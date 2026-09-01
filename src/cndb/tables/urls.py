@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.urls import path
 
+from cndb.tables.permission_views import PermissionDetailView
 from cndb.tables.record_views import RecordBulkView, RecordDetailView, RecordListCreateView
 from cndb.tables.view_views import (
     ViewAggregationsView,
@@ -30,4 +31,5 @@ urlpatterns = [
     path("<int:table_pk>/views/<int:pk>/", ViewDetailView.as_view(), name="table-view"),
     path("<int:table_pk>/views/<int:pk>/rows/", ViewRowsView.as_view(), name="table-view-rows"),
     path("<int:table_pk>/views/<int:pk>/aggregations/", ViewAggregationsView.as_view(), name="table-view-aggregations"),
+    path("<int:table_pk>/permission/", PermissionDetailView.as_view(), name="table-permission"),
 ]

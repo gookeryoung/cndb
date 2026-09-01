@@ -33,7 +33,7 @@ class ViewRules:
     field_options: Any = field(default_factory=dict)
 
 
-def _normalize_filters(table: DataTable, filters: Any, filter_type: str) -> list[dict[str, Any]]:
+def normalize_filters(table: DataTable, filters: Any, filter_type: str) -> list[dict[str, Any]]:
     """校验筛选规则结构并归一化为 [{"field","op","value"}]."""
     if not isinstance(filters, list):
         raise InvalidViewError("filters 必须是数组")
@@ -107,7 +107,7 @@ def normalize_view(table: DataTable, rules: ViewRules) -> dict[str, Any]:
     if rules.filter_type not in query.MATCH_TYPES:
         raise InvalidViewError(f"不支持的条件组合方式: {rules.filter_type}")
     return {
-        "filters": _normalize_filters(table, rules.filters, rules.filter_type),
+        "filters": normalize_filters(table, rules.filters, rules.filter_type),
         "sortings": _normalize_sortings(table, rules.sortings),
         "field_options": _normalize_field_options(table, rules.field_options),
     }

@@ -6,13 +6,16 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from django.contrib.auth.models import AbstractBaseUser
 from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from cndb.tables import query, records
+from cndb.tables.access import TableAction, hidden_field_names, row_scope
 from cndb.tables.models import DataTable
+from cndb.tables.query import RowQuery
 from cndb.tables.views import TableMixin
 
 # 分页默认值与上限
@@ -44,6 +47,18 @@ def _page_url(request: Request, page: int) -> str:
     return str(urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query_string), parts.fragment)))
 
 
+def _scope_for(table: DataTable, user: AbstractBaseUser | None) -> RowQuery | None:
+    """当前用户的行级访问范围（无表级权限或 OWNER 时为 None）."""
+    return row_scope(user, table)
+
+
+def _strip_hidden(row: dict[str, Any], hidden: set[str]) -> dict[str, Any]:
+    """剔除用户角色不可见的字段（行数据以字段名为 key）."""
+    for name in hidden:
+        row.pop(name, None)
+    return row
+
+
 class RecordListCreateView(TableMixin, APIView):
     """行列表与新增行：列表支持过滤/排序/分页查询参数."""
 
@@ -59,15 +74,19 @@ class RecordListCreateView(TableMixin, APIView):
         except query.InvalidQueryError as exc:
             return Response({"detail": str(exc)}, status=400)
         spec = query.RowQuery(where=where, params=params, order=order, limit=page_size, offset=(page - 1) * page_size)
+        spec = query.merge_where(spec, _scope_for(table, request.user))
         total = records.count_rows(table, spec)
         rows = records.fetch_rows(table, spec)
+        hidden = hidden_field_names(request.user, table)
+        if hidden:
+            rows = [_strip_hidden(row, hidden) for row in rows]
         next_url = _page_url(request, page + 1) if page * page_size < total else None
         previous_url = _page_url(request, page - 1) if page > 1 else None
         return Response({"count": total, "next": next_url, "previous": previous_url, "results": rows})
 
     def post(self, request: Request, **_kwargs: object) -> Response:
         """新增一行：请求体须为对象且逐字段校验，非法返回 400."""
-        denied = self.require_editor()
+        denied = self.require_table_action(TableAction.EDIT_RECORDS)
         if denied is not None:
             return denied
         table = self.get_table()
@@ -80,7 +99,7 @@ class RecordListCreateView(TableMixin, APIView):
         row_id = records.insert_row(table, cleaned)
         row = records.fetch_row(table, row_id)
         assert row is not None, "刚插入的行必然可读"
-        return Response(row, status=201)
+        return Response(_strip_hidden(row, hidden_field_names(request.user, table)), status=201)
 
 
 class RecordDetailView(TableMixin, APIView):
@@ -88,21 +107,24 @@ class RecordDetailView(TableMixin, APIView):
 
     permission_classes = [permissions.IsAuthenticated]
 
-    def _get_row(self, table: DataTable, row_id: int) -> dict[str, Any] | None:
-        """读取单行，不存在返回 None."""
-        return records.fetch_row(table, row_id)
+    def _get_row(self, request: Request, table: DataTable, row_id: int) -> dict[str, Any] | None:
+        """按当前用户的行级范围读取单行，并剔除不可见字段."""
+        row = records.fetch_row(table, row_id, scope=_scope_for(table, request.user))
+        if row is None:
+            return None
+        return _strip_hidden(row, hidden_field_names(request.user, table))
 
-    def get(self, _request: Request, **_kwargs: object) -> Response:
+    def get(self, request: Request, **_kwargs: object) -> Response:
         """读取单行."""
         table = self.get_table()
-        row = self._get_row(table, int(self.kwargs["row_id"]))
+        row = self._get_row(request, table, int(self.kwargs["row_id"]))
         if row is None:
             return Response({"detail": "行不存在"}, status=404)
         return Response(row)
 
     def patch(self, request: Request, **_kwargs: object) -> Response:
-        """局部更新行：数据非法返回 400，行不存在返回 404."""
-        denied = self.require_editor()
+        """局部更新行：数据非法返回 400，行不存在或不在范围内返回 404."""
+        denied = self.require_table_action(TableAction.EDIT_RECORDS)
         if denied is not None:
             return denied
         table = self.get_table()
@@ -113,19 +135,19 @@ class RecordDetailView(TableMixin, APIView):
             cleaned = records.clean_row(table, request.data, partial=True)
         except records.InvalidRowError as exc:
             return Response({"detail": str(exc)}, status=400)
-        if not records.update_row(table, row_id, cleaned):
+        if not records.update_row(table, row_id, cleaned, scope=_scope_for(table, request.user)):
             return Response({"detail": "行不存在"}, status=404)
-        row = self._get_row(table, row_id)
+        row = self._get_row(request, table, row_id)
         assert row is not None, "刚更新的行必然可读"
         return Response(row)
 
-    def delete(self, _request: Request, **_kwargs: object) -> Response:
+    def delete(self, request: Request, **_kwargs: object) -> Response:
         """删除行."""
-        denied = self.require_editor()
+        denied = self.require_table_action(TableAction.EDIT_RECORDS)
         if denied is not None:
             return denied
         table = self.get_table()
-        if not records.delete_row(table, int(self.kwargs["row_id"])):
+        if not records.delete_row(table, int(self.kwargs["row_id"]), scope=_scope_for(table, request.user)):
             return Response({"detail": "行不存在"}, status=404)
         return Response(status=204)
 
@@ -167,7 +189,7 @@ class RecordBulkView(TableMixin, APIView):
 
     def post(self, request: Request, **_kwargs: object) -> Response:
         """批量创建：请求体为行对象数组，返回创建的行（按提交顺序）."""
-        denied = self.require_editor()
+        denied = self.require_table_action(TableAction.EDIT_RECORDS)
         if denied is not None:
             return denied
         table = self.get_table()
@@ -179,11 +201,15 @@ class RecordBulkView(TableMixin, APIView):
         except records.InvalidRowError as exc:
             return Response({"detail": str(exc)}, status=400)
         row_ids = records.insert_rows(table, cleaned_rows)
-        return Response(records.fetch_rows_by_ids(table, row_ids), status=201)
+        hidden = hidden_field_names(request.user, table)
+        rows = records.fetch_rows_by_ids(table, row_ids, scope=_scope_for(table, request.user))
+        if hidden:
+            rows = [_strip_hidden(row, hidden) for row in rows]
+        return Response(rows, status=201)
 
     def patch(self, request: Request, **_kwargs: object) -> Response:
         """批量局部更新：请求体为 [{"id": 1, ...字段}, ...]，返回更新后的行."""
-        denied = self.require_editor()
+        denied = self.require_table_action(TableAction.EDIT_RECORDS)
         if denied is not None:
             return denied
         table = self.get_table()
@@ -193,14 +219,19 @@ class RecordBulkView(TableMixin, APIView):
         updates, error = _parse_bulk_updates(table, items)
         if error is not None:
             return Response({"detail": error}, status=400)
-        if len(records.fetch_rows_by_ids(table, list(updates))) != len(updates):
+        scope = _scope_for(table, request.user)
+        if len(records.fetch_rows_by_ids(table, list(updates), scope=scope)) != len(updates):
             return Response({"detail": "部分行不存在"}, status=404)
-        records.update_rows(table, updates)
-        return Response(records.fetch_rows_by_ids(table, list(updates)))
+        records.update_rows(table, updates, scope=scope)
+        rows = records.fetch_rows_by_ids(table, list(updates), scope=scope)
+        hidden = hidden_field_names(request.user, table)
+        if hidden:
+            rows = [_strip_hidden(row, hidden) for row in rows]
+        return Response(rows)
 
     def delete(self, request: Request, **_kwargs: object) -> Response:
-        """批量删除：请求体为 {"ids": [1, 2, ...]}，返回删除行数."""
-        denied = self.require_editor()
+        """批量删除：请求体为 {"ids": [1, 2, ...]}，返回删除行数（仅范围内行）."""
+        denied = self.require_table_action(TableAction.EDIT_RECORDS)
         if denied is not None:
             return denied
         table = self.get_table()
@@ -212,5 +243,5 @@ class RecordBulkView(TableMixin, APIView):
             return Response({"detail": f"ids 必须是非空整数数组，一次最多 {_MAX_BATCH_SIZE} 行"}, status=400)
         if len(ids) > _MAX_BATCH_SIZE:
             return Response({"detail": f"一次最多删除 {_MAX_BATCH_SIZE} 行"}, status=400)
-        deleted = records.delete_rows(table, ids)
+        deleted = records.delete_rows(table, ids, scope=_scope_for(table, request.user))
         return Response({"deleted": deleted})

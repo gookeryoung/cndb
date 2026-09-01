@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from cndb.tables import query, records
+from cndb.tables.access import TableAction, hidden_field_names, row_scope
 from cndb.tables.aggregations import InvalidAggregationError, fetch_aggregations, parse_aggregations
 from cndb.tables.models import DataView
 from cndb.tables.record_views import _page_url, _parse_paging
@@ -28,7 +29,7 @@ class ViewListCreateView(TableMixin, generics.ListCreateAPIView):
 
     def create(self, request: Request, *_args: object, **_kwargs: object) -> Response:
         """建视图：规则结构非法返回 400."""
-        denied = self.require_editor()
+        denied = self.require_table_action(TableAction.EDIT_VIEWS)
         if denied is not None:
             return denied
         serializer = self.get_serializer(data=request.data)
@@ -51,7 +52,7 @@ class ViewDetailView(TableMixin, generics.RetrieveUpdateDestroyAPIView):
 
     def update(self, request: Request, *_args: object, **kwargs: object) -> Response:
         """改视图：名称/规则/公开性，规则结构非法返回 400."""
-        denied = self.require_editor()
+        denied = self.require_table_action(TableAction.EDIT_VIEWS)
         if denied is not None:
             return denied
         partial = kwargs.pop("partial", False)
@@ -67,7 +68,7 @@ class ViewDetailView(TableMixin, generics.RetrieveUpdateDestroyAPIView):
 
     def destroy(self, _request: Request, *_args: object, **_kwargs: object) -> Response:
         """删视图：纯元数据删除."""
-        denied = self.require_editor()
+        denied = self.require_table_action(TableAction.EDIT_VIEWS)
         if denied is not None:
             return denied
         self.get_object().delete()
@@ -90,17 +91,24 @@ class ViewRowsView(TableMixin, APIView):
         except query.InvalidQueryError as exc:
             return Response({"detail": str(exc)}, status=400)
         spec = query.RowQuery(where=where, params=params, order=order, limit=page_size, offset=(page - 1) * page_size)
+        spec = query.merge_where(spec, row_scope(request.user, table))
         total = records.count_rows(table, spec)
         rows = records.fetch_rows(table, spec)
+        hidden = hidden_field_names(request.user, table)
+        if hidden:
+            rows = [{key: value for key, value in row.items() if key not in hidden} for row in rows]
         next_url = _page_url(request, page + 1) if page * page_size < total else None
         previous_url = _page_url(request, page - 1) if page > 1 else None
+        field_options = view.field_options or {}
+        if hidden:
+            field_options = {key: value for key, value in field_options.items() if key not in hidden}
         return Response(
             {
                 "count": total,
                 "next": next_url,
                 "previous": previous_url,
                 "results": rows,
-                "field_options": view.field_options,
+                "field_options": field_options,
             }
         )
 
@@ -119,5 +127,9 @@ class ViewAggregationsView(TableMixin, APIView):
             agg = parse_aggregations(table, request.query_params)
         except (query.InvalidQueryError, InvalidAggregationError) as exc:
             return Response({"detail": str(exc)}, status=400)
+        hidden = hidden_field_names(request.user, table)
+        if agg.group_by in hidden or any(name in hidden for name in agg.aggs):
+            return Response({"detail": "聚合字段不可见"}, status=400)
         spec = query.RowQuery(where=where, params=params)
+        spec = query.merge_where(spec, row_scope(request.user, table))
         return Response(fetch_aggregations(table, spec, agg))

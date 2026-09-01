@@ -43,6 +43,35 @@ class RowQuery:
     offset: int = 0
 
 
+def bare_condition(where: str) -> str:
+    """剥掉 WHERE 片段的 WHERE 关键字前缀，返回裸条件表达式."""
+    condition = where.strip()
+    if condition[:6].upper() == "WHERE ":
+        return condition[6:].strip()
+    return condition
+
+
+def merge_where(base: RowQuery, extra: RowQuery | None) -> RowQuery:
+    """把 extra 的 WHERE 条件以 AND 并入 base（保留 base 的排序与分页）."""
+    if extra is None or not extra.where:
+        return base
+    if not base.where:
+        return RowQuery(
+            where=f" WHERE {bare_condition(extra.where)}",
+            params=list(extra.params),
+            order=base.order,
+            limit=base.limit,
+            offset=base.offset,
+        )
+    return RowQuery(
+        where=f"{base.where} AND ({bare_condition(extra.where)})",
+        params=[*base.params, *extra.params],
+        order=base.order,
+        limit=base.limit,
+        offset=base.offset,
+    )
+
+
 def _fields_by_name(table: DataTable) -> dict[str, Any]:
     """字段名到元数据的映射（仅未回收字段）."""
     return {str(field.name): field for field in table.active_fields()}

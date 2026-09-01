@@ -159,3 +159,56 @@ class DataView(models.Model):
         self.sortings = normalized["sortings"]
         self.field_options = normalized["field_options"]
         super().save(*args, **kwargs)
+
+
+class TablePermission(models.Model):
+    """表级访问控制：角色覆盖、行级过滤与字段级隐藏，规则由 permission_rules 校验."""
+
+    table = models.OneToOneField(
+        DataTable,
+        on_delete=models.CASCADE,
+        related_name="permission",
+        verbose_name="所属数据表",
+    )
+    read_role = models.CharField("读取最低角色", max_length=16, blank=True, default="")
+    edit_records_role = models.CharField("行数据编辑最低角色", max_length=16, blank=True, default="")
+    edit_views_role = models.CharField("视图编辑最低角色", max_length=16, blank=True, default="")
+    edit_schema_role = models.CharField("结构编辑最低角色", max_length=16, blank=True, default="")
+    hidden_fields = models.JSONField("字段级隐藏", default=dict, blank=True)
+    row_filters = models.JSONField("行级过滤规则", default=list, blank=True)
+    row_filter_type = models.CharField("行级条件组合", max_length=3, default="AND")
+    created_on = models.DateTimeField("创建时间", auto_now_add=True)
+    updated_on = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        verbose_name = "表级权限"
+        verbose_name_plural = "表级权限"
+
+    def __str__(self) -> str:
+        """返回"表权限: 表名"便于后台展示."""
+        return f"表权限: {self.table.name}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """保存前经 permission_rules 校验并归一化行级规则与字段隐藏结构."""
+        from cndb.tables.permission_rules import PermissionRules, normalize_permission
+
+        normalized = normalize_permission(
+            self.table,  # type: ignore[bad-argument-type]
+            PermissionRules(
+                read_role=str(self.read_role),
+                edit_records_role=str(self.edit_records_role),
+                edit_views_role=str(self.edit_views_role),
+                edit_schema_role=str(self.edit_schema_role),
+                hidden_fields=self.hidden_fields,
+                row_filters=self.row_filters,
+                row_filter_type=str(self.row_filter_type),
+            ),
+        )
+        self.read_role = normalized["read_role"]
+        self.edit_records_role = normalized["edit_records_role"]
+        self.edit_views_role = normalized["edit_views_role"]
+        self.edit_schema_role = normalized["edit_schema_role"]
+        self.hidden_fields = normalized["hidden_fields"]
+        self.row_filters = normalized["row_filters"]
+        self.row_filter_type = normalized["row_filter_type"]
+        super().save(*args, **kwargs)

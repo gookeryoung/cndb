@@ -11,6 +11,7 @@ from typing import Any
 
 from django.db import connection, transaction
 
+from cndb.tables import query
 from cndb.tables.field_types import FieldTypeError, get_field_type
 from cndb.tables.models import DataField, DataTable
 from cndb.tables.query import RowQuery
@@ -62,22 +63,34 @@ def insert_row(table: DataTable, cleaned: dict[str, Any]) -> int:
     return int(row[0])
 
 
-def update_row(table: DataTable, row_id: int, cleaned: dict[str, Any]) -> bool:
-    """按主键更新指定列并刷新 updated_on，返回是否命中行."""
+def update_row(table: DataTable, row_id: int, cleaned: dict[str, Any], *, scope: RowQuery | None = None) -> bool:
+    """按主键更新指定列并刷新 updated_on，返回是否命中行.
+
+    scope 为行级访问范围（权限策略生成），行不在范围内同样视为未命中。
+    """
     set_clause = ", ".join(f"{quote(name)} = %s" for name in cleaned)
     sql = (
         f"UPDATE {quote(table.db_table_name)} SET {set_clause}, "
         f"{quote('updated_on')} = {now()} WHERE {quote('id')} = %s"
     )
+    params: list[Any] = [*cleaned.values(), row_id]
+    if scope is not None and scope.where:
+        sql = f"{sql} AND ({query.bare_condition(scope.where)})"
+        params.extend(scope.params)
     with connection.cursor() as cursor:
-        cursor.execute(sql, [*cleaned.values(), row_id])
+        cursor.execute(sql, params)
         return cursor.rowcount > 0
 
 
-def delete_row(table: DataTable, row_id: int) -> bool:
-    """按主键删除行，返回是否命中."""
+def delete_row(table: DataTable, row_id: int, *, scope: RowQuery | None = None) -> bool:
+    """按主键删除行，返回是否命中；scope 为行级访问范围."""
+    sql = f"DELETE FROM {quote(table.db_table_name)} WHERE {quote('id')} = %s"
+    params: list[Any] = [row_id]
+    if scope is not None and scope.where:
+        sql = f"{sql} AND ({query.bare_condition(scope.where)})"
+        params.extend(scope.params)
     with connection.cursor() as cursor:
-        cursor.execute(f"DELETE FROM {quote(table.db_table_name)} WHERE {quote('id')} = %s", [row_id])
+        cursor.execute(sql, params)
         return cursor.rowcount > 0
 
 
@@ -109,21 +122,25 @@ def insert_rows(table: DataTable, cleaned_rows: Sequence[dict[str, Any]]) -> lis
         return [int(row[0]) for row in cursor.fetchall()]
 
 
-def update_rows(table: DataTable, updates: Mapping[int, dict[str, Any]]) -> int:
+def update_rows(table: DataTable, updates: Mapping[int, dict[str, Any]], *, scope: RowQuery | None = None) -> int:
     """批量按主键更新多行，整体一个事务（全成或全败），返回命中行数."""
     with transaction.atomic():  # type: ignore[bad-context-manager]
-        return sum(update_row(table, row_id, cleaned) for row_id, cleaned in updates.items())
+        return sum(update_row(table, row_id, cleaned, scope=scope) for row_id, cleaned in updates.items())
 
 
-def delete_rows(table: DataTable, row_ids: Sequence[int]) -> int:
-    """按主键集合批量删除行（去重后 IN 匹配），返回删除行数."""
+def delete_rows(table: DataTable, row_ids: Sequence[int], *, scope: RowQuery | None = None) -> int:
+    """按主键集合批量删除行（去重后 IN 匹配），返回删除行数；scope 为行级访问范围."""
     ids = list(dict.fromkeys(row_ids))
     if not ids:
         return 0
     placeholders = ", ".join(["%s"] * len(ids))
     sql = f"DELETE FROM {quote(table.db_table_name)} WHERE {quote('id')} IN ({placeholders})"
+    params: list[Any] = list(ids)
+    if scope is not None and scope.where:
+        sql = f"{sql} AND ({query.bare_condition(scope.where)})"
+        params.extend(scope.params)
     with connection.cursor() as cursor:
-        cursor.execute(sql, ids)
+        cursor.execute(sql, params)
         return int(cursor.rowcount)
 
 
@@ -171,20 +188,26 @@ def count_rows(table: DataTable, spec: RowQuery) -> int:
     return int(row[0])
 
 
-def fetch_row(table: DataTable, row_id: int) -> dict[str, Any] | None:
-    """按主键读取单行，不存在返回 None."""
+def fetch_row(table: DataTable, row_id: int, *, scope: RowQuery | None = None) -> dict[str, Any] | None:
+    """按主键读取单行，不存在或不在行级范围内返回 None."""
     fields = table.active_fields()
     columns = _row_columns(fields)
     select = ", ".join(quote(name) for name in columns)
     sql = f"SELECT {select} FROM {quote(table.db_table_name)} WHERE {quote('id')} = %s"
+    params: list[Any] = [row_id]
+    if scope is not None and scope.where:
+        sql = f"{sql} AND ({query.bare_condition(scope.where)})"
+        params.extend(scope.params)
     with connection.cursor() as cursor:
-        cursor.execute(sql, [row_id])
+        cursor.execute(sql, params)
         row = cursor.fetchone()
     return None if row is None else _row_to_dict(fields, row, columns)
 
 
-def fetch_rows_by_ids(table: DataTable, row_ids: Sequence[int]) -> list[dict[str, Any]]:
-    """按主键集合读取行，按传入 id 顺序返回（不存在的主键跳过）."""
+def fetch_rows_by_ids(
+    table: DataTable, row_ids: Sequence[int], *, scope: RowQuery | None = None
+) -> list[dict[str, Any]]:
+    """按主键集合读取行，按传入 id 顺序返回（不存在或不在范围内的主键跳过）."""
     ids = list(dict.fromkeys(row_ids))
     if not ids:
         return []
@@ -193,7 +216,11 @@ def fetch_rows_by_ids(table: DataTable, row_ids: Sequence[int]) -> list[dict[str
     select = ", ".join(quote(name) for name in columns)
     placeholders = ", ".join(["%s"] * len(ids))
     sql = f"SELECT {select} FROM {quote(table.db_table_name)} WHERE {quote('id')} IN ({placeholders})"
+    params: list[Any] = list(ids)
+    if scope is not None and scope.where:
+        sql = f"{sql} AND ({query.bare_condition(scope.where)})"
+        params.extend(scope.params)
     with connection.cursor() as cursor:
-        cursor.execute(sql, ids)
+        cursor.execute(sql, params)
         rows_by_id = {int(row[columns.index("id")]): _row_to_dict(fields, row, columns) for row in cursor.fetchall()}
     return [rows_by_id[row_id] for row_id in ids if row_id in rows_by_id]

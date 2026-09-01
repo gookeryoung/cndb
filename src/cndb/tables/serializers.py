@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from cndb.tables.models import DataField, DataTable, DataView
+from cndb.tables.models import DataField, DataTable, DataView, TablePermission
 
 
 class DataFieldSerializer(serializers.ModelSerializer):
@@ -74,3 +74,22 @@ class DataViewSerializer(serializers.ModelSerializer):
             "updated_on",
         )
         read_only_fields = ("id", "created_on", "updated_on")
+
+
+class TablePermissionSerializer(serializers.ModelSerializer):
+    """表级权限信息：角色覆盖/字段隐藏/行级过滤规则由 permission_rules 在保存时校验."""
+
+    class Meta:
+        model = TablePermission
+        fields = (
+            "read_role",
+            "edit_records_role",
+            "edit_views_role",
+            "edit_schema_role",
+            "hidden_fields",
+            "row_filters",
+            "row_filter_type",
+            "created_on",
+            "updated_on",
+        )
+        read_only_fields = ("created_on", "updated_on")
