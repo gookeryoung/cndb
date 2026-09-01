@@ -33,6 +33,7 @@ const els = {
   gridWrap: document.getElementById("grid-wrap"),
   gridHead: document.getElementById("grid-head"),
   gridBody: document.getElementById("grid-body"),
+  gridFoot: document.getElementById("grid-foot"),
   pager: document.getElementById("pager"),
   pagePrev: document.getElementById("page-prev"),
   pageNext: document.getElementById("page-next"),
@@ -47,8 +48,11 @@ const els = {
 /** 带 CSRF 的 API 请求封装：非 2xx 抛错（401 跳登录页） */
 async function api(url, options = {}) {
   const headers = Object.assign({ "X-CSRFToken": getCookie("csrftoken") }, options.headers || {});
-  const response = await fetch(url, Object.assign({ headers }, options));
-  if (response.status === 401 || response.status === 403) {
+  if (typeof options.body === "string") {
+    headers["Content-Type"] = "application/json";
+  }
+  const response = await fetch(url, Object.assign({}, options, { headers }));
+  if (response.status === 401) {
     window.location.href = "/login/";
     throw new Error("未登录");
   }
@@ -87,11 +91,12 @@ async function loadWorkspaces() {
   }
 }
 
-/** 加载当前工作区的表列表并选中第一个 */
-async function loadTables() {
+/** 加载当前工作区的表列表，preferredId 指定优先选中的表（如新建后） */
+async function loadTables(preferredId) {
   const data = await api(`/api/workspaces/${state.workspaceId}/tables/`);
   state.tables = data.results || [];
-  state.tableId = state.tables.length ? state.tables[0].id : null;
+  const preferred = preferredId != null ? state.tables.find((t) => t.id === preferredId) : null;
+  state.tableId = preferred ? preferred.id : state.tables.length ? state.tables[0].id : null;
   renderTables();
   if (state.tableId) {
     await loadViews();
@@ -103,11 +108,12 @@ async function loadTables() {
   }
 }
 
-/** 加载当前表的视图列表并选中第一个 */
-async function loadViews() {
+/** 加载当前表的视图列表，preferredId 指定优先选中的视图（如新建后） */
+async function loadViews(preferredId) {
   const data = await api(`/api/workspaces/${state.workspaceId}/tables/${state.tableId}/views/`);
   state.views = data.results || [];
-  state.viewId = state.views.length ? state.views[0].id : null;
+  const preferred = preferredId != null ? state.views.find((v) => v.id === preferredId) : null;
+  state.viewId = preferred ? preferred.id : state.views.length ? state.views[0].id : null;
   state.page = 1;
   renderViews();
   if (state.viewId) {
@@ -263,6 +269,7 @@ function openRowDetail(row) {
   const fields = table
     ? table.fields.filter((f) => !f.trashed).sort((a, b) => a.order - b.order)
     : [];
+  state.detailRow = row;
   els.rowDetailTitle.textContent = `行 #${row.id}`;
   els.rowDetailBody.innerHTML = "";
   for (const field of fields) {
@@ -339,9 +346,30 @@ function renderTables() {
   els.tableList.innerHTML = "";
   for (const table of state.tables) {
     const item = document.createElement("li");
-    item.textContent = table.name;
-    item.classList.toggle("active", table.id === state.tableId);
-    item.addEventListener("click", async () => {
+    item.className = "table-item" + (table.id === state.tableId ? " active" : "");
+    const name = document.createElement("span");
+    name.className = "table-item-name";
+    name.textContent = table.name;
+    const actions = document.createElement("span");
+    actions.className = "table-item-actions";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn-ghost btn-mini";
+    editBtn.title = "编辑表";
+    editBtn.textContent = "编辑";
+    editBtn.dataset.act = "edit";
+    editBtn.dataset.id = table.id;
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn-ghost btn-mini";
+    delBtn.title = "删除表";
+    delBtn.textContent = "删除";
+    delBtn.dataset.act = "delete";
+    delBtn.dataset.id = table.id;
+    actions.append(editBtn, delBtn);
+    item.append(name, actions);
+    item.addEventListener("click", async (event) => {
+      if (event.target.closest("button")) return; // 操作按钮由 actions.js 委托处理
       if (state.tableId === table.id) return;
       state.tableId = table.id;
       state.page = 1;
@@ -395,6 +423,10 @@ function renderGrid() {
     }
     els.gridHead.appendChild(th);
   }
+  const opHead = document.createElement("th");
+  opHead.textContent = "操作";
+  opHead.style.width = "96px";
+  els.gridHead.appendChild(opHead);
 
   for (const row of state.rows) {
     const tr = document.createElement("tr");
@@ -407,7 +439,37 @@ function renderGrid() {
       td.textContent = value === null || value === undefined ? "" : String(value);
       tr.appendChild(td);
     }
+    const opCell = document.createElement("td");
+    opCell.className = "op-cell";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn-ghost btn-mini";
+    editBtn.textContent = "编辑";
+    editBtn.addEventListener("click", () => openRowModal(row));
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn-ghost btn-mini";
+    delBtn.textContent = "删除";
+    delBtn.addEventListener("click", () => deleteRow(row));
+    opCell.append(editBtn, delBtn);
+    tr.appendChild(opCell);
     els.gridBody.appendChild(tr);
+  }
+
+  // tfoot：添加行入口（仅 grid 视图且有字段时）
+  els.gridFoot.innerHTML = "";
+  if (visible.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = visible.length + 2;
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "btn-ghost";
+    addBtn.textContent = "+ 添加行";
+    addBtn.addEventListener("click", () => openRowModal(null));
+    td.appendChild(addBtn);
+    tr.appendChild(td);
+    els.gridFoot.appendChild(tr);
   }
 
   const totalPages = Math.max(1, Math.ceil(state.total / state.pageSize));

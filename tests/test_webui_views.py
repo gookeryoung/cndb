@@ -52,6 +52,22 @@ class TestAppPage:
         assert 'id="grid-body"' in content
         assert 'id="row-detail"' in content
         assert "/static/webui/app.js" in content
+        assert "/static/webui/actions.js" in content
+        # 编辑与管理入口
+        for element_id in (
+            "workspace-create-btn",
+            "table-create-btn",
+            "field-add-btn",
+            "view-create-btn",
+            "view-edit-btn",
+            "export-btn",
+            "import-btn",
+            "member-btn",
+            "modal-mask",
+            "grid-foot",
+            "row-detail-edit",
+        ):
+            assert f'id="{element_id}"' in content
 
     def test_nickname_fallback_to_username(self, client: Client, db: object) -> None:
         """昵称为空时回退显示用户名."""

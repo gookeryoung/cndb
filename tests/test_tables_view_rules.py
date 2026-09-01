@@ -191,6 +191,14 @@ class TestViewAPI:
         )
         assert response.status_code == 400
 
+    def test_create_view_duplicate_name_rejected(
+        self, auth_client: APIClient, workspace: Workspace, table: DataTable
+    ) -> None:
+        """同名视图重复创建返回 400 而非 500."""
+        response = auth_client.post(self._url(workspace, table), {"name": "全部"}, format="json")
+        assert response.status_code == 400
+        assert "已存在" in response.data["detail"]
+
     def test_update_view(self, auth_client: APIClient, workspace: Workspace, table: DataTable) -> None:
         """局部更新视图规则."""
         view = table.views.first()

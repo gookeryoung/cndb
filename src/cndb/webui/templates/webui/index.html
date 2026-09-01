@@ -10,12 +10,19 @@
   <aside class="sidebar">
     <div class="sidebar-top">
       <div class="brand">cndb</div>
-      <label class="field-label" for="workspace-select">工作区</label>
+      <div class="workspace-row">
+        <label class="field-label" for="workspace-select">工作区</label>
+        <button type="button" id="workspace-create-btn" class="btn-ghost btn-mini" title="新建工作区">+</button>
+      </div>
       <select id="workspace-select"></select>
-      <label class="field-label">数据表</label>
+      <div class="workspace-row">
+        <label class="field-label">数据表</label>
+        <button type="button" id="table-create-btn" class="btn-ghost btn-mini" title="新建表">+</button>
+      </div>
       <ul id="table-list" class="table-list"></ul>
     </div>
     <div class="sidebar-bottom">
+      <button type="button" id="member-btn" class="btn-ghost">成员</button>
       <span id="user-nickname">{{ nickname }}</span>
       <button type="button" id="logout-btn" class="btn-ghost">退出</button>
     </div>
@@ -24,6 +31,14 @@
   <main class="content">
     <header class="content-header">
       <div id="view-tabs" class="view-tabs"></div>
+      <div class="toolbar">
+        <button type="button" id="view-create-btn" class="btn-ghost btn-mini" title="新建视图">+视图</button>
+        <button type="button" id="view-edit-btn" class="btn-ghost btn-mini" title="编辑当前视图">编辑</button>
+        <button type="button" id="field-mgr-btn" class="btn-ghost btn-mini" title="字段管理">字段</button>
+        <button type="button" id="field-add-btn" class="btn-ghost btn-mini" title="新增字段">+字段</button>
+        <button type="button" id="export-btn" class="btn-ghost btn-mini" title="导出 CSV/JSON">导出</button>
+        <button type="button" id="import-btn" class="btn-ghost btn-mini" title="导入 CSV">导入</button>
+      </div>
       <span id="row-stats" class="row-stats"></span>
     </header>
     <div id="grid-status" class="grid-status"></div>
@@ -41,6 +56,7 @@
       <table class="grid">
         <thead><tr id="grid-head"></tr></thead>
         <tbody id="grid-body"></tbody>
+        <tfoot><tr id="grid-foot"></tr></tfoot>
       </table>
     </div>
     <footer class="pager" id="pager">
@@ -53,11 +69,26 @@
   <aside id="row-detail" class="row-detail" hidden>
     <header class="row-detail-head">
       <span id="row-detail-title">行详情</span>
-      <button type="button" id="row-detail-close" class="btn-ghost">关闭</button>
+      <div>
+        <button type="button" id="row-detail-edit" class="btn-ghost btn-mini">编辑</button>
+        <button type="button" id="row-detail-close" class="btn-ghost">关闭</button>
+      </div>
     </header>
     <dl id="row-detail-body" class="row-detail-body"></dl>
   </aside>
 
+  <div id="modal-mask" class="modal-mask" hidden>
+    <div class="modal">
+      <header class="modal-head">
+        <span id="modal-title">对话框</span>
+        <button type="button" id="modal-close" class="btn-ghost btn-mini">关闭</button>
+      </header>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <input type="file" id="import-file" accept=".csv" hidden>
   <script src="{% static 'webui/app.js' %}"></script>
+  <script src="{% static 'webui/actions.js' %}"></script>
 </body>
 </html>

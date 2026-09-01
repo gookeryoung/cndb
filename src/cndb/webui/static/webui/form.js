@@ -24,28 +24,36 @@ function collectValue(control) {
   return value;
 }
 
+let submitting = false; // 提交中防抖标志（防快速双击产生重复行）
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const payload = {};
-  for (const control of form.querySelectorAll("[data-name]")) {
-    const value = collectValue(control);
-    if (value !== null) {
-      payload[control.dataset.name] = value;
+  if (submitting) return;
+  submitting = true;
+  try {
+    const payload = {};
+    for (const control of form.querySelectorAll("[data-name]")) {
+      const value = collectValue(control);
+      if (value !== null) {
+        payload[control.dataset.name] = value;
+      }
     }
-  }
-  const response = await fetch(`/api/forms/${form.dataset.slug}/submit/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json().catch(() => null);
-  message.hidden = false;
-  if (response.ok) {
-    message.className = "public-message ok";
-    message.textContent = data && data.detail ? data.detail : "提交成功";
-    form.reset();
-  } else {
-    message.className = "public-message err";
-    message.textContent = data && data.detail ? data.detail : `提交失败: ${response.status}`;
+    const response = await fetch(`/api/forms/${form.dataset.slug}/submit/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => null);
+    message.hidden = false;
+    if (response.ok) {
+      message.className = "public-message ok";
+      message.textContent = data && data.detail ? data.detail : "提交成功";
+      form.reset();
+    } else {
+      message.className = "public-message err";
+      message.textContent = data && data.detail ? data.detail : `提交失败: ${response.status}`;
+    }
+  } finally {
+    submitting = false;
   }
 });

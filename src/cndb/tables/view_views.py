@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions
 from rest_framework.request import Request
@@ -28,7 +29,7 @@ class ViewListCreateView(TableMixin, generics.ListCreateAPIView):
         return DataView.objects.filter(table=self.get_table())
 
     def create(self, request: Request, *_args: object, **_kwargs: object) -> Response:
-        """建视图：规则结构非法返回 400."""
+        """建视图：规则结构非法或名称重复返回 400."""
         denied = self.require_table_action(TableAction.EDIT_VIEWS)
         if denied is not None:
             return denied
@@ -38,6 +39,8 @@ class ViewListCreateView(TableMixin, generics.ListCreateAPIView):
             view = DataView.objects.create(table=self.get_table(), **serializer.validated_data)
         except InvalidViewError as exc:
             return Response({"detail": str(exc)}, status=400)
+        except IntegrityError:
+            return Response({"detail": "同名视图已存在"}, status=400)
         return Response(DataViewSerializer(view).data, status=201)
 
 
