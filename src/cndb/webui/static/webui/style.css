@@ -549,6 +549,27 @@ select {
   flex-wrap: wrap;
 }
 
+/* 角色徽章：浅底圆角小标签 */
+.role-badge {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-size: 12px;
+}
+
+/* 成员操作按钮：hover 才显示，主界面保持只读 */
+.member-ops {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  visibility: hidden;
+}
+
+.member-line:hover .member-ops {
+  visibility: visible;
+}
+
 .import-errors {
   max-height: 260px;
   overflow-y: auto;

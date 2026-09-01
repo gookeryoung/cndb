@@ -1033,22 +1033,23 @@ function openMemberModal() {
       body.textContent = `加载失败: ${err.message}`;
       return;
     }
-    /** 重绘成员列表（user 为内嵌对象 {id, username, nickname}） */
+    /** 成员显示名：用户名（昵称） */
+    const memberName = (member) => {
+      const username = member.user && member.user.username !== undefined ? member.user.username : member.user;
+      const nickname = member.user ? member.user.nickname : member.nickname;
+      return nickname ? `${username}（${nickname}）` : String(username);
+    };
+    /** 重绘成员列表：默认只读展示（角色徽章），编辑/移除收进 hover 操作 */
+    let editing = null; // 正在编辑角色的成员对象
     const render = () => {
       const listBox = body.querySelector(".member-list");
       if (!listBox) return;
       listBox.innerHTML = "";
       for (const member of members) {
-        const line = document.createElement("div");
-        line.className = "member-line";
-        const name = document.createElement("span");
-        const username = member.user && member.user.username !== undefined ? member.user.username : member.user;
-        const nickname = member.user ? member.user.nickname : member.nickname;
-        name.textContent = nickname ? `${username}（${nickname}）` : String(username);
-        const roleSpan = document.createElement("span");
-        roleSpan.textContent = ` [${roleText(member.role)}]`;
-        line.append(name, roleSpan);
-        if (member.role !== "owner") {
+        if (editing === member) {
+          // 编辑态：角色下拉 + 保存/取消
+          const editLine = document.createElement("div");
+          editLine.className = "def-row";
           const roleSel = document.createElement("select");
           for (const [value, text] of MEMBER_ROLES) {
             const option = document.createElement("option");
@@ -1057,17 +1058,55 @@ function openMemberModal() {
             option.selected = member.role === value;
             roleSel.appendChild(option);
           }
-          roleSel.addEventListener("change", async () => {
+          const saveBtn = document.createElement("button");
+          saveBtn.type = "button";
+          saveBtn.className = "btn-primary btn-mini";
+          saveBtn.textContent = "保存";
+          saveBtn.addEventListener("click", async () => {
             try {
               await api(`/api/workspaces/${state.workspaceId}/members/${member.id}/`, {
                 method: "PATCH",
                 body: JSON.stringify({ role: roleSel.value }),
               });
               member.role = roleSel.value;
-              roleSpan.textContent = ` [${roleText(member.role)}]`;
+              editing = null;
+              render();
+              setStatus(`已将 ${memberName(member)} 角色改为${roleText(member.role)}`);
             } catch (err) {
               setStatus(`修改角色失败: ${err.message}`);
             }
+          });
+          const cancelBtn = document.createElement("button");
+          cancelBtn.type = "button";
+          cancelBtn.className = "btn-ghost btn-mini";
+          cancelBtn.textContent = "取消";
+          cancelBtn.addEventListener("click", () => {
+            editing = null;
+            render();
+          });
+          editLine.append(roleSel, saveBtn, cancelBtn);
+          listBox.appendChild(editLine);
+          continue;
+        }
+        const line = document.createElement("div");
+        line.className = "member-line";
+        const name = document.createElement("span");
+        name.textContent = memberName(member);
+        const roleSpan = document.createElement("span");
+        roleSpan.className = "role-badge";
+        roleSpan.textContent = roleText(member.role);
+        line.append(name, roleSpan);
+        if (member.role !== "owner") {
+          // 操作按钮 hover 才显示，主界面保持只读
+          const ops = document.createElement("span");
+          ops.className = "member-ops";
+          const editBtn = document.createElement("button");
+          editBtn.type = "button";
+          editBtn.className = "btn-ghost btn-mini";
+          editBtn.textContent = "编辑";
+          editBtn.addEventListener("click", () => {
+            editing = member;
+            render();
           });
           const removeBtn = document.createElement("button");
           removeBtn.type = "button";
@@ -1078,11 +1117,13 @@ function openMemberModal() {
               await api(`/api/workspaces/${state.workspaceId}/members/${member.id}/`, { method: "DELETE" });
               members = members.filter((m) => m.id !== member.id);
               render();
+              setStatus(`已移除成员 ${memberName(member)}`);
             } catch (err) {
               setStatus(`移除失败: ${err.message}`);
             }
           });
-          line.append(roleSel, removeBtn);
+          ops.append(editBtn, removeBtn);
+          line.appendChild(ops);
         }
         listBox.appendChild(line);
       }
@@ -1102,10 +1143,11 @@ function openMemberModal() {
     loadingOption.disabled = true;
     loadingOption.selected = true;
     userInput.appendChild(loadingOption);
+    let list = []; // 候选用户列表（含昵称），供添加成功后的状态提示取名
     try {
       const candidates = await api(`/api/workspaces/${state.workspaceId}/members/candidates/`);
       userInput.innerHTML = "";
-      const list = candidates.results || [];
+      list = candidates.results || [];
       if (!list.length) {
         const empty = document.createElement("option");
         empty.textContent = "暂无可添加用户";
@@ -1154,6 +1196,18 @@ function openMemberModal() {
         const used = userInput.querySelector(`option[value="${CSS.escape(username)}"]`);
         if (used) used.remove();
         render();
+        const added = userInput.selectedOptions[0];
+        if (!added?.value) {
+          // 候选已空：恢复占位提示
+          const empty = document.createElement("option");
+          empty.textContent = "暂无可添加用户";
+          empty.disabled = true;
+          empty.selected = true;
+          userInput.appendChild(empty);
+        }
+        const chosen = list.find((c) => c.username === username);
+        const displayName = chosen?.nickname ? `${username}（${chosen.nickname}）` : username;
+        setStatus(`已添加 ${displayName} 为${roleText(member.role)}`);
       } catch (err) {
         modalError(`添加失败: ${err.message}`);
       }
