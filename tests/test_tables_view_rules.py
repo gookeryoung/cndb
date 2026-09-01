@@ -58,9 +58,14 @@ class TestNormalizeView:
         assert normalized["field_options"]["名称"] == {"hidden": True, "width": 200, "order": 0}
 
     def test_empty_defaults(self, table: DataTable) -> None:
-        """空配置归一化为空结构."""
+        """空配置归一化为空结构与表单默认文案."""
         normalized = normalize_view(table, ViewRules())
-        assert normalized == {"filters": [], "sortings": [], "field_options": {}}
+        assert normalized == {
+            "filters": [],
+            "sortings": [],
+            "field_options": {},
+            "form_options": {"title": "", "description": "", "submit_text": "提交", "fields": {}},
+        }
 
     def test_unknown_filter_field_rejected(self, table: DataTable) -> None:
         """筛选引用未知字段拒绝."""

@@ -20,6 +20,11 @@ def generate_db_column_name() -> str:
     return f"field_{uuid.uuid4().hex[:12]}"
 
 
+def generate_form_slug() -> str:
+    """生成公开表单标识：form_ 前缀 + 16 位十六进制随机串，仅系统生成不可预测."""
+    return f"form_{uuid.uuid4().hex[:16]}"
+
+
 class DataTable(models.Model):
     """用户自定义表的元数据，物理表由 DDL 引擎（P2）按 db_table_name 创建."""
 
@@ -124,6 +129,8 @@ class DataView(models.Model):
     filters = models.JSONField("筛选规则", default=list, blank=True)
     sortings = models.JSONField("排序规则", default=list, blank=True)
     field_options = models.JSONField("字段选项", default=dict, blank=True)
+    form_options = models.JSONField("表单配置", default=dict, blank=True)
+    slug = models.CharField("公开标识", max_length=32, unique=True, null=True, blank=True, editable=False)
     public = models.BooleanField("公开共享", default=False)
     order = models.IntegerField("排序", default=0)
     created_on = models.DateTimeField("创建时间", auto_now_add=True)
@@ -142,7 +149,7 @@ class DataView(models.Model):
         return f"{self.name}: {self.view_type}"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        """保存前经视图规则校验并归一化筛选/排序/字段选项结构."""
+        """保存前经视图规则校验并归一化筛选/排序/字段选项/表单配置结构."""
         from cndb.tables.view_rules import ViewRules, normalize_view
 
         normalized = normalize_view(
@@ -153,11 +160,19 @@ class DataView(models.Model):
                 filters=self.filters,
                 sortings=self.sortings,
                 field_options=self.field_options,
+                form_options=self.form_options,
             ),
         )
         self.filters = normalized["filters"]
         self.sortings = normalized["sortings"]
         self.field_options = normalized["field_options"]
+        self.form_options = normalized["form_options"]
+        # 表单视图自动生成公开标识，其余形态不持有 slug
+        if str(self.view_type) == DataView.ViewType.FORM:
+            if not self.slug:
+                self.slug = generate_form_slug()  # type: ignore[bad-assignment]
+        else:
+            self.slug = None  # type: ignore[bad-assignment]
         super().save(*args, **kwargs)
 
 

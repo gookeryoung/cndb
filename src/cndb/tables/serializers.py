@@ -56,7 +56,7 @@ class DataTableCreateSerializer(serializers.Serializer):
 
 
 class DataViewSerializer(serializers.ModelSerializer):
-    """数据视图信息：筛选/排序/字段选项规则的结构由 view_rules 在保存时校验."""
+    """数据视图信息：规则结构由 view_rules 在保存时校验，slug 由系统生成只读."""
 
     class Meta:
         model = DataView
@@ -68,12 +68,14 @@ class DataViewSerializer(serializers.ModelSerializer):
             "filters",
             "sortings",
             "field_options",
+            "form_options",
+            "slug",
             "public",
             "order",
             "created_on",
             "updated_on",
         )
-        read_only_fields = ("id", "created_on", "updated_on")
+        read_only_fields = ("id", "slug", "created_on", "updated_on")
 
 
 class TablePermissionSerializer(serializers.ModelSerializer):

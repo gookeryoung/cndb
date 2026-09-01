@@ -16,6 +16,9 @@ from cndb.tables.models import DataTable, DataView
 # 字段选项：hidden 显隐 / width 列宽 / order 展示顺序
 _FIELD_OPTION_DEFAULTS = {"hidden": False, "width": 200, "order": 0}
 _WIDTH_RANGE = (40, 800)
+# 表单配置默认值：标题/描述/提交按钮文案与字段启用必填子集
+_FORM_DEFAULTS = {"title": "", "description": "", "submit_text": "提交"}
+_FORM_TEXT_LIMITS = {"title": 255, "description": 2000, "submit_text": 100}
 
 
 class InvalidViewError(Exception):
@@ -31,6 +34,7 @@ class ViewRules:
     filters: Any = field(default_factory=list)
     sortings: Any = field(default_factory=list)
     field_options: Any = field(default_factory=dict)
+    form_options: Any = field(default_factory=dict)
 
 
 def normalize_filters(table: DataTable, filters: Any, filter_type: str) -> list[dict[str, Any]]:
@@ -100,8 +104,41 @@ def _normalize_field_options(table: DataTable, field_options: Any) -> dict[str, 
     return normalized
 
 
+def _normalize_form_options(table: DataTable, form_options: Any) -> dict[str, Any]:
+    """校验表单配置并归一化：标题/描述/提交文案 + 字段启用与必填子集.
+
+    字段配置为 {字段名: {"enabled": bool, "required": bool}}；
+    required 仅允许出现在 enabled 字段上（未启用的字段不出现在表单中）。
+    """
+    if not isinstance(form_options, Mapping):
+        raise InvalidViewError("form_options 必须是对象")
+    normalized: dict[str, Any] = {"fields": {}}
+    for key, limit in _FORM_TEXT_LIMITS.items():
+        value = form_options.get(key, _FORM_DEFAULTS[key])
+        if not isinstance(value, str) or len(value) > limit:
+            raise InvalidViewError(f"表单配置 {key} 必须是最长 {limit} 的字符串")
+        normalized[key] = value
+    known = {str(field.name) for field in table.active_fields()}
+    fields = form_options.get("fields", {})
+    if not isinstance(fields, Mapping):
+        raise InvalidViewError("表单字段配置必须是对象")
+    for name, options in fields.items():
+        if name not in known:
+            raise InvalidViewError(f"表单配置引用了未知字段: {name}")
+        if not isinstance(options, Mapping):
+            raise InvalidViewError(f"表单字段 {name} 的配置必须是对象")
+        enabled = options.get("enabled", False)
+        required = options.get("required", False)
+        if not isinstance(enabled, bool) or not isinstance(required, bool):
+            raise InvalidViewError(f"表单字段 {name} 的 enabled/required 必须是布尔值")
+        if required and not enabled:
+            raise InvalidViewError(f"表单字段 {name} 未启用时不可设为必填")
+        normalized["fields"][name] = {"enabled": enabled, "required": required}
+    return normalized
+
+
 def normalize_view(table: DataTable, rules: ViewRules) -> dict[str, Any]:
-    """校验并归一化视图规则集合，非法抛 InvalidViewError，返回可入库的三个规则字段."""
+    """校验并归一化视图规则集合，非法抛 InvalidViewError，返回可入库的四个规则字段."""
     if rules.view_type not in {choice.value for choice in DataView.ViewType}:
         raise InvalidViewError(f"未知视图形态: {rules.view_type}")
     if rules.filter_type not in query.MATCH_TYPES:
@@ -110,4 +147,5 @@ def normalize_view(table: DataTable, rules: ViewRules) -> dict[str, Any]:
         "filters": normalize_filters(table, rules.filters, rules.filter_type),
         "sortings": _normalize_sortings(table, rules.sortings),
         "field_options": _normalize_field_options(table, rules.field_options),
+        "form_options": _normalize_form_options(table, rules.form_options),
     }
