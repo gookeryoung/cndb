@@ -25,6 +25,11 @@ def generate_form_slug() -> str:
     return f"form_{uuid.uuid4().hex[:16]}"
 
 
+def generate_share_slug() -> str:
+    """生成共享视图标识：share_ 前缀 + 16 位十六进制随机串，仅系统生成不可预测."""
+    return f"share_{uuid.uuid4().hex[:16]}"
+
+
 class DataTable(models.Model):
     """用户自定义表的元数据，物理表由 DDL 引擎（P2）按 db_table_name 创建."""
 
@@ -167,10 +172,13 @@ class DataView(models.Model):
         self.sortings = normalized["sortings"]
         self.field_options = normalized["field_options"]
         self.form_options = normalized["form_options"]
-        # 表单视图自动生成公开标识，其余形态不持有 slug
+        # 表单视图自动生成公开标识；grid 视图按公开共享生成（关闭共享即回收）；其余形态不持有 slug
         if str(self.view_type) == DataView.ViewType.FORM:
             if not self.slug:
                 self.slug = generate_form_slug()  # type: ignore[bad-assignment]
+        elif str(self.view_type) == DataView.ViewType.GRID and self.public:
+            if not self.slug:
+                self.slug = generate_share_slug()  # type: ignore[bad-assignment]
         else:
             self.slug = None  # type: ignore[bad-assignment]
         super().save(*args, **kwargs)
