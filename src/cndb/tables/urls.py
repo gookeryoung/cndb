@@ -5,6 +5,12 @@ from __future__ import annotations
 from django.urls import path
 
 from cndb.tables.record_views import RecordBulkView, RecordDetailView, RecordListCreateView
+from cndb.tables.view_views import (
+    ViewAggregationsView,
+    ViewDetailView,
+    ViewListCreateView,
+    ViewRowsView,
+)
 from cndb.tables.views import (
     FieldDetailView,
     FieldListCreateView,
@@ -20,4 +26,8 @@ urlpatterns = [
     path("<int:table_pk>/records/", RecordListCreateView.as_view(), name="table-records"),
     path("<int:table_pk>/records/bulk/", RecordBulkView.as_view(), name="table-records-bulk"),
     path("<int:table_pk>/records/<int:row_id>/", RecordDetailView.as_view(), name="table-record"),
+    path("<int:table_pk>/views/", ViewListCreateView.as_view(), name="table-views"),
+    path("<int:table_pk>/views/<int:pk>/", ViewDetailView.as_view(), name="table-view"),
+    path("<int:table_pk>/views/<int:pk>/rows/", ViewRowsView.as_view(), name="table-view-rows"),
+    path("<int:table_pk>/views/<int:pk>/aggregations/", ViewAggregationsView.as_view(), name="table-view-aggregations"),
 ]

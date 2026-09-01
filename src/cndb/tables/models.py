@@ -92,3 +92,70 @@ class DataField(models.Model):
         field_type = get_field_type(self.field_type)  # type: ignore[bad-argument-type]
         self.config = field_type.validate_config(self.config)  # type: ignore[bad-assignment, bad-argument-type]
         super().save(*args, **kwargs)
+
+
+class DataView(models.Model):
+    """数据表视图：保存筛选/排序/字段显隐等展示规则，规则结构由 view_rules 校验."""
+
+    class ViewType(models.TextChoices):
+        """视图形态：P3 交付 Grid 行查询，其余形态先存储配置."""
+
+        GRID = "grid", "表格"
+        KANBAN = "kanban", "看板"
+        CALENDAR = "calendar", "日历"
+        GALLERY = "gallery", "画册"
+        FORM = "form", "表单"
+
+    class FilterType(models.TextChoices):
+        """多条件组合方式."""
+
+        AND = "AND", "全部满足"
+        OR = "OR", "任一满足"
+
+    table = models.ForeignKey(
+        DataTable,
+        on_delete=models.CASCADE,
+        related_name="views",
+        verbose_name="所属数据表",
+    )
+    name = models.CharField("视图名", max_length=255)
+    view_type = models.CharField("视图形态", max_length=32, choices=ViewType.choices, default=ViewType.GRID)
+    filter_type = models.CharField("条件组合", max_length=3, choices=FilterType.choices, default=FilterType.AND)
+    filters = models.JSONField("筛选规则", default=list, blank=True)
+    sortings = models.JSONField("排序规则", default=list, blank=True)
+    field_options = models.JSONField("字段选项", default=dict, blank=True)
+    public = models.BooleanField("公开共享", default=False)
+    order = models.IntegerField("排序", default=0)
+    created_on = models.DateTimeField("创建时间", auto_now_add=True)
+    updated_on = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        verbose_name = "数据视图"
+        verbose_name_plural = "数据视图"
+        ordering = ["order", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=("table", "name"), name="uniq_table_view_name"),
+        ]
+
+    def __str__(self) -> str:
+        """返回"视图名: 形态"便于后台展示."""
+        return f"{self.name}: {self.view_type}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """保存前经视图规则校验并归一化筛选/排序/字段选项结构."""
+        from cndb.tables.view_rules import ViewRules, normalize_view
+
+        normalized = normalize_view(
+            self.table,  # type: ignore[bad-argument-type]
+            ViewRules(
+                view_type=str(self.view_type),
+                filter_type=str(self.filter_type),
+                filters=self.filters,
+                sortings=self.sortings,
+                field_options=self.field_options,
+            ),
+        )
+        self.filters = normalized["filters"]
+        self.sortings = normalized["sortings"]
+        self.field_options = normalized["field_options"]
+        super().save(*args, **kwargs)

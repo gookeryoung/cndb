@@ -10,7 +10,7 @@ from django.db import transaction
 
 from cndb.tables import ddl
 from cndb.tables.field_types import get_field_type
-from cndb.tables.models import DataField, DataTable
+from cndb.tables.models import DataField, DataTable, DataView
 from cndb.workspaces.models import Workspace
 
 
@@ -26,12 +26,13 @@ class FieldChanges:
 
 
 def create_table(*, workspace: Workspace, name: str, field_defs: list[dict[str, Any]]) -> DataTable:
-    """创建数据表：先写元数据（生成物理名），再建物理表，任一步失败整体回滚."""
+    """创建数据表：先写元数据（生成物理名），再建物理表，并附默认表格视图，任一步失败整体回滚."""
     with transaction.atomic():  # type: ignore[bad-context-manager]
         table = DataTable.objects.create(workspace=workspace, name=name)
         for field_def in field_defs:
             DataField.objects.create(table=table, **field_def)
         ddl.create_physical_table(table)
+        DataView.objects.create(table=table, name="全部")
         return table
 
 

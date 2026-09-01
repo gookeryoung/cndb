@@ -1,0 +1,40 @@
+{% load static %}<!DOCTYPE html>
+<html lang="zh-hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cndb - 登录</title>
+  <link rel="stylesheet" href="{% static 'webui/style.css' %}">
+</head>
+<body class="auth-body">
+  <div class="auth-card">
+    <h1 class="auth-title">cndb</h1>
+    <p class="auth-subtitle">通用数据库管理平台</p>
+
+    <div class="auth-tabs">
+      <button type="button" id="tab-login" class="auth-tab active">登录</button>
+      <button type="button" id="tab-register" class="auth-tab">注册</button>
+    </div>
+
+    <form id="auth-form" method="post">
+      {% csrf_token %}
+      <label class="field-label" for="id-username">用户名</label>
+      <input id="id-username" name="username" type="text" autocomplete="username" required>
+
+      <label class="field-label" for="id-nickname">昵称（仅注册）</label>
+      <input id="id-nickname" name="nickname" type="text" autocomplete="nickname" disabled>
+
+      <label class="field-label" for="id-email">邮箱（仅注册）</label>
+      <input id="id-email" name="email" type="email" autocomplete="email" disabled>
+
+      <label class="field-label" for="id-password">密码</label>
+      <input id="id-password" name="password" type="password" autocomplete="current-password" required>
+
+      <button type="submit" id="auth-submit" class="btn-primary">登录</button>
+      <p id="auth-error" class="auth-error" hidden></p>
+    </form>
+  </div>
+
+  <script src="{% static 'webui/auth.js' %}"></script>
+</body>
+</html>

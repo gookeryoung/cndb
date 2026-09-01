@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "cndb.accounts",
     "cndb.workspaces",
     "cndb.tables",
+    "cndb.webui",
 ]
 
 MIDDLEWARE = [
@@ -83,6 +84,9 @@ else:
 
 # 自定义用户模型
 AUTH_USER_MODEL = "accounts.User"
+
+# 登录页地址：未登录访问主应用时重定向到 webui 登录页
+LOGIN_URL = "/login/"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

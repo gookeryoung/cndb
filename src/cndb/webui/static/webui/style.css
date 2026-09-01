@@ -1,0 +1,179 @@
+/* cndb 前端样式：极简 SIDEBAR + CONTENT 布局 */
+
+:root {
+  --primary: #2563eb;
+  --border: #e5e7eb;
+  --bg: #f9fafb;
+  --text: #111827;
+  --muted: #6b7280;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  font-size: 14px;
+}
+
+/* ---------- 登录页 ---------- */
+
+.auth-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.auth-card {
+  width: 360px;
+  padding: 32px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.auth-title { font-size: 24px; }
+.auth-subtitle { color: var(--muted); margin: 4px 0 20px; }
+
+.auth-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.auth-tab {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.auth-tab.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.field-label { display: block; margin: 12px 0 4px; color: var(--muted); }
+
+input[type="text"], input[type="password"], input[type="email"], select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.btn-primary {
+  width: 100%;
+  margin-top: 20px;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.auth-error { margin-top: 12px; color: #dc2626; }
+
+/* ---------- 主应用 ---------- */
+
+.app-body {
+  display: flex;
+  height: 100vh;
+}
+
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+  background: #fff;
+  border-right: 1px solid var(--border);
+}
+
+.brand { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+
+.table-list { list-style: none; margin-top: 4px; overflow-y: auto; }
+.table-list li {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.table-list li:hover { background: var(--bg); }
+.table-list li.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.sidebar-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.btn-ghost {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.btn-ghost:disabled { opacity: 0.4; cursor: default; }
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px 24px;
+}
+
+.content-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.view-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.view-tab {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.view-tab.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.row-stats { color: var(--muted); }
+
+.grid-status { color: var(--muted); margin-bottom: 8px; }
+
+.grid-wrap { flex: 1; overflow: auto; background: #fff; border: 1px solid var(--border); border-radius: 8px; }
+
+.grid { width: 100%; border-collapse: collapse; }
+.grid th, .grid td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.grid th { background: var(--bg); position: sticky; top: 0; }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding-top: 12px;
+  color: var(--muted);
+}

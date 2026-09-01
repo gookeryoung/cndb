@@ -1,10 +1,10 @@
-"""数据表序列化器：表与字段的读写."""
+"""数据表序列化器：表、字段与视图的读写."""
 
 from __future__ import annotations
 
 from rest_framework import serializers
 
-from cndb.tables.models import DataField, DataTable
+from cndb.tables.models import DataField, DataTable, DataView
 
 
 class DataFieldSerializer(serializers.ModelSerializer):
@@ -53,3 +53,24 @@ class DataTableCreateSerializer(serializers.Serializer):
 
     name = serializers.CharField(max_length=255, label="表名")
     fields = FieldDefSerializer(many=True, label="字段定义")  # type: ignore[bad-override]
+
+
+class DataViewSerializer(serializers.ModelSerializer):
+    """数据视图信息：筛选/排序/字段选项规则的结构由 view_rules 在保存时校验."""
+
+    class Meta:
+        model = DataView
+        fields = (
+            "id",
+            "name",
+            "view_type",
+            "filter_type",
+            "filters",
+            "sortings",
+            "field_options",
+            "public",
+            "order",
+            "created_on",
+            "updated_on",
+        )
+        read_only_fields = ("id", "created_on", "updated_on")
