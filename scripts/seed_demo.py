@@ -36,16 +36,26 @@ def ensure_user(username: str, nickname: str) -> User:
 
 
 def main() -> None:
-    """写入演示数据：两个用户 + 工作区 + 任务表（看板/日历/表单视图）+ 示例行."""
+    """写入演示数据：五角色用户 + 工作区 + 任务表（看板/日历/表单视图）+ 示例行."""
     print("写入演示数据...")
-    owner = ensure_user("demo-owner", "演示管理员")
+    owner = ensure_user("demo-owner", "演示所有者")
     editor = ensure_user("demo-editor", "演示编辑")
+    admin = ensure_user("demo-admin", "演示管理员")
+    commenter = ensure_user("demo-commenter", "演示评论者")
+    viewer = ensure_user("demo-viewer", "演示查看者")
 
     workspace, created = Workspace.objects.get_or_create(name="演示工作区")
     if created:
         print("  创建工作区 演示工作区")
-    WorkspaceMember.objects.get_or_create(workspace=workspace, user=owner, role=WorkspaceMember.Role.OWNER)
-    WorkspaceMember.objects.get_or_create(workspace=workspace, user=editor, role=WorkspaceMember.Role.EDITOR)
+    for user, role in (
+        (owner, WorkspaceMember.Role.OWNER),
+        (admin, WorkspaceMember.Role.ADMIN),
+        (editor, WorkspaceMember.Role.EDITOR),
+        (commenter, WorkspaceMember.Role.COMMENTER),
+        (viewer, WorkspaceMember.Role.VIEWER),
+    ):
+        # update_or_create 以 (workspace, user) 为键：已存在则校正角色（覆盖界面上的改动），保证演示角色齐全
+        WorkspaceMember.objects.update_or_create(workspace=workspace, user=user, defaults={"role": role})
 
     if DataView.objects.filter(table__workspace=workspace, table__name="任务表").exists():
         print("演示数据已存在，跳过（如需重建请先删除演示工作区）")
@@ -107,7 +117,7 @@ def main() -> None:
     cleaned = [records.clean_row(table, row, partial=True) for row in rows]
     records.insert_rows(table, cleaned)
     print(f"  写入 {len(rows)} 行示例数据")
-    print("完成。开发账号：demo-owner / demo-editor，密码均为 Demo-Pass-42")
+    print("完成。开发账号：demo-owner / demo-admin / demo-editor / demo-commenter / demo-viewer，密码均为 Demo-Pass-42")
 
 
 if __name__ == "__main__":
