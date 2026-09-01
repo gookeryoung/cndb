@@ -3,14 +3,66 @@
 
 PACKAGE := cndb
 COV_THRESHOLD := 95
+COMPOSE := docker compose -f deploy/docker-compose.yml
 
-.PHONY: help sync build b clean c test cov lint typecheck typecheck-ci check doc tox bump patch minor major push
+.DEFAULT_GOAL := help
+.PHONY: help sync build b clean c test cov lint typecheck typecheck-ci check doc tox bump patch minor major push \
+        dev migrate makemigrations su shell dbshell routes static seed bench up down logs ps
 
 help: ## 显示帮助信息
-	@uv run python -c "import re,sys;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
+	@uv run python -c "import re,sys;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<18} {d}') for n,d in ms]" $(MAKEFILE_LIST)
 
 sync: ## 安装开发依赖
 	uv sync --extra dev
+
+# ---------- 本地运行 ----------
+
+dev: ## 启动开发服务器 (http://127.0.0.1:8000，SQLite)
+	uv run python manage.py migrate
+	uv run python manage.py runserver
+
+migrate: ## 执行数据库迁移
+	uv run python manage.py migrate
+
+makemigrations: ## 生成数据库迁移文件
+	uv run python manage.py makemigrations
+
+su: ## 创建超级用户 (需 DJANGO_SUPERUSER_PASSWORD 环境变量，用户名默认 admin)
+	@uv run python scripts/dev_setup.py --superuser
+
+shell: ## 进入 Django shell
+	uv run python manage.py shell
+
+dbshell: ## 进入数据库 shell
+	uv run python manage.py dbshell
+
+routes: ## 列出全部 URL 路由
+	uv run python scripts/dev_setup.py --routes
+
+static: ## 收集静态文件到 STATIC_ROOT
+	uv run python manage.py collectstatic --noinput
+
+seed: ## 写入演示数据（用户/工作区/表/字段/视图/示例行，幂等可重复执行）
+	uv run python scripts/seed_demo.py
+
+bench: ## 运行行数据压测基准（slow 标记）
+	uv run pytest tests/test_bench_rows.py -m slow -s --no-cov
+
+# ---------- 容器部署 ----------
+
+up: ## 启动生产容器 (gunicorn + PostgreSQL，需 deploy/.env)
+	$(COMPOSE) up -d --build
+
+down: ## 停止生产容器
+	$(COMPOSE) down
+
+logs: ## 跟随查看容器日志
+	$(COMPOSE) logs -f web
+
+ps: ## 查看容器状态
+	$(COMPOSE) ps
+
+# ---------- 工具链 ----------
 
 build b: ## 构建分发包 (wheel + sdist)
 	uv build

@@ -22,14 +22,26 @@
 ## 快速上手
 
 ```bash
-# 安装依赖（开发环境默认 SQLite）
+# 安装依赖并启动开发服务器（自动迁移，http://127.0.0.1:8000）
 uv sync --extra dev
+make dev
 
-# 初始化数据库并启动开发服务器
-uv run python manage.py migrate
-uv run python manage.py createsuperuser
-uv run python manage.py runserver
+# 写入演示数据（示例用户/工作区/任务表/看板/日历/公开表单/共享视图，幂等）
+make seed
 ```
+
+演示账号：`demo-owner` / `demo-editor`，密码均为 `Demo-Pass-42`。
+
+常用命令（`make help` 查看全部）：
+
+| 命令 | 说明 |
+|------|------|
+| `make dev` | 启动开发服务器（自动迁移） |
+| `make seed` | 写入演示数据（幂等） |
+| `make su` | 创建超级用户（需 `DJANGO_SUPERUSER_PASSWORD` 环境变量） |
+| `make routes` | 列出全部 URL 路由 |
+| `make up` / `make down` | 启停生产容器（gunicorn + PostgreSQL） |
+| `make check` | 全套门禁（lint + typecheck + cov ≥95%） |
 
 REST API 入口：`/api/auth/`、`/api/workspaces/`、`/api/tokens/`、`/api/forms/`、`/api/views/`，管理后台：`/admin/`。
 
