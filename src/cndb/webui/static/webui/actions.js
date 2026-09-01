@@ -119,6 +119,8 @@ function buildFieldControl(field, value) {
   if (value !== null && value !== undefined) {
     control.value = String(value);
   }
+  // 浏览器原生必填校验（boolean/multi_select 已提前 return，不适用原生 required）
+  control.required = Boolean(field.required);
   return control;
 }
 
@@ -173,6 +175,15 @@ function openRowModal(row) {
       const payload = {};
       for (const { field, control } of controls) {
         const value = collectFieldControl(control, field);
+        // 必填兜底：multi_select 无原生 required；编辑时清空原值、新增缺填一并拦截
+        if (value === null && field.required) {
+          const original = row ? row[field.name] : null;
+          if (!row || (original !== null && original !== undefined && !(Array.isArray(original) && !original.length))) {
+            control.focus();
+            modalError(`字段「${field.name}」为必填`);
+            return;
+          }
+        }
         if (value !== null) {
           payload[field.name] = value;
         } else if (row && row[field.name] !== null && row[field.name] !== undefined) {
