@@ -6,6 +6,7 @@ from django.urls import path
 
 from cndb.tables.permission_views import PermissionDetailView
 from cndb.tables.record_views import RecordBulkView, RecordDetailView, RecordListCreateView
+from cndb.tables.transfer_views import ExportView, ImportView
 from cndb.tables.view_views import (
     ViewAggregationsView,
     ViewDetailView,
@@ -32,4 +33,6 @@ urlpatterns = [
     path("<int:table_pk>/views/<int:pk>/rows/", ViewRowsView.as_view(), name="table-view-rows"),
     path("<int:table_pk>/views/<int:pk>/aggregations/", ViewAggregationsView.as_view(), name="table-view-aggregations"),
     path("<int:table_pk>/permission/", PermissionDetailView.as_view(), name="table-permission"),
+    path("<int:table_pk>/export/", ExportView.as_view(), name="table-export"),
+    path("<int:table_pk>/import/", ImportView.as_view(), name="table-import"),
 ]
