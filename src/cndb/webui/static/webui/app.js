@@ -37,6 +37,10 @@ const els = {
   pagePrev: document.getElementById("page-prev"),
   pageNext: document.getElementById("page-next"),
   pageInfo: document.getElementById("page-info"),
+  rowDetail: document.getElementById("row-detail"),
+  rowDetailTitle: document.getElementById("row-detail-title"),
+  rowDetailBody: document.getElementById("row-detail-body"),
+  rowDetailClose: document.getElementById("row-detail-close"),
   logoutBtn: document.getElementById("logout-btn"),
 };
 
@@ -167,6 +171,7 @@ async function loadKanban() {
       const card = document.createElement("div");
       card.className = "kanban-card";
       card.textContent = rowSummary(table, row, selectField.name);
+      card.addEventListener("click", () => openRowDetail(row));
       column.appendChild(card);
     }
     els.kanbanBoard.appendChild(column);
@@ -244,11 +249,49 @@ function renderCalendar(dateFieldName, rows) {
       const event = document.createElement("div");
       event.className = "cal-event";
       event.textContent = rowSummary(currentTable(), row, dateFieldName);
+      event.addEventListener("click", () => openRowDetail(row));
       cell.appendChild(event);
     }
     els.calGrid.appendChild(cell);
   }
   setStatus("");
+}
+
+/** 打开行详情抽屉：按字段顺序展示全部未回收字段（多选数组分号连接、布尔转是否） */
+function openRowDetail(row) {
+  const table = currentTable();
+  const fields = table
+    ? table.fields.filter((f) => !f.trashed).sort((a, b) => a.order - b.order)
+    : [];
+  els.rowDetailTitle.textContent = `行 #${row.id}`;
+  els.rowDetailBody.innerHTML = "";
+  for (const field of fields) {
+    const dt = document.createElement("dt");
+    dt.textContent = field.name;
+    const dd = document.createElement("dd");
+    dd.textContent = formatDetailValue(row[field.name]);
+    els.rowDetailBody.append(dt, dd);
+  }
+  els.rowDetail.hidden = false;
+}
+
+/** 详情值格式化：数组分号连接、布尔转是否、空值显示占位符 */
+function formatDetailValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return "（空）";
+  }
+  if (Array.isArray(value)) {
+    return value.length ? value.join("；") : "（空）";
+  }
+  if (typeof value === "boolean") {
+    return value ? "是" : "否";
+  }
+  return String(value);
+}
+
+/** 关闭行详情抽屉 */
+function closeRowDetail() {
+  els.rowDetail.hidden = true;
 }
 
 /** 表单视图提示：展示公开链接（仅已公开时） */
@@ -418,6 +461,14 @@ function shiftMonth(delta) {
     state.calendarYear += 1;
   }
 }
+
+els.rowDetailClose.addEventListener("click", closeRowDetail);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.rowDetail.hidden) {
+    closeRowDetail();
+  }
+});
 
 els.logoutBtn.addEventListener("click", async () => {
   await api("/api/auth/logout/", { method: "POST" });

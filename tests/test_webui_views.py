@@ -50,6 +50,7 @@ class TestAppPage:
         assert "爱丽丝" in content
         assert 'id="workspace-select"' in content
         assert 'id="grid-body"' in content
+        assert 'id="row-detail"' in content
         assert "/static/webui/app.js" in content
 
     def test_nickname_fallback_to_username(self, client: Client, db: object) -> None:
