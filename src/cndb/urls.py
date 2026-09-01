@@ -9,5 +9,6 @@ urlpatterns = [
     path("", include("cndb.webui.urls")),
     path("admin/", admin.site.urls),
     path("api/auth/", include("cndb.accounts.urls")),
+    path("api/tokens/", include("cndb.tokens.urls")),
     path("api/workspaces/", include("cndb.workspaces.urls")),
 ]

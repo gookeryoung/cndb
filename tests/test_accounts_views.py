@@ -70,15 +70,15 @@ def test_login_success(api: APIClient, user: User) -> None:
 
 
 def test_login_wrong_password(api: APIClient, user: User) -> None:
-    """密码错误：返回 403（DRF 序列化器内抛认证异常无 authenticator 上下文）."""
+    """密码错误：返回 401（Token 认证器提供 WWW-Authenticate 头）."""
     resp = api.post(LOGIN_URL, {"username": "alice", "password": "wrong-pass"}, format="json")
-    assert resp.status_code == 403
+    assert resp.status_code == 401
 
 
 def test_me_requires_authentication(api: APIClient) -> None:
-    """未登录访问个人信息：返回 403."""
+    """未登录访问个人信息：返回 401."""
     resp = api.get(ME_URL)
-    assert resp.status_code == 403
+    assert resp.status_code == 401
 
 
 def test_me_update_nickname(auth_client: APIClient, user: User) -> None:
@@ -94,7 +94,7 @@ def test_logout_destroys_session(api: APIClient, user: User) -> None:
     api.post(LOGIN_URL, {"username": "alice", "password": "Str0ng-Pass-42"}, format="json")
     resp = api.post(LOGOUT_URL)
     assert resp.status_code == 204
-    assert api.get(ME_URL).status_code == 403
+    assert api.get(ME_URL).status_code == 401
 
 
 def test_user_str(user: User) -> None:

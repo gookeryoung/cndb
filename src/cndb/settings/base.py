@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "cndb.accounts",
     "cndb.workspaces",
     "cndb.tables",
+    "cndb.tokens",
     "cndb.webui",
 ]
 
@@ -109,9 +110,10 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# DRF 全局配置：会话认证 + 默认需登录，分页每页 50 条
+# DRF 全局配置：会话 + Token 认证，默认需登录，分页每页 50 条
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "cndb.tokens.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
