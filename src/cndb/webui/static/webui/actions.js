@@ -1011,6 +1011,13 @@ const MEMBER_ROLES = [
   ["viewer", "查看者"],
 ];
 
+/** 角色码转中文（owner 不在下拉中，单独映射） */
+function roleText(role) {
+  const found = MEMBER_ROLES.find(([value]) => value === role);
+  if (found) return found[1];
+  return role === "owner" ? "所有者" : role;
+}
+
 /** 成员管理对话框：列表 + 改角色 + 移除 + 添加成员 */
 function openMemberModal() {
   if (!state.workspaceId) {
@@ -1026,7 +1033,7 @@ function openMemberModal() {
       body.textContent = `加载失败: ${err.message}`;
       return;
     }
-    /** 重绘成员列表 */
+    /** 重绘成员列表（user 为内嵌对象 {id, username, nickname}） */
     const render = () => {
       const listBox = body.querySelector(".member-list");
       if (!listBox) return;
@@ -1035,10 +1042,12 @@ function openMemberModal() {
         const line = document.createElement("div");
         line.className = "member-line";
         const name = document.createElement("span");
-        name.textContent = `${member.user}${member.nickname ? `（${member.nickname}）` : ""}`;
-        const roleText = document.createElement("span");
-        roleText.textContent = ` [${member.role}]`;
-        line.append(name, roleText);
+        const username = member.user && member.user.username !== undefined ? member.user.username : member.user;
+        const nickname = member.user ? member.user.nickname : member.nickname;
+        name.textContent = nickname ? `${username}（${nickname}）` : String(username);
+        const roleSpan = document.createElement("span");
+        roleSpan.textContent = ` [${roleText(member.role)}]`;
+        line.append(name, roleSpan);
         if (member.role !== "owner") {
           const roleSel = document.createElement("select");
           for (const [value, text] of MEMBER_ROLES) {
@@ -1055,7 +1064,7 @@ function openMemberModal() {
                 body: JSON.stringify({ role: roleSel.value }),
               });
               member.role = roleSel.value;
-              roleText.textContent = ` [${member.role}]`;
+              roleSpan.textContent = ` [${roleText(member.role)}]`;
             } catch (err) {
               setStatus(`修改角色失败: ${err.message}`);
             }
