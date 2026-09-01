@@ -1,5 +1,20 @@
-preset           = "strict"
-project-excludes = [".venv/**", "template/**"]
+preset = "strict"
+project-excludes = [
+    ".venv/**",
+    "template/**",
+    "src/cndb/**/migrations/**",
+    "docs/**",
+]
 project-includes = ["**/*.ipynb", "**/*.py*"]
-python-version   = "3.11"
-search-path      = ["."]
+python-version = "3.11"
+search-path = ["."]
+
+[errors]
+# Django ORM 动态属性（objects/id/反向关系/字段描述符取值）无法静态推断
+missing-attribute = "ignore"
+# 框架方法覆写（DRF 视图/序列化器、Model.save）不加 @override；typing.override 为 3.12+ 特性
+missing-override-decorator = "ignore"
+# 框架签名中未使用参数改名规避 ruff ARG002 后与父类参数名不一致
+bad-override-param-name = "ignore"
+# Django admin 的 list_display/list_filter 等可变类属性为框架约定写法
+bad-override-mutable-attribute = "ignore"

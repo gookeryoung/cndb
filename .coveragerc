@@ -1,7 +1,12 @@
 [run]
 branch = true
 concurrency = thread
-omit = tests/*
+omit =
+    tests/*
+    */migrations/*
+    */admin.py
+    **/wsgi.py
+    **/asgi.py
 source = cndb
 
 [report]

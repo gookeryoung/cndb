@@ -1,5 +1,5 @@
-extend-exclude = ["docs", "examples", "template"]
-line-length    = 120
+extend-exclude = ["docs", "examples", "template", "src/cndb/**/migrations"]
+line-length = 120
 target-version = "py311"
 
 [lint]
@@ -34,3 +34,4 @@ select = [
 
 [lint.per-file-ignores]
 "**/tests/**" = ["ARG001", "ARG002"]
+"src/cndb/settings/*" = ["F403", "F405"] # Django 配置继承惯用星号导入

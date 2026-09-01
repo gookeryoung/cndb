@@ -10,34 +10,27 @@
 
 ## 特性
 
-- **构建工具链**：hatchling + uv + ruff + pyrefly + pytest + coverage
-- **Python 版本**：3.11 ~ 3.14
-- **代码质量**：pre-commit 钩子 + ruff lint/format，覆盖率阈值 95%
-- **CI/CD**：GitHub Actions（lint + typecheck + 多版本测试 + 自动发布到 PyPI）
-- **文档**：Sphinx + ReadTheDocs（中文 zh_CN）
-- **多版本测试**：tox + tox-uv（py311, py312, py313, py314）
-- **容器化**：Dockerfile（含国内镜像源配置）
-- **项目结构**：src layout + py.typed 类型标记
-
-## 安装
-
-```bash
-pip install cndb
-```
-
-或使用 [uv](https://docs.astral.sh/uv/)：
-
-```bash
-uv add cndb
-```
+- **技术栈**：Django 5.2 + DRF + PostgreSQL（开发/测试可用 SQLite）
+- **元数据驱动**：数据表/字段定义存元数据库，字段类型系统插件式扩展
+- **工作区隔离**：用户/工作区/成员角色（owner/admin/editor/commenter/viewer）
+- **构建工具链**：hatchling + uv + ruff + pyrefly + pytest + coverage（覆盖率阈值 95%）
+- **CI/CD**：GitHub Actions（lint + typecheck + 多版本测试）
 
 ## 快速上手
 
-```python
-import cndb
+```bash
+# 安装依赖（开发环境默认 SQLite）
+uv sync --extra dev
 
-print(cndb.__version__)
+# 初始化数据库并启动开发服务器
+uv run python manage.py migrate
+uv run python manage.py createsuperuser
+uv run python manage.py runserver
 ```
+
+REST API 入口：`/api/auth/`、`/api/workspaces/`，管理后台：`/admin/`。
+
+切换 PostgreSQL：设置 `CNDB_DB=postgres` 及 `CNDB_DB_NAME/CNDB_DB_USER/CNDB_DB_PASSWORD` 等环境变量。
 
 ## 开发
 
