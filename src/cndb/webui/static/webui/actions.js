@@ -1092,13 +1092,44 @@ function openMemberModal() {
     body.appendChild(listBox);
     render();
 
-    // 添加成员
+    // 添加成员：候选用户下拉（后端排除已是成员的用户）
     body.appendChild(objectLabel("添加成员"));
     const addLine = document.createElement("div");
     addLine.className = "def-row";
-    const userInput = document.createElement("input");
-    userInput.type = "text";
-    userInput.placeholder = "用户名";
+    const userInput = document.createElement("select");
+    const loadingOption = document.createElement("option");
+    loadingOption.textContent = "加载中...";
+    loadingOption.disabled = true;
+    loadingOption.selected = true;
+    userInput.appendChild(loadingOption);
+    try {
+      const candidates = await api(`/api/workspaces/${state.workspaceId}/members/candidates/`);
+      userInput.innerHTML = "";
+      const list = candidates.results || [];
+      if (!list.length) {
+        const empty = document.createElement("option");
+        empty.textContent = "暂无可添加用户";
+        empty.disabled = true;
+        empty.selected = true;
+        userInput.appendChild(empty);
+      } else {
+        for (const candidate of list) {
+          const option = document.createElement("option");
+          option.value = candidate.username;
+          option.textContent = candidate.nickname
+            ? `${candidate.username}（${candidate.nickname}）`
+            : candidate.username;
+          userInput.appendChild(option);
+        }
+      }
+    } catch (err) {
+      userInput.innerHTML = "";
+      const denied = document.createElement("option");
+      denied.textContent = `无权添加（${err.message}）`;
+      denied.disabled = true;
+      denied.selected = true;
+      userInput.appendChild(denied);
+    }
     const roleSel = document.createElement("select");
     for (const [value, text] of MEMBER_ROLES) {
       const option = document.createElement("option");
@@ -1111,15 +1142,17 @@ function openMemberModal() {
     addBtn.className = "btn-primary";
     addBtn.textContent = "添加";
     addBtn.addEventListener("click", async () => {
-      const username = userInput.value.trim();
-      if (!username) return;
+      const username = userInput.value;
+      if (!username || !userInput.selectedOptions[0]?.value) return;
       try {
         const member = await api(`/api/workspaces/${state.workspaceId}/members/`, {
           method: "POST",
           body: JSON.stringify({ username, role: roleSel.value }),
         });
         members.push(member);
-        userInput.value = "";
+        // 添加成功后从候选下拉中移除该用户
+        const used = userInput.querySelector(`option[value="${CSS.escape(username)}"]`);
+        if (used) used.remove();
         render();
       } catch (err) {
         modalError(`添加失败: ${err.message}`);

@@ -7,12 +7,14 @@ from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, viewsets
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from cndb.accounts.models import User
 from cndb.workspaces.models import Workspace, WorkspaceMember
 from cndb.workspaces.permissions import IsWorkspaceMember, get_member_role, has_role
 from cndb.workspaces.serializers import (
     MemberAddSerializer,
+    MemberUserSerializer,
     WorkspaceMemberSerializer,
     WorkspaceSerializer,
 )
@@ -77,6 +79,19 @@ class MemberListCreateView(WorkspaceMixin, generics.ListCreateAPIView):
             return Response({"detail": "用户已是成员"}, status=400)
         member = WorkspaceMember.objects.create(workspace=workspace, user=user, role=serializer.validated_data["role"])
         return Response(WorkspaceMemberSerializer(member).data, status=201)
+
+
+class MemberCandidatesView(WorkspaceMixin, APIView):
+    """可添加为成员的候选用户列表：ADMIN 及以上可见，排除已是成员的用户."""
+
+    def get(self, request: Request, **_kwargs: object) -> Response:
+        """返回平台中尚未加入当前工作区的用户（按用户名排序）."""
+        workspace = self.get_workspace()
+        if not has_role(request.user, workspace, WorkspaceMember.Role.ADMIN):
+            return Response({"detail": "需要管理员权限"}, status=403)
+        member_ids = WorkspaceMember.objects.filter(workspace=workspace).values_list("user_id", flat=True)
+        users = User.objects.exclude(id__in=member_ids).order_by("username")
+        return Response({"results": MemberUserSerializer(users, many=True).data})
 
 
 class MemberDetailView(WorkspaceMixin, generics.RetrieveUpdateDestroyAPIView):

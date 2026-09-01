@@ -98,6 +98,30 @@ def test_add_member_by_owner(auth_client: APIClient, workspace: Workspace) -> No
     assert resp.data["user"]["username"] == "bob"
 
 
+def test_member_candidates_excludes_existing(auth_client: APIClient, user: User, workspace: Workspace) -> None:
+    """候选用户列表：排除已是成员的用户，含昵称信息."""
+    bob = _make_user("bob")
+    User.objects.create_user("carol", "carol@example.com", "Str0ng-Pass-44", nickname="卡罗尔")
+    _add_member(workspace, bob, WorkspaceMember.Role.VIEWER)
+    resp = auth_client.get(f"{WORKSPACES_URL}{workspace.id}/members/candidates/")
+    assert resp.status_code == 200
+    usernames = [item["username"] for item in resp.data["results"]]
+    assert "carol" in usernames
+    assert "bob" not in usernames
+    assert user.username not in usernames
+    carol = next(item for item in resp.data["results"] if item["username"] == "carol")
+    assert carol["nickname"] == "卡罗尔"
+
+
+def test_member_candidates_requires_admin(api: APIClient, workspace: Workspace) -> None:
+    """VIEWER 查看候选用户列表：403."""
+    viewer = _make_user("viewer")
+    _add_member(workspace, viewer, WorkspaceMember.Role.VIEWER)
+    api.force_authenticate(user=viewer)
+    resp = api.get(f"{WORKSPACES_URL}{workspace.id}/members/candidates/")
+    assert resp.status_code == 403
+
+
 def test_add_member_requires_admin(api: APIClient, workspace: Workspace) -> None:
     """VIEWER 添加成员：403."""
     viewer = _make_user("viewer")
