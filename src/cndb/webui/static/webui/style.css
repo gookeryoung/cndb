@@ -570,6 +570,16 @@ select {
   visibility: visible;
 }
 
+/* 待添加提示：选中候选用户后实时预览 */
+.pending-hint {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #f0fdf4;
+  color: #15803d;
+  font-size: 13px;
+}
+
 .import-errors {
   max-height: 260px;
   overflow-y: auto;

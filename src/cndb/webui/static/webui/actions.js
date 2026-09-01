@@ -1179,10 +1179,28 @@ function openMemberModal() {
       option.textContent = text;
       roleSel.appendChild(option);
     }
+    // 待添加提示：实时预览选中人员与角色，未选中有效用户时按钮禁用
+    const pendingLine = document.createElement("div");
+    pendingLine.className = "pending-hint";
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "btn-primary";
     addBtn.textContent = "添加";
+    addBtn.disabled = true;
+    const refreshPending = () => {
+      const selected = userInput.selectedOptions[0];
+      if (!selected || !selected.value) {
+        pendingLine.textContent = "";
+        pendingLine.hidden = true;
+        addBtn.disabled = true;
+        return;
+      }
+      pendingLine.hidden = false;
+      pendingLine.textContent = `待添加：${selected.textContent} → ${roleSel.selectedOptions[0].textContent}`;
+      addBtn.disabled = false;
+    };
+    userInput.addEventListener("change", refreshPending);
+    roleSel.addEventListener("change", refreshPending);
     addBtn.addEventListener("click", async () => {
       const username = userInput.value;
       if (!username || !userInput.selectedOptions[0]?.value) return;
@@ -1208,12 +1226,14 @@ function openMemberModal() {
         const chosen = list.find((c) => c.username === username);
         const displayName = chosen?.nickname ? `${username}（${chosen.nickname}）` : username;
         setStatus(`已添加 ${displayName} 为${roleText(member.role)}`);
+        refreshPending();
       } catch (err) {
         modalError(`添加失败: ${err.message}`);
       }
     });
     addLine.append(userInput, roleSel, addBtn);
     body.appendChild(addLine);
+    body.appendChild(pendingLine);
   });
 }
 
