@@ -1,10 +1,10 @@
-{% load static %}<!DOCTYPE html>
+{% load static_version %}<!DOCTYPE html>
 <html lang="zh-hans">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ view_name }} - cndb 共享</title>
-  <link rel="stylesheet" href="{% static 'webui/style.css' %}">
+  <link rel="stylesheet" href="{% static_v 'webui/style.css' %}">
 </head>
 <body class="public-body" data-slug="{{ slug }}">
   <div class="public-card">
@@ -28,6 +28,6 @@
     </div>
   </div>
 
-  <script src="{% static 'webui/share.js' %}"></script>
+  <script src="{% static_v 'webui/share.js' %}"></script>
 </body>
 </html>

@@ -1,10 +1,10 @@
-{% load static %}<!DOCTYPE html>
+{% load static_version %}<!DOCTYPE html>
 <html lang="zh-hans">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }}</title>
-  <link rel="stylesheet" href="{% static 'webui/style.css' %}">
+  <link rel="stylesheet" href="{% static_v 'webui/style.css' %}">
 </head>
 <body class="public-body">
   <div class="public-card">
@@ -46,6 +46,6 @@
     </form>
   </div>
 
-  <script src="{% static 'webui/form.js' %}"></script>
+  <script src="{% static_v 'webui/form.js' %}"></script>
 </body>
 </html>

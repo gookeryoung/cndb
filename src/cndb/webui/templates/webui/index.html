@@ -1,10 +1,10 @@
-{% load static %}<!DOCTYPE html>
+{% load static_version %}<!DOCTYPE html>
 <html lang="zh-hans">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>cndb</title>
-  <link rel="stylesheet" href="{% static 'webui/style.css' %}">
+  <link rel="stylesheet" href="{% static_v 'webui/style.css' %}">
 </head>
 <body class="app-body">
   <aside class="sidebar">
@@ -88,7 +88,7 @@
   </div>
 
   <input type="file" id="import-file" accept=".csv" hidden>
-  <script src="{% static 'webui/app.js' %}"></script>
-  <script src="{% static 'webui/actions.js' %}"></script>
+  <script src="{% static_v 'webui/app.js' %}"></script>
+  <script src="{% static_v 'webui/actions.js' %}"></script>
 </body>
 </html>

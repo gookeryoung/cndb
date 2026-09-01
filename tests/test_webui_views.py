@@ -80,6 +80,24 @@ class TestAppPage:
         assert 'id="user-nickname"' in content
 
 
+class TestStaticVersionTag:
+    """static_v 标签：静态资源 URL 附加 mtime 版本参数破缓存."""
+
+    def test_url_with_version(self, client: Client, user: User) -> None:
+        """已登录页面静态资源带 ?v=<mtime> 版本参数."""
+        client.force_login(user)
+        content = client.get("/").content.decode("utf-8")
+        assert "/static/webui/app.js?v=" in content
+        assert "/static/webui/actions.js?v=" in content
+
+    def test_unknown_path_plain_url(self) -> None:
+        """finder 找不到的路径返回不带版本号的原始 URL."""
+        from cndb.webui.templatetags.static_version import static_v
+
+        url = static_v("webui/not-exists.js")
+        assert url == "/static/webui/not-exists.js"
+
+
 @pytest.fixture
 def table(workspace: Workspace) -> DataTable:
     """带多类型字段的公开页测试表."""
