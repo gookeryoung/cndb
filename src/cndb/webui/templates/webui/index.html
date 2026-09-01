@@ -27,13 +27,23 @@
       <span id="row-stats" class="row-stats"></span>
     </header>
     <div id="grid-status" class="grid-status"></div>
-    <div class="grid-wrap">
+    <div id="form-hint" class="form-hint" hidden></div>
+    <div id="kanban-board" class="kanban-board" hidden></div>
+    <div id="calendar-view" class="calendar-view" hidden>
+      <header class="calendar-nav">
+        <button type="button" id="cal-prev" class="btn-ghost">上月</button>
+        <span id="cal-title"></span>
+        <button type="button" id="cal-next" class="btn-ghost">下月</button>
+      </header>
+      <div id="cal-grid" class="cal-grid"></div>
+    </div>
+    <div class="grid-wrap" id="grid-wrap">
       <table class="grid">
         <thead><tr id="grid-head"></tr></thead>
         <tbody id="grid-body"></tbody>
       </table>
     </div>
-    <footer class="pager">
+    <footer class="pager" id="pager">
       <button type="button" id="page-prev" class="btn-ghost">上一页</button>
       <span id="page-info"></span>
       <button type="button" id="page-next" class="btn-ghost">下一页</button>

@@ -1,0 +1,51 @@
+{% load static %}<!DOCTYPE html>
+<html lang="zh-hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="{% static 'webui/style.css' %}">
+</head>
+<body class="public-body">
+  <div class="public-card">
+    <h1 class="public-title">{{ title }}</h1>
+    {% if description %}<p class="public-description">{{ description }}</p>{% endif %}
+    <form id="public-form" data-slug="{{ slug }}">
+      {% for field in form_fields %}
+        <label class="field-label" for="field-{{ forloop.counter }}">
+          {{ field.name }}{% if field.required %} *{% endif %}
+        </label>
+        {% if field.field_type == "long_text" %}
+          <textarea id="field-{{ forloop.counter }}" data-name="{{ field.name }}" data-type="long_text"></textarea>
+        {% elif field.field_type == "number" %}
+          <input type="number" step="any" id="field-{{ forloop.counter }}" data-name="{{ field.name }}" data-type="number">
+        {% elif field.field_type == "boolean" %}
+          <div class="checkbox-line">
+            <input type="checkbox" id="field-{{ forloop.counter }}" data-name="{{ field.name }}" data-type="boolean">
+          </div>
+        {% elif field.field_type == "date" %}
+          <input type="date" id="field-{{ forloop.counter }}" data-name="{{ field.name }}" data-type="date">
+        {% elif field.field_type == "single_select" %}
+          <select id="field-{{ forloop.counter }}" data-name="{{ field.name }}" data-type="single_select">
+            <option value="">请选择</option>
+            {% for choice in field.config.choices %}<option value="{{ choice }}">{{ choice }}</option>{% endfor %}
+          </select>
+        {% elif field.field_type == "multi_select" %}
+          <div id="field-{{ forloop.counter }}" data-name="{{ field.name }}" data-type="multi_select" class="multi-group">
+            {% for choice in field.config.choices %}
+              <label class="checkbox-line"><input type="checkbox" value="{{ choice }}"> {{ choice }}</label>
+            {% endfor %}
+          </div>
+        {% else %}
+          <input type="{% if field.field_type == 'email' %}email{% elif field.field_type == 'url' %}url{% else %}text{% endif %}"
+                 id="field-{{ forloop.counter }}" data-name="{{ field.name }}" data-type="{{ field.field_type }}">
+        {% endif %}
+      {% endfor %}
+      <button type="submit" class="btn-primary">{{ submit_text }}</button>
+      <p id="form-message" class="public-message" hidden></p>
+    </form>
+  </div>
+
+  <script src="{% static 'webui/form.js' %}"></script>
+</body>
+</html>

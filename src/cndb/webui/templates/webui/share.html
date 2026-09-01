@@ -1,0 +1,33 @@
+{% load static %}<!DOCTYPE html>
+<html lang="zh-hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ view_name }} - cndb 共享</title>
+  <link rel="stylesheet" href="{% static 'webui/style.css' %}">
+</head>
+<body class="public-body" data-slug="{{ slug }}">
+  <div class="public-card">
+    <h1 class="public-title">{{ view_name }}</h1>
+    <p class="public-description">此视图以只读方式共享</p>
+    <div class="share-grid-wrap">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th>#</th>
+            {% for field in fields %}<th{% if field.width %} style="min-width: {{ field.width }}px"{% endif %}>{{ field.name }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody id="share-body"></tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <button type="button" id="share-prev" class="btn-ghost">上一页</button>
+      <span id="share-info"></span>
+      <button type="button" id="share-next" class="btn-ghost">下一页</button>
+    </div>
+  </div>
+
+  <script src="{% static 'webui/share.js' %}"></script>
+</body>
+</html>
