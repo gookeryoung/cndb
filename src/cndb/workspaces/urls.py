@@ -13,5 +13,6 @@ router.register("", WorkspaceViewSet, basename="workspaces")
 urlpatterns = [
     path("<int:workspace_pk>/members/", MemberListCreateView.as_view(), name="workspace-members"),
     path("<int:workspace_pk>/members/<int:pk>/", MemberDetailView.as_view(), name="workspace-member"),
+    path("<int:workspace_pk>/tables/", include("cndb.tables.urls")),
     path("", include(router.urls)),
 ]

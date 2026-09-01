@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from datetime import date, datetime
@@ -88,8 +89,8 @@ class NumberField(FieldType):
     _precision_limit = 38
 
     def db_column_type(self, config: Mapping[str, Any]) -> str:
-        """返回 numeric(precision, scale)."""
-        return f"numeric({config.get('precision', _DEFAULT_PRECISION)}, {config.get('scale', _DEFAULT_SCALE)})"
+        """返回 numeric(precision,scale)；参数间不留空格，规避 Django SQLite 内省的解析缺陷."""
+        return f"numeric({config.get('precision', _DEFAULT_PRECISION)},{config.get('scale', _DEFAULT_SCALE)})"
 
     def validate_config(self, config: Mapping[str, Any] | None) -> dict[str, Any]:
         """校验 precision 与 scale 的取值范围及相对关系."""
@@ -114,6 +115,25 @@ class NumberField(FieldType):
             raise InvalidFieldValueError("number 字段的值超出精度范围")
         return quantized
 
+    def to_db(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """Decimal 转字符串：SQLite 驱动不支持 Decimal 参数，文本可被数值列正确收纳."""
+        return str(value) if isinstance(value, Decimal) else value
+
+    def parse_query_value(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """查询参数中的数字字符串解析为 Decimal，非法格式按值校验失败处理."""
+        if not isinstance(value, str):
+            return value
+        try:
+            return Decimal(value)
+        except ArithmeticError as exc:
+            raise InvalidFieldValueError("number 字段的值必须是数字") from exc
+
+    def from_db(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """数值读回归一为 Decimal."""
+        if isinstance(value, Decimal):
+            return value
+        return None if value is None else Decimal(str(value))
+
 
 class BooleanField(FieldType):
     """布尔值：接受 bool 及 0/1 整数."""
@@ -133,6 +153,20 @@ class BooleanField(FieldType):
         if value == 1:
             return True
         raise InvalidFieldValueError("boolean 字段的值必须是布尔值")
+
+    def from_db(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """SQLite 以 0/1 整数存储布尔，读回归一为 bool."""
+        return None if value is None else bool(value)
+
+    def parse_query_value(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """查询参数中的 true/false 字符串解析为布尔."""
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered == "true":
+                return True
+            if lowered == "false":
+                return False
+        return value
 
 
 class DateField(FieldType):
@@ -156,6 +190,12 @@ class DateField(FieldType):
             except ValueError as exc:
                 raise InvalidFieldValueError("date 字段的值必须是 YYYY-MM-DD 格式") from exc
         raise InvalidFieldValueError("date 字段的值必须是日期或 ISO 格式字符串")
+
+    def from_db(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """SQLite 以 ISO 文本存储日期，读回解析为 date."""
+        if isinstance(value, date) or value is None:
+            return value
+        return date.fromisoformat(str(value))
 
 
 class _BaseSelectField(FieldType):
@@ -228,6 +268,14 @@ class MultiSelectField(_BaseSelectField):
             if item not in result:
                 result.append(item)
         return result
+
+    def to_db(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """列表序列化为 JSON 文本存储."""
+        return json.dumps(value)
+
+    def from_db(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """JSON 文本反序列化回列表."""
+        return value if isinstance(value, list) or value is None else json.loads(str(value))
 
 
 class EmailField(FieldType):

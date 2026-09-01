@@ -49,3 +49,15 @@ class FieldType(ABC):
     @abstractmethod
     def clean_value(self, value: Any, config: Mapping[str, Any]) -> Any:
         """校验非空值并返回归一化结果，非法时抛 InvalidFieldValueError."""
+
+    def to_db(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """把归一化值转换为数据库参数形式，默认原样."""
+        return value
+
+    def parse_query_value(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """把查询参数原始值（恒为字符串）解析为可校验值，默认原样."""
+        return value
+
+    def from_db(self, value: Any, _config: Mapping[str, Any]) -> Any:
+        """把数据库读取值转换回 Python 表示，默认原样."""
+        return value

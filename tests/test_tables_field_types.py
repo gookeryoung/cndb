@@ -123,7 +123,8 @@ def test_number_clean_value() -> None:
     assert ft.clean_value(Decimal("3.14159"), config) == Decimal("3.14")
     assert ft.clean_value(3.6, {"precision": 5, "scale": 0}) == Decimal("4")
     assert ft.clean_value(42, config) == Decimal("42")
-    assert ft.db_column_type(config) == "numeric(5, 2)"
+    # numeric 参数间不留空格：规避 Django SQLite 内省对含逗号空格类型的解析缺陷
+    assert ft.db_column_type(config) == "numeric(5,2)"
     with pytest.raises(InvalidFieldValueError):
         ft.clean_value(Decimal("123456"), config)
     with pytest.raises(InvalidFieldValueError):
