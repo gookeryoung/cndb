@@ -11,10 +11,13 @@
 ## 特性
 
 - **技术栈**：Django 5.2 + DRF + PostgreSQL（开发/测试可用 SQLite）
-- **元数据驱动**：数据表/字段定义存元数据库，字段类型系统插件式扩展
-- **工作区隔离**：用户/工作区/成员角色（owner/admin/editor/commenter/viewer）
-- **构建工具链**：hatchling + uv + ruff + pyrefly + pytest + coverage（覆盖率阈值 95%）
-- **CI/CD**：GitHub Actions（lint + typecheck + 多版本测试）
+- **元数据驱动**：数据表/字段定义存元数据库，字段类型系统插件式扩展（9 种内置类型）
+- **动态 DDL**：物理表/列名系统生成，用户输入永不进入 SQL 标识符
+- **视图规则**：Grid/Kanban/Calendar/Gallery/Form 五种形态，筛选/排序/字段选项保存期校验，聚合统计（count/sum/avg/min/max）
+- **权限体系**：工作区五级角色 → 表级动作制 → 行级范围 → 字段级隐藏；API Token 认证
+- **表单与共享**：表单视图匿名提交；grid 视图公开共享（slug 匿名只读）
+- **导入导出**：CSV/JSON 双向流转，错误行按原始行号报告
+- **前端**：Django 模板 + 原生 JS 无构建（登录/工作区/表/Grid）
 
 ## 快速上手
 
@@ -28,9 +31,32 @@ uv run python manage.py createsuperuser
 uv run python manage.py runserver
 ```
 
-REST API 入口：`/api/auth/`、`/api/workspaces/`，管理后台：`/admin/`。
+REST API 入口：`/api/auth/`、`/api/workspaces/`、`/api/tokens/`、`/api/forms/`、`/api/views/`，管理后台：`/admin/`。
 
 切换 PostgreSQL：设置 `CNDB_DB=postgres` 及 `CNDB_DB_NAME/CNDB_DB_USER/CNDB_DB_PASSWORD` 等环境变量。
+
+## 部署
+
+生产部署使用 Docker Compose（gunicorn + PostgreSQL 17）：
+
+```bash
+cd deploy
+# 在 .env 中设置 CNDB_SECRET_KEY 与 CNDB_DB_PASSWORD（必填）
+echo "CNDB_SECRET_KEY=<随机密钥>" > .env
+echo "CNDB_DB_PASSWORD=<数据库密码>" >> .env
+docker compose up -d
+docker compose exec web python manage.py migrate   # 首次启动执行迁移
+```
+
+访问 `http://localhost:8000/`。`CNDB_ALLOWED_HOSTS` 环境变量控制允许的Host 头（默认 `localhost,127.0.0.1`）。
+
+## 性能基准
+
+行数据服务层吞吐基准（`make check` 之外单独运行）：
+
+```bash
+uv run pytest tests/test_bench_rows.py -m slow -s --no-cov
+```
 
 ## 开发
 
