@@ -78,7 +78,7 @@ export default function Dashboard() {
         仪表盘
       </Title>
       <Paragraph type="secondary">
-        欢迎使用 pywt 模板。下方汇总框架运行状态、已加载插件及导航项。
+        欢迎使用 cndb 模板。下方汇总框架运行状态、已加载插件及导航项。
       </Paragraph>
 
       {loading ? (

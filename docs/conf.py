@@ -12,12 +12,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 # -- 项目信息 --------------------------------------------------------------
-project = "pyweb_template"
+project = "cndb"
 author = "gookeryoung"
 copyright = "2026, gookeryoung"
 
 try:
-    from pyweb_template import __version__  # type: ignore[import-not-found]
+    from cndb import __version__  # type: ignore[import-not-found]
     release = __version__
     version = __version__
 except ImportError:

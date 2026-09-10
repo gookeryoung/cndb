@@ -1,7 +1,7 @@
 API 参考
 =======
 
-.. automodule:: pyweb_template
+.. automodule:: cndb
    :members:
    :undoc-members:
    :show-inheritance:
