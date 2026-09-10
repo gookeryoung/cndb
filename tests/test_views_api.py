@@ -82,9 +82,8 @@ def ws(db, owner):
 
 
 @pytest.fixture
-def table(db, ws, tmp_path):
-    db_path = tmp_path / "vws.db"
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+def table(db, ws):
+    engine = db.get_bind()
     dt = DataTable(workspace_id=ws.id, name="VTable")
     dt.ensure_db_name()
     db.add(dt)
@@ -228,5 +227,139 @@ class TestViewsAPI:
         assert len(defaults) == 1
         assert defaults[0]["name"] == "V2"
 
+    def test_get_view_rows(self, client, ws, table, auth_owner):
+        # 先创建视图
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "RowView", "view_type": "grid", "sortings": [{"field_name": "姓名", "direction": "asc"}]},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/rows?limit=10",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert "rows" in r.json()
+        assert "total" in r.json()
 
-__all__ = []
+    def test_get_view_rows_not_found(self, client, ws, table, auth_owner):
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/99999/rows",
+            headers=auth_owner,
+        )
+        assert r.status_code == 404
+
+    def test_get_view_kanban_no_group_field(self, client, ws, table, auth_owner):
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "NoGroupKanban", "view_type": "kanban", "view_options": {}},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/kanban",
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+
+    def test_get_view_kanban(self, client, ws, table, auth_owner):
+        # 先加字段，再创建视图，然后加数据
+
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/fields",
+            json={"name": "状态", "field_type": "text", "order": 1},
+            headers=auth_owner,
+        )
+        # 重新从 test client 获取
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "KanbanView",
+                "view_type": "kanban",
+                "view_options": {"group_field": "状态"},
+            },
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/kanban",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert "columns" in r.json()
+        assert r.json()["group_field"] == "状态"
+
+    def test_get_view_kanban_not_found(self, client, ws, table, auth_owner):
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/99999/kanban",
+            headers=auth_owner,
+        )
+        assert r.status_code == 404
+
+    def test_get_view_calendar_no_start_field(self, client, ws, table, auth_owner):
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "NoStartCal", "view_type": "calendar", "view_options": {}},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/calendar",
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+
+    def test_get_view_calendar(self, client, ws, table, auth_owner):
+        # 先加 date 字段，再创建视图
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/fields",
+            json={"name": "截止日期", "field_type": "date", "order": 1},
+            headers=auth_owner,
+        )
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "CalendarView",
+                "view_type": "calendar",
+                "view_options": {"start_field": "截止日期"},
+            },
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/calendar",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert "rows" in r.json()
+        assert r.json()["start_field"] == "截止日期"
+
+    def test_get_view_calendar_with_date_range(self, client, ws, table, auth_owner):
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/fields",
+            json={"name": "截止日期", "field_type": "date", "order": 1},
+            headers=auth_owner,
+        )
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "CalRange",
+                "view_type": "calendar",
+                "view_options": {"start_field": "截止日期"},
+            },
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/calendar?start=2024-01-01&end=2024-12-31",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+
+    def test_get_view_calendar_not_found(self, client, ws, table, auth_owner):
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/99999/calendar",
+            headers=auth_owner,
+        )
+        assert r.status_code == 404
