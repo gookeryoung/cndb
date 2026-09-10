@@ -363,3 +363,113 @@ class TestViewsAPI:
             headers=auth_owner,
         )
         assert r.status_code == 404
+
+    # ── P4 公开分享测试 ──
+
+    def test_create_view_share(self, client, ws, table, auth_owner):
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "ShareView", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["is_public"] is True
+        assert data["slug"]
+        assert "share_url" in data
+
+    def test_create_form_share(self, client, ws, table, auth_owner):
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "FormView", "view_type": "form"},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert r.json()["form_url"]
+
+    def test_create_view_share_not_found(self, client, ws, table, auth_owner):
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/99999/share",
+            headers=auth_owner,
+        )
+        assert r.status_code == 404
+
+    def test_revoke_view_share(self, client, ws, table, auth_owner):
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "ShareRevoke", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+            headers=auth_owner,
+        )
+        r = client.delete(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert r.json()["is_public"] is False
+
+    def test_public_share_view(self, client, ws, table, auth_owner):
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "PubShare", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        share_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+            headers=auth_owner,
+        )
+        slug = share_r.json()["slug"]
+        r = client.get(f"/api/v1/public/share/{slug}")
+        assert r.status_code == 200
+        assert "rows" in r.json()
+        assert "total" in r.json()
+
+    def test_public_share_invalid_slug(self, client, ws, table, auth_owner):
+        r = client.get("/api/v1/public/share/nonexistentslug12")
+        assert r.status_code == 404
+
+    def test_public_form_submit(self, client, ws, table, auth_owner):
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "PubForm", "view_type": "form"},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        share_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+            headers=auth_owner,
+        )
+        slug = share_r.json()["slug"]
+        r = client.post(f"/api/v1/public/forms/{slug}", json={"姓名": "匿名提交"})
+        assert r.status_code == 200
+        assert r.json()["status"] == "ok"
+
+    def test_public_form_not_form_type(self, client, ws, table, auth_owner):
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "NotForm", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        share_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+            headers=auth_owner,
+        )
+        slug = share_r.json()["slug"]
+        r = client.post(f"/api/v1/public/forms/{slug}", json={"姓名": "x"})
+        assert r.status_code == 400
