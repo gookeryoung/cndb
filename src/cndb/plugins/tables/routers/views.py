@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -128,3 +128,121 @@ def delete_view(
         raise HTTPException(status_code=404, detail="视图不存在")
     db.delete(dv)
     db.commit()
+
+
+# ── 视图驱动的行查询 ──────────────────────────────────
+
+
+@router.get("/{view_id}/rows")
+def get_view_rows(  # noqa: PLR0913, PLR0917
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=100, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, object]:
+    """按视图的 filters + sortings 查询行."""
+    from cndb.plugins.tables import records as rec
+
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    dt = _get_table_or_404(table_id, workspace_id, db)
+    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
+    if dv is None:
+        raise HTTPException(status_code=404, detail="视图不存在")
+
+    rows, total = rec.list_rows(
+        db.get_bind(),
+        dt,
+        filters=dv.filters or None,
+        filter_logic=dv.filter_type,
+        sorts=dv.sortings or None,
+        limit=limit,
+        offset=offset,
+    )
+    return {"rows": rows, "total": total, "view_id": view_id}
+
+
+@router.get("/{view_id}/kanban")
+def get_view_kanban(  # noqa: PLR0913, PLR0917
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=500, ge=1, le=10000),
+) -> dict[str, object]:
+    """看板视图：按 view_options.group_field 分组返回行."""
+    from collections import defaultdict
+
+    from cndb.plugins.tables import records as rec
+
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    dt = _get_table_or_404(table_id, workspace_id, db)
+    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
+    if dv is None:
+        raise HTTPException(status_code=404, detail="视图不存在")
+
+    group_field = dv.view_options.get("group_field") if dv.view_options else None
+    if not group_field:
+        raise HTTPException(status_code=400, detail="看板视图需配置 group_field")
+
+    rows, total = rec.list_rows(
+        db.get_bind(),
+        dt,
+        filters=dv.filters or None,
+        filter_logic=dv.filter_type,
+        sorts=dv.sortings or None,
+        limit=limit,
+    )
+    grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in rows:
+        key = str(row.get(group_field) or "未分组")
+        grouped[key].append(row)
+
+    return {"columns": dict(grouped), "total": total, "group_field": group_field}
+
+
+@router.get("/{view_id}/calendar")
+def get_view_calendar(  # noqa: PLR0913, PLR0917
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    start: str | None = Query(default=None, description="ISO 日期起始 (YYYY-MM-DD)"),
+    end: str | None = Query(default=None, description="ISO 日期结束"),
+    limit: int = Query(default=500, ge=1, le=10000),
+) -> dict[str, object]:
+    """日历视图：按日期字段过滤并返回行列表."""
+    from cndb.plugins.tables import records as rec
+
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    dt = _get_table_or_404(table_id, workspace_id, db)
+    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
+    if dv is None:
+        raise HTTPException(status_code=404, detail="视图不存在")
+
+    start_field = dv.view_options.get("start_field") if dv.view_options else None
+    if not start_field:
+        raise HTTPException(status_code=400, detail="日历视图需配置 start_field")
+
+    filters: list[dict[str, object]] = list(dv.filters or [])
+    if start:
+        filters.append({"field_name": start_field, "op": ">=", "value": start})
+    if end:
+        filters.append({"field_name": start_field, "op": "<=", "value": end})
+
+    sorts = list(dv.sortings or [])
+    sorts.append({"field_name": start_field, "direction": "asc"})
+
+    rows, total = rec.list_rows(
+        db.get_bind(),
+        dt,
+        filters=filters,
+        filter_logic=dv.filter_type,
+        sorts=sorts,
+        limit=limit,
+    )
+    return {"rows": rows, "total": total, "start_field": start_field}
