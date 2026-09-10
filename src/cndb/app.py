@@ -35,7 +35,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 app = FastAPIOffline(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="cndb2 - FastAPI + SQLAlchemy + Plugin 架构脚手架",
+    description="cndb - FastAPI + SQLAlchemy + Plugin 架构脚手架",
     lifespan=lifespan,
 )
 

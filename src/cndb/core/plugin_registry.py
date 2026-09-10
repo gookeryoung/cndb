@@ -98,11 +98,15 @@ class PluginRegistry:
             return
 
         for name, plugin in self._plugins.items():
-            router = APIRouter()
-            plugin.register_routes(router)
+            # 如果 plugin 直接暴露了 router，跳过中间 APIRouter 包装
+            if getattr(plugin, "direct_router", None) is not None:
+                router = plugin.direct_router
+            else:
+                router = APIRouter()
+                plugin.register_routes(router)
             # 自定义 route_prefix 优先，否则用插件名作为前缀
-            seg = plugin.route_prefix.strip("/") if plugin.route_prefix else name
-            prefix = f"{settings.API_V1_PREFIX}/{seg}"
+            seg = plugin.route_prefix.strip("/") if plugin.route_prefix is not None else name
+            prefix = f"{settings.API_V1_PREFIX}/{seg}" if seg else settings.API_V1_PREFIX
             app.include_router(router, prefix=prefix, tags=[plugin.name])
             logger.info("插件路由已挂载: %s -> %s (route_prefix=%s)", name, prefix, plugin.route_prefix or "(default)")
 

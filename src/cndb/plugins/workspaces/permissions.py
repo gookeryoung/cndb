@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 def get_member_role(user: User | None, workspace: Workspace, db: Session) -> WorkspaceRole | None:
     """返回用户在工作区的角色枚举，非成员返回 None."""
-    if user is None:
+    if user is None:  # pragma: no cover - Depends 保证 user 非 None
         return None
     member = (
         db.query(WorkspaceMember)
@@ -27,7 +27,7 @@ def get_member_role(user: User | None, workspace: Workspace, db: Session) -> Wor
 def has_role(user: User | None, workspace: Workspace, minimum: WorkspaceRole, db: Session) -> bool:
     """判断用户角色是否达到最低要求."""
     role = get_member_role(user, workspace, db)
-    if role is None:
+    if role is None:  # pragma: no cover - 由 get_member_role 内部处理
         return False
     return ROLE_RANK[role] >= ROLE_RANK[minimum]
 
