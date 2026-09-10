@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pyweb_template.api.deps import get_request_id
+from cndb.api.deps import get_request_id
 
 
 def test_get_request_id_passthrough() -> None:

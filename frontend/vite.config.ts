@@ -21,7 +21,7 @@ export default defineConfig({
   },
   build: {
     // 构建产物直接输出到后端 static 目录，由 FastAPI 统一 serve
-    outDir: path.resolve(__dirname, '../src/pyweb_template/static'),
+    outDir: path.resolve(__dirname, '../src/cndb/static'),
     emptyOutDir: true,
   },
 })

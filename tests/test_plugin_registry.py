@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 from fastapi import APIRouter, FastAPI
 
-from pyweb_template.core.plugin_registry import PluginRegistry
-from pyweb_template.plugins.base import AppItem, NavItem, PluginBase
+from cndb.core.plugin_registry import PluginRegistry
+from cndb.plugins.base import AppItem, NavItem, PluginBase
 
 
 def test_empty_registry() -> None:
@@ -59,7 +59,7 @@ def test_duplicate_register_skipped() -> None:
 
 def test_discover_loads_builtin_plugins() -> None:
     """discover_and_load 应能找到 health."""
-    from pyweb_template.core.plugin_registry import PluginRegistry as _PR
+    from cndb.core.plugin_registry import PluginRegistry as _PR
 
     r = _PR()
     r.discover_and_load()
@@ -79,7 +79,7 @@ def test_discover_plugins_dir_not_exists_returns_early(tmp_path: Path) -> None:
             return target
         return real_path / other  # type: ignore[operator]
 
-    with patch("pyweb_template.core.plugin_registry.Path") as MockPath:
+    with patch("cndb.core.plugin_registry.Path") as MockPath:
         MockPath.return_value = real_path
         with patch.object(Path, "__truediv__", side_effect=fake_truediv):
             r.discover_and_load()
@@ -189,7 +189,7 @@ def test_discover_handles_import_error_gracefully(tmp_path: Path) -> None:
     (plugin_dir / "__init__.py").write_text("")
     (plugin_dir / "plugin.py").write_text("raise ImportError('broken')")
 
-    with patch("pyweb_template.core.plugin_registry.Path") as MockPath:
+    with patch("cndb.core.plugin_registry.Path") as MockPath:
         # Mock Path(__file__).resolve().parent.parent → 指向 tmp_path
         MockPath.return_value = tmp_path
         with patch.object(importlib, "import_module", side_effect=ImportError("broken")):

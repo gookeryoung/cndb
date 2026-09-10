@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pyweb_template.core import security
+from cndb.core import security
 
 
 def test_hash_and_verify_roundtrip() -> None:

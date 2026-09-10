@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from pyweb_template import runner
+from cndb import runner
 
 
 def test_info_command_prints_version() -> None:
@@ -23,7 +23,7 @@ def test_info_command_prints_version() -> None:
     finally:
         sys.stdout = old_out
     assert rc == 0
-    assert "pyweb_template" in output
+    assert "cndb" in output
 
 
 def test_dev_starts_backend_and_frontend_subprocess() -> None:
@@ -66,14 +66,14 @@ def test_serve_no_uvicorn_prints_error_and_exits() -> None:
 def test_main_with_no_command_defaults_to_serve() -> None:
     """main 无参数时应走 serve 路径."""
     with patch.object(runner, "serve") as mock_serve:
-        with patch.object(sys, "argv", ["pywt"]):
+        with patch.object(sys, "argv", ["cndb"]):
             runner.main()
         mock_serve.assert_called_once()
 
 
 def test_main_info_subcommand_exits_0() -> None:
     """main info 子命令应走 info_command 并 sys.exit(0)."""
-    with patch.object(sys, "argv", ["pywt", "info"]):
+    with patch.object(sys, "argv", ["cndb", "info"]):
         with pytest.raises(SystemExit) as excinfo:
             runner.main()
         assert excinfo.value.code == 0
@@ -82,7 +82,7 @@ def test_main_info_subcommand_exits_0() -> None:
 def test_main_serve_subcommand_dispatches() -> None:
     """main serve 子命令应调用 serve."""
     with patch.object(runner, "serve") as mock_serve:
-        with patch.object(sys, "argv", ["pywt", "serve", "--port", "9000"]):
+        with patch.object(sys, "argv", ["cndb", "serve", "--port", "9000"]):
             runner.main()
         mock_serve.assert_called_once()
 
@@ -90,7 +90,7 @@ def test_main_serve_subcommand_dispatches() -> None:
 def test_main_dev_subcommand_dispatches() -> None:
     """main dev 子命令应调用 dev（启动前后端子进程）."""
     with patch.object(runner, "dev") as mock_dev:
-        with patch.object(sys, "argv", ["pywt", "dev", "--port", "9000"]):
+        with patch.object(sys, "argv", ["cndb", "dev", "--port", "9000"]):
             runner.main()
         mock_dev.assert_called_once()
 
@@ -98,7 +98,7 @@ def test_main_dev_subcommand_dispatches() -> None:
 def test_main_build_subcommand_dispatches() -> None:
     """main build 子命令应调用 build."""
     with patch.object(runner, "build") as mock_build:
-        with patch.object(sys, "argv", ["pywt", "build"]):
+        with patch.object(sys, "argv", ["cndb", "build"]):
             runner.main()
         mock_build.assert_called_once()
 
@@ -185,7 +185,7 @@ def test_build_success() -> None:
         patch.object(subprocess, "run", fake_run),
         patch.object(runner, "FRONTEND_DIR", fake_frontend),
         patch.object(runner, "ROOT_DIR", fake_root),
-        patch("pyweb_template.runner.shutil.copytree"),
+        patch("cndb.runner.shutil.copytree"),
     ):
         runner.build(args)
 
@@ -228,7 +228,7 @@ def test_build_without_dist_dir_skips_copy() -> None:
         patch.object(runner, "_ensure_dev_env"),
         patch.object(subprocess, "run", fake_run),
         patch.object(runner, "FRONTEND_DIR", fake_frontend),
-        patch("pyweb_template.runner.shutil.copytree") as mock_copy,
+        patch("cndb.runner.shutil.copytree") as mock_copy,
     ):
         runner.build(args)
 
@@ -273,8 +273,8 @@ def test_build_with_existing_static_dir() -> None:
         patch.object(subprocess, "run", fake_run),
         patch.object(runner, "FRONTEND_DIR", fake_frontend),
         patch.object(runner, "ROOT_DIR", fake_root),
-        patch("pyweb_template.runner.shutil.rmtree", mock_rmtree),
-        patch("pyweb_template.runner.shutil.copytree", mock_copy),
+        patch("cndb.runner.shutil.rmtree", mock_rmtree),
+        patch("cndb.runner.shutil.copytree", mock_copy),
     ):
         runner.build(args)
 

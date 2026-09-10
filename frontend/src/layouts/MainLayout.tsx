@@ -135,7 +135,7 @@ export default function MainLayout() {
     <>
       <div style={{ padding: isMobile ? 12 : 16, textAlign: 'center' }}>
         <Title level={isMobile ? 5 : 4} style={{ color: '#fff', margin: 0 }}>
-          {healthData?.app || 'pywt'}
+          {healthData?.app || 'cndb'}
         </Title>
         {(!collapsed || isMobile) && (
           <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: isMobile ? 10 : 12 }}>
@@ -226,7 +226,7 @@ export default function MainLayout() {
               />
             )}
             <Title level={5} style={{ margin: 0, fontSize: isMobile ? 14 : 16 }}>
-              {isMobile ? healthData?.app || 'pywt' : `${healthData?.app || 'pywt'} · FastAPI 插件模板`}
+              {isMobile ? healthData?.app || 'cndb' : `${healthData?.app || 'cndb'} · FastAPI 插件模板`}
             </Title>
           </Space>
 

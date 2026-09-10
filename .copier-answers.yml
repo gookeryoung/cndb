@@ -8,8 +8,8 @@ description: Template for python web apps.
 license: MIT
 max_python_version: '3.14'
 min_python_version: '3.13'
-package_name: pyweb_template
-project_name: pyweb_template
+package_name: cndb
+project_name: cndb
 project_type: web
 use_cicd: true
 use_docker: true

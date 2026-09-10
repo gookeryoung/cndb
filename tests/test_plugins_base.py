@@ -7,7 +7,7 @@ from typing import override
 import pytest
 from fastapi import APIRouter
 
-from pyweb_template.plugins.base import AppItem, NavItem, PluginBase
+from cndb.plugins.base import AppItem, NavItem, PluginBase
 
 
 def test_navitem_to_dict_basic() -> None:

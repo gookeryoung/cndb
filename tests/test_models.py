@@ -7,7 +7,7 @@ import datetime as dt
 from sqlalchemy import String, create_engine, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from pyweb_template.models import Base, TimestampMixin
+from cndb.models import Base, TimestampMixin
 
 
 def test_base_is_declarative() -> None:
@@ -38,7 +38,7 @@ def test_timestamp_mixin_fields_exist() -> None:
 def test_timestamp_mixin_creates_and_queries_sqlite() -> None:
     """在 SQLite 中实际建表、插入、查询 TimestampMixin 模型."""
 
-    class User(TimestampMixin, Base):
+    class TestUser(TimestampMixin, Base):
         __tablename__ = "_test_users"
         username: Mapped[str] = mapped_column(String(50), nullable=False)
 
@@ -46,7 +46,7 @@ def test_timestamp_mixin_creates_and_queries_sqlite() -> None:
     Base.metadata.create_all(engine)
 
     with Session(engine) as session:
-        u = User(username="alice")
+        u = TestUser(username="alice")
         session.add(u)
         session.commit()
         session.refresh(u)
@@ -57,12 +57,12 @@ def test_timestamp_mixin_creates_and_queries_sqlite() -> None:
         assert isinstance(u.updated_at, dt.datetime)
 
         result = session.execute(
-            select(User).where(User.username == "alice")  # type: ignore[arg-type]
+            select(TestUser).where(TestUser.username == "alice")  # type: ignore[arg-type]
         ).scalar_one()
         assert result.id == 1
         assert result.created_at == u.created_at
 
-    Base.metadata.remove(User.__table__)  # type: ignore[arg-type]
+    Base.metadata.remove(TestUser.__table__)  # type: ignore[arg-type]
     engine.dispose()
 
 

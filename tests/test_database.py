@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from pyweb_template.core import database
+from cndb.core import database
 
 
 def test_engine_created_from_settings() -> None:
@@ -29,7 +29,7 @@ def test_get_db_yields_session_and_closes() -> None:
 
 def test_sqlite_connect_args_disable_check_same_thread() -> None:
     """SQLite 应关闭 check_same_thread 以支持多线程 TestClient."""
-    from pyweb_template.core.config import settings
+    from cndb.core.config import settings
 
     if "sqlite" in settings.DATABASE_URL:
         assert database.engine.url.drivername == "sqlite"

@@ -1,9 +1,9 @@
-# pyweb_template
+# cndb
 
 > Template for python web apps.
 
-[![PyPI](https://img.shields.io/pypi/v/pyweb_template)](https://pypi.org/project/pyweb_template/)
-[![CI](https://github.com/gookeryoung/pyweb_template/actions/workflows/ci.yml/badge.svg)](https://github.com/gookeryoung/pyweb_template/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/cndb)](https://pypi.org/project/cndb/)
+[![CI](https://github.com/gookeryoung/cndb/actions/workflows/ci.yml/badge.svg)](https://github.com/gookeryoung/cndb/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Coverage](https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen.svg)
@@ -23,21 +23,21 @@
 ## 安装
 
 ```bash
-pip install pyweb_template
+pip install cndb
 ```
 
 或使用 [uv](https://docs.astral.sh/uv/)：
 
 ```bash
-uv add pyweb_template
+uv add cndb
 ```
 
 ## 快速上手
 
 ```python
-import pyweb_template
+import cndb
 
-print(pyweb_template.__version__)
+print(cndb.__version__)
 ```
 
 ## 开发
@@ -47,7 +47,7 @@ print(pyweb_template.__version__)
 uv sync --extra dev
 
 # 运行测试（含覆盖率，阈值 95%）
-uv run pytest -m "not slow" --cov=pyweb_template --cov-fail-under=95
+uv run pytest -m "not slow" --cov=cndb --cov-fail-under=95
 
 # 类型检查
 uv run pyrefly check .

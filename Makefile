@@ -1,7 +1,7 @@
-# Makefile - pyweb_template 项目快捷命令
+# Makefile - cndb 项目快捷命令
 # 运行 `make help` 查看所有可用命令
 
-PACKAGE := pyweb_template
+PACKAGE := cndb
 COV_THRESHOLD := 95
 
 .PHONY: help sync build b clean c test cov lint typecheck typecheck-ci check doc tox bump patch minor major push
