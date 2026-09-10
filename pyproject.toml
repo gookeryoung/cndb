@@ -27,7 +27,7 @@ dependencies = [
     "reportlab>=4.2.0",
 ]
 
-description     = "Template for python web apps. (FastAPI + SQLAlchemy + Plugin 架构)"
+description     = "cndb - metadata-driven collaborative database platform (FastAPI + SQLAlchemy + Plugin architecture)"
 license         = "MIT"
 name            = "cndb"
 readme          = "README.md"
