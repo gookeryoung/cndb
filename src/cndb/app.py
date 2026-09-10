@@ -23,6 +23,7 @@ from fastapi_offline import FastAPIOffline
 
 from cndb.core.config import settings
 from cndb.core.plugin_registry import plugin_registry
+from cndb.plugins.tables.routers.public import router as public_router
 
 
 @asynccontextmanager
@@ -44,6 +45,9 @@ app = FastAPIOffline(
 if settings.PLUGINS_AUTO_DISCOVER:
     plugin_registry.discover_and_load()
 plugin_registry.mount_routes(app)
+
+# tables 插件全局公开路由
+app.include_router(public_router)
 
 
 app.add_middleware(

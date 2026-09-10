@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from cndb.plugins.tables.routers.bulk import router as bulk_router
 from cndb.plugins.tables.routers.fields import router as fields_router
 from cndb.plugins.tables.routers.permissions import router as permissions_router
+from cndb.plugins.tables.routers.public import router as public_router  # noqa: F401 — 全局公开路由，由 app.py 直接挂载
 from cndb.plugins.tables.routers.records import router as records_router
 from cndb.plugins.tables.routers.tables import router as tables_router
 from cndb.plugins.tables.routers.views import router as views_router

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -246,3 +247,54 @@ def get_view_calendar(  # noqa: PLR0913, PLR0917
         limit=limit,
     )
     return {"rows": rows, "total": total, "start_field": start_field}
+
+
+# ── 公开分享（P4） ───────────────────────────────────
+
+
+@router.post("/{view_id}/share")
+def create_view_share(
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, object]:
+    """为视图生成公开分享 slug."""
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
+    _get_table_or_404(table_id, workspace_id, db)
+    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
+    if dv is None:
+        raise HTTPException(status_code=404, detail="视图不存在")
+
+    dv.is_public = True
+    dv.public_slug = uuid.uuid4().hex[:12]
+    db.commit()
+    db.refresh(dv)
+    return {
+        "slug": dv.public_slug,
+        "share_url": f"/api/v1/public/share/{dv.public_slug}",
+        "form_url": f"/api/v1/public/forms/{dv.public_slug}" if dv.view_type == "form" else None,
+        "is_public": dv.is_public,
+    }
+
+
+@router.delete("/{view_id}/share")
+def revoke_view_share(
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, object]:
+    """撤销视图公开分享."""
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
+    _get_table_or_404(table_id, workspace_id, db)
+    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
+    if dv is None:
+        raise HTTPException(status_code=404, detail="视图不存在")
+
+    dv.is_public = False
+    dv.public_slug = None
+    db.commit()
+    return {"ok": True, "is_public": dv.is_public}
