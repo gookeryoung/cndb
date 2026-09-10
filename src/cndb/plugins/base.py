@@ -1,7 +1,7 @@
 """插件基类定义.
 
 继承自 endo 的通用 PluginBase 抽象（见 endo.plugins.base），
-为 cndb2 所有插件提供统一接口。
+为 cndb 所有插件提供统一接口。
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ class AppItem:
     icon: str = "AppstoreOutlined"
     # 自定义路由前缀：空或 "" 表示用插件名；非空时直接作为 /api/v1/ 之后的路径段
     # 用于多插件共享同一前缀的场景（如 tables 插件声明 route_prefix="workspaces" 实现嵌套路由）
-    route_prefix: str = ""
+    route_prefix: str | None = None
     path: str = ""
     category: str = "tool"  # tool / analysis / integration
 
@@ -80,7 +80,7 @@ class PluginBase(ABC):
     icon: str = "AppstoreOutlined"
     # 自定义路由前缀：空或 "" 表示用插件名；非空时直接作为 /api/v1/ 之后的路径段
     # 用于多插件共享同一前缀的场景（如 tables 插件声明 route_prefix="workspaces" 实现嵌套路由）
-    route_prefix: str = ""
+    route_prefix: str | None = None
 
     @abstractmethod
     def register_routes(self, router: APIRouter) -> None:

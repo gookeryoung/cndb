@@ -17,6 +17,8 @@ class WorkspacesPlugin(PluginBase):
     version = "0.1.0"
     description = "工作区 CRUD、成员管理（owner/admin/editor/viewer）、pin 切换"
     icon = "AppstoreOutlined"
+    route_prefix = ""
+    direct_router = workspaces_router
 
     @override
     def register_models(self) -> None:
@@ -25,7 +27,7 @@ class WorkspacesPlugin(PluginBase):
 
     @override
     def register_routes(self, router: APIRouter) -> None:
-        """注册工作区路由."""
+        """注册工作区路由（当 direct_router 未设置时的 fallback）."""
         router.include_router(workspaces_router)
 
 

@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     STATIC_DIR: Path = BASE_DIR / "static"
 
     # ── 认证授权（基础占位，启用 auth extra 时自动生效）─────────
-    JWT_SECRET: str = "cndb2-dev-secret-change-in-production"
+    JWT_SECRET: str = "cndb-dev-secret-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60 * 24  # 默认 24 小时
     AUTH_ENABLED: bool = False  # 默认关闭，模板期不强制认证
