@@ -243,11 +243,41 @@ class TablePermission(TimestampMixin, Base):
         return f"TablePermission(table_id={self.table_id})"
 
 
+# RowComment
+class RowComment(TimestampMixin, Base):
+    __tablename__ = "tables_rowcomment"
+    __table_args__ = {"extend_existing": True}
+    table_id: Mapped[int] = mapped_column(
+        ForeignKey("tables_datatable.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    row_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("accounts_user.id", ondelete="CASCADE"), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# AuditLog
+class AuditLog(TimestampMixin, Base):
+    __tablename__ = "tables_auditlog"
+    __table_args__ = {"extend_existing": True}
+    table_id: Mapped[int] = mapped_column(
+        ForeignKey("tables_datatable.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
 __all__ = [
+    "AuditLog",
     "DataField",
     "DataTable",
     "DataView",
     "FilterType",
+    "RowComment",
     "TablePermission",
     "ViewType",
     "generate_db_column_name",
