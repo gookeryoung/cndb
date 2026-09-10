@@ -1,3 +1,5 @@
+/.trae/
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -32,8 +34,8 @@ coverage.xml
 
 # Sphinx 文档构建输出
 docs/_build/
-.trae/ref
+.trae/req
 *.py.bak
-src/pyweb_template/static
+src/cndb/static
 
 *.db

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import enum
 import uuid
 from operator import attrgetter
@@ -13,9 +14,11 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    DateTime,
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -85,10 +88,11 @@ class DataTable(TimestampMixin, Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     db_table_name: Mapped[str] = mapped_column(String(63), unique=True, nullable=False, index=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     trashed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    trashed_at: Mapped[Any] = mapped_column(nullable=True)
+    trashed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 关系
     workspace: Mapped[Workspace] = relationship("Workspace")
@@ -109,7 +113,7 @@ class DataTable(TimestampMixin, Base):
     def active_fields(self) -> list[DataField]:
         """返回未进回收站的字段（按展示顺序），行读写与查询编译共用."""
         active = [f for f in self.fields if not f.trashed]
-        active.sort(key=attrgetter('order', 'id'))
+        active.sort(key=attrgetter("order", "id"))
         return active
 
     def ensure_db_name(self) -> None:
@@ -144,7 +148,7 @@ class DataField(TimestampMixin, Base):
     default_value: Mapped[Any] = mapped_column(JSON, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     trashed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    trashed_at: Mapped[Any] = mapped_column(nullable=True)
+    trashed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 关系
     table: Mapped[DataTable] = relationship(back_populates="fields")

@@ -24,4 +24,4 @@ dist-ssr
 *.sw?
 
 # Build output (publishes to backend static/)
-../src/pyweb_template/static/
+..\/src\/cndb\/static\/
