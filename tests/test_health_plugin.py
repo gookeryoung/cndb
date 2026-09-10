@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from pyweb_template.app import app
+from cndb.app import app
 
 
 @pytest.fixture()

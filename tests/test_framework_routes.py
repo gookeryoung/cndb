@@ -7,7 +7,7 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from pyweb_template.app import app
+from cndb.app import app
 
 
 @pytest.fixture()
@@ -21,7 +21,7 @@ def test_health_endpoint(client: TestClient) -> None:
     assert r.status_code == 200
     d = r.json()
     assert d["status"] == "ok"
-    assert d["app"] == "pyweb_template"
+    assert d["app"] == "cndb"
 
 
 def test_plugins_endpoint(client: TestClient) -> None:

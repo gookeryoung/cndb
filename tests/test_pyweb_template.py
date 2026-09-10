@@ -1,20 +1,20 @@
-"""pyweb_template 根包 smoke 测试."""
+"""cndb 根包 smoke 测试."""
 
 from __future__ import annotations
 
-import pyweb_template
-from pyweb_template import schemas, services
+import cndb
+from cndb import schemas, services
 
 
 def test_version_is_present() -> None:
-    assert pyweb_template.__version__
+    assert cndb.__version__
 
 
 def test_app_factory_is_accessible() -> None:
     """Facade re-export 应包含关键符号."""
-    assert hasattr(pyweb_template, "PluginBase")
-    assert hasattr(pyweb_template, "Settings")
-    assert hasattr(pyweb_template, "app")
+    assert hasattr(cndb, "PluginBase")
+    assert hasattr(cndb, "Settings")
+    assert hasattr(cndb, "app")
 
 
 def test_schemas_and_services_are_importable() -> None:

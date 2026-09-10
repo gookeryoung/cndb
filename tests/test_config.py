@@ -7,13 +7,13 @@ from unittest.mock import patch
 
 import pytest
 
-from pyweb_template.core.config import BASE_DIR, Settings, _get_version
+from cndb.core.config import BASE_DIR, Settings, _get_version
 
 
 def test_defaults() -> None:
     """默认值应符合预期."""
     s = Settings()
-    assert s.APP_NAME == "pyweb_template"
+    assert s.APP_NAME == "cndb"
     assert s.DEBUG is True
     assert s.API_V1_PREFIX == "/api/v1"
     assert s.AUTH_ENABLED is False
@@ -22,7 +22,7 @@ def test_defaults() -> None:
 def test_get_version_pkg_installed() -> None:
     """包已安装时应返回 importlib.metadata.version."""
     try:
-        expected = importlib.metadata.version("pyweb_template")
+        expected = importlib.metadata.version("cndb")
     except importlib.metadata.PackageNotFoundError:
         pytest.skip("包未安装，跳过")
     assert _get_version() == expected
@@ -32,7 +32,7 @@ def test_get_version_fallback_when_not_installed() -> None:
     """包未安装时 _get_version 应返回 fallback 值."""
 
     def raise_pkg_not_found(_name: str) -> str:
-        raise importlib.metadata.PackageNotFoundError("pyweb_template")
+        raise importlib.metadata.PackageNotFoundError("cndb")
 
     with patch.object(importlib.metadata, "version", side_effect=raise_pkg_not_found):
         v = _get_version()
@@ -65,7 +65,7 @@ def test_version_is_str() -> None:
 
 def test_find_project_root_falls_back_when_no_pyproject() -> None:
     """找不到 pyproject.toml 时应回退到 src 的上一级."""
-    from pyweb_template.core import config as config_module
+    from cndb.core import config as config_module
 
     with patch.object(config_module.Path, "is_file", return_value=False):
         # 直接调私有函数，验证兜底返回值

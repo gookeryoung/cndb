@@ -1,4 +1,4 @@
-pyweb_template
+cndb
 ==============
 
 Template for python web apps.
@@ -20,13 +20,13 @@ Template for python web apps.。
 
 .. code-block:: bash
 
-   pip install pyweb_template
+   pip install cndb
 
 或使用 uv_:
 
 .. code-block:: bash
 
-   uv add pyweb_template
+   uv add cndb
 
 .. _uv: https://docs.astral.sh/uv/
 
@@ -35,7 +35,7 @@ Template for python web apps.。
 
 .. code-block:: python
 
-   import pyweb_template
+   import cndb
 
    # TODO: 添加使用示例
 
