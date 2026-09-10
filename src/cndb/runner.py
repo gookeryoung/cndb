@@ -28,7 +28,7 @@ def _ensure_dev_env() -> None:
     """开发命令前置检查：确认处于源码仓库."""
     if not FRONTEND_DIR.is_dir():
         print(
-            "[error] 此命令需在 cndb2 源码仓库内运行。\n"
+            "[error] 此命令需在 cndb 源码仓库内运行。\n"
             f"   未找到 frontend/ 目录（期望位置: {FRONTEND_DIR}）\n"
             "   安装版仅支持 `cndb` / `cndb serve` 启动服务器。",
             file=sys.stderr,
@@ -163,7 +163,7 @@ def main() -> None:
     """cndb CLI 入口."""
     parser = argparse.ArgumentParser(
         prog="cndb",
-        description="cndb2 - FastAPI + SQLAlchemy + Plugin 架构脚手架",
+        description="cndb - FastAPI + SQLAlchemy + Plugin 架构脚手架",
     )
     sub = parser.add_subparsers(dest="command")
 
