@@ -17,8 +17,16 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import MetaData, Table, and_, func, or_
+from sqlalchemy import MetaData, Table, and_, func, or_, select
 
+from cndb.plugins.tables.audit import (
+    ACTION_CREATE,
+    ACTION_DELETE,
+    ACTION_RESTORE,
+    ACTION_TRASH,
+    ACTION_UPDATE,
+    log_action,
+)
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.links import attach_links, clear_row_links, is_link_field, set_links
 from cndb.plugins.tables.models import DataField, DataTable
@@ -99,7 +107,7 @@ def _get_sa_table(engine: Any, table: DataTable) -> Table:
 # ── CREATE ───────────────────────────────────────────
 
 
-def create_row(  # noqa: PLR0917
+def create_row(
     engine: Any,
     table: DataTable,
     values: dict[str, Any],
@@ -120,7 +128,13 @@ def create_row(  # noqa: PLR0917
     for field, target_ids in link_values:
         set_links(engine, field, row_id, target_ids, db=db)
 
-    return get_row(engine, table, row_id, db=db)
+    row = get_row(engine, table, row_id, db=db)
+    if row is not None:
+        try:
+            log_action(db, table, ACTION_CREATE, target_id=row_id, detail=row)
+        except Exception as exc:
+            logger.debug("audit create_row 失败: %s", exc)
+    return row
 
 
 # ── READ ─────────────────────────────────────────────
@@ -190,7 +204,7 @@ def list_rows(  # noqa: PLR0913
 
     # total count
     with engine.connect() as conn:
-        count_query = sa_table.select().with_only_columns(func.count(sa_table.c.id))
+        count_query = select(func.count(sa_table.c.id))
         if where_clauses:
             count_query = count_query.where(*where_clauses)
         total = conn.execute(count_query).scalar()
@@ -212,7 +226,7 @@ def list_rows(  # noqa: PLR0913
 # ── UPDATE ───────────────────────────────────────────
 
 
-def update_row(  # noqa: PLR0917
+def update_row(
     engine: Any,
     table: DataTable,
     row_id: int,
@@ -244,7 +258,7 @@ def update_row(  # noqa: PLR0917
         else:
             # 只更新关联：先确认行存在且未软删
             existing = conn.execute(
-                sa_table.select(sa_table.c.id).where(
+                select(sa_table.c.id).where(
                     sa_table.c.id == row_id,
                     sa_table.c._trashed.is_(False),
                 )
@@ -255,13 +269,19 @@ def update_row(  # noqa: PLR0917
     for field, target_ids in link_values:
         set_links(engine, field, row_id, target_ids, db=db)
 
-    return get_row(engine, table, row_id, db=db)
+    row = get_row(engine, table, row_id, db=db)
+    if row is not None:
+        try:
+            log_action(db, table, ACTION_UPDATE, target_id=row_id, detail=row)
+        except Exception as exc:
+            logger.debug("audit update_row 失败: %s", exc)
+    return row
 
 
 # ── DELETE ───────────────────────────────────────────
 
 
-def delete_row(engine: Any, table: DataTable, row_id: int) -> bool:
+def delete_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bool:
     """硬删除单行（同步清理关联记录），返回是否成功."""
     sa_table = _get_sa_table(engine, table)
     with engine.begin() as conn:
@@ -273,6 +293,10 @@ def delete_row(engine: Any, table: DataTable, row_id: int) -> bool:
         )
         if result.rowcount > 0:
             clear_row_links(engine, table, [row_id])
+            try:
+                log_action(db, table, ACTION_DELETE, target_id=row_id)
+            except Exception as exc:
+                logger.debug("audit delete_row 失败: %s", exc)
             return True
     return False
 
@@ -280,7 +304,7 @@ def delete_row(engine: Any, table: DataTable, row_id: int) -> bool:
 # ── 软删除 / 恢复 ────────────────────────────────────
 
 
-def trash_row(engine: Any, table: DataTable, row_id: int) -> bool:
+def trash_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bool:
     """软删除（标记 _trashed=True）."""
     sa_table = _get_sa_table(engine, table)
     with engine.begin() as conn:
@@ -292,10 +316,16 @@ def trash_row(engine: Any, table: DataTable, row_id: int) -> bool:
                 _trashed_at=datetime.now(UTC),
             )
         )
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+    if ok:
+        try:
+            log_action(db, table, ACTION_TRASH, target_id=row_id)
+        except Exception as exc:
+            logger.debug("audit trash_row 失败: %s", exc)
+    return ok
 
 
-def restore_row(engine: Any, table: DataTable, row_id: int) -> bool:
+def restore_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bool:
     """从回收站恢复."""
     sa_table = _get_sa_table(engine, table)
     with engine.begin() as conn:
@@ -307,13 +337,19 @@ def restore_row(engine: Any, table: DataTable, row_id: int) -> bool:
                 _trashed_at=None,
             )
         )
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+    if ok:
+        try:
+            log_action(db, table, ACTION_RESTORE, target_id=row_id)
+        except Exception as exc:
+            logger.debug("audit restore_row 失败: %s", exc)
+    return ok
 
 
 # ── BULK ─────────────────────────────────────────────
 
 
-def bulk_create(  # noqa: PLR0917
+def bulk_create(
     engine: Any,
     table: DataTable,
     rows: list[dict[str, Any]],
@@ -340,7 +376,7 @@ def bulk_create(  # noqa: PLR0917
     return ids
 
 
-def bulk_update(  # noqa: PLR0917
+def bulk_update(
     engine: Any,
     table: DataTable,
     row_ids: list[int],
@@ -359,7 +395,7 @@ def bulk_update(  # noqa: PLR0917
         valid_ids = [
             int(r[0])
             for r in conn.execute(
-                sa_table.select(sa_table.c.id).where(
+                select(sa_table.c.id).where(
                     sa_table.c.id.in_(row_ids),
                     sa_table.c._trashed.is_(False),
                 )
@@ -387,7 +423,7 @@ def bulk_update(  # noqa: PLR0917
     return count
 
 
-def bulk_delete(engine: Any, table: DataTable, row_ids: list[int]) -> int:
+def bulk_delete(engine: Any, table: DataTable, row_ids: list[int], db: Any = None) -> int:
     """批量硬删除（同步清理关联记录），返回影响行数."""
     sa_table = _get_sa_table(engine, table)
     if not row_ids:
@@ -402,6 +438,11 @@ def bulk_delete(engine: Any, table: DataTable, row_ids: list[int]) -> int:
         count = result.rowcount
     if count > 0:
         clear_row_links(engine, table, row_ids)
+        for rid in row_ids:
+            try:
+                log_action(db, table, ACTION_DELETE, target_id=rid)
+            except Exception as exc:
+                logger.debug("audit bulk_delete 失败 row %s: %s", rid, exc)
     return count
 
 

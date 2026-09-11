@@ -51,7 +51,7 @@ def _is_link_field(table: DataTable, field_name: str) -> DataField | None:
     return None
 
 
-def _compile_link_condition(  # noqa: PLR0917
+def _compile_link_condition(
     sa_table: Table,
     field: DataField,
     field_name: str,
@@ -216,7 +216,7 @@ def compile_sorts(
 
 def count_rows(_table: DataTable, sa_table: Table, where_clauses: list[Any]) -> Any:
     """编译 COUNT 查询（由 records.list_rows 间接调用；此处提供独立入口供外部使用）."""
-    query = sa_table.select().with_only_columns(func.count(sa_table.c.id))
+    query = select(func.count(sa_table.c.id))
     if where_clauses:
         query = query.where(*where_clauses)
     return query

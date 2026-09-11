@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -12,7 +12,7 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.ddl import add_column, drop_column
 from cndb.plugins.tables.field_types import LinkFieldConfig, default_registry
-from cndb.plugins.tables.models import DataTable, DataField
+from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
 from cndb.plugins.tables.schemas import FieldCreate, FieldResponse, FieldUpdate
 from cndb.plugins.workspaces.models import WorkspaceRole
@@ -20,7 +20,7 @@ from cndb.plugins.workspaces.models import WorkspaceRole
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
 
 
-def _validate_link_config(payload_config: dict, db: Session) -> dict:
+def _validate_link_config(payload_config: dict[str, Any], db: Session) -> dict[str, Any]:
     """link 字段 config 保存期校验：target_table_id 为正整数且目标表存在."""
     try:
         cfg = LinkFieldConfig(**(payload_config or {}))

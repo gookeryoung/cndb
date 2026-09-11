@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -296,7 +297,7 @@ def get_record_references(
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
     dt = _get_table_or_404(table_id, workspace_id, db)
 
-    refs = find_back_references(db, db.get_bind(), dt, record_id)
+    refs = find_back_references(db, cast("Engine", db.get_bind()), dt, record_id)
     return {
         "references": [
             {

@@ -41,7 +41,7 @@ def link_fields(table: DataTable) -> list[DataField]:
 # ── 写入 ─────────────────────────────────────────────
 
 
-def set_links(  # noqa: PLR0917
+def set_links(
     engine: Engine,
     field: DataField,
     row_id: int,
@@ -72,6 +72,8 @@ def clear_row_links(engine: Engine, table: DataTable, row_ids: Sequence[int]) ->
     if not ids:
         return
     for field in link_fields(table):
+        if not link_table_exists(engine, field.link_table_name):
+            continue
         link_table = _get_link_sa_table(engine, field.link_table_name)
         with engine.begin() as conn:
             conn.execute(link_table.delete().where(link_table.c.row_id.in_(ids)))
@@ -88,7 +90,7 @@ def load_links(engine: Engine, field: DataField, row_ids: Sequence[int]) -> dict
     link_table = _get_link_sa_table(engine, field.link_table_name)
     with engine.connect() as conn:
         rows = conn.execute(
-            link_table.select()
+            select(link_table.c.row_id, link_table.c.target_row_id)
             .where(link_table.c.row_id.in_(ids))
             .order_by(link_table.c.id)
         ).all()
@@ -122,7 +124,7 @@ def attach_links(engine: Engine, table: DataTable, rows: list[dict[str, Any]], d
 # ── 反向引用 ─────────────────────────────────────────
 
 
-def find_back_references(  # noqa: PLR0917
+def find_back_references(
     db: Session,
     engine: Engine,
     target_table: DataTable,
@@ -147,6 +149,8 @@ def find_back_references(  # noqa: PLR0917
 
     results: list[dict[str, Any]] = []
     for field in ref_fields:
+        if not link_table_exists(engine, field.link_table_name):
+            continue
         link_table = _get_link_sa_table(engine, field.link_table_name)
         with engine.connect() as conn:
             row_id_rows = conn.execute(
@@ -173,7 +177,10 @@ def find_back_references(  # noqa: PLR0917
                     "summary": summary,
                 }
             )
-    results.sort(key=lambda item: (str(item["table_name"]), int(item["row_id"])))
+    def _sort_key(it: dict[str, Any]) -> tuple[str, int]:
+        return str(it["table_name"]), int(it["row_id"])
+
+    results.sort(key=_sort_key)
     return results
 
 
@@ -231,7 +238,7 @@ def _summary_fields(table: DataTable) -> list[DataField]:
     return result
 
 
-def _target_summaries(  # noqa: PLR0917
+def _target_summaries(
     engine: Engine,
     field: DataField,
     target_ids: Sequence[int],
@@ -274,7 +281,7 @@ def _row_summaries(
             raw = db_row[offset]
             try:
                 normalized = ft.validate_value(raw, item.config) if raw is not None else None
-            except Exception:  # noqa: BLE001 - 摘要展示尽力而为
+            except Exception:
                 normalized = None
             if normalized is not None and str(normalized).strip() != "":
                 value = str(normalized)

@@ -30,7 +30,8 @@ def test_number_none_passthrough():
 
 def test_link_none_passthrough():
     ft = _ft("link")
-    assert ft.validate_value(None, {}) is None
+    # LinkFieldType None → 空列表（空关联集合，语义正确）
+    assert ft.validate_value(None, {}) == []
 
 
 def test_link_invalid_int():
