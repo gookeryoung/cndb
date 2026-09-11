@@ -84,13 +84,13 @@ def execute_import_task(db_session: Session, task_id: int) -> None:  # noqa: PLR
         engine = db_session.get_bind()
         if task.format == "json":
             assert isinstance(raw, str)
-            ids = transfer.import_rows_from_json(engine, table, raw)
+            ids = transfer.import_rows_from_json(engine, table, raw, db=db_session)
         elif task.format == "csv":
             assert isinstance(raw, str)
-            ids = transfer.import_rows_from_csv(engine, table, raw)
+            ids = transfer.import_rows_from_csv(engine, table, raw, db=db_session)
         elif task.format == "xlsx":
             assert isinstance(raw, bytes)
-            ids = transfer.import_rows_from_xlsx(engine, table, raw)
+            ids = transfer.import_rows_from_xlsx(engine, table, raw, db=db_session)
         else:
             raise ValueError(f"不支持的格式: {task.format}")
 

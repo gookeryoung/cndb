@@ -235,7 +235,7 @@ def render_report(
     table = db.get(DataTable, payload.table_id)
     if not table:
         raise HTTPException(status_code=404, detail="数据表不存在")
-    rows, _total = list_rows(db.bind, table, include_trashed=False)
+    rows, _total = list_rows(db.bind, table, include_trashed=False, db=db)
 
     records = [r.get("data", r) for r in rows]
     ctx = {"records": records, "table_name": table.name, "params": payload.params}

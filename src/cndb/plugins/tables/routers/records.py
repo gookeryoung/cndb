@@ -43,7 +43,7 @@ def create_record(
     dt = _get_table_or_404(table_id, workspace_id, db)
 
     try:
-        row = create_row(db.get_bind(), dt, payload.values)
+        row = create_row(db.get_bind(), dt, payload.values, db=db)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -76,6 +76,7 @@ def list_records(  # noqa: PLR0913, PLR0917
             limit=payload.limit,
             offset=payload.offset,
             include_trashed=include_trashed,
+            db=db,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -98,7 +99,7 @@ def get_record(
 ) -> dict[str, object]:
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
     dt = _get_table_or_404(table_id, workspace_id, db)
-    row = get_row(db.get_bind(), dt, record_id)
+    row = get_row(db.get_bind(), dt, record_id, db=db)
     if row is None:
         raise HTTPException(status_code=404, detail="行不存在")
     return row
@@ -117,7 +118,7 @@ def update_record(  # noqa: PLR0913, PLR0917
     dt = _get_table_or_404(table_id, workspace_id, db)
 
     try:
-        row = update_row(db.get_bind(), dt, record_id, payload.values)
+        row = update_row(db.get_bind(), dt, record_id, payload.values, db=db)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -160,7 +161,7 @@ def restore_record(
     ok = restore_row(db.get_bind(), dt, record_id)
     if not ok:
         raise HTTPException(status_code=404, detail="行不存在或未在回收站中")
-    row = get_row(db.get_bind(), dt, record_id)
+    row = get_row(db.get_bind(), dt, record_id, db=db)
     if row is None:  # pragma: no cover - 防御性
         raise HTTPException(status_code=500, detail="恢复后读取失败")
     return row

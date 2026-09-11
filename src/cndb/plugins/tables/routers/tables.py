@@ -237,7 +237,7 @@ def copy_table(
     if include_data:
         from cndb.plugins.tables import records as rec
 
-        rows, _ = rec.list_rows(db.get_bind(), src, include_trashed=False, limit=10000)
+        rows, _ = rec.list_rows(db.get_bind(), src, include_trashed=False, limit=10000, db=db)
         if rows:
             # 用新表的 field_name 作为 key 重建 values
             for r in rows:
@@ -246,7 +246,7 @@ def copy_table(
                     if src_f.trashed or src_f.name not in r:
                         continue
                     values[field_map[src_f.id].name] = r[src_f.name]
-                rec.create_row(db.get_bind(), dst, values)
+                rec.create_row(db.get_bind(), dst, values, db=db)
 
     return dst
 
@@ -290,63 +290,22 @@ def get_record_references(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    """查询哪些表/行通过 link 字段引用了当前行."""
-    from sqlalchemy import MetaData
+    """查询哪些表的哪些行通过 link 字段引用了当前行（跨工作区反查）."""
+    from cndb.plugins.tables.links import find_back_references
 
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
     dt = _get_table_or_404(table_id, workspace_id, db)
 
-    link_fields = (
-        db.query(DataField)
-        .filter(
-            DataField.field_type == "link",
-            DataField.trashed == False,  # noqa: E712
-        )
-        .all()
-    )
-    ref_fields = [f for f in link_fields if f.config and f.config.get("target_table_id") == dt.id]
-
-    if not ref_fields:
-        return {"references": []}
-
-    from typing import cast
-
-    from sqlalchemy.engine import Engine as _SAEngine
-
-    engine = cast(_SAEngine, db.get_bind())
-    references: list[dict[str, Any]] = []
-
-    for ref_field in ref_fields:
-        ref_table = db.get(DataTable, ref_field.table_id)
-        if ref_table is None or ref_table.trashed:
-            continue
-        try:
-            metadata = MetaData()
-            metadata.reflect(bind=engine, only=[ref_table.db_table_name])
-            sa_table = metadata.tables[ref_table.db_table_name]
-        except Exception:
-            continue
-
-        col = getattr(sa_table.c, ref_field.db_column_name, None)
-        if col is None:
-            continue
-
-        with engine.connect() as conn:
-            rows = conn.execute(
-                sa_table.select().where(
-                    col == record_id,
-                    sa_table.c._trashed.is_(False),
-                )
-            ).all()
-
-        for r in rows:
-            references.append(
-                {
-                    "table_id": ref_table.id,
-                    "table_name": ref_table.name,
-                    "record_id": r.id,
-                    "link_field": ref_field.name,
-                }
-            )
-
-    return {"references": references}
+    refs = find_back_references(db, db.get_bind(), dt, record_id)
+    return {
+        "references": [
+            {
+                "table_id": item["table_id"],
+                "table_name": item["table_name"],
+                "record_id": item["row_id"],
+                "link_field": item["field_name"],
+                "summary": item["summary"],
+            }
+            for item in refs
+        ]
+    }

@@ -19,6 +19,7 @@ from sqlalchemy import (
     Integer,
     MetaData,
     Table,
+    UniqueConstraint,
     create_engine,
     inspect,
     text,
@@ -71,6 +72,8 @@ def build_sa_table(
         if ft is None:
             logger.warning("未知字段类型 %s，跳过字段 %s", f.field_type, f.name)
             continue
+        if not ft.has_physical_column:
+            continue
         col = ft.make_column(f.db_column_name, nullable=not f.required)
         cols.append(col)
 
@@ -100,22 +103,25 @@ def table_exists(engine: Any, db_table_name: str) -> bool:
 
 
 def create_table(engine: Any, table: DataTable) -> None:
-    """在数据库中创建物理表（幂等：已存在则跳过）."""
+    """在数据库中创建物理表（幂等：已存在则跳过），link 字段同步创建关联表."""
     if table_exists(engine, table.db_table_name):
         logger.debug("物理表已存在，跳过 CREATE TABLE: %s", table.db_table_name)
-        return
+    else:
+        metadata = MetaData()
+        sa_table = build_sa_table(metadata, table)
+        metadata.create_all(engine)
+        logger.info("物理表已创建: %s（%d 个字段）", table.db_table_name, len(sa_table.columns) - 1)
 
-    metadata = MetaData()
-    sa_table = build_sa_table(metadata, table)
-    metadata.create_all(engine)
-    logger.info("物理表已创建: %s（%d 个字段）", table.db_table_name, len(sa_table.columns) - 1)
+    for field in table.active_fields():
+        if field.field_type == "link":
+            create_link_table(engine, field)
 
 
 # ── ALTER TABLE: ADD COLUMN ─────────────────────────
 
 
 def add_column(engine: Any, table: DataTable, field: DataField) -> None:
-    """为物理表新增一列.
+    """为物理表新增一列；link 字段改为创建关联物理表.
 
     策略：
     - PostgreSQL 等：直接 ALTER TABLE ADD COLUMN
@@ -125,6 +131,10 @@ def add_column(engine: Any, table: DataTable, field: DataField) -> None:
     ft = default_registry.get(field.field_type)
     if ft is None:
         raise ValueError(f"未知字段类型: {field.field_type}")
+
+    if not ft.has_physical_column:
+        create_link_table(engine, field)
+        return
 
     col = ft.make_column(field.db_column_name, nullable=not field.required)
 
@@ -145,17 +155,49 @@ def add_column(engine: Any, table: DataTable, field: DataField) -> None:
 
 
 def drop_column(engine: Any, table: DataTable, field: DataField) -> None:
-    """从物理表删除一列.
+    """从物理表删除一列；link 字段改为删除关联物理表.
 
     SQLite 兼容策略：
     - SQLite 3.35+ 支持 ALTER TABLE DROP COLUMN，直接用
     - 更老版本：需要重建表（读取现有 schema → 建新表 → 迁移数据 → 删旧表 → 重命名）
       此函数暂只支持 3.35+，低版本场景由上游捕获异常后升级驱动处理
     """
+    ft = default_registry.get(field.field_type)
+    if ft is not None and not ft.has_physical_column:
+        drop_link_table(engine, field)
+        return
+
     sql = f'ALTER TABLE "{table.db_table_name}" DROP COLUMN "{field.db_column_name}"'
     with engine.begin() as conn:
         conn.execute(text(sql))
     logger.info("物理表 %s 删除列: %s", table.db_table_name, field.db_column_name)
+
+
+# ── 关联物理表（link 字段的多对多存储） ───────────────
+
+
+def create_link_table(engine: Any, field: DataField) -> None:
+    """创建关联字段的关联物理表：(row_id, target_row_id) 多对多，唯一约束防重复关联."""
+    name = field.link_table_name
+    if table_exists(engine, name):
+        logger.debug("关联物理表已存在，跳过创建: %s", name)
+        return
+    metadata = MetaData()
+    Table(
+        name,
+        metadata,
+        Column("id", Integer, primary_key=True, autoincrement=True),
+        Column("row_id", Integer, nullable=False, index=True),
+        Column("target_row_id", Integer, nullable=False, index=True),
+        UniqueConstraint("row_id", "target_row_id", name=f"uniq_{name}"),
+    )
+    metadata.create_all(engine)
+    logger.info("关联物理表已创建: %s（字段 %s）", name, field.name)
+
+
+def drop_link_table(engine: Any, field: DataField) -> None:
+    """删除关联字段的关联物理表."""
+    drop_table(engine, field.link_table_name)
 
 
 # ── DROP TABLE ───────────────────────────────────────
@@ -184,8 +226,10 @@ def get_engine(database_url: str) -> Any:
 __all__ = [
     "add_column",
     "build_sa_table",
+    "create_link_table",
     "create_table",
     "drop_column",
+    "drop_link_table",
     "drop_table",
     "get_engine",
     "table_exists",
