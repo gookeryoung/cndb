@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react'
+import React, { Suspense, lazy, useMemo, useState, useCallback } from 'react'
 import { Outlet, useNavigate, useParams, Navigate } from 'react-router-dom'
 import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
@@ -12,8 +12,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
 import { useAuth } from '@/auth/AuthContext'
 import { useResponsive } from '@/hooks/useResponsive'
-import SettingsModal from '@/pages/modals/SettingsModal'
-import MembersModal from '@/pages/modals/MembersModal'
+
+// Modal 组件 lazy import：点击打开时才加载
+const SettingsModal = lazy(() => import('@/pages/modals/SettingsModal'))
+const MembersModal = lazy(() => import('@/pages/modals/MembersModal'))
+
+function ModalFallback() {
+  return null
+}
 
 const { Header, Sider, Content } = Layout
 
@@ -179,8 +185,10 @@ export default function MainLayout() {
         </Content>
       </Layout>
 
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <MembersModal open={membersOpen} wid={wid} onClose={() => setMembersOpen(false)} />
+      <Suspense fallback={<ModalFallback />}>
+        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <MembersModal open={membersOpen} wid={wid} onClose={() => setMembersOpen(false)} />
+      </Suspense>
     </Layout>
   )
 }
