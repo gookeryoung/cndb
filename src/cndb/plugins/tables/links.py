@@ -100,7 +100,9 @@ def load_links(engine: Engine, field: DataField, row_ids: Sequence[int]) -> dict
     return mapping
 
 
-def attach_links(engine: Engine, table: DataTable, rows: list[dict[str, Any]], db: Session | None = None) -> list[dict[str, Any]]:
+def attach_links(
+    engine: Engine, table: DataTable, rows: list[dict[str, Any]], db: Session | None = None
+) -> list[dict[str, Any]]:
     """为行响应附加关联字段的摘要值；无关联字段或空结果时原样返回.
 
     db 为 None 时摘要无法解析目标行内容，回退为 "#<id>" 占位。
@@ -177,6 +179,7 @@ def find_back_references(
                     "summary": summary,
                 }
             )
+
     def _sort_key(it: dict[str, Any]) -> tuple[str, int]:
         return str(it["table_name"]), int(it["row_id"])
 

@@ -218,9 +218,7 @@ def list_rows(  # noqa: PLR0913
 
         rows = conn.execute(query).all()
 
-    return attach_links(
-        engine, table, [_row_to_dict(table, sa_table, r) for r in rows], db=db
-    ), total or 0
+    return attach_links(engine, table, [_row_to_dict(table, sa_table, r) for r in rows], db=db), total or 0
 
 
 # ── UPDATE ───────────────────────────────────────────

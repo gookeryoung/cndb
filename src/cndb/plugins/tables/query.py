@@ -83,12 +83,7 @@ def _compile_link_condition(
     if op_lower == "has_any":
         return exists(exists_base.where(link_table.c.target_row_id.in_([int(i) for i in ids])))
     # has_all：逐 id EXISTS 后 AND 组合
-    return and_(
-        *[
-            exists(exists_base.where(link_table.c.target_row_id == int(i)))
-            for i in ids
-        ]
-    )
+    return and_(*[exists(exists_base.where(link_table.c.target_row_id == int(i))) for i in ids])
 
 
 def _build_condition(  # noqa: PLR0911, PLR0912

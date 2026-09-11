@@ -431,6 +431,7 @@ def test_trash_field_soft_delete_and_restore(client, auth_headers, db):
 
 # ── D1 links.py 单元测试 ─────────────────────────────
 
+
 def test_is_link_field_non_link():
     """非 link 字段应返回 False."""
     from cndb.plugins.tables.models import DataField
@@ -447,9 +448,23 @@ def test_link_table_exists_unknown_engine(db_engine):
 def test_default_registry_has_all_new_types():
     """确认 15 个字段类型都已注册."""
     names = sorted(ft.name for ft in default_registry.all())
-    expected = sorted([
-        "text", "longtext", "number", "float", "boolean",
-        "date", "datetime", "select", "link", "multiselect",
-        "email", "url", "phone", "percentage", "timestamp",
-    ])
+    expected = sorted(
+        [
+            "text",
+            "longtext",
+            "number",
+            "float",
+            "boolean",
+            "date",
+            "datetime",
+            "select",
+            "link",
+            "multiselect",
+            "email",
+            "url",
+            "phone",
+            "percentage",
+            "timestamp",
+        ]
+    )
     assert names == expected

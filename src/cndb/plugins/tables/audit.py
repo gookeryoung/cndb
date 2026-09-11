@@ -66,11 +66,7 @@ def query_table_history(
 ) -> list[AuditLog]:
     """查询整张表的操作历史."""
     return (
-        db.query(AuditLog)
-        .filter(AuditLog.table_id == table_id)
-        .order_by(AuditLog.created_at.desc())
-        .limit(limit)
-        .all()
+        db.query(AuditLog).filter(AuditLog.table_id == table_id).order_by(AuditLog.created_at.desc()).limit(limit).all()
     )
 
 
@@ -84,4 +80,3 @@ __all__ = [
     "query_row_history",
     "query_table_history",
 ]
-
