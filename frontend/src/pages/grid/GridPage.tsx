@@ -1,6 +1,6 @@
 /** Grid 主应用 — 集成视图 Tab / 三种视图 / inline 编辑 / 导入导出 / 行复制. */
 
-import { useMemo, useState } from 'react'
+import { Suspense, lazy, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Row, Col, Badge, Input, Tabs, Select, Form, Switch } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
@@ -14,9 +14,15 @@ import { tableApi, recordApi, viewApi } from '@/api'
 import type { RowResponse, Field, TableDetail, View, ViewCreate } from '@/api'
 import GridCell from './components/GridCell'
 import RowDetailDrawer from './components/RowDetailDrawer'
-import FieldManager from '@/pages/modals/FieldManager'
-import ImportExportDialog from '@/pages/modals/ImportExportDialog'
 import { useResponsive } from '@/hooks/useResponsive'
+
+// Modal 组件 lazy import：点击打开时才加载
+const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
+const ImportExportDialog = lazy(() => import('@/pages/modals/ImportExportDialog'))
+
+function ModalFallback() {
+  return null
+}
 
 const { Text } = Typography
 type ViewMode = 'grid' | 'kanban' | 'gallery'
@@ -282,20 +288,22 @@ export default function GridPage() {
       {/* 抽屉 & 对话框 */}
       <RowDetailDrawer open={detailOpen} row={detailRow} fields={table?.fields || []} wid={wid} tid={tid}
         onClose={() => { setDetailOpen(false); setDetailRow(null) }} />
-      <FieldManager open={fieldMgrOpen} wid={wid} tid={tid} fields={table?.fields || []}
-        onClose={() => setFieldMgrOpen(false)}
-        onChanged={() => {
-          queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
-          queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-        }}
-      />
-      <ImportExportDialog open={importExportOpen} wid={wid} tid={tid}
-        onClose={() => setImportExportOpen(false)}
-        onImported={() => {
-          queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-          queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
-        }}
-      />
+      <Suspense fallback={<ModalFallback />}>
+        <FieldManager open={fieldMgrOpen} wid={wid} tid={tid} fields={table?.fields || []}
+          onClose={() => setFieldMgrOpen(false)}
+          onChanged={() => {
+            queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+            queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+          }}
+        />
+        <ImportExportDialog open={importExportOpen} wid={wid} tid={tid}
+          onClose={() => setImportExportOpen(false)}
+          onImported={() => {
+            queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+            queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+          }}
+        />
+      </Suspense>
       <ViewConfigDialog open={viewConfigOpen} filters={viewFilters} onClose={() => setViewConfigOpen(false)}
         onSave={(f) => { setViewFilters(f); setViewConfigOpen(false); setOffset(0) }} />
     </div>
