@@ -8,6 +8,8 @@ from cndb.plugins.tables.routers.audit import router as audit_router
 from cndb.plugins.tables.routers.bulk import router as bulk_router
 from cndb.plugins.tables.routers.comments import router as comments_router
 from cndb.plugins.tables.routers.fields import router as fields_router
+from cndb.plugins.tables.routers.graph import router as graph_router
+from cndb.plugins.tables.routers.import_csv import router as import_csv_router
 from cndb.plugins.tables.routers.permissions import router as permissions_router
 from cndb.plugins.tables.routers.public import router as public_router  # noqa: F401 — 全局公开路由，由 app.py 直接挂载
 from cndb.plugins.tables.routers.records import router as records_router
@@ -25,5 +27,7 @@ router.include_router(trash_router)
 router.include_router(bulk_router)
 router.include_router(fields_router)
 router.include_router(records_router)
+router.include_router(import_csv_router)
+router.include_router(graph_router)
 
 __all__ = ["router"]

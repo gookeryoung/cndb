@@ -10,13 +10,204 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import re
 from typing import Any
 
 from cndb.plugins.tables import records as rec
+from cndb.plugins.tables.ddl import create_table as ddl_create
 from cndb.plugins.tables.links import is_link_field
-from cndb.plugins.tables.models import DataTable
+from cndb.plugins.tables.models import DataField, DataTable
 
 logger = logging.getLogger(__name__)
+
+# ── 列类型推断正则 ──────────────────────────────────────
+
+_EMAIL_RE = re.compile(r"^[\w.+-]+@[\w-]+(\.[\w-]+)+$")
+_URL_RE = re.compile(r"^https?://[\w.-]+(?::\d+)?(?:/[\w./?#=&%+-]*)?$", re.IGNORECASE)
+_PHONE_RE = re.compile(r"^[\d+\-() ]{7,20}$")
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_ISO_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:[Z+\-]\d{2}:?\d{2})?$")
+
+
+# ── CSV 列类型推断辅助 ──────────────────────────────────
+
+
+def _is_boolean(value: str) -> bool:
+    """判断值是否属于布尔值域."""
+    low = value.strip().lower()
+    return low in ("true", "false", "yes", "no", "是", "否", "1", "0", "on", "off")
+
+
+def _is_integer(value: str) -> bool:
+    """判断是否为整数（含负数、千分位逗号）."""
+    stripped = value.strip().replace(",", "")
+    if not stripped:
+        return False
+    if stripped.startswith("-"):
+        stripped = stripped[1:]
+    if not stripped.isdigit():
+        return False
+    return not (len(stripped) >= 11 and stripped.startswith("0"))
+
+
+def _is_float(value: str) -> bool:
+    """判断是否为小数."""
+    stripped = value.strip().replace(",", "")
+    if not stripped:
+        return False
+    try:
+        float(stripped)
+        return "." in stripped or "e" in stripped.lower()
+    except ValueError:
+        return False
+
+
+def _check_phone(v: str) -> bool:
+    """判断是否为带分隔符的电话格式（+、-、() 等）."""
+    if not _PHONE_RE.match(v):
+        return False
+    # 检查是否含分隔符（非数字且非字母的特殊字符）
+    has_separator = any(c in v for c in "+-()")
+    return has_separator
+
+
+def _infer_single_value(value: str) -> str:
+    """推断单个值的类型 —— 表驱动式分支."""
+    v = value.strip()
+    if not v:
+        return "empty"
+
+    # 检查器列表：(检查函数, 结果类型)，按优先级排列
+    checks: list[tuple[Any, str]] = [
+        (_is_boolean, "boolean"),
+        (lambda x: bool(_EMAIL_RE.match(x)), "email"),
+        (lambda x: bool(_URL_RE.match(x)), "url"),
+        (_check_percentage, "percentage"),
+        (lambda x: bool(_ISO_DATETIME_RE.match(x)), "datetime"),
+        (lambda x: bool(_ISO_DATE_RE.match(x)), "date"),
+        (_check_phone, "phone"),
+        (_check_long_integer, "text"),
+        (_is_integer, "number"),
+        (_is_float, "float"),
+    ]
+    for check_fn, result_type in checks:
+        if check_fn(v):
+            return result_type
+    return "text"
+
+
+def _check_percentage(v: str) -> bool:
+    """判断是否为百分比字符串."""
+    return v.endswith("%") and (_is_float(v[:-1]) or _is_integer(v[:-1]))
+
+
+def _check_long_integer(v: str) -> bool:
+    """判断是否为长数字串且前导零（应判为 text/phone）."""
+    if not _is_integer(v):
+        return False
+    num_str = v.lstrip("-").replace(",", "")
+    return len(num_str) >= 11 and num_str.startswith("0")
+
+
+def _pick_inferred_type(type_counts: dict[str, int]) -> str:
+    """从类型计数字典中取出现最多的类型."""
+    if not type_counts:
+        return "text"
+    best_key = next(iter(type_counts))
+    best_val = type_counts[best_key]
+    for k, v in type_counts.items():
+        if v > best_val:
+            best_key, best_val = k, v
+    return best_key
+
+
+def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dict[str, Any]], int]:
+    """分析 CSV 文本，推断每列字段类型 + 空值占比 + 样本值.
+
+    Returns:
+        (columns_info, total_rows)
+    """
+    buf = io.StringIO(csv_text)
+    reader = csv.DictReader(buf)
+    fieldnames = reader.fieldnames or []
+
+    sample_data: dict[str, list[str]] = {name: [] for name in fieldnames}
+    null_counts: dict[str, int] = dict.fromkeys(fieldnames, 0)
+    total_rows = 0
+
+    for row in reader:
+        total_rows += 1
+        for name in fieldnames:
+            value = (row.get(name) or "").strip()
+            if not value:
+                null_counts[name] += 1
+            elif len(sample_data[name]) < sample_rows:
+                sample_data[name].append(value)
+
+    if total_rows == 0:
+        columns = [{"name": n, "field_type": "text", "sample_values": [], "null_ratio": 0.0} for n in fieldnames]
+        return columns, 0
+
+    columns: list[dict[str, Any]] = []
+    for name in fieldnames:
+        samples = sample_data[name]
+        null_ratio = null_counts[name] / total_rows
+
+        if not samples:
+            columns.append(
+                {"name": name, "field_type": "text", "sample_values": [], "null_ratio": round(null_ratio, 4)}
+            )
+            continue
+
+        type_counts: dict[str, int] = {}
+        for v in samples:
+            t = _infer_single_value(v)
+            if t != "empty":
+                type_counts[t] = type_counts.get(t, 0) + 1
+
+        inferred = _pick_inferred_type(type_counts)
+        columns.append(
+            {
+                "name": name,
+                "field_type": inferred,
+                "sample_values": samples[:5],
+                "null_ratio": round(null_ratio, 4),
+            }
+        )
+
+    return columns, total_rows
+
+
+def create_table_from_csv(
+    engine: Any,
+    db: Any,
+    workspace_id: int,
+    table_name: str,
+    csv_text: str,
+) -> tuple[DataTable, list[int]]:
+    """从 CSV 自动建表 + 导入数据."""
+    columns, _total = analyze_csv_columns(csv_text)
+
+    if not columns:
+        raise ValueError("CSV 没有有效列")
+
+    dt = DataTable(workspace_id=workspace_id, name=table_name)
+    dt.ensure_db_name()
+    db.add(dt)
+    db.commit()
+    db.refresh(dt)
+
+    for i, col in enumerate(columns):
+        f = DataField(table_id=dt.id, name=col["name"], field_type=col["field_type"], order=i, config={})
+        f.ensure_db_name()
+        db.add(f)
+    db.commit()
+    db.refresh(dt)
+
+    ddl_create(engine, dt)
+
+    ids = import_rows_from_csv(engine, dt, csv_text, db=db)
+    return dt, ids
 
 
 def _serialize_link_value(value: Any) -> Any:
@@ -166,6 +357,8 @@ def guess_format_from_filename(filename: str) -> str:
 
 
 __all__ = [
+    "analyze_csv_columns",
+    "create_table_from_csv",
     "export_rows_to_csv",
     "export_rows_to_json",
     "export_rows_to_xlsx",
