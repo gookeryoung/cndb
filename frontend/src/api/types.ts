@@ -62,12 +62,26 @@ export interface FieldUpdate {
 }
 
 export type RowValues = Record<string, unknown>
+
+/** 后端返回的行数据 — 扁平 dict，业务字段直接以字段名作为 key，不再嵌套 values.
+ * 例如：{ id: 1, '姓名': '张三', '薪资': 15000, created_at: '...' }
+ */
 export interface RowResponse {
-  id: ID; values: RowValues; created_at?: string; updated_at?: string
-  created_by?: ID | null; updated_by?: ID | null
+  id: ID
+  created_at?: string
+  updated_at?: string
+  created_by?: ID | null
+  updated_by?: ID | null
+  /** 业务字段以字段名直接作为 key，类型由各字段定义决定 */
+  [fieldName: string]: unknown
 }
-export interface RowDetail extends RowResponse {}
+
+export type RowDetail = RowResponse
+
+/** 创建行的请求体：values 字段承载业务值 */
 export interface RowCreate { values: RowValues }
+
+/** 更新行的请求体：values 字段承载待更新的业务值子集 */
 export interface RowUpdate { values: RowValues }
 export interface RowListResponse { items: RowResponse[]; total: number; offset: number; limit: number }
 export interface RecordListParams {
@@ -103,7 +117,13 @@ export interface Reference {
   to_table_id: ID; to_row_id: ID; to_field_id: ID; created_at?: string
 }
 
-export interface TrashedRow { id: ID; original_id?: ID; deleted_at?: string; [key: string]: unknown }
+/** 回收站中的行 — 同样扁平结构 */
+export interface TrashedRow {
+  id: ID
+  original_id?: ID
+  deleted_at?: string
+  [fieldName: string]: unknown
+}
 export interface WorkspaceTrashResponse {
   tables: TableSummary[]; fields: Field[]; trashed_rows: TrashedRow[]
 }
