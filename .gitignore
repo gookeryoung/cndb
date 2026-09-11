@@ -39,3 +39,8 @@ docs/_build/
 src/cndb/static
 
 *.db
+
+# Playwright E2E
+frontend/.auth/
+frontend/playwright-report/
+frontend/test-results/

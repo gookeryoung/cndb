@@ -33,14 +33,48 @@ uv run cndb serve
 # 然后用 Postman / curl 或前端调用 API
 ```
 
-### Docker 部署
+### Docker 部署（生产形态）
 
 ```bash
-# 构建 + 启动
+# 复制环境变量模板（可选，覆盖默认值）
+cp .env.example .env
+
+# SQLite 快速启动：nginx:80 → app:8000
 docker compose up -d --build
 
-# 服务访问 http://localhost:8000
-# SQLite 数据持久化在 docker volume `cndb-data`
+# PostgreSQL（可选 profile）
+docker compose --profile pg up -d --build
+
+# 注入演示数据（首次启动）
+docker compose exec app uv run cndb seed
+```
+
+入口为 `http://localhost`（nginx 80 端口），动态请求转发 uvicorn，前端静态资源由后端统一提供。
+
+### 前端开发
+
+```bash
+cd frontend
+npm install
+npm run dev       # Vite dev server（默认 http://localhost:5173，代理到后端 8000）
+npm run build     # 构建到 src/cndb/static/（后端自动挂载）
+```
+
+### E2E 测试（Playwright）
+
+```bash
+# 1. 启动后端 + 注入数据
+uv run cndb serve --host 127.0.0.1 --port 8000  # 后台运行
+uv run cndb seed
+
+# 2. 安装 Playwright 浏览器
+cd frontend && npx playwright install chromium
+
+# 3. 运行测试
+npm run e2e:setup       # 一次登录 → 持久化 StorageState
+npm run e2e:smoke       # smoke 测试（登录 → Grid → 退出）
+npm run e2e:critical    # critical 测试（行 CRUD 全链路）
+npm run e2e             # 全部
 ```
 
 ## 项目结构

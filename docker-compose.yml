@@ -1,62 +1,73 @@
-version: "3.9"
+# ────────────────────────────────────────────────────────────────────
+# cndb2 部署编排 — 生产形态
+#
+# 入口为 nginx:80 → app:8000（uvicorn + FastAPI + 前端静态）
+# PostgreSQL 为可选 profile（--profile pg 启用）
+#
+# 快速开始（SQLite）:
+#   cp .env.example .env   # 可选，覆盖默认值
+#   docker compose up -d --build
+#   docker compose exec app uv run cndb seed   # 可选，注入演示数据
+#
+# PostgreSQL:
+#   docker compose --profile pg up -d --build
+#   docker compose exec app uv run cndb seed
+# ────────────────────────────────────────────────────────────────────
 
 services:
   app:
-    build: .
-    image: cndb:latest
-    container_name: cndb-app
-    command: uv run cndb serve --host 0.0.0.0 --port 8000
-    ports:
-      - "8000:8000"
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: cndb2:latest
+    container_name: cndb2-app
     environment:
-      - CNDATABASE_URL=sqlite:////data/cndb.db
+      - CNDATABASE_URL=${CNDATABASE_URL:-sqlite:////data/cndb.db}
+      - CNDATABASE_URL_PG=${CNDATABASE_URL_PG:-postgresql+psycopg://cndb:cndb_pass@postgres:5432/cndb}
     volumes:
       - cndb-data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  nginx:
+    image: docker.m.daocloud.io/library/nginx:1.27-alpine
+    container_name: cndb2-nginx
+    ports:
+      - "${CNDB_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/healthz || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
 
+  # ── PostgreSQL（可选 profile）──
   postgres:
-    image: postgres:16-alpine
-    container_name: cndb-postgres
+    image: docker.m.daocloud.io/library/postgres:16-alpine
+    container_name: cndb2-postgres
+    profiles: ["pg"]
     environment:
       POSTGRES_USER: cndb
-      POSTGRES_PASSWORD: cndb_pass
+      POSTGRES_PASSWORD: ${CNDB_DB_PASSWORD:-cndb_pass}
       POSTGRES_DB: cndb
-    ports:
-      - "5432:5432"
     volumes:
       - cndb-pg-data:/var/lib/postgresql/data
     restart: unless-stopped
-    profiles: ["pg"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cndb"]
+      test: ["CMD-SHELL", "pg_isready -U cndb -d cndb"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  app-pg:
-    build: .
-    image: cndb:latest
-    container_name: cndb-app-pg
-    command: uv run cndb serve --host 0.0.0.0 --port 8000
-    ports:
-      - "8001:8000"
-    environment:
-      - CNDATABASE_URL=postgresql+psycopg://cndb:cndb_pass@postgres:5432/cndb
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-    profiles: ["pg"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
 
 volumes:
   cndb-data:
