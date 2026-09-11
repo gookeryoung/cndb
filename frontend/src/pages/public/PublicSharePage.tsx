@@ -26,7 +26,7 @@ export default function PublicSharePage() {
         columns={data.table.fields.filter(f => !f.hidden).map(f => ({
           key: String(f.id),
           title: f.name,
-          dataIndex: (f.db_column_name || f.name) as string,
+          dataIndex: f.name,
           render: (v) => v === null || v === undefined || v === '' ? '—' : String(v),
         }))}
         dataSource={data.rows}

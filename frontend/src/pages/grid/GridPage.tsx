@@ -65,8 +65,8 @@ export default function GridPage() {
     for (const f of numericFields) {
       let sum = 0, count = 0
       for (const r of selectedRows) {
-        const col = f.db_column_name || f.name
-        const v = Number(r.values?.[col])
+        const col = f.name
+        const v = Number(r[col])
         if (!Number.isNaN(v)) { sum += v; count++ }
       }
       if (count > 0) out[f.name] = { count, sum, avg: sum / count }
@@ -156,7 +156,7 @@ function buildColumns(fields: Field[]): ColumnsType<RowResponse> {
     .map<NonNullable<ColumnsType<RowResponse>>[number]>(f => ({
       key: String(f.id),
       title: <span>{f.name}{f.required && <span style={{ color: '#ff4d4f' }}>*</span>}</span>,
-      dataIndex: (f.db_column_name || f.name) as string,
+      dataIndex: f.name,
       ellipsis: true,
       width: 160,
       render: (v: unknown, record: RowResponse) => <GridCell value={v} field={f} rowId={record.id} />,
@@ -167,10 +167,10 @@ function KanbanView({ rows, fields }: { rows: RowResponse[]; fields: Field[] }) 
   const selectField = fields.find(f => f.field_type === 'select')
   const cols: Array<{ key: string; title: string; rows: RowResponse[] }> = []
   if (selectField) {
-    const col = selectField.db_column_name || selectField.name
+    const col = selectField.name
     const groups = new Map<string, RowResponse[]>()
     for (const r of rows) {
-      const v = String(r.values?.[col] || '未分类')
+      const v = String(r[col] || '未分类')
       if (!groups.has(v)) groups.set(v, [])
       groups.get(v)!.push(r)
     }
@@ -185,7 +185,7 @@ function KanbanView({ rows, fields }: { rows: RowResponse[]; fields: Field[] }) 
           <Text strong>{c.title} <span style={{ color: '#9ca3af', fontSize: 12 }}>({c.rows.length})</span></Text>
           {c.rows.map(r => (
             <div key={r.id} style={{ padding: 12, marginBottom: 8, border: '1px solid #e5e7eb', borderRadius: 6 }}>
-              {String(r.values?.[fields.find(f => f.is_primary)?.db_column_name || 'id'] ?? r.id)}
+              {String(r[fields.find(f => f.is_primary)?.name || 'id'] ?? r.id)}
             </div>
           ))}
         </div>
@@ -196,13 +196,13 @@ function KanbanView({ rows, fields }: { rows: RowResponse[]; fields: Field[] }) 
 
 function GalleryView({ rows, fields }: { rows: RowResponse[]; fields: Field[] }) {
   const titleField = fields.find(f => f.field_type === 'text') || fields.find(f => f.is_primary)
-  const titleCol = titleField?.db_column_name || titleField?.name || 'id'
+  const titleCol = titleField?.name || 'id'
   return (
     <Row gutter={[16, 16]}>
       {rows.map(r => (
         <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
           <div style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff', cursor: 'pointer' }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>{String(r.values?.[titleCol] ?? r.id)}</div>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>{String(r[titleCol] ?? r.id)}</div>
             <div style={{ fontSize: 12, color: '#6b7280' }}>ID: {r.id}</div>
           </div>
         </Col>

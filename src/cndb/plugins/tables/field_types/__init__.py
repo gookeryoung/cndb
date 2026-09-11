@@ -155,6 +155,23 @@ class DateFieldType(FieldType):
     sqlalchemy_length = None
     config_schema = DateFieldConfig
 
+    @override
+    def validate_value(self, value: Any, _config: dict[str, Any]) -> Any:
+        if value is None or value == "":
+            return None
+        from datetime import date, datetime
+
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+                try:
+                    return datetime.strptime(value.strip(), fmt).date()
+                except ValueError:
+                    continue
+            raise ValueError(f"日期格式错误: {value}")
+        raise ValueError(f"不支持的日期类型: {type(value)}")
+
 
 class DateTimeFieldType(FieldType):
     name = "datetime"
@@ -163,6 +180,23 @@ class DateTimeFieldType(FieldType):
     sqlalchemy_type = DateTime
     sqlalchemy_length = None
     config_schema = DateFieldConfig
+
+    @override
+    def validate_value(self, value: Any, _config: dict[str, Any]) -> Any:
+        if value is None or value == "":
+            return None
+        from datetime import datetime
+
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    return datetime.strptime(value.strip(), fmt)
+                except ValueError:
+                    continue
+            raise ValueError(f"日期时间格式错误: {value}")
+        raise ValueError(f"不支持的日期时间类型: {type(value)}")
 
 
 class SelectFieldConfig(FieldTypeConfig):

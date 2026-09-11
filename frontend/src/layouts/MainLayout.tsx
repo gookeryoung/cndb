@@ -164,7 +164,7 @@ export default function MainLayout() {
           )}
         </Sider>
 
-        <Content style={{ background: '#fff', overflow: 'auto' }}>
+        <Content style={{ background: '#f5f7fa', overflow: 'auto', padding: 16 }}>
           <Outlet />
         </Content>
       </Layout>

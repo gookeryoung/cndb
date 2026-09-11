@@ -54,6 +54,49 @@ def create_record(
     return row
 
 
+@router.get("", response_model=RecordListResponse)
+def list_records_get(  # noqa: PLR0913, PLR0917
+    workspace_id: int,
+    table_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=5000),
+    filters: str | None = Query(default=None),
+    sorts: str | None = Query(default=None),
+    include_trashed: bool = Query(default=False),
+) -> RecordListResponse:
+    """GET /records - 前端友好的列表端点."""
+    import json as _json
+
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    dt = _get_table_or_404(table_id, workspace_id, db)
+
+    def _parse(s: str | None):
+        if not s:
+            return None
+        try:
+            return _json.loads(s)
+        except _json.JSONDecodeError:
+            return None
+
+    try:
+        rows, total = list_rows(
+            db.get_bind(),
+            dt,
+            filters=_parse(filters),
+            sorts=_parse(sorts),
+            limit=limit,
+            offset=offset,
+            include_trashed=include_trashed,
+            db=db,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return RecordListResponse(rows=rows, total=total, limit=limit, offset=offset)
+
+
 @router.post("/list", response_model=RecordListResponse)
 def list_records(  # noqa: PLR0913, PLR0917
     workspace_id: int,

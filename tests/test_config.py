@@ -16,7 +16,7 @@ def test_defaults() -> None:
     assert s.APP_NAME == "cndb"
     assert s.DEBUG is True
     assert s.API_V1_PREFIX == "/api/v1"
-    assert s.AUTH_ENABLED is False
+    assert s.AUTH_ENABLED is True
 
 
 def test_get_version_pkg_installed() -> None:

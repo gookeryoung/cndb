@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 # ── DataTable schemas ─────────────────────────────────
 
@@ -106,6 +106,12 @@ class RecordListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+    @computed_field
+    @property
+    def items(self) -> list[dict[str, Any]]:
+        """前端兼容别名 — items == rows."""
+        return self.rows
 
 
 class BulkDeleteRequest(BaseModel):
