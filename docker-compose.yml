@@ -19,5 +19,45 @@ services:
       timeout: 5s
       retries: 3
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: cndb-postgres
+    environment:
+      POSTGRES_USER: cndb
+      POSTGRES_PASSWORD: cndb_pass
+      POSTGRES_DB: cndb
+    ports:
+      - "5432:5432"
+    volumes:
+      - cndb-pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    profiles: ["pg"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cndb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app-pg:
+    build: .
+    image: cndb:latest
+    container_name: cndb-app-pg
+    command: uv run cndb serve --host 0.0.0.0 --port 8000
+    ports:
+      - "8001:8000"
+    environment:
+      - CNDATABASE_URL=postgresql+psycopg://cndb:cndb_pass@postgres:5432/cndb
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["pg"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
 volumes:
   cndb-data:
+  cndb-pg-data:
