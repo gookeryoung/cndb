@@ -166,4 +166,3 @@ __all__ = [
     "get_row_scope",
     "row_filter_conjunction",
 ]
-

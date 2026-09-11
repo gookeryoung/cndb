@@ -108,7 +108,9 @@ def test_clear_row_links_noop_for_missing_table(db_engine, db):
 
     dt = DataTable(name="t_empty", db_table_name="table_never_exist123456")
     f = DataField(
-        name="rel", field_type="link", db_column_name="field_never_exist",
+        name="rel",
+        field_type="link",
+        db_column_name="field_never_exist",
         config={"target_table_id": 999},
     )
     dt.fields = [f]

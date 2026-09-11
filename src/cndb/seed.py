@@ -63,8 +63,12 @@ def seed(_args: argparse.Namespace) -> None:
             ]
             for idx, (fname, ftype, cfg, req) in enumerate(dept_fields):
                 f = DataField(
-                    table_id=dept_tbl.id, name=fname, field_type=ftype,
-                    config=cfg, order=idx, required=req,
+                    table_id=dept_tbl.id,
+                    name=fname,
+                    field_type=ftype,
+                    config=cfg,
+                    order=idx,
+                    required=req,
                 )
                 f.ensure_db_name()
                 db.add(f)
@@ -94,8 +98,12 @@ def seed(_args: argparse.Namespace) -> None:
             ]
             for idx, (fname, ftype, cfg, req) in enumerate(field_specs):
                 f = DataField(
-                    table_id=emp_tbl.id, name=fname, field_type=ftype,
-                    config=cfg, order=idx, required=req,
+                    table_id=emp_tbl.id,
+                    name=fname,
+                    field_type=ftype,
+                    config=cfg,
+                    order=idx,
+                    required=req,
                 )
                 f.ensure_db_name()
                 db.add(f)
@@ -111,11 +119,41 @@ def seed(_args: argparse.Namespace) -> None:
                 dept_rows = {r[dept_name_col]: r.id for r in _conn.execute(dept_sa.select()).mappings()}
 
             samples = [
-                {"姓名": "张三", "部门": [dept_rows["技术部"]], "入职日期": date(2023, 1, 15), "薪资": 15000, "是否在职": "是"},
-                {"姓名": "李四", "部门": [dept_rows["市场部"]], "入职日期": date(2022, 6, 1), "薪资": 12000, "是否在职": "是"},
-                {"姓名": "王五", "部门": [dept_rows["人事部"]], "入职日期": date(2024, 3, 20), "薪资": 10000, "是否在职": "是"},
-                {"姓名": "赵六", "部门": [dept_rows["财务部"]], "入职日期": date(2021, 11, 10), "薪资": 13000, "是否在职": "否"},
-                {"姓名": "钱七", "部门": [dept_rows["技术部"]], "入职日期": date(2023, 8, 5), "薪资": 18000, "是否在职": "是"},
+                {
+                    "姓名": "张三",
+                    "部门": [dept_rows["技术部"]],
+                    "入职日期": date(2023, 1, 15),
+                    "薪资": 15000,
+                    "是否在职": "是",
+                },
+                {
+                    "姓名": "李四",
+                    "部门": [dept_rows["市场部"]],
+                    "入职日期": date(2022, 6, 1),
+                    "薪资": 12000,
+                    "是否在职": "是",
+                },
+                {
+                    "姓名": "王五",
+                    "部门": [dept_rows["人事部"]],
+                    "入职日期": date(2024, 3, 20),
+                    "薪资": 10000,
+                    "是否在职": "是",
+                },
+                {
+                    "姓名": "赵六",
+                    "部门": [dept_rows["财务部"]],
+                    "入职日期": date(2021, 11, 10),
+                    "薪资": 13000,
+                    "是否在职": "否",
+                },
+                {
+                    "姓名": "钱七",
+                    "部门": [dept_rows["技术部"]],
+                    "入职日期": date(2023, 8, 5),
+                    "薪资": 18000,
+                    "是否在职": "是",
+                },
             ]
             for data in samples:
                 create_row(engine, emp_tbl, values=data, db=db)
@@ -125,9 +163,12 @@ def seed(_args: argparse.Namespace) -> None:
         tpl = db.query(ReportTemplate).filter_by(name="员工名册").first()
         if not tpl:
             tpl = ReportTemplate(
-                name="员工名册", description="列出所有在职员工的基本信息",
-                table_id=emp_tbl.id, output_format="docx",
-                template_content="# {{ table_name }}", parameters=[],
+                name="员工名册",
+                description="列出所有在职员工的基本信息",
+                table_id=emp_tbl.id,
+                output_format="docx",
+                template_content="# {{ table_name }}",
+                parameters=[],
             )
             db.add(tpl)
             db.commit()

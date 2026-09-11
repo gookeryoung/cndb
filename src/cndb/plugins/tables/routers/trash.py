@@ -82,9 +82,12 @@ def list_workspace_trash(
             if sa_table is None:
                 continue
             with engine.connect() as _conn:
-                count = _conn.execute(
-                    select(func.count()).select_from(sa_table).where(sa_table.c._trashed.is_(True))
-                ).scalar() or 0
+                count = (
+                    _conn.execute(
+                        select(func.count()).select_from(sa_table).where(sa_table.c._trashed.is_(True))
+                    ).scalar()
+                    or 0
+                )
             if count > 0:
                 row_counts.append({"table_id": dt.id, "table_name": dt.name, "trashed_rows": count})
         except Exception:
@@ -126,11 +129,7 @@ def restore_trashed_table(
 ) -> dict[str, Any]:
     """恢复软删的表（仅工作区管理员）."""
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
-    dt = (
-        db.query(DataTable)
-        .filter(DataTable.id == table_id, DataTable.workspace_id == workspace_id)
-        .first()
-    )
+    dt = db.query(DataTable).filter(DataTable.id == table_id, DataTable.workspace_id == workspace_id).first()
     if dt is None or not dt.trashed:
         raise HTTPException(status_code=404, detail="表不在回收站中")
 
@@ -198,9 +197,10 @@ def list_trashed_rows(  # noqa: PLR0913, PLR0917
             return {"rows": [], "total": 0}
 
         with engine.connect() as conn:
-            count = conn.execute(
-                select(func.count()).select_from(sa_table).where(sa_table.c._trashed.is_(True))
-            ).scalar() or 0
+            count = (
+                conn.execute(select(func.count()).select_from(sa_table).where(sa_table.c._trashed.is_(True))).scalar()
+                or 0
+            )
             result = conn.execute(
                 sa_table.select()
                 .where(sa_table.c._trashed.is_(True))
@@ -212,10 +212,7 @@ def list_trashed_rows(  # noqa: PLR0913, PLR0917
         from cndb.plugins.tables.records import _row_to_dict
 
         return {
-            "rows": [
-                {**_row_to_dict(dt, sa_table, r), "id": r[0]}
-                for r in result
-            ],
+            "rows": [{**_row_to_dict(dt, sa_table, r), "id": r[0]} for r in result],
             "total": count,
         }
     except Exception as exc:
