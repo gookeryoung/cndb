@@ -15,6 +15,7 @@ from cndb.plugins.tables.records import (
     delete_row,
     get_row,
     list_rows,
+    restore_row,
     trash_row,
     update_row,
 )
@@ -144,3 +145,22 @@ def delete_record(  # noqa: PLR0913, PLR0917
 
     if not ok:
         raise HTTPException(status_code=404, detail="行不存在")
+
+
+@router.post("/{record_id}/restore", status_code=status.HTTP_200_OK)
+def restore_record(
+    workspace_id: int,
+    table_id: int,
+    record_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, object]:
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
+    dt = _get_table_or_404(table_id, workspace_id, db)
+    ok = restore_row(db.get_bind(), dt, record_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="行不存在或未在回收站中")
+    row = get_row(db.get_bind(), dt, record_id)
+    if row is None:  # pragma: no cover - 防御性
+        raise HTTPException(status_code=500, detail="恢复后读取失败")
+    return row

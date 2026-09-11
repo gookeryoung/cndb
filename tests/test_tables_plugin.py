@@ -45,6 +45,7 @@ class TestDefaultRegistry:
                 "date",
                 "datetime",
                 "select",
+                "link",
                 "multiselect",
             ]
         )
@@ -73,7 +74,7 @@ class TestFieldTypeRegistry:
 
     def test_build_default(self):
         reg = build_default_registry()
-        assert len(reg.all()) == 9
+        assert len(reg.all()) == 10
 
 
 class TestTextFieldType:

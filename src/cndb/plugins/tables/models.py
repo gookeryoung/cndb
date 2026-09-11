@@ -271,12 +271,42 @@ class AuditLog(TimestampMixin, Base):
     detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+# ImportTask
+class ImportTask(TimestampMixin, Base):
+    """异步导入任务：状态机 + 进度追踪.
+
+    状态机：pending -> running -> done / failed
+    """
+
+    __tablename__ = "tables_importtask"
+    __table_args__ = {"extend_existing": True}
+
+    table_id: Mapped[int] = mapped_column(
+        ForeignKey("tables_datatable.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    format: Mapped[str] = mapped_column(String(16), nullable=False, default="json")
+    # 文件内容存为 JSON 字符串（UTF-8 编码）
+    file_content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 状态
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0-100
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    imported_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    result_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+
+
 __all__ = [
     "AuditLog",
     "DataField",
     "DataTable",
     "DataView",
     "FilterType",
+    "ImportTask",
     "RowComment",
     "TablePermission",
     "ViewType",
