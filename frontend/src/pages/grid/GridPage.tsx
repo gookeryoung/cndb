@@ -54,10 +54,26 @@ export default function GridPage() {
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
     },
   })
+  const updateRow = useMutation({
+    mutationFn: async (args: { rowId: number | string; fieldName: string; value: unknown }) => {
+      const payload: Record<string, unknown> = { [args.fieldName]: args.value }
+      return recordApi.update(wid!, tid!, args.rowId, { values: payload })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '保存失败')
+    },
+  })
 
   if (!wid || !tid) return <Empty description="无效的表 ID" style={{ padding: 48 }} />
 
-  const columns = buildColumns(table?.fields || [])
+    const columns = buildColumns(table?.fields || [],
+    updateRow.isPending
+      ? undefined
+      : (rowId, fieldName, value) => updateRow.mutateAsync({ rowId, fieldName, value }),
+  )
   const numericFields = (table?.fields || []).filter(f => ['number', 'decimal'].includes(f.field_type))
   const selectedRows = (rowList.items || []).filter(r => selectedRowKeys.includes(r.id))
   const aggregates = useMemo(() => {
@@ -151,7 +167,10 @@ export default function GridPage() {
   )
 }
 
-function buildColumns(fields: Field[]): ColumnsType<RowResponse> {
+function buildColumns(
+  fields: Field[],
+  onCellSave?: (rowId: number | string, fieldName: string, value: unknown) => Promise<void>,
+): ColumnsType<RowResponse> {
   return fields.filter(f => !f.hidden).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map<NonNullable<ColumnsType<RowResponse>>[number]>(f => ({
       key: String(f.id),
@@ -159,7 +178,14 @@ function buildColumns(fields: Field[]): ColumnsType<RowResponse> {
       dataIndex: f.name,
       ellipsis: true,
       width: 160,
-      render: (v: unknown, record: RowResponse) => <GridCell value={v} field={f} rowId={record.id} />,
+      render: (v: unknown, record: RowResponse) => (
+        <GridCell
+          value={v}
+          field={f}
+          rowId={record.id}
+          onSave={onCellSave ? (fieldName, value) => onCellSave(record.id, fieldName, value) : undefined}
+        />
+      ),
     }))
 }
 
