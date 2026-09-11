@@ -1,132 +1,177 @@
 import api from './client'
+import type {
+  LoginRequest, RegisterRequest,
+  UserResponse, ApiTokenCreate, ApiToken,
+  WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember, WorkspaceInvite,
+  TableCreate, TableUpdate, TableSummary, TableDetail,
+  RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams,
+  FieldCreate, FieldUpdate, Field,
+  ViewCreate, View,
+  WorkspaceTrashResponse, TrashedRow,
+  GraphResponse, DependencyResponse,
+  CsvAnalyzeResult, CsvImportResult,
+  PublicForm, SharedGrid,
+  HealthPingResponse, HealthReadyResponse,
+  AuditLog, Comment, Reference,
+} from './types'
 
-// ============================================================
-// 类型定义（与后端 Pydantic Schema 一一对应）
-// ============================================================
+export type {
+  ID, UserResponse, LoginRequest, RegisterRequest,
+  ApiToken, ApiTokenCreate,
+  Workspace, WorkspaceDetail, WorkspaceCreate, WorkspaceUpdate, WorkspaceRole, WorkspaceMember, WorkspaceInvite,
+  TableSummary, TableDetail, TableCreate, TableUpdate,
+  FieldType, Field, FieldCreate, FieldUpdate,
+  RowValues, RowResponse, RowDetail, RowCreate, RowUpdate, RowListResponse, RecordListParams,
+  View, ViewDetail, ViewCreate,
+  AuditLog, Comment, Reference,
+  TrashedRow, WorkspaceTrashResponse,
+  GraphNode, GraphEdge, GraphResponse, DependencyResponse,
+  CsvAnalyzeResult, CsvImportResult,
+  PublicForm, SharedGrid,
+  HealthPingResponse, HealthReadyResponse,
+  ReportInfo,
+} from './types'
 
-/** 框架健康检查响应（GET /api/health） */
-export interface HealthResponse {
-  status: string
-  version: string
-  app: string
+export const authApi = {
+  register: (data: RegisterRequest) =>
+    api.post<UserResponse>('/v1/accounts/auth/register', data).then(r => r.data),
+  login: (data: LoginRequest) =>
+    api.post<{ access_token: string; token_type: string }>('/v1/accounts/auth/login', data).then(r => r.data),
+  me: () =>
+    api.get<UserResponse>('/v1/accounts/auth/me').then(r => r.data),
 }
 
-/** 插件元信息（来自 /api/plugins） */
-export interface PluginInfo {
-  name: string
-  version: string
-  description: string
-  icon: string
+export const tokenApi = {
+  list: () => api.get<ApiToken[]>('/v1/accounts/tokens').then(r => r.data),
+  create: (data: ApiTokenCreate) =>
+    api.post<ApiToken>('/v1/accounts/tokens', data).then(r => r.data),
+  remove: (tid: number | string) =>
+    api.delete(`/v1/accounts/tokens/${tid}`).then(r => r.data),
 }
 
-/** 侧边栏导航项（后端 NavItem DTO） */
-export interface NavItem {
-  key: string
-  label: string
-  icon: string
-  path: string
-  children?: NavItem[]
+export const workspaceApi = {
+  list: () => api.get<Workspace[]>('/v1/workspaces').then(r => r.data),
+  create: (data: WorkspaceCreate) =>
+    api.post<Workspace>('/v1/workspaces', data).then(r => r.data),
+  get: (wid: number | string) =>
+    api.get<WorkspaceDetail>(`/v1/workspaces/${wid}`).then(r => r.data),
+  update: (wid: number | string, data: WorkspaceUpdate) =>
+    api.put<Workspace>(`/v1/workspaces/${wid}`, data).then(r => r.data),
+  remove: (wid: number | string) =>
+    api.delete(`/v1/workspaces/${wid}`).then(r => r.data),
+  pin: (wid: number | string) => api.post(`/v1/workspaces/${wid}/pin`).then(r => r.data),
+  unpin: (wid: number | string) => api.post(`/v1/workspaces/${wid}/unpin`).then(r => r.data),
+  members: (wid: number | string) =>
+    api.get<WorkspaceMember[]>(`/v1/workspaces/${wid}/members`).then(r => r.data),
+  invite: (wid: number | string, data: WorkspaceInvite) =>
+    api.post(`/v1/workspaces/${wid}/invite`, data).then(r => r.data),
+  setRole: (wid: number | string, uid: number | string, role: string) =>
+    api.put(`/v1/workspaces/${wid}/members/${uid}/role`, { role }).then(r => r.data),
+  kick: (wid: number | string, uid: number | string) =>
+    api.delete(`/v1/workspaces/${wid}/members/${uid}`).then(r => r.data),
 }
 
-/** APP 功能模块入口（应用中心 / Header 应用下拉共用） */
-export interface AppItem {
-  key: string
-  label: string
-  description: string
-  icon: string
-  path: string
-  /** 分类：tool=实用工具 / analysis=分析工具 / integration=集成对接 */
-  category: string
+export const tableApi = {
+  list: (wid: number | string) =>
+    api.get<TableSummary[]>(`/v1/workspaces/${wid}/tables`).then(r => r.data),
+  create: (wid: number | string, data: TableCreate) =>
+    api.post<TableDetail>(`/v1/workspaces/${wid}/tables`, data).then(r => r.data),
+  get: (wid: number | string, tid: number | string) =>
+    api.get<TableDetail>(`/v1/workspaces/${wid}/tables/${tid}`).then(r => r.data),
+  update: (wid: number | string, tid: number | string, data: TableUpdate) =>
+    api.put<TableDetail>(`/v1/workspaces/${wid}/tables/${tid}`, data).then(r => r.data),
+  remove: (wid: number | string, tid: number | string) =>
+    api.delete(`/v1/workspaces/${wid}/tables/${tid}`).then(r => r.data),
+  copy: (wid: number | string, tid: number | string) =>
+    api.post<TableDetail>(`/v1/workspaces/${wid}/tables/${tid}/copy`).then(r => r.data),
 }
 
-/** 健康检查插件 ping 响应（GET /api/v1/health/ping） */
-export interface HealthPingResponse {
-  status: string
-  timestamp: string
-  python: string
-  platform: string
+export const recordApi = {
+  list: (wid: number | string, tid: number | string, params?: RecordListParams) =>
+    api.get<RowListResponse>(`/v1/workspaces/${wid}/tables/${tid}/records`, { params }).then(r => r.data),
+  create: (wid: number | string, tid: number | string, data: RowCreate) =>
+    api.post<RowResponse>(`/v1/workspaces/${wid}/tables/${tid}/records`, data).then(r => r.data),
+  get: (wid: number | string, tid: number | string, rid: number | string) =>
+    api.get<RowResponse>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}`).then(r => r.data),
+  update: (wid: number | string, tid: number | string, rid: number | string, data: RowUpdate) =>
+    api.put<RowResponse>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}`, data).then(r => r.data),
+  remove: (wid: number | string, tid: number | string, rid: number | string) =>
+    api.delete(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}`).then(r => r.data),
+  bulkCreate: (wid: number | string, tid: number | string, rows: RowCreate[]) =>
+    api.post<Array<number | string>>(`/v1/workspaces/${wid}/tables/${tid}/bulk/create`, { rows }).then(r => r.data),
+  bulkUpdate: (wid: number | string, tid: number | string, ids: Array<number | string>, values: Record<string, unknown>) =>
+    api.post(`/v1/workspaces/${wid}/tables/${tid}/bulk/update`, { ids, values }).then(r => r.data),
+  bulkDelete: (wid: number | string, tid: number | string, ids: Array<number | string>) =>
+    api.post(`/v1/workspaces/${wid}/tables/${tid}/bulk/delete`, { ids }).then(r => r.data),
+  audit: (wid: number | string, tid: number | string, params?: { offset?: number; limit?: number }) =>
+    api.get<AuditLog[]>(`/v1/workspaces/${wid}/tables/${tid}/audit`, { params }).then(r => r.data),
+  comments: (wid: number | string, tid: number | string) =>
+    api.get<Comment[]>(`/v1/workspaces/${wid}/tables/${tid}/comments`).then(r => r.data),
+  addComment: (wid: number | string, tid: number | string, content: string) =>
+    api.post<Comment>(`/v1/workspaces/${wid}/tables/${tid}/comments`, { content }).then(r => r.data),
+  references: (wid: number | string, tid: number | string, rowId: number | string) =>
+    api.get<Reference[]>(`/v1/workspaces/${wid}/tables/${tid}/references`, { params: { row_id: rowId } }).then(r => r.data),
 }
 
-/** CRUD Demo 用户实体 */
-export interface User {
-  id: number
-  username: string
-  email: string
-  role: string
-  created_at: string
-  updated_at: string
+export const fieldApi = {
+  list: (wid: number | string, tid: number | string) =>
+    api.get<Field[]>(`/v1/workspaces/${wid}/tables/${tid}/fields`).then(r => r.data),
+  create: (wid: number | string, tid: number | string, data: FieldCreate) =>
+    api.post<Field>(`/v1/workspaces/${wid}/tables/${tid}/fields`, data).then(r => r.data),
+  update: (wid: number | string, tid: number | string, fid: number | string, data: FieldUpdate) =>
+    api.put<Field>(`/v1/workspaces/${wid}/tables/${tid}/fields/${fid}`, data).then(r => r.data),
+  remove: (wid: number | string, tid: number | string, fid: number | string) =>
+    api.delete(`/v1/workspaces/${wid}/tables/${tid}/fields/${fid}`).then(r => r.data),
 }
 
-/** 用户列表分页响应 */
-export interface UserListResponse {
-  items: User[]
-  total: number
-  offset: number
-  limit: number
+export const viewApi = {
+  list: (wid: number | string, tid: number | string) =>
+    api.get<View[]>(`/v1/workspaces/${wid}/tables/${tid}/views`).then(r => r.data),
+  create: (wid: number | string, tid: number | string, data: ViewCreate) =>
+    api.post<View>(`/v1/workspaces/${wid}/tables/${tid}/views`, data).then(r => r.data),
+  get: (wid: number | string, tid: number | string, vid: number | string) =>
+    api.get<View>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}`).then(r => r.data),
 }
 
-/** 创建用户请求体 */
-export interface UserCreatePayload {
-  username: string
-  email: string
-  role?: string
+export const trashApi = {
+  list: (wid: number | string) =>
+    api.get<WorkspaceTrashResponse>(`/v1/workspaces/${wid}/tables/trash`).then(r => r.data),
+  restoreTable: (wid: number | string, tid: number | string) =>
+    api.post(`/v1/workspaces/${wid}/tables/trash/tables/${tid}/restore`).then(r => r.data),
+  restoreField: (wid: number | string, fid: number | string) =>
+    api.post(`/v1/workspaces/${wid}/tables/trash/fields/${fid}/restore`).then(r => r.data),
+  trashRows: (wid: number | string, tid: number | string) =>
+    api.get<TrashedRow[]>(`/v1/workspaces/${wid}/tables/${tid}/trash-rows`).then(r => r.data),
+  restoreRow: (wid: number | string, tid: number | string, rid: number | string) =>
+    api.post(`/v1/workspaces/${wid}/tables/${tid}/trash-rows/${rid}/restore`).then(r => r.data),
+  purge: (wid: number | string, tid: number | string, days?: number) =>
+    api.post(`/v1/workspaces/${wid}/tables/${tid}/trash-rows/purge`, null, { params: { days } }).then(r => r.data),
 }
 
-/** 更新用户请求体（所有字段可选） */
-export interface UserUpdatePayload {
-  username?: string
-  email?: string
-  role?: string
+export const graphApi = {
+  get: (wid: number | string) =>
+    api.get<GraphResponse>(`/v1/workspaces/${wid}/graph`).then(r => r.data),
+  dependencies: (wid: number | string) =>
+    api.get<DependencyResponse>(`/v1/workspaces/${wid}/dependencies`).then(r => r.data),
 }
 
-// ============================================================
-// 系统级 API（框架元路由）
-// ============================================================
-
-export const systemApi = {
-  /** 框架健康检查 */
-  health: () => api.get<HealthResponse>('/health'),
-  /** 已加载插件列表 */
-  plugins: () => api.get<{ plugins: PluginInfo[] }>('/plugins'),
-  /** 汇总所有插件注册的侧边栏导航项 */
-  navigation: () => api.get<{ navigation: NavItem[] }>('/navigation'),
-  /** 汇总所有插件注册的 APP 功能模块入口（应用中心 + Header 应用下拉共用） */
-  apps: () => api.get<AppItem[]>('/apps'),
-  /** 内置 demo 端点清单 */
-  demos: () => api.get('/demos'),
+export const importApi = {
+  analyze: (wid: number | string, csvText: string) =>
+    api.post<CsvAnalyzeResult>(`/v1/workspaces/${wid}/tables/import-csv/analyze`, { csv_text: csvText }).then(r => r.data),
+  create: (wid: number | string, tableName: string, csvText: string) =>
+    api.post<CsvImportResult>(`/v1/workspaces/${wid}/tables/import-csv`, { table_name: tableName, csv_text: csvText }).then(r => r.data),
 }
 
-// ============================================================
-// Health 插件 API（/api/v1/health）
-// ============================================================
+export const publicApi = {
+  getForm: (slug: string) =>
+    api.get<PublicForm>(`/v1/public/form/${slug}`).then(r => r.data),
+  submitForm: (slug: string, values: Record<string, unknown>) =>
+    api.post(`/v1/public/form/${slug}`, { values }).then(r => r.data),
+  getShare: (slug: string) =>
+    api.get<SharedGrid>(`/v1/public/share/${slug}`).then(r => r.data),
+}
 
 export const healthApi = {
-  /** 存活探针（带运行环境信息） */
-  ping: () => api.get<HealthPingResponse>('/v1/health/ping'),
-  /** 就绪探针 */
-  ready: () => api.get<{ status: string }>('/v1/health/ready'),
-}
-
-// ============================================================
-// CRUD Demo 插件 API（/api/v1/crud-demo）
-// ============================================================
-
-export const crudApi = {
-  /** 分页查询用户列表 */
-  listUsers: (params?: { offset?: number; limit?: number }) =>
-    api.get<UserListResponse>('/v1/crud-demo/users', { params }),
-
-  /** 按 ID 查询单个用户 */
-  getUser: (id: number) => api.get<User>(`/v1/crud-demo/users/${id}`),
-
-  /** 创建用户 */
-  createUser: (data: UserCreatePayload) =>
-    api.post<User>('/v1/crud-demo/users', data),
-
-  /** 更新用户 */
-  updateUser: (id: number, data: UserUpdatePayload) =>
-    api.put<User>(`/v1/crud-demo/users/${id}`, data),
-
-  /** 删除用户 */
-  deleteUser: (id: number) => api.delete(`/v1/crud-demo/users/${id}`),
+  ping: () => api.get<HealthPingResponse>('/v1/health/ping').then(r => r.data),
+  ready: () => api.get<HealthReadyResponse>('/v1/health/ready').then(r => r.data),
 }
