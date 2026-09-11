@@ -18,7 +18,7 @@ interface Props {
 
 export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }: Props) {
   const queryClient = useQueryClient()
-  const [values, setValues] = useState<Record<string, unknown>>((row as Record<string, unknown>) || {})
+  const [values, setValues] = useState<Record<string, unknown>>(row || {})
   const [commentText, setCommentText] = useState('')
 
   const { data: audit = [] } = useQuery<AuditLog[]>({
@@ -51,7 +51,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
   })
 
   React.useEffect(() => {
-    if (row) setValues((row as Record<string, unknown>) || {})
+    if (row) setValues(row || {})
   }, [row])
 
   if (!row) return null
