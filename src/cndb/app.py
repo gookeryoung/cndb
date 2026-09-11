@@ -86,16 +86,50 @@ from collections.abc import Awaitable, Callable  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import Response  # noqa: E402
 
+
+def should_spa_fallback(path: str, accept_header: str) -> bool:
+    """判断是否应该对 404 请求回退 index.html.
+
+    Args:
+        path: 请求路径（如 ``"/w/1/tables"``）.
+        accept_header: HTTP Accept 头的值.
+
+    Returns:
+        ``True`` 表示应该回退到 index.html.
+    """
+    # API 路由不走前端
+    if path.startswith("/api/"):
+        return False
+    # /assets/ 下的静态资源直接返回 404，避免把不存在的 JS chunk 回成 HTML
+    if path.startswith("/assets/"):
+        return False
+    # 仅对浏览器页面请求回退（Accept 包含 text/html）
+    return "text/html" in accept_header
+
+
 _STATIC = Path(__file__).resolve().parent / "static"
 if _STATIC.is_dir():
+    # 挂载 /assets 为独立静态目录（带 hash 的产物，可长缓存）
     app.mount("/assets", StaticFiles(directory=str(_STATIC / "assets")), name="assets")
 
     @app.middleware("http")
     async def _spa_fallback(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        """SPA 路由 fallback 中间件.
+
+        仅对以下条件同时满足的 404 请求回退到 index.html：
+        1. 非 /api/ 开头（API 路由不走前端）
+        2. 非 /assets/ 开头（不存在的 chunk 文件直接返回 404，不要回 HTML）
+        3. Accept 头包含 text/html（浏览器请求页面才 fallback，JS/CSS/XHR 请求不回）
+        """
         response = await call_next(request)
-        if response.status_code == 404 and not request.url.path.startswith("/api/"):
-            fp = _STATIC / request.url.path.lstrip("/")
-            if fp.is_file():
-                return FileResponse(str(fp))
+        if response.status_code != 404:
+            return response
+        path = request.url.path
+        # 优先尝试直接命中静态文件（favicon.svg 等顶层资源）
+        fp = _STATIC / path.lstrip("/")
+        if fp.is_file():
+            return FileResponse(str(fp))
+        # 用纯函数判断是否需要 fallback
+        if should_spa_fallback(path, request.headers.get("accept", "")):
             return FileResponse(str(_STATIC / "index.html"))
         return response
