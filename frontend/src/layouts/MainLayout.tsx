@@ -1,272 +1,170 @@
-import { useState, useEffect } from 'react'
-import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import {
-  Layout,
-  Menu,
-  Typography,
-  Spin,
-  Space,
-  Button,
-  Drawer,
-  Dropdown,
-  Avatar,
-  Badge,
-} from 'antd'
-import { useQuery } from '@tanstack/react-query'
+import React, { useMemo, useState, useCallback } from 'react'
+import { Outlet, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input } from 'antd'
 import type { MenuProps } from 'antd'
-import * as Icons from '@ant-design/icons'
-import { systemApi, type NavItem } from '@/api'
+import {
+  LogoutOutlined, AppstoreOutlined, TableOutlined,
+  NodeIndexOutlined, DeleteOutlined, FileTextOutlined,
+  UserOutlined, ExclamationCircleOutlined, SearchOutlined,
+} from '@ant-design/icons'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { workspaceApi, tableApi } from '@/api'
+import { useAuth } from '@/auth/AuthContext'
+import type { Workspace, TableSummary } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
 
 const { Header, Sider, Content } = Layout
-const { Title, Text } = Typography
-
-/** 将 icon 字符串（如 "UserOutlined"）映射到 @ant-design/icons 组件 */
-function resolveIcon(name: string): React.ReactNode {
-  if (!name) return null
-  const Comp = (Icons as unknown as Record<string, React.ComponentType>)[name]
-  return Comp ? <Comp /> : null
-}
-
-/** 将后端 NavItem 数组转为 Ant Design Menu items */
-function buildMenuItems(nav: NavItem[]): MenuProps['items'] {
-  return nav.map((item) => ({
-    key: item.path || item.key,
-    icon: resolveIcon(item.icon),
-    label: item.label,
-    children: item.children?.length
-      ? item.children.map((child) => ({
-          key: child.path || child.key,
-          icon: resolveIcon(child.icon),
-          label: child.label,
-        }))
-      : undefined,
-  }))
-}
 
 export default function MainLayout() {
-  const [collapsed, setCollapsed] = useState(false)
-  const [drawerVisible, setDrawerVisible] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const { isMobile, isTablet } = useResponsive()
+  const { user, logout } = useAuth()
+  const { isMobile } = useResponsive()
+  const queryClient = useQueryClient()
+  const { wid, tid } = useParams<{ wid: string; tid?: string }>()
+  const [collapsed, setCollapsed] = useState(false)
 
-  // 移动端默认折叠侧边栏
-  useEffect(() => {
-    if (isMobile) setCollapsed(true)
-  }, [isMobile])
-
-  // 从后端动态获取插件注册的导航项
-  const { data: navItems = [], isLoading: navLoading } = useQuery({
-    queryKey: ['navigation'],
-    queryFn: () =>
-      systemApi.navigation().then((r) => r.data.navigation),
+  const { data: workspaces = [], isLoading: wsLoading } = useQuery<Workspace[]>({
+    queryKey: ['workspaces'],
+    queryFn: () => workspaceApi.list(),
   })
 
-  // 获取 APP 功能模块列表（Header 应用下拉 + 应用中心共用）
-  const { data: apps = [] } = useQuery({
-    queryKey: ['apps'],
-    queryFn: () => systemApi.apps().then((r) => r.data),
+  const { data: tables = [], isLoading: tablesLoading } = useQuery<TableSummary[]>({
+    queryKey: ['tables', wid],
+    queryFn: () => (wid ? tableApi.list(wid) : Promise.resolve([])),
+    enabled: !!wid,
   })
 
-  // 获取框架健康信息（应用名、版本）
-  const { data: healthData } = useQuery({
-    queryKey: ['health'],
-    queryFn: () => systemApi.health().then((r) => r.data),
-    refetchInterval: 60_000,
-    retry: 2,
-  })
+  const orderedTables = useMemo(
+    () => [...tables].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    [tables],
+  )
 
-  // 静态首项：仪表盘 + 健康检查（health 插件未注册导航，这里手动补充）
-  const staticItems: MenuProps['items'] = [
-    { key: '/dashboard', icon: <Icons.DashboardOutlined />, label: '仪表盘' },
-    { key: '/health', icon: <Icons.HeartOutlined />, label: '健康检查' },
-  ]
+  const currentWs = workspaces.find(w => String(w.id) === wid)
 
-  // 合并静态项与后端动态导航项
-  const allItems: MenuProps['items'] = [
-    ...staticItems,
-    ...(buildMenuItems(navItems) ?? []),
-  ]
+  const onLogout = useCallback(() => {
+    Modal.confirm({
+      title: '退出登录？',
+      icon: React.createElement(ExclamationCircleOutlined),
+      onOk: () => {
+        logout()
+        queryClient.clear()
+        navigate('/login', { replace: true })
+      },
+    })
+  }, [logout, navigate, queryClient])
 
-  // 自动展开当前路径所属的子菜单
-  const openKeys = navItems
-    .filter(
-      (item) =>
-        item.children?.some((c) => location.pathname.startsWith(c.path || '')) ||
-        (item.path && location.pathname.startsWith(item.path)),
-    )
-    .map((item) => item.path || item.key)
-
-  const onMenuClick: MenuProps['onClick'] = ({ key }) => {
-    navigate(key)
-    if (isMobile) setDrawerVisible(false)
-  }
-
-  // APP 下拉菜单（Header 右上角）
-  const appMenuItems: MenuProps['items'] = [
-    {
-      key: 'app-center',
-      icon: <Icons.AppstoreOutlined />,
-      label: '应用中心',
-      onClick: () => navigate('/apps'),
-    },
-    { type: 'divider' },
-    ...apps.map((app) => ({
-      key: app.path,
-      icon: resolveIcon(app.icon),
-      label: app.label,
-      onClick: () => navigate(app.path),
+  const workspaceMenuItems: MenuProps['items'] = [
+    { type: 'group', label: '工作区' },
+    ...workspaces.map(w => ({
+      key: `ws-${w.id}`,
+      icon: <AppstoreOutlined />,
+      label: (w.pinned ? '📌 ' : '') + w.name,
+      onClick: () => navigate(`/w/${w.id}/tables`),
     })),
   ]
 
-  // 用户下拉菜单（占位，后续接入 auth 插件时替换）
   const userMenuItems: MenuProps['items'] = [
-    {
-      key: 'user-info',
-      icon: <Icons.UserOutlined />,
-      label: '未登录',
-      disabled: true,
-    },
+    { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
+    { type: 'divider' },
+    { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: onLogout },
   ]
 
-  // 侧边栏菜单内容（Sider / Drawer 共用）
-  const MenuContent = () => (
-    <>
-      <div style={{ padding: isMobile ? 12 : 16, textAlign: 'center' }}>
-        <Title level={isMobile ? 5 : 4} style={{ color: '#fff', margin: 0 }}>
-          {healthData?.app || 'cndb'}
-        </Title>
-        {(!collapsed || isMobile) && (
-          <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: isMobile ? 10 : 12 }}>
-            FastAPI 插件模板
-          </Text>
-        )}
-      </div>
-
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        {navLoading ? (
-          <Spin style={{ display: 'block', margin: '40px auto' }} />
-        ) : (
-          <Menu
-            theme="dark"
-            mode="inline"
-            selectedKeys={[location.pathname]}
-            defaultOpenKeys={openKeys}
-            items={allItems}
-            onClick={onMenuClick}
-          />
-        )}
-      </div>
-
-      <div
-        style={{
-          padding: isMobile ? 12 : 16,
-          textAlign: 'center',
-          borderTop: '1px solid rgba(255,255,255,0.1)',
-        }}
-      >
-        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: isMobile ? 10 : 11 }}>
-          v{healthData?.version || '加载中...'}
-        </Text>
-      </div>
-    </>
-  )
+  if (!wid) {
+    if (wsLoading) {
+      return React.createElement('div', { style: { padding: 48, textAlign: 'center' } }, '加载中...')
+    }
+    if (workspaces.length === 0) {
+      return React.createElement('div', { style: { padding: 48, textAlign: 'center' } },
+        React.createElement('h2', null, '欢迎使用 cndb'),
+        React.createElement('p', { style: { color: '#6b7280' } }, '还没有任何工作区'),
+      )
+    }
+    const first = workspaces[0]
+    return <Navigate to={`/w/${first.id}/tables`} replace />
+  }
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      {/* 移动端：Drawer；桌面端：Sider */}
-      {isMobile ? (
-        <Drawer
-          placement="left"
-          open={drawerVisible}
-          onClose={() => setDrawerVisible(false)}
-          width={220}
-          styles={{ body: { background: '#001529', padding: 0 } }}
-          closable={false}
-        >
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <MenuContent />
-          </div>
-        </Drawer>
-      ) : (
-        <Sider
-          collapsible
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
-          theme="dark"
-          width={isTablet ? 180 : 220}
-          collapsedWidth={isTablet ? 60 : 80}
-        >
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <MenuContent />
-          </div>
-        </Sider>
-      )}
+      <Header style={{
+        background: '#fff', padding: '0 16px', height: 52, lineHeight: '52px',
+        display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid #e5e7eb',
+      }}>
+        <div style={{ fontWeight: 700, fontSize: 18, color: '#3b82f6', marginRight: 8, cursor: 'pointer' }}
+          onClick={() => navigate('/w')}>cndb</div>
+
+        {/* 工作区下拉 */}
+        <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
+          <Button type="text" icon={<AppstoreOutlined />}>
+            {currentWs?.name || '工作区'}
+          </Button>
+        </Dropdown>
+
+        {/* Header 导航按钮 */}
+        <Space size={4}>
+          <Button
+            type={location.pathname.includes('/graph') ? 'primary' : 'text'}
+            size="small" icon={<NodeIndexOutlined />}
+            onClick={() => navigate(`/w/${wid}/graph`)}
+          >{!isMobile && '关系图'}</Button>
+          <Button
+            type={location.pathname.includes('/trash') ? 'primary' : 'text'}
+            size="small" icon={<DeleteOutlined />}
+            onClick={() => navigate(`/w/${wid}/trash`)}
+          >{!isMobile && '回收站'}</Button>
+          <Button
+            type={location.pathname.includes('/reports') ? 'primary' : 'text'}
+            size="small" icon={<FileTextOutlined />}
+            onClick={() => navigate(`/w/${wid}/reports`)}
+          >{!isMobile && '报表'}</Button>
+        </Space>
+
+        <div style={{ marginLeft: 'auto' }}>
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+            <Space style={{ cursor: 'pointer' }}>
+              <Avatar size="small" icon={<UserOutlined />} />
+              {!isMobile && <span>{user?.username || ''}</span>}
+            </Space>
+          </Dropdown>
+        </div>
+      </Header>
 
       <Layout>
-        <Header
-          style={{
-            background: '#fff',
-            padding: isMobile ? '0 12px' : '0 24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderBottom: '1px solid #f0f0f0',
-            height: isMobile ? 44 : 48,
-            lineHeight: isMobile ? '44px' : '48px',
-          }}
+        <Sider
+          collapsible collapsed={collapsed} onCollapse={setCollapsed}
+          width={240} collapsedWidth={60}
+          style={{ background: '#fafafa', borderRight: '1px solid #e5e7eb' }}
         >
-          <Space size="small">
-            {isMobile && (
-              <Button
-                type="text"
-                icon={<Icons.MenuOutlined style={{ fontSize: 18 }} />}
-                onClick={() => setDrawerVisible(true)}
-              />
-            )}
-            <Title level={5} style={{ margin: 0, fontSize: isMobile ? 14 : 16 }}>
-              {isMobile ? healthData?.app || 'cndb' : `${healthData?.app || 'cndb'} · FastAPI 插件模板`}
-            </Title>
-          </Space>
+          <div style={{
+            padding: '12px 16px', borderBottom: '1px solid #e5e7eb',
+            display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
+          </div>
+          <div style={{ padding: '8px 16px', fontWeight: 600, color: '#6b7280', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
+            数据表 ({orderedTables.length})
+          </div>
+          {tablesLoading ? (
+            <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>加载中...</div>
+          ) : orderedTables.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+              暂无表
+            </div>
+          ) : (
+            <Menu
+              mode="inline"
+              selectedKeys={tid ? [String(tid)] : []}
+              items={orderedTables.map(t => ({
+                key: String(t.id),
+                icon: <TableOutlined />,
+                label: t.name,
+                onClick: () => navigate(`/w/${wid}/tables/${t.id}`),
+              }))}
+            />
+          )}
+        </Sider>
 
-          {/* 右上角操作区：应用下拉 + 用户菜单 */}
-          <Space size={isMobile ? 'small' : 'middle'}>
-            {/* 应用入口（桌面端显示，移动端可从侧边栏访问） */}
-            {!isMobile && (
-              <Dropdown menu={{ items: appMenuItems }} placement="bottomRight">
-                <Badge count={apps.length} size="small" offset={[-2, 2]}>
-                  <Space style={{ cursor: 'pointer' }}>
-                    <Icons.AppstoreOutlined style={{ fontSize: 16 }} />
-                    <Text style={{ fontSize: isTablet ? 12 : 14 }}>应用</Text>
-                  </Space>
-                </Badge>
-              </Dropdown>
-            )}
-
-            {/* 用户入口（占位） */}
-            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-              <Space style={{ cursor: 'pointer' }}>
-                <Avatar
-                  size={isMobile ? 'small' : 'small'}
-                  icon={<Icons.UserOutlined />}
-                />
-                {!isMobile && (
-                  <Text style={{ fontSize: isTablet ? 12 : 14 }}>未登录</Text>
-                )}
-              </Space>
-            </Dropdown>
-          </Space>
-        </Header>
-
-        <Content
-          style={{
-            padding: isMobile ? 12 : isTablet ? 16 : 24,
-            background: '#f5f5f5',
-            minHeight: 'calc(100vh - 48px)',
-            overflow: 'auto',
-          }}
-        >
+        <Content style={{ background: '#fff', overflow: 'auto' }}>
           <Outlet />
         </Content>
       </Layout>
