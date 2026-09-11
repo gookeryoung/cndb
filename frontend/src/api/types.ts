@@ -149,3 +149,21 @@ export interface HealthPingResponse { status: string; timestamp: string; python:
 export interface HealthReadyResponse { status: string }
 export interface ReportInfo { id: ID; name: string; description?: string; created_at?: string; updated_at?: string }
 
+/** 导入任务状态 */
+export type ImportTaskStatus = 'pending' | 'running' | 'done' | 'failed'
+export interface ImportTaskInfo {
+  task_id: ID; status: ImportTaskStatus; progress: number
+  filename: string; format: string
+  total_rows?: number | null; imported_rows?: number | null
+  error_message?: string | null
+  result_ids?: Array<number | string>
+  created_at?: string | null; updated_at?: string | null
+}
+
+/** 表权限 */
+export interface TablePermission {
+  hidden_fields?: string[] | null
+  row_filters?: Record<string, unknown> | null
+  comment?: string
+}
+

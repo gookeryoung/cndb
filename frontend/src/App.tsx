@@ -1,6 +1,6 @@
 /** SPA 路由配置 — 按页面 lazy import 实现代码分包. */
 
-import React, { Suspense, lazy } from 'react'
+import { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from '@/auth/AuthContext'
 import ProtectedRoute from '@/components/ProtectedRoute'
