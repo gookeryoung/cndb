@@ -283,3 +283,61 @@ def test_create_import_task_xlsx_str_content(db):
     db.delete(task)
     db.delete(dt)
     db.commit()
+
+def test_execute_import_task_invalid_json_swallows_count_error(db):
+    """无效 JSON 字符串应在估算行数阶段被静默吞掉 — 覆盖 L74-75."""
+    from cndb.plugins.tables.import_tasks import create_import_task, execute_import_task
+    from cndb.plugins.tables.models import DataTable
+
+    dt = DataTable(workspace_id=1, name="badjson_t")
+    dt.db_table_name = "table_badjson123"
+    db.add(dt)
+    db.commit()
+    db.refresh(dt)
+
+    task = create_import_task(
+        db, table_id=dt.id, user_id=None,
+        filename="bad.json", fmt="json", content="NOT-valid-JSON-at-all!!!",
+    )
+    execute_import_task(db, task.id)
+    db.refresh(task)
+    # 估算行数的 JSON 解析失败被静默吞掉 → total_rows 为 0
+    assert task.total_rows == 0
+
+    db.delete(task)
+    db.delete(dt)
+    db.commit()
+
+
+def test_execute_import_task_status_conflict_fallback(db, monkeypatch):
+    """_transition_status 失败时应回退到直接赋值 — 覆盖 L111-113."""
+    from cndb.plugins.tables import import_tasks as it
+    from cndb.plugins.tables.import_tasks import create_import_task, execute_import_task
+    from cndb.plugins.tables.models import DataTable
+
+    real = it._transition_status
+
+    def fake_transition(task, new_status):
+        if task.status == "running":
+            raise ValueError("simulate conflict")
+        return real(task, new_status)
+
+    monkeypatch.setattr(it, "_transition_status", fake_transition)
+
+    dt = DataTable(workspace_id=1, name="conflict_t")
+    dt.db_table_name = "table_conflict123"
+    db.add(dt)
+    db.commit()
+    db.refresh(dt)
+
+    task = create_import_task(
+        db, table_id=dt.id, user_id=None,
+        filename="x.json", fmt="json", content="[{\"a\":1}]",
+    )
+    execute_import_task(db, task.id)
+    db.refresh(task)
+    assert task.status == "failed"
+
+    db.delete(task)
+    db.delete(dt)
+    db.commit()
