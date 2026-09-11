@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
-
-from cndb.plugins.reports.routers.reports import router as reports_router
-
-router = APIRouter()
-router.include_router(reports_router)
+from cndb.plugins.reports.routers.reports import router
 
 __all__ = ["router"]
