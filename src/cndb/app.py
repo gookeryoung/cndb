@@ -16,9 +16,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi_offline import FastAPIOffline
 
 from cndb.core.config import settings
@@ -75,3 +78,24 @@ def list_plugins() -> dict[str, object]:
 def get_navigation() -> dict[str, object]:
     """汇总所有插件注册的侧边栏导航项."""
     return {"navigation": plugin_registry.get_all_navigation()}
+
+
+# ── 前端静态资源（Vite build 产物挂 src/cndb/static/）─────────────
+from collections.abc import Awaitable, Callable  # noqa: E402
+
+from starlette.requests import Request  # noqa: E402
+from starlette.responses import Response  # noqa: E402
+
+_STATIC = Path(__file__).resolve().parent / "static"
+if _STATIC.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_STATIC / "assets")), name="assets")
+
+    @app.middleware("http")
+    async def _spa_fallback(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        response = await call_next(request)
+        if response.status_code == 404 and not request.url.path.startswith("/api/"):
+            fp = _STATIC / request.url.path.lstrip("/")
+            if fp.is_file():
+                return FileResponse(str(fp))
+            return FileResponse(str(_STATIC / "index.html"))
+        return response
