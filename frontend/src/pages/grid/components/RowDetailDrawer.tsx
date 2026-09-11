@@ -18,7 +18,7 @@ interface Props {
 
 export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }: Props) {
   const queryClient = useQueryClient()
-  const [values, setValues] = useState<Record<string, unknown>>(row?.values || {})
+  const [values, setValues] = useState<Record<string, unknown>>((row as Record<string, unknown>) || {})
   const [commentText, setCommentText] = useState('')
 
   const { data: audit = [] } = useQuery<AuditLog[]>({
@@ -51,7 +51,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
   })
 
   React.useEffect(() => {
-    if (row) setValues(row.values || {})
+    if (row) setValues((row as Record<string, unknown>) || {})
   }, [row])
 
   if (!row) return null
@@ -66,7 +66,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
       <Title level={5}>字段值</Title>
       <Form layout="vertical">
         {fields.map(f => {
-          const col = f.db_column_name || f.name
+          const col = f.name
           return (
             <Form.Item key={String(f.id)} label={f.name} style={{ marginBottom: 12 }}>
               <Input

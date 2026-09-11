@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "cndb-dev-secret-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60 * 24  # 默认 24 小时
-    AUTH_ENABLED: bool = False  # 默认关闭，模板期不强制认证
+    AUTH_ENABLED: bool = True  # 默认开启，生产环境必须认证
 
     # ── 插件自动发现目录 ─────────────────────────────────────
     PLUGINS_AUTO_DISCOVER: bool = True

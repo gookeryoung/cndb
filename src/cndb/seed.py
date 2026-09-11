@@ -20,6 +20,7 @@ def seed(_args: argparse.Namespace) -> None:
     from cndb.plugins.tables.records import create_row
     from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
 
+    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     db = SessionLocal()
     try:
