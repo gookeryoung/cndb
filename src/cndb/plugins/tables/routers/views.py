@@ -161,6 +161,7 @@ def get_view_rows(  # noqa: PLR0913, PLR0917
         sorts=dv.sortings or None,
         limit=limit,
         offset=offset,
+        db=db,
     )
     return {"rows": rows, "total": total, "view_id": view_id}
 
@@ -196,6 +197,7 @@ def get_view_kanban(  # noqa: PLR0913, PLR0917
         filter_logic=dv.filter_type,
         sorts=dv.sortings or None,
         limit=limit,
+        db=db,
     )
     grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in rows:
@@ -245,6 +247,7 @@ def get_view_calendar(  # noqa: PLR0913, PLR0917
         filter_logic=dv.filter_type,
         sorts=sorts,
         limit=limit,
+        db=db,
     )
     return {"rows": rows, "total": total, "start_field": start_field}
 

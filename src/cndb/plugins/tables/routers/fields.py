@@ -11,13 +11,25 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.ddl import add_column, drop_column
-from cndb.plugins.tables.field_types import default_registry
-from cndb.plugins.tables.models import DataField
+from cndb.plugins.tables.field_types import LinkFieldConfig, default_registry
+from cndb.plugins.tables.models import DataTable, DataField
 from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
 from cndb.plugins.tables.schemas import FieldCreate, FieldResponse, FieldUpdate
 from cndb.plugins.workspaces.models import WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
+
+
+def _validate_link_config(payload_config: dict, db: Session) -> dict:
+    """link 字段 config 保存期校验：target_table_id 为正整数且目标表存在."""
+    try:
+        cfg = LinkFieldConfig(**(payload_config or {}))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"link 字段 config 校验失败: {exc}") from exc
+    target = db.get(DataTable, cfg.target_table_id)
+    if target is None or target.trashed:
+        raise HTTPException(status_code=400, detail=f"关联目标表不存在: {cfg.target_table_id}")
+    return cfg.model_dump(exclude={"description", "placeholder"})
 
 
 @router.post("", response_model=FieldResponse, status_code=status.HTTP_201_CREATED)
@@ -41,11 +53,15 @@ def create_field(
     if existing:
         raise HTTPException(status_code=400, detail="字段名已存在")
 
+    config = payload.config
+    if payload.field_type == "link":
+        config = _validate_link_config(payload.config, db)
+
     df = DataField(
         table_id=table_id,
         name=payload.name,
         field_type=payload.field_type,
-        config=payload.config,
+        config=config,
         required=payload.required,
         is_unique=payload.is_unique,
         default_value=payload.default_value,

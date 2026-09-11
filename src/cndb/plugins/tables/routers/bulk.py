@@ -58,7 +58,7 @@ def bulk_update_records(
         raise HTTPException(status_code=400, detail="row_ids 不能为空")
     if not values:
         raise HTTPException(status_code=400, detail="values 不能为空")
-    updated = rec.bulk_update(db.get_bind(), dt, row_ids, values)
+    updated = rec.bulk_update(db.get_bind(), dt, row_ids, values, db=db)
     return {"updated": updated}
 
 
@@ -75,7 +75,7 @@ def export_table(
 ) -> Response:
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
     dt = _get_table_or_404(table_id, workspace_id, db)
-    rows, _total = rec.list_rows(db.get_bind(), dt, limit=10000)
+    rows, _total = rec.list_rows(db.get_bind(), dt, limit=10000, db=db)
 
     fmt = format.lower()
     if fmt == "json":
