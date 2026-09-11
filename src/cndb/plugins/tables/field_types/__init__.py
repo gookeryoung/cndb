@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import re
 from typing import Any, override
 
 from pydantic import BaseModel, Field, field_validator
@@ -13,6 +14,7 @@ class FieldTypeCategory(enum.StrEnum):
     DATE = "date"
     SELECT = "select"
     LINK = "link"
+    ADVANCED = "advanced"
 
 
 class FieldTypeConfig(BaseModel):
@@ -216,6 +218,133 @@ class MultiSelectFieldType(FieldType):
         return ",".join(str(v) for v in values)
 
 
+# ── email ──────────────────────────────────────────
+
+_EMAIL_RE = re.compile(r"^[\w.+-]+@[\w-]+(\.[\w-]+)+$")
+
+
+class EmailFieldType(FieldType):
+    name = "email"
+    label = "邮箱"
+    category = FieldTypeCategory.ADVANCED
+    sqlalchemy_type = String
+    sqlalchemy_length = 255
+
+    @override
+    def validate_value(self, value: Any, _config: dict[str, Any]) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if not _EMAIL_RE.match(text):
+            raise ValueError(f"邮箱格式无效: {text!r}")
+        return text.lower()
+
+
+# ── url ────────────────────────────────────────────
+
+_URL_RE = re.compile(r"^https?://[\w.-]+(?::\d+)?(?:/[\w./?#=&%+-]*)?$", re.IGNORECASE)
+
+
+class UrlFieldType(FieldType):
+    name = "url"
+    label = "链接"
+    category = FieldTypeCategory.ADVANCED
+    sqlalchemy_type = String
+    sqlalchemy_length = 1024
+
+    @override
+    def validate_value(self, value: Any, _config: dict[str, Any]) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if not _URL_RE.match(text):
+            raise ValueError(f"URL 格式无效（需以 http:// 或 https:// 开头）: {text!r}")
+        return text
+
+
+# ── phone ──────────────────────────────────────────
+
+_PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
+
+
+class PhoneFieldType(FieldType):
+    name = "phone"
+    label = "手机号"
+    category = FieldTypeCategory.ADVANCED
+    sqlalchemy_type = String
+    sqlalchemy_length = 20
+
+    @override
+    def validate_value(self, value: Any, _config: dict[str, Any]) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if not _PHONE_RE.match(text):
+            raise ValueError(f"手机号格式无效（11 位，1 开头）: {text!r}")
+        return text
+
+
+# ── percentage ──────────────────────────────────────
+
+class PercentageFieldConfig(FieldTypeConfig):
+    decimals: int = Field(default=0, ge=0, le=5)
+
+
+class PercentageFieldType(FieldType):
+    """百分比字段 —— 存储 0.0 ~ 1.0 的浮点数."""
+
+    name = "percentage"
+    label = "百分比"
+    category = FieldTypeCategory.NUMERIC
+    sqlalchemy_type = Float
+    sqlalchemy_length = None
+    config_schema = PercentageFieldConfig
+
+    @override
+    def validate_value(self, value: Any, _config: dict[str, Any]) -> float | None:
+        if value is None:
+            return None
+        try:
+            num = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"百分比必须是数字: {value!r}") from exc
+        if not (0 <= num <= 1):
+            raise ValueError(f"百分比必须在 0~1 之间（存储比例值），收到 {num}")
+        return num
+
+
+# ── timestamp ───────────────────────────────────────
+
+class TimestampFieldType(FieldType):
+    """Unix 时间戳字段 —— 存储整数秒."""
+
+    name = "timestamp"
+    label = "时间戳"
+    category = FieldTypeCategory.DATE
+    sqlalchemy_type = Integer
+    sqlalchemy_length = None
+
+    @override
+    def validate_value(self, value: Any, _config: dict[str, Any]) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            raise ValueError("时间戳必须是整数秒")
+        try:
+            ts = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"时间戳必须是整数秒: {value!r}") from exc
+        if ts < 0 or ts > 4102444800:
+            raise ValueError(f"时间戳超出合理范围 (0~4102444800): {ts}")
+        return ts
+
+
 class FieldTypeRegistry:
     def __init__(self) -> None:
         self._types: dict[str, FieldType] = {}
@@ -288,7 +417,7 @@ class LinkFieldType(FieldType):
             return value
         text = value.strip()
         if not text:
-            return []
+            return list[int]()
         try:
             return [int(part) for part in text.split(";")]
         except ValueError as exc:
@@ -306,6 +435,11 @@ def build_default_registry() -> FieldTypeRegistry:
     reg.register(DateTimeFieldType())
     reg.register(SelectFieldType())
     reg.register(MultiSelectFieldType())
+    reg.register(EmailFieldType())
+    reg.register(UrlFieldType())
+    reg.register(PhoneFieldType())
+    reg.register(PercentageFieldType())
+    reg.register(TimestampFieldType())
     reg.register(LinkFieldType())
     return reg
 
@@ -317,6 +451,7 @@ __all__ = [
     "DateFieldConfig",
     "DateFieldType",
     "DateTimeFieldType",
+    "EmailFieldType",
     "FieldType",
     "FieldTypeCategory",
     "FieldTypeConfig",
@@ -329,9 +464,14 @@ __all__ = [
     "MultiSelectFieldType",
     "NumberFieldConfig",
     "NumberFieldType",
+    "PercentageFieldConfig",
+    "PercentageFieldType",
+    "PhoneFieldType",
     "SelectFieldConfig",
     "SelectFieldType",
     "TextFieldType",
+    "TimestampFieldType",
+    "UrlFieldType",
     "build_default_registry",
     "default_registry",
 ]

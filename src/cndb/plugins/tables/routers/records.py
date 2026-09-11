@@ -140,7 +140,7 @@ def delete_record(  # noqa: PLR0913, PLR0917
     dt = _get_table_or_404(table_id, workspace_id, db)
 
     if soft:
-        ok = trash_row(db.get_bind(), dt, record_id)
+        ok = trash_row(db.get_bind(), dt, record_id, db=db)
     else:
         ok = delete_row(db.get_bind(), dt, record_id)
 
@@ -158,7 +158,7 @@ def restore_record(
 ) -> dict[str, object]:
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     dt = _get_table_or_404(table_id, workspace_id, db)
-    ok = restore_row(db.get_bind(), dt, record_id)
+    ok = restore_row(db.get_bind(), dt, record_id, db=db)
     if not ok:
         raise HTTPException(status_code=404, detail="行不存在或未在回收站中")
     row = get_row(db.get_bind(), dt, record_id, db=db)
