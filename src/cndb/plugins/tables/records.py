@@ -6,7 +6,9 @@
 - bulk_create / bulk_update / bulk_delete（批量）
 - trash_row / restore_row（软删除/恢复）
 
-所有写入值都经过 field_types 的 validate_value 规范化后才入库.
+所有写入值都经过 field_types 的 validate_value 规范化后才入库；
+link 字段值（目标行 id 列表）不占物理列，经 _split_links 拆出后由 links 模块写入关联表，
+读取时由 links.attach_links 附加摘要列表 [{"id", "value"}].
 """
 
 from __future__ import annotations
@@ -15,9 +17,10 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import MetaData, Table, and_, or_
+from sqlalchemy import MetaData, Table, and_, func, or_
 
 from cndb.plugins.tables.field_types import default_registry
+from cndb.plugins.tables.links import attach_links, clear_row_links, is_link_field, set_links
 from cndb.plugins.tables.models import DataField, DataTable
 
 logger = logging.getLogger(__name__)
@@ -31,42 +34,51 @@ def _normalize_values(
     values: dict[str, Any],
     *,
     for_update: bool = False,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[tuple[DataField, list[int]]]]:
     """把前端传入的 {field_name: raw_value} 转为 {db_column_name: normalized_value}.
 
     - 根据 DataField.field_type 调用 validate_value 做类型强转和校验
+    - link 字段不产生物理列值，拆分为 (DataField, 目标 id 列表) 由调用方写入关联表；
+      值为 None 表示显式清空，归一为空列表
     - 跳过 None（除非 required 字段）
     - 字段不存在于 table.fields 时忽略（安全起见不报错）
+
+    返回 (物理列值, 关联值列表)。
     """
     field_map: dict[str, DataField] = {f.name: f for f in table.fields}
     result: dict[str, Any] = {}
+    link_values: list[tuple[DataField, list[int]]] = []
 
     for field_name, raw in values.items():
         f = field_map.get(field_name)
-        if f is None:
+        if f is None or f.trashed:
             logger.debug("未知字段 %s，跳过", field_name)
+            continue
+        ft = default_registry.get(f.field_type)
+        if ft is None:
+            raise ValueError(f"未知字段类型: {f.field_type}")
+        if is_link_field(f):
+            ids = ft.validate_value(raw, f.config) if raw is not None else []
+            link_values.append((f, ids))
             continue
         if raw is None:
             if f.required and not for_update:
                 raise ValueError(f"必填字段 {field_name} 不能为空")
             continue
-        ft = default_registry.get(f.field_type)
-        if ft is None:
-            raise ValueError(f"未知字段类型: {f.field_type}")
         try:
             result[f.db_column_name] = ft.validate_value(raw, f.config)
         except Exception as exc:
             raise ValueError(f"字段 {field_name}({f.field_type}) 值校验失败: {exc}") from exc
 
-    # 检查缺失的必填字段
+    # 检查缺失的必填字段（link 字段无物理列，不参与）
     if not for_update:
         for f in table.fields:
-            if f.trashed or not f.required:
+            if f.trashed or not f.required or is_link_field(f):
                 continue
             if f.db_column_name not in result:
                 raise ValueError(f"必填字段 {f.name} 不能为空")
 
-    return result
+    return result, link_values
 
 
 # ── 单表 sa.Table 获取（带缓存） ─────────────────────
@@ -87,22 +99,34 @@ def _get_sa_table(engine: Any, table: DataTable) -> Table:
 # ── CREATE ───────────────────────────────────────────
 
 
-def create_row(engine: Any, table: DataTable, values: dict[str, Any]) -> dict[str, Any] | None:
-    """创建一行，返回完整行数据（含自增 id 和默认值字段）."""
+def create_row(  # noqa: PLR0917
+    engine: Any,
+    table: DataTable,
+    values: dict[str, Any],
+    db: Any = None,
+) -> dict[str, Any] | None:
+    """创建一行，返回完整行数据（含自增 id 和默认值字段）；link 字段同步写关联表."""
     sa_table = _get_sa_table(engine, table)
-    normalized = _normalize_values(table, values)
+    normalized, link_values = _normalize_values(table, values)
 
     with engine.begin() as conn:
-        result = conn.execute(sa_table.insert().values(**normalized))
+        if normalized:
+            result = conn.execute(sa_table.insert().values(**normalized))
+        else:
+            # 行仅有 link 值（无物理列值）：显式写软删标记保证 INSERT 合法
+            result = conn.execute(sa_table.insert().values(_trashed=False))
         row_id = result.lastrowid
 
-    return get_row(engine, table, row_id)
+    for field, target_ids in link_values:
+        set_links(engine, field, row_id, target_ids, db=db)
+
+    return get_row(engine, table, row_id, db=db)
 
 
 # ── READ ─────────────────────────────────────────────
 
 
-def get_row(engine: Any, table: DataTable, row_id: int) -> dict[str, Any] | None:
+def get_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> dict[str, Any] | None:
     """按主键读取单行，返回 dict；不存在返回 None（含软删除过滤）."""
     sa_table = _get_sa_table(engine, table)
     with engine.connect() as conn:
@@ -114,7 +138,7 @@ def get_row(engine: Any, table: DataTable, row_id: int) -> dict[str, Any] | None
         ).first()
     if row is None:
         return None
-    return _row_to_dict(table, sa_table, row)
+    return attach_links(engine, table, [_row_to_dict(table, sa_table, row)], db=db)[0]
 
 
 def list_rows(  # noqa: PLR0913
@@ -127,15 +151,18 @@ def list_rows(  # noqa: PLR0913
     limit: int = 100,
     offset: int = 0,
     include_trashed: bool = False,
+    db: Any = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """列表查询，返回 (rows, total_count).
 
     Args:
-        filters: 过滤条件列表，每项 {field_name, op, value}. op 见 query.py.
+        filters: 过滤条件列表，每项 {field_name, op, value}. op 见 query.py，
+            关联字段支持 is_null/has_any/has_all.
         filter_logic: "AND" 或 "OR"，多条件组合方式.
         sorts: 排序列表，每项 {field_name, direction}，direction="asc"|"desc".
         limit / offset: 分页.
         include_trashed: 是否包含软删除行.
+        db: 元数据库会话（提供时 link 字段输出目标行摘要，否则回退 "#id"）.
     """
     from cndb.plugins.tables.query import compile_filters, compile_sorts
 
@@ -163,15 +190,10 @@ def list_rows(  # noqa: PLR0913
 
     # total count
     with engine.connect() as conn:
-        total = conn.execute(
-            sa_table.select()
-            .with_only_columns(__import__("sqlalchemy", fromlist=["func"]).func.count(sa_table.c.id))
-            .where(*where_clauses)
-            if where_clauses
-            else sa_table.select().with_only_columns(
-                __import__("sqlalchemy", fromlist=["func"]).func.count(sa_table.c.id)
-            )
-        ).scalar()
+        count_query = sa_table.select().with_only_columns(func.count(sa_table.c.id))
+        if where_clauses:
+            count_query = count_query.where(*where_clauses)
+        total = conn.execute(count_query).scalar()
 
         # 排序
         if sorts:
@@ -182,45 +204,65 @@ def list_rows(  # noqa: PLR0913
 
         rows = conn.execute(query).all()
 
-    return [_row_to_dict(table, sa_table, r) for r in rows], total or 0
+    return attach_links(
+        engine, table, [_row_to_dict(table, sa_table, r) for r in rows], db=db
+    ), total or 0
 
 
 # ── UPDATE ───────────────────────────────────────────
 
 
-def update_row(
+def update_row(  # noqa: PLR0917
     engine: Any,
     table: DataTable,
     row_id: int,
     values: dict[str, Any],
+    db: Any = None,
 ) -> dict[str, Any] | None:
-    """更新一行，返回更新后的完整数据；行不存在或已软删除返回 None."""
-    sa_table = _get_sa_table(engine, table)
-    normalized = _normalize_values(table, values, for_update=True)
+    """更新一行，返回更新后的完整数据；行不存在或已软删除返回 None.
 
-    if not normalized:
-        return get_row(engine, table, row_id)
+    仅传 link 字段（无物理列值）时同样生效；link 值为 None 表示显式清空关联.
+    """
+    sa_table = _get_sa_table(engine, table)
+    normalized, link_values = _normalize_values(table, values, for_update=True)
+
+    if not normalized and not link_values:
+        return get_row(engine, table, row_id, db=db)
 
     with engine.begin() as conn:
-        result = conn.execute(
-            sa_table.update()
-            .where(
-                sa_table.c.id == row_id,
-                sa_table.c._trashed.is_(False),
+        if normalized:
+            result = conn.execute(
+                sa_table.update()
+                .where(
+                    sa_table.c.id == row_id,
+                    sa_table.c._trashed.is_(False),
+                )
+                .values(**normalized)
             )
-            .values(**normalized)
-        )
-        if result.rowcount == 0:
-            return None
+            if result.rowcount == 0:
+                return None
+        else:
+            # 只更新关联：先确认行存在且未软删
+            existing = conn.execute(
+                sa_table.select(sa_table.c.id).where(
+                    sa_table.c.id == row_id,
+                    sa_table.c._trashed.is_(False),
+                )
+            ).first()
+            if existing is None:
+                return None
 
-    return get_row(engine, table, row_id)
+    for field, target_ids in link_values:
+        set_links(engine, field, row_id, target_ids, db=db)
+
+    return get_row(engine, table, row_id, db=db)
 
 
 # ── DELETE ───────────────────────────────────────────
 
 
 def delete_row(engine: Any, table: DataTable, row_id: int) -> bool:
-    """硬删除单行，返回是否成功."""
+    """硬删除单行（同步清理关联记录），返回是否成功."""
     sa_table = _get_sa_table(engine, table)
     with engine.begin() as conn:
         result = conn.execute(
@@ -229,7 +271,10 @@ def delete_row(engine: Any, table: DataTable, row_id: int) -> bool:
                 sa_table.c._trashed.is_(False),
             )
         )
-        return result.rowcount > 0
+        if result.rowcount > 0:
+            clear_row_links(engine, table, [row_id])
+            return True
+    return False
 
 
 # ── 软删除 / 恢复 ────────────────────────────────────
@@ -268,51 +313,85 @@ def restore_row(engine: Any, table: DataTable, row_id: int) -> bool:
 # ── BULK ─────────────────────────────────────────────
 
 
-def bulk_create(
+def bulk_create(  # noqa: PLR0917
     engine: Any,
     table: DataTable,
     rows: list[dict[str, Any]],
+    db: Any = None,
 ) -> list[int]:
-    """批量创建，返回新行 id 列表."""
+    """批量创建，返回新行 id 列表；行内 link 字段同步写关联表."""
     sa_table = _get_sa_table(engine, table)
-    normalized_list = [_normalize_values(table, r) for r in rows]
+    split_rows = [_normalize_values(table, r) for r in rows]
 
     ids: list[int] = []
     with engine.begin() as conn:
-        for values in normalized_list:
-            result = conn.execute(sa_table.insert().values(**values))
+        for values, _link_values in split_rows:
+            if values:
+                result = conn.execute(sa_table.insert().values(**values))
+            else:
+                # 行仅有 link 值（无物理列值）：显式写软删标记保证 INSERT 合法
+                result = conn.execute(sa_table.insert().values(_trashed=False))
             ids.append(result.lastrowid)
+
+    for row_id, (_values, link_values) in zip(ids, split_rows, strict=True):
+        for field, target_ids in link_values:
+            set_links(engine, field, row_id, target_ids, db=db)
 
     return ids
 
 
-def bulk_update(
+def bulk_update(  # noqa: PLR0917
     engine: Any,
     table: DataTable,
     row_ids: list[int],
     values: dict[str, Any],
+    db: Any = None,
 ) -> int:
-    """批量更新，返回影响行数."""
+    """批量更新，返回影响行数；link 字段对每行写入相同关联集合."""
     sa_table = _get_sa_table(engine, table)
-    normalized = _normalize_values(table, values, for_update=True)
-    if not normalized:
+    normalized, link_values = _normalize_values(table, values, for_update=True)
+
+    if not normalized and not link_values:
         return 0
 
-    with engine.begin() as conn:
-        result = conn.execute(
-            sa_table.update()
-            .where(
-                sa_table.c.id.in_(row_ids),
-                sa_table.c._trashed.is_(False),
+    count = 0
+    with engine.connect() as conn:
+        valid_ids = [
+            int(r[0])
+            for r in conn.execute(
+                sa_table.select(sa_table.c.id).where(
+                    sa_table.c.id.in_(row_ids),
+                    sa_table.c._trashed.is_(False),
+                )
+            ).all()
+        ]
+
+    if normalized:
+        with engine.begin() as conn:
+            result = conn.execute(
+                sa_table.update()
+                .where(
+                    sa_table.c.id.in_(valid_ids),
+                )
+                .values(**normalized)
             )
-            .values(**normalized)
-        )
-        return result.rowcount
+            count = result.rowcount
+    else:
+        count = len(valid_ids)
+
+    if valid_ids and link_values:
+        for row_id in valid_ids:
+            for field, target_ids in link_values:
+                set_links(engine, field, row_id, target_ids, db=db)
+
+    return count
 
 
 def bulk_delete(engine: Any, table: DataTable, row_ids: list[int]) -> int:
-    """批量硬删除，返回影响行数."""
+    """批量硬删除（同步清理关联记录），返回影响行数."""
     sa_table = _get_sa_table(engine, table)
+    if not row_ids:
+        return 0
     with engine.begin() as conn:
         result = conn.execute(
             sa_table.delete().where(
@@ -320,7 +399,10 @@ def bulk_delete(engine: Any, table: DataTable, row_ids: list[int]) -> int:
                 sa_table.c._trashed.is_(False),
             )
         )
-        return result.rowcount
+        count = result.rowcount
+    if count > 0:
+        clear_row_links(engine, table, row_ids)
+    return count
 
 
 # ── 内部辅助 ─────────────────────────────────────────

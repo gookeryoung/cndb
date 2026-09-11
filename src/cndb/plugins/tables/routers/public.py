@@ -42,6 +42,7 @@ def public_share_view(
         sorts=dv.sortings or None,
         limit=limit,
         offset=offset,
+        db=db,
     )
     return {
         "view": {
@@ -67,7 +68,7 @@ def public_form_submit(
     dv, dt = _get_public_view(db, slug)
     if dv.view_type != "form":
         raise HTTPException(status_code=400, detail="该视图不是表单类型")
-    row = rec.create_row(db.get_bind(), dt, payload)
+    row = rec.create_row(db.get_bind(), dt, payload, db=db)
     if row is None:
         raise HTTPException(status_code=500, detail="提交失败")
     return {"id": row.get("id"), "status": "ok"}

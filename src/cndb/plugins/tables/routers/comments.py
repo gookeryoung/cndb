@@ -57,7 +57,7 @@ def create_comment(  # noqa: PLR0913, PLR0917
 ) -> RowComment:
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
     dt = _get_table_or_404(table_id, workspace_id, db)
-    row = rec.get_row(db.get_bind(), dt, record_id)
+    row = rec.get_row(db.get_bind(), dt, record_id, db=db)
     if row is None:
         raise HTTPException(status_code=404, detail="行不存在")
     if payload.parent_id is not None:

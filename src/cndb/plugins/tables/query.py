@@ -26,14 +26,69 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import Table, and_, func, or_
+from sqlalchemy import Table, and_, exists, func, or_, select
+from sqlalchemy import column as sa_column
+from sqlalchemy import table as sa_table_fn
 
+from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
 
 logger = logging.getLogger(__name__)
 
 
 # ── 操作符表 ──────────────────────────────────────────
+
+
+def _is_link_field(table: DataTable, field_name: str) -> DataField | None:
+    """若字段为关联字段则返回字段对象，否则 None."""
+    field_map: dict[str, DataField] = {f.name: f for f in table.fields if not f.trashed}
+    f = field_map.get(field_name)
+    if f is None:
+        return None
+    ft = default_registry.get(f.field_type)
+    if ft is not None and not ft.has_physical_column:
+        return f
+    return None
+
+
+def _compile_link_condition(  # noqa: PLR0917
+    sa_table: Table,
+    field: DataField,
+    field_name: str,
+    op: str,
+    value: Any,
+) -> Any:
+    """编译关联字段的过滤条件为 EXISTS 子查询（is_null/has_any/has_all，其余拒绝）."""
+    op_lower = op.lower()
+    if op_lower not in ("is_null", "has_any", "has_all"):
+        raise ValueError(f"关联字段仅支持 is_null/has_any/has_all 过滤: {field_name}")
+
+    link_table = sa_table_fn(
+        field.link_table_name,
+        sa_column("row_id"),
+        sa_column("target_row_id"),
+    )
+    exists_base = select(1).select_from(link_table).where(link_table.c.row_id == sa_table.c.id)
+
+    if op_lower == "is_null":
+        return ~exists(exists_base)
+
+    ids = value
+    ft = default_registry.get(field.field_type)
+    if ft is not None:
+        ids = ft.parse_query_value(value, field.config)
+    if not isinstance(ids, (list, tuple)) or not ids:
+        raise ValueError(f"has_any/has_all 的值必须是非空 id 集合: {field_name}")
+
+    if op_lower == "has_any":
+        return exists(exists_base.where(link_table.c.target_row_id.in_([int(i) for i in ids])))
+    # has_all：逐 id EXISTS 后 AND 组合
+    return and_(
+        *[
+            exists(exists_base.where(link_table.c.target_row_id == int(i)))
+            for i in ids
+        ]
+    )
 
 
 def _build_condition(  # noqa: PLR0911, PLR0912
@@ -52,6 +107,12 @@ def _build_condition(  # noqa: PLR0911, PLR0912
     if f is None:
         logger.warning("未知过滤字段 %s，跳过", field_name)
         return None
+
+    link_field = _is_link_field(table, field_name)
+    if link_field is not None:
+        return _compile_link_condition(sa_table, link_field, field_name, op, value)
+    if op.lower() in ("has_any", "has_all"):
+        raise ValueError(f"has_any/has_all 仅支持关联字段: {field_name}")
 
     col = getattr(sa_table.c, f.db_column_name, None)
     if col is None:
