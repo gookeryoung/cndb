@@ -25,6 +25,7 @@ class TemplateCreate(BaseModel):
     description: str = ""
     output_format: str = "docx"
     template_content: str
+    table_id: int | None = None
     parameters: list[ParameterDef] = Field(default_factory=list)
 
 
@@ -35,6 +36,7 @@ class TemplateUpdate(BaseModel):
     description: str | None = None
     output_format: str | None = None
     template_content: str | None = None
+    table_id: int | None = None
     parameters: list[ParameterDef] | None = None
 
 
@@ -44,6 +46,7 @@ class TemplateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    table_id: int | None = None
     name: str
     description: str
     output_format: str
@@ -59,6 +62,7 @@ class TemplateListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    table_id: int | None = None
     name: str
     description: str
     output_format: str

@@ -17,7 +17,7 @@ class ReportsPlugin(PluginBase):
     version = "0.1.0"
     description = "报告模板 CRUD + Jinja2 渲染 + docx/pdf/xlsx 输出"
     icon = "FileTextOutlined"
-    route_prefix = ""
+    route_prefix = None
     direct_router = reports_router
 
     @override

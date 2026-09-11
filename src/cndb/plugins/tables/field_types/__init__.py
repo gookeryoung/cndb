@@ -236,6 +236,35 @@ class FieldTypeRegistry:
         self._types.pop(name, None)
 
 
+class LinkFieldConfig(FieldTypeConfig):
+    target_table_id: int = Field(..., description="关联的目标表 ID")
+    multiple: bool = Field(default=False, description="是否多选（暂只支持单选，预留）")
+
+
+class LinkFieldType(FieldType):
+    """关联字段类型：存储目标表某行的主键 ID."""
+
+    name = "link"
+    label = "关联"
+    category = FieldTypeCategory.LINK
+    sqlalchemy_type = Integer
+    sqlalchemy_length = None
+    config_schema = LinkFieldConfig
+
+    @override
+    def make_column(self, db_column_name: str, nullable: bool = True, default: Any = None):
+        return Column(db_column_name, Integer, nullable=nullable)
+
+    @override
+    def validate_value(self, value: Any, _config: dict[str, Any]) -> int | None:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("link 字段值必须是整数（目标行 id）") from exc
+
+
 def build_default_registry() -> FieldTypeRegistry:
     reg = FieldTypeRegistry()
     reg.register(TextFieldType())
@@ -247,6 +276,7 @@ def build_default_registry() -> FieldTypeRegistry:
     reg.register(DateTimeFieldType())
     reg.register(SelectFieldType())
     reg.register(MultiSelectFieldType())
+    reg.register(LinkFieldType())
     return reg
 
 
@@ -262,6 +292,8 @@ __all__ = [
     "FieldTypeConfig",
     "FieldTypeRegistry",
     "FloatFieldType",
+    "LinkFieldConfig",
+    "LinkFieldType",
     "LongTextFieldType",
     "MultiSelectFieldConfig",
     "MultiSelectFieldType",

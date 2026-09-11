@@ -8,7 +8,7 @@ from __future__ import annotations
 import enum
 from typing import Any
 
-from sqlalchemy import JSON, String, Text
+from sqlalchemy import JSON, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cndb.models.base import Base, TimestampMixin
@@ -36,12 +36,16 @@ class ReportTemplate(TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    output_format: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=OutputFormat.DOCX
-    )
+    output_format: Mapped[str] = mapped_column(String(16), nullable=False, default=OutputFormat.DOCX)
     template_content: Mapped[str] = mapped_column(Text, nullable=False)
     # 参数定义：[{name, type, default, required, label}]
     parameters: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    # 可选归属表：模板可绑定默认表，也可通用
+    table_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tables_datatable.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"ReportTemplate(id={self.id}, name={self.name!r}, format={self.output_format!r})"
