@@ -1,3 +1,6 @@
+/** SPA 路由配置 — 按页面 lazy import 实现代码分包. */
+
+import React, { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from '@/auth/AuthContext'
 import ProtectedRoute from '@/components/ProtectedRoute'
@@ -8,12 +11,23 @@ import LoginPage from '@/pages/auth/LoginPage'
 import RegisterPage from '@/pages/auth/RegisterPage'
 import WorkspaceList from '@/pages/workspace/WorkspaceList'
 import TablesList from '@/pages/workspace/TablesList'
-import GridPage from '@/pages/grid/GridPage'
-import GraphPage from '@/pages/graph/GraphPage'
-import TrashPanel from '@/pages/modals/TrashPanel'
-import ReportsPage from '@/pages/reports/ReportsPage'
-import PublicFormPage from '@/pages/public/PublicFormPage'
-import PublicSharePage from '@/pages/public/PublicSharePage'
+
+// 重页面 lazy load：首次进入该路由时才加载 chunk
+const GridPage = lazy(() => import('@/pages/grid/GridPage'))
+const GraphPage = lazy(() => import('@/pages/graph/GraphPage'))
+const TrashPanel = lazy(() => import('@/pages/modals/TrashPanel'))
+const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'))
+const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
+const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
+
+function PageFallback() {
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'center', alignItems: 'center',
+      height: '50vh', color: '#9ca3af', fontSize: 14,
+    }}>加载中...</div>
+  )
+}
 
 function AuthenticatedApp() {
   return (
@@ -26,16 +40,28 @@ function AuthenticatedApp() {
         <Route path="w" element={<WorkspaceList />} />
         <Route path="w/:wid" element={<Navigate to="tables" replace />} />
         <Route path="w/:wid/tables" element={<TablesList />} />
-        <Route path="w/:wid/tables/:tid" element={<GridPage />} />
-        <Route path="w/:wid/graph" element={<GraphPage />} />
-        <Route path="w/:wid/trash" element={<TrashPanel embedded />} />
-        <Route path="w/:wid/reports" element={<ReportsPage />} />
+        <Route path="w/:wid/tables/:tid" element={
+          <Suspense fallback={<PageFallback />}><GridPage /></Suspense>
+        } />
+        <Route path="w/:wid/graph" element={
+          <Suspense fallback={<PageFallback />}><GraphPage /></Suspense>
+        } />
+        <Route path="w/:wid/trash" element={
+          <Suspense fallback={<PageFallback />}><TrashPanel embedded /></Suspense>
+        } />
+        <Route path="w/:wid/reports" element={
+          <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
+        } />
       </Route>
 
       <Route path="/public" element={<PublicLayout />}>
         <Route index element={<div style={{ padding: 24 }}>公开路由</div>} />
-        <Route path="form/:slug" element={<PublicFormPage />} />
-        <Route path="share/:slug" element={<PublicSharePage />} />
+        <Route path="form/:slug" element={
+          <Suspense fallback={<PageFallback />}><PublicFormPage /></Suspense>
+        } />
+        <Route path="share/:slug" element={
+          <Suspense fallback={<PageFallback />}><PublicSharePage /></Suspense>
+        } />
       </Route>
 
       <Route path="*" element={<Navigate to="/w" replace />} />
