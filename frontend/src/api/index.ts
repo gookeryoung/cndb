@@ -13,6 +13,7 @@ import type {
   PublicForm, SharedGrid,
   HealthPingResponse, HealthReadyResponse,
   AuditLog, Comment, Reference,
+  ImportTaskInfo, TablePermission,
 } from './types'
 
 export type {
@@ -29,7 +30,7 @@ export type {
   CsvAnalyzeResult, CsvImportResult,
   PublicForm, SharedGrid,
   HealthPingResponse, HealthReadyResponse,
-  ReportInfo,
+  ReportInfo, ImportTaskStatus, ImportTaskInfo, TablePermission,
 } from './types'
 
 export const authApi = {
@@ -131,6 +132,8 @@ export const viewApi = {
     api.post<View>(`/v1/workspaces/${wid}/tables/${tid}/views`, data).then(r => r.data),
   get: (wid: number | string, tid: number | string, vid: number | string) =>
     api.get<View>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}`).then(r => r.data),
+  remove: (wid: number | string, tid: number | string, vid: number | string) =>
+    api.delete(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}`).then(r => r.data),
 }
 
 export const trashApi = {
@@ -160,6 +163,30 @@ export const importApi = {
     api.post<CsvAnalyzeResult>(`/v1/workspaces/${wid}/tables/import-csv/analyze`, { csv_text: csvText }).then(r => r.data),
   create: (wid: number | string, tableName: string, csvText: string) =>
     api.post<CsvImportResult>(`/v1/workspaces/${wid}/tables/import-csv`, { table_name: tableName, csv_text: csvText }).then(r => r.data),
+  /** 异步导入现有表（文件上传） */
+  asyncImport: (wid: number | string, tid: number | string, file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post<ImportTaskInfo>(`/v1/workspaces/${wid}/tables/${tid}/import/async`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
+  /** 轮询异步导入任务状态 */
+  getTask: (wid: number | string, tid: number | string, taskId: number | string) =>
+    api.get<ImportTaskInfo>(`/v1/workspaces/${wid}/tables/${tid}/import/async/${taskId}`).then(r => r.data),
+}
+
+export const exportApi = {
+  /** 导出为 JSON / CSV / XLSX（浏览器直接下载 blob） */
+  download: (wid: number | string, tid: number | string, format: 'json' | 'csv' | 'xlsx' = 'json') =>
+    api.get(`/v1/workspaces/${wid}/tables/${tid}/export`, { params: { format }, responseType: 'blob' }).then(r => r.data),
+}
+
+export const permissionApi = {
+  get: (wid: number | string, tid: number | string) =>
+    api.get<TablePermission>(`/v1/workspaces/${wid}/tables/${tid}/permissions`).then(r => r.data),
+  update: (wid: number | string, tid: number | string, data: TablePermission) =>
+    api.put<TablePermission>(`/v1/workspaces/${wid}/tables/${tid}/permissions`, data).then(r => r.data),
 }
 
 export const publicApi = {

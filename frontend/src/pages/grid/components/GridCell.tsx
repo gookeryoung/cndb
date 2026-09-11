@@ -10,7 +10,7 @@ interface Props {
   value: unknown
   field: Field
   rowId: number | string
-  onSave?: (fieldName: string, value: unknown) => Promise<void>
+  onSave?: (fieldName: string, value: unknown) => Promise<unknown>
 }
 
 /** 可编辑单元格：默认展示态，双击切到编辑态，回车/失焦保存 */
@@ -201,7 +201,7 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving }
               rows={4}
               autoSize={{ minRows: 2, maxRows: 6 }}
               onKeyDown={commonOnKey}
-              ref={el => { if (el) inputRef.current = el.resizableTextArea?.textArea }}
+              ref={el => { if (el) inputRef.current = el.resizableTextArea?.textArea ?? null }}
             />
           )}
           title="多行文本"
