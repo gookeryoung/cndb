@@ -1,35 +1,39 @@
 import React, { useMemo, useState, useCallback } from 'react'
-import { Outlet, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input } from 'antd'
+import { Outlet, useNavigate, useParams, Navigate } from 'react-router-dom'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
   NodeIndexOutlined, DeleteOutlined, FileTextOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
+  TeamOutlined, SettingOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
 import { useAuth } from '@/auth/AuthContext'
-import type { Workspace, TableSummary } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
+import SettingsModal from '@/pages/modals/SettingsModal'
+import MembersModal from '@/pages/modals/MembersModal'
 
 const { Header, Sider, Content } = Layout
 
 export default function MainLayout() {
   const navigate = useNavigate()
-  const location = useLocation()
+  const { wid, tid } = useParams<{ wid: string; tid?: string }>()
+  const location = window.location.pathname
   const { user, logout } = useAuth()
   const { isMobile } = useResponsive()
   const queryClient = useQueryClient()
-  const { wid, tid } = useParams<{ wid: string; tid?: string }>()
   const [collapsed, setCollapsed] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [membersOpen, setMembersOpen] = useState(false)
 
-  const { data: workspaces = [], isLoading: wsLoading } = useQuery<Workspace[]>({
+  const { data: workspaces = [], isLoading: wsLoading } = useQuery({
     queryKey: ['workspaces'],
     queryFn: () => workspaceApi.list(),
   })
 
-  const { data: tables = [], isLoading: tablesLoading } = useQuery<TableSummary[]>({
+  const { data: tables = [] } = useQuery({
     queryKey: ['tables', wid],
     queryFn: () => (wid ? tableApi.list(wid) : Promise.resolve([])),
     enabled: !!wid,
@@ -67,6 +71,8 @@ export default function MainLayout() {
   const userMenuItems: MenuProps['items'] = [
     { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
     { type: 'divider' },
+    { key: 'settings', icon: <SettingOutlined />, label: '个人设置（Token / 主题）', onClick: () => setSettingsOpen(true) },
+    { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: onLogout },
   ]
 
@@ -103,20 +109,26 @@ export default function MainLayout() {
         {/* Header 导航按钮 */}
         <Space size={4}>
           <Button
-            type={location.pathname.includes('/graph') ? 'primary' : 'text'}
+            type={location.includes('/graph') ? 'primary' : 'text'}
             size="small" icon={<NodeIndexOutlined />}
             onClick={() => navigate(`/w/${wid}/graph`)}
           >{!isMobile && '关系图'}</Button>
           <Button
-            type={location.pathname.includes('/trash') ? 'primary' : 'text'}
+            type={location.includes('/trash') ? 'primary' : 'text'}
             size="small" icon={<DeleteOutlined />}
             onClick={() => navigate(`/w/${wid}/trash`)}
           >{!isMobile && '回收站'}</Button>
           <Button
-            type={location.pathname.includes('/reports') ? 'primary' : 'text'}
+            type={location.includes('/reports') ? 'primary' : 'text'}
             size="small" icon={<FileTextOutlined />}
             onClick={() => navigate(`/w/${wid}/reports`)}
           >{!isMobile && '报表'}</Button>
+          <Tooltip title="成员管理">
+            <Button
+              type="text" size="small" icon={<TeamOutlined />}
+              onClick={() => setMembersOpen(true)}
+            />
+          </Tooltip>
         </Space>
 
         <div style={{ marginLeft: 'auto' }}>
@@ -144,9 +156,7 @@ export default function MainLayout() {
           <div style={{ padding: '8px 16px', fontWeight: 600, color: '#6b7280', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
             数据表 ({orderedTables.length})
           </div>
-          {tablesLoading ? (
-            <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>加载中...</div>
-          ) : orderedTables.length === 0 ? (
+          {tables.length === 0 ? (
             <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
               暂无表
             </div>
@@ -168,6 +178,9 @@ export default function MainLayout() {
           <Outlet />
         </Content>
       </Layout>
+
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <MembersModal open={membersOpen} wid={wid} onClose={() => setMembersOpen(false)} />
     </Layout>
   )
 }
