@@ -103,7 +103,7 @@ export interface Reference {
   to_table_id: ID; to_row_id: ID; to_field_id: ID; created_at?: string
 }
 
-export interface TrashedRow { id: ID; original_id: ID; values?: RowValues; deleted_at?: string }
+export interface TrashedRow { id: ID; original_id?: ID; deleted_at?: string; [key: string]: unknown }
 export interface WorkspaceTrashResponse {
   tables: TableSummary[]; fields: Field[]; trashed_rows: TrashedRow[]
 }

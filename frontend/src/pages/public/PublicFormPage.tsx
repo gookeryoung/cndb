@@ -40,7 +40,7 @@ export default function PublicFormPage() {
         {formInfo.fields.map(f => (
           <Form.Item
             key={String(f.id)}
-            name={f.db_column_name || f.name}
+            name={f.name}
             label={f.name}
             rules={f.required ? [{ required: true, message: `${f.name} 为必填` }] : []}
           >

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, message } from 'antd'
+import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, message } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import { useMutation } from '@tanstack/react-query'
 import { fieldApi } from '@/api'
@@ -96,12 +96,12 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             </Col>
             <Col span={12}>
               <Form.Item name="required" valuePropName="checked" label="必填">
-                <Input type="checkbox" />
+                <Checkbox />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name="hidden" valuePropName="checked" label="在视图中隐藏">
-                <Input type="checkbox" />
+                <Checkbox />
               </Form.Item>
             </Col>
           </Row>
