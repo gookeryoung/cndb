@@ -1,4 +1,4 @@
-"""field_types 单元测试。"""
+"""field_types 单元测试."""
 
 import pytest
 
@@ -100,3 +100,41 @@ def test_number_int_min_violation():
     ft = _ft("number")
     with pytest.raises(ValueError):
         ft.validate_value(5, {"min": 10})
+
+
+# ── 覆盖率补测 ──────────────────────────────────────────
+
+
+def test_make_column_with_default():
+    """FieldType.make_column(default=...) 分支 — L38."""
+    ft = _ft("text")
+    col = ft.make_column("name", default="hello")
+    assert col.default is not None
+
+
+def test_base_default_value_returns_none():
+    """基类 FieldType.default_value 返回 None — L47."""
+    ft = _ft("text")
+    assert ft.default_value({}) is None
+
+
+def test_float_min_violation():
+    """DecimalFieldType (float) 的 min 校验 — L108."""
+    ft = _ft("float")
+    with pytest.raises(ValueError) as ei:
+        ft.validate_value("0", {"min": 1.0})
+    assert "小于最小值" in str(ei.value)
+
+
+def test_select_field_config_non_empty_ok():
+    """SelectFieldConfig._non_empty validator 返回值分支 — L168."""
+    from cndb.plugins.tables.field_types import SelectFieldConfig
+
+    cfg = SelectFieldConfig(options=["a", "b"])
+    assert cfg.options == ["a", "b"]
+
+
+def test_select_field_type_none_passthrough():
+    """SelectFieldType.validate_value None passthrough — L182."""
+    ft = _ft("select")
+    assert ft.validate_value(None, {"options": ["a", "b"]}) is None
