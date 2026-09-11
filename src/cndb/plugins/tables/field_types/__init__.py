@@ -292,6 +292,7 @@ class PhoneFieldType(FieldType):
 
 # ── percentage ──────────────────────────────────────
 
+
 class PercentageFieldConfig(FieldTypeConfig):
     decimals: int = Field(default=0, ge=0, le=5)
 
@@ -320,6 +321,7 @@ class PercentageFieldType(FieldType):
 
 
 # ── timestamp ───────────────────────────────────────
+
 
 class TimestampFieldType(FieldType):
     """Unix 时间戳字段 —— 存储整数秒."""

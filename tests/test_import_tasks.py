@@ -284,6 +284,7 @@ def test_create_import_task_xlsx_str_content(db):
     db.delete(dt)
     db.commit()
 
+
 def test_execute_import_task_invalid_json_swallows_count_error(db):
     """无效 JSON 字符串应在估算行数阶段被静默吞掉 — 覆盖 L74-75."""
     from cndb.plugins.tables.import_tasks import create_import_task, execute_import_task
@@ -296,8 +297,12 @@ def test_execute_import_task_invalid_json_swallows_count_error(db):
     db.refresh(dt)
 
     task = create_import_task(
-        db, table_id=dt.id, user_id=None,
-        filename="bad.json", fmt="json", content="NOT-valid-JSON-at-all!!!",
+        db,
+        table_id=dt.id,
+        user_id=None,
+        filename="bad.json",
+        fmt="json",
+        content="NOT-valid-JSON-at-all!!!",
     )
     execute_import_task(db, task.id)
     db.refresh(task)
@@ -331,8 +336,12 @@ def test_execute_import_task_status_conflict_fallback(db, monkeypatch):
     db.refresh(dt)
 
     task = create_import_task(
-        db, table_id=dt.id, user_id=None,
-        filename="x.json", fmt="json", content="[{\"a\":1}]",
+        db,
+        table_id=dt.id,
+        user_id=None,
+        filename="x.json",
+        fmt="json",
+        content='[{"a":1}]',
     )
     execute_import_task(db, task.id)
     db.refresh(task)

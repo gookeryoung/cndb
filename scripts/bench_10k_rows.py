@@ -4,33 +4,33 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import tempfile
 import time
+from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
 
 from sqlalchemy import MetaData, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from cndb.core.config import settings
 from cndb.models.base import Base
+from cndb.plugins.tables import transfer
 from cndb.plugins.tables.ddl import create_table
 from cndb.plugins.tables.models import DataField, DataTable
-from cndb.plugins.tables import transfer
 
 
 def setup_db() -> tuple[Any, Any]:
     """创建临时 SQLite 数据库 + 表结构."""
-    db_path = os.path.join(tempfile.gettempdir(), "cndb_bench.db")
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    db_path = Path(tempfile.gettempdir()) / "cndb_bench.db"
+    if db_path.exists():
+        db_path.unlink()
     settings.DATABASE_URL = f"sqlite:///{db_path}"
     engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
-    return engine, db_path
+    return engine, str(db_path)
 
 
 def create_bench_table(engine: Any) -> Any:
@@ -40,7 +40,9 @@ def create_bench_table(engine: Any) -> Any:
     try:
         dt = DataTable(workspace_id=1, name="bench", description="benchmark table")
         dt.ensure_db_name()
-        db.add(dt); db.commit(); db.refresh(dt)
+        db.add(dt)
+        db.commit()
+        db.refresh(dt)
 
         field_specs = [
             ("name", "text"),
@@ -50,11 +52,15 @@ def create_bench_table(engine: Any) -> Any:
         ]
         for idx, (fname, ftype) in enumerate(field_specs):
             f = DataField(
-                table_id=dt.id, name=fname, field_type=ftype,
+                table_id=dt.id,
+                name=fname,
+                field_type=ftype,
                 config={"options": ["A", "B", "C"]} if ftype == "select" else {},
-                order=idx, required=False,
+                order=idx,
+                required=False,
             )
-            f.ensure_db_name(); db.add(f)
+            f.ensure_db_name()
+            db.add(f)
         db.commit()
         create_table(engine, dt)
         return dt
@@ -62,7 +68,7 @@ def create_bench_table(engine: Any) -> Any:
         db.close()
 
 
-def bench_import(engine: Any, dt: Any, rows: list[dict]) -> None:
+def bench_import(engine: Any, dt: Any, rows: list[dict[str, Any]]) -> None:
     """10k 行 JSON 导入."""
     json_text = json.dumps(rows)
     t0 = time.perf_counter()
@@ -84,7 +90,7 @@ def bench_queries(engine: Any, dt: Any) -> None:
         with engine.connect() as conn:
             conn.execute(select(sa_tbl).limit(100)).all()
     elapsed = time.perf_counter() - t0
-    print(f"  query_limit100_x100: {elapsed:.3f}s ({100/elapsed:.1f} q/s)")
+    print(f"  query_limit100_x100: {elapsed:.3f}s ({100 / elapsed:.1f} q/s)")
 
     # 2. count
     t0 = time.perf_counter()
@@ -105,7 +111,8 @@ def main() -> None:
 
     if args.skip_import:
         # 假设表已存在，只跑查询
-        from sqlalchemy.orm import Session, sessionmaker
+        from sqlalchemy.orm import sessionmaker
+
         S = sessionmaker(bind=engine)
         db = S()
         dt = db.query(DataTable).filter_by(name="bench").first()
