@@ -1,6 +1,6 @@
 /** Grid 主应用 — 集成视图 Tab / 三种视图 / inline 编辑 / 导入导出 / 行复制. */
 
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Row, Col, Badge, Input, InputNumber, Tabs, Select, Form, Switch } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
@@ -8,7 +8,7 @@ import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
   AppstoreOutlined, CopyOutlined, ImportOutlined, DownOutlined, CloseOutlined,
-  SaveOutlined, CalendarOutlined, ShareAltOutlined, SafetyOutlined, SwapOutlined,
+  CalendarOutlined, ShareAltOutlined, SafetyOutlined, SwapOutlined,
   SearchOutlined, SortAscendingOutlined, SortDescendingOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -60,6 +60,9 @@ export default function GridPage() {
   const [limit, setLimit] = useState(settings.defaultPageSize)
   const tableKey = `${wid}/${tid}`
 
+  /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
+  const skipSaveRef = useRef(false)
+
   const { data: table, isLoading } = useQuery<TableDetail>({
     queryKey: ['table', tableKey],
     queryFn: () => tableApi.get(wid!, tid!),
@@ -100,6 +103,7 @@ export default function GridPage() {
 
   // 加载 active view 的 filters + view_options
   const loadView = (v: View | null, updateUrl = true) => {
+    skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
       setActiveViewId(v.id)
       setViewFilters(normalizeFilters(v.filters))
@@ -129,6 +133,8 @@ export default function GridPage() {
       }
     }
     setOffset(0)
+    // 等 React 批量 setState 渲染完，下一轮微任务允许自动保存
+    queueMicrotask(() => { skipSaveRef.current = false })
   }
 
   // 当前激活的视图对象（含 view_options）
@@ -267,9 +273,7 @@ export default function GridPage() {
     },
   })
 
-  /** 持久化当前视图到后端（唯一真相源：viewFilters / viewSortings）.
-   *  两处调用：工具栏"保存视图"按钮、ViewConfigDialog 保存 onCommit.
-   */
+  /** 持久化当前视图到后端（自动保存 useEffect 唯一真相源：viewFilters / viewSortings 等 state 变化自动触发）. */
   const persistCurrentView = () => {
     if (!activeViewId) return
     updateView.mutate({
@@ -280,6 +284,16 @@ export default function GridPage() {
       view_options: viewOptionsDraft,
     })
   }
+
+  /** 自动持久化视图配置（debounce 500ms）: 列头筛选/排序、ViewConfigDialog 保存等所有 state 变更均走此入口.
+   *  切换视图 loadView 期间 skipSaveRef=true，刚加载完的 state 不会触发无意义的回写.
+   */
+  useEffect(() => {
+    if (!activeViewId || skipSaveRef.current) return
+    const timer = setTimeout(() => persistCurrentView(), 500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, activeViewId])
 
   // 权限查询（点开权限 Modal 时加载）
   const { data: permData, refetch: refetchPerm } = useQuery<TablePermission>({
@@ -456,16 +470,6 @@ export default function GridPage() {
             onClick={() => setSettingsOpen(true)}
           />
         </Tooltip>
-        {activeViewId && (
-          <Tooltip title="保存筛选规则与视图配置到当前视图">
-            <Button
-              size="small"
-              icon={<SaveOutlined />}
-              loading={updateView.isPending}
-              onClick={persistCurrentView}
-            >保存视图</Button>
-          </Tooltip>
-        )}
       </div>
 
       {/* 主内容 */}
@@ -578,10 +582,6 @@ export default function GridPage() {
         onSaveFilters={(f) => { setViewFilters(f); setOffset(0) }}
         onSaveSortings={(s) => { setViewSortings(s); setOffset(0) }}
         onSaveOptions={(o) => { setViewOptionsDraft(o) }}
-        onCommit={() => {
-          // 有激活视图时自动持久化到后端（含列级筛选/排序）
-          persistCurrentView()
-        }}
       />
 
       {/* 创建新视图 Modal */}
@@ -912,14 +912,11 @@ interface ViewConfigDialogProps {
   onSaveFilters: (f: FilterRule[]) => void
   onSaveSortings: (s: SortRule[]) => void
   onSaveOptions: (o: Record<string, unknown> | null) => void
-  /** 保存按钮所有 onSave 回调执行完毕后触发，用于一次性持久化到后端 */
-  onCommit?: () => void
 }
 
 function ViewConfigDialog({
   open, viewType, filters, sortings, viewOptions, fields, onClose,
   filterLogic, onSaveFilterLogic, onSaveFilters, onSaveSortings, onSaveOptions,
-  onCommit,
 }: ViewConfigDialogProps) {
   const [draftFilters, setDraftFilters] = useState<FilterRule[]>([])
   const [draftSorts, setDraftSorts] = useState<SortRule[]>([])
@@ -1175,7 +1172,6 @@ function ViewConfigDialog({
             Object.entries(draftOpt).filter(([, v]) => v !== '' && v != null && (Array.isArray(v) ? v.length > 0 : true)),
           )
           onSaveOptions(Object.keys(cleanOpt).length ? cleanOpt : null)
-          onCommit?.()
           onClose()
         }}>保存</Button>,
       ]}
