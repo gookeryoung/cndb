@@ -22,7 +22,7 @@ router = APIRouter(tags=["audit"])
     "/{workspace_id}/tables/{table_id}/audit",
     response_model=list[AuditLogResponse],
 )
-def list_audit_logs(  # noqa: PLR0913, PLR0917
+def list_audit_logs(
     workspace_id: int,
     table_id: int,
     current_user: Annotated[User, Depends(get_current_user)],

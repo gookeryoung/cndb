@@ -99,7 +99,7 @@ def list_fields(
 
 
 @router.patch("/{field_id}", response_model=FieldResponse)
-def update_field(  # noqa: PLR0913, PLR0917
+def update_field(
     workspace_id: int,
     table_id: int,
     field_id: int,

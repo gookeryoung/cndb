@@ -19,6 +19,8 @@ const TrashPanel = lazy(() => import('@/pages/modals/TrashPanel'))
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'))
 const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
+const WorkflowListPage = lazy(() => import('@/pages/workflow/WorkflowListPage'))
+const WorkflowEditorPage = lazy(() => import('@/pages/workflow/WorkflowEditorPage'))
 
 function PageFallback() {
   return (
@@ -51,6 +53,12 @@ function AuthenticatedApp() {
         } />
         <Route path="w/:wid/reports" element={
           <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
+        } />
+        <Route path="w/:wid/workflows" element={
+          <Suspense fallback={<PageFallback />}><WorkflowListPage /></Suspense>
+        } />
+        <Route path="w/:wid/workflows/:fwid" element={
+          <Suspense fallback={<PageFallback />}><WorkflowEditorPage /></Suspense>
         } />
       </Route>
 

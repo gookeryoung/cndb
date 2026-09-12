@@ -1,7 +1,7 @@
 /** Grid 主应用 — 集成视图 Tab / 三种视图 / inline 编辑 / 导入导出 / 行复制. */
 
-import { Suspense, lazy, useMemo, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Row, Col, Badge, Input, Tabs, Select, Form, Switch } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -31,6 +31,7 @@ type ViewMode = 'grid' | 'kanban' | 'gallery' | 'calendar'
 export default function GridPage() {
   const { wid, tid } = useParams<{ wid: string; tid: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const { isMobile } = useResponsive()
   const [mode, setMode] = useState<ViewMode>('grid')
@@ -61,20 +62,45 @@ export default function GridPage() {
     enabled: !!wid && !!tid,
   })
   // 加载 active view 的 filters
-  const loadView = (v: View | null) => {
+  const loadView = (v: View | null, updateUrl = true) => {
     if (v) {
       setActiveViewId(v.id)
       setViewFilters(v.filters ?? null)
       if (v.view_type === 'kanban') setMode('kanban')
       else if (v.view_type === 'gallery') setMode('gallery')
+      else if (v.view_type === 'calendar') setMode('calendar')
       else setMode('grid')
+      if (updateUrl) {
+        const params = new URLSearchParams(searchParams)
+        params.set('view', String(v.id))
+        setSearchParams(params, { replace: true })
+      }
     } else {
       setActiveViewId(null)
       setViewFilters(null)
       setMode('grid')
+      if (updateUrl && searchParams.has('view')) {
+        const params = new URLSearchParams(searchParams)
+        params.delete('view')
+        setSearchParams(params, { replace: true })
+      }
     }
     setOffset(0)
   }
+
+  // URL 深链：?view=<id> 自动选中视图
+  useEffect(() => {
+    if (!views.length || activeViewId !== null) return
+    const vid = searchParams.get('view')
+    if (vid) {
+      const target = views.find(v => String(v.id) === vid)
+      if (target) { loadView(target, false); return }
+    }
+    // 默认选中 default 或第一个
+    const def = views.find(v => v.default) || views[0]
+    if (def) loadView(def, false)
+    else setActiveViewId(null)
+  }, [views, searchParams, wid, tid])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 } } = useQuery({
     queryKey: ['table-records', tableKey, offset, limit, viewFilters],
