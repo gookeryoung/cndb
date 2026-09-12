@@ -33,7 +33,7 @@ export default function GraphPage() {
       </div>
       <Row gutter={16}>
         <Col xs={24} lg={18}>
-          <Card bodyStyle={{ padding: 16 }}>
+          <Card styles={{ body: { padding: 16 } }}>
             <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ border: '1px solid #e5e7eb', borderRadius: 8, background: '#fafafa' }}>
               {data.edges.map((e, i) => {
                 const s = layout.get(e.source), t = layout.get(e.target)
@@ -109,3 +109,4 @@ function computeLayeredLayout(g: GraphResponse): Map<string, { x: number; y: num
   })
   return pos
 }
+

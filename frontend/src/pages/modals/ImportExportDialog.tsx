@@ -155,7 +155,7 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
       width={620}
-      destroyOnClose
+      destroyOnHidden
     >
       <Tabs
         items={[

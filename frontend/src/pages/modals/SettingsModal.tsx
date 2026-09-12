@@ -52,7 +52,7 @@ export default function SettingsModal({ open, onClose }: Props) {
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
       width={600}
-      destroyOnClose
+      destroyOnHidden
     >
       <Tabs
         items={[
