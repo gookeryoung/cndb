@@ -4,6 +4,7 @@
 PACKAGE := cndb
 COV_THRESHOLD := 95
 FRONTEND_DIR := frontend
+PYTEST_JOBS := auto  # pytest-xdist 并行进程数；auto = CPU 核数
 
 .PHONY: help sync build b clean c test cov lint typecheck typecheck-ci check doc tox bump patch minor major push \
         fe-install fe-lint fe-typecheck fe-build fe-check fe-clean
@@ -25,11 +26,11 @@ clean c: ## 清理构建产物与缓存
 
 # ── Python 后端检查 ──────────────────────────────────
 
-test: ## 运行测试（不含覆盖率）
-	uv run pytest -m "not slow"
+test: ## 运行测试（不含覆盖率，xdist 并行）
+	uv run pytest -m "not slow" -n $(PYTEST_JOBS)
 
-cov: ## 运行测试并检查覆盖率
-	uv run pytest -m "not slow" --cov=$(PACKAGE) --cov-fail-under=$(COV_THRESHOLD)
+cov: ## 运行测试并检查覆盖率（xdist 并行）
+	uv run pytest -m "not slow" -n $(PYTEST_JOBS) --cov=$(PACKAGE) --cov-fail-under=$(COV_THRESHOLD)
 
 lint: ## 代码风格检查 (ruff)
 	uv run ruff check .
