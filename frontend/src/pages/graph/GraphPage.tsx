@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Card, Row, Col, Tag, Typography, List, Empty, Spin, Tooltip, Space, Button } from 'antd'
 import { ShareAltOutlined, ZoomInOutlined, ZoomOutOutlined, ReloadOutlined } from '@ant-design/icons'
@@ -7,6 +7,8 @@ import { graphApi } from '@/api'
 import type { GraphResponse } from '@/api'
 
 const { Text } = Typography
+
+const STORAGE_KEY = 'cndb.graph.layout.'
 
 export default function GraphPage() {
   const { wid } = useParams<{ wid: string }>()
@@ -24,6 +26,47 @@ export default function GraphPage() {
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
 
+  // 节点位置（可拖拽覆盖初始 layout）
+  const [nodePositions, setNodePositions] = useState<Map<string, { x: number; y: number }>>(() => new Map())
+  const dragState = useRef<{
+    id: string; startX: number; startY: number; origX: number; origY: number;
+  } | null>(null)
+
+  // 从 localStorage 恢复布局
+  useEffect(() => {
+    if (!wid || !data) return
+    try {
+      const raw = localStorage.getItem(`${STORAGE_KEY}${wid}`)
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, { x: number; y: number }>
+        setNodePositions(new Map(Object.entries(parsed)))
+      } else {
+        // 首次访问 — 用自动布局
+        setNodePositions(computeLayeredLayout(data))
+      }
+    } catch {
+      setNodePositions(computeLayeredLayout(data))
+    }
+  }, [wid, data])
+
+  // 位置变更后持久化
+  const persistLayout = useCallback((positions: Map<string, { x: number; y: number }>) => {
+    if (!wid) return
+    try {
+      const obj: Record<string, { x: number; y: number }> = {}
+      positions.forEach((v, k) => { obj[k] = v })
+      localStorage.setItem(`${STORAGE_KEY}${wid}`, JSON.stringify(obj))
+    } catch {
+      /* quota exceeded 忽略 */
+    }
+  }, [wid])
+
+  // 自动布局 fallback
+  const autoLayout = data ? computeLayeredLayout(data) : new Map<string, { x: number; y: number }>()
+  const effectiveLayout = useCallback((id: string) => {
+    return nodePositions.get(id) || autoLayout.get(id) || { x: 20, y: 20 }
+  }, [nodePositions, autoLayout])
+
   // 鼠标滚轮缩放
   const onWheel = useCallback((e: React.WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey && !e.shiftKey && Math.abs(e.deltaY) < 30) return
@@ -31,8 +74,63 @@ export default function GraphPage() {
     setScale(prev => Math.min(2, Math.max(0.3, prev - e.deltaY * 0.002)))
   }, [])
 
-  // 重置缩放
-  const resetView = () => { setScale(1); setHoverNode(null); setSelectedNode(null) }
+  // 重置：恢复自动布局
+  const resetLayout = () => {
+    if (!data) return
+    const fresh = computeLayeredLayout(data)
+    setNodePositions(fresh)
+    persistLayout(fresh)
+    setScale(1)
+    setHoverNode(null)
+    setSelectedNode(null)
+  }
+
+  // ─────────── 拖拽逻辑 ───────────
+  const onNodeMouseDown = useCallback((ev: React.MouseEvent, nodeId: string) => {
+    ev.stopPropagation()
+    ev.preventDefault()
+    setSelectedNode(nodeId)
+    const pos = effectiveLayout(nodeId)
+    dragState.current = {
+      id: nodeId,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      origX: pos.x,
+      origY: pos.y,
+    }
+  }, [effectiveLayout])
+
+  useEffect(() => {
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragState.current) return
+      const { id, startX, startY, origX, origY } = dragState.current
+      const dx = (ev.clientX - startX) / scale
+      const dy = (ev.clientY - startY) / scale
+      const newX = Math.max(10, origX + dx)
+      const newY = Math.max(10, origY + dy)
+      setNodePositions(prev => {
+        const next = new Map(prev)
+        next.set(id, { x: newX, y: newY })
+        return next
+      })
+    }
+    const onMouseUp = () => {
+      if (dragState.current) {
+        dragState.current = null
+        // 持久化当前所有位置
+        setNodePositions(prev => {
+          persistLayout(prev)
+          return prev
+        })
+      }
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [scale, persistLayout])
 
   if (isLoading) return <div style={{ padding: 48, textAlign: 'center' }}><Spin /></div>
   if (!data || data.nodes.length === 0) {
@@ -40,7 +138,6 @@ export default function GraphPage() {
   }
 
   const W = 900, H = Math.max(320, data.nodes.length * 80 + 80)
-  const layout = computeLayeredLayout(data)
   const nodeMap = new Map(data.nodes.map(n => [n.id, n]))
 
   // 关联边集合（hover/选中节点的直接关联）
@@ -69,6 +166,7 @@ export default function GraphPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
         <ShareAltOutlined style={{ fontSize: 20, color: '#3b82f6' }} />
         <h2 style={{ margin: 0, flex: 1 }}>表关系图</h2>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>提示：可拖拽节点调整位置，自动保存</span>
         <Space>
           <Tooltip title="缩小">
             <Button size="small" icon={<ZoomOutOutlined />} onClick={() => setScale(s => Math.max(0.3, s - 0.15))} />
@@ -79,8 +177,8 @@ export default function GraphPage() {
           <Tooltip title="放大">
             <Button size="small" icon={<ZoomInOutlined />} onClick={() => setScale(s => Math.min(2, s + 0.15))} />
           </Tooltip>
-          <Tooltip title="重置">
-            <Button size="small" icon={<ReloadOutlined />} onClick={resetView} />
+          <Tooltip title="恢复自动布局">
+            <Button size="small" icon={<ReloadOutlined />} onClick={resetLayout} />
           </Tooltip>
         </Space>
       </div>
@@ -111,7 +209,7 @@ export default function GraphPage() {
 
               {/* 边 */}
               {data.edges.map((e, i) => {
-                const s = layout.get(e.source), t = layout.get(e.target)
+                const s = effectiveLayout(e.source), t = effectiveLayout(e.target)
                 if (!s || !t) return null
                 const isActive = relatedEdges.has(i)
                 const dimmed = activeId != null && !isActive
@@ -128,7 +226,7 @@ export default function GraphPage() {
 
               {/* 节点 */}
               {data.nodes.map(n => {
-                const pos = layout.get(n.id) || { x: 20, y: 20 }
+                const pos = effectiveLayout(n.id)
                 const isHover = hoverNode === n.id
                 const isSelected = selectedNode === n.id
                 const related = activeId != null && relatedNodes.has(n.id)
@@ -137,10 +235,15 @@ export default function GraphPage() {
                 const stroke = isSelected ? '#ef4444' : isHover ? '#2563eb' : '#3b82f6'
                 return (
                   <g key={n.id}
-                    style={{ cursor: n.type !== 'workflow' ? 'pointer' : 'default' }}
+                    style={{ cursor: 'move' }}
                     onMouseEnter={() => setHoverNode(n.id)}
                     onMouseLeave={() => setHoverNode(null)}
-                    onClick={(ev) => { ev.stopPropagation(); setSelectedNode(n.id); goToTable(n.id) }}
+                    onMouseDown={(ev) => onNodeMouseDown(ev, n.id)}
+                    onClick={(ev) => {
+                      // 只在非拖拽（mouseup 后位置未变）时才跳转
+                      ev.stopPropagation()
+                      if (!dragState.current) goToTable(n.id)
+                    }}
                   >
                     <rect
                       x={pos.x} y={pos.y - 22} width={140} height={44} rx={6}
@@ -148,7 +251,7 @@ export default function GraphPage() {
                       stroke={stroke}
                       strokeWidth={isHover || isSelected ? 2 : 1}
                       opacity={dimmed ? 0.3 : 1}
-                      style={{ transition: 'all 0.15s', filter: isHover ? 'drop-shadow(0 2px 6px rgba(59,130,246,0.25))' : undefined }}
+                      style={{ transition: isHover || isSelected ? 'all 0.15s' : undefined, filter: isHover ? 'drop-shadow(0 2px 6px rgba(59,130,246,0.25))' : undefined }}
                     />
                     <text x={pos.x + 70} y={pos.y + 4} textAnchor="middle" fontSize={13} fontWeight={600} fill="#1f2937">
                       {nodeMap.get(n.id)?.label || n.id}
@@ -255,4 +358,3 @@ function computeLayeredLayout(g: GraphResponse): Map<string, { x: number; y: num
   })
   return pos
 }
-
