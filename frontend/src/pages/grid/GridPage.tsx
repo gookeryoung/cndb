@@ -8,10 +8,11 @@ import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
   AppstoreOutlined, CopyOutlined, ImportOutlined, DownOutlined, CloseOutlined,
+  SaveOutlined, CalendarOutlined, ShareAltOutlined, SafetyOutlined, SwapOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { tableApi, recordApi, viewApi } from '@/api'
-import type { RowResponse, Field, TableDetail, View, ViewCreate } from '@/api'
+import { tableApi, recordApi, viewApi, permissionApi } from '@/api'
+import type { RowResponse, Field, TableDetail, View, ViewCreate, TablePermission } from '@/api'
 import GridCell from './components/GridCell'
 import RowDetailDrawer from './components/RowDetailDrawer'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -25,7 +26,7 @@ function ModalFallback() {
 }
 
 const { Text } = Typography
-type ViewMode = 'grid' | 'kanban' | 'gallery'
+type ViewMode = 'grid' | 'kanban' | 'gallery' | 'calendar'
 
 export default function GridPage() {
   const { wid, tid } = useParams<{ wid: string; tid: string }>()
@@ -39,6 +40,10 @@ export default function GridPage() {
   const [fieldMgrOpen, setFieldMgrOpen] = useState(false)
   const [importExportOpen, setImportExportOpen] = useState(false)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
+  const [createViewOpen, setCreateViewOpen] = useState(false)
+  const [permOpen, setPermOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [moveOpen, setMoveOpen] = useState(false)
   const [activeViewId, setActiveViewId] = useState<number | string | null>(null)
   const [viewFilters, setViewFilters] = useState<Record<string, unknown> | null>(null)
   const [offset, setOffset] = useState(0)
@@ -116,7 +121,8 @@ export default function GridPage() {
         }
       }
       if (copies.length === 0) return []
-      return recordApi.bulkCreate(wid!, tid!, copies.map(values => ({ values })))
+      const res = await recordApi.bulkCreate(wid!, tid!, copies)
+      return res.ids
     },
     onSuccess: (ids) => {
       message.success(`已复制 ${ids.length} 行`)
@@ -131,12 +137,69 @@ export default function GridPage() {
       queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
     },
   })
+  const updateView = useMutation({
+    mutationFn: (args: { vid: number | string; filters: Record<string, unknown> | null; view_type?: string }) =>
+      viewApi.update(wid!, tid!, args.vid, {
+        filters: args.filters ?? undefined,
+        view_type: args.view_type,
+      }),
+    onSuccess: () => {
+      message.success('视图已保存')
+      queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '保存视图失败')
+    },
+  })
   const removeView = useMutation({
     mutationFn: (vid: number | string) => viewApi.remove(wid!, tid!, vid),
     onSuccess: () => {
       message.success('视图已删除')
       setActiveViewId(null)
       queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
+    },
+  })
+
+  // 权限查询（点开权限 Modal 时加载）
+  const { data: permData, refetch: refetchPerm } = useQuery<TablePermission>({
+    queryKey: ['table-perm', tableKey],
+    queryFn: () => permissionApi.get(wid!, tid!),
+    enabled: false,
+  })
+  const savePerm = useMutation({
+    mutationFn: (data: Partial<TablePermission>) => permissionApi.patch(wid!, tid!, data),
+    onSuccess: () => {
+      message.success('权限已更新')
+      setPermOpen(false)
+    },
+  })
+
+  // 分享视图
+  const shareView = useMutation({
+    mutationFn: () => {
+      const vid = activeViewId || (views.find(v => v.default)?.id) || (views[0]?.id)
+      if (!vid) throw new Error('请先创建或选择一个视图')
+      return viewApi.share(wid!, tid!, vid)
+    },
+    onSuccess: (res) => {
+      message.success('分享已生成')
+      // 自动复制到剪贴板
+      navigator.clipboard?.writeText(res.share_url).then(() => message.info('分享链接已复制到剪贴板'))
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '分享失败'),
+  })
+  const revokeShare = useMutation({
+    mutationFn: () => viewApi.revokeShare(wid!, tid!, activeViewId || views[0]?.id),
+    onSuccess: () => message.success('已撤销分享'),
+  })
+
+  // 移动表
+  const moveTable = useMutation({
+    mutationFn: (targetWsId: number | string) => tableApi.move(wid!, tid!, targetWsId),
+    onSuccess: () => {
+      message.success('表已移动')
+      setMoveOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
     },
   })
 
@@ -190,8 +253,12 @@ export default function GridPage() {
           <Button icon={<ImportOutlined />} onClick={() => setImportExportOpen(true)}>导入/导出</Button>
           <Dropdown menu={{ items: [
             { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
+            { key: 'perm', icon: <SafetyOutlined />, label: '权限设置', onClick: () => { refetchPerm(); setPermOpen(true) } },
+            { key: 'share', icon: <ShareAltOutlined />, label: '分享视图', onClick: () => shareView.mutate() },
+            { key: 'revoke', icon: <CloseOutlined />, label: '撤销分享', onClick: () => revokeShare.mutate() },
             { type: 'divider' },
-            { key: 'copy', icon: <CopyOutlined />, label: '复制当前表', onClick: () => tableApi.copy(wid!, tid!).then(() => message.success('表已复制')).then(() => queryClient.invalidateQueries({ queryKey: ['table', tableKey] })) },
+            { key: 'copy', icon: <CopyOutlined />, label: '复制表', onClick: () => tableApi.copy(wid!, tid!).then(() => message.success('表已复制')).then(() => queryClient.invalidateQueries({ queryKey: ['table', tableKey] })) },
+            { key: 'move', icon: <SwapOutlined />, label: '移动到其他工作区', onClick: () => setMoveOpen(true) },
             { type: 'divider' },
             { key: 'delete', icon: <DeleteOutlined />, danger: true, label: '删除表', disabled: true },
           ] }}><Button icon={<MoreOutlined />} /></Dropdown>
@@ -205,14 +272,7 @@ export default function GridPage() {
           activeKey={activeViewId ? String(activeViewId) : 'all'}
           onChange={(k) => loadView(k === 'all' ? null : views.find(v => String(v.id) === k) || null)}
           onEdit={(targetKey, action) => {
-            if (action === 'add') {
-              Modal.confirm({
-                title: '创建新视图',
-                content: <CreateViewForm onCreate={(name, vt) => createView.mutate({ name, view_type: vt })} />,
-                okText: '创建',
-                cancelText: '取消',
-              })
-            } else if (action === 'remove' && typeof targetKey === 'string') {
+            if (action === 'remove' && typeof targetKey === 'string') {
               removeView.mutate(targetKey)
             }
           }}
@@ -223,11 +283,18 @@ export default function GridPage() {
           }))}
           style={{ flex: 1 }}
         />
-        <Button.Group style={{ marginLeft: 8 }}>
+        <Button
+          size="small"
+          type="text"
+          icon={<PlusOutlined />}
+          onClick={() => setCreateViewOpen(true)}
+        >新建视图</Button>
+        <Space.Compact style={{ marginLeft: 8 }}>
           <Button size="small" type={mode === 'grid' ? 'primary' : 'default'} icon={<ColumnHeightOutlined />} onClick={() => setMode('grid')}>{!isMobile && '表格'}</Button>
           <Button size="small" type={mode === 'kanban' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => setMode('kanban')}>{!isMobile && '看板'}</Button>
           <Button size="small" type={mode === 'gallery' ? 'primary' : 'default'} icon={<EyeOutlined />} onClick={() => setMode('gallery')}>{!isMobile && '画廊'}</Button>
-        </Button.Group>
+          <Button size="small" type={mode === 'calendar' ? 'primary' : 'default'} icon={<CalendarOutlined />} onClick={() => setMode('calendar')}>{!isMobile && '日历'}</Button>
+        </Space.Compact>
         <Tooltip title="当前视图筛选规则">
           <Button
             size="small"
@@ -237,6 +304,16 @@ export default function GridPage() {
             onClick={() => setViewConfigOpen(true)}
           />
         </Tooltip>
+        {activeViewId && (
+          <Tooltip title="保存筛选规则到当前视图">
+            <Button
+              size="small"
+              icon={<SaveOutlined />}
+              loading={updateView.isPending}
+              onClick={() => updateView.mutate({ vid: activeViewId, filters: viewFilters })}
+            >保存视图</Button>
+          </Tooltip>
+        )}
       </div>
 
       {/* 主内容 */}
@@ -258,8 +335,10 @@ export default function GridPage() {
           />
         ) : mode === 'kanban' ? (
           <KanbanView rows={rowList.items || []} fields={table?.fields || []} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
-        ) : (
+        ) : mode === 'gallery' ? (
           <GalleryView rows={rowList.items || []} fields={table?.fields || []} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+        ) : (
+          <CalendarView rows={rowList.items || []} fields={table?.fields || []} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         )}
       </div>
 
@@ -306,6 +385,59 @@ export default function GridPage() {
       </Suspense>
       <ViewConfigDialog open={viewConfigOpen} filters={viewFilters} onClose={() => setViewConfigOpen(false)}
         onSave={(f) => { setViewFilters(f); setViewConfigOpen(false); setOffset(0) }} />
+
+      {/* 创建新视图 Modal */}
+      <Modal
+        title="创建新视图"
+        open={createViewOpen}
+        onCancel={() => setCreateViewOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        <CreateViewForm
+          onCreate={(name, vt) => {
+            createView.mutate({ name, view_type: vt })
+            setCreateViewOpen(false)
+          }}
+        />
+      </Modal>
+
+      {/* 权限设置 Modal */}
+      <Modal
+        title="表权限设置"
+        open={permOpen}
+        onCancel={() => setPermOpen(false)}
+        confirmLoading={savePerm.isPending}
+        okText="保存"
+        onOk={() => {
+          // 将 Modal 内表单的值从 window 上读 — 简化版
+          const el = document.querySelector<HTMLInputElement>('input[data-perm-comment]')
+          const hiddenInputs = document.querySelectorAll<HTMLInputElement>('input[data-perm-hidden]:checked')
+          const hiddenFields = Array.from(hiddenInputs).map(i => i.value)
+          savePerm.mutate({
+            hidden_fields: hiddenFields,
+            row_filters: null,
+            comment: el?.value || null,
+          })
+        }}
+      >
+        <PermissionEditor fields={table?.fields || []} data={permData} />
+      </Modal>
+
+      {/* 移动表 Modal */}
+      <Modal
+        title="移动表到其他工作区"
+        open={moveOpen}
+        onCancel={() => setMoveOpen(false)}
+        onOk={() => {
+          const el = document.querySelector<HTMLSelectElement>('select[data-move-ws]')
+          if (el?.value) moveTable.mutate(el.value)
+        }}
+        confirmLoading={moveTable.isPending}
+        okText="移动"
+      >
+        <MoveTableForm currentWid={wid!} />
+      </Modal>
     </div>
   )
 }
@@ -331,7 +463,7 @@ function CreateViewForm({ onCreate }: { onCreate: (name: string, viewType: strin
       </Form.Item>
       <div style={{ textAlign: 'right', marginTop: 12 }}>
         <Button type="primary" disabled={!name.trim()}
-          onClick={() => { onCreate(name.trim(), vt); Modal.destroyAll() }}>创建</Button>
+          onClick={() => onCreate(name.trim(), vt)}>创建</Button>
       </div>
     </Form>
   )
@@ -371,7 +503,7 @@ function ViewConfigDialog({
           }
         }}>保存</Button>,
       ]}
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
         筛选规则使用 JSON 格式，例如 {`{"状态": "进行中", "优先级": {"$gt": 3}}`}。暂时由后端解析。
@@ -449,27 +581,192 @@ function KanbanView({ rows, fields, onRowClick }: { rows: RowResponse[]; fields:
 
 // ─────────────── Gallery 视图 ───────────────
 
+function extractImageUrl(v: unknown): string | null {
+  if (!v) return null
+  if (typeof v === 'string') {
+    if (v.startsWith('http') || v.startsWith('/')) return v
+    return null
+  }
+  if (Array.isArray(v)) {
+    const first = v[0]
+    return extractImageUrl(first)
+  }
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>
+    return (o.url as string) || (o.value as string) || null
+  }
+  return null
+}
+
 function GalleryView({ rows, fields, onRowClick }: { rows: RowResponse[]; fields: Field[]; onRowClick?: (r: RowResponse) => void }) {
   const titleField = fields.find(f => f.field_type === 'text') || fields.find(f => f.is_primary)
   const titleCol = titleField?.name || 'id'
+  // 找第一个图片/附件字段作为缩略图来源
+  const imgField = fields.find(f => ['image', 'attachment'].includes(f.field_type))
+  const imgCol = imgField?.name
+
   return (
     <Row gutter={[16, 16]}>
-      {rows.map(r => (
-        <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
-          <div
-            onClick={() => onRowClick?.(r)}
-            style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff', cursor: 'pointer' }}
-          >
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>{String(r[titleCol] ?? r.id)}</div>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>ID: {r.id}</div>
-          </div>
-        </Col>
-      ))}
+      {rows.map(r => {
+        const imgUrl = imgCol ? extractImageUrl(r[imgCol]) : null
+        return (
+          <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
+            <div
+              onClick={() => onRowClick?.(r)}
+              style={{ padding: 0, border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff', cursor: 'pointer', overflow: 'hidden' }}
+            >
+              {imgUrl ? (
+                <div style={{ width: '100%', height: 140, background: '#f5f7fa', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                  <img
+                    src={imgUrl}
+                    alt=""
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </div>
+              ) : (
+                <div style={{ width: '100%', height: 80, background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: 20 }}>
+                  {String(r[titleCol] ?? r.id).slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <div style={{ padding: 12 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{String(r[titleCol] ?? r.id)}</div>
+                <div style={{ fontSize: 12, color: '#9ca3af' }}>ID: {r.id}</div>
+              </div>
+            </div>
+          </Col>
+        )
+      })}
       {rows.length === 0 && <Empty description="暂无记录" style={{ padding: 48 }} />}
     </Row>
+  )
+}
+
+// ─────────────── Calendar 视图（按日期字段分组） ───────────────
+
+function CalendarView({ rows, fields, onRowClick }: { rows: RowResponse[]; fields: Field[]; onRowClick?: (r: RowResponse) => void }) {
+  // 找第一个 date/datetime 类型字段作为分组列
+  const dateField = fields.find(f => ['date', 'datetime'].includes(f.field_type))
+  const titleField = fields.find(f => f.field_type === 'text') || fields.find(f => f.is_primary)
+  const dateCol = dateField?.name
+  const titleCol = titleField?.name || 'id'
+
+  // 按日期分组
+  const groups = new Map<string, RowResponse[]>()
+  if (dateCol) {
+    for (const r of rows) {
+      const raw = r[dateCol]
+      const key = raw ? String(raw).slice(0, 10) : '无日期'
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(r)
+    }
+  } else {
+    groups.set('全部', rows)
+  }
+
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    if (a === '无日期') return 1
+    if (b === '无日期') return -1
+    return a.localeCompare(b)
+  })
+
+  return (
+    <div style={{ padding: 12 }}>
+      {sortedKeys.length === 0 && <Empty description="暂无记录" style={{ padding: 48 }} />}
+      {sortedKeys.map(key => (
+        <div key={key} style={{ marginBottom: 24 }}>
+          <div style={{
+            fontWeight: 600, marginBottom: 8, padding: '6px 12px',
+            background: '#f0f5ff', borderRadius: 6, color: '#1d4ed8',
+            fontSize: 13,
+          }}>
+            📅 {key} <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>({groups.get(key)!.length})</span>
+          </div>
+          <Row gutter={[8, 8]}>
+            {groups.get(key)!.map(r => (
+              <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
+                <div
+                  onClick={() => onRowClick?.(r)}
+                  style={{
+                    padding: 10, border: '1px solid #e5e7eb', borderRadius: 6,
+                    background: '#fff', cursor: 'pointer', fontSize: 13,
+                  }}
+                >
+                  <div style={{ fontWeight: 500, marginBottom: 2 }}>{String(r[titleCol] ?? r.id)}</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>ID: {r.id}</div>
+                </div>
+              </Col>
+            ))}
+          </Row>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─────────────── 权限编辑器（内嵌在 Modal 内） ───────────────
+
+function PermissionEditor({ fields, data }: { fields: Field[]; data?: TablePermission }) {
+  const [comment, setComment] = useState(data?.comment || '')
+  const hiddenSet = new Set(data?.hidden_fields || [])
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>隐藏字段（勾选后用户不可见）</div>
+      <Form>
+        {fields.filter(f => !f.hidden).map(f => (
+          <Form.Item key={f.id} style={{ marginBottom: 4 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                value={f.name}
+                defaultChecked={hiddenSet.has(f.name)}
+                data-perm-hidden
+              />
+              {f.name} <span style={{ color: '#9ca3af', fontSize: 11 }}>({f.field_type})</span>
+            </label>
+          </Form.Item>
+        ))}
+      </Form>
+      <div style={{ marginTop: 16, fontSize: 13, fontWeight: 600, marginBottom: 8 }}>备注</div>
+      <Input.TextArea
+        rows={3}
+        placeholder="权限备注"
+        value={comment}
+        onChange={e => setComment(e.target.value)}
+        data-perm-comment
+      />
+    </div>
+  )
+}
+
+// ─────────────── 移动表单（内嵌在 Modal 内） ───────────────
+
+function MoveTableForm({ currentWid }: { currentWid: number | string }) {
+  const { data: workspaces = [], isLoading } = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: () => import('@/api').then(m => m.workspaceApi.list()),
+  })
+  const options = workspaces.filter(w => String(w.id) !== String(currentWid))
+  return (
+    <div style={{ marginTop: 12 }}>
+      {isLoading ? (
+        <div style={{ color: '#9ca3af', textAlign: 'center', padding: 24 }}>加载中...</div>
+      ) : options.length === 0 ? (
+        <div style={{ color: '#9ca3af', textAlign: 'center', padding: 24 }}>没有其他工作区可移动</div>
+      ) : (
+        <Select
+          style={{ width: '100%' }}
+          placeholder="选择目标工作区"
+          options={options.map(w => ({ value: w.id, label: w.name }))}
+          data-move-ws
+        />
+      )}
+    </div>
   )
 }
 
 // ─────────────── 一些保留但暂隐藏的图标引用（让打包器知道没丢依赖） ───────────────
 
 void DownOutlined; void CloseOutlined; void Switch
+

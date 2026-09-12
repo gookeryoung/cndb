@@ -1,10 +1,12 @@
+/** 工作区表列表页 — 支持创建/重命名/复制/删除 + CSV 自动建表. */
+
 import React from 'react'
-import { Button, Modal, Form, Input, Table, Typography, Empty, message, Space, Popconfirm, Tag } from 'antd'
-import { PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined } from '@ant-design/icons'
+import { Button, Modal, Form, Input, Table, Typography, Empty, message, Space, Popconfirm, Tag, Upload, Dropdown } from 'antd'
+import { PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined, UploadOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { tableApi, workspaceApi } from '@/api'
-import type { TableSummary } from '@/api'
+import { tableApi, workspaceApi, importApi } from '@/api'
+import type { TableSummary, TableUpdate } from '@/api'
 
 const { Title, Text } = Typography
 
@@ -13,7 +15,9 @@ export default function TablesList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = React.useState(false)
+  const [editOpen, setEditOpen] = React.useState<TableSummary | null>(null)
   const [form] = Form.useForm()
+  const [editForm] = Form.useForm()
 
   // workspace 信息（标题展示）
   const { data: workspace } = useQuery({
@@ -41,12 +45,45 @@ export default function TablesList() {
     },
   })
 
+  const update = useMutation({
+    mutationFn: ({ tid, data }: { tid: number | string; data: TableUpdate }) => tableApi.update(wid!, tid, data),
+    onSuccess: () => {
+      message.success('已更新')
+      queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
+      setEditOpen(null)
+      editForm.resetFields()
+    },
+  })
+
+  const copy = useMutation({
+    mutationFn: (tid: number | string) => tableApi.copy(wid!, tid, false),
+    onSuccess: (t) => {
+      message.success(`已复制为 "${t.name}"`)
+      queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
+    },
+  })
+
   const remove = useMutation({
     mutationFn: (tid: number | string) => tableApi.remove(wid!, tid),
     onSuccess: () => {
       message.success('已删除')
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid] })
+    },
+  })
+
+  const csvCreate = useMutation({
+    mutationFn: async (file: File) => {
+      const text = await file.text()
+      const tableName = file.name.replace(/\.csv$/i, '')
+      return importApi.createFromCsv(wid!, tableName, text)
+    },
+    onSuccess: (result) => {
+      message.success(`已从 CSV 创建表 "${result.table_name}" (${result.imported} 行)`)
+      queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
+      if (result.table_id) {
+        navigate(`/w/${wid}/tables/${result.table_id}`)
+      }
     },
   })
 
@@ -100,20 +137,47 @@ export default function TablesList() {
     {
       title: '操作',
       key: 'actions',
-      width: 120,
+      width: 200,
       render: (_: unknown, record: TableSummary) => (
         <Space size="small">
           <a onClick={() => navigate(`/w/${wid}/tables/${record.id}`)}>打开</a>
-          <Popconfirm
-            title="确认删除该表？"
-            description="表内所有记录和字段将被永久移除"
-            okText="删除"
-            okButtonProps={{ danger: true }}
-            cancelText="取消"
-            onConfirm={() => remove.mutate(record.id)}
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'rename',
+                  icon: <EditOutlined />,
+                  label: '重命名/编辑',
+                  onClick: () => { setEditOpen(record); editForm.setFieldsValue({ name: record.name, description: record.description }) },
+                },
+                {
+                  key: 'copy',
+                  icon: <CopyOutlined />,
+                  label: '复制表结构',
+                  onClick: () => copy.mutate(record.id),
+                },
+                { type: 'divider' },
+                {
+                  key: 'delete',
+                  icon: <DeleteOutlined />,
+                  label: '删除表',
+                  danger: true,
+                  onClick: () => {
+                    Modal.confirm({
+                      title: `删除表「${record.name}」？`,
+                      content: '表内所有记录和字段将被永久移除。',
+                      okText: '删除',
+                      okType: 'danger',
+                      cancelText: '取消',
+                      onOk: () => remove.mutate(record.id),
+                    })
+                  },
+                },
+              ],
+            }}
           >
-            <a style={{ color: '#ef4444' }}><DeleteOutlined /> 删除</a>
-          </Popconfirm>
+            <a>更多…</a>
+          </Dropdown>
         </Space>
       ),
     },
@@ -131,14 +195,25 @@ export default function TablesList() {
             {workspace?.description || '管理当前工作区的所有数据表'}
           </Text>
         </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setCreateOpen(true)}
-          style={{ backgroundColor: '#3b82f6', borderColor: '#3b82f6' }}
-        >
-          新建表
-        </Button>
+        <Space>
+          <Upload
+            accept=".csv"
+            showUploadList={false}
+            beforeUpload={(file) => { csvCreate.mutate(file as File); return false }}
+          >
+            <Button icon={<UploadOutlined />} loading={csvCreate.isPending}>
+              CSV 建表
+            </Button>
+          </Upload>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setCreateOpen(true)}
+            style={{ backgroundColor: '#3b82f6', borderColor: '#3b82f6' }}
+          >
+            新建表
+          </Button>
+        </Space>
       </div>
 
       {/* Table 列表 */}
@@ -158,7 +233,7 @@ export default function TablesList() {
             <Empty
               description={
                 <span>
-                  还没有表 —— 点击右侧 <Text strong>"新建表"</Text> 开始
+                  还没有表 —— 点击右侧 <Text strong>"新建表"</Text> 或 <Text strong>"CSV 建表"</Text> 开始
                 </span>
               }
             />
@@ -194,6 +269,42 @@ export default function TablesList() {
           </Form.Item>
           <Form.Item name="description" label="描述（可选）">
             <Input.TextArea rows={2} placeholder="简要说明这张表的用途" maxLength={255} showCount />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 编辑表 Modal */}
+      <Modal
+        title="编辑表"
+        open={!!editOpen}
+        onCancel={() => { setEditOpen(null); editForm.resetFields() }}
+        onOk={() => editForm.submit()}
+        confirmLoading={update.isPending}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Form
+          form={editForm}
+          layout="vertical"
+          preserve={false}
+          onFinish={(v) => {
+            if (editOpen) {
+              update.mutate({ tid: editOpen.id, data: v })
+            }
+          }}
+        >
+          <Form.Item
+            name="name"
+            label="表名"
+            rules={[
+              { required: true, message: '请输入表名' },
+              { max: 64, message: '表名不超过 64 字符' },
+            ]}
+          >
+            <Input maxLength={64} showCount />
+          </Form.Item>
+          <Form.Item name="description" label="描述（可选）">
+            <Input.TextArea rows={2} maxLength={255} showCount />
           </Form.Item>
         </Form>
       </Modal>

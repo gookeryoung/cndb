@@ -459,6 +459,50 @@ class TestViewsAPI:
         assert r.status_code == 200
         assert r.json()["status"] == "ok"
 
+    def test_public_form_view(self, client, ws, table, auth_owner):
+        """覆盖 GET /forms/{slug} —— 返回表结构供前端渲染表单."""
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "PubFormView", "view_type": "form"},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        share_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+            headers=auth_owner,
+        )
+        slug = share_r.json()["slug"]
+        r = client.get(f"/api/v1/public/forms/{slug}")
+        assert r.status_code == 200
+        data = r.json()
+        assert "view" in data
+        assert "table" in data
+        assert data["table"]["fields"]
+        assert len(data["table"]["fields"]) > 0
+        # 字段应按默认顺序返回
+        field_names = [f["name"] for f in data["table"]["fields"]]
+        assert "姓名" in field_names
+
+    def test_public_form_view_invalid_slug(self, client, ws, table, auth_owner):
+        r = client.get("/api/v1/public/forms/nonexistentslug99")
+        assert r.status_code == 404
+
+    def test_public_form_view_not_form_type(self, client, ws, table, auth_owner):
+        """GET /forms/{slug} 对非 form 视图应返回 400."""
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "NotFormView", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        share_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+            headers=auth_owner,
+        )
+        slug = share_r.json()["slug"]
+        r = client.get(f"/api/v1/public/forms/{slug}")
+        assert r.status_code == 400
+
     def test_public_form_not_form_type(self, client, ws, table, auth_owner):
         create_r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",

@@ -213,5 +213,27 @@ class TestAuditAPI:
         )
         assert r.status_code == 200
 
+    def test_list_audit_by_row_id(self, client, ws, table, auth_owner):
+        """覆盖 audit row_id 查询参数 — 按行过滤审计日志."""
+        # 先建一条记录产生 audit log
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/fields",
+            headers=auth_owner,
+            json={"name": "name", "field_type": "single_text"},
+        )
+        cr = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records",
+            headers=auth_owner,
+            json={"values": {"name": "hello"}},
+        )
+        row_id = cr.json()["id"]
+        # 按 row_id 过滤
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/audit?row_id={row_id}",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert len(r.json()) >= 1
+
 
 __all__ = []
