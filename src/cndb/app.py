@@ -114,22 +114,44 @@ if _STATIC.is_dir():
 
     @app.middleware("http")
     async def _spa_fallback(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        """SPA 路由 fallback 中间件.
+        """SPA 路由 fallback + 缓存策略中间件.
 
+        缓存策略：
+        - index.html 及其它顶层 HTML：Cache-Control: no-cache（每次协商获取最新版本）
+          原因：Vite 构建产物文件名带 hash，index.html 是唯一引用入口，必须及时刷新
+        - /assets/*：Cache-Control: public, max-age=31536000, immutable
+          原因：Vite 输出带内容 hash，内容永不变化，可长缓存
+
+        fallback 逻辑：
         仅对以下条件同时满足的 404 请求回退到 index.html：
         1. 非 /api/ 开头（API 路由不走前端）
         2. 非 /assets/ 开头（不存在的 chunk 文件直接返回 404，不要回 HTML）
         3. Accept 头包含 text/html（浏览器请求页面才 fallback，JS/CSS/XHR 请求不回）
         """
         response = await call_next(request)
+        path = request.url.path
+
+        # /assets/ 下带 hash 的产物 —— 一年长缓存 + immutable
+        if path.startswith("/assets/") and response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return response
+
+        # HTML 页面 —— 禁止缓存，确保每次都拿到最新 index.html
+        is_html_path = path == "/" or path.endswith(".html")
+        if is_html_path and response.status_code == 200:
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+
         if response.status_code != 404:
             return response
-        path = request.url.path
-        # 优先尝试直接命中静态文件（favicon.svg 等顶层资源）
+
+        # 404 路径 —— 优先尝试直接命中静态文件（favicon.svg 等顶层资源）
         fp = _STATIC / path.lstrip("/")
         if fp.is_file():
             return FileResponse(str(fp))
         # 用纯函数判断是否需要 fallback
         if should_spa_fallback(path, request.headers.get("accept", "")):
-            return FileResponse(str(_STATIC / "index.html"))
+            return FileResponse(
+                str(_STATIC / "index.html"),
+                headers={"Cache-Control": "no-cache, must-revalidate"},
+            )
         return response
