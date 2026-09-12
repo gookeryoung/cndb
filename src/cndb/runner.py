@@ -180,9 +180,7 @@ def main() -> None:
     p_dev.add_argument("--port", type=int, default=8772, help="后端端口（默认 8772，与 Vite 代理对齐）")
 
     sub.add_parser("build", help="构建前后端（需源码目录）")
-
     sub.add_parser("info", help="打印版本/配置/运行环境")
-
     sub.add_parser("seed", help="向数据库注入演示数据")
 
     args = parser.parse_args()

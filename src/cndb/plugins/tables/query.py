@@ -153,16 +153,98 @@ def _build_condition(  # noqa: PLR0911, PLR0912
 # ── 入口函数 ─────────────────────────────────────────
 
 
+def _normalize_filters(
+    table: DataTable,
+    filters: Any,
+) -> list[dict[str, Any]]:
+    """把 dict / list 统一归一成 list[dict[str, Any]].
+
+    接受三种形状：
+    1. list[dict]       —— 已经是标准格式，直接返回.
+    2. dict {k: v}      —— 每个条目视为 {field_name: k, op: "=", value: v}.
+    3. dict 含 $query   —— $query 值对所有文本字段做 OR contains 匹配.
+    """
+    if filters is None:
+        return []
+
+    # 已是 list
+    if isinstance(filters, list):
+        result: list[dict[str, Any]] = []
+        for item in filters:
+            if isinstance(item, dict):
+                result.append(item)
+            else:
+                logger.warning("忽略非 dict filter 项: %r", item)
+        return result
+
+    # dict 形式
+    if isinstance(filters, dict):
+        normalized: list[dict[str, Any]] = []
+        for key, value in filters.items():
+            # 特殊操作符 $query: 对所有可搜索文本字段做 OR contains
+            if key == "$query":
+                text_fields = [
+                    f
+                    for f in table.fields
+                    if not f.trashed
+                    and f.field_type
+                    in (
+                        "text",
+                        "long_text",
+                        "email",
+                        "phone",
+                        "url",
+                    )
+                ]
+                if text_fields and value:
+                    contains_list: list[dict[str, Any]] = [
+                        {"field_name": f.name, "op": "contains", "value": value} for f in text_fields
+                    ]
+                    # 用 OR 逻辑 —— 通过追加 marker key __query_or__ 来提示 compile_filters
+                    normalized.append({"__query_or__": contains_list})
+                continue
+
+            # 值本身是 dict，视为 {field_name, op, value} 或 {op: ..., value: ...}
+            if isinstance(value, dict) and "op" in value and "value" in value:
+                normalized.append({"field_name": key, **value})
+            # 常规形式: {field_name: value} → {field_name, op: "=", value}
+            else:
+                normalized.append({"field_name": key, "op": "=", "value": value})
+        return normalized
+
+    logger.warning("filters 类型不支持: %r", type(filters))
+    return []
+
+
 def compile_filters(
     table: DataTable,
     sa_table: Table,
-    filters: list[dict[str, Any]],
+    filters: Any,
     logic: str = "AND",
 ) -> Any | None:
-    """编译过滤条件列表，返回单个 SQLAlchemy where clause（或 None 表示无有效条件）."""
+    """编译过滤条件，返回单个 SQLAlchemy where clause（或 None 表示无有效条件）.
+
+    filters 支持 list[dict] 或 dict 形式，dict 里可含特殊 key $query 做全局关键词搜索。
+    """
     clauses: list[Any] = []
 
-    for flt in filters:
+    normalized = _normalize_filters(table, filters)
+
+    for flt in normalized:
+        # $query 展开的 OR 组
+        if "__query_or__" in flt:
+            sub_clauses: list[Any] = []
+            for sub in flt["__query_or__"]:
+                field_name = sub.get("field_name") or sub.get("field")
+                op = sub.get("op") or sub.get("operator") or "="
+                value = sub.get("value")
+                clause = _build_condition(table, sa_table, field_name, op, value)
+                if clause is not None:
+                    sub_clauses.append(clause)
+            if sub_clauses:
+                clauses.append(or_(*sub_clauses) if len(sub_clauses) > 1 else sub_clauses[0])
+            continue
+
         field_name = flt.get("field_name") or flt.get("field")
         if not field_name:
             continue
