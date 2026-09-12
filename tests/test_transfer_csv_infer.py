@@ -100,6 +100,7 @@ def csv_workspace(tmp_path):
     finally:
         session.close()
         Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 class TestCreateTableFromCsv:

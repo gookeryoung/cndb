@@ -33,6 +33,7 @@ def db(tmp_path):
         yield session
     finally:
         session.close()
+        engine.dispose()
 
 
 @pytest.fixture

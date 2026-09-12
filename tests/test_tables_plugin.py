@@ -221,6 +221,7 @@ class TestDataTableHelpers:
         finally:
             session.close()
             Base.metadata.drop_all(engine)
+            engine.dispose()
 
     def test_ensure_db_name_first_time(self, db_session):
         dt = DataTable(
