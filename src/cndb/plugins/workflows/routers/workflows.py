@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import MetaData, func, select
@@ -82,7 +82,7 @@ def _validate_table_binding(workspace_id: int, table_id: int | None, db: Session
 # ── 绑定表摘要 ───────────────────────────────────────
 
 
-def _count_physical_rows(engine: object, dt: DataTable) -> int | None:
+def _count_physical_rows(engine: Any, dt: DataTable) -> int | None:
     """物理表行数；表结构异常时返回 None 而不是让详情接口整体失败."""
     try:
         metadata = MetaData()
@@ -104,12 +104,13 @@ def _table_briefs(wf: Workflow, db: Session) -> dict[int, NodeTableBrief]:
         return {}
 
     tables = db.query(DataTable).filter(DataTable.id.in_(table_ids)).all()
-    view_counts = dict(
+    _rows = (
         db.query(DataView.table_id, func.count(DataView.id))
         .filter(DataView.table_id.in_(table_ids))
         .group_by(DataView.table_id)
         .all()
     )
+    view_counts: dict[int, int] = {int(r[0]): int(r[1]) for r in _rows}
 
     briefs: dict[int, NodeTableBrief] = {}
     for dt in tables:
@@ -127,12 +128,12 @@ def _table_briefs(wf: Workflow, db: Session) -> dict[int, NodeTableBrief]:
 # ── Workflow CRUD ────────────────────────────────────
 
 
-@router.get("", response_model=list[dict])
+@router.get("", response_model=list[dict[str, object]])
 def list_workflows(
     workspace_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> list[dict]:
+) -> list[dict[str, object]]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
     wfs = (
         db.query(Workflow)
@@ -167,7 +168,7 @@ def create_workflow(
     payload: WorkflowCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, object]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     if not payload.name.strip():
         raise HTTPException(status_code=400, detail="工作流名称不能为空")
@@ -193,7 +194,7 @@ def get_workflow(
     workflow_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, object]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
     wf = _get_workflow_or_404(workflow_id, workspace_id, db)
 
@@ -252,7 +253,7 @@ def update_workflow(
     payload: WorkflowUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, object]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     wf = _get_workflow_or_404(workflow_id, workspace_id, db)
 
@@ -298,7 +299,7 @@ def create_node(
     payload: NodeCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, object]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     wf = _get_workflow_or_404(workflow_id, workspace_id, db)
     _validate_table_binding(workspace_id, payload.table_id, db)
@@ -338,7 +339,7 @@ def update_node(
     payload: NodeUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, object]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     wf = _get_workflow_or_404(workflow_id, workspace_id, db)
     node = db.query(WorkflowNode).filter(
@@ -406,7 +407,7 @@ def create_edge(
     payload: EdgeCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, object]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     wf = _get_workflow_or_404(workflow_id, workspace_id, db)
 
@@ -455,7 +456,7 @@ def update_edge(
     payload: EdgeUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, object]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     wf = _get_workflow_or_404(workflow_id, workspace_id, db)
     edge = db.query(WorkflowEdge).filter(
