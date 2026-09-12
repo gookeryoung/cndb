@@ -872,11 +872,18 @@ const FIELD_OPS: Record<string, Array<{ op: string; label: string; needValue?: b
 
 function _opsForField(fieldType: string) {
   if (FIELD_OPS[fieldType]) return FIELD_OPS[fieldType]
-  if (['long_text', 'email', 'url', 'phone'].includes(fieldType)) return FIELD_OPS.text
-  if (['decimal'].includes(fieldType)) return FIELD_OPS.number
-  if (['multi_select'].includes(fieldType)) return FIELD_OPS.select
+  // 后端实际 field_type name → 前端操作符组的别名映射
+  if (['longtext', 'email', 'url', 'phone'].includes(fieldType)) return FIELD_OPS.text
+  if (['float', 'decimal', 'percentage', 'timestamp'].includes(fieldType)) return FIELD_OPS.number
+  if (['multiselect'].includes(fieldType)) return FIELD_OPS.select
   if (['datetime'].includes(fieldType)) return FIELD_OPS.date
   if (fieldType === 'attachment') return FIELD_OPS.text.slice(5)  // 只给空/非空
+  if (fieldType === 'link') return [
+    { op: 'is_null', label: '未关联', needValue: true },
+    { op: 'is_not_null', label: '已关联', needValue: true },
+    { op: 'has_any', label: '包含任一目标行（逗号分隔 id）', valueKind: 'text' },
+    { op: 'has_all', label: '包含全部目标行（逗号分隔 id）', valueKind: 'text' },
+  ]
   return FIELD_OPS.text
 }
 
