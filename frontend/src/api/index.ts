@@ -28,17 +28,16 @@ import type {
   WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember,
   TableCreate, TableUpdate, TableSummary, TableDetail,
   RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams,
-  FieldCreate, FieldUpdate, Field,
+  FieldCreate, FieldUpdate, Field, FieldType,
   ViewCreate, View, ViewUpdate,
   WorkspaceTrashResponse, TrashedRow,
   GraphResponse, DependencyResponse,
   CsvAnalyzeResult, CsvImportResult,
-  PublicForm, SharedGrid,
   HealthPingResponse, HealthReadyResponse,
   AuditLog, Comment, Reference,
   ImportTaskInfo, TablePermission,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
-  ReportParameter, ReportRenderRequest, ReportRenderResult,
+  ReportRenderRequest,
 } from './types'
 
 export type {
@@ -58,6 +57,9 @@ export type {
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportParameter, ReportRenderRequest, ReportRenderResult,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
+  NodeTableBrief, WorkflowNode, WorkflowEdge, WorkflowSummary, WorkflowDetail,
+  WorkflowCreate, WorkflowUpdate, WorkflowNodeCreate, WorkflowNodeUpdate,
+  WorkflowEdgeCreate, WorkflowEdgeUpdate,
 } from './types'
 
 // ─────────────── Auth & Tokens ───────────────
@@ -308,14 +310,14 @@ export const publicApi = {
   getShare: (slug: string, limit = 100, offset = 0) =>
     api.get<{
       view: { id: number; name: string; view_type: string; filters: unknown; sortings: unknown }
-      table: { id: number; name: string; description: string | null; fields: Array<{ id: number; name: string; field_type: string; config: unknown; required?: boolean; is_unique?: boolean }> }
+      table: { id: number; name: string; description: string | null; fields: Array<{ id: number; name: string; field_type: FieldType; config: unknown; required?: boolean; is_unique?: boolean; hidden?: boolean }> }
       rows: RowResponse[]; total: number
     }>(`/v1/public/share/${slug}`, { params: { limit, offset } }).then(r => r.data),
   /** 公开表单元数据（获取表结构渲染表单） */
   getForm: (slug: string) =>
     api.get<{
       view: { id: number; name: string; view_type: string }
-      table: { id: number; name: string; description: string | null; fields: Array<{ id: number; name: string; field_type: string; config: unknown; required?: boolean; is_unique?: boolean }> }
+      table: { id: number; name: string; description: string | null; fields: Array<{ id: number; name: string; field_type: FieldType; config: unknown; required?: boolean; is_unique?: boolean; hidden?: boolean }> }
     }>(`/v1/public/forms/${slug}`).then(r => r.data),
   /** 匿名提交公开表单行 */
   submitForm: (slug: string, values: Record<string, unknown>) =>

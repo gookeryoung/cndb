@@ -1,7 +1,7 @@
 /** 行详情抽屉 — 编辑字段值 / 评论 / 历史 / 反向引用. */
 
 import React, { useState } from 'react'
-import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Descriptions, Empty } from 'antd'
+import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch } from 'antd'
 import { SaveOutlined, CommentOutlined, HistoryOutlined, LinkOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { commentApi, auditApi, recordApi, tableApi } from '@/api'

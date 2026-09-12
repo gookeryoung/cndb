@@ -46,6 +46,7 @@ export default function TrashPanel({ embedded }: Props) {
   const rowCountOptions = (overview?.row_counts || []).map((r: { table_id: number | string; table_name: string; trashed_rows: number }) => ({
     value: r.table_id,
     label: `${r.table_name} (${r.trashed_rows})`,
+    trashed_rows: r.trashed_rows,
   }))
 
   const tabs = [
