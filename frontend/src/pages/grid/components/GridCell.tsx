@@ -1,12 +1,12 @@
 /** Grid 单元格组件 — 支持 inline 编辑. */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Tag, Tooltip, Typography, Input, InputNumber, Select, Checkbox, DatePicker, Button, Popover, message } from 'antd'
-import { SaveOutlined, CloseOutlined } from '@ant-design/icons'
+import { Tag, Tooltip, Typography, Input, InputNumber, Select, Checkbox, DatePicker, Button, Popover, message, Upload, Image } from 'antd'
+import { SaveOutlined, CloseOutlined, InboxOutlined, DeleteOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
-import type { Field, RowResponse } from '@/api'
-import { recordApi } from '@/api'
+import type { AttachmentFile, Field, RowResponse } from '@/api'
+import { recordApi, fileApi } from '@/api'
 
 interface Props {
   value: unknown
@@ -97,7 +97,7 @@ export default function GridCell({ value, field, rowId, wid, onSave }: Props) {
 
 // ─────────────── 展示态 ───────────────
 
-function DisplayCell({ value, field, rowId }: { value: unknown; field: Field; rowId: number | string; wid?: number | string }) {
+function DisplayCell({ value, field, rowId, wid }: { value: unknown; field: Field; rowId: number | string; wid?: number | string }) {
   if (value === null || value === undefined || value === '') {
     return <span style={{ color: '#cbd5e1' }}>—</span>
   }
@@ -134,8 +134,36 @@ function DisplayCell({ value, field, rowId }: { value: unknown; field: Field; ro
       }
       return <Tag>{String(value)}</Tag>
     }
-    case 'attachment':
-      return <span>📎 {String(value)}</span>
+    case 'attachment': {
+      // 值可能是 JSON 字符串或已经解析好的数组
+      let files: AttachmentFile[] = []
+      try {
+        files = Array.isArray(value) ? (value as AttachmentFile[]) : JSON.parse(String(value || '[]'))
+      } catch { files = [] }
+      if (!files.length) return <span style={{ color: '#cbd5e1' }}>—</span>
+      return (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {files.map(f => {
+            const isImg = (f.mime_type || f.filename).match(/image\/|\.(png|jpe?g|gif|webp|svg)$/i)
+            if (isImg && wid) {
+              return (
+                <Image key={f.file_key} width={48} height={48}
+                  src={fileApi.getUrl(wid, f.file_key, true)}
+                  alt={f.filename} style={{ objectFit: 'cover', borderRadius: 4 }} />
+              )
+            }
+            return (
+              <Typography.Link key={f.file_key}
+                href={wid ? fileApi.getUrl(wid, f.file_key) : undefined}
+                target="_blank" rel="noreferrer"
+                style={{ fontSize: 12 }}>
+                📎 {f.filename}
+              </Typography.Link>
+            )
+          })}
+        </div>
+      )
+    }
     case 'long_text': {
       const s = String(value)
       return <Tooltip title={s}><span>{s.length > 40 ? s.slice(0, 40) + '…' : s}</span></Tooltip>
@@ -356,16 +384,52 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
       )
     }
     case 'attachment': {
+      const files: AttachmentFile[] = Array.isArray(draft)
+        ? (draft as AttachmentFile[])
+        : (() => {
+            try { return JSON.parse(String(draft || '[]')) } catch { return [] }
+          })()
+
+      const upload = async (file: File): Promise<AttachmentFile> => {
+        if (!wid) throw new Error('缺少 wid')
+        const meta = await fileApi.upload(wid, file)
+        onChange([...files, meta])
+        return meta
+      }
+      const removeAt = (idx: number) => {
+        const removed = files[idx]
+        // 尝试硬清理物理文件（忽略错误）
+        if (wid && removed?.file_key) {
+          fileApi.remove(wid, removed.file_key).catch(() => { /* 行值更新后再清理会有竞争，静默 */ })
+        }
+        const next = files.filter((_, i) => i !== idx)
+        onChange(next)
+      }
+
       return (
-        <div style={wrap}>
-          <Input
-            size="small"
-            value={typeof draft === 'object' ? JSON.stringify(draft) : String(draft ?? '')}
-            onChange={e => onChange(e.target.value)}
-            placeholder="附件 URL"
-            onKeyDown={commonOnKey}
-            style={{ flex: 1 }}
-          />
+        <div style={{ ...wrap, flexDirection: 'column', alignItems: 'stretch' }}>
+          <Upload.Dragger
+            multiple={Boolean(field.config?.multiple ?? true)}
+            showUploadList={false}
+            accept={(field.config?.allowed_mime_types as string[])?.join(',') || undefined}
+            beforeUpload={f => { upload(f); return false }}
+            style={{ padding: '4px 8px', marginBottom: 4 }}
+          >
+            <div style={{ fontSize: 12, color: '#94a3b8', margin: '2px 0' }}>
+              <InboxOutlined /> 点击或拖拽上传
+            </div>
+          </Upload.Dragger>
+          {files.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {files.map((f, i) => (
+                <span key={f.file_key} style={{ fontSize: 12, padding: '2px 6px', border: '1px solid #e2e8f0', borderRadius: 4 }}>
+                  📎 {f.filename}
+                  <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                    onClick={() => removeAt(i)} style={{ marginLeft: 2 }} />
+                </span>
+              ))}
+            </div>
+          )}
           {actions}
         </div>
       )
@@ -396,11 +460,17 @@ function normalizeValueForEdit(value: unknown, field: Field): unknown {
     if (field.field_type === 'number' || field.field_type === 'decimal') return null
     if (field.field_type === 'multi_select') return []
     if (field.field_type === 'link') return []  // link 从 [{id, value}] 转为空数组，由 ExtractLinkIds 在 EditCell 内部处理
+    if (field.field_type === 'attachment') return []
     return ''
   }
   if (field.field_type === 'link') {
     // API 返回 [{id, value}]，编辑器消费纯 id 数组
     return extractLinkIds(value)
+  }
+  if (field.field_type === 'attachment') {
+    // 后端存 JSON 字符串，前端编辑器消费 AttachmentFile[]
+    if (Array.isArray(value)) return value
+    try { return JSON.parse(String(value || '[]')) } catch { return [] }
   }
   if (field.field_type === 'date' || field.field_type === 'datetime') {
     return value

@@ -338,3 +338,18 @@ export interface WorkflowEdgeUpdate {
   label?: string
 }
 
+// ── Attachment ──────────────────────────────────────
+
+export interface AttachmentFile {
+  /** 后端 upload 返回的稳定存储键（uuid.ext） */
+  file_key: string
+  /** 原始文件名 */
+  filename: string
+  /** 字节数 */
+  size?: number
+  /** MIME 类型 */
+  mime_type?: string
+  /** ISO 时间 */
+  created_at?: string
+}
+
