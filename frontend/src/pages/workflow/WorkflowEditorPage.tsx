@@ -198,7 +198,7 @@ function WorkflowEditorInner() {
   })
 
   const { data: tables = [] } = useQuery({
-    queryKey: ['tables', wid],
+    queryKey: ['workspaces', wid, 'tables'],
     queryFn: () => tableApi.list(wid!),
     enabled: !!wid,
   })
