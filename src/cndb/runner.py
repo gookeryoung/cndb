@@ -97,13 +97,14 @@ def dev(args: argparse.Namespace) -> None:
     processes.append(backend)
 
     print(f"[run] 启动前端开发服务器 (port {frontend_port})...")
-    frontend_kwargs: dict[str, Any] = {"cwd": FRONTEND_DIR, "shell": True}
+    frontend_kwargs: dict[str, Any] = {"cwd": FRONTEND_DIR}
     if sys.platform == "win32":
+        frontend_kwargs["shell"] = True
         frontend_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    frontend = subprocess.Popen(
-        ["npx", "vite", "--host", args.host, "--port", str(frontend_port)],
-        **frontend_kwargs,
-    )
+        frontend_cmd = f"npx vite --host {args.host} --port {frontend_port}"
+    else:
+        frontend_cmd = ["npx", "vite", "--host", args.host, "--port", str(frontend_port)]
+    frontend = subprocess.Popen(frontend_cmd, **frontend_kwargs)
     processes.append(frontend)
 
     print()
@@ -123,7 +124,8 @@ def build(_args: argparse.Namespace) -> None:
     """构建前后端（需源码目录）."""
     _ensure_dev_env()
     print("[build] 构建前端...")
-    result = subprocess.run(["npm", "run", "build"], cwd=FRONTEND_DIR, shell=True, check=False)
+    cmd = "npm run build" if sys.platform == "win32" else ["npm", "run", "build"]
+    result = subprocess.run(cmd, cwd=FRONTEND_DIR, check=False)
     if result.returncode != 0:
         print("[error] 前端构建失败")
         sys.exit(result.returncode)

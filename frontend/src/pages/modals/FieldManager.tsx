@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, Space, ColorPicker, message } from 'antd'
+import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
@@ -61,15 +61,6 @@ function normalizeOptionsFromConfig(raw: unknown): Array<{ key: string; label: s
   })
 }
 
-/** 把前端编辑格式转回后端 SelectFieldConfig.options */
-function optionsToBackend(options: Array<{ label: string; value: string | number; color: string }>): Array<{ label: string; value: string | number; color?: string }> {
-  return options.filter(o => o.label.trim()).map(o => {
-    const item: { label: string; value: string | number; color?: string } = { label: o.label.trim(), value: o.value }
-    if (o.color) item.color = o.color
-    return item
-  })
-}
-
 export default function FieldManager({ open, wid, tid, fields, onClose, onChanged }: Props) {
   const [innerOpen, setInnerOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Field | null>(null)
@@ -115,7 +106,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         field_type: target.field_type,
         required: target.required,
         hidden: target.hidden,
-        is_unique: (target as Record<string, unknown>).is_unique ?? false,
+        is_unique: target.is_unique ?? false,
         default_value: target.default_value ?? '',
         config: target.config ?? {},
       })
@@ -145,7 +136,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     if (editTarget) {
       update.mutate({ fid: editTarget.id, data: payload as Partial<Field> })
     } else {
-      create.mutate(payload as FieldCreate)
+      create.mutate(payload as unknown as FieldCreate)
     }
   }
 
@@ -278,12 +269,12 @@ function ConfigEditor({ fieldType, form, tables }: ConfigEditorProps) {
         <Row gutter={12}>
           <Col span={8}>
             <Form.Item {...configField('min')} label="最小值">
-              <InputNumber style={{ width: '100%' }} placeholder="不限" allowClear />
+              <InputNumber style={{ width: '100%' }} placeholder="不限" />
             </Form.Item>
           </Col>
           <Col span={8}>
             <Form.Item {...configField('max')} label="最大值">
-              <InputNumber style={{ width: '100%' }} placeholder="不限" allowClear />
+              <InputNumber style={{ width: '100%' }} placeholder="不限" />
             </Form.Item>
           </Col>
           {fieldType !== 'percentage' && (
@@ -335,8 +326,8 @@ function ConfigEditor({ fieldType, form, tables }: ConfigEditorProps) {
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多选">
-              <Checkbox extra="勾选后一个单元格可关联多行目标数据" />
+            <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多选" extra="勾选后一个单元格可关联多行目标数据">
+              <Checkbox />
             </Form.Item>
           </Col>
         </Row>
