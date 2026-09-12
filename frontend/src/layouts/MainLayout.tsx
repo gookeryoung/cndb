@@ -40,7 +40,7 @@ export default function MainLayout() {
   })
 
   const { data: tables = [] } = useQuery({
-    queryKey: ['tables', wid],
+    queryKey: ['workspaces', wid, 'tables'],
     queryFn: () => (wid ? tableApi.list(wid) : Promise.resolve([])),
     enabled: !!wid,
   })
