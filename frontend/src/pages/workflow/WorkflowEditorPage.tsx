@@ -93,8 +93,8 @@ function CustomEdge({
     targetPosition,
   })
 
-  // label 向上偏移 22px，显示在连线上方
-  const labelOffsetY = labelY - 22
+  // label 向上偏移 8px，紧贴连线上方
+  const labelOffsetY = labelY - 12
 
   return (
     <>
@@ -122,7 +122,7 @@ function CustomEdge({
           width={240}
           height={40}
           x={labelX - 120}
-          y={labelOffsetY - 14}
+          y={labelOffsetY - 8}
           style={{ overflow: 'visible', pointerEvents: 'none' }}
         >
           <div style={{
@@ -253,7 +253,7 @@ function WorkflowEditorInner() {
     changes.forEach(c => {
       if (c.type === 'remove') {
         const edgeId = Number(c.id)
-        workflowApi.removeEdge(wid!, fwid!, edgeId).catch(() => {})
+        workflowApi.removeEdge(wid!, fwid!, edgeId).catch(() => { })
       }
     })
     setRfEdges(es => applyEdgeChanges(changes, es))
@@ -301,7 +301,7 @@ function WorkflowEditorInner() {
     workflowApi.updateNode(wid!, fwid!, nid, {
       pos_x: Math.round(node.position.x),
       pos_y: Math.round(node.position.y),
-    }).catch(() => {})
+    }).catch(() => { })
   }, [wid, fwid, rfNodes])
 
   const onNodeDoubleClick = useCallback((_ev: unknown, node: Node) => {
@@ -372,7 +372,7 @@ function WorkflowEditorInner() {
         workflowApi.updateNode(wid!, fwid!, Number(n.id), {
           pos_x: Math.round(n.position.x),
           pos_y: Math.round(n.position.y),
-        }).catch(() => {})
+        }).catch(() => { })
       }
     }
     message.success('已自动布局')
