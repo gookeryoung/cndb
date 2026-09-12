@@ -177,7 +177,7 @@ def main() -> None:
 
     p_dev = sub.add_parser("dev", help="开发模式：同时启动前后端")
     p_dev.add_argument("--host", default="127.0.0.1")
-    p_dev.add_argument("--port", type=int, default=8000, help="后端端口（默认 8000）")
+    p_dev.add_argument("--port", type=int, default=8772, help="后端端口（默认 8772，与 Vite 代理对齐）")
 
     sub.add_parser("build", help="构建前后端（需源码目录）")
 
