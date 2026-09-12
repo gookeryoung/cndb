@@ -1,7 +1,7 @@
 /** 工作区表列表页 — 支持创建/重命名/复制/删除 + CSV 自动建表. */
 
 import React from 'react'
-import { Button, Modal, Form, Input, Table, Typography, Empty, message, Space, Popconfirm, Tag, Upload, Dropdown } from 'antd'
+import { Button, Modal, Form, Input, Table, Typography, Empty, message, Space, Tag, Upload, Dropdown } from 'antd'
 import { PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined, UploadOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'

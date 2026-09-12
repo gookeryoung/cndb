@@ -55,7 +55,7 @@ export default function PublicSharePage() {
             render: (v: unknown, record: Record<string, unknown>) => (
               <GridCell
                 value={v}
-                field={f}
+                field={f as any}
                 rowId={record.id as number | string}
               />
             ),

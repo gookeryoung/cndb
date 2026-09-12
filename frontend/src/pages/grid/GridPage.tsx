@@ -43,7 +43,6 @@ export default function GridPage() {
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
   const [createViewOpen, setCreateViewOpen] = useState(false)
   const [permOpen, setPermOpen] = useState(false)
-  const [shareOpen, setShareOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [activeViewId, setActiveViewId] = useState<number | string | null>(null)
   const [viewFilters, setViewFilters] = useState<Record<string, unknown> | null>(null)
@@ -443,7 +442,7 @@ export default function GridPage() {
           savePerm.mutate({
             hidden_fields: hiddenFields,
             row_filters: null,
-            comment: el?.value || null,
+            comment: el?.value ?? undefined,
           })
         }}
       >
