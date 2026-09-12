@@ -45,9 +45,7 @@ router = APIRouter(prefix="/{workspace_id}/workflows", tags=["workflows"])
 # ── 权限辅助 ─────────────────────────────────────────
 
 
-def _check_workspace_permission(
-    workspace_id: int, user: User, db: Session, min_role: WorkspaceRole
-) -> Workspace:
+def _check_workspace_permission(workspace_id: int, user: User, db: Session, min_role: WorkspaceRole) -> Workspace:
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
     if ws is None:
         raise HTTPException(status_code=404, detail="工作区不存在")
@@ -58,11 +56,7 @@ def _check_workspace_permission(
 
 
 def _get_workflow_or_404(workflow_id: int, workspace_id: int, db: Session) -> Workflow:
-    wf = (
-        db.query(Workflow)
-        .filter(Workflow.id == workflow_id, Workflow.workspace_id == workspace_id)
-        .first()
-    )
+    wf = db.query(Workflow).filter(Workflow.id == workflow_id, Workflow.workspace_id == workspace_id).first()
     if wf is None:
         raise HTTPException(status_code=404, detail="工作流不存在")
     return wf
@@ -135,12 +129,7 @@ def list_workflows(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict[str, object]]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    wfs = (
-        db.query(Workflow)
-        .filter(Workflow.workspace_id == workspace_id)
-        .order_by(Workflow.order, Workflow.id)
-        .all()
-    )
+    wfs = db.query(Workflow).filter(Workflow.workspace_id == workspace_id).order_by(Workflow.order, Workflow.id).all()
     counts = dict(
         db.query(WorkflowNode.workflow_id, func.count(WorkflowNode.id))
         .filter(WorkflowNode.workflow_id.in_([w.id for w in wfs] or [0]))
@@ -342,9 +331,7 @@ def update_node(
 ) -> dict[str, object]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     wf = _get_workflow_or_404(workflow_id, workspace_id, db)
-    node = db.query(WorkflowNode).filter(
-        WorkflowNode.id == node_id, WorkflowNode.workflow_id == wf.id
-    ).first()
+    node = db.query(WorkflowNode).filter(WorkflowNode.id == node_id, WorkflowNode.workflow_id == wf.id).first()
     if node is None:
         raise HTTPException(status_code=404, detail="节点不存在")
 
@@ -381,9 +368,7 @@ def delete_node(
 ) -> None:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     wf = _get_workflow_or_404(workflow_id, workspace_id, db)
-    node = db.query(WorkflowNode).filter(
-        WorkflowNode.id == node_id, WorkflowNode.workflow_id == wf.id
-    ).first()
+    node = db.query(WorkflowNode).filter(WorkflowNode.id == node_id, WorkflowNode.workflow_id == wf.id).first()
     if node is None:
         raise HTTPException(status_code=404, detail="节点不存在")
     # SQLite 默认关闭 FK 约束，手动清理关联边
@@ -459,9 +444,7 @@ def update_edge(
 ) -> dict[str, object]:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     wf = _get_workflow_or_404(workflow_id, workspace_id, db)
-    edge = db.query(WorkflowEdge).filter(
-        WorkflowEdge.id == edge_id, WorkflowEdge.workflow_id == wf.id
-    ).first()
+    edge = db.query(WorkflowEdge).filter(WorkflowEdge.id == edge_id, WorkflowEdge.workflow_id == wf.id).first()
     if edge is None:
         raise HTTPException(status_code=404, detail="边不存在")
 
@@ -491,9 +474,7 @@ def delete_edge(
 ) -> None:
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     wf = _get_workflow_or_404(workflow_id, workspace_id, db)
-    edge = db.query(WorkflowEdge).filter(
-        WorkflowEdge.id == edge_id, WorkflowEdge.workflow_id == wf.id
-    ).first()
+    edge = db.query(WorkflowEdge).filter(WorkflowEdge.id == edge_id, WorkflowEdge.workflow_id == wf.id).first()
     if edge is None:
         raise HTTPException(status_code=404, detail="边不存在")
     db.delete(edge)
