@@ -2,6 +2,19 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// antd 重型 ESM 子模块（源码 > 50KB，路由级延迟加载）
+// 这些组件内部依赖多、打包体积大，但只在特定页面使用
+const ANTD_HEAVY_ES_MODULES = [
+  '/es/table/',       // 163KB — 虚拟滚动 + 固定列 + 排序筛选
+  '/es/date-picker/', // 147KB — 日历面板 + dayjs
+  '/es/input/',       //  90KB — 输入框 + AutoComplete + OTP
+  '/es/form/',        //  85KB — 表单校验引擎
+  '/es/select/',      //  68KB — 下拉选择 + 搜索
+  '/es/modal/',       //  66KB — 弹窗 + confirm
+  '/es/upload/',      //  62KB — 文件上传 + 拖拽
+  '/es/transfer/',    //  51KB — 穿梭框
+]
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -21,16 +34,55 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, '../src/cndb/static'),
     emptyOutDir: true,
+    // 现代浏览器目标：去掉 asyncIterator/Map/Set/Proxy 等老 polyfill
+    target: 'es2022',
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {
-        // 对象式 manualChunks：顶层 node_modules 包名直接映射到 chunk。
-        // 避免函数式写法因路径包含关系导致"跨包循环引用"警告。
-        // 业务页面按路由 lazy import 自动拆分（见 App.tsx）。
-        manualChunks: {
-          react: ['react', 'react-dom', 'react-router-dom'],
-          antd: ['antd', '@ant-design/icons'],
-          tanstack: ['@tanstack/react-query'],
+        // 函数式 manualChunks（精确路径匹配）：
+        // - react/react-dom/react-router-dom → react
+        // - @ant-design/icons → antd-icons
+        // - antd 重型子模块 → antd-heavy（Table/Form/DatePicker/Upload/Select/Input/Modal）
+        // - antd 其余（ConfigProvider/theme/cssinjs/Button/Space/Tag/Typography...）→ antd-core
+        // - @tanstack/react-query → tanstack
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+
+          // React 生态
+          if (
+            id.includes('node_modules/react/') ||
+            id.includes('node_modules/react-dom/') ||
+            id.includes('node_modules/react-router-dom/') ||
+            id.includes('node_modules/react-router/')
+          ) {
+            return 'react'
+          }
+
+          // @ant-design/icons —— 独立 chunk 便于单独缓存
+          if (id.includes('node_modules/@ant-design/icons/')) {
+            return 'antd-icons'
+          }
+
+          // antd 主包
+          if (id.includes('node_modules/antd/')) {
+            if (ANTD_HEAVY_ES_MODULES.some(m => id.includes(m))) {
+              return 'antd-heavy'
+            }
+            return 'antd-core'
+          }
+
+          // @ant-design/cssinjs/static 是 antd 运行时（ConfigProvider/theme 依赖）
+          if (
+            id.includes('node_modules/@ant-design/cssinjs/') ||
+            id.includes('node_modules/@ant-design/static/')
+          ) {
+            return 'antd-core'
+          }
+
+          // TanStack Query
+          if (id.includes('node_modules/@tanstack/')) {
+            return 'tanstack'
+          }
         },
       },
     },
