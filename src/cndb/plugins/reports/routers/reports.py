@@ -114,7 +114,7 @@ def update_template(
     # exclude_unset 会把显式设为 None 的字段也排除（因为等于默认值），
     # 所以改用显式迭代 model_fields 来检测用户真正设置了哪些字段
     ud: dict[str, Any] = {}
-    for field_name in payload.model_fields:
+    for field_name in TemplateUpdate.model_fields:
         value = getattr(payload, field_name)
         # model_fields 里有但默认就是 None 的字段，exclude_unset 会排除
         # 这里我们只要用户显式传了就更新
