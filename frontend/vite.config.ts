@@ -2,17 +2,15 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
-// antd 重型 ESM 子模块（源码 > 50KB，路由级延迟加载）
-// 这些组件内部依赖多、打包体积大，但只在特定页面使用
+// antd 重型 ESM 子模块 —— 只放 lazy 路由才需要的组件
+// 原则：源码体积大 + 非首屏必需（LoginPage/MainLayout/WorkspaceList 不用）
+// Form/Modal/Input 虽然体积不小但首屏需要，归 core
 const ANTD_HEAVY_ES_MODULES = [
-  '/es/table/',       // 163KB — 虚拟滚动 + 固定列 + 排序筛选
-  '/es/date-picker/', // 147KB — 日历面板 + dayjs
-  '/es/input/',       //  90KB — 输入框 + AutoComplete + OTP
-  '/es/form/',        //  85KB — 表单校验引擎
-  '/es/select/',      //  68KB — 下拉选择 + 搜索
-  '/es/modal/',       //  66KB — 弹窗 + confirm
-  '/es/upload/',      //  62KB — 文件上传 + 拖拽
-  '/es/transfer/',    //  51KB — 穿梭框
+  '/es/table/',       // 163KB — 虚拟滚动 + 固定列 + 排序筛选（GridPage/ReportsPage）
+  '/es/date-picker/', // 147KB — 日历面板 + dayjs（GridCell/RowDetailDrawer）
+  '/es/select/',      //  68KB — 下拉选择 + 搜索（GridCell/RowDetailDrawer）
+  '/es/upload/',      //  62KB — 文件上传 + 拖拽（ImportExportDialog）
+  '/es/transfer/',    //  51KB — 穿梭框（暂未用但预留在 antd 主包里）
 ]
 
 export default defineConfig({
