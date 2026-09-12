@@ -532,5 +532,25 @@ class TestTablesAPI:
         assert data["total"] == 1
         assert data["rows"][0]["姓名"] == "R1"
 
+    def test_list_records_get_endpoint(self, client, workspace, auth_owner, table_with_fields):
+        """GET /records 端点（前端 GridPage 使用的列表 API）."""
+        dt, _ = table_with_fields
+        rec_plugin = client.post(
+            f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}/records",
+            json={"values": {"姓名": "G1", "年龄": 20, "部门": "X"}},
+            headers=auth_owner,
+        )
+        assert rec_plugin.status_code == 201
+
+        # GET 端点：无参数
+        r = client.get(
+            f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}/records",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] == 1
+        assert data["rows"][0]["姓名"] == "G1"
+
 
 __all__ = []

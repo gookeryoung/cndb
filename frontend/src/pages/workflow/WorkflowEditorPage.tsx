@@ -4,7 +4,8 @@ import {
   ReactFlow, useReactFlow,
   Background, Controls, Handle, MiniMap, Position, ReactFlowProvider,
   applyNodeChanges, applyEdgeChanges, BackgroundVariant,
-  type Connection, type Edge, type EdgeChange, type Node, type NodeChange,
+  BaseEdge, getBezierPath,
+  type Connection, type Edge, type EdgeChange, type EdgeProps, type Node, type NodeChange,
   type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -68,7 +69,80 @@ function TableNode({ data, selected }: NodeProps) {
   )
 }
 
+// ── 自定义边（无背景 label，位于连线上方） ────────────
+
+function CustomEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style,
+  markerEnd,
+  label,
+  selected,
+}: EdgeProps) {
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+  })
+
+  // label 向上偏移 22px，显示在连线上方
+  const labelOffsetY = labelY - 22
+
+  return (
+    <>
+      {/* 透明宽路径作为点击热区，方便选中边 */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={16}
+        style={{ cursor: 'pointer' }}
+      />
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        markerEnd={markerEnd}
+        style={{
+          ...style,
+          stroke: selected ? '#1677ff' : (style?.stroke || '#64748b'),
+          strokeWidth: selected ? 3 : (style?.strokeWidth || 2),
+          transition: 'stroke 0.15s, stroke-width 0.15s',
+        }}
+      />
+      {label && (
+        <foreignObject
+          width={240}
+          height={40}
+          x={labelX - 120}
+          y={labelOffsetY - 14}
+          style={{ overflow: 'visible', pointerEvents: 'none' }}
+        >
+          <div style={{
+            fontSize: 12,
+            color: selected ? '#1677ff' : '#64748b',
+            textAlign: 'center',
+            lineHeight: '16px',
+            fontFamily: 'inherit',
+            userSelect: 'none',
+          }}>
+            {label}
+          </div>
+        </foreignObject>
+      )}
+    </>
+  )
+}
+
 const nodeTypes = { table: TableNode }
+const edgeTypes = { custom: CustomEdge }
 
 // ── 自动分层布局（移植 GraphPage 算法） ───────────────
 
@@ -101,7 +175,7 @@ function computeLayeredLayout(
   }
   if (remaining.size > 0) layers.push([...remaining])
 
-  const colGap = 240, rowGap = 120
+  const colGap = 340, rowGap = 140
   layers.forEach((layer, ci) => {
     layer.forEach((id, ri) => {
       pos.set(id, { x: 40 + ci * colGap, y: 60 + ri * rowGap })
@@ -148,10 +222,13 @@ function WorkflowEditorInner() {
     }))
     const edges: Edge[] = data.edges.map(e => ({
       id: String(e.id),
+      type: 'custom',
       source: String(e.source_node_id),
       target: String(e.target_node_id),
       label: e.label || undefined,
       animated: true,
+      selectable: true,
+      deletable: true,
       style: { stroke: '#64748b', strokeWidth: 2 },
     }))
     setRfNodes(nodes)
@@ -199,9 +276,12 @@ function WorkflowEditorInner() {
     }).then(resp => {
       setRfEdges(es => [...es, {
         id: String(resp.id),
+        type: 'custom',
         source: String(sourceNum),
         target: String(targetNum),
         animated: true,
+        selectable: true,
+        deletable: true,
         style: { stroke: '#64748b', strokeWidth: 2 },
       }])
       message.success('连线已创建')
@@ -351,6 +431,7 @@ function WorkflowEditorInner() {
           nodes={rfNodes}
           edges={rfEdges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
@@ -360,6 +441,8 @@ function WorkflowEditorInner() {
           fitView
           deleteKeyCode={['Delete', 'Backspace']}
           proOptions={{ hideAttribution: true }}
+          edgesFocusable
+          connectOnClick
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" />
           <Controls showInteractive={false} position="bottom-left" />
