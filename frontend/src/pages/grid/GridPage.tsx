@@ -107,12 +107,8 @@ export default function GridPage() {
     if (v) {
       setActiveViewId(v.id)
       setViewFilters(normalizeFilters(v.filters))
-      setViewSortings(Array.isArray((v as unknown as Record<string, unknown>).sortings)
-        ? (v as unknown as Record<string, unknown>).sortings as Array<{ field_name: string; direction: 'asc' | 'desc' }>
-        : Array.isArray((v as unknown as Record<string, unknown>).sorts)
-          ? (v as unknown as Record<string, unknown>).sorts as Array<{ field_name: string; direction: 'asc' | 'desc' }>
-          : [])
-      setViewFilterLogic((((v as unknown as Record<string, unknown>).filter_logic ?? (v as unknown as Record<string, unknown>).filter_type) as 'AND' | 'OR') || 'AND')
+      setViewSortings(Array.isArray(v.sortings) ? v.sortings : [])
+      setViewFilterLogic((v.filter_type ?? 'AND') as 'AND' | 'OR')
       setViewOptionsDraft(v.view_options ?? null)
       // 切换视图时重置列级排序和筛选（视图已有自己的 filters）
       setColumnSort(null)
@@ -258,15 +254,15 @@ export default function GridPage() {
     mutationFn: (args: {
       vid: number | string
       filters?: Array<{ field_name: string; op: string; value?: unknown }> | null
-      sorts?: Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
-      filter_logic?: 'AND' | 'OR'
+      sortings?: Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
+      filter_type?: 'AND' | 'OR'
       view_type?: string
       view_options?: Record<string, unknown> | null
     }) =>
       viewApi.update(wid!, tid!, args.vid, {
         filters: args.filters ?? undefined,
-        sorts: args.sorts ?? undefined,
-        filter_logic: args.filter_logic ?? undefined,
+        sortings: args.sortings ?? undefined,
+        filter_type: args.filter_type ?? undefined,
         view_type: args.view_type,
         view_options: args.view_options ?? undefined,
       }),
@@ -286,6 +282,33 @@ export default function GridPage() {
       queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
     },
   })
+
+  /** 合并视图级筛选 + 列级筛选/排序 → 持久化到后端的统一入口.
+   *  两处调用：工具栏"保存视图"按钮、ViewConfigDialog 保存 onCommit.
+   */
+  const persistCurrentView = () => {
+    if (!activeViewId) return
+    // 合并列级筛选进视图筛选（字段名避免重复：视图级优先，列级追加）
+    const allFilters = [...viewFilters]
+    for (const [fieldName, flt] of Object.entries(columnLevelFilters)) {
+      if (flt.value !== undefined && flt.value !== null && flt.value !== '') {
+        const already = allFilters.some(f => f.field_name === fieldName)
+        if (!already) allFilters.push({ field_name: fieldName, op: flt.op, value: flt.value })
+      }
+    }
+    // 合并列级排序进视图排序（列级作为主排序放最前）
+    const allSortings = [...(columnSort ? [columnSort] : []), ...viewSortings]
+    updateView.mutate({
+      vid: activeViewId,
+      filters: allFilters.length ? allFilters : null,
+      sortings: allSortings.length ? allSortings : null,
+      filter_type: viewFilterLogic,
+      view_options: viewOptionsDraft,
+    })
+    // 同步：列级筛选/排序合并后重置，下次就是纯视图级的了
+    setColumnLevelFilters({})
+    setColumnSort(null)
+  }
 
   // 权限查询（点开权限 Modal 时加载）
   const { data: permData, refetch: refetchPerm } = useQuery<TablePermission>({
@@ -390,17 +413,19 @@ export default function GridPage() {
         <Space>
           <Tooltip title="字段管理"><Button icon={<SettingOutlined />} onClick={() => setFieldMgrOpen(true)} /></Tooltip>
           <Button icon={<ImportOutlined />} onClick={() => setImportExportOpen(true)}>导入/导出</Button>
-          <Dropdown menu={{ items: [
-            { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
-            { key: 'perm', icon: <SafetyOutlined />, label: '权限设置', onClick: () => { refetchPerm(); setPermOpen(true) } },
-            { key: 'share', icon: <ShareAltOutlined />, label: '分享视图', onClick: () => shareView.mutate() },
-            { key: 'revoke', icon: <CloseOutlined />, label: '撤销分享', onClick: () => revokeShare.mutate() },
-            { type: 'divider' },
-            { key: 'copy', icon: <CopyOutlined />, label: '复制表', onClick: () => tableApi.copy(wid!, tid!).then(() => message.success('表已复制')).then(() => queryClient.invalidateQueries({ queryKey: ['table', tableKey] })) },
-            { key: 'move', icon: <SwapOutlined />, label: '移动到其他工作区', onClick: () => setMoveOpen(true) },
-            { type: 'divider' },
-            { key: 'delete', icon: <DeleteOutlined />, danger: true, label: '删除表', disabled: true },
-          ] }}><Button icon={<MoreOutlined />} /></Dropdown>
+          <Dropdown menu={{
+            items: [
+              { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
+              { key: 'perm', icon: <SafetyOutlined />, label: '权限设置', onClick: () => { refetchPerm(); setPermOpen(true) } },
+              { key: 'share', icon: <ShareAltOutlined />, label: '分享视图', onClick: () => shareView.mutate() },
+              { key: 'revoke', icon: <CloseOutlined />, label: '撤销分享', onClick: () => revokeShare.mutate() },
+              { type: 'divider' },
+              { key: 'copy', icon: <CopyOutlined />, label: '复制表', onClick: () => tableApi.copy(wid!, tid!).then(() => message.success('表已复制')).then(() => queryClient.invalidateQueries({ queryKey: ['table', tableKey] })) },
+              { key: 'move', icon: <SwapOutlined />, label: '移动到其他工作区', onClick: () => setMoveOpen(true) },
+              { type: 'divider' },
+              { key: 'delete', icon: <DeleteOutlined />, danger: true, label: '删除表', disabled: true },
+            ]
+          }}><Button icon={<MoreOutlined />} /></Dropdown>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => quickAdd.mutate()}>新增行</Button>
         </Space>
       </div>
@@ -466,13 +491,7 @@ export default function GridPage() {
               size="small"
               icon={<SaveOutlined />}
               loading={updateView.isPending}
-              onClick={() => updateView.mutate({
-                vid: activeViewId,
-                filters: viewFilters.length ? viewFilters : null,
-                sorts: viewSortings.length ? viewSortings : null,
-                filter_logic: viewFilterLogic,
-                view_options: viewOptionsDraft,
-              })}
+              onClick={persistCurrentView}
             >保存视图</Button>
           </Tooltip>
         )}
@@ -579,6 +598,10 @@ export default function GridPage() {
         onSaveFilters={(f) => { setViewFilters(f); setOffset(0) }}
         onSaveSortings={(s) => { setViewSortings(s); setOffset(0) }}
         onSaveOptions={(o) => { setViewOptionsDraft(o) }}
+        onCommit={() => {
+          // 有激活视图时自动持久化到后端（含列级筛选/排序）
+          persistCurrentView()
+        }}
       />
 
       {/* 创建新视图 Modal */}
@@ -909,11 +932,14 @@ interface ViewConfigDialogProps {
   onSaveFilters: (f: FilterRule[]) => void
   onSaveSortings: (s: SortRule[]) => void
   onSaveOptions: (o: Record<string, unknown> | null) => void
+  /** 保存按钮所有 onSave 回调执行完毕后触发，用于一次性持久化到后端 */
+  onCommit?: () => void
 }
 
 function ViewConfigDialog({
   open, viewType, filters, sortings, viewOptions, fields, onClose,
   filterLogic, onSaveFilterLogic, onSaveFilters, onSaveSortings, onSaveOptions,
+  onCommit,
 }: ViewConfigDialogProps) {
   const [draftFilters, setDraftFilters] = useState<FilterRule[]>([])
   const [draftSorts, setDraftSorts] = useState<SortRule[]>([])
@@ -1149,7 +1175,7 @@ function ViewConfigDialog({
       })
     }
     return items
-  }, [draftFilters, draftSorts, filterableFields, sortableFields, viewOptFields, draftOpt, viewType])
+  }, [draftFilters, draftSorts, draftFilterLogic, filterableFields, sortableFields, viewOptFields, draftOpt, viewType])
 
   return (
     <Modal
@@ -1169,6 +1195,7 @@ function ViewConfigDialog({
             Object.entries(draftOpt).filter(([, v]) => v !== '' && v != null && (Array.isArray(v) ? v.length > 0 : true)),
           )
           onSaveOptions(Object.keys(cleanOpt).length ? cleanOpt : null)
+          onCommit?.()
           onClose()
         }}>保存</Button>,
       ]}
@@ -1353,9 +1380,9 @@ function ColumnFilterDropdown({
   const isSelect = _resolveFt(field.field_type) === 'select' || _resolveFt(field.field_type) === 'multiselect'
   const options: Array<{ value: string; label: string }> = isSelect
     ? ((field.config as Record<string, unknown> | undefined)?.options as Array<Record<string, unknown>> | undefined || []).map((o: Record<string, unknown>) => ({
-        value: String(o.value ?? o.name ?? ''),
-        label: String(o.value ?? o.name ?? ''),
-      }))
+      value: String(o.value ?? o.name ?? ''),
+      label: String(o.value ?? o.name ?? ''),
+    }))
     : []
 
   return (
