@@ -58,10 +58,6 @@ export default function GridPage() {
   const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') || '')
   const [offset, setOffset] = useState(0)
   const [limit, setLimit] = useState(settings.defaultPageSize)
-  // 表头排序：单个字段排序 {field_name: direction} 或 null
-  const [columnSort, setColumnSort] = useState<{ field_name: string; direction: 'asc' | 'desc' } | null>(null)
-  // 表头列级筛选：{field_name: { op, value }} 的字典
-  const [columnLevelFilters, setColumnLevelFilters] = useState<Record<string, { op: string; value: unknown }>>({})
   const tableKey = `${wid}/${tid}`
 
   const { data: table, isLoading } = useQuery<TableDetail>({
@@ -110,9 +106,6 @@ export default function GridPage() {
       setViewSortings(Array.isArray(v.sortings) ? v.sortings : [])
       setViewFilterLogic((v.filter_type ?? 'AND') as 'AND' | 'OR')
       setViewOptionsDraft(v.view_options ?? null)
-      // 切换视图时重置列级排序和筛选（视图已有自己的 filters）
-      setColumnSort(null)
-      setColumnLevelFilters({})
       if (v.view_type === 'kanban') setMode('kanban')
       else if (v.view_type === 'gallery') setMode('gallery')
       else if (v.view_type === 'calendar') setMode('calendar')
@@ -128,8 +121,6 @@ export default function GridPage() {
       setViewSortings([])
       setViewFilterLogic('AND')
       setViewOptionsDraft(null)
-      setColumnSort(null)
-      setColumnLevelFilters({})
       setMode('grid')
       if (updateUrl && searchParams.has('view')) {
         const params = new URLSearchParams(searchParams)
@@ -168,24 +159,17 @@ export default function GridPage() {
     setSearchParams(params, { replace: true })
   }, [searchQuery])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 合并视图 filters + 表头列级筛选 + 全局关键词 → 后端统一解析
+  // 当前生效的筛选条件（视图筛选 + 全局关键词）
   const effectiveFilters = useMemo(() => {
     const list: Array<Record<string, unknown>> = [...viewFilters]
-    for (const [fieldName, flt] of Object.entries(columnLevelFilters)) {
-      if (flt.value !== undefined && flt.value !== null && flt.value !== '') {
-        list.push({ field_name: fieldName, op: flt.op, value: flt.value })
-      }
-    }
     if (searchQuery.trim()) list.push({ field_name: '__query__', op: 'contains', value: searchQuery.trim() })
     return list.length ? list : undefined
-  }, [viewFilters, columnLevelFilters, searchQuery])
+  }, [viewFilters, searchQuery])
 
-  // 后端 sorts 格式（视图排序 + 表头列排序）
+  // 当前生效的排序条件
   const sortsParam = useMemo(() => {
-    const result = [...viewSortings]
-    if (columnSort) result.push({ field_name: columnSort.field_name, direction: columnSort.direction })
-    return result.length ? result : undefined
-  }, [viewSortings, columnSort])
+    return viewSortings.length ? viewSortings : undefined
+  }, [viewSortings])
 
   const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 } } = useQuery({
     queryKey: ['table-records', tableKey, offset, limit, effectiveFilters, sortsParam, viewFilterLogic],
@@ -283,31 +267,18 @@ export default function GridPage() {
     },
   })
 
-  /** 合并视图级筛选 + 列级筛选/排序 → 持久化到后端的统一入口.
+  /** 持久化当前视图到后端（唯一真相源：viewFilters / viewSortings）.
    *  两处调用：工具栏"保存视图"按钮、ViewConfigDialog 保存 onCommit.
    */
   const persistCurrentView = () => {
     if (!activeViewId) return
-    // 合并列级筛选进视图筛选（字段名避免重复：视图级优先，列级追加）
-    const allFilters = [...viewFilters]
-    for (const [fieldName, flt] of Object.entries(columnLevelFilters)) {
-      if (flt.value !== undefined && flt.value !== null && flt.value !== '') {
-        const already = allFilters.some(f => f.field_name === fieldName)
-        if (!already) allFilters.push({ field_name: fieldName, op: flt.op, value: flt.value })
-      }
-    }
-    // 合并列级排序进视图排序（列级作为主排序放最前）
-    const allSortings = [...(columnSort ? [columnSort] : []), ...viewSortings]
     updateView.mutate({
       vid: activeViewId,
-      filters: allFilters.length ? allFilters : null,
-      sortings: allSortings.length ? allSortings : null,
+      filters: viewFilters.length ? viewFilters : null,
+      sortings: viewSortings.length ? viewSortings : null,
       filter_type: viewFilterLogic,
       view_options: viewOptionsDraft,
     })
-    // 同步：列级筛选/排序合并后重置，下次就是纯视图级的了
-    setColumnLevelFilters({})
-    setColumnSort(null)
   }
 
   // 权限查询（点开权限 Modal 时加载）
@@ -355,17 +326,17 @@ export default function GridPage() {
 
   if (!wid || !tid) return <Empty description="无效的表 ID" style={{ padding: 48 }} />
 
-  const columns = buildColumns(table?.fields || [], wid, columnSort, columnLevelFilters,
+  const columns = buildColumns(table?.fields || [], wid, viewSortings, viewFilters,
     (fieldName, op, value) => {
-      setColumnLevelFilters(prev => ({ ...prev, [fieldName]: { op, value } }))
+      // 替换同字段已有规则，没有则追加（避免不断累积）
+      setViewFilters(prev => {
+        const without = prev.filter(f => f.field_name !== fieldName)
+        return [...without, { field_name: fieldName, op, value }]
+      })
       setOffset(0)
     },
     (fieldName) => {
-      setColumnLevelFilters(prev => {
-        const next = { ...prev }
-        delete next[fieldName]
-        return next
-      })
+      setViewFilters(prev => prev.filter(f => f.field_name !== fieldName))
       setOffset(0)
     },
     updateRow.isPending
@@ -519,18 +490,20 @@ export default function GridPage() {
               // 处理列排序 — Ant Design sorter 可能是单对象或数组
               type SorterInfo = { field?: string | number | readonly (string | number)[]; order?: 'ascend' | 'descend' | null }
               const s = sorter as SorterInfo | SorterInfo[]
+              let newSort: { field_name: string; direction: 'asc' | 'desc' } | null = null
               if (Array.isArray(s)) {
                 const first = s[0]
                 if (first.order && typeof first.field === 'string') {
-                  setColumnSort({ field_name: first.field, direction: first.order === 'ascend' ? 'asc' : 'desc' })
-                } else {
-                  setColumnSort(null)
+                  newSort = { field_name: first.field, direction: first.order === 'ascend' ? 'asc' : 'desc' }
                 }
               } else if (s.order && typeof s.field === 'string') {
-                setColumnSort({ field_name: s.field, direction: s.order === 'ascend' ? 'asc' : 'desc' })
-              } else {
-                setColumnSort(null)
+                newSort = { field_name: s.field, direction: s.order === 'ascend' ? 'asc' : 'desc' }
               }
+              // 更新 viewSortings：替换同字段规则，新规则置顶
+              setViewSortings(prev => {
+                const without = newSort ? prev.filter(sr => sr.field_name !== newSort!.field_name) : prev
+                return newSort ? [newSort, ...without] : without
+              })
               setOffset(0)
             }}
             onRow={(record) => ({ onDoubleClick: () => { setDetailRow(record); setDetailOpen(true) } })}
@@ -1470,18 +1443,22 @@ function ColumnFilterDropdown({
 function buildColumns(
   fields: Field[],
   wid: number | string | undefined,
-  columnSort: { field_name: string; direction: 'asc' | 'desc' } | null,
-  columnLevelFilters: Record<string, { op: string; value: unknown }>,
+  viewSortings: Array<{ field_name: string; direction: 'asc' | 'desc' }>,
+  viewFilters: Array<{ field_name: string; op: string; value?: unknown }>,
   onFilterApply: (fieldName: string, op: string, value: unknown) => void,
   onFilterReset: (fieldName: string) => void,
   onCellSave?: (rowId: number | string, fieldName: string, value: unknown) => Promise<unknown>,
 ): ColumnsType<RowResponse> {
   return fields.filter(f => !f.hidden).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map<NonNullable<ColumnsType<RowResponse>>[number]>(f => {
-      const currentSort = columnSort?.field_name === f.name
-        ? (columnSort.direction === 'asc' ? 'ascend' : 'descend') as 'ascend' | 'descend'
+      const sortRule = viewSortings.find(s => s.field_name === f.name)
+      const currentSort = sortRule
+        ? (sortRule.direction === 'asc' ? 'ascend' : 'descend') as 'ascend' | 'descend'
         : null
-      const hasFilter = !!columnLevelFilters[f.name]
+      const filterRule = viewFilters.find(fr => fr.field_name === f.name)
+      const currentFilter = filterRule
+        ? { op: filterRule.op, value: filterRule.value }
+        : undefined
       return {
         key: String(f.id),
         title: (
@@ -1492,7 +1469,7 @@ function buildColumns(
                 ? <SortAscendingOutlined style={{ fontSize: 12, color: '#1677ff' }} />
                 : <SortDescendingOutlined style={{ fontSize: 12, color: '#1677ff' }} />
             )}
-            {hasFilter && (
+            {currentFilter && (
               <FilterOutlined style={{ fontSize: 11, color: '#1677ff' }} />
             )}
           </span>
@@ -1505,13 +1482,13 @@ function buildColumns(
         filterDropdown: ({ confirm, clearFilters }) => (
           <ColumnFilterDropdown
             field={f}
-            currentFilter={columnLevelFilters[f.name]}
+            currentFilter={currentFilter}
             onApply={(op, value) => { onFilterApply(f.name, op, value); confirm?.() }}
             onReset={() => { onFilterReset(f.name); clearFilters?.(); confirm?.() }}
           />
         ),
         filterIcon: (filtered) => (
-          <FilterOutlined style={{ color: filtered || hasFilter ? '#1677ff' : undefined }} />
+          <FilterOutlined style={{ color: filtered || currentFilter ? '#1677ff' : undefined }} />
         ),
         render: (v: unknown, record: RowResponse) => (
           <GridCell
