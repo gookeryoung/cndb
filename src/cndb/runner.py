@@ -124,8 +124,11 @@ def build(_args: argparse.Namespace) -> None:
     """构建前后端（需源码目录）."""
     _ensure_dev_env()
     print("[build] 构建前端...")
-    cmd = "npm run build" if sys.platform == "win32" else ["npm", "run", "build"]
-    result = subprocess.run(cmd, cwd=FRONTEND_DIR, check=False)
+    cmd = ["npm", "run", "build"]
+    if sys.platform == "win32":
+        result = subprocess.run(cmd, cwd=FRONTEND_DIR, check=False, shell=True)
+    else:
+        result = subprocess.run(cmd, cwd=FRONTEND_DIR, check=False)
     if result.returncode != 0:
         print("[error] 前端构建失败")
         sys.exit(result.returncode)

@@ -1,6 +1,11 @@
-"""Coverage: routers/fields.py _validate_link_config bad config + nonexistent target + delete_field rollback."""
+"""Coverage: routers/fields.py 分支覆盖."""
 
 from __future__ import annotations
+
+from unittest.mock import patch
+
+import pytest
+from fastapi import HTTPException
 
 
 class TestLinkFieldValidation:
@@ -66,3 +71,68 @@ class TestLinkFieldValidation:
             headers=auth_headers,
         )
         assert r.status_code == 404
+
+
+# ── fields.py 剩余分支覆盖 ────────────────────────────
+
+
+class TestFieldsRouterRemaining:
+    def test_validate_field_config_unknown_type(self, db):
+        """_validate_field_config 遇到未知 field_type -> 400 (覆盖 line 30)."""
+        from cndb.plugins.tables.field_types import default_registry
+        from cndb.plugins.tables.routers.fields import _validate_field_config
+
+        with patch.object(default_registry, "get", return_value=None):
+            with pytest.raises(HTTPException) as exc_info:
+                _validate_field_config("ghost_type", {}, db)
+            assert exc_info.value.status_code == 400
+            assert "未知字段类型" in exc_info.value.detail
+
+    def test_create_field_add_column_failure_rollback(self, client, auth_headers, db):
+        """create_field 时 add_column 抛异常 -> 500 (覆盖 line 95-97)."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_acf"})
+        wid = ws.json()["id"]
+        t = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t_acf"})
+        tid = t.json()["id"]
+
+        # patch 目标是 fields 模块里已经 import 的 add_column
+        with patch("cndb.plugins.tables.routers.fields.add_column", side_effect=RuntimeError("disk full")):
+            r = client.post(
+                f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+                headers=auth_headers,
+                json={"name": "bad_col", "field_type": "text", "order": 0},
+            )
+        assert r.status_code == 500
+        assert "物理加列失败" in r.json()["detail"]
+
+    def test_delete_field_drop_column_failure_rollback(self, client, auth_headers, db):
+        """delete_field 时 drop_column 抛异常 -> 500 + trashed 回滚 (覆盖 line 161-164)."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_dcf"})
+        wid = ws.json()["id"]
+        t = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t_dcf"})
+        tid = t.json()["id"]
+        # 先正常建个字段
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+            headers=auth_headers,
+            json={"name": "rollback_col", "field_type": "text", "order": 0},
+        )
+        assert r.status_code == 201
+        fid = r.json()["id"]
+
+        # 删列失败时应回滚 trashed=True
+        with patch("cndb.plugins.tables.routers.fields.drop_column", side_effect=RuntimeError("cannot drop")):
+            r = client.delete(
+                f"/api/v1/workspaces/{wid}/tables/{tid}/fields/{fid}",
+                headers=auth_headers,
+            )
+        assert r.status_code == 500
+        assert "物理删列失败" in r.json()["detail"]
+
+        # 确认 trashed 已被回滚为 False
+        fields = client.get(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields?include_trashed=true",
+            headers=auth_headers,
+        )
+        target = next(f for f in fields.json() if f["id"] == fid)
+        assert target["trashed"] is False
