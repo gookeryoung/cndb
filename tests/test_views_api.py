@@ -518,3 +518,74 @@ class TestViewsAPI:
         slug = share_r.json()["slug"]
         r = client.post(f"/api/v1/public/forms/{slug}", json={"姓名": "x"})
         assert r.status_code == 400
+
+    # ── 覆盖遗漏分支 ──
+
+    def test_update_view_without_is_default(self, client, ws, table, auth_owner):
+        """update_view 不传 is_default 时条件为 False，跳过清 default 分支."""
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "VNoDefault", "view_type": "grid", "is_default": True},
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+        # 只更新 name，不传 is_default —— 覆盖 if payload.is_default: 的 False 分支
+        r = client.patch(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            json={"name": "Renamed"},
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert r.json()["name"] == "Renamed"
+        assert r.json()["is_default"] is True
+
+    def test_get_view_kanban_with_rows(self, client, ws, table, auth_owner):
+        """kanban 有实际行数据时进入 for row in rows 循环，覆盖 line 204-205."""
+        # 先加状态字段
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/fields",
+            json={"name": "状态", "field_type": "text", "order": 1},
+            headers=auth_owner,
+        )
+
+        create_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "KanbanWithRows",
+                "view_type": "kanban",
+                "view_options": {"group_field": "状态"},
+            },
+            headers=auth_owner,
+        )
+        vid = create_r.json()["id"]
+
+        # 使用 records API 插行（values 字段）
+        row1 = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records",
+            headers=auth_owner,
+            json={"values": {"姓名": "张三", "状态": "进行中"}},
+        )
+        row2 = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records",
+            headers=auth_owner,
+            json={"values": {"姓名": "李四", "状态": None}},
+        )
+        assert row1.status_code in (200, 201), f"row1 failed: {row1.text}"
+        assert row2.status_code in (200, 201), f"row2 failed: {row2.text}"
+
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/kanban",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        cols = r.json()["columns"]
+        assert "进行中" in cols
+        assert "未分组" in cols
+
+    def test_revoke_view_share_not_found(self, client, ws, table, auth_owner):
+        """revoke 不存在的 view 应返回 404（覆盖 line 298）."""
+        r = client.delete(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/99999/share",
+            headers=auth_owner,
+        )
+        assert r.status_code == 404
