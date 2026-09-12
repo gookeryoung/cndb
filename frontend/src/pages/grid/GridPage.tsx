@@ -2,20 +2,21 @@
 
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Row, Col, Badge, Input, Tabs, Select, Form, Switch } from 'antd'
+import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Row, Col, Badge, Input, InputNumber, Tabs, Select, Form, Switch } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
   AppstoreOutlined, CopyOutlined, ImportOutlined, DownOutlined, CloseOutlined,
   SaveOutlined, CalendarOutlined, ShareAltOutlined, SafetyOutlined, SwapOutlined,
-  SearchOutlined,
+  SearchOutlined, SortAscendingOutlined, SortDescendingOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tableApi, recordApi, viewApi, permissionApi } from '@/api'
 import type { RowResponse, Field, TableDetail, View, ViewCreate, TablePermission } from '@/api'
 import GridCell from './components/GridCell'
 import RowDetailDrawer from './components/RowDetailDrawer'
+import KanbanView from './components/KanbanView'
 import { useResponsive } from '@/hooks/useResponsive'
 import { useTableSettings } from '@/theme/TableSettingsProvider'
 import { densityToSize, DEFAULT_TABLE_SETTINGS } from '@/theme/tableSettings'
@@ -50,11 +51,17 @@ export default function GridPage() {
   const [permOpen, setPermOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [activeViewId, setActiveViewId] = useState<number | string | null>(null)
-  const [viewFilters, setViewFilters] = useState<Record<string, unknown> | null>(null)
+  const [viewFilters, setViewFilters] = useState<Array<{ field_name: string; op: string; value?: unknown }>>([])
+  const [viewSortings, setViewSortings] = useState<Array<{ field_name: string; direction: 'asc' | 'desc' }>>([])
+  const [viewFilterLogic, setViewFilterLogic] = useState<'AND' | 'OR'>('AND')
   const [viewOptionsDraft, setViewOptionsDraft] = useState<Record<string, unknown> | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') || '')
   const [offset, setOffset] = useState(0)
   const [limit, setLimit] = useState(settings.defaultPageSize)
+  // 表头排序：单个字段排序 {field_name: direction} 或 null
+  const [columnSort, setColumnSort] = useState<{ field_name: string; direction: 'asc' | 'desc' } | null>(null)
+  // 表头列级筛选：{field_name: { op, value }} 的字典
+  const [columnLevelFilters, setColumnLevelFilters] = useState<Record<string, { op: string; value: unknown }>>({})
   const tableKey = `${wid}/${tid}`
 
   const { data: table, isLoading } = useQuery<TableDetail>({
@@ -67,12 +74,49 @@ export default function GridPage() {
     queryFn: () => viewApi.list(wid!, tid!),
     enabled: !!wid && !!tid,
   })
+  /** 把后端存储的 filters（dict 或 list）归一化成 list 形式 */
+  function normalizeFilters(raw: unknown): Array<{ field_name: string; op: string; value?: unknown }> {
+    if (!raw) return []
+    if (Array.isArray(raw)) {
+      return raw
+        .filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null)
+        .map(r => ({
+          field_name: String(r.field_name ?? ''),
+          op: String(r.op ?? '='),
+          ...(r.value !== undefined && r.value !== null ? { value: r.value } : {}),
+        }))
+    }
+    if (typeof raw === 'object') {
+      const result: Array<{ field_name: string; op: string; value?: unknown }> = []
+      for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (k === '$query') continue  // 特殊 key 跳过
+        if (typeof v === 'object' && v !== null && 'op' in v) {
+          const vv = v as { op: string; value?: unknown }
+          result.push({ field_name: k, op: vv.op, ...(vv.value !== undefined ? { value: vv.value } : {}) })
+        } else {
+          result.push({ field_name: k, op: '=', value: v })
+        }
+      }
+      return result
+    }
+    return []
+  }
+
   // 加载 active view 的 filters + view_options
   const loadView = (v: View | null, updateUrl = true) => {
     if (v) {
       setActiveViewId(v.id)
-      setViewFilters(v.filters ?? null)
+      setViewFilters(normalizeFilters(v.filters))
+      setViewSortings(Array.isArray((v as unknown as Record<string, unknown>).sortings)
+        ? (v as unknown as Record<string, unknown>).sortings as Array<{ field_name: string; direction: 'asc' | 'desc' }>
+        : Array.isArray((v as unknown as Record<string, unknown>).sorts)
+          ? (v as unknown as Record<string, unknown>).sorts as Array<{ field_name: string; direction: 'asc' | 'desc' }>
+          : [])
+      setViewFilterLogic((((v as unknown as Record<string, unknown>).filter_logic ?? (v as unknown as Record<string, unknown>).filter_type) as 'AND' | 'OR') || 'AND')
       setViewOptionsDraft(v.view_options ?? null)
+      // 切换视图时重置列级排序和筛选（视图已有自己的 filters）
+      setColumnSort(null)
+      setColumnLevelFilters({})
       if (v.view_type === 'kanban') setMode('kanban')
       else if (v.view_type === 'gallery') setMode('gallery')
       else if (v.view_type === 'calendar') setMode('calendar')
@@ -84,8 +128,12 @@ export default function GridPage() {
       }
     } else {
       setActiveViewId(null)
-      setViewFilters(null)
+      setViewFilters([])
+      setViewSortings([])
+      setViewFilterLogic('AND')
       setViewOptionsDraft(null)
+      setColumnSort(null)
+      setColumnLevelFilters({})
       setMode('grid')
       if (updateUrl && searchParams.has('view')) {
         const params = new URLSearchParams(searchParams)
@@ -124,14 +172,29 @@ export default function GridPage() {
     setSearchParams(params, { replace: true })
   }, [searchQuery])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 合并视图 filters + 表头列级筛选 + 全局关键词 → 后端统一解析
+  const effectiveFilters = useMemo(() => {
+    const list: Array<Record<string, unknown>> = [...viewFilters]
+    for (const [fieldName, flt] of Object.entries(columnLevelFilters)) {
+      if (flt.value !== undefined && flt.value !== null && flt.value !== '') {
+        list.push({ field_name: fieldName, op: flt.op, value: flt.value })
+      }
+    }
+    if (searchQuery.trim()) list.push({ field_name: '__query__', op: 'contains', value: searchQuery.trim() })
+    return list.length ? list : undefined
+  }, [viewFilters, columnLevelFilters, searchQuery])
+
+  // 后端 sorts 格式（视图排序 + 表头列排序）
+  const sortsParam = useMemo(() => {
+    const result = [...viewSortings]
+    if (columnSort) result.push({ field_name: columnSort.field_name, direction: columnSort.direction })
+    return result.length ? result : undefined
+  }, [viewSortings, columnSort])
+
   const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 } } = useQuery({
-    queryKey: ['table-records', tableKey, offset, limit, viewFilters, searchQuery],
+    queryKey: ['table-records', tableKey, offset, limit, effectiveFilters, sortsParam, viewFilterLogic],
     queryFn: () => {
-      // 合并视图 filters 与全局关键词搜索
-      let merged: Record<string, unknown> | undefined = viewFilters ? { ...viewFilters } : {}
-      if (searchQuery.trim()) merged.$query = searchQuery.trim()
-      if (Object.keys(merged).length === 0) merged = undefined
-      return recordApi.list(wid!, tid!, { offset, limit, filters: merged })
+      return recordApi.list(wid!, tid!, { offset, limit, filters: effectiveFilters, sorts: sortsParam, filter_logic: viewFilterLogic })
     },
     enabled: !!wid && !!tid,
   })
@@ -192,9 +255,18 @@ export default function GridPage() {
     },
   })
   const updateView = useMutation({
-    mutationFn: (args: { vid: number | string; filters: Record<string, unknown> | null; view_type?: string; view_options?: Record<string, unknown> | null }) =>
+    mutationFn: (args: {
+      vid: number | string
+      filters?: Array<{ field_name: string; op: string; value?: unknown }> | null
+      sorts?: Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
+      filter_logic?: 'AND' | 'OR'
+      view_type?: string
+      view_options?: Record<string, unknown> | null
+    }) =>
       viewApi.update(wid!, tid!, args.vid, {
         filters: args.filters ?? undefined,
+        sorts: args.sorts ?? undefined,
+        filter_logic: args.filter_logic ?? undefined,
         view_type: args.view_type,
         view_options: args.view_options ?? undefined,
       }),
@@ -260,7 +332,19 @@ export default function GridPage() {
 
   if (!wid || !tid) return <Empty description="无效的表 ID" style={{ padding: 48 }} />
 
-  const columns = buildColumns(table?.fields || [], wid,
+  const columns = buildColumns(table?.fields || [], wid, columnSort, columnLevelFilters,
+    (fieldName, op, value) => {
+      setColumnLevelFilters(prev => ({ ...prev, [fieldName]: { op, value } }))
+      setOffset(0)
+    },
+    (fieldName) => {
+      setColumnLevelFilters(prev => {
+        const next = { ...prev }
+        delete next[fieldName]
+        return next
+      })
+      setOffset(0)
+    },
     updateRow.isPending
       ? undefined
       : (rowId, fieldName, value) => updateRow.mutateAsync({ rowId, fieldName, value }),
@@ -384,7 +468,9 @@ export default function GridPage() {
               loading={updateView.isPending}
               onClick={() => updateView.mutate({
                 vid: activeViewId,
-                filters: viewFilters,
+                filters: viewFilters.length ? viewFilters : null,
+                sorts: viewSortings.length ? viewSortings : null,
+                filter_logic: viewFilterLogic,
                 view_options: viewOptionsDraft,
               })}
             >保存视图</Button>
@@ -398,7 +484,7 @@ export default function GridPage() {
           <div style={{ textAlign: 'center', padding: 48 }}>加载中...</div>
         ) : mode === 'grid' ? (
           <Table
-            rowKey="id" size={densityToSize(settings.density)} loading={isLoading} columns={columns} dataSource={rowList.items || []}
+            rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns} dataSource={rowList.items || []}
             bordered={settings.bordered}
             showHeader={settings.showHeader}
             rowClassName={settings.striped ? (_r, i) => (i % 2 === 1 ? 'table-row-striped' : '') : undefined}
@@ -409,7 +495,25 @@ export default function GridPage() {
               onChange: (p, l) => { setOffset((p - 1) * l); setLimit(l) },
               showTotal: (t) => `共 ${t} 条`,
             }}
-            scroll={{ x: Math.max(800, (table?.fields.length || 4) * 160) }}
+            scroll={{ x: 'max-content' }}
+            onChange={(_pag, _fil, sorter) => {
+              // 处理列排序 — Ant Design sorter 可能是单对象或数组
+              type SorterInfo = { field?: string | number | readonly (string | number)[]; order?: 'ascend' | 'descend' | null }
+              const s = sorter as SorterInfo | SorterInfo[]
+              if (Array.isArray(s)) {
+                const first = s[0]
+                if (first.order && typeof first.field === 'string') {
+                  setColumnSort({ field_name: first.field, direction: first.order === 'ascend' ? 'asc' : 'desc' })
+                } else {
+                  setColumnSort(null)
+                }
+              } else if (s.order && typeof s.field === 'string') {
+                setColumnSort({ field_name: s.field, direction: s.order === 'ascend' ? 'asc' : 'desc' })
+              } else {
+                setColumnSort(null)
+              }
+              setOffset(0)
+            }}
             onRow={(record) => ({ onDoubleClick: () => { setDetailRow(record); setDetailOpen(true) } })}
           />
         ) : mode === 'kanban' ? (
@@ -462,11 +566,20 @@ export default function GridPage() {
           }}
         />
       </Suspense>
-      <ViewConfigDialog open={viewConfigOpen} viewType={activeView?.view_type || 'grid'}
-        filters={viewFilters} viewOptions={viewOptionsDraft} fields={table?.fields || []}
+      <ViewConfigDialog
+        open={viewConfigOpen}
+        viewType={activeView?.view_type || 'grid'}
+        filters={viewFilters}
+        sortings={viewSortings}
+        viewOptions={viewOptionsDraft}
+        fields={table?.fields || []}
         onClose={() => setViewConfigOpen(false)}
+        filterLogic={viewFilterLogic}
+        onSaveFilterLogic={(logic) => { setViewFilterLogic(logic); setOffset(0) }}
         onSaveFilters={(f) => { setViewFilters(f); setOffset(0) }}
-        onSaveOptions={(o) => { setViewOptionsDraft(o) }} />
+        onSaveSortings={(s) => { setViewSortings(s); setOffset(0) }}
+        onSaveOptions={(o) => { setViewOptionsDraft(o) }}
+      />
 
       {/* 创建新视图 Modal */}
       <Modal
@@ -550,7 +663,9 @@ function CreateViewForm({
   const selectFields = fields.filter(f => f.field_type === 'select' || f.field_type === 'multi_select')
   const dateFields = fields.filter(f => f.field_type === 'date' || f.field_type === 'datetime')
   const textFields = fields.filter(f => f.field_type === 'text' || f.field_type === 'long_text')
+  const numberFields = fields.filter(f => f.field_type === 'number' || f.field_type === 'decimal')
   const imageFields = fields.filter(f => f.field_type === 'attachment')
+  const allFields = fields.filter(f => !f.hidden)
 
   const updateOpt = (key: string, value: unknown) => {
     setOpts(prev => {
@@ -569,16 +684,87 @@ function CreateViewForm({
   ]
 
   const kanbanConfig = vt === 'kanban' && (
-    <Form.Item label="分组字段" required tooltip="后端看板视图必须配置 group_field">
-      <Select
-        value={(opts.group_field as string) || undefined}
-        onChange={(v) => updateOpt('group_field', v)}
-        placeholder="选择用于分组的字段"
-        options={selectFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
-        style={{ width: '100%' }}
-        allowClear
-      />
-    </Form.Item>
+    <>
+      <Form.Item label="分组字段" required tooltip="按哪个字段分组显示为看板列">
+        <Select
+          value={(opts.group_field as string) || undefined}
+          onChange={(v) => updateOpt('group_field', v)}
+          placeholder="选择分组字段"
+          options={selectFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="卡片标题字段" tooltip="留空使用主键字段">
+        <Select
+          value={(opts.title_field as string) || undefined}
+          onChange={(v) => updateOpt('title_field', v)}
+          placeholder="选择标题字段"
+          options={textFields.concat(fields.filter(f => f.is_primary)).map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="进度百分比字段" tooltip="0-100 的数值字段，显示进度条">
+        <Select
+          value={(opts.progress_field as string) || undefined}
+          onChange={(v) => updateOpt('progress_field', v)}
+          placeholder="选择进度字段"
+          options={numberFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="截止日期字段" tooltip="配置后自动显示逾期/临近提醒">
+        <Select
+          value={(opts.due_date_field as string) || undefined}
+          onChange={(v) => updateOpt('due_date_field', v)}
+          placeholder="选择日期字段"
+          options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="优先级字段" tooltip="Select 字段，不同值显示不同颜色徽章">
+        <Select
+          value={(opts.priority_field as string) || undefined}
+          onChange={(v) => updateOpt('priority_field', v)}
+          placeholder="选择优先级字段"
+          options={selectFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="负责人字段">
+        <Select
+          value={(opts.assignee_field as string) || undefined}
+          onChange={(v) => updateOpt('assignee_field', v)}
+          placeholder="选择负责人字段"
+          options={textFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="卡片额外字段" tooltip="在卡片底部以标签形式展示">
+        <Select
+          mode="multiple"
+          value={(opts.card_fields as string[]) || []}
+          onChange={(v) => updateOpt('card_fields', v)}
+          placeholder="选择要显示的字段"
+          options={allFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="紧急阈值（天）" tooltip="截止日期前多少天标记为紧急">
+        <Select
+          value={(opts.urgent_threshold_days as number) || 3}
+          onChange={(v) => updateOpt('urgent_threshold_days', v)}
+          options={[{ value: 1, label: '1 天' }, { value: 3, label: '3 天' }, { value: 5, label: '5 天' }, { value: 7, label: '7 天' }]}
+          style={{ width: '100%' }}
+        />
+      </Form.Item>
+    </>
   )
 
   const calendarConfig = vt === 'calendar' && (
@@ -638,82 +824,338 @@ function CreateViewForm({
   )
 }
 
-// ─────────────── 视图配置对话框（筛选 + 排序 + 视图专属配置） ───────────────
+// ─────────────── 筛选规则可视化编辑器依赖（操作符表） ───────────────
+
+const FIELD_OPS: Record<string, Array<{ op: string; label: string; needValue?: boolean; valueKind?: 'text' | 'number' | 'select' | 'date' | 'boolean' }>> = {
+  text: [
+    { op: 'contains', label: '包含', valueKind: 'text' },
+    { op: 'starts_with', label: '开头为', valueKind: 'text' },
+    { op: 'ends_with', label: '结尾为', valueKind: 'text' },
+    { op: '=', label: '等于', valueKind: 'text' },
+    { op: '!=', label: '不等于', valueKind: 'text' },
+    { op: 'is_empty', label: '为空', needValue: true },
+    { op: 'is_not_empty', label: '不为空', needValue: true },
+  ],
+  number: [
+    { op: '=', label: '等于', valueKind: 'number' },
+    { op: '!=', label: '不等于', valueKind: 'number' },
+    { op: '>', label: '大于', valueKind: 'number' },
+    { op: '>=', label: '大于等于', valueKind: 'number' },
+    { op: '<', label: '小于', valueKind: 'number' },
+    { op: '<=', label: '小于等于', valueKind: 'number' },
+    { op: 'in', label: '在列表中（逗号分隔）', valueKind: 'text' },
+    { op: 'is_empty', label: '为空', needValue: true },
+    { op: 'is_not_empty', label: '不为空', needValue: true },
+  ],
+  select: [
+    { op: '=', label: '等于', valueKind: 'select' },
+    { op: '!=', label: '不等于', valueKind: 'select' },
+    { op: 'in', label: '在列表中', valueKind: 'select' },
+    { op: 'is_empty', label: '为空', needValue: true },
+    { op: 'is_not_empty', label: '不为空', needValue: true },
+  ],
+  date: [
+    { op: '=', label: '等于', valueKind: 'date' },
+    { op: '>', label: '晚于', valueKind: 'date' },
+    { op: '>=', label: '不早于', valueKind: 'date' },
+    { op: '<', label: '早于', valueKind: 'date' },
+    { op: '<=', label: '不晚于', valueKind: 'date' },
+    { op: 'is_empty', label: '为空', needValue: true },
+    { op: 'is_not_empty', label: '不为空', needValue: true },
+  ],
+  boolean: [
+    { op: '=', label: '等于', valueKind: 'boolean' },
+    { op: 'is_empty', label: '为空', needValue: true },
+    { op: 'is_not_empty', label: '不为空', needValue: true },
+  ],
+}
+
+function _opsForField(fieldType: string) {
+  if (FIELD_OPS[fieldType]) return FIELD_OPS[fieldType]
+  if (['long_text', 'email', 'url', 'phone'].includes(fieldType)) return FIELD_OPS.text
+  if (['decimal'].includes(fieldType)) return FIELD_OPS.number
+  if (['multi_select'].includes(fieldType)) return FIELD_OPS.select
+  if (['datetime'].includes(fieldType)) return FIELD_OPS.date
+  if (fieldType === 'attachment') return FIELD_OPS.text.slice(5)  // 只给空/非空
+  return FIELD_OPS.text
+}
+
+// ─────────────── 视图配置对话框（可视化筛选 / 排序 / 视图设置） ───────────────
+
+interface FilterRule { field_name: string; op: string; value?: unknown }
+interface SortRule { field_name: string; direction: 'asc' | 'desc' }
 
 interface ViewConfigDialogProps {
   open: boolean
   viewType: string
-  filters: Record<string, unknown> | null
+  filters: FilterRule[]
+  sortings: SortRule[]
   viewOptions: Record<string, unknown> | null
   fields: Field[]
   onClose: () => void
-  onSaveFilters: (f: Record<string, unknown> | null) => void
+  filterLogic: 'AND' | 'OR'
+  onSaveFilterLogic: (logic: 'AND' | 'OR') => void
+  onSaveFilters: (f: FilterRule[]) => void
+  onSaveSortings: (s: SortRule[]) => void
   onSaveOptions: (o: Record<string, unknown> | null) => void
 }
 
 function ViewConfigDialog({
-  open, viewType, filters, viewOptions, fields, onClose, onSaveFilters, onSaveOptions,
+  open, viewType, filters, sortings, viewOptions, fields, onClose,
+  filterLogic, onSaveFilterLogic, onSaveFilters, onSaveSortings, onSaveOptions,
 }: ViewConfigDialogProps) {
-  const [filterText, setFilterText] = useState('')
-  const [optText, setOptText] = useState('')
+  const [draftFilters, setDraftFilters] = useState<FilterRule[]>([])
+  const [draftSorts, setDraftSorts] = useState<SortRule[]>([])
+  const [draftFilterLogic, setDraftFilterLogic] = useState<'AND' | 'OR'>('AND')
+  const [draftOpt, setDraftOpt] = useState<Record<string, unknown>>({})
+  const [activeTab, setActiveTab] = useState<'filter' | 'sort' | 'view'>('filter')
 
-  useMemo(() => {
-    if (!open) return
-    setFilterText(filters ? JSON.stringify(filters, null, 2) : '')
-    setOptText(viewOptions ? JSON.stringify(viewOptions, null, 2) : '')
-  }, [open, filters, viewOptions])
+  useEffect(() => {
+    if (open) {
+      setDraftFilters(filters.length ? [...filters] : [{ field_name: '', op: 'contains' }])
+      setDraftSorts(sortings.length ? [...sortings] : [{ field_name: '', direction: 'asc' }])
+      setDraftFilterLogic(filterLogic)
+      setDraftOpt((viewOptions || {}) as Record<string, unknown>)
+      setActiveTab('filter')
+    }
+  }, [open, filters, sortings, filterLogic, viewOptions])
 
-  // 视图专属配置 UI（结构化，而非 JSON）
-  const viewOptFields = useMemo(() => {
-    const options = (viewOptions || {}) as Record<string, unknown>
+  const filterableFields = fields.filter(f => !f.hidden)
+  const sortableFields = fields.filter(f => !f.hidden)
+
+  // ── 筛选规则增删改 ──
+  const addFilter = () => setDraftFilters(prev => [...prev, { field_name: '', op: 'contains' }])
+  const removeFilter = (idx: number) => setDraftFilters(prev => prev.filter((_, i) => i !== idx))
+  const updateFilter = (idx: number, patch: Partial<FilterRule>) => {
+    setDraftFilters(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+  }
+
+  // ── 排序规则增删改 ──
+  const addSort = () => setDraftSorts(prev => [...prev, { field_name: '', direction: 'asc' }])
+  const removeSort = (idx: number) => setDraftSorts(prev => prev.filter((_, i) => i !== idx))
+  const updateSort = (idx: number, patch: Partial<SortRule>) => {
+    setDraftSorts(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+  }
+
+  // ── 视图专属设置结构化配置（保留原有的丰富字段）──
+  type _OptField =
+    | { key: string; label: string; fieldTypes: string[]; kind?: 'select' }
+    | { key: string; label: string; fieldTypes: 'multiple'; kind: 'multiple' }
+    | { key: string; label: string; fieldTypes: 'number'; kind: 'number' }
+
+  const viewOptFields = useMemo<_OptField[]>(() => {
     if (viewType === 'kanban') {
       return [
-        { key: 'group_field', label: '分组字段（Select）', value: options.group_field as string ?? '' },
+        { key: 'group_field', label: '分组字段（Select）', fieldTypes: ['select', 'multi_select'] },
+        { key: 'title_field', label: '卡片标题字段', fieldTypes: ['text', 'long_text', 'is_primary'] },
+        { key: 'progress_field', label: '进度百分比字段（Number）', fieldTypes: ['number', 'decimal'] },
+        { key: 'due_date_field', label: '截止日期字段（Date）', fieldTypes: ['date', 'datetime'] },
+        { key: 'priority_field', label: '优先级字段（Select）', fieldTypes: ['select', 'multi_select'] },
+        { key: 'assignee_field', label: '负责人字段', fieldTypes: ['text', 'long_text'] },
+        { key: 'card_fields', label: '卡片额外字段（多选）', fieldTypes: 'multiple', kind: 'multiple' },
+        { key: 'urgent_threshold_days', label: '紧急阈值（天）', fieldTypes: 'number', kind: 'number' },
       ]
     }
     if (viewType === 'calendar') {
       return [
-        { key: 'start_field', label: '起始日期字段', value: options.start_field as string ?? '' },
-        { key: 'end_field', label: '结束日期字段（可选）', value: options.end_field as string ?? '' },
+        { key: 'start_field', label: '起始日期字段', fieldTypes: ['date', 'datetime'] },
+        { key: 'end_field', label: '结束日期字段（可选）', fieldTypes: ['date', 'datetime'] },
       ]
     }
     if (viewType === 'gallery') {
       return [
-        { key: 'title_field', label: '标题字段', value: options.title_field as string ?? '' },
-        { key: 'image_field', label: '图片字段（可选）', value: options.image_field as string ?? '' },
+        { key: 'title_field', label: '标题字段', fieldTypes: ['text', 'long_text'] },
+        { key: 'image_field', label: '图片字段（可选）', fieldTypes: ['attachment', 'image'] },
       ]
     }
     return []
-  }, [viewType, viewOptions])
+  }, [viewType])
 
-  const dateOrSelect = fields.filter(f =>
-    ['select', 'multi_select', 'date', 'datetime', 'attachment', 'rich_text', 'text'].includes(f.field_type),
-  )
+  const viewTabItems = useMemo(() => {
+    const items: Array<{ key: string; label: string; children: React.ReactNode }> = [
+      {
+        key: 'filter',
+        label: `筛选${draftFilters.filter(f => f.field_name).length ? ` (${draftFilters.filter(f => f.field_name).length})` : ''}`,
+        children: (
+          <div style={{ minHeight: 120 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid #f0f0f0' }}>
+              <span style={{ fontSize: 13, color: '#475569' }}>条件组合：</span>
+              <Button.Group size="small">
+                <Button
+                  type={draftFilterLogic === 'AND' ? 'primary' : 'default'}
+                  onClick={() => setDraftFilterLogic('AND')}
+                >全部满足（AND）</Button>
+                <Button
+                  type={draftFilterLogic === 'OR' ? 'primary' : 'default'}
+                  onClick={() => setDraftFilterLogic('OR')}
+                >任一满足（OR）</Button>
+              </Button.Group>
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                {draftFilterLogic === 'AND' ? '所有筛选条件同时生效' : '任一筛选条件生效即可'}
+              </span>
+            </div>
+            {draftFilters.length === 0 && (
+              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', border: '1px dashed #e2e8f0', borderRadius: 6 }}>
+                暂无筛选条件
+              </div>
+            )}
+            {draftFilters.map((rule, idx) => {
+              const currentField = filterableFields.find(f => f.name === rule.field_name)
+              const ops = currentField ? _opsForField(currentField.field_type) : FIELD_OPS.text
+              const currentOp = ops.find(o => o.op === rule.op)
+              const needValue = !!currentOp?.needValue
+              const fieldOpts = filterableFields.map(f => ({ value: f.name, label: f.name }))
+              const selectFieldOpts = ((currentField?.config as Record<string, unknown> | undefined)?.options as Array<Record<string, unknown>> | undefined || []).map((o: Record<string, unknown>) =>
+                String(o.value ?? o.name ?? ''))
+              return (
+                <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: '#9ca3af', width: 24, textAlign: 'center', flexShrink: 0 }}>#{idx + 1}</span>
+                  <Select size="small" value={rule.field_name || undefined}
+                    onChange={(v) => {
+                      const nextField = filterableFields.find(f => f.name === v)
+                      const nextOps = nextField ? _opsForField(nextField.field_type) : FIELD_OPS.text
+                      updateFilter(idx, { field_name: v, op: nextOps[0].op, value: undefined })
+                    }}
+                    placeholder="字段" style={{ width: 130 }} options={fieldOpts} />
+                  <Select size="small" value={rule.op}
+                    onChange={(v) => updateFilter(idx, { op: v, value: undefined })}
+                    placeholder="操作符" style={{ width: 130 }} options={ops.map(o => ({ value: o.op, label: o.label }))} />
+                  {needValue ? (
+                    <span style={{ fontSize: 12, color: '#9ca3af' }}>（无需值）</span>
+                  ) : currentOp?.valueKind === 'boolean' ? (
+                    <Switch size="small" checked={!!rule.value} onChange={(v) => updateFilter(idx, { value: v })} />
+                  ) : currentOp?.valueKind === 'number' ? (
+                    <InputNumber size="small" value={rule.value as number | undefined}
+                      onChange={(v) => updateFilter(idx, { value: v ?? undefined })} style={{ width: 120 }} placeholder="数值" />
+                  ) : currentOp?.valueKind === 'select' ? (
+                    <Select size="small" value={rule.value as string | undefined}
+                      onChange={(v) => updateFilter(idx, { value: v })} style={{ width: 130 }} allowClear
+                      options={selectFieldOpts.map(o => ({ value: o, label: o }))} placeholder="值" />
+                  ) : currentOp?.valueKind === 'date' ? (
+                    <Input size="small" value={rule.value as string | undefined}
+                      onChange={(e) => updateFilter(idx, { value: e.target.value })} style={{ width: 140 }}
+                      placeholder="YYYY-MM-DD" />
+                  ) : (
+                    <Input size="small" value={rule.value as string | undefined}
+                      onChange={(e) => updateFilter(idx, { value: e.target.value })} style={{ flex: 1 }} placeholder="值" />
+                  )}
+                  <Button size="small" type="text" danger disabled={draftFilters.length <= 1} icon={<DeleteOutlined />}
+                    onClick={() => removeFilter(idx)} />
+                </div>
+              )
+            })}
+            <div style={{ marginTop: 8 }}>
+              <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addFilter}>添加筛选条件</Button>
+            </div>
+          </div>
+        ),
+      },
+      {
+        key: 'sort',
+        label: `排序${draftSorts.filter(s => s.field_name).length ? ` (${draftSorts.filter(s => s.field_name).length})` : ''}`,
+        children: (
+          <div style={{ minHeight: 120 }}>
+            {draftSorts.length === 0 && (
+              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', border: '1px dashed #e2e8f0', borderRadius: 6 }}>
+                暂无排序规则
+              </div>
+            )}
+            {draftSorts.map((rule, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: '#9ca3af', width: 24, textAlign: 'center', flexShrink: 0 }}>#{idx + 1}</span>
+                <Select size="small" value={rule.field_name || undefined}
+                  onChange={(v) => updateSort(idx, { field_name: v })}
+                  placeholder="字段" style={{ flex: 1 }}
+                  options={sortableFields.map(f => ({ value: f.name, label: f.name }))} />
+                <Select size="small" value={rule.direction}
+                  onChange={(v: 'asc' | 'desc') => updateSort(idx, { direction: v })}
+                  style={{ width: 100 }}
+                  options={[{ value: 'asc', label: '升序 ↑' }, { value: 'desc', label: '降序 ↓' }]} />
+                <Button size="small" type="text" danger disabled={draftSorts.length <= 1} icon={<DeleteOutlined />}
+                  onClick={() => removeSort(idx)} />
+              </div>
+            ))}
+            <div style={{ marginTop: 8 }}>
+              <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addSort}>添加排序</Button>
+            </div>
+          </div>
+        ),
+      },
+    ]
+    if (viewOptFields.length > 0) {
+      items.push({
+        key: 'view',
+        label: `${viewType} 专属设置`,
+        children: (
+          <div>
+            {viewOptFields.map(opt => {
+              const ft = opt.fieldTypes
+              let fieldOptions: Array<{ label: string; value: string }> = []
+              let isMultiple = false
+              let isNumber = false
 
-  const [draftOpt, setDraftOpt] = useState<Record<string, unknown>>({})
-  useEffect(() => {
-    if (open) setDraftOpt((viewOptions || {}) as Record<string, unknown>)
-  }, [open, viewOptions])
+              if (ft === 'multiple') {
+                isMultiple = true
+                fieldOptions = sortableFields.map(f => ({ label: f.name, value: f.name }))
+              } else if (ft === 'number') {
+                isNumber = true
+              } else {
+                fieldOptions = sortableFields
+                  .filter(f => ft.includes(f.field_type) || (ft.includes('is_primary') && f.is_primary))
+                  .map(f => ({ label: f.name, value: f.name }))
+              }
+
+              return (
+                <div key={opt.key} style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, color: '#475569', marginBottom: 4 }}>{opt.label}</div>
+                  {isNumber ? (
+                    <Select
+                      style={{ width: '100%' }}
+                      value={(draftOpt[opt.key] as number) || 3}
+                      onChange={v => setDraftOpt(prev => ({ ...prev, [opt.key]: v }))}
+                      options={[{ value: 1, label: '1 天' }, { value: 3, label: '3 天' }, { value: 5, label: '5 天' }, { value: 7, label: '7 天' }]}
+                    />
+                  ) : (
+                    <Select
+                      mode={isMultiple ? 'multiple' : undefined}
+                      style={{ width: '100%' }}
+                      allowClear
+                      showSearch
+                      placeholder={isMultiple ? '选择多个字段' : '选择字段'}
+                      options={fieldOptions}
+                      value={isMultiple ? (draftOpt[opt.key] as string[]) || [] : ((draftOpt[opt.key] as string) || undefined)}
+                      onChange={v => {
+                        if (isMultiple) setDraftOpt(prev => ({ ...prev, [opt.key]: v }))
+                        else setDraftOpt(prev => ({ ...prev, [opt.key]: v ?? '' }))
+                      }}
+                    />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ),
+      })
+    }
+    return items
+  }, [draftFilters, draftSorts, filterableFields, sortableFields, viewOptFields, draftOpt, viewType])
 
   return (
     <Modal
-      title={viewType === 'grid' ? '视图配置 — 筛选 / 排序' : `视图配置 — 筛选 + ${viewType} 专属设置`}
+      title={viewType === 'grid' ? '视图配置' : `视图配置 — ${viewType} 专属设置`}
       open={open}
       onCancel={onClose}
-      width={560}
+      width={640}
       footer={[
         <Button key="cancel" onClick={onClose}>取消</Button>,
         <Button key="ok" type="primary" onClick={() => {
-          // filters
-          let parsedF: Record<string, unknown> | null = null
-          if (filterText.trim()) {
-            try { parsedF = JSON.parse(filterText) }
-            catch { message.error('筛选 JSON 格式错误'); return }
-          }
-          onSaveFilters(parsedF)
-          // options：用结构化 draftOpt
+          const cleanFilters = draftFilters.filter(f => f.field_name)
+          onSaveFilterLogic(draftFilterLogic)
+          onSaveFilters(cleanFilters)
+          const cleanSorts = draftSorts.filter(s => s.field_name)
+          onSaveSortings(cleanSorts)
           const cleanOpt = Object.fromEntries(
-            Object.entries(draftOpt).filter(([, v]) => v !== '' && v != null),
+            Object.entries(draftOpt).filter(([, v]) => v !== '' && v != null && (Array.isArray(v) ? v.length > 0 : true)),
           )
           onSaveOptions(Object.keys(cleanOpt).length ? cleanOpt : null)
           onClose()
@@ -721,49 +1163,230 @@ function ViewConfigDialog({
       ]}
       destroyOnHidden
     >
-      {/* filters */}
-      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>筛选规则（JSON，后端解析）</div>
-      <Input.TextArea
-        value={filterText}
-        onChange={e => setFilterText(e.target.value)}
-        rows={4}
-        placeholder='{"状态": "进行中"}  或  {"状态": {"$ne": "已关闭"}}'
-      />
+      <Tabs activeKey={activeTab} onChange={(k) => setActiveTab(k as typeof activeTab)} size="small" items={viewTabItems} />
+    </Modal>
+  )
+}
 
-      {/* view options 结构化配置 */}
-      {viewOptFields.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
-            {viewType} 视图专属设置
-          </div>
-          {viewOptFields.map(opt => {
-            const fieldOptions = dateOrSelect.map(f => ({ label: f.name, value: f.name }))
-            return (
-              <div key={opt.key} style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 12, color: '#475569', marginBottom: 4 }}>{opt.label}</div>
-                <Select
-                  style={{ width: '100%' }}
-                  allowClear
-                  showSearch
-                  placeholder="选择字段"
-                  options={fieldOptions}
-                  value={(draftOpt[opt.key] as string) || undefined}
-                  onChange={v => setDraftOpt(prev => ({ ...prev, [opt.key]: v ?? '' }))}
-                />
-              </div>
-            )
-          })}
+// ─────────────── 字段类型到可用操作符 ───────────────
+
+const FIELD_OPS_BY_TYPE: Record<string, Array<{ op: string; label: string }>> = {
+  text: [
+    { op: 'contains', label: '包含' },
+    { op: 'starts_with', label: '开头为' },
+    { op: 'ends_with', label: '结尾为' },
+    { op: '=', label: '等于' },
+    { op: '!=', label: '不等于' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  long_text: [
+    { op: 'contains', label: '包含' },
+    { op: 'starts_with', label: '开头为' },
+    { op: 'ends_with', label: '结尾为' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  number: [
+    { op: '=', label: '等于' },
+    { op: '!=', label: '不等于' },
+    { op: '>', label: '大于' },
+    { op: '>=', label: '大于等于' },
+    { op: '<', label: '小于' },
+    { op: '<=', label: '小于等于' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  decimal: [
+    { op: '=', label: '等于' },
+    { op: '!=', label: '不等于' },
+    { op: '>', label: '大于' },
+    { op: '>=', label: '大于等于' },
+    { op: '<', label: '小于' },
+    { op: '<=', label: '小于等于' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  select: [
+    { op: '=', label: '等于' },
+    { op: '!=', label: '不等于' },
+    { op: 'in', label: '属于' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  multi_select: [
+    { op: 'contains', label: '包含值' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  date: [
+    { op: '=', label: '等于' },
+    { op: '>', label: '晚于' },
+    { op: '>=', label: '晚于或等于' },
+    { op: '<', label: '早于' },
+    { op: '<=', label: '早于或等于' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  datetime: [
+    { op: '=', label: '等于' },
+    { op: '>', label: '晚于' },
+    { op: '>=', label: '晚于或等于' },
+    { op: '<', label: '早于' },
+    { op: '<=', label: '早于或等于' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  boolean: [
+    { op: '=', label: '等于' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  email: [
+    { op: 'contains', label: '包含' },
+    { op: '=', label: '等于' },
+    { op: '!=', label: '不等于' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  phone: [
+    { op: 'contains', label: '包含' },
+    { op: '=', label: '等于' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  url: [
+    { op: 'contains', label: '包含' },
+    { op: 'starts_with', label: '开头为' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  attachment: [
+    { op: 'is_empty', label: '无附件' },
+    { op: 'is_not_empty', label: '有附件' },
+  ],
+  rich_text: [
+    { op: 'contains', label: '包含' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  link_to_table: [
+    { op: 'is_empty', label: '未关联' },
+    { op: 'is_not_empty', label: '已关联' },
+  ],
+}
+
+function getOpsForField(fieldType: string): Array<{ op: string; label: string }> {
+  return FIELD_OPS_BY_TYPE[fieldType] || FIELD_OPS_BY_TYPE.text
+}
+
+// ─────────────── 列级筛选下拉面板组件 ───────────────
+
+function ColumnFilterDropdown({
+  field, currentFilter, onApply, onReset,
+}: {
+  field: Field
+  currentFilter?: { op: string; value: unknown }
+  onApply: (op: string, value: unknown) => void
+  onReset: () => void
+}) {
+  const [op, setOp] = useState<string>(currentFilter?.op || (getOpsForField(field.field_type)[0]?.op || '='))
+  const [value, setValue] = useState<unknown>(currentFilter?.value ?? '')
+
+  // 当 field 变化（切换到不同列）时重置
+  useEffect(() => {
+    setOp(currentFilter?.op || (getOpsForField(field.field_type)[0]?.op || '='))
+    setValue(currentFilter?.value ?? '')
+  }, [field.name]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 如果是 is_empty / is_not_empty 操作符，不需要输入值
+  const noValue = op === 'is_empty' || op === 'is_not_empty'
+
+  const isSelect = field.field_type === 'select' || field.field_type === 'multi_select'
+  const options: Array<{ value: string; label: string }> = isSelect
+    ? ((field.config as Record<string, unknown> | undefined)?.options as Array<Record<string, unknown>> | undefined || []).map((o: Record<string, unknown>) => ({
+        value: String(o.value ?? o.name ?? ''),
+        label: String(o.value ?? o.name ?? ''),
+      }))
+    : []
+
+  return (
+    <div style={{ padding: 12, width: 280 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#1f2937' }}>
+        筛选「{field.name}」
+      </div>
+      <div style={{ marginBottom: 8 }}>
+        <Select
+          value={op}
+          onChange={(v) => { setOp(v); setValue('') }}
+          style={{ width: '100%' }}
+          options={getOpsForField(field.field_type).map(o => ({ value: o.op, label: o.label }))}
+          size="small"
+        />
+      </div>
+      {!noValue && (
+        <div style={{ marginBottom: 12 }}>
+          {isSelect ? (
+            <Select
+              mode={op === 'in' ? 'multiple' : undefined}
+              value={value as string | string[] | undefined}
+              onChange={(v) => setValue(v)}
+              style={{ width: '100%' }}
+              size="small"
+              placeholder={op === 'in' ? '选择多个值' : '选择值'}
+              options={options}
+              allowClear
+              showSearch
+            />
+          ) : field.field_type === 'number' || field.field_type === 'decimal' ? (
+            <Input
+              type="number"
+              value={value as string | number}
+              onChange={e => setValue(e.target.value)}
+              size="small"
+              placeholder="输入数值"
+            />
+          ) : field.field_type === 'boolean' ? (
+            <Select
+              value={value as boolean | undefined}
+              onChange={(v) => setValue(v)}
+              style={{ width: '100%' }}
+              size="small"
+              placeholder="选择"
+              options={[{ value: true, label: '是' }, { value: false, label: '否' }]}
+              allowClear
+            />
+          ) : (
+            <Input
+              value={value as string}
+              onChange={e => setValue(e.target.value)}
+              size="small"
+              placeholder="输入值"
+            />
+          )}
         </div>
       )}
-
-      {/* 隐藏的 JSON 备份输入 —— 高级用户可用 */}
-      {viewOptFields.length === 0 && (
-        <>
-          <div style={{ fontSize: 12, color: '#64748b', marginTop: 12, marginBottom: 4 }}>view_options（可选 JSON）</div>
-          <Input.TextArea value={optText} onChange={e => setOptText(e.target.value)} rows={3} />
-        </>
+      {noValue && (
+        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+          此条件无需输入值
+        </div>
       )}
-    </Modal>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <Button size="small" onClick={onReset}>清除</Button>
+        <Button
+          size="small"
+          type="primary"
+          onClick={() => {
+            if (noValue) {
+              onApply(op, null)
+            } else {
+              onApply(op, value)
+            }
+          }}
+          disabled={!noValue && (value === '' || value === null || value === undefined)}
+        >确定</Button>
+      </div>
+    </div>
   )
 }
 
@@ -772,63 +1395,63 @@ function ViewConfigDialog({
 function buildColumns(
   fields: Field[],
   wid: number | string | undefined,
+  columnSort: { field_name: string; direction: 'asc' | 'desc' } | null,
+  columnLevelFilters: Record<string, { op: string; value: unknown }>,
+  onFilterApply: (fieldName: string, op: string, value: unknown) => void,
+  onFilterReset: (fieldName: string) => void,
   onCellSave?: (rowId: number | string, fieldName: string, value: unknown) => Promise<unknown>,
 ): ColumnsType<RowResponse> {
   return fields.filter(f => !f.hidden).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-    .map<NonNullable<ColumnsType<RowResponse>>[number]>(f => ({
-      key: String(f.id),
-      title: <span>{f.name}{f.required && <span style={{ color: '#ff4d4f' }}>*</span>}</span>,
-      dataIndex: f.name,
-      ellipsis: true,
-      width: 160,
-      render: (v: unknown, record: RowResponse) => (
-        <GridCell
-          value={v}
-          field={f}
-          rowId={record.id}
-          wid={wid}
-          onSave={onCellSave ? (fieldName, value) => onCellSave(record.id, fieldName, value) : undefined}
-        />
-      ),
-    }))
+    .map<NonNullable<ColumnsType<RowResponse>>[number]>(f => {
+      const currentSort = columnSort?.field_name === f.name
+        ? (columnSort.direction === 'asc' ? 'ascend' : 'descend') as 'ascend' | 'descend'
+        : null
+      const hasFilter = !!columnLevelFilters[f.name]
+      return {
+        key: String(f.id),
+        title: (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span>{f.name}{f.required && <span style={{ color: '#ff4d4f' }}>*</span>}</span>
+            {currentSort && (
+              currentSort === 'ascend'
+                ? <SortAscendingOutlined style={{ fontSize: 12, color: '#1677ff' }} />
+                : <SortDescendingOutlined style={{ fontSize: 12, color: '#1677ff' }} />
+            )}
+            {hasFilter && (
+              <FilterOutlined style={{ fontSize: 11, color: '#1677ff' }} />
+            )}
+          </span>
+        ),
+        dataIndex: f.name,
+        ellipsis: true,
+        width: 160,
+        sorter: true,
+        sortOrder: currentSort,
+        filterDropdown: ({ confirm, clearFilters }) => (
+          <ColumnFilterDropdown
+            field={f}
+            currentFilter={columnLevelFilters[f.name]}
+            onApply={(op, value) => { onFilterApply(f.name, op, value); confirm?.() }}
+            onReset={() => { onFilterReset(f.name); clearFilters?.(); confirm?.() }}
+          />
+        ),
+        filterIcon: (filtered) => (
+          <FilterOutlined style={{ color: filtered || hasFilter ? '#1677ff' : undefined }} />
+        ),
+        render: (v: unknown, record: RowResponse) => (
+          <GridCell
+            value={v}
+            field={f}
+            rowId={record.id}
+            wid={wid}
+            onSave={onCellSave ? (fieldName, value) => onCellSave(record.id, fieldName, value) : undefined}
+          />
+        ),
+      }
+    })
 }
 
-// ─────────────── Kanban 视图（优先使用 view_options.group_field） ───────────────
-
-function KanbanView({ rows, fields, view, onRowClick }: { rows: RowResponse[]; fields: Field[]; view?: View | null; onRowClick?: (r: RowResponse) => void }) {
-  const groupField = (view?.view_options?.group_field as string)
-    || fields.find(f => f.field_type === 'select' || f.field_type === 'multi_select')?.name
-  const cols: Array<{ key: string; title: string; rows: RowResponse[] }> = []
-  if (groupField) {
-    const groups = new Map<string, RowResponse[]>()
-    for (const r of rows) {
-      const v = String(r[groupField] || '未分组')
-      if (!groups.has(v)) groups.set(v, [])
-      groups.get(v)!.push(r)
-    }
-    for (const [title, list] of groups) cols.push({ key: title, title, rows: list })
-  } else {
-    cols.push({ key: 'all', title: '全部', rows })
-  }
-  return (
-    <div style={{ display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 16 }}>
-      {cols.map(c => (
-        <div key={c.key} style={{ minWidth: 280, background: '#fff', borderRadius: 8, padding: 12, border: '1px solid #e5e7eb' }}>
-          <Text strong>{c.title} <span style={{ color: '#9ca3af', fontSize: 12 }}>({c.rows.length})</span></Text>
-          {c.rows.map(r => (
-            <div
-              key={r.id}
-              onClick={() => onRowClick?.(r)}
-              style={{ padding: 12, marginBottom: 8, border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer' }}
-            >
-              {String(r[fields.find(f => f.is_primary)?.name || 'id'] ?? r.id)}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  )
-}
+// KanbanView 已提取到 ./components/KanbanView.tsx
 
 // ─────────────── Gallery 视图 ───────────────
 
@@ -1066,65 +1689,71 @@ function TableSettingsDialog({ open, onClose, onAfterSave }: TableSettingsDialog
       title="表格显示设置"
       open={open}
       onCancel={onClose}
-      width={460}
+      width={400}
       okText="保存"
       cancelText="取消"
       onOk={handleOk}
       destroyOnHidden
+      className="table-settings-dialog"
       footer={[
-        <Button key="reset" onClick={handleReset}>重置为默认</Button>,
-        <Button key="cancel" onClick={onClose}>取消</Button>,
-        <Button key="ok" type="primary" onClick={handleOk}>保存</Button>,
+        <Button key="reset" size="small" onClick={handleReset}>重置默认</Button>,
+        <Button key="cancel" size="small" onClick={onClose}>取消</Button>,
+        <Button key="ok" size="small" type="primary" onClick={handleOk}>保存</Button>,
       ]}
     >
-      <Form layout="vertical" style={{ marginTop: 8 }}>
-        <Form.Item label="内容间距">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* 内容间距 — 横向 radiogroup 样式 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: '#374151', whiteSpace: 'nowrap', minWidth: 56 }}>间距</span>
           <Select
+            size="small"
             value={draft.density}
             onChange={(v: typeof draft.density) => updateDraft('density', v)}
-            style={{ width: '100%' }}
+            style={{ flex: 1 }}
             options={[
-              { value: 'compact', label: '紧凑（适合快速浏览大量数据）' },
-              { value: 'comfortable', label: '适中（平衡可读性与信息量）' },
-              { value: 'spacious', label: '宽松（适合阅读长文本）' },
+              { value: 'compact', label: '紧凑' },
+              { value: 'comfortable', label: '适中' },
+              { value: 'spacious', label: '宽松' },
             ]}
           />
-        </Form.Item>
+        </div>
 
-        <Form.Item label="默认每页行数">
+        {/* 每页行数 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: '#374151', whiteSpace: 'nowrap', minWidth: 56 }}>每页</span>
           <Select
+            size="small"
             value={draft.defaultPageSize}
             onChange={(v: number) => updateDraft('defaultPageSize', v)}
-            style={{ width: '100%' }}
+            style={{ flex: 1 }}
             options={[
-              { value: 25, label: '25 条 / 页' },
-              { value: 50, label: '50 条 / 页' },
-              { value: 100, label: '100 条 / 页' },
-              { value: 200, label: '200 条 / 页' },
+              { value: 25, label: '25 条' },
+              { value: 50, label: '50 条' },
+              { value: 100, label: '100 条' },
+              { value: 200, label: '200 条' },
             ]}
           />
-        </Form.Item>
+        </div>
 
-        <Form.Item label="显示选项">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
-              <Switch checked={draft.bordered} onChange={(v) => updateDraft('bordered', v)} />
-              <span>显示表格边框</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
-              <Switch checked={draft.showHeader} onChange={(v) => updateDraft('showHeader', v)} />
-              <span>显示表头</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
-              <Switch checked={draft.striped} onChange={(v) => updateDraft('striped', v)} />
-              <span>启用斑马纹</span>
-            </label>
-          </div>
-        </Form.Item>
-      </Form>
+        {/* 显示选项 — 三开关横排 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingTop: 4, borderTop: '1px solid #f0f0f0' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+            <Switch size="small" checked={draft.bordered} onChange={(v) => updateDraft('bordered', v)} />
+            <span>边框</span>
+          </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+            <Switch size="small" checked={draft.showHeader} onChange={(v) => updateDraft('showHeader', v)} />
+            <span>表头</span>
+          </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+            <Switch size="small" checked={draft.striped} onChange={(v) => updateDraft('striped', v)} />
+            <span>斑马纹</span>
+          </label>
+        </div>
+      </div>
 
-      <div style={{ marginTop: 8, fontSize: 12, color: '#9ca3af' }}>
-        设置会自动保存到浏览器，适用于所有数据表。
+      <div style={{ marginTop: 10, fontSize: 11, color: '#9ca3af', textAlign: 'center' }}>
+        保存到浏览器，对所有数据表生效
       </div>
     </Modal>
   )
