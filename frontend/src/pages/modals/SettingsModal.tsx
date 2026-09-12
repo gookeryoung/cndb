@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Modal, Tabs, Table, Button, Input, Select, Space, message, Tag, Popconfirm, Empty, Tooltip, Switch } from 'antd'
-import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, BulbOutlined, BulbFilled, TeamOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, BulbOutlined, TeamOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tokenApi, workspaceApi } from '@/api'
 import type { ApiToken, WorkspaceMember } from '@/api'
@@ -155,12 +155,7 @@ export default function SettingsModal({ open, onClose, wid, onOpenMembers }: Pro
               <div style={{ padding: '24px 0' }}>
                 <Space size="large">
                   <span>暗色模式</span>
-                  <Switch
-                    checked={mode === 'dark'}
-                    onChange={toggle}
-                    checkedChildren={<BulbFilled />}
-                    unCheckedChildren={<BulbOutlined />}
-                  />
+                  <Switch checked={mode === 'dark'} onChange={toggle} />
                 </Space>
                 <div style={{ marginTop: 12, fontSize: 12, color: '#64748b' }}>
                   设置会自动保存到浏览器。
