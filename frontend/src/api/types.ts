@@ -46,21 +46,32 @@ export type FieldType =
 export interface Field {
   id: ID; name: string; field_type: FieldType; db_column_name?: string
   order?: number; config?: Record<string, unknown>; required?: boolean
-  description?: string; hidden?: boolean; is_primary?: boolean; created_at?: string
+  /** 字段唯一约束 */
+  is_unique?: boolean
+  /** 默认值（后端支持任意类型） */
+  default_value?: unknown
+  /** 是否在视图中隐藏（后端 FieldUpdate 支持，前端 Field 保留字段） */
+  hidden?: boolean
+  description?: string; is_primary?: boolean; created_at?: string
   /** 所属表 ID（回收站字段列表等场景使用） */
   table_id?: ID
   /** 所属表名称（回收站字段列表等场景使用） */
   table_name?: string
+  /** 软删标记 */
+  trashed?: boolean
   /** 软删时间（回收站场景） */
   trashed_at?: string | null
+  updated_at?: string
 }
 export interface FieldCreate {
   name: string; field_type: FieldType; order?: number
   config?: Record<string, unknown>; required?: boolean; description?: string
+  is_unique?: boolean; default_value?: unknown
 }
 export interface FieldUpdate {
   name?: string; field_type?: FieldType; order?: number
   config?: Record<string, unknown>; required?: boolean; description?: string; hidden?: boolean
+  is_unique?: boolean; default_value?: unknown
 }
 
 export type RowValues = Record<string, unknown>
