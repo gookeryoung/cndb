@@ -660,10 +660,14 @@ function CreateViewForm({
   const [vt, setVt] = useState('grid')
   const [opts, setOpts] = useState<Record<string, unknown>>({})
 
-  const selectFields = fields.filter(f => f.field_type === 'select' || f.field_type === 'multi_select')
-  const dateFields = fields.filter(f => f.field_type === 'date' || f.field_type === 'datetime')
-  const textFields = fields.filter(f => f.field_type === 'text' || f.field_type === 'long_text')
-  const numberFields = fields.filter(f => f.field_type === 'number' || f.field_type === 'decimal')
+  // 兼容后端真实 field_type name 和历史别名
+  const _isOneOf = (ft: string, ...names: string[]) =>
+    names.includes(ft) || names.includes(FIELD_TYPE_ALIASES[ft] ?? ft)
+
+  const selectFields = fields.filter(f => _isOneOf(f.field_type, 'select', 'multiselect'))
+  const dateFields = fields.filter(f => _isOneOf(f.field_type, 'date', 'datetime'))
+  const textFields = fields.filter(f => _isOneOf(f.field_type, 'text', 'longtext'))
+  const numberFields = fields.filter(f => _isOneOf(f.field_type, 'number', 'float', 'percentage', 'timestamp'))
   const imageFields = fields.filter(f => f.field_type === 'attachment')
   const allFields = fields.filter(f => !f.hidden)
 
@@ -1177,6 +1181,10 @@ function ViewConfigDialog({
 
 // ─────────────── 字段类型到可用操作符 ───────────────
 
+// ─────────────── 列级筛选 / 视图筛选 共用的 field_type → 操作符组映射 ───────────────
+// key 必须匹配后端 FieldType.name 的真实值（见 src/cndb/plugins/tables/field_types/__init__.py）
+// 别名映射在 FIELD_TYPE_ALIASES 中处理
+
 const FIELD_OPS_BY_TYPE: Record<string, Array<{ op: string; label: string }>> = {
   text: [
     { op: 'contains', label: '包含' },
@@ -1187,7 +1195,7 @@ const FIELD_OPS_BY_TYPE: Record<string, Array<{ op: string; label: string }>> = 
     { op: 'is_empty', label: '为空' },
     { op: 'is_not_empty', label: '不为空' },
   ],
-  long_text: [
+  longtext: [
     { op: 'contains', label: '包含' },
     { op: 'starts_with', label: '开头为' },
     { op: 'ends_with', label: '结尾为' },
@@ -1201,10 +1209,33 @@ const FIELD_OPS_BY_TYPE: Record<string, Array<{ op: string; label: string }>> = 
     { op: '>=', label: '大于等于' },
     { op: '<', label: '小于' },
     { op: '<=', label: '小于等于' },
+    { op: 'in', label: '在列表中（逗号分隔）' },
     { op: 'is_empty', label: '为空' },
     { op: 'is_not_empty', label: '不为空' },
   ],
-  decimal: [
+  // float / percentage / timestamp 都走 number 操作符组（后端 DB 列类型都是 Float/Integer）
+  float: [
+    { op: '=', label: '等于' },
+    { op: '!=', label: '不等于' },
+    { op: '>', label: '大于' },
+    { op: '>=', label: '大于等于' },
+    { op: '<', label: '小于' },
+    { op: '<=', label: '小于等于' },
+    { op: 'in', label: '在列表中（逗号分隔）' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  percentage: [
+    { op: '=', label: '等于' },
+    { op: '!=', label: '不等于' },
+    { op: '>', label: '大于' },
+    { op: '>=', label: '大于等于' },
+    { op: '<', label: '小于' },
+    { op: '<=', label: '小于等于' },
+    { op: 'is_empty', label: '为空' },
+    { op: 'is_not_empty', label: '不为空' },
+  ],
+  timestamp: [
     { op: '=', label: '等于' },
     { op: '!=', label: '不等于' },
     { op: '>', label: '大于' },
@@ -1221,8 +1252,9 @@ const FIELD_OPS_BY_TYPE: Record<string, Array<{ op: string; label: string }>> = 
     { op: 'is_empty', label: '为空' },
     { op: 'is_not_empty', label: '不为空' },
   ],
-  multi_select: [
+  multiselect: [
     { op: 'contains', label: '包含值' },
+    { op: 'in', label: '属于任一' },
     { op: 'is_empty', label: '为空' },
     { op: 'is_not_empty', label: '不为空' },
   ],
@@ -1272,19 +1304,26 @@ const FIELD_OPS_BY_TYPE: Record<string, Array<{ op: string; label: string }>> = 
     { op: 'is_empty', label: '无附件' },
     { op: 'is_not_empty', label: '有附件' },
   ],
-  rich_text: [
-    { op: 'contains', label: '包含' },
-    { op: 'is_empty', label: '为空' },
-    { op: 'is_not_empty', label: '不为空' },
-  ],
-  link_to_table: [
+  link: [
     { op: 'is_empty', label: '未关联' },
     { op: 'is_not_empty', label: '已关联' },
+    { op: 'has_any', label: '包含任一目标行（逗号分隔 id）' },
+    { op: 'has_all', label: '包含全部目标行（逗号分隔 id）' },
   ],
 }
 
+// 旧 field_type name → 新 field_type name 的别名映射（兼容历史数据 / 过渡）
+const FIELD_TYPE_ALIASES: Record<string, string> = {
+  long_text: 'longtext',
+  decimal: 'float',
+  multi_select: 'multiselect',
+  rich_text: 'longtext',
+  link_to_table: 'link',
+}
+
 function getOpsForField(fieldType: string): Array<{ op: string; label: string }> {
-  return FIELD_OPS_BY_TYPE[fieldType] || FIELD_OPS_BY_TYPE.text
+  const resolved = FIELD_TYPE_ALIASES[fieldType] ?? fieldType
+  return FIELD_OPS_BY_TYPE[resolved] || FIELD_OPS_BY_TYPE.text
 }
 
 // ─────────────── 列级筛选下拉面板组件 ───────────────
@@ -1309,7 +1348,9 @@ function ColumnFilterDropdown({
   // 如果是 is_empty / is_not_empty 操作符，不需要输入值
   const noValue = op === 'is_empty' || op === 'is_not_empty'
 
-  const isSelect = field.field_type === 'select' || field.field_type === 'multi_select'
+  const _numericTypes = new Set(['number', 'float', 'decimal', 'percentage', 'timestamp'])
+  const _resolveFt = (ft: string) => FIELD_TYPE_ALIASES[ft] ?? ft
+  const isSelect = _resolveFt(field.field_type) === 'select' || _resolveFt(field.field_type) === 'multiselect'
   const options: Array<{ value: string; label: string }> = isSelect
     ? ((field.config as Record<string, unknown> | undefined)?.options as Array<Record<string, unknown>> | undefined || []).map((o: Record<string, unknown>) => ({
         value: String(o.value ?? o.name ?? ''),
@@ -1345,7 +1386,7 @@ function ColumnFilterDropdown({
               allowClear
               showSearch
             />
-          ) : field.field_type === 'number' || field.field_type === 'decimal' ? (
+          ) : _numericTypes.has(_resolveFt(field.field_type)) ? (
             <Input
               type="number"
               value={value as string | number}

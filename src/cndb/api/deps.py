@@ -2,9 +2,7 @@
 
 集中放置 Depends() 可调用对象，避免散落在各路由文件.
 
-认证双轨：
-- JWT：Authorization: Bearer <jwt>，前端登录后使用
-- ApiToken：Authorization: Bearer cndb_<sha256hex>，外部脚本使用
+认证方式：JWT（Authorization: Bearer <jwt>），由前端登录流程签发.
 """
 
 from __future__ import annotations
@@ -54,27 +52,11 @@ def _authenticate_jwt(token: str, db: Session) -> User | None:
     return db.query(User).filter(User.id == int(sub), User.is_active.is_(True)).first()
 
 
-def _authenticate_api_token(token: str, db: Session) -> User | None:
-    """尝试用 ApiToken 摘要匹配令牌并加载用户，同时更新 last_used_at."""
-    import datetime as dt
-    import hashlib
-
-    from cndb.plugins.accounts.models import ApiToken, User
-
-    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    at = db.query(ApiToken).filter(ApiToken.digest == digest).first()
-    if at is None:
-        return None
-    at.last_used_at = dt.datetime.now(dt.UTC)
-    db.commit()
-    return db.query(User).filter(User.id == at.user_id, User.is_active.is_(True)).first()
-
-
 def get_current_user(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ) -> object | None:
-    """双轨认证：先尝试 JWT，再尝试 ApiToken.
+    """JWT 认证：解析 Bearer 令牌并加载用户.
 
     返回：
         认证成功返回 User 对象；AUTH_ENABLED=False 或无认证头时返回 None；
@@ -97,12 +79,7 @@ def get_current_user(
     if not token:
         return None
 
-    # 先尝试 ApiToken（cndb_ 前缀），再尝试 JWT
-    user: User | None = None
-    if token.startswith("cndb_"):
-        user = _authenticate_api_token(token, db)
-    if user is None:
-        user = _authenticate_jwt(token, db)
+    user: User | None = _authenticate_jwt(token, db)
 
     if user is None:
         raise HTTPException(

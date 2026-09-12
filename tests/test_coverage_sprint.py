@@ -314,13 +314,6 @@ class TestDepsMore:
         result = _authenticate_jwt(bad_token, db_cov)
         assert result is None
 
-    def test_api_token_not_found(self, db_cov):
-        """ApiToken 不存在时返回 None."""
-        from cndb.api.deps import _authenticate_api_token
-
-        result = _authenticate_api_token("cndb_nonexistent_xyz", db_cov)
-        assert result is None
-
 
 class TestTablesRecordsMore:
     """router/records.py 剩余分支."""
