@@ -101,18 +101,21 @@ export interface RecordListParams {
 export interface View {
   id: ID; name: string; view_type?: string
   filters?: Record<string, unknown> | null; sorts?: Record<string, unknown> | null
-  field_order?: string[] | null; default?: boolean; created_at?: string
+  field_order?: string[] | null; view_options?: Record<string, unknown> | null
+  default?: boolean; created_at?: string
 }
 export interface ViewDetail extends View {}
 export interface ViewCreate {
   name: string; view_type?: string
   filters?: Record<string, unknown> | null; sorts?: Record<string, unknown> | null
-  field_order?: string[] | null; default?: boolean
+  field_order?: string[] | null; view_options?: Record<string, unknown> | null
+  default?: boolean
 }
 export interface ViewUpdate {
   name?: string; view_type?: string
   filters?: Record<string, unknown> | null; sorts?: Record<string, unknown> | null
-  field_order?: string[] | null; default?: boolean
+  field_order?: string[] | null; view_options?: Record<string, unknown> | null
+  default?: boolean
 }
 
 export interface AuditLog {
