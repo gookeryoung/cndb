@@ -27,7 +27,10 @@ def _db_engine(tmp_path: Path):
 
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    yield engine
+    try:
+        yield engine
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture
