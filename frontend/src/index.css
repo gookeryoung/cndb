@@ -28,3 +28,17 @@ body {
   width: 100%;
   min-height: 100vh;
 }
+
+/* Switch 开关兜底 — 防止 flex 容器拉伸高度，保证长宽比例协调 */
+.ant-switch {
+  align-self: center;
+  flex-shrink: 0;
+}
+.ant-switch-inner {
+  font-size: 12px;
+}
+
+/* 表格斑马纹（用户设置开启时通过 rowClassName 应用） */
+.table-row-striped > td {
+  background-color: #fafbfc;
+}

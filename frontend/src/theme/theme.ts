@@ -1,5 +1,15 @@
 import type { ThemeConfig } from 'antd'
 
+/** Switch 组件 token — 确保 trackHeight : trackMinWidth ≈ 1:2 的协调比例 */
+const switchTokens = {
+  trackHeight: 24,
+  trackMinWidth: 48,
+  trackHeightSM: 18,
+  trackMinWidthSM: 36,
+  handleSize: 20,
+  handleSizeSM: 14,
+}
+
 export const lightTheme: ThemeConfig = {
   token: {
     colorPrimary: '#3b82f6',
@@ -7,6 +17,9 @@ export const lightTheme: ThemeConfig = {
     colorBgBase: '#ffffff',
     colorTextBase: '#1f2937',
     fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif",
+  },
+  components: {
+    Switch: switchTokens,
   },
 }
 
@@ -16,6 +29,9 @@ export const darkTheme: ThemeConfig = {
     borderRadius: 6,
     colorBgBase: '#0b1220',
     colorTextBase: '#e5e7eb',
+  },
+  components: {
+    Switch: switchTokens,
   },
 }
 
