@@ -94,26 +94,33 @@ export interface RowUpdate { values: RowValues }
 export interface RowListResponse { items: RowResponse[]; total: number; offset: number; limit: number }
 export interface RecordListParams {
   offset?: number; limit?: number
-  filters?: string | Record<string, unknown>
-  sorts?: string | Record<string, unknown>
+  filters?: string | Record<string, unknown> | Array<Record<string, unknown>>
+  sorts?: string | Record<string, unknown> | Array<Record<string, unknown>>
+  filter_logic?: 'AND' | 'OR'
 }
 
 export interface View {
   id: ID; name: string; view_type?: string
-  filters?: Record<string, unknown> | null; sorts?: Record<string, unknown> | null
+  filters?: Record<string, unknown> | Array<{ field_name: string; op: string; value?: unknown }> | null
+  sorts?: Record<string, unknown> | Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
+  filter_logic?: 'AND' | 'OR'
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
   default?: boolean; created_at?: string
 }
 export interface ViewDetail extends View {}
 export interface ViewCreate {
   name: string; view_type?: string
-  filters?: Record<string, unknown> | null; sorts?: Record<string, unknown> | null
+  filters?: Record<string, unknown> | Array<{ field_name: string; op: string; value?: unknown }> | null
+  sorts?: Record<string, unknown> | Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
+  filter_logic?: 'AND' | 'OR'
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
   default?: boolean
 }
 export interface ViewUpdate {
   name?: string; view_type?: string
-  filters?: Record<string, unknown> | null; sorts?: Record<string, unknown> | null
+  filters?: Record<string, unknown> | Array<{ field_name: string; op: string; value?: unknown }> | null
+  sorts?: Record<string, unknown> | Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
+  filter_logic?: 'AND' | 'OR' | null
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
   default?: boolean
 }
