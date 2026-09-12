@@ -77,7 +77,7 @@ export default function MainLayout() {
   const userMenuItems: MenuProps['items'] = [
     { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
     { type: 'divider' },
-    { key: 'settings', icon: <SettingOutlined />, label: '个人设置（Token / 主题）', onClick: () => setSettingsOpen(true) },
+    { key: 'settings', icon: <SettingOutlined />, label: '个人设置', onClick: () => setSettingsOpen(true) },
     { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: onLogout },
   ]
@@ -198,8 +198,7 @@ export default function MainLayout() {
       </Layout>
 
       <Suspense fallback={<ModalFallback />}>
-        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)}
-          wid={wid} onOpenMembers={() => setMembersOpen(true)} />
+        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
         <MembersModal open={membersOpen} wid={wid ?? ''} onClose={() => setMembersOpen(false)} />
       </Suspense>
     </Layout>
