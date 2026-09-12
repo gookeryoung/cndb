@@ -1,6 +1,6 @@
 /** 报表模板页 — 模板 CRUD + 渲染下载. */
 
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Table, Button, Space, Tag, Modal, Form, Input, Typography, message, Select, Dropdown, Empty, Row, Col } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
@@ -29,6 +29,18 @@ export default function ReportsPage() {
   const queryClient = useQueryClient()
   const [editorOpen, setEditorOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<ReportTemplate | null>(null)
+  const [renderParamsOpen, setRenderParamsOpen] = React.useState(false)
+  const [renderTarget, setRenderTarget] = React.useState<ReportTemplateSummary | null>(null)
+
+  // 根据模板是否定义参数，决定直接渲染还是先弹参数窗口
+  const handleRenderClick = (r: ReportTemplateSummary) => {
+    if (!r.parameters || r.parameters.length === 0) {
+      renderReport.mutate({ tpl: r, params: {} })
+      return
+    }
+    setRenderTarget(r)
+    setRenderParamsOpen(true)
+  }
   const [form] = Form.useForm()
 
   const { data: templates = [], isLoading } = useQuery<ReportTemplateSummary[]>({
@@ -72,9 +84,10 @@ export default function ReportsPage() {
   })
 
   const renderReport = useMutation({
-    mutationFn: async (tpl: ReportTemplateSummary) => {
+    mutationFn: async (arg: { tpl: ReportTemplateSummary; params: Record<string, unknown> }) => {
+      const { tpl, params } = arg
       if (!wid) throw new Error('缺少 workspace')
-      const blob = await reportApi.render(tpl.id, { table_id: tpl.table_id ?? 0, params: {} })
+      const blob = await reportApi.render(tpl.id, { table_id: tpl.table_id ?? 0, params })
       // 触发浏览器下载
       const ext = tpl.output_format === 'docx' ? 'docx' : tpl.output_format === 'pdf' ? 'pdf' : tpl.output_format
       const url = URL.createObjectURL(blob)
@@ -171,7 +184,7 @@ export default function ReportsPage() {
           <Button size="small" icon={<DownloadOutlined />}
             loading={renderReport.isPending}
             disabled={!r.table_id}
-            onClick={() => renderReport.mutate(r)}>渲染下载</Button>
+            onClick={() => handleRenderClick(r)}>渲染下载</Button>
           <Dropdown
             menu={{
               items: [
@@ -232,6 +245,21 @@ export default function ReportsPage() {
           else create.mutate(v)
         }}
         submitting={create.isPending || update.isPending}
+      />
+
+      <RenderParamsModal
+        open={renderParamsOpen}
+        target={renderTarget}
+        tables={tables}
+        onClose={() => { setRenderParamsOpen(false); setRenderTarget(null) }}
+        onSubmit={(params) => {
+          if (!renderTarget) return
+          renderReport.mutate(
+            { tpl: renderTarget, params },
+            { onSuccess: () => { setRenderParamsOpen(false); setRenderTarget(null) } },
+          )
+        }}
+        submitting={renderReport.isPending}
       />
     </div>
   )
@@ -317,6 +345,78 @@ function TemplateEditor({ open, editing, tables, form, onClose, onSubmit, submit
             )}
           </Form.List>
         </Form.Item>
+      </Form>
+    </Modal>
+  )
+}
+
+// ════════════════════════════════════════════════ 渲染参数 Modal ════════════════════════════════════════════════
+
+interface RenderParamsModalProps {
+  open: boolean
+  target: ReportTemplateSummary | null
+  tables: TableSummary[]
+  onClose: () => void
+  onSubmit: (params: Record<string, unknown>) => void
+  submitting: boolean
+}
+
+function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting }: RenderParamsModalProps) {
+  const [form] = Form.useForm<Record<string, unknown>>()
+  useEffect(() => {
+    if (open && target) {
+      const initial: Record<string, unknown> = {}
+      target.parameters.forEach(p => { if (p.default !== undefined) initial[p.name] = p.default })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      form.setFieldsValue(initial as any)
+    }
+  }, [open, target])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tableNameMap = useMemo(() => new Map(tables.map(t => [t.id, t.name])), [tables])
+
+  return (
+    <Modal
+      title={target ? `渲染模板：${target.name}` : '渲染参数'}
+      open={open}
+      onCancel={() => { form.resetFields(); onClose() }}
+      confirmLoading={submitting}
+      okText="生成报告"
+      cancelText="取消"
+      onOk={async () => {
+        try {
+          const values = await form.validateFields()
+          onSubmit(values as Record<string, unknown>)
+        } catch { /* 用户取消校验 */ }
+      }}
+    >
+      {target?.table_id ? (
+        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          数据源表：{tableNameMap.get(target.table_id) || `#${target.table_id}`}
+        </Typography.Text>
+      ) : (
+        <Typography.Text type="danger" style={{ display: 'block', marginBottom: 16 }}>
+          模板未关联数据表，无法渲染
+        </Typography.Text>
+      )}
+      <Form form={form} layout="vertical" disabled={!target?.table_id}>
+        {target?.parameters.map(p => (
+          <Form.Item
+            key={p.name}
+            label={p.label || p.name}
+            name={p.name}
+            rules={p.required ? [{ required: true, message: `参数 ${p.name} 必填` }] : []}
+          >
+            {p.type === 'boolean' ? (
+              <Select options={[{ value: true, label: '是' }, { value: false, label: '否' }]} />
+            ) : p.type === 'number' ? (
+              <Input type="number" placeholder={`请输入 ${p.name}`} />
+            ) : p.type === 'date' ? (
+              <Input type="date" />
+            ) : (
+              <Input placeholder={`请输入 ${p.name}`} />
+            )}
+          </Form.Item>
+        ))}
       </Form>
     </Modal>
   )
