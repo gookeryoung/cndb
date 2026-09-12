@@ -94,6 +94,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
               field={f}
               value={values?.[f.name]}
               onChange={(v) => setValues(prev => ({ ...prev, [f.name]: v }))}
+              wid={wid}
             />
           </Form.Item>
         ))}
@@ -167,13 +168,45 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
 
 /** 根据字段类型渲染合适的编辑控件. */
 function FieldEditor({
-  field, value, onChange,
+  field, value, onChange, wid,
 }: {
   field: Field
   value: unknown
   onChange: (v: unknown) => void
+  wid: string
 }) {
   const ft = field.field_type
+
+  // link 字段 hook — 必须在条件 return 之前调用，保持 hooks 顺序稳定
+  const targetTableId = (field.config?.target_table_id as number | undefined)
+  const multiple = Boolean(field.config?.multiple ?? true)
+  const { data: targetRowsData, isLoading: linkLoading } = useQuery({
+    queryKey: ['link-target-rows', targetTableId],
+    queryFn: () => recordApi.list(wid, targetTableId!, { limit: 500 }),
+    enabled: ft === 'link' && !!wid && !!targetTableId,
+  })
+  const targetRows: RowResponse[] = (targetRowsData as any)?.items || []
+
+  if (ft === 'link') {
+    const ids = Array.isArray(value) ? value : value ? [value] : []
+    const options = targetRows.map((r: any) => ({
+      value: r.id,
+      label: (r.name || r.title || (String(r.id))),
+    }))
+    return (
+      <Select
+        mode={multiple ? 'multiple' : undefined}
+        style={{ width: '100%' }}
+        placeholder={linkLoading ? '加载中...' : '选择关联行'}
+        loading={linkLoading}
+        allowClear
+        showSearch
+        options={options}
+        value={ids.length ? ids : undefined}
+        onChange={v => onChange(v)}
+      />
+    )
+  }
 
   switch (ft) {
     case 'number':
