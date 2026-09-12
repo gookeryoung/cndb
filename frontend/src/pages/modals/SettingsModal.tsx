@@ -1,19 +1,21 @@
-/** 用户设置面板 — API Token 管理 + 主题切换. */
+/** 用户设置面板 — API Token 管理 + 主题切换 + 工作区快捷入口. */
 
 import { useState } from 'react'
 import { Modal, Tabs, Table, Button, Input, Select, Space, message, Tag, Popconfirm, Empty, Tooltip, Switch } from 'antd'
-import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, BulbOutlined, BulbFilled } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, BulbOutlined, BulbFilled, TeamOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { tokenApi } from '@/api'
-import type { ApiToken } from '@/api'
+import { tokenApi, workspaceApi } from '@/api'
+import type { ApiToken, WorkspaceMember } from '@/api'
 import { useTheme } from '@/theme/ThemeProvider'
 
 interface Props {
   open: boolean
   onClose: () => void
+  wid?: string
+  onOpenMembers?: () => void
 }
 
-export default function SettingsModal({ open, onClose }: Props) {
+export default function SettingsModal({ open, onClose, wid, onOpenMembers }: Props) {
   const queryClient = useQueryClient()
   const { mode, toggle } = useTheme()
   const [newTokenName, setNewTokenName] = useState('')
@@ -23,6 +25,13 @@ export default function SettingsModal({ open, onClose }: Props) {
     queryKey: ['api-tokens'],
     queryFn: () => tokenApi.list(),
     enabled: open,
+  })
+
+  // 当前工作区成员概览（可选）
+  const { data: members = [] } = useQuery<WorkspaceMember[]>({
+    queryKey: ['workspace-members', wid],
+    queryFn: () => workspaceApi.members(wid!),
+    enabled: open && !!wid,
   })
 
   const createToken = useMutation({
@@ -156,6 +165,42 @@ export default function SettingsModal({ open, onClose }: Props) {
                 <div style={{ marginTop: 12, fontSize: 12, color: '#64748b' }}>
                   设置会自动保存到浏览器。
                 </div>
+              </div>
+            ),
+          },
+          {
+            key: 'workspace',
+            label: <span><TeamOutlined /> 工作区</span>,
+            disabled: !wid,
+            children: !wid ? (
+              <Empty description="请先选择一个工作区" style={{ padding: 32 }} />
+            ) : (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                  <span>当前工作区共 {members.length} 位成员</span>
+                  {onOpenMembers && (
+                    <Button type="link" size="small" onClick={() => { onOpenMembers(); onClose() }}>
+                      打开成员管理 →
+                    </Button>
+                  )}
+                </div>
+                <Table
+                  rowKey="id"
+                  size="small"
+                  dataSource={members}
+                  pagination={false}
+                  locale={{ emptyText: <Empty description="暂无成员" /> }}
+                  columns={[
+                    { title: '用户名', dataIndex: 'username' },
+                    {
+                      title: '角色', dataIndex: 'role',
+                      render: (r: string) => {
+                        const color = r === 'owner' ? 'red' : r === 'admin' ? 'orange' : 'blue'
+                        return <Tag color={color}>{r}</Tag>
+                      },
+                    },
+                  ]}
+                />
               </div>
             ),
           },
