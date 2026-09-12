@@ -1,11 +1,11 @@
 /** 行详情抽屉 — 编辑字段值 / 评论 / 历史 / 反向引用. */
 
 import React, { useState } from 'react'
-import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Popconfirm } from 'antd'
-import { SaveOutlined, CommentOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Popconfirm, Upload, Image } from 'antd'
+import { SaveOutlined, CommentOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { commentApi, auditApi, recordApi, tableApi } from '@/api'
-import type { RowResponse, Field, AuditLog, Comment as ApiComment, Reference } from '@/api'
+import { commentApi, auditApi, recordApi, tableApi, fileApi } from '@/api'
+import type { RowResponse, Field, AuditLog, Comment as ApiComment, Reference, AttachmentFile } from '@/api'
 
 const { Title, Text } = Typography
 
@@ -243,6 +243,62 @@ function FieldEditor({
       return <Input value={value as string} onChange={e => onChange(e.target.value)} placeholder="手机号" />
     case 'json':
       return <Input.TextArea rows={3} value={typeof value === 'string' ? value : JSON.stringify(value ?? '', null, 2)} onChange={e => onChange(e.target.value)} placeholder="JSON" />
+    case 'attachment': {
+      const files: AttachmentFile[] = Array.isArray(value)
+        ? (value as AttachmentFile[])
+        : (() => { try { return JSON.parse(String(value || '[]')) } catch { return [] } })()
+      const upload = async (file: File) => {
+        const meta = await fileApi.upload(wid, file)
+        onChange([...files, meta])
+        return meta
+      }
+      return (
+        <div>
+          <Upload.Dragger
+            multiple={Boolean(field.config?.multiple ?? true)}
+            showUploadList={false}
+            accept={(field.config?.allowed_mime_types as string[])?.join(',') || undefined}
+            beforeUpload={f => { upload(f); return false }}
+            style={{ padding: '4px 8px', marginBottom: 8 }}
+          >
+            <div style={{ fontSize: 12, color: '#94a3b8', margin: '2px 0' }}>
+              <InboxOutlined /> 点击或拖拽上传
+            </div>
+          </Upload.Dragger>
+          {files.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {files.map((f, i) => {
+                const isImg = (f.mime_type || f.filename).match(/image\/|\.(png|jpe?g|gif|webp|svg)$/i)
+                if (isImg) {
+                  return (
+                    <div key={f.file_key} style={{ position: 'relative', width: 56, height: 56 }}>
+                      <Image width={56} height={56} src={fileApi.getUrl(wid, f.file_key, true)}
+                        style={{ objectFit: 'cover', borderRadius: 4 }} />
+                      <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                        style={{ position: 'absolute', top: -4, right: -4, background: '#fff', padding: 0 }}
+                        onClick={() => {
+                          fileApi.remove(wid, f.file_key).catch(() => {})
+                          onChange(files.filter((_, j) => j !== i))
+                        }} />
+                    </div>
+                  )
+                }
+                return (
+                  <span key={f.file_key} style={{ fontSize: 12, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 4 }}>
+                    📎 <a href={fileApi.getUrl(wid, f.file_key)} target="_blank" rel="noreferrer">{f.filename}</a>
+                    <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                      onClick={() => {
+                        fileApi.remove(wid, f.file_key).catch(() => {})
+                        onChange(files.filter((_, j) => j !== i))
+                      }} />
+                  </span>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )
+    }
     default:
       return <Input value={value as string} onChange={e => onChange(e.target.value)} placeholder="请输入..." />
   }

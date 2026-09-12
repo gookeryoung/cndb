@@ -22,7 +22,7 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: 'multi_select', label: '多选' }, { value: 'email', label: '邮箱' },
   { value: 'url', label: '链接' }, { value: 'phone', label: '电话' },
   { value: 'link', label: '关联' },
-  // NOTE: attachment 后端 FieldTypeRegistry 尚未实现，暂不暴露给前端
+  { value: 'attachment', label: '附件' },
 ]
 
 export default function FieldManager({ open, wid, tid, fields, onClose, onChanged }: Props) {

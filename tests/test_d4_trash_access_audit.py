@@ -446,7 +446,7 @@ def test_link_table_exists_unknown_engine(db_engine):
 
 
 def test_default_registry_has_all_new_types():
-    """确认 15 个字段类型都已注册."""
+    """确认 16 个字段类型都已注册."""
     names = sorted(ft.name for ft in default_registry.all())
     expected = sorted(
         [
@@ -465,6 +465,7 @@ def test_default_registry_has_all_new_types():
             "phone",
             "percentage",
             "timestamp",
+            "attachment",
         ]
     )
     assert names == expected
