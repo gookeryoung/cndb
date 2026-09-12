@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  ReactFlow,
+  ReactFlow, useReactFlow,
   Background, Controls, Handle, MiniMap, Position, ReactFlowProvider,
   applyNodeChanges, applyEdgeChanges, BackgroundVariant,
   type Connection, type Edge, type EdgeChange, type Node, type NodeChange,
-  type NodeProps, type ReactFlowInstance,
+  type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
@@ -115,7 +115,7 @@ function computeLayeredLayout(
 function WorkflowEditorInner() {
   const { wid, fwid } = useParams<{ wid: string; fwid: string }>()
   const navigate = useNavigate()
-  const rfRef = useRef<ReactFlowInstance | null>(null)
+  const rf = useReactFlow()
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['workflows', wid, fwid],
@@ -298,7 +298,7 @@ function WorkflowEditorInner() {
     message.success('已自动布局')
   }
 
-  const handleFit = () => rfRef.current?.fitView({ padding: 0.2 })
+  const handleFit = () => rf.fitView({ padding: 0.2 })
 
   const handleDeleteNode = () => {
     if (!selectedNodeId) return
@@ -347,9 +347,7 @@ function WorkflowEditorInner() {
           </Space>
         </div>
 
-        {/* @ts-expect-error ReactFlow v12 的 JSX 类型在某些场景下不兼容 */}
         <ReactFlow
-          ref={rfRef}
           nodes={rfNodes}
           edges={rfEdges}
           nodeTypes={nodeTypes}
