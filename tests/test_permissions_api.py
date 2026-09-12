@@ -33,6 +33,7 @@ def db(tmp_path):
         yield session
     finally:
         session.close()
+        engine.dispose()
 
 
 @pytest.fixture
@@ -95,6 +96,7 @@ def table(db, ws, tmp_path):
     db.commit()
     db.refresh(dt)
     ddl.create_table(engine, dt)
+    engine.dispose()
     return dt
 
 

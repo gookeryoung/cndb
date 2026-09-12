@@ -1,9 +1,9 @@
-import { useState } from 'react'
-import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, message } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, Space, ColorPicker, message } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
-import { useMutation } from '@tanstack/react-query'
-import { fieldApi } from '@/api'
-import type { Field, FieldCreate, FieldType } from '@/api'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { fieldApi, tableApi } from '@/api'
+import type { Field, FieldCreate, FieldType, TableSummary } from '@/api'
 
 interface Props {
   open: boolean
@@ -14,40 +14,145 @@ interface Props {
   onChanged: () => void
 }
 
-const FIELD_TYPES: { value: FieldType; label: string }[] = [
-  { value: 'text', label: '单行文本' }, { value: 'long_text', label: '多行文本' },
-  { value: 'number', label: '整数' }, { value: 'decimal', label: '小数' },
-  { value: 'boolean', label: '是/否' }, { value: 'date', label: '日期' },
-  { value: 'datetime', label: '日期时间' }, { value: 'select', label: '单选' },
-  { value: 'multi_select', label: '多选' }, { value: 'email', label: '邮箱' },
-  { value: 'url', label: '链接' }, { value: 'phone', label: '电话' },
-  { value: 'link', label: '关联' },
-  { value: 'attachment', label: '附件' },
+const FIELD_TYPES: { value: FieldType; label: string; category: string }[] = [
+  { value: 'text', label: '单行文本', category: '基础' },
+  { value: 'long_text', label: '多行文本', category: '基础' },
+  { value: 'boolean', label: '是/否', category: '基础' },
+  { value: 'number', label: '整数', category: '数字' },
+  { value: 'decimal', label: '小数', category: '数字' },
+  { value: 'percentage', label: '百分比', category: '数字' },
+  { value: 'date', label: '日期', category: '日期' },
+  { value: 'datetime', label: '日期时间', category: '日期' },
+  { value: 'timestamp', label: '时间戳', category: '日期' },
+  { value: 'select', label: '单选', category: '选择' },
+  { value: 'multi_select', label: '多选', category: '选择' },
+  { value: 'email', label: '邮箱', category: '高级' },
+  { value: 'url', label: '链接', category: '高级' },
+  { value: 'phone', label: '电话', category: '高级' },
+  { value: 'link', label: '关联', category: '关联' },
+  { value: 'attachment', label: '附件', category: '高级' },
 ]
+
+/** 字段类型分类，决定需要渲染哪些 config 子表单 */
+const TYPE_CATEGORIES = {
+  basic: ['text', 'long_text', 'boolean', 'email', 'url', 'phone'],
+  numeric: ['number', 'decimal', 'percentage'],
+  date: ['date', 'datetime'],
+  timestamp: ['timestamp'],
+  select: ['select', 'multi_select'],
+  link: ['link'],
+  attachment: ['attachment'],
+}
+
+/** 把后端 SelectOption 格式归一化为前端编辑用的 { key, label, value, color } */
+function normalizeOptionsFromConfig(raw: unknown): Array<{ key: string; label: string; value: string | number; color: string }> {
+  if (!Array.isArray(raw)) return []
+  return raw.map((item, idx) => {
+    if (typeof item === 'string') {
+      return { key: String(idx), label: item, value: item, color: '' }
+    }
+    if (typeof item === 'object' && item !== null) {
+      const o = item as Record<string, unknown>
+      const label = String(o.label ?? '')
+      const val = o.value ?? label
+      return { key: String(idx), label, value: val as string | number, color: String(o.color ?? '') }
+    }
+    return { key: String(idx), label: String(item), value: String(item), color: '' }
+  })
+}
+
+/** 把前端编辑格式转回后端 SelectFieldConfig.options */
+function optionsToBackend(options: Array<{ label: string; value: string | number; color: string }>): Array<{ label: string; value: string | number; color?: string }> {
+  return options.filter(o => o.label.trim()).map(o => {
+    const item: { label: string; value: string | number; color?: string } = { label: o.label.trim(), value: o.value }
+    if (o.color) item.color = o.color
+    return item
+  })
+}
 
 export default function FieldManager({ open, wid, tid, fields, onClose, onChanged }: Props) {
   const [innerOpen, setInnerOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Field | null>(null)
   const [form] = Form.useForm()
-  const sorted = [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const [fieldType, setFieldType] = useState<FieldType | undefined>()
+  const sorted = useMemo(() => [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [fields])
+
+  // 拉取当前工作区表列表（link 字段用）
+  const { data: tables = [] } = useQuery<TableSummary[]>({
+    queryKey: ['tables', wid],
+    queryFn: () => tableApi.list(wid),
+    enabled: open && innerOpen,
+  })
 
   const create = useMutation({
     mutationFn: (data: FieldCreate) => fieldApi.create(wid, tid, data),
-    onSuccess: () => { message.success('已添加字段'); setInnerOpen(false); form.resetFields(); onChanged() },
+    onSuccess: () => { message.success('已添加字段'); closeDialog(); onChanged() },
   })
   const update = useMutation({
     mutationFn: (args: { fid: number | string; data: Partial<Field> }) => fieldApi.update(wid, tid, args.fid, args.data),
-    onSuccess: () => { message.success('已更新'); setEditTarget(null); form.resetFields(); onChanged() },
+    onSuccess: () => { message.success('已更新'); closeDialog(); onChanged() },
   })
   const remove = useMutation({
     mutationFn: (fid: number | string) => fieldApi.remove(wid, tid, fid),
     onSuccess: () => { message.success('已删除'); onChanged() },
   })
 
+  function closeDialog() {
+    setInnerOpen(false)
+    setEditTarget(null)
+    setFieldType(undefined)
+    form.resetFields()
+  }
+
+  /** 打开新建/编辑对话框 */
+  function openDialog(target: Field | null) {
+    setEditTarget(target)
+    setInnerOpen(true)
+    if (target) {
+      // 回填数据，config 直接以 Record<string, unknown> 存入表单
+      form.setFieldsValue({
+        name: target.name,
+        field_type: target.field_type,
+        required: target.required,
+        hidden: target.hidden,
+        is_unique: (target as Record<string, unknown>).is_unique ?? false,
+        default_value: target.default_value ?? '',
+        config: target.config ?? {},
+      })
+      setFieldType(target.field_type)
+    } else {
+      form.resetFields()
+      setFieldType(undefined)
+    }
+  }
+
+  /** 提交：组装 config 后发送 */
+  function handleSubmit() {
+    const values = form.getFieldsValue()
+    const payload: Record<string, unknown> = {
+      name: values.name,
+      field_type: values.field_type,
+      required: !!values.required,
+      is_unique: !!values.is_unique,
+      hidden: !!values.hidden,
+      config: values.config ?? {},
+    }
+    // 处理 default_value
+    if (values.default_value !== undefined && values.default_value !== null && values.default_value !== '') {
+      payload.default_value = values.default_value
+    }
+
+    if (editTarget) {
+      update.mutate({ fid: editTarget.id, data: payload as Partial<Field> })
+    } else {
+      create.mutate(payload as FieldCreate)
+    }
+  }
+
   return (
-    <Modal title="字段管理" width={720} open={open} onCancel={onClose} footer={null}>
+    <Modal title="字段管理" width={760} open={open} onCancel={onClose} footer={null}>
       <div style={{ marginBottom: 12, textAlign: 'right' }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditTarget(null); setInnerOpen(true); form.resetFields() }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => openDialog(null)}>
           新建字段
         </Button>
       </div>
@@ -63,7 +168,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             render: (_, r) => (
               <span>
                 <Button size="small" icon={<EditOutlined />} style={{ marginRight: 4 }}
-                  onClick={() => { setEditTarget(r); form.setFieldsValue(r); setInnerOpen(true) }}>编辑</Button>
+                  onClick={() => openDialog(r)}>编辑</Button>
                 {!r.is_primary && (
                   <Popconfirm title="确认删除？" onConfirm={() => remove.mutate(r.id)}>
                     <Button size="small" danger icon={<DeleteOutlined />} />
@@ -77,37 +182,318 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       <Modal
         title={editTarget ? '编辑字段' : '新建字段'}
         open={innerOpen}
-        onCancel={() => { setInnerOpen(false); setEditTarget(null); form.resetFields() }}
-        onOk={() => form.submit()}
+        onCancel={closeDialog}
+        onOk={handleSubmit}
         confirmLoading={create.isPending || update.isPending}
+        width={720}
+        okText={editTarget ? '保存' : '创建'}
+        cancelText="取消"
       >
-        <Form form={form} layout="vertical"
-          onFinish={(v) => {
-            if (editTarget) update.mutate({ fid: editTarget.id, data: v })
-            else create.mutate(v)
-          }}>
+        <Form form={form} layout="vertical" preserve={false}>
           <Row gutter={12}>
             <Col span={12}>
-              <Form.Item name="name" label="字段名" rules={[{ required: true }]}><Input /></Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="field_type" label="类型" rules={[{ required: true }]}>
-                <Select options={FIELD_TYPES} />
+              <Form.Item name="name" label="字段名" rules={[{ required: true, message: '请输入字段名' }]}>
+                <Input placeholder="例如：姓名" />
               </Form.Item>
             </Col>
             <Col span={12}>
+              <Form.Item name="field_type" label="类型" rules={[{ required: true, message: '请选择类型' }]}>
+                <Select
+                  options={FIELD_TYPES.map(t => ({ label: `${t.label}（${t.category}）`, value: t.value }))}
+                  onChange={(v) => setFieldType(v)}
+                  disabled={!!editTarget}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* 通用属性 */}
+          <Row gutter={12}>
+            <Col span={6}>
               <Form.Item name="required" valuePropName="checked" label="必填">
                 <Checkbox />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={6}>
+              <Form.Item name="is_unique" valuePropName="checked" label="唯一">
+                <Checkbox />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
               <Form.Item name="hidden" valuePropName="checked" label="在视图中隐藏">
                 <Checkbox />
               </Form.Item>
             </Col>
+            <Col span={6}>
+              <Form.Item name="default_value" label="默认值（可选）">
+                <Input placeholder="例如：默认文本" allowClear />
+              </Form.Item>
+            </Col>
           </Row>
+
+          {/* 类型专属 config 编辑区 */}
+          {fieldType && <ConfigEditor fieldType={fieldType} form={form} wid={wid} tid={tid} tables={tables} />}
         </Form>
       </Modal>
     </Modal>
+  )
+}
+
+// ─────────────── 动态 Config 编辑器 ───────────────
+
+interface ConfigEditorProps {
+  fieldType: FieldType
+  form: ReturnType<typeof Form.useForm>[0]
+  wid: string
+  tid: string
+  tables: TableSummary[]
+}
+
+/** 字段类型对应的 config 编辑器 */
+function ConfigEditor({ fieldType, form, tables }: ConfigEditorProps) {
+  // 监听 config 变化，保证表单 re-render
+  const currentConfig = Form.useWatch('config', form) as Record<string, unknown> | undefined
+  const effectiveConfig = currentConfig ?? {}
+
+  // 初始填充：如果 config 为空则给默认值
+  useEffect(() => {
+    if (!currentConfig || Object.keys(currentConfig).length === 0) {
+      const defaults = defaultConfigForType(fieldType)
+      if (Object.keys(defaults).length > 0) {
+        form.setFieldValue('config', defaults)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fieldType])
+
+  // 把 config 的子字段映射到独立表单项（antd Form.Item name 支持对象路径）
+  const configField = (name: string) => ({ name: ['config', ...name.split('.')] as [string, string] })
+
+  return (
+    <div style={{ marginTop: 8, borderTop: '1px dashed #d9d9d9', paddingTop: 12 }}>
+      <div style={{ fontWeight: 500, marginBottom: 12 }}>字段配置</div>
+
+      {/* ── 数字类（number / decimal / percentage） ── */}
+      {TYPE_CATEGORIES.numeric.includes(fieldType) && (
+        <Row gutter={12}>
+          <Col span={8}>
+            <Form.Item {...configField('min')} label="最小值">
+              <InputNumber style={{ width: '100%' }} placeholder="不限" allowClear />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item {...configField('max')} label="最大值">
+              <InputNumber style={{ width: '100%' }} placeholder="不限" allowClear />
+            </Form.Item>
+          </Col>
+          {fieldType !== 'percentage' && (
+            <Col span={8}>
+              <Form.Item {...configField('decimals')} label="小数位数" extra="整数固定 0">
+                <InputNumber min={0} max={10} style={{ width: '100%' }} placeholder="0" />
+              </Form.Item>
+            </Col>
+          )}
+        </Row>
+      )}
+
+      {/* ── 日期类（date / datetime） ── */}
+      {TYPE_CATEGORIES.date.includes(fieldType) && (
+        <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item {...configField('auto_fill')} label="自动填充" extra="创建时间/更新时间戳推荐使用">
+              <Radio.Group>
+                <Radio.Button value="">不自动填充</Radio.Button>
+                <Radio.Button value="on_create">创建时填入当前时间</Radio.Button>
+                <Radio.Button value="on_update">每次更新时覆盖</Radio.Button>
+              </Radio.Group>
+            </Form.Item>
+          </Col>
+          {fieldType === 'datetime' && (
+            <Col span={12}>
+              <Form.Item {...configField('include_time')} valuePropName="checked" label="包含时间">
+                <Checkbox />
+              </Form.Item>
+            </Col>
+          )}
+        </Row>
+      )}
+
+      {/* ── 选择类（select / multi_select） ── */}
+      {TYPE_CATEGORIES.select.includes(fieldType) && <SelectOptionsEditor form={form} config={effectiveConfig} />}
+
+      {/* ── 关联 link ── */}
+      {TYPE_CATEGORIES.link.includes(fieldType) && (
+        <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item {...configField('target_table_id')} label="关联目标表" rules={[{ required: true, message: '请选择目标表' }]}>
+              <Select
+                showSearch
+                placeholder="选择要关联的表"
+                options={tables.map(t => ({ label: t.name, value: t.id }))}
+                filterOption={(input, option) => (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多选">
+              <Checkbox extra="勾选后一个单元格可关联多行目标数据" />
+            </Form.Item>
+          </Col>
+        </Row>
+      )}
+
+      {/* ── 附件 attachment ── */}
+      {TYPE_CATEGORIES.attachment.includes(fieldType) && (
+        <Row gutter={12}>
+          <Col span={8}>
+            <Form.Item {...configField('max_size_mb')} label="单文件最大 (MB)">
+              <InputNumber min={0} max={1024} style={{ width: '100%' }} placeholder="10" />
+            </Form.Item>
+          </Col>
+          <Col span={10}>
+            <Form.Item {...configField('allowed_mime_types')} label="允许的 MIME 类型（逗号分隔，空=不限）">
+              <Input placeholder="例如 image/png,image/jpeg" />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多文件">
+              <Checkbox />
+            </Form.Item>
+          </Col>
+        </Row>
+      )}
+    </div>
+  )
+}
+
+/** 根据字段类型给出初始默认 config */
+function defaultConfigForType(fieldType: FieldType): Record<string, unknown> {
+  switch (fieldType) {
+    case 'number':
+    case 'decimal':
+      return { min: undefined, max: undefined, decimals: fieldType === 'decimal' ? 2 : 0 }
+    case 'percentage':
+      return { decimals: 0 }
+    case 'date':
+      return { include_time: false, auto_fill: '' }
+    case 'datetime':
+      return { include_time: true, auto_fill: '' }
+    case 'select':
+    case 'multi_select':
+      return { options: [] }
+    case 'link':
+      return { target_table_id: undefined, multiple: true }
+    case 'attachment':
+      return { max_size_mb: 10, allowed_mime_types: [], multiple: true }
+    default:
+      return {}
+  }
+}
+
+// ─────────────── 选项编辑器（select / multi_select 共享） ───────────────
+
+function SelectOptionsEditor({ form, config }: { form: ReturnType<typeof Form.useForm>[0]; config: Record<string, unknown> }) {
+  // 从 config.options 初始化（兼容旧 list[str] 格式）
+  const initialOptions = useMemo(() => normalizeOptionsFromConfig(config.options), [config.options])
+  const [options, setOptions] = useState(initialOptions)
+
+  // 当外部 config.options 变化（比如切换字段类型）时同步
+  useEffect(() => {
+    setOptions(normalizeOptionsFromConfig(config.options))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.options])
+
+  /** 把当前编辑中的 options 同步到 form 的 config.options */
+  function syncToForm(next: typeof options) {
+    // 过滤空 label 后才提交
+    const cleaned = next.filter(o => o.label.trim())
+    // 构建后端兼容格式：如果 value == label 则存简洁格式，否则带 value
+    const backend = cleaned.map(o => ({
+      label: o.label.trim(),
+      value: o.value,
+      ...(o.color ? { color: o.color } : {}),
+    }))
+    form.setFieldValue(['config', 'options'], backend)
+  }
+
+  function addOption() {
+    const next = [...options, { key: String(Date.now()), label: '', value: '', color: '' }]
+    setOptions(next)
+    syncToForm(next)
+  }
+
+  function removeOption(key: string) {
+    const next = options.filter(o => o.key !== key)
+    setOptions(next)
+    syncToForm(next)
+  }
+
+  function updateOption(key: string, patch: Partial<(typeof options)[number]>) {
+    const next = options.map(o => o.key === key ? { ...o, ...patch } : o)
+    // 如果 label 变化且 value 仍等于旧 label，同步 value
+    if (patch.label !== undefined) {
+      const old = options.find(o => o.key === key)
+      if (old && (old.value === old.label || old.value === old.label.trim())) {
+        const idx = next.findIndex(o => o.key === key)
+        if (idx >= 0) next[idx] = { ...next[idx], value: patch.label.trim() }
+      }
+    }
+    setOptions(next)
+    syncToForm(next)
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span>选项列表（显示标签 + 存储值）</span>
+        <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addOption}>
+          添加选项
+        </Button>
+      </div>
+      {options.length === 0 ? (
+        <div style={{ color: '#999', padding: 16, textAlign: 'center', border: '1px dashed #d9d9d9', borderRadius: 4 }}>
+          暂无选项，点击上方按钮添加
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {options.map((opt, idx) => (
+            <div key={opt.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: '#999', width: 24, textAlign: 'center' }}>{idx + 1}</span>
+              <Input
+                value={opt.label}
+                placeholder="显示标签"
+                style={{ flex: 1 }}
+                onChange={(e) => updateOption(opt.key, { label: e.target.value })}
+              />
+              <span style={{ color: '#999' }}>=</span>
+              <Input
+                value={String(opt.value)}
+                placeholder="存储值（数字或文本）"
+                style={{ flex: 1 }}
+                onChange={(e) => {
+                  const v = e.target.value
+                  // 尝试解析为数字
+                  const num = Number(v)
+                  updateOption(opt.key, { value: v && !Number.isNaN(num) ? v : v })
+                }}
+              />
+              <ColorPicker
+                value={opt.color || undefined}
+                showText
+                size="small"
+                onChange={(color) => updateOption(opt.key, { color: color.toHexString() })}
+              />
+              <Button
+                danger
+                type="text"
+                size="small"
+                icon={<DeleteOutlined />}
+                onClick={() => removeOption(opt.key)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

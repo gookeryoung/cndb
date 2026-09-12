@@ -11,7 +11,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.ddl import add_column, drop_column
-from cndb.plugins.tables.field_types import LinkFieldConfig, default_registry
+from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, default_registry
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
 from cndb.plugins.tables.schemas import FieldCreate, FieldResponse, FieldUpdate
@@ -20,16 +20,34 @@ from cndb.plugins.workspaces.models import WorkspaceRole
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
 
 
-def _validate_link_config(payload_config: dict[str, Any], db: Session) -> dict[str, Any]:
-    """link 字段 config 保存期校验：target_table_id 为正整数且目标表存在."""
+def _validate_field_config(field_type: str, payload_config: dict[str, Any], db: Session) -> dict[str, Any]:
+    """用字段类型对应的 config_schema 校验并归一化 config.
+
+    link 字段额外校验 target_table_id 存在性。未知/缺失 config_schema 的类型走直通。
+    """
+    ft = default_registry.get(field_type)
+    if ft is None:
+        raise HTTPException(status_code=400, detail=f"未知字段类型: {field_type}")
+
+    # 用 pydantic 校验
+    schema_cls: type[FieldTypeConfig] = ft.config_schema
     try:
-        cfg = LinkFieldConfig(**(payload_config or {}))
+        cfg = schema_cls.model_validate(payload_config or {})
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"link 字段 config 校验失败: {exc}") from exc
-    target = db.get(DataTable, cfg.target_table_id)
-    if target is None or target.trashed:
-        raise HTTPException(status_code=400, detail=f"关联目标表不存在: {cfg.target_table_id}")
-    return cfg.model_dump(exclude={"description", "placeholder"})
+        raise HTTPException(status_code=400, detail=f"{field_type} 字段 config 校验失败: {exc}") from exc
+
+    # link 字段额外校验 target_table_id
+    if field_type == "link":
+        assert isinstance(cfg, LinkFieldConfig)
+        target = db.get(DataTable, cfg.target_table_id)
+        if target is None or target.trashed:
+            raise HTTPException(status_code=400, detail=f"关联目标表不存在: {cfg.target_table_id}")
+
+    # 归一化输出（去掉基类 FieldTypeConfig 的通用字段）
+    exclude = set()
+    base_fields = {"description", "placeholder"}
+    exclude.update(base_fields - set(schema_cls.model_fields.keys()))  # 去掉 schema 里没有的
+    return cfg.model_dump(exclude_unset=False)
 
 
 @router.post("", response_model=FieldResponse, status_code=status.HTTP_201_CREATED)
@@ -53,9 +71,8 @@ def create_field(
     if existing:
         raise HTTPException(status_code=400, detail="字段名已存在")
 
-    config = payload.config
-    if payload.field_type == "link":
-        config = _validate_link_config(payload.config, db)
+    # 用字段类型专属 schema 校验并归一化 config
+    config = _validate_field_config(payload.field_type, payload.config or {}, db)
 
     df = DataField(
         table_id=table_id,

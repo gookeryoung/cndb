@@ -74,10 +74,11 @@ def linked_api_session(tmp_path):
     finally:
         session.close()
         Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 @pytest.fixture
-def linked_client(linked_api_session):
+def linked_api_client(linked_api_session):
     session, _engine, _ws_id = linked_api_session
     from cndb.app import app
 
@@ -91,16 +92,16 @@ def linked_client(linked_api_session):
 
 
 @pytest.fixture
-def linked_auth(linked_client, linked_api_session):
+def linked_auth(linked_api_client, linked_api_session):
     _session, _engine, ws_id = linked_api_session
-    r = linked_client.post("/api/v1/accounts/auth/login", json={"login": "link_user", "password": "passw0rd"})
+    r = linked_api_client.post("/api/v1/accounts/auth/login", json={"login": "link_user", "password": "passw0rd"})
     return ws_id, {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
 class TestGraphWithLinks:
-    def test_graph_with_edges(self, linked_client, linked_auth):
+    def test_graph_with_edges(self, linked_api_client, linked_auth):
         ws_id, auth = linked_auth
-        r = linked_client.get(f"/api/v1/workspaces/{ws_id}/graph", headers=auth)
+        r = linked_api_client.get(f"/api/v1/workspaces/{ws_id}/graph", headers=auth)
         assert r.status_code == 200
         data = r.json()
         assert len(data["nodes"]) == 2
@@ -113,9 +114,9 @@ class TestGraphWithLinks:
 
 
 class TestDependenciesApi:
-    def test_deps_with_links(self, linked_client, linked_auth):
+    def test_deps_with_links(self, linked_api_client, linked_auth):
         ws_id, auth = linked_auth
-        r = linked_client.get(f"/api/v1/workspaces/{ws_id}/dependencies", headers=auth)
+        r = linked_api_client.get(f"/api/v1/workspaces/{ws_id}/dependencies", headers=auth)
         assert r.status_code == 200
         data = r.json()
         assert "link_fields" in data

@@ -128,14 +128,123 @@ def test_float_min_violation():
 
 
 def test_select_field_config_non_empty_ok():
-    """SelectFieldConfig._non_empty validator 返回值分支 — L168."""
+    """SelectFieldConfig 纯字符串输入归一化为 SelectOption — 兼容旧格式."""
     from cndb.plugins.tables.field_types import SelectFieldConfig
 
     cfg = SelectFieldConfig(options=["a", "b"])
-    assert cfg.options == ["a", "b"]
+    assert len(cfg.options) == 2
+    assert cfg.options[0].label == "a"
+    assert cfg.options[0].value == "a"
+    assert cfg.options[1].label == "b"
 
 
 def test_select_field_type_none_passthrough():
     """SelectFieldType.validate_value None passthrough — L182."""
     ft = _ft("select")
     assert ft.validate_value(None, {"options": ["a", "b"]}) is None
+
+
+# ── SelectFieldConfig 新格式覆盖 ────────────────────────────
+
+
+def test_select_config_dict_input():
+    """options 以字典列表输入 —— label/value 分离."""
+    from cndb.plugins.tables.field_types import SelectFieldConfig
+
+    cfg = SelectFieldConfig(options=[{"label": "是", "value": 1, "color": "#ff0000"}])
+    assert len(cfg.options) == 1
+    assert cfg.options[0].label == "是"
+    assert cfg.options[0].value == 1
+    assert cfg.options[0].color == "#ff0000"
+
+
+def test_select_config_select_option_input():
+    """options 以 SelectOption 实例输入."""
+    from cndb.plugins.tables.field_types import SelectFieldConfig, SelectOption
+
+    cfg = SelectFieldConfig(options=[SelectOption(label="活跃", value=1)])
+    assert cfg.option_values() == ["1"]
+
+
+def test_select_config_value_label_separation():
+    """SelectFieldType 校验 value 用 numberic id 而展示用 label."""
+    ft = _ft("select")
+    cfg = {"options": [{"label": "男", "value": 1}, {"label": "女", "value": 2}]}
+    assert ft.validate_value(1, cfg) == "1"
+    assert ft.validate_value("1", cfg) == "1"
+    with pytest.raises(ValueError):
+        ft.validate_value("男", cfg)  # label 不能直接当 value
+
+
+def test_multiselect_dict_config():
+    """多选 + dict 格式 —— 逗号拼接 value."""
+    ft = _ft("multiselect")
+    cfg = {"options": [{"label": "A", "value": 1}, {"label": "B", "value": 2}]}
+    assert ft.validate_value([1, 2], cfg) == "1,2"
+
+
+# ── DateFieldConfig auto_fill 覆盖 ──────────────────────────
+
+
+def test_date_config_auto_fill_on_create():
+    """DateFieldConfig.should_auto_fill — on_create."""
+    from cndb.plugins.tables.field_types import DateFieldConfig
+
+    cfg = DateFieldConfig(auto_fill="on_create")
+    assert cfg.should_auto_fill(for_update=False) is True
+    assert cfg.should_auto_fill(for_update=True) is False
+
+
+def test_date_config_auto_fill_on_update():
+    """DateFieldConfig.should_auto_fill — on_update."""
+    from cndb.plugins.tables.field_types import DateFieldConfig
+
+    cfg = DateFieldConfig(auto_fill="on_update")
+    assert cfg.should_auto_fill(for_update=False) is True
+    assert cfg.should_auto_fill(for_update=True) is True
+
+
+def test_date_config_auto_fill_empty():
+    """DateFieldConfig.should_auto_fill — 不自动填充."""
+    from cndb.plugins.tables.field_types import DateFieldConfig
+
+    cfg = DateFieldConfig()
+    assert cfg.should_auto_fill(for_update=False) is False
+    assert cfg.should_auto_fill(for_update=True) is False
+
+
+def test_date_default_value_auto_fill():
+    """DateFieldType default_value — on_create 返回今天."""
+    from datetime import date
+
+    ft = _ft("date")
+    val = ft.default_value({"auto_fill": "on_create"})
+    assert isinstance(val, date)
+
+
+def test_datetime_default_value_auto_fill():
+    """DateTimeFieldType default_value — on_create 返回当前时间."""
+    from datetime import datetime
+
+    ft = _ft("datetime")
+    val = ft.default_value({"auto_fill": "on_create"})
+    assert isinstance(val, datetime)
+
+
+def test_date_validate_str_input():
+    """DateFieldType validate_value — str 输入路径."""
+    from datetime import date
+
+    ft = _ft("date")
+    assert ft.validate_value("2026-09-12", {}) == date(2026, 9, 12)
+    assert ft.validate_value("2026/09/12", {}) == date(2026, 9, 12)
+
+
+def test_datetime_validate_date_input():
+    """DateTimeFieldType validate_value — date 转换为 datetime."""
+    from datetime import date, datetime
+
+    ft = _ft("datetime")
+    result = ft.validate_value(date(2026, 9, 12), {})
+    assert isinstance(result, datetime)
+    assert result.date() == date(2026, 9, 12)

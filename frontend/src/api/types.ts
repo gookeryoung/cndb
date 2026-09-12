@@ -38,8 +38,8 @@ export interface TableUpdate { name?: string; description?: string }
 
 export type FieldType =
   | 'text' | 'long_text' | 'number' | 'decimal' | 'boolean'
-  | 'date' | 'datetime' | 'select' | 'multi_select'
-  | 'email' | 'url' | 'phone' | 'link' | 'attachment' | 'json'
+  | 'date' | 'datetime' | 'timestamp' | 'select' | 'multi_select'
+  | 'email' | 'url' | 'phone' | 'link' | 'attachment' | 'percentage' | 'json'
   | 'formula' | 'auto_id' | 'created_time' | 'updated_time'
   | 'created_by' | 'updated_by'
 
