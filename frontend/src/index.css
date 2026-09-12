@@ -38,7 +38,47 @@ body {
   font-size: 12px;
 }
 
+/* 表格表头垂直居中修复 */
+.cn-table .ant-table-thead > tr > th {
+  vertical-align: middle;
+}
+
 /* 表格斑马纹（用户设置开启时通过 rowClassName 应用） */
 .table-row-striped > td {
   background-color: #fafbfc;
+}
+
+/* ─────────────── 表格显示设置 Dialog — 紧凑化 ─────────────── */
+.table-settings-dialog .ant-modal-body {
+  padding: 12px 16px 8px;
+}
+.table-settings-dialog .ant-modal-footer {
+  padding: 8px 16px 12px;
+  border-top: none;
+}
+
+/* ─────────────── 表格密度控制 — 用 padding 压缩行高，不改字号 ─────────────── */
+
+/* 紧凑模式：最小 padding，适合快速浏览 */
+.cn-table.cn-table-compact .ant-table-thead > tr > th {
+  padding: 4px 8px !important;
+}
+.cn-table.cn-table-compact .ant-table-tbody > tr > td {
+  padding: 4px 8px !important;
+}
+
+/* 适中模式（antd middle 默认 padding 已合理，微调统一） */
+.cn-table.cn-table-comfortable .ant-table-thead > tr > th {
+  padding: 8px 12px !important;
+}
+.cn-table.cn-table-comfortable .ant-table-tbody > tr > td {
+  padding: 8px 12px !important;
+}
+
+/* 宽松模式：大 padding，适合长文本 */
+.cn-table.cn-table-spacious .ant-table-thead > tr > th {
+  padding: 12px 16px !important;
+}
+.cn-table.cn-table-spacious .ant-table-tbody > tr > td {
+  padding: 14px 16px !important;
 }
