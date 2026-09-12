@@ -2,11 +2,11 @@
 
 import React, { useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Form, Input, Typography, message, Select, Popconfirm, Dropdown, Tabs, Empty, InputNumber, Row, Col } from 'antd'
+import { Table, Button, Space, Tag, Modal, Form, Input, Typography, message, Select, Dropdown, Empty, Row, Col } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { reportApi, tableApi } from '@/api'
-import type { ReportTemplate, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter } from '@/api'
+import type { ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter, TableSummary } from '@/api'
 
 const { Title, Text } = Typography
 const FORMAT_OPTIONS = [
@@ -27,12 +27,11 @@ export default function ReportsPage() {
   const { wid } = useParams<{ wid: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [detailId, setDetailId] = React.useState<number | null>(null)
   const [editorOpen, setEditorOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<ReportTemplate | null>(null)
-  const [form] = Form.useForm<ReportTemplateCreate>()
+  const [form] = Form.useForm()
 
-  const { data: templates = [], isLoading } = useQuery<ReportTemplate[]>({
+  const { data: templates = [], isLoading } = useQuery<ReportTemplateSummary[]>({
     queryKey: ['report-templates'],
     queryFn: () => reportApi.list(),
   })
@@ -73,7 +72,7 @@ export default function ReportsPage() {
   })
 
   const renderReport = useMutation({
-    mutationFn: async (tpl: ReportTemplate) => {
+    mutationFn: async (tpl: ReportTemplateSummary) => {
       if (!wid) throw new Error('缺少 workspace')
       const blob = await reportApi.render(tpl.id, { table_id: tpl.table_id ?? 0, params: {} })
       // 触发浏览器下载
@@ -105,17 +104,20 @@ export default function ReportsPage() {
     setEditorOpen(true)
   }
 
-  const openEdit = (tpl: ReportTemplate) => {
-    setEditing(tpl)
-    form.setFieldsValue({
-      name: tpl.name,
-      description: tpl.description,
-      output_format: tpl.output_format,
-      template_content: tpl.template_content,
-      table_id: tpl.table_id,
-      parameters: tpl.parameters as ReportParameter[],
-    })
-    setEditorOpen(true)
+  const openEdit = (tpl: ReportTemplateSummary) => {
+    // 获取完整模板（含 template_content）
+    reportApi.get(tpl.id).then(full => {
+      setEditing(full)
+      form.setFieldsValue({
+        name: full.name,
+        description: full.description,
+        output_format: full.output_format,
+        template_content: full.template_content,
+        table_id: full.table_id,
+        parameters: full.parameters as ReportParameter[],
+      })
+      setEditorOpen(true)
+    }).catch(() => {})
   }
 
   const columns = [
@@ -123,8 +125,8 @@ export default function ReportsPage() {
       title: '模板名称',
       dataIndex: 'name',
       key: 'name',
-      render: (n: string, r: ReportTemplate) => (
-        <a onClick={() => setDetailId(r.id)}><FileTextOutlined style={{ marginRight: 6 }} />{n}</a>
+      render: (n: string, _r: ReportTemplateSummary) => (
+        <><FileTextOutlined style={{ marginRight: 6 }} />{n}</>
       ),
     },
     {
@@ -164,7 +166,7 @@ export default function ReportsPage() {
       title: '操作',
       key: 'actions',
       width: 200,
-      render: (_: unknown, r: ReportTemplate) => (
+      render: (_: unknown, r: ReportTemplateSummary) => (
         <Space size="small">
           <Button size="small" icon={<DownloadOutlined />}
             loading={renderReport.isPending}
@@ -240,7 +242,7 @@ export default function ReportsPage() {
 interface EditorProps {
   open: boolean
   editing: ReportTemplate | null
-  tables: Array<{ id: number; name: string }>
+  tables: TableSummary[]
   form: ReturnType<typeof Form.useForm>[0]
   onClose: () => void
   onSubmit: (data: ReportTemplateCreate) => void
@@ -248,7 +250,6 @@ interface EditorProps {
 }
 
 function TemplateEditor({ open, editing, tables, form, onClose, onSubmit, submitting }: EditorProps) {
-  const parameterType = Form.useWatch('parameters', form) as ReportParameter[] | undefined
   const tableOptions = useMemo(() => tables.map(t => ({ value: t.id, label: t.name })), [tables])
 
   return (
@@ -263,7 +264,7 @@ function TemplateEditor({ open, editing, tables, form, onClose, onSubmit, submit
       cancelText="取消"
       destroyOnHidden
     >
-      <Form form={form} layout="vertical" preserve={false} onFinish={onSubmit}>
+      <Form form={form} layout="vertical" preserve={false} onFinish={(v) => onSubmit(v as ReportTemplateCreate)}>
         <Row gutter={12}>
           <Col span={12}>
             <Form.Item name="name" label="模板名称" rules={[{ required: true, message: '请输入名称' }]}>

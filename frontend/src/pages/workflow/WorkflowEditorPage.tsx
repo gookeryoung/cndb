@@ -1,30 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import ReactFlow, {
+import {
+  ReactFlow,
   Background, Controls, Handle, MiniMap, Position, ReactFlowProvider,
-  addEdge, applyNodeChanges, applyEdgeChanges, BackgroundVariant,
+  applyNodeChanges, applyEdgeChanges, BackgroundVariant,
   type Connection, type Edge, type EdgeChange, type Node, type NodeChange,
   type NodeProps, type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
-  Button, Card, ColorPicker, Descriptions, Empty, Input, InputNumber, Modal,
+  Button, Card, Descriptions, Empty, Input, Modal,
   Select, Space, Spin, Tag, Tooltip, Typography, message,
 } from 'antd'
 import {
-  AimOutlined, ApartmentOutlined, AutoGraphOutlined, DeleteOutlined,
-  EditOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, TableOutlined,
+  AimOutlined, ApartmentOutlined, ClusterOutlined, DeleteOutlined,
+  PlusOutlined, ReloadOutlined, SaveOutlined, TableOutlined,
 } from '@ant-design/icons'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { workflowApi, tableApi } from '@/api'
-import type { WorkflowNode } from '@/api'
+import type { WorkflowNode, ID } from '@/api'
 
 const { Text } = Typography
 
 // ── 自定义节点卡片 ────────────────────────────────────
 
 function TableNode({ data, selected }: NodeProps) {
-  const node = data as WorkflowNode
+  const node = data as unknown as WorkflowNode
   const hasTable = !!node.table_id
 
   return (
@@ -114,7 +115,6 @@ function computeLayeredLayout(
 function WorkflowEditorInner() {
   const { wid, fwid } = useParams<{ wid: string; fwid: string }>()
   const navigate = useNavigate()
-  const qc = useQueryClient()
   const rfRef = useRef<ReactFlowInstance | null>(null)
 
   const { data, isLoading, refetch } = useQuery({
@@ -135,8 +135,7 @@ function WorkflowEditorInner() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [addNodeOpen, setAddNodeOpen] = useState(false)
   const [addNodeName, setAddNodeName] = useState('')
-  const [addNodeTableId, setAddNodeTableId] = useState<number | null>(null)
-  const [addNodeColor, setAddNodeColor] = useState('#3b82f6')
+  const [addNodeTableId, setAddNodeTableId] = useState<ID | null>(null)
 
   // 将后端数据转换为 React Flow 格式
   useEffect(() => {
@@ -145,7 +144,7 @@ function WorkflowEditorInner() {
       id: String(n.id),
       type: 'table',
       position: { x: n.pos_x, y: n.pos_y },
-      data: n,
+      data: n as unknown as Record<string, unknown>,
     }))
     const edges: Edge[] = data.edges.map(e => ({
       id: String(e.id),
@@ -214,7 +213,7 @@ function WorkflowEditorInner() {
   const onNodeDragStop = useCallback((_ev: unknown, node: Node) => {
     // debounce 批量发送位置
     const nid = Number(node.id)
-    const orig = rfNodes.find(n => n.id === node.id)?.data as WorkflowNode | undefined
+    const orig = rfNodes.find(n => n.id === node.id)?.data as unknown as WorkflowNode | undefined
     if (!orig) return
     const dx = node.position.x - orig.pos_x
     const dy = node.position.y - orig.pos_y
@@ -226,7 +225,7 @@ function WorkflowEditorInner() {
   }, [wid, fwid, rfNodes])
 
   const onNodeDoubleClick = useCallback((_ev: unknown, node: Node) => {
-    const n = node.data as WorkflowNode
+    const n = node.data as unknown as WorkflowNode
     if (n.table_id) {
       const vid = (n.config as any)?.default_view_id
       const url = vid
@@ -253,7 +252,7 @@ function WorkflowEditorInner() {
         id: String(resp.id),
         type: 'table',
         position: { x: resp.pos_x, y: resp.pos_y },
-        data: { ...resp } as WorkflowNode,
+        data: { ...resp } as unknown as Record<string, unknown>,
       }])
       setAddNodeOpen(false); setAddNodeName(''); setAddNodeTableId(null)
       message.success('节点已添加')
@@ -287,7 +286,7 @@ function WorkflowEditorInner() {
     setRfNodes(newNodes)
     // 批量更新位置
     for (const n of newNodes) {
-      const orig = rfNodes.find(x => x.id === n.id)?.data as WorkflowNode | undefined
+      const orig = rfNodes.find(x => x.id === n.id)?.data as unknown as WorkflowNode | undefined
       if (!orig) continue
       if (n.position.x !== orig.pos_x || n.position.y !== orig.pos_y) {
         workflowApi.updateNode(wid!, fwid!, Number(n.id), {
@@ -324,7 +323,7 @@ function WorkflowEditorInner() {
         }}>
           <Button icon={<PlusOutlined />} onClick={() => setAddNodeOpen(true)}>添加节点</Button>
           <Tooltip title="自动布局">
-            <Button icon={<AutoGraphOutlined />} onClick={handleAutoLayout} />
+            <Button icon={<ClusterOutlined />} onClick={handleAutoLayout} />
           </Tooltip>
           <Tooltip title="适应画布">
             <Button icon={<AimOutlined />} onClick={handleFit} />
@@ -348,6 +347,7 @@ function WorkflowEditorInner() {
           </Space>
         </div>
 
+        {/* @ts-expect-error ReactFlow v12 的 JSX 类型在某些场景下不兼容 */}
         <ReactFlow
           ref={rfRef}
           nodes={rfNodes}
@@ -358,7 +358,7 @@ function WorkflowEditorInner() {
           onConnect={onConnect}
           onNodeDragStop={onNodeDragStop}
           onNodeDoubleClick={onNodeDoubleClick}
-          onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+          onNodeClick={(_: unknown, node: Node) => setSelectedNodeId(node.id)}
           fitView
           deleteKeyCode={['Delete', 'Backspace']}
           proOptions={{ hideAttribution: true }}
@@ -387,8 +387,8 @@ function WorkflowEditorInner() {
                 // 本地更新
                 setRfNodes(ns => ns.map(n => {
                   if (n.id !== selectedNode.id) return n
-                  const newData = { ...(n.data as WorkflowNode), ...payload }
-                  return { ...n, data: newData }
+                  const newData = { ...(n.data as unknown as WorkflowNode), ...payload }
+                  return { ...n, data: newData as unknown as Record<string, unknown> }
                 }))
               }}
               onDelete={handleDeleteNode}
@@ -453,9 +453,9 @@ interface NodePropertiesProps {
 }
 
 function NodeProperties({ node, tables, onUpdate, onDelete, isDeleting }: NodePropertiesProps) {
-  const n = node.data as WorkflowNode
+  const n = node.data as unknown as WorkflowNode
   const [name, setName] = useState(n.name)
-  const [tableId, setTableId] = useState<number | null>(n.table_id ?? null)
+  const [tableId, setTableId] = useState<ID | null>(n.table_id ?? null)
 
   useEffect(() => {
     setName(n.name)

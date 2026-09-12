@@ -32,6 +32,8 @@ export interface WorkspaceInvite { username: string; role: WorkspaceRole }
 export interface TableSummary {
   id: ID; name: string; description?: string
   record_count?: number; field_count?: number; updated_at?: string
+  /** 软删时间（回收站场景） */
+  trashed_at?: string | null
 }
 export interface TableDetail {
   id: ID; workspace_id: ID; name: string; description?: string
@@ -43,7 +45,7 @@ export interface TableUpdate { name?: string; description?: string }
 export type FieldType =
   | 'text' | 'long_text' | 'number' | 'decimal' | 'boolean'
   | 'date' | 'datetime' | 'select' | 'multi_select'
-  | 'email' | 'url' | 'phone' | 'link' | 'attachment'
+  | 'email' | 'url' | 'phone' | 'link' | 'attachment' | 'json'
   | 'formula' | 'auto_id' | 'created_time' | 'updated_time'
   | 'created_by' | 'updated_by'
 
@@ -51,6 +53,12 @@ export interface Field {
   id: ID; name: string; field_type: FieldType; db_column_name?: string
   order?: number; config?: Record<string, unknown>; required?: boolean
   description?: string; hidden?: boolean; is_primary?: boolean; created_at?: string
+  /** 所属表 ID（回收站字段列表等场景使用） */
+  table_id?: ID
+  /** 所属表名称（回收站字段列表等场景使用） */
+  table_name?: string
+  /** 软删时间（回收站场景） */
+  trashed_at?: string | null
 }
 export interface FieldCreate {
   name: string; field_type: FieldType; order?: number
@@ -101,6 +109,11 @@ export interface ViewCreate {
   filters?: Record<string, unknown> | null; sorts?: Record<string, unknown> | null
   field_order?: string[] | null; default?: boolean
 }
+export interface ViewUpdate {
+  name?: string; view_type?: string
+  filters?: Record<string, unknown> | null; sorts?: Record<string, unknown> | null
+  field_order?: string[] | null; default?: boolean
+}
 
 export interface AuditLog {
   id: ID; table_id?: ID; row_id?: ID; action: string
@@ -115,6 +128,14 @@ export interface Reference {
   id: ID
   from_table_id: ID; from_row_id: ID; from_field_id: ID
   to_table_id: ID; to_row_id: ID; to_field_id: ID; created_at?: string
+  /** 前端便捷展示用：被引用表 ID（同 to_table_id） */
+  table_id?: ID
+  /** 前端便捷展示用：被引用行 ID（同 to_row_id） */
+  row_id?: ID
+  /** 前端便捷展示用：被引用表名称 */
+  table_name?: string
+  /** 前端便捷展示用：被引用行摘要 */
+  row_summary?: string
 }
 
 /** 回收站中的行 — 同样扁平结构 */
@@ -122,10 +143,14 @@ export interface TrashedRow {
   id: ID
   original_id?: ID
   deleted_at?: string
+  /** 软删时间（后端可能返回 _trashed_at 或 deleted_at） */
+  _trashed_at?: string
   [fieldName: string]: unknown
 }
 export interface WorkspaceTrashResponse {
   tables: TableSummary[]; fields: Field[]; trashed_rows: TrashedRow[]
+  /** 各表的软删行计数 */
+  row_counts?: Array<{ table_id: ID; table_name: string; trashed_rows: number }>
 }
 
 export interface GraphNode { id: string; label: string; type?: string }
@@ -134,7 +159,7 @@ export interface GraphResponse { nodes: GraphNode[]; edges: GraphEdge[]; topo_or
 export interface DependencyResponse { forward: Record<string, string[]>; reverse: Record<string, string[]> }
 
 export interface CsvAnalyzeResult { columns: string[]; total_rows: number }
-export interface CsvImportResult { table_id: ID; imported_rows: number }
+export interface CsvImportResult { table_id: ID; imported_rows: number; table_name?: string; imported?: number }
 
 export interface PublicForm {
   slug: string; title: string; description?: string
