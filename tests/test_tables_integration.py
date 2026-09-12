@@ -537,7 +537,7 @@ class TestTablesAPI:
         dt, _ = table_with_fields
         rec_plugin = client.post(
             f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}/records",
-            json={"values": {"姓名": "G1", "年龄": 20, "部门": "X"}},
+            json={"values": {"姓名": "G1", "年龄": 20, "部门": "技术部"}},
             headers=auth_owner,
         )
         assert rec_plugin.status_code == 201
