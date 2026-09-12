@@ -64,4 +64,3 @@ url     = "https://mirrors.aliyun.com/pypi/simple/"
 
 [dependency-groups]
 dev = ["cndb[dev]"]
-
