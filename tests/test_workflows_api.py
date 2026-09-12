@@ -312,9 +312,9 @@ class TestWorkflowNodes:
 
         node = db.query(WorkflowNode).filter(WorkflowNode.id == n1).first()
         assert node is None
-        edge = db.query(WorkflowEdge).filter(
-            WorkflowEdge.workflow_id == fwid, WorkflowEdge.target_node_id == n2
-        ).first()
+        edge = (
+            db.query(WorkflowEdge).filter(WorkflowEdge.workflow_id == fwid, WorkflowEdge.target_node_id == n2).first()
+        )
         # n2 作为 target 的那条边也应被级联（因为 source n1 被删）
         assert edge is None
 

@@ -197,7 +197,8 @@ def seed(_args: argparse.Namespace) -> None:
                 workflow_id=wf.id,
                 name="入职登记",
                 table_id=emp_tbl.id,
-                pos_x=60, pos_y=60,
+                pos_x=60,
+                pos_y=60,
                 config={"default_view_id": None},
             )
             db.add(n1)
@@ -209,7 +210,8 @@ def seed(_args: argparse.Namespace) -> None:
                 workflow_id=wf.id,
                 name="部门分配",
                 table_id=dept_tbl.id,
-                pos_x=300, pos_y=60,
+                pos_x=300,
+                pos_y=60,
                 config={"default_view_id": None},
             )
             db.add(n2)
@@ -221,7 +223,8 @@ def seed(_args: argparse.Namespace) -> None:
                 workflow_id=wf.id,
                 name="入职完成",
                 table_id=None,
-                pos_x=540, pos_y=60,
+                pos_x=540,
+                pos_y=60,
                 config={"default_view_id": None},
             )
             db.add(n3)
@@ -229,14 +232,22 @@ def seed(_args: argparse.Namespace) -> None:
             db.refresh(n3)
 
             # 边
-            db.add(WorkflowEdge(
-                workflow_id=wf.id,
-                source_node_id=n1.id, target_node_id=n2.id, label="提交资料",
-            ))
-            db.add(WorkflowEdge(
-                workflow_id=wf.id,
-                source_node_id=n2.id, target_node_id=n3.id, label="分配完成",
-            ))
+            db.add(
+                WorkflowEdge(
+                    workflow_id=wf.id,
+                    source_node_id=n1.id,
+                    target_node_id=n2.id,
+                    label="提交资料",
+                )
+            )
+            db.add(
+                WorkflowEdge(
+                    workflow_id=wf.id,
+                    source_node_id=n2.id,
+                    target_node_id=n3.id,
+                    label="分配完成",
+                )
+            )
             db.commit()
             print("[seed] 组装 3 节点 2 边: 入职流程 → 部门分配 → 入职完成")
 
