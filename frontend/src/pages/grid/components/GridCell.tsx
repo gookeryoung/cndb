@@ -387,8 +387,8 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
       const files: AttachmentFile[] = Array.isArray(draft)
         ? (draft as AttachmentFile[])
         : (() => {
-            try { return JSON.parse(String(draft || '[]')) } catch { return [] }
-          })()
+          try { return JSON.parse(String(draft || '[]')) } catch { return [] }
+        })()
 
       const upload = async (file: File): Promise<AttachmentFile> => {
         if (!wid) throw new Error('缺少 wid')
