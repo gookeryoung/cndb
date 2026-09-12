@@ -153,7 +153,7 @@ class TestCommentsAPI:
         )
         assert r.status_code == 404
 
-    def test_update_comment(self, client, ws, table, record_id, auth_owner, db):  # noqa: PLR0913, PLR0917
+    def test_update_comment(self, client, ws, table, record_id, auth_owner, db):
         client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/{record_id}/comments",
             json={"content": "old"},
@@ -176,7 +176,7 @@ class TestCommentsAPI:
         )
         assert r.status_code == 404
 
-    def test_delete_comment(self, client, ws, table, record_id, auth_owner, db):  # noqa: PLR0913, PLR0917
+    def test_delete_comment(self, client, ws, table, record_id, auth_owner, db):
         client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/{record_id}/comments",
             json={"content": "bye"},

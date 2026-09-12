@@ -176,7 +176,7 @@ def restore_trashed_field(
 
 
 @router.get("/{workspace_id}/tables/{table_id}/trash-rows")
-def list_trashed_rows(  # noqa: PLR0913, PLR0917
+def list_trashed_rows(
     workspace_id: int,
     table_id: int,
     current_user: Annotated[User, Depends(get_current_user)],

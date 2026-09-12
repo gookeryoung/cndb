@@ -222,3 +222,91 @@ export interface TablePermission {
   comment?: string
 }
 
+// ── Workflows ───────────────────────────────────────
+
+/** 节点绑定表的摘要 */
+export interface NodeTableBrief {
+  id: ID
+  name: string
+  view_count: number
+  row_count: number | null
+}
+
+/** 工作流节点 */
+export interface WorkflowNode {
+  id: ID
+  workflow_id: ID
+  name: string
+  table_id: ID | null
+  pos_x: number
+  pos_y: number
+  config: Record<string, unknown>
+  /** 绑定表摘要；表被软删/移出工作区时为 null（未绑定） */
+  table: NodeTableBrief | null
+  created_at?: string
+  updated_at?: string
+}
+
+/** 工作流边 */
+export interface WorkflowEdge {
+  id: ID
+  workflow_id: ID
+  source_node_id: ID
+  target_node_id: ID
+  label: string
+  created_at?: string
+  updated_at?: string
+}
+
+/** 工作流列表项 */
+export interface WorkflowSummary {
+  id: ID
+  workspace_id: ID
+  name: string
+  description: string
+  order: number
+  node_count: number
+  created_at?: string
+  updated_at?: string
+}
+
+/** 工作流详情 */
+export interface WorkflowDetail extends WorkflowSummary {
+  nodes: WorkflowNode[]
+  edges: WorkflowEdge[]
+}
+
+export interface WorkflowCreate {
+  name: string
+  description?: string
+}
+export interface WorkflowUpdate {
+  name?: string
+  description?: string
+  order?: number
+}
+
+export interface WorkflowNodeCreate {
+  name: string
+  table_id?: ID | null
+  pos_x?: number
+  pos_y?: number
+  config?: Record<string, unknown>
+}
+export interface WorkflowNodeUpdate {
+  name?: string
+  table_id?: ID | null
+  pos_x?: number
+  pos_y?: number
+  config?: Record<string, unknown>
+}
+
+export interface WorkflowEdgeCreate {
+  source_node_id: ID
+  target_node_id: ID
+  label?: string
+}
+export interface WorkflowEdgeUpdate {
+  label?: string
+}
+

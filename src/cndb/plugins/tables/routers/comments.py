@@ -23,7 +23,7 @@ router = APIRouter(tags=["comments"])
     "/{workspace_id}/tables/{table_id}/records/{record_id}/comments",
     response_model=list[CommentResponse],
 )
-def list_comments(  # noqa: PLR0913, PLR0917
+def list_comments(
     workspace_id: int,
     table_id: int,
     record_id: int,
@@ -47,7 +47,7 @@ def list_comments(  # noqa: PLR0913, PLR0917
     response_model=CommentResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_comment(  # noqa: PLR0913, PLR0917
+def create_comment(
     workspace_id: int,
     table_id: int,
     record_id: int,
@@ -81,7 +81,7 @@ def create_comment(  # noqa: PLR0913, PLR0917
     "/{workspace_id}/tables/{table_id}/comments/{comment_id}",
     response_model=CommentResponse,
 )
-def update_comment(  # noqa: PLR0913, PLR0917
+def update_comment(
     workspace_id: int,
     table_id: int,
     comment_id: int,

@@ -55,7 +55,7 @@ def create_record(
 
 
 @router.get("", response_model=RecordListResponse)
-def list_records_get(  # noqa: PLR0913, PLR0917
+def list_records_get(
     workspace_id: int,
     table_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -98,7 +98,7 @@ def list_records_get(  # noqa: PLR0913, PLR0917
 
 
 @router.post("/list", response_model=RecordListResponse)
-def list_records(  # noqa: PLR0913, PLR0917
+def list_records(
     workspace_id: int,
     table_id: int,
     payload: RecordListRequest,
@@ -149,7 +149,7 @@ def get_record(
 
 
 @router.patch("/{record_id}")
-def update_record(  # noqa: PLR0913, PLR0917
+def update_record(
     workspace_id: int,
     table_id: int,
     record_id: int,
@@ -171,7 +171,7 @@ def update_record(  # noqa: PLR0913, PLR0917
 
 
 @router.delete("/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_record(  # noqa: PLR0913, PLR0917
+def delete_record(
     workspace_id: int,
     table_id: int,
     record_id: int,
