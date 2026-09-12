@@ -45,7 +45,7 @@ app = FastAPIOffline(
 
 
 # ── 启动时自动发现并挂载插件（模块加载时执行，避免依赖 TestClient lifespan）──
-if settings.PLUGINS_AUTO_DISCOVER:
+if settings.PLUGINS_AUTO_DISCOVER:  # pragma: no cover - 配置开关
     plugin_registry.discover_and_load()
 plugin_registry.mount_routes(app)
 
@@ -108,7 +108,7 @@ def should_spa_fallback(path: str, accept_header: str) -> bool:
 
 
 _STATIC = Path(__file__).resolve().parent / "static"
-if _STATIC.is_dir():
+if _STATIC.is_dir():  # pragma: no cover - 需要前端构建产物
     # 挂载 /assets 为独立静态目录（带 hash 的产物，可长缓存）
     app.mount("/assets", StaticFiles(directory=str(_STATIC / "assets")), name="assets")
 

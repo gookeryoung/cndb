@@ -27,7 +27,10 @@ def db_engine_cov(tmp_path):
 
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    yield engine
+    try:
+        yield engine
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture

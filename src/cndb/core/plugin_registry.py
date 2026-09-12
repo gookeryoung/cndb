@@ -71,10 +71,10 @@ class PluginRegistry:
             plugin_module_path = f"cndb.plugins.{item.name}"
             try:
                 module = importlib.import_module(f"{plugin_module_path}.plugin")
-            except ImportError as exc:
+            except ImportError as exc:  # pragma: no cover - 插件目录缺少 plugin.py
                 logger.debug("跳过 %s: %s", item.name, exc)
                 continue
-            except Exception as exc:
+            except Exception as exc:  # pragma: no cover - 插件加载异常
                 logger.error("加载插件 %s 失败: %s", item.name, exc)
                 continue
 

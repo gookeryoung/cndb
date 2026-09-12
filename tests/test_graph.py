@@ -42,6 +42,7 @@ def graph_session(tmp_path):
     finally:
         session.close()
         Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 @pytest.fixture
