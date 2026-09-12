@@ -38,6 +38,7 @@ import type {
   ImportTaskInfo, TablePermission,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportRenderRequest,
+  AttachmentFile,
 } from './types'
 
 export type {
@@ -60,6 +61,7 @@ export type {
   NodeTableBrief, WorkflowNode, WorkflowEdge, WorkflowSummary, WorkflowDetail,
   WorkflowCreate, WorkflowUpdate, WorkflowNodeCreate, WorkflowNodeUpdate,
   WorkflowEdgeCreate, WorkflowEdgeUpdate,
+  AttachmentFile,
 } from './types'
 
 // ─────────────── Auth & Tokens ───────────────
@@ -381,4 +383,23 @@ export const workflowApi = {
     api.patch(`/v1/workspaces/${wid}/workflows/${fwid}/edges/${eid}`, data).then(r => r.data),
   removeEdge: (wid: number | string, fwid: number | string, eid: number | string) =>
     api.delete(`/v1/workspaces/${wid}/workflows/${fwid}/edges/${eid}`).then(r => r.data),
+}
+
+// ─────────────── Files / Attachments ───────────────
+
+export const fileApi = {
+  /** 上传单个附件文件 */
+  upload: (wid: number | string, file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post<AttachmentFile>(`/v1/workspaces/${wid}/files`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
+  /** 生成附件下载/预览 URL（后端路径 + 查询参数） */
+  getUrl: (wid: number | string, fileKey: string, inline = false) =>
+    `/api/v1/workspaces/${wid}/files/${encodeURIComponent(fileKey)}${inline ? '?inline=true' : ''}`,
+  /** 删除附件（硬清理） */
+  remove: (wid: number | string, fileKey: string) =>
+    api.delete(`/v1/workspaces/${wid}/files/${encodeURIComponent(fileKey)}`).then(() => true),
 }
