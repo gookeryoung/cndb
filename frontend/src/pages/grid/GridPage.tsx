@@ -46,6 +46,7 @@ export default function GridPage() {
   const [moveOpen, setMoveOpen] = useState(false)
   const [activeViewId, setActiveViewId] = useState<number | string | null>(null)
   const [viewFilters, setViewFilters] = useState<Record<string, unknown> | null>(null)
+  const [viewOptionsDraft, setViewOptionsDraft] = useState<Record<string, unknown> | null>(null)
   const [offset, setOffset] = useState(0)
   const [limit, setLimit] = useState(50)
   const tableKey = `${wid}/${tid}`
@@ -60,11 +61,12 @@ export default function GridPage() {
     queryFn: () => viewApi.list(wid!, tid!),
     enabled: !!wid && !!tid,
   })
-  // 加载 active view 的 filters
+  // 加载 active view 的 filters + view_options
   const loadView = (v: View | null, updateUrl = true) => {
     if (v) {
       setActiveViewId(v.id)
       setViewFilters(v.filters ?? null)
+      setViewOptionsDraft(v.view_options ?? null)
       if (v.view_type === 'kanban') setMode('kanban')
       else if (v.view_type === 'gallery') setMode('gallery')
       else if (v.view_type === 'calendar') setMode('calendar')
@@ -77,6 +79,7 @@ export default function GridPage() {
     } else {
       setActiveViewId(null)
       setViewFilters(null)
+      setViewOptionsDraft(null)
       setMode('grid')
       if (updateUrl && searchParams.has('view')) {
         const params = new URLSearchParams(searchParams)
@@ -166,10 +169,11 @@ export default function GridPage() {
     },
   })
   const updateView = useMutation({
-    mutationFn: (args: { vid: number | string; filters: Record<string, unknown> | null; view_type?: string }) =>
+    mutationFn: (args: { vid: number | string; filters: Record<string, unknown> | null; view_type?: string; view_options?: Record<string, unknown> | null }) =>
       viewApi.update(wid!, tid!, args.vid, {
         filters: args.filters ?? undefined,
         view_type: args.view_type,
+        view_options: args.view_options ?? undefined,
       }),
     onSuccess: () => {
       message.success('视图已保存')
@@ -333,12 +337,16 @@ export default function GridPage() {
           />
         </Tooltip>
         {activeViewId && (
-          <Tooltip title="保存筛选规则到当前视图">
+          <Tooltip title="保存筛选规则与视图配置到当前视图">
             <Button
               size="small"
               icon={<SaveOutlined />}
               loading={updateView.isPending}
-              onClick={() => updateView.mutate({ vid: activeViewId, filters: viewFilters })}
+              onClick={() => updateView.mutate({
+                vid: activeViewId,
+                filters: viewFilters,
+                view_options: viewOptionsDraft,
+              })}
             >保存视图</Button>
           </Tooltip>
         )}
@@ -411,8 +419,11 @@ export default function GridPage() {
           }}
         />
       </Suspense>
-      <ViewConfigDialog open={viewConfigOpen} filters={viewFilters} onClose={() => setViewConfigOpen(false)}
-        onSave={(f) => { setViewFilters(f); setViewConfigOpen(false); setOffset(0) }} />
+      <ViewConfigDialog open={viewConfigOpen} viewType={activeView?.view_type || 'grid'}
+        filters={viewFilters} viewOptions={viewOptionsDraft} fields={table?.fields || []}
+        onClose={() => setViewConfigOpen(false)}
+        onSaveFilters={(f) => { setViewFilters(f); setOffset(0) }}
+        onSaveOptions={(o) => { setViewOptionsDraft(o) }} />
 
       {/* 创建新视图 Modal */}
       <Modal
@@ -577,51 +588,131 @@ function CreateViewForm({
   )
 }
 
-// ─────────────── 视图配置对话框（筛选 + 排序 JSON） ───────────────
+// ─────────────── 视图配置对话框（筛选 + 排序 + 视图专属配置） ───────────────
+
+interface ViewConfigDialogProps {
+  open: boolean
+  viewType: string
+  filters: Record<string, unknown> | null
+  viewOptions: Record<string, unknown> | null
+  fields: Field[]
+  onClose: () => void
+  onSaveFilters: (f: Record<string, unknown> | null) => void
+  onSaveOptions: (o: Record<string, unknown> | null) => void
+}
 
 function ViewConfigDialog({
-  open, filters, onClose, onSave,
-}: {
-  open: boolean
-  filters: Record<string, unknown> | null
-  onClose: () => void
-  onSave: (f: Record<string, unknown> | null) => void
-}) {
-  const [text, setText] = useState(filters ? JSON.stringify(filters, null, 2) : '')
+  open, viewType, filters, viewOptions, fields, onClose, onSaveFilters, onSaveOptions,
+}: ViewConfigDialogProps) {
+  const [filterText, setFilterText] = useState('')
+  const [optText, setOptText] = useState('')
 
-  // 每次打开重置 text
-  useMemo(() => { if (open) setText(filters ? JSON.stringify(filters, null, 2) : '') }, [open, filters])
+  useMemo(() => {
+    if (!open) return
+    setFilterText(filters ? JSON.stringify(filters, null, 2) : '')
+    setOptText(viewOptions ? JSON.stringify(viewOptions, null, 2) : '')
+  }, [open, filters, viewOptions])
+
+  // 视图专属配置 UI（结构化，而非 JSON）
+  const viewOptFields = useMemo(() => {
+    const options = (viewOptions || {}) as Record<string, unknown>
+    if (viewType === 'kanban') {
+      return [
+        { key: 'group_field', label: '分组字段（Select）', value: options.group_field as string ?? '' },
+      ]
+    }
+    if (viewType === 'calendar') {
+      return [
+        { key: 'start_field', label: '起始日期字段', value: options.start_field as string ?? '' },
+        { key: 'end_field', label: '结束日期字段（可选）', value: options.end_field as string ?? '' },
+      ]
+    }
+    if (viewType === 'gallery') {
+      return [
+        { key: 'title_field', label: '标题字段', value: options.title_field as string ?? '' },
+        { key: 'image_field', label: '图片字段（可选）', value: options.image_field as string ?? '' },
+      ]
+    }
+    return []
+  }, [viewType, viewOptions])
+
+  const dateOrSelect = fields.filter(f =>
+    ['select', 'multi_select', 'date', 'datetime', 'attachment', 'rich_text', 'text'].includes(f.field_type),
+  )
+
+  const [draftOpt, setDraftOpt] = useState<Record<string, unknown>>({})
+  useEffect(() => {
+    if (open) setDraftOpt((viewOptions || {}) as Record<string, unknown>)
+  }, [open, viewOptions])
 
   return (
     <Modal
-      title="当前视图 — 筛选 / 排序"
+      title={viewType === 'grid' ? '视图配置 — 筛选 / 排序' : `视图配置 — 筛选 + ${viewType} 专属设置`}
       open={open}
       onCancel={onClose}
       width={560}
       footer={[
         <Button key="cancel" onClick={onClose}>取消</Button>,
-        <Button key="clear" onClick={() => onSave(null)}>清空筛选</Button>,
         <Button key="ok" type="primary" onClick={() => {
-          if (!text.trim()) { onSave(null); return }
-          try {
-            const parsed = JSON.parse(text)
-            onSave(parsed)
-          } catch {
-            message.error('JSON 格式错误')
+          // filters
+          let parsedF: Record<string, unknown> | null = null
+          if (filterText.trim()) {
+            try { parsedF = JSON.parse(filterText) }
+            catch { message.error('筛选 JSON 格式错误'); return }
           }
+          onSaveFilters(parsedF)
+          // options：用结构化 draftOpt
+          const cleanOpt = Object.fromEntries(
+            Object.entries(draftOpt).filter(([, v]) => v !== '' && v != null),
+          )
+          onSaveOptions(Object.keys(cleanOpt).length ? cleanOpt : null)
+          onClose()
         }}>保存</Button>,
       ]}
       destroyOnHidden
     >
-      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
-        筛选规则使用 JSON 格式，例如 {`{"状态": "进行中", "优先级": {"$gt": 3}}`}。暂时由后端解析。
-      </div>
+      {/* filters */}
+      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>筛选规则（JSON，后端解析）</div>
       <Input.TextArea
-        value={text}
-        onChange={e => setText(e.target.value)}
-        rows={8}
-        placeholder='{"字段名": "值"}  或  {"字段名": {"$op": "值"}}'
+        value={filterText}
+        onChange={e => setFilterText(e.target.value)}
+        rows={4}
+        placeholder='{"状态": "进行中"}  或  {"状态": {"$ne": "已关闭"}}'
       />
+
+      {/* view options 结构化配置 */}
+      {viewOptFields.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
+            {viewType} 视图专属设置
+          </div>
+          {viewOptFields.map(opt => {
+            const fieldOptions = dateOrSelect.map(f => ({ label: f.name, value: f.name }))
+            return (
+              <div key={opt.key} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: '#475569', marginBottom: 4 }}>{opt.label}</div>
+                <Select
+                  style={{ width: '100%' }}
+                  allowClear
+                  showSearch
+                  placeholder="选择字段"
+                  options={fieldOptions}
+                  value={(draftOpt[opt.key] as string) || undefined}
+                  onChange={v => setDraftOpt(prev => ({ ...prev, [opt.key]: v ?? '' }))}
+                />
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* 隐藏的 JSON 备份输入 —— 高级用户可用 */}
+      {viewOptFields.length === 0 && (
+        <>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 12, marginBottom: 4 }}>view_options（可选 JSON）</div>
+          <Input.TextArea value={optText} onChange={e => setOptText(e.target.value)} rows={3} />
+        </>
+      )}
     </Modal>
   )
 }

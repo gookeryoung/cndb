@@ -1,8 +1,8 @@
 /** 行详情抽屉 — 编辑字段值 / 评论 / 历史 / 反向引用. */
 
 import React, { useState } from 'react'
-import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch } from 'antd'
-import { SaveOutlined, CommentOutlined, HistoryOutlined, LinkOutlined } from '@ant-design/icons'
+import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Popconfirm } from 'antd'
+import { SaveOutlined, CommentOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { commentApi, auditApi, recordApi, tableApi } from '@/api'
 import type { RowResponse, Field, AuditLog, Comment as ApiComment, Reference } from '@/api'
@@ -62,6 +62,16 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
     },
   })
 
+  const deleteComment = useMutation({
+    mutationFn: (cid: number | string) => commentApi.remove(wid, tid, cid),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['row-comments', wid, tid, row?.id] })
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '删除失败')
+    },
+  })
+
   React.useEffect(() => {
     if (row) setValues(row || {})
   }, [row])
@@ -118,8 +128,16 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
           <Text type="secondary" italic>暂无评论</Text>
         ) : comments.map(c => (
           <div key={c.id} style={{ padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
-            <strong>{c.author_name || '匿名'}</strong>
-            <span style={{ color: '#94a3b8', marginLeft: 8, fontSize: 12 }}>{c.created_at || ''}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <strong>{c.author_name || '匿名'}</strong>
+              <span style={{ color: '#94a3b8', fontSize: 12 }}>{c.created_at || ''}</span>
+              <Popconfirm title="删除该评论？" okText="删除" cancelText="取消"
+                onConfirm={() => deleteComment.mutate(c.id)}
+                okButtonProps={{ danger: true }}>
+                <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                  loading={deleteComment.isPending} />
+              </Popconfirm>
+            </div>
             <div>{c.content}</div>
           </div>
         ))}

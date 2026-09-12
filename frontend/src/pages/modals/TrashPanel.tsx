@@ -1,8 +1,8 @@
 /** 回收站面板 — 工作区级概览 + 表/字段恢复 + 表级软删行列表与恢复. */
 
 import { useState } from 'react'
-import { Card, Table, Button, Tabs, Empty, message, Select, Space, Tag } from 'antd'
-import { DeleteOutlined, UndoOutlined } from '@ant-design/icons'
+import { Card, Table, Button, Tabs, Empty, message, Select, Space, Tag, Popconfirm, InputNumber } from 'antd'
+import { DeleteOutlined, UndoOutlined, ClearOutlined } from '@ant-design/icons'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { trashApi } from '@/api'
@@ -38,6 +38,18 @@ export default function TrashPanel({ embedded }: Props) {
   const restoreRows = useMutation({
     mutationFn: (rowIds: Array<string | number>) => trashApi.restoreRows(wid!, selectedTid!, rowIds),
     onSuccess: () => { message.success('已恢复行'); queryClient.invalidateQueries({ queryKey: ['trash-rows', wid, selectedTid] }); queryClient.invalidateQueries({ queryKey: ['trash', wid] }) },
+  })
+  const [purgeDays, setPurgeDays] = useState<number>(30)
+  const purgeRows = useMutation({
+    mutationFn: () => trashApi.purgeRows(wid!, selectedTid!, purgeDays),
+    onSuccess: (data) => {
+      message.success(`已硬清理 ${data?.purged ?? 0} 条超过 ${data?.older_than_days ?? purgeDays} 天的软删行`)
+      queryClient.invalidateQueries({ queryKey: ['trash-rows', wid, selectedTid] })
+      queryClient.invalidateQueries({ queryKey: ['trash', wid] })
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '清理失败')
+    },
   })
 
   if (!wid) return <Empty description="无效工作区" />
@@ -130,6 +142,24 @@ export default function TrashPanel({ embedded }: Props) {
                 />
                 {selectedTid && rowData && (
                   <Button danger size="small" onClick={() => restoreRows.mutate([])}>恢复全部 {rowData.total} 行</Button>
+                )}
+                {selectedTid && (
+                  <Space>
+                    <span style={{ color: '#6b7280' }}>清理超过</span>
+                    <InputNumber size="small" min={1} max={365} value={purgeDays}
+                      onChange={v => setPurgeDays(Number(v))} style={{ width: 70 }} />
+                    <span style={{ color: '#6b7280' }}>天</span>
+                    <Popconfirm
+                      title={`硬清理 ${purgeDays} 天前的软删行？`}
+                      description="此操作不可恢复"
+                      okText="确认清理"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => purgeRows.mutate()}
+                    >
+                      <Button danger size="small" icon={<ClearOutlined />} loading={purgeRows.isPending}>硬清理</Button>
+                    </Popconfirm>
+                  </Space>
                 )}
               </Space>
               {selectedTid && (
