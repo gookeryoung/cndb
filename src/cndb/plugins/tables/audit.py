@@ -19,7 +19,7 @@ ACTION_RESTORE = "restore"
 ACTION_DELETE = "delete"
 
 
-def log_action(  # noqa: PLR0913
+def log_action(
     db: Session,
     table: DataTable,
     action: str,

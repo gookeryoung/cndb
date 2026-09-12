@@ -113,7 +113,7 @@ def execute_import_task(db_session: Session, task_id: int) -> None:  # noqa: PLR
             db_session.commit()
 
 
-def create_import_task(  # noqa: PLR0913
+def create_import_task(
     db: Session,
     *,
     table_id: int,

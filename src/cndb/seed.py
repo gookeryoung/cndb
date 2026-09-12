@@ -176,6 +176,70 @@ def seed(_args: argparse.Namespace) -> None:
             eid2 = emp_tbl.id
             print(f"[seed] 创建报告模板: 员工名册 (table_id={eid2})")
 
+        # 业务工作流示例 — 采购管理流程（3 节点 2 边，绑定现有表）
+        from cndb.plugins.workflows.models import Workflow, WorkflowEdge, WorkflowNode
+
+        wf = db.query(Workflow).filter_by(workspace_id=ws.id, name="员工入职流程").first()
+        if not wf:
+            wf = Workflow(
+                workspace_id=ws.id,
+                name="员工入职流程",
+                description="从提交入职申请到完成登记的业务流程",
+                order=0,
+            )
+            db.add(wf)
+            db.commit()
+            db.refresh(wf)
+            print(f"[seed] 创建工作流: 员工入职流程 (id={wf.id})")
+
+            # 节点 1：入职登记（绑定员工表）
+            n1 = WorkflowNode(
+                workflow_id=wf.id,
+                name="入职登记",
+                table_id=emp_tbl.id,
+                pos_x=60, pos_y=60,
+                config={"default_view_id": None},
+            )
+            db.add(n1)
+            db.commit()
+            db.refresh(n1)
+
+            # 节点 2：部门分配（绑定部门表）
+            n2 = WorkflowNode(
+                workflow_id=wf.id,
+                name="部门分配",
+                table_id=dept_tbl.id,
+                pos_x=300, pos_y=60,
+                config={"default_view_id": None},
+            )
+            db.add(n2)
+            db.commit()
+            db.refresh(n2)
+
+            # 节点 3：完成确认（暂不绑表）
+            n3 = WorkflowNode(
+                workflow_id=wf.id,
+                name="入职完成",
+                table_id=None,
+                pos_x=540, pos_y=60,
+                config={"default_view_id": None},
+            )
+            db.add(n3)
+            db.commit()
+            db.refresh(n3)
+
+            # 边
+            db.add(WorkflowEdge(
+                workflow_id=wf.id,
+                source_node_id=n1.id, target_node_id=n2.id, label="提交资料",
+            ))
+            db.add(WorkflowEdge(
+                workflow_id=wf.id,
+                source_node_id=n2.id, target_node_id=n3.id, label="分配完成",
+            ))
+            db.commit()
+            print("[seed] 组装 3 节点 2 边: 入职流程 → 部门分配 → 入职完成")
+
         print("[seed] 完成！运行 uv run cndb serve 启动服务后用 demo / demo1234 登录")
     finally:
         db.close()

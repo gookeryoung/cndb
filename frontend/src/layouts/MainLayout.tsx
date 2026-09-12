@@ -6,7 +6,7 @@ import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
   NodeIndexOutlined, DeleteOutlined, FileTextOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
-  TeamOutlined, SettingOutlined,
+  TeamOutlined, SettingOutlined, ApartmentOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
@@ -121,6 +121,11 @@ export default function MainLayout() {
 
         {/* Header 导航按钮 */}
         <Space size={4}>
+          <Button
+            type={location.includes('/workflows') ? 'primary' : 'text'}
+            size="small" icon={<ApartmentOutlined />}
+            onClick={() => navigate(`/w/${wid}/workflows`)}
+          >{!isMobile && '工作流'}</Button>
           <Button
             type={location.includes('/graph') ? 'primary' : 'text'}
             size="small" icon={<NodeIndexOutlined />}

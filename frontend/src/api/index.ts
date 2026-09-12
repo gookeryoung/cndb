@@ -346,3 +346,37 @@ export const reportApi = {
   render: (id: number | string, data: ReportRenderRequest) =>
     api.post<Blob>(`/v1/reports/${id}/render`, data, { responseType: 'blob' }).then(r => r.data),
 }
+
+// ─────────────── Workflows（挂载到 /api/v1/workspaces/{wid}/workflows） ───────────────
+
+import type {
+  WorkflowDetail, WorkflowSummary, WorkflowCreate, WorkflowUpdate,
+  WorkflowNodeCreate, WorkflowNodeUpdate, WorkflowEdgeCreate, WorkflowEdgeUpdate,
+} from './types'
+
+export const workflowApi = {
+  list: (wid: number | string) =>
+    api.get<WorkflowSummary[]>(`/v1/workspaces/${wid}/workflows`).then(r => r.data),
+  get: (wid: number | string, fwid: number | string) =>
+    api.get<WorkflowDetail>(`/v1/workspaces/${wid}/workflows/${fwid}`).then(r => r.data),
+  create: (wid: number | string, data: WorkflowCreate) =>
+    api.post<WorkflowSummary>(`/v1/workspaces/${wid}/workflows`, data).then(r => r.data),
+  update: (wid: number | string, fwid: number | string, data: WorkflowUpdate) =>
+    api.patch<WorkflowSummary>(`/v1/workspaces/${wid}/workflows/${fwid}`, data).then(r => r.data),
+  remove: (wid: number | string, fwid: number | string) =>
+    api.delete(`/v1/workspaces/${wid}/workflows/${fwid}`).then(r => r.data),
+  // Node
+  addNode: (wid: number | string, fwid: number | string, data: WorkflowNodeCreate) =>
+    api.post(`/v1/workspaces/${wid}/workflows/${fwid}/nodes`, data).then(r => r.data),
+  updateNode: (wid: number | string, fwid: number | string, nid: number | string, data: WorkflowNodeUpdate) =>
+    api.patch(`/v1/workspaces/${wid}/workflows/${fwid}/nodes/${nid}`, data).then(r => r.data),
+  removeNode: (wid: number | string, fwid: number | string, nid: number | string) =>
+    api.delete(`/v1/workspaces/${wid}/workflows/${fwid}/nodes/${nid}`).then(r => r.data),
+  // Edge
+  addEdge: (wid: number | string, fwid: number | string, data: WorkflowEdgeCreate) =>
+    api.post(`/v1/workspaces/${wid}/workflows/${fwid}/edges`, data).then(r => r.data),
+  updateEdge: (wid: number | string, fwid: number | string, eid: number | string, data: WorkflowEdgeUpdate) =>
+    api.patch(`/v1/workspaces/${wid}/workflows/${fwid}/edges/${eid}`, data).then(r => r.data),
+  removeEdge: (wid: number | string, fwid: number | string, eid: number | string) =>
+    api.delete(`/v1/workspaces/${wid}/workflows/${fwid}/edges/${eid}`).then(r => r.data),
+}

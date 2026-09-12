@@ -88,7 +88,7 @@ def get_view(
 
 
 @router.patch("/{view_id}", response_model=ViewResponse)
-def update_view(  # noqa: PLR0913, PLR0917
+def update_view(
     workspace_id: int,
     table_id: int,
     view_id: int,
@@ -135,7 +135,7 @@ def delete_view(
 
 
 @router.get("/{view_id}/rows")
-def get_view_rows(  # noqa: PLR0913, PLR0917
+def get_view_rows(
     workspace_id: int,
     table_id: int,
     view_id: int,
@@ -167,7 +167,7 @@ def get_view_rows(  # noqa: PLR0913, PLR0917
 
 
 @router.get("/{view_id}/kanban")
-def get_view_kanban(  # noqa: PLR0913, PLR0917
+def get_view_kanban(
     workspace_id: int,
     table_id: int,
     view_id: int,
@@ -208,7 +208,7 @@ def get_view_kanban(  # noqa: PLR0913, PLR0917
 
 
 @router.get("/{view_id}/calendar")
-def get_view_calendar(  # noqa: PLR0913, PLR0917
+def get_view_calendar(
     workspace_id: int,
     table_id: int,
     view_id: int,

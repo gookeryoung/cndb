@@ -155,7 +155,7 @@ def get_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> dict[
     return attach_links(engine, table, [_row_to_dict(table, sa_table, row)], db=db)[0]
 
 
-def list_rows(  # noqa: PLR0913
+def list_rows(
     engine: Any,
     table: DataTable,
     *,
