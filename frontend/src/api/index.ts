@@ -2,7 +2,6 @@
  *
  * 后端挂载规则：
  * - /api/v1/accounts/auth/*       → 认证（register/login/me）
- * - /api/v1/accounts/tokens/*     → ApiToken
  * - /api/v1/workspaces/*          → 工作区 + 成员 + pin（route_prefix=""）
  * - /api/v1/workspaces/{wid}/tables/*       → 表 CRUD
  * - /api/v1/workspaces/{wid}/tables/{tid}/fields/*    → 字段
@@ -24,7 +23,7 @@
 import api from './client'
 import type {
   LoginRequest, RegisterRequest,
-  UserResponse, ApiTokenCreate, ApiToken,
+  UserResponse,
   WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember,
   TableCreate, TableUpdate, TableSummary, TableDetail,
   RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams,
@@ -43,7 +42,6 @@ import type {
 
 export type {
   ID, UserResponse, LoginRequest, RegisterRequest,
-  ApiToken, ApiTokenCreate,
   Workspace, WorkspaceDetail, WorkspaceCreate, WorkspaceUpdate, WorkspaceRole, WorkspaceMember,
   TableSummary, TableDetail, TableCreate, TableUpdate,
   FieldType, Field, FieldCreate, FieldUpdate,
@@ -64,7 +62,7 @@ export type {
   AttachmentFile,
 } from './types'
 
-// ─────────────── Auth & Tokens ───────────────
+// ─────────────── Auth ───────────────
 
 export const authApi = {
   register: (data: RegisterRequest) =>
@@ -73,14 +71,6 @@ export const authApi = {
     api.post<{ access_token: string; token_type: string }>('/v1/accounts/auth/login', data).then(r => r.data),
   me: () =>
     api.get<UserResponse>('/v1/accounts/auth/me').then(r => r.data),
-}
-
-export const tokenApi = {
-  list: () => api.get<ApiToken[]>('/v1/accounts/tokens').then(r => r.data),
-  create: (data: ApiTokenCreate) =>
-    api.post<{ id: number; name: string; prefix: string; token: string; created_at: string; last_used_at: string | null }>('/v1/accounts/tokens', data).then(r => r.data),
-  remove: (tid: number | string) =>
-    api.delete(`/v1/accounts/tokens/${tid}`).then(r => r.data),
 }
 
 // ─────────────── Workspaces ───────────────
@@ -144,6 +134,7 @@ export const recordApi = {
     const qp: Record<string, unknown> = { offset: params?.offset, limit: params?.limit }
     if (params?.filters) qp.filters = typeof params.filters === 'string' ? params.filters : JSON.stringify(params.filters)
     if (params?.sorts) qp.sorts = typeof params.sorts === 'string' ? params.sorts : JSON.stringify(params.sorts)
+    if (params?.filter_logic) qp.filter_logic = params.filter_logic
     return api.get<RowListResponse>(`/v1/workspaces/${wid}/tables/${tid}/records`, { params: qp }).then(r => r.data)
   },
   create: (wid: number | string, tid: number | string, data: RowCreate) =>

@@ -12,12 +12,6 @@ export interface LoginRequest { login: string; password: string }
 export interface RegisterRequest { username: string; email: string; password: string }
 export interface LoginResponse { access_token: string; token_type: string }
 
-export interface ApiToken {
-  id: ID; name: string; token: string
-  created_at?: string; expires_at?: string | null
-}
-export interface ApiTokenCreate { name: string; expires_days?: number }
-
 export interface Workspace {
   id: ID; name: string; description?: string; default_role?: string
   pinned?: boolean; created_at?: string; updated_at?: string

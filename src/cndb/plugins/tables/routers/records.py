@@ -64,6 +64,7 @@ def list_records_get(
     limit: int = Query(default=50, ge=1, le=5000),
     filters: str | None = Query(default=None),
     sorts: str | None = Query(default=None),
+    filter_logic: str = Query(default="AND", pattern="^(AND|OR)$"),
     include_trashed: bool = Query(default=False),
 ) -> RecordListResponse:
     """GET /records - 前端友好的列表端点."""
@@ -85,6 +86,7 @@ def list_records_get(
             db.get_bind(),
             dt,
             filters=_parse(filters),
+            filter_logic=filter_logic,
             sorts=_parse(sorts),
             limit=limit,
             offset=offset,
