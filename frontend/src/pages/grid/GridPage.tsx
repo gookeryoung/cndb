@@ -488,22 +488,29 @@ export default function GridPage() {
             scroll={{ x: 'max-content' }}
             onChange={(_pag, _fil, sorter) => {
               // 处理列排序 — Ant Design sorter 可能是单对象或数组
+              // 受控排序循环：ascend → descend → null（清除）
               type SorterInfo = { field?: string | number | readonly (string | number)[]; order?: 'ascend' | 'descend' | null }
               const s = sorter as SorterInfo | SorterInfo[]
-              let newSort: { field_name: string; direction: 'asc' | 'desc' } | null = null
-              if (Array.isArray(s)) {
-                const first = s[0]
-                if (first.order && typeof first.field === 'string') {
-                  newSort = { field_name: first.field, direction: first.order === 'ascend' ? 'asc' : 'desc' }
-                }
-              } else if (s.order && typeof s.field === 'string') {
-                newSort = { field_name: s.field, direction: s.order === 'ascend' ? 'asc' : 'desc' }
+              const first = Array.isArray(s) ? s[0] : s
+              // 必须拿到 field（即使 order=null 也要清除该列的排序规则）
+              const field = typeof first?.field === 'string' ? first.field : null
+              const order = first?.order ?? null
+              if (!field) {
+                setViewSortings([])
+                setOffset(0)
+                return
               }
-              // 更新 viewSortings：替换同字段规则，新规则置顶
-              setViewSortings(prev => {
-                const without = newSort ? prev.filter(sr => sr.field_name !== newSort!.field_name) : prev
-                return newSort ? [newSort, ...without] : without
-              })
+              if (order === null) {
+                // 清除：只移除该字段的排序规则
+                setViewSortings(prev => prev.filter(sr => sr.field_name !== field))
+              } else {
+                // 设置：替换同字段规则并置顶
+                const newSort = { field_name: field, direction: order === 'ascend' ? 'asc' as const : 'desc' as const }
+                setViewSortings(prev => {
+                  const without = prev.filter(sr => sr.field_name !== field)
+                  return [newSort, ...without]
+                })
+              }
               setOffset(0)
             }}
             onRow={(record) => ({ onDoubleClick: () => { setDetailRow(record); setDetailOpen(true) } })}
@@ -1449,12 +1456,17 @@ function buildColumns(
   onFilterReset: (fieldName: string) => void,
   onCellSave?: (rowId: number | string, fieldName: string, value: unknown) => Promise<unknown>,
 ): ColumnsType<RowResponse> {
+  // 主排序 = 数组第一项，用于受控 sortOrder；其余仅作视觉提示
+  const primarySortField = viewSortings[0]?.field_name
   return fields.filter(f => !f.hidden).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map<NonNullable<ColumnsType<RowResponse>>[number]>(f => {
       const sortRule = viewSortings.find(s => s.field_name === f.name)
-      const currentSort = sortRule
-        ? (sortRule.direction === 'asc' ? 'ascend' : 'descend') as 'ascend' | 'descend'
+      // 只有主排序列的 sortOrder 被受控，AntD 据此做 ascend→descend→null 循环
+      const sortOrder: 'ascend' | 'descend' | null = (f.name === primarySortField && sortRule)
+        ? (sortRule.direction === 'asc' ? 'ascend' : 'descend')
         : null
+      // 表头图标：任何有排序规则的列都显示箭头（视觉提示）
+      const hasSortIndicator = !!sortRule
       const filterRule = viewFilters.find(fr => fr.field_name === f.name)
       const currentFilter = filterRule
         ? { op: filterRule.op, value: filterRule.value }
@@ -1464,8 +1476,8 @@ function buildColumns(
         title: (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span>{f.name}{f.required && <span style={{ color: '#ff4d4f' }}>*</span>}</span>
-            {currentSort && (
-              currentSort === 'ascend'
+            {hasSortIndicator && (
+              sortRule!.direction === 'asc'
                 ? <SortAscendingOutlined style={{ fontSize: 12, color: '#1677ff' }} />
                 : <SortDescendingOutlined style={{ fontSize: 12, color: '#1677ff' }} />
             )}
@@ -1478,7 +1490,7 @@ function buildColumns(
         ellipsis: true,
         width: 160,
         sorter: true,
-        sortOrder: currentSort,
+        sortOrder,
         filterDropdown: ({ confirm, clearFilters }) => (
           <ColumnFilterDropdown
             field={f}
