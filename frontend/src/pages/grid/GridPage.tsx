@@ -9,6 +9,7 @@ import {
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
   AppstoreOutlined, CopyOutlined, ImportOutlined, DownOutlined, CloseOutlined,
   SaveOutlined, CalendarOutlined, ShareAltOutlined, SafetyOutlined, SwapOutlined,
+  SearchOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tableApi, recordApi, viewApi, permissionApi } from '@/api'
@@ -47,6 +48,7 @@ export default function GridPage() {
   const [activeViewId, setActiveViewId] = useState<number | string | null>(null)
   const [viewFilters, setViewFilters] = useState<Record<string, unknown> | null>(null)
   const [viewOptionsDraft, setViewOptionsDraft] = useState<Record<string, unknown> | null>(null)
+  const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') || '')
   const [offset, setOffset] = useState(0)
   const [limit, setLimit] = useState(50)
   const tableKey = `${wid}/${tid}`
@@ -107,9 +109,26 @@ export default function GridPage() {
     else setActiveViewId(null)
   }, [views, searchParams, wid, tid])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // searchQuery URL 深链：?q=关键词
+  useEffect(() => {
+    const expected = searchQuery.trim()
+    const current = searchParams.get('q') || ''
+    if (expected === current) return
+    const params = new URLSearchParams(searchParams)
+    if (expected) params.set('q', expected)
+    else params.delete('q')
+    setSearchParams(params, { replace: true })
+  }, [searchQuery])  // eslint-disable-line react-hooks/exhaustive-deps
+
   const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 } } = useQuery({
-    queryKey: ['table-records', tableKey, offset, limit, viewFilters],
-    queryFn: () => recordApi.list(wid!, tid!, { offset, limit, filters: viewFilters ?? undefined }),
+    queryKey: ['table-records', tableKey, offset, limit, viewFilters, searchQuery],
+    queryFn: () => {
+      // 合并视图 filters 与全局关键词搜索
+      let merged: Record<string, unknown> | undefined = viewFilters ? { ...viewFilters } : {}
+      if (searchQuery.trim()) merged.$query = searchQuery.trim()
+      if (Object.keys(merged).length === 0) merged = undefined
+      return recordApi.list(wid!, tid!, { offset, limit, filters: merged })
+    },
     enabled: !!wid && !!tid,
   })
 
@@ -327,6 +346,15 @@ export default function GridPage() {
           <Button size="small" type={mode === 'gallery' ? 'primary' : 'default'} icon={<EyeOutlined />} onClick={() => setMode('gallery')}>{!isMobile && '画廊'}</Button>
           <Button size="small" type={mode === 'calendar' ? 'primary' : 'default'} icon={<CalendarOutlined />} onClick={() => setMode('calendar')}>{!isMobile && '日历'}</Button>
         </Space.Compact>
+        <Input.Search
+          size="small"
+          placeholder="搜索所有文本字段..."
+          allowClear
+          prefix={<SearchOutlined />}
+          value={searchQuery}
+          onChange={e => { setSearchQuery(e.target.value); setOffset(0) }}
+          style={{ width: 220, marginLeft: 8 }}
+        />
         <Tooltip title="当前视图筛选规则">
           <Button
             size="small"

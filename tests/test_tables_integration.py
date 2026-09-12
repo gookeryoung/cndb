@@ -281,6 +281,44 @@ class TestRecordsEngine:
         ages = {r["年龄"] for r in rows}
         assert ages == {35, 40}
 
+    def test_list_rows_dict_filter_form(self, db_engine, table_with_fields):
+        """list_rows 接受 dict {field: value} 形式的 filters."""
+        dt, _ = table_with_fields
+        from cndb.plugins.tables import records as rec
+
+        rec.create_row(db_engine, dt, {"姓名": "张三", "年龄": 22})
+        rec.create_row(db_engine, dt, {"姓名": "李四", "年龄": 35})
+        rec.create_row(db_engine, dt, {"姓名": "王五", "年龄": 40})
+
+        rows, total = rec.list_rows(
+            db_engine,
+            dt,
+            filters={"年龄": {"op": ">=", "value": 35}},
+            limit=10,
+            offset=0,
+        )
+        assert total == 2
+        assert {r["姓名"] for r in rows} == {"李四", "王五"}
+
+    def test_list_rows_query_keyword(self, db_engine, table_with_fields):
+        """list_rows 的 dict filters 支持 $query 做全局关键词搜索."""
+        dt, _ = table_with_fields
+        from cndb.plugins.tables import records as rec
+
+        rec.create_row(db_engine, dt, {"姓名": "张三丰", "年龄": 50})
+        rec.create_row(db_engine, dt, {"姓名": "李四", "年龄": 30})
+        rec.create_row(db_engine, dt, {"姓名": "张无忌", "年龄": 25})
+
+        rows, total = rec.list_rows(
+            db_engine,
+            dt,
+            filters={"$query": "张"},
+            limit=10,
+            offset=0,
+        )
+        assert total == 2
+        assert {r["姓名"] for r in rows} == {"张三丰", "张无忌"}
+
     def test_list_rows_with_sort(self, db_engine, table_with_fields):
         dt, _ = table_with_fields
         from cndb.plugins.tables import records as rec
