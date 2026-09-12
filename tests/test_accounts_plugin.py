@@ -23,7 +23,10 @@ def _db_engine(tmp_path: Path):
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    yield engine
+    try:
+        yield engine
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture
