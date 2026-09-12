@@ -17,6 +17,8 @@ import type { RowResponse, Field, TableDetail, View, ViewCreate, TablePermission
 import GridCell from './components/GridCell'
 import RowDetailDrawer from './components/RowDetailDrawer'
 import { useResponsive } from '@/hooks/useResponsive'
+import { useTableSettings } from '@/theme/TableSettingsProvider'
+import { densityToSize, DEFAULT_TABLE_SETTINGS } from '@/theme/tableSettings'
 
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
@@ -35,6 +37,8 @@ export default function GridPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const { isMobile } = useResponsive()
+  const { settings } = useTableSettings()
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [mode, setMode] = useState<ViewMode>('grid')
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [detailOpen, setDetailOpen] = useState(false)
@@ -50,7 +54,7 @@ export default function GridPage() {
   const [viewOptionsDraft, setViewOptionsDraft] = useState<Record<string, unknown> | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') || '')
   const [offset, setOffset] = useState(0)
-  const [limit, setLimit] = useState(50)
+  const [limit, setLimit] = useState(settings.defaultPageSize)
   const tableKey = `${wid}/${tid}`
 
   const { data: table, isLoading } = useQuery<TableDetail>({
@@ -364,6 +368,14 @@ export default function GridPage() {
             onClick={() => setViewConfigOpen(true)}
           />
         </Tooltip>
+        <Tooltip title="表格显示设置（对所有数据表生效）">
+          <Button
+            size="small"
+            icon={<ColumnHeightOutlined />}
+            style={{ marginLeft: 8 }}
+            onClick={() => setSettingsOpen(true)}
+          />
+        </Tooltip>
         {activeViewId && (
           <Tooltip title="保存筛选规则与视图配置到当前视图">
             <Button
@@ -386,7 +398,10 @@ export default function GridPage() {
           <div style={{ textAlign: 'center', padding: 48 }}>加载中...</div>
         ) : mode === 'grid' ? (
           <Table
-            rowKey="id" size="middle" loading={isLoading} columns={columns} dataSource={rowList.items || []}
+            rowKey="id" size={densityToSize(settings.density)} loading={isLoading} columns={columns} dataSource={rowList.items || []}
+            bordered={settings.bordered}
+            showHeader={settings.showHeader}
+            rowClassName={settings.striped ? (_r, i) => (i % 2 === 1 ? 'table-row-striped' : '') : undefined}
             rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
             pagination={{
               current: Math.floor(offset / limit) + 1, pageSize: limit, total: rowList.total,
@@ -508,6 +523,13 @@ export default function GridPage() {
       >
         <MoveTableForm currentWid={wid!} />
       </Modal>
+
+      {/* 表格显示设置 Modal — 全局生效 */}
+      <TableSettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onAfterSave={() => { setLimit(settings.defaultPageSize); setOffset(0) }}
+      />
     </div>
   )
 }
@@ -1003,6 +1025,108 @@ function MoveTableForm({ currentWid }: { currentWid: number | string }) {
         />
       )}
     </div>
+  )
+}
+
+// ─────────────── 表格显示设置 Dialog（全局用户设置） ───────────────
+
+interface TableSettingsDialogProps {
+  open: boolean
+  onClose: () => void
+  onAfterSave?: () => void
+}
+
+function TableSettingsDialog({ open, onClose, onAfterSave }: TableSettingsDialogProps) {
+  const { settings, updateSettings, resetSettings } = useTableSettings()
+  const [draft, setDraft] = useState(settings)
+
+  useEffect(() => {
+    if (open) setDraft(settings)
+  }, [open, settings])
+
+  const updateDraft = <K extends keyof typeof draft>(key: K, value: typeof draft[K]) => {
+    setDraft(prev => ({ ...prev, [key]: value }))
+  }
+
+  const handleOk = () => {
+    updateSettings(draft)
+    onAfterSave?.()
+    message.success('设置已保存（适用于所有数据表）')
+    onClose()
+  }
+
+  const handleReset = () => {
+    resetSettings()
+    setDraft({ ...DEFAULT_TABLE_SETTINGS })
+    message.info('已重置为默认值')
+  }
+
+  return (
+    <Modal
+      title="表格显示设置"
+      open={open}
+      onCancel={onClose}
+      width={460}
+      okText="保存"
+      cancelText="取消"
+      onOk={handleOk}
+      destroyOnHidden
+      footer={[
+        <Button key="reset" onClick={handleReset}>重置为默认</Button>,
+        <Button key="cancel" onClick={onClose}>取消</Button>,
+        <Button key="ok" type="primary" onClick={handleOk}>保存</Button>,
+      ]}
+    >
+      <Form layout="vertical" style={{ marginTop: 8 }}>
+        <Form.Item label="内容间距">
+          <Select
+            value={draft.density}
+            onChange={(v: typeof draft.density) => updateDraft('density', v)}
+            style={{ width: '100%' }}
+            options={[
+              { value: 'compact', label: '紧凑（适合快速浏览大量数据）' },
+              { value: 'comfortable', label: '适中（平衡可读性与信息量）' },
+              { value: 'spacious', label: '宽松（适合阅读长文本）' },
+            ]}
+          />
+        </Form.Item>
+
+        <Form.Item label="默认每页行数">
+          <Select
+            value={draft.defaultPageSize}
+            onChange={(v: number) => updateDraft('defaultPageSize', v)}
+            style={{ width: '100%' }}
+            options={[
+              { value: 25, label: '25 条 / 页' },
+              { value: 50, label: '50 条 / 页' },
+              { value: 100, label: '100 条 / 页' },
+              { value: 200, label: '200 条 / 页' },
+            ]}
+          />
+        </Form.Item>
+
+        <Form.Item label="显示选项">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+              <Switch checked={draft.bordered} onChange={(v) => updateDraft('bordered', v)} />
+              <span>显示表格边框</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+              <Switch checked={draft.showHeader} onChange={(v) => updateDraft('showHeader', v)} />
+              <span>显示表头</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+              <Switch checked={draft.striped} onChange={(v) => updateDraft('striped', v)} />
+              <span>启用斑马纹</span>
+            </label>
+          </div>
+        </Form.Item>
+      </Form>
+
+      <div style={{ marginTop: 8, fontSize: 12, color: '#9ca3af' }}>
+        设置会自动保存到浏览器，适用于所有数据表。
+      </div>
+    </Modal>
   )
 }
 
