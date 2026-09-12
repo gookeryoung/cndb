@@ -22,6 +22,28 @@ from cndb.plugins.workspaces.models import WorkspaceRole
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}", tags=["bulk"])
 
 
+# ── 批量建行 ───────────────────────────────────────────
+
+
+@router.post("/records/bulk-create", status_code=status.HTTP_201_CREATED)
+def bulk_create_records(
+    workspace_id: int,
+    table_id: int,
+    payload: dict[str, Any],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
+    dt = _get_table_or_404(table_id, workspace_id, db)
+    rows = payload.get("rows", [])
+    if not rows:
+        raise HTTPException(status_code=400, detail="rows 不能为空")
+    # 兼容两种格式：直接 values 数组 或 {values} 包装
+    normalized = [r.get("values", r) if isinstance(r, dict) else r for r in rows]
+    ids = rec.bulk_create(db.get_bind(), dt, normalized, db=db)
+    return {"created": len(ids), "ids": ids}
+
+
 # ── 批量删行 ───────────────────────────────────────────
 
 

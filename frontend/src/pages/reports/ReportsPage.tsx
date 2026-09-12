@@ -1,36 +1,322 @@
-import React from 'react'
-import { Typography, Empty, Button, Modal, Form, Input, message } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
+/** 报表模板页 — 模板 CRUD + 渲染下载. */
+
+import React, { useMemo } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { Table, Button, Space, Tag, Modal, Form, Input, Typography, message, Select, Popconfirm, Dropdown, Tabs, Empty, InputNumber, Row, Col } from 'antd'
+import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { reportApi, tableApi } from '@/api'
+import type { ReportTemplate, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter } from '@/api'
 
 const { Title, Text } = Typography
+const FORMAT_OPTIONS = [
+  { value: 'docx', label: 'Word (.docx)' },
+  { value: 'pdf', label: 'PDF (.pdf)' },
+  { value: 'html', label: 'HTML (.html)' },
+  { value: 'csv', label: 'CSV (.csv)' },
+  { value: 'xlsx', label: 'Excel (.xlsx)' },
+]
+const PARAM_TYPES = [
+  { value: 'string', label: '文本' },
+  { value: 'number', label: '数字' },
+  { value: 'date', label: '日期' },
+  { value: 'boolean', label: '布尔' },
+]
 
 export default function ReportsPage() {
-  const [createOpen, setCreateOpen] = React.useState(false)
-  const [form] = Form.useForm()
+  const { wid } = useParams<{ wid: string }>()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [detailId, setDetailId] = React.useState<number | null>(null)
+  const [editorOpen, setEditorOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<ReportTemplate | null>(null)
+  const [form] = Form.useForm<ReportTemplateCreate>()
+
+  const { data: templates = [], isLoading } = useQuery<ReportTemplate[]>({
+    queryKey: ['report-templates'],
+    queryFn: () => reportApi.list(),
+  })
+
+  const { data: tables = [] } = useQuery({
+    queryKey: ['workspaces', wid, 'tables'],
+    queryFn: () => tableApi.list(wid!),
+    enabled: !!wid,
+  })
+
+  const create = useMutation({
+    mutationFn: (data: ReportTemplateCreate) => reportApi.create(data),
+    onSuccess: () => {
+      message.success('模板已创建')
+      queryClient.invalidateQueries({ queryKey: ['report-templates'] })
+      setEditorOpen(false)
+      form.resetFields()
+    },
+  })
+
+  const update = useMutation({
+    mutationFn: ({ id, data }: { id: number | string; data: ReportTemplateUpdate }) => reportApi.update(id, data),
+    onSuccess: () => {
+      message.success('模板已更新')
+      queryClient.invalidateQueries({ queryKey: ['report-templates'] })
+      setEditorOpen(false)
+      setEditing(null)
+      form.resetFields()
+    },
+  })
+
+  const remove = useMutation({
+    mutationFn: (id: number | string) => reportApi.remove(id),
+    onSuccess: () => {
+      message.success('模板已删除')
+      queryClient.invalidateQueries({ queryKey: ['report-templates'] })
+    },
+  })
+
+  const renderReport = useMutation({
+    mutationFn: async (tpl: ReportTemplate) => {
+      if (!wid) throw new Error('缺少 workspace')
+      const blob = await reportApi.render(tpl.id, { table_id: tpl.table_id ?? 0, params: {} })
+      // 触发浏览器下载
+      const ext = tpl.output_format === 'docx' ? 'docx' : tpl.output_format === 'pdf' ? 'pdf' : tpl.output_format
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${tpl.name}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    },
+    onSuccess: () => message.success('报告已生成'),
+  })
+
+  const tableNameMap = useMemo(() => new Map(tables.map(t => [t.id, t.name])), [tables])
+
+  const openCreate = () => {
+    setEditing(null)
+    form.setFieldsValue({
+      name: '',
+      description: '',
+      output_format: 'docx',
+      template_content: 'Hello {{ name }}! 总数 {{ total }}',
+      table_id: null,
+      parameters: [],
+    })
+    setEditorOpen(true)
+  }
+
+  const openEdit = (tpl: ReportTemplate) => {
+    setEditing(tpl)
+    form.setFieldsValue({
+      name: tpl.name,
+      description: tpl.description,
+      output_format: tpl.output_format,
+      template_content: tpl.template_content,
+      table_id: tpl.table_id,
+      parameters: tpl.parameters as ReportParameter[],
+    })
+    setEditorOpen(true)
+  }
+
+  const columns = [
+    {
+      title: '模板名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (n: string, r: ReportTemplate) => (
+        <a onClick={() => setDetailId(r.id)}><FileTextOutlined style={{ marginRight: 6 }} />{n}</a>
+      ),
+    },
+    {
+      title: '输出格式',
+      dataIndex: 'output_format',
+      key: 'output_format',
+      width: 110,
+      render: (f: string) => {
+        const opt = FORMAT_OPTIONS.find(o => o.value === f)
+        return <Tag color="blue">{opt?.label || f}</Tag>
+      },
+    },
+    {
+      title: '关联表',
+      dataIndex: 'table_id',
+      key: 'table_id',
+      width: 160,
+      render: (tid: number | null) => tid ? (tableNameMap.get(tid) || <Text type="secondary">#{tid}</Text>) : <Text type="secondary" italic>未关联</Text>,
+    },
+    {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+      render: (d: string) => d || <Text type="secondary" italic>—</Text>,
+    },
+    {
+      title: '参数',
+      dataIndex: 'parameters',
+      key: 'parameters',
+      width: 200,
+      render: (params: ReportParameter[]) => params.length > 0
+        ? <Space wrap size={[4, 4]}>{params.map(p => <Tag key={p.name}>{p.name}{p.required ? '*' : ''}</Tag>)}</Space>
+        : <Text type="secondary" italic>无</Text>,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 200,
+      render: (_: unknown, r: ReportTemplate) => (
+        <Space size="small">
+          <Button size="small" icon={<DownloadOutlined />}
+            loading={renderReport.isPending}
+            disabled={!r.table_id}
+            onClick={() => renderReport.mutate(r)}>渲染下载</Button>
+          <Dropdown
+            menu={{
+              items: [
+                { key: 'edit', icon: <EditOutlined />, label: '编辑', onClick: () => openEdit(r) },
+                { type: 'divider' },
+                {
+                  key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true,
+                  onClick: () => {
+                    Modal.confirm({
+                      title: `删除模板「${r.name}」？`,
+                      okText: '删除', okType: 'danger', cancelText: '取消',
+                      onOk: () => remove.mutate(r.id),
+                    })
+                  },
+                },
+              ],
+            }}
+          >
+            <Button size="small" icon={<MoreOutlined />} />
+          </Dropdown>
+        </Space>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <Title level={3} style={{ margin: 0 }}>报表</Title>
-          <Text type="secondary">将多张表的数据汇总为报表（简化版占位）</Text>
+          <Space>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)} />
+            <Title level={3} style={{ margin: 0 }}>报表模板</Title>
+          </Space>
+          <Text type="secondary">基于 Jinja2 的轻量级报告模板，支持 Word/PDF/HTML/CSV/Excel 输出</Text>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建报表</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建模板</Button>
       </div>
 
-      <Empty description="报表功能即将上线，敬请期待" style={{ padding: 64 }} />
+      <Table
+        rowKey="id"
+        size="middle"
+        loading={isLoading}
+        columns={columns}
+        dataSource={templates}
+        pagination={false}
+        locale={{ emptyText: <Empty description="暂无模板，点击右上角新建一个" /> }}
+      />
 
-      <Modal title="新建报表" open={createOpen}
-        onCancel={() => setCreateOpen(false)}
-        onOk={() => form.submit()}>
-        <Form form={form} layout="vertical" onFinish={() => {
-          message.info('报表创建（占位）'); setCreateOpen(false)
-        }}>
-          <Form.Item name="name" label="报表名称" rules={[{ required: true }]}><Input placeholder="例如：月度销售" /></Form.Item>
-          <Form.Item name="desc" label="描述"><Input.TextArea rows={3} /></Form.Item>
-        </Form>
-      </Modal>
-      
+      {/* 模板编辑器 */}
+      <TemplateEditor
+        open={editorOpen}
+        editing={editing}
+        tables={tables}
+        form={form}
+        onClose={() => { setEditorOpen(false); setEditing(null); form.resetFields() }}
+        onSubmit={(v) => {
+          if (editing) update.mutate({ id: editing.id, data: v })
+          else create.mutate(v)
+        }}
+        submitting={create.isPending || update.isPending}
+      />
     </div>
+  )
+}
+
+// ─────────────── 模板编辑器 Modal ───────────────
+
+interface EditorProps {
+  open: boolean
+  editing: ReportTemplate | null
+  tables: Array<{ id: number; name: string }>
+  form: ReturnType<typeof Form.useForm>[0]
+  onClose: () => void
+  onSubmit: (data: ReportTemplateCreate) => void
+  submitting: boolean
+}
+
+function TemplateEditor({ open, editing, tables, form, onClose, onSubmit, submitting }: EditorProps) {
+  const parameterType = Form.useWatch('parameters', form) as ReportParameter[] | undefined
+  const tableOptions = useMemo(() => tables.map(t => ({ value: t.id, label: t.name })), [tables])
+
+  return (
+    <Modal
+      title={editing ? `编辑模板「${editing.name}」` : '新建模板'}
+      open={open}
+      onCancel={onClose}
+      width={760}
+      onOk={() => form.submit()}
+      confirmLoading={submitting}
+      okText={editing ? '保存' : '创建'}
+      cancelText="取消"
+      destroyOnHidden
+    >
+      <Form form={form} layout="vertical" preserve={false} onFinish={onSubmit}>
+        <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item name="name" label="模板名称" rules={[{ required: true, message: '请输入名称' }]}>
+              <Input placeholder="例如：月度销售汇总" />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="output_format" label="输出格式">
+              <Select options={FORMAT_OPTIONS} />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="table_id" label="关联表">
+              <Select options={tableOptions} allowClear placeholder="选填" />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Form.Item name="description" label="描述（可选）">
+          <Input.TextArea rows={2} placeholder="简单说明这个模板的用途" />
+        </Form.Item>
+        <Form.Item name="template_content" label="模板内容 (Jinja2)" rules={[{ required: true, message: '请输入模板内容' }]}
+          extra={<Text type="secondary" style={{ fontSize: 12 }}>使用 {'{{ field }}'} 引用字段，{'{% for row in rows %}'} 遍历行</Text>}>
+          <Input.TextArea rows={8} placeholder="{{ name }} 的值是 {{ value }}" style={{ fontFamily: 'ui-monospace, monospace' }} />
+        </Form.Item>
+        <Form.Item label="模板参数" tooltip="运行时传入的动态参数（可选）">
+          <Form.List name="parameters">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map(({ key, name, ...restField }) => (
+                  <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                    <Form.Item {...restField} name={[name, 'name']} rules={[{ required: true }]}>
+                      <Input placeholder="参数名" style={{ width: 140 }} />
+                    </Form.Item>
+                    <Form.Item {...restField} name={[name, 'type']}>
+                      <Select options={PARAM_TYPES} style={{ width: 100 }} />
+                    </Form.Item>
+                    <Form.Item {...restField} name={[name, 'default']}>
+                      <Input placeholder="默认值" style={{ width: 120 }} />
+                    </Form.Item>
+                    <Form.Item {...restField} name={[name, 'required']} valuePropName="checked">
+                      <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} style={{ width: 80 }} />
+                    </Form.Item>
+                    <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
+                  </Space>
+                ))}
+                <Button type="dashed" onClick={() => add({ name: '', type: 'string', default: null, required: false })} block icon={<PlusOutlined />}>
+                  添加参数
+                </Button>
+              </>
+            )}
+          </Form.List>
+        </Form.Item>
+      </Form>
+    </Modal>
   )
 }

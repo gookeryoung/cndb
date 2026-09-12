@@ -151,6 +151,30 @@ def table(db, ws):
 
 
 class TestBulkAPI:
+    def test_bulk_create(self, client, ws, table, auth_owner):
+        """覆盖 POST /records/bulk-create —— 批量新建行."""
+        # 先用空 rows 测试 400
+        r0 = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/bulk-create",
+            json={"rows": []},
+            headers=auth_owner,
+        )
+        assert r0.status_code == 400
+        # 正常批量创建（values 包装格式）
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/bulk-create",
+            json={
+                "rows": [
+                    {"values": {"姓名": "批量甲", "年龄": 25}},
+                    {"values": {"姓名": "批量乙", "年龄": 28}},
+                ],
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 201
+        assert r.json()["created"] == 2
+        assert len(r.json()["ids"]) == 2
+
     def test_bulk_delete(self, client, ws, table, auth_owner):
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/bulk-delete",

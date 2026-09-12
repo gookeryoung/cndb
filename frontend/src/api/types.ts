@@ -147,7 +147,62 @@ export interface SharedGrid {
 
 export interface HealthPingResponse { status: string; timestamp: string; python: string; platform: string }
 export interface HealthReadyResponse { status: string }
-export interface ReportInfo { id: ID; name: string; description?: string; created_at?: string; updated_at?: string }
+
+/** 报告模板参数定义 */
+export interface ReportParameter {
+  name: string
+  type: 'string' | 'number' | 'date' | 'boolean'
+  default?: unknown
+  required?: boolean
+  label?: string
+}
+
+/** 报告模板（列表精简） */
+export interface ReportTemplateSummary {
+  id: ID
+  table_id: number | null
+  name: string
+  description: string
+  output_format: string
+  parameters: ReportParameter[]
+}
+
+/** 报告模板（详情，含模板内容） */
+export interface ReportTemplate extends ReportTemplateSummary {
+  template_content: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ReportTemplateCreate {
+  name: string
+  description?: string
+  output_format?: string
+  template_content: string
+  table_id?: number | null
+  parameters?: ReportParameter[]
+}
+
+export interface ReportTemplateUpdate {
+  name?: string
+  description?: string
+  output_format?: string
+  template_content?: string
+  table_id?: number | null
+  parameters?: ReportParameter[]
+}
+
+export interface ReportRenderRequest {
+  table_id: number
+  params?: Record<string, unknown>
+  row_ids?: Array<number | null> | null
+}
+
+export interface ReportRenderResult {
+  filename: string
+  content_type: string
+  size: number
+}
 
 /** 导入任务状态 */
 export type ImportTaskStatus = 'pending' | 'running' | 'done' | 'failed'

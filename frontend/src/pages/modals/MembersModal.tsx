@@ -5,7 +5,7 @@ import { Modal, Table, Button, Input, Select, message, Tag, Popconfirm, Empty, D
 import { PlusOutlined, UserDeleteOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi } from '@/api'
-import type { WorkspaceMember, WorkspaceInvite, WorkspaceRole } from '@/api'
+import type { WorkspaceMember, WorkspaceRole } from '@/api'
 
 interface Props {
   open: boolean
@@ -36,7 +36,7 @@ export default function MembersModal({ open, wid, onClose }: Props) {
   })
 
   const invite = useMutation({
-    mutationFn: (data: WorkspaceInvite) => workspaceApi.invite(wid, data),
+    mutationFn: ({ username, role }: { username: string; role: string }) => workspaceApi.addMember(wid, username, role),
     onSuccess: () => {
       message.success('已邀请用户')
       setInviteName('')
@@ -45,7 +45,7 @@ export default function MembersModal({ open, wid, onClose }: Props) {
   })
 
   const changeRole = useMutation({
-    mutationFn: ({ uid, role }: { uid: number | string; role: string }) => workspaceApi.setRole(wid, uid, role),
+    mutationFn: ({ memberId, role }: { memberId: number | string; role: string }) => workspaceApi.updateMemberRole(wid, memberId, role),
     onSuccess: () => {
       message.success('角色已更新')
       queryClient.invalidateQueries({ queryKey: ['workspace-members', wid] })
@@ -53,7 +53,7 @@ export default function MembersModal({ open, wid, onClose }: Props) {
   })
 
   const kick = useMutation({
-    mutationFn: (uid: number | string) => workspaceApi.kick(wid, uid),
+    mutationFn: (memberId: number | string) => workspaceApi.removeMember(wid, memberId),
     onSuccess: () => {
       message.success('已移除成员')
       queryClient.invalidateQueries({ queryKey: ['workspace-members', wid] })
@@ -67,7 +67,7 @@ export default function MembersModal({ open, wid, onClose }: Props) {
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
       width={600}
-      destroyOnClose
+      destroyOnHidden
     >
       {/* 邀请区域 */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, padding: 12, background: '#f8fafc', borderRadius: 8 }}>
@@ -119,7 +119,7 @@ export default function MembersModal({ open, wid, onClose }: Props) {
               return (
                 <Select
                   value={m.role}
-                  onChange={(v: string) => changeRole.mutate({ uid: m.id, role: v })}
+                  onChange={(v: string) => changeRole.mutate({ memberId: m.id, role: v })}
                   size="small"
                   style={{ width: 140 }}
                   options={[...ROLE_OPTIONS, { value: 'owner', label: ROLE_LABEL.owner, disabled: true }]}

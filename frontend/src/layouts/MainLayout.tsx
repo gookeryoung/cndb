@@ -86,14 +86,21 @@ export default function MainLayout() {
     if (wsLoading) {
       return React.createElement('div', { style: { padding: 48, textAlign: 'center' } }, '加载中...')
     }
-    if (workspaces.length === 0) {
+    // 用户访问的是 /w （工作区列表页），让 Outlet 渲染 WorkspaceList
+    if (location.endsWith('/w') || location === '/') {
+      // 有工作区也不要自动跳转：让用户自己选
+    } else if (workspaces.length > 0) {
+      // 访问了需要 wid 的 URL 但没带 wid → 跳到第一个工作区
+      const first = workspaces[0]
+      return <Navigate to={`/w/${first.id}/tables`} replace />
+    }
+    // 空工作区 + 需要 wid 的 URL → 显示引导
+    if (workspaces.length === 0 && !location.endsWith('/w')) {
       return React.createElement('div', { style: { padding: 48, textAlign: 'center' } },
         React.createElement('h2', null, '欢迎使用 cndb'),
         React.createElement('p', { style: { color: '#6b7280' } }, '还没有任何工作区'),
       )
     }
-    const first = workspaces[0]
-    return <Navigate to={`/w/${first.id}/tables`} replace />
   }
 
   return (
