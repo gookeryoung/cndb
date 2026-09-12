@@ -87,6 +87,9 @@ export default function GridPage() {
     setOffset(0)
   }
 
+  // 当前激活的视图对象（含 view_options）
+  const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
+
   // URL 深链：?view=<id> 自动选中视图
   useEffect(() => {
     if (!views.length || activeViewId !== null) return
@@ -230,7 +233,7 @@ export default function GridPage() {
 
   if (!wid || !tid) return <Empty description="无效的表 ID" style={{ padding: 48 }} />
 
-  const columns = buildColumns(table?.fields || [],
+  const columns = buildColumns(table?.fields || [], wid,
     updateRow.isPending
       ? undefined
       : (rowId, fieldName, value) => updateRow.mutateAsync({ rowId, fieldName, value }),
@@ -359,11 +362,11 @@ export default function GridPage() {
             onRow={(record) => ({ onDoubleClick: () => { setDetailRow(record); setDetailOpen(true) } })}
           />
         ) : mode === 'kanban' ? (
-          <KanbanView rows={rowList.items || []} fields={table?.fields || []} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <KanbanView rows={rowList.items || []} fields={table?.fields || []} view={activeView} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         ) : mode === 'gallery' ? (
-          <GalleryView rows={rowList.items || []} fields={table?.fields || []} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         ) : (
-          <CalendarView rows={rowList.items || []} fields={table?.fields || []} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         )}
       </div>
 
@@ -420,8 +423,11 @@ export default function GridPage() {
         destroyOnHidden
       >
         <CreateViewForm
-          onCreate={(name, vt) => {
-            createView.mutate({ name, view_type: vt })
+          fields={table?.fields || []}
+          onCreate={(name, vt, opts) => {
+            const payload: { name: string; view_type: string; view_options?: Record<string, unknown> } = { name, view_type: vt }
+            if (opts && Object.keys(opts).length) payload.view_options = opts
+            createView.mutate(payload)
             setCreateViewOpen(false)
           }}
         />
@@ -467,28 +473,105 @@ export default function GridPage() {
   )
 }
 
-// ─────────────── 创建视图表单 ───────────────
+// ─────────────── 创建视图表单（含 view_options 配置） ───────────────
 
-function CreateViewForm({ onCreate }: { onCreate: (name: string, viewType: string) => void }) {
+function CreateViewForm({
+  fields,
+  onCreate,
+}: {
+  fields: Field[]
+  onCreate: (name: string, viewType: string, viewOptions: Record<string, unknown>) => void
+}) {
   const [name, setName] = useState('')
   const [vt, setVt] = useState('grid')
+  const [opts, setOpts] = useState<Record<string, unknown>>({})
+
+  const selectFields = fields.filter(f => f.field_type === 'select' || f.field_type === 'multi_select')
+  const dateFields = fields.filter(f => f.field_type === 'date' || f.field_type === 'datetime')
+  const textFields = fields.filter(f => f.field_type === 'text' || f.field_type === 'long_text')
+  const imageFields = fields.filter(f => f.field_type === 'attachment')
+
+  const updateOpt = (key: string, value: unknown) => {
+    setOpts(prev => {
+      const next = { ...prev }
+      if (value === undefined || value === null || value === '') delete next[key]
+      else next[key] = value
+      return next
+    })
+  }
+
+  const viewTypeOptions = [
+    { value: 'grid', label: '表格（Grid）' },
+    { value: 'kanban', label: '看板（Kanban）' },
+    { value: 'gallery', label: '画廊（Gallery）' },
+    { value: 'calendar', label: '日历（Calendar）' },
+  ]
+
+  const kanbanConfig = vt === 'kanban' && (
+    <Form.Item label="分组字段" required tooltip="后端看板视图必须配置 group_field">
+      <Select
+        value={(opts.group_field as string) || undefined}
+        onChange={(v) => updateOpt('group_field', v)}
+        placeholder="选择用于分组的字段"
+        options={selectFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+        style={{ width: '100%' }}
+        allowClear
+      />
+    </Form.Item>
+  )
+
+  const calendarConfig = vt === 'calendar' && (
+    <Form.Item label="起始时间字段" required tooltip="后端日历视图必须配置 start_field">
+      <Select
+        value={(opts.start_field as string) || undefined}
+        onChange={(v) => updateOpt('start_field', v)}
+        placeholder="选择日期/时间字段"
+        options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+        style={{ width: '100%' }}
+        allowClear
+      />
+    </Form.Item>
+  )
+
+  const galleryConfig = vt === 'gallery' && (
+    <>
+      <Form.Item label="标题字段">
+        <Select
+          value={(opts.title_field as string) || undefined}
+          onChange={(v) => updateOpt('title_field', v)}
+          placeholder="留空则自动选第一个文本字段"
+          options={textFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="图片/附件字段">
+        <Select
+          value={(opts.image_field as string) || undefined}
+          onChange={(v) => updateOpt('image_field', v)}
+          placeholder="留空则自动选第一个附件字段"
+          options={imageFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+    </>
+  )
+
   return (
     <Form layout="vertical" style={{ marginTop: 12 }}>
       <Form.Item label="视图名称" required>
         <Input placeholder="例如：只看进行中" value={name} onChange={e => setName(e.target.value)} autoFocus />
       </Form.Item>
       <Form.Item label="视图类型">
-        <Select value={vt} onChange={setVt} options={[
-          { value: 'grid', label: '表格（Grid）' },
-          { value: 'kanban', label: '看板（Kanban）' },
-          { value: 'gallery', label: '画廊（Gallery）' },
-          { value: 'calendar', label: '日历（Calendar）' },
-          { value: 'form', label: '表单（Form）' },
-        ]} />
+        <Select value={vt} onChange={(v) => { setVt(v); setOpts({}) }} options={viewTypeOptions} />
       </Form.Item>
+      {kanbanConfig}
+      {calendarConfig}
+      {galleryConfig}
       <div style={{ textAlign: 'right', marginTop: 12 }}>
         <Button type="primary" disabled={!name.trim()}
-          onClick={() => onCreate(name.trim(), vt)}>创建</Button>
+          onClick={() => onCreate(name.trim(), vt, opts)}>创建</Button>
       </div>
     </Form>
   )
@@ -547,6 +630,7 @@ function ViewConfigDialog({
 
 function buildColumns(
   fields: Field[],
+  wid: number | string | undefined,
   onCellSave?: (rowId: number | string, fieldName: string, value: unknown) => Promise<unknown>,
 ): ColumnsType<RowResponse> {
   return fields.filter(f => !f.hidden).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -561,22 +645,23 @@ function buildColumns(
           value={v}
           field={f}
           rowId={record.id}
+          wid={wid}
           onSave={onCellSave ? (fieldName, value) => onCellSave(record.id, fieldName, value) : undefined}
         />
       ),
     }))
 }
 
-// ─────────────── Kanban 视图 ───────────────
+// ─────────────── Kanban 视图（优先使用 view_options.group_field） ───────────────
 
-function KanbanView({ rows, fields, onRowClick }: { rows: RowResponse[]; fields: Field[]; onRowClick?: (r: RowResponse) => void }) {
-  const selectField = fields.find(f => f.field_type === 'select')
+function KanbanView({ rows, fields, view, onRowClick }: { rows: RowResponse[]; fields: Field[]; view?: View | null; onRowClick?: (r: RowResponse) => void }) {
+  const groupField = (view?.view_options?.group_field as string)
+    || fields.find(f => f.field_type === 'select' || f.field_type === 'multi_select')?.name
   const cols: Array<{ key: string; title: string; rows: RowResponse[] }> = []
-  if (selectField) {
-    const col = selectField.name
+  if (groupField) {
     const groups = new Map<string, RowResponse[]>()
     for (const r of rows) {
-      const v = String(r[col] || '未分类')
+      const v = String(r[groupField] || '未分组')
       if (!groups.has(v)) groups.set(v, [])
       groups.get(v)!.push(r)
     }
@@ -623,11 +708,18 @@ function extractImageUrl(v: unknown): string | null {
   return null
 }
 
-function GalleryView({ rows, fields, onRowClick }: { rows: RowResponse[]; fields: Field[]; onRowClick?: (r: RowResponse) => void }) {
-  const titleField = fields.find(f => f.field_type === 'text') || fields.find(f => f.is_primary)
-  const titleCol = titleField?.name || 'id'
-  // 找第一个图片/附件字段作为缩略图来源
-  const imgField = fields.find(f => ['image', 'attachment'].includes(f.field_type))
+// ─────────────── Gallery 视图（优先使用 view_options.title_field / image_field） ───────────────
+
+function GalleryView({ rows, fields, view, onRowClick }: { rows: RowResponse[]; fields: Field[]; view?: View | null; onRowClick?: (r: RowResponse) => void }) {
+  const titleField = (view?.view_options?.title_field as string)
+    || fields.find(f => f.field_type === 'text')?.name
+    || fields.find(f => f.is_primary)?.name
+  const titleCol = titleField || 'id'
+  // 找图片/附件字段作为缩略图来源：优先 view_options.image_field，否则第一个 attachment
+  const imageFieldOpted = view?.view_options?.image_field as string | undefined
+  const imgField = imageFieldOpted
+    ? fields.find(f => f.name === imageFieldOpted)
+    : fields.find(f => ['image', 'attachment'].includes(f.field_type))
   const imgCol = imgField?.name
 
   return (
@@ -667,14 +759,18 @@ function GalleryView({ rows, fields, onRowClick }: { rows: RowResponse[]; fields
   )
 }
 
-// ─────────────── Calendar 视图（按日期字段分组） ───────────────
+// ─────────────── Calendar 视图（优先使用 view_options.start_field） ───────────────
 
-function CalendarView({ rows, fields, onRowClick }: { rows: RowResponse[]; fields: Field[]; onRowClick?: (r: RowResponse) => void }) {
-  // 找第一个 date/datetime 类型字段作为分组列
-  const dateField = fields.find(f => ['date', 'datetime'].includes(f.field_type))
-  const titleField = fields.find(f => f.field_type === 'text') || fields.find(f => f.is_primary)
+function CalendarView({ rows, fields, view, onRowClick }: { rows: RowResponse[]; fields: Field[]; view?: View | null; onRowClick?: (r: RowResponse) => void }) {
+  // 起始日期字段：优先 view_options.start_field，否则第一个 date/datetime 字段
+  const startFieldOpted = view?.view_options?.start_field as string | undefined
+  const dateField = startFieldOpted
+    ? fields.find(f => f.name === startFieldOpted)
+    : fields.find(f => ['date', 'datetime'].includes(f.field_type))
+  const titleField = fields.find(f => f.field_type === 'text')?.name
+    || fields.find(f => f.is_primary)?.name || 'id'
   const dateCol = dateField?.name
-  const titleCol = titleField?.name || 'id'
+  const titleCol = titleField
 
   // 按日期分组
   const groups = new Map<string, RowResponse[]>()

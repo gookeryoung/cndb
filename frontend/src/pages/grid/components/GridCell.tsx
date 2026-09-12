@@ -4,17 +4,20 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Tag, Tooltip, Typography, Input, InputNumber, Select, Checkbox, DatePicker, Button, Popover, message } from 'antd'
 import { SaveOutlined, CloseOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
-import type { Field } from '@/api'
+import { useQuery } from '@tanstack/react-query'
+import type { Field, RowResponse } from '@/api'
+import { recordApi } from '@/api'
 
 interface Props {
   value: unknown
   field: Field
   rowId: number | string
+  wid?: number | string
   onSave?: (fieldName: string, value: unknown) => Promise<unknown>
 }
 
 /** 可编辑单元格：默认展示态，双击切到编辑态，回车/失焦保存 */
-export default function GridCell({ value, field, rowId, onSave }: Props) {
+export default function GridCell({ value, field, rowId, wid, onSave }: Props) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<unknown>(value)
   const [saving, setSaving] = useState(false)
@@ -63,7 +66,7 @@ export default function GridCell({ value, field, rowId, onSave }: Props) {
 
   // 只读字段直接展示
   if (isReadonlyField(field)) {
-    return <DisplayCell value={value} field={field} rowId={rowId} />
+    return <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
   }
 
   if (!editing) {
@@ -73,7 +76,7 @@ export default function GridCell({ value, field, rowId, onSave }: Props) {
         style={{ padding: '2px 4px', cursor: onSave ? 'pointer' : 'default', minHeight: 22 }}
         title={onSave ? '双击编辑' : undefined}
       >
-        <DisplayCell value={value} field={field} rowId={rowId} />
+        <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
       </div>
     )
   }
@@ -87,13 +90,14 @@ export default function GridCell({ value, field, rowId, onSave }: Props) {
       onSave={handleSave}
       onCancel={handleCancel}
       saving={saving}
+      wid={wid}
     />
   )
 }
 
 // ─────────────── 展示态 ───────────────
 
-function DisplayCell({ value, field, rowId }: { value: unknown; field: Field; rowId: number | string }) {
+function DisplayCell({ value, field, rowId }: { value: unknown; field: Field; rowId: number | string; wid?: number | string }) {
   if (value === null || value === undefined || value === '') {
     return <span style={{ color: '#cbd5e1' }}>—</span>
   }
@@ -153,9 +157,10 @@ interface EditCellProps {
   onSave: () => void
   onCancel: () => void
   saving: boolean
+  wid?: number | string
 }
 
-function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving }: EditCellProps) {
+function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, wid }: EditCellProps) {
   const ft = field.field_type
   const wrap: React.CSSProperties = {
     display: 'flex', gap: 4, alignItems: 'center', padding: '2px 0',
@@ -311,16 +316,53 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving }
         </div>
       )
     }
-    case 'link':
+    case 'link': {
+      // link 字段：从 field.config.target_table_id 拉目标表行，用 Select 选择
+      const targetTableId = (field.config?.target_table_id as number | undefined)
+      const multiple = Boolean(field.config?.multiple ?? true)
+      const { data: targetRowsData, isLoading: linkLoading } = useQuery({
+        queryKey: ['link-target-rows', targetTableId],
+        queryFn: () => recordApi.list(wid!, targetTableId!, { limit: 500 }),
+        enabled: !!wid && !!targetTableId,
+      })
+      const targetRows: RowResponse[] = (targetRowsData as any)?.items || []
+
+      // 从 draft（可能是 [{id, value}] 或 id 数组）提取纯 id 数组给 Select
+      const ids = extractLinkIds(draft)
+
+      const options = targetRows.map((r: any) => ({
+        value: r.id,
+        label: extractRowLabel(r),
+      }))
+
+      return (
+        <div style={wrap}>
+          <Select
+            size="small"
+            mode={multiple ? 'multiple' : undefined}
+            value={ids as any}
+            onChange={(v) => onChange(Array.isArray(v) ? v : v !== undefined && v !== null ? [v] : [])}
+            options={options}
+            placeholder={linkLoading ? '加载中...' : (targetTableId ? '选择关联行' : '未配置目标表')}
+            loading={linkLoading}
+            style={{ flex: 1 }}
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            disabled={!targetTableId}
+          />
+          {actions}
+        </div>
+      )
+    }
     case 'attachment': {
-      // link/attachment inline 编辑暂用纯文本输入（value 存的是 [{id,value}] JSON 或原始值）
       return (
         <div style={wrap}>
           <Input
             size="small"
             value={typeof draft === 'object' ? JSON.stringify(draft) : String(draft ?? '')}
             onChange={e => onChange(e.target.value)}
-            placeholder={ft === 'link' ? 'JSON: [{id,value}]' : '附件 URL'}
+            placeholder="附件 URL"
             onKeyDown={commonOnKey}
             style={{ flex: 1 }}
           />
@@ -353,13 +395,38 @@ function normalizeValueForEdit(value: unknown, field: Field): unknown {
     if (field.field_type === 'boolean') return false
     if (field.field_type === 'number' || field.field_type === 'decimal') return null
     if (field.field_type === 'multi_select') return []
+    if (field.field_type === 'link') return []  // link 从 [{id, value}] 转为空数组，由 ExtractLinkIds 在 EditCell 内部处理
     return ''
   }
+  if (field.field_type === 'link') {
+    // API 返回 [{id, value}]，编辑器消费纯 id 数组
+    return extractLinkIds(value)
+  }
   if (field.field_type === 'date' || field.field_type === 'datetime') {
-    // 后端返回 "2023-01-15"，DatePicker 需要 Dayjs，但 onChange 给 dateStr
-    return value  // 在 EditCell 内部再 wrap
+    return value
   }
   return value
+}
+
+/** 从 link 字段 API 返回值中提取纯 id 数组. */
+function extractLinkIds(value: unknown): number[] {
+  if (value === null || value === undefined) return []
+  if (Array.isArray(value)) {
+    return value.map((item: any) => {
+      if (typeof item === 'number') return item
+      if (item && typeof item === 'object') return item.id
+      return Number(item)
+    }).filter((n: number) => !Number.isNaN(n) && n > 0)
+  }
+  if (typeof value === 'number') return [value]
+  return []
+}
+
+/** 从目标行数据中提取可读的标签文本用于 Select 选项. */
+function extractRowLabel(r: RowResponse | Record<string, unknown>): string {
+  // 优先用 text 字段，否则用 id
+  const text = String(r.id ?? '')
+  return text ? `#${text}` : '行'
 }
 
 /** 离开编辑态保存前：把编辑器的草稿值转换成后端 schema 需要的格式 */
