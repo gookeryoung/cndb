@@ -198,7 +198,8 @@ export default function MainLayout() {
       </Layout>
 
       <Suspense fallback={<ModalFallback />}>
-        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)}
+          wid={wid} onOpenMembers={() => setMembersOpen(true)} />
         <MembersModal open={membersOpen} wid={wid ?? ''} onClose={() => setMembersOpen(false)} />
       </Suspense>
     </Layout>
