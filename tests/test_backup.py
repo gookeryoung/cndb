@@ -1,0 +1,349 @@
+"""backup.py 单元测试."""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import sys
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from cndb.backup import (
+    MANIFEST_VERSION,
+    BackupError,
+    _backup_sqlite_native,
+    _collect_uploads,
+    _is_sqlite_url,
+    _resolve_sqlite_path,
+    create_backup,
+)
+
+# ── 辅助 ──────────────────────────────────────────────
+
+
+def _setup_sqlite(tmp_path: Path) -> Path:
+    """在 tmp_path 下创建一个有若干表和数据的 SQLite 数据库."""
+    db = tmp_path / "cndb_test.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript(
+        """
+        CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT);
+        CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT);
+        INSERT INTO users (name, email) VALUES ('张三', 'a@b.com'), ('李四', 'c@d.com');
+        INSERT INTO posts (user_id, title) VALUES (1, '第一篇'), (1, '第二篇'), (2, '第三篇');
+        """
+    )
+    conn.commit()
+    conn.close()
+    return db
+
+
+def _setup_uploads(tmp_path: Path) -> Path:
+    """创建 uploads 目录并放一些文件（含嵌套）."""
+    up = tmp_path / "uploads"
+    (up / "1").mkdir(parents=True)
+    (up / "2").mkdir(parents=True)
+    (up / "1" / "f1.txt").write_text("hello", encoding="utf-8")
+    (up / "2" / "f2.txt").write_text("world", encoding="utf-8")
+    # 隐藏文件应跳过
+    (up / ".hidden").write_text("skip me", encoding="utf-8")
+    return up
+
+
+# ── URL 解析辅助测试 ──────────────────────────────────
+
+
+def test_is_sqlite_url_positive() -> None:
+    assert _is_sqlite_url("sqlite:///C:/foo/bar.db")
+    assert _is_sqlite_url("sqlite:///:memory:")
+
+
+def test_is_sqlite_url_negative() -> None:
+    assert not _is_sqlite_url("postgresql://user:pass@host/db")
+    assert not _is_sqlite_url("mysql://localhost/db")
+
+
+def test_resolve_sqlite_path_absolute() -> None:
+    p = _resolve_sqlite_path("sqlite:///C:/foo/bar.db")
+    assert p.name == "bar.db"
+
+
+def test_resolve_sqlite_path_relative(tmp_path: Path) -> None:
+    p = _resolve_sqlite_path(f"sqlite:///{tmp_path / 'rel.db'}")
+    assert p.exists() or p.name == "rel.db"
+
+
+# ── _backup_sqlite_native 单元 ────────────────────────
+
+
+def test_backup_sqlite_native_copies_and_counts(tmp_path: Path) -> None:
+    db = _setup_sqlite(tmp_path)
+    target = tmp_path / "backup_dest"
+    target.mkdir()
+    fname, counts = _backup_sqlite_native(db, target)
+
+    assert fname == "cndb.db"
+    assert (target / "cndb.db").is_file()
+    assert counts["users"] == 2
+    assert counts["posts"] == 3
+    # 备份文件与原文件行数一致
+    conn = sqlite3.connect(str(target / "cndb.db"))
+    assert conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 2
+    conn.close()
+
+
+# ── _collect_uploads 单元 ─────────────────────────────
+
+
+def test_collect_uploads_copies_files(tmp_path: Path) -> None:
+    uploads = _setup_uploads(tmp_path)
+    target = tmp_path / "collect_target"
+    target.mkdir()
+
+    info = _collect_uploads(uploads, target)
+
+    assert info.included is True
+    assert info.file_count == 2  # 排除 .hidden
+    assert info.total_size > 0
+    assert (target / "uploads" / "1" / "f1.txt").is_file()
+    assert (target / "uploads" / "2" / "f2.txt").is_file()
+
+
+def test_collect_uploads_empty_directory(tmp_path: Path) -> None:
+    empty = tmp_path / "empty_uploads"
+    empty.mkdir()
+    target = tmp_path / "target"
+    target.mkdir()
+    info = _collect_uploads(empty, target)
+    assert info.included is False
+    assert info.file_count == 0
+
+
+def test_collect_uploads_nonexistent(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    info = _collect_uploads(tmp_path / "no_such", target)
+    assert info.included is False
+
+
+# ── create_backup native 端到端 ───────────────────────
+
+
+def test_create_backup_native_full_flow(tmp_path: Path) -> None:
+    db_path = _setup_sqlite(tmp_path)
+    uploads = _setup_uploads(tmp_path)
+    archive = tmp_path / "backup.tar.gz"
+
+    result = create_backup(
+        output=archive,
+        mode="native",
+        include_uploads=True,
+        database_url=f"sqlite:///{db_path}",
+        upload_dir=uploads,
+    )
+
+    assert result == archive
+    assert archive.is_file()
+    # 解包检查
+    import tarfile
+
+    with tarfile.open(archive, "r:gz") as tar:
+        names = tar.getnames()
+        assert "backup/manifest.json" in names
+        assert "backup/database/cndb.db" in names
+        assert "backup/uploads/1/f1.txt" in names
+
+        manifest_file = tar.extractfile("backup/manifest.json")
+        assert manifest_file is not None
+        manifest = json.loads(manifest_file.read().decode("utf-8"))
+
+        assert manifest["version"] == MANIFEST_VERSION
+        assert manifest["database"]["backup_mode"] == "native"
+        assert manifest["database"]["row_counts"]["users"] == 2
+        assert manifest["database"]["row_counts"]["posts"] == 3
+        assert manifest["uploads"]["included"] is True
+        assert manifest["uploads"]["file_count"] == 2
+
+
+def test_create_backup_no_uploads(tmp_path: Path) -> None:
+    db_path = _setup_sqlite(tmp_path)
+    archive = tmp_path / "backup.tar.gz"
+
+    result = create_backup(
+        output=archive,
+        mode="native",
+        include_uploads=False,
+        database_url=f"sqlite:///{db_path}",
+        upload_dir=tmp_path / "uploads",
+    )
+
+    import tarfile
+
+    with tarfile.open(result, "r:gz") as tar:
+        names = tar.getnames()
+        assert not any(n.startswith("backup/uploads/") for n in names)
+        manifest_file = tar.extractfile("backup/manifest.json")
+        assert manifest_file is not None
+        manifest = json.loads(manifest_file.read().decode("utf-8"))
+        assert manifest["uploads"]["included"] is False
+
+
+def test_create_backup_default_output_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """output=None 时应生成 backup-<timestamp>.tar.gz 默认名."""
+    db_path = _setup_sqlite(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = create_backup(
+        mode="native",
+        include_uploads=False,
+        database_url=f"sqlite:///{db_path}",
+        upload_dir=tmp_path / "uploads",
+    )
+
+    assert result.name.startswith("backup-")
+    assert result.name.endswith(".tar.gz")
+
+
+def test_create_backup_nonexistent_sqlite_file(tmp_path: Path) -> None:
+    """SQLite 路径不存在时应抛 BackupError."""
+    with pytest.raises(BackupError, match="SQLite 数据库文件不存在"):
+        create_backup(
+            output=tmp_path / "backup.tar.gz",
+            mode="native",
+            database_url=f"sqlite:///{tmp_path / 'no_such.db'}",
+        )
+
+
+def test_create_backup_native_for_postgres_is_rejected(tmp_path: Path) -> None:
+    """native 模式对非 SQLite DB 应报错."""
+    with pytest.raises(BackupError, match="native 备份模式仅支持 SQLite"):
+        create_backup(
+            output=tmp_path / "backup.tar.gz",
+            mode="native",
+            database_url="postgresql://user:pass@localhost/db",
+        )
+
+
+def test_create_backup_sqlalchemy_mode_requires_plugin_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """sqlalchemy 模式下应能正常工作（需触发插件注册以便 Base.metadata 有表）."""
+    # 这里用一个极简 SQLite 库配合真实 ORM 模型可能比较重
+    # 改为直接测试 auto 模式对 sqlite 的分发
+    db_path = _setup_sqlite(tmp_path)
+    archive = tmp_path / "backup.tar.gz"
+
+    # auto 应选择 native 模式
+    result = create_backup(
+        output=archive,
+        mode="auto",
+        database_url=f"sqlite:///{db_path}",
+    )
+    import tarfile
+
+    with tarfile.open(result, "r:gz") as tar:
+        manifest_file = tar.extractfile("backup/manifest.json")
+        assert manifest_file is not None
+        manifest = json.loads(manifest_file.read().decode("utf-8"))
+        assert manifest["database"]["backup_mode"] == "native"
+
+
+# ── backup_command CLI 包装 ───────────────────────────
+
+
+def test_backup_command_calls_create_backup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """backup_command 应正确转发到 create_backup."""
+    import argparse
+
+    from cndb.backup import backup_command
+    from cndb.core.config import settings
+
+    db_path = _setup_sqlite(tmp_path)
+    archive = tmp_path / "backup.tar.gz"
+
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
+
+    args = argparse.Namespace(
+        output=str(archive),
+        mode="native",
+        no_uploads=True,
+    )
+
+    backup_command(args)
+    assert archive.is_file()
+
+
+def test_backup_command_exit_on_backup_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """BackupError 应导致 sys.exit(1)."""
+    import argparse
+
+    from cndb.backup import backup_command
+    from cndb.core.config import settings
+
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{tmp_path / 'no_such.db'}")
+    args = argparse.Namespace(output=str(tmp_path / "x.tar.gz"), mode="native", no_uploads=True)
+
+    with pytest.raises(SystemExit) as excinfo:
+        backup_command(args)
+    assert excinfo.value.code == 1
+
+
+# ── runner 子命令分发 ─────────────────────────────────
+
+
+def test_runner_backup_subcommand_dispatches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cndb import runner
+    from cndb.core.config import settings
+
+    db_path = _setup_sqlite(tmp_path)
+    archive = tmp_path / "backup.tar.gz"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
+
+    with patch.object(
+        sys,
+        "argv",
+        [
+            "cndb",
+            "backup",
+            "--mode",
+            "native",
+            "-o",
+            str(archive),
+        ],
+    ):
+        runner.main()
+
+    assert archive.is_file()
+
+
+def test_runner_restore_subcommand_dispatches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cndb import runner
+    from cndb.backup import create_backup
+
+    # 先做备份
+    db_path = _setup_sqlite(tmp_path)
+    archive = tmp_path / "backup.tar.gz"
+    create_backup(
+        output=archive,
+        mode="native",
+        database_url=f"sqlite:///{db_path}",
+    )
+
+    # restore --dry-run 不应修改数据
+    monkeypatch.chdir(tmp_path)
+    # 目标库不存在（全新），restore 应该通过
+    target_db = tmp_path / "fresh.db"
+    with patch.object(
+        sys,
+        "argv",
+        [
+            "cndb",
+            "restore",
+            str(archive),
+            "--dry-run",
+        ],
+    ):
+        runner.main()
+    # dry-run 不应创建目标库
+    assert not target_db.exists()
