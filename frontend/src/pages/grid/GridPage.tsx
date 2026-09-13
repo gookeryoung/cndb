@@ -18,7 +18,7 @@ import GridCell from './components/GridCell'
 import RowDetailDrawer from './components/RowDetailDrawer'
 import KanbanView from './components/KanbanView'
 import { useTableSettings } from '@/theme/TableSettingsProvider'
-import { densityToSize, DEFAULT_TABLE_SETTINGS } from '@/theme/tableSettings'
+import { densityToSize, DEFAULT_TABLE_SETTINGS, type Density } from '@/theme/tableSettings'
 
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
@@ -390,19 +390,16 @@ export default function GridPage() {
     return out
   }, [selectedRows, numericFields])
 
-  // 视图 Segmented 选项（全部 + 各自定义视图）
-  const segmentedOptions = useMemo(() => [
-    { label: '全部', value: 'all' },
-    ...views.map(v => ({
-      label: (
-        <span>
-          {v.name}
-          {v.default && <Tag color="blue" style={{ marginLeft: 4, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
-        </span>
-      ),
-      value: String(v.id),
-    })),
-  ], [views])
+  // 视图 Segmented 选项（仅来自后端定义的视图，不再硬编码"全部"避免与"全部XX"默认视图冗余）
+  const segmentedOptions = useMemo(() => views.map(v => ({
+    label: (
+      <span>
+        {v.name}
+        {v.default && <Tag color="blue" style={{ marginLeft: 4, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
+      </span>
+    ),
+    value: String(v.id),
+  })), [views])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -434,10 +431,10 @@ export default function GridPage() {
       {/* 视图切换 + 视图操作 */}
       <div style={{ padding: '0 16px', background: '#fff', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 8 }}>
         <Segmented
-          value={activeViewId ? String(activeViewId) : 'all'}
+          value={activeViewId != null ? String(activeViewId) : undefined}
           onChange={(v) => {
             const key = String(v)
-            loadView(key === 'all' ? null : views.find(vv => String(vv.id) === key) || null)
+            loadView(views.find(vv => String(vv.id) === key) || null)
           }}
           options={segmentedOptions}
           style={{ flex: 1, overflow: 'auto' }}
@@ -510,7 +507,7 @@ export default function GridPage() {
             onClick={() => setViewConfigOpen(true)}
           />
         </Tooltip>
-        <Tooltip title="表格显示设置（对所有数据表生效）">
+        <Tooltip title="显示模式设置（对所有视图生效）">
           <Button
             size="small"
             icon={<SettingOutlined />}
@@ -570,11 +567,11 @@ export default function GridPage() {
             onRow={(record) => ({ onDoubleClick: () => { setDetailRow(record); setDetailOpen(true) } })}
           />
         ) : mode === 'kanban' ? (
-          <KanbanView rows={rowList.items || []} fields={table?.fields || []} view={activeView} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <KanbanView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         ) : mode === 'gallery' ? (
-          <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         ) : (
-          <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         )}
       </div>
 
@@ -1836,7 +1833,7 @@ function extractImageUrl(v: unknown): string | null {
 
 // ─────────────── Gallery 视图（优先使用 view_options.title_field / image_field） ───────────────
 
-function GalleryView({ rows, fields, view, onRowClick }: { rows: RowResponse[]; fields: Field[]; view?: View | null; onRowClick?: (r: RowResponse) => void }) {
+function GalleryView({ rows, fields, view, density, onRowClick }: { rows: RowResponse[]; fields: Field[]; view?: View | null; density: Density; onRowClick?: (r: RowResponse) => void }) {
   const titleField = (view?.view_options?.title_field as string)
     || fields.find(f => f.field_type === 'text')?.name
     || fields.find(f => f.is_primary)?.name
@@ -1848,18 +1845,28 @@ function GalleryView({ rows, fields, view, onRowClick }: { rows: RowResponse[]; 
     : fields.find(f => ['image', 'attachment'].includes(f.field_type))
   const imgCol = imgField?.name
 
+  // 根据 density 调整画廊卡片间距
+  const gutter: [number, number] = density === 'compact' ? [8, 8] : density === 'spacious' ? [20, 20] : [16, 16]
+  const radius = density === 'compact' ? 6 : density === 'spacious' ? 10 : 8
+  const textPadding = density === 'compact' ? 8 : density === 'spacious' ? 16 : 12
+  const textFontSize = density === 'compact' ? 13 : density === 'spacious' ? 15 : 14
+  const textSubFontSize = density === 'compact' ? 11 : density === 'spacious' ? 13 : 12
+  const imgHeight = density === 'compact' ? 110 : density === 'spacious' ? 170 : 140
+  const fallbackHeight = density === 'compact' ? 60 : density === 'spacious' ? 100 : 80
+  const fallbackFontSize = density === 'compact' ? 16 : density === 'spacious' ? 24 : 20
+
   return (
-    <Row gutter={[16, 16]}>
+    <Row gutter={gutter}>
       {rows.map(r => {
         const imgUrl = imgCol ? extractImageUrl(r[imgCol]) : null
         return (
           <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
             <div
               onClick={() => onRowClick?.(r)}
-              style={{ padding: 0, border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff', cursor: 'pointer', overflow: 'hidden' }}
+              style={{ padding: 0, border: '1px solid #e5e7eb', borderRadius: radius, background: '#fff', cursor: 'pointer', overflow: 'hidden' }}
             >
               {imgUrl ? (
-                <div style={{ width: '100%', height: 140, background: '#f5f7fa', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                <div style={{ width: '100%', height: imgHeight, background: '#f5f7fa', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                   <img
                     src={imgUrl}
                     alt=""
@@ -1868,13 +1875,13 @@ function GalleryView({ rows, fields, view, onRowClick }: { rows: RowResponse[]; 
                   />
                 </div>
               ) : (
-                <div style={{ width: '100%', height: 80, background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: 20 }}>
+                <div style={{ width: '100%', height: fallbackHeight, background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: fallbackFontSize }}>
                   {String(r[titleCol] ?? r.id).slice(0, 2).toUpperCase()}
                 </div>
               )}
-              <div style={{ padding: 12 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{String(r[titleCol] ?? r.id)}</div>
-                <div style={{ fontSize: 12, color: '#9ca3af' }}>ID: {r.id}</div>
+              <div style={{ padding: textPadding }}>
+                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: textFontSize }}>{String(r[titleCol] ?? r.id)}</div>
+                <div style={{ fontSize: textSubFontSize, color: '#9ca3af' }}>ID: {r.id}</div>
               </div>
             </div>
           </Col>
@@ -1887,7 +1894,7 @@ function GalleryView({ rows, fields, view, onRowClick }: { rows: RowResponse[]; 
 
 // ─────────────── Calendar 视图（优先使用 view_options.start_field） ───────────────
 
-function CalendarView({ rows, fields, view, onRowClick }: { rows: RowResponse[]; fields: Field[]; view?: View | null; onRowClick?: (r: RowResponse) => void }) {
+function CalendarView({ rows, fields, view, density, onRowClick }: { rows: RowResponse[]; fields: Field[]; view?: View | null; density: Density; onRowClick?: (r: RowResponse) => void }) {
   // 起始日期字段：优先 view_options.start_field，否则第一个 date/datetime 字段
   const startFieldOpted = view?.view_options?.start_field as string | undefined
   const dateField = startFieldOpted
@@ -1897,6 +1904,19 @@ function CalendarView({ rows, fields, view, onRowClick }: { rows: RowResponse[];
     || fields.find(f => f.is_primary)?.name || 'id'
   const dateCol = dateField?.name
   const titleCol = titleField
+
+  // 根据 density 调整日历卡片间距
+  const outerPadding = density === 'compact' ? 8 : density === 'spacious' ? 20 : 12
+  const sectionMarginBottom = density === 'compact' ? 16 : density === 'spacious' ? 32 : 24
+  const headerMarginBottom = density === 'compact' ? 4 : density === 'spacious' ? 12 : 8
+  const headerPadding = density === 'compact' ? '4px 8px' : density === 'spacious' ? '8px 16px' : '6px 12px'
+  const headerFontSize = density === 'compact' ? 12 : density === 'spacious' ? 14 : 13
+  const cardGutter: [number, number] = density === 'compact' ? [4, 4] : density === 'spacious' ? [12, 12] : [8, 8]
+  const cardPadding = density === 'compact' ? 6 : density === 'spacious' ? 14 : 10
+  const cardRadius = density === 'compact' ? 4 : density === 'spacious' ? 8 : 6
+  const cardFontSize = density === 'compact' ? 12 : density === 'spacious' ? 14 : 13
+  const cardTitleFontSize = density === 'compact' ? 12 : density === 'spacious' ? 14 : 13
+  const cardSubFontSize = density === 'compact' ? 10 : density === 'spacious' ? 12 : 11
 
   // 按日期分组
   const groups = new Map<string, RowResponse[]>()
@@ -1918,29 +1938,29 @@ function CalendarView({ rows, fields, view, onRowClick }: { rows: RowResponse[];
   })
 
   return (
-    <div style={{ padding: 12 }}>
+    <div style={{ padding: outerPadding }}>
       {sortedKeys.length === 0 && <Empty description="暂无记录" style={{ padding: 48 }} />}
       {sortedKeys.map(key => (
-        <div key={key} style={{ marginBottom: 24 }}>
+        <div key={key} style={{ marginBottom: sectionMarginBottom }}>
           <div style={{
-            fontWeight: 600, marginBottom: 8, padding: '6px 12px',
+            fontWeight: 600, marginBottom: headerMarginBottom, padding: headerPadding,
             background: '#f0f5ff', borderRadius: 6, color: '#1d4ed8',
-            fontSize: 13,
+            fontSize: headerFontSize,
           }}>
-            📅 {key} <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>({groups.get(key)!.length})</span>
+            📅 {key} <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: headerFontSize - 1 }}>({groups.get(key)!.length})</span>
           </div>
-          <Row gutter={[8, 8]}>
+          <Row gutter={cardGutter}>
             {groups.get(key)!.map(r => (
               <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
                 <div
                   onClick={() => onRowClick?.(r)}
                   style={{
-                    padding: 10, border: '1px solid #e5e7eb', borderRadius: 6,
-                    background: '#fff', cursor: 'pointer', fontSize: 13,
+                    padding: cardPadding, border: '1px solid #e5e7eb', borderRadius: cardRadius,
+                    background: '#fff', cursor: 'pointer', fontSize: cardFontSize,
                   }}
                 >
-                  <div style={{ fontWeight: 500, marginBottom: 2 }}>{String(r[titleCol] ?? r.id)}</div>
-                  <div style={{ fontSize: 11, color: '#9ca3af' }}>ID: {r.id}</div>
+                  <div style={{ fontWeight: 500, marginBottom: 2, fontSize: cardTitleFontSize }}>{String(r[titleCol] ?? r.id)}</div>
+                  <div style={{ fontSize: cardSubFontSize, color: '#9ca3af' }}>ID: {r.id}</div>
                 </div>
               </Col>
             ))}
@@ -2013,7 +2033,7 @@ function MoveTableForm({ currentWid }: { currentWid: number | string }) {
   )
 }
 
-// ─────────────── 表格显示设置 Dialog（全局用户设置） ───────────────
+// ─────────────── 显示模式 Dialog（全局用户设置） ───────────────
 
 interface TableSettingsDialogProps {
   open: boolean
@@ -2048,7 +2068,7 @@ function TableSettingsDialog({ open, onClose, onAfterSave }: TableSettingsDialog
 
   return (
     <Modal
-      title="表格显示设置"
+      title="显示模式"
       open={open}
       onCancel={onClose}
       width={400}
@@ -2115,7 +2135,7 @@ function TableSettingsDialog({ open, onClose, onAfterSave }: TableSettingsDialog
       </div>
 
       <div style={{ marginTop: 10, fontSize: 11, color: '#9ca3af', textAlign: 'center' }}>
-        保存到浏览器，对所有数据表生效
+        保存到浏览器，对所有视图生效
       </div>
     </Modal>
   )
