@@ -17,7 +17,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import MetaData, Table, and_, func, or_, select
+from sqlalchemy import MetaData, Table, and_, func, select
 
 from cndb.plugins.tables.audit import (
     ACTION_CREATE,
@@ -210,31 +210,32 @@ def list_rows(
 
     sa_table = _get_sa_table(engine, table)
 
-    # 基础 where
-    where_clauses: list[Any] = []
+    # 基础 where（trashed 条件始终与业务过滤 AND 组合）
+    base_where: list[Any] = []
     if not include_trashed:
-        where_clauses.append(sa_table.c._trashed.is_(False))
+        base_where.append(sa_table.c._trashed.is_(False))
 
     # 业务过滤
+    business_where: Any | None = None
     if filters:
-        compiled = compile_filters(table, sa_table, filters, filter_logic)
-        if compiled is not None:
-            where_clauses.append(compiled)
+        business_where = compile_filters(table, sa_table, filters, filter_logic)
 
-    # 构建 base query
+    # 构建 base query —— trashed AND 业务过滤（无论 filter_logic 是什么）
     query = sa_table.select()
-    if where_clauses:
-        if len(where_clauses) == 1:
-            query = query.where(where_clauses[0])
+    final_where: list[Any] = list(base_where)
+    if business_where is not None:
+        final_where.append(business_where)
+    if final_where:
+        if len(final_where) == 1:
+            query = query.where(final_where[0])
         else:
-            combined = and_(*where_clauses) if filter_logic.upper() == "AND" else or_(*where_clauses)
-            query = query.where(combined)
+            query = query.where(and_(*final_where))
 
     # total count
     with engine.connect() as conn:
         count_query = select(func.count(sa_table.c.id))
-        if where_clauses:
-            count_query = count_query.where(*where_clauses)
+        if final_where:
+            count_query = count_query.where(*final_where)
         total = conn.execute(count_query).scalar()
 
         # 排序

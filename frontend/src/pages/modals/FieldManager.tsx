@@ -240,6 +240,15 @@ interface ConfigEditorProps {
   tables: TableSummary[]
 }
 
+/** 哪些字段类型有可配置项 */
+const HAS_CONFIG_TYPES = new Set<string>([
+  ...TYPE_CATEGORIES.numeric,
+  ...TYPE_CATEGORIES.date,
+  ...TYPE_CATEGORIES.select,
+  ...TYPE_CATEGORIES.link,
+  ...TYPE_CATEGORIES.attachment,
+])
+
 /** 字段类型对应的 config 编辑器 */
 function ConfigEditor({ fieldType, form, tables }: ConfigEditorProps) {
   // 监听 config 变化，保证表单 re-render
@@ -256,6 +265,9 @@ function ConfigEditor({ fieldType, form, tables }: ConfigEditorProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fieldType])
+
+  // 无配置项的字段类型直接返回 null，不显示空壳
+  if (!HAS_CONFIG_TYPES.has(fieldType)) return null
 
   // 把 config 的子字段映射到独立表单项（antd Form.Item name 支持对象路径）
   const configField = (name: string) => ({ name: ['config', ...name.split('.')] as [string, string] })
