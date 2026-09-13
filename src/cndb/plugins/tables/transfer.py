@@ -121,11 +121,52 @@ def _pick_inferred_type(type_counts: dict[str, int]) -> str:
     return best_key
 
 
+def _is_select_candidate(unique_values: list[str], inferred_type: str, non_empty_count: int) -> bool:
+    """判断某列是否应被提升为 select 类型（低基数离散值启发式）.
+
+    规则：
+    - 唯一值数在 2~8 之间
+    - 推断类型必须是 text（其他类型已各有归属：boolean/number/date/email/url 等）
+    - 唯一值数 / 非空样本数 ≤ 0.5（保证至少一半重复值，避免小样本误伤）
+    - 所有值都不在 boolean 值集中（避免把 "是/否" 这类被误推为 text 时仍保持 bool）
+    """
+    if inferred_type != "text":
+        return False
+    n = len(unique_values)
+    if n < 2 or n > 8:
+        return False
+    # 唯一值占比不能太高：至少一半重复值才认为是离散分类
+    if non_empty_count > 0 and n / non_empty_count > 0.5:
+        return False
+    # boolean 优先级更高：如果所有值都是 boolean 值域的字符串，不应转 select
+    boolean_values = {"true", "false", "yes", "no", "是", "否", "1", "0", "on", "off"}
+    return not all(v.strip().lower() in boolean_values for v in unique_values)
+
+
+def _promote_to_select_if_low_cardinality(inferred_type: str, samples: list[str]) -> tuple[str, list[str]]:
+    """对推断后的列类型做二次检查：若为 text 且低基数离散值则提升为 select.
+
+    Returns:
+        (最终字段类型, 唯一值列表 — 若最终为 select 则作为 options 使用, 否则为空列表)
+    """
+    seen: list[str] = []
+    for v in samples:
+        if v not in seen:
+            seen.append(v)
+    if _is_select_candidate(seen, inferred_type, len(samples)):
+        return "select", seen
+    return inferred_type, []
+
+
 def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dict[str, Any]], int]:
     """分析 CSV 文本，推断每列字段类型 + 空值占比 + 样本值.
 
+    启发式增强：text 列若唯一值数 ≤ 8 且非 boolean 值域，则自动提升为 select 类型，
+    并附带 options 列表（按首次出现顺序去重），供 create_table_from_csv 写入 config.
+
     Returns:
-        (columns_info, total_rows)
+        (columns_info, total_rows) — columns_info 每项含 name/field_type/sample_values/null_ratio，
+            若推断为 select 还会额外包含 options: list[str]
     """
     buf = io.StringIO(csv_text)
     reader = csv.DictReader(buf)
@@ -166,14 +207,17 @@ def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dic
                 type_counts[t] = type_counts.get(t, 0) + 1
 
         inferred = _pick_inferred_type(type_counts)
-        columns.append(
-            {
-                "name": name,
-                "field_type": inferred,
-                "sample_values": samples[:5],
-                "null_ratio": round(null_ratio, 4),
-            }
-        )
+        inferred, select_options = _promote_to_select_if_low_cardinality(inferred, samples)
+
+        col_info: dict[str, Any] = {
+            "name": name,
+            "field_type": inferred,
+            "sample_values": samples[:5],
+            "null_ratio": round(null_ratio, 4),
+        }
+        if select_options:
+            col_info["options"] = select_options
+        columns.append(col_info)
 
     return columns, total_rows
 
@@ -198,7 +242,10 @@ def create_table_from_csv(
     db.refresh(dt)
 
     for i, col in enumerate(columns):
-        f = DataField(table_id=dt.id, name=col["name"], field_type=col["field_type"], order=i, config={})
+        cfg: dict[str, Any] = {}
+        if col["field_type"] == "select":
+            cfg["options"] = col.get("options", [])
+        f = DataField(table_id=dt.id, name=col["name"], field_type=col["field_type"], order=i, config=cfg)
         f.ensure_db_name()
         db.add(f)
     db.commit()
