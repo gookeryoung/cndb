@@ -193,8 +193,8 @@ export default function GridPage() {
       }
     }
     setOffset(0)
-    // 等 React 批量 setState 渲染完，下一轮微任务允许自动保存
-    queueMicrotask(() => { skipSaveRef.current = false })
+    // 等 React 批量 setState 渲染完 + useEffect 检查过一遍（此时 skipSaveRef=true 会被正确跳过），再放开自动保存
+    setTimeout(() => { skipSaveRef.current = false }, 50)
   }
 
   // 当前激活的视图对象（含 view_options）
