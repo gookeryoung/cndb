@@ -175,7 +175,13 @@ def get_view_kanban(
     db: Annotated[Session, Depends(get_db)],
     limit: int = Query(default=500, ge=1, le=10000),
 ) -> dict[str, object]:
-    """看板视图：按 view_options.group_field 分组返回行."""
+    """看板视图：按 view_options.group_field 分组返回行.
+
+    view_options 支持：
+    - group_field (str, 必填): 分组字段名（DataField.name）
+    - group_order (list[str], 可选): 显式分组顺序，未在列表里的分组追加在末尾
+    - ungrouped_label (str, 可选): 空值分组的显示名，默认 "未分组"
+    """
     from collections import defaultdict
 
     from cndb.plugins.tables import records as rec
@@ -186,9 +192,13 @@ def get_view_kanban(
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")
 
-    group_field = dv.view_options.get("group_field") if dv.view_options else None
+    opts = dv.view_options or {}
+    group_field = opts.get("group_field")
     if not group_field:
         raise HTTPException(status_code=400, detail="看板视图需配置 group_field")
+
+    group_order: list[str] = opts.get("group_order") or []
+    ungrouped_label: str = opts.get("ungrouped_label") or "未分组"
 
     rows, total = rec.list_rows(
         db.get_bind(),
@@ -201,10 +211,28 @@ def get_view_kanban(
     )
     grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in rows:
-        key = str(row.get(group_field) or "未分组")
+        raw_val = row.get(group_field)
+        key = str(raw_val) if raw_val not in (None, "") else ungrouped_label
         grouped[key].append(row)
 
-    return {"columns": dict(grouped), "total": total, "group_field": group_field}
+    # 按 group_order 排序分组，未列出的追加在末尾
+    if group_order:
+        ordered_keys = [k for k in group_order if k in grouped]
+        extra_keys = [k for k in grouped if k not in group_order]
+        # ungrouped_label 放最后（如果不在 group_order 里）
+        if ungrouped_label in extra_keys:
+            extra_keys.remove(ungrouped_label)
+            extra_keys.append(ungrouped_label)
+        ordered_keys.extend(extra_keys)
+        grouped = {k: grouped[k] for k in ordered_keys}
+
+    return {
+        "columns": grouped,
+        "total": total,
+        "group_field": group_field,
+        "group_order": list(grouped.keys()),
+        "ungrouped_label": ungrouped_label,
+    }
 
 
 @router.get("/{view_id}/calendar")

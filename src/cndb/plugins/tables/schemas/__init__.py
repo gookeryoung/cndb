@@ -51,15 +51,18 @@ class FieldCreate(BaseModel):
     required: bool = False
     is_unique: bool = False
     default_value: Any = None
+    hidden: bool = False
     order: int = 0
 
 
 class FieldUpdate(BaseModel):
     name: str | None = None
+    field_type: str | None = None
     config: dict[str, Any] | None = None
     required: bool | None = None
     is_unique: bool | None = None
     default_value: Any = None
+    hidden: bool | None = None
     order: int | None = None
     trashed: bool | None = None
 
@@ -75,6 +78,7 @@ class FieldResponse(BaseModel):
     required: bool
     is_unique: bool
     default_value: Any = None
+    hidden: bool = False
     order: int
     trashed: bool
     trashed_at: datetime | None = None

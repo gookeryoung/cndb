@@ -4,14 +4,21 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.ddl import add_column, drop_column
-from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, default_registry
+from cndb.plugins.tables.ddl import (
+    _column_needs_rebuild,
+    add_column,
+    add_unique_constraint,
+    drop_column,
+    drop_unique_constraint,
+    rebuild_column,
+)
+from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, default_registry, normalize_field_type
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
 from cndb.plugins.tables.schemas import FieldCreate, FieldResponse, FieldUpdate
@@ -92,6 +99,9 @@ def create_field(
     # 物理加列
     try:
         add_column(db.get_bind(), dt, df)
+        # is_unique：创建后同步加物理唯一索引
+        if df.is_unique:
+            add_unique_constraint(db.get_bind(), dt, df)
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"物理加列失败: {exc}") from exc
@@ -125,16 +135,98 @@ def update_field(
     db: Annotated[Session, Depends(get_db)],
 ) -> DataField:
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
-    _ = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db)
     df = db.query(DataField).filter(DataField.id == field_id, DataField.table_id == table_id).first()
     if df is None:
         raise HTTPException(status_code=404, detail="字段不存在")
+
+    # 归一化传入的 field_type（兼容历史别名）
     update_data = payload.model_dump(exclude_unset=True)
+    if "field_type" in update_data and update_data["field_type"] is not None:
+        update_data["field_type"] = normalize_field_type(update_data["field_type"])
+
+    # 备份旧状态（用于后续物理变更检测）
+    old_field_type = df.field_type
+    old_required = df.required
+    old_is_unique = df.is_unique
+    old_db_column_name = df.db_column_name
+    old_field = DataField(
+        id=df.id,
+        table_id=df.table_id,
+        name=df.name,
+        field_type=old_field_type,
+        db_column_name=old_db_column_name,
+        config=df.config,
+        required=old_required,
+        is_unique=old_is_unique,
+        default_value=df.default_value,
+        order=df.order,
+    )
+
     for key, value in update_data.items():
         setattr(df, key, value)
+
     db.commit()
     db.refresh(df)
+
+    # ── 物理变更检测与执行 ──
+    engine = db.get_bind()
+
+    # 1. field_type / required 变更 → 列重建
+    if _column_needs_rebuild(old_field, df):
+        try:
+            rebuild_column(engine, dt, old_field, df)
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"物理列重建失败: {exc}") from exc
+
+    # 2. is_unique 切换
+    if old_is_unique != df.is_unique:
+        try:
+            if df.is_unique:
+                add_unique_constraint(engine, dt, df)
+            else:
+                drop_unique_constraint(engine, dt, df)
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"唯一约束变更失败: {exc}") from exc
+
     return df
+
+
+@router.post("/reorder", response_model=list[FieldResponse])
+def reorder_fields(
+    workspace_id: int,
+    table_id: int,
+    field_ids: Annotated[list[int], Body(embed=True)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[DataField]:
+    """批量调整字段顺序（按传入顺序赋值 order 字段）."""
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
+    _get_table_or_404(table_id, workspace_id, db)  # 校验表存在
+
+    fields = (
+        db.query(DataField)
+        .filter(
+            DataField.table_id == table_id,
+            DataField.id.in_(field_ids),
+        )
+        .all()
+    )
+
+    field_map = {f.id: f for f in fields}
+    for idx, fid in enumerate(field_ids):
+        if fid in field_map:
+            field_map[fid].order = idx
+
+    db.commit()
+    return (
+        db.query(DataField)
+        .filter(DataField.table_id == table_id)
+        .order_by(DataField.order, DataField.id)
+        .all()
+    )
 
 
 @router.delete("/{field_id}", status_code=status.HTTP_204_NO_CONTENT)
