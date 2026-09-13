@@ -369,3 +369,22 @@ export interface AttachmentFile {
   created_at?: string
 }
 
+
+// ── User Preferences ───────────────────────────────
+
+/** 用户偏好：每张表的激活视图映射 */
+export interface PreferencesResponse {
+  /** 每张表的激活视图映射: table_id(str) -> view_id(int) */
+  active_views: Record<string, number>
+}
+
+/** 设置单表激活视图 */
+export interface ActiveViewUpsert {
+  active_view_id: number | null
+}
+
+/** 查询单表激活视图偏好的响应 */
+export interface ActiveViewResponse {
+  table_id: number
+  active_view_id: number | null
+}

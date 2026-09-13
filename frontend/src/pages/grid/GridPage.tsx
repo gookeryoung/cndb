@@ -12,7 +12,7 @@ import {
   SearchOutlined, SortAscendingOutlined, SortDescendingOutlined, EditOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { tableApi, recordApi, viewApi, permissionApi } from '@/api'
+import { tableApi, recordApi, viewApi, permissionApi, userApi } from '@/api'
 import type { RowResponse, Field, TableDetail, View, ViewCreate, TablePermission } from '@/api'
 import GridCell from './components/GridCell'
 import RowDetailDrawer from './components/RowDetailDrawer'
@@ -75,6 +75,17 @@ export default function GridPage() {
     queryFn: () => viewApi.list(wid!, tid!),
     enabled: !!wid && !!tid,
   })
+  /** 用户偏好：当前表的激活视图 ID（per-user per-table 持久化） */
+  const { data: activeViewPreference } = useQuery<{ table_id: number; active_view_id: number | null }>({
+    queryKey: ['user-pref-active-view', tableKey],
+    queryFn: () => userApi.getTableActiveView(tid!),
+    enabled: !!wid && !!tid,
+    staleTime: 60_000,
+  })
+  /** 保存激活视图偏好（debounce 在 loadView 里手动控制） */
+  const saveActiveViewPref = useMutation({
+    mutationFn: (vid: number | null) => userApi.setTableActiveView(Number(tid!), vid),
+  })
   /** 把后端存储的 filters（dict 或 list）归一化成 list 形式 */
   function normalizeFilters(raw: unknown): Array<{ field_name: string; op: string; value?: unknown }> {
     if (!raw) return []
@@ -120,6 +131,8 @@ export default function GridPage() {
         const params = new URLSearchParams(searchParams)
         params.set('view', String(v.id))
         setSearchParams(params, { replace: true })
+        // 用户主动切换视图 —— 持久化偏好到后端
+        saveActiveViewPref.mutate(Number(v.id))
       }
     } else {
       setActiveViewId(null)
@@ -142,19 +155,26 @@ export default function GridPage() {
   // 当前激活的视图对象（含 view_options）
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
 
-  // URL 深链：?view=<id> 自动选中视图
+  // 视图初始化：URL 深链 > 用户偏好 > is_default > 第一个
   useEffect(() => {
     if (!views.length || activeViewId !== null) return
-    const vid = searchParams.get('view')
-    if (vid) {
-      const target = views.find(v => String(v.id) === vid)
+    // URL 深链优先
+    const vidParam = searchParams.get('view')
+    if (vidParam) {
+      const target = views.find(v => String(v.id) === vidParam)
       if (target) { loadView(target, false); return }
     }
-    // 默认选中 default 或第一个
+    // 其次：用户偏好的激活视图
+    const prefVid = activeViewPreference?.active_view_id
+    if (prefVid != null) {
+      const target = views.find(v => Number(v.id) === prefVid)
+      if (target) { loadView(target, false); return }
+    }
+    // 最后：default 或第一个
     const def = views.find(v => v.default) || views[0]
     if (def) loadView(def, false)
     else setActiveViewId(null)
-  }, [views, searchParams, wid, tid])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [views, searchParams, wid, tid, activeViewPreference])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // searchQuery URL 深链：?q=关键词
   useEffect(() => {
@@ -1062,7 +1082,7 @@ function EditViewForm({
           value={(opts.group_field as string) || undefined}
           onChange={(v) => updateOpt('group_field', v)}
           placeholder="选择分组字段"
-          options={selectFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          options={selectFields.concat(fields.filter(f => f.field_type === 'boolean')).map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
           style={{ width: '100%' }}
           allowClear
         />
@@ -1376,7 +1396,7 @@ function ViewConfigDialog({
   const viewOptFields = useMemo<_OptField[]>(() => {
     if (viewType === 'kanban') {
       return [
-        { key: 'group_field', label: '分组字段（Select）', fieldTypes: ['select', 'multi_select'] },
+        { key: 'group_field', label: '分组字段（Select/Boolean）', fieldTypes: ['select', 'multi_select', 'boolean'] },
         { key: 'title_field', label: '卡片标题字段', fieldTypes: ['text', 'long_text', 'is_primary'] },
         { key: 'progress_field', label: '进度百分比字段（Number）', fieldTypes: ['number', 'decimal'] },
         { key: 'due_date_field', label: '截止日期字段（Date）', fieldTypes: ['date', 'datetime'] },

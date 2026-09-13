@@ -13,6 +13,7 @@ from typing import override
 from fastapi import APIRouter
 
 from cndb.plugins.accounts.routers.auth import router as auth_router
+from cndb.plugins.accounts.routers.preferences import router as preferences_router
 from cndb.plugins.base import PluginBase
 
 
@@ -21,7 +22,7 @@ class AccountsPlugin(PluginBase):
 
     name = "accounts"
     version = "0.1.0"
-    description = "用户注册 / JWT 登录"
+    description = "用户注册 / JWT 登录 / 用户偏好"
     icon = "UserOutlined"
 
     @override
@@ -31,5 +32,6 @@ class AccountsPlugin(PluginBase):
 
     @override
     def register_routes(self, router: APIRouter) -> None:
-        """注册 auth 路由."""
+        """注册 auth + preferences 路由."""
         router.include_router(auth_router)
+        router.include_router(preferences_router)

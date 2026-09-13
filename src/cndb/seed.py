@@ -379,8 +379,12 @@ def _seed_views(db: Any, user: Any, tables_map: dict[str, dict[str, Any]], datas
 def seed(_args: argparse.Namespace) -> None:
     """向数据库注入演示数据（datasets CSV + 硬编码业务表 + 视图种子）."""
     from cndb.core.database import SessionLocal, engine
+    from cndb.core.plugin_registry import plugin_registry
     from cndb.models.base import Base
     from cndb.plugins.accounts.models import User
+
+    # 触发所有插件 register_models，确保 Base.metadata 完整注册
+    plugin_registry.discover_and_load()
 
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

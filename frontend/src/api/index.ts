@@ -38,6 +38,7 @@ import type {
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportRenderRequest,
   AttachmentFile,
+  PreferencesResponse, ActiveViewUpsert, ActiveViewResponse,
 } from './types'
 
 export type {
@@ -60,6 +61,7 @@ export type {
   WorkflowCreate, WorkflowUpdate, WorkflowNodeCreate, WorkflowNodeUpdate,
   WorkflowEdgeCreate, WorkflowEdgeUpdate,
   AttachmentFile,
+  PreferencesResponse, ActiveViewUpsert, ActiveViewResponse,
 } from './types'
 
 // ─────────────── Auth ───────────────
@@ -71,6 +73,20 @@ export const authApi = {
     api.post<{ access_token: string; token_type: string }>('/v1/accounts/auth/login', data).then(r => r.data),
   me: () =>
     api.get<UserResponse>('/v1/accounts/auth/me').then(r => r.data),
+}
+
+// ─────────────── User Preferences ───────────────
+
+export const userApi = {
+  /** 获取当前用户全部偏好 */
+  getPreferences: () =>
+    api.get<PreferencesResponse>('/v1/accounts/preferences').then(r => r.data),
+  /** 查询某表的激活视图偏好 */
+  getTableActiveView: (tid: number | string) =>
+    api.get<ActiveViewResponse>(`/v1/accounts/preferences/tables/${tid}/active-view`).then(r => r.data),
+  /** 设置或清除某表的激活视图偏好（upsert） */
+  setTableActiveView: (tid: number | string, activeViewId: number | null) =>
+    api.put<ActiveViewResponse>(`/v1/accounts/preferences/tables/${tid}/active-view`, { active_view_id: activeViewId }).then(r => r.data),
 }
 
 // ─────────────── Workspaces ───────────────
