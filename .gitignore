@@ -52,3 +52,4 @@ frontend/package-lock.json
 *.bak
 uploads
 /.trae-html-share-packages
+backup-*.tar.gz
