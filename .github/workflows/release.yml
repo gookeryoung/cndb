@@ -30,6 +30,9 @@ jobs:
       - name: Build distributions
         run: uv build
 
+      - name: Publish to PyPI (OIDC)
+        run: uv publish
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

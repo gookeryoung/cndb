@@ -55,9 +55,12 @@ jobs:
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
+      
+      
 
       - name: Sync dependencies
         run: uv sync --frozen --extra test --python ${{ matrix.python-version }}
 
       - name: Run tests
+        
         run: uv run pytest -m "not slow" --cov=cndb --cov-fail-under=95 --cov-report=term-missing
