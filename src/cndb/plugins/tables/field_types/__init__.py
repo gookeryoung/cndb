@@ -278,9 +278,15 @@ class SelectFieldConfig(FieldTypeConfig):
     1. 纯字符串列表 ["男", "女"] —— value=label
     2. 字典列表 [{"label": "男", "value": 1}, ...]
     3. SelectOption 对象列表
+
+    当某个 option 的 color 为空字符串时，规范化阶段会自动调用
+    :mod:`smart_color` 模块做语义匹配，填入推荐色名；用户已手动设置的
+    color 不会被覆盖。
     """
 
     options: list[SelectOption] = Field(default_factory=list)
+    # 是否在规范化时自动为空白 color 填充语义配色（默认开启）
+    auto_fill_colors: bool = True
 
     @field_validator("options", mode="before")
     @classmethod
@@ -288,24 +294,66 @@ class SelectFieldConfig(FieldTypeConfig):
         if v is None:
             return []
         result: list[SelectOption] = []
-        for item in v:
+        raw_labels: list[str] = []  # 收集 label，批量调用 suggest_colors
+        empty_color_indices: list[int] = []  # 哪些选项 color 为空
+
+        for i, item in enumerate(v):
             if isinstance(item, SelectOption):
-                result.append(item)
+                opt = item
             elif isinstance(item, str):
-                result.append(SelectOption(label=item, value=item))
+                opt = SelectOption(label=item, value=item)
             elif isinstance(item, dict):
                 label = str(item.get("label", ""))
                 val = item.get("value", label)
-                result.append(SelectOption(label=label, value=val, color=str(item.get("color", ""))))
+                opt = SelectOption(label=label, value=val, color=str(item.get("color", "")))
             else:
                 raise ValueError(f"options 每项必须是 str / dict / SelectOption，收到 {type(item)!r}")
+
+            result.append(opt)
+            raw_labels.append(opt.label)
+            if not opt.color:
+                empty_color_indices.append(i)
+
         if not result:
             raise ValueError("options 不能为空")
+
+        # 批量智能配色：仅填充空白 color
+        if empty_color_indices:
+            from .smart_color import suggest_colors
+
+            all_colors = suggest_colors(raw_labels)
+            for idx in empty_color_indices:
+                if not result[idx].color:
+                    result[idx] = SelectOption(
+                        label=result[idx].label,
+                        value=result[idx].value,
+                        color=all_colors[idx],
+                    )
+
         return result
 
     def option_values(self) -> list[str]:
         """返回所有选项的 value 列表（用于校验）."""
         return [str(opt.value) for opt in self.options]
+
+    def apply_smart_colors(self, *, overwrite: bool = False) -> None:
+        """显式对当前选项列表应用智能配色.
+
+        Args:
+            overwrite: 是否覆盖已手动设置的 color。False（默认）仅填充空白项；
+                True 时全部重新配色，用于前端"一键智能配色"按钮场景。
+        """
+        from .smart_color import suggest_colors
+
+        labels = [opt.label for opt in self.options]
+        colors = suggest_colors(labels)
+        for i, opt in enumerate(self.options):
+            if overwrite or not opt.color:
+                self.options[i] = SelectOption(
+                    label=opt.label,
+                    value=opt.value,
+                    color=colors[i],
+                )
 
 
 class SelectFieldType(FieldType):

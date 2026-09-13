@@ -7,7 +7,7 @@ import dayjs, { Dayjs } from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
 import type { AttachmentFile, Field, RowResponse } from '@/api'
 import { recordApi, fileApi } from '@/api'
-import { getTagColorName } from '@/utils/tagColors'
+import { getTagColorName, resolveTagColor } from '@/utils/tagColors'
 
 interface Props {
   value: unknown
@@ -145,12 +145,20 @@ function DisplayCell({ value, field, rowId, wid }: { value: unknown; field: Fiel
       }
       return <span>{String(value)}</span>
     }
-    case 'select':
-      return <ColoredTag value={String(value)} />
+    case 'select': {
+      const options = field.config?.options
+      const v = String(value)
+      const color = resolveTagColor(v, options)
+      return <Tag color={color}>{v}</Tag>
+    }
     case 'multi_select':
     case 'multiselect': {
+      const options = field.config?.options
       const arr = Array.isArray(value) ? value as unknown[] : String(value).split(',').map(s => s.trim()).filter(Boolean)
-      return <>{arr.map((v, i) => <ColoredTag key={i} value={String(v)} />)}</>
+      return <>{arr.map((v, i) => {
+        const sv = String(v)
+        return <Tag key={i} color={resolveTagColor(sv, options, i)}>{sv}</Tag>
+      })}</>
     }
     case 'email':
       return <Typography.Link href={`mailto:${value}`}>{String(value)}</Typography.Link>

@@ -20,7 +20,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
-import { getTagColorName } from '@/utils/tagColors'
+import { resolveTagColor } from '@/utils/tagColors'
 
 // ── 工具函数 ──────────────────────────────────────────
 
@@ -52,29 +52,9 @@ function daysFromToday(target: Date): number {
   return Math.round((t.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-/** 优先级到颜色映射 */
-const PRIORITY_COLORS: Record<string, string> = {
-  紧急: 'red',
-  高: 'orange',
-  中: 'gold',
-  低: 'blue',
-  Critical: 'red',
-  High: 'orange',
-  Medium: 'gold',
-  Low: 'blue',
-  P0: 'red',
-  P1: 'orange',
-  P2: 'gold',
-  P3: 'blue',
-}
-
-function priorityColor(value: string): string {
-  return PRIORITY_COLORS[value] || 'default'
-}
-
 /** 自动配色 Tag（看板内部使用）— 直接用 antd 预设色名 */
 function AutoTag({ value, style }: { value: string; style?: React.CSSProperties }) {
-  return <Tag color={getTagColorName(value)} style={{ margin: 0, ...style }}>{value}</Tag>
+  return <Tag color={resolveTagColor(value)} style={{ margin: 0, ...style }}>{value}</Tag>
 }
 
 // ── 看板卡片 ──────────────────────────────────────────
@@ -215,7 +195,9 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
 function PriorityBadge({ field, value }: { field?: Field; value: unknown }) {
   if (!value) return null
   const label = field ? getSelectLabel(field, value) : String(value)
-  const color = priorityColor(label)
+  // 优先使用字段配置中已存的 color，fallback 语义推荐 → hash
+  const options = field?.config?.options
+  const color = resolveTagColor(label, options)
   return <Tag color={color} style={{ margin: 0, fontWeight: 500 }}>{label}</Tag>
 }
 

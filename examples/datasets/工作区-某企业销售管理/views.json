@@ -29,5 +29,11 @@
     {"name": "在职员工", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "是否在职", "op": "=", "value": "是"}], "sortings": [{"field_name": "薪资", "direction": "desc"}], "order": 1},
     {"name": "按部门看板", "view_type": "kanban", "view_options": {"group_field": "部门"}, "order": 2},
     {"name": "高薪榜", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "薪资", "op": ">=", "value": "15000"}], "sortings": [{"field_name": "薪资", "direction": "desc"}], "order": 3}
+  ],
+  "出差统计": [
+    {"name": "全部出差", "view_type": "grid", "sortings": [{"field_name": "出差日期", "direction": "desc"}], "is_default": true, "order": 0},
+    {"name": "按出差事项看板", "view_type": "kanban", "view_options": {"group_field": "出差事项"}, "order": 1},
+    {"name": "按出差地点看板", "view_type": "kanban", "view_options": {"group_field": "出差地点"}, "order": 2},
+    {"name": "出差日历", "view_type": "calendar", "view_options": {"start_field": "出差日期"}, "order": 3}
   ]
 }
