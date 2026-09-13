@@ -11,7 +11,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import {
   Button, Card, Descriptions, Drawer, Empty, Input, Modal,
-  Select, Space, Spin, TabPane, Tabs, Tag, Tooltip, Typography, message,
+  Select, Space, Spin, Tabs, Tag, Tooltip, Typography, message,
 } from 'antd'
 import {
   AimOutlined, ApartmentOutlined, ClusterOutlined, DeleteOutlined,

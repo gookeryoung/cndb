@@ -276,8 +276,10 @@ function KanbanCard({ row, fields, opts, density, onRowClick }: KanbanCardProps)
   const cs = densityCardStyle(density)
 
   // 字段解析（opts 已 resolve 默认值；title_field 走 schema 自动推断 fallback）
-  const titleField = (opts.title_field as string)
+  const titleField: string = (opts.title_field as string)
     || resolveAutoField(fields, findOptionSchema('kanban', 'title_field'))
+    || fields[0]?.name
+    || 'id'
   const progressField = opts.progress_field as string | undefined
   const dueDateField = opts.due_date_field as string | undefined
   const priorityField = opts.priority_field as string | undefined
