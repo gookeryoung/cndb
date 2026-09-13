@@ -672,3 +672,152 @@ class TestKanbanEnhanced:
         assert resp.status_code == 200
         body = resp.json()
         assert body["group_order"] == ["B", "A", "C"]
+
+
+class TestViewValidation:
+    """视图字段校验覆盖：filter / sorting / view_options 各分支."""
+
+    def test_filter_field_not_found(self, client, ws, table, auth_owner):
+        """filter 引用不存在的字段 → 400（覆盖 _validate_view_fields filter 分支）."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "BadFilter",
+                "view_type": "grid",
+                "filters": [{"field_name": "不存在的字段", "op": "=", "value": "x"}],
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "filter field_name" in r.json()["detail"]
+
+    def test_sorting_field_not_found(self, client, ws, table, auth_owner):
+        """sorting 引用不存在的字段 → 400（覆盖 _validate_view_fields sorting 分支）."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "BadSort",
+                "view_type": "grid",
+                "sortings": [{"field_name": "不存在的字段", "direction": "asc"}],
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "sorting field_name" in r.json()["detail"]
+
+    def test_view_options_field_not_found(self, client, ws, table, auth_owner):
+        """view_options 里的单字段引用不存在 → 400（覆盖 _validate_view_fields opt_key 循环）."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "BadTitle",
+                "view_type": "gallery",
+                "view_options": {"title_field": "不存在的字段"},
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "view_options.title_field" in r.json()["detail"]
+
+    def test_meta_fields_field_not_found(self, client, ws, table, auth_owner):
+        """meta_fields 数组里包含不存在的字段 → 400."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "BadMeta",
+                "view_type": "gallery",
+                "view_options": {"meta_fields": ["不存在的字段"]},
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "meta_fields" in r.json()["detail"]
+
+    def test_gallery_with_subtitle_tag_meta(self, client, ws, table, auth_owner):
+        """gallery 视图带 subtitle_field / tag_field / meta_fields 全部合法字段 → 201."""
+        # 先加几个字段
+        for fname, ftype in [("部门", "text"), ("状态", "text"), ("备注", "text")]:
+            client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/fields",
+                json={"name": fname, "field_type": ftype},
+                headers=auth_owner,
+            )
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "GalleryFull",
+                "view_type": "gallery",
+                "view_options": {
+                    "title_field": "姓名",
+                    "subtitle_field": "部门",
+                    "tag_field": "状态",
+                    "meta_fields": ["备注"],
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 201
+        data = r.json()
+        assert data["view_options"]["subtitle_field"] == "部门"
+        assert data["view_options"]["tag_field"] == "状态"
+        assert data["view_options"]["meta_fields"] == ["备注"]
+
+    def test_import_views_with_meta_fields(self, client, ws, table, auth_owner):
+        """批量导入视图时 meta_fields 合法字段能通过校验."""
+        for fname, ftype in [("部门", "text"), ("状态", "text")]:
+            client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/fields",
+                json={"name": fname, "field_type": ftype},
+                headers=auth_owner,
+            )
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/import",
+            json=[
+                {
+                    "name": "BatchGallery",
+                    "view_type": "gallery",
+                    "view_options": {
+                        "title_field": "姓名",
+                        "subtitle_field": "部门",
+                        "tag_field": "状态",
+                        "meta_fields": ["部门"],
+                    },
+                }
+            ],
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert len(r.json()) == 1
+
+    def test_import_views_meta_fields_bad(self, client, ws, table, auth_owner):
+        """批量导入视图时 meta_fields 含不存在字段 → 跳过该视图但整体 200."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/import",
+            json=[
+                {
+                    "name": "SkipBadMeta",
+                    "view_type": "gallery",
+                    "view_options": {"meta_fields": ["no_such_field"]},
+                }
+            ],
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert len(r.json()) == 0
+
+    def test_import_views_skip_existing(self, client, ws, table, auth_owner):
+        """批量导入遇到同名视图自动跳过，不报错（覆盖 import_views 同名跳过分支）."""
+        # 先建一个视图
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "ExistView", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        # 再 import 同名的 —— 应跳过
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/import",
+            json=[{"name": "ExistView", "view_type": "grid"}],
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert len(r.json()) == 0

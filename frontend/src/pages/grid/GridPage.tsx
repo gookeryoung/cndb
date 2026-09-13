@@ -951,6 +951,37 @@ function CreateViewForm({
           allowClear
         />
       </Form.Item>
+      <Form.Item label="副标题字段">
+        <Select
+          value={(opts.subtitle_field as string) || undefined}
+          onChange={(v) => updateOpt('subtitle_field', v)}
+          placeholder="卡片标题下方的补充文字"
+          options={allFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="标签字段">
+        <Select
+          value={(opts.tag_field as string) || undefined}
+          onChange={(v) => updateOpt('tag_field', v)}
+          placeholder="显示为卡片右上角徽章"
+          options={selectFields.concat(allFields.filter(f => f.field_type === 'boolean')).map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="附加信息字段" tooltip="显示在卡片底部的小标签（可多选）">
+        <Select
+          mode="multiple"
+          value={(opts.meta_fields as string[]) || []}
+          onChange={(v) => updateOpt('meta_fields', v.length ? v : undefined)}
+          placeholder="选几个字段当卡片脚注"
+          options={allFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
       <Form.Item label="图片/附件字段">
         <Select
           value={(opts.image_field as string) || undefined}
@@ -1147,6 +1178,37 @@ function EditViewForm({
           onChange={(v) => updateOpt('title_field', v)}
           placeholder="留空则自动选第一个文本字段"
           options={textFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="副标题字段">
+        <Select
+          value={(opts.subtitle_field as string) || undefined}
+          onChange={(v) => updateOpt('subtitle_field', v)}
+          placeholder="卡片标题下方的补充文字"
+          options={allFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="标签字段">
+        <Select
+          value={(opts.tag_field as string) || undefined}
+          onChange={(v) => updateOpt('tag_field', v)}
+          placeholder="显示为卡片右上角徽章"
+          options={selectFields.concat(allFields.filter(f => f.field_type === 'boolean')).map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="附加信息字段" tooltip="显示在卡片底部的小标签（可多选）">
+        <Select
+          mode="multiple"
+          value={(opts.meta_fields as string[]) || []}
+          onChange={(v) => updateOpt('meta_fields', v.length ? v : undefined)}
+          placeholder="选几个字段当卡片脚注"
+          options={allFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
           style={{ width: '100%' }}
           allowClear
         />
@@ -1913,16 +1975,37 @@ function extractImageUrl(v: unknown): string | null {
 // ─────────────── Gallery 视图（优先使用 view_options.title_field / image_field） ───────────────
 
 function GalleryView({ rows, fields, view, density, onRowClick }: { rows: RowResponse[]; fields: Field[]; view?: View | null; density: Density; onRowClick?: (r: RowResponse) => void }) {
-  const titleField = (view?.view_options?.title_field as string)
+  const opts = view?.view_options ?? {}
+  const titleField = (opts.title_field as string)
     || fields.find(f => f.field_type === 'text')?.name
     || fields.find(f => f.is_primary)?.name
+  const subtitleField = opts.subtitle_field as string | undefined
+  const tagField = opts.tag_field as string | undefined
+  const metaFields = (opts.meta_fields as string[] | undefined) ?? []
   const titleCol = titleField || 'id'
   // 找图片/附件字段作为缩略图来源：优先 view_options.image_field，否则第一个 attachment
-  const imageFieldOpted = view?.view_options?.image_field as string | undefined
+  const imageFieldOpted = opts.image_field as string | undefined
   const imgField = imageFieldOpted
     ? fields.find(f => f.name === imageFieldOpted)
     : fields.find(f => ['image', 'attachment'].includes(f.field_type))
   const imgCol = imgField?.name
+
+  // 渐变色 fallback 的调色板（按标题首字符 hash 选取，保持同一记录颜色稳定）
+  const PALETTE = [
+    'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+    'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
+    'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+    'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
+    'linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%)',
+    'linear-gradient(135deg, #f43f5e 0%, #f59e0b 100%)',
+    'linear-gradient(135deg, #6366f1 0%, #22d3ee 100%)',
+    'linear-gradient(135deg, #84cc16 0%, #10b981 100%)',
+  ]
+  const pickGradient = (key: string) => {
+    let h = 0
+    for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) & 0x7fffffff
+    return PALETTE[h % PALETTE.length]
+  }
 
   // 根据 density 调整画廊卡片间距
   const gutter: [number, number] = density === 'compact' ? [8, 8] : density === 'spacious' ? [20, 20] : [16, 16]
@@ -1938,29 +2021,52 @@ function GalleryView({ rows, fields, view, density, onRowClick }: { rows: RowRes
     <Row gutter={gutter}>
       {rows.map(r => {
         const imgUrl = imgCol ? extractImageUrl(r[imgCol]) : null
+        const titleVal = String(r[titleCol] ?? r.id)
+        const subtitleVal = subtitleField ? r[subtitleField] : null
+        const tagVal = tagField ? r[tagField] : null
+        const gradient = pickGradient(titleVal)
         return (
           <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
             <div
               onClick={() => onRowClick?.(r)}
-              style={{ padding: 0, border: '1px solid #e5e7eb', borderRadius: radius, background: '#fff', cursor: 'pointer', overflow: 'hidden' }}
+              style={{ padding: 0, border: '1px solid #e5e7eb', borderRadius: radius, background: '#fff', cursor: 'pointer', overflow: 'hidden', transition: 'box-shadow 0.15s' }}
             >
               {imgUrl ? (
-                <div style={{ width: '100%', height: imgHeight, background: '#f5f7fa', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                <div style={{ width: '100%', height: imgHeight, background: '#f5f7fa', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
                   <img
                     src={imgUrl}
                     alt=""
                     onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
+                  {tagVal != null && tagVal !== '' && (
+                    <span style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: textSubFontSize, padding: '1px 8px', borderRadius: 10, backdropFilter: 'blur(4px)' }}>{String(tagVal)}</span>
+                  )}
                 </div>
               ) : (
-                <div style={{ width: '100%', height: fallbackHeight, background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: fallbackFontSize }}>
-                  {String(r[titleCol] ?? r.id).slice(0, 2).toUpperCase()}
+                <div style={{ width: '100%', height: fallbackHeight, background: gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: fallbackFontSize, position: 'relative' }}>
+                  {titleVal.slice(0, 2).toUpperCase()}
+                  {tagVal != null && tagVal !== '' && (
+                    <span style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: textSubFontSize, padding: '1px 8px', borderRadius: 10, fontWeight: 500 }}>{String(tagVal)}</span>
+                  )}
                 </div>
               )}
               <div style={{ padding: textPadding }}>
-                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: textFontSize }}>{String(r[titleCol] ?? r.id)}</div>
-                <div style={{ fontSize: textSubFontSize, color: '#9ca3af' }}>ID: {r.id}</div>
+                <div style={{ fontWeight: 600, marginBottom: 2, fontSize: textFontSize, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titleVal}</div>
+                {subtitleVal != null && subtitleVal !== '' && (
+                  <div style={{ fontSize: textSubFontSize, color: '#6b7280', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(subtitleVal)}</div>
+                )}
+                {metaFields.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                    {metaFields.map(mf => {
+                      const v = r[mf]
+                      if (v == null || v === '') return null
+                      return (
+                        <span key={mf} style={{ fontSize: textSubFontSize - 1, color: '#6b7280', background: '#f3f4f6', padding: '1px 6px', borderRadius: 3 }}>{String(v)}</span>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </Col>

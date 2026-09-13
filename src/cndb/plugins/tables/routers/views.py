@@ -29,10 +29,22 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         if s.get("field_name") not in valid_fields:
             return False, f"sorting field_name='{s.get('field_name')}' 不存在"
     vo = vc.view_options or {}
-    for opt_key in ("group_field", "start_field", "end_field", "title_field", "image_field"):
+    for opt_key in (
+        "group_field",
+        "start_field",
+        "end_field",
+        "title_field",
+        "image_field",
+        "subtitle_field",
+        "tag_field",
+    ):
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:
             return False, f"view_options.{opt_key}='{opt_val}' 不存在"
+    # meta_fields 是字符串数组，每项都需校验
+    for mf in vo.get("meta_fields") or []:
+        if mf not in valid_fields:
+            return False, f"view_options.meta_fields 包含不存在的字段 '{mf}'"
     return True, None
 
 
