@@ -52,6 +52,9 @@ requires      = ["hatchling"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cndb"]
+# 排除 static 目录的常规包收集，避免与 force-include 重复
+# （force-include 会把 src/cndb/static 映射到 cndb/static）
+exclude = ["src/cndb/static/**"]
 
 [tool.hatch.build.targets.wheel.force-include]
 # 类型标记文件
