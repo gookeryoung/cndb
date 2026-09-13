@@ -19,7 +19,15 @@ from sqlalchemy import MetaData
 
 
 def _get_datasets_dir() -> Path | None:
-    """定位 examples/datasets 目录（优先源码仓库，找不到则返回 None 优雅降级）."""
+    """定位 datasets 目录（包内优先，fallback 仓库根，均找不到则返回 None 优雅降级）.
+
+    搜索顺序：
+    1. 包内 cndb/datasets/ —— wheel 安装版，由 hatch force-include 打包
+    2. 仓库根 examples/datasets/ —— 源码开发版
+    """
+    pkg_datasets = Path(__file__).resolve().parent / "datasets"
+    if pkg_datasets.is_dir():
+        return pkg_datasets
     src_root = Path(__file__).resolve().parent.parent.parent
     candidate = src_root / "examples" / "datasets"
     if candidate.is_dir():
