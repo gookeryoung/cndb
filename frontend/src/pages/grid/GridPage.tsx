@@ -17,6 +17,7 @@ import type { RowResponse, Field, TableDetail, View, ViewCreate, TablePermission
 import GridCell from './components/GridCell'
 import RowDetailDrawer from './components/RowDetailDrawer'
 import KanbanView from './components/KanbanView'
+import CalendarView from './components/CalendarView'
 import { useTableSettings } from '@/theme/TableSettingsProvider'
 import { densityToSize, DEFAULT_TABLE_SETTINGS, type Density } from '@/theme/tableSettings'
 
@@ -322,6 +323,33 @@ export default function GridPage() {
     })
   }
 
+  /** 右侧模式按钮组的统一处理：
+   *  - 若当前激活视图已是目标类型 → 仅切换本地渲染模式（边界，正常不触发）.
+   *  - 否则 → 跳到第一个 view_type 匹配的视图，让左侧 Segmented TAB 也联动选中.
+   *  - 没有匹配类型的视图 → 仅切本地 mode（降级兜底，后端视图不变）.
+   *
+   *  形成双向联动：
+   *    Segmented 点选 → loadView 根据 view_type 自动同步 ButtonGroup 高亮（已有）.
+   *    ButtonGroup 点击 → 本函数跳到目标视图，Segmented 选中项同步变化（本次修复）.
+   */
+  const handleModeChange = (newMode: ViewMode) => {
+    if (mode === newMode) return
+    // 当前视图已是此类型 — 理论上不会进入（mode 有 guard），兜底直接切
+    if (activeView?.view_type === newMode) {
+      setMode(newMode)
+      return
+    }
+    // 找第一个 view_type 匹配的视图
+    const matchView = views.find(v => v.view_type === newMode)
+    if (matchView) {
+      // loadView 会同时：更新 activeViewId（Segmented 选中项）+ setMode（ButtonGroup 高亮）+ 持久化 URL
+      loadView(matchView)
+    } else {
+      // 没有匹配类型的视图，降级只切渲染（无视图可联动）
+      setMode(newMode)
+    }
+  }
+
   /** 自动持久化视图配置（debounce 500ms）: 列头筛选/排序、ViewConfigDialog 保存等所有 state 变更均走此入口.
    *  切换视图 loadView 期间 skipSaveRef=true，刚加载完的 state 不会触发无意义的回写.
    */
@@ -375,8 +403,6 @@ export default function GridPage() {
     },
   })
 
-  if (!wid || !tid) return <Empty description="无效的表 ID" style={{ padding: 48 }} />
-
   const columns = buildColumns(table?.fields || [], wid, viewSortings, viewFilters,
     (fieldName, op, value) => {
       // 替换同字段已有规则，没有则追加（避免不断累积）
@@ -420,6 +446,9 @@ export default function GridPage() {
     ),
     value: String(v.id),
   })), [views])
+
+  // 早 return — 已确保所有 hooks 调用完成
+  if (!wid || !tid) return <Empty description="无效的表 ID" style={{ padding: 48 }} />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -498,16 +527,16 @@ export default function GridPage() {
         {/* 视图模式切换（无文字） */}
         <Space.Compact>
           <Tooltip title="表格">
-            <Button size="small" type={mode === 'grid' ? 'primary' : 'default'} icon={<ColumnHeightOutlined />} onClick={() => setMode('grid')} />
+            <Button size="small" type={mode === 'grid' ? 'primary' : 'default'} icon={<ColumnHeightOutlined />} onClick={() => handleModeChange('grid')} />
           </Tooltip>
           <Tooltip title="看板">
-            <Button size="small" type={mode === 'kanban' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => setMode('kanban')} />
+            <Button size="small" type={mode === 'kanban' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => handleModeChange('kanban')} />
           </Tooltip>
           <Tooltip title="画廊">
-            <Button size="small" type={mode === 'gallery' ? 'primary' : 'default'} icon={<EyeOutlined />} onClick={() => setMode('gallery')} />
+            <Button size="small" type={mode === 'gallery' ? 'primary' : 'default'} icon={<EyeOutlined />} onClick={() => handleModeChange('gallery')} />
           </Tooltip>
           <Tooltip title="日历">
-            <Button size="small" type={mode === 'calendar' ? 'primary' : 'default'} icon={<CalendarOutlined />} onClick={() => setMode('calendar')} />
+            <Button size="small" type={mode === 'calendar' ? 'primary' : 'default'} icon={<CalendarOutlined />} onClick={() => handleModeChange('calendar')} />
           </Tooltip>
         </Space.Compact>
         <Input.Search
@@ -947,16 +976,60 @@ function CreateViewForm({
   )
 
   const calendarConfig = vt === 'calendar' && (
-    <Form.Item label="起始时间字段" required tooltip="后端日历视图必须配置 start_field">
-      <Select
-        value={(opts.start_field as string) || undefined}
-        onChange={(v) => updateOpt('start_field', v)}
-        placeholder="选择日期/时间字段"
-        options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
-        style={{ width: '100%' }}
-        allowClear
-      />
-    </Form.Item>
+    <>
+      <Form.Item label="起始时间字段" required tooltip="事件的起始日期/时间">
+        <Select
+          value={(opts.start_field as string) || undefined}
+          onChange={(v) => updateOpt('start_field', v)}
+          placeholder="选择日期/时间字段"
+          options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="结束时间字段" tooltip="可选。配置后事件会渲染为跨天/跨时间范围">
+        <Select
+          value={(opts.end_field as string) || undefined}
+          onChange={(v) => updateOpt('end_field', v)}
+          placeholder="选择日期/时间字段"
+          options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="事件标题字段" tooltip="日历格中显示的事件文字">
+        <Select
+          value={(opts.title_field as string) || undefined}
+          onChange={(v) => updateOpt('title_field', v)}
+          placeholder="留空则自动选第一个文本字段"
+          options={textFields.concat(fields.filter(f => f.is_primary)).map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="分组/颜色字段" tooltip="Select 字段，不同值渲染不同颜色侧边条">
+        <Select
+          value={(opts.group_field as string) || undefined}
+          onChange={(v) => updateOpt('group_field', v)}
+          placeholder="选择分组字段（可选）"
+          options={selectFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="默认打开的日历层级">
+        <Select
+          value={(opts.calendar_mode as string) || 'month'}
+          onChange={(v) => updateOpt('calendar_mode', v)}
+          style={{ width: '100%' }}
+          options={[
+            { value: 'year', label: '年视图（12 月概览）' },
+            { value: 'month', label: '月视图（标准日历）' },
+            { value: 'week', label: '周视图（7 天横向）' },
+          ]}
+        />
+      </Form.Item>
+    </>
   )
 
   const galleryConfig = vt === 'gallery' && (
@@ -1178,16 +1251,60 @@ function EditViewForm({
   )
 
   const calendarConfig = vt === 'calendar' && (
-    <Form.Item label="起始时间字段" required>
-      <Select
-        value={(opts.start_field as string) || undefined}
-        onChange={(v) => updateOpt('start_field', v)}
-        placeholder="选择日期/时间字段"
-        options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
-        style={{ width: '100%' }}
-        allowClear
-      />
-    </Form.Item>
+    <>
+      <Form.Item label="起始时间字段" required tooltip="事件的起始日期/时间">
+        <Select
+          value={(opts.start_field as string) || undefined}
+          onChange={(v) => updateOpt('start_field', v)}
+          placeholder="选择日期/时间字段"
+          options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="结束时间字段" tooltip="可选。配置后事件会渲染为跨天/跨时间范围">
+        <Select
+          value={(opts.end_field as string) || undefined}
+          onChange={(v) => updateOpt('end_field', v)}
+          placeholder="选择日期/时间字段"
+          options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="事件标题字段" tooltip="日历格中显示的事件文字">
+        <Select
+          value={(opts.title_field as string) || undefined}
+          onChange={(v) => updateOpt('title_field', v)}
+          placeholder="留空则自动选第一个文本字段"
+          options={textFields.concat(fields.filter(f => f.is_primary)).map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="分组/颜色字段" tooltip="Select 字段，不同值渲染不同颜色侧边条">
+        <Select
+          value={(opts.group_field as string) || undefined}
+          onChange={(v) => updateOpt('group_field', v)}
+          placeholder="选择分组字段（可选）"
+          options={selectFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="默认打开的日历层级">
+        <Select
+          value={(opts.calendar_mode as string) || 'month'}
+          onChange={(v) => updateOpt('calendar_mode', v)}
+          style={{ width: '100%' }}
+          options={[
+            { value: 'year', label: '年视图（12 月概览）' },
+            { value: 'month', label: '月视图（标准日历）' },
+            { value: 'week', label: '周视图（7 天横向）' },
+          ]}
+        />
+      </Form.Item>
+    </>
   )
 
   const galleryConfig = vt === 'gallery' && (
@@ -1412,7 +1529,9 @@ function ViewConfigDialog({
     if (viewType === 'calendar') {
       return [
         { key: 'start_field', label: '起始日期字段', fieldTypes: ['date', 'datetime'] },
-        { key: 'end_field', label: '结束日期字段（可选）', fieldTypes: ['date', 'datetime'] },
+        { key: 'end_field', label: '结束日期字段（可选，用于跨天事件）', fieldTypes: ['date', 'datetime'] },
+        { key: 'title_field', label: '事件标题字段（可选）', fieldTypes: ['text', 'long_text', 'is_primary'] },
+        { key: 'group_field', label: '分组/颜色字段（Select，可选）', fieldTypes: ['select', 'multi_select'] },
       ]
     }
     if (viewType === 'gallery') {
@@ -1433,7 +1552,7 @@ function ViewConfigDialog({
           <div style={{ minHeight: 120 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid #f0f0f0' }}>
               <span style={{ fontSize: 13, color: '#475569' }}>条件组合：</span>
-              <Button.Group size="small">
+              <Space.Compact size="small">
                 <Button
                   type={draftFilterLogic === 'AND' ? 'primary' : 'default'}
                   onClick={() => setDraftFilterLogic('AND')}
@@ -1442,7 +1561,7 @@ function ViewConfigDialog({
                   type={draftFilterLogic === 'OR' ? 'primary' : 'default'}
                   onClick={() => setDraftFilterLogic('OR')}
                 >任一满足（OR）</Button>
-              </Button.Group>
+              </Space.Compact>
               <span style={{ fontSize: 12, color: '#94a3b8' }}>
                 {draftFilterLogic === 'AND' ? '所有筛选条件同时生效' : '任一筛选条件生效即可'}
               </span>
@@ -2097,84 +2216,7 @@ function GalleryView({ rows, fields, view, density, onRowClick }: { rows: RowRes
   )
 }
 
-// ─────────────── Calendar 视图（优先使用 view_options.start_field） ───────────────
-
-function CalendarView({ rows, fields, view, density, onRowClick }: { rows: RowResponse[]; fields: Field[]; view?: View | null; density: Density; onRowClick?: (r: RowResponse) => void }) {
-  // 起始日期字段：优先 view_options.start_field，否则第一个 date/datetime 字段
-  const startFieldOpted = view?.view_options?.start_field as string | undefined
-  const dateField = startFieldOpted
-    ? fields.find(f => f.name === startFieldOpted)
-    : fields.find(f => ['date', 'datetime'].includes(f.field_type))
-  const titleField = fields.find(f => f.field_type === 'text')?.name
-    || fields.find(f => f.is_primary)?.name || 'id'
-  const dateCol = dateField?.name
-  const titleCol = titleField
-
-  // 根据 density 调整日历卡片间距
-  const outerPadding = density === 'compact' ? 8 : density === 'spacious' ? 20 : 12
-  const sectionMarginBottom = density === 'compact' ? 16 : density === 'spacious' ? 32 : 24
-  const headerMarginBottom = density === 'compact' ? 4 : density === 'spacious' ? 12 : 8
-  const headerPadding = density === 'compact' ? '4px 8px' : density === 'spacious' ? '8px 16px' : '6px 12px'
-  const headerFontSize = density === 'compact' ? 12 : density === 'spacious' ? 14 : 13
-  const cardGutter: [number, number] = density === 'compact' ? [4, 4] : density === 'spacious' ? [12, 12] : [8, 8]
-  const cardPadding = density === 'compact' ? 6 : density === 'spacious' ? 14 : 10
-  const cardRadius = density === 'compact' ? 4 : density === 'spacious' ? 8 : 6
-  const cardFontSize = density === 'compact' ? 12 : density === 'spacious' ? 14 : 13
-  const cardTitleFontSize = density === 'compact' ? 12 : density === 'spacious' ? 14 : 13
-  const cardSubFontSize = density === 'compact' ? 10 : density === 'spacious' ? 12 : 11
-
-  // 按日期分组
-  const groups = new Map<string, RowResponse[]>()
-  if (dateCol) {
-    for (const r of rows) {
-      const raw = r[dateCol]
-      const key = raw ? String(raw).slice(0, 10) : '无日期'
-      if (!groups.has(key)) groups.set(key, [])
-      groups.get(key)!.push(r)
-    }
-  } else {
-    groups.set('全部', rows)
-  }
-
-  const sortedKeys = [...groups.keys()].sort((a, b) => {
-    if (a === '无日期') return 1
-    if (b === '无日期') return -1
-    return a.localeCompare(b)
-  })
-
-  return (
-    <div style={{ padding: outerPadding }}>
-      {sortedKeys.length === 0 && <Empty description="暂无记录" style={{ padding: 48 }} />}
-      {sortedKeys.map(key => (
-        <div key={key} style={{ marginBottom: sectionMarginBottom }}>
-          <div style={{
-            fontWeight: 600, marginBottom: headerMarginBottom, padding: headerPadding,
-            background: '#f0f5ff', borderRadius: 6, color: '#1d4ed8',
-            fontSize: headerFontSize,
-          }}>
-            📅 {key} <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: headerFontSize - 1 }}>({groups.get(key)!.length})</span>
-          </div>
-          <Row gutter={cardGutter}>
-            {groups.get(key)!.map(r => (
-              <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
-                <div
-                  onClick={() => onRowClick?.(r)}
-                  style={{
-                    padding: cardPadding, border: '1px solid #e5e7eb', borderRadius: cardRadius,
-                    background: '#fff', cursor: 'pointer', fontSize: cardFontSize,
-                  }}
-                >
-                  <div style={{ fontWeight: 500, marginBottom: 2, fontSize: cardTitleFontSize }}>{String(r[titleCol] ?? r.id)}</div>
-                  <div style={{ fontSize: cardSubFontSize, color: '#9ca3af' }}>ID: {r.id}</div>
-                </div>
-              </Col>
-            ))}
-          </Row>
-        </div>
-      ))}
-    </div>
-  )
-}
+// CalendarView 已提取到 ./components/CalendarView.tsx（支持年/月/周万年历模式）
 
 // ─────────────── 权限编辑器（内嵌在 Modal 内） ───────────────
 

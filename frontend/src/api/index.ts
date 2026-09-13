@@ -38,7 +38,7 @@ import type {
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportRenderRequest,
   AttachmentFile,
-  PreferencesResponse, ActiveViewUpsert, ActiveViewResponse,
+  PreferencesResponse, ActiveViewResponse,
 } from './types'
 
 export type {
@@ -61,7 +61,7 @@ export type {
   WorkflowCreate, WorkflowUpdate, WorkflowNodeCreate, WorkflowNodeUpdate,
   WorkflowEdgeCreate, WorkflowEdgeUpdate,
   AttachmentFile,
-  PreferencesResponse, ActiveViewUpsert, ActiveViewResponse,
+  PreferencesResponse, ActiveViewResponse,
 } from './types'
 
 // ─────────────── Auth ───────────────
