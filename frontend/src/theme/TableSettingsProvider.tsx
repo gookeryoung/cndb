@@ -1,4 +1,4 @@
-/** 表格设置 Provider — 维护用户级表格配置并注入 Context. */
+/** 视图设置 Provider — 维护用户级视图配置并注入 Context. */
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -42,7 +42,7 @@ export function TableSettingsProvider({ children }: { children: ReactNode }) {
   )
 }
 
-/** 消费表格设置的 hook，必须在 TableSettingsProvider 内使用. */
+/** 消费视图设置的 hook，必须在 TableSettingsProvider 内使用. */
 export function useTableSettings(): TableSettingsContextValue {
   const ctx = useContext(TableSettingsContext)
   if (!ctx) throw new Error('useTableSettings must be used inside <TableSettingsProvider>')
