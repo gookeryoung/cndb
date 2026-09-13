@@ -1,16 +1,16 @@
 {
   "_comment": "视图种子配置：按 表名 -> 视图列表 组织。字段名必须与 CSV 建表时的 DataField.name 一致。",
   "房价预测": [
-    {"name": "全部房源", "view_type": "grid", "sortings": [{"field_name": "房价_万元", "direction": "desc"}], "is_default": true, "order": 0},
+    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "房价_万元", "direction": "desc"}], "is_default": true, "order": 0},
     {"name": "学区房", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "是否学区房", "op": "=", "value": "1"}], "sortings": [{"field_name": "房价_万元", "direction": "desc"}], "order": 1},
     {"name": "近地铁", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "是否近地铁", "op": "=", "value": "1"}], "sortings": [{"field_name": "房价_万元", "direction": "desc"}], "order": 2},
-    {"name": "按城市看板", "view_type": "kanban", "view_options": {"group_field": "城市"}, "order": 3},
+    {"name": "按城市看板", "view_type": "kanban", "view_options": {"group_field": "城市", "title_field": "面积_平米"}, "order": 3},
     {"name": "豪宅榜", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "房价_万元", "op": ">=", "value": "200"}], "sortings": [{"field_name": "房价_万元", "direction": "desc"}], "order": 4}
   ],
   "气温天气": [
-    {"name": "全部记录", "view_type": "grid", "sortings": [{"field_name": "日期", "direction": "desc"}], "is_default": true, "order": 0},
+    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "日期", "direction": "desc"}], "is_default": true, "order": 0},
     {"name": "晴好天气", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "天气", "op": "=", "value": "晴"}], "sortings": [{"field_name": "日期", "direction": "desc"}], "order": 1},
-    {"name": "按城市看板", "view_type": "kanban", "view_options": {"group_field": "城市"}, "order": 2},
+    {"name": "按城市看板", "view_type": "kanban", "view_options": {"group_field": "城市", "title_field": "天气", "due_date_field": "日期"}, "order": 2},
     {"name": "高温预警", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "最高温_℃", "op": ">=", "value": "30"}], "sortings": [{"field_name": "最高温_℃", "direction": "desc"}], "order": 3}
   ]
 }

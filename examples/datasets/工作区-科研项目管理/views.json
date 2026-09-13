@@ -1,34 +1,34 @@
 {
   "_comment": "科研项目管理视图种子配置：按 表名 -> 视图列表 组织。字段名必须与 CSV 建表时的 DataField.name 一致。",
   "科研项目": [
-    {"name": "全部项目", "view_type": "grid", "sortings": [{"field_name": "立项年份", "direction": "desc"}, {"field_name": "课题编号", "direction": "asc"}], "is_default": true, "order": 0},
+    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "立项年份", "direction": "desc"}, {"field_name": "课题编号", "direction": "asc"}], "is_default": true, "order": 0},
     {"name": "在研项目", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "项目状态", "op": "=", "value": "在研"}], "sortings": [{"field_name": "经费总额_万元", "direction": "desc"}], "order": 1},
     {"name": "已结题项目", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "项目状态", "op": "=", "value": "已结题"}], "sortings": [{"field_name": "结题日期", "direction": "desc"}], "order": 2},
-    {"name": "按项目类别看板", "view_type": "kanban", "view_options": {"group_field": "项目类别"}, "order": 3},
-    {"name": "按项目状态看板", "view_type": "kanban", "view_options": {"group_field": "项目状态"}, "order": 4},
+    {"name": "按项目类别看板", "view_type": "kanban", "view_options": {"group_field": "项目类别", "title_field": "项目名称", "due_date_field": "结题日期"}, "order": 3},
+    {"name": "按项目状态看板", "view_type": "kanban", "view_options": {"group_field": "项目状态", "title_field": "项目名称", "due_date_field": "结题日期"}, "order": 4},
     {"name": "大额项目榜", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "经费总额_万元", "op": ">=", "value": "300"}], "sortings": [{"field_name": "经费总额_万元", "direction": "desc"}], "order": 5},
     {"name": "立项日历", "view_type": "calendar", "view_options": {"start_field": "立项年份"}, "order": 6},
     {"name": "2024年新项目", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "立项年份", "op": "=", "value": "2024"}], "sortings": [{"field_name": "课题编号", "direction": "asc"}], "order": 7}
   ],
   "课题负责人": [
-    {"name": "全部负责人", "view_type": "grid", "sortings": [{"field_name": "职称", "direction": "desc"}], "is_default": true, "order": 0},
+    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "职称", "direction": "desc"}], "is_default": true, "order": 0},
     {"name": "PI名录", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "是否PI", "op": "=", "value": "是"}], "sortings": [{"field_name": "职称", "direction": "desc"}], "order": 1},
-    {"name": "按职称看板", "view_type": "kanban", "view_options": {"group_field": "职称"}, "order": 2},
-    {"name": "按性别看板", "view_type": "kanban", "view_options": {"group_field": "性别"}, "order": 3}
+    {"name": "按职称看板", "view_type": "kanban", "view_options": {"group_field": "职称", "title_field": "姓名"}, "order": 2},
+    {"name": "按性别看板", "view_type": "kanban", "view_options": {"group_field": "性别", "title_field": "姓名"}, "order": 3}
   ],
   "科研经费": [
-    {"name": "全部经费记录", "view_type": "grid", "sortings": [{"field_name": "课题编号", "direction": "asc"}, {"field_name": "预算科目", "direction": "asc"}], "is_default": true, "order": 0},
-    {"name": "按课题编号看板", "view_type": "kanban", "view_options": {"group_field": "课题编号"}, "order": 1},
-    {"name": "按预算科目看板", "view_type": "kanban", "view_options": {"group_field": "预算科目"}, "order": 2},
-    {"name": "按经费状态看板", "view_type": "kanban", "view_options": {"group_field": "经费状态"}, "order": 3},
+    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "课题编号", "direction": "asc"}, {"field_name": "预算科目", "direction": "asc"}], "is_default": true, "order": 0},
+    {"name": "按课题编号看板", "view_type": "kanban", "view_options": {"group_field": "课题编号", "title_field": "预算科目", "due_date_field": "拨付日期"}, "order": 1},
+    {"name": "按预算科目看板", "view_type": "kanban", "view_options": {"group_field": "预算科目", "title_field": "课题编号", "due_date_field": "拨付日期"}, "order": 2},
+    {"name": "按经费状态看板", "view_type": "kanban", "view_options": {"group_field": "经费状态", "title_field": "课题编号", "due_date_field": "拨付日期"}, "order": 3},
     {"name": "未结清经费", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "经费状态", "op": "=", "value": "正常"}], "sortings": [{"field_name": "已拨金额_万元", "direction": "desc"}], "order": 4},
     {"name": "拨付日历", "view_type": "calendar", "view_options": {"start_field": "拨付日期"}, "order": 5}
   ],
   "项目进展": [
-    {"name": "全部进展记录", "view_type": "grid", "sortings": [{"field_name": "课题编号", "direction": "asc"}, {"field_name": "报告季度", "direction": "desc"}], "is_default": true, "order": 0},
-    {"name": "按课题编号看板", "view_type": "kanban", "view_options": {"group_field": "课题编号"}, "order": 1},
-    {"name": "按进展阶段看板", "view_type": "kanban", "view_options": {"group_field": "进展阶段"}, "order": 2},
-    {"name": "按报告季度看板", "view_type": "kanban", "view_options": {"group_field": "报告季度"}, "order": 3},
+    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "课题编号", "direction": "asc"}, {"field_name": "报告季度", "direction": "desc"}], "is_default": true, "order": 0},
+    {"name": "按课题编号看板", "view_type": "kanban", "view_options": {"group_field": "课题编号", "title_field": "关键成果", "progress_field": "进度百分比", "due_date_field": "报告日期"}, "order": 1},
+    {"name": "按进展阶段看板", "view_type": "kanban", "view_options": {"group_field": "进展阶段", "title_field": "关键成果", "progress_field": "进度百分比", "due_date_field": "报告日期"}, "order": 2},
+    {"name": "按报告季度看板", "view_type": "kanban", "view_options": {"group_field": "报告季度", "title_field": "关键成果", "progress_field": "进度百分比", "due_date_field": "报告日期"}, "order": 3},
     {"name": "进展日历", "view_type": "calendar", "view_options": {"start_field": "报告日期"}, "order": 4},
     {"name": "里程碑达成", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "进展阶段", "op": "=", "value": "验收结题"}], "sortings": [{"field_name": "报告日期", "direction": "desc"}], "order": 5}
   ]

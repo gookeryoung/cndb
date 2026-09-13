@@ -21,6 +21,108 @@ import {
 } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
 import { resolveTagColor } from '@/utils/tagColors'
+import type { Density } from '@/theme/tableSettings'
+
+// ── 密度样式映射 ──────────────────────────────────────
+
+/** 根据 density 返回看板卡片各部位的间距/字号数值 */
+function densityCardStyle(density: Density) {
+  if (density === 'compact') {
+    return {
+      padding: 8,
+      marginBottom: 4,
+      borderRadius: 6,
+      titleFontSize: 13,
+      titleMarginBottom: 4,
+      titleLineHeight: 1.3,
+      progressMarginBottom: 4,
+      metaGap: 2,
+      metaMarginBottom: 3,
+      extraGap: 2,
+      borderLeftWidth: 3,
+    }
+  }
+  if (density === 'spacious') {
+    return {
+      padding: 16,
+      marginBottom: 12,
+      borderRadius: 10,
+      titleFontSize: 15,
+      titleMarginBottom: 10,
+      titleLineHeight: 1.5,
+      progressMarginBottom: 10,
+      metaGap: 6,
+      metaMarginBottom: 8,
+      extraGap: 6,
+      borderLeftWidth: 5,
+    }
+  }
+  // comfortable（默认）
+  return {
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: 8,
+    titleFontSize: 14,
+    titleMarginBottom: 8,
+    titleLineHeight: 1.4,
+    progressMarginBottom: 8,
+    metaGap: 4,
+    metaMarginBottom: 6,
+    extraGap: 4,
+    borderLeftWidth: 4,
+  }
+}
+
+/** 根据 density 返回看板列容器的间距/尺寸数值 */
+function densityColumnStyle(density: Density) {
+  if (density === 'compact') {
+    return {
+      gap: 10,
+      padding: 8,
+      colPadding: 8,
+      colMinWidth: 260,
+      colMaxWidth: 320,
+      colHeaderPadding: '2px 6px 6px',
+      colHeaderMarginBottom: 6,
+      colHeaderFontSize: 13,
+      colHeaderCountFontSize: 11,
+      emptyPadding: 16,
+      emptyFontSize: 12,
+      borderRadius: 10,
+    }
+  }
+  if (density === 'spacious') {
+    return {
+      gap: 22,
+      padding: 20,
+      colPadding: 16,
+      colMinWidth: 340,
+      colMaxWidth: 400,
+      colHeaderPadding: '8px 12px 14px',
+      colHeaderMarginBottom: 10,
+      colHeaderFontSize: 15,
+      colHeaderCountFontSize: 13,
+      emptyPadding: 32,
+      emptyFontSize: 14,
+      borderRadius: 14,
+    }
+  }
+  // comfortable（默认）
+  return {
+    gap: 16,
+    padding: 16,
+    colPadding: 12,
+    colMinWidth: 300,
+    colMaxWidth: 360,
+    colHeaderPadding: '4px 8px 10px',
+    colHeaderMarginBottom: 8,
+    colHeaderFontSize: 14,
+    colHeaderCountFontSize: 12,
+    emptyPadding: 24,
+    emptyFontSize: 13,
+    borderRadius: 12,
+  }
+}
 
 // ── 工具函数 ──────────────────────────────────────────
 
@@ -134,11 +236,13 @@ interface KanbanCardProps {
   row: RowResponse
   fields: Field[]
   view?: View | null
+  density: Density
   onRowClick?: (r: RowResponse) => void
 }
 
-function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
+function KanbanCard({ row, fields, view, density, onRowClick }: KanbanCardProps) {
   const opts = (view?.view_options || {}) as Record<string, unknown>
+  const cs = densityCardStyle(density)
 
   // 字段解析
   const titleField = (opts.title_field as string) || fields.find((f) => f.is_primary)?.name || 'id'
@@ -172,10 +276,10 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
   let borderStyle: React.CSSProperties = {}
   let bgStyle: React.CSSProperties = {}
   if (isOverdue) {
-    borderStyle = { borderLeft: '4px solid #ff4d4f' }
+    borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #ff4d4f` }
     bgStyle = { background: '#fff2f0' }
   } else if (isUrgent) {
-    borderStyle = { borderLeft: '4px solid #faad14' }
+    borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #faad14` }
     bgStyle = { background: '#fffbe6' }
   }
 
@@ -183,10 +287,10 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
     <div
       onClick={() => onRowClick?.(row)}
       style={{
-        padding: 12,
-        marginBottom: 8,
+        padding: cs.padding,
+        marginBottom: cs.marginBottom,
         border: '1px solid #e5e7eb',
-        borderRadius: 8,
+        borderRadius: cs.borderRadius,
         cursor: 'pointer',
         transition: 'box-shadow 0.15s ease, transform 0.15s ease',
         ...borderStyle,
@@ -202,13 +306,13 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
       }}
     >
       {/* 标题行 */}
-      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, lineHeight: 1.4, wordBreak: 'break-word' }}>
+      <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word' }}>
         {title}
       </div>
 
       {/* 进度条 */}
       {showProgressBar && Number.isFinite(progress) && (
-        <div style={{ marginBottom: 8 }}>
+        <div style={{ marginBottom: cs.progressMarginBottom }}>
           <Progress
             percent={progress}
             size="small"
@@ -219,7 +323,7 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
       )}
 
       {/* 元信息行：优先级 + 截止日期 + 负责人 */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: cs.metaGap, marginBottom: cs.metaMarginBottom }}>
         {priorityField && (
           <PriorityBadge field={findField(priorityField)} value={row[priorityField]} />
         )}
@@ -238,7 +342,7 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
 
       {/* 卡片额外字段 */}
       {cardFields.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: cs.extraGap }}>
           {cardFields.map((cf) => {
             const field = findField(cf)
             if (!field) return null
@@ -249,22 +353,6 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
             )
           })}
         </div>
-      )}
-
-      {/* 紧急/逾期标记徽章 */}
-      {isOverdue && (
-        <Tooltip title={`已逾期 ${Math.abs(daysLeft!)} 天`}>
-          <Tag color="red" icon={<WarningOutlined />} style={{ marginTop: 6 }}>
-            已逾期 {Math.abs(daysLeft!)}天
-          </Tag>
-        </Tooltip>
-      )}
-      {isUrgent && !isOverdue && (
-        <Tooltip title={`还剩 ${daysLeft} 天`}>
-          <Tag color="orange" icon={<ClockCircleOutlined />} style={{ marginTop: 6 }}>
-            仅剩 {daysLeft}天
-          </Tag>
-        </Tooltip>
       )}
     </div>
   )
@@ -329,11 +417,13 @@ export default function KanbanView({
   rows,
   fields,
   view,
+  density,
   onRowClick,
 }: {
   rows: RowResponse[]
   fields: Field[]
   view?: View | null
+  density: Density
   onRowClick?: (r: RowResponse) => void
 }) {
   const opts = (view?.view_options || {}) as Record<string, unknown>
@@ -342,6 +432,8 @@ export default function KanbanView({
     fields.find((f) => f.field_type === 'select' || f.field_type === 'multi_select' || f.field_type === 'link')?.name
 
   const groupFieldDef = groupField ? fields.find((f) => f.name === groupField) : undefined
+
+  const colStyle = densityColumnStyle(density)
 
   // 按分组字段聚合成列 — 正确处理 link/multiselect/select 的值
   const columns = useMemo(() => {
@@ -417,9 +509,9 @@ export default function KanbanView({
     <div
       style={{
         display: 'flex',
-        gap: 16,
+        gap: colStyle.gap,
         overflowX: 'auto',
-        paddingBottom: 16,
+        paddingBottom: colStyle.padding,
         minHeight: 300,
       }}
     >
@@ -427,11 +519,11 @@ export default function KanbanView({
         <div
           key={col.key}
           style={{
-            minWidth: 300,
-            maxWidth: 360,
+            minWidth: colStyle.colMinWidth,
+            maxWidth: colStyle.colMaxWidth,
             background: '#f8fafc',
-            borderRadius: 12,
-            padding: 12,
+            borderRadius: colStyle.borderRadius,
+            padding: colStyle.colPadding,
             border: '1px solid #e2e8f0',
             flexShrink: 0,
             display: 'flex',
@@ -444,18 +536,18 @@ export default function KanbanView({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '4px 8px 10px',
+              padding: colStyle.colHeaderPadding,
               borderBottom: '1px solid #e2e8f0',
-              marginBottom: 8,
+              marginBottom: colStyle.colHeaderMarginBottom,
             }}
           >
-            <span style={{ fontWeight: 600, fontSize: 14, color: '#1f2937' }}>
+            <span style={{ fontWeight: 600, fontSize: colStyle.colHeaderFontSize, color: '#1f2937' }}>
               {col.title}
             </span>
             <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               <span
                 style={{
-                  fontSize: 12,
+                  fontSize: colStyle.colHeaderCountFontSize,
                   color: '#94a3b8',
                   background: '#e2e8f0',
                   padding: '2px 8px',
@@ -465,7 +557,7 @@ export default function KanbanView({
                 {col.rows.length}
               </span>
               {col.urgentCount > 0 && (
-                <Tag color="red" style={{ margin: 0, fontSize: 11 }}>
+                <Tag color="red" style={{ margin: 0, fontSize: colStyle.colHeaderCountFontSize }}>
                   {col.urgentCount} 紧急
                 </Tag>
               )}
@@ -475,15 +567,15 @@ export default function KanbanView({
           {/* 卡片列表 */}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {col.rows.map((r) => (
-              <KanbanCard key={r.id} row={r} fields={fields} view={view} onRowClick={onRowClick} />
+              <KanbanCard key={r.id} row={r} fields={fields} view={view} density={density} onRowClick={onRowClick} />
             ))}
             {col.rows.length === 0 && (
               <div
                 style={{
                   textAlign: 'center',
-                  padding: 24,
+                  padding: colStyle.emptyPadding,
                   color: '#94a3b8',
-                  fontSize: 13,
+                  fontSize: colStyle.emptyFontSize,
                 }}
               >
                 无记录
