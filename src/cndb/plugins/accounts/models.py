@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, String
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from cndb.models.base import Base, TimestampMixin
 
 
-class UserRole(str, Enum):
+class UserRole(StrEnum):
     """用户角色枚举（三员 + 普通用户）.
 
     - system_admin: 系统管理员 — 负责系统配置、用户管理、工作区创建

@@ -17,9 +17,9 @@ from cndb.core.database import get_db
 from cndb.core.security import create_access_token
 from cndb.plugins.accounts.models import User, UserRole
 from cndb.plugins.accounts.schemas.auth import (
+    PUBLIC_REGISTERABLE_ROLES,
     AdminRegisterRequest,
     LoginRequest,
-    PUBLIC_REGISTERABLE_ROLES,
     RegisterRequest,
     TokenResponse,
     UserResponse,
