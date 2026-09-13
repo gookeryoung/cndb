@@ -5,7 +5,7 @@ PACKAGE := cndb
 COV_THRESHOLD := 95
 PYTEST_JOBS := 8  # pytest-xdist 并行进程数；Windows 默认 8 避免句柄耗尽
 
-.PHONY: help sync build b clean c test cov lint typecheck typecheck-ci check doc tox pub bump patch minor major push
+.PHONY: help sync frontend-build frontend-sync build b clean c test cov lint typecheck typecheck-ci check doc tox pub bump patch minor major push
 
 help: ## 显示帮助信息
 	@uv run python -c "import re,sys;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -13,7 +13,13 @@ help: ## 显示帮助信息
 sync: ## 安装开发依赖
 	uv sync --extra dev
 
-build b: ## 构建分发包 (wheel + sdist)
+frontend-sync: ## 安装前端依赖（pnpm install）
+	cd frontend && pnpm install --frozen-lockfile
+
+frontend-build: frontend-sync ## 构建前端（Vite，产物输出到 src/cndb/static/）
+	cd frontend && pnpm build
+
+build b: frontend-build ## 构建分发包 (前端 → wheel + sdist)
 	uv build
 
 clean c: ## 清理构建产物与缓存
