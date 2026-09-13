@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, EditOutlined, AutoFixHighOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary } from '@/api'
+import { suggestColorForLabel } from '@/utils/tagColors'
 
 interface Props {
   open: boolean
@@ -395,6 +396,21 @@ function defaultConfigForType(fieldType: FieldType): Record<string, unknown> {
 
 // ─────────────── 选项编辑器（select / multi_select 共享） ───────────────
 
+/** 判断颜色值是否为 antd 预设色名（而非 HEX/CSS 自定义色） */
+function isPresetColor(color: string): boolean {
+  if (!color) return false
+  const PRESET_NAMES = new Set([
+    'blue', 'purple', 'cyan', 'green', 'magenta', 'pink', 'red',
+    'orange', 'yellow', 'volcano', 'geekblue', 'lime', 'gold',
+    'blue-inverse', 'purple-inverse', 'cyan-inverse', 'green-inverse',
+    'magenta-inverse', 'pink-inverse', 'red-inverse',
+    'orange-inverse', 'yellow-inverse', 'volcano-inverse',
+    'geekblue-inverse', 'lime-inverse', 'gold-inverse',
+    'success', 'processing', 'error', 'default', 'warning',
+  ])
+  return PRESET_NAMES.has(color)
+}
+
 function SelectOptionsEditor({ form, config }: { form: ReturnType<typeof Form.useForm>[0]; config: Record<string, unknown> }) {
   // 从 config.options 初始化（兼容旧 list[str] 格式）
   const initialOptions = useMemo(() => normalizeOptionsFromConfig(config.options), [config.options])
@@ -433,25 +449,53 @@ function SelectOptionsEditor({ form, config }: { form: ReturnType<typeof Form.us
 
   function updateOption(key: string, patch: Partial<(typeof options)[number]>) {
     const next = options.map(o => o.key === key ? { ...o, ...patch } : o)
-    // 如果 label 变化且 value 仍等于旧 label，同步 value
+    // 如果 label 变化：同步 value + 智能推荐颜色
     if (patch.label !== undefined) {
       const old = options.find(o => o.key === key)
-      if (old && (old.value === old.label || old.value === old.label.trim())) {
-        const idx = next.findIndex(o => o.key === key)
-        if (idx >= 0) next[idx] = { ...next[idx], value: patch.label.trim() }
+      const idx = next.findIndex(o => o.key === key)
+      if (idx >= 0) {
+        const newLabel = patch.label.trim()
+        // 如果 value 仍等于旧 label，同步 value
+        if (old && (old.value === old.label || old.value === old.label.trim())) {
+          next[idx] = { ...next[idx], value: newLabel }
+        }
+        // 智能推荐颜色：仅当当前 color 是预设色名（自动填充的）或为空时自动更新
+        const curColor = next[idx].color
+        if (!curColor || isPresetColor(curColor)) {
+          const suggested = suggestColorForLabel(newLabel)
+          if (suggested) {
+            next[idx] = { ...next[idx], color: suggested }
+          }
+        }
       }
     }
     setOptions(next)
     syncToForm(next)
   }
 
+  /** 一键智能配色：为所有选项（不管之前有没有 color）重新推荐颜色 */
+  function autoColorAll() {
+    const next = options.map((opt) => {
+      const suggested = suggestColorForLabel(opt.label.trim())
+      return { ...opt, color: suggested || '' }
+    })
+    setOptions(next)
+    syncToForm(next)
+    message.success('已为所有选项智能配色')
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
         <span>选项列表（显示标签 + 存储值）</span>
-        <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addOption}>
-          添加选项
-        </Button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <Button size="small" icon={<AutoFixHighOutlined />} onClick={autoColorAll}>
+            一键智能配色
+          </Button>
+          <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addOption}>
+            添加选项
+          </Button>
+        </div>
       </div>
       {options.length === 0 ? (
         <div style={{ color: '#999', padding: 16, textAlign: 'center', border: '1px dashed #d9d9d9', borderRadius: 4 }}>
@@ -475,14 +519,30 @@ function SelectOptionsEditor({ form, config }: { form: ReturnType<typeof Form.us
                 style={{ flex: 1 }}
                 onChange={(e) => {
                   const v = e.target.value
-                  // 尝试解析为数字
-                  const num = Number(v)
-                  updateOption(opt.key, { value: v && !Number.isNaN(num) ? v : v })
+                  updateOption(opt.key, { value: v })
                 }}
               />
+              {/* 颜色预览 + ColorPicker：antd 预设色名用 Tag 展示，支持 ColorPicker 覆盖 */}
+              {opt.color ? (
+                <Tag
+                  color={opt.color}
+                  style={{ cursor: 'pointer', margin: 0 }}
+                  title={`点击选择自定义颜色（当前: ${opt.color}）`}
+                  onClick={() => {
+                    // 如果是预设色名，清空让 ColorPicker 打开；如果是 HEX，打开 ColorPicker
+                    const picker = document.querySelector(`.ant-color-picker-trigger`) as HTMLElement | null
+                    picker?.click()
+                  }}
+                >
+                  {isPresetColor(opt.color) ? `智能:${opt.color}` : opt.color}
+                </Tag>
+              ) : (
+                <span style={{ color: '#bbb', fontSize: 12, width: 80, textAlign: 'center' }}>
+                  自动推荐
+                </span>
+              )}
               <ColorPicker
-                value={opt.color || undefined}
-                showText
+                value={opt.color && !isPresetColor(opt.color) ? opt.color : undefined}
                 size="small"
                 onChange={(color) => updateOption(opt.key, { color: color.toHexString() })}
               />

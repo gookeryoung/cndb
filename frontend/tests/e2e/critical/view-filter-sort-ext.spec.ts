@@ -277,6 +277,85 @@ test.describe("表格视图 — AND/OR 逻辑与多字段排序（员工表）",
         const firstRowSalary = rows.first().locator("td").nth(3);  // 薪资是第 4 列（0-indexed 3）
         await expect(firstRowSalary).toHaveText(/10000/);
     });
+
+    test("多排序 — 通过表头取消一个排序后另一个仍保留", async ({ page, request }) => {
+        // 步骤 1: 通过 ViewConfigDialog 设置两个排序（部门 asc + 薪资 desc）
+        const filterBtn = page.locator(".ant-btn").filter({ has: page.locator('[aria-label="filter"]') }).first();
+        await filterBtn.click();
+        await page.waitForTimeout(300);
+
+        // 切到排序 tab
+        await page.locator(".ant-modal .ant-tabs-tab", { hasText: /排序/ }).click();
+
+        // 选"部门" + 升序
+        const sortField1 = page.locator(".ant-modal-content .ant-select").nth(0);
+        await sortField1.click();
+        await sortField1.getByRole("option", { name: /部门/ }).click();
+
+        // 第二条排序：薪资 + 降序
+        await page.getByRole("button", { name: /添加|新增/ }).first().click();
+        await page.waitForTimeout(100);
+
+        const sortField2 = page.locator(".ant-modal-content .ant-select").nth(2);
+        await sortField2.click();
+        await sortField2.getByRole("option", { name: /薪资/ }).click();
+
+        const sortDir2 = page.locator(".ant-modal-content .ant-select").nth(3);
+        await sortDir2.click();
+        await sortDir2.getByRole("option", { name: /降序|descend/ }).click();
+
+        // 确定应用
+        await page.getByRole("button", { name: /确定|OK/ }).click();
+        await page.waitForTimeout(800);  // 等待自动保存
+
+        // 步骤 2: 验证两个排序列都有排序箭头图标
+        const deptTh = page.locator(".ant-table-thead .ant-table-th", { hasText: /部门/ }).first();
+        const salaryTh = page.locator(".ant-table-thead .ant-table-th", { hasText: /薪资/ }).first();
+        // antd Table 的 sorter 状态会给有排序的列加类名
+        await expect(deptTh).toHaveClass(/ant-table-column-sorters/);
+        await expect(salaryTh).toHaveClass(/ant-table-column-sorters/);
+
+        // 步骤 3: 记录当前数据顺序（按部门 asc + 薪资 desc）
+        const rowsBefore = page.locator(".ant-table-tbody tr.ant-table-row");
+        const deptCellsBefore = rowsBefore.locator("td").nth(2);  // 部门列
+        const deptTextsBefore = await deptCellsBefore.allTextContents();
+        console.log("取消前部门顺序:", deptTextsBefore);
+
+        // 步骤 4: 点击"部门"列的表头，循环三次取消排序（ascend → descend → null）
+        // 第一次点击：ascend → descend
+        await deptTh.click();
+        await page.waitForTimeout(400);
+        // 第二次点击：descend → null（取消排序）
+        await deptTh.click();
+        await page.waitForTimeout(600);  // 等待自动保存
+
+        // 步骤 5: 验证部门列的排序被取消（不再有排序状态类名）
+        // antd 在排序取消后会移除 ant-table-column-sort 类（保留 ant-table-column-sorters）
+        // 我们通过检查 sortOrder 来验证——取消后部门列不应该有 sortOrder
+        // 同时验证薪资列仍然有排序
+        await expect(salaryTh).toHaveClass(/ant-table-column-sort/);
+
+        // 步骤 6: 验证数据现在只按薪资 desc 排序
+        // 薪资降序应该是：钱七 18000, 张三 15000, 赵六 13000, 李四 12000, 王五 10000
+        const rowsAfter = page.locator(".ant-table-tbody tr.ant-table-row");
+        const firstRowSalaryAfter = rowsAfter.first().locator("td").nth(3);
+        await expect(firstRowSalaryAfter).toHaveText(/18000/);
+
+        // 步骤 7: 通过 API 验证后端存储的 sortings 只有薪资 desc
+        // 先获取当前视图 ID
+        const activeTab = page.locator(".ant-tabs-tab-active");
+        await expect(activeTab).toBeVisible();
+        const token = await getToken(request);
+        const viewsResp = await request.get("/api/v1/workspaces/2/tables/3/views", {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const views = await viewsResp.json();
+        const currentView = views.find((v: any) => v.is_default);
+        // sortings 应该只剩一个（薪资 desc）
+        expect(currentView.sortings.length).toBe(1);
+        expect(currentView.sortings[0].field_name).toBe("薪资");
+        expect(currentView.sortings[0].direction).toBe("desc");
+    });
 });
 
 // ── 电商销售表 — 更多筛选操作符 + 分页 ────────────────────────
