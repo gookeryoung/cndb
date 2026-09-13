@@ -4,7 +4,7 @@ import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip } 
 import type { MenuProps } from 'antd'
 import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
-  NodeIndexOutlined, DeleteOutlined, FileTextOutlined,
+  DeleteOutlined, FileTextOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   TeamOutlined, SettingOutlined, ApartmentOutlined,
 } from '@ant-design/icons'
@@ -126,11 +126,6 @@ export default function MainLayout() {
             size="small" icon={<ApartmentOutlined />}
             onClick={() => navigate(`/w/${wid}/workflows`)}
           >{!isMobile && '工作流'}</Button>
-          <Button
-            type={location.includes('/graph') ? 'primary' : 'text'}
-            size="small" icon={<NodeIndexOutlined />}
-            onClick={() => navigate(`/w/${wid}/graph`)}
-          >{!isMobile && '关系图'}</Button>
           <Button
             type={location.includes('/trash') ? 'primary' : 'text'}
             size="small" icon={<DeleteOutlined />}

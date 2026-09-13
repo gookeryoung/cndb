@@ -5,6 +5,7 @@ import { ShareAltOutlined, ZoomInOutlined, ZoomOutOutlined, ReloadOutlined } fro
 import { useQuery } from '@tanstack/react-query'
 import { graphApi } from '@/api'
 import type { GraphResponse } from '@/api'
+import { computeLayeredLayout } from '@/utils/graphLayout'
 
 const { Text } = Typography
 
@@ -42,10 +43,10 @@ export default function GraphPage() {
         setNodePositions(new Map(Object.entries(parsed)))
       } else {
         // 首次访问 — 用自动布局
-        setNodePositions(computeLayeredLayout(data))
+        setNodePositions(computeLayeredLayout(data.nodes, data.edges))
       }
     } catch {
-      setNodePositions(computeLayeredLayout(data))
+      setNodePositions(computeLayeredLayout(data.nodes, data.edges))
     }
   }, [wid, data])
 
@@ -62,7 +63,7 @@ export default function GraphPage() {
   }, [wid])
 
   // 自动布局 fallback
-  const autoLayout = data ? computeLayeredLayout(data) : new Map<string, { x: number; y: number }>()
+  const autoLayout = data ? computeLayeredLayout(data.nodes, data.edges) : new Map<string, { x: number; y: number }>()
   const effectiveLayout = useCallback((id: string) => {
     return nodePositions.get(id) || autoLayout.get(id) || { x: 20, y: 20 }
   }, [nodePositions, autoLayout])
@@ -77,7 +78,7 @@ export default function GraphPage() {
   // 重置：恢复自动布局
   const resetLayout = () => {
     if (!data) return
-    const fresh = computeLayeredLayout(data)
+    const fresh = computeLayeredLayout(data.nodes, data.edges)
     setNodePositions(fresh)
     persistLayout(fresh)
     setScale(1)
@@ -326,35 +327,4 @@ function NodeDetail({
       )}
     </div>
   )
-}
-
-function computeLayeredLayout(g: GraphResponse): Map<string, { x: number; y: number }> {
-  const pos = new Map<string, { x: number; y: number }>()
-  const indeg = new Map<string, number>()
-  for (const n of g.nodes) indeg.set(n.id, 0)
-  for (const e of g.edges) indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1)
-
-  const layers: string[][] = []
-  const remaining = new Set(g.nodes.map(n => n.id))
-  while (remaining.size > 0) {
-    const layer: string[] = []
-    for (const id of remaining) {
-      if ((indeg.get(id) ?? 0) === 0) layer.push(id)
-    }
-    if (layer.length === 0) break
-    layers.push(layer)
-    for (const id of layer) {
-      remaining.delete(id)
-      for (const e of g.edges) if (e.source === id) indeg.set(e.target, (indeg.get(e.target) ?? 0) - 1)
-    }
-  }
-  if (remaining.size > 0) layers.push([...remaining])
-
-  const colGap = 220, rowGap = 80
-  layers.forEach((layer, ci) => {
-    layer.forEach((id, ri) => {
-      pos.set(id, { x: 40 + ci * colGap, y: 40 + ri * rowGap })
-    })
-  })
-  return pos
 }

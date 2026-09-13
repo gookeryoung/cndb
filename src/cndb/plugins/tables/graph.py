@@ -4,6 +4,7 @@
 - build_table_graph: 构建 {table_id: {依赖的表id集合}} 依赖图
 - topological_sort: Kahn 拓扑排序
 - get_workspace_dependencies: 工作区依赖详情（含反向依赖）
+- count_physical_rows: 统计物理表行数（被多个路由复用）
 
 这些是纯函数，不涉及 HTTP 层.
 """
@@ -14,11 +15,29 @@ import logging
 from collections import defaultdict, deque
 from typing import Any
 
+from sqlalchemy import MetaData, func, select
 from sqlalchemy.orm import Session
 
 from cndb.plugins.tables.models import DataTable
 
 logger = logging.getLogger(__name__)
+
+
+def count_physical_rows(engine: Any, dt: DataTable) -> int | None:
+    """统计物理表行数；表结构异常时返回 None.
+
+    被 tables/routers/graph.py 和 workflows/routers/workflows.py 共同使用.
+    """
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=engine, only=[dt.db_table_name])
+        sa_table = metadata.tables.get(dt.db_table_name)
+        if sa_table is None:
+            return None
+        with engine.connect() as conn:  # type: ignore[attr-defined]
+            return conn.execute(select(func.count()).select_from(sa_table)).scalar_one()
+    except Exception:
+        return None
 
 
 def build_table_graph(db: Session, workspace_id: int | None = None) -> dict[int, set[int]]:
@@ -123,6 +142,7 @@ def get_workspace_dependencies(db: Session, workspace_id: int) -> dict[str, Any]
 
 __all__ = [
     "build_table_graph",
+    "count_physical_rows",
     "get_workspace_dependencies",
     "topological_sort",
 ]

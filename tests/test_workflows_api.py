@@ -191,8 +191,12 @@ class TestWorkflowNodes:
         assert node["name"] == "需求审核"
         assert node["table_id"] == tid
         assert node["pos_x"] == 100
-        # table 摘要暂为 None（create 端点不查）
-        assert node["table"] is None
+        # create 端点现在返回 table 摘要
+        assert node["table"] is not None
+        assert node["table"]["id"] == tid
+        assert node["table"]["name"] == "需求表"
+        assert "view_count" in node["table"]
+        assert "row_count" in node["table"]
 
     def test_add_node_no_binding(self, client, auth_headers, ws_with_table):
         wid, _ = ws_with_table
