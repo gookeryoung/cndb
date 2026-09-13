@@ -677,3 +677,136 @@ class TestWorkspaceExportImport:
         }
         r = client.post(f"/api/v1/workspaces/{ws_id}/import", json=payload, headers=_headers(token))
         assert r.status_code == 200
+
+    def test_add_member_nonexistent_user(self, client, owner_user):
+        """add_member 对不存在的用户返回 404."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/members",
+            json={"username": "nobody_exists_xxx", "role": "viewer"},
+            headers=_headers(token),
+        )
+        assert r.status_code == 404
+
+    def test_list_candidates_with_search(self, client, owner_user, member_user):
+        """list_candidates 带 search 参数过滤."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        r = client.get(
+            f"/api/v1/workspaces/{ws_id}/members/candidates?search=memb",
+            headers=_headers(token),
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data["results"]) >= 1
+        assert data["results"][0]["username"] == "member"
+
+    def test_viewer_cannot_update_member_role(self, client, owner_user, member_user):
+        """viewer 尝试修改角色返回 403 (覆盖 update_member_role 权限)."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        # 把 member_user 加入
+        client.post(
+            f"/api/v1/workspaces/{ws_id}/members",
+            json={"username": "member", "role": "viewer"},
+            headers=_headers(token),
+        )
+        # 获取 member 的 member_id
+        r = client.get(f"/api/v1/workspaces/{ws_id}/members", headers=_headers(token))
+        member_mid = next(m["id"] for m in r.json() if m["user"]["username"] == "member")
+        # member (viewer) 尝试修改自己角色
+        viewer_token = _login_token(client, "member", "passw0rd")
+        r2 = client.patch(
+            f"/api/v1/workspaces/{ws_id}/members/{member_mid}",
+            json={"role": "admin"},
+            headers=_headers(viewer_token),
+        )
+        assert r2.status_code == 403
+
+    def test_viewer_cannot_delete_member(self, client, owner_user, member_user):
+        """viewer 尝试删除成员返回 403 (覆盖 delete_member 权限)."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        client.post(
+            f"/api/v1/workspaces/{ws_id}/members",
+            json={"username": "member", "role": "viewer"},
+            headers=_headers(token),
+        )
+        viewer_token = _login_token(client, "member", "passw0rd")
+        r = client.delete(
+            f"/api/v1/workspaces/{ws_id}/members/9999",
+            headers=_headers(viewer_token),
+        )
+        assert r.status_code == 403
+
+    def test_admin_cannot_delete_owner(self, client, owner_user, admin_user):
+        """admin 尝试删除 owner 返回 403 (覆盖 delete_member owner 保护)."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        client.post(
+            f"/api/v1/workspaces/{ws_id}/members", json={"username": "admin", "role": "admin"}, headers=_headers(token)
+        )
+        # 获取 owner member id
+        r = client.get(f"/api/v1/workspaces/{ws_id}/members", headers=_headers(token))
+        owner_mid = next(m["id"] for m in r.json() if m["role"] == "owner")
+        admin_token = _login_token(client, "admin", "passw0rd")
+        r2 = client.delete(
+            f"/api/v1/workspaces/{ws_id}/members/{owner_mid}",
+            headers=_headers(admin_token),
+        )
+        assert r2.status_code == 403
+
+    def test_remove_owner_when_multiple_exist(self, client, owner_user, admin_user):
+        """有 2 个 owner 时可以删除其中一个（覆盖 owner_count > 1 分支）."""
+        token_o = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token_o)
+        # 把 admin_user 加入并升级为 owner
+        client.post(
+            f"/api/v1/workspaces/{ws_id}/members",
+            json={"username": "admin", "role": "admin"},
+            headers=_headers(token_o),
+        )
+        r = client.get(f"/api/v1/workspaces/{ws_id}/members", headers=_headers(token_o))
+        admin_mid = next(m["id"] for m in r.json() if m["user"]["username"] == "admin")
+        # 把 admin 升级为 owner
+        client.patch(
+            f"/api/v1/workspaces/{ws_id}/members/{admin_mid}", json={"role": "owner"}, headers=_headers(token_o)
+        )
+        # 现在有 2 个 owner，原 owner 可以删除 admin owner
+        r2 = client.delete(f"/api/v1/workspaces/{ws_id}/members/{admin_mid}", headers=_headers(token_o))
+        assert r2.status_code == 204
+
+    def test_import_workspace_full_flow(self, client, owner_user, monkeypatch):
+        """import 完整流程（mock DDL 绕过物理表创建）."""
+        # mock DDL create_table，什么都不做
+        monkeypatch.setattr("cndb.plugins.tables.ddl.create_table", lambda engine, table: None)
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        payload = {
+            "json_data": {
+                "version": "1",
+                "tables": [
+                    {
+                        "name": "完整导入表",
+                        "description": "测试",
+                        "fields": [
+                            {"name": "标题", "field_type": "text", "order": 0},
+                        ],
+                        "views": [
+                            {"name": "默认", "view_type": "grid", "is_default": True},
+                        ],
+                        "rows": [],
+                    }
+                ],
+            }
+        }
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import",
+            json=payload,
+            headers=_headers(token),
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["imported_tables"] == 1
+        assert data["imported_views"] == 1
