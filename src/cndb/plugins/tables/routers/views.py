@@ -11,12 +11,49 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.models import DataView
+from cndb.plugins.tables.models import DataField, DataView
 from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
 from cndb.plugins.tables.schemas import ViewCreate, ViewResponse, ViewUpdate
 from cndb.plugins.workspaces.models import WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/views", tags=["views"])
+
+
+def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[bool, str | None]:
+    """校验视图配置里引用的所有 field_name 是否在目标表存在."""
+    valid_fields = {f.name for f in db.query(DataField).filter(DataField.table_id == table_id).all()}
+    for f in vc.filters or []:
+        if f.get("field_name") not in valid_fields:
+            return False, f"filter field_name='{f.get('field_name')}' 不存在"
+    for s in vc.sortings or []:
+        if s.get("field_name") not in valid_fields:
+            return False, f"sorting field_name='{s.get('field_name')}' 不存在"
+    vo = vc.view_options or {}
+    for opt_key in ("group_field", "start_field", "end_field", "title_field", "image_field"):
+        opt_val = vo.get(opt_key)
+        if opt_val and opt_val not in valid_fields:
+            return False, f"view_options.{opt_key}='{opt_val}' 不存在"
+    return True, None
+
+
+def _create_view_obj(db: Session, user: User, table_id: int, payload: ViewCreate) -> DataView:
+    """创建单个 DataView 对象（不含 commit）."""
+    if payload.is_default:
+        db.query(DataView).filter(DataView.table_id == table_id).update({"is_default": False})
+    return DataView(
+        table_id=table_id,
+        owner_id=user.id,
+        name=payload.name,
+        view_type=payload.view_type,
+        filter_type=payload.filter_type,
+        filters=payload.filters,
+        sortings=payload.sortings,
+        field_options=payload.field_options,
+        field_order=payload.field_order,
+        view_options=payload.view_options,
+        is_default=payload.is_default,
+        order=payload.order,
+    )
 
 
 @router.post("", response_model=ViewResponse, status_code=status.HTTP_201_CREATED)
@@ -35,28 +72,59 @@ def create_view(
     if existing:
         raise HTTPException(status_code=400, detail="视图名已存在")
 
-    # 如果标记为 default，先把同表其他视图的 default 清掉
-    if payload.is_default:
-        db.query(DataView).filter(DataView.table_id == table_id).update({"is_default": False})
+    ok, err = _validate_view_fields(payload, table_id, db)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"视图字段校验失败: {err}")
 
-    dv = DataView(
-        table_id=table_id,
-        owner_id=current_user.id,
-        name=payload.name,
-        view_type=payload.view_type,
-        filter_type=payload.filter_type,
-        filters=payload.filters,
-        sortings=payload.sortings,
-        field_options=payload.field_options,
-        field_order=payload.field_order,
-        view_options=payload.view_options,
-        is_default=payload.is_default,
-        order=payload.order,
-    )
+    dv = _create_view_obj(db, current_user, table_id, payload)
     db.add(dv)
     db.commit()
     db.refresh(dv)
     return dv
+
+
+@router.post("/import", response_model=list[ViewResponse])
+def import_views(
+    workspace_id: int,
+    table_id: int,
+    payload: list[ViewCreate],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[DataView]:
+    """批量导入视图配置（上传 JSON 数组）.
+
+    同名视图自动跳过，字段引用不存在时跳过并返回 warnings.
+    """
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    _get_table_or_404(table_id, workspace_id, db)
+
+    existing_names = {r[0] for r in db.query(DataView.name).filter(DataView.table_id == table_id).all()}
+    created: list[DataView] = []
+    skipped: list[str] = []
+
+    for vc in payload:
+        if vc.name in existing_names:
+            skipped.append(f"已存在: {vc.name}")
+            continue
+        ok, err = _validate_view_fields(vc, table_id, db)
+        if not ok:
+            skipped.append(f"跳过 {vc.name}: {err}")
+            continue
+        dv = _create_view_obj(db, current_user, table_id, vc)
+        db.add(dv)
+        created.append(dv)
+        existing_names.add(vc.name)
+
+    db.commit()
+    for dv in created:
+        db.refresh(dv)
+    if skipped:
+        import json as _json
+
+        print(
+            f"[视图导入] table_id={table_id}: {len(created)} 成功, {len(skipped)} 跳过: {_json.dumps(skipped, ensure_ascii=False)}"
+        )
+    return created
 
 
 @router.get("", response_model=list[ViewResponse])
