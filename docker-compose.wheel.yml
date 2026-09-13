@@ -1,0 +1,62 @@
+# ────────────────────────────────────────────────────────────────────
+# cndb wheel 版部署编排 — 单容器精简形态
+#
+# 前置条件（本地或 CI 执行一次即可）：
+#   make build        # 构建 wheel 到 dist/
+#
+# 与源码版（docker-compose.yml）区别：
+#   - 无独立 nginx 容器：wheel 已含前端静态，FastAPI 直接托管
+#   - 无前端构建阶段：wheel 构建时已完成
+#   - 构建更快、镜像更小、依赖更少
+#
+# 快速开始（SQLite）：
+#   docker compose -f docker-compose.wheel.yml up -d --build
+#   docker compose -f docker-compose.wheel.yml exec app cndb seed
+#
+# PostgreSQL（可选 profile）：
+#   docker compose -f docker-compose.wheel.yml --profile pg up -d --build
+#   docker compose -f docker-compose.wheel.yml exec app cndb seed
+# ────────────────────────────────────────────────────────────────────
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.wheel
+    image: cndb:latest
+    container_name: cndb
+    ports:
+      - "${CNDB_PORT:-8000}:8000"
+    environment:
+      - CNDATABASE_URL=${CNDATABASE_URL:-sqlite:////data/cndb.db}
+    volumes:
+      - cndb-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── PostgreSQL（可选 profile）──
+  postgres:
+    image: docker.m.daocloud.io/library/postgres:16-alpine
+    container_name: cndb-postgres
+    profiles: ["pg"]
+    environment:
+      POSTGRES_USER: cndb
+      POSTGRES_PASSWORD: ${CNDB_DB_PASSWORD:-cndb_pass}
+      POSTGRES_DB: cndb
+    volumes:
+      - cndb-pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cndb -d cndb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  cndb-data:
+  cndb-pg-data:
