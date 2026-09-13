@@ -1,18 +1,30 @@
-/** 主题切换 Provider — 维护 light/dark 状态并注入 antd ConfigProvider. */
+/** 主题切换 Provider — 维护多主题状态并注入 antd ConfigProvider. */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ConfigProvider, theme as antdTheme } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
-import { getThemeConfig, loadThemeMode, saveThemeMode, type ThemeMode } from '@/theme/theme'
+import { getThemeConfig, loadThemeMode, saveThemeMode, THEME_META, type ThemeMode } from '@/theme/theme'
 
 interface ThemeContextValue {
   mode: ThemeMode
-  toggle: () => void
   setMode: (m: ThemeMode) => void
+  /** 当前主题是否深色 — 方便组件内做针对性分支 */
+  isDark: boolean
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined)
+
+/** 清理所有可能的主题 class，只保留当前的 */
+function applyBodyClass(mode: ThemeMode) {
+  const allClasses = Object.values(THEME_META).map(t => t.bodyClass)
+  const body = document.body
+  allClasses.forEach(cls => body.classList.remove(cls))
+  body.classList.add(THEME_META[mode].bodyClass)
+
+  // 向后兼容：保留 theme-dark class 给老 CSS 规则
+  body.classList.toggle('theme-dark', THEME_META[mode].isDark)
+}
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(() => loadThemeMode())
@@ -22,20 +34,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     saveThemeMode(m)
   }, [])
 
-  const toggle = useCallback(() => {
-    setModeState(prev => {
-      const next = prev === 'dark' ? 'light' : 'dark'
-      saveThemeMode(next)
-      return next
-    })
-  }, [])
-
-  // 同步 body class 方便 CSS 变量覆盖
   useEffect(() => {
-    document.body.classList.toggle('theme-dark', mode === 'dark')
+    applyBodyClass(mode)
   }, [mode])
 
-  const value = useMemo<ThemeContextValue>(() => ({ mode, toggle, setMode }), [mode, toggle, setMode])
+  const isDark = THEME_META[mode].isDark
+
+  const value = useMemo<ThemeContextValue>(() => ({ mode, setMode, isDark }), [mode, setMode, isDark])
 
   return (
     <ThemeContext.Provider value={value}>
@@ -43,7 +48,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         locale={zhCN}
         theme={{
           ...getThemeConfig(mode),
-          algorithm: mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+          algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         }}
       >
         {children}
