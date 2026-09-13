@@ -23,6 +23,7 @@ def _db_engine(tmp_path: Path):
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     # 先导入所有插件 models，确保 Base.metadata 包含全部表
     import cndb.plugins.accounts.models
+    import cndb.plugins.tables.models
     import cndb.plugins.workspaces.models  # noqa: F401
 
     Base.metadata.drop_all(engine)
@@ -440,6 +441,7 @@ class TestPinAPI:
         assert r.status_code == 201
         return r.json()["id"]
 
+
 # ── 扩展字段测试（visibility / tags / allow_edit） ───────────
 
 
@@ -636,3 +638,42 @@ class TestWorkspaceExportImport:
         assert r.status_code == 201
         return r.json()["id"]
 
+    def test_export_workspace_with_table_records(self, client, owner_user, db):
+        """export 有 DataTable 记录时遍历表定义（跳过物理表 autoload）."""
+        from cndb.plugins.tables.models import DataField, DataTable, DataView
+
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        dt = DataTable(workspace_id=ws_id, name="导出测试表")
+        dt.ensure_db_name()
+        db.add(dt)
+        db.flush()
+        f1 = DataField(table_id=dt.id, name="字段A", field_type="text", order=0)
+        f1.ensure_db_name()
+        db.add(f1)
+        db.flush()
+        db.add(DataView(table_id=dt.id, name="默认视图", view_type="grid", is_default=True))
+        db.commit()
+        r = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=_headers(token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["tables"][0]["name"] == "导出测试表"
+        assert len(data["tables"][0]["fields"]) >= 1
+        assert len(data["tables"][0]["views"]) >= 1
+
+    def test_import_workspace_skips_empty_names(self, client, owner_user):
+        """import 跳过空表名和已存在的同名表."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        # 空表名 → 跳过（不报错）
+        payload = {
+            "json_data": {
+                "version": "1",
+                "tables": [
+                    {"name": "  ", "fields": []},
+                    {"fields": []},
+                ],
+            }
+        }
+        r = client.post(f"/api/v1/workspaces/{ws_id}/import", json=payload, headers=_headers(token))
+        assert r.status_code == 200
