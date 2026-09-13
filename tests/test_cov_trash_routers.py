@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 # ---------- trash.py: list trash rows empty result path ----------
 
 
@@ -109,6 +111,7 @@ class TestTrashRouterEdgeCases:
         assert r.status_code == 200
         assert r.json()["restored"] == 1
 
+    @pytest.mark.slow()
     def test_restore_trash_rows_batch_all(self, client, auth_headers, db):
         """Restore all trashed rows (empty row_ids)."""
         ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_trash6"})
