@@ -48,6 +48,8 @@ export default function GridPage() {
   const [importExportOpen, setImportExportOpen] = useState(false)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
   const [createViewOpen, setCreateViewOpen] = useState(false)
+  const [importViewsOpen, setImportViewsOpen] = useState(false)
+  const [importJson, setImportJson] = useState('')
   const [permOpen, setPermOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [activeViewId, setActiveViewId] = useState<number | string | null>(null)
@@ -238,6 +240,18 @@ export default function GridPage() {
     onSuccess: () => {
       message.success('视图已创建')
       queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
+    },
+  })
+  const importViews = useMutation({
+    mutationFn: (data: ViewCreate[]) => viewApi.importViews(wid!, tid!, data),
+    onSuccess: (created: View[]) => {
+      message.success(`成功导入 ${created.length} 个视图`)
+      queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
+      setImportViewsOpen(false)
+      setImportJson('')
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '导入失败')
     },
   })
   const updateView = useMutation({
@@ -438,6 +452,12 @@ export default function GridPage() {
           icon={<PlusOutlined />}
           onClick={() => setCreateViewOpen(true)}
         >新建视图</Button>
+        <Button
+          size="small"
+          type="text"
+          icon={<ImportOutlined />}
+          onClick={() => { setImportJson(''); setImportViewsOpen(true) }}
+        >导入视图</Button>
         <Space.Compact style={{ marginLeft: 8 }}>
           <Button size="small" type={mode === 'grid' ? 'primary' : 'default'} icon={<ColumnHeightOutlined />} onClick={() => setMode('grid')}>{!isMobile && '表格'}</Button>
           <Button size="small" type={mode === 'kanban' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => setMode('kanban')}>{!isMobile && '看板'}</Button>
@@ -600,6 +620,39 @@ export default function GridPage() {
             createView.mutate(payload)
             setCreateViewOpen(false)
           }}
+        />
+      </Modal>
+
+      {/* 导入视图 Modal */}
+      <Modal
+        title="导入视图"
+        open={importViewsOpen}
+        onCancel={() => setImportViewsOpen(false)}
+        width={560}
+        onOk={() => {
+          let parsed: ViewCreate[]
+          try {
+            parsed = JSON.parse(importJson)
+            if (!Array.isArray(parsed)) throw new Error('JSON 必须是数组')
+          } catch (e) {
+            message.error('JSON 解析失败: ' + (e instanceof Error ? e.message : String(e)))
+            return
+          }
+          importViews.mutate(parsed)
+        }}
+        confirmLoading={importViews.isPending}
+        okText="导入"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 8, fontSize: 12, color: '#6b7280' }}>
+          粘贴视图 JSON 数组，格式参考 examples/datasets/工作区-某企业销售管理/views.json
+        </div>
+        <Input.TextArea
+          rows={12}
+          value={importJson}
+          onChange={(e) => setImportJson(e.target.value)}
+          placeholder='[{"name":"高金额","view_type":"grid","filters":[{"field_name":"合同金额_万元","op":">=","value":"1000"}]}]'
+          style={{ fontFamily: 'monospace', fontSize: 12 }}
         />
       </Modal>
 
