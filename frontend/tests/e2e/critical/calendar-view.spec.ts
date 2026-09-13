@@ -1,14 +1,14 @@
 /** Critical — 日历视图 E2E 全量覆盖（仅 chromium-authed）.
  *
  * 覆盖矩阵（基于 examples/datasets 种子数据，已更新 2026 年数据）:
- * ┌──────┬──────────┬──────────┬─────────────┬──────────┬──────────┬──────────┐
- * │ 工作区 │ 表        │ 视图名    │ start_field  │title      │ group     │ end      │
- * ├──────┼──────────┼──────────┼─────────────┼──────────┼──────────┼──────────┤
- * │ WID1 │ 产品开发  │ 交付日历  │ 计划交付日期 │项目名称   │ 项目类别  │ 实际交付 │
- * │ WID1 │ 出差统计  │ 出差日历  │ 出差日期     │出差事项   │ 出差地点  │ —        │
- * │ WID2 │ 科研经费  │ 拨付日历  │ 拨付日期     │预算科目   │ 经费状态  │ —        │
- * │ WID2 │ 项目进展  │ 进展日历  │ 报告日期     │关键成果   │ 进展阶段  │ —        │
- * └──────┴──────────┴──────────┴─────────────┴──────────┴──────────┴──────────┘
+ * ┌──────┬──────────┬──────────┬─────────────┬──────────┬──────────┐
+ * │ 工作区 │ 表        │ 视图名    │ start_field  │title      │ group     │
+ * ├──────┼──────────┼──────────┼─────────────┼──────────┼──────────┤
+ * │ WID1 │ 产品开发  │ 交付日历  │ 计划交付日期 │项目名称   │ 项目类别  │
+ * │ WID1 │ 出差统计  │ 出差日历  │ 出差日期     │出差事项   │ 出差地点  │
+ * │ WID2 │ 科研经费  │ 拨付日历  │ 拨付日期     │预算科目   │ 经费状态  │
+ * │ WID2 │ 项目进展  │ 进展日历  │ 报告日期     │关键成果   │ 进展阶段  │
+ * └──────┴──────────┴──────────┴─────────────┴──────────┴──────────┘
  *
  * 断言重点:
  *   1. URL 深链激活 → 日历根容器可见（非 Empty 态）
@@ -16,10 +16,10 @@
  *   3. 事件卡片显示 title_field 文本、有 group_field 颜色侧边条
  *   4. 导航按钮（上一周期/下一周期/回到今天）工作
  *   5. 点击事件 → 详情抽屉出现（回归 date4.isValid 根因）
- *   6. 产品开发交付日历跨天事件（end_field）正确显示
- *   7. 2026 年数据：产品开发每月均有事件
+ *   6. 2026 年数据：产品开发每月均有事件
  *
  * 注意：CalendarView 全部原生 DOM + inline style，无 Ant Calendar 组件.
+ *       日历视图只支持单点日期事件，进度跟踪请使用其他视图。
  */
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 
@@ -474,38 +474,7 @@ test.describe("日历视图 — 点击事件打开详情抽屉", () => {
   });
 });
 
-// ─────────────── 第五组：跨天事件（end_field） ─────────────────────────────
-
-test.describe("日历视图 — 跨天事件渲染", () => {
-  test("产品开发·交付日历 — end_field 实际交付日期 晚于 start_field 时跨天显示", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "某企业销售管理");
-    const tid = await getTableId(request, wid, "产品开发");
-    const vid = await getCalendarViewId(request, wid, tid, "交付");
-
-    await gotoTable(page, wid, "产品开发");
-    await activateCalendarView(page, vid);
-
-    // 产品开发表有 80+ 行项目的 实际交付日期 晚于 计划交付日期
-    // 跨天事件在非起始日渲染为 4px 高的小色条（opacity 0.6）
-    const miniBars = page.locator(
-      "div[style*='height: 4px'][style*='border-radius: 2px'][style*='opacity: 0.6']",
-    );
-    // 不一定每个月都有跨天，但至少整体日历里应该有一些
-    const miniCount = await miniBars.count();
-    if (miniCount > 0) {
-      await expect(miniBars.first()).toBeVisible();
-    }
-    // 如果没找到也不 fail，只验证日历正常渲染
-    await expect(calendarRoot(page)).toBeVisible({ timeout: 5000 });
-  });
-});
-
-// ─────────────── 第六组：错误配置表兜底（科研项目已删除日历视图） ─────────
+// ─────────────── 第五组：错误配置表兜底（科研项目已删除日历视图） ─────────
 
 test.describe("日历视图 — 无日历视图的表兜底行为", () => {
   test("科研项目表 — 日历视图已删除，点日历按钮自动切换模式", async ({

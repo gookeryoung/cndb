@@ -114,7 +114,6 @@
       "view_type": "calendar",
       "view_options": {
         "start_field": "计划交付日期",
-        "end_field": "实际交付日期",
         "title_field": "项目名称",
         "group_field": "项目类别"
       },

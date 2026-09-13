@@ -296,7 +296,6 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
     for opt_key in (
         "group_field",
         "start_field",
-        "end_field",
         "title_field",
         "image_field",
         "subtitle_field",
