@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Popconfirm, Upload, Image } from 'antd'
 import { SaveOutlined, CommentOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
+import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { commentApi, auditApi, recordApi, tableApi, fileApi } from '@/api'
 import type { RowResponse, Field, AuditLog, Comment as ApiComment, Reference, AttachmentFile } from '@/api'
@@ -215,9 +216,24 @@ function FieldEditor({
     case 'boolean':
       return <Switch checked={!!value} onChange={onChange} />
     case 'date':
-      return <DatePicker style={{ width: '100%' }} value={value as any} onChange={onChange} placeholder="日期" />
+      return (
+        <DatePicker
+          style={{ width: '100%' }}
+          value={value != null && value !== '' ? dayjs(String(value)) : null}
+          onChange={(_d, dateStr) => onChange(dateStr)}
+          placeholder="日期"
+        />
+      )
     case 'datetime':
-      return <DatePicker showTime style={{ width: '100%' }} value={value as any} onChange={onChange} placeholder="日期时间" />
+      return (
+        <DatePicker
+          showTime
+          style={{ width: '100%' }}
+          value={value != null && value !== '' ? dayjs(String(value)) : null}
+          onChange={(_d, dateStr) => onChange(dateStr)}
+          placeholder="日期时间"
+        />
+      )
     case 'select':
     case 'multi_select': {
       const options = extractSelectOptions(field.config)
