@@ -516,18 +516,21 @@ export default function GridPage() {
               // 处理列排序 — Ant Design sorter 可能是单对象或数组
               // 受控排序循环：ascend → descend → null（清除）
               type SorterInfo = { field?: string | number | readonly (string | number)[]; order?: 'ascend' | 'descend' | null }
-              const s = sorter as SorterInfo | SorterInfo[]
-              const first = Array.isArray(s) ? s[0] : s
-              // 必须拿到 field（即使 order=null 也要清除该列的排序规则）
-              const field = typeof first?.field === 'string' ? first.field : null
-              const order = first?.order ?? null
-              if (!field) {
-                setViewSortings([])
-                setOffset(0)
+              const raw = sorter as SorterInfo | SorterInfo[] | null
+              // 统一转成数组
+              const items: SorterInfo[] = Array.isArray(raw) ? raw : (raw ? [raw] : [])
+              // 过滤出有有效字符串 field 的项
+              const validItems = items.filter(it => typeof it?.field === 'string') as Array<{ field: string; order: 'ascend' | 'descend' | null }>
+              if (validItems.length === 0) {
+                // sorter 中没有有效排序信息 — 不清空现有排序，避免误删
                 return
               }
+              // 取被操作的列（有非 null order 的优先；如果都是 null 取第一个）
+              const activeItem = validItems.find(it => it.order !== null) ?? validItems[0]
+              const field = activeItem.field
+              const order = activeItem.order
               if (order === null) {
-                // 清除：只移除该字段的排序规则
+                // 清除：只移除该字段的排序规则，保留其他
                 setViewSortings(prev => prev.filter(sr => sr.field_name !== field))
               } else {
                 // 设置：替换同字段规则并置顶
@@ -1531,15 +1534,14 @@ function buildColumns(
   onFilterReset: (fieldName: string) => void,
   onCellSave?: (rowId: number | string, fieldName: string, value: unknown) => Promise<unknown>,
 ): ColumnsType<RowResponse> {
-  // 主排序 = 数组第一项，用于受控 sortOrder；其余仅作视觉提示
-  const primarySortField = viewSortings[0]?.field_name
   return fields.filter(f => !f.hidden).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map<NonNullable<ColumnsType<RowResponse>>[number]>(f => {
       const sortRule = viewSortings.find(s => s.field_name === f.name)
-      // 只有主排序列的 sortOrder 被受控，AntD 据此做 ascend→descend→null 循环
-      const sortOrder: 'ascend' | 'descend' | null = (f.name === primarySortField && sortRule)
+      // 所有有排序规则的列都受控 sortOrder，保证 AntD 内部状态与 viewSortings 同步
+      // 这样任何排序列都能正确经历 ascend→descend→null 循环
+      const sortOrder: 'ascend' | 'descend' | null | undefined = sortRule
         ? (sortRule.direction === 'asc' ? 'ascend' : 'descend')
-        : null
+        : undefined
       // 表头图标：任何有排序规则的列都显示箭头（视觉提示）
       const hasSortIndicator = !!sortRule
       const filterRule = viewFilters.find(fr => fr.field_name === f.name)
