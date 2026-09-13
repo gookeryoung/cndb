@@ -269,6 +269,7 @@ def test_trash_row_via_delete_and_list(client, auth_headers):
     assert rows.json()["total"] == 1
 
 
+@pytest.mark.slow()
 def test_trash_restore_rows_batch(client, auth_headers):
     """批量恢复软删行."""
     wid, tid = _setup_workspace_with_table_and_fields(client, auth_headers)
