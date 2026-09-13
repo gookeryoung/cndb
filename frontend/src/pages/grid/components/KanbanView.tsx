@@ -251,7 +251,7 @@ function getUrgencyRank(
 }
 
 /** 按优先级字段值计算排序权重（高→低） */
-function getPriorityRank(row: RowResponse, field?: Field, value?: unknown): number {
+function getPriorityRank(_row: RowResponse, field?: Field, value?: unknown): number {
   if (!field || !field.config) return 0
   const options = (field.config as Record<string, unknown>).options as
     | Array<Record<string, unknown>>
