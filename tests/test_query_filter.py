@@ -166,16 +166,12 @@ class TestNewOperators:
     """is_null / is_not_null / contains_any / contains_all / between."""
 
     def test_is_null(self, sa_table, table_with_fields):
-        clause = compile_filters(
-            table_with_fields, sa_table, [{"field_name": "name", "op": "is_null"}]
-        )
+        clause = compile_filters(table_with_fields, sa_table, [{"field_name": "name", "op": "is_null"}])
         assert clause is not None
         assert "IS NULL" in str(clause).upper()
 
     def test_is_not_null(self, sa_table, table_with_fields):
-        clause = compile_filters(
-            table_with_fields, sa_table, [{"field_name": "name", "op": "is_not_null"}]
-        )
+        clause = compile_filters(table_with_fields, sa_table, [{"field_name": "name", "op": "is_not_null"}])
         assert clause is not None
         assert "IS NOT NULL" in str(clause).upper()
 
@@ -260,9 +256,7 @@ class TestNewOperators:
 
     def test_unknown_field_warning(self, sa_table, table_with_fields):
         """不存在的字段应返回 None 并记 warning."""
-        clause = compile_filters(
-            table_with_fields, sa_table, [{"field_name": "nonexistent", "op": "="}]
-        )
+        clause = compile_filters(table_with_fields, sa_table, [{"field_name": "nonexistent", "op": "="}])
         assert clause is None
 
     def test_unknown_op_raises(self, sa_table, table_with_fields):
@@ -347,13 +341,21 @@ class TestOrAndGrouping:
         db.commit()
         db.refresh(tbl)
 
-        sa_t = Table(tbl.db_table_name, MetaData(), Column("id", Integer, primary_key=True),
-                     Column(f.db_column_name, String(255)))
+        sa_t = Table(
+            tbl.db_table_name,
+            MetaData(),
+            Column("id", Integer, primary_key=True),
+            Column(f.db_column_name, String(255)),
+        )
         where = query.compile_filters(
             tbl,
             sa_t,
-            {"__or__": [{"field_name": "name", "op": "=", "value": "foo"},
-                        {"field_name": "name", "op": "=", "value": "bar"}]},
+            {
+                "__or__": [
+                    {"field_name": "name", "op": "=", "value": "foo"},
+                    {"field_name": "name", "op": "=", "value": "bar"},
+                ]
+            },
         )
         assert where is not None
         sql = str(where.compile(compile_kwargs={"literal_binds": True}))
@@ -376,17 +378,23 @@ class TestOrAndGrouping:
         db.commit()
         db.refresh(tbl)
 
-        sa_t = Table(tbl.db_table_name, MetaData(), Column("id", Integer, primary_key=True),
-                     Column(f.db_column_name, String(255)))
+        sa_t = Table(
+            tbl.db_table_name,
+            MetaData(),
+            Column("id", Integer, primary_key=True),
+            Column(f.db_column_name, String(255)),
+        )
         where = query.compile_filters(
             tbl,
             sa_t,
             [
                 {"field_name": "name", "op": "=", "value": "foo"},
-                {"__or__": [
-                    {"field_name": "name", "op": "contains", "value": "a"},
-                    {"field_name": "name", "op": "contains", "value": "b"},
-                ]},
+                {
+                    "__or__": [
+                        {"field_name": "name", "op": "contains", "value": "a"},
+                        {"field_name": "name", "op": "contains", "value": "b"},
+                    ]
+                },
             ],
         )
         assert where is not None
@@ -413,7 +421,8 @@ class TestOrAndGrouping:
         db.refresh(tbl)
 
         sa_t = Table(
-            tbl.db_table_name, MetaData(),
+            tbl.db_table_name,
+            MetaData(),
             Column("id", Integer, primary_key=True),
             Column(f1.db_column_name, String(255)),
             Column(f2.db_column_name, Boolean),
@@ -421,8 +430,12 @@ class TestOrAndGrouping:
         where = query.compile_filters(
             tbl,
             sa_t,
-            {"__and__": [{"field_name": "name", "op": "=", "value": "x"},
-                        {"field_name": "active", "op": "=", "value": True}]},
+            {
+                "__and__": [
+                    {"field_name": "name", "op": "=", "value": "x"},
+                    {"field_name": "active", "op": "=", "value": True},
+                ]
+            },
         )
         assert where is not None
         sql = str(where.compile(compile_kwargs={"literal_binds": True}))
@@ -443,8 +456,12 @@ class TestOrAndGrouping:
         db.add(f)
         db.commit()
         db.refresh(tbl)
-        sa_t = Table(tbl.db_table_name, MetaData(), Column("id", Integer, primary_key=True),
-                     Column(f.db_column_name, String(255)))
+        sa_t = Table(
+            tbl.db_table_name,
+            MetaData(),
+            Column("id", Integer, primary_key=True),
+            Column(f.db_column_name, String(255)),
+        )
 
         assert query.compile_filters(tbl, sa_t, {"__or__": []}) is None
 
@@ -463,8 +480,12 @@ class TestOrAndGrouping:
         db.add(f)
         db.commit()
         db.refresh(tbl)
-        sa_t = Table(tbl.db_table_name, MetaData(), Column("id", Integer, primary_key=True),
-                     Column(f.db_column_name, String(255)))
+        sa_t = Table(
+            tbl.db_table_name,
+            MetaData(),
+            Column("id", Integer, primary_key=True),
+            Column(f.db_column_name, String(255)),
+        )
 
         where = query.compile_filters(
             tbl,
