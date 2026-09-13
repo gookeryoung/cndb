@@ -567,7 +567,7 @@ export default function GridPage() {
             onRow={(record) => ({ onDoubleClick: () => { setDetailRow(record); setDetailOpen(true) } })}
           />
         ) : mode === 'kanban' ? (
-          <KanbanView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <KanbanView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         ) : mode === 'gallery' ? (
           <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         ) : (
@@ -838,6 +838,32 @@ function CreateViewForm({
           allowClear
         />
       </Form.Item>
+      <Form.Item label="卡片排序字段" tooltip="每列卡片按此字段排序；留空则按 API 返回顺序 + 紧急置顶">
+        <Select
+          value={(opts.card_sort_field as string) || undefined}
+          onChange={(v) => updateOpt('card_sort_field', v)}
+          placeholder="选择排序字段（可选）"
+          options={allFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="卡片排序方向" tooltip="配合卡片排序字段使用">
+        <Select
+          value={(opts.card_sort_direction as 'asc' | 'desc') || 'desc'}
+          onChange={(v: 'asc' | 'desc') => updateOpt('card_sort_direction', v)}
+          style={{ width: '100%' }}
+          options={[{ value: 'desc', label: '降序 ↓' }, { value: 'asc', label: '升序 ↑' }]}
+        />
+      </Form.Item>
+      <Form.Item label="逾期/紧急卡片置顶" valuePropName="checked" tooltip="有截止日期时，逾期和临近截止的卡片始终排在列顶">
+        <Switch
+          checked={opts.pin_urgent !== false}
+          onChange={(v) => updateOpt('pin_urgent', v)}
+          checkedChildren="开"
+          unCheckedChildren="关"
+        />
+      </Form.Item>
       <Form.Item label="进度百分比字段" tooltip="0-100 的数值字段，显示进度条">
         <Select
           value={(opts.progress_field as string) || undefined}
@@ -1018,6 +1044,32 @@ function EditViewForm({
           options={textFields.concat(fields.filter(f => f.is_primary)).map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
           style={{ width: '100%' }}
           allowClear
+        />
+      </Form.Item>
+      <Form.Item label="卡片排序字段" tooltip="每列卡片按此字段排序；留空则按 API 返回顺序 + 紧急置顶">
+        <Select
+          value={(opts.card_sort_field as string) || undefined}
+          onChange={(v) => updateOpt('card_sort_field', v)}
+          placeholder="选择排序字段（可选）"
+          options={allFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="卡片排序方向" tooltip="配合卡片排序字段使用">
+        <Select
+          value={(opts.card_sort_direction as 'asc' | 'desc') || 'desc'}
+          onChange={(v: 'asc' | 'desc') => updateOpt('card_sort_direction', v)}
+          style={{ width: '100%' }}
+          options={[{ value: 'desc', label: '降序 ↓' }, { value: 'asc', label: '升序 ↑' }]}
+        />
+      </Form.Item>
+      <Form.Item label="逾期/紧急卡片置顶" valuePropName="checked" tooltip="有截止日期时，逾期和临近截止的卡片始终排在列顶">
+        <Switch
+          checked={opts.pin_urgent !== false}
+          onChange={(v) => updateOpt('pin_urgent', v)}
+          checkedChildren="开"
+          unCheckedChildren="关"
         />
       </Form.Item>
       <Form.Item label="进度百分比字段">
@@ -1256,6 +1308,8 @@ function ViewConfigDialog({
     | { key: string; label: string; fieldTypes: string[]; kind?: 'select' }
     | { key: string; label: string; fieldTypes: 'multiple'; kind: 'multiple' }
     | { key: string; label: string; fieldTypes: 'number'; kind: 'number' }
+    | { key: string; label: string; fieldTypes: 'direction'; kind: 'direction' }
+    | { key: string; label: string; fieldTypes: 'boolean'; kind: 'switch' }
 
   const viewOptFields = useMemo<_OptField[]>(() => {
     if (viewType === 'kanban') {
@@ -1266,6 +1320,9 @@ function ViewConfigDialog({
         { key: 'due_date_field', label: '截止日期字段（Date）', fieldTypes: ['date', 'datetime'] },
         { key: 'priority_field', label: '优先级字段（Select）', fieldTypes: ['select', 'multi_select'] },
         { key: 'assignee_field', label: '负责人字段', fieldTypes: ['text', 'long_text'] },
+        { key: 'card_sort_field', label: '卡片排序字段（可选）', fieldTypes: ['number', 'float', 'decimal', 'date', 'datetime', 'select', 'text'] },
+        { key: 'card_sort_direction', label: '卡片排序方向', fieldTypes: 'direction', kind: 'direction' },
+        { key: 'pin_urgent', label: '逾期/紧急卡片置顶', fieldTypes: 'boolean', kind: 'switch' },
         { key: 'card_fields', label: '卡片额外字段（多选）', fieldTypes: 'multiple', kind: 'multiple' },
         { key: 'urgent_threshold_days', label: '紧急阈值（天）', fieldTypes: 'number', kind: 'number' },
       ]
@@ -1407,17 +1464,25 @@ function ViewConfigDialog({
               let fieldOptions: Array<{ label: string; value: string }> = []
               let isMultiple = false
               let isNumber = false
+              let isDirection = false
+              let isSwitch = false
 
               if (ft === 'multiple') {
                 isMultiple = true
                 fieldOptions = sortableFields.map(f => ({ label: f.name, value: f.name }))
               } else if (ft === 'number') {
                 isNumber = true
+              } else if (ft === 'direction') {
+                isDirection = true
+              } else if (ft === 'boolean') {
+                isSwitch = true
               } else {
                 fieldOptions = sortableFields
                   .filter(f => ft.includes(f.field_type) || (ft.includes('is_primary') && f.is_primary))
                   .map(f => ({ label: f.name, value: f.name }))
               }
+
+              const currentValue = draftOpt[opt.key]
 
               return (
                 <div key={opt.key} style={{ marginBottom: 8 }}>
@@ -1425,9 +1490,23 @@ function ViewConfigDialog({
                   {isNumber ? (
                     <Select
                       style={{ width: '100%' }}
-                      value={(draftOpt[opt.key] as number) || 3}
+                      value={(currentValue as number) || 3}
                       onChange={v => setDraftOpt(prev => ({ ...prev, [opt.key]: v }))}
                       options={[{ value: 1, label: '1 天' }, { value: 3, label: '3 天' }, { value: 5, label: '5 天' }, { value: 7, label: '7 天' }]}
+                    />
+                  ) : isDirection ? (
+                    <Select
+                      style={{ width: '100%' }}
+                      value={(currentValue as 'asc' | 'desc') || 'desc'}
+                      onChange={(v: 'asc' | 'desc') => setDraftOpt(prev => ({ ...prev, [opt.key]: v }))}
+                      options={[{ value: 'desc', label: '降序 ↓' }, { value: 'asc', label: '升序 ↑' }]}
+                    />
+                  ) : isSwitch ? (
+                    <Switch
+                      checked={currentValue !== false}
+                      onChange={v => setDraftOpt(prev => ({ ...prev, [opt.key]: v }))}
+                      checkedChildren="开"
+                      unCheckedChildren="关"
                     />
                   ) : (
                     <Select
@@ -1437,7 +1516,7 @@ function ViewConfigDialog({
                       showSearch
                       placeholder={isMultiple ? '选择多个字段' : '选择字段'}
                       options={fieldOptions}
-                      value={isMultiple ? (draftOpt[opt.key] as string[]) || [] : ((draftOpt[opt.key] as string) || undefined)}
+                      value={isMultiple ? (currentValue as string[]) || [] : ((currentValue as string) || undefined)}
                       onChange={v => {
                         if (isMultiple) setDraftOpt(prev => ({ ...prev, [opt.key]: v }))
                         else setDraftOpt(prev => ({ ...prev, [opt.key]: v ?? '' }))
