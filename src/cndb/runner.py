@@ -19,6 +19,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from cndb.backup import backup_command
+from cndb.restore import restore_command
 from cndb.seed import seed as seed_command
 
 # 源码根目录（仅开发命令可用；wheel 安装后不存在）
@@ -188,6 +190,42 @@ def main() -> None:
     sub.add_parser("info", help="打印版本/配置/运行环境")
     sub.add_parser("seed", help="向数据库注入演示数据")
 
+    # backup 子命令
+    p_backup = sub.add_parser("backup", help="备份数据库和附件到 .tar.gz 归档")
+    p_backup.add_argument(
+        "-o",
+        "--output",
+        help="输出归档路径（默认 backup-<timestamp>.tar.gz）",
+    )
+    p_backup.add_argument(
+        "--mode",
+        choices=["auto", "native", "sqlalchemy"],
+        default="auto",
+        help="备份模式：auto=SQLite 用 native 其他用 sqlalchemy；native 直接复制 db 文件最快；sqlalchemy 跨数据库兼容",
+    )
+    p_backup.add_argument(
+        "--no-uploads",
+        action="store_true",
+        help="不包含 uploads 目录的附件文件（仅备份数据库）",
+    )
+
+    # restore 子命令
+    p_restore = sub.add_parser("restore", help="从 .tar.gz 归档恢复数据")
+    p_restore.add_argument(
+        "archive",
+        help="备份归档路径（.tar.gz）",
+    )
+    p_restore.add_argument(
+        "--force",
+        action="store_true",
+        help="强制覆盖已有数据（默认拒绝有数据的目标库）",
+    )
+    p_restore.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="仅检查归档完整性并预览内容，不实际恢复",
+    )
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -206,6 +244,10 @@ def main() -> None:
         build(args)
     elif args.command == "seed":
         seed_command(args)
+    elif args.command == "backup":
+        backup_command(args)
+    elif args.command == "restore":
+        restore_command(args)
     elif args.command == "info":
         sys.exit(info_command())
     else:

@@ -1,0 +1,349 @@
+"""数据备份模块.
+
+提供完整的数据备份能力，覆盖：
+1. SQLite 数据库文件（使用 sqlite3.Connection.backup 热备份，无需停服）
+2. uploads 目录下的所有附件文件
+
+输出格式为 ``.tar.gz`` 归档，包含 ``manifest.json`` 元信息供恢复端校验。
+
+备份模式：
+- ``native``（默认）：直接备份数据库文件，速度最快，仅 SQLite 可用
+- ``sqlalchemy``：通过 SQLAlchemy 序列化所有表数据，跨数据库兼容
+
+归档结构::
+
+    backup-<timestamp>.tar.gz
+    ├── manifest.json          # 备份元信息（版本、时间、表清单、文件统计）
+    ├── database/              # 数据库备份
+    │   ├── cndb.db            # native 模式下的原始文件（SQLite）
+    │   └── dump.json          # sqlalchemy 模式下的 JSON 导出
+    └── uploads/               # 附件文件目录（按 workspace_id 隔离）
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import shutil
+import sqlite3
+import tarfile
+import tempfile
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+__all__ = ["BackupError", "BackupManifest", "create_backup"]
+
+MANIFEST_VERSION = "1"  # 当前 manifest 协议版本，restore 端检查此值做兼容性判断
+
+
+class BackupError(RuntimeError):
+    """备份过程中的业务错误基类."""
+
+
+@dataclass
+class UploadsInfo:
+    """uploads 目录统计信息."""
+
+    included: bool = False
+    file_count: int = 0
+    total_size: int = 0
+
+
+@dataclass
+class DatabaseInfo:
+    """数据库备份统计."""
+
+    path: str = ""
+    db_type: str = "sqlite"
+    backup_mode: str = "native"
+    tables: list[str] = field(default_factory=list)
+    row_counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class BackupManifest:
+    """备份元信息（序列化写入 manifest.json）."""
+
+    version: str = MANIFEST_VERSION
+    app_version: str = ""
+    created_at: str = ""
+    database: DatabaseInfo = field(default_factory=DatabaseInfo)
+    uploads: UploadsInfo = field(default_factory=UploadsInfo)
+
+
+def _is_sqlite_url(database_url: str) -> bool:
+    """判断 DATABASE_URL 是否为 SQLite."""
+    parsed = urlparse(database_url)
+    return parsed.scheme.startswith("sqlite")
+
+
+def _resolve_sqlite_path(database_url: str) -> Path:
+    """从 SQLite DATABASE_URL 解析出实际文件路径."""
+    # sqlite:///absolute/path/to/db → absolute/path/to/db
+    # sqlite:///./relative/path  → 处理相对路径
+    parsed = urlparse(database_url)
+    # netloc 为空时，path 开头已有斜杠
+    path_str = parsed.path
+    # 去掉前导斜杠（sqlite:/// 产生三个斜杠）
+    if path_str.startswith("/"):
+        path_str = path_str[1:]
+    return Path(path_str).resolve()
+
+
+def _backup_sqlite_native(db_path: Path, target_dir: Path) -> tuple[str, dict[str, int]]:
+    """使用 sqlite3 的 backup() API 热备份数据库文件.
+
+    Returns:
+        (备份文件名, 表名 → 行数 映射)
+    """
+    dest = target_dir / "cndb.db"
+    # 使用 sqlite3.Connection.backup() 做联机备份
+    src_conn = sqlite3.connect(str(db_path))
+    try:
+        dest_conn = sqlite3.connect(str(dest))
+        try:
+            src_conn.backup(dest_conn)
+        finally:
+            dest_conn.close()
+    finally:
+        src_conn.close()
+
+    # 统计表行数
+    row_counts: dict[str, int] = {}
+    conn = sqlite3.connect(str(dest))
+    try:
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+        tables = [row[0] for row in cursor.fetchall()]
+        for table in tables:
+            count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+            row_counts[table] = count
+    finally:
+        conn.close()
+    return "cndb.db", row_counts
+
+
+def _backup_sqlalchemy(database_url: str, target_dir: Path) -> tuple[str, dict[str, int], list[str]]:
+    """通过 SQLAlchemy 序列化所有表数据（跨数据库兼容）.
+
+    Returns:
+        (备份文件名, 表名 → 行数 映射, 表清单)
+    """
+    from sqlalchemy import MetaData, create_engine, text
+
+    from cndb.core.plugin_registry import plugin_registry
+
+    plugin_registry.discover_and_load()
+
+    engine = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=engine)
+        tables_info: list[dict[str, Any]] = []
+        row_counts: dict[str, int] = {}
+
+        with engine.connect() as conn:
+            for table_name in sorted(metadata.tables.keys()):
+                sa_table = metadata.tables[table_name]
+                # 反射列名（按顺序）
+                columns = [c.name for c in sa_table.columns]
+                # 统计行数
+                count = conn.execute(text(f'SELECT COUNT(*) FROM "{table_name}"')).scalar() or 0
+                row_counts[table_name] = count
+                # 导出所有行（limit 保护：单表超 100 万行报警）
+                rows = conn.execute(sa_table.select()).mappings().all()
+                if len(rows) > 1_000_000:
+                    print(f"[backup] 警告：表 {table_name} 行数 {len(rows)} 超过一百万，序列化体积较大")
+                # 转成普通 dict，处理 datetime 等不可序列化类型
+                clean_rows = [{k: _to_json_safe(v) for k, v in row.items()} for row in rows]
+                tables_info.append({"table": table_name, "columns": columns, "rows": clean_rows})
+
+        dump = {"tables": tables_info}
+    finally:
+        engine.dispose()
+
+    dest = target_dir / "dump.json"
+    dest.write_text(json.dumps(dump, ensure_ascii=False, indent=2), encoding="utf-8")
+    return "dump.json", row_counts, sorted(metadata.tables.keys())
+
+
+def _to_json_safe(value: Any) -> Any:
+    """将 datetime/bytes/Decimal 等不可 JSON 序列化的类型转为安全值."""
+    if value is None:
+        return None
+    if isinstance(value, (dt.datetime, dt.date, dt.time)):
+        return value.isoformat()
+    if isinstance(value, bytes):
+        import base64
+
+        return {"__base64__": base64.b64encode(value).decode("ascii")}
+    # Decimal / UUID 等有 __str__ 的类型
+    return value
+
+
+def _collect_uploads(upload_dir: Path, target_dir: Path) -> UploadsInfo:
+    """收集 uploads 目录并复制到目标临时目录.
+
+    保留子目录结构（按 workspace_id 隔离）。空目录自动跳过。
+    """
+    info = UploadsInfo(included=False, file_count=0, total_size=0)
+    if not upload_dir.is_dir():
+        return info
+
+    target_uploads = target_dir / "uploads"
+    target_uploads.mkdir(parents=True, exist_ok=True)
+
+    for root, dirs, files in os.walk(upload_dir):
+        # 跳过隐藏目录
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for fname in files:
+            if fname.startswith("."):
+                continue
+            src_file = Path(root) / fname
+            rel_path = src_file.relative_to(upload_dir)
+            dst_file = target_uploads / rel_path
+            dst_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_file, dst_file)
+            info.file_count += 1
+            info.total_size += src_file.stat().st_size
+
+    if info.file_count > 0:
+        info.included = True
+    return info
+
+
+def _make_tar_archive(source_dir: Path, output_path: Path) -> None:
+    """将 source_dir 打包为 output_path（.tar.gz）.
+
+    使用 GNU 长文件格式以支持 Windows 下的长路径。
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(output_path, "w:gz", format=tarfile.GNU_FORMAT) as tar:
+        tar.add(source_dir, arcname="backup")
+
+
+def _total_size(path: Path) -> int:
+    """计算目录或文件总字节数."""
+    if path.is_file():
+        return path.stat().st_size
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def create_backup(
+    output: Path | None = None,
+    mode: str = "auto",
+    include_uploads: bool = True,
+    database_url: str | None = None,
+    upload_dir: Path | None = None,
+) -> Path:
+    """创建完整数据备份.
+
+    Args:
+        output: 输出归档路径（默认 ``backup-<timestamp>.tar.gz``）.
+        mode: 备份模式 — ``auto``（SQLite 用 native，其它 sqlalchemy）/ ``native`` / ``sqlalchemy``.
+        include_uploads: 是否包含 uploads 目录附件.
+        database_url: 覆盖 settings.DATABASE_URL（测试用）.
+        upload_dir: 覆盖 settings.UPLOAD_DIR（测试用）.
+
+    Returns:
+        备份归档的绝对路径.
+
+    Raises:
+        BackupError: 备份过程中的业务错误（DB 不可用、路径不存在等）.
+    """
+    import cndb
+    from cndb.core.config import settings
+
+    db_url = database_url or settings.DATABASE_URL
+    up_dir = upload_dir or settings.UPLOAD_DIR
+    is_sqlite = _is_sqlite_url(db_url)
+
+    # 解析最终使用的模式
+    resolved_mode = mode
+    if mode == "auto":
+        resolved_mode = "native" if is_sqlite else "sqlalchemy"
+    if resolved_mode == "native" and not is_sqlite:
+        raise BackupError("native 备份模式仅支持 SQLite，当前数据库类型不支持，请使用 --mode sqlalchemy")
+
+    # 设置默认输出文件名
+    if output is None:
+        ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+        output = Path(f"backup-{ts}.tar.gz").resolve()
+    else:
+        output = Path(output).resolve()
+
+    # 临时目录：拼装 manifest / database / uploads 后一次性打包
+    temp_root = Path(tempfile.mkdtemp(prefix="cndb-backup-"))
+    try:
+        db_dir = temp_root / "database"
+        db_dir.mkdir()
+
+        manifest = BackupManifest(
+            app_version=cndb.__version__,
+            created_at=dt.datetime.now(dt.UTC).isoformat(),
+            database=DatabaseInfo(db_type="sqlite" if is_sqlite else "other", backup_mode=resolved_mode),
+        )
+
+        print(f"[backup] 模式: {resolved_mode}，数据库: {db_url}")
+
+        # 1) 备份数据库
+        if resolved_mode == "native":
+            db_path = _resolve_sqlite_path(db_url)
+            if not db_path.is_file():
+                raise BackupError(f"SQLite 数据库文件不存在: {db_path}")
+            db_file, row_counts = _backup_sqlite_native(db_path, db_dir)
+            manifest.database.path = db_file
+            manifest.database.tables = sorted(row_counts.keys())
+            manifest.database.row_counts = row_counts
+        else:
+            db_file, row_counts, tables = _backup_sqlalchemy(db_url, db_dir)
+            manifest.database.path = db_file
+            manifest.database.tables = tables
+            manifest.database.row_counts = row_counts
+
+        total_rows = sum(row_counts.values())
+        print(f"[backup] 数据库备份完成: {len(row_counts)} 张表, 共 {total_rows} 行")
+
+        # 2) 收集 uploads
+        if include_uploads:
+            print(f"[backup] 收集附件目录: {up_dir}")
+            manifest.uploads = _collect_uploads(up_dir, temp_root)
+            if manifest.uploads.included:
+                size_kb = manifest.uploads.total_size / 1024
+                print(f"[backup] 附件: {manifest.uploads.file_count} 个文件, {size_kb:.1f} KB")
+            else:
+                print("[backup] uploads 目录为空或不存在，跳过附件备份")
+
+        # 3) 写入 manifest
+        manifest_path = temp_root / "manifest.json"
+        manifest_path.write_text(json.dumps(asdict(manifest), ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 4) 打包
+        print(f"[backup] 打包归档 → {output}")
+        _make_tar_archive(temp_root, output)
+        size_mb = output.stat().st_size / 1024 / 1024
+        print(f"[backup] 完成！归档大小: {size_mb:.2f} MB")
+        return output
+
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def backup_command(args: argparse.Namespace) -> None:
+    """CLI 命令：``cndb backup``."""
+    try:
+        output = Path(args.output).resolve() if args.output else None
+        include_uploads = not args.no_uploads
+        result = create_backup(output=output, mode=args.mode, include_uploads=include_uploads)
+        print(f"[ok] 备份成功: {result}")
+    except BackupError as exc:
+        print(f"[error] {exc}", file=os.sys.stderr)
+        os.sys.exit(1)
+    except Exception as exc:  # 兜底：捕获并格式化未预期异常
+        print(f"[error] 备份失败: {exc}", file=os.sys.stderr)
+        os.sys.exit(1)

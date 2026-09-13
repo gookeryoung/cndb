@@ -33,21 +33,10 @@ export default function GraphPage() {
     id: string; startX: number; startY: number; origX: number; origY: number;
   } | null>(null)
 
-  // 从 localStorage 恢复布局
+  // 默认每次数据变化都应用自动布局（不恢复旧的手动布局）
   useEffect(() => {
     if (!wid || !data) return
-    try {
-      const raw = localStorage.getItem(`${STORAGE_KEY}${wid}`)
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, { x: number; y: number }>
-        setNodePositions(new Map(Object.entries(parsed)))
-      } else {
-        // 首次访问 — 用自动布局
-        setNodePositions(computeLayeredLayout(data.nodes, data.edges))
-      }
-    } catch {
-      setNodePositions(computeLayeredLayout(data.nodes, data.edges))
-    }
+    setNodePositions(computeLayeredLayout(data.nodes, data.edges))
   }, [wid, data])
 
   // 位置变更后持久化
@@ -167,7 +156,7 @@ export default function GraphPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
         <ShareAltOutlined style={{ fontSize: 20, color: '#3b82f6' }} />
         <h2 style={{ margin: 0, flex: 1 }}>表关系图</h2>
-        <span style={{ color: '#94a3b8', fontSize: 12 }}>提示：可拖拽节点调整位置，自动保存</span>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>提示：双击节点跳转，可拖拽调整位置，默认自动布局</span>
         <Space>
           <Tooltip title="缩小">
             <Button size="small" icon={<ZoomOutOutlined />} onClick={() => setScale(s => Math.max(0.3, s - 0.15))} />
@@ -240,10 +229,9 @@ export default function GraphPage() {
                     onMouseEnter={() => setHoverNode(n.id)}
                     onMouseLeave={() => setHoverNode(null)}
                     onMouseDown={(ev) => onNodeMouseDown(ev, n.id)}
-                    onClick={(ev) => {
-                      // 只在非拖拽（mouseup 后位置未变）时才跳转
+                    onDoubleClick={(ev) => {
                       ev.stopPropagation()
-                      if (!dragState.current) goToTable(n.id)
+                      goToTable(n.id)
                     }}
                   >
                     <rect
