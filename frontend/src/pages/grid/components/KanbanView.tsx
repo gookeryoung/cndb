@@ -10,6 +10,9 @@
  * - card_fields:       卡片额外显示的字段列表（string[]）
  * - urgent_threshold_days: 临近截止多少天标记为紧急（默认 3）
  * - show_progress_bar: 是否显示进度条（默认 true，有 progress_field 时）
+ * - card_sort_field:   卡片排序字段（可选）；留空则按 API 返回顺序
+ * - card_sort_direction: 卡片排序方向 'asc' | 'desc'，默认 desc
+ * - pin_urgent:        是否把逾期/紧急卡片置顶（默认 true，有 due_date_field 时）
  */
 
 import { useMemo } from 'react'
@@ -230,6 +233,125 @@ function AutoTag({ value, style }: { value: string; style?: React.CSSProperties 
   return <Tag color={resolveTagColor(value)} style={{ margin: 0, ...style }}>{value}</Tag>
 }
 
+// ── 卡片排序 ──────────────────────────────────────────
+
+/** 计算卡片紧急级别（0=正常, 1=紧急, 2=逾期），用于置顶排序 */
+function getUrgencyRank(
+  row: RowResponse,
+  dueDateField?: string,
+  urgentThreshold = 3,
+): number {
+  if (!dueDateField) return 0
+  const due = parseDate(row[dueDateField])
+  if (!due) return 0
+  const dl = daysFromToday(due)
+  if (dl < 0) return 2
+  if (dl <= urgentThreshold) return 1
+  return 0
+}
+
+/** 按优先级字段值计算排序权重（高→低） */
+function getPriorityRank(row: RowResponse, field?: Field, value?: unknown): number {
+  if (!field || !field.config) return 0
+  const options = (field.config as Record<string, unknown>).options as
+    | Array<Record<string, unknown>>
+    | undefined
+  if (!options) return 0
+  const strVal = String(value ?? '')
+  // options 数组靠前的视为更高优先级 —— 索引越小权重越大
+  const idx = options.findIndex(
+    (o: Record<string, unknown>) => String(o.value ?? o.name ?? '') === strVal,
+  )
+  return idx >= 0 ? options.length - idx : 0
+}
+
+/** 单字段比较器：按字段类型正确比较两个 row */
+function compareField(
+  a: RowResponse,
+  b: RowResponse,
+  fieldName: string,
+  fields: Field[],
+  direction: 'asc' | 'desc',
+): number {
+  const field = fields.find((f) => f.name === fieldName)
+  const av = a[fieldName]
+  const bv = b[fieldName]
+  // null/undefined 排末尾
+  const aEmpty = av === null || av === undefined || av === ''
+  const bEmpty = bv === null || bv === undefined || bv === ''
+  if (aEmpty && bEmpty) return 0
+  if (aEmpty) return 1
+  if (bEmpty) return -1
+
+  let cmp = 0
+  if (field && ['number', 'decimal', 'float', 'percentage', 'timestamp'].includes(field.field_type)) {
+    cmp = Number(av) - Number(bv)
+  } else if (field && ['date', 'datetime'].includes(field.field_type)) {
+    const ad = new Date(String(av)).getTime()
+    const bd = new Date(String(bv)).getTime()
+    cmp = ad - bd
+  } else {
+    cmp = String(av).localeCompare(String(bv), 'zh-CN')
+  }
+  return direction === 'asc' ? cmp : -cmp
+}
+
+/** 对一列卡片应用完整排序：先紧急置顶，再按 card_sort_field / 级联 view_sortings 排序 */
+function sortKanbanCards(
+  rows: RowResponse[],
+  fields: Field[],
+  opts: Record<string, unknown>,
+  viewSortings: Array<{ field_name: string; direction: 'asc' | 'desc' }> = [],
+): RowResponse[] {
+  const urgentThreshold = Number(opts.urgent_threshold_days) || 3
+  const dueDateField = opts.due_date_field as string | undefined
+  const priorityField = opts.priority_field as string | undefined
+  const pinUrgent = opts.pin_urgent !== false && !!dueDateField
+  const cardSortField = opts.card_sort_field as string | undefined
+  const cardSortDir = ((opts.card_sort_direction as 'asc' | 'desc') || 'desc')
+  const priorityFieldDef = priorityField ? fields.find((f) => f.name === priorityField) : undefined
+
+  // 把所有排序规则拼成有序列表
+  // 优先级：紧急置顶 > card_sort_field > 级联 view_sortings > 优先级权重 > 创建时间倒序
+  const sortKeys: Array<{ field_name: string; direction: 'asc' | 'desc' }> = []
+  if (cardSortField) sortKeys.push({ field_name: cardSortField, direction: cardSortDir })
+  for (const s of viewSortings) {
+    if (s.field_name === cardSortField) continue // 去重
+    sortKeys.push(s)
+  }
+
+  return [...rows].sort((a, b) => {
+    // 1) 紧急置顶（逾期 > 紧急 > 正常）
+    if (pinUrgent) {
+      const au = getUrgencyRank(a, dueDateField, urgentThreshold)
+      const bu = getUrgencyRank(b, dueDateField, urgentThreshold)
+      if (au !== bu) return bu - au // 权重 2 排在最前
+    }
+
+    // 2) 应用配置的字段排序
+    for (const sk of sortKeys) {
+      const c = compareField(a, b, sk.field_name, fields, sk.direction)
+      if (c !== 0) return c
+    }
+
+    // 3) 按优先级字段权重（如果有配置且未在 sortKeys 中）
+    if (priorityField && !sortKeys.some((s) => s.field_name === priorityField)) {
+      const pwA = getPriorityRank(a, priorityFieldDef, a[priorityField])
+      const pwB = getPriorityRank(b, priorityFieldDef, b[priorityField])
+      if (pwA !== pwB) return pwB - pwA
+    }
+
+    // 4) 兜底：创建时间倒序（新的在前）或 id 倒序
+    const aCreated = (a.created_at as string | undefined) || ''
+    const bCreated = (b.created_at as string | undefined) || ''
+    if (aCreated && bCreated) {
+      const c = bCreated.localeCompare(aCreated)
+      if (c !== 0) return c
+    }
+    return (b.id as number) - (a.id as number)
+  })
+}
+
 // ── 看板卡片 ──────────────────────────────────────────
 
 interface KanbanCardProps {
@@ -418,12 +540,14 @@ export default function KanbanView({
   fields,
   view,
   density,
+  sortings,
   onRowClick,
 }: {
   rows: RowResponse[]
   fields: Field[]
   view?: View | null
   density: Density
+  sortings?: Array<{ field_name: string; direction: 'asc' | 'desc' }>
   onRowClick?: (r: RowResponse) => void
 }) {
   const opts = (view?.view_options || {}) as Record<string, unknown>
@@ -439,9 +563,27 @@ export default function KanbanView({
   const columns = useMemo(() => {
     const cols: Array<{ key: string; title: string; rows: RowResponse[]; urgentCount: number }> = []
 
+    // 统计每个分组的紧急/逾期卡片数
+    const urgentThreshold = Number(opts.urgent_threshold_days) || 3
+    const dueDateField = opts.due_date_field as string | undefined
+
+    const makeCol = (key: string, title: string, list: RowResponse[]) => {
+      const sorted = sortKanbanCards(list, fields, opts, sortings)
+      let urgentCount = 0
+      if (dueDateField) {
+        for (const r of sorted) {
+          const dueDate = parseDate(r[dueDateField])
+          if (!dueDate) continue
+          const dl = daysFromToday(dueDate)
+          if (dl < 0 || dl <= urgentThreshold) urgentCount++
+        }
+      }
+      cols.push({ key, title, rows: sorted, urgentCount })
+    }
+
     if (!groupField) {
       // 无分组 → 单列
-      cols.push({ key: 'all', title: '全部', rows, urgentCount: 0 })
+      makeCol('all', '全部', rows)
       return cols
     }
 
@@ -481,25 +623,12 @@ export default function KanbanView({
       groups.get(key)!.push(r)
     }
 
-    // 统计每个分组的紧急/逾期卡片数
-    const urgentThreshold = Number(opts.urgent_threshold_days) || 3
-    const dueDateField = opts.due_date_field as string | undefined
-
     for (const [title, list] of groups) {
-      let urgentCount = 0
-      if (dueDateField) {
-        for (const r of list) {
-          const dueDate = parseDate(r[dueDateField])
-          if (!dueDate) continue
-          const dl = daysFromToday(dueDate)
-          if (dl < 0 || dl <= urgentThreshold) urgentCount++
-        }
-      }
-      cols.push({ key: title, title, rows: list, urgentCount })
+      makeCol(title, title, list)
     }
 
     return cols
-  }, [rows, groupField, groupFieldDef, opts])
+  }, [rows, groupField, groupFieldDef, opts, fields, sortings])
 
   if (columns.length === 0) {
     return <Empty description="暂无记录" style={{ padding: 48 }} />
