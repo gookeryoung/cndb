@@ -97,7 +97,7 @@ class TestSuggestColors:
 
     def test_mixed_avoids_used(self):
         """语义命中 + fallback 混合时，fallback 应避开已用色."""
-        labels = ["紧急", "未知选项X", "未知选项Y"]
+        labels = ["紧急", "选项X", "选项Y"]
         result = suggest_colors(labels)
         assert result[0] == "red"  # 语义命中
         # fallback 的两个应避开 "red"

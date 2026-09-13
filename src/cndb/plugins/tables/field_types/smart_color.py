@@ -47,10 +47,10 @@ ANTD_STATUS_COLORS: tuple[str, ...] = (
 # 顺序是调色板的自然顺序，fallback 时按选项索引循环取用
 _PALETTE: tuple[str, ...] = (
     "blue",
-    "green",
     "orange",
     "purple",
     "cyan",
+    "green",
     "magenta",
     "gold",
     "red",
@@ -79,9 +79,7 @@ class _ColorRule:
 # 意外命中（如 "选项A" 中的 A 不应匹配 "优秀/grade_a" 规则）。
 _RULES: tuple[_ColorRule, ...] = (
     # ── 布尔 / 是或否（最常见） ──
-    _ColorRule(
-        "green", ("是", "yes", "true", "对", "同意", "通过", "ok", "done", "已完成", "完成"), description="肯定/完成"
-    ),
+    _ColorRule("green", ("是", "yes", "true", "对", "同意", "通过", "ok", "done"), description="肯定/确认"),
     _ColorRule(
         "default",
         ("否", "no", "false", "错", "拒绝", "不通过", "未完成", "pending", "待处理", "待办"),
@@ -93,8 +91,12 @@ _RULES: tuple[_ColorRule, ...] = (
         ("进行中", "处理中", "执行中", "ongoing", "running", "in_progress", "active"),
         description="进行中",
     ),
+    # weight=12 让 "已完成" 状态色优先于 green 域中同样含 "已完成" 关键词的规则
     _ColorRule(
-        "success", ("已完成", "完成", "已解决", "已处理", "closed", "resolved", "finished"), description="已完成"
+        "success",
+        ("已完成", "已解决", "已处理", "closed", "resolved", "finished"),
+        weight=12,
+        description="已完成",
     ),
     _ColorRule(
         "error",
@@ -109,7 +111,7 @@ _RULES: tuple[_ColorRule, ...] = (
         weight=15,
         description="紧急/最高优先级",
     ),
-    _ColorRule("orange", ("高优先级", "较高", "high", "p2", "重要", "优先", "高"), description="高优先级/重要"),
+    _ColorRule("orange", ("高优先级", "较高", "high", "p2", "重要"), description="高优先级/重要"),
     _ColorRule("gold", ("中等", "medium", "normal", "一般", "p3", "普通", "常规", "中"), description="中等/一般"),
     _ColorRule(
         "blue", ("低优先级", "较低", "low", "p4", "p5", "次要", "minimal", "不急", "低"), description="低优先级/次要"
@@ -191,7 +193,8 @@ def _extract_grade_word(text: str) -> str | None:
 
     不会误匹配 "选项A" 这种末尾单字母。
     """
-    m = _GRADE_WORD_RE.search(text)
+    normalized = _normalize(text)
+    m = _GRADE_WORD_RE.search(normalized)
     if m:
         return m.group(1).lower()
     return None
@@ -331,7 +334,7 @@ def suggest_colors(labels: list[str]) -> list[str]:
 
     混合策略：
     1. 逐个调用 :func:`match_color` 用语义匹配
-    2. 未命中的按 fallback 调色板分配，且保证与已命中的颜色不重复
+    2. 未命中的按 fallback 调色板分配，且保证与已命中的颜色不重复（调色板耗尽后直接循环）
 
     Args:
         labels: 选项显示文本列表.
@@ -347,21 +350,28 @@ def suggest_colors(labels: list[str]) -> list[str]:
 
     out: list[str] = []
     palette_len = len(_PALETTE)
+    all_palette_colors = {fallback_palette(i) for i in range(palette_len)}
     for c in result:
         if c is not None:
             out.append(c)
             continue
-        # fallback：循环调色板，跳过已用色；调色板耗尽后强制取第一个
-        pick: str | None = None
-        for _ in range(palette_len + 1):
-            candidate = fallback_palette(fallback_idx)
-            fallback_idx += 1
-            if candidate not in used:
-                pick = candidate
-                break
-        if pick is None:
-            # 调色板全部被占，强制取 fallback 下一个
+        # 若调色板还有未被使用的颜色，跳过已用色；否则直接循环取
+        unused_palette = all_palette_colors - used
+        if unused_palette:
+            pick: str | None = None
+            for _ in range(palette_len + 1):
+                candidate = fallback_palette(fallback_idx)
+                fallback_idx += 1
+                if candidate not in used:
+                    pick = candidate
+                    break
+            if pick is None:
+                pick = fallback_palette(fallback_idx)
+                fallback_idx += 1
+        else:
+            # 调色板全部被占用，直接循环取下一个
             pick = fallback_palette(fallback_idx)
+            fallback_idx += 1
         used.add(pick)
         out.append(pick)
     return out
