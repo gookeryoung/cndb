@@ -37,9 +37,11 @@ export interface TableCreate { name: string; description?: string }
 export interface TableUpdate { name?: string; description?: string }
 
 export type FieldType =
-  | 'text' | 'long_text' | 'number' | 'decimal' | 'boolean'
-  | 'date' | 'datetime' | 'timestamp' | 'select' | 'multi_select'
-  | 'email' | 'url' | 'phone' | 'link' | 'attachment' | 'percentage' | 'json'
+  | 'text' | 'longtext' | 'number' | 'float' | 'boolean'
+  | 'date' | 'datetime' | 'timestamp' | 'select' | 'multiselect'
+  | 'email' | 'url' | 'phone' | 'link' | 'attachment' | 'percentage'
+  // 历史别名（后端自动归一化）
+  | 'long_text' | 'decimal' | 'multi_select' | 'json'
   | 'formula' | 'auto_id' | 'created_time' | 'updated_time'
   | 'created_by' | 'updated_by'
 

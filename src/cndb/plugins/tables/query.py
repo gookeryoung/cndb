@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import Table, and_, exists, func, or_, select
+from sqlalchemy import String, Table, Text, and_, exists, func, or_, select
 from sqlalchemy import column as sa_column
 from sqlalchemy import table as sa_table_fn
 
@@ -146,6 +146,29 @@ def _build_condition(  # noqa: PLR0911, PLR0912
         return or_(col.is_(None), col == "")
     if op_lower == "is_not_empty":
         return and_(col.isnot(None), col != "")
+    if op_lower == "is_null":
+        return col.is_(None)
+    if op_lower == "is_not_null":
+        return col.isnot(None)
+    # multiselect 专用：逗号分隔字符串的包含判断
+    # - contains_any: 值中包含列表任一（任一匹配即 true）
+    # - contains_all: 值中包含列表全部
+    # - exactly: 值精确等于某个字符串（逗号分隔整体匹配）
+    if op_lower == "contains_any":
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("contains_any 需要 list/tuple 值")
+        # col LIKE '%val1%' OR col LIKE '%val2%' ...
+        return or_(*[col.contains(str(v)) for v in value]) if value else None
+    if op_lower == "contains_all":
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("contains_all 需要 list/tuple 值")
+        return and_(*[col.contains(str(v)) for v in value]) if value else None
+    # date range: 值为 [start, end]，两端闭区间
+    if op_lower in ("between", "date_range"):
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            raise ValueError(f"{op_lower} 需要 [start, end] 二元组")
+        start_val, end_val = value
+        return and_(col >= start_val, col <= end_val)
 
     raise ValueError(f"未知操作符: {op}")
 
@@ -153,7 +176,7 @@ def _build_condition(  # noqa: PLR0911, PLR0912
 # ── 入口函数 ─────────────────────────────────────────
 
 
-def _normalize_filters(
+def _normalize_filters(  # noqa: PLR0912
     table: DataTable,
     filters: Any,
 ) -> list[dict[str, Any]]:
@@ -181,27 +204,29 @@ def _normalize_filters(
     if isinstance(filters, dict):
         normalized: list[dict[str, Any]] = []
         for key, value in filters.items():
-            # 特殊操作符 $query: 对所有可搜索文本字段做 OR contains
-            if key == "$query":
-                text_fields = [
-                    f
-                    for f in table.fields
-                    if not f.trashed
-                    and f.field_type
-                    in (
-                        "text",
-                        "long_text",
-                        "email",
-                        "phone",
-                        "url",
-                    )
-                ]
+            # 特殊操作符 $query / __query__: 对所有可搜索文本字段做 OR contains
+            if key in ("$query", "__query__"):
+                # 可搜索文本字段 —— 遍历 registry 找 String/Text 基础列（排除 link/attachment 等无物理列或非文本类型）
+                text_fields: list[DataField] = []
+                for f in table.fields:
+                    if f.trashed:
+                        continue
+                    ft = default_registry.get(f.field_type)
+                    if ft is None or not ft.has_physical_column:
+                        continue
+                    if ft.sqlalchemy_type in (String, Text):
+                        text_fields.append(f)
                 if text_fields and value:
                     contains_list: list[dict[str, Any]] = [
                         {"field_name": f.name, "op": "contains", "value": value} for f in text_fields
                     ]
-                    # 用 OR 逻辑 —— 通过追加 marker key __query_or__ 来提示 compile_filters
+                    # 用 OR 逻辑 —— 通过 marker key __query_or__ 提示 compile_filters
                     normalized.append({"__query_or__": contains_list})
+                continue
+
+            # 嵌套分组 key: __or__ / __and__ —— 原样保留，值可以是 list[dict] 或 dict
+            if key in ("__or__", "__and__"):
+                normalized.append({key: value})
                 continue
 
             # 值本身是 dict，视为 {field_name, op, value} 或 {op: ..., value: ...}
@@ -216,6 +241,55 @@ def _normalize_filters(
     return []
 
 
+def _compile_filter_item(
+    table: DataTable,
+    sa_table: Table,
+    flt: dict[str, Any],
+) -> Any | None:
+    """编译单个 filter dict（支持递归处理 __or__ / __and__ 嵌套组）."""
+    # __or__ / __and__ 嵌套组
+    if "__or__" in flt:
+        return _compile_group(table, sa_table, flt["__or__"], logic="OR")
+    if "__and__" in flt:
+        return _compile_group(table, sa_table, flt["__and__"], logic="AND")
+
+    # $query 展开的 OR 组
+    if "__query_or__" in flt:
+        return _compile_group(table, sa_table, flt["__query_or__"], logic="OR")
+
+    field_name = flt.get("field_name") or flt.get("field")
+    if not field_name:
+        return None
+    op = flt.get("op") or flt.get("operator") or "="
+    value = flt.get("value")
+    return _build_condition(table, sa_table, field_name, op, value)
+
+
+def _compile_group(
+    table: DataTable,
+    sa_table: Table,
+    items: Any,
+    logic: str,
+) -> Any | None:
+    """编译一组条件，用指定逻辑连接."""
+    if not items:
+        return None
+    if isinstance(items, dict):
+        items = _normalize_filters(table, items)
+    sub_clauses: list[Any] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        clause = _compile_filter_item(table, sa_table, item)
+        if clause is not None:
+            sub_clauses.append(clause)
+    if not sub_clauses:
+        return None
+    if len(sub_clauses) == 1:
+        return sub_clauses[0]
+    return or_(*sub_clauses) if logic.upper() == "OR" else and_(*sub_clauses)
+
+
 def compile_filters(
     table: DataTable,
     sa_table: Table,
@@ -224,42 +298,14 @@ def compile_filters(
 ) -> Any | None:
     """编译过滤条件，返回单个 SQLAlchemy where clause（或 None 表示无有效条件）.
 
-    filters 支持 list[dict] 或 dict 形式，dict 里可含特殊 key $query 做全局关键词搜索。
+    filters 支持：
+    - list[dict]: 标准格式
+    - dict {k: v}: 简易格式
+    - dict 含 $query / __query__: 全局关键词搜索
+    - dict 含 __or__ / __and__: 嵌套分组（值为 list[dict] 或 dict）
     """
-    clauses: list[Any] = []
-
     normalized = _normalize_filters(table, filters)
-
-    for flt in normalized:
-        # $query 展开的 OR 组
-        if "__query_or__" in flt:
-            sub_clauses: list[Any] = []
-            for sub in flt["__query_or__"]:
-                field_name = sub.get("field_name") or sub.get("field")
-                op = sub.get("op") or sub.get("operator") or "="
-                value = sub.get("value")
-                clause = _build_condition(table, sa_table, field_name, op, value)
-                if clause is not None:
-                    sub_clauses.append(clause)
-            if sub_clauses:
-                clauses.append(or_(*sub_clauses) if len(sub_clauses) > 1 else sub_clauses[0])
-            continue
-
-        field_name = flt.get("field_name") or flt.get("field")
-        if not field_name:
-            continue
-        op = flt.get("op") or flt.get("operator") or "="
-        value = flt.get("value")
-        clause = _build_condition(table, sa_table, field_name, op, value)
-        if clause is not None:
-            clauses.append(clause)
-
-    if not clauses:
-        return None
-    if len(clauses) == 1:
-        return clauses[0]
-
-    return and_(*clauses) if logic.upper() == "AND" else or_(*clauses)
+    return _compile_group(table, sa_table, normalized, logic=logic)
 
 
 def compile_sorts(

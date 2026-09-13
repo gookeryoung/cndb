@@ -213,6 +213,129 @@ def drop_table(engine: Any, db_table_name: str) -> None:
     logger.info("物理表已删除: %s", db_table_name)
 
 
+# ── is_unique 物理唯一索引 ────────────────────────────
+
+
+def _unique_index_name(table_name: str, column_name: str) -> str:
+    """唯一索引命名：idx_uniq_{table}_{col}（截断到 SQLite 64 字符限制内）."""
+    raw = f"idx_u_{table_name}_{column_name}"
+    if len(raw) > 60:
+        raw = raw[:57] + ".."
+    return raw
+
+
+def add_unique_constraint(engine: Any, table: DataTable, field: DataField) -> None:
+    """为字段创建物理唯一索引（SQLite / PostgreSQL 通用）.
+
+    已存在则跳过（幂等）；数据冲突时抛异常由上层处理.
+    """
+    ft = default_registry.get(field.field_type)
+    if ft is None or not ft.has_physical_column:
+        # link 等无物理列字段不支持唯一约束
+        logger.debug("字段 %s 无物理列，跳过唯一约束", field.name)
+        return
+
+    idx_name = _unique_index_name(table.db_table_name, field.db_column_name)
+    insp = inspect(engine)
+    existing_idx_names = {idx["name"] for idx in insp.get_indexes(table.db_table_name)}
+    if idx_name in existing_idx_names:
+        logger.debug("唯一索引 %s 已存在，跳过", idx_name)
+        return
+
+    sql = f'CREATE UNIQUE INDEX "{idx_name}" ON "{table.db_table_name}" ("{field.db_column_name}")'
+    with engine.begin() as conn:
+        conn.execute(text(sql))
+    logger.info("唯一索引已创建: %s (%s.%s)", idx_name, table.db_table_name, field.db_column_name)
+
+
+def drop_unique_constraint(engine: Any, table: DataTable, field: DataField) -> None:
+    """移除字段的物理唯一索引（幂等：不存在则跳过）."""
+    ft = default_registry.get(field.field_type)
+    if ft is None or not ft.has_physical_column:
+        return
+
+    idx_name = _unique_index_name(table.db_table_name, field.db_column_name)
+    insp = inspect(engine)
+    existing_idx_names = {idx["name"] for idx in insp.get_indexes(table.db_table_name)}
+    if idx_name not in existing_idx_names:
+        logger.debug("唯一索引 %s 不存在，跳过删除", idx_name)
+        return
+
+    sql = f'DROP INDEX IF EXISTS "{idx_name}"'
+    with engine.begin() as conn:
+        conn.execute(text(sql))
+    logger.info("唯一索引已删除: %s", idx_name)
+
+
+# ── 列变更检测与物理重建 ──────────────────────────────
+
+
+def _column_needs_rebuild(old_field: DataField, new_field: DataField) -> bool:
+    """判断字段变更是否需要物理列重建.
+
+    以下变更需要重建：
+    - field_type 改变（SQLAlchemy 类型或长度可能变了）
+    - required 从 False 改为 True（SQLite 不支持 ALTER COLUMN）
+    """
+    return old_field.field_type != new_field.field_type or (
+        old_field.required != new_field.required and new_field.required
+    )
+
+
+def rebuild_column(engine: Any, table: DataTable, old_field: DataField, new_field: DataField) -> None:
+    """SQLite 兼容的列重建：rename → create → copy → drop → rename.
+
+    步骤：
+    1. 把旧列改名为 _{col}_bak
+    2. 用新定义 ADD COLUMN 新列（原列名）
+    3. 把旧列数据复制到新列（做必要的类型转换）
+    4. DROP COLUMN 旧列（备份列）
+
+    PostgreSQL 等支持 ALTER COLUMN 的引擎暂不走此路径（add_column 直接 ADD 即可）。
+    """
+    ft_old = default_registry.get(old_field.field_type)
+    ft_new = default_registry.get(new_field.field_type)
+    if ft_old is None or not ft_old.has_physical_column:
+        raise ValueError(f"旧字段 {old_field.name} 无物理列，无法重建")
+    if ft_new is None or not ft_new.has_physical_column:
+        raise ValueError(f"新字段 {new_field.name} 无物理列，无法重建")
+
+    old_col = old_field.db_column_name
+    new_col = new_field.db_column_name
+    bak_col = f"{old_col}_bak"
+
+    col = ft_new.make_column(new_col, nullable=not new_field.required)
+    col_def = f'"{col.name}" {col.type.compile(engine.dialect)}'
+    if not col.nullable:
+        col_def += " NOT NULL"
+
+    with engine.begin() as conn:
+        # 1. rename old → bak
+        conn.execute(text(f'ALTER TABLE "{table.db_table_name}" RENAME COLUMN "{old_col}" TO "{bak_col}"'))
+        # 2. add new
+        conn.execute(text(f'ALTER TABLE "{table.db_table_name}" ADD COLUMN {col_def}'))
+        # 3. copy data（做宽松类型转换：CASE WHEN）
+        conn.execute(
+            text(
+                f'UPDATE "{table.db_table_name}" SET "{new_col}" = CAST("{bak_col}" AS {col.type.compile(engine.dialect)}) '
+                f'WHERE "{bak_col}" IS NOT NULL'
+            )
+        )
+        # 4. drop bak column
+        try:
+            conn.execute(text(f'ALTER TABLE "{table.db_table_name}" DROP COLUMN "{bak_col}"'))
+        except Exception as exc:  # pragma: no cover - 低版本 SQLite 兜底
+            logger.warning("删除备份列 %s 失败（低版本 SQLite？）: %s", bak_col, exc)
+
+    logger.info(
+        "物理列已重建: %s.%s (%s → %s)",
+        table.db_table_name,
+        new_col,
+        old_field.field_type,
+        new_field.field_type,
+    )
+
+
 # ── 快速入口（从 engine 字符串创建 engine） ────────────
 
 
@@ -224,13 +347,17 @@ def get_engine(database_url: str) -> Any:
 
 
 __all__ = [
+    "_column_needs_rebuild",
     "add_column",
+    "add_unique_constraint",
     "build_sa_table",
     "create_link_table",
     "create_table",
     "drop_column",
     "drop_link_table",
     "drop_table",
+    "drop_unique_constraint",
     "get_engine",
+    "rebuild_column",
     "table_exists",
 ]

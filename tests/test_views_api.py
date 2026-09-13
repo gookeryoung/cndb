@@ -589,3 +589,86 @@ class TestViewsAPI:
             headers=auth_owner,
         )
         assert r.status_code == 404
+
+
+class TestKanbanEnhanced:
+    """看板增强：group_order + ungrouped_label + 返回字段."""
+
+    def test_kanban_group_order(self, client, ws, table, auth_owner):
+        """按 group_order 排序分组，未列出的追加末尾，ungrouped 自动放最后."""
+        # 建字段
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/fields",
+            json={"name": "状态", "field_type": "text", "order": 1},
+            headers=auth_owner,
+        )
+        # 建视图 + group_order
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "KanbanOrdered",
+                "view_type": "kanban",
+                "view_options": {
+                    "group_field": "状态",
+                    "group_order": ["待办", "进行中", "已完成"],
+                    "ungrouped_label": "未设置",
+                },
+            },
+            headers=auth_owner,
+        )
+        vid = r.json()["id"]
+
+        # 插数据
+        for val in ["进行中", "待办", "已完成", "阻塞", None]:
+            client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records",
+                headers=auth_owner,
+                json={"values": {"姓名": f"row-{val}", "状态": val}},
+            )
+
+        resp = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/kanban",
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        # group_order 字段存在
+        assert body["group_order"] == ["待办", "进行中", "已完成", "阻塞", "未设置"]
+        assert body["ungrouped_label"] == "未设置"
+        # columns key 顺序匹配
+        assert list(body["columns"].keys()) == ["待办", "进行中", "已完成", "阻塞", "未设置"]
+        # ungrouped（None）在最后
+        assert body["columns"]["未设置"][0]["状态"] is None
+
+    def test_kanban_empty_group_order_default_sort(self, client, ws, table, auth_owner):
+        """group_order 为空列表 → 保持 defaultdict 自然顺序."""
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/fields",
+            json={"name": "状态", "field_type": "text", "order": 1},
+            headers=auth_owner,
+        )
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "KanbanNoOrder",
+                "view_type": "kanban",
+                "view_options": {"group_field": "状态", "group_order": []},
+            },
+            headers=auth_owner,
+        )
+        vid = r.json()["id"]
+
+        for val in ["B", "A", "C"]:
+            client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records",
+                headers=auth_owner,
+                json={"values": {"姓名": f"r-{val}", "状态": val}},
+            )
+
+        resp = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/kanban",
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["group_order"] == ["B", "A", "C"]

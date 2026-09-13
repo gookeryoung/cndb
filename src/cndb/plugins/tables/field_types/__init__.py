@@ -485,6 +485,44 @@ class TimestampFieldType(FieldType):
         return ts
 
 
+# ── 字段类型别名归一化 ─────────────────────────────────
+
+# 历史别名 → 后端 registry 真实名（向前兼容前端旧数据和存量记录）
+_FIELD_TYPE_ALIASES: dict[str, str] = {
+    # 前端旧名 / Django 时代名 → FastAPI 后端名
+    "decimal": "float",
+    "long_text": "longtext",
+    "multi_select": "multiselect",
+    "integer": "number",
+    "checkbox": "boolean",
+    "single_select": "select",
+    "multi": "multiselect",
+    # 大小写宽容
+    "LongText": "longtext",
+    "MultiSelect": "multiselect",
+}
+
+
+def normalize_field_type(name: str) -> str:
+    """把前端传来的字段类型名归一化为后端 registry 注册的真实名.
+
+    未知别名原样返回（由下游 registry.get 处理）。
+    """
+    if not isinstance(name, str):
+        return str(name)
+    # 先查别名表
+    alias = _FIELD_TYPE_ALIASES.get(name)
+    if alias is not None:
+        return alias
+    # 再尝试大小写不敏感匹配
+    lower = name.lower()
+    if lower != name:
+        alias_ci = _FIELD_TYPE_ALIASES.get(lower)
+        if alias_ci is not None:
+            return alias_ci
+    return name
+
+
 class FieldTypeRegistry:
     def __init__(self) -> None:
         self._types: dict[str, FieldType] = {}
@@ -498,7 +536,8 @@ class FieldTypeRegistry:
         return ft
 
     def get(self, name: str) -> FieldType | None:
-        return self._types.get(name)
+        # 自动归一化字段类型别名
+        return self._types.get(normalize_field_type(name))
 
     def all(self) -> list[FieldType]:
         return list(self._types.values())

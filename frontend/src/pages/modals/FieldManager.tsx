@@ -16,16 +16,16 @@ interface Props {
 
 const FIELD_TYPES: { value: FieldType; label: string; category: string }[] = [
   { value: 'text', label: '单行文本', category: '基础' },
-  { value: 'long_text', label: '多行文本', category: '基础' },
+  { value: 'longtext', label: '多行文本', category: '基础' },
   { value: 'boolean', label: '是/否', category: '基础' },
   { value: 'number', label: '整数', category: '数字' },
-  { value: 'decimal', label: '小数', category: '数字' },
+  { value: 'float', label: '小数', category: '数字' },
   { value: 'percentage', label: '百分比', category: '数字' },
   { value: 'date', label: '日期', category: '日期' },
   { value: 'datetime', label: '日期时间', category: '日期' },
   { value: 'timestamp', label: '时间戳', category: '日期' },
   { value: 'select', label: '单选', category: '选择' },
-  { value: 'multi_select', label: '多选', category: '选择' },
+  { value: 'multiselect', label: '多选', category: '选择' },
   { value: 'email', label: '邮箱', category: '高级' },
   { value: 'url', label: '链接', category: '高级' },
   { value: 'phone', label: '电话', category: '高级' },
@@ -35,11 +35,11 @@ const FIELD_TYPES: { value: FieldType; label: string; category: string }[] = [
 
 /** 字段类型分类，决定需要渲染哪些 config 子表单 */
 const TYPE_CATEGORIES = {
-  basic: ['text', 'long_text', 'boolean', 'email', 'url', 'phone'],
-  numeric: ['number', 'decimal', 'percentage'],
+  basic: ['text', 'longtext', 'boolean', 'email', 'url', 'phone'],
+  numeric: ['number', 'float', 'percentage'],
   date: ['date', 'datetime'],
   timestamp: ['timestamp'],
-  select: ['select', 'multi_select'],
+  select: ['select', 'multiselect'],
   link: ['link'],
   attachment: ['attachment'],
 }
@@ -361,8 +361,8 @@ function ConfigEditor({ fieldType, form, tables }: ConfigEditorProps) {
 function defaultConfigForType(fieldType: FieldType): Record<string, unknown> {
   switch (fieldType) {
     case 'number':
-    case 'decimal':
-      return { min: undefined, max: undefined, decimals: fieldType === 'decimal' ? 2 : 0 }
+    case 'float':
+      return { min: undefined, max: undefined, decimals: fieldType === 'float' ? 2 : 0 }
     case 'percentage':
       return { decimals: 0 }
     case 'date':
@@ -370,7 +370,7 @@ function defaultConfigForType(fieldType: FieldType): Record<string, unknown> {
     case 'datetime':
       return { include_time: true, auto_fill: '' }
     case 'select':
-    case 'multi_select':
+    case 'multiselect':
       return { options: [] }
     case 'link':
       return { target_table_id: undefined, multiple: true }
