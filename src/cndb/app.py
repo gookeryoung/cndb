@@ -108,9 +108,15 @@ def should_spa_fallback(path: str, accept_header: str) -> bool:
 
 
 _STATIC = Path(__file__).resolve().parent / "static"
-if _STATIC.is_dir():  # pragma: no cover - 需要前端构建产物
+_ASSETS_DIR = _STATIC / "assets"
+_INDEX_HTML = _STATIC / "index.html"
+# 仅当下目录结构完整时才挂载 SPA 静态资源；前端未 build 时（如 CI、纯后端测试）跳过，
+# 避免 StaticFiles 构造器因目录不存在抛 RuntimeError
+_SPA_READY = _STATIC.is_dir() and _ASSETS_DIR.is_dir() and _INDEX_HTML.is_file()
+
+if _SPA_READY:  # pragma: no cover - 需要前端构建产物
     # 挂载 /assets 为独立静态目录（带 hash 的产物，可长缓存）
-    app.mount("/assets", StaticFiles(directory=str(_STATIC / "assets")), name="assets")
+    app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="assets")
 
     @app.middleware("http")
     async def _spa_fallback(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
