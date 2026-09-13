@@ -200,10 +200,15 @@ export default function GridPage() {
     return viewSortings.length ? viewSortings : undefined
   }, [viewSortings])
 
+  // 非 grid 视图需要全量数据（日历/看板/画廊要跨月/跨列聚合），绕过分页
+  const VIEW_FETCH_ALL_LIMIT = 5000
+  const effectiveLimit = mode === 'grid' ? limit : VIEW_FETCH_ALL_LIMIT
+  const effectiveOffset = mode === 'grid' ? offset : 0
+
   const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 } } = useQuery({
-    queryKey: ['table-records', tableKey, offset, limit, effectiveFilters, sortsParam, viewFilterLogic],
+    queryKey: ['table-records', tableKey, mode, effectiveOffset, effectiveLimit, effectiveFilters, sortsParam, viewFilterLogic],
     queryFn: () => {
-      return recordApi.list(wid!, tid!, { offset, limit, filters: effectiveFilters, sorts: sortsParam, filter_logic: viewFilterLogic })
+      return recordApi.list(wid!, tid!, { offset: effectiveOffset, limit: effectiveLimit, filters: effectiveFilters, sorts: sortsParam, filter_logic: viewFilterLogic })
     },
     enabled: !!wid && !!tid,
   })

@@ -10,7 +10,7 @@ __pycache__
 *.pyd
 *.egg-info
 *.egg
-dist
+dist/*.tar.gz   # 仅排除 sdist，保留 dist/*.whl 供 wheel 部署镜像使用
 build
 .eggs
 

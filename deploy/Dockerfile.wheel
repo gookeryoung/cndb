@@ -1,0 +1,50 @@
+# ═══════════════════════════════════════════════════════════════════
+# cndb wheel 安装版生产镜像
+#
+# 使用方式（两步走）：
+#   1. 本地或 CI 构建 wheel：make build   # 产物在 dist/*.whl
+#   2. 构建镜像：
+#      docker build -f deploy/Dockerfile.wheel -t cndb:latest .
+#      # 或从 compose：
+#      docker compose -f docker-compose.wheel.yml up -d --build
+#
+# 与源码版（deploy/Dockerfile）区别：
+#   - 不复制源码，不构建前端；wheel 已包含编译好的前端静态 + 后端代码
+#   - 镜像更小、构建更快、产物可直接复用已有 wheel
+#
+# 国内镜像源（如不需要可替换为官方 docker.io/python:3.14-slim）：
+#   docker.m.daocloud.io / docker.1ms.run / dockerpull.com / docker.xuanyuan.me
+# ═══════════════════════════════════════════════════════════════════
+
+FROM docker.m.daocloud.io/python:3.14-slim
+
+# ── 国内镜像（按需替换）──
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn \
+    DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# ── 安装系统依赖（curl 用于 healthcheck）──
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── 仅复制 wheel 包（构建上下文为仓库根，dist/ 由 make build 生成）──
+WORKDIR /app
+COPY dist/*.whl ./
+
+# ── 安装 wheel（--no-cache-dir 减小镜像体积）──
+RUN pip install --no-cache-dir ./*.whl \
+    && rm ./*.whl
+
+# ── 非 root 用户运行 ──
+RUN useradd --create-home --shell /bin/false cndb \
+    && chown -R cndb:cndb /app
+USER cndb
+
+EXPOSE 8000
+
+# uvicorn 启动：单进程足够，前端静态由 FastAPI 直接服务
+CMD ["uvicorn", "cndb.app:app", "--host", "0.0.0.0", "--port", "8000"]
