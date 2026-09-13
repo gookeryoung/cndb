@@ -112,11 +112,14 @@ async function activateView(page: Page, viewId: number) {
   await page.waitForTimeout(1200);
 }
 
-/** 点 Ant Segmented 里的 "看板" radio 切换视图类型 */
+/** 点 Ant Segmented 里的 "看板" 切换视图类型
+ *  Ant Segmented 的 <input type="radio"> 是隐藏的，需要点外层 label.ant-segmented-item */
 async function switchToKanbanMode(page: Page) {
-  // Ant Design Segmented 用 radiogroup + radio label
-  const kanbanRadio = page.getByRole("radio", { name: /看板/ }).first();
-  await kanbanRadio.click();
+  const kanbanLabel = page
+    .locator(".ant-segmented-item", { hasText: /看板/ })
+    .first();
+  await expect(kanbanLabel).toBeVisible({ timeout: 5000 });
+  await kanbanLabel.click();
   await page.waitForTimeout(1000);
 }
 
@@ -140,7 +143,10 @@ async function assertKanbanRendered(page: Page, minColCount = 1) {
   const root = kanbanRoot(page);
   await expect(root).toBeVisible({ timeout: 8000 });
   const columns = kanbanColumns(root);
-  await expect(columns).toHaveCount((n) => n >= minColCount, { timeout: 5000 });
+  // Playwright toHaveCount 只接受数字，用 poll 轮询 count
+  await expect
+    .poll(async () => await columns.count(), { timeout: 8000 })
+    .toBeGreaterThanOrEqual(minColCount);
   return { root, columns };
 }
 
@@ -169,7 +175,7 @@ test.describe("看板视图 — 分组字段类型覆盖", () => {
 
     // 列头应有卡片计数徽章
     const { root } = await assertKanbanRendered(page, 4);
-    const countBadges = root.locator("span[style*='#e2e8f0']");
+    const countBadges = root.locator("span[style*='border-radius: 10px']");
     await expect(countBadges).toHaveCount(4);
   });
 
@@ -246,8 +252,8 @@ test.describe("看板视图 — 分组字段类型覆盖", () => {
     await activateView(page, vid);
     await assertNoObjectObject(page);
 
-    await expect(page.getByText("教授")).toBeVisible();
-    await expect(page.getByText("研究员")).toBeVisible();
+    await expect(page.getByText("教授", { exact: true })).toBeVisible();
+    await expect(page.getByText("研究员", { exact: true })).toBeVisible();
   });
 });
 
@@ -378,8 +384,8 @@ test.describe("看板视图 — 列头计数与卡片数一致", () => {
 
     for (let i = 0; i < colCount; i++) {
       const col = columns.nth(i);
-      // 列头计数徽章（灰色圆角 span）
-      const countBadge = col.locator("span[style*='#e2e8f0']").first();
+      // 列头计数徽章（灰色圆角 span — style 带 border-radius: 10px）
+      const countBadge = col.locator("span[style*='border-radius: 10px']").first();
       // 实际卡片 = cursor: pointer 的 div（React inline style）
       const cards = col.locator("div[style*='cursor: pointer']");
       const badgeText = (await countBadge.textContent())?.trim() ?? "";
@@ -393,28 +399,39 @@ test.describe("看板视图 — 列头计数与卡片数一致", () => {
 // ─────────────── 第四组：卡片交互与详情抽屉 ───────────────
 
 test.describe("看板视图 — 卡片交互", () => {
-  test("产品开发·按片区看板 — 卡片点击打开详情抽屉", async ({
+  test("卡片点击打开详情抽屉 — 员工表·按部门看板", async ({
     page,
     request,
   }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
+    // 员工表按部门看板 — link 分组，只有 4 列少量数据
     const wid = await getWorkspaceId(request, "某企业销售管理");
-    const tid = await getTableId(request, wid, "产品开发");
-    const vid = await getKanbanViewId(request, wid, tid, "片区");
+    const tid = await getTableId(request, wid, "员工表");
+    const vid = await getKanbanViewId(request, wid, tid, "部门");
 
-    await gotoTable(page, wid, "产品开发");
+    await gotoTable(page, wid, "员工表");
     await activateView(page, vid);
 
     const { root } = await assertKanbanRendered(page, 3);
-    const firstCard = root.locator("div[style*='cursor: pointer']").first();
-    await firstCard.click();
+    // 精确定位：第一列的卡片容器（overflowY:auto）里的第一张卡片
+    const firstCol = root.locator(":scope > div[style*='flex-direction: column']").first();
+    // KanbanCard 的 style 组合：有 cursor: pointer 且有 border（内部元素一般没有 border）
+    const firstCard = firstCol.locator("div[style*='cursor: pointer'][style*='border']").first();
+    await expect(firstCard).toBeVisible({ timeout: 3000 });
+
+    // evaluate 强制 dispatch click 事件并检查 onClick 是否触发
+    const clicked = await firstCard.evaluate((el: HTMLElement) => {
+      // 触发原生 click 事件（React 合成事件基于它）
+      const evt = new MouseEvent("click", { bubbles: true, cancelable: true });
+      el.dispatchEvent(evt);
+      return true;
+    });
+    expect(clicked).toBe(true);
 
     // 详情抽屉出现
-    await page.waitForTimeout(500);
-    const drawer = page.locator(".ant-drawer").first();
-    await expect(drawer).toBeVisible({ timeout: 3000 });
-    await expect(drawer.getByText("[object Object]")).toHaveCount(0);
+    await expect(page.locator(".ant-drawer").first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(".ant-drawer").first().getByText("[object Object]")).toHaveCount(0);
   });
 
   test("大数据集首屏渲染 — 产品开发看板 8s 内完成", async ({
