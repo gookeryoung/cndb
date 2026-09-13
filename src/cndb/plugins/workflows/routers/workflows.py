@@ -19,12 +19,13 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import MetaData, func, select
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.graph import count_physical_rows
 from cndb.plugins.tables.models import DataTable, DataView
 from cndb.plugins.workflows.models import Workflow, WorkflowEdge, WorkflowNode
 from cndb.plugins.workflows.schemas import (
@@ -76,20 +77,6 @@ def _validate_table_binding(workspace_id: int, table_id: int | None, db: Session
 # ── 绑定表摘要 ───────────────────────────────────────
 
 
-def _count_physical_rows(engine: Any, dt: DataTable) -> int | None:
-    """物理表行数；表结构异常时返回 None 而不是让详情接口整体失败."""
-    try:
-        metadata = MetaData()
-        metadata.reflect(bind=engine, only=[dt.db_table_name])
-        sa_table = metadata.tables.get(dt.db_table_name)
-        if sa_table is None:
-            return None
-        with engine.connect() as conn:  # type: ignore[attr-defined]
-            return conn.execute(select(func.count()).select_from(sa_table)).scalar_one()
-    except Exception:
-        return None
-
-
 def _table_briefs(wf: Workflow, db: Session) -> dict[int, NodeTableBrief]:
     """批量构建 {table_id: 摘要}；表软删/移出工作区时跳过（前端显示未绑定）."""
     engine = db.get_bind()
@@ -114,9 +101,27 @@ def _table_briefs(wf: Workflow, db: Session) -> dict[int, NodeTableBrief]:
             id=dt.id,
             name=dt.name,
             view_count=view_counts.get(dt.id, 0),
-            row_count=_count_physical_rows(engine, dt),
+            row_count=count_physical_rows(engine, dt),
         )
     return briefs
+
+
+def _single_table_brief(db: Session, workspace_id: int, table_id: int) -> dict[str, Any] | None:
+    """单张表的摘要（用于 create_node/update_node 即时返回）.
+
+    找不到 / 已软删 / 不属于该工作区时返回 None.
+    """
+    dt = db.query(DataTable).filter(DataTable.id == table_id).first()
+    if dt is None or dt.trashed or dt.workspace_id != workspace_id:
+        return None
+    engine = db.get_bind()
+    _views = db.query(func.count(DataView.id)).filter(DataView.table_id == table_id).scalar() or 0
+    return {
+        "id": dt.id,
+        "name": dt.name,
+        "view_count": int(_views),
+        "row_count": count_physical_rows(engine, dt),
+    }
 
 
 # ── Workflow CRUD ────────────────────────────────────
@@ -306,6 +311,7 @@ def create_node(
     db.add(node)
     db.commit()
     db.refresh(node)
+    brief = _single_table_brief(db, workspace_id, node.table_id) if node.table_id is not None else None
     return {
         "id": node.id,
         "workflow_id": node.workflow_id,
@@ -314,7 +320,7 @@ def create_node(
         "pos_x": node.pos_x,
         "pos_y": node.pos_y,
         "config": node.config or {},
-        "table": None,
+        "table": brief,
         "created_at": node.created_at,
         "updated_at": node.updated_at,
     }
@@ -344,6 +350,7 @@ def update_node(
         setattr(node, key, value)
     db.commit()
     db.refresh(node)
+    brief = _single_table_brief(db, workspace_id, node.table_id) if node.table_id is not None else None
     return {
         "id": node.id,
         "workflow_id": node.workflow_id,
@@ -352,7 +359,7 @@ def update_node(
         "pos_x": node.pos_x,
         "pos_y": node.pos_y,
         "config": node.config or {},
-        "table": None,
+        "table": brief,
         "created_at": node.created_at,
         "updated_at": node.updated_at,
     }

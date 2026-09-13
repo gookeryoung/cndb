@@ -25,14 +25,14 @@ import {
 import type { RowResponse, Field, View } from '@/api'
 import { resolveTagColor } from '@/utils/tagColors'
 import type { Density } from '@/theme/tableSettings'
+import { resolveOpts, KANBAN_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
 import {
-  formatLinkValue,
-  formatMultiSelectValue,
   getSelectLabel,
   getLinkFirstLabel,
   getMultiSelectFirstLabel,
   formatFieldDisplayValue,
 } from './fieldValueFormat'
+import { parseDate, daysFromToday } from './dateUtils'
 
 // ── 密度样式映射 ──────────────────────────────────────
 
@@ -135,25 +135,9 @@ function densityColumnStyle(density: Density) {
   }
 }
 
-// ── 工具函数（link/multi_select/select/通用格式化已抽到 ./fieldValueFormat.ts） ──
+// ── 工具函数（link/multi_select/select/通用格式化已抽到 ./fieldValueFormat.ts；日期工具已抽到 ./dateUtils.ts） ──
 
-/** 解析日期字段值为 Date */
-function parseDate(value: unknown): Date | null {
-  if (!value) return null
-  const str = String(value).slice(0, 10) // 取 YYYY-MM-DD
-  const d = new Date(str)
-  return Number.isNaN(d.getTime()) ? null : d
-}
-
-/** 计算距今天数（负数表示已逾期） */
-function daysFromToday(target: Date): number {
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const t = new Date(target.getFullYear(), target.getMonth(), target.getDate())
-  return Math.round((t.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-}
-
-/** 自动配色 Tag（看板内部使用）— 直接用 antd 预设色名 */
+// ── 自动配色 Tag ──────────────────────────────────────
 function AutoTag({ value, style }: { value: string; style?: React.CSSProperties }) {
   return <Tag color={resolveTagColor(value)} style={{ margin: 0, ...style }}>{value}</Tag>
 }
@@ -228,12 +212,13 @@ function sortKanbanCards(
   opts: Record<string, unknown>,
   viewSortings: Array<{ field_name: string; direction: 'asc' | 'desc' }> = [],
 ): RowResponse[] {
-  const urgentThreshold = Number(opts.urgent_threshold_days) || 3
+  // opts 已由 KanbanView 顶层 resolveOpts 统一默认值，此处直接取值即可
+  const urgentThreshold = Number(opts.urgent_threshold_days)
   const dueDateField = opts.due_date_field as string | undefined
   const priorityField = opts.priority_field as string | undefined
   const pinUrgent = opts.pin_urgent !== false && !!dueDateField
   const cardSortField = opts.card_sort_field as string | undefined
-  const cardSortDir = ((opts.card_sort_direction as 'asc' | 'desc') || 'desc')
+  const cardSortDir = opts.card_sort_direction as 'asc' | 'desc'
   const priorityFieldDef = priorityField ? fields.find((f) => f.name === priorityField) : undefined
 
   // 把所有排序规则拼成有序列表
@@ -282,24 +267,24 @@ function sortKanbanCards(
 interface KanbanCardProps {
   row: RowResponse
   fields: Field[]
-  view?: View | null
+  opts: Record<string, unknown>   // 已由 KanbanView 顶层 resolveOpts 统一默认值
   density: Density
   onRowClick?: (r: RowResponse) => void
 }
 
-function KanbanCard({ row, fields, view, density, onRowClick }: KanbanCardProps) {
-  const opts = (view?.view_options || {}) as Record<string, unknown>
+function KanbanCard({ row, fields, opts, density, onRowClick }: KanbanCardProps) {
   const cs = densityCardStyle(density)
 
-  // 字段解析
-  const titleField = (opts.title_field as string) || fields.find((f) => f.is_primary)?.name || 'id'
+  // 字段解析（opts 已 resolve 默认值；title_field 走 schema 自动推断 fallback）
+  const titleField = (opts.title_field as string)
+    || resolveAutoField(fields, findOptionSchema('kanban', 'title_field'))
   const progressField = opts.progress_field as string | undefined
   const dueDateField = opts.due_date_field as string | undefined
   const priorityField = opts.priority_field as string | undefined
   const assigneeField = opts.assignee_field as string | undefined
   const cardFields = (opts.card_fields as string[] | undefined) || []
   const showProgressBar = opts.show_progress_bar !== false && !!progressField
-  const urgentThreshold = Number(opts.urgent_threshold_days) || 3
+  const urgentThreshold = Number(opts.urgent_threshold_days)
 
   // 查找字段定义（用于格式化复杂类型值）
   const findField = (name: string): Field | undefined => fields.find((f) => f.name === name)
@@ -475,7 +460,10 @@ export default function KanbanView({
   sortings?: Array<{ field_name: string; direction: 'asc' | 'desc' }>
   onRowClick?: (r: RowResponse) => void
 }) {
-  const opts = (view?.view_options || {}) as Record<string, unknown>
+  const opts = useMemo(
+    () => resolveOpts(view?.view_options as Record<string, unknown> | undefined, KANBAN_OPTIONS),
+    [view?.view_options],
+  )
   const groupField =
     (opts.group_field as string) ||
     fields.find((f) => f.field_type === 'select' || f.field_type === 'multi_select' || f.field_type === 'link')?.name
@@ -488,8 +476,8 @@ export default function KanbanView({
   const columns = useMemo(() => {
     const cols: Array<{ key: string; title: string; rows: RowResponse[]; urgentCount: number }> = []
 
-    // 统计每个分组的紧急/逾期卡片数
-    const urgentThreshold = Number(opts.urgent_threshold_days) || 3
+    // 统计每个分组的紧急/逾期卡片数（opts 已 resolve，直接取值）
+    const urgentThreshold = Number(opts.urgent_threshold_days)
     const dueDateField = opts.due_date_field as string | undefined
 
     const makeCol = (key: string, title: string, list: RowResponse[]) => {
@@ -621,7 +609,7 @@ export default function KanbanView({
           {/* 卡片列表 */}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {col.rows.map((r) => (
-              <KanbanCard key={r.id} row={r} fields={fields} view={view} density={density} onRowClick={onRowClick} />
+              <KanbanCard key={r.id} row={r} fields={fields} opts={opts} density={density} onRowClick={onRowClick} />
             ))}
             {col.rows.length === 0 && (
               <div

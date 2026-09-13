@@ -172,9 +172,43 @@ export interface WorkspaceTrashResponse {
   row_counts?: Array<{ table_id: ID; table_name: string; trashed_rows: number }>
 }
 
-export interface GraphNode { id: string; label: string; type?: string }
-export interface GraphEdge { source: string; target: string; label?: string }
-export interface GraphResponse { nodes: GraphNode[]; edges: GraphEdge[]; topo_order?: string[] }
+export interface GraphNode {
+  /** 字符串化的表 ID（前端 Map key 用） */
+  id: string
+  /** 节点显示名称 */
+  label: string
+  /** 节点类型：table/view/workflow 等 */
+  type?: string
+  /** 原始表 ID（数字，用于跳转） */
+  table_id?: number
+  /** 原始表名（兼容保留，等同于 label） */
+  name?: string
+  /** 字段数（不含软删） */
+  field_count?: number
+  /** 物理行数（表结构异常时为 null） */
+  row_count?: number | null
+  /** 视图数 */
+  view_count?: number
+  /** 入度（被多少张表引用） */
+  link_count?: number
+  /** 软删标记 */
+  trashed?: boolean
+}
+export interface GraphEdge {
+  /** 源节点 id(str) */
+  source: string
+  /** 目标节点 id(str) */
+  target: string
+  /** 边标签（link 字段名） */
+  label?: string
+  /** link 字段名（兼容保留） */
+  link_field_name?: string
+}
+export interface GraphResponse {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  topo_order?: string[]
+}
 export interface DependencyResponse { forward: Record<string, string[]>; reverse: Record<string, string[]> }
 
 export interface CsvAnalyzeResult { columns: string[]; total_rows: number }

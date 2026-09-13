@@ -21,6 +21,8 @@ import {
 import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
 import { formatFieldDisplayValue, getLinkFirstLabel, getMultiSelectFirstLabel } from './fieldValueFormat'
+import { parseDate, fmtDate } from './dateUtils'
+import { resolveOpts, CALENDAR_OPTIONS } from './viewOptionSchema'
 
 // ── 类型定义 ──────────────────────────────────────────
 
@@ -42,23 +44,7 @@ interface CalendarEvent {
   color?: string
 }
 
-// ── 工具函数 ──────────────────────────────────────────
-
-/** 解析日期字符串为 Date（只取日期部分） */
-function parseDateOnly(value: unknown): Date | null {
-  if (!value) return null
-  const str = String(value).slice(0, 10)
-  const d = new Date(str + 'T00:00:00')
-  return Number.isNaN(d.getTime()) ? null : d
-}
-
-/** 格式化日期为 YYYY-MM-DD */
-function fmtDate(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
+// ── 工具函数（日期已抽到 ./dateUtils.ts） ───────────────
 
 /** 获取某月的日历网格（6 行 x 7 列，周日起始） */
 function getMonthGrid(year: number, month: number): Date[] {
@@ -139,7 +125,7 @@ function buildEvents(
 
   const events: CalendarEvent[] = []
   for (const row of rows) {
-    const date = parseDateOnly(row[startField])
+    const date = parseDate(row[startField])
     if (!date) continue
 
     // 标题：优先 title_field，否则第一个 text 字段，否则主键
@@ -190,6 +176,40 @@ function densityStyle(density: Density): DensityStyle {
     return { navPadding: 12, navFontSize: 14, cellFontSize: 14, eventFontSize: 13, eventPadding: '4px 10px', eventRadius: 6, dayCellMinHeight: 140, monthCellHeight: 110, yearCellHeight: 96 }
   }
   return { navPadding: 8, navFontSize: 13, cellFontSize: 13, eventFontSize: 12, eventPadding: '2px 6px', eventRadius: 4, dayCellMinHeight: 100, monthCellHeight: 90, yearCellHeight: 80 }
+}
+
+// ── 跨视图共用的事件工具 ──────────────────────────────
+
+/** 把事件按日期字符串分组（MonthView / WeekView 共用）.
+ *  filterDays 可选：只保留这些日期范围内的事件（WeekView 过滤本周用）。
+ */
+function groupEventsByDay(events: CalendarEvent[], filterDays?: Date[]): Map<string, CalendarEvent[]> {
+  const map = new Map<string, CalendarEvent[]>()
+  const allowed = filterDays ? new Set(filterDays.map(d => fmtDate(d))) : null
+  for (const ev of events) {
+    const key = fmtDate(ev.date)
+    if (allowed && !allowed.has(key)) continue
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(ev)
+  }
+  return map
+}
+
+/** 构造事件 badge 的统一 style 对象（MonthView / WeekView 共用） */
+function eventBadgeStyle(event: CalendarEvent, ds: DensityStyle, lineHeight = 1.3): React.CSSProperties {
+  return {
+    fontSize: ds.eventFontSize,
+    padding: ds.eventPadding,
+    borderRadius: ds.eventRadius,
+    background: event.color ? `${event.color}15` : '#e6f4ff',
+    color: event.color || '#1677ff',
+    cursor: 'pointer',
+    borderLeft: `3px solid ${event.color || '#1677ff'}`,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    lineHeight,
+  }
 }
 
 // ── 年视图 YearView ──────────────────────────────────
@@ -332,15 +352,7 @@ function MonthView({
   const todayStr = fmtDate(today)
 
   // 预计算每天的事件（单点日期，不跨天）
-  const eventsByDay = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>()
-    for (const ev of events) {
-      const key = fmtDate(ev.date)
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(ev)
-    }
-    return map
-  }, [events])
+  const eventsByDay = useMemo(() => groupEventsByDay(events), [events])
 
   const WEEK_HEADERS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
@@ -445,19 +457,7 @@ function MonthView({
                   <div
                     key={`${ev.row.id}-${idx}`}
                     onClick={(e) => { e.stopPropagation(); onEventClick?.(ev.row) }}
-                    style={{
-                      fontSize: ds.eventFontSize,
-                      padding: ds.eventPadding,
-                      borderRadius: ds.eventRadius,
-                      background: ev.color ? `${ev.color}15` : '#e6f4ff',
-                      color: ev.color || '#1677ff',
-                      cursor: 'pointer',
-                      borderLeft: `3px solid ${ev.color || '#1677ff'}`,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      lineHeight: 1.3,
-                    }}
+                    style={eventBadgeStyle(ev, ds, 1.3)}
                     title={ev.title}
                   >
                     {ev.title}
@@ -492,18 +492,8 @@ function WeekView({
 
   const DAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
-  // 按天分组事件（单点日期）
-  const eventsByDay = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>()
-    for (const ev of events) {
-      const dStr = fmtDate(ev.date)
-      // 只保留本周范围内的
-      if (!weekDays.some((wd) => fmtDate(wd) === dStr)) continue
-      if (!map.has(dStr)) map.set(dStr, [])
-      map.get(dStr)!.push(ev)
-    }
-    return map
-  }, [events, weekDays])
+  // 按天分组事件（只保留本周范围内的）
+  const eventsByDay = useMemo(() => groupEventsByDay(events, weekDays), [events, weekDays])
 
   const weekStart = fmtDate(weekDays[0])
   const weekEnd = fmtDate(weekDays[6])
@@ -562,19 +552,7 @@ function WeekView({
                     <div
                       key={`${ev.row.id}-${i}`}
                       onClick={() => onEventClick?.(ev.row)}
-                      style={{
-                        fontSize: ds.eventFontSize,
-                        padding: ds.eventPadding,
-                        borderRadius: ds.eventRadius,
-                        background: ev.color ? `${ev.color}15` : '#e6f4ff',
-                        color: ev.color || '#1677ff',
-                        cursor: 'pointer',
-                        borderLeft: `3px solid ${ev.color || '#1677ff'}`,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        lineHeight: 1.4,
-                      }}
+                      style={eventBadgeStyle(ev, ds, 1.4)}
                       title={ev.title}
                     >
                       {ev.title}
@@ -601,9 +579,9 @@ function WeekView({
 // ── 主组件 CalendarView ──────────────────────────────
 
 export default function CalendarView({ rows, fields, view, density, onRowClick }: CalendarViewProps) {
-  // 稳定的 view_options 引用 — 避免每次渲染创建新对象导致 useMemo 重新计算
+  // 稳定的 view_options 引用 — 由 resolveOpts 统一默认值
   const opts = useMemo(
-    () => (view?.view_options || {}) as Record<string, unknown>,
+    () => resolveOpts(view?.view_options as Record<string, unknown> | undefined, CALENDAR_OPTIONS),
     [view?.view_options],
   )
 

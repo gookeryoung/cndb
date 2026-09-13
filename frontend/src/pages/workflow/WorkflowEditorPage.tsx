@@ -10,8 +10,8 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
-  Button, Card, Descriptions, Empty, Input, Modal,
-  Select, Space, Spin, Tag, Tooltip, Typography, message,
+  Button, Card, Descriptions, Drawer, Empty, Input, Modal,
+  Select, Space, Spin, TabPane, Tabs, Tag, Tooltip, Typography, message,
 } from 'antd'
 import {
   AimOutlined, ApartmentOutlined, ClusterOutlined, DeleteOutlined,
@@ -20,6 +20,9 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { workflowApi, tableApi } from '@/api'
 import type { WorkflowNode, ID } from '@/api'
+import GraphMiniPanel from './GraphMiniPanel'
+import GraphFullPanel from './GraphFullPanel'
+import { computeLayeredLayout } from '@/utils/graphLayout'
 
 const { Text } = Typography
 
@@ -144,46 +147,6 @@ function CustomEdge({
 const nodeTypes = { table: TableNode }
 const edgeTypes = { custom: CustomEdge }
 
-// ── 自动分层布局（移植 GraphPage 算法） ───────────────
-
-function computeLayeredLayout(
-  nodes: WorkflowNode[],
-  edges: { source_node_id: number | string; target_node_id: number | string }[],
-): Map<string, { x: number; y: number }> {
-  const pos = new Map<string, { x: number; y: number }>()
-  const indeg = new Map<string, number>()
-  for (const n of nodes) indeg.set(String(n.id), 0)
-  for (const e of edges) indeg.set(String(e.target_node_id), (indeg.get(String(e.target_node_id)) ?? 0) + 1)
-
-  const layers: string[][] = []
-  const remaining = new Set(nodes.map(n => String(n.id)))
-  while (remaining.size > 0) {
-    const layer: string[] = []
-    for (const id of remaining) {
-      if ((indeg.get(id) ?? 0) === 0) layer.push(id)
-    }
-    if (layer.length === 0) break // 有环，退出
-    layers.push(layer)
-    for (const id of layer) {
-      remaining.delete(id)
-      for (const e of edges) {
-        if (String(e.source_node_id) === id) {
-          indeg.set(String(e.target_node_id), (indeg.get(String(e.target_node_id)) ?? 0) - 1)
-        }
-      }
-    }
-  }
-  if (remaining.size > 0) layers.push([...remaining])
-
-  const colGap = 340, rowGap = 140
-  layers.forEach((layer, ci) => {
-    layer.forEach((id, ri) => {
-      pos.set(id, { x: 40 + ci * colGap, y: 60 + ri * rowGap })
-    })
-  })
-  return pos
-}
-
 // ── 主编辑器 ─────────────────────────────────────────
 
 function WorkflowEditorInner() {
@@ -210,6 +173,7 @@ function WorkflowEditorInner() {
   const [addNodeOpen, setAddNodeOpen] = useState(false)
   const [addNodeName, setAddNodeName] = useState('')
   const [addNodeTableId, setAddNodeTableId] = useState<ID | null>(null)
+  const [graphDrawerOpen, setGraphDrawerOpen] = useState(false)
 
   // 将后端数据转换为 React Flow 格式
   useEffect(() => {
@@ -358,7 +322,11 @@ function WorkflowEditorInner() {
 
   const handleAutoLayout = () => {
     if (!data) return
-    const layout = computeLayeredLayout(data.nodes, data.edges)
+    const layout = computeLayeredLayout(
+      data.nodes.map(n => ({ id: String(n.id) })),
+      data.edges.map(e => ({ source: String(e.source_node_id), target: String(e.target_node_id) })),
+      { colGap: 340, rowGap: 140, startX: 40, startY: 60 },
+    )
     const newNodes = rfNodes.map(n => {
       const pos = layout.get(n.id) || { x: n.position.x, y: n.position.y }
       return { ...n, position: pos }
@@ -455,39 +423,65 @@ function WorkflowEditorInner() {
         </ReactFlow>
       </div>
 
-      {/* 右侧：属性面板 */}
-      <div style={{ width: 280, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <Card title="节点属性" size="small" styles={{ body: { padding: 16 } }}>
-          {selectedNode ? (
-            <NodeProperties
-              node={selectedNode}
-              tables={tables}
-              onUpdate={(payload) => {
-                const nid = Number(selectedNode.id)
-                updateNodeMut.mutate(nid, payload)
-                // 本地更新
-                setRfNodes(ns => ns.map(n => {
-                  if (n.id !== selectedNode.id) return n
-                  const newData = { ...(n.data as unknown as WorkflowNode), ...payload }
-                  return { ...n, data: newData as unknown as Record<string, unknown> }
-                }))
-              }}
-              onDelete={handleDeleteNode}
-              isDeleting={removeNodeMut.isPending}
-            />
-          ) : (
-            <Text type="secondary" style={{ fontSize: 13 }}>点击节点查看/编辑属性</Text>
-          )}
-        </Card>
+      {/* 右侧：Tabs 面板 */}
+      <div style={{ width: 320, display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+        <Tabs
+          defaultActiveKey="node"
+          size="small"
+          style={{ padding: '0 8px' }}
+          items={[
+            {
+              key: 'node',
+              label: '节点属性',
+              children: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '8px 4px 12px' }}>
+                  {selectedNode ? (
+                    <NodeProperties
+                      node={selectedNode}
+                      tables={tables}
+                      onUpdate={(payload) => {
+                        const nid = Number(selectedNode.id)
+                        updateNodeMut.mutate(nid, payload)
+                        // 本地更新
+                        setRfNodes(ns => ns.map(n => {
+                          if (n.id !== selectedNode.id) return n
+                          const newData = { ...(n.data as unknown as WorkflowNode), ...payload }
+                          return { ...n, data: newData as unknown as Record<string, unknown> }
+                        }))
+                      }}
+                      onDelete={handleDeleteNode}
+                      isDeleting={removeNodeMut.isPending}
+                    />
+                  ) : (
+                    <Text type="secondary" style={{ fontSize: 13 }}>点击节点查看/编辑属性</Text>
+                  )}
 
-        <Card title="说明" size="small" styles={{ body: { padding: 12 } }}>
-          <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.7 }}>
-            <div>• <strong>双击节点</strong> → 跳转绑定的数据表</div>
-            <div>• <strong>拖动手柄</strong> → 连线创建边</div>
-            <div>• <strong>Delete 键</strong> → 删除选中的节点/边</div>
-            <div>• <strong>拖动节点</strong> → 位置自动保存</div>
-          </div>
-        </Card>
+                  <Card title="说明" size="small" styles={{ body: { padding: 12 } }}>
+                    <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.7 }}>
+                      <div>• <strong>双击节点</strong> → 跳转绑定的数据表</div>
+                      <div>• <strong>拖动手柄</strong> → 连线创建边</div>
+                      <div>• <strong>Delete 键</strong> → 删除选中的节点/边</div>
+                      <div>• <strong>拖动节点</strong> → 位置自动保存</div>
+                    </div>
+                  </Card>
+                </div>
+              ),
+            },
+            {
+              key: 'graph',
+              label: '关系图',
+              children: (
+                <div style={{ padding: '8px 4px 12px' }}>
+                  <GraphMiniPanel
+                    workspaceId={wid!}
+                    onExpand={() => setGraphDrawerOpen(true)}
+                    onNavigateToTable={(tid) => navigate(`/w/${wid}/tables/${tid}`)}
+                  />
+                </div>
+              ),
+            },
+          ]}
+        />
       </div>
 
       {/* 添加节点弹窗 */}
@@ -519,6 +513,23 @@ function WorkflowEditorInner() {
           </div>
         </div>
       </Modal>
+
+      {/* 关系图大图抽屉 */}
+      <Drawer
+        title="表关系图（完整）"
+        open={graphDrawerOpen}
+        onClose={() => setGraphDrawerOpen(false)}
+        width={800}
+        destroyOnClose
+      >
+        <GraphFullPanel
+          workspaceId={wid!}
+          onNavigateToTable={(tid) => {
+            setGraphDrawerOpen(false)
+            navigate(`/w/${wid}/tables/${tid}`)
+          }}
+        />
+      </Drawer>
     </div>
   )
 }

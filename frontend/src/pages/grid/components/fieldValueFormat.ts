@@ -68,6 +68,34 @@ export function getSelectLabel(field: Field, value: unknown): string {
   return found ? String(found.label ?? found.value ?? found.name ?? value) : strVal
 }
 
+// ── attachment / image 字段 ─────────────────────────────
+
+/** 从 attachment / image 类型字段值里提取第一个可用 URL.
+ *
+ * 后端可能返回：
+ * - 单个 URL string（以 http 或 / 开头）
+ * - 单对象 { url: "...", value: "..." }
+ * - 数组 [obj1, obj2, ...]（多附件场景取第一个）
+ * - 其他情况返回 null
+ */
+export function extractImageUrl(v: unknown): string | null {
+  if (!v) return null
+  if (typeof v === 'string') {
+    if (v.startsWith('http') || v.startsWith('/')) return v
+    return null
+  }
+  if (Array.isArray(v)) {
+    const first = v[0]
+    return extractImageUrl(first)
+  }
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>
+    const url = (o.url as string) || (o.value as string) || null
+    if (url && (url.startsWith('http') || url.startsWith('/'))) return url
+  }
+  return null
+}
+
 // ── 通用入口 ──────────────────────────────────────────
 
 /** 通用值格式化入口：根据字段类型把 row[fieldName] 转为可显示字符串. */
