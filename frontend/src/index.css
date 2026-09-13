@@ -16,6 +16,8 @@ body {
   font-family: system-ui, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--cn-bg-page);
+  color: var(--cn-text-primary);
 }
 
 /* 确保 Ant Design Layout 没有默认边距 */
@@ -29,7 +31,141 @@ body {
   min-height: 100vh;
 }
 
-/* Switch 开关兜底 — 防止 flex 容器拉伸高度，保证长宽比例协调 */
+/* ─────────────── 主题 CSS 变量 ─────────────── */
+/* 这些变量在 body 上由 ThemeProvider 通过 class 切换 */
+
+:root,
+body.theme-modern {
+  --cn-bg-page: #f5f7fa;
+  --cn-text-primary: #1f2937;
+  --cn-text-secondary: #6b7280;
+}
+
+body.theme-github-dark,
+body.theme-dark {
+  --cn-bg-page: #0d1117;
+  --cn-text-primary: #e6edf3;
+  --cn-text-secondary: #8b949e;
+}
+
+body.theme-github-light {
+  --cn-bg-page: #f6f8fa;
+  --cn-text-primary: #1f2328;
+  --cn-text-secondary: #59636e;
+}
+
+body.theme-minimal {
+  --cn-bg-page: #fafafa;
+  --cn-text-primary: #262626;
+  --cn-text-secondary: #737373;
+}
+
+/* ─────────────── 表格斑马纹（按主题覆盖） ─────────────── */
+
+/* 默认（modern） */
+.table-row-striped > td {
+  background-color: #fafbfc;
+}
+
+body.theme-github-dark .table-row-striped > td,
+body.theme-dark .table-row-striped > td {
+  background-color: #161b22;
+}
+
+body.theme-github-light .table-row-striped > td {
+  background-color: #f6f8fa;
+}
+
+body.theme-minimal .table-row-striped > td {
+  background-color: #fafafa;
+}
+
+/* ─────────────── 暗色模式全局微调 ─────────────── */
+
+body.theme-github-dark a,
+body.theme-dark a {
+  color: #58a6ff;
+}
+
+body.theme-github-light a {
+  color: #0969da;
+}
+
+body.theme-minimal a {
+  color: #262626;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ─────────────── MainLayout 内联硬编码颜色主题覆盖 ─────────────── */
+
+/* Header — 带硬编码 #fff / #e5e7eb 边框 */
+body.theme-github-dark .ant-layout-header,
+body.theme-dark .ant-layout-header {
+  background: #0d1117 !important;
+  border-bottom-color: #30363d !important;
+}
+body.theme-github-light .ant-layout-header {
+  background: #ffffff !important;
+  border-bottom-color: #d0d7de !important;
+}
+body.theme-minimal .ant-layout-header {
+  background: #ffffff !important;
+  border-bottom-color: #e5e5e5 !important;
+}
+
+/* Header Logo — 带硬编码 #3b82f6 */
+body.theme-github-dark .ant-layout-header > div:first-child,
+body.theme-dark .ant-layout-header > div:first-child {
+  color: #58a6ff !important;
+}
+body.theme-github-light .ant-layout-header > div:first-child {
+  color: #0969da !important;
+}
+body.theme-minimal .ant-layout-header > div:first-child {
+  color: #262626 !important;
+}
+
+/* Sider — 带硬编码 #fafafa / #e5e7eb */
+body.theme-github-dark .ant-layout-sider,
+body.theme-dark .ant-layout-sider {
+  background: #0d1117 !important;
+  border-right-color: #30363d !important;
+}
+body.theme-github-light .ant-layout-sider {
+  background: #f6f8fa !important;
+  border-right-color: #d0d7de !important;
+}
+body.theme-minimal .ant-layout-sider {
+  background: #fafafa !important;
+  border-right-color: #e5e5e5 !important;
+}
+
+/* Sider 顶部搜索栏 — 硬编码 borderBottom */
+body.theme-github-dark .ant-layout-sider > div > div:first-child,
+body.theme-dark .ant-layout-sider > div > div:first-child {
+  border-bottom-color: #30363d !important;
+}
+body.theme-github-light .ant-layout-sider > div > div:first-child {
+  border-bottom-color: #d0d7de !important;
+}
+body.theme-minimal .ant-layout-sider > div > div:first-child {
+  border-bottom-color: #e5e5e5 !important;
+}
+
+/* Content — 硬编码 background */
+body.theme-github-dark .ant-layout-content,
+body.theme-dark .ant-layout-content {
+  background: #010409 !important;
+}
+body.theme-github-light .ant-layout-content {
+  background: #ffffff !important;
+}
+body.theme-minimal .ant-layout-content {
+  background: #fafafa !important;
+}
+
+/* ─────────────── Switch 开关兜底 — 防止 flex 容器拉伸高度 ─────────────── */
 .ant-switch {
   align-self: center;
   flex-shrink: 0;
@@ -41,11 +177,6 @@ body {
 /* 表格表头垂直居中修复 */
 .cn-table .ant-table-thead > tr > th {
   vertical-align: middle;
-}
-
-/* 表格斑马纹（用户设置开启时通过 rowClassName 应用） */
-.table-row-striped > td {
-  background-color: #fafbfc;
 }
 
 /* ─────────────── 表格显示设置 Dialog — 紧凑化 ─────────────── */
