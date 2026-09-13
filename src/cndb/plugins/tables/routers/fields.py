@@ -221,12 +221,7 @@ def reorder_fields(
             field_map[fid].order = idx
 
     db.commit()
-    return (
-        db.query(DataField)
-        .filter(DataField.table_id == table_id)
-        .order_by(DataField.order, DataField.id)
-        .all()
-    )
+    return db.query(DataField).filter(DataField.table_id == table_id).order_by(DataField.order, DataField.id).all()
 
 
 @router.delete("/{field_id}", status_code=status.HTTP_204_NO_CONTENT)
