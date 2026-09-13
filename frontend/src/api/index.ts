@@ -25,6 +25,7 @@ import type {
   LoginRequest, RegisterRequest,
   UserResponse,
   WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember,
+  WorkspaceVisibility, WorkspaceExportData,
   TableCreate, TableUpdate, TableSummary, TableDetail,
   RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams,
   FieldCreate, FieldUpdate, Field, FieldType,
@@ -44,6 +45,7 @@ import type {
 export type {
   ID, UserResponse, LoginRequest, RegisterRequest,
   Workspace, WorkspaceDetail, WorkspaceCreate, WorkspaceUpdate, WorkspaceRole, WorkspaceMember,
+  WorkspaceVisibility, WorkspaceExportData,
   TableSummary, TableDetail, TableCreate, TableUpdate,
   FieldType, Field, FieldCreate, FieldUpdate,
   RowValues, RowResponse, RowDetail, RowCreate, RowUpdate, RowListResponse, RecordListParams,
@@ -116,7 +118,16 @@ export const workspaceApi = {
   updateMemberRole: (wid: number | string, memberId: number | string, role: string) =>
     api.patch<WorkspaceMember>(`/v1/workspaces/${wid}/members/${memberId}`, { role }).then(r => r.data),
   removeMember: (wid: number | string, memberId: number | string) =>
-    api.delete(`/v1/workspaces/${wid}/members/${memberId}`).then(r => r.data),
+    api.delete(`/v1/workspaces/${wid}/members/${memberId}`).then(() => true),
+  /** 导出整个工作区为 JSON（结构+数据+视图） */
+  exportWorkspace: (wid: number | string) =>
+    api.get<WorkspaceExportData>(`/v1/workspaces/${wid}/export`).then(r => r.data),
+  /** 从 JSON 数据导入工作区（创建新表、字段、数据、视图） */
+  importWorkspace: (wid: number | string, jsonData: Record<string, unknown>) =>
+    api.post<{ imported_tables: number; imported_rows: number; imported_views: number }>(
+      `/v1/workspaces/${wid}/import`,
+      { json_data: jsonData },
+    ).then(r => r.data),
 }
 
 // ─────────────── Tables ───────────────

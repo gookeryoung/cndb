@@ -8,7 +8,7 @@ from __future__ import annotations
 import enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Enum, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cndb.models.base import Base, TimestampMixin
@@ -24,6 +24,17 @@ class WorkspaceRole(enum.StrEnum):
     ADMIN = "admin"
     EDITOR = "editor"
     VIEWER = "viewer"
+
+
+class WorkspaceVisibility(enum.StrEnum):
+    """工作区可见性枚举."""
+
+    # 公开：任何人可查看工作区数据表结构和数据（只读）
+    PUBLIC = "public"
+    # 成员可见：仅工作区成员可访问
+    MEMBER = "member"
+    # 私有：仅 OWNER/ADMIN 可见，其他成员被排除
+    PRIVATE = "private"
 
 
 # 角色等级映射：数值越大权限越高
@@ -47,6 +58,26 @@ class Workspace(TimestampMixin, Base):
         ForeignKey("accounts_user.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+
+    # 工作区扩展字段
+    visibility: Mapped[WorkspaceVisibility] = mapped_column(
+        Enum(WorkspaceVisibility),
+        nullable=False,
+        default=WorkspaceVisibility.MEMBER,
+        comment="可见性：公开/成员可见/私有",
+    )
+    tags: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+        comment="工作区标签列表",
+    )
+    allow_edit: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="是否允许成员（EDITOR 及以下）编辑数据",
     )
 
     # 关系
@@ -87,4 +118,4 @@ class WorkspaceMember(TimestampMixin, Base):
         return f"WorkspaceMember(workspace_id={self.workspace_id}, user_id={self.user_id}, role={self.role.value})"
 
 
-__all__ = ["ROLE_RANK", "Workspace", "WorkspaceMember", "WorkspaceRole"]
+__all__ = ["ROLE_RANK", "Workspace", "WorkspaceMember", "WorkspaceRole", "WorkspaceVisibility"]

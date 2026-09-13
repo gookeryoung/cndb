@@ -49,3 +49,4 @@ frontend/test-results/
 # 前端冗余 lock 文件（已用 pnpm，不再用 npm）
 frontend/package-lock.json
 *.bak
+uploads
