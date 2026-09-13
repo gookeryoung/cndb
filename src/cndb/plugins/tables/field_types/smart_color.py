@@ -346,18 +346,24 @@ def suggest_colors(labels: list[str]) -> list[str]:
     fallback_idx = 0
 
     out: list[str] = []
+    palette_len = len(_PALETTE)
     for c in result:
         if c is not None:
             out.append(c)
             continue
-        # fallback：循环调色板，跳过已用色
-        while True:
-            pick = fallback_palette(fallback_idx)
+        # fallback：循环调色板，跳过已用色；调色板耗尽后强制取第一个
+        pick: str | None = None
+        for _ in range(palette_len + 1):
+            candidate = fallback_palette(fallback_idx)
             fallback_idx += 1
-            if pick not in used:
-                used.add(pick)
-                out.append(pick)
+            if candidate not in used:
+                pick = candidate
                 break
+        if pick is None:
+            # 调色板全部被占，强制取 fallback 下一个
+            pick = fallback_palette(fallback_idx)
+        used.add(pick)
+        out.append(pick)
     return out
 
 
