@@ -2,14 +2,14 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Row, Col, Badge, Input, InputNumber, Tabs, Select, Form, Switch, Upload } from 'antd'
+import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Row, Col, Badge, Input, InputNumber, Segmented, Tabs, Select, Form, Switch, Upload, Popconfirm } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
   AppstoreOutlined, CopyOutlined, ImportOutlined, UploadOutlined, DownOutlined, CloseOutlined,
   CalendarOutlined, ShareAltOutlined, SafetyOutlined, SwapOutlined,
-  SearchOutlined, SortAscendingOutlined, SortDescendingOutlined,
+  SearchOutlined, SortAscendingOutlined, SortDescendingOutlined, EditOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tableApi, recordApi, viewApi, permissionApi } from '@/api'
@@ -17,7 +17,6 @@ import type { RowResponse, Field, TableDetail, View, ViewCreate, TablePermission
 import GridCell from './components/GridCell'
 import RowDetailDrawer from './components/RowDetailDrawer'
 import KanbanView from './components/KanbanView'
-import { useResponsive } from '@/hooks/useResponsive'
 import { useTableSettings } from '@/theme/TableSettingsProvider'
 import { densityToSize, DEFAULT_TABLE_SETTINGS } from '@/theme/tableSettings'
 
@@ -37,7 +36,6 @@ export default function GridPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const { isMobile } = useResponsive()
   const { settings } = useTableSettings()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [mode, setMode] = useState<ViewMode>('grid')
@@ -48,6 +46,7 @@ export default function GridPage() {
   const [importExportOpen, setImportExportOpen] = useState(false)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
   const [createViewOpen, setCreateViewOpen] = useState(false)
+  const [editViewOpen, setEditViewOpen] = useState(false)
   const [importViewsOpen, setImportViewsOpen] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importFileContent, setImportFileContent] = useState('')
@@ -259,6 +258,7 @@ export default function GridPage() {
   const updateView = useMutation({
     mutationFn: (args: {
       vid: number | string
+      name?: string
       filters?: Array<{ field_name: string; op: string; value?: unknown }> | null
       sortings?: Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
       filter_type?: 'AND' | 'OR'
@@ -266,6 +266,7 @@ export default function GridPage() {
       view_options?: Record<string, unknown> | null
     }) =>
       viewApi.update(wid!, tid!, args.vid, {
+        name: args.name,
         filters: args.filters ?? undefined,
         sortings: args.sortings ?? undefined,
         filter_type: args.filter_type ?? undefined,
@@ -389,20 +390,19 @@ export default function GridPage() {
     return out
   }, [selectedRows, numericFields])
 
-  // 视图 Tab 项（全部 + 各自定义视图）
-  const viewTabItems: Array<{ key: string; label: React.ReactNode; closable?: boolean }> = [
-    { key: 'all', label: <span>全部</span> },
+  // 视图 Segmented 选项（全部 + 各自定义视图）
+  const segmentedOptions = useMemo(() => [
+    { label: '全部', value: 'all' },
     ...views.map(v => ({
-      key: String(v.id),
       label: (
         <span>
           {v.name}
-          {v.default && <Tag color="blue" style={{ marginLeft: 4 }}>默认</Tag>}
+          {v.default && <Tag color="blue" style={{ marginLeft: 4, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
         </span>
       ),
-      closable: true,
+      value: String(v.id),
     })),
-  ]
+  ], [views])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -431,40 +431,67 @@ export default function GridPage() {
         </Space>
       </div>
 
-      {/* 视图 Tab + 视图切换 */}
-      <div style={{ padding: '0 16px', background: '#fff', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center' }}>
-        <Tabs
-          activeKey={activeViewId ? String(activeViewId) : 'all'}
-          onChange={(k) => loadView(k === 'all' ? null : views.find(v => String(v.id) === k) || null)}
-          onEdit={(targetKey, action) => {
-            if (action === 'remove' && typeof targetKey === 'string') {
-              removeView.mutate(targetKey)
-            }
+      {/* 视图切换 + 视图操作 */}
+      <div style={{ padding: '0 16px', background: '#fff', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Segmented
+          value={activeViewId ? String(activeViewId) : 'all'}
+          onChange={(v) => {
+            const key = String(v)
+            loadView(key === 'all' ? null : views.find(vv => String(vv.id) === key) || null)
           }}
-          items={viewTabItems.map(item => ({
-            key: item.key,
-            label: item.label,
-            closable: item.closable,
-          }))}
-          style={{ flex: 1 }}
+          options={segmentedOptions}
+          style={{ flex: 1, overflow: 'auto' }}
         />
-        <Button
-          size="small"
-          type="text"
-          icon={<PlusOutlined />}
-          onClick={() => setCreateViewOpen(true)}
-        >新建视图</Button>
-        <Button
-          size="small"
-          type="text"
-          icon={<ImportOutlined />}
-          onClick={() => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) }}
-        >导入视图</Button>
-        <Space.Compact style={{ marginLeft: 8 }}>
-          <Button size="small" type={mode === 'grid' ? 'primary' : 'default'} icon={<ColumnHeightOutlined />} onClick={() => setMode('grid')}>{!isMobile && '表格'}</Button>
-          <Button size="small" type={mode === 'kanban' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => setMode('kanban')}>{!isMobile && '看板'}</Button>
-          <Button size="small" type={mode === 'gallery' ? 'primary' : 'default'} icon={<EyeOutlined />} onClick={() => setMode('gallery')}>{!isMobile && '画廊'}</Button>
-          <Button size="small" type={mode === 'calendar' ? 'primary' : 'default'} icon={<CalendarOutlined />} onClick={() => setMode('calendar')}>{!isMobile && '日历'}</Button>
+        {/* 视图操作按钮组 */}
+        <Space size={4}>
+          <Tooltip title="新建视图">
+            <Button size="small" type="text" icon={<PlusOutlined />} onClick={() => setCreateViewOpen(true)} />
+          </Tooltip>
+          <Tooltip title="编辑视图">
+            <Button
+              size="small"
+              type="text"
+              icon={<EditOutlined />}
+              disabled={!activeView}
+              onClick={() => setEditViewOpen(true)}
+            />
+          </Tooltip>
+          <Popconfirm
+            title="确定删除此视图？"
+            description={activeView?.name}
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => activeViewId != null && removeView.mutate(String(activeViewId))}
+            disabled={!activeView}
+          >
+            <Tooltip title="删除视图">
+              <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!activeView} />
+            </Tooltip>
+          </Popconfirm>
+          <Tooltip title="导入视图">
+            <Button
+              size="small"
+              type="text"
+              icon={<ImportOutlined />}
+              onClick={() => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) }}
+            />
+          </Tooltip>
+        </Space>
+        {/* 视图模式切换（无文字） */}
+        <Space.Compact>
+          <Tooltip title="表格">
+            <Button size="small" type={mode === 'grid' ? 'primary' : 'default'} icon={<ColumnHeightOutlined />} onClick={() => setMode('grid')} />
+          </Tooltip>
+          <Tooltip title="看板">
+            <Button size="small" type={mode === 'kanban' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => setMode('kanban')} />
+          </Tooltip>
+          <Tooltip title="画廊">
+            <Button size="small" type={mode === 'gallery' ? 'primary' : 'default'} icon={<EyeOutlined />} onClick={() => setMode('gallery')} />
+          </Tooltip>
+          <Tooltip title="日历">
+            <Button size="small" type={mode === 'calendar' ? 'primary' : 'default'} icon={<CalendarOutlined />} onClick={() => setMode('calendar')} />
+          </Tooltip>
         </Space.Compact>
         <Input.Search
           size="small"
@@ -473,22 +500,20 @@ export default function GridPage() {
           prefix={<SearchOutlined />}
           value={searchQuery}
           onChange={e => { setSearchQuery(e.target.value); setOffset(0) }}
-          style={{ width: 220, marginLeft: 8 }}
+          style={{ width: 220 }}
         />
         <Tooltip title="当前视图筛选规则">
           <Button
             size="small"
             icon={<FilterOutlined />}
-            type={viewFilters ? 'primary' : 'default'}
-            style={{ marginLeft: 8 }}
+            type={viewFilters.length ? 'primary' : 'default'}
             onClick={() => setViewConfigOpen(true)}
           />
         </Tooltip>
         <Tooltip title="表格显示设置（对所有数据表生效）">
           <Button
             size="small"
-            icon={<ColumnHeightOutlined />}
-            style={{ marginLeft: 8 }}
+            icon={<SettingOutlined />}
             onClick={() => setSettingsOpen(true)}
           />
         </Tooltip>
@@ -626,6 +651,28 @@ export default function GridPage() {
             setCreateViewOpen(false)
           }}
         />
+      </Modal>
+
+      {/* 编辑视图 Modal */}
+      <Modal
+        title="编辑视图"
+        open={editViewOpen}
+        onCancel={() => setEditViewOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        {activeView && (
+          <EditViewForm
+            fields={table?.fields || []}
+            view={activeView}
+            onSave={(name, vt, opts) => {
+              const payload: { name: string; view_type: string; view_options?: Record<string, unknown> } = { name, view_type: vt }
+              if (opts && Object.keys(opts).length) payload.view_options = opts
+              updateView.mutate({ vid: activeView.id, ...payload })
+              setEditViewOpen(false)
+            }}
+          />
+        )}
       </Modal>
 
       {/* 导入视图 Modal */}
@@ -908,6 +955,180 @@ function CreateViewForm({
       <div style={{ textAlign: 'right', marginTop: 12 }}>
         <Button type="primary" disabled={!name.trim()}
           onClick={() => onCreate(name.trim(), vt, opts)}>创建</Button>
+      </div>
+    </Form>
+  )
+}
+
+/** 编辑视图表单 —— 复用 CreateViewForm 的字段布局，初始值来自现有 View. */
+function EditViewForm({
+  fields,
+  view,
+  onSave,
+}: {
+  fields: Field[]
+  view: View
+  onSave: (name: string, viewType: string, viewOptions: Record<string, unknown>) => void
+}) {
+  const [name, setName] = useState(view.name)
+  const [vt, setVt] = useState(view.view_type || 'grid')
+  const [opts, setOpts] = useState<Record<string, unknown>>({ ...(view.view_options || {}) })
+
+  // 兼容后端真实 field_type name 和历史别名
+  const _isOneOf = (ft: string, ...names: string[]) =>
+    names.includes(ft) || names.includes(FIELD_TYPE_ALIASES[ft] ?? ft)
+
+  const selectFields = fields.filter(f => _isOneOf(f.field_type, 'select', 'multiselect'))
+  const dateFields = fields.filter(f => _isOneOf(f.field_type, 'date', 'datetime'))
+  const textFields = fields.filter(f => _isOneOf(f.field_type, 'text', 'longtext'))
+  const numberFields = fields.filter(f => _isOneOf(f.field_type, 'number', 'float', 'percentage', 'timestamp'))
+  const imageFields = fields.filter(f => f.field_type === 'attachment')
+  const allFields = fields.filter(f => !f.hidden)
+
+  const updateOpt = (key: string, value: unknown) => {
+    setOpts(prev => {
+      const next = { ...prev }
+      if (value === undefined || value === null || value === '') delete next[key]
+      else next[key] = value
+      return next
+    })
+  }
+
+  const viewTypeOptions = [
+    { value: 'grid', label: '表格（Grid）' },
+    { value: 'kanban', label: '看板（Kanban）' },
+    { value: 'gallery', label: '画廊（Gallery）' },
+    { value: 'calendar', label: '日历（Calendar）' },
+  ]
+
+  const kanbanConfig = vt === 'kanban' && (
+    <>
+      <Form.Item label="分组字段" required>
+        <Select
+          value={(opts.group_field as string) || undefined}
+          onChange={(v) => updateOpt('group_field', v)}
+          placeholder="选择分组字段"
+          options={selectFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="卡片标题字段">
+        <Select
+          value={(opts.title_field as string) || undefined}
+          onChange={(v) => updateOpt('title_field', v)}
+          placeholder="选择标题字段"
+          options={textFields.concat(fields.filter(f => f.is_primary)).map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="进度百分比字段">
+        <Select
+          value={(opts.progress_field as string) || undefined}
+          onChange={(v) => updateOpt('progress_field', v)}
+          placeholder="选择进度字段"
+          options={numberFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="截止日期字段">
+        <Select
+          value={(opts.due_date_field as string) || undefined}
+          onChange={(v) => updateOpt('due_date_field', v)}
+          placeholder="选择日期字段"
+          options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="优先级字段">
+        <Select
+          value={(opts.priority_field as string) || undefined}
+          onChange={(v) => updateOpt('priority_field', v)}
+          placeholder="选择优先级字段"
+          options={selectFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="负责人字段">
+        <Select
+          value={(opts.assignee_field as string) || undefined}
+          onChange={(v) => updateOpt('assignee_field', v)}
+          placeholder="选择负责人字段"
+          options={textFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="卡片额外字段">
+        <Select
+          mode="multiple"
+          value={(opts.card_fields as string[]) || []}
+          onChange={(v) => updateOpt('card_fields', v)}
+          placeholder="选择要显示的字段"
+          options={allFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+    </>
+  )
+
+  const calendarConfig = vt === 'calendar' && (
+    <Form.Item label="起始时间字段" required>
+      <Select
+        value={(opts.start_field as string) || undefined}
+        onChange={(v) => updateOpt('start_field', v)}
+        placeholder="选择日期/时间字段"
+        options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+        style={{ width: '100%' }}
+        allowClear
+      />
+    </Form.Item>
+  )
+
+  const galleryConfig = vt === 'gallery' && (
+    <>
+      <Form.Item label="标题字段">
+        <Select
+          value={(opts.title_field as string) || undefined}
+          onChange={(v) => updateOpt('title_field', v)}
+          placeholder="留空则自动选第一个文本字段"
+          options={textFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+      <Form.Item label="图片/附件字段">
+        <Select
+          value={(opts.image_field as string) || undefined}
+          onChange={(v) => updateOpt('image_field', v)}
+          placeholder="留空则自动选第一个附件字段"
+          options={imageFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Form.Item>
+    </>
+  )
+
+  return (
+    <Form layout="vertical" style={{ marginTop: 12 }}>
+      <Form.Item label="视图名称" required>
+        <Input value={name} onChange={e => setName(e.target.value)} autoFocus />
+      </Form.Item>
+      <Form.Item label="视图类型">
+        <Select value={vt} onChange={(v) => { setVt(v); setOpts({}) }} options={viewTypeOptions} />
+      </Form.Item>
+      {kanbanConfig}
+      {calendarConfig}
+      {galleryConfig}
+      <div style={{ textAlign: 'right', marginTop: 12 }}>
+        <Button type="primary" disabled={!name.trim()}
+          onClick={() => onSave(name.trim(), vt, opts)}>保存</Button>
       </div>
     </Form>
   )

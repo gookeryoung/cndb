@@ -32,9 +32,8 @@ async function getToken(request: any): Promise<string> {
 
 /** 确保 Grid 显示 N 条记录 */
 async function gotoGridAndCheckCount(page: any, expectedCount: number) {
-  // 先进入工作区
-  await page.goto("/");
-  await page.waitForURL(/\/w\/\d+/);
+  // 直接导航到指定工作区，绕过 WorkspaceList 多工作区场景
+  await page.goto(`/w/${WID}/tables`);
 
   // 侧栏 Menu 点击 "员工表"
   await page.getByRole("menuitem", { name: /员工表/ }).click();

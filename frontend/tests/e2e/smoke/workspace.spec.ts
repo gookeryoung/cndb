@@ -4,9 +4,10 @@ import { test, expect } from "@playwright/test";
 const ANON = ["setup", "chromium-anon"];
 
 async function gotoWorkspace(page: any) {
-  await page.goto("/");
-  await page.waitForURL(/\/w\/\d+/);
-  // 到达 /w/{wid}/tables — TablesList 页面
+  // 直接导航到已知工作区，绕过 WorkspaceList 多工作区场景
+  await page.goto("/w/1/tables");
+  await page.waitForURL(/\/w\/\d+\/tables/);
+  // TablesList 页面
   await expect(page.getByRole("heading", { level: 3 })).toBeVisible();
 }
 
@@ -23,12 +24,12 @@ test.describe("工作区 + 表列表", () => {
     await expect(page.getByRole("button", { name: /新建表/ })).toBeVisible();
   });
 
-  test("至少有 2 张 seed 表", async ({ page }) => {
+  test("seed 数据：至少有 6 张表（某企业销售管理）", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await gotoWorkspace(page);
 
-    // Antd Table 行应该有 2 行（部门表 + 员工表）
+    // WID=1 某企业销售管理有 6 张 seed 表
     const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-    await expect(rows).toHaveCount(2);
+    await expect(rows).toHaveCount(6);
   });
 });
