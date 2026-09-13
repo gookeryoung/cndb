@@ -1,6 +1,6 @@
 /** 工作区级整体导入/导出对话框 — JSON 格式备份与恢复. */
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Modal, Tabs, Button, message, Upload, Space, Alert, Progress } from 'antd'
 import { DownloadOutlined, UploadOutlined, InboxOutlined, FileTextOutlined } from '@ant-design/icons'
 import { workspaceApi } from '@/api'
@@ -24,8 +24,7 @@ export default function WorkspaceBackupDialog({ open, wid, workspaceName, onClos
   const [exporting, setExporting] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number } | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
+  
   // 导出
   const handleExport = async () => {
     try {

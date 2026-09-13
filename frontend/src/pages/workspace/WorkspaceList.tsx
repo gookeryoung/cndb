@@ -1,11 +1,10 @@
 /** 工作区列表页 — 卡片式布局，支持创建/设置/导入/导出/置顶/成员管理. */
 
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, Row, Col, Typography, Button, Modal, Form, Input, Tag, Empty, message, Space, Dropdown } from 'antd'
 import {
-  PlusOutlined, PushpinOutlined, TeamOutlined, TableOutlined, EditOutlined, DeleteOutlined, MoreOutlined,
-  DownloadOutlined, UploadOutlined, SettingOutlined, UserOutlined, ClockCircleOutlined, EyeOutlined,
-  FileTextOutlined, CrownOutlined, GlobalOutlined, LockOutlined, SafetyCertificateOutlined,
+  PlusOutlined, PushpinOutlined, TeamOutlined, TableOutlined, DeleteOutlined,
+  DownloadOutlined, SettingOutlined,   GlobalOutlined, LockOutlined, SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -100,7 +99,6 @@ export default function WorkspaceList() {
               <Col xs={24} sm={12} md={8} lg={6} key={w.id}>
                 <Card
                   hoverable
-                  onClick={() => navigate(`/w/${w.id}/tables`)}
                   data-testid={`workspace-card-${w.id}`}
                   styles={{ body: { padding: 16 } }}
                   actions={[
@@ -122,6 +120,12 @@ export default function WorkspaceList() {
                       data-testid={`settings-btn-${w.id}`}
                     ><SettingOutlined /> 设置</span>,
                   ]}
+                  onClick={(e) => {
+                    // 只在点击 card body 时跳转，footer actions 自带 stopPropagation
+                    const target = e.target as HTMLElement
+                    if (target.closest('.ant-card-actions')) return
+                    navigate(`/w/${w.id}/tables`)
+                  }}
                 >
                   {/* 头部：标签 + 公开性 */}
                   <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

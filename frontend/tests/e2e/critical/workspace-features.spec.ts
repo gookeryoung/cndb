@@ -14,8 +14,8 @@ test.describe("工作区列表卡片展示", () => {
     await expect(cards.first()).toBeVisible();
 
     // 每张卡片应该有公开性 Tag（公开/成员可见/私有）
-    const tags = page.getByRole("tag");
-    await expect(tags.filter({ hasText: /公开|成员可见|私有/ }).first()).toBeVisible();
+    const visibilityTag = page.locator(".ant-tag").filter({ hasText: /公开|成员可见|私有/ }).first();
+    await expect(visibilityTag).toBeVisible();
   });
 
   test("卡片有统计信息（表数 / 成员数）", async ({ page }) => {
@@ -54,8 +54,8 @@ test.describe("工作区设置对话框", () => {
     // 点击第一张卡片的"设置"按钮
     await page.getByText(/设置/).first().click();
 
-    // 设置对话框标题
-    await expect(page.getByRole("heading", { name: /工作区设置/ })).toBeVisible();
+    // 设置对话框标题（Ant Design Modal title 是 div，不是 heading）
+    await expect(page.locator(".ant-modal-title")).toContainText("工作区设置");
 
     // 默认在"基本设置" Tab
     await expect(page.getByRole("tab", { name: /基本设置/ })).toBeVisible();
@@ -80,8 +80,8 @@ test.describe("工作区设置对话框", () => {
     await page.getByText(/设置/).first().click();
     await page.getByRole("tab", { name: /成员管理/ }).click();
 
-    // 成员管理 Tab 显示"用户名"和"角色"表头
-    await expect(page.getByText(/用户名/).first()).toBeVisible();
+    // 成员管理 Tab 显示"用户"和"角色"表头
+    await expect(page.getByText(/用户/).first()).toBeVisible();
     await expect(page.getByText(/角色/).first()).toBeVisible();
   });
 
@@ -93,7 +93,7 @@ test.describe("工作区设置对话框", () => {
     await page.getByText(/设置/).first().click();
     await page.getByRole("tab", { name: /统计信息/ }).click();
 
-    // 统计 Tab 显示"数据表"、"成员"、"视图"、"数据行"
+    // 统计 Tab 显示统计卡片和工作区信息
     await expect(page.getByText(/数据表/).first()).toBeVisible();
     await expect(page.getByText(/成员/).first()).toBeVisible();
   });
@@ -107,9 +107,10 @@ test.describe("工作区备份对话框", () => {
 
     await page.getByText(/备份/).first().click();
 
-    await expect(page.getByRole("heading", { name: /工作区.*导入.*导出/ })).toBeVisible();
+    // Ant Design Modal title
+    await expect(page.locator(".ant-modal-title")).toContainText(/工作区.*导入.*导出/);
 
-    // 默认显示"导出工作区"Tab 内容
+    // 默认显示"导出工作区"内容
     await expect(page.getByText(/导出整个工作区/)).toBeVisible();
   });
 
