@@ -95,7 +95,6 @@ const githubDarkTheme: ThemeConfig = {
     colorBorderSecondary: '#21262d',
     colorSplit: '#21262d',
     colorTextSecondary: '#8b949e',
-    colorTertiaryBg: '#161b22',
     fontFamily: commonFont,
   },
   components: {
@@ -214,9 +213,6 @@ const minimalTheme: ThemeConfig = {
     },
     Card: {
       colorBorderSecondary: '#e5e5e5',
-    },
-    Modal: {
-      titleFontWeight: 400,
     },
     Layout: {
       headerBg: '#ffffff',
