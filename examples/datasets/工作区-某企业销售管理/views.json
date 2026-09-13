@@ -1,49 +1,568 @@
-{
+﻿{
   "_comment": "视图种子配置：按 表名 -> 视图列表 组织。字段名必须与 CSV/硬编码建表时的 DataField.name 一致。看板视图可通过 view_options.card_sort_field 配置列内卡片排序，filters/sortings 在 API 层生效。画廊视图支持 title_field / subtitle_field / tag_field / meta_fields / image_field 组合。",
   "产品开发": [
-    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "启动日期", "direction": "desc"}], "is_default": true, "order": 0},
-    {"name": "进行中项目", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "项目状态", "op": "=", "value": "进行中"}], "sortings": [{"field_name": "进度百分比", "direction": "desc"}], "order": 1},
-    {"name": "已完成项目", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "项目状态", "op": "=", "value": "已完成"}], "sortings": [{"field_name": "实际交付日期", "direction": "desc"}], "order": 2},
-    {"name": "按项目类别看板", "view_type": "kanban", "view_options": {"group_field": "项目类别", "title_field": "项目名称", "progress_field": "进度百分比", "due_date_field": "计划交付日期", "assignee_field": "负责人", "card_sort_field": "进度百分比", "card_sort_direction": "desc", "pin_urgent": true}, "order": 3},
-    {"name": "按片区看板", "view_type": "kanban", "view_options": {"group_field": "片区", "title_field": "项目名称", "progress_field": "进度百分比", "due_date_field": "计划交付日期", "assignee_field": "负责人", "card_sort_field": "计划交付日期", "card_sort_direction": "asc"}, "order": 4},
-    {"name": "进行中看板", "view_type": "kanban", "filter_type": "AND", "filters": [{"field_name": "项目状态", "op": "=", "value": "进行中"}], "sortings": [{"field_name": "进度百分比", "direction": "desc"}], "view_options": {"group_field": "项目类别", "title_field": "项目名称", "progress_field": "进度百分比", "due_date_field": "计划交付日期", "assignee_field": "负责人", "card_sort_field": "进度百分比", "card_sort_direction": "desc", "pin_urgent": true}, "order": 5},
-    {"name": "交付日历", "view_type": "calendar", "view_options": {"start_field": "计划交付日期"}, "order": 6},
-    {"name": "高金额项目", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "合同金额_万元", "op": ">=", "value": "1000"}], "sortings": [{"field_name": "合同金额_万元", "direction": "desc"}], "order": 7},
-    {"name": "项目画廊", "view_type": "gallery", "sortings": [{"field_name": "启动日期", "direction": "desc"}], "view_options": {"title_field": "项目名称", "subtitle_field": "片区", "tag_field": "项目状态", "meta_fields": ["负责人", "进度百分比", "合同金额_万元"]}, "order": 8}
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "启动日期",
+          "direction": "desc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "进行中项目",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "项目状态",
+          "op": "=",
+          "value": "进行中"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "进度百分比",
+          "direction": "desc"
+        }
+      ],
+      "order": 1
+    },
+    {
+      "name": "已完成项目",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "项目状态",
+          "op": "=",
+          "value": "已完成"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "实际交付日期",
+          "direction": "desc"
+        }
+      ],
+      "order": 2
+    },
+    {
+      "name": "按项目类别看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "项目类别",
+        "title_field": "项目名称",
+        "progress_field": "进度百分比",
+        "due_date_field": "计划交付日期",
+        "assignee_field": "负责人",
+        "card_sort_field": "进度百分比",
+        "card_sort_direction": "desc",
+        "pin_urgent": true
+      },
+      "order": 3
+    },
+    {
+      "name": "按片区看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "片区",
+        "title_field": "项目名称",
+        "progress_field": "进度百分比",
+        "due_date_field": "计划交付日期",
+        "assignee_field": "负责人",
+        "card_sort_field": "计划交付日期",
+        "card_sort_direction": "asc"
+      },
+      "order": 4
+    },
+    {
+      "name": "进行中看板",
+      "view_type": "kanban",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "项目状态",
+          "op": "=",
+          "value": "进行中"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "进度百分比",
+          "direction": "desc"
+        }
+      ],
+      "view_options": {
+        "group_field": "项目类别",
+        "title_field": "项目名称",
+        "progress_field": "进度百分比",
+        "due_date_field": "计划交付日期",
+        "assignee_field": "负责人",
+        "card_sort_field": "进度百分比",
+        "card_sort_direction": "desc",
+        "pin_urgent": true
+      },
+      "order": 5
+    },
+    {
+      "name": "交付日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "计划交付日期",
+        "end_field": "实际交付日期",
+        "title_field": "项目名称",
+        "group_field": "项目类别"
+      },
+      "order": 6
+    },
+    {
+      "name": "高金额项目",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "合同金额_万元",
+          "op": ">=",
+          "value": "1000"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "合同金额_万元",
+          "direction": "desc"
+        }
+      ],
+      "order": 7
+    },
+    {
+      "name": "项目画廊",
+      "view_type": "gallery",
+      "sortings": [
+        {
+          "field_name": "启动日期",
+          "direction": "desc"
+        }
+      ],
+      "view_options": {
+        "title_field": "项目名称",
+        "subtitle_field": "片区",
+        "tag_field": "项目状态",
+        "meta_fields": [
+          "负责人",
+          "进度百分比",
+          "合同金额_万元"
+        ]
+      },
+      "order": 8
+    }
   ],
   "客户流失": [
-    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "累计消费_元", "direction": "desc"}], "is_default": true, "order": 0},
-    {"name": "已流失客户", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "是否流失", "op": "=", "value": "1"}], "sortings": [{"field_name": "累计消费_元", "direction": "desc"}], "order": 1},
-    {"name": "未流失客户", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "是否流失", "op": "=", "value": "0"}], "sortings": [{"field_name": "累计消费_元", "direction": "desc"}], "order": 2},
-    {"name": "按合约类型看板", "view_type": "kanban", "view_options": {"group_field": "合约类型", "title_field": "客户ID", "subtitle_field": "套餐名称", "card_sort_field": "累计消费_元", "card_sort_direction": "desc"}, "order": 3},
-    {"name": "按套餐名称看板", "view_type": "kanban", "view_options": {"group_field": "套餐名称", "title_field": "客户ID", "subtitle_field": "合约类型", "card_sort_field": "累计消费_元", "card_sort_direction": "desc"}, "order": 4},
-    {"name": "按流失状态看板", "view_type": "kanban", "view_options": {"group_field": "是否流失", "title_field": "客户ID", "subtitle_field": "合约类型", "card_sort_field": "累计消费_元", "card_sort_direction": "desc", "group_order": ["0", "1"], "ungrouped_label": "未知"}, "order": 5},
-    {"name": "高消费客户", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "月消费_元", "op": ">=", "value": "300"}], "sortings": [{"field_name": "月消费_元", "direction": "desc"}], "order": 6},
-    {"name": "高流失风险", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "在网月数", "op": "<=", "value": "12"}, {"field_name": "客服呼叫次数", "op": ">=", "value": "3"}], "sortings": [{"field_name": "客服呼叫次数", "direction": "desc"}], "order": 7},
-    {"name": "客户画廊", "view_type": "gallery", "sortings": [{"field_name": "累计消费_元", "direction": "desc"}], "view_options": {"title_field": "客户ID", "subtitle_field": "合约类型", "tag_field": "是否流失", "meta_fields": ["套餐名称", "累计消费_元", "月消费_元", "在网月数"]}, "order": 8}
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "累计消费_元",
+          "direction": "desc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "已流失客户",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "是否流失",
+          "op": "=",
+          "value": "1"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "累计消费_元",
+          "direction": "desc"
+        }
+      ],
+      "order": 1
+    },
+    {
+      "name": "未流失客户",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "是否流失",
+          "op": "=",
+          "value": "0"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "累计消费_元",
+          "direction": "desc"
+        }
+      ],
+      "order": 2
+    },
+    {
+      "name": "按合约类型看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "合约类型",
+        "title_field": "客户ID",
+        "subtitle_field": "套餐名称",
+        "card_sort_field": "累计消费_元",
+        "card_sort_direction": "desc"
+      },
+      "order": 3
+    },
+    {
+      "name": "按套餐名称看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "套餐名称",
+        "title_field": "客户ID",
+        "subtitle_field": "合约类型",
+        "card_sort_field": "累计消费_元",
+        "card_sort_direction": "desc"
+      },
+      "order": 4
+    },
+    {
+      "name": "按流失状态看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "是否流失",
+        "title_field": "客户ID",
+        "subtitle_field": "合约类型",
+        "card_sort_field": "累计消费_元",
+        "card_sort_direction": "desc",
+        "group_order": [
+          "0",
+          "1"
+        ],
+        "ungrouped_label": "未知"
+      },
+      "order": 5
+    },
+    {
+      "name": "高消费客户",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "月消费_元",
+          "op": ">=",
+          "value": "300"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "月消费_元",
+          "direction": "desc"
+        }
+      ],
+      "order": 6
+    },
+    {
+      "name": "高流失风险",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "在网月数",
+          "op": "<=",
+          "value": "12"
+        },
+        {
+          "field_name": "客服呼叫次数",
+          "op": ">=",
+          "value": "3"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "客服呼叫次数",
+          "direction": "desc"
+        }
+      ],
+      "order": 7
+    },
+    {
+      "name": "客户画廊",
+      "view_type": "gallery",
+      "sortings": [
+        {
+          "field_name": "累计消费_元",
+          "direction": "desc"
+        }
+      ],
+      "view_options": {
+        "title_field": "客户ID",
+        "subtitle_field": "合约类型",
+        "tag_field": "是否流失",
+        "meta_fields": [
+          "套餐名称",
+          "累计消费_元",
+          "月消费_元",
+          "在网月数"
+        ]
+      },
+      "order": 8
+    }
   ],
   "电商销售": [
-    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "日期", "direction": "desc"}], "is_default": true, "order": 0},
-    {"name": "按商品类别看板", "view_type": "kanban", "view_options": {"group_field": "商品类别", "title_field": "订单号", "due_date_field": "日期", "card_sort_field": "评分", "card_sort_direction": "desc"}, "order": 1},
-    {"name": "按支付方式看板", "view_type": "kanban", "view_options": {"group_field": "支付方式", "title_field": "订单号", "due_date_field": "日期", "card_sort_field": "日期", "card_sort_direction": "desc"}, "order": 2},
-    {"name": "高分订单", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "评分", "op": ">=", "value": "4"}], "sortings": [{"field_name": "评分", "direction": "desc"}], "order": 3},
-    {"name": "商品画廊", "view_type": "gallery", "sortings": [{"field_name": "日期", "direction": "desc"}], "view_options": {"title_field": "订单号", "subtitle_field": "商品类别", "tag_field": "评分", "meta_fields": ["支付方式", "日期", "销售额"]}, "order": 4}
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "日期",
+          "direction": "desc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "按商品类别看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "商品类别",
+        "title_field": "订单号",
+        "due_date_field": "日期",
+        "card_sort_field": "评分",
+        "card_sort_direction": "desc"
+      },
+      "order": 1
+    },
+    {
+      "name": "按支付方式看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "支付方式",
+        "title_field": "订单号",
+        "due_date_field": "日期",
+        "card_sort_field": "日期",
+        "card_sort_direction": "desc"
+      },
+      "order": 2
+    },
+    {
+      "name": "高分订单",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "评分",
+          "op": ">=",
+          "value": "4"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "评分",
+          "direction": "desc"
+        }
+      ],
+      "order": 3
+    },
+    {
+      "name": "商品画廊",
+      "view_type": "gallery",
+      "sortings": [
+        {
+          "field_name": "日期",
+          "direction": "desc"
+        }
+      ],
+      "view_options": {
+        "title_field": "订单号",
+        "subtitle_field": "商品类别",
+        "tag_field": "评分",
+        "meta_fields": [
+          "支付方式",
+          "日期",
+          "销售额"
+        ]
+      },
+      "order": 4
+    }
   ],
   "部门表": [
-    {"name": "全部", "view_type": "grid", "is_default": true, "order": 0}
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "is_default": true,
+      "order": 0
+    }
   ],
   "员工表": [
-    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "入职日期", "direction": "desc"}], "is_default": true, "order": 0},
-    {"name": "在职员工", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "是否在职", "op": "=", "value": "是"}], "sortings": [{"field_name": "薪资", "direction": "desc"}], "order": 1},
-    {"name": "按部门看板", "view_type": "kanban", "sortings": [{"field_name": "薪资", "direction": "desc"}], "view_options": {"group_field": "部门", "title_field": "姓名", "due_date_field": "入职日期", "card_sort_field": "薪资", "card_sort_direction": "desc", "pin_urgent": false}, "order": 2},
-    {"name": "高薪榜", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "薪资", "op": ">=", "value": "15000"}], "sortings": [{"field_name": "薪资", "direction": "desc"}], "order": 3},
-    {"name": "员工画廊", "view_type": "gallery", "sortings": [{"field_name": "薪资", "direction": "desc"}], "view_options": {"title_field": "姓名", "subtitle_field": "部门", "tag_field": "是否在职", "meta_fields": ["薪资", "入职日期"]}, "order": 4}
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "入职日期",
+          "direction": "desc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "在职员工",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "是否在职",
+          "op": "=",
+          "value": "是"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "薪资",
+          "direction": "desc"
+        }
+      ],
+      "order": 1
+    },
+    {
+      "name": "按部门看板",
+      "view_type": "kanban",
+      "sortings": [
+        {
+          "field_name": "薪资",
+          "direction": "desc"
+        }
+      ],
+      "view_options": {
+        "group_field": "部门",
+        "title_field": "姓名",
+        "due_date_field": "入职日期",
+        "card_sort_field": "薪资",
+        "card_sort_direction": "desc",
+        "pin_urgent": false
+      },
+      "order": 2
+    },
+    {
+      "name": "高薪榜",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "薪资",
+          "op": ">=",
+          "value": "15000"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "薪资",
+          "direction": "desc"
+        }
+      ],
+      "order": 3
+    },
+    {
+      "name": "员工画廊",
+      "view_type": "gallery",
+      "sortings": [
+        {
+          "field_name": "薪资",
+          "direction": "desc"
+        }
+      ],
+      "view_options": {
+        "title_field": "姓名",
+        "subtitle_field": "部门",
+        "tag_field": "是否在职",
+        "meta_fields": [
+          "薪资",
+          "入职日期"
+        ]
+      },
+      "order": 4
+    }
   ],
   "出差统计": [
-    {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "出差日期", "direction": "desc"}], "is_default": true, "order": 0},
-    {"name": "按出差事项看板", "view_type": "kanban", "view_options": {"group_field": "出差事项", "title_field": "出差地点", "due_date_field": "出差日期", "assignee_field": "参与人员", "card_sort_field": "出差日期", "card_sort_direction": "asc"}, "order": 1},
-    {"name": "按出差地点看板", "view_type": "kanban", "view_options": {"group_field": "出差地点", "title_field": "出差事项", "due_date_field": "出差日期", "assignee_field": "参与人员", "card_sort_field": "出差日期", "card_sort_direction": "asc"}, "order": 2},
-    {"name": "出差日历", "view_type": "calendar", "view_options": {"start_field": "出差日期"}, "order": 3},
-    {"name": "出差画廊", "view_type": "gallery", "sortings": [{"field_name": "出差日期", "direction": "desc"}], "view_options": {"title_field": "出差事项", "subtitle_field": "出差地点", "tag_field": "出差日期", "meta_fields": ["参与人员"]}, "order": 4}
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "出差日期",
+          "direction": "desc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "按出差事项看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "出差事项",
+        "title_field": "出差地点",
+        "due_date_field": "出差日期",
+        "assignee_field": "参与人员",
+        "card_sort_field": "出差日期",
+        "card_sort_direction": "asc"
+      },
+      "order": 1
+    },
+    {
+      "name": "按出差地点看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "出差地点",
+        "title_field": "出差事项",
+        "due_date_field": "出差日期",
+        "assignee_field": "参与人员",
+        "card_sort_field": "出差日期",
+        "card_sort_direction": "asc"
+      },
+      "order": 2
+    },
+    {
+      "name": "出差日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "出差日期",
+        "title_field": "出差事项",
+        "group_field": "出差地点"
+      },
+      "order": 3
+    },
+    {
+      "name": "出差画廊",
+      "view_type": "gallery",
+      "sortings": [
+        {
+          "field_name": "出差日期",
+          "direction": "desc"
+        }
+      ],
+      "view_options": {
+        "title_field": "出差事项",
+        "subtitle_field": "出差地点",
+        "tag_field": "出差日期",
+        "meta_fields": [
+          "参与人员"
+        ]
+      },
+      "order": 4
+    }
   ]
 }
