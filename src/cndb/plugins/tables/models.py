@@ -146,6 +146,7 @@ class DataField(TimestampMixin, Base):
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_unique: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     default_value: Mapped[Any] = mapped_column(JSON, nullable=True)
+    hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     trashed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     trashed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
