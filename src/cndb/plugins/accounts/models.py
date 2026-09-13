@@ -5,10 +5,17 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, String
+from typing import Any
+
+from sqlalchemy import JSON, Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cndb.models.base import Base, TimestampMixin
+
+
+def _default_preferences() -> dict[str, Any]:
+    """用户偏好默认值：空的激活视图映射."""
+    return {"active_views": {}}
 
 
 class User(TimestampMixin, Base):
@@ -23,6 +30,11 @@ class User(TimestampMixin, Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    preferences: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=_default_preferences,
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"User(id={self.id}, username={self.username!r})"

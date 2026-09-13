@@ -14,9 +14,13 @@
   "客户流失": [
     {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "累计消费_元", "direction": "desc"}], "is_default": true, "order": 0},
     {"name": "已流失客户", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "是否流失", "op": "=", "value": "1"}], "sortings": [{"field_name": "累计消费_元", "direction": "desc"}], "order": 1},
-    {"name": "按合约类型看板", "view_type": "kanban", "view_options": {"group_field": "合约类型", "title_field": "客户ID", "card_sort_field": "累计消费_元", "card_sort_direction": "desc"}, "order": 2},
-    {"name": "高消费客户", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "月消费_元", "op": ">=", "value": "300"}], "sortings": [{"field_name": "月消费_元", "direction": "desc"}], "order": 3},
-    {"name": "客户画廊", "view_type": "gallery", "sortings": [{"field_name": "累计消费_元", "direction": "desc"}], "view_options": {"title_field": "客户ID", "subtitle_field": "合约类型", "tag_field": "是否流失", "meta_fields": ["累计消费_元", "月消费_元", "在网月数"]}, "order": 4}
+    {"name": "未流失客户", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "是否流失", "op": "=", "value": "0"}], "sortings": [{"field_name": "累计消费_元", "direction": "desc"}], "order": 2},
+    {"name": "按合约类型看板", "view_type": "kanban", "view_options": {"group_field": "合约类型", "title_field": "客户ID", "subtitle_field": "套餐名称", "card_sort_field": "累计消费_元", "card_sort_direction": "desc"}, "order": 3},
+    {"name": "按套餐名称看板", "view_type": "kanban", "view_options": {"group_field": "套餐名称", "title_field": "客户ID", "subtitle_field": "合约类型", "card_sort_field": "累计消费_元", "card_sort_direction": "desc"}, "order": 4},
+    {"name": "按流失状态看板", "view_type": "kanban", "view_options": {"group_field": "是否流失", "title_field": "客户ID", "subtitle_field": "合约类型", "card_sort_field": "累计消费_元", "card_sort_direction": "desc", "group_order": ["0", "1"], "ungrouped_label": "未知"}, "order": 5},
+    {"name": "高消费客户", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "月消费_元", "op": ">=", "value": "300"}], "sortings": [{"field_name": "月消费_元", "direction": "desc"}], "order": 6},
+    {"name": "高流失风险", "view_type": "grid", "filter_type": "AND", "filters": [{"field_name": "在网月数", "op": "<=", "value": "12"}, {"field_name": "客服呼叫次数", "op": ">=", "value": "3"}], "sortings": [{"field_name": "客服呼叫次数", "direction": "desc"}], "order": 7},
+    {"name": "客户画廊", "view_type": "gallery", "sortings": [{"field_name": "累计消费_元", "direction": "desc"}], "view_options": {"title_field": "客户ID", "subtitle_field": "合约类型", "tag_field": "是否流失", "meta_fields": ["套餐名称", "累计消费_元", "月消费_元", "在网月数"]}, "order": 8}
   ],
   "电商销售": [
     {"name": "全部", "view_type": "grid", "sortings": [{"field_name": "日期", "direction": "desc"}], "is_default": true, "order": 0},
