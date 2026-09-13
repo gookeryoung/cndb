@@ -241,7 +241,7 @@ def _normalize_filters(  # noqa: PLR0912
     return []
 
 
-def _compile_filter_item(
+def _compile_filter_item(  # noqa: PLR0911 - filter item 分支多属正常
     table: DataTable,
     sa_table: Table,
     flt: dict[str, Any],
@@ -262,6 +262,29 @@ def _compile_filter_item(
         return None
     op = flt.get("op") or flt.get("operator") or "="
     value = flt.get("value")
+
+    # list 形式里 __query__ / $query —— 对所有可搜索文本字段做 OR contains
+    if field_name in ("__query__", "$query"):
+        from sqlalchemy import String, Text
+
+        from cndb.plugins.tables.field_types import default_registry
+
+        text_fields: list[DataField] = []
+        for f in table.fields:
+            if f.trashed:
+                continue
+            ft = default_registry.get(f.field_type)
+            if ft is None or not ft.has_physical_column:
+                continue
+            if ft.sqlalchemy_type in (String, Text):
+                text_fields.append(f)
+        if text_fields and value:
+            contains_list: list[dict[str, Any]] = [
+                {"field_name": f.name, "op": "contains", "value": value} for f in text_fields
+            ]
+            return _compile_group(table, sa_table, contains_list, logic="OR")
+        return None
+
     return _build_condition(table, sa_table, field_name, op, value)
 
 
@@ -318,6 +341,9 @@ def compile_sorts(
     order_clauses: list[Any] = []
 
     for s in sorts:
+        if not isinstance(s, dict):
+            logger.warning("跳过非 dict sort 项: %r", s)
+            continue
         field_name = s.get("field_name") or s.get("field")
         if not field_name:
             continue

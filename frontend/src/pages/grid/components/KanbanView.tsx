@@ -16,11 +16,11 @@ import { useMemo } from 'react'
 import { Tag, Progress, Tooltip, Empty } from 'antd'
 import {
   CalendarOutlined,
-  UserOutlined,
   ClockCircleOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
+import { getTagColorName } from '@/utils/tagColors'
 
 // ── 工具函数 ──────────────────────────────────────────
 
@@ -70,6 +70,11 @@ const PRIORITY_COLORS: Record<string, string> = {
 
 function priorityColor(value: string): string {
   return PRIORITY_COLORS[value] || 'default'
+}
+
+/** 自动配色 Tag（看板内部使用）— 直接用 antd 预设色名 */
+function AutoTag({ value, style }: { value: string; style?: React.CSSProperties }) {
+  return <Tag color={getTagColorName(value)} style={{ margin: 0, ...style }}>{value}</Tag>
 }
 
 // ── 看板卡片 ──────────────────────────────────────────
@@ -163,9 +168,7 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
         )}
         {dueDateField && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
         {assigneeField && (
-          <Tag icon={<UserOutlined />} style={{ margin: 0 }}>
-            {String(row[assigneeField] || '—')}
-          </Tag>
+          <AutoTag value={String(row[assigneeField] || '—')} style={{ paddingInline: 6 }} />
         )}
       </div>
 
@@ -182,9 +185,7 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
                 ? getSelectLabel(field, rawVal)
                 : String(rawVal)
             return (
-              <Tag key={cf} style={{ margin: 0 }} color="blue">
-                {field.name}: {displayVal}
-              </Tag>
+              <AutoTag key={cf} value={`${field.name}: ${displayVal}`} />
             )
           })}
         </div>

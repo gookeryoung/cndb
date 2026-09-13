@@ -7,6 +7,7 @@ import dayjs, { Dayjs } from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
 import type { AttachmentFile, Field, RowResponse } from '@/api'
 import { recordApi, fileApi } from '@/api'
+import { getTagColorName } from '@/utils/tagColors'
 
 interface Props {
   value: unknown
@@ -97,6 +98,11 @@ export default function GridCell({ value, field, rowId, wid, onSave }: Props) {
 
 // ─────────────── 展示态 ───────────────
 
+/** 自动配色 Tag — 直接用 antd 预设色名 */
+function ColoredTag({ value }: { value: string }) {
+  return <Tag color={getTagColorName(value)}>{value}</Tag>
+}
+
 function DisplayCell({ value, field, rowId, wid }: { value: unknown; field: Field; rowId: number | string; wid?: number | string }) {
   if (value === null || value === undefined || value === '') {
     return <span style={{ color: '#cbd5e1' }}>—</span>
@@ -109,16 +115,42 @@ function DisplayCell({ value, field, rowId, wid }: { value: unknown; field: Fiel
     }
     case 'number':
     case 'decimal':
+    case 'float': {
+      // 小数位数根据 config 决定，默认保留全部
+      const cfg = (field.config as Record<string, unknown> | undefined) || {}
+      const decimals = cfg.decimals as number | undefined
+      const num = Number(value)
+      if (!Number.isNaN(num) && decimals !== undefined) {
+        return <span style={{ fontFamily: 'ui-monospace, monospace' }}>{num.toFixed(decimals)}</span>
+      }
       return <span style={{ fontFamily: 'ui-monospace, monospace' }}>{String(value)}</span>
+    }
+    case 'percentage': {
+      const num = Number(value)
+      if (!Number.isNaN(num)) {
+        const cfg = (field.config as Record<string, unknown> | undefined) || {}
+        const decimals = (cfg.decimals as number | undefined) ?? 0
+        return <span style={{ fontFamily: 'ui-monospace, monospace' }}>{(num * 100).toFixed(decimals)}%</span>
+      }
+      return <span>{String(value)}</span>
+    }
     case 'date':
       return <span>{dayjs(String(value)).format('YYYY-MM-DD')}</span>
     case 'datetime':
       return <span>{dayjs(String(value)).format('YYYY-MM-DD HH:mm')}</span>
+    case 'timestamp': {
+      const n = Number(value)
+      if (!Number.isNaN(n) && n > 0) {
+        return <span>{dayjs.unix(n).format('YYYY-MM-DD HH:mm:ss')}</span>
+      }
+      return <span>{String(value)}</span>
+    }
     case 'select':
-      return <Tag color="blue">{String(value)}</Tag>
-    case 'multi_select': {
+      return <ColoredTag value={String(value)} />
+    case 'multi_select':
+    case 'multiselect': {
       const arr = Array.isArray(value) ? value as unknown[] : String(value).split(',').map(s => s.trim()).filter(Boolean)
-      return <>{arr.map((v, i) => <Tag key={i}>{String(v)}</Tag>)}</>
+      return <>{arr.map((v, i) => <ColoredTag key={i} value={String(v)} />)}</>
     }
     case 'email':
       return <Typography.Link href={`mailto:${value}`}>{String(value)}</Typography.Link>
@@ -126,13 +158,13 @@ function DisplayCell({ value, field, rowId, wid }: { value: unknown; field: Fiel
       return <Typography.Link href={String(value)} target="_blank" rel="noreferrer">{String(value)}</Typography.Link>
     case 'link': {
       if (Array.isArray(value)) {
-        return <span>{value.map((v: Record<string, unknown>, i: number) => <Tag key={i}>{String(v?.value ?? v?.id ?? v)}</Tag>)}</span>
+        return <span>{value.map((v: Record<string, unknown>, i: number) => <ColoredTag key={i} value={String(v?.value ?? v?.id ?? v)} />)}</span>
       }
       if (value && typeof value === 'object') {
         const o = value as Record<string, unknown>
-        return <Tooltip title={`row ${o.id ?? rowId}`}><Tag>{String(o.value ?? o.id ?? value)}</Tag></Tooltip>
+        return <Tooltip title={`row ${o.id ?? rowId}`}><ColoredTag value={String(o.value ?? o.id ?? value)} /></Tooltip>
       }
-      return <Tag>{String(value)}</Tag>
+      return <ColoredTag value={String(value)} />
     }
     case 'attachment': {
       // 值可能是 JSON 字符串或已经解析好的数组
@@ -164,7 +196,8 @@ function DisplayCell({ value, field, rowId, wid }: { value: unknown; field: Fiel
         </div>
       )
     }
-    case 'long_text': {
+    case 'long_text':
+    case 'longtext': {
       const s = String(value)
       return <Tooltip title={s}><span>{s.length > 40 ? s.slice(0, 40) + '…' : s}</span></Tooltip>
     }
@@ -205,6 +238,16 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
     if (e.key === 'Escape') { e.preventDefault(); onCancel() }
   }
 
+  // link 字段用的 query —— 必须在组件顶层调用，enabled 控制非 link 类型时不执行
+  const targetTableId = (field.config?.target_table_id as number | undefined)
+  const multiple = Boolean(field.config?.multiple ?? true)
+  const { data: targetRowsData, isLoading: linkLoading } = useQuery({
+    queryKey: ['link-target-rows', targetTableId],
+    queryFn: () => recordApi.list(wid!, targetTableId!, { limit: 500 }),
+    enabled: !!wid && !!targetTableId,
+  })
+  const targetRows: RowResponse[] = (targetRowsData as any)?.items || []
+
   switch (ft) {
     case 'text':
     case 'email':
@@ -224,7 +267,8 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
         </div>
       )
     }
-    case 'long_text': {
+    case 'long_text':
+    case 'longtext': {
       return (
         <Popover
           content={(
@@ -250,7 +294,9 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
       )
     }
     case 'number':
-    case 'decimal': {
+    case 'decimal':
+    case 'float':
+    case 'percentage': {
       return (
         <div style={wrap}>
           <InputNumber
@@ -260,7 +306,24 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
             onKeyDown={commonOnKey}
             ref={el => { if (el) inputRef.current = el as unknown as HTMLElement }}
             style={{ flex: 1, width: '100%' }}
-            step={ft === 'decimal' ? 0.01 : 1}
+            step={ft === 'decimal' || ft === 'float' || ft === 'percentage' ? 0.01 : 1}
+          />
+          {actions}
+        </div>
+      )
+    }
+    case 'timestamp': {
+      return (
+        <div style={wrap}>
+          <InputNumber
+            size="small"
+            value={draft as number | null}
+            onChange={v => onChange(v)}
+            onKeyDown={commonOnKey}
+            ref={el => { if (el) inputRef.current = el as unknown as HTMLElement }}
+            style={{ flex: 1, width: '100%' }}
+            step={1}
+            placeholder="Unix 时间戳（秒）"
           />
           {actions}
         </div>
@@ -279,7 +342,10 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
       )
     }
     case 'select': {
-      const options = ((field.config?.options as string[]) || []).map(o => ({ value: o, label: o }))
+      const options = ((field.config?.options as string[] | Array<{ label: string; value: string }>) || []).map(o => {
+        if (typeof o === 'string') return { value: o, label: o }
+        return { value: String(o.value ?? o.label), label: String(o.label ?? o.value) }
+      })
       const merged = options.length ? options : [{ value: String(draft ?? ''), label: String(draft ?? '') }]
       return (
         <div style={wrap}>
@@ -297,8 +363,12 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
         </div>
       )
     }
-    case 'multi_select': {
-      const options = ((field.config?.options as string[]) || []).map(o => ({ value: o, label: o }))
+    case 'multi_select':
+    case 'multiselect': {
+      const options = ((field.config?.options as string[] | Array<{ label: string; value: string }>) || []).map(o => {
+        if (typeof o === 'string') return { value: o, label: o }
+        return { value: String(o.value ?? o.label), label: String(o.label ?? o.value) }
+      })
       return (
         <div style={wrap}>
           <Select
@@ -346,14 +416,7 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
     }
     case 'link': {
       // link 字段：从 field.config.target_table_id 拉目标表行，用 Select 选择
-      const targetTableId = (field.config?.target_table_id as number | undefined)
-      const multiple = Boolean(field.config?.multiple ?? true)
-      const { data: targetRowsData, isLoading: linkLoading } = useQuery({
-        queryKey: ['link-target-rows', targetTableId],
-        queryFn: () => recordApi.list(wid!, targetTableId!, { limit: 500 }),
-        enabled: !!wid && !!targetTableId,
-      })
-      const targetRows: RowResponse[] = (targetRowsData as any)?.items || []
+      // （query 已移到组件顶层调用）
 
       // 从 draft（可能是 [{id, value}] 或 id 数组）提取纯 id 数组给 Select
       const ids = extractLinkIds(draft)
@@ -457,8 +520,8 @@ function isReadonlyField(field: Field): boolean {
 function normalizeValueForEdit(value: unknown, field: Field): unknown {
   if (value === null || value === undefined) {
     if (field.field_type === 'boolean') return false
-    if (field.field_type === 'number' || field.field_type === 'decimal') return null
-    if (field.field_type === 'multi_select') return []
+    if (['number', 'decimal', 'float', 'percentage', 'timestamp'].includes(field.field_type)) return null
+    if (['multi_select', 'multiselect'].includes(field.field_type)) return []
     if (field.field_type === 'link') return []  // link 从 [{id, value}] 转为空数组，由 ExtractLinkIds 在 EditCell 内部处理
     if (field.field_type === 'attachment') return []
     return ''
@@ -509,11 +572,15 @@ function finalizeValueFromEdit(draft: unknown, field: Field): unknown {
   }
   switch (ft) {
     case 'number':
-    case 'decimal': {
+    case 'decimal':
+    case 'float':
+    case 'percentage':
+    case 'timestamp': {
       const n = typeof draft === 'number' ? draft : Number(String(draft).trim())
       return Number.isNaN(n) ? null : n
     }
-    case 'multi_select': {
+    case 'multi_select':
+    case 'multiselect': {
       return Array.isArray(draft) ? draft : []
     }
     case 'date':

@@ -2,12 +2,12 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Row, Col, Badge, Input, InputNumber, Tabs, Select, Form, Switch } from 'antd'
+import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Row, Col, Badge, Input, InputNumber, Tabs, Select, Form, Switch, Upload } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
-  AppstoreOutlined, CopyOutlined, ImportOutlined, DownOutlined, CloseOutlined,
+  AppstoreOutlined, CopyOutlined, ImportOutlined, UploadOutlined, DownOutlined, CloseOutlined,
   CalendarOutlined, ShareAltOutlined, SafetyOutlined, SwapOutlined,
   SearchOutlined, SortAscendingOutlined, SortDescendingOutlined,
 } from '@ant-design/icons'
@@ -49,7 +49,8 @@ export default function GridPage() {
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
   const [createViewOpen, setCreateViewOpen] = useState(false)
   const [importViewsOpen, setImportViewsOpen] = useState(false)
-  const [importJson, setImportJson] = useState('')
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importFileContent, setImportFileContent] = useState('')
   const [permOpen, setPermOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [activeViewId, setActiveViewId] = useState<number | string | null>(null)
@@ -248,7 +249,8 @@ export default function GridPage() {
       message.success(`成功导入 ${created.length} 个视图`)
       queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
       setImportViewsOpen(false)
-      setImportJson('')
+      setImportFile(null)
+      setImportFileContent('')
     },
     onError: (err) => {
       message.error(err instanceof Error ? err.message : '导入失败')
@@ -456,7 +458,7 @@ export default function GridPage() {
           size="small"
           type="text"
           icon={<ImportOutlined />}
-          onClick={() => { setImportJson(''); setImportViewsOpen(true) }}
+          onClick={() => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) }}
         >导入视图</Button>
         <Space.Compact style={{ marginLeft: 8 }}>
           <Button size="small" type={mode === 'grid' ? 'primary' : 'default'} icon={<ColumnHeightOutlined />} onClick={() => setMode('grid')}>{!isMobile && '表格'}</Button>
@@ -630,10 +632,14 @@ export default function GridPage() {
         onCancel={() => setImportViewsOpen(false)}
         width={560}
         onOk={() => {
+          if (!importFileContent) {
+            message.warning('请先选择或拖入 JSON 文件')
+            return
+          }
           let parsed: ViewCreate[]
           try {
-            parsed = JSON.parse(importJson)
-            if (!Array.isArray(parsed)) throw new Error('JSON 必须是数组')
+            parsed = JSON.parse(importFileContent)
+            if (!Array.isArray(parsed)) throw new Error('JSON 根节点必须是数组')
           } catch (e) {
             message.error('JSON 解析失败: ' + (e instanceof Error ? e.message : String(e)))
             return
@@ -643,17 +649,37 @@ export default function GridPage() {
         confirmLoading={importViews.isPending}
         okText="导入"
         cancelText="取消"
+        okButtonProps={{ disabled: !importFileContent }}
       >
-        <div style={{ marginBottom: 8, fontSize: 12, color: '#6b7280' }}>
-          粘贴视图 JSON 数组，格式参考 examples/datasets/工作区-某企业销售管理/views.json
-        </div>
-        <Input.TextArea
-          rows={12}
-          value={importJson}
-          onChange={(e) => setImportJson(e.target.value)}
-          placeholder='[{"name":"高金额","view_type":"grid","filters":[{"field_name":"合同金额_万元","op":">=","value":"1000"}]}]'
-          style={{ fontFamily: 'monospace', fontSize: 12 }}
-        />
+        <Upload.Dragger
+          accept=".json,application/json"
+          maxCount={1}
+          fileList={importFile ? [{ uid: '-1', name: importFile.name, status: 'done' }] : []}
+          beforeUpload={(file: File) => {
+            const reader = new FileReader()
+            reader.onload = () => {
+              setImportFile(file)
+              setImportFileContent(String(reader.result ?? ''))
+            }
+            reader.onerror = () => {
+              message.error('读取文件失败')
+              setImportFile(null)
+              setImportFileContent('')
+            }
+            reader.readAsText(file, 'utf-8')
+            return false
+          }}
+          onRemove={() => { setImportFile(null); setImportFileContent(''); return true }}
+        >
+          <p className="ant-upload-drag-icon"><UploadOutlined /></p>
+          <p className="ant-upload-text">点击或拖拽 JSON 文件到此处</p>
+          <p className="ant-upload-hint">支持 .json 格式，内容为视图配置数组</p>
+        </Upload.Dragger>
+        {importFile && (
+          <div style={{ marginTop: 12, fontSize: 12, color: '#1677ff', textAlign: 'center' }}>
+            已选择：{importFile.name}（{(importFile.size / 1024).toFixed(1)} KB）
+          </div>
+        )}
       </Modal>
 
       {/* 权限设置 Modal */}
