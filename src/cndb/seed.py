@@ -376,11 +376,11 @@ def _seed_views(db: Any, user: Any, tables_map: dict[str, dict[str, Any]], datas
 
 
 def seed(_args: argparse.Namespace) -> None:
-    """向数据库注入演示数据（datasets CSV + 硬编码业务表 + 视图种子）."""
+    """向数据库注入演示数据（datasets CSV + 硬编码业务表 + 视图种子 + 三员演示账号）."""
     from cndb.core.database import SessionLocal, engine
     from cndb.core.plugin_registry import plugin_registry
     from cndb.models.base import Base
-    from cndb.plugins.accounts.models import User
+    from cndb.plugins.accounts.models import User, UserRole
 
     # 触发所有插件 register_models，确保 Base.metadata 完整注册
     plugin_registry.discover_and_load()
@@ -389,16 +389,65 @@ def seed(_args: argparse.Namespace) -> None:
     Base.metadata.create_all(engine)
     db = SessionLocal()
     try:
-        # 用户
-        user = User(username="demo", email="demo@cndb.local", nickname="演示账号")
-        user.set_password("demo1234")
-        db.add(user)
+        # 用户 —— 三员账号（GB/T 22239 等级保护模型）+ 1 个普通用户示例
+        # 系统管理员（同时是超级管理员，用于首次安装时的初始管理员）
+        admin = User(
+            username="admin",
+            email="admin@cndb.local",
+            nickname="系统管理员",
+            role=UserRole.SYSTEM_ADMIN.value,
+            is_superuser=True,
+        )
+        admin.set_password("admin1234")
+        db.add(admin)
         db.commit()
-        db.refresh(user)
-        print("[seed] 创建用户: demo / demo1234")
+        db.refresh(admin)
+        print("[seed] 创建用户: admin / admin1234  (角色: 系统管理员 + 超级管理员)")
+
+        # 安全管理员
+        sec_admin = User(
+            username="sec_admin",
+            email="sec_admin@cndb.local",
+            nickname="安全管理员",
+            role=UserRole.SECURITY_ADMIN.value,
+        )
+        sec_admin.set_password("sec1234")
+        db.add(sec_admin)
+        db.commit()
+        db.refresh(sec_admin)
+        print("[seed] 创建用户: sec_admin / sec1234  (角色: 安全管理员)")
+
+        # 审计管理员
+        audit_admin = User(
+            username="audit_admin",
+            email="audit_admin@cndb.local",
+            nickname="审计管理员",
+            role=UserRole.AUDIT_ADMIN.value,
+        )
+        audit_admin.set_password("audit1234")
+        db.add(audit_admin)
+        db.commit()
+        db.refresh(audit_admin)
+        print("[seed] 创建用户: audit_admin / audit1234  (角色: 审计管理员)")
+
+        # 普通用户（示例）
+        demo = User(
+            username="demo",
+            email="demo@cndb.local",
+            nickname="演示用户",
+            role=UserRole.USER.value,
+        )
+        demo.set_password("demo1234")
+        db.add(demo)
+        db.commit()
+        db.refresh(demo)
+        print("[seed] 创建用户: demo / demo1234  (角色: 普通用户)")
+
+        # 用 admin 作为后续数据的所有者（超级管理员最合理）
+        owner = admin
 
         # 1) datasets CSV：每个子文件夹 → 工作区，每个 CSV → 数据表
-        csv_count, ws_map, tables_map = _seed_datasets(db, engine, user)
+        csv_count, ws_map, tables_map = _seed_datasets(db, engine, owner)
 
         # 2) 硬编码业务表挂到 "某企业销售管理" 工作区
         extra = 0
@@ -412,12 +461,16 @@ def seed(_args: argparse.Namespace) -> None:
 
         # 3) 视图种子（依赖所有表已就绪，扫描每个工作区文件夹下的 views.json）
         datasets_dir = _get_datasets_dir()
-        view_count = _seed_views(db, user, tables_map, datasets_dir)
+        view_count = _seed_views(db, owner, tables_map, datasets_dir)
 
         total = csv_count + extra
         print(
-            f"[seed] 完成！共 {total} 张数据表、{view_count} 个视图。"
-            "运行 uv run cndb serve 启动服务后用 demo / demo1234 登录"
+            f"[seed] 完成！共 {total} 张数据表、{view_count} 个视图、4 个演示账号（三员 + 普通用户）。"
+            "\n登录账号："
+            "\n  系统管理员: admin / admin1234"
+            "\n  安全管理员: sec_admin / sec1234"
+            "\n  审计管理员: audit_admin / audit1234"
+            "\n  普通用户:   demo / demo1234"
         )
     finally:
         db.close()
