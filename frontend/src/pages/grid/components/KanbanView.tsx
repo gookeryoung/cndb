@@ -1,12 +1,12 @@
 /** 看板视图组件 — 支持进度跟踪、紧急提醒、优先级徽章.
  *
  * view_options 扩展字段:
- * - group_field:       分组字段（select/multi_select）
- * - title_field:       卡片标题字段（text/主键字段）
+ * - group_field:       分组字段（select/multi_select/link）
+ * - title_field:       卡片标题字段（text/主键字段/link/select 等任意可显示字段）
  * - progress_field:    进度百分比字段（number, 0-100）
  * - due_date_field:    截止日期字段（date/datetime）
  * - priority_field:    优先级字段（select）
- * - assignee_field:    负责人字段（text）
+ * - assignee_field:    负责人字段（text/link）
  * - card_fields:       卡片额外显示的字段列表（string[]）
  * - urgent_threshold_days: 临近截止多少天标记为紧急（默认 3）
  * - show_progress_bar: 是否显示进度条（默认 true，有 progress_field 时）
@@ -24,9 +24,40 @@ import { resolveTagColor } from '@/utils/tagColors'
 
 // ── 工具函数 ──────────────────────────────────────────
 
-/** 解析字段的 label/name 展示值 */
+/** 把 link 字段的 API 返回值（[{id, value}]）展平为可读字符串数组 */
+function formatLinkValue(value: unknown): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) {
+    return value
+      .map((item: Record<string, unknown>) => {
+        if (item && typeof item === 'object') {
+          return String(item.value ?? item.label ?? item.id ?? '')
+        }
+        return String(item)
+      })
+      .filter(Boolean)
+  }
+  if (value && typeof value === 'object') {
+    const o = value as Record<string, unknown>
+    const v = o.value ?? o.label ?? o.id ?? ''
+    return [String(v)]
+  }
+  return [String(value)]
+}
+
+/** 把 multiselect 字段值（逗号分隔字符串或数组）解析为标签数组 */
+function formatMultiSelectValue(value: unknown): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) return value.map((v) => String(v)).filter(Boolean)
+  return String(value)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+/** 解析 select 字段的原始值为可读标签 */
 function getSelectLabel(field: Field, value: unknown): string {
-  if (!value) return ''
+  if (value === null || value === undefined || value === '') return ''
   const options = (field.config as Record<string, unknown> | undefined)?.options as
     | Array<Record<string, unknown>>
     | undefined
@@ -34,6 +65,46 @@ function getSelectLabel(field: Field, value: unknown): string {
   const strVal = String(value)
   const found = options.find((o) => String(o.value ?? o.name ?? '') === strVal)
   return found ? String(found.label ?? found.value ?? found.name ?? value) : strVal
+}
+
+/** 解析 link 字段值（对象数组）用于分组键提取 — 取第一个 link 的 value */
+function getLinkFirstLabel(value: unknown): string {
+  const labels = formatLinkValue(value)
+  return labels.length > 0 ? labels[0] : ''
+}
+
+/** 解析 multiselect 字段值用于分组键 — 逗号分隔字符串的第一个值 */
+function getMultiSelectFirstLabel(value: unknown): string {
+  const labels = formatMultiSelectValue(value)
+  return labels.length > 0 ? labels[0] : ''
+}
+
+/** 通用值格式化入口：根据字段类型把 row[fieldName] 转为可显示字符串 */
+function formatFieldDisplayValue(field: Field, value: unknown): string {
+  if (value === null || value === undefined || value === '') return ''
+
+  switch (field.field_type) {
+    case 'select':
+      return getSelectLabel(field, value)
+
+    case 'multi_select':
+    case 'multiselect':
+      return formatMultiSelectValue(value).join(', ')
+
+    case 'link':
+      return formatLinkValue(value).join(', ')
+
+    case 'boolean':
+      return value ? '是' : '否'
+
+    case 'date':
+    case 'datetime':
+    case 'timestamp':
+      return String(value)
+
+    default:
+      return String(value)
+  }
 }
 
 /** 解析日期字段值为 Date */
@@ -79,6 +150,9 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
   const showProgressBar = opts.show_progress_bar !== false && !!progressField
   const urgentThreshold = Number(opts.urgent_threshold_days) || 3
 
+  // 查找字段定义（用于格式化复杂类型值）
+  const findField = (name: string): Field | undefined => fields.find((f) => f.name === name)
+
   // 计算状态
   const dueDate = dueDateField ? parseDate(row[dueDateField]) : null
   const daysLeft = dueDate ? daysFromToday(dueDate) : null
@@ -88,8 +162,11 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
   const progressVal = progressField ? Number(row[progressField]) : NaN
   const progress = Number.isFinite(progressVal) ? Math.max(0, Math.min(100, progressVal)) : NaN
 
-  // 卡片标题
-  const title = String(row[titleField] ?? row.id)
+  // 卡片标题 — 用字段定义正确格式化 link/select 等类型
+  const titleFieldDef = findField(titleField)
+  const title = titleFieldDef
+    ? formatFieldDisplayValue(titleFieldDef, row[titleField]) || String(row.id)
+    : String(row[titleField] ?? row.id)
 
   // 卡片边框样式（紧急提醒）
   let borderStyle: React.CSSProperties = {}
@@ -144,11 +221,18 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
       {/* 元信息行：优先级 + 截止日期 + 负责人 */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
         {priorityField && (
-          <PriorityBadge field={fields.find((f) => f.name === priorityField)} value={row[priorityField]} />
+          <PriorityBadge field={findField(priorityField)} value={row[priorityField]} />
         )}
         {dueDateField && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
         {assigneeField && (
-          <AutoTag value={String(row[assigneeField] || '—')} style={{ paddingInline: 6 }} />
+          <AutoTag
+            value={
+              findField(assigneeField)
+                ? formatFieldDisplayValue(findField(assigneeField)!, row[assigneeField]) || '—'
+                : String(row[assigneeField] || '—')
+            }
+            style={{ paddingInline: 6 }}
+          />
         )}
       </div>
 
@@ -156,14 +240,10 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
       {cardFields.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {cardFields.map((cf) => {
-            const field = fields.find((f) => f.name === cf)
+            const field = findField(cf)
             if (!field) return null
-            const rawVal = row[cf]
-            if (rawVal === null || rawVal === undefined || rawVal === '') return null
-            const displayVal =
-              field.field_type === 'select' || field.field_type === 'multi_select'
-                ? getSelectLabel(field, rawVal)
-                : String(rawVal)
+            const displayVal = formatFieldDisplayValue(field, row[cf])
+            if (!displayVal) return null
             return (
               <AutoTag key={cf} value={`${field.name}: ${displayVal}`} />
             )
@@ -193,9 +273,9 @@ function KanbanCard({ row, fields, view, onRowClick }: KanbanCardProps) {
 // ── 优先级徽章 ───────────────────────────────────────
 
 function PriorityBadge({ field, value }: { field?: Field; value: unknown }) {
-  if (!value) return null
-  const label = field ? getSelectLabel(field, value) : String(value)
-  // 优先使用字段配置中已存的 color，fallback 语义推荐 → hash
+  if (value === null || value === undefined || value === '') return null
+  const label = field ? formatFieldDisplayValue(field, value) : String(value)
+  if (!label) return null
   const options = field?.config?.options
   const color = resolveTagColor(label, options)
   return <Tag color={color} style={{ margin: 0, fontWeight: 500 }}>{label}</Tag>
@@ -259,9 +339,11 @@ export default function KanbanView({
   const opts = (view?.view_options || {}) as Record<string, unknown>
   const groupField =
     (opts.group_field as string) ||
-    fields.find((f) => f.field_type === 'select' || f.field_type === 'multi_select')?.name
+    fields.find((f) => f.field_type === 'select' || f.field_type === 'multi_select' || f.field_type === 'link')?.name
 
-  // 按分组字段聚合成列
+  const groupFieldDef = groupField ? fields.find((f) => f.name === groupField) : undefined
+
+  // 按分组字段聚合成列 — 正确处理 link/multiselect/select 的值
   const columns = useMemo(() => {
     const cols: Array<{ key: string; title: string; rows: RowResponse[]; urgentCount: number }> = []
 
@@ -273,10 +355,36 @@ export default function KanbanView({
 
     const groups = new Map<string, RowResponse[]>()
     for (const r of rows) {
-      let rawVal = r[groupField]
-      // multi_select 可能返回数组 → 取第一个元素作为分组键
-      if (Array.isArray(rawVal)) rawVal = rawVal[0]
-      const key = rawVal ? String(rawVal) : '未分组'
+      const rawVal = r[groupField]
+      let key: string
+
+      if (groupFieldDef) {
+        const ft = groupFieldDef.field_type
+        if (ft === 'link') {
+          key = getLinkFirstLabel(rawVal)
+        } else if (ft === 'multi_select' || ft === 'multiselect') {
+          key = getMultiSelectFirstLabel(rawVal)
+        } else if (ft === 'select') {
+          key = getSelectLabel(groupFieldDef, rawVal) || String(rawVal || '')
+        } else {
+          key = rawVal !== null && rawVal !== undefined && rawVal !== '' ? String(rawVal) : ''
+        }
+      } else {
+        // 未知字段类型，保守兜底
+        if (Array.isArray(rawVal)) {
+          const first = rawVal[0]
+          key = first && typeof first === 'object'
+            ? String((first as Record<string, unknown>).value ?? (first as Record<string, unknown>).id ?? '')
+            : String(first ?? '')
+        } else if (rawVal && typeof rawVal === 'object') {
+          const o = rawVal as Record<string, unknown>
+          key = String(o.value ?? o.label ?? o.id ?? '')
+        } else {
+          key = rawVal !== null && rawVal !== undefined && rawVal !== '' ? String(rawVal) : ''
+        }
+      }
+
+      if (!key) key = '未分组'
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(r)
     }
@@ -299,7 +407,7 @@ export default function KanbanView({
     }
 
     return cols
-  }, [rows, groupField, opts])
+  }, [rows, groupField, groupFieldDef, opts])
 
   if (columns.length === 0) {
     return <Empty description="暂无记录" style={{ padding: 48 }} />
