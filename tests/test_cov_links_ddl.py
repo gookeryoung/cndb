@@ -182,8 +182,7 @@ class TestDDLUniqueConstraint:
     def test_unique_on_link_field_skipped(self, db_engine, db):
         """link 等无物理列字段不支持唯一约束（静默跳过）."""
         tbl = _make_table(db, 1, "t_uniq2")
-        f = DataField(table_id=tbl.id, name="link_x", field_type="link", order=0,
-                       config={"target_table_id": 1})
+        f = DataField(table_id=tbl.id, name="link_x", field_type="link", order=0, config={"target_table_id": 1})
         f.ensure_db_name()
         db.add(f)
         db.commit()
@@ -223,6 +222,7 @@ class TestDDLColumnRebuild:
 
         # 先加一行文本数据
         from cndb.plugins.tables import records as rec
+
         rec.create_row(db_engine, tbl, {"score": "hello"}, db=db)
 
         # 重建为 float（需要先把 unique 去掉，因为列名没变）
@@ -240,8 +240,7 @@ class TestDDLColumnRebuild:
     def test_rebuild_link_field_raises(self, db_engine, db):
         """link→text 重建：旧字段 link 无物理列，抛 ValueError."""
         tbl = _make_table(db, 1, "t_rebuild2")
-        f = DataField(table_id=tbl.id, name="link_x", field_type="link", order=0,
-                       config={"target_table_id": 1})
+        f = DataField(table_id=tbl.id, name="link_x", field_type="link", order=0, config={"target_table_id": 1})
         f.ensure_db_name()
         db.add(f)
         db.commit()
@@ -250,6 +249,7 @@ class TestDDLColumnRebuild:
 
         f2 = DataField(name="link_x", field_type="text", db_column_name=f.db_column_name, required=False)
         import pytest
+
         with pytest.raises(ValueError, match="无物理列"):
             ddl.rebuild_column(db_engine, tbl, f, f2)
 
@@ -263,9 +263,9 @@ class TestDDLColumnRebuild:
         db.refresh(tbl)
         ddl.create_table(db_engine, tbl)
 
-        f2 = DataField(name="x", field_type="link", db_column_name=f.db_column_name,
-                       config={"target_table_id": 1})
+        f2 = DataField(name="x", field_type="link", db_column_name=f.db_column_name, config={"target_table_id": 1})
         import pytest
+
         with pytest.raises(ValueError, match="无物理列"):
             ddl.rebuild_column(db_engine, tbl, f, f2)
 
@@ -286,8 +286,7 @@ class TestDDLColumnRebuild:
     def test_drop_unique_on_link_field_skip(self, db_engine, db):
         """link 字段 drop_unique_constraint 静默跳过."""
         tbl = _make_table(db, 1, "t_uniq_skip")
-        f = DataField(table_id=tbl.id, name="link_x", field_type="link", order=0,
-                       config={"target_table_id": 1})
+        f = DataField(table_id=tbl.id, name="link_x", field_type="link", order=0, config={"target_table_id": 1})
         f.ensure_db_name()
         db.add(f)
         db.commit()
@@ -432,6 +431,7 @@ class TestUpdateFieldTypeChange:
     def test_create_field_with_is_unique_calls_ddl(self, client, auth_headers, db):
         """create_field 时 is_unique=True → 触发 add_unique_constraint."""
         from unittest.mock import patch
+
         ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_uniq_create"})
         wid = ws.json()["id"]
         r = client.post(f"/api/v1/workspaces/{wid}/tables", json={"name": "t_uniq_create"}, headers=auth_headers)
@@ -450,6 +450,7 @@ class TestUpdateFieldTypeChange:
     def test_update_field_rebuild_exception(self, client, auth_headers, db):
         """update_field 时 rebuild_column 抛异常 → 返回 500."""
         from unittest.mock import patch
+
         ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_err1"})
         wid = ws.json()["id"]
         r = client.post(f"/api/v1/workspaces/{wid}/tables", json={"name": "t_err1"}, headers=auth_headers)
@@ -474,6 +475,7 @@ class TestUpdateFieldTypeChange:
     def test_update_field_unique_exception(self, client, auth_headers, db):
         """update_field 时 add_unique_constraint 抛异常 → 返回 500."""
         from unittest.mock import patch
+
         ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_err2"})
         wid = ws.json()["id"]
         r = client.post(f"/api/v1/workspaces/{wid}/tables", json={"name": "t_err2"}, headers=auth_headers)
