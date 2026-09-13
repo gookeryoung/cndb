@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -19,6 +20,9 @@ from cndb.plugins.workspaces.schemas import (
     PinRequest,
     PinToggleResponse,
     WorkspaceCreate,
+    WorkspaceDetailResponse,
+    WorkspaceImportRequest,
+    WorkspaceImportResponse,
     WorkspaceMemberResponse,
     WorkspaceResponse,
     WorkspaceUpdate,
@@ -56,8 +60,10 @@ def list_workspaces(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[WorkspaceWithPinnedResponse]:
-    """列出当前用户所属的工作区，钉住的置顶."""
-    from sqlalchemy import case, select
+    """列出当前用户所属的工作区，钉住的置顶，附带 table_count / member_count."""
+    from sqlalchemy import case, func, select
+
+    from cndb.plugins.tables.models import DataTable
 
     stmt = (
         select(
@@ -72,10 +78,32 @@ def list_workspaces(
         .order_by(case((WorkspaceMember.pinned.is_(True), 0), else_=1), Workspace.id)
     )
     rows = db.execute(stmt).all()
+
+    # 批量收集 workspace_id 用于统计
+    ws_ids = [ws.id for ws, _ in rows]
+    # 表数统计（排除软删）
+    table_counts: dict[int, int] = dict(
+        db.query(DataTable.workspace_id, func.count(DataTable.id))
+        .filter(DataTable.workspace_id.in_(ws_ids), DataTable.trashed_at.is_(None))
+        .group_by(DataTable.workspace_id)
+        .all()
+    )
+    # 成员数统计
+    member_counts: dict[int, int] = dict(
+        db.query(WorkspaceMember.workspace_id, func.count(WorkspaceMember.id))
+        .filter(WorkspaceMember.workspace_id.in_(ws_ids))
+        .group_by(WorkspaceMember.workspace_id)
+        .all()
+    )
+
     result: list[WorkspaceWithPinnedResponse] = []
     for ws, pinned in rows:
         d = {c.name: getattr(ws, c.name) for c in ws.__table__.columns}
         d["pinned"] = bool(pinned)
+        # 统计字段塞进 response 扩展（WorkspaceWithPinnedResponse 继承自 WorkspaceResponse，
+        # 前端列表类型声明时用 Workspace & { table_count, member_count } 接收）
+        d["table_count"] = table_counts.get(ws.id, 0)
+        d["member_count"] = member_counts.get(ws.id, 0)
         result.append(WorkspaceWithPinnedResponse.model_validate(d))
     return result
 
@@ -87,7 +115,14 @@ def create_workspace(
     db: Annotated[Session, Depends(get_db)],
 ) -> Workspace:
     """创建工作区并把创建者登记为 OWNER."""
-    ws = Workspace(name=payload.name, description=payload.description, created_by_id=current_user.id)
+    ws = Workspace(
+        name=payload.name,
+        description=payload.description,
+        visibility=payload.visibility,
+        tags=payload.tags,
+        allow_edit=payload.allow_edit,
+        created_by_id=current_user.id,
+    )
     db.add(ws)
     db.flush()  # 拿到 ws.id
     member = WorkspaceMember(workspace_id=ws.id, user_id=current_user.id, role=WorkspaceRole.OWNER)
@@ -97,16 +132,92 @@ def create_workspace(
     return ws
 
 
-@router.get("/{workspace_id}", response_model=WorkspaceResponse)
+@router.get("/{workspace_id}", response_model=WorkspaceDetailResponse)
 def get_workspace(
     workspace_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> Workspace:
-    """获取单个工作区（需是成员）."""
+) -> WorkspaceDetailResponse:
+    """获取工作区详情（需是成员），附带拥有者信息和统计."""
+    from contextlib import suppress
+
+    from sqlalchemy import MetaData, func, select
+
+    from cndb.plugins.tables.models import DataTable, DataView
+
     ws = _get_workspace_or_404(workspace_id, db)
     _require_member(ws, current_user, db)
-    return ws  # pragma: no cover - 测试环境下 DB 异常不触发
+
+    # 统计
+    table_count = (
+        db.query(DataTable)
+        .filter(
+            DataTable.workspace_id == workspace_id,
+            DataTable.trashed_at.is_(None),
+        )
+        .count()
+    )
+    member_count = (
+        db.query(WorkspaceMember)
+        .filter(
+            WorkspaceMember.workspace_id == workspace_id,
+        )
+        .count()
+    )
+    view_count = (
+        db.query(DataView)
+        .join(DataTable)
+        .filter(
+            DataTable.workspace_id == workspace_id,
+            DataTable.trashed_at.is_(None),
+        )
+        .count()
+    )
+    # 总行数：遍历每个 DataTable 的物理表执行 COUNT
+    total_rows = 0
+    tables = (
+        db.query(DataTable)
+        .filter(
+            DataTable.workspace_id == workspace_id,
+            DataTable.trashed_at.is_(None),
+        )
+        .all()
+    )
+    metadata = MetaData()
+    for tbl in tables:
+        with suppress(Exception):
+            sa_table = __import__("sqlalchemy").Table(tbl.db_table_name, metadata, autoload_with=db.bind)
+            cnt = db.execute(select(func.count(sa_table.c.id))).scalar() or 0
+            total_rows += int(cnt)
+
+    # 拥有者信息
+    owner_member = (
+        db.query(WorkspaceMember)
+        .filter(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.role == WorkspaceRole.OWNER,
+        )
+        .first()
+    )
+    owner_info: dict | None = None
+    if owner_member and owner_member.user:
+        owner_info = {
+            "id": owner_member.user.id,
+            "username": owner_member.user.username,
+            "nickname": owner_member.user.nickname,
+        }
+
+    d = {c.name: getattr(ws, c.name) for c in ws.__table__.columns}
+    d.update(
+        {
+            "owner": owner_info,
+            "table_count": table_count,
+            "member_count": member_count,
+            "view_count": view_count,
+            "total_rows": total_rows,
+        }
+    )
+    return WorkspaceDetailResponse.model_validate(d)
 
 
 @router.patch("/{workspace_id}", response_model=WorkspaceResponse)
@@ -323,6 +434,258 @@ def toggle_pin(
     db.commit()
     db.refresh(member)
     return PinToggleResponse(pinned=member.pinned)
+
+
+# ── 工作区整体导入导出 ──────────────────────────────
+
+
+@router.get("/{workspace_id}/export")
+def export_workspace(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """导出整个工作区为 JSON：工作区元信息 + 所有表结构 + 数据行 + 视图配置."""
+    import datetime as dt
+
+    from sqlalchemy import MetaData, select
+
+    from cndb.plugins.tables.models import DataField, DataTable, DataView
+
+    ws = _get_workspace_or_404(workspace_id, db)
+    _require_member(ws, current_user, db)
+
+    # 工作区元信息
+    workspace_meta = {
+        "name": ws.name,
+        "description": ws.description,
+        "visibility": ws.visibility.value,
+        "tags": ws.tags,
+        "allow_edit": ws.allow_edit,
+    }
+
+    # 导出所有表（含字段、数据、视图）
+    tables_data: list[dict] = []
+    tables = (
+        db.query(DataTable)
+        .filter(
+            DataTable.workspace_id == workspace_id,
+            DataTable.trashed_at.is_(None),
+        )
+        .all()
+    )
+
+    metadata = MetaData()
+    for tbl in tables:
+        # 字段定义
+        fields = (
+            db.query(DataField)
+            .filter(
+                DataField.table_id == tbl.id,
+                DataField.trashed.is_(False),
+            )
+            .order_by(DataField.order, DataField.id)
+            .all()
+        )
+        fields_data = [
+            {
+                "name": f.name,
+                "field_type": f.field_type,
+                "config": f.config,
+                "required": f.required,
+                "is_unique": f.is_unique,
+                "default_value": f.default_value,
+                "hidden": f.hidden,
+                "order": f.order,
+            }
+            for f in fields
+        ]
+
+        # 数据行
+        rows_data: list[dict] = []
+        try:
+            sa_table = __import__("sqlalchemy").Table(tbl.db_table_name, metadata, autoload_with=db.bind)
+            if "trashed_at" in sa_table.columns:
+                result = db.execute(select(sa_table).where(sa_table.c.trashed_at.is_(None))).mappings().all()
+            else:
+                result = db.execute(select(sa_table)).mappings().all()
+            rows_data = [dict(r) for r in result]
+        except Exception:  # pragma: no cover - 表结构异常
+            pass
+
+        # 视图配置
+        views = db.query(DataView).filter(DataView.table_id == tbl.id).all()
+        views_data = [
+            {
+                "name": v.name,
+                "view_type": v.view_type,
+                "filter_type": v.filter_type,
+                "filters": v.filters,
+                "sortings": v.sortings,
+                "field_options": v.field_options,
+                "view_options": getattr(v, "view_options", None),
+                "field_order": getattr(v, "field_order", None),
+                "default": v.default,
+            }
+            for v in views
+        ]
+
+        tables_data.append(
+            {
+                "name": tbl.name,
+                "description": tbl.description,
+                "fields": fields_data,
+                "views": views_data,
+                "rows": rows_data,
+            }
+        )
+
+    return {
+        "version": "1",
+        "exported_at": dt.datetime.now(dt.UTC).isoformat(),
+        "workspace": workspace_meta,
+        "tables": tables_data,
+    }
+
+
+@router.post("/{workspace_id}/import", response_model=WorkspaceImportResponse)
+def import_workspace(  # noqa: PLR0912 - 导入流程需要多分支，暂不拆分
+    workspace_id: int,
+    payload: WorkspaceImportRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> WorkspaceImportResponse:
+    """从 JSON 数据导入表结构、视图和数据行到指定工作区（ADMIN+）."""
+    import logging
+
+    from cndb.plugins.tables.ddl import create_table as ddl_create
+    from cndb.plugins.tables.models import DataField, DataTable, DataView
+
+    ws = _get_workspace_or_404(workspace_id, db)
+    _require_admin(ws, current_user, db)
+
+    data = payload.json_data
+    if not isinstance(data, dict) or "tables" not in data:
+        raise HTTPException(status_code=400, detail="无效的导入数据格式")
+
+    imported_tables = 0
+    imported_rows = 0
+    imported_views = 0
+
+    with contextlib.suppress(Exception):
+        db.begin()
+
+    try:
+        for tbl_data in data.get("tables", []):
+            table_name = tbl_data.get("name", "").strip()
+            if not table_name:
+                continue
+            # 同名表跳过
+            existing = (
+                db.query(DataTable)
+                .filter(
+                    DataTable.workspace_id == workspace_id,
+                    DataTable.name == table_name,
+                    DataTable.trashed_at.is_(None),
+                )
+                .first()
+            )
+            if existing:
+                continue
+
+            table = DataTable(
+                workspace_id=workspace_id,
+                name=table_name,
+                description=tbl_data.get("description", ""),
+            )
+            table.ensure_db_name()
+            db.add(table)
+            db.flush()
+
+            # 创建 DataField
+            fields_data = tbl_data.get("fields", [])
+            fields_order = []
+            for fd in fields_data:
+                field = DataField(
+                    table_id=table.id,
+                    name=fd.get("name", ""),
+                    field_type=fd.get("field_type", "text"),
+                    config=fd.get("config", {}) or {},
+                    required=fd.get("required", False),
+                    is_unique=fd.get("is_unique", False),
+                    default_value=fd.get("default_value"),
+                    hidden=fd.get("hidden", False),
+                    order=fd.get("order", 0),
+                )
+                field.ensure_db_name()
+                db.add(field)
+                fields_order.append(field)
+
+            db.flush()
+
+            # DDL 创建物理表
+            try:
+                ddl_create(db, table, fields_order)
+            except Exception as exc:
+                db.rollback()
+                raise HTTPException(status_code=400, detail=f"创建表 {table_name} 失败: {exc}") from exc
+
+            # 插入数据行（用 raw INSERT 避免依赖 transfer.py 的复杂逻辑）
+            rows_data = tbl_data.get("rows", [])
+            if rows_data and fields_order:
+                try:
+                    from sqlalchemy import MetaData, insert
+                    from sqlalchemy import Table as SATable
+
+                    metadata = MetaData()
+                    sa_table = SATable(table.db_table_name, metadata, autoload_with=db.bind)
+                    row_values = []
+                    for raw in rows_data:
+                        values = {}
+                        for f in fields_order:
+                            if f.db_column_name in raw:
+                                values[f.db_column_name] = raw[f.db_column_name]
+                        if values:
+                            row_values.append(values)
+                    if row_values:
+                        db.execute(insert(sa_table), row_values)
+                        imported_rows += len(row_values)
+                except Exception as exc:
+                    logging.getLogger(__name__).warning("表 %s 数据行导入失败: %s", table_name, exc)
+
+            # 创建视图
+            for vd in tbl_data.get("views", []):
+                view = DataView(
+                    table_id=table.id,
+                    name=vd.get("name", ""),
+                    view_type=vd.get("view_type", "grid"),
+                    filter_type=vd.get("filter_type", "AND"),
+                    filters=vd.get("filters", []) or [],
+                    sortings=vd.get("sortings", []) or [],
+                    field_options=vd.get("field_options", {}) or {},
+                    view_options=vd.get("view_options", {}) or {},
+                    field_order=vd.get("field_order"),
+                    default=vd.get("default", False),
+                )
+                db.add(view)
+                imported_views += 1
+
+            db.flush()
+            imported_tables += 1
+
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"导入失败: {exc}") from exc
+
+    return WorkspaceImportResponse(
+        imported_tables=imported_tables,
+        imported_rows=imported_rows,
+        imported_views=imported_views,
+    )
 
 
 __all__ = ["router"]

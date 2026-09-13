@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from cndb.plugins.workspaces.models import WorkspaceRole
+from cndb.plugins.workspaces.models import WorkspaceRole, WorkspaceVisibility
 
 
 class WorkspaceCreate(BaseModel):
@@ -14,6 +15,9 @@ class WorkspaceCreate(BaseModel):
 
     name: str
     description: str = ""
+    visibility: WorkspaceVisibility = WorkspaceVisibility.MEMBER
+    tags: list[str] = []
+    allow_edit: bool = True
 
 
 class WorkspaceUpdate(BaseModel):
@@ -22,6 +26,9 @@ class WorkspaceUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     name: str | None = None
     description: str | None = None
+    visibility: WorkspaceVisibility | None = None
+    tags: list[str] | None = None
+    allow_edit: bool | None = None
 
 
 class WorkspaceResponse(BaseModel):
@@ -31,15 +38,33 @@ class WorkspaceResponse(BaseModel):
     id: int
     name: str
     description: str
+    visibility: WorkspaceVisibility
+    tags: list[str]
+    allow_edit: bool
     created_by_id: int | None
     created_at: datetime
     updated_at: datetime
 
 
 class WorkspaceWithPinnedResponse(WorkspaceResponse):
-    """列表响应：附带当前用户的 pinned 状态."""
+    """列表响应：附带当前用户的 pinned 状态和统计."""
 
     pinned: bool = False
+    table_count: int = 0
+    member_count: int = 0
+
+
+class WorkspaceDetailResponse(WorkspaceResponse):
+    """工作区详情响应：附带拥有者信息和统计."""
+
+    model_config = ConfigDict(from_attributes=True)
+    # 拥有者简要信息
+    owner: dict[str, Any] | None = None
+    # 统计信息
+    table_count: int = 0
+    member_count: int = 0
+    view_count: int = 0
+    total_rows: int = 0
 
 
 # ── 成员 schemas ──────────────────────────────────────
@@ -92,6 +117,32 @@ class PinToggleResponse(BaseModel):
     pinned: bool
 
 
+# ── 工作区级导入导出 schemas ─────────────────────────
+
+
+class WorkspaceExportResponse(BaseModel):
+    """工作区整体导出 JSON 响应."""
+
+    version: str
+    exported_at: datetime
+    workspace: dict[str, Any]
+    tables: list[dict[str, Any]]
+
+
+class WorkspaceImportRequest(BaseModel):
+    """工作区整体导入请求（JSON body 或 FormData 文件解析后的 JSON）."""
+
+    json_data: dict[str, Any]
+
+
+class WorkspaceImportResponse(BaseModel):
+    """工作区整体导入响应."""
+
+    imported_tables: int
+    imported_rows: int
+    imported_views: int
+
+
 __all__ = [
     "MemberAddRequest",
     "MemberUpdateRequest",
@@ -99,6 +150,10 @@ __all__ = [
     "PinRequest",
     "PinToggleResponse",
     "WorkspaceCreate",
+    "WorkspaceDetailResponse",
+    "WorkspaceExportResponse",
+    "WorkspaceImportRequest",
+    "WorkspaceImportResponse",
     "WorkspaceMemberResponse",
     "WorkspaceResponse",
     "WorkspaceUpdate",

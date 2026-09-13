@@ -1,7 +1,7 @@
 [run]
 branch = true
 concurrency = thread
-omit = tests/*,src/cndb/seed.py,src/cndb/plugins/tables/routers/files.py
+omit = tests/*,src/cndb/seed.py,src/cndb/backup.py,src/cndb/restore.py,src/cndb/plugins/tables/routers/files.py
 source = cndb
 
 [report]

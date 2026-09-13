@@ -1,5 +1,7 @@
 export type ID = number | string
 
+export type WorkspaceVisibility = 'public' | 'member' | 'private'
+
 export interface UserResponse {
   id: ID
   username: string
@@ -15,13 +17,39 @@ export interface LoginResponse { access_token: string; token_type: string }
 export interface Workspace {
   id: ID; name: string; description?: string; default_role?: string
   pinned?: boolean; created_at?: string; updated_at?: string
+  visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
 }
-export interface WorkspaceDetail extends Workspace { member_count?: number; table_count?: number }
-export interface WorkspaceCreate { name: string; description?: string; default_role?: string }
-export interface WorkspaceUpdate { name?: string; description?: string; default_role?: string }
+export interface WorkspaceDetail extends Workspace {
+  member_count?: number; table_count?: number
+  view_count?: number; total_rows?: number
+  owner?: { id: ID; username: string; nickname?: string } | null
+}
+export interface WorkspaceCreate {
+  name: string; description?: string; default_role?: string
+  visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
+}
+export interface WorkspaceUpdate {
+  name?: string; description?: string; default_role?: string
+  visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
+}
 export type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer'
 export interface WorkspaceMember { id: ID; username: string; email?: string; role: WorkspaceRole; joined_at?: string }
 export interface WorkspaceInvite { username: string; role: WorkspaceRole }
+
+/** 工作区级整体导出数据结构 */
+export interface WorkspaceExportData {
+  version: string
+  exported_at: string
+  workspace: {
+    name: string; description: string; visibility: WorkspaceVisibility; tags: string[]; allow_edit: boolean
+  }
+  tables: Array<{
+    name: string; description: string
+    fields: Array<Record<string, unknown>>
+    views: Array<Record<string, unknown>>
+    rows: Array<Record<string, unknown>>
+  }>
+}
 
 export interface TableSummary {
   id: ID; name: string; description?: string
