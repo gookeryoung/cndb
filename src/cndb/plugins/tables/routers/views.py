@@ -32,7 +32,6 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
     for opt_key in (
         "group_field",
         "start_field",
-        "end_field",
         "title_field",
         "image_field",
         "subtitle_field",

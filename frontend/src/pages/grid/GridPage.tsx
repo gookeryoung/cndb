@@ -31,6 +31,17 @@ function ModalFallback() {
 
 const { Text } = Typography
 type ViewMode = 'grid' | 'kanban' | 'gallery' | 'calendar'
+const VALID_MODES: readonly ViewMode[] = ['grid', 'kanban', 'gallery', 'calendar']
+const MODE_STORAGE_KEY = 'cndb_current_mode'
+
+/** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */
+function _readModeFromStorage(): ViewMode | null {
+  try {
+    const m = localStorage.getItem(MODE_STORAGE_KEY)
+    if (m && (VALID_MODES as readonly string[]).includes(m)) return m as ViewMode
+  } catch { /* localStorage 不可用时忽略 */ }
+  return null
+}
 
 export default function GridPage() {
   const { wid, tid } = useParams<{ wid: string; tid: string }>()
@@ -39,7 +50,12 @@ export default function GridPage() {
   const queryClient = useQueryClient()
   const { settings } = useTableSettings()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [mode, setMode] = useState<ViewMode>('grid')
+  const [mode, setMode] = useState<ViewMode>(() => {
+    const spMode = searchParams.get('mode') as ViewMode | null
+    if (spMode && (VALID_MODES as readonly string[]).includes(spMode)) return spMode
+    const lsMode = _readModeFromStorage()
+    return lsMode ?? 'grid'
+  })
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailRow, setDetailRow] = useState<RowResponse | null>(null)
@@ -124,13 +140,16 @@ export default function GridPage() {
       setViewSortings(Array.isArray(v.sortings) ? v.sortings : [])
       setViewFilterLogic((v.filter_type ?? 'AND') as 'AND' | 'OR')
       setViewOptionsDraft(v.view_options ?? null)
-      if (v.view_type === 'kanban') setMode('kanban')
-      else if (v.view_type === 'gallery') setMode('gallery')
-      else if (v.view_type === 'calendar') setMode('calendar')
-      else setMode('grid')
+      const newMode = (['kanban', 'gallery', 'calendar'] as const).includes(v.view_type as ViewMode)
+        ? (v.view_type as ViewMode)
+        : 'grid'
+      setMode(newMode)
+      // 全局模式持久化（localStorage + URL）—— 跨表切换时自动找回相同视图类型
+      try { localStorage.setItem(MODE_STORAGE_KEY, newMode) } catch { /* localStorage 不可用时忽略 */ }
       if (updateUrl) {
         const params = new URLSearchParams(searchParams)
         params.set('view', String(v.id))
+        params.set('mode', newMode)
         setSearchParams(params, { replace: true })
         // 用户主动切换视图 —— 持久化偏好到后端
         saveActiveViewPref.mutate(Number(v.id))
@@ -142,9 +161,11 @@ export default function GridPage() {
       setViewFilterLogic('AND')
       setViewOptionsDraft(null)
       setMode('grid')
-      if (updateUrl && searchParams.has('view')) {
+      try { localStorage.setItem(MODE_STORAGE_KEY, 'grid') } catch { /* localStorage 不可用时忽略 */ }
+      if (updateUrl) {
         const params = new URLSearchParams(searchParams)
         params.delete('view')
+        params.delete('mode')
         setSearchParams(params, { replace: true })
       }
     }
@@ -156,22 +177,34 @@ export default function GridPage() {
   // 当前激活的视图对象（含 view_options）
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
 
-  // 视图初始化：URL 深链 > 用户偏好 > is_default > 第一个
+  // 视图初始化：URL ?view= 深链 > URL ?mode= 匹配 > localStorage mode 匹配 > 用户偏好 active_view_id > is_default > 第一个
   useEffect(() => {
     if (!views.length || activeViewId !== null) return
-    // URL 深链优先
+    // 1. URL 深链优先（精确 view id）
     const vidParam = searchParams.get('view')
     if (vidParam) {
       const target = views.find(v => String(v.id) === vidParam)
       if (target) { loadView(target, false); return }
     }
-    // 其次：用户偏好的激活视图
+    // 2. URL mode 匹配（刷新 / 从其它表带 ?mode= 导航过来时保留展示模式）
+    const spMode = searchParams.get('mode') as ViewMode | null
+    if (spMode && VALID_MODES.includes(spMode)) {
+      const target = views.find(v => v.view_type === spMode)
+      if (target) { loadView(target, false); return }
+    }
+    // 3. localStorage mode 匹配（侧边栏点表导航丢失 URL 参数时的兜底）
+    const lsMode = _readModeFromStorage()
+    if (lsMode) {
+      const target = views.find(v => v.view_type === lsMode)
+      if (target) { loadView(target, false); return }
+    }
+    // 4. 用户偏好的激活视图（后端存储 per-table）
     const prefVid = activeViewPreference?.active_view_id
     if (prefVid != null) {
       const target = views.find(v => Number(v.id) === prefVid)
       if (target) { loadView(target, false); return }
     }
-    // 最后：default 或第一个
+    // 5. 最后：default 或第一个
     const def = views.find(v => v.default) || views[0]
     if (def) loadView(def, false)
     else setActiveViewId(null)
@@ -339,19 +372,26 @@ export default function GridPage() {
    */
   const handleModeChange = (newMode: ViewMode) => {
     if (mode === newMode) return
+    const _persistModeOnly = (m: ViewMode) => {
+      setMode(m)
+      try { localStorage.setItem(MODE_STORAGE_KEY, m) } catch { /* localStorage 不可用时忽略 */ }
+      const params = new URLSearchParams(searchParams)
+      params.set('mode', m)
+      setSearchParams(params, { replace: true })
+    }
     // 当前视图已是此类型 — 理论上不会进入（mode 有 guard），兜底直接切
     if (activeView?.view_type === newMode) {
-      setMode(newMode)
+      _persistModeOnly(newMode)
       return
     }
     // 找第一个 view_type 匹配的视图
     const matchView = views.find(v => v.view_type === newMode)
     if (matchView) {
-      // loadView 会同时：更新 activeViewId（Segmented 选中项）+ setMode（ButtonGroup 高亮）+ 持久化 URL
+      // loadView 会同时：更新 activeViewId（Segmented 选中项）+ setMode（ButtonGroup 高亮）+ 持久化 URL + localStorage
       loadView(matchView)
     } else {
-      // 没有匹配类型的视图，降级只切渲染（无视图可联动）
-      setMode(newMode)
+      // 没有匹配类型的视图，降级只切渲染（无视图可联动）—— 但仍持久化 mode 供后续跨表匹配
+      _persistModeOnly(newMode)
     }
   }
 
@@ -982,20 +1022,10 @@ function CreateViewForm({
 
   const calendarConfig = vt === 'calendar' && (
     <>
-      <Form.Item label="起始时间字段" required tooltip="事件的起始日期/时间">
+      <Form.Item label="日期字段" required tooltip="事件的日期">
         <Select
           value={(opts.start_field as string) || undefined}
           onChange={(v) => updateOpt('start_field', v)}
-          placeholder="选择日期/时间字段"
-          options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
-          style={{ width: '100%' }}
-          allowClear
-        />
-      </Form.Item>
-      <Form.Item label="结束时间字段" tooltip="可选。配置后事件会渲染为跨天/跨时间范围">
-        <Select
-          value={(opts.end_field as string) || undefined}
-          onChange={(v) => updateOpt('end_field', v)}
           placeholder="选择日期/时间字段"
           options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
           style={{ width: '100%' }}
@@ -1257,20 +1287,10 @@ function EditViewForm({
 
   const calendarConfig = vt === 'calendar' && (
     <>
-      <Form.Item label="起始时间字段" required tooltip="事件的起始日期/时间">
+      <Form.Item label="日期字段" required tooltip="事件的日期">
         <Select
           value={(opts.start_field as string) || undefined}
           onChange={(v) => updateOpt('start_field', v)}
-          placeholder="选择日期/时间字段"
-          options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
-          style={{ width: '100%' }}
-          allowClear
-        />
-      </Form.Item>
-      <Form.Item label="结束时间字段" tooltip="可选。配置后事件会渲染为跨天/跨时间范围">
-        <Select
-          value={(opts.end_field as string) || undefined}
-          onChange={(v) => updateOpt('end_field', v)}
           placeholder="选择日期/时间字段"
           options={dateFields.map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))}
           style={{ width: '100%' }}
@@ -1533,8 +1553,7 @@ function ViewConfigDialog({
     }
     if (viewType === 'calendar') {
       return [
-        { key: 'start_field', label: '起始日期字段', fieldTypes: ['date', 'datetime'] },
-        { key: 'end_field', label: '结束日期字段（可选，用于跨天事件）', fieldTypes: ['date', 'datetime'] },
+        { key: 'start_field', label: '日期字段', fieldTypes: ['date', 'datetime'] },
         { key: 'title_field', label: '事件标题字段（可选）', fieldTypes: ['text', 'long_text', 'is_primary'] },
         { key: 'group_field', label: '分组/颜色字段（Select，可选）', fieldTypes: ['select', 'multi_select'] },
       ]

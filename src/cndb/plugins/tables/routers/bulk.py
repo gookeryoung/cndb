@@ -94,10 +94,47 @@ def export_table(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     format: str = "json",
+    view_id: int | None = None,
 ) -> Response:
+    """导出当前表的数据，支持按视图筛选条件导出.
+
+    Args:
+        workspace_id: 工作区 ID
+        table_id: 表 ID
+        current_user: 当前登录用户
+        db: 数据库会话
+        format: 导出格式（json/csv/xlsx），默认 json
+        view_id: 可选的视图 ID；传入后按该视图的 filters/sortings/filter_type 过滤结果
+
+    Returns:
+        对应格式的文件二进制响应
+    """
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
     dt = _get_table_or_404(table_id, workspace_id, db)
-    rows, _total = rec.list_rows(db.get_bind(), dt, limit=10000, db=db)
+
+    filters: list[dict[str, Any]] | None = None
+    sorts: list[dict[str, Any]] | None = None
+    filter_logic = "AND"
+
+    if view_id is not None:
+        from cndb.plugins.tables.models import DataView
+
+        dv = db.get(DataView, view_id)
+        if dv is None or dv.table_id != dt.id:
+            raise HTTPException(status_code=404, detail="视图不存在或不属于当前表")
+        filters = dv.filters or None
+        sorts = dv.sortings or None
+        filter_logic = dv.filter_type or "AND"
+
+    rows, _total = rec.list_rows(
+        db.get_bind(),
+        dt,
+        limit=10000,
+        db=db,
+        filters=filters,
+        sorts=sorts,
+        filter_logic=filter_logic,
+    )
 
     fmt = format.lower()
     if fmt == "json":
