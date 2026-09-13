@@ -178,6 +178,9 @@ export const viewApi = {
     api.get<View>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}`).then(r => r.data),
   create: (wid: number | string, tid: number | string, data: ViewCreate) =>
     api.post<View>(`/v1/workspaces/${wid}/tables/${tid}/views`, data).then(r => r.data),
+  /** 批量导入视图（JSON 数组，同名自动跳过） */
+  importViews: (wid: number | string, tid: number | string, data: ViewCreate[]) =>
+    api.post<View[]>(`/v1/workspaces/${wid}/tables/${tid}/views/import`, data).then(r => r.data),
   update: (wid: number | string, tid: number | string, vid: number | string, data: ViewUpdate) =>
     api.patch<View>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}`, data).then(r => r.data),
   remove: (wid: number | string, tid: number | string, vid: number | string) =>

@@ -2,13 +2,15 @@
 
 数据源：
 1. examples/datasets/<工作区名>/*.csv — 按文件夹名自动建工作区，CSV 自动推断字段建表导入
-2. 硬编码业务表 — 部门表 + 员工表 + 报告模板 + 工作流，绑定到 datasets 创建的
+2. examples/datasets/<工作区名>/views.json — 每个工作区独立的视图种子配置，按 表名 -> 视图列表 组织
+3. 硬编码业务表 — 部门表 + 员工表 + 报告模板 + 工作流，绑定到 datasets 创建的
    "某企业销售管理"工作区，与 CSV 数据共同构成完整销售场景
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -25,11 +27,37 @@ def _get_datasets_dir() -> Path | None:
     return None
 
 
-def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]]:
+def _get_workspace_view_configs(datasets_dir: Path) -> dict[str, dict[str, Any]]:
+    """扫描每个工作区文件夹下的 views.json.
+
+    Returns:
+        工作区显示名 -> 视图配置（表名 -> 视图列表）的映射.
+    """
+    result: dict[str, dict[str, Any]] = {}
+    for folder in sorted(datasets_dir.iterdir()):
+        if not folder.is_dir() or folder.name.startswith("."):
+            continue
+        views_path = folder / "views.json"
+        if not views_path.is_file():
+            continue
+        # 工作区名做同样的 "工作区-" 前缀剥离
+        ws_name = folder.name
+        if ws_name.startswith("工作区-"):
+            ws_display = ws_name[len("工作区-") :]
+        else:
+            ws_display = ws_name
+        try:
+            result[ws_display] = json.loads(views_path.read_text(encoding="utf-8-sig"))
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"[seed-视图] {folder.name}/views.json 解析失败: {exc}")
+    return result
+
+
+def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any], dict[str, dict[str, Any]]]:
     """扫描 datasets 目录，按子文件夹建工作区、按 CSV 建表导入.
 
     Returns:
-        (成功创建的数据表总数, 工作区名 -> Workspace 对象的映射)
+        (成功创建的数据表总数, 工作区名 -> Workspace 对象映射, 工作区名 -> 表名 -> DataTable 映射)
     """
     from cndb.plugins.tables.transfer import create_table_from_csv
     from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
@@ -37,10 +65,11 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
     datasets_dir = _get_datasets_dir()
     if datasets_dir is None:
         print("[seed] examples/datasets 目录不存在，跳过 CSV 注入（wheel 安装版无此目录属正常）")
-        return 0, {}
+        return 0, {}, {}
 
     table_count = 0
     ws_map: dict[str, Any] = {}
+    tables_map: dict[str, dict[str, Any]] = {}
     for folder in sorted(datasets_dir.iterdir()):
         if not folder.is_dir() or folder.name.startswith("."):
             continue
@@ -48,7 +77,7 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
         if not csv_files:
             continue
 
-        # 工作区名去掉 "工作区-" 前缀让显示更友好，同时保留原名做 key
+        # 工作区名去掉 "工作区-" 前缀让显示更友好
         ws_name = folder.name
         if ws_name.startswith("工作区-"):
             ws_display = ws_name[len("工作区-") :]
@@ -62,6 +91,7 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
         db.add(WorkspaceMember(workspace_id=ws.id, user_id=user.id, role="owner"))
         db.commit()
         ws_map[ws_display] = ws
+        tables_map[ws_display] = {}
         print(f"[seed-CSV] 创建工作区: {ws_display} (id={ws.id})")
 
         for csv_path in csv_files:
@@ -70,18 +100,19 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
             try:
                 dt, ids = create_table_from_csv(engine, db, ws.id, table_name, csv_text)
                 table_count += 1
+                tables_map[ws_display][table_name] = dt
                 print(f"[seed-CSV] 建表: {ws_display}/{table_name} → {len(ids)} 行 (id={dt.id})")
             except Exception as exc:  # 单表失败不应阻断其它表
                 print(f"[seed-CSV] 建表失败: {ws_display}/{table_name}: {exc}")
 
-    return table_count, ws_map
+    return table_count, ws_map, tables_map
 
 
-def _seed_sales_tables(db: Any, engine: Any, ws: Any) -> int:
+def _seed_sales_tables(db: Any, engine: Any, ws: Any) -> tuple[int, dict[str, Any]]:
     """在"某企业销售管理"工作区下创建硬编码业务表（部门/员工/报告/工作流）.
 
     Returns:
-        创建的数据表数量（部门表 + 员工表 = 2）.
+        (创建的数据表数量, 表名 -> DataTable 映射)
     """
     from cndb.plugins.reports.models import ReportTemplate
     from cndb.plugins.tables.ddl import create_table
@@ -89,12 +120,15 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any) -> int:
     from cndb.plugins.tables.records import create_row
     from cndb.plugins.workflows.models import Workflow, WorkflowEdge, WorkflowNode
 
+    extra_tables: dict[str, Any] = {}
+
     # 部门表（先建，员工表 link 字段要引用它）
     dept_tbl = DataTable(workspace_id=ws.id, name="部门表", description="公司部门", order=1)
     dept_tbl.ensure_db_name()
     db.add(dept_tbl)
     db.commit()
     db.refresh(dept_tbl)
+    extra_tables["部门表"] = dept_tbl
     print(f"[seed] 创建数据表: 部门表 (id={dept_tbl.id})")
 
     dept_fields: list[tuple[str, str, dict[str, Any], bool]] = [
@@ -124,6 +158,7 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any) -> int:
     db.add(emp_tbl)
     db.commit()
     db.refresh(emp_tbl)
+    extra_tables["员工表"] = emp_tbl
     print(f"[seed] 创建数据表: 员工表 (id={emp_tbl.id})")
 
     field_specs: list[tuple[str, str, dict[str, Any], bool]] = [
@@ -186,6 +221,7 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any) -> int:
     print(f"[seed] 创建报告模板: 员工名册 (table_id={emp_tbl.id})")
 
     # 业务工作流 — 员工入职流程（3 节点 2 边，绑定部门表 + 员工表）
+
     wf = Workflow(
         workspace_id=ws.id,
         name="员工入职流程",
@@ -223,11 +259,101 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any) -> int:
     db.commit()
     print("[seed] 组装 3 节点 2 边: 入职登记 → 部门分配 → 入职完成")
 
-    return 2
+    return 2, extra_tables
+
+
+def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: str, table_name: str) -> bool:
+    """校验单个视图配置里引用的所有 field_name 是否在目标表存在.
+
+    Returns:
+        True 表示通过，False 表示校验失败并已打印错误信息.
+    """
+    view_name = vc.get("name", "")
+    for f in vc.get("filters", []):
+        if f.get("field_name") not in valid_fields:
+            print(
+                f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' "
+                f"的 filter field_name='{f.get('field_name')}' 不存在"
+            )
+            return False
+    for s in vc.get("sortings", []):
+        if s.get("field_name") not in valid_fields:
+            print(
+                f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' "
+                f"的 sorting field_name='{s.get('field_name')}' 不存在"
+            )
+            return False
+    # kanban 的 group_field / calendar 的 start_field / gallery 的 title_field 等
+    vo = vc.get("view_options", {})
+    for opt_key in ("group_field", "start_field", "end_field", "title_field", "image_field"):
+        opt_val = vo.get(opt_key)
+        if opt_val and opt_val not in valid_fields:
+            print(
+                f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' "
+                f"的 view_options.{opt_key}='{opt_val}' 不存在"
+            )
+            return False
+    return True
+
+
+def _seed_views(db: Any, user: Any, tables_map: dict[str, dict[str, Any]], datasets_dir: Path | None) -> int:
+    """按各工作区文件夹下的 views.json 为每张表创建典型视图."""
+    from cndb.plugins.tables.models import DataView
+
+    if datasets_dir is None:
+        print("[seed-视图] examples/datasets 目录不存在，跳过视图注入")
+        return 0
+
+    ws_configs = _get_workspace_view_configs(datasets_dir)
+    if not ws_configs:
+        print("[seed-视图] 未发现任何 views.json，跳过视图注入")
+        return 0
+
+    created = 0
+    for ws_name, tables in ws_configs.items():
+        ws_tables = tables_map.get(ws_name)
+        if not ws_tables:
+            print(f"[seed-视图] 配置中的工作区 '{ws_name}' 不存在，跳过")
+            continue
+        for table_name, view_list in tables.items():
+            if table_name.startswith("_"):
+                continue  # 跳过 _comment 等元数据键
+            dt = ws_tables.get(table_name)
+            if dt is None:
+                print(f"[seed-视图] 配置中的表 '{ws_name}/{table_name}' 不存在，跳过")
+                continue
+            valid_fields = {f.name for f in dt.fields}
+            for idx, vc in enumerate(view_list):
+                try:
+                    if not _validate_view_fields(vc, valid_fields, ws_name, table_name):
+                        continue
+                    dv = DataView(
+                        table_id=dt.id,
+                        owner_id=user.id,
+                        name=vc["name"],
+                        view_type=vc.get("view_type", "grid"),
+                        filter_type=vc.get("filter_type", "AND"),
+                        filters=vc.get("filters", []),
+                        sortings=vc.get("sortings", []),
+                        field_options=vc.get("field_options", {}),
+                        field_order=vc.get("field_order", []),
+                        view_options=vc.get("view_options", {}),
+                        is_default=vc.get("is_default", False),
+                        order=vc.get("order", idx),
+                    )
+                    db.add(dv)
+                    db.flush()
+                    created += 1
+                    print(f"[seed-视图] {ws_name}/{table_name} → {dv.name} ({dv.view_type})")
+                except Exception as exc:  # 单视图失败不阻断其它
+                    print(f"[seed-视图] 跳过: {ws_name}/{table_name} / {vc.get('name', '<无>')}: {exc}")
+
+    db.commit()
+    return created
 
 
 def seed(_args: argparse.Namespace) -> None:
-    """向数据库注入演示数据（datasets CSV + 硬编码业务表）."""
+    """向数据库注入演示数据（datasets CSV + 硬编码业务表 + 视图种子）."""
     from cndb.core.database import SessionLocal, engine
     from cndb.models.base import Base
     from cndb.plugins.accounts.models import User
@@ -244,19 +370,27 @@ def seed(_args: argparse.Namespace) -> None:
         db.refresh(user)
         print("[seed] 创建用户: demo / demo1234")
 
-        # 先跑 datasets：每个子文件夹 → 工作区，每个 CSV → 数据表
-        csv_count, ws_map = _seed_datasets(db, engine, user)
+        # 1) datasets CSV：每个子文件夹 → 工作区，每个 CSV → 数据表
+        csv_count, ws_map, tables_map = _seed_datasets(db, engine, user)
 
-        # 硬编码业务表（部门表/员工表/报告模板/工作流）挂到 "某企业销售管理" 工作区
+        # 2) 硬编码业务表挂到 "某企业销售管理" 工作区
         extra = 0
         sales_ws = ws_map.get("某企业销售管理")
         if sales_ws is not None:
             print(f"[seed] 在工作区 '{sales_ws.name}' 下扩展部门/员工业务表")
-            extra = _seed_sales_tables(db, engine, sales_ws)
+            extra, extra_tables = _seed_sales_tables(db, engine, sales_ws)
+            tables_map.setdefault("某企业销售管理", {}).update(extra_tables)
         else:
             print("[seed] 未找到 '某企业销售管理' 工作区，跳过部门表/员工表注入")
 
+        # 3) 视图种子（依赖所有表已就绪，扫描每个工作区文件夹下的 views.json）
+        datasets_dir = _get_datasets_dir()
+        view_count = _seed_views(db, user, tables_map, datasets_dir)
+
         total = csv_count + extra
-        print(f"[seed] 完成！共 {total} 张数据表。运行 uv run cndb serve 启动服务后用 demo / demo1234 登录")
+        print(
+            f"[seed] 完成！共 {total} 张数据表、{view_count} 个视图。"
+            "运行 uv run cndb serve 启动服务后用 demo / demo1234 登录"
+        )
     finally:
         db.close()
