@@ -53,7 +53,39 @@ requires      = ["hatchling"]
 packages = ["src/cndb"]
 
 [tool.hatch.build.targets.wheel.force-include]
+# 类型标记文件
 "src/cndb/py.typed" = "cndb/py.typed"
+# 前端 Vite 构建产物（已由 make frontend-build 生成到 src/cndb/static/）
+"src/cndb/static" = "cndb/static"
+# 演示 seed 数据（CSV + views.json，cndb seed 命令依赖）
+"examples/datasets" = "cndb/datasets"
+
+[tool.hatch.build.targets.sdist]
+# sdist 排除开发工具缓存和前端依赖
+exclude = [
+    "frontend/node_modules/**",
+    "frontend/.auth/**",
+    "frontend/playwright-report/**",
+    "frontend/test-results/**",
+    "frontend/dist/**",
+    ".benchmarks/**",
+    ".trae/**",
+    ".trae-cn/**",
+    ".tox/**",
+    ".mypy_cache/**",
+    ".pyrefly_cache/**",
+    ".pytest_cache/**",
+    ".ruff_cache/**",
+    "htmlcov/**",
+    "dist/**",
+    "build/**",
+    "*.egg-info/**",
+]
+
+[tool.hatch.build.targets.sdist.force-include]
+# sdist 必须包含 wheel force-include 的源文件，否则从 sdist 构建 wheel 会找不到
+"src/cndb/static" = "src/cndb/static"
+"examples/datasets" = "examples/datasets"
 
 [tool.uv]
 required-version = ">=0.5.0"
