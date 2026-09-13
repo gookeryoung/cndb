@@ -297,9 +297,17 @@ export const importApi = {
 }
 
 export const exportApi = {
-  /** 导出为 JSON / CSV / XLSX（浏览器直接下载 blob） */
-  download: (wid: number | string, tid: number | string, format: 'json' | 'csv' | 'xlsx' = 'json') =>
-    api.get(`/v1/workspaces/${wid}/tables/${tid}/export`, { params: { format }, responseType: 'blob' }).then(r => r.data),
+  /** 导出为 JSON / CSV / XLSX（浏览器直接下载 blob）
+   *  @param wid 工作区 ID
+   *  @param tid 表 ID
+   *  @param format 导出格式
+   *  @param viewId 可选的视图 ID，传入后按该视图的筛选条件导出子集
+   */
+  download: (wid: number | string, tid: number | string, format: 'json' | 'csv' | 'xlsx' = 'json', viewId?: number | string) => {
+    const params: Record<string, unknown> = { format }
+    if (viewId != null) params.view_id = viewId
+    return api.get(`/v1/workspaces/${wid}/tables/${tid}/export`, { params, responseType: 'blob' }).then(r => r.data)
+  },
 }
 
 // ─────────────── Permissions ───────────────

@@ -1,12 +1,13 @@
 /** 日历视图组件 — 支持年/月/周三层级的万年历模式.
  *
  * view_options 配置字段：
- * - start_field:    起始日期字段（date/datetime，必填）
- * - end_field:      结束日期字段（可选，用于渲染跨天事件）
+ * - start_field:    事件日期字段（date/datetime，必填）
  * - title_field:    事件标题字段（可选，留空用主键或第一个文本字段）
  * - group_field:    分组/颜色字段（select，可选，不同值渲染不同侧边色条）
  * - calendar_mode:  默认打开的日历层级 'year' | 'month' | 'week'（默认 'month'）
  * - show_weekend:   是否高亮周末（默认 true）
+ *
+ * 注：日历视图只支持单点日期事件，不渲染跨天持续标识。进度跟踪请使用其他视图。
  */
 
 import { useMemo, useState } from 'react'
@@ -19,6 +20,7 @@ import {
 } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
+import { formatFieldDisplayValue, getLinkFirstLabel, getMultiSelectFirstLabel } from './fieldValueFormat'
 
 // ── 类型定义 ──────────────────────────────────────────
 
@@ -34,8 +36,7 @@ interface CalendarViewProps {
 
 interface CalendarEvent {
   row: RowResponse
-  start: Date
-  end: Date
+  date: Date
   title: string
   groupValue?: string
   color?: string
@@ -87,11 +88,7 @@ function getWeekDays(base: Date): Date[] {
 function getEventDates(events: CalendarEvent[]): Set<string> {
   const set = new Set<string>()
   for (const ev of events) {
-    const s = new Date(ev.start.getFullYear(), ev.start.getMonth(), ev.start.getDate())
-    const e = new Date(ev.end.getFullYear(), ev.end.getMonth(), ev.end.getDate())
-    for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
-      set.add(fmtDate(d))
-    }
+    set.add(fmtDate(ev.date))
   }
   return set
 }
@@ -118,38 +115,43 @@ function buildEvents(
   opts: Record<string, unknown>,
 ): CalendarEvent[] {
   const startField = opts.start_field as string | undefined
-  const endField = opts.end_field as string | undefined
   const titleField = opts.title_field as string | undefined
   const groupField = opts.group_field as string | undefined
 
   if (!startField) return []
 
-  // 查找字段定义（用于格式化 link/select 等复杂类型）
-  const findField = (name: string): Field | undefined => fields.find((f) => f.name === name)
+  // 字段名 -> Field 映射，用于格式化 link/select 等复杂类型
+  const fieldMap = new Map<string, Field>(fields.map((f) => [f.name, f]))
+  const fmtTitle = (name: string | undefined, raw: unknown, fallback: string): string => {
+    if (!name) return fallback
+    const fd = fieldMap.get(name)
+    if (!fd) return raw != null ? String(raw) : fallback
+    return formatFieldDisplayValue(fd, raw) || fallback
+  }
+  const fmtGroup = (name: string, raw: unknown): string | undefined => {
+    const fd = fieldMap.get(name)
+    if (!fd) return raw != null && raw !== '' ? String(raw) : undefined
+    if (fd.field_type === 'link') return getLinkFirstLabel(raw) || undefined
+    if (fd.field_type === 'multi_select' || fd.field_type === 'multiselect') return getMultiSelectFirstLabel(raw) || undefined
+    const s = formatFieldDisplayValue(fd, raw)
+    return s || undefined
+  }
 
   const events: CalendarEvent[] = []
   for (const row of rows) {
-    const start = parseDateOnly(row[startField])
-    if (!start) continue
-
-    // 结束日期：end_field 有值且晚于 start 则用之，否则单天事件
-    let end = start
-    if (endField) {
-      const rawEnd = parseDateOnly(row[endField])
-      if (rawEnd && rawEnd.getTime() >= start.getTime()) end = rawEnd
-    }
+    const date = parseDateOnly(row[startField])
+    if (!date) continue
 
     // 标题：优先 title_field，否则第一个 text 字段，否则主键
     let title = String(row.id)
     if (titleField) {
-      const f = findField(titleField)
-      title = f ? String(row[titleField] ?? row.id) : String(row[titleField] ?? row.id)
+      title = fmtTitle(titleField, row[titleField], String(row.id))
     } else {
       const textFld = fields.find((f) => f.field_type === 'text')
-      if (textFld) title = String(row[textFld.name] ?? row.id)
+      if (textFld) title = fmtTitle(textFld.name, row[textFld.name], String(row.id))
       else {
         const primaryFld = fields.find((f) => f.is_primary)
-        if (primaryFld) title = String(row[primaryFld.name] ?? row.id)
+        if (primaryFld) title = fmtTitle(primaryFld.name, row[primaryFld.name], String(row.id))
       }
     }
 
@@ -157,12 +159,11 @@ function buildEvents(
     let groupValue: string | undefined
     let color: string | undefined
     if (groupField) {
-      const raw = row[groupField]
-      groupValue = raw != null && raw !== '' ? String(raw) : undefined
+      groupValue = fmtGroup(groupField, row[groupField])
       if (groupValue) color = groupColor(groupValue)
     }
 
-    events.push({ row, start, end, title, groupValue, color })
+    events.push({ row, date, title, groupValue, color })
   }
   return events
 }
@@ -221,7 +222,7 @@ function YearView({
         }}
       >
         {months.map((_m, idx) => {
-          const mEvents = events.filter((ev) => ev.start.getMonth() === idx || ev.end.getMonth() === idx)
+          const mEvents = events.filter((ev) => ev.date.getMonth() === idx)
           const eventDates = getEventDates(mEvents)
           const isCurrentMonth = today.getFullYear() === year && today.getMonth() === idx
 
@@ -276,7 +277,7 @@ function YearView({
                       onClick={(e) => {
                         e.stopPropagation()
                         if (hasEvent) {
-                          const ev = mEvents.find((ev) => fmtDate(ev.start) === dateStr)
+                          const ev = mEvents.find((ev) => fmtDate(ev.date) === dateStr)
                           if (ev) onEventClick?.(ev.row)
                         }
                       }}
@@ -330,29 +331,16 @@ function MonthView({
   const today = new Date()
   const todayStr = fmtDate(today)
 
-  // 预计算每天的事件
+  // 预计算每天的事件（单点日期，不跨天）
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>()
     for (const ev of events) {
-      const s = new Date(ev.start.getFullYear(), ev.start.getMonth(), ev.start.getDate())
-      const e = new Date(ev.end.getFullYear(), ev.end.getMonth(), ev.end.getDate())
-      for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
-        const key = fmtDate(d)
-        if (!map.has(key)) map.set(key, [])
-        map.get(key)!.push(ev)
-      }
+      const key = fmtDate(ev.date)
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(ev)
     }
     return map
   }, [events])
-
-  // 计算事件跨天信息（同一天内只渲染"头部"，其余天渲染小标记）
-  const getEventDisplay = (ev: CalendarEvent, dayStr: string): { showFull: boolean; isStart: boolean; spanDays: number } => {
-    const sStr = fmtDate(ev.start)
-    const isStart = dayStr === sStr
-    const spanDays = Math.max(1, Math.round((ev.end.getTime() - ev.start.getTime()) / (1000 * 60 * 60 * 24)) + 1)
-    void ev.end // 预留 eStr 计算
-    return { showFull: isStart, isStart, spanDays }
-  }
 
   const WEEK_HEADERS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
@@ -400,10 +388,8 @@ function MonthView({
           const isCurrentMonth = d.getMonth() === month
           const isWeekend = d.getDay() === 0 || d.getDay() === 6
           const isToday = dateStr === todayStr
+          // 单点日期事件，无需去重
           const dayEvents = eventsByDay.get(dateStr) || []
-
-          // 去重（跨天事件在同一天内可能重复）
-          const uniqueEvents = Array.from(new Set(dayEvents))
 
           return (
             <div
@@ -448,55 +434,35 @@ function MonthView({
                     {d.getDate()}
                   </span>
                 )}
-                {uniqueEvents.length > 3 && isCurrentMonth && (
-                  <span style={{ fontSize: ds.cellFontSize - 4, color: '#9ca3af' }}>+{uniqueEvents.length - 3}</span>
+                {dayEvents.length > 3 && isCurrentMonth && (
+                  <span style={{ fontSize: ds.cellFontSize - 4, color: '#9ca3af' }}>+{dayEvents.length - 3}</span>
                 )}
               </div>
 
               {/* 事件列表 */}
               <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {uniqueEvents.slice(0, 3).map((ev, idx) => {
-                  const display = getEventDisplay(ev, dateStr)
-                  if (!display.showFull) {
-                    // 跨天的后续日期 — 只显示小色条
-                    return (
-                      <div
-                        key={`${ev.row.id}-${idx}`}
-                        onClick={(e) => { e.stopPropagation(); onEventClick?.(ev.row) }}
-                        style={{
-                          height: 4,
-                          borderRadius: 2,
-                          background: ev.color || '#1677ff',
-                          cursor: 'pointer',
-                          opacity: 0.6,
-                        }}
-                        title={ev.title}
-                      />
-                    )
-                  }
-                  return (
-                    <div
-                      key={`${ev.row.id}-${idx}`}
-                      onClick={(e) => { e.stopPropagation(); onEventClick?.(ev.row) }}
-                      style={{
-                        fontSize: ds.eventFontSize,
-                        padding: ds.eventPadding,
-                        borderRadius: ds.eventRadius,
-                        background: ev.color ? `${ev.color}15` : '#e6f4ff',
-                        color: ev.color || '#1677ff',
-                        cursor: 'pointer',
-                        borderLeft: `3px solid ${ev.color || '#1677ff'}`,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        lineHeight: 1.3,
-                      }}
-                      title={ev.title}
-                    >
-                      {ev.title}
-                    </div>
-                  )
-                })}
+                {dayEvents.slice(0, 3).map((ev, idx) => (
+                  <div
+                    key={`${ev.row.id}-${idx}`}
+                    onClick={(e) => { e.stopPropagation(); onEventClick?.(ev.row) }}
+                    style={{
+                      fontSize: ds.eventFontSize,
+                      padding: ds.eventPadding,
+                      borderRadius: ds.eventRadius,
+                      background: ev.color ? `${ev.color}15` : '#e6f4ff',
+                      color: ev.color || '#1677ff',
+                      cursor: 'pointer',
+                      borderLeft: `3px solid ${ev.color || '#1677ff'}`,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      lineHeight: 1.3,
+                    }}
+                    title={ev.title}
+                  >
+                    {ev.title}
+                  </div>
+                ))}
               </div>
             </div>
           )
@@ -526,19 +492,15 @@ function WeekView({
 
   const DAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
-  // 按天分组事件
+  // 按天分组事件（单点日期）
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>()
     for (const ev of events) {
-      const s = new Date(ev.start.getFullYear(), ev.start.getMonth(), ev.start.getDate())
-      const e = new Date(ev.end.getFullYear(), ev.end.getMonth(), ev.end.getDate())
-      for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
-        // 只保留本周范围内的
-        const dStr = fmtDate(d)
-        if (!weekDays.some((wd) => fmtDate(wd) === dStr)) continue
-        if (!map.has(dStr)) map.set(dStr, [])
-        map.get(dStr)!.push(ev)
-      }
+      const dStr = fmtDate(ev.date)
+      // 只保留本周范围内的
+      if (!weekDays.some((wd) => fmtDate(wd) === dStr)) continue
+      if (!map.has(dStr)) map.set(dStr, [])
+      map.get(dStr)!.push(ev)
     }
     return map
   }, [events, weekDays])
@@ -558,7 +520,6 @@ function WeekView({
         {weekDays.map((d, idx) => {
           const dateStr = fmtDate(d)
           const dayEvents = eventsByDay.get(dateStr) || []
-          const uniqueEvents = Array.from(new Set(dayEvents))
           const isWeekend = d.getDay() === 0 || d.getDay() === 6
           const isToday = dateStr === todayStr
 
@@ -592,12 +553,12 @@ function WeekView({
 
               {/* 事件列表 */}
               <div style={{ padding: ds.navPadding, minHeight: ds.dayCellMinHeight, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {uniqueEvents.length === 0 ? (
+                {dayEvents.length === 0 ? (
                   <div style={{ color: '#d1d5db', textAlign: 'center', fontSize: ds.eventFontSize - 1, padding: `${ds.navPadding + 4}px 0` }}>
                     无
                   </div>
                 ) : (
-                  uniqueEvents.map((ev, i) => (
+                  dayEvents.map((ev, i) => (
                     <div
                       key={`${ev.row.id}-${i}`}
                       onClick={() => onEventClick?.(ev.row)}

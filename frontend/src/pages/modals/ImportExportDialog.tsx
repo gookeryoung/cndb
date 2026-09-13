@@ -1,7 +1,7 @@
 /** 导入/导出对话框 — 文件上传 + 异步进度轮询 + 多格式导出. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Modal, Tabs, Button, Progress, message, Space, Select, Alert, Empty, Upload } from 'antd'
+import { Modal, Tabs, Button, Progress, message, Space, Select, Alert, Empty, Upload, Switch } from 'antd'
 import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/icons'
 import { importApi, exportApi } from '@/api'
 import type { ImportTaskInfo } from '@/api'
@@ -15,16 +15,21 @@ interface Props {
   onClose: () => void
   /** 导入成功后调用（刷新列表等） */
   onImported?: () => void
+  /** 当前激活的视图 ID（用于按视图筛选导出） */
+  viewId?: number | string | null
+  /** 当前激活的视图名称（仅用于提示） */
+  viewName?: string
 }
 
 /** 允许的导入文件扩展名 */
 const ACCEPTED_EXT = ['.csv', '.json', '.xlsx', '.xls']
 
-export default function ImportExportDialog({ open, wid, tid, onClose, onImported }: Props) {
+export default function ImportExportDialog({ open, wid, tid, onClose, onImported, viewId, viewName }: Props) {
   const [task, setTask] = useState<ImportTaskInfo | null>(null)
   const [polling, setPolling] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [selectedFormat, setSelectedFormat] = useState<'json' | 'csv' | 'xlsx'>('csv')
+  const [useViewFilter, setUseViewFilter] = useState(true)
   const pollTimer = useRef<number | null>(null)
 
   // 关闭时清理轮询
@@ -96,7 +101,8 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
   const handleExport = useCallback(async () => {
     try {
       setExporting(true)
-      const blob = await exportApi.download(wid, tid, selectedFormat)
+      const vid = useViewFilter && viewId != null ? viewId : undefined
+      const blob = await exportApi.download(wid, tid, selectedFormat, vid)
       // 触发浏览器下载
       const url = URL.createObjectURL(blob as Blob)
       const a = document.createElement('a')
@@ -114,7 +120,7 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
     } finally {
       setExporting(false)
     }
-  }, [wid, tid, selectedFormat])
+  }, [wid, tid, selectedFormat, useViewFilter, viewId])
 
   // ── 导入进度视图 ──
   const renderProgress = () => {
@@ -196,10 +202,20 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
                 <Empty
                   description={
                     <span style={{ color: '#64748b' }}>
-                      将当前表的全部行数据导出为所选格式（最多 10000 行）
+                      将表中的数据导出为所选格式（最多 10000 行）
                     </span>
                   }
                 />
+                {viewId != null && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: '#f1f5f9', borderRadius: 6, marginBottom: 8 }}>
+                    <Switch size="small" checked={useViewFilter} onChange={setUseViewFilter} />
+                    <span style={{ fontSize: 13, color: '#334155' }}>
+                      {useViewFilter
+                        ? `按当前视图「${viewName || ''}」筛选后导出`
+                        : '导出全表数据（忽略视图筛选）'}
+                    </span>
+                  </div>
+                )}
                 <Space style={{ justifyContent: 'center', width: '100%', marginTop: 8 }}>
                   <Select
                     value={selectedFormat}

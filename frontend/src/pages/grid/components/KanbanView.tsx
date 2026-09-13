@@ -25,6 +25,14 @@ import {
 import type { RowResponse, Field, View } from '@/api'
 import { resolveTagColor } from '@/utils/tagColors'
 import type { Density } from '@/theme/tableSettings'
+import {
+  formatLinkValue,
+  formatMultiSelectValue,
+  getSelectLabel,
+  getLinkFirstLabel,
+  getMultiSelectFirstLabel,
+  formatFieldDisplayValue,
+} from './fieldValueFormat'
 
 // ── 密度样式映射 ──────────────────────────────────────
 
@@ -127,90 +135,7 @@ function densityColumnStyle(density: Density) {
   }
 }
 
-// ── 工具函数 ──────────────────────────────────────────
-
-/** 把 link 字段的 API 返回值（[{id, value}]）展平为可读字符串数组 */
-function formatLinkValue(value: unknown): string[] {
-  if (!value) return []
-  if (Array.isArray(value)) {
-    return value
-      .map((item: Record<string, unknown>) => {
-        if (item && typeof item === 'object') {
-          return String(item.value ?? item.label ?? item.id ?? '')
-        }
-        return String(item)
-      })
-      .filter(Boolean)
-  }
-  if (value && typeof value === 'object') {
-    const o = value as Record<string, unknown>
-    const v = o.value ?? o.label ?? o.id ?? ''
-    return [String(v)]
-  }
-  return [String(value)]
-}
-
-/** 把 multiselect 字段值（逗号分隔字符串或数组）解析为标签数组 */
-function formatMultiSelectValue(value: unknown): string[] {
-  if (!value) return []
-  if (Array.isArray(value)) return value.map((v) => String(v)).filter(Boolean)
-  return String(value)
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
-/** 解析 select 字段的原始值为可读标签 */
-function getSelectLabel(field: Field, value: unknown): string {
-  if (value === null || value === undefined || value === '') return ''
-  const options = (field.config as Record<string, unknown> | undefined)?.options as
-    | Array<Record<string, unknown>>
-    | undefined
-  if (!options) return String(value)
-  const strVal = String(value)
-  const found = options.find((o) => String(o.value ?? o.name ?? '') === strVal)
-  return found ? String(found.label ?? found.value ?? found.name ?? value) : strVal
-}
-
-/** 解析 link 字段值（对象数组）用于分组键提取 — 取第一个 link 的 value */
-function getLinkFirstLabel(value: unknown): string {
-  const labels = formatLinkValue(value)
-  return labels.length > 0 ? labels[0] : ''
-}
-
-/** 解析 multiselect 字段值用于分组键 — 逗号分隔字符串的第一个值 */
-function getMultiSelectFirstLabel(value: unknown): string {
-  const labels = formatMultiSelectValue(value)
-  return labels.length > 0 ? labels[0] : ''
-}
-
-/** 通用值格式化入口：根据字段类型把 row[fieldName] 转为可显示字符串 */
-function formatFieldDisplayValue(field: Field, value: unknown): string {
-  if (value === null || value === undefined || value === '') return ''
-
-  switch (field.field_type) {
-    case 'select':
-      return getSelectLabel(field, value)
-
-    case 'multi_select':
-    case 'multiselect':
-      return formatMultiSelectValue(value).join(', ')
-
-    case 'link':
-      return formatLinkValue(value).join(', ')
-
-    case 'boolean':
-      return value ? '是' : '否'
-
-    case 'date':
-    case 'datetime':
-    case 'timestamp':
-      return String(value)
-
-    default:
-      return String(value)
-  }
-}
+// ── 工具函数（link/multi_select/select/通用格式化已抽到 ./fieldValueFormat.ts） ──
 
 /** 解析日期字段值为 Date */
 function parseDate(value: unknown): Date | null {
