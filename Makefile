@@ -4,7 +4,7 @@
 PACKAGE := cndb
 COV_THRESHOLD := 95
 FRONTEND_DIR := frontend
-PYTEST_JOBS := auto  # pytest-xdist 并行进程数；auto = CPU 核数
+PYTEST_JOBS := 8  # pytest-xdist 并行进程数；Windows 默认 8 避免句柄耗尽
 
 .PHONY: help sync build b clean c test cov lint typecheck typecheck-ci check doc tox bump patch minor major push \
         fe-install fe-lint fe-typecheck fe-build fe-check fe-clean
