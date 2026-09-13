@@ -35,21 +35,95 @@ uv run cndb serve
 
 ### Docker 部署（生产形态）
 
+本项目提供两种 Docker 部署方案，按需选择：
+
+#### 方案一：Wheel 部署（推荐，单容器精简）
+
+先在本地或 CI 构建 wheel 包（前端 + 后端一并打包），Docker 仅做安装：
+
 ```bash
-# 复制环境变量模板（可选，覆盖默认值）
+# 1. 构建 wheel（含前端静态 + 后端代码 + seed 数据）
+make build
+
+# 2. 构建镜像并启动（SQLite 零配置）
+docker compose -f docker-compose.wheel.yml up -d --build
+
+# 3. 注入演示数据（首次启动可选）
+docker compose -f docker-compose.wheel.yml exec app cndb seed
+```
+
+入口为 `http://localhost:8000`，FastAPI 直接托管前端静态资源，无需额外 nginx 容器。
+
+使用 PostgreSQL：
+
+```bash
+# 复制环境变量模板，修改 CNDATABASE_URL 为 PostgreSQL 连接串
 cp .env.example .env
 
+# 带 PostgreSQL 容器启动（可选 profile）
+docker compose -f docker-compose.wheel.yml --profile pg up -d --build
+docker compose -f docker-compose.wheel.yml exec app cndb seed
+```
+
+自定义端口 / 数据库密码（编辑 `.env`）：
+
+```env
+CNDB_PORT=9000
+CNDATABASE_URL=sqlite:////data/cndb.db
+# 或 PostgreSQL：
+# CNDATABASE_URL=postgresql+psycopg://cndb:your_pass@postgres:5432/cndb
+CNDB_DB_PASSWORD=your_pass
+```
+
+#### 方案二：源码部署（双容器 + Nginx 反代）
+
+适合需要 nginx 的 gzip/缓存/SSL 的生产场景，Docker 内部完成前端构建：
+
+```bash
 # SQLite 快速启动：nginx:80 → app:8000
+cp .env.example .env   # 可选
 docker compose up -d --build
 
 # PostgreSQL（可选 profile）
 docker compose --profile pg up -d --build
 
-# 注入演示数据（首次启动）
+# 注入演示数据
 docker compose exec app uv run cndb seed
 ```
 
-入口为 `http://localhost`（nginx 80 端口），动态请求转发 uvicorn，前端静态资源由后端统一提供。
+入口为 `http://localhost`（nginx 80 端口），动态请求转发 uvicorn。
+
+#### 两种方案对比
+
+| | Wheel 部署 | 源码部署 |
+|---|---|---|
+| 前置步骤 | `make build` 构建 wheel | 无（Docker 内自动构建） |
+| 容器数量 | 1（仅 app） | 2（app + nginx） |
+| 构建速度 | 快（wheel 直接安装） | 慢（含 node 前端构建） |
+| 镜像体积 | 小 | 较大（含 nginx） |
+| nginx 特性 | 无 | 有（gzip / 缓存 / SSL） |
+| 适用场景 | 快速上线、单机部署 | 需要 nginx 高级特性 |
+
+#### 常用运维命令
+
+```bash
+# 查看容器状态与日志
+docker compose -f docker-compose.wheel.yml ps
+docker compose -f docker-compose.wheel.yml logs -f
+
+# 数据库迁移 / 初始化数据
+docker compose -f docker-compose.wheel.yml exec app cndb seed
+
+# 停止并保留数据卷
+docker compose -f docker-compose.wheel.yml down
+
+# 停止并清除全部（含数据卷，谨慎使用）
+docker compose -f docker-compose.wheel.yml down -v
+
+# 更新版本（重新 build wheel → 重新构建镜像 → 重启）
+make build
+docker compose -f docker-compose.wheel.yml up -d --build
+```
 
 ### 前端开发
 
