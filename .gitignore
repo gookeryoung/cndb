@@ -36,7 +36,8 @@ coverage.xml
 docs/_build/
 .trae/req
 *.py.bak
-src/cndb/static
+src/cndb/static/*
+!src/cndb/static/.gitkeep
 
 *.db
 
