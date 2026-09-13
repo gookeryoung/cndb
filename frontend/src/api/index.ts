@@ -25,7 +25,7 @@ import type {
   LoginRequest, RegisterRequest,
   UserResponse,
   WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember,
-  WorkspaceVisibility, WorkspaceExportData,
+  WorkspaceExportData,
   TableCreate, TableUpdate, TableSummary, TableDetail,
   RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams,
   FieldCreate, FieldUpdate, Field, FieldType,

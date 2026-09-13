@@ -163,9 +163,9 @@ export default function GridPage() {
       setViewSortings(Array.isArray(v.sortings) ? v.sortings : [])
       setViewFilterLogic((v.filter_type ?? 'AND') as 'AND' | 'OR')
       setViewOptionsDraft(v.view_options ?? null)
-      const newMode = (['kanban', 'gallery', 'calendar'] as const).includes(v.view_type as ViewMode)
-        ? (v.view_type as ViewMode)
-        : 'grid'
+      const KANBAN_MODES = new Set<string>(['kanban', 'gallery', 'calendar'])
+      const vt = v.view_type ?? ''
+      const newMode: ViewMode = KANBAN_MODES.has(vt) ? (vt as ViewMode) : 'grid'
       setMode(newMode)
       // 全局模式持久化（localStorage + URL）—— 跨表切换时自动找回相同视图类型
       try { localStorage.setItem(MODE_STORAGE_KEY, newMode) } catch { /* localStorage 不可用时忽略 */ }
@@ -246,14 +246,14 @@ export default function GridPage() {
 
   // 当前生效的筛选条件（视图筛选 + 全局关键词）
   const effectiveFilters = useMemo(() => {
-    const list: Array<Record<string, unknown>> = [...viewFilters]
+    const list: Array<Record<string, unknown>> = viewFilters as unknown as Array<Record<string, unknown>>
     if (searchQuery.trim()) list.push({ field_name: '__query__', op: 'contains', value: searchQuery.trim() })
     return list.length ? list : undefined
   }, [viewFilters, searchQuery])
 
   // 当前生效的排序条件
   const sortsParam = useMemo(() => {
-    return viewSortings.length ? viewSortings : undefined
+    return viewSortings.length ? (viewSortings as unknown as Array<Record<string, unknown>>) : undefined
   }, [viewSortings])
 
   // 非 grid 视图需要全量数据（日历/看板/画廊要跨月/跨列聚合），绕过分页
