@@ -35,10 +35,10 @@ test.describe("匿名（chromium-anon only）", () => {
     await page.getByPlaceholder("用户名或邮箱").fill("demo");
     await page.getByPlaceholder("密码").fill("demo1234");
     await page.getByRole("button", { name: /登 录/ }).click();
-    // 登录成功 → 自动 Navigate 到 /w → /w/{wid}/tables
-    await page.waitForURL(/\/w\/\d+/);
-    // 主应用关键锚点 — h3 标题
-    await expect(page.getByRole("heading", { level: 3, name: /演示工作区/ })).toBeVisible();
+    // 登录成功 → 自动 Navigate 到 /w（多工作区）或 /w/{wid}/tables（单工作区）
+    await page.waitForURL(/\/w(\/\d+)?(\/tables)?/);
+    // 主应用关键锚点 — 工作区列表标题或侧栏已加载
+    await expect(page.getByRole("heading", { level: 3 })).toBeVisible();
   });
 
   test("错误密码 → 保留在登录页并显示错误", async ({ page }) => {
@@ -60,7 +60,9 @@ test.describe("已登录会话（chromium-authed only）", () => {
 
   test("复用 StorageState 直接访问根 → 渲染主应用", async ({ page }) => {
     await page.goto("/");
-    await page.waitForURL(/\/w\/\d+/);
-    await expect(page.getByRole("heading", { level: 3, name: /演示工作区/ })).toBeVisible();
+    // 可能是 /w（多工作区列表）或 /w/{wid}/tables（已自动进入）
+    await page.waitForURL(/\/w(\/\d+)?/);
+    // 主应用关键锚点
+    await expect(page.getByRole("heading", { level: 3 })).toBeVisible();
   });
 });

@@ -21,8 +21,8 @@ const SORTED_ASC = ["王五", "李四", "赵六", "张三"];
 const SORTED_DESC = ["张三", "赵六", "李四", "王五"];
 
 async function gotoGrid(page: any) {
-    await page.goto("/");
-    await page.waitForURL(/\/w\/\d+/);
+    // 直接导航到指定工作区，绕过 WorkspaceList 多工作区场景
+    await page.goto(`/w/${WID}/tables`);
     await page.getByRole("menuitem", { name: /员工表/ }).click();
     await page.waitForURL(/\/tables\/\d+/);
     await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible();

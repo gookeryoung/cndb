@@ -19,11 +19,8 @@ const TABLE_EMP = "员工表";
 const TABLE_SALES = "电商销售";
 
 async function gotoTable(page: any, tableName: string) {
-    await page.goto("/");
-    await page.waitForURL(/\/w\/\d+/);
-    // 切到目标工作区
-    const wsItem = page.getByRole("menuitem", { name: new RegExp("工作区|WorkSpace") }).first();
-    // 直接通过 URL nav 更可靠 —— 先取 workspace ID
+    // 直接导航到已知 WID=1 的工作区（员工表和电商销售都在某企业销售管理下）
+    await page.goto(`/w/${WID_ENTERPRISE}/tables`);
     await page.waitForTimeout(300);
     await page.getByRole("menuitem", { name: new RegExp(tableName) }).click();
     await page.waitForURL(/\/tables\/\d+/);
