@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, selectinload
@@ -82,19 +82,25 @@ def list_workspaces(
     # 批量收集 workspace_id 用于统计
     ws_ids = [ws.id for ws, _ in rows]
     # 表数统计（排除软删）
-    table_counts: dict[int, int] = dict(
-        db.query(DataTable.workspace_id, func.count(DataTable.id))
-        .filter(DataTable.workspace_id.in_(ws_ids), DataTable.trashed_at.is_(None))
-        .group_by(DataTable.workspace_id)
-        .all()
-    )
+    table_counts: dict[int, int] = {
+        row[0]: row[1]
+        for row in (
+            db.query(DataTable.workspace_id, func.count(DataTable.id))
+            .filter(DataTable.workspace_id.in_(ws_ids), DataTable.trashed_at.is_(None))
+            .group_by(DataTable.workspace_id)
+            .all()
+        )
+    }
     # 成员数统计
-    member_counts: dict[int, int] = dict(
-        db.query(WorkspaceMember.workspace_id, func.count(WorkspaceMember.id))
-        .filter(WorkspaceMember.workspace_id.in_(ws_ids))
-        .group_by(WorkspaceMember.workspace_id)
-        .all()
-    )
+    member_counts: dict[int, int] = {
+        row[0]: row[1]
+        for row in (
+            db.query(WorkspaceMember.workspace_id, func.count(WorkspaceMember.id))
+            .filter(WorkspaceMember.workspace_id.in_(ws_ids))
+            .group_by(WorkspaceMember.workspace_id)
+            .all()
+        )
+    }
 
     result: list[WorkspaceWithPinnedResponse] = []
     for ws, pinned in rows:
@@ -199,7 +205,7 @@ def get_workspace(
         )
         .first()
     )
-    owner_info: dict | None = None
+    owner_info: dict[str, Any] | None = None
     if owner_member and owner_member.user:
         owner_info = {
             "id": owner_member.user.id,
@@ -444,7 +450,7 @@ def export_workspace(
     workspace_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, Any]:
     """导出整个工作区为 JSON：工作区元信息 + 所有表结构 + 数据行 + 视图配置."""
     import datetime as dt
 
@@ -465,7 +471,7 @@ def export_workspace(
     }
 
     # 导出所有表（含字段、数据、视图）
-    tables_data: list[dict] = []
+    tables_data: list[dict[str, Any]] = []
     tables = (
         db.query(DataTable)
         .filter(
@@ -502,7 +508,7 @@ def export_workspace(
         ]
 
         # 数据行
-        rows_data: list[dict] = []
+        rows_data: list[dict[str, Any]] = []
         try:
             sa_table = __import__("sqlalchemy").Table(tbl.db_table_name, metadata, autoload_with=db.bind)
             if "trashed_at" in sa_table.columns:
@@ -525,7 +531,7 @@ def export_workspace(
                 "field_options": v.field_options,
                 "view_options": getattr(v, "view_options", None),
                 "field_order": getattr(v, "field_order", None),
-                "default": v.default,
+                "default": v.is_default,
             }
             for v in views
         ]
@@ -623,9 +629,9 @@ def import_workspace(  # noqa: PLR0912 - 导入流程需要多分支，暂不拆
 
             db.flush()
 
-            # DDL 创建物理表
+            # DDL 创建物理表（create_table 自动从 table.fields 拿字段）
             try:
-                ddl_create(db, table, fields_order)
+                ddl_create(db.get_bind(), table)
             except Exception as exc:
                 db.rollback()
                 raise HTTPException(status_code=400, detail=f"创建表 {table_name} 失败: {exc}") from exc
