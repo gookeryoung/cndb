@@ -2,16 +2,30 @@ export type ID = number | string
 
 export type WorkspaceVisibility = 'public' | 'member' | 'private'
 
+/** 用户角色 —— 三员 + 普通用户（参考 GB/T 22239 等级保护模型） */
+export type UserRole = 'system_admin' | 'security_admin' | 'audit_admin' | 'user'
+
+/** 角色中文显示名映射 */
+export const USER_ROLE_LABEL: Record<UserRole, string> = {
+  system_admin: '系统管理员',
+  security_admin: '安全管理员',
+  audit_admin: '审计管理员',
+  user: '普通用户',
+}
+
 export interface UserResponse {
   id: ID
   username: string
-  email: string
+  email: string | null
+  nickname?: string
+  role: UserRole
   is_active?: boolean
+  is_superuser?: boolean
   created_at?: string
 }
 
 export interface LoginRequest { login: string; password: string }
-export interface RegisterRequest { username: string; email: string; password: string }
+export interface RegisterRequest { username: string; email?: string | null; password: string; nickname?: string; role?: UserRole }
 export interface LoginResponse { access_token: string; token_type: string }
 
 export interface Workspace {
