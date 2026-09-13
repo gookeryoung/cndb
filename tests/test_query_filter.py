@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table
 
 from cndb.plugins.tables.models import DataField
-from cndb.plugins.tables.query import compile_filters
+from cndb.plugins.tables.query import compile_filters, compile_sorts
 
 
 @pytest.fixture
@@ -493,3 +493,117 @@ class TestOrAndGrouping:
             {"__or__": [{"field_name": "name", "op": "=", "value": "x"}, "bad", None]},
         )
         assert where is not None
+
+
+# ── compile_sorts 完整覆盖 ──────────────────────────────────
+
+
+class TestCompileSorts:
+    """compile_sorts 函数 — 多字段 / 方向 / 别名 / 未知字段跳过."""
+
+    def test_empty_list_returns_empty(self, sa_table, table_with_fields):
+        assert compile_sorts(table_with_fields, sa_table, []) == []
+
+    def test_single_field_asc_default(self, sa_table, table_with_fields):
+        """direction 省略时默认 asc."""
+        result = compile_sorts(table_with_fields, sa_table, [{"field_name": "name"}])
+        assert len(result) == 1
+        sql = str(result[0])
+        # asc 是默认排序，SQLAlchemy asc() 生成的 SQL 不含 DESC
+        assert "field_name" in sql
+
+    def test_single_field_desc(self, sa_table, table_with_fields):
+        result = compile_sorts(
+            table_with_fields,
+            sa_table,
+            [{"field_name": "age", "direction": "desc"}],
+        )
+        assert len(result) == 1
+        sql = str(result[0]).upper()
+        assert "DESC" in sql
+
+    def test_direction_alias_dir(self, sa_table, table_with_fields):
+        """`dir` 是 `direction` 的别名."""
+        result = compile_sorts(
+            table_with_fields,
+            sa_table,
+            [{"field_name": "age", "dir": "asc"}],
+        )
+        assert len(result) == 1
+
+    def test_field_alias_field(self, sa_table, table_with_fields):
+        """`field` 是 `field_name` 的别名."""
+        result = compile_sorts(
+            table_with_fields,
+            sa_table,
+            [{"field": "age", "direction": "desc"}],
+        )
+        assert len(result) == 1
+        sql = str(result[0]).upper()
+        assert "DESC" in sql
+
+    def test_multiple_fields(self, sa_table, table_with_fields):
+        """多字段排序 — 返回顺序与输入一致."""
+        result = compile_sorts(
+            table_with_fields,
+            sa_table,
+            [
+                {"field_name": "age", "direction": "desc"},
+                {"field_name": "name", "direction": "asc"},
+            ],
+        )
+        assert len(result) == 2
+        sql_descs = [str(c).upper() for c in result]
+        assert "DESC" in sql_descs[0]
+        assert "DESC" not in sql_descs[1]  # asc 默认不显式写
+
+    def test_unknown_field_skipped(self, sa_table, table_with_fields):
+        """不存在的字段名被跳过，不报错."""
+        result = compile_sorts(
+            table_with_fields,
+            sa_table,
+            [
+                {"field_name": "nonexistent", "direction": "desc"},
+                {"field_name": "age", "direction": "asc"},
+            ],
+        )
+        assert len(result) == 1
+
+    def test_all_unknown_fields_returns_empty(self, sa_table, table_with_fields):
+        result = compile_sorts(
+            table_with_fields,
+            sa_table,
+            [
+                {"field_name": "xxx"},
+                {"field_name": "yyy", "direction": "desc"},
+            ],
+        )
+        assert result == []
+
+    def test_direction_case_insensitive(self, sa_table, table_with_fields):
+        result = compile_sorts(
+            table_with_fields,
+            sa_table,
+            [{"field_name": "age", "direction": "DESC"}],
+        )
+        assert len(result) == 1
+        assert "DESC" in str(result[0]).upper()
+
+    def test_item_missing_field_name_skipped(self, sa_table, table_with_fields):
+        result = compile_sorts(
+            table_with_fields,
+            sa_table,
+            [
+                {"direction": "asc"},  # 没有 field_name
+                {"field_name": "age"},
+            ],
+        )
+        assert len(result) == 1
+
+    def test_non_dict_items_skipped(self, sa_table, table_with_fields):
+        result = compile_sorts(
+            table_with_fields,
+            sa_table,
+            ["not_a_dict", None, {"field_name": "age"}],
+        )
+        assert len(result) == 1
