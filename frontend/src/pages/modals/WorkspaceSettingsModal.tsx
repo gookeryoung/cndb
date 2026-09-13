@@ -1,11 +1,11 @@
 /** 工作区设置对话框 — 基本设置 + 成员管理 + 统计信息（三 Tab）. */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Modal, Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions, Table, Empty, Input as AntInput, message, Space, Popconfirm } from 'antd'
-import { SettingOutlined, TeamOutlined, BarChartOutlined, PlusOutlined, UserDeleteOutlined, CrownOutlined, ClockCircleOutlined, FileTextOutlined, EyeOutlined, ColumnWidthOutlined, UserOutlined } from '@ant-design/icons'
+import { Modal, Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions, Table, Empty, Input as AntInput, message, Popconfirm } from 'antd'
+import { SettingOutlined, TeamOutlined, BarChartOutlined, PlusOutlined, UserDeleteOutlined, CrownOutlined, FileTextOutlined, EyeOutlined, ColumnWidthOutlined, UserOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi } from '@/api'
-import type { Workspace, WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceVisibility } from '@/api'
+import type { WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceVisibility } from '@/api'
 
 interface Props {
   open: boolean
@@ -40,7 +40,7 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
   const [activeTab, setActiveTab] = useState('basic')
 
   // 获取工作区详情
-  const { data: detail, isLoading: detailLoading } = useQuery<WorkspaceDetail>({
+  const { data: detail } = useQuery<WorkspaceDetail>({
     queryKey: ['workspace-detail', wid],
     queryFn: () => workspaceApi.get(wid),
     enabled: open && !!wid,

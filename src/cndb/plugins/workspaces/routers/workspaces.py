@@ -671,7 +671,7 @@ def import_workspace(  # noqa: PLR0912 - 导入流程需要多分支，暂不拆
                     field_options=vd.get("field_options", {}) or {},
                     view_options=vd.get("view_options", {}) or {},
                     field_order=vd.get("field_order"),
-                    default=vd.get("default", False),
+                    is_default=vd.get("is_default", False),
                 )
                 db.add(view)
                 imported_views += 1
