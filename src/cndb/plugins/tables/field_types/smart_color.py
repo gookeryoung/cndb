@@ -19,23 +19,46 @@ from collections.abc import Iterable
 
 # 可用于 SelectOption.color 的有效色名；前端 <Tag> 组件直接消费
 ANTD_PRESET_COLORS: tuple[str, ...] = (
-    "blue", "purple", "cyan", "green", "magenta", "pink", "red",
-    "orange", "yellow", "volcano", "geekblue", "lime", "gold",
+    "blue",
+    "purple",
+    "cyan",
+    "green",
+    "magenta",
+    "pink",
+    "red",
+    "orange",
+    "yellow",
+    "volcano",
+    "geekblue",
+    "lime",
+    "gold",
 )
 
 # 状态类色名（success/processing/error/warning/default）—— antd status 预设
 ANTD_STATUS_COLORS: tuple[str, ...] = (
-    "success", "processing", "error", "default", "warning",
+    "success",
+    "processing",
+    "error",
+    "default",
+    "warning",
 )
 
 # 智能配色专用调色板（从 antd 预设中挑出适合做连续区分的 8 种）
 # 顺序是调色板的自然顺序，fallback 时按选项索引循环取用
 _PALETTE: tuple[str, ...] = (
-    "blue", "green", "orange", "purple", "cyan", "magenta", "gold", "red",
+    "blue",
+    "green",
+    "orange",
+    "purple",
+    "cyan",
+    "magenta",
+    "gold",
+    "red",
 )
 
 
 # ─────────────── 语义域定义 ──────────────────────────────────────────────────
+
 
 class _ColorRule:
     """单条语义配色规则."""
@@ -56,58 +79,84 @@ class _ColorRule:
 # 意外命中（如 "选项A" 中的 A 不应匹配 "优秀/grade_a" 规则）。
 _RULES: tuple[_ColorRule, ...] = (
     # ── 布尔 / 是或否（最常见） ──
-    _ColorRule("green", ("是", "yes", "true", "对", "同意", "通过", "ok", "done", "已完成", "完成"), description="肯定/完成"),
-    _ColorRule("default", ("否", "no", "false", "错", "拒绝", "不通过", "未完成", "pending", "待处理", "待办"), description="否定/待办"),
-
+    _ColorRule(
+        "green", ("是", "yes", "true", "对", "同意", "通过", "ok", "done", "已完成", "完成"), description="肯定/完成"
+    ),
+    _ColorRule(
+        "default",
+        ("否", "no", "false", "错", "拒绝", "不通过", "未完成", "pending", "待处理", "待办"),
+        description="否定/待办",
+    ),
     # ── 状态域：进行中 / 已完成 / 已取消 ──
-    _ColorRule("processing", ("进行中", "处理中", "执行中", "ongoing", "running", "in_progress", "active"), description="进行中"),
-    _ColorRule("success", ("已完成", "完成", "已解决", "已处理", "closed", "resolved", "finished"), description="已完成"),
-    _ColorRule("error", ("已取消", "取消", "废弃", "已关闭", "驳回", "rejected", "canceled", "cancelled", "abandoned"), description="已取消/驳回"),
-
+    _ColorRule(
+        "processing",
+        ("进行中", "处理中", "执行中", "ongoing", "running", "in_progress", "active"),
+        description="进行中",
+    ),
+    _ColorRule(
+        "success", ("已完成", "完成", "已解决", "已处理", "closed", "resolved", "finished"), description="已完成"
+    ),
+    _ColorRule(
+        "error",
+        ("已取消", "取消", "废弃", "已关闭", "驳回", "rejected", "canceled", "cancelled", "abandoned"),
+        description="已取消/驳回",
+    ),
     # ── 优先级 / 紧急度 ──
     # weight=15 让 "紧急" 类优先于其他语义
-    _ColorRule("red", ("紧急", "urgent", "critical", "p0", "最高优先级", "立即处理", "立即"), weight=15, description="紧急/最高优先级"),
+    _ColorRule(
+        "red",
+        ("紧急", "urgent", "critical", "p0", "最高优先级", "立即处理", "立即"),
+        weight=15,
+        description="紧急/最高优先级",
+    ),
     _ColorRule("orange", ("高优先级", "较高", "high", "p2", "重要", "优先", "高"), description="高优先级/重要"),
     _ColorRule("gold", ("中等", "medium", "normal", "一般", "p3", "普通", "常规", "中"), description="中等/一般"),
-    _ColorRule("blue", ("低优先级", "较低", "low", "p4", "p5", "次要", "minimal", "不急", "低"), description="低优先级/次要"),
-
+    _ColorRule(
+        "blue", ("低优先级", "较低", "low", "p4", "p5", "次要", "minimal", "不急", "低"), description="低优先级/次要"
+    ),
     # ── 进度/完成度 ──
     _ColorRule("green", ("100%", "全部", "完全", "full", "complete", "全部完成"), description="完全/100%"),
     _ColorRule("cyan", ("75%", "大部分", "mostly", "多数", "基本完成"), description="75%/大部分"),
     _ColorRule("gold", ("50%", "一半", "half", "中等进度", "进行中"), description="50%/一半"),
     _ColorRule("orange", ("25%", "小部分", "少量", "刚开始"), description="25%/少量"),
     _ColorRule("default", ("0%", "无", "none", "空", "empty", "未开始"), description="0%/无"),
-
     # ── 风险等级 ──
     _ColorRule("error", ("极高风险", "高风险", "风险极高", "critical_risk", "high_risk", "危险"), description="高风险"),
     _ColorRule("warning", ("中风险", "较高风险", "medium_risk", "moderate", "有风险"), description="中风险"),
     _ColorRule("green", ("低风险", "安全", "safe", "low_risk", "no_risk", "无风险"), description="低风险/安全"),
-
     # ── 评分/等级（文字描述） ──
-    _ColorRule("red", ("极差", "很差", "failed", "grade_d", "非常差", "糟糕", "terrible", "bad"), description="极差/失败"),
+    _ColorRule(
+        "red", ("极差", "很差", "failed", "grade_d", "非常差", "糟糕", "terrible", "bad"), description="极差/失败"
+    ),
     _ColorRule("orange", ("较差", "及格", "poor", "grade_c", "pass", "勉强"), description="较差/及格"),
     _ColorRule("gold", ("中等", "平均", "ok", "grade_b", "average", "一般般"), description="中等"),
-    _ColorRule("green", ("良好", "优秀", "很好", "grade_a", "excellent", "great", "perfect", "出色"), description="优秀"),
-
+    _ColorRule(
+        "green", ("良好", "优秀", "很好", "grade_a", "excellent", "great", "perfect", "出色"), description="优秀"
+    ),
     # ── 金额/费用程度 ──
     _ColorRule("red", ("免费", "free", "零元", "无偿", "赠送"), description="免费"),
     _ColorRule("orange", ("昂贵", "expensive", "premium", "高价", "很贵", "贵"), description="昂贵"),
     _ColorRule("green", ("便宜", "廉价", "cheap", "low_cost", "低价", "实惠", "划算", "不贵"), description="便宜/划算"),
-
     # ── 频率域 ──
     _ColorRule("red", ("从不", "never", "零次", "完全不"), description="从不"),
     _ColorRule("orange", ("偶尔", "很少", "rarely", "seldom", "罕见", "极少"), description="偶尔"),
     _ColorRule("gold", ("有时", "sometimes", "some", "偶尔发生"), description="有时"),
     _ColorRule("blue", ("经常", "often", "频繁", "时常"), description="经常"),
     _ColorRule("green", ("总是", "每天", "always", "daily", "hourly", "每次"), description="总是/每天"),
-
     # ── 角色/身份（粗粒度） ──
-    _ColorRule("purple", ("管理员", "admin", "administrator", "root", "超级管理员", "owner", "所有者"), description="管理员/Owner"),
+    _ColorRule(
+        "purple",
+        ("管理员", "admin", "administrator", "root", "超级管理员", "owner", "所有者"),
+        description="管理员/Owner",
+    ),
     _ColorRule("blue", ("编辑", "editor", "写权限", "可编辑"), description="编辑者"),
-    _ColorRule("default", ("只读", "read_only", "查看", "reader", "viewer", "访客", "guest", "浏览"), description="只读/访客"),
-
+    _ColorRule(
+        "default", ("只读", "read_only", "查看", "reader", "viewer", "访客", "guest", "浏览"), description="只读/访客"
+    ),
     # ── 待定/未知 ──
-    _ColorRule("processing", ("待定", "待确认", "tbd", "pending_confirm", "unknown", "未知", "未确定"), description="待定/未知"),
+    _ColorRule(
+        "processing", ("待定", "待确认", "tbd", "pending_confirm", "unknown", "未知", "未确定"), description="待定/未知"
+    ),
 )
 
 
@@ -150,11 +199,11 @@ def _extract_grade_word(text: str) -> str | None:
 
 # 数字等级 → 建议颜色的直接映射（当 label 仅为 "等级 3" 这种无文字描述时使用）
 _NUMBER_LEVEL_COLORS: dict[int, str] = {
-    1: "red",      # 最高级/最紧急
+    1: "red",  # 最高级/最紧急
     2: "orange",
     3: "gold",
     4: "blue",
-    5: "green",    # 最低级/最不紧急
+    5: "green",  # 最低级/最不紧急
 }
 
 # 等级字母 → 颜色映射
@@ -319,6 +368,7 @@ def has_semantic_match(label: str) -> bool:
 
 # ─────────────── 调试/可观测 ────────────────────────────────────────────────
 
+
 def match_debug(label: str) -> tuple[str | None, list[tuple[str, int, str]]]:
     """返回 (最终色名, [(规则色, 得分, 规则描述), ...])，用于调试或单测.
 
@@ -339,6 +389,7 @@ def match_debug(label: str) -> tuple[str | None, list[tuple[str, int, str]]]:
 
     def _sort_key(item: tuple[str, int, str]) -> int:
         return item[1]
+
     scores.sort(key=_sort_key, reverse=True)
 
     # 补充路径 2/3 的调试信息
