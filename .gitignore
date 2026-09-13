@@ -51,3 +51,4 @@ frontend/test-results/
 frontend/package-lock.json
 *.bak
 uploads
+/.trae-html-share-packages
