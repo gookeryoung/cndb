@@ -1,6 +1,6 @@
 /** 工作区列表页 — 卡片式布局，支持创建/编辑/删除/置顶/成员管理. */
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Card, Row, Col, Typography, Button, Modal, Form, Input, Tag, Empty, message, Space, Dropdown } from 'antd'
 import { PlusOutlined, PushpinOutlined, TeamOutlined, TableOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -24,6 +24,13 @@ export default function WorkspaceList() {
     queryKey: ['workspaces'],
     queryFn: () => workspaceApi.list(),
   })
+
+  // 只有一个工作区时自动进入，避免用户多一次点击
+  useEffect(() => {
+    if (!isLoading && workspaces.length === 1) {
+      navigate(`/w/${workspaces[0].id}/tables`, { replace: true })
+    }
+  }, [isLoading, workspaces, navigate])
 
   const create = useMutation({
     mutationFn: (v: { name: string; description?: string }) => workspaceApi.create(v),

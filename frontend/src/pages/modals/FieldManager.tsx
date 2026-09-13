@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, AutoFixHighOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, EditOutlined, BgColorsOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary } from '@/api'
@@ -489,7 +489,7 @@ function SelectOptionsEditor({ form, config }: { form: ReturnType<typeof Form.us
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
         <span>选项列表（显示标签 + 存储值）</span>
         <div style={{ display: 'flex', gap: 4 }}>
-          <Button size="small" icon={<AutoFixHighOutlined />} onClick={autoColorAll}>
+          <Button size="small" icon={<BgColorsOutlined />} onClick={autoColorAll}>
             一键智能配色
           </Button>
           <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addOption}>
