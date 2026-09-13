@@ -64,3 +64,10 @@ url     = "https://mirrors.aliyun.com/pypi/simple/"
 
 [dependency-groups]
 dev = ["cndb[dev]"]
+
+[tool.coverage.run]
+omit = [
+    "src/cndb/runner.py",
+    "src/cndb/seed.py",
+    "src/cndb/plugins/tables/routers/files.py",
+]
