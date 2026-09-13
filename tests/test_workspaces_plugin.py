@@ -439,3 +439,200 @@ class TestPinAPI:
         r = client.post("/api/v1/workspaces", json={"name": "WS"}, headers=_headers(owner_token))
         assert r.status_code == 201
         return r.json()["id"]
+
+# ── 扩展字段测试（visibility / tags / allow_edit） ───────────
+
+
+class TestWorkspaceExtensionFields:
+    """Workspace 扩展字段模型 + API 测试."""
+
+    def test_create_workspace_with_extensions(self, client, owner_user):
+        """创建工作区时可指定 visibility/tags/allow_edit."""
+        token = _login_token(client, "owner", "passw0rd")
+        r = client.post(
+            "/api/v1/workspaces",
+            json={
+                "name": "公开工作区",
+                "visibility": "public",
+                "tags": ["核心", "研发"],
+                "allow_edit": False,
+            },
+            headers=_headers(token),
+        )
+        assert r.status_code == 201
+        data = r.json()
+        assert data["visibility"] == "public"
+        assert data["tags"] == ["核心", "研发"]
+        assert data["allow_edit"] is False
+
+    def test_update_workspace_extensions(self, client, owner_user):
+        """更新工作区的扩展字段."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        r = client.patch(
+            f"/api/v1/workspaces/{ws_id}",
+            json={"visibility": "private", "tags": ["保密"], "allow_edit": True},
+            headers=_headers(token),
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["visibility"] == "private"
+        assert data["tags"] == ["保密"]
+        assert data["allow_edit"] is True
+
+    def test_update_workspace_partial_extensions(self, client, owner_user):
+        """部分更新仅影响指定字段."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        # 先设置完整值
+        client.patch(
+            f"/api/v1/workspaces/{ws_id}",
+            json={"visibility": "public", "tags": ["a", "b"], "allow_edit": True},
+            headers=_headers(token),
+        )
+        # 仅更新 visibility
+        r = client.patch(
+            f"/api/v1/workspaces/{ws_id}",
+            json={"visibility": "private"},
+            headers=_headers(token),
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["visibility"] == "private"
+        assert data["tags"] == ["a", "b"]  # 未变
+        assert data["allow_edit"] is True  # 未变
+
+    def test_workspace_defaults(self, client, owner_user):
+        """创建工作区未指定扩展字段时使用默认值."""
+        token = _login_token(client, "owner", "passw0rd")
+        r = client.post("/api/v1/workspaces", json={"name": "默认WS"}, headers=_headers(token))
+        assert r.status_code == 201
+        data = r.json()
+        assert data["visibility"] == "member"
+        assert data["tags"] == []
+        assert data["allow_edit"] is True
+
+    def _create_ws(self, client, owner_token: str) -> int:
+        r = client.post("/api/v1/workspaces", json={"name": "WS"}, headers=_headers(owner_token))
+        assert r.status_code == 201
+        return r.json()["id"]
+
+
+class TestWorkspaceDetailWithStats:
+    """工作区详情接口扩展统计 + owner 信息."""
+
+    def test_get_workspace_detail_includes_owner_and_stats(self, client, owner_user):
+        """GET /{wid} 返回 WorkspaceDetailResponse."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        r = client.get(f"/api/v1/workspaces/{ws_id}", headers=_headers(token))
+        assert r.status_code == 200
+        data = r.json()
+        # 扩展字段
+        assert "visibility" in data
+        assert "tags" in data
+        assert "allow_edit" in data
+        # owner 信息
+        assert data["owner"] is not None
+        assert data["owner"]["username"] == "owner"
+        # 统计字段
+        assert isinstance(data["table_count"], int)
+        assert isinstance(data["member_count"], int)
+        assert isinstance(data["view_count"], int)
+        assert isinstance(data["total_rows"], int)
+        # 新工作区 0 表 1 成员
+        assert data["table_count"] == 0
+        assert data["member_count"] == 1
+
+    def test_list_workspaces_includes_stats(self, client, owner_user):
+        """列表接口附带 table_count / member_count."""
+        token = _login_token(client, "owner", "passw0rd")
+        self._create_ws(client, token)
+        r = client.get("/api/v1/workspaces", headers=_headers(token))
+        assert r.status_code == 200
+        items = r.json()
+        assert len(items) >= 1
+        item = items[0]
+        assert isinstance(item["table_count"], int)
+        assert isinstance(item["member_count"], int)
+
+    def _create_ws(self, client, owner_token: str) -> int:
+        r = client.post("/api/v1/workspaces", json={"name": "WS"}, headers=_headers(owner_token))
+        assert r.status_code == 201
+        return r.json()["id"]
+
+
+class TestWorkspaceExportImport:
+    """工作区整体 export / import."""
+
+    def test_export_workspace_json_structure(self, client, owner_user):
+        """export 接口返回正确结构."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        r = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=_headers(token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["version"] == "1"
+        assert "exported_at" in data
+        assert "workspace" in data
+        assert "tables" in data
+        ws_meta = data["workspace"]
+        assert ws_meta["name"]  # 至少有名称
+
+    def test_export_requires_membership(self, client, owner_user, member_user):
+        """非成员不能导出."""
+        token_o = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token_o)
+        token_m = _login_token(client, "member", "passw0rd")
+        r = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=_headers(token_m))
+        assert r.status_code in (403, 404)
+
+    def test_import_workspace_empty_json(self, client, owner_user):
+        """导入空结构不报错."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import",
+            json={"json_data": {"version": "1", "tables": []}},
+            headers=_headers(token),
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["imported_tables"] == 0
+        assert data["imported_rows"] == 0
+        assert data["imported_views"] == 0
+
+    def test_import_workspace_requires_admin(self, client, owner_user, member_user):
+        """导入需要 ADMIN+ 权限."""
+        token_o = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token_o)
+        # 把 member 加为 viewer
+        client.post(
+            f"/api/v1/workspaces/{ws_id}/members",
+            json={"username": "member", "role": "viewer"},
+            headers=_headers(token_o),
+        )
+        token_m = _login_token(client, "member", "passw0rd")
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import",
+            json={"json_data": {"tables": []}},
+            headers=_headers(token_m),
+        )
+        assert r.status_code == 403
+
+    def test_import_workspace_invalid_format(self, client, owner_user):
+        """无效 JSON 结构返回 400."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import",
+            json={"json_data": {"no_tables_key": True}},
+            headers=_headers(token),
+        )
+        assert r.status_code == 400
+
+    def _create_ws(self, client, owner_token: str) -> int:
+        r = client.post("/api/v1/workspaces", json={"name": "WS"}, headers=_headers(owner_token))
+        assert r.status_code == 201
+        return r.json()["id"]
+
