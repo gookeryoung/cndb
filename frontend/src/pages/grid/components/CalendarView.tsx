@@ -251,10 +251,10 @@ function YearView({
               key={idx}
               onClick={() => onSelectMonth(idx)}
               style={{
-                border: `1px solid ${isCurrentMonth ? '#1677ff' : '#e5e7eb'}`,
+                border: `1px solid ${isCurrentMonth ? '#1677ff' : 'var(--cn-border)'}`,
                 borderRadius: ds.eventRadius + 2,
                 padding: ds.navPadding,
-                background: isCurrentMonth ? '#f0f5ff' : '#fff',
+                background: isCurrentMonth ? '#f0f5ff' : 'var(--cn-bg-container)',
                 cursor: 'pointer',
                 minHeight: ds.yearCellHeight,
                 transition: 'box-shadow 0.15s',
@@ -267,7 +267,7 @@ function YearView({
                 style={{
                   fontWeight: 600,
                   fontSize: ds.cellFontSize,
-                  color: isCurrentMonth ? '#1677ff' : '#1f2937',
+                  color: isCurrentMonth ? '#1677ff' : 'var(--cn-text-primary)',
                   marginBottom: 4,
                   textAlign: 'center',
                 }}
@@ -278,7 +278,7 @@ function YearView({
               {/* 迷你日历网格（7 列） */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, fontSize: ds.cellFontSize - 4 }}>
                 {['日', '一', '二', '三', '四', '五', '六'].map((d) => (
-                  <div key={d} style={{ textAlign: 'center', color: '#9ca3af' }}>{d}</div>
+                  <div key={d} style={{ textAlign: 'center', color: 'var(--cn-text-muted)' }}>{d}</div>
                 ))}
                 {getMonthGrid(year, idx).map((d) => {
                   const isCurrentMonthCell = d.getMonth() === idx
@@ -291,7 +291,7 @@ function YearView({
                       style={{
                         textAlign: 'center',
                         lineHeight: `${ds.cellFontSize - 2}px`,
-                        color: !isCurrentMonthCell ? '#e5e7eb' : '#374151',
+                        color: !isCurrentMonthCell ? 'var(--cn-text-disabled)' : 'var(--cn-text-primary)',
                         position: 'relative',
                       }}
                       onClick={(e) => {
@@ -375,7 +375,7 @@ function MonthView({
               fontWeight: 600,
               fontSize: ds.cellFontSize,
               padding: '4px 0',
-              color: idx === 0 || idx === 6 ? '#ff4d4f' : '#374151',
+              color: idx === 0 || idx === 6 ? '#ff4d4f' : 'var(--cn-text-primary)',
             }}
           >
             {h}
@@ -389,10 +389,10 @@ function MonthView({
           display: 'grid',
           gridTemplateColumns: 'repeat(7, 1fr)',
           gap: 1,
-          border: '1px solid #e5e7eb',
+          border: '1px solid var(--cn-border)',
           borderRadius: ds.eventRadius + 2,
           overflow: 'hidden',
-          background: '#e5e7eb',
+          background: 'var(--cn-border)',
         }}
       >
         {grid.map((d) => {
@@ -409,7 +409,7 @@ function MonthView({
               onClick={() => onDayClick?.(d)}
               style={{
                 minHeight: ds.dayCellMinHeight,
-                background: isCurrentMonth ? (isWeekend ? '#fafafa' : '#fff') : '#f9fafb',
+                background: isCurrentMonth ? (isWeekend ? 'var(--cn-bg-subtle)' : 'var(--cn-bg-container)') : 'var(--cn-bg-muted)',
                 padding: 4,
                 cursor: 'pointer',
                 display: 'flex',
@@ -440,14 +440,14 @@ function MonthView({
                   <span
                     style={{
                       fontSize: ds.cellFontSize,
-                      color: !isCurrentMonth ? '#d1d5db' : (isWeekend ? '#ff4d4f' : '#374151'),
+                      color: !isCurrentMonth ? 'var(--cn-text-disabled)' : (isWeekend ? '#ff4d4f' : 'var(--cn-text-primary)'),
                     }}
                   >
                     {d.getDate()}
                   </span>
                 )}
                 {dayEvents.length > 3 && isCurrentMonth && (
-                  <span style={{ fontSize: ds.cellFontSize - 4, color: '#9ca3af' }}>+{dayEvents.length - 3}</span>
+                  <span style={{ fontSize: ds.cellFontSize - 4, color: 'var(--cn-text-muted)' }}>+{dayEvents.length - 3}</span>
                 )}
               </div>
 
@@ -517,9 +517,9 @@ function WeekView({
             <div
               key={dateStr}
               style={{
-                border: '1px solid #e5e7eb',
+                border: '1px solid var(--cn-border)',
                 borderRadius: ds.eventRadius + 2,
-                background: isWeekend ? '#fafafa' : '#fff',
+                background: isWeekend ? 'var(--cn-bg-subtle)' : 'var(--cn-bg-container)',
                 overflow: 'hidden',
               }}
             >
@@ -527,9 +527,9 @@ function WeekView({
               <div
                 style={{
                   padding: `${ds.navPadding}px 8px`,
-                  borderBottom: '1px solid #e5e7eb',
-                  background: isToday ? '#1677ff' : (isWeekend ? '#f5f5f5' : '#fafafa'),
-                  color: isToday ? '#fff' : (isWeekend ? '#ff4d4f' : '#374151'),
+                  borderBottom: '1px solid var(--cn-border)',
+                  background: isToday ? '#1677ff' : (isWeekend ? 'var(--cn-bg-muted)' : 'var(--cn-bg-subtle)'),
+                  color: isToday ? '#fff' : (isWeekend ? '#ff4d4f' : 'var(--cn-text-primary)'),
                   textAlign: 'center',
                 }}
               >
@@ -544,7 +544,7 @@ function WeekView({
               {/* 事件列表 */}
               <div style={{ padding: ds.navPadding, minHeight: ds.dayCellMinHeight, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {dayEvents.length === 0 ? (
-                  <div style={{ color: '#d1d5db', textAlign: 'center', fontSize: ds.eventFontSize - 1, padding: `${ds.navPadding + 4}px 0` }}>
+                  <div style={{ color: 'var(--cn-text-disabled)', textAlign: 'center', fontSize: ds.eventFontSize - 1, padding: `${ds.navPadding + 4}px 0` }}>
                     无
                   </div>
                 ) : (
@@ -569,7 +569,7 @@ function WeekView({
           )
         })}
       </div>
-      <div style={{ textAlign: 'center', marginTop: 8, fontSize: ds.cellFontSize - 2, color: '#9ca3af' }}>
+      <div style={{ textAlign: 'center', marginTop: 8, fontSize: ds.cellFontSize - 2, color: 'var(--cn-text-muted)' }}>
         本周范围：{weekStart} ~ {weekEnd}
       </div>
     </div>
@@ -651,8 +651,8 @@ export default function CalendarView({ rows, fields, view, density, onRowClick }
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          borderBottom: '1px solid #f0f0f0',
-          background: '#fff',
+          borderBottom: '1px solid var(--cn-border)',
+          background: 'var(--cn-bg-container)',
         }}
       >
         {/* 模式切换 */}
@@ -687,13 +687,13 @@ export default function CalendarView({ rows, fields, view, density, onRowClick }
         </Space.Compact>
 
         {/* 事件数量 */}
-        <div style={{ marginLeft: 'auto', fontSize: ds.navFontSize, color: '#9ca3af' }}>
+        <div style={{ marginLeft: 'auto', fontSize: ds.navFontSize, color: 'var(--cn-text-muted)' }}>
           共 {events.length} 个事件
         </div>
       </div>
 
       {/* 日历主体 */}
-      <div style={{ flex: 1, overflow: 'auto', background: '#fff' }}>
+      <div style={{ flex: 1, overflow: 'auto', background: 'var(--cn-bg-page)' }}>
         {mode === 'year' && (
           <YearView
             year={year}

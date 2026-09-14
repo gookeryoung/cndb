@@ -224,7 +224,7 @@ export default function GraphPage() {
                 const isSelected = selectedNode === n.id
                 const related = activeId != null && relatedNodes.has(n.id)
                 const dimmed = activeId != null && !related
-                const fill = n.type === 'view' ? '#fef3c7' : n.type === 'workflow' ? '#dcfce7' : '#ffffff'
+                const fill = n.type === 'view' ? 'var(--cn-graph-fill-view)' : n.type === 'workflow' ? 'var(--cn-graph-fill-workflow)' : 'var(--cn-graph-fill-default)'
                 const stroke = isSelected ? '#ef4444' : isHover ? '#2563eb' : '#3b82f6'
                 return (
                   <g key={n.id}

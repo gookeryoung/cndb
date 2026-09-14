@@ -100,10 +100,10 @@ export default function GalleryView({ rows, fields, view, density, onRowClick }:
           <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
             <div
               onClick={() => onRowClick?.(r)}
-              style={{ padding: 0, border: '1px solid #e5e7eb', borderRadius: radius, background: '#fff', cursor: 'pointer', overflow: 'hidden', transition: 'box-shadow 0.15s' }}
+              style={{ padding: 0, border: '1px solid var(--cn-border)', borderRadius: radius, background: 'var(--cn-bg-container)', cursor: 'pointer', overflow: 'hidden', transition: 'box-shadow 0.15s' }}
             >
               {imgUrl ? (
-                <div style={{ width: '100%', height: imgHeight, background: '#f5f7fa', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
+                <div style={{ width: '100%', height: imgHeight, background: 'var(--cn-bg-canvas)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
                   <img
                     src={imgUrl}
                     alt=""
@@ -125,7 +125,7 @@ export default function GalleryView({ rows, fields, view, density, onRowClick }:
               <div style={{ padding: textPadding }}>
                 <div style={{ fontWeight: 600, marginBottom: 2, fontSize: textFontSize, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titleVal}</div>
                 {subtitleVal && (
-                  <div style={{ fontSize: textSubFontSize, color: '#6b7280', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitleVal}</div>
+                  <div style={{ fontSize: textSubFontSize, color: 'var(--cn-text-secondary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitleVal}</div>
                 )}
                 {metaFieldNames.length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>

@@ -505,7 +505,7 @@ export default function GridPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* 顶部工具栏 */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', background: '#fff', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-container)', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)}>返回</Button>
         <Text strong style={{ fontSize: 16 }}>{table?.name || '...'}</Text>
         {/* 统计小徽标（来自后端增强字段） */}
@@ -556,7 +556,7 @@ export default function GridPage() {
       </div>
 
       {/* 视图切换 + 视图操作 */}
-      <div style={{ padding: '0 16px', background: '#fff', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ padding: '0 16px', background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
         <Segmented
           value={activeViewId != null ? String(activeViewId) : undefined}
           onChange={(v) => {
@@ -699,7 +699,7 @@ export default function GridPage() {
 
       {/* 底部聚合条 */}
       {selectedRowKeys.length > 0 && (
-        <div style={{ padding: '8px 16px', borderTop: '1px solid #e5e7eb', background: '#fff', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ padding: '8px 16px', borderTop: '1px solid var(--cn-border)', background: 'var(--cn-bg-container)', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <Tag color="blue" style={{ margin: 0 }}>已选 {selectedRowKeys.length} 行</Tag>
           <Space size="middle">
             {Object.entries(aggregates).map(([name, a]) => (
