@@ -204,6 +204,86 @@ body.theme-dark .ant-segmented-item-selected .ant-segmented-item-label {
   color: var(--cn-text-primary) !important;
 }
 
+/* ─────────────── 深色模式下 Modal 内部常见硬编码浅灰背景/边框兜底 ───────────────
+ * 一些组件在 inline style 里写死了 #fafafa / #f8fafc / #e5e7eb 等浅色调，
+ * 在深色模式下会显得突兀。用属性选择器 + !important 强制覆盖。
+ * 注意：只覆盖容器背景和边框，不覆盖功能色（红/绿/蓝图标）。 */
+
+/* 常见浅灰背景 */
+body.theme-github-dark [style*="background: #fafafa"],
+body.theme-dark [style*="background: #fafafa"],
+body.theme-github-dark [style*="background:#fafafa"],
+body.theme-dark [style*="background:#fafafa"],
+body.theme-github-dark [style*="background: #f8fafc"],
+body.theme-dark [style*="background: #f8fafc"],
+body.theme-github-dark [style*="background:#f8fafc"],
+body.theme-dark [style*="background:#f8fafc"],
+body.theme-github-dark [style*="background: #f6f8fa"],
+body.theme-dark [style*="background: #f6f8fa"],
+body.theme-github-dark [style*="background:#f6f8fa"],
+body.theme-dark [style*="background:#f6f8fa"],
+body.theme-github-dark [style*="background: #f1f5f9"],
+body.theme-dark [style*="background: #f1f5f9"],
+body.theme-github-dark [style*="background:#f1f5f9"],
+body.theme-dark [style*="background:#f1f5f9"] {
+  background: var(--cn-bg-subtle) !important;
+}
+
+/* 浅灰实线边框 */
+body.theme-github-dark [style*="border: 1px solid #e5e7eb"],
+body.theme-dark [style*="border: 1px solid #e5e7eb"],
+body.theme-github-dark [style*="border:1px solid #e5e7eb"],
+body.theme-dark [style*="border:1px solid #e5e7eb"],
+body.theme-github-dark [style*="border: 1px solid #e2e8f0"],
+body.theme-dark [style*="border: 1px solid #e2e8f0"],
+body.theme-github-dark [style*="border:1px solid #e2e8f0"],
+body.theme-dark [style*="border:1px solid #e2e8f0"],
+body.theme-github-dark [style*="borderBottom: '1px solid #f0f0f0'"],
+body.theme-dark [style*="borderBottom: '1px solid #f0f0f0'"] {
+  border-color: var(--cn-border) !important;
+}
+
+/* 浅灰虚线边框 */
+body.theme-github-dark [style*="border: 1px dashed #e2e8f0"],
+body.theme-dark [style*="border: 1px dashed #e2e8f0"],
+body.theme-github-dark [style*="border:1px dashed #e2e8f0"],
+body.theme-dark [style*="border:1px dashed #e2e8f0"],
+body.theme-github-dark [style*="border: 1px dashed #d9d9d9"],
+body.theme-dark [style*="border: 1px dashed #d9d9d9"],
+body.theme-github-dark [style*="border:1px dashed #d9d9d9"],
+body.theme-dark [style*="border:1px dashed #d9d9d9"] {
+  border-color: var(--cn-border) !important;
+}
+
+/* ─────────────── 深色模式兜底：常见浅色文字色，自动替换为 muted 色 ───────────────
+ * #475569 / #374151 / #1f2937 这类深色模式下会变得不可见的文字色。 */
+body.theme-github-dark [style*="color: '#475569'"],
+body.theme-dark [style*="color: '#475569'"],
+body.theme-github-dark [style*="color:'#475569'"],
+body.theme-dark [style*="color:'#475569'"],
+body.theme-github-dark [style*="color: '#374151'"],
+body.theme-dark [style*="color: '#374151'"],
+body.theme-github-dark [style*="color:'#374151'"],
+body.theme-dark [style*="color:'#374151'"],
+body.theme-github-dark [style*="color: '#64748b'"],
+body.theme-dark [style*="color: '#64748b'"],
+body.theme-github-dark [style*="color:'#64748b'"],
+body.theme-dark [style*="color:'#64748b'"],
+body.theme-github-dark [style*="color: '#6b7280'"],
+body.theme-dark [style*="color: '#6b7280'"],
+body.theme-github-dark [style*="color:'#6b7280'"],
+body.theme-dark [style*="color:'#6b7280'"],
+body.theme-github-dark [style*="color: '#9ca3af'"],
+body.theme-dark [style*="color: '#9ca3af'"],
+body.theme-github-dark [style*="color:'#9ca3af'"],
+body.theme-dark [style*="color:'#9ca3af'"],
+body.theme-github-dark [style*="color: '#999'"],
+body.theme-dark [style*="color: '#999'"],
+body.theme-github-dark [style*="color:'#999'"],
+body.theme-dark [style*="color:'#999'"] {
+  color: var(--cn-text-muted) !important;
+}
+
 /* Switch 开关兜底 — 防止 flex 容器拉伸高度 ─────────────── */
 .ant-switch {
   align-self: center;

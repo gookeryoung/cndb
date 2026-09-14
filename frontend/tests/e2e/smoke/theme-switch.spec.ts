@@ -136,3 +136,117 @@ test.describe("主题切换", () => {
     expect(stored).toBe("minimal");
   });
 });
+
+/* ─────────────── 视觉回归：主题切换后关键区域的颜色不自相矛盾 ───────────────
+ * 这组测试是 Issue 修复的回归保护：
+ *   - 深色模式下浅色主题卡片的文字不能发白（不能 inherit 外层浅色）
+ *   - 深色模式下表设置视图 Tab 的容器背景不能是白色
+ *   - 浅色模式下深色主题卡片的文字不能发黑
+ */
+test.describe("主题视觉回归（防颜色自相矛盾）", () => {
+  test.skip(!isAuthed(), "需要 chromium-authed 项目（已登录）");
+
+  test("深色模式下 — 浅色主题卡片文字颜色必须是深色（不能 inherit 外层白字）", async ({ page }) => {
+    await gotoApp(page);
+    await openSettings(page);
+
+    // 切到 GitHub 深色 — 外层 body 背景深、文字浅
+    await page.locator('[data-theme-card="github-dark"]').click();
+    await expect(page.locator("body")).toHaveClass(/theme-github-dark/);
+
+    const body = page.locator("body");
+    const bodyColor = await body.evaluate(el => getComputedStyle(el).color);
+
+    // 三个浅色主题卡片（modern / github-light / minimal）
+    // 它们各自的文字颜色必须跟 bodyColor 不同（bodyColor 是浅色，卡片上文字应该是深色）
+    const lightCardIds = ["modern", "github-light", "minimal"] as const;
+    for (const id of lightCardIds) {
+      const card = page.locator(`[data-theme-card="${id}"]`).first();
+      await expect(card).toBeVisible();
+
+      // 拿到卡片根元素的文字颜色
+      const cardColor = await card.evaluate(el => getComputedStyle(el).color);
+      // 断言：浅色卡片文字色 ≠ 外层深色 body 的浅色文字色
+      expect(cardColor).not.toBe(bodyColor);
+
+      // 卡片背景应该是浅色调（白 / 极浅灰），不是深色
+      const cardBg = await card.evaluate(el => getComputedStyle(el).backgroundColor);
+      // rgba(255,255,255,...) 或 rgb(255,255,255) 或 hsl(...) 白色系
+      expect(cardBg).toMatch(/(255,\s*255,\s*255|fafafa|250,\s*250,\s*250)/);
+    }
+  });
+
+  test("浅色模式下 — 深色主题卡片文字颜色必须是浅色（不能 inherit 外层黑字）", async ({ page }) => {
+    await gotoApp(page);
+    await openSettings(page);
+
+    // 切到现代（浅色）— 外层 body 背景浅、文字深
+    await page.locator('[data-theme-card="modern"]').click();
+    await expect(page.locator("body")).toHaveClass(/theme-modern/);
+
+    const body = page.locator("body");
+    const bodyColor = await body.evaluate(el => getComputedStyle(el).color);
+
+    // 只有一个深色主题卡片：github-dark
+    const darkCard = page.locator('[data-theme-card="github-dark"]').first();
+    await expect(darkCard).toBeVisible();
+
+    const cardColor = await darkCard.evaluate(el => getComputedStyle(el).color);
+    // 深色卡片文字 ≠ 外层浅色 body 的深色文字色
+    expect(cardColor).not.toBe(bodyColor);
+
+    // 卡片背景应该是深色系
+    const cardBg = await darkCard.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(cardBg).not.toMatch(/(255,\s*255,\s*255|fafafa)/);
+  });
+
+  test("深色模式下 — 表设置 Modal 视图 Tab 的容器背景不是白色", async ({ page }) => {
+    await gotoApp(page);
+
+    // 切到深色主题（通过设置 Modal）
+    await openSettings(page);
+    await page.locator('[data-theme-card="github-dark"]').click();
+    await expect(page.locator("body")).toHaveClass(/theme-github-dark/);
+    // 关闭设置 Modal
+    await page.keyboard.press("Escape");
+
+    // 进入 Grid → 打开表设置 Modal
+    // 先可能需要点进工作区 + 表
+    if (page.url().match(/\/w\/?$/)) {
+      // 在工作区列表页 — 点第一个卡片
+      await page.locator(".ant-card").first().click();
+      await page.waitForURL(/\/w\/\d+/);
+    }
+    // 在工作区/网格视图，找到表
+    await page.getByRole("menuitem", { name: /产品开发|客户/ }).first().click();
+    await page.waitForURL(/\/tables\/\d+/);
+
+    // 打开表设置 Modal
+    await page.locator("[data-testid='table-settings-btn']").click();
+    const modalBody = page.getByRole("dialog", { name: /表设置/ }).locator(".ant-modal-body");
+    await expect(modalBody).toBeVisible();
+
+    // 切到"视图" Tab
+    const viewsTab = page.locator(".ant-tabs-tab").filter({ hasText: "视图" }).first();
+    await viewsTab.click();
+    await expect(viewsTab).toHaveClass(/ant-tabs-tab-active/);
+    await expect(page.getByText(/共 \d+ 个视图/)).toBeVisible();
+
+    // 取视图列表容器（有边框的那个 div）的 computed 背景色
+    // 找到视图 Tab 下的有 border 1px 的子 div（我们修复的那个）
+    const viewListContainer = modalBody.locator("> div > div > div > div").filter({
+      hasCSS: { border: /1px solid/ },
+    }).first();
+
+    if (await viewListContainer.count() > 0) {
+      const bg = await viewListContainer.evaluate(el => getComputedStyle(el).backgroundColor);
+      // 深色模式下不应该是白色/极浅灰
+      expect(bg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+    }
+
+    // 额外：Modal 本身的背景也不能是白色
+    const modal = page.getByRole("dialog", { name: /表设置/ });
+    const modalBg = await modal.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(modalBg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+  });
+});
