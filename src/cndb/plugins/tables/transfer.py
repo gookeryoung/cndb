@@ -569,13 +569,28 @@ def ingest_from_api(
     body: Any = None,
     data_path: str | None = None,
     timeout: float = 15.0,
+    response_handler: str | Any = "json",
+    encoding: str = "utf-8",
+    query_interval: float | None = None,
 ) -> tuple[DataTable, list[int], list[dict[str, Any]]]:
     """一站式：抓 API → 推断列 → 建表 → 导入.
+
+    Args:
+        response_handler: "json" (默认) / "tencent_stock" / 自定义 callable
+        encoding: 响应编码，默认 utf-8（腾讯股票用 gbk）
+        query_interval: 查询间隔秒数，None 时用 DEFAULT_QUERY_INTERVAL
 
     Returns:
         (DataTable, 新行 id 列表, 列信息)
     """
-    from cndb.plugins.tables.api_fetch import FetchConfig, fetch_json
+    from cndb.plugins.tables.api_fetch import (
+        DEFAULT_QUERY_INTERVAL,
+        FetchConfig,
+        fetch_json,
+        validate_query_interval,
+    )
+
+    qi = validate_query_interval(query_interval) if query_interval is not None else DEFAULT_QUERY_INTERVAL
 
     rows = fetch_json(
         FetchConfig(
@@ -586,6 +601,9 @@ def ingest_from_api(
             body=body,
             timeout=timeout,
             data_path=data_path,
+            response_handler=response_handler,
+            encoding=encoding,
+            query_interval=qi,
         )
     )
 
