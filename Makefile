@@ -5,7 +5,7 @@ PACKAGE := cndb
 COV_THRESHOLD := 95
 PYTEST_JOBS := 8  # pytest-xdist 并行进程数；Windows 默认 8 避免句柄耗尽
 
-.PHONY: help sync frontend-build frontend-sync build b clean c test cov lint typecheck typecheck-ci check doc tox pub bump patch minor major push
+.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck typecheck-ci check doc tox pub bump patch minor major push e2e
 
 help: ## 显示帮助信息
 	@uv run python -c "import re,sys;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -15,6 +15,14 @@ sync: ## 安装开发依赖
 
 frontend-sync: ## 安装前端依赖（pnpm install）
 	cd frontend && pnpm install --frozen-lockfile
+
+frontend-lint: frontend-sync ## 前端 ESLint 检查
+	cd frontend && pnpm lint
+
+frontend-typecheck: frontend-sync ## 前端 TypeScript 类型检查
+	cd frontend && pnpm typecheck
+
+frontend-check: frontend-typecheck frontend-lint ## 前端门禁（typecheck + lint）
 
 frontend-build: frontend-sync ## 构建前端（Vite，产物输出到 src/cndb/static/）
 	cd frontend && pnpm build
@@ -35,6 +43,9 @@ cov: ## 运行测试并生成 HTML 覆盖率报告
 	uv run pytest --cov --cov-report=term --cov-fail-under=$(COV_THRESHOLD) --cov-report=html -n $(PYTEST_JOBS)
 	@uv run python -c "print('Coverage report: htmlcov/index.html')"
 
+e2e: frontend-sync ## 前端 E2E 测试（Playwright；需后端已启动）
+	cd frontend && pnpm e2e
+
 lint: ## 代码风格检查 (ruff)
 	uv run ruff check .
 	uv run ruff format --check .
@@ -45,7 +56,7 @@ typecheck: ## 类型检查 (pyrefly)
 typecheck-ci: ## 类型检查 (pyrefly, CI 平台 linux — 捕获跨平台问题)
 	uv run pyrefly check --python-platform linux
 
-check: lint typecheck typecheck-ci cov ## 运行全套门禁 (lint + typecheck + typecheck-ci + cov)
+check: lint typecheck typecheck-ci frontend-check cov ## 运行全套门禁 (lint + typecheck + typecheck-ci + frontend-check + cov)
 
 doc: ## 构建 Sphinx 文档
 	uv run sphinx-build -b html docs docs/_build/html

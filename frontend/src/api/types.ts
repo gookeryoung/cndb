@@ -112,6 +112,8 @@ export interface TableDetail {
   owner?: OwnerBrief | null
   /** 后端增强 —— 所属工作区精简摘要 */
   workspace?: WorkspaceBrief | null
+  /** 后端增强 —— 是否在回收站（软删） */
+  trashed?: boolean
 }
 export interface TableCreate { name: string; description?: string }
 export interface TableUpdate { name?: string; description?: string }
@@ -196,7 +198,7 @@ export interface View {
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
   default?: boolean; created_at?: string
 }
-export interface ViewDetail extends View { }
+export type ViewDetail = View
 export interface ViewCreate {
   name: string; view_type?: string
   filters?: Record<string, unknown> | Array<{ field_name: string; op: string; value?: unknown }> | null

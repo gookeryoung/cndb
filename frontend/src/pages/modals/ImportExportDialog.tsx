@@ -77,7 +77,7 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
   }, [polling, task, wid, tid, onImported])
 
   // 用 any 绕过 antd Upload 复杂类型（运行时行为正确）
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const beforeUpload = useCallback((file: any) => {
     const name: string = file?.name?.toLowerCase() || ''
     if (!ACCEPTED_EXT.some(ext => name.endsWith(ext))) {

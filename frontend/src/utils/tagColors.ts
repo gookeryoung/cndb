@@ -98,7 +98,7 @@ const _NUMBER_LEVEL_COLORS: Record<number, string> = { 1: 'red', 2: 'orange', 3:
 const _GRADE_LETTER_COLORS: Record<string, string> = { a: 'green', b: 'cyan', c: 'gold', d: 'orange', e: 'red', f: 'red' }
 
 function _normalizeText(text: string): string {
-  return text.trim().toLowerCase().replace(/[（），：　]/g, '')
+  return text.trim().toLowerCase().replace(/[（），：\u3000]/g, '')
 }
 
 function _extractNumber(text: string): number | null {

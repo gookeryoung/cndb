@@ -25,19 +25,18 @@ import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
   AppstoreOutlined, CopyOutlined, ImportOutlined, UploadOutlined, CloseOutlined,
-  CalendarOutlined, ShareAltOutlined, SafetyOutlined, SwapOutlined,
+  CalendarOutlined, ShareAltOutlined, SwapOutlined,
   SearchOutlined, EditOutlined, MenuOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { tableApi, recordApi, viewApi, permissionApi, userApi } from '@/api'
-import type { RowResponse, TableDetail, View, ViewCreate, TablePermission } from '@/api'
+import { tableApi, recordApi, viewApi, userApi } from '@/api'
+import type { RowResponse, TableDetail, View, ViewCreate } from '@/api'
 import KanbanView from './components/KanbanView'
 import CalendarView from './components/CalendarView'
 import GalleryView from './components/GalleryView'
 import RowDetailDrawer from './components/RowDetailDrawer'
 import ViewConfigDialog, { type FilterRule, type SortRule } from './components/ViewConfigDialog'
 import CreateEditViewForm from './components/CreateEditViewForm'
-import PermissionEditor from './components/PermissionEditor'
 import MoveTableForm from './components/MoveTableForm'
 import TableSettingsDialog from './components/TableSettingsDialog'
 import TableSettingsModal from '@/pages/modals/TableSettingsModal'
@@ -91,7 +90,6 @@ export default function GridPage() {
   const [importViewsOpen, setImportViewsOpen] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importFileContent, setImportFileContent] = useState('')
-  const [permOpen, setPermOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [tableSettingsOpen, setTableSettingsOpen] = useState(false)
   const [tableSettingsTab, setTableSettingsTab] = useState<'basic' | 'fields' | 'views' | 'permissions'>('basic')
@@ -268,9 +266,7 @@ export default function GridPage() {
   const userActions = table?.current_user_actions ?? []
   const hasAction = (a: string) => userActions.includes(a)
   const canEditSchema = hasAction('edit_schema')
-  const canEditViews = hasAction('edit_views')
   const canEditRecords = hasAction('edit_records')
-  const canComment = hasAction('comment')
 
   const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 } } = useQuery({
     queryKey: ['table-records', tableKey, mode, effectiveOffset, effectiveLimit, effectiveFilters, sortsParam, viewFilterLogic],
@@ -428,20 +424,6 @@ export default function GridPage() {
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, activeViewId])
-
-  // 权限查询（点开权限 Modal 时加载）
-  const { data: permData, refetch: refetchPerm } = useQuery<TablePermission>({
-    queryKey: ['table-perm', tableKey],
-    queryFn: () => permissionApi.get(wid!, tid!),
-    enabled: false,
-  })
-  const savePerm = useMutation({
-    mutationFn: (data: Partial<TablePermission>) => permissionApi.patch(wid!, tid!, data),
-    onSuccess: () => {
-      message.success('权限已更新')
-      setPermOpen(false)
-    },
-  })
 
   // 分享视图
   const shareView = useMutation({

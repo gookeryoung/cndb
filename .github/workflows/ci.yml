@@ -36,6 +36,34 @@ jobs:
       - name: Pyrefly check
         run: uv run pyrefly check
 
+  frontend-check:
+    name: Frontend Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: cd frontend && pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: cd frontend && pnpm typecheck
+
+      - name: ESLint
+        run: cd frontend && pnpm lint
+
   test:
     name: Test (Python 3.13 & 3.14)
     runs-on: ubuntu-latest

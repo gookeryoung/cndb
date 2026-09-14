@@ -419,7 +419,7 @@ function SelectOptionsEditor({ form, config }: { form: ReturnType<typeof Form.us
   // 当外部 config.options 变化（比如切换字段类型）时同步
   useEffect(() => {
     setOptions(normalizeOptionsFromConfig(config.options))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [config.options])
 
   /** 把当前编辑中的 options 同步到 form 的 config.options */
