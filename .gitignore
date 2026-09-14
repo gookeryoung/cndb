@@ -51,6 +51,6 @@ frontend/test-results/
 frontend/package-lock.json
 *.bak
 uploads
-/.trae-html-share-packages
+.trae-html-share-packages/*
 backup-*.tar.gz
 .pnpm-store
