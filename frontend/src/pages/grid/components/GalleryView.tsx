@@ -135,7 +135,7 @@ export default function GalleryView({ rows, fields, view, density, onRowClick }:
                       const v = formatFieldDisplayValue(fd, r[mf])
                       if (!v) return null
                       return (
-                        <span key={mf} style={{ fontSize: textSubFontSize - 1, color: '#6b7280', background: '#f3f4f6', padding: '1px 6px', borderRadius: 3 }}>{v}</span>
+                        <span key={mf} style={{ fontSize: textSubFontSize - 1, color: 'var(--cn-text-secondary)', background: 'var(--cn-bg-muted)', padding: '1px 6px', borderRadius: 3 }}>{v}</span>
                       )
                     })}
                   </div>

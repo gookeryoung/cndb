@@ -565,10 +565,10 @@ export default function KanbanView({
           style={{
             minWidth: colStyle.colMinWidth,
             maxWidth: colStyle.colMaxWidth,
-            background: '#f8fafc',
+            background: 'var(--cn-bg-subtle)',
             borderRadius: colStyle.borderRadius,
             padding: colStyle.colPadding,
-            border: '1px solid #e2e8f0',
+            border: '1px solid var(--cn-border)',
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
@@ -581,19 +581,19 @@ export default function KanbanView({
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: colStyle.colHeaderPadding,
-              borderBottom: '1px solid #e2e8f0',
+              borderBottom: '1px solid var(--cn-border)',
               marginBottom: colStyle.colHeaderMarginBottom,
             }}
           >
-            <span style={{ fontWeight: 600, fontSize: colStyle.colHeaderFontSize, color: '#1f2937' }}>
+            <span style={{ fontWeight: 600, fontSize: colStyle.colHeaderFontSize, color: 'var(--cn-text-primary)' }}>
               {col.title}
             </span>
             <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               <span
                 style={{
                   fontSize: colStyle.colHeaderCountFontSize,
-                  color: '#94a3b8',
-                  background: '#e2e8f0',
+                  color: 'var(--cn-text-muted)',
+                  background: 'var(--cn-bg-container)',
                   padding: '2px 8px',
                   borderRadius: 10,
                 }}
@@ -618,7 +618,7 @@ export default function KanbanView({
                 style={{
                   textAlign: 'center',
                   padding: colStyle.emptyPadding,
-                  color: '#94a3b8',
+                  color: 'var(--cn-text-muted)',
                   fontSize: colStyle.emptyFontSize,
                 }}
               >
