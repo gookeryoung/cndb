@@ -201,10 +201,10 @@ function eventBadgeStyle(event: CalendarEvent, ds: DensityStyle, lineHeight = 1.
     fontSize: ds.eventFontSize,
     padding: ds.eventPadding,
     borderRadius: ds.eventRadius,
-    background: event.color ? `${event.color}15` : '#e6f4ff',
-    color: event.color || '#1677ff',
+    background: event.color ? `${event.color}20` : 'var(--cn-bg-muted)',
+    color: event.color || 'var(--cn-brand-color)',
     cursor: 'pointer',
-    borderLeft: `3px solid ${event.color || '#1677ff'}`,
+    borderLeft: `3px solid ${event.color || 'var(--cn-brand-color)'}`,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -251,10 +251,10 @@ function YearView({
               key={idx}
               onClick={() => onSelectMonth(idx)}
               style={{
-                border: `1px solid ${isCurrentMonth ? '#1677ff' : 'var(--cn-border)'}`,
+                border: `1px solid ${isCurrentMonth ? 'var(--cn-brand-color)' : 'var(--cn-border)'}`,
                 borderRadius: ds.eventRadius + 2,
                 padding: ds.navPadding,
-                background: isCurrentMonth ? '#f0f5ff' : 'var(--cn-bg-container)',
+                background: isCurrentMonth ? 'var(--cn-bg-subtle)' : 'var(--cn-bg-container)',
                 cursor: 'pointer',
                 minHeight: ds.yearCellHeight,
                 transition: 'box-shadow 0.15s',
@@ -267,7 +267,7 @@ function YearView({
                 style={{
                   fontWeight: 600,
                   fontSize: ds.cellFontSize,
-                  color: isCurrentMonth ? '#1677ff' : 'var(--cn-text-primary)',
+                  color: isCurrentMonth ? 'var(--cn-brand-color)' : 'var(--cn-text-primary)',
                   marginBottom: 4,
                   textAlign: 'center',
                 }}
@@ -303,12 +303,12 @@ function YearView({
                       }}
                     >
                       {isToday && isCurrentMonthCell ? (
-                        <span style={{ background: '#1677ff', color: '#fff', borderRadius: '50%', padding: '0 2px' }}>{d.getDate()}</span>
+                        <span style={{ background: 'var(--cn-brand-color)', color: '#fff', borderRadius: '50%', padding: '0 2px' }}>{d.getDate()}</span>
                       ) : (
                         d.getDate()
                       )}
                       {hasEvent && isCurrentMonthCell && (
-                        <span style={{ position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, background: '#1677ff', borderRadius: '50%' }} />
+                        <span style={{ position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, background: 'var(--cn-brand-color)', borderRadius: '50%' }} />
                       )}
                     </div>
                   )
@@ -317,7 +317,7 @@ function YearView({
 
               {/* 事件数量 */}
               {mEvents.length > 0 && (
-                <div style={{ marginTop: 4, textAlign: 'center', fontSize: ds.cellFontSize - 4, color: '#1677ff' }}>
+                <div style={{ marginTop: 4, textAlign: 'center', fontSize: ds.cellFontSize - 4, color: 'var(--cn-brand-color)' }}>
                   {mEvents.length} 条
                 </div>
               )}
@@ -424,7 +424,7 @@ function MonthView({
                 {isToday ? (
                   <span
                     style={{
-                      background: '#1677ff',
+                      background: 'var(--cn-brand-color)',
                       color: '#fff',
                       borderRadius: '50%',
                       width: ds.cellFontSize + 8,
@@ -528,7 +528,7 @@ function WeekView({
                 style={{
                   padding: `${ds.navPadding}px 8px`,
                   borderBottom: '1px solid var(--cn-border)',
-                  background: isToday ? '#1677ff' : (isWeekend ? 'var(--cn-bg-muted)' : 'var(--cn-bg-subtle)'),
+                  background: isToday ? 'var(--cn-brand-color)' : (isWeekend ? 'var(--cn-bg-muted)' : 'var(--cn-bg-subtle)'),
                   color: isToday ? '#fff' : (isWeekend ? '#ff4d4f' : 'var(--cn-text-primary)'),
                   textAlign: 'center',
                 }}
@@ -669,7 +669,7 @@ export default function CalendarView({ rows, fields, view, density, onRowClick }
 
         {/* 标题 */}
         <div style={{ fontWeight: 600, fontSize: ds.navFontSize + 2, marginLeft: 8, minWidth: 160 }}>
-          <CalendarOutlined style={{ marginRight: 6, color: '#1677ff' }} />
+          <CalendarOutlined style={{ marginRight: 6, color: 'var(--cn-brand-color)' }} />
           {titleText}
         </div>
 
