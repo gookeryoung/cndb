@@ -543,7 +543,7 @@ export default function GridPage() {
               { key: 'share', icon: <ShareAltOutlined />, label: '分享视图', onClick: () => shareView.mutate() },
               { key: 'revoke', icon: <CloseOutlined />, label: '撤销分享', onClick: () => revokeShare.mutate() },
               { type: 'divider' },
-              { key: 'copy', icon: copyTable.isPending ? <ReloadOutlined spin /> : <CopyOutlined />, label: '复制表', onClick: () => copyTable.mutate() },
+              { key: 'copy', icon: <CopyOutlined />, label: '复制表', onClick: () => tableApi.copy(wid!, tid!).then(() => message.success('表已复制')).then(() => queryClient.invalidateQueries({ queryKey: ['table', tableKey] })) },
               { key: 'move', icon: <SwapOutlined />, label: '移动到其他工作区', onClick: () => setMoveOpen(true) },
               { type: 'divider' },
               {
