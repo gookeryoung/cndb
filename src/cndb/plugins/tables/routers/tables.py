@@ -55,16 +55,11 @@ def _fill_table_stats(db: Session, table: DataTable) -> TableResponse:
         .scalar()
         or 0
     )
-    view_count = (
-        db.query(func.count(DataView.id))
-        .filter(DataView.table_id == table.id)
-        .scalar()
-        or 0
-    )
+    view_count = db.query(func.count(DataView.id)).filter(DataView.table_id == table.id).scalar() or 0
     # 物理表 COUNT —— 表结构异常（比如 DDL 没建出来）时用 None
     record_count: int | None = None
     try:
-        result = db.execute(text(f'SELECT COUNT(*) FROM {table.db_table_name}'))
+        result = db.execute(text(f"SELECT COUNT(*) FROM {table.db_table_name}"))
         record_count = result.scalar() or 0
     except Exception:
         record_count = None
