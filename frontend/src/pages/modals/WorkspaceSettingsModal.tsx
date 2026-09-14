@@ -1,11 +1,26 @@
-/** 工作区设置对话框 — 基本设置 + 成员管理 + 统计信息（三 Tab）. */
+/** 工作区设置对话框 — 基本设置 + 成员管理 + 统计信息（三 Tab）.
+ *
+ * Props:
+ *  - initialTab: 指定打开时的 Tab（members / basic / stats），默认 basic
+ */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Modal, Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions, Table, Empty, Input as AntInput, message, Popconfirm } from 'antd'
-import { SettingOutlined, TeamOutlined, BarChartOutlined, PlusOutlined, UserDeleteOutlined, CrownOutlined, FileTextOutlined, EyeOutlined, ColumnWidthOutlined, UserOutlined } from '@ant-design/icons'
+import {
+  Modal, Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
+  Table, Empty, message, Popconfirm, Divider, Space, Input as AntInput,
+} from 'antd'
+import {
+  SettingOutlined, TeamOutlined, BarChartOutlined, PlusOutlined,
+  UserDeleteOutlined, CrownOutlined, FileTextOutlined, EyeOutlined,
+  ColumnWidthOutlined, UserOutlined, DeleteOutlined, SearchOutlined,
+} from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi } from '@/api'
-import type { WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceVisibility } from '@/api'
+import type {
+  WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceVisibility,
+  MemberUserBrief,
+} from '@/api'
+import { useAuth } from '@/auth/AuthContext'
 
 interface Props {
   open: boolean
@@ -13,6 +28,8 @@ interface Props {
   onClose: () => void
   /** 设置保存后通知工作区列表刷新 */
   onUpdated?: () => void
+  /** 指定打开时的 Tab，默认 basic */
+  initialTab?: 'basic' | 'members' | 'stats'
 }
 
 const ROLE_LABEL: Record<WorkspaceRole, string> = {
@@ -28,16 +45,34 @@ const VISIBILITY_LABEL: Record<WorkspaceVisibility, string> = {
   private: '私有（仅所有者和管理员可见）',
 }
 
-const ROLE_OPTIONS: Array<{ value: WorkspaceRole; label: string }> = (Object.keys(ROLE_LABEL) as WorkspaceRole[])
-  .filter(r => r !== 'owner')
-  .map(r => ({ value: r, label: ROLE_LABEL[r] }))
+/** 角色等级 — 数值越大权限越高 */
+const ROLE_RANK: Record<WorkspaceRole, number> = { owner: 3, admin: 2, editor: 1, viewer: 0 }
 
-export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }: Props) {
+/** 当前用户可分配给其他人的角色选项（不含比自己高的） */
+function getAssignableRoles(currentRole: WorkspaceRole | null): Array<{ value: WorkspaceRole; label: string }> {
+  if (!currentRole) return []
+  const myRank = ROLE_RANK[currentRole]
+  // owner 可以给所有人分配所有角色（含 owner 自己升级）
+  // admin 只能给 editor/viewer（不能动 owner）
+  return (Object.keys(ROLE_LABEL) as WorkspaceRole[])
+    .filter(r => ROLE_RANK[r] <= myRank && !(currentRole === 'admin' && r === 'owner'))
+    .map(r => ({ value: r, label: ROLE_LABEL[r] }))
+}
+
+/** 成员排序：owner → admin → editor → viewer */
+function sortMembersByRole(members: WorkspaceMember[]): WorkspaceMember[] {
+  return [...members].sort((a, b) => ROLE_RANK[b.role] - ROLE_RANK[a.role])
+}
+
+export default function WorkspaceSettingsModal({
+  open, wid, onClose, onUpdated, initialTab = 'basic',
+}: Props) {
   const queryClient = useQueryClient()
+  const { user: currentUser } = useAuth()
   const [form] = Form.useForm()
-  const [inviteName, setInviteName] = useState('')
   const [inviteRole, setInviteRole] = useState<WorkspaceRole>('editor')
-  const [activeTab, setActiveTab] = useState('basic')
+  const [activeTab, setActiveTab] = useState(initialTab)
+  const [candidatesSearch, setCandidatesSearch] = useState('')
 
   // 获取工作区详情
   const { data: detail } = useQuery<WorkspaceDetail>({
@@ -53,7 +88,25 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
     enabled: open && !!wid,
   })
 
-  // 打开时填充表单
+  // 候选用户（邀请时搜索）
+  const { data: candidatesData = [] as MemberUserBrief[], isLoading: candidatesLoading } = useQuery<MemberUserBrief[]>({
+    queryKey: ['workspace-member-candidates', wid, candidatesSearch],
+    queryFn: async () => {
+      const res = await workspaceApi.memberCandidates(wid, candidatesSearch)
+      return res.results
+    },
+    enabled: open && !!wid && !!detail?.current_user_role && ROLE_RANK[detail.current_user_role] >= ROLE_RANK.admin,
+    gcTime: 0,
+  })
+
+  // 打开时重置 Tab + 填充表单
+  useEffect(() => {
+    if (open) {
+      setActiveTab(initialTab)
+      setCandidatesSearch('')
+    }
+  }, [open, initialTab])
+
   useEffect(() => {
     if (detail && open) {
       form.setFieldsValue({
@@ -66,7 +119,22 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
     }
   }, [detail, open, form])
 
-  // 保存设置
+  // 当前用户角色
+  const myRole = detail?.current_user_role ?? null
+  const myRoleRank = myRole ? ROLE_RANK[myRole] : -1
+
+  // 权限判断
+  const canEditBasic = myRoleRank >= ROLE_RANK.admin   // admin + owner
+  const canManageMembers = myRoleRank >= ROLE_RANK.admin
+  const canDeleteWorkspace = myRole === 'owner'
+  const assignableRoles = useMemo(() => getAssignableRoles(myRole), [myRole])
+  const sortedMembers = useMemo(() => sortMembersByRole(members), [members])
+
+  const currentMemberId = members.find(
+    m => m.user?.username === currentUser?.username,
+  )?.id
+
+  // mutations
   const save = useMutation({
     mutationFn: (v: Record<string, unknown>) => {
       const tagsStr = (v.tags as string) || ''
@@ -86,19 +154,20 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
     },
   })
 
-  // 成员管理 mutations
   const invite = useMutation({
-    mutationFn: ({ username, role }: { username: string; role: string }) => workspaceApi.addMember(wid, username, role),
+    mutationFn: ({ username, role }: { username: string; role: string }) =>
+      workspaceApi.addMember(wid, username, role),
     onSuccess: () => {
       message.success('已邀请用户')
-      setInviteName('')
+      setCandidatesSearch('')
       queryClient.invalidateQueries({ queryKey: ['workspace-members', wid] })
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
     },
   })
 
   const changeRole = useMutation({
-    mutationFn: ({ memberId, role }: { memberId: number | string; role: string }) => workspaceApi.updateMemberRole(wid, memberId, role),
+    mutationFn: ({ memberId, role }: { memberId: number | string; role: string }) =>
+      workspaceApi.updateMemberRole(wid, memberId, role),
     onSuccess: () => {
       message.success('角色已更新')
       queryClient.invalidateQueries({ queryKey: ['workspace-members', wid] })
@@ -115,9 +184,15 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
     },
   })
 
-  const canEdit = detail?.visibility !== undefined  // 所有成员都能看设置，但编辑权限在按钮层控制
+  const removeWs = useMutation({
+    mutationFn: () => workspaceApi.remove(wid),
+    onSuccess: () => {
+      message.success('工作区已删除')
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+      onClose()
+    },
+  })
 
-  // 统计展示
   const statItems = useMemo(() => {
     if (!detail) return []
     return [
@@ -128,6 +203,139 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
     ]
   }, [detail])
 
+  // ─────────────────────────────────────────
+  // 成员管理 Tab 内部组件
+  const membersTabChildren = (
+    <div>
+      {/* 邀请区 — 搜索候选用户 */}
+      {canManageMembers && (
+        <div
+          style={{
+            display: 'flex', gap: 8, marginBottom: 16,
+            padding: 12, background: '#f8fafc', borderRadius: 8,
+          }}
+        >
+          <Select
+            showSearch
+            filterOption={false}
+            onSearch={setCandidatesSearch}
+            placeholder="搜索用户名或昵称..."
+            style={{ flex: 1 }}
+            options={candidatesData.map(u => ({
+              value: u.username,
+              label: (
+                <span>
+                  <strong>{u.username}</strong>
+                  {u.nickname && <span style={{ color: '#94a3b8', marginLeft: 8 }}>({u.nickname})</span>}
+                </span>
+              ),
+            }))}
+            notFoundContent={
+              candidatesSearch
+                ? (candidatesLoading ? '搜索中...' : '未找到候选用户')
+                : '请输入关键字搜索可邀请的用户'
+            }
+            loading={candidatesLoading}
+          />
+          <Select
+            value={inviteRole}
+            onChange={setInviteRole}
+            style={{ width: 140 }}
+            options={assignableRoles.filter(r => r.value !== 'owner')}  // 邀请不加 owner
+          />
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            disabled={!candidatesSearch}
+            loading={invite.isPending}
+            onClick={() => {
+              const selected = candidatesData.find(u => u.username === candidatesSearch)
+              if (selected) {
+                invite.mutate({ username: selected.username, role: inviteRole })
+              }
+            }}
+          >邀请</Button>
+        </div>
+      )}
+      {!canManageMembers && (
+        <div style={{ marginBottom: 16, padding: 12, background: '#fef3c7', borderRadius: 8, color: '#92400e' }}>
+          仅管理员及以上角色可管理成员
+        </div>
+      )}
+
+      {/* 成员列表 */}
+      <Table
+        rowKey="id"
+        size="small"
+        loading={membersLoading}
+        dataSource={sortedMembers}
+        locale={{ emptyText: <Empty description="暂无成员" /> }}
+        pagination={false}
+        columns={[
+          {
+            title: '用户',
+            render: (_, m) => {
+              const u = m.user
+              const isMe = currentMemberId === m.id
+              return (
+                <div>
+                  <div style={{ fontWeight: 500 }}>
+                    {u.username}
+                    {u.nickname && <span style={{ color: '#64748b', marginLeft: 8, fontSize: 13 }}>({u.nickname})</span>}
+                    {isMe && <Tag color="blue" style={{ marginLeft: 8 }}>我</Tag>}
+                  </div>
+                  {u.email && <div style={{ color: '#94a3b8', fontSize: 12 }}>{u.email}</div>}
+                </div>
+              )
+            },
+          },
+          {
+            title: '角色', width: 180,
+            render: (_, m) => {
+              const isOwner = m.role === 'owner'
+              if (isOwner) {
+                return <Tag color="gold" icon={<CrownOutlined />}>{ROLE_LABEL[m.role]}</Tag>
+              }
+              if (!canManageMembers) {
+                return <Tag>{ROLE_LABEL[m.role]}</Tag>
+              }
+              return (
+                <Select
+                  value={m.role}
+                  onChange={(v: string) => changeRole.mutate({ memberId: m.id, role: v })}
+                  size="small"
+                  style={{ width: 140 }}
+                  disabled={myRoleRank < ROLE_RANK.admin || (m.role === 'owner' && myRole !== 'owner')}
+                  options={assignableRoles}
+                />
+              )
+            },
+          },
+          {
+            title: '操作', width: 80,
+            render: (_, m) => {
+              if (m.role === 'owner') return null
+              if (!canManageMembers) return null
+              // 非 owner 不能移除 owner；admin 不能移除其他 admin（可由 owner 移除）
+              if (myRole === 'admin' && m.role === 'admin') return null
+              return (
+                <Popconfirm
+                  title={`移除「${m.user.username}」？`}
+                  description="该成员将从工作区中移出"
+                  onConfirm={() => kick.mutate(m.id)}
+                >
+                  <Button size="small" type="text" danger icon={<UserDeleteOutlined />} />
+                </Popconfirm>
+              )
+            },
+          },
+        ]}
+      />
+    </div>
+  )
+
+  // ─────────────────────────────────────────
+  // Tab 定义
   const tabs = [
     {
       key: 'basic',
@@ -138,6 +346,7 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
           layout="vertical"
           initialValues={{ visibility: 'member', tags: '', allow_edit: true }}
           onFinish={(v) => save.mutate(v)}
+          disabled={!canEditBasic}
         >
           <Form.Item
             name="name"
@@ -150,14 +359,17 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
             <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
           </Form.Item>
           <Form.Item name="visibility" label="公开性">
-            <Select options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({ value: v, label: l }))} />
+            <Select
+              options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({ value: v, label: l }))}
+              disabled={!canEditBasic}
+            />
           </Form.Item>
           <Form.Item name="tags" label="标签（逗号分隔）">
             <Input placeholder="例如：研发, 产品, 核心业务" />
           </Form.Item>
           <Form.Item name="allow_edit" label="编辑权限" valuePropName="checked">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Switch />
+              <Switch disabled={!canEditBasic} />
               <span style={{ color: '#64748b', fontSize: 13 }}>
                 {form.getFieldValue('allow_edit') ?? true
                   ? '已开启：允许编辑者和管理员修改数据'
@@ -165,87 +377,18 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
               </span>
             </div>
           </Form.Item>
+          {!canEditBasic && (
+            <div style={{ marginTop: 12, color: '#f59e0b', fontSize: 13 }}>
+              ℹ️ 您的角色（{ROLE_LABEL[myRole ?? 'viewer']}）仅能查看设置，无法修改
+            </div>
+          )}
         </Form>
       ),
     },
     {
       key: 'members',
       label: <span><TeamOutlined /> 成员管理</span>,
-      children: (
-        <div>
-          {/* 邀请区域 */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, padding: 12, background: '#f8fafc', borderRadius: 8 }}>
-            <AntInput
-              placeholder="输入用户名邀请"
-              value={inviteName}
-              onChange={e => setInviteName(e.target.value)}
-              style={{ flex: 1 }}
-            />
-            <Select
-              value={inviteRole}
-              onChange={setInviteRole}
-              style={{ width: 120 }}
-              options={ROLE_OPTIONS}
-            />
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              disabled={!inviteName.trim()}
-              loading={invite.isPending}
-              onClick={() => invite.mutate({ username: inviteName.trim(), role: inviteRole })}
-            >邀请</Button>
-          </div>
-
-          {/* 成员列表 */}
-          <Table
-            rowKey="id"
-            size="small"
-            loading={membersLoading}
-            dataSource={members}
-            locale={{ emptyText: <Empty description="暂无成员" /> }}
-            pagination={false}
-            columns={[
-              {
-                title: '用户',
-                render: (_, m) => (
-                  <div>
-                    <div style={{ fontWeight: 500 }}>{m.username}</div>
-                    {m.email && <div style={{ color: '#94a3b8', fontSize: 12 }}>{m.email}</div>}
-                  </div>
-                ),
-              },
-              {
-                title: '角色', width: 180,
-                render: (_, m) => {
-                  if (m.role === 'owner') {
-                    return <Tag color="gold" icon={<CrownOutlined />}>{ROLE_LABEL[m.role]}</Tag>
-                  }
-                  return (
-                    <Select
-                      value={m.role}
-                      onChange={(v: string) => changeRole.mutate({ memberId: m.id, role: v })}
-                      size="small"
-                      style={{ width: 140 }}
-                      options={[...ROLE_OPTIONS, { value: 'owner', label: ROLE_LABEL.owner, disabled: true }]}
-                    />
-                  )
-                },
-              },
-              {
-                title: '操作', width: 80,
-                render: (_, m) => m.role !== 'owner' ? (
-                  <Popconfirm
-                    title={`移除「${m.username}」？`}
-                    onConfirm={() => kick.mutate(m.id)}
-                  >
-                    <Button size="small" type="text" danger icon={<UserDeleteOutlined />} />
-                  </Popconfirm>
-                ) : null,
-              },
-            ]}
-          />
-        </div>
-      ),
+      children: membersTabChildren,
     },
     {
       key: 'stats',
@@ -274,15 +417,20 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
             ))}
           </div>
 
-          {/* 拥有者信息 */}
-          {detail?.owner && (
-            <Descriptions title="拥有者" size="small" bordered column={2} style={{ marginBottom: 16 }}>
-              <Descriptions.Item label="用户名">{detail.owner.username}</Descriptions.Item>
-              {detail.owner.nickname && (
-                <Descriptions.Item label="昵称">{detail.owner.nickname}</Descriptions.Item>
-              )}
-            </Descriptions>
-          )}
+          {/* 当前角色 + 拥有者 */}
+          <Descriptions title="角色信息" size="small" bordered column={2} style={{ marginBottom: 16 }}>
+            <Descriptions.Item label="您的角色">
+              {myRole
+                ? <Tag color={myRole === 'owner' ? 'gold' : myRole === 'admin' ? 'geekblue' : 'default'}>{ROLE_LABEL[myRole]}</Tag>
+                : <Tag>非成员</Tag>}
+            </Descriptions.Item>
+            {detail?.owner && (
+              <Descriptions.Item label="拥有者">
+                {detail.owner.username}
+                {detail.owner.nickname && <span style={{ color: '#94a3b8', marginLeft: 8 }}>({detail.owner.nickname})</span>}
+              </Descriptions.Item>
+            )}
+          </Descriptions>
 
           {/* 创建信息（只读） */}
           <Descriptions title="工作区信息（只读）" size="small" bordered column={2}>
@@ -302,10 +450,57 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
                 : <span style={{ color: '#94a3b8' }}>暂无标签</span>}
             </Descriptions.Item>
           </Descriptions>
+
+          {/* 危险操作区 — 仅 owner 可见 */}
+          {canDeleteWorkspace && (
+            <>
+              <Divider />
+              <div
+                style={{
+                  padding: 16, background: '#fef2f2', borderRadius: 8,
+                  border: '1px solid #fecaca',
+                }}
+              >
+                <div style={{ fontWeight: 600, color: '#dc2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <DeleteOutlined /> 危险操作
+                </div>
+                <div style={{ color: '#991b1b', fontSize: 13, marginBottom: 12 }}>
+                  删除工作区将永久删除所有数据表、数据行、视图和成员关系，无法恢复。
+                </div>
+                <Popconfirm
+                  title={`确认删除工作区「${detail?.name}」？`}
+                  description="此操作不可撤销，所有数据将永久丢失。"
+                  okText="我确定，删除"
+                  okType="danger"
+                  cancelText="取消"
+                  onConfirm={() => removeWs.mutate()}
+                >
+                  <Button danger icon={<DeleteOutlined />} loading={removeWs.isPending}>
+                    删除工作区
+                  </Button>
+                </Popconfirm>
+              </div>
+            </>
+          )}
         </div>
       ),
     },
   ]
+
+  // 底部按钮（根据权限动态）
+  const footer: React.ReactNode[] = [
+    <Button key="close" onClick={onClose}>关闭</Button>,
+  ]
+  if (canEditBasic) {
+    footer.push(
+      <Button
+        key="save"
+        type="primary"
+        onClick={() => form.submit()}
+        loading={save.isPending}
+      >保存设置</Button>,
+    )
+  }
 
   return (
     <Modal
@@ -315,10 +510,7 @@ export default function WorkspaceSettingsModal({ open, wid, onClose, onUpdated }
       width={720}
       destroyOnHidden
       confirmLoading={save.isPending}
-      footer={[
-        <Button key="close" onClick={onClose}>关闭</Button>,
-        canEdit && <Button key="save" type="primary" onClick={() => form.submit()} loading={save.isPending}>保存设置</Button>,
-      ].filter(Boolean)}
+      footer={footer}
     >
       <Tabs
         activeKey={activeTab}

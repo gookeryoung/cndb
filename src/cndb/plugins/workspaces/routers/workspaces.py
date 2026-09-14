@@ -66,13 +66,7 @@ def list_workspaces(
     from cndb.plugins.tables.models import DataTable
 
     stmt = (
-        select(
-            Workspace,
-            case(
-                (WorkspaceMember.pinned.is_(True), True),
-                else_=False,
-            ).label("pinned"),
-        )
+        select(Workspace, WorkspaceMember)
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
         .where(WorkspaceMember.user_id == current_user.id)
         .order_by(case((WorkspaceMember.pinned.is_(True), 0), else_=1), Workspace.id)
@@ -103,13 +97,14 @@ def list_workspaces(
     }
 
     result: list[WorkspaceWithPinnedResponse] = []
-    for ws, pinned in rows:
+    for ws, member in rows:
         d = {c.name: getattr(ws, c.name) for c in ws.__table__.columns}
-        d["pinned"] = bool(pinned)
+        d["pinned"] = bool(member.pinned)
         # 统计字段塞进 response 扩展（WorkspaceWithPinnedResponse 继承自 WorkspaceResponse，
         # 前端列表类型声明时用 Workspace & { table_count, member_count } 接收）
         d["table_count"] = table_counts.get(ws.id, 0)
         d["member_count"] = member_counts.get(ws.id, 0)
+        d["current_user_role"] = member.role.value if member.role else None
         result.append(WorkspaceWithPinnedResponse.model_validate(d))
     return result
 
@@ -213,6 +208,7 @@ def get_workspace(
             "nickname": owner_member.user.nickname,
         }
 
+    current_role = get_member_role(current_user, ws, db)
     d = {c.name: getattr(ws, c.name) for c in ws.__table__.columns}
     d.update(
         {
@@ -221,6 +217,7 @@ def get_workspace(
             "member_count": member_count,
             "view_count": view_count,
             "total_rows": total_rows,
+            "current_user_role": current_role.value if current_role else None,
         }
     )
     return WorkspaceDetailResponse.model_validate(d)
