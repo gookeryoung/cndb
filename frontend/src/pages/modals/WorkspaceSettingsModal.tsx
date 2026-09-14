@@ -7,12 +7,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Modal, Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
-  Table, Empty, message, Popconfirm, Divider, Space, Input as AntInput,
+  Table, Empty, message, Popconfirm, Divider,
 } from 'antd'
 import {
   SettingOutlined, TeamOutlined, BarChartOutlined, PlusOutlined,
   UserDeleteOutlined, CrownOutlined, FileTextOutlined, EyeOutlined,
-  ColumnWidthOutlined, UserOutlined, DeleteOutlined, SearchOutlined,
+  ColumnWidthOutlined, UserOutlined, DeleteOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi } from '@/api'
@@ -514,7 +514,7 @@ export default function WorkspaceSettingsModal({
     >
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
+        onChange={(k) => setActiveTab(k as typeof initialTab)}
         items={tabs}
       />
     </Modal>

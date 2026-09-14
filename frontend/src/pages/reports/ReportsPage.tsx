@@ -367,7 +367,7 @@ function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting
     if (open && target) {
       const initial: Record<string, unknown> = {}
       target.parameters.forEach(p => { if (p.default !== undefined) initial[p.name] = p.default })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       form.setFieldsValue(initial as any)
     }
   }, [open, target])  // eslint-disable-line react-hooks/exhaustive-deps

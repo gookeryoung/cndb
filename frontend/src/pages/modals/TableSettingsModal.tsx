@@ -9,7 +9,7 @@ import {
   Modal, Tabs, Form, Input, Button, Descriptions, Tag, Popconfirm, message, Space, Empty,
 } from 'antd'
 import {
-  InfoCircleOutlined, ColumnsOutlined, AppstoreOutlined, SafetyOutlined,
+  InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
   SaveOutlined, EditOutlined, PlusOutlined, DeleteOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -242,7 +242,7 @@ export default function TableSettingsModal({
           // ────────────── Tab 2: 字段 ──────────────
           {
             key: 'fields',
-            label: <span><ColumnsOutlined /> 字段</span>,
+            label: <span><UnorderedListOutlined /> 字段</span>,
             children: (
               <Suspense fallback={<div style={{ padding: 48, textAlign: 'center' }}>加载字段管理器...</div>}>
                 <FieldManager

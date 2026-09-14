@@ -233,7 +233,7 @@ export default function TablesList() {
             <Empty
               description={
                 <span>
-                  还没有表 —— 点击右侧 <Text strong>"新建表"</Text> 或 <Text strong>"CSV 建表"</Text> 开始
+                  还没有表 —— 点击右侧 <Text strong>&quot;新建表&quot;</Text> 或 <Text strong>&quot;CSV 建表&quot;</Text> 开始
                 </span>
               }
             />
