@@ -205,10 +205,16 @@ def get_table(
     base = _fill_table_stats(db, dt)
 
     # 2) 字段（复用 relationship，已自动加载）
-    active_fields = sorted([f for f in dt.fields if not f.trashed], key=lambda f: (f.order, f.id))
+    def _field_sort_key(f: DataField) -> tuple[int, int]:
+        return (f.order, f.id)
+
+    active_fields = sorted([f for f in dt.fields if not f.trashed], key=_field_sort_key)
 
     # 3) 视图精简摘要
-    views = sorted(dt.views, key=lambda v: (v.order, v.id))
+    def _view_sort_key(v: DataView) -> tuple[int, int]:
+        return (v.order, v.id)
+
+    views = sorted(dt.views, key=_view_sort_key)
     view_briefs = [ViewBrief.model_validate(v, from_attributes=True) for v in views]
 
     # 4) 工作区 + 当前用户角色 + owner（复用 _check_table_permission 已查过的 ws）
