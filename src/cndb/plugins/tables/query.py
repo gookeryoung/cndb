@@ -86,7 +86,7 @@ def _compile_link_condition(
     return and_(*[exists(exists_base.where(link_table.c.target_row_id == int(i))) for i in ids])
 
 
-def _build_condition(  # noqa: PLR0911, PLR0912
+def _build_condition(
     table: DataTable,
     sa_table: Table,
     field_name: str,
@@ -176,7 +176,7 @@ def _build_condition(  # noqa: PLR0911, PLR0912
 # ── 入口函数 ─────────────────────────────────────────
 
 
-def _normalize_filters(  # noqa: PLR0912
+def _normalize_filters(
     table: DataTable,
     filters: Any,
 ) -> list[dict[str, Any]]:
@@ -241,7 +241,7 @@ def _normalize_filters(  # noqa: PLR0912
     return []
 
 
-def _compile_filter_item(  # noqa: PLR0911 - filter item 分支多属正常
+def _compile_filter_item(
     table: DataTable,
     sa_table: Table,
     flt: dict[str, Any],
