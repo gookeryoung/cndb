@@ -450,8 +450,20 @@ export default function GridPage() {
     onSuccess: () => {
       message.success('表已移动')
       setMoveOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
     },
+  })
+
+  // 复制表
+  const copyTable = useMutation({
+    mutationFn: () => tableApi.copy(wid!, tid!),
+    onSuccess: (t) => {
+      message.success(`已复制为 "${t.name}"`)
+      queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
+      if (t.id) navigate(`/w/${wid}/tables/${t.id}`)
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '复制失败'),
   })
 
   const columns = buildColumns(
@@ -531,7 +543,7 @@ export default function GridPage() {
               { key: 'share', icon: <ShareAltOutlined />, label: '分享视图', onClick: () => shareView.mutate() },
               { key: 'revoke', icon: <CloseOutlined />, label: '撤销分享', onClick: () => revokeShare.mutate() },
               { type: 'divider' },
-              { key: 'copy', icon: <CopyOutlined />, label: '复制表', onClick: () => tableApi.copy(wid!, tid!).then(() => message.success('表已复制')).then(() => queryClient.invalidateQueries({ queryKey: ['table', tableKey] })) },
+              { key: 'copy', icon: <CopyOutlined />, label: '复制表', loading: copyTable.isPending, onClick: () => copyTable.mutate() },
               { key: 'move', icon: <SwapOutlined />, label: '移动到其他工作区', onClick: () => setMoveOpen(true) },
               { type: 'divider' },
               {
