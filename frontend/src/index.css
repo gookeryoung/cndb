@@ -229,6 +229,38 @@ body.theme-dark [style*="background:#f1f5f9"] {
   background: var(--cn-bg-subtle) !important;
 }
 
+/* 危险/警告区域 — 浅色底 */
+body.theme-github-dark [style*="background: #fef2f2"],
+body.theme-dark [style*="background: #fef2f2"],
+body.theme-github-dark [style*="background:#fef2f2"],
+body.theme-dark [style*="background:#fef2f2"],
+body.theme-github-dark [style*="background: #fff2f0"],
+body.theme-dark [style*="background: #fff2f0"],
+body.theme-github-dark [style*="background:#fff2f0"],
+body.theme-dark [style*="background:#fff2f0"],
+body.theme-github-dark [style*="background: #fef3c7"],
+body.theme-dark [style*="background: #fef3c7"],
+body.theme-github-dark [style*="background:#fef3c7"],
+body.theme-dark [style*="background:#fef3c7"],
+body.theme-github-dark [style*="background: #fffbe6"],
+body.theme-dark [style*="background: #fffbe6"],
+body.theme-github-dark [style*="background:#fffbe6"],
+body.theme-dark [style*="background:#fffbe6"] {
+  background: var(--cn-bg-danger-subtle) !important;
+}
+
+/* 危险区域边框 */
+body.theme-github-dark [style*="border: 1px solid #fecaca"],
+body.theme-dark [style*="border: 1px solid #fecaca"],
+body.theme-github-dark [style*="border:1px solid #fecaca"],
+body.theme-dark [style*="border:1px solid #fecaca"],
+body.theme-github-dark [style*="border: 1px solid #ffccc7"],
+body.theme-dark [style*="border: 1px solid #ffccc7"],
+body.theme-github-dark [style*="border:1px solid #ffccc7"],
+body.theme-dark [style*="border:1px solid #ffccc7"] {
+  border-color: #67242a !important;
+}
+
 /* 浅灰实线边框 */
 body.theme-github-dark [style*="border: 1px solid #e5e7eb"],
 body.theme-dark [style*="border: 1px solid #e5e7eb"],

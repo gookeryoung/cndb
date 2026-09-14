@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { Button, Modal, Form, Input, Table, Typography, Empty, message, Space, Tag, Upload, Dropdown } from 'antd'
-import { PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined, UploadOutlined } from '@ant-design/icons'
+import { PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined, UploadOutlined, SettingOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { tableApi, workspaceApi, importApi } from '@/api'
@@ -196,6 +196,13 @@ export default function TablesList() {
           </Text>
         </div>
         <Space>
+          <Button
+            icon={<SettingOutlined />}
+            data-testid="workspace-settings-link"
+            onClick={() => navigate(`/w/${wid}/settings`)}
+          >
+            工作区设置
+          </Button>
           <Upload
             accept=".csv"
             showUploadList={false}

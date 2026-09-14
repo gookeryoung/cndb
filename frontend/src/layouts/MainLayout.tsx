@@ -6,7 +6,7 @@ import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
   DeleteOutlined, FileTextOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
-  TeamOutlined, SettingOutlined, ApartmentOutlined,
+  SettingOutlined, ApartmentOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
@@ -15,7 +15,6 @@ import { useResponsive } from '@/hooks/useResponsive'
 
 // Modal 组件 lazy import：点击打开时才加载
 const SettingsModal = lazy(() => import('@/pages/modals/SettingsModal'))
-const WorkspaceSettingsModal = lazy(() => import('@/pages/modals/WorkspaceSettingsModal'))
 
 function ModalFallback() {
   return null
@@ -32,7 +31,6 @@ export default function MainLayout() {
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [membersOpen, setMembersOpen] = useState(false)
 
   const { data: workspaces = [], isLoading: wsLoading } = useQuery({
     queryKey: ['workspaces'],
@@ -136,11 +134,13 @@ export default function MainLayout() {
             size="small" icon={<FileTextOutlined />}
             onClick={() => navigate(`/w/${wid}/reports`)}
           >{!isMobile && '报表'}</Button>
-          <Tooltip title="成员管理">
+          <Tooltip title="工作区设置">
             <Button
-              type="text" size="small" icon={<TeamOutlined />}
-              onClick={() => setMembersOpen(true)}
-            />
+              type={location.includes('/settings') ? 'primary' : 'text'}
+              size="small" icon={<SettingOutlined />}
+              data-testid="workspace-settings-nav"
+              onClick={() => navigate(`/w/${wid}/settings`)}
+            >{!isMobile && '设置'}</Button>
           </Tooltip>
         </Space>
 
@@ -194,12 +194,6 @@ export default function MainLayout() {
 
       <Suspense fallback={<ModalFallback />}>
         <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-        <WorkspaceSettingsModal
-          open={membersOpen}
-          wid={wid ?? ''}
-          initialTab="members"
-          onClose={() => setMembersOpen(false)}
-        />
       </Suspense>
     </Layout>
   )
