@@ -35,10 +35,27 @@ class TableResponse(BaseModel):
     trashed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    # 可选统计字段 —— list_tables / get_table 按需填充
+    field_count: int | None = None
+    record_count: int | None = None
+    view_count: int | None = None
+
+
+class ViewBrief(BaseModel):
+    """视图精简摘要（嵌入 TableDetailResponse 用）."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    view_type: str
+    is_default: bool
 
 
 class TableDetailResponse(TableResponse):
     fields: list[FieldResponse] = []
+    views: list[ViewBrief] = []
+    # 当前用户在该表上可执行的动作（由 check_action 批量计算）
+    current_user_actions: list[str] = []
 
 
 # ── DataField schemas ────────────────────────────────

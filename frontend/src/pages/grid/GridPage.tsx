@@ -26,7 +26,7 @@ import {
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
   AppstoreOutlined, CopyOutlined, ImportOutlined, UploadOutlined, CloseOutlined,
   CalendarOutlined, ShareAltOutlined, SafetyOutlined, SwapOutlined,
-  SearchOutlined, EditOutlined,
+  SearchOutlined, EditOutlined, MenuOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tableApi, recordApi, viewApi, permissionApi, userApi } from '@/api'
@@ -40,6 +40,7 @@ import CreateEditViewForm from './components/CreateEditViewForm'
 import PermissionEditor from './components/PermissionEditor'
 import MoveTableForm from './components/MoveTableForm'
 import TableSettingsDialog from './components/TableSettingsDialog'
+import TableSettingsModal from '@/pages/modals/TableSettingsModal'
 import { buildColumns } from './components/buildColumns'
 import { useTableSettings } from '@/theme/TableSettingsProvider'
 import { densityToSize } from '@/theme/tableSettings'
@@ -92,6 +93,8 @@ export default function GridPage() {
   const [importFileContent, setImportFileContent] = useState('')
   const [permOpen, setPermOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
+  const [tableSettingsOpen, setTableSettingsOpen] = useState(false)
+  const [tableSettingsTab, setTableSettingsTab] = useState<'basic' | 'fields' | 'views' | 'permissions'>('basic')
   const [activeViewId, setActiveViewId] = useState<number | string | null>(null)
   const [viewFilters, setViewFilters] = useState<FilterRule[]>([])
   const [viewSortings, setViewSortings] = useState<SortRule[]>([])
@@ -260,6 +263,14 @@ export default function GridPage() {
   const VIEW_FETCH_ALL_LIMIT = 5000
   const effectiveLimit = mode === 'grid' ? limit : VIEW_FETCH_ALL_LIMIT
   const effectiveOffset = mode === 'grid' ? offset : 0
+
+  // 当前用户在本表的权限（来自后端 current_user_actions）
+  const userActions = table?.current_user_actions ?? []
+  const hasAction = (a: string) => userActions.includes(a)
+  const canEditSchema = hasAction('edit_schema')
+  const canEditViews = hasAction('edit_views')
+  const canEditRecords = hasAction('edit_records')
+  const canComment = hasAction('comment')
 
   const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 } } = useQuery({
     queryKey: ['table-records', tableKey, mode, effectiveOffset, effectiveLimit, effectiveFilters, sortsParam, viewFilterLogic],
@@ -515,24 +526,50 @@ export default function GridPage() {
       <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', background: '#fff', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)}>返回</Button>
         <Text strong style={{ fontSize: 16 }}>{table?.name || '...'}</Text>
+        {/* 统计小徽标（来自后端增强字段） */}
+        {table?.record_count != null && table.record_count > 0 && (
+          <Tag color="blue" style={{ marginLeft: 4 }}>{table.record_count} 条记录</Tag>
+        )}
         <div style={{ flex: 1 }} />
         <Space>
-          <Tooltip title="字段管理"><Button icon={<SettingOutlined />} onClick={() => setFieldMgrOpen(true)} /></Tooltip>
+          <Tooltip title="表设置（字段/视图/权限）">
+            <Button
+              icon={<MenuOutlined />}
+              onClick={() => setTableSettingsOpen(true)}
+            >
+              表设置
+            </Button>
+          </Tooltip>
           <Button icon={<ImportOutlined />} onClick={() => setImportExportOpen(true)}>导入/导出</Button>
           <Dropdown menu={{
             items: [
               { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
-              { key: 'perm', icon: <SafetyOutlined />, label: '权限设置', onClick: () => { refetchPerm(); setPermOpen(true) } },
+              { type: 'divider' },
               { key: 'share', icon: <ShareAltOutlined />, label: '分享视图', onClick: () => shareView.mutate() },
               { key: 'revoke', icon: <CloseOutlined />, label: '撤销分享', onClick: () => revokeShare.mutate() },
               { type: 'divider' },
               { key: 'copy', icon: <CopyOutlined />, label: '复制表', onClick: () => tableApi.copy(wid!, tid!).then(() => message.success('表已复制')).then(() => queryClient.invalidateQueries({ queryKey: ['table', tableKey] })) },
               { key: 'move', icon: <SwapOutlined />, label: '移动到其他工作区', onClick: () => setMoveOpen(true) },
               { type: 'divider' },
-              { key: 'delete', icon: <DeleteOutlined />, danger: true, label: '删除表', disabled: true },
+              {
+                key: 'delete', icon: <DeleteOutlined />, danger: true, label: '删除表',
+                disabled: !canEditSchema,
+                onClick: () => Modal.confirm({
+                  title: `删除表 "${table?.name}" ？`,
+                  content: '表内所有记录和字段将被永久移除。此操作不可恢复。',
+                  okText: '删除',
+                  okType: 'danger',
+                  cancelText: '取消',
+                  onOk: () => tableApi.remove(wid!, tid!).then(() => {
+                    message.success('表已删除')
+                    queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
+                    navigate(`/w/${wid}`)
+                  }),
+                }),
+              },
             ]
           }}><Button icon={<MoreOutlined />} /></Dropdown>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => quickAdd.mutate()}>新增行</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => quickAdd.mutate()} disabled={!canEditRecords}>新增行</Button>
         </Space>
       </div>
 
@@ -836,27 +873,7 @@ export default function GridPage() {
         )}
       </Modal>
 
-      {/* 权限设置 Modal */}
-      <Modal
-        title="表权限设置"
-        open={permOpen}
-        onCancel={() => setPermOpen(false)}
-        confirmLoading={savePerm.isPending}
-        okText="保存"
-        onOk={() => {
-          const el = document.querySelector<HTMLInputElement>('input[data-perm-comment]')
-          const hiddenInputs = document.querySelectorAll<HTMLInputElement>('input[data-perm-hidden]:checked')
-          const hiddenFields = Array.from(hiddenInputs).map(i => i.value)
-          savePerm.mutate({
-            hidden_fields: hiddenFields,
-            row_filters: null,
-            comment: el?.value ?? undefined,
-          })
-        }}
-      >
-        <PermissionEditor fields={table?.fields || []} data={permData} />
-      </Modal>
-
+      {/* 权限设置 Modal — 已收敛到 TableSettingsModal 的权限 Tab，仅作为 fallback 保留（不暴露按钮） */}
       {/* 移动表 Modal */}
       <Modal
         title="移动表到其他工作区"
@@ -877,6 +894,20 @@ export default function GridPage() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onAfterSave={() => { setLimit(settings.defaultPageSize); setOffset(0) }}
+      />
+
+      {/* 表设置统一 Modal — 新增 */}
+      <TableSettingsModal
+        open={tableSettingsOpen}
+        wid={wid!}
+        tid={tid!}
+        initialTab={tableSettingsTab}
+        onClose={() => { setTableSettingsOpen(false); setTableSettingsTab('basic') }}
+        onUpdated={() => {
+          queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+          queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+          queryClient.invalidateQueries({ queryKey: ['table-settings', tableKey] })
+        }}
       />
     </div>
   )
