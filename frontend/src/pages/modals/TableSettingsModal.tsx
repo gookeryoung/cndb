@@ -357,10 +357,15 @@ export default function TableSettingsModal({
                       const hiddenInputs = document.querySelectorAll<HTMLInputElement>('input[data-perm-hidden]:checked')
                       const hiddenFields = Array.from(hiddenInputs).map(i => i.value)
                       const el = document.querySelector<HTMLInputElement>('input[data-perm-comment]')
+                      // hidden_fields 在后端是按角色分桶的 dict，当前 UI 是扁平 checkbox，
+                      // 所以把所有勾选字段存到 admin 角色桶里（只有 admin 能保存权限）
+                      const payloadHidden: Record<string, string[]> = hiddenFields.length > 0
+                        ? { admin: hiddenFields }
+                        : {}
                       savePerm.mutate({
-                        hidden_fields: hiddenFields,
+                        hidden_fields: payloadHidden,
                         row_filters: null,
-                        comment: el?.value ?? undefined,
+                        comment_role: el?.value ?? undefined,
                       })
                     }}
                   >
