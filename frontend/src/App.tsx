@@ -21,6 +21,7 @@ const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const WorkflowListPage = lazy(() => import('@/pages/workflow/WorkflowListPage'))
 const WorkflowEditorPage = lazy(() => import('@/pages/workflow/WorkflowEditorPage'))
+const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
 
 function PageFallback() {
   return (
@@ -42,6 +43,9 @@ function AuthenticatedApp() {
         <Route path="w" element={<WorkspaceList />} />
         <Route path="w/:wid" element={<Navigate to="tables" replace />} />
         <Route path="w/:wid/tables" element={<TablesList />} />
+        <Route path="w/:wid/settings" element={
+          <Suspense fallback={<PageFallback />}><WorkspaceSettingsPage /></Suspense>
+        } />
         <Route path="w/:wid/tables/:tid" element={
           <Suspense fallback={<PageFallback />}><GridPage /></Suspense>
         } />
