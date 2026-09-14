@@ -12,8 +12,6 @@ const { Title, Text } = Typography
 const FORMAT_OPTIONS = [
   { value: 'docx', label: 'Word (.docx)' },
   { value: 'pdf', label: 'PDF (.pdf)' },
-  { value: 'html', label: 'HTML (.html)' },
-  { value: 'csv', label: 'CSV (.csv)' },
   { value: 'xlsx', label: 'Excel (.xlsx)' },
 ]
 const PARAM_TYPES = [
@@ -218,7 +216,7 @@ export default function ReportsPage() {
             <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)} />
             <Title level={3} style={{ margin: 0 }}>报表模板</Title>
           </Space>
-          <Text type="secondary">基于 Jinja2 的轻量级报告模板，支持 Word/PDF/HTML/CSV/Excel 输出</Text>
+          <Text type="secondary">基于 Jinja2 的轻量级报告模板，支持 Word/PDF/Excel 输出</Text>
         </div>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建模板</Button>
       </div>
