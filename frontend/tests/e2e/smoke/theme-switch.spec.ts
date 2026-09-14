@@ -250,3 +250,129 @@ test.describe("主题视觉回归（防颜色自相矛盾）", () => {
     expect(modalBg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
   });
 });
+
+/* ─────────────── 视觉回归：深色模式下看板 / 画廊 / 日历视图背景 ───────────────
+ * 这组测试验证本 Issue 的核心修复：
+ *   - 深色模式下看板列容器背景不能是白色（KanbanView.tsx 的硬编码 #f8fafc → var(--cn-bg-subtle)）
+ *   - 深色模式下看板卡片的计数徽章背景不能是白色
+ *   - 深色模式下日历视图日期格子背景层级合理（非当前月份不接近纯黑）
+ */
+test.describe("深色模式下看板/日历视图背景回归", () => {
+  test.skip(!isAuthed(), "需要 chromium-authed 项目（已登录）");
+
+  /** 辅助：进入指定工作区的表页面 */
+  async function gotoWorkspaceTable(page: Parameters<typeof test["fn"]>[0]["page"]) {
+    if (page.url().match(/\/w\/?$/)) {
+      // 在工作区列表页 — 点第一个卡片
+      await page.locator(".ant-card").first().click();
+      await page.waitForURL(/\/w\/\d+/);
+    }
+    // 在工作区/网格视图，找到表
+    await page.getByRole("menuitem", { name: /产品开发|客户/ }).first().click();
+    await page.waitForURL(/\/tables\/\d+/);
+    await page.waitForTimeout(800);
+  }
+
+  /** 辅助：切换到深色主题（如未切换） */
+  async function ensureDarkTheme(page: Parameters<typeof test["fn"]>[0]["page"]) {
+    const body = page.locator("body");
+    if (!(await body.evaluate(el => el.classList.contains("theme-github-dark")))) {
+      await openSettings(page);
+      await page.locator('[data-theme-card="github-dark"]').click();
+      await expect(body).toHaveClass(/theme-github-dark/);
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
+    }
+  }
+
+  test("深色模式 — 看板列容器背景不是白色", async ({ page }) => {
+    await gotoApp(page);
+    await ensureDarkTheme(page);
+    await gotoWorkspaceTable(page);
+
+    // 切到看板视图（通过 Segmented 或 URL）
+    const kanbanLabel = page.locator(".ant-segmented-item", { hasText: /看板/ }).first();
+    if (await kanbanLabel.isVisible()) {
+      await kanbanLabel.click();
+      await page.waitForTimeout(1000);
+    }
+
+    // 定位看板列容器 — KanbanView 的列根 div（有 flex-direction: column 且有背景）
+    const kanbanRoot = page.locator(
+      "div[style*='overflow-x'][style*='display: flex']",
+    ).first();
+    await expect(kanbanRoot).toBeVisible({ timeout: 8000 });
+
+    // 看板列容器（flex-direction: column 的直接子元素）
+    const columns = kanbanRoot.locator(":scope > div[style*='flex-direction: column']");
+    const colCount = await columns.count();
+    expect(colCount).toBeGreaterThanOrEqual(1);
+
+    // 断言第一列的 computed 背景色不是白色
+    const firstCol = columns.first();
+    const colBg = await firstCol.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(colBg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+
+    // 看板卡片的计数徽章（border-radius: 10px）背景也不是白色
+    const countBadge = firstCol.locator("span[style*='border-radius: 10px']").first();
+    if (await countBadge.isVisible()) {
+      const badgeBg = await countBadge.evaluate(el => getComputedStyle(el).backgroundColor);
+      expect(badgeBg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+    }
+
+    // 看板卡片本身的背景也不是白色
+    const card = firstCol.locator(
+      "div[style*='cursor: pointer'][style*='border']",
+    ).first();
+    if (await card.isVisible()) {
+      const cardBg = await card.evaluate(el => getComputedStyle(el).backgroundColor);
+      expect(cardBg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+    }
+  });
+
+  test("深色模式 — 日历视图非当前月份格子背景不是近纯黑", async ({ page }) => {
+    await gotoApp(page);
+    await ensureDarkTheme(page);
+    await gotoWorkspaceTable(page);
+
+    // 切到日历视图（找到带日历 icon 的按钮）
+    const calBtn = page
+      .locator("button")
+      .filter({ has: page.locator(".anticon-calendar") })
+      .first();
+    await expect(calBtn).toBeVisible({ timeout: 5000 });
+    await calBtn.click();
+    await page.waitForTimeout(1500);
+
+    // 日历月视图根容器 — 7列 grid + border
+    const monthRoot = page.locator(
+      "div[style*='grid-template-columns: repeat(7, 1fr)'][style*='border: 1px solid']",
+    ).first();
+    const hasMonthView = await monthRoot.isVisible();
+
+    if (hasMonthView) {
+      // 找到一个非当前月份的日期格子 — 通过判断 color: var(--cn-text-disabled) 来识别
+      const allCells = monthRoot.locator(":scope > div[style*='min-height']");
+      const cellCount = await allCells.count();
+      expect(cellCount).toBeGreaterThan(0);
+
+      // 检查前 10 个格子的背景色，确保没有接近纯黑 (#010409)
+      for (let i = 0; i < Math.min(10, cellCount); i++) {
+        const cell = allCells.nth(i);
+        const bg = await cell.evaluate(el => getComputedStyle(el).backgroundColor);
+        // 断言：不能是 rgb(1, 4, 9) 或 rgb(0, 0, 0) 这种近纯黑
+        expect(bg).not.toMatch(/rgba?\(\s*[0-9]\s*,\s*[0-9]\s*,\s*[0-9]/);
+        expect(bg).not.toMatch(/rgba?\(\s*0\s*,\s*0\s*,\s*0/);
+      }
+    } else {
+      // 如果没有月视图（可能是空状态），检查日历导航栏背景也不是白色
+      const navBar = page.locator(
+        "div[style*='border-bottom'][style*='background']",
+      ).first();
+      if (await navBar.isVisible()) {
+        const navBg = await navBar.evaluate(el => getComputedStyle(el).backgroundColor);
+        expect(navBg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+      }
+    }
+  });
+});
