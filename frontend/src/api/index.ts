@@ -24,9 +24,9 @@ import api from './client'
 import type {
   LoginRequest, RegisterRequest,
   UserResponse,
-  WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember, MemberUserBrief,
+  WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember,
   WorkspaceExportData,
-  TableCreate, TableUpdate, TableSummary, TableDetail, ViewBrief,
+  TableCreate, TableUpdate, TableSummary, TableDetail,
   RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams,
   FieldCreate, FieldUpdate, Field, FieldType,
   ViewCreate, View, ViewUpdate,

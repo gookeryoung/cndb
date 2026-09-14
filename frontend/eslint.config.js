@@ -49,6 +49,8 @@ export default tseslint.config(
     plugins: { 'react-refresh': reactRefresh },
     rules: {
       ...reactRefresh.configs.vite.rules,
+      // 关闭：允许 Provider 文件同时导出 Context 和工具函数
+      'react-refresh/only-export-components': 'off',
     },
   },
 
@@ -83,6 +85,15 @@ export default tseslint.config(
       '@typescript-eslint/no-require-imports': 'off',
       // 允许 TS 注释
       '@typescript-eslint/ban-ts-comment': 'off',
+    },
+  },
+
+  // E2E 测试代码放宽规则（Playwright fixture 类型天然需要 any）
+  {
+    files: ['tests/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 )
