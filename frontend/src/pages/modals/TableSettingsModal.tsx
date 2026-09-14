@@ -246,11 +246,12 @@ export default function TableSettingsModal({
             children: (
               <Suspense fallback={<div style={{ padding: 48, textAlign: 'center' }}>加载字段管理器...</div>}>
                 <FieldManager
+                  embedded
                   open={true}
                   wid={wid}
                   tid={tid}
                   fields={table?.fields ?? []}
-                  onClose={() => { /* 不真关 Modal — 用户点 Modal X 才关 */ }}
+                  onClose={onClose}
                   onChanged={() => {
                     queryClient.invalidateQueries({ queryKey: ['table-settings', wid, tid] })
                     queryClient.invalidateQueries({ queryKey: ['table', `${wid}/${tid}`] })

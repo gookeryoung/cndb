@@ -516,6 +516,7 @@ export default function GridPage() {
         <Space>
           <Tooltip title="表设置（字段/视图/权限）">
             <Button
+              data-testid="table-settings-btn"
               icon={<MenuOutlined />}
               onClick={() => setTableSettingsOpen(true)}
             >

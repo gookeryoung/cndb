@@ -7,12 +7,15 @@ import type { Field, FieldCreate, FieldType, TableSummary } from '@/api'
 import { suggestColorForLabel } from '@/utils/tagColors'
 
 interface Props {
+  /** 非 embedded 模式下控制外层 Modal 显隐；embedded 模式下可传 true */
   open: boolean
   wid: string
   tid: string
   fields: Field[]
   onClose: () => void
   onChanged: () => void
+  /** 嵌入模式：作为 Tab / 页面内容渲染，不包外层 Modal */
+  embedded?: boolean
 }
 
 const FIELD_TYPES: { value: FieldType; label: string; category: string }[] = [
@@ -62,7 +65,7 @@ function normalizeOptionsFromConfig(raw: unknown): Array<{ key: string; label: s
   })
 }
 
-export default function FieldManager({ open, wid, tid, fields, onClose, onChanged }: Props) {
+export default function FieldManager({ open, wid, tid, fields, onClose, onChanged, embedded }: Props) {
   const [innerOpen, setInnerOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Field | null>(null)
   const [form] = Form.useForm()
@@ -141,8 +144,9 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     }
   }
 
-  return (
-    <Modal title="字段管理" width={760} open={open} onCancel={onClose} footer={null}>
+  /** 字段列表 + 工具栏（两种模式共用的内容） */
+  const fieldListContent = (
+    <>
       <div style={{ marginBottom: 12, textAlign: 'right' }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => openDialog(null)}>
           新建字段
@@ -170,63 +174,84 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             ),
           },
         ]} />
+    </>
+  )
 
-      <Modal
-        title={editTarget ? '编辑字段' : '新建字段'}
-        open={innerOpen}
-        onCancel={closeDialog}
-        onOk={handleSubmit}
-        confirmLoading={create.isPending || update.isPending}
-        width={720}
-        okText={editTarget ? '保存' : '创建'}
-        cancelText="取消"
-      >
-        <Form form={form} layout="vertical" preserve={false}>
-          <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item name="name" label="字段名" rules={[{ required: true, message: '请输入字段名' }]}>
-                <Input placeholder="例如：姓名" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="field_type" label="类型" rules={[{ required: true, message: '请选择类型' }]}>
-                <Select
-                  options={FIELD_TYPES.map(t => ({ label: `${t.label}（${t.category}）`, value: t.value }))}
-                  onChange={(v) => setFieldType(v)}
-                  disabled={!!editTarget}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+  /** 新建 / 编辑字段的内部 Modal（两种模式共用） */
+  const editDialog = (
+    <Modal
+      title={editTarget ? '编辑字段' : '新建字段'}
+      open={innerOpen}
+      onCancel={closeDialog}
+      onOk={handleSubmit}
+      confirmLoading={create.isPending || update.isPending}
+      width={720}
+      okText={editTarget ? '保存' : '创建'}
+      cancelText="取消"
+    >
+      <Form form={form} layout="vertical" preserve={false}>
+        <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item name="name" label="字段名" rules={[{ required: true, message: '请输入字段名' }]}>
+              <Input placeholder="例如：姓名" />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name="field_type" label="类型" rules={[{ required: true, message: '请选择类型' }]}>
+              <Select
+                options={FIELD_TYPES.map(t => ({ label: `${t.label}（${t.category}）`, value: t.value }))}
+                onChange={(v) => setFieldType(v)}
+                disabled={!!editTarget}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
 
-          {/* 通用属性 */}
-          <Row gutter={12}>
-            <Col span={6}>
-              <Form.Item name="required" valuePropName="checked" label="必填">
-                <Checkbox />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="is_unique" valuePropName="checked" label="唯一">
-                <Checkbox />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="hidden" valuePropName="checked" label="在视图中隐藏">
-                <Checkbox />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="default_value" label="默认值（可选）">
-                <Input placeholder="例如：默认文本" allowClear />
-              </Form.Item>
-            </Col>
-          </Row>
+        {/* 通用属性 */}
+        <Row gutter={12}>
+          <Col span={6}>
+            <Form.Item name="required" valuePropName="checked" label="必填">
+              <Checkbox />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="is_unique" valuePropName="checked" label="唯一">
+              <Checkbox />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="hidden" valuePropName="checked" label="在视图中隐藏">
+              <Checkbox />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="default_value" label="默认值（可选）">
+              <Input placeholder="例如：默认文本" allowClear />
+            </Form.Item>
+          </Col>
+        </Row>
 
-          {/* 类型专属 config 编辑区 */}
-          {fieldType && <ConfigEditor fieldType={fieldType} form={form} wid={wid} tid={tid} tables={tables} />}
-        </Form>
-      </Modal>
+        {/* 类型专属 config 编辑区 */}
+        {fieldType && <ConfigEditor fieldType={fieldType} form={form} wid={wid} tid={tid} tables={tables} />}
+      </Form>
+    </Modal>
+  )
+
+  // embedded 模式：直接返回内容（供 Tab / 页面嵌入）
+  if (embedded) {
+    return (
+      <>
+        {fieldListContent}
+        {editDialog}
+      </>
+    )
+  }
+
+  // 独立模式：外层包 Modal
+  return (
+    <Modal title="字段管理" width={760} open={open} onCancel={onClose} footer={null}>
+      {fieldListContent}
+      {editDialog}
     </Modal>
   )
 }
