@@ -36,7 +36,7 @@ def _transition_status(task: ImportTask, new_status: str) -> None:
     task.status = new_status
 
 
-def execute_import_task(db_session: Session, task_id: int) -> None:  # noqa: PLR0912
+def execute_import_task(db_session: Session, task_id: int) -> None:
     """执行导入任务（在线程中调用，独立 Session 安全）.
 
     包含：状态转换 -> 读取 DataTable -> 解码文件内容 -> 估算行数 -> 执行导入 -> 标记完成.

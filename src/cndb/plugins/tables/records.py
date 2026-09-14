@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # ── 值规范化 ──────────────────────────────────────────
 
 
-def _normalize_values(  # noqa: PLR0912 - auto_fill + link + field 校验叠加导致分支多
+def _normalize_values(
     table: DataTable,
     values: dict[str, Any],
     *,
