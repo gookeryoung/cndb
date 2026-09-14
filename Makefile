@@ -49,6 +49,9 @@ cov: ## 运行测试并生成 HTML 覆盖率报告
 e2e: frontend-sync ## 前端 E2E 测试（Playwright；需后端已启动）
 	cd frontend && pnpm e2e
 
+gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败）
+	uv run python scripts/check_gitkeep.py
+
 lint: ## 代码风格检查 (ruff)
 	uv run ruff check .
 	uv run ruff format --check .
@@ -59,7 +62,7 @@ typecheck: ## 类型检查 (pyrefly)
 typecheck-ci: ## 类型检查 (pyrefly, CI 平台 linux — 捕获跨平台问题)
 	uv run pyrefly check --python-platform linux
 
-check: lint typecheck typecheck-ci frontend-check cov ## 运行全套门禁 (lint + typecheck + typecheck-ci + frontend-check + cov)
+check: gitkeep-check lint typecheck typecheck-ci frontend-check cov ## 运行全套门禁 (gitkeep + lint + typecheck + typecheck-ci + frontend-check + cov)
 
 doc: ## 构建 Sphinx 文档
 	uv run sphinx-build -b html docs docs/_build/html

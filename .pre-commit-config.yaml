@@ -1,6 +1,17 @@
 # prek / pre-commit 配置
 # See https://pre-commit.com for more information
 repos:
+  # 本地钩子：保护关键 .gitkeep 文件（缺失会导致 hatchling force-include /
+  # Sphinx html_static_path 在 CI 上直接 FileNotFoundError）
+  - repo: local
+    hooks:
+      - id: gitkeep-check
+        name: 校验关键 .gitkeep 文件
+        entry: python scripts/check_gitkeep.py
+        language: python
+        pass_filenames: false
+        always_run: true
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff 版本 - 与 pyproject.toml 保持同步
     rev: v0.15.21
