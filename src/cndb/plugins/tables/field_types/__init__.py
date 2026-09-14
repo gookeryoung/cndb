@@ -738,6 +738,43 @@ class AttachmentFieldType(FieldType):
         return json.dumps(result, ensure_ascii=False)
 
 
+# ── json ─────────────────────────────────────────────
+
+
+class JsonFieldType(FieldType):
+    """JSON 字段类型 —— 存储任意 JSON 值（Text 列）.
+
+    用于 API 自动建表时遇到的嵌套对象/数组。值在 Python 端是 dict/list/None，
+    落库时序列化为 JSON 字符串.
+    """
+
+    name = "json"
+    label = "JSON"
+    category = FieldTypeCategory.ADVANCED
+    sqlalchemy_type = Text
+    sqlalchemy_length = None
+    has_physical_column = True
+
+    @override
+    def validate_value(self, value: Any, _config: dict[str, Any]) -> str | None:
+        import json
+
+        if value is None or value == "":
+            return None
+        if isinstance(value, str):
+            # 反序列化路径：已是 JSON 字符串，校验格式后原样返回
+            try:
+                json.loads(value)
+            except (json.JSONDecodeError, ValueError) as exc:
+                raise ValueError(f"JSON 值格式无效: {value!r}") from exc
+            return value
+        # 序列化路径：dict / list / 标量 等
+        try:
+            return json.dumps(value, ensure_ascii=False, default=str)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"无法序列化为 JSON: {exc}") from exc
+
+
 def build_default_registry() -> FieldTypeRegistry:
     reg = FieldTypeRegistry()
     reg.register(TextFieldType())
@@ -756,6 +793,7 @@ def build_default_registry() -> FieldTypeRegistry:
     reg.register(TimestampFieldType())
     reg.register(LinkFieldType())
     reg.register(AttachmentFieldType())
+    reg.register(JsonFieldType())
     return reg
 
 

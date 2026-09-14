@@ -53,6 +53,7 @@ class TestDefaultRegistry:
                 "percentage",
                 "timestamp",
                 "attachment",
+                "json",
             ]
         )
 
@@ -80,7 +81,7 @@ class TestFieldTypeRegistry:
 
     def test_build_default(self):
         reg = build_default_registry()
-        assert len(reg.all()) == 16
+        assert len(reg.all()) == 17
 
 
 class TestTextFieldType:

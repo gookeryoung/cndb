@@ -10,6 +10,7 @@ from cndb.plugins.tables.routers.comments import router as comments_router
 from cndb.plugins.tables.routers.fields import router as fields_router
 from cndb.plugins.tables.routers.files import router as files_router
 from cndb.plugins.tables.routers.graph import router as graph_router
+from cndb.plugins.tables.routers.import_api import router as import_api_router
 from cndb.plugins.tables.routers.import_csv import router as import_csv_router
 from cndb.plugins.tables.routers.permissions import router as permissions_router
 from cndb.plugins.tables.routers.public import router as public_router  # noqa: F401 — 全局公开路由，由 app.py 直接挂载
@@ -30,6 +31,7 @@ router.include_router(fields_router)
 router.include_router(files_router)
 router.include_router(records_router)
 router.include_router(import_csv_router)
+router.include_router(import_api_router)
 router.include_router(graph_router)
 
 __all__ = ["router"]

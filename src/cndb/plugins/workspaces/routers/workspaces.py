@@ -552,7 +552,7 @@ def export_workspace(
 
 
 @router.post("/{workspace_id}/import", response_model=WorkspaceImportResponse)
-def import_workspace(  # noqa: PLR0912 - 导入流程需要多分支，暂不拆分
+def import_workspace(
     workspace_id: int,
     payload: WorkspaceImportRequest,
     current_user: Annotated[User, Depends(get_current_user)],
