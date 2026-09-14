@@ -90,6 +90,15 @@ export interface TableSummary {
 export interface ViewBrief {
   id: ID; name: string; view_type: string; is_default: boolean
 }
+/** 表所属工作区的 owner 简要信息（对齐后端 OwnerBrief） */
+export interface OwnerBrief {
+  id: ID; username: string; nickname?: string
+}
+/** 表所属工作区精简摘要（避免前端额外调 workspaceApi.get） */
+export interface WorkspaceBrief {
+  id: ID; name: string; visibility?: string; allow_edit?: boolean
+  current_user_role?: WorkspaceRole | null
+}
 export interface TableDetail {
   id: ID; workspace_id: ID; name: string; db_table_name?: string; description?: string
   fields: Field[]; created_at?: string; updated_at?: string
@@ -99,6 +108,10 @@ export interface TableDetail {
   views?: ViewBrief[]
   /** 后端增强 —— 当前用户在该表可执行的动作集合 */
   current_user_actions?: string[]
+  /** 后端增强 —— 所属工作区的 owner */
+  owner?: OwnerBrief | null
+  /** 后端增强 —— 所属工作区精简摘要 */
+  workspace?: WorkspaceBrief | null
 }
 export interface TableCreate { name: string; description?: string }
 export interface TableUpdate { name?: string; description?: string }
