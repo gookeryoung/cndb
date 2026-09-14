@@ -6,10 +6,13 @@ target-version = "py313"
 ignore = [
     "E501",    # line too long (handled by formatter)
     "PLC0415", # import should be at top-level (intentional for lazy imports)
+    "PLR0911", # too many return statements (intentional for data-processing pipelines)
+    "PLR0912", # too many branches (intentional for URL validation / type inference)
     "PLR0913", # too many arguments (FastAPI 路由天然有多个 path 参数 + Depends)
     "PLR0915", # too many statements (intentional for complex methods)
     "PLR0917", # too many positional arguments (同上)
     "PLR2004", # magic value comparison
+    "PLW2901", # for-loop variable overwritten (acceptable for _resolve_path 简化语法)
     "RUF001",  # ambiguous unicode characters in string
     "RUF002",  # ambiguous unicode characters in docstring
     "RUF003",  # ambiguous unicode characters in comment
