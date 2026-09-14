@@ -30,17 +30,19 @@ test.describe("工作区列表卡片展示", () => {
     await expect(memberCountText.first()).toBeVisible();
   });
 
-  test("卡片有三项功能按钮（置顶 / 备份 / 设置）", async ({ page }) => {
+  test("卡片有四项功能按钮（置顶 / 备份 / 设置 / 完整页面）", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await page.goto("/w");
     await page.waitForURL(/\/w$/);
 
     const backupBtn = page.getByText(/备份/).first();
-    const settingsBtn = page.getByText(/设置/).first();
+    const settingsBtn = page.locator("[data-testid='settings-btn-1']");
+    const fullPageBtn = page.locator("[data-testid='settings-page-btn-1']");
     const pinBtn = page.getByText(/置顶|取消置顶/).first();
 
     await expect(backupBtn).toBeVisible();
     await expect(settingsBtn).toBeVisible();
+    await expect(fullPageBtn).toBeVisible();
     await expect(pinBtn).toBeVisible();
   });
 });
@@ -51,8 +53,8 @@ test.describe("工作区设置对话框", () => {
     await page.goto("/w");
     await page.waitForURL(/\/w$/);
 
-    // 点击第一张卡片的"设置"按钮
-    await page.getByText(/设置/).first().click();
+    // 点击第一张卡片的"设置"按钮（data-testid 精确定位卡片内设置入口）
+    await page.locator("[data-testid='settings-btn-1']").click();
 
     // 设置对话框标题（Ant Design Modal title 是 div，不是 heading）
     await expect(page.locator(".ant-modal-title")).toContainText("工作区设置");
@@ -77,7 +79,7 @@ test.describe("工作区设置对话框", () => {
     await page.goto("/w");
     await page.waitForURL(/\/w$/);
 
-    await page.getByText(/设置/).first().click();
+    await page.locator("[data-testid='settings-btn-1']").click();
     await page.getByRole("tab", { name: /成员管理/ }).click();
 
     // 成员管理 Tab 显示"用户"和"角色"表头
@@ -90,7 +92,7 @@ test.describe("工作区设置对话框", () => {
     await page.goto("/w");
     await page.waitForURL(/\/w$/);
 
-    await page.getByText(/设置/).first().click();
+    await page.locator("[data-testid='settings-btn-1']").click();
     await page.getByRole("tab", { name: /统计信息/ }).click();
 
     // 统计 Tab 显示统计卡片和工作区信息
