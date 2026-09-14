@@ -53,3 +53,4 @@ frontend/package-lock.json
 uploads
 /.trae-html-share-packages
 backup-*.tar.gz
+.pnpm-store
