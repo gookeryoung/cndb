@@ -497,9 +497,7 @@ def analyze_json_columns(
         null_ratio = null_counts[key] / total if total else 0.0
 
         if not type_counts[key]:
-            columns.append(
-                {"name": key, "field_type": "text", "sample_values": [], "null_ratio": round(null_ratio, 4)}
-            )
+            columns.append({"name": key, "field_type": "text", "sample_values": [], "null_ratio": round(null_ratio, 4)})
             continue
 
         inferred = _pick_inferred_type(type_counts[key])
