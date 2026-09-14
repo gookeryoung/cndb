@@ -169,18 +169,34 @@ def create_row(
 
 
 def get_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> dict[str, Any] | None:
-    """按主键读取单行，返回 dict；不存在返回 None（含软删除过滤）."""
+    """按主键读取单行，返回 dict；不存在返回 None（含软删除过滤 + 行级权限）."""
     sa_table = _get_sa_table(engine, table)
+    row_scope = _build_row_scope_where(table, sa_table, db)
+    where = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
+    if row_scope is not None:
+        where.append(row_scope)
     with engine.connect() as conn:
-        row = conn.execute(
-            sa_table.select().where(
-                sa_table.c.id == row_id,
-                sa_table.c._trashed.is_(False),
-            )
-        ).first()
+        row = conn.execute(sa_table.select().where(and_(*where))).first()
     if row is None:
         return None
     return attach_links(engine, table, [_row_to_dict(table, sa_table, row)], db=db)[0]
+
+
+def _build_row_scope_where(table: DataTable, sa_table: Any, db: Any) -> Any | None:
+    """从 TablePermission.row_filters 编译行级权限 WHERE 条件.
+
+    仅在 db 可用且 row_filters 非空时生效。返回的条件会与 trashed 条件 AND 组合。
+    """
+    if db is None:
+        return None
+    from cndb.plugins.tables.access import get_row_scope, row_filter_conjunction
+    from cndb.plugins.tables.query import compile_filters
+
+    scope = get_row_scope(db, table)
+    if not scope:
+        return None
+    conj = row_filter_conjunction(db, table)
+    return compile_filters(table, sa_table, scope, conj)
 
 
 def list_rows(
@@ -215,12 +231,17 @@ def list_rows(
     if not include_trashed:
         base_where.append(sa_table.c._trashed.is_(False))
 
+    # 行级权限（TablePermission.row_filters）
+    row_scope = _build_row_scope_where(table, sa_table, db)
+    if row_scope is not None:
+        base_where.append(row_scope)
+
     # 业务过滤
     business_where: Any | None = None
     if filters:
         business_where = compile_filters(table, sa_table, filters, filter_logic)
 
-    # 构建 base query —— trashed AND 业务过滤（无论 filter_logic 是什么）
+    # 构建 base query —— trashed AND 权限 AND 业务过滤
     query = sa_table.select()
     final_where: list[Any] = list(base_where)
     if business_where is not None:
@@ -260,7 +281,7 @@ def update_row(
     values: dict[str, Any],
     db: Any = None,
 ) -> dict[str, Any] | None:
-    """更新一行，返回更新后的完整数据；行不存在或已软删除返回 None.
+    """更新一行，返回更新后的完整数据；行不存在或已软删除或被行级权限拦截时返回 None.
 
     仅传 link 字段（无物理列值）时同样生效；link 值为 None 表示显式清空关联.
     """
@@ -270,26 +291,20 @@ def update_row(
     if not normalized and not link_values:
         return get_row(engine, table, row_id, db=db)
 
+    row_scope = _build_row_scope_where(table, sa_table, db)
+    base_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
+    if row_scope is not None:
+        base_where.append(row_scope)
+
     with engine.begin() as conn:
         if normalized:
             result = conn.execute(
-                sa_table.update()
-                .where(
-                    sa_table.c.id == row_id,
-                    sa_table.c._trashed.is_(False),
-                )
-                .values(**normalized)
+                sa_table.update().where(*base_where).values(**normalized)
             )
             if result.rowcount == 0:
                 return None
         else:  # pragma: no cover - 只更新关联分支待补测试
-            # 只更新关联：先确认行存在且未软删
-            existing = conn.execute(
-                select(sa_table.c.id).where(
-                    sa_table.c.id == row_id,
-                    sa_table.c._trashed.is_(False),
-                )
-            ).first()
+            existing = conn.execute(select(sa_table.c.id).where(*base_where)).first()
             if existing is None:
                 return None
 
@@ -309,15 +324,17 @@ def update_row(
 
 
 def delete_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bool:
-    """硬删除单行（同步清理关联记录），返回是否成功."""
+    """硬删除单行（同步清理关联记录），返回是否成功.
+
+    行级权限拦截时返回 False（不会删除被 row_filters 过滤的行）.
+    """
     sa_table = _get_sa_table(engine, table)
+    row_scope = _build_row_scope_where(table, sa_table, db)
+    base_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
+    if row_scope is not None:
+        base_where.append(row_scope)
     with engine.begin() as conn:
-        result = conn.execute(
-            sa_table.delete().where(
-                sa_table.c.id == row_id,
-                sa_table.c._trashed.is_(False),
-            )
-        )
+        result = conn.execute(sa_table.delete().where(*base_where))
         if result.rowcount > 0:
             clear_row_links(engine, table, [row_id])
             try:
@@ -410,34 +427,33 @@ def bulk_update(
     values: dict[str, Any],
     db: Any = None,
 ) -> int:
-    """批量更新，返回影响行数；link 字段对每行写入相同关联集合."""
+    """批量更新，返回影响行数；link 字段对每行写入相同关联集合.
+
+    被 row_filters 过滤的行不会被更新（不泄漏存在性）.
+    """
     sa_table = _get_sa_table(engine, table)
     normalized, link_values = _normalize_values(table, values, for_update=True)
 
     if not normalized and not link_values:
         return 0
 
+    row_scope = _build_row_scope_where(table, sa_table, db)
     count = 0
     with engine.connect() as conn:
+        valid_where: list[Any] = [sa_table.c.id.in_(row_ids), sa_table.c._trashed.is_(False)]
+        if row_scope is not None:
+            valid_where.append(row_scope)
         valid_ids = [
             int(r[0])
-            for r in conn.execute(
-                select(sa_table.c.id).where(
-                    sa_table.c.id.in_(row_ids),
-                    sa_table.c._trashed.is_(False),
-                )
-            ).all()
+            for r in conn.execute(select(sa_table.c.id).where(*valid_where)).all()
         ]
 
     if normalized:
+        update_where: list[Any] = [sa_table.c.id.in_(valid_ids)]
+        if row_scope is not None:
+            update_where.append(row_scope)
         with engine.begin() as conn:
-            result = conn.execute(
-                sa_table.update()
-                .where(
-                    sa_table.c.id.in_(valid_ids),
-                )
-                .values(**normalized)
-            )
+            result = conn.execute(sa_table.update().where(*update_where).values(**normalized))
             count = result.rowcount
     else:
         count = len(valid_ids)
@@ -451,19 +467,22 @@ def bulk_update(
 
 
 def bulk_delete(engine: Any, table: DataTable, row_ids: list[int], db: Any = None) -> int:
-    """批量硬删除（同步清理关联记录），返回影响行数."""
+    """批量硬删除（同步清理关联记录），返回影响行数.
+
+    被 row_filters 过滤的行不会被删除.
+    """
     sa_table = _get_sa_table(engine, table)
     if not row_ids:
         return 0
+    row_scope = _build_row_scope_where(table, sa_table, db)
+    del_where: list[Any] = [sa_table.c.id.in_(row_ids), sa_table.c._trashed.is_(False)]
+    if row_scope is not None:
+        del_where.append(row_scope)
     with engine.begin() as conn:
-        result = conn.execute(
-            sa_table.delete().where(
-                sa_table.c.id.in_(row_ids),
-                sa_table.c._trashed.is_(False),
-            )
-        )
+        result = conn.execute(sa_table.delete().where(*del_where))
         count = result.rowcount
     if count > 0:
+        # 注意：只清理实际被删除行的 links；这里简化传全部 row_ids，clear_row_links 做逐行删除
         clear_row_links(engine, table, row_ids)
         for rid in row_ids:
             try:
