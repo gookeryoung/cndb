@@ -27,6 +27,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      - name: Check .gitkeep sentinels
+        run: |
+          uv sync --frozen --extra lint
+          uv run python scripts/check_gitkeep.py
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
