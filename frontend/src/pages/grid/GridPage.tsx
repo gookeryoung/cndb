@@ -645,7 +645,7 @@ export default function GridPage() {
       </div>
 
       {/* 主内容 */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', background: '#fafafa' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', background: 'var(--cn-bg-page)' }}>
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: 48 }}>加载中...</div>
         ) : mode === 'grid' ? (
