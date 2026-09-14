@@ -1,4 +1,7 @@
-/** 主题配置 — 4 种风格：modern / github-dark / github-light / minimal. */
+/** 主题配置 — 10 种风格：
+ * 浅色：modern / github-light / minimal / ocean / forest / sepia / sakura
+ * 深色：github-dark / midnight / oled
+ */
 
 import type { ThemeConfig } from 'antd'
 
@@ -14,7 +17,18 @@ const switchTokens = {
 
 /* ─────────────── 主题 ID / 元信息 ─────────────── */
 
-export const THEME_MODES = ['modern', 'github-dark', 'github-light', 'minimal'] as const
+export const THEME_MODES = [
+  'modern',
+  'github-dark',
+  'github-light',
+  'minimal',
+  'ocean',
+  'forest',
+  'sepia',
+  'sakura',
+  'midnight',
+  'oled',
+] as const
 export type ThemeMode = (typeof THEME_MODES)[number]
 
 export interface ThemeMeta {
@@ -54,6 +68,48 @@ export const THEME_META: Record<ThemeMode, ThemeMeta> = {
     description: '中性灰，无装饰，低饱和度',
     isDark: false,
     bodyClass: 'theme-minimal',
+  },
+  ocean: {
+    id: 'ocean',
+    label: '海洋',
+    description: '青蓝清爽，冷静专注',
+    isDark: false,
+    bodyClass: 'theme-ocean',
+  },
+  forest: {
+    id: 'forest',
+    label: '森野',
+    description: '翠绿自然，舒缓放松',
+    isDark: false,
+    bodyClass: 'theme-forest',
+  },
+  sepia: {
+    id: 'sepia',
+    label: '纸感',
+    description: '米黄纸调，温润护眼',
+    isDark: false,
+    bodyClass: 'theme-sepia',
+  },
+  sakura: {
+    id: 'sakura',
+    label: '樱粉',
+    description: '柔和粉色，轻盈亲和',
+    isDark: false,
+    bodyClass: 'theme-sakura',
+  },
+  midnight: {
+    id: 'midnight',
+    label: '午夜紫',
+    description: '深紫夜色，沉浸低扰',
+    isDark: true,
+    bodyClass: 'theme-midnight',
+  },
+  oled: {
+    id: 'oled',
+    label: '极夜黑',
+    description: '纯黑高对比，OLED 省电',
+    isDark: true,
+    bodyClass: 'theme-oled',
   },
 }
 
@@ -223,11 +279,311 @@ const minimalTheme: ThemeConfig = {
   },
 }
 
+/** 海洋 — 青蓝清爽浅色系 */
+const oceanTheme: ThemeConfig = {
+  token: {
+    colorPrimary: '#0891b2',
+    borderRadius: 8,
+    colorBgBase: '#ffffff',
+    colorTextBase: '#0f3a45',
+    colorBgContainer: '#ffffff',
+    colorBgElevated: '#ffffff',
+    colorBorder: '#cfe2e8',
+    colorBorderSecondary: '#e3eef2',
+    colorSplit: '#e3eef2',
+    colorTextSecondary: '#5b7c88',
+    fontFamily: commonFont,
+  },
+  components: {
+    Switch: switchTokens,
+    Button: {
+      defaultBg: '#f0f8fa',
+      defaultColor: '#0f3a45',
+      defaultBorderColor: '#cfe2e8',
+      defaultHoverBg: '#e0f0f5',
+    },
+    Table: {
+      headerBg: '#eef7f9',
+      headerColor: '#5b7c88',
+      rowHoverBg: '#f0f8fa',
+      rowSelectedBg: '#d5f0f6',
+      borderColor: '#dcebf0',
+      headerBorderRadius: 0,
+    },
+    Card: {
+      colorBorderSecondary: '#e3eef2',
+    },
+    Layout: {
+      headerBg: '#ffffff',
+      siderBg: '#eef7f9',
+      bodyBg: '#f0f8fa',
+      headerHeight: 52,
+    },
+  },
+}
+
+/** 森野 — 翠绿自然浅色系 */
+const forestTheme: ThemeConfig = {
+  token: {
+    colorPrimary: '#16a34a',
+    borderRadius: 8,
+    colorBgBase: '#ffffff',
+    colorTextBase: '#14301b',
+    colorBgContainer: '#ffffff',
+    colorBgElevated: '#ffffff',
+    colorBorder: '#d3e4d5',
+    colorBorderSecondary: '#e7f0e8',
+    colorSplit: '#e7f0e8',
+    colorTextSecondary: '#5c7560',
+    fontFamily: commonFont,
+  },
+  components: {
+    Switch: switchTokens,
+    Button: {
+      defaultBg: '#f3f8f4',
+      defaultColor: '#14301b',
+      defaultBorderColor: '#d3e4d5',
+      defaultHoverBg: '#e6f2e9',
+    },
+    Table: {
+      headerBg: '#eef6ef',
+      headerColor: '#5c7560',
+      rowHoverBg: '#f3f8f4',
+      rowSelectedBg: '#d8f0de',
+      borderColor: '#e0ece2',
+      headerBorderRadius: 0,
+    },
+    Card: {
+      colorBorderSecondary: '#e7f0e8',
+    },
+    Layout: {
+      headerBg: '#ffffff',
+      siderBg: '#eef6ef',
+      bodyBg: '#f2f7f3',
+      headerHeight: 52,
+    },
+  },
+}
+
+/** 纸感 — 米黄纸调，温润护眼 */
+const sepiaTheme: ThemeConfig = {
+  token: {
+    colorPrimary: '#a16207',
+    borderRadius: 4,
+    colorBgBase: '#fbf6ea',
+    colorTextBase: '#43341f',
+    colorBgContainer: '#fbf6ea',
+    colorBgElevated: '#fffdf7',
+    colorBorder: '#ddcfae',
+    colorBorderSecondary: '#e8dec6',
+    colorSplit: '#e8dec6',
+    colorTextSecondary: '#7a6a4d',
+    fontFamily: commonFont,
+  },
+  components: {
+    Switch: switchTokens,
+    Button: {
+      defaultBg: '#f3ecd9',
+      defaultColor: '#43341f',
+      defaultBorderColor: '#ddcfae',
+      defaultHoverBg: '#ebe0c6',
+    },
+    Table: {
+      headerBg: '#f3ecd9',
+      headerColor: '#7a6a4d',
+      rowHoverBg: '#f6f0e0',
+      rowSelectedBg: '#efe4c8',
+      borderColor: '#e3d8bd',
+      headerBorderRadius: 0,
+    },
+    Card: {
+      colorBorderSecondary: '#e8dec6',
+    },
+    Input: {
+      colorBgContainer: '#fffdf7',
+    },
+    Select: {
+      colorBgContainer: '#fffdf7',
+    },
+    Layout: {
+      headerBg: '#fbf6ea',
+      siderBg: '#f3ecd9',
+      bodyBg: '#efe7d2',
+      headerHeight: 52,
+    },
+  },
+}
+
+/** 樱粉 — 柔和粉色，轻盈亲和 */
+const sakuraTheme: ThemeConfig = {
+  token: {
+    colorPrimary: '#db2777',
+    borderRadius: 10,
+    colorBgBase: '#ffffff',
+    colorTextBase: '#3d2230',
+    colorBgContainer: '#ffffff',
+    colorBgElevated: '#ffffff',
+    colorBorder: '#f2d9e5',
+    colorBorderSecondary: '#f8e7ef',
+    colorSplit: '#f8e7ef',
+    colorTextSecondary: '#92708a',
+    fontFamily: commonFont,
+  },
+  components: {
+    Switch: switchTokens,
+    Button: {
+      defaultBg: '#fdf3f8',
+      defaultColor: '#3d2230',
+      defaultBorderColor: '#f2d9e5',
+      defaultHoverBg: '#fae7f1',
+    },
+    Table: {
+      headerBg: '#fceff6',
+      headerColor: '#92708a',
+      rowHoverBg: '#fdf3f8',
+      rowSelectedBg: '#f8dceb',
+      borderColor: '#f5e0eb',
+      headerBorderRadius: 0,
+    },
+    Card: {
+      colorBorderSecondary: '#f8e7ef',
+    },
+    Layout: {
+      headerBg: '#ffffff',
+      siderBg: '#fceff6',
+      bodyBg: '#fdf5f9',
+      headerHeight: 52,
+    },
+  },
+}
+
+/** 午夜紫 — 深紫夜色，沉浸低扰 */
+const midnightTheme: ThemeConfig = {
+  token: {
+    colorPrimary: '#a78bfa',
+    borderRadius: 8,
+    colorBgBase: '#15121f',
+    colorTextBase: '#e9e4f5',
+    colorBgContainer: '#1d1830',
+    colorBgElevated: '#26203a',
+    colorBorder: '#383150',
+    colorBorderSecondary: '#2a2440',
+    colorSplit: '#2a2440',
+    colorTextSecondary: '#a299c2',
+    fontFamily: commonFont,
+  },
+  components: {
+    Switch: switchTokens,
+    Button: {
+      defaultBg: '#26203a',
+      defaultColor: '#e9e4f5',
+      defaultBorderColor: '#383150',
+      defaultHoverBg: '#332b52',
+    },
+    Card: {
+      colorBorderSecondary: '#383150',
+    },
+    Table: {
+      headerBg: '#15121f',
+      headerColor: '#a299c2',
+      headerSortActiveBg: '#15121f',
+      headerSortHoverBg: '#1d1830',
+      rowHoverBg: '#1d1830',
+      rowSelectedBg: '#332a55',
+      borderColor: '#383150',
+      headerBorderRadius: 0,
+    },
+    Modal: {
+      contentBg: '#1d1830',
+      headerBg: '#1d1830',
+    },
+    Input: {
+      colorBgContainer: '#15121f',
+      activeBorderColor: '#a78bfa',
+      hoverBorderColor: '#383150',
+    },
+    Select: {
+      colorBgContainer: '#15121f',
+      optionSelectedBg: '#332a55',
+    },
+    Layout: {
+      headerBg: '#15121f',
+      siderBg: '#15121f',
+      bodyBg: '#100d1a',
+      headerHeight: 52,
+    },
+  },
+}
+
+/** 极夜黑 — 纯黑高对比，AMOLED 友好 */
+const oledTheme: ThemeConfig = {
+  token: {
+    colorPrimary: '#22d3ee',
+    borderRadius: 4,
+    colorBgBase: '#000000',
+    colorTextBase: '#f5f5f5',
+    colorBgContainer: '#0a0a0a',
+    colorBgElevated: '#161616',
+    colorBorder: '#262626',
+    colorBorderSecondary: '#1a1a1a',
+    colorSplit: '#1a1a1a',
+    colorTextSecondary: '#a3a3a3',
+    fontFamily: commonFont,
+  },
+  components: {
+    Switch: switchTokens,
+    Button: {
+      defaultBg: '#161616',
+      defaultColor: '#f5f5f5',
+      defaultBorderColor: '#2a2a2a',
+      defaultHoverBg: '#262626',
+    },
+    Card: {
+      colorBorderSecondary: '#262626',
+    },
+    Table: {
+      headerBg: '#000000',
+      headerColor: '#a3a3a3',
+      headerSortActiveBg: '#000000',
+      headerSortHoverBg: '#0a0a0a',
+      rowHoverBg: '#141414',
+      rowSelectedBg: '#1f1f1f',
+      borderColor: '#262626',
+      headerBorderRadius: 0,
+    },
+    Modal: {
+      contentBg: '#0a0a0a',
+      headerBg: '#0a0a0a',
+    },
+    Input: {
+      colorBgContainer: '#000000',
+      activeBorderColor: '#22d3ee',
+      hoverBorderColor: '#262626',
+    },
+    Select: {
+      colorBgContainer: '#000000',
+      optionSelectedBg: '#1f1f1f',
+    },
+    Layout: {
+      headerBg: '#000000',
+      siderBg: '#000000',
+      bodyBg: '#000000',
+      headerHeight: 52,
+    },
+  },
+}
+
 export const THEMES: Record<ThemeMode, ThemeConfig> = {
   modern: modernTheme,
   'github-dark': githubDarkTheme,
   'github-light': githubLightTheme,
   minimal: minimalTheme,
+  ocean: oceanTheme,
+  forest: forestTheme,
+  sepia: sepiaTheme,
+  sakura: sakuraTheme,
+  midnight: midnightTheme,
+  oled: oledTheme,
 }
 
 /* ─────────────── 持久化 helpers ─────────────── */

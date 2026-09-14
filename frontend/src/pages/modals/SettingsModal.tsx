@@ -15,6 +15,12 @@ const themeSwatches: Record<ThemeMode, { primary: string; bg: string; text: stri
   'github-dark': { primary: '#58a6ff', bg: '#0d1117', text: '#e6edf3', border: '#30363d' },
   'github-light': { primary: '#0969da', bg: '#ffffff', text: '#1f2328', border: '#d0d7de' },
   minimal:     { primary: '#525252', bg: '#fafafa', text: '#262626', border: '#d4d4d4' },
+  ocean:       { primary: '#0891b2', bg: '#ffffff', text: '#0f3a45', border: '#cfe2e8' },
+  forest:      { primary: '#16a34a', bg: '#ffffff', text: '#14301b', border: '#d3e4d5' },
+  sepia:       { primary: '#a16207', bg: '#fbf6ea', text: '#43341f', border: '#ddcfae' },
+  sakura:      { primary: '#db2777', bg: '#ffffff', text: '#3d2230', border: '#f2d9e5' },
+  midnight:    { primary: '#a78bfa', bg: '#1d1830', text: '#e9e4f5', border: '#383150' },
+  oled:        { primary: '#22d3ee', bg: '#0a0a0a', text: '#f5f5f5', border: '#262626' },
 }
 
 const { Text } = Typography
@@ -37,7 +43,7 @@ function ThemeCard({ mode, selected, onSelect }: {
           : '2px solid transparent',
         borderRadius: 10,
         padding: 12,
-        background: meta.isDark ? '#161b22' : '#ffffff',
+        background: s.bg,
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
@@ -82,7 +88,7 @@ export default function SettingsModal({ open, onClose }: Props) {
       open={open}
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
-      width={480}
+      width={660}
       destroyOnHidden
     >
       <div style={{ padding: '12px 0' }}>
@@ -97,7 +103,7 @@ export default function SettingsModal({ open, onClose }: Props) {
           value={mode}
           onChange={e => setMode(e.target.value)}
           buttonStyle="solid"
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 8 }}
         >
           {THEME_MODES.map(m => (
             <Radio.Button key={m} value={m}>
@@ -111,7 +117,7 @@ export default function SettingsModal({ open, onClose }: Props) {
           data-testid="theme-grid"
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
             gap: 10,
           }}
         >
