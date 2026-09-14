@@ -20,7 +20,6 @@ import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, GANTT_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
 import { formatFieldDisplayValue, getLinkFirstLabel, getMultiSelectFirstLabel, getSelectLabel } from './fieldValueFormat'
 import { parseDate, fmtDate } from './dateUtils'
-import { resolveTagColor } from '@/utils/tagColors'
 
 // ── 类型定义 ──────────────────────────────────────────
 
@@ -365,7 +364,6 @@ function GanttBar({ task, range, pxPerDay, barHeight, onRowClick }: GanttBarProp
   // 实际完成条（如果有 actualEnd）
   let actualEndWidth: number | null = null
   if (task.actualEnd) {
-    const actualOffsetDays = daysBetween(range.min, task.actualEnd) - 1
     const actualDuration = daysBetween(task.start, task.actualEnd)
     if (task.actualEnd >= task.start) {
       actualEndWidth = Math.max(pxPerDay, actualDuration * pxPerDay)
@@ -521,6 +519,7 @@ export default function GanttView({
   const ds = densityStyle(density)
   const scale = (opts.time_scale as TimeScale) || 'month'
   const showToday = opts.show_today_line !== false
+  const groupField = opts.group_field as string | undefined
 
   // 构建任务列表
   const tasks = useMemo(
@@ -552,12 +551,12 @@ export default function GanttView({
 
   // 按分组聚合（用于左侧分组分隔）
   const groupedTasks = useMemo(() => {
-    const groups: Array<{ key: string; label: string; tasks: GanttTask[] }> = []
+    const groups: Array<{ key: string; label: string; tasks: GanttTask[]; color: string }> = []
     for (const t of tasks) {
       const gkey = t.groupValue || '__nogroup__'
       let g = groups.find(g => g.key === gkey)
       if (!g) {
-        g = { key: gkey, label: t.groupValue || '未分组', tasks: [] }
+        g = { key: gkey, label: t.groupValue || '未分组', tasks: [], color: groupColor(gkey) }
         groups.push(g)
       }
       g.tasks.push(t)
@@ -708,7 +707,7 @@ export default function GanttView({
         {groupedTasks.map((group) => (
           <div key={group.key}>
             {/* 分组标题（有 group_field 时显示） */}
-            {opts.group_field && (
+            {groupField && (
               <div
                 style={{
                   padding: '4px 12px',

@@ -298,9 +298,7 @@ def update_row(
 
     with engine.begin() as conn:
         if normalized:
-            result = conn.execute(
-                sa_table.update().where(*base_where).values(**normalized)
-            )
+            result = conn.execute(sa_table.update().where(*base_where).values(**normalized))
             if result.rowcount == 0:
                 return None
         else:  # pragma: no cover - 只更新关联分支待补测试
@@ -443,10 +441,7 @@ def bulk_update(
         valid_where: list[Any] = [sa_table.c.id.in_(row_ids), sa_table.c._trashed.is_(False)]
         if row_scope is not None:
             valid_where.append(row_scope)
-        valid_ids = [
-            int(r[0])
-            for r in conn.execute(select(sa_table.c.id).where(*valid_where)).all()
-        ]
+        valid_ids = [int(r[0]) for r in conn.execute(select(sa_table.c.id).where(*valid_where)).all()]
 
     if normalized:
         update_where: list[Any] = [sa_table.c.id.in_(valid_ids)]
