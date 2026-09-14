@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
-const DEMO_USER = "demo";
-const DEMO_PASS = "demo1234";
+const DEMO_USER = "admin";
+const DEMO_PASS = "admin1234";
 const STATE_PATH = ".auth/state.json";
 
 test("登录并持久化 StorageState", async ({ page }) => {
