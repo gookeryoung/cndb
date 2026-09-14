@@ -15,7 +15,7 @@ import { useResponsive } from '@/hooks/useResponsive'
 
 // Modal 组件 lazy import：点击打开时才加载
 const SettingsModal = lazy(() => import('@/pages/modals/SettingsModal'))
-const MembersModal = lazy(() => import('@/pages/modals/MembersModal'))
+const WorkspaceSettingsModal = lazy(() => import('@/pages/modals/WorkspaceSettingsModal'))
 
 function ModalFallback() {
   return null
@@ -194,7 +194,12 @@ export default function MainLayout() {
 
       <Suspense fallback={<ModalFallback />}>
         <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-        <MembersModal open={membersOpen} wid={wid ?? ''} onClose={() => setMembersOpen(false)} />
+        <WorkspaceSettingsModal
+          open={membersOpen}
+          wid={wid ?? ''}
+          initialTab="members"
+          onClose={() => setMembersOpen(false)}
+        />
       </Suspense>
     </Layout>
   )

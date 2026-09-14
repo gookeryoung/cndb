@@ -24,7 +24,7 @@ import api from './client'
 import type {
   LoginRequest, RegisterRequest,
   UserResponse,
-  WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember,
+  WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember, MemberUserBrief,
   WorkspaceExportData,
   TableCreate, TableUpdate, TableSummary, TableDetail,
   RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams,
@@ -44,7 +44,7 @@ import type {
 
 export type {
   ID, UserResponse, LoginRequest, RegisterRequest,
-  Workspace, WorkspaceDetail, WorkspaceCreate, WorkspaceUpdate, WorkspaceRole, WorkspaceMember,
+  Workspace, WorkspaceDetail, WorkspaceCreate, WorkspaceUpdate, WorkspaceRole, WorkspaceMember, MemberUserBrief,
   WorkspaceVisibility, WorkspaceExportData,
   TableSummary, TableDetail, TableCreate, TableUpdate,
   FieldType, Field, FieldCreate, FieldUpdate,
