@@ -506,3 +506,52 @@ export interface ActiveViewResponse {
   table_id: number
   active_view_id: number | null
 }
+
+// ── API 自动建表 / 数据抓取 ────────────────────────
+
+/** API 抓取通用请求体（对齐后端 ApiFetchRequest） */
+export interface ApiFetchRequest {
+  url: string
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  headers?: Record<string, string>
+  params?: Record<string, unknown>
+  body?: unknown
+  data_path?: string | null
+  timeout?: number
+}
+
+/** 分析接口返回的列元数据（对齐后端 analyze_json_columns 的输出） */
+export interface ApiAnalyzeColumn {
+  name: string
+  field_type: FieldType
+  /** 非空样本数 */
+  non_null_count?: number
+  /** 空值比例 0-1 */
+  null_ratio?: number
+  /** 样本值（最多几条） */
+  samples?: unknown[]
+  /** 推测出的选项列表（select 类型） */
+  options?: string[]
+}
+
+/** POST /{wid}/import-api/analyze 响应 */
+export interface ApiAnalyzeResult {
+  columns: ApiAnalyzeColumn[]
+  total_rows: number
+  sample_row_keys: string[]
+}
+
+/** POST /{wid}/import-api 响应（建表 + 导入） */
+export interface ApiImportResult {
+  table_id: ID
+  table_name: string
+  imported_rows: number
+  field_count: number
+  columns: ApiAnalyzeColumn[]
+}
+
+/** POST /{wid}/tables/{tid}/import-api 响应（追加） */
+export interface ApiAppendResult {
+  table_id: ID
+  appended_rows: number
+}

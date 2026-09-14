@@ -1,10 +1,11 @@
-/** 导入/导出对话框 — 文件上传 + 异步进度轮询 + 多格式导出. */
+/** 导入/导出对话框 — 文件上传 + 异步进度轮询 + 多格式导出 + API 抓取追加. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Modal, Tabs, Button, Progress, message, Space, Select, Alert, Empty, Upload, Switch } from 'antd'
-import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/icons'
+import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined, ApiOutlined } from '@ant-design/icons'
 import { importApi, exportApi } from '@/api'
 import type { ImportTaskInfo } from '@/api'
+import ApiImportDialog from './ApiImportDialog'
 
 const { Dragger } = Upload
 
@@ -236,6 +237,19 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
                   >下载</Button>
                 </Space>
               </div>
+            ),
+          },
+          {
+            key: 'api',
+            label: <span><ApiOutlined /> API 抓取追加</span>,
+            children: (
+              <ApiImportDialog
+                embed
+                wid={wid}
+                tid={tid}
+                title="API 抓取 · 追加到当前表"
+                onSuccess={() => onImported?.()}
+              />
             ),
           },
         ]}
