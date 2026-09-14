@@ -38,7 +38,7 @@ function TableNode({ data, selected }: NodeProps) {
         minWidth: 180,
         border: `2px solid ${selected ? '#1677ff' : hasTable ? '#10b981' : '#d1d5db'}`,
         borderRadius: 10,
-        background: '#fff',
+        background: 'var(--cn-bg-container)',
         padding: '12px 14px',
         boxShadow: selected ? '0 4px 16px rgba(22,119,255,.25)' : '0 2px 8px rgba(0,0,0,.06)',
         cursor: 'grab',
@@ -53,7 +53,7 @@ function TableNode({ data, selected }: NodeProps) {
       </div>
 
       {hasTable ? (
-        <div style={{ fontSize: 12, color: '#6b7280', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ fontSize: 12, color: 'var(--cn-text-secondary)', display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span>
             <TableOutlined /> 绑定表：<Tag color="blue" style={{ marginLeft: 4 }}>{node.table?.name || '(加载中)'}</Tag>
           </span>
@@ -362,11 +362,11 @@ function WorkflowEditorInner() {
   return (
     <div style={{ height: 'calc(100vh - 120px)', display: 'flex', gap: 16 }}>
       {/* 左侧：React Flow 画布 */}
-      <div style={{ flex: 1, position: 'relative', background: '#f8fafc', borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
+      <div style={{ flex: 1, position: 'relative', background: 'var(--cn-bg-canvas)', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--cn-border)' }}>
         {/* 工具栏 */}
         <div style={{
           position: 'absolute', top: 12, left: 12, zIndex: 10,
-          display: 'flex', gap: 8, background: '#fff', padding: '8px 12px',
+          display: 'flex', gap: 8, background: 'var(--cn-bg-elevated)', padding: '8px 12px',
           borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,.08)',
         }}>
           <Button icon={<PlusOutlined />} onClick={() => setAddNodeOpen(true)}>添加节点</Button>
@@ -384,7 +384,7 @@ function WorkflowEditorInner() {
         {/* 标题 */}
         <div style={{
           position: 'absolute', top: 12, right: 12, zIndex: 10,
-          background: '#fff', padding: '8px 14px', borderRadius: 8,
+          background: 'var(--cn-bg-elevated)', padding: '8px 14px', borderRadius: 8,
           boxShadow: '0 2px 8px rgba(0,0,0,.08)',
         }}>
           <Space>
@@ -418,13 +418,13 @@ function WorkflowEditorInner() {
             nodeColor="#3b82f6"
             nodeStrokeWidth={3}
             position="bottom-right"
-            style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8 }}
+            style={{ background: 'var(--cn-bg-elevated)', border: '1px solid var(--cn-border)', borderRadius: 8 }}
           />
         </ReactFlow>
       </div>
 
       {/* 右侧：Tabs 面板 */}
-      <div style={{ width: 320, display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+      <div style={{ width: 320, display: 'flex', flexDirection: 'column', background: 'var(--cn-bg-container)', borderRadius: 8, border: '1px solid var(--cn-border)' }}>
         <Tabs
           defaultActiveKey="node"
           size="small"

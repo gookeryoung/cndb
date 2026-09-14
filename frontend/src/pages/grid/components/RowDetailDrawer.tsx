@@ -291,7 +291,7 @@ function FieldEditor({
                       <Image width={56} height={56} src={fileApi.getUrl(wid, f.file_key, true)}
                         style={{ objectFit: 'cover', borderRadius: 4 }} />
                       <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                        style={{ position: 'absolute', top: -4, right: -4, background: '#fff', padding: 0 }}
+                        style={{ position: 'absolute', top: -4, right: -4, background: 'var(--cn-bg-container)', padding: 0 }}
                         onClick={() => {
                           fileApi.remove(wid, f.file_key).catch(() => {})
                           onChange(files.filter((_, j) => j !== i))

@@ -2,10 +2,10 @@ import { Outlet } from 'react-router-dom'
 
 export default function PublicLayout() {
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f7fa' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--cn-bg-page)' }}>
       <header style={{
-        padding: '12px 24px', background: '#fff',
-        borderBottom: '1px solid #e5e7eb', fontWeight: 600,
+        padding: '12px 24px', background: 'var(--cn-bg-container)',
+        borderBottom: '1px solid var(--cn-border)', fontWeight: 600,
       }}>
         cndb · 公开访问
       </header>

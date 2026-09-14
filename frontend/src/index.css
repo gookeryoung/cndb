@@ -18,6 +18,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--cn-bg-page);
   color: var(--cn-text-primary);
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
 /* 确保 Ant Design Layout 没有默认边距 */
@@ -37,47 +38,93 @@ body {
 :root,
 body.theme-modern {
   --cn-bg-page: #f5f7fa;
+  --cn-bg-container: #ffffff;
+  --cn-bg-elevated: #ffffff;
+  --cn-bg-subtle: #fafafa;
+  --cn-bg-canvas: #f5f7fa;
+  --cn-bg-muted: #f9fafb;
+  --cn-border: #e5e7eb;
+  --cn-border-soft: #e5e7eb;
   --cn-text-primary: #1f2937;
   --cn-text-secondary: #6b7280;
+  --cn-text-muted: #9ca3af;
+  --cn-text-disabled: #d1d5db;
+  --cn-brand-color: #3b82f6;
+  --cn-bg-danger-subtle: #fff2f0;
+  --cn-bg-warning-subtle: #fffbe6;
+  --cn-graph-fill-default: #ffffff;
+  --cn-graph-fill-view: #fef3c7;
+  --cn-graph-fill-workflow: #dcfce7;
 }
 
 body.theme-github-dark,
 body.theme-dark {
   --cn-bg-page: #0d1117;
+  --cn-bg-container: #161b22;
+  --cn-bg-elevated: #21262d;
+  --cn-bg-subtle: #0d1117;
+  --cn-bg-canvas: #0d1117;
+  --cn-bg-muted: #010409;
+  --cn-border: #30363d;
+  --cn-border-soft: #21262d;
   --cn-text-primary: #e6edf3;
   --cn-text-secondary: #8b949e;
+  --cn-text-muted: #6e7681;
+  --cn-text-disabled: #484f58;
+  --cn-brand-color: #58a6ff;
+  --cn-bg-danger-subtle: #3b1313;
+  --cn-bg-warning-subtle: #3b2e12;
+  --cn-graph-fill-default: #21262d;
+  --cn-graph-fill-view: #3b2e12;
+  --cn-graph-fill-workflow: #123b2a;
 }
 
 body.theme-github-light {
   --cn-bg-page: #f6f8fa;
+  --cn-bg-container: #ffffff;
+  --cn-bg-elevated: #ffffff;
+  --cn-bg-subtle: #f6f8fa;
+  --cn-bg-canvas: #f6f8fa;
+  --cn-bg-muted: #f6f8fa;
+  --cn-border: #d0d7de;
+  --cn-border-soft: #d0d7de;
   --cn-text-primary: #1f2328;
   --cn-text-secondary: #59636e;
+  --cn-text-muted: #6e7781;
+  --cn-text-disabled: #d0d7de;
+  --cn-brand-color: #0969da;
+  --cn-bg-danger-subtle: #fff2f0;
+  --cn-bg-warning-subtle: #fffbe6;
+  --cn-graph-fill-default: #ffffff;
+  --cn-graph-fill-view: #fef3c7;
+  --cn-graph-fill-workflow: #dcfce7;
 }
 
 body.theme-minimal {
   --cn-bg-page: #fafafa;
+  --cn-bg-container: #ffffff;
+  --cn-bg-elevated: #ffffff;
+  --cn-bg-subtle: #fafafa;
+  --cn-bg-canvas: #fafafa;
+  --cn-bg-muted: #f5f5f5;
+  --cn-border: #e5e5e5;
+  --cn-border-soft: #e5e5e5;
   --cn-text-primary: #262626;
   --cn-text-secondary: #737373;
+  --cn-text-muted: #a3a3a3;
+  --cn-text-disabled: #d4d4d4;
+  --cn-brand-color: #525252;
+  --cn-bg-danger-subtle: #fff2f0;
+  --cn-bg-warning-subtle: #fffbe6;
+  --cn-graph-fill-default: #ffffff;
+  --cn-graph-fill-view: #fef3c7;
+  --cn-graph-fill-workflow: #dcfce7;
 }
 
 /* ─────────────── 表格斑马纹（按主题覆盖） ─────────────── */
 
-/* 默认（modern） */
 .table-row-striped > td {
-  background-color: #fafbfc;
-}
-
-body.theme-github-dark .table-row-striped > td,
-body.theme-dark .table-row-striped > td {
-  background-color: #161b22;
-}
-
-body.theme-github-light .table-row-striped > td {
-  background-color: #f6f8fa;
-}
-
-body.theme-minimal .table-row-striped > td {
-  background-color: #fafafa;
+  background-color: var(--cn-bg-subtle);
 }
 
 /* ─────────────── 暗色模式全局微调 ─────────────── */
@@ -95,74 +142,6 @@ body.theme-minimal a {
   color: #262626;
   text-decoration: underline;
   text-underline-offset: 2px;
-}
-
-/* ─────────────── MainLayout 内联硬编码颜色主题覆盖 ─────────────── */
-
-/* Header — 带硬编码 #fff / #e5e7eb 边框 */
-body.theme-github-dark .ant-layout-header,
-body.theme-dark .ant-layout-header {
-  background: #0d1117 !important;
-  border-bottom-color: #30363d !important;
-}
-body.theme-github-light .ant-layout-header {
-  background: #ffffff !important;
-  border-bottom-color: #d0d7de !important;
-}
-body.theme-minimal .ant-layout-header {
-  background: #ffffff !important;
-  border-bottom-color: #e5e5e5 !important;
-}
-
-/* Header Logo — 带硬编码 #3b82f6 */
-body.theme-github-dark .ant-layout-header > div:first-child,
-body.theme-dark .ant-layout-header > div:first-child {
-  color: #58a6ff !important;
-}
-body.theme-github-light .ant-layout-header > div:first-child {
-  color: #0969da !important;
-}
-body.theme-minimal .ant-layout-header > div:first-child {
-  color: #262626 !important;
-}
-
-/* Sider — 带硬编码 #fafafa / #e5e7eb */
-body.theme-github-dark .ant-layout-sider,
-body.theme-dark .ant-layout-sider {
-  background: #0d1117 !important;
-  border-right-color: #30363d !important;
-}
-body.theme-github-light .ant-layout-sider {
-  background: #f6f8fa !important;
-  border-right-color: #d0d7de !important;
-}
-body.theme-minimal .ant-layout-sider {
-  background: #fafafa !important;
-  border-right-color: #e5e5e5 !important;
-}
-
-/* Sider 顶部搜索栏 — 硬编码 borderBottom */
-body.theme-github-dark .ant-layout-sider > div > div:first-child,
-body.theme-dark .ant-layout-sider > div > div:first-child {
-  border-bottom-color: #30363d !important;
-}
-body.theme-github-light .ant-layout-sider > div > div:first-child {
-  border-bottom-color: #d0d7de !important;
-}
-body.theme-minimal .ant-layout-sider > div > div:first-child {
-  border-bottom-color: #e5e5e5 !important;
-}
-
-/* Content — 硬编码 background */
-body.theme-github-dark .ant-layout-content,
-body.theme-dark .ant-layout-content {
-  background: #010409 !important;
-}
-body.theme-github-light .ant-layout-content {
-  background: #ffffff !important;
-}
-body.theme-minimal .ant-layout-content {
-  background: #fafafa !important;
 }
 
 /* ─────────────── Switch 开关兜底 — 防止 flex 容器拉伸高度 ─────────────── */

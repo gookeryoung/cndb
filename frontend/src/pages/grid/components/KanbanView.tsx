@@ -311,10 +311,10 @@ function KanbanCard({ row, fields, opts, density, onRowClick }: KanbanCardProps)
   let bgStyle: React.CSSProperties = {}
   if (isOverdue) {
     borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #ff4d4f` }
-    bgStyle = { background: '#fff2f0' }
+    bgStyle = { background: 'var(--cn-bg-danger-subtle)' }
   } else if (isUrgent) {
     borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #faad14` }
-    bgStyle = { background: '#fffbe6' }
+    bgStyle = { background: 'var(--cn-bg-warning-subtle)' }
   }
 
   return (
@@ -323,7 +323,7 @@ function KanbanCard({ row, fields, opts, density, onRowClick }: KanbanCardProps)
       style={{
         padding: cs.padding,
         marginBottom: cs.marginBottom,
-        border: '1px solid #e5e7eb',
+        border: '1px solid var(--cn-border)',
         borderRadius: cs.borderRadius,
         cursor: 'pointer',
         transition: 'box-shadow 0.15s ease, transform 0.15s ease',
