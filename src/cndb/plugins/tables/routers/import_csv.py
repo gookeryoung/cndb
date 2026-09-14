@@ -97,7 +97,9 @@ def import_csv_create_table(
     # 建表 + 导入
     try:
         engine = db.get_bind()
-        dt, ids = create_table_from_csv(engine, db, workspace_id, payload.table_name, csv_text)
+        dt, ids = create_table_from_csv(
+            engine, db, workspace_id, payload.table_name, csv_text, owner_id=current_user.id
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"建表或导入失败: {exc}") from exc
 

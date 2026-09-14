@@ -39,6 +39,11 @@ class TableResponse(BaseModel):
     field_count: int | None = None
     record_count: int | None = None
     view_count: int | None = None
+    # 数据资产目录相关 —— 由 list_tables 聚合填充
+    owner_id: int | None = None
+    owner_username: str | None = None
+    member_count: int | None = None
+    my_access: str | None = None  # "owner" | "write" | "read" | "none"
 
 
 class ViewBrief(BaseModel):
@@ -255,12 +260,48 @@ class PermissionResponse(BaseModel):
     updated_at: datetime
 
 
+# ── TableMember / Owner Transfer schemas ───────────────
+
+
+class MemberOut(BaseModel):
+    """表成员详情 —— 列表响应."""
+
+    model_config = ConfigDict(from_attributes=True)
+    user_id: int
+    username: str
+    nickname: str = ""
+    role: str  # "read" | "write"
+
+
+class MemberCreate(BaseModel):
+    """添加表成员."""
+
+    user_id: int
+    role: str = "read"
+
+
+class MemberUpdate(BaseModel):
+    """变更表成员角色（仅允许修改 role）."""
+
+    role: str
+
+
+class OwnerTransfer(BaseModel):
+    """转让表所有权."""
+
+    user_id: int
+
+
 __all__ = [
     "BulkDeleteRequest",
     "FieldCreate",
     "FieldResponse",
     "FieldUpdate",
+    "MemberCreate",
+    "MemberOut",
+    "MemberUpdate",
     "OwnerBrief",
+    "OwnerTransfer",
     "PermissionCreate",
     "PermissionResponse",
     "PermissionUpdate",

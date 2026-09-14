@@ -87,6 +87,9 @@ class DataTable(TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+    owner_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     db_table_name: Mapped[str] = mapped_column(String(63), unique=True, nullable=False, index=True)
@@ -96,11 +99,13 @@ class DataTable(TimestampMixin, Base):
 
     # 关系
     workspace: Mapped[Workspace] = relationship("Workspace")
+    owner: Mapped[User | None] = relationship("User", foreign_keys=[owner_id])
     fields: Mapped[list[DataField]] = relationship(back_populates="table", cascade="all, delete-orphan")
     views: Mapped[list[DataView]] = relationship(back_populates="table", cascade="all, delete-orphan")
     permission: Mapped[TablePermission | None] = relationship(
         back_populates="table", cascade="all, delete-orphan", uselist=False
     )
+    members: Mapped[list[TableMember]] = relationship(back_populates="table", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"DataTable(id={self.id}, name={self.name!r}, db_table_name={self.db_table_name!r})"
@@ -244,6 +249,31 @@ class TablePermission(TimestampMixin, Base):
         return f"TablePermission(table_id={self.table_id})"
 
 
+# ── TableMember ──
+
+
+class TableMember(TimestampMixin, Base):
+    """表级成员授权：按用户授予 read/write 两级权限."""
+
+    __tablename__ = "tables_tablemember"
+    __table_args__ = (
+        UniqueConstraint("table_id", "user_id", name="uniq_tablemember_user"),
+        {"extend_existing": True},
+    )
+
+    table_id: Mapped[int] = mapped_column(
+        ForeignKey("tables_datatable.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="read")
+
+    # 关系
+    table: Mapped[DataTable] = relationship(back_populates="members")
+    user: Mapped[User] = relationship("User")
+
+
 # RowComment
 class RowComment(TimestampMixin, Base):
     __tablename__ = "tables_rowcomment"
@@ -309,6 +339,7 @@ __all__ = [
     "FilterType",
     "ImportTask",
     "RowComment",
+    "TableMember",
     "TablePermission",
     "ViewType",
     "generate_db_column_name",

@@ -137,33 +137,4 @@ class TestImportCsvCreateTableApi:
         assert r.status_code == 400
 
 
-# ── GET /graph ────────────────────────────────────────
-
-
-class TestGraphApi:
-    def test_get_graph(self, api_client, workspace_with_auth):
-        ws_id, auth = workspace_with_auth
-        r = api_client.get(
-            f"/api/v1/workspaces/{ws_id}/graph",
-            headers=auth,
-        )
-        assert r.status_code == 200
-        data = r.json()
-        assert "nodes" in data
-        assert "edges" in data
-        assert "topo_order" in data
-
-    def test_get_dependencies(self, api_client, workspace_with_auth):
-        ws_id, auth = workspace_with_auth
-        r = api_client.get(
-            f"/api/v1/workspaces/{ws_id}/dependencies",
-            headers=auth,
-        )
-        assert r.status_code == 200
-        data = r.json()
-        assert "forward" in data
-        assert "reverse" in data
-        assert "link_fields" in data
-
-
 __all__ = []

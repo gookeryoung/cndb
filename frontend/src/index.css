@@ -52,9 +52,6 @@ body.theme-modern {
   --cn-brand-color: #3b82f6;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
-  --cn-graph-fill-default: #ffffff;
-  --cn-graph-fill-view: #fef3c7;
-  --cn-graph-fill-workflow: #dcfce7;
 }
 
 body.theme-github-dark,
@@ -74,9 +71,6 @@ body.theme-dark {
   --cn-brand-color: #58a6ff;
   --cn-bg-danger-subtle: #3b1313;
   --cn-bg-warning-subtle: #3b2e12;
-  --cn-graph-fill-default: #21262d;
-  --cn-graph-fill-view: #3b2e12;
-  --cn-graph-fill-workflow: #123b2a;
 }
 
 body.theme-github-light {
@@ -95,9 +89,6 @@ body.theme-github-light {
   --cn-brand-color: #0969da;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
-  --cn-graph-fill-default: #ffffff;
-  --cn-graph-fill-view: #fef3c7;
-  --cn-graph-fill-workflow: #dcfce7;
 }
 
 body.theme-minimal {
@@ -116,9 +107,6 @@ body.theme-minimal {
   --cn-brand-color: #525252;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
-  --cn-graph-fill-default: #ffffff;
-  --cn-graph-fill-view: #fef3c7;
-  --cn-graph-fill-workflow: #dcfce7;
 }
 
 /* ─────────────── 表格斑马纹（按主题覆盖） ─────────────── */

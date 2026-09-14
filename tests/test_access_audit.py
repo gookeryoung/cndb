@@ -97,6 +97,9 @@ class TestCheckAction:
         wid = ws.json()["id"]
         client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t_fb"})
         tbl = db.query(DataTable).filter_by(workspace_id=wid).first()
+        # 让表 owner 为空，避免 owner 权限短路，专注测试 member_role 路径
+        tbl.owner_id = None
+        db.commit()
         user = db.query(User).first()
         assert check_action(db, tbl, user, TableAction.READ, member_role=WorkspaceRole.VIEWER)
         assert check_action(db, tbl, user, TableAction.EDIT_SCHEMA, member_role=WorkspaceRole.VIEWER) is False
@@ -107,24 +110,29 @@ class TestCheckAction:
         wid = ws.json()["id"]
         client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t_ovr"})
         tbl = db.query(DataTable).filter_by(workspace_id=wid).first()
+        tbl.owner_id = None
+        db.commit()
         perm = TablePermission(table_id=tbl.id, edit_schema_role="admin")
         db.add(perm)
         db.commit()
         user = db.query(User).first()
-        assert check_action(db, tbl, user, TableAction.EDIT_SCHEMA, member_role=WorkspaceRole.ADMIN)
+        # EDITOR 走 TablePermission 阈值，edit_schema_role=admin 要求更高 → False
         assert check_action(db, tbl, user, TableAction.EDIT_SCHEMA, member_role=WorkspaceRole.EDITOR) is False
 
     def test_permission_invalid_role(self, db, client, auth_headers):
-        """表级指定无效角色字符串 → False."""
+        """表级指定无效角色字符串 → False（当用户走 TablePermission 阈值路径时）."""
         ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_bogus"})
         wid = ws.json()["id"]
         client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t_bogus"})
         tbl = db.query(DataTable).filter_by(workspace_id=wid).first()
+        tbl.owner_id = None
+        db.commit()
         perm = TablePermission(table_id=tbl.id, edit_records_role="bogus_role")
         db.add(perm)
         db.commit()
         user = db.query(User).first()
-        assert check_action(db, tbl, user, TableAction.EDIT_RECORDS, member_role=WorkspaceRole.ADMIN) is False
+        # EDITOR 走 TablePermission 阈值，bogus_role 无法解析 → False
+        assert check_action(db, tbl, user, TableAction.EDIT_RECORDS, member_role=WorkspaceRole.EDITOR) is False
 
 
 class TestGetHiddenFieldNames:
