@@ -1,9 +1,11 @@
 """API 自动建表导入路由 — 工作区级别端点.
 
-提供三个端点：
+提供五个端点：
 - POST /{workspace_id}/import-api/analyze           — 抓 API + 分析列类型（不写库）
 - POST /{workspace_id}/import-api                   — 抓 API + 自动建表 + 导入数据
 - POST /{workspace_id}/tables/{table_id}/import-api — 抓 API + 追加数据到已有表
+- POST /{workspace_id}/import-api/config            — 从 JSON 配置文件批量建表
+- POST /{workspace_id}/import-api/config/validate   — 校验 JSON 配置文件（不建表）
 """
 
 from __future__ import annotations
@@ -17,6 +19,13 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.api_config_loader import (
+    ApiConfigError,
+    build_fetch_config,
+    ingest_tables_from_config,
+    load_api_config_text,
+    validate_api_config,
+)
 from cndb.plugins.tables.api_fetch import FetchConfig, fetch_json
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.transfer import (
@@ -52,6 +61,9 @@ class ApiFetchRequest(BaseModel):
         description="响应内数组定位路径（如 data.items）。留空时自动尝试 data/items/results 等常见字段",
     )
     timeout: float = Field(default=15.0, description="请求超时（秒）")
+    response_handler: str = Field(default="json", description="响应处理器：json / tencent_stock / ...")
+    encoding: str = Field(default="utf-8", description="响应编码，如 utf-8 / gbk")
+    query_interval: float = Field(default=60.0, description="查询间隔（秒），默认60，最短6")
 
 
 class ApiAnalyzeRequest(ApiFetchRequest):
@@ -60,6 +72,16 @@ class ApiAnalyzeRequest(ApiFetchRequest):
 
 class ApiImportRequest(ApiFetchRequest):
     table_name: str = Field(..., description="新建表的名称")
+
+
+class ApiConfigRequest(BaseModel):
+    """JSON 配置文件驱动的批量建表请求."""
+
+    config_json: str = Field(..., description="API 建表配置 JSON 字符串")
+    stop_on_error: bool = Field(default=True, description="遇错是否停止（True=停止/False=继续）")
+
+
+# ── 原有端点 ────────────────────────────────────
 
 
 @router.post("/import-api/analyze")
@@ -82,6 +104,9 @@ def api_analyze(
                 body=payload.body,
                 timeout=payload.timeout,
                 data_path=payload.data_path,
+                response_handler=payload.response_handler,
+                encoding=payload.encoding,
+                query_interval=payload.query_interval,
             )
         )
     except ValueError as exc:
@@ -167,6 +192,9 @@ def api_import_append(
                 body=payload.body,
                 timeout=payload.timeout,
                 data_path=payload.data_path,
+                response_handler=payload.response_handler,
+                encoding=payload.encoding,
+                query_interval=payload.query_interval,
             )
         )
     except ValueError as exc:
@@ -190,6 +218,87 @@ def api_import_append(
     return {
         "table_id": table.id,
         "appended_rows": len(ids),
+    }
+
+
+# ── JSON 配置文件批量建表 ───────────────────────
+
+
+@router.post("/import-api/config/validate")
+def api_config_validate(
+    workspace_id: int,
+    payload: ApiConfigRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """校验 JSON 配置文件（不建表）."""
+    _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+
+    try:
+        table_defs = load_api_config_text(payload.config_json)
+    except ApiConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 返回概要信息
+    summary = []
+    for td in table_defs:
+        fetch_cfg = build_fetch_config(td)
+        summary.append({
+            "table_name": td["table_name"],
+            "handler": fetch_cfg.response_handler if isinstance(fetch_cfg.response_handler, str) else "custom",
+            "encoding": fetch_cfg.encoding,
+            "query_interval": fetch_cfg.query_interval,
+            "url": fetch_cfg.url[:80] + ("..." if len(fetch_cfg.url) > 80 else ""),
+        })
+
+    return {
+        "valid": True,
+        "table_count": len(table_defs),
+        "tables": summary,
+    }
+
+
+@router.post("/import-api/config")
+def api_config_import(
+    workspace_id: int,
+    payload: ApiConfigRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """从 JSON 配置文件批量建表 + 导入数据."""
+    _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
+
+    try:
+        table_defs = load_api_config_text(payload.config_json)
+    except ApiConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    engine = db.get_bind()
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+
+    for table_def in table_defs:
+        table_name = table_def["table_name"]
+        try:
+            table_results = ingest_tables_from_config(engine, db, workspace_id, [table_def])
+            results.extend(table_results)
+        except Exception as exc:
+            err_info = {"table_name": table_name, "error": str(exc)}
+            errors.append(err_info)
+            if payload.stop_on_error:
+                break
+            # 继续下一个
+
+    # 无论部分成功还是全部失败，都返回结果
+    success_count = len(results)
+    fail_count = len(errors)
+
+    return {
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "results": results,
+        "errors": errors,
+        "stopped_on_error": payload.stop_on_error and fail_count > 0,
     }
 
 
