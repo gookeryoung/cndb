@@ -177,9 +177,7 @@ class TestFetchJson:
         body = json.dumps({"result": {"items": [{"x": 1}]}}).encode()
         MockClient.return_value = _mock_client(200, body)
 
-        rows = af.fetch_json(
-            af.FetchConfig(url="https://example.com/api", data_path="result.items")
-        )
+        rows = af.fetch_json(af.FetchConfig(url="https://example.com/api", data_path="result.items"))
         assert rows == [{"x": 1}]
 
     @patch("httpx2.Client")
