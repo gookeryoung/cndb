@@ -16,13 +16,20 @@ from cndb.plugins.tables.access import TableAction, check_action
 from cndb.plugins.tables.ddl import create_table as ddl_create
 from cndb.plugins.tables.models import DataField, DataTable, DataView
 from cndb.plugins.tables.schemas import (
+    OwnerBrief,
     TableCreate,
     TableDetailResponse,
     TableResponse,
     TableUpdate,
     ViewBrief,
+    WorkspaceBrief,
 )
-from cndb.plugins.workspaces.models import ROLE_RANK, Workspace, WorkspaceRole
+from cndb.plugins.workspaces.models import (
+    ROLE_RANK,
+    Workspace,
+    WorkspaceMember,
+    WorkspaceRole,
+)
 from cndb.plugins.workspaces.permissions import get_member_role
 
 router = APIRouter(prefix="/{workspace_id}/tables", tags=["tables"])
@@ -209,7 +216,7 @@ def get_table(
     views = sorted(dt.views, key=lambda v: (v.order, v.id))
     view_briefs = [ViewBrief.model_validate(v, from_attributes=True) for v in views]
 
-    # 4) 当前用户可执行的动作（用 member_role 缓存避免重复查询 workspace）
+    # 4) 工作区 + 当前用户角色 + owner（复用 _check_table_permission 已查过的 ws）
     ws = db.get(Workspace, workspace_id)
     member_role = get_member_role(current_user, ws, db) if ws else None
     actions: list[str] = []
@@ -217,11 +224,40 @@ def get_table(
         if check_action(db, dt, current_user, action, member_role=member_role):
             actions.append(_ACTION_LABEL[action])
 
+    # 5) 所属工作区摘要（让前端不用再调 workspaceApi.get）
+    ws_brief: WorkspaceBrief | None = None
+    owner: OwnerBrief | None = None
+    if ws is not None:
+        ws_brief = WorkspaceBrief(
+            id=ws.id,
+            name=ws.name,
+            visibility=ws.visibility.value if hasattr(ws.visibility, "value") else str(ws.visibility),
+            allow_edit=ws.allow_edit,
+            current_user_role=member_role.value if member_role else None,
+        )
+        # owner — 查 OWNER 角色的 WorkspaceMember
+        owner_member = (
+            db.query(WorkspaceMember)
+            .filter(
+                WorkspaceMember.workspace_id == ws.id,
+                WorkspaceMember.role == WorkspaceRole.OWNER,
+            )
+            .first()
+        )
+        if owner_member and owner_member.user:
+            owner = OwnerBrief(
+                id=owner_member.user.id,
+                username=owner_member.user.username,
+                nickname=owner_member.user.nickname,
+            )
+
     return TableDetailResponse(
         **base.model_dump(),
         fields=active_fields,
         views=view_briefs,
         current_user_actions=actions,
+        owner=owner,
+        workspace=ws_brief,
     )
 
 
