@@ -63,12 +63,23 @@ def _is_float(value: str) -> bool:
 
 
 def _check_phone(v: str) -> bool:
-    """判断是否为带分隔符的电话格式（+、-、() 等）."""
-    if not _PHONE_RE.match(v):
-        return False
-    # 检查是否含分隔符（非数字且非字母的特殊字符）
-    has_separator = any(c in v for c in "+-()")
-    return has_separator
+    """判断是否为**中国手机号**格式（含 +86 前缀、带/不带分隔符）.
+
+    设计意图：
+    - CSV 用户可能真在导入中国手机号数据 → 可以升为 phone 类型；
+    - 但 API 自动建表遇到国际手机号（如 +1 (822) 340-2602）→ 一律降级为 text，
+      因为 phone 字段类型的 validate_value 只接受中国 11 位格式。
+
+    规则：剥掉所有分隔符和 +86 前缀后，为纯数字 11 位，以 1 开头，第二位 3-9.
+    """
+    stripped = v.strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    # 去掉可选的中国区号前缀
+    if stripped.startswith("+86"):
+        stripped = stripped[3:]
+    elif stripped.startswith("86") and len(stripped) > 11:
+        stripped = stripped[2:]
+    # 现在应该是纯数字 11 位
+    return len(stripped) == 11 and stripped.isdigit() and stripped.startswith("1") and stripped[1] in "3456789"
 
 
 def _infer_single_value(value: str) -> str:
@@ -403,9 +414,196 @@ def guess_format_from_filename(filename: str) -> str:
     raise ValueError(f"无法从文件名推断格式: {filename}")
 
 
+# ── JSON 数组类型推断 ──────────────────────────────────
+
+
+def _python_type_to_field_type(value: Any) -> str:
+    """把 Python 对象直接映射到字段类型（JSON 推断的第一捷径）."""
+    if value is None:
+        return "empty"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        # 长整型 / 前导零风格数字 → text 交给字符串推断，但纯 int 直接判 number
+        return "number"
+    if isinstance(value, float):
+        return "float"
+    if isinstance(value, str):
+        if not value.strip():
+            return "empty"
+        return _infer_single_value(value)
+    if isinstance(value, (list, dict)):
+        return "json"
+    return "text"
+
+
+def analyze_json_columns(
+    rows: list[dict[str, Any]],
+    sample_rows: int = 100,
+) -> list[dict[str, Any]]:
+    """分析 JSON 对象数组，推断每个字段的类型.
+
+    Returns:
+        列表每项同 analyze_csv_columns：
+        {name, field_type, sample_values, null_ratio, options?}
+    """
+    # 收集所有出现过的 key（跨所有行）
+    key_counts: dict[str, int] = {}  # 非空值计数
+    null_counts: dict[str, int] = {}
+    type_counts: dict[str, dict[str, int]] = {}
+    samples: dict[str, list[str]] = {}
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key, val in row.items():
+            key_counts.setdefault(key, 0)
+            null_counts.setdefault(key, 0)
+            type_counts.setdefault(key, {})
+            samples.setdefault(key, [])
+
+            if val is None:
+                null_counts[key] += 1
+                continue
+            if isinstance(val, str) and not val.strip():
+                null_counts[key] += 1
+                continue
+
+            key_counts[key] += 1
+            t = _python_type_to_field_type(val)
+            if t == "empty":
+                null_counts[key] += 1
+                continue
+            type_counts[key][t] = type_counts[key].get(t, 0) + 1
+
+            # 样本收集（仅基础类型）
+            if len(samples[key]) < sample_rows:
+                if isinstance(val, (dict, list)):
+                    import json as _json
+
+                    try:
+                        samples[key].append(_json.dumps(val, ensure_ascii=False))
+                    except Exception:
+                        samples[key].append(str(val))
+                else:
+                    samples[key].append(str(val))
+
+    if not rows:
+        return []
+
+    total = len(rows)
+    columns: list[dict[str, Any]] = []
+    for key in key_counts:
+        null_ratio = null_counts[key] / total if total else 0.0
+
+        if not type_counts[key]:
+            columns.append(
+                {"name": key, "field_type": "text", "sample_values": [], "null_ratio": round(null_ratio, 4)}
+            )
+            continue
+
+        inferred = _pick_inferred_type(type_counts[key])
+        inferred, select_options = _promote_to_select_if_low_cardinality(inferred, samples[key])
+
+        col_info: dict[str, Any] = {
+            "name": key,
+            "field_type": inferred,
+            "sample_values": samples[key][:5],
+            "null_ratio": round(null_ratio, 4),
+        }
+        if select_options:
+            col_info["options"] = select_options
+        columns.append(col_info)
+
+    return columns
+
+
+def create_table_from_json_data(
+    engine: Any,
+    db: Any,
+    workspace_id: int,
+    table_name: str,
+    rows: list[dict[str, Any]],
+) -> tuple[DataTable, list[int]]:
+    """从 JSON 对象数组自动建表 + 导入数据.
+
+    与 create_table_from_csv 对称.
+    """
+    columns = analyze_json_columns(rows)
+
+    if not columns:
+        raise ValueError("JSON 没有有效字段")
+
+    dt = DataTable(workspace_id=workspace_id, name=table_name)
+    dt.ensure_db_name()
+    db.add(dt)
+    db.commit()
+    db.refresh(dt)
+
+    for i, col in enumerate(columns):
+        cfg: dict[str, Any] = {}
+        if col["field_type"] == "select":
+            cfg["options"] = col.get("options", [])
+        f = DataField(table_id=dt.id, name=col["name"], field_type=col["field_type"], order=i, config=cfg)
+        f.ensure_db_name()
+        db.add(f)
+    db.commit()
+    db.refresh(dt)
+
+    ddl_create(engine, dt)
+
+    # import_rows_from_json 需要 JSON 字符串，我们直接用对象数组
+    valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
+    ids = rec.bulk_create(engine, dt, valid, db=db)
+    return dt, ids
+
+
+def ingest_from_api(
+    engine: Any,
+    db: Any,
+    workspace_id: int,
+    table_name: str,
+    *,
+    api_url: str,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    params: dict[str, Any] | None = None,
+    body: Any = None,
+    data_path: str | None = None,
+    timeout: float = 15.0,
+) -> tuple[DataTable, list[int], list[dict[str, Any]]]:
+    """一站式：抓 API → 推断列 → 建表 → 导入.
+
+    Returns:
+        (DataTable, 新行 id 列表, 列信息)
+    """
+    from cndb.plugins.tables.api_fetch import FetchConfig, fetch_json
+
+    rows = fetch_json(
+        FetchConfig(
+            url=api_url,
+            method=method,
+            headers=headers or {},
+            params=params or {},
+            body=body,
+            timeout=timeout,
+            data_path=data_path,
+        )
+    )
+
+    if not rows:
+        raise ValueError("API 未返回有效对象数组")
+
+    columns = analyze_json_columns(rows)
+    dt, ids = create_table_from_json_data(engine, db, workspace_id, table_name, rows)
+    return dt, ids, columns
+
+
 __all__ = [
     "analyze_csv_columns",
+    "analyze_json_columns",
     "create_table_from_csv",
+    "create_table_from_json_data",
     "export_rows_to_csv",
     "export_rows_to_json",
     "export_rows_to_xlsx",
@@ -413,4 +611,5 @@ __all__ = [
     "import_rows_from_csv",
     "import_rows_from_json",
     "import_rows_from_xlsx",
+    "ingest_from_api",
 ]
