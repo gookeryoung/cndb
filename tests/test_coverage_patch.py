@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -14,12 +13,10 @@ from cndb.plugins.tables import transfer as transfer_mod
 from cndb.plugins.tables.models import (
     DataField,
     DataTable,
-    DataView,
-    TablePermission,
     TableMember,
+    TablePermission,
 )
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
-
 
 # ── access.py 单元测试 ───────────────────────────────
 
@@ -66,52 +63,48 @@ def outsider_user(db):
 
 class TestAccessModule:
     def test_check_action_member_write(self, db, _ws_table_user):
-        ws, dt, owner, viewer, writerm = _ws_table_user
+        _ws, dt, _owner, viewer, _writerm = _ws_table_user
         db.add(TableMember(table_id=dt.id, user_id=viewer.id, role="write"))
         db.commit()
         assert access_mod.check_action(db, dt, viewer, access_mod.TableAction.EDIT_RECORDS) is True
         assert access_mod.check_action(db, dt, viewer, access_mod.TableAction.EDIT_SCHEMA) is False
 
     def test_check_action_member_read(self, db, _ws_table_user):
-        ws, dt, owner, viewer, writerm = _ws_table_user
+        _ws, dt, _owner, _viewer, writerm = _ws_table_user
         db.add(TableMember(table_id=dt.id, user_id=writerm.id, role="read"))
         db.commit()
         assert access_mod.check_action(db, dt, writerm, access_mod.TableAction.READ) is True
         assert access_mod.check_action(db, dt, writerm, access_mod.TableAction.EDIT_RECORDS) is False
 
     def test_check_action_unknown_member_role(self, db, _ws_table_user):
-        ws, dt, owner, viewer, writerm = _ws_table_user
+        _ws, dt, _owner, viewer, _writerm = _ws_table_user
         db.add(TableMember(table_id=dt.id, user_id=viewer.id, role="super"))
         db.commit()
         assert access_mod.check_action(db, dt, viewer, access_mod.TableAction.READ) is True
         assert access_mod.check_action(db, dt, viewer, access_mod.TableAction.EDIT_SCHEMA) is False
 
     def test_row_filter_conjunction_default_and(self, db, _ws_table_user):
-        ws, dt, owner, viewer, writerm = _ws_table_user
+        _ws, dt, _owner, _viewer, _writerm = _ws_table_user
         assert access_mod.row_filter_conjunction(db, dt) == "AND"
 
     def test_row_filter_conjunction_or(self, db, _ws_table_user):
-        ws, dt, owner, viewer, writerm = _ws_table_user
-        db.add(
-            TablePermission(table_id=dt.id, row_filters=[{"field": "x"}], row_filter_type="OR")
-        )
+        _ws, dt, _owner, _viewer, _writerm = _ws_table_user
+        db.add(TablePermission(table_id=dt.id, row_filters=[{"field": "x"}], row_filter_type="OR"))
         db.commit()
         assert access_mod.row_filter_conjunction(db, dt) == "OR"
 
     def test_row_filter_conjunction_invalid(self, db, _ws_table_user):
-        ws, dt, owner, viewer, writerm = _ws_table_user
-        db.add(
-            TablePermission(table_id=dt.id, row_filters=[{"field": "x"}], row_filter_type="FUNNY")
-        )
+        _ws, dt, _owner, _viewer, _writerm = _ws_table_user
+        db.add(TablePermission(table_id=dt.id, row_filters=[{"field": "x"}], row_filter_type="FUNNY"))
         db.commit()
         assert access_mod.row_filter_conjunction(db, dt) == "AND"
 
     def test_get_hidden_field_names_no_perm(self, db, _ws_table_user):
-        ws, dt, owner, viewer, writerm = _ws_table_user
+        _ws, dt, _owner, viewer, _writerm = _ws_table_user
         assert access_mod.get_hidden_field_names(db, dt, viewer) == set()
 
     def test_get_hidden_field_names_none_role(self, db, _ws_table_user, outsider_user):
-        ws, dt, owner, viewer, writerm = _ws_table_user
+        _ws, dt, _owner, _viewer, _writerm = _ws_table_user
         db.add(TablePermission(table_id=dt.id, hidden_fields={"viewer": ["secret"]}))
         db.commit()
         assert access_mod.get_hidden_field_names(db, dt, outsider_user) == set()
@@ -194,7 +187,7 @@ def _u_ws(db):
 
 class TestDDLPatch2:
     def test_recreate_table(self, db_engine, db, _u_ws):
-        u, ws = _u_ws
+        _u, ws = _u_ws
         dt = DataTable(workspace_id=ws.id, name="R1")
         dt.ensure_db_name()
         db.add(dt)
@@ -210,7 +203,7 @@ class TestDDLPatch2:
         assert True
 
     def test_drop_column(self, db_engine, db, _u_ws):
-        u, ws = _u_ws
+        _u, ws = _u_ws
         dt = DataTable(workspace_id=ws.id, name="DC1")
         dt.ensure_db_name()
         db.add(dt)
@@ -234,8 +227,8 @@ class TestRunnerPatch:
             ["uv", "run", "cndb", "info"],
             capture_output=True,
             text=True,
-            cwd="/workspace",
             timeout=15,
+            check=False,
         )
         assert r.returncode == 0
 

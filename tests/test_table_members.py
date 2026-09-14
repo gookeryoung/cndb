@@ -300,9 +300,11 @@ class TestRemoveMember:
         )
         assert r.status_code == 204
         # 确认已删除
-        remaining = db.query(TableMember).filter(
-            TableMember.table_id == mb_table.id, TableMember.user_id == editor_user.id
-        ).first()
+        remaining = (
+            db.query(TableMember)
+            .filter(TableMember.table_id == mb_table.id, TableMember.user_id == editor_user.id)
+            .first()
+        )
         assert remaining is None
 
     def test_remove_not_found(self, client, mb_ws, mb_table, editor_user, auth_for):
