@@ -5,24 +5,69 @@ from __future__ import annotations
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.access import TableAction, check_action
 from cndb.plugins.tables.ddl import create_table as ddl_create
-from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.models import DataField, DataTable, DataView
 from cndb.plugins.tables.schemas import (
     TableCreate,
     TableDetailResponse,
     TableResponse,
     TableUpdate,
+    ViewBrief,
 )
 from cndb.plugins.workspaces.models import ROLE_RANK, Workspace, WorkspaceRole
 from cndb.plugins.workspaces.permissions import get_member_role
 
 router = APIRouter(prefix="/{workspace_id}/tables", tags=["tables"])
+
+# TableAction 名称 → 前端展示字符串
+_ACTION_LABEL: dict[TableAction, str] = {
+    TableAction.READ: "read",
+    TableAction.EDIT_RECORDS: "edit_records",
+    TableAction.EDIT_VIEWS: "edit_views",
+    TableAction.EDIT_SCHEMA: "edit_schema",
+    TableAction.COMMENT: "comment",
+}
+
+
+def _fill_table_stats(db: Session, table: DataTable) -> TableResponse:
+    """为单张表填充 field_count / record_count / view_count 并返回 TableResponse.
+
+    行数通过物理表 COUNT 查询，字段/视图直接查元数据表。
+    """
+    field_count = (
+        db.query(func.count(DataField.id))
+        .filter(DataField.table_id == table.id, DataField.trashed == False)  # noqa: E712
+        .scalar()
+        or 0
+    )
+    view_count = (
+        db.query(func.count(DataView.id))
+        .filter(DataView.table_id == table.id)
+        .scalar()
+        or 0
+    )
+    # 物理表 COUNT —— 表结构异常（比如 DDL 没建出来）时用 None
+    record_count: int | None = None
+    try:
+        result = db.execute(text(f'SELECT COUNT(*) FROM {table.db_table_name}'))
+        record_count = result.scalar() or 0
+    except Exception:
+        record_count = None
+
+    # 先把 ORM 对象转成 TableResponse 基本字段，再注入统计
+    base = TableResponse.model_validate(table, from_attributes=True)
+    base.field_count = int(field_count)
+    base.record_count = int(record_count) if record_count is not None else None
+    base.view_count = int(view_count)
+    return base
 
 
 def _check_table_permission(workspace_id: int, user: User, db: Session, min_role: WorkspaceRole) -> None:
@@ -66,12 +111,13 @@ def list_tables(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = False,
-) -> list[DataTable]:
+) -> list[TableResponse]:
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
     query = db.query(DataTable).filter(DataTable.workspace_id == workspace_id)
     if not include_trashed:
         query = query.filter(DataTable.trashed == False)  # noqa: E712
-    return query.order_by(DataTable.order, DataTable.id).all()
+    tables = query.order_by(DataTable.order, DataTable.id).all()
+    return [_fill_table_stats(db, t) for t in tables]
 
 
 @router.post("/reorder", response_model=list[TableResponse])
@@ -149,10 +195,34 @@ def get_table(
     table_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> DataTable:
+) -> TableDetailResponse:
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
     dt = _get_table_or_404(table_id, workspace_id, db)
-    return dt
+
+    # 1) 统计 + 基础 TableResponse 字段
+    base = _fill_table_stats(db, dt)
+
+    # 2) 字段（复用 relationship，已自动加载）
+    active_fields = sorted([f for f in dt.fields if not f.trashed], key=lambda f: (f.order, f.id))
+
+    # 3) 视图精简摘要
+    views = sorted(dt.views, key=lambda v: (v.order, v.id))
+    view_briefs = [ViewBrief.model_validate(v, from_attributes=True) for v in views]
+
+    # 4) 当前用户可执行的动作（用 member_role 缓存避免重复查询 workspace）
+    ws = db.get(Workspace, workspace_id)
+    member_role = get_member_role(current_user, ws, db) if ws else None
+    actions: list[str] = []
+    for action in TableAction:
+        if check_action(db, dt, current_user, action, member_role=member_role):
+            actions.append(_ACTION_LABEL[action])
+
+    return TableDetailResponse(
+        **base.model_dump(),
+        fields=active_fields,
+        views=view_briefs,
+        current_user_actions=actions,
+    )
 
 
 @router.patch("/{table_id}", response_model=TableResponse)

@@ -80,13 +80,25 @@ export interface WorkspaceExportData {
 
 export interface TableSummary {
   id: ID; name: string; description?: string
-  record_count?: number; field_count?: number; updated_at?: string
-  /** 软删时间（回收站场景） */
+  record_count?: number | null; field_count?: number | null; view_count?: number | null
+  /** 软删标记（后端 TableResponse 新增，TablesList 不展示但 API 有返回） */
+  trashed?: boolean
   trashed_at?: string | null
+  updated_at?: string
+}
+/** 视图精简摘要（嵌入 TableDetail） */
+export interface ViewBrief {
+  id: ID; name: string; view_type: string; is_default: boolean
 }
 export interface TableDetail {
-  id: ID; workspace_id: ID; name: string; description?: string
+  id: ID; workspace_id: ID; name: string; db_table_name?: string; description?: string
   fields: Field[]; created_at?: string; updated_at?: string
+  /** 后端增强 —— 可选统计字段 */
+  field_count?: number | null; record_count?: number | null; view_count?: number | null
+  /** 后端增强 —— 视图精简摘要（避免前端再调一次 viewApi.list） */
+  views?: ViewBrief[]
+  /** 后端增强 —— 当前用户在该表可执行的动作集合 */
+  current_user_actions?: string[]
 }
 export interface TableCreate { name: string; description?: string }
 export interface TableUpdate { name?: string; description?: string }
