@@ -270,8 +270,18 @@ body.theme-github-dark [style*="border: 1px solid #e2e8f0"],
 body.theme-dark [style*="border: 1px solid #e2e8f0"],
 body.theme-github-dark [style*="border:1px solid #e2e8f0"],
 body.theme-dark [style*="border:1px solid #e2e8f0"],
+body.theme-github-dark [style*="border: 1px solid #f1f5f9"],
+body.theme-dark [style*="border: 1px solid #f1f5f9"],
+body.theme-github-dark [style*="border:1px solid #f1f5f9"],
+body.theme-dark [style*="border:1px solid #f1f5f9"],
+body.theme-github-dark [style*="border: 1px solid #f0f0f0"],
+body.theme-dark [style*="border: 1px solid #f0f0f0"],
+body.theme-github-dark [style*="border:1px solid #f0f0f0"],
+body.theme-dark [style*="border:1px solid #f0f0f0"],
 body.theme-github-dark [style*="borderBottom: '1px solid #f0f0f0'"],
-body.theme-dark [style*="borderBottom: '1px solid #f0f0f0'"] {
+body.theme-dark [style*="borderBottom: '1px solid #f0f0f0'"],
+body.theme-github-dark [style*="border-bottom: 1px solid #f0f0f0"],
+body.theme-dark [style*="border-bottom: 1px solid #f0f0f0"] {
   border-color: var(--cn-border) !important;
 }
 

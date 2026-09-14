@@ -207,7 +207,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
       title: '样本值',
       key: 'samples',
       render: (_: unknown, col: ApiAnalyzeColumn) => (
-        <span style={{ color: '#64748b', fontSize: 12 }}>{renderSamples(col)}</span>
+        <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>{renderSamples(col)}</span>
       ),
     },
   ]
@@ -336,7 +336,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
             column={3}
             bordered
             style={{ marginBottom: 8 }}
-            labelStyle={{ width: 110, background: '#f8fafc' }}
+            labelStyle={{ width: 110, background: 'var(--cn-bg-subtle)', color: 'var(--cn-text-secondary)' }}
           >
             <Descriptions.Item label="命中记录数">
               <Tag color="blue">{analyzeResult.total_rows}</Tag>
@@ -345,7 +345,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
               <Tag color="green">{columnsPreview.length}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="顶层键">
-              <span style={{ color: '#64748b', fontSize: 12 }}>
+              <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>
                 {analyzeResult.sample_row_keys.slice(0, 6).join(', ')}
                 {analyzeResult.sample_row_keys.length > 6 ? ` … (+${analyzeResult.sample_row_keys.length - 6})` : ''}
               </span>
@@ -358,15 +358,25 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
             rowKey="name"
             pagination={false}
             scroll={{ y: 260 }}
-            style={{ border: '1px solid #f1f5f9', borderRadius: 6 }}
+            style={{ border: '1px solid var(--cn-border)', borderRadius: 6 }}
           />
         </div>
       )}
 
       {!analyzeResult && !errorMsg && (
-        <div style={{ marginTop: 16, padding: 16, background: '#f8fafc', borderRadius: 8, textAlign: 'center' }}>
-          <ReloadOutlined style={{ fontSize: 28, color: '#94a3b8' }} />
-          <div style={{ color: '#64748b', marginTop: 8 }}>
+        <div
+          data-testid="api-placeholder"
+          style={{
+            marginTop: 16,
+            padding: 16,
+            background: 'var(--cn-bg-subtle)',
+            borderRadius: 8,
+            textAlign: 'center',
+            border: '1px solid var(--cn-border)',
+          }}
+        >
+          <ReloadOutlined style={{ fontSize: 28, color: 'var(--cn-text-muted)' }} />
+          <div style={{ color: 'var(--cn-text-secondary)', marginTop: 8 }}>
             填写 API 参数后点击「分析」，预览返回的数据结构和推断字段类型
           </div>
         </div>
