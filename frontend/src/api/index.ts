@@ -41,6 +41,7 @@ import type {
   AttachmentFile,
   PreferencesResponse, ActiveViewResponse,
   ApiFetchRequest, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
+  ApiConfigRequest, ApiConfigValidateResult, ApiConfigImportResult,
 } from './types'
 
 export type {
@@ -66,6 +67,7 @@ export type {
   AttachmentFile,
   PreferencesResponse, ActiveViewResponse,
   ApiFetchRequest, ApiAnalyzeColumn, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
+  ApiConfigRequest, ApiConfigValidateResult, ApiConfigImportResult,
 } from './types'
 
 // ─────────────── Auth ───────────────
@@ -327,6 +329,17 @@ export const importApi = {
   /** 抓 API + 追加数据到已有表 */
   fetchAppend: (wid: number | string, tid: number | string, payload: ApiFetchRequest) =>
     api.post<ApiAppendResult>(`/v1/workspaces/${wid}/tables/${tid}/import-api`, payload).then(r => r.data),
+
+  // ── JSON 配置文件批量建表 ──
+  /** 校验 JSON 配置文件（不建表） */
+  configValidate: (wid: number | string, configJson: string) =>
+    api.post<ApiConfigValidateResult>(`/v1/workspaces/${wid}/import-api/config/validate`, { config_json: configJson }).then(r => r.data),
+  /** 从 JSON 配置文件批量建表 */
+  configImport: (wid: number | string, configJson: string, stopOnError = true) =>
+    api.post<ApiConfigImportResult>(`/v1/workspaces/${wid}/import-api/config`, {
+      config_json: configJson,
+      stop_on_error: stopOnError,
+    }).then(r => r.data),
 }
 
 export const exportApi = {
