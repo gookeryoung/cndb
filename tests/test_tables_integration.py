@@ -562,9 +562,7 @@ class TestTablesAPI:
 class TestTableDetailEnhancement:
     """验证 get_table / list_tables 新增强字段（统计、权限上下文、owner、工作区摘要）."""
 
-    def test_list_tables_includes_stats(
-        self, client, workspace, auth_owner, table_with_fields
-    ):
+    def test_list_tables_includes_stats(self, client, workspace, auth_owner, table_with_fields):
         """list_tables 返回的每张表应包含 field_count / record_count / view_count."""
         dt, _ = table_with_fields
 
@@ -585,9 +583,7 @@ class TestTableDetailEnhancement:
             headers=auth_owner,
         )
 
-        r = client.get(
-            f"/api/v1/workspaces/{workspace.id}/tables", headers=auth_owner
-        )
+        r = client.get(f"/api/v1/workspaces/{workspace.id}/tables", headers=auth_owner)
         assert r.status_code == 200
         items = r.json()
         assert len(items) == 1
@@ -604,9 +600,7 @@ class TestTableDetailEnhancement:
         assert row["name"] == "员工表"
         assert "db_table_name" in row
 
-    def test_get_table_detail_complete_structure(
-        self, client, workspace, auth_owner, table_with_fields
-    ):
+    def test_get_table_detail_complete_structure(self, client, workspace, auth_owner, table_with_fields):
         """get_table 返回完整 TableDetailResponse 结构."""
         dt, _ = table_with_fields
         # 预建视图 + 插数据
@@ -621,9 +615,7 @@ class TestTableDetailEnhancement:
             headers=auth_owner,
         )
 
-        r = client.get(
-            f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}", headers=auth_owner
-        )
+        r = client.get(f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}", headers=auth_owner)
         assert r.status_code == 200
         d = r.json()
 
@@ -676,8 +668,14 @@ class TestTableDetailEnhancement:
         assert ws["current_user_role"] == "owner"
 
     def test_current_user_actions_differ_by_role(
-        self, client, workspace, auth_owner, table_with_fields,
-        db, editor_user, viewer_user,
+        self,
+        client,
+        workspace,
+        auth_owner,
+        table_with_fields,
+        db,
+        editor_user,
+        viewer_user,
     ):
         """不同工作区角色的 current_user_actions 应不同."""
         from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
@@ -697,9 +695,7 @@ class TestTableDetailEnhancement:
         assert r_login.status_code == 200
         auth_editor = {"Authorization": f"Bearer {r_login.json()['access_token']}"}
 
-        r = client.get(
-            f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}", headers=auth_editor
-        )
+        r = client.get(f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}", headers=auth_editor)
         assert r.status_code == 200
         actions_e = set(r.json()["current_user_actions"])
         # editor 应该能编辑记录、视图、评论；但不能编辑 schema
@@ -716,9 +712,7 @@ class TestTableDetailEnhancement:
         assert r_login.status_code == 200
         auth_viewer = {"Authorization": f"Bearer {r_login.json()['access_token']}"}
 
-        r = client.get(
-            f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}", headers=auth_viewer
-        )
+        r = client.get(f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}", headers=auth_viewer)
         assert r.status_code == 200
         actions_v = set(r.json()["current_user_actions"])
         # viewer 应该只有 read + comment
@@ -731,9 +725,7 @@ class TestTableDetailEnhancement:
         # viewer 的 workspace.current_user_role 也应正确
         assert r.json()["workspace"]["current_user_role"] == "viewer"
 
-    def test_empty_table_stats_are_zero(
-        self, client, workspace, auth_owner, db
-    ):
+    def test_empty_table_stats_are_zero(self, client, workspace, auth_owner, db):
         """刚创建的空表：record_count=0, field_count=0, view_count=0."""
         r = client.post(
             f"/api/v1/workspaces/{workspace.id}/tables",
@@ -743,9 +735,7 @@ class TestTableDetailEnhancement:
         assert r.status_code == 201
         tid = r.json()["id"]
 
-        r = client.get(
-            f"/api/v1/workspaces/{workspace.id}/tables/{tid}", headers=auth_owner
-        )
+        r = client.get(f"/api/v1/workspaces/{workspace.id}/tables/{tid}", headers=auth_owner)
         assert r.status_code == 200
         d = r.json()
         assert d["field_count"] == 0
@@ -756,9 +746,7 @@ class TestTableDetailEnhancement:
         # 空表仍有基础权限动作（owner）
         assert "edit_schema" in d["current_user_actions"]
 
-    def test_trashed_table_excluded_from_list(
-        self, client, workspace, auth_owner, table_with_fields
-    ):
+    def test_trashed_table_excluded_from_list(self, client, workspace, auth_owner, table_with_fields):
         """软删表不出现在 list_tables 默认结果里."""
         dt, _ = table_with_fields
         # 再建一张表
@@ -768,9 +756,7 @@ class TestTableDetailEnhancement:
             headers=auth_owner,
         )
 
-        r = client.get(
-            f"/api/v1/workspaces/{workspace.id}/tables", headers=auth_owner
-        )
+        r = client.get(f"/api/v1/workspaces/{workspace.id}/tables", headers=auth_owner)
         assert r.status_code == 200
         assert len(r.json()) == 2
 
@@ -779,9 +765,7 @@ class TestTableDetailEnhancement:
             f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}",
             headers=auth_owner,
         )
-        r = client.get(
-            f"/api/v1/workspaces/{workspace.id}/tables", headers=auth_owner
-        )
+        r = client.get(f"/api/v1/workspaces/{workspace.id}/tables", headers=auth_owner)
         assert r.status_code == 200
         names = {t["name"] for t in r.json()}
         assert "员工表" not in names
