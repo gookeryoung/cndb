@@ -154,7 +154,7 @@ export default function TablesList() {
                   key: 'copy',
                   icon: <CopyOutlined />,
                   label: '复制表结构',
-                  onClick: () => copy.mutate(record.id),
+                  onClick: (e) => { e?.domEvent?.stopPropagation?.(); copy.mutate(record.id) },
                 },
                 { type: 'divider' },
                 {
@@ -162,7 +162,8 @@ export default function TablesList() {
                   icon: <DeleteOutlined />,
                   label: '删除表',
                   danger: true,
-                  onClick: () => {
+                  onClick: (e) => {
+                    e?.domEvent?.stopPropagation?.();
                     Modal.confirm({
                       title: `删除表「${record.name}」？`,
                       content: '表内所有记录和字段将被永久移除。',
@@ -176,7 +177,7 @@ export default function TablesList() {
               ],
             }}
           >
-            <a>更多…</a>
+            <a onClick={(e) => e.stopPropagation()}>更多…</a>
           </Dropdown>
         </Space>
       ),
