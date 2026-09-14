@@ -116,7 +116,6 @@ async function openAppendDialog(page: Page) {
 
 test.describe("API 自动建表 + 数据抓取", () => {
   test("Analyze 端点返回的列元数据正确展示", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     mockImportApiRoutes(page);
     await openCreateDialog(page);
 
@@ -156,7 +155,6 @@ test.describe("API 自动建表 + 数据抓取", () => {
   });
 
   test("建表流程：分析 → 建表 → 成功消息 → 自动跳转", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     mockImportApiRoutes(page);
     await openCreateDialog(page);
 
@@ -183,7 +181,6 @@ test.describe("API 自动建表 + 数据抓取", () => {
   });
 
   test("追加流程：进入已有表 → 打开导入导出 → 切 API tab → 分析 → 追加", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     mockImportApiRoutes(page);
     await openAppendDialog(page);
 
@@ -212,7 +209,6 @@ test.describe("API 自动建表 + 数据抓取", () => {
   });
 
   test("追加流程：后端 400 错误在 Dialog 内展示 Alert", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     mockAnalyzeError(page, 400, "禁止访问保留 IP: 127.0.0.1");
     await openAppendDialog(page);
 
@@ -234,7 +230,6 @@ test.describe("API 自动建表 + 数据抓取", () => {
   });
 
   test("URL 表单校验：http 前缀强制 + 非法 URL 禁止提交", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await openCreateDialog(page);
 
     // 不填 URL 直接分析 → 应该有校验错误
@@ -248,7 +243,6 @@ test.describe("API 自动建表 + 数据抓取", () => {
   });
 
   test("高级参数折叠面板可展开并保存 headers/params", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     mockImportApiRoutes(page);
     await openCreateDialog(page);
 
@@ -274,7 +268,6 @@ test.describe("API 自动建表 + 数据抓取", () => {
   });
 
   test("追加流程与导入/导出 Dialog 的三个 tab 正常切换", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     mockImportApiRoutes(page);
     await openAppendDialog(page);
 
@@ -290,5 +283,142 @@ test.describe("API 自动建表 + 数据抓取", () => {
     // 切到第三个 tab（API 抓取追加）
     await tabs.nth(2).click();
     await expect(page.getByTestId("api-url-input")).toBeVisible();
+  });
+});
+
+/* ─────────────── 视觉回归：深色模式下 API 抓取对话框无白色背景块 ───────────────
+ * 本测试组是 Issue 修复的回归保护，验证深色模式下：
+ *   1. 预览区域 Descriptions label 背景不是白色
+ *   2. 预览区域 Table 边框不是白色
+ *   3. 占位符（未分析时）区域背景不是白色
+ */
+test.describe("深色模式下 API 抓取对话框视觉回归", () => {
+  /** 辅助：切换到 GitHub 深色主题 — 直接写 localStorage + reload */
+  async function ensureDarkTheme(page: Page) {
+    const body = page.locator("body");
+    if (!(await body.evaluate(el => el.classList.contains("theme-github-dark")))) {
+      await page.evaluate(() => {
+        localStorage.setItem("cndb_theme", "github-dark");
+      });
+      await page.reload();
+      await page.waitForURL(/\/w\/\d+\/tables/);
+      await expect(body).toHaveClass(/theme-github-dark/);
+      await page.waitForTimeout(500);
+    }
+  }
+
+  test("深色模式 — 未分析时占位符区域背景/边框不是白色", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
+    mockImportApiRoutes(page);
+
+    // 进入应用并切深色主题
+    await page.goto(`/w/${WID}/tables`);
+    await page.waitForURL(/\/w\/\d+\/tables/);
+    await ensureDarkTheme(page);
+
+    // 打开 API 建表 Dialog
+    await page.getByTestId("api-import-entry").click();
+    await expect(page.getByTestId("api-url-input")).toBeVisible();
+
+    // 找到占位符区域
+    const placeholder = page.getByTestId("api-placeholder");
+    await expect(placeholder).toBeVisible();
+
+    const placeholderBg = await placeholder.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(placeholderBg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+
+    const placeholderBorder = await placeholder.evaluate(el => getComputedStyle(el).borderColor);
+    expect(placeholderBorder).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+  });
+
+  test("深色模式 — 分析预览区域 Descriptions label 背景不是白色", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
+    mockImportApiRoutes(page);
+
+    await page.goto(`/w/${WID}/tables`);
+    await page.waitForURL(/\/w\/\d+\/tables/);
+    await ensureDarkTheme(page);
+
+    await page.getByTestId("api-import-entry").click();
+    await expect(page.getByTestId("api-url-input")).toBeVisible();
+
+    // 填 URL → 分析
+    await page.getByTestId("api-url-input").fill("https://api.example.com/data");
+    await page.getByTestId("api-analyze-btn").click();
+
+    const preview = page.getByTestId("api-analyze-preview");
+    await expect(preview).toBeVisible();
+
+    // Descriptions label 单元格
+    const descLabels = preview.locator(".ant-descriptions-item-label");
+    const labelCount = await descLabels.count();
+    expect(labelCount).toBeGreaterThan(0);
+
+    // 检查前 3 个 label 单元格背景色都不是白色
+    for (let i = 0; i < Math.min(3, labelCount); i++) {
+      const labelBg = await descLabels.nth(i).evaluate(el => getComputedStyle(el).backgroundColor);
+      expect(labelBg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+    }
+  });
+
+  test("深色模式 — 分析预览区域 Table 边框不是白色", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
+    mockImportApiRoutes(page);
+
+    await page.goto(`/w/${WID}/tables`);
+    await page.waitForURL(/\/w\/\d+\/tables/);
+    await ensureDarkTheme(page);
+
+    await page.getByTestId("api-import-entry").click();
+    await expect(page.getByTestId("api-url-input")).toBeVisible();
+
+    await page.getByTestId("api-url-input").fill("https://api.example.com/data");
+    await page.getByTestId("api-analyze-btn").click();
+
+    const preview = page.getByTestId("api-analyze-preview");
+    await expect(preview).toBeVisible();
+
+    // Table 外层边框容器
+    const tableWrapper = preview.locator(".ant-table").first();
+    const borderColor = await tableWrapper.evaluate(el => getComputedStyle(el).borderColor);
+    expect(borderColor).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+
+    // Table body 背景也不能是白色
+    const tableBody = preview.locator(".ant-table-body").first();
+    const bodyBg = await tableBody.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(bodyBg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
+  });
+
+  test("深色模式 — API 抓取追加 Dialog embed 模式下无白色块", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
+    mockImportApiRoutes(page);
+
+    await page.goto(`/w/${WID}/tables`);
+    await page.waitForURL(/\/w\/\d+\/tables/);
+    await ensureDarkTheme(page);
+
+    // 进入第一张表
+    const firstRow = page.locator(".ant-table-tbody tr.ant-table-row").first();
+    await firstRow.click();
+    await page.waitForURL(/\/tables\/\d+/);
+    await page.waitForTimeout(500);
+
+    // 打开导入导出 → 切 API tab
+    await page.getByRole("button", { name: /导入\/导出/ }).click();
+    const tabs = page.locator(".ant-tabs-tab");
+    await tabs.nth(2).click();
+    await expect(page.getByTestId("api-url-input")).toBeVisible();
+
+    // 分析 → 出现预览
+    await page.getByTestId("api-url-input").fill("https://api.example.com/data");
+    await page.getByTestId("api-analyze-btn").click();
+
+    const preview = page.getByTestId("api-analyze-preview");
+    await expect(preview).toBeVisible();
+
+    // embed 模式下 Table 背景也不能是白色
+    const tableBg = await preview.locator(".ant-table").first()
+      .evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(tableBg).not.toMatch(/rgba?\(25[0-5],\s*25[0-5],\s*25[0-5]/);
   });
 });
