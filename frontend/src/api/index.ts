@@ -41,7 +41,7 @@ import type {
   AttachmentFile,
   PreferencesResponse, ActiveViewResponse,
   ApiFetchRequest, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
-  ApiConfigRequest, ApiConfigValidateResult, ApiConfigImportResult,
+  ApiConfigValidateResult, ApiConfigImportResult,
 } from './types'
 
 export type {
