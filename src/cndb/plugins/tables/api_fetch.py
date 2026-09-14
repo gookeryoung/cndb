@@ -21,8 +21,9 @@ import json
 import logging
 import re
 import socket
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx2
@@ -38,7 +39,7 @@ USER_AGENT = "cndb-api-importer/1.0 (+https://github.com/cndb)"
 
 # 查询间隔常量（秒）
 DEFAULT_QUERY_INTERVAL = 60  # 默认每分钟 1 次
-MIN_QUERY_INTERVAL = 6       # 最短每 6 秒 1 次（每分钟不超过 10 次）
+MIN_QUERY_INTERVAL = 6  # 最短每 6 秒 1 次（每分钟不超过 10 次）
 
 # ── 响应处理器注册表 ──────────────────────────────
 
@@ -325,60 +326,60 @@ def _extract_array(payload: Any, data_path: str | None, try_candidates: bool) ->
 # 腾讯股票快照字段定义（按 ~ 分隔的索引位置）
 # 参考：https://blog.csdn.net/u013326689/article/details/126557827
 TENCENT_STOCK_FIELDS = [
-    ("unknown", "text"),        # 0: 恒为 1
-    ("stock_name", "text"),     # 1: 股票名称
-    ("stock_code", "text"),     # 2: 股票代码
-    ("current_price", "float"), # 3: 当前价格
-    ("prev_close", "float"),    # 4: 昨收
-    ("open_price", "float"),    # 5: 今开
+    ("unknown", "text"),  # 0: 恒为 1
+    ("stock_name", "text"),  # 1: 股票名称
+    ("stock_code", "text"),  # 2: 股票代码
+    ("current_price", "float"),  # 3: 当前价格
+    ("prev_close", "float"),  # 4: 昨收
+    ("open_price", "float"),  # 5: 今开
     ("volume_lots", "number"),  # 6: 成交量（手）
-    ("outer_volume", "number"), # 7: 外盘
-    ("inner_volume", "number"), # 8: 内盘
-    ("bid1_price", "float"),    # 9: 买一价
+    ("outer_volume", "number"),  # 7: 外盘
+    ("inner_volume", "number"),  # 8: 内盘
+    ("bid1_price", "float"),  # 9: 买一价
     ("bid1_volume", "number"),  # 10: 买一量
-    ("bid2_price", "float"),    # 11: 买二价
+    ("bid2_price", "float"),  # 11: 买二价
     ("bid2_volume", "number"),  # 12: 买二量
-    ("bid3_price", "float"),    # 13: 买三价
+    ("bid3_price", "float"),  # 13: 买三价
     ("bid3_volume", "number"),  # 14: 买三量
-    ("bid4_price", "float"),    # 15: 买四价
+    ("bid4_price", "float"),  # 15: 买四价
     ("bid4_volume", "number"),  # 16: 买四量
-    ("bid5_price", "float"),    # 17: 买五价
+    ("bid5_price", "float"),  # 17: 买五价
     ("bid5_volume", "number"),  # 18: 买五量
-    ("ask1_price", "float"),    # 19: 卖一价
+    ("ask1_price", "float"),  # 19: 卖一价
     ("ask1_volume", "number"),  # 20: 卖一量
-    ("ask2_price", "float"),    # 21: 卖二价
+    ("ask2_price", "float"),  # 21: 卖二价
     ("ask2_volume", "number"),  # 22: 卖二量
-    ("ask3_price", "float"),    # 23: 卖三价
+    ("ask3_price", "float"),  # 23: 卖三价
     ("ask3_volume", "number"),  # 24: 卖三量
-    ("ask4_price", "float"),    # 25: 卖四价
+    ("ask4_price", "float"),  # 25: 卖四价
     ("ask4_volume", "number"),  # 26: 卖四量
-    ("ask5_price", "float"),    # 27: 卖五价
+    ("ask5_price", "float"),  # 27: 卖五价
     ("ask5_volume", "number"),  # 28: 卖五量
-    ("unknown2", "text"),       # 29: 空
+    ("unknown2", "text"),  # 29: 空
     ("timestamp", "datetime"),  # 30: 时间戳 YYYYMMDDHHmmss
-    ("change_amount", "float"), # 31: 涨跌额
-    ("change_percent", "float"),# 32: 涨跌幅 %
-    ("high_price", "float"),    # 33: 最高
-    ("low_price", "float"),     # 34: 最低
-    ("summary", "text"),        # 35: 价格/成交量/成交额 合成串
-    ("volume", "number"),       # 36: 成交量（手）
-    ("amount_wan", "float"),    # 37: 成交额（万元）
-    ("turnover_rate", "float"), # 38: 换手率 %
-    ("pe_ratio", "float"),     # 39: 市盈率
-    ("unknown3", "text"),       # 40: 空
-    ("high52w", "float"),      # 41: 52周最高
-    ("low52w", "float"),       # 42: 52周最低
-    ("amplitude", "float"),    # 43: 振幅 %
-    ("circulating_mv", "float"), # 44: 流通市值（亿）
-    ("total_mv", "float"),       # 45: 总市值（亿）
-    ("pb_ratio", "float"),       # 46: 市净率
+    ("change_amount", "float"),  # 31: 涨跌额
+    ("change_percent", "float"),  # 32: 涨跌幅 %
+    ("high_price", "float"),  # 33: 最高
+    ("low_price", "float"),  # 34: 最低
+    ("summary", "text"),  # 35: 价格/成交量/成交额 合成串
+    ("volume", "number"),  # 36: 成交量（手）
+    ("amount_wan", "float"),  # 37: 成交额（万元）
+    ("turnover_rate", "float"),  # 38: 换手率 %
+    ("pe_ratio", "float"),  # 39: 市盈率
+    ("unknown3", "text"),  # 40: 空
+    ("high52w", "float"),  # 41: 52周最高
+    ("low52w", "float"),  # 42: 52周最低
+    ("amplitude", "float"),  # 43: 振幅 %
+    ("circulating_mv", "float"),  # 44: 流通市值（亿）
+    ("total_mv", "float"),  # 45: 总市值（亿）
+    ("pb_ratio", "float"),  # 46: 市净率
 ]
 
 # 编译正则：v_sh600519="..." 或 v_sz000001="..."
 _TENCENT_STOCK_RE = re.compile(r'v_(\w+)="([^"]*)"')
 
 
-def _parse_tencent_stock(text: str, config: FetchConfig) -> list[dict[str, Any]]:
+def _parse_tencent_stock(text: str, _config: FetchConfig) -> list[dict[str, Any]]:
     """解析腾讯实时股票快照响应.
 
     响应格式：
@@ -561,13 +562,13 @@ __all__ = [
     "ARRAY_CANDIDATE_KEYS",
     "DEFAULT_QUERY_INTERVAL",
     "DEFAULT_TIMEOUT",
-    "FetchConfig",
     "MAX_BODY_BYTES",
     "MAX_REDIRECTS",
     "MIN_QUERY_INTERVAL",
     "RESPONSE_HANDLERS",
     "TENCENT_STOCK_FIELDS",
     "USER_AGENT",
+    "FetchConfig",
     "_extract_array",
     "_get_response_handler",
     "_is_private_or_reserved_ip",

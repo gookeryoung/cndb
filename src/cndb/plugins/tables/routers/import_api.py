@@ -24,7 +24,6 @@ from cndb.plugins.tables.api_config_loader import (
     build_fetch_config,
     ingest_tables_from_config,
     load_api_config_text,
-    validate_api_config,
 )
 from cndb.plugins.tables.api_fetch import FetchConfig, fetch_json
 from cndb.plugins.tables.models import DataTable
@@ -243,13 +242,15 @@ def api_config_validate(
     summary = []
     for td in table_defs:
         fetch_cfg = build_fetch_config(td)
-        summary.append({
-            "table_name": td["table_name"],
-            "handler": fetch_cfg.response_handler if isinstance(fetch_cfg.response_handler, str) else "custom",
-            "encoding": fetch_cfg.encoding,
-            "query_interval": fetch_cfg.query_interval,
-            "url": fetch_cfg.url[:80] + ("..." if len(fetch_cfg.url) > 80 else ""),
-        })
+        summary.append(
+            {
+                "table_name": td["table_name"],
+                "handler": fetch_cfg.response_handler if isinstance(fetch_cfg.response_handler, str) else "custom",
+                "encoding": fetch_cfg.encoding,
+                "query_interval": fetch_cfg.query_interval,
+                "url": fetch_cfg.url[:80] + ("..." if len(fetch_cfg.url) > 80 else ""),
+            }
+        )
 
     return {
         "valid": True,
