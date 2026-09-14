@@ -145,9 +145,7 @@ class TestApiConfigImport:
                 ]
             }
         )
-        mock_client = _mock_api_fetch_response(
-            200, [{"name": "A", "value": 1}, {"name": "B", "value": 2}]
-        )
+        mock_client = _mock_api_fetch_response(200, [{"name": "A", "value": 1}, {"name": "B", "value": 2}])
         with patch("httpx2.Client", return_value=mock_client):
             r = client.post(
                 f"/api/v1/workspaces/{ws_id}/import-api/config",
@@ -188,22 +186,24 @@ class TestApiConfigImport:
                 raise RuntimeError("第一个表失败")
             return [{"table_name": "好表", "table_id": 1}]
 
-        with patch(
-            "cndb.plugins.tables.routers.import_api.ingest_tables_from_config",
-            side_effect=_patched_ingest,
+        with (
+            patch(
+                "cndb.plugins.tables.routers.import_api.ingest_tables_from_config",
+                side_effect=_patched_ingest,
+            ),
+            patch("httpx2.Client", return_value=mock_client),
         ):
-            with patch("httpx2.Client", return_value=mock_client):
-                r = client.post(
-                    f"/api/v1/workspaces/{ws_id}/import-api/config",
-                    json={"config_json": config_json, "stop_on_error": True},
-                    headers=auth,
-                )
-                assert r.status_code == 200, r.text
-                data = r.json()
-                assert data["fail_count"] >= 1
-                assert data["stopped_on_error"] is True
-                # 只尝试了第一个表
-                assert call_count[0] == 1
+            r = client.post(
+                f"/api/v1/workspaces/{ws_id}/import-api/config",
+                json={"config_json": config_json, "stop_on_error": True},
+                headers=auth,
+            )
+            assert r.status_code == 200, r.text
+            data = r.json()
+            assert data["fail_count"] >= 1
+            assert data["stopped_on_error"] is True
+            # 只尝试了第一个表
+            assert call_count[0] == 1
 
     def test_config_import_continue_on_error(self, client, ws_with_auth):
         """stop_on_error=False 遇到失败继续."""
@@ -225,22 +225,24 @@ class TestApiConfigImport:
                 raise RuntimeError("第一个表失败")
             return [{"table_name": "好表2", "table_id": 2}]
 
-        with patch(
-            "cndb.plugins.tables.routers.import_api.ingest_tables_from_config",
-            side_effect=_patched_ingest,
+        with (
+            patch(
+                "cndb.plugins.tables.routers.import_api.ingest_tables_from_config",
+                side_effect=_patched_ingest,
+            ),
+            patch("httpx2.Client", return_value=mock_client),
         ):
-            with patch("httpx2.Client", return_value=mock_client):
-                r = client.post(
-                    f"/api/v1/workspaces/{ws_id}/import-api/config",
-                    json={"config_json": config_json, "stop_on_error": False},
-                    headers=auth,
-                )
-                assert r.status_code == 200, r.text
-                data = r.json()
-                assert data["fail_count"] >= 1
-                assert data["stopped_on_error"] is False
-                # 两个表都尝试了
-                assert call_count[0] == 2
+            r = client.post(
+                f"/api/v1/workspaces/{ws_id}/import-api/config",
+                json={"config_json": config_json, "stop_on_error": False},
+                headers=auth,
+            )
+            assert r.status_code == 200, r.text
+            data = r.json()
+            assert data["fail_count"] >= 1
+            assert data["stopped_on_error"] is False
+            # 两个表都尝试了
+            assert call_count[0] == 2
 
     def test_config_import_unauthorized(self, client, ws_with_auth):
         ws_id, _auth = ws_with_auth
@@ -374,17 +376,19 @@ class TestApiImportAppendExceptions:
         table_id = r.json()["table_id"]
 
         mock_client = _mock_api_fetch_response(200, [{"a": 1}])
-        with patch("httpx2.Client", return_value=mock_client):
-            with patch(
+        with (
+            patch("httpx2.Client", return_value=mock_client),
+            patch(
                 "cndb.plugins.tables.routers.import_api.import_rows_from_json",
                 side_effect=RuntimeError("bad import"),
-            ):
-                r = client.post(
-                    f"/api/v1/workspaces/{ws_id}/tables/{table_id}/import-api",
-                    json={"url": "https://x.com"},
-                    headers=auth,
-                )
-                assert r.status_code == 400
+            ),
+        ):
+            r = client.post(
+                f"/api/v1/workspaces/{ws_id}/tables/{table_id}/import-api",
+                json={"url": "https://x.com"},
+                headers=auth,
+            )
+            assert r.status_code == 400
 
 
 __all__ = []
