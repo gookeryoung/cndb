@@ -60,12 +60,6 @@ function tryParseJson(text: string | undefined): unknown {
   try { return JSON.parse(text) } catch { return undefined }
 }
 
-/** 把 headers dict 转成每行 k=v 文本 */
-function stringifyHeaders(headers: Record<string, string> | undefined): string {
-  if (!headers) return ''
-  return Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join('\n')
-}
-
 /** 把 "k: v\nk2: v2" 文本转回 dict（忽略空行和 # 注释） */
 function parseHeadersText(text: string): Record<string, string> {
   const result: Record<string, string> = {}
@@ -98,7 +92,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
     }
     const payload: ApiFetchRequest = {
       url: values.url,
-      method: values.method,
+      method: values.method as ApiFetchRequest['method'],
       data_path: values.data_path || null,
       timeout: values.timeout ?? 15,
     }
@@ -172,7 +166,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
       onSuccess?.(result)
       // 成功后重置对话框状态
       setAnalyzeResult(null)
-      onClose()
+      onClose?.()
     } catch (err) {
       const msg = err instanceof Error ? err.message : '导入失败'
       setErrorMsg(msg)
@@ -276,7 +270,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
                   <Form.Item
                     name="params_text"
                     label="URL 查询参数（JSON 对象）"
-                    extra="必须是合法 JSON 对象，如 {\"page\": 1, \"limit\": 50}"
+                    extra={'必须是合法 JSON 对象，如 {"page": 1, "limit": 50}'}
                   >
                     <Input.TextArea rows={2} placeholder='{"page": 1}' />
                   </Form.Item>
