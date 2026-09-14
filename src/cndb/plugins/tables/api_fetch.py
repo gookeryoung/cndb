@@ -354,16 +354,12 @@ def fetch_json(config: FetchConfig) -> list[dict[str, Any]]:
 
         # 检查状态码
         if resp.status_code >= 400:
-            raise ValueError(
-                f"API 返回 {resp.status_code}: {resp.text[:200]}"
-            )
+            raise ValueError(f"API 返回 {resp.status_code}: {resp.text[:200]}")
 
         # 检查响应大小
         body = resp.content
         if len(body) > config.max_bytes:
-            raise ValueError(
-                f"响应体过大 ({len(body)} bytes > {config.max_bytes})"
-            )
+            raise ValueError(f"响应体过大 ({len(body)} bytes > {config.max_bytes})")
 
         # Content-Type 软检查
         ct = (resp.headers.get("content-type") or "").lower()
