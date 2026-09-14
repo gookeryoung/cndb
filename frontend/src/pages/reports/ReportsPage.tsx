@@ -290,7 +290,6 @@ function TemplateEditor({ open, editing, tables, form, onClose, onSubmit, submit
       confirmLoading={submitting}
       okText={editing ? '保存' : '创建'}
       cancelText="取消"
-      destroyOnHidden
     >
       <Form form={form} layout="vertical" preserve={false} onFinish={(v) => onSubmit(v as ReportTemplateCreate)}>
         <Row gutter={12}>

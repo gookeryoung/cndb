@@ -157,7 +157,6 @@ export default function TableSettingsModal({
       open={open}
       onCancel={onClose}
       width={780}
-      destroyOnHidden
       footer={null}
       loading={isLoading}
     >
@@ -169,22 +168,22 @@ export default function TableSettingsModal({
           {
             key: 'basic',
             label: <span><InfoCircleOutlined /> 基本信息</span>,
-            children: table ? (
+            children: (
               <div style={{ paddingTop: 8 }}>
                 <Descriptions column={3} bordered size="small" style={{ marginBottom: 16 }}>
                   <Descriptions.Item label="字段数">
-                    <Tag>{table.field_count ?? table.fields.length}</Tag>
+                    {table ? <Tag>{table.field_count ?? table.fields.length}</Tag> : '—'}
                   </Descriptions.Item>
                   <Descriptions.Item label="记录数">
-                    <strong>{table.record_count ?? 0}</strong>
+                    {table ? <strong>{table.record_count ?? 0}</strong> : '—'}
                   </Descriptions.Item>
                   <Descriptions.Item label="视图数">
-                    <Tag color="purple">{table.view_count ?? (table.views?.length ?? 0)}</Tag>
+                    {table ? <Tag color="purple">{table.view_count ?? (table.views?.length ?? 0)}</Tag> : '—'}
                   </Descriptions.Item>
-                  <Descriptions.Item label="表 ID">{table.id}</Descriptions.Item>
-                  <Descriptions.Item label="工作区">{table.workspace_id}</Descriptions.Item>
+                  <Descriptions.Item label="表 ID">{table?.id ?? '—'}</Descriptions.Item>
+                  <Descriptions.Item label="工作区">{table?.workspace_id ?? '—'}</Descriptions.Item>
                   <Descriptions.Item label="创建时间">
-                    {table.created_at ? new Date(table.created_at).toLocaleString() : '—'}
+                    {table?.created_at ? new Date(table.created_at).toLocaleString() : '—'}
                   </Descriptions.Item>
                 </Descriptions>
 
@@ -215,19 +214,21 @@ export default function TableSettingsModal({
                     >
                       保存
                     </Button>
-                    <Popconfirm
-                      title={`删除表 "${table.name}" ？`}
-                      description="表内所有记录和字段将被永久移除。此操作不可恢复。"
-                      okText="删除"
-                      okType="danger"
-                      cancelText="取消"
-                      onConfirm={() => removeTable.mutate()}
-                      disabled={!canDeleteTable}
-                    >
-                      <Button danger icon={<DeleteOutlined />} disabled={!canDeleteTable}>
-                        删除表
-                      </Button>
-                    </Popconfirm>
+                    {table && (
+                      <Popconfirm
+                        title={`删除表 "${table.name}" ？`}
+                        description="表内所有记录和字段将被永久移除。此操作不可恢复。"
+                        okText="删除"
+                        okType="danger"
+                        cancelText="取消"
+                        onConfirm={() => removeTable.mutate()}
+                        disabled={!canDeleteTable}
+                      >
+                        <Button danger icon={<DeleteOutlined />} disabled={!canDeleteTable}>
+                          删除表
+                        </Button>
+                      </Popconfirm>
+                    )}
                     {!canDeleteTable && table && (
                       <Tag color="warning" style={{ marginLeft: 8 }}>
                         需要 edit_schema 权限才能删除此表
@@ -236,7 +237,7 @@ export default function TableSettingsModal({
                   </Space>
                 </Form>
               </div>
-            ) : <Empty description="加载中..." />,
+            ),
           },
 
           // ────────────── Tab 2: 字段 ──────────────

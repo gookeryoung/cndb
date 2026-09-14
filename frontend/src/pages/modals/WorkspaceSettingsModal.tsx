@@ -508,7 +508,6 @@ export default function WorkspaceSettingsModal({
       open={open}
       onCancel={onClose}
       width={720}
-      destroyOnHidden
       confirmLoading={save.isPending}
       footer={footer}
     >
