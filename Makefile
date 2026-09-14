@@ -5,6 +5,9 @@ PACKAGE := cndb
 COV_THRESHOLD := 95
 PYTEST_JOBS := 8  # pytest-xdist 并行进程数；Windows 默认 8 避免句柄耗尽
 
+# push / bump 默认依赖 check，可用 SKIP_CHECK=1 临时跳过（仅限紧急修复，发布场景禁止使用）
+CHECK_DEPS := $(if $(SKIP_CHECK),,check)
+
 .PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck typecheck-ci check doc tox pub bump patch minor major push e2e
 
 help: ## 显示帮助信息
@@ -67,7 +70,7 @@ tox: ## 多版本测试 (tox)
 
 BUMP_PART := $(filter-out bump,$(MAKECMDGOALS))
 
-bump: ## 版本号 bump (默认 patch，用法: make bump [minor|major])
+bump: $(CHECK_DEPS) ## 版本号 bump (默认 patch，用法: make bump [minor|major])
 	@uvx bump-my-version bump $(if $(BUMP_PART),$(firstword $(BUMP_PART)),patch) --tag
 
 patch minor major:
@@ -76,6 +79,6 @@ patch minor major:
 pub:  ## 推送到pypi
 	uvx twine upload ./dist/**
 
-push: ## 推送代码到所有远程仓库
+push: $(CHECK_DEPS) ## 推送代码到所有远程仓库
 	@uv run python -c "import subprocess as sp; [print(f'\u63a8\u9001 {r}...',flush=True) or (sp.run(['git','push',r],check=True) and sp.run(['git','push',r,'--tags'],check=True)) for r in sp.check_output(['git','remote'],text=True).split()]"
 
