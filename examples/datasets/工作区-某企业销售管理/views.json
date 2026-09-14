@@ -158,6 +158,57 @@
         ]
       },
       "order": 8
+    },
+    {
+      "name": "项目时间轴",
+      "view_type": "gantt",
+      "sortings": [
+        {
+          "field_name": "启动日期",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "start_date_field": "启动日期",
+        "end_date_field": "计划交付日期",
+        "actual_end_field": "实际交付日期",
+        "title_field": "项目名称",
+        "group_field": "项目类别",
+        "progress_field": "进度百分比",
+        "assignee_field": "负责人",
+        "time_scale": "month",
+        "show_today_line": true
+      },
+      "order": 9
+    },
+    {
+      "name": "进行中项目时间轴",
+      "view_type": "gantt",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "项目状态",
+          "op": "=",
+          "value": "进行中"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "计划交付日期",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "start_date_field": "启动日期",
+        "end_date_field": "计划交付日期",
+        "title_field": "项目名称",
+        "group_field": "项目类别",
+        "progress_field": "进度百分比",
+        "assignee_field": "负责人",
+        "time_scale": "week",
+        "show_today_line": true
+      },
+      "order": 10
     }
   ],
   "客户流失": [

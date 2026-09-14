@@ -147,12 +147,59 @@ export const GALLERY_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
+/** Gantt 甘特图视图的专属配置字段（共 9 项） */
+export const GANTT_OPTIONS: ViewOptionSchema[] = [
+  {
+    key: 'start_date_field', label: '开始日期字段', tooltip: '任务/项目的开始日期',
+    kind: 'field_select', fieldTypes: ['date', 'datetime'], required: true,
+  },
+  {
+    key: 'end_date_field', label: '结束日期字段', tooltip: '任务/项目的截止日期或计划交付日期',
+    kind: 'field_select', fieldTypes: ['date', 'datetime'], required: true,
+  },
+  {
+    key: 'actual_end_field', label: '实际完成日期字段', tooltip: '可选：用于显示实际完成时间与计划的对比',
+    kind: 'field_select', fieldTypes: ['date', 'datetime'],
+  },
+  {
+    key: 'title_field', label: '任务名称字段', tooltip: '甘特条左侧显示的任务名称；留空自动选第一个文本字段',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
+  },
+  {
+    key: 'group_field', label: '分组/着色字段', tooltip: 'Select 字段，不同分组渲染不同颜色的甘特条',
+    kind: 'field_select', fieldTypes: ['select', 'multiselect'],
+  },
+  {
+    key: 'progress_field', label: '进度百分比字段', tooltip: '0-100 的数值字段，在甘特条上显示进度填充',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage'],
+  },
+  {
+    key: 'assignee_field', label: '负责人字段', tooltip: '在甘特条下方显示负责人名称',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'],
+  },
+  {
+    key: 'time_scale', label: '时间刻度', tooltip: '默认显示的时间粒度',
+    kind: 'enum_select', defaultValue: 'month',
+    enumOptions: [
+      { value: 'day', label: '天（精细）' },
+      { value: 'week', label: '周（中等）' },
+      { value: 'month', label: '月（标准）' },
+      { value: 'quarter', label: '季度（粗粒度）' },
+    ],
+  },
+  {
+    key: 'show_today_line', label: '显示今日标线', tooltip: '在甘特图中用红色竖线标记今天的位置',
+    kind: 'switch', defaultValue: true,
+  },
+]
+
 /** 按 view_type 名返回 option schema 列表 */
 export function getOptionSchema(viewType: string): ViewOptionSchema[] {
   switch (viewType) {
     case 'kanban': return KANBAN_OPTIONS
     case 'calendar': return CALENDAR_OPTIONS
     case 'gallery': return GALLERY_OPTIONS
+    case 'gantt': return GANTT_OPTIONS
     default: return []
   }
 }

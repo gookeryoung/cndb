@@ -118,6 +118,12 @@ function GalleryConfig(props: ViewTypeConfigProps) {
   return <ConfigBlock {...props} />
 }
 
+/** 甘特图视图专属配置字段 — 由 viewOptionSchema.ts 驱动 */
+function GanttConfig(props: ViewTypeConfigProps) {
+  if (props.vt !== 'gantt') return null
+  return <ConfigBlock {...props} />
+}
+
 // ── 主表单组件 ──────────────────────────────────────────
 
 /** 合并后的创建/编辑视图表单（根据 initialName 是否存在自动区分模式） */
@@ -147,6 +153,7 @@ export default function CreateEditViewForm({
     { value: 'kanban', label: '看板（Kanban）' },
     { value: 'gallery', label: '画廊（Gallery）' },
     { value: 'calendar', label: '日历（Calendar）' },
+    { value: 'gantt', label: '甘特图（Gantt）' },
   ]
 
   return (
@@ -160,6 +167,7 @@ export default function CreateEditViewForm({
       <KanbanConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
       <CalendarConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
       <GalleryConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
+      <GanttConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
       <div style={{ textAlign: 'right', marginTop: 12 }}>
         <Button type="primary" disabled={!name.trim()}
           onClick={() => onSubmit(name.trim(), vt, opts)}>{submitLabel}</Button>
