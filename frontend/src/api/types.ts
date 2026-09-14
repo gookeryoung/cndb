@@ -518,6 +518,12 @@ export interface ApiFetchRequest {
   body?: unknown
   data_path?: string | null
   timeout?: number
+  /** 响应处理器：json / tencent_stock / 自定义 */
+  response_handler?: string
+  /** 响应编码，如 utf-8 / gbk */
+  encoding?: string
+  /** 查询间隔（秒），默认 60，最短 6 */
+  query_interval?: number
 }
 
 /** 分析接口返回的列元数据（对齐后端 analyze_json_columns 的输出） */
@@ -554,4 +560,38 @@ export interface ApiImportResult {
 export interface ApiAppendResult {
   table_id: ID
   appended_rows: number
+}
+
+/** POST /{wid}/import-api/config 请求体 */
+export interface ApiConfigRequest {
+  config_json: string
+  stop_on_error?: boolean
+}
+
+/** 配置文件校验结果 */
+export interface ApiConfigValidateResult {
+  valid: boolean
+  table_count: number
+  tables: Array<{
+    table_name: string
+    handler: string
+    encoding: string
+    query_interval: number
+    url: string
+  }>
+}
+
+/** 配置文件批量建表结果 */
+export interface ApiConfigImportResult {
+  success_count: number
+  fail_count: number
+  results: Array<{
+    table_name: string
+    table_id: ID
+    imported_rows: number
+    field_count: number
+    query_interval: number
+  }>
+  errors: Array<{ table_name: string; error: string }>
+  stopped_on_error: boolean
 }
