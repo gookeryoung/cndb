@@ -32,11 +32,13 @@ export interface Workspace {
   id: ID; name: string; description?: string; default_role?: string
   pinned?: boolean; created_at?: string; updated_at?: string
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
+  current_user_role?: WorkspaceRole | null
 }
 export interface WorkspaceDetail extends Workspace {
   member_count?: number; table_count?: number
   view_count?: number; total_rows?: number
   owner?: { id: ID; username: string; nickname?: string } | null
+  current_user_role?: WorkspaceRole | null
 }
 export interface WorkspaceCreate {
   name: string; description?: string; default_role?: string
@@ -47,7 +49,18 @@ export interface WorkspaceUpdate {
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
 }
 export type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer'
-export interface WorkspaceMember { id: ID; username: string; email?: string; role: WorkspaceRole; joined_at?: string }
+
+/** 成员中的用户简要信息（对齐后端 MemberUserBrief） */
+export interface MemberUserBrief {
+  id: ID; username: string; nickname?: string; email?: string | null
+}
+
+/** 工作区成员（对齐后端 WorkspaceMemberResponse） */
+export interface WorkspaceMember {
+  id: ID; workspace_id: ID; user_id: ID
+  role: WorkspaceRole; pinned?: boolean; created_at?: string
+  user: MemberUserBrief
+}
 export interface WorkspaceInvite { username: string; role: WorkspaceRole }
 
 /** 工作区级整体导出数据结构 */
@@ -67,13 +80,38 @@ export interface WorkspaceExportData {
 
 export interface TableSummary {
   id: ID; name: string; description?: string
-  record_count?: number; field_count?: number; updated_at?: string
-  /** 软删时间（回收站场景） */
+  record_count?: number | null; field_count?: number | null; view_count?: number | null
+  /** 软删标记（后端 TableResponse 新增，TablesList 不展示但 API 有返回） */
+  trashed?: boolean
   trashed_at?: string | null
+  updated_at?: string
+}
+/** 视图精简摘要（嵌入 TableDetail） */
+export interface ViewBrief {
+  id: ID; name: string; view_type: string; is_default: boolean
+}
+/** 表所属工作区的 owner 简要信息（对齐后端 OwnerBrief） */
+export interface OwnerBrief {
+  id: ID; username: string; nickname?: string
+}
+/** 表所属工作区精简摘要（避免前端额外调 workspaceApi.get） */
+export interface WorkspaceBrief {
+  id: ID; name: string; visibility?: string; allow_edit?: boolean
+  current_user_role?: WorkspaceRole | null
 }
 export interface TableDetail {
-  id: ID; workspace_id: ID; name: string; description?: string
+  id: ID; workspace_id: ID; name: string; db_table_name?: string; description?: string
   fields: Field[]; created_at?: string; updated_at?: string
+  /** 后端增强 —— 可选统计字段 */
+  field_count?: number | null; record_count?: number | null; view_count?: number | null
+  /** 后端增强 —— 视图精简摘要（避免前端再调一次 viewApi.list） */
+  views?: ViewBrief[]
+  /** 后端增强 —— 当前用户在该表可执行的动作集合 */
+  current_user_actions?: string[]
+  /** 后端增强 —— 所属工作区的 owner */
+  owner?: OwnerBrief | null
+  /** 后端增强 —— 所属工作区精简摘要 */
+  workspace?: WorkspaceBrief | null
 }
 export interface TableCreate { name: string; description?: string }
 export interface TableUpdate { name?: string; description?: string }

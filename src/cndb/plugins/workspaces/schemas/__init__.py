@@ -47,15 +47,16 @@ class WorkspaceResponse(BaseModel):
 
 
 class WorkspaceWithPinnedResponse(WorkspaceResponse):
-    """列表响应：附带当前用户的 pinned 状态和统计."""
+    """列表响应：附带当前用户的 pinned 状态、统计和在该工作区的角色."""
 
     pinned: bool = False
     table_count: int = 0
     member_count: int = 0
+    current_user_role: WorkspaceRole | None = None
 
 
 class WorkspaceDetailResponse(WorkspaceResponse):
-    """工作区详情响应：附带拥有者信息和统计."""
+    """工作区详情响应：附带拥有者信息、统计和当前用户角色."""
 
     model_config = ConfigDict(from_attributes=True)
     # 拥有者简要信息
@@ -65,6 +66,8 @@ class WorkspaceDetailResponse(WorkspaceResponse):
     member_count: int = 0
     view_count: int = 0
     total_rows: int = 0
+    # 当前请求用户在该工作区的角色（null 表示非成员）
+    current_user_role: WorkspaceRole | None = None
 
 
 # ── 成员 schemas ──────────────────────────────────────
@@ -90,6 +93,7 @@ class MemberUserBrief(BaseModel):
     id: int
     username: str
     nickname: str
+    email: str | None = None
 
 
 class WorkspaceMemberResponse(BaseModel):
