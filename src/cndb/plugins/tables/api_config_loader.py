@@ -52,9 +52,9 @@ from typing import Any
 
 from cndb.plugins.tables.api_fetch import (
     DEFAULT_QUERY_INTERVAL,
-    FetchConfig,
     MIN_QUERY_INTERVAL,
     RESPONSE_HANDLERS,
+    FetchConfig,
     validate_query_interval,
 )
 
@@ -108,18 +108,18 @@ def validate_api_config(config: dict[str, Any]) -> list[dict[str, Any]]:
         handler = fetch.get("response_handler", "json")
         if isinstance(handler, str) and handler != "json" and handler not in RESPONSE_HANDLERS:
             raise ApiConfigError(
-                f"tables[{idx}].fetch.response_handler={handler!r} 未注册，"
-                f"可选: 'json', {list(RESPONSE_HANDLERS)}"
+                f"tables[{idx}].fetch.response_handler={handler!r} 未注册，可选: 'json', {list(RESPONSE_HANDLERS)}"
             )
 
         # 校验 query_interval
         interval = fetch.get("query_interval", DEFAULT_QUERY_INTERVAL)
-        if isinstance(interval, (int, float)):
-            if interval < MIN_QUERY_INTERVAL:
-                logger.warning(
-                    "table '%s' query_interval=%.1fs 低于最小值 %.1fs，将被夹取",
-                    name, interval, MIN_QUERY_INTERVAL,
-                )
+        if isinstance(interval, (int, float)) and interval < MIN_QUERY_INTERVAL:
+            logger.warning(
+                "table '%s' query_interval=%.1fs 低于最小值 %.1fs，将被夹取",
+                name,
+                interval,
+                MIN_QUERY_INTERVAL,
+            )
 
         validated.append(tbl)
 
@@ -190,11 +190,18 @@ def ingest_tables_from_config(
         fetch_cfg = build_fetch_config(table_def)
         table_name = table_def["table_name"]
 
-        logger.info("[api-config] 建表: %s (handler=%s, interval=%.0fs)",
-                    table_name, fetch_cfg.response_handler, fetch_cfg.query_interval)
+        logger.info(
+            "[api-config] 建表: %s (handler=%s, interval=%.0fs)",
+            table_name,
+            fetch_cfg.response_handler,
+            fetch_cfg.query_interval,
+        )
 
         dt, ids, columns = ingest_from_api(
-            engine, db, workspace_id, table_name,
+            engine,
+            db,
+            workspace_id,
+            table_name,
             api_url=fetch_cfg.url,
             method=fetch_cfg.method,
             headers=fetch_cfg.headers,
@@ -204,13 +211,15 @@ def ingest_tables_from_config(
             timeout=fetch_cfg.timeout,
         )
 
-        results.append({
-            "table_name": table_name,
-            "table_id": dt.id,
-            "imported_rows": len(ids),
-            "field_count": len(columns),
-            "query_interval": fetch_cfg.query_interval,
-        })
+        results.append(
+            {
+                "table_name": table_name,
+                "table_id": dt.id,
+                "imported_rows": len(ids),
+                "field_count": len(columns),
+                "query_interval": fetch_cfg.query_interval,
+            }
+        )
 
     return results
 

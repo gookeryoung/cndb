@@ -131,7 +131,10 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
                 fetch_cfg = build_fetch_config(table_def)
                 try:
                     dt, ids, _columns = ingest_from_api(
-                        engine, db, ws.id, tbl_name,
+                        engine,
+                        db,
+                        ws.id,
+                        tbl_name,
                         api_url=fetch_cfg.url,
                         method=fetch_cfg.method,
                         headers=fetch_cfg.headers,
