@@ -2,7 +2,7 @@
  *
  * 测试范围：
  *   1. 默认进入应用时主题为 modern
- *   2. 通过设置面板可切换到 4 种主题
+ *   2. 通过设置面板可切换到 10 种主题
  *   3. 每次切换后 body 上对应 class 被更新
  *   4. 切换后 localStorage 中值正确
  *   5. 深色主题同时带 body.theme-dark class（向后兼容）
@@ -38,6 +38,12 @@ const THEMES = [
   { id: "github-dark", label: "GitHub 深色", bodyClass: "theme-github-dark", isDark: true },
   { id: "github-light", label: "GitHub 浅色", bodyClass: "theme-github-light", isDark: false },
   { id: "minimal", label: "极简", bodyClass: "theme-minimal", isDark: false },
+  { id: "ocean", label: "海洋", bodyClass: "theme-ocean", isDark: false },
+  { id: "forest", label: "森野", bodyClass: "theme-forest", isDark: false },
+  { id: "sepia", label: "纸感", bodyClass: "theme-sepia", isDark: false },
+  { id: "sakura", label: "樱粉", bodyClass: "theme-sakura", isDark: false },
+  { id: "midnight", label: "午夜紫", bodyClass: "theme-midnight", isDark: true },
+  { id: "oled", label: "极夜黑", bodyClass: "theme-oled", isDark: true },
 ] as const;
 
 test.describe("主题切换", () => {
@@ -74,7 +80,7 @@ test.describe("主题切换", () => {
     expect(stored).toBe("github-dark");
   });
 
-  test("按顺序切换所有 4 种主题 — 每个都能正确应用", async ({ page }) => {
+  test("按顺序切换所有 10 种主题 — 每个都能正确应用", async ({ page }) => {
     await gotoApp(page);
 
     for (const t of THEMES) {
@@ -157,9 +163,10 @@ test.describe("主题视觉回归（防颜色自相矛盾）", () => {
     const body = page.locator("body");
     const bodyColor = await body.evaluate(el => getComputedStyle(el).color);
 
-    // 三个浅色主题卡片（modern / github-light / minimal）
+    // 白色底浅色主题卡片（modern / github-light / minimal / ocean / forest / sakura）
     // 它们各自的文字颜色必须跟 bodyColor 不同（bodyColor 是浅色，卡片上文字应该是深色）
-    const lightCardIds = ["modern", "github-light", "minimal"] as const;
+    // 注意：sepia 是米黄底（#fbf6ea），不适用白色系背景断言，故不在此列
+    const lightCardIds = ["modern", "github-light", "minimal", "ocean", "forest", "sakura"] as const;
     for (const id of lightCardIds) {
       const card = page.locator(`[data-theme-card="${id}"]`).first();
       await expect(card).toBeVisible();
