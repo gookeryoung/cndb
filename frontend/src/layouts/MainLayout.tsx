@@ -106,10 +106,10 @@ export default function MainLayout() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Header style={{
-        background: '#fff', padding: '0 16px', height: 52, lineHeight: '52px',
-        display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid #e5e7eb',
+        background: 'var(--cn-bg-container)', padding: '0 16px', height: 52, lineHeight: '52px',
+        display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--cn-border)',
       }}>
-        <div style={{ fontWeight: 700, fontSize: 18, color: '#3b82f6', marginRight: 8, cursor: 'pointer' }}
+        <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--cn-brand-color)', marginRight: 8, cursor: 'pointer' }}
           onClick={() => navigate('/w')}>cndb</div>
 
         {/* 工作区下拉 */}
@@ -158,19 +158,19 @@ export default function MainLayout() {
         <Sider
           collapsible collapsed={collapsed} onCollapse={setCollapsed}
           width={240} collapsedWidth={60}
-          style={{ background: '#fafafa', borderRight: '1px solid #e5e7eb' }}
+          style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)' }}
         >
           <div style={{
-            padding: '12px 16px', borderBottom: '1px solid #e5e7eb',
+            padding: '12px 16px', borderBottom: '1px solid var(--cn-border)',
             display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
           }}>
             <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
           </div>
-          <div style={{ padding: '8px 16px', fontWeight: 600, color: '#6b7280', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
+          <div style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
             数据表 ({orderedTables.length})
           </div>
           {tables.length === 0 ? (
-            <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>
               暂无表
             </div>
           ) : (
@@ -187,7 +187,7 @@ export default function MainLayout() {
           )}
         </Sider>
 
-        <Content style={{ background: '#f5f7fa', overflow: 'auto', padding: 16 }}>
+        <Content style={{ background: 'var(--cn-bg-page)', overflow: 'auto', padding: 16 }}>
           <Outlet />
         </Content>
       </Layout>

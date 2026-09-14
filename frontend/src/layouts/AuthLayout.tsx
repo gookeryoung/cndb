@@ -7,7 +7,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%)',
+      background: 'var(--cn-bg-page)',
       padding: 24,
     }}>
       <div style={{ width: 420, maxWidth: '100%' }}>{children}</div>
