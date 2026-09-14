@@ -12,7 +12,7 @@
  * - show_today_line:   是否显示今日标线（默认 true）
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Segmented, Button, Tooltip, Empty } from 'antd'
 import { LeftOutlined, RightOutlined, ReloadOutlined, CalendarOutlined } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
@@ -517,7 +517,12 @@ export default function GanttView({
   )
 
   const ds = densityStyle(density)
-  const scale = (opts.time_scale as TimeScale) || 'month'
+  const defaultScale = (opts.time_scale as TimeScale) || 'month'
+  const [scale, setScale] = useState<TimeScale>(defaultScale)
+
+  // 切换 view 时，本地 scale 同步到新 view 的默认值
+  useEffect(() => { setScale(defaultScale) }, [defaultScale])
+
   const showToday = opts.show_today_line !== false
   const groupField = opts.group_field as string | undefined
 
@@ -614,7 +619,7 @@ export default function GanttView({
         <Segmented
           size="small"
           value={scale}
-          onChange={() => { /* scale 由 options 控制，此处留作未来扩展 */ }}
+          onChange={(v) => setScale(v as TimeScale)}
           options={[
             { value: 'day', label: '天' },
             { value: 'week', label: '周' },
