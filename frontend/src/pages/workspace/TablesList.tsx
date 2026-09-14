@@ -1,12 +1,14 @@
-/** 工作区表列表页 — 支持创建/重命名/复制/删除 + CSV 自动建表. */
+/** 工作区表列表页 — 支持创建/重命名/复制/删除 + CSV 自动建表 + API 自动建表. */
 
-import React from 'react'
+import React, { Suspense, lazy } from 'react'
 import { Button, Modal, Form, Input, Table, Typography, Empty, message, Space, Tag, Upload, Dropdown } from 'antd'
-import { PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined, UploadOutlined, SettingOutlined } from '@ant-design/icons'
+import { PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined, UploadOutlined, SettingOutlined, ApiOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate } from '@/api'
+
+const ApiImportDialog = lazy(() => import('@/pages/modals/ApiImportDialog'))
 
 const { Title, Text } = Typography
 
@@ -16,6 +18,7 @@ export default function TablesList() {
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = React.useState(false)
   const [editOpen, setEditOpen] = React.useState<TableSummary | null>(null)
+  const [apiImportOpen, setApiImportOpen] = React.useState(false)
   const [form] = Form.useForm()
   const [editForm] = Form.useForm()
 
@@ -213,6 +216,13 @@ export default function TablesList() {
             </Button>
           </Upload>
           <Button
+            icon={<ApiOutlined />}
+            onClick={() => setApiImportOpen(true)}
+            data-testid="api-import-entry"
+          >
+            API 建表
+          </Button>
+          <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateOpen(true)}
@@ -315,6 +325,20 @@ export default function TablesList() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* API 建表 Dialog（建表模式） */}
+      <Suspense fallback={null}>
+        <ApiImportDialog
+          open={apiImportOpen}
+          wid={wid!}
+          onClose={() => setApiImportOpen(false)}
+          onSuccess={(res) => {
+            if (res.table_id) {
+              navigate(`/w/${wid}/tables/${res.table_id}`)
+            }
+          }}
+        />
+      </Suspense>
     </div>
   )
 }
