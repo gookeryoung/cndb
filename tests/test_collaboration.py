@@ -245,4 +245,3 @@ def test_reorder_tables_with_nonexistent_ids(client, auth_headers):
     data = resp.json()
     assert len(data) == 1
     assert data[0]["id"] == tid
-

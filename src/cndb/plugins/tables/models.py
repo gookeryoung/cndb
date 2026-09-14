@@ -264,9 +264,7 @@ class TableMember(TimestampMixin, Base):
     table_id: Mapped[int] = mapped_column(
         ForeignKey("tables_datatable.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts_user.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("accounts_user.id", ondelete="CASCADE"), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="read")
 
     # 关系
