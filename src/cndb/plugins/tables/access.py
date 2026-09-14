@@ -1,7 +1,6 @@
-"""表级访问控制：角色覆盖 + 行级过滤 + 字段隐藏.
+"""表级访问控制：拥有者 + 工作区角色 + 表成员 + TablePermission.
 
-对齐旧项目 tables/access.py 和 permission_rules.py.
-策略优先级：表级 TablePermission 覆盖 > 工作区 WorkspaceRole 默认.
+策略优先级：表拥有者 > 工作区 ADMIN/OWNER > 表成员授权 > TablePermission 角色阈值 > 工作区角色默认.
 """
 
 from __future__ import annotations
@@ -13,7 +12,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.models import DataTable, TablePermission
+from cndb.plugins.tables.models import DataTable, TableMember, TablePermission
 from cndb.plugins.workspaces.models import ROLE_RANK, WorkspaceRole
 
 
@@ -46,6 +45,21 @@ _ACTION_DEFAULT_ROLE: dict[TableAction, WorkspaceRole] = {
 }
 
 
+# 表成员 "write" 角色允许的动作集合
+_WRITE_MEMBER_ACTIONS: set[TableAction] = {
+    TableAction.READ,
+    TableAction.EDIT_RECORDS,
+    TableAction.EDIT_VIEWS,
+    TableAction.COMMENT,
+}
+
+# 表成员 "read" 角色允许的动作集合
+_READ_MEMBER_ACTIONS: set[TableAction] = {
+    TableAction.READ,
+    TableAction.COMMENT,
+}
+
+
 def check_action(
     db: Session,
     table: DataTable,
@@ -55,30 +69,52 @@ def check_action(
 ) -> bool:
     """判定用户是否可以在该表上执行某动作.
 
-    优先级：表级 TablePermission 覆盖 > 工作区 WorkspaceRole 默认.
-    TablePermission 字段为空字符串时视为未设置，回退工作区角色.
+    优先级：
+      1. 表拥有者（owner_id == user.id）→ 拥有全部动作，包括 EDIT_SCHEMA
+      2. 工作区 ADMIN/OWNER 级角色 → 拥有全部动作
+      3. 表成员授权（TableMember）→ read/write 两级，见 _READ_MEMBER_ACTIONS / _WRITE_MEMBER_ACTIONS
+      4. TablePermission 角色阈值（仅当用户未通过成员授权时生效）
+      5. 工作区角色默认
     """
-    # 1. 表级 permission 覆盖
+    # ── 1. 表拥有者 ──
+    if table.owner_id is not None and table.owner_id == user.id:
+        return True
+
+    # ── 2. 工作区 ADMIN / OWNER ──
+    user_role = member_role or _get_member_role(db, table, user)
+    if user_role is None:
+        # 工作区成员都不是，只有 owner 可能放行；owner 检查已通过
+        return False
+    if user_role in (WorkspaceRole.ADMIN, WorkspaceRole.OWNER):
+        return True
+
+    # ── 3. 表成员授权 ──
+    member = (
+        db.query(TableMember)
+        .filter(TableMember.table_id == table.id, TableMember.user_id == user.id)
+        .first()
+    )
+    if member is not None:
+        if member.role == "write":
+            return action in _WRITE_MEMBER_ACTIONS
+        if member.role == "read":
+            return action in _READ_MEMBER_ACTIONS
+        # 其它未知角色按无成员处理，继续走阈值判定
+
+    # ── 4. TablePermission 阈值 ──
     perm = db.get(TablePermission, table.id)
     if perm is not None:
         field_name = _ACTION_PERMISSION_FIELD[action]
         required_role_str = getattr(perm, field_name, "")
         if required_role_str:
-            # 表级指定了角色 — 用户必须达到该角色
             try:
                 required = WorkspaceRole(required_role_str)
             except ValueError:
                 return False
-            user_role = member_role or _get_member_role(db, table, user)
-            if user_role is None:
-                return False
             return ROLE_RANK[user_role] >= ROLE_RANK[required]
 
-    # 2. 回退到工作区默认角色
+    # ── 5. 工作区角色默认 ──
     default_required = _ACTION_DEFAULT_ROLE[action]
-    user_role = member_role or _get_member_role(db, table, user)
-    if user_role is None:
-        return False
     return ROLE_RANK[user_role] >= ROLE_RANK[default_required]
 
 

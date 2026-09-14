@@ -172,6 +172,7 @@ def ingest_tables_from_config(
     db: Any,
     workspace_id: int,
     table_defs: list[dict[str, Any]],
+    owner_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """按配置批量建表 + 导入数据.
 
@@ -209,6 +210,7 @@ def ingest_tables_from_config(
             body=fetch_cfg.body,
             data_path=fetch_cfg.data_path,
             timeout=fetch_cfg.timeout,
+            owner_id=owner_id,
         )
 
         results.append(

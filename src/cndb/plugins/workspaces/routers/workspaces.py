@@ -598,6 +598,7 @@ def import_workspace(
 
             table = DataTable(
                 workspace_id=workspace_id,
+                owner_id=current_user.id,
                 name=table_name,
                 description=tbl_data.get("description", ""),
             )

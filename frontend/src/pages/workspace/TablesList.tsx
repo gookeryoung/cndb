@@ -1,24 +1,46 @@
-/** 工作区表列表页 — 支持创建/重命名/复制/删除 + CSV 自动建表 + API 自动建表. */
+/** 工作区表列表页 — 数据资产目录视图.
+ *
+ * 支持创建/重命名/复制/删除 + CSV 自动建表 + API 自动建表.
+ * 展示 Owner / MyAccess / MemberCount 三个权限元信息列, 并提供按访问级别筛选.
+ */
 
-import React, { Suspense, lazy } from 'react'
-import { Button, Modal, Form, Input, Table, Typography, Empty, message, Space, Tag, Upload, Dropdown } from 'antd'
-import { PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined, UploadOutlined, SettingOutlined, ApiOutlined } from '@ant-design/icons'
+import { Suspense, lazy, useMemo, useState } from 'react'
+import {
+  Button, Modal, Form, Input, Table, Typography, Empty, message, Space, Tag, Upload, Dropdown,
+  Avatar, Segmented, Badge, Tooltip,
+} from 'antd'
+import {
+  PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined,
+  UploadOutlined, SettingOutlined, ApiOutlined, TeamOutlined, UserOutlined,
+} from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate } from '@/api'
+import { useAuth } from '@/auth/AuthContext'
 
 const ApiImportDialog = lazy(() => import('@/pages/modals/ApiImportDialog'))
 
 const { Title, Text } = Typography
 
+type AccessFilter = 'all' | 'owner' | 'write' | 'read'
+
+const ACCESS_TAG: Record<string, { color: string; label: string }> = {
+  owner: { color: 'red', label: 'owner' },
+  write: { color: 'green', label: 'write' },
+  read: { color: 'blue', label: 'read' },
+  none: { color: 'default', label: '默认' },
+}
+
 export default function TablesList() {
   const { wid } = useParams<{ wid: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [createOpen, setCreateOpen] = React.useState(false)
-  const [editOpen, setEditOpen] = React.useState<TableSummary | null>(null)
-  const [apiImportOpen, setApiImportOpen] = React.useState(false)
+  const { user } = useAuth()
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState<TableSummary | null>(null)
+  const [apiImportOpen, setApiImportOpen] = useState(false)
+  const [filter, setFilter] = useState<AccessFilter>('all')
   const [form] = Form.useForm()
   const [editForm] = Form.useForm()
 
@@ -35,6 +57,24 @@ export default function TablesList() {
     queryFn: () => tableApi.list(wid!),
     enabled: !!wid,
   })
+
+  // ── 筛选后的表列表 ──
+  const filteredTables = useMemo(() => {
+    if (filter === 'all') return tables
+    return tables.filter(t => {
+      const access = t.my_access ?? 'none'
+      // "我拥有的" 同时也包含显式标记为 owner 的表
+      if (filter === 'owner') {
+        if (access === 'owner') return true
+        // 后端若没返回 my_access, 回退到比对 owner.id
+        if (access === 'none' && t.owner && user) return String(t.owner.id) === String(user.id)
+        return false
+      }
+      if (filter === 'write') return access === 'write' || access === 'owner'
+      if (filter === 'read') return access === 'read' || access === 'write' || access === 'owner'
+      return true
+    })
+  }, [tables, filter, user])
 
   const create = useMutation({
     mutationFn: (v: { name: string; description?: string }) => tableApi.create(wid!, v),
@@ -110,10 +150,61 @@ export default function TablesList() {
       render: (d?: string) => d ? <Text type="secondary">{d}</Text> : <Text type="secondary" italic>—</Text>,
     },
     {
+      title: '拥有者',
+      dataIndex: 'owner',
+      key: 'owner',
+      width: 160,
+      render: (owner?: { id: number | string; username: string } | null) => {
+        if (!owner) {
+          return <Text type="secondary">未指定</Text>
+        }
+        const isMe = user && String(owner.id) === String(user.id)
+        return (
+          <Space size={6}>
+            <Avatar size="small" icon={<UserOutlined />} />
+            <span>
+              {owner.username}
+              {isMe && <Tag color="red" style={{ marginLeft: 4, fontSize: 11, lineHeight: '16px' }}>我</Tag>}
+            </span>
+          </Space>
+        )
+      },
+    },
+    {
+      title: '我的访问',
+      dataIndex: 'my_access',
+      key: 'my_access',
+      width: 110,
+      render: (access?: string) => {
+        const key = access ?? 'none'
+        const info = ACCESS_TAG[key] ?? ACCESS_TAG.none
+        return <Tag color={info.color}>{info.label}</Tag>
+      },
+    },
+    {
+      title: '成员数',
+      dataIndex: 'member_count',
+      key: 'member_count',
+      width: 90,
+      align: 'right' as const,
+      render: (n?: number) => (
+        <Tooltip title="显式授予成员">
+          <Badge
+            count={n ?? 0}
+            showZero
+            overflowCount={99}
+            color={(n ?? 0) > 0 ? 'var(--cn-brand-color)' : undefined}
+          >
+            <TeamOutlined style={{ fontSize: 16, color: 'var(--cn-text-muted)' }} />
+          </Badge>
+        </Tooltip>
+      ),
+    },
+    {
       title: '字段',
       dataIndex: 'field_count',
       key: 'field_count',
-      width: 80,
+      width: 70,
       align: 'right' as const,
       render: (n?: number) => <Tag>{n ?? 0}</Tag>,
     },
@@ -129,7 +220,7 @@ export default function TablesList() {
       title: '更新时间',
       dataIndex: 'updated_at',
       key: 'updated_at',
-      width: 180,
+      width: 170,
       render: (t?: string) => t ? (
         <Text type="secondary">
           <ClockCircleOutlined style={{ marginRight: 4 }} />
@@ -193,7 +284,7 @@ export default function TablesList() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
           <Title level={3} style={{ margin: 0 }}>
-            {workspace?.name ? `${workspace.name} · 表` : '表列表'}
+            {workspace?.name ? `${workspace.name} · 数据资产` : '数据资产目录'}
           </Title>
           <Text type="secondary">
             {workspace?.description || '管理当前工作区的所有数据表'}
@@ -234,13 +325,32 @@ export default function TablesList() {
         </Space>
       </div>
 
+      {/* Filter Segmented */}
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Space>
+          <Segmented<AccessFilter>
+            value={filter}
+            onChange={(v) => setFilter(v as AccessFilter)}
+            options={[
+              { label: '全部', value: 'all' },
+              { label: '我拥有的', value: 'owner' },
+              { label: '我可编辑的', value: 'write' },
+              { label: '我可读的', value: 'read' },
+            ]}
+          />
+          <Text type="secondary" style={{ marginLeft: 8 }}>
+            共 {filteredTables.length} / {tables.length} 张表
+          </Text>
+        </Space>
+      </div>
+
       {/* Table 列表 */}
       <Table
         size="middle"
         loading={isLoading}
         rowKey="id"
         columns={columns}
-        dataSource={tables}
+        dataSource={filteredTables}
         pagination={false}
         onRow={(record) => ({
           onClick: () => navigate(`/w/${wid}/tables/${record.id}`),
@@ -251,7 +361,11 @@ export default function TablesList() {
             <Empty
               description={
                 <span>
-                  还没有表 —— 点击右侧 <Text strong>&quot;新建表&quot;</Text> 或 <Text strong>&quot;CSV 建表&quot;</Text> 开始
+                  {filter !== 'all' ? '当前筛选条件下没有表' : (
+                    <>
+                      还没有表 —— 点击右侧 <Text strong>&quot;新建表&quot;</Text> 或 <Text strong>&quot;CSV 建表&quot;</Text> 开始
+                    </>
+                  )}
                 </span>
               }
             />

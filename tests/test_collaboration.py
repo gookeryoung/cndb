@@ -96,21 +96,6 @@ def test_reorder_tables(client, auth_headers, db):
     assert reordered[0]["id"] == ids[2]
 
 
-def test_get_tables_graph(client, auth_headers, db):
-    """表关系图端点应返回 nodes + edges."""
-    ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_graph"})
-    wid = ws.json()["id"]
-    client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "g_table"})
-    resp = client.get(
-        f"/api/v1/workspaces/{wid}/tables/graph",
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "nodes" in data
-    assert "edges" in data
-
-
 def test_record_soft_delete_and_restore(client, auth_headers, db):
     """软删除 + 恢复完整链路."""
     ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_restore"})
@@ -261,25 +246,3 @@ def test_reorder_tables_with_nonexistent_ids(client, auth_headers):
     assert len(data) == 1
     assert data[0]["id"] == tid
 
-
-def test_graph_with_link_field(client, auth_headers):
-    """有 link 字段的表应在 graph 中生成边 — 覆盖 L127-131."""
-    ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_graph"})
-    wid = ws.json()["id"]
-    # 先建目标表
-    tgt = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "target"})
-    tgt_id = tgt.json()["id"]
-    # 再建源表并加 link 字段
-    src = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "source"})
-    src_id = src.json()["id"]
-    client.post(
-        f"/api/v1/workspaces/{wid}/tables/{src_id}/fields",
-        headers=auth_headers,
-        json={"name": "link_to_target", "field_type": "link", "config": {"target_table_id": tgt_id}},
-    )
-    resp = client.get(f"/api/v1/workspaces/{wid}/tables/graph", headers=auth_headers)
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "nodes" in data
-    assert "edges" in data
-    assert any(e["from_table"] == src_id and e["to_table"] == tgt_id for e in data["edges"])

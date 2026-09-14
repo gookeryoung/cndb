@@ -346,7 +346,7 @@ export default function TableSettingsModal({
                   </Space>
                 </div>
 
-                <PermissionEditor fields={table.fields ?? []} data={permData as any} />
+                <PermissionEditor fields={table.fields ?? []} data={permData as any} wid={wid} tid={tid} owner={table.owner ?? null} />
 
                 <div style={{ marginTop: 16, textAlign: 'right' }}>
                   <Button
