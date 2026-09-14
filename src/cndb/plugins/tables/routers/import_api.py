@@ -151,6 +151,7 @@ def api_import_create_table(
             body=payload.body,
             data_path=payload.data_path,
             timeout=payload.timeout,
+            owner_id=current_user.id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -281,7 +282,9 @@ def api_config_import(
     for table_def in table_defs:
         table_name = table_def["table_name"]
         try:
-            table_results = ingest_tables_from_config(engine, db, workspace_id, [table_def])
+            table_results = ingest_tables_from_config(
+                engine, db, workspace_id, [table_def], owner_id=current_user.id
+            )
             results.extend(table_results)
         except Exception as exc:
             err_info = {"table_name": table_name, "error": str(exc)}

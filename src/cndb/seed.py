@@ -160,8 +160,8 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
     return table_count, ws_map, tables_map
 
 
-def _seed_sales_tables(db: Any, engine: Any, ws: Any) -> tuple[int, dict[str, Any]]:
-    """在"某企业销售管理"工作区下创建硬编码业务表（部门/员工/报告/工作流）.
+def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = None) -> tuple[int, dict[str, Any]]:
+    """在"某企业销售管理"工作区下创建硬编码业务表（部门/员工/报告）.
 
     Returns:
         (创建的数据表数量, 表名 -> DataTable 映射)
@@ -170,12 +170,11 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any) -> tuple[int, dict[str, An
     from cndb.plugins.tables.ddl import create_table
     from cndb.plugins.tables.models import DataField, DataTable
     from cndb.plugins.tables.records import create_row
-    from cndb.plugins.workflows.models import Workflow, WorkflowEdge, WorkflowNode
 
     extra_tables: dict[str, Any] = {}
 
     # 部门表（先建，员工表 link 字段要引用它）
-    dept_tbl = DataTable(workspace_id=ws.id, name="部门表", description="公司部门", order=1)
+    dept_tbl = DataTable(workspace_id=ws.id, owner_id=owner_id, name="部门表", description="公司部门", order=1)
     dept_tbl.ensure_db_name()
     db.add(dept_tbl)
     db.commit()
@@ -205,7 +204,7 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any) -> tuple[int, dict[str, An
     print("[seed] 插入 4 条部门记录")
 
     # 员工表
-    emp_tbl = DataTable(workspace_id=ws.id, name="员工表", description="公司员工信息", order=2)
+    emp_tbl = DataTable(workspace_id=ws.id, owner_id=owner_id, name="员工表", description="公司员工信息", order=2)
     emp_tbl.ensure_db_name()
     db.add(emp_tbl)
     db.commit()
@@ -271,45 +270,6 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any) -> tuple[int, dict[str, An
     db.add(tpl)
     db.commit()
     print(f"[seed] 创建报告模板: 员工名册 (table_id={emp_tbl.id})")
-
-    # 业务工作流 — 员工入职流程（3 节点 2 边，绑定部门表 + 员工表）
-
-    wf = Workflow(
-        workspace_id=ws.id,
-        name="员工入职流程",
-        description="从提交入职申请到完成登记的业务流程",
-        order=0,
-    )
-    db.add(wf)
-    db.commit()
-    db.refresh(wf)
-    print(f"[seed] 创建工作流: 员工入职流程 (id={wf.id})")
-
-    n1 = WorkflowNode(
-        workflow_id=wf.id, name="入职登记", table_id=emp_tbl.id, pos_x=60, pos_y=60, config={"default_view_id": None}
-    )
-    db.add(n1)
-    db.commit()
-    db.refresh(n1)
-
-    n2 = WorkflowNode(
-        workflow_id=wf.id, name="部门分配", table_id=dept_tbl.id, pos_x=300, pos_y=60, config={"default_view_id": None}
-    )
-    db.add(n2)
-    db.commit()
-    db.refresh(n2)
-
-    n3 = WorkflowNode(
-        workflow_id=wf.id, name="入职完成", table_id=None, pos_x=540, pos_y=60, config={"default_view_id": None}
-    )
-    db.add(n3)
-    db.commit()
-    db.refresh(n3)
-
-    db.add(WorkflowEdge(workflow_id=wf.id, source_node_id=n1.id, target_node_id=n2.id, label="提交资料"))
-    db.add(WorkflowEdge(workflow_id=wf.id, source_node_id=n2.id, target_node_id=n3.id, label="分配完成"))
-    db.commit()
-    print("[seed] 组装 3 节点 2 边: 入职登记 → 部门分配 → 入职完成")
 
     return 2, extra_tables
 
@@ -498,7 +458,7 @@ def seed(_args: argparse.Namespace) -> None:
         sales_ws = ws_map.get("某企业销售管理")
         if sales_ws is not None:
             print(f"[seed] 在工作区 '{sales_ws.name}' 下扩展部门/员工业务表")
-            extra, extra_tables = _seed_sales_tables(db, engine, sales_ws)
+            extra, extra_tables = _seed_sales_tables(db, engine, sales_ws, owner_id=owner.id)
             tables_map.setdefault("某企业销售管理", {}).update(extra_tables)
         else:
             print("[seed] 未找到 '某企业销售管理' 工作区，跳过部门表/员工表注入")

@@ -85,6 +85,41 @@ export interface TableSummary {
   trashed?: boolean
   trashed_at?: string | null
   updated_at?: string
+  /** 表拥有者（owner） */
+  owner?: TableOwnerInfo | null
+  /** 显式成员数（不含 owner，可空） */
+  member_count?: number
+  /** 当前用户在该表的访问级别（owner > write > read > none） */
+  my_access?: 'owner' | 'write' | 'read' | 'none'
+}
+
+/** 表拥有者简要信息 */
+export interface TableOwnerInfo {
+  id: number | string
+  username: string
+}
+
+/** 表成员（对齐后端 TableMember） */
+export interface TableMember {
+  user_id: number | string
+  username: string
+  role: 'read' | 'write'
+}
+
+/** 添加表成员请求体 */
+export interface MemberCreate {
+  user_id: number
+  role: 'read' | 'write'
+}
+
+/** 更新表成员授权请求体 */
+export interface MemberUpdate {
+  role: 'read' | 'write'
+}
+
+/** 转让所有权请求体 */
+export interface OwnerTransferPayload {
+  user_id: number
 }
 /** 视图精简摘要（嵌入 TableDetail） */
 export interface ViewBrief {
@@ -254,45 +289,6 @@ export interface WorkspaceTrashResponse {
   row_counts?: Array<{ table_id: ID; table_name: string; trashed_rows: number }>
 }
 
-export interface GraphNode {
-  /** 字符串化的表 ID（前端 Map key 用） */
-  id: string
-  /** 节点显示名称 */
-  label: string
-  /** 节点类型：table/view/workflow 等 */
-  type?: string
-  /** 原始表 ID（数字，用于跳转） */
-  table_id?: number
-  /** 原始表名（兼容保留，等同于 label） */
-  name?: string
-  /** 字段数（不含软删） */
-  field_count?: number
-  /** 物理行数（表结构异常时为 null） */
-  row_count?: number | null
-  /** 视图数 */
-  view_count?: number
-  /** 入度（被多少张表引用） */
-  link_count?: number
-  /** 软删标记 */
-  trashed?: boolean
-}
-export interface GraphEdge {
-  /** 源节点 id(str) */
-  source: string
-  /** 目标节点 id(str) */
-  target: string
-  /** 边标签（link 字段名） */
-  label?: string
-  /** link 字段名（兼容保留） */
-  link_field_name?: string
-}
-export interface GraphResponse {
-  nodes: GraphNode[]
-  edges: GraphEdge[]
-  topo_order?: string[]
-}
-export interface DependencyResponse { forward: Record<string, string[]>; reverse: Record<string, string[]> }
-
 export interface CsvAnalyzeResult { columns: string[]; total_rows: number }
 export interface CsvImportResult { table_id: ID; imported_rows: number; table_name?: string; imported?: number }
 
@@ -382,94 +378,6 @@ export interface TablePermission {
   row_filters?: Record<string, unknown> | null
   /** 角色级备注字段 (后端: comment_role) */
   comment_role?: string
-}
-
-// ── Workflows ───────────────────────────────────────
-
-/** 节点绑定表的摘要 */
-export interface NodeTableBrief {
-  id: ID
-  name: string
-  view_count: number
-  row_count: number | null
-}
-
-/** 工作流节点 */
-export interface WorkflowNode {
-  id: ID
-  workflow_id: ID
-  name: string
-  table_id: ID | null
-  pos_x: number
-  pos_y: number
-  config: Record<string, unknown>
-  /** 绑定表摘要；表被软删/移出工作区时为 null（未绑定） */
-  table: NodeTableBrief | null
-  created_at?: string
-  updated_at?: string
-}
-
-/** 工作流边 */
-export interface WorkflowEdge {
-  id: ID
-  workflow_id: ID
-  source_node_id: ID
-  target_node_id: ID
-  label: string
-  created_at?: string
-  updated_at?: string
-}
-
-/** 工作流列表项 */
-export interface WorkflowSummary {
-  id: ID
-  workspace_id: ID
-  name: string
-  description: string
-  order: number
-  node_count: number
-  created_at?: string
-  updated_at?: string
-}
-
-/** 工作流详情 */
-export interface WorkflowDetail extends WorkflowSummary {
-  nodes: WorkflowNode[]
-  edges: WorkflowEdge[]
-}
-
-export interface WorkflowCreate {
-  name: string
-  description?: string
-}
-export interface WorkflowUpdate {
-  name?: string
-  description?: string
-  order?: number
-}
-
-export interface WorkflowNodeCreate {
-  name: string
-  table_id?: ID | null
-  pos_x?: number
-  pos_y?: number
-  config?: Record<string, unknown>
-}
-export interface WorkflowNodeUpdate {
-  name?: string
-  table_id?: ID | null
-  pos_x?: number
-  pos_y?: number
-  config?: Record<string, unknown>
-}
-
-export interface WorkflowEdgeCreate {
-  source_node_id: ID
-  target_node_id: ID
-  label?: string
-}
-export interface WorkflowEdgeUpdate {
-  label?: string
 }
 
 // ── Attachment ──────────────────────────────────────

@@ -14,7 +14,6 @@
  * - /api/v1/workspaces/{wid}/tables/{tid}/trash-rows  → 表级回收站行
  * - /api/v1/workspaces/{wid}/tables/{tid}/export|import|import/async  → 导入导出
  * - /api/v1/workspaces/{wid}/import-csv/*             → CSV 自动建表
- * - /api/v1/workspaces/{wid}/graph|dependencies       → 关系图
  * - /api/v1/public/*               → 公开分享（全局挂载）
  * - /api/v1/health/*               → 健康检查
  * - reports 插件单独挂载（见 reports plugin route_prefix）
@@ -31,7 +30,6 @@ import type {
   FieldCreate, FieldUpdate, Field, FieldType,
   ViewCreate, View, ViewUpdate,
   WorkspaceTrashResponse, TrashedRow,
-  GraphResponse, DependencyResponse,
   CsvAnalyzeResult, CsvImportResult,
   HealthPingResponse, HealthReadyResponse,
   AuditLog, Comment, Reference,
@@ -42,6 +40,7 @@ import type {
   PreferencesResponse, ActiveViewResponse,
   ApiFetchRequest, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
   ApiConfigValidateResult, ApiConfigImportResult,
+  TableMember, MemberCreate, MemberUpdate, OwnerTransferPayload,
 } from './types'
 
 export type {
@@ -54,20 +53,17 @@ export type {
   View, ViewDetail, ViewCreate, ViewUpdate,
   AuditLog, Comment, Reference,
   TrashedRow, WorkspaceTrashResponse,
-  GraphNode, GraphEdge, GraphResponse, DependencyResponse,
   CsvAnalyzeResult, CsvImportResult,
   PublicForm, SharedGrid,
   HealthPingResponse, HealthReadyResponse,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportParameter, ReportRenderRequest, ReportRenderResult,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
-  NodeTableBrief, WorkflowNode, WorkflowEdge, WorkflowSummary, WorkflowDetail,
-  WorkflowCreate, WorkflowUpdate, WorkflowNodeCreate, WorkflowNodeUpdate,
-  WorkflowEdgeCreate, WorkflowEdgeUpdate,
   AttachmentFile,
   PreferencesResponse, ActiveViewResponse,
   ApiFetchRequest, ApiAnalyzeColumn, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
   ApiConfigRequest, ApiConfigValidateResult, ApiConfigImportResult,
+  TableOwnerInfo, TableMember, MemberCreate, MemberUpdate, OwnerTransferPayload,
 } from './types'
 
 // ─────────────── Auth ───────────────
@@ -283,16 +279,7 @@ export const trashApi = {
     api.delete<{ purged: number; older_than_days: number }>(`/v1/workspaces/${wid}/tables/${tid}/trash-rows`, { params: { days } }).then(r => r.data),
 }
 
-// ─────────────── Graph ───────────────
-
-export const graphApi = {
-  get: (wid: number | string) =>
-    api.get<GraphResponse>(`/v1/workspaces/${wid}/graph`).then(r => r.data),
-  dependencies: (wid: number | string) =>
-    api.get<DependencyResponse>(`/v1/workspaces/${wid}/dependencies`).then(r => r.data),
-}
-
-// ─────────────── Import / Export ───────────────
+// ─────────────── Permissions ───────────────
 
 export const importApi = {
   analyzeCsv: (wid: number | string, csvText: string) =>
@@ -369,6 +356,21 @@ export const permissionApi = {
     api.patch<TablePermission>(`/v1/workspaces/${wid}/tables/${tid}/permissions`, data).then(r => r.data),
 }
 
+// ─────────────── Table Members & Owner ───────────────
+
+export const tableMembersApi = {
+  list: (wid: number | string, tid: number | string) =>
+    api.get<TableMember[]>(`/v1/workspaces/${wid}/tables/${tid}/members`).then(r => r.data),
+  add: (wid: number | string, tid: number | string, data: MemberCreate) =>
+    api.post<TableMember>(`/v1/workspaces/${wid}/tables/${tid}/members`, data).then(r => r.data),
+  update: (wid: number | string, tid: number | string, userId: number, data: MemberUpdate) =>
+    api.patch<TableMember>(`/v1/workspaces/${wid}/tables/${tid}/members/${userId}`, data).then(r => r.data),
+  remove: (wid: number | string, tid: number | string, userId: number) =>
+    api.delete(`/v1/workspaces/${wid}/tables/${tid}/members/${userId}`),
+  transferOwner: (wid: number | string, tid: number | string, data: OwnerTransferPayload) =>
+    api.post(`/v1/workspaces/${wid}/tables/${tid}/owner`, data),
+}
+
 // ─────────────── Public（全局挂载） ───────────────
 
 export const publicApi = {
@@ -413,40 +415,6 @@ export const reportApi = {
   /** 渲染报告（返回文件二进制） */
   render: (id: number | string, data: ReportRenderRequest) =>
     api.post<Blob>(`/v1/reports/${id}/render`, data, { responseType: 'blob' }).then(r => r.data),
-}
-
-// ─────────────── Workflows（挂载到 /api/v1/workspaces/{wid}/workflows） ───────────────
-
-import type {
-  WorkflowDetail, WorkflowSummary, WorkflowCreate, WorkflowUpdate,
-  WorkflowNodeCreate, WorkflowNodeUpdate, WorkflowEdgeCreate, WorkflowEdgeUpdate,
-} from './types'
-
-export const workflowApi = {
-  list: (wid: number | string) =>
-    api.get<WorkflowSummary[]>(`/v1/workspaces/${wid}/workflows`).then(r => r.data),
-  get: (wid: number | string, fwid: number | string) =>
-    api.get<WorkflowDetail>(`/v1/workspaces/${wid}/workflows/${fwid}`).then(r => r.data),
-  create: (wid: number | string, data: WorkflowCreate) =>
-    api.post<WorkflowSummary>(`/v1/workspaces/${wid}/workflows`, data).then(r => r.data),
-  update: (wid: number | string, fwid: number | string, data: WorkflowUpdate) =>
-    api.patch<WorkflowSummary>(`/v1/workspaces/${wid}/workflows/${fwid}`, data).then(r => r.data),
-  remove: (wid: number | string, fwid: number | string) =>
-    api.delete(`/v1/workspaces/${wid}/workflows/${fwid}`).then(r => r.data),
-  // Node
-  addNode: (wid: number | string, fwid: number | string, data: WorkflowNodeCreate) =>
-    api.post(`/v1/workspaces/${wid}/workflows/${fwid}/nodes`, data).then(r => r.data),
-  updateNode: (wid: number | string, fwid: number | string, nid: number | string, data: WorkflowNodeUpdate) =>
-    api.patch(`/v1/workspaces/${wid}/workflows/${fwid}/nodes/${nid}`, data).then(r => r.data),
-  removeNode: (wid: number | string, fwid: number | string, nid: number | string) =>
-    api.delete(`/v1/workspaces/${wid}/workflows/${fwid}/nodes/${nid}`).then(r => r.data),
-  // Edge
-  addEdge: (wid: number | string, fwid: number | string, data: WorkflowEdgeCreate) =>
-    api.post(`/v1/workspaces/${wid}/workflows/${fwid}/edges`, data).then(r => r.data),
-  updateEdge: (wid: number | string, fwid: number | string, eid: number | string, data: WorkflowEdgeUpdate) =>
-    api.patch(`/v1/workspaces/${wid}/workflows/${fwid}/edges/${eid}`, data).then(r => r.data),
-  removeEdge: (wid: number | string, fwid: number | string, eid: number | string) =>
-    api.delete(`/v1/workspaces/${wid}/workflows/${fwid}/edges/${eid}`).then(r => r.data),
 }
 
 // ─────────────── Files / Attachments ───────────────

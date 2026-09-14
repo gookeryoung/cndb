@@ -239,6 +239,7 @@ def create_table_from_csv(
     workspace_id: int,
     table_name: str,
     csv_text: str,
+    owner_id: int | None = None,
 ) -> tuple[DataTable, list[int]]:
     """从 CSV 自动建表 + 导入数据."""
     columns, _total = analyze_csv_columns(csv_text)
@@ -246,7 +247,7 @@ def create_table_from_csv(
     if not columns:
         raise ValueError("CSV 没有有效列")
 
-    dt = DataTable(workspace_id=workspace_id, name=table_name)
+    dt = DataTable(workspace_id=workspace_id, owner_id=owner_id, name=table_name)
     dt.ensure_db_name()
     db.add(dt)
     db.commit()
@@ -522,6 +523,7 @@ def create_table_from_json_data(
     workspace_id: int,
     table_name: str,
     rows: list[dict[str, Any]],
+    owner_id: int | None = None,
 ) -> tuple[DataTable, list[int]]:
     """从 JSON 对象数组自动建表 + 导入数据.
 
@@ -532,7 +534,7 @@ def create_table_from_json_data(
     if not columns:
         raise ValueError("JSON 没有有效字段")
 
-    dt = DataTable(workspace_id=workspace_id, name=table_name)
+    dt = DataTable(workspace_id=workspace_id, owner_id=owner_id, name=table_name)
     dt.ensure_db_name()
     db.add(dt)
     db.commit()
@@ -572,6 +574,7 @@ def ingest_from_api(
     response_handler: str | Any = "json",
     encoding: str = "utf-8",
     query_interval: float | None = None,
+    owner_id: int | None = None,
 ) -> tuple[DataTable, list[int], list[dict[str, Any]]]:
     """一站式：抓 API → 推断列 → 建表 → 导入.
 
@@ -611,7 +614,9 @@ def ingest_from_api(
         raise ValueError("API 未返回有效对象数组")
 
     columns = analyze_json_columns(rows)
-    dt, ids = create_table_from_json_data(engine, db, workspace_id, table_name, rows)
+    dt, ids = create_table_from_json_data(
+        engine, db, workspace_id, table_name, rows, owner_id=owner_id
+    )
     return dt, ids, columns
 
 

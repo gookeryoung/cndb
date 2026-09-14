@@ -14,13 +14,10 @@ import TablesList from '@/pages/workspace/TablesList'
 
 // 重页面 lazy load：首次进入该路由时才加载 chunk
 const GridPage = lazy(() => import('@/pages/grid/GridPage'))
-const GraphPage = lazy(() => import('@/pages/graph/GraphPage'))
 const TrashPanel = lazy(() => import('@/pages/modals/TrashPanel'))
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'))
 const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
-const WorkflowListPage = lazy(() => import('@/pages/workflow/WorkflowListPage'))
-const WorkflowEditorPage = lazy(() => import('@/pages/workflow/WorkflowEditorPage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
 
 function PageFallback() {
@@ -49,20 +46,11 @@ function AuthenticatedApp() {
         <Route path="w/:wid/tables/:tid" element={
           <Suspense fallback={<PageFallback />}><GridPage /></Suspense>
         } />
-        <Route path="w/:wid/graph" element={
-          <Suspense fallback={<PageFallback />}><GraphPage /></Suspense>
-        } />
         <Route path="w/:wid/trash" element={
           <Suspense fallback={<PageFallback />}><TrashPanel embedded /></Suspense>
         } />
         <Route path="w/:wid/reports" element={
           <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
-        } />
-        <Route path="w/:wid/workflows" element={
-          <Suspense fallback={<PageFallback />}><WorkflowListPage /></Suspense>
-        } />
-        <Route path="w/:wid/workflows/:fwid" element={
-          <Suspense fallback={<PageFallback />}><WorkflowEditorPage /></Suspense>
         } />
       </Route>
 

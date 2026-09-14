@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, cast
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, text
@@ -14,7 +14,7 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.access import TableAction, check_action
 from cndb.plugins.tables.ddl import create_table as ddl_create
-from cndb.plugins.tables.models import DataField, DataTable, DataView
+from cndb.plugins.tables.models import DataField, DataTable, DataView, TableMember
 from cndb.plugins.tables.schemas import (
     OwnerBrief,
     TableCreate,
@@ -44,11 +44,15 @@ _ACTION_LABEL: dict[TableAction, str] = {
 }
 
 
-def _fill_table_stats(db: Session, table: DataTable) -> TableResponse:
-    """为单张表填充 field_count / record_count / view_count 并返回 TableResponse.
-
-    行数通过物理表 COUNT 查询，字段/视图直接查元数据表。
-    """
+def _fill_table_stats(
+    db: Session,
+    table: DataTable,
+    current_user: User | None = None,
+    owner_map: dict[int, User] | None = None,
+    member_count_map: dict[int, int] | None = None,
+    my_member_map: dict[int, TableMember] | None = None,
+) -> TableResponse:
+    """为单张表填充统计 + 数据资产目录字段."""
     field_count = (
         db.query(func.count(DataField.id))
         .filter(DataField.table_id == table.id, DataField.trashed == False)  # noqa: E712
@@ -56,7 +60,7 @@ def _fill_table_stats(db: Session, table: DataTable) -> TableResponse:
         or 0
     )
     view_count = db.query(func.count(DataView.id)).filter(DataView.table_id == table.id).scalar() or 0
-    # 物理表 COUNT —— 表结构异常（比如 DDL 没建出来）时用 None
+    # 物理表 COUNT —— 表结构异常时用 None
     record_count: int | None = None
     try:
         result = db.execute(text(f"SELECT COUNT(*) FROM {table.db_table_name}"))
@@ -64,11 +68,38 @@ def _fill_table_stats(db: Session, table: DataTable) -> TableResponse:
     except Exception:
         record_count = None
 
-    # 先把 ORM 对象转成 TableResponse 基本字段，再注入统计
     base = TableResponse.model_validate(table, from_attributes=True)
     base.field_count = int(field_count)
     base.record_count = int(record_count) if record_count is not None else None
     base.view_count = int(view_count)
+
+    # 数据资产目录字段（list_tables 会批量预查，单表 get_table 时回退懒查）
+    if owner_map is not None:
+        owner = owner_map.get(table.owner_id) if table.owner_id else None
+    else:
+        owner = db.get(User, table.owner_id) if table.owner_id else None
+    if owner is not None:
+        base.owner_id = owner.id
+        base.owner_username = owner.username
+
+    if member_count_map is not None:
+        base.member_count = member_count_map.get(table.id, 0)
+    else:
+        base.member_count = (
+            db.query(func.count(TableMember.id)).filter(TableMember.table_id == table.id).scalar() or 0
+        )
+
+    # my_access
+    if current_user is not None:
+        if table.owner_id == current_user.id:
+            base.my_access = "owner"
+        elif my_member_map is not None and table.id in my_member_map:
+            base.my_access = my_member_map[table.id].role  # "read" | "write"
+        else:
+            base.my_access = "none"
+    else:
+        base.my_access = None
+
     return base
 
 
@@ -96,7 +127,12 @@ def create_table(
     db: Annotated[Session, Depends(get_db)],
 ) -> DataTable:
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
-    dt = DataTable(workspace_id=workspace_id, name=payload.name, description=payload.description)
+    dt = DataTable(
+        workspace_id=workspace_id,
+        owner_id=current_user.id,
+        name=payload.name,
+        description=payload.description,
+    )
     dt.ensure_db_name()
     db.add(dt)
     db.commit()
@@ -119,7 +155,41 @@ def list_tables(
     if not include_trashed:
         query = query.filter(DataTable.trashed == False)  # noqa: E712
     tables = query.order_by(DataTable.order, DataTable.id).all()
-    return [_fill_table_stats(db, t) for t in tables]
+
+    # 批量预查 owner / member_count / my_member，避免 N+1
+    table_ids = [t.id for t in tables]
+    owner_ids = {t.owner_id for t in tables if t.owner_id}
+    owner_map: dict[int, User] = {}
+    if owner_ids:
+        for u in db.query(User).filter(User.id.in_(owner_ids)).all():
+            owner_map[u.id] = u
+
+    member_count_map: dict[int, int] = {}
+    if table_ids:
+        rows = (
+            db.query(TableMember.table_id, func.count(TableMember.id))
+            .filter(TableMember.table_id.in_(table_ids))
+            .group_by(TableMember.table_id)
+            .all()
+        )
+        for tid, cnt in rows:
+            member_count_map[int(tid)] = int(cnt)
+
+    my_member_map: dict[int, TableMember] = {}
+    if table_ids:
+        my_members = db.query(TableMember).filter(
+            TableMember.table_id.in_(table_ids), TableMember.user_id == current_user.id
+        )
+        for m in my_members:
+            my_member_map[m.table_id] = m
+
+    return [
+        _fill_table_stats(
+            db, t, current_user=current_user,
+            owner_map=owner_map, member_count_map=member_count_map, my_member_map=my_member_map,
+        )
+        for t in tables
+    ]
 
 
 @router.post("/reorder", response_model=list[TableResponse])
@@ -152,45 +222,6 @@ def reorder_tables(
     )
 
 
-@router.get("/graph")
-def get_tables_graph(
-    workspace_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-) -> dict[str, object]:
-    """返回工作区内所有表的 link 字段关系图."""
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-
-    tables = (
-        db.query(DataTable)
-        .filter(
-            DataTable.workspace_id == workspace_id,
-            DataTable.trashed == False,  # noqa: E712
-        )
-        .all()
-    )
-
-    edges: list[dict[str, Any]] = []
-    for t in tables:
-        for f in t.fields:
-            if f.trashed or f.field_type != "link":
-                continue
-            target_tid = f.config.get("target_table_id") if f.config else None
-            if target_tid is not None:
-                edges.append(
-                    {
-                        "from_table": t.id,
-                        "from_table_name": t.name,
-                        "from_field": f.name,
-                        "to_table": target_tid,
-                    }
-                )
-
-    nodes: list[dict[str, Any]] = [{"id": t.id, "name": t.name, "db_table_name": t.db_table_name} for t in tables]
-
-    return {"nodes": nodes, "edges": edges}
-
-
 @router.get("/{table_id}", response_model=TableDetailResponse)
 def get_table(
     workspace_id: int,
@@ -202,7 +233,7 @@ def get_table(
     dt = _get_table_or_404(table_id, workspace_id, db)
 
     # 1) 统计 + 基础 TableResponse 字段
-    base = _fill_table_stats(db, dt)
+    base = _fill_table_stats(db, dt, current_user=current_user)
 
     # 2) 字段（复用 relationship，已自动加载）
     def _field_sort_key(f: DataField) -> tuple[int, int]:
@@ -309,7 +340,12 @@ def copy_table(
     src = _get_table_or_404(table_id, workspace_id, db)
 
     # 创建新表元数据
-    dst = DataTable(workspace_id=src.workspace_id, name=f"{src.name} (副本)", description=src.description)
+    dst = DataTable(
+        workspace_id=src.workspace_id,
+        owner_id=current_user.id,
+        name=f"{src.name} (副本)",
+        description=src.description,
+    )
     dst.ensure_db_name()
     db.add(dst)
     db.commit()
@@ -371,11 +407,32 @@ def move_table(
     db: Annotated[Session, Depends(get_db)],
 ) -> DataTable:
     """跨工作区移动表（需同时是源和目标工作区的成员）."""
+    from cndb.plugins.tables.models import TableMember
+    from cndb.plugins.workspaces.models import WorkspaceMember
+
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     _check_table_permission(target_workspace_id, current_user, db, WorkspaceRole.EDITOR)
 
     dt = _get_table_or_404(table_id, workspace_id, db)
     dt.workspace_id = target_workspace_id
+
+    # 跨工作区移动后清空表级成员列表（成员授权不跨工作区）
+    db.query(TableMember).filter(TableMember.table_id == dt.id).delete(synchronize_session=False)
+
+    # 如果原 owner 不是目标工作区成员，则清空 owner_id
+    if dt.owner_id is not None:
+        is_target_member = (
+            db.query(WorkspaceMember)
+            .filter(
+                WorkspaceMember.workspace_id == target_workspace_id,
+                WorkspaceMember.user_id == dt.owner_id,
+            )
+            .first()
+            is not None
+        )
+        if not is_target_member:
+            dt.owner_id = None
+
     db.commit()
     db.refresh(dt)
     return dt
