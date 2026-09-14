@@ -88,12 +88,12 @@ export default tseslint.config(
     },
   },
 
-  // E2E 测试代码放宽规则（Playwright fixture 类型天然需要 any）
+  // E2E 测试代码放宽规则（Playwright fixture 类型天然需要 any / 声明但不用的辅助变量）
   {
     files: ['tests/**/*.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': 'off',
     },
   },
 )

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Card, Row, Col, Tag, Typography, List, Empty, Spin, Tooltip, Space, Button } from 'antd'
 import { ShareAltOutlined, ZoomInOutlined, ZoomOutOutlined, ReloadOutlined } from '@ant-design/icons'
@@ -51,8 +51,11 @@ export default function GraphPage() {
     }
   }, [wid])
 
-  // 自动布局 fallback
-  const autoLayout = data ? computeLayeredLayout(data.nodes, data.edges) : new Map<string, { x: number; y: number }>()
+  // 自动布局 fallback（data 不变时稳定引用，避免 useCallback 每次重建）
+  const autoLayout = useMemo(
+    () => data ? computeLayeredLayout(data.nodes, data.edges) : new Map<string, { x: number; y: number }>(),
+    [data],
+  )
   const effectiveLayout = useCallback((id: string) => {
     return nodePositions.get(id) || autoLayout.get(id) || { x: 20, y: 20 }
   }, [nodePositions, autoLayout])
