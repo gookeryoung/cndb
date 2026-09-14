@@ -9,10 +9,30 @@ interface PermissionEditorProps {
   data?: TablePermission
 }
 
+/** 把后端 hidden_fields（dict: 角色名 → 隐藏字段列表）展平成一个 Set.
+ *  后端 schema: hidden_fields: dict[str, Any] = { "admin": ["name"], "editor": [...] }
+ *  历史遗留：早期设计为数组，后端改为按角色分桶后前端没跟进，需要兼容两种形态.
+ */
+function buildHiddenSet(hidden: unknown): Set<string> {
+  const set = new Set<string>()
+  if (!hidden) return set
+  if (Array.isArray(hidden)) {
+    hidden.forEach(v => set.add(String(v)))
+  } else if (typeof hidden === 'object') {
+    // 角色 → 列表 的 dict，把所有角色的 hidden fields 合并
+    Object.values(hidden as Record<string, unknown>).forEach(v => {
+      if (Array.isArray(v)) v.forEach(x => set.add(String(x)))
+      else if (v != null) set.add(String(v))
+    })
+  }
+  return set
+}
+
 /** 内嵌在权限 Modal 内的编辑 UI */
 export default function PermissionEditor({ fields, data }: PermissionEditorProps) {
-  const [comment, setComment] = useState(data?.comment || '')
-  const hiddenSet = new Set(data?.hidden_fields || [])
+  const [comment, setComment] = useState(data?.comment_role || '')
+  // hidden_fields 在后端是 dict（按角色分桶），这里做兼容展平
+  const hiddenSet = buildHiddenSet(data?.hidden_fields as unknown)
 
   return (
     <div style={{ marginTop: 12 }}>

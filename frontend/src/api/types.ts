@@ -377,9 +377,11 @@ export interface ImportTaskInfo {
 
 /** 表权限 */
 export interface TablePermission {
-  hidden_fields?: string[] | null
+  /** 按角色分桶的隐藏字段: { "admin": ["field_name", ...], "editor": [...] } */
+  hidden_fields?: Record<string, string[]> | null
   row_filters?: Record<string, unknown> | null
-  comment?: string
+  /** 角色级备注字段 (后端: comment_role) */
+  comment_role?: string
 }
 
 // ── Workflows ───────────────────────────────────────
