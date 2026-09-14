@@ -40,6 +40,7 @@ import type {
   ReportRenderRequest,
   AttachmentFile,
   PreferencesResponse, ActiveViewResponse,
+  ApiFetchRequest, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
 } from './types'
 
 export type {
@@ -64,6 +65,7 @@ export type {
   WorkflowEdgeCreate, WorkflowEdgeUpdate,
   AttachmentFile,
   PreferencesResponse, ActiveViewResponse,
+  ApiFetchRequest, ApiAnalyzeColumn, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
 } from './types'
 
 // ─────────────── Auth ───────────────
@@ -314,6 +316,17 @@ export const importApi = {
   /** 轮询异步导入任务状态 */
   getTask: (wid: number | string, tid: number | string, taskId: number | string) =>
     api.get<ImportTaskInfo>(`/v1/workspaces/${wid}/tables/${tid}/import/async/${taskId}`).then(r => r.data),
+
+  // ── API 抓取（import-api 路由） ──
+  /** 抓 API + 分析列类型（不写库） */
+  fetchAnalyze: (wid: number | string, payload: ApiFetchRequest) =>
+    api.post<ApiAnalyzeResult>(`/v1/workspaces/${wid}/import-api/analyze`, payload).then(r => r.data),
+  /** 抓 API + 自动建表 + 导入数据 */
+  fetchCreateTable: (wid: number | string, tableName: string, payload: ApiFetchRequest) =>
+    api.post<ApiImportResult>(`/v1/workspaces/${wid}/import-api`, { ...payload, table_name: tableName }).then(r => r.data),
+  /** 抓 API + 追加数据到已有表 */
+  fetchAppend: (wid: number | string, tid: number | string, payload: ApiFetchRequest) =>
+    api.post<ApiAppendResult>(`/v1/workspaces/${wid}/tables/${tid}/import-api`, payload).then(r => r.data),
 }
 
 export const exportApi = {
