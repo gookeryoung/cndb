@@ -295,15 +295,21 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
                 f"的 sorting field_name='{s.get('field_name')}' 不存在"
             )
             return False
-    # kanban 的 group_field / calendar 的 start_field / gallery 的 title_field 等
+    # kanban 的 group_field / calendar 的 start_field / gallery 的 title_field / gantt 的 start_date_field 等
     vo = vc.get("view_options", {})
     for opt_key in (
         "group_field",
         "start_field",
+        "end_field",
         "title_field",
         "image_field",
         "subtitle_field",
         "tag_field",
+        "start_date_field",
+        "end_date_field",
+        "actual_end_field",
+        "progress_field",
+        "assignee_field",
     ):
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:
