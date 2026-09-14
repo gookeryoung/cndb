@@ -43,7 +43,9 @@ function ThemeCard({ mode, selected, onSelect }: {
         gap: 8,
         transition: 'border-color 120ms, box-shadow 120ms',
         boxShadow: selected ? `0 0 0 3px ${s.primary}22` : 'none',
-        color: meta.isDark ? '#e6edf3' : 'inherit',
+        // 每张卡片根据自己展示的主题色板来决定文字色，不能 inherit 外层
+        // 否则当外层是深色模式时，浅色主题卡片（白背景）会继承浅色文字，看不清
+        color: s.text,
       }}
     >
       {/* 小预览条 */}

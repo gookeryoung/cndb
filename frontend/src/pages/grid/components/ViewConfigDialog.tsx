@@ -81,18 +81,18 @@ export default function ViewConfigDialog({
         label: `筛选${draftFilters.filter(f => f.field_name).length ? ` (${draftFilters.filter(f => f.field_name).length})` : ''}`,
         children: (
           <div style={{ minHeight: 120 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid #f0f0f0' }}>
-              <span style={{ fontSize: 13, color: '#475569' }}>条件组合：</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid var(--cn-border)' }}>
+              <span style={{ fontSize: 13, color: 'var(--cn-text-primary)' }}>条件组合：</span>
               <Space.Compact size="small">
                 <Button type={draftFilterLogic === 'AND' ? 'primary' : 'default'} onClick={() => setDraftFilterLogic('AND')}>全部满足（AND）</Button>
                 <Button type={draftFilterLogic === 'OR' ? 'primary' : 'default'} onClick={() => setDraftFilterLogic('OR')}>任一满足（OR）</Button>
               </Space.Compact>
-              <span style={{ fontSize: 12, color: '#94a3b8' }}>
+              <span style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>
                 {draftFilterLogic === 'AND' ? '所有筛选条件同时生效' : '任一筛选条件生效即可'}
               </span>
             </div>
             {draftFilters.length === 0 && (
-              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', border: '1px dashed #e2e8f0', borderRadius: 6 }}>
+              <div style={{ textAlign: 'center', color: 'var(--cn-text-muted)', padding: '20px 0', border: '1px dashed var(--cn-border)', borderRadius: 6 }}>
                 暂无筛选条件
               </div>
             )}
@@ -106,7 +106,7 @@ export default function ViewConfigDialog({
                 String(o.value ?? o.name ?? ''))
               return (
                 <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: '#9ca3af', width: 24, textAlign: 'center', flexShrink: 0 }}>#{idx + 1}</span>
+                  <span style={{ fontSize: 11, color: 'var(--cn-text-muted)', width: 24, textAlign: 'center', flexShrink: 0 }}>#{idx + 1}</span>
                   <Select size="small" value={rule.field_name || undefined}
                     onChange={(v) => {
                       const nextField = filterableFields.find(f => f.name === v)
@@ -118,7 +118,7 @@ export default function ViewConfigDialog({
                     onChange={(v) => updateFilter(idx, { op: v, value: undefined })}
                     placeholder="操作符" style={{ width: 130 }} options={ops.map(o => ({ value: o.op, label: o.label }))} />
                   {needValue ? (
-                    <span style={{ fontSize: 12, color: '#9ca3af' }}>（无需值）</span>
+                    <span style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>（无需值）</span>
                   ) : currentOp?.valueKind === 'boolean' ? (
                     <Switch size="small" checked={!!rule.value} onChange={(v) => updateFilter(idx, { value: v })} />
                   ) : currentOp?.valueKind === 'number' ? (
@@ -153,13 +153,13 @@ export default function ViewConfigDialog({
         children: (
           <div style={{ minHeight: 120 }}>
             {draftSorts.length === 0 && (
-              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', border: '1px dashed #e2e8f0', borderRadius: 6 }}>
+              <div style={{ textAlign: 'center', color: 'var(--cn-text-muted)', padding: '20px 0', border: '1px dashed var(--cn-border)', borderRadius: 6 }}>
                 暂无排序规则
               </div>
             )}
             {draftSorts.map((rule, idx) => (
               <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: '#9ca3af', width: 24, textAlign: 'center', flexShrink: 0 }}>#{idx + 1}</span>
+                <span style={{ fontSize: 11, color: 'var(--cn-text-muted)', width: 24, textAlign: 'center', flexShrink: 0 }}>#{idx + 1}</span>
                 <Select size="small" value={rule.field_name || undefined}
                   onChange={(v) => updateSort(idx, { field_name: v })}
                   placeholder="字段" style={{ flex: 1 }}
@@ -192,7 +192,7 @@ export default function ViewConfigDialog({
               if (opt.kind === 'switch') {
                 return (
                   <div key={opt.key} style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: '#475569', marginBottom: 4 }}>{opt.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--cn-text-primary)', marginBottom: 4 }}>{opt.label}</div>
                     <Switch
                       checked={currentValue !== false && currentValue !== undefined}
                       onChange={v => setDraftOpt(prev => ({ ...prev, [opt.key]: v }))}
@@ -206,7 +206,7 @@ export default function ViewConfigDialog({
               if (opt.kind === 'direction' || opt.kind === 'enum_select' || opt.kind === 'number_enum') {
                 return (
                   <div key={opt.key} style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: '#475569', marginBottom: 4 }}>{opt.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--cn-text-primary)', marginBottom: 4 }}>{opt.label}</div>
                     <Select
                       style={{ width: '100%' }}
                       value={(currentValue ?? fallbackValue) as string | number}
@@ -222,7 +222,7 @@ export default function ViewConfigDialog({
               const isMultiple = opt.kind === 'field_multi_select'
               return (
                 <div key={opt.key} style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 12, color: '#475569', marginBottom: 4 }}>{opt.label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--cn-text-primary)', marginBottom: 4 }}>{opt.label}</div>
                   <Select
                     mode={isMultiple ? 'multiple' : undefined}
                     style={{ width: '100%' }}

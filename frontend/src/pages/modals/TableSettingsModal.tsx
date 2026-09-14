@@ -269,7 +269,7 @@ export default function TableSettingsModal({
             children: (
               <div style={{ paddingTop: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <span style={{ color: '#6b7280' }}>共 {views.length} 个视图</span>
+                  <span style={{ color: 'var(--cn-text-secondary)' }}>共 {views.length} 个视图</span>
                   <Button
                     type="primary"
                     icon={<PlusOutlined />}
@@ -293,8 +293,8 @@ export default function TableSettingsModal({
                     style={{
                       display: 'flex', alignItems: 'center', gap: 12,
                       padding: '10px 12px', marginBottom: 6,
-                      border: '1px solid #e5e7eb', borderRadius: 6,
-                      background: '#fafafa',
+                      border: '1px solid var(--cn-border)', borderRadius: 6,
+                      background: 'var(--cn-bg-subtle)',
                     }}
                   >
                     <strong style={{ flex: 1 }}>{v.name}</strong>
@@ -337,7 +337,7 @@ export default function TableSettingsModal({
             children: table ? (
               <div style={{ paddingTop: 8 }}>
                 <div style={{ marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, color: '#374151', marginRight: 8 }}>您当前在本表的权限：</span>
+                  <span style={{ fontSize: 13, color: 'var(--cn-text-primary)', marginRight: 8 }}>您当前在本表的权限：</span>
                   <Space size={[4, 4]} wrap>
                     {canEditRecords && <Tag color="blue">编辑记录</Tag>}
                     {canEditViews && <Tag color="purple">编辑视图</Tag>}
