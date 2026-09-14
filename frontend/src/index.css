@@ -144,7 +144,67 @@ body.theme-minimal a {
   text-underline-offset: 2px;
 }
 
-/* ─────────────── Switch 开关兜底 — 防止 flex 容器拉伸高度 ─────────────── */
+/* ─────────────── 深色主题 antd 组件兜底覆盖 — 防外围漏白 ─────────────── */
+body.theme-github-dark .ant-table-wrapper,
+body.theme-dark .ant-table-wrapper,
+body.theme-github-dark .ant-table-container,
+body.theme-dark .ant-table-container,
+body.theme-github-dark .ant-table-content,
+body.theme-dark .ant-table-content,
+body.theme-github-dark .ant-table-body,
+body.theme-dark .ant-table-body,
+body.theme-github-dark .ant-table-cell-scrollbar,
+body.theme-dark .ant-table-cell-scrollbar,
+body.theme-github-dark .ant-spin-nested-loading,
+body.theme-dark .ant-spin-nested-loading,
+body.theme-github-dark .ant-empty,
+body.theme-dark .ant-empty {
+  background: var(--cn-bg-page) !important;
+}
+
+/* 分页区域、空状态、占位文本 */
+body.theme-github-dark .ant-pagination,
+body.theme-dark .ant-pagination,
+body.theme-github-dark .ant-empty-description,
+body.theme-dark .ant-empty-description {
+  color: var(--cn-text-secondary) !important;
+}
+
+/* Table wrapper 外层 & loading overlay */
+body.theme-github-dark .ant-table,
+body.theme-dark .ant-table {
+  background: var(--cn-bg-page) !important;
+}
+
+body.theme-github-dark .ant-spin-container::after,
+body.theme-dark .ant-spin-container::after {
+  background: var(--cn-bg-page) !important;
+}
+
+/* Tag / Button / Segmented 背景兜底 */
+body.theme-github-dark .ant-tag,
+body.theme-dark .ant-tag {
+  background: var(--cn-bg-container) !important;
+  border-color: var(--cn-border) !important;
+  color: var(--cn-text-primary) !important;
+}
+
+body.theme-github-dark .ant-segmented,
+body.theme-dark .ant-segmented {
+  background: var(--cn-bg-container) !important;
+}
+
+body.theme-github-dark .ant-segmented-item-label,
+body.theme-dark .ant-segmented-item-label {
+  color: var(--cn-text-secondary) !important;
+}
+
+body.theme-github-dark .ant-segmented-item-selected .ant-segmented-item-label,
+body.theme-dark .ant-segmented-item-selected .ant-segmented-item-label {
+  color: var(--cn-text-primary) !important;
+}
+
+/* Switch 开关兜底 — 防止 flex 容器拉伸高度 ─────────────── */
 .ant-switch {
   align-self: center;
   flex-shrink: 0;
