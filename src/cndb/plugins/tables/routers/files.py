@@ -100,8 +100,18 @@ def _safe_filename(filename: str) -> str:
 
 
 def _file_path(workspace_id: int, file_key: str) -> PathLib:
-    """由 file_key 还原出绝对路径."""
-    return _workspace_dir(workspace_id) / file_key
+    """由 file_key 还原出绝对路径（带安全校验，防路径穿越）."""
+    # file_key 必须是 uuid.hex + 可选 .ext 格式（不包含路径分隔符、.. 等危险组件）
+    if ".." in file_key or "/" in file_key or "\\" in file_key or file_key.startswith("."):
+        raise HTTPException(status_code=400, detail="非法的文件标识符")
+    if not file_key or len(file_key) > 255:
+        raise HTTPException(status_code=400, detail="非法的文件标识符")
+    path = _workspace_dir(workspace_id) / file_key
+    resolved = path.resolve()
+    work_dir = _workspace_dir(workspace_id).resolve()
+    if not str(resolved).startswith(str(work_dir) + "/") and resolved != work_dir:
+        raise HTTPException(status_code=400, detail="非法的文件标识符")
+    return path
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
