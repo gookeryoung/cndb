@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -65,7 +65,7 @@ def _write_audit(
     table_id: int,
     action: str,
     actor_id: int,
-    detail: dict,
+    detail: dict[str, Any],
 ) -> None:
     """写一条审计日志."""
     db.add(
@@ -78,7 +78,7 @@ def _write_audit(
     )
 
 
-def _member_out(db: Session, user_id: int, role: str) -> dict:
+def _member_out(db: Session, user_id: int, role: str) -> dict[str, Any]:
     """构造 MemberOut 响应 dict."""
     user = db.get(User, user_id)
     return {
@@ -98,7 +98,7 @@ def list_members(
     table_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """列出表的所有成员（含用户名）."""
     from cndb.plugins.tables.routers.tables import _check_table_permission
 
@@ -111,7 +111,7 @@ def list_members(
         .filter(TableMember.table_id == table.id)
         .all()
     )
-    result: list[dict] = []
+    result: list[dict[str, Any]] = []
     for tm, username, nickname in rows:
         result.append(
             {
@@ -134,7 +134,7 @@ def add_member(
     payload: MemberCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, Any]:
     """为表添加成员."""
     table = _get_table_or_404(table_id, workspace_id, db)
     _require_table_admin(table, current_user, db)
@@ -148,9 +148,7 @@ def add_member(
         raise HTTPException(status_code=400, detail="表所有者无需再添加为成员")
 
     existing = (
-        db.query(TableMember)
-        .filter(TableMember.table_id == table.id, TableMember.user_id == payload.user_id)
-        .first()
+        db.query(TableMember).filter(TableMember.table_id == table.id, TableMember.user_id == payload.user_id).first()
     )
     if existing is not None:
         raise HTTPException(status_code=409, detail="该用户已是表成员")
@@ -181,7 +179,7 @@ def update_member(
     payload: MemberUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, Any]:
     """变更成员角色."""
     table = _get_table_or_404(table_id, workspace_id, db)
     _require_table_admin(table, current_user, db)
@@ -189,11 +187,7 @@ def update_member(
     if payload.role not in ("read", "write"):
         raise HTTPException(status_code=400, detail="role 必须是 read 或 write")
 
-    tm = (
-        db.query(TableMember)
-        .filter(TableMember.table_id == table.id, TableMember.user_id == user_id)
-        .first()
-    )
+    tm = db.query(TableMember).filter(TableMember.table_id == table.id, TableMember.user_id == user_id).first()
     if tm is None:
         raise HTTPException(status_code=404, detail="该用户不是表成员")
 
@@ -227,11 +221,7 @@ def remove_member(
     table = _get_table_or_404(table_id, workspace_id, db)
     _require_table_admin(table, current_user, db)
 
-    tm = (
-        db.query(TableMember)
-        .filter(TableMember.table_id == table.id, TableMember.user_id == user_id)
-        .first()
-    )
+    tm = db.query(TableMember).filter(TableMember.table_id == table.id, TableMember.user_id == user_id).first()
     if tm is None:
         raise HTTPException(status_code=404, detail="该用户不是表成员")
 
@@ -256,7 +246,7 @@ def transfer_owner(
     payload: OwnerTransfer,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict:
+) -> dict[str, Any]:
     """转让表所有权."""
     table = _get_table_or_404(table_id, workspace_id, db)
 
@@ -306,6 +296,7 @@ def transfer_owner(
     db.commit()
     db.refresh(table)
 
+    assert table.owner_id is not None
     return _member_out(db, table.owner_id, "owner")
 
 

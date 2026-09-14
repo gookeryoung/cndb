@@ -85,9 +85,7 @@ def _fill_table_stats(
     if member_count_map is not None:
         base.member_count = member_count_map.get(table.id, 0)
     else:
-        base.member_count = (
-            db.query(func.count(TableMember.id)).filter(TableMember.table_id == table.id).scalar() or 0
-        )
+        base.member_count = db.query(func.count(TableMember.id)).filter(TableMember.table_id == table.id).scalar() or 0
 
     # my_access
     if current_user is not None:
@@ -185,8 +183,12 @@ def list_tables(
 
     return [
         _fill_table_stats(
-            db, t, current_user=current_user,
-            owner_map=owner_map, member_count_map=member_count_map, my_member_map=my_member_map,
+            db,
+            t,
+            current_user=current_user,
+            owner_map=owner_map,
+            member_count_map=member_count_map,
+            my_member_map=my_member_map,
         )
         for t in tables
     ]

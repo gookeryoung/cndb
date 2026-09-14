@@ -282,9 +282,7 @@ def api_config_import(
     for table_def in table_defs:
         table_name = table_def["table_name"]
         try:
-            table_results = ingest_tables_from_config(
-                engine, db, workspace_id, [table_def], owner_id=current_user.id
-            )
+            table_results = ingest_tables_from_config(engine, db, workspace_id, [table_def], owner_id=current_user.id)
             results.extend(table_results)
         except Exception as exc:
             err_info = {"table_name": table_name, "error": str(exc)}

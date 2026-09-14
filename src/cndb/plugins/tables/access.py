@@ -89,11 +89,7 @@ def check_action(
         return True
 
     # ── 3. 表成员授权 ──
-    member = (
-        db.query(TableMember)
-        .filter(TableMember.table_id == table.id, TableMember.user_id == user.id)
-        .first()
-    )
+    member = db.query(TableMember).filter(TableMember.table_id == table.id, TableMember.user_id == user.id).first()
     if member is not None:
         if member.role == "write":
             return action in _WRITE_MEMBER_ACTIONS

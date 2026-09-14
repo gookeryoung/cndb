@@ -614,9 +614,7 @@ def ingest_from_api(
         raise ValueError("API 未返回有效对象数组")
 
     columns = analyze_json_columns(rows)
-    dt, ids = create_table_from_json_data(
-        engine, db, workspace_id, table_name, rows, owner_id=owner_id
-    )
+    dt, ids = create_table_from_json_data(engine, db, workspace_id, table_name, rows, owner_id=owner_id)
     return dt, ids, columns
 
 
