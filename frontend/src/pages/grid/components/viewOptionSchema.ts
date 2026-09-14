@@ -75,6 +75,10 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
   {
     key: 'card_sort_direction', label: '卡片排序方向', tooltip: '配合卡片排序字段使用',
     kind: 'direction', defaultValue: 'desc',
+    enumOptions: [
+      { value: 'asc', label: '升序 ↑' },
+      { value: 'desc', label: '降序 ↓' },
+    ],
   },
   {
     key: 'pin_urgent', label: '逾期/紧急卡片置顶', tooltip: '有截止日期时，逾期和临近截止的卡片始终排在列顶',
