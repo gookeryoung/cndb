@@ -109,6 +109,120 @@ body.theme-minimal {
   --cn-bg-warning-subtle: #fffbe6;
 }
 
+/* 海洋 — 青蓝清爽 */
+body.theme-ocean {
+  --cn-bg-page: #f0f8fa;
+  --cn-bg-container: #ffffff;
+  --cn-bg-elevated: #ffffff;
+  --cn-bg-subtle: #eef7f9;
+  --cn-bg-canvas: #f0f8fa;
+  --cn-bg-muted: #f4fafb;
+  --cn-border: #cfe2e8;
+  --cn-border-soft: #e3eef2;
+  --cn-text-primary: #0f3a45;
+  --cn-text-secondary: #5b7c88;
+  --cn-text-muted: #8aa7b0;
+  --cn-text-disabled: #c2d6dd;
+  --cn-brand-color: #0891b2;
+  --cn-bg-danger-subtle: #fff2f0;
+  --cn-bg-warning-subtle: #fffbe6;
+}
+
+/* 森野 — 翠绿自然 */
+body.theme-forest {
+  --cn-bg-page: #f2f7f3;
+  --cn-bg-container: #ffffff;
+  --cn-bg-elevated: #ffffff;
+  --cn-bg-subtle: #eef6ef;
+  --cn-bg-canvas: #f2f7f3;
+  --cn-bg-muted: #f6faf7;
+  --cn-border: #d3e4d5;
+  --cn-border-soft: #e7f0e8;
+  --cn-text-primary: #14301b;
+  --cn-text-secondary: #5c7560;
+  --cn-text-muted: #8fa894;
+  --cn-text-disabled: #c6d8ca;
+  --cn-brand-color: #16a34a;
+  --cn-bg-danger-subtle: #fff2f0;
+  --cn-bg-warning-subtle: #fffbe6;
+}
+
+/* 纸感 — 米黄护眼 */
+body.theme-sepia {
+  --cn-bg-page: #efe7d2;
+  --cn-bg-container: #fbf6ea;
+  --cn-bg-elevated: #fffdf7;
+  --cn-bg-subtle: #f3ecd9;
+  --cn-bg-canvas: #efe7d2;
+  --cn-bg-muted: #f7f1e1;
+  --cn-border: #ddcfae;
+  --cn-border-soft: #e8dec6;
+  --cn-text-primary: #43341f;
+  --cn-text-secondary: #7a6a4d;
+  --cn-text-muted: #a89878;
+  --cn-text-disabled: #d3c7a8;
+  --cn-brand-color: #a16207;
+  --cn-bg-danger-subtle: #f9e8d9;
+  --cn-bg-warning-subtle: #f7ecd0;
+}
+
+/* 樱粉 — 柔和粉色 */
+body.theme-sakura {
+  --cn-bg-page: #fdf5f9;
+  --cn-bg-container: #ffffff;
+  --cn-bg-elevated: #ffffff;
+  --cn-bg-subtle: #fceff6;
+  --cn-bg-canvas: #fdf5f9;
+  --cn-bg-muted: #fef8fb;
+  --cn-border: #f2d9e5;
+  --cn-border-soft: #f8e7ef;
+  --cn-text-primary: #3d2230;
+  --cn-text-secondary: #92708a;
+  --cn-text-muted: #bfa3b2;
+  --cn-text-disabled: #e8d3de;
+  --cn-brand-color: #db2777;
+  --cn-bg-danger-subtle: #fff2f0;
+  --cn-bg-warning-subtle: #fff7fa;
+}
+
+/* 午夜紫 — 深紫夜色 */
+body.theme-midnight {
+  --cn-bg-page: #100d1a;
+  --cn-bg-container: #1d1830;
+  --cn-bg-elevated: #26203a;
+  --cn-bg-subtle: #15121f;
+  --cn-bg-canvas: #100d1a;
+  --cn-bg-muted: #0e0b16;
+  --cn-border: #383150;
+  --cn-border-soft: #2a2440;
+  --cn-text-primary: #e9e4f5;
+  --cn-text-secondary: #a299c2;
+  --cn-text-muted: #7d749c;
+  --cn-text-disabled: #4a4366;
+  --cn-brand-color: #a78bfa;
+  --cn-bg-danger-subtle: #421c2e;
+  --cn-bg-warning-subtle: #3d2f16;
+}
+
+/* 极夜黑 — 纯黑高对比 */
+body.theme-oled {
+  --cn-bg-page: #000000;
+  --cn-bg-container: #0a0a0a;
+  --cn-bg-elevated: #161616;
+  --cn-bg-subtle: #050505;
+  --cn-bg-canvas: #000000;
+  --cn-bg-muted: #0f0f0f;
+  --cn-border: #262626;
+  --cn-border-soft: #1a1a1a;
+  --cn-text-primary: #f5f5f5;
+  --cn-text-secondary: #a3a3a3;
+  --cn-text-muted: #737373;
+  --cn-text-disabled: #404040;
+  --cn-brand-color: #22d3ee;
+  --cn-bg-danger-subtle: #2d1212;
+  --cn-bg-warning-subtle: #2e2410;
+}
+
 /* ─────────────── 表格斑马纹（按主题覆盖） ─────────────── */
 
 .table-row-striped > td {
@@ -130,6 +244,31 @@ body.theme-minimal a {
   color: #262626;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* 新增主题的链接品牌色（深色主题需覆盖 theme-dark 的兜底蓝） */
+body.theme-ocean a {
+  color: #0e7490;
+}
+
+body.theme-forest a {
+  color: #15803d;
+}
+
+body.theme-sepia a {
+  color: #92590a;
+}
+
+body.theme-sakura a {
+  color: #be185d;
+}
+
+body.theme-midnight a {
+  color: #a78bfa;
+}
+
+body.theme-oled a {
+  color: #22d3ee;
 }
 
 /* ─────────────── 深色主题 antd 组件兜底覆盖 — 防外围漏白 ─────────────── */
