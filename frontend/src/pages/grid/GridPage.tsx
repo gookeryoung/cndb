@@ -457,11 +457,13 @@ export default function GridPage() {
     },
   })
 
-  // 复制表
+  // 复制表（三种模式）
   const copyTable = useMutation({
-    mutationFn: () => tableApi.copy(wid!, tid!),
-    onSuccess: (t) => {
-      message.success(`已复制为 "${t.name}"`)
+    mutationFn: (opts: { mode: 'structure' | 'all' | 'view'; viewId?: number | string }) =>
+      tableApi.copy(wid!, tid!, opts),
+    onSuccess: (t, opts) => {
+      const modeLabel = opts.mode === 'structure' ? '(仅结构)' : opts.mode === 'view' ? '(当前视图)' : '(含全部数据)'
+      message.success(`已复制为 "${t.name}" ${modeLabel}`)
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
       if (t.id) navigate(`/w/${wid}/tables/${t.id}`)
     },
@@ -545,7 +547,19 @@ export default function GridPage() {
               { key: 'share', icon: <ShareAltOutlined />, label: '分享视图', onClick: () => shareView.mutate() },
               { key: 'revoke', icon: <CloseOutlined />, label: '撤销分享', onClick: () => revokeShare.mutate() },
               { type: 'divider' },
-              { key: 'copy', icon: <CopyOutlined />, label: '复制表', onClick: () => copyTable.mutate() },
+              {
+                key: 'copy', icon: <CopyOutlined />, label: '复制表',
+                children: [
+                  { key: 'copy-structure', label: '仅复制表结构', onClick: () => copyTable.mutate({ mode: 'structure' }) },
+                  { key: 'copy-all', label: '复制表结构 + 全部数据', onClick: () => copyTable.mutate({ mode: 'all' }) },
+                  {
+                    key: 'copy-view',
+                    label: `复制当前视图数据${activeView ? `（${activeView.name}）` : ''}`,
+                    disabled: !activeView,
+                    onClick: () => activeView && copyTable.mutate({ mode: 'view', viewId: activeView.id }),
+                  },
+                ],
+              },
               { key: 'move', icon: <SwapOutlined />, label: '移动到其他工作区', onClick: () => setMoveOpen(true) },
               { type: 'divider' },
               {

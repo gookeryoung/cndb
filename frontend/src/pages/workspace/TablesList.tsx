@@ -100,9 +100,11 @@ export default function TablesList() {
   })
 
   const copy = useMutation({
-    mutationFn: (tid: number | string) => tableApi.copy(wid!, tid, false),
-    onSuccess: (t) => {
-      message.success(`已复制为 "${t.name}"`)
+    mutationFn: (args: { tid: number | string; mode: 'structure' | 'all' }) =>
+      tableApi.copy(wid!, args.tid, { mode: args.mode }),
+    onSuccess: (t, args) => {
+      const modeLabel = args.mode === 'all' ? '(含全部数据)' : '(仅结构)'
+      message.success(`已复制为 "${t.name}" ${modeLabel}`)
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
     },
   })
@@ -256,8 +258,19 @@ export default function TablesList() {
                 {
                   key: 'copy',
                   icon: <CopyOutlined />,
-                  label: '复制表结构',
-                  onClick: (e) => { e?.domEvent?.stopPropagation?.(); copy.mutate(record.id) },
+                  label: '复制表',
+                  children: [
+                    {
+                      key: 'copy-structure',
+                      label: '仅复制表结构',
+                      onClick: (e) => { e?.domEvent?.stopPropagation?.(); copy.mutate({ tid: record.id, mode: 'structure' }) },
+                    },
+                    {
+                      key: 'copy-all',
+                      label: '复制表结构 + 全部数据',
+                      onClick: (e) => { e?.domEvent?.stopPropagation?.(); copy.mutate({ tid: record.id, mode: 'all' }) },
+                    },
+                  ],
                 },
                 { type: 'divider' },
                 {
