@@ -12,6 +12,8 @@
 - 字段顺序：按源字段在源表的展示顺序（order, id）复制，目标表已有字段时从当前最大 order 后追加；
 - 冲突（同名字段）由调用方决定是跳过还是报错 —— 提供两个 API：
   `validate_field_import_conflicts` 抛错版，`plan_field_import` 返回计划版。
+- field_mapping 支持源字段 → 目标字段的重命名 / 跳过：
+  ``{源字段名: 目标字段名}``，目标字段名为 None 时跳过该源字段。
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from cndb.plugins.tables import ddl as _ddl
+from cndb.plugins.tables.field_mapping import apply_user_mapping, build_default_mapping
 from cndb.plugins.tables.links import is_link_field
 from cndb.plugins.tables.models import DataField, DataTable, generate_db_column_name
 
@@ -122,13 +125,17 @@ def plan_field_import(
     src_fields: list[DataField],
     *,
     start_order: int | None = None,
+    field_mapping: dict[str, str | None] | None = None,
 ) -> tuple[list[DataField], list[str]]:
-    """规划字段导入：计算冲突、分配目标字段的 order.
+    """规划字段导入：按映射计算目标字段名、检测冲突、分配 order.
 
     Args:
         dst_table: 目标数据表.
         src_fields: 已从源表筛选好的待克隆字段.
         start_order: 起始 order —— None 时取目标表当前最大 order + 1.
+        field_mapping: 可选的字段重命名 / 跳过映射。
+            ``{源字段名: 目标字段名}``，目标名为 None 时跳过该源字段。
+            未显式列出的源字段按 源名 == 目标名 处理（行为与不传 mapping 等价）。
 
     Returns:
         (计划创建的 DataField 列表（未提交、未分配 id）, 被跳过的原因说明列表).
@@ -138,16 +145,42 @@ def plan_field_import(
         current_max = max((f.order for f in dst_table.fields if not f.trashed), default=-1)
         start_order = current_max + 1
 
+    # 1. 构造映射（默认源名 → 同名，用户覆盖）
+    src_names = [f.name for f in src_fields]
+    mapping: dict[str, str] = build_default_mapping(src_names)
+    if field_mapping:
+        mapping = apply_user_mapping(mapping, field_mapping, src_names)
+
+    # 2. 目标名冲突预扫：包括目标表已有字段 + 本次计划内重复目标名
+    planned_dst_names: set[str] = set()
     plan: list[DataField] = []
     skipped: list[str] = []
     for idx, src in enumerate(src_fields):
-        if src.name in existing_names:
-            skipped.append(f"{src.name} — 目标表已存在同名字段，跳过")
+        if src.name not in mapping:
+            # 用户显式跳过
+            skipped.append(f"{src.name} — 用户通过 field_mapping 指定跳过")
             continue
+
+        dst_name = mapping[src.name]
+
+        # 目标表已有同名字段
+        if dst_name in existing_names:
+            if dst_name == src.name:
+                skipped.append(f"{src.name} — 目标表已存在同名字段，跳过")
+            else:
+                skipped.append(f"{src.name} → {dst_name} — 目标表已存在字段 {dst_name!r}，跳过")
+            continue
+
+        # 本次计划内重复目标名
+        if dst_name in planned_dst_names:
+            skipped.append(f"{src.name} → {dst_name} — 已有另一个源字段也映射到 {dst_name!r}，跳过")
+            continue
+
+        planned_dst_names.add(dst_name)
         plan.append(
             DataField(
                 table_id=dst_table.id,
-                name=src.name,
+                name=dst_name,
                 field_type=src.field_type,
                 config=dict(src.config) if src.config else {},
                 required=src.required,
@@ -170,6 +203,7 @@ def execute_field_import(
     src_fields: list[DataField],
     *,
     skip_conflicts: bool = False,
+    field_mapping: dict[str, str | None] | None = None,
 ) -> list[DataField]:
     """执行字段克隆：元数据 + DDL 物理列.
 
@@ -180,6 +214,7 @@ def execute_field_import(
         src_fields: 待克隆的源字段列表.
         skip_conflicts: True 时跳过同名字段（返回列表中不含被跳过字段）；
             False 时同名冲突直接抛 ValueError.
+        field_mapping: 可选的字段重命名 / 跳过映射 — 见 :func:`plan_field_import`.
 
     Returns:
         成功创建并持久化（含 db_column_name）的 DataField 列表.
@@ -191,10 +226,13 @@ def execute_field_import(
     validate_link_targets_exist(src_fields, db)
 
     if skip_conflicts:
-        plan, _skipped = plan_field_import(dst_table, src_fields)
+        plan, _skipped = plan_field_import(dst_table, src_fields, field_mapping=field_mapping)
     else:
-        validate_field_import_conflicts(dst_table, src_fields)
-        plan, _skipped = plan_field_import(dst_table, src_fields)
+        # 有 mapping 时冲突延后到 plan_field_import 内处理（因为重命名后可能恰好避冲突）
+        # 不传 mapping 时沿用原有"同名冲突即报错"行为
+        if not field_mapping:
+            validate_field_import_conflicts(dst_table, src_fields)
+        plan, _skipped = plan_field_import(dst_table, src_fields, field_mapping=field_mapping)
 
     if not plan:
         logger.info("[field_ops] 没有可克隆的字段，跳过")
@@ -239,8 +277,12 @@ def clone_fields_between_tables(
     field_names: list[str] | None = None,
     exclude_trashed: bool = True,
     skip_conflicts: bool = False,
+    field_mapping: dict[str, str | None] | None = None,
 ) -> tuple[list[DataField], list[str]]:
     """一站式：筛选 → 校验 → 规划 → 执行，返回 (创建的字段列表, 跳过说明).
+
+    Args:
+        field_mapping: 可选的字段重命名 / 跳过映射 — 见 :func:`plan_field_import`.
 
     Raises:
         ValueError: 字段不存在 / link target 不存在 / 同名冲突（且 skip_conflicts=False）.
@@ -254,10 +296,11 @@ def clone_fields_between_tables(
     validate_link_targets_exist(src_fields, db)
 
     if skip_conflicts:
-        plan, skipped = plan_field_import(dst_table, src_fields)
+        plan, skipped = plan_field_import(dst_table, src_fields, field_mapping=field_mapping)
     else:
-        validate_field_import_conflicts(dst_table, src_fields)
-        plan, skipped = plan_field_import(dst_table, src_fields)
+        if not field_mapping:
+            validate_field_import_conflicts(dst_table, src_fields)
+        plan, skipped = plan_field_import(dst_table, src_fields, field_mapping=field_mapping)
 
     if not plan:
         return [], skipped
