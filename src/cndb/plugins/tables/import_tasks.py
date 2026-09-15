@@ -19,9 +19,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from cndb.plugins.tables import transfer
-from cndb.plugins.tables.diff_reporter import DiffReporter
 from cndb.plugins.tables.models import DataTable, ImportTask
-from cndb.plugins.tables.row_validator import RowValidator
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +57,8 @@ def analyze_import_task(db_session: Session, task_id: int) -> None:
 
     完成后 task.status = pending_confirm，validation_report 填充 JSON.
     """
+    from cndb.plugins.tables.importer import Importer
+
     task = db_session.get(ImportTask, task_id)
     if task is None:
         logger.error("ImportTask %s 不存在", task_id)
@@ -76,21 +76,19 @@ def analyze_import_task(db_session: Session, task_id: int) -> None:
         raw = _decode_content(task)
         engine = db_session.get_bind()
 
-        # 解析文件为行 dict 列表
-        rows, file_columns, total = _parse_to_rows(raw, task.format, engine, table)
-        task.total_rows = total
-        task.progress = 30
+        imp = Importer(engine, db_session, table)
+        analysis = imp.analyze(
+            raw,
+            task.format,
+            match_keys=list(task.match_keys) if task.match_keys else None,
+            unknown_cols_strategy=task.unknown_cols_strategy or "drop",
+        )
+
+        task.total_rows = len(analysis.results)
+        task.progress = 90
         db_session.commit()
 
-        # 校验
-        rv = RowValidator(table)
-        results = rv.validate_all(rows)
-        task.progress = 70
-        db_session.commit()
-
-        # 报告
-        report = DiffReporter.build(results, table.active_fields(), file_columns)
-        task.validation_report = json.dumps(report, ensure_ascii=False)
+        task.validation_report = json.dumps(analysis.report, ensure_ascii=False)
         task.progress = 95
         _transition_status(task, "pending_confirm")
         db_session.commit()
@@ -98,9 +96,9 @@ def analyze_import_task(db_session: Session, task_id: int) -> None:
         logger.info(
             "ImportTask %s analyze 完成：total=%d valid=%d error=%d",
             task_id,
-            total,
-            report["valid_count"],
-            report["error_count"],
+            task.total_rows,
+            analysis.report["valid_count"],
+            analysis.report["error_count"],
         )
     except Exception as exc:
         logger.exception("ImportTask %s analyze 失败: %s", task_id, exc)
@@ -188,12 +186,17 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
         raw = _decode_content(task)
         engine = db_session.get_bind()
 
-        # ── 有 validation_report 时走 Importer 链路 ──
+        # ── 有 validation_report 时走 Importer 链路（支持 upsert + 字段自动新增） ──
         if task.validation_report:
             from cndb.plugins.tables.importer import Importer
 
             importer = Importer(engine, db_session, table)
-            result = importer.execute(raw, task.format)
+            result = importer.execute(
+                raw,
+                task.format,
+                match_keys=list(task.match_keys) if task.match_keys else None,
+                unknown_cols_strategy=task.unknown_cols_strategy or "drop",
+            )
             task.imported_rows = len(result.imported_ids)
             task.result_ids = result.imported_ids
             task.validation_report = json.dumps(result.report, ensure_ascii=False)
@@ -261,6 +264,8 @@ def create_import_task(
     fmt: str,
     content: bytes | str,
     status: str = "pending",
+    match_keys: list[str] | None = None,
+    unknown_cols_strategy: str = "drop",
 ) -> ImportTask:
     """创建异步导入任务并入库."""
     if fmt == "xlsx":
@@ -286,6 +291,8 @@ def create_import_task(
         error_message="",
         result_ids=[],
         validation_report="",
+        match_keys=list(match_keys) if match_keys else [],
+        unknown_cols_strategy=unknown_cols_strategy or "drop",
     )
     db.add(task)
     db.commit()
