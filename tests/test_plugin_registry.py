@@ -58,13 +58,14 @@ def test_duplicate_register_skipped() -> None:
 
 
 def test_discover_loads_builtin_plugins() -> None:
-    """discover_and_load 应能找到 health."""
+    """discover_and_load 应能加载内置插件."""
     from cndb.core.plugin_registry import PluginRegistry as _PR
 
     r = _PR()
     r.discover_and_load()
     names = {p["name"] for p in r.get_plugin_info_list()}
-    assert "health" in names
+    assert "workspaces" in names
+    assert "tables" in names
     assert r.get_all_apps() == []
 
 
