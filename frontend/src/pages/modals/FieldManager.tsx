@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, BgColorsOutlined } from '@ant-design/icons'
+import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message, Alert, Empty, Spin } from 'antd'
+import { PlusOutlined, DeleteOutlined, EditOutlined, BgColorsOutlined, ImportOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary } from '@/api'
@@ -72,11 +72,24 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   const [fieldType, setFieldType] = useState<FieldType | undefined>()
   const sorted = useMemo(() => [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [fields])
 
-  // 拉取当前工作区表列表（link 字段用）
+  // ── 从其他表引入对话框状态 ──
+  const [importOpen, setImportOpen] = useState(false)
+  const [sourceTableId, setSourceTableId] = useState<number | string | null>(null)
+  const [importSelectedIds, setImportSelectedIds] = useState<Array<number | string>>([])
+  const [importSkipConflicts, setImportSkipConflicts] = useState(true)
+
+  // 拉取当前工作区表列表（link 字段用 + 引入来源选择）
   const { data: tables = [] } = useQuery<TableSummary[]>({
     queryKey: ['tables', wid],
     queryFn: () => tableApi.list(wid),
-    enabled: open && innerOpen,
+    enabled: open && (innerOpen || importOpen),
+  })
+
+  // 拉取选中源表的字段列表
+  const { data: sourceFields = [], isFetching: sourceFieldsLoading } = useQuery<Field[]>({
+    queryKey: ['fields', wid, sourceTableId],
+    queryFn: () => fieldApi.list(wid, String(sourceTableId!)),
+    enabled: importOpen && !!sourceTableId && String(sourceTableId) !== String(tid),
   })
 
   const create = useMutation({
@@ -92,11 +105,47 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     onSuccess: () => { message.success('已删除'); onChanged() },
   })
 
+  const importMutation = useMutation({
+    mutationFn: () => {
+      if (!sourceTableId) return Promise.reject(new Error('未选择源表'))
+      return fieldApi.importFields(wid, tid, {
+        source_table_id: Number(sourceTableId),
+        field_ids: importSelectedIds.map(Number),
+        import_all_fields: importSelectedIds.length === 0,
+        skip_conflicts: importSkipConflicts,
+      })
+    },
+    onSuccess: (resp) => {
+      const parts: string[] = [`成功引入 ${resp.created.length} 个字段`]
+      if (resp.skipped.length > 0) parts.push(`已跳过 ${resp.skipped.length} 个重名字段`)
+      message.success(parts.join('，'))
+      closeImportDialog()
+      onChanged()
+    },
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : '引入失败'
+      message.error(msg)
+    },
+  })
+
   function closeDialog() {
     setInnerOpen(false)
     setEditTarget(null)
     setFieldType(undefined)
     form.resetFields()
+  }
+
+  function openImportDialog() {
+    setSourceTableId(null)
+    setImportSelectedIds([])
+    setImportSkipConflicts(true)
+    setImportOpen(true)
+  }
+
+  function closeImportDialog() {
+    setImportOpen(false)
+    setSourceTableId(null)
+    setImportSelectedIds([])
   }
 
   /** 打开新建/编辑对话框 */
@@ -147,7 +196,10 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   /** 字段列表 + 工具栏（两种模式共用的内容） */
   const fieldListContent = (
     <>
-      <div style={{ marginBottom: 12, textAlign: 'right' }}>
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <Button icon={<ImportOutlined />} onClick={openImportDialog}>
+          从其他表引入
+        </Button>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => openDialog(null)}>
           新建字段
         </Button>
@@ -237,12 +289,109 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     </Modal>
   )
 
+  // 计算哪些源字段会和当前表重名
+  const existingNames = useMemo(() => new Set(fields.map(f => f.name)), [fields])
+  const sourceFieldsWithConflict = useMemo(() => {
+    return sourceFields.map(sf => ({
+      ...sf,
+      conflict: existingNames.has(sf.name),
+    }))
+  }, [sourceFields, existingNames])
+
+  /** 引入对话框 */
+  const importDialog = (
+    <Modal
+      title="从其他表引入字段"
+      open={importOpen}
+      onCancel={closeImportDialog}
+      onOk={() => importMutation.mutate()}
+      confirmLoading={importMutation.isPending}
+      okText={`引入${importSelectedIds.length > 0 ? `（${importSelectedIds.length} 个）` : '全部'}`}
+      cancelText="取消"
+      width={640}
+    >
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message="字段将被复制为当前表的新字段（独立副本，不与源表保持同步）"
+      />
+
+      {/* 源表选择 */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 4, fontWeight: 500 }}>选择源表</div>
+        <Select
+          style={{ width: '100%' }}
+          placeholder="请选择要引入字段的来源表"
+          showSearch
+          value={sourceTableId ?? undefined}
+          onChange={(v) => { setSourceTableId(v); setImportSelectedIds([]) }}
+          options={tables
+            .filter(t => String(t.id) !== String(tid))
+            .map(t => ({ label: t.name, value: t.id }))}
+          filterOption={(input, option) => (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
+        />
+      </div>
+
+      {/* 字段勾选区 */}
+      {sourceTableId && String(sourceTableId) !== String(tid) && (
+        <Spin spinning={sourceFieldsLoading}>
+          {sourceFields.length === 0 ? (
+            <Empty description="该表暂无字段" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ) : (
+            <div>
+              <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 500 }}>选择要引入的字段</span>
+                <span style={{ color: '#999', fontSize: 12 }}>
+                  已选 {importSelectedIds.length}/{sourceFields.length}（不选 = 全部引入）
+                </span>
+              </div>
+              <Checkbox.Group
+                value={importSelectedIds as Array<string | number>}
+                onChange={(vals) => setImportSelectedIds(vals as Array<string | number>)}
+                style={{ width: '100%' }}
+              >
+                <div style={{ maxHeight: 280, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4, padding: 8 }}>
+                  {sourceFieldsWithConflict.map((sf) => (
+                    <div key={sf.id} style={{ padding: '4px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Checkbox value={sf.id} disabled={sf.is_primary}>
+                        <span style={{ fontWeight: sf.is_primary ? 500 : 400 }}>{sf.name}</span>
+                        {sf.is_primary && <Tag color="gold" style={{ marginLeft: 4 }}>PK</Tag>}
+                        <Tag style={{ marginLeft: 4 }}>{sf.field_type}</Tag>
+                        {sf.conflict && (
+                          <Tag color="orange" style={{ marginLeft: 4 }}>重名</Tag>
+                        )}
+                      </Checkbox>
+                    </div>
+                  ))}
+                </div>
+              </Checkbox.Group>
+            </div>
+          )}
+        </Spin>
+      )}
+
+      {/* 冲突策略 */}
+      {sourceFields.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <Checkbox checked={importSkipConflicts} onChange={(e) => setImportSkipConflicts(e.target.checked)}>
+            跳过重名字段（推荐）
+          </Checkbox>
+          <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>
+            关闭则在重名时报错，不会执行任何引入
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+
   // embedded 模式：直接返回内容（供 Tab / 页面嵌入）
   if (embedded) {
     return (
       <>
         {fieldListContent}
         {editDialog}
+        {importDialog}
       </>
     )
   }
@@ -252,6 +401,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     <Modal title="字段管理" width={760} open={open} onCancel={onClose} footer={null}>
       {fieldListContent}
       {editDialog}
+      {importDialog}
     </Modal>
   )
 }
