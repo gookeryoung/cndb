@@ -262,7 +262,6 @@ const minimalTheme: ThemeConfig = {
     Table: {
       headerBg: '#fafafa',
       headerColor: '#737373',
-      rowBg: '#fafafa',
       rowHoverBg: '#f5f5f5',
       rowSelectedBg: '#f0f0f0',
       borderColor: '#e5e5e5',
@@ -306,7 +305,6 @@ const oceanTheme: ThemeConfig = {
     Table: {
       headerBg: '#eef7f9',
       headerColor: '#5b7c88',
-      rowBg: '#f4fafb',
       rowHoverBg: '#f0f8fa',
       rowSelectedBg: '#d5f0f6',
       borderColor: '#dcebf0',
@@ -350,7 +348,6 @@ const forestTheme: ThemeConfig = {
     Table: {
       headerBg: '#eef6ef',
       headerColor: '#5c7560',
-      rowBg: '#f6faf7',
       rowHoverBg: '#f3f8f4',
       rowSelectedBg: '#d8f0de',
       borderColor: '#e0ece2',
@@ -443,7 +440,6 @@ const sakuraTheme: ThemeConfig = {
     Table: {
       headerBg: '#fceff6',
       headerColor: '#92708a',
-      rowBg: '#fef8fb',
       rowHoverBg: '#fdf3f8',
       rowSelectedBg: '#f8dceb',
       borderColor: '#f5e0eb',
