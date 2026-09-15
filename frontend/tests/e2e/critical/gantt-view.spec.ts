@@ -28,7 +28,7 @@ const ANON = ["setup", "chromium-anon"];
 
 async function getToken(request: APIRequestContext): Promise<string> {
   const resp = await request.post("/api/v1/accounts/auth/login", {
-    data: { login: "demo", password: "demo1234" },
+    data: { login: "admin", password: "admin1234" },
   });
   const body = (await resp.json()) as { access_token: string };
   return body.access_token;
@@ -493,5 +493,135 @@ test.describe("甘特图视图 — 通过视图 TAB 切换", () => {
     await expect
       .poll(async () => await ganttBars(page).count(), { timeout: 8000 })
       .toBeGreaterThanOrEqual(10);
+  });
+});
+
+// ─────────────── 第九组：时间轴日期数字标签可见性（核心修复验证） ────────────
+
+test.describe("甘特图视图 — 时间轴日期数字标签", () => {
+  test("产品开发·项目时间轴 — month 刻度日期标签可见（>=6 个月）", async ({
+    page,
+    request,
+  }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    const wid = await getWorkspaceId(request, "某企业销售管理");
+    const tid = await getTableId(request, wid, "产品开发");
+    const vid = await getGanttViewId(request, wid, tid, "项目时间轴");
+
+    await gotoTable(page, wid, "产品开发");
+    await activateGanttView(page, vid);
+
+    const root = ganttRoot(page);
+    await expect(root).toBeVisible({ timeout: 8000 });
+
+    // 默认 month 刻度下 timeline-label 应该存在
+    const labels = page.getByTestId("gantt-timeline-label");
+    await expect
+      .poll(async () => await labels.count(), { timeout: 8000 })
+      .toBeGreaterThanOrEqual(6);
+
+    // 验证至少一个标签包含中文"月"字
+    const firstLabelText = await labels.first().textContent();
+    expect(firstLabelText).toMatch(/月/);
+  });
+
+  test("产品开发·项目时间轴 — week 刻度切换后日期标签可见", async ({
+    page,
+    request,
+  }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    const wid = await getWorkspaceId(request, "某企业销售管理");
+    const tid = await getTableId(request, wid, "产品开发");
+    const vid = await getGanttViewId(request, wid, tid, "项目时间轴");
+
+    await gotoTable(page, wid, "产品开发");
+    await activateGanttView(page, vid);
+
+    // 切换到 week 刻度
+    const switcher = page.getByTestId("gantt-scale-switch");
+    await expect(switcher).toBeVisible({ timeout: 5000 });
+    await switcher.locator(".ant-segmented-item", { hasText: "周" }).click();
+    await page.waitForTimeout(800);
+
+    // week 刻度下 timeline-label 应该存在（每周一标签）
+    const labels = page.getByTestId("gantt-timeline-label");
+    await expect
+      .poll(async () => await labels.count(), { timeout: 8000 })
+      .toBeGreaterThanOrEqual(12);
+
+    // 切换后甘特条仍然存在
+    await expect
+      .poll(async () => await ganttBars(page).count(), { timeout: 5000 })
+      .toBeGreaterThanOrEqual(10);
+  });
+
+  test("产品开发·项目时间轴 — day 刻度切换后日期标签可见", async ({
+    page,
+    request,
+  }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    const wid = await getWorkspaceId(request, "某企业销售管理");
+    const tid = await getTableId(request, wid, "产品开发");
+    const vid = await getGanttViewId(request, wid, tid, "项目时间轴");
+
+    await gotoTable(page, wid, "产品开发");
+    await activateGanttView(page, vid);
+
+    // 切换到 day 刻度
+    const switcher = page.getByTestId("gantt-scale-switch");
+    await expect(switcher).toBeVisible({ timeout: 5000 });
+    await switcher.locator(".ant-segmented-item", { hasText: "天" }).click();
+    await page.waitForTimeout(800);
+
+    // day 刻度下 timeline-label 应该存在（稀疏后至少覆盖 30 天）
+    const labels = page.getByTestId("gantt-timeline-label");
+    await expect
+      .poll(async () => await labels.count(), { timeout: 8000 })
+      .toBeGreaterThanOrEqual(30);
+
+    // 切换后甘特条仍然存在
+    await expect
+      .poll(async () => await ganttBars(page).count(), { timeout: 5000 })
+      .toBeGreaterThanOrEqual(10);
+  });
+
+  test("产品开发·项目时间轴 — month→week→day 三级切换标签数无突变为 0", async ({
+    page,
+    request,
+  }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    const wid = await getWorkspaceId(request, "某企业销售管理");
+    const tid = await getTableId(request, wid, "产品开发");
+    const vid = await getGanttViewId(request, wid, tid, "项目时间轴");
+
+    await gotoTable(page, wid, "产品开发");
+    await activateGanttView(page, vid);
+
+    const switcher = page.getByTestId("gantt-scale-switch");
+
+    // month 默认
+    let labels = page.getByTestId("gantt-timeline-label");
+    const monthCount = await labels.count();
+    expect(monthCount).toBeGreaterThanOrEqual(6);
+
+    // 切 week
+    await switcher.locator(".ant-segmented-item", { hasText: "周" }).click();
+    await page.waitForTimeout(800);
+    labels = page.getByTestId("gantt-timeline-label");
+    const weekCount = await labels.count();
+    expect(weekCount).toBeGreaterThan(0);
+    expect(weekCount).toBeGreaterThanOrEqual(monthCount); // week 应 >= month
+
+    // 切 day
+    await switcher.locator(".ant-segmented-item", { hasText: "天" }).click();
+    await page.waitForTimeout(800);
+    labels = page.getByTestId("gantt-timeline-label");
+    const dayCount = await labels.count();
+    expect(dayCount).toBeGreaterThan(weekCount); // day 应 >> week
+    expect(dayCount).toBeGreaterThanOrEqual(30);
   });
 });
