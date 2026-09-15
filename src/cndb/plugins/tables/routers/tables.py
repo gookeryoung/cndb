@@ -138,7 +138,58 @@ def create_table(
 
     # 执行物理建表
     ddl_create(db.get_bind(), dt)
+
+    # 可选：从其他表引入字段 schema（建表即带字段）
+    if payload.import_from_table_id is not None:
+        _import_fields_on_create(
+            db,
+            dt,
+            source_table_id=payload.import_from_table_id,
+            field_ids=payload.import_field_ids,
+            field_names=payload.import_field_names,
+            import_all_fields=payload.import_all_fields,
+        )
+
     return dt
+
+
+def _import_fields_on_create(
+    db: Session,
+    dst: DataTable,
+    *,
+    source_table_id: int,
+    field_ids: list[int] | None = None,
+    field_names: list[str] | None = None,
+    import_all_fields: bool = False,
+) -> None:
+    """create_table 建表后立即从其他表引入字段.
+
+    失败时自动回滚（删除新创建的 DataTable + DROP 物理表），
+    不让一个半初始化的表残留在数据库里。
+    """
+    from cndb.plugins.tables import field_ops as _fo
+    from cndb.plugins.tables.ddl import drop_table as ddl_drop
+
+    src = db.get(DataTable, source_table_id)
+    if src is None or src.trashed:
+        # 源表不存在则静默跳过（不影响建表本身）
+        return
+
+    try:
+        if import_all_fields:
+            _created, _ = _fo.clone_fields_between_tables(db.get_bind(), db, src, dst)
+        elif field_ids:
+            _created, _ = _fo.clone_fields_between_tables(db.get_bind(), db, src, dst, field_ids=field_ids)
+        elif field_names:
+            _created, _ = _fo.clone_fields_between_tables(db.get_bind(), db, src, dst, field_names=field_names)
+        else:
+            return  # 无指定则不导入
+    except Exception:
+        # 回滚：删除 DataTable metadata + DROP 物理表
+        db.delete(dst)
+        db.commit()
+        ddl_drop(db.get_bind(), dst.db_table_name)
+        raise
 
 
 @router.get("", response_model=list[TableResponse])
@@ -337,11 +388,17 @@ def copy_table(
     db: Annotated[Session, Depends(get_db)],
     include_data: bool = False,
 ) -> DataTable:
-    """复制表结构（可选含数据）."""
+    """复制表结构（可选含数据）.
+
+    字段克隆复用 field_ops.clone_fields_between_tables，src 全量字段
+    （除已回收）schema 复制到 dst，新字段拥有独立生命周期.
+    """
+    from cndb.plugins.tables import field_ops as _fo
+
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     src = _get_table_or_404(table_id, workspace_id, db)
 
-    # 创建新表元数据
+    # 创建新表元数据 + 物理表（空表，随后批量加列）
     dst = DataTable(
         workspace_id=src.workspace_id,
         owner_id=current_user.id,
@@ -352,32 +409,26 @@ def copy_table(
     db.add(dst)
     db.commit()
     db.refresh(dst)
-
-    # 复制字段
-    field_map: dict[int, DataField] = {}
-    for src_field in src.fields:
-        if src_field.trashed:
-            continue
-        f = DataField(
-            table_id=dst.id,
-            name=src_field.name,
-            field_type=src_field.field_type,
-            config=src_field.config,
-            required=src_field.required,
-            is_unique=src_field.is_unique,
-            default_value=src_field.default_value,
-            order=src_field.order,
-        )
-        f.ensure_db_name()
-        db.add(f)
-        db.flush()  # 获取 id
-        field_map[src_field.id] = f
-
-    db.commit()
-    db.refresh(dst)
-
-    # 物理建表
     ddl_create(db.get_bind(), dst)
+
+    # 克隆全部非回收字段
+    src_active = src.active_fields()
+    try:
+        _created_fields, _skipped = _fo.clone_fields_between_tables(
+            db.get_bind(), db, src, dst, field_ids=[f.id for f in src_active]
+        )
+    except Exception as exc:
+        # 回滚：删除 DataTable metadata + DROP 物理表
+        from cndb.plugins.tables.ddl import drop_table as _ddl_drop
+
+        db.delete(dst)
+        db.commit()
+        _ddl_drop(db.get_bind(), dst.db_table_name)
+        raise HTTPException(status_code=500, detail=f"字段克隆失败: {exc}") from exc
+
+    # 建立字段映射（用于 include_data=True 时按 src 字段名写入 dst）
+    db.refresh(dst)
+    dst_field_by_name = {f.name: f for f in dst.active_fields()}
 
     # 可选：复制数据
     if include_data:
@@ -385,14 +436,16 @@ def copy_table(
 
         rows, _ = rec.list_rows(db.get_bind(), src, include_trashed=False, limit=10000, db=db)
         if rows:
-            # 用新表的 field_name 作为 key 重建 values
             for r in rows:
                 values: dict[str, object] = {}
-                for src_f in src.fields:
-                    if src_f.trashed or src_f.name not in r:
+                for src_f in src_active:
+                    if src_f.name not in r:
                         continue
-                    values[field_map[src_f.id].name] = r[src_f.name]
-                rec.create_row(db.get_bind(), dst, values, db=db)
+                    # src.name == dst.name（同名字段克隆），直接用 dst.name 作 key
+                    if src_f.name in dst_field_by_name:
+                        values[src_f.name] = r[src_f.name]
+                if values:
+                    rec.create_row(db.get_bind(), dst, values, db=db)
 
     return dst
 
