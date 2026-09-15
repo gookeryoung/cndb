@@ -303,9 +303,12 @@ class AuditLog(TimestampMixin, Base):
 
 # ImportTask
 class ImportTask(TimestampMixin, Base):
-    """异步导入任务：状态机 + 进度追踪.
+    """异步导入任务：状态机 + 进度追踪 + 校验报告.
 
-    状态机：pending -> running -> done / failed
+    状态机（扩展后）：
+        pending_validation -> pending_confirm -> running -> done / failed
+        pending_validation -> pending_confirm -> running -> failed
+        pending -> running -> done / failed      （兼容旧流程）
     """
 
     __tablename__ = "tables_importtask"
@@ -322,12 +325,14 @@ class ImportTask(TimestampMixin, Base):
     # 文件内容存为 JSON 字符串（UTF-8 编码）
     file_content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # 状态
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0-100
     total_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     imported_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     result_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    # 校验报告（JSON 字符串） —— analyze 阶段产出，pending_confirm / running 时只读
+    validation_report: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 __all__ = [
