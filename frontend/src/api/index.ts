@@ -306,6 +306,34 @@ export const importApi = {
   getTask: (wid: number | string, tid: number | string, taskId: number | string) =>
     api.get<ImportTaskInfo>(`/v1/workspaces/${wid}/tables/${tid}/import/async/${taskId}`).then(r => r.data),
 
+  // ── 预览式导入（两阶段：analyze → confirm） ──
+  /** 上传文件仅做解析+校验，返回 task_id（不写库） */
+  previewAnalyze: (wid: number | string, tid: number | string, file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post<ImportTaskInfo>(`/v1/workspaces/${wid}/tables/${tid}/import/analyze`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
+  /** 确认导入：把 pending_confirm 任务推进到 running → done */
+  confirmImport: (wid: number | string, tid: number | string, taskId: number | string) =>
+    api.post<{ task_id: number; status: string; message: string }>(
+      `/v1/workspaces/${wid}/tables/${tid}/import/${taskId}/confirm`
+    ).then(r => r.data),
+  /** 下载失败行文件 */
+  downloadFailedRows: async (
+    wid: number | string,
+    tid: number | string,
+    taskId: number | string,
+    format: 'csv' | 'xlsx' | 'json' = 'csv',
+  ): Promise<Blob> => {
+    const resp = await api.get(
+      `/v1/workspaces/${wid}/tables/${tid}/import/${taskId}/failed-rows`,
+      { params: { format }, responseType: 'blob' }
+    )
+    return resp.data as unknown as Blob
+  },
+
   // ── API 抓取（import-api 路由） ──
   /** 抓 API + 分析列类型（不写库） */
   fetchAnalyze: (wid: number | string, payload: ApiFetchRequest) =>
