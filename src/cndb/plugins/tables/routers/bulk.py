@@ -266,4 +266,174 @@ def get_import_task(
     # 完成时返回导入的行 ID 列表
     if task.status == "done":
         result["result_ids"] = task.result_ids
+    # 有校验报告时一并返回（preview 导入场景）
+    if task.validation_report:
+        import json as _json
+
+        try:
+            result["validation_report"] = _json.loads(task.validation_report)
+        except Exception:
+            result["validation_report_raw"] = task.validation_report
     return result
+
+
+# ── 预览式导入（两阶段：analyze → confirm）────────────
+
+
+@router.post("/import/analyze")
+async def import_table_analyze(
+    workspace_id: int,
+    table_id: int,
+    file: UploadFile,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """提交文件仅做解析+校验，返回 task_id（不写库）.
+
+    任务进入 pending_validation → pending_confirm 状态，
+    前端轮询 task_id 拿到 validation_report 后展示预览，
+    用户点击确认 → POST /import/{task_id}/confirm 才真正落库.
+    """
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
+    dt = _get_table_or_404(table_id, workspace_id, db)
+
+    try:
+        fmt = transfer.guess_format_from_filename(file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    content = await file.read()
+    task = create_import_task(
+        db,
+        table_id=dt.id,
+        user_id=current_user.id if current_user else None,
+        filename=file.filename or "upload",
+        fmt=fmt,
+        content=content,
+    )
+
+    # 后台跑 analyze 阶段
+    from sqlalchemy.orm import sessionmaker
+
+    engine = db.get_bind()
+    bg_session_factory = sessionmaker(bind=engine)
+    run_task_in_background(bg_session_factory, task.id, phase="analyze")
+
+    return {
+        "task_id": task.id,
+        "status": task.status,
+        "progress": task.progress,
+        "hint": "等待 pending_confirm 状态后，可通过 GET /import/async/{task_id} 查看校验报告",
+    }
+
+
+@router.post("/import/{task_id}/confirm")
+def import_table_confirm(
+    workspace_id: int,
+    table_id: int,
+    task_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """确认导入 — 把 pending_confirm 状态的任务推进到 running → done.
+
+    成功返回导入的行数和 result_ids.
+    """
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
+    dt = _get_table_or_404(table_id, workspace_id, db)
+
+    task = db.get(ImportTask, task_id)
+    if task is None or task.table_id != dt.id:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if task.status not in ("pending_confirm", "pending_validation", "failed"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"当前状态 {task.status} 不允许确认（需 pending_confirm）",
+        )
+
+    # 后台跑 execute 阶段
+    from sqlalchemy.orm import sessionmaker
+
+    engine = db.get_bind()
+    bg_session_factory = sessionmaker(bind=engine)
+    run_task_in_background(bg_session_factory, task.id, phase="execute")
+
+    return {
+        "task_id": task.id,
+        "status": "running",
+        "message": "已提交执行，请轮询 GET /import/async/{task_id} 查看结果",
+    }
+
+
+@router.get("/import/{task_id}/failed-rows")
+def download_failed_rows(
+    workspace_id: int,
+    table_id: int,
+    task_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    *,
+    format: str = "csv",
+) -> Response:
+    """下载失败行文件（CSV / XLSX / JSON）."""
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    dt = _get_table_or_404(table_id, workspace_id, db)
+
+    task = db.get(ImportTask, task_id)
+    if task is None or task.table_id != dt.id:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if not task.validation_report:
+        raise HTTPException(status_code=400, detail="任务尚未完成校验")
+
+    # 重新跑一次 analyze 拿到完整 ValidationResult 列表（因为 analysis 结果没存）
+    # 或者从 validation_report 里只能拿到 errors/warnings 明细，没有 values
+    # 实际上 Importer.execute 内部已经过滤了，validation_report 里有所有 row_number
+    # 但要导出完整的 values，需要重新 parse + validate
+    from cndb.plugins.tables.failed_row_exporter import FailedRowExporter
+    from cndb.plugins.tables.importer import Importer
+
+    engine = db.get_bind()
+    importer = Importer(engine, db, dt)
+    # 用空的 content 不行，但我们有 task.file_content —— 只需要重新 analyze
+    import base64 as _b64
+
+    raw: bytes | str = _b64.b64decode(task.file_content) if task.format == "xlsx" else task.file_content
+    analysis = importer.analyze(raw, task.format)
+
+    content_bytes = FailedRowExporter.export_failed_rows(analysis.results, format=format)
+
+    # 构造 HTTP 响应
+    mime_map = {
+        "csv": "text/csv; charset=utf-8",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "json": "application/json",
+    }
+    ext_map = {"csv": ".csv", "xlsx": ".xlsx", "json": ".json"}
+    filename = f"{dt.name}-failed-rows-{task.id}{ext_map.get(format, '.csv')}"
+
+    if isinstance(content_bytes, str):
+        content_bytes = content_bytes.encode("utf-8")
+
+    return Response(
+        content=content_bytes,
+        media_type=mime_map.get(format, "application/octet-stream"),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── 扩展现有查询端点返回 validation_report ────────────
+
+
+def _augment_task_result(result: dict[str, Any], task: ImportTask) -> dict[str, Any]:
+    """为 GET /import/async/{task_id} 返回值追加 validation_report."""
+    if task.validation_report:
+        import json as _json
+
+        try:
+            result["validation_report"] = _json.loads(task.validation_report)
+        except Exception:
+            result["validation_report_raw"] = task.validation_report
+    return result
+
+
+# （不破坏向后兼容：只新增字段）
