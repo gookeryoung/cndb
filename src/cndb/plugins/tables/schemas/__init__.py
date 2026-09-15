@@ -11,8 +11,21 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class TableCreate(BaseModel):
+    """创建数据表 —— 可选同时从其他表引入字段.
+
+    三种引入方式互斥（优先级从高到低）：
+    - import_field_ids: 精确指定源字段 id 列表
+    - import_field_names: 按字段名匹配（优先级最低）
+    - import_all_fields: True 时引入源表全部字段
+    """
+
     name: str
     description: str = ""
+    # 从其他表引入字段（可选）
+    import_from_table_id: int | None = None
+    import_field_ids: list[int] | None = None
+    import_field_names: list[str] | None = None
+    import_all_fields: bool = False
 
 
 class TableUpdate(BaseModel):
@@ -111,6 +124,28 @@ class FieldUpdate(BaseModel):
     hidden: bool | None = None
     order: int | None = None
     trashed: bool | None = None
+
+
+# ── 字段从其他表引入 schemas ─────────────────────────
+
+
+class FieldImportRequest(BaseModel):
+    """从其他表引入字段到当前表的请求体."""
+
+    source_table_id: int
+    field_ids: list[int] | None = None
+    field_names: list[str] | None = None
+    import_all_fields: bool = False
+    exclude_trashed: bool = True
+    skip_conflicts: bool = False
+
+
+class FieldImportResponse(BaseModel):
+    """字段导入结果 —— 新建字段列表 + 跳过原因."""
+
+    created: list[FieldResponse] = []
+    skipped: list[str] = []
+    total_source_count: int = 0
 
 
 class FieldResponse(BaseModel):
@@ -295,6 +330,8 @@ class OwnerTransfer(BaseModel):
 __all__ = [
     "BulkDeleteRequest",
     "FieldCreate",
+    "FieldImportRequest",
+    "FieldImportResponse",
     "FieldResponse",
     "FieldUpdate",
     "MemberCreate",

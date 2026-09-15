@@ -157,7 +157,55 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
                 except Exception as exc:
                     print(f"[seed-API] 建表失败: {ws_display}/{tbl_name}: {exc}")
 
+        # ── 跨表字段引入（表已就绪后执行，避免源表不存在） ──
+        _apply_field_import_rules(db, engine, ws_display, tables_map)
+
     return table_count, ws_map, tables_map
+
+
+# ── 字段引入规则 ──────────────────────────────────────
+
+
+def _apply_field_import_rules(db: Any, engine: Any, ws_name: str, tables_map: dict[str, dict[str, Any]]) -> None:
+    """按预定义规则在同一工作区内把源表字段克隆到目标表.
+
+    设计意图：
+    - CSV 建表天然是"先建主体表再建关联子表"，子表往往需要知道主表的某个状态/标签字段；
+    - 这里用 field_ops.clone_fields_between_tables 把字段 schema 从主表克隆到子表，
+      让子表可以独立存储（不依赖 link 字段和 lookup 计算）；
+    - 失败不阻断其它规则执行（单条规则失败只打印）。
+    """
+    from cndb.plugins.tables import field_ops as _fo
+
+    rules: dict[str, list[tuple[str, str, list[str]]]] = {
+        # 项目进展表 / 科研经费表 都需要从 科研项目 表知道项目状态和立项年份
+        "科研项目管理": [
+            # (目标表, 源表, 要引入的字段名列表)
+            ("项目进展", "科研项目", ["项目状态", "立项年份"]),
+            ("科研经费", "科研项目", ["项目状态", "项目类别"]),
+            ("课题负责人", "科研项目", ["项目状态"]),
+        ],
+    }
+
+    ws_rules = rules.get(ws_name)
+    if not ws_rules:
+        return
+
+    ws_tables = tables_map.get(ws_name, {})
+    for dst_name, src_name, field_names in ws_rules:
+        dst = ws_tables.get(dst_name)
+        src = ws_tables.get(src_name)
+        if dst is None or src is None:
+            print(f"[seed-字段引入] {ws_name}: 表缺失（{src_name}->{dst_name}），跳过")
+            continue
+        try:
+            created, skipped = _fo.clone_fields_between_tables(
+                engine, db, src, dst, field_names=field_names, skip_conflicts=True
+            )
+            if created or skipped:
+                print(f"[seed-字段引入] {ws_name}: {src_name} → {dst_name} (成功 {len(created)}, 跳过 {len(skipped)})")
+        except Exception as exc:
+            print(f"[seed-字段引入] {ws_name}: {src_name} → {dst_name} 失败: {exc}")
 
 
 def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = None) -> tuple[int, dict[str, Any]]:
