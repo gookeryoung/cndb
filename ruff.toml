@@ -1,6 +1,6 @@
 extend-exclude = ["docs", "examples", "template", "alembic"]
 line-length    = 120
-target-version = "py313"
+target-version = "py312"
 
 [lint]
 ignore = [

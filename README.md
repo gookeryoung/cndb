@@ -2,7 +2,7 @@
 
 > 通用数据库管理平台。
 
-[![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org)
 [![Coverage](https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen.svg)](#开发)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#许可证)
 
