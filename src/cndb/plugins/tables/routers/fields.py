@@ -18,10 +18,11 @@ from cndb.plugins.tables.ddl import (
     drop_unique_constraint,
     rebuild_column,
 )
+from cndb.plugins.tables.field_ops import clone_fields_between_tables, resolve_source_fields
 from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, default_registry, normalize_field_type
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
-from cndb.plugins.tables.schemas import FieldCreate, FieldResponse, FieldUpdate
+from cndb.plugins.tables.schemas import FieldCreate, FieldImportRequest, FieldImportResponse, FieldResponse, FieldUpdate
 from cndb.plugins.workspaces.models import WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
@@ -249,3 +250,76 @@ def delete_field(
         df.trashed = False
         db.commit()
         raise HTTPException(status_code=500, detail=f"物理删列失败: {exc}") from exc
+
+
+@router.post("/import", response_model=FieldImportResponse, status_code=status.HTTP_201_CREATED)
+def import_fields(
+    workspace_id: int,
+    table_id: int,
+    payload: FieldImportRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> FieldImportResponse:
+    """从其他表引入字段 schema 到当前表（不复制数据，只复制字段定义）.
+
+    - 新字段拥有独立的生命周期（修改/删除不影响源表）.
+    - link 字段的 config.target_table_id 保留原值（天然支持跨工作区关联）.
+    - 同名冲突时默认 400，skip_conflicts=True 时跳过冲突字段并返回说明.
+    """
+
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
+    dst = _get_table_or_404(table_id, workspace_id, db)
+
+    # 源表必须存在（允许跨工作区，但用户必须在目标表工作区有 ADMIN 权限）
+    src = db.get(DataTable, payload.source_table_id)
+    if src is None:
+        raise HTTPException(status_code=400, detail=f"源表不存在: {payload.source_table_id}")
+    if src.trashed:
+        raise HTTPException(status_code=400, detail="源表已进回收站，不能引入字段")
+
+    # 解析源字段 —— 三种模式互斥
+    if payload.import_all_fields:
+        field_ids = None
+        field_names = None
+    elif payload.field_ids:
+        field_ids = payload.field_ids
+        field_names = None
+    elif payload.field_names:
+        field_ids = None
+        field_names = payload.field_names
+    else:
+        raise HTTPException(status_code=400, detail="需指定 import_all_fields / field_ids / field_names 其中之一")
+
+    try:
+        src_fields = resolve_source_fields(
+            src,
+            field_ids=field_ids,
+            field_names=field_names,
+            exclude_trashed=payload.exclude_trashed,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not src_fields:
+        return FieldImportResponse(created=[], skipped=["源表没有可克隆的字段"], total_source_count=0)
+
+    engine = db.get_bind()
+    try:
+        created, skipped = clone_fields_between_tables(
+            engine,
+            db,
+            src,
+            dst,
+            field_ids=[f.id for f in src_fields],
+            skip_conflicts=payload.skip_conflicts,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"字段导入失败: {exc}") from exc
+
+    return FieldImportResponse(
+        created=[FieldResponse.model_validate(f, from_attributes=True) for f in created],
+        skipped=skipped,
+        total_source_count=len(src_fields),
+    )
