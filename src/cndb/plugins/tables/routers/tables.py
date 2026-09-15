@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, text
@@ -411,12 +411,10 @@ def copy_table(
     # 校验 mode
     valid_modes = {"structure", "all", "view"}
     if effective_mode not in valid_modes:
-        raise HTTPException(
-            status_code=400, detail=f"无效的 mode: {mode}，可选值: {sorted(valid_modes)}"
-        )
+        raise HTTPException(status_code=400, detail=f"无效的 mode: {mode}，可选值: {sorted(valid_modes)}")
 
     # mode=view 时必须有 view_id，且 view 属于该表
-    view_filters: list[dict] | None = None
+    view_filters: list[dict[str, Any]] | None = None
     view_filter_logic: str = "AND"
     if effective_mode == "view":
         if view_id is None:
