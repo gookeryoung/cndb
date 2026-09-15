@@ -25,7 +25,7 @@ RUN npm run build
 # 职责：FastAPI + SQLAlchemy + 插件；/api/* 动态接口
 # 前端静态资源已由 nginx 容器直出，此容器仍保留 SPA fallback 作为安全网
 # ═══════════════════════════════════════════════════════════════════
-FROM docker.m.daocloud.io/python:3.14-slim AS app
+FROM docker.m.daocloud.io/python:3.12-slim AS app
 
 ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
     PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn \

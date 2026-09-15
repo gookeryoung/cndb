@@ -6,8 +6,8 @@ author_name: gookeryoung
 coverage_fail_under: 95
 description: Template for python web apps.
 license: MIT
-max_python_version: '3.14'
-min_python_version: '3.13'
+max_python_version: '3.12'
+min_python_version: '3.12'
 package_name: cndb
 project_name: cndb
 project_type: web

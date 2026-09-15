@@ -68,13 +68,13 @@ jobs:
         run: cd frontend && pnpm lint
 
   test:
-    name: Test (Python 3.13 & 3.14)
+    name: Test (Python 3.12)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13", "3.14"]
+        python-version: ["3.12"]
     steps:
       - uses: actions/checkout@v5
 
