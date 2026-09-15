@@ -386,17 +386,46 @@ def copy_table(
     table_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    mode: str = "structure",
+    view_id: int | None = None,
     include_data: bool = False,
 ) -> DataTable:
-    """复制表结构（可选含数据）.
+    """复制表 — 支持三种模式.
 
-    字段克隆复用 field_ops.clone_fields_between_tables，src 全量字段
-    （除已回收）schema 复制到 dst，新字段拥有独立生命周期.
+    - mode=structure（默认）: 仅复制表结构和字段，不携带任何数据
+    - mode=all: 复制表结构 + 全部数据（默认 10000 行上限，可扩展）
+    - mode=view: 复制表结构 + 指定视图过滤后的数据（需传 view_id）
+
+    向后兼容：旧客户端传 include_data=true 等价于 mode=all.
     """
     from cndb.plugins.tables import field_ops as _fo
 
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     src = _get_table_or_404(table_id, workspace_id, db)
+
+    # 兼容旧参数：include_data=true 等价于 mode=all
+    effective_mode = mode
+    if include_data and mode == "structure":
+        effective_mode = "all"
+
+    # 校验 mode
+    valid_modes = {"structure", "all", "view"}
+    if effective_mode not in valid_modes:
+        raise HTTPException(
+            status_code=400, detail=f"无效的 mode: {mode}，可选值: {sorted(valid_modes)}"
+        )
+
+    # mode=view 时必须有 view_id，且 view 属于该表
+    view_filters: list[dict] | None = None
+    view_filter_logic: str = "AND"
+    if effective_mode == "view":
+        if view_id is None:
+            raise HTTPException(status_code=400, detail="mode=view 时必须提供 view_id")
+        dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == src.id).first()
+        if dv is None:
+            raise HTTPException(status_code=404, detail=f"视图 {view_id} 不存在或不属于该表")
+        view_filters = dv.filters or None
+        view_filter_logic = dv.filter_type or "AND"
 
     # 创建新表元数据 + 物理表（空表，随后批量加列）
     dst = DataTable(
@@ -426,15 +455,23 @@ def copy_table(
         _ddl_drop(db.get_bind(), dst.db_table_name)
         raise HTTPException(status_code=500, detail=f"字段克隆失败: {exc}") from exc
 
-    # 建立字段映射（用于 include_data=True 时按 src 字段名写入 dst）
+    # 建立字段映射（用于复制数据时按 src 字段名写入 dst）
     db.refresh(dst)
     dst_field_by_name = {f.name: f for f in dst.active_fields()}
 
-    # 可选：复制数据
-    if include_data:
+    # 复制数据（all 或 view）
+    if effective_mode in ("all", "view"):
         from cndb.plugins.tables import records as rec
 
-        rows, _ = rec.list_rows(db.get_bind(), src, include_trashed=False, limit=10000, db=db)
+        rows, _ = rec.list_rows(
+            db.get_bind(),
+            src,
+            filters=view_filters,
+            filter_logic=view_filter_logic,
+            include_trashed=False,
+            limit=10000,
+            db=db,
+        )
         if rows:
             for r in rows:
                 values: dict[str, object] = {}
