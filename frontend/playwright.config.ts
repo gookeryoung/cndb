@@ -1,6 +1,10 @@
-import { defineConfig, devices } from "@playwright/test";
+import { defineConfig } from "@playwright/test";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const _configDir = path.dirname(fileURLToPath(import.meta.url));
 const CHROME_PATH = "/root/.cache/puppeteer/chrome/linux-151.0.7922.71/chrome-linux64/chrome";
+const AUTH_STATE = path.resolve(_configDir, ".auth/state.json");
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -13,32 +17,23 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:8000",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    browserName: "chromium",
+    executablePath: CHROME_PATH,
+    headless: true,
   },
 
   projects: [
     {
       name: "setup",
       testMatch: /.*\.setup\.ts/,
-      use: {
-        ...devices["Desktop Chrome"],
-        executablePath: CHROME_PATH,
-      },
     },
     {
       name: "chromium-authed",
       dependencies: ["setup"],
-      use: {
-        ...devices["Desktop Chrome"],
-        executablePath: CHROME_PATH,
-        storageState: ".auth/state.json",
-      },
+      storageState: AUTH_STATE,
     },
     {
       name: "chromium-anon",
-      use: {
-        ...devices["Desktop Chrome"],
-        executablePath: CHROME_PATH,
-      },
     },
   ],
 });
