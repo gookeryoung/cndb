@@ -61,7 +61,6 @@ export interface WorkspaceMember {
   role: WorkspaceRole; pinned?: boolean; created_at?: string
   user: MemberUserBrief
 }
-export interface WorkspaceInvite { username: string; role: WorkspaceRole }
 
 /** 工作区级整体导出数据结构 */
 export interface WorkspaceExportData {
