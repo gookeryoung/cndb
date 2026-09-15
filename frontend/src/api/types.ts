@@ -325,9 +325,6 @@ export interface SharedGrid {
   rows: RowResponse[]; total: number
 }
 
-export interface HealthPingResponse { status: string; timestamp: string; python: string; platform: string }
-export interface HealthReadyResponse { status: string }
-
 /** 报告模板参数定义 */
 export interface ReportParameter {
   name: string
