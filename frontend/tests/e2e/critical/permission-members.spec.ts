@@ -6,15 +6,14 @@
  * - 工作区权限 Tab：展示所有者卡片、编辑权限开关、成员列表
  */
 
-import { test, expect } from "@playwright/test"
-
-const ANON = ["setup", "chromium-anon"]
+import { test, expect, beforeEachCleanTable } from "../fixtures/auth"
 
 // seed 数据：工作区 1 = 某企业销售管理（含 sec_admin/audit_admin/demo 成员），表 1 = 产品开发
 const WID = 1
 const TID = 1
 
 test.describe("数据表权限 — 成员管理", () => {
+  beforeEachCleanTable(WID, TID)
   /** 打开表设置 Modal 并切到「权限」Tab，返回 Modal 定位器（用于后续作用域限定）. */
   async function openTablePermModal(page: any) {
     await page.goto(`/w/${WID}/tables/${TID}`)
@@ -36,7 +35,6 @@ test.describe("数据表权限 — 成员管理", () => {
   }
 
   test("权限 Tab 展示表拥有者卡片和成员列表", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     const modal = await openTablePermModal(page)
 
     // 表拥有者卡片
@@ -51,7 +49,6 @@ test.describe("数据表权限 — 成员管理", () => {
   })
 
   test("添加表成员 — 候选列表展示工作区其他成员", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     const modal = await openTablePermModal(page)
 
     // 点击"添加成员"
@@ -77,6 +74,13 @@ test.describe("数据表权限 — 成员管理", () => {
     )
     expect(hasCandidate).toBe(true)
 
+    // 强断言：所有下拉选项的 label 必须包含用户名（字母/下划线），不能是纯数字
+    // 回归修复：Ant Design Select value 类型不一致时会把原始 value（数字）渲染为 label
+    for (const t of optionTexts) {
+      expect(/[a-zA-Z_]/.test(t.trim()), `选项 "${t}" 应包含用户名，不能是纯数字`).toBe(true)
+      expect(/^\d+$/.test(t.trim()), `选项 "${t}" 不应为纯数字`).toBe(false)
+    }
+
     // 先按 Escape 关闭下拉选项，避免选项遮罩拦截取消按钮
     await page.keyboard.press("Escape")
     // 关闭 Modal（点击取消按钮）
@@ -86,7 +90,6 @@ test.describe("数据表权限 — 成员管理", () => {
   })
 
   test("添加表成员并验证出现在列表中", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     const modal = await openTablePermModal(page)
 
     // 记录添加前的成员数（限定在 Modal 内"表成员"卡片下的表格）
@@ -101,7 +104,19 @@ test.describe("数据表权限 — 成员管理", () => {
     // 选择第一个候选用户
     const select = addModal.locator(".ant-select-selector").first()
     await select.click()
-    await page.locator(".ant-select-item-option").first().click()
+
+    const firstOption = page.locator(".ant-select-item-option").first()
+    const firstOptionText = (await firstOption.textContent()) || ""
+    await firstOption.click()
+
+    // 强断言：选中后 Select 框内应显示该选项的 label（含用户名），不是纯数字
+    await expect(select).not.toHaveText(/^\d+$/)
+    await expect(select).not.toHaveText(/搜索工作区成员/)  // placeholder 应消失
+    // Select 框内应包含选中的用户名（来自下拉选项的文本）
+    expect(firstOptionText.length, "下拉选项文本不应为空").toBeGreaterThan(0)
+    const selectedText = (await select.textContent()) || ""
+    expect(selectedText.trim().length, "Select 框选中后应有内容").toBeGreaterThan(0)
+    expect(/[a-zA-Z_]/.test(selectedText), `Select 框显示 "${selectedText}" 应包含用户名`).toBe(true)
 
     // 点击 Modal footer 的"添加"按钮（primary 按钮）
     await addModal.locator(".ant-modal-footer .ant-btn-primary").click()
@@ -114,7 +129,6 @@ test.describe("数据表权限 — 成员管理", () => {
   })
 
   test("变更表成员角色 read ↔ write", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     const modal = await openTablePermModal(page)
 
     // 先添加一个成员
@@ -138,7 +152,6 @@ test.describe("数据表权限 — 成员管理", () => {
   })
 
   test("移除表成员", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     const modal = await openTablePermModal(page)
 
     // 先添加一个成员
@@ -164,11 +177,58 @@ test.describe("数据表权限 — 成员管理", () => {
     // 等待成功提示
     await expect(page.getByText(/已移除成员/)).toBeVisible({ timeout: 5000 })
   })
+
+  test("转让所有权 Modal — 下拉候选展示用户名（非纯数字）", async ({ page }) => {
+    const modal = await openTablePermModal(page)
+
+    // 点击"转让所有权"按钮
+    await modal.getByRole("button", { name: /转让所有权/ }).click()
+
+    // 转让所有权 Modal — 用标题精准定位，避免与 settings Modal 混淆
+    const transferModal = page.getByRole("dialog", { name: /转让所有权/ })
+    await expect(transferModal).toBeVisible()
+
+    // 候选用户下拉框
+    const select = transferModal.locator(".ant-select-selector").first()
+    await select.click()
+
+    // 下拉选项中应包含工作区其他成员（排除 owner admin 自己）
+    const options = page.locator(".ant-select-item-option")
+    await expect(options.first()).toBeVisible({ timeout: 5000 })
+
+    const optionTexts = await options.allTextContents()
+    // 转让所有权候选应包含 sec_admin / audit_admin / demo（至少有一个）
+    const hasCandidate = optionTexts.some(t =>
+      t.includes("sec_admin") || t.includes("audit_admin") || t.includes("demo")
+    )
+    expect(hasCandidate, "转让所有权候选应包含非 owner 的工作区成员").toBe(true)
+
+    // 强断言：所有下拉选项的 label 必须包含用户名（字母/下划线），不能是纯数字
+    // 回归修复：Ant Design Select value 类型不一致时会把原始 value（数字）渲染为 label
+    for (const t of optionTexts) {
+      expect(/[a-zA-Z_]/.test(t.trim()), `选项 "${t}" 应包含用户名，不能是纯数字`).toBe(true)
+      expect(/^\d+$/.test(t.trim()), `选项 "${t}" 不应为纯数字`).toBe(false)
+    }
+
+    // 选中第一个候选用户
+    const firstOption = options.first()
+    const firstOptionText = (await firstOption.textContent()) || ""
+    await firstOption.click()
+
+    // 选中后 Select 框内应显示该选项的 label（含用户名），不是纯数字
+    await expect(select).not.toHaveText(/^\d+$/)
+    expect(firstOptionText.length, "下拉选项文本不应为空").toBeGreaterThan(0)
+    const selectedText = (await select.textContent()) || ""
+    expect(/[a-zA-Z_]/.test(selectedText), `Select 框显示 "${selectedText}" 应包含用户名`).toBe(true)
+
+    // 关闭 Modal：点右上角 X（Select 选中后已失焦）
+    await transferModal.getByRole("button", { name: "Close" }).click()
+    await expect(transferModal).not.toBeVisible({ timeout: 5000 })
+  })
 })
 
 test.describe("工作区权限 Tab", () => {
   test("权限 Tab 展示所有者卡片和编辑权限开关", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
     await page.goto(`/w/${WID}/settings`)
     await page.waitForURL(/\/settings$/)
@@ -188,7 +248,6 @@ test.describe("工作区权限 Tab", () => {
   })
 
   test("权限 Tab 展示成员列表（含多个成员）", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
     await page.goto(`/w/${WID}/settings`)
     await page.waitForURL(/\/settings$/)
@@ -203,7 +262,6 @@ test.describe("工作区权限 Tab", () => {
   })
 
   test("切换编辑权限开关", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
     await page.goto(`/w/${WID}/settings`)
     await page.waitForURL(/\/settings$/)
