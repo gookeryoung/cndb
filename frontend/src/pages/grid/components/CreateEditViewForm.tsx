@@ -124,6 +124,12 @@ function GanttConfig(props: ViewTypeConfigProps) {
   return <ConfigBlock {...props} />
 }
 
+/** WBS 工作分解结构视图专属配置字段 — 由 viewOptionSchema.ts 驱动 */
+function WbsConfig(props: ViewTypeConfigProps) {
+  if (props.vt !== 'wbs') return null
+  return <ConfigBlock {...props} />
+}
+
 // ── 主表单组件 ──────────────────────────────────────────
 
 /** 合并后的创建/编辑视图表单（根据 initialName 是否存在自动区分模式） */
@@ -154,6 +160,7 @@ export default function CreateEditViewForm({
     { value: 'gallery', label: '画廊（Gallery）' },
     { value: 'calendar', label: '日历（Calendar）' },
     { value: 'gantt', label: '甘特图（Gantt）' },
+    { value: 'wbs', label: '工作分解（WBS）' },
   ]
 
   return (
@@ -168,6 +175,7 @@ export default function CreateEditViewForm({
       <CalendarConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
       <GalleryConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
       <GanttConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
+      <WbsConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
       <div style={{ textAlign: 'right', marginTop: 12 }}>
         <Button type="primary" disabled={!name.trim()}
           onClick={() => onSubmit(name.trim(), vt, opts)}>{submitLabel}</Button>
