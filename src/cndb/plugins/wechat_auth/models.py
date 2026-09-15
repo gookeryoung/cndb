@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import override
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cndb.models.base import Base
@@ -40,8 +40,8 @@ class WechatAccount(Base):
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        server_default=func.now(),
         nullable=False,
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
