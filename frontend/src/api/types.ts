@@ -390,17 +390,38 @@ export type ImportTaskStatus =
   | 'done'
   | 'failed'
 
-/** 校验报告（DiffReporter 输出结构） */
+/** 校验报告（DiffReporter 输出结构 — V2 支持 upsert + 字段自动新增） */
 export interface ValidationReport {
   total: number
   valid_count: number
   warning_count: number
   error_count: number
+  /** V2: 待新增行数（未指定 match_keys 时等于 valid_count） */
+  new_count?: number
+  /** V2: 待更新行数 */
+  update_count?: number
+  /** V2: 多行同 key 冲突数 */
+  multi_key_conflicts?: number
   skipped_columns: string[]
   missing_required: string[]
+  /** V2: 未知列自动新增规划 */
+  planned_columns?: Array<{
+    name: string; field_type: string; options?: string[]; sample_values?: string[]
+  }>
+  /** V2: 待新增行预览（限前 200 行） */
+  new_preview?: Array<{
+    row_number: number; match_key_values: Record<string, unknown>; field_sample: Record<string, unknown>
+  }>
+  /** V2: 待更新行预览 */
+  update_preview?: Array<{
+    row_number: number; match_key_values: Record<string, unknown>; existing_row_id: number; field_sample: Record<string, unknown>
+  }>
   warnings: Array<{ row_number: number; field: string; message: string }>
   errors: Array<{ row_number: number; field: string; message: string }>
   actually_imported?: number
+  /** V2: execute 后补充 */
+  actually_created?: number
+  actually_updated?: number
 }
 
 export interface ImportTaskInfo {
