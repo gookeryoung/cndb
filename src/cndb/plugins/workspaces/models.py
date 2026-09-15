@@ -17,6 +17,30 @@ if TYPE_CHECKING:
     from cndb.plugins.accounts.models import User
 
 
+# ── 动作常量：与 tables.access.TableAction 对齐 ──
+
+# 动作集合（管理员维护角色时勾选的权限项）
+ACTION_KEYS: tuple[str, ...] = (
+    "READ",
+    "EDIT_RECORDS",
+    "EDIT_VIEWS",
+    "EDIT_SCHEMA",
+    "COMMENT",
+)
+
+# 动作中文显示名
+ACTION_LABELS: dict[str, str] = {
+    "READ": "读取数据",
+    "EDIT_RECORDS": "编辑数据行",
+    "EDIT_VIEWS": "编辑视图",
+    "EDIT_SCHEMA": "编辑结构（字段）",
+    "COMMENT": "评论",
+}
+
+# 内置角色 code（由迁移种子写入，管理员可修改但不可删除）
+BUILTIN_ROLE_CODES: tuple[str, ...] = ("read", "write", "admin")
+
+
 class WorkspaceRole(enum.StrEnum):
     """工作区成员角色，权限从高到低：owner > admin > editor > viewer."""
 
@@ -118,4 +142,52 @@ class WorkspaceMember(TimestampMixin, Base):
         return f"WorkspaceMember(workspace_id={self.workspace_id}, user_id={self.user_id}, role={self.role.value})"
 
 
-__all__ = ["ROLE_RANK", "Workspace", "WorkspaceMember", "WorkspaceRole", "WorkspaceVisibility"]
+# ── Role（全局数据角色，管理员维护） ──
+
+
+class Role(TimestampMixin, Base):
+    """全局数据角色：管理员自定义的角色，由表拥有者分配给表成员.
+
+    与工作区角色（WorkspaceRole）解耦：
+    - WorkspaceRole 决定用户能进入哪些工作区、在工作区里做什么（边界 + 粗粒度）
+    - Role 决定用户进入某张表后能执行哪些具体动作（细粒度）
+    """
+
+    __tablename__ = "workspaces_role"
+    __table_args__ = (UniqueConstraint("code", name="uniq_role_code"), {"extend_existing": True})
+
+    code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 权限位：{action_key: bool}，action_key 见 ACTION_KEYS
+    permissions: Mapped[dict[str, bool]] = mapped_column(JSON, nullable=False, default=dict)
+    is_builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"Role(code={self.code!r}, name={self.name!r})"
+
+    # ── 便捷访问 ──
+
+    def has_action(self, action_key: str) -> bool:
+        """判定角色是否拥有指定动作权限."""
+        return bool(self.permissions.get(action_key, False))
+
+    def ensure_permissions(self) -> None:
+        """补齐缺失的 action_key（向后兼容）."""
+        perms = dict(self.permissions or {})
+        for key in ACTION_KEYS:
+            perms.setdefault(key, False)
+        self.permissions = perms
+
+
+__all__ = [
+    "ACTION_KEYS",
+    "ACTION_LABELS",
+    "BUILTIN_ROLE_CODES",
+    "ROLE_RANK",
+    "Role",
+    "Workspace",
+    "WorkspaceMember",
+    "WorkspaceRole",
+    "WorkspaceVisibility",
+]
