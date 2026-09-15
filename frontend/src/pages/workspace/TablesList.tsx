@@ -12,6 +12,7 @@ import {
 import {
   PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined,
   UploadOutlined, SettingOutlined, ApiOutlined, TeamOutlined, UserOutlined,
+  LoginOutlined, MoreOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -231,10 +232,18 @@ export default function TablesList() {
     {
       title: '操作',
       key: 'actions',
-      width: 200,
+      width: 110,
       render: (_: unknown, record: TableSummary) => (
         <Space size="small">
-          <a onClick={() => navigate(`/w/${wid}/tables/${record.id}`)}>打开</a>
+          <Tooltip title="打开">
+            <Button
+              type="text"
+              size="small"
+              icon={<LoginOutlined />}
+              onClick={(e) => { e.stopPropagation(); navigate(`/w/${wid}/tables/${record.id}`) }}
+              data-testid={`open-table-${record.id}`}
+            />
+          </Tooltip>
           <Dropdown
             menu={{
               items: [
@@ -271,7 +280,15 @@ export default function TablesList() {
               ],
             }}
           >
-            <a onClick={(e) => e.stopPropagation()}>更多…</a>
+            <Tooltip title="更多操作">
+              <Button
+                type="text"
+                size="small"
+                icon={<MoreOutlined />}
+                onClick={(e) => e.stopPropagation()}
+                data-testid={`more-table-${record.id}`}
+              />
+            </Tooltip>
           </Dropdown>
         </Space>
       ),
