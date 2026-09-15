@@ -36,6 +36,15 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         "image_field",
         "subtitle_field",
         "tag_field",
+        # Gantt 甘特图（v1 未校验，此次补齐）
+        "start_date_field",
+        "end_date_field",
+        "actual_end_field",
+        "progress_field",
+        "assignee_field",
+        # WBS 工作分解结构
+        "parent_field",
+        "status_field",
     ):
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:

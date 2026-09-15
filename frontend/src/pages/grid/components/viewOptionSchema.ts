@@ -193,6 +193,46 @@ export const GANTT_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
+/** WBS 工作分解结构视图的专属配置字段（共 9 项） */
+export const WBS_OPTIONS: ViewOptionSchema[] = [
+  {
+    key: 'parent_field', label: '父任务字段', tooltip: '哪个字段存储父任务关联（link 指向同表自身，或文本/数字存父 ID）',
+    kind: 'field_select', fieldTypes: ['link', 'text', 'number', 'decimal', 'is_primary'], required: true,
+  },
+  {
+    key: 'title_field', label: '任务名称字段', tooltip: '树节点显示的主标题；留空自动选第一个文本字段',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
+  },
+  {
+    key: 'progress_field', label: '进度百分比字段', tooltip: '0-100 的数值字段；父节点自动按子节点平均计算',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage'],
+  },
+  {
+    key: 'status_field', label: '状态字段', tooltip: 'Select 字段，显示为状态徽章',
+    kind: 'field_select', fieldTypes: ['select', 'multiselect'],
+  },
+  {
+    key: 'assignee_field', label: '负责人字段', tooltip: '在节点右侧显示负责人名称',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'],
+  },
+  {
+    key: 'start_date_field', label: '开始日期字段', tooltip: '可选：在节点上显示时间跨度',
+    kind: 'field_select', fieldTypes: ['date', 'datetime'],
+  },
+  {
+    key: 'end_date_field', label: '结束日期字段', tooltip: '可选：与开始日期配合显示区间',
+    kind: 'field_select', fieldTypes: ['date', 'datetime'],
+  },
+  {
+    key: 'show_numbering', label: '显示层级编号', tooltip: '在任务名前显示 1 / 1.1 / 1.1.1 样式的编号',
+    kind: 'switch', defaultValue: true,
+  },
+  {
+    key: 'expand_all', label: '默认全部展开', tooltip: '首次加载时是否展开所有层级；关闭则只展开第一层',
+    kind: 'switch', defaultValue: false,
+  },
+]
+
 /** 按 view_type 名返回 option schema 列表 */
 export function getOptionSchema(viewType: string): ViewOptionSchema[] {
   switch (viewType) {
@@ -200,6 +240,7 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
     case 'calendar': return CALENDAR_OPTIONS
     case 'gallery': return GALLERY_OPTIONS
     case 'gantt': return GANTT_OPTIONS
+    case 'wbs': return WBS_OPTIONS
     default: return []
   }
 }
