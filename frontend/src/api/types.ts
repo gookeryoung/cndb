@@ -150,8 +150,33 @@ export interface TableDetail {
   /** 后端增强 —— 是否在回收站（软删） */
   trashed?: boolean
 }
-export interface TableCreate { name: string; description?: string }
+export interface TableCreate {
+  name: string
+  description?: string
+  /** 可选：从其他表引入字段 —— 建表即带字段 schema */
+  import_from_table_id?: number
+  import_field_ids?: number[]
+  import_field_names?: string[]
+  import_all_fields?: boolean
+}
 export interface TableUpdate { name?: string; description?: string }
+
+// ── 字段从其他表引入 ──
+
+export interface FieldImportRequest {
+  source_table_id: number
+  field_ids?: number[]
+  field_names?: string[]
+  import_all_fields?: boolean
+  exclude_trashed?: boolean
+  skip_conflicts?: boolean
+}
+
+export interface FieldImportResponse {
+  created: Field[]
+  skipped: string[]
+  total_source_count: number
+}
 
 export type FieldType =
   | 'text' | 'longtext' | 'number' | 'float' | 'boolean'
