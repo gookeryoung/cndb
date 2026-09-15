@@ -13,11 +13,11 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables import records as rec
 from cndb.plugins.tables import transfer
+from cndb.plugins.tables.access import TableAction
 from cndb.plugins.tables.import_tasks import create_import_task, run_task_in_background
 from cndb.plugins.tables.models import ImportTask
-from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
+from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import BulkDeleteRequest
-from cndb.plugins.workspaces.models import WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}", tags=["bulk"])
 
@@ -33,8 +33,7 @@ def bulk_create_records(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
     rows = payload.get("rows", [])
     if not rows:
         raise HTTPException(status_code=400, detail="rows 不能为空")
@@ -55,8 +54,7 @@ def bulk_delete_records(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
     deleted = rec.bulk_delete(db.get_bind(), dt, payload.row_ids)
     return {"deleted": deleted}
 
@@ -72,8 +70,7 @@ def bulk_update_records(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
     row_ids = payload.get("row_ids", [])
     values = payload.get("values", {})
     if not row_ids:
@@ -109,8 +106,7 @@ def export_table(
     Returns:
         对应格式的文件二进制响应
     """
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     filters: list[dict[str, Any]] | None = None
     sorts: list[dict[str, Any]] | None = None
@@ -161,8 +157,7 @@ async def import_table(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         fmt = transfer.guess_format_from_filename(file.filename or "")
@@ -201,8 +196,7 @@ async def import_table_async(
 
     前端轮询 GET /import/async/{task_id} 查询进度.
     """
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         fmt = transfer.guess_format_from_filename(file.filename or "")
@@ -242,8 +236,7 @@ def get_import_task(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """查询异步导入任务进度."""
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     task = db.get(ImportTask, task_id)
     if task is None:
@@ -294,8 +287,7 @@ async def import_table_analyze(
     前端轮询 task_id 拿到 validation_report 后展示预览，
     用户点击确认 → POST /import/{task_id}/confirm 才真正落库.
     """
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         fmt = transfer.guess_format_from_filename(file.filename or "")
@@ -339,8 +331,7 @@ def import_table_confirm(
 
     成功返回导入的行数和 result_ids.
     """
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     task = db.get(ImportTask, task_id)
     if task is None or task.table_id != dt.id:
@@ -376,8 +367,7 @@ def download_failed_rows(
     format: str = "csv",
 ) -> Response:
     """下载失败行文件（CSV / XLSX / JSON）."""
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     task = db.get(ImportTask, task_id)
     if task is None or task.table_id != dt.id:
