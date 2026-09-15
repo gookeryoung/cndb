@@ -182,6 +182,7 @@ export default function PermissionEditor({ fields, data, wid, tid, owner }: Perm
           description="该用户将失去本表显式授予的成员权限。"
           okText="移除"
           okType="danger"
+          okButtonProps={{ danger: true, type: 'primary' }}
           cancelText="取消"
           onConfirm={() => removeMember.mutate(Number(record.user_id))}
           disabled={!canManageMembers}

@@ -44,17 +44,17 @@ test.describe("工作区设置独立页面 /w/:wid/settings", () => {
     const tabs = page.locator(".ant-tabs-tab")
     await expect(tabs).toHaveCount(3)
     await expect(tabs.filter({ hasText: "基本设置" })).toBeVisible()
-    await expect(tabs.filter({ hasText: "成员管理" })).toBeVisible()
+    await expect(tabs.filter({ hasText: "权限" })).toBeVisible()
     await expect(tabs.filter({ hasText: "统计信息" })).toBeVisible()
   })
 
-  test("Tab 切换 — 基本设置 → 成员管理 → 统计信息", async ({ page }) => {
+  test("Tab 切换 — 基本设置 → 权限 → 统计信息", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
     await page.goto(`/w/${WID}/settings`)
     await page.waitForURL(/\/settings$/)
 
-    // 工作区设置 Tab 顺序：基本设置 / 成员管理 / 统计信息
+    // 工作区设置 Tab 顺序：基本设置 / 权限 / 统计信息
     // 用 .ant-tabs-tab（外层包装器）+ hasText 子串匹配最稳定，
     // 不受内部 role=tab 元素 id 计数器或 aria-selected 变化影响
     const tab = (name: string) => page.locator(".ant-tabs-tab").filter({ hasText: name }).first()
@@ -63,10 +63,10 @@ test.describe("工作区设置独立页面 /w/:wid/settings", () => {
     // 默认在基本设置
     await expect(tab("基本设置")).toHaveClass(/ant-tabs-tab-active/)
 
-    // 切到成员管理
-    await tab("成员管理").click()
-    await expect(tab("成员管理")).toHaveClass(/ant-tabs-tab-active/)
-    // 成员管理 Tab 内：成员列表有"用户"和"角色"两列表头
+    // 切到权限
+    await tab("权限").click()
+    await expect(tab("权限")).toHaveClass(/ant-tabs-tab-active/)
+    // 权限 Tab 内：成员列表有"用户"和"角色"两列表头
     await expect(page.getByRole("columnheader", { name: "用户" })).toBeVisible()
     await expect(page.getByRole("columnheader", { name: "角色" })).toBeVisible()
 
