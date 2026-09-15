@@ -13,7 +13,7 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import AuditLog, DataTable, TableMember
 from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import MemberCreate, MemberOut, MemberUpdate, OwnerTransfer
-from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
+from cndb.plugins.workspaces.models import Role, WorkspaceMember, WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}", tags=["table-members"])
 
@@ -58,6 +58,22 @@ def _assert_workspace_member(workspace_id: int, user_id: int, db: Session) -> No
     )
     if wm is None:
         raise HTTPException(status_code=400, detail="目标用户不是该工作区成员")
+
+
+_BUILTIN_ROLES = frozenset({"read", "write"})
+
+
+def _validate_member_role(db: Session, role_code: str) -> None:
+    """校验 TableMember.role 是否合法.
+
+    合法值：内置 "read"/"write"，或管理员已定义的 Role.code.
+    失败时抛 400.
+    """
+    if role_code in _BUILTIN_ROLES:
+        return
+    r = db.query(Role).filter(Role.code == role_code).first()
+    if r is None:
+        raise HTTPException(status_code=400, detail=f"角色 {role_code!r} 不存在，请联系管理员创建")
 
 
 def _write_audit(
@@ -139,9 +155,7 @@ def add_member(
     table = _get_table_or_404(table_id, workspace_id, db)
     _require_table_admin(table, current_user, db)
 
-    if payload.role not in ("read", "write"):
-        raise HTTPException(status_code=400, detail="role 必须是 read 或 write")
-
+    _validate_member_role(db, payload.role)
     _assert_workspace_member(workspace_id, payload.user_id, db)
 
     if table.owner_id == payload.user_id:
@@ -184,8 +198,7 @@ def update_member(
     table = _get_table_or_404(table_id, workspace_id, db)
     _require_table_admin(table, current_user, db)
 
-    if payload.role not in ("read", "write"):
-        raise HTTPException(status_code=400, detail="role 必须是 read 或 write")
+    _validate_member_role(db, payload.role)
 
     tm = db.query(TableMember).filter(TableMember.table_id == table.id, TableMember.user_id == user_id).first()
     if tm is None:
