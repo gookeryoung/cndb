@@ -279,6 +279,22 @@ class TestAdminRegister:
         )
         assert r.status_code == 404
 
+    def test_update_user_role_forbidden(self, client):
+        """非 superuser 尝试修改用户角色应 403."""
+        client.post(
+            "/api/v1/accounts/auth/register",
+            json={"username": "plain_user", "password": "pw1234"},
+        )
+        token = client.post(
+            "/api/v1/accounts/auth/login",
+            json={"login": "plain_user", "password": "pw1234"},
+        ).json()["access_token"]
+        r = client.patch(
+            "/api/v1/accounts/auth/users/1/role?new_role=audit_admin",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 403
+
     def test_list_users_rejects_non_superuser(self, client):
         client.post(
             "/api/v1/accounts/auth/register",

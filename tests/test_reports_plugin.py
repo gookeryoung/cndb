@@ -516,6 +516,21 @@ def test_update_template_to_null_table_id(client, auth_headers, db):
     assert resp.json()["table_id"] is None
 
 
+def test_plugin_register_routes_fallback(monkeypatch):
+    """覆盖 ReportsPlugin.register_routes fallback 分支（direct_router 未设置时）."""
+    from fastapi import APIRouter
+
+    from cndb.plugins.reports.plugin import ReportsPlugin
+
+    # monkeypatch APIRouter.include_router 避免空 path 校验报错
+    monkeypatch.setattr(APIRouter, "include_router", lambda self, r: None)
+
+    plugin = ReportsPlugin()
+    router = APIRouter()
+    plugin.register_routes(router)
+    assert plugin.direct_router is not None
+
+
 def test_render_unsupported_format(client, auth_headers, db):
     """如果模板格式不被渲染器支持（当前只有 docx/pdf/xlsx），应 400."""
     ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_uf"})
