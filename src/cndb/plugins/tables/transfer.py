@@ -374,7 +374,17 @@ def import_rows_from_csv(
     """从 CSV 文本导入行数据，返回新行 id 列表."""
     buf = io.StringIO(csv_text)
     reader = csv.DictReader(buf)
-    rows = [_parse_link_import_value(table, dict(r)) for r in reader]
+    # 把 CSV 空单元格（空字符串或仅空白）归一为 None — 否则 number/date 等类型校验会因 '' 抛 ValueError
+    rows = []
+    for r in reader:
+        cleaned: dict[str, Any] = {}
+        for k, v in r.items():
+            if isinstance(v, str):
+                stripped = v.strip()
+                cleaned[k] = None if stripped == "" else stripped
+            else:
+                cleaned[k] = v
+        rows.append(_parse_link_import_value(table, cleaned))
     return rec.bulk_create(engine, table, rows, db=db)
 
 
