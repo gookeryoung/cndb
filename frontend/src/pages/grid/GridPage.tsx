@@ -726,7 +726,12 @@ export default function GridPage() {
               showTotal: (t) => `共 ${t} 条`,
             }}
             scroll={{ x: 'max-content' }}
-            onChange={(_pag, _fil, sorter) => {
+            onChange={(_pag, _fil, sorter, extra) => {
+              // 只在用户点击列头排序时（extra.action === 'sort'）才处理排序，
+              // 分页/筛选变化时 AntD 也会传当前排序状态，但不应触发 sort 处理逻辑
+              if (extra?.action !== 'sort') {
+                return
+              }
               // 处理列排序 — Ant Design sorter 可能是单对象或数组
               // 受控排序循环：ascend → descend → null（清除）
               type SorterInfo = { field?: string | number | readonly (string | number)[]; order?: 'ascend' | 'descend' | null }
