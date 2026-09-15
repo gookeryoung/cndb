@@ -28,7 +28,7 @@ __all__ = [
 
 
 # 版本号：与 pyproject.toml 保持同步（由 bump-my-version 自动维护）
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 
 # 给调用者一个便捷入口：from cndb import app
 app = _fastapi_app
