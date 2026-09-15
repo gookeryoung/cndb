@@ -1,0 +1,148 @@
+{
+  "_comment": "项目管理视图种子配置：WBS 任务分解表支持 WBS（工作分解结构）/Gantt/Kanban/Calendar 四种核心视图形态。WBS 视图通过 parent_field=父任务ID 字段构建层级树，父节点进度自动由子节点汇总。",
+  "WBS任务分解": [
+    {
+      "name": "全部任务",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "任务ID",
+          "direction": "asc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "WBS 工作分解结构",
+      "view_type": "wbs",
+      "sortings": [
+        {
+          "field_name": "任务ID",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "parent_field": "父任务ID",
+        "title_field": "任务名称",
+        "progress_field": "进度百分比",
+        "status_field": "任务状态",
+        "assignee_field": "负责人",
+        "start_date_field": "开始日期",
+        "end_date_field": "结束日期",
+        "show_numbering": true,
+        "expand_all": false
+      },
+      "order": 1
+    },
+    {
+      "name": "WBS 进行中任务",
+      "view_type": "wbs",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "任务状态",
+          "op": "=",
+          "value": "进行中"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "任务ID",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "parent_field": "父任务ID",
+        "title_field": "任务名称",
+        "progress_field": "进度百分比",
+        "status_field": "任务状态",
+        "assignee_field": "负责人",
+        "show_numbering": true,
+        "expand_all": true
+      },
+      "order": 2
+    },
+    {
+      "name": "WBS 已完成任务",
+      "view_type": "wbs",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "任务状态",
+          "op": "=",
+          "value": "已完成"
+        }
+      ],
+      "view_options": {
+        "parent_field": "父任务ID",
+        "title_field": "任务名称",
+        "progress_field": "进度百分比",
+        "assignee_field": "负责人",
+        "show_numbering": true,
+        "expand_all": true
+      },
+      "order": 3
+    },
+    {
+      "name": "任务时间轴",
+      "view_type": "gantt",
+      "sortings": [
+        {
+          "field_name": "开始日期",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "start_date_field": "开始日期",
+        "end_date_field": "结束日期",
+        "title_field": "任务名称",
+        "group_field": "父任务ID",
+        "progress_field": "进度百分比",
+        "assignee_field": "负责人",
+        "time_scale": "month",
+        "show_today_line": true
+      },
+      "order": 4
+    },
+    {
+      "name": "按任务状态看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "任务状态",
+        "title_field": "任务名称",
+        "progress_field": "进度百分比",
+        "due_date_field": "结束日期",
+        "assignee_field": "负责人",
+        "card_sort_field": "进度百分比",
+        "card_sort_direction": "asc",
+        "pin_urgent": true
+      },
+      "order": 5
+    },
+    {
+      "name": "按优先级看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "优先级",
+        "title_field": "任务名称",
+        "progress_field": "进度百分比",
+        "due_date_field": "结束日期",
+        "assignee_field": "负责人",
+        "card_sort_field": "结束日期",
+        "card_sort_direction": "asc"
+      },
+      "order": 6
+    },
+    {
+      "name": "任务日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "开始日期",
+        "title_field": "任务名称",
+        "group_field": "任务状态"
+      },
+      "order": 7
+    }
+  ]
+}
