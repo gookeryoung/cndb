@@ -59,6 +59,21 @@ type ViewMode = 'grid' | 'kanban' | 'gallery' | 'calendar' | 'gantt' | 'wbs'
 const VALID_MODES: readonly ViewMode[] = ['grid', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs']
 const MODE_STORAGE_KEY = 'cndb_current_mode'
 
+/** 右侧模式按钮配置 —— 顺序即显示顺序；仅当数据表存在对应 view_type 的视图时才渲染. */
+interface ModeBtn {
+  mode: ViewMode
+  tooltip: string
+  icon: React.ReactNode
+}
+const MODE_BUTTONS: readonly ModeBtn[] = [
+  { mode: 'grid',    tooltip: '表格',   icon: <ColumnHeightOutlined /> },
+  { mode: 'kanban',  tooltip: '看板',   icon: <AppstoreOutlined /> },
+  { mode: 'gallery', tooltip: '画廊',   icon: <EyeOutlined /> },
+  { mode: 'calendar',tooltip: '日历',   icon: <CalendarOutlined /> },
+  { mode: 'gantt',   tooltip: '甘特图', icon: <LineChartOutlined /> },
+  { mode: 'wbs',     tooltip: '工作分解', icon: <PartitionOutlined /> },
+]
+
 /** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */
 function _readModeFromStorage(): ViewMode | null {
   try {
@@ -515,6 +530,26 @@ export default function GridPage() {
     value: String(v.id),
   })), [views])
 
+  /** 数据表实际拥有的视图类型集合（去重） */
+  const availableViewTypes = useMemo<Set<ViewMode>>(() => {
+    const s = new Set<ViewMode>()
+    for (const v of views) {
+      const vt = v.view_type as ViewMode | undefined
+      if (vt && VALID_MODES.includes(vt)) s.add(vt)
+    }
+    // grid 作为基础视图，始终确保存在
+    s.add('grid')
+    return s
+  }, [views])
+
+  /** 右侧模式按钮组 —— 仅渲染数据表实际拥有的视图类型 */
+  const modeButtons = useMemo(() =>
+    MODE_BUTTONS.filter(b => availableViewTypes.has(b.mode)),
+    [availableViewTypes])
+
+  /** 是否渲染模式按钮组（多于一个按钮才显示；仅 grid 时隐藏） */
+  const showModeSwitch = modeButtons.length > 1
+
   // 早 return — 已确保所有 hooks 调用完成
   if (!wid || !tid) return <Empty description="无效的表 ID" style={{ padding: 48 }} />
 
@@ -631,27 +666,22 @@ export default function GridPage() {
             />
           </Tooltip>
         </Space>
-        {/* 视图模式切换（无文字） */}
-        <Space.Compact>
-          <Tooltip title="表格">
-            <Button size="small" type={mode === 'grid' ? 'primary' : 'default'} icon={<ColumnHeightOutlined />} onClick={() => handleModeChange('grid')} />
-          </Tooltip>
-          <Tooltip title="看板">
-            <Button size="small" type={mode === 'kanban' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => handleModeChange('kanban')} />
-          </Tooltip>
-          <Tooltip title="画廊">
-            <Button size="small" type={mode === 'gallery' ? 'primary' : 'default'} icon={<EyeOutlined />} onClick={() => handleModeChange('gallery')} />
-          </Tooltip>
-          <Tooltip title="日历">
-            <Button size="small" type={mode === 'calendar' ? 'primary' : 'default'} icon={<CalendarOutlined />} onClick={() => handleModeChange('calendar')} />
-          </Tooltip>
-          <Tooltip title="甘特图">
-            <Button size="small" type={mode === 'gantt' ? 'primary' : 'default'} icon={<LineChartOutlined />} onClick={() => handleModeChange('gantt')} />
-          </Tooltip>
-          <Tooltip title="工作分解">
-            <Button size="small" type={mode === 'wbs' ? 'primary' : 'default'} icon={<PartitionOutlined />} onClick={() => handleModeChange('wbs')} />
-          </Tooltip>
-        </Space.Compact>
+        {/* 视图模式切换 —— 仅渲染数据表实际拥有的视图类型；仅 grid 一种时隐藏 */}
+        {showModeSwitch && (
+          <Space.Compact>
+            {modeButtons.map((b) => (
+              <Tooltip key={b.mode} title={b.tooltip}>
+                <Button
+                  size="small"
+                  type={mode === b.mode ? 'primary' : 'default'}
+                  icon={b.icon}
+                  data-mode={b.mode}
+                  onClick={() => handleModeChange(b.mode)}
+                />
+              </Tooltip>
+            ))}
+          </Space.Compact>
+        )}
         <Input.Search
           size="small"
           placeholder="搜索所有文本字段..."
