@@ -12,7 +12,7 @@
  * - show_today_line:   是否显示今日标线（默认 true）
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { Segmented, Button, Tooltip, Empty } from 'antd'
 import { LeftOutlined, RightOutlined, ReloadOutlined, CalendarOutlined } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
@@ -125,6 +125,7 @@ interface TimelineSegment {
   date: Date
   width: number  // 像素宽度
   days: number   // 覆盖天数
+  left: number   // 累积左侧偏移（像素），一次算好避免 slice+reduce
 }
 
 function buildTimeline(
@@ -144,6 +145,7 @@ function buildTimeline(
         date: d,
         width: pxPerDay,
         days: 1,
+        left: 0, // 稍后统一回填
       })
     }
   } else if (scale === 'week') {
@@ -155,7 +157,7 @@ function buildTimeline(
       weekEnd.setDate(weekStart.getDate() + 6)
       const days = daysBetween(weekStart, weekEnd)
       const label = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`
-      segments.push({ label, date: weekStart, width: days * pxPerDay, days })
+      segments.push({ label, date: weekStart, width: days * pxPerDay, days, left: 0 })
       cursor = new Date(weekEnd)
       cursor.setDate(cursor.getDate() + 1)
     }
@@ -167,19 +169,14 @@ function buildTimeline(
         cursor < range.min ? range.min : cursor,
         monthEnd > range.max ? range.max : monthEnd,
       )
-      const fullDays = daysBetween(
-        cursor,
-        new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0),
-      )
       segments.push({
         label: `${cursor.getFullYear()}年${cursor.getMonth() + 1}月`,
         date: cursor,
-        width: fullDays * pxPerDay,
-        days: fullDays,
+        width: days * pxPerDay,
+        days,
+        left: 0,
       })
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
-      // 但我们需要的是实际可见区间的天数 * pxPerDay，不是整月
-      segments[segments.length - 1].width = days * pxPerDay
     }
   } else { // quarter
     let cursor = new Date(range.min.getFullYear(), Math.floor(range.min.getMonth() / 3) * 3, 1)
@@ -195,9 +192,17 @@ function buildTimeline(
         date: cursor,
         width: days * pxPerDay,
         days,
+        left: 0,
       })
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 3, 1)
     }
+  }
+
+  // 一次性回填累积 left（O(n)）
+  let acc = 0
+  for (const seg of segments) {
+    seg.left = acc
+    acc += seg.width
   }
 
   return segments
@@ -351,7 +356,7 @@ interface GanttBarProps {
   onRowClick?: (r: RowResponse) => void
 }
 
-function GanttBar({ task, range, pxPerDay, barHeight, onRowClick }: GanttBarProps) {
+const GanttBar = memo(function GanttBar({ task, range, pxPerDay, barHeight, onRowClick }: GanttBarProps) {
   // 计算相对于 range.min 的偏移
   const offsetDays = daysBetween(range.min, task.start) - 1
   const durationDays = daysBetween(task.start, task.end)
@@ -451,7 +456,7 @@ function GanttBar({ task, range, pxPerDay, barHeight, onRowClick }: GanttBarProp
       )}
     </div>
   )
-}
+})
 
 // ── 今日标线 ──────────────────────────────────────────
 
@@ -677,9 +682,9 @@ export default function GanttView({
               minWidth: totalTimelineWidth,
             }}
           >
-            {timeline.map((seg, idx) => (
+            {timeline.map((seg) => (
               <div
-                key={idx}
+                key={seg.left}
                 style={{
                   width: seg.width,
                   minWidth: seg.width,
@@ -707,8 +712,51 @@ export default function GanttView({
           overflow: 'auto',
           display: 'flex',
           flexDirection: 'column',
+          position: 'relative', // 给背景层做定位基准
         }}
       >
+        {/* 全局时间轴背景层：网格线 + 今日标线，全图只渲染一次，避免每行重复 O(n×m) */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            left: ds.leftColWidth,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            pointerEvents: 'none',
+            overflow: 'hidden',
+            zIndex: 0,
+          }}
+        >
+          <div
+            style={{
+              position: 'relative',
+              height: '100%',
+              minWidth: totalTimelineWidth,
+              transform: `translateX(${-scrollX}px)`,
+            }}
+          >
+            {/* 时间分割线 */}
+            {timeline.map((seg) => (
+              <div
+                key={seg.left}
+                style={{
+                  position: 'absolute',
+                  left: seg.left,
+                  top: 0,
+                  bottom: 0,
+                  width: seg.width,
+                  borderRight: '1px solid var(--cn-border)',
+                }}
+              />
+            ))}
+            {/* 今日标线 */}
+            {showToday && <TodayLine range={timeRange} pxPerDay={pxPerDay} />}
+          </div>
+        </div>
+
+        {/* 分组 + 任务行 */}
         {groupedTasks.map((group) => (
           <div key={group.key}>
             {/* 分组标题（有 group_field 时显示） */}
@@ -724,6 +772,8 @@ export default function GanttView({
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
+                  position: 'relative',
+                  zIndex: 1,
                 }}
               >
                 <span
@@ -752,7 +802,9 @@ export default function GanttView({
                   borderBottom: '1px solid var(--cn-border)',
                   cursor: 'pointer',
                   position: 'relative',
+                  zIndex: 1,
                   transition: 'background 0.15s',
+                  background: 'var(--cn-bg-container)', // 盖住下方背景层
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'var(--cn-bg-subtle)'
@@ -814,31 +866,9 @@ export default function GanttView({
                       height: '100%',
                       minWidth: totalTimelineWidth,
                       transform: `translateX(${-scrollX}px)`,
-                      transition: 'transform 0.2s',
                     }}
                   >
-                    {/* 背景网格线 */}
-                    <div style={{ position: 'absolute', inset: 0 }}>
-                      {timeline.map((seg, idx) => {
-                        const left = timeline.slice(0, idx).reduce((s, t) => s + t.width, 0)
-                        return (
-                          <div
-                            key={idx}
-                            style={{
-                              position: 'absolute',
-                              left,
-                              top: 0,
-                              bottom: 0,
-                              width: seg.width,
-                              borderRight: '1px solid var(--cn-border)',
-                              pointerEvents: 'none',
-                            }}
-                          />
-                        )
-                      })}
-                    </div>
-
-                    {/* 甘特条 */}
+                    {/* 甘特条（唯一需要每行渲染的元素） */}
                     <GanttBar
                       task={task}
                       range={timeRange}
@@ -846,9 +876,6 @@ export default function GanttView({
                       barHeight={ds.barHeight}
                       onRowClick={onRowClick}
                     />
-
-                    {/* 今日标线（每行都画，否则视觉不连贯） */}
-                    {showToday && <TodayLine range={timeRange} pxPerDay={pxPerDay} />}
                   </div>
                 </div>
               </div>
