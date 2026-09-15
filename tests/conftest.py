@@ -25,6 +25,7 @@ def db_engine(tmp_path: Path):
     import cndb.plugins.accounts.models
     import cndb.plugins.reports.models
     import cndb.plugins.tables.models
+    import cndb.plugins.wechat_auth.models
     import cndb.plugins.workspaces.models  # noqa: F401
 
     Base.metadata.drop_all(engine)
