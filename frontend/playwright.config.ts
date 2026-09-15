@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const CHROME_PATH = "/root/.cache/puppeteer/chrome/linux-151.0.7922.71/chrome-linux64/chrome";
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
@@ -19,7 +21,7 @@ export default defineConfig({
       testMatch: /.*\.setup\.ts/,
       use: {
         ...devices["Desktop Chrome"],
-        executablePath: "/root/.cache/puppeteer/chrome/linux-151.0.7922.71/chrome-linux64/chrome",
+        executablePath: CHROME_PATH,
       },
     },
     {
@@ -27,7 +29,7 @@ export default defineConfig({
       dependencies: ["setup"],
       use: {
         ...devices["Desktop Chrome"],
-        executablePath: "/root/.cache/puppeteer/chrome/linux-151.0.7922.71/chrome-linux64/chrome",
+        executablePath: CHROME_PATH,
         storageState: ".auth/state.json",
       },
     },
@@ -35,7 +37,7 @@ export default defineConfig({
       name: "chromium-anon",
       use: {
         ...devices["Desktop Chrome"],
-        executablePath: "/root/.cache/puppeteer/chrome/linux-151.0.7922.71/chrome-linux64/chrome",
+        executablePath: CHROME_PATH,
       },
     },
   ],
