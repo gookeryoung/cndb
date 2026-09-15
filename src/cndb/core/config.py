@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 60 * 24  # 默认 24 小时
     AUTH_ENABLED: bool = True  # 默认开启，生产环境必须认证
 
+    # ── 微信小程序认证 ─────────────────────────────────────
+    WECHAT_AUTH_ENABLED: bool = False
+    WECHAT_APPID: str = ""
+    WECHAT_SECRET: str = ""
+    WECHAT_LOGIN_AUTO_REGISTER: bool = True
+
     # ── 插件自动发现目录 ─────────────────────────────────────
     PLUGINS_AUTO_DISCOVER: bool = True
     PLUGINS_DIR: Path = BASE_DIR / "plugins"
