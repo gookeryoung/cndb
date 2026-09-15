@@ -91,6 +91,11 @@ exclude = [
 "src/cndb/static" = "src/cndb/static"
 "examples/datasets" = "examples/datasets"
 
+# ── fspack 打包配置 ────────────────────────────────────────
+[tool.fspack]
+entry-app-types = { cndb = "cli" }
+web-static-dirs = ["src/cndb/static"]
+
 [tool.uv]
 required-version = ">=0.5.0"
 
