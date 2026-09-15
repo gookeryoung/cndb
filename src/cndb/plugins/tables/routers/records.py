@@ -122,8 +122,7 @@ def list_records(
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = Query(default=False),
 ) -> RecordListResponse:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     try:
         rows, total = list_rows(
