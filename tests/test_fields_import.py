@@ -402,7 +402,7 @@ class TestLinkFieldImport:
 
         from cndb.plugins.tables.models import DataField
 
-        created_field = db.query(DataField).get(created["id"])
+        created_field = db.get(DataField, created["id"])
         assert created_field is not None
         insp = inspect(db.get_bind())
         assert created_field.link_table_name in insp.get_table_names()
