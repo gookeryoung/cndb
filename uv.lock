@@ -398,7 +398,7 @@ requires-dist = [
     { name = "bcrypt", specifier = ">=3.2.2,<4.0.0" },
     { name = "cndb", extras = ["lint", "test", "docs", "pack"], marker = "extra == 'dev'" },
     { name = "cryptography", specifier = ">=41.0.0,<42.0.0" },
-    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "fastapi", specifier = ">=0.115.0,<0.126.0" },
     { name = "fastapi-offline", specifier = ">=1.7.0" },
     { name = "fspack", marker = "extra == 'pack'", specifier = ">=0.5.0" },
     { name = "httpx", specifier = ">=0.27.0" },
