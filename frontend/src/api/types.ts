@@ -361,7 +361,27 @@ export interface ReportRenderResult {
 }
 
 /** 导入任务状态 */
-export type ImportTaskStatus = 'pending' | 'running' | 'done' | 'failed'
+export type ImportTaskStatus =
+  | 'pending'
+  | 'pending_validation'
+  | 'pending_confirm'
+  | 'running'
+  | 'done'
+  | 'failed'
+
+/** 校验报告（DiffReporter 输出结构） */
+export interface ValidationReport {
+  total: number
+  valid_count: number
+  warning_count: number
+  error_count: number
+  skipped_columns: string[]
+  missing_required: string[]
+  warnings: Array<{ row_number: number; field: string; message: string }>
+  errors: Array<{ row_number: number; field: string; message: string }>
+  actually_imported?: number
+}
+
 export interface ImportTaskInfo {
   task_id: ID; status: ImportTaskStatus; progress: number
   filename: string; format: string
@@ -369,6 +389,8 @@ export interface ImportTaskInfo {
   error_message?: string | null
   result_ids?: Array<number | string>
   created_at?: string | null; updated_at?: string | null
+  /** analyze 阶段产出的校验报告（JSON） */
+  validation_report?: ValidationReport | null
 }
 
 /** 表权限 */
