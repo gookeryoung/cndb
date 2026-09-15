@@ -265,6 +265,10 @@ def import_fields(
     - 新字段拥有独立的生命周期（修改/删除不影响源表）.
     - link 字段的 config.target_table_id 保留原值（天然支持跨工作区关联）.
     - 同名冲突时默认 400，skip_conflicts=True 时跳过冲突字段并返回说明.
+    - field_mapping 支持源字段 → 目标字段重命名 / 跳过：
+      payload.field_mapping={"源字段名": "目标字段名", "另一个": null}
+      传入 mapping 时，响应体附带 gap_analysis（matched / unmapped_source / target_missing / conflicts）
+      供前端渲染"参照对比"面板.
     """
 
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
@@ -303,6 +307,14 @@ def import_fields(
     if not src_fields:
         return FieldImportResponse(created=[], skipped=["源表没有可克隆的字段"], total_source_count=0)
 
+    # 校验用户 field_mapping 里没有源表不存在的字段名
+    if payload.field_mapping:
+        src_names = {f.name for f in src_fields}
+        unknown = set(payload.field_mapping.keys()) - src_names
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"field_mapping 中存在源表没有的字段: {sorted(unknown)}")
+
+    # 执行克隆
     engine = db.get_bind()
     try:
         created, skipped = clone_fields_between_tables(
@@ -312,14 +324,31 @@ def import_fields(
             dst,
             field_ids=[f.id for f in src_fields],
             skip_conflicts=payload.skip_conflicts,
+            field_mapping=payload.field_mapping,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"字段导入失败: {exc}") from exc
 
+    # 传入 field_mapping 时附带 gap_analysis，便于前端展示参照对比面板
+    gap_analysis = None
+    if payload.field_mapping is not None:
+        from cndb.plugins.tables.field_mapping import (
+            analyze_field_gaps,
+            apply_user_mapping,
+            build_default_mapping,
+        )
+
+        src_names_list = [f.name for f in src_fields]
+        base = build_default_mapping(src_names_list)
+        merged = apply_user_mapping(base, payload.field_mapping, src_names_list)
+        dst_names = [f.name for f in dst.fields if not f.trashed]
+        gap_analysis = analyze_field_gaps(merged, src_names_list, dst_names)
+
     return FieldImportResponse(
         created=[FieldResponse.model_validate(f, from_attributes=True) for f in created],
         skipped=skipped,
         total_source_count=len(src_fields),
+        gap_analysis=gap_analysis,
     )

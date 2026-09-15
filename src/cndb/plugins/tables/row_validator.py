@@ -5,7 +5,19 @@
 
 复用 :mod:`cndb.plugins.tables.field_types` 的 ``default_registry``，
 每个字段类型的 ``validate_value`` 做实际的类型强转 + 业务规则校验；
-RowValidator 只负责调度、空值宽松处理、link 值预解析、以及结果收集。
+RowValidator 只负责调度、空值宽松处理、link 值预解析、字段映射、缺口填充、以及结果收集.
+
+字段映射（field_mapping）：
+- ``{源字段名: 目标字段名}`` — 行 dict 的 key 会先按映射重命名再校验
+- 未显式列出的字段按 源名 == 目标名 自动匹配（保守默认）
+- 映射值为 None 表示该源字段跳过
+
+缺口填充（GapFilling）：
+- 当目标侧某些必填字段在源侧找不到对应列时，按策略处理：
+  "empty"（默认）→ 留空，后续必填校验会标为 error
+  "default"      → 用字段的 default_value 填充
+  "value"        → 用用户指定的固定值填充（fill_values 参数）
+  "error"        → 直接报 error，整行拒绝
 """
 
 from __future__ import annotations
@@ -13,6 +25,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from cndb.plugins.tables.field_mapping import (
+    GapFilling,
+    apply_gap_filling,
+    apply_user_mapping,
+    build_default_mapping,
+    remap_row,
+)
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.links import is_link_field
 from cndb.plugins.tables.models import DataField, DataTable
@@ -73,14 +92,39 @@ class RowValidator:
         table: 目标数据表（使用其 ``active_fields()`` 定义做校验）.
         skip_unknown_columns: 文件中有但表中没有的列 → warning；设为 True 则完全忽略.
             默认 False（保留 warning，让 DiffReporter 汇总展示）.
+        field_mapping: 可选的源列 → 目标字段映射，用于把源数据的列对齐到目标表字段.
+            ``{源列名: 目标字段名}``；值为 None 表示跳过该源列；
+            未列出的源列按 源名 == 目标名 自动匹配.
+        gap_filling: 目标侧缺失字段的填充策略 — "empty" / "default" / "value" / "error".
+        fill_values: gap_filling="value" 时按目标字段名指定固定填充值.
     """
 
-    def __init__(self, table: DataTable, *, skip_unknown_columns: bool = False) -> None:
+    def __init__(
+        self,
+        table: DataTable,
+        *,
+        skip_unknown_columns: bool = False,
+        field_mapping: dict[str, str | None] | None = None,
+        gap_filling: GapFilling = "empty",
+        fill_values: dict[str, Any] | None = None,
+    ) -> None:
         self.table = table
         self.skip_unknown_columns = skip_unknown_columns
+        self.gap_filling = gap_filling
+        self.fill_values = fill_values or {}
         self._fields: list[DataField] = table.active_fields()
         self._field_map: dict[str, DataField] = {f.name: f for f in self._fields}
         self._required_names: set[str] = {f.name for f in self._fields if f.required}
+        # 预编译用户 field_mapping —— 给 validate_row 直接用
+        self._compiled_mapping: dict[str, str] | None = None
+        self._unmapped_target: list[str] = []
+        self._field_mapping = field_mapping
+        if field_mapping is not None:
+            # 编译：默认同名 → 用户覆盖
+            # 这里假设 validate_row 的输入 row dict 的 key 是源侧列名
+            # 目标侧哪些字段是 mapping 覆盖不到的（即源侧没有对应列）
+            # 先在 validate_row 里按实际 row.keys() 来算更准确
+            pass
 
     # ── 公共 API ──────────────────────────────────
 
@@ -91,10 +135,57 @@ class RowValidator:
     def validate_row(self, row: dict[str, Any], row_number: int) -> ValidationResult:
         """校验单行，返回 ValidationResult（永远不抛异常）."""
         result = ValidationResult(row_number=row_number, values=dict(row))
-        self._check_field_set(row, result)
-        self._check_each_field(row, result)
+
+        # 1. 应用 field_mapping（或保守默认）— 把源侧 key 重命名为目标侧 key
+        effective_row, unmapped_target = self._apply_mapping(row)
+        result.values = effective_row
+
+        # 2. 目标侧缺失 → 按 gap_filling 策略处理（始终生效，与 field_mapping 是否传入无关）
+        if unmapped_target:
+            try:
+                effective_row = apply_gap_filling(
+                    effective_row,
+                    unmapped_target,
+                    self._field_map,
+                    strategy=self.gap_filling,
+                    fill_values=self.fill_values,
+                )
+                result.values = effective_row
+            except ValueError as exc:
+                # strategy="error" 且存在缺失 → 直接记录 error 并提前返回
+                for name in unmapped_target:
+                    result.issues.append(Issue(field=name, level="error", message=str(exc)))
+                result.status = "error"
+                return result
+
+        self._check_field_set(effective_row, result)
+        self._check_each_field(effective_row, result)
         self._finalize_status(result)
         return result
+
+    def _apply_mapping(self, row: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+        """把源侧 row 按 field_mapping（或保守默认）重命名为目标侧 key.
+
+        始终被调用 —— 即使 field_mapping=None，也会走保守默认（源名 == 目标名）.
+
+        Returns:
+            (重命名后的 row dict, 目标侧缺失字段名列表).
+        """
+        src_cols = list(row.keys())
+        # 默认：源名 == 目标名
+        base = build_default_mapping(src_cols)
+        if self._field_mapping:
+            merged = apply_user_mapping(base, self._field_mapping, src_cols)
+        else:
+            merged = base
+
+        # 重命名行 dict
+        remapped = remap_row(row, merged)
+
+        # 目标侧字段中，哪些在 merged.values() 里找不到
+        mapped_dst = set(merged.values())
+        unmapped_target = [name for name in self._field_map if name not in mapped_dst]
+        return remapped, unmapped_target
 
     # ── 内部：字段集合校验 ────────────────────────
 

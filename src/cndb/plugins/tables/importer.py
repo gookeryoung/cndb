@@ -8,6 +8,10 @@ Importer 是"文件导入追加到已有表"的统一入口。它串联：
 
 与 :mod:`transfer` 的关系：Importer 是上层编排，transfer 做底层解析；
 transfer 的三个 ``import_rows_from_*`` 保留作为旧流程直连接口，不被 Importer 替代。
+
+支持字段映射与缺口填充：
+- field_mapping: ``{源列名: 目标字段名}`` —— 把文件/API 的列对齐到目标表字段
+- gap_filling:   目标侧缺失字段的填充策略 — "empty" / "default" / "value" / "error"
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from cndb.plugins.tables import records as rec
 from cndb.plugins.tables.diff_reporter import DiffReporter
+from cndb.plugins.tables.field_mapping import GapFilling
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.row_validator import RowValidator, ValidationResult
 
@@ -74,12 +79,27 @@ class Importer:
         engine: SQLAlchemy Engine（bulk_create 用）.
         db: SQLAlchemy Session（link 字段写入关联表时需要传）.
         table: 目标数据表.
+        field_mapping: 可选的源列 → 目标字段映射 — 透传给 RowValidator.
+        gap_filling: 目标侧缺失字段填充策略 — 透传给 RowValidator.
+        fill_values: gap_filling="value" 时的固定值 — 透传给 RowValidator.
     """
 
-    def __init__(self, engine: Any, db: Session, table: DataTable) -> None:
+    def __init__(
+        self,
+        engine: Any,
+        db: Session,
+        table: DataTable,
+        *,
+        field_mapping: dict[str, str | None] | None = None,
+        gap_filling: GapFilling = "empty",
+        fill_values: dict[str, Any] | None = None,
+    ) -> None:
         self.engine = engine
         self.db = db
         self.table = table
+        self.field_mapping = field_mapping
+        self.gap_filling = gap_filling
+        self.fill_values = fill_values
 
     # ── 公共 API ────────────────────────────────
 
@@ -100,7 +120,12 @@ class Importer:
         else:
             file_columns = self._collect_columns(rows)
 
-        rv = RowValidator(self.table)
+        rv = RowValidator(
+            self.table,
+            field_mapping=self.field_mapping,
+            gap_filling=self.gap_filling,
+            fill_values=self.fill_values,
+        )
         results = rv.validate_all(rows)
         report = DiffReporter.build(results, self.table.active_fields(), file_columns)
         return ImportAnalysisResult(report=report, results=results, file_columns=file_columns)
