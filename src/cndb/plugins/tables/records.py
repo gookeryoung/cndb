@@ -14,10 +14,11 @@ link 字段值（目标行 id 列表）不占物理列，经 _split_links 拆出
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import MetaData, Table, and_, func, select
+from sqlalchemy import MetaData, Table, and_, func, or_, select
 
 from cndb.plugins.tables.audit import (
     ACTION_CREATE,
@@ -534,12 +535,154 @@ def _row_to_dict(table: DataTable, _sa_table: Table, row: Any) -> dict[str, Any]
     return result
 
 
+# ── UPSERT 支撑（导入流水线用）──────────────────────
+
+
+def find_rows_by_key(
+    engine: Any,
+    table: DataTable,
+    key_cols: list[str],
+    values_list: list[dict[str, Any]],
+    *,
+    chunk_size: int = 500,
+) -> tuple[dict[tuple[Any, ...], int], dict[tuple[Any, ...], int]]:
+    """按多列组合批量查询已有行，返回 `{key_tuple: row_id}` 映射.
+
+    Args:
+        engine: SQLAlchemy engine.
+        table: 目标数据表元数据.
+        key_cols: 参与匹配的字段名列表（DataField.name，不是 db_column_name）.
+        values_list: 文件行原始 values 列表（每个 dict 至少包含 key_cols）.
+        chunk_size: 每批 OR 条件数量，默认 500.
+
+    Returns:
+        (exact_map, conflict_map) —
+            exact_map: {key_tuple: 唯一 row_id}；
+            conflict_map: {key_tuple: 匹配到的行数}（多行同 key 时取 min(id) 做 exact_map，
+                同时在 conflict_map 里记录冲突数，让调用方决定是否告警）.
+    """
+    if not key_cols or not values_list:
+        return {}, {}
+
+    sa_table = _get_sa_table(engine, table)
+    # 把 field_name → db_column_name 建立映射
+    col_map: dict[str, str] = {}
+    for f in table.fields:
+        if f.trashed:
+            continue
+        if f.name in key_cols:
+            col_map[f.name] = f.db_column_name
+    # key_cols 里若有不存在的字段，过滤掉
+    effective_cols = [c for c in key_cols if c in col_map]
+    if not effective_cols:
+        return {}, {}
+
+    # 收集所有唯一 key tuple（保持 None，不用空串替代）
+    unique_keys: list[tuple[Any, ...]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for row in values_list:
+        tup = tuple(row.get(c) for c in effective_cols)
+        if tup not in seen:
+            seen.add(tup)
+            unique_keys.append(tup)
+
+    exact_map: dict[tuple[Any, ...], int] = {}
+    conflict_map: dict[tuple[Any, ...], int] = {}
+
+    for i in range(0, len(unique_keys), chunk_size):
+        chunk = unique_keys[i : i + chunk_size]
+        # 构建 OR 条件：(k1=? AND k2=? AND _trashed=FALSE) OR ...
+        or_parts = []
+        for tup in chunk:
+            and_parts: list[Any] = [sa_table.c._trashed.is_(False)]
+            for c, val in zip(effective_cols, tup, strict=True):
+                db_col = sa_table.c[col_map[c]]
+                if val is None:
+                    and_parts.append(db_col.is_(None))
+                else:
+                    and_parts.append(db_col == val)
+            or_parts.append(and_(*and_parts))
+        where = or_(*or_parts)
+        query = select(sa_table.c.id, *[sa_table.c[col_map[c]] for c in effective_cols]).where(where)
+
+        with engine.connect() as conn:
+            rows = conn.execute(query).all()
+
+        # 按 key 分组
+        grouped: dict[tuple[Any, ...], list[int]] = defaultdict(list)
+        for r in rows:
+            row_id = int(r[0])
+            key_tup = tuple(r[i + 1] for i in range(len(effective_cols)))
+            grouped[key_tup].append(row_id)
+
+        for key_tup, ids in grouped.items():
+            if len(ids) > 1:
+                conflict_map[key_tup] = len(ids)
+            exact_map[key_tup] = min(ids)
+
+    return exact_map, conflict_map
+
+
+def bulk_update_rows(
+    engine: Any,
+    table: DataTable,
+    updates: list[dict[str, Any]],
+    db: Any = None,
+) -> int:
+    """批量单行更新 — 每条 row_id 对应独立 values（upsert 分流时用）.
+
+    与 bulk_update 不同：bulk_update 是 "N 行共用一组 values"，这里是 "N 行各有自己的 values"。
+    批量导入场景不逐条记 audit log（避免海量 audit 行）。返回成功更新的行数。
+    """
+    if not updates:
+        return 0
+
+    sa_table = _get_sa_table(engine, table)
+    total = 0
+    # 逐行在同一个事务里执行（SQLite/PostgreSQL 对 100-500 行循环开销可接受）
+    with engine.begin() as conn:
+        for item in updates:
+            row_id = item.get("row_id")
+            values = item.get("values") or {}
+            if row_id is None or not values:
+                continue
+            normalized, link_values = _normalize_values(table, values, for_update=True)
+            if not normalized and not link_values:
+                continue
+            # 物理列更新
+            if normalized:
+                result = conn.execute(
+                    sa_table.update()
+                    .where(sa_table.c.id == row_id, sa_table.c._trashed.is_(False))
+                    .values(**normalized)
+                )
+                if result.rowcount == 0:
+                    # 行不存在或被软删，跳过
+                    continue
+                total += 1
+            else:
+                # 只有 link 值
+                existing = conn.execute(
+                    select(sa_table.c.id).where(sa_table.c.id == row_id, sa_table.c._trashed.is_(False))
+                ).first()
+                if existing is None:
+                    continue
+                total += 1
+            # link 同步（事务外 set_links 有自己的 engine.begin）
+            for field, target_ids in link_values:
+                set_links(engine, field, row_id, target_ids, db=db)
+
+    return total
+
+
 __all__ = [
     "bulk_create",
     "bulk_delete",
     "bulk_update",
+    "bulk_update_rows",
     "create_row",
     "delete_row",
+    "find_rows_by_key",
     "get_row",
     "list_rows",
     "restore_row",
