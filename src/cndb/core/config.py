@@ -13,15 +13,23 @@ from pydantic_settings import BaseSettings
 
 
 def _find_project_root() -> Path:
-    """从当前文件向上递归查找 pyproject.toml 所在目录.
+    """从当前文件向上递归查找项目根目录.
 
-    兼容 editable install（src layout）、wheel 安装和直接运行脚本三种场景。
+    场景兼容：
+    - 开发 editable install：src layout → 找到 pyproject.toml
+    - wheel 安装：site-packages/cndb → 找不到 pyproject.toml，兜底到包父目录
+    - fspack 打包：dist/src/src/cndb/core/ → 找不到 pyproject.toml，
+      向上找 dist/src/（那里有 cndb.db、uploads/、alembic.ini）
     """
     here = Path(__file__).resolve().parent
     for candidate in (here, *here.parents):
         if (candidate / "pyproject.toml").is_file():
             return candidate
-    # 兜底：回退到 src 的上一级
+    # 兜底策略：向上找第一个同时包含 cndb.db 或 alembic.ini 的目录
+    # fspack 打包后 dist/src/ 会命中；wheel 安装时回退到 here.parent.parent
+    for candidate in (here, *here.parents):
+        if (candidate / "cndb.db").is_file() or (candidate / "alembic.ini").is_file():
+            return candidate
     return here.parent.parent
 
 
