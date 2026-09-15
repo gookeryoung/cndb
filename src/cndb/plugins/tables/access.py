@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataTable, TableMember, TablePermission
-from cndb.plugins.workspaces.models import ROLE_RANK, WorkspaceRole
+from cndb.plugins.workspaces.models import ROLE_RANK, Role, WorkspaceRole
 
 
 class TableAction(StrEnum):
@@ -45,19 +45,33 @@ _ACTION_DEFAULT_ROLE: dict[TableAction, WorkspaceRole] = {
 }
 
 
-# 表成员 "write" 角色允许的动作集合
-_WRITE_MEMBER_ACTIONS: set[TableAction] = {
-    TableAction.READ,
-    TableAction.EDIT_RECORDS,
-    TableAction.EDIT_VIEWS,
-    TableAction.COMMENT,
+# 内置表成员角色（TableMember.role 硬编码值）→ 动作集合
+_BUILTIN_MEMBER_ACTIONS: dict[str, set[TableAction]] = {
+    "write": {TableAction.READ, TableAction.EDIT_RECORDS, TableAction.EDIT_VIEWS, TableAction.COMMENT},
+    "read": {TableAction.READ, TableAction.COMMENT},
 }
 
-# 表成员 "read" 角色允许的动作集合
-_READ_MEMBER_ACTIONS: set[TableAction] = {
-    TableAction.READ,
-    TableAction.COMMENT,
-}
+
+def _resolve_member_role_permissions(
+    db: Session,
+    member: TableMember,
+) -> set[TableAction] | None:
+    """解析 TableMember.role 为具体允许动作集合.
+
+    返回 None 表示既不是内置 read/write 也不是合法 Role.code，
+    调用方按"无成员授权"继续往下走.
+    """
+    builtin = _BUILTIN_MEMBER_ACTIONS.get(member.role)
+    if builtin is not None:
+        return builtin
+    role = db.query(Role).filter(Role.code == member.role).first()
+    if role is None:
+        return None
+    allowed: set[TableAction] = set()
+    for action in TableAction:
+        if role.has_action(action.value):
+            allowed.add(action)
+    return allowed
 
 
 def check_action(
@@ -91,11 +105,12 @@ def check_action(
     # ── 3. 表成员授权 ──
     member = db.query(TableMember).filter(TableMember.table_id == table.id, TableMember.user_id == user.id).first()
     if member is not None:
-        if member.role == "write":
-            return action in _WRITE_MEMBER_ACTIONS
-        if member.role == "read":
-            return action in _READ_MEMBER_ACTIONS
-        # 其它未知角色按无成员处理，继续走阈值判定
+        allowed = _resolve_member_role_permissions(db, member)
+        if allowed is None:
+            # 角色 code 无效或未定义，忽略成员记录，继续走阈值判定
+            pass
+        else:
+            return action in allowed
 
     # ── 4. TablePermission 阈值 ──
     perm = db.get(TablePermission, table.id)
