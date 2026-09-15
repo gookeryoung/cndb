@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.access import TableAction
 from cndb.plugins.tables.ddl import (
     _column_needs_rebuild,
     add_column,
@@ -21,9 +22,8 @@ from cndb.plugins.tables.ddl import (
 from cndb.plugins.tables.field_ops import clone_fields_between_tables, resolve_source_fields
 from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, default_registry, normalize_field_type
 from cndb.plugins.tables.models import DataField, DataTable
-from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
+from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import FieldCreate, FieldImportRequest, FieldImportResponse, FieldResponse, FieldUpdate
-from cndb.plugins.workspaces.models import WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
 
@@ -66,8 +66,7 @@ def create_field(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataField:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
 
     # 校验 field_type 是否存在
     ft = default_registry.get(payload.field_type)
@@ -118,8 +117,7 @@ def list_fields(
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = False,
 ) -> list[DataField]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    _get_table_or_404(table_id, workspace_id, db)
+    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     query = db.query(DataField).filter(DataField.table_id == table_id)
     if not include_trashed:
         query = query.filter(DataField.trashed == False)  # noqa: E712
@@ -135,8 +133,7 @@ def update_field(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataField:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     df = db.query(DataField).filter(DataField.id == field_id, DataField.table_id == table_id).first()
     if df is None:
         raise HTTPException(status_code=404, detail="字段不存在")
@@ -204,8 +201,7 @@ def reorder_fields(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[DataField]:
     """批量调整字段顺序（按传入顺序赋值 order 字段）."""
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
-    _get_table_or_404(table_id, workspace_id, db)  # 校验表存在
+    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)  # 校验表存在
 
     fields = (
         db.query(DataField)
@@ -233,8 +229,7 @@ def delete_field(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     df = db.query(DataField).filter(DataField.id == field_id, DataField.table_id == table_id).first()
     if df is None:
         raise HTTPException(status_code=404, detail="字段不存在")
@@ -267,8 +262,7 @@ def import_fields(
     - 同名冲突时默认 400，skip_conflicts=True 时跳过冲突字段并返回说明.
     """
 
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
-    dst = _get_table_or_404(table_id, workspace_id, db)
+    dst = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
 
     # 源表必须存在（允许跨工作区，但用户必须在目标表工作区有 ADMIN 权限）
     src = db.get(DataTable, payload.source_table_id)
