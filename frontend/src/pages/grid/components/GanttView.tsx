@@ -10,11 +10,14 @@
  * - assignee_field:    负责人字段（可选）
  * - time_scale:        时间粒度 'day' | 'week' | 'month' | 'quarter'（默认 'month'）
  * - show_today_line:   是否显示今日标线（默认 true）
+ *
+ * 滚动策略：用一个真实的 overflow-x: auto 横向滚动容器包住右侧全部时间轴内容，
+ * header 和 body 各自独立但横向同步；同时支持鼠标滚轮转横向 + 滚动到今天按钮。
  */
 
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Segmented, Button, Tooltip, Empty } from 'antd'
-import { LeftOutlined, RightOutlined, ReloadOutlined, CalendarOutlined } from '@ant-design/icons'
+import { LeftOutlined, RightOutlined, ReloadOutlined, CalendarOutlined, HomeOutlined } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, GANTT_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
@@ -70,6 +73,8 @@ function densityStyle(density: Density) {
       titleFontSize: 12,
       metaFontSize: 10,
       headerFontSize: 11,
+      groupHeaderHeight: 34,
+      wbsIndent: 16,
     }
   }
   if (density === 'spacious') {
@@ -81,6 +86,8 @@ function densityStyle(density: Density) {
       titleFontSize: 14,
       metaFontSize: 12,
       headerFontSize: 13,
+      groupHeaderHeight: 44,
+      wbsIndent: 20,
     }
   }
   return {
@@ -91,6 +98,8 @@ function densityStyle(density: Density) {
     titleFontSize: 13,
     metaFontSize: 11,
     headerFontSize: 12,
+    groupHeaderHeight: 38,
+    wbsIndent: 18,
   }
 }
 
@@ -119,13 +128,37 @@ function computeTimeRange(tasks: GanttTask[]): { min: Date; max: Date } | null {
   return { min: paddedMin, max: paddedMax }
 }
 
-/** 根据时间刻度生成时间轴 header 分段 */
+/** 时间轴分段 —— 带稀疏显示策略的标签 */
 interface TimelineSegment {
   label: string
   date: Date
   width: number  // 像素宽度
   days: number   // 覆盖天数
-  left: number   // 累积左侧偏移（像素），一次算好避免 slice+reduce
+  left: number   // 累积左侧偏移（像素）
+  showLabel: boolean  // 是否应该渲染标签（稀疏策略）
+}
+
+/** 判断某一天是否值得显示标签：月初 / 周一 / 季度初 */
+function shouldShowLabel(d: Date, scale: TimeScale, width: number): boolean {
+  // 宽度阈值：太窄就不显示，避免拥挤
+  const MIN_LABEL_WIDTH: Record<TimeScale, number> = {
+    day: 28,
+    week: 60,
+    month: 80,
+    quarter: 120,
+  }
+  if (width < MIN_LABEL_WIDTH[scale]) return false
+
+  if (scale === 'day') {
+    // day 刻度：只在月初或周一显示
+    return d.getDate() === 1 || d.getDay() === 1
+  }
+  if (scale === 'week') {
+    // week 刻度：只在月初那一周显示
+    return d.getDate() <= 7
+  }
+  // month / quarter：有足够宽度就显示（它们本身就稀疏）
+  return true
 }
 
 function buildTimeline(
@@ -140,12 +173,14 @@ function buildTimeline(
     for (let i = 0; i < totalDays; i++) {
       const d = new Date(range.min)
       d.setDate(d.getDate() + i)
+      const width = pxPerDay
       segments.push({
         label: `${d.getMonth() + 1}/${d.getDate()}`,
         date: d,
-        width: pxPerDay,
+        width,
         days: 1,
         left: 0, // 稍后统一回填
+        showLabel: shouldShowLabel(d, scale, width),
       })
     }
   } else if (scale === 'week') {
@@ -156,8 +191,15 @@ function buildTimeline(
       const weekEnd = new Date(weekStart)
       weekEnd.setDate(weekStart.getDate() + 6)
       const days = daysBetween(weekStart, weekEnd)
-      const label = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`
-      segments.push({ label, date: weekStart, width: days * pxPerDay, days, left: 0 })
+      const width = days * pxPerDay
+      segments.push({
+        label: `${weekStart.getMonth() + 1}/${weekStart.getDate()}`,
+        date: weekStart,
+        width,
+        days,
+        left: 0,
+        showLabel: shouldShowLabel(weekStart, scale, width),
+      })
       cursor = new Date(weekEnd)
       cursor.setDate(cursor.getDate() + 1)
     }
@@ -169,12 +211,14 @@ function buildTimeline(
         cursor < range.min ? range.min : cursor,
         monthEnd > range.max ? range.max : monthEnd,
       )
+      const width = days * pxPerDay
       segments.push({
         label: `${cursor.getFullYear()}年${cursor.getMonth() + 1}月`,
         date: cursor,
-        width: days * pxPerDay,
+        width,
         days,
         left: 0,
+        showLabel: shouldShowLabel(cursor, scale, width),
       })
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
     }
@@ -187,12 +231,14 @@ function buildTimeline(
         qEnd > range.max ? range.max : qEnd,
       )
       const qNum = Math.floor(cursor.getMonth() / 3) + 1
+      const width = days * pxPerDay
       segments.push({
         label: `${cursor.getFullYear()} Q${qNum}`,
         date: cursor,
-        width: days * pxPerDay,
+        width,
         days,
         left: 0,
+        showLabel: shouldShowLabel(cursor, scale, width),
       })
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 3, 1)
     }
@@ -556,17 +602,65 @@ export default function GanttView({
 
   const totalTimelineWidth = timeline.reduce((sum, t) => sum + t.width, 0)
 
-  // 导航状态（时间轴平移偏移）
-  const [scrollX, setScrollX] = useState(0)
+  // ── 滚动容器 ref —— 整个右侧时间轴用真实 overflow-x: auto ──
+  const hScrollRef = useRef<HTMLDivElement>(null)
 
-  // 按分组聚合（用于左侧分组分隔）
+  const scrollTo = useCallback((delta: number) => {
+    const el = hScrollRef.current
+    if (!el) return
+    el.scrollBy({ left: delta, behavior: 'smooth' })
+  }, [])
+
+  const scrollToToday = useCallback(() => {
+    const el = hScrollRef.current
+    if (!el || !timeRange) return
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    if (today < timeRange.min || today > timeRange.max) return
+    const offsetDays = daysBetween(timeRange.min, today) - 1
+    const todayLeft = offsetDays * pxPerDay
+    // 把今天滚到视口中间
+    const target = Math.max(0, todayLeft - el.clientWidth / 2)
+    el.scrollTo({ left: target, behavior: 'smooth' })
+  }, [timeRange, pxPerDay])
+
+  // 滚轮转横向：Shift+wheel 本来浏览器就支持，这里处理普通 wheel
+  useEffect(() => {
+    const el = hScrollRef.current
+    if (!el) return
+    const handler = (e: WheelEvent) => {
+      // 如果用户按了 Shift，让浏览器原生处理（已是横向）
+      if (e.shiftKey) return
+      // 如果纵向滚动量明显大于横向，转成横向
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault()
+        el.scrollLeft += e.deltaY
+      }
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [timeline])
+
+  // 按分组聚合（用于左侧分组分隔 + WBS 编号）
   const groupedTasks = useMemo(() => {
-    const groups: Array<{ key: string; label: string; tasks: GanttTask[]; color: string }> = []
+    const groups: Array<{
+      key: string
+      label: string
+      tasks: GanttTask[]
+      color: string
+      index: number   // 组序号（1-based，用于 WBS 编号）
+    }> = []
     for (const t of tasks) {
       const gkey = t.groupValue || '__nogroup__'
       let g = groups.find(g => g.key === gkey)
       if (!g) {
-        g = { key: gkey, label: t.groupValue || '未分组', tasks: [], color: groupColor(gkey) }
+        g = {
+          key: gkey,
+          label: t.groupValue || '未分组',
+          tasks: [],
+          color: groupColor(gkey),
+          index: groups.length + 1,
+        }
         groups.push(g)
       }
       g.tasks.push(t)
@@ -598,10 +692,8 @@ export default function GanttView({
     )
   }
 
-  // 导航函数
-  const scrollTimeline = (direction: -1 | 1) => {
-    setScrollX(prev => Math.max(0, prev + direction * 200))
-  }
+  // 导航步长自适应：视口宽度的 30%
+  const navStep = typeof window !== 'undefined' ? Math.max(120, Math.floor(window.innerWidth * 0.3)) : 200
 
   return (
     <div data-testid="gantt-view" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -614,6 +706,7 @@ export default function GanttView({
           gap: 12,
           borderBottom: '1px solid var(--cn-border)',
           background: 'var(--cn-bg-container)',
+          flexShrink: 0,
         }}
       >
         <div style={{ fontWeight: 600, fontSize: ds.headerFontSize + 2, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -638,48 +731,70 @@ export default function GanttView({
         </div>
       </div>
 
-      {/* 时间轴 header */}
-      <div
-        style={{
-          display: 'flex',
-          borderBottom: '1px solid var(--cn-border)',
-          background: 'var(--cn-bg-subtle)',
-          height: ds.headerHeight,
-          flexShrink: 0,
-        }}
-      >
-        {/* 左侧固定标题列 */}
+      {/* ─── 主体：左列固定 + 右列横向可滚动 ─── */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+        {/* 左侧固定列（header + body 合并为一个区域） */}
         <div
           style={{
             width: ds.leftColWidth,
             minWidth: ds.leftColWidth,
-            padding: '0 12px',
-            display: 'flex',
-            alignItems: 'center',
             borderRight: '1px solid var(--cn-border)',
-            fontWeight: 600,
-            fontSize: ds.headerFontSize,
             background: 'var(--cn-bg-container)',
+            display: 'flex',
+            flexDirection: 'column',
+            flexShrink: 0,
+            overflow: 'hidden',
           }}
         >
-          任务名称
+          {/* 左侧 header */}
+          <div
+            style={{
+              height: ds.headerHeight,
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 12px',
+              fontWeight: 600,
+              fontSize: ds.headerFontSize,
+              borderBottom: '1px solid var(--cn-border)',
+              background: 'var(--cn-bg-subtle)',
+            }}
+          >
+            {groupField ? 'WBS 分解' : '任务名称'}
+          </div>
+
+          {/* 左侧 body —— 跟随右侧纵向滚动 */}
+          <LeftColBody
+            groupedTasks={groupedTasks}
+            ds={ds}
+            groupField={!!groupField}
+            onRowClick={onRowClick}
+            rightScrollRef={hScrollRef}
+          />
         </div>
 
-        {/* 右侧时间轴 header */}
+        {/* 右侧时间轴区域 —— 单一真实横向滚动容器 */}
         <div
+          ref={hScrollRef}
           style={{
             flex: 1,
-            overflow: 'hidden',
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflowX: 'auto',
+            overflowY: 'hidden',
             position: 'relative',
           }}
         >
+          {/* header 行 */}
           <div
             style={{
-              display: 'flex',
-              height: '100%',
-              transform: `translateX(${-scrollX}px)`,
-              transition: 'transform 0.2s',
+              height: ds.headerHeight,
               minWidth: totalTimelineWidth,
+              display: 'flex',
+              borderBottom: '1px solid var(--cn-border)',
+              background: 'var(--cn-bg-subtle)',
+              flexShrink: 0,
             }}
           >
             {timeline.map((seg) => (
@@ -688,7 +803,7 @@ export default function GanttView({
                 style={{
                   width: seg.width,
                   minWidth: seg.width,
-                  padding: '0 8px',
+                  padding: '0 4px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -696,192 +811,68 @@ export default function GanttView({
                   fontSize: ds.headerFontSize,
                   color: 'var(--cn-text-muted)',
                   flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
                 }}
               >
-                {seg.label}
+                {seg.showLabel ? seg.label : null}
               </div>
             ))}
           </div>
-        </div>
-      </div>
 
-      {/* 任务行区域 */}
-      <div
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'relative', // 给背景层做定位基准
-        }}
-      >
-        {/* 全局时间轴背景层：网格线 + 今日标线，全图只渲染一次，避免每行重复 O(n×m) */}
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            left: ds.leftColWidth,
-            top: 0,
-            right: 0,
-            bottom: 0,
-            pointerEvents: 'none',
-            overflow: 'hidden',
-            zIndex: 0,
-          }}
-        >
+          {/* body 行区 —— 垂直滚动，内部内容按 totalTimelineWidth 铺开 */}
           <div
             style={{
               position: 'relative',
-              height: '100%',
+              flex: 1,
+              overflow: 'auto',
               minWidth: totalTimelineWidth,
-              transform: `translateX(${-scrollX}px)`,
             }}
           >
-            {/* 时间分割线 */}
-            {timeline.map((seg) => (
-              <div
-                key={seg.left}
-                style={{
-                  position: 'absolute',
-                  left: seg.left,
-                  top: 0,
-                  bottom: 0,
-                  width: seg.width,
-                  borderRight: '1px solid var(--cn-border)',
-                }}
-              />
-            ))}
-            {/* 今日标线 */}
-            {showToday && <TodayLine range={timeRange} pxPerDay={pxPerDay} />}
-          </div>
-        </div>
-
-        {/* 分组 + 任务行 */}
-        {groupedTasks.map((group) => (
-          <div key={group.key}>
-            {/* 分组标题（有 group_field 时显示） */}
-            {groupField && (
-              <div
-                style={{
-                  padding: '4px 12px',
-                  background: 'var(--cn-bg-subtle)',
-                  borderBottom: '1px solid var(--cn-border)',
-                  fontSize: ds.metaFontSize,
-                  fontWeight: 600,
-                  color: group.color || 'var(--cn-text-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  position: 'relative',
-                  zIndex: 1,
-                }}
-              >
-                <span
+            {/* 时间轴网格背景层 + 今日标线 */}
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: totalTimelineWidth,
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: 0,
+              }}
+            >
+              {timeline.map((seg) => (
+                <div
+                  key={seg.left}
                   style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    background: group.color || 'var(--cn-text-muted)',
+                    position: 'absolute',
+                    left: seg.left,
+                    top: 0,
+                    bottom: 0,
+                    width: seg.width,
+                    borderRight: '1px solid var(--cn-border)',
                   }}
                 />
-                {group.label}
-                <span style={{ color: 'var(--cn-text-muted)', fontWeight: 400 }}>
-                  ({group.tasks.length})
-                </span>
-              </div>
-            )}
+              ))}
+              {showToday && timeRange && <TodayLine range={timeRange} pxPerDay={pxPerDay} />}
+            </div>
 
-            {/* 任务行 */}
-            {group.tasks.map((task) => (
-              <div
-                key={task.row.id}
-                onClick={() => onRowClick?.(task.row)}
-                style={{
-                  display: 'flex',
-                  height: ds.rowHeight,
-                  borderBottom: '1px solid var(--cn-border)',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  zIndex: 1,
-                  transition: 'background 0.15s',
-                  background: 'var(--cn-bg-container)', // 盖住下方背景层
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--cn-bg-subtle)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = ''
-                }}
-              >
-                {/* 左侧任务名称 */}
-                <div
-                  style={{
-                    width: ds.leftColWidth,
-                    minWidth: ds.leftColWidth,
-                    padding: '0 12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    borderRight: '1px solid var(--cn-border)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: ds.titleFontSize,
-                      fontWeight: 500,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {task.title}
-                  </div>
-                  {task.assignee && (
-                    <div
-                      style={{
-                        fontSize: ds.metaFontSize,
-                        color: 'var(--cn-text-muted)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      👤 {task.assignee}
-                    </div>
-                  )}
-                </div>
-
-                {/* 右侧甘特条区域 */}
-                <div
-                  style={{
-                    flex: 1,
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      position: 'relative',
-                      height: '100%',
-                      minWidth: totalTimelineWidth,
-                      transform: `translateX(${-scrollX}px)`,
-                    }}
-                  >
-                    {/* 甘特条（唯一需要每行渲染的元素） */}
-                    <GanttBar
-                      task={task}
-                      range={timeRange}
-                      pxPerDay={pxPerDay}
-                      barHeight={ds.barHeight}
-                      onRowClick={onRowClick}
-                    />
-                  </div>
-                </div>
-              </div>
+            {/* 分组 + 任务行 */}
+            {groupedTasks.map((group) => (
+              <GroupBlock
+                key={group.key}
+                group={group}
+                ds={ds}
+                groupField={!!groupField}
+                timeRange={timeRange!}
+                pxPerDay={pxPerDay}
+                totalTimelineWidth={totalTimelineWidth}
+                onRowClick={onRowClick}
+              />
             ))}
           </div>
-        ))}
+        </div>
       </div>
 
       {/* 底部导航栏 */}
@@ -897,13 +888,16 @@ export default function GanttView({
         }}
       >
         <Tooltip title="时间轴左移">
-          <Button size="small" icon={<LeftOutlined />} onClick={() => scrollTimeline(-1)} />
+          <Button size="small" icon={<LeftOutlined />} onClick={() => scrollTo(-navStep)} />
         </Tooltip>
         <Tooltip title="时间轴右移">
-          <Button size="small" icon={<RightOutlined />} onClick={() => scrollTimeline(1)} />
+          <Button size="small" icon={<RightOutlined />} onClick={() => scrollTo(navStep)} />
         </Tooltip>
-        <Tooltip title="重置位置">
-          <Button size="small" icon={<ReloadOutlined />} onClick={() => setScrollX(0)} />
+        <Tooltip title="滚动到今天">
+          <Button size="small" icon={<HomeOutlined />} onClick={scrollToToday} />
+        </Tooltip>
+        <Tooltip title="回到起点">
+          <Button size="small" icon={<ReloadOutlined />} onClick={() => hScrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' })} />
         </Tooltip>
         <span style={{ fontSize: ds.metaFontSize, color: 'var(--cn-text-muted)' }}>
           {fmtDate(timeRange.min)} ~ {fmtDate(timeRange.max)}
@@ -912,3 +906,243 @@ export default function GanttView({
     </div>
   )
 }
+
+// ── 左侧列 body —— 与右侧纵向滚动同步 ──────────────────
+
+interface LeftColBodyProps {
+  groupedTasks: Array<{
+    key: string
+    label: string
+    tasks: GanttTask[]
+    color: string
+    index: number
+  }>
+  ds: ReturnType<typeof densityStyle>
+  groupField: boolean
+  onRowClick?: (r: RowResponse) => void
+  rightScrollRef: React.RefObject<HTMLDivElement>
+}
+
+const LeftColBody = memo(function LeftColBody({ groupedTasks, ds, groupField, onRowClick, rightScrollRef }: LeftColBodyProps) {
+  const leftRef = useRef<HTMLDivElement>(null)
+
+  // 同步右侧 body 的纵向滚动 —— 用 MutationObserver 或直接 wheel 事件
+  // 简单方案：监听左侧 wheel，转发到右侧；监听右侧 scroll，同步左侧
+  useEffect(() => {
+    const leftEl = leftRef.current
+    const rightEl = rightScrollRef.current
+    if (!leftEl || !rightEl) return
+
+    // 找到右侧 body 里的纵向滚动容器（overflow: auto）
+    const rightBody = rightEl.querySelector<HTMLDivElement>('div[style*="overflow: auto"]')
+    if (!rightBody) return
+
+    let syncing = false
+    const onRightScroll = () => {
+      if (syncing) return
+      syncing = true
+      leftEl.scrollTop = rightBody.scrollTop
+      requestAnimationFrame(() => { syncing = false })
+    }
+    const onLeftScroll = () => {
+      if (syncing) return
+      syncing = true
+      rightBody.scrollTop = leftEl.scrollTop
+      requestAnimationFrame(() => { syncing = false })
+    }
+    rightBody.addEventListener('scroll', onRightScroll)
+    leftEl.addEventListener('scroll', onLeftScroll)
+    return () => {
+      rightBody.removeEventListener('scroll', onRightScroll)
+      leftEl.removeEventListener('scroll', onLeftScroll)
+    }
+  }, [rightScrollRef])
+
+  return (
+    <div
+      ref={leftRef}
+      style={{
+        flex: 1,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+      }}
+    >
+      {groupedTasks.map((group) => (
+        <div key={group.key}>
+          {/* 分组 header —— 有 group_field 时显示，否则不显示（任务直接平铺） */}
+          {groupField && (
+            <div
+              style={{
+                height: ds.groupHeaderHeight,
+                padding: '0 12px',
+                background: `${group.color}15`,
+                borderBottom: '1px solid var(--cn-border)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: ds.metaFontSize,
+                fontWeight: 600,
+                color: group.color,
+                position: 'relative',
+                flexShrink: 0,
+              }}
+            >
+              {/* 左侧色条 */}
+              <span
+                style={{
+                  width: 3,
+                  height: 16,
+                  borderRadius: 2,
+                  background: group.color,
+                  flexShrink: 0,
+                }}
+              />
+              {/* WBS 组编号 */}
+              <span
+                style={{
+                  fontSize: ds.metaFontSize - 1,
+                  color: 'var(--cn-text-muted)',
+                  fontWeight: 500,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                }}
+              >
+                G{group.index}
+              </span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {group.label}
+              </span>
+              <span style={{ color: 'var(--cn-text-muted)', fontWeight: 400, marginLeft: 'auto' }}>
+                ({group.tasks.length})
+              </span>
+            </div>
+          )}
+
+          {/* 任务行 —— 带树状连接线 */}
+          {group.tasks.map((task, tIdx) => {
+            const isLast = tIdx === group.tasks.length - 1
+            return (
+              <div
+                key={task.row.id}
+                onClick={() => onRowClick?.(task.row)}
+                style={{
+                  height: ds.rowHeight,
+                  padding: '0 12px',
+                  borderBottom: '1px solid var(--cn-border)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  position: 'relative',
+                  gap: 8,
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--cn-bg-subtle)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '' }}
+              >
+                {/* WBS 编号 */}
+                <span
+                  style={{
+                    fontSize: ds.metaFontSize - 1,
+                    color: 'var(--cn-text-muted)',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    flexShrink: 0,
+                    minWidth: groupField ? 36 : 28,
+                  }}
+                >
+                  {groupField ? `G${group.index}.${tIdx + 1}` : `${tIdx + 1}`}
+                </span>
+                {/* 树状连接符 */}
+                <span
+                  style={{
+                    color: 'var(--cn-text-muted)',
+                    fontSize: ds.titleFontSize,
+                    lineHeight: 1,
+                    flexShrink: 0,
+                    width: 10,
+                    textAlign: 'center',
+                  }}
+                >
+                  {groupField ? (isLast ? '└' : '├') : (tIdx === group.tasks.length - 1 ? '—' : '│')}
+                </span>
+                {/* 任务标题 */}
+                <div
+                  style={{
+                    flex: 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontSize: ds.titleFontSize,
+                    fontWeight: 500,
+                  }}
+                >
+                  {task.title}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+})
+
+// ── 分组块（右侧 body 里的一组任务行 + 甘特条） ────────────
+
+interface GroupBlockProps {
+  group: {
+    key: string
+    label: string
+    tasks: GanttTask[]
+    color: string
+    index: number
+  }
+  ds: ReturnType<typeof densityStyle>
+  groupField: boolean
+  timeRange: { min: Date; max: Date }
+  pxPerDay: number
+  totalTimelineWidth: number
+  onRowClick?: (r: RowResponse) => void
+}
+
+const GroupBlock = memo(function GroupBlock({ group, ds, groupField, timeRange, pxPerDay, totalTimelineWidth, onRowClick }: GroupBlockProps) {
+  return (
+    <div style={{ position: 'relative', width: totalTimelineWidth, zIndex: 1 }}>
+      {/* 分组 header 背景条 —— 与左侧高度一致 */}
+      {groupField && (
+        <div
+          aria-hidden
+          style={{
+            height: ds.groupHeaderHeight,
+            background: `${group.color}15`,
+            borderBottom: '1px solid var(--cn-border)',
+          }}
+        />
+      )}
+
+      {/* 任务行 */}
+      {group.tasks.map((task) => (
+        <div
+          key={task.row.id}
+          onClick={() => onRowClick?.(task.row)}
+          style={{
+            height: ds.rowHeight,
+            borderBottom: '1px solid var(--cn-border)',
+            position: 'relative',
+            background: 'var(--cn-bg-container)',
+            cursor: 'pointer',
+            transition: 'background 0.15s',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--cn-bg-subtle)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = '' }}
+        >
+          <GanttBar
+            task={task}
+            range={timeRange}
+            pxPerDay={pxPerDay}
+            barHeight={ds.barHeight}
+            onRowClick={onRowClick}
+          />
+        </div>
+      ))}
+    </div>
+  )
+})
