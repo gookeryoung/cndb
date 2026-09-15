@@ -1,9 +1,59 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import path from 'path'
+import fs from 'node:fs'
+import path from 'node:path'
+
+// ── 前端构建产物同步到 src/cndb/static（保留 .gitkeep）────────────────
+// Vite 直接把 outDir 指向 src/cndb/static 且 emptyOutDir=true 时，
+// 构建会先清空目标目录，.gitkeep 被抹掉，后续 hatchling 打包失败。
+// 这里用中间目录 dist 构建，构建完成后再同步到静态目录，同时保留
+// .gitkeep 哨兵文件。
+function syncStaticPlugin() {
+  return {
+    name: 'sync-static',
+    closeBundle() {
+      const repoRoot = path.resolve(__dirname, '..')
+      const distDir = path.resolve(__dirname, 'dist')
+      const staticDir = path.resolve(repoRoot, 'src/cndb/static')
+      const gitkeepPath = path.join(staticDir, '.gitkeep')
+
+      // 1) 确保目标目录存在且 .gitkeep 不丢
+      fs.mkdirSync(staticDir, { recursive: true })
+      const hadGitkeep = fs.existsSync(gitkeepPath)
+
+      // 2) 清空 static 目录下的旧产物（保留 .gitkeep）
+      for (const entry of fs.readdirSync(staticDir)) {
+        if (entry === '.gitkeep') continue
+        const full = path.join(staticDir, entry)
+        fs.rmSync(full, { recursive: true, force: true })
+      }
+
+      // 3) 把 dist/* 复制过去
+      if (fs.existsSync(distDir)) {
+        for (const entry of fs.readdirSync(distDir)) {
+          fs.cpSync(
+            path.join(distDir, entry),
+            path.join(staticDir, entry),
+            { recursive: true },
+          )
+        }
+      }
+
+      // 4) 兜底保证 .gitkeep 存在
+      if (!hadGitkeep) {
+        fs.writeFileSync(gitkeepPath, '')
+      }
+
+      console.log(
+        `[sync-static] ${path.relative(repoRoot, distDir)} → ${path.relative(repoRoot, staticDir)}` +
+        (hadGitkeep ? '（.gitkeep 已保留）' : '（.gitkeep 已补回）'),
+      )
+    },
+  }
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), syncStaticPlugin()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -19,7 +69,8 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: path.resolve(__dirname, '../src/cndb/static'),
+    // 中间构建目录（由 syncStaticPlugin 在 closeBundle 后同步到 src/cndb/static）
+    outDir: path.resolve(__dirname, 'dist'),
     emptyOutDir: true,
     // 现代浏览器目标：去掉 asyncIterator/Map/Set/Proxy 等老 polyfill
     target: 'es2022',
