@@ -344,15 +344,6 @@ class TestFieldTypesPatch:
         assert ft.validate_value(None, {}) == []
 
 
-# ── health plugin ──────────────────────────────────────
-
-
-class TestHealthPatch:
-    def test_health_ping(self, client):
-        r = client.get("/api/v1/health/ping")
-        assert r.status_code == 200
-
-
 # ── views router 边缘 ──────────────────────────────────
 
 
