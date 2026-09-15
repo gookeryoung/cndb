@@ -129,13 +129,15 @@ export default function PermissionEditor({ fields, data, wid, tid, owner }: Perm
   })
 
   // ── 可选用户（排除当前已在成员列表里的 + 排除当前拥有者） ──
+  // 注意：Select options 的 value 统一用 string，避免 Ant Design 内部类型匹配失败
+  // （number vs string 类型不一致时 Select 可能把原始 value 渲染出来而不是 label）
   const candidateUsers = useMemo(() => {
     const existingIds = new Set(members.map(m => String(m.user_id)))
     const ownerIdStr = owner ? String(owner.id) : null
     return wsMembers
       .filter(m => !existingIds.has(String(m.user.id)) && String(m.user.id) !== ownerIdStr)
       .map(m => ({
-        value: Number(m.user.id),
+        value: String(m.user.id),
         label: `${m.user.username}${m.user.nickname ? ` (${m.user.nickname})` : ''}`,
       }))
   }, [wsMembers, members, owner])
@@ -315,17 +317,17 @@ function TransferOwnerModal({
 }: {
   open: boolean
   onClose: () => void
-  candidates: Array<{ value: number; label: string }>
+  candidates: Array<{ value: string; label: string }>
   loading: boolean
   onSubmit: (userId: number) => void
 }) {
-  const [selected, setSelected] = useState<number | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
   return (
     <Modal
       title="转让所有权"
       open={open}
       onCancel={onClose}
-      onOk={() => selected != null && onSubmit(selected)}
+      onOk={() => selected != null && onSubmit(Number(selected))}
       okText="确认转让"
       okType="danger"
       confirmLoading={loading}
@@ -355,18 +357,18 @@ function AddMemberModal({
 }: {
   open: boolean
   onClose: () => void
-  candidates: Array<{ value: number; label: string }>
+  candidates: Array<{ value: string; label: string }>
   loading: boolean
   onSubmit: (userId: number, role: 'read' | 'write') => void
 }) {
-  const [userId, setUserId] = useState<number | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [role, setRole] = useState<'read' | 'write'>('read')
   return (
     <Modal
       title="添加表成员"
       open={open}
       onCancel={onClose}
-      onOk={() => userId != null && onSubmit(userId, role)}
+      onOk={() => userId != null && onSubmit(Number(userId), role)}
       okText="添加"
       confirmLoading={loading}
       okButtonProps={{ disabled: userId == null }}
