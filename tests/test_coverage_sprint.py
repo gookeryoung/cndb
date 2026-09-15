@@ -206,10 +206,10 @@ class TestWorkspacesSprint:
         )
         assert r.status_code in (403, 404)
 
-    def test_editor_cannot_invite(self, client_cov, auth_editor_cov, ws_cov):
+    def test_editor_cannot_add_member(self, client_cov, auth_editor_cov, ws_cov):
         r = client_cov.post(
-            f"/api/v1/workspaces/{ws_cov.id}/invite",
-            json={"user_ids": [99999]},
+            f"/api/v1/workspaces/{ws_cov.id}/members",
+            json={"username": "nonexistent_user", "role": "editor"},
             headers=auth_editor_cov,
         )
         assert r.status_code in (403, 404)
