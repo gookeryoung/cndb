@@ -1,7 +1,7 @@
 # CI/容器化用 Dockerfile
 # 使用国内镜像源拉取基础镜像（如不需要可替换为官方镜像）
 # 备选镜像源前缀：docker.1ms.run / dockerpull.com / docker.xuanyuan.me
-FROM docker.m.daocloud.io/python:3.14-slim
+FROM docker.m.daocloud.io/python:3.12-slim
 
 # ---- 国内镜像源 ----
 ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
@@ -33,7 +33,7 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
 RUN pip install --no-cache-dir uv -i https://mirrors.aliyun.com/pypi/simple/
 
 # 预装项目所需 Python 版本
-RUN uv python install 3.13 3.14
+RUN uv python install 3.12
 
 # 预装项目 dev 依赖（仅复制依赖描述文件，利用 Docker 层缓存）
 WORKDIR /workspace
