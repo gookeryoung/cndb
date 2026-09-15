@@ -168,8 +168,15 @@ def create_row(
 # ── READ ─────────────────────────────────────────────
 
 
-def get_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> dict[str, Any] | None:
-    """按主键读取单行，返回 dict；不存在返回 None（含软删除过滤 + 行级权限）."""
+def get_row(
+    engine: Any,
+    table: DataTable,
+    row_id: int,
+    db: Any = None,
+    *,
+    user: Any = None,
+) -> dict[str, Any] | None:
+    """按主键读取单行，返回 dict；不存在返回 None（含软删除过滤 + 行级权限 + 字段隐藏）."""
     sa_table = _get_sa_table(engine, table)
     row_scope = _build_row_scope_where(table, sa_table, db)
     where = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
@@ -179,7 +186,13 @@ def get_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> dict[
         row = conn.execute(sa_table.select().where(and_(*where))).first()
     if row is None:
         return None
-    return attach_links(engine, table, [_row_to_dict(table, sa_table, row)], db=db)[0]
+    result = attach_links(engine, table, [_row_to_dict(table, sa_table, row)], db=db)[0]
+    if db is not None and user is not None:
+        from cndb.plugins.tables.access import apply_field_hiding, get_hidden_field_names
+
+        hidden = get_hidden_field_names(db, table, user)
+        apply_field_hiding(result, hidden)
+    return result
 
 
 def _build_row_scope_where(table: DataTable, sa_table: Any, db: Any) -> Any | None:
@@ -210,6 +223,7 @@ def list_rows(
     offset: int = 0,
     include_trashed: bool = False,
     db: Any = None,
+    user: Any = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """列表查询，返回 (rows, total_count).
 
@@ -221,6 +235,7 @@ def list_rows(
         limit / offset: 分页.
         include_trashed: 是否包含软删除行.
         db: 元数据库会话（提供时 link 字段输出目标行摘要，否则回退 "#id"）.
+        user: 当前用户（提供时按 TablePermission.hidden_fields 做字段隐藏）.
     """
     from cndb.plugins.tables.query import compile_filters, compile_sorts
 
@@ -268,7 +283,16 @@ def list_rows(
 
         rows = conn.execute(query).all()
 
-    return attach_links(engine, table, [_row_to_dict(table, sa_table, r) for r in rows], db=db), total or 0
+    result = attach_links(engine, table, [_row_to_dict(table, sa_table, r) for r in rows], db=db)
+
+    # 字段隐藏
+    if db is not None and user is not None:
+        from cndb.plugins.tables.access import apply_field_hiding_rows, get_hidden_field_names
+
+        hidden = get_hidden_field_names(db, table, user)
+        apply_field_hiding_rows(result, hidden)
+
+    return result, total or 0
 
 
 # ── UPDATE ───────────────────────────────────────────
