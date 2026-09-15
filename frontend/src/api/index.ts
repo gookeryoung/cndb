@@ -128,6 +128,9 @@ export const workspaceApi = {
     api.patch<WorkspaceMember>(`/v1/workspaces/${wid}/members/${memberId}`, { role }).then(r => r.data),
   removeMember: (wid: number | string, memberId: number | string) =>
     api.delete(`/v1/workspaces/${wid}/members/${memberId}`).then(() => true),
+  /** 转让工作区所有权（仅 owner 可执行） */
+  transferOwner: (wid: number | string, userId: number) =>
+    api.post<WorkspaceMember>(`/v1/workspaces/${wid}/owner`, { user_id: userId }).then(r => r.data),
   /** 导出整个工作区为 JSON（结构+数据+视图） */
   exportWorkspace: (wid: number | string) =>
     api.get<WorkspaceExportData>(`/v1/workspaces/${wid}/export`).then(r => r.data),

@@ -810,3 +810,91 @@ class TestWorkspaceExportImport:
         data = r.json()
         assert data["imported_tables"] == 1
         assert data["imported_views"] == 1
+
+
+class TestWorkspaceOwnerTransfer:
+    """工作区所有权转让接口 POST /{wid}/owner."""
+
+    def _create_ws(self, client, owner_token: str) -> int:
+        r = client.post("/api/v1/workspaces", json={"name": "WS"}, headers=_headers(owner_token))
+        assert r.status_code == 201
+        return r.json()["id"]
+
+    def _member_user_id(self, client, ws_id: int, token: str, username: str) -> int:
+        r = client.get(f"/api/v1/workspaces/{ws_id}/members", headers=_headers(token))
+        return next(m["user"]["id"] for m in r.json() if m["user"]["username"] == username)
+
+    def test_owner_can_transfer_to_member(self, client, owner_user, admin_user):
+        """OWNER 可将所有权转让给工作区成员，自身降级为 ADMIN."""
+        token_o = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token_o)
+        # 把 admin 加为成员
+        client.post(
+            f"/api/v1/workspaces/{ws_id}/members",
+            json={"username": "admin", "role": "admin"},
+            headers=_headers(token_o),
+        )
+        target_uid = self._member_user_id(client, ws_id, token_o, "admin")
+        # 转让所有权
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/owner",
+            json={"user_id": target_uid},
+            headers=_headers(token_o),
+        )
+        assert r.status_code == 200
+        assert r.json()["role"] == "owner"
+        assert r.json()["user"]["username"] == "admin"
+        # 验证原 owner 已降级为 admin
+        members = client.get(f"/api/v1/workspaces/{ws_id}/members", headers=_headers(token_o)).json()
+        roles = {m["user"]["username"]: m["role"] for m in members}
+        assert roles["admin"] == "owner"
+        assert roles["owner"] == "admin"
+
+    def test_non_owner_cannot_transfer(self, client, owner_user, admin_user, member_user):
+        """非 OWNER（如 admin/viewer）转让所有权返回 403."""
+        token_o = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token_o)
+        client.post(
+            f"/api/v1/workspaces/{ws_id}/members",
+            json={"username": "admin", "role": "admin"},
+            headers=_headers(token_o),
+        )
+        client.post(
+            f"/api/v1/workspaces/{ws_id}/members",
+            json={"username": "member", "role": "viewer"},
+            headers=_headers(token_o),
+        )
+        target_uid = self._member_user_id(client, ws_id, token_o, "member")
+        # admin 尝试转让 → 403
+        token_a = _login_token(client, "admin", "passw0rd")
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/owner",
+            json={"user_id": target_uid},
+            headers=_headers(token_a),
+        )
+        assert r.status_code == 403
+
+    def test_transfer_to_non_member_returns_400(self, client, owner_user, admin_user, member_user):
+        """转让目标不是工作区成员时返回 400."""
+        token_o = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token_o)
+        # member_user 没有被加入工作区
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/owner",
+            json={"user_id": member_user.id},
+            headers=_headers(token_o),
+        )
+        assert r.status_code == 400
+
+    def test_transfer_to_self_is_idempotent(self, client, owner_user):
+        """把所有权转让给自己（已是 OWNER）幂等返回."""
+        token_o = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token_o)
+        self_uid = self._member_user_id(client, ws_id, token_o, "owner")
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/owner",
+            json={"user_id": self_uid},
+            headers=_headers(token_o),
+        )
+        assert r.status_code == 200
+        assert r.json()["role"] == "owner"
