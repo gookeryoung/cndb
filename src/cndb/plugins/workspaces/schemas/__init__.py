@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from cndb.plugins.workspaces.models import WorkspaceRole, WorkspaceVisibility
 
@@ -147,12 +147,74 @@ class WorkspaceImportResponse(BaseModel):
     imported_views: int
 
 
+# ── Role schemas ──────────────────────────────────────
+
+
+class RoleCreate(BaseModel):
+    """创建数据角色请求."""
+
+    code: str
+    name: str
+    description: str = ""
+    permissions: dict[str, bool] = {}
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def _strict_bool_perms(cls, v: Any) -> dict[str, bool]:
+        if v is None:
+            return {}
+        if not isinstance(v, dict):
+            raise ValueError("permissions 必须是对象")
+        for key, val in v.items():
+            if not isinstance(val, bool):
+                raise ValueError(f"permissions.{key} 必须为 bool，实际为 {type(val).__name__}")
+        return dict(v)
+
+
+class RoleUpdate(BaseModel):
+    """更新数据角色请求（部分字段）."""
+
+    model_config = ConfigDict(from_attributes=True)
+    name: str | None = None
+    description: str | None = None
+    permissions: dict[str, bool] | None = None
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def _strict_bool_perms(cls, v: Any) -> dict[str, bool] | None:
+        if v is None:
+            return None
+        if not isinstance(v, dict):
+            raise ValueError("permissions 必须是对象")
+        for key, val in v.items():
+            if not isinstance(val, bool):
+                raise ValueError(f"permissions.{key} 必须为 bool，实际为 {type(val).__name__}")
+        return dict(v)
+
+
+class RoleResponse(BaseModel):
+    """数据角色响应."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    code: str
+    name: str
+    description: str
+    permissions: dict[str, bool]
+    is_builtin: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 __all__ = [
     "MemberAddRequest",
     "MemberUpdateRequest",
     "MemberUserBrief",
     "PinRequest",
     "PinToggleResponse",
+    "RoleCreate",
+    "RoleResponse",
+    "RoleUpdate",
     "WorkspaceCreate",
     "WorkspaceDetailResponse",
     "WorkspaceExportResponse",
