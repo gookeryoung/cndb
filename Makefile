@@ -17,12 +17,10 @@ sync: ## 安装开发依赖
 	uv sync --extra dev
 
 frontend-sync: ## 安装前端依赖（pnpm install，惰性：node_modules 已存在则跳过）
-	@if [ ! -d frontend/node_modules ]; then \
-		echo "[frontend] node_modules 不存在，开始 pnpm install..."; \
-		cd frontend && pnpm install --frozen-lockfile; \
-	else \
-		echo "[frontend] node_modules 已存在，跳过 install"; \
-	fi
+	@uv run python -c "import os,subprocess;\
+print('[frontend] node_modules 已存在，跳过 install') if os.path.isdir('frontend/node_modules') else (\
+print('[frontend] node_modules 不存在，开始 pnpm install...'),\
+subprocess.run(['pnpm','install','--frozen-lockfile'],cwd='frontend',check=True))"
 
 frontend-lint: frontend-sync ## 前端 ESLint 检查
 	cd frontend && pnpm lint
@@ -39,10 +37,11 @@ build b: frontend-build ## 构建分发包 (前端 → wheel + sdist)
 	uv build
 
 clean c: ## 清理构建产物与缓存
-	rm -rf build/ dist/ wheels/ *.egg-info htmlcov/ .coverage .coverage.* coverage.xml docs/_build/ .tox/
-	rm -rf .ruff_cache/ .pyrefly_cache/ .mypy_cache/
-	find src tests -type d -name __pycache__ -exec rm -rf {} +
-	find src tests -type f -name "*.py[oc]" -delete
+	@uv run python -c "import shutil,pathlib,glob;\
+pts=['build','dist','wheels','*.egg-info','htmlcov','.coverage','.coverage.*','coverage.xml','docs/_build','.tox','.ruff_cache','.pyrefly_cache','.mypy_cache'];\
+[shutil.rmtree(m,ignore_errors=True) if pathlib.Path(m).is_dir() else pathlib.Path(m).unlink(missing_ok=True) for p in pts for m in glob.glob(p)];\
+[shutil.rmtree(d,ignore_errors=True) for base in ('src','tests') for d in pathlib.Path(base).rglob('__pycache__')];\
+[f.unlink(missing_ok=True) for base in ('src','tests') for f in pathlib.Path(base).rglob('*') if f.suffix in ('.pyc','.pyo')]"
 
 test: ## 运行测试（不含覆盖率）
 	uv run pytest -m "not slow" -n $(PYTEST_JOBS)
