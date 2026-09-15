@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.access import TableAction
 from cndb.plugins.tables.audit import ACTION_RESTORE, log_action
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.records import restore_row
@@ -185,8 +186,7 @@ def list_trashed_rows(
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     """列出某表的软删行（普通成员也可见 —— 让用户能恢复自己误删的行）."""
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     engine: Any = db.get_bind()
     try:
@@ -231,8 +231,7 @@ def restore_trashed_rows_batch(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
     """批量恢复软删行。payload: {row_ids: [int, ...]}；row_ids 为空时恢复全部."""
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     row_ids: list[int] = payload.get("row_ids", [])
     engine: Any = db.get_bind()
@@ -284,8 +283,7 @@ def purge_trashed_rows(
 
     仅工作区 ADMIN 可用.
     """
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
 
     cutoff = datetime.now(UTC)
     engine: Any = db.get_bind()

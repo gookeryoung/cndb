@@ -191,17 +191,13 @@ def apply_field_hiding_rows(
 
 def _get_member_role(db: Session, table: DataTable, user: User) -> WorkspaceRole | None:
     """查询用户在表所属工作区的角色."""
-    from cndb.plugins.workspaces.permissions import get_member_role as _gmr
-
-    ws = db.query(table.__class__.__bases__[0]).filter_by(id=table.workspace_id).first() if False else None
-    # 直接查 workspace
     from cndb.plugins.workspaces.models import Workspace
+    from cndb.plugins.workspaces.permissions import get_member_role as _gmr
 
     ws = db.get(Workspace, table.workspace_id)
     if ws is None:
         return None
-    role = _gmr(user, ws, db)
-    return role
+    return _gmr(user, ws, db)
 
 
 __all__ = [

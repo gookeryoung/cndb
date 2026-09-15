@@ -11,10 +11,10 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables import records as rec
+from cndb.plugins.tables.access import TableAction
 from cndb.plugins.tables.models import RowComment
-from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
+from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas.comments import CommentCreate, CommentResponse, CommentUpdate
-from cndb.plugins.workspaces.models import WorkspaceRole
 
 router = APIRouter(tags=["comments"])
 
@@ -31,8 +31,7 @@ def list_comments(
     db: Annotated[Session, Depends(get_db)],
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[RowComment]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    _get_table_or_404(table_id, workspace_id, db)
+    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.COMMENT)
     return (
         db.query(RowComment)
         .filter(RowComment.table_id == table_id, RowComment.row_id == record_id)
@@ -55,8 +54,7 @@ def create_comment(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> RowComment:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.COMMENT)
     row = rec.get_row(db.get_bind(), dt, record_id, db=db)
     if row is None:
         raise HTTPException(status_code=404, detail="行不存在")
@@ -89,8 +87,7 @@ def update_comment(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> RowComment:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    _get_table_or_404(table_id, workspace_id, db)
+    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.COMMENT)
     c = db.query(RowComment).filter(RowComment.id == comment_id, RowComment.table_id == table_id).first()
     if c is None:
         raise HTTPException(status_code=404, detail="评论不存在")
@@ -113,7 +110,7 @@ def delete_comment(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
+    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     c = db.query(RowComment).filter(RowComment.id == comment_id, RowComment.table_id == table_id).first()
     if c is None:
         raise HTTPException(status_code=404, detail="评论不存在")
