@@ -1,10 +1,15 @@
-/** 导入/导出对话框 — 文件上传 + 两阶段预览 + 异步进度轮询 + 多格式导出 + API 抓取追加. */
+/** 导入/导出对话框 — 文件上传 + 两阶段预览 + 异步进度轮询 + 多格式导出 + API 抓取追加.
+ *
+ * V2 扩展：
+ * - 高级导入设置（折叠区）：参考列多选 + 未知列策略
+ * - 预览面板三区域：统计卡片（可新增/可更新/警告/错误）+ 高级设置折叠 + Tabs（待新增/待更新/错误警告）
+ */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Modal, Tabs, Button, Progress, message, Space, Select, Alert, Empty, Upload, Switch, Table, Tag, Collapse } from 'antd'
-import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined, ApiOutlined, CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
+import { Modal, Tabs, Button, Progress, message, Space, Select, Alert, Empty, Upload, Switch, Table, Tag, Collapse, Radio, Descriptions } from 'antd'
+import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined, ApiOutlined, CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined, SettingOutlined } from '@ant-design/icons'
 import { importApi, exportApi } from '@/api'
-import type { ImportTaskInfo } from '@/api'
+import type { ImportTaskInfo, Field } from '@/api'
 import ApiImportDialog from './ApiImportDialog'
 
 const { Dragger } = Upload
@@ -13,6 +18,8 @@ interface Props {
   open: boolean
   wid: string
   tid: string
+  /** 当前表的活动字段列表（用于参考列多选） */
+  fields?: Field[]
   onClose: () => void
   /** 导入成功后调用（刷新列表等） */
   onImported?: () => void
@@ -25,27 +32,20 @@ interface Props {
 /** 允许的导入文件扩展名 */
 const ACCEPTED_EXT = ['.csv', '.json', '.xlsx', '.xls']
 
-interface ValidationReport {
-  total: number
-  valid_count: number
-  warning_count: number
-  error_count: number
-  skipped_columns: string[]
-  missing_required: string[]
-  warnings: Array<{ row_number: number; field: string; message: string }>
-  errors: Array<{ row_number: number; field: string; message: string }>
-  actually_imported?: number
-}
-
 type Phase = 'idle' | 'analyzing' | 'preview' | 'importing' | 'done' | 'failed'
 
-export default function ImportExportDialog({ open, wid, tid, onClose, onImported, viewId, viewName }: Props) {
+export default function ImportExportDialog({ open, wid, tid, fields = [], onClose, onImported, viewId, viewName }: Props) {
   const [task, setTask] = useState<ImportTaskInfo | null>(null)
   const [phase, setPhase] = useState<Phase>('idle')
   const [polling, setPolling] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [selectedFormat, setSelectedFormat] = useState<'json' | 'csv' | 'xlsx'>('csv')
   const [useViewFilter, setUseViewFilter] = useState(true)
+
+  // V2 高级设置
+  const [matchKeys, setMatchKeys] = useState<string[]>([])
+  const [unknownColsStrategy, setUnknownColsStrategy] = useState<'drop' | 'add_text_field'>('drop')
+
   const pollTimer = useRef<number | null>(null)
 
   // 关闭时清理
@@ -58,6 +58,8 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
       setTask(null)
       setPolling(false)
       setPhase('idle')
+      setMatchKeys([])
+      setUnknownColsStrategy('drop')
     }
   }, [open])
 
@@ -68,19 +70,15 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
       try {
         const info = await importApi.getTask(wid, tid, task.task_id)
         setTask(info)
-        // analyze 完成 → pending_confirm → 展示预览
         if (info.status === 'pending_confirm') {
           setPolling(false)
           setPhase('preview')
-          const report = (info as ImportTaskInfo & { validation_report?: ValidationReport }).validation_report
-          if (report) {
-            // file_columns 在后端报告里没有单独存，但 skipped_columns 能给提示
-          }
         } else if (info.status === 'done') {
           setPolling(false)
           setPhase('done')
-          if (info.imported_rows && info.imported_rows > 0) {
-            message.success(`导入完成：${info.imported_rows} 行`)
+          const imported = (info as ImportTaskInfo & { validation_report?: any }).validation_report?.actually_imported ?? info.imported_rows ?? 0
+          if (imported > 0) {
+            message.success(`导入完成：${imported} 行`)
           }
           onImported?.()
         } else if (info.status === 'failed') {
@@ -100,15 +98,14 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
     }
   }, [polling, task, wid, tid, onImported])
 
-  // 用 any 绕过 antd Upload 复杂类型
+  // 上传文件 + analyze（带 V2 参数）
   const beforeUpload = useCallback((file: any) => {
     const name: string = file?.name?.toLowerCase() || ''
     if (!ACCEPTED_EXT.some(ext => name.endsWith(ext))) {
       message.error(`仅支持 ${ACCEPTED_EXT.join(' / ')} 文件`)
       return false
     }
-    // 调 previewAnalyze（两阶段）
-    importApi.previewAnalyze(wid, tid, file as File)
+    importApi.previewAnalyze(wid, tid, file, matchKeys, unknownColsStrategy)
       .then((info) => {
         setTask(info)
         setPhase('analyzing')
@@ -119,7 +116,7 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
         message.error(msg)
       })
     return false
-  }, [wid, tid])
+  }, [wid, tid, matchKeys, unknownColsStrategy])
 
   const handleExport = useCallback(async () => {
     try {
@@ -144,11 +141,11 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
     }
   }, [wid, tid, selectedFormat, useViewFilter, viewId])
 
-  // ── 确认导入 ──
+  // 确认导入（带 V2 参数）
   const handleConfirm = async () => {
     if (!task) return
     try {
-      await importApi.confirmImport(wid, tid, task.task_id)
+      await importApi.confirmImport(wid, tid, task.task_id, matchKeys, unknownColsStrategy)
       setPhase('importing')
       setPolling(true)
     } catch (err) {
@@ -156,7 +153,6 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
     }
   }
 
-  // ── 取消/重置 ──
   const handleReset = () => {
     if (pollTimer.current) {
       clearInterval(pollTimer.current)
@@ -167,7 +163,6 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
     setPolling(false)
   }
 
-  // ── 下载失败行 ──
   const handleDownloadFailed = async () => {
     if (!task) return
     try {
@@ -210,11 +205,7 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
           <FileTextOutlined /> <span style={{ marginLeft: 6 }}>{task.filename}</span>
           <span style={{ marginLeft: 12, color: '#94a3b8' }}>· {task.format.toUpperCase()}</span>
         </div>
-        <Progress
-          percent={task.progress}
-          status={colorMap[task.status] || 'normal'}
-          size="small"
-        />
+        <Progress percent={task.progress} status={colorMap[task.status] || 'normal'} size="small" />
         <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
           {textMap[task.status] || task.status}
           {task.imported_rows != null && task.status === 'done' && ` · 已导入 ${task.imported_rows} 行`}
@@ -226,26 +217,74 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
     )
   }
 
-  // ── 渲染：预览面板 ──
+  // ── 渲染：高级导入设置（折叠区）──────────
+  const renderAdvancedSettings = () => {
+    const fieldOptions = fields
+      .filter(f => f.field_type !== 'link')  // link 不适合做 upsert key
+      .map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))
+    return (
+      <Collapse
+        size="small"
+        style={{ marginBottom: 12 }}
+        items={[{
+          key: 'adv',
+          label: <span><SettingOutlined /> 高级导入设置</span>,
+          children: (
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="参考列（upsert 匹配键）">
+                <Select
+                  mode="multiple"
+                  allowClear
+                  style={{ width: '100%' }}
+                  placeholder="不选则全部导入为新行；选了则按此列匹配已有行做更新"
+                  value={matchKeys}
+                  onChange={setMatchKeys}
+                  options={fieldOptions}
+                  disabled={fieldOptions.length === 0}
+                />
+              </Descriptions.Item>
+              <Descriptions.Item label="未知列处理策略">
+                <Radio.Group value={unknownColsStrategy} onChange={e => setUnknownColsStrategy(e.target.value)}>
+                  <Radio value="drop">丢弃（跳过文件里表中不存在的列）</Radio>
+                  <Radio value="add_text_field">自动新增字段（推断类型并建列）</Radio>
+                </Radio.Group>
+              </Descriptions.Item>
+            </Descriptions>
+          ),
+        }]}
+      />
+    )
+  }
+
+  // ── 渲染：预览面板（V2 四卡片 + Tab） ──
   const renderPreview = () => {
     if (!task || phase !== 'preview') return null
-    const report = (task as ImportTaskInfo & { validation_report?: ValidationReport }).validation_report
+    const report = (task as ImportTaskInfo & { validation_report?: any }).validation_report
     if (!report) return null
 
     const hasErrors = report.error_count > 0
-
-    const valid = report.valid_count
+    const newCount = report.new_count ?? report.valid_count
+    const updateCount = report.update_count ?? 0
     const warning = report.warning_count
     const error = report.error_count
+    const hasUpsert = updateCount > 0
+    const multiConflict = report.multi_key_conflicts ?? 0
+    const plannedColumns: Array<{name: string; field_type: string; sample_values?: string[]}> = report.planned_columns || []
 
     return (
       <div style={{ marginTop: 16 }}>
         {/* 统计卡片 */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
           <div style={{ flex: 1, padding: 12, background: '#f0fdf4', borderRadius: 8, textAlign: 'center' }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>{valid}</div>
-            <div style={{ fontSize: 12, color: '#166534' }}><CheckCircleOutlined /> 可导入</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>{newCount}</div>
+            <div style={{ fontSize: 12, color: '#166534' }}><CheckCircleOutlined /> 待新增</div>
           </div>
+          {hasUpsert && (
+            <div style={{ flex: 1, padding: 12, background: '#eff6ff', borderRadius: 8, textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#2563eb' }}>{updateCount}</div>
+              <div style={{ fontSize: 12, color: '#1e40af' }}>🔄 待更新</div>
+            </div>
+          )}
           {warning > 0 && (
             <div style={{ flex: 1, padding: 12, background: '#fffbeb', borderRadius: 8, textAlign: 'center' }}>
               <div style={{ fontSize: 20, fontWeight: 700, color: '#d97706' }}>{warning}</div>
@@ -260,21 +299,41 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
           )}
         </div>
 
-        {/* 跳过的列 */}
-        {(report.skipped_columns.length > 0 || report.missing_required.length > 0) && (
+        {multiConflict > 0 && (
+          <Alert
+            type="warning"
+            style={{ marginBottom: 12 }}
+            showIcon
+            message={`参考列匹配到 ${multiConflict} 组多行冲突（同 key 对应多条已有数据），将取 ID 最小的一行更新`}
+          />
+        )}
+
+        {renderAdvancedSettings()}
+
+        {/* 未知列提示 / 规划 */}
+        {(report.skipped_columns?.length > 0 || report.missing_required?.length > 0) && (
           <Alert
             type="warning"
             style={{ marginBottom: 12 }}
             showIcon
             message={
               <div style={{ fontSize: 12 }}>
-                {report.skipped_columns.length > 0 && (
+                {report.skipped_columns?.length > 0 && (
                   <div>
                     <Tag color="orange">已忽略的文件列</Tag>
                     {report.skipped_columns.join(', ')}
+                    {unknownColsStrategy === 'drop' && <span style={{ marginLeft: 8, color: '#d97706' }}>（自动新增字段已关闭，可在上方设置中开启）</span>}
                   </div>
                 )}
-                {report.missing_required.length > 0 && (
+                {plannedColumns.length > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    <Tag color="green">将自动新增字段</Tag>
+                    {plannedColumns.map((pc: any) => (
+                      <Tag key={pc.name} color="blue">{pc.name} <span style={{ color: '#64748b' }}>({pc.field_type})</span></Tag>
+                    ))}
+                  </div>
+                )}
+                {report.missing_required?.length > 0 && (
                   <div>
                     <Tag color="red">必填但文件缺失</Tag>
                     {report.missing_required.join(', ')}
@@ -285,49 +344,60 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
           />
         )}
 
-        {/* 错误/警告折叠列表 */}
-        {(report.errors.length > 0 || report.warnings.length > 0) && (
-          <Collapse
-            size="small"
-            style={{ marginBottom: 12 }}
-            items={[
-              {
-                key: 'errors',
-                label: `错误明细 (${report.errors.length})`,
-                children: (
-                  <Table
-                    size="small"
-                    pagination={{ pageSize: 10 }}
-                    dataSource={report.errors}
-                    rowKey={(_, i) => `e${i}`}
-                    columns={[
-                      { title: '行号', dataIndex: 'row_number', width: 80 },
-                      { title: '字段', dataIndex: 'field', width: 120 },
-                      { title: '原因', dataIndex: 'message' },
-                    ]}
-                  />
-                ),
-              },
-              ...(report.warnings.length > 0 ? [{
-                key: 'warnings',
-                label: `警告明细 (${report.warnings.length})`,
-                children: (
-                  <Table
-                    size="small"
-                    pagination={{ pageSize: 10 }}
-                    dataSource={report.warnings}
-                    rowKey={(_, i) => `w${i}`}
-                    columns={[
-                      { title: '行号', dataIndex: 'row_number', width: 80 },
-                      { title: '字段', dataIndex: 'field', width: 120 },
-                      { title: '原因', dataIndex: 'message' },
-                    ]}
-                  />
-                ),
-              }] : []),
-            ]}
-          />
-        )}
+        {/* 主预览 Tab */}
+        <Tabs
+          size="small"
+          defaultActiveKey={hasUpsert ? 'new' : 'errors'}
+          items={[
+            {
+              key: 'new',
+              label: `待新增 (${newCount})`,
+              disabled: newCount === 0,
+              children: renderPreviewTab(report.new_preview, { match_key_values: 1, field_sample: 1 }),
+            },
+            ...(hasUpsert ? [{
+              key: 'update',
+              label: `待更新 (${updateCount})`,
+              children: renderPreviewTab(report.update_preview, { match_key_values: 1, field_sample: 1, existing_row_id: 1 }),
+            }] : []),
+            {
+              key: 'errors',
+              label: `错误 / 警告 (${report.errors.length + report.warnings.length})`,
+              children: (
+                <>
+                  {report.errors.length > 0 && (
+                    <Table
+                      size="small" pagination={{ pageSize: 10 }}
+                      dataSource={report.errors} rowKey={(_, i) => `e${i}`}
+                      columns={[
+                        { title: '行号', dataIndex: 'row_number', width: 80 },
+                        { title: '字段', dataIndex: 'field', width: 120 },
+                        { title: '原因', dataIndex: 'message' },
+                      ]}
+                    />
+                  )}
+                  {report.warnings.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ marginBottom: 4, color: '#92400e', fontSize: 13 }}>⚠️ 警告</div>
+                      <Table
+                        size="small" pagination={{ pageSize: 10 }}
+                        dataSource={report.warnings} rowKey={(_, i) => `w${i}`}
+                        columns={[
+                          { title: '行号', dataIndex: 'row_number', width: 80 },
+                          { title: '字段', dataIndex: 'field', width: 120 },
+                          { title: '原因', dataIndex: 'message' },
+                        ]}
+                      />
+                    </div>
+                  )}
+                  {report.errors.length === 0 && report.warnings.length === 0 && (
+                    <Empty description="无错误无警告" />
+                  )}
+                </>
+              ),
+            },
+          ]}
+        />
 
         {/* 操作按钮 */}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
@@ -338,12 +408,57 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
           <Button
             type="primary"
             onClick={handleConfirm}
-            disabled={valid === 0}
+            disabled={newCount + updateCount === 0}
           >
-            确认导入（{valid} 行）
+            确认导入（新增 {newCount} / 更新 {updateCount}）
           </Button>
         </div>
       </div>
+    )
+  }
+
+  // 通用预览表格
+  const renderPreviewTab = (
+    preview: any[] | undefined,
+    colKeys: Record<string, number>,
+  ) => {
+    if (!preview || preview.length === 0) {
+      return <Empty description="无数据" />
+    }
+    const columns: any[] = [{ title: '行号', dataIndex: 'row_number', width: 80 }]
+    if (colKeys.match_key_values) {
+      const kvs = Object.keys(preview[0].match_key_values || {})
+      kvs.forEach(k => columns.push({ title: `参考列: ${k}`, dataIndex: ['match_key_values', k], width: 120 }))
+    }
+    if (colKeys.existing_row_id) {
+      columns.push({ title: '命中行 ID', dataIndex: 'existing_row_id', width: 100, render: (v: number) => <Tag color="blue">#{v}</Tag> })
+    }
+    if (colKeys.field_sample) {
+      columns.push({
+        title: '主要字段样本',
+        dataIndex: 'field_sample',
+        render: (sample: Record<string, unknown>) => {
+          if (!sample) return '-'
+          return Object.entries(sample).map(([k, v]) => (
+            <Tag key={k} style={{ marginBottom: 2 }}>{k}: <span style={{ color: '#334155' }}>{String(v)}</span></Tag>
+          ))
+        },
+      })
+    }
+    return (
+      <>
+        <Table
+          size="small"
+          pagination={{ pageSize: 20 }}
+          scroll={{ y: 320 }}
+          dataSource={preview}
+          rowKey={(_, i) => `p${i}`}
+          columns={columns}
+        />
+        {preview.length >= 200 && (
+          <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>仅预览前 200 行，完整数据将全部导入</div>
+        )}
+      </>
     )
   }
 
@@ -365,12 +480,7 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
       )}
 
       {(phase === 'analyzing' || phase === 'importing') && (
-        <Alert
-          type="info"
-          message="处理中..."
-          style={{ marginTop: 12 }}
-          showIcon
-        />
+        <Alert type="info" message="处理中..." style={{ marginTop: 12 }} showIcon />
       )}
 
       {renderStatusBar()}
@@ -393,7 +503,7 @@ export default function ImportExportDialog({ open, wid, tid, onClose, onImported
       open={open}
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
-      width={720}
+      width={860}
       destroyOnHidden
     >
       <Tabs
