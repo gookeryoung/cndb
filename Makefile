@@ -11,13 +11,13 @@ CHECK_DEPS := $(if $(SKIP_CHECK),,check)
 .PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck check-fast check doc tox pub bump patch minor major push e2e
 
 help: ## 显示帮助信息
-	@uv run python -c "import re,sys;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
+	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
 
 sync: ## 安装开发依赖
 	uv sync --extra dev
 
 frontend-sync: ## 安装前端依赖（pnpm install，惰性：node_modules 已存在则跳过）
-	@uv run python -c "import os,subprocess;\
+	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import os,subprocess;\
 print('[frontend] node_modules 已存在，跳过 install') if os.path.isdir('frontend/node_modules') else (\
 print('[frontend] node_modules 不存在，开始 pnpm install...'),\
 subprocess.run(['pnpm','install','--frozen-lockfile'],cwd='frontend',check=True))"
@@ -37,7 +37,7 @@ build b: frontend-build ## 构建分发包 (前端 → wheel + sdist)
 	uv build
 
 clean c: ## 清理构建产物与缓存
-	@uv run python -c "import shutil,pathlib,glob;\
+	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import shutil,pathlib,glob;\
 pts=['build','dist','wheels','*.egg-info','htmlcov','.coverage','.coverage.*','coverage.xml','docs/_build','.tox','.ruff_cache','.pyrefly_cache','.mypy_cache'];\
 [shutil.rmtree(m,ignore_errors=True) if pathlib.Path(m).is_dir() else pathlib.Path(m).unlink(missing_ok=True) for p in pts for m in glob.glob(p)];\
 [shutil.rmtree(d,ignore_errors=True) for base in ('src','tests') for d in pathlib.Path(base).rglob('__pycache__')];\
@@ -48,7 +48,7 @@ test: ## 运行测试（不含覆盖率）
 
 cov: ## 运行测试并生成 HTML 覆盖率报告
 	uv run pytest --cov --cov-report=term --cov-fail-under=$(COV_THRESHOLD) --cov-report=html -n $(PYTEST_JOBS)
-	@uv run python -c "print('Coverage report: htmlcov/index.html')"
+	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); print('Coverage report: htmlcov/index.html')"
 
 e2e: frontend-sync ## 前端 E2E 测试（Playwright；需后端已启动）
 	cd frontend && pnpm e2e
@@ -86,5 +86,5 @@ pub:  ## 推送到pypi
 	uvx twine upload ./dist/**
 
 push: $(CHECK_DEPS) ## 推送代码到所有远程仓库
-	@uv run python -c "import subprocess as sp; [print(f'\u63a8\u9001 {r}...',flush=True) or (sp.run(['git','push',r],check=True) and sp.run(['git','push',r,'--tags'],check=True)) for r in sp.check_output(['git','remote'],text=True).split()]"
+	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import subprocess as sp; [print(f'\u63a8\u9001 {r}...',flush=True) or (sp.run(['git','push',r],check=True) and sp.run(['git','push',r,'--tags'],check=True)) for r in sp.check_output(['git','remote'],text=True).split()]"
 
