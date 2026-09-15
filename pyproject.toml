@@ -87,8 +87,10 @@ exclude = [
 [tool.fspack]
 entry-app-types = { cndb = "cli" }
 web-static-dirs = ["src/cndb/static"]
-nuitka = true
-ccache = true
+pyc_strip = true
+no_site   = true
+# nuitka = true
+# ccache = true
 
 [tool.uv]
 required-version = ">=0.5.0"
