@@ -293,8 +293,7 @@ async def import_table_analyze(
     """
     import json as _json
 
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         fmt = transfer.guess_format_from_filename(file.filename or "")
