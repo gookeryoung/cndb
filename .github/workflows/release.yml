@@ -27,11 +27,6 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Check .gitkeep sentinels
-        run: |
-          uv sync --frozen --extra lint
-          uv run python scripts/check_gitkeep.py
-
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -49,6 +44,9 @@ jobs:
           cd frontend
           pnpm install --frozen-lockfile
           pnpm build
+
+      - name: Check .gitkeep sentinels
+        run: python scripts/check_gitkeep.py
 
       - name: Build distributions
         run: uv build
