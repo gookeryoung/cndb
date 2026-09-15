@@ -76,7 +76,7 @@ tox: ## 多版本测试 (tox)
 
 BUMP_PART := $(filter-out bump,$(MAKECMDGOALS))
 
-bump: $(CHECK_DEPS) ## 版本号 bump (默认 patch，用法: make bump [minor|major])
+bump: ## 版本号 bump (默认 patch，用法: make bump [minor|major])
 	@uvx bump-my-version bump $(if $(BUMP_PART),$(firstword $(BUMP_PART)),patch) --tag
 
 patch minor major:
