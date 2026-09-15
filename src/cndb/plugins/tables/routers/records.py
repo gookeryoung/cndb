@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.access import TableAction
 from cndb.plugins.tables.records import (
     create_row,
     delete_row,
@@ -19,14 +20,13 @@ from cndb.plugins.tables.records import (
     trash_row,
     update_row,
 )
-from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
+from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import (
     RecordCreate,
     RecordListRequest,
     RecordListResponse,
     RecordUpdate,
 )
-from cndb.plugins.workspaces.models import WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/records", tags=["records"])
 
@@ -39,8 +39,7 @@ def create_record(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         row = create_row(db.get_bind(), dt, payload.values, db=db)
@@ -70,8 +69,7 @@ def list_records_get(
     """GET /records - 前端友好的列表端点."""
     import json as _json
 
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     def _parse(s: str | None):
         if not s:
@@ -92,6 +90,7 @@ def list_records_get(
             offset=offset,
             include_trashed=include_trashed,
             db=db,
+            user=current_user,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -108,8 +107,7 @@ def list_records(
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = Query(default=False),
 ) -> RecordListResponse:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     try:
         rows, total = list_rows(
@@ -122,6 +120,7 @@ def list_records(
             offset=payload.offset,
             include_trashed=include_trashed,
             db=db,
+            user=current_user,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -142,9 +141,8 @@ def get_record(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
-    dt = _get_table_or_404(table_id, workspace_id, db)
-    row = get_row(db.get_bind(), dt, record_id, db=db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    row = get_row(db.get_bind(), dt, record_id, db=db, user=current_user)
     if row is None:
         raise HTTPException(status_code=404, detail="行不存在")
     return row
@@ -159,8 +157,7 @@ def update_record(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         row = update_row(db.get_bind(), dt, record_id, payload.values, db=db)
@@ -181,8 +178,7 @@ def delete_record(
     db: Annotated[Session, Depends(get_db)],
     soft: bool = Query(default=True, description="软删除 vs 硬删除"),
 ) -> None:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     if soft:
         ok = trash_row(db.get_bind(), dt, record_id, db=db)
@@ -201,12 +197,11 @@ def restore_record(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
-    dt = _get_table_or_404(table_id, workspace_id, db)
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
     ok = restore_row(db.get_bind(), dt, record_id, db=db)
     if not ok:
         raise HTTPException(status_code=404, detail="行不存在或未在回收站中")
-    row = get_row(db.get_bind(), dt, record_id, db=db)
+    row = get_row(db.get_bind(), dt, record_id, db=db, user=current_user)
     if row is None:  # pragma: no cover - 防御性
         raise HTTPException(status_code=500, detail="恢复后读取失败")
     return row
