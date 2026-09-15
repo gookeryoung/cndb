@@ -8,7 +8,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "fastapi>=0.115.0",
+    "fastapi>=0.115.0,<0.126.0",       # 0.126+ 要求 pydantic>=2.7，与 pydantic<2.7（Win7 兼容）冲突
     "fastapi-offline>=1.7.0",
     "pydantic-settings>=2.2.0,<2.9.0",  # 与 pydantic <2.7 对齐（Win7 兼容）
     "pydantic>=2.6.0,<2.7.0",           # 2.7+ 带出 pydantic-core>=2.17，引入 Win8+ kernel32.GetSystemTimePreciseAsFileTime
