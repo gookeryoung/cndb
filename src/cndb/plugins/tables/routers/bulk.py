@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -280,14 +280,21 @@ async def import_table_analyze(
     file: UploadFile,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    match_keys: Annotated[str | None, Form()] = None,
+    unknown_cols_strategy: Annotated[str, Form()] = "drop",
 ) -> dict[str, Any]:
     """提交文件仅做解析+校验，返回 task_id（不写库）.
 
     任务进入 pending_validation → pending_confirm 状态，
     前端轮询 task_id 拿到 validation_report 后展示预览，
     用户点击确认 → POST /import/{task_id}/confirm 才真正落库.
+
+    V2: 接受 match_keys (JSON 字符串, list[str]) 和 unknown_cols_strategy ("drop" / "add_text_field").
     """
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    import json as _json
+
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
+    dt = _get_table_or_404(table_id, workspace_id, db)
 
     try:
         fmt = transfer.guess_format_from_filename(file.filename or "")
@@ -295,6 +302,22 @@ async def import_table_analyze(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     content = await file.read()
+
+    # 解析 match_keys JSON 字符串
+    parsed_keys: list[str] | None = None
+    if match_keys:
+        try:
+            parsed = _json.loads(match_keys)
+            if isinstance(parsed, list):
+                parsed_keys = [str(x) for x in parsed]
+        except _json.JSONDecodeError:
+            # 也接受逗号分隔的简单形式
+            parsed_keys = [k.strip() for k in match_keys.split(",") if k.strip()]
+
+    strategy = unknown_cols_strategy or "drop"
+    if strategy not in ("drop", "add_text_field"):
+        raise HTTPException(status_code=400, detail=f"无效的 unknown_cols_strategy: {strategy}")
+
     task = create_import_task(
         db,
         table_id=dt.id,
@@ -302,6 +325,8 @@ async def import_table_analyze(
         filename=file.filename or "upload",
         fmt=fmt,
         content=content,
+        match_keys=parsed_keys,
+        unknown_cols_strategy=strategy,
     )
 
     # 后台跑 analyze 阶段
@@ -315,6 +340,8 @@ async def import_table_analyze(
         "task_id": task.id,
         "status": task.status,
         "progress": task.progress,
+        "match_keys": parsed_keys or [],
+        "unknown_cols_strategy": strategy,
         "hint": "等待 pending_confirm 状态后，可通过 GET /import/async/{task_id} 查看校验报告",
     }
 
@@ -326,10 +353,13 @@ def import_table_confirm(
     task_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    match_keys: str | None = None,
+    unknown_cols_strategy: str | None = None,
 ) -> dict[str, Any]:
     """确认导入 — 把 pending_confirm 状态的任务推进到 running → done.
 
-    成功返回导入的行数和 result_ids.
+    V2: 允许前端在 confirm 阶段覆盖 analyze 时的 match_keys / unknown_cols_strategy.
+        覆盖后会重新跑 analyze（因为 validation_report 里需要新的 upsert 分类）。
     """
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
@@ -341,6 +371,35 @@ def import_table_confirm(
             status_code=400,
             detail=f"当前状态 {task.status} 不允许确认（需 pending_confirm）",
         )
+
+    # 覆盖参数（如果前端在 preview 阶段改了选择）
+    import json as _json
+
+    need_reanalyze = False
+    if match_keys is not None:
+        try:
+            parsed = _json.loads(match_keys)
+            if isinstance(parsed, list):
+                new_keys = [str(x) for x in parsed]
+            else:
+                new_keys = [k.strip() for k in match_keys.split(",") if k.strip()]
+        except _json.JSONDecodeError:
+            new_keys = [k.strip() for k in match_keys.split(",") if k.strip()]
+        if new_keys != list(task.match_keys or []):
+            task.match_keys = new_keys
+            need_reanalyze = True
+
+    if (
+        unknown_cols_strategy is not None
+        and unknown_cols_strategy in ("drop", "add_text_field")
+        and unknown_cols_strategy != task.unknown_cols_strategy
+    ):
+        task.unknown_cols_strategy = unknown_cols_strategy
+        need_reanalyze = True
+
+    if need_reanalyze:
+        # 覆盖后重新 commit（execute 阶段 Importer 会重新 analyze 以拿到新的 validation_report）
+        db.commit()
 
     # 后台跑 execute 阶段
     from sqlalchemy.orm import sessionmaker

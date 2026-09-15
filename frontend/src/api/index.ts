@@ -320,17 +320,42 @@ export const importApi = {
 
   // ── 预览式导入（两阶段：analyze → confirm） ──
   /** 上传文件仅做解析+校验，返回 task_id（不写库） */
-  previewAnalyze: (wid: number | string, tid: number | string, file: File) => {
+  previewAnalyze: (
+    wid: number | string,
+    tid: number | string,
+    file: File,
+    matchKeys?: string[],
+    unknownColsStrategy?: 'drop' | 'add_text_field',
+  ) => {
     const fd = new FormData()
     fd.append('file', file)
+    if (matchKeys && matchKeys.length > 0) {
+      fd.append('match_keys', JSON.stringify(matchKeys))
+    }
+    if (unknownColsStrategy && unknownColsStrategy !== 'drop') {
+      fd.append('unknown_cols_strategy', unknownColsStrategy)
+    }
     return api.post<ImportTaskInfo>(`/v1/workspaces/${wid}/tables/${tid}/import/analyze`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
   },
   /** 确认导入：把 pending_confirm 任务推进到 running → done */
-  confirmImport: (wid: number | string, tid: number | string, taskId: number | string) =>
+  confirmImport: (
+    wid: number | string,
+    tid: number | string,
+    taskId: number | string,
+    matchKeys?: string[],
+    unknownColsStrategy?: 'drop' | 'add_text_field',
+  ) =>
     api.post<{ task_id: number; status: string; message: string }>(
-      `/v1/workspaces/${wid}/tables/${tid}/import/${taskId}/confirm`
+      `/v1/workspaces/${wid}/tables/${tid}/import/${taskId}/confirm`,
+      null,
+      {
+        params: {
+          ...(matchKeys && matchKeys.length > 0 ? { match_keys: JSON.stringify(matchKeys) } : {}),
+          ...(unknownColsStrategy && unknownColsStrategy !== 'drop' ? { unknown_cols_strategy: unknownColsStrategy } : {}),
+        },
+      }
     ).then(r => r.data),
   /** 下载失败行文件 */
   downloadFailedRows: async (
