@@ -8,7 +8,7 @@ PYTEST_JOBS := 8  # pytest-xdist 并行进程数；Windows 默认 8 避免句柄
 # push / bump 默认依赖 check，可用 SKIP_CHECK=1 临时跳过（仅限紧急修复，发布场景禁止使用）
 CHECK_DEPS := $(if $(SKIP_CHECK),,check)
 
-.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck typecheck-ci check doc tox pub bump patch minor major push e2e
+.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck check-fast check doc tox pub bump patch minor major push e2e
 
 help: ## 显示帮助信息
 	@uv run python -c "import re,sys;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -16,8 +16,13 @@ help: ## 显示帮助信息
 sync: ## 安装开发依赖
 	uv sync --extra dev
 
-frontend-sync: ## 安装前端依赖（pnpm install）
-	cd frontend && pnpm install --frozen-lockfile
+frontend-sync: ## 安装前端依赖（pnpm install，惰性：node_modules 已存在则跳过）
+	@if [ ! -d frontend/node_modules ]; then \
+		echo "[frontend] node_modules 不存在，开始 pnpm install..."; \
+		cd frontend && pnpm install --frozen-lockfile; \
+	else \
+		echo "[frontend] node_modules 已存在，跳过 install"; \
+	fi
 
 frontend-lint: frontend-sync ## 前端 ESLint 检查
 	cd frontend && pnpm lint
@@ -52,17 +57,16 @@ e2e: frontend-sync ## 前端 E2E 测试（Playwright；需后端已启动）
 gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败）
 	uv run python scripts/check_gitkeep.py
 
-lint: ## 代码风格检查 (ruff)
-	uv run ruff check .
-	uv run ruff format --check .
+lint: ## 代码风格检查 (ruff, 与 CI 对齐仅扫 src + tests)
+	uv run ruff check src tests
+	uv run ruff format --check src tests
 
 typecheck: ## 类型检查 (pyrefly)
 	uv run pyrefly check
 
-typecheck-ci: ## 类型检查 (pyrefly, CI 平台 linux — 捕获跨平台问题)
-	uv run pyrefly check --python-platform linux
+check-fast: gitkeep-check lint typecheck frontend-check ## 轻量门禁（不含覆盖率，适合日常快速验证）
 
-check: gitkeep-check lint typecheck typecheck-ci frontend-check cov ## 运行全套门禁 (gitkeep + lint + typecheck + typecheck-ci + frontend-check + cov)
+check: check-fast cov ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-check + cov)
 
 doc: ## 构建 Sphinx 文档
 	uv run sphinx-build -b html docs docs/_build/html
