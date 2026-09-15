@@ -27,7 +27,7 @@ import type {
   WorkspaceExportData,
   TableCreate, TableUpdate, TableSummary, TableDetail,
   RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams,
-  FieldCreate, FieldUpdate, Field, FieldType,
+  FieldCreate, FieldUpdate, FieldImportRequest, FieldImportResponse, Field, FieldType,
   ViewCreate, View, ViewUpdate,
   WorkspaceTrashResponse, TrashedRow,
   CsvAnalyzeResult, CsvImportResult,
@@ -48,7 +48,7 @@ export type {
   Workspace, WorkspaceDetail, WorkspaceCreate, WorkspaceUpdate, WorkspaceRole, WorkspaceMember, MemberUserBrief,
   WorkspaceVisibility, WorkspaceExportData,
   TableSummary, TableDetail, TableCreate, TableUpdate, ViewBrief,
-  FieldType, Field, FieldCreate, FieldUpdate,
+  FieldImportRequest, FieldImportResponse, FieldType, Field, FieldCreate, FieldUpdate,
   RowValues, RowResponse, RowDetail, RowCreate, RowUpdate, RowListResponse, RecordListParams,
   View, ViewDetail, ViewCreate, ViewUpdate,
   AuditLog, Comment, Reference,
@@ -203,6 +203,9 @@ export const fieldApi = {
     api.patch<Field>(`/v1/workspaces/${wid}/tables/${tid}/fields/${fid}`, data).then(r => r.data),
   remove: (wid: number | string, tid: number | string, fid: number | string) =>
     api.delete(`/v1/workspaces/${wid}/tables/${tid}/fields/${fid}`).then(r => r.data),
+  /** 从其他表引入字段 schema 到当前表 */
+  importFields: (wid: number | string, tid: number | string, data: FieldImportRequest) =>
+    api.post<FieldImportResponse>(`/v1/workspaces/${wid}/tables/${tid}/fields/import`, data).then(r => r.data),
 }
 
 // ─────────────── Views ───────────────
