@@ -130,7 +130,18 @@ class FieldUpdate(BaseModel):
 
 
 class FieldImportRequest(BaseModel):
-    """从其他表引入字段到当前表的请求体."""
+    """从其他表引入字段到当前表的请求体.
+
+    三种字段来源互斥（优先级从高到低）：
+    - field_ids:          精确指定源字段 id 列表
+    - field_names:         按源字段名列表
+    - import_all_fields:   True 时引入源表全部字段
+
+    field_mapping 支持源字段 → 目标字段重命名 / 跳过：
+    ``{"源字段名": "目标字段名"}`` — 重命名
+    ``{"源字段名": null}``       — 跳过该源字段
+    未显式列出的源字段按 源名 == 目标名 自动处理.
+    """
 
     source_table_id: int
     field_ids: list[int] | None = None
@@ -138,14 +149,17 @@ class FieldImportRequest(BaseModel):
     import_all_fields: bool = False
     exclude_trashed: bool = True
     skip_conflicts: bool = False
+    field_mapping: dict[str, str | None] | None = None
 
 
 class FieldImportResponse(BaseModel):
-    """字段导入结果 —— 新建字段列表 + 跳过原因."""
+    """字段导入结果 —— 新建字段列表 + 跳过原因 + 可选的缺口分析."""
 
     created: list[FieldResponse] = []
     skipped: list[str] = []
     total_source_count: int = 0
+    # 可选：gap_analysis 仅在 field_mapping 显式传入时返回，便于前端展示"参照对比"面板
+    gap_analysis: dict[str, Any] | None = None
 
 
 class FieldResponse(BaseModel):
