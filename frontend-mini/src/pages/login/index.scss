@@ -1,0 +1,96 @@
+.login-page {
+  min-height: 100vh;
+  padding: 120rpx 64rpx;
+  background: linear-gradient(180deg, #e6f4ff 0%, #ffffff 50%, #ffffff 100%);
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 80rpx;
+}
+
+.login-title {
+  font-size: 72rpx;
+  font-weight: 700;
+  color: #1677ff;
+  display: block;
+  margin-bottom: 12rpx;
+}
+
+.login-subtitle {
+  font-size: 28rpx;
+  color: #6b7280;
+}
+
+.login-tabs {
+  display: flex;
+  gap: 32rpx;
+  margin-bottom: 48rpx;
+  border-bottom: 2rpx solid #e5e7eb;
+}
+
+.login-tab {
+  flex: 1;
+  text-align: center;
+  padding-bottom: 24rpx;
+  font-size: 30rpx;
+  color: #6b7280;
+  border-bottom: 4rpx solid transparent;
+  margin-bottom: -2rpx;
+}
+
+.login-tab.active {
+  color: #1677ff;
+  font-weight: 500;
+  border-bottom-color: #1677ff;
+}
+
+.login-section {
+  display: flex;
+  flex-direction: column;
+  gap: 32rpx;
+}
+
+.login-input {
+  background-color: #fff;
+  border: 2rpx solid #e5e7eb;
+  border-radius: 12rpx;
+  padding: 24rpx 32rpx;
+  font-size: 30rpx;
+  height: 88rpx;
+  box-sizing: border-box;
+}
+
+.btn-wechat {
+  background-color: #07c160;
+  border-color: #07c160;
+  color: #fff;
+  height: 96rpx;
+  line-height: 96rpx;
+  font-size: 32rpx;
+  border-radius: 12rpx;
+}
+
+.btn-primary {
+  background-color: #1677ff;
+  border-color: #1677ff;
+  color: #fff;
+  height: 96rpx;
+  line-height: 96rpx;
+  font-size: 32rpx;
+  border-radius: 12rpx;
+}
+
+.login-tip {
+  font-size: 24rpx;
+  color: #9ca3af;
+  text-align: center;
+  margin-top: 8rpx;
+}
+
+.login-link {
+  font-size: 28rpx;
+  color: #1677ff;
+  text-align: center;
+  margin-top: 16rpx;
+}

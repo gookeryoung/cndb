@@ -1,0 +1,121 @@
+.me-page {
+  min-height: 100vh;
+  background-color: #f5f5f5;
+  padding: 32rpx;
+  box-sizing: border-box;
+}
+
+.me-card {
+  background-color: #fff;
+  border-radius: 16rpx;
+  padding: 64rpx 32rpx;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 32rpx;
+}
+
+.me-text { color: #6b7280; font-size: 28rpx; }
+
+.btn-login {
+  background-color: #1677ff;
+  color: #fff;
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 12rpx;
+}
+
+.me-user-card {
+  background-color: #fff;
+  border-radius: 16rpx;
+  padding: 40rpx;
+  display: flex;
+  gap: 24rpx;
+  align-items: center;
+  margin-bottom: 32rpx;
+}
+
+.me-avatar {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1677ff, #4096ff);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.me-avatar-text {
+  color: #fff;
+  font-size: 48rpx;
+  font-weight: 600;
+}
+
+.me-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.me-nickname {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1f1f1f;
+}
+
+.me-username {
+  font-size: 24rpx;
+  color: #9ca3af;
+}
+
+.me-role-tag {
+  font-size: 22rpx;
+  color: #1677ff;
+  background-color: #e6f4ff;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  align-self: flex-start;
+}
+
+.me-menu {
+  background-color: #fff;
+  border-radius: 16rpx;
+  overflow: hidden;
+  margin-bottom: 32rpx;
+}
+
+.me-menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 32rpx;
+  border-bottom: 2rpx solid #f5f5f5;
+}
+
+.me-menu-item:last-child {
+  border-bottom: none;
+}
+
+.me-menu-label {
+  font-size: 30rpx;
+  color: #1f1f1f;
+}
+
+.me-menu-arrow {
+  font-size: 32rpx;
+  color: #d1d5db;
+}
+
+.me-actions {
+  margin-top: 32rpx;
+}
+
+.btn-logout {
+  background-color: #fff;
+  color: #ff4d4f;
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 12rpx;
+  font-size: 30rpx;
+}

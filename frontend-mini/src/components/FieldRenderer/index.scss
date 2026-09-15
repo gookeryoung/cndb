@@ -1,0 +1,16 @@
+.cell-empty { color: #d1d5db; }
+.cell-text { color: #1f1f1f; }
+.cell-number { color: #1677ff; font-variant-numeric: tabular-nums; }
+.cell-bool-true { color: #52c41a; }
+.cell-date { color: #6b7280; font-size: 24rpx; }
+.cell-select {
+  background-color: #e6f4ff;
+  color: #1677ff;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  font-size: 24rpx;
+  display: inline-block;
+  margin-right: 8rpx;
+}
+.cell-multiselect { display: inline-flex; flex-wrap: wrap; gap: 8rpx; }
+.cell-link { color: #1677ff; text-decoration: underline; }
