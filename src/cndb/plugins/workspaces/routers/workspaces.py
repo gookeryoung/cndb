@@ -24,6 +24,7 @@ from cndb.plugins.workspaces.schemas import (
     WorkspaceImportRequest,
     WorkspaceImportResponse,
     WorkspaceMemberResponse,
+    WorkspaceOwnerTransferRequest,
     WorkspaceResponse,
     WorkspaceUpdate,
     WorkspaceWithPinnedResponse,
@@ -413,6 +414,58 @@ def remove_member(
             raise HTTPException(status_code=400, detail="工作区至少保留一名所有者")
     db.delete(member)
     db.commit()
+
+
+# ── 转让所有权 ────────────────────────────────────────
+
+
+@router.post("/{workspace_id}/owner", response_model=WorkspaceMemberResponse)
+def transfer_owner(
+    workspace_id: int,
+    payload: WorkspaceOwnerTransferRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> WorkspaceMember:
+    """转让工作区所有权（仅当前 OWNER 可执行；目标须是工作区成员）."""
+    ws = _get_workspace_or_404(workspace_id, db)
+    requester_role = get_member_role(current_user, ws, db)
+    if requester_role != WorkspaceRole.OWNER:
+        raise HTTPException(status_code=403, detail="仅所有者可转让所有权")
+
+    # 目标必须是工作区成员
+    target_member = (
+        db.query(WorkspaceMember)
+        .filter(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == payload.user_id,
+        )
+        .first()
+    )
+    if target_member is None:
+        raise HTTPException(status_code=400, detail="目标用户不是该工作区成员")
+
+    # 幂等：转让给自己直接返回
+    if target_member.role == WorkspaceRole.OWNER:
+        return target_member
+
+    # 把当前 OWNER 降级为 ADMIN
+    current_owner = (
+        db.query(WorkspaceMember)
+        .filter(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.role == WorkspaceRole.OWNER,
+        )
+        .first()
+    )
+    if current_owner is not None:
+        current_owner.role = WorkspaceRole.ADMIN
+
+    # 把目标提升为 OWNER
+    target_member.role = WorkspaceRole.OWNER
+    db.commit()
+    db.refresh(target_member)
+    _ = target_member.user
+    return target_member
 
 
 # ── pin 切换 ──────────────────────────────────────────

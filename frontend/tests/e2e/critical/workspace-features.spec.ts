@@ -74,15 +74,15 @@ test.describe("工作区设置对话框", () => {
     await expect(page.getByText(/已保存/)).toBeVisible({ timeout: 5000 });
   });
 
-  test("设置对话框切换到成员管理 Tab", async ({ page }) => {
+  test("设置对话框切换到权限 Tab", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await page.goto("/w");
     await page.waitForURL(/\/w$/);
 
     await page.locator("[data-testid='settings-btn-1']").click();
-    await page.getByRole("tab", { name: /成员管理/ }).click();
+    await page.getByRole("tab", { name: /权限/ }).click();
 
-    // 成员管理 Tab 显示"用户"和"角色"表头
+    // 权限 Tab 显示"用户"和"角色"表头
     await expect(page.getByText(/用户/).first()).toBeVisible();
     await expect(page.getByText(/角色/).first()).toBeVisible();
   });

@@ -10,7 +10,7 @@ interface Props {
   /** 设置保存后通知工作区列表刷新 */
   onUpdated?: () => void
   /** 指定打开时的 Tab，默认 basic */
-  initialTab?: 'basic' | 'members' | 'stats'
+  initialTab?: 'basic' | 'permissions' | 'stats'
 }
 
 export default function WorkspaceSettingsModal({
