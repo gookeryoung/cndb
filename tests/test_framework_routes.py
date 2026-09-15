@@ -28,12 +28,12 @@ def test_plugins_endpoint(client: TestClient) -> None:
     r = client.get("/api/plugins")
     assert r.status_code == 200
     names = {p["name"] for p in r.json()["plugins"]}
-    assert "health" in names
+    assert "workspaces" in names
+    assert "tables" in names
 
 
 def test_navigation_endpoint(client: TestClient) -> None:
     r = client.get("/api/navigation")
     assert r.status_code == 200
     nav = r.json()["navigation"]
-    # 当前只有 health 插件（无 navigation 注册），返回空列表是合法的
     assert isinstance(nav, list)

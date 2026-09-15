@@ -15,7 +15,6 @@
  * - /api/v1/workspaces/{wid}/tables/{tid}/export|import|import/async  → 导入导出
  * - /api/v1/workspaces/{wid}/import-csv/*             → CSV 自动建表
  * - /api/v1/public/*               → 公开分享（全局挂载）
- * - /api/v1/health/*               → 健康检查
  * - reports 插件单独挂载（见 reports plugin route_prefix）
  */
 
@@ -31,7 +30,6 @@ import type {
   ViewCreate, View, ViewUpdate,
   WorkspaceTrashResponse, TrashedRow,
   CsvAnalyzeResult, CsvImportResult,
-  HealthPingResponse, HealthReadyResponse,
   AuditLog, Comment, Reference,
   ImportTaskInfo, TablePermission,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
@@ -55,7 +53,6 @@ export type {
   TrashedRow, WorkspaceTrashResponse,
   CsvAnalyzeResult, CsvImportResult,
   PublicForm, SharedGrid,
-  HealthPingResponse, HealthReadyResponse,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportParameter, ReportRenderRequest, ReportRenderResult,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
@@ -433,13 +430,6 @@ export const publicApi = {
   /** 匿名提交公开表单行 */
   submitForm: (slug: string, values: Record<string, unknown>) =>
     api.post<{ id: number; status: string }>(`/v1/public/forms/${slug}`, values).then(r => r.data),
-}
-
-// ─────────────── Health ───────────────
-
-export const healthApi = {
-  ping: () => api.get<HealthPingResponse>('/v1/health/ping').then(r => r.data),
-  ready: () => api.get<HealthReadyResponse>('/v1/health/ready').then(r => r.data),
 }
 
 // ─────────────── Reports（全局挂载 /api/v1/reports） ───────────────
