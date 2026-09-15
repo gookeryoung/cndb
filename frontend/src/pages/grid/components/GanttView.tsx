@@ -17,7 +17,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Segmented, Button, Tooltip, Empty } from 'antd'
-import { LeftOutlined, RightOutlined, ReloadOutlined, CalendarOutlined, HomeOutlined } from '@ant-design/icons'
+import { LeftOutlined, RightOutlined, ReloadOutlined, CalendarOutlined, HomeOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, GANTT_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
@@ -111,7 +111,7 @@ function daysBetween(a: Date, b: Date): number {
   return Math.max(1, Math.round(diff / (1000 * 60 * 60 * 24)) + 1)
 }
 
-/** 根据 tasks 计算时间轴范围（向前扩展 5 天，向后扩展 15 天以留出余量） */
+/** 根据 tasks 计算时间轴范围（向前扩展 7 天、向后扩展 21 天，给锚定层留出完整锚点） */
 function computeTimeRange(tasks: GanttTask[]): { min: Date; max: Date } | null {
   if (tasks.length === 0) return null
   let min = tasks[0].start
@@ -120,83 +120,65 @@ function computeTimeRange(tasks: GanttTask[]): { min: Date; max: Date } | null {
     if (t.start < min) min = t.start
     if (t.end > max) max = t.end
   }
-  // 向前 5 天，向后 15 天
   const paddedMin = new Date(min)
-  paddedMin.setDate(paddedMin.getDate() - 5)
+  paddedMin.setDate(paddedMin.getDate() - 7)
   const paddedMax = new Date(max)
-  paddedMax.setDate(paddedMax.getDate() + 15)
+  paddedMax.setDate(paddedMax.getDate() + 21)
   return { min: paddedMin, max: paddedMax }
 }
 
-/** 时间轴分段 —— 带稀疏显示策略的标签 */
+/** 时间轴分段 — 通用结构，双层 header 共用 */
 interface TimelineSegment {
   label: string
   date: Date
-  width: number  // 像素宽度
-  days: number   // 覆盖天数
-  left: number   // 累积左侧偏移（像素）
-  showLabel: boolean  // 是否应该渲染标签（稀疏策略）
+  width: number
+  days: number
+  left: number
+  showLabel: boolean
 }
 
-/** 按"关键锚点"标记哪些段优先显示标签（不考虑宽度，纯语义）。
- *  - day: 每月 1/15 号 + 周一
- *  - week: 每月第一周
- *  - month/quarter: 全部
- */
-function isAnchorSegment(d: Date, scale: TimeScale): boolean {
-  if (scale === 'day') {
-    return d.getDate() === 1 || d.getDate() === 15 || d.getDay() === 1
-  }
-  if (scale === 'week') {
-    return d.getDate() <= 7
-  }
-  // month / quarter：全部都是锚点
-  return true
+/** 锚定粒度 */
+type AnchorScale = 'year' | 'month'
+
+/** Zoom 档位定义 */
+interface ZoomLevel {
+  name: string          // 显示文本，如 "月-日"
+  pxPerDay: number      // 基准像素/天
+  anchorScale: AnchorScale
+  currentScale: TimeScale
+  anchorLabel: string   // 上层 label 模板（直接字符串化锚定日期）
+  currentLabel: string  // 下层 label 模板（直接字符串化当前刻度日期）
+  /** 下层稀疏化的最小间距像素（锚定层不稀疏化，全部显示） */
+  minGapPx: number
 }
 
-/** 后处理：根据最小标签间距像素对 segments 做稀疏化，避免密集。
- *  策略：先保留所有锚点，再在"锚点间"的非锚点段里均匀填充，
- *  保证相邻两个显示标签间的像素距离 >= minGapPx。
- */
-function sparseLabels(segments: TimelineSegment[], minGapPx: number): TimelineSegment[] {
-  if (segments.length === 0) return segments
+/** 8 档连续缩放 — 覆盖 quarter → day 的完整区间 */
+const ZOOM_LEVELS: ReadonlyArray<ZoomLevel> = [
+  { name: '年-季度', pxPerDay: 1.5, anchorScale: 'year',  currentScale: 'quarter', anchorLabel: '${y}年',       currentLabel: 'Q${q}',          minGapPx: 0 },
+  { name: '年-月',   pxPerDay: 4,   anchorScale: 'year',  currentScale: 'month',   anchorLabel: '${y}年',       currentLabel: '${m}月',         minGapPx: 0 },
+  { name: '月-双周', pxPerDay: 7,   anchorScale: 'month', currentScale: 'week',    anchorLabel: '${y}年${m}月', currentLabel: '${m}/${d}',      minGapPx: 42 },
+  { name: '月-周',   pxPerDay: 10,  anchorScale: 'month', currentScale: 'week',    anchorLabel: '${y}年${m}月', currentLabel: '${m}/${d}',      minGapPx: 48 },
+  { name: '月-半周', pxPerDay: 14,  anchorScale: 'month', currentScale: 'day',     anchorLabel: '${y}年${m}月', currentLabel: '${m}/${d}',      minGapPx: 42 },
+  { name: '月-日',   pxPerDay: 18,  anchorScale: 'month', currentScale: 'day',     anchorLabel: '${y}年${m}月', currentLabel: '${m}/${d}',      minGapPx: 36 },
+  { name: '周-日',   pxPerDay: 26,  anchorScale: 'month', currentScale: 'day',     anchorLabel: '${y}年${m}月', currentLabel: '${m}/${d}',      minGapPx: 48 },
+  { name: '日-细',   pxPerDay: 40,  anchorScale: 'month', currentScale: 'day',     anchorLabel: '${y}年${m}月', currentLabel: '${m}/${d}',      minGapPx: 56 },
+] as const
 
-  // 先标记全部锚点为 showLabel = true
-  let lastShownLeft = -Infinity
-  for (const seg of segments) {
-    if (seg.showLabel) {
-      // 如果锚点本身距离上一个显示标签太近，则跳过这个锚点
-      if (seg.left - lastShownLeft < minGapPx) {
-        seg.showLabel = false
-      } else {
-        lastShownLeft = seg.left
-      }
-    }
-  }
-
-  // 非锚点段：在剩余空位里均匀插入，保证间距 >= minGapPx
-  lastShownLeft = -Infinity
-  for (const seg of segments) {
-    if (seg.showLabel) {
-      lastShownLeft = seg.left
-      continue
-    }
-    // 找到可以安全插入的位置：与上一个显示标签 + 自身中心距都够远
-    const segCenter = seg.left + seg.width / 2
-    if (segCenter - lastShownLeft >= minGapPx) {
-      seg.showLabel = true
-      lastShownLeft = segCenter
-    }
-  }
-
-  return segments
+/** 用模板格式化日期 — 支持 ${y} ${m} ${d} ${q} */
+function fmtWithTemplate(template: string, d: Date): string {
+  const y = d.getFullYear()
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  const q = Math.floor(d.getMonth() / 3) + 1
+  return template
+    .split('${y}').join(String(y))
+    .split('${m}').join(String(m))
+    .split('${d}').join(String(day))
+    .split('${q}').join(String(q))
 }
 
-function buildTimeline(
-  range: { min: Date; max: Date },
-  scale: TimeScale,
-  pxPerDay: number,
-): TimelineSegment[] {
+/** 构建细粒度（current scale）分段 */
+function buildCurrentSegments(range: { min: Date; max: Date }, scale: TimeScale, pxPerDay: number, labelTemplate: string): TimelineSegment[] {
   const segments: TimelineSegment[] = []
   const totalDays = daysBetween(range.min, range.max)
 
@@ -205,12 +187,12 @@ function buildTimeline(
       const d = new Date(range.min)
       d.setDate(d.getDate() + i)
       segments.push({
-        label: `${d.getMonth() + 1}/${d.getDate()}`,
+        label: fmtWithTemplate(labelTemplate, d),
         date: d,
         width: pxPerDay,
         days: 1,
         left: 0,
-        showLabel: isAnchorSegment(d, scale),
+        showLabel: false, // 先全部 false，后续由锚定标记 + 稀疏化填充
       })
     }
   } else if (scale === 'week') {
@@ -222,12 +204,12 @@ function buildTimeline(
       weekEnd.setDate(weekStart.getDate() + 6)
       const days = daysBetween(weekStart, weekEnd)
       segments.push({
-        label: `${weekStart.getMonth() + 1}/${weekStart.getDate()}`,
+        label: fmtWithTemplate(labelTemplate, weekStart),
         date: weekStart,
         width: days * pxPerDay,
         days,
         left: 0,
-        showLabel: isAnchorSegment(weekStart, scale),
+        showLabel: false,
       })
       cursor = new Date(weekEnd)
       cursor.setDate(cursor.getDate() + 1)
@@ -241,12 +223,12 @@ function buildTimeline(
         monthEnd > range.max ? range.max : monthEnd,
       )
       segments.push({
-        label: `${cursor.getFullYear()}年${cursor.getMonth() + 1}月`,
+        label: fmtWithTemplate(labelTemplate, cursor),
         date: cursor,
         width: days * pxPerDay,
         days,
         left: 0,
-        showLabel: isAnchorSegment(cursor, scale),
+        showLabel: true, // month 粒度本身就稀疏，全部显示
       })
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
     }
@@ -258,14 +240,13 @@ function buildTimeline(
         cursor < range.min ? range.min : cursor,
         qEnd > range.max ? range.max : qEnd,
       )
-      const qNum = Math.floor(cursor.getMonth() / 3) + 1
       segments.push({
-        label: `${cursor.getFullYear()} Q${qNum}`,
+        label: fmtWithTemplate(labelTemplate, cursor),
         date: cursor,
         width: days * pxPerDay,
         days,
         left: 0,
-        showLabel: isAnchorSegment(cursor, scale),
+        showLabel: true,
       })
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 3, 1)
     }
@@ -277,41 +258,186 @@ function buildTimeline(
     seg.left = acc
     acc += seg.width
   }
-
-  // 动态稀疏化：保证标签间最小像素间距，避免过于密集
-  // day: 24px/周几数字足够放下; week: 48px; month/quarter: 全部显示
-  const MIN_GAP: Record<TimeScale, number> = {
-    day: 24,
-    week: 48,
-    month: 0,
-    quarter: 0,
-  }
-  return sparseLabels(segments, MIN_GAP[scale])
+  return segments
 }
 
-/** 根据 pxPerDay 自适应：如果总宽度太大则缩小，如果太小则放大 */
-function computePxPerDay(range: { min: Date; max: Date }, scale: TimeScale): number {
-  const totalDays = daysBetween(range.min, range.max)
-  let basePx = 6 // 默认 6px/天
+/** 构建锚定层（anchor scale）分段 —— 永远完整显示（showLabel=true），不做稀疏化 */
+function buildAnchorSegments(range: { min: Date; max: Date }, anchorScale: AnchorScale, pxPerDay: number, labelTemplate: string): TimelineSegment[] {
+  const segments: TimelineSegment[] = []
 
-  // 根据刻度调整基础值
-  if (scale === 'day') basePx = 18  // 天刻度要更宽
-  else if (scale === 'week') basePx = 10
-  else if (scale === 'month') basePx = 4
-  else basePx = 1.5 // quarter 最窄
-
-  const totalWidth = totalDays * basePx
-
-  // 太宽了 → 缩小
-  if (totalWidth > 3000) {
-    basePx = Math.max(1.5, 3000 / totalDays)
+  if (anchorScale === 'year') {
+    let cursor = new Date(range.min.getFullYear(), 0, 1)
+    while (cursor <= range.max) {
+      const yearEnd = new Date(cursor.getFullYear(), 11, 31)
+      const days = daysBetween(
+        cursor < range.min ? range.min : cursor,
+        yearEnd > range.max ? range.max : yearEnd,
+      )
+      segments.push({
+        label: fmtWithTemplate(labelTemplate, cursor),
+        date: cursor,
+        width: days * pxPerDay,
+        days,
+        left: 0,
+        showLabel: true,
+      })
+      cursor = new Date(cursor.getFullYear() + 1, 0, 1)
+    }
+  } else { // month
+    let cursor = new Date(range.min.getFullYear(), range.min.getMonth(), 1)
+    while (cursor <= range.max) {
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0)
+      const days = daysBetween(
+        cursor < range.min ? range.min : cursor,
+        monthEnd > range.max ? range.max : monthEnd,
+      )
+      segments.push({
+        label: fmtWithTemplate(labelTemplate, cursor),
+        date: cursor,
+        width: days * pxPerDay,
+        days,
+        left: 0,
+        showLabel: true,
+      })
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
+    }
   }
-  // 太窄了 → 放大
-  if (totalWidth < 600) {
-    basePx = Math.min(20, 600 / totalDays)
+
+  let acc = 0
+  for (const seg of segments) {
+    seg.left = acc
+    acc += seg.width
+  }
+  return segments
+}
+
+/** 标记下层 segments 的"语义锚点"（每月 1 号、每周一），作为稀疏化的保留点 */
+function markCurrentAnchors(segments: TimelineSegment[], scale: TimeScale): void {
+  for (const seg of segments) {
+    if (scale === 'day') {
+      if (seg.date.getDate() === 1) seg.showLabel = true
+    } else if (scale === 'week') {
+      // week 刻度本身就是周一，全部都是锚点
+      seg.showLabel = true
+    }
+    // month / quarter 已在 build 阶段全部 showLabel=true
+  }
+}
+
+/** 下层稀疏化 —— 先保留语义锚点，再在锚点间均匀填充，保证间距 >= minGapPx */
+function sparseCurrentLabels(segments: TimelineSegment[], minGapPx: number): TimelineSegment[] {
+  if (segments.length === 0 || minGapPx <= 0) {
+    // minGapPx=0 表示全部显示（month/quarter 刻度）
+    for (const seg of segments) seg.showLabel = true
+    return segments
   }
 
-  return basePx
+  // 第一轮：保留语义锚点（已在上一步标记），去掉过近的锚点
+  let lastShownLeft = -Infinity
+  for (const seg of segments) {
+    if (seg.showLabel) {
+      if (seg.left - lastShownLeft < minGapPx) {
+        seg.showLabel = false
+      } else {
+        lastShownLeft = seg.left
+      }
+    }
+  }
+
+  // 第二轮：在锚点之间的空位里均匀插入非锚点
+  lastShownLeft = -Infinity
+  for (const seg of segments) {
+    if (seg.showLabel) {
+      lastShownLeft = seg.left
+      continue
+    }
+    const segCenter = seg.left + seg.width / 2
+    if (segCenter - lastShownLeft >= minGapPx) {
+      seg.showLabel = true
+      lastShownLeft = segCenter
+    }
+  }
+
+  return segments
+}
+
+/** 构建双层时间轴 —— 返回锚定层分段 + 下层分段 + 使用的档位 */
+function buildDualTimeline(
+  range: { min: Date; max: Date },
+  level: number,
+): {
+  anchorSegments: TimelineSegment[]
+  currentSegments: TimelineSegment[]
+  pxPerDay: number
+  level: number
+  levelDef: ZoomLevel
+} {
+  const lv = ZOOM_LEVELS[level] ?? ZOOM_LEVELS[2]
+  const pxPerDay = lv.pxPerDay
+
+  const anchorSegments = buildAnchorSegments(range, lv.anchorScale, pxPerDay, lv.anchorLabel)
+  const currentSegments = buildCurrentSegments(range, lv.currentScale, pxPerDay, lv.currentLabel)
+
+  // 锚定层永远 showLabel=true（在 buildAnchorSegments 已设）
+
+  // 下层：先标记语义锚点 → 再稀疏化
+  markCurrentAnchors(currentSegments, lv.currentScale)
+  sparseCurrentLabels(currentSegments, lv.minGapPx)
+
+  return { anchorSegments, currentSegments, pxPerDay, level, levelDef: lv }
+}
+
+/** 根据用户选定的 scale + 时间跨度，从 ZOOM_LEVELS 中选出最合适的档位.
+ *  策略：优先匹配 currentScale，再选 pxPerDay 使总宽度落在 [600, 3000] 区间。 */
+function selectZoomLevelForScale(scale: TimeScale, totalDays: number): number {
+  const candidates = ZOOM_LEVELS
+    .map((lv, i) => ({ lv, i }))
+    .filter(x => x.lv.currentScale === scale)
+
+  if (candidates.length === 0) return 2 // fallback
+
+  // 计算期望总宽度
+  const totalDaysNum = totalDays
+  // 找最合适的档位：总宽度落在 [600, 3000] 内的第一个，否则取中间
+  let best = candidates[Math.floor(candidates.length / 2)]
+  let bestScore = Infinity
+  for (const c of candidates) {
+    const w = totalDaysNum * c.lv.pxPerDay
+    // 评分：落在区间内得 0 分，偏离量越小越好
+    const score = w < 600 ? 600 - w : w > 3000 ? w - 3000 : 0
+    if (score < bestScore) {
+      bestScore = score
+      best = c
+    }
+  }
+  return best.i
+}
+
+/** 根据视口宽度和时间跨度做二次缩放 —— 如果默认档位产生的总宽度偏离太远则微调 level.
+ *  这个函数返回调整后的 level（不直接改 pxPerDay，保持档位离散）。 */
+function autoAdjustLevel(
+  level: number,
+  totalDays: number,
+  viewportWidth: number,
+): number {
+  const targetMinPx = viewportWidth * 0.6
+  const targetMaxPx = viewportWidth * 2
+
+  let lv = level
+  let safety = 0
+  while (safety < ZOOM_LEVELS.length) {
+    const w = totalDays * ZOOM_LEVELS[lv].pxPerDay
+    if (w >= targetMinPx && w <= targetMaxPx) break
+    if (w < targetMinPx) {
+      if (lv < ZOOM_LEVELS.length - 1) lv++
+      else break
+    } else {
+      if (lv > 0) lv--
+      else break
+    }
+    safety++
+  }
+  return lv
 }
 
 // ── 任务构建 ──────────────────────────────────────────
@@ -605,9 +731,13 @@ export default function GanttView({
   const ds = densityStyle(density)
   const defaultScale = (opts.time_scale as TimeScale) || 'month'
   const [scale, setScale] = useState<TimeScale>(defaultScale)
+  const [zoomLevel, setZoomLevel] = useState<number | null>(null)
 
-  // 切换 view 时，本地 scale 同步到新 view 的默认值
-  useEffect(() => { setScale(defaultScale) }, [defaultScale])
+  // 切换 view 时，本地 scale + zoomLevel 同步到新 view 的默认值
+  useEffect(() => {
+    setScale(defaultScale)
+    setZoomLevel(null) // 触发 selectZoomLevelForScale 重新计算
+  }, [defaultScale])
 
   const showToday = opts.show_today_line !== false
   const groupField = opts.group_field as string | undefined
@@ -624,18 +754,26 @@ export default function GanttView({
     [tasks],
   )
 
-  // 计算每日像素和生成时间轴
-  const pxPerDay = useMemo(
-    () => timeRange ? computePxPerDay(timeRange, scale) : 6,
-    [timeRange, scale],
+  // 根据 scale + 时间跨度自动选初始 zoomLevel
+  const totalDays = timeRange ? daysBetween(timeRange.min, timeRange.max) : 365
+  const resolvedLevel = zoomLevel ?? (timeRange ? selectZoomLevelForScale(scale, totalDays) : 2)
+
+  // 只有用户还没手动调过 zoom 时才做视口宽度微调（避免覆盖用户手动选择）
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200
+  const finalLevel = zoomLevel == null && timeRange
+    ? autoAdjustLevel(resolvedLevel, totalDays, viewportWidth)
+    : resolvedLevel
+
+  // 构建双层时间轴
+  const dualTimeline = useMemo(
+    () => timeRange ? buildDualTimeline(timeRange, finalLevel) : {
+      anchorSegments: [], currentSegments: [], pxPerDay: 6, level: 2, levelDef: ZOOM_LEVELS[2],
+    },
+    [timeRange, finalLevel],
   )
 
-  const timeline = useMemo(
-    () => timeRange ? buildTimeline(timeRange, scale, pxPerDay) : [],
-    [timeRange, scale, pxPerDay],
-  )
-
-  const totalTimelineWidth = timeline.reduce((sum, t) => sum + t.width, 0)
+  const { anchorSegments, currentSegments, pxPerDay, levelDef } = dualTimeline
+  const totalTimelineWidth = anchorSegments.reduce((s, t) => s + t.width, 0)
 
   // ── 滚动容器 ref —— 整个右侧时间轴用真实 overflow-x: auto ──
   const hScrollRef = useRef<HTMLDivElement>(null)
@@ -654,19 +792,16 @@ export default function GanttView({
     if (today < timeRange.min || today > timeRange.max) return
     const offsetDays = daysBetween(timeRange.min, today) - 1
     const todayLeft = offsetDays * pxPerDay
-    // 把今天滚到视口中间
     const target = Math.max(0, todayLeft - el.clientWidth / 2)
     el.scrollTo({ left: target, behavior: 'smooth' })
   }, [timeRange, pxPerDay])
 
-  // 滚轮转横向：Shift+wheel 本来浏览器就支持，这里处理普通 wheel
+  // 滚轮转横向
   useEffect(() => {
     const el = hScrollRef.current
     if (!el) return
     const handler = (e: WheelEvent) => {
-      // 如果用户按了 Shift，让浏览器原生处理（已是横向）
       if (e.shiftKey) return
-      // 如果纵向滚动量明显大于横向，转成横向
       if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
         e.preventDefault()
         el.scrollLeft += e.deltaY
@@ -674,7 +809,7 @@ export default function GanttView({
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
-  }, [timeline])
+  }, [totalTimelineWidth])
 
   // 按分组聚合（用于左侧分组分隔 + WBS 编号）
   const groupedTasks = useMemo(() => {
@@ -753,13 +888,55 @@ export default function GanttView({
           <Segmented
             size="small"
             value={scale}
-            onChange={(v) => setScale(v as TimeScale)}
+            onChange={(v) => {
+              const newScale = v as TimeScale
+              setScale(newScale)
+              setZoomLevel(null) // 让 zoomLevel 重新按 newScale 自动选择
+            }}
             options={[
               { value: 'day', label: '天' },
               { value: 'week', label: '周' },
               { value: 'month', label: '月' },
               { value: 'quarter', label: '季' },
             ]}
+          />
+        </div>
+
+        {/* 缩放控件 —— 连续缩放 8 档 */}
+        <div
+          data-testid="gantt-scale-info"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '0 8px',
+            height: 24,
+            borderRadius: 4,
+            border: '1px solid var(--cn-border)',
+            fontSize: ds.headerFontSize,
+            color: 'var(--cn-text-muted)',
+            background: 'var(--cn-bg-subtle)',
+          }}
+          title={`${levelDef.name} · ${pxPerDay.toFixed(1)} px/天`}
+        >
+          <Button
+            size="small"
+            type="text"
+            icon={<ZoomOutOutlined />}
+            disabled={finalLevel <= 0}
+            onClick={() => setZoomLevel(finalLevel - 1)}
+            title="缩小"
+          />
+          <span style={{ minWidth: 44, textAlign: 'center', fontWeight: 500, color: 'var(--cn-text)' }}>
+            {levelDef.name}
+          </span>
+          <Button
+            size="small"
+            type="text"
+            icon={<ZoomInOutlined />}
+            disabled={finalLevel >= ZOOM_LEVELS.length - 1}
+            onClick={() => setZoomLevel(finalLevel + 1)}
+            title="放大"
           />
         </div>
 
@@ -823,42 +1000,87 @@ export default function GanttView({
             position: 'relative',
           }}
         >
-          {/* header 行 */}
-          <div
-            style={{
-              height: ds.headerHeight,
-              minWidth: totalTimelineWidth,
-              display: 'flex',
-              borderBottom: '1px solid var(--cn-border)',
-              background: 'var(--cn-bg-subtle)',
-              flexShrink: 0,
-            }}
-          >
-            {timeline.map((seg) => (
-              <div
-                key={seg.left}
-                data-testid={seg.showLabel ? 'gantt-timeline-label' : undefined}
-                style={{
-                  width: seg.width,
-                  minWidth: seg.width,
-                  padding: '0 4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRight: '1px solid var(--cn-border)',
-                  fontSize: ds.headerFontSize,
-                  color: 'var(--cn-text-muted)',
-                  flexShrink: 0,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                }}
-              >
-                {seg.showLabel ? seg.label : null}
-              </div>
-            ))}
+          {/* header —— 双层 */}
+          <div style={{ flexShrink: 0, minWidth: totalTimelineWidth }}>
+            {/* 上层：锚定层（month / year）—— 合并渲染 */}
+            <div
+              data-testid="gantt-header-row"
+              data-layer="anchor"
+              style={{
+                height: ds.headerHeight,
+                position: 'relative',
+                minWidth: totalTimelineWidth,
+                borderBottom: '1px solid var(--cn-border)',
+                background: 'var(--cn-bg-container)',
+              }}
+            >
+              {anchorSegments.map((seg) => (
+                <div
+                  key={`a-${seg.left}`}
+                  data-testid={seg.showLabel ? 'gantt-timeline-label' : undefined}
+                  data-layer="anchor"
+                  style={{
+                    position: 'absolute',
+                    left: seg.left,
+                    top: 0,
+                    bottom: 0,
+                    width: seg.width,
+                    padding: '0 6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-start',
+                    borderRight: '1px solid var(--cn-border)',
+                    fontSize: ds.headerFontSize,
+                    fontWeight: 600,
+                    color: 'var(--cn-text)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {seg.showLabel ? seg.label : null}
+                </div>
+              ))}
+            </div>
+
+            {/* 下层：当前刻度层（day / week / month / quarter）—— flex 布局 */}
+            <div
+              data-testid="gantt-header-row"
+              data-layer="current"
+              style={{
+                height: ds.headerHeight,
+                minWidth: totalTimelineWidth,
+                display: 'flex',
+                background: 'var(--cn-bg-subtle)',
+              }}
+            >
+              {currentSegments.map((seg) => (
+                <div
+                  key={`c-${seg.left}`}
+                  data-testid={seg.showLabel ? 'gantt-timeline-label' : undefined}
+                  data-layer="current"
+                  style={{
+                    width: seg.width,
+                    minWidth: seg.width,
+                    padding: '0 3px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRight: `1px solid ${levelDef.anchorScale === 'year' ? 'var(--cn-border)' : 'var(--cn-border-secondary, #f0f0f0)'}`,
+                    fontSize: ds.headerFontSize,
+                    color: 'var(--cn-text-muted)',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {seg.showLabel ? seg.label : null}
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* body 行区 —— 垂直滚动，内部内容按 totalTimelineWidth 铺开 */}
+          {/* body 行区 —— 垂直滚动 */}
           <div
             style={{
               position: 'relative',
@@ -867,7 +1089,7 @@ export default function GanttView({
               minWidth: totalTimelineWidth,
             }}
           >
-            {/* 时间轴网格背景层 + 今日标线 */}
+            {/* 时间轴网格背景层 —— 双层：主分隔（锚定粒度深色）+ 次分隔（当前粒度浅色） */}
             <div
               aria-hidden
               style={{
@@ -880,9 +1102,10 @@ export default function GanttView({
                 zIndex: 0,
               }}
             >
-              {timeline.map((seg) => (
+              {/* 主分隔线：锚定粒度 */}
+              {anchorSegments.map((seg) => (
                 <div
-                  key={seg.left}
+                  key={`ag-${seg.left}`}
                   style={{
                     position: 'absolute',
                     left: seg.left,
@@ -892,6 +1115,37 @@ export default function GanttView({
                     borderRight: '1px solid var(--cn-border)',
                   }}
                 />
+              ))}
+              {/* 次分隔线：当前粒度（仅当粒度 < 锚定粒度时渲染） */}
+              {levelDef.anchorScale === 'month' && levelDef.currentScale === 'day' && currentSegments.map((seg, i) => (
+                i < currentSegments.length - 1 ? (
+                  <div
+                    key={`cg-${seg.left}`}
+                    style={{
+                      position: 'absolute',
+                      left: seg.left + seg.width,
+                      top: 0,
+                      bottom: 0,
+                      width: 0,
+                      borderRight: '1px dashed var(--cn-border-secondary, #eee)',
+                    }}
+                  />
+                ) : null
+              ))}
+              {levelDef.anchorScale === 'month' && levelDef.currentScale === 'week' && currentSegments.map((seg, i) => (
+                i < currentSegments.length - 1 ? (
+                  <div
+                    key={`cg-${seg.left}`}
+                    style={{
+                      position: 'absolute',
+                      left: seg.left + seg.width,
+                      top: 0,
+                      bottom: 0,
+                      width: 0,
+                      borderRight: '1px dashed var(--cn-border-secondary, #eee)',
+                    }}
+                  />
+                ) : null
               ))}
               {showToday && timeRange && <TodayLine range={timeRange} pxPerDay={pxPerDay} />}
             </div>
