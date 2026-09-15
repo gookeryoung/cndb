@@ -423,6 +423,54 @@ body.theme-dark .ant-spin-container::after {
   background: var(--cn-bg-page) !important;
 }
 
+/* ─────────────── 浅色主题（minimal / ocean / forest / sakura）antd Table 容器层兜底 — 防外围漏白 ───────────────
+ * 这些主题的 bodyBg 已有主题色，而 antd Table wrapper 默认取 colorBgContainer（白色），
+ * 会形成突兀的白块。用 rowBg 色兜底 wrapper/container/body 各层背景，融入页面。 */
+body.theme-minimal .ant-table-wrapper,
+body.theme-minimal .ant-table-container,
+body.theme-minimal .ant-table-content,
+body.theme-minimal .ant-table-body,
+body.theme-minimal .ant-table-cell-scrollbar,
+body.theme-minimal .ant-spin-nested-loading,
+body.theme-minimal .ant-empty,
+body.theme-ocean .ant-table-wrapper,
+body.theme-ocean .ant-table-container,
+body.theme-ocean .ant-table-content,
+body.theme-ocean .ant-table-body,
+body.theme-ocean .ant-table-cell-scrollbar,
+body.theme-ocean .ant-spin-nested-loading,
+body.theme-ocean .ant-empty,
+body.theme-forest .ant-table-wrapper,
+body.theme-forest .ant-table-container,
+body.theme-forest .ant-table-content,
+body.theme-forest .ant-table-body,
+body.theme-forest .ant-table-cell-scrollbar,
+body.theme-forest .ant-spin-nested-loading,
+body.theme-forest .ant-empty,
+body.theme-sakura .ant-table-wrapper,
+body.theme-sakura .ant-table-container,
+body.theme-sakura .ant-table-content,
+body.theme-sakura .ant-table-body,
+body.theme-sakura .ant-table-cell-scrollbar,
+body.theme-sakura .ant-spin-nested-loading,
+body.theme-sakura .ant-empty {
+  background: var(--cn-bg-page) !important;
+}
+
+body.theme-minimal .ant-table,
+body.theme-ocean .ant-table,
+body.theme-forest .ant-table,
+body.theme-sakura .ant-table {
+  background: var(--cn-bg-page) !important;
+}
+
+body.theme-minimal .ant-spin-container::after,
+body.theme-ocean .ant-spin-container::after,
+body.theme-forest .ant-spin-container::after,
+body.theme-sakura .ant-spin-container::after {
+  background: var(--cn-bg-page) !important;
+}
+
 /* Tag / Button / Segmented 背景兜底 */
 body.theme-github-dark .ant-tag,
 body.theme-dark .ant-tag {
