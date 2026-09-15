@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -107,7 +107,7 @@ def wechat_login(
             user_id=user.id,
             nickname=payload.nickname,
             avatar_url=payload.avatar_url,
-            last_login_at=datetime.utcnow(),
+            last_login_at=datetime.now(UTC),
         )
         db.add(account)
     else:
@@ -118,7 +118,7 @@ def wechat_login(
 
         # 更新 session_key 和登录时间
         account.session_key = wx_session.get("session_key")
-        account.last_login_at = datetime.utcnow()
+        account.last_login_at = datetime.now(UTC)
         if payload.nickname and not account.nickname:
             account.nickname = payload.nickname
         if payload.avatar_url and not account.avatar_url:
