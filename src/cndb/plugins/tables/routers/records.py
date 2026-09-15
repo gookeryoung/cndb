@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+import logging
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -28,6 +29,7 @@ from cndb.plugins.tables.schemas import (
     RecordUpdate,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/records", tags=["records"])
 
 
@@ -66,34 +68,47 @@ def list_records_get(
     filter_logic: str = Query(default="AND", pattern="^(AND|OR)$"),
     include_trashed: bool = Query(default=False),
 ) -> RecordListResponse:
-    """GET /records - 前端友好的列表端点."""
+    """GET /records - 前端友好的列表端点.
+
+    sorts / filters 为 URL 编码的 JSON 字符串. 解析失败时降级为空列表
+    而非报错，确保分页等基础功能不被参数格式阻断.
+    """
     import json as _json
 
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    def _parse(s: str | None):
+    def _parse(s: str | None, label: str) -> list[dict[str, Any]] | None:
         if not s:
             return None
         try:
-            return _json.loads(s)
+            v = _json.loads(s)
         except _json.JSONDecodeError:
+            logger.warning("%s JSON 解析失败，降级为空", label)
             return None
+        if isinstance(v, list):
+            return [x for x in v if isinstance(x, dict)]
+        return None
 
     try:
         rows, total = list_rows(
             db.get_bind(),
             dt,
-            filters=_parse(filters),
+            filters=_parse(filters, "filters"),
             filter_logic=filter_logic,
-            sorts=_parse(sorts),
+            sorts=_parse(sorts, "sorts"),
             limit=limit,
             offset=offset,
             include_trashed=include_trashed,
             db=db,
             user=current_user,
         )
-    except Exception as exc:
+    except ValueError as exc:
+        # 业务语义错误（未知操作符、非法字段等）— 客户端可修正
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        # SQLAlchemy / 数据库等运行时错误 — 记录日志后统一返回 500
+        logger.exception("list_rows 运行时异常")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return RecordListResponse(rows=rows, total=total, limit=limit, offset=offset)
 
@@ -107,23 +122,27 @@ def list_records(
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = Query(default=False),
 ) -> RecordListResponse:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    dt = _get_table_or_404(table_id, workspace_id, db)
 
     try:
         rows, total = list_rows(
             db.get_bind(),
             dt,
-            filters=payload.filters,
+            filters=payload.filters if payload.filters else None,
             filter_logic=payload.filter_logic,
-            sorts=payload.sorts,
+            sorts=payload.sorts if payload.sorts else None,
             limit=payload.limit,
             offset=payload.offset,
             include_trashed=include_trashed,
             db=db,
             user=current_user,
         )
-    except Exception as exc:
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("list_rows 运行时异常")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return RecordListResponse(
         rows=rows,

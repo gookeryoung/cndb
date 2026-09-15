@@ -336,11 +336,15 @@ def compile_sorts(
     sa_table: Table,
     sorts: list[dict[str, str]],
 ) -> list[Any]:
-    """编译排序条件，返回 SQLAlchemy order_by expression 列表."""
+    """编译排序条件，返回 SQLAlchemy order_by expression 列表.
+
+    单个 sort 项解析失败时跳过而非让整个查询崩溃，保证分页等
+    基础功能不被坏数据阻断.
+    """
     field_map: dict[str, DataField] = {f.name: f for f in table.fields}
     order_clauses: list[Any] = []
 
-    for s in sorts:
+    for s in sorts or []:
         if not isinstance(s, dict):
             logger.warning("跳过非 dict sort 项: %r", s)
             continue
@@ -356,9 +360,13 @@ def compile_sorts(
 
         col = getattr(sa_table.c, f.db_column_name, None)
         if col is None:
+            logger.warning("排序列 %s 不存在，跳过", f.db_column_name)
             continue
 
-        order_clauses.append(col.desc() if direction == "desc" else col.asc())
+        try:
+            order_clauses.append(col.desc() if direction == "desc" else col.asc())
+        except Exception as exc:  # pragma: no cover - 防御性
+            logger.warning("排序列构建失败 field=%s: %s", field_name, exc)
 
     return order_clauses
 
