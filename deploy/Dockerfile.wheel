@@ -12,11 +12,11 @@
 #   - 不复制源码，不构建前端；wheel 已包含编译好的前端静态 + 后端代码
 #   - 镜像更小、构建更快、产物可直接复用已有 wheel
 #
-# 国内镜像源（如不需要可替换为官方 docker.io/python:3.14-slim）：
+# 国内镜像源（如不需要可替换为官方 docker.io/python:3.12-slim）：
 #   docker.m.daocloud.io / docker.1ms.run / dockerpull.com / docker.xuanyuan.me
 # ═══════════════════════════════════════════════════════════════════
 
-FROM docker.m.daocloud.io/python:3.14-slim
+FROM docker.m.daocloud.io/python:3.12-slim
 
 # ── 国内镜像（按需替换）──
 ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
