@@ -13,12 +13,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
-  Table, Empty, message, Popconfirm, Divider,
+  Table, Empty, message, Popconfirm, Divider, Modal, Card, Space, Avatar,
 } from 'antd'
 import {
-  SettingOutlined, TeamOutlined, BarChartOutlined, PlusOutlined,
+  SettingOutlined, BarChartOutlined, PlusOutlined,
   UserDeleteOutlined, CrownOutlined, FileTextOutlined, EyeOutlined,
-  ColumnWidthOutlined, UserOutlined, DeleteOutlined,
+  ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi } from '@/api'
@@ -30,7 +30,7 @@ import { useAuth } from '@/auth/AuthContext'
 
 interface Props {
   wid: string
-  initialTab?: 'basic' | 'members' | 'stats'
+  initialTab?: 'basic' | 'permissions' | 'stats'
   /** 设置保存后通知工作区列表刷新 */
   onUpdated?: () => void
 }
@@ -74,6 +74,8 @@ export default function WorkspaceSettingsContent({
   const [inviteRole, setInviteRole] = useState<WorkspaceRole>('editor')
   const [activeTab, setActiveTab] = useState(initialTab)
   const [candidatesSearch, setCandidatesSearch] = useState('')
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [transferTargetId, setTransferTargetId] = useState<string | null>(null)
 
   // 获取工作区详情
   const { data: detail } = useQuery<WorkspaceDetail>({
@@ -113,7 +115,6 @@ export default function WorkspaceSettingsContent({
         description: detail.description,
         visibility: detail.visibility ?? 'member',
         tags: (detail.tags ?? []).join(', '),
-        allow_edit: detail.allow_edit ?? true,
       })
     }
   }, [detail, form])
@@ -142,7 +143,6 @@ export default function WorkspaceSettingsContent({
         description: v.description as string,
         visibility: v.visibility as WorkspaceVisibility,
         tags: tagsStr.split(/[,，]/).map(s => s.trim()).filter(Boolean),
-        allow_edit: v.allow_edit as boolean,
       })
     },
     onSuccess: () => {
@@ -150,6 +150,15 @@ export default function WorkspaceSettingsContent({
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       onUpdated?.()
+    },
+  })
+
+  const toggleAllowEdit = useMutation({
+    mutationFn: (allowEdit: boolean) =>
+      workspaceApi.update(wid, { allow_edit: allowEdit }),
+    onSuccess: () => {
+      message.success('编辑权限已更新')
+      queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
     },
   })
 
@@ -191,6 +200,17 @@ export default function WorkspaceSettingsContent({
     },
   })
 
+  const transferOwner = useMutation({
+    mutationFn: (userId: number) => workspaceApi.transferOwner(wid, userId),
+    onSuccess: () => {
+      message.success('所有权已转让')
+      queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
+      queryClient.invalidateQueries({ queryKey: ['workspace-members', wid] })
+      setTransferOpen(false)
+    },
+    onError: () => message.error('转让失败'),
+  })
+
   const statItems = useMemo(() => {
     if (!detail) return []
     return [
@@ -218,9 +238,66 @@ export default function WorkspaceSettingsContent({
   }
 
   // ─────────────────────────────────────────
-  // 成员管理 Tab 内部组件
+  // 权限 Tab 内部组件
   const membersTabChildren = (
     <div>
+      {/* ── Owner Card ── */}
+      <Card
+        size="small"
+        title={<Space><SafetyOutlined /> 工作区所有者</Space>}
+        style={{ marginBottom: 12 }}
+        extra={
+          myRole === 'owner' ? (
+            <Button
+              size="small"
+              icon={<SwapOutlined />}
+              onClick={() => setTransferOpen(true)}
+            >
+              转让所有权
+            </Button>
+          ) : null
+        }
+      >
+        {detail?.owner ? (
+          <Space>
+            <Avatar icon={<UserOutlined />} />
+            <div>
+              <div style={{ fontWeight: 500 }}>
+                {detail.owner.username}
+                {detail.owner.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 13 }}>({detail.owner.nickname})</span>}
+                {myRole === 'owner' && <Tag color="blue" style={{ marginLeft: 8 }}>就是您</Tag>}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>
+                所有者对工作区负全责，可管理成员与转让所有权
+              </div>
+            </div>
+          </Space>
+        ) : (
+          <div style={{ color: 'var(--cn-text-muted)' }}>未指定所有者</div>
+        )}
+      </Card>
+
+      {/* ── 编辑权限开关（allow_edit） ── */}
+      <Card
+        size="small"
+        title={<Space><EyeOutlined /> 编辑权限</Space>}
+        style={{ marginBottom: 12 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Switch
+            checked={detail?.allow_edit ?? true}
+            disabled={!canEditBasic}
+            onChange={(checked) => toggleAllowEdit.mutate(checked)}
+            loading={toggleAllowEdit.isPending}
+          />
+          <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>
+            {detail?.allow_edit ?? true
+              ? '已开启：编辑者（editor）及以上角色可修改数据'
+              : '已关闭：仅所有者和管理员可修改数据，编辑者降级为只读'}
+          </span>
+        </div>
+      </Card>
+
       {/* 邀请区 — 搜索候选用户 */}
       {canManageMembers && (
         <div
@@ -344,6 +421,42 @@ export default function WorkspaceSettingsContent({
           },
         ]}
       />
+
+      {/* ── 转让所有权 Modal ── */}
+      <Modal
+        title="转让工作区所有权"
+        open={transferOpen}
+        onCancel={() => setTransferOpen(false)}
+        onOk={() => {
+          const selected = members.find(m => m.role !== 'owner' && String(m.user.id) === String(transferTargetId))
+          if (selected) transferOwner.mutate(Number(selected.user.id))
+        }}
+        okText="确认转让"
+        okType="danger"
+        confirmLoading={transferOwner.isPending}
+        okButtonProps={{ disabled: !transferTargetId }}
+        destroyOnHidden
+      >
+        <div style={{ marginBottom: 8, color: 'var(--cn-text-secondary)', fontSize: 13 }}>
+          将工作区所有权转让给下列成员。转让后您将失去所有者特权，回落到管理员角色。
+        </div>
+        <Select
+          showSearch
+          placeholder="选择接收者"
+          style={{ width: '100%' }}
+          value={transferTargetId}
+          onChange={setTransferTargetId}
+          options={members
+            .filter(m => m.role !== 'owner')
+            .map(m => ({
+              value: String(m.user.id),
+              label: `${m.user.username}${m.user.nickname ? ` (${m.user.nickname})` : ''}`,
+            }))}
+          filterOption={(input, option) =>
+            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+          }
+        />
+      </Modal>
     </div>
   )
 
@@ -357,7 +470,7 @@ export default function WorkspaceSettingsContent({
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ visibility: 'member', tags: '', allow_edit: true }}
+          initialValues={{ visibility: 'member', tags: '' }}
           onFinish={(v) => save.mutate(v)}
           disabled={!canEditBasic}
         >
@@ -380,16 +493,6 @@ export default function WorkspaceSettingsContent({
           <Form.Item name="tags" label="标签（逗号分隔）">
             <Input placeholder="例如：研发, 产品, 核心业务" />
           </Form.Item>
-          <Form.Item name="allow_edit" label="编辑权限" valuePropName="checked">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Switch disabled={!canEditBasic} />
-              <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>
-                {form.getFieldValue('allow_edit') ?? true
-                  ? '已开启：允许编辑者和管理员修改数据'
-                  : '已关闭：仅所有者可修改数据'}
-              </span>
-            </div>
-          </Form.Item>
           {!canEditBasic && (
             <div style={{ marginTop: 12, color: '#f59e0b', fontSize: 13 }}>
               ℹ️ 您的角色（{ROLE_LABEL[myRole ?? 'viewer']}）仅能查看设置，无法修改
@@ -399,8 +502,8 @@ export default function WorkspaceSettingsContent({
       ),
     },
     {
-      key: 'members',
-      label: <span><TeamOutlined /> 成员管理</span>,
+      key: 'permissions',
+      label: <span><SafetyOutlined /> 权限</span>,
       children: membersTabChildren,
     },
     {

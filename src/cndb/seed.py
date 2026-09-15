@@ -473,6 +473,21 @@ def seed(_args: argparse.Namespace) -> None:
         datasets_dir = _get_datasets_dir()
         view_count = _seed_views(db, owner, tables_map, datasets_dir)
 
+        # 4) 为"某企业销售管理"工作区添加其他演示成员，使表权限设置能看到可添加的候选成员
+        from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
+
+        sales_ws = ws_map.get("某企业销售管理")
+        if sales_ws is not None:
+            extra_members = [
+                (sec_admin, WorkspaceRole.ADMIN, "安全管理员"),
+                (audit_admin, WorkspaceRole.EDITOR, "审计管理员"),
+                (demo, WorkspaceRole.VIEWER, "演示用户"),
+            ]
+            for u, role, label in extra_members:
+                db.add(WorkspaceMember(workspace_id=sales_ws.id, user_id=u.id, role=role))
+                print(f"[seed] 添加工作区成员: {label} → {sales_ws.name} ({role.value})")
+            db.commit()
+
         total = csv_count + extra
         print(
             f"[seed] 完成！共 {total} 张数据表、{view_count} 个视图、4 个演示账号（三员 + 普通用户）。"

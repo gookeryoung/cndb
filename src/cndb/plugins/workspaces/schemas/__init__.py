@@ -86,6 +86,12 @@ class MemberUpdateRequest(BaseModel):
     role: WorkspaceRole
 
 
+class WorkspaceOwnerTransferRequest(BaseModel):
+    """转让工作区所有权请求."""
+
+    user_id: int
+
+
 class MemberUserBrief(BaseModel):
     """成员列表中的用户简要信息."""
 
@@ -221,6 +227,7 @@ __all__ = [
     "WorkspaceImportRequest",
     "WorkspaceImportResponse",
     "WorkspaceMemberResponse",
+    "WorkspaceOwnerTransferRequest",
     "WorkspaceResponse",
     "WorkspaceUpdate",
     "WorkspaceWithPinnedResponse",
