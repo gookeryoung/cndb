@@ -138,27 +138,58 @@ interface TimelineSegment {
   showLabel: boolean  // 是否应该渲染标签（稀疏策略）
 }
 
-/** 判断某一天是否值得显示标签：月初 / 周一 / 季度初 */
-function shouldShowLabel(d: Date, scale: TimeScale, width: number): boolean {
-  // 宽度阈值：太窄就不显示，避免拥挤
-  const MIN_LABEL_WIDTH: Record<TimeScale, number> = {
-    day: 28,
-    week: 60,
-    month: 80,
-    quarter: 120,
-  }
-  if (width < MIN_LABEL_WIDTH[scale]) return false
-
+/** 按"关键锚点"标记哪些段优先显示标签（不考虑宽度，纯语义）。
+ *  - day: 每月 1/15 号 + 周一
+ *  - week: 每月第一周
+ *  - month/quarter: 全部
+ */
+function isAnchorSegment(d: Date, scale: TimeScale): boolean {
   if (scale === 'day') {
-    // day 刻度：只在月初或周一显示
-    return d.getDate() === 1 || d.getDay() === 1
+    return d.getDate() === 1 || d.getDate() === 15 || d.getDay() === 1
   }
   if (scale === 'week') {
-    // week 刻度：只在月初那一周显示
     return d.getDate() <= 7
   }
-  // month / quarter：有足够宽度就显示（它们本身就稀疏）
+  // month / quarter：全部都是锚点
   return true
+}
+
+/** 后处理：根据最小标签间距像素对 segments 做稀疏化，避免密集。
+ *  策略：先保留所有锚点，再在"锚点间"的非锚点段里均匀填充，
+ *  保证相邻两个显示标签间的像素距离 >= minGapPx。
+ */
+function sparseLabels(segments: TimelineSegment[], minGapPx: number): TimelineSegment[] {
+  if (segments.length === 0) return segments
+
+  // 先标记全部锚点为 showLabel = true
+  let lastShownLeft = -Infinity
+  for (const seg of segments) {
+    if (seg.showLabel) {
+      // 如果锚点本身距离上一个显示标签太近，则跳过这个锚点
+      if (seg.left - lastShownLeft < minGapPx) {
+        seg.showLabel = false
+      } else {
+        lastShownLeft = seg.left
+      }
+    }
+  }
+
+  // 非锚点段：在剩余空位里均匀插入，保证间距 >= minGapPx
+  lastShownLeft = -Infinity
+  for (const seg of segments) {
+    if (seg.showLabel) {
+      lastShownLeft = seg.left
+      continue
+    }
+    // 找到可以安全插入的位置：与上一个显示标签 + 自身中心距都够远
+    const segCenter = seg.left + seg.width / 2
+    if (segCenter - lastShownLeft >= minGapPx) {
+      seg.showLabel = true
+      lastShownLeft = segCenter
+    }
+  }
+
+  return segments
 }
 
 function buildTimeline(
@@ -173,14 +204,13 @@ function buildTimeline(
     for (let i = 0; i < totalDays; i++) {
       const d = new Date(range.min)
       d.setDate(d.getDate() + i)
-      const width = pxPerDay
       segments.push({
         label: `${d.getMonth() + 1}/${d.getDate()}`,
         date: d,
-        width,
+        width: pxPerDay,
         days: 1,
-        left: 0, // 稍后统一回填
-        showLabel: shouldShowLabel(d, scale, width),
+        left: 0,
+        showLabel: isAnchorSegment(d, scale),
       })
     }
   } else if (scale === 'week') {
@@ -191,14 +221,13 @@ function buildTimeline(
       const weekEnd = new Date(weekStart)
       weekEnd.setDate(weekStart.getDate() + 6)
       const days = daysBetween(weekStart, weekEnd)
-      const width = days * pxPerDay
       segments.push({
         label: `${weekStart.getMonth() + 1}/${weekStart.getDate()}`,
         date: weekStart,
-        width,
+        width: days * pxPerDay,
         days,
         left: 0,
-        showLabel: shouldShowLabel(weekStart, scale, width),
+        showLabel: isAnchorSegment(weekStart, scale),
       })
       cursor = new Date(weekEnd)
       cursor.setDate(cursor.getDate() + 1)
@@ -211,14 +240,13 @@ function buildTimeline(
         cursor < range.min ? range.min : cursor,
         monthEnd > range.max ? range.max : monthEnd,
       )
-      const width = days * pxPerDay
       segments.push({
         label: `${cursor.getFullYear()}年${cursor.getMonth() + 1}月`,
         date: cursor,
-        width,
+        width: days * pxPerDay,
         days,
         left: 0,
-        showLabel: shouldShowLabel(cursor, scale, width),
+        showLabel: isAnchorSegment(cursor, scale),
       })
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
     }
@@ -231,27 +259,34 @@ function buildTimeline(
         qEnd > range.max ? range.max : qEnd,
       )
       const qNum = Math.floor(cursor.getMonth() / 3) + 1
-      const width = days * pxPerDay
       segments.push({
         label: `${cursor.getFullYear()} Q${qNum}`,
         date: cursor,
-        width,
+        width: days * pxPerDay,
         days,
         left: 0,
-        showLabel: shouldShowLabel(cursor, scale, width),
+        showLabel: isAnchorSegment(cursor, scale),
       })
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 3, 1)
     }
   }
 
-  // 一次性回填累积 left（O(n)）
+  // 回填累积 left
   let acc = 0
   for (const seg of segments) {
     seg.left = acc
     acc += seg.width
   }
 
-  return segments
+  // 动态稀疏化：保证标签间最小像素间距，避免过于密集
+  // day: 24px/周几数字足够放下; week: 48px; month/quarter: 全部显示
+  const MIN_GAP: Record<TimeScale, number> = {
+    day: 24,
+    week: 48,
+    month: 0,
+    quarter: 0,
+  }
+  return sparseLabels(segments, MIN_GAP[scale])
 }
 
 /** 根据 pxPerDay 自适应：如果总宽度太大则缩小，如果太小则放大 */
@@ -714,17 +749,19 @@ export default function GanttView({
           甘特图视图
         </div>
 
-        <Segmented
-          size="small"
-          value={scale}
-          onChange={(v) => setScale(v as TimeScale)}
-          options={[
-            { value: 'day', label: '天' },
-            { value: 'week', label: '周' },
-            { value: 'month', label: '月' },
-            { value: 'quarter', label: '季' },
-          ]}
-        />
+        <div data-testid="gantt-scale-switch">
+          <Segmented
+            size="small"
+            value={scale}
+            onChange={(v) => setScale(v as TimeScale)}
+            options={[
+              { value: 'day', label: '天' },
+              { value: 'week', label: '周' },
+              { value: 'month', label: '月' },
+              { value: 'quarter', label: '季' },
+            ]}
+          />
+        </div>
 
         <div style={{ marginLeft: 'auto', fontSize: ds.headerFontSize, color: 'var(--cn-text-muted)' }}>
           共 {tasks.length} 个任务 · {groupedTasks.length} 个分组
@@ -800,6 +837,7 @@ export default function GanttView({
             {timeline.map((seg) => (
               <div
                 key={seg.left}
+                data-testid={seg.showLabel ? 'gantt-timeline-label' : undefined}
                 style={{
                   width: seg.width,
                   minWidth: seg.width,
