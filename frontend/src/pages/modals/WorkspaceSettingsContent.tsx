@@ -71,9 +71,11 @@ export default function WorkspaceSettingsContent({
   const queryClient = useQueryClient()
   const { user: currentUser } = useAuth()
   const [form] = Form.useForm()
-  const [inviteRole, setInviteRole] = useState<WorkspaceRole>('editor')
   const [activeTab, setActiveTab] = useState(initialTab)
   const [candidatesSearch, setCandidatesSearch] = useState('')
+  const [addMemberOpen, setAddMemberOpen] = useState(false)
+  const [addMemberUsername, setAddMemberUsername] = useState<string | null>(null)
+  const [addMemberRole, setAddMemberRole] = useState<WorkspaceRole>('editor')
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferTargetId, setTransferTargetId] = useState<string | null>(null)
 
@@ -91,7 +93,7 @@ export default function WorkspaceSettingsContent({
     enabled: !!wid,
   })
 
-  // 候选用户（邀请时搜索）
+  // 候选用户（添加成员时搜索）
   const { data: candidatesData = [] as MemberUserBrief[], isLoading: candidatesLoading } = useQuery<MemberUserBrief[]>({
     queryKey: ['workspace-member-candidates', wid, candidatesSearch],
     queryFn: async () => {
@@ -106,6 +108,8 @@ export default function WorkspaceSettingsContent({
   useEffect(() => {
     setActiveTab(initialTab)
     setCandidatesSearch('')
+    setAddMemberUsername(null)
+    setAddMemberRole('editor')
   }, [initialTab, wid])
 
   useEffect(() => {
@@ -162,12 +166,14 @@ export default function WorkspaceSettingsContent({
     },
   })
 
-  const invite = useMutation({
+  const addMember = useMutation({
     mutationFn: ({ username, role }: { username: string; role: string }) =>
       workspaceApi.addMember(wid, username, role),
     onSuccess: () => {
-      message.success('已邀请用户')
+      message.success('已添加成员')
       setCandidatesSearch('')
+      setAddMemberUsername(null)
+      setAddMemberOpen(false)
       queryClient.invalidateQueries({ queryKey: ['workspace-members', wid] })
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
     },
@@ -298,61 +304,27 @@ export default function WorkspaceSettingsContent({
         </div>
       </Card>
 
-      {/* 邀请区 — 搜索候选用户 */}
-      {canManageMembers && (
-        <div
-          style={{
-            display: 'flex', gap: 8, marginBottom: 16,
-            padding: 12, ...subtleBoxStyle,
-          }}
-        >
-          <Select
-            showSearch
-            filterOption={false}
-            onSearch={setCandidatesSearch}
-            placeholder="搜索用户名或昵称..."
-            style={{ flex: 1 }}
-            options={candidatesData.map(u => ({
-              value: u.username,
-              label: (
-                <span>
-                  <strong>{u.username}</strong>
-                  {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8 }}>({u.nickname})</span>}
-                </span>
-              ),
-            }))}
-            notFoundContent={
-              candidatesSearch
-                ? (candidatesLoading ? '搜索中...' : '未找到候选用户')
-                : '请输入关键字搜索可邀请的用户'
-            }
-            loading={candidatesLoading}
-          />
-          <Select
-            value={inviteRole}
-            onChange={setInviteRole}
-            style={{ width: 140 }}
-            options={assignableRoles.filter(r => r.value !== 'owner')}
-          />
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            disabled={!candidatesSearch}
-            loading={invite.isPending}
-            onClick={() => {
-              const selected = candidatesData.find(u => u.username === candidatesSearch)
-              if (selected) {
-                invite.mutate({ username: selected.username, role: inviteRole })
-              }
-            }}
-          >邀请</Button>
-        </div>
-      )}
-      {!canManageMembers && (
-        <div style={{ marginBottom: 16, padding: 12, ...warningBoxStyle, color: '#92400e' }}>
-          仅管理员及以上角色可管理成员
-        </div>
-      )}
+      {/* 成员列表 Card — 头部含添加成员按钮 */}
+      <Card
+        size="small"
+        title={<Space><UserOutlined /> 工作区成员（{members.length}）</Space>}
+        style={{ marginBottom: 12 }}
+        extra={
+          canManageMembers ? (
+            <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => {
+              setAddMemberUsername(null)
+              setAddMemberRole('editor')
+              setCandidatesSearch('')
+              setAddMemberOpen(true)
+            }}>添加成员</Button>
+          ) : null
+        }
+      >
+        {!canManageMembers && (
+          <div style={{ marginBottom: 12, padding: 10, ...warningBoxStyle, color: '#92400e', fontSize: 13 }}>
+            仅管理员及以上角色可管理成员与权限
+          </div>
+        )}
 
       {/* 成员列表 */}
       <Table
@@ -421,6 +393,65 @@ export default function WorkspaceSettingsContent({
           },
         ]}
       />
+      </Card>
+
+      {/* ── 添加成员 Modal ── */}
+      <Modal
+        title="添加成员"
+        open={addMemberOpen}
+        onCancel={() => setAddMemberOpen(false)}
+        onOk={() => {
+          if (addMemberUsername) addMember.mutate({ username: addMemberUsername, role: addMemberRole })
+        }}
+        okText="添加"
+        confirmLoading={addMember.isPending}
+        okButtonProps={{ disabled: !addMemberUsername }}
+        destroyOnHidden
+      >
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>选择用户（系统内已注册且未加入本工作区）</div>
+          <Select
+            showSearch
+            filterOption={false}
+            onSearch={setCandidatesSearch}
+            placeholder="输入关键字搜索用户名或昵称..."
+            style={{ width: '100%' }}
+            value={addMemberUsername ?? undefined}
+            onChange={(v: string) => setAddMemberUsername(v)}
+            options={candidatesData.map(u => ({
+              value: u.username,
+              label: (
+                <span>
+                  <strong>{u.username}</strong>
+                  {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8 }}>({u.nickname})</span>}
+                </span>
+              ),
+            }))}
+            notFoundContent={
+              candidatesSearch
+                ? (candidatesLoading ? '搜索中...' : '未找到匹配用户')
+                : '请先输入关键字搜索用户'
+            }
+            loading={candidatesLoading}
+          />
+        </div>
+        <div>
+          <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>配置权限角色</div>
+          <Select
+            style={{ width: '100%' }}
+            value={addMemberRole}
+            onChange={(v: WorkspaceRole) => setAddMemberRole(v)}
+            options={assignableRoles.filter(r => r.value !== 'owner')}
+          />
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--cn-text-muted)' }}>
+            {ROLE_LABEL[addMemberRole as WorkspaceRole]} — {
+              addMemberRole === 'admin' ? '管理成员与工作区设置，不可转让所有权'
+              : addMemberRole === 'editor' ? '可查看并编辑数据，不可管理成员与设置'
+              : '仅可查看工作区内容与数据'
+            }
+          </div>
+        </div>
+      </Modal>
 
       {/* ── 转让所有权 Modal ── */}
       <Modal
