@@ -26,7 +26,7 @@ import {
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
   AppstoreOutlined, CopyOutlined, ImportOutlined, UploadOutlined, CloseOutlined,
   CalendarOutlined, ShareAltOutlined, SwapOutlined, LineChartOutlined,
-  SearchOutlined, EditOutlined, MenuOutlined,
+  SearchOutlined, EditOutlined, MenuOutlined, PartitionOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tableApi, recordApi, viewApi, userApi } from '@/api'
@@ -35,6 +35,7 @@ import KanbanView from './components/KanbanView'
 import CalendarView from './components/CalendarView'
 import GalleryView from './components/GalleryView'
 import GanttView from './components/GanttView'
+import WbsView from './components/WbsView'
 import RowDetailDrawer from './components/RowDetailDrawer'
 import ViewConfigDialog, { type FilterRule, type SortRule } from './components/ViewConfigDialog'
 import CreateEditViewForm from './components/CreateEditViewForm'
@@ -54,8 +55,8 @@ function ModalFallback() {
 }
 
 const { Text } = Typography
-type ViewMode = 'grid' | 'kanban' | 'gallery' | 'calendar' | 'gantt'
-const VALID_MODES: readonly ViewMode[] = ['grid', 'kanban', 'gallery', 'calendar', 'gantt']
+type ViewMode = 'grid' | 'kanban' | 'gallery' | 'calendar' | 'gantt' | 'wbs'
+const VALID_MODES: readonly ViewMode[] = ['grid', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs']
 const MODE_STORAGE_KEY = 'cndb_current_mode'
 
 /** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */
@@ -165,7 +166,7 @@ export default function GridPage() {
       setViewSortings(Array.isArray(v.sortings) ? v.sortings : [])
       setViewFilterLogic((v.filter_type ?? 'AND') as 'AND' | 'OR')
       setViewOptionsDraft(v.view_options ?? null)
-      const KANBAN_MODES = new Set<string>(['kanban', 'gallery', 'calendar', 'gantt'])
+      const KANBAN_MODES = new Set<string>(['kanban', 'gallery', 'calendar', 'gantt', 'wbs'])
       const vt = v.view_type ?? ''
       const newMode: ViewMode = KANBAN_MODES.has(vt) ? (vt as ViewMode) : 'grid'
       setMode(newMode)
@@ -633,6 +634,9 @@ export default function GridPage() {
           <Tooltip title="甘特图">
             <Button size="small" type={mode === 'gantt' ? 'primary' : 'default'} icon={<LineChartOutlined />} onClick={() => handleModeChange('gantt')} />
           </Tooltip>
+          <Tooltip title="工作分解">
+            <Button size="small" type={mode === 'wbs' ? 'primary' : 'default'} icon={<PartitionOutlined />} onClick={() => handleModeChange('wbs')} />
+          </Tooltip>
         </Space.Compact>
         <Input.Search
           size="small"
@@ -711,6 +715,8 @@ export default function GridPage() {
           <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         ) : mode === 'gantt' ? (
           <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+        ) : mode === 'wbs' ? (
+          <WbsView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         ) : (
           <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
         )}
