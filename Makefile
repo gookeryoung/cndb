@@ -8,7 +8,7 @@ PYTEST_JOBS := 8  # pytest-xdist 并行进程数；Windows 默认 8 避免句柄
 # push / bump 默认依赖 check，可用 SKIP_CHECK=1 临时跳过（仅限紧急修复，发布场景禁止使用）
 CHECK_DEPS := $(if $(SKIP_CHECK),,check)
 
-.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck check-fast check doc tox pub bump patch minor major push e2e
+.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck check-fast check doc tox pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -84,6 +84,20 @@ patch minor major:
 
 pub:  ## 推送到pypi
 	uvx twine upload dist/*.whl dist/*.tar.gz
+
+# ── fspack 本地打包 ──────────────────────────────────────────
+
+pack-doctor: ## fspack 环境诊断（检查打包工具链可用性）
+	uv run fspack doctor
+
+pack: frontend-build ## 本地当前平台打包（fspack build + package + 冒烟测试）
+	uv run python -c "import sys,platform; sys.stdout.reconfigure(encoding='utf-8'); p='windows' if platform.system()=='Windows' else ('macos' if platform.system()=='Darwin' else 'linux'); print(f'[pack] 目标平台: {p}')"
+	uv run fspack b . --target $$(uv run python -c "import platform; print('windows' if platform.system()=='Windows' else ('macos' if platform.system()=='Darwin' else 'linux'))")
+	uv run fspack p . --target $$(uv run python -c "import platform; print('windows' if platform.system()=='Windows' else ('macos' if platform.system()=='Darwin' else 'linux'))") --format all --no-build
+	@uv run python -c "import sys,subprocess,platform; sys.stdout.reconfigure(encoding='utf-8'); exe='dist/cndb.exe' if platform.system()=='Windows' else 'dist/cndb'; r=subprocess.run([exe,'info'],capture_output=True,text=True); print(r.stdout); print(f'[pack] 冒烟测试: OK' if r.returncode==0 else f'[pack] 冒烟测试 FAILED (rc={r.returncode})', file=sys.stderr if r.returncode!=0 else sys.stdout); sys.exit(r.returncode)"
+
+pack-cache-clean: ## 清理 fspack 缓存（wheels + nuitka）
+	uv run fspack cache clean
 
 push: ## 推送代码到所有远程仓库
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import subprocess as sp; [print(f'\u63a8\u9001 {r}...',flush=True) or (sp.run(['git','push',r],check=True) and sp.run(['git','push',r,'--tags'],check=True)) for r in sp.check_output(['git','remote'],text=True).split()]"
