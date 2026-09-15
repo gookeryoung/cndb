@@ -333,6 +333,11 @@ class ImportTask(TimestampMixin, Base):
     result_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
     # 校验报告（JSON 字符串） —— analyze 阶段产出，pending_confirm / running 时只读
     validation_report: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # ── 导入选项（两阶段导入 · upsert 扩展） ──
+    # 用户选择的参考列名列表（upsert 匹配键）；为空时全部追加
+    match_keys: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # 未知列处理策略："drop"（默认丢弃）/ "add_text_field"（自动新增基础类型字段）
+    unknown_cols_strategy: Mapped[str] = mapped_column(String(16), nullable=False, default="drop")
 
 
 __all__ = [
