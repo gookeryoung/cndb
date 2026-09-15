@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from cndb.plugins.tables import records as rec
 from cndb.plugins.tables.ddl import add_column
 from cndb.plugins.tables.diff_reporter import DiffReporter
+from cndb.plugins.tables.field_mapping import GapFilling
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.row_validator import RowValidator, ValidationResult
 
@@ -96,7 +97,16 @@ class Importer:
     PREVIEW_LIMIT = 200
     SAMPLE_FIELD_LIMIT = 5
 
-    def __init__(self, engine: Any, db: Session, table: DataTable) -> None:
+    def __init__(
+        self,
+        engine: Any,
+        db: Session,
+        table: DataTable,
+        *,
+        field_mapping: dict[str, str | None] | None = None,
+        gap_filling: GapFilling = "empty",
+        fill_values: dict[str, Any] | None = None,
+    ) -> None:
         self.engine = engine
         self.db = db
         self.table = table
