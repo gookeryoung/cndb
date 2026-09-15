@@ -155,8 +155,17 @@ export const tableApi = {
     api.patch<TableDetail>(`/v1/workspaces/${wid}/tables/${tid}`, data).then(r => r.data),
   remove: (wid: number | string, tid: number | string) =>
     api.delete(`/v1/workspaces/${wid}/tables/${tid}`).then(r => r.data),
-  copy: (wid: number | string, tid: number | string, includeData = false) =>
-    api.post<TableDetail>(`/v1/workspaces/${wid}/tables/${tid}/copy`, null, { params: { include_data: includeData } }).then(r => r.data),
+  /** 复制表 — 支持三种模式:
+   * - mode='structure'（默认）: 仅复制表结构
+   * - mode='all': 复制结构 + 全部数据
+   * - mode='view': 复制结构 + 指定视图过滤后的数据（需传 viewId）
+   */
+  copy: (wid: number | string, tid: number | string, opts?: { mode?: 'structure' | 'all' | 'view'; viewId?: number | string }) => {
+    const mode = opts?.mode ?? 'structure'
+    const params: Record<string, unknown> = { mode }
+    if (opts?.viewId != null) params.view_id = opts.viewId
+    return api.post<TableDetail>(`/v1/workspaces/${wid}/tables/${tid}/copy`, null, { params }).then(r => r.data)
+  },
   move: (wid: number | string, tid: number | string, targetWorkspaceId: number | string) =>
     api.post<TableDetail>(`/v1/workspaces/${wid}/tables/${tid}/move`, null, { params: { target_workspace_id: targetWorkspaceId } }).then(r => r.data),
   reorder: (wid: number | string, tableIds: Array<number | string>) =>
