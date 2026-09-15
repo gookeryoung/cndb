@@ -71,9 +71,9 @@ class TestCommentsCoverage:
             json={"login": "editor2", "password": "passw0rd"},
         )
         h2 = {"Authorization": f"Bearer {login2.json()['access_token']}"}
-        # invite 到 workspace
+        # 添加成员到工作区
         client.post(
-            f"/api/v1/workspaces/{wid}/invite",
+            f"/api/v1/workspaces/{wid}/members",
             headers=auth_headers,
             json={"username": "editor2", "role": "editor"},
         )
