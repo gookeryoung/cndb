@@ -121,16 +121,16 @@ function DisplayCell({ value, field, rowId, wid }: { value: unknown; field: Fiel
       const decimals = cfg.decimals as number | undefined
       const num = Number(value)
       if (!Number.isNaN(num) && decimals !== undefined) {
-        return <span style={{ fontFamily: 'ui-monospace, monospace' }}>{num.toFixed(decimals)}</span>
+        return <span className="font-num">{num.toFixed(decimals)}</span>
       }
-      return <span style={{ fontFamily: 'ui-monospace, monospace' }}>{String(value)}</span>
+      return <span className="font-num">{String(value)}</span>
     }
     case 'percentage': {
       const num = Number(value)
       if (!Number.isNaN(num)) {
         const cfg = (field.config as Record<string, unknown> | undefined) || {}
         const decimals = (cfg.decimals as number | undefined) ?? 0
-        return <span style={{ fontFamily: 'ui-monospace, monospace' }}>{(num * 100).toFixed(decimals)}%</span>
+        return <span className="font-num">{(num * 100).toFixed(decimals)}%</span>
       }
       return <span>{String(value)}</span>
     }
