@@ -615,7 +615,7 @@ def import_workspace(
     import logging
 
     from cndb.plugins.tables.ddl import create_table as ddl_create
-    from cndb.plugins.tables.models import DataField, DataTable, DataView
+    from cndb.plugins.tables.models import DataField, DataTable, DataView, ensure_default_view
 
     ws = _get_workspace_or_404(workspace_id, db)
     _require_admin(ws, current_user, db)
@@ -686,6 +686,9 @@ def import_workspace(
             except Exception as exc:
                 db.rollback()
                 raise HTTPException(status_code=400, detail=f"创建表 {table_name} 失败: {exc}") from exc
+
+            # 自动生成默认视图「全部」（若导入的 views 里已存在同名则跳过）
+            ensure_default_view(db, table, owner_id=current_user.id, commit=False)
 
             # 插入数据行（用 raw INSERT 避免依赖 transfer.py 的复杂逻辑）
             rows_data = tbl_data.get("rows", [])
