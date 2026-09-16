@@ -314,8 +314,9 @@ class SelectFieldConfig(FieldTypeConfig):
             if not opt.color:
                 empty_color_indices.append(i)
 
+        # 空 options 合法（允许导入后自动补全），跳过智能配色
         if not result:
-            raise ValueError("options 不能为空")
+            return result
 
         # 批量智能配色：仅填充空白 color
         if empty_color_indices:
@@ -369,6 +370,9 @@ class SelectFieldType(FieldType):
         if value is None:
             return None
         cfg = SelectFieldConfig(**_config)
+        # options 为空时放行（导入前预填充 options 前的过渡期）
+        if not cfg.options:
+            return str(value)
         allowed = cfg.option_values()
         str_val = str(value)
         if str_val not in allowed:
@@ -393,14 +397,19 @@ class MultiSelectFieldType(FieldType):
         if value is None:
             return None
         cfg = MultiSelectFieldConfig(**_config)
-        allowed = cfg.option_values()
+        # options 为空时放行（导入前预填充 options 前的过渡期）
         values = value if isinstance(value, list) else [value]
         result: list[str] = []
-        for v in values:
-            str_v = str(v)
-            if str_v not in allowed:
-                raise ValueError(f"{v!r} 不在可选值 {allowed} 中")
-            result.append(str_v)
+        if cfg.options:
+            allowed = cfg.option_values()
+            for v in values:
+                str_v = str(v)
+                if str_v not in allowed:
+                    raise ValueError(f"{v!r} 不在可选值 {allowed} 中")
+                result.append(str_v)
+        else:
+            for v in values:
+                result.append(str(v))
         return ",".join(result)
 
 
