@@ -1,17 +1,15 @@
-import { Card, Form, Input, Button, Typography, message, Radio } from 'antd'
+import { Card, Form, Input, Button, Typography, message } from 'antd'
 import { UserOutlined, MailOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
-import type { UserRole } from '@/api/types'
 
 const { Title, Text } = Typography
 
-/** 公开注册页面 —— 支持三员角色选择
+/** 公开注册页面 —— 已收窄为仅注册普通用户.
  *
- * 安全说明：
- * - 公开注册端点后端会静默降级非 user 角色，所以前端提供完整角色选择
- *   是为了让用户了解系统角色设计，后端始终强制最终角色为 user
- * - 真正的三员账号需要由超级管理员通过 admin-register 创建
+ * 三员账号（system_admin / security_admin / audit_admin）必须由超级管理员
+ * 通过 `cndb users create --role <role>` 或 admin-register API 创建，
+ * 不在公开注册入口暴露角色选择。
  */
 
 interface RegisterFormValues {
@@ -19,20 +17,11 @@ interface RegisterFormValues {
   email?: string
   password: string
   nickname?: string
-  role: UserRole
 }
-
-const ROLE_OPTIONS: Array<{ value: UserRole; label: string; hint: string; color: string }> = [
-  { value: 'system_admin', label: '系统管理员', hint: '系统配置、用户管理、工作区创建', color: '#1677ff' },
-  { value: 'security_admin', label: '安全管理员', hint: '权限策略、数据安全、访问控制', color: '#eb2f96' },
-  { value: 'audit_admin', label: '审计管理员', hint: '审计日志查看、合规检查', color: '#faad14' },
-  { value: 'user', label: '普通用户', hint: '日常业务操作（公开注册默认此角色）', color: '#52c41a' },
-]
 
 export default function RegisterPage() {
   const { register } = useAuth()
   const navigate = useNavigate()
-  const [form] = Form.useForm<RegisterFormValues>()
 
   const onFinish = async (values: RegisterFormValues) => {
     try {
@@ -51,9 +40,7 @@ export default function RegisterPage() {
         <Text type="secondary">加入 cndb，开始构建你的数据工作区</Text>
       </div>
       <Form<RegisterFormValues>
-        form={form}
         layout="vertical"
-        initialValues={{ role: 'user' as UserRole }}
         onFinish={onFinish}
       >
         <Form.Item
@@ -85,27 +72,6 @@ export default function RegisterPage() {
         >
           <Input.Password prefix={<LockOutlined />} placeholder="密码" size="large" />
         </Form.Item>
-
-        <Form.Item
-          name="role"
-          label="角色"
-          tooltip="三员角色参考 GB/T 22239 等级保护模型。公开注册时三员角色将自动降级为普通用户，需管理员创建。"
-        >
-          <Radio.Group optionType="button" buttonStyle="solid" size="large">
-            {ROLE_OPTIONS.map((opt) => (
-              <Radio.Button key={opt.value} value={opt.value}>
-                <span style={{ color: opt.color }}>●</span> {opt.label}
-              </Radio.Button>
-            ))}
-          </Radio.Group>
-        </Form.Item>
-        <Text type="secondary" style={{ display: 'block', marginTop: -8, marginBottom: 16, fontSize: 12 }}>
-          {(() => {
-            const currentRole = form.getFieldValue('role') as UserRole
-            const currentOption = ROLE_OPTIONS.find((o) => o.value === currentRole)
-            return currentOption ? `说明：${currentOption.hint}` : ''
-          })()}
-        </Text>
 
         <Button type="primary" htmlType="submit" block size="large">注册</Button>
         <div style={{ textAlign: 'center', marginTop: 16 }}>

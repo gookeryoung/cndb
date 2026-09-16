@@ -6,28 +6,26 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cndb.plugins.accounts.models import UserRole
 
-# 允许公开注册的角色集合（三员角色必须由超级管理员指定）
-PUBLIC_REGISTERABLE_ROLES = frozenset({UserRole.USER.value})
-
 
 class RegisterRequest(BaseModel):
-    """用户注册请求体."""
+    """公开注册请求体 —— 仅普通用户，不接受角色参数.
 
-    model_config = ConfigDict(strict=True)
+    公开注册入口收窄为"只允许普通用户"，因此 role 字段已移除。
+    角色由 User 模型默认值（user）自动填充。
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
 
     username: str = Field(min_length=2, max_length=150, description="用户名")
     email: str | None = Field(default=None, max_length=255, description="邮箱（可选）")
     nickname: str = Field(default="", max_length=150, description="昵称")
     password: str = Field(min_length=6, max_length=128, description="明文密码")
-    role: str = Field(
-        default=UserRole.USER.value,
-        description="用户角色（public_register 时仅支持 user；三员角色须由管理员创建）",
-    )
 
 
 class AdminRegisterRequest(RegisterRequest):
-    """管理员创建用户请求体 —— role 字段强制必填."""
+    """管理员创建用户请求体 —— role 字段强制必填（三员 + user 任意）."""
 
+    model_config = ConfigDict(strict=True, extra="forbid")
     role: str = Field(description="用户角色: system_admin / security_admin / audit_admin / user")
 
 
