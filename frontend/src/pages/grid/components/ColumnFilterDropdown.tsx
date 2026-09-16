@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button, Select, Input } from 'antd'
-import { getOpsForField, FIELD_TYPE_ALIASES, type FieldOp } from './fieldOps'
+import { getOpsForField, FIELD_TYPE_ALIASES, extractSelectOptions, type FieldOp } from './fieldOps'
 import type { Field } from '@/api'
 
 interface ColumnFilterDropdownProps {
@@ -37,11 +37,8 @@ export default function ColumnFilterDropdown({
   const _numericTypes = new Set(['number', 'float', 'decimal', 'percentage', 'timestamp'])
   const _resolveFt = (ft: string) => FIELD_TYPE_ALIASES[ft] ?? ft
   const isSelect = _resolveFt(field.field_type) === 'select' || _resolveFt(field.field_type) === 'multiselect'
-  const options: Array<{ value: string; label: string }> = isSelect
-    ? ((field.config as Record<string, unknown> | undefined)?.options as Array<Record<string, unknown>> | undefined || []).map((o: Record<string, unknown>) => ({
-      value: String(o.value ?? o.name ?? ''),
-      label: String(o.value ?? o.name ?? ''),
-    }))
+  const options = isSelect
+    ? extractSelectOptions(field.config).map(o => ({ value: o.value, label: o.label }))
     : []
 
   return (
