@@ -137,6 +137,16 @@ class TestCreateTableFromJsonData:
         assert field_names["humidity"] == "number"
         assert field_names["sunny"] == "boolean"
 
+        # 自动建表同时生成默认视图「全部」
+        from cndb.plugins.tables.models import DataView
+
+        views = db.query(DataView).filter(DataView.table_id == dt.id).all()
+        assert len(views) == 1
+        v = views[0]
+        assert v.name == "全部"
+        assert v.view_type == "grid"
+        assert v.is_default is True
+
         from cndb.plugins.tables import records as rec
 
         got_rows, _total = rec.list_rows(db_engine, dt, db=db)

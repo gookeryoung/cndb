@@ -118,6 +118,17 @@ class TestCreateTableFromCsv:
         assert field_map["age"] == "number"
         assert field_map["score"] == "float"
 
+        # 自动建表同时生成默认视图「全部」
+        from cndb.plugins.tables.models import DataView
+
+        views = db.query(DataView).filter(DataView.table_id == dt.id).all()
+        assert len(views) == 1
+        v = views[0]
+        assert v.name == "全部"
+        assert v.view_type == "grid"
+        assert v.is_default is True
+        assert v.order == 0
+
     def test_empty_csv_error(self, csv_workspace):
         engine, db, ws = csv_workspace
         with pytest.raises(ValueError, match="没有有效列"):
