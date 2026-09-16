@@ -17,6 +17,7 @@ from cndb.plugins.tables.models import DataField
 from cndb.plugins.tables.transfer import _promote_to_select_if_low_cardinality
 
 from .row_validator import ValidationResult
+from .transfer import _infer_single_value, _pick_inferred_type, _promote_to_select_if_low_cardinality
 
 # 预览截断上限
 PREVIEW_LIMIT = 200
@@ -125,6 +126,13 @@ class DiffReporter:
             "update_preview": update_preview,
             "warnings": warnings,
             "errors": errors,
+            # V2 字段
+            "new_count": new_count,
+            "update_count": update_count,
+            "multi_key_conflicts": multi_key_conflicts,
+            "new_preview": new_preview,
+            "update_preview": update_preview,
+            "planned_columns": planned_columns or [],
         }
 
     # ── 辅助：未知列类型推断 ──────────────────────────
