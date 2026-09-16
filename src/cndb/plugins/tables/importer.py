@@ -33,6 +33,7 @@ from cndb.plugins.tables.diff_reporter import DiffReporter
 from cndb.plugins.tables.field_mapping import GapFilling
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.row_validator import RowValidator, ValidationResult
+from cndb.plugins.tables.transfer import decode_bytes_auto
 
 _Format = str
 
@@ -510,7 +511,10 @@ class Importer:
 
     @staticmethod
     def _parse_csv(content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
-        text = content if isinstance(content, str) else content.decode("utf-8-sig")
+        if isinstance(content, bytes):
+            text, _enc = decode_bytes_auto(content)
+        else:
+            text = content
         reader = csv.DictReader(io.StringIO(text))
         file_columns = list(reader.fieldnames or [])
         rows = [dict(row) for row in reader]
@@ -518,7 +522,10 @@ class Importer:
 
     @staticmethod
     def _parse_json(content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
-        text = content if isinstance(content, str) else content.decode("utf-8")
+        if isinstance(content, bytes):
+            text, _enc = decode_bytes_auto(content)
+        else:
+            text = content
         data = json.loads(text)
         if not isinstance(data, list):
             raise ValueError("JSON 必须是对象数组")
@@ -560,19 +567,22 @@ class Importer:
 def guess_format_from_content(content: bytes | str) -> _Format:
     """从内容推断格式（按内容特征而非文件名）."""
     if isinstance(content, bytes):
+        text, enc = decode_bytes_auto(content)
+        # 如果兜底编码是 latin-1，说明原始字节无法被任何文本编码解码，
+        # 很可能是二进制（xlsx / 图片等），返回 xlsx 让调用方尝试 openpyxl 解析
+        if enc == "latin-1":
+            return "xlsx"
+    else:
+        text = content
+    stripped = text.strip()
+    if stripped.startswith("{") or stripped.startswith("["):
         try:
-            content = content.decode("utf-8-sig")
-        except Exception:
-            return "xlsx"  # 无法解码为文本 → xlsx
-    text = content.strip()
-    if text.startswith("{") or text.startswith("["):
-        try:
-            json.loads(text[:2048])
+            json.loads(stripped[:2048])
             return "json"
         except Exception:
             pass
     # 快速 CSV 检查：第一行有逗号或制表符分隔的多列
-    first_line = text.splitlines()[0] if text.splitlines() else ""
+    first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
     if "," in first_line or "\t" in first_line:
         return "csv"
     return "csv"  # 默认兜底

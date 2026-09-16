@@ -268,13 +268,16 @@ def create_import_task(
     unknown_cols_strategy: str = "drop",
 ) -> ImportTask:
     """创建异步导入任务并入库."""
+    from cndb.plugins.tables.transfer import decode_bytes_auto
+
     if fmt == "xlsx":
         if isinstance(content, bytes):
             stored = base64.b64encode(content).decode("ascii")
         else:
             stored = base64.b64encode(content.encode("latin-1")).decode("ascii")
     elif isinstance(content, bytes):
-        stored = content.decode("utf-8")
+        # CSV / JSON bytes：自动编码检测后存字符串
+        stored, _enc = decode_bytes_auto(content)
     else:
         stored = content
 

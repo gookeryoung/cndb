@@ -168,9 +168,11 @@ async def import_table(
 
     try:
         if fmt == "json":
-            ids = transfer.import_rows_from_json(db.get_bind(), dt, content.decode("utf-8"))
+            text, _enc = transfer.decode_bytes_auto(content)
+            ids = transfer.import_rows_from_json(db.get_bind(), dt, text)
         elif fmt == "csv":
-            ids = transfer.import_rows_from_csv(db.get_bind(), dt, content.decode("utf-8"))
+            text, _enc = transfer.decode_bytes_auto(content)
+            ids = transfer.import_rows_from_csv(db.get_bind(), dt, text)
         elif fmt == "xlsx":
             ids = transfer.import_rows_from_xlsx(db.get_bind(), dt, content)
         else:
