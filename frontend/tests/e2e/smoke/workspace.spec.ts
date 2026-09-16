@@ -32,4 +32,24 @@ test.describe("工作区 + 表列表", () => {
     const rows = page.locator(".ant-table-tbody tr.ant-table-row");
     await expect(rows).toHaveCount(6);
   });
+
+  test("表列表 owner 列正确展示拥有者用户名", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
+    await gotoWorkspace(page);
+
+    // 等待表列表加载完成
+    const rows = page.locator(".ant-table-tbody tr.ant-table-row");
+    await expect(rows).toHaveCount(6);
+
+    // 表头应包含「拥有者」列
+    await expect(page.locator("th", { hasText: "拥有者" }).first()).toBeVisible();
+
+    // 每一行的拥有者列不应是空（seed 表都有 owner=admin）
+    // 取第一行的 owner cell（ant-table-cell 的第 3 个，因为列顺序是 表名|描述|拥有者|...）
+    const firstRowOwnerCell = rows.first().locator("td").nth(2);
+    await expect(firstRowOwnerCell).toBeVisible();
+    // 应该显示 admin（而不是"未指定"）
+    await expect(firstRowOwnerCell).not.toHaveText("未指定");
+    await expect(firstRowOwnerCell).toContainText("admin");
+  });
 });

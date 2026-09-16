@@ -19,6 +19,7 @@ from cndb.plugins.tables.schemas import (
     OwnerBrief,
     TableCreate,
     TableDetailResponse,
+    TableOwnerBrief,
     TableResponse,
     TableUpdate,
     ViewBrief,
@@ -79,8 +80,7 @@ def _fill_table_stats(
     else:
         owner = db.get(User, table.owner_id) if table.owner_id else None
     if owner is not None:
-        base.owner_id = owner.id
-        base.owner_username = owner.username
+        base.owner = TableOwnerBrief(id=owner.id, username=owner.username)
 
     if member_count_map is not None:
         base.member_count = member_count_map.get(table.id, 0)
@@ -370,7 +370,7 @@ def get_table(
         fields=active_fields,
         views=view_briefs,
         current_user_actions=actions,
-        owner=owner,
+        workspace_owner=owner,
         workspace=ws_brief,
     )
 
