@@ -36,6 +36,14 @@ class TableUpdate(BaseModel):
     trashed: bool | None = None
 
 
+class TableOwnerBrief(BaseModel):
+    """表级拥有者简要信息（仅 id + username，用于数据表列表/详情返回）."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    username: str
+
+
 class TableResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -52,9 +60,9 @@ class TableResponse(BaseModel):
     field_count: int | None = None
     record_count: int | None = None
     view_count: int | None = None
+    # 表级拥有者（DataTable.owner_id 关联的用户；owner_id 为空时为 None）
+    owner: TableOwnerBrief | None = None
     # 数据资产目录相关 —— 由 list_tables 聚合填充
-    owner_id: int | None = None
-    owner_username: str | None = None
     member_count: int | None = None
     my_access: str | None = None  # "owner" | "write" | "read" | "none"
 
@@ -94,8 +102,8 @@ class TableDetailResponse(TableResponse):
     views: list[ViewBrief] = []
     # 当前用户在该表上可执行的动作（由 check_action 批量计算）
     current_user_actions: list[str] = []
-    # 表所属工作区的 owner（从 WorkspaceMember + User 查出）
-    owner: OwnerBrief | None = None
+    # 表所属工作区的 owner（从 WorkspaceMember + User 查出，注意：与继承自 TableResponse 的表级 owner 区分）
+    workspace_owner: OwnerBrief | None = None
     # 所属工作区摘要
     workspace: WorkspaceBrief | None = None
 
@@ -362,6 +370,7 @@ __all__ = [
     "RecordUpdate",
     "TableCreate",
     "TableDetailResponse",
+    "TableOwnerBrief",
     "TableResponse",
     "TableUpdate",
     "ViewBrief",
