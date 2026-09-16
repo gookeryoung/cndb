@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from cndb.models.base import Base
 from cndb.plugins.tables import transfer
 
 
@@ -74,33 +71,21 @@ class TestAnalyzeCsvColumns:
 
 
 @pytest.fixture
-def csv_workspace(tmp_path):
-    db_path = tmp_path / "test_csv.db"
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-
-    Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine)
-    session = SessionLocal()
-
+def csv_workspace(db, db_engine):
+    """复用 conftest 内存 DB，种子 csv_user + CSVWS workspace."""
     from cndb.plugins.accounts.models import User
     from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
 
     u = User(username="csv_user")
     u.set_password("pass")
-    session.add(u)
-    session.flush()
+    db.add(u)
+    db.flush()
     ws = Workspace(name="CSVWS", created_by_id=u.id)
-    session.add(ws)
-    session.flush()
-    session.add(WorkspaceMember(workspace_id=ws.id, user_id=u.id, role=WorkspaceRole.OWNER))
-    session.commit()
-
-    try:
-        yield engine, session, ws
-    finally:
-        session.close()
-        Base.metadata.drop_all(engine)
-        engine.dispose()
+    db.add(ws)
+    db.flush()
+    db.add(WorkspaceMember(workspace_id=ws.id, user_id=u.id, role=WorkspaceRole.OWNER))
+    db.commit()
+    yield db_engine, db, ws
 
 
 class TestCreateTableFromCsv:
