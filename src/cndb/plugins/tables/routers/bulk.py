@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -196,10 +197,15 @@ async def import_table_async(
     file: UploadFile,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    match_keys: Annotated[str | None, Form()] = None,
+    unknown_cols_strategy: Annotated[str | None, Form()] = None,
 ) -> dict[str, Any]:
     """提交异步导入任务，返回 task_id.
 
     前端轮询 GET /import/async/{task_id} 查询进度.
+
+    V2: 支持 match_keys（upsert 参考列，JSON 序列化字符串如 "[\"code\"]"）
+    和 unknown_cols_strategy（未知列策略：drop / add_text_field）.
     """
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     dt = _get_table_or_404(table_id, workspace_id, db)
@@ -217,6 +223,8 @@ async def import_table_async(
         filename=file.filename or "upload",
         fmt=fmt,
         content=content,
+        match_keys=json.loads(match_keys) if match_keys else None,
+        unknown_cols_strategy=unknown_cols_strategy or "drop",
     )
 
     # 启动后台线程执行：用请求 session 的 bind 保证连接到同一个数据库
@@ -287,12 +295,17 @@ async def import_table_analyze(
     file: UploadFile,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    match_keys: Annotated[str | None, Form()] = None,
+    unknown_cols_strategy: Annotated[str | None, Form()] = None,
 ) -> dict[str, Any]:
     """提交文件仅做解析+校验，返回 task_id（不写库）.
 
     任务进入 pending_validation → pending_confirm 状态，
     前端轮询 task_id 拿到 validation_report 后展示预览，
     用户点击确认 → POST /import/{task_id}/confirm 才真正落库.
+
+    V2: 支持 match_keys（upsert 参考列，JSON 序列化的字符串数组如 "[\"code\"]"）
+    和 unknown_cols_strategy（未知列策略：drop / add_text_field）.
     """
     _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
     dt = _get_table_or_404(table_id, workspace_id, db)
@@ -310,6 +323,8 @@ async def import_table_analyze(
         filename=file.filename or "upload",
         fmt=fmt,
         content=content,
+        match_keys=json.loads(match_keys) if match_keys else None,
+        unknown_cols_strategy=unknown_cols_strategy or "drop",
     )
 
     # 后台跑 analyze 阶段

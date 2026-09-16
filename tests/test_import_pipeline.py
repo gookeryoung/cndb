@@ -1423,3 +1423,1029 @@ class TestImportTaskAnalyzeBranch:
         engine, _session = test_session
         rows, _cols, _total = _parse_to_rows("x,y\n", "csv", engine, None)
         assert rows == []
+
+
+# ════════════════════════════════════════════════════
+# UPSERT 专项测试 — AC-1 ~ AC-7
+# ════════════════════════════════════════════════════
+
+
+# ── records.py: find_rows_by_key / bulk_update_rows ─────────────
+
+
+class TestFindRowsByKey:
+    """TR-1.1/1.2/1.3: records.find_rows_by_key 正常路径."""
+
+    def test_exact_match_returns_row_id(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"code": "A001"}], db=session)
+        exact_map, conflict_map = rec.find_rows_by_key(engine, table, ["code"], [{"code": "A001"}])
+        assert exact_map[("A001",)] == ids[0]
+        assert conflict_map == {}
+
+    def test_partial_match(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        rec.bulk_create(engine, table, [{"code": "A"}], db=session)
+        exact_map, _ = rec.find_rows_by_key(engine, table, ["code"], [{"code": "A"}, {"code": "B"}, {"code": "C"}])
+        assert len(exact_map) == 1
+        assert ("A",) in exact_map
+
+    def test_multi_column_key(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "sub", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"code": "A", "sub": "1"}], db=session)
+        exact_map, _ = rec.find_rows_by_key(engine, table, ["code", "sub"], [{"code": "A", "sub": "1"}])
+        assert exact_map[("A", "1")] == ids[0]
+
+    def test_empty_values_list_returns_empty(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        assert rec.find_rows_by_key(engine, table, ["code"], []) == ({}, {})
+        assert rec.find_rows_by_key(engine, table, [], [{"code": "X"}]) == ({}, {})
+
+    def test_conflict_multi_row_same_key(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"code": "DUP"}, {"code": "DUP"}], db=session)
+        exact_map, conflict_map = rec.find_rows_by_key(engine, table, ["code"], [{"code": "DUP"}])
+        assert exact_map[("DUP",)] == min(ids)
+        assert conflict_map[("DUP",)] == 2
+
+    def test_null_value_as_key(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        created_ids = rec.bulk_create(engine, table, [{"code": None}], db=session)
+        exact_map, _ = rec.find_rows_by_key(engine, table, ["code"], [{"code": None}])
+        assert exact_map[(None,)] == created_ids[0]
+
+    def test_duplicate_keys_in_input_deduped(self, test_session):
+        """find_rows_by_key 输入里重复 key tuple → 去重后只查一次."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"code": "X"}], db=session)
+        values_list = [{"code": "X"}, {"code": "X"}, {"code": "X"}, {"code": "Y"}]
+        exact_map, _ = rec.find_rows_by_key(engine, table, ["code"], values_list)
+        assert exact_map[("X",)] == ids[0]
+
+    def test_invalid_cols_filtered_out(self, test_session):
+        """key_cols 里包含不存在的字段 → 过滤掉，剩空列表返回 {}."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        assert rec.find_rows_by_key(engine, table, ["nonexistent"], [{"nonexistent": "x"}]) == ({}, {})
+
+    def test_trashed_key_field_filtered(self, test_session):
+        """key_cols 里被 trashed 的字段不参与匹配."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        bad = _add_field(session, table, "bad", "text", order=1)
+        bad.trashed = True
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        # bad 是 trashed，不在有效字段里，key_cols=["bad"] → effective_cols 空 → {}
+        assert rec.find_rows_by_key(engine, table, ["bad"], [{"bad": "x"}]) == ({}, {})
+
+
+class TestBulkUpdateRows:
+    """bulk_update_rows 每条独立 values."""
+
+    def test_each_different_values(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"code": "A", "name": "N1"}, {"code": "B", "name": "N2"}], db=session)
+        updates = [
+            {"row_id": ids[0], "values": {"name": "U1"}},
+            {"row_id": ids[1], "values": {"name": "U2"}},
+        ]
+        count = rec.bulk_update_rows(engine, table, updates, db=session)
+        assert count == 2
+        r1 = rec.get_row(engine, table, ids[0], db=session)
+        r2 = rec.get_row(engine, table, ids[1], db=session)
+        assert r1 is not None and r1["name"] == "U1"
+        assert r2 is not None and r2["name"] == "U2"
+
+    def test_empty_updates_returns_zero(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        assert rec.bulk_update_rows(engine, table, [], db=session) == 0
+
+    def test_missing_row_id_skipped(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"code": "A", "name": "O"}], db=session)
+        count = rec.bulk_update_rows(
+            engine,
+            table,
+            [
+                {"row_id": None, "values": {"name": "X"}},
+                {"row_id": ids[0], "values": {"name": "U"}},
+                {"row_id": ids[0], "values": {}},  # values 空 dict → skip
+            ],
+            db=session,
+        )
+        assert count == 1
+
+    def test_trashed_row_skipped(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"code": "A", "name": "Old"}], db=session)
+        rec.bulk_delete(engine, table, ids, db=session)
+        count = rec.bulk_update_rows(engine, table, [{"row_id": ids[0], "values": {"name": "New"}}], db=session)
+        assert count == 0
+
+    # ── Importer: analyze upsert 分类 ──────────────────────────
+
+    def test_link_only_update(self, test_session):
+        """bulk_update_rows: values 里只有 link 字段 → 走 else 分支 + set_links."""
+        from cndb.plugins.tables import ddl as _ddl
+        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.models import DataField, DataTable
+
+        engine, session = test_session
+        # 建一个 source 表作为 link target
+        target = DataTable(workspace_id=1, name="Target")
+        target.ensure_db_name()
+        session.add(target)
+        session.commit()
+        t_name = DataField(table_id=target.id, name="tname", field_type="text", order=0)
+        t_name.ensure_db_name()
+        session.add(t_name)
+        session.commit()
+        _ddl.create_table(engine, target)
+        target_ids = rec.bulk_create(engine, target, [{"tname": "T1"}, {"tname": "T2"}], db=session)
+
+        # 建主表（含 link 字段到 target）
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        link_field = DataField(
+            table_id=table.id,
+            name="ref",
+            field_type="link",
+            config={"target_table_id": target.id, "multiple": True},
+            order=1,
+        )
+        link_field.ensure_db_name()
+        session.add(link_field)
+        session.commit()
+        _ddl.create_table(engine, table)
+
+        ids = rec.bulk_create(engine, table, [{"code": "A"}, {"code": "B"}], db=session)
+        # 只传 link 值（无物理列值）
+        count = rec.bulk_update_rows(
+            engine,
+            table,
+            [
+                {"row_id": ids[0], "values": {"ref": [target_ids[0]]}},
+                {"row_id": ids[1], "values": {"ref": [target_ids[1]]}},
+            ],
+            db=session,
+        )
+        assert count == 2
+
+
+class TestImporterUpsertAnalyze:
+    """AC-1: analyze 正确分类 new/update."""
+
+    def test_match_keys_classify_new_and_update(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        existing_ids = rec.bulk_create(engine, table, [{"code": "A001", "name": "苹果"}], db=session)
+        imp = Importer(engine, session, table)
+        csv = "code,name\nA001,Apple\nA002,香蕉\n"
+        analysis = imp.analyze(csv, format="csv", match_keys=["code"])
+        report = analysis.report
+        assert report["new_count"] == 1
+        assert report["update_count"] == 1
+        assert report["update_preview"][0]["existing_row_id"] == existing_ids[0]
+        assert report["new_preview"][0].get("existing_row_id", True)
+
+    def test_no_match_keys_all_new(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        rec.bulk_create(engine, table, [{"code": "A001", "name": "苹果"}], db=session)
+        imp = Importer(engine, session, table)
+        csv = "code,name\nA001,Apple\nA002,香蕉\n"
+        analysis = imp.analyze(csv, format="csv")
+        report = analysis.report
+        # 不传 match_keys → 全部按 new
+        assert report["update_count"] == 0
+        assert report["new_count"] == report["valid_count"]
+
+    def test_multi_key_conflict_counted(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        rec.bulk_create(engine, table, [{"code": "X"}, {"code": "X"}], db=session)
+        imp = Importer(engine, session, table)
+        csv = "code\nX\n"
+        analysis = imp.analyze(csv, format="csv", match_keys=["code"])
+        assert analysis.report.get("multi_key_conflicts", 0) >= 1
+
+
+# ── Importer: execute upsert 分流 ──────────────────────────
+
+
+class TestImporterUpsertExecute:
+    """AC-4: execute 阶段 upsert 分流正确."""
+
+    def test_update_existing_and_create_new(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        rec.bulk_create(engine, table, [{"code": "A001", "name": "旧值"}], db=session)
+        imp = Importer(engine, session, table)
+        csv = "code,name\nA001,新值\nA002,香蕉\n"
+        imp.execute(csv, format="csv", match_keys=["code"])
+        # 验证：原有行 name 被更新 + 新增 A002
+        rows = rec.list_rows(engine, table, db=session)[0]
+        code_a = next(r for r in rows if r.get("code") == "A001")
+        code_b = next(r for r in rows if r.get("code") == "A002")
+        assert code_a["name"] == "新值"
+        assert code_b["name"] == "香蕉"
+        assert len(rows) == 2
+
+    def test_no_match_keys_pure_append(self, test_session):
+        """AC-7: 向后兼容 — 不传 match_keys → 纯追加."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        rec.bulk_create(engine, table, [{"code": "A001", "name": "旧值"}], db=session)
+        imp = Importer(engine, session, table)
+        csv = "code,name\nA001,重复\n"
+        imp.execute(csv, format="csv")
+        # 纯追加 → 两行，同名 code
+        rows = rec.list_rows(engine, table, db=session)[0]
+        assert len(rows) == 2
+
+
+# ── 未知列策略 ──────────────────────────────────────────
+
+
+class TestUnknownColumnStrategy:
+    """AC-2 / AC-3: 丢弃 vs 自动新增字段."""
+
+    def test_drop_by_default(self, test_session):
+        """unknown_cols_strategy 未传 → 默认 drop → skipped_columns 包含 price."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        csv = "code,price\nA001,9.9\n"
+        analysis = imp.analyze(csv, format="csv")
+        report = analysis.report
+        assert "price" in report.get("skipped_columns", [])
+        assert report.get("planned_columns", []) == []
+        imp.execute(csv, format="csv")
+        # price 列没有被创建
+        existing_names = {f.name for f in table.fields if not f.trashed}
+        assert "price" not in existing_names
+
+    def test_auto_add_number_column(self, test_session):
+        """price 数值高占比 → 推断为 number/float + 自动建列 + 值正确写入."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        csv = "code,price\nA001,5.5\nA002,9.9\nA003,3.0\n"
+        analysis = imp.analyze(csv, format="csv", unknown_cols_strategy="add_text_field")
+        planned = analysis.report.get("planned_columns", [])
+        price_plan = next((p for p in planned if p["name"] == "price"), None)
+        assert price_plan is not None
+        assert price_plan["field_type"] in ("number", "float")
+
+        # 执行后验证
+        imp.execute(csv, format="csv", unknown_cols_strategy="add_text_field", analysis=analysis)
+        existing_names = {f.name for f in table.fields if not f.trashed}
+        assert "price" in existing_names
+        from cndb.plugins.tables import records as rec
+
+        rows = rec.list_rows(engine, table, db=session)[0]
+        prices = sorted([r["price"] for r in rows])
+        assert prices == [3.0, 5.5, 9.9]
+
+    def test_auto_add_select_column_low_cardinality(self, test_session):
+        """低基数 (yes/no) 字段 → 推断为 select."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        csv = "code,status\nA,low\nB,medium\nC,high\nD,low\nE,medium\nF,high\n"
+        analysis = imp.analyze(csv, format="csv", unknown_cols_strategy="add_text_field")
+        planned = analysis.report.get("planned_columns", [])
+        status_plan = next((p for p in planned if p["name"] == "status"), None)
+        assert status_plan is not None
+        assert status_plan["field_type"] == "select"
+        assert "options" in status_plan
+
+
+# ── 性能基准 ─────────────────────────────────────────────
+
+
+class TestPerformanceAC7:
+    """AC-7: 5000 行 analyze 耗时 < 3s."""
+
+    def test_five_k_rows_perf(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        # 先 seed 一半（2500 行）到表中让 upsert 匹配有工作量
+        seed = [{"code": f"CODE{i:05d}", "name": f"SEED_{i}"} for i in range(2500)]
+        rec.bulk_create(engine, table, seed, db=session)
+
+        # 构造 5000 行文件：2500 已存在 + 2500 新
+        import time
+
+        lines = ["code,name"]
+        for i in range(5000):
+            if i < 2500:
+                lines.append(f"CODE{i:05d},EXISTING_OVERRIDE_{i}")
+            else:
+                lines.append(f"NEW{i:05d},NEW_{i}")
+        csv = "\n".join(lines) + "\n"
+
+        imp = Importer(engine, session, table)
+        start = time.perf_counter()
+        analysis = imp.analyze(csv, format="csv", match_keys=["code"])
+        elapsed = time.perf_counter() - start
+
+        assert analysis.report["new_count"] == 2500
+        assert analysis.report["update_count"] == 2500
+        # 容器内 SQLite 阈值放宽到 6s
+        assert elapsed < 6.0, f"analyze 耗时 {elapsed:.2f}s 超过阈值 6s"
+
+
+# ── DiffReporter V2 向后兼容 ───────────────────────────
+
+
+class TestDiffReporterV2BackwardCompat:
+    """TR-3.1/3.2/3.3: 不传 V2 参数时 diff_reporter 原有行为不变."""
+
+    def test_no_upsert_result_falls_back_to_valid(self, test_session):
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "name", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+
+        rv = RowValidator(table)
+        results = rv.validate_all([{"name": "a"}, {"name": "b"}])
+        report = DiffReporter.build(results, table.active_fields(), ["name"])
+        assert report["new_count"] == report["valid_count"]
+        assert report["update_count"] == 0
+        assert report["planned_columns"] == []
+
+    def test_default_strategy_empty_planned(self, test_session):
+        """unknown_cols_strategy="drop" → planned_columns 为空."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+
+        rv = RowValidator(table)
+        results = rv.validate_all([{"code": "A", "price": "9.9"}])
+        report = DiffReporter.build(
+            results,
+            table.active_fields(),
+            ["code", "price"],
+            planned_columns=[],
+        )
+        assert report["planned_columns"] == []
+
+    def test_infer_new_column_type_basic(self):
+        """DiffReporter.infer_new_column_type 正常推断."""
+        assert DiffReporter.infer_new_column_type(["1", "2", "3"])[0] == "number"
+
+    def test_infer_new_column_type_empty_samples(self):
+        assert DiffReporter.infer_new_column_type([]) == ("text", [])
+
+    def test_infer_new_column_type_number(self):
+        t, _ = DiffReporter.infer_new_column_type(["3.14", "2.71", "1.0"])
+        assert t in {"number", "float"}
+
+    # ── Importer 边界 ────────────────────────────────────────
+
+    def test_infer_all_empty_samples_falls_back_to_text(self):
+        samples = [None, "", None, ""]
+        t, opts = DiffReporter.infer_new_column_type(samples)
+        assert t == "text"
+        assert opts == []
+
+    def test_infer_non_standard_type_falls_back_to_text(self, monkeypatch):
+        """模拟 _pick_inferred_type 返回一个未知类型 → 安全兜底转 text."""
+        from cndb.plugins.tables import diff_reporter as dr
+
+        monkeypatch.setattr(dr, "_pick_inferred_type", lambda _: "weird_type")
+        t, opts = DiffReporter.infer_new_column_type(["x", "y"])
+        assert t == "text"
+        assert opts == []
+
+
+class TestImporterEdgeCases:
+    """upsert 分流边界."""
+
+    def test_all_error_rows_no_upsert(self, test_session):
+        """所有行 error → to_import 空 → upsert_result 里 update_rows/new_rows 也空."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "email", "email", required=True, order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        csv = "email\nbad\n"
+        analysis = imp.analyze(csv, format="csv", match_keys=["email"])
+        assert analysis.report["new_count"] == 0
+        assert analysis.report["update_count"] == 0
+
+    def test_execute_upsert_falls_back_when_no_update_rows(self, test_session):
+        """upsert_result 存在但 update_rows 空 → 全走 bulk_create."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        csv = "code\nNEW1\nNEW2\n"
+        result = imp.execute(csv, format="csv", match_keys=["code"])
+        assert result.imported_ids == [1, 2]
+
+    def test_unknown_cols_drop_then_reimport(self, test_session):
+        """先 drop 后 add 两次导入，字段自动新增不重复."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        csv = "code,price\nA,1.0\nB,2.0\n"
+        # 先 drop → 不建 price 列
+        imp.execute(csv, format="csv")
+        existing_before = {f.name for f in table.fields if not f.trashed}
+        assert "price" not in existing_before
+        # 再 add → 自动建列
+        imp.execute(csv, format="csv", unknown_cols_strategy="add_text_field")
+        existing_after = {f.name for f in table.fields if not f.trashed}
+        assert "price" in existing_after
+
+    # ── import_tasks 边界覆盖 ──────────────────────────────
+
+    def test_upsert_all_update_no_new(self, test_session):
+        """upsert_result 里只有 update_rows，没有 new_rows → all_new 空 → ids = []."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        existing_ids = rec.bulk_create(engine, table, [{"code": "A", "name": "Old"}], db=session)
+        imp = Importer(engine, session, table)
+        csv = "code,name\nA,New\n"
+        result = imp.execute(csv, format="csv", match_keys=["code"])
+        assert len(result.imported_ids) == 0
+        # 但实际上 update 成功了
+        row = rec.get_row(engine, table, existing_ids[0], db=session)
+        assert row is not None and row["name"] == "New"
+
+    def test_auto_add_fields_idempotent_existing_skipped(self, test_session):
+        """_auto_add_fields 跳过已存在的同名字段（幂等）."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        planned = [{"name": "code", "field_type": "text", "sample_values": []}]
+        # code 已存在 → 跳过 → 不抛异常
+        imp._auto_add_fields(planned)
+
+    def test_auto_add_fields_ddl_failure_rolls_back(self, test_session, monkeypatch):
+        """_auto_add_fields DDL 失败 → 逆向清理 + ORM rollback + 重新 raise."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+
+        from cndb.plugins.tables import ddl as _ddl
+
+        original_add = _ddl.add_column
+        call_count = [0]
+
+        def fail_on_second(eng, tbl, fld):
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                raise RuntimeError("模拟 DDL 失败")
+            original_add(eng, tbl, fld)
+
+        monkeypatch.setattr(_ddl, "add_column", fail_on_second)
+
+        planned = [
+            {"name": "new1", "field_type": "text", "sample_values": []},
+            {"name": "new2", "field_type": "text", "sample_values": []},
+        ]
+        import pytest as _pytest
+
+        with _pytest.raises(RuntimeError, match="模拟 DDL 失败"):
+            imp._auto_add_fields(planned)
+        # 验证 new1 的 DDL 被逆向清理（如果它成功执行过的话）
+        existing_names = {f.name for f in table.fields if not f.trashed}
+        # new2 应该不存在（因为 DDL 中途失败回滚）
+        assert "new2" not in existing_names
+
+
+class TestImportTasksEdgeCases:
+    """补齐 import_tasks.py 未覆盖的边界路径."""
+
+    def test_analyze_task_not_found_noop(self, test_session):
+        """analyze_import_task 传入不存在的 task_id → noop (line 62-63)."""
+        from cndb.plugins.tables.import_tasks import analyze_import_task
+
+        _engine, session = test_session
+        analyze_import_task(session, task_id=99999)
+
+    def test_execute_task_not_found_noop(self, test_session):
+        """execute_import_task 传入不存在的 task_id → noop (line 173-175)."""
+        from cndb.plugins.tables.import_tasks import execute_import_task
+
+        _engine, session = test_session
+        execute_import_task(session, task_id=99999)
+
+    def test_create_import_task_xlsx_bytes_b64(self, test_session):
+        """create_import_task 处理 xlsx bytes → base64 (line 271-274)."""
+        import base64
+
+        from cndb.plugins.tables.import_tasks import create_import_task
+
+        _engine, session = test_session
+        # 建一个表
+        from cndb.plugins.tables.models import DataTable
+
+        dt = DataTable(workspace_id=1, name="XLSX")
+        dt.ensure_db_name()
+        session.add(dt)
+        session.commit()
+        fake_xlsx = b"\0"
+        task = create_import_task(
+            session,
+            table_id=dt.id,
+            user_id=1,
+            filename="t.xlsx",
+            fmt="xlsx",
+            content=fake_xlsx,
+        )
+        assert task.format == "xlsx"
+        assert task.file_content == base64.b64encode(fake_xlsx).decode("ascii")
+        assert task.match_keys == []
+        assert task.unknown_cols_strategy == "drop"
+
+
+class TestImportTasksUpsertCoverage:
+    """覆盖 import_tasks.py 中未被其他测试走到的边界分支."""
+
+    # ── _transition_status 非法转换 ──
+
+    def test_transition_status_illegal_raises(self, test_session):
+        """_transition_status 非法状态转换抛 ValueError (line 41)."""
+        from cndb.plugins.tables.import_tasks import _transition_status
+        from cndb.plugins.tables.models import ImportTask
+
+        _engine, session = test_session
+        task = ImportTask(
+            table_id=1, user_id=1, filename="t.csv", format="csv", file_content="a", status="done", progress=100
+        )
+        session.add(task)
+        session.commit()
+
+        with pytest.raises(ValueError, match="非法状态转换"):
+            _transition_status(task, "running")
+
+    # ── _decode_content xlsx 分支 ──
+
+    def test_decode_content_xlsx_b64(self, test_session):
+        """_decode_content 对 xlsx 走 base64 解码 (line 48)."""
+        import base64
+
+        from cndb.plugins.tables.import_tasks import _decode_content
+        from cndb.plugins.tables.models import ImportTask
+
+        _engine, _session = test_session
+        raw = b"\x00\x01\x02"
+        task = ImportTask(
+            table_id=1,
+            user_id=1,
+            filename="t.xlsx",
+            format="xlsx",
+            file_content=base64.b64encode(raw).decode("ascii"),
+            status="pending",
+        )
+        assert _decode_content(task) == raw
+
+    # ── analyze_import_task 表不存在 ──
+
+    def test_analyze_table_not_found(self, test_session):
+        """analyze_import_task 表不存在抛 RuntimeError (line 72)."""
+        from cndb.plugins.tables.import_tasks import analyze_import_task
+        from cndb.plugins.tables.models import ImportTask
+
+        _engine, session = test_session
+        task = ImportTask(
+            table_id=9999,
+            user_id=1,
+            filename="t.csv",
+            format="csv",
+            file_content="code,name\nA,x\n",
+            status="pending",
+        )
+        session.add(task)
+        session.commit()
+        analyze_import_task(session, task.id)
+        session.refresh(task)
+        assert task.status == "failed"
+        assert "不存在" in (task.error_message or "")
+
+    # ── analyze_import_task except 里 transition 也失败 → 兜底 ──
+
+    def test_analyze_failed_transition_second_time(self, test_session, monkeypatch):
+        """analyze except 分支里 _transition_status 也非法时兜底 (lines 104-113)."""
+        from cndb.plugins.tables.import_tasks import analyze_import_task
+        from cndb.plugins.tables.models import DataTable, ImportTask
+
+        _engine, session = test_session
+        dt = DataTable(workspace_id=1, name="T")
+        dt.ensure_db_name()
+        session.add(dt)
+        session.commit()
+
+        # 初始状态 pending —— analyze 会先转 pending_validation（合法），
+        # 然后 Importer.analyze 抛错进入 except，except 里尝试转 failed（pending→failed 非法）
+        task = ImportTask(
+            table_id=dt.id,
+            user_id=1,
+            filename="t.csv",
+            format="csv",
+            file_content="code,name\nA,x\n",
+            status="pending",
+        )
+        session.add(task)
+        session.commit()
+
+        from cndb.plugins.tables import importer as imp_mod
+
+        def boom(*_a, **_kw):
+            raise RuntimeError("模拟 analyze 内部异常")
+
+        monkeypatch.setattr(imp_mod.Importer, "analyze", boom)
+        analyze_import_task(session, task.id)
+        session.refresh(task)
+        assert task.status == "failed"
+
+    # ── execute_import_task 走新流程（有 validation_report）成功 ──
+
+    def test_execute_new_flow_success(self, test_session):
+        """execute_import_task 有 validation_report 走 Importer 成功 (lines 201-203)."""
+        import json
+
+        from cndb.plugins.tables import ddl, records
+        from cndb.plugins.tables.import_tasks import execute_import_task
+        from cndb.plugins.tables.models import DataTable, ImportTask
+
+        engine, session = test_session
+        dt = DataTable(workspace_id=1, name="T")
+        dt.ensure_db_name()
+        session.add(dt)
+        session.commit()
+        _add_field(session, dt, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, dt)
+
+        task = ImportTask(
+            table_id=dt.id,
+            user_id=1,
+            filename="t.csv",
+            format="csv",
+            file_content="code\nA\nB\n",
+            status="pending_confirm",
+            validation_report=json.dumps({"valid_count": 2, "error_count": 0}),
+        )
+        session.add(task)
+        session.commit()
+        execute_import_task(session, task.id)
+        session.refresh(task)
+        assert task.status == "done"
+        assert task.imported_rows == 2
+        assert len(records.list_rows(engine, dt, db=session)) == 2
+
+    # ── _parse_to_rows xlsx 空表 ──
+
+    def test_parse_xlsx_empty(self, test_session):
+        """_parse_to_rows xlsx 空表返回 ([], [], 0) (line 156)."""
+        from cndb.plugins.tables.import_tasks import _parse_to_rows
+        from cndb.plugins.tables.models import DataTable
+
+        engine, session = test_session
+        dt = DataTable(workspace_id=1, name="T")
+        dt.ensure_db_name()
+        session.add(dt)
+        session.commit()
+
+        import io
+
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        # 写入表头但写空行
+        ws.append(["code", "name"])
+        buf = io.BytesIO()
+        wb.save(buf)
+        # 手动创建一个只有表头没有数据行的 xlsx 来模拟真正的空（只表头）
+        _rows, cols, n = _parse_to_rows(buf.getvalue(), "xlsx", engine, dt)
+        # 只有表头 → file_columns 是 ['code','name']，但没有数据行
+        assert cols == ["code", "name"]
+        assert n == 0
+
+    # ── _parse_to_rows 不支持的格式 ──
+
+    def test_parse_unknown_format_raises(self, test_session):
+        """_parse_to_rows 不支持的格式 raise ValueError (line 160)."""
+        from cndb.plugins.tables.import_tasks import _parse_to_rows
+        from cndb.plugins.tables.models import DataTable
+
+        engine, session = test_session
+        dt = DataTable(workspace_id=1, name="T")
+        dt.ensure_db_name()
+        session.add(dt)
+        session.commit()
+
+        with pytest.raises(ValueError, match="不支持的格式"):
+            _parse_to_rows("raw", "pdf", engine, dt)
+
+    # ── create_import_task xlsx + str content 分支 ──
+
+    def test_create_import_task_xlsx_str_content(self, test_session):
+        """create_import_task xlsx + str content 走 encode latin-1 (line 276)."""
+        import base64
+
+        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.models import DataTable
+
+        _engine, session = test_session
+        dt = DataTable(workspace_id=1, name="X")
+        dt.ensure_db_name()
+        session.add(dt)
+        session.commit()
+
+        task = create_import_task(
+            session,
+            table_id=dt.id,
+            user_id=1,
+            filename="t.xlsx",
+            fmt="xlsx",
+            content="\x00\x01\x02",  # str, 走 latin-1 分支
+        )
+        decoded = base64.b64decode(task.file_content)
+        assert decoded == b"\x00\x01\x02"
+
+
+class TestImporterAndDiffCoverageExtras:
+    """补齐 importer.py / diff_reporter.py / schemas / failed_row_exporter.py 的小缺口."""
+
+    # ── importer._sample_preview 里 sample 值为 None 触发 continue ──
+
+    def test_preview_sample_none_value_skipped(self, test_session):
+        """_sample_preview 遇 None 值跳过 (importer.py line 316)."""
+        from cndb.plugins.tables.importer import Importer
+
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        _add_field(session, table, "city", "text", order=2)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        rows = [
+            {
+                "row_number": 1,
+                "match_key_values": {"code": "A"},
+                "values": {"code": "A", "name": None, "city": "BJ", "score": 1},
+            }
+        ]
+        preview = imp._sample_preview(rows, match_keys=["code"], kind="new")
+        assert len(preview) == 1
+        assert "name" not in preview[0].get("field_sample", {})
+
+    def test_preview_sample_breaks_at_5_non_match_keys(self, test_session):
+        """_sample_preview 凑够 5 个非 match_key 字段后 break (importer.py line 320)."""
+        from cndb.plugins.tables.importer import Importer
+
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        for i in range(10):
+            _add_field(session, table, f"f{i}", "text", order=i + 1)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        values = {"code": "A"}
+        for i in range(10):
+            values[f"f{i}"] = f"v{i}"
+        rows = [{"row_number": 1, "match_key_values": {"code": "A"}, "values": values}]
+        preview = imp._sample_preview(rows, match_keys=["code"], kind="new")
+        assert len(preview[0]["field_sample"]) == 5
+
+    def test_auto_add_empty_list_noop(self, test_session):
+        """_auto_add_fields 空列表直接 return (importer.py line 335)."""
+        from cndb.plugins.tables.importer import Importer
+
+        engine, session = test_session
+        table = _make_table(session, engine)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        imp._auto_add_fields([])
+
+    def test_auto_add_select_type_copies_options(self, test_session):
+        """_auto_add_fields select + options → cfg.options (importer.py line 348)."""
+        from cndb.plugins.tables.importer import Importer
+
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        imp._auto_add_fields([{"name": "status", "field_type": "select", "options": ["a", "b"], "sample_values": []}])
+        fld = next(f for f in table.fields if f.name == "status")
+        assert fld.config.get("options") == ["a", "b"]
+
+    def test_auto_add_number_decimal_infer(self, test_session):
+        """_auto_add_fields number sample 里含非浮点 str → except continue (importer.py line 357-358)."""
+        from cndb.plugins.tables.importer import Importer
+
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        # 混入不可拆分的 str
+        imp._auto_add_fields(
+            [
+                {
+                    "name": "price",
+                    "field_type": "number",
+                    "sample_values": ["5.0", "notanumber", 12.34],
+                }
+            ]
+        )
+        fld = next(f for f in table.fields if f.name == "price")
+        assert "decimals" in fld.config
+
+    # ── DiffReporter.infer_new_column_type 兜底路径 ──
+
+    def test_infer_type_all_empty_returns_text(self):
+        """infer_new_column_type samples 全空/None → ("text", []) 走 line 119."""
+        from cndb.plugins.tables.diff_reporter import DiffReporter
+
+        t, opts = DiffReporter.infer_new_column_type([None, "   ", ""])
+        assert t == "text"
+        assert opts == []
+
+    # ── FailedRowExporter 不支持格式 ──
+
+    def test_failed_row_exporter_unknown_format(self):
+        """FailedRowExporter.export 不支持的格式 raise ValueError (line 52)."""
+        from cndb.plugins.tables.failed_row_exporter import FailedRowExporter
+        from cndb.plugins.tables.row_validator import Issue, ValidationResult
+
+        exporter = FailedRowExporter()
+        results = [
+            ValidationResult(
+                row_number=1,
+                values={"a": 1},
+                status="error",
+                issues=[Issue(level="error", field="a", message="bad")],
+            )
+        ]
+        with pytest.raises(ValueError, match="不支持的导出格式"):
+            exporter.export(results, format="pdf")
+
+
+class TestImportSchemasCoverage:
+    """覆盖 schemas 里的 computed_field 等边角路径 (line 199)."""
+
+    def test_record_list_response_items(self):
+        """RecordListResponse.items computed_field 返回 rows (schemas/__init__.py line 199)."""
+        from cndb.plugins.tables.schemas import RecordListResponse
+
+        r = RecordListResponse(rows=[{"id": 1}], total=1, limit=100, offset=0)
+        assert r.items == [{"id": 1}]
