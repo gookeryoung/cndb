@@ -368,6 +368,7 @@ class TestSchemaImportWithFieldMapping:
         assert len(ga["matched"]) == 2
 
     def test_no_mapping_no_gap_analysis(self, client, auth_headers, _src_table2):
+        """现在 gap_analysis + suggestions 总是返回（即便不传 field_mapping），便于前端首次渲染."""
         wid, src_tid = _src_table2
 
         r = client.post(
@@ -383,11 +384,16 @@ class TestSchemaImportWithFieldMapping:
             json={
                 "source_table_id": src_tid,
                 "import_all_fields": True,
-                # 不传 field_mapping —— gap_analysis 应为 None
+                # 不传 field_mapping —— 现在后端会自动 suggest，gap_analysis 不再是 None
             },
         )
         assert r.status_code == 201
-        assert r.json()["gap_analysis"] is None
+        body = r.json()
+        assert body["gap_analysis"] is not None
+        assert body["suggestions"] is not None
+        # 目标表为空 → 3 个源字段都 will_map=True, reason="目标表为空..."
+        will_map_flags = [s["will_map"] for s in body["suggestions"]]
+        assert all(will_map_flags)
 
     def test_mapping_invalid_source_field_400(self, client, auth_headers, _src_table2):
         wid, src_tid = _src_table2
@@ -1140,3 +1146,291 @@ class TestRowValidatorNormalizedNoneBranch:
         rv = rv_mod.RowValidator(src)
         results = rv.validate_all([{"x": "hello"}])
         assert "x" not in results[0].normalized
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Part 8 — suggest_mapping 智能匹配单元测试
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _mkf(name: str, field_type: str = "text"):
+    """快速造一个无 DB 绑定的 DataField（suggest_mapping 只看 name + field_type）."""
+    from cndb.plugins.tables.models import DataField
+
+    return DataField(name=name, field_type=field_type)
+
+
+class TestSuggestMappingNormalize:
+    """字段名归一化工具函数."""
+
+    def test_strip_common_prefix(self):
+        from cndb.plugins.tables.field_mapping import _normalize_name
+
+        assert _normalize_name("src_amount") == "amount"
+        assert _normalize_name("src_amount_total") == "amount_total"
+        assert _normalize_name("old_name") == "name"
+        # 前缀不匹配时保持原样
+        assert _normalize_name("srctotal") == "srctotal"
+
+    def test_strip_common_suffix(self):
+        from cndb.plugins.tables.field_mapping import _normalize_name
+
+        assert _normalize_name("amount_src") == "amount"
+        assert _normalize_name("name_old") == "name"
+
+    def test_separator_normalize(self):
+        from cndb.plugins.tables.field_mapping import _normalize_name
+
+        assert _normalize_name("Full Name") == "full_name"
+        assert _normalize_name("full-name") == "full_name"
+        assert _normalize_name("full.name") == "full_name"
+
+    def test_lowercase(self):
+        from cndb.plugins.tables.field_mapping import _normalize_name
+
+        assert _normalize_name("FULL_NAME") == "full_name"
+
+
+class TestSuggestMapping:
+    """suggest_mapping 核心行为."""
+
+    def test_exact_name_match(self):
+        from cndb.plugins.tables.field_mapping import suggest_mapping
+
+        src = [_mkf("amount", "number")]
+        dst = [_mkf("amount", "number"), _mkf("count", "number")]
+        results = suggest_mapping(src, dst)
+        assert results[0]["target"] == "amount"
+        assert results[0]["will_map"]
+        assert results[0]["score"] >= 1.0
+
+    def test_abbrev_match(self):
+        from cndb.plugins.tables.field_mapping import suggest_mapping
+
+        src = [_mkf("amt", "number")]
+        dst = [_mkf("amount", "number"), _mkf("count", "number")]
+        results = suggest_mapping(src, dst)
+        assert results[0]["target"] == "amount"
+        assert results[0]["will_map"]
+        assert "缩写" in results[0]["reason"]
+
+    def test_prefix_stripped_match(self):
+        from cndb.plugins.tables.field_mapping import suggest_mapping
+
+        src = [_mkf("src_email", "text")]
+        dst = [_mkf("email", "text")]
+        results = suggest_mapping(src, dst)
+        assert results[0]["target"] == "email"
+        assert results[0]["will_map"]
+
+    def test_no_candidate_when_nothing_similar(self):
+        from cndb.plugins.tables.field_mapping import suggest_mapping
+
+        src = [_mkf("totally_unknown_xyz", "text")]
+        dst = [_mkf("amount", "number"), _mkf("description", "text")]
+        results = suggest_mapping(src, dst)
+        # score < 0.6 或 极低，will_map=False
+        assert not results[0]["will_map"]
+
+    def test_one_to_one_greedy_assignment(self):
+        """两个 src 都能匹配到同一个 dst —— 贪心保证一对一."""
+        from cndb.plugins.tables.field_mapping import suggest_mapping
+
+        src = [_mkf("name", "text"), _mkf("full_name", "text")]
+        dst = [_mkf("full_name", "text"), _mkf("description", "text")]
+        results = suggest_mapping(src, dst)
+        targets = {r["target"] for r in results if r["target"]}
+        assert len(targets) == 2, "两个 src 应拿到两个不同的 dst"
+
+    def test_type_compat_bonus(self):
+        from cndb.plugins.tables.field_mapping import suggest_mapping
+
+        src = [_mkf("count", "number")]
+        dst_same = [_mkf("count", "number"), _mkf("cnt", "number")]
+        results = suggest_mapping(src, dst_same)
+        # 完全同名同类型 > 缩写+同类型 > 弱匹配
+        assert results[0]["target"] == "count"
+        assert results[0]["score"] >= 1.0
+
+    def test_min_score_threshold(self):
+        from cndb.plugins.tables.field_mapping import suggest_mapping
+
+        src = [_mkf("totally_unknown_xyz", "text")]
+        dst = [_mkf("amount", "number"), _mkf("description", "text")]
+        results_strict = suggest_mapping(src, dst, min_score=0.99)
+        # strict 模式下 will_map=False — 阈值生效
+        assert not results_strict[0]["will_map"]
+
+
+class TestSuggestFieldMapping:
+    """suggest_field_mapping 便捷接口 — 返回可直接用的 mapping dict."""
+
+    def test_returns_mapping_dict_with_will_map_true_as_target(self):
+        from cndb.plugins.tables.field_mapping import suggest_field_mapping
+
+        src = [_mkf("amount", "number"), _mkf("unknown_xyz", "text")]
+        dst = [_mkf("amount", "number")]
+        mapping, suggestions = suggest_field_mapping(src, dst)
+        assert mapping["amount"] == "amount"
+        # unknown_xyz 无匹配 → None（跳过）
+        assert mapping["unknown_xyz"] is None
+        # suggestions 里有两条
+        assert len(suggestions) == 2
+
+    def test_mapping_dict_compatible_with_apply_user_mapping(self):
+        """suggestion 产出的 mapping dict 可直接 apply_user_mapping 消费."""
+        from cndb.plugins.tables.field_mapping import (
+            apply_user_mapping,
+            build_default_mapping,
+            suggest_field_mapping,
+        )
+
+        src = [_mkf("src_name", "text"), _mkf("src_amt", "number")]
+        dst = [_mkf("name", "text"), _mkf("amount", "number")]
+        mapping, _ = suggest_field_mapping(src, dst)
+        src_names = [s.name for s in src]
+        base = build_default_mapping(src_names)
+        merged = apply_user_mapping(base, mapping, src_names)
+        assert merged.get("src_name") == "name"
+        assert merged.get("src_amt") == "amount"
+
+
+class TestSuggestMappingEdge:
+    """suggest_mapping 的边界场景."""
+
+    def test_empty_src(self):
+        from cndb.plugins.tables.field_mapping import suggest_mapping
+
+        assert suggest_mapping([], [_mkf("amount")]) == []
+
+    def test_empty_dst_all_no_candidate(self):
+        from cndb.plugins.tables.field_mapping import suggest_mapping
+
+        results = suggest_mapping([_mkf("amount")], [])
+        assert len(results) == 1
+        assert results[0]["target"] is None
+        assert results[0]["score"] == 0.0
+
+    def test_identical_src_dst_names(self):
+        from cndb.plugins.tables.field_mapping import suggest_mapping
+
+        # src 和 dst 字段名完全相同 → 全部 will_map
+        src = [_mkf("name", "text"), _mkf("age", "number")]
+        dst = [_mkf("name", "text"), _mkf("age", "number")]
+        results = suggest_mapping(src, dst)
+        assert all(r["will_map"] for r in results)
+        assert {r["source"]: r["target"] for r in results} == {"name": "name", "age": "age"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Part 9 — preview_only + 自动建议的路由级集成测试
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestImportFieldsPreviewOnly:
+    """preview_only=True 时只返回建议和 gap_analysis，不实际创建字段."""
+
+    def test_preview_only_returns_suggestions_no_creation(self, client, auth_headers, _src_table2):
+        wid, src_tid = _src_table2
+
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables",
+            headers=auth_headers,
+            json={"name": "DstPrev1"},
+        )
+        dst_tid = r.json()["id"]
+
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={
+                "source_table_id": src_tid,
+                "import_all_fields": True,
+                "preview_only": True,
+            },
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        # preview_only → 不创建字段
+        assert body["created"] == []
+        assert body["skipped"] == []
+        # 但有 suggestions + gap_analysis
+        assert body["suggestions"] is not None
+        assert len(body["suggestions"]) == 3  # src_name / src_amount / src_active
+        assert body["gap_analysis"] is not None
+        # 验证 suggestions 里的每条都有必要字段
+        for s in body["suggestions"]:
+            assert "source" in s and "target" in s and "score" in s and "will_map" in s
+
+    def test_preview_only_then_execute_with_same_mapping(self, client, auth_headers, _src_table2):
+        """preview → 用户确认后把建议的 field_mapping 传进去执行."""
+        wid, src_tid = _src_table2
+
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables",
+            headers=auth_headers,
+            json={"name": "DstPrev2"},
+        )
+        dst_tid = r.json()["id"]
+
+        # 先 preview 拿建议
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={
+                "source_table_id": src_tid,
+                "import_all_fields": True,
+                "preview_only": True,
+            },
+        )
+        suggestions = r.json()["suggestions"]
+
+        # 把 will_map=True 的建议转成 field_mapping
+        field_mapping: dict[str, str | None] = {}
+        for s in suggestions:
+            if s["will_map"] and s["target"]:
+                field_mapping[s["source"]] = s["target"]
+            else:
+                field_mapping[s["source"]] = None
+
+        # 用这个 mapping 实际执行
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={
+                "source_table_id": src_tid,
+                "import_all_fields": True,
+                "field_mapping": field_mapping,
+            },
+        )
+        assert r.status_code == 201, r.text
+        # 验证确实创建了字段
+        dst_fields = client.get(f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields", headers=auth_headers).json()
+        # 至少有一个字段被创建（因为源表有 src_name/src_amount/src_active，目标表是空的）
+        assert len(dst_fields) >= 1
+
+    def test_gap_analysis_always_returned(self, client, auth_headers, _src_table2):
+        """现在不论传不传 field_mapping，gap_analysis 都应该返回."""
+        wid, src_tid = _src_table2
+
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables",
+            headers=auth_headers,
+            json={"name": "DstAlways"},
+        )
+        dst_tid = r.json()["id"]
+
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={
+                "source_table_id": src_tid,
+                "import_all_fields": True,
+                # 不传 field_mapping
+            },
+        )
+        assert r.status_code == 201
+        body = r.json()
+        # gap_analysis 和 suggestions 都不为 None
+        assert body["gap_analysis"] is not None
+        assert body["suggestions"] is not None
