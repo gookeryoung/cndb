@@ -37,8 +37,8 @@ export default function RegisterPage() {
   const onFinish = async (values: RegisterFormValues) => {
     try {
       await register(values)
-      message.success('注册成功，请登录')
-      navigate('/login', { replace: true })
+      message.success('注册成功，欢迎加入')
+      navigate('/w', { replace: true })
     } catch {
       message.error('注册失败，请检查输入')
     }
