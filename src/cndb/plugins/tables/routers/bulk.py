@@ -40,7 +40,28 @@ def bulk_create_records(
         raise HTTPException(status_code=400, detail="rows 不能为空")
     # 兼容两种格式：直接 values 数组 或 {values} 包装
     normalized = [r.get("values", r) if isinstance(r, dict) else r for r in rows]
+
+    # 导入前预填充 + 导入后同步 select/multiselect options
+    try:
+        from cndb.plugins.tables.field_ops import (
+            prefill_select_options_from_rows,
+            sync_select_options_from_table,
+        )
+
+        if normalized:
+            prefill_select_options_from_rows(db, dt, normalized)
+    except Exception:
+        pass
+
     ids = rec.bulk_create(db.get_bind(), dt, normalized, db=db)
+
+    try:
+        from cndb.plugins.tables.field_ops import sync_select_options_from_table
+
+        sync_select_options_from_table(db, dt)
+    except Exception:
+        pass
+
     return {"created": len(ids), "ids": ids}
 
 
@@ -78,7 +99,26 @@ def bulk_update_records(
         raise HTTPException(status_code=400, detail="row_ids 不能为空")
     if not values:
         raise HTTPException(status_code=400, detail="values 不能为空")
+
+    # 更新前预填充 select/multiselect options（让新值的校验能通过）
+    try:
+        from cndb.plugins.tables.field_ops import prefill_select_options_from_rows
+
+        # values 是 {"field_name": new_value} 格式，转换成 rows=[values] 让 prefill 能提取
+        prefill_select_options_from_rows(db, dt, [values])
+    except Exception:
+        pass
+
     updated = rec.bulk_update(db.get_bind(), dt, row_ids, values, db=db)
+
+    # 更新后同步 select/multiselect options（兜底：物理表中可能有其他行的值未覆盖）
+    try:
+        from cndb.plugins.tables.field_ops import sync_select_options_from_table
+
+        sync_select_options_from_table(db, dt)
+    except Exception:
+        pass
+
     return {"updated": updated}
 
 
@@ -170,12 +210,12 @@ async def import_table(
     try:
         if fmt == "json":
             text, _enc = transfer.decode_bytes_auto(content)
-            ids = transfer.import_rows_from_json(db.get_bind(), dt, text)
+            ids = transfer.import_rows_from_json(db.get_bind(), dt, text, db=db)
         elif fmt == "csv":
             text, _enc = transfer.decode_bytes_auto(content)
-            ids = transfer.import_rows_from_csv(db.get_bind(), dt, text)
+            ids = transfer.import_rows_from_csv(db.get_bind(), dt, text, db=db)
         elif fmt == "xlsx":
-            ids = transfer.import_rows_from_xlsx(db.get_bind(), dt, content)
+            ids = transfer.import_rows_from_xlsx(db.get_bind(), dt, content, db=db)
         else:
             raise HTTPException(status_code=400, detail=f"不支持的格式: {fmt}")
     except ValueError as exc:
