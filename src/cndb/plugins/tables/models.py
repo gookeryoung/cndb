@@ -218,6 +218,67 @@ class DataView(TimestampMixin, Base):
         return f"DataView(id={self.id}, name={self.name!r}, type={self.view_type!r})"
 
 
+# ── 默认视图辅助 ──
+
+
+def ensure_default_view(
+    db: Any,
+    table: DataTable,
+    owner_id: int | None = None,
+    commit: bool = True,
+) -> DataView | None:
+    """确保表存在一个默认视图「全部」（grid 类型，is_default=True, order=0）.
+
+    同名视图已存在时跳过（不覆盖业务自定义的「全部」视图配置）；
+    存在但非默认时补齐 is_default=True 并把同表其它视图的默认标志清掉.
+
+    db 需为 SQLAlchemy ``Session``，此处用 ``Any`` 以避免 models 层反向依赖.
+
+    Returns:
+        新建的 DataView；或 None（已存在同名，无需新建）.
+    """
+    existing = (
+        db.query(DataView)
+        .filter(DataView.table_id == table.id, DataView.name == "全部")
+        .first()
+    )
+    if existing is not None:
+        if not existing.is_default:
+            db.query(DataView).filter(DataView.table_id == table.id).update(
+                {"is_default": False}, synchronize_session=False
+            )
+            existing.is_default = True
+            existing.order = existing.order or 0
+            if commit:
+                db.commit()
+                db.refresh(existing)
+        return None
+
+    # 首次创建：清掉同表可能残留的其它默认标记（应该没有，但保险）
+    db.query(DataView).filter(DataView.table_id == table.id).update(
+        {"is_default": False}, synchronize_session=False
+    )
+    dv = DataView(
+        table_id=table.id,
+        owner_id=owner_id or table.owner_id,
+        name="全部",
+        view_type=ViewType.GRID,
+        filter_type=FilterType.AND,
+        filters=[],
+        sortings=[],
+        field_options={},
+        field_order=[],
+        view_options={},
+        is_default=True,
+        order=0,
+    )
+    db.add(dv)
+    if commit:
+        db.commit()
+        db.refresh(dv)
+    return dv
+
+
 # ── TablePermission ──
 
 

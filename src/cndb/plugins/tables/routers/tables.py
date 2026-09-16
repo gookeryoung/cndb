@@ -14,7 +14,7 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.access import TableAction, check_action
 from cndb.plugins.tables.ddl import create_table as ddl_create
-from cndb.plugins.tables.models import DataField, DataTable, DataView, TableMember
+from cndb.plugins.tables.models import DataField, DataTable, DataView, TableMember, ensure_default_view
 from cndb.plugins.tables.schemas import (
     OwnerBrief,
     TableCreate,
@@ -168,6 +168,9 @@ def create_table(
 
     # 执行物理建表
     ddl_create(db.get_bind(), dt)
+
+    # 自动生成默认视图「全部」（grid，is_default=True，order=0）
+    ensure_default_view(db, dt, owner_id=current_user.id, commit=True)
 
     # 可选：从其他表引入字段 schema（建表即带字段）
     if payload.import_from_table_id is not None:
@@ -482,6 +485,9 @@ def copy_table(
     # 建立字段映射（用于复制数据时按 src 字段名写入 dst）
     db.refresh(dst)
     dst_field_by_name = {f.name: f for f in dst.active_fields()}
+
+    # 自动生成默认视图「全部」
+    ensure_default_view(db, dst, owner_id=current_user.id, commit=True)
 
     # 复制数据（all 或 view）
     if effective_mode in ("all", "view"):
