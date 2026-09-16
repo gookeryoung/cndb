@@ -66,8 +66,10 @@ class DiffReporter:
         *,
         upsert_result: dict[str, Any] | None = None,
         planned_columns: list[dict[str, Any]] | None = None,
+        column_profiles: list[dict[str, Any]] | None = None,
+        data_quality_summary: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """根据校验结果 + 表字段 + 文件列名 + upsert 匹配 + 字段规划生成报告."""
+        """根据校验结果 + 表字段 + 文件列名 + upsert 匹配 + 字段规划 + 数据画像生成报告."""
         field_names = {f.name for f in table_fields if not f.trashed}
         required_names = {f.name for f in table_fields if f.required and not f.trashed}
         file_name_set = set(file_columns)
@@ -129,6 +131,9 @@ class DiffReporter:
             "update_preview": update_preview,
             "warnings": warnings,
             "errors": errors,
+            # 数据质量画像（Task 2 新增）
+            "column_profiles": column_profiles or [],
+            "data_quality_summary": data_quality_summary or {},
         }
 
     # ── 辅助：未知列类型推断 ──────────────────────────

@@ -456,6 +456,45 @@ export interface ValidationReport {
   /** V2: execute 后补充 */
   actually_created?: number
   actually_updated?: number
+  /** V2: 列级数据质量画像 */
+  column_profiles?: Array<{
+    name: string
+    inferred_type: string
+    confidence: number
+    fallback_type?: string | null
+    null_count: number
+    null_ratio: number
+    unique_count: number
+    sample_values?: string[]
+    type_conflicts?: Array<{ row_number: number; value: string; conflicting_type: string }>
+    outliers?: Array<{ value: string | number; type: string; row_number?: number | null }>
+    /** 数值列: min/max/mean/std */
+    min?: number; max?: number; mean?: number; std?: number
+    /** 数值列直方图 */
+    distribution_bins?: Array<{ bin_label: string; count: number; low: number; high: number }>
+    /** 离散列 Top N 分布 */
+    value_counts?: Array<{ value: string; count: number }>
+    select_options?: string[]
+  }>
+  /** V2: 整体数据质量 summary */
+  data_quality_summary?: {
+    total_rows: number
+    total_columns: number
+    duplicate_rows: number
+    empty_columns: string[]
+    high_null_columns: string[]
+  }
+  /** V2: 建议的清洗操作 */
+  cleaning_suggestions?: Array<{
+    id: string; column: string | null; action: string
+    strategy?: string | null; on_fail?: string | null
+    affected_count: number; reason: string
+    preview_before?: unknown[]; preview_after?: unknown[]
+  }>
+  /** V2: execute 后实际执行的清洗 */
+  cleaning_applied?: Array<{
+    action: string; column: string | null; strategy?: string | null; affected_rows: number
+  }>
 }
 
 export interface ImportTaskInfo {

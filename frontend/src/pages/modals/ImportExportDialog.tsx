@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Modal, Tabs, Button, Progress, message, Space, Select, Alert, Empty, Upload, Switch, Table, Tag, Collapse, Radio, Descriptions, Tooltip } from 'antd'
+import { Modal, Tabs, Button, Progress, message, Space, Select, Alert, Empty, Upload, Switch, Table, Tag, Collapse, Radio, Descriptions, Tooltip, Checkbox } from 'antd'
 import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined, ApiOutlined, ExclamationCircleOutlined, CloseCircleOutlined, SettingOutlined, ReloadOutlined, SwapOutlined, PlusCircleOutlined, EditOutlined } from '@ant-design/icons'
 import { importApi, exportApi } from '@/api'
 import type { ImportTaskInfo, Field } from '@/api'
@@ -55,6 +55,9 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
   const [matchKeys, setMatchKeys] = useState<string[]>([])
   const [unknownColsStrategy, setUnknownColsStrategy] = useState<'drop' | 'add_text_field'>('drop')
   const [diffing, setDiffing] = useState(false)  // 执行 DIFF 的 loading
+
+  // V3: 数据质量面板 —— 用户勾选的清洗建议列表（完整 suggestion 对象）
+  const [selectedCleaningActions, setSelectedCleaningActions] = useState<any[]>([])
 
   const pollTimer = useRef<number | null>(null)
 
@@ -181,11 +184,11 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     }
   }, [wid, tid, selectedFormat, useViewFilter, viewId])
 
-  // 确认导入（当前 matchKeys + unknownColsStrategy）
+  // 确认导入（当前 matchKeys + unknownColsStrategy + 清洗建议）
   const handleConfirm = async () => {
     if (!task) return
     try {
-      await importApi.confirmImport(wid, tid, task.task_id, matchKeys, unknownColsStrategy)
+      await importApi.confirmImport(wid, tid, task.task_id, matchKeys, unknownColsStrategy, selectedCleaningActions)
       setPhase('importing')
       setPolling(true)
     } catch (err) {
@@ -204,6 +207,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     setMatchKeys([])
     setUnknownColsStrategy('drop')
     setDiffing(false)
+    setSelectedCleaningActions([])
   }
 
   const handleDownloadFailed = async () => {
@@ -327,6 +331,178 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
       </div>
     )
   }
+
+  // ── 渲染：数据质量面板 ──
+  const renderQualityPanel = (report: any) => {
+    const profiles = (report.column_profiles || []) as any[]
+    const summary = report.data_quality_summary as any
+    const suggestions = (report.cleaning_suggestions || []) as any[]
+    if (profiles.length === 0) return <Empty description="暂无数据质量信息" />
+
+    return (
+      <div>
+        {/* 整体 summary 卡片 */}
+        {summary && (
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <MiniStat label="总行数" value={summary.total_rows} color="#3b82f6" />
+            <MiniStat label="总列数" value={summary.total_columns} color="#8b5cf6" />
+            {summary.duplicate_rows > 0 && <MiniStat label="重复行" value={summary.duplicate_rows} color="#f59e0b" />}
+            {summary.empty_columns?.length > 0 && <MiniStat label="全空列" value={summary.empty_columns.length} color="#ef4444" />}
+            {summary.high_null_columns?.length > 0 && <MiniStat label="高空值列" value={summary.high_null_columns.length} color="#ec4899" />}
+          </div>
+        )}
+
+        {/* 清洗建议（如果有） */}
+        {suggestions.length > 0 && (
+          <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+            <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>
+              <SettingOutlined /> 清洗建议（勾选后将在确认导入时执行）
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {suggestions.map((s, i) => {
+                const isChecked = selectedCleaningActions.some((a: any) => a.id === s.id)
+                return (
+                  <label key={s.id || i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                    <Checkbox
+                      checked={isChecked}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedCleaningActions((prev) => [...prev, s])
+                        } else {
+                          setSelectedCleaningActions((prev) => prev.filter((a: any) => a.id !== s.id))
+                        }
+                      }}
+                    >
+                      {s.action}{s.column ? ` (${s.column})` : ''} — {s.reason}（影响 {s.affected_count} 行）
+                    </Checkbox>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 每列可展开卡片 */}
+        <Collapse
+          size="small"
+          defaultActiveKey={profiles.slice(0, 1).map(p => p.name)}
+          items={profiles.map(p => ({
+            key: p.name,
+            label: (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontWeight: 500 }}>{p.name}</span>
+                <Tag color="blue">{p.inferred_type}</Tag>
+                <Tag color={p.confidence >= 0.9 ? 'green' : p.confidence >= 0.7 ? 'orange' : 'red'} style={{ margin: 0 }}>
+                  置信 {Math.round(p.confidence * 100)}%
+                </Tag>
+              </div>
+            ),
+            children: (
+              <div style={{ fontSize: 13 }}>
+                <div style={{ display: 'flex', gap: 24, marginBottom: 10 }}>
+                  <span>唯一值 <b>{p.unique_count}</b></span>
+                  <span>空值 <b>{p.null_count}</b></span>
+                  {p.fallback_type && <span style={{ color: '#dc2626' }}>建议降级: {p.fallback_type}</span>}
+                </div>
+                {/* 空值率进度条 */}
+                <div style={{ marginBottom: 10 }}>
+                  <span style={{ color: '#64748b', marginRight: 8 }}>空值率</span>
+                  <Progress
+                    size="small"
+                    percent={Math.round(p.null_ratio * 100)}
+                    strokeColor={p.null_ratio > 0.5 ? '#ef4444' : p.null_ratio > 0.2 ? '#f59e0b' : '#22c55e'}
+                  />
+                </div>
+                {/* 数值列 min/max/mean */}
+                {p.min !== undefined && (
+                  <div style={{ marginBottom: 10, color: '#475569' }}>
+                    最小 <b>{p.min}</b> / 最大 <b>{p.max}</b> / 均值 <b>{p.mean?.toFixed(2)}</b>
+                  </div>
+                )}
+                {/* 类型冲突 */}
+                {p.type_conflicts?.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ color: '#dc2626', marginBottom: 4 }}>⚠ 类型冲突（{p.type_conflicts.length} 条）</div>
+                    {p.type_conflicts.slice(0, 5).map((c: any, i: number) => (
+                      <div key={i} style={{ color: '#64748b' }}>
+                        行 {c.row_number}: <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 3 }}>{String(c.value).slice(0, 40)}</code>
+                        被识别为 <Tag>{c.conflicting_type}</Tag>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* 异常值 */}
+                {p.outliers?.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ color: '#d97706', marginBottom: 4 }}>⚠ 异常值（{p.outliers.length} 个）</div>
+                    <div style={{ color: '#64748b' }}>
+                      {p.outliers.slice(0, 5).map((o: any, i: number) => (
+                        <Tag key={i} color="orange" style={{ marginBottom: 2 }}>{String(o.value)}</Tag>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* 分布直方图（数值列） */}
+                {p.distribution_bins?.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ color: '#475569', marginBottom: 4 }}>数值分布</div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 50 }}>
+                      {p.distribution_bins.map((b: any, i: number) => {
+                        const maxC = Math.max(...p.distribution_bins.map((x: any) => x.count))
+                        const h = Math.max(4, (b.count / maxC) * 46)
+                        return (
+                          <Tooltip key={i} title={`${b.bin_label}: ${b.count}`}>
+                            <div style={{
+                              width: `${100 / p.distribution_bins.length}%`,
+                              background: '#3b82f6',
+                              height: h,
+                              borderRadius: 2,
+                              minWidth: 3,
+                            }} />
+                          </Tooltip>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+                {/* 离散列 Top N */}
+                {p.value_counts?.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ color: '#475569', marginBottom: 4 }}>Top {Math.min(5, p.value_counts.length)} 取值</div>
+                    {p.value_counts.slice(0, 5).map((v: any, i: number) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
+                        <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{String(v.value)}</span>
+                        <span>{v.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* 样本值 */}
+                {p.sample_values?.length > 0 && (
+                  <div style={{ color: '#64748b' }}>
+                    样本: {p.sample_values.map((v: string, i: number) => (
+                      <Tag key={i} style={{ marginBottom: 2 }}>{String(v).slice(0, 30)}</Tag>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ),
+          }))}
+        />
+      </div>
+    )
+  }
+
+  /** 迷你统计卡片子组件 —— 内联避免 JSX 中重复 */
+  const MiniStat = ({ label, value, color }: { label: string; value: number | string; color: string }) => (
+    <div style={{
+      padding: '8px 14px', background: color + '10', borderRadius: 6,
+      borderLeft: `3px solid ${color}`, minWidth: 90,
+    }}>
+      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: 11, color: '#64748b' }}>{label}</div>
+    </div>
+  )
 
   // ── 渲染：Diff 表格（支持行着色 + 字段级 old→new 对比） ──
   const renderDiffTable = (
@@ -572,6 +748,12 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
                 </>
               ),
             },
+            // ── 数据质量 Tab ──
+            ...((report as any).column_profiles?.length > 0 ? [{
+              key: 'quality',
+              label: `数据质量 (${(report as any).column_profiles.length})`,
+              children: renderQualityPanel(report),
+            }] : []),
           ]}
         />
 
