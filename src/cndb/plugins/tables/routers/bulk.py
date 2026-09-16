@@ -520,7 +520,7 @@ def download_failed_rows(
     import base64 as _b64
 
     raw: bytes | str = _b64.b64decode(task.file_content) if task.format == "xlsx" else task.file_content
-    analysis = importer.analyze(raw, task.format)
+    analysis = importer.analyze(raw, task.format, match_keys=list(task.match_keys) if task.match_keys else None)
 
     content_bytes = FailedRowExporter.export_failed_rows(analysis.results, format=format)
 

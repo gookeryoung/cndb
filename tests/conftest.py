@@ -58,15 +58,17 @@ def db(_session_factory):
 
 @pytest.fixture(autouse=True)
 def _cleanup_tables(db_engine):
-    """autouse：每个测试后彻底清表 + 重置自增计数器."""
+    """autouse：每个测试后等后台线程结束，再彻底清表 + 重置自增计数器."""
     yield
+    # 等待 import_tasks 中所有后台线程完成，避免残留线程与清表冲突
+    from cndb.plugins.tables.import_tasks import join_background_threads
+
+    join_background_threads(timeout=10)
     with db_engine.connect() as conn:
-        # 先 DROP TABLE，彻底清理所有数据 + 自增计数器
         for table in reversed(Base.metadata.sorted_tables):
             with suppress(Exception):
                 conn.execute(text(f"DROP TABLE IF EXISTS {table.name}"))
         conn.commit()
-        # 重建 schema
         Base.metadata.create_all(bind=conn)
         conn.commit()
 
@@ -86,15 +88,22 @@ def client(db):
 
 @pytest.fixture
 def auth_headers(client, db):
-    """注册 + 登录获取 token."""
-    r = client.post(
-        "/api/v1/accounts/auth/register",
-        json={"username": "testuser", "email": "t@t.com", "password": "passw0rd"},
-    )
-    assert r.status_code in (200, 201), f"Register failed: {r.text}"
+    """登录获取 token — 先尝试登录，不存在再注册."""
+    # 先尝试直接登录（用户可能已存在）
     r = client.post(
         "/api/v1/accounts/auth/login",
         json={"login": "testuser", "password": "passw0rd"},
     )
+    if r.status_code != 200:
+        # 用户不存在，注册
+        r = client.post(
+            "/api/v1/accounts/auth/register",
+            json={"username": "testuser", "email": "t@t.com", "password": "passw0rd"},
+        )
+        assert r.status_code in (200, 201), f"Register failed: {r.text}"
+        r = client.post(
+            "/api/v1/accounts/auth/login",
+            json={"login": "testuser", "password": "passw0rd"},
+        )
     assert r.status_code == 200, f"Login failed: {r.text}"
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
