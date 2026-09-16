@@ -485,3 +485,66 @@ class TestListAndEcho:
 
 
 __all__ = []
+
+
+# ── 覆盖率补丁：roles.py 缺失分支 ────────────────────
+
+
+class TestRolesCoveragePatch:
+    """补齐 roles.py 未覆盖的路由分支."""
+
+    def test_get_role_not_found(self, client, auth_sysadmin):
+        """GET /roles/99999 → 404."""
+        r = client.get("/api/v1/roles/99999", headers=auth_sysadmin)
+        assert r.status_code == 404
+
+    def test_update_role_not_found(self, client, auth_sysadmin):
+        """PATCH /roles/99999 → 404."""
+        r = client.patch("/api/v1/roles/99999", json={"name": "x"}, headers=auth_sysadmin)
+        assert r.status_code == 404
+
+    def test_update_role_description(self, client, auth_sysadmin):
+        """PATCH 更新 description 字段."""
+        r = client.post(
+            "/api/v1/roles",
+            json={"code": "desc_upd", "name": "原名", "description": "旧描述"},
+            headers=auth_sysadmin,
+        )
+        rid = r.json()["id"]
+        r = client.patch(
+            f"/api/v1/roles/{rid}",
+            json={"description": "新描述"},
+            headers=auth_sysadmin,
+        )
+        assert r.status_code == 200
+        assert r.json()["description"] == "新描述"
+
+    def test_update_role_description_to_empty(self, client, auth_sysadmin):
+        """PATCH 更新 description 为 None → 回退空字符串."""
+        r = client.post(
+            "/api/v1/roles",
+            json={"code": "desc_clr", "name": "x", "description": "有内容"},
+            headers=auth_sysadmin,
+        )
+        rid = r.json()["id"]
+        r = client.patch(
+            f"/api/v1/roles/{rid}",
+            json={"description": None},
+            headers=auth_sysadmin,
+        )
+        assert r.status_code == 200
+        assert r.json()["description"] == ""
+
+    def test_delete_custom_role_not_in_use(self, client, auth_sysadmin):
+        """自定义角色未被引用 → 正常删除."""
+        r = client.post(
+            "/api/v1/roles",
+            json={"code": "del_me", "name": "可删角色"},
+            headers=auth_sysadmin,
+        )
+        rid = r.json()["id"]
+        r = client.delete(f"/api/v1/roles/{rid}", headers=auth_sysadmin)
+        assert r.status_code == 204
+        # 再 GET 应 404
+        r = client.get(f"/api/v1/roles/{rid}", headers=auth_sysadmin)
+        assert r.status_code == 404

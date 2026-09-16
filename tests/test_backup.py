@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
+import base64
+import datetime as dt
 import json
 import sqlite3
 import sys
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +21,7 @@ from cndb.backup import (
     _collect_uploads,
     _is_sqlite_url,
     _resolve_sqlite_path,
+    _to_json_safe,
     create_backup,
 )
 
@@ -347,3 +352,96 @@ def test_runner_restore_subcommand_dispatches(tmp_path: Path, monkeypatch: pytes
         runner.main()
     # dry-run 不应创建目标库
     assert not target_db.exists()
+
+
+# ── _to_json_safe datetime/bytes 分支 ────────────────
+
+
+def test_to_json_safe_datetime() -> None:
+    now = dt.datetime(2024, 6, 15, 10, 30, 0)
+    assert _to_json_safe(now) == "2024-06-15T10:30:00"
+
+
+def test_to_json_safe_date() -> None:
+    d = dt.date(2024, 1, 1)
+    assert _to_json_safe(d) == "2024-01-01"
+
+
+def test_to_json_safe_time() -> None:
+    t = dt.time(12, 0, 0)
+    assert _to_json_safe(t) == "12:00:00"
+
+
+def test_to_json_safe_bytes() -> None:
+    raw = b"hello world"
+    result = _to_json_safe(raw)
+    assert isinstance(result, dict)
+    assert "__base64__" in result
+    assert base64.b64encode(raw).decode("ascii") == result["__base64__"]
+
+
+def test_to_json_safe_null_and_other() -> None:
+    assert _to_json_safe(None) is None
+    assert _to_json_safe(42) == 42
+    # Decimal 无专门处理 → 原样返回
+    dec = Decimal("3.14")
+    assert _to_json_safe(dec) is dec
+
+
+# ── _collect_uploads upload_dir 不存在 ───────────────
+
+
+def test_collect_uploads_dir_missing(tmp_path: Path) -> None:
+    """upload_dir 不存在 → 返回空 UploadsInfo."""
+    target = tmp_path / "target"
+    info = _collect_uploads(tmp_path / "no_such_uploads", target)
+    assert info.included is False
+    assert info.file_count == 0
+    assert info.total_size == 0
+
+
+# ── create_backup native 非 SQLite ───────────────────
+
+
+def test_create_backup_native_non_sqlite_rejected(tmp_path: Path) -> None:
+    """native 模式配非 SQLite URL → BackupError."""
+    with pytest.raises(BackupError, match=r"native 备份模式仅支持 SQLite"):
+        create_backup(
+            output=tmp_path / "x.tar.gz",
+            mode="native",
+            database_url="postgresql://localhost/db",
+        )
+
+
+# ── create_backup SQLite 文件不存在 ──────────────────
+
+
+def test_create_backup_sqlite_file_missing(tmp_path: Path) -> None:
+    """native 模式但 SQLite 文件不存在 → BackupError."""
+    with pytest.raises(BackupError, match=r"SQLite 数据库文件不存在"):
+        create_backup(
+            output=tmp_path / "x.tar.gz",
+            mode="native",
+            database_url=f"sqlite:///{tmp_path / 'missing.db'}",
+        )
+
+
+# ── backup_command 兜底异常 ───────────────────────────
+
+
+def test_backup_command_catch_unexpected(tmp_path: Path) -> None:
+    """backup_command 捕获 BackupError 之外的异常 → sys.exit(1)."""
+    from cndb import backup as backup_mod
+    from cndb.backup import backup_command
+
+    args = argparse.Namespace(
+        output=str(tmp_path / "out.tar.gz"),
+        mode="native",
+        no_uploads=True,
+    )
+    with (
+        patch.object(backup_mod, "create_backup", side_effect=RuntimeError("unexpected")),
+        pytest.raises(SystemExit) as excinfo,
+    ):
+        backup_command(args)
+    assert excinfo.value.code == 1
