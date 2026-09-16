@@ -30,7 +30,7 @@ interface Props {
 }
 
 /** 允许的导入文件扩展名 */
-const ACCEPTED_EXT = ['.csv', '.json', '.xlsx', '.xls']
+const ACCEPTED_EXT = ['.csv', '.json', '.xlsx']
 
 type Phase = 'idle' | 'analyzing' | 'preview' | 'importing' | 'done' | 'failed'
 
@@ -203,7 +203,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
       <div style={{ marginTop: 12, padding: 12, background: '#f6f8fa', borderRadius: 8 }}>
         <div style={{ fontSize: 13, color: '#475569', marginBottom: 6 }}>
           <FileTextOutlined /> <span style={{ marginLeft: 6 }}>{task.filename}</span>
-          <span style={{ marginLeft: 12, color: '#94a3b8' }}>· {task.format.toUpperCase()}</span>
+          <span style={{ marginLeft: 12, color: '#94a3b8' }}>· {(task.format || '').toUpperCase()}</span>
         </div>
         <Progress percent={task.progress} status={colorMap[task.status] || 'normal'} size="small" />
         <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
