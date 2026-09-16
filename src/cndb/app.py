@@ -25,13 +25,19 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_offline import FastAPIOffline
 
 from cndb.core.config import settings
+from cndb.core.migrations import ensure_db_migrated
 from cndb.core.plugin_registry import plugin_registry
 from cndb.plugins.tables.routers.public import router as public_router
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-    """应用生命周期管理."""
+    """应用生命周期管理.
+
+    启动时自动执行数据库迁移（alembic upgrade head），
+    确保 schema 处于最新版本。首次运行的全新数据库会自动 create_all。
+    """
+    ensure_db_migrated()
 
     yield
 
