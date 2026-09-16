@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,28 @@ from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import BulkDeleteRequest
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}", tags=["bulk"])
+
+
+def _normalize_cleaning_actions(
+    raw: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """规范化前端传来的 cleaning_actions —— 只保留 apply_cleaning_actions 需要的字段.
+
+    前端会把 analyze 阶段返回的 cleaning_suggestions 中被勾选的条目原封不动传过来，
+    这些条目里包含 id / reason / preview_before 等展示字段；后端只需要
+    column / action / strategy / on_fail 四个字段.
+    """
+    if not raw:
+        return []
+    valid_keys = {"column", "action", "strategy", "on_fail"}
+    normalized: list[dict[str, Any]] = []
+    for act in raw:
+        if not isinstance(act, dict):
+            continue
+        norm = {k: v for k, v in act.items() if k in valid_keys}
+        if "action" in norm:
+            normalized.append(norm)
+    return normalized
 
 
 # ── 批量建行 ───────────────────────────────────────────
@@ -210,10 +232,10 @@ async def import_table(
     try:
         if fmt == "json":
             text, _enc = transfer.decode_bytes_auto(content)
-            ids = transfer.import_rows_from_json(db.get_bind(), dt, text, db=db)
+            ids = transfer.import_rows_from_json(db.get_bind(), dt, text)
         elif fmt == "csv":
             text, _enc = transfer.decode_bytes_auto(content)
-            ids = transfer.import_rows_from_csv(db.get_bind(), dt, text, db=db)
+            ids = transfer.import_rows_from_csv(db.get_bind(), dt, text)
         elif fmt == "xlsx":
             ids = transfer.import_rows_from_xlsx(db.get_bind(), dt, content, db=db)
         else:
@@ -404,11 +426,15 @@ def import_table_confirm(
     db: Annotated[Session, Depends(get_db)],
     match_keys: str | None = None,
     unknown_cols_strategy: str | None = None,
+    cleaning_actions: list[dict[str, Any]] | None = Body(default=None, embed=True),
 ) -> dict[str, Any]:
     """确认导入 — 把 pending_confirm 状态的任务推进到 running → done.
 
     V2: 允许前端在 confirm 阶段覆盖 analyze 时的 match_keys / unknown_cols_strategy.
         覆盖后会重新跑 analyze（因为 validation_report 里需要新的 upsert 分类）。
+    V3: 支持 cleaning_actions（清洗建议）。前端传 analyze 阶段返回的
+        cleaning_suggestions 中被勾选的条目（每条含 column, action, strategy 等），
+        后端原样存入 task.cleaning_actions，execute 阶段在 RowValidator 之前应用.
     """
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
@@ -446,8 +472,11 @@ def import_table_confirm(
         task.unknown_cols_strategy = unknown_cols_strategy
         need_reanalyze = True
 
-    if need_reanalyze:
-        # 覆盖后重新 commit（execute 阶段 Importer 会重新 analyze 以拿到新的 validation_report）
+    # V3: 保存用户勾选的清洗动作（execute 阶段会重新 analyze 以拿到清洗后的数据画像）
+    if cleaning_actions is not None:
+        task.cleaning_actions = _normalize_cleaning_actions(cleaning_actions)  # type: ignore[assignment]
+
+    if need_reanalyze or cleaning_actions is not None:
         db.commit()
 
     # 后台跑 execute 阶段

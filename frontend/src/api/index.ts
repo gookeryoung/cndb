@@ -349,10 +349,12 @@ export const importApi = {
     taskId: number | string,
     matchKeys?: string[],
     unknownColsStrategy?: 'drop' | 'add_text_field',
+    cleaningActions?: Array<{ column?: string | null; action: string; strategy?: string; on_fail?: string }>,
   ) =>
     api.post<{ task_id: number; status: string; message: string }>(
       `/v1/workspaces/${wid}/tables/${tid}/import/${taskId}/confirm`,
-      null,
+      // 后端 Body 参数：cleaning_actions 走 JSON body；match_keys / unknown_cols_strategy 仍走 query params
+      cleaningActions && cleaningActions.length > 0 ? { cleaning_actions: cleaningActions } : {},
       {
         params: {
           ...(matchKeys && matchKeys.length > 0 ? { match_keys: JSON.stringify(matchKeys) } : {}),
