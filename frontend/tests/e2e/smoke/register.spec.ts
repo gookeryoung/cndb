@@ -14,7 +14,7 @@ function uniqueUsername(): string {
 }
 
 test.describe("注册流程（仅 chromium-anon）", () => {
-  test.skip(ANON.includes(test.info().project.name) === false, "仅 anon 项目运行")
+  test.skip(() => ANON.includes(test.info().project.name) === false, "仅 anon 项目运行")
 
   test("注册页表单渲染完整", async ({ page }) => {
     await page.goto("/register")

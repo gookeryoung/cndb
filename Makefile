@@ -57,7 +57,7 @@ cov: ## 运行测试并生成 HTML 覆盖率报告
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); print('Coverage report: htmlcov/index.html')"
 
 e2e: frontend-sync ## 前端 E2E 测试（Playwright；需后端已启动）
-	cd frontend && pnpm e2e
+	cd frontend && set PLAYWRIGHT_BROWSERS_PATH=$(CURDIR)/frontend/.local-ms-playwright && pnpm e2e
 
 gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败）
 	uv run python scripts/check_gitkeep.py
