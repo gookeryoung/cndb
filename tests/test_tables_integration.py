@@ -123,9 +123,9 @@ def auth_owner(client, owner_user):
 
 
 @pytest.fixture
-def table_with_fields(db, db_engine, workspace):
-    """创建一个带 text + number 字段的 DataTable（metadata + 物理表）."""
-    dt = DataTable(workspace_id=workspace.id, name="员工表")
+def table_with_fields(db, db_engine, workspace, owner_user):
+    """创建一个带 text + number 字段的 DataTable（metadata + 物理表, 带 owner_id）."""
+    dt = DataTable(workspace_id=workspace.id, owner_id=owner_user.id, name="员工表")
     dt.ensure_db_name()
     db.add(dt)
     db.flush()
@@ -654,11 +654,17 @@ class TestTableDetailEnhancement:
         assert "edit_schema" in actions
         assert "comment" in actions
 
-        # ── owner: 从 WorkspaceMember 查出
+        # ── owner: 表级拥有者（DataTable.owner_id 关联用户，继承自 TableResponse）
         assert d["owner"] is not None
         owner = d["owner"]
-        assert "id" in owner and "username" in owner and "nickname" in owner
+        assert "id" in owner and "username" in owner
         assert owner["username"] == "owner"
+
+        # ── workspace_owner: 工作区拥有者（从 WorkspaceMember 查出，含 nickname）
+        assert d["workspace_owner"] is not None
+        ws_owner = d["workspace_owner"]
+        assert "id" in ws_owner and "username" in ws_owner and "nickname" in ws_owner
+        assert ws_owner["username"] == "owner"
 
         # ── workspace: 精简摘要
         assert d["workspace"] is not None
