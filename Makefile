@@ -3,7 +3,7 @@
 
 PACKAGE := cndb
 COV_THRESHOLD := 95
-PYTEST_JOBS := 8  # pytest-xdist 并行进程数；Windows 默认 8 避免句柄耗尽
+PYTEST_JOBS := $(shell uv run python -c "import os; print(min((os.cpu_count() or 4) * 2, 8))")
 
 # push / bump 默认依赖 check，可用 SKIP_CHECK=1 临时跳过（仅限紧急修复，发布场景禁止使用）
 CHECK_DEPS := $(if $(SKIP_CHECK),,check)
@@ -57,15 +57,19 @@ gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败
 	uv run python scripts/check_gitkeep.py
 
 lint: ## 代码风格检查 (ruff, 与 CI 对齐仅扫 src + tests)
-	uv run ruff check src tests
+	uv run ruff check src tests --cache-dir .ruff_cache
 	uv run ruff format --check src tests
 
 typecheck: ## 类型检查 (pyrefly)
-	uv run pyrefly check
+	uv run pyrefly check -j 0
 
 check-fast: gitkeep-check lint typecheck frontend-check ## 轻量门禁（不含覆盖率，适合日常快速验证）
 
-check: check-fast cov ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-check + cov)
+# check-fast 并行版本（用于 check 内部，省时间）
+_check-fast-par: ## 轻量门禁并行入口（内部使用）
+	@$(MAKE) -j4 gitkeep-check lint typecheck frontend-check
+
+check: _check-fast-par cov ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-check + cov)
 
 doc: ## 构建 Sphinx 文档
 	uv run sphinx-build -b html docs docs/_build/html
