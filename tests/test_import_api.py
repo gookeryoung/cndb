@@ -152,6 +152,36 @@ class TestCreateTableFromJsonData:
         got_rows, _total = rec.list_rows(db_engine, dt, db=db)
         assert len(got_rows) == 3
 
+    def test_select_field_config_preserved_as_dicts(self, db_engine, db):
+        """JSON 含低基数离散列 → 推断为 select,config.options 存为 dict 格式."""
+        rows = [
+            {"name": "张三", "status": "进行中", "金额": 1000},
+            {"name": "李四", "status": "已完成", "金额": 2000},
+            {"name": "王五", "status": "进行中", "金额": 3000},
+            {"name": "赵六", "status": "已取消", "金额": 4000},
+            {"name": "孙七", "status": "进行中", "金额": 5000},
+            {"name": "周八", "status": "已完成", "金额": 6000},
+            {"name": "吴九", "status": "进行中", "金额": 7000},
+            {"name": "郑十", "status": "已完成", "金额": 8000},
+        ]
+        ws = Workspace(name="JSON-SELECT-WS")
+        db.add(ws)
+        db.flush()
+
+        dt, ids = create_table_from_json_data(db_engine, db, ws.id, "项目表", rows)
+
+        assert len(ids) == 8
+        status_field = next(f for f in dt.fields if f.name == "status")
+        assert status_field.field_type == "select"
+        opts = status_field.config.get("options")
+        assert opts is not None, f"options missing from config: {status_field.config}"
+        assert len(opts) == 3, f"expected 3 options, got {opts}"
+        for opt in opts:
+            assert isinstance(opt, dict), f"expected dict option, got {type(opt)}: {opt}"
+            assert "label" in opt and "value" in opt
+        labels = [o["label"] for o in opts]
+        assert set(labels) == {"进行中", "已完成", "已取消"}
+
 
 # ── Mock httpx2 辅助 ──────────────────────────────────
 

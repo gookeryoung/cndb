@@ -141,5 +141,24 @@ class TestCreateTableFromCsv:
         assert len(ids) == 3
         assert dt.fields[0].field_type == "number"
 
+    def test_select_field_config_preserved_as_dicts(self, csv_workspace):
+        """CSV 含低基数离散列 → 推断为 select,config.options 存为 dict 格式."""
+        engine, db, ws = csv_workspace
+        csv = "name,status\nAlice,active\nBob,done\nCarol,active\nDan,done\nEve,pending\nFrank,done\nGrace,active\nHelen,pending\n"
+        dt, ids = transfer.create_table_from_csv(engine, db, ws.id, "状态表", csv)
+        assert len(ids) == 8
+        status_field = next(f for f in dt.fields if f.name == "status")
+        assert status_field.field_type == "select"
+        cfg = status_field.config
+        assert "options" in cfg
+        opts = cfg["options"]
+        assert len(opts) == 3, f"expected 3 options, got {opts}"
+        # 每个 option 是 dict 格式 {label, value}
+        for opt in opts:
+            assert isinstance(opt, dict), f"expected dict option, got {type(opt)}: {opt}"
+            assert "label" in opt and "value" in opt
+        labels = [o["label"] for o in opts]
+        assert set(labels) == {"active", "done", "pending"}
+
 
 __all__ = []
