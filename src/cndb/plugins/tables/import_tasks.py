@@ -188,6 +188,7 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
 
         # ── 有 validation_report 时走 Importer 链路（支持 upsert + 字段自动新增） ──
         if task.validation_report:
+            from cndb.plugins.tables.field_ops import sync_select_options_from_table
             from cndb.plugins.tables.importer import Importer
 
             importer = Importer(engine, db_session, table)
@@ -200,8 +201,15 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
             task.imported_rows = len(result.imported_ids)
             task.result_ids = result.imported_ids
             task.validation_report = json.dumps(result.report, ensure_ascii=False)
+            # 导入完成后自动补全 select/multiselect options
+            try:
+                sync_select_options_from_table(db_session, table)
+            except Exception as exc:
+                logger.warning("[ImportTask %s] select options 自动补全失败: %s", task_id, exc)
         else:
             # ── 旧流程兼容：直接调 transfer.import_rows_from_* ──
+            from cndb.plugins.tables.field_ops import sync_select_options_from_table
+
             total_lines = _estimate_total_rows(raw, task.format)
             task.total_rows = total_lines
             task.progress = 30
@@ -221,6 +229,12 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
 
             task.imported_rows = len(ids)
             task.result_ids = ids
+            # transfer 内部已有 _post_import_sync，但保险起见再调一次
+            if ids:
+                try:
+                    sync_select_options_from_table(db_session, table)
+                except Exception as exc:
+                    logger.warning("[ImportTask %s] select options 自动补全失败: %s", task_id, exc)
 
         task.progress = 100
         _transition_status(task, "done")

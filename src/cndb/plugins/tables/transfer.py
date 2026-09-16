@@ -404,6 +404,36 @@ def _wb_to_bytes(wb: Any) -> bytes:
     return buf.getvalue()
 
 
+def _prefill_before_bulk(db: Any, table: DataTable, rows: list[dict[str, Any]]) -> None:
+    """bulk_create 前：从待导入行预填充 select/multiselect options，让后续值校验通过.
+
+    db 可为 None（纯 engine 场景），此时跳过不报错.
+    """
+    if not db or not rows:
+        return
+    try:
+        from cndb.plugins.tables.field_ops import prefill_select_options_from_rows
+
+        prefill_select_options_from_rows(db, table, rows)
+    except Exception as exc:  # pragma: no cover - 补全失败不阻断主流程
+        logger.warning("[transfer] prefill select options 失败，不影响主流程: %s", exc)
+
+
+def _sync_after_bulk(db: Any, table: DataTable) -> None:
+    """bulk_create 后：从物理表补全 select/multiselect options（覆盖存量行值）.
+
+    db 可为 None（纯 engine 场景），此时跳过不报错.
+    """
+    if not db:
+        return
+    try:
+        from cndb.plugins.tables.field_ops import sync_select_options_from_table
+
+        sync_select_options_from_table(db, table)
+    except Exception as exc:  # pragma: no cover - 补全失败不阻断主流程
+        logger.warning("[transfer] sync select options 失败，不影响已导入数据: %s", exc)
+
+
 def import_rows_from_json(
     engine: Any,
     table: DataTable,
@@ -417,7 +447,10 @@ def import_rows_from_json(
     if not isinstance(rows, list):
         raise ValueError("JSON 必须是对象数组")
     valid = [_parse_link_import_value(table, r) for r in rows if isinstance(r, dict)]
-    return rec.bulk_create(engine, table, valid, db=db)
+    _prefill_before_bulk(db, table, valid)
+    ids = rec.bulk_create(engine, table, valid, db=db)
+    _sync_after_bulk(db, table)
+    return ids
 
 
 def import_rows_from_csv(
@@ -440,7 +473,10 @@ def import_rows_from_csv(
             else:
                 cleaned[k] = v
         rows.append(_parse_link_import_value(table, cleaned))
-    return rec.bulk_create(engine, table, rows, db=db)
+    _prefill_before_bulk(db, table, rows)
+    ids = rec.bulk_create(engine, table, rows, db=db)
+    _sync_after_bulk(db, table)
+    return ids
 
 
 def import_rows_from_xlsx(
@@ -465,7 +501,10 @@ def import_rows_from_xlsx(
         for row in rows[1:]
         if any(c is not None for c in row)
     ]
-    return rec.bulk_create(engine, table, data, db=db)
+    _prefill_before_bulk(db, table, data)
+    ids = rec.bulk_create(engine, table, data, db=db)
+    _sync_after_bulk(db, table)
+    return ids
 
 
 def guess_format_from_filename(filename: str) -> str:
