@@ -330,12 +330,230 @@ def generate_column_name() -> str:
     return generate_db_column_name()
 
 
+# ── select / multiselect options 自动补全 ────────────
+
+
+def _merge_new_options(
+    field: DataField,
+    new_values: list[str],
+) -> bool:
+    """把 new_values 合并到 field.config.options，保持已有项不变.
+
+    去重逻辑：label 或 value 任一已存在 → 跳过.
+
+    Returns:
+        True 表示 config 有变更.
+    """
+    from typing import Any as _Any
+
+    from cndb.plugins.tables.field_types.smart_color import suggest_colors
+
+    existing_options: list[dict[str, _Any]] = []
+    config = field.config or {}
+    for item in config.get("options", []) or []:
+        if isinstance(item, str):
+            existing_options.append({"label": item, "value": item, "color": ""})
+        elif isinstance(item, dict):
+            label = str(item.get("label", ""))
+            val = item.get("value", label)
+            existing_options.append(
+                {
+                    "label": label,
+                    "value": val,
+                    "color": str(item.get("color", "")),
+                }
+            )
+
+    existing_labels = {o["label"] for o in existing_options}
+    existing_values = {str(o["value"]) for o in existing_options}
+
+    new_labels: list[str] = []
+    seen_new: set[str] = set()
+    for v in new_values:
+        if not v or v in seen_new:
+            continue
+        if v in existing_labels or v in existing_values:
+            continue
+        seen_new.add(v)
+        new_labels.append(v)
+
+    if not new_labels:
+        return False
+
+    new_colors = suggest_colors(new_labels)
+    new_options = [{"label": label, "value": label, "color": new_colors[i]} for i, label in enumerate(new_labels)]
+    merged = existing_options + new_options
+
+    new_config = dict(config)
+    new_config["options"] = merged
+    field.config = new_config
+    return True
+
+
+def _extract_values_from_rows(
+    field: DataField,
+    rows: list[dict[str, Any]],
+) -> list[str]:
+    """从待导入行数据中提取某 select/multiselect 字段出现过的所有唯一值.
+
+    multiselect 字段的值如果是 list → 直接展开；如果是逗号分隔字符串 → split.
+    """
+    collected: list[str] = []
+    seen: set[str] = set()
+    field_name = field.name
+
+    for row in rows:
+        raw = row.get(field_name)
+        if raw is None:
+            continue
+
+        if field.field_type == "multiselect":
+            if isinstance(raw, list):
+                for item in raw:
+                    s = str(item).strip() if item is not None else ""
+                    if s and s not in seen:
+                        seen.add(s)
+                        collected.append(s)
+            else:
+                parts = [p.strip() for p in str(raw).split(",") if p.strip()]
+                for p in parts:
+                    if p and p not in seen:
+                        seen.add(p)
+                        collected.append(p)
+        else:
+            s = str(raw).strip()
+            if s and s not in seen:
+                seen.add(s)
+                collected.append(s)
+
+    return collected
+
+
+def prefill_select_options_from_rows(
+    db: Session,
+    table: DataTable,
+    rows: list[dict[str, Any]],
+) -> list[DataField]:
+    """从待导入行数据中预填充 select / multiselect 字段的 options.
+
+    bulk_create **之前**调用：扫描行数据中 select/multiselect 字段出现过的
+    所有唯一值，合并到 config.options（保持已有项，新值追加），这样
+    FieldType.validate_value 校验就能通过.
+
+    Args:
+        db: SQLAlchemy Session（用于持久化 DataField.config）.
+        table: 目标数据表元数据.
+        rows: 待导入行（list[dict]，键为源字段名）.
+
+    Returns:
+        config 有变更的 DataField 列表（已 commit）.
+    """
+    select_fields = [f for f in table.active_fields() if f.field_type in ("select", "multiselect")]
+    if not select_fields or not rows:
+        return []
+
+    changed: list[DataField] = []
+    for field in select_fields:
+        values = _extract_values_from_rows(field, rows)
+        if not values:
+            continue
+        if _merge_new_options(field, values):
+            changed.append(field)
+
+    if changed:
+        db.commit()
+        logger.info(
+            "[prefill_select_options] 为表 %s 的 %d 个字段预填充了 options",
+            table.name,
+            len(changed),
+        )
+
+    return changed
+
+
+def sync_select_options_from_table(db: Session, table: DataTable) -> list[DataField]:
+    """从物理表数据中自动补全 select / multiselect 字段的 config.options.
+
+    导入完成后调用：扫描表中所有 select / multiselect 类型字段，
+    从物理表里收集该列所有非空值，与现有 config.options 合并
+    （保持已有选项顺序和 color 不变，新值追加到末尾并自动智能配色）.
+
+    用于覆盖**存量行**中的值（prefill 只处理本轮新导入的行数据）.
+
+    Args:
+        db: SQLAlchemy Session（用于读取物理表 + 持久化 DataField.config）.
+        table: 目标数据表元数据.
+
+    Returns:
+        config 有变更的 DataField 列表（已 commit）.
+    """
+    from typing import Any as _Any
+
+    from sqlalchemy import MetaData
+    from sqlalchemy import select as _sa_select
+
+    changed: list[DataField] = []
+    select_fields = [f for f in table.active_fields() if f.field_type in ("select", "multiselect")]
+    if not select_fields:
+        return changed
+
+    engine: _Any = db.get_bind()
+    metadata = MetaData()
+    metadata.reflect(bind=engine, only=[table.db_table_name])
+    sa_table = metadata.tables.get(table.db_table_name)
+    if sa_table is None:
+        logger.warning("[sync_select_options] 物理表 %s 不存在，跳过", table.db_table_name)
+        return changed
+
+    for field in select_fields:
+        col = sa_table.c.get(field.db_column_name)
+        if col is None:
+            continue
+
+        query = _sa_select(col).distinct().where(col.isnot(None)).where(col != "")
+        raw_values = [row[0] for row in db.execute(query).all()]
+
+        collected: list[str] = []
+        seen: set[str] = set()
+        for rv in raw_values:
+            if rv is None:
+                continue
+            if field.field_type == "multiselect":
+                parts = [p.strip() for p in str(rv).split(",") if p.strip()]
+                for p in parts:
+                    if p not in seen:
+                        seen.add(p)
+                        collected.append(p)
+            else:
+                s = str(rv).strip()
+                if s and s not in seen:
+                    seen.add(s)
+                    collected.append(s)
+
+        if not collected:
+            continue
+
+        if _merge_new_options(field, collected):
+            changed.append(field)
+
+    if changed:
+        db.commit()
+        logger.info(
+            "[sync_select_options] 为表 %s 的 %d 个字段从存量数据补全了 options",
+            table.name,
+            len(changed),
+        )
+
+    return changed
+
+
 __all__ = [
     "clone_fields_between_tables",
     "execute_field_import",
     "generate_column_name",
     "plan_field_import",
     "resolve_source_fields",
+    "sync_select_options_from_table",
     "validate_field_import_conflicts",
     "validate_link_targets_exist",
 ]

@@ -136,6 +136,15 @@ class Importer:
         else:
             file_columns = self._collect_columns(rows)
 
+        # 导入前预填充 select/multiselect options（让 RowValidator 校验能通过）
+        if rows:
+            try:
+                from cndb.plugins.tables.field_ops import prefill_select_options_from_rows
+
+                prefill_select_options_from_rows(self.db, self.table, rows)
+            except Exception:
+                pass
+
         rv = RowValidator(
             self.table,
             field_mapping=self.field_mapping,
