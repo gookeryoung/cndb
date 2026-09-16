@@ -101,7 +101,7 @@ def test_get_user_data_dir_linux_xdg(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setenv("XDG_DATA_HOME", "/home/xdg/.local/share")
     result = cfg_mod._get_user_data_dir()
-    assert str(result) == "/home/xdg/.local/share/cndb"
+    assert result.as_posix() == "/home/xdg/.local/share/cndb"
 
 
 def test_is_frozen_true_when_no_pyproject(tmp_path, monkeypatch):
@@ -253,7 +253,7 @@ def test_get_user_data_dir_linux_no_xdg(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     result = cfg_mod._get_user_data_dir()
-    assert ".local/share/cndb" in str(result)
+    assert ".local/share/cndb" in result.as_posix()
 
 
 def test_find_project_root_alembic_ini_fallback(tmp_path, monkeypatch):
