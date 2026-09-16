@@ -1,58 +1,9 @@
 """reports 插件集成测试."""
 
-from __future__ import annotations
-
-from pathlib import Path
-
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from cndb.core.config import settings
-from cndb.core.database import get_db
-from cndb.models.base import Base
 from cndb.plugins.accounts.models import User
 from cndb.plugins.reports.models import OutputFormat
-
-
-@pytest.fixture
-def _db_engine(tmp_path: Path):
-    settings.AUTH_ENABLED = True
-    db_path = tmp_path / "test.db"
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    try:
-        yield engine
-    finally:
-        engine.dispose()
-
-
-@pytest.fixture
-def db(_db_engine):
-    SessionLocal = sessionmaker(bind=_db_engine, autocommit=False, autoflush=False)
-    session = SessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
-@pytest.fixture
-def client(db):
-    from cndb.app import app
-
-    def _override_get_db():
-        try:
-            yield db
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = _override_get_db
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
 
 
 @pytest.fixture
