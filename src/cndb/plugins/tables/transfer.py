@@ -20,6 +20,49 @@ from cndb.plugins.tables.models import DataField, DataTable, ensure_default_view
 
 logger = logging.getLogger(__name__)
 
+
+# ── 编码自动检测 ──────────────────────────────────────
+
+# 优先级编码列表：先去 BOM，再按常见度逐一尝试
+_ENCODING_CANDIDATES: list[str] = [
+    "utf-8-sig",   # 带/不带 BOM 的 UTF-8
+    "utf-8",
+    "gb18030",     # 覆盖 GBK + GB2312 全部字符集（中国 Windows 默认 ANSI 代码页 CP936 等价）
+    "gbk",
+    "big5",        # 繁体中文
+    "utf-16",      # BOM 自动判别 LE/BE
+    "latin-1",     # 兜底（永远不会失败）
+]
+
+
+def decode_bytes_auto(data: bytes) -> tuple[str, str]:
+    """对原始字节做编码自动检测并解码为文本.
+
+    依次尝试 ``_ENCODING_CANDIDATES`` 中的编码，第一个成功解码且
+    不可打印字符占比低于 1% 的即为最终结果；全部失败时 fallback 到 latin-1.
+
+    Returns:
+        (解码后的文本, 实际使用的编码)
+    """
+    if not isinstance(data, bytes):
+        return data, "utf-8"
+
+    for enc in _ENCODING_CANDIDATES:
+        try:
+            text = data.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+        # 质量检查：如果出现过多不可打印字符，跳过
+        if text:
+            bad = sum(1 for c in text if not c.isprintable() and c not in "\r\n\t")
+            if bad / len(text) >= 0.05:
+                continue
+        return text, enc
+
+    # 兜底（理论上 latin-1 永远会命中，不会走到这里）
+    logger.warning("所有候选编码均未通过质量检查，使用 latin-1 兜底")
+    return data.decode("latin-1"), "latin-1"
+
 # ── 列类型推断正则 ──────────────────────────────────────
 
 _EMAIL_RE = re.compile(r"^[\w.+-]+@[\w-]+(\.[\w-]+)+$")
@@ -425,7 +468,11 @@ def import_rows_from_xlsx(
 
 
 def guess_format_from_filename(filename: str) -> str:
-    """根据文件名推断格式（json/csv/xlsx）."""
+    """根据文件名推断格式（json/csv/xlsx）.
+
+    不支持旧版 ``.xls``（BIFF 格式），openpyxl 无法解析；
+    用户需另存为 ``.xlsx`` 再导入。
+    """
     lower = filename.lower()
     if lower.endswith(".xlsx"):
         return "xlsx"
@@ -433,6 +480,8 @@ def guess_format_from_filename(filename: str) -> str:
         return "csv"
     if lower.endswith(".json"):
         return "json"
+    if lower.endswith(".xls"):
+        raise ValueError("不支持旧版 .xls 格式，请在 Excel 中另存为 .xlsx 后再导入")
     raise ValueError(f"无法从文件名推断格式: {filename}")
 
 
@@ -644,6 +693,7 @@ __all__ = [
     "analyze_json_columns",
     "create_table_from_csv",
     "create_table_from_json_data",
+    "decode_bytes_auto",
     "export_rows_to_csv",
     "export_rows_to_json",
     "export_rows_to_xlsx",
