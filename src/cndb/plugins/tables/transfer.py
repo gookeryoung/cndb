@@ -35,17 +35,18 @@ _ENCODING_CANDIDATES: list[str] = [
 ]
 
 
-def decode_bytes_auto(data: bytes) -> tuple[str, str]:
+def decode_bytes_auto(data: bytes) -> tuple[str, str, float]:
     """对原始字节做编码自动检测并解码为文本.
 
     依次尝试 ``_ENCODING_CANDIDATES`` 中的编码，第一个成功解码且
-    不可打印字符占比低于 1% 的即为最终结果；全部失败时 fallback 到 latin-1.
+    不可打印字符占比低于 5% 的即为最终结果；全部失败时再走 chardet.detect()，
+    仍不行则 fallback 到 latin-1.
 
     Returns:
-        (解码后的文本, 实际使用的编码)
+        (解码后的文本, 实际使用的编码, 置信度 0-1)
     """
     if not isinstance(data, bytes):
-        return data, "utf-8"
+        return data, "utf-8", 1.0
 
     for enc in _ENCODING_CANDIDATES:
         try:
@@ -57,11 +58,66 @@ def decode_bytes_auto(data: bytes) -> tuple[str, str]:
             bad = sum(1 for c in text if not c.isprintable() and c not in "\r\n\t")
             if bad / len(text) >= 0.05:
                 continue
-        return text, enc
+        return text, enc, 1.0
+
+    # chardet 兜底（只接受 confidence ≥ 0.5 的结果，低置信度视为盲猜）
+    try:
+        import chardet
+
+        detection = chardet.detect(data)
+        chardet_enc = detection.get("encoding")
+        chardet_conf = float(detection.get("confidence") or 0.0)
+        if chardet_enc and chardet_enc.lower() != "ascii" and chardet_conf >= 0.5:
+            # chardet 可能返回 "EUC-JP" 之类 Python 也能解，尝试
+            try:
+                text = data.decode(chardet_enc)
+                if text:
+                    bad = sum(1 for c in text if not c.isprintable() and c not in "\r\n\t")
+                    if bad / len(text) < 0.10:
+                        return text, chardet_enc, chardet_conf
+            except (UnicodeDecodeError, LookupError):
+                pass
+    except Exception:  # chardet 自身也可能失败
+        logger.debug("chardet 检测失败，继续 latin-1 兜底", exc_info=True)
 
     # 兜底（理论上 latin-1 永远会命中，不会走到这里）
     logger.warning("所有候选编码均未通过质量检查，使用 latin-1 兜底")
-    return data.decode("latin-1"), "latin-1"
+    return data.decode("latin-1"), "latin-1", 0.5
+
+
+def sniff_csv_delimiter(text: str) -> str:
+    """从文本中嗅探 CSV 分隔符 —— 优先 csv.Sniffer，失败按候选分隔符计数.
+
+    Returns:
+        单字符分隔符：',' / ';' / '\\t' / '|'
+    """
+    if not text.strip():
+        return ","
+    # 先尝试 csv.Sniffer
+    try:
+        dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t|")
+        if dialect.delimiter in (",", ";", "\t", "|"):
+            return dialect.delimiter
+    except (csv.Error, Exception):
+        pass
+    # 退化：按候选分隔符统计头 10 行出现频率，选第一行里计数最高的
+    candidates = [",", ";", "\t", "|"]
+    first_lines = text.splitlines()[:10]
+    best_delim = ","
+    best_score = -1
+    for d in candidates:
+        # 好分隔符应该在每行里出现次数相近且 >= 1
+        scores = [line.count(d) for line in first_lines if d in line]
+        if not scores:
+            continue
+        # 稳定出现 + 次数多加分
+        avg = sum(scores) / len(scores)
+        variance = sum((s - avg) ** 2 for s in scores) / len(scores)
+        score = avg - variance  # 方差小且均值大 → 好分隔符
+        if score > best_score:
+            best_score = score
+            best_delim = d
+    return best_delim
 
 
 # ── 列类型推断正则 ──────────────────────────────────────
@@ -71,6 +127,10 @@ _URL_RE = re.compile(r"^https?://[\w.-]+(?::\d+)?(?:/[\w./?#=&%+-]*)?$", re.IGNO
 _PHONE_RE = re.compile(r"^[\d+\-() ]{7,20}$")
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ISO_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:[Z+\-]\d{2}:?\d{2})?$")
+# 中文日期：2024年1月1日 / 2024年01月01日 / 2024年1月1
+_CN_DATE_RE = re.compile(r"^\d{4}年\d{1,2}月\d{1,2}日?$")
+# 通用日期：2024/1/1 / 1/1/2024 / 01-01-2024 / 2024.1.1（月日均 1-2 位）
+_GENERIC_DATE_RE = re.compile(r"^\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2}$|^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{4}$")
 
 
 # ── CSV 列类型推断辅助 ──────────────────────────────────
@@ -82,26 +142,97 @@ def _is_boolean(value: str) -> bool:
     return low in ("true", "false", "yes", "no", "是", "否", "1", "0", "on", "off")
 
 
+def _normalize_numeric(value: str) -> str | None:
+    """尝试把带千分位/货币符号的数字归一为纯数字字符串.
+
+    支持：
+    - 逗号千分位: 1,234 → 1234
+    - 逗号小数: 1,5 → 1.5
+    - 欧元点千分位 + 逗号小数: 1.234,56 → 1234.56
+    - 负数、货币符号 ¥ $ ￥
+    """
+    s = value.strip()
+    if not s:
+        return None
+    # 去掉货币符号
+    s = s.replace("¥", "").replace("￥", "").replace("$", "").replace("€", "").strip()
+    negative = False
+    if s.startswith("-"):
+        negative = True
+        s = s[1:]
+    elif s.startswith("+"):
+        s = s[1:]
+    if not s:
+        return None
+
+    # 欧元点格式：只有一个逗号且后面跟 1-2 位数字 → 逗号是小数点，点是千分位
+    # 如 "1.234,56" 最后一个逗号在最后 3 位里
+    last_comma = s.rfind(",")
+    last_dot = s.rfind(".")
+    normalized = s
+    if last_comma > 0 and last_dot > 0:
+        # 同时有逗号和点 —— 看哪个在后面
+        if last_comma > last_dot:
+            # 逗号在后面 → 欧元点格式
+            # 去掉所有点（千分位），把最后一个逗号换成点
+            normalized = s.replace(".", "")
+            normalized = normalized.rsplit(",", 1)[0] + "." + normalized.rsplit(",", 1)[1]
+        else:
+            # 点在后面 → 点是小数点，逗号是千分位（国际格式）
+            normalized = s.replace(",", "")
+    elif last_comma > 0:
+        # 只有逗号 —— 判断是小数还是千分位
+        after = s[last_comma + 1 :]
+        if 1 <= len(after) <= 2 and after.isdigit() and "," not in after:
+            # 末尾 1-2 位 → 逗号作小数点（欧洲习惯）
+            normalized = s.replace(",", ".", 1)
+        else:
+            # 千分位逗号
+            normalized = s.replace(",", "")
+    elif last_dot > 0:
+        # 只有点 —— 小数或千分位
+        after = s[last_dot + 1 :]
+        if len(after) <= 2 and after.isdigit():
+            # 末尾 1-2 位 → 点作小数点
+            pass  # 已经是标准小数
+        else:
+            # 点是千分位
+            normalized = s.replace(".", "")
+
+    # 归一化后必须是合法数字
+    try:
+        float(normalized)
+    except ValueError:
+        return None
+    if negative:
+        normalized = "-" + normalized
+    return normalized
+
+
 def _is_integer(value: str) -> bool:
-    """判断是否为整数（含负数、千分位逗号）."""
-    stripped = value.strip().replace(",", "")
-    if not stripped:
+    """判断是否为整数（含负数、千分位逗号/点、货币符号）."""
+    normalized = _normalize_numeric(value)
+    if normalized is None:
         return False
-    if stripped.startswith("-"):
-        stripped = stripped[1:]
-    if not stripped.isdigit():
+    if normalized.startswith("-"):
+        normalized = normalized[1:]
+    if "." in normalized or "e" in normalized.lower():
         return False
-    return not (len(stripped) >= 11 and stripped.startswith("0"))
+    if not normalized.isdigit():
+        return False
+    return not (len(normalized) >= 11 and normalized.startswith("0"))
 
 
 def _is_float(value: str) -> bool:
-    """判断是否为小数."""
-    stripped = value.strip().replace(",", "")
-    if not stripped:
+    """判断是否为小数（含千分位、欧元点格式）."""
+    normalized = _normalize_numeric(value)
+    if normalized is None:
+        return False
+    if "." not in normalized and "e" not in normalized.lower():
         return False
     try:
-        float(stripped)
-        return "." in stripped or "e" in stripped.lower()
+        float(normalized)
+        return True
     except ValueError:
         return False
 
@@ -140,6 +271,8 @@ def _infer_single_value(value: str) -> str:
         (_check_percentage, "percentage"),
         (lambda x: bool(_ISO_DATETIME_RE.match(x)), "datetime"),
         (lambda x: bool(_ISO_DATE_RE.match(x)), "date"),
+        (lambda x: bool(_CN_DATE_RE.match(x)), "date"),
+        (lambda x: bool(_GENERIC_DATE_RE.match(x)), "date"),
         (_check_phone, "phone"),
         (_check_long_integer, "text"),
         (_is_integer, "number"),
@@ -469,7 +602,7 @@ def import_rows_from_xlsx(
 
 
 def guess_format_from_filename(filename: str) -> str:
-    """根据文件名推断格式（json/csv/xlsx）.
+    """根据文件名推断格式（json/csv/tsv/xlsx）.
 
     不支持旧版 ``.xls``（BIFF 格式），openpyxl 无法解析；
     用户需另存为 ``.xlsx`` 再导入。
@@ -477,6 +610,8 @@ def guess_format_from_filename(filename: str) -> str:
     lower = filename.lower()
     if lower.endswith(".xlsx"):
         return "xlsx"
+    if lower.endswith(".tsv"):
+        return "tsv"
     if lower.endswith(".csv"):
         return "csv"
     if lower.endswith(".json"):
@@ -705,4 +840,5 @@ __all__ = [
     "import_rows_from_json",
     "import_rows_from_xlsx",
     "ingest_from_api",
+    "sniff_csv_delimiter",
 ]

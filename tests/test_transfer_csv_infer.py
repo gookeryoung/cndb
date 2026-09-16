@@ -165,45 +165,45 @@ class TestDecodeBytesAuto:
     """多编码自动检测 + 解码 —— 纯函数测试."""
 
     def test_utf8_no_bom(self):
-        text, enc = transfer.decode_bytes_auto("姓名,年龄\n张三,25".encode())
+        text, enc, _conf = transfer.decode_bytes_auto("姓名,年龄\n张三,25".encode())
         assert enc in ("utf-8", "utf-8-sig")
         assert "张三" in text
 
     def test_utf8_with_bom(self):
-        text, enc = transfer.decode_bytes_auto("姓名,年龄\n张三,25".encode("utf-8-sig"))
+        text, enc, _conf = transfer.decode_bytes_auto("姓名,年龄\n张三,25".encode("utf-8-sig"))
         assert enc == "utf-8-sig"
         assert text.startswith("姓名")  # BOM 已被去除
 
     def test_gbk(self):
-        text, enc = transfer.decode_bytes_auto("姓名,年龄\n张三,25".encode("gbk"))
+        text, enc, _conf = transfer.decode_bytes_auto("姓名,年龄\n张三,25".encode("gbk"))
         assert enc in ("gbk", "gb18030")
         assert "张三" in text
 
     def test_gb18030(self):
-        text, enc = transfer.decode_bytes_auto("姓名,年龄\n张三,25".encode("gb18030"))
+        text, enc, _conf = transfer.decode_bytes_auto("姓名,年龄\n张三,25".encode("gb18030"))
         assert enc in ("gb18030", "gbk")
         assert "张三" in text
 
     def test_big5(self):
-        text, enc = transfer.decode_bytes_auto("姓名,年齡\n張三,25".encode("big5"))
+        text, enc, _conf = transfer.decode_bytes_auto("姓名,年齡\n張三,25".encode("big5"))
         assert enc == "big5"
         assert "張三" in text
 
     def test_pure_ascii(self):
-        text, enc = transfer.decode_bytes_auto("name,age\nAlice,30\n".encode("ascii"))
+        text, enc, _conf = transfer.decode_bytes_auto("name,age\nAlice,30\n".encode("ascii"))
         # ASCII 是 UTF-8 的子集，会先命中 utf-8
         assert enc in ("utf-8", "utf-8-sig", "gb18030")
         assert "Alice" in text
 
     def test_non_bytes_passthrough(self):
-        result, enc = transfer.decode_bytes_auto("already-text")  # type: ignore[arg-type]
+        result, enc, _conf = transfer.decode_bytes_auto("already-text")  # type: ignore[arg-type]
         assert result == "already-text"
         assert enc == "utf-8"
 
     def test_latin1_fallback(self):
         # 构造一段所有文本编码都不适合的字节，应兜底到 latin-1
         bad_bytes = bytes(range(0x80, 0xC0)) + bytes(range(0xF5, 0xFF))
-        text, enc = transfer.decode_bytes_auto(bad_bytes)
+        text, enc, _conf = transfer.decode_bytes_auto(bad_bytes)
         assert enc == "latin-1"
         assert len(text) == len(bad_bytes)
 

@@ -196,6 +196,7 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
                 task.format,
                 match_keys=list(task.match_keys) if task.match_keys else None,
                 unknown_cols_strategy=task.unknown_cols_strategy or "drop",
+                cleaning_actions=list(task.cleaning_actions) if task.cleaning_actions else None,
             )
             task.imported_rows = len(result.imported_ids)
             task.result_ids = result.imported_ids
@@ -277,7 +278,7 @@ def create_import_task(
             stored = base64.b64encode(content.encode("latin-1")).decode("ascii")
     elif isinstance(content, bytes):
         # CSV / JSON bytes：自动编码检测后存字符串
-        stored, _enc = decode_bytes_auto(content)
+        stored, _enc, _conf = decode_bytes_auto(content)
     else:
         stored = content
 

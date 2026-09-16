@@ -707,4 +707,3 @@ class TestEdgeCases:
         _import_single_user(report, 1, "exc_user", None, "", "user", "pw1234", None)
         assert len(report.failed) == 1
         assert "DB 错误" in report.failed[0].message
-
