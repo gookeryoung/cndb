@@ -408,25 +408,41 @@ def _seed_views(db: Any, user: Any, tables_map: dict[str, dict[str, Any]], datas
                 try:
                     if not _validate_view_fields(vc, valid_fields, ws_name, table_name):
                         continue
-                    dv = DataView(
-                        table_id=dt.id,
-                        owner_id=user.id,
-                        name=vc["name"],
-                        view_type=vc.get("view_type", "grid"),
-                        filter_type=vc.get("filter_type", "AND"),
-                        filters=vc.get("filters", []),
-                        sortings=vc.get("sortings", []),
-                        field_options=vc.get("field_options", {}),
-                        field_order=vc.get("field_order", []),
-                        view_options=vc.get("view_options", {}),
-                        is_default=vc.get("is_default", False),
-                        order=vc.get("order", idx),
+                    dv_payload = {
+                        "table_id": dt.id,
+                        "owner_id": user.id,
+                        "name": vc["name"],
+                        "view_type": vc.get("view_type", "grid"),
+                        "filter_type": vc.get("filter_type", "AND"),
+                        "filters": vc.get("filters", []),
+                        "sortings": vc.get("sortings", []),
+                        "field_options": vc.get("field_options", {}),
+                        "field_order": vc.get("field_order", []),
+                        "view_options": vc.get("view_options", {}),
+                        "is_default": vc.get("is_default", False),
+                        "order": vc.get("order", idx),
+                    }
+                    # 同名视图已存在则用配置更新（自动生成的「全部」默认视图需要被丰富化）
+                    existing = (
+                        db.query(DataView)
+                        .filter(DataView.table_id == dt.id, DataView.name == vc["name"])
+                        .first()
                     )
+                    if existing is not None:
+                        for key, value in dv_payload.items():
+                            setattr(existing, key, value)
+                        db.flush()
+                        print(
+                            f"[seed-视图] 更新已存在: {ws_name}/{table_name} → {dv_payload['name']} ({dv_payload['view_type']})"
+                        )
+                        continue
+                    dv = DataView(**dv_payload)
                     db.add(dv)
                     db.flush()
                     created += 1
                     print(f"[seed-视图] {ws_name}/{table_name} → {dv.name} ({dv.view_type})")
                 except Exception as exc:  # 单视图失败不阻断其它
+                    db.rollback()
                     print(f"[seed-视图] 跳过: {ws_name}/{table_name} / {vc.get('name', '<无>')}: {exc}")
 
     db.commit()

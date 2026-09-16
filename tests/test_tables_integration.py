@@ -726,7 +726,7 @@ class TestTableDetailEnhancement:
         assert r.json()["workspace"]["current_user_role"] == "viewer"
 
     def test_empty_table_stats_are_zero(self, client, workspace, auth_owner, db):
-        """刚创建的空表：record_count=0, field_count=0, view_count=0."""
+        """刚创建的空表：record_count=0, field_count=0, 但默认视图「全部」自动存在."""
         r = client.post(
             f"/api/v1/workspaces/{workspace.id}/tables",
             json={"name": "空表"},
@@ -740,9 +740,14 @@ class TestTableDetailEnhancement:
         d = r.json()
         assert d["field_count"] == 0
         assert d["record_count"] == 0
-        assert d["view_count"] == 0
+        # 创建表时自动生成默认视图「全部」
+        assert d["view_count"] == 1
         assert d["fields"] == []
-        assert d["views"] == []
+        assert len(d["views"]) == 1
+        v0 = d["views"][0]
+        assert v0["name"] == "全部"
+        assert v0["view_type"] == "grid"
+        assert v0["is_default"] is True
         # 空表仍有基础权限动作（owner）
         assert "edit_schema" in d["current_user_actions"]
 
