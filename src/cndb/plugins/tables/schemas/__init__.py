@@ -150,16 +150,20 @@ class FieldImportRequest(BaseModel):
     exclude_trashed: bool = True
     skip_conflicts: bool = False
     field_mapping: dict[str, str | None] | None = None
+    # 预览模式：True 时只返回建议/缺口分析，不实际创建字段（前端先让用户确认映射再执行）
+    preview_only: bool = False
 
 
 class FieldImportResponse(BaseModel):
-    """字段导入结果 —— 新建字段列表 + 跳过原因 + 可选的缺口分析."""
+    """字段导入结果 —— 新建字段列表 + 跳过原因 + 可选的缺口分析/智能建议."""
 
     created: list[FieldResponse] = []
     skipped: list[str] = []
     total_source_count: int = 0
-    # 可选：gap_analysis 仅在 field_mapping 显式传入时返回，便于前端展示"参照对比"面板
+    # 总是返回 —— 前端用它渲染"参照对比"面板
     gap_analysis: dict[str, Any] | None = None
+    # suggest_mapping 的建议列表，preview_only=True 时主要返回这个
+    suggestions: list[dict[str, Any]] | None = None
 
 
 class FieldResponse(BaseModel):
