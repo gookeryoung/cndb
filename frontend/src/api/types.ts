@@ -80,6 +80,8 @@ export interface WorkspaceExportData {
 export interface TableSummary {
   id: ID; name: string; description?: string
   record_count?: number | null; field_count?: number | null; view_count?: number | null
+  /** 排序权重（后端 DataTable.order） */
+  order?: number
   /** 软删标记（后端 TableResponse 新增，TablesList 不展示但 API 有返回） */
   trashed?: boolean
   trashed_at?: string | null
@@ -256,6 +258,8 @@ export interface View {
   filter_type?: 'AND' | 'OR'
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
   default?: boolean; created_at?: string
+  /** 排序权重（后端 DataView.order） */
+  order?: number
 }
 export type ViewDetail = View
 export interface ViewCreate {
