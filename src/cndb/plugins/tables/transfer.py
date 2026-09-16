@@ -138,7 +138,7 @@ def _is_select_candidate(unique_values: list[str], inferred_type: str, non_empty
     规则：
     - 唯一值数在 2~8 之间
     - 推断类型必须是 text（其他类型已各有归属：boolean/number/date/email/url 等）
-    - 唯一值数 / 非空样本数 ≤ 0.5（保证至少一半重复值，避免小样本误伤）
+    - 唯一值数 / 非空样本数 ≤ 0.8（允许小样本下较高的唯一值占比仍被识别为离散分类）
     - 所有值都不在 boolean 值集中（避免把 "是/否" 这类被误推为 text 时仍保持 bool）
     """
     if inferred_type != "text":
@@ -146,8 +146,8 @@ def _is_select_candidate(unique_values: list[str], inferred_type: str, non_empty
     n = len(unique_values)
     if n < 2 or n > 8:
         return False
-    # 唯一值占比不能太高：至少一半重复值才认为是离散分类
-    if non_empty_count > 0 and n / non_empty_count > 0.5:
+    # 唯一值占比不能太高：小样本场景（4-10 行）允许 0.8，大样本仍需保持低基数
+    if non_empty_count > 0 and n / non_empty_count > 0.8:
         return False
     # boolean 优先级更高：如果所有值都是 boolean 值域的字符串，不应转 select
     boolean_values = {"true", "false", "yes", "no", "是", "否", "1", "0", "on", "off"}
@@ -167,6 +167,15 @@ def _promote_to_select_if_low_cardinality(inferred_type: str, samples: list[str]
     if _is_select_candidate(seen, inferred_type, len(samples)):
         return "select", seen
     return inferred_type, []
+
+
+def _options_strings_to_dicts(options: list[str]) -> list[dict[str, Any]]:
+    """把 list[str] 格式的 select options 转为 [{label, value}] 字典格式.
+
+    供 transfer / importer 在持久化 DataField.config 前调用，保证与
+    SelectFieldConfig._normalize_options 及前端消费方约定一致。
+    """
+    return [{"label": o, "value": o} for o in options]
 
 
 def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dict[str, Any]], int]:
@@ -256,7 +265,7 @@ def create_table_from_csv(
     for i, col in enumerate(columns):
         cfg: dict[str, Any] = {}
         if col["field_type"] == "select":
-            cfg["options"] = col.get("options", [])
+            cfg["options"] = _options_strings_to_dicts(col.get("options", []))
         f = DataField(table_id=dt.id, name=col["name"], field_type=col["field_type"], order=i, config=cfg)
         f.ensure_db_name()
         db.add(f)
@@ -553,7 +562,7 @@ def create_table_from_json_data(
     for i, col in enumerate(columns):
         cfg: dict[str, Any] = {}
         if col["field_type"] == "select":
-            cfg["options"] = col.get("options", [])
+            cfg["options"] = _options_strings_to_dicts(col.get("options", []))
         f = DataField(table_id=dt.id, name=col["name"], field_type=col["field_type"], order=i, config=cfg)
         f.ensure_db_name()
         db.add(f)
@@ -561,8 +570,6 @@ def create_table_from_json_data(
     db.refresh(dt)
 
     ddl_create(engine, dt)
-
-    # import_rows_from_json 需要 JSON 字符串，我们直接用对象数组
     valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
     ids = rec.bulk_create(engine, dt, valid, db=db)
     return dt, ids
