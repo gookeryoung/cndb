@@ -71,12 +71,12 @@ interface ModeBtn {
   icon: React.ReactNode
 }
 const MODE_BUTTONS: readonly ModeBtn[] = [
-  { mode: 'grid',    tooltip: '表格',   icon: <ColumnHeightOutlined /> },
-  { mode: 'kanban',  tooltip: '看板',   icon: <AppstoreOutlined /> },
-  { mode: 'gallery', tooltip: '画廊',   icon: <EyeOutlined /> },
-  { mode: 'calendar',tooltip: '日历',   icon: <CalendarOutlined /> },
-  { mode: 'gantt',   tooltip: '甘特图', icon: <LineChartOutlined /> },
-  { mode: 'wbs',     tooltip: '工作分解', icon: <PartitionOutlined /> },
+  { mode: 'grid', tooltip: '表格', icon: <ColumnHeightOutlined /> },
+  { mode: 'kanban', tooltip: '看板', icon: <AppstoreOutlined /> },
+  { mode: 'gallery', tooltip: '画廊', icon: <EyeOutlined /> },
+  { mode: 'calendar', tooltip: '日历', icon: <CalendarOutlined /> },
+  { mode: 'gantt', tooltip: '甘特图', icon: <LineChartOutlined /> },
+  { mode: 'wbs', tooltip: '工作分解', icon: <PartitionOutlined /> },
 ]
 
 /** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */
@@ -575,7 +575,8 @@ export default function GridPage() {
   }, [selectedRows, numericFields])
 
   // 视图 Segmented 选项（支持拖拽排序）
-  const segmentedOptions = useMemo(() => views.map(v => ({
+  // 注意：loadView 未用 useCallback 包裹，随渲染重建；此处直接计算，避免 lint 缺依赖警告
+  const segmentedOptions = views.map(v => ({
     label: (
       <DndViewTab
         view={v}
@@ -584,7 +585,7 @@ export default function GridPage() {
       />
     ),
     value: String(v.id),
-  })), [views, activeViewId])
+  }))
 
   /** 数据表实际拥有的视图类型集合（去重） */
   const availableViewTypes = useMemo<Set<ViewMode>>(() => {

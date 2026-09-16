@@ -237,11 +237,7 @@ def ensure_default_view(
     Returns:
         新建的 DataView；或 None（已存在同名，无需新建）.
     """
-    existing = (
-        db.query(DataView)
-        .filter(DataView.table_id == table.id, DataView.name == "全部")
-        .first()
-    )
+    existing = db.query(DataView).filter(DataView.table_id == table.id, DataView.name == "全部").first()
     if existing is not None:
         if not existing.is_default:
             db.query(DataView).filter(DataView.table_id == table.id).update(
@@ -255,9 +251,7 @@ def ensure_default_view(
         return None
 
     # 首次创建：清掉同表可能残留的其它默认标记（应该没有，但保险）
-    db.query(DataView).filter(DataView.table_id == table.id).update(
-        {"is_default": False}, synchronize_session=False
-    )
+    db.query(DataView).filter(DataView.table_id == table.id).update({"is_default": False}, synchronize_session=False)
     dv = DataView(
         table_id=table.id,
         owner_id=owner_id or table.owner_id,
