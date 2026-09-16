@@ -169,12 +169,35 @@ export interface FieldImportRequest {
   import_all_fields?: boolean
   exclude_trashed?: boolean
   skip_conflicts?: boolean
+  /** 源字段 → 目标字段 重命名/跳过映射；None 表示跳过 */
+  field_mapping?: Record<string, string | null> | null
+  /** 预览模式：只返回建议映射/缺口分析，不实际创建 */
+  preview_only?: boolean
+}
+
+export interface FieldImportGapAnalysis {
+  matched: Array<{ source: string; target: string }>
+  unmapped_source: string[]
+  target_missing: string[]
+  conflicts: Array<{ src_a: string; src_b: string; dst: string }>
+}
+
+export interface FieldImportSuggestion {
+  source: string
+  target: string | null
+  score: number
+  reason: string
+  will_map: boolean
 }
 
 export interface FieldImportResponse {
   created: Field[]
   skipped: string[]
   total_source_count: number
+  /** 总是返回 — 四象限缺口分析 */
+  gap_analysis?: FieldImportGapAnalysis | null
+  /** 智能建议列表 — preview_only=True 时主要返回这个 */
+  suggestions?: FieldImportSuggestion[] | null
 }
 
 export type FieldType =
