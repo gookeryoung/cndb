@@ -47,7 +47,7 @@ const THEMES = [
 ] as const;
 
 test.describe("主题切换", () => {
-  test.skip(!isAuthed, "需要 chromium-authed 项目（已登录）");
+  test.skip(() => !isAuthed(), "需要 chromium-authed 项目（已登录）");
 
   test("默认主题为 modern", async ({ page }) => {
     await gotoApp(page);
@@ -150,7 +150,7 @@ test.describe("主题切换", () => {
  *   - 浅色模式下深色主题卡片的文字不能发黑
  */
 test.describe("主题视觉回归（防颜色自相矛盾）", () => {
-  test.skip(!isAuthed(), "需要 chromium-authed 项目（已登录）");
+  test.skip(() => !isAuthed(), "需要 chromium-authed 项目（已登录）");
 
   test("深色模式下 — 浅色主题卡片文字颜色必须是深色（不能 inherit 外层白字）", async ({ page }) => {
     await gotoApp(page);
@@ -265,7 +265,7 @@ test.describe("主题视觉回归（防颜色自相矛盾）", () => {
  *   - 深色模式下日历视图日期格子背景层级合理（非当前月份不接近纯黑）
  */
 test.describe("深色模式下看板/日历视图背景回归", () => {
-  test.skip(!isAuthed(), "需要 chromium-authed 项目（已登录）");
+  test.skip(() => !isAuthed(), "需要 chromium-authed 项目（已登录）");
 
   /** 辅助：进入指定工作区的表页面 */
   async function gotoWorkspaceTable(page: Parameters<typeof test["fn"]>[0]["page"]) {

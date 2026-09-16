@@ -112,7 +112,7 @@ async function dragByText(
 
 test.describe("工作区表排序（拖拽）", () => {
   const ANON_PROJECTS = ["setup", "chromium-anon"]
-  test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+  test.skip(() => ANON.includes(test.info().project.name), "anon 项目跳过")
 
   const NEW_TABLES = ["E2E 排序表-A", "E2E 排序表-B", "E2E 排序表-C"]
   let createdIds: number[] = []
@@ -157,7 +157,7 @@ test.describe("工作区表排序（拖拽）", () => {
 
 test.describe("Grid 视图排序（拖拽）", () => {
   const ANON_PROJECTS = ["setup", "chromium-anon"]
-  test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+  test.skip(() => ANON.includes(test.info().project.name), "anon 项目跳过")
 
   const TABLE_NAME = "E2E 视图排序表"
   const NEW_VIEWS = ["Alpha 视图", "Beta 视图", "Gamma 视图"]
