@@ -414,3 +414,297 @@ class TestCmdImport:
         report = cmd_import(_ns(file=str(csv_file), dry_run=False))
         assert len(report.failed) == 1
         assert "缺少 username" in report.failed[0].message
+
+
+# ── print_* 输出函数 ─
+
+
+class TestPrintFunctions:
+    def test_print_create_result_with_note(self, capsys, cli_db):
+        from cndb.cli_users import CreateResult, print_create_result
+
+        r = CreateResult(user_id=1, username="alice", role="user", password="pw1234", note="（自动生成） [superuser]")
+        print_create_result(r)
+        out = capsys.readouterr().out
+        assert "alice" in out
+        assert "pw1234" in out
+        assert "自动生成" in out
+
+    def test_print_create_result_no_note(self, capsys, cli_db):
+        from cndb.cli_users import CreateResult, print_create_result
+
+        r = CreateResult(user_id=2, username="bob", role="user", password="secret")
+        print_create_result(r)
+        out = capsys.readouterr().out
+        assert "bob" in out
+        assert "secret" in out
+
+    def test_print_delete_check_none(self, capsys, cli_db):
+        from cndb.cli_users import print_delete_check
+
+        print_delete_check(None)
+        out = capsys.readouterr().out
+        assert "不存在" in out
+
+    def test_print_delete_check_with_workspaces(self, capsys, cli_db):
+        from cndb.cli_users import DeleteCheckResult, print_delete_check
+        from cndb.plugins.workspaces.models import Workspace
+
+        ws = Workspace(name="ws1")
+        ws.id = 99
+        check = DeleteCheckResult(
+            user_id=1,
+            username="owner",
+            is_superuser=False,
+            owned_workspaces=[ws],
+            member_count=2,
+            can_delete_without_cascade=False,
+        )
+        print_delete_check(check)
+        out = capsys.readouterr().out
+        assert "owner" in out
+        assert "ws1" in out
+
+    def test_print_delete_result_with_workspaces(self, capsys, cli_db):
+        from cndb.cli_users import print_delete_result
+
+        print_delete_result(
+            {
+                "deleted_username": "x",
+                "deleted_user_id": 5,
+                "deleted_workspace_count": 2,
+                "deleted_workspace_ids": [1, 2],
+            }
+        )
+        out = capsys.readouterr().out
+        assert "x" in out
+        assert "2" in out
+
+    def test_print_delete_result_no_workspaces(self, capsys, cli_db):
+        from cndb.cli_users import print_delete_result
+
+        print_delete_result(
+            {"deleted_username": "y", "deleted_user_id": 6, "deleted_workspace_count": 0, "deleted_workspace_ids": []}
+        )
+        out = capsys.readouterr().out
+        assert "y" in out
+
+    def test_print_list_empty(self, capsys, cli_db):
+        from cndb.cli_users import print_list
+
+        print_list([])
+        out = capsys.readouterr().out
+        assert "没有匹配" in out
+
+    def test_print_list_with_users(self, capsys, cli_db):
+        from cndb.cli_users import cmd_create, cmd_list, print_list
+
+        cmd_create(_ns(username="pl1", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        users = cmd_list(_ns(role=None, active=False, inactive=False))
+        print_list(users)
+        out = capsys.readouterr().out
+        assert "pl1" in out
+        assert "共 1 条" in out
+
+    def test_print_import_report_full(self, capsys, cli_db):
+        from cndb.cli_users import ImportReport, ImportRowResult, print_import_report
+
+        report = ImportReport(
+            total=3,
+            ok=[ImportRowResult(row_index=1, status="ok", message="", username="u1", generated_password="abc123")],
+            skipped=[ImportRowResult(row_index=2, status="skipped", message="已存在", username="u2")],
+            failed=[ImportRowResult(row_index=3, status="failed", message="缺少 username")],
+        )
+        print_import_report(report, Path("users.csv"), dry_run=False)
+        out = capsys.readouterr().out
+        assert "u1" in out
+        assert "u2" in out
+        assert "缺少 username" in out
+        assert "自动生成" in out  # warning about generated passwords
+
+    def test_print_import_report_dry_run(self, capsys, cli_db):
+        from cndb.cli_users import ImportReport, print_import_report
+
+        report = ImportReport(total=1, ok=[], skipped=[], failed=[])
+        print_import_report(report, Path("users.csv"), dry_run=True)
+        out = capsys.readouterr().out
+        assert "预演模式" in out
+
+
+# ── users_command 分发 ─
+
+
+class TestUsersCommand:
+    def test_dispatch_create(self, capsys, cli_db, monkeypatch):
+        from cndb.cli_users import users_command
+
+        monkeypatch.setattr("cndb.cli_users.cmd_create", lambda args: None)
+        monkeypatch.setattr("cndb.cli_users.print_create_result", lambda r: None)
+        users_command(_ns(users_cmd="create"))
+
+    def test_dispatch_delete_check_only(self, capsys, cli_db, monkeypatch):
+        from cndb.cli_users import users_command
+
+        monkeypatch.setattr("cndb.cli_users.cmd_delete_check", lambda args: None)
+        monkeypatch.setattr("cndb.cli_users.print_delete_check", lambda c: None)
+        users_command(_ns(users_cmd="delete", check_only=True))
+
+    def test_dispatch_delete_normal(self, capsys, cli_db, monkeypatch):
+        from cndb.cli_users import users_command
+
+        monkeypatch.setattr("cndb.cli_users.cmd_delete", lambda args: {})
+        monkeypatch.setattr("cndb.cli_users.print_delete_result", lambda r: None)
+        users_command(_ns(users_cmd="delete", check_only=False))
+
+    def test_dispatch_list(self, capsys, cli_db, monkeypatch):
+        from cndb.cli_users import users_command
+
+        monkeypatch.setattr("cndb.cli_users.cmd_list", lambda args: [])
+        monkeypatch.setattr("cndb.cli_users.print_list", lambda u: None)
+        users_command(_ns(users_cmd="list"))
+
+    def test_dispatch_import(self, capsys, cli_db, monkeypatch):
+        from cndb.cli_users import users_command
+
+        monkeypatch.setattr("cndb.cli_users.cmd_import", lambda args: None)
+        monkeypatch.setattr("cndb.cli_users.print_import_report", lambda r, f, dry_run: None)
+        users_command(_ns(users_cmd="import", file="x.csv", dry_run=False))
+
+    def test_dispatch_missing_subcommand(self, cli_db):
+        from cndb.cli_users import users_command
+
+        with pytest.raises(SystemExit) as ei:
+            users_command(_ns(users_cmd=None))
+        assert ei.value.code == 2
+
+
+# ── 边界分支 ─
+
+
+class TestEdgeCases:
+    def test_create_duplicate_email_fails(self, cli_db):
+        from cndb.cli_users import cmd_create
+
+        cmd_create(
+            _ns(username="e1", password="pw1234", email="dup@x.com", nickname=None, role="user", is_superuser=False)
+        )
+        with pytest.raises(SystemExit) as ei:
+            cmd_create(
+                _ns(username="e2", password="pw1234", email="dup@x.com", nickname=None, role="user", is_superuser=False)
+            )
+        assert "邮箱" in str(ei.value)
+
+    def test_delete_superuser_warning(self, cli_db, capsys):
+        from cndb.cli_users import cmd_create, cmd_delete
+
+        cmd_create(_ns(username="su_del", password="pw1234", email=None, nickname=None, role="user", is_superuser=True))
+        cmd_delete(_ns(target="su_del", cascade=False, yes=False, check_only=False))
+        err = capsys.readouterr().err
+        assert "superuser" in err
+
+    def test_delete_check_not_found_returns_none(self, cli_db):
+        from cndb.cli_users import cmd_delete_check
+
+        assert cmd_delete_check(_ns(target="ghost")) is None
+
+    def test_list_active_filter(self, cli_db):
+        from cndb.cli_users import _get_session, cmd_create, cmd_list
+        from cndb.plugins.accounts.models import User
+
+        cmd_create(_ns(username="act1", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        # 把第二个用户设为 inactive
+        cmd_create(_ns(username="act2", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        db = _get_session()
+        try:
+            u = db.query(User).filter(User.username == "act2").first()
+            u.is_active = False
+            db.commit()
+        finally:
+            db.close()
+
+        active = cmd_list(_ns(role=None, active=True, inactive=False))
+        inactive = cmd_list(_ns(role=None, active=False, inactive=True))
+        assert len(active) == 1
+        assert len(inactive) == 1
+
+    def test_resolve_user_by_digit_id(self, cli_db):
+        from cndb.cli_users import _get_session, _resolve_user, cmd_create
+
+        result = cmd_create(
+            _ns(username="digit_u", password="pw1234", email=None, nickname=None, role="user", is_superuser=False)
+        )
+        db = _get_session()
+        try:
+            u = _resolve_user(db, str(result.user_id))
+            assert u is not None
+            assert u.username == "digit_u"
+        finally:
+            db.close()
+
+    def test_read_csv_gbk_fallback(self, tmp_path: Path):
+        from cndb.cli_users import _read_csv
+
+        f = tmp_path / "gbk.csv"
+        f.write_bytes("用户名,密码\n张三,pw1234\n".encode("gbk"))
+        rows = _read_csv(f)
+        assert len(rows) == 1
+        assert rows[0]["username"] == "张三"
+
+    def test_read_csv_empty_file(self, tmp_path: Path):
+        from cndb.cli_users import _read_csv
+
+        f = tmp_path / "empty.csv"
+        f.write_text("", encoding="utf-8")
+        assert _read_csv(f) == []
+
+    def test_read_xlsx_none_header(self, tmp_path: Path):
+        from openpyxl import Workbook
+
+        from cndb.cli_users import _read_xlsx
+
+        wb = Workbook()
+        ws = wb.active
+        # 只写一行数据，不写表头 → header 为 None 分支
+        ws.append([None, None])
+        xlsx = tmp_path / "none_header.xlsx"
+        wb.save(xlsx)
+        rows = _read_xlsx(xlsx)
+        assert isinstance(rows, list)
+
+    def test_map_row_skips_unknown_column(self):
+        """未知列头应被跳过，不进入映射结果."""
+        from cndb.cli_users import _map_row
+
+        row = {"username": "x", "unknown_col": "y"}
+        mapped = _map_row(row)
+        assert mapped == {"username": "x"}
+
+    def test_validate_row_username_too_short(self):
+        from cndb.cli_users import _validate_row
+
+        err = _validate_row({"username": "a"})
+        assert err is not None
+        assert "2 个字符" in err
+
+    def test_validate_row_password_too_short(self):
+        from cndb.cli_users import _validate_row
+
+        err = _validate_row({"username": "valid", "password": "12"})
+        assert err is not None
+        assert "6 位" in err
+
+    def test_import_single_user_db_exception(self, cli_db, monkeypatch):
+        from cndb.cli_users import ImportReport, _import_single_user
+
+        report = ImportReport(total=1, ok=[], skipped=[], failed=[])
+
+        def _boom(*a, **kw):
+            raise RuntimeError("simulated db error")
+
+        from cndb.plugins.accounts.models import User
+
+        monkeypatch.setattr(User, "set_password", _boom)
+        _import_single_user(report, 1, "exc_user", None, "", "user", "pw1234", None)
+        assert len(report.failed) == 1
+        assert "DB 错误" in report.failed[0].message
+

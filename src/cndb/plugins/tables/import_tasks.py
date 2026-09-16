@@ -303,6 +303,82 @@ def create_import_task(
     return task
 
 
+def reanalyze_import_task(
+    db_session: Session,
+    task_id: int,
+    *,
+    match_keys: list[str] | None = None,
+    unknown_cols_strategy: str | None = None,
+) -> None:
+    """用新参数重新跑 analyze（让用户在 preview 阶段改参考列/未知列策略后重算 diff）.
+
+    允许的源状态：pending_confirm、pending_validation。
+    完成后回到 pending_confirm，更新后的 validation_report 带新的 upsert 分类。
+    """
+    from cndb.plugins.tables.importer import Importer
+
+    task = db_session.get(ImportTask, task_id)
+    if task is None:
+        logger.error("ImportTask %s 不存在", task_id)
+        return
+    if task.status not in ("pending_confirm", "pending_validation"):
+        raise ValueError(f"当前状态 {task.status} 不允许重新分析（需 pending_confirm）")
+
+    # 更新任务参数
+    if match_keys is not None:
+        task.match_keys = list(match_keys)
+    if unknown_cols_strategy is not None:
+        task.unknown_cols_strategy = unknown_cols_strategy
+
+    _transition_status(task, "pending_validation")
+    task.progress = 10
+    task.error_message = ""
+    db_session.commit()
+
+    try:
+        table = db_session.get(DataTable, task.table_id)
+        if table is None:
+            raise RuntimeError(f"数据表 {task.table_id} 不存在")
+
+        raw = _decode_content(task)
+        engine = db_session.get_bind()
+
+        imp = Importer(engine, db_session, table)
+        analysis = imp.analyze(
+            raw,
+            task.format,
+            match_keys=list(task.match_keys) if task.match_keys else None,
+            unknown_cols_strategy=task.unknown_cols_strategy or "drop",
+        )
+
+        task.total_rows = len(analysis.results)
+        task.progress = 90
+        db_session.commit()
+
+        task.validation_report = json.dumps(analysis.report, ensure_ascii=False)
+        task.progress = 95
+        _transition_status(task, "pending_confirm")
+        db_session.commit()
+
+        logger.info(
+            "ImportTask %s reanalyze 完成：new=%d update=%d error=%d",
+            task_id,
+            analysis.report.get("new_count", 0),
+            analysis.report.get("update_count", 0),
+            analysis.report["error_count"],
+        )
+    except Exception as exc:
+        logger.exception("ImportTask %s reanalyze 失败: %s", task_id, exc)
+        task.error_message = str(exc)
+        task.progress = 100
+        try:
+            _transition_status(task, "failed")
+            db_session.commit()
+        except ValueError:
+            task.status = "failed"
+            db_session.commit()
+
+
 def run_task_in_background(
     db_session_factory: Any,
     task_id: int,
@@ -312,7 +388,9 @@ def run_task_in_background(
     """在后台线程中执行任务.
 
     Args:
-        phase: "execute"（默认，跑 execute_import_task）或 "analyze"（跑 analyze_import_task）.
+        phase: "execute"（默认，跑 execute_import_task）、"analyze"（跑 analyze_import_task），
+            或 "reanalyze"（跑 reanalyze_import_task，match_keys / unknown_cols_strategy 从 task 上读取）.
+        match_keys / unknown_cols_strategy: reanalyze 阶段可选的新参数.
     """
 
     def _worker() -> None:
@@ -320,6 +398,8 @@ def run_task_in_background(
         try:
             if phase == "analyze":
                 analyze_import_task(session, task_id)
+            elif phase == "reanalyze":
+                reanalyze_import_task(session, task_id)
             else:
                 execute_import_task(session, task_id)
         finally:
@@ -333,5 +413,6 @@ __all__ = [
     "analyze_import_task",
     "create_import_task",
     "execute_import_task",
+    "reanalyze_import_task",
     "run_task_in_background",
 ]

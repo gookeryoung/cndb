@@ -444,9 +444,11 @@ export interface ValidationReport {
   new_preview?: Array<{
     row_number: number; match_key_values: Record<string, unknown>; field_sample: Record<string, unknown>
   }>
-  /** V2: 待更新行预览 */
+  /** V2: 待更新行预览（含字段级 diff） */
   update_preview?: Array<{
-    row_number: number; match_key_values: Record<string, unknown>; existing_row_id: number; field_sample: Record<string, unknown>
+    row_number: number; match_key_values: Record<string, unknown>; existing_row_id: number; field_sample: Record<string, unknown>;
+    /** 仅包含 changed=true 的业务字段（不含 match_keys）— old 为 DB 旧值, new 为文件新值 */
+    field_diffs?: Record<string, { old: unknown; new: unknown; changed: boolean }>
   }>
   warnings: Array<{ row_number: number; field: string; message: string }>
   errors: Array<{ row_number: number; field: string; message: string }>

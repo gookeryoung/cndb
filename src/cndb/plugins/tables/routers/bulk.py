@@ -424,6 +424,70 @@ def import_table_confirm(
     }
 
 
+@router.post("/import/{task_id}/reanalyze")
+def import_table_reanalyze(
+    workspace_id: int,
+    table_id: int,
+    task_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    match_keys: str | None = None,
+    unknown_cols_strategy: str | None = None,
+) -> dict[str, Any]:
+    """用新参数重新跑 analyze（让用户在 preview 阶段改参考列/未知列策略后重算 diff）.
+
+    适用场景：用户先上传文件看全量数据，再选参考列，重新 DIFF 得到 new/update 分类.
+    任务必须处于 pending_confirm 或 pending_validation 状态.
+    """
+    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+
+    task = db.get(ImportTask, task_id)
+    if task is None or task.table_id != dt.id:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if task.status not in ("pending_confirm", "pending_validation"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"当前状态 {task.status} 不允许重新分析（需 pending_confirm）",
+        )
+
+    # 解析参数（与 confirm 保持一致的 JSON 字符串/逗号分隔两种形式）
+    import json as _json
+
+    if match_keys is not None:
+        try:
+            parsed = _json.loads(match_keys)
+            if isinstance(parsed, list):
+                new_keys = [str(x) for x in parsed]
+            else:
+                new_keys = [k.strip() for k in match_keys.split(",") if k.strip()]
+        except _json.JSONDecodeError:
+            new_keys = [k.strip() for k in match_keys.split(",") if k.strip()]
+        task.match_keys = new_keys
+
+    if unknown_cols_strategy is not None and unknown_cols_strategy in ("drop", "add_text_field"):
+        task.unknown_cols_strategy = unknown_cols_strategy
+
+    task.validation_report = ""  # 清空旧报告
+    task.progress = 0
+    task.error_message = ""
+    db.commit()
+
+    # 后台跑 reanalyze 阶段（复用 run_task_in_background 的 phase="reanalyze"）
+    from sqlalchemy.orm import sessionmaker
+
+    engine = db.get_bind()
+    bg_session_factory = sessionmaker(bind=engine)
+    run_task_in_background(bg_session_factory, task.id, phase="reanalyze")
+
+    return {
+        "task_id": task.id,
+        "status": task.status,
+        "match_keys": list(task.match_keys or []),
+        "unknown_cols_strategy": task.unknown_cols_strategy,
+        "message": "已提交重新分析，请轮询 GET /import/async/{task_id} 查看新报告",
+    }
+
+
 @router.get("/import/{task_id}/failed-rows")
 def download_failed_rows(
     workspace_id: int,
