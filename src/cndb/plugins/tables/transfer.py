@@ -16,7 +16,7 @@ from typing import Any
 from cndb.plugins.tables import records as rec
 from cndb.plugins.tables.ddl import create_table as ddl_create
 from cndb.plugins.tables.links import is_link_field
-from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.models import DataField, DataTable, ensure_default_view
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +264,8 @@ def create_table_from_csv(
     db.refresh(dt)
 
     ddl_create(engine, dt)
+
+    ensure_default_view(db, dt, owner_id=owner_id, commit=True)
 
     ids = import_rows_from_csv(engine, dt, csv_text, db=db)
     return dt, ids
@@ -561,6 +563,8 @@ def create_table_from_json_data(
     db.refresh(dt)
 
     ddl_create(engine, dt)
+
+    ensure_default_view(db, dt, owner_id=owner_id, commit=True)
 
     # import_rows_from_json 需要 JSON 字符串，我们直接用对象数组
     valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
