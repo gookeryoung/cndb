@@ -213,6 +213,35 @@ def delete_view(
     db.commit()
 
 
+@router.post("/reorder", response_model=list[ViewResponse])
+def reorder_views(
+    workspace_id: int,
+    table_id: int,
+    view_ids: list[int],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[DataView]:
+    """批量调整视图顺序（按传入顺序赋值 order 字段）."""
+    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
+
+    views = (
+        db.query(DataView)
+        .filter(
+            DataView.table_id == table_id,
+            DataView.id.in_(view_ids),
+        )
+        .all()
+    )
+
+    view_map = {v.id: v for v in views}
+    for idx, vid in enumerate(view_ids):
+        if vid in view_map:
+            view_map[vid].order = idx
+
+    db.commit()
+    return db.query(DataView).filter(DataView.table_id == table_id).order_by(DataView.order, DataView.id).all()
+
+
 # ── 视图驱动的行查询 ──────────────────────────────────
 
 

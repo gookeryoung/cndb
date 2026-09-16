@@ -821,3 +821,82 @@ class TestViewValidation:
         )
         assert r.status_code == 200
         assert len(r.json()) == 0
+
+
+class TestViewReorder:
+    """POST /views/reorder 视图排序."""
+
+    def test_reorder_views(self, client, ws, table, auth_owner):
+        """批量调整视图顺序应按传入顺序返回."""
+        view_ids = []
+        for i in range(3):
+            r = client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+                json={"name": f"v{i}", "view_type": "grid"},
+                headers=auth_owner,
+            )
+            view_ids.append(r.json()["id"])
+
+        # 反转顺序
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/reorder",
+            json=list(reversed(view_ids)),
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        reordered = r.json()
+        assert reordered[0]["id"] == view_ids[2]
+        assert reordered[1]["id"] == view_ids[1]
+        assert reordered[2]["id"] == view_ids[0]
+
+    def test_reorder_views_skip_missing_id(self, client, ws, table, auth_owner):
+        """reorder 视图时传入不存在的 view_id 应被跳过，不报错."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "v_only", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = r.json()["id"]
+        # 混入一个不存在的 id
+        r2 = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/reorder",
+            json=[99999, vid],
+            headers=auth_owner,
+        )
+        assert r2.status_code == 200
+        assert [v["id"] for v in r2.json()] == [vid]
+
+    def test_reorder_views_readonly_forbidden(self, client, db, ws, table, auth_owner):
+        """只读用户 reorder 视图应返回 403."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.workspaces.models import WorkspaceMember
+
+        viewer = User(username="viewer", email="v@t.com")
+        viewer.set_password("pw")
+        viewer.role = "user"
+        db.add(viewer)
+        db.flush()
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=viewer.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+        db.refresh(viewer)
+
+        login = client.post(
+            "/api/v1/accounts/auth/login",
+            json={"login": "viewer", "password": "pw"},
+        )
+        viewer_h = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        # 先建一个视图
+        vr = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "v1", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = vr.json()["id"]
+
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/reorder",
+            json=[vid],
+            headers=viewer_h,
+        )
+        assert r.status_code == 403
