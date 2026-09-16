@@ -153,12 +153,15 @@ def info_command() -> int:
     """打印版本/配置/运行环境."""
     import platform
 
-    from cndb.core.config import settings
+    from cndb.core.config import BASE_DIR, DATA_DIR, _is_frozen, settings
 
     print(f"{settings.APP_NAME}  v{settings.APP_VERSION}")
     print("-" * 40)
     print(f"  Python:       {sys.version}")
     print(f"  Platform:     {platform.platform()}")
+    print(f"  Frozen:       {_is_frozen()}")
+    print(f"  BASE_DIR:     {BASE_DIR}")
+    print(f"  DATA_DIR:     {DATA_DIR}")
     print(f"  DEBUG:        {settings.DEBUG}")
     print(f"  DATABASE_URL: {settings.DATABASE_URL}")
     print(f"  API_PREFIX:   {settings.API_V1_PREFIX}")
