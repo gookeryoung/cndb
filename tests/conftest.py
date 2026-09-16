@@ -46,6 +46,34 @@ def _session_factory(db_engine):
     return sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _skip_lifespan_migrations(monkeypatch_session):
+    """测试中 TestClient 每次启动都触发 lifespan 的 alembic 迁移（~0.6s/次），
+    且目标是真实 settings.DATABASE_URL 而非测试内存库 —— 直接跳过，
+    schema 由 db_engine 的 create_all 负责。"""
+    import importlib
+
+    app_module = importlib.import_module("cndb.app")
+    monkeypatch_session.setattr(app_module, "ensure_db_migrated", lambda: None)
+
+
+@pytest.fixture(scope="session")
+def monkeypatch_session():
+    m = pytest.MonkeyPatch()
+    yield m
+    m.undo()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _fast_bcrypt(monkeypatch_session):
+    """bcrypt 默认 cost(12) 单次哈希 ~0.2s，auth_headers 每测试 register+login
+    要付 2-3 次 —— 测试环境降到 cost=4，保持真实哈希/校验流程不变。"""
+    import bcrypt
+
+    orig_gensalt = bcrypt.gensalt
+    monkeypatch_session.setattr(bcrypt, "gensalt", lambda *a, **kw: orig_gensalt(4))
+
+
 @pytest.fixture
 def db(_session_factory):
     """function 级 session — 每个测试独立 session."""
@@ -58,18 +86,19 @@ def db(_session_factory):
 
 @pytest.fixture(autouse=True)
 def _cleanup_tables(db_engine):
-    """autouse：每个测试后等后台线程结束，再彻底清表 + 重置自增计数器."""
+    """autouse：每个测试后等后台线程结束，再清空全部表 + 重置自增计数器."""
     yield
     # 等待 import_tasks 中所有后台线程完成，避免残留线程与清表冲突
     from cndb.plugins.tables.import_tasks import join_background_threads
 
     join_background_threads(timeout=10)
     with db_engine.connect() as conn:
+        # DELETE 比 DROP+CREATE 快一个量级；schema 在 session 级 engine 上只建一次
         for table in reversed(Base.metadata.sorted_tables):
             with suppress(Exception):
-                conn.execute(text(f"DROP TABLE IF EXISTS {table.name}"))
-        conn.commit()
-        Base.metadata.create_all(bind=conn)
+                conn.execute(text(f"DELETE FROM {table.name}"))
+        with suppress(Exception):
+            conn.execute(text("DELETE FROM sqlite_sequence WHERE name NOT LIKE 'sqlite_%'"))
         conn.commit()
 
 

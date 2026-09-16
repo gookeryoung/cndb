@@ -19,6 +19,7 @@ from cndb.plugins.tables.failed_row_exporter import FailedRowExporter
 from cndb.plugins.tables.importer import Importer, guess_format_from_content
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.row_validator import RowValidator
+from tests.helpers import wait_import_settled
 
 # ── 公共 Fixture ──────────────────────────────────
 
@@ -826,22 +827,14 @@ class TestImportPipelineEndpoints:
         assert "task_id" in data
 
         # run_task_in_background 是后台线程，POST 返回时可能还是 pending 状态
-        # 轮询 GET /import/async/{task_id} 直到进入 pending_validation 或 pending_confirm
-        import time
-
+        # 等后台线程结束后单次查询（确定性等待，替代固定 sleep 轮询）
         tid_resp = data["task_id"]
-        final_status = None
-        for _ in range(20):
-            time.sleep(0.1)
-            r = client.get(
-                f"/api/v1/workspaces/{wid}/tables/{tid}/import/async/{tid_resp}",
-                headers=auth_headers,
-            )
-            if r.status_code == 200:
-                st = r.json().get("status")
-                if st != "pending":
-                    final_status = st
-                    break
+        data = wait_import_settled(
+            client,
+            f"/api/v1/workspaces/{wid}/tables/{tid}/import/async/{tid_resp}",
+            auth_headers,
+        )
+        final_status = data.get("status")
         assert final_status in ("pending_validation", "pending_confirm", "running"), (
             f"后台 analyze 未完成，最后状态: {final_status}"
         )
@@ -879,17 +872,13 @@ class TestImportPipelineEndpoints:
         )
         assert resp.status_code == 200
 
-        import time
-
+        # 等后台线程结束后单次查询（确定性等待，替代固定 sleep 轮询）
         tid_resp = resp.json()["task_id"]
-        for _ in range(20):
-            time.sleep(0.1)
-            r = client.get(
-                f"/api/v1/workspaces/{wid}/tables/{tid}/import/async/{tid_resp}",
-                headers=auth_headers,
-            )
-            if r.status_code == 200 and r.json().get("status") in ("pending_confirm", "running", "done"):
-                break
+        wait_import_settled(
+            client,
+            f"/api/v1/workspaces/{wid}/tables/{tid}/import/async/{tid_resp}",
+            auth_headers,
+        )
 
         # 关键断言：analyze 阶段不应写库
         count_after = db.execute(__import__("sqlalchemy").text(f"SELECT COUNT(*) FROM {phys_table_name}")).scalar()
@@ -1405,6 +1394,10 @@ class TestImportPipelineEndpoints:
             headers=auth_headers,
         )
         assert resp.status_code == 200, resp.text
+        # analyze 会触发后台线程，先 join 再读任务行，避免与线程写库竞争
+        from cndb.plugins.tables.import_tasks import join_background_threads
+
+        join_background_threads()
         task = db.get(ImportTask, resp.json()["task_id"])
         assert sorted(task.match_keys) == ["code", "name"]
 
