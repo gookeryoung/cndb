@@ -25,7 +25,10 @@ export interface UserResponse {
 }
 
 export interface LoginRequest { login: string; password: string }
-export interface RegisterRequest { username: string; email?: string | null; password: string; nickname?: string; role?: UserRole }
+/** 公开注册请求体 —— 已收窄为仅普通用户，不接受 role 参数. */
+export interface RegisterRequest { username: string; email?: string | null; password: string; nickname?: string }
+/** 管理员创建用户请求体 —— role 必填（三员 + user 任意）. */
+export interface AdminRegisterRequest extends Omit<RegisterRequest, 'password'> { password: string; role: UserRole }
 export interface LoginResponse { access_token: string; token_type: string }
 
 export interface Workspace {
