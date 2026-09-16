@@ -11,7 +11,6 @@ from contextlib import suppress
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -24,7 +23,6 @@ from cndb.models.base import Base
 def db_engine():
     """session 级共享内存 SQLite engine — 每个 worker 只建一次 schema."""
     settings.AUTH_ENABLED = True
-    # StaticPool 保证单连接池：SQLite :memory: 本身只能被一个连接持有
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -60,13 +58,16 @@ def db(_session_factory):
 
 @pytest.fixture(autouse=True)
 def _cleanup_tables(db_engine):
-    """autouse：每个测试后 DELETE FROM 所有表，实现快速隔离."""
+    """autouse：每个测试后彻底清表 + 重置自增计数器."""
     yield
     with db_engine.connect() as conn:
-        # SQLite 默认 FK 关闭，DELETE 无需关闭约束
+        # 先 DROP TABLE，彻底清理所有数据 + 自增计数器
         for table in reversed(Base.metadata.sorted_tables):
-            with suppress(OperationalError):
-                conn.execute(text(f"DELETE FROM {table.name}"))
+            with suppress(Exception):
+                conn.execute(text(f"DROP TABLE IF EXISTS {table.name}"))
+        conn.commit()
+        # 重建 schema
+        Base.metadata.create_all(bind=conn)
         conn.commit()
 
 

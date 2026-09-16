@@ -8,32 +8,25 @@ from __future__ import annotations
 import csv
 import io
 import json
-from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, func, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from cndb.plugins.tables import ddl
 from cndb.plugins.tables.diff_reporter import DiffReporter
 from cndb.plugins.tables.failed_row_exporter import FailedRowExporter
 from cndb.plugins.tables.importer import Importer, guess_format_from_content
-from cndb.plugins.tables.models import Base, DataField, DataTable
+from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.row_validator import RowValidator
 
 # ── 公共 Fixture ──────────────────────────────────
 
 
 @pytest.fixture
-def test_session(tmp_path: Path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'pv.db'}", connect_args={"check_same_thread": False})
-    Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-    session = SessionLocal()
-    try:
-        yield engine, session
-    finally:
-        session.close()
+def test_session(db_engine, db):
+    """复用 conftest 内存 DB，yield (engine, session) 保持调用方签名不变."""
+    yield db_engine, db
 
 
 def _make_table(session: Session, engine, *, workspace_id: int = 1) -> DataTable:
