@@ -48,7 +48,7 @@ export type {
   Workspace, WorkspaceDetail, WorkspaceCreate, WorkspaceUpdate, WorkspaceRole, WorkspaceMember, MemberUserBrief,
   WorkspaceVisibility, WorkspaceExportData,
   TableSummary, TableDetail, TableCreate, TableUpdate, ViewBrief,
-  FieldImportRequest, FieldImportResponse, FieldType, Field, FieldCreate, FieldUpdate,
+  FieldImportRequest, FieldImportResponse, FieldImportSuggestion, FieldImportGapAnalysis, FieldType, Field, FieldCreate, FieldUpdate,
   RowValues, RowResponse, RowDetail, RowCreate, RowUpdate, RowListResponse, RecordListParams,
   View, ViewDetail, ViewCreate, ViewUpdate,
   AuditLog, Comment, Reference,
