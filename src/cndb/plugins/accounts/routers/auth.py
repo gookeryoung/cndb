@@ -17,7 +17,6 @@ from cndb.core.database import get_db
 from cndb.core.security import create_access_token
 from cndb.plugins.accounts.models import User, UserRole
 from cndb.plugins.accounts.schemas.auth import (
-    PUBLIC_REGISTERABLE_ROLES,
     AdminRegisterRequest,
     LoginRequest,
     RegisterRequest,
@@ -52,11 +51,12 @@ def _ensure_unique(db: Session, username: str, email: str | None) -> None:
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
     """公开注册新用户.
 
-    安全约束：公开注册仅允许注册 user (普通用户) 角色。如 payload.role
-    指定了三员角色，则自动降级为 user 并在响应体中体现。
+    公开注册入口已收窄为"只允许普通用户"，不接受 role 参数；
+    角色由 User 模型默认值（user）自动填充。管理员创建三员账号
+    请使用 /auth/admin-register（需要超级管理员权限）。
 
     Args:
-        payload: 注册请求体（用户名/邮箱/昵称/密码/角色）
+        payload: 注册请求体（用户名/邮箱/昵称/密码）
         db: 数据库会话
 
     Returns:
@@ -64,20 +64,10 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
     """
     _ensure_unique(db, payload.username, payload.email)
 
-    # 公开注册只能选 user 角色
-    if payload.role not in PUBLIC_REGISTERABLE_ROLES:
-        # 降级处理：不要让用户知道可以越权，静默降级
-        role_value = UserRole.USER.value
-    else:
-        role_value = payload.role
-
-    _validate_role(role_value)
-
     user = User(
         username=payload.username,
         email=payload.email,
         nickname=payload.nickname,
-        role=role_value,
     )
     user.set_password(payload.password)
     db.add(user)

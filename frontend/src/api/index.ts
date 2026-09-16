@@ -20,7 +20,7 @@
 
 import api from './client'
 import type {
-  LoginRequest, RegisterRequest,
+  AdminRegisterRequest, LoginRequest, RegisterRequest,
   UserResponse,
   WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember,
   WorkspaceExportData,
@@ -42,7 +42,7 @@ import type {
 } from './types'
 
 export type {
-  ID, UserResponse, LoginRequest, RegisterRequest,
+  ID, UserResponse, AdminRegisterRequest, LoginRequest, RegisterRequest,
   Workspace, WorkspaceDetail, WorkspaceCreate, WorkspaceUpdate, WorkspaceRole, WorkspaceMember, MemberUserBrief,
   WorkspaceVisibility, WorkspaceExportData,
   TableSummary, TableDetail, TableCreate, TableUpdate, ViewBrief,
@@ -73,7 +73,7 @@ export const authApi = {
   me: () =>
     api.get<UserResponse>('/v1/accounts/auth/me').then(r => r.data),
   /** 管理员创建用户（需超级管理员 token） */
-  adminRegister: (data: RegisterRequest) =>
+  adminRegister: (data: AdminRegisterRequest) =>
     api.post<UserResponse>('/v1/accounts/auth/admin-register', data).then(r => r.data),
   /** 列出所有用户（需超级管理员） */
   listUsers: (roleFilter?: string) =>

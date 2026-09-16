@@ -217,15 +217,13 @@ class TestAdminRegister:
         assert r.status_code == 201
         assert r.json()["nickname"] == "安全管理员"
 
-    def test_public_register_silent_downgrade(self, client):
-        """公开注册指定三员角色，后端静默降级为 user."""
+    def test_public_register_rejects_role(self, client):
+        """公开注册入口收窄：携带 role 字段触发 422（不再静默降级）."""
         r = client.post(
             "/api/v1/accounts/auth/register",
             json={"username": "tricky_x", "password": "pw1234", "role": "system_admin"},
         )
-        assert r.status_code == 201
-        # 被降级成普通用户
-        assert r.json()["role"] == "user"
+        assert r.status_code == 422
 
     def test_list_users_requires_superuser(self, client, superuser_token):
         for u in ("a1_x", "a2_x", "a3_x"):
