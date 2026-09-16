@@ -21,6 +21,21 @@ from sqlalchemy.orm import Session
 from cndb.plugins.tables import transfer
 from cndb.plugins.tables.models import DataTable, ImportTask
 
+# 追踪所有后台线程，供测试 fixture 等待完成
+_background_threads: list[threading.Thread] = []
+_background_lock = threading.Lock()
+
+
+def join_background_threads(timeout: float = 5.0) -> None:
+    """等待所有后台线程结束（用于测试清理前调用）."""
+    with _background_lock:
+        threads = list(_background_threads)
+        _background_threads.clear()
+    for t in threads:
+        if t.is_alive():
+            t.join(timeout=timeout)
+
+
 logger = logging.getLogger(__name__)
 
 # 允许的状态转换
@@ -406,6 +421,8 @@ def run_task_in_background(
             session.close()
 
     thread = threading.Thread(target=_worker, daemon=True)
+    with _background_lock:
+        _background_threads.append(thread)
     thread.start()
 
 
@@ -413,6 +430,7 @@ __all__ = [
     "analyze_import_task",
     "create_import_task",
     "execute_import_task",
+    "join_background_threads",
     "reanalyze_import_task",
     "run_task_in_background",
 ]
