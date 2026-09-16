@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message, Alert, Empty, Spin } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, BgColorsOutlined, ImportOutlined } from '@ant-design/icons'
+import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message, Alert, Empty, Spin, Tooltip, Divider } from 'antd'
+import { PlusOutlined, DeleteOutlined, EditOutlined, BgColorsOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
-import type { Field, FieldCreate, FieldType, TableSummary } from '@/api'
+import type { Field, FieldCreate, FieldType, TableSummary, FieldImportResponse as FieldImportResponseType, FieldImportSuggestion } from '@/api'
 import { suggestColorForLabel } from '@/utils/tagColors'
 
 interface Props {
@@ -77,6 +77,10 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   const [sourceTableId, setSourceTableId] = useState<number | string | null>(null)
   const [importSelectedIds, setImportSelectedIds] = useState<Array<number | string>>([])
   const [importSkipConflicts, setImportSkipConflicts] = useState(true)
+  // 新增：预览返回的 suggestions + gap_analysis
+  const [importPreview, setImportPreview] = useState<FieldImportResponseType | null>(null)
+  const [importMapping, setImportMapping] = useState<Record<string, string | null>>({})
+  const [importPreviewLoading, setImportPreviewLoading] = useState(false)
 
   // 拉取当前工作区表列表（link 字段用 + 引入来源选择）
   const { data: tables = [] } = useQuery<TableSummary[]>({
@@ -105,19 +109,48 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     onSuccess: () => { message.success('已删除'); onChanged() },
   })
 
+  // ── 预览建议映射 ──
+  const runPreview = async () => {
+    if (!sourceTableId) return
+    setImportPreviewLoading(true)
+    try {
+      const resp = await fieldApi.importFields(wid, tid, {
+        source_table_id: Number(sourceTableId),
+        field_ids: importSelectedIds.length > 0 ? importSelectedIds.map(Number) : undefined,
+        import_all_fields: importSelectedIds.length === 0,
+        skip_conflicts: importSkipConflicts,
+        preview_only: true,
+      })
+      setImportPreview(resp)
+      // 用 suggestions 初始化 importMapping
+      const mapping: Record<string, string | null> = {}
+      resp.suggestions?.forEach((s: FieldImportSuggestion) => {
+        mapping[s.source] = s.will_map && s.target ? s.target : null
+      })
+      setImportMapping(mapping)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '预览失败'
+      message.error(msg)
+    } finally {
+      setImportPreviewLoading(false)
+    }
+  }
+
   const importMutation = useMutation({
     mutationFn: () => {
       if (!sourceTableId) return Promise.reject(new Error('未选择源表'))
       return fieldApi.importFields(wid, tid, {
         source_table_id: Number(sourceTableId),
-        field_ids: importSelectedIds.map(Number),
+        field_ids: importSelectedIds.length > 0 ? importSelectedIds.map(Number) : undefined,
         import_all_fields: importSelectedIds.length === 0,
         skip_conflicts: importSkipConflicts,
+        // 把用户调整后的 mapping 传过去（null 条目表示跳过）
+        field_mapping: importMapping,
       })
     },
     onSuccess: (resp) => {
       const parts: string[] = [`成功引入 ${resp.created.length} 个字段`]
-      if (resp.skipped.length > 0) parts.push(`已跳过 ${resp.skipped.length} 个重名字段`)
+      if (resp.skipped.length > 0) parts.push(`已跳过 ${resp.skipped.length} 个字段`)
       message.success(parts.join('，'))
       closeImportDialog()
       onChanged()
@@ -146,6 +179,8 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     setImportOpen(false)
     setSourceTableId(null)
     setImportSelectedIds([])
+    setImportPreview(null)
+    setImportMapping({})
   }
 
   /** 打开新建/编辑对话框 */
@@ -306,9 +341,9 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       onCancel={closeImportDialog}
       onOk={() => importMutation.mutate()}
       confirmLoading={importMutation.isPending}
-      okText={`引入${importSelectedIds.length > 0 ? `（${importSelectedIds.length} 个）` : '全部'}`}
+      okText={importPreview ? `确认引入（${Object.values(importMapping).filter(v => v != null).length} 个字段）` : '确认引入'}
       cancelText="取消"
-      width={640}
+      width={780}
     >
       <Alert
         type="info"
@@ -325,7 +360,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
           placeholder="请选择要引入字段的来源表"
           showSearch
           value={sourceTableId ?? undefined}
-          onChange={(v) => { setSourceTableId(v); setImportSelectedIds([]) }}
+          onChange={(v) => { setSourceTableId(v); setImportSelectedIds([]); setImportPreview(null); setImportMapping({}) }}
           options={tables
             .filter(t => String(t.id) !== String(tid))
             .map(t => ({ label: t.name, value: t.id }))}
@@ -348,10 +383,10 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
               </div>
               <Checkbox.Group
                 value={importSelectedIds as Array<string | number>}
-                onChange={(vals) => setImportSelectedIds(vals as Array<string | number>)}
+                onChange={(vals) => { setImportSelectedIds(vals as Array<string | number>); setImportPreview(null) }}
                 style={{ width: '100%' }}
               >
-                <div style={{ maxHeight: 280, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4, padding: 8 }}>
+                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4, padding: 8 }}>
                   {sourceFieldsWithConflict.map((sf) => (
                     <div key={sf.id} style={{ padding: '4px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Checkbox value={sf.id} disabled={sf.is_primary}>
@@ -366,15 +401,149 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                   ))}
                 </div>
               </Checkbox.Group>
+
+              {/* 预览按钮 */}
+              <div style={{ marginTop: 12, textAlign: 'center' }}>
+                <Button
+                  type="primary"
+                  icon={<SwapOutlined />}
+                  loading={importPreviewLoading}
+                  disabled={!sourceTableId}
+                  onClick={runPreview}
+                >
+                  {importPreview ? '重新分析映射' : '分析字段映射'}
+                </Button>
+              </div>
             </div>
           )}
         </Spin>
       )}
 
+      {/* 映射对比面板 */}
+      {importPreview && importPreview.suggestions && importPreview.suggestions.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <Divider style={{ margin: '8px 0' }}>字段映射对照</Divider>
+
+          {/* gap_analysis 概要 */}
+          {importPreview.gap_analysis && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10, fontSize: 12 }}>
+              <Tag color="green">已匹配 {importPreview.gap_analysis.matched.length}</Tag>
+              {importPreview.gap_analysis.unmapped_source.length > 0 && (
+                <Tag color="orange">待引入 {importPreview.gap_analysis.unmapped_source.length}</Tag>
+              )}
+              {importPreview.gap_analysis.target_missing.length > 0 && (
+                <Tag color="blue">目标侧还缺 {importPreview.gap_analysis.target_missing.length} 个字段</Tag>
+              )}
+              {importPreview.gap_analysis.conflicts.length > 0 && (
+                <Tag color="red">重名冲突 {importPreview.gap_analysis.conflicts.length}</Tag>
+              )}
+            </div>
+          )}
+
+          {/* 映射对比表 */}
+          <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4 }}>
+            {importPreview.suggestions.map((s: FieldImportSuggestion) => {
+              const isSkipped = importMapping[s.source] === null || importMapping[s.source] === undefined
+              const scoreColor = s.score >= 0.9 ? '#16a34a' : s.score >= 0.75 ? '#d97706' : '#dc2626'
+              // 候选目标字段：目标表已有字段 + 用户可以输入新名字
+              const targetOptions = [
+                ...fields.map(f => ({ label: `${f.name}（${f.field_type}）`, value: f.name })),
+                { label: '新名字（在下方输入）', value: '__new__' },
+                { label: '跳过（不引入）', value: '__skip__' },
+              ]
+
+              return (
+                <div
+                  key={s.source}
+                  style={{
+                    padding: '8px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    borderBottom: '1px solid #f5f5f5',
+                    background: isSkipped ? '#fffbeb' : 'transparent',
+                  }}
+                >
+                  {/* 源字段 */}
+                  <div style={{ width: 160, flexShrink: 0 }}>
+                    <div style={{ fontWeight: 500 }}>{s.source}</div>
+                    <div style={{ fontSize: 11, color: '#999' }}>
+                      {sourceFields.find(f => f.name === s.source)?.field_type ?? 'unknown'}
+                    </div>
+                  </div>
+
+                  {/* 箭头 */}
+                  <div style={{ color: isSkipped ? '#999' : '#52c41a', fontSize: 18 }}>
+                    {isSkipped ? <MinusOutlined /> : <SwapOutlined />}
+                  </div>
+
+                  {/* 目标字段选择 */}
+                  <div style={{ flex: 1, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <Select
+                      size="small"
+                      style={{ width: 220 }}
+                      value={isSkipped ? '__skip__' : (importMapping[s.source] ?? '__skip__')}
+                      options={targetOptions}
+                      onChange={(val) => {
+                        const next: Record<string, string | null> = { ...importMapping }
+                        if (val === '__skip__') {
+                          next[s.source] = null
+                        } else if (val === '__new__') {
+                          // 先设为源字段名本身，让用户在旁边的 Input 改
+                          next[s.source] = s.source
+                        } else {
+                          next[s.source] = val
+                        }
+                        setImportMapping(next)
+                      }}
+                    />
+                    {importMapping[s.source] !== null && importMapping[s.source] !== undefined &&
+                      importMapping[s.source] !== s.source &&
+                      !fields.find(f => f.name === importMapping[s.source]) && (
+                      <Tooltip title="这是新输入的目标字段名">
+                        <Input
+                          size="small"
+                          value={importMapping[s.source] ?? ''}
+                          placeholder="输入新字段名"
+                          onChange={(e) => {
+                            const next = { ...importMapping, [s.source]: e.target.value }
+                            setImportMapping(next)
+                          }}
+                          style={{ width: 140 }}
+                        />
+                      </Tooltip>
+                    )}
+                  </div>
+
+                  {/* 推荐状态 + 置信度 */}
+                  <Tooltip title={s.reason}>
+                    <Tag
+                      color={s.will_map ? 'green' : 'orange'}
+                      style={{ margin: 0, fontSize: 11 }}
+                      icon={s.will_map ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+                    >
+                      {s.will_map ? '推荐' : '低置信度'}
+                    </Tag>
+                  </Tooltip>
+                  <span style={{ fontSize: 11, color: scoreColor, width: 42, textAlign: 'right' }}>
+                    {s.score.toFixed(2)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* 统计 */}
+          <div style={{ marginTop: 10, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+            共 {importPreview.suggestions.length} 个源字段 — 目标表当前 {fields.length} 个已有字段
+          </div>
+        </div>
+      )}
+
       {/* 冲突策略 */}
       {sourceFields.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <Checkbox checked={importSkipConflicts} onChange={(e) => setImportSkipConflicts(e.target.checked)}>
+          <Checkbox checked={importSkipConflicts} onChange={(e) => { setImportSkipConflicts(e.target.checked); setImportPreview(null) }}>
             跳过重名字段（推荐）
           </Checkbox>
           <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>

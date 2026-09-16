@@ -208,6 +208,269 @@ def auto_match_fields(
     return mapping, gap
 
 
+# ── 智能建议：跨表字段名匹配 ────────────────────────────
+
+
+# 常见缩写 → 完整词（双向）
+_ABBREV_DICT: dict[str, str] = {
+    # 通用
+    "amt": "amount",
+    "cnt": "count",
+    "qty": "quantity",
+    "val": "value",
+    "id": "identifier",
+    "no": "number",
+    "num": "number",
+    "desc": "description",
+    "info": "information",
+    "cfg": "config",
+    "st": "status",
+    "stat": "status",
+    "typ": "type",
+    "dt": "date",
+    "tm": "time",
+    "ts": "timestamp",
+    "src": "source",
+    "dst": "destination",
+    "tgt": "target",
+    "usr": "user",
+    "adm": "admin",
+    "pwd": "password",
+    "addr": "address",
+    "tel": "telephone",
+    "phone": "phone",
+    "url": "url",
+    "img": "image",
+    "pic": "picture",
+    "msg": "message",
+    "err": "error",
+    "exc": "exception",
+    "tmp": "temp",
+    "bak": "backup",
+    # 后缀类
+    "name_full": "full_name",
+    "fullname": "full_name",
+    # 中文拼音缩写（低优先级兜底，仅当中文名匹配时生效）
+    # 暂不列入 —— 中文场景建议用字符串相似度兜底
+}
+
+# 常见前缀/后缀，归一化时剥离
+_COMMON_PREFIXES = ("src_", "dst_", "tgt_", "old_", "new_", "prev_", "next_", "cur_", "current_")
+_COMMON_SUFFIXES = ("_src", "_dst", "_old", "_new", "_prev", "_cur", "_current")
+
+
+def _normalize_name(name: str) -> str:
+    """把字段名归一化：小写 → 剥离分隔符 → 去常见前后缀."""
+    n = name.lower().strip().replace(" ", "_").replace("-", "_").replace(".", "_").replace("/", "_")
+    n = "_".join(p for p in n.split("_") if p)  # 去连续 _
+    for p in _COMMON_PREFIXES:
+        if n.startswith(p):
+            n = n[len(p) :]
+            break
+    for s in _COMMON_SUFFIXES:
+        if n.endswith(s):
+            n = n[: -len(s)]
+            break
+    return n
+
+
+def _expand_abbrev(name: str) -> list[str]:
+    """返回字段名的候选扩展形式（含原词 + 每个 token 展开后的版本）."""
+    tokens = name.split("_")
+    candidates = [name]
+    for i, tok in enumerate(tokens):
+        expanded = _ABBREV_DICT.get(tok, tok)
+        if expanded != tok:
+            tokens_copy = list(tokens)
+            tokens_copy[i] = expanded
+            candidates.append("_".join(tokens_copy))
+    return candidates
+
+
+# 字段类型兼容矩阵（同组内 +0.12 分，跨组但可安全互转 +0.05）
+_TYPE_GROUPS: dict[str, str] = {
+    "text": "text",
+    "longtext": "text",
+    "email": "text",
+    "url": "text",
+    "phone": "text",
+    "number": "numeric",
+    "float": "numeric",
+    "percentage": "numeric",
+    "boolean": "boolean",
+    "date": "date",
+    "datetime": "date",
+    "timestamp": "date",
+    "select": "select",
+    "multiselect": "select",
+    "link": "link",
+    "attachment": "attachment",
+}
+
+
+def _type_compat(src_type: str | None, dst_type: str | None) -> float:
+    """返回 0.0 / 0.05 / 0.15 的类型兼容加分."""
+    if not src_type or not dst_type:
+        return 0.0
+    g_s = _TYPE_GROUPS.get(src_type, src_type)
+    g_d = _TYPE_GROUPS.get(dst_type, dst_type)
+    if src_type == dst_type:
+        return 0.18
+    if g_s == g_d:
+        return 0.12
+    # text ↔ numeric 不加分（可能丢精度），其他跨组给极小分
+    return 0.03
+
+
+def _name_similarity(src_norm: str, dst_norm: str) -> tuple[float, str]:
+    """基于归一化名称计算相似度 + 返回匹配理由."""
+    import difflib
+
+    # 完全匹配
+    if src_norm == dst_norm:
+        return 1.0, "同名"
+
+    # 缩写双向匹配
+    for s_cand in _expand_abbrev(src_norm):
+        for d_cand in _expand_abbrev(dst_norm):
+            if s_cand == d_cand and (s_cand != src_norm or d_cand != dst_norm):
+                return 0.92, f"缩写扩展: {src_norm} ≡ {dst_norm}"
+
+    # SequenceMatcher
+    ratio = difflib.SequenceMatcher(None, src_norm, dst_norm).ratio()
+
+    # 包含关系
+    if src_norm in dst_norm or dst_norm in src_norm:
+        ratio = max(ratio, 0.85)
+        return ratio, f"包含匹配 (相似度 {ratio:.2f})"
+
+    if ratio >= 0.75:
+        return ratio, f"名称相似 (相似度 {ratio:.2f})"
+
+    return ratio, f"弱匹配 (相似度 {ratio:.2f})"
+
+
+def suggest_mapping(
+    src_fields: list[DataField],
+    dst_fields: list[DataField],
+    *,
+    min_score: float = 0.6,
+) -> list[dict[str, Any]]:
+    """为源表每个字段在目标表中推荐一个最佳匹配.
+
+    评分公式：``final = name_score + type_bonus``.
+
+    Args:
+        src_fields: 源表字段列表.
+        dst_fields: 目标表字段列表（已是候选集，通常是"目标表已有字段"，
+            用户也可以只传"目标表中尚未被占用的字段"实现增量建议）.
+        min_score: 低于此阈值的推荐会在返回里标记 ``will_map=False``.
+
+    Returns:
+        list 每项形如
+        ``{"source": src_name, "target": dst_name | None, "score": float,
+          "reason": str, "will_map": bool}``
+        — ``will_map=False`` 表示得分过低或无候选，前端应提示用户手动选择/跳过.
+    """
+    src_norm_map = {f.name: _normalize_name(f.name) for f in src_fields}
+    dst_norm_map = {f.name: _normalize_name(f.name) for f in dst_fields}
+
+    # 预计算每个 src ↔ dst 的得分 (score, src_name, dst_name, reason)
+    scored: list[tuple[float, str, str, str]] = []
+    for sf in src_fields:
+        for df in dst_fields:
+            name_score, reason = _name_similarity(src_norm_map[sf.name], dst_norm_map[df.name])
+            type_bonus = _type_compat(sf.field_type, df.field_type)
+            final = name_score + type_bonus
+            scored.append((final, sf.name, df.name, reason))
+
+    # 贪心分配：按 score 降序，每个 src 先到先得一个 dst
+    def _score_tuple_key(r: tuple[float, str, str, str]) -> float:
+        return r[0]
+
+    scored_sorted = sorted(scored, key=_score_tuple_key, reverse=True)
+    assigned_dst: set[str] = set()
+    best_for_src: dict[str, tuple[float, str, str]] = {}  # src → (score, dst, reason)
+
+    for score, src, dst, reason in scored_sorted:
+        if src in best_for_src:
+            continue  # 该 src 已拿到更高分的候选
+        if dst in assigned_dst:
+            continue
+        assigned_dst.add(dst)
+        best_for_src[src] = (score, dst, reason)
+
+    results: list[dict[str, Any]] = []
+    for sf in src_fields:
+        entry = best_for_src.get(sf.name)
+        if entry is None:
+            results.append(
+                {
+                    "source": sf.name,
+                    "target": None,
+                    "score": 0.0,
+                    "reason": "无候选",
+                    "will_map": False,
+                }
+            )
+            continue
+        score, dst, reason = entry
+        will_map = score >= min_score
+        if not will_map:
+            reason += f"（得分 {score:.2f} < 阈值 {min_score}）"
+        results.append(
+            {
+                "source": sf.name,
+                "target": dst,
+                "score": round(score, 3),
+                "reason": reason,
+                "will_map": will_map,
+            }
+        )
+
+    return results
+
+
+def suggest_field_mapping(
+    src_fields: list[DataField],
+    dst_fields: list[DataField],
+    *,
+    min_score: float = 0.6,
+) -> tuple[dict[str, str | None], list[dict[str, Any]]]:
+    """suggest_mapping 的便捷封装：返回 ``(mapping_dict, suggestions_list)``.
+
+    mapping_dict 直接可传入 :func:`apply_user_mapping`；
+    suggestions_list 供前端渲染"推荐 → 手动覆盖"面板.
+
+    特殊：当目标表（dst_fields）为空时，所有源字段默认 will_map=True 同名导入
+    （覆盖 min_score 阈值），符合"目标表还没字段就全量克隆"的直觉.
+    """
+    # 特殊：目标表暂无字段 → 全部同名导入
+    if not dst_fields:
+        suggestions: list[dict[str, Any]] = [
+            {
+                "source": f.name,
+                "target": f.name,
+                "score": 1.0,
+                "reason": "目标表为空，默认同名导入",
+                "will_map": True,
+            }
+            for f in src_fields
+        ]
+        mapping: dict[str, str | None] = {s["source"]: s["target"] for s in suggestions if s["target"]}
+        return mapping, suggestions
+
+    suggestions = suggest_mapping(src_fields, dst_fields, min_score=min_score)
+    mapping = {}
+    for s in suggestions:
+        if s["will_map"] and s["target"]:
+            mapping[s["source"]] = s["target"]
+        else:
+            # will_map=False — 要么无候选要么得分低，先标记为 None（跳过），让用户手动确认
+            mapping[s["source"]] = None
+    return mapping, suggestions
+
+
 __all__ = [
     "GapFilling",
     "analyze_field_gaps",
@@ -216,4 +479,6 @@ __all__ = [
     "auto_match_fields",
     "build_default_mapping",
     "remap_row",
+    "suggest_field_mapping",
+    "suggest_mapping",
 ]
