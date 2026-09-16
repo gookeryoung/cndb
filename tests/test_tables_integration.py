@@ -160,13 +160,16 @@ class TestFieldTypesIntegration:
         assert len(names) >= 9
 
     def test_select_config_validation(self):
-        """空 options 应该被拒绝."""
-        from pydantic import ValidationError
-
+        """空 options 合法（允许导入后自动识别补全）."""
         from cndb.plugins.tables.field_types import SelectFieldConfig
 
-        with pytest.raises(ValidationError):
-            SelectFieldConfig(options=[])
+        cfg = SelectFieldConfig(options=[])
+        assert cfg.options == []
+
+        # 非空 options 正常工作
+        cfg2 = SelectFieldConfig(options=["男", "女"])
+        labels = [o.label for o in cfg2.options]
+        assert labels == ["男", "女"]
 
 
 # ── DDL 引擎测试 ────────────────────────────────────
