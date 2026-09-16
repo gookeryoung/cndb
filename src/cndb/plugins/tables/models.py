@@ -393,6 +393,9 @@ class ImportTask(TimestampMixin, Base):
     match_keys: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # 未知列处理策略："drop"（默认丢弃）/ "add_text_field"（自动新增基础类型字段）
     unknown_cols_strategy: Mapped[str] = mapped_column(String(16), nullable=False, default="drop")
+    # 用户在确认导入时勾选的清洗动作列表（来自 analyze 阶段的 cleaning_suggestions）
+    # 每条格式：{column, action, strategy?, on_fail?}
+    cleaning_actions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
 
 
 __all__ = [

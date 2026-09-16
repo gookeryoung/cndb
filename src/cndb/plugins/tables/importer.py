@@ -28,12 +28,14 @@ from typing import Any, cast
 from sqlalchemy.orm import Session
 
 from cndb.plugins.tables import records as rec
+from cndb.plugins.tables.cleaning import apply_cleaning_actions, generate_cleaning_suggestions
+from cndb.plugins.tables.column_profiler import profile_columns
 from cndb.plugins.tables.ddl import add_column
 from cndb.plugins.tables.diff_reporter import DiffReporter
 from cndb.plugins.tables.field_mapping import GapFilling
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.row_validator import RowValidator, ValidationResult
-from cndb.plugins.tables.transfer import decode_bytes_auto
+from cndb.plugins.tables.transfer import decode_bytes_auto, sniff_csv_delimiter
 
 _Format = str
 
@@ -166,14 +168,23 @@ class Importer:
             skipped = default_report.get("skipped_columns", [])
             planned_columns = self._plan_unknown_columns(rows, skipped)
 
-        # 最终报告（带 upsert + planned_columns）
+        # ── Task 2: 列级数据质量画像 ────────────────
+        column_profiles, data_quality_summary = profile_columns(rows, file_columns)
+
+        # 最终报告（带 upsert + planned_columns + 数据画像）
         report = DiffReporter.build(
             results,
             self.table.active_fields(),
             file_columns,
             upsert_result=upsert_result,
             planned_columns=planned_columns,
+            column_profiles=column_profiles,
+            data_quality_summary=data_quality_summary,
         )
+
+        # ── Task 4: 清洗建议生成 ─────────────────────
+        report["cleaning_suggestions"] = generate_cleaning_suggestions(column_profiles, data_quality_summary)
+
         return ImportAnalysisResult(
             report=report,
             results=results,
@@ -193,26 +204,58 @@ class Importer:
         import_warnings: bool = True,
         match_keys: list[str] | None = None,
         unknown_cols_strategy: str = "drop",
+        cleaning_actions: list[dict[str, Any]] | None = None,
     ) -> ImportExecuteResult:
-        """完整流水线：解析 → 校验 → 报告 → （可选）字段自动新增 → （可选）upsert 分流 → 落库.
+        """完整流水线：解析 → （可选）清洗 → 校验 → 报告 → upsert → 落库.
 
         三种入口优先级：analysis > content+format > rows.
-        skip_errors=True 默认跳过 error 行（只落库 valid + warning）.
-        import_warnings=True 默认 warning 行也落库.
+        cleaning_actions 若非空，会在 RowValidator 之前应用到原始 rows 上，
+        清洗结果写入 report.cleaning_applied.
         """
         if analysis is not None:
+            # 若需清洗，必须回退到原始 rows 重新跑 analyze
+            if cleaning_actions:
+                orig_rows = self._resolve_original_rows(content, format, rows, analysis)
+                cleaned_rows, applied = apply_cleaning_actions(
+                    orig_rows, analysis.report.get("column_profiles", []), cleaning_actions
+                )
+                analysis = self.analyze(
+                    content or "",
+                    format,
+                    rows=cleaned_rows,
+                    match_keys=match_keys,
+                    unknown_cols_strategy=unknown_cols_strategy,
+                )
+                analysis.report["cleaning_applied"] = applied
             results = analysis.results
             report = analysis.report
             upsert_result = analysis.upsert_result
             planned_columns = analysis.planned_columns
         else:
-            analysis = self.analyze(
-                content or "",
-                format,
-                rows=rows,
-                match_keys=match_keys,
-                unknown_cols_strategy=unknown_cols_strategy,
-            )
+            # 先 parse 原始 rows，可能做清洗
+            if rows is None:
+                assert format is not None, "必须提供 format 或 rows"
+                rows, _orig_cols = self._parse(content or "", format)
+            if cleaning_actions:
+                # 需要列画像来做 IQR / fill_null，先快速跑一次 analyze 拿 profiles
+                tmp = self.analyze(content or "", format, rows=rows)
+                rows, applied = apply_cleaning_actions(rows, tmp.report.get("column_profiles", []), cleaning_actions)
+                analysis = self.analyze(
+                    content or "",
+                    format,
+                    rows=rows,
+                    match_keys=match_keys,
+                    unknown_cols_strategy=unknown_cols_strategy,
+                )
+                analysis.report["cleaning_applied"] = applied
+            else:
+                analysis = self.analyze(
+                    content or "",
+                    format,
+                    rows=rows,
+                    match_keys=match_keys,
+                    unknown_cols_strategy=unknown_cols_strategy,
+                )
             results = analysis.results
             report = analysis.report
             upsert_result = analysis.upsert_result
@@ -599,8 +642,8 @@ class Importer:
 
     def _parse(self, content: bytes | str, format: _Format) -> tuple[list[dict[str, Any]], list[str]]:
         """把文件内容转为 (行列表, 文件列名)."""
-        if format == "csv":
-            return self._parse_csv(content)
+        if format in ("csv", "tsv", "delimited"):
+            return self._parse_csv(content, delimiter=None)
         if format == "json":
             return self._parse_json(content)
         if format == "xlsx":
@@ -608,12 +651,18 @@ class Importer:
         raise ValueError(f"不支持的格式: {format}")
 
     @staticmethod
-    def _parse_csv(content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
+    def _parse_csv(
+        content: bytes | str,
+        *,
+        delimiter: str | None = None,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """解析分隔符文本，自动 sniff 分隔符（逗号/分号/pipe/tab）."""
         if isinstance(content, bytes):
-            text, _enc = decode_bytes_auto(content)
+            text, _enc, _conf = decode_bytes_auto(content)
         else:
             text = content
-        reader = csv.DictReader(io.StringIO(text))
+        delim = delimiter or sniff_csv_delimiter(text)
+        reader = csv.DictReader(io.StringIO(text), delimiter=delim)
         file_columns = list(reader.fieldnames or [])
         rows = [dict(row) for row in reader]
         return rows, file_columns
@@ -621,7 +670,7 @@ class Importer:
     @staticmethod
     def _parse_json(content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
         if isinstance(content, bytes):
-            text, _enc = decode_bytes_auto(content)
+            text, _enc, _conf = decode_bytes_auto(content)
         else:
             text = content
         data = json.loads(text)
@@ -661,11 +710,31 @@ class Importer:
                     seen.append(k)
         return seen
 
+    def _resolve_original_rows(
+        self,
+        content: bytes | str | None,
+        fmt: _Format | None,
+        rows: list[dict[str, Any]] | None,
+        analysis: ImportAnalysisResult,
+    ) -> list[dict[str, Any]]:
+        """在 execute 清洗分支里拿到"原始未解析前"的 rows.
+
+        优先级：直接传的 rows > content + format 重新解析 > 从 analysis.results 反推.
+        最后一个兜底是 analysis.results 里每个 ValidationResult.values，
+        这些值经过 RowValidator 可能被类型转换过，但总比空好。
+        """
+        if rows is not None:
+            return rows
+        if content is not None and fmt is not None:
+            return self._parse(content, fmt)[0]
+        # 兜底：从 analysis.results 反推
+        return [r.values for r in analysis.results]
+
 
 def guess_format_from_content(content: bytes | str) -> _Format:
     """从内容推断格式（按内容特征而非文件名）."""
     if isinstance(content, bytes):
-        text, enc = decode_bytes_auto(content)
+        text, enc, _conf = decode_bytes_auto(content)
         # 如果兜底编码是 latin-1，说明原始字节无法被任何文本编码解码，
         # 很可能是二进制（xlsx / 图片等），返回 xlsx 让调用方尝试 openpyxl 解析
         if enc == "latin-1":
@@ -679,9 +748,11 @@ def guess_format_from_content(content: bytes | str) -> _Format:
             return "json"
         except Exception:
             pass
-    # 快速 CSV 检查：第一行有逗号或制表符分隔的多列
+    # 快速检查：是否包含制表符 — 若是优先判为 tsv
     first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
-    if "," in first_line or "\t" in first_line:
+    if "\t" in first_line and "," not in first_line and ";" not in first_line:
+        return "tsv"
+    if "," in first_line or ";" in first_line or "|" in first_line:
         return "csv"
     return "csv"  # 默认兜底
 

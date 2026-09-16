@@ -1,0 +1,4 @@
+name,age,email,score,join_date,is_active
+Alice,28,a@b.com,85.5,2024-01-15,true
+Bob,32,b@c.com,92.0,2023-06-20,false
+Carol,25,c@d.com,78.0,2024-03-01,true
