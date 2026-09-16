@@ -142,7 +142,9 @@ def test_build_config_missing_alembic_dir(tmp_path, monkeypatch):
 
     fake_core_dir = tmp_path / "fake_core"
     fake_core_dir.mkdir()
-    monkeypatch.setattr(mig_mod, "__file__", str(fake_core_dir / "migrations.py"))
+    fake_migrations = fake_core_dir / "migrations.py"
+    fake_migrations.write_text("")  # 让 __file__ 指向真实存在的文件，避免 coverage 警告
+    monkeypatch.setattr(mig_mod, "__file__", str(fake_migrations))
 
     with pytest.raises(RuntimeError, match="alembic 目录不存在"):
         mig_mod._build_config()
