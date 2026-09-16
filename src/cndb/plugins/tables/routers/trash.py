@@ -188,6 +188,11 @@ def list_trashed_rows(
     """列出某表的软删行（普通成员也可见 —— 让用户能恢复自己误删的行）."""
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
+    from sqlalchemy import and_, func
+
+    from cndb.plugins.tables.access import apply_field_hiding_rows, get_hidden_field_names
+    from cndb.plugins.tables.records import _build_row_scope_where
+
     engine: Any = db.get_bind()
     try:
         metadata = MetaData()
@@ -196,25 +201,33 @@ def list_trashed_rows(
         if sa_table is None:
             return {"rows": [], "total": 0}
 
+        # 构建 WHERE: _trashed=True AND row_scope（避免绕过行级权限）
+        row_scope = _build_row_scope_where(dt, sa_table, db)
+        where_clauses: list[Any] = [sa_table.c._trashed.is_(True)]
+        if row_scope is not None:
+            where_clauses.append(row_scope)
+        final_where = and_(*where_clauses)
+
         with engine.connect() as conn:
-            count = (
-                conn.execute(select(func.count()).select_from(sa_table).where(sa_table.c._trashed.is_(True))).scalar()
-                or 0
-            )
-            result = conn.execute(
+            count = conn.execute(select(func.count()).select_from(sa_table).where(final_where)).scalar() or 0
+            raw_rows = conn.execute(
                 sa_table.select()
-                .where(sa_table.c._trashed.is_(True))
+                .where(final_where)
                 .order_by(sa_table.c._trashed_at.desc().nullslast(), sa_table.c.id.desc())
                 .limit(limit)
                 .offset(offset)
             ).all()
 
-        from cndb.plugins.tables.records import _row_to_dict
+        from cndb.plugins.tables.records import _row_to_dict, attach_links
 
-        return {
-            "rows": [{**_row_to_dict(dt, sa_table, r), "id": r[0]} for r in result],
-            "total": count,
-        }
+        rows = [_row_to_dict(dt, sa_table, r) for r in raw_rows]
+        rows = attach_links(engine, dt, rows, db=db)
+
+        # 字段隐藏（避免泄漏 hidden_fields 配置的列）
+        hidden = get_hidden_field_names(db, dt, current_user)
+        apply_field_hiding_rows(rows, hidden)
+
+        return {"rows": rows, "total": count}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"读取回收站失败: {exc}") from exc
 
@@ -230,7 +243,8 @@ def restore_trashed_rows_batch(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
-    """批量恢复软删行。payload: {row_ids: [int, ...]}；row_ids 为空时恢复全部."""
+    """批量恢复软删行。payload: {row_ids: [int, ...]}；row_ids 为空时恢复全部（受行级权限约束）."""
+
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     row_ids: list[int] = payload.get("row_ids", [])
@@ -242,16 +256,22 @@ def restore_trashed_rows_batch(
             if restore_row(engine, dt, rid, db=db):
                 restored += 1
     else:
-        # 恢复全部软删行
+        # 恢复全部软删行（同样受 row_filters 约束，避免权限绕过）
         try:
             metadata = MetaData()
             metadata.reflect(bind=engine, only=[dt.db_table_name])
             sa_table = metadata.tables.get(dt.db_table_name)
             if sa_table is not None:
+                from cndb.plugins.tables.records import _build_row_scope_where
+
+                row_scope = _build_row_scope_where(dt, sa_table, db)
+                base_where: list[Any] = [sa_table.c._trashed.is_(True)]
+                if row_scope is not None:
+                    base_where.append(row_scope)
                 with engine.begin() as conn:
                     result = conn.execute(
                         sa_table.update()
-                        .where(sa_table.c._trashed.is_(True))
+                        .where(*base_where)
                         .values(
                             _trashed=False,
                             _trashed_at=None,
