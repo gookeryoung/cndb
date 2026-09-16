@@ -53,6 +53,9 @@ def _build_config() -> alembic.config.Config:
     # env.py 所在目录（env.py 在包内 alembic/ 下）
     cfg.set_main_option("prepend_sys_path", str(alembic_dir))
 
+    # 指定路径分隔符以消除 Alembic DeprecationWarning
+    cfg.set_main_option("path_separator", "os")
+
     # 注入数据库 URL
     db_url = settings.DATABASE_URL
     if "+aiosqlite" in db_url:

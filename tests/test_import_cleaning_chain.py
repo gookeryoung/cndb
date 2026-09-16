@@ -5,6 +5,21 @@ from __future__ import annotations
 from contextlib import suppress
 
 
+def _get_task_fresh(db, task_id):
+    """用全新 session 读取 ImportTask，规避 StaticPool 连接共享导致的 identity map 问题."""
+    from sqlalchemy.orm import Session
+
+    from cndb.plugins.tables.import_tasks import join_background_threads
+    from cndb.plugins.tables.models import ImportTask
+
+    join_background_threads(timeout=10)
+    fresh = Session(bind=db.get_bind())
+    try:
+        return fresh.get(ImportTask, task_id)
+    finally:
+        fresh.close()
+
+
 class TestImportTaskCleaningActions:
     """ImportTask 模型应支持 cleaning_actions 字段."""
 
@@ -286,9 +301,8 @@ class TestConfirmRouteCleaningActionsE2E:
             content=json.dumps(body),
         )
         assert resp2.status_code == 200
-        from cndb.plugins.tables.models import ImportTask
 
-        db_task = db.get(ImportTask, task_id)
+        db_task = _get_task_fresh(db, task_id)
         assert db_task is not None
         assert len(db_task.cleaning_actions) == 1
         # 展示字段应被剥离
@@ -342,10 +356,9 @@ class TestConfirmRouteCleaningActionsE2E:
         )
         assert resp2.status_code == 200
 
-        from cndb.plugins.tables.models import ImportTask
-
-        db_task = db.get(ImportTask, task_id)
+        db_task = _get_task_fresh(db, task_id)
         # 不传时应保持默认值（空列表 或 None 取决于 driver）
+        assert db_task is not None
         assert db_task.cleaning_actions in ([], None)
 
 
@@ -394,7 +407,6 @@ class TestReanalyzeRouteCoverage:
         )
         assert resp2.status_code == 200
 
-        from cndb.plugins.tables.models import ImportTask
-
-        db_task = db.get(ImportTask, task_id)
+        db_task = _get_task_fresh(db, task_id)
+        assert db_task is not None
         assert db_task.match_keys == ["name"]
