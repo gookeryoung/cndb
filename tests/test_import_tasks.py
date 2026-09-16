@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+from tests.helpers import wait_import_settled
 
 
 def test_import_task_model_exists(db):
@@ -71,17 +71,12 @@ def test_async_import_submit_and_poll(client, auth_headers, db):
     task_id = resp.json()["task_id"]
     assert resp.json()["status"] == "pending"
 
-    # 轮询等待完成
-    for _ in range(30):
-        time.sleep(0.3)
-        poll = client.get(
-            f"/api/v1/workspaces/{wid}/tables/{tid}/import/async/{task_id}",
-            headers=auth_headers,
-        )
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["status"] in ("done", "failed"):
-            break
+    # 等后台线程结束后单次查询（确定性等待，替代固定 sleep 轮询）
+    data = wait_import_settled(
+        client,
+        f"/api/v1/workspaces/{wid}/tables/{tid}/import/async/{task_id}",
+        auth_headers,
+    )
 
     # 最终应为 done 或 failed（取决于引擎行为）
     assert data["status"] in ("done", "failed")
@@ -379,19 +374,13 @@ def _create_workspace_and_table(client, auth_headers, db):
 
 
 def _poll_pending_confirm(client, wid, tid, task_id, auth_headers, timeout=10):
-    """helper: 轮询直到 pending_confirm 或 done."""
-    import time
-
-    for _ in range(timeout * 5):
-        resp = client.get(
-            f"/api/v1/workspaces/{wid}/tables/{tid}/import/async/{task_id}",
-            headers=auth_headers,
-        )
-        info = resp.json()
-        if info.get("status") in ("pending_confirm", "pending_validation", "done", "failed"):
-            return info
-        time.sleep(0.2)
-    return resp.json()
+    """helper: 等后台线程结束后查询任务状态（tid 参数保留以兼容调用方签名）."""
+    return wait_import_settled(
+        client,
+        f"/api/v1/workspaces/{wid}/tables/{tid}/import/async/{task_id}",
+        auth_headers,
+        timeout=timeout,
+    )
 
 
 def test_gbk_csv_import_direct_analyze(client, auth_headers, db):

@@ -3,12 +3,18 @@
 
 PACKAGE := cndb
 COV_THRESHOLD := 95
-PYTEST_JOBS := $(shell uv run python -c "import os; print(min((os.cpu_count() or 4) * 2, 8))")
+# min(cpu*2, 8)：≥4 核跑满 8 worker，低核数机器保守降档（纯 make 计算，避免每次解析都启动 uv/python）
+ifeq ($(OS),Windows_NT)
+CPUS := $(NUMBER_OF_PROCESSORS)
+else
+CPUS := $(shell nproc 2>/dev/null || echo 4)
+endif
+PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 
 # push / bump 默认依赖 check，可用 SKIP_CHECK=1 临时跳过（仅限紧急修复，发布场景禁止使用）
 CHECK_DEPS := $(if $(SKIP_CHECK),,check)
 
-.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck check-fast check doc tox pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
+.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck check-fast check-fast-par check doc tox pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -65,11 +71,13 @@ typecheck: ## 类型检查 (pyrefly)
 
 check-fast: gitkeep-check lint typecheck frontend-check ## 轻量门禁（不含覆盖率，适合日常快速验证）
 
-# check-fast 并行版本（用于 check 内部，省时间）
-_check-fast-par: ## 轻量门禁并行入口（内部使用）
+# check-fast 并行版本（用于 check 内部，省时间）——本机 make 3.81 不支持 -O，输出可能交错
+check-fast-par: ## 轻量门禁并行入口
 	@$(MAKE) -j4 gitkeep-check lint typecheck frontend-check
 
-check: _check-fast-par cov ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-check + cov)
+# cov（pytest）是最长尾，最先启动，与 4 项门禁并行执行
+check: ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-check + cov，cov 与门禁并行)
+	@$(MAKE) -j5 cov gitkeep-check lint typecheck frontend-check
 
 doc: ## 构建 Sphinx 文档
 	uv run sphinx-build -b html docs docs/_build/html
