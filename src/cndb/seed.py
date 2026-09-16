@@ -424,9 +424,7 @@ def _seed_views(db: Any, user: Any, tables_map: dict[str, dict[str, Any]], datas
                     }
                     # 同名视图已存在则用配置更新（自动生成的「全部」默认视图需要被丰富化）
                     existing = (
-                        db.query(DataView)
-                        .filter(DataView.table_id == dt.id, DataView.name == vc["name"])
-                        .first()
+                        db.query(DataView).filter(DataView.table_id == dt.id, DataView.name == vc["name"]).first()
                     )
                     if existing is not None:
                         for key, value in dv_payload.items():
