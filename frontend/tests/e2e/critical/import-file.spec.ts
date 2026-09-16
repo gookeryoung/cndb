@@ -10,6 +10,7 @@
 
 import { test, expect, Page } from "@playwright/test";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 
 const AUTHD = ["setup", "chromium-authed"];
@@ -29,7 +30,7 @@ Grape,4.80,150,fruit,true
 Honeydew,9.20,40,fruit,false
 `;
 
-const CSV_PATH = path.resolve("/tmp", "e2e_import_sample.csv");
+const CSV_PATH = path.join(os.tmpdir(), "e2e_import_sample.csv");
 fs.writeFileSync(CSV_PATH, SAMPLE_CSV);
 
 // 带问题的 CSV（测试数据质量面板）
@@ -42,7 +43,7 @@ Eve,,active,
 Frank,bad_price,active,
 `;
 
-const PROBLEM_CSV_PATH = path.resolve("/tmp", "e2e_import_problem.csv");
+const PROBLEM_CSV_PATH = path.join(os.tmpdir(), "e2e_import_problem.csv");
 fs.writeFileSync(PROBLEM_CSV_PATH, PROBLEM_CSV);
 
 
