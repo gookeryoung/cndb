@@ -351,8 +351,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "fspack", version = "0.5.13", source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }, marker = "python_full_version < '3.13'" },
-    { name = "fspack", version = "0.6.2", source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }, marker = "python_full_version >= '3.13'" },
     { name = "myst-parser" },
     { name = "pyrefly" },
     { name = "pytest" },
@@ -374,10 +372,6 @@ lint = [
     { name = "pyrefly" },
     { name = "ruff" },
 ]
-pack = [
-    { name = "fspack", version = "0.5.13", source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }, marker = "python_full_version < '3.13'" },
-    { name = "fspack", version = "0.6.2", source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }, marker = "python_full_version >= '3.13'" },
-]
 test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -396,11 +390,10 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "bcrypt", specifier = ">=3.2.2,<4.0.0" },
-    { name = "cndb", extras = ["lint", "test", "docs", "pack"], marker = "extra == 'dev'" },
+    { name = "cndb", extras = ["lint", "test", "docs"], marker = "extra == 'dev'" },
     { name = "cryptography", specifier = ">=41.0.0,<42.0.0" },
     { name = "fastapi", specifier = ">=0.115.0,<0.126.0" },
     { name = "fastapi-offline", specifier = ">=1.7.0" },
-    { name = "fspack", marker = "extra == 'pack'", specifier = ">=0.5.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx2", specifier = ">=1.0.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
@@ -426,7 +419,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
 ]
-provides-extras = ["dev", "docs", "lint", "test", "pack"]
+provides-extras = ["dev", "docs", "lint", "test"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "cndb", extras = ["dev"] }]
@@ -624,38 +617,6 @@ dependencies = [
 sdist = { url = "https://mirrors.aliyun.com/pypi/packages/15/a5/f650b565354d38f98211683a7b5c3578d450848421444799cb51da8e562f/fastapi_offline-1.7.7.tar.gz", hash = "sha256:aeeabe67dd40f867ab0fe64dd8de742949e36ba5f3ac6aeb055baef274ed91d0" }
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/8d/de/808ff88dac73c97ad32c653f92f6751ea5a0a211ae1dffd471125e63a31e/fastapi_offline-1.7.7-py3-none-any.whl", hash = "sha256:60c8399fd7d3e3b01510e14468709e3dea1a0e773ef920372d057392d736a1f9" },
-]
-
-[[package]]
-name = "fspack"
-version = "0.5.13"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
-resolution-markers = [
-    "python_full_version < '3.13'",
-]
-dependencies = [
-    { name = "certifi", marker = "python_full_version < '3.13'" },
-    { name = "rich", marker = "python_full_version < '3.13'" },
-]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/7c/f2/e1592dea49dfe99dd137af4db825335502bb70e8c0203c9d079ef1dc8de7/fspack-0.5.13.tar.gz", hash = "sha256:2e70d9a235e6e689bc0ef6f9ad88598f1f72cf34aff0837054c1c99f107b290c" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/41/a6/970c89cdc11ed56f15cbc217ea382c7db3eff350b28197f1c9cc2d4fa425/fspack-0.5.13-py3-none-any.whl", hash = "sha256:f48295b06ba72c26e2a666c645c16f91c55c66a13139a3f312c16ec6906155c3" },
-]
-
-[[package]]
-name = "fspack"
-version = "0.6.2"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
-resolution-markers = [
-    "python_full_version >= '3.13'",
-]
-dependencies = [
-    { name = "certifi", marker = "python_full_version >= '3.13'" },
-    { name = "rich", marker = "python_full_version >= '3.13'" },
-]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/e7/05/c73a00b4ea4857422cbb696a47f4bb3e3559d960e0100d65f3ad110fc12a/fspack-0.6.2.tar.gz", hash = "sha256:cf94b2ab16769c7c22c93584b56a0aa0509dcbef0b86cbe85b8ed4d6449ad43f" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/61/ea/f3692afbd87e6c8174f68c93b283b6f0344e83728ef7c852325a65812b28/fspack-0.6.2-py3-none-any.whl", hash = "sha256:812bafe6c215a1b8b1fbb2bff273423f5d0fdf588058c86461f67f7ffb6876df" },
 ]
 
 [[package]]
@@ -1571,19 +1532,6 @@ dependencies = [
 sdist = { url = "https://mirrors.aliyun.com/pypi/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz", hash = "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed" }
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl", hash = "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0" },
-]
-
-[[package]]
-name = "rich"
-version = "15.0.0"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
-dependencies = [
-    { name = "markdown-it-py" },
-    { name = "pygments" },
-]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb" },
 ]
 
 [[package]]
