@@ -77,7 +77,7 @@ def bulk_delete_records(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
-    deleted = rec.bulk_delete(db.get_bind(), dt, payload.row_ids)
+    deleted = rec.bulk_delete(db.get_bind(), dt, payload.row_ids, db=db)
     return {"deleted": deleted}
 
 
@@ -168,6 +168,7 @@ def export_table(
         dt,
         limit=10000,
         db=db,
+        user=current_user,
         filters=filters,
         sorts=sorts,
         filter_logic=filter_logic,
