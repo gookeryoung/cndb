@@ -1,8 +1,9 @@
 /** P0 Smoke — 登录流程：匿名重定向 / 表单登录 / 错误密码.
  *
- * cndb2 使用 Ant Design + React Router：
+ * cndb 使用 Ant Design + React Router：
  * - 未登录访问根 → Navigate 到 /login?return_to=%2F
- * - 登录成功 → Navigate 到 return_to（默认 /w）
+ * - 登录成功 → Navigate 到 return_to（默认 /w，工作区列表视图）
+ * - 根路径 / 不可直接访问，登录后自动重定向到 /w
  */
 import { test, expect } from "@playwright/test";
 
@@ -30,15 +31,16 @@ test.describe("匿名（chromium-anon only）", () => {
     await expect(page.getByRole("button", { name: /登 录/ })).toBeVisible();
   });
 
-  test("表单登录成功 → 渲染工作区列表", async ({ page }) => {
+  test("表单登录成功 → 进入工作区列表 /w", async ({ page }) => {
     await page.goto("/login");
     await page.getByPlaceholder("用户名或邮箱").fill("demo");
     await page.getByPlaceholder("密码").fill("demo1234");
     await page.getByRole("button", { name: /登 录/ }).click();
-    // 登录成功 → 自动 Navigate 到 /w（多工作区）或 /w/{wid}/tables（单工作区）
-    await page.waitForURL(/\/w(\/\d+)?(\/tables)?/);
-    // 主应用关键锚点 — 工作区列表标题或侧栏已加载
-    await expect(page.getByRole("heading", { level: 3 })).toBeVisible();
+    // 登录成功 → 自动 Navigate 到 /w（工作区列表视图，不再自动跳入某个工作区）
+    await page.waitForURL(/\/w$/);
+    // 工作区列表关键锚点
+    await expect(page.getByTestId("workspace-list")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 3, name: /我的工作区/ })).toBeVisible();
   });
 
   test("错误密码 → 保留在登录页并显示错误", async ({ page }) => {
@@ -58,11 +60,12 @@ test.describe("匿名（chromium-anon only）", () => {
 test.describe("已登录会话（chromium-authed only）", () => {
   test.skip(isAnon, "anon 项目无 StorageState，跳过");
 
-  test("复用 StorageState 直接访问根 → 渲染主应用", async ({ page }) => {
+  test("已登录访问根 / → 自动重定向到 /w 工作区列表", async ({ page }) => {
     await page.goto("/");
-    // 可能是 /w（多工作区列表）或 /w/{wid}/tables（已自动进入）
-    await page.waitForURL(/\/w(\/\d+)?/);
-    // 主应用关键锚点
-    await expect(page.getByRole("heading", { level: 3 })).toBeVisible();
+    // 根路径不可直接访问，应跳转到 /w
+    await page.waitForURL(/\/w$/);
+    // 工作区列表关键锚点
+    await expect(page.getByTestId("workspace-list")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 3, name: /我的工作区/ })).toBeVisible();
   });
 });

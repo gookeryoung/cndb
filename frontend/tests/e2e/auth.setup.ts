@@ -20,8 +20,8 @@ test("登录并持久化 StorageState", async ({ page }) => {
   await passwordInput.fill(DEMO_PASS);
   await loginButton.click();
 
-  // 登录后可能直接到 /w（多工作区列表）或 /w/{id}/tables（单工作区自动进入）
-  await page.waitForURL(/\/w(\/\d+)?(\/tables)?$/);
+  // 登录后进入 /w（工作区列表视图）
+  await page.waitForURL(/\/w$/);
   await page.waitForTimeout(500);
   await page.context().storageState({ path: STATE_PATH });
 });

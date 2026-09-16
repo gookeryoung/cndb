@@ -1,6 +1,6 @@
 /** 工作区列表页 — 卡片式布局，支持创建/设置/导入/导出/置顶/成员管理/搜索. */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Card, Row, Col, Typography, Button, Modal, Form, Input, Select, Switch, Tag, Empty, message } from 'antd'
 import {
   PlusOutlined, PushpinOutlined, TeamOutlined, TableOutlined,
@@ -49,13 +49,6 @@ export default function WorkspaceList() {
     queryKey: ['workspaces'],
     queryFn: () => workspaceApi.list(),
   })
-
-  // 只有一个工作区时自动进入
-  useEffect(() => {
-    if (!isLoading && workspaces.length === 1) {
-      navigate(`/w/${workspaces[0].id}/tables`, { replace: true })
-    }
-  }, [isLoading, workspaces, navigate])
 
   const create = useMutation({
     mutationFn: (v: {
