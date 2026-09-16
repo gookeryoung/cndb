@@ -233,6 +233,9 @@ export const viewApi = {
     api.patch<View>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}`, data).then(r => r.data),
   remove: (wid: number | string, tid: number | string, vid: number | string) =>
     api.delete(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}`).then(r => r.data),
+  /** 批量调整视图顺序（按传入顺序赋值 order 字段） */
+  reorder: (wid: number | string, tid: number | string, viewIds: Array<number | string>) =>
+    api.post<View[]>(`/v1/workspaces/${wid}/tables/${tid}/views/reorder`, viewIds).then(r => r.data),
   /** 按视图的 filters/sorts 查行 */
   rows: (wid: number | string, tid: number | string, vid: number | string, limit = 100, offset = 0) =>
     api.get<{ rows: RowResponse[]; total: number; view_id: number }>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}/rows`, { params: { limit, offset } }).then(r => r.data),

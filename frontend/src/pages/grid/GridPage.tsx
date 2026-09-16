@@ -26,9 +26,14 @@ import {
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
   AppstoreOutlined, CopyOutlined, ImportOutlined, UploadOutlined, CloseOutlined,
   CalendarOutlined, ShareAltOutlined, SwapOutlined, LineChartOutlined,
-  SearchOutlined, EditOutlined, MenuOutlined, PartitionOutlined,
+  SearchOutlined, EditOutlined, MenuOutlined, PartitionOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors,
+} from '@dnd-kit/core'
+import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { tableApi, recordApi, viewApi, userApi } from '@/api'
 import type { RowResponse, TableDetail, View, ViewCreate } from '@/api'
 import KanbanView from './components/KanbanView'
@@ -81,6 +86,36 @@ function _readModeFromStorage(): ViewMode | null {
     if (m && (VALID_MODES as readonly string[]).includes(m)) return m as ViewMode
   } catch { /* localStorage 不可用时忽略 */ }
   return null
+}
+
+/** 可拖拽视图 Tab 标签 —— 供 Segmented.options.label 使用，配合 DndContext + SortableContext. */
+function DndViewTab({ view, active, onClick }: { view: View; active: boolean; onClick: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: String(view.id),
+  })
+  return (
+    <span
+      ref={setNodeRef}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        cursor: active ? 'pointer' : 'grab',
+        userSelect: 'none',
+      }}
+      data-testid={`view-tab-${view.id}`}
+      {...attributes}
+      {...listeners}
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+    >
+      <HolderOutlined style={{ fontSize: 10, color: '#bfbfbf' }} />
+      <span>{view.name}</span>
+      {view.default && <Tag color="blue" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
+    </span>
+  )
 }
 
 export default function GridPage() {
@@ -396,6 +431,26 @@ export default function GridPage() {
     },
   })
 
+  // ── 视图顺序拖拽 ──
+  const viewDragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+  const reorderViews = useMutation({
+    mutationFn: (ids: Array<number | string>) => viewApi.reorder(wid!, tid!, ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '视图排序失败'),
+  })
+  const handleViewDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    // views 已按后端 order 排序
+    const oldIndex = views.findIndex(v => String(v.id) === String(active.id))
+    const newIndex = views.findIndex(v => String(v.id) === String(over.id))
+    if (oldIndex < 0 || newIndex < 0) return
+    const reordered = arrayMove(views, oldIndex, newIndex)
+    reorderViews.mutate(reordered.map(v => v.id))
+  }
+
   /** 持久化当前视图到后端（自动保存 useEffect 唯一真相源：viewFilters / viewSortings 等 state 变化自动触发）. */
   const persistCurrentView = () => {
     if (!activeViewId) return
@@ -519,16 +574,17 @@ export default function GridPage() {
     return out
   }, [selectedRows, numericFields])
 
-  // 视图 Segmented 选项
+  // 视图 Segmented 选项（支持拖拽排序）
   const segmentedOptions = useMemo(() => views.map(v => ({
     label: (
-      <span>
-        {v.name}
-        {v.default && <Tag color="blue" style={{ marginLeft: 4, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
-      </span>
+      <DndViewTab
+        view={v}
+        active={activeViewId != null && String(v.id) === String(activeViewId)}
+        onClick={() => loadView(v)}
+      />
     ),
     value: String(v.id),
-  })), [views])
+  })), [views, activeViewId])
 
   /** 数据表实际拥有的视图类型集合（去重） */
   const availableViewTypes = useMemo<Set<ViewMode>>(() => {
@@ -619,17 +675,21 @@ export default function GridPage() {
         </Space>
       </div>
 
-      {/* 视图切换 + 视图操作 */}
+      {/* 视图切换 + 视图操作（支持拖拽排序） */}
       <div style={{ padding: '0 16px', background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Segmented
-          value={activeViewId != null ? String(activeViewId) : undefined}
-          onChange={(v) => {
-            const key = String(v)
-            loadView(views.find(vv => String(vv.id) === key) || null)
-          }}
-          options={segmentedOptions}
-          style={{ flex: 1, overflow: 'auto' }}
-        />
+        <DndContext sensors={viewDragSensors} collisionDetection={closestCenter} onDragEnd={handleViewDragEnd}>
+          <SortableContext items={views.map(v => String(v.id))} strategy={horizontalListSortingStrategy}>
+            <Segmented
+              value={activeViewId != null ? String(activeViewId) : undefined}
+              onChange={(v) => {
+                const key = String(v)
+                loadView(views.find(vv => String(vv.id) === key) || null)
+              }}
+              options={segmentedOptions}
+              style={{ flex: 1, overflow: 'auto' }}
+            />
+          </SortableContext>
+        </DndContext>
         {/* 视图操作按钮组 */}
         <Space size={4}>
           <Tooltip title="新建视图">
