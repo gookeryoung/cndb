@@ -1,49 +1,73 @@
-"""pytest 全局 fixtures — 被各测试文件共享."""
+"""pytest 全局 fixtures — 被各测试文件共享.
+
+优化：session 级共享内存 SQLite + function 级 DELETE FROM 隔离,
+避免每个测试都 drop_all/create_all 的开销.
+"""
 
 from __future__ import annotations
 
-from pathlib import Path
+from contextlib import suppress
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from cndb.api.deps import get_db
 from cndb.core.config import settings
 from cndb.models.base import Base
 
 
-@pytest.fixture
-def db_engine(tmp_path: Path):
+@pytest.fixture(scope="session")
+def db_engine():
+    """session 级共享内存 SQLite engine — 每个 worker 只建一次 schema."""
     settings.AUTH_ENABLED = True
-    db_path = tmp_path / "test_collab.db"
+    # StaticPool 保证单连接池：SQLite :memory: 本身只能被一个连接持有
     engine = create_engine(
-        f"sqlite:///{db_path}",
+        "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
+    # 确保所有模型已注册到 Base.metadata
     import cndb.plugins.accounts.models
     import cndb.plugins.reports.models
     import cndb.plugins.tables.models
     import cndb.plugins.wechat_auth.models
     import cndb.plugins.workspaces.models  # noqa: F401
 
-    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    try:
-        yield engine
-    finally:
-        engine.dispose()
+    yield engine
+    engine.dispose()
 
 
 @pytest.fixture
-def db(db_engine):
-    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
-    session = SessionLocal()
+def _session_factory(db_engine):
+    """绑定 sessionmaker — 仅 session 级 engine 生命周期内有效."""
+    return sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+
+@pytest.fixture
+def db(_session_factory):
+    """function 级 session — 每个测试独立 session."""
+    session = _session_factory()
     try:
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_tables(db_engine):
+    """autouse：每个测试后 DELETE FROM 所有表，实现快速隔离."""
+    yield
+    with db_engine.connect() as conn:
+        # SQLite 默认 FK 关闭，DELETE 无需关闭约束
+        for table in reversed(Base.metadata.sorted_tables):
+            with suppress(OperationalError):
+                conn.execute(text(f"DELETE FROM {table.name}"))
+        conn.commit()
 
 
 @pytest.fixture

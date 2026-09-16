@@ -52,3 +52,12 @@ uploads
 .trae-html-share-packages/*
 backup-*.tar.gz
 .pnpm-store
+
+# SQLite 内存 DB / URI 临时文件
+file:*
+?cache=*
+
+# 工具缓存
+.eslintcache
+.pytest_cache/
+.mypy_cache/

@@ -1,17 +1,9 @@
 """bulk + transfer 模块测试 —— 纯函数可独立测，路由走 API."""
 
-from __future__ import annotations
-
 import json
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from cndb.core.config import settings
-from cndb.core.database import get_db
-from cndb.models.base import Base
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables import ddl, transfer
 from cndb.plugins.tables.models import DataField, DataTable, DataView
@@ -57,42 +49,6 @@ class TestTransferPure:
 
 
 # ── bulk router API 测试 ─────────────────────────────
-
-
-@pytest.fixture
-def db(tmp_path):
-    settings.AUTH_ENABLED = True
-    db_path = tmp_path / "bulk.db"
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-    import cndb.plugins.accounts.models
-    import cndb.plugins.tables.models
-    import cndb.plugins.workspaces.models  # noqa: F401
-
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-    session = SessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-        engine.dispose()
-
-
-@pytest.fixture
-def client(db):
-    from cndb.app import app
-
-    def _override():
-        try:
-            yield db
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = _override
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
 
 
 @pytest.fixture

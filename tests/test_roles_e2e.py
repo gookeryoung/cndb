@@ -8,57 +8,13 @@
 - 非法 role code 在添加 / 更新 TableMember 时被拒绝
 """
 
-from __future__ import annotations
-
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from cndb.core.config import settings
-from cndb.core.database import get_db
-from cndb.models.base import Base
 from cndb.plugins.accounts.models import User, UserRole
 from cndb.plugins.tables import ddl
 from cndb.plugins.tables.models import DataField, DataTable, TableMember
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
-
-
-@pytest.fixture
-def db(tmp_path):
-    settings.AUTH_ENABLED = True
-    db_path = tmp_path / "role_e2e.db"
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-    import cndb.plugins.accounts.models
-    import cndb.plugins.tables.models
-    import cndb.plugins.workspaces.models  # noqa: F401
-
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-    session = SessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-        engine.dispose()
-
-
-@pytest.fixture
-def client(db):
-    from cndb.app import app
-
-    def _override():
-        try:
-            yield db
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = _override
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
-
 
 # ── 用户 fixtures ─────────────────────────────────────
 
