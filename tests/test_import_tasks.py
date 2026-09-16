@@ -409,6 +409,7 @@ def test_gbk_csv_import_direct_analyze(client, auth_headers, db):
 
     assert task.status == "pending_confirm", task.error_message
     import json as _json
+
     report = _json.loads(task.validation_report)
     skipped = report.get("skipped_columns", [])
     assert "姓名" not in skipped, f"GBK 解码失败，'姓名' 被跳过: skipped={skipped}"
@@ -430,6 +431,7 @@ def test_utf8_bom_csv_import_direct_analyze(client, auth_headers, db):
 
     assert task.status == "pending_confirm", task.error_message
     import json as _json
+
     report = _json.loads(task.validation_report)
     # BOM 应被去除，列名不包含 BOM 字符
     file_cols = report.get("file_columns") or []

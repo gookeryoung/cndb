@@ -25,13 +25,13 @@ logger = logging.getLogger(__name__)
 
 # 优先级编码列表：先去 BOM，再按常见度逐一尝试
 _ENCODING_CANDIDATES: list[str] = [
-    "utf-8-sig",   # 带/不带 BOM 的 UTF-8
+    "utf-8-sig",  # 带/不带 BOM 的 UTF-8
     "utf-8",
-    "gb18030",     # 覆盖 GBK + GB2312 全部字符集（中国 Windows 默认 ANSI 代码页 CP936 等价）
+    "gb18030",  # 覆盖 GBK + GB2312 全部字符集（中国 Windows 默认 ANSI 代码页 CP936 等价）
     "gbk",
-    "big5",        # 繁体中文
-    "utf-16",      # BOM 自动判别 LE/BE
-    "latin-1",     # 兜底（永远不会失败）
+    "big5",  # 繁体中文
+    "utf-16",  # BOM 自动判别 LE/BE
+    "latin-1",  # 兜底（永远不会失败）
 ]
 
 
@@ -62,6 +62,7 @@ def decode_bytes_auto(data: bytes) -> tuple[str, str]:
     # 兜底（理论上 latin-1 永远会命中，不会走到这里）
     logger.warning("所有候选编码均未通过质量检查，使用 latin-1 兜底")
     return data.decode("latin-1"), "latin-1"
+
 
 # ── 列类型推断正则 ──────────────────────────────────────
 
@@ -621,6 +622,8 @@ def create_table_from_json_data(
     db.refresh(dt)
 
     ddl_create(engine, dt)
+
+    ensure_default_view(db, dt, owner_id=owner_id, commit=True)
 
     # import_rows_from_json 需要 JSON 字符串，我们直接用对象数组
     valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
