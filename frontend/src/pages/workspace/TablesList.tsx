@@ -1,6 +1,6 @@
 /** 工作区表列表页 — 数据资产目录视图.
  *
- * 支持创建/重命名/复制/删除 + CSV 自动建表 + API 自动建表.
+ * 支持创建/重命名/复制/删除 + CSV 自动建表 + API 自动建表 + 拖拽排序.
  * 展示 Owner / MyAccess / MemberCount 三个权限元信息列, 并提供按访问级别筛选.
  */
 
@@ -12,10 +12,15 @@ import {
 import {
   PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined,
   UploadOutlined, SettingOutlined, ApiOutlined, TeamOutlined, UserOutlined,
-  LoginOutlined, MoreOutlined,
+  LoginOutlined, MoreOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
+import {
+  DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors,
+} from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate } from '@/api'
 import { useAuth } from '@/auth/AuthContext'
@@ -31,6 +36,31 @@ const ACCESS_TAG: Record<string, { color: string; label: string }> = {
   write: { color: 'green', label: 'write' },
   read: { color: 'blue', label: 'read' },
   none: { color: 'default', label: '默认' },
+}
+
+/** AntD Table 可拖拽行 —— 配合 DndContext + SortableContext 使用. */
+function DraggableRow({
+  style,
+  ...rest
+}: React.HTMLAttributes<HTMLTableRowElement>) {
+  // 从 data-row-key 读取排序 id（AntD Table 自动传入）
+  const rowKey = (rest as Record<string, unknown>)['data-row-key'] as string | number
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: rowKey })
+  return (
+    <tr
+      ref={setNodeRef}
+      style={{
+        ...style,
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.6 : undefined,
+        cursor: 'grab',
+      }}
+      {...attributes}
+      {...listeners}
+      {...rest}
+    />
+  )
 }
 
 export default function TablesList() {
@@ -133,7 +163,40 @@ export default function TablesList() {
     },
   })
 
+  // ── 表顺序拖拽 ──
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+  const reorderTables = useMutation({
+    mutationFn: (ids: Array<number | string>) => tableApi.reorder(wid!, ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '排序失败'),
+  })
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    // tables 已按后端 order, id 排序，这里用 findIndex 定位
+    const srcId = String(active.id)
+    const dstId = String(over.id)
+    const ids = tables.map(t => String(t.id))
+    const oldIndex = ids.indexOf(srcId)
+    const newIndex = ids.indexOf(dstId)
+    if (oldIndex < 0 || newIndex < 0) return
+    const reorderedIds = arrayMove(ids, oldIndex, newIndex)
+    reorderTables.mutate(reorderedIds)
+  }
+
   const columns = [
+    {
+      title: '',
+      key: 'drag',
+      width: 40,
+      render: () => (
+        <Tooltip title="拖动排序">
+          <HolderOutlined style={{ color: '#bfbfbf', cursor: 'grab' }} />
+        </Tooltip>
+      ),
+    },
     {
       title: '表名',
       dataIndex: 'name',
@@ -374,34 +437,42 @@ export default function TablesList() {
         </Space>
       </div>
 
-      {/* Table 列表 */}
-      <Table
-        size="middle"
-        loading={isLoading}
-        rowKey="id"
-        columns={columns}
-        dataSource={filteredTables}
-        pagination={false}
-        onRow={(record) => ({
-          onClick: () => navigate(`/w/${wid}/tables/${record.id}`),
-          style: { cursor: 'pointer' },
-        })}
-        locale={{
-          emptyText: (
-            <Empty
-              description={
-                <span>
-                  {filter !== 'all' ? '当前筛选条件下没有表' : (
-                    <>
-                      还没有表 —— 点击右侧 <Text strong>&quot;新建表&quot;</Text> 或 <Text strong>&quot;CSV 建表&quot;</Text> 开始
-                    </>
-                  )}
-                </span>
-              }
-            />
-          ),
-        }}
-      />
+      {/* Table 列表 —— 支持拖拽排序 */}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext
+          items={filteredTables.map(t => String(t.id))}
+          strategy={verticalListSortingStrategy}
+        >
+          <Table
+            size="middle"
+            loading={isLoading}
+            rowKey="id"
+            columns={columns}
+            dataSource={filteredTables}
+            pagination={false}
+            components={{ body: { row: DraggableRow } }}
+            onRow={(record) => ({
+              onClick: () => navigate(`/w/${wid}/tables/${record.id}`),
+              'data-testid': `table-row-${record.id}`,
+            })}
+            locale={{
+              emptyText: (
+                <Empty
+                  description={
+                    <span>
+                      {filter !== 'all' ? '当前筛选条件下没有表' : (
+                        <>
+                          还没有表 —— 点击右侧 <Text strong>&quot;新建表&quot;</Text> 或 <Text strong>&quot;CSV 建表&quot;</Text> 开始
+                        </>
+                      )}
+                    </span>
+                  }
+                />
+              ),
+            }}
+          />
+        </SortableContext>
+      </DndContext>
 
       {/* 创建 Modal */}
       <Modal
