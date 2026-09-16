@@ -2245,7 +2245,7 @@ class TestImporterEdgeCases:
         assert imp._plan_unknown_columns([{"code": "A"}], []) == []
 
     def test_auto_add_fields_select_with_options(self, test_session):
-        """select 类型字段 + options 非空 → cfg 包含 options."""
+        """select 类型字段 + options 非空 → cfg 包含 dict 格式 options."""
         engine, session = test_session
         table = _make_table(session, engine)
         _add_field(session, table, "code", "text", order=0)
@@ -2262,7 +2262,10 @@ class TestImporterEdgeCases:
             sa_select(DataField).where(DataField.table_id == table.id, DataField.name == "status")
         ).scalar_one()
         assert f.field_type == "select"
-        assert f.config.get("options") == ["new", "done"]
+        assert f.config.get("options") == [
+            {"label": "new", "value": "new"},
+            {"label": "done", "value": "done"},
+        ]
 
     def test_execute_upsert_skip_errors_false(self, test_session):
         """skip_errors=True + upsert → 既有行更新 + 新行创建，report 计数正确."""
