@@ -53,6 +53,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = useCallback(async (payload: RegisterRequest) => {
     const u = await authApi.register(payload)
+    // 注册成功后自动登录
+    const res = await authApi.login({ login: payload.username, password: payload.password })
+    persistToken(res.access_token)
+    setTokenState(res.access_token)
+    setUser(u)
     return u
   }, [])
 
