@@ -450,7 +450,6 @@ def import_table_confirm(
     # 覆盖参数（如果前端在 preview 阶段改了选择）
     import json as _json
 
-    need_reanalyze = False
     if match_keys is not None:
         try:
             parsed = _json.loads(match_keys)
@@ -462,7 +461,6 @@ def import_table_confirm(
             new_keys = [k.strip() for k in match_keys.split(",") if k.strip()]
         if new_keys != list(task.match_keys or []):
             task.match_keys = new_keys
-            need_reanalyze = True
 
     if (
         unknown_cols_strategy is not None
@@ -470,14 +468,14 @@ def import_table_confirm(
         and unknown_cols_strategy != task.unknown_cols_strategy
     ):
         task.unknown_cols_strategy = unknown_cols_strategy
-        need_reanalyze = True
 
     # V3: 保存用户勾选的清洗动作（execute 阶段会重新 analyze 以拿到清洗后的数据画像）
     if cleaning_actions is not None:
         task.cleaning_actions = _normalize_cleaning_actions(cleaning_actions)  # type: ignore[assignment]
 
-    if need_reanalyze or cleaning_actions is not None:
-        db.commit()
+    # 始终 commit 以确保当前事务结束，避免后台线程在同一连接上的 session
+    # 操作导致当前 session 的 identity map 被破坏（StaticPool 场景下的竞争条件）
+    db.commit()
 
     # 后台跑 execute 阶段
     from sqlalchemy.orm import sessionmaker
