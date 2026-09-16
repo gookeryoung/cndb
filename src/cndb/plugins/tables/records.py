@@ -374,10 +374,14 @@ def delete_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bo
 def trash_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bool:
     """软删除（标记 _trashed=True）."""
     sa_table = _get_sa_table(engine, table)
+    row_scope = _build_row_scope_where(table, sa_table, db)
+    base_where: list[Any] = [sa_table.c.id == row_id]
+    if row_scope is not None:
+        base_where.append(row_scope)
     with engine.begin() as conn:
         result = conn.execute(
             sa_table.update()
-            .where(sa_table.c.id == row_id)
+            .where(*base_where)
             .values(
                 _trashed=True,
                 _trashed_at=datetime.now(UTC),
@@ -395,10 +399,14 @@ def trash_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> boo
 def restore_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bool:
     """从回收站恢复."""
     sa_table = _get_sa_table(engine, table)
+    row_scope = _build_row_scope_where(table, sa_table, db)
+    base_where: list[Any] = [sa_table.c.id == row_id]
+    if row_scope is not None:
+        base_where.append(row_scope)
     with engine.begin() as conn:
         result = conn.execute(
             sa_table.update()
-            .where(sa_table.c.id == row_id)
+            .where(*base_where)
             .values(
                 _trashed=False,
                 _trashed_at=None,
