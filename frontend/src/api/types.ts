@@ -138,12 +138,14 @@ export interface TableDetail {
   fields: Field[]; created_at?: string; updated_at?: string
   /** 后端增强 —— 可选统计字段 */
   field_count?: number | null; record_count?: number | null; view_count?: number | null
+  /** 后端增强 —— 表级拥有者（DataTable.owner_id 关联的用户，来自 TableResponse） */
+  owner?: TableOwnerInfo | null
   /** 后端增强 —— 视图精简摘要（避免前端再调一次 viewApi.list） */
   views?: ViewBrief[]
   /** 后端增强 —— 当前用户在该表可执行的动作集合 */
   current_user_actions?: string[]
-  /** 后端增强 —— 所属工作区的 owner */
-  owner?: OwnerBrief | null
+  /** 后端增强 —— 所属工作区的 owner（WorkspaceRole.owner 成员，与表级 owner 区分） */
+  workspace_owner?: OwnerBrief | null
   /** 后端增强 —— 所属工作区精简摘要 */
   workspace?: WorkspaceBrief | null
   /** 后端增强 —— 是否在回收站（软删） */
