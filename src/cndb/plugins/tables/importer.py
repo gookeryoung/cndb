@@ -419,6 +419,8 @@ class Importer:
         fields_to_create: list[DataField] = []
 
         # ── 第一阶段：构造所有 DataField 对象（ORM add 但不 commit） ──
+        from cndb.plugins.tables.transfer import _options_strings_to_dicts
+
         for plan in planned_columns:
             name = plan["name"]
             if name in existing_names:
@@ -427,7 +429,7 @@ class Importer:
             options = plan.get("options") or []
             cfg: dict[str, Any] = {}
             if field_type == "select" and options:
-                cfg["options"] = options
+                cfg["options"] = _options_strings_to_dicts(options)
             # float 字段自动推断 decimals（NumberFieldConfig 默认 0 会导致 round(5.5, 0)=6）
             if field_type in ("float", "number"):
                 max_dec = 0
