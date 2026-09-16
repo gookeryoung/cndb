@@ -262,8 +262,7 @@ def import_fields(
     - 同名冲突时默认 400，skip_conflicts=True 时跳过冲突字段并返回说明.
     - field_mapping 支持源字段 → 目标字段重命名 / 跳过：
       payload.field_mapping={"源字段名": "目标字段名", "另一个": null}
-      传入 mapping 时，响应体附带 gap_analysis（matched / unmapped_source / target_missing / conflicts）
-      供前端渲染"参照对比"面板.
+    - preview_only=True 时只返回建议映射/缺口分析，不实际创建字段（供前端先展示参照对比面板）.
     """
 
     dst = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
@@ -308,7 +307,42 @@ def import_fields(
         if unknown:
             raise HTTPException(status_code=400, detail=f"field_mapping 中存在源表没有的字段: {sorted(unknown)}")
 
-    # 执行克隆
+    # ── 构造缺口分析 + 智能建议（无论 preview 与否都返回，供前端渲染） ──
+    from cndb.plugins.tables.field_mapping import (
+        analyze_field_gaps,
+        apply_user_mapping,
+        build_default_mapping,
+        suggest_field_mapping,
+    )
+
+    dst_names = [f.name for f in dst.fields if not f.trashed]
+    dst_fields_list = [f for f in dst.fields if not f.trashed]
+    src_names_list = [f.name for f in src_fields]
+
+    if payload.field_mapping is not None:
+        # 用户显式传了 mapping → 用用户的
+        base = build_default_mapping(src_names_list)
+        merged = apply_user_mapping(base, payload.field_mapping, src_names_list)
+        gap_analysis = analyze_field_gaps(merged, src_names_list, dst_names)
+        suggestions: list[dict[str, Any]] | None = None
+    else:
+        # 未传 field_mapping → 用 suggest_field_mapping 自动推一个默认（供前端预览用）
+        auto_mapping, suggestions = suggest_field_mapping(src_fields, dst_fields_list)
+        base = build_default_mapping(src_names_list)
+        merged = apply_user_mapping(base, auto_mapping, src_names_list)
+        gap_analysis = analyze_field_gaps(merged, src_names_list, dst_names)
+
+    # ── 预览模式：直接返回，不执行克隆 ──
+    if payload.preview_only:
+        return FieldImportResponse(
+            created=[],
+            skipped=[],
+            total_source_count=len(src_fields),
+            gap_analysis=gap_analysis,
+            suggestions=suggestions,
+        )
+
+    # ── 执行克隆（field_mapping 仅在用户显式传入时才应用；否则沿用 legacy 同名默认） ──
     engine = db.get_bind()
     try:
         created, skipped = clone_fields_between_tables(
@@ -325,24 +359,10 @@ def import_fields(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"字段导入失败: {exc}") from exc
 
-    # 传入 field_mapping 时附带 gap_analysis，便于前端展示参照对比面板
-    gap_analysis = None
-    if payload.field_mapping is not None:
-        from cndb.plugins.tables.field_mapping import (
-            analyze_field_gaps,
-            apply_user_mapping,
-            build_default_mapping,
-        )
-
-        src_names_list = [f.name for f in src_fields]
-        base = build_default_mapping(src_names_list)
-        merged = apply_user_mapping(base, payload.field_mapping, src_names_list)
-        dst_names = [f.name for f in dst.fields if not f.trashed]
-        gap_analysis = analyze_field_gaps(merged, src_names_list, dst_names)
-
     return FieldImportResponse(
         created=[FieldResponse.model_validate(f, from_attributes=True) for f in created],
         skipped=skipped,
         total_source_count=len(src_fields),
         gap_analysis=gap_analysis,
+        suggestions=suggestions,
     )
