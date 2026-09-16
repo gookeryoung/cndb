@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Modal, Select, Space, Switch, Tabs, Input, InputNumber } from 'antd'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
-import { getOpsForField } from './fieldOps'
+import { getOpsForField, extractSelectOptions } from './fieldOps'
 import { getOptionSchema, resolveFieldOptions } from './viewOptionSchema'
 import type { ViewOptionSchema } from './viewOptionSchema'
 import type { Field } from '@/api'
@@ -102,8 +102,7 @@ export default function ViewConfigDialog({
               const currentOp = ops.find(o => o.op === rule.op)
               const needValue = !!currentOp?.needValue
               const fieldOpts = filterableFields.map(f => ({ value: f.name, label: f.name }))
-              const selectFieldOpts = ((currentField?.config as Record<string, unknown> | undefined)?.options as Array<Record<string, unknown>> | undefined || []).map((o: Record<string, unknown>) =>
-                String(o.value ?? o.name ?? ''))
+              const selectFieldOpts = extractSelectOptions(currentField?.config).map((o) => o.value)
               return (
                 <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: 'var(--cn-text-muted)', width: 24, textAlign: 'center', flexShrink: 0 }}>#{idx + 1}</span>

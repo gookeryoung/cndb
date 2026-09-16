@@ -157,3 +157,32 @@ export function getOpsForField(fieldType: string): FieldOp[] {
   const resolved = FIELD_TYPE_ALIASES[fieldType] ?? fieldType
   return FIELD_OPS_BY_TYPE[resolved] || FIELD_OPS_BY_TYPE.text
 }
+
+// ── select / multiselect 字段 options 提取 ──────────────
+
+/** 从 field.config 里提取 select options，统一转为 [{value, label}] 格式.
+ *
+ * 兼容两种历史格式：
+ * - 后端 transfer.py 旧输出：list[str] — ["active", "done"]
+ * - 后端 SelectFieldConfig 新输出：list[dict] — [{label: "active", value: "active", color: "blue"}]
+ */
+export interface SelectOption {
+  value: string
+  label: string
+  color?: string
+}
+
+export function extractSelectOptions(config: unknown): SelectOption[] {
+  if (!config || typeof config !== 'object') return []
+  const c = config as { options?: unknown[] }
+  const opts = c.options
+  if (!Array.isArray(opts) || opts.length === 0) return []
+  if (typeof opts[0] === 'string') {
+    return (opts as string[]).map((v) => ({ value: v, label: v }))
+  }
+  return (opts as Array<Record<string, unknown>>).map((o) => ({
+    value: String(o.value ?? o.name ?? ''),
+    label: String(o.label ?? o.value ?? o.name ?? ''),
+    ...(o.color ? { color: String(o.color) } : {}),
+  })).filter((o) => o.value || o.label)
+}

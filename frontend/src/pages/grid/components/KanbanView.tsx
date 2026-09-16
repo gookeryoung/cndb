@@ -32,6 +32,7 @@ import {
   getMultiSelectFirstLabel,
   formatFieldDisplayValue,
 } from './fieldValueFormat'
+import { extractSelectOptions } from './fieldOps'
 import { parseDate, daysFromToday } from './dateUtils'
 
 // ── 密度样式映射 ──────────────────────────────────────
@@ -162,15 +163,11 @@ function getUrgencyRank(
 /** 按优先级字段值计算排序权重（高→低） */
 function getPriorityRank(_row: RowResponse, field?: Field, value?: unknown): number {
   if (!field || !field.config) return 0
-  const options = (field.config as Record<string, unknown>).options as
-    | Array<Record<string, unknown>>
-    | undefined
-  if (!options) return 0
+  const options = extractSelectOptions(field.config)
+  if (!options.length) return 0
   const strVal = String(value ?? '')
   // options 数组靠前的视为更高优先级 —— 索引越小权重越大
-  const idx = options.findIndex(
-    (o: Record<string, unknown>) => String(o.value ?? o.name ?? '') === strVal,
-  )
+  const idx = options.findIndex((o) => o.value === strVal || o.label === strVal)
   return idx >= 0 ? options.length - idx : 0
 }
 

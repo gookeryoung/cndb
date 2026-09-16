@@ -7,6 +7,7 @@ import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { commentApi, auditApi, recordApi, tableApi, fileApi } from '@/api'
 import type { RowResponse, Field, AuditLog, Comment as ApiComment, Reference, AttachmentFile } from '@/api'
+import { extractSelectOptions } from './fieldOps'
 
 const { Title, Text } = Typography
 
@@ -318,13 +319,4 @@ function FieldEditor({
     default:
       return <Input value={value as string} onChange={e => onChange(e.target.value)} placeholder="请输入..." />
   }
-}
-
-function extractSelectOptions(config: unknown): Array<{ value: string; label: string }> {
-  if (!config || typeof config !== 'object') return []
-  const c = config as { options?: Array<{ value: string; label?: string }> | string[] }
-  const opts = c.options || []
-  if (opts.length === 0) return []
-  if (typeof opts[0] === 'string') return (opts as string[]).map(v => ({ value: v, label: v }))
-  return (opts as Array<{ value: string; label?: string }>).map(o => ({ value: o.value, label: o.label || o.value }))
 }

@@ -5,6 +5,7 @@
  * 直接 String() 会得到 "[object Object]"）.
  */
 
+import { extractSelectOptions } from './fieldOps'
 import type { Field } from '@/api'
 
 // ── link 字段 ──────────────────────────────────────────
@@ -59,13 +60,11 @@ export function getMultiSelectFirstLabel(value: unknown): string {
 /** 解析 select 字段的原始值为可读标签. */
 export function getSelectLabel(field: Field, value: unknown): string {
   if (value === null || value === undefined || value === '') return ''
-  const options = (field.config as Record<string, unknown> | undefined)?.options as
-    | Array<Record<string, unknown>>
-    | undefined
-  if (!options) return String(value)
+  const options = extractSelectOptions(field.config)
+  if (!options.length) return String(value)
   const strVal = String(value)
-  const found = options.find((o) => String(o.value ?? o.name ?? '') === strVal)
-  return found ? String(found.label ?? found.value ?? found.name ?? value) : strVal
+  const found = options.find((o) => o.value === strVal)
+  return found ? found.label : strVal
 }
 
 // ── attachment / image 字段 ─────────────────────────────
