@@ -231,11 +231,11 @@ async def import_table(
 
     try:
         if fmt == "json":
-            text, _enc = transfer.decode_bytes_auto(content)
-            ids = transfer.import_rows_from_json(db.get_bind(), dt, text)
+            text, _enc, _conf = transfer.decode_bytes_auto(content)
+            ids = transfer.import_rows_from_json(db.get_bind(), dt, text, db=db)
         elif fmt == "csv":
-            text, _enc = transfer.decode_bytes_auto(content)
-            ids = transfer.import_rows_from_csv(db.get_bind(), dt, text)
+            text, _enc, _conf = transfer.decode_bytes_auto(content)
+            ids = transfer.import_rows_from_csv(db.get_bind(), dt, text, db=db)
         elif fmt == "xlsx":
             ids = transfer.import_rows_from_xlsx(db.get_bind(), dt, content, db=db)
         else:

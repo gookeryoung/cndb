@@ -11,7 +11,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default tseslint.config(
   // 忽略文件（优先级最高）
-  { ignores: ['dist', 'node_modules', 'coverage', 'playwright-report'] },
+  { ignores: ['dist', 'node_modules', 'coverage', 'playwright-report', '.local-ms-playwright', '.playwright-browsers'] },
 
   // JavaScript 推荐规则
   js.configs.recommended,
