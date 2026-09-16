@@ -229,6 +229,11 @@ def main() -> None:
         help="仅检查归档完整性并预览内容，不实际恢复",
     )
 
+    # users 子命令组
+    from cndb.cli_users import register_users_subparser
+
+    register_users_subparser(sub)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -253,6 +258,10 @@ def main() -> None:
         restore_command(args)
     elif args.command == "info":
         sys.exit(info_command())
+    elif args.command == "users":
+        from cndb.cli_users import users_command
+
+        users_command(args)
     else:
         parser.print_help()  # pragma: no cover - argparse 默认分支
         sys.exit(1)
