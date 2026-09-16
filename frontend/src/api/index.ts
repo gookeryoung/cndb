@@ -360,6 +360,24 @@ export const importApi = {
         },
       }
     ).then(r => r.data),
+  /** 重新 analyze — 用户在 preview 阶段改参考列后重算 diff，返回新的 task 状态 */
+  reanalyzeImport: (
+    wid: number | string,
+    tid: number | string,
+    taskId: number | string,
+    matchKeys?: string[],
+    unknownColsStrategy?: 'drop' | 'add_text_field',
+  ) =>
+    api.post<ImportTaskInfo>(
+      `/v1/workspaces/${wid}/tables/${tid}/import/${taskId}/reanalyze`,
+      null,
+      {
+        params: {
+          ...(matchKeys && matchKeys.length > 0 ? { match_keys: JSON.stringify(matchKeys) } : {}),
+          ...(unknownColsStrategy && unknownColsStrategy !== 'drop' ? { unknown_cols_strategy: unknownColsStrategy } : {}),
+        },
+      }
+    ).then(r => r.data),
   /** 下载失败行文件 */
   downloadFailedRows: async (
     wid: number | string,
