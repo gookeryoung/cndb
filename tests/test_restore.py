@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import argparse
+import base64
+import datetime as dt
 import io
+import json
 import sqlite3
 import tarfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -15,7 +20,10 @@ from cndb.restore import (
     RestoreError,
     _check_target_safe,
     _ensure_manifest_compatible,
+    _from_json_safe,
     _reset_sqlite_database,
+    _restore_sqlite_native,
+    _restore_uploads,
     inspect_backup,
     restore_backup,
 )
@@ -353,11 +361,165 @@ def test_restore_command_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_restore_command_exit_on_error(tmp_path: Path) -> None:
-    import argparse
-
     from cndb.restore import restore_command
 
     args = argparse.Namespace(archive=str(tmp_path / "no.tar.gz"), force=False, dry_run=False)
     with pytest.raises(SystemExit) as excinfo:
+        restore_command(args)
+    assert excinfo.value.code == 1
+
+
+# ── BackupInspection.summary 附件未包含 ───────────────
+
+
+def test_summary_uploads_not_included() -> None:
+    """manifest 中 uploads.included=False → summary 应显示 '附件: 未包含'."""
+    inspection = BackupInspection(
+        manifest={
+            "app_version": "1.0",
+            "created_at": "2024-01-01T00:00:00",
+            "database": {"db_type": "sqlite", "backup_mode": "native", "tables": ["a"], "row_counts": {"a": 5}},
+            "uploads": {"included": False, "file_count": 0, "total_size": 0},
+        },
+        archive_size=1024,
+    )
+    assert "附件: 未包含" in inspection.summary
+
+
+# ── _check_target_safe 非 SQLite 分支 ────────────────
+
+
+def test_check_target_safe_non_sqlite_url(tmp_path: Path) -> None:
+    """非 SQLite DATABASE_URL 直接 return，不抛错."""
+    _check_target_safe("postgresql://user:pass@localhost/db", force=False)
+    _check_target_safe("mysql://localhost/db", force=True)
+
+
+# ── _restore_sqlite_native 缺失 db 文件 ───────────────
+
+
+def test_restore_sqlite_native_missing_src_db(tmp_path: Path) -> None:
+    """native 备份目录中缺 cndb.db → RestoreError."""
+    extracted = tmp_path / "extracted"
+    (extracted / "database").mkdir(parents=True)
+    target = tmp_path / "target.db"
+    with pytest.raises(RestoreError, match=r"缺失 cndb.db"):
+        _restore_sqlite_native(extracted, target)
+
+
+# ── _from_json_safe 全分支 ────────────────────────────
+
+
+def test_from_json_safe_none() -> None:
+    assert _from_json_safe(None) is None
+
+
+def test_from_json_safe_base64_dict() -> None:
+    raw = b"hello bytes"
+    encoded = {"__base64__": base64.b64encode(raw).decode("ascii")}
+    assert _from_json_safe(encoded) == raw
+
+
+def test_from_json_safe_iso_string() -> None:
+    dt_str = "2024-06-15T10:30:00"
+    result = _from_json_safe(dt_str)
+    assert isinstance(result, dt.datetime)
+    assert result.year == 2024 and result.month == 6 and result.day == 15
+
+
+def test_from_json_safe_short_string() -> None:
+    """长度 < 10 的字符串不会尝试解析 datetime."""
+    assert _from_json_safe("short") == "short"
+
+
+def test_from_json_safe_non_iso_string() -> None:
+    """长度 >= 10 但不是合法 ISO → 原样返回."""
+    assert _from_json_safe("not-a-datetime!!") == "not-a-datetime!!"
+
+
+def test_from_json_safe_other_types() -> None:
+    assert _from_json_safe(42) == 42
+    assert _from_json_safe(3.14) == 3.14
+    assert _from_json_safe([1, 2]) == [1, 2]
+
+
+# ── _restore_uploads 分支 ─────────────────────────────
+
+
+def test_restore_uploads_not_included(tmp_path: Path) -> None:
+    """included=False → 直接返回 0，不碰文件系统."""
+    extracted = tmp_path / "extracted"
+    target = tmp_path / "target_uploads"
+    count = _restore_uploads(extracted, target, included=False)
+    assert count == 0
+    assert not target.exists()
+
+
+def test_restore_uploads_src_missing(tmp_path: Path) -> None:
+    """备份中无 uploads 目录 → 返回 0."""
+    extracted = tmp_path / "extracted"
+    extracted.mkdir()
+    target = tmp_path / "target_uploads"
+    count = _restore_uploads(extracted, target, included=True)
+    assert count == 0
+    assert not target.exists()
+
+
+# ── restore_backup 跳过 uploads 恢复 ──────────────────
+
+
+def test_restore_backup_no_uploads_in_backup(tmp_path: Path) -> None:
+    """备份 manifest 中 uploads.included=False → 恢复时跳过 uploads."""
+    import tarfile
+
+    archive = tmp_path / "no_uploads.tar.gz"
+    target_db = tmp_path / "target.db"
+
+    manifest = {
+        "version": "1",
+        "app_version": "0.1.0",
+        "created_at": "2024-01-01T00:00:00",
+        "database": {"db_type": "sqlite", "backup_mode": "native", "tables": [], "row_counts": {}},
+        "uploads": {"included": False, "file_count": 0, "total_size": 0},
+    }
+
+    # 手工构造一个空的 native 备份（空库）
+    src_db = tmp_path / "empty.db"
+    sqlite3.connect(str(src_db)).close()
+
+    with tarfile.open(archive, "w:gz") as tar:
+        # 添加 manifest
+        manifest_bytes = json.dumps(manifest).encode("utf-8")
+        info = tarfile.TarInfo(name="backup/manifest.json")
+        info.size = len(manifest_bytes)
+        tar.addfile(info, io.BytesIO(manifest_bytes))
+        # 添加空 cndb.db
+        db_bytes = src_db.read_bytes()
+        info2 = tarfile.TarInfo(name="backup/database/cndb.db")
+        info2.size = len(db_bytes)
+        tar.addfile(info2, io.BytesIO(db_bytes))
+
+    # upload_dir 不应该被创建
+    target_up = tmp_path / "should_not_exist"
+    restore_backup(archive, force=False, database_url=f"sqlite:///{target_db}", upload_dir=target_up)
+    assert not target_up.exists()
+
+
+# ── restore_command 兜底异常 ──────────────────────────
+
+
+def test_restore_command_catch_unexpected_exception(tmp_path: Path) -> None:
+    """restore_command 捕获 RestoreError 之外的异常 → sys.exit(1)."""
+    from cndb import restore as restore_mod
+    from cndb.restore import restore_command
+
+    archive = tmp_path / "no.tar.gz"
+    args = argparse.Namespace(archive=str(archive), force=False, dry_run=False)
+
+    # monkeypatch inspect_backup 抛一个非 RestoreError 的异常
+    with (
+        patch.object(restore_mod, "inspect_backup", side_effect=RuntimeError("boom")),
+        pytest.raises(SystemExit) as excinfo,
+    ):
         restore_command(args)
     assert excinfo.value.code == 1
