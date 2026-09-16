@@ -350,3 +350,151 @@ def test_execute_import_task_status_conflict_fallback(db, monkeypatch):
     db.delete(task)
     db.delete(dt)
     db.commit()
+
+
+# ── 多编码自动检测 + XLSX 导入 e2e ──────────────────────────
+
+
+def _create_workspace_and_table(client, auth_headers, db):
+    """helper: 创建 workspace + table + text 字段，返回 (wid, tid)."""
+    ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_encode"})
+    wid = ws.json()["id"]
+    tbl = client.post(
+        f"/api/v1/workspaces/{wid}/tables",
+        headers=auth_headers,
+        json={"name": "t_encode"},
+    )
+    tid = tbl.json()["id"]
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+        headers=auth_headers,
+        json={"name": "姓名", "field_type": "text", "order": 0},
+    )
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+        headers=auth_headers,
+        json={"name": "年龄", "field_type": "number", "order": 1},
+    )
+    return wid, tid
+
+
+def _poll_pending_confirm(client, wid, tid, task_id, auth_headers, timeout=10):
+    """helper: 轮询直到 pending_confirm 或 done."""
+    import time
+
+    for _ in range(timeout * 5):
+        resp = client.get(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/import/async/{task_id}",
+            headers=auth_headers,
+        )
+        info = resp.json()
+        if info.get("status") in ("pending_confirm", "pending_validation", "done", "failed"):
+            return info
+        time.sleep(0.2)
+    return resp.json()
+
+
+def test_gbk_csv_import_direct_analyze(client, auth_headers, db):
+    """GBK 编码 CSV —— Importer 直接 analyze 能正确解码中文字段."""
+    from cndb.plugins.tables.import_tasks import analyze_import_task, create_import_task
+    from cndb.plugins.tables.models import DataTable
+
+    _wid, tid = _create_workspace_and_table(client, auth_headers, db)
+    gbk_bytes = "姓名,年龄\n张三,25\n李四,30\n".encode("gbk")
+
+    dt = db.get(DataTable, tid)
+    task = create_import_task(db, table_id=dt.id, user_id=None, filename="data.csv", fmt="csv", content=gbk_bytes)
+    analyze_import_task(db, task.id)
+    db.refresh(task)
+
+    assert task.status == "pending_confirm", task.error_message
+    import json as _json
+    report = _json.loads(task.validation_report)
+    skipped = report.get("skipped_columns", [])
+    assert "姓名" not in skipped, f"GBK 解码失败，'姓名' 被跳过: skipped={skipped}"
+    assert "年龄" not in skipped
+
+
+def test_utf8_bom_csv_import_direct_analyze(client, auth_headers, db):
+    """UTF-8 BOM CSV —— analyze_import_task 应自动去除 BOM."""
+    from cndb.plugins.tables.import_tasks import analyze_import_task, create_import_task
+    from cndb.plugins.tables.models import DataTable
+
+    _wid, tid = _create_workspace_and_table(client, auth_headers, db)
+    bom_bytes = "姓名,年龄\n张三,25\n".encode("utf-8-sig")
+
+    dt = db.get(DataTable, tid)
+    task = create_import_task(db, table_id=dt.id, user_id=None, filename="data.csv", fmt="csv", content=bom_bytes)
+    analyze_import_task(db, task.id)
+    db.refresh(task)
+
+    assert task.status == "pending_confirm", task.error_message
+    import json as _json
+    report = _json.loads(task.validation_report)
+    # BOM 应被去除，列名不包含 BOM 字符
+    file_cols = report.get("file_columns") or []
+    assert not any(c.startswith("\ufeff") for c in file_cols), f"BOM 未被去除: {file_cols}"
+
+
+def test_xls_filename_gives_friendly_error(client, auth_headers, db):
+    """上传 .xls 后缀文件应返回友好错误提示."""
+    wid, tid = _create_workspace_and_table(client, auth_headers, db)
+
+    resp = client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/import/analyze",
+        headers=auth_headers,
+        files={"file": ("data.xls", b"fake-binary", "application/vnd.ms-excel")},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "xls" in resp.json()["detail"].lower()
+
+
+def test_xlsx_import_sync_route(client, auth_headers, db):
+    """同步导入路由支持 XLSX 文件."""
+    import io
+
+    from openpyxl import Workbook
+
+    wid, tid = _create_workspace_and_table(client, auth_headers, db)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data"
+    ws.append(["姓名", "年龄"])
+    ws.append(["王五", 22])
+    ws.append(["赵六", 28])
+    buf = io.BytesIO()
+    wb.save(buf)
+    xlsx_bytes = buf.getvalue()
+
+    resp = client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/import",
+        headers=auth_headers,
+        files={"file": ("data.xlsx", xlsx_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["imported"] == 2
+
+
+def test_importer_parse_xlsx_roundtrip():
+    """Importer._parse_xlsx 能正确解析 openpyxl Workbook 写入的 XLSX."""
+    import io
+
+    from openpyxl import Workbook
+
+    from cndb.plugins.tables.importer import Importer
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data"
+    ws.append(["姓名", "年龄"])
+    ws.append(["孙七", 31])
+    buf = io.BytesIO()
+    wb.save(buf)
+    xlsx_bytes = buf.getvalue()
+
+    rows, cols = Importer._parse_xlsx(xlsx_bytes)
+    assert cols == ["姓名", "年龄"]
+    assert len(rows) == 1
+    assert rows[0]["姓名"] == "孙七"
