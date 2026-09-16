@@ -23,7 +23,7 @@ import csv
 import io
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
@@ -282,17 +282,17 @@ class Importer:
         results: list[ValidationResult],
         match_keys: list[str],
     ) -> dict[str, Any]:
-        """对 valid + warning 行做 upsert 匹配，产出 new/update 分类 + 预览.
+        """对 valid + warning 行做 upsert 匹配，产出 new/update 分类 + 预览 + 字段级 diff.
 
         Returns:
             {
                 "new_count": int,
                 "update_count": int,
                 "multi_key_conflicts": int,
-                "new_preview": [...],    # 限 PREVIEW_LIMIT
-                "update_preview": [...], # 限 PREVIEW_LIMIT
-                "new_rows": [...],       # 完整 rows 供 execute 用
-                "update_rows": [...],    # 完整 [{row_id, values}] 供 execute 用
+                "new_preview": [...],
+                "update_preview": [...],  # 每项含 field_diffs（仅变化的字段）
+                "new_rows": [...],
+                "update_rows": [...],
             }
         """
         # 收集待匹配行（valid + warning），同时记录原 results 顺序
@@ -320,6 +320,10 @@ class Importer:
             values_list,
         )
 
+        # ── 批量查出旧行全部业务字段（供字段级 diff） ──
+        existing_row_ids = list({int(rid) for rid in exact_map.values()})
+        old_rows_by_id = self._fetch_old_rows_by_ids(existing_row_ids) if existing_row_ids else {}
+
         # 更新路径：先查库拿到 reference columns 做 preview
         # exact_map 的 key 是 tuple，和文件行里 match_keys 的值一一对应
         new_preview: list[dict[str, Any]] = []
@@ -339,12 +343,15 @@ class Importer:
             if existing_row_id is not None:
                 update_rows.append({"row_id": existing_row_id, "values": values})
                 if len(update_preview) < self.PREVIEW_LIMIT:
+                    old_values = old_rows_by_id.get(int(existing_row_id), cast(dict[str, Any], {}))
+                    field_diffs = self._build_field_diffs(old_values, values, key_cols_set)
                     update_preview.append(
                         {
                             "row_number": r.row_number,
                             "match_key_values": match_key_values,
                             "existing_row_id": existing_row_id,
                             "field_sample": field_sample,
+                            "field_diffs": field_diffs,
                         }
                     )
             else:
@@ -367,6 +374,86 @@ class Importer:
             "new_rows": new_rows,
             "update_rows": update_rows,
         }
+
+    def _fetch_old_rows_by_ids(self, row_ids: list[int]) -> dict[int, dict[str, Any]]:
+        """按 row_id 批量查询旧行全部业务字段值，返回 {row_id: {field_name: value}}."""
+        if not row_ids:
+            return {}
+
+        from sqlalchemy import select
+
+        sa_table = rec._get_sa_table(self.engine, self.table)
+        # 构造 field_name → db_column_name 映射
+        col_map: dict[str, str] = {}
+        for f in self.table.active_fields():
+            if f.db_column_name:
+                col_map[f.name] = f.db_column_name
+
+        # 只查 db_column_name 对应的列
+        db_cols = [sa_table.c[c] for c in col_map.values() if c in sa_table.c]
+        db_col_names = [c.name for c in db_cols]
+
+        with self.engine.connect() as conn:
+            stmt = select(sa_table.c.id, *db_cols).where(sa_table.c.id.in_(row_ids))
+            rows = conn.execute(stmt).mappings().all()
+
+        result: dict[int, dict[str, Any]] = {}
+        # 反转映射：db_column_name → field_name
+        db_to_field = {db: fname for fname, db in col_map.items()}
+        for row in rows:
+            rid = int(row["id"])
+            old_vals: dict[str, Any] = {}
+            for db_col in db_col_names:
+                fname = db_to_field.get(db_col)
+                if fname is not None:
+                    old_vals[fname] = row[db_col]
+            result[rid] = old_vals
+        return result
+
+    @staticmethod
+    def _build_field_diffs(
+        old_values: dict[str, Any],
+        new_values: dict[str, Any],
+        key_cols: set[str],
+    ) -> dict[str, dict[str, Any]]:
+        """逐字段比较 old vs new，仅返回有差异的业务字段（不含 match_keys）.
+
+        Returns:
+            {field_name: {"old": ..., "new": ..., "changed": bool}}  — 仅包含 changed=True 的字段.
+        """
+        diffs: dict[str, dict[str, Any]] = {}
+        # 遍历 new 里的所有业务字段（文件侧为准），排除 key 列
+        for fname, new_val in new_values.items():
+            if fname in key_cols:
+                continue
+            old_val = old_values.get(fname)
+            if not Importer._values_equal(old_val, new_val):
+                diffs[fname] = {"old": old_val, "new": new_val, "changed": True}
+        return diffs
+
+    @staticmethod
+    def _values_equal(a: Any, b: Any) -> bool:
+        """比较两个值是否相等，处理 None / 空串 / 数字类型差异."""
+        # 先处理 None 分支
+        if a is None and b is None:
+            return True
+        if a is None or b is None:
+            return False
+        # 字符串 vs 数字：尝试宽松比较
+        if isinstance(a, (int, float)) and isinstance(b, str):
+            try:
+                return a == type(a)(b)  # type: ignore[arg-type]
+            except (ValueError, TypeError):
+                return str(a).strip() == b.strip()
+        if isinstance(b, (int, float)) and isinstance(a, str):
+            try:
+                return b == type(b)(a)  # type: ignore[arg-type]
+            except (ValueError, TypeError):
+                return str(b).strip() == a.strip()
+        # 字符串去空白比较
+        if isinstance(a, str) and isinstance(b, str):
+            return a.strip() == b.strip()
+        return a == b
 
     # ── V2: 未知列规划 ───────────────────────
 
