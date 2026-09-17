@@ -68,12 +68,35 @@ export const SYNTAX_SECTIONS: SyntaxSection[] = [
     ],
   },
   {
+    key: 'multitable',
+    label: '跨表引用',
+    examples: [
+      { title: '访问额外表数据', code: "{{ records_by_table['员工表'] }}", description: '渲染时额外传入的表数据，dict 结构，key 为表名' },
+      { title: '遍历额外表', code: "{% for r in records_by_table['员工表'] %}\n{{ r.name }}\n{% endfor %}", description: '遍历 extra 表中的全部记录' },
+      { title: '取额外表行数', code: "{{ records_by_table['员工表'] | length }}", description: '统计额外表的记录总数' },
+      { title: '主表 + 额外表联合', code: "{{ records | length }} + {{ records_by_table['员工表'] | length }} 行", description: '同时使用主表和额外表' },
+    ],
+  },
+  {
+    key: 'markdown',
+    label: 'Markdown 输出标记',
+    examples: [
+      { title: '一级标题', code: '# 月度报告', description: 'DOCX → Heading 1，PDF → 大标题' },
+      { title: '二级标题', code: '## 销售明细', description: 'DOCX → Heading 2，PDF → 中标题' },
+      { title: '加粗文本', code: '**重要数据**', description: '输出为粗体（DOCX/PDF）' },
+      { title: '代码样式', code: '`code here`', description: '输出为等宽代码字体（DOCX）' },
+      { title: '表格（Markdown 风格）', code: '| 姓名 | 金额 |\n| --- | --- |\n| 张三 | 1000 |', description: 'DOCX/PDF 自动解析为表格对象' },
+      { title: '换页标记', code: '---PAGE---', description: 'PDF/DOCX 强制分页' },
+    ],
+  },
+  {
     key: 'builtins',
     label: '内置变量',
     examples: [
       { title: '全部行数据', code: 'records', description: 'list[dict]，模板最核心的数据源' },
       { title: '表名', code: 'table_name', description: 'str，模板关联的数据表名称' },
       { title: '用户参数', code: 'params', description: 'dict，运行时用户输入的动态参数' },
+      { title: '额外表数据', code: 'records_by_table', description: 'dict[str, list[dict]]，跨表引用容器' },
     ],
   },
 ]

@@ -83,10 +83,14 @@ export default function ReportsPage() {
   })
 
   const renderReport = useMutation({
-    mutationFn: async (arg: { tpl: ReportTemplateSummary; params: Record<string, unknown> }) => {
-      const { tpl, params } = arg
+    mutationFn: async (arg: { tpl: ReportTemplateSummary; params: Record<string, unknown>; extraTableIds?: number[] }) => {
+      const { tpl, params, extraTableIds = [] } = arg
       if (!wid) throw new Error('缺少 workspace')
-      const blob = await reportApi.render(tpl.id, { table_id: tpl.table_id ?? 0, params })
+      const body: Record<string, unknown> = { table_id: tpl.table_id ?? 0, params }
+      if (extraTableIds.length > 0) {
+        body.extra_table_ids = extraTableIds
+      }
+      const blob = await reportApi.render(tpl.id, body as any)
       const ext = tpl.output_format === 'docx' ? 'docx' : tpl.output_format === 'pdf' ? 'pdf' : tpl.output_format
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -250,10 +254,10 @@ export default function ReportsPage() {
         target={renderTarget}
         tables={tables}
         onClose={() => { setRenderParamsOpen(false); setRenderTarget(null) }}
-        onSubmit={(params) => {
+        onSubmit={(params, extraTableIds) => {
           if (!renderTarget) return
           renderReport.mutate(
-            { tpl: renderTarget, params },
+            { tpl: renderTarget, params, extraTableIds },
             { onSuccess: () => { setRenderParamsOpen(false); setRenderTarget(null) } },
           )
         }}
@@ -283,12 +287,27 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
   const [templateValue, setTemplateValue] = useState('')
   // 当前选中的关联表 ID（从 Form 监听）
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null)
+  // 额外选择的表 ID 列表
+  const [extraTableIds, setExtraTableIds] = useState<number[]>([])
 
   // 关联表的字段列表（用于字段面板）
   const { data: fields = [] } = useQuery<Field[]>({
     queryKey: ['workspaces', workspaceId, 'tables', selectedTableId, 'fields'],
     queryFn: () => fieldApi.list(workspaceId, selectedTableId!),
     enabled: !!selectedTableId && !!workspaceId,
+  })
+
+  // 额外表的字段列表（批量加载）
+  const { data: extraFieldsMap = {} } = useQuery<Record<number, Field[]>>({
+    queryKey: ['workspaces', workspaceId, 'extra-fields', extraTableIds],
+    queryFn: async () => {
+      const result: Record<number, Field[]> = {}
+      await Promise.all(extraTableIds.map(async (tid) => {
+        result[tid] = await fieldApi.list(workspaceId, tid)
+      }))
+      return result
+    },
+    enabled: extraTableIds.length > 0 && !!workspaceId,
   })
 
   // 关联表的前 10 行真实数据（用于预览）
@@ -305,18 +324,49 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     enabled: !!selectedTableId && !!workspaceId,
   })
 
+  // 额外表的预览数据（用于 PreviewPanel records_by_table）
+  const { data: extraPreviewMap = {} } = useQuery<Record<number, Array<Record<string, unknown>>>>({
+    queryKey: ['workspaces', workspaceId, 'extra-preview', extraTableIds],
+    queryFn: async () => {
+      const result: Record<number, Array<Record<string, unknown>>> = {}
+      await Promise.all(extraTableIds.map(async (tid) => {
+        const resp = await recordApi.list(workspaceId, tid, { limit: 5 })
+        result[tid] = resp.items.map(r => {
+          const { id: _id, created_at: _ca, updated_at: _ua, created_by: _cb, updated_by: _ub, ...rest } = r as any
+          return rest
+        })
+      }))
+      return result
+    },
+    enabled: extraTableIds.length > 0 && !!workspaceId,
+  })
+
   // Modal 打开时初始化值
   useEffect(() => {
     if (!open) return
     const tplContent: string = form.getFieldValue('template_content') || ''
     const tplId: number | null = form.getFieldValue('table_id') ?? null
+    const extras: number[] = form.getFieldValue('extra_table_ids') || []
     setTemplateValue(tplContent)
     setSelectedTableId(tplId)
+    setExtraTableIds(extras)
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 关联表变更时更新 selectedTableId
+  // 关联表变更时更新 selectedTableId（同时从 extra 表中排除它）
   const handleTableChange = (value: number | null) => {
     setSelectedTableId(value)
+    if (value !== null) {
+      setExtraTableIds(prev => prev.filter(id => id !== value))
+    }
+  }
+
+  // extra_table_ids 变更（排除主表本身）
+  const handleExtraTablesChange = (values: number[]) => {
+    const filtered = selectedTableId !== null
+      ? values.filter(id => id !== selectedTableId)
+      : values
+    setExtraTableIds(filtered)
+    form.setFieldValue('extra_table_ids', filtered)
   }
 
   // 模板内容变更（CodeMirror → Form 同步）
@@ -334,6 +384,39 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
   const selectedTableName = selectedTableId
     ? tables.find(t => t.id === selectedTableId)?.name
     : undefined
+
+  // 构建多表字段分组（传给 FieldPanel）
+  const tableGroups = useMemo(() => {
+    const groups: Array<{ tableId: number; tableName: string; fields: Field[]; isPrimary: boolean }> = []
+    if (selectedTableId !== null && selectedTableName) {
+      groups.push({ tableId: selectedTableId, tableName: selectedTableName, fields, isPrimary: true })
+    }
+    for (const eid of extraTableIds) {
+      const tname = tables.find(t => t.id === eid)?.name
+      const efields = extraFieldsMap[eid] || []
+      if (tname) {
+        groups.push({ tableId: eid, tableName: tname, fields: efields, isPrimary: false })
+      }
+    }
+    return groups
+  }, [selectedTableId, selectedTableName, fields, extraTableIds, extraFieldsMap, tables])
+
+  // 构建 recordsByTable（传给 PreviewPanel）
+  const recordsByTable = useMemo(() => {
+    const result: Record<string, Array<Record<string, unknown>>> = {}
+    for (const eid of extraTableIds) {
+      const tname = tables.find(t => t.id === eid)?.name
+      if (tname && extraPreviewMap[eid]) {
+        result[tname] = extraPreviewMap[eid]
+      }
+    }
+    return result
+  }, [extraTableIds, extraPreviewMap, tables])
+
+  // extra 表选项（排除已选的主表）
+  const extraTableOptions = useMemo(() => {
+    return tableOptions.filter(o => o.value !== selectedTableId)
+  }, [tableOptions, selectedTableId])
 
   return (
     <Modal
@@ -371,6 +454,17 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
               onChange={handleTableChange}
             />
           </Form.Item>
+          <Form.Item name="extra_table_ids" label="额外引用表" style={{ flex: 1, minWidth: 200, marginBottom: 8 }} tooltip="模板中可通过 records_by_table['表名'] 引用这些表的数据">
+            <Select
+              mode="multiple"
+              options={extraTableOptions}
+              placeholder="选择额外引用的数据表（可选）"
+              onChange={handleExtraTablesChange}
+              value={extraTableIds}
+              allowClear
+              maxTagCount={3}
+            />
+          </Form.Item>
         </div>
         <Form.Item name="description" label="描述（可选）" style={{ marginBottom: 8 }}>
           <Input.TextArea rows={1} placeholder="简单说明这个模板的用途" />
@@ -391,6 +485,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
           <FieldPanelWithDnD
             fields={fields as Field[]}
             tableId={selectedTableId}
+            tableGroups={tableGroups}
             onInsert={() => { /* 点击会通过 DndContext 外层转发 */ }}
           />
 
@@ -416,6 +511,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
                       records={previewRows as Array<Record<string, unknown>>}
                       tableName={selectedTableName}
                       loading={previewLoading}
+                      recordsByTable={recordsByTable}
                     />
                   ),
                 },
@@ -499,10 +595,13 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
 function FieldPanelWithDnD({
   fields,
   tableId,
+  tableGroups,
   onInsert: _onInsert,
 }: {
   fields: Field[]
   tableId: number | null
+  /** 多表字段分组（多表模式优先使用） */
+  tableGroups?: Array<{ tableId: number; tableName: string; fields: Field[]; isPrimary: boolean }>
   onInsert: (fieldName: string) => void
 }) {
   // 占位组件 — 实际拖拽由外层 ReportTemplateEditor 的 DndContext 处理
@@ -521,7 +620,7 @@ function FieldPanelWithDnD({
     return () => window.removeEventListener('report-field-insert', handler)
   }, [])
 
-  if (!tableId) {
+  if (!tableId && (!tableGroups || tableGroups.length === 0)) {
     return (
       <div className="report-field-panel">
         <div className="report-field-panel-header">
@@ -538,16 +637,26 @@ function FieldPanelWithDnD({
   }
 
   // 这里不直接拖拽，只是渲染 FieldPanel；拖拽在 EditorWithDropzone 的 DndContext 中
+  // 多表模式传 tableGroups，单表模式传 fields
+  if (tableGroups && tableGroups.length > 1) {
+    return <ReportTemplateEditorFieldsOnly tableGroups={tableGroups} />
+  }
   return <ReportTemplateEditorFieldsOnly fields={fields} />
 }
 
 /** 纯字段列表（不重复创建 DndContext，避免嵌套冲突） */
-function ReportTemplateEditorFieldsOnly({ fields }: { fields: Field[] }) {
+function ReportTemplateEditorFieldsOnly({
+  fields,
+  tableGroups,
+}: {
+  fields?: Field[]
+  tableGroups?: Array<{ tableId: number; tableName: string; fields: Field[]; isPrimary: boolean }>
+}) {
   // 点击时派发事件让 EditorWithDropzone 捕获
   const handleInsert = (fieldName: string) => {
     window.dispatchEvent(new CustomEvent('report-field-insert', { detail: { fieldName } }))
   }
-  return <FieldPanel fields={fields} onInsert={handleInsert} />
+  return <FieldPanel fields={fields} tableGroups={tableGroups} onInsert={handleInsert} />
 }
 
 /** 中间编辑器（含 DndContext dropzone + 全局 insert 事件监听） */
@@ -597,39 +706,48 @@ interface RenderParamsModalProps {
   target: ReportTemplateSummary | null
   tables: TableSummary[]
   onClose: () => void
-  onSubmit: (params: Record<string, unknown>) => void
+  onSubmit: (params: Record<string, unknown>, extraTableIds?: number[]) => void
   submitting: boolean
 }
 
 function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting }: RenderParamsModalProps) {
   const [form] = Form.useForm<Record<string, unknown>>()
+  const [extraTableIds, setExtraTableIds] = useState<number[]>([])
+
   useEffect(() => {
     if (open && target) {
       const initial: Record<string, unknown> = {}
       target.parameters.forEach(p => { if (p.default !== undefined) initial[p.name] = p.default })
       form.setFieldsValue(initial as any)
+      setExtraTableIds([])
     }
   }, [open, target, form])
 
   const tableNameMap = useMemo(() => new Map(tables.map(t => [t.id, t.name])), [tables])
 
+  // 额外表选项（排除模板关联的主表）
+  const extraTableOptions = useMemo(() => {
+    if (!target?.table_id) return tables.map(t => ({ value: t.id, label: t.name }))
+    return tables.filter(t => t.id !== target.table_id).map(t => ({ value: t.id, label: t.name }))
+  }, [tables, target?.table_id])
+
   return (
     <Modal
       title={target ? `渲染模板：${target.name}` : '渲染参数'}
       open={open}
-      onCancel={() => { form.resetFields(); onClose() }}
+      onCancel={() => { form.resetFields(); setExtraTableIds([]); onClose() }}
       confirmLoading={submitting}
       okText="生成报告"
       cancelText="取消"
       onOk={async () => {
         try {
           const values = await form.validateFields()
-          onSubmit(values as Record<string, unknown>)
+          onSubmit(values as Record<string, unknown>, extraTableIds.length > 0 ? extraTableIds : undefined)
         } catch { /* 用户取消校验 */ }
       }}
     >
       {target?.table_id ? (
-        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
           数据源表：{tableNameMap.get(target.table_id) || `#${target.table_id}`}
         </Typography.Text>
       ) : (
@@ -637,6 +755,22 @@ function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting
           模板未关联数据表，无法渲染
         </Typography.Text>
       )}
+
+      {/* 额外引用表选择 */}
+      {target?.table_id && (
+        <Form.Item label="额外引用表" tooltip="模板中可通过 records_by_table['表名'] 引用" style={{ marginBottom: 12 }}>
+          <Select
+            mode="multiple"
+            options={extraTableOptions}
+            placeholder="选择额外引用的数据表（可选）"
+            value={extraTableIds}
+            onChange={setExtraTableIds}
+            allowClear
+            maxTagCount={3}
+          />
+        </Form.Item>
+      )}
+
       <Form form={form} layout="vertical" disabled={!target?.table_id}>
         {target?.parameters.map(p => (
           <Form.Item
@@ -656,6 +790,11 @@ function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting
             )}
           </Form.Item>
         ))}
+        {(!target?.parameters || target.parameters.length === 0) && (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            该模板无自定义参数，选择额外引用表后直接点击「生成报告」
+          </Typography.Text>
+        )}
       </Form>
     </Modal>
   )

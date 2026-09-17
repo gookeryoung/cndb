@@ -76,6 +76,8 @@ class RenderRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     # 可选：过滤行（空=全部）
     row_ids: list[int] | None = None
+    # 可选：额外引用的数据表 ID 列表，渲染上下文注入 records_by_table
+    extra_table_ids: list[int] = Field(default_factory=list)
 
 
 __all__ = [

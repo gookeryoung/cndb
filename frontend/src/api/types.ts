@@ -422,6 +422,8 @@ export interface ReportRenderRequest {
   table_id: number
   params?: Record<string, unknown>
   row_ids?: Array<number | null> | null
+  /** 可选：额外引用的数据表 ID 列表 */
+  extra_table_ids?: number[]
 }
 
 export interface ReportRenderResult {
