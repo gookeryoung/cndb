@@ -149,13 +149,9 @@ export default function TablesList() {
   })
 
   const csvCreate = useMutation({
-    mutationFn: async (file: File) => {
-      const text = await file.text()
-      const tableName = file.name.replace(/\.csv$/i, '')
-      return importApi.createFromCsv(wid!, tableName, text)
-    },
+    mutationFn: (file: File) => importApi.createFromFile(wid!, file),
     onSuccess: (result) => {
-      message.success(`已从 CSV 创建表 "${result.table_name}" (${result.imported} 行)`)
+      message.success(`已创建表 "${result.table_name}" (${result.imported_rows} 行)`)
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
       if (result.table_id) {
         navigate(`/w/${wid}/tables/${result.table_id}`)
@@ -392,12 +388,12 @@ export default function TablesList() {
             工作区设置
           </Button>
           <Upload
-            accept=".csv"
+            accept=".csv,.tsv,.json,.xlsx"
             showUploadList={false}
             beforeUpload={(file) => { csvCreate.mutate(file as File); return false }}
           >
             <Button icon={<UploadOutlined />} loading={csvCreate.isPending}>
-              CSV 建表
+              导入数据表
             </Button>
           </Upload>
           <Button
@@ -462,7 +458,7 @@ export default function TablesList() {
                     <span>
                       {filter !== 'all' ? '当前筛选条件下没有表' : (
                         <>
-                          还没有表 —— 点击右侧 <Text strong>&quot;新建表&quot;</Text> 或 <Text strong>&quot;CSV 建表&quot;</Text> 开始
+                          还没有表 —— 点击右侧 <Text strong>&quot;新建表&quot;</Text> 或 <Text strong>&quot;导入数据表&quot;</Text> 开始
                         </>
                       )}
                     </span>
