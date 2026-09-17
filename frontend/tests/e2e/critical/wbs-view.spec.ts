@@ -97,18 +97,17 @@ async function getWbsViewId(
 async function gotoTable(page: Page, wid: number, tableName: string) {
   await page.goto(`/w/${wid}/tables`);
   await page.waitForURL(/\/w\/\d+\/tables/);
-  await page.waitForTimeout(400);
+  // click 自带可见等待，无需固定 sleep
   await page.getByRole("menuitem", { name: new RegExp(tableName) }).click();
   await page.waitForURL(/\/tables\/\d+/);
-  await page.waitForTimeout(600);
 }
 
-/** 通过 URL ?view=vid 直接激活指定视图 */
+/** 通过 URL ?view=vid 直接激活指定视图（goto 为整页刷新，等 WBS 容器渲染完成即可） */
 async function activateView(page: Page, viewId: number) {
   const url = new URL(page.url());
   url.searchParams.set("view", String(viewId));
   await page.goto(url.toString());
-  await page.waitForTimeout(1500);
+  await expect(wbsRoot(page)).toBeVisible({ timeout: 8000 });
 }
 
 /** 定位 WBS 根容器 */
@@ -134,7 +133,7 @@ async function clickWbsModeButton(page: Page) {
     .first();
   await expect(btn).toBeVisible({ timeout: 5000 });
   await btn.click();
-  await page.waitForTimeout(800);
+  // 切换结果由调用方断言 wbsRoot / Empty 态，这里不做固定等待
 }
 
 // ─────────────── 第一组: URL 深链激活 + 树节点渲染 ───────────────
@@ -188,19 +187,17 @@ test.describe("WBS 视图 — 基本渲染", () => {
     const root = wbsRoot(page);
     await expect(root).toBeVisible({ timeout: 8000 });
 
-    // 初始: 只展开根层 (expand_all=false) → 4 个根节点
+    // 初始: expand_all=false → 根节点默认展开第一层（4 根 + 各自直接子节点）
     const toggles = wbsToggles(page);
     const toggleCount = await toggles.count();
 
-    // 展开第一个根节点 (产品线A)
+    // 折叠第一个根节点 (产品线A) → 子节点隐藏，节点数减少
     if (toggleCount > 0) {
+      const before = await wbsNodes(page).count();
       await toggles.first().click();
-      await page.waitForTimeout(400);
-
-      // 展开后至少能看到产品线A 的子节点（需求调研/方案设计/核心开发 = 3 个）
-      const afterExpand = wbsNodes(page);
-      const nodeCount = await afterExpand.count();
-      expect(nodeCount).toBeGreaterThanOrEqual(5); // 4 根 + 3 子（部分可能折叠）
+      await expect
+        .poll(async () => await wbsNodes(page).count(), { timeout: 5000 })
+        .toBeLessThan(before);
     }
   });
 
@@ -218,21 +215,19 @@ test.describe("WBS 视图 — 基本渲染", () => {
     await activateView(page, vid);
 
     await expect(wbsRoot(page)).toBeVisible({ timeout: 8000 });
-    const toggles = wbsToggles(page);
-    await expect(toggles.first()).toBeVisible({ timeout: 5000 });
+    const firstToggle = wbsToggles(page).first();
+    await expect(firstToggle).toBeVisible({ timeout: 5000 });
 
-    // 第一次点击（展开）
-    const beforeCount = await wbsNodes(page).count();
-    await toggles.first().click();
-    await page.waitForTimeout(400);
-    const afterExpand = await wbsNodes(page).count();
-    expect(afterExpand).toBeGreaterThan(beforeCount);
+    // 初始根节点为展开态（DownOutlined）
+    await expect(firstToggle.locator(".anticon-down")).toBeVisible({ timeout: 5000 });
 
-    // 第二次点击（折叠）→ 回到之前数量
-    await toggles.first().click();
-    await page.waitForTimeout(400);
-    const afterCollapse = await wbsNodes(page).count();
-    expect(afterCollapse).toBe(beforeCount);
+    // 第一次点击（折叠）→ RightOutlined
+    await firstToggle.click();
+    await expect(firstToggle.locator(".anticon-right")).toBeVisible({ timeout: 5000 });
+
+    // 第二次点击（展开）→ 回到 DownOutlined
+    await firstToggle.click();
+    await expect(firstToggle.locator(".anticon-down")).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -251,13 +246,8 @@ test.describe("WBS 视图 — 内容渲染验证", () => {
 
     await expect(wbsRoot(page)).toBeVisible({ timeout: 8000 });
 
-    // 展开第一个根节点（产品线A）看看子任务的 1.1 / 1.2 / 1.3 编号
-    await wbsToggles(page).first().click();
-    await page.waitForTimeout(400);
-
-    // 检查是否有层级编号文本出现（show_numbering=true）
-    const nodeCount = await wbsNodes(page).count();
-    expect(nodeCount).toBeGreaterThanOrEqual(5);
+    // 根节点默认展开第一层 → 子任务层级编号 1.1. / 1.2. 直接可见（show_numbering=true）
+    await expect(page.getByText(/^1\.\d+\.$/).first()).toBeVisible({ timeout: 5000 });
   });
 
   test("WBS 工作分解结构 — 任务状态徽章渲染", async ({ page, request }) => {
@@ -274,14 +264,14 @@ test.describe("WBS 视图 — 内容渲染验证", () => {
 
     // 状态徽章（进行中/已完成/未开始）应出现在树节点上
     const statusTexts = ["进行中", "已完成", "未开始"];
-    let found = false;
-    for (const s of statusTexts) {
-      if ((await page.getByText(s).count()) > 0) {
-        found = true;
-        break;
-      }
-    }
-    expect(found).toBeTruthy();
+    await expect
+      .poll(async () => {
+        for (const s of statusTexts) {
+          if ((await page.getByText(s).count()) > 0) return true;
+        }
+        return false;
+      }, { timeout: 8000 })
+      .toBe(true);
   });
 
   test("WBS 工作分解结构 — 进度条 + 百分比文本可见", async ({
@@ -299,15 +289,11 @@ test.describe("WBS 视图 — 内容渲染验证", () => {
 
     await expect(wbsRoot(page)).toBeVisible({ timeout: 8000 });
 
-    // 展开第一个根
-    await wbsToggles(page).first().click();
-    await page.waitForTimeout(400);
-
-    // 检查是否有 % 文本（进度条旁显示的百分比）
+    // 检查是否有 % 文本（进度条旁显示的百分比；根节点默认展开，叶子/汇总进度均可见）
     const progressMatch = page.getByText(/^\d+%$/);
-    const count = await progressMatch.count();
-    // 至少有一些进度值可见（叶子节点有明确进度，父节点汇总也有值）
-    expect(count).toBeGreaterThanOrEqual(1);
+    await expect
+      .poll(async () => await progressMatch.count(), { timeout: 5000 })
+      .toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -336,9 +322,8 @@ test.describe("WBS 视图 — 交互与导航", () => {
     // 抽屉不应有 [object Object] 错误
     await expect(drawer.getByText("[object Object]")).toHaveCount(0);
 
-    // 关闭抽屉
+    // 关闭抽屉（Escape 后无需固定等待，抽屉关闭由下个用例的新导航处理）
     await page.keyboard.press("Escape");
-    await page.waitForTimeout(300);
   });
 
   test("WBS 工作分解结构 — 点击子节点行也能打开抽屉", async ({
@@ -356,18 +341,14 @@ test.describe("WBS 视图 — 交互与导航", () => {
 
     await expect(wbsRoot(page)).toBeVisible({ timeout: 8000 });
 
-    // 展开第一个根
-    await wbsToggles(page).first().click();
-    await page.waitForTimeout(400);
-
-    // 点击第二个可见节点（根下第一个子任务：需求调研）
+    // 点击第二个可见节点（根节点默认已展开，nth(1) 即根下第一个子任务：需求调研）
     const nodes = wbsNodes(page);
-    const childCount = await nodes.count();
-    if (childCount > 1) {
-      await nodes.nth(1).click();
-      const drawer = page.locator(".ant-drawer").first();
-      await expect(drawer).toBeVisible({ timeout: 5000 });
-    }
+    await expect
+      .poll(async () => await nodes.count(), { timeout: 5000 })
+      .toBeGreaterThanOrEqual(2);
+    await nodes.nth(1).click();
+    const drawer = page.locator(".ant-drawer").first();
+    await expect(drawer).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -384,7 +365,6 @@ test.describe("WBS 视图 — 模式切换", () => {
     const tid = await getTableId(request, wid, "WBS任务分解");
 
     await gotoTable(page, wid, "WBS任务分解");
-    await page.waitForTimeout(800);
 
     // 点 WBS 模式按钮
     await clickWbsModeButton(page);
@@ -392,37 +372,28 @@ test.describe("WBS 视图 — 模式切换", () => {
     // WBS 根容器出现
     await expect(wbsRoot(page)).toBeVisible({ timeout: 8000 });
 
-    // URL 应包含 mode=wbs
-    const url = new URL(page.url());
-    expect(url.searchParams.get("mode")).toBe("wbs");
+    // URL 应包含 mode=wbs（React Router 异步更新，轮询等待）
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("mode"), { timeout: 5000 })
+      .toBe("wbs");
   });
 
-  test("非 WBS 表 — 点 WBS 按钮也能降级渲染（Empty 态或实际树）", async ({
+  test("非 WBS 表 — 不渲染 WBS 模式按钮（仅显示表实际拥有的视图类型）", async ({
     page,
     request,
   }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
-    const wid = await getWorkspaceId(request, "项目管理");
     // 切到科研项目管理（没有 WBS 表）
     const wid2 = await getWorkspaceId(request, "科研项目管理");
     const tid = await getTableId(request, wid2, "科研项目");
 
     await gotoTable(page, wid2, "科研项目");
-    await page.waitForTimeout(800);
 
-    // 点 WBS 按钮
-    await clickWbsModeButton(page);
-
-    // 降级: 没有父任务字段配置 → 显示 Empty 态
-    const root = wbsRoot(page);
-    const hasRoot = (await root.count()) > 0;
-    if (hasRoot) {
-      await expect(root).toBeVisible({ timeout: 5000 });
-      // 应提示需要配置 parent_field
-      const emptyDesc = page.getByText(/需要配置|父任务字段|parent_field|暂无数据/);
-      await expect(emptyDesc).toBeVisible({ timeout: 3000 });
-    }
+    // 模式按钮组仅渲染数据表实际拥有的视图类型 —— 科研项目无 wbs 视图 → 按钮不出现
+    await expect(
+      page.locator("button").filter({ has: page.locator(".anticon-partition") }),
+    ).toHaveCount(0, { timeout: 8000 });
   });
 });
 
@@ -488,12 +459,16 @@ test.describe("WBS 视图 — 全量拉取回归", () => {
 
     // grid 视图进入
     await gotoTable(page, wid, "WBS任务分解");
-    await page.waitForTimeout(800);
-    recordsUrls.length = 0;
+    const baseline = recordsUrls.length;
 
-    // 切到 WBS 模式 → 必须触发 limit=5000
+    // 切到 WBS 模式 → 必须触发 limit=5000（轮询请求记录，替代固定等待）
     await clickWbsModeButton(page);
-    await page.waitForTimeout(2000);
+    await expect
+      .poll(
+        async () => recordsUrls.slice(baseline).some((u) => u.includes("limit=5000")),
+        { timeout: 10000 },
+      )
+      .toBe(true);
 
     const lastRecordsUrl = recordsUrls[recordsUrls.length - 1] || "";
     expect(lastRecordsUrl).toContain("limit=5000");
@@ -521,7 +496,6 @@ test.describe("WBS 视图 — 通过视图 TAB 切换", () => {
       .first();
     await expect(wbsTab).toBeVisible({ timeout: 8000 });
     await wbsTab.click();
-    await page.waitForTimeout(1500);
 
     // WBS 根容器出现
     await expect(wbsRoot(page)).toBeVisible({ timeout: 8000 });
