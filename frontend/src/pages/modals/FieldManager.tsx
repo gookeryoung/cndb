@@ -287,8 +287,14 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             <Form.Item name="field_type" label="类型" rules={[{ required: true, message: '请选择类型' }]}>
               <Select
                 options={FIELD_TYPES.map(t => ({ label: `${t.label}（${t.category}）`, value: t.value }))}
-                onChange={(v) => setFieldType(v)}
-                disabled={!!editTarget}
+                onChange={(v) => {
+                  setFieldType(v)
+                  // 编辑时切换类型：重置 config 为新类型的默认值（避免旧类型 config 残留）
+                  if (editTarget && v !== editTarget.field_type) {
+                    const defaults = defaultConfigForType(v)
+                    form.setFieldValue('config', defaults)
+                  }
+                }}
               />
             </Form.Item>
           </Col>

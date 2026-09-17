@@ -239,7 +239,7 @@ export interface Field {
 export interface FieldCreate {
   name: string; field_type: FieldType; order?: number
   config?: Record<string, unknown>; required?: boolean; description?: string
-  is_unique?: boolean; default_value?: unknown
+  is_unique?: boolean; default_value?: unknown; hidden?: boolean
 }
 export interface FieldUpdate {
   name?: string; field_type?: FieldType; order?: number
