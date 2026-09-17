@@ -44,7 +44,7 @@ function EditorDropzone({
   return (
     <div
       ref={setNodeRef}
-      style={{ flex: 1, minWidth: 0, position: 'relative' }}
+      style={{ flex: 1, minWidth: 0, minHeight: 0, height: '100%', position: 'relative', overflow: 'hidden' }}
       data-dropzone="true"
     >
       <TemplateEditor
@@ -160,26 +160,28 @@ export default function ReportTemplateEditor({
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-    >
-      <SortableContext items={fieldIds} strategy={verticalListSortingStrategy}>
-        <FieldPanel
-          fields={fields}
-          tableGroups={tableGroups}
-          onInsert={handleFieldInsert}
-        />
-      </SortableContext>
+    <div className="report-template-editor">
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={fieldIds} strategy={verticalListSortingStrategy}>
+          <FieldPanel
+            fields={fields}
+            tableGroups={tableGroups}
+            onInsert={handleFieldInsert}
+          />
+        </SortableContext>
 
-      <EditorDropzone
-        value={value}
-        onChange={onChange}
-        editorRef={internalRef}
-        isDragActive={isDragActive}
-      />
-    </DndContext>
+        <EditorDropzone
+          value={value}
+          onChange={onChange}
+          editorRef={internalRef}
+          isDragActive={isDragActive}
+        />
+      </DndContext>
+    </div>
   )
 }
