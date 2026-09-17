@@ -8,7 +8,7 @@
  *   5. 深色主题同时带 body.theme-dark class（向后兼容）
  *   6. 刷新页面后主题持久化
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
 
 const AUTHS = ["chromium-authed"];
 function isAuthed(): boolean {

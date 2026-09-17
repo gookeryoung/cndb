@@ -8,7 +8,7 @@
  * 后面的 CRUD 共享同一个 describe.configure({ mode: 'serial' })。
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
 
 const ANON = ["setup", "chromium-anon"];
 const WID = 1;

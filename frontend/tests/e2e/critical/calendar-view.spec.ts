@@ -21,7 +21,8 @@
  * 注意：CalendarView 全部原生 DOM + inline style，无 Ant Calendar 组件.
  *       日历视图只支持单点日期事件，进度跟踪请使用其他视图。
  */
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 

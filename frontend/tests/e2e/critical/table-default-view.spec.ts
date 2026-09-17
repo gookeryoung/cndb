@@ -5,7 +5,8 @@
  *   2. 不能重复创建同名「全部」视图（后端唯一约束）
  *   3. 调用 copy_table 生成的副本同样自带默认视图
  */
-import { test, expect, type APIResponse } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIResponse } from "@playwright/test";
 
 const WID = 1;
 

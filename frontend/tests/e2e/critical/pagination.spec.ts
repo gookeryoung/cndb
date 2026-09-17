@@ -10,7 +10,8 @@
  * 验证策略：以页码激活态变化为核心断言，网络请求 URL 为辅助证据。
  * React Query 对相同 queryKey 可能使用缓存，所以网络请求验证仅对首次状态变化可靠。
  */
-import { test, expect, APIResponse } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIResponse } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 

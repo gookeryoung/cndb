@@ -16,7 +16,8 @@
  *   - ViewConfigDialog 内 select 限定在 `.ant-tabs-tabpane-active` 内
  *   - 打开 ViewConfigDialog 后先切 filter tab 清空残留筛选，再操作排序
  */
-import { test, expect, APIResponse } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIResponse } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 const WID = 1;

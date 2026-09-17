@@ -3,7 +3,7 @@
  * 覆盖：页面加载、三个 Tab（表 / 字段 / 行）、Tab 切换、空状态.
  */
 
-import { test, expect } from "@playwright/test"
+import { test, expect } from "../fixtures/auth"
 
 const ANON = ["setup", "chromium-anon"]
 const WID = 1

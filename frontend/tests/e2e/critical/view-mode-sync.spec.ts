@@ -14,7 +14,8 @@
  *   calendar: 进展日历
  *   gallery: 进展画廊
  */
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 
@@ -71,7 +72,7 @@ async function gotoTable(
   await request.put(`/api/v1/accounts/preferences/tables/${tid}/active-view`, {
     headers: { Authorization: `Bearer ${token}` },
     data: { active_view_id: null },
-  }).catch(() => {});
+  }).catch(() => { });
 
   await page.goto(`/w/${wid}/tables/${tid}`);
   await page.waitForURL(/\/tables\/\d+/);

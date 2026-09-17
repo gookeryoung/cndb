@@ -7,7 +7,8 @@
  *
  * 附带回归：GridPage 复制后 Sider 列表立即刷新，TablesList 页面两个模式各 1 条
  */
-import { test, expect, APIResponse } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIResponse } from "@playwright/test";
 
 const AUTHS = ["chromium-authed"];
 const WID = 1;

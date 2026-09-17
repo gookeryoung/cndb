@@ -11,7 +11,8 @@
  *   - 前端只做 Grid 渲染 + 控件交互；数据通过 seed 初始化（员工表 5 条）
  *   - 持久化验收通过"刷新后重新加载"验证，不依赖 API 后端断言
  */
-import { test, expect, APIResponse } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIResponse } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 const WID = 1;

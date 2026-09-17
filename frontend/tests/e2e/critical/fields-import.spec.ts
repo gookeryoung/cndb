@@ -3,7 +3,8 @@
  * 流程：API 建两张表，src 带若干字段 → dst 通过 API /fields/import 引入 →
  *  UI 进入 GridPage 确认 dst 拥有被引入的字段且能正常存储数据.
  */
-import { test, expect, APIResponse } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIResponse } from "@playwright/test";
 
 const AUTHS = ["chromium-authed"];
 

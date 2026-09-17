@@ -15,7 +15,7 @@
  *   .toHaveClass(/ant-tabs-tab-active/) 是最可靠的组合
  */
 
-import { test, expect } from "@playwright/test"
+import { test, expect } from "../fixtures/auth"
 
 const ANON = ["setup", "chromium-anon"]
 

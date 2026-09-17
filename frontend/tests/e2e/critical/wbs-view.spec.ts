@@ -26,7 +26,8 @@
  *  11. 过滤后视图不显示已完成/未开始任务
  *  12. 通过视图 Segmented TAB 切换到 WBS
  */
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 

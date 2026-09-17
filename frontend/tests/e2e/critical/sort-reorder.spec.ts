@@ -9,7 +9,8 @@
  *       本文件聚焦排序的业务逻辑正确性（后端存储 + 前端展示 + 持久化）.
  */
 
-import { test, expect, APIRequestContext } from "@playwright/test"
+import { test, expect } from "../fixtures/auth"
+import type { APIRequestContext } from "@playwright/test"
 
 const ANON = ["setup", "chromium-anon"]
 const WID = 1

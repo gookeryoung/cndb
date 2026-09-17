@@ -10,7 +10,8 @@
  *   2. GridPage 的 "导入/导出" → API 抓取追加 tab → 分析预览 → 追加
  *   3. 错误提示：URL 不合法、后端返回 400
  */
-import { test, expect, Page } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { Page } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 const WID = 1; // seed 后的"某企业销售管理"工作区

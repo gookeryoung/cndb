@@ -1,6 +1,6 @@
 /** P0 — 工作区新功能 E2E：列表卡片 / 设置对话框 / 备份对话框. */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
 
 const ANON = ["setup", "chromium-anon"];
 

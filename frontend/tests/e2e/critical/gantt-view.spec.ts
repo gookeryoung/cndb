@@ -20,7 +20,8 @@
  *
  * 注意：GanttView 全部原生 DOM + inline style，无第三方甘特图库.
  */
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 
