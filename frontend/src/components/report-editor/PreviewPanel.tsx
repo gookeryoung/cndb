@@ -20,8 +20,9 @@ export interface PreviewPanelProps {
 /**
  * 前端 nunjucks 渲染器（Jinja2 兼容子集）。
  * 设置为 autoescape=false 与后端保持一致。
+ * 浏览器端直接渲染字符串，不需要 Node.js 专用的 FileSystemLoader。
  */
-const renderer = new nunjucks.Environment(new nunjucks.FileSystemLoader('views'), {
+const renderer = new nunjucks.Environment(null, {
   autoescape: false,
   trimBlocks: true,
   lstripBlocks: true,
