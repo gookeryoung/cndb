@@ -30,6 +30,7 @@ import type {
   ViewCreate, View, ViewUpdate,
   WorkspaceTrashResponse, TrashedRow,
   CsvAnalyzeResult, CsvImportResult,
+  FileAnalyzeResult, FileImportResult,
   AuditLog, Comment, Reference,
   ImportTaskInfo, TablePermission,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
@@ -52,6 +53,7 @@ export type {
   AuditLog, Comment, Reference,
   TrashedRow, WorkspaceTrashResponse,
   CsvAnalyzeResult, CsvImportResult,
+  FileAnalyzeResult, FileImportResult,
   PublicForm, SharedGrid,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportParameter, ReportRenderRequest, ReportRenderResult,
@@ -301,6 +303,25 @@ export const importApi = {
     api.post<CsvAnalyzeResult>(`/v1/workspaces/${wid}/import-csv/analyze`, { csv_text: csvText }).then(r => r.data),
   createFromCsv: (wid: number | string, tableName: string, csvText: string) =>
     api.post<CsvImportResult>(`/v1/workspaces/${wid}/import-csv`, { table_name: tableName, csv_text: csvText }).then(r => r.data),
+
+  // ── 通用文件导入建表（支持 csv / tsv / json / xlsx） ──
+  /** 上传文件 + 分析列类型（不写库） */
+  analyzeFile: (wid: number | string, file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post<FileAnalyzeResult>(`/v1/workspaces/${wid}/import-file/analyze`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
+  /** 上传文件 + 自动建表 + 导入数据（tableName 留空则用文件名推断） */
+  createFromFile: (wid: number | string, file: File, tableName?: string) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (tableName) fd.append('table_name', tableName)
+    return api.post<FileImportResult>(`/v1/workspaces/${wid}/import-file`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
   /** 同步导入现有表（文件上传） */
   syncImport: (wid: number | string, tid: number | string, file: File) => {
     const fd = new FormData()

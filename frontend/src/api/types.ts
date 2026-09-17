@@ -348,6 +348,23 @@ export interface WorkspaceTrashResponse {
 export interface CsvAnalyzeResult { columns: string[]; total_rows: number }
 export interface CsvImportResult { table_id: ID; imported_rows: number; table_name?: string; imported?: number }
 
+/** 通用文件导入分析结果（新） */
+export interface FileAnalyzeResult {
+  columns: Array<{ name: string; field_type: string; sample_values?: string[]; null_ratio?: number; options?: string[] }>
+  total_rows: number
+  format: string
+  filename?: string
+}
+/** 通用文件建表导入结果（新） */
+export interface FileImportResult {
+  table_id: ID
+  table_name: string
+  imported_rows: number
+  field_count: number
+  format?: string
+  columns?: Array<{ name: string; field_type: string }>
+}
+
 export interface PublicForm {
   slug: string; title: string; description?: string
   fields: Field[]; created_at?: string
