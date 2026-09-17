@@ -90,6 +90,7 @@ def create_field(
         is_unique=payload.is_unique,
         default_value=payload.default_value,
         order=payload.order,
+        hidden=payload.hidden,
     )
     df.ensure_db_name()
     db.add(df)
@@ -160,6 +161,16 @@ def update_field(
         default_value=df.default_value,
         order=df.order,
     )
+
+    # ── config 校验：create_field 已覆盖，update_field 需补齐 ──
+    # 当 config 或 field_type 发生变化时，用字段类型专属 schema 校验并归一化 config
+    needs_config_validation = "config" in update_data or (
+        "field_type" in update_data and update_data["field_type"] != old_field_type
+    )
+    if needs_config_validation:
+        effective_field_type = update_data.get("field_type", old_field_type)
+        raw_config = update_data.get("config", df.config or {})
+        update_data["config"] = _validate_field_config(effective_field_type, raw_config, db)
 
     for key, value in update_data.items():
         setattr(df, key, value)
