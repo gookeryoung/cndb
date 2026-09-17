@@ -227,11 +227,46 @@ def _make_tar_archive(source_dir: Path, output_path: Path) -> None:
         tar.add(source_dir, arcname="backup")
 
 
+def _copy_to_directory(source_dir: Path, output_dir: Path) -> None:
+    """将 source_dir 完整复制到 output_dir.
+
+    output_dir 不存在则创建；存在时要求为空目录，避免与已有文件冲突。
+    目录模式下，manifest.json、database/、uploads/ 直接位于 output_dir 根下。
+    """
+    if output_dir.exists():
+        if not output_dir.is_dir():
+            raise BackupError(f"输出路径已存在且不是目录: {output_dir}")
+        # 允许已存在但为空的目录（常见于文件选择对话框选定的目标）
+        existing = list(output_dir.iterdir())
+        if existing:
+            raise BackupError(f"输出目录已包含文件，请选择空目录: {output_dir}")
+    else:
+        output_dir.mkdir(parents=True)
+
+    for item in source_dir.iterdir():
+        dst = output_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, dst)
+        else:
+            shutil.copy2(item, dst)
+
+
 def _total_size(path: Path) -> int:
     """计算目录或文件总字节数."""
     if path.is_file():
         return path.stat().st_size
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def _detect_format(output: Path) -> str:
+    """根据 output 后缀判断输出格式 — ``archive`` 或 ``directory``.
+
+    ``.tar.gz`` / ``.tgz`` → archive；其它一律视为目录（让调用方也能显式指定）。
+    """
+    name = output.name.lower()
+    if name.endswith(".tar.gz") or name.endswith(".tgz"):
+        return "archive"
+    return "directory"
 
 
 def create_backup(
@@ -240,18 +275,22 @@ def create_backup(
     include_uploads: bool = True,
     database_url: str | None = None,
     upload_dir: Path | None = None,
+    fmt: str | None = None,
 ) -> Path:
     """创建完整数据备份.
 
     Args:
-        output: 输出归档路径（默认 ``backup-<timestamp>.tar.gz``）.
+        output: 输出路径 — ``archive`` 模式下是 ``.tar.gz`` 文件路径；``directory`` 模式下是目标目录。
+            默认按格式生成文件名：``backup-<timestamp>.tar.gz``（归档）或 ``backup-<timestamp>``（目录）.
         mode: 备份模式 — ``auto``（SQLite 用 native，其它 sqlalchemy）/ ``native`` / ``sqlalchemy``.
         include_uploads: 是否包含 uploads 目录附件.
         database_url: 覆盖 settings.DATABASE_URL（测试用）.
         upload_dir: 覆盖 settings.UPLOAD_DIR（测试用）.
+        fmt: 输出格式 — ``archive`` / ``directory``. 默认 None，自动根据 output 后缀推断；
+            若 output 未指定则默认 archive。
 
     Returns:
-        备份归档的绝对路径.
+        备份产物的绝对路径（归档文件或目录）.
 
     Raises:
         BackupError: 备份过程中的业务错误（DB 不可用、路径不存在等）.
@@ -270,10 +309,21 @@ def create_backup(
     if resolved_mode == "native" and not is_sqlite:
         raise BackupError("native 备份模式仅支持 SQLite，当前数据库类型不支持，请使用 --mode sqlalchemy")
 
-    # 设置默认输出文件名
+    # 解析输出格式
+    if fmt is not None:
+        resolved_fmt = fmt
+    elif output is not None:
+        resolved_fmt = _detect_format(output)
+    else:
+        resolved_fmt = "archive"
+
+    # 设置默认输出路径
     if output is None:
         ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
-        output = Path(f"backup-{ts}.tar.gz").resolve()
+        if resolved_fmt == "archive":
+            output = Path(f"backup-{ts}.tar.gz").resolve()
+        else:
+            output = Path(f"backup-{ts}").resolve()
     else:
         output = Path(output).resolve()
 
@@ -323,11 +373,17 @@ def create_backup(
         manifest_path = temp_root / "manifest.json"
         manifest_path.write_text(json.dumps(asdict(manifest), ensure_ascii=False, indent=2), encoding="utf-8")
 
-        # 4) 打包
-        print(f"[backup] 打包归档 → {output}")
-        _make_tar_archive(temp_root, output)
-        size_mb = output.stat().st_size / 1024 / 1024
-        print(f"[backup] 完成！归档大小: {size_mb:.2f} MB")
+        # 4) 输出（归档 / 目录）
+        if resolved_fmt == "archive":
+            print(f"[backup] 打包归档 → {output}")
+            _make_tar_archive(temp_root, output)
+            size_mb = output.stat().st_size / 1024 / 1024
+            print(f"[backup] 完成！归档大小: {size_mb:.2f} MB")
+        else:
+            print(f"[backup] 复制到目录 → {output}")
+            _copy_to_directory(temp_root, output)
+            size_mb = _total_size(output) / 1024 / 1024
+            print(f"[backup] 完成！目录大小: {size_mb:.2f} MB")
         return output
 
     finally:
@@ -339,7 +395,10 @@ def backup_command(args: argparse.Namespace) -> None:
     try:
         output = Path(args.output).resolve() if args.output else None
         include_uploads = not args.no_uploads
-        result = create_backup(output=output, mode=args.mode, include_uploads=include_uploads)
+        fmt = getattr(args, "format", None)  # argparse 可能用 format / fmt
+        if fmt is None and getattr(args, "dir", False):
+            fmt = "directory"
+        result = create_backup(output=output, mode=args.mode, include_uploads=include_uploads, fmt=fmt)
         print(f"[ok] 备份成功: {result}")
     except BackupError as exc:
         print(f"[error] {exc}", file=os.sys.stderr)

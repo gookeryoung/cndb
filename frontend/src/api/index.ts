@@ -537,3 +537,66 @@ export const fileApi = {
   remove: (wid: number | string, fileKey: string) =>
     api.delete(`/v1/workspaces/${wid}/files/${encodeURIComponent(fileKey)}`).then(() => true),
 }
+
+// ─────────────── System Admin（系统管理级） ───────────────
+
+export interface AdminSystemInfo {
+  app_name: string
+  app_version: string
+  database_url: string
+  upload_dir: string
+  data_dir: string
+  auth_enabled: boolean
+  timezone: string
+}
+
+export interface BackupManifest {
+  version: string
+  app_version: string
+  created_at: string
+  database: {
+    path: string
+    db_type: string
+    backup_mode: string
+    tables: string[]
+    row_counts: Record<string, number>
+  }
+  uploads: {
+    included: boolean
+    file_count: number
+    total_size: number
+  }
+}
+
+export const adminApi = {
+  /** 获取系统级信息（版本/数据库路径/数据目录等） */
+  info: () => api.get<AdminSystemInfo>('/v1/admin/info').then(r => r.data),
+
+  /** 触发系统级备份，返回可下载的 tar.gz 文件流 */
+  backup: (options?: { include_uploads?: boolean; mode?: string }) => {
+    return api.post('/v1/admin/backup', {
+      format: 'archive',
+      include_uploads: options?.include_uploads ?? true,
+      mode: options?.mode ?? 'auto',
+    }, { responseType: 'blob' }).then(r => r.data as Blob)
+  },
+
+  /** dry-run 检查备份文件（上传 tar.gz），返回 manifest 元信息 */
+  restoreInspect: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post<BackupManifest>('/v1/admin/restore/inspect', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
+
+  /** 执行系统级恢复（破坏性操作） */
+  restore: (file: File, force = true) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('force', String(force))
+    return api.post<{ status: string; message: string }>('/v1/admin/restore', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
+}

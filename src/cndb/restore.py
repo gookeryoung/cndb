@@ -260,12 +260,39 @@ def _restore_uploads(extracted_dir: Path, target_upload_dir: Path, included: boo
     return count
 
 
+def _detect_backup_format(path: Path) -> str:
+    """判断备份源是 ``archive``（.tar.gz）还是 ``directory``（文件夹）."""
+    if path.is_dir():
+        return "directory"
+    name = path.name.lower()
+    if name.endswith(".tar.gz") or name.endswith(".tgz"):
+        return "archive"
+    # 不是目录也不是已知后缀 → 尝试当归档打开，失败再报错
+    return "archive"
+
+
 def inspect_backup(archive_path: Path) -> BackupInspection:
-    """检查归档完整性并返回元信息（dry-run 核心）.
+    """检查备份源（归档或目录）完整性并返回元信息（dry-run 核心）.
 
     不修改任何文件系统状态，仅验证 tar 可打开、manifest 可读。
+    自动根据路径类型识别归档或目录模式。
     """
     archive_path = Path(archive_path).resolve()
+    fmt = _detect_backup_format(archive_path)
+
+    if fmt == "directory":
+        manifest_path = archive_path / "manifest.json"
+        if not manifest_path.is_file():
+            raise RestoreError(f"目录备份缺少 manifest.json: {archive_path}")
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RestoreError(f"manifest.json 不是合法 JSON: {exc}") from exc
+        archive_size = sum(f.stat().st_size for f in archive_path.rglob("*") if f.is_file())
+        _ensure_manifest_compatible(manifest)
+        return BackupInspection(manifest=manifest, archive_size=archive_size)
+
+    # archive 模式
     if not archive_path.is_file():
         raise RestoreError(f"备份归档不存在: {archive_path}")
 
@@ -294,10 +321,10 @@ def restore_backup(
     database_url: str | None = None,
     upload_dir: Path | None = None,
 ) -> None:
-    """从备份归档恢复数据.
+    """从备份源（归档或目录）恢复数据.
 
     Args:
-        archive_path: ``cndb backup`` 生成的 .tar.gz 路径.
+        archive_path: 备份路径 — ``.tar.gz`` 归档或 ``manifest.json`` 所在的目录.
         force: 强制覆盖已有数据（默认拒绝）.
         database_url: 覆盖 settings.DATABASE_URL（测试用）.
         upload_dir: 覆盖 settings.UPLOAD_DIR（测试用）.
@@ -308,14 +335,18 @@ def restore_backup(
     from cndb.core.config import settings
 
     archive_path = Path(archive_path).resolve()
-    if not archive_path.is_file():
+    fmt = _detect_backup_format(archive_path)
+
+    if fmt == "archive" and not archive_path.is_file():
         raise RestoreError(f"备份归档不存在: {archive_path}")
+    if fmt == "directory" and not archive_path.is_dir():
+        raise RestoreError(f"备份目录不存在: {archive_path}")
 
     db_url = database_url or settings.DATABASE_URL
     up_dir = upload_dir or settings.UPLOAD_DIR
 
-    # 1) 检查归档 & 读取 manifest
-    print(f"[restore] 读取备份归档: {archive_path}")
+    # 1) 检查备份源 & 读取 manifest
+    print(f"[restore] 读取备份（{'目录' if fmt == 'directory' else '归档'}）: {archive_path}")
     inspection = inspect_backup(archive_path)
     manifest = inspection.manifest
     print(f"[restore] 备份版本: {manifest['version']}，应用版本: {manifest['app_version']}")
@@ -328,14 +359,21 @@ def restore_backup(
     # 2) 安全检查
     _check_target_safe(db_url, force)
 
-    # 3) 解压到临时目录
-    temp_root = Path(tempfile.mkdtemp(prefix="cndb-restore-"))
-    extracted = temp_root / "backup"
+    # 3) 准备 extracted 目录
+    temp_root: Path | None = None
+    if fmt == "archive":
+        temp_root = Path(tempfile.mkdtemp(prefix="cndb-restore-"))
+        extracted = temp_root / "backup"
+    else:
+        extracted = archive_path
+
     try:
-        print("[restore] 解压归档...")
-        with tarfile.open(archive_path, "r:gz") as tar:
-            # filter="data"：跳过可能有安全风险的元数据，但保留正常文件内容（Python 3.12+ 推荐）
-            tar.extractall(temp_root, filter="data")
+        if fmt == "archive":
+            print("[restore] 解压归档...")
+            assert temp_root is not None  # 类型收窄
+            with tarfile.open(archive_path, "r:gz") as tar:
+                # filter="data"：跳过可能有安全风险的元数据，但保留正常文件内容（Python 3.12+ 推荐）
+                tar.extractall(temp_root, filter="data")
 
         # 4) 恢复数据库
         print(f"[restore] 恢复数据库（{backup_mode} 模式）...")
@@ -360,7 +398,8 @@ def restore_backup(
         print("[ok] 恢复完成！")
 
     finally:
-        shutil.rmtree(temp_root, ignore_errors=True)
+        if temp_root is not None:
+            shutil.rmtree(temp_root, ignore_errors=True)
 
 
 def restore_command(args: argparse.Namespace) -> None:

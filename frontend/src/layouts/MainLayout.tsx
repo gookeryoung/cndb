@@ -6,7 +6,7 @@ import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
   DeleteOutlined, FileTextOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
-  SettingOutlined,
+  SettingOutlined, SafetyOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
@@ -62,6 +62,8 @@ export default function MainLayout() {
   )
 
   const currentWs = workspaces.find(w => String(w.id) === wid)
+
+  const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
   const onLogout = useCallback(() => {
     Modal.confirm({
@@ -132,6 +134,15 @@ export default function MainLayout() {
 
         {/* Header 导航按钮 */}
         <Space size={4}>
+          {isAdmin && (
+            <Tooltip title="系统管理台">
+              <Button
+                type={location.includes('/admin') ? 'primary' : 'text'}
+                size="small" icon={<SafetyOutlined />}
+                onClick={() => navigate('/admin')}
+              >{!isMobile && '管理台'}</Button>
+            </Tooltip>
+          )}
           <Button
             type={location.includes('/trash') ? 'primary' : 'text'}
             size="small" icon={<DeleteOutlined />}
