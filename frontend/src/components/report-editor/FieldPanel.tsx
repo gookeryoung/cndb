@@ -112,7 +112,7 @@ export default function FieldPanel({ fields, tableGroups, onInsert }: FieldPanel
     if (defaultGroupId !== null && defaultGroupId !== activeTableId) {
       setActiveTableId(defaultGroupId)
     }
-  }, [defaultGroupId])
+  }, [defaultGroupId, activeTableId])
 
   // 当前激活的分组
   const activeGroup = useMemo(() => {

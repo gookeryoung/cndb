@@ -162,7 +162,7 @@ export default function GridPage() {
    *  跨表导航时 activeViewId 保留旧值会阻止初始化 useEffect 重新匹配目标表的视图. */
   useEffect(() => {
     setActiveViewId(null)
-  }, [wid, tid])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wid, tid])
 
   const { data: table, isLoading } = useQuery<TableDetail>({
     queryKey: ['table', tableKey],
