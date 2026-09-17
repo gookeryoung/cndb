@@ -43,8 +43,8 @@ function DraggableRow({
   style,
   ...rest
 }: React.HTMLAttributes<HTMLTableRowElement>) {
-  // 从 data-row-key 读取排序 id（AntD Table 自动传入）
-  const rowKey = (rest as Record<string, unknown>)['data-row-key'] as string | number
+  // 从 data-row-key 读取排序 id（AntD Table 自动传入），统一转 string 与 SortableContext items 对齐
+  const rowKey = String((rest as Record<string, unknown>)['data-row-key'])
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: rowKey })
   return (
     <tr
