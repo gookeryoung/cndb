@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useMemo, useState, useCallback } from 'react'
-import { Outlet, useNavigate, useParams, Navigate } from 'react-router-dom'
+import { Outlet, useNavigate, useParams, useSearchParams, Navigate } from 'react-router-dom'
 import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -31,6 +31,19 @@ export default function MainLayout() {
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [searchParams] = useSearchParams()
+
+  /** 跨表导航时保留当前 URL 的 query params（如 ?mode=calendar、?view=123）. */
+  const navigateToTable = useCallback((targetWid: string | number, targetTid: string | number) => {
+    const params = new URLSearchParams()
+    // 复制需要保留的 params
+    for (const key of ['mode', 'view']) {
+      const v = searchParams.get(key)
+      if (v) params.set(key, v)
+    }
+    const qs = params.toString()
+    navigate(`/w/${targetWid}/tables/${targetTid}${qs ? `?${qs}` : ''}`)
+  }, [searchParams, navigate])
 
   const { data: workspaces = [], isLoading: wsLoading } = useQuery({
     queryKey: ['workspaces'],
@@ -176,7 +189,7 @@ export default function MainLayout() {
                 key: String(t.id),
                 icon: <TableOutlined />,
                 label: t.name,
-                onClick: () => navigate(`/w/${wid}/tables/${t.id}`),
+                onClick: () => navigateToTable(wid!, t.id),
               }))}
             />
           )}

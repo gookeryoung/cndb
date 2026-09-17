@@ -110,7 +110,7 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
             table_name = csv_path.stem
             csv_text = csv_path.read_text(encoding="utf-8-sig")
             try:
-                dt, _ids = create_table_from_csv(engine, db, ws.id, table_name, csv_text)
+                dt, _ids = create_table_from_csv(engine, db, ws.id, table_name, csv_text, owner_id=user.id)
                 table_count += 1
                 tables_map[ws_display][table_name] = dt
                 print(f"[seed-CSV] 建表: {ws_display}/{table_name} → (id={dt.id})")
@@ -145,6 +145,7 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
                         response_handler=fetch_cfg.response_handler,
                         encoding=fetch_cfg.encoding,
                         query_interval=fetch_cfg.query_interval,
+                        owner_id=user.id,
                     )
                     table_count += 1
                     tables_map[ws_display][tbl_name] = dt

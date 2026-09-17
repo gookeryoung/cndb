@@ -19,7 +19,7 @@ const ANON = ["setup", "chromium-anon"];
 
 async function getToken(request: APIRequestContext): Promise<string> {
   const resp = await request.post("/api/v1/accounts/auth/login", {
-    data: { login: "demo", password: "demo1234" },
+    data: { login: "admin", password: "admin1234" },
   });
   const body = (await resp.json()) as { access_token: string };
   return body.access_token;
@@ -35,7 +35,7 @@ async function getWorkspaceId(
   });
   const workspaces = (await resp.json()) as Array<{ id: number; name: string }>;
   if (nameKeyword) {
-    const ws = workspaces.find((w) => w.name.includes(nameKeyword));
+    const ws = workspaces.find((w) => w.name === nameKeyword) || workspaces.find((w) => w.name.includes(nameKeyword));
     if (ws) return ws.id;
   }
   return workspaces[0].id;
@@ -278,6 +278,14 @@ test.describe("跨表切换 — 目标表无匹配视图时的 fallback", () => 
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
     const wid = await getWorkspaceId(request, "科研项目管理");
+    const token = await getToken(request);
+    const tidC = await getTableId(request, wid, "课题负责人");
+
+    // 预先清空表 C 的用户偏好，避免残留状态干扰 fallback 路径
+    await request.put(`/api/v1/accounts/preferences/tables/${tidC}/active-view`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { active_view_id: null },
+    }).catch(() => {});
 
     // 1. 表 A（项目进展）有日历视图 → 切到日历
     await gotoTable(page, request, wid, "项目进展");
@@ -289,9 +297,7 @@ test.describe("跨表切换 — 目标表无匹配视图时的 fallback", () => 
 
     // 3. 断言：mode 持久化到了 localStorage，但表 C 找不到 calendar 视图
     //    此时应 fallback 到 default / 第一个视图（按初始化优先级）
-    //    由于表 C 有用户偏好（已清空）、URL 无 view 参数，应走 default 或第一个
-    const tidC = await getTableId(request, wid, "课题负责人");
-
+    //    由于已清空用户偏好、URL 无 view 参数，应走 default 或第一个
     // 验证 localStorage 里 mode=calendar 仍在（持久化成功）
     const storedMode = await page.evaluate(() => {
       try { return localStorage.getItem("cndb_current_mode"); } catch { return null; }
@@ -302,7 +308,6 @@ test.describe("跨表切换 — 目标表无匹配视图时的 fallback", () => 
     // 它应该 fallback 到 default（课题负责人的 default 是 grid "全部"）
     const selected = page.locator(".ant-segmented-item-selected").first();
     const label = (await selected.innerText()).trim();
-    const token = await getToken(request);
     const resp = await request.get(`/api/v1/workspaces/${wid}/tables/${tidC}/views`, {
       headers: { Authorization: `Bearer ${token}` },
     });
