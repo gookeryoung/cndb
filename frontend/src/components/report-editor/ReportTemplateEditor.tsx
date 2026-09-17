@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
-  rectIntersection,
+  closestCenter,
   useSensor,
   useSensors,
   PointerSensor,
@@ -89,7 +89,7 @@ export default function ReportTemplateEditor({
   // 如果外部传了 editorRef，把 internalRef 的值同步过去
   useEffect(() => {
     if (editorRef && typeof editorRef === 'object') {
-      ;(editorRef as React.MutableRefObject<TemplateEditorHandle | null>).current = internalRef.current
+      ; (editorRef as React.MutableRefObject<TemplateEditorHandle | null>).current = internalRef.current
     }
   })
 
