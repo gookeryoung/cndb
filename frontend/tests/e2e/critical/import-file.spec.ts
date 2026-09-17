@@ -57,7 +57,12 @@ function mockAnalyzeRoute(page: Page) {
 
 // ── 场景 1: 干净 CSV → 导入 → Grid 校验 ─────────
 
-test(`${AUTHD.join(" ")} 干净 CSV 导入全链路`, async ({ page }) => {
+test("干净 CSV 导入全链路", async ({ page }) => {
+  test.skip(
+    !AUTHD.includes(test.info().project.name),
+    "需要登录态，anon 项目跳过",
+  );
+
   // 1. 进入工作区 + 打开导入对话框
   await page.goto(`/workspace/${WID}`);
   await page.waitForLoadState("networkidle");
@@ -115,7 +120,12 @@ test(`${AUTHD.join(" ")} 干净 CSV 导入全链路`, async ({ page }) => {
 
 // ── 场景 2: 带问题 CSV → 数据质量面板渲染 ─────────
 
-test(`${AUTHD.join(" ")} 问题 CSV 触发数据质量面板`, async ({ page }) => {
+test("问题 CSV 触发数据质量面板", async ({ page }) => {
+  test.skip(
+    !AUTHD.includes(test.info().project.name),
+    "需要登录态，anon 项目跳过",
+  );
+
   await page.goto(`/workspace/${WID}`);
   await page.waitForLoadState("networkidle");
 
