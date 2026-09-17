@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
 import re
 from typing import Any
@@ -805,6 +806,240 @@ def create_table_from_json_data(
     return dt, ids
 
 
+# ── 通用文件解析 / 分析 / 建表 ───────────────────────────
+
+
+def parse_file_to_rows(
+    content: bytes | str,
+    format: str | None = None,
+    *,
+    filename: str | None = None,
+) -> tuple[list[dict[str, Any]], list[str], str]:
+    """把任意支持的文件内容转为 (行列表, 文件列名, 实际使用的 format).
+
+    支持：csv / tsv / delimited / json / xlsx / xls（拒绝）.
+    format 未指定时：优先用 filename 推断，退化到内容特征推断.
+
+    Returns:
+        (rows, file_columns, actual_format)
+    """
+    from cndb.plugins.tables.importer import guess_format_from_content
+
+    # 1) 确定 format
+    actual_fmt = format
+    if actual_fmt is None and filename is not None:
+        try:
+            actual_fmt = guess_format_from_filename(filename)
+        except ValueError:
+            actual_fmt = None
+    if actual_fmt is None:
+        actual_fmt = guess_format_from_content(content)
+
+    # 2) 统一转 bytes 解码（文本类）或直接 bytes（二进制类）
+    if actual_fmt == "xlsx":
+        # openpyxl 只吃 bytes
+        raw = content if isinstance(content, bytes) else content.encode("utf-8")
+        rows, cols = _parse_xlsx_bytes(raw)
+        return rows, cols, "xlsx"
+
+    if actual_fmt == "json":
+        if isinstance(content, bytes):
+            text, _enc, _conf = decode_bytes_auto(content)
+        else:
+            text = content
+        rows, cols = _parse_json_text(text)
+        return rows, cols, "json"
+
+    # csv / tsv / delimited — 统一走分隔符文本解析
+    if isinstance(content, bytes):
+        text, _enc, _conf = decode_bytes_auto(content)
+    else:
+        text = content
+    delim = "\t" if actual_fmt == "tsv" else None
+    rows, cols = _parse_delimited_text(text, delimiter=delim)
+    return rows, cols, actual_fmt
+
+
+def _parse_delimited_text(
+    text: str,
+    *,
+    delimiter: str | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """解析分隔符文本（逗号/分号/pipe/tab 自动 sniff）."""
+    delim = delimiter or sniff_csv_delimiter(text)
+    reader = csv.DictReader(io.StringIO(text), delimiter=delim)
+    file_columns = list(reader.fieldnames or [])
+    rows: list[dict[str, Any]] = []
+    for r in reader:
+        cleaned = {}
+        for k, v in r.items():
+            if isinstance(v, str):
+                stripped = v.strip()
+                cleaned[k] = None if stripped == "" else stripped
+            else:
+                cleaned[k] = v
+        rows.append(cleaned)
+    return rows, file_columns
+
+
+def _parse_json_text(text: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """解析 JSON 对象数组文本."""
+    data = json.loads(text)
+    if not isinstance(data, list):
+        raise ValueError("JSON 必须是对象数组")
+    file_columns: list[str] = []
+    seen: set[str] = set()
+    for item in data:
+        if isinstance(item, dict):
+            for k in item:
+                if k not in seen:
+                    seen.add(k)
+                    file_columns.append(k)
+    return [r for r in data if isinstance(r, dict)], file_columns
+
+
+def _parse_xlsx_bytes(xlsx_bytes: bytes) -> tuple[list[dict[str, Any]], list[str]]:
+    """解析 XLSX 字节串."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(xlsx_bytes))
+    ws = wb.active
+    assert ws is not None
+    all_rows = list(ws.iter_rows(values_only=True))
+    if not all_rows:
+        return [], []
+    file_columns = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(all_rows[0])]
+    rows: list[dict[str, Any]] = []
+    for r in all_rows[1:]:
+        if not any(c is not None for c in r):
+            continue
+        row_dict: dict[str, Any] = {}
+        for i, key in enumerate(file_columns):
+            v = r[i] if i < len(r) else None
+            if isinstance(v, str):
+                stripped = v.strip()
+                row_dict[key] = None if stripped == "" else stripped
+            else:
+                row_dict[key] = v
+        rows.append(row_dict)
+    return rows, file_columns
+
+
+def analyze_file_columns(
+    content: bytes | str | None = None,
+    *,
+    format: str | None = None,
+    filename: str | None = None,
+    rows: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], int, str]:
+    """通用列类型推断 — 自动识别格式，复用 csv / json 分析器.
+
+    Args:
+        content: 文件原始字节或文本. 若传 rows 可跳过解析.
+        format: 显式指定格式（csv / tsv / delimited / json / xlsx）.
+        filename: 文件名（用于格式推断）.
+        rows: 已解析好的对象数组 — 直接走 JSON 路径推断.
+
+    Returns:
+        (columns_info, total_rows, actual_format) — columns_info 每项同 analyze_csv_columns.
+    """
+    if rows is None:
+        if content is None:
+            raise ValueError("必须提供 content 或 rows")
+        rows, _cols, actual_fmt = parse_file_to_rows(content, format, filename=filename)
+    else:
+        # rows 由调用方提供 —— 无法推断 format，默认 json 路径
+        actual_fmt = format or "json"
+
+    if actual_fmt in ("json", "xlsx"):
+        # xlsx 解析后也是对象数组，走 JSON 推断路径（支持 Python 原生 bool/int/float 类型信息）
+        columns = analyze_json_columns(rows)
+    else:
+        # csv / tsv / delimited — 把行重新序列化为 csv 文本走原有分析
+        # 或直接把 dict 的值转字符串后复用 analyze_csv_columns 的逻辑
+        columns = _analyze_dict_rows_as_csv(rows)
+
+    return columns, len(rows), actual_fmt
+
+
+def _analyze_dict_rows_as_csv(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把 list[dict] 行转为 csv 文本再调用 analyze_csv_columns，复用成熟的启发式."""
+    if not rows:
+        return []
+    # 收集全部列名（跨所有行）
+    all_cols: list[str] = []
+    seen: set[str] = set()
+    for r in rows:
+        for k in r:
+            if k not in seen:
+                seen.add(k)
+                all_cols.append(k)
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=all_cols)
+    writer.writeheader()
+    for r in rows:
+        # 把 None 转空串，把 bool/number 转字符串（CSV 世界没有原生类型）
+        normalized: dict[str, Any] = {}
+        for k in all_cols:
+            v = r.get(k)
+            if v is None:
+                normalized[k] = ""
+            elif isinstance(v, bool):
+                normalized[k] = "是" if v else "否"  # 让 boolean 推断触发
+            elif isinstance(v, (int, float)):
+                normalized[k] = str(v)
+            else:
+                normalized[k] = str(v) if v is not None else ""
+        writer.writerow(normalized)
+    columns, _total = analyze_csv_columns(buf.getvalue())
+    return columns
+
+
+def create_table_from_file(
+    engine: Any,
+    db: Any,
+    workspace_id: int,
+    table_name: str,
+    content: bytes | str,
+    *,
+    format: str | None = None,
+    filename: str | None = None,
+    owner_id: int | None = None,
+) -> tuple[DataTable, list[int], list[dict[str, Any]]]:
+    """从任意支持的文件自动建表 + 导入数据 + 返回列信息（一站式入口）.
+
+    Returns:
+        (DataTable, 新行 id 列表, 列分析信息)
+    """
+    rows, _file_cols, actual_fmt = parse_file_to_rows(content, format, filename=filename)
+    columns = analyze_json_columns(rows) if actual_fmt in ("json", "xlsx") else _analyze_dict_rows_as_csv(rows)
+    if not columns:
+        raise ValueError("文件没有有效列")
+
+    dt = DataTable(workspace_id=workspace_id, owner_id=owner_id, name=table_name)
+    dt.ensure_db_name()
+    db.add(dt)
+    db.commit()
+    db.refresh(dt)
+
+    for i, col in enumerate(columns):
+        cfg: dict[str, Any] = {}
+        if col["field_type"] == "select":
+            cfg["options"] = _options_strings_to_dicts(col.get("options", []))
+        f = DataField(table_id=dt.id, name=col["name"], field_type=col["field_type"], order=i, config=cfg)
+        f.ensure_db_name()
+        db.add(f)
+    db.commit()
+    db.refresh(dt)
+
+    ddl_create(engine, dt)
+    ensure_default_view(db, dt, owner_id=owner_id, commit=True)
+
+    valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
+    ids = rec.bulk_create(engine, dt, valid, db=db)
+    return dt, ids, columns
+
+
 def ingest_from_api(
     engine: Any,
     db: Any,
@@ -867,8 +1102,10 @@ def ingest_from_api(
 
 __all__ = [
     "analyze_csv_columns",
+    "analyze_file_columns",
     "analyze_json_columns",
     "create_table_from_csv",
+    "create_table_from_file",
     "create_table_from_json_data",
     "decode_bytes_auto",
     "export_rows_to_csv",
@@ -879,5 +1116,6 @@ __all__ = [
     "import_rows_from_json",
     "import_rows_from_xlsx",
     "ingest_from_api",
+    "parse_file_to_rows",
     "sniff_csv_delimiter",
 ]
