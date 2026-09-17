@@ -226,6 +226,148 @@ class TestFetchJson:
         with pytest.raises(ValueError):
             af.fetch_json(af.FetchConfig(url="file:///etc/passwd"))
 
+    # ── 重定向 SSRF 防护 ──────────────────────────
+
+    @patch("httpx2.Client")
+    def test_redirect_to_private_ip_blocked(self, MockClient):
+        """302 跳转到 127.0.0.1 应被 validate_url 拦截 —— 防 SSRF via open redirect."""
+        from unittest.mock import MagicMock
+
+        redirect_resp = MagicMock()
+        redirect_resp.status_code = 302
+        redirect_resp.headers = {"location": "http://127.0.0.1:8080/admin"}
+        redirect_resp.content = b""
+        redirect_resp.text = ""
+
+        client = MagicMock()
+        client.request.return_value = redirect_resp
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        with pytest.raises(ValueError, match=r"禁止访问保留 IP"):
+            af.fetch_json(af.FetchConfig(url="https://evil.com/redirect"))
+
+    @patch("httpx2.Client")
+    def test_redirect_to_linklocal_blocked(self, MockClient):
+        """302 跳转到 169.254.169.254（云 metadata）应被拦截."""
+        from unittest.mock import MagicMock
+
+        redirect_resp = MagicMock()
+        redirect_resp.status_code = 302
+        redirect_resp.headers = {"location": "http://169.254.169.254/latest/meta-data/"}
+        redirect_resp.content = b""
+        redirect_resp.text = ""
+
+        client = MagicMock()
+        client.request.return_value = redirect_resp
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        with pytest.raises(ValueError, match=r"禁止访问保留 IP"):
+            af.fetch_json(af.FetchConfig(url="https://evil.com/redirect"))
+
+    @patch("httpx2.Client")
+    def test_redirect_to_localhost_hostname_blocked(self, MockClient):
+        """302 跳转到 localhost 主机名应被拦截."""
+        from unittest.mock import MagicMock
+
+        redirect_resp = MagicMock()
+        redirect_resp.status_code = 301
+        redirect_resp.headers = {"location": "http://localhost/admin"}
+        redirect_resp.content = b""
+        redirect_resp.text = ""
+
+        client = MagicMock()
+        client.request.return_value = redirect_resp
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        with pytest.raises(ValueError, match=r"禁止访问 localhost"):
+            af.fetch_json(af.FetchConfig(url="https://evil.com/redirect"))
+
+    @patch("httpx2.Client")
+    def test_redirect_to_public_ok(self, MockClient):
+        """302 跳转到另一个公网地址应正常跟随."""
+        from unittest.mock import MagicMock
+
+        redirect_resp = MagicMock()
+        redirect_resp.status_code = 302
+        redirect_resp.headers = {"location": "https://api.github.com/events"}
+        redirect_resp.content = b""
+        redirect_resp.text = ""
+
+        final_body = json.dumps([{"name": "ok"}]).encode()
+        final_resp = MagicMock()
+        final_resp.status_code = 200
+        final_resp.content = final_body
+        final_resp.text = final_body.decode()
+        final_resp.headers = {"content-type": "application/json"}
+
+        client = MagicMock()
+        client.request.side_effect = [redirect_resp, final_resp]
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        rows = af.fetch_json(af.FetchConfig(url="https://evil.com/redirect"))
+        assert rows == [{"name": "ok"}]
+        # 两次请求 —— 第一次初始 URL，第二次跳转目标
+        assert client.request.call_count == 2
+
+    @patch("httpx2.Client")
+    def test_redirect_relative_url_joined(self, MockClient):
+        """相对路径的 location 头应正确拼接到当前 URL 上再校验."""
+        from unittest.mock import MagicMock
+
+        redirect_resp = MagicMock()
+        redirect_resp.status_code = 302
+        redirect_resp.headers = {"location": "/admin"}  # 相对路径
+        redirect_resp.content = b""
+        redirect_resp.text = ""
+
+        final_body = json.dumps([{"x": 1}]).encode()
+        final_resp = MagicMock()
+        final_resp.status_code = 200
+        final_resp.content = final_body
+        final_resp.text = final_body.decode()
+        final_resp.headers = {"content-type": "application/json"}
+
+        client = MagicMock()
+        client.request.side_effect = [redirect_resp, final_resp]
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        rows = af.fetch_json(af.FetchConfig(url="https://api.trusted.com/v1"))
+        assert rows == [{"x": 1}]
+        # 第二次请求 URL 应为 https://api.trusted.com/admin
+        second_call = client.request.call_args_list[1].kwargs
+        assert second_call["url"] == "https://api.trusted.com/admin"
+
+    @patch("httpx2.Client")
+    def test_too_many_redirects_rejected(self, MockClient):
+        """超过 max_redirects 次重定向应抛 ValueError."""
+        from unittest.mock import MagicMock
+
+        redirect_resp = MagicMock()
+        redirect_resp.status_code = 302
+        redirect_resp.headers = {"location": "https://api.example.com/next"}
+        redirect_resp.content = b""
+        redirect_resp.text = ""
+
+        client = MagicMock()
+        client.request.return_value = redirect_resp
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        cfg = af.FetchConfig(url="https://api.example.com/start", max_redirects=2)
+        with pytest.raises(ValueError, match=r"重定向次数过多"):
+            af.fetch_json(cfg)
+
 
 # ── FetchConfig 默认值 ──────────────────────────────
 

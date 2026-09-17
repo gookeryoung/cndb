@@ -266,11 +266,27 @@ class TestFetchJsonMore:
 
     @patch("httpx2.Client")
     def test_httpx_too_many_redirects(self, MockClient):
-        mock_client = _make_client(200, b"", exc=httpx2.TooManyRedirects("too many"))
+        """redirect 循环超过 max_redirects 时抛 ValueError.
+
+        旧实现依赖 httpx2 自动 redirect 并在超限时报 TooManyRedirects；
+        现改为手动跟随，由 fetch_json 自身做 redirect_count 限制.
+        这里让 request() 始终返回 302 到下一个公网地址即可触发超限分支.
+        """
+        resp_redirect = MagicMock()
+        resp_redirect.status_code = 302
+        resp_redirect.headers = {"location": "https://next.example.com/loop"}
+        resp_redirect.content = b""
+        resp_redirect.text = ""
+
+        mock_client = MagicMock()
+        mock_client.request.return_value = resp_redirect
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
         MockClient.return_value = mock_client
 
+        cfg = af.FetchConfig(url="https://x.com", max_redirects=2)
         with pytest.raises(ValueError, match="重定向次数过多"):
-            af.fetch_json(af.FetchConfig(url="https://x.com"))
+            af.fetch_json(cfg)
 
     @patch("httpx2.Client")
     def test_httpx_request_error(self, MockClient):
