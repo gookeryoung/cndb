@@ -8,7 +8,7 @@ import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeft
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { reportApi, tableApi, fieldApi, recordApi } from '@/api'
 import type { ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter, TableSummary, Field } from '@/api'
-import { ReportTemplateEditor, PreviewPanel, SyntaxHelpPanel, FieldPanel } from '@/components/report-editor'
+import { ReportTemplateEditor, PreviewPanel, SyntaxHelpPanel } from '@/components/report-editor'
 import type { TemplateEditorHandle } from '@/components/report-editor'
 
 const { Title, Text } = Typography
@@ -267,7 +267,7 @@ export default function ReportsPage() {
   )
 }
 
-// ─────────────── 模板编辑器 Modal（可视化三栏布局） ───────────────
+// ─────────────── 模板编辑器 Modal ───────────────
 
 interface EditorProps {
   open: boolean
@@ -289,8 +289,10 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null)
   // 额外选择的表 ID 列表
   const [extraTableIds, setExtraTableIds] = useState<number[]>([])
+  // CodeMirror 引用（供 SyntaxHelpPanel 插入代码使用）
+  const editorRef = useRef<TemplateEditorHandle | null>(null)
 
-  // 关联表的字段列表（用于字段面板）
+  // 关联表的字段列表
   const { data: fields = [] } = useQuery<Field[]>({
     queryKey: ['workspaces', workspaceId, 'tables', selectedTableId, 'fields'],
     queryFn: () => fieldApi.list(workspaceId, selectedTableId!),
@@ -316,7 +318,6 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     queryFn: async () => {
       const resp = await recordApi.list(workspaceId, selectedTableId!, { limit: 10 })
       return resp.items.map(r => {
-        // 过滤系统字段，只保留业务字段作为模板上下文
         const { id: _id, created_at: _ca, updated_at: _ua, created_by: _cb, updated_by: _ub, ...rest } = r as any
         return rest
       }) as Array<Record<string, unknown>>
@@ -352,6 +353,20 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     setExtraTableIds(extras)
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 全局 insert 事件监听（SyntaxHelpPanel → ReportTemplateEditor）
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ code?: string; fieldName?: string }>
+      if (ce.detail?.code) {
+        editorRef.current?.insertText(ce.detail.code)
+      } else if (ce.detail?.fieldName) {
+        editorRef.current?.insertText(`{{ ${ce.detail.fieldName} }}`)
+      }
+    }
+    window.addEventListener('report-editor-insert', handler)
+    return () => window.removeEventListener('report-editor-insert', handler)
+  }, [])
+
   // 关联表变更时更新 selectedTableId（同时从 extra 表中排除它）
   const handleTableChange = (value: number | null) => {
     setSelectedTableId(value)
@@ -375,9 +390,8 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     form.setFieldValue('template_content', value)
   }
 
-  // 保存校验：确保 Form 里的 template_content 是最新的
+  // 保存校验
   const handleFormFinish = (v: ReportTemplateCreate) => {
-    // 强制写回最新的编辑器内容
     onSubmit({ ...v, template_content: templateValue })
   }
 
@@ -385,7 +399,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     ? tables.find(t => t.id === selectedTableId)?.name
     : undefined
 
-  // 构建多表字段分组（传给 FieldPanel）
+  // 构建多表字段分组
   const tableGroups = useMemo(() => {
     const groups: Array<{ tableId: number; tableName: string; fields: Field[]; isPrimary: boolean }> = []
     if (selectedTableId !== null && selectedTableName) {
@@ -401,7 +415,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     return groups
   }, [selectedTableId, selectedTableName, fields, extraTableIds, extraFieldsMap, tables])
 
-  // 构建 recordsByTable（传给 PreviewPanel）
+  // 构建 recordsByTable
   const recordsByTable = useMemo(() => {
     const result: Record<string, Array<Record<string, unknown>>> = {}
     for (const eid of extraTableIds) {
@@ -423,15 +437,16 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
       title={editing ? `编辑模板「${editing.name}」` : '新建模板'}
       open={open}
       onCancel={onClose}
-      width={1200}
+      width="min(1280px, 92vw)"
       onOk={() => form.submit()}
       confirmLoading={submitting}
       okText={editing ? '保存' : '创建'}
       cancelText="取消"
       destroyOnHidden
       footer={null}
-      styles={{ body: { padding: 0 } }}
+      styles={{ body: { padding: 0, maxHeight: 'calc(92vh - 110px)', overflowY: 'auto' } }}
     >
+      {/* 顶部：模板元信息 */}
       <Form
         form={form}
         layout="vertical"
@@ -439,11 +454,11 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
         style={{ padding: '16px 24px 0' }}
         onFinish={handleFormFinish}
       >
-        <div style={{ display: 'flex', gap: 12 }}>
-          <Form.Item name="name" label="模板名称" rules={[{ required: true, message: '请输入名称' }]} style={{ flex: 1, marginBottom: 8 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <Form.Item name="name" label="模板名称" rules={[{ required: true, message: '请输入名称' }]} style={{ flex: '1 1 220px', marginBottom: 8 }}>
             <Input placeholder="例如：月度销售汇总" />
           </Form.Item>
-          <Form.Item name="output_format" label="输出格式" style={{ width: 160, marginBottom: 8 }}>
+          <Form.Item name="output_format" label="输出格式" style={{ width: 150, marginBottom: 8 }}>
             <Select options={FORMAT_OPTIONS} />
           </Form.Item>
           <Form.Item name="table_id" label="关联表" style={{ width: 220, marginBottom: 8 }}>
@@ -454,7 +469,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
               onChange={handleTableChange}
             />
           </Form.Item>
-          <Form.Item name="extra_table_ids" label="额外引用表" style={{ flex: 1, minWidth: 200, marginBottom: 8 }} tooltip="模板中可通过 records_by_table['表名'] 引用这些表的数据">
+          <Form.Item name="extra_table_ids" label="额外引用表" style={{ flex: '1 1 220px', marginBottom: 8 }} tooltip="模板中可通过 records_by_table['表名'] 引用这些表的数据">
             <Select
               mode="multiple"
               options={extraTableOptions}
@@ -478,22 +493,15 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
         </Form.Item>
       </Form>
 
-      {/* 三栏编辑器主体 */}
-      <div style={{ padding: '0 24px 16px', height: 560 }}>
-        <div className="report-editor-body" style={{ height: '100%' }}>
-          {/* 左侧：字段面板（拖拽源） */}
-          <FieldPanelWithDnD
-            fields={fields as Field[]}
-            tableId={selectedTableId}
-            tableGroups={tableGroups}
-            onInsert={() => { /* 点击会通过 DndContext 外层转发 */ }}
-          />
-
-          {/* 中间：CodeMirror 编辑器（Dropzone） */}
-          <EditorWithDropzone
-            fields={fields as Field[]}
+      {/* 编辑器主体：字段面板 + 编辑器 + 预览（统一 ReportTemplateEditor，无重复） */}
+      <div style={{ padding: '12px 24px 0' }}>
+        <div className="report-editor-body" style={{ height: 520 }}>
+          <ReportTemplateEditor
+            fields={selectedTableId !== null ? (fields as Field[]) : undefined}
+            tableGroups={tableGroups.length > 0 ? tableGroups : undefined}
             value={templateValue}
             onChange={handleTemplateChange}
+            editorRef={editorRef}
           />
 
           {/* 右侧：Tabs（预览 / 语法帮助） */}
@@ -521,7 +529,6 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
                   children: (
                     <SyntaxHelpPanel
                       onInsert={(code) => {
-                        // 通过 CustomEvent 让 EditorWithDropzone 捕获插入
                         window.dispatchEvent(new CustomEvent('report-editor-insert', { detail: { code } }))
                       }}
                     />
@@ -534,7 +541,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
       </div>
 
       {/* 参数定义区 */}
-      <div style={{ padding: '0 24px 16px' }}>
+      <div style={{ padding: '12px 24px 0' }}>
         <Form form={form} layout="vertical" preserve={false}>
           <Form.Item label="模板参数" tooltip="运行时传入的动态参数（可选）" style={{ marginBottom: 0 }}>
             <Form.List name="parameters">
@@ -572,7 +579,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
         </Form>
       </div>
 
-      {/* 底部按钮区（Modal footer=null，自己实现） */}
+      {/* 底部按钮区 */}
       <div style={{ padding: '12px 24px', borderTop: '1px solid #f0f0f0', textAlign: 'right' }}>
         <Space>
           <Button onClick={onClose}>取消</Button>
@@ -588,114 +595,6 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
         </Space>
       </div>
     </Modal>
-  )
-}
-
-/** 左侧字段面板（带 dnd-kit 拖拽）*/
-function FieldPanelWithDnD({
-  fields,
-  tableId,
-  tableGroups,
-  onInsert: _onInsert,
-}: {
-  fields: Field[]
-  tableId: number | null
-  /** 多表字段分组（多表模式优先使用） */
-  tableGroups?: Array<{ tableId: number; tableName: string; fields: Field[]; isPrimary: boolean }>
-  onInsert: (fieldName: string) => void
-}) {
-  // 占位组件 — 实际拖拽由外层 ReportTemplateEditor 的 DndContext 处理
-  // 这里简化：直接用 FieldPanel 的点击回调 + DndContext 的 drag handle
-  const ref = useRef<{ insert: (name: string) => void } | null>(null)
-
-  // 注册全局 insert handler（SyntaxHelpPanel 通过 CustomEvent 触发）
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ fieldName: string }>).detail
-      if (detail?.fieldName) {
-        ref.current?.insert(detail.fieldName)
-      }
-    }
-    window.addEventListener('report-field-insert', handler)
-    return () => window.removeEventListener('report-field-insert', handler)
-  }, [])
-
-  if (!tableId && (!tableGroups || tableGroups.length === 0)) {
-    return (
-      <div className="report-field-panel">
-        <div className="report-field-panel-header">
-          <Typography.Text strong style={{ fontSize: 13 }}>字段</Typography.Text>
-        </div>
-        <div className="report-field-list">
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={<span style={{ fontSize: 12 }}>请先选择关联表</span>}
-          />
-        </div>
-      </div>
-    )
-  }
-
-  // 这里不直接拖拽，只是渲染 FieldPanel；拖拽在 EditorWithDropzone 的 DndContext 中
-  // 多表模式传 tableGroups，单表模式传 fields
-  if (tableGroups && tableGroups.length > 1) {
-    return <ReportTemplateEditorFieldsOnly tableGroups={tableGroups} />
-  }
-  return <ReportTemplateEditorFieldsOnly fields={fields} />
-}
-
-/** 纯字段列表（不重复创建 DndContext，避免嵌套冲突） */
-function ReportTemplateEditorFieldsOnly({
-  fields,
-  tableGroups,
-}: {
-  fields?: Field[]
-  tableGroups?: Array<{ tableId: number; tableName: string; fields: Field[]; isPrimary: boolean }>
-}) {
-  // 点击时派发事件让 EditorWithDropzone 捕获
-  const handleInsert = (fieldName: string) => {
-    window.dispatchEvent(new CustomEvent('report-field-insert', { detail: { fieldName } }))
-  }
-  return <FieldPanel fields={fields} tableGroups={tableGroups} onInsert={handleInsert} />
-}
-
-/** 中间编辑器（含 DndContext dropzone + 全局 insert 事件监听） */
-function EditorWithDropzone({
-  fields,
-  value,
-  onChange,
-}: {
-  fields: Field[]
-  value: string
-  onChange: (v: string) => void
-}) {
-  const editorRef = useRef<TemplateEditorHandle | null>(null)
-
-  // 监听全局 insert 事件（字段点击 / 语法帮助面板）
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const ce = e as CustomEvent<{ code?: string; fieldName?: string }>
-      if (ce.detail?.code) {
-        editorRef.current?.insertText(ce.detail.code)
-      } else if (ce.detail?.fieldName) {
-        editorRef.current?.insertText(`{{ ${ce.detail.fieldName} }}`)
-      }
-    }
-    window.addEventListener('report-field-insert', handler)
-    window.addEventListener('report-editor-insert', handler)
-    return () => {
-      window.removeEventListener('report-field-insert', handler)
-      window.removeEventListener('report-editor-insert', handler)
-    }
-  }, [])
-
-  return (
-    <ReportTemplateEditor
-      fields={fields}
-      value={value}
-      onChange={onChange}
-      editorRef={editorRef}
-    />
   )
 }
 

@@ -1,14 +1,27 @@
-import { useEffect, useRef, useState } from 'react'
-import { DndContext, closestCenter, useSensor, useSensors, PointerSensor, KeyboardSensor, useDroppable, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  DndContext,
+  closestCenter,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  KeyboardSensor,
+  useDroppable,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import TemplateEditor, { type TemplateEditorHandle } from './TemplateEditor'
-import FieldPanel from './FieldPanel'
+import FieldPanel, { type TableFieldGroup } from './FieldPanel'
 import type { Field } from '@/api'
 
 interface ReportTemplateEditorProps {
   value: string
   onChange: (value: string) => void
-  fields: Field[]
+  /** 单表字段（向后兼容） */
+  fields?: Field[]
+  /** 多表字段分组（多表模式，优先使用） */
+  tableGroups?: TableFieldGroup[]
   editorRef?: React.RefObject<TemplateEditorHandle | null>
 }
 
@@ -56,7 +69,7 @@ function EditorDropzone({
             borderRadius: 6,
           }}
         >
-          松开以插入 {'{{ field_name }}'}
+          松开以插入字段
         </div>
       )}
     </div>
@@ -67,6 +80,7 @@ export default function ReportTemplateEditor({
   value,
   onChange,
   fields,
+  tableGroups,
   editorRef,
 }: ReportTemplateEditorProps) {
   const internalRef = useRef<TemplateEditorHandle>(null)
@@ -84,6 +98,39 @@ export default function ReportTemplateEditor({
     useSensor(KeyboardSensor),
   )
 
+  // 展平所有字段（tableGroups 优先）生成 SortableContext items
+  const { fieldIds, fieldMap } = useMemo(() => {
+    const ids: string[] = []
+    const map = new Map<string, { field: Field; group?: TableFieldGroup }>()
+
+    if (tableGroups && tableGroups.length > 0) {
+      for (const group of tableGroups) {
+        for (const f of group.fields) {
+          const id = `field-${f.id}`
+          ids.push(id)
+          map.set(id, { field: f, group })
+        }
+      }
+    } else {
+      for (const f of fields || []) {
+        const id = `field-${f.id}`
+        ids.push(id)
+        map.set(id, { field: f })
+      }
+    }
+
+    return { fieldIds: ids, fieldMap: map }
+  }, [tableGroups, fields])
+
+  // 构造要插入的模板代码（多表模式自动加 records_by_table 前缀）
+  const buildInsertText = (item: { field: Field; group?: TableFieldGroup }): string => {
+    const { field, group } = item
+    if (group && !group.isPrimary) {
+      return `{{ records_by_table['${group.tableName}'][0].${field.name} }}`
+    }
+    return `{{ ${field.name} }}`
+  }
+
   const handleDragStart = (_event: DragStartEvent) => {
     setIsDragActive(true)
   }
@@ -94,17 +141,23 @@ export default function ReportTemplateEditor({
     if (!over) return
     if (over.id !== 'template-editor-dropzone') return
 
-    const data = active.data.current as { type: string; fieldName?: string } | undefined
-    if (data?.type === 'field' && data.fieldName) {
+    // 从 dnd-kit 的 data 中获取字段 id；若找不到，尝试从 active.id 反查
+    const data = active.data.current as { type?: string; fieldId?: string; fieldName?: string } | undefined
+    const fieldId = data?.fieldId ?? String(active.id)
+    const item = fieldMap.get(fieldId)
+
+    if (item) {
+      internalRef.current?.insertText(buildInsertText(item))
+    } else if (data?.fieldName) {
+      // fallback：仅插入简单语法
       internalRef.current?.insertText(`{{ ${data.fieldName} }}`)
     }
   }
 
+  // 点击插入（FieldPanel onInsert 回调）
   const handleFieldInsert = (fieldName: string) => {
     internalRef.current?.insertText(`{{ ${fieldName} }}`)
   }
-
-  const fieldIds = fields.map(f => `field-${f.id}`)
 
   return (
     <DndContext
@@ -114,7 +167,11 @@ export default function ReportTemplateEditor({
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={fieldIds} strategy={verticalListSortingStrategy}>
-        <FieldPanel fields={fields} onInsert={handleFieldInsert} />
+        <FieldPanel
+          fields={fields}
+          tableGroups={tableGroups}
+          onInsert={handleFieldInsert}
+        />
       </SortableContext>
 
       <EditorDropzone

@@ -61,14 +61,22 @@ function FieldTag({ type }: { type: FieldType }) {
 /** 单个可拖拽字段项 */
 function DraggableFieldItem({
   field,
+  groupInfo,
   onInsert,
 }: {
   field: Field
+  groupInfo?: { tableName: string; isPrimary: boolean }
   onInsert: (name: string) => void
 }) {
+  const fieldId = `field-${field.id}`
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: `field-${field.id}`,
-    data: { type: 'field', fieldName: field.name },
+    id: fieldId,
+    data: {
+      type: 'field',
+      fieldId,
+      fieldName: field.name,
+      groupInfo,
+    },
   })
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -191,7 +199,12 @@ export default function FieldPanel({ fields, tableGroups, onInsert }: FieldPanel
             />
           ) : (
             filtered.map(field => (
-              <DraggableFieldItem key={field.id} field={field} onInsert={handleInsert} />
+              <DraggableFieldItem
+                key={field.id}
+                field={field}
+                groupInfo={activeGroup ? { tableName: activeGroup.tableName, isPrimary: !!activeGroup.isPrimary } : undefined}
+                onInsert={handleInsert}
+              />
             ))
           )}
         </div>
