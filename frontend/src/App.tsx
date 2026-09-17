@@ -20,6 +20,7 @@ const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
 const TableSettingsPage = lazy(() => import('@/pages/workspace/TableSettingsPage'))
+const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 
 function PageFallback() {
   return (
@@ -55,6 +56,9 @@ function AuthenticatedApp() {
         } />
         <Route path="w/:wid/reports" element={
           <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
+        } />
+        <Route path="admin" element={
+          <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>
         } />
       </Route>
 

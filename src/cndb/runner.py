@@ -200,11 +200,16 @@ def main() -> None:
     sub.add_parser("seed", help="向数据库注入演示数据")
 
     # backup 子命令
-    p_backup = sub.add_parser("backup", help="备份数据库和附件到 .tar.gz 归档")
+    p_backup = sub.add_parser("backup", help="备份数据库和附件（输出到 .tar.gz 归档或文件夹）")
     p_backup.add_argument(
         "-o",
         "--output",
-        help="输出归档路径（默认 backup-<timestamp>.tar.gz）",
+        help="输出路径 — .tar.gz 文件（归档）或文件夹（目录模式，需配合 --dir）. 默认 backup-<timestamp>.tar.gz",
+    )
+    p_backup.add_argument(
+        "--dir",
+        action="store_true",
+        help="目录模式：将备份内容直接输出到文件夹（manifest.json + database/ + uploads/），不做压缩",
     )
     p_backup.add_argument(
         "--mode",
@@ -219,10 +224,10 @@ def main() -> None:
     )
 
     # restore 子命令
-    p_restore = sub.add_parser("restore", help="从 .tar.gz 归档恢复数据")
+    p_restore = sub.add_parser("restore", help="从 .tar.gz 归档或文件夹恢复数据（自动识别源类型）")
     p_restore.add_argument(
         "archive",
-        help="备份归档路径（.tar.gz）",
+        help="备份源路径 — .tar.gz 归档文件或包含 manifest.json 的文件夹",
     )
     p_restore.add_argument(
         "--force",
@@ -232,7 +237,7 @@ def main() -> None:
     p_restore.add_argument(
         "--dry-run",
         action="store_true",
-        help="仅检查归档完整性并预览内容，不实际恢复",
+        help="仅检查备份源完整性并预览内容，不实际恢复",
     )
 
     # users 子命令组
