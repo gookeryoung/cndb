@@ -237,29 +237,38 @@ class ServeTab(_BaseTab):
         reload = self.reload_var.get()
         workers = 1 if reload else int(self.workers_var.get().strip() or "1")
 
-        cmd: list[str] = [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "cndb.app:app",
-            "--host",
-            host,
-            "--port",
-            str(port),
-        ]
-        if reload:
-            cmd.append("--reload")
-        elif workers > 1:
-            cmd.extend(["--workers", str(workers)])
+        # 计算项目源码根：
+        # - 打包后 sys.executable = dist/runtime/pythonw.exe
+        #   → 源码在 dist/src/src/cndb/（fspack 对 src layout 的产物布局）
+        # - 开发时 sys.executable = .venv/Scripts/python.exe
+        #   → 此路径不存在，sys.path 已正确（uvicorn -m 直接可用）
+        _exe_parent = Path(sys.executable).resolve().parent
+        _pkg_entry_root = (_exe_parent / ".." / "src" / "src").resolve()
+
+        # 用 -c 引导代码：先注入源码根到 sys.path（解决打包后子进程找不到 cndb），
+        # 再调 uvicorn.run() 启动服务
+        _bootstrap = (
+            f"import sys; sys.path.insert(0, r'{_pkg_entry_root}'); "
+            "import uvicorn; "
+            f"uvicorn.run('cndb.app:app', host={host!r}, port={port}, "
+            f"reload={reload!r}, workers={workers})"
+        )
+        cmd: list[str] = [sys.executable, "-c", _bootstrap]
 
         try:
+            # Windows GUI 程序（pythonw 无 console）下 stdin 是无效句柄，
+            # Popen 内部 _make_inheritable 会触发 WinError 6；显式设 DEVNULL 规避
+            creationflags = 0
+            if sys.platform == "win32":
+                creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
             self.app._server_proc = subprocess.Popen(
                 cmd,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+                creationflags=creationflags,
             )
         except FileNotFoundError:
             messagebox.showerror("启动失败", "找不到 Python 或 uvicorn，请先执行 `uv sync`")
