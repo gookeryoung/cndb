@@ -314,19 +314,44 @@ def _is_select_candidate(unique_values: list[str], inferred_type: str, non_empty
     """判断某列是否应被提升为 select 类型（低基数离散值启发式）.
 
     规则：
-    - 唯一值数在 2~8 之间
+    - 唯一值数 ≥ 2，且不超过样本量感知的上限（避免自由文本列被误判）
     - 推断类型必须是 text（其他类型已各有归属：boolean/number/date/email/url 等）
-    - 唯一值数 / 非空样本数 ≤ 0.8（允许小样本下较高的唯一值占比仍被识别为离散分类）
+    - 唯一值数 / 非空样本数 的比例需低于样本量自适应阈值（越大样本允许的比例越低）
     - 所有值都不在 boolean 值集中（避免把 "是/否" 这类被误推为 text 时仍保持 bool）
+
+    样本量感知阈值：
+    - 样本 < 100 行：允许 ≤ 20 个唯一值，比例 ≤ 0.50（小样本下保守）
+    - 样本 100~1000 行：允许 ≤ 30 个唯一值，比例 ≤ 0.30
+    - 样本 > 1000 行：允许 ≤ 50 个唯一值，比例 ≤ 0.20（大样本下严格控比）
     """
     if inferred_type != "text":
         return False
     n = len(unique_values)
-    if n < 2 or n > 8:
+    if n < 2:
         return False
-    # 唯一值占比不能太高：小样本场景（4-10 行）允许 0.8，大样本仍需保持低基数
-    if non_empty_count > 0 and n / non_empty_count > 0.8:
+
+    # 样本量自适应阈值：小样本下放宽比例（避免少量分类被丢弃），大样本下严格控比（避免自由文本被误判）
+    if non_empty_count < 20:
+        # 极小样本（< 20 行）：允许较高比例，因为小数据里的重复值多半是离散分类
+        max_unique = 15
+        max_ratio = 0.80
+    elif non_empty_count < 100:
+        max_unique = 25
+        max_ratio = 0.60
+    elif non_empty_count <= 1000:
+        max_unique = 60
+        max_ratio = 0.35
+    else:
+        max_unique = 100
+        max_ratio = 0.20
+
+    if n > max_unique:
         return False
+
+    # 唯一值占比检查
+    if non_empty_count > 0 and n / non_empty_count > max_ratio:
+        return False
+
     # boolean 优先级更高：如果所有值都是 boolean 值域的字符串，不应转 select
     boolean_values = {"true", "false", "yes", "no", "是", "否", "1", "0", "on", "off"}
     return not all(v.strip().lower() in boolean_values for v in unique_values)
