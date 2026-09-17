@@ -37,7 +37,8 @@ requires-python = ">=3.12"
 version         = "0.1.8"
 
 [project.scripts]
-cndb = "cndb.runner:main"
+cndb  = "cndb.runner:main"
+cndbw = "cndb.gui:main"
 
 [project.optional-dependencies]
 dev = ["cndb[lint,test,docs]"]
@@ -85,11 +86,12 @@ exclude = [
 
 # ── fspack 打包配置 ────────────────────────────────────────
 [tool.fspack]
-entry-app-types = { cndb = "cli" }
+entry-app-types = { cndb = "cli", cndbw = "gui" }
 web-static-dirs = ["src/cndb/static"]
 #data-dirs = ["src/alembic/versions"]
 #pyc_strip = true
 #no_site   = true
+# gui = Windows 上用 pythonw 无控制台；Linux/macOS 用 python + DISPLAY
 
 [tool.uv]
 required-version = ">=0.5.0"
@@ -105,5 +107,6 @@ dev = ["cndb[dev]"]
 omit = [
     "src/cndb/runner.py",
     "src/cndb/seed.py",
+    "src/cndb/gui/**",
     "src/cndb/plugins/tables/routers/files.py",
 ]
