@@ -208,13 +208,16 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   /** 提交：组装 config 后发送 */
   function handleSubmit() {
     const values = form.getFieldsValue()
+    // config 由 ConfigEditor/SelectOptionsEditor 通过 setFieldValue 写入 store，
+    // 未注册对应 Form.Item，getFieldsValue()（仅注册字段）不包含 config —— 必须直接读 store。
+    const configFromStore = form.getFieldValue('config') as Record<string, unknown> | undefined
     const payload: Record<string, unknown> = {
       name: values.name,
       field_type: values.field_type,
       required: !!values.required,
       is_unique: !!values.is_unique,
       hidden: !!values.hidden,
-      config: values.config ?? {},
+      config: configFromStore ?? values.config ?? {},
     }
     // 处理 default_value
     if (values.default_value !== undefined && values.default_value !== null && values.default_value !== '') {
@@ -325,7 +328,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         </Row>
 
         {/* 类型专属 config 编辑区 */}
-        {fieldType && <ConfigEditor fieldType={fieldType} form={form} wid={wid} tid={tid} tables={tables} />}
+        {fieldType && <ConfigEditor fieldType={fieldType} form={form} wid={wid} tid={tid} tables={tables} isEdit={!!editTarget} />}
       </Form>
     </Modal>
   )
@@ -589,6 +592,8 @@ interface ConfigEditorProps {
   wid: string
   tid: string
   tables: TableSummary[]
+  /** 是否为编辑已有字段（编辑时不覆盖既有 config，避免 options 等配置被默认值清空） */
+  isEdit?: boolean
 }
 
 /** 哪些字段类型有可配置项 */
@@ -601,13 +606,19 @@ const HAS_CONFIG_TYPES = new Set<string>([
 ])
 
 /** 字段类型对应的 config 编辑器 */
-function ConfigEditor({ fieldType, form, tables }: ConfigEditorProps) {
-  // 监听 config 变化，保证表单 re-render
+function ConfigEditor({ fieldType, form, tables, isEdit = false }: ConfigEditorProps) {
+  // 监听 config 变化，保证表单 re-render。
+  // 注意：Form.useWatch 走 getFieldsValue()（仅含已注册 Form.Item 的字段），
+  // select 的 options 编辑器没有注册 config.* 表单项，因此 select 字段的 watch
+  // 值永远是 undefined —— 必须回退直接读 form store（getFieldValue），否则
+  // 编辑时 options 永远显示为空（并可能被默认值覆盖）。
   const currentConfig = Form.useWatch('config', form) as Record<string, unknown> | undefined
-  const effectiveConfig = currentConfig ?? {}
+  const effectiveConfig = currentConfig ?? (form.getFieldValue('config') as Record<string, unknown> | undefined) ?? {}
 
-  // 初始填充：如果 config 为空则给默认值
+  // 初始填充：仅新建字段时（编辑时不覆盖既有 config）给默认值。
+  // 注意 Form.useWatch 首帧返回 undefined，若不加 isEdit 守卫会把已存 options 等配置误清空。
   useEffect(() => {
+    if (isEdit) return
     if (!currentConfig || Object.keys(currentConfig).length === 0) {
       const defaults = defaultConfigForType(fieldType)
       if (Object.keys(defaults).length > 0) {
@@ -615,7 +626,7 @@ function ConfigEditor({ fieldType, form, tables }: ConfigEditorProps) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fieldType])
+  }, [fieldType, isEdit])
 
   // 无配置项的字段类型直接返回 null，不显示空壳
   if (!HAS_CONFIG_TYPES.has(fieldType)) return null
