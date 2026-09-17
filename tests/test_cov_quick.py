@@ -1,7 +1,5 @@
 """Coverage patch tests: schemas validators, models, config, migrations."""
 
-import sys
-
 import pytest
 
 # ── workspaces/schemas/__init__.py validators ─────────
@@ -61,47 +59,39 @@ def test_user_role_enum_invalid_string():
     assert u.is_system_admin is False
 
 
-# ── core/config.py Windows/macOS/frozen 分支 ──────────
+# ── core/config.py DATA_DIR 统一 ~/.cndb ──────────
 
 
-def test_get_user_data_dir_windows(monkeypatch):
-    """Windows 平台 + APPDATA → 返回 APPDATA/cndb."""
+def test_data_dir_unified_home_cndb():
+    """DATA_DIR 统一为 ~/.cndb，不再区分开发/打包或操作系统."""
+    from pathlib import Path
+
     from cndb.core import config as cfg_mod
 
-    monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setenv("APPDATA", "C:/Users/me/AppData/Roaming")
-    result = cfg_mod._get_user_data_dir()
-    assert str(result).replace("\\", "/").endswith("AppData/Roaming/cndb")
+    assert Path.home() / ".cndb" == cfg_mod.DATA_DIR
+    assert cfg_mod.DATA_DIR.name == ".cndb"
 
 
-def test_get_user_data_dir_windows_fallback(monkeypatch):
-    """Windows 无 APPDATA/LOCALAPPDATA → 回退 ~/.cndb."""
+def test_data_dir_subdirs_nesting():
+    """所有子目录均位于 DATA_DIR 下，职责清晰."""
     from cndb.core import config as cfg_mod
 
-    monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.delenv("APPDATA", raising=False)
-    monkeypatch.delenv("LOCALAPPDATA", raising=False)
-    result = cfg_mod._get_user_data_dir()
-    assert result.name == ".cndb"
+    d = cfg_mod.DATA_DIR
+    assert d / "config" == cfg_mod.CONFIG_DIR
+    assert d / "data" == cfg_mod.DATABASE_DIR
+    assert d / "uploads" == cfg_mod.UPLOAD_DIR
+    assert d / "plugins" == cfg_mod.PLUGINS_DIR
+    assert d / "backups" == cfg_mod.BACKUP_DIR
+    assert d / "cache" == cfg_mod.CACHE_DIR
+    assert d / "logs" == cfg_mod.LOG_DIR
 
 
-def test_get_user_data_dir_macos(monkeypatch):
-    """macOS → ~/Library/Application Support/cndb."""
+def test_database_url_default_under_data_dir():
+    """默认 DATABASE_URL 指向 DATABASE_DIR/cndb.db."""
     from cndb.core import config as cfg_mod
 
-    monkeypatch.setattr(sys, "platform", "darwin")
-    result = cfg_mod._get_user_data_dir()
-    assert "Library" in str(result) and "cndb" in str(result)
-
-
-def test_get_user_data_dir_linux_xdg(monkeypatch):
-    """Linux + XDG_DATA_HOME → XDG/cndb."""
-    from cndb.core import config as cfg_mod
-
-    monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setenv("XDG_DATA_HOME", "/home/xdg/.local/share")
-    result = cfg_mod._get_user_data_dir()
-    assert result.as_posix() == "/home/xdg/.local/share/cndb"
+    expected = f"sqlite:///{cfg_mod.DATABASE_DIR / 'cndb.db'}"
+    assert expected == cfg_mod.settings.DATABASE_URL
 
 
 def test_is_frozen_true_when_no_pyproject(tmp_path, monkeypatch):
@@ -248,14 +238,17 @@ def test_ensure_db_migrated_both_fail_raises(tmp_path, monkeypatch):
 # ── config.py 剩余分支 ───────────────────────────────
 
 
-def test_get_user_data_dir_linux_no_xdg(monkeypatch):
-    """Linux 下无 XDG_DATA_HOME → ~/.local/share/cndb."""
+def test_data_dir_exists_after_import():
+    """模块 import 后 DATA_DIR 及其子目录已自动创建."""
     from cndb.core import config as cfg_mod
 
-    monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
-    result = cfg_mod._get_user_data_dir()
-    assert ".local/share/cndb" in result.as_posix()
+    assert cfg_mod.DATA_DIR.is_dir()
+    assert cfg_mod.CONFIG_DIR.is_dir()
+    assert cfg_mod.DATABASE_DIR.is_dir()
+    assert cfg_mod.UPLOAD_DIR.is_dir()
+    assert cfg_mod.BACKUP_DIR.is_dir()
+    assert cfg_mod.CACHE_DIR.is_dir()
+    assert cfg_mod.LOG_DIR.is_dir()
 
 
 def test_find_project_root_alembic_ini_fallback(tmp_path, monkeypatch):
