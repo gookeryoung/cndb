@@ -119,21 +119,30 @@ async function gotoGrid(page: any, wid: number, tableName: string) {
 
 /** 点击顶部 More → 复制表（SubMenu）→ 指定子项 */
 async function clickCopySubmenu(page: any, subItemText: RegExp) {
-  // 点击 More 按钮（有 data-testid="grid-more-menu"）
+  // 表格列表的异步刷新可能中途重建菜单、关掉已展开的 submenu —— 失败则整体重试
   const moreBtn = page.locator('button[data-testid="grid-more-menu"]');
   await expect(moreBtn).toBeVisible({ timeout: 5000 });
-  await moreBtn.click();
-  await expect(page.locator(".ant-dropdown-menu-root")).toBeVisible();
-  // 找到 SubMenu "复制表" 并展开
-  const copySubmenu = page.locator(".ant-dropdown-menu-submenu-title").filter({ hasText: /复制表/ });
-  await expect(copySubmenu).toBeVisible({ timeout: 3000 });
-  await copySubmenu.hover();
-  // antd v5 hover 后 submenu 会渲染独立 popup（.ant-dropdown-menu-submenu-popup）
-  await expect(page.locator(".ant-dropdown-menu-submenu-popup")).toBeVisible({ timeout: 5000 });
-  // 在 page 级别找子项（popup portal 到 body）
-  const subItem = page.getByRole("menuitem", { name: subItemText }).last();
-  await expect(subItem).toBeVisible({ timeout: 5000 });
-  await subItem.click();
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await moreBtn.click();
+      await expect(page.locator(".ant-dropdown-menu-root")).toBeVisible();
+      // 找到 SubMenu "复制表" 并展开
+      const copySubmenu = page.locator(".ant-dropdown-menu-submenu-title").filter({ hasText: /复制表/ });
+      await expect(copySubmenu).toBeVisible({ timeout: 3000 });
+      await copySubmenu.hover();
+      // antd v5 hover 后 submenu 会渲染独立 popup（.ant-dropdown-menu-submenu-popup）
+      await expect(page.locator(".ant-dropdown-menu-submenu-popup")).toBeVisible({ timeout: 5000 });
+      // 在 page 级别找子项（popup portal 到 body）
+      const subItem = page.getByRole("menuitem", { name: subItemText }).last();
+      await expect(subItem).toBeVisible({ timeout: 5000 });
+      await subItem.click();
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
 }
 
 // ─────────────── 辅助：一次性准备自建表 ───────────────

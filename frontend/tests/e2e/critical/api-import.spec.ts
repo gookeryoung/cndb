@@ -128,7 +128,8 @@ test.describe("API 自动建表 + 数据抓取", () => {
 
     // 填 URL + 表名
     await page.getByTestId("api-url-input").fill("https://api.coingecko.com/api/v3/coins/markets");
-    await page.getByLabel("请求方法").first().click();
+    // antd Select 的隐藏 input 会被选中值 span 挡住，点外层 selector 才能稳定打开下拉
+    await page.locator(".ant-select:has(#method)").locator(".ant-select-selector").click();
     await page.getByTitle("GET", { exact: true }).click();
     await page.getByLabel("新表名称").fill("加密货币行情");
 
