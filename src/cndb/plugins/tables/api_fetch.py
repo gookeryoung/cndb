@@ -24,7 +24,7 @@ import socket
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx2
 
@@ -496,21 +496,46 @@ def fetch_json(config: FetchConfig) -> list[dict[str, Any]]:
 
     with httpx2.Client(
         timeout=config.timeout,
-        max_redirects=config.max_redirects,
+        follow_redirects=False,
         headers=headers,
     ) as client:
         try:
-            resp = client.request(
-                method=method,
-                url=config.url,
-                params=config.params or None,
-                content=content,
-                json=json_body,
-            )
-        except httpx2.TooManyRedirects as exc:
-            raise ValueError(f"重定向次数过多（>{config.max_redirects}）: {exc}") from exc
+            current_url = config.url
+            resp: httpx2.Response | None = None
+            params_value = config.params or None
+            redirect_count = 0
+            while True:
+                resp = client.request(
+                    method=method,
+                    url=current_url,
+                    params=params_value,
+                    content=content,
+                    json=json_body,
+                )
+                # 3xx 重定向：手动跟随 + 每步 validate_url（防 SSRF via open redirect）
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    redirect_count += 1
+                    if redirect_count > config.max_redirects:
+                        raise ValueError(f"重定向次数过多（>{config.max_redirects}）")
+                    location = resp.headers.get("location")
+                    if not location:
+                        raise ValueError(f"重定向响应缺少 Location 头（status={resp.status_code}）")
+                    # 相对 URL 转绝对
+                    next_url = urljoin(current_url, location)
+                    validate_url(next_url)
+                    current_url = next_url
+                    # 303 一律降级为 GET；301/302 多数客户端也降级为 GET（兼容）
+                    if resp.status_code == 303 or (
+                        resp.status_code in (301, 302) and method in ("POST", "PUT", "PATCH", "DELETE")
+                    ):
+                        method = "GET"
+                        content = None
+                        json_body = None
+                    continue
+                break
         except httpx2.RequestError as exc:
             raise ValueError(f"请求失败: {exc}") from exc
+        assert resp is not None
 
         # 检查状态码
         if resp.status_code >= 400:
