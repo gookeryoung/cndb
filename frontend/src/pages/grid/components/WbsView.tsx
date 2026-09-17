@@ -98,24 +98,48 @@ function buildTree(
   progressField?: string,
 ): { roots: WbsNode[]; totalNodeCount: number } {
   const rowMap = new Map<string, RowResponse>()
-  const childrenMap = new Map<string | null, RowResponse[]>()
+  const childrenMap = new Map<string, RowResponse[]>()
 
-  // 1. 建 rowMap + 按 parent 分组
+  // 0. 建 业务值 → rowId 反向映射（用于把 parentValue 转成 parent row.id）
+  //    遍历每行所有 string 值（排除 id 和 parentField 本身），任一值都可能是别人引用的业务 ID
+  const valueToRowId = new Map<string, string>()
   for (const row of rows) {
-    const id = rowIdKey(row)
-    rowMap.set(id, row)
-    const parentId = extractParentId(row, parentField)
-    const bucket = childrenMap.get(parentId) || []
+    const rid = rowIdKey(row)
+    for (const [k, v] of Object.entries(row)) {
+      if (k === 'id') continue
+      if (k === parentField) continue
+      if (typeof v === 'string' && v.length > 0 && v.length < 100) {
+        valueToRowId.set(v, rid)
+      }
+    }
+  }
+
+  // 1. 建 rowMap + 按 parent rowId 分组（不是业务值）
+  for (const row of rows) {
+    const rid = rowIdKey(row)
+    rowMap.set(rid, row)
+    const parentValue = extractParentId(row, parentField)
+    // 把 parentValue（业务值）转成 parent rowId（数据库主键）
+    let parentRowId: string | null = null
+    if (parentValue && valueToRowId.has(parentValue)) {
+      parentRowId = valueToRowId.get(parentValue)!
+    }
+    const key = parentRowId ?? '__root__'
+    const bucket = childrenMap.get(key) || []
     bucket.push(row)
-    childrenMap.set(parentId, bucket)
+    childrenMap.set(key, bucket)
   }
 
   // 2. 识别根节点：parent_field 为空，或 parent 指向不存在的行
   const allIds = new Set<string>(rowMap.keys())
   const rootRows: RowResponse[] = []
   for (const row of rows) {
-    const parentId = extractParentId(row, parentField)
-    if (!parentId || !allIds.has(parentId)) {
+    const parentValue = extractParentId(row, parentField)
+    let parentRowId: string | null = null
+    if (parentValue && valueToRowId.has(parentValue)) {
+      parentRowId = valueToRowId.get(parentValue)!
+    }
+    if (!parentValue || !parentRowId || !allIds.has(parentRowId)) {
       rootRows.push(row)
     }
   }

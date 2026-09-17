@@ -22,7 +22,7 @@ const ANON = ["setup", "chromium-anon"];
 
 async function getToken(request: APIRequestContext): Promise<string> {
   const resp = await request.post("/api/v1/accounts/auth/login", {
-    data: { login: "demo", password: "demo1234" },
+    data: { login: "admin", password: "admin1234" },
   });
   const body = (await resp.json()) as { access_token: string };
   return body.access_token;
@@ -38,7 +38,7 @@ async function getWorkspaceId(
   });
   const workspaces = (await resp.json()) as Array<{ id: number; name: string }>;
   if (nameKeyword) {
-    const ws = workspaces.find((w) => w.name.includes(nameKeyword));
+    const ws = workspaces.find((w) => w.name === nameKeyword) || workspaces.find((w) => w.name.includes(nameKeyword));
     if (ws) return ws.id;
   }
   return workspaces[0].id;

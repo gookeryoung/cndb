@@ -17,11 +17,11 @@ test.describe("工作区 + 表列表", () => {
     await gotoWorkspace(page);
 
     // 顶部导航
-    await expect(page.getByRole("button", { name: /关系图/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /回收站/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /报表/ })).toBeVisible();
 
-    // 表列表页 — TablesList
-    await expect(page.getByRole("button", { name: /新建表/ })).toBeVisible();
+    // 表列表页 — TablesList（用 :has-text 避免匹配到空状态 placeholder row）
+    await expect(page.locator('button:has-text("新建表")').first()).toBeVisible();
   });
 
   test("seed 数据：至少有 6 张表（某企业销售管理）", async ({ page }) => {
@@ -45,8 +45,8 @@ test.describe("工作区 + 表列表", () => {
     await expect(page.locator("th", { hasText: "拥有者" }).first()).toBeVisible();
 
     // 每一行的拥有者列不应是空（seed 表都有 owner=admin）
-    // 取第一行的 owner cell（ant-table-cell 的第 3 个，因为列顺序是 表名|描述|拥有者|...）
-    const firstRowOwnerCell = rows.first().locator("td").nth(2);
+    // 取第一行的 owner cell（TablesList 列顺序：drag | 表名 | 描述 | 拥有者 | ...，所以 owner 在第 4 列即 nth(3)）
+    const firstRowOwnerCell = rows.first().locator("td").nth(3);
     await expect(firstRowOwnerCell).toBeVisible();
     // 应该显示 admin（而不是"未指定"）
     await expect(firstRowOwnerCell).not.toHaveText("未指定");

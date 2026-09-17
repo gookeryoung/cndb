@@ -27,7 +27,15 @@ function applyBodyClass(mode: ThemeMode) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>(() => loadThemeMode())
+  const [mode, setModeState] = useState<ThemeMode>(() => {
+    const m = loadThemeMode()
+    // 首次进入时把默认值也持久化，保证 localStorage 始终有值
+    try {
+      const raw = localStorage.getItem('cndb_theme')
+      if (!raw) saveThemeMode(m)
+    } catch { /* noop */ }
+    return m
+  })
 
   const setMode = useCallback((m: ThemeMode) => {
     setModeState(m)

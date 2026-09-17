@@ -24,11 +24,14 @@ async function gotoApp(page: Parameters<typeof test["fn"]>[0]["page"]) {
 
 /** 打开个人设置 Modal */
 async function openSettings(page: Parameters<typeof test["fn"]>[0]["page"]) {
-  // 用户头像 Dropdown — 点击用户图标/头像打开菜单
-  const userAvatar = page.locator(".ant-layout-header .ant-avatar, .ant-layout-header .ant-dropdown-trigger").first();
-  await userAvatar.click();
-  // 点击"个人设置"
-  await page.getByRole("menuitem", { name: "个人设置" }).click();
+  // 用户头像 Dropdown —— header 最右侧的 .ant-dropdown-trigger（最后一个）
+  const userTrigger = page.locator(".ant-layout-header .ant-dropdown-trigger").last();
+  await userTrigger.waitFor({ state: 'visible' });
+  await userTrigger.click();
+  // 等待下拉菜单出现并点击"个人设置"
+  const menuItem = page.getByRole("menuitem", { name: "个人设置" });
+  await menuItem.waitFor({ state: 'visible' });
+  await menuItem.click();
   // 等待 Modal 出现
   await expect(page.getByRole("dialog", { name: "个人设置" })).toBeVisible();
 }
@@ -131,8 +134,8 @@ test.describe("主题切换", () => {
     await gotoApp(page);
     await openSettings(page);
 
-    // 找到 Radio.Button 里的 "极简" 并点击
-    const minimalRadio = page.getByRole("radio", { name: "极简" });
+    // 找到 Radio.Button 里的 "极简" 并点击（AntD Radio.Button 把 input 隐藏了，需点击 wrapper/label）
+    const minimalRadio = page.locator(".ant-radio-button-wrapper", { hasText: "极简" });
     await minimalRadio.click();
 
     const body = page.locator("body");
@@ -159,9 +162,11 @@ test.describe("主题视觉回归（防颜色自相矛盾）", () => {
     // 切到 GitHub 深色 — 外层 body 背景深、文字浅
     await page.locator('[data-theme-card="github-dark"]').click();
     await expect(page.locator("body")).toHaveClass(/theme-github-dark/);
+    // CSS 变量传播需要一点时间，等一下确保 computedStyle 已更新
+    await page.waitForTimeout(300);
 
-    const body = page.locator("body");
-    const bodyColor = await body.evaluate(el => getComputedStyle(el).color);
+    // 从 document.body 取外层文字色（主题通过 body class 生效，body 上有正确的 color 变量）
+    const bodyColor = await page.evaluate(() => getComputedStyle(document.body).color);
 
     // 白色底浅色主题卡片（modern / github-light / minimal / ocean / forest / sakura）
     // 它们各自的文字颜色必须跟 bodyColor 不同（bodyColor 是浅色，卡片上文字应该是深色）
@@ -191,8 +196,8 @@ test.describe("主题视觉回归（防颜色自相矛盾）", () => {
     await page.locator('[data-theme-card="modern"]').click();
     await expect(page.locator("body")).toHaveClass(/theme-modern/);
 
-    const body = page.locator("body");
-    const bodyColor = await body.evaluate(el => getComputedStyle(el).color);
+    // 从 document.body 取外层文字色（主题通过 body class 生效，body 上有正确的 color 变量）
+    const bodyColor = await page.evaluate(() => getComputedStyle(document.body).color);
 
     // 只有一个深色主题卡片：github-dark
     const darkCard = page.locator('[data-theme-card="github-dark"]').first();
