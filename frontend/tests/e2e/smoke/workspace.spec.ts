@@ -1,5 +1,5 @@
 /** P0 Smoke — 工作区列表 + 表列表（仅 chromium-authed）. */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
 
 const ANON = ["setup", "chromium-anon"];
 

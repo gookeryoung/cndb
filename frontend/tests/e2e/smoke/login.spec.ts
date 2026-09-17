@@ -1,5 +1,5 @@
 /** P0 Smoke — 登录流程：匿名重定向 / 表单登录 / 错误密码. */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
 
 const ANON_PROJECTS = ["setup", "chromium-anon"];
 

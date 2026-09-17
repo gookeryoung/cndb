@@ -1,5 +1,6 @@
 /** P0 Smoke — Grid 表格渲染与基础操作（仅 chromium-authed）. */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { Page } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 

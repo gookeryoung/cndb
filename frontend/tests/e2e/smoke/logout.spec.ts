@@ -2,7 +2,7 @@
  *
  * 用 API 方式退出，避免 Antd Dropdown + Modal 组合的选择器脆弱性。
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
 
 const ANON = ["setup", "chromium-anon"];
 

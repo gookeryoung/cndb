@@ -8,7 +8,8 @@
  * 依赖：auth.setup.ts 先运行并持久化登录状态.
  */
 
-import { test, expect, Page } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { Page } from "@playwright/test";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";

@@ -11,7 +11,8 @@
  *   表 B "科研经费":   grid / kanban / gallery / calendar（"拨付日历"）
  *   表 C "课题负责人": grid / kanban / gallery（无 calendar，fallback 测试）
  */
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 
@@ -70,7 +71,7 @@ async function gotoTable(
     await request.put(`/api/v1/accounts/preferences/tables/${tid}/active-view`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { active_view_id: null },
-    }).catch(() => {});
+    }).catch(() => { });
   }
   // 清 localStorage 里的 mode，确保每个测试从干净状态开始
   await page.evaluate(() => {
@@ -285,7 +286,7 @@ test.describe("跨表切换 — 目标表无匹配视图时的 fallback", () => 
     await request.put(`/api/v1/accounts/preferences/tables/${tidC}/active-view`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { active_view_id: null },
-    }).catch(() => {});
+    }).catch(() => { });
 
     // 1. 表 A（项目进展）有日历视图 → 切到日历
     await gotoTable(page, request, wid, "项目进展");

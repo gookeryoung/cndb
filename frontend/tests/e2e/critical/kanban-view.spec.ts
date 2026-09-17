@@ -28,7 +28,8 @@
  * 注意：React inline style 渲染后 camelCase 转成 kebab-case，
  * 如 overflowX → overflow-x, fontWeight → font-weight.
  */
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 
