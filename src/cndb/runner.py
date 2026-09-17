@@ -162,11 +162,17 @@ def info_command() -> int:
     print(f"  Frozen:       {_is_frozen()}")
     print(f"  BASE_DIR:     {BASE_DIR}")
     print(f"  DATA_DIR:     {DATA_DIR}")
+    print(f"  ├─ config:    {settings.CONFIG_DIR}")
+    print(f"  ├─ data:      {settings.DATABASE_DIR}")
+    print(f"  ├─ uploads:   {settings.UPLOAD_DIR}")
+    print(f"  ├─ plugins:   {settings.PLUGINS_DIR}")
+    print(f"  ├─ backups:   {settings.BACKUP_DIR}")
+    print(f"  ├─ cache:     {settings.CACHE_DIR}")
+    print(f"  └─ logs:      {settings.LOG_DIR}")
     print(f"  DEBUG:        {settings.DEBUG}")
     print(f"  DATABASE_URL: {settings.DATABASE_URL}")
     print(f"  API_PREFIX:   {settings.API_V1_PREFIX}")
     print(f"  AUTH_ENABLED: {settings.AUTH_ENABLED}")
-    print(f"  PLUGINS_DIR:  {settings.PLUGINS_DIR}")
     print(f"  SYSLIB:       {sys.executable}")
     return 0
 
