@@ -27,6 +27,7 @@ from fastapi_offline import FastAPIOffline
 from cndb.core.config import settings
 from cndb.core.migrations import ensure_db_migrated
 from cndb.core.plugin_registry import plugin_registry
+from cndb.core.system_api import register_system_routes
 from cndb.plugins.tables.routers.public import router as public_router
 
 
@@ -57,6 +58,9 @@ plugin_registry.mount_routes(app)
 
 # tables 插件全局公开路由
 app.include_router(public_router)
+
+# 系统管理级路由（backup/restore/info）— 需 superuser 权限
+register_system_routes(app)
 
 
 app.add_middleware(
