@@ -33,6 +33,17 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
+    // 将 FastAPI 的 detail（字符串或校验错误数组）归一化进 err.message，
+    // 各调用点的 `err.message` 展示即可拿到可读的后端文案
+    const detail = err?.response?.data?.detail
+    if (detail) {
+      err.message =
+        typeof detail === 'string'
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d: { msg?: string }) => d?.msg ?? JSON.stringify(d)).join('; ')
+            : String(detail?.msg ?? JSON.stringify(detail))
+    }
     if (err.response?.status === 401) {
       clearToken()
       try {
