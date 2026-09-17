@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
-  closestCenter,
+  rectIntersection,
   useSensor,
   useSensors,
   PointerSensor,
@@ -139,6 +139,11 @@ export default function ReportTemplateEditor({
     setIsDragActive(false)
     const { active, over } = event
     if (!over) return
+
+    // over 是某个字段项自身（field- 前缀）→ 用户在 FieldPanel 内排序，跳过 insert
+    if (String(over.id).startsWith('field-')) return
+
+    // 确认目标是编辑器 dropzone
     if (over.id !== 'template-editor-dropzone') return
 
     // 从 dnd-kit 的 data 中获取字段 id；若找不到，尝试从 active.id 反查
