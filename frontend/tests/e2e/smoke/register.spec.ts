@@ -4,6 +4,8 @@
  * - 匿名访问 /register 可正常显示注册表单
  * - 注册成功后自动登录 → 进入 /w 工作区列表
  * - 重复用户名 → 显示错误提示
+ *
+ * 注：公开注册页已收窄为仅注册普通用户，不暴露三员角色选择.
  */
 import { test, expect } from "@playwright/test"
 
@@ -24,10 +26,8 @@ test.describe("注册流程（仅 chromium-anon）", () => {
     await expect(page.getByPlaceholder("显示昵称（可选）")).toBeVisible()
     await expect(page.getByPlaceholder("your@email.com")).toBeVisible()
     await expect(page.getByPlaceholder("密码")).toBeVisible()
-    // 角色选择器
-    await expect(page.getByRole("radio", { name: /普通用户/ })).toBeVisible()
-    // 提交按钮
-    await expect(page.getByRole("button", { name: /创 建 账 号/ })).toBeVisible()
+    // 提交按钮（公开注册页按钮文字为"注册"）
+    await expect(page.getByRole("button", { name: /注 册/ })).toBeVisible()
   })
 
   test("注册成功 → 自动登录 → 进入 /w 工作区列表", async ({ page }) => {
@@ -36,7 +36,7 @@ test.describe("注册流程（仅 chromium-anon）", () => {
     await page.goto("/register")
     await page.getByPlaceholder("用户名").fill(username)
     await page.getByPlaceholder("密码").fill("testpass123")
-    await page.getByRole("button", { name: /创 建 账 号/ }).click()
+    await page.getByRole("button", { name: /注 册/ }).click()
 
     // 注册成功后自动登录，跳转到 /w
     await page.waitForURL(/\/w$/)
@@ -50,7 +50,7 @@ test.describe("注册流程（仅 chromium-anon）", () => {
     await page.goto("/register")
     await page.getByPlaceholder("用户名").fill("demo")
     await page.getByPlaceholder("密码").fill("testpass123")
-    await page.getByRole("button", { name: /创 建 账 号/ }).click()
+    await page.getByRole("button", { name: /注 册/ }).click()
 
     // 应该留在注册页，不跳转
     await page.waitForTimeout(1000)

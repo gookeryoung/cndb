@@ -114,7 +114,13 @@ async function openAppendDialog(page: Page) {
 
 // ── 测试用例 ─────────────────────────────────────────
 
+/** 需要登录态（chromium-authed only）的 API 建表/追加流程测试 */
 test.describe("API 自动建表 + 数据抓取", () => {
+  test.skip(
+    () => !["chromium-authed"].includes(test.info().project.name),
+    "需要登录态，anon 项目跳过",
+  );
+
   test("Analyze 端点返回的列元数据正确展示", async ({ page }) => {
     mockImportApiRoutes(page);
     await openCreateDialog(page);

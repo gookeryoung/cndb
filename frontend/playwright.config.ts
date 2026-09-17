@@ -28,7 +28,9 @@ export default defineConfig({
     {
       name: "chromium-authed",
       dependencies: ["setup"],
-      storageState: AUTH_STATE,
+      use: {
+        storageState: AUTH_STATE,
+      },
     },
     {
       name: "chromium-anon",
