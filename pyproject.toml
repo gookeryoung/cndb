@@ -38,7 +38,7 @@ version         = "0.1.8"
 
 [project.scripts]
 cndb  = "cndb.runner:main"
-cndbw = "cndb.gui:main"
+cndbw = "cndb.gui.main_window:main"
 
 [project.optional-dependencies]
 dev = ["cndb[lint,test,docs]"]
