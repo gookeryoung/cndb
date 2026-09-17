@@ -61,7 +61,10 @@ test.describe("表列表 owner 列 + 访问级筛选器", () => {
     await expect(page.locator("th", { hasText: "拥有者" }).first()).toBeVisible()
 
     // 第一行拥有者 cell 显示 "admin"（seed 数据 owner=admin）
-    const firstOwnerCell = page.locator(".ant-table-tbody tr.ant-table-row").first().locator("td").nth(2)
+    // owner 列是 th 中文字为「拥有者」的列 —— 用 header 定位更稳定
+    const ownerTh = page.locator("th", { hasText: "拥有者" }).first()
+    const ownerIndex = await ownerTh.evaluate(th => th.cellIndex)
+    const firstOwnerCell = page.locator(".ant-table-tbody tr.ant-table-row").first().locator("td").nth(ownerIndex)
     await expect(firstOwnerCell).toContainText("admin")
     await expect(firstOwnerCell).not.toHaveText("未指定")
   })

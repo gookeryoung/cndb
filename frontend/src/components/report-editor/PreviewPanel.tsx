@@ -22,6 +22,7 @@ export interface PreviewPanelProps {
  * 设置为 autoescape=false 与后端保持一致。
  * 浏览器端直接渲染字符串，不需要 Node.js 专用的 FileSystemLoader。
  */
+// 浏览器端不需要 FileSystemLoader（Node 专属），renderString 直接用 null loader 即可
 const renderer = new nunjucks.Environment(null, {
   autoescape: false,
   trimBlocks: true,

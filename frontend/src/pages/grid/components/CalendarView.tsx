@@ -10,7 +10,7 @@
  * 注：日历视图只支持单点日期事件，不渲染跨天持续标识。进度跟踪请使用其他视图。
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Segmented, Space, Tooltip, Empty, Tag } from 'antd'
 import {
   LeftOutlined,
@@ -586,6 +586,7 @@ export default function CalendarView({ rows, fields, view, density, onRowClick }
   )
 
   // 当前"注视日期"——所有层级导航围绕此日期展开
+  // 初始化时：优先 today，但如果 events 非空且 today 的月份没有事件，则跳到第一个有事件的日期
   const [focusDate, setFocusDate] = useState<Date>(() => new Date())
   const [mode, setMode] = useState<CalendarMode>(() => (opts.calendar_mode as CalendarMode) || 'month')
 
@@ -597,6 +598,29 @@ export default function CalendarView({ rows, fields, view, density, onRowClick }
 
   // 构建事件列表
   const events = useMemo(() => buildEvents(rows, fields, opts), [rows, fields, opts])
+
+  // events 首次非空时，若当前 focusDate 所在月无事件，自动跳到第一个有事件的日期
+  // 仅在首次有效渲染时触发一次，用户手动翻月后不再自动修正
+  const autoFocusDoneRef = useRef(false)
+  useEffect(() => {
+    if (autoFocusDoneRef.current) return
+    if (events.length === 0) return
+    const target = events[0].date
+    // 检查当前 focusDate 月是否有任何事件
+    const hasEventInMonth = events.some(
+      (ev) =>
+        ev.date.getFullYear() === focusDate.getFullYear() &&
+        ev.date.getMonth() === focusDate.getMonth(),
+    )
+    if (!hasEventInMonth) {
+      autoFocusDoneRef.current = true
+      setFocusDate(target)
+    } else {
+      // 已有事件，不再需要自动跳转，避免后续重复修正
+      autoFocusDoneRef.current = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events])
 
   // 标题栏文本（必须在条件 return 之前声明）
   const titleText = useMemo(() => {
