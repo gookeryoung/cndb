@@ -68,6 +68,8 @@ const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorProps>(fun
           '.cm-scroller': {
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             lineHeight: '1.6',
+            height: '100%',
+            overflow: 'auto',
           },
           '.cm-jinja-variable': {
             color: '#7ec699',
