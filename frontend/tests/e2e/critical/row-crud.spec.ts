@@ -24,7 +24,7 @@ async function getTableId(request: any): Promise<number> {
 /** 登录获取 token */
 async function getToken(request: any): Promise<string> {
   const resp: APIResponse = await request.post("/api/v1/accounts/auth/login", {
-    data: { login: "demo", password: "demo1234" },
+    data: { login: "admin", password: "admin1234" },
   });
   const body = await resp.json();
   return body.access_token;

@@ -158,6 +158,12 @@ export default function GridPage() {
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
 
+  /** wid/tid 变化时重置活动视图状态 —— React Router 复用 GridPage 组件实例，
+   *  跨表导航时 activeViewId 保留旧值会阻止初始化 useEffect 重新匹配目标表的视图. */
+  useEffect(() => {
+    setActiveViewId(null)
+  }, [wid, tid])  // eslint-disable-line react-hooks/exhaustive-deps
+
   const { data: table, isLoading } = useQuery<TableDetail>({
     queryKey: ['table', tableKey],
     queryFn: () => tableApi.get(wid!, tid!),
@@ -208,7 +214,7 @@ export default function GridPage() {
   }
 
   // 加载 active view 的 filters + view_options
-  const loadView = (v: View | null, updateUrl = true) => {
+  const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
       setActiveViewId(v.id)
@@ -221,7 +227,10 @@ export default function GridPage() {
       const newMode: ViewMode = KANBAN_MODES.has(vt) ? (vt as ViewMode) : 'grid'
       setMode(newMode)
       // 全局模式持久化（localStorage + URL）—— 跨表切换时自动找回相同视图类型
-      try { localStorage.setItem(MODE_STORAGE_KEY, newMode) } catch { /* localStorage 不可用时忽略 */ }
+      // persistMode=false 时（如初始化 fallback 到 default 视图）跳过，不覆盖用户之前的偏好
+      if (persistMode) {
+        try { localStorage.setItem(MODE_STORAGE_KEY, newMode) } catch { /* localStorage 不可用时忽略 */ }
+      }
       if (updateUrl) {
         const params = new URLSearchParams(searchParams)
         params.set('view', String(v.id))
@@ -237,7 +246,9 @@ export default function GridPage() {
       setViewFilterLogic('AND')
       setViewOptionsDraft(null)
       setMode('grid')
-      try { localStorage.setItem(MODE_STORAGE_KEY, 'grid') } catch { /* localStorage 不可用时忽略 */ }
+      if (persistMode) {
+        try { localStorage.setItem(MODE_STORAGE_KEY, 'grid') } catch { /* localStorage 不可用时忽略 */ }
+      }
       if (updateUrl) {
         const params = new URLSearchParams(searchParams)
         params.delete('view')
@@ -253,37 +264,54 @@ export default function GridPage() {
   // 当前激活的视图对象（含 view_options）
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
 
-  // 视图初始化：URL ?view= 深链 > URL ?mode= 匹配 > localStorage mode 匹配 > 用户偏好 active_view_id > is_default > 第一个
+  // 视图初始化 / 重新匹配：URL ?view= 深链 > URL ?mode= 匹配 > localStorage mode 匹配 > 用户偏好 active_view_id > is_default > 第一个
+  // 每次 wid/tid/searchParams/views/activeViewPreference 变化时都重新评估，
+  // 但只有当目标视图和当前 activeViewId 不同时才实际切换，避免无限循环.
   useEffect(() => {
-    if (!views.length || activeViewId !== null) return
+    if (!views.length) return
+
+    // ── 计算最匹配的目标视图 ──
+    let target: View | null = null
+
     // 1. URL 深链优先（精确 view id）
     const vidParam = searchParams.get('view')
     if (vidParam) {
-      const target = views.find(v => String(v.id) === vidParam)
-      if (target) { loadView(target, false); return }
+      target = views.find(v => String(v.id) === vidParam) || null
     }
     // 2. URL mode 匹配（刷新 / 从其它表带 ?mode= 导航过来时保留展示模式）
-    const spMode = searchParams.get('mode') as ViewMode | null
-    if (spMode && VALID_MODES.includes(spMode)) {
-      const target = views.find(v => v.view_type === spMode)
-      if (target) { loadView(target, false); return }
+    if (!target) {
+      const spMode = searchParams.get('mode') as ViewMode | null
+      if (spMode && VALID_MODES.includes(spMode)) {
+        target = views.find(v => v.view_type === spMode) || null
+      }
     }
     // 3. localStorage mode 匹配（侧边栏点表导航丢失 URL 参数时的兜底）
-    const lsMode = _readModeFromStorage()
-    if (lsMode) {
-      const target = views.find(v => v.view_type === lsMode)
-      if (target) { loadView(target, false); return }
+    if (!target) {
+      const lsMode = _readModeFromStorage()
+      if (lsMode) {
+        target = views.find(v => v.view_type === lsMode) || null
+      }
     }
-    // 4. 用户偏好的激活视图（后端存储 per-table）
-    const prefVid = activeViewPreference?.active_view_id
-    if (prefVid != null) {
-      const target = views.find(v => Number(v.id) === prefVid)
-      if (target) { loadView(target, false); return }
+    // 4. 用户偏好的激活视图（后端存储 per-table）—— 异步加载完成后也能触发重新评估
+    if (!target) {
+      const prefVid = activeViewPreference?.active_view_id
+      if (prefVid != null) {
+        target = views.find(v => Number(v.id) === prefVid) || null
+      }
     }
     // 5. 最后：default 或第一个
-    const def = views.find(v => v.default) || views[0]
-    if (def) loadView(def, false)
-    else setActiveViewId(null)
+    if (!target) {
+      target = views.find(v => v.default) || views[0] || null
+    }
+
+    // ── 只在目标和当前不同时才切换（初始化都不持久化 mode，避免覆盖用户偏好） ──
+    if (target) {
+      if (activeViewId !== String(target.id)) {
+        loadView(target, false, false)
+      }
+    } else if (activeViewId !== null) {
+      loadView(null, false, false)
+    }
   }, [views, searchParams, wid, tid, activeViewPreference])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // searchQuery URL 深链：?q=关键词
@@ -533,9 +561,9 @@ export default function GridPage() {
       tableApi.copy(wid!, tid!, opts),
     onSuccess: (t, opts) => {
       const modeLabel = opts.mode === 'structure' ? '(仅结构)' : opts.mode === 'view' ? '(当前视图)' : '(含全部数据)'
-      message.success(`已复制为 "${t.name}" ${modeLabel}`)
+      message.success(`已复制为 "${t.name}" ${modeLabel}`, 2)
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
-      if (t.id) navigate(`/w/${wid}/tables/${t.id}`)
+      if (t.id) setTimeout(() => navigate(`/w/${wid}/tables/${t.id}`), 300)
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '复制失败'),
   })
@@ -639,6 +667,8 @@ export default function GridPage() {
               { key: 'share', icon: <ShareAltOutlined />, label: '分享视图', onClick: () => shareView.mutate() },
               { key: 'revoke', icon: <CloseOutlined />, label: '撤销分享', onClick: () => revokeShare.mutate() },
               { type: 'divider' },
+              { key: 'table-settings-page', icon: <SettingOutlined />, label: '表设置页面', onClick: () => navigate(`/w/${wid}/tables/${tid}/settings`) },
+              { type: 'divider' },
               {
                 key: 'copy', icon: <CopyOutlined />, label: '复制表',
                 children: [
@@ -671,7 +701,7 @@ export default function GridPage() {
                 }),
               },
             ]
-          }}><Button icon={<MoreOutlined />} /></Dropdown>
+          }}><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></Dropdown>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => quickAdd.mutate()} disabled={!canEditRecords}>新增行</Button>
         </Space>
       </div>
