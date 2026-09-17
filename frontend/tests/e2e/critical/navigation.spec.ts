@@ -4,7 +4,7 @@
  * 以及表列表 owner 列展示 + 筛选器.
  */
 
-import { test, expect } from "@playwright/test"
+import { test, expect } from "../fixtures/auth"
 
 const ANON = ["setup", "chromium-anon"]
 const WID = 1

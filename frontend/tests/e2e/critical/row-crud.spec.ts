@@ -3,7 +3,8 @@
  * 策略：通过 API 直接管理测试行，前端只验证 Grid 渲染结果。
  * 避免 inline 编辑在 Antd 组件中的复杂选择器。
  */
-import { test, expect, APIResponse } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIResponse } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
 const WID = 1;

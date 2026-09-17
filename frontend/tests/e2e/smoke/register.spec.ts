@@ -7,7 +7,7 @@
  *
  * 注：公开注册页已收窄为仅注册普通用户，不暴露三员角色选择.
  */
-import { test, expect } from "@playwright/test"
+import { test, expect } from "../fixtures/auth"
 
 const ANON = ["setup", "chromium-anon"]
 

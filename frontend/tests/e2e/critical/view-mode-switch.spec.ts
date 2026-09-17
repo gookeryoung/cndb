@@ -16,7 +16,8 @@
  *   └─ 工作区-项目管理
  *       └─ WBS任务分解      → grid+kanban+calendar+gantt+wbs → 5 个按钮（缺 gallery）
  */
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 // ──────────────────────────── 通用辅助 ────────────────────────────
 
@@ -76,7 +77,7 @@ async function gotoTable(
       headers: { Authorization: `Bearer ${token}` },
       data: { active_view_id: null },
     })
-    .catch(() => {});
+    .catch(() => { });
 
   await page.goto(`/w/${wid}/tables/${tid}`);
   await page.waitForURL(/\/tables\/\d+/);
