@@ -5,7 +5,7 @@ import { Alert, Empty, Spin, Typography } from 'antd'
 export interface PreviewPanelProps {
   /** 当前模板内容 */
   template: string
-  /** 模拟行数据（records） */
+  /** 模拟行数据（records — 主表） */
   records: Array<Record<string, unknown>>
   /** 表名 */
   tableName?: string
@@ -13,6 +13,8 @@ export interface PreviewPanelProps {
   params?: Record<string, unknown>
   /** 数据源加载状态 */
   loading?: boolean
+  /** 额外表预览数据 (tableName -> records[]) */
+  recordsByTable?: Record<string, Array<Record<string, unknown>>>
 }
 
 /**
@@ -48,15 +50,16 @@ export default function PreviewPanel({
   tableName,
   params = {},
   loading = false,
+  recordsByTable,
 }: PreviewPanelProps) {
   // debounce 300ms
   const result = useMemo<RenderResult>(() => {
     if (!template.trim()) {
       return { output: '', error: null, elapsed: 0 }
     }
-    const ctx = { records, table_name: tableName || '', params }
+    const ctx = { records, table_name: tableName || '', params, records_by_table: recordsByTable || {} }
     return tryRender(template, ctx)
-  }, [template, records, tableName, params])
+  }, [template, records, tableName, params, recordsByTable])
 
   const [debouncedResult, setDebouncedResult] = useState<RenderResult>(result)
 
