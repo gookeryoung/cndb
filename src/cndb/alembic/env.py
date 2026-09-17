@@ -1,9 +1,10 @@
-"""包内 alembic env.py，供编程式迁移调用.
+"""Alembic env.py（双份同内容：根目录 alembic/ + 包内 src/cndb/alembic/）.
 
-与根目录 alembic/env.py 的区别：
-- 不依赖 config.config_file_name（编程式调用时为 None）
-- 所有路径以当前文件所在目录为基准
-- 收集全部插件的 ORM metadata，供 upgrade head 使用
+职责：
+- 收集全部插件的 ORM metadata，确保 Base.metadata 包含所有表
+- 动态注入 DATABASE_URL（优先 env.py，回退 settings）
+- 编程式调用（config.config_file_name 为 None）时自动跳过 fileConfig
+- 支持 CLI（alembic.ini）和编程式（ensure_db_migrated）两种使用场景
 """
 
 from __future__ import annotations
