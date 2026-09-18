@@ -2,6 +2,26 @@
 
 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.12] — 未发布
+
+### 移除
+
+- 空壳包 `cndb.services` / `cndb.schemas`（模板脚手架遗留，无任何引用）
+- Sphinx 文档骨架 `docs/` 与 `.readthedocs.yaml`、pyproject `docs` extra（文档入口以 FastAPI `/docs` 为准）
+- `tox.ini` 与 Makefile `tox` / `doc` / `check-fast-par` 死目标（门禁统一由 `make check` 承载）
+
+### 变更
+
+- `httpx` 从运行时依赖移至 `test` extra（源码仅使用 `httpx2`；httpx 仅供 starlette TestClient 测试使用）
+- ruff/pyrefly 配置收敛：移除不存在目录的排除项，修正 UP045 注释中的 typer 表述（CLI 实际用 argparse）
+
+### 修复
+
+- `docker-compose.yml` 源码部署构建上下文 `context: ..` → `context: .`（compose 文件位于仓库根目录）
+- README 失实内容：npm → pnpm、`make bench` 改为脚本调用、移除不存在的 `.env.example` 指引、项目结构树对齐实际目录
+
+> 注：历史条目止于 0.1.2，0.1.3–0.1.11 未回填。
+
 ## [0.1.2] — 2026-09-11
 
 ### 新增

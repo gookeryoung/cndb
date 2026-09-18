@@ -6,7 +6,6 @@ import subprocess
 import sys
 
 import cndb
-from cndb import schemas, services
 
 
 def test_version_is_present() -> None:
@@ -18,12 +17,6 @@ def test_app_factory_is_accessible() -> None:
     assert hasattr(cndb, "PluginBase")
     assert hasattr(cndb, "Settings")
     assert hasattr(cndb, "app")
-
-
-def test_schemas_and_services_are_importable() -> None:
-    """schema/services 包应可正常导入."""
-    assert schemas is not None
-    assert services is not None
 
 
 def test_facade_import_does_not_eagerly_load_app() -> None:
