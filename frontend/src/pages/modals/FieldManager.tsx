@@ -335,7 +335,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         </Row>
 
         {/* 类型专属 config 编辑区 */}
-        {fieldType && <ConfigEditor fieldType={fieldType} form={form} wid={wid} tid={tid} tables={tables} isEdit={!!editTarget} />}
+        {fieldType && <ConfigEditor fieldType={fieldType} form={form} wid={wid} tid={tid} tables={tables} isEdit={!!editTarget} editTargetId={editTarget?.id ?? null} />}
       </Form>
     </Modal>
   )
@@ -601,6 +601,8 @@ interface ConfigEditorProps {
   tables: TableSummary[]
   /** 是否为编辑已有字段（编辑时不覆盖既有 config，避免 options 等配置被默认值清空） */
   isEdit?: boolean
+  /** 正在编辑的字段 id（null 表示新建），用于强制 SelectOptionsEditor 在不同字段间切换时重挂载 */
+  editTargetId?: number | string | null
 }
 
 /** 哪些字段类型有可配置项 */
@@ -613,7 +615,7 @@ const HAS_CONFIG_TYPES = new Set<string>([
 ])
 
 /** 字段类型对应的 config 编辑器 */
-function ConfigEditor({ fieldType, form, tables, isEdit = false }: ConfigEditorProps) {
+function ConfigEditor({ fieldType, form, tables, isEdit = false, editTargetId = null }: ConfigEditorProps) {
   // 关键：<Form.Item name="config" hidden /> 注册后，Form.useWatch('config', form)
   // 才能真正订阅 config 变化。此前未注册 Form.Item 导致 useWatch 永远返回 undefined，
   // ConfigEditor 不会因 form.setFieldValue 触发重渲染，SelectOptionsEditor 收到的 config
@@ -694,10 +696,10 @@ function ConfigEditor({ fieldType, form, tables, isEdit = false }: ConfigEditorP
       )}
 
       {/* ── 选择类（select / multi_select） ── */}
-      {/* key={fieldType} 确保字段类型切换时 SelectOptionsEditor 强制重挂载，
-          useState 从 form store 重新初始化，避免旧类型 options 残留。 */}
+      {/* key 绑定 fieldType + editTargetId：同类型不同字段切换时也强制重挂载，
+          避免 SelectOptionsEditor 的 useState 停留在上一个字段的 options. */}
       {TYPE_CATEGORIES.select.includes(fieldType) && (
-        <SelectOptionsEditor key={fieldType} form={form} />
+        <SelectOptionsEditor key={`${fieldType}-${editTargetId ?? 'new'}`} form={form} />
       )}
 
       {/* ── 关联 link ── */}
