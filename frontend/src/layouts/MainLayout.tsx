@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useMemo, useState, useCallback } from 'react'
+import React, { Suspense, lazy, useState, useCallback } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, Navigate } from 'react-router-dom'
 import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
@@ -57,10 +57,8 @@ export default function MainLayout() {
     enabled: !!wid,
   })
 
-  const orderedTables = useMemo(
-    () => [...tables].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
-    [tables],
-  )
+  // 后端已按 DataTable.order（用户拖拽顺序）返回，这里直接使用即可。
+  const orderedTables = tables
 
   const currentWs = workspaces.find(w => String(w.id) === wid)
 
