@@ -188,7 +188,7 @@ class TestBuiltinRoleSeed:
         r = client.get("/api/v1/roles", headers=auth_sysadmin)
         admin_role = next(x for x in r.json() if x["code"] == "admin")
         rid = admin_role["id"]
-        new_perms = {"READ": True, "EDIT_RECORDS": True, "EDIT_VIEWS": True, "EDIT_SCHEMA": False, "COMMENT": True}
+        new_perms = {"READ": True, "EDIT_RECORDS": True, "EDIT_VIEWS": True, "EDIT_SCHEMA": False}
         r = client.patch(f"/api/v1/roles/{rid}", json={"permissions": new_perms}, headers=auth_sysadmin)
         assert r.status_code == 200, r.text
         assert r.json()["permissions"]["EDIT_SCHEMA"] is False
@@ -210,7 +210,6 @@ class TestCustomRoleCRUD:
                 "EDIT_RECORDS": True,
                 "EDIT_VIEWS": False,
                 "EDIT_SCHEMA": False,
-                "COMMENT": True,
             },
         }
         r = client.post("/api/v1/roles", json=payload, headers=auth_sysadmin)
@@ -292,7 +291,6 @@ class TestOwnerAssignsRoleToMember:
                     "EDIT_RECORDS": True,
                     "EDIT_VIEWS": False,
                     "EDIT_SCHEMA": False,
-                    "COMMENT": True,
                 },
             },
             headers=auth_sysadmin,
@@ -347,7 +345,6 @@ class TestOwnerAssignsRoleToMember:
                     "EDIT_RECORDS": True,
                     "EDIT_VIEWS": False,
                     "EDIT_SCHEMA": False,
-                    "COMMENT": False,
                 },
             },
             headers=auth_sysadmin,
@@ -373,7 +370,7 @@ class TestOwnerAssignsRoleToMember:
 class TestAccessControlWithCustomRole:
     @pytest.fixture
     def role_assigned_member(self, client, auth_sysadmin, db, ws_with_owner, table_for_role, another_user):
-        """给 another_user 分配一个自定义角色，READ + COMMENT 都允许，但 EDIT_RECORDS/EDIT_VIEWS 不允许."""
+        """给 another_user 分配一个自定义角色，READ 允许，但 EDIT_RECORDS/EDIT_VIEWS 不允许."""
         r = client.post(
             "/api/v1/roles",
             json={
@@ -384,7 +381,6 @@ class TestAccessControlWithCustomRole:
                     "EDIT_RECORDS": False,
                     "EDIT_VIEWS": False,
                     "EDIT_SCHEMA": False,
-                    "COMMENT": True,
                 },
             },
             headers=auth_sysadmin,
@@ -403,9 +399,8 @@ class TestAccessControlWithCustomRole:
         from cndb.plugins.tables.access import TableAction, check_action
 
         table = role_assigned_member
-        # READ / COMMENT 应 True
+        # READ 应 True
         assert check_action(db, table, another_user, TableAction.READ) is True
-        assert check_action(db, table, another_user, TableAction.COMMENT) is True
         # EDIT_* 应 False
         assert check_action(db, table, another_user, TableAction.EDIT_RECORDS) is False
         assert check_action(db, table, another_user, TableAction.EDIT_VIEWS) is False
@@ -464,7 +459,6 @@ class TestListAndEcho:
                     "EDIT_RECORDS": True,
                     "EDIT_VIEWS": False,
                     "EDIT_SCHEMA": False,
-                    "COMMENT": True,
                 },
             },
             headers=auth_sysadmin,

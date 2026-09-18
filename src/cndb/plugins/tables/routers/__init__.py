@@ -6,7 +6,6 @@ from fastapi import APIRouter
 
 from cndb.plugins.tables.routers.audit import router as audit_router
 from cndb.plugins.tables.routers.bulk import router as bulk_router
-from cndb.plugins.tables.routers.comments import router as comments_router
 from cndb.plugins.tables.routers.fields import router as fields_router
 from cndb.plugins.tables.routers.files import router as files_router
 from cndb.plugins.tables.routers.import_api import router as import_api_router
@@ -25,7 +24,6 @@ router.include_router(tables_router)
 router.include_router(views_router)
 router.include_router(permissions_router)
 router.include_router(members_router)
-router.include_router(comments_router)
 router.include_router(audit_router)
 router.include_router(trash_router)
 router.include_router(bulk_router)

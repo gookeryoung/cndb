@@ -70,15 +70,15 @@ def seed_builtin_roles(db: Session) -> None:
     builtin_defs: dict[str, tuple[str, dict[str, bool]]] = {
         "read": (
             "只读",
-            {"READ": True, "EDIT_RECORDS": False, "EDIT_VIEWS": False, "EDIT_SCHEMA": False, "COMMENT": True},
+            {"READ": True, "EDIT_RECORDS": False, "EDIT_VIEWS": False, "EDIT_SCHEMA": False},
         ),
         "write": (
             "可编辑",
-            {"READ": True, "EDIT_RECORDS": True, "EDIT_VIEWS": True, "EDIT_SCHEMA": False, "COMMENT": True},
+            {"READ": True, "EDIT_RECORDS": True, "EDIT_VIEWS": True, "EDIT_SCHEMA": False},
         ),
         "admin": (
             "表管理员",
-            {"READ": True, "EDIT_RECORDS": True, "EDIT_VIEWS": True, "EDIT_SCHEMA": True, "COMMENT": True},
+            {"READ": True, "EDIT_RECORDS": True, "EDIT_VIEWS": True, "EDIT_SCHEMA": True},
         ),
     }
     for code in BUILTIN_ROLE_CODES:

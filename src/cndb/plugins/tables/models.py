@@ -292,7 +292,6 @@ class TablePermission(TimestampMixin, Base):
     edit_records_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     edit_views_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     edit_schema_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    comment_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     hidden_fields: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     row_filters: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     row_filter_type: Mapped[str] = mapped_column(String(3), nullable=False, default="AND")
@@ -326,19 +325,6 @@ class TableMember(TimestampMixin, Base):
     # 关系
     table: Mapped[DataTable] = relationship(back_populates="members")
     user: Mapped[User] = relationship("User")
-
-
-# RowComment
-class RowComment(TimestampMixin, Base):
-    __tablename__ = "tables_rowcomment"
-    __table_args__ = {"extend_existing": True}
-    table_id: Mapped[int] = mapped_column(
-        ForeignKey("tables_datatable.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    row_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("accounts_user.id", ondelete="CASCADE"), nullable=False, index=True)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    parent_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 # AuditLog
@@ -407,7 +393,6 @@ __all__ = [
     "DataView",
     "FilterType",
     "ImportTask",
-    "RowComment",
     "TableMember",
     "TablePermission",
     "ViewType",

@@ -599,7 +599,6 @@ class TestTableDetailEnhancement:
         assert "edit_records" in actions
         assert "edit_views" in actions
         assert "edit_schema" in actions
-        assert "comment" in actions
 
         # ── owner: 表级拥有者（DataTable.owner_id 关联用户，继承自 TableResponse）
         assert d["owner"] is not None
@@ -651,10 +650,9 @@ class TestTableDetailEnhancement:
         r = client.get(f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}", headers=auth_editor)
         assert r.status_code == 200
         actions_e = set(r.json()["current_user_actions"])
-        # editor 应该能编辑记录、视图、评论；但不能编辑 schema
+        # editor 应该能编辑记录、视图；但不能编辑 schema
         assert "edit_records" in actions_e
         assert "edit_views" in actions_e
-        assert "comment" in actions_e
         assert "edit_schema" not in actions_e  # schema 需 admin+
 
         # viewer 登录
@@ -668,9 +666,8 @@ class TestTableDetailEnhancement:
         r = client.get(f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}", headers=auth_viewer)
         assert r.status_code == 200
         actions_v = set(r.json()["current_user_actions"])
-        # viewer 应该只有 read + comment
+        # viewer 应该只有 read
         assert "read" in actions_v
-        assert "comment" in actions_v
         assert "edit_records" not in actions_v
         assert "edit_views" not in actions_v
         assert "edit_schema" not in actions_v
