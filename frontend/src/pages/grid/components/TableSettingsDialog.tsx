@@ -1,8 +1,8 @@
 /** 表格显示设置 Dialog — 全局用户偏好（间距 / 每页行数 / 边框 / 表头 / 斑马纹） */
 
-import { useEffect, useState } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 import { Button, Modal, Select, Switch, message } from 'antd'
-import { useTableSettings } from '@/theme/TableSettingsProvider'
+import { useTableSettingsStore } from '@/store'
 import { DEFAULT_TABLE_SETTINGS } from '@/theme/tableSettings'
 
 interface TableSettingsDialogProps {
@@ -13,7 +13,17 @@ interface TableSettingsDialogProps {
 
 /** 表格显示设置对话框（持久化到浏览器 localStorage，对所有表生效） */
 export default function TableSettingsDialog({ open, onClose, onAfterSave }: TableSettingsDialogProps) {
-  const { settings, updateSettings, resetSettings } = useTableSettings()
+  const density = useTableSettingsStore(s => s.density)
+  const defaultPageSize = useTableSettingsStore(s => s.defaultPageSize)
+  const bordered = useTableSettingsStore(s => s.bordered)
+  const showHeader = useTableSettingsStore(s => s.showHeader)
+  const striped = useTableSettingsStore(s => s.striped)
+  const updateSettings = useTableSettingsStore(s => s.updateSettings)
+  const resetSettings = useTableSettingsStore(s => s.resetSettings)
+  const settings = useMemo(
+    () => ({ density, defaultPageSize, bordered, showHeader, striped }),
+    [density, defaultPageSize, bordered, showHeader, striped],
+  )
   const [draft, setDraft] = useState(settings)
 
   useEffect(() => {

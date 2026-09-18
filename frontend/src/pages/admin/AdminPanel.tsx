@@ -9,7 +9,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { adminApi } from '@/api'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuthStore } from '@/store'
 import type { BackupManifest } from '@/api'
 
 const { Text, Title } = Typography
@@ -21,7 +21,7 @@ function formatSize(bytes: number): string {
 }
 
 export default function AdminPanel() {
-  const { user } = useAuth()
+  const user = useAuthStore(s => s.user)
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
   // ── 所有 Hook 必须在任何条件 return 之前声明 ──

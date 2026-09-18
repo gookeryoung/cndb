@@ -1,8 +1,8 @@
 /** SPA 路由配置 — 按页面 lazy import 实现代码分包. */
 
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider } from '@/auth/AuthContext'
+import { useAuthStore } from '@/store'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import MainLayout from '@/layouts/MainLayout'
 import AuthLayout from '@/layouts/AuthLayout'
@@ -78,11 +78,14 @@ function AuthenticatedApp() {
 }
 
 function App() {
-  return (
-    <AuthProvider>
-      <AuthenticatedApp />
-    </AuthProvider>
-  )
+  const refresh = useAuthStore(s => s.refresh)
+
+  useEffect(() => {
+    // 应用启动时恢复登录态（token 已由 persist 从 localStorage 恢复）
+    refresh()
+  }, [refresh])
+
+  return <AuthenticatedApp />
 }
 
 export default App

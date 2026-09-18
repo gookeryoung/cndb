@@ -26,7 +26,7 @@ import type {
   WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceVisibility,
   MemberUserBrief,
 } from '@/api'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuthStore } from '@/store'
 
 interface Props {
   wid: string
@@ -69,7 +69,7 @@ export default function WorkspaceSettingsContent({
   wid, initialTab = 'basic', onUpdated,
 }: Props) {
   const queryClient = useQueryClient()
-  const { user: currentUser } = useAuth()
+  const currentUser = useAuthStore(s => s.user)
   const [form] = Form.useForm()
   const [activeTab, setActiveTab] = useState(initialTab)
   const [candidatesSearch, setCandidatesSearch] = useState('')

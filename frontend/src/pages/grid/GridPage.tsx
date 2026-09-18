@@ -50,7 +50,7 @@ import MoveTableForm from './components/MoveTableForm'
 import TableSettingsDialog from './components/TableSettingsDialog'
 import TableSettingsModal from '@/pages/modals/TableSettingsModal'
 import { buildColumns } from './components/buildColumns'
-import { useTableSettings } from '@/theme/TableSettingsProvider'
+import { useTableSettingsStore } from '@/store'
 import { densityToSize } from '@/theme/tableSettings'
 
 // Modal 组件 lazy import：点击打开时才加载
@@ -125,7 +125,12 @@ export default function GridPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const { settings } = useTableSettings()
+  const density = useTableSettingsStore(s => s.density)
+  const defaultPageSize = useTableSettingsStore(s => s.defaultPageSize)
+  const bordered = useTableSettingsStore(s => s.bordered)
+  const showHeader = useTableSettingsStore(s => s.showHeader)
+  const striped = useTableSettingsStore(s => s.striped)
+  const settings = { density, defaultPageSize, bordered, showHeader, striped }
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [mode, setMode] = useState<ViewMode>(() => {
     const spMode = searchParams.get('mode') as ViewMode | null

@@ -1,7 +1,7 @@
 import { Card, Form, Input, Button, Typography, message } from 'antd'
 import { UserOutlined, MailOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate, Link } from 'react-router-dom'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuthStore } from '@/store'
 
 const { Title, Text } = Typography
 
@@ -20,7 +20,7 @@ interface RegisterFormValues {
 }
 
 export default function RegisterPage() {
-  const { register } = useAuth()
+  const register = useAuthStore(s => s.register)
   const navigate = useNavigate()
 
   const onFinish = async (values: RegisterFormValues) => {
