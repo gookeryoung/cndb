@@ -28,14 +28,15 @@ import {
   CalendarOutlined, ShareAltOutlined, SwapOutlined, LineChartOutlined,
   SearchOutlined, EditOutlined, MenuOutlined, PartitionOutlined, HolderOutlined,
 } from '@ant-design/icons'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTable, useTableViews, useActiveViewPreference, useTableRecords, useUpdateRowOptimistic } from '@/api/hooks'
 import {
   DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors,
 } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { tableApi, recordApi, viewApi, userApi } from '@/api'
-import type { RowResponse, TableDetail, View, ViewCreate } from '@/api'
+import type { RowResponse, View, ViewCreate } from '@/api'
 import KanbanView from './components/KanbanView'
 import CalendarView from './components/CalendarView'
 import GalleryView from './components/GalleryView'
@@ -164,23 +165,10 @@ export default function GridPage() {
     setActiveViewId(null)
   }, [wid, tid])
 
-  const { data: table, isLoading } = useQuery<TableDetail>({
-    queryKey: ['table', tableKey],
-    queryFn: () => tableApi.get(wid!, tid!),
-    enabled: !!wid && !!tid,
-  })
-  const { data: views = [] } = useQuery<View[]>({
-    queryKey: ['table-views', tableKey],
-    queryFn: () => viewApi.list(wid!, tid!),
-    enabled: !!wid && !!tid,
-  })
+  const { data: table, isLoading } = useTable(wid!, tid!)
+  const { data: views = [] } = useTableViews(wid!, tid!)
   /** 用户偏好：当前表的激活视图 ID（per-user per-table 持久化） */
-  const { data: activeViewPreference } = useQuery<{ table_id: number; active_view_id: number | null }>({
-    queryKey: ['user-pref-active-view', tableKey],
-    queryFn: () => userApi.getTableActiveView(tid!),
-    enabled: !!wid && !!tid,
-    staleTime: 60_000,
-  })
+  const { data: activeViewPreference } = useActiveViewPreference(Number(tid))
   /** 保存激活视图偏好（debounce 在 loadView 里手动控制） */
   const saveActiveViewPref = useMutation({
     mutationFn: (vid: number | null) => userApi.setTableActiveView(Number(tid!), vid),
@@ -348,13 +336,16 @@ export default function GridPage() {
   const canEditSchema = hasAction('edit_schema')
   const canEditRecords = hasAction('edit_records')
 
-  const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 } } = useQuery({
-    queryKey: ['table-records', tableKey, mode, effectiveOffset, effectiveLimit, effectiveFilters, sortsParam, viewFilterLogic],
-    queryFn: () => {
-      return recordApi.list(wid!, tid!, { offset: effectiveOffset, limit: effectiveLimit, filters: effectiveFilters, sorts: sortsParam, filter_logic: viewFilterLogic })
+  const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 } } = useTableRecords(
+    wid!, tid!, mode,
+    {
+      offset: effectiveOffset,
+      limit: effectiveLimit,
+      filters: effectiveFilters,
+      sorts: sortsParam,
+      filter_logic: viewFilterLogic,
     },
-    enabled: !!wid && !!tid,
-  })
+  )
 
   const deleteRows = useMutation({
     mutationFn: (ids: React.Key[]) => recordApi.bulkDelete(wid!, tid!, ids as Array<number | string>),
@@ -372,18 +363,7 @@ export default function GridPage() {
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
     },
   })
-  const updateRow = useMutation({
-    mutationFn: async (args: { rowId: number | string; fieldName: string; value: unknown }) => {
-      const payload: Record<string, unknown> = { [args.fieldName]: args.value }
-      return recordApi.update(wid!, tid!, args.rowId, { values: payload })
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-    },
-    onError: (err) => {
-      message.error(err instanceof Error ? err.message : '保存失败')
-    },
-  })
+  const updateRow = useUpdateRowOptimistic(wid!, tid!)
   const copyRow = useMutation({
     mutationFn: async (ids: Array<number | string>) => {
       const copies: Array<Record<string, unknown>> = []
@@ -816,7 +796,8 @@ export default function GridPage() {
               onChange: (p, l) => { setOffset((p - 1) * l); setLimit(l) },
               showTotal: (t) => `共 ${t} 条`,
             }}
-            scroll={{ x: 'max-content' }}
+            scroll={{ x: 'max-content', y: 'calc(100vh - 320px)' }}
+            virtual
             onChange={(_pag, _fil, sorter, extra) => {
               // 只在用户点击列头排序时（extra.action === 'sort'）才处理排序，
               // 分页/筛选变化时 AntD 也会传当前排序状态，但不应触发 sort 处理逻辑
