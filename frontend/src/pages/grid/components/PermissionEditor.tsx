@@ -18,7 +18,7 @@ import {
 import type {
   Field, TablePermission, TableOwnerInfo, TableMember, WorkspaceRole,
 } from '@/api'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuthStore } from '@/store'
 
 interface PermissionEditorProps {
   fields: Field[]
@@ -53,7 +53,7 @@ function buildHiddenSet(hidden: unknown): Set<string> {
 // ───────────────────────── 主组件 ─────────────────────────
 
 export default function PermissionEditor({ fields, data, wid, tid, owner }: PermissionEditorProps) {
-  const { user } = useAuth()
+  const user = useAuthStore(s => s.user)
   const queryClient = useQueryClient()
   const [transferOpen, setTransferOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
