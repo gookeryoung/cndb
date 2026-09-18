@@ -3,16 +3,14 @@
 
 PACKAGE := cndb
 COV_THRESHOLD := 95
-# min(cpu*2, 8)：≥4 核跑满 8 worker，低核数机器保守降档（纯 make 计算，避免每次解析都启动 uv/python）
+
+# min(cpu*2, 8)：≥4 核跑满 8 worker，低核数机器保守降档
 ifeq ($(OS),Windows_NT)
 CPUS := $(NUMBER_OF_PROCESSORS)
 else
 CPUS := $(shell nproc 2>/dev/null || echo 4)
 endif
 PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
-
-# push / bump 默认依赖 check，可用 SKIP_CHECK=1 临时跳过（仅限紧急修复，发布场景禁止使用）
-CHECK_DEPS := $(if $(SKIP_CHECK),,check)
 
 .PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck check-fast check-fast-par check doc tox pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
@@ -22,21 +20,21 @@ help: ## 显示帮助信息
 sync: ## 安装开发依赖
 	uv sync --extra dev
 
-frontend-sync: ## 安装前端依赖（pnpm install，惰性：node_modules 已存在则跳过）
+frontend-sync fs: ## 安装前端依赖（pnpm install，惰性：node_modules 已存在则跳过）
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import os,subprocess;\
-print('[frontend] node_modules 已存在，跳过 install') if os.path.isdir('frontend/node_modules') else (\
-print('[frontend] node_modules 不存在，开始 pnpm install...'),\
+print('[frontend] node_modules exist, skip pnpm install') if os.path.isdir('frontend/node_modules') else (\
+print('[frontend] node_modules not exist, start pnpm install...'),\
 subprocess.run(['pnpm','install','--frozen-lockfile'],cwd='frontend',check=True))"
 
-frontend-lint: frontend-sync ## 前端 ESLint 检查
+frontend-lint fl: frontend-sync ## 前端 ESLint 检查
 	cd frontend && pnpm lint
 
-frontend-typecheck: frontend-sync ## 前端 TypeScript 类型检查
+frontend-typecheck ft: frontend-sync ## 前端 TypeScript 类型检查
 	cd frontend && pnpm typecheck
 
-frontend-check: frontend-typecheck frontend-lint ## 前端门禁（typecheck + lint）
+frontend-check fc: frontend-typecheck frontend-lint ## 前端门禁（typecheck + lint）
 
-frontend-build: frontend-sync ## 构建前端（Vite，产物输出到 src/cndb/static/）
+frontend-build fb: frontend-sync ## 构建前端（Vite，产物输出到 src/cndb/static/）
 	cd frontend && pnpm build
 
 build b: frontend-build ## 构建分发包 (前端 → wheel + sdist)
@@ -62,7 +60,7 @@ e2e: frontend-sync ## 前端 E2E 测试（Playwright；需后端已启动 + 首�
 gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败）
 	uv run python scripts/check_gitkeep.py
 
-lint: ## 代码风格检查 (ruff, 与 CI 对齐仅扫 src + tests)
+lint: frontend-check ## 代码风格检查 (ruff, 与 CI 对齐仅扫 src + tests)
 	uv run ruff check src tests --cache-dir .ruff_cache
 	uv run ruff format --check src tests
 
