@@ -25,7 +25,7 @@
 }
 
 /* DndContext 可能渲染出 wrapper div，让它不参与布局 */
-.report-template-editor > * {
+.report-template-editor>* {
   display: contents;
 }
 
@@ -280,11 +280,21 @@
 
 /* 响应式：窄屏下右侧面板再收一点 */
 @media (max-width: 1200px) {
-  .report-field-panel { width: 200px; }
-  .report-right-panel { width: 300px; }
+  .report-field-panel {
+    width: 200px;
+  }
+
+  .report-right-panel {
+    width: 300px;
+  }
 }
 
 @media (max-width: 1024px) {
-  .report-field-panel { width: 180px; }
-  .report-right-panel { width: 280px; }
+  .report-field-panel {
+    width: 180px;
+  }
+
+  .report-right-panel {
+    width: 280px;
+  }
 }
