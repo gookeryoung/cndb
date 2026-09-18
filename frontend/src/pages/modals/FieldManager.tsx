@@ -99,14 +99,17 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   const create = useMutation({
     mutationFn: (data: FieldCreate) => fieldApi.create(wid, tid, data),
     onSuccess: () => { message.success('已添加字段'); closeDialog(); onChanged() },
+    onError: (err) => message.error(err instanceof Error ? err.message : '创建字段失败'),
   })
   const update = useMutation({
     mutationFn: (args: { fid: number | string; data: Partial<Field> }) => fieldApi.update(wid, tid, args.fid, args.data),
     onSuccess: () => { message.success('已更新'); closeDialog(); onChanged() },
+    onError: (err) => message.error(err instanceof Error ? err.message : '更新字段失败'),
   })
   const remove = useMutation({
     mutationFn: (fid: number | string) => fieldApi.remove(wid, tid, fid),
     onSuccess: () => { message.success('已删除'); onChanged() },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除字段失败'),
   })
 
   // ── 预览建议映射 ──
