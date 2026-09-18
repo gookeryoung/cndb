@@ -12,7 +12,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Row, Col, message } from 'antd'
-import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
+import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined, CheckOutlined, DownOutlined, UpOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { FileAnalyzeResult, FileImportResult } from '@/api'
 
@@ -181,6 +181,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
   const [tableName, setTableName] = useState('')
   const [creating, setCreating] = useState(false)
   const [selectedField, setSelectedField] = useState<string | null>(null)
+  /** 右侧预览区图例面板是否折叠 */
+  const [legendCollapsed, setLegendCollapsed] = useState(false)
 
   // 重置内部状态（open 变化时）
   useMemo(() => {
@@ -227,12 +229,29 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
     return res
   }, [effectiveColumns, sampleRows, analyzeResult])
 
+  /** 判断 override 是否与后端原始完全一致 —— 一致则应清除. */
+  const isOverrideRedundant = useCallback((colName: string, ov: ColumnOverride): boolean => {
+    const original = analyzeResult?.columns.find(c => c.name === colName)
+    if (!original) return false
+    if (ov.field_type !== original.field_type) return false
+    // 非 select 类型，options 总是 undefined，与原始的空数组/undefined 视为一致
+    if (ov.field_type !== 'select' && ov.field_type !== 'multiselect') {
+      return true
+    }
+    // select/multiselect 比较 options 内容
+    const origOpts = original.options ?? []
+    const ovOpts = ov.options ?? []
+    return JSON.stringify([...origOpts].sort()) === JSON.stringify([...ovOpts].sort())
+  }, [analyzeResult])
+
   /** 改变字段类型 —— 自动填 options 如果是 select. */
   const changeFieldType = useCallback((colName: string, newType: string) => {
     setOverrides(prev => {
-      const base = prev[colName] ?? {
-        field_type: analyzeResult?.columns.find(c => c.name === colName)?.field_type ?? 'text',
-        options: analyzeResult?.columns.find(c => c.name === colName)?.options ?? [],
+      const baseCol = analyzeResult?.columns.find(c => c.name === colName)
+      const prevOv = prev[colName]
+      const base: ColumnOverride = prevOv ?? {
+        field_type: baseCol?.field_type ?? 'text',
+        options: baseCol?.options ?? [],
       }
       const next: ColumnOverride = { ...base, field_type: newType }
       // 切到 select/multiselect 时若没 options，用 sample_rows 自动填充
@@ -241,9 +260,14 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       } else if (newType !== 'select' && newType !== 'multiselect') {
         next.options = undefined
       }
+      // 若回退到原始值，则清除 override
+      if (isOverrideRedundant(colName, next)) {
+        const { [colName]: _removed, ...rest } = prev
+        return rest
+      }
       return { ...prev, [colName]: next }
     })
-  }, [analyzeResult, sampleRows])
+  }, [analyzeResult, sampleRows, isOverrideRedundant])
 
   /** 更新某列的 options（select/multiselect 场景）. */
   const updateOptions = useCallback((colName: string, options: string[]) => {
@@ -251,9 +275,14 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       const base = prev[colName] ?? {
         field_type: effectiveColumns.find(c => c.name === colName)?.field_type ?? 'text',
       }
-      return { ...prev, [colName]: { ...base, options } }
+      const next: ColumnOverride = { ...base, options }
+      if (isOverrideRedundant(colName, next)) {
+        const { [colName]: _removed, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [colName]: next }
     })
-  }, [effectiveColumns])
+  }, [effectiveColumns, isOverrideRedundant])
 
   /** 组装 column_overrides payload —— 与后端同结构. */
   const buildColumnOverrides = (): Record<string, ColumnOverride> => {
@@ -298,6 +327,17 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         const isAutoType = !overrides[col.name]
         const isDate = col.field_type === 'date' || col.field_type === 'datetime'
         const isSelect = col.field_type === 'select' || col.field_type === 'multiselect'
+        const hasError = failCnt > 0
+        // 卡片背景：选中 > 有异常 > 无异常（绿色）
+        let cardBg = '#fafafa'
+        let cardBorder = '#e5e7eb'
+        if (selectedField === col.name) {
+          cardBg = '#eff6ff'; cardBorder = '#93c5fd'
+        } else if (hasError) {
+          cardBg = '#fef2f2'; cardBorder = '#fecaca'
+        } else {
+          cardBg = '#f0fdf4'; cardBorder = '#bbf7d0'
+        }
         return (
           <div
             key={col.name}
@@ -305,8 +345,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
             style={{
               padding: 10,
               marginBottom: 8,
-              background: selectedField === col.name ? '#eff6ff' : '#fafafa',
-              border: `1px solid ${selectedField === col.name ? '#93c5fd' : '#e5e7eb'}`,
+              background: cardBg,
+              border: `1px solid ${cardBorder}`,
               borderRadius: 6,
               cursor: 'pointer',
             }}
@@ -319,9 +359,13 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
               </div>
               {isSelect && <Tag color="orange">select</Tag>}
               {isDate && <Tag color="green">日期</Tag>}
-              {failCnt > 0 && (
+              {hasError ? (
                 <Tooltip title={`有 ${failCnt} 行无法转换为此类型`}>
                   <Tag color="red" icon={<WarningOutlined />}>{failCnt}</Tag>
+                </Tooltip>
+              ) : (
+                <Tooltip title="无转换异常">
+                  <Tag color="success" icon={<CheckOutlined />} style={{ margin: 0 }} />
                 </Tooltip>
               )}
             </div>
@@ -472,34 +516,53 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       cols.some(col => tryConvert(row[col.name], col.field_type).failed)
     )
 
+    const errorFieldCount = cols.filter(c => (columnFailCounts[c.name] ?? 0) > 0).length
+    const okFieldCount = cols.length - errorFieldCount
+
     return (
       <div>
-        {/* 汇总栏 */}
-        <Row gutter={[12, 12]} style={{ marginBottom: 10 }}>
-          <Col span={6}>
-            <div style={{ padding: '6px 10px', background: '#f1f5f9', borderRadius: 6 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>{analyzeResult.total_rows}</div>
+        {/* 汇总栏：6 项统计 */}
+        <Row gutter={[8, 8]} style={{ marginBottom: 10 }}>
+          <Col span={4}>
+            <div style={{ padding: '6px 8px', background: '#f1f5f9', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{analyzeResult.total_rows}</div>
               <div style={{ fontSize: 11, color: '#64748b' }}>总行数</div>
             </div>
           </Col>
-          <Col span={6}>
-            <div style={{ padding: '6px 10px', background: '#f1f5f9', borderRadius: 6 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>{cols.length}</div>
+          <Col span={4}>
+            <div style={{ padding: '6px 8px', background: '#f1f5f9', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{cols.length}</div>
               <div style={{ fontSize: 11, color: '#64748b' }}>字段数</div>
             </div>
           </Col>
-          <Col span={6}>
-            <div style={{ padding: '6px 10px', background: '#f1f5f9', borderRadius: 6 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>{sampleRows.length}</div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>预览行（前 50）</div>
+          <Col span={4}>
+            <div style={{ padding: '6px 8px', background: '#f1f5f9', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{sampleRows.length}</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>预览行</div>
             </div>
           </Col>
-          <Col span={6}>
-            <div style={{ padding: '6px 10px', background: failedRows.length > 0 ? '#fef2f2' : '#f0fdf4', borderRadius: 6 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: failedRows.length > 0 ? '#dc2626' : '#16a34a' }}>
+          <Col span={4}>
+            <div style={{ padding: '6px 8px', background: okFieldCount > 0 ? '#f0fdf4' : '#f1f5f9', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#16a34a' }}>
+                <CheckOutlined style={{ marginRight: 2 }} />{okFieldCount}
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>无异常字段</div>
+            </div>
+          </Col>
+          <Col span={4}>
+            <div style={{ padding: '6px 8px', background: errorFieldCount > 0 ? '#fef2f2' : '#f1f5f9', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626' }}>
+                <WarningOutlined style={{ marginRight: 2 }} />{errorFieldCount}
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>异常字段</div>
+            </div>
+          </Col>
+          <Col span={4}>
+            <div style={{ padding: '6px 8px', background: failedRows.length > 0 ? '#fef2f2' : '#f0fdf4', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: failedRows.length > 0 ? '#dc2626' : '#16a34a' }}>
                 {failedRows.length}
               </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>转换异常行</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>异常行</div>
             </div>
           </Col>
         </Row>
@@ -577,10 +640,68 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         <Col span={16}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
             典型数据 & 实时转换预览
-            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 'normal' }}>
-              （灰色删除线 = 原始值，绿色 = 转换后）
-            </span>
           </div>
+
+          {/* 图例面板（可折叠） */}
+          <div
+            style={{
+              marginBottom: 10,
+              border: '1px solid #e5e7eb',
+              borderRadius: 6,
+              background: '#fafafa',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              onClick={() => setLegendCollapsed(c => !c)}
+              style={{
+                padding: '6px 12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: 12,
+                color: '#475569',
+                fontWeight: 500,
+                background: '#f1f5f9',
+                userSelect: 'none',
+              }}
+            >
+              <span>图例说明</span>
+              {legendCollapsed ? <DownOutlined style={{ fontSize: 10 }} /> : <UpOutlined style={{ fontSize: 10 }} />}
+            </div>
+            {!legendCollapsed && (
+              <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {/* 数据类型颜色图例 */}
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4, fontWeight: 500 }}>数据类型</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {PREVIEW_FIELD_TYPES.map(t => (
+                      <Tag key={t.value} color={TYPE_COLOR[t.value] ?? 'default'} style={{ margin: 0 }}>
+                        {t.label}
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+                {/* 转换状态图例 */}
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4, fontWeight: 500 }}>转换状态</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 11, color: '#475569' }}>
+                    <span><Tag color="success" icon={<CheckOutlined />} style={{ margin: 0 }} /> 无异常</span>
+                    <span><Tag color="red" icon={<WarningOutlined />} style={{ margin: 0 }} /> 转换异常</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                      <span style={{ color: '#cbd5e1', fontStyle: 'italic' }}>(空)</span> 空值
+                    </span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                      <span style={{ color: '#9ca3af', textDecoration: 'line-through' }}>原始</span>
+                      <span style={{ color: '#16a34a' }}>→ 转换后</span> 格式变化
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {renderDataPreview()}
         </Col>
       </Row>
