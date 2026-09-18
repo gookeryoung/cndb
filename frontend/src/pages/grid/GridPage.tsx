@@ -410,8 +410,8 @@ export default function GridPage() {
     return viewSortings.length ? (viewSortings as unknown as Array<Record<string, unknown>>) : undefined
   }, [viewSortings])
 
-  // 非 grid 视图需要全量数据（日历/看板/画廊要跨月/跨列聚合），绕过分页
-  const VIEW_FETCH_ALL_LIMIT = 5000
+  // 非 grid 视图需要数据做分组/聚合。降低上限到 2000（覆盖 99% 使用场景，避免每次切换拉 5000 条的网络+渲染压力）
+  const VIEW_FETCH_ALL_LIMIT = 2000
   const effectiveLimit = mode === 'grid' ? limit : VIEW_FETCH_ALL_LIMIT
   const effectiveOffset = mode === 'grid' ? offset : 0
 
@@ -566,6 +566,7 @@ export default function GridPage() {
     }
   }, [newRowActive, editingRowId, rowDrafts, gridFields]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // inlineOps 不做 useMemo — 每次 render 重建代价可忽略
   const inlineOps: RowInlineOps | undefined = canEditRecords ? {
     getInlineEdit,
     onEdit: startEditRow,
@@ -741,25 +742,33 @@ export default function GridPage() {
     onError: (err) => message.error(err instanceof Error ? err.message : '复制失败'),
   })
 
-  const columns = buildColumns(
+  const _onFilterApply = useCallback((fieldName: string, op: string, value: unknown) => {
+    updateViewFilters(prev => {
+      const without = prev.filter(f => f.field_name !== fieldName)
+      return [...without, { field_name: fieldName, op, value }]
+    })
+    setOffset(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateViewFilters])
+  const _onFilterReset = useCallback((fieldName: string) => {
+    updateViewFilters(prev => prev.filter(f => f.field_name !== fieldName))
+    setOffset(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateViewFilters])
+  const _onCellSave = useMemo(() => updateRow.isPending
+    ? undefined
+    : (rowId: number | string, fieldName: string, value: unknown) => updateRow.mutateAsync({ rowId, fieldName, value }),
+  [updateRow])
+
+  const columns = useMemo(() => buildColumns(
     table?.fields || [], wid, viewSortings, viewFilters,
-    (fieldName, op, value) => {
-      // 替换同字段已有规则，没有则追加（避免不断累积）
-      updateViewFilters(prev => {
-        const without = prev.filter(f => f.field_name !== fieldName)
-        return [...without, { field_name: fieldName, op, value }]
-      })
-      setOffset(0)
-    },
-    (fieldName) => {
-      updateViewFilters(prev => prev.filter(f => f.field_name !== fieldName))
-      setOffset(0)
-    },
-    updateRow.isPending
-      ? undefined
-      : (rowId, fieldName, value) => updateRow.mutateAsync({ rowId, fieldName, value }),
+    _onFilterApply,
+    _onFilterReset,
+    _onCellSave,
     inlineOps,
-  )
+    // inlineOps 每次 render 重建是预期内的（依赖多个 useState），但 buildColumns 本身很轻
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave])
   const numericFields = (table?.fields || []).filter(f => ['number', 'decimal'].includes(f.field_type))
   const selectedRows = (rowList.items || []).filter(r => selectedRowKeys.includes(r.id))
   const aggregates = useMemo(() => {
