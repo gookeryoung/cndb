@@ -63,11 +63,12 @@ export default function WorkspaceList() {
     }),
     onSuccess: (w) => {
       message.success(`已创建 "${w.name}"`)
-      queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       setCreateOpen(false)
       form.resetFields()
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       navigate(`/w/${w.id}/tables`)
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '创建工作区失败，请重试'),
   })
 
   const pin = useMutation({
