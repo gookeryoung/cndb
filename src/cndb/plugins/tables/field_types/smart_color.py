@@ -56,6 +56,48 @@ _PALETTE: tuple[str, ...] = (
     "red",
 )
 
+# ─────────────── 分级配色策略 ────────────────────────────────────────────────
+# 设计意图：避免颜色过于花哨，按选项数量分级取用调色板子集。
+# 语义匹配优先于分级；分级仅作用于"语义未命中时的 fallback".
+# - 1-5 个选项：核心 5 色（blue/green/orange/purple/red）——最少区分
+# - 6-10 个选项：扩展 8 色（再加 cyan/gold/magenta）
+# - 10+ 个选项：完整主推 13 色（再加 yellow/volcano/geekblue/lime）
+_CORE_PALETTE: tuple[str, ...] = ("blue", "green", "orange", "purple", "red")
+_EXTENDED_PALETTE: tuple[str, ...] = (
+    "blue",
+    "green",
+    "orange",
+    "purple",
+    "red",
+    "cyan",
+    "gold",
+    "magenta",
+)
+_FULL_PALETTE: tuple[str, ...] = (
+    "blue",
+    "green",
+    "orange",
+    "purple",
+    "red",
+    "cyan",
+    "gold",
+    "magenta",
+    "yellow",
+    "volcano",
+    "geekblue",
+    "lime",
+    "pink",
+)
+
+
+def _pick_palette(size: int) -> tuple[str, ...]:
+    """按选项数量挑选分级调色板."""
+    if size <= 5:
+        return _CORE_PALETTE
+    if size <= 10:
+        return _EXTENDED_PALETTE
+    return _FULL_PALETTE
+
 
 # ─────────────── 语义域定义 ──────────────────────────────────────────────────
 
@@ -314,27 +356,23 @@ def match_color(label: str) -> str | None:
     return _match_grade_letter(text)
 
 
-def fallback_palette(index: int) -> str:
+def fallback_palette(index: int, total_count: int = 0) -> str:
     """当语义匹配完全失败时，按选项在列表中的位置循环分配调色板.
 
-    这保证了同一组未命名选项（如 ["选项A", "选项B", "选项C"]）也能得到
-    稳定且彼此区分的颜色。
-
-    Args:
-        index: 选项在列表中的位置（0-based）.
-
-    Returns:
-        antd 预设色名.
+    调色板按 total_count 分级取用：5 个以内用核心 5 色，6-10 用扩展 8 色，
+    10+ 用完整主推 13 色。传入 0 或负数时走旧行为（_PALETTE 8 色循环）。
     """
-    return _PALETTE[index % len(_PALETTE)]
+    palette = _pick_palette(total_count) if total_count > 0 else _PALETTE
+    return palette[index % len(palette)]
 
 
 def suggest_colors(labels: list[str]) -> list[str]:
     """一键为一组选项 label 生成建议颜色.
 
     混合策略：
-    1. 逐个调用 :func:`match_color` 用语义匹配
-    2. 未命中的按 fallback 调色板分配，且保证与已命中的颜色不重复（调色板耗尽后直接循环）
+    1. 逐个调用 :func:`match_color` 用语义匹配（语义命中的直接用，不受分级限制）
+    2. 未命中的按分级调色板 fallback，优先使用与语义命中不重复的颜色
+    3. 调色板等级由 labels 总数决定（核心 5 / 扩展 8 / 完整 13）
 
     Args:
         labels: 选项显示文本列表.
@@ -342,35 +380,36 @@ def suggest_colors(labels: list[str]) -> list[str]:
     Returns:
         与 labels 等长的 antd 色名列表.
     """
+    palette = _pick_palette(len(labels))
     result: list[str | None] = [match_color(lbl) for lbl in labels]
 
-    # 收集已使用的颜色集合，让 fallback 尽量避开
+    # 收集已使用的颜色集合（语义命中的），让 fallback 尽量避开
     used: set[str] = {c for c in result if c is not None}
     fallback_idx = 0
+    palette_len = len(palette)
 
     out: list[str] = []
-    palette_len = len(_PALETTE)
-    all_palette_colors = {fallback_palette(i) for i in range(palette_len)}
     for c in result:
         if c is not None:
             out.append(c)
             continue
-        # 若调色板还有未被使用的颜色，跳过已用色；否则直接循环取
-        unused_palette = all_palette_colors - used
-        if unused_palette:
-            pick: str | None = None
-            for _ in range(palette_len + 1):
-                candidate = fallback_palette(fallback_idx)
-                fallback_idx += 1
-                if candidate not in used:
-                    pick = candidate
-                    break
-            if pick is None:
-                pick = fallback_palette(fallback_idx)
-                fallback_idx += 1
-        else:
-            # 调色板全部被占用，直接循环取下一个
-            pick = fallback_palette(fallback_idx)
+        # 调色板已全部被占用 → 直接循环取，不做重复搜索
+        if len(used) >= palette_len:
+            pick = palette[fallback_idx % palette_len]
+            fallback_idx += 1
+            out.append(pick)
+            continue
+        # 正常路径：找到当前级调色板里未被使用的
+        pick: str | None = None
+        for _ in range(palette_len):
+            candidate = palette[fallback_idx % palette_len]
+            fallback_idx += 1
+            if candidate not in used:
+                pick = candidate
+                break
+        if pick is None:
+            # 理论上不会到达，因为已在上面处理全部占用的场景
+            pick = palette[fallback_idx % palette_len]
             fallback_idx += 1
         used.add(pick)
         out.append(pick)
