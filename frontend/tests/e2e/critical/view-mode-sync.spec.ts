@@ -16,6 +16,7 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIRequestContext, Page } from "@playwright/test";
+import { settle } from "../fixtures/settle";
 
 const ANON = ["setup", "chromium-anon"];
 
@@ -78,14 +79,14 @@ async function gotoTable(
   await page.waitForURL(/\/tables\/\d+/);
   await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible({ timeout: 10000 });
   await expect(page.locator(".ant-space-compact")).toHaveCount(1, { timeout: 10000 });
-  await page.waitForTimeout(1500);
+  await settle(page);
 }
 
 async function activateView(page: Page, viewId: number) {
   const url = new URL(page.url());
   url.searchParams.set("view", String(viewId));
   await page.goto(url.toString());
-  await page.waitForTimeout(1200);
+  await settle(page);
 }
 
 /** 断言 Segmented 选中项的文本匹配目标视图名 */
@@ -142,7 +143,7 @@ async function clickModeButton(page: Page, mode: "grid" | "kanban" | "gallery" |
   const btn = page.locator(`.ant-space-compact button:has(.${iconClassMap[mode]})`);
   await expect(btn).toHaveCount(1, { timeout: 3000 });
   await btn.click();
-  await page.waitForTimeout(1000); // loadView 触发，等待渲染切换
+  await settle(page); // loadView 触发，等待渲染切换
 }
 
 /** 断言当前渲染确实是目标模式（通过 DOM 特征）.
@@ -386,15 +387,15 @@ test.describe("废弃 API 清理 — Button.Group 警告", () => {
       }
     });
 
-    // 先打开 GridPage 等待 2 秒
+    // 先打开 GridPage 等待渲染完成（确保 Button.Group 弃用警告已触发）
     await page.goto(`/w/1/tables/1`);
-    await page.waitForTimeout(2000);
+    await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible({ timeout: 10000 });
 
     // 再切到 calendar 模式（GridPage 渲染 CalendarView 子组件）
     const calendarBtn = page.locator('.ant-space-compact button:has(.anticon-calendar)');
     if ((await calendarBtn.count()) > 0) {
       await calendarBtn.click();
-      await page.waitForTimeout(1000);
+      await settle(page);
     }
 
     expect(warnings, `发现 Button.Group 废弃警告: ${warnings.join(" | ")}`).toHaveLength(0);

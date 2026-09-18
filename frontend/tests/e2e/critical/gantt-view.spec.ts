@@ -22,6 +22,7 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIRequestContext, Page } from "@playwright/test";
+import { settle } from "../fixtures/settle";
 
 const ANON = ["setup", "chromium-anon"];
 
@@ -95,10 +96,10 @@ async function gotoTable(page: Page, wid: number, tableName: string) {
   });
   await page.goto(`/w/${wid}/tables`);
   await page.waitForURL(/\/w\/\d+\/tables/);
-  await page.waitForTimeout(400);
-  await page.getByRole("menuitem", { name: new RegExp(tableName) }).click();
+  const menuItem = page.getByRole("menuitem", { name: new RegExp(tableName) });
+  await expect(menuItem).toBeVisible({ timeout: 5000 });
+  await menuItem.click();
   await page.waitForURL(/\/tables\/\d+/);
-  await page.waitForTimeout(600);
 }
 
 /** 激活甘特图视图 — URL ?view=vid */
@@ -106,7 +107,6 @@ async function activateGanttView(page: Page, viewId: number) {
   const url = new URL(page.url());
   url.searchParams.set("view", String(viewId));
   await page.goto(url.toString());
-  await page.waitForTimeout(1500);
 }
 
 /** 定位甘特图根容器.
@@ -130,7 +130,6 @@ async function clickGanttModeButton(page: Page) {
   const btn = page.locator('button[data-mode="gantt"]').first();
   await expect(btn).toBeVisible({ timeout: 5000 });
   await btn.click();
-  await page.waitForTimeout(800);
 }
 
 // ─────────────── 第一组：基本渲染 —— 项目时间轴（全量） ───────────────
@@ -334,7 +333,6 @@ test.describe("甘特图视图 — 模式切换", () => {
     const tid = await getTableId(request, wid, "产品开发");
 
     await gotoTable(page, wid, "产品开发");
-    await page.waitForTimeout(800);
 
     // 点甘特图按钮 — 切换到 gantt 模式
     await clickGanttModeButton(page);
@@ -378,7 +376,6 @@ test.describe("甘特图视图 — 时间轴导航", () => {
       .filter({ has: page.locator(".anticon-right") });
     await expect(rightBtn.first()).toBeVisible({ timeout: 5000 });
     await rightBtn.first().click();
-    await page.waitForTimeout(400);
 
     // 重置按钮（带 ReloadOutlined icon，文本为 "重置位置" 的 tooltip）
     const resetBtn = page
@@ -386,7 +383,6 @@ test.describe("甘特图视图 — 时间轴导航", () => {
       .filter({ has: page.locator(".anticon-reload") });
     await expect(resetBtn.first()).toBeVisible({ timeout: 5000 });
     await resetBtn.first().click();
-    await page.waitForTimeout(400);
 
     // 甘特图仍然正常显示
     await expect(ganttRoot(page)).toBeVisible({ timeout: 5000 });
@@ -412,20 +408,20 @@ test.describe("甘特图全量拉取回归", () => {
 
     // 进入 table —— 清 localStorage 避免 mode 残留，但 userPreference 后端可能仍激活 gantt
     await gotoTable(page, wid, "产品开发");
-    await page.waitForTimeout(800);
+    await settle(page);
     recordsUrls.length = 0;
 
     // 先强制切回 grid（如果当前已是 gantt，按钮点击会被 skip — 用 grid mode 按钮兜底）
     const gridBtn = page.locator('button[data-mode="grid"]').first();
     if (await gridBtn.count() > 0) {
       await gridBtn.click();
-      await page.waitForTimeout(800);
+      await settle(page);
     }
     recordsUrls.length = 0;
 
     // 切到甘特图 —— 必须触发新的 records 请求且 limit=5000
     await clickGanttModeButton(page);
-    await page.waitForTimeout(2000);
+    await settle(page);
 
     // 如果没监听新的 records 请求（可能 mode 没切），退而验证甘特条数量
     const lastRecordsUrl = recordsUrls[recordsUrls.length - 1] || "";
@@ -455,7 +451,6 @@ test.describe("甘特图视图 — 无可选甘特图视图的表兜底行为", 
     const tid = await getTableId(request, wid, "客户流失");
 
     await gotoTable(page, wid, "客户流失");
-    await page.waitForTimeout(800);
 
     // 客户流失表没有 gantt view → mode 按钮组里没有 data-mode="gantt"
     const ganttBtn = page.locator('button[data-mode="gantt"]');
@@ -487,7 +482,6 @@ test.describe("甘特图视图 — 通过视图 TAB 切换", () => {
       .first();
     await expect(ganttTab).toBeVisible({ timeout: 8000 });
     await ganttTab.click();
-    await page.waitForTimeout(1500);
 
     // 甘特图根容器出现
     const root = ganttRoot(page);
@@ -566,14 +560,14 @@ test.describe("甘特图视图 — 时间轴日期数字标签", () => {
 
     // 切 day → anchor 应变化（autoAdjust 可能调回粗档，但至少 anchor 文本有更新）
     await switcher.locator(".ant-segmented-item", { hasText: "天" }).click();
-    await page.waitForTimeout(800);
+    await settle(page);
     const anchorDay = await anchorLabels.first().textContent();
     expect(anchorDay).toBeTruthy();
     expect(anchorDay!.length).toBeGreaterThan(0);
 
     // 切 quarter → anchor = year（含"年"字，且通常是单年份）
     await switcher.locator(".ant-segmented-item", { hasText: "季" }).click();
-    await page.waitForTimeout(800);
+    await settle(page);
     const anchorQ = await anchorLabels.first().textContent();
     expect(anchorQ).toMatch(/年/);
   });
@@ -600,14 +594,14 @@ test.describe("甘特图视图 — 时间轴日期数字标签", () => {
     // 点 + 放大
     const plusBtn = scaleInfo.locator("button").last();
     await plusBtn.click();
-    await page.waitForTimeout(300);
+    await settle(page);
     const zoomedText = (await scaleInfo.textContent()) || "";
     expect(zoomedText).not.toBe(initialText);
 
     // 点 - 缩小
     const minusBtn = scaleInfo.locator("button").first();
     await minusBtn.click();
-    await page.waitForTimeout(300);
+    await settle(page);
     const backText = (await scaleInfo.textContent()) || "";
     expect(backText).toBe(initialText);
   });
@@ -630,7 +624,7 @@ test.describe("甘特图视图 — 时间轴日期数字标签", () => {
 
     // 切到 week → anchor = month。锚定层 label 数 = 覆盖的月数（应在 6-24 之间）
     await switcher.locator(".ant-segmented-item", { hasText: "周" }).click();
-    await page.waitForTimeout(800);
+    await settle(page);
 
     const anchorCount = await anchorLabels.count();
     expect(anchorCount).toBeGreaterThanOrEqual(4);
@@ -659,13 +653,13 @@ test.describe("甘特图视图 — 时间轴日期数字标签", () => {
 
     // 切 week
     await switcher.locator(".ant-segmented-item", { hasText: "周" }).click();
-    await page.waitForTimeout(800);
+    await settle(page);
     const weekCount = await currentLabels("current").count();
     expect(weekCount).toBeGreaterThan(0);
 
     // 切 day
     await switcher.locator(".ant-segmented-item", { hasText: "天" }).click();
-    await page.waitForTimeout(800);
+    await settle(page);
     const dayCount = await currentLabels("current").count();
     expect(dayCount).toBeGreaterThanOrEqual(20); // 稀疏后仍有足够覆盖
 

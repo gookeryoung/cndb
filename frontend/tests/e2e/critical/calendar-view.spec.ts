@@ -23,6 +23,7 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIRequestContext, Page } from "@playwright/test";
+import { settle } from "../fixtures/settle";
 
 const ANON = ["setup", "chromium-anon"];
 
@@ -92,10 +93,10 @@ async function getCalendarViewId(
 async function gotoTable(page: Page, wid: number, tableName: string) {
   await page.goto(`/w/${wid}/tables`);
   await page.waitForURL(/\/w\/\d+\/tables/);
-  await page.waitForTimeout(400);
-  await page.getByRole("menuitem", { name: new RegExp(tableName) }).click();
+  const menuItem = page.getByRole("menuitem", { name: new RegExp(tableName) });
+  await expect(menuItem).toBeVisible({ timeout: 5000 });
+  await menuItem.click();
   await page.waitForURL(/\/tables\/\d+/);
-  await page.waitForTimeout(600);
 }
 
 /** 激活日历视图 — URL ?view=vid */
@@ -103,7 +104,6 @@ async function activateCalendarView(page: Page, viewId: number) {
   const url = new URL(page.url());
   url.searchParams.set("view", String(viewId));
   await page.goto(url.toString());
-  await page.waitForTimeout(1200);
 }
 
 /** 定位日历根容器.
@@ -138,7 +138,6 @@ async function switchCalendarMode(page: Page, mode: "年" | "月" | "周") {
     .first();
   await expect(label).toBeVisible({ timeout: 5000 });
   await label.click();
-  await page.waitForTimeout(600);
 }
 
 // ─────────────── 第一组：基本渲染 —— 产品开发交付日历 ───────────────
@@ -279,7 +278,6 @@ test.describe("日历视图 — 基本渲染", () => {
     // 进展阶段作为 group_field，事件卡片按阶段分色
     const cards = eventCards(page);
     // 应用会自动跳到第一个有事件的月份，等标题切换后再断言
-    await page.waitForTimeout(600);
     await expect(cards.first()).toBeVisible({ timeout: 5000 });
 
     // 至少两种不同颜色（不同阶段）
@@ -342,7 +340,6 @@ test.describe("日历视图 — 年/月/周三段层级切换", () => {
 
     // 点一个月份切回月视图
     await monthLabels.first().click();
-    await page.waitForTimeout(600);
     await expect(monthRoot).toBeVisible({ timeout: 5000 });
 
     // 切到周视图 — 7 列 grid（每列一天，带 DAY_LABELS）
@@ -388,7 +385,7 @@ test.describe("日历视图 — 导航按钮", () => {
     });
     await expect(nextBtn).toBeVisible({ timeout: 5000 });
     await nextBtn.first().click();
-    await page.waitForTimeout(600);
+    await settle(page);
 
     const afterText = (await titleBefore.textContent()) || "";
     expect(afterText).not.toBe(beforeText);
@@ -399,7 +396,7 @@ test.describe("日历视图 — 导航按钮", () => {
       .first();
     await expect(todayBtn).toBeVisible({ timeout: 5000 });
     await todayBtn.click();
-    await page.waitForTimeout(600);
+    await settle(page);
 
     // 回到今天 — 标题应含当前年份
     const todayYear = new Date().getFullYear();
@@ -453,7 +450,6 @@ test.describe("日历视图 — 点击事件打开详情抽屉", () => {
 
     const cards = eventCards(page);
     // 应用自动跳到第一个有事件的月份，等渲染完再找卡片
-    await page.waitForTimeout(600);
     await expect(cards.first()).toBeVisible({ timeout: 8000 });
 
     await cards.first().evaluate((el: HTMLElement) => {
@@ -517,7 +513,7 @@ test.describe("非 grid 视图全量拉取回归", () => {
 
     // 先进入 table —— 默认 grid 视图，offset=0&limit=50
     await gotoTable(page, wid, "出差统计");
-    await page.waitForTimeout(800);
+    await settle(page);
     recordsUrls.length = 0; // 清空 grid 加载时的请求
 
     // 切到日历 —— 必须触发新的 records 请求且 limit=5000
@@ -525,8 +521,12 @@ test.describe("非 grid 视图全量拉取回归", () => {
       .locator("button")
       .filter({ has: page.locator(".anticon-calendar") })
       .first();
+    const calResp = page.waitForResponse(
+      (r) => r.url().includes("/records") && r.url().includes("limit=5000"),
+      { timeout: 10000 },
+    );
     await calBtn.click();
-    await page.waitForTimeout(1500);
+    await calResp;
 
     const lastRecordsUrl = recordsUrls[recordsUrls.length - 1] || "";
     expect(lastRecordsUrl).toContain("limit=5000");
@@ -549,15 +549,19 @@ test.describe("非 grid 视图全量拉取回归", () => {
     });
 
     await gotoTable(page, wid, "出差统计");
-    await page.waitForTimeout(800);
+    await settle(page);
     recordsUrls.length = 0;
 
     // 切到看板
     const kanbanView = page
       .locator(".ant-segmented-item", { hasText: "按出差事项看板" })
       .first();
+    const kanbanResp = page.waitForResponse(
+      (r) => r.url().includes("/records") && r.url().includes("limit=5000"),
+      { timeout: 10000 },
+    );
     await kanbanView.click();
-    await page.waitForTimeout(1500);
+    await kanbanResp;
 
     const lastRecordsUrl = recordsUrls[recordsUrls.length - 1] || "";
     expect(lastRecordsUrl).toContain("limit=5000");

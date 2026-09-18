@@ -13,6 +13,7 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIRequestContext, Page } from "@playwright/test";
+import { settle } from "../fixtures/settle";
 
 const ANON = ["setup", "chromium-anon"];
 
@@ -81,7 +82,7 @@ async function gotoTable(
   await page.waitForURL(/\/tables\/\d+/);
   await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible({ timeout: 10000 });
   await expect(page.locator(".ant-space-compact")).toHaveCount(1, { timeout: 10000 });
-  await page.waitForTimeout(1500);
+  await settle(page);
 }
 
 /** 断言 ButtonGroup 指定模式按钮为 primary（高亮）. */
@@ -108,7 +109,7 @@ async function clickModeButton(page: Page, mode: "grid" | "kanban" | "gallery" |
   const btn = page.locator(`.ant-space-compact button:has(.${iconClassMap[mode]})`);
   await expect(btn).toHaveCount(1, { timeout: 3000 });
   await btn.click();
-  await page.waitForTimeout(1000);
+  await settle(page);
 }
 
 /** 断言 URL 包含 mode= 参数且值匹配目标模式 */
@@ -147,7 +148,7 @@ async function clickTableInSidebar(page: Page, tableName: string) {
   await expect(menuItem).toHaveCount(1, { timeout: 5000 });
   await menuItem.first().click();
   await page.waitForURL(/\/tables\/\d+/, { timeout: 10000 });
-  await page.waitForTimeout(1200);
+  await settle(page);
 }
 
 // ─────────────── 核心场景：侧边栏导航保持 mode ───────────────
@@ -242,7 +243,7 @@ test.describe("跨表切换 — URL ?mode= 参数保留（刷新/直接导航）
     // 直接用 URL 带 mode=calendar 打开
     await page.goto(`/w/${wid}/tables/${tid}?mode=calendar`);
     await page.waitForURL(/\/tables\/\d+\?mode=calendar/);
-    await page.waitForTimeout(2000);
+    await settle(page);
 
     await assertModeButtonActive(page, "calendar");
     await assertSegmentedSelectedIsType(page, request, wid, tid, "calendar");
@@ -260,8 +261,6 @@ test.describe("跨表切换 — URL ?mode= 参数保留（刷新/直接导航）
 
     // 刷新页面
     await page.reload();
-    await page.waitForLoadState("networkidle");
-    await page.waitForTimeout(1500);
 
     // 刷新后 mode 应保留
     await assertModeButtonActive(page, "calendar");
@@ -451,7 +450,6 @@ test.describe("回归 — per-table active_view_id 用户偏好不被破坏", ()
 
     await page.goto(`/w/${wid}/tables/${tidProg}`);
     await page.waitForURL(/\/tables\/\d+/);
-    await page.waitForTimeout(2500); // 用户偏好查询 + 加载需要等待
 
     // 应该加载了 kanban 视图（用户偏好）
     await assertModeButtonActive(page, "kanban");

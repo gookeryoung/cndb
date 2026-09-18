@@ -13,6 +13,7 @@ import type { Page } from "@playwright/test";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { settle } from "../fixtures/settle";
 
 const AUTHD = ["setup", "chromium-authed"];
 const WID = 1;       // seed 后 "某企业销售管理" 工作区
@@ -49,7 +50,7 @@ fs.writeFileSync(PROBLEM_CSV_PATH, PROBLEM_CSV);
 /** 辅助：进入工作区第一张表的 GridPage */
 async function gotoFirstTable(page: Page) {
   await page.goto(`/w/${WID}/tables`);
-  await page.waitForLoadState("networkidle");
+  await settle(page);
 
   // 等表列表渲染
   await expect(page.locator("tr.ant-table-row").first()).toBeVisible({ timeout: 8000 });
@@ -58,7 +59,7 @@ async function gotoFirstTable(page: Page) {
   const firstRow = page.locator("tr.ant-table-row").first();
   await firstRow.click();
   await page.waitForURL(/\/w\/\d+\/tables\/\d+/);
-  await page.waitForLoadState("networkidle");
+  await settle(page);
 
   // 等 Grid 渲染
   await expect(page.locator(".ant-table").first()).toBeVisible({ timeout: 8000 });

@@ -9,6 +9,7 @@
  *   6. 刷新页面后主题持久化
  */
 import { test, expect } from "../fixtures/auth";
+import { settle } from "../fixtures/settle";
 
 const AUTHS = ["chromium-authed"];
 function isAuthed(): boolean {
@@ -163,7 +164,7 @@ test.describe("主题视觉回归（防颜色自相矛盾）", () => {
     await page.locator('[data-theme-card="github-dark"]').click();
     await expect(page.locator("body")).toHaveClass(/theme-github-dark/);
     // CSS 变量传播需要一点时间，等一下确保 computedStyle 已更新
-    await page.waitForTimeout(300);
+    await settle(page);
 
     // 从 document.body 取外层文字色（主题通过 body class 生效，body 上有正确的 color 变量）
     const bodyColor = await page.evaluate(() => getComputedStyle(document.body).color);
@@ -282,7 +283,8 @@ test.describe("深色模式下看板/日历视图背景回归", () => {
     // 在工作区/网格视图，找到表
     await page.getByRole("menuitem", { name: /产品开发|客户/ }).first().click();
     await page.waitForURL(/\/tables\/\d+/);
-    await page.waitForTimeout(800);
+    // Grid 渲染 + 数据加载完成信号
+    await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible();
   }
 
   /** 辅助：切换到深色主题（如未切换） */
@@ -293,7 +295,7 @@ test.describe("深色模式下看板/日历视图背景回归", () => {
       await page.locator('[data-theme-card="github-dark"]').click();
       await expect(body).toHaveClass(/theme-github-dark/);
       await page.keyboard.press("Escape");
-      await page.waitForTimeout(300);
+      await settle(page);
     }
   }
 
@@ -306,7 +308,6 @@ test.describe("深色模式下看板/日历视图背景回归", () => {
     const kanbanLabel = page.locator(".ant-segmented-item", { hasText: /看板/ }).first();
     if (await kanbanLabel.isVisible()) {
       await kanbanLabel.click();
-      await page.waitForTimeout(1000);
     }
 
     // 定位看板列容器 — KanbanView 的列根 div（有 flex-direction: column 且有背景）
@@ -354,7 +355,10 @@ test.describe("深色模式下看板/日历视图背景回归", () => {
       .first();
     await expect(calBtn).toBeVisible({ timeout: 5000 });
     await calBtn.click();
-    await page.waitForTimeout(1500);
+    // 等日历月视图渲染出来（有渲染信号则快，无则短兜底）
+    await expect(
+      page.locator("div[style*='grid-template-columns: repeat(7, 1fr)']").first(),
+    ).toBeVisible({ timeout: 5000 });
 
     // 日历月视图根容器 — 7列 grid + border
     const monthRoot = page.locator(

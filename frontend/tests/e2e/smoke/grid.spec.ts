@@ -47,11 +47,10 @@ test.describe("Grid 表格", () => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await gotoGrid(page);
 
-    // 等待数据加载
-    await page.waitForTimeout(800);
-
-    // Antd Table body 应该有 5 行
-    const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-    await expect(rows).toHaveCount(5);
+    // 数据量确定性信号：分页 showTotal 显示"共 5 条"（虚拟滚动下行 DOM 不固定为 tr.ant-table-row）
+    await expect(page.getByText(/共 5 条/)).toBeVisible();
+    // 抽查 seed 首行/末行已渲染
+    await expect(page.getByText("王五").first()).toBeVisible();
+    await expect(page.getByText("赵六").first()).toBeVisible();
   });
 });
