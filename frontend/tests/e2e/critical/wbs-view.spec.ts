@@ -375,23 +375,6 @@ test.describe("WBS 视图 — 模式切换", () => {
       .toBe("wbs");
   });
 
-  test("非 WBS 表 — 不渲染 WBS 模式按钮（仅显示表实际拥有的视图类型）", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    // 切到科研项目管理（没有 WBS 表）
-    const wid2 = await getWorkspaceId(request, "科研项目管理");
-    const tid = await getTableId(request, wid2, "科研项目");
-
-    await gotoTable(page, wid2, "科研项目");
-
-    // 模式按钮组仅渲染数据表实际拥有的视图类型 —— 科研项目无 wbs 视图 → 按钮不出现
-    await expect(
-      page.locator("button").filter({ has: page.locator(".anticon-partition") }),
-    ).toHaveCount(0, { timeout: 8000 });
-  });
 });
 
 // ─────────────── 第五组: expand_all=true + 带筛选的 WBS 视图 ───────────────

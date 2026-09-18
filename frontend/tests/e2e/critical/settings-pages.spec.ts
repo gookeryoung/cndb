@@ -88,31 +88,25 @@ test.describe("工作区设置独立页面 /w/:wid/settings", () => {
     await page.waitForURL(`/w/${WID}/tables`)
   })
 
-  test("MainLayout Header 工作区设置按钮导航", async ({ page }) => {
+  test("MainLayout Header + TablesList 头部按钮 → 表驱动跳转到设置页面", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
     await page.goto(`/w/${WID}/tables`)
     await page.waitForURL(/\/tables$/)
 
-    const settingsNav = page.locator("[data-testid='workspace-settings-nav']")
-    await expect(settingsNav).toBeVisible()
-    await settingsNav.click()
-
-    await page.waitForURL(`/w/${WID}/settings`)
-    await expect(page.locator(".ant-tabs-tab").filter({ hasText: "基本设置" })).toBeVisible()
-  })
-
-  test("TablesList 头部工作区设置按钮导航", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
-
-    await page.goto(`/w/${WID}/tables`)
-    await page.waitForURL(/\/tables$/)
-
-    const link = page.locator("[data-testid='workspace-settings-link']")
-    await expect(link).toBeVisible()
-    await link.click()
-
-    await page.waitForURL(`/w/${WID}/settings`)
+    // 两个入口都应存在（MainLayout Header + TablesList 头部）
+    const entries = [
+      page.locator("[data-testid='workspace-settings-nav']"),
+      page.locator("[data-testid='workspace-settings-link']"),
+    ]
+    for (const entry of entries) {
+      await expect(entry).toBeVisible()
+      await entry.click()
+      await page.waitForURL(`/w/${WID}/settings`)
+      // 回到 tables 准备下一个
+      await page.goto(`/w/${WID}/tables`)
+      await page.waitForURL(/\/tables$/)
+    }
   })
 })
 

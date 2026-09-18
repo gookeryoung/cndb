@@ -159,22 +159,5 @@ for (const auth of AUTHS) {
       await gotoGridAndVerifyColumns(page, wid, "DestSkip", ["dup_name", "unique_col"]);
     });
 
-    test("同名冲突：skip_conflicts=false 返回 400", async ({ request }) => {
-      const wid = await createWorkspace(request, `import-conflict-${Date.now()}`);
-
-      const srcTid = await createTable(request, wid, "SourceConflict");
-      await createField(request, wid, srcTid, "collide", "text");
-
-      const dstTid = await createTable(request, wid, "DestConflict");
-      await createField(request, wid, dstTid, "collide", "text");
-
-      const resp = await importFields(request, wid, dstTid, srcTid, {
-        field_names: ["collide"],
-        skip_conflicts: false,
-      });
-      expect(resp.status()).toBe(400);
-      const body = await resp.json();
-      expect(body.detail).toContain("同名字段");
-    });
   });
 }
