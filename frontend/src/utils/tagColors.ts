@@ -1,30 +1,54 @@
 /** 数据标签自动配色工具.
  *
  * 配色完全基于 Ant Design v5 官方预设色板（不自行定义任何 HEX）.
- * - 基础预设 13 种（blue/purple/cyan/green/magenta/pink/red/orange/yellow/volcano/geekblue/lime/gold）
- * - inverse 变体 13 种（如 blue-inverse）
- * - status 预设 5 种（success/processing/error/default/warning）
- * 合计 31 种稳定色名；通过字符串 hash 映射，同值同色.
+ * 配色策略：
+ * - 语义规则优先（如"已完成"→success，"紧急"→red）
+ * - 语义未命中时按分级调色板 fallback（核心 5 / 扩展 8 / 完整 13）
+ * - 完全随机 hash 时仅从主推 13 种基础色里循环，不碰 inverse/status
  *
- * 增强：支持从后端 SelectOption.color 取已存储颜色，以及前端语义实时推荐.
+ * 主推色系：13 种 antd 基础预设（blue/purple/cyan/green/magenta/pink/red/
+ * orange/yellow/volcano/geekblue/lime/gold），不含 inverse 变体和 status 专用色.
+ * inverse/status 变体仅在语义规则明确命中时使用.
  */
 
 /** Ant Design v5 完整预设色名清单（基础 + inverse + status） */
 const ANTD_COLOR_NAMES: readonly string[] = [
-  // —— 13 种基础预设 ——
+  // —— 13 种基础预设（主推色系）——
   'blue', 'purple', 'cyan', 'green', 'magenta', 'pink', 'red',
   'orange', 'yellow', 'volcano', 'geekblue', 'lime', 'gold',
-  // —— 13 种 inverse 变体 ——
+  // —— 13 种 inverse 变体（仅语义命中时使用）——
   'blue-inverse', 'purple-inverse', 'cyan-inverse', 'green-inverse',
   'magenta-inverse', 'pink-inverse', 'red-inverse',
   'orange-inverse', 'yellow-inverse', 'volcano-inverse',
   'geekblue-inverse', 'lime-inverse', 'gold-inverse',
-  // —— 5 种 status 预设 ——
+  // —— 5 种 status 预设（仅语义命中时使用）——
   'success', 'processing', 'error', 'default', 'warning',
 ]
 
-/** 前端智能配色专用调色板（语义不匹配时 fallback） */
-const _PALETTE: readonly string[] = ['blue', 'green', 'orange', 'purple', 'cyan', 'magenta', 'gold', 'red']
+/** 主推色系（13 种基础预设，不含 inverse/status）—— 分级配色的根基 */
+const PRIMARY_COLORS: readonly string[] = [
+  'blue', 'green', 'orange', 'purple', 'red',
+  'cyan', 'gold', 'magenta',
+  'yellow', 'volcano', 'geekblue', 'lime', 'pink',
+]
+
+/** 分级配色调色板（与后端 smart_color.py 保持一致） */
+const CORE_PALETTE: readonly string[] = ['blue', 'green', 'orange', 'purple', 'red']
+const EXTENDED_PALETTE: readonly string[] = [
+  'blue', 'green', 'orange', 'purple', 'red',
+  'cyan', 'gold', 'magenta',
+]
+const FULL_PALETTE: readonly string[] = [
+  'blue', 'green', 'orange', 'purple', 'red',
+  'cyan', 'gold', 'magenta',
+  'yellow', 'volcano', 'geekblue', 'lime', 'pink',
+]
+
+function pickPalette(size: number): readonly string[] {
+  if (size <= 5) return CORE_PALETTE
+  if (size <= 10) return EXTENDED_PALETTE
+  return FULL_PALETTE
+}
 
 /** 标签值到 hash 颜色索引的缓存，保证同值同色 */
 const valueIndexCache = new Map<string, number>()
@@ -159,20 +183,20 @@ export function suggestColorForLabel(label: string): string | null {
 
 /** 根据标签值返回稳定的 Ant Design 预设色名字符串.
  *
- * 直接传给 <Tag color={name}> 即可由 antd 渲染，主题切换自动适配.
+ * 完全 hash 随机配色，但仅从 **主推色系**（13 种基础预设）里循环，
+ * 避免 inverse 变体或 status 专用色随机混入导致视觉混乱。
  *
- * 注：纯 hash 随机配色，不感知 option.color。需感知后端已存颜色时使用
- * {@link resolveTagColor}。
+ * 直接传给 <Tag color={name}> 即可由 antd 渲染，主题切换自动适配.
  */
 export function getTagColorName(value: string | number): string {
   const key = String(value).trim()
-  if (!key) return ANTD_COLOR_NAMES[0]!
+  if (!key) return PRIMARY_COLORS[0]!
   let idx = valueIndexCache.get(key)
   if (idx === undefined) {
-    idx = hashString(key) % ANTD_COLOR_NAMES.length
+    idx = hashString(key) % PRIMARY_COLORS.length
     valueIndexCache.set(key, idx)
   }
-  return ANTD_COLOR_NAMES[idx]!
+  return PRIMARY_COLORS[idx]!
 }
 
 /** 兼容旧 API — 同 getTagColorName */
@@ -180,11 +204,15 @@ export function getTagColor(value: string | number): string {
   return getTagColorName(value)
 }
 
-/** 从选项配置中查找值对应的已存颜色；找不到则 fallback 语义推荐 → hash.
+/** 从选项配置中查找值对应的已存颜色；找不到则 fallback 语义推荐 → 分级调色板.
+ *
+ * 与 {@link getTagColorName} 的区别：resolveTagColor 会消费后端已存的
+ * SelectOption.color（优先级最高），且按 options 数组长度选择分级调色板
+ * 做 fallback（5 以内核心 5 色 / 6-10 扩展 8 色 / 10+ 完整主推 13 色）.
  *
  * @param value 单元格显示值（label 文本）
  * @param options 字段配置中的选项列表（可以是 string[] 或 {label, value, color}[]）
- * @param index 在选项列表中的位置（fallback 调色板用）
+ * @param index 在选项列表中的位置（fallback 调色板循环用）
  */
 export function resolveTagColor(
   value: string | number,
@@ -198,10 +226,7 @@ export function resolveTagColor(
   if (Array.isArray(options)) {
     for (const opt of options) {
       if (typeof opt === 'string') {
-        if (opt === key) {
-          // 纯字符串选项本身没有 color 字段，跳过
-          break
-        }
+        if (opt === key) break
       } else if (opt && typeof opt === 'object') {
         const o = opt as { label?: string; value?: unknown; color?: string }
         const optLabel = String(o.label ?? o.value ?? '')
@@ -216,8 +241,10 @@ export function resolveTagColor(
   const semantic = suggestColorForLabel(key)
   if (semantic) return semantic
 
-  // 路径 3: 调色板 fallback 或 hash
-  return _PALETTE[index % _PALETTE.length]
+  // 路径 3: 按 options 总数挑选分级调色板做 fallback
+  const paletteSize = Array.isArray(options) ? options.length : 0
+  const palette = pickPalette(paletteSize)
+  return palette[index % palette.length]
 }
 
 /** 清空所有颜色缓存（hash + 语义），用于测试或热更新场景. */
