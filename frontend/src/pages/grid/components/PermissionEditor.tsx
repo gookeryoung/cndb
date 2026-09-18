@@ -1,12 +1,12 @@
 /** 表权限编辑器 — 嵌入在 Modal 内.
  *
  * 上半部分：Owner Card + Members Table（新增成员 / 切换 read-write / 移除成员 / 转让所有权）
- * 下半部分：原有 TablePermission 编辑 UI（隐藏字段 / 备注 / 行级过滤 — 保留, 未改动）
+ * 下半部分：原有 TablePermission 编辑 UI（隐藏字段 — 保留, 未改动）
  */
 
 import { useState, useMemo } from 'react'
 import {
-  Card, Avatar, Button, Table, Select, Modal, Tag, Space, Input, Form, message, Popconfirm, Tooltip,
+  Card, Avatar, Button, Table, Select, Modal, Tag, Space, Form, message, Popconfirm, Tooltip,
 } from 'antd'
 import {
   SafetyOutlined, UserOutlined, SwapOutlined, PlusOutlined, DeleteOutlined,
@@ -57,7 +57,6 @@ export default function PermissionEditor({ fields, data, wid, tid, owner }: Perm
   const queryClient = useQueryClient()
   const [transferOpen, setTransferOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
-  const [comment, setComment] = useState(data?.comment_role || '')
   const hiddenSet = buildHiddenSet(data?.hidden_fields as unknown)
 
   // ── 表成员列表 ──
@@ -280,14 +279,6 @@ export default function PermissionEditor({ fields, data, wid, tid, owner }: Perm
           </Form.Item>
         ))}
       </Form>
-      <div style={{ marginTop: 16, fontSize: 13, fontWeight: 600, marginBottom: 8 }}>备注</div>
-      <Input.TextArea
-        rows={3}
-        placeholder="权限备注"
-        value={comment}
-        onChange={e => setComment(e.target.value)}
-        data-perm-comment
-      />
 
       {/* ─────────────── 转让所有权 Modal ─────────────── */}
       <TransferOwnerModal
@@ -395,7 +386,7 @@ function AddMemberModal({
           value={role}
           onChange={setRole}
           options={[
-            { value: 'read', label: 'read · 只读（可读数据、可评论）' },
+            { value: 'read', label: 'read · 只读' },
             { value: 'write', label: 'write · 可编辑（可编辑数据与视图, 不可改结构）' },
           ]}
         />

@@ -54,7 +54,6 @@ def upsert_permission(
     tp.edit_records_role = payload.edit_records_role
     tp.edit_views_role = payload.edit_views_role
     tp.edit_schema_role = payload.edit_schema_role
-    tp.comment_role = payload.comment_role
     tp.hidden_fields = payload.hidden_fields
     tp.row_filters = payload.row_filters
     tp.row_filter_type = payload.row_filter_type

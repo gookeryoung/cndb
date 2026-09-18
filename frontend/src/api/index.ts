@@ -8,7 +8,6 @@
  * - /api/v1/workspaces/{wid}/tables/{tid}/records/*   → 行
  * - /api/v1/workspaces/{wid}/tables/{tid}/views/*     → 视图
  * - /api/v1/workspaces/{wid}/tables/{tid}/permissions → 表级权限
- * - /api/v1/workspaces/{wid}/tables/{tid}/comments/*  → 评论（嵌套在 records 下）
  * - /api/v1/workspaces/{wid}/tables/{tid}/audit       → 审计
  * - /api/v1/workspaces/{wid}/trash/*                  → 回收站概览
  * - /api/v1/workspaces/{wid}/tables/{tid}/trash-rows  → 表级回收站行
@@ -31,7 +30,7 @@ import type {
   WorkspaceTrashResponse, TrashedRow,
   CsvAnalyzeResult, CsvImportResult,
   FileAnalyzeResult, FileImportResult,
-  AuditLog, Comment, Reference,
+  AuditLog, Reference,
   ImportTaskInfo, TablePermission,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportRenderRequest,
@@ -50,7 +49,7 @@ export type {
   FieldImportRequest, FieldImportResponse, FieldImportSuggestion, FieldImportGapAnalysis, FieldType, Field, FieldCreate, FieldUpdate,
   RowValues, RowResponse, RowDetail, RowCreate, RowUpdate, RowListResponse, RecordListParams,
   View, ViewDetail, ViewCreate, ViewUpdate,
-  AuditLog, Comment, Reference,
+  AuditLog, Reference,
   TrashedRow, WorkspaceTrashResponse,
   CsvAnalyzeResult, CsvImportResult,
   FileAnalyzeResult, FileImportResult,
@@ -253,19 +252,6 @@ export const viewApi = {
   /** 撤销公开分享 */
   revokeShare: (wid: number | string, tid: number | string, vid: number | string) =>
     api.delete<{ ok: boolean; is_public: boolean }>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}/share`).then(r => r.data),
-}
-
-// ─────────────── Comments（行级） ───────────────
-
-export const commentApi = {
-  list: (wid: number | string, tid: number | string, rid: number | string) =>
-    api.get<Comment[]>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}/comments`).then(r => r.data),
-  create: (wid: number | string, tid: number | string, rid: number | string, content: string, parentId?: number) =>
-    api.post<Comment>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}/comments`, { content, parent_id: parentId }).then(r => r.data),
-  update: (wid: number | string, tid: number | string, cid: number | string, content: string) =>
-    api.patch<Comment>(`/v1/workspaces/${wid}/tables/${tid}/comments/${cid}`, { content }).then(r => r.data),
-  remove: (wid: number | string, tid: number | string, cid: number | string) =>
-    api.delete(`/v1/workspaces/${wid}/tables/${tid}/comments/${cid}`).then(r => r.data),
 }
 
 // ─────────────── Audit ───────────────
