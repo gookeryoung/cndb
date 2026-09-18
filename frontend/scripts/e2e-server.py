@@ -37,6 +37,7 @@ def main() -> int:
     print("[e2e-server] seed 演示数据...", flush=True)
     seed = subprocess.run(
         ["uv", "run", "cndb", "seed"],
+        check=False,
         cwd=root,
     )
     if seed.returncode != 0:
