@@ -6,9 +6,16 @@
  * - tag_field:     标签字段（可选，显示为右上角徽章）
  * - meta_fields:   附加信息字段（string[]，卡片底部脚注）
  * - image_field:   图片/附件字段（可选，缩略图来源）
+ *
+ * 虚拟化策略：
+ * - 当 rows >= 100 时启用，用 useVirtualizer 按"行"虚拟化
+ * - 行数 = ceil(rows.length / 每行卡片数)，每行卡片数根据 AntD 断点动态计算
+ * - 用独立滚动容器，每个虚拟行是一个 flex 行
  */
 
-import { Row, Col, Empty } from 'antd'
+import { useMemo, useRef } from 'react'
+import { Row, Col, Empty, Grid as AntDGrid } from 'antd'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, GALLERY_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
@@ -44,6 +51,9 @@ interface GalleryViewProps {
 }
 
 export default function GalleryView({ rows, fields, view, density, onRowClick }: GalleryViewProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const breakpoints = AntDGrid.useBreakpoint()
+
   const opts = resolveOpts(view?.view_options as Record<string, unknown> | undefined, GALLERY_OPTIONS)
   const titleFieldName = (opts.title_field as string)
     || resolveAutoField(fields, findOptionSchema('gallery', 'title_field'))
@@ -72,80 +82,153 @@ export default function GalleryView({ rows, fields, view, density, onRowClick }:
   const primaryField = fields.find(f => f.is_primary)
   const titleField = titleFieldName ? find(titleFieldName) : primaryField
 
-  return (
-    <Row gutter={gutter}>
-      {rows.map(r => {
-        const imgUrl = imageFieldName ? extractImageUrl(r[imageFieldName]) : null
+  // 根据断点计算每行卡片数（对齐 AntD Col 配置）
+  // xs=24(1列) sm=12(2列) md=8(3列) lg=6(4列) xl=6(4列) xxl=6(4列)
+  const colsPerRow = useMemo(() => {
+    if (breakpoints.xxl) return 4
+    if (breakpoints.xl) return 4
+    if (breakpoints.lg) return 4
+    if (breakpoints.md) return 3
+    if (breakpoints.sm) return 2
+    if (breakpoints.xs) return 1
+    return 3
+  }, [breakpoints])
 
-        // 标题：主键字段或配置字段的格式化值
-        const titleVal = titleField
-          ? formatFieldDisplayValue(titleField, r[titleField.name]) || String(r.id)
-          : String(r.id)
+  // 是否启用虚拟化
+  const useVirtual = rows.length >= 100
 
-        // 副标题
-        const subtitleField = find(subtitleFieldName)
-        const subtitleVal = subtitleField
-          ? formatFieldDisplayValue(subtitleField, r[subtitleField.name])
-          : ''
+  // 按 colsPerRow 把 rows 分组成虚拟行
+  const rowChunks = useMemo(() => {
+    const chunks: RowResponse[][] = []
+    for (let i = 0; i < rows.length; i += colsPerRow) {
+      chunks.push(rows.slice(i, i + colsPerRow))
+    }
+    return chunks
+  }, [rows, colsPerRow])
 
-        // 标签徽章
-        const tagField = find(tagFieldName)
-        const tagVal = tagField
-          ? formatFieldDisplayValue(tagField, r[tagField.name])
-          : ''
+  // 估算每行高度（gutter[1] 是行间距）
+  const estimatedRowHeight = (() => {
+    const cardHeight = Math.max(imgHeight, fallbackHeight) + textPadding * 2 + 30 // 30 ≈ 标题+副标题+meta 粗略估计
+    return cardHeight + gutter[1]
+  })()
 
-        const gradient = pickGradient(titleVal)
+  const virtualizer = useVirtualizer({
+    count: rowChunks.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => estimatedRowHeight,
+    overscan: 3,
+  })
 
-        return (
-          <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
-            <div
-              onClick={() => onRowClick?.(r)}
-              style={{ padding: 0, border: '1px solid var(--cn-border)', borderRadius: radius, background: 'var(--cn-bg-container)', cursor: 'pointer', overflow: 'hidden', transition: 'box-shadow 0.15s' }}
-            >
-              {imgUrl ? (
-                <div style={{ width: '100%', height: imgHeight, background: 'var(--cn-bg-canvas)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
-                  <img
-                    src={imgUrl}
-                    alt=""
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                  {tagVal && (
-                    <span style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: textSubFontSize, padding: '1px 8px', borderRadius: 10, backdropFilter: 'blur(4px)' }}>{tagVal}</span>
-                  )}
-                </div>
-              ) : (
-                <div style={{ width: '100%', height: fallbackHeight, background: gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: fallbackFontSize, position: 'relative' }}>
-                  {titleVal.slice(0, 2).toUpperCase()}
-                  {tagVal && (
-                    <span style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: textSubFontSize, padding: '1px 8px', borderRadius: 10, fontWeight: 500 }}>{tagVal}</span>
-                  )}
-                </div>
+  // 渲染单个卡片（抽成函数复用在全量和虚拟化两种模式）
+  const renderCard = (r: RowResponse) => {
+    const imgUrl = imageFieldName ? extractImageUrl(r[imageFieldName]) : null
+
+    const titleVal = titleField
+      ? formatFieldDisplayValue(titleField, r[titleField.name]) || String(r.id)
+      : String(r.id)
+
+    const subtitleField = find(subtitleFieldName)
+    const subtitleVal = subtitleField
+      ? formatFieldDisplayValue(subtitleField, r[subtitleField.name])
+      : ''
+
+    const tagField = find(tagFieldName)
+    const tagVal = tagField
+      ? formatFieldDisplayValue(tagField, r[tagField.name])
+      : ''
+
+    const gradient = pickGradient(titleVal)
+
+    return (
+      <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
+        <div
+          onClick={() => onRowClick?.(r)}
+          style={{ padding: 0, border: '1px solid var(--cn-border)', borderRadius: radius, background: 'var(--cn-bg-container)', cursor: 'pointer', overflow: 'hidden', transition: 'box-shadow 0.15s' }}
+        >
+          {imgUrl ? (
+            <div style={{ width: '100%', height: imgHeight, background: 'var(--cn-bg-canvas)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
+              <img
+                src={imgUrl}
+                alt=""
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              {tagVal && (
+                <span style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: textSubFontSize, padding: '1px 8px', borderRadius: 10, backdropFilter: 'blur(4px)' }}>{tagVal}</span>
               )}
-              <div style={{ padding: textPadding }}>
-                <div style={{ fontWeight: 600, marginBottom: 2, fontSize: textFontSize, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titleVal}</div>
-                {subtitleVal && (
-                  <div style={{ fontSize: textSubFontSize, color: 'var(--cn-text-secondary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitleVal}</div>
-                )}
-                {metaFieldNames.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                    {metaFieldNames.map(mf => {
-                      const fd = find(mf)
-                      if (!fd) return null
-                      const v = formatFieldDisplayValue(fd, r[mf])
-                      if (!v) return null
-                      return (
-                        <span key={mf} style={{ fontSize: textSubFontSize - 1, color: 'var(--cn-text-secondary)', background: 'var(--cn-bg-muted)', padding: '1px 6px', borderRadius: 3 }}>{v}</span>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
             </div>
-          </Col>
-        )
-      })}
-      {rows.length === 0 && <Empty description="暂无记录" style={{ padding: 48 }} />}
-    </Row>
+          ) : (
+            <div style={{ width: '100%', height: fallbackHeight, background: gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: fallbackFontSize, position: 'relative' }}>
+              {titleVal.slice(0, 2).toUpperCase()}
+              {tagVal && (
+                <span style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: textSubFontSize, padding: '1px 8px', borderRadius: 10, fontWeight: 500 }}>{tagVal}</span>
+              )}
+            </div>
+          )}
+          <div style={{ padding: textPadding }}>
+            <div style={{ fontWeight: 600, marginBottom: 2, fontSize: textFontSize, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titleVal}</div>
+            {subtitleVal && (
+              <div style={{ fontSize: textSubFontSize, color: 'var(--cn-text-secondary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitleVal}</div>
+            )}
+            {metaFieldNames.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                {metaFieldNames.map(mf => {
+                  const fd = find(mf)
+                  if (!fd) return null
+                  const v = formatFieldDisplayValue(fd, r[mf])
+                  if (!v) return null
+                  return (
+                    <span key={mf} style={{ fontSize: textSubFontSize - 1, color: 'var(--cn-text-secondary)', background: 'var(--cn-bg-muted)', padding: '1px 6px', borderRadius: 3 }}>{v}</span>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </Col>
+    )
+  }
+
+  if (rows.length === 0) {
+    return <Empty description="暂无记录" style={{ padding: 48 }} />
+  }
+
+  if (!useVirtual) {
+    return (
+      <Row gutter={gutter}>
+        {rows.map(r => renderCard(r))}
+      </Row>
+    )
+  }
+
+  // 虚拟化模式：独立滚动容器
+  return (
+    <div ref={scrollRef} style={{ overflowY: 'auto', height: '100%', paddingRight: 4 }}>
+      <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+        {virtualizer.getVirtualItems().map((vi) => {
+          const rowData = rowChunks[vi.index]
+          if (!rowData) return null
+          return (
+            <div
+              key={vi.key}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: vi.size,
+                transform: `translateY(${vi.start}px)`,
+              }}
+              ref={virtualizer.measureElement}
+              data-index={vi.index}
+            >
+              <Row gutter={gutter}>
+                {rowData.map(r => renderCard(r))}
+              </Row>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }

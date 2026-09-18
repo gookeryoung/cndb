@@ -15,8 +15,9 @@
  * - pin_urgent:        是否把逾期/紧急卡片置顶（默认 true，有 due_date_field 时）
  */
 
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { Tag, Progress, Tooltip, Empty } from 'antd'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   CalendarOutlined,
   ClockCircleOutlined,
@@ -442,6 +443,139 @@ function DueDateBadge({
   )
 }
 
+// ── 看板列（虚拟化） ───────────────────────────────────
+
+/** 卡片高度估算 —— 不同 density 给一个合理 baseline，virtualizer 运行时会用 measureElement 自动修正 */
+function estimateCardHeight(density: Density): number {
+  if (density === 'compact') return 100
+  if (density === 'spacious') return 130
+  return 115
+}
+
+/** 单列看板列组件 —— 当 rows >= 100 时启用虚拟滚动，否则全量渲染更简单 */
+interface KanbanColumnProps {
+  col: { key: string; title: string; rows: RowResponse[]; urgentCount: number }
+  fields: Field[]
+  opts: Record<string, unknown>
+  density: Density
+  colStyle: ReturnType<typeof densityColumnStyle>
+  onRowClick?: (r: RowResponse) => void
+}
+
+function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick }: KanbanColumnProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const useVirtual = col.rows.length >= 100
+  const estimatedSize = estimateCardHeight(density)
+
+  const virtualizer = useVirtualizer({
+    count: col.rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => estimatedSize,
+    overscan: 5,
+  })
+
+  const items = useVirtual
+    ? virtualizer.getVirtualItems()
+    : col.rows.map((_, i) => ({ index: i, start: 0, size: estimatedSize, key: i, lane: 0 }))
+
+  return (
+    <div
+      key={col.key}
+      style={{
+        minWidth: colStyle.colMinWidth,
+        maxWidth: colStyle.colMaxWidth,
+        background: 'var(--cn-bg-subtle)',
+        borderRadius: colStyle.borderRadius,
+        padding: colStyle.colPadding,
+        border: '1px solid var(--cn-border)',
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      {/* 列头 */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: colStyle.colHeaderPadding,
+          borderBottom: '1px solid var(--cn-border)',
+          marginBottom: colStyle.colHeaderMarginBottom,
+        }}
+      >
+        <span style={{ fontWeight: 600, fontSize: colStyle.colHeaderFontSize, color: 'var(--cn-text-primary)' }}>
+          {col.title}
+        </span>
+        <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <span
+            style={{
+              fontSize: colStyle.colHeaderCountFontSize,
+              color: 'var(--cn-text-muted)',
+              background: 'var(--cn-bg-container)',
+              padding: '2px 8px',
+              borderRadius: 10,
+            }}
+          >
+            {col.rows.length}
+          </span>
+          {col.urgentCount > 0 && (
+            <Tag color="red" style={{ margin: 0, fontSize: colStyle.colHeaderCountFontSize }}>
+              {col.urgentCount} 紧急
+            </Tag>
+          )}
+        </span>
+      </div>
+
+      {/* 卡片列表 */}
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto' }}>
+        {col.rows.length === 0 ? (
+          <div
+            style={{
+              textAlign: 'center',
+              padding: colStyle.emptyPadding,
+              color: 'var(--cn-text-muted)',
+              fontSize: colStyle.emptyFontSize,
+            }}
+          >
+            无记录
+          </div>
+        ) : useVirtual ? (
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+            {items.map((vi) => (
+              <div
+                key={vi.key}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: vi.size,
+                  transform: `translateY(${vi.start}px)`,
+                }}
+                ref={virtualizer.measureElement}
+                data-index={vi.index}
+              >
+                <KanbanCard
+                  row={col.rows[vi.index]}
+                  fields={fields}
+                  opts={opts}
+                  density={density}
+                  onRowClick={onRowClick}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          col.rows.map((r) => (
+            <KanbanCard key={r.id} row={r} fields={fields} opts={opts} density={density} onRowClick={onRowClick} />
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── 看板主视图 ────────────────────────────────────────
 
 export default function KanbanView({
@@ -557,73 +691,15 @@ export default function KanbanView({
       }}
     >
       {columns.map((col) => (
-        <div
+        <KanbanColumn
           key={col.key}
-          style={{
-            minWidth: colStyle.colMinWidth,
-            maxWidth: colStyle.colMaxWidth,
-            background: 'var(--cn-bg-subtle)',
-            borderRadius: colStyle.borderRadius,
-            padding: colStyle.colPadding,
-            border: '1px solid var(--cn-border)',
-            flexShrink: 0,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          {/* 列头 */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: colStyle.colHeaderPadding,
-              borderBottom: '1px solid var(--cn-border)',
-              marginBottom: colStyle.colHeaderMarginBottom,
-            }}
-          >
-            <span style={{ fontWeight: 600, fontSize: colStyle.colHeaderFontSize, color: 'var(--cn-text-primary)' }}>
-              {col.title}
-            </span>
-            <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              <span
-                style={{
-                  fontSize: colStyle.colHeaderCountFontSize,
-                  color: 'var(--cn-text-muted)',
-                  background: 'var(--cn-bg-container)',
-                  padding: '2px 8px',
-                  borderRadius: 10,
-                }}
-              >
-                {col.rows.length}
-              </span>
-              {col.urgentCount > 0 && (
-                <Tag color="red" style={{ margin: 0, fontSize: colStyle.colHeaderCountFontSize }}>
-                  {col.urgentCount} 紧急
-                </Tag>
-              )}
-            </span>
-          </div>
-
-          {/* 卡片列表 */}
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {col.rows.map((r) => (
-              <KanbanCard key={r.id} row={r} fields={fields} opts={opts} density={density} onRowClick={onRowClick} />
-            ))}
-            {col.rows.length === 0 && (
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: colStyle.emptyPadding,
-                  color: 'var(--cn-text-muted)',
-                  fontSize: colStyle.emptyFontSize,
-                }}
-              >
-                无记录
-              </div>
-            )}
-          </div>
-        </div>
+          col={col}
+          fields={fields}
+          opts={opts}
+          density={density}
+          colStyle={colStyle}
+          onRowClick={onRowClick}
+        />
       ))}
     </div>
   )
