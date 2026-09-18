@@ -318,7 +318,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
 
   // ── 左侧：字段列表 ──
   const renderFieldsList = () => (
-    <div style={{ height: '60vh', overflowY: 'auto', borderRight: '1px solid #f0f0f0', paddingRight: 8 }}>
+    <div style={{ height: '62vh', overflowY: 'auto', borderRight: '1px solid #f0f0f0', paddingRight: 6 }}>
       {effectiveColumns.map(col => {
         const failCnt = columnFailCounts[col.name] ?? 0
         const baseCol = analyzeResult?.columns.find(c => c.name === col.name)
@@ -341,19 +341,19 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
             key={col.name}
             onClick={() => setSelectedField(col.name)}
             style={{
-              padding: 10,
-              marginBottom: 8,
+              padding: 8,
+              marginBottom: 6,
               background: cardBg,
               border: `1px solid ${cardBorder}`,
-              borderRadius: 6,
+              borderRadius: 5,
               cursor: 'pointer',
             }}
           >
             {/* 字段名 + 类型选择 + 置信度 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
               <div style={{ fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {col.name}
-                {!isAutoType && <Tag color="purple" style={{ marginLeft: 6 }}>已调整</Tag>}
+                {!isAutoType && <Tag color="purple" style={{ marginLeft: 4 }}>已调</Tag>}
               </div>
               {isSelect && <Tag color="orange">select</Tag>}
               {isDate && <Tag color="green">日期</Tag>}
@@ -374,13 +374,13 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
               value={col.field_type}
               onChange={(v) => changeFieldType(col.name, v)}
               options={PREVIEW_FIELD_TYPES}
-              style={{ width: '100%', marginBottom: 6 }}
+              style={{ width: '100%', marginBottom: 4 }}
             />
 
             {/* 空值率进度条 */}
             {baseCol?.null_ratio != null && baseCol.null_ratio > 0 && (
-              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>空值率</span>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span>空值</span>
                 <Progress
                   size="small"
                   percent={Math.round(baseCol.null_ratio * 100)}
@@ -392,20 +392,20 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
 
             {/* 类型识别提示（date/select 特别提示） */}
             {isSelect && (
-              <div style={{ fontSize: 11, color: '#d97706', marginBottom: 4 }}>
-                <SwapOutlined /> 低基数文本列 → 识别为 select（{col.options?.length ?? 0} 个选项）
+              <div style={{ fontSize: 11, color: '#d97706', marginBottom: 2 }}>
+                <SwapOutlined /> 低基数 → select（{col.options?.length ?? 0}）
               </div>
             )}
             {isDate && (
-              <div style={{ fontSize: 11, color: '#16a34a', marginBottom: 4 }}>
-                <FileTextOutlined /> 识别为日期格式
+              <div style={{ fontSize: 11, color: '#16a34a', marginBottom: 2 }}>
+                <FileTextOutlined /> 识别为日期
               </div>
             )}
 
             {/* 样本值 */}
             <div style={{ fontSize: 11, color: '#64748b' }}>
               样本: {(col.sample_values ?? []).slice(0, 3).map((v, i) => (
-                <Tag key={i} style={{ marginBottom: 2, background: '#f1f5f9' }}>{v}</Tag>
+                <Tag key={i} style={{ marginBottom: 1, background: '#f1f5f9' }}>{v}</Tag>
               ))}
             </div>
           </div>
@@ -469,20 +469,18 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       const failCnt = columnFailCounts[col.name] ?? 0
       return {
         title: (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontWeight: 600 }}>{col.name}</span>
-            <div>
-              <Tag color={TYPE_COLOR[col.field_type] ?? 'default'} style={{ margin: 0 }}>{col.field_type}</Tag>
-              {failCnt > 0 && (
-                <Tooltip title={`有 ${failCnt} 行无法转换`}>
-                  <ExclamationCircleOutlined style={{ color: '#ef4444', marginLeft: 4 }} />
-                </Tooltip>
-              )}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+            <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.name}</span>
+            <Tag color={TYPE_COLOR[col.field_type] ?? 'default'} style={{ margin: 0 }}>{col.field_type}</Tag>
+            {failCnt > 0 && (
+              <Tooltip title={`有 ${failCnt} 行无法转换`}>
+                <ExclamationCircleOutlined style={{ color: '#ef4444' }} />
+              </Tooltip>
+            )}
           </div>
         ),
         dataIndex: col.name,
-        width: 180,
+        width: 160,
         render: (_v: unknown, row: Record<string, unknown>) => {
           const raw = row[col.name]
           const t = tryConvert(raw, col.field_type)
@@ -517,61 +515,35 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
     const errorFieldCount = cols.filter(c => (columnFailCounts[c.name] ?? 0) > 0).length
     const okFieldCount = cols.length - errorFieldCount
 
+    // 统计卡片公共样式
+    const statBox = (bg: string, numColor = '#0f172a', icon: any = null, num: any = 0, label = '') => (
+      <div style={{ padding: '4px 6px', background: bg, borderRadius: 4, textAlign: 'center' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: numColor, lineHeight: 1.2 }}>
+          {icon}{num}
+        </div>
+        <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>{label}</div>
+      </div>
+    )
+
     return (
       <div>
         {/* 汇总栏：6 项统计 */}
-        <Row gutter={[8, 8]} style={{ marginBottom: 10 }}>
-          <Col span={4}>
-            <div style={{ padding: '6px 8px', background: '#f1f5f9', borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{analyzeResult.total_rows}</div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>总行数</div>
-            </div>
-          </Col>
-          <Col span={4}>
-            <div style={{ padding: '6px 8px', background: '#f1f5f9', borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{cols.length}</div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>字段数</div>
-            </div>
-          </Col>
-          <Col span={4}>
-            <div style={{ padding: '6px 8px', background: '#f1f5f9', borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{sampleRows.length}</div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>预览行</div>
-            </div>
-          </Col>
-          <Col span={4}>
-            <div style={{ padding: '6px 8px', background: okFieldCount > 0 ? '#f0fdf4' : '#f1f5f9', borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#16a34a' }}>
-                <CheckOutlined style={{ marginRight: 2 }} />{okFieldCount}
-              </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>正常字段</div>
-            </div>
-          </Col>
-          <Col span={4}>
-            <div style={{ padding: '6px 8px', background: errorFieldCount > 0 ? '#fef2f2' : '#f1f5f9', borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626' }}>
-                <WarningOutlined style={{ marginRight: 2 }} />{errorFieldCount}
-              </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>异常字段</div>
-            </div>
-          </Col>
-          <Col span={4}>
-            <div style={{ padding: '6px 8px', background: failedRows.length > 0 ? '#fef2f2' : '#f0fdf4', borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: failedRows.length > 0 ? '#dc2626' : '#16a34a' }}>
-                {failedRows.length}
-              </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>异常行</div>
-            </div>
-          </Col>
-        </Row>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          {statBox('#f1f5f9', '#0f172a', null, analyzeResult.total_rows, '总行数')}
+          {statBox('#f1f5f9', '#0f172a', null, cols.length, '字段数')}
+          {statBox('#f1f5f9', '#0f172a', null, sampleRows.length, '预览行')}
+          {statBox(okFieldCount > 0 ? '#f0fdf4' : '#f1f5f9', '#16a34a', <CheckOutlined style={{ marginRight: 1 }} />, okFieldCount, '正常')}
+          {statBox(errorFieldCount > 0 ? '#fef2f2' : '#f1f5f9', '#dc2626', <WarningOutlined style={{ marginRight: 1 }} />, errorFieldCount, '异常')}
+          {statBox(failedRows.length > 0 ? '#fef2f2' : '#f0fdf4', failedRows.length > 0 ? '#dc2626' : '#16a34a', null, failedRows.length, '异常行')}
+        </div>
 
         <Table
           size="small"
           rowKey={(_, i) => `r-${i}`}
           dataSource={sampleRows as any[]}
           columns={columns}
-          scroll={{ x: cols.length * 180, y: '55vh' }}
-          pagination={{ pageSize: 20 }}
+          scroll={{ x: cols.length * 160, y: '60vh' }}
+          pagination={{ pageSize: 20, size: 'small' }}
         />
       </div>
     )
@@ -613,19 +585,19 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       ]}
     >
       {/* 表名输入 */}
-      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>表名：</span>
         <Input value={tableName} onChange={e => setTableName(e.target.value)} style={{ flex: 1 }} placeholder="自动使用文件名" />
         <span style={{ color: '#64748b', fontSize: 12 }}>
-          格式：{analyzeResult?.format?.toUpperCase() ?? '-'} · 共 {analyzeResult?.total_rows ?? 0} 行
+          {analyzeResult?.format?.toUpperCase() ?? '-'} · {analyzeResult?.total_rows ?? 0} 行
         </span>
       </div>
 
       {/* 主体：左右分栏 */}
-      <Row gutter={16}>
+      <Row gutter={10}>
         {/* 左栏：字段列表 */}
         <Col span={8}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 4 }}>
             字段与类型（{effectiveColumns.length}）
           </div>
           {renderFieldsList()}
@@ -633,7 +605,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         </Col>
         {/* 右栏：数据预览 */}
         <Col span={16}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>典型数据 & 实时转换预览</span>
             <Popover
               placement="bottomRight"
