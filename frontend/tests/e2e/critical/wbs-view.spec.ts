@@ -28,17 +28,14 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIRequestContext, Page } from "@playwright/test";
+import { getAdminToken } from "../helpers/api";
 
 const ANON = ["setup", "chromium-anon"];
 
 // ── 通用辅助 ──────────────────────────────────────────
 
 async function getToken(request: APIRequestContext): Promise<string> {
-  const resp = await request.post("/api/v1/accounts/auth/login", {
-    data: { login: "admin", password: "admin1234" },
-  });
-  const body = (await resp.json()) as { access_token: string };
-  return body.access_token;
+  return getAdminToken(request);
 }
 
 async function getWorkspaceId(
