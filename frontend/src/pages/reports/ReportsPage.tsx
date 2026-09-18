@@ -61,6 +61,7 @@ export default function ReportsPage() {
       setEditorOpen(false)
       form.resetFields()
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '创建模板失败'),
   })
 
   const update = useMutation({
@@ -72,6 +73,7 @@ export default function ReportsPage() {
       setEditing(null)
       form.resetFields()
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '更新模板失败'),
   })
 
   const remove = useMutation({
@@ -80,6 +82,7 @@ export default function ReportsPage() {
       message.success('模板已删除')
       queryClient.invalidateQueries({ queryKey: ['report-templates'] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除模板失败'),
   })
 
   const renderReport = useMutation({
@@ -102,6 +105,7 @@ export default function ReportsPage() {
       URL.revokeObjectURL(url)
     },
     onSuccess: () => message.success('报告已生成'),
+    onError: (err) => message.error(err instanceof Error ? err.message : '生成报告失败'),
   })
 
   const tableNameMap = useMemo(() => new Map(tables.map(t => [t.id, t.name])), [tables])
@@ -132,7 +136,9 @@ export default function ReportsPage() {
         parameters: full.parameters as ReportParameter[],
       })
       setEditorOpen(true)
-    }).catch(() => {})
+    }).catch((err: unknown) => {
+      message.error(err instanceof Error ? err.message : '加载模板失败')
+    })
   }
 
   const columns = [

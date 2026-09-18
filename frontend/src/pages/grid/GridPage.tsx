@@ -249,6 +249,7 @@ export default function GridPage() {
   /** 保存激活视图偏好（debounce 在 loadView 里手动控制） */
   const saveActiveViewPref = useMutation({
     mutationFn: (vid: number | null) => userApi.setTableActiveView(Number(tid!), vid),
+    onError: (err) => message.error(err instanceof Error ? err.message : '视图偏好保存失败'),
   })
   /** 把后端存储的 filters（dict 或 list）归一化成 list 形式 */
   function normalizeFilters(raw: unknown): FilterRule[] {
@@ -453,6 +454,7 @@ export default function GridPage() {
       queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '复制行失败'),
   })
   // ── 行内新增（底部空白行）Mutation ──
   const createRow = useMutation({
@@ -578,6 +580,7 @@ export default function GridPage() {
       message.success('视图已创建')
       queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '创建视图失败'),
   })
   const importViews = useMutation({
     mutationFn: (data: ViewCreate[]) => viewApi.importViews(wid!, tid!, data),
@@ -625,6 +628,7 @@ export default function GridPage() {
       setActiveViewId(null)
       queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除视图失败'),
   })
 
   // ── 视图顺序拖拽 ──
@@ -710,6 +714,7 @@ export default function GridPage() {
   const revokeShare = useMutation({
     mutationFn: () => viewApi.revokeShare(wid!, tid!, activeViewId || views[0]?.id),
     onSuccess: () => message.success('已撤销分享'),
+    onError: (err) => message.error(err instanceof Error ? err.message : '撤销分享失败'),
   })
 
   // 移动表
@@ -721,6 +726,7 @@ export default function GridPage() {
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '移动表失败'),
   })
 
   // 复制表（三种模式）

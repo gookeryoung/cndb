@@ -74,6 +74,7 @@ export default function WorkspaceList() {
   const pin = useMutation({
     mutationFn: (w: Workspace) => workspaceApi.togglePin(w.id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workspaces'] }),
+    onError: (err) => message.error(err instanceof Error ? err.message : '置顶失败'),
   })
 
   // 排序 + 搜索过滤

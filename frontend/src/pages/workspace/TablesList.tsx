@@ -123,6 +123,7 @@ export default function TablesList() {
       form.resetFields()
       navigate(`/w/${wid}/tables/${t.id}`)
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '创建表失败'),
   })
 
   const update = useMutation({
@@ -133,6 +134,7 @@ export default function TablesList() {
       setEditOpen(null)
       editForm.resetFields()
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '更新表失败'),
   })
 
   const copy = useMutation({
@@ -143,6 +145,7 @@ export default function TablesList() {
       message.success(`已复制为 "${t.name}" ${modeLabel}`)
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '复制表失败'),
   })
 
   const remove = useMutation({
@@ -152,6 +155,7 @@ export default function TablesList() {
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除表失败'),
   })
 
   // ── 表顺序拖拽 ──
