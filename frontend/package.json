@@ -21,11 +21,6 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "msw"
-    ]
-  },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
     "@codemirror/commands": "^6.11.1",
