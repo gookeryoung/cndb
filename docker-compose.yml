@@ -17,7 +17,7 @@
 services:
   app:
     build:
-      context: ..
+      context: .
       dockerfile: deploy/Dockerfile
       target: app
     image: cndb2-app:latest
