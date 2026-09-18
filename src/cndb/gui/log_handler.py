@@ -11,7 +11,8 @@ from __future__ import annotations
 import sys
 import threading
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import TextIO
 
 
@@ -81,3 +82,22 @@ def run_in_thread(target: Callable[[], None]) -> threading.Thread:
     t = threading.Thread(target=target, daemon=True)
     t.start()
     return t
+
+
+@contextmanager
+def redirect_output(queue: QueueStdout, *, also_stderr: bool = True) -> Iterator[None]:
+    """临时把 stdout（及可选 stderr）重定向到指定队列，上下文内 print 输出进入该队列.
+
+    用于把后台耗时操作（备份/恢复/预演）自身的日志导出到对应 Tab 的日志区，
+    与原全局队列（主服务日志）隔离，避免混栈。退出时恢复原 stdout/stderr。
+    """
+    old_stdout = sys.stdout
+    sys.stdout = queue
+    old_stderr = sys.stderr
+    if also_stderr:
+        sys.stderr = queue
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr

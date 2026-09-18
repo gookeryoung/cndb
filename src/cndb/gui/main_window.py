@@ -26,7 +26,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Any, override
 
-from cndb.gui.log_handler import QueueStdout, run_in_thread, schedule_log_flush
+from cndb.gui.log_handler import QueueStdout, redirect_output, run_in_thread, schedule_log_flush
 
 # ── 日志文本 Tag 配置（终端风格配色）──
 LOG_TAGS: dict[str, tuple[str, str]] = {
@@ -388,9 +388,16 @@ class BackupTab(_BaseTab):
             row=1, column=2, sticky=tk.W, pady=(6, 0)
         )
 
-        ttk.Button(back_frame, text="立即备份", command=self.do_backup).grid(
-            row=2, column=0, columnspan=3, pady=(10, 0), sticky=tk.E
-        )
+        self.backup_btn = ttk.Button(back_frame, text="立即备份", command=self.do_backup, width=12)
+        self.backup_btn.grid(row=2, column=0, columnspan=3, pady=(10, 0), sticky=tk.E)
+
+        # 进度条 + 结果反馈（备份/恢复/预演共用）
+        prog_row = ttk.Frame(back_frame)
+        prog_row.grid(row=3, column=0, columnspan=3, sticky=tk.EW, pady=(8, 0))
+        self.progress = ttk.Progressbar(prog_row, mode="determinate", maximum=1, value=0, length=200)
+        self.progress.pack(side=tk.LEFT)
+        self.op_status = ttk.Label(prog_row, text="就绪", foreground="#888")
+        self.op_status.pack(side=tk.LEFT, padx=(10, 0))
 
         # 中间：恢复
         rest_frame = ttk.LabelFrame(self.frame, text="从归档恢复", padding=10)
@@ -408,13 +415,33 @@ class BackupTab(_BaseTab):
 
         btn_row = ttk.Frame(rest_frame)
         btn_row.grid(row=2, column=0, columnspan=3, pady=(10, 0), sticky=tk.E)
-        ttk.Button(btn_row, text="预演 (dry-run)", command=self.do_restore_dry_run).pack(side=tk.LEFT, padx=(0, 6))
-        ttk.Button(btn_row, text="立即恢复", command=self.do_restore).pack(side=tk.LEFT)
+        self.dry_run_btn = ttk.Button(btn_row, text="预演 (dry-run)", command=self.do_restore_dry_run)
+        self.dry_run_btn.pack(side=tk.LEFT, padx=(0, 6))
+        self.restore_btn = ttk.Button(btn_row, text="立即恢复", command=self.do_restore)
+        self.restore_btn.pack(side=tk.LEFT)
 
         # 日志区
         log_frame = ttk.LabelFrame(self.frame, text="操作日志", padding=(4, 4))
         log_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
         self.log_text = self._build_log_text(log_frame)
+        # 本 Tab 独立的日志队列与定时 flush（与原全局队列隔离，避免误派到「启动服务」日志）
+        self._log_queue = QueueStdout()
+        schedule_log_flush(self.app.root, self._log_queue, self.log_text)
+
+    # ── 进度与结果反馈 ──
+    def _begin_op(self, status: str) -> None:
+        """操作开始：进度条进入不定步长动画，状态标签置为「进行中」."""
+        self.progress.configure(mode="indeterminate")
+        self.progress.start(12)
+        self.op_status.configure(text=status, foreground="#d4760a")
+
+    def _finish_op(self, button: ttk.Button, ok: bool, status: str) -> None:
+        """操作结束：恢复按钮、停止进度、给出成功/失败反馈."""
+        button.configure(state=tk.NORMAL)
+        self.progress.stop()
+        self.progress.configure(mode="determinate", maximum=1, value=(1 if ok else 0))
+        self.op_status.configure(text=status, foreground=("#1a7f37" if ok else "#cf222e"))
+        self.app.set_status(status)
 
     def _pick_output(self) -> None:
         path = filedialog.asksaveasfilename(
@@ -438,17 +465,26 @@ class BackupTab(_BaseTab):
         mode = self.mode_var.get()
         include_uploads = not self.no_uploads_var.get()
 
+        self.backup_btn.configure(state=tk.DISABLED)
+        self._begin_op("正在备份...")
+
         def _run() -> None:
             from cndb.backup import BackupError, create_backup
 
             try:
                 path = Path(out).resolve() if out else None
-                result = create_backup(output=path, mode=mode, include_uploads=include_uploads)
-                print(f"[ok] 备份成功: {result}")
+                with redirect_output(self._log_queue):
+                    result = create_backup(output=path, mode=mode, include_uploads=include_uploads)
+                    print(f"[ok] 备份成功: {result}")
+                self.app.root.after(0, self._finish_op, self.backup_btn, True, f"备份完成: {result.name}")
             except BackupError as exc:
-                print(f"[error] {exc}", file=sys.stderr)
+                with redirect_output(self._log_queue):
+                    print(f"[error] {exc}", file=sys.stderr)
+                self.app.root.after(0, self._finish_op, self.backup_btn, False, "备份失败")
             except Exception as exc:
-                print(f"[error] 备份失败: {exc}", file=sys.stderr)
+                with redirect_output(self._log_queue):
+                    print(f"[error] 备份失败: {exc}", file=sys.stderr)
+                self.app.root.after(0, self._finish_op, self.backup_btn, False, "备份失败")
 
         run_in_thread(_run)
 
@@ -460,16 +496,25 @@ class BackupTab(_BaseTab):
         if not messagebox.askyesno("确认恢复", "恢复将覆盖现有数据，确认继续？"):
             return
 
+        self.restore_btn.configure(state=tk.DISABLED)
+        self._begin_op("正在恢复...")
+
         def _run() -> None:
             from cndb.restore import RestoreError, restore_backup
 
             try:
-                restore_backup(Path(archive), force=self.force_var.get())
-                print("[ok] 恢复完成")
+                with redirect_output(self._log_queue):
+                    restore_backup(Path(archive), force=self.force_var.get())
+                    print("[ok] 恢复完成")
+                self.app.root.after(0, self._finish_op, self.restore_btn, True, "恢复完成")
             except RestoreError as exc:
-                print(f"[error] {exc}", file=sys.stderr)
+                with redirect_output(self._log_queue):
+                    print(f"[error] {exc}", file=sys.stderr)
+                self.app.root.after(0, self._finish_op, self.restore_btn, False, "恢复失败")
             except Exception as exc:
-                print(f"[error] 恢复失败: {exc}", file=sys.stderr)
+                with redirect_output(self._log_queue):
+                    print(f"[error] 恢复失败: {exc}", file=sys.stderr)
+                self.app.root.after(0, self._finish_op, self.restore_btn, False, "恢复失败")
 
         run_in_thread(_run)
 
@@ -479,15 +524,22 @@ class BackupTab(_BaseTab):
             messagebox.showwarning("缺少参数", "请先选择归档文件")
             return
 
+        self.dry_run_btn.configure(state=tk.DISABLED)
+        self._begin_op("正在预演...")
+
         def _run() -> None:
             from cndb.restore import RestoreError, inspect_backup
 
             try:
-                info = inspect_backup(Path(archive))
-                print("[info] 归档有效")
-                print(info.summary)
+                with redirect_output(self._log_queue):
+                    info = inspect_backup(Path(archive))
+                    print("[info] 归档有效")
+                    print(info.summary)
+                self.app.root.after(0, self._finish_op, self.dry_run_btn, True, "预演完成")
             except RestoreError as exc:
-                print(f"[error] {exc}", file=sys.stderr)
+                with redirect_output(self._log_queue):
+                    print(f"[error] {exc}", file=sys.stderr)
+                self.app.root.after(0, self._finish_op, self.dry_run_btn, False, "预演失败")
 
         run_in_thread(_run)
 
