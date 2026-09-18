@@ -37,6 +37,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { tableApi, recordApi, viewApi, userApi } from '@/api'
 import type { RowResponse, TableDetail, View, ViewCreate } from '@/api'
 import KanbanView from './components/KanbanView'
+import NewRowModal from './components/NewRowModal'
 import CalendarView from './components/CalendarView'
 import GalleryView from './components/GalleryView'
 import GanttView from './components/GanttView'
@@ -145,6 +146,7 @@ export default function GridPage() {
   const [moveOpen, setMoveOpen] = useState(false)
   const [tableSettingsOpen, setTableSettingsOpen] = useState(false)
   const [tableSettingsTab, setTableSettingsTab] = useState<'basic' | 'fields' | 'views' | 'permissions'>('basic')
+  const [newRowOpen, setNewRowOpen] = useState(false)
   const [activeViewId, setActiveViewId] = useState<number | string | null>(null)
   const [viewFilters, setViewFilters] = useState<FilterRule[]>([])
   const [viewSortings, setViewSortings] = useState<SortRule[]>([])
@@ -363,13 +365,6 @@ export default function GridPage() {
       queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
       setSelectedRowKeys([])
-    },
-  })
-  const quickAdd = useMutation({
-    mutationFn: () => recordApi.create(wid!, tid!, { values: {} }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-      queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
     },
   })
   const updateRow = useMutation({
@@ -702,7 +697,7 @@ export default function GridPage() {
               },
             ]
           }}><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></Dropdown>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => quickAdd.mutate()} disabled={!canEditRecords}>新增行</Button>
+          <Button type="primary" icon={<PlusOutlined />} data-testid="add-row-btn" onClick={() => setNewRowOpen(true)} disabled={!canEditRecords}>新增行</Button>
         </Space>
       </div>
 
@@ -1042,6 +1037,15 @@ export default function GridPage() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onAfterSave={() => { setLimit(settings.defaultPageSize); setOffset(0) }}
+      />
+
+      {/* 新增行 Modal — 收集必填字段后创建 */}
+      <NewRowModal
+        open={newRowOpen}
+        wid={wid!}
+        tid={tid!}
+        fields={table?.fields || []}
+        onClose={() => setNewRowOpen(false)}
       />
 
       {/* 表设置统一 Modal — 新增 */}
