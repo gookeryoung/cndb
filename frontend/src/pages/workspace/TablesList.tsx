@@ -22,10 +22,11 @@ import {
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { tableApi, workspaceApi, importApi } from '@/api'
-import type { TableSummary, TableUpdate } from '@/api'
+import type { TableSummary, TableUpdate, FileAnalyzeResult } from '@/api'
 import { useAuthStore } from '@/store'
 
 const ApiImportDialog = lazy(() => import('@/pages/modals/ApiImportDialog'))
+const FileImportPreview = lazy(() => import('@/pages/modals/FileImportPreview'))
 
 const { Title, Text } = Typography
 
@@ -72,6 +73,11 @@ export default function TablesList() {
   const [editOpen, setEditOpen] = useState<TableSummary | null>(null)
   const [apiImportOpen, setApiImportOpen] = useState(false)
   const [filter, setFilter] = useState<AccessFilter>('all')
+  // 文件导入预览 Modal 状态
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewFile, setPreviewFile] = useState<File | null>(null)
+  const [previewAnalyze, setPreviewAnalyze] = useState<FileAnalyzeResult | null>(null)
+  const [analyzingFile, setAnalyzingFile] = useState(false)
   const [form] = Form.useForm()
   const [editForm] = Form.useForm()
 
@@ -145,17 +151,6 @@ export default function TablesList() {
       message.success('已删除')
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid] })
-    },
-  })
-
-  const csvCreate = useMutation({
-    mutationFn: (file: File) => importApi.createFromFile(wid!, file),
-    onSuccess: (result) => {
-      message.success(`已创建表 "${result.table_name}" (${result.imported_rows} 行)`)
-      queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
-      if (result.table_id) {
-        navigate(`/w/${wid}/tables/${result.table_id}`)
-      }
     },
   })
 
@@ -390,9 +385,22 @@ export default function TablesList() {
           <Upload
             accept=".csv,.tsv,.json,.xlsx"
             showUploadList={false}
-            beforeUpload={(file) => { csvCreate.mutate(file as File); return false }}
+            beforeUpload={async (file) => {
+              setAnalyzingFile(true)
+              try {
+                const result = await importApi.analyzeFile(wid!, file as File)
+                setPreviewFile(file as File)
+                setPreviewAnalyze(result)
+                setPreviewOpen(true)
+              } catch (err) {
+                message.error(err instanceof Error ? err.message : '文件解析失败')
+              } finally {
+                setAnalyzingFile(false)
+              }
+              return false  // 阻止 Upload 自动上传，由我们手动控制
+            }}
           >
-            <Button icon={<UploadOutlined />} loading={csvCreate.isPending}>
+            <Button icon={<UploadOutlined />} loading={analyzingFile}>
               导入数据表
             </Button>
           </Upload>
@@ -545,6 +553,28 @@ export default function TablesList() {
           wid={wid!}
           onClose={() => setApiImportOpen(false)}
           onSuccess={(res) => {
+            if (res.table_id) {
+              navigate(`/w/${wid}/tables/${res.table_id}`)
+            }
+          }}
+        />
+      </Suspense>
+
+      {/* 文件导入预览 Modal */}
+      <Suspense fallback={null}>
+        <FileImportPreview
+          open={previewOpen}
+          wid={wid!}
+          file={previewFile}
+          analyzeResult={previewAnalyze}
+          onClose={() => {
+            setPreviewOpen(false)
+            setPreviewFile(null)
+            setPreviewAnalyze(null)
+          }}
+          onSuccess={(res) => {
+            queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
+            queryClient.invalidateQueries({ queryKey: ['workspaces', wid] })
             if (res.table_id) {
               navigate(`/w/${wid}/tables/${res.table_id}`)
             }

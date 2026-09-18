@@ -350,6 +350,8 @@ export interface FileAnalyzeResult {
   total_rows: number
   format: string
   filename?: string
+  /** 前端做"典型数据 + 实时转换预览"使用（前 50 行） */
+  sample_rows?: Array<Record<string, unknown>>
 }
 /** 通用文件建表导入结果（新） */
 export interface FileImportResult {
