@@ -16,8 +16,9 @@ export default defineConfig({
   ],
 
   // 一键起后端：seed 演示数据 + 启动 :8000。本地已有后端时复用，CI 自动拉起。
+  // 跨平台 Python 脚本（替代 bash/PowerShell，避免 shell 差异）。
   webServer: {
-    command: "bash scripts/e2e-server.sh",
+    command: "uv run python scripts/e2e-server.py",
     url: "http://127.0.0.1:8000/",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
