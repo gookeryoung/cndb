@@ -23,7 +23,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from '@dnd-kit/utilities'
 import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate } from '@/api'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuthStore } from '@/store'
 
 const ApiImportDialog = lazy(() => import('@/pages/modals/ApiImportDialog'))
 
@@ -67,7 +67,7 @@ export default function TablesList() {
   const { wid } = useParams<{ wid: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { user } = useAuth()
+  const user = useAuthStore(s => s.user)
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState<TableSummary | null>(null)
   const [apiImportOpen, setApiImportOpen] = useState(false)

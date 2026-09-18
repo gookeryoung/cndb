@@ -1,12 +1,12 @@
 import { Card, Form, Input, Button, Typography, message, Checkbox } from 'antd'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuthStore } from '@/store'
 
 const { Title, Text } = Typography
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const login = useAuthStore(s => s.login)
   const navigate = useNavigate()
   const [sp] = useSearchParams()
   const returnTo = sp.get('return_to') || '/w'

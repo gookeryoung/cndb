@@ -10,7 +10,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 
 // Modal 组件 lazy import：点击打开时才加载
@@ -26,7 +26,8 @@ export default function MainLayout() {
   const navigate = useNavigate()
   const { wid, tid } = useParams<{ wid: string; tid?: string }>()
   const location = window.location.pathname
-  const { user, logout } = useAuth()
+  const user = useAuthStore(s => s.user)
+  const logout = useAuthStore(s => s.logout)
   const { isMobile } = useResponsive()
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)

@@ -1,10 +1,11 @@
 import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuthStore } from '@/store'
 import { Spin } from 'antd'
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth()
+  const user = useAuthStore(s => s.user)
+  const loading = useAuthStore(s => s.loading)
   const location = useLocation()
 
   if (loading) {
