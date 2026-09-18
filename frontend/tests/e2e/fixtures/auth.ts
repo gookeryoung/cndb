@@ -18,6 +18,13 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { existsSync, readFileSync } from "node:fs"
 
+/** 第三方遥测/分析类域名：E2E 中一律 abort，避免无效网络等待拖慢用例.
+ *
+ * 自托管环境通常并不加载这些资源；即便某个环境注入了，也仅影响埋点/统计，
+ * 与应用功能无关。阻断后既可提速（省去超时前的网络空转），也能让用例更确定。
+ */
+const THIRD_PARTY_PATTERN = /(googletagmanager\.com|google-analytics\.com|googleadservices\.com|googlesyndication\.com|hotjar\.com|segment\.(io|com)|amplitude|mixpanel\.com|sentry\.io|zendesk\.com)/i
+
 const _fixtureDir = path.dirname(fileURLToPath(import.meta.url))
 // fixtures/auth.ts → e2e → tests → frontend/.auth/state.json（向上 3 级）
 const AUTH_STATE_PATH = path.resolve(_fixtureDir, "../../../.auth/state.json")
@@ -59,6 +66,8 @@ export const test = base.extend({
     const context = await browser.newContext(
       isAuthed ? { storageState: AUTH_STATE_PATH } : {},
     )
+    // 全局阻断第三方遥测/分析请求（见 THIRD_PARTY_PATTERN），提速 + 确定性
+    await context.route(THIRD_PARTY_PATTERN, (route) => route.abort())
     const page = await context.newPage()
     await use(page)
     await context.close()

@@ -12,6 +12,7 @@
     "lint:fix": "eslint . --fix",
     "check": "pnpm typecheck && pnpm lint",
     "e2e": "playwright test",
+    "e2e:affected": "node scripts/e2e-affected.mjs",
     "e2e:setup": "playwright test --project=setup",
     "e2e:smoke": "playwright test --project=chromium-authed tests/e2e/smoke",
     "e2e:critical": "playwright test --project=chromium-authed tests/e2e/critical",

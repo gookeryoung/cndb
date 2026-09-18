@@ -96,11 +96,16 @@ jobs:
         run: uv run pytest -m "not slow" --cov=cndb --cov-fail-under=95 --cov-report=term-missing -n auto
 
   e2e:
-    name: E2E (Playwright)
+    name: E2E (Playwright) shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # 观察期：先 continue-on-error 收集稳定性数据，稳定后收紧为门禁并扩全量 + --shard
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        # 按 spec 文件分片并行到 4 台 runner，单层 E2E 耗时约降为 1/4（随新增 spec 可调大）
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v5
 
@@ -139,12 +144,13 @@ jobs:
       - name: Run E2E (webServer 自动 seed + 起后端 :8000)
         env:
           CI: "true"
-        run: cd frontend && pnpm e2e
+          E2E_SHARD_INDEX: ${{ matrix.shard }}
+        run: cd frontend && pnpm e2e -- --shard=${{ matrix.shard }}/4
 
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4.8.0
         with:
-          name: playwright-report
+          name: playwright-report-shard${{ matrix.shard }}
           path: frontend/playwright-report/
           retention-days: 7
