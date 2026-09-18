@@ -1,12 +1,12 @@
-/** 行详情抽屉 — 编辑字段值 / 评论 / 历史 / 反向引用. */
+/** 行详情抽屉 — 编辑字段值 / 历史 / 反向引用. */
 
-import React, { useState } from 'react'
-import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Popconfirm, Upload, Image } from 'antd'
-import { SaveOutlined, CommentOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
+import React from 'react'
+import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Upload, Image } from 'antd'
+import { SaveOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
 import { recordApi, fileApi } from '@/api'
-import { useRowAudit, useRowComments, useRowReferences, useUpdateRowOptimistic, useDeleteCommentOptimistic, useCreateCommentOptimistic } from '@/api/hooks'
+import { useRowAudit, useRowReferences, useUpdateRowOptimistic } from '@/api/hooks'
 import type { RowResponse, Field, AttachmentFile } from '@/api'
 import { extractSelectOptions } from './fieldOps'
 
@@ -24,21 +24,12 @@ interface Props {
 export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }: Props) {
   const [form] = Form.useForm()
 
-  // 行特定的审计日志 / 评论 / 反向引用 —— 使用统一的自定义 hooks
+  // 行特定的审计日志 / 反向引用 —— 使用统一的自定义 hooks
   const { data: audit = [] } = useRowAudit(wid, tid, row?.id, open && !!row)
-  const { data: comments = [] } = useRowComments(wid, tid, row?.id, open && !!row)
   const { data: references = [] } = useRowReferences(wid, tid, row?.id, open && !!row)
 
   // 行更新 —— 使用乐观更新 hook，立即反映到 cache，失败回滚
   const updateRow = useUpdateRowOptimistic(wid, tid)
-
-  // 评论发表 —— 乐观更新，立即前端插入临时评论
-  const addComment = useCreateCommentOptimistic(wid, tid, row?.id)
-
-  // 评论删除 —— 乐观更新，立即从列表移除，失败时回滚
-  const deleteComment = useDeleteCommentOptimistic(wid, tid, row?.id)
-
-  const [commentText, setCommentText] = useState('')
 
   React.useEffect(() => {
     if (row) form.setFieldsValue(row)
@@ -85,45 +76,6 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
           </div>
         </>
       )}
-
-      {/* 评论 */}
-      <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
-      <Title level={5}><CommentOutlined /> 评论</Title>
-      <Input.TextArea rows={2} placeholder="写点什么..." value={commentText}
-        onChange={e => setCommentText(e.target.value)} />
-      <div style={{ marginTop: 8, textAlign: 'right' }}>
-        <Button type="primary" onClick={() => {
-          const text = commentText.trim()
-          if (!text) return
-          addComment.mutate(text, {
-            onSuccess: () => {
-              setCommentText('')
-            },
-            onError: (err) => message.error(err instanceof Error ? err.message : '发表失败'),
-          })
-        }} loading={addComment.isPending}>发表</Button>
-      </div>
-      <div style={{ marginTop: 12 }}>
-        {comments.length === 0 ? (
-          <Text type="secondary" italic>暂无评论</Text>
-        ) : comments.map(c => (
-          <div key={c.id} style={{ padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <strong>{c.author_name || '匿名'}</strong>
-              <span style={{ color: '#94a3b8', fontSize: 12 }}>{c.created_at || ''}</span>
-              <Popconfirm title="删除该评论？" okText="删除" cancelText="取消"
-                onConfirm={() => deleteComment.mutate(c.id, {
-                  onError: (err) => message.error(err instanceof Error ? err.message : '删除失败'),
-                })}
-                okButtonProps={{ danger: true }}>
-                <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                  loading={deleteComment.isPending} />
-              </Popconfirm>
-            </div>
-            <div>{c.content}</div>
-          </div>
-        ))}
-      </div>
 
       {/* 操作历史 */}
       <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />

@@ -1,16 +1,16 @@
-"""评论 + 审计 API 测试."""
+"""审计 API 测试."""
 
 import pytest
 
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables import ddl
-from cndb.plugins.tables.models import DataField, DataTable, RowComment
+from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 
 
 @pytest.fixture
 def owner(db):
-    u = User(username="c_owner", nickname="Owner")
+    u = User(username="a_owner", nickname="Owner")
     u.set_password("passw0rd")
     db.add(u)
     db.commit()
@@ -29,7 +29,7 @@ def auth_owner(client, owner):
 def ws(db, owner):
     from cndb.plugins.workspaces.models import WorkspaceMember
 
-    w = Workspace(name="CWS", created_by_id=owner.id)
+    w = Workspace(name="AWS", created_by_id=owner.id)
     db.add(w)
     db.flush()
     db.add(WorkspaceMember(workspace_id=w.id, user_id=owner.id, role=WorkspaceRole.OWNER))
@@ -41,7 +41,7 @@ def ws(db, owner):
 @pytest.fixture
 def table(db, ws):
     engine = db.get_bind()
-    dt = DataTable(workspace_id=ws.id, name="CTable")
+    dt = DataTable(workspace_id=ws.id, name="ATable")
     dt.ensure_db_name()
     db.add(dt)
     db.flush()
@@ -51,107 +51,7 @@ def table(db, ws):
     db.commit()
     db.refresh(dt)
     ddl.create_table(engine, dt)
-    # 造一行数据
-    from cndb.plugins.tables import records as rec
-
-    rec.create_row(engine, dt, {"姓名": "张三"})
     return dt
-
-
-@pytest.fixture
-def record_id(db, table):
-    from cndb.plugins.tables import records as rec
-
-    rows, _ = rec.list_rows(db.get_bind(), table)
-    return rows[0]["id"]
-
-
-class TestCommentsAPI:
-    def test_create_comment(self, client, ws, table, record_id, auth_owner):
-        r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/{record_id}/comments",
-            json={"content": "不错哦"},
-            headers=auth_owner,
-        )
-        assert r.status_code == 201
-        assert r.json()["content"] == "不错哦"
-
-    def test_list_comments(self, client, ws, table, record_id, auth_owner):
-        client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/{record_id}/comments",
-            json={"content": "A"},
-            headers=auth_owner,
-        )
-        client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/{record_id}/comments",
-            json={"content": "B"},
-            headers=auth_owner,
-        )
-        r = client.get(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/{record_id}/comments",
-            headers=auth_owner,
-        )
-        assert r.status_code == 200
-        assert len(r.json()) == 2
-
-    def test_list_comments_empty(self, client, ws, table, record_id, auth_owner):
-        r = client.get(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/{record_id}/comments",
-            headers=auth_owner,
-        )
-        assert r.status_code == 200
-        assert r.json() == []
-
-    def test_create_comment_row_not_found(self, client, ws, table, auth_owner):
-        r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/9999/comments",
-            json={"content": "x"},
-            headers=auth_owner,
-        )
-        assert r.status_code == 404
-
-    def test_update_comment(self, client, ws, table, record_id, auth_owner, db):
-        client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/{record_id}/comments",
-            json={"content": "old"},
-            headers=auth_owner,
-        )
-        cid = db.query(RowComment).filter(RowComment.table_id == table.id).first().id
-        r = client.patch(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/comments/{cid}",
-            json={"content": "new"},
-            headers=auth_owner,
-        )
-        assert r.status_code == 200
-        assert r.json()["content"] == "new"
-
-    def test_update_comment_not_found(self, client, ws, table, auth_owner):
-        r = client.patch(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/comments/9999",
-            json={"content": "x"},
-            headers=auth_owner,
-        )
-        assert r.status_code == 404
-
-    def test_delete_comment(self, client, ws, table, record_id, auth_owner, db):
-        client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/{record_id}/comments",
-            json={"content": "bye"},
-            headers=auth_owner,
-        )
-        cid = db.query(RowComment).filter(RowComment.table_id == table.id).first().id
-        r = client.delete(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/comments/{cid}",
-            headers=auth_owner,
-        )
-        assert r.status_code == 204
-
-    def test_delete_comment_not_found(self, client, ws, table, auth_owner):
-        r = client.delete(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/comments/9999",
-            headers=auth_owner,
-        )
-        assert r.status_code == 404
 
 
 class TestAuditAPI:
