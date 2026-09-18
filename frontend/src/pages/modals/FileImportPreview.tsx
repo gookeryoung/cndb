@@ -1,17 +1,22 @@
 /** 文件导入预览 Modal —— 左右分栏.
  *
  * 左侧：识别到的字段列表，可调整 field_type；
- * 右侧：典型数据表（sample_rows），当用户调整左侧字段类型时，
+ * 右侧：数据实时转换预览表（sample_rows），当用户调整左侧字段类型时，
  *       右侧对应列的值以"原始 → 转换后"形式实时展示。
+ *
+ * 性能策略：
+ * - 所有行×列的 tryConvert 在 useMemo 中一次性计算，渲染阶段只读缓存；
+ * - Table dataSource 用分页 + 可选"仅显示异常"过滤，避免一次渲染过多行。
  *
  * 支持的交互：
  * - 改变字段类型（下拉）
  * - select 类型可编辑 options（自动填充推测值，可增删）
  * - 数值/日期/boolean 等类型在右侧显示转换结果与失败警示
+ * - 勾选"仅显示异常"聚焦问题行
  */
 
 import { useCallback, useMemo, useState } from 'react'
-import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Row, Col, message } from 'antd'
+import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Row, Col, Checkbox, message } from 'antd'
 import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined, CheckOutlined, DownOutlined, UpOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { FileAnalyzeResult, FileImportResult } from '@/api'
@@ -183,6 +188,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
   const [selectedField, setSelectedField] = useState<string | null>(null)
   /** 右侧预览区图例面板是否折叠 */
   const [legendCollapsed, setLegendCollapsed] = useState(false)
+  /** 仅显示异常行 —— 方便聚焦问题 */
+  const [onlyShowFailed, setOnlyShowFailed] = useState(false)
 
   // 重置内部状态（open 变化时）
   useMemo(() => {
@@ -214,20 +221,37 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
 
   const sampleRows = useMemo(() => analyzeResult?.sample_rows ?? [], [analyzeResult])
 
-  /** 某列的类型转换失败计数 —— 用于左侧字段卡片上的警示. */
-  const columnFailCounts = useMemo(() => {
-    const res: Record<string, number> = {}
-    if (!analyzeResult) return res
-    for (const col of effectiveColumns) {
+  /** 所有行×列的转换结果 —— 一次性算完，渲染只读，避免重复 tryConvert 热点.
+   *  rowTransforms[i][colName] = CellTransform
+   *  rowHasError[i] = 该行是否有任意转换失败
+   *  columnFailCounts[colName] = 该列失败数
+   *  failedRowIndices = 有失败的行在 sample_rows 里的下标
+   */
+  const { rowTransforms, rowHasError, columnFailCounts, failedRowIndices } = useMemo(() => {
+    const cols = effectiveColumns
+    const rows = sampleRows
+    const rowT: Array<Record<string, CellTransform>> = rows.map(() => ({}))
+    const rowE: boolean[] = rows.map(() => false)
+    const colF: Record<string, number> = {}
+    const failedIdx: number[] = []
+    for (let ci = 0; ci < cols.length; ci++) {
+      const col = cols[ci]
       let fail = 0
-      for (const row of sampleRows) {
-        const t = tryConvert(row[col.name], col.field_type)
-        if (t.failed) fail++
+      for (let ri = 0; ri < rows.length; ri++) {
+        const t = tryConvert(rows[ri][col.name], col.field_type)
+        rowT[ri][col.name] = t
+        if (t.failed) {
+          fail++
+          rowE[ri] = true
+        }
       }
-      res[col.name] = fail
+      colF[col.name] = fail
     }
-    return res
-  }, [effectiveColumns, sampleRows, analyzeResult])
+    for (let ri = 0; ri < rowE.length; ri++) {
+      if (rowE[ri]) failedIdx.push(ri)
+    }
+    return { rowTransforms: rowT, rowHasError: rowE, columnFailCounts: colF, failedRowIndices: failedIdx }
+  }, [effectiveColumns, sampleRows])
 
   /** 判断 override 是否与后端原始完全一致 —— 一致则应清除. */
   const isOverrideRedundant = useCallback((colName: string, ov: ColumnOverride): boolean => {
@@ -467,57 +491,102 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
     const cols = effectiveColumns
     if (cols.length === 0) return <Empty description="没有有效列" />
 
-    const columns = cols.map(col => {
-      const failCnt = columnFailCounts[col.name] ?? 0
-      return {
-        title: (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontWeight: 600 }}>{col.name}</span>
-            <div>
-              <Tag color={TYPE_COLOR[col.field_type] ?? 'default'} style={{ margin: 0 }}>{col.field_type}</Tag>
-              {failCnt > 0 && (
-                <Tooltip title={`有 ${failCnt} 行无法转换`}>
-                  <ExclamationCircleOutlined style={{ color: '#ef4444', marginLeft: 4 }} />
-                </Tooltip>
-              )}
-            </div>
-          </div>
-        ),
-        dataIndex: col.name,
-        width: 180,
-        render: (_v: unknown, row: Record<string, unknown>) => {
-          const raw = row[col.name]
-          const t = tryConvert(raw, col.field_type)
-          if (t.rawText === '' || t.convertedText === '') {
-            return <span style={{ color: '#cbd5e1', fontStyle: 'italic' }}>(空)</span>
-          }
-          if (t.failed) {
-            return (
-              <Tooltip title={`原始值 "${t.rawText}" 无法转为 ${col.field_type}`}>
-                <span style={{ color: '#dc2626', textDecoration: 'line-through' }}>{t.rawText}</span>
-              </Tooltip>
-            )
-          }
-          // 转换成功且与原始不同才显示"→"对比
-          if (t.convertedText !== t.rawText) {
-            return (
-              <span>
-                <span style={{ color: '#9ca3af', textDecoration: 'line-through', fontSize: 11 }}>{t.rawText}</span>
-                <span style={{ color: '#16a34a', marginLeft: 4, fontWeight: 500 }}>→ {t.convertedText}</span>
-              </span>
-            )
-          }
-          return <span>{t.rawText}</span>
+    // 构造列定义：首列固定行号，后跟业务列
+    const columns = [
+      {
+        title: '#',
+        key: '__row_number__',
+        width: 64,
+        fixed: 'left' as const,
+        render: (_v: unknown, _row: unknown, idx: number) => {
+          const realIdx = onlyShowFailed ? (failedRowIndices[idx] ?? idx) : idx
+          const hasErr = rowHasError[realIdx]
+          return (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              color: hasErr ? '#dc2626' : '#64748b', fontWeight: hasErr ? 600 : 500,
+            }}>
+              {hasErr && <WarningOutlined style={{ fontSize: 11 }} />}
+              {realIdx + 1}
+            </span>
+          )
         },
-      }
-    })
+      },
+      ...cols.map(col => {
+        const failCnt = columnFailCounts[col.name] ?? 0
+        return {
+          title: (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontWeight: 600 }}>{col.name}</span>
+              <div>
+                <Tag color={TYPE_COLOR[col.field_type] ?? 'default'} style={{ margin: 0 }}>{col.field_type}</Tag>
+                {failCnt > 0 && (
+                  <Tooltip title={`有 ${failCnt} 行无法转换`}>
+                    <ExclamationCircleOutlined style={{ color: '#ef4444', marginLeft: 4 }} />
+                  </Tooltip>
+                )}
+              </div>
+            </div>
+          ),
+          dataIndex: col.name,
+          width: 180,
+          render: (_v: unknown, _row: unknown, idx: number) => {
+            // 直接读缓存，不再 tryConvert
+            const realIdx = onlyShowFailed ? (failedRowIndices[idx] ?? idx) : idx
+            const t = rowTransforms[realIdx]?.[col.name]
+            if (!t) return null
+            if (t.rawText === '' || t.convertedText === '') {
+              return <span style={{ color: '#cbd5e1', fontStyle: 'italic' }}>(空)</span>
+            }
+            if (t.failed) {
+              return (
+                <Tooltip title={`原始值 "${t.rawText}" 无法转为 ${col.field_type}`}>
+                  <span style={{
+                    display: 'inline-block',
+                    background: '#fee2e2',
+                    color: '#b91c1c',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    border: '1px solid #fecaca',
+                    textDecoration: 'line-through',
+                    fontSize: 12,
+                  }}>{t.rawText}</span>
+                </Tooltip>
+              )
+            }
+            // 转换成功且与原始不同才显示"→"对比
+            if (t.convertedText !== t.rawText) {
+              return (
+                <span>
+                  <span style={{ color: '#9ca3af', textDecoration: 'line-through', fontSize: 11 }}>{t.rawText}</span>
+                  <span style={{ color: '#16a34a', marginLeft: 4, fontWeight: 500 }}>→ {t.convertedText}</span>
+                </span>
+              )
+            }
+            return <span>{t.rawText}</span>
+          },
+        }
+      }),
+    ]
 
-    const failedRows = sampleRows.filter(row =>
-      cols.some(col => tryConvert(row[col.name], col.field_type).failed)
-    )
-
+    // 异常统计
     const errorFieldCount = cols.filter(c => (columnFailCounts[c.name] ?? 0) > 0).length
     const okFieldCount = cols.length - errorFieldCount
+
+    // 实际展示的 dataSource（用索引保持映射，Table 用 rowKey + 真实行号）
+    const displaySource: Array<Record<string, unknown> & { __real_idx__: number }> = (onlyShowFailed
+      ? failedRowIndices.map(i => ({ ...(sampleRows[i] as any), __real_idx__: i }))
+      : sampleRows.map((r, i) => ({ ...(r as any), __real_idx__: i })))
+
+    const rowClassName = (_record: Record<string, unknown>, idx: number) => {
+      const realIdx = onlyShowFailed ? (failedRowIndices[idx] ?? idx) : idx
+      return rowHasError[realIdx] ? 'ant-table-row-warning' : ''
+    }
+
+    const rowKey = (_record: Record<string, unknown>, i: number) => {
+      if (!onlyShowFailed) return `r-${i}`
+      return `r-${(failedRowIndices[i] ?? i)}`
+    }
 
     return (
       <div>
@@ -558,23 +627,60 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
             </div>
           </Col>
           <Col span={4}>
-            <div style={{ padding: '6px 8px', background: failedRows.length > 0 ? '#fef2f2' : '#f0fdf4', borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: failedRows.length > 0 ? '#dc2626' : '#16a34a' }}>
-                {failedRows.length}
+            <div style={{ padding: '6px 8px', background: failedRowIndices.length > 0 ? '#fef2f2' : '#f0fdf4', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: failedRowIndices.length > 0 ? '#dc2626' : '#16a34a' }}>
+                {failedRowIndices.length}
               </div>
               <div style={{ fontSize: 11, color: '#64748b' }}>异常行</div>
             </div>
           </Col>
         </Row>
 
+        {/* 过滤控制条 */}
+        <div style={{
+          marginBottom: 8,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '6px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6,
+        }}>
+          <Checkbox
+            checked={onlyShowFailed}
+            onChange={e => setOnlyShowFailed(e.target.checked)}
+            disabled={failedRowIndices.length === 0}
+          >
+            仅显示异常行
+            <span style={{ marginLeft: 4, color: '#64748b', fontSize: 12 }}>
+              ({failedRowIndices.length}/{sampleRows.length})
+            </span>
+          </Checkbox>
+          <div style={{ fontSize: 12, color: '#64748b' }}>
+            共 {displaySource.length} 行 · 全部分页显示
+          </div>
+        </div>
+
         <Table
           size="small"
-          rowKey={(_, i) => `r-${i}`}
-          dataSource={sampleRows as any[]}
-          columns={columns}
-          scroll={{ x: cols.length * 180, y: '55vh' }}
-          pagination={{ pageSize: 20 }}
+          rowKey={rowKey as any}
+          rowClassName={rowClassName}
+          dataSource={displaySource}
+          columns={columns as any}
+          scroll={{ x: 80 + cols.length * 180, y: '55vh' }}
+          pagination={{
+            pageSize: 20,
+            pageSizeOptions: [10, 20, 50],
+            showSizeChanger: true,
+            showTotal: (total, range) => `${range[0]}-${range[1]} / ${total} 行`,
+          }}
         />
+
+        {/* 注入异常行背景样式（ant-table-row-warning） */}
+        <style>{`
+          .ant-table-tbody > tr.ant-table-row-warning > td {
+            background-color: #fef2f2 !important;
+          }
+          .ant-table-tbody > tr.ant-table-row-warning:hover > td {
+            background-color: #fee2e2 !important;
+          }
+        `}</style>
       </div>
     )
   }
@@ -639,7 +745,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         {/* 右栏：数据预览 */}
         <Col span={16}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-            典型数据 & 实时转换预览
+            数据实时转换预览
           </div>
 
           {/* 图例面板（可折叠） */}
