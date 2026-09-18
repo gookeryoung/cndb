@@ -15,31 +15,29 @@ const WID = 1;
 
 // ─────────────── 只读：页面加载与预置数据 ───────────────
 
-test.describe("报表模板页面 /w/:wid/reports", () => {
-  test("直接访问 — 标题 + 表格 + 新建按钮 + 6 列表头", async ({ page }) => {
+test.describe("报表模板页面 /w/:wid/reports（只读）", () => {
+  test("页面加载 — 标题 + 表格 + 新建按钮 + 预置员工名册模板 + 格式对齐 + 导航返回", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
 
     await page.goto(`/w/${WID}/reports`);
     await page.waitForURL(/\/reports$/);
 
+    // 标题 + 新建按钮 + 表格 + 6 列表头
     await expect(page.locator("h3", { hasText: /报表模板/ })).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole("button", { name: /新建模板/ })).toBeVisible();
     await expect(page.locator(".ant-table")).toBeVisible();
+    await expect(page.getByRole("columnheader")).toHaveCount(6, { timeout: 5000 });
 
-    // 表头：模板名称/输出格式/关联表/描述/参数/操作
-    const headers = page.getByRole("columnheader");
-    await expect(headers).toHaveCount(6, { timeout: 5000 });
-  });
-
-  test("seed 预置 — 存在员工名册模板", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
-
-    await page.goto(`/w/${WID}/reports`);
-    await page.waitForURL(/\/reports$/);
-
+    // seed 预置：1 行员工名册模板
     await expect(page.locator(".ant-table-row")).toHaveCount(1, { timeout: 10000 });
-    const firstRow = page.locator(".ant-table-row").first();
-    await expect(firstRow.getByText(/员工名册/)).toBeVisible();
+    await expect(page.locator(".ant-table-row").first()).toContainText(/员工名册/);
+
+    // 描述文案：仅提及 Word/PDF/Excel
+    await expect(page.getByText(/Word.*PDF.*Excel/).first()).toBeVisible();
+
+    // 返回工作区（独立断言避免后续 Modal 打开干扰）
+    const backBtn = page.getByRole("button", { name: /arrow-left/i }).first();
+    await expect(backBtn).toBeVisible();
   });
 
   test("格式下拉 — 仅有 docx / pdf / xlsx 三种选项（Phase 1 对齐后）", async ({ page }) => {
@@ -64,15 +62,6 @@ test.describe("报表模板页面 /w/:wid/reports", () => {
     // 关闭 Modal
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
-  });
-
-  test("描述文案正确 — 仅提及 Word/PDF/Excel", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
-
-    await page.goto(`/w/${WID}/reports`);
-    await page.waitForURL(/\/reports$/);
-
-    await expect(page.getByText(/Word.*PDF.*Excel/).first()).toBeVisible();
   });
 
   test("返回工作区 — 点击左箭头回到 /w/:wid", async ({ page }) => {

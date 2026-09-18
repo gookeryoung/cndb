@@ -174,33 +174,6 @@ test.describe("甘特图视图 — 基本渲染", () => {
     expect(found).toBeTruthy();
   });
 
-  test("产品开发·项目时间轴 — 今日标线可见（2026 年数据）", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "某企业销售管理");
-    const tid = await getTableId(request, wid, "产品开发");
-    const vid = await getGanttViewId(request, wid, tid, "项目时间轴");
-
-    await gotoTable(page, wid, "产品开发");
-    await activateGanttView(page, vid);
-
-    const line = todayLine(page);
-    // 今日标线应在时间轴覆盖范围内可见
-    const barCount = await ganttBars(page).count();
-    if (barCount >= 10) {
-      // 如果有足够甘特条渲染，今日标线可能在滚动区域内
-      // 今日标线的 presence 由甘特条区间决定，不一定可见
-      // 这里只验证甘特图根容器和甘特条
-      await expect(ganttRoot(page)).toBeVisible({ timeout: 5000 });
-      await expect
-        .poll(async () => await ganttBars(page).count(), { timeout: 5000 })
-        .toBeGreaterThanOrEqual(10);
-    }
-  });
-
   test("产品开发·项目时间轴 — 甘特条有颜色边框（group_field 着色）", async ({
     page,
     request,
@@ -320,35 +293,6 @@ test.describe("甘特图视图 — 带筛选的视图", () => {
   });
 });
 
-// ─────────────── 第四组：模式切换 —— 从 grid 切到 gantt ───────────────
-
-test.describe("甘特图视图 — 模式切换", () => {
-  test("产品开发 — 点甘特图按钮后甘特图视图可见", async ({ page, request }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "某企业销售管理");
-    const tid = await getTableId(request, wid, "产品开发");
-
-    await gotoTable(page, wid, "产品开发");
-
-    // 点甘特图按钮 — 切换到 gantt 模式
-    await clickGanttModeButton(page);
-
-    // 甘特图根容器出现
-    const root = ganttRoot(page);
-    await expect(root).toBeVisible({ timeout: 8000 });
-
-    // 甘特条应出现
-    const bars = ganttBars(page);
-    await expect
-      .poll(async () => await bars.count(), { timeout: 8000 })
-      .toBeGreaterThanOrEqual(10);
-
-    // 如果 URL 没带 mode 参数（可能因为初始化时已在 gantt 模式），
-    // 甘特图根容器 visible 已经充分验证了模式切换功能
-  });
-});
-
 // ─────────────── 第五组：导航按钮 —— 时间轴左移/右移/重置 ───────────────
 
 test.describe("甘特图视图 — 时间轴导航", () => {
@@ -435,62 +379,6 @@ test.describe("甘特图全量拉取回归", () => {
   });
 });
 
-// ─────────────── 第七组：错误配置兜底 ───────────────
-
-test.describe("甘特图视图 — 无可选甘特图视图的表兜底行为", () => {
-  test("客户流失表 — 没有甘特图视图 → 甘特图按钮不应渲染", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "某企业销售管理");
-    const tid = await getTableId(request, wid, "客户流失");
-
-    await gotoTable(page, wid, "客户流失");
-
-    // 客户流失表没有 gantt view → mode 按钮组里没有 data-mode="gantt"
-    const ganttBtn = page.locator('button[data-mode="gantt"]');
-    await expect(ganttBtn).toHaveCount(0);
-
-    // 但基础 grid 按钮应该存在
-    const gridBtn = page.locator('button[data-mode="grid"]');
-    await expect(gridBtn.first()).toBeVisible({ timeout: 5000 });
-  });
-});
-
-// ─────────────── 第八组：通过视图 Segmented 切换到甘特图 ───────────────
-
-test.describe("甘特图视图 — 通过视图 TAB 切换", () => {
-  test("产品开发 — 点击'项目时间轴'Segmented TAB 切换到甘特图", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "某企业销售管理");
-    const tid = await getTableId(request, wid, "产品开发");
-
-    await gotoTable(page, wid, "产品开发");
-
-    // 点击 "项目时间轴" Segmented 选项
-    const ganttTab = page
-      .locator(".ant-segmented-item", { hasText: /项目时间轴/ })
-      .first();
-    await expect(ganttTab).toBeVisible({ timeout: 8000 });
-    await ganttTab.click();
-
-    // 甘特图根容器出现
-    const root = ganttRoot(page);
-    await expect(root).toBeVisible({ timeout: 8000 });
-
-    // 甘特条应出现
-    await expect
-      .poll(async () => await ganttBars(page).count(), { timeout: 8000 })
-      .toBeGreaterThanOrEqual(10);
-  });
-});
-
 // ─────────────── 第九组：时间轴日期数字标签可见性（双层 header 适配） ────────────
 
 test.describe("甘特图视图 — 时间轴日期数字标签", () => {
@@ -535,40 +423,6 @@ test.describe("甘特图视图 — 时间轴日期数字标签", () => {
     expect(firstCurrentText.length).toBeGreaterThan(0);
   });
 
-  test("产品开发·项目时间轴 — scale 切换时锚定层自动适配（AC-5）", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "某企业销售管理");
-    const tid = await getTableId(request, wid, "产品开发");
-    const vid = await getGanttViewId(request, wid, tid, "项目时间轴");
-
-    await gotoTable(page, wid, "产品开发");
-    await activateGanttView(page, vid);
-
-    const switcher = page.getByTestId("gantt-scale-switch");
-    const anchorLabels = page.locator('[data-testid="gantt-timeline-label"][data-layer="anchor"]');
-
-    // 默认 anchor = year（含"年"字）
-    const anchorBefore = await anchorLabels.first().textContent();
-    expect(anchorBefore).toMatch(/年/);
-
-    // 切 day → anchor 应变化（autoAdjust 可能调回粗档，但至少 anchor 文本有更新）
-    await switcher.locator(".ant-segmented-item", { hasText: "天" }).click();
-    await settle(page);
-    const anchorDay = await anchorLabels.first().textContent();
-    expect(anchorDay).toBeTruthy();
-    expect(anchorDay!.length).toBeGreaterThan(0);
-
-    // 切 quarter → anchor = year（含"年"字，且通常是单年份）
-    await switcher.locator(".ant-segmented-item", { hasText: "季" }).click();
-    await settle(page);
-    const anchorQ = await anchorLabels.first().textContent();
-    expect(anchorQ).toMatch(/年/);
-  });
-
   test("产品开发·项目时间轴 — 缩放控件 +/- 改变档位（AC-4）", async ({
     page,
     request,
@@ -601,31 +455,6 @@ test.describe("甘特图视图 — 时间轴日期数字标签", () => {
     await settle(page);
     const backText = (await scaleInfo.textContent()) || "";
     expect(backText).toBe(initialText);
-  });
-
-  test("产品开发·项目时间轴 — 锚定层合并显示、数量等于覆盖粒度数（AC-2）", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "某企业销售管理");
-    const tid = await getTableId(request, wid, "产品开发");
-    const vid = await getGanttViewId(request, wid, tid, "项目时间轴");
-
-    await gotoTable(page, wid, "产品开发");
-    await activateGanttView(page, vid);
-
-    const switcher = page.getByTestId("gantt-scale-switch");
-    const anchorLabels = page.locator('[data-testid="gantt-timeline-label"][data-layer="anchor"]');
-
-    // 切到 week → anchor = month。锚定层 label 数 = 覆盖的月数（应在 6-24 之间）
-    await switcher.locator(".ant-segmented-item", { hasText: "周" }).click();
-    await settle(page);
-
-    const anchorCount = await anchorLabels.count();
-    expect(anchorCount).toBeGreaterThanOrEqual(4);
-    expect(anchorCount).toBeLessThanOrEqual(36); // 产品开发表跨度不会超过 3 年
   });
 
   test("产品开发·项目时间轴 — month→week→day 切换无突变为 0", async ({

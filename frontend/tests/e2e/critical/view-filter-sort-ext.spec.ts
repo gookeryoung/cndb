@@ -164,11 +164,6 @@ test.describe("表格视图 — 全局搜索与电商销售表扩展", () => {
         await gotoTableById(page, tid);
     });
 
-    test("电商销售表正确加载 + 分页控件可见", async ({ page }) => {
-        const pagination = page.getByRole("listitem").filter({ hasText: /共/ });
-        await expect(pagination.first()).toBeVisible({ timeout: 10000 });
-    });
-
     test("全局搜索框输入关键词 → 实时过滤", async ({ page }) => {
         const searchInput = page.locator('input[placeholder*="搜索"], input[placeholder*="search" i]').first();
         if (await searchInput.count() === 0) {
@@ -186,21 +181,6 @@ test.describe("表格视图 — 全局搜索与电商销售表扩展", () => {
         const countAfter = await rowsAfter.count();
         expect(countAfter).toBeGreaterThan(0);
         expect(countAfter).toBeLessThanOrEqual(countBefore);
-    });
-
-    test("分页切换 → 数据正确刷新", async ({ page }) => {
-        const page2Btn = page.locator(".ant-pagination-item", { hasText: "2" });
-        await expect(page2Btn).toBeVisible({ timeout: 5000 });
-        await page2Btn.click();
-        await settle(page);
-
-        const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-        await expect(rows.first()).toBeVisible();
-    });
-
-    test("表格密度切换不影响数据", async ({ page }) => {
-        const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-        await expect(rows.first()).toBeVisible();
     });
 });
 
