@@ -8,7 +8,7 @@
  *
  * 精简说明（2026-09）：原 5 条"换表+换按钮数"测试结构完全一致，合并为表驱动循环；
  *      删掉各条内的 API 侧断言（seed 数据自检，非前端行为）；
- *      切换行为回归合并为 1 条（双向联动已由 view-mode-sync 覆盖）.
+ *      切换行为回归合并为 1 条.
  */
 import { test, expect } from "../fixtures/auth";
 import { getAdminToken, getTableId, getWorkspaceId } from "../helpers/api";

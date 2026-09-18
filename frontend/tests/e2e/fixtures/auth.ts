@@ -16,7 +16,6 @@
 import { test as base, expect } from "@playwright/test"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { existsSync, readFileSync } from "node:fs"
 
 /** 第三方遥测/分析类域名：E2E 中一律 abort，避免无效网络等待拖慢用例.
  *
@@ -28,36 +27,6 @@ const THIRD_PARTY_PATTERN = /(googletagmanager\.com|google-analytics\.com|google
 const _fixtureDir = path.dirname(fileURLToPath(import.meta.url))
 // fixtures/auth.ts → e2e → tests → frontend/.auth/state.json（向上 3 级）
 const AUTH_STATE_PATH = path.resolve(_fixtureDir, "../../../.auth/state.json")
-
-/** 从 storageState 文件中提取 access token，用于直接调 API 做清理. */
-function _readAuthToken(): string | null {
-  if (!existsSync(AUTH_STATE_PATH)) return null
-  try {
-    const raw = readFileSync(AUTH_STATE_PATH, "utf-8")
-    const state = JSON.parse(raw)
-    return state?.origins?.[0]?.localStorage?.find(
-      (it: { name: string }) => it.name === "cndb_access_token",
-    )?.value ?? null
-  } catch {
-    return null
-  }
-}
-
-/** 清空指定表的所有成员（除 owner 外），用于 E2E 测试间隔离. */
-async function cleanTableMembers(wid: number, tid: number, baseURL = "http://127.0.0.1:8000") {
-  const token = _readAuthToken()
-  if (!token) return
-  const res = await fetch(`${baseURL}/api/v1/workspaces/${wid}/tables/${tid}/members`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  const members: Array<{ user_id: number }> = await res.json()
-  for (const m of members) {
-    await fetch(`${baseURL}/api/v1/workspaces/${wid}/tables/${tid}/members/${m.user_id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    })
-  }
-}
 
 export const test = base.extend({
   page: async ({ browser }, use, testInfo) => {
@@ -74,11 +43,4 @@ export const test = base.extend({
   },
 })
 
-/** 在 test 内部调用，等价于 beforeEach。 */
-export const beforeEachCleanTable = (wid: number, tid: number) => {
-  test.beforeEach(async () => {
-    await cleanTableMembers(wid, tid)
-  })
-}
-
-export { expect, cleanTableMembers }
+export { expect }
