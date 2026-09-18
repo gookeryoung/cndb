@@ -65,6 +65,32 @@ def _detect_tag(line: str) -> str:
     return "info"
 
 
+def _backup_mtime(p: Path) -> float:
+    """备份文件/目录的修改时间（排序键）."""
+    return p.stat().st_mtime
+
+
+def _scan_backup_files() -> list[Path]:
+    """扫描默认备份目录，返回按修改时间倒序排列的备份文件.
+
+    识别 ``.tar.gz`` / ``.tgz`` 归档文件与 ``backup-`` 前缀目录（目录模式备份），
+    最新（修改时间最大）的排在列表首位。
+    """
+    from cndb.core.config import settings
+
+    backup_dir = settings.BACKUP_DIR
+    backups: list[Path] = []
+    if backup_dir.is_dir():
+        for p in backup_dir.iterdir():
+            name = p.name.lower()
+            is_archive = p.is_file() and (name.endswith(".tar.gz") or name.endswith(".tgz"))
+            is_backup_dir = p.is_dir() and p.name.startswith("backup-")
+            if is_archive or is_backup_dir:
+                backups.append(p)
+    backups.sort(key=_backup_mtime, reverse=True)
+    return backups
+
+
 # ═══════════════════════════════════════════════════════════════
 # 主窗口
 # ═══════════════════════════════════════════════════════════════
@@ -412,8 +438,15 @@ class BackupTab(_BaseTab):
 
         ttk.Label(rest_frame, text="归档文件:").grid(row=0, column=0, sticky=tk.W)
         self.archive_var = tk.StringVar()
-        ttk.Entry(rest_frame, textvariable=self.archive_var, width=48).grid(row=0, column=1, sticky=tk.W, padx=4)
+        self.archive_box = ttk.Combobox(
+            rest_frame,
+            textvariable=self.archive_var,
+            width=48,
+            state="readonly",
+        )
+        self.archive_box.grid(row=0, column=1, sticky=tk.W, padx=4)
         ttk.Button(rest_frame, text="浏览", command=self._pick_archive).grid(row=0, column=2, padx=4)
+        ttk.Button(rest_frame, text="刷新列表", command=self._refresh_archives).grid(row=0, column=3, padx=(0, 4))
 
         self.force_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(rest_frame, text="强制覆盖已有数据", variable=self.force_var).grid(
@@ -430,6 +463,19 @@ class BackupTab(_BaseTab):
         log_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
         self.log_text = self._build_log_text(log_frame)
 
+        # 初始填充归档列表：最新备份作为默认选项
+        self._refresh_archives()
+
+    def _refresh_archives(self) -> None:
+        """扫描默认备份目录刷新归档下拉列表，最新备份自动作为默认选项."""
+        values = [str(p) for p in _scan_backup_files()]
+        self.archive_box.configure(values=values)
+        current = self.archive_var.get().strip()
+        if values and (not current or current not in values):
+            self.archive_var.set(values[0])
+        elif not values:
+            self.archive_var.set("")
+
     def _pick_output(self) -> None:
         path = filedialog.asksaveasfilename(
             title="备份输出路径",
@@ -443,16 +489,29 @@ class BackupTab(_BaseTab):
     def _pick_archive(self) -> None:
         path = filedialog.askopenfilename(
             title="选择备份归档",
-            initialdir=_default_backup_dir(),
-            filetypes=[("归档", "*.tar.gz"), ("全部", "*.*")],
+            filetypes=[("归档", "*.tar.gz *.tgz"), ("全部", "*.*")],
         )
-        if path:
-            self.archive_var.set(path)
+        if not path:
+            return
+        # 手动选择的文件并入下拉列表并设为当前项（不要求位于默认备份目录）
+        values = list(self.archive_box.cget("values"))
+        if path not in values:
+            values.insert(0, path)
+            self.archive_box.configure(values=values)
+        self.archive_var.set(path)
 
     def do_backup(self) -> None:
-        out = self.out_var.get().strip() or None
+        out = self.out_var.get().strip()
         mode = self.mode_var.get()
         include_uploads = not self.no_uploads_var.get()
+        # 输出路径留空时默认写入备份目录，便于「归档文件」列表直接识别
+        if not out:
+            import datetime as dt
+
+            from cndb.core.config import settings
+
+            ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+            out = str(settings.BACKUP_DIR / f"backup-{ts}.tar.gz")
 
         # 输出路径为目录（或未填写）时，改用默认 ~/.cndb/backups 并在其中生成归档文件
         if out is None:
@@ -465,8 +524,10 @@ class BackupTab(_BaseTab):
             from cndb.backup import BackupError, create_backup
 
             try:
-                result = create_backup(output=out_path, mode=mode, include_uploads=include_uploads)
+                result = create_backup(output=Path(out).resolve(), mode=mode, include_uploads=include_uploads)
                 print(f"[ok] 备份成功: {result}")
+                # 备份完成后刷新归档列表，新备份自动成为默认选项
+                self.app.root.after(0, self._refresh_archives)
             except BackupError as exc:
                 print(f"[error] {exc}", file=sys.stderr)
             except Exception as exc:
