@@ -51,6 +51,12 @@ interface RecordsQueryParams {
   filter_logic?: 'AND' | 'OR'
 }
 
+/** 把 filter/sort 数组序列化为稳定字符串，避免 queryKey 因引用变化而 cache miss. */
+function _stableStr(value: unknown): string {
+  if (!value) return ''
+  try { return JSON.stringify(value) } catch { return String(value) }
+}
+
 export function useTableRecords(
   wid: string,
   tid: string,
@@ -62,8 +68,13 @@ export function useTableRecords(
   const filters = params.filters?.length ? params.filters : undefined
   const sorts = params.sorts?.length ? params.sorts : undefined
 
+  // 用序列化字符串进 queryKey，避免数组引用每次 render 都变导致 cache miss
+  const filtersKey = _stableStr(filters)
+  const sortsKey = _stableStr(sorts)
+  const filterLogic = params.filter_logic ?? 'AND'
+
   return useQuery<RowListResponse>({
-    queryKey: ['table-records', tableKey, mode, offset, limit, filters, sorts, params.filter_logic],
+    queryKey: ['table-records', tableKey, mode, offset, limit, filtersKey, sortsKey, filterLogic],
     queryFn: () =>
       recordApi.list(wid, tid, {
         offset,
@@ -73,6 +84,7 @@ export function useTableRecords(
         filter_logic: params.filter_logic,
       }),
     enabled: !!wid && !!tid,
+    // staleTime 由 main.tsx 的 setQueryDefaults 全局配置（table-records: 10s），此处不重复覆盖
   })
 }
 
