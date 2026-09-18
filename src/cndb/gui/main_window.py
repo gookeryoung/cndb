@@ -21,6 +21,7 @@ import datetime as dt
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
@@ -882,33 +883,118 @@ class UsersTab(_BaseTab):
 
 
 class InfoTab(_BaseTab):
+    """系统信息：手动刷新 + 定时自动刷新.
+
+    - 手动刷新：点击「立即刷新」随时拉取最新系统信息
+    - 自动刷新：勾选「自动刷新」后按所选间隔定时刷新，切换间隔即时生效，
+      关闭勾选即停止定时器；刷新在后台线程采集，避免阻塞 UI
+    """
+
+    # 自动刷新间隔选项：显示文案 → 毫秒（0 表示关闭）
+    AUTO_REFRESH_OPTIONS: dict[str, int] = {
+        "关闭": 0,
+        "5 秒": 5000,
+        "10 秒": 10000,
+        "30 秒": 30000,
+        "60 秒": 60000,
+    }
+
     @override
     def _build_layout(self) -> None:
         top = ttk.Frame(self.frame)
         top.pack(fill=tk.X)
-        ttk.Button(top, text="刷新", command=self.refresh).pack(side=tk.RIGHT)
+
+        self.auto_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(top, text="自动刷新", variable=self.auto_var, command=self._on_auto_toggle).pack(side=tk.LEFT)
+
+        self.interval_var = tk.StringVar(value="10 秒")
+        self.interval_box = ttk.Combobox(
+            top,
+            textvariable=self.interval_var,
+            values=list(self.AUTO_REFRESH_OPTIONS),
+            state="readonly",
+            width=8,
+        )
+        self.interval_box.pack(side=tk.LEFT, padx=(6, 0))
+        self.interval_box.bind("<<ComboboxSelected>>", self._on_interval_change)
+
+        ttk.Button(top, text="立即刷新", command=self.refresh).pack(side=tk.LEFT, padx=(12, 0))
+
+        self.last_var = tk.StringVar(value="尚未刷新")
+        ttk.Label(top, textvariable=self.last_var, foreground="#888").pack(side=tk.RIGHT)
 
         self.text = scrolledtext.ScrolledText(self.frame, wrap=tk.NONE, font=("Consolas", 10), state=tk.DISABLED)
         self.text.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
 
+        self._refreshing = False
+        self._after_id: str | None = None
+
+    # ── 刷新 ──
+
     def refresh(self) -> None:
-        import io
-        import sys
+        """后台采集系统信息并渲染到文本区（自动/手动刷新共用入口）."""
+        if self._refreshing:
+            return
+        self._refreshing = True
 
-        from cndb.runner import info_command
+        def _run() -> None:
+            import io
+            import sys
 
-        buf = io.StringIO()
-        old = sys.stdout
-        sys.stdout = buf
-        try:
-            info_command()
-        finally:
-            sys.stdout = old
+            from cndb.runner import info_command
 
+            buf = io.StringIO()
+            old = sys.stdout
+            sys.stdout = buf
+            try:
+                info_command()
+            finally:
+                sys.stdout = old
+            self.app.root.after(0, lambda: self._render(buf.getvalue()))
+
+        run_in_thread(_run)
+
+    def _render(self, output: str) -> None:
+        self._refreshing = False
+        self.last_var.set(f"上次刷新: {time.strftime('%H:%M:%S')}")
         self.text.configure(state=tk.NORMAL)
         self.text.delete("1.0", tk.END)
-        self.text.insert("1.0", buf.getvalue())
+        self.text.insert("1.0", output)
         self.text.configure(state=tk.DISABLED)
+
+    # ── 自动刷新 ──
+
+    def _on_auto_toggle(self) -> None:
+        if self.auto_var.get():
+            self.refresh()  # 开启后立即刷新一次
+            self._schedule_next()
+        else:
+            self._cancel_timer()
+
+    def _on_interval_change(self, _event: object | None = None) -> None:
+        # 切换间隔即时生效：自动刷新开启时按新间隔重排定时器
+        if self.auto_var.get():
+            self._schedule_next()
+
+    def _schedule_next(self) -> None:
+        self._cancel_timer()
+        ms = self.AUTO_REFRESH_OPTIONS.get(self.interval_var.get(), 0)
+        if ms <= 0:
+            return
+        self._after_id = self.app.root.after(ms, self._on_timer)
+
+    def _cancel_timer(self) -> None:
+        if self._after_id is not None:
+            with contextlib.suppress(Exception):
+                self.app.root.after_cancel(self._after_id)
+            self._after_id = None
+
+    def _on_timer(self) -> None:
+        self._after_id = None
+        if not self.auto_var.get():
+            return
+        self.refresh()
+        self._schedule_next()
 
 
 # ═══════════════════════════════════════════════════════════════
