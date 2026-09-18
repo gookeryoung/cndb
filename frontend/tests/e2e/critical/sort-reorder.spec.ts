@@ -14,7 +14,6 @@ import type { APIRequestContext } from "@playwright/test"
 import { settle } from "../fixtures/settle"
 import { getAdminToken } from "../helpers/api"
 
-const ANON = ["setup", "chromium-anon"]
 const WID = 1
 
 /** 登录获取 token. */

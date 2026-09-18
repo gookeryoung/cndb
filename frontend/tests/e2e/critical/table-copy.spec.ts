@@ -9,22 +9,13 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIResponse } from "@playwright/test";
+import { getAdminToken } from "../helpers/api";
 
-const AUTHS = ["chromium-authed"];
 const WID = 1;
 
-/** 登录获取 token */
-async function getToken(request: any): Promise<string> {
-  const resp: APIResponse = await request.post("/api/v1/accounts/auth/login", {
-    data: { login: "admin", password: "admin1234" },
-  });
-  const body = await resp.json();
-  return body.access_token;
-}
-
-/** 带 token 的 request 辅助 */
+/** 带 token 的 request 辅助（getAdminToken 复用 storageState，避免重复登录） */
 async function authed(request: any) {
-  return { headers: { Authorization: `Bearer ${await getToken(request)}` } };
+  return { headers: { Authorization: `Bearer ${await getAdminToken(request)}` } };
 }
 
 /** 创建表（用于测试自建源表，完全自包含） */
@@ -176,8 +167,6 @@ async function setupTestTable(request: any): Promise<{
 
 test.describe("复制表 — 三种模式（自建表 + UI 操作）", () => {
   test("仅复制表结构 → 新表 0 行数据", async ({ page, request }) => {
-    if (!AUTHS.includes(test.info().project.name)) return;
-
     const { tableId } = await setupTestTable(request);
 
     // 进入自建源表
@@ -218,8 +207,6 @@ test.describe("复制表 — 三种模式（自建表 + UI 操作）", () => {
   });
 
   test("复制表结构 + 全部数据 → 新表有完整数据", async ({ page, request }) => {
-    if (!AUTHS.includes(test.info().project.name)) return;
-
     const { tableId, totalRows } = await setupTestTable(request);
 
     await page.goto(`/w/${WID}/tables/${tableId}`);
@@ -251,8 +238,6 @@ test.describe("复制表 — 三种模式（自建表 + UI 操作）", () => {
   });
 
   test("复制当前视图数据 → 新表仅含视图过滤子集", async ({ page, request }) => {
-    if (!AUTHS.includes(test.info().project.name)) return;
-
     const { tableId, viewId, filteredRows } = await setupTestTable(request);
 
     await page.goto(`/w/${WID}/tables/${tableId}`);
@@ -306,8 +291,6 @@ test.describe("复制表 — 三种模式（自建表 + UI 操作）", () => {
 
 test.describe("复制表 — TablesList 页面（仅结构 + 全部数据）", () => {
   test("TablesList 复制表结构 + 全部数据 → 列表 +1 且数据完整", async ({ page, request }) => {
-    if (!AUTHS.includes(test.info().project.name)) return;
-
     const { tableId, totalRows } = await setupTestTable(request);
 
     // 进入 TablesList 页面
@@ -349,8 +332,6 @@ test.describe("复制表 — TablesList 页面（仅结构 + 全部数据）", (
   });
 
   test("TablesList 复制表仅结构 → 新表 0 行数据", async ({ page, request }) => {
-    if (!AUTHS.includes(test.info().project.name)) return;
-
     const { tableId } = await setupTestTable(request);
 
     await page.goto(`/w/${WID}/tables`);
@@ -387,8 +368,6 @@ test.describe("复制表 — TablesList 页面（仅结构 + 全部数据）", (
 
 test.describe("复制表 — 回归修复（GridPage Sider 立即刷新）", () => {
   test("GridPage 复制表结构 → 左侧 Sider 列表立即出现新表", async ({ page, request }) => {
-    if (!AUTHS.includes(test.info().project.name)) return;
-
     // 使用 seed 数据中确定存在的 "员工表"
     await gotoGrid(page, WID, "员工表");
 
