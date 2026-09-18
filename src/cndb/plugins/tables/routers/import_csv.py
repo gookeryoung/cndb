@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json as _json
 from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -25,6 +26,7 @@ from cndb.plugins.tables.transfer import (
     analyze_file_columns,
     create_table_from_csv,
     create_table_from_file,
+    parse_file_to_rows,
 )
 from cndb.plugins.workspaces.models import ROLE_RANK, Workspace, WorkspaceRole
 from cndb.plugins.workspaces.permissions import get_member_role
@@ -72,6 +74,8 @@ async def import_file_analyze(
     """上传文件 + 分析列类型（不写库）.
 
     格式自动识别：优先用文件名扩展名，退化到内容特征.
+
+    额外返回 sample_rows（前 50 行）供前端渲染"典型数据 + 实时转换预览".
     """
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
 
@@ -94,11 +98,17 @@ async def import_file_analyze(
     if not valid_cols:
         raise HTTPException(status_code=400, detail="文件没有有效列名")
 
+    # 额外解析前 50 行作为 sample_rows —— 前端用来做"典型数据 + 实时转换预览"
+    sample_rows, _cols, _ = parse_file_to_rows(content, filename=filename)
+    SAMPLE_ROWS_LIMIT = 50
+    sample_rows_preview: list[dict[str, Any]] = sample_rows[:SAMPLE_ROWS_LIMIT]
+
     return {
         "columns": columns,
         "total_rows": total_rows,
         "format": actual_fmt,
         "filename": filename,
+        "sample_rows": sample_rows_preview,
     }
 
 
@@ -109,6 +119,11 @@ async def import_file_create_table(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     table_name: Optional[str] = Form(default=None, description="新建表名 — 留空则用文件名"),
+    column_overrides: Optional[str] = Form(
+        default=None,
+        description="前端回传的字段类型覆盖映射（JSON 字符串），"
+        "格式 {\"列名\": {\"field_type\": \"select\", \"options\": [...]}}",
+    ),
 ) -> dict[str, Any]:
     """上传文件 + 自动建表 + 导入数据（通用入口）."""
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
@@ -130,6 +145,16 @@ async def import_file_create_table(
     if not name.strip():
         raise HTTPException(status_code=400, detail="表名不能为空")
 
+    # 解析 column_overrides（可选）
+    overrides: dict[str, dict[str, Any]] | None = None
+    if column_overrides:
+        try:
+            parsed = _json.loads(column_overrides)
+            if isinstance(parsed, dict):
+                overrides = {k: v for k, v in parsed.items() if isinstance(v, dict)}
+        except _json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"column_overrides JSON 格式错误: {exc}") from exc
+
     try:
         engine = db.get_bind()
         dt, ids, columns = create_table_from_file(
@@ -140,6 +165,7 @@ async def import_file_create_table(
             content,
             filename=filename,
             owner_id=current_user.id,
+            column_overrides=overrides,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"建表或导入失败: {exc}") from exc
