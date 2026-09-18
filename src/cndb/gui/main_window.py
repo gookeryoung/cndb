@@ -288,6 +288,20 @@ class ServeTab(_BaseTab):
         self.workers_var = tk.StringVar(value=self.app.settings.serve.workers)
         ttk.Entry(cfg, textvariable=self.workers_var, width=6).grid(row=0, column=6, sticky=tk.W, padx=2)
 
+        # 环境检查监视区（端口占用 + 静态产物就绪）
+        env = ttk.LabelFrame(self.frame, text="环境检查", padding=10)
+        env.pack(fill=tk.X, pady=(10, 0))
+        ttk.Label(env, text="端口占用:").grid(row=0, column=0, sticky=tk.W, padx=(0, 6))
+        self.port_status_var = tk.StringVar(value="未检测")
+        ttk.Label(env, textvariable=self.port_status_var, foreground="#888").grid(row=0, column=1, sticky=tk.W, padx=6)
+        ttk.Label(env, text="静态文件:").grid(row=1, column=0, sticky=tk.W, padx=(0, 6))
+        self.static_status_var = tk.StringVar(value="未检测")
+        ttk.Label(env, textvariable=self.static_status_var, foreground="#888").grid(
+            row=1, column=1, sticky=tk.W, padx=6
+        )
+        self.env_check_btn = ttk.Button(env, text="重新检查", command=self.refresh_env)
+        self.env_check_btn.grid(row=0, column=2, rowspan=2, sticky=tk.E)
+
         # 按钮区
         btn_row = ttk.Frame(self.frame)
         btn_row.pack(fill=tk.X, pady=(10, 4))
@@ -305,7 +319,70 @@ class ServeTab(_BaseTab):
         log_frame.pack(fill=tk.BOTH, expand=True)
         self.log_text = self._build_log_text(log_frame)
 
+        # 构建 Tab 时立即刷新一次环境状态
+        self.refresh_env()
+
     # ── actions ──
+
+    def refresh_env(self) -> None:
+        """后台刷新端口占用与静态产物状态，渲染到「环境检查」监视区."""
+        self._env_busy = True
+        self.env_check_btn.configure(state=tk.DISABLED)
+        self.port_status_var.set("检测中...")
+        self.static_status_var.set("检测中...")
+
+        def _run() -> None:
+            from cndb.gui import checks
+
+            port = int(self.port_var.get().strip() or "8000")
+            info = checks.port_status(port)
+            st = checks.static_status()
+            if info.used:
+                port_label = f"端口 {port} 已被占用"
+                if info.pid:
+                    port_label += f" (PID {info.pid})"
+                if info.process_name:
+                    port_label += f" ({info.process_name})"
+            else:
+                port_label = f"端口 {port} 空闲，可启动"
+            static_text = "就绪" if st.ready else ("缺失: " + ", ".join(st.missing) if st.missing else "未构建")
+            self.app.root.after(0, lambda: self._render_env(port_label, static_text, st.ready))
+
+        run_in_thread(_run)
+
+    def _render_env(self, port_label: str, static_text: str, static_ok: bool) -> None:
+        """把后台采集到的环境检查结果渲染到监视区（主线程回调）."""
+        del static_ok
+        self._env_busy = False
+        self.env_check_btn.configure(state=tk.NORMAL)
+        self.port_status_var.set(port_label)
+        self.static_status_var.set(f"静态文件 {static_text}")
+
+    def _preflight(self, host: str, port: int) -> None:
+        """启动前环境预检：停止占用端口 + 自动构建缺失的静态产物.
+
+        Args:
+            host: 服务绑定主机。
+            port: 服务端口。
+
+        Raises:
+            RuntimeError: 自动构建静态产物失败时（端口清理失败同样上抛）。
+        """
+        from cndb.gui import checks
+
+        # 1) 端口占用先清理，避免 uvicorn 绑定失败
+        if checks.check_port(host, port):
+            self.app.log_queue.write(f"[warn] 端口 {host}:{port} 已被占用，正在停止占用进程...\n")
+            message = checks.stop_port_occupant(port)
+            self.app.log_queue.write(f"[ok] {message}\n")
+            time.sleep(0.5)  # 留出内核释放端口的时间
+
+        # 2) 前端静态产物缺失时自动构建，避免访问 SPA 报 404 / 仅返回 API
+        st = checks.static_status()
+        if not st.ready:
+            self.app.log_queue.write("[info] 前端静态产物缺失，自动构建...\n")
+            checks.build_static(log=lambda msg: self.app.log_queue.write(msg + "\n"))
+            self.app.log_queue.write("[ok] 前端静态产物构建完成\n")
 
     def start_server(self) -> None:
         if self.app._server_proc is not None:
@@ -316,6 +393,14 @@ class ServeTab(_BaseTab):
         port = int(self.port_var.get().strip() or "8000")
         reload = self.reload_var.get()
         workers = 1 if reload else int(self.workers_var.get().strip() or "1")
+
+        # ── 启动前环境预检：停止占用端口 + 确保静态产物就绪 ──
+        try:
+            self._preflight(host, port)
+        except Exception as exc:
+            messagebox.showerror("启动前检查失败", str(exc))
+            self.app.log_queue.write(f"[error] 启动前检查失败: {exc}\n")
+            return
 
         # === 定位 dist 根目录（fspack 打包根） ===
         # fspack launcher 模式下 sys.executable = cndbw.exe（launcher 自身），
