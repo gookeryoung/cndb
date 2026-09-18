@@ -12,17 +12,14 @@
 import { test, expect } from "../fixtures/auth"
 import type { APIRequestContext } from "@playwright/test"
 import { settle } from "../fixtures/settle"
+import { getAdminToken } from "../helpers/api"
 
 const ANON = ["setup", "chromium-anon"]
 const WID = 1
 
 /** 登录获取 token. */
 async function getToken(request: APIRequestContext): Promise<string> {
-  const resp = await request.post("/api/v1/accounts/auth/login", {
-    data: { login: "admin", password: "admin1234" },
-  })
-  const body = await resp.json()
-  return body.access_token
+  return getAdminToken(request)
 }
 
 /** 通过 API 创建 N 张表，返回 id 数组（按创建顺序）. */
