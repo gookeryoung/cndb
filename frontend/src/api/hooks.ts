@@ -5,6 +5,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { message } from 'antd'
 import { tableApi, recordApi, viewApi, userApi, auditApi } from './index'
 import type {
   TableDetail, View, RowListResponse,
@@ -137,9 +138,9 @@ export function useUpdateRowOptimistic(wid: string, tid: string) {
       context?.previousRecordsQueries.forEach(([queryKey, data]) => {
         if (data) queryClient.setQueryData(queryKey, data)
       })
-      if (err instanceof Error) {
-        console.warn('[useUpdateRowOptimistic] optimistic rollback:', err.message)
-      }
+      const msg = err instanceof Error ? err.message : '保存失败'
+      console.warn('[useUpdateRowOptimistic] optimistic rollback:', msg)
+      message.error(msg)
     },
     onSettled: () => {
       // 最终仍走一次 invalidate，避免其他 query key 变体的 cache 不一致
