@@ -18,7 +18,7 @@
  *     └─ fieldValueFormat.ts     — 字段值格式化工具
  */
 
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Input, Segmented, Switch, Upload, Popconfirm } from 'antd'
 import {
@@ -35,7 +35,7 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { tableApi, recordApi, viewApi, userApi } from '@/api'
+import { tableApi, recordApi, viewApi, userApi, auditApi, commentApi } from '@/api'
 import type { RowResponse, View, ViewCreate } from '@/api'
 import KanbanView from './components/KanbanView'
 import NewRowModal from './components/NewRowModal'
@@ -193,6 +193,30 @@ export default function GridPage() {
 
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
+
+  /** 打开行详情抽屉并预取 audit/comments/references —— queryKey 与 RowDetailDrawer 的自定义 hooks 完全一致. */
+  const openDetailWithPrefetch = useCallback((r: RowResponse) => {
+    setDetailRow(r)
+    setDetailOpen(true)
+    if (wid && tid && r.id != null) {
+      const rowId = r.id
+      void queryClient.prefetchQuery({
+        queryKey: ['row-audit', wid, tid, rowId],
+        queryFn: () => auditApi.list(wid, tid, undefined, 20, rowId),
+        staleTime: 60_000,
+      })
+      void queryClient.prefetchQuery({
+        queryKey: ['row-comments', wid, tid, rowId],
+        queryFn: () => commentApi.list(wid, tid, rowId),
+        staleTime: 60_000,
+      })
+      void queryClient.prefetchQuery({
+        queryKey: ['row-references', wid, tid, rowId],
+        queryFn: () => tableApi.references(wid, tid, rowId),
+        staleTime: 60_000,
+      })
+    }
+  }, [wid, tid, queryClient])
 
   const { data: table, isLoading } = useTable(wid!, tid!)
   const { data: views = [] } = useTableViews(wid!, tid!)
@@ -815,7 +839,24 @@ export default function GridPage() {
             pagination={{
               current: Math.floor(offset / limit) + 1, pageSize: limit, total: rowList.total,
               showSizeChanger: true, pageSizeOptions: [25, 50, 100, 200],
-              onChange: (p, l) => { setOffset((p - 1) * l); setLimit(l) },
+              onChange: (p, l) => {
+                setOffset((p - 1) * l)
+                setLimit(l)
+                // 预取下一页 —— 只有存在下一页且当前是 grid 模式（非全量拉取）时才预取
+                const nextOffset = p * l
+                if (mode === 'grid' && nextOffset < rowList.total) {
+                  void queryClient.prefetchQuery({
+                    queryKey: ['table-records', tableKey, mode, nextOffset, l, effectiveFilters ?? [], sortsParam ?? [], viewFilterLogic],
+                    queryFn: () => recordApi.list(wid!, tid!, {
+                      offset: nextOffset, limit: l,
+                      filters: effectiveFilters?.length ? effectiveFilters : undefined,
+                      sorts: sortsParam?.length ? sortsParam : undefined,
+                      filter_logic: viewFilterLogic,
+                    }),
+                    staleTime: 10_000,
+                  })
+                }
+              },
               showTotal: (t) => `共 ${t} 条`,
             }}
             scroll={{ x: 'max-content', y: 'calc(100vh - 320px)' }}
@@ -850,18 +891,18 @@ export default function GridPage() {
               }
               setOffset(0)
             }}
-            onRow={(record) => ({ onDoubleClick: () => { setDetailRow(record); setDetailOpen(true) } })}
+            onRow={(record) => ({ onDoubleClick: () => openDetailWithPrefetch(record) })}
           />
         ) : mode === 'kanban' ? (
-          <KanbanView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <KanbanView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} />
         ) : mode === 'gallery' ? (
-          <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
         ) : mode === 'gantt' ? (
-          <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} />
         ) : mode === 'wbs' ? (
-          <WbsView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <WbsView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
         ) : (
-          <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={(r) => { setDetailRow(r); setDetailOpen(true) }} />
+          <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
         )}
       </div>
 
