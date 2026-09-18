@@ -35,8 +35,6 @@ def test_facade_import_does_not_eagerly_load_app() -> None:
     ``sys.modules``（惰性门面生效），守护该性能契约。
     """
     code = "import cndb, sys; assert 'cndb.app' not in sys.modules, 'cndb.app was eagerly imported'; print('LAZY_OK')"
-    result = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
-    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     assert result.returncode == 0, f"惰性门面失效: {result.stdout}\n{result.stderr}"
     assert "LAZY_OK" in result.stdout
