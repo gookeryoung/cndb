@@ -186,9 +186,10 @@ export default function TableSettingsModal({
               </Descriptions>
 
               <Form
+                key={`basic-${table?.id ?? 'loading'}`}
                 form={form}
                 layout="vertical"
-                preserve={false}
+                initialValues={{ name: table?.name ?? '', description: table?.description ?? '' }}
                 onFinish={(v) => updateTable.mutate(v)}
               >
                 <Form.Item
