@@ -2,6 +2,10 @@
  *
  * 策略：通过 API 直接管理测试行，前端只验证 Grid 渲染结果。
  * 避免 inline 编辑在 Antd 组件中的复杂选择器。
+ *
+ * 选择器说明（2026-09）：Grid 已启用 Antd virtual 虚拟滚动，行 DOM 为 div 而非
+ * tr.ant-table-row —— 行数断言一律用分页「共 N 条」文本（showTotal，服务端真值）；
+ * 行定位用 tag 无关的 [data-row-key] 属性。
  */
 import { test, expect } from "../fixtures/auth";
 import { getAdminToken, getTableId } from "../helpers/api";
@@ -21,15 +25,14 @@ async function openEmployeeGrid(page: any) {
   await page.getByRole("menuitem", { name: /员工表/ }).click();
   await page.waitForURL(/\/tables\/\d+/);
 
-  // 数据渲染由调用方基于 expect(...).toHaveCount 自动等待完成，无需固定 sleep
+  // Grid 骨架渲染完成信号：新增行按钮可见
+  await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible();
 }
 
-/** 确保 Grid 显示 N 条记录 */
+/** 确保 Grid 分页显示共 N 条（服务端真值，不受虚拟滚动 DOM 影响） */
 async function gotoGridAndCheckCount(page: any, expectedCount: number) {
   await openEmployeeGrid(page);
-
-  const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-  await expect(rows).toHaveCount(expectedCount);
+  await expect(page.getByText(`共 ${expectedCount} 条`)).toBeVisible();
 }
 
 /** 清理非 seed 行 */
@@ -95,6 +98,7 @@ test.describe("行 CRUD", () => {
     await deleteRow(request, tid, newId);
     await cleanupExtraRows(request, tid);
     await gotoGridAndCheckCount(page, 5);
+    await expect(page.getByText("E2E-测试行")).not.toBeVisible();
   });
 
   test("删除行 → Grid -1 行 → 重建 → 清理", async ({ page, request }) => {
@@ -129,9 +133,9 @@ test.describe("行 CRUD", () => {
     await cleanupExtraRows(request, tid);
     await gotoGridAndCheckCount(page, 5);
 
-    // 点击 "新增行" → 底部出现空白可编辑行
+    // 点击 "新增行" → 底部出现空白可编辑行（虚拟滚动下行是 div，用 data-row-key 定位）
     await page.getByTestId("add-row-btn").click();
-    const newRow = page.locator('.ant-table-tbody tr[data-row-key="__new__"]');
+    const newRow = page.locator('[data-row-key="__new__"]');
     await expect(newRow).toHaveCount(1);
 
     // 必填字段缺失直接保存 → 阻止并提示
@@ -144,8 +148,7 @@ test.describe("行 CRUD", () => {
 
     // Grid +1 行且新行可见（虚拟新增行消失，回落到 DB 行）
     await expect(page.getByText("E2E-按钮新增")).toBeVisible();
-    const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-    await expect(rows).toHaveCount(6);
+    await expect(page.getByText("共 6 条")).toBeVisible();
 
     // 清理
     await cleanupExtraRows(request, tid);
@@ -162,7 +165,7 @@ test.describe("行 CRUD", () => {
 
     // 打开行内新增行，直接保存
     await page.getByTestId("add-row-btn").click();
-    const newRow = page.locator('.ant-table-tbody tr[data-row-key="__new__"]');
+    const newRow = page.locator('[data-row-key="__new__"]');
     await expect(newRow).toHaveCount(1);
     await newRow.getByTestId("row-save-btn").click();
 
@@ -170,11 +173,10 @@ test.describe("行 CRUD", () => {
     await expect(page.getByText(/请填写必填字段/)).toBeVisible();
     await expect(newRow).toHaveCount(1);
 
-    // 取消放弃本次新增，新增行消失，Grid 回到 5 行
+    // 取消放弃本次新增，新增行消失，Grid 回到 5 条
     await newRow.getByTestId("row-cancel-btn").click();
     await expect(newRow).toHaveCount(0);
-    const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-    await expect(rows).toHaveCount(5);
+    await expect(page.getByText("共 5 条")).toBeVisible();
   });
 
   test("整行编辑 → 修改字段 → 保存 → Grid 更新 → 清理", async ({ page, request }) => {
@@ -184,12 +186,12 @@ test.describe("行 CRUD", () => {
     await cleanupExtraRows(request, tid);
     await gotoGridAndCheckCount(page, 5);
 
-    // 定位 "张三" 行，进入整行编辑
-    const zhangRow = page.locator(".ant-table-tbody tr.ant-table-row", { hasText: "张三" }).first();
+    // 定位 "张三" 行，进入整行编辑（虚拟滚动行是 div，用 data-row-key 过滤）
+    const zhangRow = page.locator("[data-row-key]").filter({ hasText: "张三" }).first();
     await zhangRow.getByTestId("row-edit-btn").click();
     await expect(zhangRow.getByTestId("row-save-btn")).toBeVisible();
 
-    // 修改 "薪资" 字段（整行内数字输入框按出现顺序定位，姓名后第二个文本/数字框）
+    // 确认 "姓名" 字段回填正确（整行内第一个输入框）
     const nameInput = zhangRow.locator("input.ant-input").first();
     await expect(nameInput).toHaveValue("张三");
 
