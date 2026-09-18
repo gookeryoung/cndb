@@ -4,7 +4,7 @@ import { PlusOutlined, DeleteOutlined, EditOutlined, BgColorsOutlined, ImportOut
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary, FieldImportResponse as FieldImportResponseType, FieldImportSuggestion } from '@/api'
-import { suggestColorForLabel } from '@/utils/tagColors'
+import { suggestColorForLabel, getTagColorName } from '@/utils/tagColors'
 
 interface Props {
   /** 非 embedded 模式下控制外层 Modal 显隐；embedded 模式下可传 true */
@@ -843,13 +843,13 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
         if (old && (old.value === old.label || old.value === old.label.trim())) {
           next[idx] = { ...next[idx], value: newLabel }
         }
-        // 智能推荐颜色：仅当当前 color 是预设色名（自动填充的）或为空时自动更新
+        // 智能推荐颜色：仅当当前 color 是预设色名（自动填充的）或为空时自动更新。
+        // 语义命中优先，语义 miss 时 fallback 到 label hash，保证不同 label 有不同颜色。
         const curColor = next[idx].color
         if (!curColor || isPresetColor(curColor)) {
-          const suggested = suggestColorForLabel(newLabel)
-          if (suggested) {
-            next[idx] = { ...next[idx], color: suggested }
-          }
+          const semantic = suggestColorForLabel(newLabel)
+          const color = semantic ?? getTagColorName(newLabel)
+          next[idx] = { ...next[idx], color }
         }
       }
     }
@@ -857,11 +857,19 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
     syncToForm(next)
   }
 
-  /** 一键智能配色：为所有选项（不管之前有没有 color）重新推荐颜色 */
+  /** 一键智能配色：为所有选项（不管之前有没有 color）重新推荐颜色.
+   *
+   * 策略：语义规则匹配优先（保证"已完成"="success"这类直观语义），
+   * 语义命中不到时 fallback 到 label 字符串 hash——保证不同 label 能得到不同颜色，
+   * 避免"一键配色后全部同色"。
+   */
   function autoColorAll() {
     const next = options.map((opt) => {
-      const suggested = suggestColorForLabel(opt.label.trim())
-      return { ...opt, color: suggested || '' }
+      const label = opt.label.trim()
+      if (!label) return { ...opt, color: '' }
+      const semantic = suggestColorForLabel(label)
+      const color = semantic ?? getTagColorName(label)
+      return { ...opt, color }
     })
     setOptions(next)
     syncToForm(next)
