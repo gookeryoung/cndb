@@ -850,7 +850,9 @@ def create_table_from_json_data(
         ddl_create(engine, dt)
         ensure_default_view(db, dt, owner_id=owner_id, commit=True)
         valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
+        _prefill_before_bulk(db, dt, valid)
         ids = rec.bulk_create(engine, dt, valid, db=db)
+        _sync_after_bulk(db, dt)
     except Exception:
         _cleanup_partial_table(engine, db, dt)
         raise
@@ -1127,7 +1129,9 @@ def create_table_from_file(
         ddl_create(engine, dt)
         ensure_default_view(db, dt, owner_id=owner_id, commit=True)
         valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
+        _prefill_before_bulk(db, dt, valid)
         ids = rec.bulk_create(engine, dt, valid, db=db)
+        _sync_after_bulk(db, dt)
     except Exception:
         _cleanup_partial_table(engine, db, dt)
         raise
