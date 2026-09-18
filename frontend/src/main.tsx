@@ -17,7 +17,6 @@ const queryClient = new QueryClient({
   },
 })
 queryClient.setQueryDefaults(['table-records'], { staleTime: 10_000 })
-queryClient.setQueryDefaults(['row-comments'], { staleTime: 10_000 })
 queryClient.setQueryDefaults(['row-audit'], { staleTime: 10_000 })
 queryClient.setQueryDefaults(['row-references'], { staleTime: 10_000 })
 queryClient.setQueryDefaults(['table-views'], { staleTime: 60_000 })

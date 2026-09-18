@@ -5,10 +5,10 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { tableApi, recordApi, viewApi, userApi, commentApi, auditApi } from './index'
+import { tableApi, recordApi, viewApi, userApi, auditApi } from './index'
 import type {
   TableDetail, View, RowListResponse,
-  AuditLog, Comment as ApiComment, Reference,
+  AuditLog, Reference,
 } from './types'
 
 // ─────────────── Tables ───────────────
@@ -81,14 +81,6 @@ export function useRowAudit(wid: string, tid: string, rowId: number | string | u
   return useQuery<AuditLog[]>({
     queryKey: ['row-audit', wid, tid, rowId],
     queryFn: () => auditApi.list(wid, tid, undefined, 20, rowId),
-    enabled: enabled && !!wid && !!tid && !!rowId,
-  })
-}
-
-export function useRowComments(wid: string, tid: string, rowId: number | string | undefined, enabled = true) {
-  return useQuery<ApiComment[]>({
-    queryKey: ['row-comments', wid, tid, rowId],
-    queryFn: () => commentApi.list(wid, tid, rowId!),
     enabled: enabled && !!wid && !!tid && !!rowId,
   })
 }
@@ -191,80 +183,6 @@ export function useDeleteRowsOptimistic(wid: string, tid: string) {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
-    },
-  })
-}
-
-// ─────────────── Comments（乐观更新） ───────────────
-
-/** 乐观更新版 deleteComment —— 立即从 row-comments cache 移除，失败时回滚. */
-export function useDeleteCommentOptimistic(wid: string, tid: string, rowId: number | string | undefined) {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (commentId: number | string) => commentApi.remove(wid, tid, commentId),
-    onMutate: async (commentId) => {
-      await queryClient.cancelQueries({ queryKey: ['row-comments', wid, tid, rowId] })
-
-      const previous = queryClient.getQueryData<ApiComment[]>(['row-comments', wid, tid, rowId])
-
-      if (previous) {
-        queryClient.setQueryData<ApiComment[]>(['row-comments', wid, tid, rowId], previous.filter(c => c.id !== commentId))
-      }
-
-      return { previous }
-    },
-    onError: (_err, _commentId, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(['row-comments', wid, tid, rowId], context.previous)
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['row-comments', wid, tid, rowId] })
-    },
-  })
-}
-
-/** 乐观更新版 createComment —— 立即在 row-comments cache 前端插入临时评论，成功后替换真实 ID，失败时移除. */
-export function useCreateCommentOptimistic(wid: string, tid: string, rowId: number | string | undefined) {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (content: string) => commentApi.create(wid, tid, rowId!, content),
-    onMutate: async (content) => {
-      await queryClient.cancelQueries({ queryKey: ['row-comments', wid, tid, rowId] })
-
-      const previous = queryClient.getQueryData<ApiComment[]>(['row-comments', wid, tid, rowId]) ?? []
-
-      // 生成带标记的临时评论 —— 用 '__temp_' 前缀标识，避免和真实数字 ID 冲突
-      const tempId = `__temp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` as unknown as ApiComment['id']
-      const optimisticComment: ApiComment = {
-        id: tempId,
-        content,
-        author_name: '你',
-        created_at: new Date().toISOString(),
-        row_id: rowId as any,
-      }
-
-      queryClient.setQueryData<ApiComment[]>(['row-comments', wid, tid, rowId], [optimisticComment, ...previous])
-
-      return { previous, tempId }
-    },
-    onSuccess: (realComment, _content, context) => {
-      if (!context?.tempId) return
-      // 用后端返回的真实评论对象替换临时占位
-      queryClient.setQueryData<ApiComment[]>(['row-comments', wid, tid, rowId], (current) => {
-        if (!current) return current
-        return current.map(c => (c.id === context.tempId ? realComment : c))
-      })
-    },
-    onError: (_err, _content, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(['row-comments', wid, tid, rowId], context.previous)
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['row-comments', wid, tid, rowId] })
     },
   })
 }
