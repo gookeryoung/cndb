@@ -40,6 +40,33 @@ def _ensure_dev_env() -> None:
         sys.exit(1)
 
 
+def _silence_proactor_reset_noise() -> None:
+    """抑制 Windows ProactorEventLoop 的连接重置噪音（gh-83580 / bpo-39010）.
+
+    客户端强制断开（RST）后，_ProactorBasePipeTransport._call_connection_lost
+    回调内的 sock.shutdown(SHUT_RDWR) 会对已重置的连接再抛
+    ConnectionResetError(WinError 10054)。连接本就在关闭，属无害噪音，
+    但会污染 e2e（Playwright 并发 abort 连接时高频触发）与生产日志。
+    包装该回调吞掉重置类异常；非 win32 为 no-op。
+    """
+    if sys.platform != "win32":
+        return
+    from asyncio.proactor_events import _ProactorBasePipeTransport
+
+    # 私有属性未进 typeshed stubs，经 Any 动态读写绕过静态检查
+    transport_cls: Any = _ProactorBasePipeTransport
+    original = transport_cls._call_connection_lost
+
+    def _quiet_call_connection_lost(self: Any, exc: BaseException | None) -> None:
+        try:  # noqa: SIM105
+            original(self, exc)
+        except (ConnectionResetError, ConnectionAbortedError):
+            # 对端已强制断开，连接本就在关闭，无需上抛
+            pass
+
+    transport_cls._call_connection_lost = _quiet_call_connection_lost
+
+
 def serve(args: argparse.Namespace) -> None:
     """启动 uvicorn 服务器（生产可用，不依赖源码目录）."""
     try:
@@ -48,6 +75,7 @@ def serve(args: argparse.Namespace) -> None:
         print("[error] uvicorn 未安装，请执行 `uv sync`", file=sys.stderr)
         sys.exit(1)
 
+    _silence_proactor_reset_noise()
     uvicorn.run(
         "cndb.app:app",
         host=args.host,
