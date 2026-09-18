@@ -140,8 +140,8 @@ function densityColumnStyle(density: Density) {
 // ── 工具函数（link/multi_select/select/通用格式化已抽到 ./fieldValueFormat.ts；日期工具已抽到 ./dateUtils.ts） ──
 
 // ── 自动配色 Tag ──────────────────────────────────────
-function AutoTag({ value, style }: { value: string; style?: React.CSSProperties }) {
-  return <Tag color={resolveTagColor(value)} style={{ margin: 0, ...style }}>{value}</Tag>
+function AutoTag({ value, style, options }: { value: string; style?: React.CSSProperties; options?: unknown }) {
+  return <Tag color={resolveTagColor(value, options)} style={{ margin: 0, ...style }}>{value}</Tag>
 }
 
 // ── 卡片排序 ──────────────────────────────────────────
@@ -360,16 +360,19 @@ function KanbanCard({ row, fields, opts, density, onRowClick }: KanbanCardProps)
           <PriorityBadge field={findField(priorityField)} value={row[priorityField]} />
         )}
         {dueDateField && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
-        {assigneeField && (
-          <AutoTag
-            value={
-              findField(assigneeField)
-                ? formatFieldDisplayValue(findField(assigneeField)!, row[assigneeField]) || '—'
-                : String(row[assigneeField] || '—')
-            }
-            style={{ paddingInline: 6 }}
-          />
-        )}
+        {assigneeField && (() => {
+          const assigneeFieldObj = findField(assigneeField)
+          const rawVal = assigneeFieldObj
+            ? formatFieldDisplayValue(assigneeFieldObj, row[assigneeField]) || '—'
+            : String(row[assigneeField] || '—')
+          return (
+            <AutoTag
+              value={rawVal}
+              options={assigneeFieldObj?.config?.options}
+              style={{ paddingInline: 6 }}
+            />
+          )
+        })()}
       </div>
 
       {/* 卡片额外字段 */}
