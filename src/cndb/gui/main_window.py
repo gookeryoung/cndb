@@ -245,6 +245,26 @@ class ServeTab(_BaseTab):
         _exe_parent = Path(sys.executable).resolve().parent
         _pkg_entry_root = (_exe_parent / ".." / "src" / "src").resolve()
 
+        # 子进程解释器：显式用 python.exe（控制台子系统），
+        # 配 CREATE_NO_WINDOW + STARTUPINFO SW_HIDE 双保险绝对不弹黑窗。
+        # 不用 sys.executable：pythonw.exe 在部分 Windows 版本下
+        # 会绕过 CREATE_NO_WINDOW 的抑制逻辑。
+        _py_bin = _exe_parent / "python.exe"
+        if not _py_bin.exists():
+            _py_bin = _exe_parent / "pythonw.exe"
+
+        # Windows GUI 程序（pythonw 无 console）下 stdin 是无效句柄，
+        # Popen 内部 _make_inheritable 会触发 WinError 6；显式设 DEVNULL 规避
+        creationflags = 0
+        startupinfo = None
+        if sys.platform == "win32":
+            creationflags = (
+                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            )
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0  # SW_HIDE
+
         # 用 -c 引导代码：先注入源码根到 sys.path（解决打包后子进程找不到 cndb），
         # 再调 uvicorn.run() 启动服务
         _bootstrap = (
@@ -253,14 +273,9 @@ class ServeTab(_BaseTab):
             f"uvicorn.run('cndb.app:app', host={host!r}, port={port}, "
             f"reload={reload!r}, workers={workers})"
         )
-        cmd: list[str] = [sys.executable, "-c", _bootstrap]
+        cmd: list[str] = [str(_py_bin), "-c", _bootstrap]
 
         try:
-            # Windows GUI 程序（pythonw 无 console）下 stdin 是无效句柄，
-            # Popen 内部 _make_inheritable 会触发 WinError 6；显式设 DEVNULL 规避
-            creationflags = 0
-            if sys.platform == "win32":
-                creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
             self.app._server_proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.DEVNULL,
@@ -269,6 +284,7 @@ class ServeTab(_BaseTab):
                 text=True,
                 bufsize=1,
                 creationflags=creationflags,
+                startupinfo=startupinfo,
             )
         except FileNotFoundError:
             messagebox.showerror("启动失败", "找不到 Python 或 uvicorn，请先执行 `uv sync`")
