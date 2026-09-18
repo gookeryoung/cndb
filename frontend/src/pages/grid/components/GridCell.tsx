@@ -14,36 +14,60 @@ interface Props {
   field: Field
   rowId: number | string
   wid?: number | string
+  /** 传统按单元格编辑：双击进入编辑态，回车/失焦调用该回调保存单个字段 */
   onSave?: (fieldName: string, value: unknown) => Promise<unknown>
+  /** 受控编辑模式：为 true 时强制渲染编辑态，value 作为受控草稿值，供"行内新增/整行编辑"复用 */
+  editing?: boolean
+  /** 受控模式下草稿变化回调 */
+  onDraftChange?: (value: unknown) => void
+  /** 受控模式下回车确认（行级编辑时通常为 noop，父级统一保存） */
+  onDraftCommit?: (fieldName: string, value: unknown) => void
+  /** 受控模式下取消 */
+  onDraftCancel?: () => void
+  /** 是否渲染单元格底部自带的"保存/取消"按钮（行级编辑时由行操作列统一承载，置 false） */
+  showActionButtons?: boolean
 }
 
-/** 可编辑单元格：默认展示态，双击切到编辑态，回车/失焦保存 */
-export default function GridCell({ value, field, rowId, wid, onSave }: Props) {
+/**
+ * 可编辑单元格。
+ * - 传统模式（无 editing prop）：双击切到编辑态，回车/失焦通过 onSave 保存单个字段。
+ * - 受控模式（editing 为布尔值）：由父级把控编辑态与草稿值，value 即当前草稿。
+ */
+export default function GridCell({ value, field, rowId, wid, onSave, editing: controlledEditing, onDraftChange, onDraftCommit, onDraftCancel, showActionButtons }: Props) {
+  // 说明：prop `editing`（受控模式）与内部 state `editing`（传统模式）同名，
+  // 这里在解构时把 prop 重命名为 `controlledEditing`，内部 state 沿用 `editing` 变量名（传统模式）。
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<unknown>(value)
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLElement | null>(null)
 
-  // 外部 value 变化时同步 draft
+  // 受控模式：编辑态与草稿值完全交由父级
+  const controlled = typeof controlledEditing === 'boolean'
+  // 受控模式下编辑态由 prop 决定，否则用内部 state
+  const isEditing = controlled ? controlledEditing : editing
+
+  // 外部 value 变化时同步 draft（仅传统模式用）
   useEffect(() => {
-    setDraft(value)
-  }, [value])
+    if (!controlled) setDraft(value)
+  }, [value, controlled])
 
   // 切到编辑态时自动聚焦
   useEffect(() => {
-    if (editing && inputRef.current) {
+    if (isEditing && inputRef.current) {
       const el = inputRef.current
       if ('focus' in el && typeof (el as HTMLElement).focus === 'function') {
         setTimeout(() => (el as HTMLElement).focus(), 30)
       }
     }
-  }, [editing])
+  }, [isEditing])
 
   const handleStartEdit = useCallback(() => {
+    // 受控模式由父级把控首个焦点，无需在此处理
+    if (controlled) return
     if (isReadonlyField(field)) return
     setDraft(normalizeValueForEdit(value, field))
     setEditing(true)
-  }, [value, field])
+  }, [controlled, value, field])
 
   const handleSave = useCallback(async () => {
     if (!onSave) { setEditing(false); return }
@@ -70,6 +94,24 @@ export default function GridCell({ value, field, rowId, wid, onSave }: Props) {
     return <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
   }
 
+  // 受控模式：编辑态与草稿值由父级决定
+  if (controlled) {
+    // 草稿值即 value（父级传入的当前值）；回车提交走 onDraftCommit（行级保存统一由父级处理）
+    return (
+      <EditCell
+        field={field}
+        draft={value}
+        onChange={onDraftChange ?? (() => {})}
+        inputRef={inputRef}
+        onSave={() => onDraftCommit?.(field.name, finalizeValueFromEdit(value, field))}
+        onCancel={() => onDraftCancel?.()}
+        saving={false}
+        wid={wid}
+        showActions={!!showActionButtons}
+      />
+    )
+  }
+
   if (!editing) {
     return (
       <div
@@ -85,7 +127,7 @@ export default function GridCell({ value, field, rowId, wid, onSave }: Props) {
   return (
     <EditCell
       field={field}
-      draft={draft}
+      draft={isEditing ? draft : value}
       onChange={setDraft}
       inputRef={inputRef}
       onSave={handleSave}
@@ -227,19 +269,21 @@ interface EditCellProps {
   onCancel: () => void
   saving: boolean
   wid?: number | string
+  /** 是否渲染单元格自带的"保存/取消"按钮，行级编辑时由行操作列承载，置 false */
+  showActions?: boolean
 }
 
-function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, wid }: EditCellProps) {
+function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, wid, showActions = true }: EditCellProps) {
   const ft = field.field_type
   const wrap: React.CSSProperties = {
     display: 'flex', gap: 4, alignItems: 'center', padding: '2px 0',
   }
-  const actions = (
+  const actions = showActions ? (
     <span style={{ display: 'inline-flex', gap: 2 }}>
       <Button size="small" type="primary" icon={<SaveOutlined />} onClick={onSave} loading={saving} />
       <Button size="small" icon={<CloseOutlined />} onClick={onCancel} />
     </span>
-  )
+  ) : null
 
   const commonOnKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSave() }
@@ -610,4 +654,37 @@ function finalizeValueFromEdit(draft: unknown, field: Field): unknown {
     default:
       return draft
   }
+}
+
+/**
+ * 导出的字段值归一化：把编辑器草稿值转成后端接受的格式。
+ * 供 GridPage 行内新增/整行编辑在保存时统一复用。
+ */
+export function finalizeCellValue(draft: unknown, field: Field): unknown {
+  return finalizeValueFromEdit(draft, field)
+}
+
+/**
+ * 导出的字段值归一化（编辑态）：把后端值转成编辑器可消费的草稿。
+ * 供 GridPage 行内新增/整行编辑初始化草稿时复用（与单元格双击编辑的转换保持一致）。
+ */
+export function normalizeCellValueForEdit(value: unknown, field: Field): unknown {
+  return normalizeValueForEdit(value, field)
+}
+
+/**
+ * 判断草稿是否为空（不参与提交）。
+ * 空串 / null / undefined / 空数组 视为空。
+ */
+export function isBlankCellValue(v: unknown): boolean {
+  if (v === null || v === undefined || v === '') return true
+  if (Array.isArray(v)) return v.length === 0
+  return false
+}
+
+/**
+ * 该字段是否在行内编辑中可编辑（与展示/单元格双击判定一致）。
+ */
+export function isEditableInlineField(field: Field): boolean {
+  return !isReadonlyField(field) && !field.trashed
 }
