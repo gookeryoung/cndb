@@ -486,6 +486,20 @@ class BackupTab(_BaseTab):
         elif not values:
             self.archive_var.set("")
 
+    def _begin_op(self, status: str) -> None:
+        """开始一个耗时操作：显示进度条、更新状态文本."""
+        self.progress.configure(mode="indeterminate")
+        self.progress.start(10)
+        self.op_status.configure(text=status, foreground="#1a7f37")
+
+    def _finish_op(self, btn: ttk.Button, success: bool, status: str) -> None:
+        """结束一个耗时操作：停止进度条、恢复按钮、更新状态."""
+        self.progress.stop()
+        self.progress.configure(mode="determinate", value=0)
+        btn.configure(state=tk.NORMAL)
+        fg = "#1a7f37" if success else "#d1242f"
+        self.op_status.configure(text=status, foreground=fg)
+
     def _pick_output(self) -> None:
         path = filedialog.asksaveasfilename(
             title="备份输出路径",
@@ -523,27 +537,29 @@ class BackupTab(_BaseTab):
             ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
             out = str(settings.BACKUP_DIR / f"backup-{ts}.tar.gz")
 
-        # 输出路径为目录（或未填写）时，改用默认 ~/.cndb/backups 并在其中生成归档文件
-        if out is None:
-            out = str(_default_backup_dir())
+        # 输出路径为目录时，追加时间戳文件名；否则直接使用给定路径
         out_path = Path(out).expanduser().resolve()
         if out_path.is_dir():
             out_path = out_path / _make_backup_name()
+
+        self.backup_btn.configure(state=tk.DISABLED)
+        self._begin_op("正在备份...")
 
         def _run() -> None:
             from cndb.backup import BackupError, create_backup
 
             try:
-                result = create_backup(output=Path(out).resolve(), mode=mode, include_uploads=include_uploads)
+                result = create_backup(output=out_path, mode=mode, include_uploads=include_uploads)
                 print(f"[ok] 备份成功: {result}")
                 # 备份完成后刷新归档列表，新备份自动成为默认选项
                 self.app.root.after(0, self._refresh_archives)
+                self.app.root.after(0, self._finish_op, self.backup_btn, True, "备份完成")
             except BackupError as exc:
-                with redirect_output(self._log_queue):
+                with redirect_output(self.app.log_queue):
                     print(f"[error] {exc}", file=sys.stderr)
                 self.app.root.after(0, self._finish_op, self.backup_btn, False, "备份失败")
             except Exception as exc:
-                with redirect_output(self._log_queue):
+                with redirect_output(self.app.log_queue):
                     print(f"[error] 备份失败: {exc}", file=sys.stderr)
                 self.app.root.after(0, self._finish_op, self.backup_btn, False, "备份失败")
 
@@ -564,16 +580,16 @@ class BackupTab(_BaseTab):
             from cndb.restore import RestoreError, restore_backup
 
             try:
-                with redirect_output(self._log_queue):
+                with redirect_output(self.app.log_queue):
                     restore_backup(Path(archive), force=self.force_var.get())
                     print("[ok] 恢复完成")
                 self.app.root.after(0, self._finish_op, self.restore_btn, True, "恢复完成")
             except RestoreError as exc:
-                with redirect_output(self._log_queue):
+                with redirect_output(self.app.log_queue):
                     print(f"[error] {exc}", file=sys.stderr)
                 self.app.root.after(0, self._finish_op, self.restore_btn, False, "恢复失败")
             except Exception as exc:
-                with redirect_output(self._log_queue):
+                with redirect_output(self.app.log_queue):
                     print(f"[error] 恢复失败: {exc}", file=sys.stderr)
                 self.app.root.after(0, self._finish_op, self.restore_btn, False, "恢复失败")
 
@@ -592,13 +608,13 @@ class BackupTab(_BaseTab):
             from cndb.restore import RestoreError, inspect_backup
 
             try:
-                with redirect_output(self._log_queue):
+                with redirect_output(self.app.log_queue):
                     info = inspect_backup(Path(archive))
                     print("[info] 归档有效")
                     print(info.summary)
                 self.app.root.after(0, self._finish_op, self.dry_run_btn, True, "预演完成")
             except RestoreError as exc:
-                with redirect_output(self._log_queue):
+                with redirect_output(self.app.log_queue):
                     print(f"[error] {exc}", file=sys.stderr)
                 self.app.root.after(0, self._finish_op, self.dry_run_btn, False, "预演失败")
 
