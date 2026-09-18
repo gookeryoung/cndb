@@ -137,9 +137,7 @@ jobs:
         run: cd frontend && pnpm build
 
       - name: Install Playwright Chromium
-        uses: playwright-community/playwright-github-action@v2.0.0
-        with:
-          browsers: chromium
+        run: cd frontend && npx playwright install --with-deps chromium
 
       - name: Run E2E (webServer 自动 seed + 起后端 :8000)
         env:
@@ -149,7 +147,7 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4.8.0
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report-shard${{ matrix.shard }}
           path: frontend/playwright-report/
