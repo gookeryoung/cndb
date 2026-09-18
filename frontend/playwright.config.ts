@@ -46,6 +46,9 @@ export default defineConfig({
     },
     {
       name: "chromium-anon",
+      // critical 用例全部依赖登录态（匿名访问会被 ProtectedRoute 重定向到 /login），
+      // anon 项目只服务 smoke 的登录/注册/登出用例，避免双倍执行与必败重试。
+      testIgnore: /[\\/]critical[\\/]/,
     },
   ],
 });
