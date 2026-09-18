@@ -53,7 +53,9 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
 
   // V3: 参考列选择 + 高级设置
   const [matchKeys, setMatchKeys] = useState<string[]>([])
-  const [unknownColsStrategy, setUnknownColsStrategy] = useState<'drop' | 'add_text_field'>('drop')
+  const [unknownColsStrategy, setUnknownColsStrategy] = useState<'drop' | 'add_text_field'>('add_text_field')
+  // V3: 用户勾选丢弃的 planned_columns 字段名列表（默认全创建）
+  const [droppedColumns, setDroppedColumns] = useState<string[]>([])
   const [diffing, setDiffing] = useState(false)  // 执行 DIFF 的 loading
 
   // V3: 数据质量面板 —— 用户勾选的清洗建议列表（完整 suggestion 对象）
@@ -72,7 +74,8 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
       setPolling(false)
       setPhase('idle')
       setMatchKeys([])
-      setUnknownColsStrategy('drop')
+      setUnknownColsStrategy('add_text_field')
+      setDroppedColumns([])
       setDiffing(false)
     }
   }, [open])
@@ -184,11 +187,11 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     }
   }, [wid, tid, selectedFormat, useViewFilter, viewId])
 
-  // 确认导入（当前 matchKeys + unknownColsStrategy + 清洗建议）
+  // 确认导入（当前 matchKeys + unknownColsStrategy + droppedColumns + 清洗建议）
   const handleConfirm = async () => {
     if (!task) return
     try {
-      await importApi.confirmImport(wid, tid, task.task_id, matchKeys, unknownColsStrategy, selectedCleaningActions)
+      await importApi.confirmImport(wid, tid, task.task_id, matchKeys, unknownColsStrategy, droppedColumns, selectedCleaningActions)
       setPhase('importing')
       setPolling(true)
     } catch (err) {
@@ -205,7 +208,8 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     setPhase('idle')
     setPolling(false)
     setMatchKeys([])
-    setUnknownColsStrategy('drop')
+    setUnknownColsStrategy('add_text_field')
+    setDroppedColumns([])
     setDiffing(false)
     setSelectedCleaningActions([])
   }
@@ -662,31 +666,80 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
         {/* Diff 控制区 */}
         {renderDiffControls()}
 
-        {/* 未知列提示 / 规划 */}
-        {(report.skipped_columns?.length > 0 || report.missing_required?.length > 0) && (
+        {/* 未知列提示 / 规划 —— 可勾选逐个决定是否创建 */}
+        {(report.skipped_columns?.length > 0 || report.missing_required?.length > 0 || plannedColumns.length > 0) && (
           <Alert
-            type="warning"
+            type={plannedColumns.length > 0 ? 'info' : 'warning'}
             style={{ marginBottom: 12 }}
             showIcon
             message={
               <div style={{ fontSize: 12 }}>
-                {report.skipped_columns?.length > 0 && (
+                {plannedColumns.length > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                      <Tag color="blue" style={{ marginRight: 6 }}>新字段</Tag>
+                      检测到 {plannedColumns.length} 个文件里有、但表中尚未建立的字段
+                      {unknownColsStrategy === 'add_text_field'
+                        ? <span style={{ color: '#0284c7', marginLeft: 4 }}>— 勾选要自动创建的字段，未勾选的将被丢弃</span>
+                        : <span style={{ color: '#d97706', marginLeft: 4 }}>— 当前为「丢弃」策略，切换到上方高级设置开启自动新增</span>}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {plannedColumns.map((pc: any) => {
+                        const isDropped = droppedColumns.includes(pc.name)
+                        return (
+                          <label
+                            key={pc.name}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 8,
+                              padding: '4px 8px',
+                              background: isDropped ? '#fef2f2' : '#f0fdf4',
+                              border: `1px solid ${isDropped ? '#fecaca' : '#bbf7d0'}`,
+                              borderRadius: 4,
+                              cursor: unknownColsStrategy === 'add_text_field' ? 'pointer' : 'not-allowed',
+                              opacity: unknownColsStrategy === 'add_text_field' ? 1 : 0.55,
+                            }}
+                          >
+                            <Checkbox
+                              checked={!isDropped}
+                              disabled={unknownColsStrategy !== 'add_text_field'}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setDroppedColumns(prev => prev.filter(n => n !== pc.name))
+                                } else {
+                                  setDroppedColumns(prev => [...prev, pc.name])
+                                }
+                              }}
+                            />
+                            <span style={{ fontWeight: 500 }}>{pc.name}</span>
+                            <Tag color={isDropped ? 'default' : 'blue'} style={{ margin: 0 }}>{pc.field_type}</Tag>
+                            {pc.sample_values?.length > 0 && (
+                              <span style={{ color: '#64748b', fontSize: 11 }}>
+                                样本: {pc.sample_values.join(' / ')}
+                              </span>
+                            )}
+                            {isDropped && (
+                              <Tag color="red" style={{ marginLeft: 'auto', marginRight: 0 }}>将丢弃</Tag>
+                            )}
+                          </label>
+                        )
+                      })}
+                    </div>
+                    {unknownColsStrategy === 'add_text_field' && droppedColumns.length > 0 && (
+                      <div style={{ marginTop: 6, color: '#dc2626', fontSize: 11 }}>
+                        其中 {droppedColumns.length} 个字段被勾选丢弃，不会自动创建
+                      </div>
+                    )}
+                  </div>
+                )}
+                {report.skipped_columns?.length > 0 && plannedColumns.length === 0 && (
                   <div>
                     <Tag color="orange">已忽略的文件列</Tag>
                     {report.skipped_columns.join(', ')}
-                    {unknownColsStrategy === 'drop' && <span style={{ marginLeft: 8, color: '#d97706' }}>（自动新增字段已关闭，可在上方设置中开启）</span>}
-                  </div>
-                )}
-                {plannedColumns.length > 0 && (
-                  <div style={{ marginTop: 6 }}>
-                    <Tag color="green">将自动新增字段</Tag>
-                    {plannedColumns.map((pc: any) => (
-                      <Tag key={pc.name} color="blue">{pc.name} <span style={{ color: '#64748b' }}>({pc.field_type})</span></Tag>
-                    ))}
+                    <span style={{ marginLeft: 8, color: '#d97706' }}>（自动新增字段已关闭，可在上方设置中开启）</span>
                   </div>
                 )}
                 {report.missing_required?.length > 0 && (
-                  <div>
+                  <div style={{ marginTop: 6 }}>
                     <Tag color="red">必填但文件缺失</Tag>
                     {report.missing_required.join(', ')}
                   </div>

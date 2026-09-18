@@ -212,6 +212,7 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
                 task.format,
                 match_keys=list(task.match_keys) if task.match_keys else None,
                 unknown_cols_strategy=task.unknown_cols_strategy or "drop",
+                dropped_columns=list(task.dropped_columns) if task.dropped_columns else None,
                 cleaning_actions=list(task.cleaning_actions) if task.cleaning_actions else None,
             )
             task.imported_rows = len(result.imported_ids)
@@ -296,6 +297,7 @@ def create_import_task(
     status: str = "pending",
     match_keys: list[str] | None = None,
     unknown_cols_strategy: str = "drop",
+    dropped_columns: list[str] | None = None,
 ) -> ImportTask:
     """创建异步导入任务并入库."""
     from cndb.plugins.tables.transfer import decode_bytes_auto
@@ -326,6 +328,7 @@ def create_import_task(
         validation_report="",
         match_keys=list(match_keys) if match_keys else [],
         unknown_cols_strategy=unknown_cols_strategy or "drop",
+        dropped_columns=list(dropped_columns) if dropped_columns else [],
     )
     db.add(task)
     db.commit()
