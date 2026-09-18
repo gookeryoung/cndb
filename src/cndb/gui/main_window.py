@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import datetime as dt
 import subprocess
 import sys
 import threading
@@ -35,6 +36,22 @@ LOG_TAGS: dict[str, tuple[str, str]] = {
     "warn": ("#d4760a", ""),
     "error": ("#cf222e", ""),
 }
+
+
+def _default_backup_dir() -> Path:
+    """GUI 默认备份输出路径（~/.cndb/backups）.
+
+    复用 core.config 的 settings.BACKUP_DIR 约定，避免在 GUI 内重复定义路径常量。
+    """
+    from cndb.core.config import settings
+
+    return settings.BACKUP_DIR
+
+
+def _make_backup_name() -> str:
+    """生成归档默认文件名，命名约定与 backup.create_backup 一致."""
+    ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    return f"backup-{ts}.tar.gz"
 
 
 def _detect_tag(line: str) -> str:
@@ -369,7 +386,7 @@ class BackupTab(_BaseTab):
         back_frame.pack(fill=tk.X)
 
         ttk.Label(back_frame, text="输出路径:").grid(row=0, column=0, sticky=tk.W)
-        self.out_var = tk.StringVar()
+        self.out_var = tk.StringVar(value=str(_default_backup_dir()))
         ttk.Entry(back_frame, textvariable=self.out_var, width=48).grid(row=0, column=1, sticky=tk.W, padx=4)
         ttk.Button(back_frame, text="浏览", command=self._pick_output).grid(row=0, column=2, padx=4)
 
@@ -419,6 +436,7 @@ class BackupTab(_BaseTab):
     def _pick_output(self) -> None:
         path = filedialog.asksaveasfilename(
             title="备份输出路径",
+            initialdir=_default_backup_dir(),
             defaultextension=".tar.gz",
             filetypes=[("归档", "*.tar.gz"), ("全部", "*.*")],
         )
@@ -428,6 +446,7 @@ class BackupTab(_BaseTab):
     def _pick_archive(self) -> None:
         path = filedialog.askopenfilename(
             title="选择备份归档",
+            initialdir=_default_backup_dir(),
             filetypes=[("归档", "*.tar.gz"), ("全部", "*.*")],
         )
         if path:
@@ -438,12 +457,18 @@ class BackupTab(_BaseTab):
         mode = self.mode_var.get()
         include_uploads = not self.no_uploads_var.get()
 
+        # 输出路径为目录（或未填写）时，改用默认 ~/.cndb/backups 并在其中生成归档文件
+        if out is None:
+            out = str(_default_backup_dir())
+        out_path = Path(out).expanduser().resolve()
+        if out_path.is_dir():
+            out_path = out_path / _make_backup_name()
+
         def _run() -> None:
             from cndb.backup import BackupError, create_backup
 
             try:
-                path = Path(out).resolve() if out else None
-                result = create_backup(output=path, mode=mode, include_uploads=include_uploads)
+                result = create_backup(output=out_path, mode=mode, include_uploads=include_uploads)
                 print(f"[ok] 备份成功: {result}")
             except BackupError as exc:
                 print(f"[error] {exc}", file=sys.stderr)
