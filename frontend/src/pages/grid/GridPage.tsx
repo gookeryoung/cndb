@@ -191,6 +191,20 @@ export default function GridPage() {
   const [newRowOpen, setNewRowOpen] = useState(false)
   const tableKey = `${wid}/${tid}`
 
+  /** 表格容器的 ref + 尺寸测量（用于 scroll.y 精确数值计算） */
+  const gridAreaRef = useRef<HTMLDivElement | null>(null)
+  const [gridAreaSize, setGridAreaSize] = useState({ h: 400, w: 800 })
+  useEffect(() => {
+    const el = gridAreaRef.current
+    if (!el) return
+    const update = () => setGridAreaSize({ h: el.clientHeight, w: el.clientWidth })
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    window.addEventListener('resize', update)
+    return () => { ro.disconnect(); window.removeEventListener('resize', update) }
+  }, [])
+
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
 
@@ -825,8 +839,8 @@ export default function GridPage() {
         </Tooltip>
       </div>
 
-      {/* 主内容 */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', background: 'var(--cn-bg-page)' }}>
+      {/* 主内容 — flex:1 占满剩余空间，overflow:hidden 交给内部 Table 的虚拟滚动 */}
+      <div ref={gridAreaRef} style={{ flex: 1, minHeight: 0, padding: '12px 16px', background: 'var(--cn-bg-page)', display: 'flex', flexDirection: 'column' }}>
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: 48 }}>加载中...</div>
         ) : mode === 'grid' ? (
@@ -834,8 +848,9 @@ export default function GridPage() {
             rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns} dataSource={rowList.items || []}
             bordered={settings.bordered}
             showHeader={settings.showHeader}
+            style={{ flex: 1, minHeight: 0 }}
             rowClassName={settings.striped ? (_r, i) => (i % 2 === 1 ? 'table-row-striped' : '') : undefined}
-            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 48 }}
             pagination={{
               current: Math.floor(offset / limit) + 1, pageSize: limit, total: rowList.total,
               showSizeChanger: true, pageSizeOptions: [25, 50, 100, 200],
@@ -859,7 +874,7 @@ export default function GridPage() {
               },
               showTotal: (t) => `共 ${t} 条`,
             }}
-            scroll={{ x: 'max-content', y: 'calc(100vh - 320px)' }}
+            scroll={{ x: Math.max(gridAreaSize.w, 1200), y: Math.max(gridAreaSize.h - 96, 200) }}
             virtual
             onChange={(_pag, _fil, sorter, extra) => {
               // 只在用户点击列头排序时（extra.action === 'sort'）才处理排序，

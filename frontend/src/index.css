@@ -664,3 +664,30 @@ body.theme-dark [style*="color:'#999'"] {
 .cn-table.cn-table-spacious .ant-table-tbody > tr > td {
   padding: 14px 16px !important;
 }
+
+/* ─────────────── 选择列（rowSelection）对齐修复 ───────────────
+ * AntD 虚拟表格 + 自定义 padding 后，选择列 th/td 的内边距需要统一，
+ * 否则表头全选 checkbox 与表体 checkbox 会出现水平/垂直错位。 */
+.cn-table .ant-table-selection-column {
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+  text-align: center !important;
+}
+.cn-table .ant-table-selection-column .ant-checkbox-wrapper,
+.cn-table .ant-table-selection-column .ant-checkbox {
+  margin-right: 0 !important;
+}
+
+/* 确保 AntD Table 在 flex 容器中填满可用空间 */
+.cn-table.ant-table {
+  flex: 1;
+  min-height: 0;
+}
+.cn-table .ant-table-container {
+  height: 100%;
+}
+
+/* 虚拟表格场景：表头固定、表体滚动时，保证选择列 th 与 td 对齐 */
+.cn-table .ant-table-virtual .ant-table-selection-column {
+  padding: 8px 12px !important;
+}
