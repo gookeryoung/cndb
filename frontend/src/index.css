@@ -637,12 +637,8 @@ body.theme-dark [style*="color:'#999'"] {
   vertical-align: middle;
 }
 
-/* 勾选列固定宽度（覆盖 AntD 自动计算） */
-.cn-table .ant-table-selection-column {
-  width: 40px !important;
-  min-width: 40px !important;
-  max-width: 40px !important;
-}
+/* 勾选列宽度由 rowSelection.columnWidth 统一控制，不再用 CSS 硬编码
+   —— 硬编码会与 AntD virtual 模式的 JS 列宽计算冲突，导致表头/表体列宽不一致 */
 
 /* ─────────────── 表格显示设置 Dialog — 紧凑化 ─────────────── */
 .table-settings-dialog .ant-modal-body {
@@ -661,7 +657,8 @@ body.theme-dark [style*="color:'#999'"] {
   padding: 4px 8px !important;
 }
 
-.cn-table.cn-table-compact .ant-table-tbody>tr>td {
+.cn-table.cn-table-compact .ant-table-tbody>tr>td,
+.cn-table.cn-table-compact .ant-table-tbody-virtual-holder .ant-table-cell {
   padding: 4px 8px !important;
 }
 
@@ -670,7 +667,8 @@ body.theme-dark [style*="color:'#999'"] {
   padding: 8px 12px !important;
 }
 
-.cn-table.cn-table-comfortable .ant-table-tbody>tr>td {
+.cn-table.cn-table-comfortable .ant-table-tbody>tr>td,
+.cn-table.cn-table-comfortable .ant-table-tbody-virtual-holder .ant-table-cell {
   padding: 8px 12px !important;
 }
 
@@ -679,6 +677,7 @@ body.theme-dark [style*="color:'#999'"] {
   padding: 12px 16px !important;
 }
 
-.cn-table.cn-table-spacious .ant-table-tbody>tr>td {
+.cn-table.cn-table-spacious .ant-table-tbody>tr>td,
+.cn-table.cn-table-spacious .ant-table-tbody-virtual-holder .ant-table-cell {
   padding: 14px 16px !important;
 }
