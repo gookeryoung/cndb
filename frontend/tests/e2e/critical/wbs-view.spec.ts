@@ -423,39 +423,6 @@ test.describe("WBS 视图 — expand_all 与筛选", () => {
   });
 });
 
-// ─────────────── 第六组: 非 grid 全量拉取回归 ───────────────
-
-test.describe("WBS 视图 — 全量拉取回归", () => {
-  test("WBS任务分解 — WBS 模式自动 limit=5000", async ({ page, request }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "项目管理");
-    const tid = await getTableId(request, wid, "WBS任务分解");
-
-    const recordsUrls: string[] = [];
-    page.on("request", (req) => {
-      if (req.url().includes("/records")) recordsUrls.push(req.url());
-    });
-
-    // grid 视图进入
-    await gotoTable(page, wid, "WBS任务分解");
-    const baseline = recordsUrls.length;
-
-    // 切到 WBS 模式 → 必须触发 limit=5000（轮询请求记录，替代固定等待）
-    await clickWbsModeButton(page);
-    await expect
-      .poll(
-        async () => recordsUrls.slice(baseline).some((u) => u.includes("limit=5000")),
-        { timeout: 10000 },
-      )
-      .toBe(true);
-
-    const lastRecordsUrl = recordsUrls[recordsUrls.length - 1] || "";
-    expect(lastRecordsUrl).toContain("limit=5000");
-    expect(lastRecordsUrl).toContain("offset=0");
-  });
-});
-
 // ─────────────── 第七组: 通过 Segmented TAB 切换到 WBS ───────────────
 
 test.describe("WBS 视图 — 通过视图 TAB 切换", () => {

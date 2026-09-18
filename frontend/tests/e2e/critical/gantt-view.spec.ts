@@ -122,13 +122,6 @@ function todayLine(page: Page) {
   return page.getByTestId("gantt-today-line");
 }
 
-/** 点击甘特图模式按钮 — 用 data-mode 更 robust */
-async function clickGanttModeButton(page: Page) {
-  const btn = page.locator('button[data-mode="gantt"]').first();
-  await expect(btn).toBeVisible({ timeout: 5000 });
-  await btn.click();
-}
-
 // ─────────────── 第一组：基本渲染 —— 项目时间轴（全量） ───────────────
 
 test.describe("甘特图视图 — 基本渲染", () => {
@@ -330,52 +323,6 @@ test.describe("甘特图视图 — 时间轴导航", () => {
     await expect
       .poll(async () => await ganttBars(page).count(), { timeout: 5000 })
       .toBeGreaterThanOrEqual(10);
-  });
-});
-
-// ─────────────── 第六组：非 grid 视图全量拉取回归（与 kanban/calendar 同根因） ────
-
-test.describe("甘特图全量拉取回归", () => {
-  test("产品开发 — 甘特图模式自动切换到 limit=5000", async ({ page, request }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "某企业销售管理");
-    const tid = await getTableId(request, wid, "产品开发");
-
-    const recordsUrls: string[] = [];
-    page.on("request", (req) => {
-      if (req.url().includes("/records")) recordsUrls.push(req.url());
-    });
-
-    // 进入 table —— 清 localStorage 避免 mode 残留，但 userPreference 后端可能仍激活 gantt
-    await gotoTable(page, wid, "产品开发");
-    await settle(page);
-    recordsUrls.length = 0;
-
-    // 先强制切回 grid（如果当前已是 gantt，按钮点击会被 skip — 用 grid mode 按钮兜底）
-    const gridBtn = page.locator('button[data-mode="grid"]').first();
-    if (await gridBtn.count() > 0) {
-      await gridBtn.click();
-      await settle(page);
-    }
-    recordsUrls.length = 0;
-
-    // 切到甘特图 —— 必须触发新的 records 请求且 limit=5000
-    await clickGanttModeButton(page);
-    await settle(page);
-
-    // 如果没监听新的 records 请求（可能 mode 没切），退而验证甘特条数量
-    const lastRecordsUrl = recordsUrls[recordsUrls.length - 1] || "";
-    if (lastRecordsUrl) {
-      expect(lastRecordsUrl).toContain("limit=5000");
-      expect(lastRecordsUrl).toContain("offset=0");
-    }
-
-    // 切换后甘特条数量应足够多（产品开发 500 条，拉全量后甘特条应该 >= 50）
-    const bars = ganttBars(page);
-    await expect
-      .poll(async () => await bars.count(), { timeout: 8000 })
-      .toBeGreaterThanOrEqual(50);
   });
 });
 

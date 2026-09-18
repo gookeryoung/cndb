@@ -19,6 +19,7 @@
 import { test, expect } from "../fixtures/auth";
 import type { APIResponse } from "@playwright/test";
 import { settle } from "../fixtures/settle";
+import { getAdminToken } from "../helpers/api";
 
 const ANON = ["setup", "chromium-anon"];
 const WID = 1;
@@ -27,12 +28,8 @@ const TABLE_SALES_NAME = "电商销售";
 
 // ── Token / ID 辅助 ─────────────────────────────────────────
 
-async function getToken(request: any, login = "admin", password = "admin1234"): Promise<string> {
-    const resp: APIResponse = await request.post("/api/v1/accounts/auth/login", {
-        data: { login, password },
-    });
-    const body = await resp.json();
-    return body.access_token;
+async function getToken(request: any): Promise<string> {
+    return getAdminToken(request);
 }
 
 async function getTableId(request: any, tableName: string): Promise<number> {

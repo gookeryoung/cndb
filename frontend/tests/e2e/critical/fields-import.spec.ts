@@ -5,15 +5,11 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIResponse } from "@playwright/test";
+import { getAdminToken } from "../helpers/api";
 
-const AUTHS = ["chromium-authed"];
-
-/** 获取 admin token */
+/** 获取 admin token（复用 storageState，避免逐调用重复登录） */
 async function getToken(request: any): Promise<string> {
-  const resp: APIResponse = await request.post("/api/v1/accounts/auth/login", {
-    data: { login: "admin", password: "admin1234" },
-  });
-  return (await resp.json()).access_token;
+  return getAdminToken(request);
 }
 
 /** 新建工作区 */
@@ -91,73 +87,70 @@ async function gotoGridAndVerifyColumns(page: any, wid: number, tableName: strin
   }
 }
 
-for (const auth of AUTHS) {
-  test.describe(`字段引入 E2E — ${auth}`, () => {
-    test("API 建表 + import_all_fields 引入源表全部字段 → UI 验证", async ({ page, request }) => {
-      const wid = await createWorkspace(request, `import-all-${Date.now()}`);
+test.describe("字段引入 E2E", () => {
+  test("API 建表 + import_all_fields 引入源表全部字段 → UI 验证", async ({ page, request }) => {
+    const wid = await createWorkspace(request, `import-all-${Date.now()}`);
 
-      // 源表 + 3 个字段
-      const srcTid = await createTable(request, wid, "SourceAll");
-      await createField(request, wid, srcTid, "src_name", "text");
-      await createField(request, wid, srcTid, "src_score", "number");
-      await createField(request, wid, srcTid, "src_done", "boolean");
+    // 源表 + 3 个字段
+    const srcTid = await createTable(request, wid, "SourceAll");
+    await createField(request, wid, srcTid, "src_name", "text");
+    await createField(request, wid, srcTid, "src_score", "number");
+    await createField(request, wid, srcTid, "src_done", "boolean");
 
-      // 目标表：建表时直接从源表引入全部字段
-      const dstTid = await createTable(request, wid, "DestAll", {
-        import_from_table_id: srcTid,
-        import_all_fields: true,
-      });
-
-      // UI 验证 —— 进入目标表，三列都应该存在
-      await gotoGridAndVerifyColumns(page, wid, "DestAll", ["src_name", "src_score", "src_done"]);
+    // 目标表：建表时直接从源表引入全部字段
+    const dstTid = await createTable(request, wid, "DestAll", {
+      import_from_table_id: srcTid,
+      import_all_fields: true,
     });
 
-    test("API 从现有表按字段名引入 → UI 验证", async ({ page, request }) => {
-      const wid = await createWorkspace(request, `import-names-${Date.now()}`);
-
-      // 源表
-      const srcTid = await createTable(request, wid, "SourceNames");
-      await createField(request, wid, srcTid, "keep_a", "text");
-      await createField(request, wid, srcTid, "skip_b", "number");
-      await createField(request, wid, srcTid, "keep_c", "email");
-
-      // 目标表先只建，然后调 /fields/import 按名字引入 keep_a + keep_c
-      const dstTid = await createTable(request, wid, "DestNames");
-      const resp = await importFields(request, wid, dstTid, srcTid, {
-        field_names: ["keep_a", "keep_c"],
-      });
-      expect(resp.status()).toBe(201);
-      const body = await resp.json();
-      expect(body.created.length).toBe(2);
-      expect(body.total_source_count).toBe(2);
-
-      // UI 验证
-      await gotoGridAndVerifyColumns(page, wid, "DestNames", ["keep_a", "keep_c"]);
-    });
-
-    test("同名冲突：skip_conflicts=true 跳过 → 非冲突字段正常引入", async ({ page, request }) => {
-      const wid = await createWorkspace(request, `import-skip-${Date.now()}`);
-
-      const srcTid = await createTable(request, wid, "SourceSkip");
-      await createField(request, wid, srcTid, "dup_name", "text");
-      await createField(request, wid, srcTid, "unique_col", "number");
-
-      const dstTid = await createTable(request, wid, "DestSkip");
-      // 目标表先有一个 dup_name
-      await createField(request, wid, dstTid, "dup_name", "text");
-
-      const resp = await importFields(request, wid, dstTid, srcTid, {
-        import_all_fields: true,
-        skip_conflicts: true,
-      });
-      expect(resp.status()).toBe(201);
-      const body = await resp.json();
-      expect(body.created.length).toBe(1);
-      expect(body.skipped.length).toBe(1);
-      expect(body.skipped[0]).toContain("dup_name");
-
-      await gotoGridAndVerifyColumns(page, wid, "DestSkip", ["dup_name", "unique_col"]);
-    });
-
+    // UI 验证 —— 进入目标表，三列都应该存在
+    await gotoGridAndVerifyColumns(page, wid, "DestAll", ["src_name", "src_score", "src_done"]);
   });
-}
+
+  test("API 从现有表按字段名引入 → UI 验证", async ({ page, request }) => {
+    const wid = await createWorkspace(request, `import-names-${Date.now()}`);
+
+    // 源表
+    const srcTid = await createTable(request, wid, "SourceNames");
+    await createField(request, wid, srcTid, "keep_a", "text");
+    await createField(request, wid, srcTid, "skip_b", "number");
+    await createField(request, wid, srcTid, "keep_c", "email");
+
+    // 目标表先只建，然后调 /fields/import 按名字引入 keep_a + keep_c
+    const dstTid = await createTable(request, wid, "DestNames");
+    const resp = await importFields(request, wid, dstTid, srcTid, {
+      field_names: ["keep_a", "keep_c"],
+    });
+    expect(resp.status()).toBe(201);
+    const body = await resp.json();
+    expect(body.created.length).toBe(2);
+    expect(body.total_source_count).toBe(2);
+
+    // UI 验证
+    await gotoGridAndVerifyColumns(page, wid, "DestNames", ["keep_a", "keep_c"]);
+  });
+
+  test("同名冲突：skip_conflicts=true 跳过 → 非冲突字段正常引入", async ({ page, request }) => {
+    const wid = await createWorkspace(request, `import-skip-${Date.now()}`);
+
+    const srcTid = await createTable(request, wid, "SourceSkip");
+    await createField(request, wid, srcTid, "dup_name", "text");
+    await createField(request, wid, srcTid, "unique_col", "number");
+
+    const dstTid = await createTable(request, wid, "DestSkip");
+    // 目标表先有一个 dup_name
+    await createField(request, wid, dstTid, "dup_name", "text");
+
+    const resp = await importFields(request, wid, dstTid, srcTid, {
+      import_all_fields: true,
+      skip_conflicts: true,
+    });
+    expect(resp.status()).toBe(201);
+    const body = await resp.json();
+    expect(body.created.length).toBe(1);
+    expect(body.skipped.length).toBe(1);
+    expect(body.skipped[0]).toContain("dup_name");
+
+    await gotoGridAndVerifyColumns(page, wid, "DestSkip", ["dup_name", "unique_col"]);
+  });
+});

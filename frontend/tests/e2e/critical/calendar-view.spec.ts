@@ -235,32 +235,51 @@ test.describe("日历视图 — 点击事件打开详情抽屉", () => {
 // ─────────────── 非 grid 视图全量拉取（limit=5000） ───────────────
 
 test.describe("非 grid 视图全量拉取回归", () => {
-  test("grid 模式小 limit，calendar 模式自动切到 limit=5000", async ({ page, request }) => {
+  // GridPage 层同一逻辑：切到任意非 grid 模式都必须拉全量（limit=5000）。
+  // 原先 calendar/gantt/wbs 三个 spec 各写一遍，合并为单条循环遍历三种视图类型。
+  test("calendar/gantt/wbs 模式均自动切换到 limit=5000", async ({ page, request }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
-    const wid = await getWorkspaceId(request, "某企业销售管理");
-    const tid = await getTableId(request, wid, "出差统计");
+    // (工作区, 表名, 目标模式)：三种非 grid 视图各取一张代表表
+    const matrix: Array<[string, string, string]> = [
+      ["某企业销售管理", "出差统计", "calendar"],
+      ["某企业销售管理", "产品开发", "gantt"],
+      ["项目管理", "WBS任务分解", "wbs"],
+    ];
 
     const recordsUrls: string[] = [];
     page.on("request", (req) => {
       if (req.url().includes("/records")) recordsUrls.push(req.url());
     });
 
-    await gotoTable(page, wid, "出差统计");
-    await settle(page);
-    recordsUrls.length = 0;
+    for (const [ws, table, mode] of matrix) {
+      const wid = await getWorkspaceId(request, ws);
 
-    const calBtn = page.locator("button").filter({ has: page.locator(".anticon-calendar") }).first();
-    const calResp = page.waitForResponse(
-      (r) => r.url().includes("/records") && r.url().includes("limit=5000"),
-      { timeout: 10000 },
-    );
-    await calBtn.click();
-    await calResp;
+      await gotoTable(page, wid, table);
+      await settle(page);
 
-    const lastUrl = recordsUrls[recordsUrls.length - 1] || "";
-    expect(lastUrl).toContain("limit=5000");
+      // 先强制切回 grid：若用户偏好/URL 残留使目标模式已是激活态，幂等点击不会触发新请求
+      const gridBtn = page.locator('button[data-mode="grid"]').first();
+      if ((await gridBtn.count()) > 0) {
+        await gridBtn.click();
+        await settle(page);
+      }
+      recordsUrls.length = 0;
 
-    await expect(eventCards(page).first()).toBeVisible({ timeout: 8000 });
+      // 切到目标模式 → 必须出现 limit=5000 的新 records 请求
+      const modeBtn = page.locator(`button[data-mode="${mode}"]`).first();
+      await expect(modeBtn).toBeVisible({ timeout: 5000 });
+      await modeBtn.click();
+      await expect
+        .poll(
+          async () => recordsUrls.some((u) => u.includes("limit=5000")),
+          { timeout: 10000 },
+        )
+        .toBe(true);
+
+      const lastRecordsUrl = recordsUrls[recordsUrls.length - 1] || "";
+      expect(lastRecordsUrl, `${table} 切 ${mode} 应拉全量`).toContain("limit=5000");
+      expect(lastRecordsUrl).toContain("offset=0");
+    }
   });
 });

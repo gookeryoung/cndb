@@ -12,16 +12,13 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIResponse } from "@playwright/test";
+import { getAdminToken } from "../helpers/api";
 
 const ANON = ["setup", "chromium-anon"];
 
-/** 登录获取 token */
+/** 获取 token（复用 storageState，避免逐调用重复登录） */
 async function getToken(request: any): Promise<string> {
-  const resp: APIResponse = await request.post("/api/v1/accounts/auth/login", {
-    data: { login: "admin", password: "admin1234" },
-  });
-  const body = await resp.json();
-  return body.access_token;
+  return getAdminToken(request);
 }
 
 /** 找到记录数 >= 50 的表 */
