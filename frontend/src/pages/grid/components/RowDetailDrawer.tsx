@@ -4,9 +4,9 @@ import React, { useState } from 'react'
 import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Popconfirm, Upload, Image } from 'antd'
 import { SaveOutlined, CommentOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { commentApi, recordApi, fileApi } from '@/api'
-import { useRowAudit, useRowComments, useRowReferences, useUpdateRowOptimistic, useDeleteCommentOptimistic } from '@/api/hooks'
+import { useQuery } from '@tanstack/react-query'
+import { recordApi, fileApi } from '@/api'
+import { useRowAudit, useRowComments, useRowReferences, useUpdateRowOptimistic, useDeleteCommentOptimistic, useCreateCommentOptimistic } from '@/api/hooks'
 import type { RowResponse, Field, AttachmentFile } from '@/api'
 import { extractSelectOptions } from './fieldOps'
 
@@ -22,7 +22,6 @@ interface Props {
 }
 
 export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }: Props) {
-  const queryClient = useQueryClient()
   const [form] = Form.useForm()
 
   // 行特定的审计日志 / 评论 / 反向引用 —— 使用统一的自定义 hooks
@@ -33,14 +32,8 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
   // 行更新 —— 使用乐观更新 hook，立即反映到 cache，失败回滚
   const updateRow = useUpdateRowOptimistic(wid, tid)
 
-  const addComment = useMutation({
-    mutationFn: () => commentApi.create(wid, tid, row!.id, commentText),
-    onSuccess: () => {
-      message.success('已评论')
-      setCommentText('')
-      queryClient.invalidateQueries({ queryKey: ['row-comments', wid, tid, row?.id] })
-    },
-  })
+  // 评论发表 —— 乐观更新，立即前端插入临时评论
+  const addComment = useCreateCommentOptimistic(wid, tid, row?.id)
 
   // 评论删除 —— 乐观更新，立即从列表移除，失败时回滚
   const deleteComment = useDeleteCommentOptimistic(wid, tid, row?.id)
@@ -99,7 +92,16 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
       <Input.TextArea rows={2} placeholder="写点什么..." value={commentText}
         onChange={e => setCommentText(e.target.value)} />
       <div style={{ marginTop: 8, textAlign: 'right' }}>
-        <Button type="primary" onClick={() => addComment.mutate()} loading={addComment.isPending}>发表</Button>
+        <Button type="primary" onClick={() => {
+          const text = commentText.trim()
+          if (!text) return
+          addComment.mutate(text, {
+            onSuccess: () => {
+              setCommentText('')
+            },
+            onError: (err) => message.error(err instanceof Error ? err.message : '发表失败'),
+          })
+        }} loading={addComment.isPending}>发表</Button>
       </div>
       <div style={{ marginTop: 12 }}>
         {comments.length === 0 ? (
