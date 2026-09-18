@@ -54,7 +54,7 @@ cov: ## 运行测试并生成 HTML 覆盖率报告
 	uv run pytest --cov --cov-report=term --cov-fail-under=$(COV_THRESHOLD) --cov-report=html -n $(PYTEST_JOBS)
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); print('Coverage report: htmlcov/index.html')"
 
-e2e: frontend-sync ## 前端 E2E 测试（Playwright；需后端已启动 + 首次先 npx playwright install chromium）
+e2e: frontend-build ## 前端 E2E 测试（Playwright；webServer 自动起隔离后端，首次先 npx playwright install chromium）
 	cd frontend && pnpm e2e
 
 gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败）
