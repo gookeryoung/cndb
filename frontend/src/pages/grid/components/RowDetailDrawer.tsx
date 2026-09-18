@@ -22,8 +22,7 @@ interface Props {
 
 export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }: Props) {
   const queryClient = useQueryClient()
-  const [values, setValues] = useState<Record<string, unknown>>(row || {})
-  const [commentText, setCommentText] = useState('')
+  const [form] = Form.useForm()
 
   // 行特定的审计日志（新增 rowId 参数）
   const { data: audit = [] } = useQuery<AuditLog[]>({
@@ -47,7 +46,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
   })
 
   const updateRow = useMutation({
-    mutationFn: () => recordApi.update(wid, tid, row!.id, { values }),
+    mutationFn: () => recordApi.update(wid, tid, row!.id, { values: form.getFieldsValue() }),
     onSuccess: () => {
       message.success('已保存')
       queryClient.invalidateQueries({ queryKey: ['table-records', `${wid}/${tid}`] })
@@ -74,9 +73,12 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
     },
   })
 
+  const [commentText, setCommentText] = useState('')
+
   React.useEffect(() => {
-    if (row) setValues(row || {})
-  }, [row])
+    if (row) form.setFieldsValue(row)
+    else form.resetFields()
+  }, [row, form])
 
   if (!row) return null
 
@@ -89,15 +91,10 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
     >
       {/* 字段值编辑 */}
       <Title level={5}>字段值</Title>
-      <Form layout="vertical">
+      <Form form={form} layout="vertical">
         {fields.map(f => (
-          <Form.Item key={String(f.id)} label={f.name} style={{ marginBottom: 12 }}>
-            <FieldEditor
-              field={f}
-              value={values?.[f.name]}
-              onChange={(v) => setValues(prev => ({ ...prev, [f.name]: v }))}
-              wid={wid}
-            />
+          <Form.Item key={String(f.id)} label={f.name} name={f.name} style={{ marginBottom: 12 }}>
+            <FieldEditor field={f} wid={wid} />
           </Form.Item>
         ))}
       </Form>
@@ -170,11 +167,14 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
 
 /** 根据字段类型渲染合适的编辑控件. */
 function FieldEditor({
-  field, value, onChange, wid,
+  field,
+  value,
+  onChange = () => {},
+  wid,
 }: {
   field: Field
-  value: unknown
-  onChange: (v: unknown) => void
+  value?: unknown
+  onChange?: (v: unknown) => void
   wid: string
 }) {
   const ft = field.field_type
