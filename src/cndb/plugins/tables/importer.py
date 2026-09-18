@@ -155,18 +155,18 @@ class Importer:
         )
         results = rv.validate_all(rows)
 
+        # analyze 阶段始终规划未知列（让前端总能预览），strategy 仅在 execute 阶段生效
+        _ = unknown_cols_strategy
+
         # ── V2: upsert 匹配 ─────────────────────
         upsert_result: dict[str, Any] | None = None
         if match_keys:
             upsert_result = self._build_upsert_result(results, match_keys)
 
-        # ── V2: 未知列规划 ───────────────────────
-        planned_columns: list[dict[str, Any]] = []
-        if unknown_cols_strategy == "add_text_field":
-            # 先拿默认 DiffReporter.build 算出 skipped_columns
-            default_report = DiffReporter.build(results, self.table.active_fields(), file_columns)
-            skipped = default_report.get("skipped_columns", [])
-            planned_columns = self._plan_unknown_columns(rows, skipped)
+        # ── V2: 未知列规划（始终返回，让前端总能预览到有哪些新字段） ─────
+        default_report = DiffReporter.build(results, self.table.active_fields(), file_columns)
+        skipped = default_report.get("skipped_columns", [])
+        planned_columns = self._plan_unknown_columns(rows, skipped)
 
         # ── Task 2: 列级数据质量画像 ────────────────
         column_profiles, data_quality_summary = profile_columns(rows, file_columns)
@@ -204,6 +204,7 @@ class Importer:
         import_warnings: bool = True,
         match_keys: list[str] | None = None,
         unknown_cols_strategy: str = "drop",
+        dropped_columns: list[str] | None = None,
         cleaning_actions: list[dict[str, Any]] | None = None,
     ) -> ImportExecuteResult:
         """完整流水线：解析 → （可选）清洗 → 校验 → 报告 → upsert → 落库.
@@ -262,8 +263,12 @@ class Importer:
             planned_columns = analysis.planned_columns
 
         # ── V2: 字段自动新增（在 upsert / create 之前）──
-        if planned_columns:
-            self._auto_add_fields(planned_columns)
+        if unknown_cols_strategy == "add_text_field" and planned_columns:
+            # 用户勾选丢弃的那些字段从 planned 里排除
+            _dropped_set = set(dropped_columns or [])
+            effective = [p for p in planned_columns if p["name"] not in _dropped_set]
+            if effective:
+                self._auto_add_fields(effective)
 
         # ── 过滤要落库的行 ────────────────────────
         to_import: list[dict[str, Any]] = []
