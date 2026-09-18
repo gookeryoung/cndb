@@ -92,6 +92,18 @@ def _run_upgrade(cfg: alembic.config.Config) -> None:
     alembic.command.upgrade(cfg, "head")
 
 
+def stamp_head() -> None:
+    """将数据库标记为最新迁移版本（alembic stamp head）.
+
+    供自行 create_all 建表的流程（如 seed）在建表后调用：
+    补写 alembic_version，避免 serve 启动时 ensure_db_migrated
+    误判为"半迁移库"而重放建表迁移报"table already exists"。
+    对已存在 alembic_version 的库幂等（仅更新版本行）。
+    """
+    cfg = _build_config()
+    alembic.command.stamp(cfg, "head")
+
+
 def _run_create_all_and_stamp(cfg: alembic.config.Config) -> None:
     """兜底：用 SQLAlchemy create_all 建表 + alembic stamp head.
 
@@ -123,7 +135,7 @@ def ensure_db_migrated() -> None:
 
         logger.info("检测到全新数据库，执行 create_all + stamp head")
         Base.metadata.create_all(bind=engine)
-        alembic.command.stamp(cfg, "head")
+        stamp_head()
         logger.info("数据库初始化完成（create_all + stamp head）")
         return
 
@@ -140,7 +152,7 @@ def ensure_db_migrated() -> None:
             raise RuntimeError(f"数据库迁移彻底失败: {exc2}") from exc
 
 
-__all__ = ["ensure_db_migrated"]
+__all__ = ["ensure_db_migrated", "stamp_head"]
 
 
 def __getattr__(name: str) -> NoReturn:  # pragma: no cover - 防御性

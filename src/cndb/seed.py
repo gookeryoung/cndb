@@ -468,6 +468,11 @@ def seed(_args: argparse.Namespace) -> None:
 
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
+    # 补写 alembic_version（seed 自行建表绕过了迁移），避免 serve 启动时
+    # ensure_db_migrated 误判为"半迁移库"而重放建表迁移报 table already exists
+    from cndb.core.migrations import stamp_head
+
+    stamp_head()
     db = SessionLocal()
     try:
         # 用户 —— 三员账号（GB/T 22239 等级保护模型）+ 1 个普通用户示例
