@@ -189,15 +189,19 @@ test.describe("行 CRUD", () => {
     // 定位 "张三" 行，进入整行编辑（虚拟滚动行是 div，用 data-row-key 过滤）
     const zhangRow = page.locator("[data-row-key]").filter({ hasText: "张三" }).first();
     await zhangRow.getByTestId("row-edit-btn").click();
-    await expect(zhangRow.getByTestId("row-save-btn")).toBeVisible();
 
-    // 确认 "姓名" 字段回填正确（整行内第一个输入框）
-    const nameInput = zhangRow.locator("input.ant-input").first();
+    // 编辑态重渲染后行内容不再嵌套在 [data-row-key] 容器内，
+    // 且编辑态下仅当前行有保存按钮 —— 用全局 testid 定位
+    const saveBtn = page.getByTestId("row-save-btn");
+    await expect(saveBtn).toBeVisible();
+
+    // 确认 "姓名" 字段回填正确（表格内第一个文本输入框）
+    const nameInput = page.locator(".ant-table").getByRole("textbox").first();
     await expect(nameInput).toHaveValue("张三");
 
     // 提交保存 → 整行编辑退出，行数据仍可见
-    await zhangRow.getByTestId("row-save-btn").click();
-    await expect(zhangRow.getByTestId("row-save-btn")).not.toBeVisible();
+    await saveBtn.click();
+    await expect(saveBtn).not.toBeVisible();
     await expect(page.getByText("张三")).toBeVisible();
   });
 });
