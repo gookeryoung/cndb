@@ -614,26 +614,25 @@ const HAS_CONFIG_TYPES = new Set<string>([
 
 /** 字段类型对应的 config 编辑器 */
 function ConfigEditor({ fieldType, form, tables, isEdit = false }: ConfigEditorProps) {
-  // 监听 config 变化，保证表单 re-render。
-  // 注意：Form.useWatch 走 getFieldsValue()（仅含已注册 Form.Item 的字段），
-  // select 的 options 编辑器没有注册 config.* 表单项，因此 select 字段的 watch
-  // 值永远是 undefined —— 必须回退直接读 form store（getFieldValue），否则
-  // 编辑时 options 永远显示为空（并可能被默认值覆盖）。
+  // 关键：<Form.Item name="config" hidden /> 注册后，Form.useWatch('config', form)
+  // 才能真正订阅 config 变化。此前未注册 Form.Item 导致 useWatch 永远返回 undefined，
+  // ConfigEditor 不会因 form.setFieldValue 触发重渲染，SelectOptionsEditor 收到的 config
+  // prop 长期停留在首帧快照——这是"一键配色有时候进去有有时候没有"的根因。
   const currentConfig = Form.useWatch('config', form) as Record<string, unknown> | undefined
-  const effectiveConfig = currentConfig ?? (form.getFieldValue('config') as Record<string, unknown> | undefined) ?? {}
 
-  // 初始填充：仅新建字段时（编辑时不覆盖既有 config）给默认值。
-  // 注意 Form.useWatch 首帧返回 undefined，若不加 isEdit 守卫会把已存 options 等配置误清空。
+  // 初始化默认 config：仅在新建场景下、且 config 为空时填充默认值。
+  // 编辑场景绝不覆盖已存 config。
   useEffect(() => {
     if (isEdit) return
-    if (!currentConfig || Object.keys(currentConfig).length === 0) {
+    if (!HAS_CONFIG_TYPES.has(fieldType)) return
+    const hasConfig = currentConfig != null && Object.keys(currentConfig).length > 0
+    if (!hasConfig) {
       const defaults = defaultConfigForType(fieldType)
       if (Object.keys(defaults).length > 0) {
         form.setFieldValue('config', defaults)
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fieldType, isEdit])
+  }, [fieldType, isEdit, currentConfig, form])
 
   // 无配置项的字段类型直接返回 null，不显示空壳
   if (!HAS_CONFIG_TYPES.has(fieldType)) return null
@@ -643,6 +642,10 @@ function ConfigEditor({ fieldType, form, tables, isEdit = false }: ConfigEditorP
 
   return (
     <div style={{ marginTop: 8, borderTop: '1px dashed #d9d9d9', paddingTop: 12 }}>
+      {/* 注册 config 根字段，让 useWatch / getFieldsValue 能追踪它 */}
+      <Form.Item name="config" hidden>
+        <Input />
+      </Form.Item>
       <div style={{ fontWeight: 500, marginBottom: 12 }}>字段配置</div>
 
       {/* ── 数字类（number / decimal / percentage） ── */}
@@ -691,7 +694,11 @@ function ConfigEditor({ fieldType, form, tables, isEdit = false }: ConfigEditorP
       )}
 
       {/* ── 选择类（select / multi_select） ── */}
-      {TYPE_CATEGORIES.select.includes(fieldType) && <SelectOptionsEditor form={form} config={effectiveConfig} />}
+      {/* key={fieldType} 确保字段类型切换时 SelectOptionsEditor 强制重挂载，
+          useState 从 form store 重新初始化，避免旧类型 options 残留。 */}
+      {TYPE_CATEGORIES.select.includes(fieldType) && (
+        <SelectOptionsEditor key={fieldType} form={form} />
+      )}
 
       {/* ── 关联 link ── */}
       {TYPE_CATEGORIES.link.includes(fieldType) && (
@@ -779,16 +786,13 @@ function isPresetColor(color: string): boolean {
   return PRESET_NAMES.has(color)
 }
 
-function SelectOptionsEditor({ form, config }: { form: ReturnType<typeof Form.useForm>[0]; config: Record<string, unknown> }) {
-  // 从 config.options 初始化（兼容旧 list[str] 格式）
-  const initialOptions = useMemo(() => normalizeOptionsFromConfig(config.options), [config.options])
-  const [options, setOptions] = useState(initialOptions)
-
-  // 当外部 config.options 变化（比如切换字段类型）时同步
-  useEffect(() => {
-    setOptions(normalizeOptionsFromConfig(config.options))
-     
-  }, [config.options])
+function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0] }) {
+  // options 的唯一真相源：首次挂载时从 form store 读一次，之后完全由本地 state 驱动。
+  // 不再接受外部 config prop，避免"父组件重渲染 → config.options 新引用 → useEffect
+  // 覆盖用户正在编辑的 state"的竞态。key 变化（fieldType 切换 / 打开不同字段）时
+  // React 会强制重挂载本组件，useState 重新初始化。
+  const watchedOptions = Form.useWatch(['config', 'options'], form)
+  const [options, setOptions] = useState(() => normalizeOptionsFromConfig(watchedOptions))
 
   /** 把当前编辑中的 options 同步到 form 的 config.options */
   function syncToForm(next: typeof options) {
