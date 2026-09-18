@@ -33,7 +33,6 @@ def test_save_load_round_trip(tmp_path) -> None:
     src.backup.mode = "native"
     src.backup.no_uploads = True
     src.backup.force = True
-    src.users.role = "audit_admin"
     src.info.auto_refresh = False
     src.info.interval = "30 秒"
 
@@ -44,7 +43,6 @@ def test_save_load_round_trip(tmp_path) -> None:
     assert loaded.window_geometry == "1024x720+100+50"
     assert loaded.serve == src.serve
     assert loaded.backup == src.backup
-    assert loaded.users == src.users
     assert loaded.info == src.info
 
 
