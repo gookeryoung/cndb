@@ -6,7 +6,7 @@ import { SaveOutlined, CommentOutlined, HistoryOutlined, LinkOutlined, DeleteOut
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { commentApi, recordApi, fileApi } from '@/api'
-import { useRowAudit, useRowComments, useRowReferences } from '@/api/hooks'
+import { useRowAudit, useRowComments, useRowReferences, useUpdateRowOptimistic, useDeleteCommentOptimistic } from '@/api/hooks'
 import type { RowResponse, Field, AttachmentFile } from '@/api'
 import { extractSelectOptions } from './fieldOps'
 
@@ -30,14 +30,8 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
   const { data: comments = [] } = useRowComments(wid, tid, row?.id, open && !!row)
   const { data: references = [] } = useRowReferences(wid, tid, row?.id, open && !!row)
 
-  const updateRow = useMutation({
-    mutationFn: () => recordApi.update(wid, tid, row!.id, { values: form.getFieldsValue() }),
-    onSuccess: () => {
-      message.success('已保存')
-      queryClient.invalidateQueries({ queryKey: ['table-records', `${wid}/${tid}`] })
-      queryClient.invalidateQueries({ queryKey: ['row-audit', wid, tid, row?.id] })
-    },
-  })
+  // 行更新 —— 使用乐观更新 hook，立即反映到 cache，失败回滚
+  const updateRow = useUpdateRowOptimistic(wid, tid)
 
   const addComment = useMutation({
     mutationFn: () => commentApi.create(wid, tid, row!.id, commentText),
@@ -48,15 +42,8 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
     },
   })
 
-  const deleteComment = useMutation({
-    mutationFn: (cid: number | string) => commentApi.remove(wid, tid, cid),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['row-comments', wid, tid, row?.id] })
-    },
-    onError: (err) => {
-      message.error(err instanceof Error ? err.message : '删除失败')
-    },
-  })
+  // 评论删除 —— 乐观更新，立即从列表移除，失败时回滚
+  const deleteComment = useDeleteCommentOptimistic(wid, tid, row?.id)
 
   const [commentText, setCommentText] = useState('')
 
@@ -71,7 +58,13 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
     <Drawer
       title={`行详情 #${row.id}`} width={600} open={open} onClose={onClose}
       extra={
-        <Button type="primary" icon={<SaveOutlined />} onClick={() => updateRow.mutate()} loading={updateRow.isPending}>保存</Button>
+        <Button type="primary" icon={<SaveOutlined />} onClick={() => {
+          if (!row) return
+          updateRow.mutate(
+            { rowId: row.id, values: form.getFieldsValue() },
+            { onSuccess: () => message.success('已保存') },
+          )
+        }} loading={updateRow.isPending}>保存</Button>
       }
     >
       {/* 字段值编辑 */}
@@ -117,7 +110,9 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
               <strong>{c.author_name || '匿名'}</strong>
               <span style={{ color: '#94a3b8', fontSize: 12 }}>{c.created_at || ''}</span>
               <Popconfirm title="删除该评论？" okText="删除" cancelText="取消"
-                onConfirm={() => deleteComment.mutate(c.id)}
+                onConfirm={() => deleteComment.mutate(c.id, {
+                  onError: (err) => message.error(err instanceof Error ? err.message : '删除失败'),
+                })}
                 okButtonProps={{ danger: true }}>
                 <Button type="text" size="small" danger icon={<DeleteOutlined />}
                   loading={deleteComment.isPending} />
