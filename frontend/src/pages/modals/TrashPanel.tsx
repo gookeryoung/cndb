@@ -30,14 +30,17 @@ export default function TrashPanel({ embedded }: Props) {
   const restoreTable = useMutation({
     mutationFn: (tid: string | number) => trashApi.restoreTable(wid!, tid),
     onSuccess: () => { message.success('已恢复表'); queryClient.invalidateQueries({ queryKey: ['trash', wid] }) },
+    onError: (err) => message.error(err instanceof Error ? err.message : '恢复表失败'),
   })
   const restoreField = useMutation({
     mutationFn: (fid: string | number) => trashApi.restoreField(wid!, fid),
     onSuccess: () => { message.success('已恢复字段'); queryClient.invalidateQueries({ queryKey: ['trash', wid] }) },
+    onError: (err) => message.error(err instanceof Error ? err.message : '恢复字段失败'),
   })
   const restoreRows = useMutation({
     mutationFn: (rowIds: Array<string | number>) => trashApi.restoreRows(wid!, selectedTid!, rowIds),
     onSuccess: () => { message.success('已恢复行'); queryClient.invalidateQueries({ queryKey: ['trash-rows', wid, selectedTid] }); queryClient.invalidateQueries({ queryKey: ['trash', wid] }) },
+    onError: (err) => message.error(err instanceof Error ? err.message : '恢复行失败'),
   })
   const [purgeDays, setPurgeDays] = useState<number>(30)
   const purgeRows = useMutation({
