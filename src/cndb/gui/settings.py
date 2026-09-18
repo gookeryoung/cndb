@@ -47,13 +47,6 @@ class BackupConfig:
 
 
 @dataclass
-class UsersConfig:
-    """「用户管理」Tab 配置."""
-
-    role: str = ""  # 列表页角色筛选值
-
-
-@dataclass
 class InfoConfig:
     """「系统信息」Tab 配置."""
 
@@ -68,7 +61,6 @@ class GuiSettings:
     window_geometry: str = ""  # Tk geometry("WxH+X+Y")，空表示未保存过
     serve: ServeConfig = field(default_factory=ServeConfig)
     backup: BackupConfig = field(default_factory=BackupConfig)
-    users: UsersConfig = field(default_factory=UsersConfig)
     info: InfoConfig = field(default_factory=InfoConfig)
 
     # ── 序列化 ──
@@ -90,9 +82,6 @@ class GuiSettings:
                 "no_uploads": self.backup.no_uploads,
                 "force": self.backup.force,
             },
-            "users": {
-                "role": self.users.role,
-            },
             "info": {
                 "auto_refresh": self.info.auto_refresh,
                 "interval": self.info.interval,
@@ -106,7 +95,6 @@ class GuiSettings:
         st.window_geometry = _value_str(data.get("window_geometry"))
         _apply_section(st.serve, data.get("serve"))
         _apply_section(st.backup, data.get("backup"))
-        _apply_section(st.users, data.get("users"))
         _apply_section(st.info, data.get("info"))
         return st
 

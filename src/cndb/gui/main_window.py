@@ -1,10 +1,11 @@
 """cndbw GUI 主窗口（Tkinter + ttk）.
 
-提供 CLI 全部功能的图形化入口：
+提供 CLI 主要功能的图形化入口：
 - 启动服务   serve（host/port/workers）
 - 备份恢复   backup + restore
-- 用户管理   users create/delete/list/import
 - 系统信息   info
+
+用户管理（users create/delete/list/import）仅保留 CLI 方式，不在 GUI 提供。
 
 设计原则：
 - UI 只负责参数采集 + 日志展示，实际逻辑调用 cndb 已有模块（backup/restore/cli_users），
@@ -15,7 +16,6 @@
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import datetime as dt
 import re
@@ -180,12 +180,10 @@ class CndbMainWindow:
 
         self.tab_serve = ServeTab(self.notebook, self)
         self.tab_backup = BackupTab(self.notebook, self)
-        self.tab_users = UsersTab(self.notebook, self)
         self.tab_info = InfoTab(self.notebook, self)
 
         self.notebook.add(self.tab_serve.frame, text="启动服务")
         self.notebook.add(self.tab_backup.frame, text="备份恢复")
-        self.notebook.add(self.tab_users.frame, text="用户管理")
         self.notebook.add(self.tab_info.frame, text="系统信息")
 
     def _build_statusbar(self) -> None:
@@ -211,7 +209,7 @@ class CndbMainWindow:
         """把主窗口几何与各 Tab 界面设置收集进 settings 并写入配置文件."""
         with contextlib.suppress(Exception):
             self.settings.window_geometry = self.root.geometry()
-        for tab in (self.tab_serve, self.tab_backup, self.tab_users, self.tab_info):
+        for tab in (self.tab_serve, self.tab_backup, self.tab_info):
             tab.persist(self.settings)
         save_settings(self.settings)
 
@@ -684,313 +682,6 @@ class BackupTab(_BaseTab):
                 with redirect_output(self.app.log_queue):
                     print(f"[error] {exc}", file=sys.stderr)
                 self.app.root.after(0, self._finish_op, self.dry_run_btn, False, "预演失败")
-
-        run_in_thread(_run)
-
-
-# ═══════════════════════════════════════════════════════════════
-# Tab: 用户管理
-# ═══════════════════════════════════════════════════════════════
-
-
-class UsersTab(_BaseTab):
-    @override
-    def _build_layout(self) -> None:
-        # 子 Tab：create / list / delete / import
-        sub = ttk.Notebook(self.frame)
-        sub.pack(fill=tk.BOTH, expand=True)
-
-        sub_create = ttk.Frame(sub, padding=8)
-        sub_list = ttk.Frame(sub, padding=8)
-        sub_delete = ttk.Frame(sub, padding=8)
-        sub_import = ttk.Frame(sub, padding=8)
-        sub.add(sub_create, text="创建")
-        sub.add(sub_list, text="列表")
-        sub.add(sub_delete, text="删除")
-        sub.add(sub_import, text="导入")
-
-        self._sub_notebook = sub
-        self._list_busy = False  # 防止并发重复查询
-        # 切到「列表」子 Tab 时自动加载（同时保留手动「查询」按钮）
-        sub.bind("<<NotebookTabChanged>>", self._on_sub_tab_changed)
-
-        self._build_create(sub_create)
-        self._build_list(sub_list)
-        self._build_delete(sub_delete)
-        self._build_import(sub_import)
-
-        # 全局日志
-        log_frame = ttk.LabelFrame(self.frame, text="操作日志", padding=(4, 4))
-        log_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
-        self.log_text = self._build_log_text(log_frame)
-
-    # ── create ──
-    def _build_create(self, parent: ttk.Frame) -> None:
-        grid = ttk.Frame(parent)
-        grid.pack(fill=tk.X)
-
-        fields: list[tuple[str, str]] = [
-            ("用户名 *", "username"),
-            ("密码（留空自动生成）", "password"),
-            ("邮箱", "email"),
-            ("昵称", "nickname"),
-        ]
-        self.create_vars: dict[str, tk.StringVar] = {}
-        for i, (label, key) in enumerate(fields):
-            ttk.Label(grid, text=label).grid(row=i, column=0, sticky=tk.W, padx=4, pady=4)
-            var = tk.StringVar()
-            self.create_vars[key] = var
-            ttk.Entry(grid, textvariable=var, width=32).grid(row=i, column=1, sticky=tk.W, padx=4, pady=4)
-
-        ttk.Label(grid, text="角色").grid(row=len(fields), column=0, sticky=tk.W, padx=4, pady=4)
-        self.role_var = tk.StringVar(value="user")
-        ttk.Combobox(
-            grid,
-            textvariable=self.role_var,
-            values=["system_admin", "security_admin", "audit_admin", "user"],
-            state="readonly",
-            width=16,
-        ).grid(row=len(fields), column=1, sticky=tk.W, padx=4, pady=4)
-
-        self.su_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(grid, text="同时设为 superuser", variable=self.su_var).grid(
-            row=len(fields) + 1, column=0, columnspan=2, sticky=tk.W, padx=4, pady=4
-        )
-
-        ttk.Button(grid, text="创建用户", command=self._do_create).grid(
-            row=len(fields) + 2, column=1, sticky=tk.E, padx=4, pady=(10, 0)
-        )
-
-    def _do_create(self) -> None:
-        u = self.create_vars["username"].get().strip()
-        if not u:
-            messagebox.showwarning("缺少参数", "用户名必填")
-            return
-
-        args = argparse.Namespace(
-            username=u,
-            password=self.create_vars["password"].get().strip() or None,
-            email=self.create_vars["email"].get().strip() or None,
-            nickname=self.create_vars["nickname"].get().strip() or None,
-            role=self.role_var.get(),
-            is_superuser=self.su_var.get(),
-        )
-
-        def _run() -> None:
-            from cndb.cli_users import cmd_create, print_create_result
-
-            try:
-                result = cmd_create(args)
-                print_create_result(result)
-                self.app.root.after(0, self.request_auto_query)
-            except SystemExit as exc:
-                print(f"[error] {exc}", file=sys.stderr)
-
-        run_in_thread(_run)
-
-    # ── list ──
-    def _build_list(self, parent: ttk.Frame) -> None:
-        filter_row = ttk.Frame(parent)
-        filter_row.pack(fill=tk.X)
-
-        ttk.Label(filter_row, text="角色筛选:").pack(side=tk.LEFT)
-        self.list_role_var = tk.StringVar(value=self.app.settings.users.role)
-        self.list_role_opts = ["", "system_admin", "security_admin", "audit_admin", "user"]
-        ttk.Combobox(
-            filter_row,
-            textvariable=self.list_role_var,
-            values=self.list_role_opts,
-            state="readonly",
-            width=16,
-        ).pack(side=tk.LEFT, padx=4)
-
-        self.list_active_var = tk.BooleanVar(value=False)
-        self.list_inactive_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(filter_row, text="仅激活", variable=self.list_active_var).pack(side=tk.LEFT, padx=8)
-        ttk.Checkbutton(filter_row, text="仅停用", variable=self.list_inactive_var).pack(side=tk.LEFT, padx=4)
-
-        ttk.Button(filter_row, text="查询", command=self._do_list).pack(side=tk.RIGHT)
-
-        # 筛选条件变化即自动刷新（手动「查询」按钮仍然保留）
-        for var in (self.list_role_var, self.list_active_var, self.list_inactive_var):
-            var.trace_add("write", self._on_filter_changed)
-
-        # 结果表
-        cols = ("id", "username", "role", "nickname", "active", "superuser", "email")
-        self.list_tree = ttk.Treeview(parent, columns=cols, show="headings", height=12)
-        widths = {"id": 60, "username": 140, "role": 130, "nickname": 160, "active": 70, "superuser": 70, "email": 180}
-        for c in cols:
-            self.list_tree.heading(c, text=c)
-            self.list_tree.column(c, width=widths[c], anchor=tk.W)
-        self.list_tree.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
-
-    # ── 自动查询辅助 ──
-    def _on_filter_changed(self, *_args: str) -> None:
-        """筛选条件（角色/激活/停用）变化时自动刷新列表."""
-        self.request_auto_query()
-
-    def _on_sub_tab_changed(self, _event: object | None = None) -> None:
-        """切到「列表」子 Tab（index=1）时自动执行一次查询."""
-        try:
-            selected = self._sub_notebook.select()
-            current = self._sub_notebook.index(selected)
-        except Exception:
-            return
-        if current == 1:
-            self.request_auto_query()
-
-    def request_auto_query(self) -> None:
-        """并发安全的自动查询入口（进入列表 Tab / 筛选变化 / 写操作后触发）."""
-        if not self._list_busy:
-            self._do_list()
-
-    def _do_list(self) -> None:
-        if self._list_busy:
-            return
-        self._list_busy = True
-        args = argparse.Namespace(
-            role=self.list_role_var.get() or None,
-            active=self.list_active_var.get(),
-            inactive=self.list_inactive_var.get(),
-        )
-
-        def _run() -> None:
-            from cndb.cli_users import cmd_list
-
-            try:
-                users = cmd_list(args)
-            except SystemExit as exc:
-                print(f"[error] {exc}", file=sys.stderr)
-                return
-            finally:
-                self._list_busy = False
-
-            def _fill() -> None:
-                for item in self.list_tree.get_children():
-                    self.list_tree.delete(item)
-                for u in users:
-                    self.list_tree.insert(
-                        "",
-                        tk.END,
-                        values=(
-                            u.id,
-                            u.username,
-                            u.role,
-                            u.nickname or "",
-                            "yes" if u.is_active else "no",
-                            "Y" if u.is_superuser else "",
-                            u.email or "",
-                        ),
-                    )
-
-            self.app.root.after(0, _fill)
-
-        run_in_thread(_run)
-
-    @override
-    def persist(self, settings: GuiSettings) -> None:
-        role = self.list_role_var.get()
-        settings.users.role = role if role in self.list_role_opts else ""
-
-    # ── delete ──
-    def _build_delete(self, parent: ttk.Frame) -> None:
-        grid = ttk.Frame(parent)
-        grid.pack(fill=tk.X)
-
-        ttk.Label(grid, text="用户名或 ID").grid(row=0, column=0, sticky=tk.W, padx=4, pady=4)
-        self.del_target_var = tk.StringVar()
-        ttk.Entry(grid, textvariable=self.del_target_var, width=24).grid(row=0, column=1, sticky=tk.W, padx=4, pady=4)
-
-        self.del_cascade_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(grid, text="级联删除 OWNER 工作区", variable=self.del_cascade_var).grid(
-            row=1, column=0, columnspan=2, sticky=tk.W, padx=4
-        )
-
-        btn_row = ttk.Frame(grid)
-        btn_row.grid(row=2, column=0, columnspan=2, pady=(10, 0), sticky=tk.E)
-        ttk.Button(btn_row, text="安全检查", command=self._do_delete_check).pack(side=tk.LEFT, padx=(0, 6))
-        ttk.Button(btn_row, text="删除", command=self._do_delete).pack(side=tk.LEFT)
-
-    def _do_delete_check(self) -> None:
-        target = self.del_target_var.get().strip()
-        if not target:
-            return
-        args = argparse.Namespace(target=target)
-
-        def _run() -> None:
-            from cndb.cli_users import cmd_delete_check, print_delete_check
-
-            check = cmd_delete_check(args)
-            print_delete_check(check)
-
-        run_in_thread(_run)
-
-    def _do_delete(self) -> None:
-        target = self.del_target_var.get().strip()
-        if not target:
-            return
-        if not messagebox.askyesno("确认", f"确定删除用户 '{target}'？此操作不可逆。"):
-            return
-        args = argparse.Namespace(
-            target=target,
-            cascade=self.del_cascade_var.get(),
-            yes=True,
-        )
-
-        def _run() -> None:
-            from cndb.cli_users import cmd_delete, print_delete_result
-
-            try:
-                result = cmd_delete(args)
-                print_delete_result(result)
-                self.app.root.after(0, self.request_auto_query)
-            except SystemExit as exc:
-                print(f"[error] {exc}", file=sys.stderr)
-
-        run_in_thread(_run)
-
-    # ── import ──
-    def _build_import(self, parent: ttk.Frame) -> None:
-        row = ttk.Frame(parent)
-        row.pack(fill=tk.X)
-
-        ttk.Label(row, text="源文件 (.csv / .xlsx):").pack(side=tk.LEFT)
-        self.import_file_var = tk.StringVar()
-        ttk.Entry(row, textvariable=self.import_file_var, width=48).pack(side=tk.LEFT, padx=4)
-        ttk.Button(row, text="浏览", command=self._pick_import_file).pack(side=tk.LEFT)
-
-        self.import_dry_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(parent, text="预演模式（只校验不写入，推荐先跑）", variable=self.import_dry_var).pack(
-            anchor=tk.W, pady=4
-        )
-        ttk.Button(parent, text="执行导入", command=self._do_import).pack(anchor=tk.E)
-
-    def _pick_import_file(self) -> None:
-        path = filedialog.askopenfilename(
-            title="选择用户数据文件",
-            filetypes=[("表格", "*.csv *.xlsx *.xls"), ("全部", "*.*")],
-        )
-        if path:
-            self.import_file_var.set(path)
-
-    def _do_import(self) -> None:
-        fp = self.import_file_var.get().strip()
-        if not fp:
-            messagebox.showwarning("缺少参数", "请选择源文件")
-            return
-        args = argparse.Namespace(file=fp, dry_run=self.import_dry_var.get())
-
-        def _run() -> None:
-            from cndb.cli_users import cmd_import, print_import_report
-
-            try:
-                report = cmd_import(args)
-                print_import_report(report, Path(fp), dry_run=args.dry_run)
-                self.app.root.after(0, self.request_auto_query)
-            except SystemExit as exc:
-                print(f"[error] {exc}", file=sys.stderr)
-            except Exception as exc:
-                print(f"[error] {exc}", file=sys.stderr)
 
         run_in_thread(_run)
 
