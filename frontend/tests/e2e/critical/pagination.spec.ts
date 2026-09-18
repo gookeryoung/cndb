@@ -144,8 +144,22 @@ test.describe("Grid 分页", () => {
     const reqBeforeResize = apiRequests.length;
     await opt100.click();
 
-    // 等待新数据加载
-    await page.waitForTimeout(1000);
+    // 等待新数据加载（确定性：等到 limit=100 请求出现）
+    await expect
+      .poll(
+        () => {
+          const resizeRequests = apiRequests.slice(reqBeforeResize);
+          return resizeRequests.some((r) => {
+            try {
+              return new URL(r).searchParams.get("limit") === "100";
+            } catch {
+              return r.includes("limit=100");
+            }
+          });
+        },
+        { timeout: 10000 },
+      )
+      .toBe(true);
 
     // 验证请求带 limit=100
     const resizeRequests = apiRequests.slice(reqBeforeResize);

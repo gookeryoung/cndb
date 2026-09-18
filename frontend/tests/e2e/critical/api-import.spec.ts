@@ -12,6 +12,7 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { Page } from "@playwright/test";
+import { settle } from "../fixtures/settle";
 
 const ANON = ["setup", "chromium-anon"];
 const WID = 1; // seed 后的"某企业销售管理"工作区
@@ -86,7 +87,7 @@ function mockAnalyzeError(page: Page, status = 400, detail = "禁止访问保留
 async function openCreateDialog(page: Page) {
   await page.goto(`/w/${WID}/tables`);
   await page.waitForURL(/\/w\/\d+\/tables/);
-  await page.waitForTimeout(300);
+  await settle(page);
   // 点击 "API 建表" 按钮
   await page.getByTestId("api-import-entry").click();
   // Dialog 打开 — 等 URL 输入框出现
@@ -101,7 +102,7 @@ async function openAppendDialog(page: Page) {
   const firstRow = page.locator(".ant-table-tbody tr.ant-table-row").first();
   await firstRow.click();
   await page.waitForURL(/\/tables\/\d+/);
-  await page.waitForTimeout(500);
+  await settle(page);
 
   // 顶部 "导入/导出" 按钮
   await page.getByRole("button", { name: /导入\/导出/ }).click();
@@ -311,7 +312,6 @@ test.describe("深色模式下 API 抓取对话框视觉回归", () => {
       await page.reload();
       await page.waitForURL(/\/w\/\d+\/tables/);
       await expect(body).toHaveClass(/theme-github-dark/);
-      await page.waitForTimeout(500);
     }
   }
 
@@ -409,7 +409,7 @@ test.describe("深色模式下 API 抓取对话框视觉回归", () => {
     const firstRow = page.locator(".ant-table-tbody tr.ant-table-row").first();
     await firstRow.click();
     await page.waitForURL(/\/tables\/\d+/);
-    await page.waitForTimeout(500);
+    await settle(page);
 
     // 打开导入导出 → 切 API tab
     await page.getByRole("button", { name: /导入\/导出/ }).click();

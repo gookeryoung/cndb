@@ -8,9 +8,20 @@ const AUTH_STATE = path.resolve(_configDir, ".auth/state.json");
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
-  retries: 0,
+  retries: process.env.CI ? 2 : 0,
   workers: 8,
-  reporter: [["list"]],
+  reporter: [
+    ["list"],
+    ["./tests/e2e/reporters/slow-test.ts"],
+  ],
+
+  // 一键起后端：seed 演示数据 + 启动 :8000。本地已有后端时复用，CI 自动拉起。
+  webServer: {
+    command: "bash scripts/e2e-server.sh",
+    url: "http://127.0.0.1:8000/",
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+  },
 
   use: {
     baseURL: "http://127.0.0.1:8000",

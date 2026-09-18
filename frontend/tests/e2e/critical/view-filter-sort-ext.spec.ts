@@ -18,6 +18,7 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIResponse } from "@playwright/test";
+import { settle } from "../fixtures/settle";
 
 const ANON = ["setup", "chromium-anon"];
 const WID = 1;
@@ -50,28 +51,28 @@ async function getTableId(request: any, tableName: string): Promise<number> {
 async function gotoTableById(page: any, tid: number) {
     await page.goto(`/w/${WID}/tables/${tid}`);
     await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible();
-    await page.waitForTimeout(600);
+    await settle(page);
 }
 
 async function waitAutoSave(page: any) {
-    await page.waitForTimeout(1500);
+    await settle(page, 1500);
 }
 
 // ── ViewConfigDialog 工具 ───────────────────────────────────
 
 async function openViewConfig(page: any) {
     await page.locator('.ant-btn:has(.anticon-filter)').first().click();
-    await page.waitForTimeout(300);
+    await settle(page);
 }
 
 async function switchToFilterTab(page: any) {
     await page.locator(".ant-modal .ant-tabs-tab", { hasText: /筛选/ }).click();
-    await page.waitForTimeout(100);
+    await settle(page);
 }
 
 async function switchToSortTab(page: any) {
     await page.locator(".ant-modal .ant-tabs-tab", { hasText: /排序/ }).click();
-    await page.waitForTimeout(100);
+    await settle(page);
 }
 
 function activeTabSelects(page: any) {
@@ -88,7 +89,7 @@ async function clearFilterRules(page: any) {
     const count = await closeIcons.count();
     for (let i = count - 1; i >= 0; i--) {
         await closeIcons.nth(i).click({ force: true });
-        await page.waitForTimeout(100);
+        await settle(page);
     }
 }
 
@@ -99,7 +100,7 @@ async function clearSortRules(page: any) {
     const count = await closeIcons.count();
     for (let i = count - 1; i >= 0; i--) {
         await closeIcons.nth(i).click({ force: true });
-        await page.waitForTimeout(100);
+        await settle(page);
     }
 }
 
@@ -108,7 +109,7 @@ async function clearSortRules(page: any) {
 async function openColumnFilter(page: any, columnName: string) {
     const th = page.locator("th.ant-table-cell", { hasText: new RegExp(columnName) }).first();
     await th.locator('.ant-table-filter-trigger').click();
-    await page.waitForTimeout(200);
+    await settle(page);
 }
 
 async function applyColumnFilter(page: any, opText: string, value?: string) {
@@ -124,7 +125,7 @@ async function applyColumnFilter(page: any, opText: string, value?: string) {
         await input.fill(value);
     }
     await page.getByRole("button", { name: /确\s*定/ }).click();
-    await page.waitForTimeout(400);
+    await settle(page);
 }
 
 async function clickColumnSorter(page: any, columnName: string) {
@@ -136,7 +137,7 @@ async function clickColumnSorter(page: any, columnName: string) {
     } else {
         await th.click();
     }
-    await page.waitForTimeout(400);
+    await settle(page);
 }
 
 /** 找到指定列的 td index（动态计算，避免 antd 左侧 checkbox 列偏移） */
@@ -179,7 +180,7 @@ test.describe("表格视图 — 全局搜索与电商销售表扩展", () => {
         const countBefore = await rowsBefore.count();
 
         await searchInput.fill("支付宝");
-        await page.waitForTimeout(800);
+        await settle(page);
 
         const rowsAfter = page.locator(".ant-table-tbody tr.ant-table-row");
         const countAfter = await rowsAfter.count();
@@ -191,7 +192,7 @@ test.describe("表格视图 — 全局搜索与电商销售表扩展", () => {
         const page2Btn = page.locator(".ant-pagination-item", { hasText: "2" });
         await expect(page2Btn).toBeVisible({ timeout: 5000 });
         await page2Btn.click();
-        await page.waitForTimeout(600);
+        await settle(page);
 
         const rows = page.locator(".ant-table-tbody tr.ant-table-row");
         await expect(rows.first()).toBeVisible();
@@ -240,11 +241,10 @@ test.describe("表格视图 — AND/OR 逻辑与多字段排序（员工表）",
             await orBtn.click({ force: true });
         }
 
-        await page.waitForTimeout(200);
+        await settle(page);
 
         // 保存关闭
         await page.getByRole("button", { name: /保\s*存/ }).click({ force: true });
-        await page.waitForTimeout(400);
         await waitAutoSave(page);
 
         // 数据仍可见
@@ -266,7 +266,7 @@ test.describe("表格视图 — AND/OR 逻辑与多字段排序（员工表）",
 
         // ESC 关闭
         await page.keyboard.press("Escape");
-        await page.waitForTimeout(300);
+        await settle(page);
 
         await expect(page.locator(".ant-table-tbody tr.ant-table-row").first()).toBeVisible();
     });
@@ -280,7 +280,7 @@ test.describe("表格视图 — AND/OR 逻辑与多字段排序（员工表）",
         const addBtn = page.getByRole("button", { name: /添加排序/ }).first();
         await expect(addBtn).toBeVisible({ timeout: 3000 });
         await addBtn.click({ force: true });
-        await page.waitForTimeout(200);
+        await settle(page);
 
         // active tabpanel 内应有 select
         const sortSelect = activeTabSelects(page).first();
@@ -292,7 +292,7 @@ test.describe("表格视图 — AND/OR 逻辑与多字段排序（员工表）",
 
         // 关闭 Dialog（用 × 或 ESC，避免保存影响全局状态）
         await page.keyboard.press("Escape");
-        await page.waitForTimeout(300);
+        await settle(page);
 
         // 数据仍可见
         await expect(page.locator(".ant-table-tbody tr.ant-table-row").first()).toBeVisible();
@@ -346,7 +346,7 @@ test.describe("表格视图 — 电商销售表筛选操作符扩展", () => {
             // 用 force click 试试
             await confirmBtn.click({ force: true });
         }
-        await page.waitForTimeout(400);
+        await settle(page);
 
         const rows = page.locator(".ant-table-tbody tr.ant-table-row");
         const count = await rows.count();
@@ -364,7 +364,7 @@ test.describe("表格视图 — 电商销售表筛选操作符扩展", () => {
         expect(countAfterFirst).toBeGreaterThan(0);
 
         // 等待 dropdown 完全关闭后再打开新的
-        await page.waitForTimeout(300);
+        await settle(page);
 
         // 重新打开商品类别筛选
         await openColumnFilter(page, "商品类别");
@@ -385,7 +385,7 @@ test.describe("表格视图 — 电商销售表筛选操作符扩展", () => {
         } else {
             await confirmBtn.click({ force: true });
         }
-        await page.waitForTimeout(400);
+        await settle(page);
 
         const rowsAfterSecond = page.locator(".ant-table-tbody tr.ant-table-row");
         const countAfterSecond = await rowsAfterSecond.count();

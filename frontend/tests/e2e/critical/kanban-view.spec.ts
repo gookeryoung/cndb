@@ -30,6 +30,7 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIRequestContext, Page } from "@playwright/test";
+import { settle } from "../fixtures/settle";
 
 const ANON = ["setup", "chromium-anon"];
 
@@ -98,10 +99,10 @@ async function getKanbanViewId(
 async function gotoTable(page: Page, wid: number, tableName: string) {
   await page.goto(`/w/${wid}/tables`);
   await page.waitForURL(/\/w\/\d+\/tables/);
-  await page.waitForTimeout(400);
-  await page.getByRole("menuitem", { name: new RegExp(tableName) }).click();
+  const menuItem = page.getByRole("menuitem", { name: new RegExp(tableName) });
+  await expect(menuItem).toBeVisible({ timeout: 5000 });
+  await menuItem.click();
   await page.waitForURL(/\/tables\/\d+/);
-  await page.waitForTimeout(600);
 }
 
 /** 激活 URL 中的指定视图并等待看板渲染 */
@@ -109,8 +110,6 @@ async function activateView(page: Page, viewId: number) {
   const url = new URL(page.url());
   url.searchParams.set("view", String(viewId));
   await page.goto(url.toString());
-  // 看板渲染需要 row + field 两次 fetch
-  await page.waitForTimeout(1200);
 }
 
 /** 点 Ant Segmented 里的 "看板" 切换视图类型
@@ -121,7 +120,6 @@ async function switchToKanbanMode(page: Page) {
     .first();
   await expect(kanbanLabel).toBeVisible({ timeout: 5000 });
   await kanbanLabel.click();
-  await page.waitForTimeout(1000);
 }
 
 /** 断言页面无 [object Object]（核心回归断言） */
@@ -544,8 +542,6 @@ test.describe("看板视图 — 刷新持久化与视图选择器", () => {
     const url = new URL(page.url());
     url.searchParams.set("view", String(vid));
     await page.goto(url.toString());
-    await page.waitForTimeout(1200);
-
     await assertNoObjectObject(page);
     await assertKanbanRendered(page, 3);
   });

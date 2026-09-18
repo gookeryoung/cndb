@@ -427,8 +427,8 @@ test.describe("多表引用 + 编辑器增强（只读）", () => {
     const previewTab = rightPanel.getByRole("tab", { name: /实时预览/ });
     await previewTab.click();
 
-    // 预览面板渲染成功（无 error alert）
-    await page.waitForTimeout(500);
+    // 预览渲染成功（Markdown h1 出现，无 error alert）
+    await expect(rightPanel.getByRole("heading", { name: /测试报告/ })).toBeVisible({ timeout: 5000 });
     const errorCount = await rightPanel.locator(".ant-alert").filter({ hasText: /渲染错误/ }).count();
     expect(errorCount).toBe(0);
 

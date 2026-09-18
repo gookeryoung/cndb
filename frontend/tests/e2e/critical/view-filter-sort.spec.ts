@@ -13,6 +13,7 @@
  */
 import { test, expect } from "../fixtures/auth";
 import type { APIResponse } from "@playwright/test";
+import { settle } from "../fixtures/settle";
 
 const ANON = ["setup", "chromium-anon"];
 const WID = 1;
@@ -27,7 +28,7 @@ async function gotoGrid(page: any) {
     await page.getByRole("menuitem", { name: /员工表/ }).click();
     await page.waitForURL(/\/tables\/\d+/);
     await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible();
-    await page.waitForTimeout(600);
+    await settle(page);
 }
 
 /** 登录获取 token（用于 view CRUD API 辅助） */
@@ -89,7 +90,7 @@ async function gotoView(page: any, viewId: number) {
     } else {
         await page.goto(currentUrl + `?view=${viewId}`);
     }
-    await page.waitForTimeout(500);
+    await settle(page);
 }
 
 // ─────────────── 工具：表头交互 ───────────────
@@ -99,7 +100,6 @@ async function openColumnFilter(page: any, columnName: string) {
     // 找到包含 columnName 的表头，然后找里面的 filter 图标
     const th = page.locator("th.ant-table-cell", { hasText: new RegExp(columnName) }).first();
     await th.locator('.ant-table-filter-trigger').click();
-    await page.waitForTimeout(200);
 }
 
 /** 在下拉里设置筛选条件并确定 */
@@ -122,7 +122,6 @@ async function applyColumnFilter(page: any, opText: string, value?: string) {
     }
     // 确定按钮（antd 按钮文本可能有空格："确 定"）
     await page.getByRole("button", { name: /确\s*定/ }).click();
-    await page.waitForTimeout(400);
 }
 
 /** 点击某列表头触发排序循环 */
@@ -131,7 +130,6 @@ async function clickColumnSorter(page: any, columnName: string) {
         .first()
         .locator(".ant-table-column-sorters");
     await sorterBtn.click();
-    await page.waitForTimeout(400);
 }
 
 // ─────────────── 工具：ViewConfigDialog ───────────────
@@ -140,19 +138,16 @@ async function clickColumnSorter(page: any, columnName: string) {
 async function openViewConfig(page: any) {
     // 工具栏上第一个 filter 按钮（表头里的 filter 图标不算）
     await page.locator('.ant-btn:has(.anticon-filter)').first().click();
-    await page.waitForTimeout(300);
 }
 
 /** 在 ViewConfigDialog 里切换到 "筛选" tab */
 async function switchToFilterTab(page: any) {
     await page.locator(".ant-modal .ant-tabs-tab", { hasText: /筛选/ }).click();
-    await page.waitForTimeout(100);
 }
 
 /** 在 ViewConfigDialog 里切换到 "排序" tab */
 async function switchToSortTab(page: any) {
     await page.locator(".ant-modal .ant-tabs-tab", { hasText: /排序/ }).click();
-    await page.waitForTimeout(100);
 }
 
 /** 在 ViewConfigDialog 的筛选 tab 里，获取第 N 行（0-based）的字段名 */
@@ -173,7 +168,7 @@ async function getFilterRowField(page: any, index: number): Promise<string> {
 /** 等待自动保存完成（GridPage 的筛选/排序变化会自动持久化到后端） */
 async function waitAutoSave(page: any) {
     // debounce + mutation + 后端返回，保守等 1500ms
-    await page.waitForTimeout(1500);
+    await settle(page);
 }
 
 // ─────────────── 测试主体 ───────────────
@@ -207,7 +202,6 @@ test.describe("视图筛选/排序持久化", () => {
 
         // 刷新
         await page.reload();
-        await page.waitForTimeout(800);
 
         // 刷新后筛选丢失 → 回到 5 行（因为没保存视图）
         rows = page.locator(".ant-table-tbody tr.ant-table-row");
@@ -233,12 +227,10 @@ test.describe("视图筛选/排序持久化", () => {
 
         // 保存视图
         await page.getByRole("button", { name: /保\s*存/ }).first().click(); // Dialog 的保存按钮
-        await page.waitForTimeout(200);
         await waitAutoSave(page); // 工具栏的"保存视图"
 
         // 刷新
         await page.reload();
-        await page.waitForTimeout(800);
         await gotoView(page, vid); // 保持激活这个视图
 
         // 刷新后筛选仍然生效 → 还是 2 行
@@ -264,7 +256,6 @@ test.describe("视图筛选/排序持久化", () => {
 
         // 刷新 → 状态应保持
         await page.reload();
-        await page.waitForTimeout(800);
         await gotoView(page, vid);
 
         // 只要页面正常加载即可（排序状态验证已覆盖在其他测试）
@@ -293,7 +284,6 @@ test.describe("视图筛选/排序持久化", () => {
 
         // 刷新 → 只剩张三（含"张"）
         await page.reload();
-        await page.waitForTimeout(800);
         await gotoView(page, vid);
 
         const rows = page.locator(".ant-table-tbody tr.ant-table-row");
@@ -323,7 +313,6 @@ test.describe("视图筛选/排序持久化", () => {
         // 保存并验证
         await waitAutoSave(page);
         await page.reload();
-        await page.waitForTimeout(800);
         await gotoView(page, vid);
 
         // 刷新后仍保持最新规则

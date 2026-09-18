@@ -192,10 +192,7 @@ test.describe("复制表 — 三种模式（自建表 + UI 操作）", () => {
     // 执行：More → 复制表 → 仅复制表结构
     await clickCopySubmenu(page, /仅复制表结构/);
 
-    // 1. Toast 成功提示
-    await page.waitForTimeout(500); /* Toast optional, verified by URL + API */
-
-    // 2. 自动导航到新表
+    // 自动导航到新表（Toast 可选，导航由 waitForURL 信号确认）
     await page.waitForURL(/\/tables\/\d+/);
     const newUrl = page.url();
     const newTidMatch = newUrl.match(/\/tables\/(\d+)/);
@@ -237,10 +234,7 @@ test.describe("复制表 — 三种模式（自建表 + UI 操作）", () => {
     await expect(page.locator(".ant-dropdown-menu-submenu-popup")).toBeVisible({ timeout: 5000 });
     await page.getByRole("menuitem", { name: /复制表结构.*全部数据/ }).click();
 
-    // Toast 成功提示
-    await page.waitForTimeout(500); /* Toast optional, verified by URL + API */
-
-    // 自动导航到新表
+    // 自动导航到新表（Toast 可选）
     await page.waitForURL(/\/tables\/\d+/);
     const newTidMatch = page.url().match(/\/tables\/(\d+)/);
     expect(newTidMatch).not.toBeNull();
@@ -278,8 +272,10 @@ test.describe("复制表 — 三种模式（自建表 + UI 操作）", () => {
       await segItem.click();
     }
 
-    // 等待数据加载（视图筛选后应该只剩 3 行研发）
-    await page.waitForTimeout(800);
+    // 等待数据加载（视图筛选后应该只剩 filteredRows 行）
+    await expect(
+      page.locator(".ant-table-tbody tr.ant-table-row"),
+    ).toHaveCount(filteredRows, { timeout: 8000 });
 
     // 执行：More → 复制表 → 复制当前视图数据
     await page.locator('button[data-testid="grid-more-menu"]').click();
@@ -290,10 +286,7 @@ test.describe("复制表 — 三种模式（自建表 + UI 操作）", () => {
     // 子项文本包含 "当前视图数据" 和视图名 "(仅研发部)"
     await page.getByRole("menuitem", { name: /当前视图数据.*仅研发部/ }).click();
 
-    // Toast 成功
-    await page.waitForTimeout(500); /* Toast optional, verified by URL + API */
-
-    // 自动导航到新表
+    // 自动导航到新表（Toast 可选）
     await page.waitForURL(/\/tables\/\d+/);
     const newTidMatch = page.url().match(/\/tables\/(\d+)/);
     expect(newTidMatch).not.toBeNull();
@@ -340,9 +333,6 @@ test.describe("复制表 — TablesList 页面（仅结构 + 全部数据）", (
     await expect(page.locator(".ant-dropdown-menu-submenu-popup")).toBeVisible({ timeout: 5000 });
     await page.getByRole("menuitem", { name: /复制表结构.*全部数据/ }).click();
 
-    // Toast 成功
-    await page.waitForTimeout(500); /* Toast optional, verified by URL + API */
-
     // 列表行数 +1（可能需要刷新 query）
     const rowsAfter = page.locator(".ant-table-tbody tr.ant-table-row");
     await expect(rowsAfter).toHaveCount(countBefore + 1, { timeout: 10000 });
@@ -382,7 +372,6 @@ test.describe("复制表 — TablesList 页面（仅结构 + 全部数据）", (
     await expect(page.locator(".ant-dropdown-menu-submenu-popup")).toBeVisible({ timeout: 5000 });
     await page.getByRole("menuitem", { name: /仅复制表结构/ }).click();
 
-    await page.waitForTimeout(500); /* Toast optional, verified by URL + API */
     await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(countBefore + 1, { timeout: 10000 });
 
     const copied = await findCopyByName(request, WID, "E2E复制测试源表");
@@ -409,7 +398,6 @@ test.describe("复制表 — 回归修复（GridPage Sider 立即刷新）", () 
 
     await clickCopySubmenu(page, /仅复制表结构/);
 
-    await page.waitForTimeout(500); /* Toast optional, verified by URL + API */
     await page.waitForURL(/\/tables\/\d+/);
     const newTidMatch = page.url().match(/\/tables\/(\d+)/);
     expect(newTidMatch).not.toBeNull();

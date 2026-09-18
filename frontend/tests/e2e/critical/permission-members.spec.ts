@@ -7,6 +7,7 @@
  */
 
 import { test, expect, beforeEachCleanTable } from "../fixtures/auth"
+import { settle } from "../fixtures/settle"
 
 // seed 数据：工作区 1 = 某企业销售管理（含 sec_admin/audit_admin/demo 成员），表 1 = 产品开发
 const WID = 1
@@ -29,8 +30,8 @@ test.describe("数据表权限 — 成员管理", () => {
     await expect(tab("权限")).toHaveClass(/ant-tabs-tab-active/)
     // 等待工作区成员加载完成（"添加成员"按钮出现且可点击）
     await expect(settingsModal.getByRole("button", { name: /添加成员/ })).toBeVisible({ timeout: 10000 })
-    // 额外等待确保 workspace members 查询完成（候选列表依赖此数据）
-    await page.waitForTimeout(1500)
+    // 等待工作区成员渲染收敛
+    await settle(page)
     return settingsModal
   }
 

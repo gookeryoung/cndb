@@ -11,6 +11,7 @@
 
 import { test, expect } from "../fixtures/auth"
 import type { APIRequestContext } from "@playwright/test"
+import { settle } from "../fixtures/settle"
 
 const ANON = ["setup", "chromium-anon"]
 const WID = 1
@@ -179,7 +180,7 @@ test.describe("工作区表排序（reorder API + UI 同步）", () => {
 
     // 5. 刷新页面 — 验证排序持久化
     await page.reload()
-    await page.waitForLoadState("networkidle")
+    await settle(page)
     const namesAfterReload = await page
       .locator("tr.ant-table-row")
       .filter({ hasText: /E2E 排序表/ })
