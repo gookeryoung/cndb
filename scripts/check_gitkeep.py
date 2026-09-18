@@ -1,7 +1,7 @@
 """校验仓库内关键 .gitkeep 文件是否存在.
 
 这些空占位文件一旦被删除，对应的空目录在 git clone / CI checkout 后就会消失，
-导致 hatchling force-include / Sphinx html_static_path 等依赖实际目录路径的步骤
+导致 hatchling force-include 等依赖实际目录路径的步骤
 直接报错。本脚本在 pre-commit 阶段和 ``make check`` 流程中被调用，提前阻断。
 
 用法::
@@ -24,8 +24,6 @@ from pathlib import Path
 _DEFAULT_KEEPS: tuple[str, ...] = (
     # hatchling force-include 依赖 src/cndb/static/ 真实存在
     "src/cndb/static/.gitkeep",
-    # Sphinx html_static_path = ["_static"] 要求目录存在
-    "docs/_static/.gitkeep",
 )
 
 
@@ -62,7 +60,7 @@ def check(paths: list[str], *, fix: bool = False) -> int:
         print()
         print(f"共 {len(missing)} 个 .gitkeep 缺失。")
         print("这些文件一旦从工作树消失，对应的空目录在 git checkout 后也不复存在，")
-        print("会导致 hatchling force-include / Sphinx html_static_path 等步骤报错。")
+        print("会导致 hatchling force-include 等步骤报错。")
         print("请执行 `python scripts/check_gitkeep.py --fix` 补回，或手动 `touch` 对应文件。")
         return 1
 
