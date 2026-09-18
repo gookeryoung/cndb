@@ -5,8 +5,9 @@ import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select
 import { SaveOutlined, CommentOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { commentApi, auditApi, recordApi, tableApi, fileApi } from '@/api'
-import type { RowResponse, Field, AuditLog, Comment as ApiComment, Reference, AttachmentFile } from '@/api'
+import { commentApi, recordApi, fileApi } from '@/api'
+import { useRowAudit, useRowComments, useRowReferences } from '@/api/hooks'
+import type { RowResponse, Field, AttachmentFile } from '@/api'
 import { extractSelectOptions } from './fieldOps'
 
 const { Title, Text } = Typography
@@ -24,26 +25,10 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
   const queryClient = useQueryClient()
   const [form] = Form.useForm()
 
-  // 行特定的审计日志（新增 rowId 参数）
-  const { data: audit = [] } = useQuery<AuditLog[]>({
-    queryKey: ['row-audit', wid, tid, row?.id],
-    queryFn: () => auditApi.list(wid, tid, undefined, 20, row?.id),
-    enabled: open && !!row,
-  })
-
-  // 评论
-  const { data: comments = [] } = useQuery<ApiComment[]>({
-    queryKey: ['row-comments', wid, tid, row?.id],
-    queryFn: () => commentApi.list(wid, tid, row!.id),
-    enabled: open && !!row,
-  })
-
-  // 反向 link 引用（哪些其他表的行引用了当前行）
-  const { data: references = [] } = useQuery<Reference[]>({
-    queryKey: ['row-references', wid, tid, row?.id],
-    queryFn: () => tableApi.references(wid, tid, row!.id),
-    enabled: open && !!row,
-  })
+  // 行特定的审计日志 / 评论 / 反向引用 —— 使用统一的自定义 hooks
+  const { data: audit = [] } = useRowAudit(wid, tid, row?.id, open && !!row)
+  const { data: comments = [] } = useRowComments(wid, tid, row?.id, open && !!row)
+  const { data: references = [] } = useRowReferences(wid, tid, row?.id, open && !!row)
 
   const updateRow = useMutation({
     mutationFn: () => recordApi.update(wid, tid, row!.id, { values: form.getFieldsValue() }),
