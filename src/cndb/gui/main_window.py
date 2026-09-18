@@ -4,11 +4,10 @@
 - 启动服务   serve（host/port/workers）
 - 备份恢复   backup + restore
 - 用户管理   users create/delete/list/import
-- 演示数据   seed
 - 系统信息   info
 
 设计原则：
-- UI 只负责参数采集 + 日志展示，实际逻辑调用 cndb 已有模块（backup/restore/cli_users/seed），
+- UI 只负责参数采集 + 日志展示，实际逻辑调用 cndb 已有模块（backup/restore/cli_users），
   避免重复实现业务代码
 - 耗时操作放 daemon 线程跑，stdout/stderr 重定向到 Text 组件，主线程定时 flush
 - uvicorn server 用 subprocess.Popen 独立进程启动，窗口关闭时自动终止
@@ -127,13 +126,11 @@ class CndbMainWindow:
         self.tab_serve = ServeTab(self.notebook, self)
         self.tab_backup = BackupTab(self.notebook, self)
         self.tab_users = UsersTab(self.notebook, self)
-        self.tab_seed = SeedTab(self.notebook, self)
         self.tab_info = InfoTab(self.notebook, self)
 
         self.notebook.add(self.tab_serve.frame, text="启动服务")
         self.notebook.add(self.tab_backup.frame, text="备份恢复")
         self.notebook.add(self.tab_users.frame, text="用户管理")
-        self.notebook.add(self.tab_seed.frame, text="演示数据")
         self.notebook.add(self.tab_info.frame, text="系统信息")
 
     def _build_statusbar(self) -> None:
@@ -774,50 +771,6 @@ class UsersTab(_BaseTab):
                 print_import_report(report, Path(fp), dry_run=args.dry_run)
             except SystemExit as exc:
                 print(f"[error] {exc}", file=sys.stderr)
-            except Exception as exc:
-                print(f"[error] {exc}", file=sys.stderr)
-
-        run_in_thread(_run)
-
-
-# ═══════════════════════════════════════════════════════════════
-# Tab: 演示数据
-# ═══════════════════════════════════════════════════════════════
-
-
-class SeedTab(_BaseTab):
-    @override
-    def _build_layout(self) -> None:
-        top = ttk.Frame(self.frame)
-        top.pack(fill=tk.X)
-
-        ttk.Label(
-            top,
-            text="向数据库注入演示数据（会 drop_all 后重建，每次全新）:\n"
-            "  • examples/datasets/* 各工作区 CSV + 视图\n"
-            "  • 三员演示账号 admin / sec_admin / audit_admin + 普通用户 demo",
-            foreground="#d4760a",
-            justify=tk.LEFT,
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        ttk.Button(top, text="执行 seed", command=self.do_seed).pack(side=tk.RIGHT)
-
-        log_frame = ttk.LabelFrame(self.frame, text="seed 日志", padding=(4, 4))
-        log_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
-        self.log_text = self._build_log_text(log_frame)
-
-    def do_seed(self) -> None:
-        if not messagebox.askyesno(
-            "确认",
-            "seed 会清空当前数据库再重建所有表和数据，\n若已部署，请先执行「备份恢复」创建备份。\n\n继续？",
-        ):
-            return
-
-        def _run() -> None:
-            from cndb.seed import seed
-
-            try:
-                seed(argparse.Namespace())
             except Exception as exc:
                 print(f"[error] {exc}", file=sys.stderr)
 
