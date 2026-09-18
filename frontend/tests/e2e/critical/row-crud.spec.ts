@@ -31,8 +31,8 @@ async function getToken(request: any): Promise<string> {
   return body.access_token;
 }
 
-/** 确保 Grid 显示 N 条记录 */
-async function gotoGridAndCheckCount(page: any, expectedCount: number) {
+/** 导航到员工表 Grid 并等待数据渲染. */
+async function openEmployeeGrid(page: any) {
   // 直接导航到指定工作区，绕过 WorkspaceList 多工作区场景
   await page.goto(`/w/${WID}/tables`);
 
@@ -42,6 +42,11 @@ async function gotoGridAndCheckCount(page: any, expectedCount: number) {
 
   // 等待数据渲染
   await page.waitForTimeout(800);
+}
+
+/** 确保 Grid 显示 N 条记录 */
+async function gotoGridAndCheckCount(page: any, expectedCount: number) {
+  await openEmployeeGrid(page);
 
   const rows = page.locator(".ant-table-tbody tr.ant-table-row");
   await expect(rows).toHaveCount(expectedCount);
@@ -135,5 +140,63 @@ test.describe("行 CRUD", () => {
     // 确认回到 5 行
     await gotoGridAndCheckCount(page, 5);
     await expect(page.getByText("E2E-临时")).not.toBeVisible();
+  });
+
+  test("新增行按钮 → 必填校验 → 填写 → Grid +1 行 → 清理", async ({ page, request }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    const tid = await getTableId(request);
+    await cleanupExtraRows(request, tid);
+
+    // 初始 5 行
+    await gotoGridAndCheckCount(page, 5);
+
+    // 点击 "新增行" 按钮 → 弹出新增表单
+    await page.getByTestId("add-row-btn").click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("新增一行")).toBeVisible();
+
+    // 不填必填字段直接提交 → 表单阻止并提示
+    await dialog.getByRole("button", { name: /创\s*建/ }).click();
+    await expect(dialog.getByText(/请填写 姓名/)).toBeVisible();
+
+    // 填写必填字段后提交
+    await dialog.getByPlaceholder("请输入 姓名").fill("E2E-按钮新增");
+    await dialog.getByRole("button", { name: /创\s*建/ }).click();
+
+    // Grid +1 行且新行可见
+    const rows = page.locator(".ant-table-tbody tr.ant-table-row");
+    await expect(rows).toHaveCount(6);
+    await expect(page.getByText("E2E-按钮新增")).toBeVisible();
+
+    // 清理
+    await cleanupExtraRows(request, tid);
+    await gotoGridAndCheckCount(page, 5);
+    await expect(page.getByText("E2E-按钮新增")).not.toBeVisible();
+  });
+
+  test("新增行表单 — 必填字段缺失时阻止提交", async ({ page, request }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    const tid = await getTableId(request);
+    await cleanupExtraRows(request, tid);
+
+    await gotoGridAndCheckCount(page, 5);
+
+    // 打开新增行表单，直接提交
+    await page.getByTestId("add-row-btn").click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("新增一行")).toBeVisible();
+    await dialog.getByRole("button", { name: /创\s*建/ }).click();
+
+    // 校验错误提示出现，且 Grid 仍未新增行
+    await expect(dialog.getByText(/请填写 姓名/)).toBeVisible();
+    const rows = page.locator(".ant-table-tbody tr.ant-table-row");
+    await expect(rows).toHaveCount(5);
+
+    // 关闭弹窗，行数不变
+    await dialog.getByRole("button", { name: /取\s*消/ }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(rows).toHaveCount(5);
   });
 });
