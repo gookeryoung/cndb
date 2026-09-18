@@ -587,9 +587,6 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         <span>
           <FileTextOutlined style={{ marginRight: 6 }} />
           导入数据预览
-          {analyzeResult?.filename && (
-            <Tag color="blue" style={{ marginLeft: 8 }}>{analyzeResult.filename}</Tag>
-          )}
           {overriddenCount > 0 && (
             <Tag color="purple" style={{ marginLeft: 4 }}>{overriddenCount} 个字段已调整</Tag>
           )}
