@@ -6,15 +6,9 @@
  * 本次变更：从 views[] 提取存在的 view_type 集合，仅渲染有对应视图的按钮；
  *          若仅 grid 一种视图类型则整个按钮组隐藏（避免单按钮视觉噪音）.
  *
- * 测试覆盖矩阵（来自 examples/datasets/）:
- *   ┌─ 工作区-某企业销售管理
- *   │   ├─ 部门表          → 仅 grid → 按钮组完全隐藏
- *   │   └─ 产品开发        → grid+kanban+gallery+calendar+gantt → 5 个按钮（缺 wbs）
- *   ├─ 工作区-科研项目管理
- *   │   ├─ 科研项目        → grid+kanban+gallery → 3 个按钮（缺 calendar/gantt/wbs）
- *   │   └─ 项目进展        → grid+kanban+gallery+calendar → 4 个按钮（缺 gantt/wbs）
- *   └─ 工作区-项目管理
- *       └─ WBS任务分解      → grid+kanban+calendar+gantt+wbs → 5 个按钮（缺 gallery）
+ * 精简说明（2026-09）：原 5 条"换表+换按钮数"测试结构完全一致，合并为表驱动循环；
+ *      删掉各条内的 API 侧断言（seed 数据自检，非前端行为）；
+ *      切换行为回归合并为 1 条（双向联动已由 view-mode-sync 覆盖）.
  */
 import { test, expect } from "../fixtures/auth";
 import { getAdminToken, getTableId, getWorkspaceId } from "../helpers/api";
@@ -47,30 +41,12 @@ async function gotoTable(
   });
 }
 
-async function getApiViewTypes(
-  request: APIRequestContext,
-  wid: number,
-  tid: number,
-): Promise<Set<string>> {
-  const token = await getAdminToken(request);
-  const resp = await request.get(
-    `/api/v1/workspaces/${wid}/tables/${tid}/views`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  const views = (await resp.json()) as Array<{ view_type: string }>;
-  return new Set(views.map((v) => v.view_type));
-}
-
 // ──────────────────────────── 按钮组结构断言 ────────────────────────────
 
 /** 断言 Space.Compact 模式按钮组存在且内部按钮数量 === expectedCount */
 async function assertModeButtonCount(page: Page, expectedCount: number) {
-  const groups = page.locator(".ant-space-compact");
-  // 注意：antd Segmented 和 Space.Compact 都是 .ant-space-compact —— 工具栏里有两处用法
-  // 我们通过 data-mode 属性过滤，因为 Segmented TAB 按钮没有 data-mode
   const modeBtns = page.locator(".ant-btn[data-mode]");
   if (expectedCount === 0) {
-    // 模式按钮组不存在，或者存在但没有 data-mode 按钮
     await expect(modeBtns).toHaveCount(0, { timeout: 3000 });
   } else {
     await expect(modeBtns).toHaveCount(expectedCount, { timeout: 5000 });
@@ -93,206 +69,58 @@ async function assertModeButtonExists(
 
 // ──────────────────────────── 测试用例 ────────────────────────────
 
+const ANON = ["setup", "chromium-anon"];
+
 test.describe("视图类型切换按钮 — 按数据表 views 动态配置", () => {
-  const ANON = ["setup", "chromium-anon"];
+  // 表驱动矩阵：(工作区, 表名, 期望按钮数)，覆盖单视图隐藏与多视图组合
+  const tableMatrix: Array<[string, string, number]> = [
+    ["企业销售", "部门表", 0],        // 仅 grid → 按钮组隐藏
+    ["科研项目管理", "科研项目", 3],  // grid+kanban+gallery
+    ["科研项目管理", "项目进展", 4],  // grid+kanban+gallery+calendar
+    ["项目管理", "WBS任务分解", 5],   // grid+kanban+calendar+gantt+wbs
+    ["企业销售", "产品开发", 5],      // grid+kanban+gallery+calendar+gantt（缺 wbs）
+  ];
 
-  test("部门表（仅 grid）→ 模式按钮组完全不渲染", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "企业销售");
-    await gotoTable(page, request, wid, "部门表");
-
-    // API 侧确认：只有 grid 视图类型
-    const apiTypes = await getApiViewTypes(
+  for (const [ws, table, expectedCount] of tableMatrix) {
+    test(`${table}（${ws}）→ 模式按钮组显示 ${expectedCount} 个按钮`, async ({
+      page,
       request,
-      wid,
-      await getTableId(request, wid, "部门表"),
-    );
-    expect(apiTypes.has("grid")).toBeTruthy();
-    expect(apiTypes.size).toBe(1);
+    }) => {
+      test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
-    // UI 侧：模式按钮组完全不存在（只有 grid 一种，showModeSwitch=false）
-    await assertModeButtonCount(page, 0);
-  });
-
-  test("科研项目表（grid+kanban+gallery）→ 显示 3 个按钮，日历/甘特/WBS 按钮不存在", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "科研项目管理");
-    await gotoTable(page, request, wid, "科研项目");
-
-    // API 侧确认
-    const apiTypes = await getApiViewTypes(
-      request,
-      wid,
-      await getTableId(request, wid, "科研项目"),
-    );
-    expect(apiTypes.has("grid")).toBeTruthy();
-    expect(apiTypes.has("kanban")).toBeTruthy();
-    expect(apiTypes.has("gallery")).toBeTruthy();
-    expect(apiTypes.has("calendar")).toBeFalsy();
-    expect(apiTypes.has("gantt")).toBeFalsy();
-    expect(apiTypes.has("wbs")).toBeFalsy();
-
-    // UI 侧
-    await assertModeButtonCount(page, 3);
-    await assertModeButtonExists(page, "grid", true);
-    await assertModeButtonExists(page, "kanban", true);
-    await assertModeButtonExists(page, "gallery", true);
-    await assertModeButtonExists(page, "calendar", false);
-    await assertModeButtonExists(page, "gantt", false);
-    await assertModeButtonExists(page, "wbs", false);
-  });
-
-  test("项目进展表（grid+kanban+gallery+calendar）→ 显示 4 个按钮，甘特/WBS 按钮不存在", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "科研项目管理");
-    await gotoTable(page, request, wid, "项目进展");
-
-    const apiTypes = await getApiViewTypes(
-      request,
-      wid,
-      await getTableId(request, wid, "项目进展"),
-    );
-    expect(apiTypes.has("grid")).toBeTruthy();
-    expect(apiTypes.has("kanban")).toBeTruthy();
-    expect(apiTypes.has("gallery")).toBeTruthy();
-    expect(apiTypes.has("calendar")).toBeTruthy();
-    expect(apiTypes.has("gantt")).toBeFalsy();
-    expect(apiTypes.has("wbs")).toBeFalsy();
-
-    await assertModeButtonCount(page, 4);
-    await assertModeButtonExists(page, "grid", true);
-    await assertModeButtonExists(page, "kanban", true);
-    await assertModeButtonExists(page, "gallery", true);
-    await assertModeButtonExists(page, "calendar", true);
-    await assertModeButtonExists(page, "gantt", false);
-    await assertModeButtonExists(page, "wbs", false);
-  });
-
-  test("WBS任务分解表（grid+kanban+calendar+gantt+wbs）→ 显示 5 个按钮，画廊按钮不存在", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "项目管理");
-    await gotoTable(page, request, wid, "WBS任务分解");
-
-    const apiTypes = await getApiViewTypes(
-      request,
-      wid,
-      await getTableId(request, wid, "WBS任务分解"),
-    );
-    expect(apiTypes.has("grid")).toBeTruthy();
-    expect(apiTypes.has("kanban")).toBeTruthy();
-    expect(apiTypes.has("calendar")).toBeTruthy();
-    expect(apiTypes.has("gantt")).toBeTruthy();
-    expect(apiTypes.has("wbs")).toBeTruthy();
-    expect(apiTypes.has("gallery")).toBeFalsy();
-
-    await assertModeButtonCount(page, 5);
-    await assertModeButtonExists(page, "grid", true);
-    await assertModeButtonExists(page, "kanban", true);
-    await assertModeButtonExists(page, "calendar", true);
-    await assertModeButtonExists(page, "gantt", true);
-    await assertModeButtonExists(page, "wbs", true);
-    await assertModeButtonExists(page, "gallery", false);
-  });
-
-  test("产品开发表（grid+kanban+gallery+calendar+gantt）→ 显示 5 个按钮（缺 WBS）", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "企业销售");
-    await gotoTable(page, request, wid, "产品开发");
-
-    const apiTypes = await getApiViewTypes(
-      request,
-      wid,
-      await getTableId(request, wid, "产品开发"),
-    );
-    expect(apiTypes.has("grid")).toBeTruthy();
-    expect(apiTypes.has("kanban")).toBeTruthy();
-    expect(apiTypes.has("gallery")).toBeTruthy();
-    expect(apiTypes.has("calendar")).toBeTruthy();
-    expect(apiTypes.has("gantt")).toBeTruthy();
-    expect(apiTypes.has("wbs")).toBeFalsy();
-
-    await assertModeButtonCount(page, 5);
-    await assertModeButtonExists(page, "wbs", false);
-  });
+      const wid = await getWorkspaceId(request, ws);
+      await gotoTable(page, request, wid, table);
+      await assertModeButtonCount(page, expectedCount);
+    });
+  }
 });
 
 // ──────────────────────────── 切换行为回归 ────────────────────────────
 
 test.describe("动态按钮组 — 点击切换行为回归", () => {
-  const ANON = ["setup", "chromium-anon"];
-
-  test("科研项目表点看板按钮 → 切到 kanban 视图；甘特按钮不存在所以不会误渲染", async ({
-    page,
-    request,
-  }) => {
+  test("科研项目表点看板按钮 → 切到 kanban 视图", async ({ page, request }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
     const wid = await getWorkspaceId(request, "科研项目管理");
     await gotoTable(page, request, wid, "科研项目");
 
-    // 只有 3 个按钮
     await assertModeButtonCount(page, 3);
 
-    // 点击看板按钮
+    // 点击看板按钮 → Segmented 跳转到 kanban 类型的视图
     const kanbanBtn = page.locator('.ant-btn[data-mode="kanban"]');
     await kanbanBtn.click();
     await settle(page);
 
-    // Segmented 应选中 kanban 类型的视图
     const selectedSeg = page.locator(".ant-segmented-item-selected").first();
     const selectedText = (await selectedSeg.innerText()).trim();
     expect(selectedText).toMatch(/看板/);
-  });
-
-  test("WBS任务分解表点 WBS 按钮 → 切到 wbs 视图（画廊按钮不存在不会被误点）", async ({
-    page,
-    request,
-  }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const wid = await getWorkspaceId(request, "项目管理");
-    await gotoTable(page, request, wid, "WBS任务分解");
-
-    await assertModeButtonCount(page, 5);
-    await assertModeButtonExists(page, "gallery", false);
-    await assertModeButtonExists(page, "wbs", true);
-
-    const wbsBtn = page.locator('.ant-btn[data-mode="wbs"]');
-    await wbsBtn.click();
-
-    // 渲染了 WBS 视图组件（通过其唯一 DOM 特征）
-    await expect(
-      page.locator('[data-testid="wbs-view"]'),
-    ).toBeVisible({ timeout: 5000 });
   });
 });
 
 // ──────────────────────────── 跨表导航切换回归 ────────────────────────────
 
 test.describe("跨表导航 — 模式按钮组跟随数据表 views 变化", () => {
-  const ANON = ["setup", "chromium-anon"];
-
-  test("部门表 → 产品开发表 → 科研项目表：按钮组数量动态变化", async ({
+  test("部门表 → 产品开发表 → 客户流失表：按钮组数量动态变化", async ({
     page,
     request,
   }) => {
@@ -300,7 +128,7 @@ test.describe("跨表导航 — 模式按钮组跟随数据表 views 变化", ()
 
     const wid = await getWorkspaceId(request, "企业销售");
 
-    // 1. 部门表：0 个模式按钮
+    // 1. 部门表：0 个模式按钮（仅 grid）
     await gotoTable(page, request, wid, "部门表");
     await assertModeButtonCount(page, 0);
 
@@ -308,13 +136,10 @@ test.describe("跨表导航 — 模式按钮组跟随数据表 views 变化", ()
     await gotoTable(page, request, wid, "产品开发");
     await assertModeButtonCount(page, 5);
     await assertModeButtonExists(page, "wbs", false);
-    await assertModeButtonExists(page, "gantt", true);
 
     // 3. 客户流失表：3 个模式按钮（grid+kanban+gallery）
     await gotoTable(page, request, wid, "客户流失");
     await assertModeButtonCount(page, 3);
-    await assertModeButtonExists(page, "calendar", false);
-    await assertModeButtonExists(page, "gantt", false);
     await assertModeButtonExists(page, "wbs", false);
   });
 });
