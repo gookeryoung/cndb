@@ -1020,6 +1020,34 @@ def _analyze_dict_rows_as_csv(rows: list[dict[str, Any]]) -> list[dict[str, Any]
     return columns
 
 
+def _apply_column_overrides(
+    columns: list[dict[str, Any]],
+    column_overrides: dict[str, dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """用前端回传的 column_overrides 覆盖自动推断的列信息，返回新列表.
+
+    Args:
+        columns: analyze 阶段产出的原始列列表（name/field_type/sample_values/...）
+        column_overrides: {列名: {field_type, options?}} — 前端调整后的类型声明
+    """
+    if not column_overrides:
+        return columns
+    overridden: list[dict[str, Any]] = []
+    for col in columns:
+        new_col = dict(col)
+        ov = column_overrides.get(col["name"])
+        if ov:
+            if "field_type" in ov:
+                new_col["field_type"] = ov["field_type"]
+            if "options" in ov:
+                new_col["options"] = ov["options"] or []
+            elif ov.get("field_type") not in ("select", "multiselect"):
+                # 前端把 select 改成其他类型 → 清掉 options
+                new_col.pop("options", None)
+        overridden.append(new_col)
+    return overridden
+
+
 def create_table_from_file(
     engine: Any,
     db: Any,
@@ -1030,16 +1058,25 @@ def create_table_from_file(
     format: str | None = None,
     filename: str | None = None,
     owner_id: int | None = None,
+    column_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[DataTable, list[int], list[dict[str, Any]]]:
     """从任意支持的文件自动建表 + 导入数据 + 返回列信息（一站式入口）.
 
+    Args:
+        column_overrides: 前端回传的字段调整映射 —— 格式为
+            ``{列名: {field_type, options?}}``，覆盖自动推断结果.
+            例如 ``{"状态": {"field_type": "select", "options": ["进行中", "已完成"]}}``
+
     Returns:
-        (DataTable, 新行 id 列表, 列分析信息)
+        (DataTable, 新行 id 列表, 最终采用的列信息 —— 含 overrides 结果)
     """
     rows, _file_cols, actual_fmt = parse_file_to_rows(content, format, filename=filename)
     columns = analyze_json_columns(rows) if actual_fmt in ("json", "xlsx") else _analyze_dict_rows_as_csv(rows)
     if not columns:
         raise ValueError("文件没有有效列")
+
+    # 应用前端字段类型覆盖（如果有）
+    columns = _apply_column_overrides(columns, column_overrides)
 
     dt = DataTable(workspace_id=workspace_id, owner_id=owner_id, name=table_name)
     dt.ensure_db_name()
