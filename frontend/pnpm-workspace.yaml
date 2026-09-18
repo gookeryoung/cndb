@@ -1,4 +1,4 @@
+allowBuilds:
+  esbuild: true
+  msw: true
 # pnpm 10+ 依赖构建脚本白名单（msw 的 postinstall 仅复制浏览器端 service worker；esbuild 需安装平台二进制）
-onlyBuiltDependencies:
-  - msw
-  - esbuild

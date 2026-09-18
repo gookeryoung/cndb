@@ -50,6 +50,7 @@ import TableSettingsDialog from './components/TableSettingsDialog'
 import TableSettingsModal from '@/pages/modals/TableSettingsModal'
 import { buildColumns, type RowInlineOps, type InlineEditCellProps } from './components/buildColumns'
 import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCellValueForEdit } from './components/GridCell'
+import { type ViewMode, VALID_MODES, deriveModeSwitch } from './viewModes'
 import { useTableSettingsStore, useGridViewStore } from '@/store'
 import { densityToSize } from '@/theme/tableSettings'
 
@@ -62,8 +63,6 @@ function ModalFallback() {
 }
 
 const { Text } = Typography
-type ViewMode = 'grid' | 'kanban' | 'gallery' | 'calendar' | 'gantt' | 'wbs'
-const VALID_MODES: readonly ViewMode[] = ['grid', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs']
 const MODE_STORAGE_KEY = 'cndb_current_mode'
 
 /** 右侧模式按钮配置 —— 顺序即显示顺序；仅当数据表存在对应 view_type 的视图时才渲染. */
@@ -790,25 +789,11 @@ export default function GridPage() {
     value: String(v.id),
   }))
 
-  /** 数据表实际拥有的视图类型集合（去重） */
-  const availableViewTypes = useMemo<Set<ViewMode>>(() => {
-    const s = new Set<ViewMode>()
-    for (const v of views) {
-      const vt = v.view_type as ViewMode | undefined
-      if (vt && VALID_MODES.includes(vt)) s.add(vt)
-    }
-    // grid 作为基础视图，始终确保存在
-    s.add('grid')
-    return s
-  }, [views])
-
-  /** 右侧模式按钮组 —— 仅渲染数据表实际拥有的视图类型 */
-  const modeButtons = useMemo(() =>
-    MODE_BUTTONS.filter(b => availableViewTypes.has(b.mode)),
-    [availableViewTypes])
-
-  /** 是否渲染模式按钮组（多于一个按钮才显示；仅 grid 时隐藏） */
-  const showModeSwitch = modeButtons.length > 1
+  /** 右侧模式按钮组 —— 仅渲染数据表实际拥有的视图类型；仅 grid 时隐藏（推导逻辑在 viewModes.ts，纯函数可单测） */
+  const { buttons: modeButtons, visible: showModeSwitch } = useMemo(
+    () => deriveModeSwitch(views, MODE_BUTTONS),
+    [views],
+  )
 
   // 早 return — 已确保所有 hooks 调用完成
   if (!wid || !tid) return <Empty description="无效的表 ID" style={{ padding: 48 }} />
