@@ -224,3 +224,47 @@ export function useDeleteCommentOptimistic(wid: string, tid: string, rowId: numb
     },
   })
 }
+
+/** 乐观更新版 createComment —— 立即在 row-comments cache 前端插入临时评论，成功后替换真实 ID，失败时移除. */
+export function useCreateCommentOptimistic(wid: string, tid: string, rowId: number | string | undefined) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (content: string) => commentApi.create(wid, tid, rowId!, content),
+    onMutate: async (content) => {
+      await queryClient.cancelQueries({ queryKey: ['row-comments', wid, tid, rowId] })
+
+      const previous = queryClient.getQueryData<ApiComment[]>(['row-comments', wid, tid, rowId]) ?? []
+
+      // 生成带标记的临时评论 —— 用 '__temp_' 前缀标识，避免和真实数字 ID 冲突
+      const tempId = `__temp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` as unknown as ApiComment['id']
+      const optimisticComment: ApiComment = {
+        id: tempId,
+        content,
+        author_name: '你',
+        created_at: new Date().toISOString(),
+        row_id: rowId as any,
+      }
+
+      queryClient.setQueryData<ApiComment[]>(['row-comments', wid, tid, rowId], [optimisticComment, ...previous])
+
+      return { previous, tempId }
+    },
+    onSuccess: (realComment, _content, context) => {
+      if (!context?.tempId) return
+      // 用后端返回的真实评论对象替换临时占位
+      queryClient.setQueryData<ApiComment[]>(['row-comments', wid, tid, rowId], (current) => {
+        if (!current) return current
+        return current.map(c => (c.id === context.tempId ? realComment : c))
+      })
+    },
+    onError: (_err, _content, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['row-comments', wid, tid, rowId], context.previous)
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['row-comments', wid, tid, rowId] })
+    },
+  })
+}
