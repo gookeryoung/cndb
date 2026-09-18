@@ -23,7 +23,6 @@ class TableAction(StrEnum):
     EDIT_RECORDS = "EDIT_RECORDS"
     EDIT_VIEWS = "EDIT_VIEWS"
     EDIT_SCHEMA = "EDIT_SCHEMA"
-    COMMENT = "COMMENT"
 
 
 # 动作 -> TablePermission 字段映射
@@ -32,7 +31,6 @@ _ACTION_PERMISSION_FIELD: dict[TableAction, str] = {
     TableAction.EDIT_RECORDS: "edit_records_role",
     TableAction.EDIT_VIEWS: "edit_views_role",
     TableAction.EDIT_SCHEMA: "edit_schema_role",
-    TableAction.COMMENT: "comment_role",
 }
 
 # 动作 -> 默认工作区角色（表级 permission 为空时回退）
@@ -41,14 +39,13 @@ _ACTION_DEFAULT_ROLE: dict[TableAction, WorkspaceRole] = {
     TableAction.EDIT_RECORDS: WorkspaceRole.EDITOR,
     TableAction.EDIT_VIEWS: WorkspaceRole.EDITOR,
     TableAction.EDIT_SCHEMA: WorkspaceRole.ADMIN,
-    TableAction.COMMENT: WorkspaceRole.VIEWER,
 }
 
 
 # 内置表成员角色（TableMember.role 硬编码值）→ 动作集合
 _BUILTIN_MEMBER_ACTIONS: dict[str, set[TableAction]] = {
-    "write": {TableAction.READ, TableAction.EDIT_RECORDS, TableAction.EDIT_VIEWS, TableAction.COMMENT},
-    "read": {TableAction.READ, TableAction.COMMENT},
+    "write": {TableAction.READ, TableAction.EDIT_RECORDS, TableAction.EDIT_VIEWS},
+    "read": {TableAction.READ},
 }
 
 

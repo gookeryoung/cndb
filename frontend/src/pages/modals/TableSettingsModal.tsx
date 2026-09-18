@@ -354,14 +354,12 @@ export default function TableSettingsModal({
                   onClick={() => {
                     const hiddenInputs = document.querySelectorAll<HTMLInputElement>('input[data-perm-hidden]:checked')
                     const hiddenFields = Array.from(hiddenInputs).map(i => i.value)
-                    const el = document.querySelector<HTMLInputElement>('input[data-perm-comment]')
                     const payloadHidden: Record<string, string[]> = hiddenFields.length > 0
                       ? { admin: hiddenFields }
                       : {}
                     savePerm.mutate({
                       hidden_fields: payloadHidden,
                       row_filters: null,
-                      comment_role: el?.value ?? undefined,
                     })
                   }}
                 >

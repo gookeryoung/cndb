@@ -288,7 +288,6 @@ class PermissionCreate(BaseModel):
     edit_records_role: str = ""
     edit_views_role: str = ""
     edit_schema_role: str = ""
-    comment_role: str = ""
     hidden_fields: dict[str, Any] = Field(default_factory=dict)
     row_filters: list[dict[str, Any]] = Field(default_factory=list)
     row_filter_type: str = "AND"
@@ -299,7 +298,6 @@ class PermissionUpdate(BaseModel):
     edit_records_role: str | None = None
     edit_views_role: str | None = None
     edit_schema_role: str | None = None
-    comment_role: str | None = None
     hidden_fields: dict[str, Any] | None = None
     row_filters: list[dict[str, Any]] | None = None
     row_filter_type: str | None = None
@@ -313,7 +311,6 @@ class PermissionResponse(BaseModel):
     edit_records_role: str
     edit_views_role: str
     edit_schema_role: str
-    comment_role: str
     hidden_fields: dict[str, Any]
     row_filters: list[dict[str, Any]]
     row_filter_type: str
