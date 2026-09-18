@@ -13,6 +13,7 @@
 ### 变更
 
 - `httpx` 从运行时依赖移至 `test` extra（源码仅使用 `httpx2`；httpx 仅供 starlette TestClient 测试使用）
+- 显式声明 `requests` 运行时依赖（wechat_auth 插件实际使用，此前靠 docs extra 的 sphinx 传递引入）
 - ruff/pyrefly 配置收敛：移除不存在目录的排除项，修正 UP045 注释中的 typer 表述（CLI 实际用 argparse）
 
 ### 修复
