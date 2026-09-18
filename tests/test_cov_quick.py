@@ -192,6 +192,74 @@ def test_run_create_all_and_stamp_calls_dependencies(monkeypatch):
     assert creates  # 被调用了
 
 
+def test_stamp_head_writes_alembic_version(tmp_path, monkeypatch):
+    """stamp_head 补写 alembic_version 到 head（seed 建表后调用场景）.
+
+    复现 e2e 场景：create_all 建了业务表但无 alembic_version，
+    stamp_head 后版本行等于 ScriptDirectory 的 head，且重复调用幂等。
+    注意：env.py 会用 settings.DATABASE_URL 覆盖 config 里的 URL，
+    因此这里直接 patch settings 而非伪造 config。
+    """
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import create_engine, inspect, text
+
+    from cndb.core import migrations as mig_mod
+    from cndb.core.config import settings
+    from cndb.models.base import Base
+
+    url = f"sqlite:///{(tmp_path / 't.db').as_posix()}"
+    monkeypatch.setattr(settings, "DATABASE_URL", url)
+
+    engine = create_engine(url)
+    import cndb.plugins.accounts.models  # noqa: F401  # 注册 accounts 模型
+
+    Base.metadata.create_all(engine)  # 模拟 seed：有业务表、无 alembic_version
+    insp = inspect(engine)
+    assert "accounts_user" in insp.get_table_names()
+    assert "alembic_version" not in insp.get_table_names()
+
+    try:
+        mig_mod.stamp_head()
+        with engine.connect() as conn:
+            version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        head = ScriptDirectory(str(mig_mod._alembic_dir())).get_current_head()
+        assert version == head
+
+        mig_mod.stamp_head()  # 幂等：重复 stamp 不报错
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == head
+    finally:
+        engine.dispose()
+
+
+def test_ensure_db_migrated_skips_upgrade_when_stamped(tmp_path, monkeypatch):
+    """seed 后已 stamp head 的库 → ensure_db_migrated 走 upgrade 幂等无报错.
+
+    回归：e2e 中 seed 只建表不 stamp 时，serve 启动 upgrade 会重放
+    0001 建表迁移报"table accounts_user already exists"。
+    """
+    from sqlalchemy import create_engine, inspect
+
+    from cndb.core import migrations as mig_mod
+    from cndb.core.config import settings
+    from cndb.models.base import Base
+
+    url = f"sqlite:///{(tmp_path / 't.db').as_posix()}"
+    monkeypatch.setattr(settings, "DATABASE_URL", url)
+
+    engine = create_engine(url)
+    import cndb.plugins.accounts.models  # noqa: F401
+
+    Base.metadata.create_all(engine)
+    mig_mod.stamp_head()  # 模拟修复后的 seed
+    monkeypatch.setattr(mig_mod, "_db_is_fresh", lambda: False)  # 不探测真实库
+    try:
+        mig_mod.ensure_db_migrated()  # upgrade head 应为 no-op，不抛异常
+        assert "alembic_version" in inspect(engine).get_table_names()
+    finally:
+        engine.dispose()
+
+
 def test_ensure_db_migrated_fresh_db(tmp_path, monkeypatch):
     """全新数据库 → 直接 create_all + stamp，不走 upgrade."""
     from cndb.core import migrations as mig_mod
