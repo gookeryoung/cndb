@@ -83,7 +83,15 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
     table_count = 0
     ws_map: dict[str, Any] = {}
     tables_map: dict[str, dict[str, Any]] = {}
-    for folder in sorted(datasets_dir.iterdir()):
+
+    # "某企业销售管理"（硬编码业务表宿主）固定最先创建 → 稳定占据 ws id=1，
+    # 供 e2e 等场景对工作区 id 做稳定假设；其余工作区保持名称排序。
+    def _sales_first(p: Path) -> tuple[bool, str]:
+        """排序键：某企业销售管理优先，其余按文件夹名升序."""
+        return (p.name != "工作区-某企业销售管理", p.name)
+
+    folders = sorted(datasets_dir.iterdir(), key=_sales_first)
+    for folder in folders:
         if not folder.is_dir() or folder.name.startswith("."):
             continue
 
