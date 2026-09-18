@@ -53,8 +53,12 @@ async function cleanTableMembers(wid: number, tid: number, baseURL = "http://127
 }
 
 export const test = base.extend({
-  page: async ({ browser }, use) => {
-    const context = await browser.newContext({ storageState: AUTH_STATE_PATH })
+  page: async ({ browser }, use, testInfo) => {
+    // 仅 chromium-authed 项目注入 storageState；anon/setup 项目用干净 context
+    const isAuthed = testInfo.project.name === "chromium-authed"
+    const context = await browser.newContext(
+      isAuthed ? { storageState: AUTH_STATE_PATH } : {},
+    )
     const page = await context.newPage()
     await use(page)
     await context.close()
