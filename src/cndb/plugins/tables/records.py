@@ -497,22 +497,32 @@ def bulk_update(
 def bulk_delete(engine: Any, table: DataTable, row_ids: list[int], db: Any = None) -> int:
     """批量硬删除（同步清理关联记录），返回影响行数.
 
-    被 row_filters 过滤的行不会被删除.
+    被 row_filters 过滤的行不会被删除，也不会被清理关联或记 audit.
     """
     sa_table = _get_sa_table(engine, table)
     if not row_ids:
         return 0
     row_scope = _build_row_scope_where(table, sa_table, db)
-    del_where: list[Any] = [sa_table.c.id.in_(row_ids), sa_table.c._trashed.is_(False)]
+
+    # 先查哪些行真正符合删除条件（同时受 row_filters 约束），避免误删 links / 误记 audit
+    check_where: list[Any] = [sa_table.c.id.in_(row_ids), sa_table.c._trashed.is_(False)]
     if row_scope is not None:
-        del_where.append(row_scope)
+        check_where.append(row_scope)
+    with engine.connect() as conn:
+        valid_ids = [int(r[0]) for r in conn.execute(select(sa_table.c.id).where(*check_where)).all()]
+
+    if not valid_ids:
+        return 0
+
+    del_where: list[Any] = [sa_table.c.id.in_(valid_ids)]
     with engine.begin() as conn:
         result = conn.execute(sa_table.delete().where(*del_where))
         count = result.rowcount
+
     if count > 0:
-        # 注意：只清理实际被删除行的 links；这里简化传全部 row_ids，clear_row_links 做逐行删除
-        clear_row_links(engine, table, row_ids)
-        for rid in row_ids:
+        # 只清理实际被删除行的 links（valid_ids 一定是 row_ids 的子集）
+        clear_row_links(engine, table, valid_ids)
+        for rid in valid_ids:
             try:
                 log_action(db, table, ACTION_DELETE, target_id=rid)
             except Exception as exc:
