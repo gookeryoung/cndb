@@ -7,6 +7,8 @@
 - BASE_DIR：代码/静态资源目录（只读），定位 pyproject.toml 或 alembic.ini。
 - HOME_DIR: 用户主目录（~），全局持久化数据根目录。
 - DATA_DIR：用户可写数据根目录（统一为 ~/.cndb）。
+  支持通过环境变量 CNDB_DATA_DIR 整体覆盖（e2e 测试与用户数据隔离等场景），
+  覆盖后其下所有子目录与默认 DATABASE_URL 一并切换。
   下分子目录职责：
   - CONFIG_DIR:  配置文件（.env 等）
   - DATABASE_DIR: SQLite 数据库文件
@@ -21,6 +23,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
@@ -62,8 +65,10 @@ def _is_frozen() -> bool:
 BASE_DIR = _find_project_root()
 HOME_DIR = Path.home()
 
-# 统一的用户数据根目录（跨平台一致，不再区分开发/打包模式）
-DATA_DIR = HOME_DIR / ".cndb"
+# 统一的用户数据根目录（跨平台一致，不再区分开发/打包模式）。
+# 环境变量 CNDB_DATA_DIR 可整体覆盖（e2e 隔离等场景），子目录与默认
+# DATABASE_URL 均由此派生，保证数据库/上传/日志等一并切换。
+DATA_DIR = Path(os.environ.get("CNDB_DATA_DIR") or (HOME_DIR / ".cndb"))
 
 # 子目录
 CONFIG_DIR = DATA_DIR / "config"

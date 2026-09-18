@@ -15,12 +15,14 @@ export default defineConfig({
     ["./tests/e2e/reporters/slow-test.ts"],
   ],
 
-  // 一键起后端：seed 演示数据 + 启动 :8000。本地已有后端时复用，CI 自动拉起。
+  // 一键起后端：数据目录隔离(.e2e-data) + seed 演示数据 + 启动 :8000。
+  // reuseExistingServer 关闭：绝不复用来源不明的 8000 端口服务（可能是用户
+  // 自己的后端，指向真实数据目录），保证每次运行都在隔离数据上全量重建。
   // 跨平台 Python 脚本（替代 bash/PowerShell，避免 shell 差异）。
   webServer: {
     command: "uv run python scripts/e2e-server.py",
     url: "http://127.0.0.1:8000/",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 

@@ -50,6 +50,7 @@ frontend/.local-ms-playwright/
 frontend/package-lock.json
 *.bak
 uploads
+.e2e-data/
 .trae-html-share-packages/*
 backup-*.tar.gz
 .pnpm-store
