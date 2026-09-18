@@ -30,7 +30,7 @@ const PREVIEW_FIELD_TYPES = [
   { value: 'url', label: '链接 url' },
   { value: 'phone', label: '电话 phone' },
   { value: 'percentage', label: '百分比 percentage' },
-] as const
+]
 
 /** 列分析项（后端 analyze 返回） */
 interface AnalyzeColumn {
