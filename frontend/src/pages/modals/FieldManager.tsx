@@ -188,17 +188,21 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     setEditTarget(target)
     setInnerOpen(true)
     if (target) {
-      // 回填数据，config 直接以 Record<string, unknown> 存入表单
-      form.setFieldsValue({
-        name: target.name,
-        field_type: target.field_type,
-        required: target.required,
-        hidden: target.hidden,
-        is_unique: target.is_unique ?? false,
-        default_value: target.default_value ?? '',
-        config: target.config ?? {},
-      })
+      // 先设置 fieldType，让 ConfigEditor 也能拿到正确类型
       setFieldType(target.field_type)
+      // 用 setTimeout 推入下一个事件循环，确保内层 Modal + Form 完成首次挂载
+      // 同步调用 setFieldsValue 会因 Form.Item 尚未挂载而丢失值
+      setTimeout(() => {
+        form.setFieldsValue({
+          name: target.name,
+          field_type: target.field_type,
+          required: target.required,
+          hidden: target.hidden,
+          is_unique: target.is_unique ?? false,
+          default_value: target.default_value ?? '',
+          config: target.config ?? {},
+        })
+      }, 0)
     } else {
       form.resetFields()
       setFieldType(undefined)
