@@ -154,3 +154,42 @@ export function useUpdateRowOptimistic(wid: string, tid: string) {
     },
   })
 }
+
+/** 乐观更新版 deleteRows —— 立即从 cache 移除被删行，失败时回滚. */
+export function useDeleteRowsOptimistic(wid: string, tid: string) {
+  const queryClient = useQueryClient()
+  const tableKey = `${wid}/${tid}`
+
+  return useMutation({
+    mutationFn: (ids: Array<number | string>) =>
+      recordApi.bulkDelete(wid, tid, ids),
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey: ['table-records', tableKey] })
+
+      const previousRecordsQueries = queryClient.getQueriesData<RowListResponse>({
+        queryKey: ['table-records', tableKey],
+      })
+
+      const idSet = new Set(ids)
+      previousRecordsQueries.forEach(([queryKey, data]) => {
+        if (!data) return
+        queryClient.setQueryData<RowListResponse>(queryKey, {
+          ...data,
+          items: data.items.filter(r => !idSet.has(r.id)),
+          total: Math.max(0, data.total - ids.length),
+        })
+      })
+
+      return { previousRecordsQueries }
+    },
+    onError: (_err, _ids, context) => {
+      context?.previousRecordsQueries.forEach(([queryKey, data]) => {
+        if (data) queryClient.setQueryData(queryKey, data)
+      })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+      queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+    },
+  })
+}

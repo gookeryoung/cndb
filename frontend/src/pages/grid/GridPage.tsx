@@ -29,7 +29,7 @@ import {
   SearchOutlined, EditOutlined, MenuOutlined, PartitionOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useTable, useTableViews, useActiveViewPreference, useTableRecords } from '@/api/hooks'
+import { useTable, useTableViews, useActiveViewPreference, useTableRecords, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
 import {
   DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors,
 } from '@dnd-kit/core'
@@ -50,7 +50,7 @@ import MoveTableForm from './components/MoveTableForm'
 import TableSettingsDialog from './components/TableSettingsDialog'
 import TableSettingsModal from '@/pages/modals/TableSettingsModal'
 import { buildColumns } from './components/buildColumns'
-import { useTableSettingsStore } from '@/store'
+import { useTableSettingsStore, useGridViewStore } from '@/store'
 import { densityToSize } from '@/theme/tableSettings'
 
 // Modal 组件 lazy import：点击打开时才加载
@@ -131,13 +131,49 @@ export default function GridPage() {
   const showHeader = useTableSettingsStore(s => s.showHeader)
   const striped = useTableSettingsStore(s => s.striped)
   const settings = { density, defaultPageSize, bordered, showHeader, striped }
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [mode, setMode] = useState<ViewMode>(() => {
+
+  // —— 视图状态从 GridViewStore 订阅 ——
+  const mode = useGridViewStore(s => s.mode)
+  const setMode = useGridViewStore(s => s.setMode)
+  const activeViewId = useGridViewStore(s => s.activeViewId)
+  const setActiveViewId = useGridViewStore(s => s.setActiveViewId)
+  const viewFilters = useGridViewStore(s => s.viewFilters)
+  const setViewFilters = useGridViewStore(s => s.setViewFilters)
+  const updateViewFilters = useGridViewStore(s => s.updateViewFilters)
+  const viewSortings = useGridViewStore(s => s.viewSortings)
+  const setViewSortings = useGridViewStore(s => s.setViewSortings)
+  const updateViewSortings = useGridViewStore(s => s.updateViewSortings)
+  const viewFilterLogic = useGridViewStore(s => s.viewFilterLogic)
+  const setViewFilterLogic = useGridViewStore(s => s.setViewFilterLogic)
+  const viewOptionsDraft = useGridViewStore(s => s.viewOptionsDraft)
+  const setViewOptionsDraft = useGridViewStore(s => s.setViewOptionsDraft)
+  const searchQuery = useGridViewStore(s => s.searchQuery)
+  const setSearchQuery = useGridViewStore(s => s.setSearchQuery)
+  const offset = useGridViewStore(s => s.offset)
+  const setOffset = useGridViewStore(s => s.setOffset)
+  const limit = useGridViewStore(s => s.limit)
+  const setLimit = useGridViewStore(s => s.setLimit)
+  const patchView = useGridViewStore(s => s.patch)
+  const resetView = useGridViewStore(s => s.reset)
+
+  // wid/tid 变化时重置 store + 初始化 mode
+  useEffect(() => {
+    resetView()
+    // 恢复当前表的 mode 偏好（URL > localStorage > 默认 grid）
     const spMode = searchParams.get('mode') as ViewMode | null
-    if (spMode && (VALID_MODES as readonly string[]).includes(spMode)) return spMode
-    const lsMode = _readModeFromStorage()
-    return lsMode ?? 'grid'
-  })
+    if (spMode && (VALID_MODES as readonly string[]).includes(spMode)) {
+      setMode(spMode)
+    } else {
+      const lsMode = _readModeFromStorage()
+      if (lsMode) setMode(lsMode)
+    }
+    // 搜索词恢复
+    const q = searchParams.get('q')
+    if (q) setSearchQuery(q)
+    setLimit(settings.defaultPageSize)
+  }, [wid, tid]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailRow, setDetailRow] = useState<RowResponse | null>(null)
@@ -153,24 +189,10 @@ export default function GridPage() {
   const [tableSettingsOpen, setTableSettingsOpen] = useState(false)
   const [tableSettingsTab, setTableSettingsTab] = useState<'basic' | 'fields' | 'views' | 'permissions'>('basic')
   const [newRowOpen, setNewRowOpen] = useState(false)
-  const [activeViewId, setActiveViewId] = useState<number | string | null>(null)
-  const [viewFilters, setViewFilters] = useState<FilterRule[]>([])
-  const [viewSortings, setViewSortings] = useState<SortRule[]>([])
-  const [viewFilterLogic, setViewFilterLogic] = useState<'AND' | 'OR'>('AND')
-  const [viewOptionsDraft, setViewOptionsDraft] = useState<Record<string, unknown> | null>(null)
-  const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') || '')
-  const [offset, setOffset] = useState(0)
-  const [limit, setLimit] = useState(settings.defaultPageSize)
   const tableKey = `${wid}/${tid}`
 
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
-
-  /** wid/tid 变化时重置活动视图状态 —— React Router 复用 GridPage 组件实例，
-   *  跨表导航时 activeViewId 保留旧值会阻止初始化 useEffect 重新匹配目标表的视图. */
-  useEffect(() => {
-    setActiveViewId(null)
-  }, [wid, tid])
 
   const { data: table, isLoading } = useTable(wid!, tid!)
   const { data: views = [] } = useTableViews(wid!, tid!)
@@ -212,15 +234,20 @@ export default function GridPage() {
   const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
-      setActiveViewId(v.id)
-      setViewFilters(normalizeFilters(v.filters))
-      setViewSortings(Array.isArray(v.sortings) ? v.sortings : [])
-      setViewFilterLogic((v.filter_type ?? 'AND') as 'AND' | 'OR')
-      setViewOptionsDraft(v.view_options ?? null)
       const KANBAN_MODES = new Set<string>(['kanban', 'gallery', 'calendar', 'gantt', 'wbs'])
       const vt = v.view_type ?? ''
       const newMode: ViewMode = KANBAN_MODES.has(vt) ? (vt as ViewMode) : 'grid'
-      setMode(newMode)
+
+      patchView({
+        activeViewId: v.id,
+        viewFilters: normalizeFilters(v.filters),
+        viewSortings: Array.isArray(v.sortings) ? v.sortings : [],
+        viewFilterLogic: (v.filter_type ?? 'AND') as 'AND' | 'OR',
+        viewOptionsDraft: v.view_options ?? null,
+        mode: newMode,
+        offset: 0,
+      })
+
       // 全局模式持久化（localStorage + URL）—— 跨表切换时自动找回相同视图类型
       // persistMode=false 时（如初始化 fallback 到 default 视图）跳过，不覆盖用户之前的偏好
       if (persistMode) {
@@ -235,12 +262,16 @@ export default function GridPage() {
         saveActiveViewPref.mutate(Number(v.id))
       }
     } else {
-      setActiveViewId(null)
-      setViewFilters([])
-      setViewSortings([])
-      setViewFilterLogic('AND')
-      setViewOptionsDraft(null)
-      setMode('grid')
+      patchView({
+        activeViewId: null,
+        viewFilters: [],
+        viewSortings: [],
+        viewFilterLogic: 'AND',
+        viewOptionsDraft: null,
+        mode: 'grid',
+        offset: 0,
+      })
+
       if (persistMode) {
         try { localStorage.setItem(MODE_STORAGE_KEY, 'grid') } catch { /* localStorage 不可用时忽略 */ }
       }
@@ -251,8 +282,7 @@ export default function GridPage() {
         setSearchParams(params, { replace: true })
       }
     }
-    setOffset(0)
-    // 等 React 批量 setState 渲染完 + useEffect 检查过一遍（此时 skipSaveRef=true 会被正确跳过），再放开自动保存
+    // 等 React 批量渲染完 + useEffect 检查过一遍（此时 skipSaveRef=true 会被正确跳过），再放开自动保存
     setTimeout(() => { skipSaveRef.current = false }, 50)
   }
 
@@ -354,27 +384,8 @@ export default function GridPage() {
     },
   )
 
-  const deleteRows = useMutation({
-    mutationFn: (ids: React.Key[]) => recordApi.bulkDelete(wid!, tid!, ids as Array<number | string>),
-    onSuccess: () => {
-      message.success('已删除')
-      queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-      queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
-      setSelectedRowKeys([])
-    },
-  })
-  const updateRow = useMutation({
-    mutationFn: async (args: { rowId: number | string; fieldName: string; value: unknown }) => {
-      const payload: Record<string, unknown> = { [args.fieldName]: args.value }
-      return recordApi.update(wid!, tid!, args.rowId, { values: payload })
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-    },
-    onError: (err) => {
-      message.error(err instanceof Error ? err.message : '保存失败')
-    },
-  })
+  const deleteRows = useDeleteRowsOptimistic(wid!, tid!)
+  const updateRow = useUpdateRowOptimistic(wid!, tid!)
   const copyRow = useMutation({
     mutationFn: async (ids: Array<number | string>) => {
       const copies: Array<Record<string, unknown>> = []
@@ -563,14 +574,14 @@ export default function GridPage() {
     table?.fields || [], wid, viewSortings, viewFilters,
     (fieldName, op, value) => {
       // 替换同字段已有规则，没有则追加（避免不断累积）
-      setViewFilters(prev => {
+      updateViewFilters(prev => {
         const without = prev.filter(f => f.field_name !== fieldName)
         return [...without, { field_name: fieldName, op, value }]
       })
       setOffset(0)
     },
     (fieldName) => {
-      setViewFilters(prev => prev.filter(f => f.field_name !== fieldName))
+      updateViewFilters(prev => prev.filter(f => f.field_name !== fieldName))
       setOffset(0)
     },
     updateRow.isPending
@@ -829,10 +840,10 @@ export default function GridPage() {
               const order = activeItem.order
               if (order === null) {
                 // 清除：只移除该字段的排序规则，保留其他
-                setViewSortings(prev => prev.filter(sr => sr.field_name !== field))
+                updateViewSortings(prev => prev.filter(sr => sr.field_name !== field))
               } else {
                 const newSort: SortRule = { field_name: field, direction: order === 'ascend' ? 'asc' : 'desc' }
-                setViewSortings(prev => {
+                updateViewSortings(prev => {
                   const without = prev.filter(sr => sr.field_name !== field)
                   return [newSort, ...without]
                 })
@@ -868,7 +879,12 @@ export default function GridPage() {
               <Button size="small" icon={<CopyOutlined />} loading={copyRow.isPending}
                 onClick={() => copyRow.mutate(selectedRowKeys as Array<number | string>)}>复制选中</Button>
               <Button size="small" danger icon={<DeleteOutlined />}
-                onClick={() => Modal.confirm({ title: `确定删除 ${selectedRowKeys.length} 行？`, onOk: () => deleteRows.mutate(selectedRowKeys) })}
+                onClick={() => Modal.confirm({
+                  title: `确定删除 ${selectedRowKeys.length} 行？`,
+                  onOk: () => deleteRows.mutate(selectedRowKeys as Array<number | string>, {
+                    onSuccess: () => { message.success('已删除'); setSelectedRowKeys([]) },
+                  }),
+                })}
                 loading={deleteRows.isPending}>删除选中</Button>
               <Button size="small" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
             </Space>

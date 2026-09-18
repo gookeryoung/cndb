@@ -39,11 +39,15 @@ interface GridViewState {
   /** 支持函数式更新，同 React setState */
   updateViewFilters: (updater: (prev: FilterRule[]) => FilterRule[]) => void
   setViewSortings: (sortings: SortRule[]) => void
+  /** 支持函数式更新，同 React setState */
+  updateViewSortings: (updater: (prev: SortRule[]) => SortRule[]) => void
   setViewFilterLogic: (logic: 'AND' | 'OR') => void
   setViewOptionsDraft: (draft: Record<string, unknown> | null) => void
   setSearchQuery: (q: string) => void
   setOffset: (offset: number) => void
   setLimit: (limit: number) => void
+  /** 批量更新部分字段 —— loadView 一次性设置 6+ 个状态时使用 */
+  patch: (partial: Partial<Omit<GridViewState, 'patch' | 'reset'>>) => void
   /** 跨表导航时重置所有视图状态 */
   reset: () => void
 }
@@ -79,11 +83,13 @@ export const useGridViewStore = create<GridViewState>()((set) => ({
   setViewFilters: (viewFilters) => set({ viewFilters }),
   updateViewFilters: (updater) => set((state) => ({ viewFilters: updater(state.viewFilters) })),
   setViewSortings: (viewSortings) => set({ viewSortings }),
+  updateViewSortings: (updater) => set((state) => ({ viewSortings: updater(state.viewSortings) })),
   setViewFilterLogic: (viewFilterLogic) => set({ viewFilterLogic }),
   setViewOptionsDraft: (viewOptionsDraft) => set({ viewOptionsDraft }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setOffset: (offset) => set({ offset }),
   setLimit: (limit) => set({ limit }),
 
+  patch: (partial) => set(partial),
   reset: () => set(INITIAL_STATE),
 }))
