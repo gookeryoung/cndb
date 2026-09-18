@@ -1208,7 +1208,6 @@ export default function GridPage() {
         )}
       </Modal>
 
-      {/* 权限设置 Modal — 已收敛到 TableSettingsModal 的权限 Tab，仅作为 fallback 保留（不暴露按钮） */}
       {/* 移动表 Modal */}
       <Modal
         title="移动表到其他工作区"
