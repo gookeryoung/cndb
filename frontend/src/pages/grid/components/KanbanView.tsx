@@ -15,7 +15,7 @@
  * - pin_urgent:        是否把逾期/紧急卡片置顶（默认 true，有 due_date_field 时）
  */
 
-import { useMemo, useRef } from 'react'
+import { memo, useMemo, useRef } from 'react'
 import { Tag, Progress, Tooltip, Empty } from 'antd'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
@@ -151,7 +151,7 @@ interface KanbanCardProps {
   onRowClick?: (r: RowResponse) => void
 }
 
-function KanbanCard({ row, fields, opts, density, onRowClick }: KanbanCardProps) {
+const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowClick }: KanbanCardProps) {
   const cs = densityCardStyle(density)
 
   // 字段解析（opts 已 resolve 默认值；title_field 走 schema 自动推断 fallback）
@@ -272,9 +272,7 @@ function KanbanCard({ row, fields, opts, density, onRowClick }: KanbanCardProps)
       )}
     </div>
   )
-}
-
-// ── 优先级徽章 ───────────────────────────────────────
+})
 
 function PriorityBadge({ field, value }: { field?: Field; value: unknown }) {
   if (value === null || value === undefined || value === '') return null
