@@ -299,11 +299,12 @@ export const importApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
   },
-  /** 上传文件 + 自动建表 + 导入数据（tableName 留空则用文件名推断） */
-  createFromFile: (wid: number | string, file: File, tableName?: string) => {
+  /** 上传文件 + 自动建表 + 导入数据（tableName 留空则用文件名推断；columnOverrides 为可选字段类型覆盖） */
+  createFromFile: (wid: number | string, file: File, tableName?: string, columnOverrides?: Record<string, { field_type: string; options?: string[] }>) => {
     const fd = new FormData()
     fd.append('file', file)
     if (tableName) fd.append('table_name', tableName)
+    if (columnOverrides) fd.append('column_overrides', JSON.stringify(columnOverrides))
     return api.post<FileImportResult>(`/v1/workspaces/${wid}/import-file`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
