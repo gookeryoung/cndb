@@ -36,7 +36,7 @@ import {
 import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { tableApi, recordApi, viewApi, userApi, auditApi, commentApi } from '@/api'
-import type { RowResponse, View, ViewCreate, RowValues, Field, ID } from '@/api'
+import type { RowResponse, View, ViewCreate } from '@/api'
 import KanbanView from './components/KanbanView'
 import CalendarView from './components/CalendarView'
 import GalleryView from './components/GalleryView'
@@ -223,7 +223,7 @@ export default function GridPage() {
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
 
-  /** 打开行详情抽屉并预取 audit/comments/references —— queryKey 与 RowDetailDrawer 的自定义 hooks 完全一致. */
+  /** 打开行详情抽屉并预取 audit/references —— queryKey 与 RowDetailDrawer 的自定义 hooks 完全一致. */
   const openDetailWithPrefetch = useCallback((r: RowResponse) => {
     setDetailRow(r)
     setDetailOpen(true)
@@ -232,11 +232,6 @@ export default function GridPage() {
       void queryClient.prefetchQuery({
         queryKey: ['row-audit', wid, tid, rowId],
         queryFn: () => auditApi.list(wid, tid, undefined, 20, rowId),
-        staleTime: 60_000,
-      })
-      void queryClient.prefetchQuery({
-        queryKey: ['row-comments', wid, tid, rowId],
-        queryFn: () => commentApi.list(wid, tid, rowId),
         staleTime: 60_000,
       })
       void queryClient.prefetchQuery({

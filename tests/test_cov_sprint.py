@@ -1,4 +1,4 @@
-"""Coverage sprint — 补全 comments/import_csv/public/records/trash routers 的异常/边界分支."""
+"""Coverage sprint — 补全 import_csv/public/records/trash routers 的异常/边界分支."""
 
 from __future__ import annotations
 
@@ -8,83 +8,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cndb.plugins.tables.field_types import DateFieldType, DateTimeFieldType
-
-# ── comments.py ──────────────────────────────────────────
-
-
-class TestCommentsCoverage:
-    def test_create_comment_parent_not_found(self, client, auth_headers):
-        """POST comments with parent_id -> 400 when parent missing."""
-        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_c1"})
-        wid = ws.json()["id"]
-        t = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t1"})
-        tid = t.json()["id"]
-        client.post(
-            f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
-            headers=auth_headers,
-            json={"name": "name", "field_type": "text", "order": 0},
-        )
-        row = client.post(
-            f"/api/v1/workspaces/{wid}/tables/{tid}/records",
-            headers=auth_headers,
-            json={"values": {"name": "hi"}},
-        )
-        rid = row.json()["id"]
-        # parent_id 指向不存在的评论
-        r = client.post(
-            f"/api/v1/workspaces/{wid}/tables/{tid}/records/{rid}/comments",
-            headers=auth_headers,
-            json={"content": "threaded", "parent_id": 9999},
-        )
-        assert r.status_code == 400
-
-    def test_update_comment_not_author_403(self, client, auth_headers):
-        """PATCH comment -> 403 when not the original author."""
-        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_c2"})
-        wid = ws.json()["id"]
-        t = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t2"})
-        tid = t.json()["id"]
-        client.post(
-            f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
-            headers=auth_headers,
-            json={"name": "name", "field_type": "text", "order": 0},
-        )
-        row = client.post(
-            f"/api/v1/workspaces/{wid}/tables/{tid}/records",
-            headers=auth_headers,
-            json={"values": {"name": "hi"}},
-        )
-        rid = row.json()["id"]
-        c = client.post(
-            f"/api/v1/workspaces/{wid}/tables/{tid}/records/{rid}/comments",
-            headers=auth_headers,
-            json={"content": "mine"},
-        )
-        cid = c.json()["id"]
-        # 注册另一个用户，把他加进来当 editor，然后用他账号改评论
-        client.post(
-            "/api/v1/accounts/auth/register",
-            json={"username": "editor2", "email": "e2@e.com", "password": "passw0rd"},
-        )
-        login2 = client.post(
-            "/api/v1/accounts/auth/login",
-            json={"login": "editor2", "password": "passw0rd"},
-        )
-        h2 = {"Authorization": f"Bearer {login2.json()['access_token']}"}
-        # 添加成员到工作区
-        client.post(
-            f"/api/v1/workspaces/{wid}/members",
-            headers=auth_headers,
-            json={"username": "editor2", "role": "editor"},
-        )
-        # 用 editor2 的 token 尝试更新评论
-        r = client.patch(
-            f"/api/v1/workspaces/{wid}/tables/{tid}/comments/{cid}",
-            headers=h2,
-            json={"content": "hacked"},
-        )
-        assert r.status_code == 403
-
 
 # ── records.py routers ───────────────────────────────────
 

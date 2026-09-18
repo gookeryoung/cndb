@@ -312,10 +312,6 @@ export interface AuditLog {
   actor_id?: ID | null; actor_name?: string
   payload?: Record<string, unknown> | null; created_at?: string
 }
-export interface Comment {
-  id: ID; row_id?: ID; author_id?: ID | null; author_name?: string
-  content: string; created_at?: string; updated_at?: string
-}
 export interface Reference {
   id: ID
   from_table_id: ID; from_row_id: ID; from_field_id: ID
@@ -532,8 +528,6 @@ export interface TablePermission {
   /** 按角色分桶的隐藏字段: { "admin": ["field_name", ...], "editor": [...] } */
   hidden_fields?: Record<string, string[]> | null
   row_filters?: Record<string, unknown> | null
-  /** 角色级备注字段 (后端: comment_role) */
-  comment_role?: string
 }
 
 // ── Attachment ──────────────────────────────────────
