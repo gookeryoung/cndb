@@ -41,7 +41,13 @@ function buildWrapper(route: string, queryClient: QueryClient) {
     return (
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+          {/* future flags 对齐 main.tsx 的 BrowserRouter，保证 v7 路由语义测试与生产一致 */}
+          <MemoryRouter
+            future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+            initialEntries={[route]}
+          >
+            {children}
+          </MemoryRouter>
         </ThemeProvider>
       </QueryClientProvider>
     )
