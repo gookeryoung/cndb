@@ -127,6 +127,56 @@ def test_serve_reload_sets_workers_to_one() -> None:
         assert call_kwargs["workers"] == 1
 
 
+def test_silence_proactor_noise_noop_on_posix(monkeypatch: pytest.MonkeyPatch) -> None:
+    """非 win32 平台应为 no-op，不修改 transport 类."""
+    from asyncio.proactor_events import _ProactorBasePipeTransport
+
+    original = _ProactorBasePipeTransport._call_connection_lost
+    monkeypatch.setattr(sys, "platform", "linux")
+    runner._silence_proactor_reset_noise()
+    assert _ProactorBasePipeTransport._call_connection_lost is original
+
+
+def test_silence_proactor_noise_swallows_connection_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """win32 下包装后应吞掉对端 RST 引发的 ConnectionResetError（e2e 噪音）."""
+    from asyncio.proactor_events import _ProactorBasePipeTransport
+
+    calls: list[object] = []
+
+    def fake_original(self: object, exc: object) -> None:
+        calls.append(exc)
+        raise ConnectionResetError(10054, "远程主机强迫关闭了一个现有的连接")
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(_ProactorBasePipeTransport, "_call_connection_lost", fake_original)
+    runner._silence_proactor_reset_noise()
+
+    # 用占位 self 直接调用包装函数，避免 object.__new__ 半初始化实例触发 __del__
+    wrapped = _ProactorBasePipeTransport._call_connection_lost
+    wrapped(object(), None)  # 不抛异常即通过
+    assert calls == [None]
+
+
+def test_silence_proactor_noise_reraises_other_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """win32 下非重置类异常应原样上抛，不被吞掉."""
+    from asyncio.proactor_events import _ProactorBasePipeTransport
+
+    def fake_original(self: object, exc: object) -> None:
+        raise ValueError("真实 bug 不应被吞")
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(_ProactorBasePipeTransport, "_call_connection_lost", fake_original)
+    runner._silence_proactor_reset_noise()
+
+    wrapped = _ProactorBasePipeTransport._call_connection_lost
+    with pytest.raises(ValueError, match="真实 bug"):
+        wrapped(object(), None)
+
+
 def test_ensure_dev_env_missing_frontend_exits() -> None:
     """FRONTEND_DIR 不存在时 _ensure_dev_env 应 sys.exit(1)."""
     fake = Mock()
