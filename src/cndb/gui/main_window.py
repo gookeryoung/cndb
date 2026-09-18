@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+import re
 import subprocess
 import sys
 import threading
@@ -28,6 +29,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Any, override
 
 from cndb.gui.log_handler import QueueStdout, redirect_output, run_in_thread, schedule_log_flush
+from cndb.gui.settings import GuiSettings, load_settings, save_settings
 
 # ── 日志文本 Tag 配置（终端风格配色）──
 LOG_TAGS: dict[str, tuple[str, str]] = {
@@ -92,6 +94,29 @@ def _scan_backup_files() -> list[Path]:
     return backups
 
 
+# ── 窗口几何恢复 ──
+
+# Tk geometry 字符串：`WxH+X+Y`（宽 x 高 + 水平偏移 + 垂直偏移）
+_GEOMETRY_RE = re.compile(r"^(\d+)x(\d+)([+-]\d+)([+-]\d+)$")
+
+
+def _apply_window_geometry(root: tk.Tk, geometry: str) -> None:
+    """恢复主窗口位置/尺寸；已完全滑出屏幕（显示器变更等）时忽略，回退默认.
+
+    Tk 的 geometry() 一直会记录左上角坐标；若用户外接屏移除后坐标变为负值，
+    强行恢复会导致窗口无法拖回，故做一次屏幕边界校验。
+    """
+    match = _GEOMETRY_RE.match(geometry)
+    if not match:
+        return
+    _, _, x, y = (int(g) for g in match.groups())
+    screen_w = root.winfo_screenwidth()
+    screen_h = root.winfo_screenheight()
+    if x >= screen_w or y >= screen_h:  # 左上角已到屏幕外，忽略已保存位置
+        return
+    root.geometry(geometry)
+
+
 # ═══════════════════════════════════════════════════════════════
 # 主窗口
 # ═══════════════════════════════════════════════════════════════
@@ -103,8 +128,11 @@ class CndbMainWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("cndbw — cndb 桌面管理台")
-        self.root.geometry("960x640")
         self.root.minsize(800, 520)
+
+        # 加载持久化的 GUI 设置，恢复主窗口几何信息（若有）
+        self.settings = load_settings()
+        _apply_window_geometry(root, self.settings.window_geometry)
 
         # 全局日志队列
         self.log_queue = QueueStdout()
@@ -172,11 +200,20 @@ class CndbMainWindow:
         self.root.after(0, lambda: self.status_var.set(text))
 
     def _on_close(self) -> None:
-        """关闭窗口前停服务."""
+        """关闭窗口：持久化所有界面设置与窗口位置，再停止并销毁."""
+        self._persist_settings()
         if self._server_proc is not None:
             with contextlib.suppress(Exception):
                 self._server_proc.terminate()
         self.root.destroy()
+
+    def _persist_settings(self) -> None:
+        """把主窗口几何与各 Tab 界面设置收集进 settings 并写入配置文件."""
+        with contextlib.suppress(Exception):
+            self.settings.window_geometry = self.root.geometry()
+        for tab in (self.tab_serve, self.tab_backup, self.tab_users, self.tab_info):
+            tab.persist(self.settings)
+        save_settings(self.settings)
 
     def run(self) -> None:
         # 切换到主窗口的 stdout/stderr（只在 GUI 运行期间重定向，避免影响子进程）
@@ -217,6 +254,10 @@ class _BaseTab:
         text.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
         return text
 
+    def persist(self, settings: GuiSettings) -> None:
+        """把当前界面取值写入 settings（默认无状态 Tab 为 no-op）."""
+        del settings
+
 
 # ═══════════════════════════════════════════════════════════════
 # Tab: 启动服务
@@ -233,20 +274,20 @@ class ServeTab(_BaseTab):
         cfg.pack(fill=tk.X)
 
         ttk.Label(cfg, text="Host:").grid(row=0, column=0, sticky=tk.W, padx=2, pady=2)
-        self.host_var = tk.StringVar(value="127.0.0.1")
+        self.host_var = tk.StringVar(value=self.app.settings.serve.host)
         ttk.Entry(cfg, textvariable=self.host_var, width=16).grid(row=0, column=1, sticky=tk.W, padx=2)
 
         ttk.Label(cfg, text="Port:").grid(row=0, column=2, sticky=tk.W, padx=2, pady=2)
-        self.port_var = tk.StringVar(value="8000")
+        self.port_var = tk.StringVar(value=self.app.settings.serve.port)
         ttk.Entry(cfg, textvariable=self.port_var, width=8).grid(row=0, column=3, sticky=tk.W, padx=2)
 
-        self.reload_var = tk.BooleanVar(value=False)
+        self.reload_var = tk.BooleanVar(value=self.app.settings.serve.reload)
         ttk.Checkbutton(cfg, text="开发模式 (reload)", variable=self.reload_var).grid(
             row=0, column=4, sticky=tk.W, padx=12
         )
 
         ttk.Label(cfg, text="Workers:").grid(row=0, column=5, sticky=tk.W, padx=2)
-        self.workers_var = tk.StringVar(value="1")
+        self.workers_var = tk.StringVar(value=self.app.settings.serve.workers)
         ttk.Entry(cfg, textvariable=self.workers_var, width=6).grid(row=0, column=6, sticky=tk.W, padx=2)
 
         # 按钮区
@@ -396,6 +437,13 @@ class ServeTab(_BaseTab):
         url = f"http://{self.host_var.get().strip() or '127.0.0.1'}:{self.port_var.get().strip() or '8000'}"
         webbrowser.open(url)
 
+    @override
+    def persist(self, settings: GuiSettings) -> None:
+        settings.serve.host = self.host_var.get().strip() or "127.0.0.1"
+        settings.serve.port = self.port_var.get().strip() or "8000"
+        settings.serve.reload = self.reload_var.get()
+        settings.serve.workers = self.workers_var.get().strip() or "1"
+
 
 # ═══════════════════════════════════════════════════════════════
 # Tab: 备份/恢复
@@ -403,34 +451,46 @@ class ServeTab(_BaseTab):
 
 
 class BackupTab(_BaseTab):
+    """备份/恢复操作界面.
+
+    布局约定（对齐最佳实践）：
+    - 分组使用 LabelFrame，顶部两个操作区并排的首要信息（输出路径/归档文件）
+      以「标签 + 输入框 + 行内按钮」排成一行
+    - 控制列（column=1）拉伸占满剩余宽度，保证不同分辨率下整齐
+    - 所有操作按钮统一右对齐，避免散落
+    """
+
+    _BACKUP_MODES: tuple[str, ...] = ("auto", "native", "sqlalchemy")
+
     @override
     def _build_layout(self) -> None:
-        # 上半：备份
-        back_frame = ttk.LabelFrame(self.frame, text="创建备份", padding=10)
+        saved = self.app.settings.backup
+
+        # ── 上半：创建备份 ──
+        back_frame = ttk.LabelFrame(self.frame, text="创建备份", padding=(12, 10))
         back_frame.pack(fill=tk.X)
+        back_frame.columnconfigure(1, weight=1)  # 输入/选择列占满剩余宽度
 
-        ttk.Label(back_frame, text="输出路径:").grid(row=0, column=0, sticky=tk.W)
-        self.out_var = tk.StringVar(value=str(_default_backup_dir()))
-        ttk.Entry(back_frame, textvariable=self.out_var, width=48).grid(row=0, column=1, sticky=tk.W, padx=4)
-        ttk.Button(back_frame, text="浏览", command=self._pick_output).grid(row=0, column=2, padx=4)
-
-        ttk.Label(back_frame, text="模式:").grid(row=1, column=0, sticky=tk.W, pady=(6, 0))
-        self.mode_var = tk.StringVar(value="auto")
-        ttk.Combobox(
-            back_frame,
-            textvariable=self.mode_var,
-            values=["auto", "native", "sqlalchemy"],
-            width=14,
-            state="readonly",
-        ).grid(row=1, column=1, sticky=tk.W, pady=(6, 0))
-
-        self.no_uploads_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(back_frame, text="不包含附件 (uploads)", variable=self.no_uploads_var).grid(
-            row=1, column=2, sticky=tk.W, pady=(6, 0)
+        ttk.Label(back_frame, text="输出路径:").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+        self.out_var = tk.StringVar(value=saved.output or str(_default_backup_dir()))
+        ttk.Entry(back_frame, textvariable=self.out_var).grid(row=0, column=1, sticky=tk.EW, pady=4)
+        ttk.Button(back_frame, text="浏览", command=self._pick_output, width=8).grid(
+            row=0, column=2, padx=(8, 0), pady=4
         )
 
-        self.backup_btn = ttk.Button(back_frame, text="立即备份", command=self.do_backup, width=12)
-        self.backup_btn.grid(row=2, column=0, columnspan=3, pady=(10, 0), sticky=tk.E)
+        ttk.Label(back_frame, text="模式:").grid(row=1, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+        self.mode_var = tk.StringVar(value=(saved.mode if saved.mode in self._BACKUP_MODES else "auto"))
+        ttk.Combobox(
+            back_frame, textvariable=self.mode_var, values=list(self._BACKUP_MODES), state="readonly", width=14
+        ).grid(row=1, column=1, sticky=tk.W, pady=4)
+
+        self.no_uploads_var = tk.BooleanVar(value=saved.no_uploads)
+        ttk.Checkbutton(back_frame, text="不包含附件 (uploads)", variable=self.no_uploads_var).grid(
+            row=1, column=2, sticky=tk.W, padx=(12, 0), pady=4
+        )
+
+        self.backup_btn = ttk.Button(back_frame, text="立即备份", command=self.do_backup)
+        self.backup_btn.grid(row=2, column=2, sticky=tk.E, pady=(10, 0))
 
         # 进度条 + 结果反馈（备份/恢复/预演共用）
         prog_row = ttk.Frame(back_frame)
@@ -440,32 +500,32 @@ class BackupTab(_BaseTab):
         self.op_status = ttk.Label(prog_row, text="就绪", foreground="#888")
         self.op_status.pack(side=tk.LEFT, padx=(10, 0))
 
-        # 中间：恢复
-        rest_frame = ttk.LabelFrame(self.frame, text="从归档恢复", padding=10)
+        # ── 下半：恢复 ──
+        rest_frame = ttk.LabelFrame(self.frame, text="从归档恢复", padding=(12, 10))
         rest_frame.pack(fill=tk.X, pady=(10, 0))
+        rest_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(rest_frame, text="归档文件:").grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(rest_frame, text="归档文件:").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=4)
         self.archive_var = tk.StringVar()
-        self.archive_box = ttk.Combobox(
-            rest_frame,
-            textvariable=self.archive_var,
-            width=48,
-            state="readonly",
-        )
-        self.archive_box.grid(row=0, column=1, sticky=tk.W, padx=4)
-        ttk.Button(rest_frame, text="浏览", command=self._pick_archive).grid(row=0, column=2, padx=4)
-        ttk.Button(rest_frame, text="刷新列表", command=self._refresh_archives).grid(row=0, column=3, padx=(0, 4))
+        self.archive_box = ttk.Combobox(rest_frame, textvariable=self.archive_var, state="readonly")
+        self.archive_box.grid(row=0, column=1, sticky=tk.EW, pady=4)
+        # 归档行内操作按钮集合（成组，视觉紧凑）
+        archive_btns = ttk.Frame(rest_frame)
+        archive_btns.grid(row=0, column=2, padx=(8, 0), pady=4)
+        ttk.Button(archive_btns, text="浏览", command=self._pick_archive, width=6).pack(side=tk.LEFT)
+        ttk.Button(archive_btns, text="刷新列表", command=self._refresh_archives).pack(side=tk.LEFT, padx=(6, 0))
 
-        self.force_var = tk.BooleanVar(value=False)
+        self.force_var = tk.BooleanVar(value=saved.force)
         ttk.Checkbutton(rest_frame, text="强制覆盖已有数据", variable=self.force_var).grid(
-            row=1, column=1, sticky=tk.W, pady=(6, 0)
+            row=1, column=0, columnspan=2, sticky=tk.W, padx=(0, 8), pady=4
         )
 
-        btn_row = ttk.Frame(rest_frame)
-        btn_row.grid(row=2, column=0, columnspan=3, pady=(10, 0), sticky=tk.E)
-        self.dry_run_btn = ttk.Button(btn_row, text="预演 (dry-run)", command=self.do_restore_dry_run)
+        # 操作按钮统一右对齐
+        op_row = ttk.Frame(rest_frame)
+        op_row.grid(row=2, column=2, sticky=tk.E, pady=(10, 0))
+        self.dry_run_btn = ttk.Button(op_row, text="预演 (dry-run)", command=self.do_restore_dry_run)
         self.dry_run_btn.pack(side=tk.LEFT, padx=(0, 6))
-        self.restore_btn = ttk.Button(btn_row, text="立即恢复", command=self.do_restore)
+        self.restore_btn = ttk.Button(op_row, text="立即恢复", command=self.do_restore)
         self.restore_btn.pack(side=tk.LEFT)
 
         # 日志区
@@ -475,6 +535,13 @@ class BackupTab(_BaseTab):
 
         # 初始填充归档列表：最新备份作为默认选项
         self._refresh_archives()
+
+    @override
+    def persist(self, settings: GuiSettings) -> None:
+        settings.backup.output = self.out_var.get().strip()
+        settings.backup.mode = self.mode_var.get() or "auto"
+        settings.backup.no_uploads = self.no_uploads_var.get()
+        settings.backup.force = self.force_var.get()
 
     def _refresh_archives(self) -> None:
         """扫描默认备份目录刷新归档下拉列表，最新备份自动作为默认选项."""
@@ -727,11 +794,12 @@ class UsersTab(_BaseTab):
         filter_row.pack(fill=tk.X)
 
         ttk.Label(filter_row, text="角色筛选:").pack(side=tk.LEFT)
-        self.list_role_var = tk.StringVar(value="")
+        self.list_role_var = tk.StringVar(value=self.app.settings.users.role)
+        self.list_role_opts = ["", "system_admin", "security_admin", "audit_admin", "user"]
         ttk.Combobox(
             filter_row,
             textvariable=self.list_role_var,
-            values=["", "system_admin", "security_admin", "audit_admin", "user"],
+            values=self.list_role_opts,
             state="readonly",
             width=16,
         ).pack(side=tk.LEFT, padx=4)
@@ -818,6 +886,11 @@ class UsersTab(_BaseTab):
             self.app.root.after(0, _fill)
 
         run_in_thread(_run)
+
+    @override
+    def persist(self, settings: GuiSettings) -> None:
+        role = self.list_role_var.get()
+        settings.users.role = role if role in self.list_role_opts else ""
 
     # ── delete ──
     def _build_delete(self, parent: ttk.Frame) -> None:
@@ -949,10 +1022,17 @@ class InfoTab(_BaseTab):
         top = ttk.Frame(self.frame)
         top.pack(fill=tk.X)
 
-        self.auto_var = tk.BooleanVar(value=False)
+        saved = self.app.settings.info
+        self._refreshing = False
+        self._after_id: str | None = None
+
+        # 自动刷新默认开启（可被持久化的配置覆盖）
+        self.auto_var = tk.BooleanVar(value=saved.auto_refresh)
         ttk.Checkbutton(top, text="自动刷新", variable=self.auto_var, command=self._on_auto_toggle).pack(side=tk.LEFT)
 
-        self.interval_var = tk.StringVar(value="10 秒")
+        # 间隔取持久化值，不合法时回退默认
+        interval = saved.interval if saved.interval in self.AUTO_REFRESH_OPTIONS else "10 秒"
+        self.interval_var = tk.StringVar(value=interval)
         self.interval_box = ttk.Combobox(
             top,
             textvariable=self.interval_var,
@@ -971,8 +1051,15 @@ class InfoTab(_BaseTab):
         self.text = scrolledtext.ScrolledText(self.frame, wrap=tk.NONE, font=("Consolas", 10), state=tk.DISABLED)
         self.text.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
 
-        self._refreshing = False
-        self._after_id: str | None = None
+        # 启动即开启自动刷新：立即取一次信息并排定定时器
+        if self.auto_var.get():
+            self.refresh()
+            self._schedule_next()
+
+    @override
+    def persist(self, settings: GuiSettings) -> None:
+        settings.info.auto_refresh = self.auto_var.get()
+        settings.info.interval = self.interval_var.get() or "10 秒"
 
     # ── 刷新 ──
 
