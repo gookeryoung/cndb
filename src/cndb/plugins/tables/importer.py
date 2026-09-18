@@ -326,6 +326,14 @@ class Importer:
         report["actually_updated"] = updated_count
         report["actually_imported"] = len(new_ids) + updated_count
 
+        # 导入完成后自动补全 select/multiselect options（覆盖新旧字段 + 存量数据）
+        try:
+            from cndb.plugins.tables.field_ops import sync_select_options_from_table
+
+            sync_select_options_from_table(self.db, self.table)
+        except Exception:
+            pass
+
         return ImportExecuteResult(
             imported_ids=new_ids,
             report=report,
