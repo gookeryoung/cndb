@@ -16,6 +16,7 @@ from typing import Any
 
 from cndb.plugins.tables import records as rec
 from cndb.plugins.tables.ddl import create_table as ddl_create
+from cndb.plugins.tables.ddl import drop_table as ddl_drop
 from cndb.plugins.tables.links import is_link_field
 from cndb.plugins.tables.models import DataField, DataTable, ensure_default_view
 
@@ -445,6 +446,24 @@ def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dic
     return columns, total_rows
 
 
+def _cleanup_partial_table(engine: Any, db: Any, dt: DataTable) -> None:
+    """清理"已创建元数据但导入失败"的半残表 —— 先删物理表（含 link 表），再删 ORM 元数据.
+
+    DataTable.relationship 已配置 cascade="all, delete-orphan"，
+    ``db.delete(dt)`` 会级联删除 DataField / DataView / TablePermission / TableMember 等子记录.
+    """
+    # 1. 物理层：先删 link 关联表（ddl_drop 对不存在的表幂等），再删主表
+    for field in dt.fields:
+        if field.field_type == "link":
+            ddl_drop(engine, field.link_table_name)
+    ddl_drop(engine, dt.db_table_name)
+
+    # 2. 元数据层：级联删除 DataTable 即删光子记录
+    db.delete(dt)
+    db.commit()
+    logger.info("已清理导入失败残留的表 %s (id=%s)", dt.name, dt.id)
+
+
 def create_table_from_csv(
     engine: Any,
     db: Any,
@@ -453,7 +472,11 @@ def create_table_from_csv(
     csv_text: str,
     owner_id: int | None = None,
 ) -> tuple[DataTable, list[int]]:
-    """从 CSV 自动建表 + 导入数据."""
+    """从 CSV 自动建表 + 导入数据.
+
+    建表与导入包在同一 try/except 中，若数据导入失败则自动清理已创建的
+    DataTable / DataField 元数据及物理表，避免残留空壳。
+    """
     columns, _total = analyze_csv_columns(csv_text)
 
     if not columns:
@@ -475,11 +498,13 @@ def create_table_from_csv(
     db.commit()
     db.refresh(dt)
 
-    ddl_create(engine, dt)
-
-    ensure_default_view(db, dt, owner_id=owner_id, commit=True)
-
-    ids = import_rows_from_csv(engine, dt, csv_text, db=db)
+    try:
+        ddl_create(engine, dt)
+        ensure_default_view(db, dt, owner_id=owner_id, commit=True)
+        ids = import_rows_from_csv(engine, dt, csv_text, db=db)
+    except Exception:
+        _cleanup_partial_table(engine, db, dt)
+        raise
     return dt, ids
 
 
@@ -798,7 +823,7 @@ def create_table_from_json_data(
 ) -> tuple[DataTable, list[int]]:
     """从 JSON 对象数组自动建表 + 导入数据.
 
-    与 create_table_from_csv 对称.
+    与 create_table_from_csv 对称；导入失败时同样清理残留元数据与物理表.
     """
     columns = analyze_json_columns(rows)
 
@@ -821,13 +846,14 @@ def create_table_from_json_data(
     db.commit()
     db.refresh(dt)
 
-    ddl_create(engine, dt)
-
-    ensure_default_view(db, dt, owner_id=owner_id, commit=True)
-
-    # import_rows_from_json 需要 JSON 字符串，我们直接用对象数组
-    valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
-    ids = rec.bulk_create(engine, dt, valid, db=db)
+    try:
+        ddl_create(engine, dt)
+        ensure_default_view(db, dt, owner_id=owner_id, commit=True)
+        valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
+        ids = rec.bulk_create(engine, dt, valid, db=db)
+    except Exception:
+        _cleanup_partial_table(engine, db, dt)
+        raise
     return dt, ids
 
 
@@ -1069,6 +1095,9 @@ def create_table_from_file(
 
     Returns:
         (DataTable, 新行 id 列表, 最终采用的列信息 —— 含 overrides 结果)
+
+    建表与导入包在同一 try/except 中，若数据导入失败则自动清理已创建的
+    DataTable / DataField 元数据及物理表，避免残留空壳。
     """
     rows, _file_cols, actual_fmt = parse_file_to_rows(content, format, filename=filename)
     columns = analyze_json_columns(rows) if actual_fmt in ("json", "xlsx") else _analyze_dict_rows_as_csv(rows)
@@ -1094,11 +1123,14 @@ def create_table_from_file(
     db.commit()
     db.refresh(dt)
 
-    ddl_create(engine, dt)
-    ensure_default_view(db, dt, owner_id=owner_id, commit=True)
-
-    valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
-    ids = rec.bulk_create(engine, dt, valid, db=db)
+    try:
+        ddl_create(engine, dt)
+        ensure_default_view(db, dt, owner_id=owner_id, commit=True)
+        valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
+        ids = rec.bulk_create(engine, dt, valid, db=db)
+    except Exception:
+        _cleanup_partial_table(engine, db, dt)
+        raise
     return dt, ids, columns
 
 
