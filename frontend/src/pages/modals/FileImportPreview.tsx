@@ -11,8 +11,8 @@
  */
 
 import { useCallback, useMemo, useState } from 'react'
-import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Row, Col, message } from 'antd'
-import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined, CheckOutlined, DownOutlined, UpOutlined } from '@ant-design/icons'
+import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Row, Col, Popover, message } from 'antd'
+import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined, CheckOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { FileAnalyzeResult, FileImportResult } from '@/api'
 
@@ -181,8 +181,6 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
   const [tableName, setTableName] = useState('')
   const [creating, setCreating] = useState(false)
   const [selectedField, setSelectedField] = useState<string | null>(null)
-  /** 右侧预览区图例面板是否折叠 */
-  const [legendCollapsed, setLegendCollapsed] = useState(false)
 
   // 重置内部状态（open 变化时）
   useMemo(() => {
@@ -638,68 +636,52 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         </Col>
         {/* 右栏：数据预览 */}
         <Col span={16}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-            典型数据 & 实时转换预览
-          </div>
-
-          {/* 图例面板（可折叠） */}
-          <div
-            style={{
-              marginBottom: 10,
-              border: '1px solid #e5e7eb',
-              borderRadius: 6,
-              background: '#fafafa',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              onClick={() => setLegendCollapsed(c => !c)}
-              style={{
-                padding: '6px 12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                fontSize: 12,
-                color: '#475569',
-                fontWeight: 500,
-                background: '#f1f5f9',
-                userSelect: 'none',
-              }}
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>典型数据 & 实时转换预览</span>
+            <Popover
+              placement="bottomRight"
+              trigger="click"
+              content={
+                <div style={{ maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {/* 数据类型颜色图例 */}
+                  <div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, fontWeight: 600 }}>数据类型颜色</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {PREVIEW_FIELD_TYPES.map(t => (
+                        <Tag key={t.value} color={TYPE_COLOR[t.value] ?? 'default'} style={{ margin: 0 }}>
+                          {t.label}
+                        </Tag>
+                      ))}
+                    </div>
+                  </div>
+                  {/* 转换状态图例 */}
+                  <div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, fontWeight: 600 }}>转换状态</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: '#475569' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Tag color="success" icon={<CheckOutlined />} style={{ margin: 0 }} />
+                        <span>字段无类型转换异常</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Tag color="red" icon={<WarningOutlined />} style={{ margin: 0 }} />
+                        <span>部分行无法转换为此类型</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ color: '#cbd5e1', fontStyle: 'italic' }}>(空)</span>
+                        <span>该单元格原始值为空</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ color: '#9ca3af', textDecoration: 'line-through' }}>原始</span>
+                        <span style={{ color: '#16a34a' }}>→ 转换后</span>
+                        <span>格式发生变化（如 2024/01/05 → 2024-01-05）</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              }
             >
-              <span>图例说明</span>
-              {legendCollapsed ? <DownOutlined style={{ fontSize: 10 }} /> : <UpOutlined style={{ fontSize: 10 }} />}
-            </div>
-            {!legendCollapsed && (
-              <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {/* 数据类型颜色图例 */}
-                <div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4, fontWeight: 500 }}>数据类型</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {PREVIEW_FIELD_TYPES.map(t => (
-                      <Tag key={t.value} color={TYPE_COLOR[t.value] ?? 'default'} style={{ margin: 0 }}>
-                        {t.label}
-                      </Tag>
-                    ))}
-                  </div>
-                </div>
-                {/* 转换状态图例 */}
-                <div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4, fontWeight: 500 }}>转换状态</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 11, color: '#475569' }}>
-                    <span><Tag color="success" icon={<CheckOutlined />} style={{ margin: 0 }} /> 无异常</span>
-                    <span><Tag color="red" icon={<WarningOutlined />} style={{ margin: 0 }} /> 转换异常</span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                      <span style={{ color: '#cbd5e1', fontStyle: 'italic' }}>(空)</span> 空值
-                    </span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                      <span style={{ color: '#9ca3af', textDecoration: 'line-through' }}>原始</span>
-                      <span style={{ color: '#16a34a' }}>→ 转换后</span> 格式变化
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
+              <Button size="small" type="text" icon={<InfoCircleOutlined />}>图例说明</Button>
+            </Popover>
           </div>
 
           {renderDataPreview()}
