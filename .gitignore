@@ -45,6 +45,8 @@ frontend/.auth/
 frontend/playwright-report/
 frontend/test-results/
 frontend/.local-ms-playwright/
+# Vitest 覆盖率报告产物
+frontend/coverage/
 
 # 前端冗余 lock 文件（已用 pnpm，不再用 npm）
 frontend/package-lock.json

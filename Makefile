@@ -12,7 +12,7 @@ CPUS := $(shell nproc 2>/dev/null || echo 4)
 endif
 PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 
-.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-check build b clean c test cov lint typecheck check-fast check-fast-par check doc tox pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
+.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-test frontend-check build b clean c test cov lint typecheck check-fast check-fast-par check doc tox pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -32,7 +32,10 @@ frontend-lint fl: frontend-sync ## 前端 ESLint 检查
 frontend-typecheck ft: frontend-sync ## 前端 TypeScript 类型检查
 	cd frontend && pnpm typecheck
 
-frontend-check fc: frontend-typecheck frontend-lint ## 前端门禁（typecheck + lint）
+frontend-test ftest: frontend-sync ## 前端单测/组件测试 + 覆盖率双门槛校验
+	cd frontend && pnpm test:coverage
+
+frontend-check fc: frontend-typecheck frontend-lint frontend-test ## 前端门禁（typecheck + lint + test:coverage）
 
 frontend-build fb: frontend-sync ## 构建前端（Vite，产物输出到 src/cndb/static/）
 	cd frontend && pnpm build

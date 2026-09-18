@@ -88,6 +88,18 @@ export default tseslint.config(
     },
   },
 
+  // Node.js 脚本（coverage 校验等构建期脚本）—— 提供 Node 全局
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        console: 'readonly',
+      },
+    },
+  },
+
   // E2E 测试代码放宽规则（Playwright fixture 类型天然需要 any / 声明但不用的辅助变量）
   {
     files: ['tests/**/*.{ts,tsx}'],

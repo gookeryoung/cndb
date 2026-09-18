@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -12,6 +12,9 @@ function syncStaticPlugin() {
   return {
     name: 'sync-static',
     closeBundle() {
+      // vitest 会复用本配置的插件链，closeBundle 在测试结束时也会触发，
+      // 这里跳过，避免运行测试时误同步构建产物
+      if (process.env.VITEST) return
       const repoRoot = path.resolve(__dirname, '..')
       const distDir = path.resolve(__dirname, 'dist')
       const staticDir = path.resolve(repoRoot, 'src/cndb/static')
@@ -81,6 +84,31 @@ export default defineConfig({
         // 手动拆分无论怎么划分都会产生循环依赖，触发 ES module
         // 暂时性死区导致运行时 TypeError。交给 Rollup 自行分析依赖图。
       },
+    },
+  },
+  // ── Vitest 测试配置（不影响构建行为）────────────────────────────────
+  test: {
+    // antd 5 组件在 happy-dom 下兼容性欠佳，选择 jsdom
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    // 每个用例结束后自动 restore 所有 spyOn mock，防止异常分支的 mock 泄漏到后续用例
+    restoreMocks: true,
+    // 单元/组件测试遵循就近放置约定：src 下的 *.test.ts(x)
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**'],
+      // 测试设施与类型声明不纳入覆盖率统计
+      exclude: [
+        'src/test/**',
+        'src/**/*.test.{ts,tsx}',
+        'src/**/*.spec.{ts,tsx}',
+        'src/**/*.d.ts',
+        'src/vite-env.d.ts',
+      ],
+      reporter: ['text', 'json-summary', 'html'],
+      reportsDirectory: 'coverage',
     },
   },
 })
