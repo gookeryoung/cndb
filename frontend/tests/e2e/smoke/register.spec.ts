@@ -52,8 +52,8 @@ test.describe("注册流程（仅 chromium-anon）", () => {
     await page.getByPlaceholder("密码").fill("testpass123")
     await page.getByRole("button", { name: /注 册/ }).click()
 
-    // 应该留在注册页，不跳转
-    await page.waitForTimeout(1000)
+    // 应该留在注册页，不跳转（toHaveURL 自动等待确认未重定向 /w）
+    await expect(page).toHaveURL(/\/register/);
     await expect(page.getByPlaceholder("用户名")).toBeVisible()
     await expect(page.getByPlaceholder("密码")).toBeVisible()
   })

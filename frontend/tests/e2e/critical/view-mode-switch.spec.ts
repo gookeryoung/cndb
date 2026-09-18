@@ -17,51 +17,11 @@
  *       └─ WBS任务分解      → grid+kanban+calendar+gantt+wbs → 5 个按钮（缺 gallery）
  */
 import { test, expect } from "../fixtures/auth";
+import { getAdminToken, getTableId, getWorkspaceId } from "../helpers/api";
 import type { APIRequestContext, Page } from "@playwright/test";
+import { settle } from "../fixtures/settle";
 
 // ──────────────────────────── 通用辅助 ────────────────────────────
-
-async function getToken(request: APIRequestContext): Promise<string> {
-  const resp = await request.post("/api/v1/accounts/auth/login", {
-    data: { login: "admin", password: "admin1234" },
-  });
-  const body = (await resp.json()) as { access_token: string };
-  return body.access_token;
-}
-
-async function getWorkspaceId(
-  request: APIRequestContext,
-  nameKeyword?: string,
-): Promise<number> {
-  const token = await getToken(request);
-  const resp = await request.get("/api/v1/workspaces", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const workspaces = (await resp.json()) as Array<{ id: number; name: string }>;
-  if (nameKeyword) {
-    // 优先精确匹配，fallback 到 includes 匹配（避免 "科研项目管理" 误匹配 "项目管理"）
-    const exact = workspaces.find((w) => w.name === nameKeyword);
-    if (exact) return exact.id;
-    const fuzzy = workspaces.find((w) => w.name.includes(nameKeyword));
-    if (fuzzy) return fuzzy.id;
-  }
-  return workspaces[0].id;
-}
-
-async function getTableId(
-  request: APIRequestContext,
-  wid: number,
-  tableName: string,
-): Promise<number> {
-  const token = await getToken(request);
-  const resp = await request.get(`/api/v1/workspaces/${wid}/tables`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const tables = (await resp.json()) as Array<{ id: number; name: string }>;
-  const t = tables.find((x) => x.name === tableName);
-  if (!t) throw new Error(`未找到表: ${tableName}`);
-  return t.id;
-}
 
 async function gotoTable(
   page: Page,
@@ -70,7 +30,7 @@ async function gotoTable(
   tableName: string,
 ) {
   const tid = await getTableId(request, wid, tableName);
-  const token = await getToken(request);
+  const token = await getAdminToken(request);
   // 清用户激活视图偏好，避免测试间持久化污染
   await request
     .put(`/api/v1/accounts/preferences/tables/${tid}/active-view`, {
@@ -81,10 +41,10 @@ async function gotoTable(
 
   await page.goto(`/w/${wid}/tables/${tid}`);
   await page.waitForURL(/\/tables\/\d+/);
+  // 视图按钮渲染由后续 assertModeButtonCount 的 toHaveCount 自动等待，无需固定 sleep
   await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible({
     timeout: 10000,
   });
-  await page.waitForTimeout(1500);
 }
 
 async function getApiViewTypes(
@@ -92,7 +52,7 @@ async function getApiViewTypes(
   wid: number,
   tid: number,
 ): Promise<Set<string>> {
-  const token = await getToken(request);
+  const token = await getAdminToken(request);
   const resp = await request.get(
     `/api/v1/workspaces/${wid}/tables/${tid}/views`,
     { headers: { Authorization: `Bearer ${token}` } },
@@ -296,7 +256,7 @@ test.describe("动态按钮组 — 点击切换行为回归", () => {
     // 点击看板按钮
     const kanbanBtn = page.locator('.ant-btn[data-mode="kanban"]');
     await kanbanBtn.click();
-    await page.waitForTimeout(1000);
+    await settle(page);
 
     // Segmented 应选中 kanban 类型的视图
     const selectedSeg = page.locator(".ant-segmented-item-selected").first();
@@ -319,7 +279,6 @@ test.describe("动态按钮组 — 点击切换行为回归", () => {
 
     const wbsBtn = page.locator('.ant-btn[data-mode="wbs"]');
     await wbsBtn.click();
-    await page.waitForTimeout(1200);
 
     // 渲染了 WBS 视图组件（通过其唯一 DOM 特征）
     await expect(

@@ -22,6 +22,9 @@ test("登录并持久化 StorageState", async ({ page }) => {
 
   // 登录后进入 /w（工作区列表视图）
   await page.waitForURL(/\/w$/);
-  await page.waitForTimeout(500);
+  // token 写入 localStorage 后才落盘 state，避免保存到空态
+  await page.waitForFunction(
+    () => !!window.localStorage.getItem("cndb_access_token"),
+  );
   await page.context().storageState({ path: STATE_PATH });
 });

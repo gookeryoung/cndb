@@ -39,7 +39,8 @@ test.describe("匿名（chromium-anon only）", () => {
     await page.getByPlaceholder("用户名或邮箱").fill("demo");
     await page.getByPlaceholder("密码").fill("wrong-password");
     await page.getByRole("button", { name: /登 录/ }).click();
-    await page.waitForTimeout(500);
+    // 错误密码应保留在登录页，不跳转（toHaveURL 自动等待确认未重定向 /w）
+    await expect(page).toHaveURL(/\/login/);
     await expect(page.getByPlaceholder("用户名或邮箱")).toBeVisible();
     await expect(page.getByPlaceholder("密码")).toBeVisible();
   });
