@@ -111,12 +111,12 @@ export function useUpdateRowOptimistic(wid: string, tid: string) {
   const tableKey = `${wid}/${tid}`
 
   return useMutation({
-    mutationFn: async (args: { rowId: number | string; fieldName: string; value: unknown }) => {
-      const payload: Record<string, unknown> = { [args.fieldName]: args.value }
+    mutationFn: async (args: { rowId: number | string; fieldName?: string; value?: unknown; values?: Record<string, unknown> }) => {
+      const payload: Record<string, unknown> = args.values ?? (args.fieldName != null ? { [args.fieldName]: args.value } : {})
       return recordApi.update(wid, tid, args.rowId, { values: payload })
     },
     onMutate: async (args) => {
-      // 1. 找到 table-records 这个 query（多个 filter 变体，但乐观更新先更新第一个匹配到的 cache）
+      // 1. 取消进行中的 table-records / row-audit 请求，避免覆盖乐观更新
       await queryClient.cancelQueries({ queryKey: ['table-records', tableKey] })
       await queryClient.cancelQueries({ queryKey: ['row-audit', wid, tid, args.rowId] })
 
@@ -124,14 +124,15 @@ export function useUpdateRowOptimistic(wid: string, tid: string) {
         queryKey: ['table-records', tableKey],
       })
 
-      // 2. 直接在 cache 里改行数据
+      // 2. 直接在 cache 里改行数据 —— 支持单字段 { fieldName, value } 和多字段 { values } 两种调用方式
+      const patch: Record<string, unknown> = args.values ?? (args.fieldName != null ? { [args.fieldName]: args.value } : {})
       previousRecordsQueries.forEach(([queryKey, data]) => {
         if (!data) return
         queryClient.setQueryData<RowListResponse>(queryKey, {
           ...data,
           items: data.items.map((r) =>
             r.id === args.rowId
-              ? { ...r, [args.fieldName]: args.value }
+              ? { ...r, ...patch }
               : r,
           ),
         })
@@ -190,6 +191,36 @@ export function useDeleteRowsOptimistic(wid: string, tid: string) {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+    },
+  })
+}
+
+// ─────────────── Comments（乐观更新） ───────────────
+
+/** 乐观更新版 deleteComment —— 立即从 row-comments cache 移除，失败时回滚. */
+export function useDeleteCommentOptimistic(wid: string, tid: string, rowId: number | string | undefined) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (commentId: number | string) => commentApi.remove(wid, tid, commentId),
+    onMutate: async (commentId) => {
+      await queryClient.cancelQueries({ queryKey: ['row-comments', wid, tid, rowId] })
+
+      const previous = queryClient.getQueryData<ApiComment[]>(['row-comments', wid, tid, rowId])
+
+      if (previous) {
+        queryClient.setQueryData<ApiComment[]>(['row-comments', wid, tid, rowId], previous.filter(c => c.id !== commentId))
+      }
+
+      return { previous }
+    },
+    onError: (_err, _commentId, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['row-comments', wid, tid, rowId], context.previous)
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['row-comments', wid, tid, rowId] })
     },
   })
 }
