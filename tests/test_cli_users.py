@@ -20,6 +20,8 @@ from cndb.models.base import Base
 @pytest.fixture
 def cli_db(tmp_path: Path, monkeypatch) -> Path:
     """为 CLI 函数准备独立的临时 SQLite DB，并确保所有模型导入."""
+    from sqlalchemy import create_engine
+
     db_path = tmp_path / "cli_users_test.db"
     monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
 
@@ -28,9 +30,11 @@ def cli_db(tmp_path: Path, monkeypatch) -> Path:
     import cndb.plugins.reports.models
     import cndb.plugins.tables.models
     import cndb.plugins.workspaces.models  # noqa: F401
-    from cndb.core.database import engine
 
+    # 用临时 db_path 新建 engine，避免误用模块级 engine（绑定旧 URL）
+    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
+    engine.dispose()
     return db_path
 
 

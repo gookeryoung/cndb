@@ -193,11 +193,13 @@ def test_inspect_backup_bad_json(tmp_path: Path) -> None:
 
 def test_restore_native_full_flow(tmp_path: Path) -> None:
     archive, target_db = _make_backup_archive(tmp_path)
+    target_uploads = tmp_path / "uploads_target"
 
     restore_backup(
         archive,
         force=False,
         database_url=f"sqlite:///{target_db}",
+        upload_dir=target_uploads,
     )
 
     # 数据库验证
@@ -226,6 +228,7 @@ def test_restore_native_overwrite_existing_with_force(tmp_path: Path) -> None:
         archive,
         force=True,
         database_url=f"sqlite:///{target}",
+        upload_dir=tmp_path / "uploads_target",
     )
 
     # 旧表应被删除（native 直接覆盖文件），新表生效
