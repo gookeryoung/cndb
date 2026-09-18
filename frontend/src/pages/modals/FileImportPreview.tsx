@@ -546,7 +546,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
               <div style={{ fontSize: 16, fontWeight: 700, color: '#16a34a' }}>
                 <CheckOutlined style={{ marginRight: 2 }} />{okFieldCount}
               </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>无异常字段</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>正常字段</div>
             </div>
           </Col>
           <Col span={4}>
