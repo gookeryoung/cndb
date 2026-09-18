@@ -122,7 +122,7 @@ async def import_file_create_table(
     column_overrides: Optional[str] = Form(
         default=None,
         description="前端回传的字段类型覆盖映射（JSON 字符串），"
-        "格式 {\"列名\": {\"field_type\": \"select\", \"options\": [...]}}",
+        '格式 {"列名": {"field_type": "select", "options": [...]}}',
     ),
 ) -> dict[str, Any]:
     """上传文件 + 自动建表 + 导入数据（通用入口）."""
