@@ -980,7 +980,7 @@ export default function GridPage() {
             showHeader={settings.showHeader}
             style={{ flex: 1, minHeight: 0 }}
             rowClassName={settings.striped ? (_r, i) => (i % 2 === 1 ? 'table-row-striped' : '') : undefined}
-            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 40, columnTitle: '', columnWidth: 48 }}
+            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 40 }}
             pagination={{
               current: Math.floor(offset / limit) + 1, pageSize: limit, total: rowList.total,
               showSizeChanger: true, pageSizeOptions: [25, 50, 100, 200],
