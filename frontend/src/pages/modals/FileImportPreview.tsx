@@ -492,7 +492,10 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
           if (t.failed) {
             return (
               <Tooltip title={`原始值 "${t.rawText}" 无法转为 ${col.field_type}`}>
-                <span style={{ color: '#dc2626', textDecoration: 'line-through' }}>{t.rawText}</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ color: '#dc2626', textDecoration: 'line-through' }}>{t.rawText}</span>
+                  <WarningOutlined style={{ color: '#ef4444', fontSize: 12 }} />
+                </span>
               </Tooltip>
             )
           }
