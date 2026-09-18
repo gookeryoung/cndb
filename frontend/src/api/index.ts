@@ -350,14 +350,18 @@ export const importApi = {
     file: File,
     matchKeys?: string[],
     unknownColsStrategy?: 'drop' | 'add_text_field',
+    droppedColumns?: string[],
   ) => {
     const fd = new FormData()
     fd.append('file', file)
     if (matchKeys && matchKeys.length > 0) {
       fd.append('match_keys', JSON.stringify(matchKeys))
     }
-    if (unknownColsStrategy && unknownColsStrategy !== 'drop') {
+    if (unknownColsStrategy) {
       fd.append('unknown_cols_strategy', unknownColsStrategy)
+    }
+    if (droppedColumns && droppedColumns.length > 0) {
+      fd.append('dropped_columns', JSON.stringify(droppedColumns))
     }
     return api.post<ImportTaskInfo>(`/v1/workspaces/${wid}/tables/${tid}/import/analyze`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -370,16 +374,18 @@ export const importApi = {
     taskId: number | string,
     matchKeys?: string[],
     unknownColsStrategy?: 'drop' | 'add_text_field',
+    droppedColumns?: string[],
     cleaningActions?: Array<{ column?: string | null; action: string; strategy?: string; on_fail?: string }>,
   ) =>
     api.post<{ task_id: number; status: string; message: string }>(
       `/v1/workspaces/${wid}/tables/${tid}/import/${taskId}/confirm`,
-      // 后端 Body 参数：cleaning_actions 走 JSON body；match_keys / unknown_cols_strategy 仍走 query params
+      // 后端 Body 参数：cleaning_actions 走 JSON body；match_keys / unknown_cols_strategy / dropped_columns 仍走 query params
       cleaningActions && cleaningActions.length > 0 ? { cleaning_actions: cleaningActions } : {},
       {
         params: {
           ...(matchKeys && matchKeys.length > 0 ? { match_keys: JSON.stringify(matchKeys) } : {}),
-          ...(unknownColsStrategy && unknownColsStrategy !== 'drop' ? { unknown_cols_strategy: unknownColsStrategy } : {}),
+          ...(unknownColsStrategy ? { unknown_cols_strategy: unknownColsStrategy } : {}),
+          ...(droppedColumns && droppedColumns.length > 0 ? { dropped_columns: JSON.stringify(droppedColumns) } : {}),
         },
       }
     ).then(r => r.data),

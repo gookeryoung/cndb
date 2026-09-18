@@ -355,6 +355,7 @@ async def import_table_analyze(
     db: Annotated[Session, Depends(get_db)],
     match_keys: Annotated[str | None, Form()] = None,
     unknown_cols_strategy: Annotated[str, Form()] = "drop",
+    dropped_columns: Annotated[str | None, Form()] = None,
 ) -> dict[str, Any]:
     """提交文件仅做解析+校验，返回 task_id（不写库）.
 
@@ -363,6 +364,7 @@ async def import_table_analyze(
     用户点击确认 → POST /import/{task_id}/confirm 才真正落库.
 
     V2: 接受 match_keys (JSON 字符串, list[str]) 和 unknown_cols_strategy ("drop" / "add_text_field").
+    V3: 接受 dropped_columns (JSON 字符串, list[str])，前端在预览阶段勾选丢弃的字段名.
     """
     import json as _json
 
@@ -386,6 +388,16 @@ async def import_table_analyze(
             # 也接受逗号分隔的简单形式
             parsed_keys = [k.strip() for k in match_keys.split(",") if k.strip()]
 
+    # 解析 dropped_columns JSON 字符串（前端在预览阶段勾选丢弃的字段）
+    parsed_dropped: list[str] | None = None
+    if dropped_columns:
+        try:
+            parsed = _json.loads(dropped_columns)
+            if isinstance(parsed, list):
+                parsed_dropped = [str(x) for x in parsed]
+        except _json.JSONDecodeError:
+            parsed_dropped = [k.strip() for k in dropped_columns.split(",") if k.strip()]
+
     strategy = unknown_cols_strategy or "drop"
     if strategy not in ("drop", "add_text_field"):
         raise HTTPException(status_code=400, detail=f"无效的 unknown_cols_strategy: {strategy}")
@@ -399,6 +411,7 @@ async def import_table_analyze(
         content=content,
         match_keys=parsed_keys,
         unknown_cols_strategy=strategy,
+        dropped_columns=parsed_dropped,
     )
 
     # 后台跑 analyze 阶段
@@ -414,6 +427,7 @@ async def import_table_analyze(
         "progress": task.progress,
         "match_keys": parsed_keys or [],
         "unknown_cols_strategy": strategy,
+        "dropped_columns": parsed_dropped or [],
         "hint": "等待 pending_confirm 状态后，可通过 GET /import/async/{task_id} 查看校验报告",
     }
 
@@ -427,6 +441,7 @@ def import_table_confirm(
     db: Annotated[Session, Depends(get_db)],
     match_keys: str | None = None,
     unknown_cols_strategy: str | None = None,
+    dropped_columns: str | None = None,
     cleaning_actions: list[dict[str, Any]] | None = Body(default=None, embed=True),
 ) -> dict[str, Any]:
     """确认导入 — 把 pending_confirm 状态的任务推进到 running → done.
@@ -436,6 +451,7 @@ def import_table_confirm(
     V3: 支持 cleaning_actions（清洗建议）。前端传 analyze 阶段返回的
         cleaning_suggestions 中被勾选的条目（每条含 column, action, strategy 等），
         后端原样存入 task.cleaning_actions，execute 阶段在 RowValidator 之前应用.
+    V4: 支持 dropped_columns（用户勾选丢弃的未知字段名列表）。
     """
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
@@ -469,6 +485,18 @@ def import_table_confirm(
         and unknown_cols_strategy != task.unknown_cols_strategy
     ):
         task.unknown_cols_strategy = unknown_cols_strategy
+
+    # V4: 覆盖 dropped_columns
+    if dropped_columns is not None:
+        try:
+            parsed = _json.loads(dropped_columns)
+            if isinstance(parsed, list):
+                new_dropped = [str(x) for x in parsed]
+            else:
+                new_dropped = [k.strip() for k in dropped_columns.split(",") if k.strip()]
+        except _json.JSONDecodeError:
+            new_dropped = [k.strip() for k in dropped_columns.split(",") if k.strip()]
+        task.dropped_columns = new_dropped  # type: ignore[assignment]
 
     # V3: 保存用户勾选的清洗动作（execute 阶段会重新 analyze 以拿到清洗后的数据画像）
     if cleaning_actions is not None:
