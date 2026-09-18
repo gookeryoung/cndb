@@ -237,43 +237,58 @@ class ServeTab(_BaseTab):
         reload = self.reload_var.get()
         workers = 1 if reload else int(self.workers_var.get().strip() or "1")
 
-        # 计算项目源码根：
-        # - 打包后 sys.executable = dist/runtime/pythonw.exe
-        #   → 源码在 dist/src/src/cndb/（fspack 对 src layout 的产物布局）
-        # - 开发时 sys.executable = .venv/Scripts/python.exe
-        #   → 此路径不存在，sys.path 已正确（uvicorn -m 直接可用）
-        _exe_parent = Path(sys.executable).resolve().parent
-        _pkg_entry_root = (_exe_parent / ".." / "src" / "src").resolve()
+        # === 定位 dist 根目录（fspack 打包根） ===
+        # fspack launcher 模式下 sys.executable = cndbw.exe（launcher 自身），
+        # 不是 runtime/pythonw.exe！必须从 __file__ 往上找 runtime/python.exe
+        # 作为锚点——这是打包环境唯一稳定的定位方式（开发环境无 runtime/ 目录）。
+        def _find_dist_root() -> Path | None:
+            here = Path(__file__).resolve()
+            for parent in here.parents:
+                if (parent / "runtime" / "python.exe").exists():
+                    return parent
+            return None  # 开发环境
 
-        # 子进程解释器：显式用 python.exe（控制台子系统），
-        # 配 CREATE_NO_WINDOW + STARTUPINFO SW_HIDE 双保险绝对不弹黑窗。
-        # 不用 sys.executable：pythonw.exe 在部分 Windows 版本下
-        # 会绕过 CREATE_NO_WINDOW 的抑制逻辑。
-        _py_bin = _exe_parent / "python.exe"
-        if not _py_bin.exists():
-            _py_bin = _exe_parent / "pythonw.exe"
+        _dist_root = _find_dist_root()
+
+        # 子进程解释器与引导命令
+        # - 打包环境：用 runtime/python.exe（控制台子系统）+ bootstrap 注入路径
+        # - 开发环境：sys.path 已正确，直接用 sys.executable -m uvicorn
+        if _dist_root is not None:
+            _py_bin = _dist_root / "runtime" / "python.exe"
+            _pkg_entry_root = _dist_root / "src" / "src"
+            _bootstrap = (
+                f"import sys; sys.path.insert(0, r'{_pkg_entry_root}'); "
+                "import uvicorn; "
+                f"uvicorn.run('cndb.app:app', host={host!r}, port={port}, "
+                f"reload={reload!r}, workers={workers})"
+            )
+            cmd: list[str] = [str(_py_bin), "-c", _bootstrap]
+        else:
+            cmd = [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "cndb.app:app",
+                "--host",
+                host,
+                "--port",
+                str(port),
+            ]
+            if reload:
+                cmd.append("--reload")
+            elif workers > 1:
+                cmd.extend(["--workers", str(workers)])
 
         # Windows GUI 程序（pythonw 无 console）下 stdin 是无效句柄，
-        # Popen 内部 _make_inheritable 会触发 WinError 6；显式设 DEVNULL 规避
+        # Popen 内部 _make_inheritable 会触发 WinError 6；显式设 DEVNULL 规避。
+        # CREATE_NO_WINDOW + STARTUPINFO SW_HIDE 双保险绝对不弹黑窗。
         creationflags = 0
         startupinfo = None
         if sys.platform == "win32":
-            creationflags = (
-                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-            )
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = 0  # SW_HIDE
-
-        # 用 -c 引导代码：先注入源码根到 sys.path（解决打包后子进程找不到 cndb），
-        # 再调 uvicorn.run() 启动服务
-        _bootstrap = (
-            f"import sys; sys.path.insert(0, r'{_pkg_entry_root}'); "
-            "import uvicorn; "
-            f"uvicorn.run('cndb.app:app', host={host!r}, port={port}, "
-            f"reload={reload!r}, workers={workers})"
-        )
-        cmd: list[str] = [str(_py_bin), "-c", _bootstrap]
 
         try:
             self.app._server_proc = subprocess.Popen(
@@ -286,8 +301,11 @@ class ServeTab(_BaseTab):
                 creationflags=creationflags,
                 startupinfo=startupinfo,
             )
-        except FileNotFoundError:
-            messagebox.showerror("启动失败", "找不到 Python 或 uvicorn，请先执行 `uv sync`")
+        except FileNotFoundError as e:
+            _hint = str(e) or "找不到要执行的解释器或命令"
+            messagebox.showerror(
+                "启动失败", f"找不到 Python 可执行文件：{_hint}\n\n请检查安装目录下是否存在 runtime\\python.exe"
+            )
             return
 
         self.start_btn.configure(state=tk.DISABLED)
