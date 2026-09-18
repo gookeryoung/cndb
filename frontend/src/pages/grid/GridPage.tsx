@@ -36,9 +36,8 @@ import {
 import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { tableApi, recordApi, viewApi, userApi, auditApi, commentApi } from '@/api'
-import type { RowResponse, View, ViewCreate } from '@/api'
+import type { RowResponse, View, ViewCreate, RowValues, Field, ID } from '@/api'
 import KanbanView from './components/KanbanView'
-import NewRowModal from './components/NewRowModal'
 import CalendarView from './components/CalendarView'
 import GalleryView from './components/GalleryView'
 import GanttView from './components/GanttView'
@@ -49,7 +48,8 @@ import CreateEditViewForm from './components/CreateEditViewForm'
 import MoveTableForm from './components/MoveTableForm'
 import TableSettingsDialog from './components/TableSettingsDialog'
 import TableSettingsModal from '@/pages/modals/TableSettingsModal'
-import { buildColumns } from './components/buildColumns'
+import { buildColumns, type RowInlineOps, type InlineEditCellProps } from './components/buildColumns'
+import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCellValueForEdit } from './components/GridCell'
 import { useTableSettingsStore, useGridViewStore } from '@/store'
 import { densityToSize } from '@/theme/tableSettings'
 
@@ -159,6 +159,10 @@ export default function GridPage() {
   // wid/tid 变化时重置 store + 初始化 mode
   useEffect(() => {
     resetView()
+    // 行内编辑状态重置
+    setEditingRowId(null)
+    setNewRowActive(false)
+    setRowDrafts({})
     // 恢复当前表的 mode 偏好（URL > localStorage > 默认 grid）
     const spMode = searchParams.get('mode') as ViewMode | null
     if (spMode && (VALID_MODES as readonly string[]).includes(spMode)) {
@@ -188,8 +192,20 @@ export default function GridPage() {
   const [moveOpen, setMoveOpen] = useState(false)
   const [tableSettingsOpen, setTableSettingsOpen] = useState(false)
   const [tableSettingsTab, setTableSettingsTab] = useState<'basic' | 'fields' | 'views' | 'permissions'>('basic')
-  const [newRowOpen, setNewRowOpen] = useState(false)
   const tableKey = `${wid}/${tid}`
+
+  // ── 行内编辑（新增行 / 整行编辑）状态 ──
+  const NEW_ROW_KEY = '__new__'
+  /** 整行编辑模式下的行 id（null 表示无行处于整行编辑） */
+  const [editingRowId, setEditingRowId] = useState<ID | null>(null)
+  /** 底部空白新增行是否激活 */
+  const [newRowActive, setNewRowActive] = useState(false)
+  /** 各编辑态行的草稿值，key 为 `row-${id}`；新增行固定用 NEW_ROW_KEY */
+  const [rowDrafts, setRowDrafts] = useState<Record<string, RowValues>>({})
+
+  const rowKeyOf = (recordId: ID) => `row-${recordId}`
+  const isNewRow = (recordId: ID) => String(recordId) === NEW_ROW_KEY
+  const inlineDataKey = (recordId: ID) => (isNewRow(recordId) ? NEW_ROW_KEY : rowKeyOf(recordId))
 
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
@@ -430,6 +446,124 @@ export default function GridPage() {
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
     },
   })
+  // ── 行内新增（底部空白行）Mutation ──
+  const createRow = useMutation({
+    mutationFn: (values: RowValues) => recordApi.create(wid!, tid!, { values }),
+    onSuccess: () => {
+      message.success('已新增 1 行')
+      setNewRowActive(false)
+      setRowDrafts(prev => { const next = { ...prev }; delete next[NEW_ROW_KEY]; return next })
+      queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+      queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '新增行失败')
+    },
+  })
+
+  const gridFields = (table?.fields || []) as Field[]
+
+  /** 依据原行（或空白）为每个可编辑字段初始化草稿 */
+  const draftFor = (record: RowResponse | null): RowValues => {
+    const d: RowValues = {}
+    for (const f of gridFields) {
+      if (!isEditableInlineField(f)) continue
+      d[f.name] = normalizeCellValueForEdit(record ? record[f.name] : null, f)
+    }
+    return d
+  }
+
+  const updateDraft = (key: string, fieldName: string, value: unknown) => {
+    setRowDrafts(prev => ({ ...prev, [key]: { ...(prev[key] ?? {}), [fieldName]: value } }))
+  }
+
+  const clearDraft = (key: string) => {
+    setRowDrafts(prev => { const next = { ...prev }; delete next[key]; return next })
+  }
+
+  /** 激活底部空白新增行 */
+  const startNewRow = () => {
+    if (!canEditRecords) return
+    setEditingRowId(null)
+    setNewRowActive(true)
+    setRowDrafts(prev => ({ ...prev, [NEW_ROW_KEY]: draftFor(null) }))
+  }
+
+  /** 进入某存量行的整行编辑态 */
+  const startEditRow = (recordId: ID) => {
+    setNewRowActive(false)
+    const rec = rowList.items.find(r => String(r.id) === String(recordId)) ?? null
+    setEditingRowId(recordId)
+    setRowDrafts(prev => ({ ...prev, [rowKeyOf(recordId)]: draftFor(rec) }))
+  }
+
+  /** 取消某行编辑 / 放弃新增 */
+  const cancelInline = (recordId: ID) => {
+    const key = inlineDataKey(recordId)
+    clearDraft(key)
+    if (isNewRow(recordId)) setNewRowActive(false)
+    else setEditingRowId(null)
+  }
+
+  /** 保存整行（新增建立 / 存量整行编辑提交） */
+  const saveInline = (recordId: ID) => {
+    const key = inlineDataKey(recordId)
+    const draft = rowDrafts[key]
+    if (!draft) return
+
+    // 必填校验：可编辑必填字段最终值非空
+    for (const f of gridFields) {
+      if (!f.required || !isEditableInlineField(f)) continue
+      if (isBlankCellValue(finalizeCellValue(draft[f.name], f))) {
+        message.error(`请填写必填字段：${f.name}`)
+        return
+      }
+    }
+
+    // 仅提交非空的编辑字段
+    const values: RowValues = {}
+    for (const f of gridFields) {
+      if (!isEditableInlineField(f)) continue
+      const final = finalizeCellValue(draft[f.name], f)
+      if (isBlankCellValue(final)) continue
+      values[f.name] = final
+    }
+
+    if (isNewRow(recordId)) {
+      createRow.mutate(values)
+    } else {
+      updateRow.mutate({ rowId: recordId, values }, {
+        onSuccess: () => {
+          setEditingRowId(null)
+          clearDraft(rowKeyOf(recordId))
+          message.success('已保存')
+        },
+      })
+    }
+  }
+
+  /** 为指定行提供行内编辑能力（新增行激活 or 存量行整行编辑） */
+  const getInlineEdit = useCallback((record: RowResponse): InlineEditCellProps | null => {
+    const isNew = isNewRow(record.id)
+    const editing = isNew ? newRowActive : (editingRowId != null && String(record.id) === String(editingRowId))
+    if (!editing) return null
+    const key = isNew ? NEW_ROW_KEY : rowKeyOf(record.id)
+    return {
+      editing: true,
+      values: rowDrafts[key] ?? draftFor(record),
+      onFieldChange: (fieldName, value) => updateDraft(key, fieldName, value),
+      onFieldCommit: () => {}, // 行级统一保存，回车 noop
+      onFieldCancel: () => { if (isNew) setNewRowActive(false); else setEditingRowId(null) },
+    }
+  }, [newRowActive, editingRowId, rowDrafts, gridFields]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const inlineOps: RowInlineOps | undefined = canEditRecords ? {
+    getInlineEdit,
+    onEdit: startEditRow,
+    onSave: saveInline,
+    onCancel: cancelInline,
+  } : undefined
+
   const createView = useMutation({
     mutationFn: (data: ViewCreate) => viewApi.create(wid!, tid!, data),
     onSuccess: () => {
@@ -611,6 +745,7 @@ export default function GridPage() {
     updateRow.isPending
       ? undefined
       : (rowId, fieldName, value) => updateRow.mutateAsync({ rowId, fieldName, value }),
+    inlineOps,
   )
   const numericFields = (table?.fields || []).filter(f => ['number', 'decimal'].includes(f.field_type))
   const selectedRows = (rowList.items || []).filter(r => selectedRowKeys.includes(r.id))
@@ -728,7 +863,7 @@ export default function GridPage() {
               },
             ]
           }}><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></Dropdown>
-          <Button type="primary" icon={<PlusOutlined />} data-testid="add-row-btn" onClick={() => setNewRowOpen(true)} disabled={!canEditRecords}>新增行</Button>
+          <Button type="primary" icon={<PlusOutlined />} data-testid="add-row-btn" onClick={startNewRow} disabled={!canEditRecords}>新增行</Button>
         </Space>
       </div>
 
@@ -831,7 +966,8 @@ export default function GridPage() {
           <div style={{ textAlign: 'center', padding: 48 }}>加载中...</div>
         ) : mode === 'grid' ? (
           <Table
-            rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns} dataSource={rowList.items || []}
+            rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns}
+            dataSource={newRowActive ? [...(rowList.items || []), { id: NEW_ROW_KEY } as unknown as RowResponse] : (rowList.items || [])}
             bordered={settings.bordered}
             showHeader={settings.showHeader}
             rowClassName={settings.striped ? (_r, i) => (i % 2 === 1 ? 'table-row-striped' : '') : undefined}
@@ -891,7 +1027,9 @@ export default function GridPage() {
               }
               setOffset(0)
             }}
-            onRow={(record) => ({ onDoubleClick: () => openDetailWithPrefetch(record) })}
+            onRow={(record) => (
+              isNewRow(record.id) ? {} : ({ onDoubleClick: () => openDetailWithPrefetch(record) })
+            )}
           />
         ) : mode === 'kanban' ? (
           <KanbanView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} />
@@ -1093,14 +1231,7 @@ export default function GridPage() {
         onAfterSave={() => { setLimit(settings.defaultPageSize); setOffset(0) }}
       />
 
-      {/* 新增行 Modal — 收集必填字段后创建 */}
-      <NewRowModal
-        open={newRowOpen}
-        wid={wid!}
-        tid={tid!}
-        fields={table?.fields || []}
-        onClose={() => setNewRowOpen(false)}
-      />
+      {/* 新增行 & 整行编辑改用行内编辑（见 buildColumns inlineOps / 操作列），不再使用弹窗 */}
 
       {/* 表设置统一 Modal — 新增 */}
       <TableSettingsModal

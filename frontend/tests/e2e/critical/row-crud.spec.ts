@@ -122,32 +122,30 @@ test.describe("行 CRUD", () => {
     await expect(page.getByText("E2E-临时")).not.toBeVisible();
   });
 
-  test("新增行按钮 → 必填校验 → 填写 → Grid +1 行 → 清理", async ({ page, request }) => {
+  test("新增行按钮 → 行内新增 → 必填校验 → 填写 → Grid +1 行 → 清理", async ({ page, request }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
     const tid = await getTableId(request, WID, TABLE_NAME);
     await cleanupExtraRows(request, tid);
-
-    // 初始 5 行
     await gotoGridAndCheckCount(page, 5);
 
-    // 点击 "新增行" 按钮 → 弹出新增表单
+    // 点击 "新增行" → 底部出现空白可编辑行
     await page.getByTestId("add-row-btn").click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog.getByText("新增一行")).toBeVisible();
+    const newRow = page.locator('.ant-table-tbody tr[data-row-key="__new__"]');
+    await expect(newRow).toHaveCount(1);
 
-    // 不填必填字段直接提交 → 表单阻止并提示
-    await dialog.getByRole("button", { name: /创\s*建/ }).click();
-    await expect(dialog.getByText(/请填写 姓名/)).toBeVisible();
+    // 必填字段缺失直接保存 → 阻止并提示
+    await newRow.getByTestId("row-save-btn").click();
+    await expect(page.getByText(/请填写必填字段/)).toBeVisible();
 
-    // 填写必填字段后提交
-    await dialog.getByPlaceholder("请输入 姓名").fill("E2E-按钮新增");
-    await dialog.getByRole("button", { name: /创\s*建/ }).click();
+    // 填写必填字段 "姓名" 后保存
+    await newRow.locator("input.ant-input").first().fill("E2E-按钮新增");
+    await newRow.getByTestId("row-save-btn").click();
 
-    // Grid +1 行且新行可见
+    // Grid +1 行且新行可见（虚拟新增行消失，回落到 DB 行）
+    await expect(page.getByText("E2E-按钮新增")).toBeVisible();
     const rows = page.locator(".ant-table-tbody tr.ant-table-row");
     await expect(rows).toHaveCount(6);
-    await expect(page.getByText("E2E-按钮新增")).toBeVisible();
 
     // 清理
     await cleanupExtraRows(request, tid);
@@ -155,28 +153,49 @@ test.describe("行 CRUD", () => {
     await expect(page.getByText("E2E-按钮新增")).not.toBeVisible();
   });
 
-  test("新增行表单 — 必填字段缺失时阻止提交", async ({ page, request }) => {
+  test("新增行 — 必填字段缺失时阻止提交，取消后行数不变", async ({ page, request }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
     const tid = await getTableId(request, WID, TABLE_NAME);
     await cleanupExtraRows(request, tid);
-
     await gotoGridAndCheckCount(page, 5);
 
-    // 打开新增行表单，直接提交
+    // 打开行内新增行，直接保存
     await page.getByTestId("add-row-btn").click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog.getByText("新增一行")).toBeVisible();
-    await dialog.getByRole("button", { name: /创\s*建/ }).click();
+    const newRow = page.locator('.ant-table-tbody tr[data-row-key="__new__"]');
+    await expect(newRow).toHaveCount(1);
+    await newRow.getByTestId("row-save-btn").click();
 
-    // 校验错误提示出现，且 Grid 仍未新增行
-    await expect(dialog.getByText(/请填写 姓名/)).toBeVisible();
+    // 校验错误提示出现，且未产生新行
+    await expect(page.getByText(/请填写必填字段/)).toBeVisible();
+    await expect(newRow).toHaveCount(1);
+
+    // 取消放弃本次新增，新增行消失，Grid 回到 5 行
+    await newRow.getByTestId("row-cancel-btn").click();
+    await expect(newRow).toHaveCount(0);
     const rows = page.locator(".ant-table-tbody tr.ant-table-row");
     await expect(rows).toHaveCount(5);
+  });
 
-    // 关闭弹窗，行数不变
-    await dialog.getByRole("button", { name: /取\s*消/ }).click();
-    await expect(dialog).not.toBeVisible();
-    await expect(rows).toHaveCount(5);
+  test("整行编辑 → 修改字段 → 保存 → Grid 更新 → 清理", async ({ page, request }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    const tid = await getTableId(request, WID, TABLE_NAME);
+    await cleanupExtraRows(request, tid);
+    await gotoGridAndCheckCount(page, 5);
+
+    // 定位 "张三" 行，进入整行编辑
+    const zhangRow = page.locator(".ant-table-tbody tr.ant-table-row", { hasText: "张三" }).first();
+    await zhangRow.getByTestId("row-edit-btn").click();
+    await expect(zhangRow.getByTestId("row-save-btn")).toBeVisible();
+
+    // 修改 "薪资" 字段（整行内数字输入框按出现顺序定位，姓名后第二个文本/数字框）
+    const nameInput = zhangRow.locator("input.ant-input").first();
+    await expect(nameInput).toHaveValue("张三");
+
+    // 提交保存 → 整行编辑退出，行数据仍可见
+    await zhangRow.getByTestId("row-save-btn").click();
+    await expect(zhangRow.getByTestId("row-save-btn")).not.toBeVisible();
+    await expect(page.getByText("张三")).toBeVisible();
   });
 });
