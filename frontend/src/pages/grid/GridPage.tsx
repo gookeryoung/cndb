@@ -552,7 +552,7 @@ export default function GridPage() {
       editing: true,
       values: rowDrafts[key] ?? draftFor(record),
       onFieldChange: (fieldName, value) => updateDraft(key, fieldName, value),
-      onFieldCommit: () => {}, // 行级统一保存，回车 noop
+      onFieldCommit: () => { }, // 行级统一保存，回车 noop
       onFieldCancel: () => { if (isNew) setNewRowActive(false); else setEditingRowId(null) },
     }
   }, [newRowActive, editingRowId, rowDrafts, gridFields]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -971,7 +971,7 @@ export default function GridPage() {
             bordered={settings.bordered}
             showHeader={settings.showHeader}
             rowClassName={settings.striped ? (_r, i) => (i % 2 === 1 ? 'table-row-striped' : '') : undefined}
-            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 40, columnTitle: '' }}
             pagination={{
               current: Math.floor(offset / limit) + 1, pageSize: limit, total: rowList.total,
               showSizeChanger: true, pageSizeOptions: [25, 50, 100, 200],

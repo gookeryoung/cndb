@@ -15,39 +15,42 @@
   font-weight: 400;
   font-display: swap;
   src: url('/fonts/inter/inter-latin-400-normal.woff2') format('woff2'),
-       url('/fonts/inter/inter-latin-ext-400-normal.woff2') format('woff2');
+    url('/fonts/inter/inter-latin-ext-400-normal.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-                 U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+
 @font-face {
   font-family: 'Inter';
   font-style: normal;
   font-weight: 500;
   font-display: swap;
   src: url('/fonts/inter/inter-latin-500-normal.woff2') format('woff2'),
-       url('/fonts/inter/inter-latin-ext-500-normal.woff2') format('woff2');
+    url('/fonts/inter/inter-latin-ext-500-normal.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-                 U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+
 @font-face {
   font-family: 'Inter';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
   src: url('/fonts/inter/inter-latin-600-normal.woff2') format('woff2'),
-       url('/fonts/inter/inter-latin-ext-600-normal.woff2') format('woff2');
+    url('/fonts/inter/inter-latin-ext-600-normal.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-                 U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+
 @font-face {
   font-family: 'Inter';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
   src: url('/fonts/inter/inter-latin-700-normal.woff2') format('woff2'),
-       url('/fonts/inter/inter-latin-ext-700-normal.woff2') format('woff2');
+    url('/fonts/inter/inter-latin-ext-700-normal.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-                 U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 /* ── Noto Sans SC（中文 CJK） ── */
@@ -58,8 +61,9 @@
   font-display: swap;
   src: url('/fonts/noto-sans-sc/noto-sans-sc-101-400-normal.woff2') format('woff2');
   unicode-range: U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+20000-2A6DF, U+2A700-2B73F,
-                 U+2B740-2B81F, U+2B820-2CEAF, U+2CEB0-2EBEF, U+30000-3134F;
+    U+2B740-2B81F, U+2B820-2CEAF, U+2CEB0-2EBEF, U+30000-3134F;
 }
+
 @font-face {
   font-family: 'Noto Sans SC';
   font-style: normal;
@@ -67,8 +71,9 @@
   font-display: swap;
   src: url('/fonts/noto-sans-sc/noto-sans-sc-101-500-normal.woff2') format('woff2');
   unicode-range: U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+20000-2A6DF, U+2A700-2B73F,
-                 U+2B740-2B81F, U+2B820-2CEAF, U+2CEB0-2EBEF, U+30000-3134F;
+    U+2B740-2B81F, U+2B820-2CEAF, U+2CEB0-2EBEF, U+30000-3134F;
 }
+
 @font-face {
   font-family: 'Noto Sans SC';
   font-style: normal;
@@ -76,7 +81,7 @@
   font-display: swap;
   src: url('/fonts/noto-sans-sc/noto-sans-sc-101-700-normal.woff2') format('woff2');
   unicode-range: U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+20000-2A6DF, U+2A700-2B73F,
-                 U+2B740-2B81F, U+2B820-2CEAF, U+2CEB0-2EBEF, U+30000-3134F;
+    U+2B740-2B81F, U+2B820-2CEAF, U+2CEB0-2EBEF, U+30000-3134F;
 }
 
 /* ── JetBrains Mono（等宽数字/代码） ── */
@@ -86,19 +91,20 @@
   font-weight: 400;
   font-display: swap;
   src: url('/fonts/jetbrains-mono/jetbrains-mono-latin-400-normal.woff2') format('woff2'),
-       url('/fonts/jetbrains-mono/jetbrains-mono-latin-ext-400-normal.woff2') format('woff2');
+    url('/fonts/jetbrains-mono/jetbrains-mono-latin-ext-400-normal.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-                 U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
   src: url('/fonts/jetbrains-mono/jetbrains-mono-latin-700-normal.woff2') format('woff2'),
-       url('/fonts/jetbrains-mono/jetbrains-mono-latin-ext-700-normal.woff2') format('woff2');
+    url('/fonts/jetbrains-mono/jetbrains-mono-latin-ext-700-normal.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-                 U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 *,
@@ -115,7 +121,7 @@ body {
   height: 100%;
   overflow-x: hidden;
   font-family: 'Inter', 'Noto Sans SC', system-ui, -apple-system, 'Segoe UI', Roboto,
-               'PingFang SC', 'Microsoft YaHei', sans-serif;
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--cn-bg-page);
@@ -133,7 +139,7 @@ body {
 /* 真正的等宽字体备用（当前表格数字列未启用，保留给代码字段等场景） */
 .font-mono {
   font-family: 'JetBrains Mono', 'Inter', 'Noto Sans SC', ui-monospace, SFMono-Regular,
-               Menlo, Monaco, Consolas, monospace;
+    Menlo, Monaco, Consolas, monospace;
 }
 
 /* 确保 Ant Design Layout 没有默认边距 */
@@ -340,7 +346,7 @@ body.theme-oled {
 
 /* ─────────────── 表格斑马纹（按主题覆盖） ─────────────── */
 
-.table-row-striped > td {
+.table-row-striped>td {
   background-color: var(--cn-bg-subtle);
 }
 
@@ -621,19 +627,28 @@ body.theme-dark [style*="color:'#999'"] {
   align-self: center;
   flex-shrink: 0;
 }
+
 .ant-switch-inner {
   font-size: 12px;
 }
 
 /* 表格表头垂直居中修复 */
-.cn-table .ant-table-thead > tr > th {
+.cn-table .ant-table-thead>tr>th {
   vertical-align: middle;
+}
+
+/* 勾选列固定宽度（覆盖 AntD 自动计算） */
+.cn-table .ant-table-selection-column {
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
 }
 
 /* ─────────────── 表格显示设置 Dialog — 紧凑化 ─────────────── */
 .table-settings-dialog .ant-modal-body {
   padding: 12px 16px 8px;
 }
+
 .table-settings-dialog .ant-modal-footer {
   padding: 8px 16px 12px;
   border-top: none;
@@ -642,25 +657,28 @@ body.theme-dark [style*="color:'#999'"] {
 /* ─────────────── 表格密度控制 — 用 padding 压缩行高，不改字号 ─────────────── */
 
 /* 紧凑模式：最小 padding，适合快速浏览 */
-.cn-table.cn-table-compact .ant-table-thead > tr > th {
+.cn-table.cn-table-compact .ant-table-thead>tr>th {
   padding: 4px 8px !important;
 }
-.cn-table.cn-table-compact .ant-table-tbody > tr > td {
+
+.cn-table.cn-table-compact .ant-table-tbody>tr>td {
   padding: 4px 8px !important;
 }
 
 /* 适中模式（antd middle 默认 padding 已合理，微调统一） */
-.cn-table.cn-table-comfortable .ant-table-thead > tr > th {
+.cn-table.cn-table-comfortable .ant-table-thead>tr>th {
   padding: 8px 12px !important;
 }
-.cn-table.cn-table-comfortable .ant-table-tbody > tr > td {
+
+.cn-table.cn-table-comfortable .ant-table-tbody>tr>td {
   padding: 8px 12px !important;
 }
 
 /* 宽松模式：大 padding，适合长文本 */
-.cn-table.cn-table-spacious .ant-table-thead > tr > th {
+.cn-table.cn-table-spacious .ant-table-thead>tr>th {
   padding: 12px 16px !important;
 }
-.cn-table.cn-table-spacious .ant-table-tbody > tr > td {
+
+.cn-table.cn-table-spacious .ant-table-tbody>tr>td {
   padding: 14px 16px !important;
 }
