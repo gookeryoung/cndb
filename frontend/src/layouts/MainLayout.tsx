@@ -118,9 +118,9 @@ export default function MainLayout() {
   }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ height: '100vh', minHeight: 0 }}>
       <Header style={{
-        background: 'var(--cn-bg-container)', padding: '0 16px', height: 52, lineHeight: '52px',
+        background: 'var(--cn-bg-container)', padding: '0 16px', height: 52, lineHeight: '52px', flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--cn-border)',
       }}>
         <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--cn-brand-color)', marginRight: 8, cursor: 'pointer' }}
@@ -174,11 +174,11 @@ export default function MainLayout() {
         </div>
       </Header>
 
-      <Layout>
+      <Layout style={{ flex: 1, minHeight: 0 }}>
         <Sider
           collapsible collapsed={collapsed} onCollapse={setCollapsed}
           width={240} collapsedWidth={60}
-          style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)' }}
+          style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
         >
           <div style={{
             padding: '12px 16px', borderBottom: '1px solid var(--cn-border)',
@@ -207,7 +207,7 @@ export default function MainLayout() {
           )}
         </Sider>
 
-        <Content style={{ background: 'var(--cn-bg-page)', overflow: 'auto', padding: 16 }}>
+        <Content style={{ background: 'var(--cn-bg-page)', flex: 1, minHeight: 0, overflow: 'auto' }}>
           <Outlet />
         </Content>
       </Layout>
