@@ -513,6 +513,11 @@ class UsersTab(_BaseTab):
         sub.add(sub_delete, text="删除")
         sub.add(sub_import, text="导入")
 
+        self._sub_notebook = sub
+        self._list_busy = False  # 防止并发重复查询
+        # 切到「列表」子 Tab 时自动加载（同时保留手动「查询」按钮）
+        sub.bind("<<NotebookTabChanged>>", self._on_sub_tab_changed)
+
         self._build_create(sub_create)
         self._build_list(sub_list)
         self._build_delete(sub_delete)
@@ -581,6 +586,7 @@ class UsersTab(_BaseTab):
             try:
                 result = cmd_create(args)
                 print_create_result(result)
+                self.app.root.after(0, self.request_auto_query)
             except SystemExit as exc:
                 print(f"[error] {exc}", file=sys.stderr)
 
@@ -608,6 +614,10 @@ class UsersTab(_BaseTab):
 
         ttk.Button(filter_row, text="查询", command=self._do_list).pack(side=tk.RIGHT)
 
+        # 筛选条件变化即自动刷新（手动「查询」按钮仍然保留）
+        for var in (self.list_role_var, self.list_active_var, self.list_inactive_var):
+            var.trace_add("write", self._on_filter_changed)
+
         # 结果表
         cols = ("id", "username", "role", "nickname", "active", "superuser", "email")
         self.list_tree = ttk.Treeview(parent, columns=cols, show="headings", height=12)
@@ -617,7 +627,30 @@ class UsersTab(_BaseTab):
             self.list_tree.column(c, width=widths[c], anchor=tk.W)
         self.list_tree.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
 
+    # ── 自动查询辅助 ──
+    def _on_filter_changed(self, *_args: str) -> None:
+        """筛选条件（角色/激活/停用）变化时自动刷新列表."""
+        self.request_auto_query()
+
+    def _on_sub_tab_changed(self, _event: object | None = None) -> None:
+        """切到「列表」子 Tab（index=1）时自动执行一次查询."""
+        try:
+            selected = self._sub_notebook.select()
+            current = self._sub_notebook.index(selected)
+        except Exception:
+            return
+        if current == 1:
+            self.request_auto_query()
+
+    def request_auto_query(self) -> None:
+        """并发安全的自动查询入口（进入列表 Tab / 筛选变化 / 写操作后触发）."""
+        if not self._list_busy:
+            self._do_list()
+
     def _do_list(self) -> None:
+        if self._list_busy:
+            return
+        self._list_busy = True
         args = argparse.Namespace(
             role=self.list_role_var.get() or None,
             active=self.list_active_var.get(),
@@ -629,28 +662,31 @@ class UsersTab(_BaseTab):
 
             try:
                 users = cmd_list(args)
-
-                def _fill() -> None:
-                    for item in self.list_tree.get_children():
-                        self.list_tree.delete(item)
-                    for u in users:
-                        self.list_tree.insert(
-                            "",
-                            tk.END,
-                            values=(
-                                u.id,
-                                u.username,
-                                u.role,
-                                u.nickname or "",
-                                "yes" if u.is_active else "no",
-                                "Y" if u.is_superuser else "",
-                                u.email or "",
-                            ),
-                        )
-
-                self.app.root.after(0, _fill)
             except SystemExit as exc:
                 print(f"[error] {exc}", file=sys.stderr)
+                return
+            finally:
+                self._list_busy = False
+
+            def _fill() -> None:
+                for item in self.list_tree.get_children():
+                    self.list_tree.delete(item)
+                for u in users:
+                    self.list_tree.insert(
+                        "",
+                        tk.END,
+                        values=(
+                            u.id,
+                            u.username,
+                            u.role,
+                            u.nickname or "",
+                            "yes" if u.is_active else "no",
+                            "Y" if u.is_superuser else "",
+                            u.email or "",
+                        ),
+                    )
+
+            self.app.root.after(0, _fill)
 
         run_in_thread(_run)
 
@@ -705,6 +741,7 @@ class UsersTab(_BaseTab):
             try:
                 result = cmd_delete(args)
                 print_delete_result(result)
+                self.app.root.after(0, self.request_auto_query)
             except SystemExit as exc:
                 print(f"[error] {exc}", file=sys.stderr)
 
@@ -747,6 +784,7 @@ class UsersTab(_BaseTab):
             try:
                 report = cmd_import(args)
                 print_import_report(report, Path(fp), dry_run=args.dry_run)
+                self.app.root.after(0, self.request_auto_query)
             except SystemExit as exc:
                 print(f"[error] {exc}", file=sys.stderr)
             except Exception as exc:
