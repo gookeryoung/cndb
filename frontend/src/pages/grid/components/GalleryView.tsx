@@ -54,7 +54,10 @@ export default function GalleryView({ rows, fields, view, density, onRowClick }:
   const scrollRef = useRef<HTMLDivElement>(null)
   const breakpoints = AntDGrid.useBreakpoint()
 
-  const opts = resolveOpts(view?.view_options as Record<string, unknown> | undefined, GALLERY_OPTIONS)
+  const opts = useMemo(
+    () => resolveOpts(view?.view_options as Record<string, unknown> | undefined, GALLERY_OPTIONS),
+    [view?.view_options],
+  )
   const titleFieldName = (opts.title_field as string)
     || resolveAutoField(fields, findOptionSchema('gallery', 'title_field'))
   const subtitleFieldName = opts.subtitle_field as string | undefined
@@ -65,8 +68,8 @@ export default function GalleryView({ rows, fields, view, density, onRowClick }:
     ?? resolveAutoField(fields, findOptionSchema('gallery', 'image_field'))
 
   // 字段查找表 — 避免每行多次 fields.find
-  const fieldMap = new Map(fields.map(f => [f.name, f]))
-  const find = (name: string | undefined): Field | undefined => name ? fieldMap.get(name) : undefined
+  const fieldMap = useMemo(() => new Map(fields.map(f => [f.name, f])), [fields])
+  const find = useMemo(() => (name: string | undefined): Field | undefined => name ? fieldMap.get(name) : undefined, [fieldMap])
 
   // density 配置
   const gutter: [number, number] = density === 'compact' ? [8, 8] : density === 'spacious' ? [20, 20] : [16, 16]
