@@ -67,6 +67,9 @@ jobs:
       - name: ESLint
         run: cd frontend && pnpm lint
 
+      - name: Frontend tests + coverage
+        run: cd frontend && pnpm test:coverage
+
   test:
     name: Test (Python 3.12)
     runs-on: ubuntu-latest

@@ -6,6 +6,11 @@
  * 选择器说明（2026-09）：Grid 已启用 Antd virtual 虚拟滚动，行 DOM 为 div 而非
  * tr.ant-table-row —— 行数断言一律用分页「共 N 条」文本（showTotal，服务端真值）；
  * 行定位用 tag 无关的 [data-row-key] 属性。
+ *
+ * 精简说明（2026-09，测试金字塔下沉）：
+ *      原「必填校验 → 取消后行数不变」独立用例与「新增→校验→填写→保存→清理」
+ *      链路用例的校验部分重叠，合并保留后者（完整链路）；
+ *      取消交互细节下沉至组件层 GridCell.test.tsx（Escape 取消草稿编辑）.
  */
 import { test, expect } from "../fixtures/auth";
 import { getAdminToken, getTableId } from "../helpers/api";
@@ -154,29 +159,6 @@ test.describe("行 CRUD", () => {
     await cleanupExtraRows(request, tid);
     await gotoGridAndCheckCount(page, 5);
     await expect(page.getByText("E2E-按钮新增")).not.toBeVisible();
-  });
-
-  test("新增行 — 必填字段缺失时阻止提交，取消后行数不变", async ({ page, request }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
-
-    const tid = await getTableId(request, WID, TABLE_NAME);
-    await cleanupExtraRows(request, tid);
-    await gotoGridAndCheckCount(page, 5);
-
-    // 打开行内新增行，直接保存
-    await page.getByTestId("add-row-btn").click();
-    const newRow = page.locator('[data-row-key="__new__"]');
-    await expect(newRow).toHaveCount(1);
-    await newRow.getByTestId("row-save-btn").click();
-
-    // 校验错误提示出现，且未产生新行
-    await expect(page.getByText(/请填写必填字段/)).toBeVisible();
-    await expect(newRow).toHaveCount(1);
-
-    // 取消放弃本次新增，新增行消失，Grid 回到 5 条
-    await newRow.getByTestId("row-cancel-btn").click();
-    await expect(newRow).toHaveCount(0);
-    await expect(page.getByText("共 5 条")).toBeVisible();
   });
 
   test("整行编辑 → 修改字段 → 保存 → Grid 更新 → 清理", async ({ page, request }) => {

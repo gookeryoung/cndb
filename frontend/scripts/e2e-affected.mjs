@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global console, process */
+/* global process */
 /**
  * 只跑 affected E2E —— 按 git 变更筛选受影响的 spec，仅运行这些用例，缩短 PR/本地回归时间.
  *
