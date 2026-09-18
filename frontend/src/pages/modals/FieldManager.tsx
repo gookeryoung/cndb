@@ -215,9 +215,9 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   /** 提交：组装 config 后发送 */
   function handleSubmit() {
     const values = form.getFieldsValue()
-    // config 由 ConfigEditor/SelectOptionsEditor 通过 setFieldValue 写入 store，
-    // 未注册对应 Form.Item，getFieldsValue()（仅注册字段）不包含 config —— 必须直接读 store。
-    const configFromStore = form.getFieldValue('config') as Record<string, unknown> | undefined
+    // config 已通过 <Form.Item name="config" hidden /> 注册，getFieldsValue() 包含它；
+    // 读 store 作为 fallback 兼容极端边界（如 hidden Form.Item 未渲染）。
+    const configFromStore = (form.getFieldValue('config') as Record<string, unknown> | undefined) ?? values.config as Record<string, unknown> | undefined ?? {}
     const payload: Record<string, unknown> = {
       name: values.name,
       field_type: values.field_type,
@@ -788,11 +788,23 @@ function isPresetColor(color: string): boolean {
 
 function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0] }) {
   // options 的唯一真相源：首次挂载时从 form store 读一次，之后完全由本地 state 驱动。
-  // 不再接受外部 config prop，避免"父组件重渲染 → config.options 新引用 → useEffect
-  // 覆盖用户正在编辑的 state"的竞态。key 变化（fieldType 切换 / 打开不同字段）时
-  // React 会强制重挂载本组件，useState 重新初始化。
+  // 关键边界：openDialog 用 setTimeout(0) 延迟 setFieldsValue({ config })，
+  // ConfigEditor/SelectOptionsEditor 先挂载 → useState lazy init 先跑（此时 Form store
+  // 还没写入真实 config）→ 初始化空数组。后续 setTimeout 写入触发 useWatch 更新，
+  // SelectOptionsEditor 重渲染但 useState **不会重新初始化**——这会导致"编辑已有
+  // select 字段时 options 永远显示为空"。
+  //
+  // 因此加一个 guarded effect：仅在「外部 Form store 有值」且「内部 state 还空着」
+  // 时同步一次。既修复初始化时序竞态，又不覆盖用户正在编辑的非空 state。
   const watchedOptions = Form.useWatch(['config', 'options'], form)
   const [options, setOptions] = useState(() => normalizeOptionsFromConfig(watchedOptions))
+
+  useEffect(() => {
+    const incoming = normalizeOptionsFromConfig(watchedOptions)
+    if (incoming.length > 0 && options.length === 0) {
+      setOptions(incoming)
+    }
+  }, [watchedOptions])  // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 把当前编辑中的 options 同步到 form 的 config.options */
   function syncToForm(next: typeof options) {
