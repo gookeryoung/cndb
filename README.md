@@ -57,9 +57,6 @@ docker compose -f docker-compose.wheel.yml exec app cndb seed
 使用 PostgreSQL：
 
 ```bash
-# 复制环境变量模板，修改 CNDATABASE_URL 为 PostgreSQL 连接串
-cp .env.example .env
-
 # 带 PostgreSQL 容器启动（可选 profile）
 docker compose -f docker-compose.wheel.yml --profile pg up -d --build
 docker compose -f docker-compose.wheel.yml exec app cndb seed
@@ -81,7 +78,6 @@ CNDB_DB_PASSWORD=your_pass
 
 ```bash
 # SQLite 快速启动：nginx:80 → app:8000
-cp .env.example .env   # 可选
 docker compose up -d --build
 
 # PostgreSQL（可选 profile）
@@ -129,9 +125,9 @@ docker compose -f docker-compose.wheel.yml up -d --build
 
 ```bash
 cd frontend
-npm install
-npm run dev       # Vite dev server（默认 http://localhost:5173，代理到后端 8000）
-npm run build     # 构建到 src/cndb/static/（后端自动挂载）
+pnpm install
+pnpm dev       # Vite dev server（默认 http://localhost:5173，代理到后端 8000）
+pnpm build     # 构建到 src/cndb/static/（后端自动挂载）
 ```
 
 ### E2E 测试（Playwright）
@@ -156,14 +152,13 @@ npm run e2e             # 全部
 ```
 src/cndb/
 ├── api/              # 认证依赖 (get_current_user)
-├── core/             # 配置 / 数据库 / 安全
+├── core/             # 配置 / 数据库 / 安全 / 健康检查 (system_api.py)
 ├── plugins/
 │   ├── accounts/     # 用户注册 / 登录 / JWT
 │   ├── workspaces/   # 工作区 + 成员 + 角色
 │   ├── tables/       # 动态表 / 字段 / 记录 / DDL / 查询
 │   ├── reports/      # 报告模板 (Jinja2 sandbox)
-│   └── health/       # /health 健康检查
-├── schemas/          # 通用 Pydantic schema
+│   └── wechat_auth/  # 微信登录
 ├── seed.py           # 演示数据注入（幂等）
 └── runner.py         # 启动入口 `cndb serve`
 ```
@@ -192,8 +187,13 @@ src/cndb/
 ```bash
 make sync          # 安装依赖
 make check         # 全套门禁：lint + typecheck + cov
-make bench         # 性能基准：10k 行导入 + 查询
 make push          # 推送全部 remote
+```
+
+性能基准（10k 行导入 + 查询）：
+
+```bash
+uv run python scripts/bench_10k_rows.py
 ```
 
 覆盖门禁阈值 95%，任何 PR 低于该值自动拒绝。
