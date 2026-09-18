@@ -146,6 +146,104 @@ class TestCreateTableFromCsv:
         assert set(labels) == {"active", "done", "pending"}
 
 
+class TestImportFailureCleanup:
+    """导入流程中途失败时，DataTable/DataField/物理表 应被回滚清理，不留空壳."""
+
+    def test_create_table_from_csv_bulk_failure_cleans_up(self, csv_workspace, monkeypatch):
+        """bulk_create 抛异常 → DataTable / DataField / 物理表 全部被清理."""
+        engine, db, ws = csv_workspace
+
+        # 先确认当前没有表
+        from cndb.plugins.tables.models import DataTable
+
+        before_count = db.query(DataTable).filter(DataTable.workspace_id == ws.id).count()
+
+        # mock bulk_create 让它在数据导入阶段失败
+        from cndb.plugins.tables import transfer as transfer_mod
+
+        def _boom_bulk_create(*args, **kwargs):
+            raise RuntimeError("模拟导入失败：字段类型不匹配")
+
+        monkeypatch.setattr(transfer_mod.rec, "bulk_create", _boom_bulk_create)
+
+        csv = "name,age\nAlice,30\n"
+        with pytest.raises(RuntimeError, match="模拟导入失败"):
+            transfer.create_table_from_csv(engine, db, ws.id, "清理测试表", csv)
+
+        # 断言：DataTable 元数据应不存在
+        after_count = db.query(DataTable).filter(DataTable.workspace_id == ws.id).count()
+        assert after_count == before_count, f"期望表被清理: 之前 {before_count} 现在 {after_count}"
+
+        # 断言：物理表应不存在
+        from cndb.plugins.tables import ddl
+
+        insp = ddl.inspect(engine)
+        existing_tables = insp.get_table_names()
+        # 没有表残留（DDL 建的物理表会以 data_* 开头）
+        assert not any(t.startswith("data_") for t in existing_tables), f"物理表残留: {existing_tables}"
+
+    def test_create_table_from_file_bulk_failure_cleans_up(self, csv_workspace, monkeypatch):
+        """create_table_from_file 走的也是同一条清理路径."""
+        engine, db, ws = csv_workspace
+
+        from cndb.plugins.tables import transfer as transfer_mod
+        from cndb.plugins.tables.models import DataTable
+
+        before_count = db.query(DataTable).filter(DataTable.workspace_id == ws.id).count()
+
+        def _boom_bulk_create(*args, **kwargs):
+            raise ValueError("模拟文件导入失败")
+
+        monkeypatch.setattr(transfer_mod.rec, "bulk_create", _boom_bulk_create)
+
+        csv_bytes = b"name,age\nAlice,30\n"
+        with pytest.raises(ValueError, match="模拟文件导入失败"):
+            transfer.create_table_from_file(
+                engine,
+                db,
+                ws.id,
+                "文件清理测试表",
+                csv_bytes,
+                filename="test.csv",
+            )
+
+        after_count = db.query(DataTable).filter(DataTable.workspace_id == ws.id).count()
+        assert after_count == before_count
+
+    def test_create_table_from_json_data_bulk_failure_cleans_up(self, csv_workspace, monkeypatch):
+        """create_table_from_json_data 同样应清理."""
+        engine, db, ws = csv_workspace
+
+        from cndb.plugins.tables import transfer as transfer_mod
+        from cndb.plugins.tables.models import DataTable
+
+        before_count = db.query(DataTable).filter(DataTable.workspace_id == ws.id).count()
+
+        def _boom_bulk_create(*args, **kwargs):
+            raise RuntimeError("模拟 JSON 导入失败")
+
+        monkeypatch.setattr(transfer_mod.rec, "bulk_create", _boom_bulk_create)
+
+        rows = [{"name": "Alice", "age": 30}]
+        with pytest.raises(RuntimeError, match="模拟 JSON 导入失败"):
+            transfer.create_table_from_json_data(engine, db, ws.id, "JSON清理表", rows)
+
+        after_count = db.query(DataTable).filter(DataTable.workspace_id == ws.id).count()
+        assert after_count == before_count
+
+    def test_successful_import_leaves_table(self, csv_workspace):
+        """正常导入不应误清理 —— 基线验证."""
+        engine, db, ws = csv_workspace
+        csv = "name,age\nAlice,30\n"
+        dt, ids = transfer.create_table_from_csv(engine, db, ws.id, "正常表", csv)
+        assert dt.id is not None
+        assert len(ids) == 1
+
+        from cndb.plugins.tables.models import DataTable
+
+        assert db.get(DataTable, dt.id) is not None
+
+
 class TestDecodeBytesAuto:
     """多编码自动检测 + 解码 —— 纯函数测试."""
 
