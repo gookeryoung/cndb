@@ -94,7 +94,7 @@ export default function PermissionEditor({ fields, data, wid, tid, owner }: Perm
       queryClient.invalidateQueries({ queryKey: ['table-members', wid, tid] })
       setAddOpen(false)
     },
-    onError: () => message.error('添加成员失败'),
+    onError: (err) => message.error(err instanceof Error ? err.message : '添加成员失败'),
   })
 
   const updateMember = useMutation({
@@ -104,7 +104,7 @@ export default function PermissionEditor({ fields, data, wid, tid, owner }: Perm
       message.success('已更新授权')
       queryClient.invalidateQueries({ queryKey: ['table-members', wid, tid] })
     },
-    onError: () => message.error('更新失败'),
+    onError: (err) => message.error(err instanceof Error ? err.message : '更新失败'),
   })
 
   const removeMember = useMutation({
@@ -113,7 +113,7 @@ export default function PermissionEditor({ fields, data, wid, tid, owner }: Perm
       message.success('已移除成员')
       queryClient.invalidateQueries({ queryKey: ['table-members', wid, tid] })
     },
-    onError: () => message.error('移除失败'),
+    onError: (err) => message.error(err instanceof Error ? err.message : '移除失败'),
   })
 
   const transferOwner = useMutation({
@@ -124,7 +124,7 @@ export default function PermissionEditor({ fields, data, wid, tid, owner }: Perm
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
       setTransferOpen(false)
     },
-    onError: () => message.error('转让失败'),
+    onError: (err) => message.error(err instanceof Error ? err.message : '转让失败'),
   })
 
   // ── 可选用户（排除当前已在成员列表里的 + 排除当前拥有者） ──

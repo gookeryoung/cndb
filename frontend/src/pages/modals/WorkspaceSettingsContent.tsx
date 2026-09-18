@@ -155,6 +155,7 @@ export default function WorkspaceSettingsContent({
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       onUpdated?.()
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '保存设置失败'),
   })
 
   const toggleAllowEdit = useMutation({
@@ -164,6 +165,7 @@ export default function WorkspaceSettingsContent({
       message.success('编辑权限已更新')
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '更新编辑权限失败'),
   })
 
   const addMember = useMutation({
@@ -177,6 +179,7 @@ export default function WorkspaceSettingsContent({
       queryClient.invalidateQueries({ queryKey: ['workspace-members', wid] })
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '添加成员失败'),
   })
 
   const changeRole = useMutation({
@@ -187,6 +190,7 @@ export default function WorkspaceSettingsContent({
       queryClient.invalidateQueries({ queryKey: ['workspace-members', wid] })
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '更新角色失败'),
   })
 
   const kick = useMutation({
@@ -196,6 +200,7 @@ export default function WorkspaceSettingsContent({
       queryClient.invalidateQueries({ queryKey: ['workspace-members', wid] })
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '移除成员失败'),
   })
 
   const removeWs = useMutation({
@@ -204,6 +209,7 @@ export default function WorkspaceSettingsContent({
       message.success('工作区已删除')
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除工作区失败'),
   })
 
   const transferOwner = useMutation({
@@ -214,7 +220,7 @@ export default function WorkspaceSettingsContent({
       queryClient.invalidateQueries({ queryKey: ['workspace-members', wid] })
       setTransferOpen(false)
     },
-    onError: () => message.error('转让失败'),
+    onError: (err) => message.error(err instanceof Error ? err.message : '转让失败'),
   })
 
   const statItems = useMemo(() => {

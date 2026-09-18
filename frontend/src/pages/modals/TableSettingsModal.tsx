@@ -91,6 +91,7 @@ export default function TableSettingsModal({
       queryClient.invalidateQueries({ queryKey: ['table', `${wid}/${tid}`] })
       onUpdated?.()
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '保存失败'),
   })
 
   const removeTable = useMutation({
@@ -102,6 +103,7 @@ export default function TableSettingsModal({
       onUpdated?.()
       onClose?.()
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除表失败'),
   })
 
   const savePerm = useMutation({
@@ -110,6 +112,7 @@ export default function TableSettingsModal({
       message.success('权限已更新')
       queryClient.invalidateQueries({ queryKey: ['table-perm', wid, tid] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '保存权限失败'),
   })
 
   const createView = useMutation({
@@ -119,6 +122,7 @@ export default function TableSettingsModal({
       queryClient.invalidateQueries({ queryKey: ['table-views', wid, tid] })
       queryClient.invalidateQueries({ queryKey: ['table-settings', wid, tid] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '创建视图失败'),
   })
   const updateView = useMutation({
     mutationFn: (args: { vid: number | string; data: Partial<ViewCreate> }) =>
@@ -127,6 +131,7 @@ export default function TableSettingsModal({
       message.success('视图已更新')
       queryClient.invalidateQueries({ queryKey: ['table-views', wid, tid] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '更新视图失败'),
   })
   const removeView = useMutation({
     mutationFn: (vid: number | string) => viewApi.remove(wid, tid, vid),
@@ -135,6 +140,7 @@ export default function TableSettingsModal({
       queryClient.invalidateQueries({ queryKey: ['table-views', wid, tid] })
       queryClient.invalidateQueries({ queryKey: ['table-settings', wid, tid] })
     },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除视图失败'),
   })
 
   const handleTabChange = (key: string) => {
