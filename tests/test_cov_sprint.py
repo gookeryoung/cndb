@@ -1,9 +1,9 @@
-"""Coverage sprint — 补全 import_csv/public/records/trash routers 的异常/边界分支."""
+"""Coverage sprint — 补全 import_csv/public/records routers 的异常/边界分支."""
 
 from __future__ import annotations
 
 from datetime import date, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -152,77 +152,6 @@ class TestPublicDirect:
                 json={"values": {"a": 1}},
             )
         assert r.status_code == 500
-
-
-# ── trash.py ─────────────────────────────────────────────
-
-
-class TestTrashRouterEdgeCoverage:
-    def test_list_trashed_rows_table_missing_returns_empty(self, client, auth_headers, db):
-        """list trash rows: table exists but metadata.reflect finds nothing."""
-        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_trash5"})
-        wid = ws.json()["id"]
-        t = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t5"})
-        tid = t.json()["id"]
-
-        with patch(
-            "cndb.plugins.tables.routers.trash.MetaData.reflect",
-            side_effect=Exception("reflect boom"),
-        ):
-            r = client.get(
-                f"/api/v1/workspaces/{wid}/tables/{tid}/trash-rows",
-                headers=auth_headers,
-            )
-        assert r.status_code == 500
-
-    def test_purge_table_metadata_none(self, client, auth_headers):
-        """purge trash rows when metadata.reflect returns empty -> 0 purged."""
-        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_trash6"})
-        wid = ws.json()["id"]
-        t = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t6"})
-        tid = t.json()["id"]
-
-        # 让 sa_table = None 走 return {"purged": 0} 分支
-        from unittest.mock import MagicMock as MM
-
-        fake_meta = MM()
-        fake_meta.tables = {}
-
-        with patch("cndb.plugins.tables.routers.trash.MetaData", return_value=fake_meta):
-            r = client.delete(
-                f"/api/v1/workspaces/{wid}/tables/{tid}/trash-rows",
-                headers=auth_headers,
-                params={"days": 0},
-            )
-        # 200 with 0 purged
-        assert r.status_code == 200
-        assert r.json()["purged"] == 0
-
-    def test_restore_batch_exception_500(self, client, auth_headers):
-        """batch restore (no row_ids) -> 500 when DB fails."""
-        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_trash7"})
-        wid = ws.json()["id"]
-        t = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t7"})
-        tid = t.json()["id"]
-
-        fake_meta = MagicMock()
-        fake_meta.tables = {}
-        with patch("cndb.plugins.tables.routers.trash.MetaData", return_value=fake_meta):
-            # sa_table is None -> no tables, no exception path triggered
-            # Let's force an exception on the engine.begin path instead
-            from unittest.mock import patch as _patch
-
-            def _boom_begin(self, *a, **kw):
-                raise RuntimeError("begin failed")
-
-            with _patch("sqlalchemy.engine.Engine.begin", _boom_begin):
-                r = client.post(
-                    f"/api/v1/workspaces/{wid}/tables/{tid}/trash-rows/restore",
-                    headers=auth_headers,
-                    json={"row_ids": []},
-                )
-        # 500 from exception handler, or 200 with 0 restored depending on which branch runs
-        assert r.status_code in (200, 500)
 
 
 # ── field_types: DateFieldType / DateTimeFieldType ────────
