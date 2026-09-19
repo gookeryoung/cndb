@@ -252,30 +252,49 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   /** 字段列表 + 工具栏（两种模式共用的内容） */
   const fieldListContent = (
     <>
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <Button icon={<ImportOutlined />} onClick={openImportDialog}>
-          从其他表引入
-        </Button>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => openDialog(null)}>
-          新建字段
-        </Button>
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>共 {sorted.length} 个字段</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button icon={<ImportOutlined />} onClick={openImportDialog}>
+            从其他表引入
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openDialog(null)}>
+            新建字段
+          </Button>
+        </div>
       </div>
 
       <Table size="small" rowKey="id" pagination={false} dataSource={sorted}
         columns={[
           { title: '名称', dataIndex: 'name', render: (v, r) => r.is_primary ? <span><Tag color="gold">PK</Tag> {v}</span> : v },
-          { title: '类型', dataIndex: 'field_type', render: (v) => <Tag>{String(v)}</Tag> },
-          { title: '必填', dataIndex: 'required', render: v => v ? '是' : '否', width: 70 },
-          { title: '隐藏', dataIndex: 'hidden', render: v => v ? '是' : '否', width: 70 },
           {
-            title: '操作', key: 'op', width: 160,
+            title: '类型', dataIndex: 'field_type', width: 110,
+            render: (v: string) => {
+              const label = FIELD_TYPES.find(t => t.value === v)?.label ?? v
+              return <Tag title={v} style={{ margin: 0 }}>{label}</Tag>
+            },
+          },
+          {
+            title: '必填', dataIndex: 'required', width: 64, render: (v: boolean) => v
+              ? <Tag color="orange" style={{ margin: 0 }}>必填</Tag>
+              : <span style={{ color: 'var(--cn-text-muted)' }}>-</span>
+          },
+          {
+            title: '隐藏', dataIndex: 'hidden', width: 64, render: (v: boolean) => v
+              ? <Tag style={{ margin: 0 }}>隐藏</Tag>
+              : <span style={{ color: 'var(--cn-text-muted)' }}>-</span>
+          },
+          {
+            title: '操作', key: 'op', width: 88,
             render: (_, r) => (
               <span>
-                <Button size="small" icon={<EditOutlined />} style={{ marginRight: 4 }}
-                  onClick={() => openDialog(r)}>编辑</Button>
+                <Tooltip title="编辑">
+                  <Button size="small" type="text" icon={<EditOutlined />}
+                    onClick={() => openDialog(r)} />
+                </Tooltip>
                 {!r.is_primary && (
                   <Popconfirm title="确认删除？" onConfirm={() => remove.mutate(r.id)}>
-                    <Button size="small" danger icon={<DeleteOutlined />} />
+                    <Button size="small" type="text" danger icon={<DeleteOutlined />} />
                   </Popconfirm>
                 )}
               </span>

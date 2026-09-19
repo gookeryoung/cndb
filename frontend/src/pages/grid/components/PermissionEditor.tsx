@@ -6,7 +6,7 @@
 
 import { useState, useMemo } from 'react'
 import {
-  Card, Avatar, Button, Table, Select, Modal, Tag, Space, Form, message, Popconfirm, Tooltip,
+  Card, Avatar, Button, Table, Select, Modal, Tag, Space, Checkbox, message, Popconfirm, Tooltip,
 } from 'antd'
 import {
   SafetyOutlined, UserOutlined, SwapOutlined, PlusOutlined, DeleteOutlined,
@@ -16,17 +16,20 @@ import {
   tableMembersApi, workspaceApi,
 } from '@/api'
 import type {
-  Field, TablePermission, TableOwnerInfo, TableMember, WorkspaceRole,
+  Field, TableOwnerInfo, TableMember, WorkspaceRole,
 } from '@/api'
 import { useAuthStore } from '@/store'
 
 interface PermissionEditorProps {
   fields: Field[]
-  data?: TablePermission
   wid: number | string
   tid: number | string
   /** 表拥有者（从 TableDetail.owner 获取） */
   owner?: TableOwnerInfo | null
+  /** 受控：当前勾选为隐藏的字段名集合（状态由父组件 TableSettingsModal 持有） */
+  hiddenNames: string[]
+  /** 受控回调：勾选变化时通知父组件 */
+  onHiddenNamesChange: (names: string[]) => void
 }
 
 // ───────────────────────── 隐藏字段 + 备注（原逻辑保留） ─────────────────────────
@@ -35,7 +38,7 @@ interface PermissionEditorProps {
  *  后端 schema: hidden_fields: dict[str, Any] = { "admin": ["name"], "editor": [...] }
  *  历史遗留：早期设计为数组，后端改为按角色分桶后前端没跟进，需要兼容两种形态.
  */
-function buildHiddenSet(hidden: unknown): Set<string> {
+export function buildHiddenSet(hidden: unknown): Set<string> {
   const set = new Set<string>()
   if (!hidden) return set
   if (Array.isArray(hidden)) {
@@ -52,12 +55,11 @@ function buildHiddenSet(hidden: unknown): Set<string> {
 
 // ───────────────────────── 主组件 ─────────────────────────
 
-export default function PermissionEditor({ fields, data, wid, tid, owner }: PermissionEditorProps) {
+export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames, onHiddenNamesChange }: PermissionEditorProps) {
   const user = useAuthStore(s => s.user)
   const queryClient = useQueryClient()
   const [transferOpen, setTransferOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
-  const hiddenSet = buildHiddenSet(data?.hidden_fields as unknown)
 
   // ── 表成员列表 ──
   const { data: members = [], isLoading: membersLoading } = useQuery<TableMember[]>({
@@ -260,25 +262,29 @@ export default function PermissionEditor({ fields, data, wid, tid, owner }: Perm
         />
       </Card>
 
-      {/* ─────────────── 原有 TablePermission UI ─────────────── */}
+      {/* ─────────────── 隐藏字段（受控 Checkbox.Group，状态由父组件持有） ─────────────── */}
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, marginTop: 4 }}>
         隐藏字段（勾选后用户不可见）
       </div>
-      <Form>
-        {fields.filter(f => !f.hidden).map(f => (
-          <Form.Item key={f.id} style={{ marginBottom: 4 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-              <input
-                type="checkbox"
-                value={f.name}
-                defaultChecked={hiddenSet.has(f.name)}
-                data-perm-hidden
-              />
-              {f.name} <span style={{ color: '#9ca3af', fontSize: 11 }}>({f.field_type})</span>
-            </label>
-          </Form.Item>
-        ))}
-      </Form>
+      {fields.filter(f => !f.hidden).length === 0 ? (
+        <div style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>暂无可见字段</div>
+      ) : (
+        <Checkbox.Group
+          value={hiddenNames}
+          onChange={(vals) => onHiddenNamesChange(vals as string[])}
+          style={{ width: '100%' }}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px' }}>
+            {fields.filter(f => !f.hidden).map(f => (
+              <Checkbox key={String(f.id)} value={f.name}>
+                <span style={{ fontSize: 13 }}>
+                  {f.name} <span style={{ color: 'var(--cn-text-muted)', fontSize: 11 }}>({f.field_type})</span>
+                </span>
+              </Checkbox>
+            ))}
+          </div>
+        </Checkbox.Group>
+      )}
 
       {/* ─────────────── 转让所有权 Modal ─────────────── */}
       <TransferOwnerModal

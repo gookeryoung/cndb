@@ -43,7 +43,7 @@ export const mockField: Field = {
 }
 
 export const mockViews: View[] = [
-  { id: 200, name: '全部数据', view_type: 'grid', default: true },
+  { id: 200, name: '全部数据', view_type: 'grid', is_default: true },
 ]
 
 export const mockRecords: RowListResponse = {

@@ -9,20 +9,32 @@
  */
 
 import { Suspense, lazy, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
-  Modal, Tabs, Form, Input, Button, Descriptions, Tag, Popconfirm, message, Space, Empty,
+  Modal, Tabs, Form, Input, Button, Tag, Popconfirm, message, Space, Empty, Tooltip,
 } from 'antd'
 import {
   InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
   SaveOutlined, EditOutlined, PlusOutlined, DeleteOutlined,
+  ColumnHeightOutlined, EyeOutlined, CalendarOutlined, LineChartOutlined, PartitionOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tableApi, permissionApi, viewApi } from '@/api'
-import type { TableDetail, TableUpdate, ViewCreate } from '@/api'
-import PermissionEditor from '@/pages/grid/components/PermissionEditor'
+import type { TableDetail, TableUpdate, ViewCreate, View } from '@/api'
+import PermissionEditor, { buildHiddenSet } from '@/pages/grid/components/PermissionEditor'
 
 const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
 const CreateEditViewForm = lazy(() => import('@/pages/grid/components/CreateEditViewForm'))
+
+/** 视图类型 → 中文标签 + 图标（与 GridPage MODE_BUTTONS 保持一致） */
+const VIEW_MODE_META: Record<string, { label: string; icon: ReactNode }> = {
+  grid: { label: '表格', icon: <ColumnHeightOutlined /> },
+  kanban: { label: '看板', icon: <AppstoreOutlined /> },
+  gallery: { label: '画廊', icon: <EyeOutlined /> },
+  calendar: { label: '日历', icon: <CalendarOutlined /> },
+  gantt: { label: '甘特图', icon: <LineChartOutlined /> },
+  wbs: { label: '工作分解', icon: <PartitionOutlined /> },
+}
 
 interface Props {
   open?: boolean
@@ -58,6 +70,12 @@ export default function TableSettingsModal({
     viewType?: string
     options?: Record<string, unknown>
   }>({})
+  /** 权限 Tab 隐藏字段受控 state（保存时直接读取，不再依赖 DOM 采集） */
+  const [hiddenNames, setHiddenNames] = useState<string[]>([])
+
+  // 基本信息表单值监听（脏检查用）
+  const nameValue = Form.useWatch('name', form)
+  const descriptionValue = Form.useWatch('description', form)
 
   const isActive = embedded || !!open
 
@@ -145,8 +163,17 @@ export default function TableSettingsModal({
 
   const handleTabChange = (key: string) => {
     setActiveTab(key as typeof initialTab)
-    if (key === 'permissions') refetchPerm()
   }
+
+  // 权限数据加载：进入 permissions Tab 时触发（useEffect 覆盖 initialTab='permissions' 直接打开场景）
+  useEffect(() => {
+    if (isActive && activeTab === 'permissions') refetchPerm()
+  }, [isActive, activeTab, refetchPerm])
+
+  // 权限数据到达后展平初始化隐藏字段受控 state
+  useEffect(() => {
+    if (permData) setHiddenNames(Array.from(buildHiddenSet(permData.hidden_fields)))
+  }, [permData])
 
   // 打开 / embedded 模式 / 表切换时，初始化基本信息表单
   useEffect(() => {
@@ -163,8 +190,16 @@ export default function TableSettingsModal({
   const canEditBasic = canEditSchema
   const canDeleteTable = !table?.trashed && canEditSchema
 
+  // 基本信息脏检查：与当前表数据比对，无变化时禁用保存按钮
+  const basicDirty = !!table && (
+    (nameValue ?? '') !== (table.name ?? '') ||
+    (descriptionValue ?? '') !== (table.description ?? '')
+  )
+
   const tabs = (
     <Tabs
+      tabPosition="left"
+      className="table-settings-tabs"
       activeKey={activeTab}
       onChange={handleTabChange}
       items={[
@@ -173,23 +208,29 @@ export default function TableSettingsModal({
           key: 'basic',
           label: <span><InfoCircleOutlined /> 基本信息</span>,
           children: table ? (
-            <div style={{ paddingTop: 8 }}>
-              <Descriptions column={3} bordered size="small" style={{ marginBottom: 16 }}>
-                <Descriptions.Item label="字段数">
-                  <Tag>{table.field_count ?? table.fields.length}</Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="记录数">
-                  <strong>{table.record_count ?? 0}</strong>
-                </Descriptions.Item>
-                <Descriptions.Item label="视图数">
-                  <Tag color="purple">{table.view_count ?? (table.views?.length ?? 0)}</Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="表 ID">{table.id}</Descriptions.Item>
-                <Descriptions.Item label="工作区">{table.workspace_id}</Descriptions.Item>
-                <Descriptions.Item label="创建时间">
-                  {table.created_at ? new Date(table.created_at).toLocaleString() : '—'}
-                </Descriptions.Item>
-              </Descriptions>
+            <div style={{ paddingTop: 4 }}>
+              {/* 统计条 — 替代原 bordered Descriptions，更紧凑 */}
+              <div className="ts-stats">
+                <div className="ts-stat">
+                  <span className="ts-stat-num">{table.field_count ?? table.fields.length}</span>
+                  <span className="ts-stat-label">字段</span>
+                </div>
+                <div className="ts-stat">
+                  <span className="ts-stat-num">{table.record_count ?? 0}</span>
+                  <span className="ts-stat-label">记录</span>
+                </div>
+                <div className="ts-stat">
+                  <span className="ts-stat-num">{table.view_count ?? (table.views?.length ?? 0)}</span>
+                  <span className="ts-stat-label">视图</span>
+                </div>
+                <div className="ts-stat">
+                  <span className="ts-stat-num ts-stat-num-sm">
+                    {table.created_at ? new Date(table.created_at).toLocaleDateString() : '—'}
+                  </span>
+                  <span className="ts-stat-label">创建日期</span>
+                </div>
+              </div>
+              <div className="ts-meta">表 ID {table.id} · 工作区 {table.workspace_id}</div>
 
               <Form
                 key={`basic-${table?.id ?? 'loading'}`}
@@ -201,11 +242,12 @@ export default function TableSettingsModal({
                 <Form.Item
                   name="name"
                   label="表名"
+                  style={{ marginBottom: 12 }}
                   rules={[{ required: true, message: '请输入表名' }, { max: 64 }]}
                 >
                   <Input maxLength={64} showCount disabled={!canEditBasic} />
                 </Form.Item>
-                <Form.Item name="description" label="描述（可选）">
+                <Form.Item name="description" label="描述（可选）" style={{ marginBottom: 12 }}>
                   <Input.TextArea rows={3} maxLength={500} showCount disabled={!canEditBasic} />
                 </Form.Item>
 
@@ -215,7 +257,7 @@ export default function TableSettingsModal({
                     icon={<SaveOutlined />}
                     htmlType="submit"
                     loading={updateTable.isPending}
-                    disabled={!canEditBasic}
+                    disabled={!canEditBasic || !basicDirty}
                   >
                     保存
                   </Button>
@@ -255,7 +297,7 @@ export default function TableSettingsModal({
                 wid={wid}
                 tid={tid}
                 fields={table?.fields ?? []}
-                onClose={onClose ?? (() => {})}
+                onClose={onClose ?? (() => { })}
                 onChanged={() => {
                   queryClient.invalidateQueries({ queryKey: ['table-settings', wid, tid] })
                   queryClient.invalidateQueries({ queryKey: ['table', `${wid}/${tid}`] })
@@ -271,11 +313,12 @@ export default function TableSettingsModal({
           key: 'views',
           label: <span><AppstoreOutlined /> 视图</span>,
           children: (
-            <div style={{ paddingTop: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <span style={{ color: 'var(--cn-text-secondary)' }}>共 {views.length} 个视图</span>
+            <div style={{ paddingTop: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>共 {views.length} 个视图</span>
                 <Button
                   type="primary"
+                  size="small"
                   icon={<PlusOutlined />}
                   disabled={!canEditViews}
                   onClick={() => {
@@ -291,45 +334,43 @@ export default function TableSettingsModal({
                 <Empty description="暂无视图，点击右上角「新建视图」创建" style={{ padding: 32 }} />
               )}
 
-              {views.map((v: any) => (
-                <div
-                  key={String(v.id)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '10px 12px', marginBottom: 6,
-                    border: '1px solid var(--cn-border)', borderRadius: 6,
-                    background: 'var(--cn-bg-subtle)',
-                  }}
-                >
-                  <strong style={{ flex: 1 }}>{v.name}</strong>
-                  <Tag>{v.view_type}</Tag>
-                  {v.is_default && <Tag color="blue">默认</Tag>}
-                  <Space size={4}>
-                    <Button
-                      size="small" type="text" icon={<EditOutlined />} disabled={!canEditViews}
-                      onClick={() => {
-                        setViewEditorInitial({
-                          vid: v.id,
-                          name: v.name,
-                          viewType: v.view_type,
-                          options: v.view_options,
-                        })
-                        setViewEditorOpen(true)
-                      }}
-                    />
-                    <Popconfirm
-                      title={`删除视图 "${v.name}" ？`}
-                      okText="删除"
-                      okType="danger"
-                      cancelText="取消"
-                      onConfirm={() => removeView.mutate(v.id)}
-                      disabled={!canEditViews}
-                    >
-                      <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!canEditViews} />
-                    </Popconfirm>
-                  </Space>
-                </div>
-              ))}
+              {views.map((v: View) => {
+                const meta = VIEW_MODE_META[v.view_type]
+                return (
+                  <div key={String(v.id)} className="ts-view-row">
+                    <span className="ts-view-icon">{meta?.icon ?? <AppstoreOutlined />}</span>
+                    <strong className="ts-view-name">{v.name}</strong>
+                    <Tag style={{ marginInlineEnd: 0 }}>{meta?.label ?? v.view_type}</Tag>
+                    {v.is_default && <Tag color="blue" style={{ marginInlineEnd: 0 }}>默认</Tag>}
+                    <span className="ts-view-actions">
+                      <Tooltip title="编辑视图">
+                        <Button
+                          size="small" type="text" icon={<EditOutlined />} disabled={!canEditViews}
+                          onClick={() => {
+                            setViewEditorInitial({
+                              vid: v.id,
+                              name: v.name,
+                              viewType: v.view_type,
+                              options: v.view_options ?? undefined,
+                            })
+                            setViewEditorOpen(true)
+                          }}
+                        />
+                      </Tooltip>
+                      <Popconfirm
+                        title={`删除视图 "${v.name}" ？`}
+                        okText="删除"
+                        okType="danger"
+                        cancelText="取消"
+                        onConfirm={() => removeView.mutate(v.id)}
+                        disabled={!canEditViews}
+                      >
+                        <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!canEditViews} />
+                      </Popconfirm>
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           ),
         },
@@ -339,8 +380,8 @@ export default function TableSettingsModal({
           key: 'permissions',
           label: <span><SafetyOutlined /> 权限</span>,
           children: table ? (
-            <div style={{ paddingTop: 8 }}>
-              <div style={{ marginBottom: 12 }}>
+            <div style={{ paddingTop: 4 }}>
+              <div style={{ marginBottom: 10 }}>
                 <span style={{ fontSize: 13, color: 'var(--cn-text-primary)', marginRight: 8 }}>您当前在本表的权限：</span>
                 <Space size={[4, 4]} wrap>
                   {canEditRecords && <Tag color="blue">编辑记录</Tag>}
@@ -350,7 +391,14 @@ export default function TableSettingsModal({
                 </Space>
               </div>
 
-              <PermissionEditor fields={table.fields ?? []} data={permData as any} wid={wid} tid={tid} owner={table.owner ?? null} />
+              <PermissionEditor
+                fields={table.fields ?? []}
+                wid={wid}
+                tid={tid}
+                owner={table.owner ?? null}
+                hiddenNames={hiddenNames}
+                onHiddenNamesChange={setHiddenNames}
+              />
 
               <div style={{ marginTop: 16, textAlign: 'right' }}>
                 <Button
@@ -359,15 +407,8 @@ export default function TableSettingsModal({
                   loading={savePerm.isPending}
                   disabled={!canEditSchema}
                   onClick={() => {
-                    const hiddenInputs = document.querySelectorAll<HTMLInputElement>('input[data-perm-hidden]:checked')
-                    const hiddenFields = Array.from(hiddenInputs).map(i => i.value)
-                    const payloadHidden: Record<string, string[]> = hiddenFields.length > 0
-                      ? { admin: hiddenFields }
-                      : {}
-                    savePerm.mutate({
-                      hidden_fields: payloadHidden,
-                      row_filters: null,
-                    })
+                    // 隐藏字段受控 state 直读；不再携带 row_filters（PATCH exclude_unset 语义下避免误清空）
+                    savePerm.mutate({ hidden_fields: { admin: hiddenNames } })
                   }}
                 >
                   保存权限
@@ -434,7 +475,8 @@ export default function TableSettingsModal({
       }
       open={open}
       onCancel={onClose}
-      width={780}
+      width={720}
+      className="table-settings-modal"
       destroyOnHidden
       footer={null}
       loading={isLoading}
