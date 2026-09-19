@@ -246,12 +246,6 @@ export const viewApi = {
   /** 日历视图 */
   calendar: (wid: number | string, tid: number | string, vid: number | string, start?: string, end?: string, limit = 500) =>
     api.get<{ rows: RowResponse[]; total: number; start_field: string }>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}/calendar`, { params: { start, end, limit } }).then(r => r.data),
-  /** 生成公开分享 */
-  share: (wid: number | string, tid: number | string, vid: number | string) =>
-    api.post<{ slug: string; share_url: string; form_url: string | null; is_public: boolean }>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}/share`).then(r => r.data),
-  /** 撤销公开分享 */
-  revokeShare: (wid: number | string, tid: number | string, vid: number | string) =>
-    api.delete<{ ok: boolean; is_public: boolean }>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}/share`).then(r => r.data),
 }
 
 // ─────────────── Audit ───────────────
