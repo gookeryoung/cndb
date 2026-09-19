@@ -19,7 +19,6 @@ const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'))
 const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
-const TableSettingsPage = lazy(() => import('@/pages/workspace/TableSettingsPage'))
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 
 function PageFallback() {
@@ -47,9 +46,6 @@ function AuthenticatedApp() {
         } />
         <Route path="w/:wid/tables/:tid" element={
           <Suspense fallback={<PageFallback />}><GridPage /></Suspense>
-        } />
-        <Route path="w/:wid/tables/:tid/settings" element={
-          <Suspense fallback={<PageFallback />}><TableSettingsPage /></Suspense>
         } />
         <Route path="w/:wid/trash" element={
           <Suspense fallback={<PageFallback />}><TrashPanel embedded /></Suspense>
