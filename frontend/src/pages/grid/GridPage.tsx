@@ -116,7 +116,7 @@ function DndViewTab({ view, active, onClick }: { view: View; active: boolean; on
     >
       <HolderOutlined style={{ fontSize: 10, color: '#bfbfbf' }} />
       <span>{view.name}</span>
-      {view.default && <Tag color="blue" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
+      {view.is_default && <Tag color="blue" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
     </span>
   )
 }
@@ -368,7 +368,7 @@ export default function GridPage() {
     }
     // 5. 最后：default 或第一个
     if (!target) {
-      target = views.find(v => v.default) || views[0] || null
+      target = views.find(v => v.is_default) || views[0] || null
     }
 
     // ── 只在目标和当前不同时才切换（初始化都不持久化 mode，避免覆盖用户偏好） ──

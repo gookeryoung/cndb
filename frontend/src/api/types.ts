@@ -278,14 +278,15 @@ export interface RecordListParams {
 }
 
 export interface View {
-  id: ID; name: string; view_type?: string
+  id: ID; name: string; view_type: string
   filters?: Record<string, unknown> | Array<{ field_name: string; op: string; value?: unknown }> | null
   /** 视图级排序规则（后端字段名 sortings） */
   sortings?: Record<string, unknown> | Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
   /** 多条件组合方式（后端字段名 filter_type） */
   filter_type?: 'AND' | 'OR'
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
-  default?: boolean; created_at?: string
+  /** 是否默认视图（对齐后端 ViewResponse.is_default） */
+  is_default: boolean; created_at?: string
   /** 排序权重（后端 DataView.order） */
   order?: number
 }
