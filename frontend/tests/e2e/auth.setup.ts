@@ -26,5 +26,14 @@ test("登录并持久化 StorageState", async ({ page }) => {
   await page.waitForFunction(
     () => !!window.localStorage.getItem("cndb_access_token"),
   );
+  // 预置新手引导完成标记：业务用例默认不受引导弹层干扰；
+  // onboarding 专项用例自行清除该标记后验证首次弹出。
+  // 注意 zustand persist 存储格式为 { state, version } JSON，裸字符串不会被 hydrate
+  await page.evaluate(() =>
+    window.localStorage.setItem(
+      "cndb_onboarding_done_v1",
+      JSON.stringify({ state: { tourDone: true }, version: 0 }),
+    ),
+  );
   await page.context().storageState({ path: STATE_PATH });
 });
