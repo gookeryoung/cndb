@@ -1,12 +1,14 @@
 """导入转换识别测试矩阵 —— 推断层与落库校验层双向锁定.
 
 覆盖：
-- 46 组列推断矩阵（analyze_csv_columns）：日期/数字/百分比/布尔/联系方式/JSON/select 提升；
+- 48 组列推断矩阵（analyze_csv_columns）：日期/数字/百分比/布尔/联系方式/JSON/select/multiselect 提升；
 - 数值归一值正确性矩阵（_normalize_numeric）：B1 科学计数法值保真等；
 - validate_value 值域对齐矩阵（field_types）：B3-B6 修复验收，推断出的格式必须能落库；
-- 端到端建表导入验收：85% → 0.85、中文日期落库、"是" → True、科学计数法值保真。
+- 端到端建表导入验收：85% → 0.85、中文日期落库、"是" → True、科学计数法值保真、
+  负百分比/超 100% 的 %-后缀值落库、multiselect 列表列识别与 options 预填充。
 
-对应计划文档 .trae/documents/import-conversion-recognition-enhancement.md 的缺陷 B1-B7。
+对应计划文档 .trae/documents/import-conversion-recognition-enhancement.md 的缺陷 B1-B7
+及其遗留事项（负百分比、multiselect 识别）。
 """
 
 from __future__ import annotations
@@ -51,7 +53,7 @@ INFERENCE_MATRIX: list[tuple[str, str, list[str], str]] = [
     # ── 23-26 百分比 ──
     ("23", "整数百分比", ["85%", "92%", "100%"], "percentage"),
     ("24", "小数百分比", ["85.5%", "12.5%", "7.25%"], "percentage"),
-    # 负百分比仅锁定推断层行为；validate 层存储约定 0~1 会拒绝（已知限制，见计划决策）
+    # 负百分比/超100% 推断为 percentage；validate 层 %-后缀是显式意图，落库不再受 0~1 限制
     ("25", "负百分比", ["-12.5%", "-3%"], "percentage"),
     ("26", "全角％", ["85.5％", "12％"], "percentage"),
     # ── 27-32 布尔 ──
@@ -77,6 +79,11 @@ INFERENCE_MATRIX: list[tuple[str, str, list[str], str]] = [
     # ── 43-44 补充锁定（计划决策 2 与紧凑日期回落）──
     ("43", "年月格式保持text", ["2024年1月", "2023年12月"], "text"),
     ("44", "紧凑非法日期回落number", ["20240001", "20241300"], "number"),
+    # ── 45-48 multiselect 列表识别 ──
+    ("45", "标签列表提升multiselect", ["前端,后端", "前端,测试", "后端,运维", "前端,后端"], "multiselect"),
+    ("46", "全角分隔列表提升", ["阅读；旅行", "阅读；运动", "旅行；摄影", "阅读；旅行"], "multiselect"),
+    ("47", "个人信息串不提升", ["张三,男,北京", "李四,女,上海", "王五,男,广州", "赵六,女,深圳"], "text"),
+    ("48", "少数列表值不提升", ["普通备注", "a,b", "另一条", "c,d", "备注三", "e,f"], "text"),
 ]
 
 # ── 二、数值归一值正确性矩阵（B1 修复验收：值不得变形）──────────────
@@ -106,6 +113,15 @@ VALIDATE_ALIGN_MATRIX: list[tuple[str, str, dict[str, Any], Any]] = [
     ("percentage", "12.5%", {}, 0.125),
     ("percentage", "85.5％", {}, 0.855),
     ("percentage", "100%", {}, 1.0),
+    # %-后缀是显式用户意图，不受 0~1 值域限制（修复前负百分比/超 100% 行导致整表导入失败）
+    ("percentage", "-12.5%", {}, -0.125),
+    ("percentage", "-200％", {}, -2.0),
+    ("percentage", "200%", {}, 2.0),
+    # multiselect：字符串按分隔符拆分后以半角逗号连接（修复前整串当一个值）
+    ("multiselect", "前端,后端", {}, "前端,后端"),
+    ("multiselect", "a；b、c", {}, "a,b,c"),
+    ("multiselect", "a, b , c", {}, "a,b,c"),
+    ("multiselect", "单值", {}, "单值"),
     # boolean：中文/符号真值域（修复前"是"静默存 False）
     ("boolean", "是", {}, True),
     ("boolean", "否", {}, False),
@@ -152,7 +168,10 @@ VALIDATE_RAISE_MATRIX: list[tuple[str, str, dict[str, Any], str]] = [
     ("number", "1.5e-3", {}, "无法将 '1.5e-3' 转为整数"),  # 非整数值的科学计数法
     ("float", "abc", {}, "无法将 'abc' 转为小数"),
     ("float", "12,34.5.6", {}, "无法将"),
-    ("percentage", "-12.5%", {}, "0~1"),  # 负百分比超出存储值域
+    ("percentage", "1.5", {}, "0~1"),  # 裸数字无显式意图，超出比例值域仍拒绝
+    ("percentage", "nan%", {}, "有限数字"),  # %-后缀绕过值域但须排除 NaN/inf
+    ("percentage", "inf%", {}, "有限数字"),
+    ("multiselect", "a,z", {"options": [{"label": "a", "value": "a"}]}, "不在可选值"),  # 拆分后逐项校验
 ]
 
 
@@ -167,7 +186,7 @@ def _column_csv(samples: list[str]) -> str:
 
 
 class TestInferenceMatrix:
-    """组 01-44：analyze_csv_columns 列级推断矩阵."""
+    """组 01-48：analyze_csv_columns 列级推断矩阵."""
 
     @pytest.mark.parametrize(
         ("gid", "label", "samples", "expected"),
@@ -221,7 +240,7 @@ class TestValidateAlign:
 
 
 class TestInferenceExtras:
-    """select 提升 options、编码解码、分隔符嗅探."""
+    """select/multiselect 提升 options、编码解码、分隔符嗅探."""
 
     def test_select_promotion_with_options(self):
         """组39：低基数离散值提升为 select，options 保持首次出现顺序."""
@@ -229,6 +248,27 @@ class TestInferenceExtras:
         cols, _ = transfer.analyze_csv_columns(_column_csv(samples))
         assert cols[0]["field_type"] == "select"
         assert cols[0]["options"] == ["active", "done", "pending"]
+
+    def test_multiselect_promotion_splits_options(self):
+        """组45：multiselect 提升 options 为拆分后的独立选项（修复前整串被 select 抢走）."""
+        samples = ["前端,后端", "前端,测试", "后端,运维", "前端,后端"]
+        cols, _ = transfer.analyze_csv_columns(_column_csv(samples))
+        assert cols[0]["field_type"] == "multiselect"
+        assert cols[0]["options"] == ["前端", "后端", "测试", "运维"]
+
+    def test_multiselect_promotion_reuse_guard(self):
+        """组47：选项无复用（逐行唯一个人信息串）不提升，且不被 select 抢走."""
+        samples = ["张三,男,北京", "李四,女,上海", "王五,男,广州", "赵六,女,深圳"]
+        cols, _ = transfer.analyze_csv_columns(_column_csv(samples))
+        assert cols[0]["field_type"] == "text"
+        assert "options" not in cols[0]
+
+    def test_multiselect_not_promoted_for_numeric_thousands(self):
+        """千分位数字串（1,234）须保持 number 推断，不受列表识别影响."""
+        samples = ["1,234", "5,678", "9,012"]
+        cols, _ = transfer.analyze_csv_columns(_column_csv(samples))
+        assert cols[0]["field_type"] == "number"
+        assert "options" not in cols[0]
 
     def test_gbk_encoded_csv_analysis(self):
         """组43：GBK 编码字节流解码后推断不受影响."""
@@ -318,6 +358,53 @@ class TestEndToEndAlignment:
         assert row1["指标"] == pytest.approx(15_000_000_000.0)
         row2 = rec.get_row(engine, dt, ids[1])
         assert row2["指标"] == pytest.approx(2500.0)
+
+    def test_negative_and_over_100_percentage(self, csv_workspace):
+        """遗留②验收：负百分比/超 100% 的 %-后缀值可落库（修复前整表导入失败）."""
+        engine, db, ws = csv_workspace
+        dt, ids = transfer.create_table_from_csv(
+            engine, db, ws.id, "负百分比表", "完成率,增幅\n85%,-12.5%\n100%,200%\n"
+        )
+        assert len(ids) == 2
+        fmap = {f.name: f.field_type for f in dt.fields}
+        assert fmap["完成率"] == "percentage"
+        assert fmap["增幅"] == "percentage"
+
+        from cndb.plugins.tables import records as rec
+
+        row1 = rec.get_row(engine, dt, ids[0])
+        assert row1["完成率"] == pytest.approx(0.85)
+        assert row1["增幅"] == pytest.approx(-0.125)
+        row2 = rec.get_row(engine, dt, ids[1])
+        assert row2["完成率"] == pytest.approx(1.0)
+        assert row2["增幅"] == pytest.approx(2.0)
+
+    def test_multiselect_column_end_to_end(self, csv_workspace):
+        """遗留③验收：列表列提升为 multiselect，options 拆分预填充且整表导入成功."""
+        engine, db, ws = csv_workspace
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["姓名", "技能标签"])
+        w.writerow(["甲", "前端,后端"])
+        w.writerow(["乙", "前端,测试"])
+        w.writerow(["丙", "后端,运维"])
+        w.writerow(["丁", "前端,后端"])
+
+        dt, ids = transfer.create_table_from_csv(engine, db, ws.id, "多选列表表", buf.getvalue())
+        assert len(ids) == 4
+        fmap = {f.name: f.field_type for f in dt.fields}
+        assert fmap["姓名"] == "text"  # 逐行唯一值，select 低基数比例守卫拒绝
+        assert fmap["技能标签"] == "multiselect"
+
+        tags_field = next(f for f in dt.fields if f.name == "技能标签")
+        assert [o["label"] for o in tags_field.config["options"]] == ["前端", "后端", "测试", "运维"]
+
+        from cndb.plugins.tables import records as rec
+
+        row1 = rec.get_row(engine, dt, ids[0])
+        assert row1["技能标签"] == "前端,后端"
+        row2 = rec.get_row(engine, dt, ids[1])
+        assert row2["技能标签"] == "前端,测试"
 
 
 __all__ = []

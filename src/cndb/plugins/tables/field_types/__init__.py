@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from cndb.plugins.tables.field_types.types import (
     _FIELD_TYPE_ALIASES,
+    MULTI_SELECT_SPLIT_RE,
     AttachmentFieldConfig,
     AttachmentFieldType,
     BooleanFieldType,
@@ -36,9 +37,11 @@ from cndb.plugins.tables.field_types.types import (
     build_default_registry,
     default_registry,
     normalize_field_type,
+    split_multi_select_string,
 )
 
 __all__ = [
+    "MULTI_SELECT_SPLIT_RE",
     "_FIELD_TYPE_ALIASES",
     "AttachmentFieldConfig",
     "AttachmentFieldType",
@@ -72,4 +75,5 @@ __all__ = [
     "build_default_registry",
     "default_registry",
     "normalize_field_type",
+    "split_multi_select_string",
 ]
