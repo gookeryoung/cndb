@@ -23,6 +23,7 @@ import type { TableProps } from 'antd'
 import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined, CheckOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { FileAnalyzeResult, FileImportResult } from '@/api'
+import { PREVIEW_FIELD_TYPE_VALUES, FIELD_TYPE_META, getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 
 /** antd Table 在 flex 容器中自适应高度所需的全局样式（仅注入一次）. */
 function useTableFlexFillStyle() {
@@ -44,21 +45,11 @@ function useTableFlexFillStyle() {
   }, [])
 }
 
-/** 预览里允许切换的字段类型子集（过滤掉 link/attachment/formula 等不适合从原始数据推断的类型） */
-const PREVIEW_FIELD_TYPES = [
-  { value: 'text', label: '文本 text' },
-  { value: 'number', label: '整数 number' },
-  { value: 'float', label: '小数 float' },
-  { value: 'boolean', label: '布尔 boolean' },
-  { value: 'date', label: '日期 date' },
-  { value: 'datetime', label: '日期时间 datetime' },
-  { value: 'select', label: '单选 select' },
-  { value: 'multiselect', label: '多选 multiselect' },
-  { value: 'email', label: '邮箱 email' },
-  { value: 'url', label: '链接 url' },
-  { value: 'phone', label: '电话 phone' },
-  { value: 'percentage', label: '百分比 percentage' },
-]
+/** 类型下拉选项：由共享字段类型元数据生成（纯中文标签，value 保持后端英文类型不变） */
+const PREVIEW_TYPE_OPTIONS = PREVIEW_FIELD_TYPE_VALUES.map(v => ({
+  value: v,
+  label: FIELD_TYPE_META[v]?.label ?? v,
+}))
 
 /** 列分析项（后端 analyze 返回） */
 interface AnalyzeColumn {
@@ -194,14 +185,6 @@ function collectUniqueValues(rows: Array<Record<string, unknown>>, colName: stri
     if (out.length >= 200) break
   }
   return out
-}
-
-/** 字段类型颜色映射. */
-const TYPE_COLOR: Record<string, string> = {
-  text: 'default', longtext: 'default', number: 'blue', float: 'blue',
-  boolean: 'purple', date: 'green', datetime: 'green',
-  select: 'orange', multiselect: 'orange',
-  email: 'cyan', url: 'cyan', phone: 'cyan', percentage: 'magenta',
 }
 
 export default function FileImportPreview({ open, wid, file, analyzeResult, onClose, onSuccess }: Props) {
@@ -383,8 +366,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
                 {col.name}
                 {!isAutoType && <Tag color="purple" style={{ marginLeft: 4 }}>已调</Tag>}
               </div>
-              {isSelect && <Tag color="orange">select</Tag>}
-              {isDate && <Tag color="green">日期</Tag>}
+              {isSelect && <Tag color={getFieldTypeColor('select')}>单选</Tag>}
+              {isDate && <Tag color={getFieldTypeColor('date')}>日期</Tag>}
               {hasError ? (
                 <Tooltip title={`有 ${failCnt} 行无法转换为此类型`}>
                   <Tag color="red" icon={<WarningOutlined />}>{failCnt}</Tag>
@@ -401,7 +384,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
               size="small"
               value={col.field_type}
               onChange={(v) => changeFieldType(col.name, v)}
-              options={PREVIEW_FIELD_TYPES}
+              options={PREVIEW_TYPE_OPTIONS}
               style={{ width: '100%', marginBottom: 4 }}
             />
 
@@ -499,7 +482,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         title: (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
             <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.name}</span>
-            <Tag color={TYPE_COLOR[col.field_type] ?? 'default'} style={{ margin: 0 }}>{col.field_type}</Tag>
+            <Tag color={getFieldTypeColor(col.field_type)} style={{ margin: 0 }}>{getFieldTypeLabel(col.field_type)}</Tag>
             {failCnt > 0 && (
               <Tooltip title={`有 ${failCnt} 行无法转换`}>
                 <ExclamationCircleOutlined style={{ color: '#ef4444' }} />
@@ -686,8 +669,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
                   <div>
                     <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, fontWeight: 600 }}>数据类型颜色</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                      {PREVIEW_FIELD_TYPES.map(t => (
-                        <Tag key={t.value} color={TYPE_COLOR[t.value] ?? 'default'} style={{ margin: 0 }}>
+                      {PREVIEW_TYPE_OPTIONS.map(t => (
+                        <Tag key={t.value} color={getFieldTypeColor(t.value)} style={{ margin: 0 }}>
                           {t.label}
                         </Tag>
                       ))}

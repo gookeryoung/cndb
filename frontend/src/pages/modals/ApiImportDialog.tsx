@@ -5,6 +5,7 @@ import { Modal, Form, Input, Select, Button, Table, Alert, message, Space, Input
 import { ApiOutlined, SearchOutlined, ThunderboltOutlined, ReloadOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { ApiAnalyzeColumn, ApiAnalyzeResult, ApiFetchRequest } from '@/api'
+import { getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 
 interface Props {
   /** Modal 模式时的开关；embed 模式下忽略 */
@@ -23,27 +24,6 @@ interface Props {
 }
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
-
-/** 把 column.field_type 映射到 antd Tag 颜色 */
-const FIELD_TYPE_COLOR: Record<string, string> = {
-  text: 'blue',
-  longtext: 'blue',
-  number: 'green',
-  float: 'green',
-  boolean: 'purple',
-  date: 'cyan',
-  datetime: 'cyan',
-  timestamp: 'cyan',
-  email: 'geekblue',
-  url: 'geekblue',
-  phone: 'geekblue',
-  select: 'orange',
-  multiselect: 'orange',
-  json: 'default',
-  link: 'magenta',
-  attachment: 'magenta',
-  percentage: 'green',
-}
 
 function renderSamples(col: ApiAnalyzeColumn): string {
   const list = col.samples
@@ -191,7 +171,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
       dataIndex: 'field_type',
       key: 'field_type',
       width: 120,
-      render: (t: string) => <Tag color={FIELD_TYPE_COLOR[t] ?? 'default'}>{t}</Tag>,
+      render: (t: string) => <Tag color={getFieldTypeColor(t)}>{getFieldTypeLabel(t)}</Tag>,
     },
     {
       title: '空值率',
