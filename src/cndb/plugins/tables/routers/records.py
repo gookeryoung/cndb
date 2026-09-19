@@ -201,7 +201,7 @@ def delete_record(
     if soft:
         ok = trash_row(db.get_bind(), dt, record_id, db=db)
     else:
-        ok = delete_row(db.get_bind(), dt, record_id)
+        ok = delete_row(db.get_bind(), dt, record_id, db=db)
 
     if not ok:
         raise HTTPException(status_code=404, detail="行不存在")
