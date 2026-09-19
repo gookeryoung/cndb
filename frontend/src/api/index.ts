@@ -9,8 +9,6 @@
  * - /api/v1/workspaces/{wid}/tables/{tid}/views/*     → 视图
  * - /api/v1/workspaces/{wid}/tables/{tid}/permissions → 表级权限
  * - /api/v1/workspaces/{wid}/tables/{tid}/audit       → 审计
- * - /api/v1/workspaces/{wid}/trash/*                  → 回收站概览
- * - /api/v1/workspaces/{wid}/tables/{tid}/trash-rows  → 表级回收站行
  * - /api/v1/workspaces/{wid}/tables/{tid}/export|import|import/async  → 导入导出
  * - /api/v1/workspaces/{wid}/import-csv/*             → CSV 自动建表
  * - /api/v1/public/*               → 公开分享（全局挂载）
@@ -27,7 +25,6 @@ import type {
   RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams,
   FieldCreate, FieldUpdate, FieldImportRequest, FieldImportResponse, Field, FieldType,
   ViewCreate, View, ViewUpdate,
-  WorkspaceTrashResponse, TrashedRow,
   CsvAnalyzeResult, CsvImportResult,
   FileAnalyzeResult, FileImportResult,
   AuditLog, Reference,
@@ -50,7 +47,6 @@ export type {
   RowValues, RowResponse, RowDetail, RowCreate, RowUpdate, RowListResponse, RecordListParams,
   View, ViewDetail, ViewCreate, ViewUpdate,
   AuditLog, Reference,
-  TrashedRow, WorkspaceTrashResponse,
   CsvAnalyzeResult, CsvImportResult,
   FileAnalyzeResult, FileImportResult,
   PublicForm, SharedGrid,
@@ -253,27 +249,6 @@ export const viewApi = {
 export const auditApi = {
   list: (wid: number | string, tid: number | string, action?: string, limit = 100, rowId?: number | string) =>
     api.get<AuditLog[]>(`/v1/workspaces/${wid}/tables/${tid}/audit`, { params: { action, limit, row_id: rowId } }).then(r => r.data),
-}
-
-// ─────────────── Trash ───────────────
-
-export const trashApi = {
-  /** 工作区级回收站概览（软删表 + 软删字段 + 各表软删行计数） */
-  overview: (wid: number | string) =>
-    api.get<WorkspaceTrashResponse>(`/v1/workspaces/${wid}/trash`).then(r => r.data),
-  restoreTable: (wid: number | string, tid: number | string) =>
-    api.post<{ restored_table_id: number; restored_table_name: string }>(`/v1/workspaces/${wid}/trash/tables/${tid}/restore`).then(r => r.data),
-  restoreField: (wid: number | string, fid: number | string) =>
-    api.post<{ restored_field_id: number; restored_field_name: string; table_id: number }>(`/v1/workspaces/${wid}/trash/fields/${fid}/restore`).then(r => r.data),
-  /** 列出某表的软删行 */
-  rows: (wid: number | string, tid: number | string, limit = 500, offset = 0) =>
-    api.get<{ rows: TrashedRow[]; total: number }>(`/v1/workspaces/${wid}/tables/${tid}/trash-rows`, { params: { limit, offset } }).then(r => r.data),
-  /** 批量恢复软删行；row_ids 为空时恢复全部 */
-  restoreRows: (wid: number | string, tid: number | string, rowIds: Array<number | string> = []) =>
-    api.post<{ restored: number }>(`/v1/workspaces/${wid}/tables/${tid}/trash-rows/restore`, { row_ids: rowIds }).then(r => r.data),
-  /** 硬清理超过 N 天的软删行 */
-  purgeRows: (wid: number | string, tid: number | string, days = 30) =>
-    api.delete<{ purged: number; older_than_days: number }>(`/v1/workspaces/${wid}/tables/${tid}/trash-rows`, { params: { days } }).then(r => r.data),
 }
 
 // ─────────────── Permissions ───────────────
