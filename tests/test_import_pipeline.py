@@ -8,6 +8,8 @@ from __future__ import annotations
 import csv
 import io
 import json
+from datetime import date, datetime, time
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import func, select
@@ -3098,3 +3100,223 @@ class TestEnsureDefaultViewExistingBranch:
         # 两个都是字符串，且一个有空白
         assert imp._values_equal("  hello  ", "hello") is True
         assert imp._values_equal("abc", "xyz") is False
+
+
+# ── V5: 参考列推荐 + 归一化匹配 + datetime 序列化修复回归 ──
+
+
+class TestImporterMatchKeyRecommendations:
+    """V5: analyze 报告内置 match_key_recommendations（推荐/禁用/排序）."""
+
+    def test_report_recommendations_wired(self, test_session):
+        """analyze 报告带推荐列表：唯一列推荐置顶，文件侧重复列不推荐并提示原因."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", required=True, order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        rec.bulk_create(engine, table, [{"code": "A001", "name": "苹果"}], db=session)
+        imp = Importer(engine, session, table)
+        csv = "code,name\nA001,Apple\nA002,Apple\n"
+        result = imp.analyze(csv, "csv", match_keys=["code"])
+
+        recs = result.report["match_key_recommendations"]
+        by_field = {e["field"]: e for e in recs}
+        assert by_field["code"]["recommended"] is True
+        assert by_field["code"]["stats"]["table_rows"] == 1
+        assert by_field["name"]["recommended"] is False
+        assert "重复" in by_field["name"]["reason"]
+        assert recs[0]["field"] == "code"
+        # 报告整体 JSON 可序列化（前端消费前提）
+        json.dumps(result.report, ensure_ascii=False)
+
+    def test_analyze_recommendation_failure_degrades(self, test_session, monkeypatch):
+        """推荐计算抛异常 → analyze 降级为空推荐列表，不阻塞主链."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError("模拟推荐失败")
+
+        # importer 以 from-import 绑定推荐函数，须 patch importer 命名空间才能拦截
+        monkeypatch.setattr("cndb.plugins.tables.importer.recommend_match_keys", _boom)
+        imp = Importer(engine, session, table)
+        result = imp.analyze("code\nA\n", "csv")
+        assert result.report["match_key_recommendations"] == []
+        assert result.report["valid_count"] == 1
+
+
+class TestImporterNormalizedMatch:
+    """V5: 归一化值用于匹配与字段级 diff —— 文件侧字符串 vs 库内 date/datetime/数字."""
+
+    def test_number_string_matches_number_key(self, test_session):
+        """number 字段做参考列：文件侧 "1001" 归一为 int 后与库内 1001 匹配 → update."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "sn", "number", required=True, order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"sn": 1001, "name": "旧"}], db=session)
+        imp = Importer(engine, session, table)
+        result = imp.analyze("sn,name\n1001,新\n", "csv", match_keys=["sn"])
+        rpt = result.report
+        assert rpt["update_count"] == 1
+        assert rpt["new_count"] == 0
+        assert rpt["update_preview"][0]["existing_row_id"] == ids[0]
+
+    def test_date_string_matches_date_key_and_no_false_diff(self, test_session):
+        """date 参考列 + 非参考 date 字段：字符串匹配命中，且不产生伪字段差异."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "ondate", "date", required=True, order=0)
+        _add_field(session, table, "due", "date", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"ondate": "2024-01-15", "due": "2024-02-01"}], db=session)
+        imp = Importer(engine, session, table)
+        result = imp.analyze("ondate,due\n2024-01-15,2024-02-01\n", "csv", match_keys=["ondate"])
+        rpt = result.report
+        assert rpt["update_count"] == 1
+        assert rpt["update_preview"][0]["existing_row_id"] == ids[0]
+        # 关键：同值日期不再误报差异
+        assert rpt["update_preview"][0]["field_diffs"] == {}
+        # 报告中的日期已清洗为 ISO 字符串
+        assert rpt["update_preview"][0]["match_key_values"] == {"ondate": "2024-01-15"}
+        json.dumps(rpt, ensure_ascii=False)
+
+    def test_datetime_string_matches_datetime_key(self, test_session):
+        """datetime 参考列：字符串归一为 datetime 后匹配，报告序列化不再崩溃."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "ts", "datetime", required=True, order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"ts": "2024-01-15 10:30:00", "name": "旧"}], db=session)
+        imp = Importer(engine, session, table)
+        result = imp.analyze("ts,name\n2024-01-15 10:30:00,新\n", "csv", match_keys=["ts"])
+        rpt = result.report
+        assert rpt["update_count"] == 1
+        assert rpt["update_preview"][0]["existing_row_id"] == ids[0]
+        assert rpt["update_preview"][0]["match_key_values"] == {"ts": "2024-01-15 10:30:00"}
+        json.dumps(rpt, ensure_ascii=False)
+
+    def test_values_equal_date_variants(self, test_session):
+        """_values_equal 日期归一分支：对象 vs 字符串 / date vs datetime."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        assert imp._values_equal(date(2024, 1, 15), "2024-01-15") is True
+        assert imp._values_equal("2024/1/15", date(2024, 1, 15)) is True
+        assert imp._values_equal(datetime(2024, 1, 15, 10, 30), "2024-01-15 10:30:00") is True
+        assert imp._values_equal(date(2024, 1, 15), datetime(2024, 1, 15, 10, 0)) is True
+        assert imp._values_equal(date(2024, 1, 15), "2024-01-16") is False
+        assert imp._values_equal(date(2024, 1, 15), "not-a-date") is False
+        assert imp._values_equal(None, date(2024, 1, 15)) is False
+
+
+class TestJsonSafeReport:
+    """V5 Bug 修复回归：datetime 对象进报告后整体可 JSON 序列化."""
+
+    def test_json_safe_scalar_types(self):
+        """_json_safe 覆盖 datetime/date/time/Decimal/bytes/tuple/set/嵌套结构."""
+        from cndb.plugins.tables.diff_reporter import _json_safe
+
+        assert _json_safe(None) is None
+        assert _json_safe("x") == "x"
+        assert _json_safe(datetime(2024, 1, 15, 10, 30)) == "2024-01-15 10:30:00"
+        assert _json_safe(date(2024, 1, 15)) == "2024-01-15"
+        assert _json_safe(time(8, 5)) == "08:05:00"
+        assert _json_safe(Decimal("1.5")) == 1.5
+        assert _json_safe(b"ab") == "ab"
+        assert _json_safe((1, 2)) == [1, 2]
+        assert sorted(_json_safe({1, 2})) == [1, 2]
+        nested = _json_safe({date(2024, 1, 1): [datetime(2024, 1, 1), Decimal("2")]})
+        assert nested == {"2024-01-01": ["2024-01-01 00:00:00", 2.0]}
+
+    def test_xlsx_date_cells_report_serializable(self, test_session):
+        """xlsx 日期单元格（datetime 对象）+ date 参考列 → analyze 报告可序列化且匹配正确."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "ondate", "date", required=True, order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from openpyxl import Workbook
+
+        from cndb.plugins.tables import records as rec
+
+        rec.bulk_create(engine, table, [{"ondate": "2024-01-15", "name": "旧"}], db=session)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["ondate", "name"])
+        ws.append([date(2024, 1, 15), "新"])
+        ws.append([date(2024, 3, 1), "另"])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        imp = Importer(engine, session, table)
+        result = imp.analyze(buf.read(), "xlsx", match_keys=["ondate"])
+        rpt = result.report
+        # 核心回归：修复前此处抛 TypeError: Object of type datetime is not JSON serializable
+        json.dumps(rpt, ensure_ascii=False, default=str)
+        assert rpt["update_count"] == 1
+        assert rpt["new_count"] == 1
+        assert rpt["update_preview"][0]["match_key_values"] == {"ondate": "2024-01-15"}
+
+
+class TestAnalyzeTaskDateCellsEndToEnd:
+    """import_tasks.analyze_import_task 对含日期 xlsx 的端到端回归（json.dumps default=str）."""
+
+    def test_analyze_task_with_date_xlsx_not_failed(self, test_session):
+        """xlsx 含日期列走完整 analyze 任务链：validation_report 正常写入且可反序列化."""
+        from openpyxl import Workbook
+
+        from cndb.plugins.tables.import_tasks import analyze_import_task, create_import_task
+
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "ondate", "date", required=True, order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        rec.bulk_create(engine, table, [{"ondate": "2024-01-15", "name": "旧"}], db=session)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["ondate", "name"])
+        ws.append([date(2024, 1, 15), "新"])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        task = create_import_task(
+            session, table_id=table.id, user_id=1, filename="dates.xlsx", fmt="xlsx", content=buf.read()
+        )
+        task.match_keys = ["ondate"]
+        session.commit()
+        analyze_import_task(session, task.id)
+        session.refresh(task)
+        assert task.status != "failed"
+        assert task.validation_report is not None
+        # validation_report 本身是 JSON 字符串（修复前 datetime 未清洗导致写入崩溃转 failed）
+        assert json.loads(task.validation_report)["update_count"] == 1

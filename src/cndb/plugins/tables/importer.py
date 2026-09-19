@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import contextlib
 import csv
+import datetime as _dt
 import io
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -33,6 +35,7 @@ from cndb.plugins.tables.column_profiler import profile_columns
 from cndb.plugins.tables.ddl import add_column
 from cndb.plugins.tables.diff_reporter import DiffReporter
 from cndb.plugins.tables.field_mapping import GapFilling
+from cndb.plugins.tables.match_key_advisor import recommend_match_keys
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.row_validator import RowValidator, ValidationResult
 from cndb.plugins.tables.transfer import (
@@ -40,6 +43,8 @@ from cndb.plugins.tables.transfer import (
     decode_bytes_auto,
     sniff_csv_delimiter,
 )
+
+logger = logging.getLogger(__name__)
 
 _Format = str
 
@@ -175,7 +180,21 @@ class Importer:
         # ── Task 2: 列级数据质量画像 ────────────────
         column_profiles, data_quality_summary = profile_columns(rows, file_columns)
 
-        # 最终报告（带 upsert + planned_columns + 数据画像）
+        # ── V5: 参考列智能推荐（失败降级为空列表，不阻塞 analyze 主链） ──
+        match_key_recommendations: list[dict[str, Any]] = []
+        try:
+            match_key_recommendations = recommend_match_keys(
+                self.engine,
+                self.table,
+                rows,
+                file_columns,
+                column_profiles,
+                field_mapping=self.field_mapping,
+            )
+        except Exception as exc:  # 推荐属增强信息，任何失败都不得阻塞导入
+            logger.warning("参考列推荐计算失败，已降级跳过: %s", exc)
+
+        # 最终报告（带 upsert + planned_columns + 数据画像 + 参考列推荐）
         report = DiffReporter.build(
             results,
             self.table.active_fields(),
@@ -184,6 +203,7 @@ class Importer:
             planned_columns=planned_columns,
             column_profiles=column_profiles,
             data_quality_summary=data_quality_summary,
+            match_key_recommendations=match_key_recommendations,
         )
 
         # ── Task 4: 清洗建议生成 ─────────────────────
@@ -370,8 +390,7 @@ class Importer:
             if r.status in ("valid", "warning"):
                 to_match.append((r, r.values))
 
-        values_list = [v for _, v in to_match]
-        if not values_list:
+        if not to_match:
             return {
                 "new_count": 0,
                 "update_count": 0,
@@ -382,11 +401,16 @@ class Importer:
                 "update_rows": [],
             }
 
+        # ── V5: 归一化视图 —— 复用 RowValidator/field_types 的类型转换结果做匹配与 diff，
+        # 让文件侧字符串与库内 date/datetime/数字等反序列化类型可比；落库仍用原始 values ──
+        field_pairs: list[tuple[str, str | None]] = [(f.name, f.db_column_name) for f in self.table.active_fields()]
+        match_views = [self._normalized_view(r, v, field_pairs) for r, v in to_match]
+
         exact_map, conflict_map = rec.find_rows_by_key(
             self.engine,
             self.table,
             match_keys,
-            values_list,
+            match_views,
         )
 
         # ── 批量查出旧行全部业务字段（供字段级 diff） ──
@@ -403,17 +427,18 @@ class Importer:
 
         key_cols_set = set(match_keys)
 
-        for r, values in to_match:
-            key_tup = tuple(values.get(c) for c in match_keys)
+        for (r, values), view in zip(to_match, match_views, strict=True):
+            key_tup = tuple(view.get(c) for c in match_keys)
             existing_row_id = exact_map.get(key_tup)
-            match_key_values = {c: values.get(c) for c in match_keys}
-            field_sample = self._sample_fields(values, key_cols_set)
+            match_key_values = {c: view.get(c) for c in match_keys}
+            field_sample = self._sample_fields(view, key_cols_set)
 
             if existing_row_id is not None:
+                # 落库仍用原始 values（bulk_update_rows 内部有 _normalize_values）
                 update_rows.append({"row_id": existing_row_id, "values": values})
                 if len(update_preview) < self.PREVIEW_LIMIT:
                     old_values = old_rows_by_id.get(int(existing_row_id), cast(dict[str, Any], {}))
-                    field_diffs = self._build_field_diffs(old_values, values, key_cols_set)
+                    field_diffs = self._build_field_diffs(old_values, view, key_cols_set)
                     update_preview.append(
                         {
                             "row_number": r.row_number,
@@ -480,6 +505,23 @@ class Importer:
         return result
 
     @staticmethod
+    def _normalized_view(
+        result: ValidationResult,
+        values: dict[str, Any],
+        field_pairs: list[tuple[str, str | None]],
+    ) -> dict[str, Any]:
+        """构造"归一化优先"的行视图.
+
+        ``r.normalized`` 以 db_column_name 为键，这里翻回字段名并覆盖原始值；
+        未被归一化的键（如未知列、校验未过的字段）回退原始值。
+        """
+        view = dict(values)
+        for name, dbc in field_pairs:
+            if dbc and dbc in result.normalized:
+                view[name] = result.normalized[dbc]
+        return view
+
+    @staticmethod
     def _build_field_diffs(
         old_values: dict[str, Any],
         new_values: dict[str, Any],
@@ -522,7 +564,39 @@ class Importer:
         # 字符串去空白比较
         if isinstance(a, str) and isinstance(b, str):
             return a.strip() == b.strip()
+        # V5: 日期归一比较 —— date/datetime 对象 vs ISO 字符串、date vs datetime
+        if isinstance(a, _dt.date) or isinstance(b, _dt.date):
+            pa = Importer._coerce_date_value(a)
+            pb = Importer._coerce_date_value(b)
+            if isinstance(pa, _dt.datetime) and isinstance(pb, _dt.datetime):
+                return pa == pb
+            if isinstance(pa, _dt.date) and isinstance(pb, _dt.date):
+                # datetime 与 date 混合（datetime 分支已在上面处理）：统一转 date 比较
+                da = pa.date() if isinstance(pa, _dt.datetime) else pa
+                db_ = pb.date() if isinstance(pb, _dt.datetime) else pb
+                return da == db_
+            # 一侧是日期对象、另一侧解析不出日期 → 不相等
+            return False
         return a == b
+
+    @staticmethod
+    def _coerce_date_value(v: Any) -> Any:
+        """把值归一为可比较的日期形态：日期对象原样返回，字符串按 ISO/常见格式解析，失败返回 None."""
+        if isinstance(v, _dt.datetime):
+            return v
+        if isinstance(v, _dt.date):
+            return v
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            with contextlib.suppress(ValueError):
+                return _dt.datetime.fromisoformat(s)
+            for fmt in ("%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y/%m/%d"):
+                with contextlib.suppress(ValueError):
+                    return _dt.datetime.strptime(s, fmt)
+            return None
+        return None
 
     # ── V2: 未知列规划 ───────────────────────
 

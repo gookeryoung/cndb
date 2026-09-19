@@ -103,7 +103,7 @@ def analyze_import_task(db_session: Session, task_id: int) -> None:
         task.progress = 90
         db_session.commit()
 
-        task.validation_report = json.dumps(analysis.report, ensure_ascii=False)
+        task.validation_report = json.dumps(analysis.report, ensure_ascii=False, default=str)
         task.progress = 95
         _transition_status(task, "pending_confirm")
         db_session.commit()
@@ -222,7 +222,7 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
             )
             task.imported_rows = len(result.imported_ids)
             task.result_ids = result.imported_ids
-            task.validation_report = json.dumps(result.report, ensure_ascii=False)
+            task.validation_report = json.dumps(result.report, ensure_ascii=False, default=str)
             # 导入完成后自动补全 select/multiselect options
             try:
                 sync_select_options_from_table(db_session, table)
@@ -393,7 +393,7 @@ def reanalyze_import_task(
         task.progress = 90
         db_session.commit()
 
-        task.validation_report = json.dumps(analysis.report, ensure_ascii=False)
+        task.validation_report = json.dumps(analysis.report, ensure_ascii=False, default=str)
         task.progress = 95
         _transition_status(task, "pending_confirm")
         db_session.commit()
