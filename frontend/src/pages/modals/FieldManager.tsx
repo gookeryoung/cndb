@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message, Alert, Empty, Spin, Tooltip, Divider } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, EditOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary, FieldImportResponse as FieldImportResponseType, FieldImportSuggestion } from '@/api'
@@ -814,16 +814,21 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
     }
   }, [watchedOptions])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** 把当前编辑中的 options 同步到 form 的 config.options */
+  /** 把当前编辑中的 options 同步到 form 的 config.options.
+   *
+   * 后端兼容格式统一为 { label, value, color }，其中 value 恒等于 label
+   * （用户不再编辑存储值，二者重复）。
+   */
   function syncToForm(next: typeof options) {
-    // 过滤空 label 后才提交
     const cleaned = next.filter(o => o.label.trim())
-    // 构建后端兼容格式：如果 value == label 则存简洁格式，否则带 value
-    const backend = cleaned.map(o => ({
-      label: o.label.trim(),
-      value: o.value,
-      ...(o.color ? { color: o.color } : {}),
-    }))
+    const backend = cleaned.map(o => {
+      const label = o.label.trim()
+      return {
+        label,
+        value: label,
+        ...(o.color ? { color: o.color } : {}),
+      }
+    })
     form.setFieldValue(['config', 'options'], backend)
   }
 
@@ -842,25 +847,26 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
     syncToForm(next)
   }
 
-  function updateOption(key: string, patch: Partial<(typeof options)[number]>) {
+  /** 对单个选项执行智能推荐颜色（语义规则优先，hash fallback） */
+  function smartSuggestColor(label: string): string {
+    const semantic = suggestColorForLabel(label)
+    return semantic ?? getTagColorName(label)
+  }
+
+  function updateOption(key: string, patch: Partial<(typeof options)[number]>, opts?: { skipAutoColor?: boolean }) {
     const next = options.map(o => o.key === key ? { ...o, ...patch } : o)
-    // 如果 label 变化：同步 value + 智能推荐颜色
     if (patch.label !== undefined) {
-      const old = options.find(o => o.key === key)
       const idx = next.findIndex(o => o.key === key)
       if (idx >= 0) {
         const newLabel = patch.label.trim()
-        // 如果 value 仍等于旧 label，同步 value
-        if (old && (old.value === old.label || old.value === old.label.trim())) {
-          next[idx] = { ...next[idx], value: newLabel }
-        }
-        // 智能推荐颜色：仅当当前 color 是预设色名（自动填充的）或为空时自动更新。
-        // 语义命中优先，语义 miss 时 fallback 到 label hash，保证不同 label 有不同颜色。
-        const curColor = next[idx].color
-        if (!curColor || isPresetColor(curColor)) {
-          const semantic = suggestColorForLabel(newLabel)
-          const color = semantic ?? getTagColorName(newLabel)
-          next[idx] = { ...next[idx], color }
+        next[idx] = { ...next[idx], value: newLabel }
+        // label 编辑后自动更新标签颜色：仅当当前 color 是预设色名（自动填充的）或为空时自动刷新。
+        // 用户已手动选过自定义色（HEX）则不覆盖，避免误伤。
+        if (!opts?.skipAutoColor) {
+          const curColor = next[idx].color
+          if (!curColor || isPresetColor(curColor)) {
+            next[idx] = { ...next[idx], color: smartSuggestColor(newLabel) }
+          }
         }
       }
     }
@@ -868,10 +874,23 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
     syncToForm(next)
   }
 
+  /** 手动触发一次智能推荐颜色（无视当前颜色，强制刷新） */
+  function handleSmartSuggest(key: string) {
+    const opt = options.find(o => o.key === key)
+    if (!opt) return
+    const label = opt.label.trim()
+    if (!label) {
+      message.info('请先输入显示标签')
+      return
+    }
+    const color = smartSuggestColor(label)
+    updateOption(key, { color }, { skipAutoColor: true })
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span>选项列表（显示标签 + 存储值）</span>
+        <span>选项列表</span>
         <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addOption}>
           添加选项
         </Button>
@@ -891,39 +910,35 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
                 style={{ flex: 1 }}
                 onChange={(e) => updateOption(opt.key, { label: e.target.value })}
               />
-              <span style={{ color: '#999' }}>=</span>
-              <Input
-                value={String(opt.value)}
-                placeholder="存储值（数字或文本）"
-                style={{ flex: 1 }}
-                onChange={(e) => {
-                  const v = e.target.value
-                  updateOption(opt.key, { value: v })
-                }}
-              />
-              {/* 颜色预览 + ColorPicker：antd 预设色名用 Tag 展示，支持 ColorPicker 覆盖 */}
+              {/* 智能推荐按钮：点击按语义规则 + hash 强制刷新颜色 */}
+              <Tooltip title="智能推荐颜色">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<ThunderboltOutlined />}
+                  onClick={() => handleSmartSuggest(opt.key)}
+                />
+              </Tooltip>
+              {/* 颜色预览：antd 预设色名用 Tag 展示；HEX 自定义色显示色块 */}
               {opt.color ? (
-                <Tag
-                  color={opt.color}
-                  style={{ cursor: 'pointer', margin: 0 }}
-                  title={`点击选择自定义颜色（当前: ${opt.color}）`}
-                  onClick={() => {
-                    // 如果是预设色名，清空让 ColorPicker 打开；如果是 HEX，打开 ColorPicker
-                    const picker = document.querySelector(`.ant-color-picker-trigger`) as HTMLElement | null
-                    picker?.click()
-                  }}
-                >
-                  {isPresetColor(opt.color) ? `智能:${opt.color}` : opt.color}
-                </Tag>
-              ) : (
-                <span style={{ color: '#bbb', fontSize: 12, width: 80, textAlign: 'center' }}>
-                  自动推荐
-                </span>
-              )}
+                isPresetColor(opt.color) ? (
+                  <Tag color={opt.color} style={{ margin: 0 }}>
+                    {opt.color}
+                  </Tag>
+                ) : (
+                  <span
+                    style={{
+                      display: 'inline-block', width: 20, height: 20, borderRadius: 4,
+                      background: opt.color, border: '1px solid #e5e7eb',
+                    }}
+                    title={`自定义颜色 ${opt.color}`}
+                  />
+                )
+              ) : null}
               <ColorPicker
                 value={opt.color || undefined}
                 size="small"
-                onChange={(color) => updateOption(opt.key, { color: color.toHexString() })}
+                onChange={(color) => updateOption(opt.key, { color: color.toHexString() }, { skipAutoColor: true })}
               />
               <Button
                 danger
