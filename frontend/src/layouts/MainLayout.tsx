@@ -1,5 +1,5 @@
-import React, { Suspense, lazy, useState, useCallback } from 'react'
-import { Outlet, useNavigate, useParams, useSearchParams, Navigate } from 'react-router-dom'
+import React, { Suspense, lazy, useState, useCallback, useEffect } from 'react'
+import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
 import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -22,10 +22,18 @@ function ModalFallback() {
 
 const { Header, Sider, Content } = Layout
 
+/** 最近访问工作区的 localStorage 键 —— 供 /admin 等无 wid 页面定位工作区 */
+const LAST_WID_KEY = 'cndb_last_wid'
+
+/** 读取最近访问的工作区 id（不可用或未记录时返回 null） */
+function readLastWid(): string | null {
+  try { return localStorage.getItem(LAST_WID_KEY) } catch { return null }
+}
+
 export default function MainLayout() {
   const navigate = useNavigate()
   const { wid, tid } = useParams<{ wid: string; tid?: string }>()
-  const location = window.location.pathname
+  const location = useLocation().pathname
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
   const { isMobile } = useResponsive()
@@ -64,6 +72,16 @@ export default function MainLayout() {
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
+  // 记录最近访问的工作区 —— /admin 等无 wid 页面跳转报表/设置时据此定位
+  useEffect(() => {
+    if (wid) {
+      try { localStorage.setItem(LAST_WID_KEY, String(wid)) } catch { /* localStorage 不可用时忽略 */ }
+    }
+  }, [wid])
+
+  // 有效工作区：当前 wid → 最近访问 → 第一个工作区
+  const activeWid = wid ?? readLastWid() ?? (workspaces.length > 0 ? workspaces[0].id : undefined)
+
   const onLogout = useCallback(() => {
     Modal.confirm({
       title: '退出登录？',
@@ -100,7 +118,8 @@ export default function MainLayout() {
     }
     // 访问 / 时，让 index route 的 <Navigate to="/w" /> 生效；访问 /w 时让 Outlet 渲染 WorkspaceList.
     // 两种情况都必须返回 <Outlet /> 所在的布局，否则子路由（包括 Navigate）根本不会挂载。
-    if (location.endsWith('/w') || location === '/') {
+    // 无 wid 的合法路径（/、/w、/admin 等）正常渲染布局；仅对需要 wid 的 /w/... 路径重定向
+    if (!location.startsWith('/w/')) {
       // 正常落到下方 return 的布局 —— Outlet 渲染子路由
     } else if (workspaces.length > 0) {
       // 访问了需要 wid 的 URL 但没带 wid → 跳到第一个工作区
@@ -128,8 +147,25 @@ export default function MainLayout() {
           </Button>
         </Dropdown>
 
-        {/* Header 导航按钮 */}
+        {/* Header 常规导航按钮（管理台在右上角用户区，与常规功能区分） */}
         <Space size={4}>
+          <Button
+            type={location.includes('/reports') ? 'primary' : 'text'}
+            size="small" icon={<FileTextOutlined />}
+            onClick={() => navigate(activeWid ? `/w/${activeWid}/reports` : '/w')}
+          >{!isMobile && '报表'}</Button>
+          <Tooltip title="工作区设置">
+            <Button
+              type={location.includes('/settings') ? 'primary' : 'text'}
+              size="small" icon={<SettingOutlined />}
+              data-testid="workspace-settings-nav"
+              onClick={() => navigate(activeWid ? `/w/${activeWid}/settings` : '/w')}
+            >{!isMobile && '设置'}</Button>
+          </Tooltip>
+        </Space>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+          {/* 系统管理台入口 —— 仅管理员可见，置于用户头像左侧以区别于常规导航 */}
           {isAdmin && (
             <Tooltip title="系统管理台">
               <Button
@@ -139,22 +175,6 @@ export default function MainLayout() {
               >{!isMobile && '管理台'}</Button>
             </Tooltip>
           )}
-          <Button
-            type={location.includes('/reports') ? 'primary' : 'text'}
-            size="small" icon={<FileTextOutlined />}
-            onClick={() => navigate(`/w/${wid}/reports`)}
-          >{!isMobile && '报表'}</Button>
-          <Tooltip title="工作区设置">
-            <Button
-              type={location.includes('/settings') ? 'primary' : 'text'}
-              size="small" icon={<SettingOutlined />}
-              data-testid="workspace-settings-nav"
-              onClick={() => navigate(`/w/${wid}/settings`)}
-            >{!isMobile && '设置'}</Button>
-          </Tooltip>
-        </Space>
-
-        <div style={{ marginLeft: 'auto' }}>
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Space style={{ cursor: 'pointer' }}>
               <Avatar size="small" icon={<UserOutlined />} />
