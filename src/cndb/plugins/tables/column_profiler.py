@@ -14,6 +14,7 @@ from collections import Counter
 from typing import Any
 
 from cndb.plugins.tables.transfer import (
+    _classify_date_like,
     _infer_single_value,
     _pick_inferred_type,
     _promote_to_select_if_low_cardinality,
@@ -216,7 +217,10 @@ def _profile_single_column(
             type_counts["json"] = type_counts.get("json", 0) + 1
         else:
             non_null_values.append(raw)
-            type_counts["text"] = type_counts.get("text", 0) + 1
+            # date/datetime 对象（xlsx 日期单元格）按推断层同款规则分类，
+            # 否则落 text 后会被低基数启发式误提升为 select
+            t = _classify_date_like(raw) or "text"
+            type_counts[t] = type_counts.get(t, 0) + 1
 
     non_null_count = total_rows - null_count
     null_ratio = round(null_count / total_rows, 4) if total_rows > 0 else 0.0
@@ -252,7 +256,7 @@ def _profile_single_column(
                         if isinstance(raw, float)
                         else "json"
                         if isinstance(raw, (list, dict))
-                        else "text"
+                        else _classify_date_like(raw) or "text"
                     )
                 )
                 if actual_t == t and found < MAX_CONFLICT_SAMPLES:
