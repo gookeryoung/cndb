@@ -20,7 +20,7 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Input, Segmented, Switch, Upload, Popconfirm, Pagination } from 'antd'
+import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Input, Segmented, Upload, Pagination } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
@@ -881,15 +881,28 @@ export default function GridPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* 顶部工具栏 */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-container)', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+      <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-container)', display: 'flex', gap: 8, alignItems: 'center' }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)}>返回</Button>
         <Text strong style={{ fontSize: 16 }}>{table?.name || '...'}</Text>
         {/* 统计小徽标（来自后端增强字段） */}
         {table?.record_count != null && table.record_count > 0 && (
-          <Tag color="blue" style={{ marginLeft: 4 }}>{table.record_count} 条记录</Tag>
+          <Tag color="blue" style={{ marginLeft: 0 }}>{table.record_count} 条记录</Tag>
         )}
         <div style={{ flex: 1 }} />
-        <Space>
+        {/* 右侧主操作区 */}
+        <Space size={6}>
+          <Tooltip title={newRowActive || editingRowId != null ? '请先完成当前编辑' : '新增一行'}>
+            <Button
+              type="primary"
+              size="middle"
+              icon={<PlusOutlined />}
+              data-testid="add-row-btn"
+              onClick={startNewRow}
+              disabled={!canEditRecords || newRowActive || editingRowId != null}
+            >
+              新增行
+            </Button>
+          </Tooltip>
           <Tooltip title="表设置（字段/视图/权限）">
             <Button
               data-testid="table-settings-btn"
@@ -945,110 +958,129 @@ export default function GridPage() {
         </Space>
       </div>
 
-      {/* 视图切换 + 视图操作（支持拖拽排序） */}
-      <div style={{ padding: '0 16px', background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <DndContext sensors={viewDragSensors} collisionDetection={closestCenter} onDragEnd={handleViewDragEnd}>
-          <SortableContext items={views.map(v => String(v.id))} strategy={horizontalListSortingStrategy}>
-            <Segmented
-              value={activeViewId != null ? String(activeViewId) : undefined}
-              onChange={(v) => {
-                const key = String(v)
-                loadView(views.find(vv => String(vv.id) === key) || null)
-              }}
-              options={segmentedOptions}
-              style={{ flex: 1, overflow: 'auto' }}
-            />
-          </SortableContext>
-        </DndContext>
-        {/* 视图操作按钮组 */}
-        <Space size={4}>
+      {/* 视图切换 + 操作栏（支持拖拽排序） */}
+      <div style={{
+        padding: '0 8px 0 0',
+        background: 'var(--cn-bg-container)',
+        borderBottom: '1px solid var(--cn-border)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        minHeight: 36,
+      }}>
+        {/* Segmented —— flex:1 占满弹性空间，min-width:0 允许在窄屏下被压缩从而触发内部滚动 */}
+        <div className="cn-segmented-wrap" style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', padding: '4px 0 4px 16px' }}>
+          <DndContext sensors={viewDragSensors} collisionDetection={closestCenter} onDragEnd={handleViewDragEnd}>
+            <SortableContext items={views.map(v => String(v.id))} strategy={horizontalListSortingStrategy}>
+              <Segmented
+                value={activeViewId != null ? String(activeViewId) : undefined}
+                onChange={(v) => {
+                  const key = String(v)
+                  loadView(views.find(vv => String(vv.id) === key) || null)
+                }}
+                options={segmentedOptions}
+                className="cn-segmented"
+                style={{ width: '100%' }}
+              />
+            </SortableContext>
+          </DndContext>
+        </div>
+
+        {/* 右侧紧凑按钮组 —— flex-shrink:0 保证不被 Segmented 挤压 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, paddingRight: 8 }}>
+          {/* 视图新建（常显）+ 更多操作收进 Dropdown */}
           <Tooltip title="新建视图">
             <Button size="small" type="text" icon={<PlusOutlined />} onClick={() => setCreateViewOpen(true)} />
           </Tooltip>
-          <Tooltip title="编辑视图">
-            <Button
-              size="small"
-              type="text"
-              icon={<EditOutlined />}
-              disabled={!activeView}
-              onClick={() => setEditViewOpen(true)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="确定删除此视图？"
-            description={activeView?.name}
-            okText="删除"
-            cancelText="取消"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => activeViewId != null && removeView.mutate(String(activeViewId))}
-            disabled={!activeView}
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                {
+                  key: 'edit',
+                  icon: <EditOutlined />,
+                  label: '编辑当前视图',
+                  disabled: !activeView,
+                  onClick: () => setEditViewOpen(true),
+                },
+                {
+                  key: 'delete',
+                  icon: <DeleteOutlined />,
+                  danger: true,
+                  label: '删除当前视图',
+                  disabled: !activeView,
+                  onClick: () => {
+                    if (activeView) {
+                      Modal.confirm({
+                        title: '确定删除此视图？',
+                        content: activeView.name,
+                        okText: '删除',
+                        okType: 'danger',
+                        cancelText: '取消',
+                        onOk: () => activeViewId != null && removeView.mutate(String(activeViewId)),
+                      })
+                    }
+                  },
+                },
+                { type: 'divider' },
+                {
+                  key: 'import',
+                  icon: <ImportOutlined />,
+                  label: '导入视图',
+                  onClick: () => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) },
+                },
+              ],
+            }}
           >
-            <Tooltip title="删除视图">
-              <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!activeView} />
+            <Tooltip title="视图更多操作">
+              <Button size="small" type="text" icon={<MoreOutlined />} />
             </Tooltip>
-          </Popconfirm>
-          <Tooltip title="导入视图">
+          </Dropdown>
+
+          <div style={{ width: 1, height: 16, background: 'var(--cn-border)', margin: '0 4px' }} />
+
+          {/* 视图模式切换 —— 仅渲染数据表实际拥有的视图类型；仅 grid 一种时隐藏 */}
+          {showModeSwitch && (
+            <Space.Compact size="small">
+              {modeButtons.map((b) => (
+                <Tooltip key={b.mode} title={b.tooltip}>
+                  <Button
+                    size="small"
+                    type={mode === b.mode ? 'primary' : 'default'}
+                    icon={b.icon}
+                    data-mode={b.mode}
+                    onClick={() => handleModeChange(b.mode)}
+                  />
+                </Tooltip>
+              ))}
+            </Space.Compact>
+          )}
+
+          <Input.Search
+            size="small"
+            placeholder="搜索..."
+            allowClear
+            prefix={<SearchOutlined />}
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setOffset(0) }}
+            style={{ width: 160 }}
+          />
+          <Tooltip title="当前视图筛选规则">
             <Button
               size="small"
-              type="text"
-              icon={<ImportOutlined />}
-              onClick={() => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) }}
+              icon={<FilterOutlined />}
+              type={viewFilters.length ? 'primary' : 'default'}
+              onClick={() => setViewConfigOpen(true)}
             />
           </Tooltip>
-        </Space>
-        {/* 视图模式切换 —— 仅渲染数据表实际拥有的视图类型；仅 grid 一种时隐藏 */}
-        {showModeSwitch && (
-          <Space.Compact>
-            {modeButtons.map((b) => (
-              <Tooltip key={b.mode} title={b.tooltip}>
-                <Button
-                  size="small"
-                  type={mode === b.mode ? 'primary' : 'default'}
-                  icon={b.icon}
-                  data-mode={b.mode}
-                  onClick={() => handleModeChange(b.mode)}
-                />
-              </Tooltip>
-            ))}
-          </Space.Compact>
-        )}
-        <Input.Search
-          size="small"
-          placeholder="搜索所有文本字段..."
-          allowClear
-          prefix={<SearchOutlined />}
-          value={searchQuery}
-          onChange={e => { setSearchQuery(e.target.value); setOffset(0) }}
-          style={{ width: 220 }}
-        />
-        <Tooltip title="当前视图筛选规则">
-          <Button
-            size="small"
-            icon={<FilterOutlined />}
-            type={viewFilters.length ? 'primary' : 'default'}
-            onClick={() => setViewConfigOpen(true)}
-          />
-        </Tooltip>
-        <Tooltip title="显示模式设置（对所有视图生效）">
-          <Button
-            size="small"
-            icon={<SettingOutlined />}
-            onClick={() => setSettingsOpen(true)}
-          />
-        </Tooltip>
-        <div style={{ flex: 1 }} />
-        <Tooltip title={newRowActive || editingRowId != null ? '请先完成当前编辑' : '新增一行'}>
-          <Button
-            type="primary"
-            size="small"
-            icon={<PlusOutlined />}
-            data-testid="add-row-btn"
-            onClick={startNewRow}
-            disabled={!canEditRecords || newRowActive || editingRowId != null}
-          >
-            新增行
-          </Button>
-        </Tooltip>
+          <Tooltip title="显示模式设置（对所有视图生效）">
+            <Button
+              size="small"
+              icon={<SettingOutlined />}
+              onClick={() => setSettingsOpen(true)}
+            />
+          </Tooltip>
+        </div>
       </div>
 
       {/* 主内容 — flex:1 占满剩余空间，overflow:hidden 交给内部 Table 的虚拟滚动 */}
@@ -1366,4 +1398,4 @@ export default function GridPage() {
 }
 
 // ─────────────── 一些保留但暂隐藏的图标引用（让打包器知道没丢依赖） ───────────────
-void CloseOutlined; void Switch
+void CloseOutlined
