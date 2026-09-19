@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useCallback, useEffect } from 'react'
+import React, { Suspense, lazy, useState, useCallback } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
 import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
@@ -21,14 +21,6 @@ function ModalFallback() {
 }
 
 const { Header, Sider, Content } = Layout
-
-/** 最近访问工作区的 localStorage 键 —— 供 /admin 等无 wid 页面定位工作区 */
-const LAST_WID_KEY = 'cndb_last_wid'
-
-/** 读取最近访问的工作区 id（不可用或未记录时返回 null） */
-function readLastWid(): string | null {
-  try { return localStorage.getItem(LAST_WID_KEY) } catch { return null }
-}
 
 export default function MainLayout() {
   const navigate = useNavigate()
@@ -71,16 +63,6 @@ export default function MainLayout() {
   const currentWs = workspaces.find(w => String(w.id) === wid)
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
-
-  // 记录最近访问的工作区 —— /admin 等无 wid 页面跳转报表/设置时据此定位
-  useEffect(() => {
-    if (wid) {
-      try { localStorage.setItem(LAST_WID_KEY, String(wid)) } catch { /* localStorage 不可用时忽略 */ }
-    }
-  }, [wid])
-
-  // 有效工作区：当前 wid → 最近访问 → 第一个工作区
-  const activeWid = wid ?? readLastWid() ?? (workspaces.length > 0 ? workspaces[0].id : undefined)
 
   const onLogout = useCallback(() => {
     Modal.confirm({
@@ -147,20 +129,28 @@ export default function MainLayout() {
           </Button>
         </Dropdown>
 
-        {/* Header 常规导航按钮（管理台在右上角用户区，与常规功能区分） */}
+        {/* Header 常规导航按钮 —— 工作区级功能，显式作用于左侧下拉框当前工作区；无工作区时禁用（管理台在右上角用户区，与常规功能区分） */}
         <Space size={4}>
-          <Button
-            type={location.includes('/reports') ? 'primary' : 'text'}
-            size="small" icon={<FileTextOutlined />}
-            onClick={() => navigate(activeWid ? `/w/${activeWid}/reports` : '/w')}
-          >{!isMobile && '报表'}</Button>
-          <Tooltip title="工作区设置">
-            <Button
-              type={location.includes('/settings') ? 'primary' : 'text'}
-              size="small" icon={<SettingOutlined />}
-              data-testid="workspace-settings-nav"
-              onClick={() => navigate(activeWid ? `/w/${activeWid}/settings` : '/w')}
-            >{!isMobile && '设置'}</Button>
+          <Tooltip title={currentWs ? '报表' : '请先选择工作区'}>
+            <span style={{ display: 'inline-flex' }}>
+              <Button
+                type={location.includes('/reports') ? 'primary' : 'text'}
+                size="small" icon={<FileTextOutlined />}
+                disabled={!currentWs}
+                onClick={() => currentWs && navigate(`/w/${currentWs.id}/reports`)}
+              >{!isMobile && '报表'}</Button>
+            </span>
+          </Tooltip>
+          <Tooltip title={currentWs ? '工作区设置' : '请先选择工作区'}>
+            <span style={{ display: 'inline-flex' }}>
+              <Button
+                type={location.includes('/settings') ? 'primary' : 'text'}
+                size="small" icon={<SettingOutlined />}
+                disabled={!currentWs}
+                data-testid="workspace-settings-nav"
+                onClick={() => currentWs && navigate(`/w/${currentWs.id}/settings`)}
+              >{!isMobile && '工作区设置'}</Button>
+            </span>
           </Tooltip>
         </Space>
 

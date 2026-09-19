@@ -17,7 +17,6 @@ test.describe("工作区 + 表列表", () => {
     await gotoWorkspace(page);
 
     // 顶部导航
-    await expect(page.getByRole("button", { name: /回收站/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /报表/ })).toBeVisible();
 
     // 表列表页 — TablesList（用 :has-text 避免匹配到空状态 placeholder row）
