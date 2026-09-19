@@ -40,6 +40,7 @@ from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.row_validator import RowValidator, ValidationResult
 from cndb.plugins.tables.transfer import (
     _coerce_long_numeric_to_text,
+    _dedupe_samples,
     decode_bytes_auto,
     sniff_csv_delimiter,
 )
@@ -621,7 +622,7 @@ class Importer:
         """对 skipped_columns 里每列收集样本值 + 推断类型.
 
         Returns:
-            [{name, field_type, options, sample_values}]
+            [{name, field_type, options, sample_values}]（sample_values 按首次出现去重）
         """
         if not skipped_columns:
             return []
@@ -641,7 +642,7 @@ class Importer:
             entry: dict[str, Any] = {
                 "name": col,
                 "field_type": field_type,
-                "sample_values": column_samples[col][:5],
+                "sample_values": _dedupe_samples(column_samples[col]),
             }
             if options:
                 entry["options"] = options

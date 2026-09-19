@@ -679,8 +679,27 @@ def _infer_decimals_config(field_type: str, sample_values: list[Any]) -> dict[st
     return {"decimals": min(max_dec, 10) if max_dec > 0 else 2}
 
 
+def _dedupe_samples(samples: list[str], limit: int = 5) -> list[str]:
+    """按首次出现顺序去重，取前 limit 个作为预览样本值.
+
+    样本的意义在于"代表性"：前 N 个原始值大量重复时（如排序后的低基数列），
+    重复值不提供额外信息，反而挤占样本位。仅去重展示层，收集端保持原样，
+    不影响类型推断与 select/multiselect 提升的比例语义。
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for v in samples:
+        if v in seen:
+            continue
+        seen.add(v)
+        out.append(v)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dict[str, Any]], int]:
-    """分析 CSV 文本，推断每列字段类型 + 空值占比 + 样本值.
+    """分析 CSV 文本，推断每列字段类型 + 空值占比 + 样本值（按首次出现去重）.
 
     启发式增强：text 列若唯一值数 ≤ 8 且非 boolean 值域，则自动提升为 select 类型，
     并附带 options 列表（按首次出现顺序去重），供 create_table_from_csv 写入 config.
@@ -736,7 +755,7 @@ def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dic
         col_info: dict[str, Any] = {
             "name": name,
             "field_type": inferred,
-            "sample_values": samples[:5],
+            "sample_values": _dedupe_samples(samples),
             "null_ratio": round(null_ratio, 4),
         }
         if promote_options:
@@ -1147,7 +1166,7 @@ def analyze_json_columns(
 
     Returns:
         列表每项同 analyze_csv_columns：
-        {name, field_type, sample_values, null_ratio, options?}
+        {name, field_type, sample_values, null_ratio, options?}（sample_values 按首次出现去重）
     """
     # 收集所有出现过的 key（跨所有行）
     key_counts: dict[str, int] = {}  # 非空值计数
@@ -1218,7 +1237,7 @@ def analyze_json_columns(
         col_info: dict[str, Any] = {
             "name": key,
             "field_type": inferred,
-            "sample_values": col_samples[:5],
+            "sample_values": _dedupe_samples(col_samples),
             "null_ratio": round(null_ratio, 4),
         }
         if promote_options:
