@@ -169,7 +169,12 @@ def _parse_to_rows(
         if not all_rows:
             return [], [], 0
         file_columns = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(all_rows[0])]
-        rows = [dict(zip(file_columns, r, strict=False)) for r in all_rows[1:] if any(c is not None for c in r)]
+        # 长数字保护：对每个单元格值做精度保护转换
+        rows = [
+            {k: transfer._coerce_long_numeric_to_text(v) for k, v in zip(file_columns, r, strict=False)}
+            for r in all_rows[1:]
+            if any(c is not None for c in r)
+        ]
         return rows, file_columns, len(rows)
     raise ValueError(f"不支持的格式: {fmt}")
 

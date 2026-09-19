@@ -35,7 +35,11 @@ from cndb.plugins.tables.diff_reporter import DiffReporter
 from cndb.plugins.tables.field_mapping import GapFilling
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.row_validator import RowValidator, ValidationResult
-from cndb.plugins.tables.transfer import decode_bytes_auto, sniff_csv_delimiter
+from cndb.plugins.tables.transfer import (
+    _coerce_long_numeric_to_text,
+    decode_bytes_auto,
+    sniff_csv_delimiter,
+)
 
 _Format = str
 
@@ -711,7 +715,12 @@ class Importer:
         if not all_rows:
             return [], []
         file_columns = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(all_rows[0])]
-        rows = [dict(zip(file_columns, r, strict=False)) for r in all_rows[1:] if any(c is not None for c in r)]
+        # 长数字保护：对每个单元格值做精度保护转换
+        rows = [
+            {k: _coerce_long_numeric_to_text(v) for k, v in zip(file_columns, r, strict=False)}
+            for r in all_rows[1:]
+            if any(c is not None for c in r)
+        ]
         return rows, file_columns
 
     @staticmethod

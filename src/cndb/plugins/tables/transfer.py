@@ -292,11 +292,20 @@ def _check_percentage(v: str) -> bool:
 
 
 def _check_long_integer(v: str) -> bool:
-    """判断是否为长数字串且前导零（应判为 text/phone）."""
+    """判断是否应把整数型字符串视为 text.
+
+    规则：
+    1. 前导零风格的数字串（如 ``01234567890``）—— 明显是非数值编号（邮政编码、账号等）.
+    2. 十进制位数 >= 15 的纯数字串 —— 超过 double 精度边界（2^53 ≈ 9e15），
+       作为 number 存库后经 JSON/JS 链路会精度丢失，应判为 text 保真.
+    """
     if not _is_integer(v):
         return False
     num_str = v.lstrip("-").replace(",", "")
-    return len(num_str) >= 11 and num_str.startswith("0")
+    if num_str.startswith("0") and len(num_str) >= 11:
+        return True
+    # 15 位以上的纯整数一律判为 text，避免精度丢失
+    return len(num_str) >= 15
 
 
 def _pick_inferred_type(type_counts: dict[str, int]) -> str:
@@ -680,8 +689,12 @@ def import_rows_from_xlsx(
     if not rows:
         return []
     header = [str(c) for c in rows[0]]
+    # 长数字保护：对每个单元格值做精度保护转换
     data = [
-        _parse_link_import_value(table, dict(zip(header, row, strict=False)))
+        _parse_link_import_value(
+            table,
+            {k: _coerce_long_numeric_to_text(v) for k, v in zip(header, row, strict=False)},
+        )
         for row in rows[1:]
         if any(c is not None for c in row)
     ]
@@ -714,6 +727,55 @@ def guess_format_from_filename(filename: str) -> str:
 # ── JSON 数组类型推断 ──────────────────────────────────
 
 
+# ── Excel 长数字精度保护 ──────────────────────────────
+
+# double 能精确表示的最大整数（IEEE 754 52 位尾数）
+_DOUBLE_MAX_EXACT_INT = 2**53  # 9007199254740992
+
+# 超过该位数的数字视为"长数字"，需转回字符串避免精度丢失
+_LONG_INT_DIGITS_THRESHOLD = 15
+
+
+def _coerce_long_numeric_to_text(value: Any) -> Any:
+    """把 openpyxl 读出的长整数型数值转回字符串.
+
+    根因：Excel 用 IEEE 754 双精度浮点存储数值，有效数字约 15-16 位；
+    openpyxl 对 17+ 位长数字直接返回 float，精度已在 Excel 存储层丢失；
+    对 16 位数字返回 Python int，但经 JSON 序列化到 JavaScript 后，
+    Number 类型同样因 IEEE 754 精度限制再次截断。
+
+    策略：对 int / float 值，若绝对值超过 2^53（或十进制位数 >= 15），
+    转成字符串返回，避免精度在任何环节进一步丢失。
+
+    Args:
+        value: openpyxl 读出的单元格值（int / float / str / datetime / None）.
+
+    Returns:
+        原值或转换后的字符串.
+    """
+    if value is None:
+        return value
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if abs(value) >= _DOUBLE_MAX_EXACT_INT:
+            return str(value)
+        if len(str(abs(value))) >= _LONG_INT_DIGITS_THRESHOLD:
+            return str(value)
+        return value
+    if isinstance(value, float):
+        # 无小数部分的 float 且位数较长 → 转回字符串（openpyxl 对 17+ 位数字返回 float）
+        if value.is_integer() and abs(value) >= _DOUBLE_MAX_EXACT_INT:
+            # 用 repr 形式可能带科学计数法，需用 int 转回来再 str
+            int_val = int(value)
+            return str(int_val)
+        # 位数 >= 15 的整数型 float → 转回字符串
+        if value.is_integer() and len(str(abs(int(value)))) >= _LONG_INT_DIGITS_THRESHOLD:
+            return str(int(value))
+        return value
+    return value
+
+
 def _python_type_to_field_type(value: Any) -> str:
     """把 Python 对象直接映射到字段类型（JSON 推断的第一捷径）."""
     if value is None:
@@ -721,9 +783,16 @@ def _python_type_to_field_type(value: Any) -> str:
     if isinstance(value, bool):
         return "boolean"
     if isinstance(value, int):
-        # 长整型 / 前导零风格数字 → text 交给字符串推断，但纯 int 直接判 number
+        # 长整型（>= 15 位 或 >= 2^53）应当作 text，避免 JSON/JS 精度丢失
+        if abs(value) >= _DOUBLE_MAX_EXACT_INT or len(str(abs(value))) >= _LONG_INT_DIGITS_THRESHOLD:
+            return "text"
         return "number"
     if isinstance(value, float):
+        # 整数型长 float（openpyxl 对 17+ 位数字的返回）→ 当作 text
+        if value.is_integer() and (
+            abs(value) >= _DOUBLE_MAX_EXACT_INT or len(str(abs(int(value)))) >= _LONG_INT_DIGITS_THRESHOLD
+        ):
+            return "text"
         return "float"
     if isinstance(value, str):
         if not value.strip():
@@ -973,7 +1042,8 @@ def _parse_xlsx_bytes(xlsx_bytes: bytes) -> tuple[list[dict[str, Any]], list[str
                 stripped = v.strip()
                 row_dict[key] = None if stripped == "" else stripped
             else:
-                row_dict[key] = v
+                # 长数字保护：避免 Excel 数值精度经 JSON/JS 链路进一步丢失
+                row_dict[key] = _coerce_long_numeric_to_text(v)
         rows.append(row_dict)
     return rows, file_columns
 
