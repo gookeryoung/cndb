@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import re
+from datetime import date
 from typing import Any
 
 from cndb.plugins.tables import records as rec
@@ -129,19 +130,70 @@ _URL_RE = re.compile(r"^https?://[\w.-]+(?::\d+)?(?:/[\w./?#=&%+-]*)?$", re.IGNO
 _PHONE_RE = re.compile(r"^[\d+\-() ]{7,20}$")
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ISO_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:[Z+\-]\d{2}:?\d{2})?$")
-# 中文日期：2024年1月1日 / 2024年01月01日 / 2024年1月1
-_CN_DATE_RE = re.compile(r"^\d{4}年\d{1,2}月\d{1,2}日?$")
-# 通用日期：2024/1/1 / 1/1/2024 / 01-01-2024 / 2024.1.1（月日均 1-2 位）
-_GENERIC_DATE_RE = re.compile(r"^\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2}$|^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{4}$")
+# 中文日期：2024年1月1日 / 2024年01月01日 / 2024年1月1（"日"可省略）
+_CN_DATE_RE = re.compile(r"^(\d{4})年(\d{1,2})月(\d{1,2})日?$")
+# 通用日期：2024/1/1 / 01-01-2024 / 2024.1.1（月日均 1-2 位，分隔符须一致）
+_GENERIC_DATE_RE = re.compile(r"^(?:(\d{4})([/\-.])(\d{1,2})\2(\d{1,2})|(\d{1,2})([/\-.])(\d{1,2})\6(\d{4}))$")
+# 紧凑日期：20240115（8 位纯数字，年月日合法性另校验）
+_COMPACT_DATE_RE = re.compile(r"^\d{8}$")
+# 通用日期时间：2024/1/15 10:30 / 2024.1.15 10:30:45（年前置，月日 1-2 位）
+_GENERIC_DATETIME_RE = re.compile(r"^(\d{4})([/\-.])(\d{1,2})\2(\d{1,2})[T ]\d{1,2}:\d{2}(?::\d{2})?$")
+# 英文月名日期：Jan 15, 2024 / 15 Jan 2024（缩写或全称，逗号可选）
+_EN_DATE_PREFIX_RE = re.compile(r"^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})$")
+_EN_DATE_SUFFIX_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})$")
+# 英文月份名 → 月份数值（缩写 + 全称）
+_EN_MONTHS: dict[str, int] = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+# 科学计数法：1.5e10 / -1.5E-3（点可能属于指数部分，不能当千分位归一）
+_SCI_NOTATION_RE = re.compile(r"^[+-]?\d*\.?\d+[eE][+-]?\d+$")
+# 全角数字/符号 → 半角（数字、点、负号、加号、百分号、括号、逗号）
+_FULLWIDTH_TRANSLATION = str.maketrans("０１２３４５６７８９．－＋％（），", "0123456789.-+%(),")
+
+# 布尔值域（与 field_types.BooleanFieldType 的转换值域保持一致，测试矩阵双向锁定）
+_BOOLEAN_TRUE_VALUES = frozenset({"true", "yes", "1", "on", "是", "真", "对", "y", "t", "√"})
+_BOOLEAN_FALSE_VALUES = frozenset({"false", "no", "0", "off", "否", "假", "错", "n", "f", "×"})
 
 
 # ── CSV 列类型推断辅助 ──────────────────────────────────
 
 
 def _is_boolean(value: str) -> bool:
-    """判断值是否属于布尔值域."""
+    """判断值是否属于布尔值域（含中文 真/假、对/错、Y/N、√/× 等）."""
     low = value.strip().lower()
-    return low in ("true", "false", "yes", "no", "是", "否", "1", "0", "on", "off")
+    return low in _BOOLEAN_TRUE_VALUES or low in _BOOLEAN_FALSE_VALUES
+
+
+def _is_valid_date(y: int, m: int, d: int) -> bool:
+    """校验年月日是否为真实存在的日期（如 2024-02-30、2024-13-01 均非法）."""
+    try:
+        date(y, m, d)
+    except ValueError:
+        return False
+    return True
 
 
 def _normalize_numeric(value: str) -> str | None:
@@ -152,12 +204,32 @@ def _normalize_numeric(value: str) -> str | None:
     - 逗号小数: 1,5 → 1.5
     - 欧元点千分位 + 逗号小数: 1.234,56 → 1234.56
     - 负数、货币符号 ¥ $ ￥
+    - 科学计数法: 1.5e10 → 1.5e10（短路，不走千分位归一，避免点被误删）
+    - 会计负数: (1,234) → -1234
+    - 全角数字/符号: １２３ → 123
     """
     s = value.strip()
     if not s:
         return None
+    # 全角数字/符号归一（０-９ ．－＋％（），）
+    s = s.translate(_FULLWIDTH_TRANSLATION)
     # 去掉货币符号
     s = s.replace("¥", "").replace("￥", "").replace("$", "").replace("€", "").strip()
+    if not s:
+        return None
+    # 会计负数：(1,234) → -1234；括号内非法则整体判非数字
+    if s.startswith("(") and s.endswith(")") and len(s) > 2:
+        inner = _normalize_numeric(s[1:-1].strip())
+        if inner is None:
+            return None
+        return inner[1:] if inner.startswith("-") else "-" + inner
+    # 科学计数法短路：点/逗号可能属于指数部分，不能当千分位处理（如 1.5e10 ≠ 15e10）
+    if _SCI_NOTATION_RE.match(s):
+        try:
+            float(s)
+        except ValueError:
+            return None
+        return s
     negative = False
     if s.startswith("-"):
         negative = True
@@ -270,11 +342,15 @@ def _infer_single_value(value: str) -> str:
         (_is_boolean, "boolean"),
         (lambda x: bool(_EMAIL_RE.match(x)), "email"),
         (lambda x: bool(_URL_RE.match(x)), "url"),
+        (_check_json_string, "json"),
         (_check_percentage, "percentage"),
         (lambda x: bool(_ISO_DATETIME_RE.match(x)), "datetime"),
-        (lambda x: bool(_ISO_DATE_RE.match(x)), "date"),
-        (lambda x: bool(_CN_DATE_RE.match(x)), "date"),
-        (lambda x: bool(_GENERIC_DATE_RE.match(x)), "date"),
+        (_check_generic_datetime, "datetime"),
+        (_check_iso_date, "date"),
+        (_check_cn_date, "date"),
+        (_check_generic_date, "date"),
+        (_check_compact_date, "date"),
+        (_check_en_date, "date"),
         (_check_phone, "phone"),
         (_check_long_integer, "text"),
         (_is_integer, "number"),
@@ -286,9 +362,87 @@ def _infer_single_value(value: str) -> str:
     return "text"
 
 
+def _check_json_string(v: str) -> bool:
+    """判断是否为 JSON 对象/数组字符串（{ 或 [ 开头且可被 json.loads 解析）."""
+    if not v or v[0] not in "{[":
+        return False
+    try:
+        json.loads(v)
+    except ValueError:
+        return False
+    return True
+
+
 def _check_percentage(v: str) -> bool:
-    """判断是否为百分比字符串."""
+    """判断是否为百分比字符串（支持全角％）."""
+    if v.endswith("％"):
+        v = v[:-1] + "%"
     return v.endswith("%") and (_is_float(v[:-1]) or _is_integer(v[:-1]))
+
+
+def _check_iso_date(v: str) -> bool:
+    """ISO 日期 2024-01-15（含年月日合法性校验，2024-02-30 非法）."""
+    if _ISO_DATE_RE.match(v) is None:
+        return False
+    return _is_valid_date(int(v[:4]), int(v[5:7]), int(v[8:10]))
+
+
+def _check_cn_date(v: str) -> bool:
+    """中文日期 2024年1月1日（"日"可省略，含合法性校验）."""
+    m = _CN_DATE_RE.match(v)
+    if m is None:
+        return False
+    return _is_valid_date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+
+def _check_generic_date(v: str) -> bool:
+    """通用日期 2024/1/15、2024.1.15、1/15/2024（含合法性校验）.
+
+    前 4 位为年 → (年, 月, 日)；后 4 位为年 → 美式 (月, 日, 年)，月 >12 判非法回落 text.
+    """
+    m = _GENERIC_DATE_RE.match(v)
+    if m is None:
+        return False
+    if m.group(1) is not None:
+        y, mo, d = int(m.group(1)), int(m.group(3)), int(m.group(4))
+    else:
+        mo, d, y = int(m.group(5)), int(m.group(7)), int(m.group(8))
+    return _is_valid_date(y, mo, d)
+
+
+def _check_compact_date(v: str) -> bool:
+    """紧凑日期 20240115（年份限 1900-2100 且月日合法，否则回落 number/text）."""
+    if _COMPACT_DATE_RE.match(v) is None:
+        return False
+    y, m, d = int(v[:4]), int(v[4:6]), int(v[6:8])
+    if not (1900 <= y <= 2100):
+        return False
+    return _is_valid_date(y, m, d)
+
+
+def _check_en_date(v: str) -> bool:
+    """英文月名日期 Jan 15, 2024 / 15 Jan 2024（缩写或全称，含合法性校验）."""
+    m = _EN_DATE_PREFIX_RE.match(v)
+    if m is not None:
+        mon = _EN_MONTHS.get(m.group(1).lower())
+        day, year = int(m.group(2)), int(m.group(3))
+    else:
+        m2 = _EN_DATE_SUFFIX_RE.match(v)
+        if m2 is None:
+            return False
+        day, year = int(m2.group(1)), int(m2.group(3))
+        mon = _EN_MONTHS.get(m2.group(2).lower())
+    if mon is None:
+        return False
+    return _is_valid_date(year, mon, day)
+
+
+def _check_generic_datetime(v: str) -> bool:
+    """斜杠/点分隔日期+时间 2024/1/15 10:30(:45) → datetime（含日期合法性校验）."""
+    m = _GENERIC_DATETIME_RE.match(v)
+    if m is None:
+        return False
+    return _is_valid_date(int(m.group(1)), int(m.group(3)), int(m.group(4)))
 
 
 def _check_long_integer(v: str) -> bool:
@@ -363,8 +517,7 @@ def _is_select_candidate(unique_values: list[str], inferred_type: str, non_empty
         return False
 
     # boolean 优先级更高：如果所有值都是 boolean 值域的字符串，不应转 select
-    boolean_values = {"true", "false", "yes", "no", "是", "否", "1", "0", "on", "off"}
-    return not all(v.strip().lower() in boolean_values for v in unique_values)
+    return not all(_is_boolean(v) for v in unique_values)
 
 
 def _promote_to_select_if_low_cardinality(inferred_type: str, samples: list[str]) -> tuple[str, list[str]]:
@@ -389,6 +542,27 @@ def _options_strings_to_dicts(options: list[str]) -> list[dict[str, Any]]:
     SelectFieldConfig._normalize_options 及前端消费方约定一致。
     """
     return [{"label": o, "value": o} for o in options]
+
+
+def _infer_decimals_config(field_type: str, sample_values: list[Any]) -> dict[str, Any]:
+    """按样本推断 float/number 字段的 decimals 配置.
+
+    根因：NumberFieldConfig.decimals 默认 0，float 字段不设置时
+    ``round(5.5, 0) == 6``，导入的小数会被静默取整丢失精度.
+    """
+    if field_type not in ("float", "number"):
+        return {}
+    max_dec = 0
+    for s in sample_values[:50]:
+        text = str(s)
+        if "." not in text:
+            continue
+        try:
+            dec = len(text.split(".", 1)[1])
+        except (TypeError, ValueError):
+            continue
+        max_dec = max(max_dec, dec)
+    return {"decimals": min(max_dec, 10) if max_dec > 0 else 2}
 
 
 def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dict[str, Any]], int]:
@@ -501,6 +675,8 @@ def create_table_from_csv(
         cfg: dict[str, Any] = {}
         if col["field_type"] == "select":
             cfg["options"] = _options_strings_to_dicts(col.get("options", []))
+        else:
+            cfg.update(_infer_decimals_config(col["field_type"], col.get("sample_values", [])))
         f = DataField(table_id=dt.id, name=col["name"], field_type=col["field_type"], order=i, config=cfg)
         f.ensure_db_name()
         db.add(f)
@@ -909,6 +1085,8 @@ def create_table_from_json_data(
         cfg: dict[str, Any] = {}
         if col["field_type"] == "select":
             cfg["options"] = _options_strings_to_dicts(col.get("options", []))
+        else:
+            cfg.update(_infer_decimals_config(col["field_type"], col.get("sample_values", [])))
         f = DataField(table_id=dt.id, name=col["name"], field_type=col["field_type"], order=i, config=cfg)
         f.ensure_db_name()
         db.add(f)
@@ -1189,6 +1367,8 @@ def create_table_from_file(
         cfg: dict[str, Any] = {}
         if col["field_type"] == "select":
             cfg["options"] = _options_strings_to_dicts(col.get("options", []))
+        else:
+            cfg.update(_infer_decimals_config(col["field_type"], col.get("sample_values", [])))
         f = DataField(table_id=dt.id, name=col["name"], field_type=col["field_type"], order=i, config=cfg)
         f.ensure_db_name()
         db.add(f)
