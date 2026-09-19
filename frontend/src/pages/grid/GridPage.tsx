@@ -220,27 +220,31 @@ export default function GridPage() {
     return () => { ro.disconnect(); window.removeEventListener('resize', update) }
   }, [])
 
-  /** 新增行激活后，等待虚拟滚动渲染完成，自动滚动到可见并聚焦第一个可编辑单元格. */
+  /** 新增行激活后，等待虚拟滚动渲染完成，自动滚动到可见并聚焦第一个可编辑单元格.
+   *  用 data-row-key="__new__" 选择器（AntD 虚拟滚动复用 DOM 时更稳定），
+   *  双重 rAF 确保 React 提交 + 虚拟滚动窗口更新完毕后再定位. */
   useEffect(() => {
     if (!newRowActive || mode !== 'grid') return
     let cancelled = false
-    // 双重 rAF：等 React 提交 + AntD 虚拟滚动窗口更新
-    requestAnimationFrame(() => {
-      if (cancelled) return
-      requestAnimationFrame(() => {
-        if (cancelled) return
-        const row = document.querySelector('.cn-table-row-new') as HTMLElement | null
-        if (!row) return
-        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-        // 选择器覆盖 Input / Select / DatePicker / InputNumber / TextArea / Checkbox
+    const tryFocus = (attempts: number) => {
+      if (cancelled || attempts <= 0) return
+      const row = document.querySelector('[data-row-key="__new__"]') as HTMLElement | null
+      if (row) {
+        // page 模式用 start（让新行出现在视口顶部），tail 模式用 end（确保可见）
+        const block: ScrollLogicalPosition = newRowPosition === 'tail' ? 'end' : 'start'
+        row.scrollIntoView({ block, behavior: 'smooth' })
+        // 覆盖 Input / Select / DatePicker / InputNumber / TextArea / Checkbox
         const firstInput = row.querySelector<HTMLElement>(
-          'input:not([type="hidden"]), textarea, [role="combobox"], .ant-picker, .ant-checkbox-input',
+          'input:not([type="hidden"]):not(.ant-checkbox-input), textarea, [role="combobox"], .ant-picker, .ant-checkbox-input',
         )
         firstInput?.focus()
-      })
-    })
+        return
+      }
+      requestAnimationFrame(() => tryFocus(attempts - 1))
+    }
+    requestAnimationFrame(() => tryFocus(4))
     return () => { cancelled = true }
-  }, [newRowActive, mode, offset, limit])
+  }, [newRowActive, mode, offset, limit, newRowPosition])
 
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
@@ -1015,8 +1019,17 @@ export default function GridPage() {
           />
         </Tooltip>
         <div style={{ flex: 1 }} />
-        <Tooltip title="新增一行">
-          <Button type="primary" size="small" icon={<PlusOutlined />} data-testid="add-row-btn" onClick={startNewRow} disabled={!canEditRecords}>新增行</Button>
+        <Tooltip title={newRowActive || editingRowId != null ? '请先完成当前编辑' : '新增一行'}>
+          <Button
+            type="primary"
+            size="small"
+            icon={<PlusOutlined />}
+            data-testid="add-row-btn"
+            onClick={startNewRow}
+            disabled={!canEditRecords || newRowActive || editingRowId != null}
+          >
+            新增行
+          </Button>
         </Tooltip>
       </div>
 
