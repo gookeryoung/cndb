@@ -11,6 +11,8 @@ V2 扩展（upsert + 字段自动新增）：
 
 from __future__ import annotations
 
+import datetime as _dt
+from decimal import Decimal
 from typing import Any
 
 from cndb.plugins.tables.models import DataField
@@ -25,6 +27,31 @@ from .row_validator import ValidationResult
 # 预览截断上限
 PREVIEW_LIMIT = 200
 SAMPLE_FIELD_LIMIT = 5
+
+
+def _json_safe(obj: Any) -> Any:
+    """递归把报告对象清洗为 JSON 可序列化结构.
+
+    处理：datetime/date/time → ISO 字符串；Decimal → float；bytes → 有损解码；
+    tuple/set → list；其余类型原样返回（交给调用方 json.dumps 的 default 兜底）。
+    """
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, _dt.datetime):
+        return obj.isoformat(sep=" ")
+    if isinstance(obj, _dt.date):
+        return obj.isoformat()
+    if isinstance(obj, _dt.time):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, (bytes, bytearray)):
+        return bytes(obj).decode("utf-8", errors="replace")
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [_json_safe(v) for v in obj]
+    return obj
 
 
 class DiffReporter:
@@ -43,6 +70,10 @@ class DiffReporter:
         "missing_required": [str],
         "planned_columns": [       # V2: 未知列自动新增规划
             {"name": str, "field_type": str, "options": [...], "sample_values": [...]},
+        ],
+        "match_key_recommendations": [  # V5: 参考列智能推荐（含禁用原因）
+            {"field": str, "field_type": str, "score": float, "recommended": bool,
+             "disabled": bool, "reason": str, "stats": {...}},
         ],
         "new_preview": [           # V2: 待新增行预览（前 200 行）
             {"row_number": int, "match_key_values": {...}, "field_sample": {...}},
@@ -68,8 +99,9 @@ class DiffReporter:
         planned_columns: list[dict[str, Any]] | None = None,
         column_profiles: list[dict[str, Any]] | None = None,
         data_quality_summary: dict[str, Any] | None = None,
+        match_key_recommendations: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """根据校验结果 + 表字段 + 文件列名 + upsert 匹配 + 字段规划 + 数据画像生成报告."""
+        """根据校验结果 + 表字段 + 文件列名 + upsert 匹配 + 字段规划 + 数据画像 + 参考列推荐生成报告."""
         field_names = {f.name for f in table_fields if not f.trashed}
         required_names = {f.name for f in table_fields if f.required and not f.trashed}
         file_name_set = set(file_columns)
@@ -116,25 +148,28 @@ class DiffReporter:
         # ── V2: 字段规划 ───────────────────────────
         planned = planned_columns or []
 
-        return {
-            "total": total,
-            "valid_count": valid_count,
-            "warning_count": warning_count,
-            "error_count": error_count,
-            "new_count": new_count,
-            "update_count": update_count,
-            "multi_key_conflicts": multi_key_conflicts,
-            "skipped_columns": skipped_columns,
-            "missing_required": missing_required,
-            "planned_columns": planned,
-            "new_preview": new_preview,
-            "update_preview": update_preview,
-            "warnings": warnings,
-            "errors": errors,
-            # 数据质量画像（Task 2 新增）
-            "column_profiles": column_profiles or [],
-            "data_quality_summary": data_quality_summary or {},
-        }
+        return _json_safe(
+            {
+                "total": total,
+                "valid_count": valid_count,
+                "warning_count": warning_count,
+                "error_count": error_count,
+                "new_count": new_count,
+                "update_count": update_count,
+                "multi_key_conflicts": multi_key_conflicts,
+                "skipped_columns": skipped_columns,
+                "missing_required": missing_required,
+                "planned_columns": planned,
+                "match_key_recommendations": match_key_recommendations or [],
+                "new_preview": new_preview,
+                "update_preview": update_preview,
+                "warnings": warnings,
+                "errors": errors,
+                # 数据质量画像（Task 2 新增）
+                "column_profiles": column_profiles or [],
+                "data_quality_summary": data_quality_summary or {},
+            }
+        )
 
     # ── 辅助：未知列类型推断 ──────────────────────────
 
