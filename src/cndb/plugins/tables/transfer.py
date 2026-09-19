@@ -18,6 +18,7 @@ from typing import Any
 from cndb.plugins.tables import records as rec
 from cndb.plugins.tables.ddl import create_table as ddl_create
 from cndb.plugins.tables.ddl import drop_table as ddl_drop
+from cndb.plugins.tables.field_types import MULTI_SELECT_SPLIT_RE
 from cndb.plugins.tables.links import is_link_field
 from cndb.plugins.tables.models import DataField, DataTable, ensure_default_view
 
@@ -535,6 +536,78 @@ def _promote_to_select_if_low_cardinality(inferred_type: str, samples: list[str]
     return inferred_type, []
 
 
+# ── multiselect 列表值识别启发式参数 ──────────────────────
+_LIST_LIKE_MIN_SEGMENTS = 2  # 单值最少拆出段数（1 段是普通文本）
+_LIST_LIKE_MAX_SEGMENTS = 6  # 单值最多拆出段数（过多像自由文本）
+_LIST_LIKE_MAX_SEGMENT_LEN = 12  # 单段最大字符数（过长像地址/句子片段）
+_LIST_LIKE_MIN_OPTIONS = 3  # 列级提升：拆出选项数下限（过少像"姓名,性别"个人信息串）
+_LIST_LIKE_MAX_OPTIONS = 30  # 列级提升：拆出选项数上限
+_LIST_SEGMENT_SENTENCE_PUNCT_RE = re.compile(r"[。！？!?]")  # 段内句读 → 像句子片段
+
+
+def _split_list_like(value: str) -> list[str] | None:
+    """若值像"分隔符连接的离散选项列表"则返回拆分结果，否则 None.
+
+    守卫（任一命中即判非列表）：
+    - 无分隔符（, ， ; ； 、）或拆出段数超出 2~6；
+    - 含空段（如 "a,,b" / 尾随分隔符）—— 结构可疑；
+    - 段长超过 12 字符、段内含空白或句读 —— 像地址/英文句子片段；
+    - 段可归一为数字 —— 千分位（1,234）或欧式小数（1,5）而非列表。
+    """
+    v = value.strip()
+    if not v or not MULTI_SELECT_SPLIT_RE.search(v):
+        return None
+    parts = [p.strip() for p in MULTI_SELECT_SPLIT_RE.split(v)]
+    if any(not p for p in parts):
+        return None
+    if not (_LIST_LIKE_MIN_SEGMENTS <= len(parts) <= _LIST_LIKE_MAX_SEGMENTS):
+        return None
+    for seg in parts:
+        if len(seg) > _LIST_LIKE_MAX_SEGMENT_LEN or " " in seg:
+            return None
+        if _LIST_SEGMENT_SENTENCE_PUNCT_RE.search(seg) or _normalize_numeric(seg) is not None:
+            return None
+    return parts
+
+
+def _promote_to_multiselect_if_list_like(inferred_type: str, samples: list[str]) -> tuple[str, list[str]]:
+    """对推断后的列类型做列表值检查：多数值可拆出高复用选项则提升为 multiselect.
+
+    须在 select 提升之前调用 —— 低基数列表值（如 ["a,b","a,c"]）的唯一原始值
+    同样满足 select 低基数条件，会被 select 抢走。
+
+    守卫：
+    - 仅对推断为 text 的列生效（数字/日期等已有归属）；
+    - ≥60% 且至少 2 个样本可拆出列表（混合列中以离散选项为主才安全）；
+    - 拆出选项总数 3~30；
+    - ≥50% 的选项在 ≥2 个值中复用 —— 排除"张三,男,北京"式逐行唯一个人信息串。
+
+    Returns:
+        (最终字段类型, 拆分后的选项列表 — 若最终为 multiselect 则作为 options 使用, 否则为空列表)
+    """
+    if inferred_type != "text":
+        return inferred_type, []
+    parsed = [_split_list_like(v) for v in samples]
+    hit = [segs for segs in parsed if segs is not None]
+    if len(hit) < 2 or len(hit) * 10 < len(samples) * 6:
+        return inferred_type, []
+    option_counts: dict[str, int] = {}
+    for segs in hit:
+        for s in set(segs):
+            option_counts[s] = option_counts.get(s, 0) + 1
+    if not (_LIST_LIKE_MIN_OPTIONS <= len(option_counts) <= _LIST_LIKE_MAX_OPTIONS):
+        return inferred_type, []
+    reused = sum(1 for c in option_counts.values() if c >= 2)
+    if reused < len(option_counts) * 0.5:
+        return inferred_type, []
+    options: list[str] = []
+    for segs in hit:
+        for s in segs:
+            if s not in options:
+                options.append(s)
+    return "multiselect", options
+
+
 def _options_strings_to_dicts(options: list[str]) -> list[dict[str, Any]]:
     """把 list[str] 格式的 select options 转为 [{label, value}] 字典格式.
 
@@ -614,7 +687,10 @@ def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dic
                 type_counts[t] = type_counts.get(t, 0) + 1
 
         inferred = _pick_inferred_type(type_counts)
-        inferred, select_options = _promote_to_select_if_low_cardinality(inferred, samples)
+        # multiselect 提升须在 select 之前：低基数列表值同样满足 select 低基数条件会被抢走
+        inferred, promote_options = _promote_to_multiselect_if_list_like(inferred, samples)
+        if not promote_options:
+            inferred, promote_options = _promote_to_select_if_low_cardinality(inferred, samples)
 
         col_info: dict[str, Any] = {
             "name": name,
@@ -622,8 +698,8 @@ def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dic
             "sample_values": samples[:5],
             "null_ratio": round(null_ratio, 4),
         }
-        if select_options:
-            col_info["options"] = select_options
+        if promote_options:
+            col_info["options"] = promote_options
         columns.append(col_info)
 
     return columns, total_rows
@@ -673,7 +749,7 @@ def create_table_from_csv(
 
     for i, col in enumerate(columns):
         cfg: dict[str, Any] = {}
-        if col["field_type"] == "select":
+        if col["field_type"] in ("select", "multiselect"):
             cfg["options"] = _options_strings_to_dicts(col.get("options", []))
         else:
             cfg.update(_infer_decimals_config(col["field_type"], col.get("sample_values", [])))
@@ -1083,7 +1159,7 @@ def create_table_from_json_data(
 
     for i, col in enumerate(columns):
         cfg: dict[str, Any] = {}
-        if col["field_type"] == "select":
+        if col["field_type"] in ("select", "multiselect"):
             cfg["options"] = _options_strings_to_dicts(col.get("options", []))
         else:
             cfg.update(_infer_decimals_config(col["field_type"], col.get("sample_values", [])))
@@ -1365,7 +1441,7 @@ def create_table_from_file(
 
     for i, col in enumerate(columns):
         cfg: dict[str, Any] = {}
-        if col["field_type"] == "select":
+        if col["field_type"] in ("select", "multiselect"):
             cfg["options"] = _options_strings_to_dicts(col.get("options", []))
         else:
             cfg.update(_infer_decimals_config(col["field_type"], col.get("sample_values", [])))

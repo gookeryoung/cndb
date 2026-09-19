@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from cndb.plugins.tables import ddl as _ddl
 from cndb.plugins.tables.field_mapping import apply_user_mapping, build_default_mapping
+from cndb.plugins.tables.field_types import split_multi_select_string
 from cndb.plugins.tables.links import is_link_field
 from cndb.plugins.tables.models import DataField, DataTable, generate_db_column_name
 
@@ -408,18 +409,16 @@ def _extract_values_from_rows(
             continue
 
         if field.field_type == "multiselect":
+            # list 值直接展开（JSON 导入格式）；字符串按分隔符拆分，
+            # 与 validate_value 共用同一分隔符集，保证预填充选项与校验一致
             if isinstance(raw, list):
-                for item in raw:
-                    s = str(item).strip() if item is not None else ""
-                    if s and s not in seen:
-                        seen.add(s)
-                        collected.append(s)
+                items = [str(item).strip() if item is not None else "" for item in raw]
             else:
-                parts = [p.strip() for p in str(raw).split(",") if p.strip()]
-                for p in parts:
-                    if p and p not in seen:
-                        seen.add(p)
-                        collected.append(p)
+                items = split_multi_select_string(str(raw))
+            for p in items:
+                if p and p not in seen:
+                    seen.add(p)
+                    collected.append(p)
         else:
             s = str(raw).strip()
             if s and s not in seen:
@@ -519,7 +518,8 @@ def sync_select_options_from_table(db: Session, table: DataTable) -> list[DataFi
             if rv is None:
                 continue
             if field.field_type == "multiselect":
-                parts = [p.strip() for p in str(rv).split(",") if p.strip()]
+                # 与 validate_value 共用同一分隔符集，保证同步选项与校验一致
+                parts = split_multi_select_string(str(rv))
                 for p in parts:
                     if p not in seen:
                         seen.add(p)
