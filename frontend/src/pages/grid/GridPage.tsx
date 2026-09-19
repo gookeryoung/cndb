@@ -881,7 +881,9 @@ export default function GridPage() {
               表设置
             </Button>
           </Tooltip>
-          <Button icon={<ImportOutlined />} onClick={() => setImportExportOpen(true)}>导入/导出</Button>
+          <Tooltip title="更新、新增、抓取或导出数据">
+            <Button icon={<ImportOutlined />} onClick={() => setImportExportOpen(true)}>更新/导出</Button>
+          </Tooltip>
           <Dropdown menu={{
             items: [
               { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
