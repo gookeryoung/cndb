@@ -1,8 +1,10 @@
-/** 用户设置面板 — 主题切换. */
+/** 用户设置面板 — 主题切换 + 操作风格. */
 
-import { Modal, Button, Radio, Typography } from 'antd'
+import { Modal, Button, Radio, Typography, Tabs, Select } from 'antd'
 import { useTheme } from '@/theme/ThemeProvider'
 import { THEME_META, THEME_MODES, type ThemeMode } from '@/theme/theme'
+import { useTableSettingsStore } from '@/store'
+import type { NewRowPosition } from '@/theme/tableSettings'
 
 interface Props {
   open: boolean
@@ -79,9 +81,87 @@ function ThemeCard({ mode, selected, onSelect }: {
   )
 }
 
-export default function SettingsModal({ open, onClose }: Props) {
+/** 主题分页内容 */
+function ThemePanel() {
   const { mode, setMode } = useTheme()
+  return (
+    <div style={{ padding: '12px 0' }}>
+      <div style={{ marginBottom: 12 }}>
+        <Text strong style={{ fontSize: 14 }}>主题</Text>
+        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+          设置会自动保存到浏览器
+        </Text>
+      </div>
 
+      <Radio.Group
+        value={mode}
+        onChange={e => setMode(e.target.value)}
+        buttonStyle="solid"
+        style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 8 }}
+      >
+        {THEME_MODES.map(m => (
+          <Radio.Button key={m} value={m}>
+            {THEME_META[m].label}
+          </Radio.Button>
+        ))}
+      </Radio.Group>
+
+      {/* 卡片式选择（视觉友好） */}
+      <div
+        data-testid="theme-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
+          gap: 10,
+        }}
+      >
+        {THEME_MODES.map(m => (
+          <ThemeCard
+            key={m}
+            mode={m}
+            selected={mode === m}
+            onSelect={() => setMode(m)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** 操作风格分页内容 */
+function OperationPanel() {
+  const newRowPosition = useTableSettingsStore(s => s.newRowPosition)
+  const updateSettings = useTableSettingsStore(s => s.updateSettings)
+
+  const positionOptions: Array<{ value: NewRowPosition; label: string; description: string }> = [
+    { value: 'top', label: '表格顶部', description: '新增行作为第一条数据显示在表格开头' },
+    { value: 'tail', label: '表格尾部', description: '新增行追加到整个表格末尾（跨分页）' },
+    { value: 'page', label: '页面尾部', description: '新增行追加到当前可见页的末尾' },
+  ]
+
+  return (
+    <div style={{ padding: '12px 0' }}>
+      <div style={{ marginBottom: 16 }}>
+        <Text strong style={{ fontSize: 14 }}>表格操作</Text>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
+        <Text style={{ fontSize: 13 }}>新增行默认位置</Text>
+        <Select
+          value={newRowPosition}
+          onChange={(v: NewRowPosition) => updateSettings({ newRowPosition: v })}
+          style={{ width: 200 }}
+          options={positionOptions.map(o => ({ value: o.value, label: o.label }))}
+        />
+      </div>
+      <div style={{ fontSize: 12, color: '#8c8c8c', marginLeft: 0, marginTop: 4 }}>
+        {positionOptions.find(o => o.value === newRowPosition)?.description}
+      </div>
+    </div>
+  )
+}
+
+export default function SettingsModal({ open, onClose }: Props) {
   return (
     <Modal
       title="个人设置"
@@ -91,46 +171,12 @@ export default function SettingsModal({ open, onClose }: Props) {
       width={660}
       destroyOnHidden
     >
-      <div style={{ padding: '12px 0' }}>
-        <div style={{ marginBottom: 12 }}>
-          <Text strong style={{ fontSize: 14 }}>主题</Text>
-          <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-            设置会自动保存到浏览器
-          </Text>
-        </div>
-
-        <Radio.Group
-          value={mode}
-          onChange={e => setMode(e.target.value)}
-          buttonStyle="solid"
-          style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 8 }}
-        >
-          {THEME_MODES.map(m => (
-            <Radio.Button key={m} value={m}>
-              {THEME_META[m].label}
-            </Radio.Button>
-          ))}
-        </Radio.Group>
-
-        {/* 卡片式选择（视觉友好） */}
-        <div
-          data-testid="theme-grid"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
-            gap: 10,
-          }}
-        >
-          {THEME_MODES.map(m => (
-            <ThemeCard
-              key={m}
-              mode={m}
-              selected={mode === m}
-              onSelect={() => setMode(m)}
-            />
-          ))}
-        </div>
-      </div>
+      <Tabs
+        items={[
+          { key: 'theme', label: '主题', children: <ThemePanel /> },
+          { key: 'operation', label: '操作风格', children: <OperationPanel /> },
+        ]}
+      />
     </Modal>
   )
 }
