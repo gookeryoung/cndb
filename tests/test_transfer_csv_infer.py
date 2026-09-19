@@ -69,6 +69,12 @@ class TestAnalyzeCsvColumns:
         cols, _ = transfer.analyze_csv_columns(rows, sample_rows=100)
         assert len(cols[0]["sample_values"]) <= 5
 
+    def test_sample_values_dedupe(self):
+        """样本值按首次出现顺序去重 —— 重复值挤占样本位，失去样本的代表性."""
+        csv = "city\n北京\n北京\n上海\n北京\n上海\n广州\n"
+        cols, _ = transfer.analyze_csv_columns(csv)
+        assert cols[0]["sample_values"] == ["北京", "上海", "广州"]
+
 
 @pytest.fixture
 def csv_workspace(db, db_engine):

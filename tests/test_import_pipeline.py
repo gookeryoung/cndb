@@ -2528,6 +2528,21 @@ class TestCoverageFill:
         assert plan[0]["name"] == "price"
         assert plan[0]["sample_values"] == ["10"]
 
+    def test_plan_unknown_columns_sample_dedupe(self, test_session):
+        """_plan_unknown_columns: 样本值按首次出现去重，重复值不挤占样本位."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+        imp = Importer(engine, session, table)
+        plan = imp._plan_unknown_columns(
+            [{"tag": "前端"}, {"tag": "前端"}, {"tag": "后端"}, {"tag": "前端"}, {"tag": "测试"}],
+            ["tag"],
+        )
+        assert len(plan) == 1
+        assert plan[0]["sample_values"] == ["前端", "后端", "测试"]
+
     def test_auto_add_fields_all_existing_returns(self, test_session):
         """_auto_add_fields: planned_columns 里所有字段都已存在 → 直接 return."""
         engine, session = test_session

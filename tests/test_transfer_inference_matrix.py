@@ -423,6 +423,19 @@ class TestJsonInferenceAlignment:
         assert tags["field_type"] == "multiselect"
         assert tags["options"] == ["前端", "后端", "测试", "运维"]
 
+    def test_sample_values_dedupe(self):
+        """sample_values 按首次出现去重 —— 重复值不挤占样本位，保证样本代表性."""
+        rows: list[dict[str, Any]] = [
+            {"tag": "前端"},
+            {"tag": "前端"},
+            {"tag": "后端"},
+            {"tag": "前端"},
+            {"tag": "测试"},
+        ]
+        cols = transfer.analyze_json_columns(rows)
+        tag = next(c for c in cols if c["name"] == "tag")
+        assert tag["sample_values"] == ["前端", "后端", "测试"]
+
     def test_delimited_string_column_promoted(self):
         """text 推断列（分隔符串值）经 JSON 路径同样提升为 multiselect."""
         rows: list[dict[str, Any]] = [
