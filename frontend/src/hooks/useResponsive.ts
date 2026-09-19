@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useDebouncedCallback } from './useDebouncedCallback'
 
 /** 屏幕尺寸断点（与 Ant Design 保持一致） */
 export const BREAKPOINTS = {
@@ -50,24 +51,16 @@ export function getResponsiveState(): ResponsiveState {
   }
 }
 
-/** 响应式 Hook —— 监听 window.resize，返回设备类型标志 */
+/** 响应式 Hook —— 监听 window.resize（100ms 防抖，复用通用 useDebouncedCallback），返回设备类型标志 */
 export function useResponsive(): ResponsiveState {
   const [state, setState] = useState<ResponsiveState>(getResponsiveState())
 
+  const [handleResize] = useDebouncedCallback(() => setState(getResponsiveState()), 100)
+
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null
-
-    const handleResize = () => {
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => setState(getResponsiveState()), 100)
-    }
-
     window.addEventListener('resize', handleResize)
-    return () => {
-      window.removeEventListener('resize', handleResize)
-      if (timer) clearTimeout(timer)
-    }
-  }, [])
+    return () => window.removeEventListener('resize', handleResize)
+  }, [handleResize])
 
   return state
 }
