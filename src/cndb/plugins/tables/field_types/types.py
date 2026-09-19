@@ -89,8 +89,21 @@ class NumberFieldType(FieldType):
     def validate_value(self, value: Any, _config: dict[str, Any]) -> int | None:
         if value is None:
             return None
+        if isinstance(value, str):
+            # 字符串经千分位/货币/会计负数/全角归一后再转整数（与推断层识别值域一致）
+            normalized = _normalize_numeric_string(value)
+            if normalized is None:
+                raise ValueError(f"无法将 {value!r} 转为整数")
+            value = normalized
         cfg = NumberFieldConfig(**_config)
-        v = int(value)
+        try:
+            v = int(value)
+        except ValueError:
+            # 科学计数法整数值（如 1.5e10）：仅当 float 值恰为整数时接受，否则维持报错
+            f = float(value)
+            if not f.is_integer():
+                raise ValueError(f"无法将 {value!r} 转为整数") from None
+            v = int(f)
         if cfg.min is not None and v < cfg.min:
             raise ValueError(f"值 {v} 小于最小值 {cfg.min}")
         if cfg.max is not None and v > cfg.max:
@@ -110,6 +123,12 @@ class FloatFieldType(FieldType):
     def validate_value(self, value: Any, _config: dict[str, Any]) -> float | None:
         if value is None:
             return None
+        if isinstance(value, str):
+            # 字符串经千分位/货币/会计负数/全角归一后再转小数（与推断层识别值域一致）
+            normalized = _normalize_numeric_string(value)
+            if normalized is None:
+                raise ValueError(f"无法将 {value!r} 转为小数")
+            value = normalized
         cfg = NumberFieldConfig(**_config)
         v = float(value)
         if cfg.min is not None and v < cfg.min:
@@ -117,6 +136,23 @@ class FloatFieldType(FieldType):
         if cfg.max is not None and v > cfg.max:
             raise ValueError(f"值 {v} 大于最大值 {cfg.max}")
         return round(v, cfg.decimals)
+
+
+def _normalize_numeric_string(value: str) -> str | None:
+    """把带千分位/货币符号/会计负号/全角符号的数字字符串归一为纯数字串.
+
+    惰性导入 :func:`transfer._normalize_numeric` 打破循环依赖
+    （transfer → records/models → field_types），复用推断层同一套归一逻辑，
+    保证"识别出的格式一定能转换"。
+    """
+    from cndb.plugins.tables.transfer import _normalize_numeric
+
+    return _normalize_numeric(value)
+
+
+# 布尔字符串真值域（与 transfer._BOOLEAN_TRUE_VALUES 一致，测试矩阵双向锁定；
+# 未匹配字符串沿用历史行为返回 False，不抛错）
+_BOOLEAN_TRUE_STRINGS = frozenset({"true", "yes", "1", "on", "是", "真", "对", "y", "t", "√"})
 
 
 class BooleanFieldType(FieldType):
@@ -135,7 +171,8 @@ class BooleanFieldType(FieldType):
         if isinstance(value, (int, float)):
             return bool(value)
         if isinstance(value, str):
-            return value.lower() in ("true", "yes", "1", "on")
+            # 中文 是/真/对、单字母 Y/T、对勾 √ 等均识别为真值（与推断层值域一致）
+            return value.strip().lower() in _BOOLEAN_TRUE_STRINGS
         raise ValueError(f"无法将 {value!r} 转为布尔值")
 
     @override
@@ -144,6 +181,46 @@ class BooleanFieldType(FieldType):
 
 
 # ── 日期字段（含自动填充）─────────────────────────────────
+
+
+# 日期字符串解析格式清单（与 transfer 推断层识别的格式一一对应，测试矩阵双向锁定）
+_DATE_PARSE_FORMATS: tuple[str, ...] = (
+    "%Y-%m-%d",  # 2024-01-15
+    "%Y/%m/%d",  # 2024/1/15
+    "%Y.%m.%d",  # 2024.1.15
+    "%Y%m%d",  # 20240115 紧凑
+    "%Y年%m月%d日",  # 2024年1月15日
+    "%Y年%m月%d",  # 2024年1月15（"日"省略）
+    "%m/%d/%Y",  # 1/15/2024 美式
+    "%b %d, %Y",  # Jan 15, 2024
+    "%b %d %Y",  # Jan 15 2024
+    "%d %b %Y",  # 15 Jan 2024
+    "%d %b, %Y",  # 15 Jan, 2024
+    "%B %d, %Y",  # January 15, 2024 全称
+    "%B %d %Y",
+    "%d %B %Y",
+    "%d %B, %Y",
+)
+
+# 日期时间字符串解析格式清单（与 transfer 推断层识别的格式一一对应）
+_DATETIME_PARSE_FORMATS: tuple[str, ...] = (
+    "%Y-%m-%d %H:%M",
+    "%Y-%m-%dT%H:%M",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d %H:%M:%S.%f",  # 微秒变体
+    "%Y-%m-%dT%H:%M:%S.%f",
+    "%Y/%m/%d %H:%M",  # 斜杠日期 + 时间
+    "%Y/%m/%d %H:%M:%S",
+    "%Y.%m.%d %H:%M",  # 点分隔日期 + 时间
+    "%Y.%m.%d %H:%M:%S",
+)
+
+# ISO 8601 时区后缀（Z 或 ±HH:MM / ±HHMM）—— 解析前剥离为无时区本地语义
+_TZ_SUFFIX_RE = re.compile(r"(?:Z|[+-]\d{2}:?\d{2})$")
+
+# 英文月缩写 "Sept"（strptime %b 仅认 "Sep"，全称 september 走 %B 不受影响）
+_SEPT_ABBR_RE = re.compile(r"sept\b", re.IGNORECASE)
 
 
 class DateFieldConfig(FieldTypeConfig):
@@ -191,9 +268,12 @@ class DateFieldType(FieldType):
         if isinstance(value, datetime):
             return value.date()  # pragma: no cover - datetime 输入分支待补测试
         if isinstance(value, str):
-            for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+            text = value.strip()
+            # "Sept" 是常见英文月缩写但 strptime %b 不识别，归一为 "Sep"（全称 september 不受影响）
+            text = _SEPT_ABBR_RE.sub("Sep", text)
+            for fmt in _DATE_PARSE_FORMATS:
                 try:
-                    return datetime.strptime(value.strip(), fmt).date()
+                    return datetime.strptime(text, fmt).date()
                 except ValueError:
                     continue
             raise ValueError(f"日期格式错误: {value}")
@@ -228,9 +308,11 @@ class DateTimeFieldType(FieldType):
         if isinstance(value, date):
             return datetime.combine(value, datetime.min.time())
         if isinstance(value, str):
-            for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            # 剥离 ISO 8601 时区后缀（Z / ±HH:MM），按无时区本地语义存储
+            text = _TZ_SUFFIX_RE.sub("", value.strip())
+            for fmt in _DATETIME_PARSE_FORMATS:
                 try:
-                    return datetime.strptime(value.strip(), fmt)
+                    return datetime.strptime(text, fmt)
                 except ValueError:
                     continue
             raise ValueError(f"日期时间格式错误: {value}")
@@ -506,6 +588,17 @@ class PercentageFieldType(FieldType):
     def validate_value(self, value: Any, _config: dict[str, Any]) -> float | None:
         if value is None:
             return None
+        # 字符串带百分号（含全角％）→ 剥离后除以 100 存为比例值（与推断层 "85%" → percentage 对齐）
+        if isinstance(value, str):
+            text = value.strip()
+            if text.endswith(("%", "％")):
+                try:
+                    num = float(text[:-1].strip()) / 100
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"百分比必须是数字: {value!r}") from exc
+                if not (0 <= num <= 1):
+                    raise ValueError(f"百分比必须在 0~1 之间（存储比例值），收到 {num}")
+                return num
         try:
             num = float(value)
         except (TypeError, ValueError) as exc:

@@ -1,0 +1,7 @@
+﻿JSON对象,JSON数组,邮箱,网址,手机号,订单状态,客户备注,混合数值
+"{""a"":1,""b"":2}","[1,2,3]",alice@example.com,https://example.com/a,13800138000,active,客户A-加急订单,100
+"{""k"":""v""}","[""x"",""y""]",bob@test.org,http://test.org/b?a=1,15912345678,done,客户B-常规订单,200
+"{""n"":3.5}","[true,false]",carol@corp.cn,https://api.example.cn/v1,18600118600,pending,客户C-退换货,300
+[],"[1,""a"",2]",dave@mail.com,https://example.org/path#top,17755556666,active,客户D-批发单,
+"{""list"":[1,2]}",{},eve@io.dev,http://www.test.dev/,13566667777,done,客户E-预售单,500
+"{""msg"":""你好""}",[null],frank@cn.qq.com,https://example.com/x?q=1&r=2,18999990000,pending,客户F-内购单,600
