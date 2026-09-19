@@ -129,6 +129,7 @@ export default function GridPage() {
   const bordered = useTableSettingsStore(s => s.bordered)
   const showHeader = useTableSettingsStore(s => s.showHeader)
   const striped = useTableSettingsStore(s => s.striped)
+  const newRowPosition = useTableSettingsStore(s => s.newRowPosition)
   const settings = { density, defaultPageSize, bordered, showHeader, striped }
 
   // —— 视图状态从 GridViewStore 订阅 ——
@@ -871,7 +872,6 @@ export default function GridPage() {
               },
             ]
           }}><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></Dropdown>
-          <Button type="primary" icon={<PlusOutlined />} data-testid="add-row-btn" onClick={startNewRow} disabled={!canEditRecords}>新增行</Button>
         </Space>
       </div>
 
@@ -966,6 +966,10 @@ export default function GridPage() {
             onClick={() => setSettingsOpen(true)}
           />
         </Tooltip>
+        <div style={{ flex: 1 }} />
+        <Tooltip title="新增一行">
+          <Button type="primary" size="small" icon={<PlusOutlined />} data-testid="add-row-btn" onClick={startNewRow} disabled={!canEditRecords}>新增行</Button>
+        </Tooltip>
       </div>
 
       {/* 主内容 — flex:1 占满剩余空间，overflow:hidden 交给内部 Table 的虚拟滚动 */}
@@ -975,7 +979,12 @@ export default function GridPage() {
         ) : mode === 'grid' ? (
           <Table
             rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns}
-            dataSource={newRowActive ? [...(rowList.items || []), { id: NEW_ROW_KEY } as unknown as RowResponse] : (rowList.items || [])}
+            dataSource={(() => {
+              if (!newRowActive) return (rowList.items || [])
+              const newRow = { id: NEW_ROW_KEY } as unknown as RowResponse
+              const items = rowList.items || []
+              return newRowPosition === 'top' ? [newRow, ...items] : [...items, newRow]
+            })()}
             bordered={settings.bordered}
             showHeader={settings.showHeader}
             style={{ flex: 1, minHeight: 0 }}

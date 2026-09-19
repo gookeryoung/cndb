@@ -4,6 +4,12 @@
  *  compact → small, comfortable → middle, spacious → large */
 export type Density = 'compact' | 'comfortable' | 'spacious'
 
+/** 新增行默认插入位置.
+ *  - top:    表格顶部（作为第一条数据显示）
+ *  - tail:   表格尾部（追加到数据源末尾，跨分页）
+ *  - page:   页面尾部（追加到当前页末尾） */
+export type NewRowPosition = 'top' | 'tail' | 'page'
+
 export interface TableSettings {
   /** 内容间距密度（适用于所有视图类型） */
   density: Density
@@ -15,6 +21,8 @@ export interface TableSettings {
   showHeader: boolean
   /** 是否启用斑马纹（仅表格视图） */
   striped: boolean
+  /** 新增行默认插入位置 */
+  newRowPosition: NewRowPosition
 }
 
 export const DEFAULT_TABLE_SETTINGS: TableSettings = {
@@ -23,6 +31,7 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   bordered: false,
   showHeader: true,
   striped: false,
+  newRowPosition: 'tail',
 }
 
 const STORAGE_KEY = 'cndb_table_settings'
