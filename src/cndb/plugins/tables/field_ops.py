@@ -381,7 +381,10 @@ def _merge_new_options(
     if not new_labels:
         return False
 
-    new_colors = suggest_colors(new_labels)
+    # 让新增选项避开已有选项已占用的颜色（既有 color 可能是用户手动设置或历史推荐值），
+    # 保证导入追加的选项与存量选项在颜色上尽量区分
+    existing_used = {o["color"] for o in existing_options if o["color"]}
+    new_colors = suggest_colors(new_labels, used_colors=existing_used)
     new_options = [{"label": label, "value": label, "color": new_colors[i]} for i, label in enumerate(new_labels)]
     merged = existing_options + new_options
 

@@ -84,6 +84,49 @@ def test_merge_new_options_all_duplicates_returns_false(tmp_path: Path):
         engine.dispose()
 
 
+def test_merge_new_options_avoids_existing_colors(tmp_path: Path):
+    """新增选项的推荐色避开既有选项已占用的颜色（导入 → 编辑字段同步一致性）."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'm3.db'}", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    try:
+        table = DataTable(workspace_id=1, name="t3")
+        table.ensure_db_name()
+        session.add(table)
+        session.commit()
+        f = DataField(
+            table_id=table.id,
+            name="tag",
+            field_type="select",
+            config={
+                "options": [
+                    {"label": "red", "value": "red", "color": "blue"},
+                    {"label": "blue", "value": "blue", "color": "green"},
+                ]
+            },
+            order=0,
+        )
+        f.ensure_db_name()
+        session.add(f)
+        session.commit()
+        changed = _merge_new_options(f, ["甲乙丙丁", "戊己庚辛"])
+        assert changed is True
+        opts = f.config["options"]
+        assert len(opts) == 4
+        # 已有选项保持不变
+        assert opts[0]["color"] == "blue"
+        assert opts[1]["color"] == "green"
+        # 新增选项全部带色、避开既有占用色且互不重复
+        existing_colors = {"blue", "green"}
+        new_colors = [o["color"] for o in opts[2:]]
+        assert all(c and c not in existing_colors for c in new_colors)
+        assert new_colors[0] != new_colors[1]
+    finally:
+        session.close()
+        engine.dispose()
+
+
 # ── field_ops._extract_values_from_rows multiselect str 路径 ──
 
 

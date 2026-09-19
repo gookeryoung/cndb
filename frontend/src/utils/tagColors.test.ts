@@ -1,4 +1,4 @@
-/** tagColors 单元测试 —— hash 稳定性、语义推荐、三路径 resolve、缓存重置 */
+/** tagColors 单元测试 —— hash 稳定性、语义推荐、三路径 resolve、列表级批量推荐、缓存重置 */
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   __resetTagColorCache,
@@ -7,6 +7,7 @@ import {
   getTagColorName,
   resolveTagColor,
   suggestColorForLabel,
+  suggestColorsForLabels,
 } from './tagColors'
 
 beforeEach(() => {
@@ -138,6 +139,94 @@ describe('resolveTagColor 三路径优先级', () => {
   it('空值返回 default', () => {
     expect(resolveTagColor('')).toBe('default')
     expect(resolveTagColor('   ')).toBe('default')
+  })
+})
+
+describe('resolveTagColor fallback 位置稳定化', () => {
+  const opts = ['玄学词A', '玄学词B', '玄学词C'] // 全部无语义
+
+  it('命中选项时 fallback 用选项自身位置，与调用方 index 无关', () => {
+    expect(resolveTagColor('玄学词B', opts, 9)).toBe('green')  // pos 1 → 核心 5 色板第 2 位
+    expect(resolveTagColor('玄学词A', opts, 9)).toBe('blue')   // pos 0
+    expect(resolveTagColor('玄学词C', opts, 0)).toBe('orange') // pos 2
+  })
+
+  it('对象形式 options 同样按自身位置取 fallback 色', () => {
+    const objOpts = [
+      { label: '玄学词A', value: 'a1' },
+      { label: '玄学词B', value: 'b2' },
+    ]
+    expect(resolveTagColor('玄学词B', objOpts, 9)).toBe('green')
+    expect(resolveTagColor('玄学词A', objOpts, 0)).toBe('blue')
+  })
+
+  it('同一选项在不同多选单元格顺序下颜色恒定（所见即所得可复现）', () => {
+    // 单元格 1: [B, A]，单元格 2: [A] —— A/B 的颜色不应随行内顺序变化
+    const cell1A = resolveTagColor('玄学词A', opts, 1)
+    const cell2A = resolveTagColor('玄学词A', opts, 0)
+    expect(cell1A).toBe(cell2A)
+  })
+
+  it('已存 color 仍最高优先（稳定化不影响路径 1）', () => {
+    const withColor = [{ label: '玄学词A', color: 'purple' }]
+    expect(resolveTagColor('玄学词A', withColor, 3)).toBe('purple')
+  })
+})
+
+describe('suggestColorsForLabels 列表级批量推荐', () => {
+  it('空列表返回空数组', () => {
+    expect(suggestColorsForLabels([])).toEqual([])
+  })
+
+  it('语义优先：命中项直接用语义色', () => {
+    expect(suggestColorsForLabels(['紧急'])[0]).toBe('red')
+    expect(suggestColorsForLabels(['紧急', '进行中'])).toEqual(['red', 'processing'])
+  })
+
+  it('语义同义项允许重复（"通过/同意"同为绿色属正确语义）', () => {
+    const colors = suggestColorsForLabels(['通过', '同意'])
+    expect(colors[0]).toBe('green')
+    expect(colors[1]).toBe('green')
+  })
+
+  it('≥4 个无语义 label 颜色互不重复（修复第 4 项与第 1 项撞色）', () => {
+    const labels = ['玄学词A', '玄学词B', '玄学词C', '玄学词D']
+    const colors = suggestColorsForLabels(labels)
+    expect(new Set(colors).size).toBe(labels.length)
+  })
+
+  it('混合场景：fallback 避开语义命中色', () => {
+    const colors = suggestColorsForLabels(['紧急', '玄学词A', '玄学词B'])
+    expect(colors[0]).toBe('red')
+    expect(colors[1]).not.toBe('red')
+    expect(colors[2]).not.toBe('red')
+    expect(colors[1]).not.toBe(colors[2])
+  })
+
+  it('usedColors：fallback 避开传入的既有占用色', () => {
+    const colors = suggestColorsForLabels(['玄学词A'], ['blue', 'green'])
+    expect(colors[0]).not.toBe('blue')
+    expect(colors[0]).not.toBe('green')
+  })
+
+  it('usedColors 含非调色板色（status 色）时不误判调色板耗尽', () => {
+    expect(suggestColorsForLabels(['玄学词A'], ['processing', 'success'])[0]).toBe('blue')
+  })
+
+  it('调色板全部被占用时循环回首色', () => {
+    const colors = suggestColorsForLabels(['玄学词A'], ['blue', 'green', 'orange', 'purple', 'red'])
+    expect(colors[0]).toBe('blue')
+  })
+
+  it('纯函数：同输入同输出，不依赖调用顺序', () => {
+    const labels = ['玄学词A', '紧急', '玄学词B']
+    expect(suggestColorsForLabels(labels)).toEqual(suggestColorsForLabels(labels))
+  })
+
+  it('空 label 视为无语义走 fallback，不抛错', () => {
+    const colors = suggestColorsForLabels(['', '玄学词A'])
+    expect(colors).toHaveLength(2)
+    expect(colors[0]).not.toBe(colors[1])
   })
 })
 
