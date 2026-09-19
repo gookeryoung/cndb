@@ -18,6 +18,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 # ── 工具 ────────────────────────────────────────
 
+
 def _write(ws, headers, rows, *, start_row=1, header_fill=None):
     """在 ws 指定行写表头 + 数据；表头可加背景色."""
     for c, h in enumerate(headers, start=1):
@@ -44,6 +45,7 @@ def _freeze(ws):
 
 # ── 1. 类型混合列 (mixed_types) ────────────────
 
+
 def build_mixed_types():
     """同一数值列混入文本、同一日期列混入布尔和文本。"""
     wb = Workbook()
@@ -66,6 +68,7 @@ def build_mixed_types():
 
 
 # ── 2. 畸形数字 (malformed_numbers) ─────────────
+
 
 def build_malformed_numbers():
     """数字列含千分位、货币符号、科学计数、汉字数字、非法串."""
@@ -90,6 +93,7 @@ def build_malformed_numbers():
 
 # ── 3. 日期混乱 (mixed_dates) ───────────────────
 
+
 def build_mixed_dates():
     """同一日期列混用 ISO、斜杠、中文、Excel 序列号、非法值."""
     from datetime import date
@@ -113,6 +117,7 @@ def build_mixed_dates():
 
 
 # ── 4. 高空值率 (high_null_ratio) ───────────────
+
 
 def build_high_null_ratio():
     """员工表：联系方式 95% 空、身份证 80% 空、部门正常."""
@@ -143,6 +148,7 @@ def build_high_null_ratio():
 
 # ── 5. 重复行 (duplicate_rows) ──────────────────
 
+
 def build_duplicate_rows():
     """包含完全重复 + 部分列重复（疑似重复）+ 真实差异行."""
     wb = Workbook()
@@ -167,6 +173,7 @@ def build_duplicate_rows():
 
 
 # ── 6. 极端异常值 (extreme_outliers) ────────────
+
 
 def build_extreme_outliers():
     """数值列中混入若干离谱值（天文数字、负价格、零、NaN、字符串）."""
@@ -197,6 +204,7 @@ def build_extreme_outliers():
 
 # ── 7. 布尔值混乱 (inconsistent_booleans) ───────
 
+
 def build_inconsistent_booleans():
     """同一布尔列混入是/否/true/false/1/0/√/×/Y/N/空."""
     wb = Workbook()
@@ -219,6 +227,7 @@ def build_inconsistent_booleans():
 
 
 # ── 8. 表头上方说明行 (header_offset) ───────────
+
 
 def build_header_offset():
     """前两行是说明和空行，真正表头在第 3 行。"""
@@ -247,6 +256,7 @@ def build_header_offset():
 
 # ── 9. 含公式和 #REF! (formula_errors) ─────────
 
+
 def build_formula_errors():
     """公式残留、#REF!、#N/A、#DIV/0!、空公式."""
     wb = Workbook()
@@ -273,6 +283,7 @@ def build_formula_errors():
 
 
 # ── 10. 合并单元格 + 漏填 (merged_cells_gap) ───
+
 
 def build_merged_cells_gap():
     """第一列合并单元格后未逐行填充，致下方行看起来是空值."""
@@ -301,6 +312,7 @@ def build_merged_cells_gap():
 
 # ── 11. 列数不一致 (ragged_rows) ───────────────
 
+
 def build_ragged_rows():
     """某些行列数比表头多或少."""
     wb = Workbook()
@@ -322,6 +334,7 @@ def build_ragged_rows():
 
 # ── 12. 特殊字符污染 (special_chars) ────────────
 
+
 def build_special_chars():
     """含换行、制表符、零宽字符、前后空格、不可见字符的文本列."""
     wb = Workbook()
@@ -333,7 +346,7 @@ def build_special_chars():
         [2, "小红\u200b", "bug 不少\u200c", "功能\u200d问题"],  # 零宽字符
         [3, "  小刚  ", "还行吧，\r\n就是价格偏贵。", ""],
         [4, "小丽", "\t\t\n\n", "空"],
-        [5, "\u3000老王", "全角空格开头", "体验\u00A0优化"],  # 全角空格、不换行空格
+        [5, "\u3000老王", "全角空格开头", "体验\u00a0优化"],  # 全角空格、不换行空格
         [6, "小明", "重复的小明", "   "],
     ]
     _write(ws, headers, rows)
@@ -342,6 +355,7 @@ def build_special_chars():
 
 
 # ── 13. 跨表 link 字段混乱 (malformed_links) ───
+
 
 def build_malformed_links():
     """link 字段应是分号分隔的整数 id，但混入多种写法."""
@@ -365,6 +379,7 @@ def build_malformed_links():
 
 # ── 14. 必填字段空值 (required_empty) ───────────
 
+
 def build_required_empty():
     """姓名/手机号/身份证等必填字段批量为空或 '未知'/'N/A'."""
     wb = Workbook()
@@ -387,6 +402,7 @@ def build_required_empty():
 
 
 # ── 15. 列名不统一 + 多工作表 (multi_sheet_mess)
+
 
 def build_multi_sheet_mess():
     """一个工作簿内多个 sheet，列名风格不同（同字段不同名）."""
@@ -433,6 +449,7 @@ def build_multi_sheet_mess():
 
 
 # ── 主入口 ──────────────────────────────────────
+
 
 def main():
     builders = [

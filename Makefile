@@ -63,7 +63,7 @@ e2e: frontend-build ## 前端 E2E 测试（Playwright；webServer 自动起隔�
 gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败）
 	uv run python scripts/check_gitkeep.py
 
-lint: frontend-check ## 代码风格检查 (ruff, 与 CI 对齐仅扫 src + tests)
+lint: frontend-typecheck frontend-lint ## 代码风格检查 (ruff, 与 CI 对齐仅扫 src + tests)
 	uv run ruff check src tests --cache-dir .ruff_cache
 	uv run ruff format --check src tests
 
