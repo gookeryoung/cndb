@@ -221,28 +221,49 @@ export default function GridPage() {
   }, [])
 
   /** 新增行激活后，等待虚拟滚动渲染完成，自动滚动到可见并聚焦第一个可编辑单元格.
-   *  用 data-row-key="__new__" 选择器（AntD 虚拟滚动复用 DOM 时更稳定），
-   *  双重 rAF 确保 React 提交 + 虚拟滚动窗口更新完毕后再定位. */
+   *  AntD 虚拟滚动行用 position:absolute + transform 定位，直接 scrollIntoView 不顶用，
+   *  改为找到 .ant-table-tbody-virtual-holder 容器，按行的 offsetTop 计算目标 scrollTop. */
   useEffect(() => {
     if (!newRowActive || mode !== 'grid') return
     let cancelled = false
+
     const tryFocus = (attempts: number) => {
       if (cancelled || attempts <= 0) return
       const row = document.querySelector('[data-row-key="__new__"]') as HTMLElement | null
-      if (row) {
-        // page 模式用 start（让新行出现在视口顶部），tail 模式用 end（确保可见）
-        const block: ScrollLogicalPosition = newRowPosition === 'tail' ? 'end' : 'start'
-        row.scrollIntoView({ block, behavior: 'smooth' })
-        // 覆盖 Input / Select / DatePicker / InputNumber / TextArea / Checkbox
-        const firstInput = row.querySelector<HTMLElement>(
-          'input:not([type="hidden"]):not(.ant-checkbox-input), textarea, [role="combobox"], .ant-picker, .ant-checkbox-input',
-        )
-        firstInput?.focus()
+      if (!row) {
+        requestAnimationFrame(() => tryFocus(attempts - 1))
         return
       }
-      requestAnimationFrame(() => tryFocus(attempts - 1))
+      // 虚拟滚动模式：直接设置滚动容器的 scrollTop
+      const virtualHolder = document.querySelector('.ant-table-tbody-virtual-holder') as HTMLElement | null
+      if (virtualHolder) {
+        const rowTop = (row as HTMLElement).offsetTop
+        const rowHeight = (row as HTMLElement).offsetHeight || 55
+        const holderHeight = virtualHolder.clientHeight
+        let targetTop = 0
+        if (newRowPosition === 'tail') {
+          // 尾部：让新行底部刚好贴住容器底部（留出一点 padding）
+          targetTop = Math.max(0, rowTop + rowHeight - holderHeight + 8)
+        } else {
+          // top / page：让新行从视口顶部开始
+          targetTop = Math.max(0, rowTop - 4)
+        }
+        virtualHolder.scrollTo({ top: targetTop, behavior: 'smooth' })
+      } else {
+        // 非虚拟兜底
+        row.scrollIntoView({
+          block: newRowPosition === 'tail' ? 'end' : 'start',
+          behavior: 'smooth',
+        })
+      }
+      // 聚焦第一个可编辑输入控件
+      const firstInput = row.querySelector<HTMLElement>(
+        'input:not([type="hidden"]):not(.ant-checkbox-input), textarea, [role="combobox"], .ant-picker',
+      )
+      firstInput?.focus()
     }
-    requestAnimationFrame(() => tryFocus(4))
+    // 等虚拟滚动窗口更新 + React 提交，最多重试 5 次
+    requestAnimationFrame(() => requestAnimationFrame(() => tryFocus(5)))
     return () => { cancelled = true }
   }, [newRowActive, mode, offset, limit, newRowPosition])
 
