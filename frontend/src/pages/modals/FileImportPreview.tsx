@@ -1,8 +1,15 @@
-/** 文件导入预览 Modal —— 左右分栏.
+/** 文件导入预览 Modal —— 左右分栏（flex 等高布局）.
  *
  * 左侧：识别到的字段列表，可调整 field_type；
  * 右侧：典型数据表（sample_rows），当用户调整左侧字段类型时，
  *       右侧对应列的值以"原始 → 转换后"形式实时展示。
+ *
+ * 布局策略（避免左右高度错位）：
+ * - Modal body 为 flex-col，max-height = calc(100vh - 160px)，整体在视口内滚动受控；
+ * - 主体为 flex-row，两栏共享同一父高度 → 天然等高；
+ * - 每栏内部 flex-col：标题 flex-shrink:0（永远可见），内容 flex:1 min-height:0（滚动）；
+ * - 左栏字段列表 flex:1 滚动，select 选项编辑区贴底；
+ * - 右栏统计栏 + Table 容器 flex:1 滚动，antd Table 通过 CSS 撑满剩余空间。
  *
  * 支持的交互：
  * - 改变字段类型（下拉）
@@ -10,11 +17,32 @@
  * - 数值/日期/boolean 等类型在右侧显示转换结果与失败警示
  */
 
-import { useCallback, useMemo, useState } from 'react'
-import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Row, Col, Popover, message } from 'antd'
+import { useCallback, useMemo, useState, useEffect } from 'react'
+import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Popover, message } from 'antd'
+import type { TableProps } from 'antd'
 import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined, CheckOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { FileAnalyzeResult, FileImportResult } from '@/api'
+
+/** antd Table 在 flex 容器中自适应高度所需的全局样式（仅注入一次）. */
+function useTableFlexFillStyle() {
+  useEffect(() => {
+    const id = '__import_preview_table_flex__'
+    if (document.getElementById(id)) return
+    const style = document.createElement('style')
+    style.id = id
+    style.textContent = `
+      .import-preview-table-wrapper { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+      .import-preview-table-wrapper .ant-table { flex: 1; min-height: 0; display: flex; flex-direction: column; background: transparent; }
+      .import-preview-table-wrapper .ant-table-container { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+      .import-preview-table-wrapper .ant-table-content { flex: 1; min-height: 0; overflow: hidden; }
+      .import-preview-table-wrapper .ant-table-body { overflow-y: auto !important; flex: 1; min-height: 0; }
+      .import-preview-table-wrapper .ant-table-placeholder { height: auto !important; }
+    `
+    document.head.appendChild(style)
+    return () => { /* 保留样式供其他实例复用 */ }
+  }, [])
+}
 
 /** 预览里允许切换的字段类型子集（过滤掉 link/attachment/formula 等不适合从原始数据推断的类型） */
 const PREVIEW_FIELD_TYPES = [
@@ -318,7 +346,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
 
   // ── 左侧：字段列表 ──
   const renderFieldsList = () => (
-    <div style={{ height: '62vh', overflowY: 'auto', borderRight: '1px solid #f0f0f0', paddingRight: 6 }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 6 }}>
       {effectiveColumns.map(col => {
         const failCnt = columnFailCounts[col.name] ?? 0
         const baseCol = analyzeResult?.columns.find(c => c.name === col.name)
@@ -529,9 +557,9 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
     )
 
     return (
-      <div>
-        {/* 汇总栏：6 项统计 */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        {/* 汇总栏：6 项统计（固定高度，不随表滚动） */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexShrink: 0 }}>
           {statBox('#f1f5f9', '#0f172a', null, analyzeResult.total_rows, '总行数')}
           {statBox('#f1f5f9', '#0f172a', null, cols.length, '字段数')}
           {statBox('#f1f5f9', '#0f172a', null, sampleRows.length, '预览行')}
@@ -540,14 +568,17 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
           {statBox(failedRows.length > 0 ? '#fef2f2' : '#f0fdf4', failedRows.length > 0 ? '#dc2626' : '#16a34a', null, failedRows.length, '异常行')}
         </div>
 
-        <Table
-          size="small"
-          rowKey={(_, i) => `r-${i}`}
-          dataSource={sampleRows as any[]}
-          columns={columns}
-          scroll={{ x: cols.length * 160, y: '60vh' }}
-          pagination={{ pageSize: 20, size: 'small' }}
-        />
+        {/* Table 容器 —— 用 flex 撑满剩余空间，通过注入样式让 antd 内层 body 滚动 */}
+        <div className="import-preview-table-wrapper">
+          <Table
+            size="small"
+            rowKey={(_, i) => `r-${i}`}
+            dataSource={sampleRows as any[]}
+            columns={columns as TableProps['columns']}
+            scroll={{ x: cols.length * 160 }}
+            pagination={{ pageSize: 20, size: 'small' }}
+          />
+        </div>
       </div>
     )
   }
@@ -555,6 +586,9 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
   const overriddenCount = Object.keys(overrides).length
   const hasSelectFields = effectiveColumns.some(c => c.field_type === 'select' || c.field_type === 'multiselect')
   const hasDateFields = effectiveColumns.some(c => c.field_type === 'date' || c.field_type === 'datetime')
+
+  // 注入 antd Table flex 自适应样式（仅一次）
+  useTableFlexFillStyle()
 
   return (
     <Modal
@@ -573,6 +607,15 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       onCancel={onClose}
       width={1280}
       destroyOnHidden
+      style={{ top: 24 }}
+      styles={{
+        body: {
+          maxHeight: 'calc(100vh - 180px)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        },
+      }}
       footer={[
         <Button key="cancel" onClick={onClose}>取消</Button>,
         <Button
@@ -587,8 +630,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         </Button>,
       ]}
     >
-      {/* 表名输入 */}
-      <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+      {/* 表名输入（固定，不随主体滚动） */}
+      <div style={{ flexShrink: 0, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>表名：</span>
         <Input value={tableName} onChange={e => setTableName(e.target.value)} style={{ flex: 1 }} placeholder="自动使用文件名" />
         <span style={{ color: '#64748b', fontSize: 12 }}>
@@ -596,19 +639,43 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         </span>
       </div>
 
-      {/* 主体：左右分栏 */}
-      <Row gutter={10}>
-        {/* 左栏：字段列表 */}
-        <Col span={8}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 4 }}>
+      {/* 主体：左右 flex 等高分栏，两栏共享父容器高度 */}
+      <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        {/* 左栏：字段与类型 */}
+        <div style={{
+          width: '32%',
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          borderRight: '1px solid #f0f0f0',
+          paddingRight: 10,
+        }}>
+          {/* 左栏标题（固定） */}
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6, flexShrink: 0 }}>
             字段与类型（{effectiveColumns.length}）
           </div>
+          {/* 字段列表（滚动） */}
           {renderFieldsList()}
-          {renderSelectedFieldEditor()}
-        </Col>
-        {/* 右栏：数据预览 */}
-        <Col span={16}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* 选中字段的 select 选项编辑区（贴底，flex-shrink 防被挤掉） */}
+          <div style={{ flexShrink: 0 }}>
+            {renderSelectedFieldEditor()}
+          </div>
+        </div>
+
+        {/* 右栏：典型数据 & 实时转换预览 */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          {/* 右栏标题（固定） */}
+          <div style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: '#334155',
+            marginBottom: 6,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+          }}>
             <span>典型数据 & 实时转换预览</span>
             <Popover
               placement="bottomRight"
@@ -656,9 +723,10 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
             </Popover>
           </div>
 
+          {/* 数据预览（内部 flex:1 撑满） */}
           {renderDataPreview()}
-        </Col>
-      </Row>
+        </div>
+      </div>
     </Modal>
   )
 }
