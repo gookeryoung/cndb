@@ -64,7 +64,9 @@ class DiffReporter:
         "warning_count": int,
         "error_count": int,
         "new_count": int,          # V2: 待新增行数（未指定 match_keys 时等于 valid_count）
-        "update_count": int,       # V2: 待更新行数
+        "update_count": int,       # V2: 待更新行数（命中已有行总数，含无变化行）
+        "update_changed_count": int,  # V6: 待更新中有实际字段变化的行数
+        "update_no_change_count": int,  # V6: 命中但字段值完全一致的行数
         "multi_key_conflicts": int, # V2: 多行同 key 冲突数
         "skipped_columns": [str],
         "missing_required": [str],
@@ -134,6 +136,8 @@ class DiffReporter:
         # ── V2: upsert 统计与预览 ──────────────────
         new_count = valid_count
         update_count = 0
+        update_changed_count = 0
+        update_no_change_count = 0
         multi_key_conflicts = 0
         new_preview: list[dict[str, Any]] = []
         update_preview: list[dict[str, Any]] = []
@@ -141,6 +145,8 @@ class DiffReporter:
         if upsert_result is not None:
             new_count = upsert_result.get("new_count", valid_count)
             update_count = upsert_result.get("update_count", 0)
+            update_changed_count = upsert_result.get("update_changed_count", 0)
+            update_no_change_count = upsert_result.get("update_no_change_count", 0)
             multi_key_conflicts = upsert_result.get("multi_key_conflicts", 0)
             new_preview = upsert_result.get("new_preview", [])
             update_preview = upsert_result.get("update_preview", [])
@@ -156,6 +162,8 @@ class DiffReporter:
                 "error_count": error_count,
                 "new_count": new_count,
                 "update_count": update_count,
+                "update_changed_count": update_changed_count,
+                "update_no_change_count": update_no_change_count,
                 "multi_key_conflicts": multi_key_conflicts,
                 "skipped_columns": skipped_columns,
                 "missing_required": missing_required,
