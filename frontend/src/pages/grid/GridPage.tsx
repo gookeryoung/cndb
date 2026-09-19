@@ -54,6 +54,7 @@ import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCe
 import { type ViewMode, VALID_MODES, deriveModeSwitch } from './viewModes'
 import { useTableSettingsStore, useGridViewStore } from '@/store'
 import { densityToSize } from '@/theme/tableSettings'
+import { useElementSize, useDebouncedCallback } from '@/hooks'
 
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
@@ -207,21 +208,10 @@ export default function GridPage() {
   const rowKeyOf = (recordId: ID) => `row-${recordId}`
   const isNewRow = (recordId: ID) => String(recordId) === NEW_ROW_KEY
   const inlineDataKey = (recordId: ID) => (isNewRow(recordId) ? NEW_ROW_KEY : rowKeyOf(recordId))
-  /** 表格容器的 ref + 尺寸测量（用于 scroll.y 精确数值计算） */
-  const gridAreaRef = useRef<HTMLDivElement | null>(null)
+  /** 表格容器尺寸测量（用于 scroll.y 精确数值计算）—— 通用 useElementSize 统一实现 */
+  const [gridAreaRef, gridAreaSize] = useElementSize<HTMLDivElement>({ width: 800, height: 400 })
   /** AntD Table ref —— 暴露 scrollTo 方法，虚拟滚动场景下是唯一正确的滚动入口 */
   const tableRef = useRef<TableScrollTarget | null>(null)
-  const [gridAreaSize, setGridAreaSize] = useState({ h: 400, w: 800 })
-  useEffect(() => {
-    const el = gridAreaRef.current
-    if (!el) return
-    const update = () => setGridAreaSize({ h: el.clientHeight, w: el.clientWidth })
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    window.addEventListener('resize', update)
-    return () => { ro.disconnect(); window.removeEventListener('resize', update) }
-  }, [])
 
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
@@ -729,13 +719,14 @@ export default function GridPage() {
     }
   }
 
-  /** 自动持久化视图配置（debounce 500ms） */
+  /** 自动持久化视图配置（debounce 500ms，防抖统一收敛到 useDebouncedCallback） */
+  const [debouncedPersist, cancelPersist] = useDebouncedCallback(persistCurrentView, 500)
   useEffect(() => {
     if (!activeViewId || skipSaveRef.current) return
-    const timer = setTimeout(() => persistCurrentView(), 500)
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, activeViewId])
+    debouncedPersist()
+    // cleanup 取消 pending —— 与原手写 clearTimeout 语义一致（dep 变化即取消旧计时器）
+    return cancelPersist
+  }, [viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, activeViewId, debouncedPersist, cancelPersist])
 
   // 分享视图
   const shareView = useMutation({
@@ -1080,7 +1071,7 @@ export default function GridPage() {
               }}
               rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 40 }}
               pagination={false}
-              scroll={{ x: Math.max(gridAreaSize.w, 1200), y: Math.max(gridAreaSize.h - 140, 200) }}
+              scroll={{ x: Math.max(gridAreaSize.width, 1200), y: Math.max(gridAreaSize.height - 140, 200) }}
               virtual
               onChange={(_pag, _fil, sorter, extra) => {
                 // 只在用户点击列头排序时（extra.action === 'sort'）才处理排序，
