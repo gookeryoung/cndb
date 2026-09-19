@@ -236,7 +236,7 @@ class DateFieldConfig(FieldTypeConfig):
     include_time: bool = False
     auto_fill: str = Field(default="", pattern=r"^(on_create|on_update)?$")
 
-    def should_auto_fill(self, *, for_update: bool) -> bool:  # pragma: no cover - auto_fill 待补测试
+    def should_auto_fill(self, *, for_update: bool) -> bool:
         """判断当前操作是否需要自动填充."""
         if self.auto_fill == "on_update":
             return True  # 更新时总填充
@@ -281,7 +281,7 @@ class DateFieldType(FieldType):
         raise ValueError(f"不支持的日期类型: {type(value)}")
 
     @override
-    def default_value(self, _config: dict[str, Any]) -> Any:  # pragma: no cover - auto_fill 待补测试
+    def default_value(self, _config: dict[str, Any]) -> Any:
         cfg = DateFieldConfig(**_config)
         if cfg.should_auto_fill(for_update=False):
             from datetime import date
@@ -320,7 +320,7 @@ class DateTimeFieldType(FieldType):
         raise ValueError(f"不支持的日期时间类型: {type(value)}")
 
     @override
-    def default_value(self, _config: dict[str, Any]) -> Any:  # pragma: no cover - auto_fill 待补测试
+    def default_value(self, _config: dict[str, Any]) -> Any:
         cfg = DateFieldConfig(**_config)
         if cfg.should_auto_fill(for_update=False):
             from datetime import UTC, datetime

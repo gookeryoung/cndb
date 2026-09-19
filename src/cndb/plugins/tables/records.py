@@ -52,6 +52,7 @@ def _normalize_values(
     - 跳过 None（除非 required 字段）
     - 字段不存在于 table.fields 时忽略（安全起见不报错）
     - date/datetime 字段的 auto_fill 自动填充（on_create 创建时补、on_update 每次都覆盖）
+    - DataField.default_value 默认值填充（仅创建路径、用户未传该字段时；校验失败跳过）
 
     返回 (物理列值, 关联值列表)。
     """
@@ -83,7 +84,7 @@ def _normalize_values(
             raise ValueError(f"字段 {field_name}({f.field_type}) 值校验失败: {exc}") from exc
 
     # ── date/datetime auto_fill 自动填充 ──
-    for f in table.fields:  # pragma: no cover - auto_fill 功能待补测试
+    for f in table.fields:
         if f.trashed or is_link_field(f):
             continue
         if f.field_type not in ("date", "datetime"):
@@ -106,6 +107,26 @@ def _normalize_values(
         elif cfg.auto_fill == "on_create" and f.db_column_name not in result:
             # 创建时间戳：仅当用户未传入时补值
             result[f.db_column_name] = auto_val
+
+    # ── DataField.default_value 默认值填充（仅创建、用户未传该字段时）──
+    if not for_update:
+        for f in table.fields:
+            if f.trashed or is_link_field(f):
+                continue
+            if f.name in values:
+                # 用户显式传过（含 None 清空意图）则不覆盖
+                continue
+            dv = f.default_value
+            if dv is None or dv == "":
+                continue
+            ft = default_registry.get(f.field_type)
+            if ft is None:
+                continue
+            try:
+                result[f.db_column_name] = ft.validate_value(dv, f.config or {})
+            except Exception as exc:
+                # 默认值配置非法时不阻塞建行，跳过并留调试日志
+                logger.debug("字段 %s 默认值 %r 校验失败，跳过: %s", f.name, dv, exc)
 
     # 检查缺失的必填字段（link 字段无物理列，不参与）
     if not for_update:
