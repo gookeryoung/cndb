@@ -3,7 +3,8 @@ import { Input, Tag, Empty, Typography, Tabs } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { Field, FieldType } from '@/api'
+import type { Field } from '@/api'
+import { getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 
 /** 多表字段分组：主表 + 额外表 */
 export interface TableFieldGroup {
@@ -27,35 +28,8 @@ export interface FieldPanelProps {
   onDragEnd?: () => void
 }
 
-/** FieldType → Ant Design Tag 颜色映射（复用 grid 页风格） */
-const FIELD_TYPE_COLOR: Record<string, string> = {
-  text: 'blue',
-  longtext: 'cyan',
-  number: 'green',
-  float: 'green',
-  boolean: 'purple',
-  date: 'orange',
-  datetime: 'orange',
-  timestamp: 'orange',
-  select: 'gold',
-  multiselect: 'gold',
-  email: 'geekblue',
-  url: 'geekblue',
-  phone: 'geekblue',
-  link: 'magenta',
-  attachment: 'volcano',
-  percentage: 'lime',
-}
-
-function FieldTag({ type }: { type: FieldType }) {
-  const color = FIELD_TYPE_COLOR[type] || 'default'
-  const labelMap: Record<string, string> = {
-    text: '文本', longtext: '长文本', number: '整数', float: '小数',
-    boolean: '布尔', date: '日期', datetime: '时间', timestamp: '时间戳',
-    select: '单选', multiselect: '多选', email: '邮箱', url: '链接',
-    phone: '电话', link: '关联', attachment: '附件', percentage: '百分比',
-  }
-  return <Tag color={color} style={{ marginLeft: 4, fontSize: 11 }}>{labelMap[type] || type}</Tag>
+function FieldTag({ type }: { type: Field['field_type'] }) {
+  return <Tag color={getFieldTypeColor(type)} style={{ marginLeft: 4, fontSize: 11 }}>{getFieldTypeLabel(type)}</Tag>
 }
 
 /** 单个可拖拽字段项 */

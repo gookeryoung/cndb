@@ -6,6 +6,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary, FieldImportResponse as FieldImportResponseType, FieldImportSuggestion } from '@/api'
 import { resolveTagColor, suggestColorsForLabels } from '@/utils/tagColors'
+import { FIELD_TYPE_OPTIONS, getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 
 interface Props {
   /** 非 embedded 模式下控制外层 Modal 显隐；embedded 模式下可传 true */
@@ -18,25 +19,6 @@ interface Props {
   /** 嵌入模式：作为 Tab / 页面内容渲染，不包外层 Modal */
   embedded?: boolean
 }
-
-const FIELD_TYPES: { value: FieldType; label: string; category: string }[] = [
-  { value: 'text', label: '单行文本', category: '基础' },
-  { value: 'longtext', label: '多行文本', category: '基础' },
-  { value: 'boolean', label: '是/否', category: '基础' },
-  { value: 'number', label: '整数', category: '数字' },
-  { value: 'float', label: '小数', category: '数字' },
-  { value: 'percentage', label: '百分比', category: '数字' },
-  { value: 'date', label: '日期', category: '日期' },
-  { value: 'datetime', label: '日期时间', category: '日期' },
-  { value: 'timestamp', label: '时间戳', category: '日期' },
-  { value: 'select', label: '单选', category: '选择' },
-  { value: 'multiselect', label: '多选', category: '选择' },
-  { value: 'email', label: '邮箱', category: '高级' },
-  { value: 'url', label: '链接', category: '高级' },
-  { value: 'phone', label: '电话', category: '高级' },
-  { value: 'link', label: '关联', category: '关联' },
-  { value: 'attachment', label: '附件', category: '高级' },
-]
 
 /** 字段类型分类，决定需要渲染哪些 config 子表单 */
 const TYPE_CATEGORIES = {
@@ -290,16 +272,17 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       ) : (
         <div style={{ maxHeight: 480, overflowY: 'auto' }}>
           {sorted.map((r) => {
-            const typeMeta = FIELD_TYPES.find(t => t.value === r.field_type)
             return (
               <div key={String(r.id)} className="fm-row">
-                <span className="fm-row-icon" title={typeMeta?.label ?? r.field_type}>
+                <span className="fm-row-icon" title={getFieldTypeLabel(r.field_type)}>
                   {FIELD_TYPE_ICONS[r.field_type] ?? <TagOutlined />}
                 </span>
                 <span className="fm-row-name">{r.name}</span>
                 <span className="fm-row-tags">
                   {r.is_primary && <Tag color="gold" style={{ marginInlineEnd: 0 }}>PK</Tag>}
-                  <Tag style={{ marginInlineEnd: 0 }} title={r.field_type}>{typeMeta?.label ?? r.field_type}</Tag>
+                  <Tag color={getFieldTypeColor(r.field_type)} style={{ marginInlineEnd: 0 }} title={r.field_type}>
+                    {getFieldTypeLabel(r.field_type)}
+                  </Tag>
                   {r.required && <Tag color="orange" style={{ marginInlineEnd: 0 }}>必填</Tag>}
                   {r.hidden && <Tag style={{ marginInlineEnd: 0 }}>隐藏</Tag>}
                 </span>
@@ -345,7 +328,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
           <Col span={12}>
             <Form.Item name="field_type" label="类型" rules={[{ required: true, message: '请选择类型' }]}>
               <Select
-                options={FIELD_TYPES.map(t => ({ label: `${t.label}（${t.category}）`, value: t.value }))}
+                options={FIELD_TYPE_OPTIONS.map(t => ({ label: `${t.label}（${t.category}）`, value: t.value }))}
                 onChange={(v) => {
                   setFieldType(v)
                   // 编辑时切换类型：重置 config 为新类型的默认值（避免旧类型 config 残留）
@@ -457,7 +440,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                       <Checkbox value={sf.id} disabled={sf.is_primary}>
                         <span style={{ fontWeight: sf.is_primary ? 500 : 400 }}>{sf.name}</span>
                         {sf.is_primary && <Tag color="gold" style={{ marginLeft: 4 }}>PK</Tag>}
-                        <Tag style={{ marginLeft: 4 }}>{sf.field_type}</Tag>
+                        <Tag color={getFieldTypeColor(sf.field_type)} style={{ marginLeft: 4 }}>{getFieldTypeLabel(sf.field_type)}</Tag>
                         {sf.conflict && (
                           <Tag color="orange" style={{ marginLeft: 4 }}>重名</Tag>
                         )}
@@ -512,7 +495,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
               const scoreColor = s.score >= 0.9 ? '#16a34a' : s.score >= 0.75 ? '#d97706' : '#dc2626'
               // 候选目标字段：目标表已有字段 + 用户可以输入新名字
               const targetOptions = [
-                ...fields.map(f => ({ label: `${f.name}（${f.field_type}）`, value: f.name })),
+                ...fields.map(f => ({ label: `${f.name}（${getFieldTypeLabel(f.field_type)}）`, value: f.name })),
                 { label: '新名字（在下方输入）', value: '__new__' },
                 { label: '跳过（不引入）', value: '__skip__' },
               ]
@@ -533,7 +516,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                   <div style={{ width: 160, flexShrink: 0 }}>
                     <div style={{ fontWeight: 500 }}>{s.source}</div>
                     <div style={{ fontSize: 11, color: '#999' }}>
-                      {sourceFields.find(f => f.name === s.source)?.field_type ?? 'unknown'}
+                      {getFieldTypeLabel(sourceFields.find(f => f.name === s.source)?.field_type ?? 'unknown')}
                     </div>
                   </div>
 
