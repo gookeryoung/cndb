@@ -26,6 +26,7 @@ from cndb.models.base import Base
 
 # ── ORM 模型（必须先 import 确保 Base.metadata 完整）─
 from cndb.plugins.accounts.models import User, UserRole
+from cndb.plugins.tables.transfer import _coerce_long_numeric_to_text
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
 
 # 列头宽松别名映射（不区分大小写 + 前后空格）
@@ -149,7 +150,9 @@ def _read_xlsx(path: Path) -> list[dict[str, Any]]:
     for row in rows_iter:
         if row is None or not any(v is not None and str(v).strip() for v in row):
             continue
-        raw_row = {header[i]: row[i] if i < len(row) else None for i in range(len(header))}
+        raw_row = {
+            header[i]: _coerce_long_numeric_to_text(row[i]) if i < len(row) else None for i in range(len(header))
+        }
         result.append(_map_row(raw_row))
     return result
 
