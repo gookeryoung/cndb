@@ -357,24 +357,28 @@ body.theme-oled {
  * 深浅主题都不用单独覆盖；带品牌色上边框 + 脉冲呼吸动画引导视觉焦点. */
 
 /* 虚拟滚动模式：行是 .ant-table-row div，单元格是 .ant-table-cell div */
-.cn-table-row-new > .ant-table-cell {
+.cn-table-row-new>.ant-table-cell {
   background-color: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container)) !important;
 }
+
 .cn-table-row-new {
   border-top: 2px solid var(--cn-brand-color);
   animation: cn-new-row-pulse 2.4s ease-in-out infinite;
 }
 
 /* 非虚拟模式兜底：标准 tr > td */
-.ant-table-tbody > tr.cn-table-row-new > td {
+.ant-table-tbody>tr.cn-table-row-new>td {
   background-color: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container)) !important;
   border-top: 2px solid var(--cn-brand-color) !important;
 }
 
 @keyframes cn-new-row-pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: inset 0 0 0 0 transparent;
   }
+
   50% {
     box-shadow: inset 0 0 24px -6px color-mix(in srgb, var(--cn-brand-color) 30%, transparent);
   }
@@ -685,18 +689,18 @@ body.theme-dark [style*="color:'#999'"] {
   padding: 4px 16px 16px 4px;
 }
 
-.table-settings-tabs > .ant-tabs-nav {
+.table-settings-tabs>.ant-tabs-nav {
   min-width: 112px;
   padding: 8px 0;
 }
 
-.table-settings-tabs > .ant-tabs-nav .ant-tabs-tab {
+.table-settings-tabs>.ant-tabs-nav .ant-tabs-tab {
   padding: 7px 12px;
   margin: 2px 0;
   justify-content: flex-start;
 }
 
-.table-settings-tabs > .ant-tabs-content-holder {
+.table-settings-tabs>.ant-tabs-content-holder {
   max-height: min(600px, calc(100vh - 240px));
   overflow-y: auto;
   padding: 8px 2px 8px 12px;
@@ -788,6 +792,107 @@ body.theme-dark [style*="color:'#999'"] {
   flex-shrink: 0;
 }
 
+/* ─────────────── 字段管理（FieldManager）紧凑样式 — 与 .ts-* 同款视觉语言 ─────────────── */
+
+/* 顶部统计 + 操作按钮条 */
+.fm-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* 字段行卡片（对齐 .ts-view-row） */
+.fm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--cn-border);
+  border-radius: 6px;
+  background: var(--cn-bg-subtle);
+  transition: border-color 0.2s;
+}
+
+.fm-row:hover {
+  border-color: var(--cn-brand-color);
+}
+
+/* 字段类型图标座（对齐 .ts-view-icon） */
+.fm-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--cn-bg-muted);
+  color: var(--cn-brand-color);
+  font-size: 13px;
+}
+
+.fm-row-name {
+  font-weight: 500;
+  color: var(--cn-text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-row-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.fm-row-actions {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* 类型专属配置卡片 */
+.fm-config-section {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--cn-border);
+  border-radius: 8px;
+  background: var(--cn-bg-muted);
+}
+
+.fm-config-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--cn-text-secondary);
+}
+
+/* 选项编辑行（select / multiselect） */
+.fm-option-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 选项编辑空态 */
+.fm-option-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--cn-text-muted);
+  border: 1px dashed var(--cn-border);
+  border-radius: 6px;
+}
+
 /* ─────────────── 表格密度控制 — 用 padding 压缩行高，不改字号 ─────────────── */
 
 /* 紧凑模式：最小 padding，适合快速浏览 */
@@ -837,7 +942,7 @@ body.theme-dark [style*="color:'#999'"] {
   /* 让 AntD Segmented 内部 items 可横向滚动 */
 }
 
-.cn-segmented > .ant-segmented-item-container {
+.cn-segmented>.ant-segmented-item-container {
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: smooth;
@@ -845,22 +950,25 @@ body.theme-dark [style*="color:'#999'"] {
 }
 
 /* 细滚动条 —— 视觉上不突兀，但仍可拖动 */
-.cn-segmented > .ant-segmented-item-container::-webkit-scrollbar {
+.cn-segmented>.ant-segmented-item-container::-webkit-scrollbar {
   height: 4px;
 }
-.cn-segmented > .ant-segmented-item-container::-webkit-scrollbar-track {
+
+.cn-segmented>.ant-segmented-item-container::-webkit-scrollbar-track {
   background: transparent;
 }
-.cn-segmented > .ant-segmented-item-container::-webkit-scrollbar-thumb {
+
+.cn-segmented>.ant-segmented-item-container::-webkit-scrollbar-thumb {
   background: var(--cn-border);
   border-radius: 4px;
 }
-.cn-segmented > .ant-segmented-item-container::-webkit-scrollbar-thumb:hover {
+
+.cn-segmented>.ant-segmented-item-container::-webkit-scrollbar-thumb:hover {
   background: var(--cn-text-muted);
 }
 
 /* Firefox 滚动条 */
-.cn-segmented > .ant-segmented-item-container {
+.cn-segmented>.ant-segmented-item-container {
   scrollbar-width: thin;
   scrollbar-color: var(--cn-border) transparent;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message, Alert, Empty, Spin, Tooltip, Divider } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined, ThunderboltOutlined, BgColorsOutlined } from '@ant-design/icons'
+import type { ReactNode } from 'react'
+import { Modal, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message, Alert, Empty, Spin, Tooltip, Divider } from 'antd'
+import { PlusOutlined, DeleteOutlined, EditOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined, ThunderboltOutlined, BgColorsOutlined, FontSizeOutlined, AlignLeftOutlined, CheckSquareOutlined, FieldNumberOutlined, PercentageOutlined, CalendarOutlined, ClockCircleOutlined, FieldTimeOutlined, TagOutlined, TagsOutlined, MailOutlined, LinkOutlined, PhoneOutlined, ApartmentOutlined, PaperClipOutlined, SettingOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary, FieldImportResponse as FieldImportResponseType, FieldImportSuggestion } from '@/api'
@@ -46,6 +47,26 @@ const TYPE_CATEGORIES = {
   select: ['select', 'multiselect'],
   link: ['link'],
   attachment: ['attachment'],
+}
+
+/** 字段类型 → 图标（字段行卡片等场景共用；历史别名类型走 TagOutlined 兜底） */
+const FIELD_TYPE_ICONS: Partial<Record<FieldType, ReactNode>> = {
+  text: <FontSizeOutlined />,
+  longtext: <AlignLeftOutlined />,
+  boolean: <CheckSquareOutlined />,
+  number: <FieldNumberOutlined />,
+  float: <FieldNumberOutlined />,
+  percentage: <PercentageOutlined />,
+  date: <CalendarOutlined />,
+  datetime: <ClockCircleOutlined />,
+  timestamp: <FieldTimeOutlined />,
+  select: <TagOutlined />,
+  multiselect: <TagsOutlined />,
+  email: <MailOutlined />,
+  url: <LinkOutlined />,
+  phone: <PhoneOutlined />,
+  link: <ApartmentOutlined />,
+  attachment: <PaperClipOutlined />,
 }
 
 /** 把后端 SelectOption 格式归一化为前端编辑用的 { key, label, value, color }.
@@ -252,7 +273,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   /** 字段列表 + 工具栏（两种模式共用的内容） */
   const fieldListContent = (
     <>
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <div className="fm-toolbar">
         <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>共 {sorted.length} 个字段</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <Button icon={<ImportOutlined />} onClick={openImportDialog}>
@@ -264,43 +285,40 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         </div>
       </div>
 
-      <Table size="small" rowKey="id" pagination={false} dataSource={sorted}
-        columns={[
-          { title: '名称', dataIndex: 'name', render: (v, r) => r.is_primary ? <span><Tag color="gold">PK</Tag> {v}</span> : v },
-          {
-            title: '类型', dataIndex: 'field_type', width: 110,
-            render: (v: string) => {
-              const label = FIELD_TYPES.find(t => t.value === v)?.label ?? v
-              return <Tag title={v} style={{ margin: 0 }}>{label}</Tag>
-            },
-          },
-          {
-            title: '必填', dataIndex: 'required', width: 64, render: (v: boolean) => v
-              ? <Tag color="orange" style={{ margin: 0 }}>必填</Tag>
-              : <span style={{ color: 'var(--cn-text-muted)' }}>-</span>
-          },
-          {
-            title: '隐藏', dataIndex: 'hidden', width: 64, render: (v: boolean) => v
-              ? <Tag style={{ margin: 0 }}>隐藏</Tag>
-              : <span style={{ color: 'var(--cn-text-muted)' }}>-</span>
-          },
-          {
-            title: '操作', key: 'op', width: 88,
-            render: (_, r) => (
-              <span>
-                <Tooltip title="编辑">
-                  <Button size="small" type="text" icon={<EditOutlined />}
-                    onClick={() => openDialog(r)} />
-                </Tooltip>
-                {!r.is_primary && (
-                  <Popconfirm title="确认删除？" onConfirm={() => remove.mutate(r.id)}>
-                    <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-                  </Popconfirm>
-                )}
-              </span>
-            ),
-          },
-        ]} />
+      {sorted.length === 0 ? (
+        <Empty description="暂无字段，点击右上角「新建字段」创建" style={{ padding: 32 }} />
+      ) : (
+        <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+          {sorted.map((r) => {
+            const typeMeta = FIELD_TYPES.find(t => t.value === r.field_type)
+            return (
+              <div key={String(r.id)} className="fm-row">
+                <span className="fm-row-icon" title={typeMeta?.label ?? r.field_type}>
+                  {FIELD_TYPE_ICONS[r.field_type] ?? <TagOutlined />}
+                </span>
+                <span className="fm-row-name">{r.name}</span>
+                <span className="fm-row-tags">
+                  {r.is_primary && <Tag color="gold" style={{ marginInlineEnd: 0 }}>PK</Tag>}
+                  <Tag style={{ marginInlineEnd: 0 }} title={r.field_type}>{typeMeta?.label ?? r.field_type}</Tag>
+                  {r.required && <Tag color="orange" style={{ marginInlineEnd: 0 }}>必填</Tag>}
+                  {r.hidden && <Tag style={{ marginInlineEnd: 0 }}>隐藏</Tag>}
+                </span>
+                <span className="fm-row-actions">
+                  <Tooltip title="编辑">
+                    <Button size="small" type="text" icon={<EditOutlined />}
+                      onClick={() => openDialog(r)} />
+                  </Tooltip>
+                  {!r.is_primary && (
+                    <Popconfirm title="确认删除？" onConfirm={() => remove.mutate(r.id)}>
+                      <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                  )}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </>
   )
 
@@ -313,7 +331,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       onCancel={closeDialog}
       onOk={handleSubmit}
       confirmLoading={create.isPending || update.isPending}
-      width={720}
+      width={640}
       okText={editTarget ? '保存' : '创建'}
       cancelText="取消"
     >
@@ -341,25 +359,25 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
           </Col>
         </Row>
 
-        {/* 通用属性 */}
-        <Row gutter={12}>
-          <Col span={6}>
-            <Form.Item name="required" valuePropName="checked" label="必填">
-              <Checkbox />
+        {/* 通用属性：内联 Checkbox 紧凑一行，默认值占右侧宽位 */}
+        <Row gutter={12} align="middle">
+          <Col span={3}>
+            <Form.Item name="required" valuePropName="checked" style={{ marginBottom: 0 }}>
+              <Checkbox>必填</Checkbox>
             </Form.Item>
           </Col>
-          <Col span={6}>
-            <Form.Item name="is_unique" valuePropName="checked" label="唯一">
-              <Checkbox />
+          <Col span={3}>
+            <Form.Item name="is_unique" valuePropName="checked" style={{ marginBottom: 0 }}>
+              <Checkbox>唯一</Checkbox>
             </Form.Item>
           </Col>
-          <Col span={6}>
-            <Form.Item name="hidden" valuePropName="checked" label="在视图中隐藏">
-              <Checkbox />
+          <Col span={5}>
+            <Form.Item name="hidden" valuePropName="checked" style={{ marginBottom: 0 }}>
+              <Checkbox>视图中隐藏</Checkbox>
             </Form.Item>
           </Col>
-          <Col span={6}>
-            <Form.Item name="default_value" label="默认值（可选）">
+          <Col span={13}>
+            <Form.Item name="default_value" label="默认值（可选）" style={{ marginBottom: 0 }}>
               <Input placeholder="例如：默认文本" allowClear />
             </Form.Item>
           </Col>
@@ -674,29 +692,29 @@ function ConfigEditor({ fieldType, form, tables, isEdit = false, editTargetId = 
   const configField = (name: string) => ({ name: ['config', ...name.split('.')] as [string, string] })
 
   return (
-    <div style={{ marginTop: 8, borderTop: '1px dashed #d9d9d9', paddingTop: 12 }}>
+    <div className="fm-config-section">
       {/* 注册 config 根字段，让 useWatch / getFieldsValue 能追踪它 */}
       <Form.Item name="config" hidden>
         <Input />
       </Form.Item>
-      <div style={{ fontWeight: 500, marginBottom: 12 }}>字段配置</div>
+      <div className="fm-config-title"><SettingOutlined />字段配置</div>
 
       {/* ── 数字类（number / decimal / percentage） ── */}
       {TYPE_CATEGORIES.numeric.includes(fieldType) && (
         <Row gutter={12}>
           <Col span={8}>
-            <Form.Item {...configField('min')} label="最小值">
+            <Form.Item {...configField('min')} label="最小值" style={{ marginBottom: 8 }}>
               <InputNumber style={{ width: '100%' }} placeholder="不限" />
             </Form.Item>
           </Col>
           <Col span={8}>
-            <Form.Item {...configField('max')} label="最大值">
+            <Form.Item {...configField('max')} label="最大值" style={{ marginBottom: 8 }}>
               <InputNumber style={{ width: '100%' }} placeholder="不限" />
             </Form.Item>
           </Col>
           {fieldType !== 'percentage' && (
             <Col span={8}>
-              <Form.Item {...configField('decimals')} label="小数位数" extra="整数固定 0">
+              <Form.Item {...configField('decimals')} label="小数位数" extra="整数固定 0" style={{ marginBottom: 8 }}>
                 <InputNumber min={0} max={10} style={{ width: '100%' }} placeholder="0" />
               </Form.Item>
             </Col>
@@ -707,19 +725,19 @@ function ConfigEditor({ fieldType, form, tables, isEdit = false, editTargetId = 
       {/* ── 日期类（date / datetime） ── */}
       {TYPE_CATEGORIES.date.includes(fieldType) && (
         <Row gutter={12}>
-          <Col span={12}>
-            <Form.Item {...configField('auto_fill')} label="自动填充" extra="创建时间/更新时间戳推荐使用">
-              <Radio.Group>
-                <Radio.Button value="">不自动填充</Radio.Button>
-                <Radio.Button value="on_create">创建时填入当前时间</Radio.Button>
-                <Radio.Button value="on_update">每次更新时覆盖</Radio.Button>
+          <Col span={16}>
+            <Form.Item {...configField('auto_fill')} label="自动填充" extra="创建时填入当前时间；更新时覆盖为最新时间" style={{ marginBottom: 8 }}>
+              <Radio.Group size="small">
+                <Radio.Button value="">不自动</Radio.Button>
+                <Radio.Button value="on_create">创建时</Radio.Button>
+                <Radio.Button value="on_update">更新时</Radio.Button>
               </Radio.Group>
             </Form.Item>
           </Col>
           {fieldType === 'datetime' && (
-            <Col span={12}>
-              <Form.Item {...configField('include_time')} valuePropName="checked" label="包含时间">
-                <Checkbox />
+            <Col span={8}>
+              <Form.Item {...configField('include_time')} valuePropName="checked" label="包含时间" style={{ marginBottom: 8 }}>
+                <Checkbox>显示时间部分</Checkbox>
               </Form.Item>
             </Col>
           )}
@@ -737,7 +755,7 @@ function ConfigEditor({ fieldType, form, tables, isEdit = false, editTargetId = 
       {TYPE_CATEGORIES.link.includes(fieldType) && (
         <Row gutter={12}>
           <Col span={12}>
-            <Form.Item {...configField('target_table_id')} label="关联目标表" rules={[{ required: true, message: '请选择目标表' }]}>
+            <Form.Item {...configField('target_table_id')} label="关联目标表" rules={[{ required: true, message: '请选择目标表' }]} style={{ marginBottom: 8 }}>
               <Select
                 showSearch
                 placeholder="选择要关联的表"
@@ -747,7 +765,7 @@ function ConfigEditor({ fieldType, form, tables, isEdit = false, editTargetId = 
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多选" extra="勾选后一个单元格可关联多行目标数据">
+            <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多选" extra="勾选后一个单元格可关联多行目标数据" style={{ marginBottom: 8 }}>
               <Checkbox />
             </Form.Item>
           </Col>
@@ -758,17 +776,17 @@ function ConfigEditor({ fieldType, form, tables, isEdit = false, editTargetId = 
       {TYPE_CATEGORIES.attachment.includes(fieldType) && (
         <Row gutter={12}>
           <Col span={8}>
-            <Form.Item {...configField('max_size_mb')} label="单文件最大 (MB)">
+            <Form.Item {...configField('max_size_mb')} label="单文件最大 (MB)" style={{ marginBottom: 8 }}>
               <InputNumber min={0} max={1024} style={{ width: '100%' }} placeholder="10" />
             </Form.Item>
           </Col>
           <Col span={10}>
-            <Form.Item {...configField('allowed_mime_types')} label="允许的 MIME 类型（逗号分隔，空=不限）">
+            <Form.Item {...configField('allowed_mime_types')} label="允许的 MIME 类型（逗号分隔，空=不限）" style={{ marginBottom: 8 }}>
               <Input placeholder="例如 image/png,image/jpeg" />
             </Form.Item>
           </Col>
           <Col span={6}>
-            <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多文件">
+            <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多文件" style={{ marginBottom: 8 }}>
               <Checkbox />
             </Form.Item>
           </Col>
@@ -930,8 +948,8 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span>选项列表</span>
+      <div className="fm-config-title" style={{ justifyContent: 'space-between' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><TagOutlined />选项列表</span>
         <div style={{ display: 'flex', gap: 8 }}>
           {/* 全部智能推荐：一键按语义 + 避重规则为所有选项重新配色 */}
           <Tooltip title="按语义规则为所有选项一键推荐颜色">
@@ -945,14 +963,14 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
         </div>
       </div>
       {options.length === 0 ? (
-        <div style={{ color: '#999', padding: 16, textAlign: 'center', border: '1px dashed #d9d9d9', borderRadius: 4 }}>
+        <div className="fm-option-empty">
           暂无选项，点击上方按钮添加
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {options.map((opt, idx) => (
-            <div key={opt.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ color: '#999', width: 24, textAlign: 'center' }}>{idx + 1}</span>
+            <div key={opt.key} className="fm-option-row">
+              <span style={{ color: 'var(--cn-text-muted)', width: 20, textAlign: 'center', flexShrink: 0 }}>{idx + 1}</span>
               <Input
                 value={opt.label}
                 placeholder="显示标签"
@@ -977,8 +995,8 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
                 ) : (
                   <span
                     style={{
-                      display: 'inline-block', width: 20, height: 20, borderRadius: 4,
-                      background: opt.color, border: '1px solid #e5e7eb',
+                      display: 'inline-block', width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                      background: opt.color, border: '1px solid var(--cn-border)',
                     }}
                     title={`自定义颜色 ${opt.color}`}
                   />
