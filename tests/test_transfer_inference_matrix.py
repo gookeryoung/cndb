@@ -8,7 +8,7 @@
   负百分比/超 100% 的 %-后缀值落库、multiselect 列表列识别与 options 预填充。
 
 对应计划文档 .trae/documents/import-conversion-recognition-enhancement.md 的缺陷 B1-B7
-及其遗留事项（负百分比、multiselect 识别）。
+及其遗留事项（负百分比、multiselect 识别含 JSON/XLSX 路径）。
 """
 
 from __future__ import annotations
@@ -391,6 +391,110 @@ class TestEndToEndAlignment:
         w.writerow(["丁", "前端,后端"])
 
         dt, ids = transfer.create_table_from_csv(engine, db, ws.id, "多选列表表", buf.getvalue())
+        assert len(ids) == 4
+        fmap = {f.name: f.field_type for f in dt.fields}
+        assert fmap["姓名"] == "text"  # 逐行唯一值，select 低基数比例守卫拒绝
+        assert fmap["技能标签"] == "multiselect"
+
+        tags_field = next(f for f in dt.fields if f.name == "技能标签")
+        assert [o["label"] for o in tags_field.config["options"]] == ["前端", "后端", "测试", "运维"]
+
+        from cndb.plugins.tables import records as rec
+
+        row1 = rec.get_row(engine, dt, ids[0])
+        assert row1["技能标签"] == "前端,后端"
+        row2 = rec.get_row(engine, dt, ids[1])
+        assert row2["技能标签"] == "前端,测试"
+
+
+class TestJsonInferenceAlignment:
+    """analyze_json_columns 的 multiselect 提升（JSON/XLSX 文件路径）."""
+
+    def test_scalar_array_column_promoted(self):
+        """真 JSON 数组列（标量元素、高复用）提升为 multiselect."""
+        rows: list[dict[str, Any]] = [
+            {"tags": ["前端", "后端"]},
+            {"tags": ["前端", "测试"]},
+            {"tags": ["后端", "运维"]},
+            {"tags": ["前端", "后端"]},
+        ]
+        cols = transfer.analyze_json_columns(rows)
+        tags = next(c for c in cols if c["name"] == "tags")
+        assert tags["field_type"] == "multiselect"
+        assert tags["options"] == ["前端", "后端", "测试", "运维"]
+
+    def test_delimited_string_column_promoted(self):
+        """text 推断列（分隔符串值）经 JSON 路径同样提升为 multiselect."""
+        rows: list[dict[str, Any]] = [
+            {"tags": "前端,后端"},
+            {"tags": "前端,测试"},
+            {"tags": "后端,运维"},
+            {"tags": "前端,后端"},
+        ]
+        cols = transfer.analyze_json_columns(rows)
+        tags = next(c for c in cols if c["name"] == "tags")
+        assert tags["field_type"] == "multiselect"
+        assert tags["options"] == ["前端", "后端", "测试", "运维"]
+
+    def test_dict_column_stays_json(self):
+        """dict 值列维持 json，不做列表提升."""
+        rows: list[dict[str, Any]] = [{"data": {"a": 1}}, {"data": {"b": 2}}, {"data": {"a": 3}}]
+        cols = transfer.analyze_json_columns(rows)
+        data = next(c for c in cols if c["name"] == "data")
+        assert data["field_type"] == "json"
+        assert "options" not in data
+
+    def test_mixed_dict_sample_blocks_promotion(self):
+        """数组列混入 dict 样本 → 整列不提升（防 dict 行拆出垃圾选项）."""
+        rows: list[dict[str, Any]] = [
+            {"tags": ["前端", "后端"]},
+            {"tags": ["前端", "测试"]},
+            {"tags": {"a": 1}},
+        ]
+        cols = transfer.analyze_json_columns(rows)
+        tags = next(c for c in cols if c["name"] == "tags")
+        assert tags["field_type"] != "multiselect"
+        assert "options" not in tags
+
+    def test_nested_array_stays_json(self):
+        """嵌套数组元素判非标量 → 维持 json."""
+        rows: list[dict[str, Any]] = [{"data": [[1, 2], [3]]}, {"data": [[4], [5, 6]]}]
+        cols = transfer.analyze_json_columns(rows)
+        data = next(c for c in cols if c["name"] == "data")
+        assert data["field_type"] == "json"
+
+    def test_element_with_delimiter_stays_json(self):
+        """数组元素含分隔符（逗号连接存储有歧义）→ 维持 json."""
+        rows: list[dict[str, Any]] = [
+            {"tags": ["a,b", "c"]},
+            {"tags": ["a,b", "d"]},
+            {"tags": ["a,b", "e"]},
+        ]
+        cols = transfer.analyze_json_columns(rows)
+        tags = next(c for c in cols if c["name"] == "tags")
+        assert tags["field_type"] == "json"
+
+    def test_low_reuse_array_stays_json(self):
+        """数组选项无复用（逐行唯一）→ 守卫拒绝，维持 json."""
+        rows: list[dict[str, Any]] = [
+            {"tags": ["甲", "乙"]},
+            {"tags": ["丙", "丁"]},
+            {"tags": ["戊", "己"]},
+        ]
+        cols = transfer.analyze_json_columns(rows)
+        tags = next(c for c in cols if c["name"] == "tags")
+        assert tags["field_type"] == "json"
+
+    def test_json_array_multiselect_end_to_end(self, csv_workspace):
+        """JSON 数组列端到端：提升为 multiselect，list 值落库为逗号串."""
+        engine, db, ws = csv_workspace
+        rows: list[dict[str, Any]] = [
+            {"姓名": "甲", "技能标签": ["前端", "后端"]},
+            {"姓名": "乙", "技能标签": ["前端", "测试"]},
+            {"姓名": "丙", "技能标签": ["后端", "运维"]},
+            {"姓名": "丁", "技能标签": ["前端", "后端"]},
+        ]
+        dt, ids = transfer.create_table_from_json_data(engine, db, ws.id, "JSON多选表", rows)
         assert len(ids) == 4
         fmap = {f.name: f.field_type for f in dt.fields}
         assert fmap["姓名"] == "text"  # 逐行唯一值，select 低基数比例守卫拒绝
