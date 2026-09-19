@@ -143,6 +143,9 @@ test.describe("行 CRUD", () => {
     const newRow = page.locator('[data-row-key="__new__"]');
     await expect(newRow).toHaveCount(1);
 
+    // 自动滚动聚焦回归保护：新行第一个可编辑文本输入框必须自动获得焦点
+    await expect(newRow.locator("input.ant-input").first()).toBeFocused();
+
     // 必填字段缺失直接保存 → 阻止并提示
     await newRow.getByTestId("row-save-btn").click();
     await expect(page.getByText(/请填写必填字段/)).toBeVisible();
