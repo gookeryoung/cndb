@@ -570,14 +570,54 @@ def _split_list_like(value: str) -> list[str] | None:
     return parts
 
 
-def _promote_to_multiselect_if_list_like(inferred_type: str, samples: list[str]) -> tuple[str, list[str]]:
+def _split_json_array_like(value: str) -> list[str] | None:
+    """若样本是"标量 JSON 数组"（如 ``["前端", "后端"]`` 的 dumps 串）则返回元素列表，否则 None.
+
+    与 :func:`_split_list_like` 的字符串歧义守卫不同，数组元素已是离散值，
+    仅保留存储安全守卫：
+    - 可被 json.loads 解析为 list；
+    - 全部元素为标量（str/int/float/bool，嵌套 list/dict 判非）；
+    - 元素转字符串后非空且不含分隔符（含分隔符的元素逗号连接存储后有歧义）。
+    """
+    v = value.strip()
+    if not v.startswith("["):
+        return None
+    try:
+        parsed = json.loads(v)
+    except ValueError:
+        return None
+    if not isinstance(parsed, list) or not parsed:
+        return None
+    if len(parsed) > _LIST_LIKE_MAX_OPTIONS:
+        return None
+    segments: list[str] = []
+    for item in parsed:
+        if isinstance(item, (dict, list)) or item is None:
+            return None
+        s = str(item).strip()
+        if not s or MULTI_SELECT_SPLIT_RE.search(s):
+            return None
+        segments.append(s)
+    return segments
+
+
+def _promote_to_multiselect_if_list_like(
+    inferred_type: str,
+    samples: list[str],
+    parser: Any = None,
+) -> tuple[str, list[str]]:
     """对推断后的列类型做列表值检查：多数值可拆出高复用选项则提升为 multiselect.
 
     须在 select 提升之前调用 —— 低基数列表值（如 ["a,b","a,c"]）的唯一原始值
     同样满足 select 低基数条件，会被 select 抢走。
 
+    Args:
+        inferred_type: 列推断类型；text 走分隔符串拆分，json 走标量数组解析（parser 传入），
+            其余类型已有归属不提升。
+        samples: 列样本值字符串列表。
+        parser: 单值拆分函数（str → list[str] | None），默认分隔符串拆分。
+
     守卫：
-    - 仅对推断为 text 的列生效（数字/日期等已有归属）；
     - ≥60% 且至少 2 个样本可拆出列表（混合列中以离散选项为主才安全）；
     - 拆出选项总数 3~30；
     - ≥50% 的选项在 ≥2 个值中复用 —— 排除"张三,男,北京"式逐行唯一个人信息串。
@@ -585,9 +625,10 @@ def _promote_to_multiselect_if_list_like(inferred_type: str, samples: list[str])
     Returns:
         (最终字段类型, 拆分后的选项列表 — 若最终为 multiselect 则作为 options 使用, 否则为空列表)
     """
-    if inferred_type != "text":
+    split_fn = parser or _split_list_like
+    if inferred_type not in ("text", "json"):
         return inferred_type, []
-    parsed = [_split_list_like(v) for v in samples]
+    parsed = [split_fn(v) for v in samples]
     hit = [segs for segs in parsed if segs is not None]
     if len(hit) < 2 or len(hit) * 10 < len(samples) * 6:
         return inferred_type, []
@@ -1061,6 +1102,10 @@ def analyze_json_columns(
 ) -> list[dict[str, Any]]:
     """分析 JSON 对象数组，推断每个字段的类型.
 
+    启发式与 analyze_csv_columns 对称：text 列低基数提升 select；
+    text 列分隔符串值或 json 列标量数组值（高复用）提升 multiselect，
+    含 dict 编码样本的列不做列表提升。
+
     Returns:
         列表每项同 analyze_csv_columns：
         {name, field_type, sample_values, null_ratio, options?}
@@ -1119,16 +1164,24 @@ def analyze_json_columns(
             continue
 
         inferred = _pick_inferred_type(type_counts[key])
-        inferred, select_options = _promote_to_select_if_low_cardinality(inferred, samples[key])
+        # multiselect 提升须在 select 之前；含 dict 编码样本的列不做列表提升
+        # （dict 行落 multiselect 会把 "{'a': 1, 'b': 2}" 拆出垃圾选项）
+        col_samples = samples[key]
+        promote_options: list[str] = []
+        if not any(s.lstrip().startswith("{") for s in col_samples):
+            parser = _split_json_array_like if inferred == "json" else None
+            inferred, promote_options = _promote_to_multiselect_if_list_like(inferred, col_samples, parser)
+        if not promote_options:
+            inferred, promote_options = _promote_to_select_if_low_cardinality(inferred, col_samples)
 
         col_info: dict[str, Any] = {
             "name": key,
             "field_type": inferred,
-            "sample_values": samples[key][:5],
+            "sample_values": col_samples[:5],
             "null_ratio": round(null_ratio, 4),
         }
-        if select_options:
-            col_info["options"] = select_options
+        if promote_options:
+            col_info["options"] = promote_options
         columns.append(col_info)
 
     return columns
