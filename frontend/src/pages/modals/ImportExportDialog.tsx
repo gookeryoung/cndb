@@ -36,6 +36,17 @@ const ACCEPTED_EXT = ['.csv', '.json', '.xlsx']
 
 type Phase = 'idle' | 'analyzing' | 'preview' | 'importing' | 'done' | 'failed'
 
+/** 后端参考列推荐条目（validation_report.match_key_recommendations） */
+interface MatchKeyRecommendation {
+  field: string
+  field_type: string
+  score: number
+  recommended: boolean
+  disabled: boolean
+  reason: string
+  stats: Record<string, number | null>
+}
+
 /** 把值格式化为可显示的短文本（超长截断） */
 function fmtValue(v: unknown, limit = 80): string {
   if (v == null) return ''
@@ -270,9 +281,24 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
 
   // ── 渲染：Diff 控制区（参考列 + 执行 DIFF + 高级设置） ──
   const renderDiffControls = () => {
+    // V5: 参考列智能推荐 —— 从 analyze 报告读取推荐/禁用信息，装饰下拉选项
+    const report = (task as (ImportTaskInfo & { validation_report?: any }) | null)?.validation_report
+    const recs = (report?.match_key_recommendations || []) as MatchKeyRecommendation[]
+    const recByField = new Map(recs.map(r => [r.field, r]))
     const fieldOptions = fields
       .filter(f => f.field_type !== 'link')
-      .map(f => ({ value: f.name, label: `${f.name} (${f.field_type})` }))
+      .map(f => {
+        const rec = recByField.get(f.name)
+        if (rec?.disabled) {
+          // 禁用项：原因直接展示在标签里，选项不可选
+          return { value: f.name, label: `${f.name} (${f.field_type}) — ${rec.reason}`, disabled: true }
+        }
+        return {
+          value: f.name,
+          label: rec?.recommended ? `★ ${f.name} (${f.field_type})` : `${f.name} (${f.field_type})`,
+        }
+      })
+    const recommendedFields = recs.filter(r => r.recommended && !r.disabled).map(r => r.field)
     const hasKeys = matchKeys.length > 0
     return (
       <div style={{ marginBottom: 12 }}>
@@ -308,6 +334,11 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
               </Button>
             )}
           </div>
+          {recommendedFields.length > 0 && (
+            <div style={{ fontSize: 12, color: '#16a34a', marginTop: 6 }}>
+              ★ 推荐参考列：{recommendedFields.join('、')}（文件与表内取值唯一，匹配最可靠）
+            </div>
+          )}
           <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
             提示：选择一个或多个字段（如『ID』、『名称』），系统将用它们匹配表中已有行，相同值视为更新，无匹配视为新增。
           </div>
