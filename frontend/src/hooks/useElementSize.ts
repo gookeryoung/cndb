@@ -15,6 +15,10 @@ export interface ElementSize {
  *
  * @param initial 初始尺寸（首帧渲染、ref 未挂载时使用，可避免 scroll.y 等派生值抖动）
  * @returns [ref, size] —— ref 绑定到目标元素，size 实时更新
+ *
+ * @remarks 约束：ref 目标元素须在 hook 挂载（首次 effect 运行）时已存在。条件渲染的
+ * 元素若晚于挂载才绑定 ref，将不会被测量、尺寸停留在 initial —— 此类场景需自行保证
+ * 元素与 hook 同帧渲染，或通过 key/父级条件重挂 hook。
  */
 export function useElementSize<T extends HTMLElement>(
   initial: ElementSize = { width: 0, height: 0 },
