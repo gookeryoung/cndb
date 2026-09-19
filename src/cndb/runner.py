@@ -16,6 +16,7 @@ import shutil
 import signal
 import subprocess
 import sys
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -177,6 +178,20 @@ def build(_args: argparse.Namespace) -> None:
     print("[ok] 全部构建完成！")
 
 
+def _configure_console_encoding() -> None:
+    """入口级控制台编码兜底：Windows 默认 cp1252 无法编码盒子绘制/Emoji 字符.
+
+    Python 3.7+ 可用 ``sys.stdout.reconfigure`` 重设为 UTF-8 + replace 兜底，
+    让后续任何 ``print`` 都不会因不可编码字符中断主流程。
+    reconfigure 在部分 frozen/嵌入式环境可能失败，用 try/except 静默降级。
+    """
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        with suppress(Exception):
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+
+
 def info_command() -> int:
     """打印版本/配置/运行环境."""
     import platform
@@ -190,13 +205,13 @@ def info_command() -> int:
     print(f"  Frozen:       {_is_frozen()}")
     print(f"  BASE_DIR:     {BASE_DIR}")
     print(f"  DATA_DIR:     {DATA_DIR}")
-    print(f"  ├─ config:    {settings.CONFIG_DIR}")
-    print(f"  ├─ data:      {settings.DATABASE_DIR}")
-    print(f"  ├─ uploads:   {settings.UPLOAD_DIR}")
-    print(f"  ├─ plugins:   {settings.PLUGINS_DIR}")
-    print(f"  ├─ backups:   {settings.BACKUP_DIR}")
-    print(f"  ├─ cache:     {settings.CACHE_DIR}")
-    print(f"  └─ logs:      {settings.LOG_DIR}")
+    print(f"  |- config:    {settings.CONFIG_DIR}")
+    print(f"  |- data:      {settings.DATABASE_DIR}")
+    print(f"  |- uploads:   {settings.UPLOAD_DIR}")
+    print(f"  |- plugins:   {settings.PLUGINS_DIR}")
+    print(f"  |- backups:   {settings.BACKUP_DIR}")
+    print(f"  |- cache:     {settings.CACHE_DIR}")
+    print(f"  `- logs:      {settings.LOG_DIR}")
     print(f"  DEBUG:        {settings.DEBUG}")
     print(f"  DATABASE_URL: {settings.DATABASE_URL}")
     print(f"  API_PREFIX:   {settings.API_V1_PREFIX}")
@@ -207,6 +222,7 @@ def info_command() -> int:
 
 def main() -> None:
     """cndb CLI 入口."""
+    _configure_console_encoding()
     parser = argparse.ArgumentParser(
         prog="cndb",
         description="cndb - FastAPI + SQLAlchemy + Plugin 架构脚手架",
