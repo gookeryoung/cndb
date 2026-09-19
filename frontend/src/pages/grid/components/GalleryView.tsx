@@ -193,7 +193,12 @@ export default function GalleryView({ rows, fields, view, density, onRowClick }:
   }
 
   if (rows.length === 0) {
-    return <Empty description="暂无记录" style={{ padding: 48 }} />
+    return (
+      <Empty
+        description="这张表还没有数据：回到表格视图新增一行或导入数据，图片字段上传附件后会在这里展示"
+        style={{ padding: 48 }}
+      />
+    )
   }
 
   if (!useVirtual) {

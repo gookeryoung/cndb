@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
-  Table, Empty, message, Popconfirm, Divider, Modal, Card, Space, Avatar,
+  Table, Empty, message, Popconfirm, Divider, Modal, Card, Space, Avatar, Tooltip,
 } from 'antd'
 import {
   SettingOutlined, BarChartOutlined, PlusOutlined,
@@ -28,6 +28,7 @@ import type {
   MemberUserBrief,
 } from '@/api'
 import { useAuthStore } from '@/store'
+import HelpTip from '@/components/HelpTip'
 
 interface Props {
   wid: string
@@ -47,6 +48,14 @@ const VISIBILITY_LABEL: Record<WorkspaceVisibility, string> = {
   public: '公开（任何人可读）',
   member: '成员可见（仅工作区成员可访问）',
   private: '私有（仅所有者和管理员可见）',
+}
+
+/** 角色一句话说明（成员表格角色 Select 下拉展示，与帮助中心「权限角色」主题对齐） */
+const ROLE_HINTS: Record<WorkspaceRole, string> = {
+  owner: '全部权限，可转让与删除工作区',
+  admin: '管理成员与工作区设置，不可转让所有权',
+  editor: '可查看并编辑数据，不可管理成员与设置',
+  viewer: '仅可查看工作区内容与数据',
 }
 
 /** 角色等级 — 数值越大权限越高 */
@@ -336,73 +345,103 @@ export default function WorkspaceSettingsContent({
           </div>
         )}
 
-      {/* 成员列表 */}
-      <Table
-        rowKey="id"
-        size="small"
-        loading={membersLoading}
-        dataSource={sortedMembers}
-        locale={{ emptyText: <Empty description="暂无成员" /> }}
-        pagination={false}
-        columns={[
-          {
-            title: '用户',
-            render: (_, m) => {
-              const u = m.user
-              const isMe = currentMemberId === m.id
-              return (
-                <div>
-                  <div style={{ fontWeight: 500 }}>
-                    {u.username}
-                    {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 13 }}>({u.nickname})</span>}
-                    {isMe && <Tag color="blue" style={{ marginLeft: 8 }}>我</Tag>}
+        {/* 成员列表 */}
+        <Table
+          rowKey="id"
+          size="small"
+          loading={membersLoading}
+          dataSource={sortedMembers}
+          locale={{
+            emptyText: (
+              <div style={{ padding: '24px 0' }}>
+                <Empty description="还没有成员，邀请同事一起协作吧" />
+                {canManageMembers && (
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<PlusOutlined />}
+                    style={{ marginTop: 12 }}
+                    onClick={() => {
+                      setAddMemberUsername(null)
+                      setAddMemberRole('editor')
+                      setCandidatesSearch('')
+                      setAddMemberOpen(true)
+                    }}
+                  >添加成员</Button>
+                )}
+              </div>
+            ),
+          }}
+          pagination={false}
+          columns={[
+            {
+              title: '用户',
+              render: (_, m) => {
+                const u = m.user
+                const isMe = currentMemberId === m.id
+                return (
+                  <div>
+                    <div style={{ fontWeight: 500 }}>
+                      {u.username}
+                      {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 13 }}>({u.nickname})</span>}
+                      {isMe && <Tag color="blue" style={{ marginLeft: 8 }}>我</Tag>}
+                    </div>
+                    {u.email && <div style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>{u.email}</div>}
                   </div>
-                  {u.email && <div style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>{u.email}</div>}
-                </div>
-              )
+                )
+              },
             },
-          },
-          {
-            title: '角色', width: 180,
-            render: (_, m) => {
-              const isOwner = m.role === 'owner'
-              if (isOwner) {
-                return <Tag color="gold" icon={<CrownOutlined />}>{ROLE_LABEL[m.role]}</Tag>
-              }
-              if (!canManageMembers) {
-                return <Tag>{ROLE_LABEL[m.role]}</Tag>
-              }
-              return (
-                <Select
-                  value={m.role}
-                  onChange={(v: string) => changeRole.mutate({ memberId: m.id, role: v })}
-                  size="small"
-                  style={{ width: 140 }}
-                  disabled={myRoleRank < ROLE_RANK.admin || (m.role === 'owner' && myRole !== 'owner')}
-                  options={assignableRoles}
-                />
-              )
+            {
+              title: '角色', width: 180,
+              render: (_, m) => {
+                const isOwner = m.role === 'owner'
+                if (isOwner) {
+                  return <Tag color="gold" icon={<CrownOutlined />}>{ROLE_LABEL[m.role]}</Tag>
+                }
+                if (!canManageMembers) {
+                  return <Tag>{ROLE_LABEL[m.role]}</Tag>
+                }
+                return (
+                  <Select
+                    value={m.role}
+                    onChange={(v: string) => changeRole.mutate({ memberId: m.id, role: v })}
+                    size="small"
+                    style={{ width: 140 }}
+                    disabled={myRoleRank < ROLE_RANK.admin || (m.role === 'owner' && myRole !== 'owner')}
+                    options={assignableRoles}
+                    optionRender={(option) => (
+                      <div>
+                        <div>{option.label}</div>
+                        <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', lineHeight: 1.5 }}>
+                          {ROLE_HINTS[option.value as WorkspaceRole]}
+                        </div>
+                      </div>
+                    )}
+                  />
+                )
+              },
             },
-          },
-          {
-            title: '操作', width: 80,
-            render: (_, m) => {
-              if (m.role === 'owner') return null
-              if (!canManageMembers) return null
-              if (myRole === 'admin' && m.role === 'admin') return null
-              return (
-                <Popconfirm
-                  title={`移除「${m.user.username}」？`}
-                  description="该成员将从工作区中移出"
-                  onConfirm={() => kick.mutate(m.id)}
-                >
-                  <Button size="small" type="text" danger icon={<UserDeleteOutlined />} />
-                </Popconfirm>
-              )
+            {
+              title: '操作', width: 80,
+              render: (_, m) => {
+                if (m.role === 'owner') return null
+                if (!canManageMembers) return null
+                if (myRole === 'admin' && m.role === 'admin') return null
+                return (
+                  <Popconfirm
+                    title={`移除「${m.user.username}」？`}
+                    description="该成员将从工作区中移出"
+                    onConfirm={() => kick.mutate(m.id)}
+                  >
+                    <Tooltip title="移除成员：收回其在本工作区的访问权限">
+                      <Button size="small" type="text" danger icon={<UserDeleteOutlined />} />
+                    </Tooltip>
+                  </Popconfirm>
+                )
+              },
             },
-          },
-        ]}
-      />
+          ]}
+        />
       </Card>
 
       {/* ── 添加成员 Modal ── */}
@@ -456,8 +495,8 @@ export default function WorkspaceSettingsContent({
           <div style={{ marginTop: 6, fontSize: 12, color: 'var(--cn-text-muted)' }}>
             {ROLE_LABEL[addMemberRole as WorkspaceRole]} — {
               addMemberRole === 'admin' ? '管理成员与工作区设置，不可转让所有权'
-              : addMemberRole === 'editor' ? '可查看并编辑数据，不可管理成员与设置'
-              : '仅可查看工作区内容与数据'
+                : addMemberRole === 'editor' ? '可查看并编辑数据，不可管理成员与设置'
+                  : '仅可查看工作区内容与数据'
             }
           </div>
         </div>
@@ -525,7 +564,10 @@ export default function WorkspaceSettingsContent({
           <Form.Item name="description" label="描述（可选）">
             <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
           </Form.Item>
-          <Form.Item name="visibility" label="公开性">
+          <Form.Item
+            name="visibility"
+            label={<>公开性<HelpTip title="修改后立即生效：公开=任何人可读；成员可见=仅工作区成员可访问；私有=仅所有者和管理员可见" /></>}
+          >
             <Select
               options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({ value: v, label: l }))}
               disabled={!canEditBasic}

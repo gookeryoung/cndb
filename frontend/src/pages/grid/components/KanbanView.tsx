@@ -490,7 +490,12 @@ export default function KanbanView({
   )
 
   if (columns.length === 0) {
-    return <Empty description="暂无记录" style={{ padding: 48 }} />
+    return (
+      <Empty
+        description={rows.length === 0 ? '这张表还没有数据：回到表格视图新增一行或导入数据' : '当前视图下没有可分组的数据，试试调整筛选条件'}
+        style={{ padding: 48 }}
+      />
+    )
   }
 
   return (

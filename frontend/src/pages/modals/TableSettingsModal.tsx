@@ -365,7 +365,9 @@ export default function TableSettingsModal({
                         onConfirm={() => removeView.mutate(v.id)}
                         disabled={!canEditViews}
                       >
-                        <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!canEditViews} />
+                        <Tooltip title="删除视图（规则一并删除，不影响表数据）">
+                          <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!canEditViews} />
+                        </Tooltip>
                       </Popconfirm>
                     </span>
                   </div>

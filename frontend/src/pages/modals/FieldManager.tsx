@@ -7,6 +7,7 @@ import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary, FieldImportResponse as FieldImportResponseType, FieldImportSuggestion } from '@/api'
 import { resolveTagColor, suggestColorsForLabels } from '@/utils/tagColors'
 import { FIELD_TYPE_OPTIONS, getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
+import HelpTip from '@/components/HelpTip'
 
 interface Props {
   /** 非 embedded 模式下控制外层 Modal 显隐；embedded 模式下可传 true */
@@ -49,6 +50,26 @@ const FIELD_TYPE_ICONS: Partial<Record<FieldType, ReactNode>> = {
   phone: <PhoneOutlined />,
   link: <ApartmentOutlined />,
   attachment: <PaperClipOutlined />,
+}
+
+/** 字段类型一句话说明（类型 Select 下拉的 optionRender 展示；文案与帮助中心「字段类型参考」对齐） */
+const FIELD_TYPE_HINTS: Partial<Record<FieldType, string>> = {
+  text: '单行文本：适合姓名、标题等短文字',
+  longtext: '多行文本：适合描述、备注等长内容',
+  boolean: '是/否：勾选框，适合状态开关',
+  number: '整数：适合数量、序号等整数值',
+  float: '小数：适合金额、评分等精确数值',
+  percentage: '百分比：输入数字自动按百分比展示',
+  date: '日期：适合生日、截止日等日期值',
+  datetime: '日期时间：同时包含日期与具体时刻',
+  timestamp: '时间戳：记录精确到秒的时间点',
+  select: '单选：从预设选项中选一个，可配色',
+  multiselect: '多选：从预设选项中选多个，可配色',
+  email: '邮箱：自动校验格式，可点击发信',
+  url: '链接：自动校验格式，可点击跳转',
+  phone: '电话：手机/座机格式校验',
+  link: '关联：引用其他表的一行或多行数据',
+  attachment: '附件：上传图片、文档等文件',
 }
 
 /** 把后端 SelectOption 格式归一化为前端编辑用的 { key, label, value, color }.
@@ -305,13 +326,15 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                   {r.hidden && <Tag style={{ marginInlineEnd: 0 }}>隐藏</Tag>}
                 </span>
                 <span className="fm-row-actions">
-                  <Tooltip title="编辑">
+                  <Tooltip title="编辑字段类型与配置">
                     <Button size="small" type="text" icon={<EditOutlined />}
                       onClick={() => openDialog(r)} />
                   </Tooltip>
                   {!r.is_primary && (
                     <Popconfirm title="确认删除？" onConfirm={() => remove.mutate(r.id)}>
-                      <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                      <Tooltip title="删除字段（列及其数据将从表中移除）">
+                        <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                      </Tooltip>
                     </Popconfirm>
                   )}
                 </span>
@@ -344,9 +367,22 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item name="field_type" label="类型" rules={[{ required: true, message: '请选择类型' }]}>
+            <Form.Item
+              name="field_type"
+              label={<>类型<HelpTip title="类型决定数据的存储格式与编辑控件，选择后可在下方配置专属选项" /></>}
+              rules={[{ required: true, message: '请选择类型' }]}
+            >
               <Select
                 options={FIELD_TYPE_OPTIONS.map(t => ({ label: `${t.label}（${t.category}）`, value: t.value }))}
+                optionRender={(option) => {
+                  const hint = FIELD_TYPE_HINTS[option.value as FieldType]
+                  return (
+                    <div>
+                      <div>{option.label}</div>
+                      {hint && <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', lineHeight: 1.5 }}>{hint}</div>}
+                    </div>
+                  )
+                }}
                 onChange={(v) => {
                   setFieldType(v)
                   // 编辑时切换类型：重置 config 为新类型的默认值（避免旧类型 config 残留）
@@ -362,23 +398,29 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
 
         {/* 通用属性：内联 Checkbox 紧凑一行，默认值占右侧宽位 */}
         <Row gutter={12} align="middle">
-          <Col span={3}>
+          <Col span={4}>
             <Form.Item name="required" valuePropName="checked" style={{ marginBottom: 0 }}>
               <Checkbox>必填</Checkbox>
             </Form.Item>
           </Col>
-          <Col span={3}>
+          <Col span={4} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Form.Item name="is_unique" valuePropName="checked" style={{ marginBottom: 0 }}>
               <Checkbox>唯一</Checkbox>
             </Form.Item>
+            <HelpTip title="唯一：该列不允许出现重复值，适合工号、邮箱等标识字段" />
           </Col>
-          <Col span={5}>
+          <Col span={6} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Form.Item name="hidden" valuePropName="checked" style={{ marginBottom: 0 }}>
               <Checkbox>视图中隐藏</Checkbox>
             </Form.Item>
+            <HelpTip title="隐藏：默认不在表格中显示该列，可在显示模式中重新打开" />
           </Col>
-          <Col span={13}>
-            <Form.Item name="default_value" label="默认值（可选）" style={{ marginBottom: 0 }}>
+          <Col span={10}>
+            <Form.Item
+              name="default_value"
+              label={<>默认值（可选）<HelpTip title="新增行时自动填入的值；修改已保存字段的默认值会触发表重建，数据量大时稍慢" /></>}
+              style={{ marginBottom: 0 }}
+            >
               <Input placeholder="例如：默认文本" allowClear />
             </Form.Item>
           </Col>

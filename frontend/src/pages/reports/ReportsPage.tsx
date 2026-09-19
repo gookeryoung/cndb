@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Form, Input, Typography, message, Select, Dropdown, Empty, Tabs } from 'antd'
+import { Table, Button, Space, Tag, Modal, Form, Input, Typography, message, Select, Dropdown, Empty, Tabs, Tooltip } from 'antd'
 import type { FormInstance } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -211,7 +211,9 @@ export default function ReportsPage() {
               ],
             }}
           >
-            <Button size="small" icon={<MoreOutlined />} />
+            <Tooltip title="更多操作：编辑、删除模板">
+              <Button size="small" icon={<MoreOutlined />} />
+            </Tooltip>
           </Dropdown>
         </Space>
       ),
@@ -223,7 +225,9 @@ export default function ReportsPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
           <Space>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)} />
+            <Tooltip title="返回工作区数据表">
+              <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)} />
+            </Tooltip>
             <Title level={3} style={{ margin: 0 }}>报表模板</Title>
           </Space>
           <Text type="secondary">基于 Jinja2 的轻量级报告模板，支持字段拖拽 + 实时预览 + Word/PDF/Excel 输出</Text>
@@ -238,7 +242,14 @@ export default function ReportsPage() {
         columns={columns}
         dataSource={templates}
         pagination={false}
-        locale={{ emptyText: <Empty description="暂无模板，点击右上角新建一个" /> }}
+        locale={{
+          emptyText: (
+            <div style={{ padding: '24px 0' }}>
+              <Empty description="还没有报告模板" />
+              <Button type="primary" size="small" icon={<PlusOutlined />} style={{ marginTop: 12 }} onClick={openCreate}>新建模板</Button>
+            </div>
+          ),
+        }}
       />
 
       <TemplateEditor
@@ -571,7 +582,9 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
                         <Form.Item {...restField} name={[name, 'required']} valuePropName="checked">
                           <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} style={{ width: 80 }} />
                         </Form.Item>
-                        <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
+                        <Tooltip title="删除该参数">
+                          <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
+                        </Tooltip>
                       </Space>
                     ))}
                   </div>
@@ -593,7 +606,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
             type="primary"
             loading={submitting}
             onClick={() => {
-              form.validateFields().then(handleFormFinish).catch(() => {})
+              form.validateFields().then(handleFormFinish).catch(() => { })
             }}
           >
             {editing ? '保存' : '创建'}
