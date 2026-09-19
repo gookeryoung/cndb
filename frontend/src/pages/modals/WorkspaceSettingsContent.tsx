@@ -21,6 +21,7 @@ import {
   ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { workspaceApi } from '@/api'
 import type {
   WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceVisibility,
@@ -69,6 +70,7 @@ export default function WorkspaceSettingsContent({
   wid, initialTab = 'basic', onUpdated,
 }: Props) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const currentUser = useAuthStore(s => s.user)
   const [form] = Form.useForm()
   const [activeTab, setActiveTab] = useState(initialTab)
@@ -208,6 +210,8 @@ export default function WorkspaceSettingsContent({
     onSuccess: () => {
       message.success('工作区已删除')
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+      // 删除工作区后统一回到工作区列表（无论嵌入在独立页面还是 Modal）
+      navigate('/w', { replace: true })
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '删除工作区失败'),
   })
