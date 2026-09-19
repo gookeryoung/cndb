@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message, Alert, Empty, Spin, Tooltip, Divider } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, EditOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined, ThunderboltOutlined, BgColorsOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary, FieldImportResponse as FieldImportResponseType, FieldImportSuggestion } from '@/api'
-import { suggestColorForLabel, getTagColorName } from '@/utils/tagColors'
+import { resolveTagColor, suggestColorsForLabels } from '@/utils/tagColors'
 
 interface Props {
   /** 非 embedded 模式下控制外层 Modal 显隐；embedded 模式下可传 true */
@@ -48,10 +48,14 @@ const TYPE_CATEGORIES = {
   attachment: ['attachment'],
 }
 
-/** 把后端 SelectOption 格式归一化为前端编辑用的 { key, label, value, color } */
+/** 把后端 SelectOption 格式归一化为前端编辑用的 { key, label, value, color }.
+ *
+ * 归一化后对 color 为空的选项按 `resolveTagColor` 自动补色（与表格渲染完全同源），
+ * 保证编辑字段打开即与数据表所见一致；保存时随 syncToForm 落库实现永久同步。
+ */
 function normalizeOptionsFromConfig(raw: unknown): Array<{ key: string; label: string; value: string | number; color: string }> {
   if (!Array.isArray(raw)) return []
-  return raw.map((item, idx) => {
+  const list = raw.map((item, idx) => {
     if (typeof item === 'string') {
       return { key: String(idx), label: item, value: item, color: '' }
     }
@@ -63,6 +67,8 @@ function normalizeOptionsFromConfig(raw: unknown): Array<{ key: string; label: s
     }
     return { key: String(idx), label: String(item), value: String(item), color: '' }
   })
+  // 空 color 自动补色：传入原始 raw 让 resolveTagColor 按选项自身位置走同一 fallback
+  return list.map((o, idx) => (o.color ? o : { ...o, color: resolveTagColor(o.label, raw, idx) }))
 }
 
 export default function FieldManager({ open, wid, tid, fields, onClose, onChanged, embedded }: Props) {
@@ -522,19 +528,19 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                     {importMapping[s.source] !== null && importMapping[s.source] !== undefined &&
                       importMapping[s.source] !== s.source &&
                       !fields.find(f => f.name === importMapping[s.source]) && (
-                      <Tooltip title="这是新输入的目标字段名">
-                        <Input
-                          size="small"
-                          value={importMapping[s.source] ?? ''}
-                          placeholder="输入新字段名"
-                          onChange={(e) => {
-                            const next = { ...importMapping, [s.source]: e.target.value }
-                            setImportMapping(next)
-                          }}
-                          style={{ width: 140 }}
-                        />
-                      </Tooltip>
-                    )}
+                        <Tooltip title="这是新输入的目标字段名">
+                          <Input
+                            size="small"
+                            value={importMapping[s.source] ?? ''}
+                            placeholder="输入新字段名"
+                            onChange={(e) => {
+                              const next = { ...importMapping, [s.source]: e.target.value }
+                              setImportMapping(next)
+                            }}
+                            style={{ width: 140 }}
+                          />
+                        </Tooltip>
+                      )}
                   </div>
 
                   {/* 推荐状态 + 置信度 */}
@@ -811,6 +817,8 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
     const incoming = normalizeOptionsFromConfig(watchedOptions)
     if (incoming.length > 0 && options.length === 0) {
       setOptions(incoming)
+      // 把自动补色后的选项同步回 form store：用户不改选项直接点保存也能把颜色落库
+      syncToForm(incoming)
     }
   }, [watchedOptions])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -847,10 +855,13 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
     syncToForm(next)
   }
 
-  /** 对单个选项执行智能推荐颜色（语义规则优先，hash fallback） */
-  function smartSuggestColor(label: string): string {
-    const semantic = suggestColorForLabel(label)
-    return semantic ?? getTagColorName(label)
+  /** 列表感知推荐：对当前选项列表全部 label 计算建议色，取指定下标的槽位.
+   *
+   * 语义优先；无语义 label 走分级调色板并避开其他选项已占用颜色，
+   * 与后端 suggest_colors 同规则，修复"第 4 项推荐与第 1 项重复"的撞色问题。
+   */
+  function suggestColorAt(labels: string[], idx: number): string {
+    return suggestColorsForLabels(labels)[idx] ?? 'blue'
   }
 
   function updateOption(key: string, patch: Partial<(typeof options)[number]>, opts?: { skipAutoColor?: boolean }) {
@@ -863,7 +874,7 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
         // 颜色不再区分「预设色名 / HEX 自定义色」 — 只要 label 变了，语义就变了，
         // 色块必须立即匹配新语义，避免出现 label="低优先级" 但色块还是红色的陈旧态。
         if (!opts?.skipAutoColor) {
-          next[idx] = { ...next[idx], value: newLabel, color: smartSuggestColor(newLabel) }
+          next[idx] = { ...next[idx], value: newLabel, color: suggestColorAt(next.map(o => o.label.trim()), idx) }
         } else {
           next[idx] = { ...next[idx], value: newLabel }
         }
@@ -873,26 +884,46 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
     syncToForm(next)
   }
 
-  /** 手动触发一次智能推荐颜色（无视当前颜色，强制刷新） */
+  /** 手动触发单个选项的智能推荐颜色（列表感知，无视当前颜色强制刷新） */
   function handleSmartSuggest(key: string) {
-    const opt = options.find(o => o.key === key)
-    if (!opt) return
-    const label = opt.label.trim()
+    const idx = options.findIndex(o => o.key === key)
+    if (idx < 0) return
+    const label = options[idx]!.label.trim()
     if (!label) {
       message.info('请先输入显示标签')
       return
     }
-    const color = smartSuggestColor(label)
+    const color = suggestColorAt(options.map(o => o.label.trim()), idx)
     updateOption(key, { color }, { skipAutoColor: true })
+  }
+
+  /** 一键对全部选项应用智能推荐颜色（覆盖式，与后端 apply_smart_colors(overwrite=True) 语义一致） */
+  function handleSmartSuggestAll() {
+    if (!options.some(o => o.label.trim())) {
+      message.info('请先输入显示标签')
+      return
+    }
+    const colors = suggestColorsForLabels(options.map(o => o.label.trim()))
+    const next = options.map((o, i) => (o.label.trim() ? { ...o, color: colors[i] ?? o.color } : o))
+    setOptions(next)
+    syncToForm(next)
   }
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
         <span>选项列表</span>
-        <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addOption}>
-          添加选项
-        </Button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {/* 全部智能推荐：一键按语义 + 避重规则为所有选项重新配色 */}
+          <Tooltip title="按语义规则为所有选项一键推荐颜色">
+            <Button size="small" type="dashed" icon={<BgColorsOutlined />} onClick={handleSmartSuggestAll}>
+              全部智能推荐
+            </Button>
+          </Tooltip>
+          <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addOption}>
+            添加选项
+          </Button>
+        </div>
       </div>
       {options.length === 0 ? (
         <div style={{ color: '#999', padding: 16, textAlign: 'center', border: '1px dashed #d9d9d9', borderRadius: 4 }}>

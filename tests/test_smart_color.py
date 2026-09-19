@@ -109,6 +109,25 @@ class TestSuggestColors:
         """空列表 → 空列表."""
         assert suggest_colors([]) == []
 
+    def test_used_colors_avoids_existing(self):
+        """used_colors 传入既有占用色 → fallback 避开（导入合并场景）."""
+        result = suggest_colors(["选项甲"], used_colors={"blue", "green"})
+        assert result[0] not in {"blue", "green"}
+
+    def test_used_colors_none_keeps_default(self):
+        """used_colors=None（默认）与不传参数行为完全一致（向后兼容）."""
+        assert suggest_colors(["选项甲", "选项乙"]) == suggest_colors(["选项甲", "选项乙"], used_colors=None)
+
+    def test_used_colors_non_palette_not_false_exhausted(self):
+        """used_colors 含非调色板色（status 色）时不误判调色板耗尽."""
+        result = suggest_colors(["选项甲"], used_colors={"processing", "success"})
+        assert result[0] == "blue"  # 调色板首位仍可用
+
+    def test_used_colors_exhausted_cycles(self):
+        """调色板全部被占用 → 循环回首色."""
+        result = suggest_colors(["选项甲"], used_colors={"blue", "green", "orange", "purple", "red"})
+        assert result[0] == "blue"
+
 
 class TestHasSemanticMatch:
     """has_semantic_match 快速判断."""
