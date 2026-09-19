@@ -208,6 +208,13 @@ export default function GridPage() {
   const inlineDataKey = (recordId: ID) => (isNewRow(recordId) ? NEW_ROW_KEY : rowKeyOf(recordId))
   /** 表格容器的 ref + 尺寸测量（用于 scroll.y 精确数值计算） */
   const gridAreaRef = useRef<HTMLDivElement | null>(null)
+  /** AntD Table ref —— 暴露 scrollTo 方法，虚拟滚动场景下是唯一正确的滚动入口.
+   *  rc-table 的 Reference 类型（AntD TableRef）未在 antd 主入口导出，
+   *  这里用结构类型替代，补齐 AntD 要求的 nativeElement 属性 */
+  const tableRef = useRef<{
+    scrollTo: (opts: { top?: number; left?: number }) => void
+    nativeElement?: HTMLDivElement
+  } | null>(null)
   const [gridAreaSize, setGridAreaSize] = useState({ h: 400, w: 800 })
   useEffect(() => {
     const el = gridAreaRef.current
@@ -220,50 +227,40 @@ export default function GridPage() {
     return () => { ro.disconnect(); window.removeEventListener('resize', update) }
   }, [])
 
-  /** 新增行激活后，等待虚拟滚动渲染完成，自动滚动到可见并聚焦第一个可编辑单元格.
-   *  AntD 虚拟滚动行用 position:absolute + transform 定位，直接 scrollIntoView 不顶用，
-   *  改为找到 .ant-table-tbody-virtual-holder 容器，按行的 offsetTop 计算目标 scrollTop. */
+  /** 新增行激活后，自动滚动到新行可见位置并聚焦第一个可编辑单元格.
+   *  AntD 虚拟滚动的 rc-virtual-list 内部有独立状态，直接对 DOM 容器 scrollTo 不生效；
+   *  必须通过 TableRef.scrollTo 让虚拟滚动引擎同步更新可见窗口.
+   *
+   *  策略：不手动算像素（虚拟行 transform 后 offsetTop 不准），而是利用 dataSource 构造时
+   *  已保证 newRow 位置（tail/page→末尾，top→开头），让 TableRef.scrollTo 直接滚到目标端。 */
   useEffect(() => {
     if (!newRowActive || mode !== 'grid') return
     let cancelled = false
 
-    const tryFocus = (attempts: number) => {
-      if (cancelled || attempts <= 0) return
+    const doScrollAndFocus = () => {
       const row = document.querySelector('[data-row-key="__new__"]') as HTMLElement | null
-      if (!row) {
-        requestAnimationFrame(() => tryFocus(attempts - 1))
-        return
-      }
-      // 虚拟滚动模式：直接设置滚动容器的 scrollTop
-      const virtualHolder = document.querySelector('.ant-table-tbody-virtual-holder') as HTMLElement | null
-      if (virtualHolder) {
-        const rowTop = (row as HTMLElement).offsetTop
-        const rowHeight = (row as HTMLElement).offsetHeight || 55
-        const holderHeight = virtualHolder.clientHeight
-        let targetTop = 0
-        if (newRowPosition === 'tail') {
-          // 尾部：让新行底部刚好贴住容器底部（留出一点 padding）
-          targetTop = Math.max(0, rowTop + rowHeight - holderHeight + 8)
-        } else {
-          // top / page：让新行从视口顶部开始
-          targetTop = Math.max(0, rowTop - 4)
-        }
-        virtualHolder.scrollTo({ top: targetTop, behavior: 'smooth' })
-      } else {
-        // 非虚拟兜底
-        row.scrollIntoView({
-          block: newRowPosition === 'tail' ? 'end' : 'start',
-          behavior: 'smooth',
-        })
-      }
-      // 聚焦第一个可编辑输入控件
+      if (!row) return false
+      // top 模式滚到头部，tail/page 模式滚到底部
+      const targetTop = newRowPosition === 'top' ? 0 : Number.MAX_SAFE_INTEGER
+      tableRef.current?.scrollTo({ top: targetTop })
+      // 聚焦第一个可编辑输入
       const firstInput = row.querySelector<HTMLElement>(
         'input:not([type="hidden"]):not(.ant-checkbox-input), textarea, [role="combobox"], .ant-picker',
       )
       firstInput?.focus()
+      return true
     }
-    // 等虚拟滚动窗口更新 + React 提交，最多重试 5 次
-    requestAnimationFrame(() => requestAnimationFrame(() => tryFocus(5)))
+
+    // 双重 rAF：等 React 提交 + AntD 虚拟滚动窗口更新完毕
+    requestAnimationFrame(() => {
+      if (cancelled) return
+      requestAnimationFrame(() => {
+        if (cancelled) return
+        if (!doScrollAndFocus()) {
+          requestAnimationFrame(doScrollAndFocus)
+        }
+      })
+    })
     return () => { cancelled = true }
   }, [newRowActive, mode, offset, limit, newRowPosition])
 
@@ -1061,6 +1058,7 @@ export default function GridPage() {
         ) : mode === 'grid' ? (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <Table
+              ref={tableRef as any}
               rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns}
               dataSource={(() => {
                 if (!newRowActive) return (rowList.items || [])
@@ -1184,24 +1182,30 @@ export default function GridPage() {
       )}
 
       {/* 抽屉 & 对话框 */}
-      <RowDetailDrawer open={detailOpen} row={detailRow} fields={table?.fields || []} wid={wid} tid={tid}
-        onClose={() => { setDetailOpen(false); setDetailRow(null) }} />
+      {detailOpen && detailRow && (
+        <RowDetailDrawer open={detailOpen} row={detailRow} fields={table?.fields || []} wid={wid} tid={tid}
+          onClose={() => { setDetailOpen(false); setDetailRow(null) }} />
+      )}
       <Suspense fallback={<ModalFallback />}>
-        <FieldManager open={fieldMgrOpen} wid={wid} tid={tid} fields={table?.fields || []}
-          onClose={() => setFieldMgrOpen(false)}
-          onChanged={() => {
-            queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
-            queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-          }}
-        />
-        <ImportExportDialog open={importExportOpen} wid={wid} tid={tid}
-          fields={table?.fields || []}
-          onClose={() => setImportExportOpen(false)}
-          onImported={() => {
-            queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-            queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
-          }}
-        />
+        {fieldMgrOpen && (
+          <FieldManager open={fieldMgrOpen} wid={wid} tid={tid} fields={table?.fields || []}
+            onClose={() => setFieldMgrOpen(false)}
+            onChanged={() => {
+              queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+              queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+            }}
+          />
+        )}
+        {importExportOpen && (
+          <ImportExportDialog open={importExportOpen} wid={wid} tid={tid}
+            fields={table?.fields || []}
+            onClose={() => setImportExportOpen(false)}
+            onImported={() => {
+              queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+              queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+            }}
+          />
+        )}
       </Suspense>
       <ViewConfigDialog
         open={viewConfigOpen}

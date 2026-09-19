@@ -165,10 +165,12 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   })
 
   function closeDialog() {
+    // 先 resetFields（此时内层 Modal 的 Form 还在 DOM 里），再关闭 Modal；
+    // 若先 setInnerOpen(false) 则 Form 可能已被 Modal 卸载，form 实例找不到 Form 元素而报 warning.
+    form.resetFields()
     setInnerOpen(false)
     setEditTarget(null)
     setFieldType(undefined)
-    form.resetFields()
   }
 
   function openImportDialog() {
@@ -207,8 +209,11 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         })
       }, 0)
     } else {
-      form.resetFields()
+      // 同样延迟到下一个 tick —— setInnerOpen(true) 是异步批处理，
+      // 在 React 提交更新前 Form 还未挂载，此时 form.resetFields() 会触发
+      // "Instance created by useForm is not connected to any Form element" warning.
       setFieldType(undefined)
+      setTimeout(() => { form.resetFields() }, 0)
     }
   }
 
@@ -279,6 +284,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     <Modal
       title={editTarget ? '编辑字段' : '新建字段'}
       open={innerOpen}
+      destroyOnHidden={false}
       onCancel={closeDialog}
       onOk={handleSubmit}
       confirmLoading={create.isPending || update.isPending}
@@ -583,7 +589,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
 
   // 独立模式：外层包 Modal
   return (
-    <Modal title="字段管理" width={760} open={open} onCancel={onClose} footer={null}>
+    <Modal title="字段管理" width={760} open={open} destroyOnHidden={false} onCancel={onClose} footer={null}>
       {fieldListContent}
       {editDialog}
       {importDialog}
