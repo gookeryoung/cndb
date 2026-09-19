@@ -223,6 +223,62 @@ class CndbMainWindow:
         self.root.mainloop()
 
 
+def _make_text_copyable(text: scrolledtext.ScrolledText) -> None:
+    """让只读日志 Text 支持复制：Ctrl+C / Ctrl+A 快捷键 + 右键菜单.
+
+    日志区为 state=DISABLED 的只读 Text（不可编辑但允许选中），
+    这里补齐复制快捷键与右键菜单，便于用户拷贝日志排查故障。
+    """
+
+    def _selected() -> str | None:
+        """取当前选中文本，无选中时返回 None."""
+        try:
+            return text.get(tk.SEL_FIRST, tk.SEL_LAST)
+        except tk.TclError:
+            return None
+
+    def _copy_selection(_event: object | None = None) -> str:
+        """复制选中文本到剪贴板（无选中时不动）."""
+        content = _selected()
+        if content:
+            text.clipboard_clear()
+            text.clipboard_append(content)
+        return "break"
+
+    def _copy_all(_event: object | None = None) -> str:
+        """复制全部日志内容到剪贴板."""
+        text.clipboard_clear()
+        text.clipboard_append(text.get("1.0", tk.END))
+        return "break"
+
+    def _select_all(_event: object | None = None) -> str:
+        """全选日志文本."""
+        text.tag_add(tk.SEL, "1.0", tk.END)
+        text.mark_set(tk.INSERT, "1.0")
+        return "break"
+
+    def _show_menu(event: tk.Event[Any]) -> None:
+        """右键弹出复制菜单；无选中时禁用「复制」项."""
+        menu.entryconfig("复制", state=tk.NORMAL if _selected() else tk.DISABLED)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    # 大写变体兼容 Caps Lock 开启时的按键序列
+    for seq in ("<Control-c>", "<Control-C>"):
+        text.bind(seq, _copy_selection)
+    for seq in ("<Control-a>", "<Control-A>"):
+        text.bind(seq, _select_all)
+
+    menu = tk.Menu(text, tearoff=0)
+    menu.add_command(label="复制", command=_copy_selection)
+    menu.add_command(label="复制全部", command=_copy_all)
+    menu.add_separator()
+    menu.add_command(label="全选", command=_select_all)
+    text.bind("<Button-3>", _show_menu)
+
+
 # ═══════════════════════════════════════════════════════════════
 # Tab 基类
 # ═══════════════════════════════════════════════════════════════
@@ -242,7 +298,7 @@ class _BaseTab:
         raise NotImplementedError
 
     def _build_log_text(self, parent: ttk.Widget) -> scrolledtext.ScrolledText:
-        """创建统一风格的日志 Text 组件."""
+        """创建统一风格的日志 Text 组件（只读，支持选中复制）."""
         text = scrolledtext.ScrolledText(parent, height=14, wrap=tk.WORD, state=tk.DISABLED, font=("Consolas", 10))
         for name, (fg, bg) in LOG_TAGS.items():
             kwargs: dict[str, str] = {"foreground": fg}
@@ -250,6 +306,7 @@ class _BaseTab:
                 kwargs["background"] = bg
             text.tag_configure(name, **kwargs)
         text.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
+        _make_text_copyable(text)
         return text
 
     def persist(self, settings: GuiSettings) -> None:
@@ -826,6 +883,7 @@ class InfoTab(_BaseTab):
 
         self.text = scrolledtext.ScrolledText(self.frame, wrap=tk.NONE, font=("Consolas", 10), state=tk.DISABLED)
         self.text.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+        _make_text_copyable(self.text)
 
         # 启动即开启自动刷新：立即取一次信息并排定定时器
         if self.auto_var.get():
