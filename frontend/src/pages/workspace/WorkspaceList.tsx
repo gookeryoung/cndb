@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { Card, Row, Col, Typography, Button, Modal, Form, Input, Select, Switch, Tag, Empty, message } from 'antd'
 import {
   PlusOutlined, PushpinOutlined, TeamOutlined, TableOutlined,
-  DownloadOutlined, SettingOutlined, SearchOutlined, FullscreenOutlined,
+  DownloadOutlined, SettingOutlined, SearchOutlined,
   GlobalOutlined, LockOutlined, SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -152,12 +152,6 @@ export default function WorkspaceList() {
                       style={{ cursor: 'pointer' }}
                       data-testid={`settings-btn-${w.id}`}
                     ><SettingOutlined /> 设置</span>,
-                    <span
-                      key="full-page"
-                      onClick={(e) => { e.stopPropagation(); navigate(`/w/${w.id}/settings`) }}
-                      style={{ cursor: 'pointer' }}
-                      data-testid={`settings-page-btn-${w.id}`}
-                    ><FullscreenOutlined /> 完整页面</span>,
                   ]}
                   onClick={(e) => {
                     const target = e.target as HTMLElement
