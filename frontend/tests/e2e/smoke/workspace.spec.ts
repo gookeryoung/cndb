@@ -16,8 +16,10 @@ test.describe("工作区 + 表列表", () => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await gotoWorkspace(page);
 
-    // 顶部导航
+    // 顶部导航 — Header「工作区设置」与页内 TablesList 按钮同名，必须用 testid 定位避免 strict mode 歧义
     await expect(page.getByRole("button", { name: /报表/ })).toBeVisible();
+    await expect(page.getByTestId("workspace-settings-nav")).toBeVisible();
+    await expect(page.getByTestId("workspace-settings-link")).toBeVisible();
 
     // 表列表页 — TablesList（用 :has-text 避免匹配到空状态 placeholder row）
     await expect(page.locator('button:has-text("新建表")').first()).toBeVisible();
