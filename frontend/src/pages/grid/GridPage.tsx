@@ -49,6 +49,7 @@ import MoveTableForm from './components/MoveTableForm'
 import TableSettingsDialog from './components/TableSettingsDialog'
 import TableSettingsModal from '@/pages/modals/TableSettingsModal'
 import { buildColumns, type RowInlineOps, type InlineEditCellProps } from './components/buildColumns'
+import { useNewRowAutoScroll, type TableScrollTarget } from './useNewRowAutoScroll'
 import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCellValueForEdit } from './components/GridCell'
 import { type ViewMode, VALID_MODES, deriveModeSwitch } from './viewModes'
 import { useTableSettingsStore, useGridViewStore } from '@/store'
@@ -208,13 +209,8 @@ export default function GridPage() {
   const inlineDataKey = (recordId: ID) => (isNewRow(recordId) ? NEW_ROW_KEY : rowKeyOf(recordId))
   /** 表格容器的 ref + 尺寸测量（用于 scroll.y 精确数值计算） */
   const gridAreaRef = useRef<HTMLDivElement | null>(null)
-  /** AntD Table ref —— 暴露 scrollTo 方法，虚拟滚动场景下是唯一正确的滚动入口.
-   *  rc-table 的 Reference 类型（AntD TableRef）未在 antd 主入口导出，
-   *  这里用结构类型替代，补齐 AntD 要求的 nativeElement 属性 */
-  const tableRef = useRef<{
-    scrollTo: (opts: { top?: number; left?: number }) => void
-    nativeElement?: HTMLDivElement
-  } | null>(null)
+  /** AntD Table ref —— 暴露 scrollTo 方法，虚拟滚动场景下是唯一正确的滚动入口 */
+  const tableRef = useRef<TableScrollTarget | null>(null)
   const [gridAreaSize, setGridAreaSize] = useState({ h: 400, w: 800 })
   useEffect(() => {
     const el = gridAreaRef.current
@@ -226,43 +222,6 @@ export default function GridPage() {
     window.addEventListener('resize', update)
     return () => { ro.disconnect(); window.removeEventListener('resize', update) }
   }, [])
-
-  /** 新增行激活后，自动滚动到新行可见位置并聚焦第一个可编辑单元格.
-   *  AntD 虚拟滚动的 rc-virtual-list 内部有独立状态，直接对 DOM 容器 scrollTo 不生效；
-   *  必须通过 TableRef.scrollTo 让虚拟滚动引擎同步更新可见窗口.
-   *
-   *  策略：不手动算像素（虚拟行 transform 后 offsetTop 不准），而是利用 dataSource 构造时
-   *  已保证 newRow 位置（tail/page→末尾，top→开头），让 TableRef.scrollTo 直接滚到目标端。 */
-  useEffect(() => {
-    if (!newRowActive || mode !== 'grid') return
-    let cancelled = false
-
-    const doScrollAndFocus = () => {
-      const row = document.querySelector('[data-row-key="__new__"]') as HTMLElement | null
-      if (!row) return false
-      // top 模式滚到头部，tail/page 模式滚到底部
-      const targetTop = newRowPosition === 'top' ? 0 : Number.MAX_SAFE_INTEGER
-      tableRef.current?.scrollTo({ top: targetTop })
-      // 聚焦第一个可编辑输入
-      const firstInput = row.querySelector<HTMLElement>(
-        'input:not([type="hidden"]):not(.ant-checkbox-input), textarea, [role="combobox"], .ant-picker',
-      )
-      firstInput?.focus()
-      return true
-    }
-
-    // 双重 rAF：等 React 提交 + AntD 虚拟滚动窗口更新完毕
-    requestAnimationFrame(() => {
-      if (cancelled) return
-      requestAnimationFrame(() => {
-        if (cancelled) return
-        if (!doScrollAndFocus()) {
-          requestAnimationFrame(doScrollAndFocus)
-        }
-      })
-    })
-    return () => { cancelled = true }
-  }, [newRowActive, mode, offset, limit, newRowPosition])
 
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
@@ -476,6 +435,16 @@ export default function GridPage() {
       filter_logic: viewFilterLogic,
     },
   )
+
+  /** 新增行激活后自动滚动聚焦 —— tail 跳页时以行数变化为重同步信号，数据到达后二次校准. */
+  useNewRowAutoScroll({
+    active: newRowActive,
+    enabled: mode === 'grid',
+    position: newRowPosition,
+    rowDomKey: NEW_ROW_KEY,
+    tableRef,
+    resyncSignal: rowList.items?.length ?? 0,
+  })
 
   const deleteRows = useDeleteRowsOptimistic(wid!, tid!)
   const updateRow = useUpdateRowOptimistic(wid!, tid!)
@@ -829,7 +798,7 @@ export default function GridPage() {
   const _onCellSave = useMemo(() => updateRow.isPending
     ? undefined
     : (rowId: number | string, fieldName: string, value: unknown) => updateRow.mutateAsync({ rowId, fieldName, value }),
-  [updateRow])
+    [updateRow])
 
   const columns = useMemo(() => buildColumns(
     table?.fields || [], wid, viewSortings, viewFilters,
