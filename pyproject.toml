@@ -43,7 +43,7 @@ cndbw = "cndb.gui.main_window:main"
 [project.optional-dependencies]
 dev = [
     "cndb[lint,test]",
-    "fspack>=0.6.5",
+    "fspack>=0.6.6",
 ]
 lint = ["pyrefly>=1.1.1", "ruff>=0.8.0"]
 # httpx：starlette TestClient 运行所需（源码仅使用 httpx2）
