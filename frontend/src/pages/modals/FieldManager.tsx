@@ -859,14 +859,13 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
       const idx = next.findIndex(o => o.key === key)
       if (idx >= 0) {
         const newLabel = patch.label.trim()
-        next[idx] = { ...next[idx], value: newLabel }
-        // label 编辑后自动更新标签颜色：仅当当前 color 是预设色名（自动填充的）或为空时自动刷新。
-        // 用户已手动选过自定义色（HEX）则不覆盖，避免误伤。
+        // label 编辑后 value 恒同步为 label，颜色也始终跟随刷新。
+        // 颜色不再区分「预设色名 / HEX 自定义色」 — 只要 label 变了，语义就变了，
+        // 色块必须立即匹配新语义，避免出现 label="低优先级" 但色块还是红色的陈旧态。
         if (!opts?.skipAutoColor) {
-          const curColor = next[idx].color
-          if (!curColor || isPresetColor(curColor)) {
-            next[idx] = { ...next[idx], color: smartSuggestColor(newLabel) }
-          }
+          next[idx] = { ...next[idx], value: newLabel, color: smartSuggestColor(newLabel) }
+        } else {
+          next[idx] = { ...next[idx], value: newLabel }
         }
       }
     }
