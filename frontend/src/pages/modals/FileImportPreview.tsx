@@ -572,8 +572,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         <div className="import-preview-table-wrapper">
           <Table
             size="small"
-            rowKey={(_, i) => `r-${i}`}
-            dataSource={sampleRows as any[]}
+            dataSource={(sampleRows as any[]).map((r, i) => ({ ...r, __key: `r-${i}` }))}
+            rowKey="__key"
             columns={columns as TableProps['columns']}
             scroll={{ x: cols.length * 160 }}
             pagination={{ pageSize: 20, size: 'small' }}
