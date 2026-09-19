@@ -94,9 +94,9 @@ describe('FieldManager 编辑对话框自动填充激活态', () => {
         // 让定时器先触发，Select 会因表单重置而关闭下拉。故下拉打开→选中须在同一个
         // 同步任务内完成（真实浏览器中用户交互远晚于该定时器，无此竞态）。
         fireEvent.mouseDown(document.querySelector('.ant-select .ant-select-selector')!)
-        // 同步遍历选项，按文案定位「日期」
+        // 同步遍历选项，按文案定位「日期」（optionRender 会在类型名下追加说明小字，故用前缀匹配）
         const target = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
-            .find(el => el.textContent === '日期（日期）')
+            .find(el => el.textContent?.startsWith('日期（日期）'))
         expect(target).toBeDefined()
         fireEvent.click(target!)
 
