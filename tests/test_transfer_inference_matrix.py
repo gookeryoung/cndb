@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -509,6 +509,105 @@ class TestJsonInferenceAlignment:
         assert row1["技能标签"] == "前端,后端"
         row2 = rec.get_row(engine, dt, ids[1])
         assert row2["技能标签"] == "前端,测试"
+
+
+class TestXlsxDateInference:
+    """xlsx 日期单元格（openpyxl 读出的 datetime/date 对象）推断与 select 提升守卫.
+
+    缺陷背景：openpyxl 日期单元格返回 datetime 对象，_python_type_to_field_type
+    未识别而落 text，随后被 select 低基数启发式误提升为 select（选项为
+    "2026-09-01 00:00:00" 串）。修复后午夜 datetime 归一为 date，带时间
+    datetime 归一为 datetime，且 date/datetime 不满足 select 提升前置条件。
+    """
+
+    def test_timed_datetime_maps_to_datetime(self):
+        assert transfer._python_type_to_field_type(datetime(2026, 9, 1, 10, 30, 45)) == "datetime"
+
+    def test_midnight_datetime_maps_to_date(self):
+        # Excel 纯日期单元格经 openpyxl 读出为午夜 datetime（不含时间信息）
+        assert transfer._python_type_to_field_type(datetime(2026, 9, 1)) == "date"
+
+    def test_date_object_maps_to_date(self):
+        assert transfer._python_type_to_field_type(date(2026, 9, 1)) == "date"
+
+    def test_low_cardinality_date_column_not_promoted_to_select(self):
+        """100 行仅 5 个不同日期（此前会命中 select 提升阈值）→ 保持 date."""
+        base = datetime(2026, 9, 1)
+        rows: list[dict[str, Any]] = [{"打卡日期": base.replace(day=1 + i % 5)} for i in range(100)]
+        cols = transfer.analyze_json_columns(rows)
+        col = next(c for c in cols if c["name"] == "打卡日期")
+        assert col["field_type"] == "date"
+        assert "options" not in col
+
+    def test_low_cardinality_datetime_column_not_promoted_to_select(self):
+        base = datetime(2026, 9, 1, 8, 0, 0)
+        rows: list[dict[str, Any]] = [{"操作时间": base + timedelta(hours=i % 5)} for i in range(100)]
+        cols = transfer.analyze_json_columns(rows)
+        col = next(c for c in cols if c["name"] == "操作时间")
+        assert col["field_type"] == "datetime"
+        assert "options" not in col
+
+    def test_date_like_samples_iso_format(self):
+        """样本值输出 ISO 串：午夜 datetime 归一为日期部分，不出现 00:00:00 尾巴."""
+        rows: list[dict[str, Any]] = [
+            {"d": datetime(2026, 9, 1), "dt": datetime(2026, 9, 1, 10, 30, 45), "od": date(2026, 9, 2)},
+            {"d": datetime(2026, 9, 2), "dt": datetime(2026, 9, 2, 11, 0, 0), "od": date(2026, 9, 3)},
+        ]
+        cols = transfer.analyze_json_columns(rows)
+        by_name = {c["name"]: c for c in cols}
+        assert by_name["d"]["sample_values"] == ["2026-09-01", "2026-09-02"]
+        assert by_name["dt"]["sample_values"] == ["2026-09-01 10:30:45", "2026-09-02 11:00:00"]
+        assert by_name["od"]["sample_values"] == ["2026-09-02", "2026-09-03"]
+
+    def test_profile_layer_date_column_not_select(self):
+        """画像层（导入预览）与推断层同规则：日期列不落 text/select."""
+        from cndb.plugins.tables.column_profiler import profile_columns
+
+        base = datetime(2026, 9, 1)
+        rows: list[dict[str, Any]] = [{"打卡日期": base.replace(day=1 + i % 5)} for i in range(100)]
+        profiles, _summary = profile_columns(rows, ["打卡日期"])
+        assert profiles[0]["inferred_type"] == "date"
+        assert "select_options" not in profiles[0]
+
+    def test_xlsx_date_column_end_to_end(self, csv_workspace):
+        """xlsx 端到端：日期/日期时间列建表为 date/datetime 字段，datetime 对象落库成功."""
+        from openpyxl import Workbook
+
+        engine, db, ws = csv_workspace
+        wb = Workbook()
+        sheet = wb.active
+        sheet.append(["打卡日期", "操作时间", "姓名"])
+        base = datetime(2026, 9, 1)
+        for i in range(20):
+            sheet.append(
+                [
+                    base + timedelta(days=i % 5),
+                    datetime(2026, 9, 1, 8, i % 60, 0),
+                    f"员工{i}",
+                ]
+            )
+        buf = io.BytesIO()
+        wb.save(buf)
+
+        dt, ids, columns = transfer.create_table_from_file(
+            engine, db, ws.id, "XLSX日期表", buf.getvalue(), filename="考勤.xlsx"
+        )
+        assert len(ids) == 20
+        fmap = {f.name: f.field_type for f in dt.fields}
+        assert fmap["打卡日期"] == "date"
+        assert fmap["操作时间"] == "datetime"
+        assert fmap["姓名"] == "text"
+
+        from cndb.plugins.tables import records as rec
+
+        row1 = rec.get_row(engine, dt, ids[0])
+        assert row1["打卡日期"] == date(2026, 9, 1)
+        assert row1["操作时间"] == datetime(2026, 9, 1, 8, 0, 0)
+
+        # 列信息不含 select options，样本值为 ISO 格式
+        date_col = next(c for c in columns if c["name"] == "打卡日期")
+        assert "options" not in date_col
+        assert date_col["sample_values"][0] == "2026-09-01"
 
 
 __all__ = []
