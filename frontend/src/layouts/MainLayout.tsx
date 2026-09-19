@@ -6,7 +6,7 @@ import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
   FileTextOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
-  SettingOutlined, SafetyOutlined,
+  SettingOutlined, SafetyOutlined, QuestionCircleOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
@@ -15,6 +15,10 @@ import { useResponsive } from '@/hooks/useResponsive'
 
 // Modal 组件 lazy import：点击打开时才加载
 const SettingsModal = lazy(() => import('@/pages/modals/SettingsModal'))
+// 帮助中心抽屉 lazy import：点击打开时才加载
+const HelpCenterDrawer = lazy(() => import('@/components/HelpCenterDrawer'))
+// 新手引导：MainLayout 挂载一次，内部自行判定触发时机
+const OnboardingTour = lazy(() => import('@/components/onboarding/OnboardingTour'))
 
 function ModalFallback() {
   return null
@@ -32,6 +36,7 @@ export default function MainLayout() {
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [searchParams] = useSearchParams()
 
   /** 跨表导航时保留当前 URL 的 query params（如 ?mode=calendar、?view=123）. */
@@ -90,6 +95,7 @@ export default function MainLayout() {
     { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
     { type: 'divider' },
     { key: 'settings', icon: <SettingOutlined />, label: '个人设置', onClick: () => setSettingsOpen(true) },
+    { key: 'help', icon: <QuestionCircleOutlined />, label: '帮助中心', onClick: () => setHelpOpen(true) },
     { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: onLogout },
   ]
@@ -124,7 +130,7 @@ export default function MainLayout() {
 
         {/* 工作区下拉 */}
         <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
-          <Button type="text" icon={<AppstoreOutlined />}>
+          <Button type="text" icon={<AppstoreOutlined />} data-testid="ws-switch-btn">
             {currentWs?.name || '工作区'}
           </Button>
         </Dropdown>
@@ -155,6 +161,16 @@ export default function MainLayout() {
         </Space>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+          {/* 帮助中心入口 —— 所有登录用户可见 */}
+          <Tooltip title="帮助中心与新手引导">
+            <Button
+              type="text"
+              size="small"
+              icon={<QuestionCircleOutlined />}
+              data-testid="help-btn"
+              onClick={() => setHelpOpen(true)}
+            >{!isMobile && '帮助'}</Button>
+          </Tooltip>
           {/* 系统管理台入口 —— 仅管理员可见，置于用户头像左侧以区别于常规导航 */}
           {isAdmin && (
             <Tooltip title="系统管理台">
@@ -180,31 +196,43 @@ export default function MainLayout() {
           width={240} collapsedWidth={60}
           style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
         >
-          <div style={{
-            padding: '12px 16px', borderBottom: '1px solid var(--cn-border)',
-            display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
-          </div>
-          <div style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
-            数据表 ({orderedTables.length})
-          </div>
-          {tables.length === 0 ? (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>
-              暂无表
+          <div data-testid="sider-tables">
+            <div style={{
+              padding: '12px 16px', borderBottom: '1px solid var(--cn-border)',
+              display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
             </div>
-          ) : (
-            <Menu
-              mode="inline"
-              selectedKeys={tid ? [String(tid)] : []}
-              items={orderedTables.map(t => ({
-                key: String(t.id),
-                icon: <TableOutlined />,
-                label: t.name,
-                onClick: () => navigateToTable(wid!, t.id),
-              }))}
-            />
-          )}
+            <div style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
+              数据表 ({orderedTables.length})
+            </div>
+            {tables.length === 0 ? (
+              collapsed ? (
+                <div style={{ padding: 16, textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>无表</div>
+              ) : (
+                <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>
+                  <p style={{ marginBottom: 12 }}>还没有数据表，先创建或导入一张吧</p>
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<PlusOutlined />}
+                    onClick={() => navigate(wid ? `/w/${wid}/tables` : '/w')}
+                  >新建表</Button>
+                </div>
+              )
+            ) : (
+              <Menu
+                mode="inline"
+                selectedKeys={tid ? [String(tid)] : []}
+                items={orderedTables.map(t => ({
+                  key: String(t.id),
+                  icon: <TableOutlined />,
+                  label: t.name,
+                  onClick: () => navigateToTable(wid!, t.id),
+                }))}
+              />
+            )}
+          </div>
         </Sider>
 
         <Content style={{ background: 'var(--cn-bg-page)', flex: 1, minHeight: 0, overflow: 'auto' }}>
@@ -214,6 +242,14 @@ export default function MainLayout() {
 
       <Suspense fallback={<ModalFallback />}>
         <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      </Suspense>
+
+      <Suspense fallback={<ModalFallback />}>
+        {helpOpen && <HelpCenterDrawer open onClose={() => setHelpOpen(false)} />}
+      </Suspense>
+
+      <Suspense fallback={<ModalFallback />}>
+        <OnboardingTour />
       </Suspense>
     </Layout>
   )

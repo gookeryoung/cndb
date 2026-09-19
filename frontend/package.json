@@ -39,6 +39,7 @@
     "axios": "^1.20.0",
     "codemirror": "^6.0.2",
     "dayjs": "^1.11.23",
+    "driver.js": "^1.8.0",
     "nunjucks": "^3.2.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
