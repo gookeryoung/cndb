@@ -90,12 +90,12 @@ interface ModeBtn {
   icon: React.ReactNode
 }
 const MODE_BUTTONS: readonly ModeBtn[] = [
-  { mode: 'grid', tooltip: '表格', icon: <ColumnHeightOutlined /> },
-  { mode: 'kanban', tooltip: '看板', icon: <AppstoreOutlined /> },
-  { mode: 'gallery', tooltip: '画廊', icon: <EyeOutlined /> },
-  { mode: 'calendar', tooltip: '日历', icon: <CalendarOutlined /> },
-  { mode: 'gantt', tooltip: '甘特图', icon: <LineChartOutlined /> },
-  { mode: 'wbs', tooltip: '工作分解', icon: <PartitionOutlined /> },
+  { mode: 'grid', tooltip: '表格视图：行列结构，适合录入与批量管理', icon: <ColumnHeightOutlined /> },
+  { mode: 'kanban', tooltip: '看板视图：按选择字段分组拖拽流转，适合任务跟踪', icon: <AppstoreOutlined /> },
+  { mode: 'gallery', tooltip: '画廊视图：图片卡片展示，适合素材与档案', icon: <EyeOutlined /> },
+  { mode: 'calendar', tooltip: '日历视图：按日期字段排布在月历上', icon: <CalendarOutlined /> },
+  { mode: 'gantt', tooltip: '甘特图视图：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
+  { mode: 'wbs', tooltip: 'WBS 视图：树状层级分解任务', icon: <PartitionOutlined /> },
 ]
 
 /** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */
@@ -847,7 +847,7 @@ export default function GridPage() {
         <div style={{ flex: 1 }} />
         {/* 右侧主操作区 */}
         <Space size={6}>
-          <Tooltip title={newRowActive || editingRowId != null ? '请先完成当前编辑' : '新增一行'}>
+          <Tooltip title={newRowActive || editingRowId != null ? '请先完成当前编辑' : '新增一行：在表格末尾添加空记录，逐格填写后回车保存'}>
             <Button
               type="primary"
               size="middle"
@@ -859,7 +859,7 @@ export default function GridPage() {
               新增行
             </Button>
           </Tooltip>
-          <Tooltip title="表设置（字段/视图/权限）">
+          <Tooltip title="表设置：管理字段结构、视图列表与权限授权">
             <Button
               data-testid="table-settings-btn"
               icon={<MenuOutlined />}
@@ -868,8 +868,8 @@ export default function GridPage() {
               表设置
             </Button>
           </Tooltip>
-          <Tooltip title="更新、新增、抓取或导出数据">
-            <Button icon={<ImportOutlined />} onClick={() => setImportExportOpen(true)}>更新/导出</Button>
+          <Tooltip title="导入 / 导出：批量更新或新增数据（upsert）、导出 CSV / Excel / JSON">
+            <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={() => setImportExportOpen(true)}>更新/导出</Button>
           </Tooltip>
           <Dropdown menu={{
             items: [
@@ -907,7 +907,7 @@ export default function GridPage() {
                 }),
               },
             ]
-          }}><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></Dropdown>
+          }}><Tooltip title="更多操作：刷新、复制表、移动工作区、删除表"><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></Tooltip></Dropdown>
         </Space>
       </div>
 
@@ -1020,7 +1020,7 @@ export default function GridPage() {
 
           {/* 视图模式切换 —— 仅渲染数据表实际拥有的视图类型；仅 grid 一种时隐藏 */}
           {showModeSwitch && (
-            <Space.Compact size="small">
+            <Space.Compact size="small" data-testid="view-mode-switch">
               {modeButtons.map((b) => (
                 <Tooltip key={b.mode} title={b.tooltip}>
                   <Button
@@ -1037,25 +1037,27 @@ export default function GridPage() {
 
           <Input.Search
             size="small"
-            placeholder="搜索..."
+            placeholder="搜索当前视图..."
             allowClear
             prefix={<SearchOutlined />}
             value={searchQuery}
             onChange={e => { setSearchQuery(e.target.value); setOffset(0) }}
             style={{ width: 160 }}
           />
-          <Tooltip title="当前视图筛选规则">
+          <Tooltip title="筛选规则：按字段条件过滤当前视图的行，规则保存在视图中">
             <Button
               size="small"
               icon={<FilterOutlined />}
               type={viewFilters.length ? 'primary' : 'default'}
+              data-testid="view-filter-btn"
               onClick={() => setViewConfigOpen(true)}
             />
           </Tooltip>
-          <Tooltip title="显示模式设置（对所有视图生效）">
+          <Tooltip title="显示模式：设置行密度、边框、斑马纹等（对所有视图生效）">
             <Button
               size="small"
               icon={<SettingOutlined />}
+              data-testid="display-settings-btn"
               onClick={() => setSettingsOpen(true)}
             />
           </Tooltip>
@@ -1071,6 +1073,20 @@ export default function GridPage() {
             <Table
               ref={tableRef as any}
               rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns}
+              locale={{
+                emptyText: (
+                  <div style={{ padding: '32px 0' }} data-testid="grid-empty-state">
+                    <Empty description="这张表还没有数据，点击下方按钮录入第一行，或通过「更新/导出」批量导入" />
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      style={{ marginTop: 12 }}
+                      disabled={!canEditRecords}
+                      onClick={startNewRow}
+                    >新增一行</Button>
+                  </div>
+                ),
+              }}
               dataSource={(() => {
                 if (!newRowActive) return (rowList.items || [])
                 const newRow = { id: NEW_ROW_KEY } as unknown as RowResponse

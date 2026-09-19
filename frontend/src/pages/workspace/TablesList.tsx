@@ -187,7 +187,7 @@ export default function TablesList() {
       key: 'drag',
       width: 40,
       render: () => (
-        <Tooltip title="拖动排序">
+        <Tooltip title="拖动调整表的显示顺序（顺序会保存）">
           <HolderOutlined style={{ color: '#bfbfbf', cursor: 'grab' }} />
         </Tooltip>
       ),
@@ -249,7 +249,7 @@ export default function TablesList() {
       width: 90,
       align: 'right' as const,
       render: (n?: number) => (
-        <Tooltip title="显式授予成员">
+        <Tooltip title="显式授权成员：在表设置中单独授权的成员数量（未显式授权时遵循工作区角色）">
           <Badge
             count={n ?? 0}
             showZero
@@ -295,7 +295,7 @@ export default function TablesList() {
       width: 110,
       render: (_: unknown, record: TableSummary) => (
         <Space size="small">
-          <Tooltip title="打开">
+          <Tooltip title="打开这张表，进入数据表格页">
             <Button
               type="text"
               size="small"
@@ -351,7 +351,7 @@ export default function TablesList() {
               ],
             }}
           >
-            <Tooltip title="更多操作">
+            <Tooltip title="更多操作：重命名、复制表、删除表">
               <Button
                 type="text"
                 size="small"
