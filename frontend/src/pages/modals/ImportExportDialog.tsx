@@ -257,7 +257,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     }
     const textMap: Record<string, string> = {
       pending_confirm: '校验完成，等待确认',
-      pending_validation: diffing ? '重新 DIFF 中...' : '校验中...',
+      pending_validation: diffing ? '重新比对分析中...' : '校验中...',
       running: '导入中...',
       done: '已完成',
       failed: '失败',
@@ -265,12 +265,15 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     }
 
     // 三卡统计数据（仅 preview 阶段有 report 时展示）
+    // 后端契约：update_count = 命中已有行总数（含无变化），update_changed_count = 有实际字段变化的行数
+    // 三卡口径：待新增 = new_count，待更新 = update_changed_count（真正会更新的），无变化 = 命中但字段值一致的
     let newCount = 0, updateCount = 0, unchangedCount = 0
     if (report) {
       newCount = report.new_count ?? report.valid_count ?? 0
-      updateCount = report.update_count ?? 0
-      const updateChangedCount: number = report.update_changed_count ?? updateCount
-      unchangedCount = Math.max(0, updateCount - updateChangedCount)
+      const hitCount: number = report.update_count ?? 0
+      const changedCount: number = report.update_changed_count ?? hitCount
+      updateCount = changedCount
+      unchangedCount = Math.max(0, hitCount - changedCount)
     }
 
     return (
@@ -360,11 +363,11 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
               loading={diffing}
               disabled={!task}
             >
-              {hasKeys ? '执行 DIFF' : '预览全量'}
+              {hasKeys ? '更新数据比对分析' : '预览全量'}
             </Button>
             {hasKeys && (
               <Button onClick={handleClearMatchKeys} disabled={diffing}>
-                清空
+                清空参考列
               </Button>
             )}
           </div>
@@ -605,7 +608,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
               <span style={{ color: '#64748b', fontSize: 13 }}>
                 未选择参考列，所有行将作为<b>新增</b>导入
                 <br />
-                <span style={{ fontSize: 12 }}>选择参考列并执行 DIFF 后，此处将显示新旧字段对比</span>
+                <span style={{ fontSize: 12 }}>选择参考列并执行更新数据比对分析后，此处将显示新旧字段对比</span>
               </span>
             }
           />
@@ -807,7 +810,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message={`按参考列 ${matchKeys.join('、')} DIFF 完成：没有匹配到已有数据，全部 ${newCount} 行将作为新增导入`}
+            message={`按参考列 ${matchKeys.join('、')} 比对分析完成：没有匹配到已有数据，全部 ${newCount} 行将作为新增导入`}
           />
         )}
         {hasUpsert && updateChangedCount === 0 && (
@@ -918,7 +921,9 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
             },
             {
               key: 'update',
-              label: `待更新 (${updateCount})`,
+              label: updateChangedCount < updateCount
+                ? `更新 (${updateChangedCount}/${updateCount})`
+                : `更新 (${updateCount})`,
               children: renderDiffTable(report.update_preview, 'update', report),
             },
             {
@@ -972,13 +977,15 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
           {hasErrors && (
             <Button onClick={handleDownloadFailed} icon={<DownloadOutlined />}>下载失败行</Button>
           )}
-          <Tooltip title={matchKeys.length > 0 ? `将按参考列 ${matchKeys.join(', ')} 执行 upsert` : '当前全部作为新增导入'}>
+          <Tooltip title={matchKeys.length > 0
+            ? `将按参考列 ${matchKeys.join(', ')} 执行 upsert（新增 ${newCount} / 更新 ${updateChangedCount} / 无变化 ${Math.max(0, updateCount - updateChangedCount)}）`
+            : '当前全部作为新增导入'}>
             <Button
               type="primary"
               onClick={handleConfirm}
-              disabled={newCount + updateCount === 0}
+              disabled={newCount + updateChangedCount === 0}
             >
-              确认导入（新增 {newCount} / 更新 {updateCount}）
+              确认导入（新增 {newCount} / 更新 {updateChangedCount}）
             </Button>
           </Tooltip>
         </div>
@@ -998,7 +1005,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
           >
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
             <p className="ant-upload-text">点击或拖拽文件到此处</p>
-            <p className="ant-upload-hint">支持 CSV / JSON / XLSX — 先看全量数据，再选参考列执行 DIFF</p>
+            <p className="ant-upload-hint">支持 CSV / JSON / XLSX — 先看全量数据，再选参考列执行更新数据比对分析</p>
           </Dragger>
         </>
       )}
