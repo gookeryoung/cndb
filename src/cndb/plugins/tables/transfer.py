@@ -12,7 +12,7 @@ import io
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from cndb.plugins.tables import records as rec
@@ -1069,8 +1069,44 @@ def _coerce_long_numeric_to_text(value: Any) -> Any:
     return value
 
 
+def _classify_date_like(value: Any) -> str | None:
+    """date/datetime 对象 → 推断字段类型；非日期对象返回 None.
+
+    Excel 纯日期单元格经 openpyxl 读出为午夜 datetime（不含时间信息），
+    归一为 date 类型，使纯日期列推断为 date 而非 datetime；
+    带时间信息的 datetime 推断为 datetime。
+
+    注意分支顺序：isinstance(datetime_obj, date) 恒为 True，datetime 须先判。
+    """
+    if isinstance(value, datetime):
+        midnight = (value.hour, value.minute, value.second, value.microsecond) == (0, 0, 0, 0)
+        return "date" if midnight else "datetime"
+    if isinstance(value, date):
+        return "date"
+    return None
+
+
+def _format_date_like_sample(value: Any) -> str | None:
+    """date/datetime 对象 → ISO 样本字符串；非日期对象返回 None.
+
+    date 与午夜 datetime 输出 "YYYY-MM-DD"（避免 select options / 样本值
+    出现 "00:00:00" 尾巴）；带时间 datetime 输出空格分隔 ISO 串
+    （与 _ISO_DATETIME_RE 的 ``[T ]`` 分支及落库 strptime 格式清单一致）。
+    """
+    kind = _classify_date_like(value)
+    if kind is None:
+        return None
+    if kind == "date":
+        return value.date().isoformat() if isinstance(value, datetime) else value.isoformat()
+    return value.isoformat(sep=" ")
+
+
 def _python_type_to_field_type(value: Any) -> str:
-    """把 Python 对象直接映射到字段类型（JSON 推断的第一捷径）."""
+    """把 Python 对象直接映射到字段类型（JSON 推断的第一捷径）.
+
+    日期类对象（xlsx 单元格经 openpyxl 读出的 datetime/date）映射到
+    date/datetime 字段类型，见 _classify_date_like。
+    """
     if value is None:
         return "empty"
     if isinstance(value, bool):
@@ -1093,6 +1129,9 @@ def _python_type_to_field_type(value: Any) -> str:
         return _infer_single_value(value)
     if isinstance(value, (list, dict)):
         return "json"
+    date_like = _classify_date_like(value)
+    if date_like is not None:
+        return date_like
     return "text"
 
 
@@ -1149,7 +1188,9 @@ def analyze_json_columns(
                     except Exception:
                         samples[key].append(str(val))
                 else:
-                    samples[key].append(str(val))
+                    # date/datetime 对象输出 ISO 串，避免 "00:00:00" 尾巴混入 options
+                    formatted = _format_date_like_sample(val)
+                    samples[key].append(formatted if formatted is not None else str(val))
 
     if not rows:
         return []
