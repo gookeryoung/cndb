@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Modal, Tabs, Button, Progress, message, Space, Select, Alert, Empty, Upload, Switch, Table, Tag, Collapse, Radio, Descriptions, Tooltip, Checkbox } from 'antd'
-import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined, ApiOutlined, ExclamationCircleOutlined, CloseCircleOutlined, SettingOutlined, ReloadOutlined, SwapOutlined, PlusCircleOutlined, EditOutlined } from '@ant-design/icons'
+import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined, ApiOutlined, SettingOutlined, ReloadOutlined, SwapOutlined, PlusCircleOutlined, EditOutlined } from '@ant-design/icons'
 import { importApi, exportApi } from '@/api'
 import type { ImportTaskInfo, Field } from '@/api'
 import ApiImportDialog from './ApiImportDialog'
@@ -243,9 +243,10 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     }
   }
 
-  // ── 渲染：状态条 ──
-  const renderStatusBar = () => {
+  // ── 渲染：进度 + 统计 整合面板（紧凑单行布局） ──
+  const renderProgressSummary = () => {
     if (!task) return null
+    const report = (task as ImportTaskInfo & { validation_report?: any }).validation_report
     const colorMap: Record<string, 'success' | 'exception' | 'active' | 'normal'> = {
       pending_confirm: 'active',
       running: 'active',
@@ -262,16 +263,48 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
       failed: '失败',
       pending: '排队中',
     }
+
+    // 三卡统计数据（仅 preview 阶段有 report 时展示）
+    let newCount = 0, updateCount = 0, unchangedCount = 0
+    if (report) {
+      newCount = report.new_count ?? report.valid_count ?? 0
+      updateCount = report.update_count ?? 0
+      const updateChangedCount: number = report.update_changed_count ?? updateCount
+      unchangedCount = Math.max(0, updateCount - updateChangedCount)
+    }
+
     return (
-      <div style={{ marginTop: 12, padding: 12, background: '#f6f8fa', borderRadius: 8 }}>
-        <div style={{ fontSize: 13, color: '#475569', marginBottom: 6 }}>
-          <FileTextOutlined /> <span style={{ marginLeft: 6 }}>{task.filename}</span>
-          <span style={{ marginLeft: 12, color: '#94a3b8' }}>· {(task.format || '').toUpperCase()}</span>
-        </div>
-        <Progress percent={task.progress} status={colorMap[task.status] || 'normal'} size="small" />
-        <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
-          {textMap[task.status] || task.status}
-          {task.imported_rows != null && task.status === 'done' && ` · 已导入 ${task.imported_rows} 行`}
+      <div style={{ marginTop: 12, padding: '10px 14px', background: '#f6f8fa', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          {/* 左：文件 + 进度 */}
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <div style={{ fontSize: 13, color: '#475569', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FileTextOutlined />
+              <span style={{ fontWeight: 500 }}>{task.filename}</span>
+              <span style={{ color: '#94a3b8' }}>· {(task.format || '').toUpperCase()}</span>
+              <span style={{ color: '#94a3b8' }}>·</span>
+              <span style={{ color: '#64748b', fontSize: 12 }}>
+                {textMap[task.status] || task.status}
+                {task.imported_rows != null && task.status === 'done' && ` · 已导入 ${task.imported_rows} 行`}
+              </span>
+            </div>
+            <Progress
+              percent={task.progress}
+              status={colorMap[task.status] || 'normal'}
+              size="small"
+              style={{ marginTop: 6, marginBottom: 0 }}
+              strokeColor={task.status === 'done' ? '#22c55e' : task.status === 'failed' ? '#ef4444' : '#3b82f6'}
+            />
+          </div>
+
+          {/* 右：三卡统计（仅 preview 及之后展示） */}
+          {report && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <MiniStat compact label="待新增" value={newCount} color="#22c55e" />
+              <MiniStat compact label="待更新" value={updateCount} color="#3b82f6" />
+              <MiniStat compact label="无变化" value={unchangedCount} color="#94a3b8" />
+            </div>
+          )}
         </div>
         {task.error_message && (
           <Alert type="error" message={task.error_message} style={{ marginTop: 8, padding: '4px 10px' }} showIcon />
@@ -530,14 +563,24 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
   }
 
   /** 迷你统计卡片子组件 —— 内联避免 JSX 中重复 */
-  const MiniStat = ({ label, value, color }: { label: string; value: number | string; color: string }) => (
-    <div style={{
-      padding: '8px 14px', background: color + '10', borderRadius: 6,
-      borderLeft: `3px solid ${color}`, minWidth: 90,
-    }}>
-      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
-      <div style={{ fontSize: 11, color: '#64748b' }}>{label}</div>
-    </div>
+  const MiniStat = ({ label, value, color, compact }: { label: string; value: number | string; color: string; compact?: boolean }) => (
+    compact ? (
+      <div style={{
+        padding: '6px 12px', background: color + '12', borderRadius: 6,
+        borderLeft: `3px solid ${color}`, minWidth: 72, textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
+        <div style={{ fontSize: 11, color: '#64748b' }}>{label}</div>
+      </div>
+    ) : (
+      <div style={{
+        padding: '8px 14px', background: color + '10', borderRadius: 6,
+        borderLeft: `3px solid ${color}`, minWidth: 90,
+      }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
+        <div style={{ fontSize: 11, color: '#64748b' }}>{label}</div>
+      </div>
+    )
   )
 
   // ── 渲染：Diff 表格（更新行红/绿 chip 字段对比 + 变更汇总列；空态区分提示） ──
@@ -741,41 +784,13 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     const updateCount = report.update_count ?? 0
     // 有实际字段变化的更新行数（旧任务报告缺省时按"全部有变化"处理，避免误报无变化）
     const updateChangedCount: number = report.update_changed_count ?? updateCount
-    const warning = report.warning_count
-    const error = report.error_count
     const hasUpsert = updateCount > 0
     const multiConflict = report.multi_key_conflicts ?? 0
     const plannedColumns: Array<{ name: string; field_type: string; sample_values?: string[] }> = report.planned_columns || []
 
     return (
       <div style={{ marginTop: 16 }}>
-        {/* 统计卡片 */}
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-          <div style={{ flex: 1, padding: 12, background: '#f0fdf4', borderRadius: 8, textAlign: 'center', borderLeft: '3px solid #22c55e' }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>{newCount}</div>
-            <div style={{ fontSize: 12, color: '#166534' }}><PlusCircleOutlined /> 待新增</div>
-          </div>
-          <div style={{ flex: 1, padding: 12, background: '#eff6ff', borderRadius: 8, textAlign: 'center', borderLeft: '3px solid #3b82f6', opacity: hasUpsert ? 1 : 0.4 }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#2563eb' }}>{updateCount}</div>
-            <div style={{ fontSize: 12, color: '#1e40af' }}>
-              <EditOutlined /> 待更新
-              {hasUpsert && updateChangedCount < updateCount && `（${updateChangedCount} 行有变更）`}
-              {!hasUpsert && (matchKeys.length === 0 ? '（未选参考列）' : '（无匹配行）')}
-            </div>
-          </div>
-          {warning > 0 && (
-            <div style={{ flex: 1, padding: 12, background: '#fffbeb', borderRadius: 8, textAlign: 'center' }}>
-              <div style={{ fontSize: 20, fontWeight: 700, color: '#d97706' }}>{warning}</div>
-              <div style={{ fontSize: 12, color: '#92400e' }}><ExclamationCircleOutlined /> 警告</div>
-            </div>
-          )}
-          {hasErrors && (
-            <div style={{ flex: 1, padding: 12, background: '#fef2f2', borderRadius: 8, textAlign: 'center' }}>
-              <div style={{ fontSize: 20, fontWeight: 700, color: '#dc2626' }}>{error}</div>
-              <div style={{ fontSize: 12, color: '#991b1b' }}><CloseCircleOutlined /> 错误</div>
-            </div>
-          )}
-        </div>
+        {/* 进度 + 统计已整合至上方进度面板 */}
 
         {multiConflict > 0 && (
           <Alert
@@ -992,7 +1007,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
         <Alert type="info" message="处理中..." style={{ marginTop: 12 }} showIcon />
       )}
 
-      {renderStatusBar()}
+      {renderProgressSummary()}
       {phase === 'preview' && renderPreview()}
 
       {(phase === 'done' || phase === 'failed') && (
@@ -1008,7 +1023,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
 
   return (
     <Modal
-      title="导入 / 导出"
+      title="更新 / 导出"
       open={open}
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
@@ -1026,7 +1041,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
         items={[
           {
             key: 'import',
-            label: <span><UploadOutlined /> 导入到当前表</span>,
+            label: <span><UploadOutlined /> 更新</span>,
             children: importTab,
           },
           {
@@ -1075,7 +1090,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
           },
           {
             key: 'api',
-            label: <span><ApiOutlined /> API 抓取追加</span>,
+            label: <span><ApiOutlined /> API 抓取</span>,
             children: (
               <ApiImportDialog
                 embed
