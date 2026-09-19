@@ -230,6 +230,11 @@ export const viewApi = {
   /** 批量导入视图（JSON 数组，同名自动跳过） */
   importViews: (wid: number | string, tid: number | string, data: ViewCreate[]) =>
     api.post<View[]>(`/v1/workspaces/${wid}/tables/${tid}/views/import`, data).then(r => r.data),
+  /** 批量导出视图（返回 ViewCreate 兼容数组，无内部元数据；不传 ids 导出全部） */
+  exportViews: (wid: number | string, tid: number | string, ids?: Array<number | string>) => {
+    const params = ids && ids.length ? { ids } : undefined
+    return api.get<ViewCreate[]>(`/v1/workspaces/${wid}/tables/${tid}/views/export`, { params }).then(r => r.data)
+  },
   update: (wid: number | string, tid: number | string, vid: number | string, data: ViewUpdate) =>
     api.patch<View>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}`, data).then(r => r.data),
   remove: (wid: number | string, tid: number | string, vid: number | string) =>

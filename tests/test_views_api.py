@@ -856,3 +856,134 @@ class TestViewReorder:
             headers=viewer_h,
         )
         assert r.status_code == 403
+
+
+class TestViewExport:
+    def test_export_all(self, client, ws, table, auth_owner):
+        """不传 ids → 导出全部视图，且输出字段与 ViewCreate 对称."""
+        # 建三个不同类型视图
+        for i, name, vt in [(1, "G1", "grid"), (2, "K1", "kanban"), (3, "C1", "calendar")]:
+            client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+                json={"name": name, "view_type": vt, "order": i - 1},
+                headers=auth_owner,
+            )
+
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/export",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert isinstance(data, list)
+        assert len(data) == 3
+
+        # 应只保留 ViewCreate 字段，无 id/table_id/owner_id/时间戳
+        forbidden = {"id", "table_id", "owner_id", "created_at", "updated_at", "is_public", "public_slug"}
+        for v in data:
+            assert forbidden.isdisjoint(v.keys()), f"导出含非法字段: {forbidden & v.keys()}"
+            assert "name" in v
+            assert "view_type" in v
+            assert "filters" in v
+            assert "sortings" in v
+            assert "view_options" in v
+
+        names = {v["name"] for v in data}
+        assert names == {"G1", "K1", "C1"}
+
+    def test_export_by_ids(self, client, ws, table, auth_owner):
+        """传 ids → 只导出指定视图，不存在的 id 自动跳过."""
+        vr1 = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "A", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "B", "view_type": "kanban"},
+            headers=auth_owner,
+        )
+        vid_a = vr1.json()["id"]
+
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/export",
+            params={"ids": [vid_a, 99999]},
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "A"
+
+        # 不传 ids → 全量
+        r2 = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/export",
+            headers=auth_owner,
+        )
+        assert r2.status_code == 200
+        assert len(r2.json()) == 2
+
+    def test_export_empty(self, client, ws, table, auth_owner):
+        """新表无视图 → 返回空数组."""
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/export",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_export_then_import_roundtrip(self, client, ws, table, auth_owner):
+        """导出 → 清空全部 → 再导入同一 JSON → 视图完整恢复."""
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "Kanban看板",
+                "view_type": "kanban",
+                "filter_type": "AND",
+                "view_options": {"group_field": "姓名", "ungrouped_label": "未分配"},
+                "is_default": True,
+                "order": 0,
+            },
+            headers=auth_owner,
+        )
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "Grid默认", "view_type": "grid", "order": 1},
+            headers=auth_owner,
+        )
+
+        # 导出
+        export_r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/export",
+            headers=auth_owner,
+        )
+        assert export_r.status_code == 200
+        payload = export_r.json()
+        assert len(payload) == 2
+
+        # 删掉全部
+        list_r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            headers=auth_owner,
+        )
+        for v in list_r.json():
+            client.delete(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{v['id']}",
+                headers=auth_owner,
+            )
+
+        # 回导
+        import_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/import",
+            json=payload,
+            headers=auth_owner,
+        )
+        assert import_r.status_code == 200
+        assert len(import_r.json()) == 2
+
+        # 字段完整保留
+        kanban = next(v for v in import_r.json() if v["name"] == "Kanban看板")
+        assert kanban["view_type"] == "kanban"
+        assert kanban["filter_type"] == "AND"
+        assert kanban["view_options"]["group_field"] == "姓名"
+        assert kanban["is_default"] is True

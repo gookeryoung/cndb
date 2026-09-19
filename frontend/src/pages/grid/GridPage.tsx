@@ -24,7 +24,7 @@ import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdow
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
-  AppstoreOutlined, CopyOutlined, ImportOutlined, UploadOutlined,
+  AppstoreOutlined, CopyOutlined, ImportOutlined, ExportOutlined, UploadOutlined,
   CalendarOutlined, SwapOutlined, LineChartOutlined,
   SearchOutlined, EditOutlined, MenuOutlined, PartitionOutlined, HolderOutlined,
 } from '@ant-design/icons'
@@ -965,6 +965,32 @@ export default function GridPage() {
                   icon: <ImportOutlined />,
                   label: '导入视图',
                   onClick: () => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) },
+                },
+                {
+                  key: 'export',
+                  icon: <ExportOutlined />,
+                  label: '导出视图',
+                  onClick: async () => {
+                    try {
+                      const data = await viewApi.exportViews(wid!, tid!)
+                      if (!data.length) {
+                        message.warning('当前表暂无视图可导出')
+                        return
+                      }
+                      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = 'views.json'
+                      document.body.appendChild(a)
+                      a.click()
+                      document.body.removeChild(a)
+                      URL.revokeObjectURL(url)
+                      message.success(`已导出 ${data.length} 个视图`)
+                    } catch (err) {
+                      message.error(err instanceof Error ? err.message : '导出失败')
+                    }
+                  },
                 },
               ],
             }}
