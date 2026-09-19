@@ -4,10 +4,11 @@
  *   1. 用户上传文件（不带 matchKeys），系统解析+校验，全量展示为"待新增"
  *   2. 用户在预览面板里选择参考列 + 点击"执行 DIFF"
  *   3. 后端重新 analyze，返回 new/update 分类 + 字段级 diff
- *   4. Diff 视图：新增行绿底 / 更新行蓝底 + 字段级 old→new 对比
+ *   4. Diff 视图：新增行绿底 / 更新行蓝底；更新行字段级红/绿 chip old→new 对比 + 变更汇总列，
+ *      无更新行时空态区分"未选参考列 / 无匹配行 / 命中但字段无变化"
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Modal, Tabs, Button, Progress, message, Space, Select, Alert, Empty, Upload, Switch, Table, Tag, Collapse, Radio, Descriptions, Tooltip, Checkbox } from 'antd'
 import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined, ApiOutlined, ExclamationCircleOutlined, CloseCircleOutlined, SettingOutlined, ReloadOutlined, SwapOutlined, PlusCircleOutlined, EditOutlined } from '@ant-design/icons'
 import { importApi, exportApi } from '@/api'
@@ -539,31 +540,94 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     </div>
   )
 
-  // ── 渲染：Diff 表格（支持行着色 + 字段级 old→new 对比） ──
+  // ── 渲染：Diff 表格（更新行红/绿 chip 字段对比 + 变更汇总列；空态区分提示） ──
   const renderDiffTable = (
     preview: any[] | undefined,
     mode: 'new' | 'update',
+    report?: any,
   ) => {
-    if (!preview || preview.length === 0) {
-      return <Empty description={mode === 'new' ? '无新增行' : '无更新行'} />
-    }
     const isNew = mode === 'new'
     const rowBg = isNew ? '#f0fdf4' : '#eff6ff'          // 新增绿 / 更新蓝
     const rowBorder = isNew ? '#22c55e' : '#3b82f6'       // 左侧竖条颜色
     const badgeColor = isNew ? 'green' : 'blue'
     const BadgeIcon = isNew ? PlusCircleOutlined : EditOutlined
 
-    // 动态收集所有列（以第一行为准 + 常见列）
-    const firstRow = preview[0]
-    // new_preview / update_preview 都有 match_key_values / field_sample
-    const kvKeys = firstRow?.match_key_values ? Object.keys(firstRow.match_key_values) : []
-    const sampleKeys = firstRow?.field_sample ? Object.keys(firstRow.field_sample) : []
-    const diffKeys = firstRow?.field_diffs ? Object.keys(firstRow.field_diffs) : []
-    // 列集合：参考列 + 样本列 + 变化列（去重）
+    // ── 空态区分：update 模式按"未选参考列 / 无匹配行"分别提示 ──
+    if (!preview || preview.length === 0) {
+      if (!isNew) {
+        return matchKeys.length === 0 ? (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <span style={{ color: '#64748b', fontSize: 13 }}>
+                未选择参考列，所有行将作为<b>新增</b>导入
+                <br />
+                <span style={{ fontSize: 12 }}>选择参考列并执行 DIFF 后，此处将显示新旧字段对比</span>
+              </span>
+            }
+          />
+        ) : (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <span style={{ color: '#64748b', fontSize: 13 }}>
+                没有需要更新的行
+                <br />
+                <span style={{ fontSize: 12 }}>按参考列「{matchKeys.join('、')}」未匹配到已有数据</span>
+              </span>
+            }
+          />
+        )
+      }
+      return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无新增行" />
+    }
+
+    /** 每行变更字段数 */
+    const changedCountOf = (row: any) => (row.field_diffs ? Object.keys(row.field_diffs).length : 0)
+
+    // ── 列名收集：new 模式沿用首行样本；update 模式跨全部行取并集并聚焦变化字段 ──
+    const kvKeys: string[] = []
+    const sampleKeys: string[] = []
+    const diffKeys: string[] = []
+    if (isNew) {
+      const firstRow = preview[0]
+      Object.keys(firstRow?.match_key_values ?? {}).forEach(k => kvKeys.push(k))
+      Object.keys(firstRow?.field_sample ?? {}).forEach(k => sampleKeys.push(k))
+    } else {
+      preview.forEach(row => {
+        Object.keys(row.match_key_values ?? {}).forEach(k => { if (!kvKeys.includes(k)) kvKeys.push(k) })
+        Object.keys(row.field_diffs ?? {}).forEach(k => { if (!diffKeys.includes(k)) diffKeys.push(k) })
+      })
+    }
     const allFieldNames: string[] = []
     kvKeys.forEach(k => { if (!allFieldNames.includes(k)) allFieldNames.push(k) })
     sampleKeys.forEach(k => { if (!allFieldNames.includes(k)) allFieldNames.push(k) })
     diffKeys.forEach(k => { if (!allFieldNames.includes(k)) allFieldNames.push(k) })
+
+    /** 字段级 diff 单元格：GitHub diff 风格 —— 旧值红底删除线（−）、新值绿底（+） */
+    const renderDiffCell = (diff: any) => {
+      const oldText = fmtValue(diff.old)
+      const newText = fmtValue(diff.new)
+      const chipBase: CSSProperties = {
+        fontSize: 12,
+        lineHeight: '18px',
+        padding: '0 6px',
+        borderRadius: 3,
+        alignSelf: 'flex-start',
+        maxWidth: 280,
+        overflowWrap: 'anywhere',
+      }
+      return (
+        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ ...chipBase, background: '#fef2f2', color: '#b91c1c', textDecoration: 'line-through' }}>
+            − {oldText || '(空)'}
+          </span>
+          <span style={{ ...chipBase, background: '#f0fdf4', color: '#15803d', fontWeight: 500 }}>
+            + {newText || '(清空)'}
+          </span>
+        </div>
+      )
+    }
 
     const columns: any[] = [
       {
@@ -584,36 +648,49 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
       columns.push({
         title: '命中行',
         dataIndex: 'existing_row_id',
-        width: 100,
+        width: 90,
         fixed: 'left',
         render: (v: number) => <Tag color="blue">#{v}</Tag>,
       })
+      // 变更汇总列：变更字段数 + 字段名（最多 2 个，多余折叠为 +N）
+      columns.push({
+        title: '变更',
+        dataIndex: '_changes',
+        width: 170,
+        fixed: 'left',
+        render: (_: unknown, row: any) => {
+          const n = changedCountOf(row)
+          if (n === 0) {
+            return <Tag style={{ margin: 0, color: '#6b7280', background: '#f3f4f6', borderColor: '#e5e7eb' }}>无变化</Tag>
+          }
+          const names: string[] = Object.keys(row.field_diffs)
+          return (
+            <span>
+              <Tag color="blue" style={{ margin: '0 4px 2px 0' }}>{n} 处</Tag>
+              {names.slice(0, 2).map(nm => (
+                <Tag key={nm} color="default" style={{ margin: '0 4px 2px 0' }}>{nm}</Tag>
+              ))}
+              {names.length > 2 && <Tag style={{ margin: 0 }}>+{names.length - 2}</Tag>}
+            </span>
+          )
+        },
+      })
     }
 
-    // 每个字段列：显示值 + 如果是变化字段则渲染 diff
+    // 每个字段列：update 模式仅展示参考列与变化字段（聚焦变更）；变化字段渲染 diff chip
     allFieldNames.forEach(fname => {
       const isKeyCol = kvKeys.includes(fname)
+      const isDiffCol = diffKeys.includes(fname)
       columns.push({
         title: isKeyCol ? <span style={{ color: '#7c3aed' }}>🔑 {fname}</span> : fname,
         dataIndex: ['field_sample', fname],
-        ellipsis: true,
+        ellipsis: !isDiffCol,
         render: (_: unknown, row: any) => {
           const previewVal = row.field_sample?.[fname]
           const diff = row.field_diffs?.[fname]
-          // 优先展示 diff（如果是变化字段）
+          // 变化字段：红/绿 chip 对比
           if (diff) {
-            const oldText = fmtValue(diff.old)
-            const newText = fmtValue(diff.new)
-            return (
-              <div style={{ fontSize: 12, lineHeight: 1.6 }}>
-                <div style={{ color: '#9ca3af', textDecoration: 'line-through' }}>
-                  {oldText || <span style={{ color: '#d1d5db' }}>(空)</span>}
-                </div>
-                <div style={{ color: '#16a34a', fontWeight: 500 }}>
-                  → {newText || <span style={{ color: '#16a34a' }}>(清空)</span>}
-                </div>
-              </div>
-            )
+            return renderDiffCell(diff)
           }
           // 参考列：高亮标记
           if (isKeyCol) {
@@ -627,6 +704,15 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
 
     return (
       <>
+        {/* 命中但全部无字段变化 → 区分提示 */}
+        {!isNew && report && report.update_changed_count === 0 && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 8 }}
+            message={`已匹配 ${report.update_count} 行已有数据，但字段值均与现有数据一致，无需更新`}
+          />
+        )}
         <Table
           size="small"
           pagination={{ pageSize: 20 }}
@@ -653,6 +739,8 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     const hasErrors = report.error_count > 0
     const newCount = report.new_count ?? report.valid_count
     const updateCount = report.update_count ?? 0
+    // 有实际字段变化的更新行数（旧任务报告缺省时按"全部有变化"处理，避免误报无变化）
+    const updateChangedCount: number = report.update_changed_count ?? updateCount
     const warning = report.warning_count
     const error = report.error_count
     const hasUpsert = updateCount > 0
@@ -669,7 +757,11 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
           </div>
           <div style={{ flex: 1, padding: 12, background: '#eff6ff', borderRadius: 8, textAlign: 'center', borderLeft: '3px solid #3b82f6', opacity: hasUpsert ? 1 : 0.4 }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: '#2563eb' }}>{updateCount}</div>
-            <div style={{ fontSize: 12, color: '#1e40af' }}><EditOutlined /> 待更新{!hasUpsert && '（选参考列后显示）'}</div>
+            <div style={{ fontSize: 12, color: '#1e40af' }}>
+              <EditOutlined /> 待更新
+              {hasUpsert && updateChangedCount < updateCount && `（${updateChangedCount} 行有变更）`}
+              {!hasUpsert && (matchKeys.length === 0 ? '（未选参考列）' : '（无匹配行）')}
+            </div>
           </div>
           {warning > 0 && (
             <div style={{ flex: 1, padding: 12, background: '#fffbeb', borderRadius: 8, textAlign: 'center' }}>
@@ -691,6 +783,24 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
             style={{ marginBottom: 12 }}
             showIcon
             message={`参考列匹配到 ${multiConflict} 组多行冲突（同 key 对应多条已有数据），将取 ID 最小的一行更新`}
+          />
+        )}
+
+        {/* 无更新行区分提示：已选参考列但无命中 / 命中但字段均无变化 */}
+        {matchKeys.length > 0 && updateCount === 0 && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={`按参考列 ${matchKeys.join('、')} DIFF 完成：没有匹配到已有数据，全部 ${newCount} 行将作为新增导入`}
+          />
+        )}
+        {hasUpsert && updateChangedCount === 0 && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={`命中 ${updateCount} 行已有数据，但字段值均与现有数据一致，本次不会产生实际更新`}
           />
         )}
 
@@ -780,7 +890,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
           />
         )}
 
-        {/* 主预览 Tab：有 upsert 时按 new/update 分 Tab 并带 diff；否则全量 new */}
+        {/* 主预览 Tab：new/update 分 Tab；update Tab 常驻，空态区分"未选参考列 / 无匹配行" */}
         <Tabs
           size="small"
           defaultActiveKey={hasUpsert ? 'new' : 'errors'}
@@ -789,13 +899,13 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
               key: 'new',
               label: `待新增 (${newCount})`,
               disabled: newCount === 0,
-              children: renderDiffTable(report.new_preview, 'new'),
+              children: renderDiffTable(report.new_preview, 'new', report),
             },
-            ...(hasUpsert ? [{
+            {
               key: 'update',
               label: `待更新 (${updateCount})`,
-              children: renderDiffTable(report.update_preview, 'update'),
-            }] : []),
+              children: renderDiffTable(report.update_preview, 'update', report),
+            },
             {
               key: 'errors',
               label: `错误 / 警告 (${report.errors.length + report.warnings.length})`,

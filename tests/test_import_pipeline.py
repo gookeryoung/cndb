@@ -1798,6 +1798,50 @@ class TestImporterUpsertAnalyze:
         assert rpt["update_count"] == 1
         assert rpt["multi_key_conflicts"] == 1
 
+    def test_update_changed_and_no_change_counts(self, test_session):
+        """V6: 命中行拆分有变化/无变化计数，field_diffs 仅含变化字段."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables import records as rec
+
+        # A001 name 将变化；A002 完全一致
+        rec.bulk_create(engine, table, [{"code": "A001", "name": "苹果"}, {"code": "A002", "name": "香蕉"}], db=session)
+
+        imp = Importer(engine, session, table)
+        csv = "code,name\nA001,Apple\nA002,香蕉\nA003,新行\n"
+        rpt = imp.analyze(csv, "csv", match_keys=["code"]).report
+
+        assert rpt["update_count"] == 2
+        assert rpt["update_changed_count"] == 1
+        assert rpt["update_no_change_count"] == 1
+        assert rpt["new_count"] == 1
+        # 变化行 field_diffs 仅含变化的 name 字段
+        changed = next(p for p in rpt["update_preview"] if p["match_key_values"]["code"] == "A001")
+        assert set(changed["field_diffs"].keys()) == {"name"}
+        assert changed["field_diffs"]["name"]["old"] == "苹果"
+        assert changed["field_diffs"]["name"]["new"] == "Apple"
+        # 无变化行 field_diffs 为空
+        unchanged = next(p for p in rpt["update_preview"] if p["match_key_values"]["code"] == "A002")
+        assert unchanged["field_diffs"] == {}
+
+    def test_no_match_keys_zero_changed_counts(self, test_session):
+        """V6: 未选参考列时 upsert_result 为 None，报告回退统计全 0."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+
+        imp = Importer(engine, session, table)
+        rpt = imp.analyze("code\nA001\n", "csv").report
+        assert rpt["update_count"] == 0
+        assert rpt["update_changed_count"] == 0
+        assert rpt["update_no_change_count"] == 0
+
 
 class TestImporterUpsertExecute:
     """AC-4: execute 阶段 upsert 分流正确 —— update 覆盖 + new 创建."""

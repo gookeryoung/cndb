@@ -376,7 +376,9 @@ class Importer:
         Returns:
             {
                 "new_count": int,
-                "update_count": int,
+                "update_count": int,             # 命中已有行的总数（含无变化行）
+                "update_changed_count": int,     # 有实际字段变化的行数
+                "update_no_change_count": int,   # 命中但字段值完全一致的行数
                 "multi_key_conflicts": int,
                 "new_preview": [...],
                 "update_preview": [...],  # 每项含 field_diffs（仅变化的字段）
@@ -394,6 +396,8 @@ class Importer:
             return {
                 "new_count": 0,
                 "update_count": 0,
+                "update_changed_count": 0,
+                "update_no_change_count": 0,
                 "multi_key_conflicts": 0,
                 "new_preview": [],
                 "update_preview": [],
@@ -423,6 +427,8 @@ class Importer:
         update_preview: list[dict[str, Any]] = []
         new_rows: list[dict[str, Any]] = []
         update_rows: list[dict[str, Any]] = []
+        update_changed_count = 0
+        update_no_change_count = 0
         multi_key_conflicts = len(conflict_map)
 
         key_cols_set = set(match_keys)
@@ -436,9 +442,14 @@ class Importer:
             if existing_row_id is not None:
                 # 落库仍用原始 values（bulk_update_rows 内部有 _normalize_values）
                 update_rows.append({"row_id": existing_row_id, "values": values})
+                # 对全部命中行算 diff（供无变化统计），预览条目同样携带
+                old_values = old_rows_by_id.get(int(existing_row_id), cast(dict[str, Any], {}))
+                field_diffs = self._build_field_diffs(old_values, view, key_cols_set)
+                if field_diffs:
+                    update_changed_count += 1
+                else:
+                    update_no_change_count += 1
                 if len(update_preview) < self.PREVIEW_LIMIT:
-                    old_values = old_rows_by_id.get(int(existing_row_id), cast(dict[str, Any], {}))
-                    field_diffs = self._build_field_diffs(old_values, view, key_cols_set)
                     update_preview.append(
                         {
                             "row_number": r.row_number,
@@ -462,6 +473,8 @@ class Importer:
         return {
             "new_count": len(new_rows),
             "update_count": len(update_rows),
+            "update_changed_count": update_changed_count,
+            "update_no_change_count": update_no_change_count,
             "multi_key_conflicts": multi_key_conflicts,
             "new_preview": new_preview,
             "update_preview": update_preview,
