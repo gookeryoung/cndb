@@ -156,6 +156,46 @@ def list_views(
     return db.query(DataView).filter(DataView.table_id == table_id).order_by(DataView.order, DataView.id).all()
 
 
+@router.get("/export", response_model=list[ViewCreate])
+def export_views(
+    workspace_id: int,
+    table_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    ids: Annotated[list[int] | None, Query()] = None,
+) -> list[dict[str, object]]:
+    """导出视图配置（返回 ViewCreate 兼容的 JSON 数组，不含 id / 时间戳等内部元数据）.
+
+    - 不传 ids → 导出该表全部视图
+    - 传 ids → 仅导出指定视图（不存在的 id 自动跳过）
+    """
+    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+
+    q = db.query(DataView).filter(DataView.table_id == table_id)
+    if ids:
+        q = q.filter(DataView.id.in_(ids))
+    views = q.order_by(DataView.order, DataView.id).all()
+
+    stripped: list[dict[str, object]] = []
+    keep_fields = {
+        "name",
+        "view_type",
+        "filter_type",
+        "filters",
+        "sortings",
+        "field_options",
+        "field_order",
+        "view_options",
+        "is_default",
+        "order",
+    }
+    for v in views:
+        raw = DataView.__table__.columns.keys()
+        obj = {k: getattr(v, k) for k in raw if k in keep_fields}
+        stripped.append(obj)
+    return stripped
+
+
 @router.get("/{view_id}", response_model=ViewResponse)
 def get_view(
     workspace_id: int,
