@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import math
 import re
 from typing import Any, override
 
@@ -466,6 +467,21 @@ class MultiSelectFieldConfig(SelectFieldConfig):
     pass
 
 
+# multiselect 字符串值的分隔符：半/全角逗号、半/全角分号、顿号
+# （validate 拆分、field_ops options 预填充/同步、transfer 推断层列表识别三处共用，
+# 测试矩阵双向锁定）
+MULTI_SELECT_SPLIT_RE = re.compile(r"[,，;；、]")
+
+
+def split_multi_select_string(value: str) -> list[str]:
+    """把 multiselect 字符串值按分隔符拆分为选项列表（去空白项）.
+
+    validate_value 拆分存储值、field_ops 预填充/同步 options、transfer
+    推断层列表识别三处共用，保证分隔符语义一致。
+    """
+    return [p.strip() for p in MULTI_SELECT_SPLIT_RE.split(value) if p.strip()]
+
+
 class MultiSelectFieldType(FieldType):
     name = "multiselect"
     label = "多选"
@@ -480,7 +496,13 @@ class MultiSelectFieldType(FieldType):
             return None
         cfg = MultiSelectFieldConfig(**_config)
         # options 为空时放行（导入前预填充 options 前的过渡期）
-        values = value if isinstance(value, list) else [value]
+        if isinstance(value, list):
+            values = value
+        elif isinstance(value, str):
+            # 字符串按分隔符拆分为多值（与推断层列表识别、options 预填充共用同一分隔符集）
+            values = split_multi_select_string(value)
+        else:
+            values = [value]
         result: list[str] = []
         if cfg.options:
             allowed = cfg.option_values()
@@ -575,7 +597,12 @@ class PercentageFieldConfig(FieldTypeConfig):
 
 
 class PercentageFieldType(FieldType):
-    """百分比字段 —— 存储 0.0 ~ 1.0 的浮点数."""
+    """百分比字段 —— 存储 0.0 ~ 1.0 的比例值浮点数.
+
+    存储约定：裸数字（无 % 后缀）必须是 0~1 比例值；%-后缀字符串视为
+    显式用户意图，可为任意有限比例（``-12.5%`` → -0.125、``200%`` → 2.0），
+    避免"负百分比/超 100% 行导致混合列整表导入失败"。
+    """
 
     name = "percentage"
     label = "百分比"
@@ -588,7 +615,8 @@ class PercentageFieldType(FieldType):
     def validate_value(self, value: Any, _config: dict[str, Any]) -> float | None:
         if value is None:
             return None
-        # 字符串带百分号（含全角％）→ 剥离后除以 100 存为比例值（与推断层 "85%" → percentage 对齐）
+        # 字符串带百分号（含全角％）→ 剥离后除以 100 存为比例值（与推断层 "85%" → percentage 对齐）；
+        # 显式 % 后缀即用户意图，不受 0~1 值域限制，但须排除 NaN/inf
         if isinstance(value, str):
             text = value.strip()
             if text.endswith(("%", "％")):
@@ -596,13 +624,15 @@ class PercentageFieldType(FieldType):
                     num = float(text[:-1].strip()) / 100
                 except (TypeError, ValueError) as exc:
                     raise ValueError(f"百分比必须是数字: {value!r}") from exc
-                if not (0 <= num <= 1):
-                    raise ValueError(f"百分比必须在 0~1 之间（存储比例值），收到 {num}")
+                if not math.isfinite(num):
+                    raise ValueError(f"百分比必须是有限数字: {value!r}")
                 return num
         try:
             num = float(value)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"百分比必须是数字: {value!r}") from exc
+        # 裸数字保留 0~1 值域防护（无 % 后缀即无显式意图，超出比例值域视为数据错误；
+        # NaN/inf 因比较为 False 同样在此拒绝）
         if not (0 <= num <= 1):
             raise ValueError(f"百分比必须在 0~1 之间（存储比例值），收到 {num}")
         return num
