@@ -208,57 +208,59 @@ export default function WorkspaceList() {
         </Row>
       )}
 
-      {/* 新建工作区 Modal — 扩展字段 */}
-      <Modal
-        title="新建工作区"
-        open={createOpen}
-        onCancel={() => { setCreateOpen(false); form.resetFields() }}
-        onOk={() => form.submit()}
-        confirmLoading={create.isPending}
-        okText="创建"
-        data-testid="create-workspace-modal"
-        width={520}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{ visibility: 'member', allow_edit: true }}
-          onFinish={(v) => {
-            const tagsStr = (v.tags as string) || ''
-            create.mutate({
-              ...v,
-              tags: tagsStr.split(/[,，]/).map(s => s.trim()).filter(Boolean),
-            })
-          }}
+      {/* 新建工作区 Modal — 扩展字段；条件渲染避免 Form.useForm 在未挂载时触发 warning */}
+      {createOpen && (
+        <Modal
+          title="新建工作区"
+          open={createOpen}
+          onCancel={() => { form.resetFields(); setCreateOpen(false) }}
+          onOk={() => form.submit()}
+          confirmLoading={create.isPending}
+          okText="创建"
+          data-testid="create-workspace-modal"
+          width={520}
         >
-          <Form.Item name="name" label="工作区名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="例如：产品研发" />
-          </Form.Item>
-          <Form.Item name="description" label="描述（可选）">
-            <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
-          </Form.Item>
-          <Form.Item name="visibility" label="公开性">
-            <Select
-              options={[
-                { value: 'public', label: '公开（任何人可读）' },
-                { value: 'member', label: '成员可见（推荐）' },
-                { value: 'private', label: '私有（仅所有者/管理员）' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="tags" label="标签（逗号分隔，可选）">
-            <Input placeholder="例如：研发, 产品, 核心业务" />
-          </Form.Item>
-          <Form.Item name="allow_edit" label="允许成员编辑数据" valuePropName="checked">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Switch />
-              <span style={{ color: '#64748b', fontSize: 13 }}>
-                {form.getFieldValue('allow_edit') !== false ? '已开启' : '已关闭（仅所有者可编辑）'}
-              </span>
-            </div>
-          </Form.Item>
-        </Form>
-      </Modal>
+          <Form
+            form={form}
+            layout="vertical"
+            initialValues={{ visibility: 'member', allow_edit: true }}
+            onFinish={(v) => {
+              const tagsStr = (v.tags as string) || ''
+              create.mutate({
+                ...v,
+                tags: tagsStr.split(/[,，]/).map(s => s.trim()).filter(Boolean),
+              })
+            }}
+          >
+            <Form.Item name="name" label="工作区名称" rules={[{ required: true, message: '请输入名称' }]}>
+              <Input placeholder="例如：产品研发" />
+            </Form.Item>
+            <Form.Item name="description" label="描述（可选）">
+              <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
+            </Form.Item>
+            <Form.Item name="visibility" label="公开性">
+              <Select
+                options={[
+                  { value: 'public', label: '公开（任何人可读）' },
+                  { value: 'member', label: '成员可见（推荐）' },
+                  { value: 'private', label: '私有（仅所有者/管理员）' },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="tags" label="标签（逗号分隔，可选）">
+              <Input placeholder="例如：研发, 产品, 核心业务" />
+            </Form.Item>
+            <Form.Item name="allow_edit" label="允许成员编辑数据" valuePropName="checked">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Switch />
+                <span style={{ color: '#64748b', fontSize: 13 }}>
+                  {form.getFieldValue('allow_edit') !== false ? '已开启' : '已关闭（仅所有者可编辑）'}
+                </span>
+              </div>
+            </Form.Item>
+          </Form>
+        </Modal>
+      )}
 
       {/* 设置 Modal */}
       {settingsOpen && (
