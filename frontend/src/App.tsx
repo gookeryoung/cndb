@@ -14,7 +14,6 @@ import TablesList from '@/pages/workspace/TablesList'
 
 // 重页面 lazy load：首次进入该路由时才加载 chunk
 const GridPage = lazy(() => import('@/pages/grid/GridPage'))
-const TrashPanel = lazy(() => import('@/pages/modals/TrashPanel'))
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'))
 const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
@@ -46,9 +45,6 @@ function AuthenticatedApp() {
         } />
         <Route path="w/:wid/tables/:tid" element={
           <Suspense fallback={<PageFallback />}><GridPage /></Suspense>
-        } />
-        <Route path="w/:wid/trash" element={
-          <Suspense fallback={<PageFallback />}><TrashPanel embedded /></Suspense>
         } />
         <Route path="w/:wid/reports" element={
           <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>

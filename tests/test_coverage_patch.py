@@ -1,4 +1,4 @@
-"""综合覆盖率补全 — 覆盖 access / public / trash / tables / transfer 零散缺口."""
+"""综合覆盖率补全 — 覆盖 access / public / tables / transfer 零散缺口."""
 
 from __future__ import annotations
 
