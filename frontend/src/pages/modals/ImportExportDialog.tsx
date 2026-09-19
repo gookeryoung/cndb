@@ -717,8 +717,8 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
           size="small"
           pagination={{ pageSize: 20 }}
           scroll={{ x: 700, y: 360 }}
-          dataSource={preview}
-          rowKey={(_, i) => `${mode}-${i}`}
+          dataSource={preview.map((r, i) => ({ ...r, __key: `${mode}-${i}` }))}
+          rowKey="__key"
           columns={columns}
           rowClassName={() => 'diff-row'}
           style={{ '--diff-row-bg': rowBg, '--diff-row-border': rowBorder } as any}
@@ -914,7 +914,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
                   {report.errors.length > 0 && (
                     <Table
                       size="small" pagination={{ pageSize: 10 }}
-                      dataSource={report.errors} rowKey={(_, i) => `e${i}`}
+                      dataSource={report.errors.map((e: any, i: number) => ({ ...e, __key: `e${i}` }))} rowKey="__key"
                       columns={[
                         { title: '行号', dataIndex: 'row_number', width: 80 },
                         { title: '字段', dataIndex: 'field', width: 120 },
@@ -927,7 +927,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
                       <div style={{ marginBottom: 4, color: '#92400e', fontSize: 13 }}>警告</div>
                       <Table
                         size="small" pagination={{ pageSize: 10 }}
-                        dataSource={report.warnings} rowKey={(_, i) => `w${i}`}
+                        dataSource={report.warnings.map((w: any, i: number) => ({ ...w, __key: `w${i}` }))} rowKey="__key"
                         columns={[
                           { title: '行号', dataIndex: 'row_number', width: 80 },
                           { title: '字段', dataIndex: 'field', width: 120 },
