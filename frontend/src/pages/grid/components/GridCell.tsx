@@ -51,15 +51,17 @@ export default function GridCell({ value, field, rowId, wid, onSave, editing: co
     if (!controlled) setDraft(value)
   }, [value, controlled])
 
-  // 切到编辑态时自动聚焦
+  // 切到编辑态时自动聚焦。受控模式（行级新增/整行编辑）由父级统一聚焦第一个可编辑单元格，
+  // 避免一行内多个 GridCell 同时进入编辑态时互相争抢焦点。
   useEffect(() => {
+    if (controlled) return
     if (isEditing && inputRef.current) {
       const el = inputRef.current
       if ('focus' in el && typeof (el as HTMLElement).focus === 'function') {
         setTimeout(() => (el as HTMLElement).focus(), 30)
       }
     }
-  }, [isEditing])
+  }, [isEditing, controlled])
 
   const handleStartEdit = useCallback(() => {
     // 受控模式由父级把控首个焦点，无需在此处理
@@ -108,6 +110,7 @@ export default function GridCell({ value, field, rowId, wid, onSave, editing: co
         saving={false}
         wid={wid}
         showActions={!!showActionButtons}
+        enableAutoFocus={false}
       />
     )
   }
@@ -271,9 +274,11 @@ interface EditCellProps {
   wid?: number | string
   /** 是否渲染单元格自带的"保存/取消"按钮，行级编辑时由行操作列承载，置 false */
   showActions?: boolean
+  /** 是否允许控件内部自动聚焦（行级新增/整行编辑时由父级统一聚焦，置 false） */
+  enableAutoFocus?: boolean
 }
 
-function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, wid, showActions = true }: EditCellProps) {
+function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, wid, showActions = true, enableAutoFocus = true }: EditCellProps) {
   const ft = field.field_type
   const wrap: React.CSSProperties = {
     display: 'flex', gap: 4, alignItems: 'center', padding: '2px 0',
@@ -408,7 +413,7 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
             options={merged}
             onKeyDown={commonOnKey}
             style={{ flex: 1 }}
-            autoFocus
+            autoFocus={enableAutoFocus}
             popupMatchSelectWidth={false}
           />
           {actions}
@@ -430,7 +435,7 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
             onChange={v => onChange(v)}
             options={options}
             style={{ flex: 1 }}
-            autoFocus
+            autoFocus={enableAutoFocus}
             popupMatchSelectWidth={false}
           />
           {actions}
