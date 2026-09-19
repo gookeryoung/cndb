@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import nunjucks from 'nunjucks'
+import { useDebouncedValue } from '@/hooks'
 import { Alert, Empty, Spin, Typography } from 'antd'
 
 export interface PreviewPanelProps {
@@ -54,7 +55,7 @@ export default function PreviewPanel({
   loading = false,
   recordsByTable,
 }: PreviewPanelProps) {
-  // debounce 300ms
+  // 渲染结果防抖 300ms（通用 useDebouncedValue，收敛原手写 setTimeout 实现）
   const result = useMemo<RenderResult>(() => {
     if (!template.trim()) {
       return { output: '', error: null, elapsed: 0 }
@@ -63,12 +64,7 @@ export default function PreviewPanel({
     return tryRender(template, ctx)
   }, [template, records, tableName, params, recordsByTable])
 
-  const [debouncedResult, setDebouncedResult] = useState<RenderResult>(result)
-
-  useEffect(() => {
-    const id = setTimeout(() => setDebouncedResult(result), 300)
-    return () => clearTimeout(id)
-  }, [result])
+  const debouncedResult = useDebouncedValue(result, 300)
 
   return (
     <div className="report-preview-panel">
