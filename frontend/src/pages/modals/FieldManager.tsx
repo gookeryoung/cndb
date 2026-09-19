@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Modal, Table, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, message, Alert, Empty, Spin, Tooltip, Divider } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, BgColorsOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, EditOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary, FieldImportResponse as FieldImportResponseType, FieldImportSuggestion } from '@/api'
@@ -625,7 +625,7 @@ function ConfigEditor({ fieldType, form, tables, isEdit = false, editTargetId = 
   // 关键：<Form.Item name="config" hidden /> 注册后，Form.useWatch('config', form)
   // 才能真正订阅 config 变化。此前未注册 Form.Item 导致 useWatch 永远返回 undefined，
   // ConfigEditor 不会因 form.setFieldValue 触发重渲染，SelectOptionsEditor 收到的 config
-  // prop 长期停留在首帧快照——这是"一键配色有时候进去有有时候没有"的根因。
+  // prop 长期停留在首帧快照。
   const currentConfig = Form.useWatch('config', form) as Record<string, unknown> | undefined
 
   // 初始化默认 config：仅在新建场景下、且 config 为空时填充默认值。
@@ -828,7 +828,10 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
   }
 
   function addOption() {
-    const next = [...options, { key: String(Date.now()), label: '', value: '', color: '' }]
+    // 新增选项时按索引从调色板预分配一个颜色，label 输入后 updateOption 会再按语义调整
+    const palette = ['blue', 'green', 'orange', 'purple', 'red', 'cyan', 'gold', 'magenta', 'yellow', 'volcano', 'geekblue', 'lime', 'pink']
+    const preColor = palette[options.length % palette.length]!
+    const next = [...options, { key: String(Date.now()), label: '', value: '', color: preColor }]
     setOptions(next)
     syncToForm(next)
   }
@@ -865,37 +868,13 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
     syncToForm(next)
   }
 
-  /** 一键智能配色：为所有选项（不管之前有没有 color）重新推荐颜色.
-   *
-   * 策略：语义规则匹配优先（保证"已完成"="success"这类直观语义），
-   * 语义命中不到时 fallback 到 label 字符串 hash——保证不同 label 能得到不同颜色，
-   * 避免"一键配色后全部同色"。
-   */
-  function autoColorAll() {
-    const next = options.map((opt) => {
-      const label = opt.label.trim()
-      if (!label) return { ...opt, color: '' }
-      const semantic = suggestColorForLabel(label)
-      const color = semantic ?? getTagColorName(label)
-      return { ...opt, color }
-    })
-    setOptions(next)
-    syncToForm(next)
-    message.success('已为所有选项智能配色')
-  }
-
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
         <span>选项列表（显示标签 + 存储值）</span>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <Button size="small" icon={<BgColorsOutlined />} onClick={autoColorAll}>
-            一键智能配色
-          </Button>
-          <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addOption}>
-            添加选项
-          </Button>
-        </div>
+        <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addOption}>
+          添加选项
+        </Button>
       </div>
       {options.length === 0 ? (
         <div style={{ color: '#999', padding: 16, textAlign: 'center', border: '1px dashed #d9d9d9', borderRadius: 4 }}>
@@ -942,7 +921,7 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
                 </span>
               )}
               <ColorPicker
-                value={opt.color && !isPresetColor(opt.color) ? opt.color : undefined}
+                value={opt.color || undefined}
                 size="small"
                 onChange={(color) => updateOption(opt.key, { color: color.toHexString() })}
               />
