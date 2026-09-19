@@ -887,6 +887,59 @@ body.theme-dark [style*="color:'#999'"] {
   color: var(--cn-text-secondary);
 }
 
+/* ── 新手引导（driver.js）主题适配 ─────────────────────────────
+ * popoverClass 挂在 .driver-popover 上；全部颜色映射 var(--cn-*)
+ * 主题变量，保证 5 套主题（含暗色）下弹窗可读。 */
+
+.driver-popover.cn-driver-theme {
+  --driver-arrow-size: 0;
+  background-color: var(--cn-bg-container);
+  color: var(--cn-text-primary);
+  border: 1px solid var(--cn-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.driver-popover.cn-driver-theme .driver-popover-title {
+  color: var(--cn-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.driver-popover.cn-driver-theme .driver-popover-description {
+  color: var(--cn-text-secondary);
+  font-size: 13px;
+  max-width: 320px;
+}
+
+.driver-popover.cn-driver-theme .driver-popover-progress-text {
+  color: var(--cn-text-muted);
+  font-size: 12px;
+}
+
+.driver-popover.cn-driver-theme .driver-popover-close-btn {
+  color: var(--cn-text-muted);
+}
+
+.driver-popover.cn-driver-theme .driver-popover-next-btn,
+.driver-popover.cn-driver-theme .driver-popover-prev-btn {
+  background-color: var(--cn-brand-color);
+  color: #fff;
+  text-shadow: none;
+  border: 1px solid var(--cn-brand-color);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+/* 上一步用次要样式 */
+.driver-popover.cn-driver-theme .driver-popover-prev-btn {
+  background-color: transparent;
+  color: var(--cn-text-secondary);
+  border-color: var(--cn-border);
+}
+
 /* 选项编辑行（select / multiselect） */
 .fm-option-row {
   display: flex;
