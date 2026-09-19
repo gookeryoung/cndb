@@ -677,6 +677,7 @@ def bulk_update_rows(
         return 0
 
     sa_table = _get_sa_table(engine, table)
+    row_scope = _build_row_scope_where(table, sa_table, db)
     total = 0
     # 逐行在同一个事务里执行（SQLite/PostgreSQL 对 100-500 行循环开销可接受）
     with engine.begin() as conn:
@@ -688,21 +689,25 @@ def bulk_update_rows(
             normalized, link_values = _normalize_values(table, values, for_update=True)
             if not normalized and not link_values:
                 continue
+            # 构造带行级权限的 WHERE 条件
+            row_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
+            if row_scope is not None:
+                row_where.append(row_scope)
             # 物理列更新
             if normalized:
                 result = conn.execute(
                     sa_table.update()
-                    .where(sa_table.c.id == row_id, sa_table.c._trashed.is_(False))
+                    .where(*row_where)
                     .values(**normalized)
                 )
                 if result.rowcount == 0:
-                    # 行不存在或被软删，跳过
+                    # 行不存在、被软删或被行级权限过滤，跳过
                     continue
                 total += 1
             else:
                 # 只有 link 值
                 existing = conn.execute(
-                    select(sa_table.c.id).where(sa_table.c.id == row_id, sa_table.c._trashed.is_(False))
+                    select(sa_table.c.id).where(*row_where)
                 ).first()
                 if existing is None:
                     continue
