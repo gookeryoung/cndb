@@ -4,7 +4,7 @@ import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip } 
 import type { MenuProps } from 'antd'
 import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
-  DeleteOutlined, FileTextOutlined,
+  FileTextOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   SettingOutlined, SafetyOutlined,
 } from '@ant-design/icons'
@@ -139,11 +139,6 @@ export default function MainLayout() {
               >{!isMobile && '管理台'}</Button>
             </Tooltip>
           )}
-          <Button
-            type={location.includes('/trash') ? 'primary' : 'text'}
-            size="small" icon={<DeleteOutlined />}
-            onClick={() => navigate(`/w/${wid}/trash`)}
-          >{!isMobile && '回收站'}</Button>
           <Button
             type={location.includes('/reports') ? 'primary' : 'text'}
             size="small" icon={<FileTextOutlined />}
