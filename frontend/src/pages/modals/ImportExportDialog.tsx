@@ -14,6 +14,7 @@ import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined, ApiO
 import { importApi, exportApi } from '@/api'
 import type { ImportTaskInfo, Field } from '@/api'
 import ApiImportDialog from './ApiImportDialog'
+import HelpTip from '@/components/HelpTip'
 
 const { Dragger } = Upload
 
@@ -344,6 +345,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
           <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 8 }}>
             <SwapOutlined style={{ marginRight: 6 }} />
             选择参考列（按此匹配已有行做更新 / 新增）
+            <HelpTip title="参考列即匹配键：导入时用这些列的值在表中查找同值行，找到则更新该行，找不到则新增一行" />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
             <Select

@@ -103,7 +103,7 @@ export default function GridCell({ value, field, rowId, wid, onSave, editing: co
       <EditCell
         field={field}
         draft={value}
-        onChange={onDraftChange ?? (() => {})}
+        onChange={onDraftChange ?? (() => { })}
         inputRef={inputRef}
         onSave={() => onDraftCommit?.(field.name, finalizeValueFromEdit(value, field))}
         onCancel={() => onDraftCancel?.()}
@@ -285,8 +285,12 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
   }
   const actions = showActions ? (
     <span style={{ display: 'inline-flex', gap: 2 }}>
-      <Button size="small" type="primary" icon={<SaveOutlined />} onClick={onSave} loading={saving} />
-      <Button size="small" icon={<CloseOutlined />} onClick={onCancel} />
+      <Tooltip title="保存（回车）">
+        <Button size="small" type="primary" icon={<SaveOutlined />} onClick={onSave} loading={saving} />
+      </Tooltip>
+      <Tooltip title="取消编辑（Esc）">
+        <Button size="small" icon={<CloseOutlined />} onClick={onCancel} />
+      </Tooltip>
     </span>
   ) : null
 
@@ -544,8 +548,10 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
               {files.map((f, i) => (
                 <span key={f.file_key} style={{ fontSize: 12, padding: '2px 6px', border: '1px solid #e2e8f0', borderRadius: 4 }}>
                   📎 {f.filename}
-                  <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                    onClick={() => removeAt(i)} style={{ marginLeft: 2 }} />
+                  <Tooltip title="删除该附件">
+                    <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                      onClick={() => removeAt(i)} style={{ marginLeft: 2 }} />
+                  </Tooltip>
                 </span>
               ))}
             </div>

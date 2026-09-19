@@ -1,12 +1,13 @@
 /** 视图配置对话框 — 三个 Tab：筛选规则 / 排序规则 / 视图专属设置. */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Modal, Select, Space, Switch, Tabs, Input, InputNumber } from 'antd'
+import { Button, Modal, Select, Space, Switch, Tabs, Input, InputNumber, Tooltip } from 'antd'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
 import { getOpsForField, extractSelectOptions } from './fieldOps'
 import { getOptionSchema, resolveFieldOptions } from './viewOptionSchema'
 import type { ViewOptionSchema } from './viewOptionSchema'
 import type { Field } from '@/api'
+import HelpTip from '@/components/HelpTip'
 
 // ── 类型 ──────────────────────────────────────────
 
@@ -75,10 +76,15 @@ export default function ViewConfigDialog({
   )
 
   const viewTabItems = useMemo(() => {
-    const items: Array<{ key: string; label: string; children: React.ReactNode }> = [
+    const items: Array<{ key: string; label: React.ReactNode; children: React.ReactNode }> = [
       {
         key: 'filter',
-        label: `筛选${draftFilters.filter(f => f.field_name).length ? ` (${draftFilters.filter(f => f.field_name).length})` : ''}`,
+        label: (
+          <span>
+            筛选{draftFilters.filter(f => f.field_name).length ? ` (${draftFilters.filter(f => f.field_name).length})` : ''}
+            <HelpTip title="筛选规则：只显示满足条件的行，不改变表内数据；多个条件可用 AND / OR 组合" />
+          </span>
+        ),
         children: (
           <div style={{ minHeight: 120 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid var(--cn-border)' }}>
@@ -135,8 +141,10 @@ export default function ViewConfigDialog({
                     <Input size="small" value={rule.value as string | undefined}
                       onChange={(e) => updateFilter(idx, { value: e.target.value })} style={{ flex: 1 }} placeholder="值" />
                   )}
-                  <Button size="small" type="text" danger disabled={draftFilters.length <= 1} icon={<DeleteOutlined />}
-                    onClick={() => removeFilter(idx)} />
+                  <Tooltip title="删除这条筛选规则（至少保留一条）">
+                    <Button size="small" type="text" danger disabled={draftFilters.length <= 1} icon={<DeleteOutlined />}
+                      onClick={() => removeFilter(idx)} />
+                  </Tooltip>
                 </div>
               )
             })}
@@ -148,7 +156,12 @@ export default function ViewConfigDialog({
       },
       {
         key: 'sort',
-        label: `排序${draftSorts.filter(s => s.field_name).length ? ` (${draftSorts.filter(s => s.field_name).length})` : ''}`,
+        label: (
+          <span>
+            排序{draftSorts.filter(s => s.field_name).length ? ` (${draftSorts.filter(s => s.field_name).length})` : ''}
+            <HelpTip title="排序规则：按字段升序/降序排列行；多条规则自上而下依次生效" />
+          </span>
+        ),
         children: (
           <div style={{ minHeight: 120 }}>
             {draftSorts.length === 0 && (
@@ -167,8 +180,10 @@ export default function ViewConfigDialog({
                   onChange={(v: 'asc' | 'desc') => updateSort(idx, { direction: v })}
                   style={{ width: 100 }}
                   options={[{ value: 'asc', label: '升序 ↑' }, { value: 'desc', label: '降序 ↓' }]} />
-                <Button size="small" type="text" danger disabled={draftSorts.length <= 1} icon={<DeleteOutlined />}
-                  onClick={() => removeSort(idx)} />
+                <Tooltip title="删除这条排序规则（至少保留一条）">
+                  <Button size="small" type="text" danger disabled={draftSorts.length <= 1} icon={<DeleteOutlined />}
+                    onClick={() => removeSort(idx)} />
+                </Tooltip>
               </div>
             ))}
             <div style={{ marginTop: 8 }}>

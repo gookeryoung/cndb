@@ -1,7 +1,7 @@
 /** 行详情抽屉 — 编辑字段值 / 历史 / 反向引用. */
 
 import React from 'react'
-import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Upload, Image } from 'antd'
+import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Upload, Image, Tooltip } from 'antd'
 import { SaveOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
@@ -103,7 +103,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
 function FieldEditor({
   field,
   value,
-  onChange = () => {},
+  onChange = () => { },
   wid,
 }: {
   field: Field
@@ -225,23 +225,27 @@ function FieldEditor({
                     <div key={f.file_key} style={{ position: 'relative', width: 56, height: 56 }}>
                       <Image width={56} height={56} src={fileApi.getUrl(wid, f.file_key, true)}
                         style={{ objectFit: 'cover', borderRadius: 4 }} />
-                      <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                        style={{ position: 'absolute', top: -4, right: -4, background: 'var(--cn-bg-container)', padding: 0 }}
-                        onClick={() => {
-                          fileApi.remove(wid, f.file_key).catch(() => {})
-                          onChange(files.filter((_, j) => j !== i))
-                        }} />
+                      <Tooltip title="删除该附件">
+                        <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                          style={{ position: 'absolute', top: -4, right: -4, background: 'var(--cn-bg-container)', padding: 0 }}
+                          onClick={() => {
+                            fileApi.remove(wid, f.file_key).catch(() => { })
+                            onChange(files.filter((_, j) => j !== i))
+                          }} />
+                      </Tooltip>
                     </div>
                   )
                 }
                 return (
                   <span key={f.file_key} style={{ fontSize: 12, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 4 }}>
                     📎 <a href={fileApi.getUrl(wid, f.file_key)} target="_blank" rel="noreferrer">{f.filename}</a>
-                    <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                      onClick={() => {
-                        fileApi.remove(wid, f.file_key).catch(() => {})
-                        onChange(files.filter((_, j) => j !== i))
-                      }} />
+                    <Tooltip title="删除该附件">
+                      <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                        onClick={() => {
+                          fileApi.remove(wid, f.file_key).catch(() => { })
+                          onChange(files.filter((_, j) => j !== i))
+                        }} />
+                    </Tooltip>
                   </span>
                 )
               })}

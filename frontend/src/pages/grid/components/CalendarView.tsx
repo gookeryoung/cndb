@@ -657,8 +657,8 @@ export default function CalendarView({ rows, fields, view, density, onRowClick }
         <Empty
           description={
             opts.start_field
-              ? '当前时间范围内没有事件'
-              : '日历视图需要配置 start_field（起始日期字段）'
+              ? '当前时间范围内没有事件，试试切换月份或回到今天'
+              : '日历视图需要配置「开始时间字段」（start_field）：到视图设置中选择表中的日期字段即可显示'
           }
           style={{ padding: 48 }}
         />

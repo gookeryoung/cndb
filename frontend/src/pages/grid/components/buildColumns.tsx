@@ -1,6 +1,6 @@
 /** Grid 列构建函数 — 根据 fields 和 view 状态生成 AntD Table ColumnsType. */
 
-import { Space } from 'antd'
+import { Space, Tooltip } from 'antd'
 import { Button } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { FilterOutlined, SortAscendingOutlined, SortDescendingOutlined, SaveOutlined, CloseOutlined, EditOutlined } from '@ant-design/icons'
@@ -132,7 +132,9 @@ export function buildColumns(
           return (
             <Space size={4}>
               <Button size="small" type="primary" icon={<SaveOutlined />} data-testid="row-save-btn" onClick={() => inlineOps.onSave(record.id)}>保存</Button>
-              <Button size="small" icon={<CloseOutlined />} data-testid="row-cancel-btn" onClick={() => inlineOps.onCancel(record.id)} />
+              <Tooltip title="取消编辑：恢复为修改前的内容（不会丢失其他行）">
+                <Button size="small" icon={<CloseOutlined />} data-testid="row-cancel-btn" onClick={() => inlineOps.onCancel(record.id)} />
+              </Tooltip>
             </Space>
           )
         }
