@@ -695,20 +695,14 @@ def bulk_update_rows(
                 row_where.append(row_scope)
             # 物理列更新
             if normalized:
-                result = conn.execute(
-                    sa_table.update()
-                    .where(*row_where)
-                    .values(**normalized)
-                )
+                result = conn.execute(sa_table.update().where(*row_where).values(**normalized))
                 if result.rowcount == 0:
                     # 行不存在、被软删或被行级权限过滤，跳过
                     continue
                 total += 1
             else:
                 # 只有 link 值
-                existing = conn.execute(
-                    select(sa_table.c.id).where(*row_where)
-                ).first()
+                existing = conn.execute(select(sa_table.c.id).where(*row_where)).first()
                 if existing is None:
                     continue
                 total += 1

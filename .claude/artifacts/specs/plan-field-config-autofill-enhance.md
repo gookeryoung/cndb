@@ -142,7 +142,7 @@ if not for_update:
         if f.name in values:
             continue  # 用户显式传过（含 None 清空意图）则不覆盖
         dv = f.default_value
-        if dv is None or dv == '':
+        if dv is None or dv == "":
             continue
         ft = default_registry.get(f.field_type)
         if ft is None:
