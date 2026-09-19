@@ -711,3 +711,66 @@ body.theme-dark [style*="color:'#999'"] {
 .cn-table.cn-table-spacious .ant-table-tbody-virtual-holder .ant-table-cell {
   padding: 14px 16px !important;
 }
+
+/* ─────────────── 视图切换栏 Segmented 紧凑化 + 滚动优化 ───────────────
+ * 核心思路：Segmented 外层 .cn-segmented-wrap 设 overflow:hidden，
+ * 内部 .ant-segmented 开启横向滚动（overflow-x:auto），
+ * 配合 scrollbar 细条隐藏 + 边缘渐隐遮罩，让多视图时的滚动自然融入整体. */
+
+.cn-segmented-wrap {
+  position: relative;
+  /* 左右渐隐遮罩：仅当可滚动时由 JS/状态切换类名控制，默认关闭避免正常视图数时出现 */
+}
+
+.cn-segmented {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  /* 让 AntD Segmented 内部 items 可横向滚动 */
+}
+
+.cn-segmented > .ant-segmented-item-container {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 细滚动条 —— 视觉上不突兀，但仍可拖动 */
+.cn-segmented > .ant-segmented-item-container::-webkit-scrollbar {
+  height: 4px;
+}
+.cn-segmented > .ant-segmented-item-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cn-segmented > .ant-segmented-item-container::-webkit-scrollbar-thumb {
+  background: var(--cn-border);
+  border-radius: 4px;
+}
+.cn-segmented > .ant-segmented-item-container::-webkit-scrollbar-thumb:hover {
+  background: var(--cn-text-muted);
+}
+
+/* Firefox 滚动条 */
+.cn-segmented > .ant-segmented-item-container {
+  scrollbar-width: thin;
+  scrollbar-color: var(--cn-border) transparent;
+}
+
+/* Segmented 项紧凑化：减小高度和内边距 */
+.cn-segmented .ant-segmented-item {
+  padding: 0 10px;
+  line-height: 26px;
+  min-height: 28px;
+}
+
+.cn-segmented .ant-segmented-item-label {
+  padding: 0 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* 拖拽激活项的视觉提示 */
+.cn-segmented .ant-segmented-item[style*="opacity: 0.5"] {
+  cursor: grabbing !important;
+}
