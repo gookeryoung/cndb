@@ -55,6 +55,7 @@ import { type ViewMode, VALID_MODES, deriveModeSwitch } from './viewModes'
 import { useTableSettingsStore, useGridViewStore } from '@/store'
 import { densityToSize } from '@/theme/tableSettings'
 import { useElementSize, useDebouncedCallback } from '@/hooks'
+import dayjs from 'dayjs'
 
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
@@ -62,6 +63,21 @@ const ImportExportDialog = lazy(() => import('@/pages/modals/ImportExportDialog'
 
 function ModalFallback() {
   return null
+}
+
+/** 新增行草稿预填值：default_value 优先，其次 date/datetime 的 auto_fill 规则，否则空值. */
+function defaultValueForNewRow(f: Field): unknown {
+  if (f.default_value !== null && f.default_value !== undefined && f.default_value !== '') {
+    return normalizeCellValueForEdit(f.default_value, f)
+  }
+  const autoFill = (f.config?.auto_fill as string) ?? ''
+  if (f.field_type === 'date' && (autoFill === 'on_create' || autoFill === 'on_update')) {
+    return dayjs().format('YYYY-MM-DD')
+  }
+  if (f.field_type === 'datetime' && (autoFill === 'on_create' || autoFill === 'on_update')) {
+    return dayjs().format('YYYY-MM-DD HH:mm:ss')
+  }
+  return normalizeCellValueForEdit(null, f)
 }
 
 const { Text } = Typography
@@ -476,12 +492,12 @@ export default function GridPage() {
 
   const gridFields = (table?.fields || []) as Field[]
 
-  /** 依据原行（或空白）为每个可编辑字段初始化草稿 */
+  /** 依据原行（或空白）为每个可编辑字段初始化草稿；新增行按 default_value / auto_fill 规则预填 */
   const draftFor = (record: RowResponse | null): RowValues => {
     const d: RowValues = {}
     for (const f of gridFields) {
       if (!isEditableInlineField(f)) continue
-      d[f.name] = normalizeCellValueForEdit(record ? record[f.name] : null, f)
+      d[f.name] = record ? normalizeCellValueForEdit(record[f.name], f) : defaultValueForNewRow(f)
     }
     return d
   }
