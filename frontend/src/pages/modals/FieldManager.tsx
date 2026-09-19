@@ -74,6 +74,19 @@ function normalizeOptionsFromConfig(raw: unknown): Array<{ key: string; label: s
   return list.map((o, idx) => (o.color ? o : { ...o, color: resolveTagColor(o.label, raw, idx) }))
 }
 
+/** 字段行的备注文字：默认值 + 自动填充规则（备注风格，未配置则返回空串不渲染） */
+function fieldNoteText(f: Field): string {
+  const parts: string[] = []
+  if (f.default_value !== null && f.default_value !== undefined && f.default_value !== '') {
+    parts.push(`默认值：${String(f.default_value)}`)
+  }
+  const autoFill = (f.config?.auto_fill as string) ?? ''
+  if ((f.field_type === 'date' || f.field_type === 'datetime') && autoFill) {
+    parts.push(autoFill === 'on_create' ? '创建时自动填充' : '更新时自动填充')
+  }
+  return parts.join(' · ')
+}
+
 export default function FieldManager({ open, wid, tid, fields, onClose, onChanged, embedded }: Props) {
   const [innerOpen, setInnerOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Field | null>(null)
@@ -214,7 +227,9 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
           hidden: target.hidden,
           is_unique: target.is_unique ?? false,
           default_value: target.default_value ?? '',
-          config: target.config ?? {},
+          // 类型默认值打底、已存值覆盖：存量/引入字段缺失的 config 键（如 auto_fill）
+          // 补上默认值，保证编辑时对应控件（Radio 等）总有激活态
+          config: { ...defaultConfigForType(target.field_type), ...(target.config ?? {}) },
         })
       }, 0)
     } else {
@@ -278,6 +293,9 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                   {FIELD_TYPE_ICONS[r.field_type] ?? <TagOutlined />}
                 </span>
                 <span className="fm-row-name">{r.name}</span>
+                {fieldNoteText(r) && (
+                  <span className="fm-row-note" title={fieldNoteText(r)}>{fieldNoteText(r)}</span>
+                )}
                 <span className="fm-row-tags">
                   {r.is_primary && <Tag color="gold" style={{ marginInlineEnd: 0 }}>PK</Tag>}
                   <Tag color={getFieldTypeColor(r.field_type)} style={{ marginInlineEnd: 0 }} title={r.field_type}>
