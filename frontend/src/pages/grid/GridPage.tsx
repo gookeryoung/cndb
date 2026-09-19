@@ -220,6 +220,28 @@ export default function GridPage() {
     return () => { ro.disconnect(); window.removeEventListener('resize', update) }
   }, [])
 
+  /** 新增行激活后，等待虚拟滚动渲染完成，自动滚动到可见并聚焦第一个可编辑单元格. */
+  useEffect(() => {
+    if (!newRowActive || mode !== 'grid') return
+    let cancelled = false
+    // 双重 rAF：等 React 提交 + AntD 虚拟滚动窗口更新
+    requestAnimationFrame(() => {
+      if (cancelled) return
+      requestAnimationFrame(() => {
+        if (cancelled) return
+        const row = document.querySelector('.cn-table-row-new') as HTMLElement | null
+        if (!row) return
+        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        // 选择器覆盖 Input / Select / DatePicker / InputNumber / TextArea / Checkbox
+        const firstInput = row.querySelector<HTMLElement>(
+          'input:not([type="hidden"]), textarea, [role="combobox"], .ant-picker, .ant-checkbox-input',
+        )
+        firstInput?.focus()
+      })
+    })
+    return () => { cancelled = true }
+  }, [newRowActive, mode, offset, limit])
+
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
 
@@ -491,10 +513,41 @@ export default function GridPage() {
     setRowDrafts(prev => { const next = { ...prev }; delete next[key]; return next })
   }
 
-  /** 激活底部空白新增行 */
+  /** 激活底部空白新增行 —— 按 newRowPosition 自动跳转到能看见 newRow 的页 */
   const startNewRow = () => {
     if (!canEditRecords) return
     setEditingRowId(null)
+
+    const currentTotal = rowList.total
+    const currentLimit = limit
+    const currentItems = rowList.items ?? []
+    let targetOffset: number | null = null
+
+    if (newRowPosition === 'top') {
+      // 表格顶部 — 跳到首页
+      targetOffset = 0
+    } else if (newRowPosition === 'tail') {
+      // 表格尾部 — 跳到整个表格最后一页的起点
+      if (currentTotal === 0) {
+        targetOffset = 0
+      } else {
+        targetOffset = Math.floor((currentTotal - 1) / currentLimit) * currentLimit
+      }
+    } else {
+      // 'page'：页面尾部 — 追加到当前页末尾
+      // 如果当前页正好是最后一页且已满员，newRow 会落到下一页，需要翻到那里让它可见
+      const isLastPage = offset + currentLimit >= currentTotal
+      const pageFull = currentItems.length >= currentLimit
+      if (isLastPage && pageFull) {
+        targetOffset = currentTotal
+      }
+      // 否则保持 offset 不变
+    }
+
+    if (targetOffset !== null && targetOffset !== offset) {
+      setOffset(targetOffset)
+    }
+
     setNewRowActive(true)
     setRowDrafts(prev => ({ ...prev, [NEW_ROW_KEY]: draftFor(null) }))
   }
@@ -988,10 +1041,15 @@ export default function GridPage() {
             bordered={settings.bordered}
             showHeader={settings.showHeader}
             style={{ flex: 1, minHeight: 0 }}
-            rowClassName={settings.striped ? (_r, i) => (i % 2 === 1 ? 'table-row-striped' : '') : undefined}
+            rowClassName={(record, i) => {
+              const classes: string[] = []
+              if (isNewRow(record.id)) classes.push('cn-table-row-new')
+              if (settings.striped && i % 2 === 1) classes.push('table-row-striped')
+              return classes.join(' ')
+            }}
             rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 40 }}
             pagination={{
-              current: Math.floor(offset / limit) + 1, pageSize: limit, total: rowList.total,
+              current: Math.floor(offset / limit) + 1, pageSize: limit, total: (mode === 'grid' && newRowActive) ? rowList.total + 1 : rowList.total,
               showSizeChanger: true, pageSizeOptions: [25, 50, 100, 200],
               onChange: (p, l) => {
                 setOffset((p - 1) * l)
