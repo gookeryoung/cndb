@@ -98,20 +98,17 @@ export default function MainLayout() {
     if (wsLoading) {
       return React.createElement('div', { style: { padding: 48, textAlign: 'center' } }, '加载中...')
     }
-    // 用户访问的是 /w （工作区列表页），让 Outlet 渲染 WorkspaceList
+    // 访问 / 时，让 index route 的 <Navigate to="/w" /> 生效；访问 /w 时让 Outlet 渲染 WorkspaceList.
+    // 两种情况都必须返回 <Outlet /> 所在的布局，否则子路由（包括 Navigate）根本不会挂载。
     if (location.endsWith('/w') || location === '/') {
-      // 有工作区也不要自动跳转：让用户自己选
+      // 正常落到下方 return 的布局 —— Outlet 渲染子路由
     } else if (workspaces.length > 0) {
       // 访问了需要 wid 的 URL 但没带 wid → 跳到第一个工作区
       const first = workspaces[0]
       return <Navigate to={`/w/${first.id}/tables`} replace />
-    }
-    // 空工作区 + 需要 wid 的 URL → 显示引导
-    if (workspaces.length === 0 && !location.endsWith('/w')) {
-      return React.createElement('div', { style: { padding: 48, textAlign: 'center' } },
-        React.createElement('h2', null, '欢迎使用 cndb'),
-        React.createElement('p', { style: { color: '#6b7280' } }, '还没有任何工作区'),
-      )
+    } else {
+      // 空工作区 + 需要 wid 的 URL（不是 / 也不是 /w）→ 跳到 /w 让用户创建
+      return <Navigate to="/w" replace />
     }
   }
 
