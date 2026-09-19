@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import { renderProviders } from '@/test/render-providers'
 import { useTableSettingsStore } from '@/store/tableSettings'
@@ -143,5 +143,18 @@ describe('GridPage 新增行可见性（回归：满员页 newRow 被切掉）',
     fireEvent.click(cancelBtn)
 
     expect(document.querySelector('[data-row-key="__new__"]')).not.toBeInTheDocument()
+  })
+
+  it('点击新增行后自动聚焦新行第一个可编辑输入框（jsdom 下只覆盖聚焦行为，滚动机制由 useNewRowAutoScroll 单测锁定）', async () => {
+    renderGrid('page')
+    fireEvent.click(screen.getByTestId('add-row-btn'))
+
+    await waitFor(() => {
+      const row = document.querySelector('[data-row-key="__new__"]')
+      expect(row).toBeInTheDocument()
+      // 聚焦落在新行内部的可编辑输入框上
+      expect(row?.contains(document.activeElement)).toBe(true)
+      expect(document.activeElement?.tagName).toBe('INPUT')
+    })
   })
 })
