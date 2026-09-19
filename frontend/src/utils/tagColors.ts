@@ -206,13 +206,16 @@ export function getTagColor(value: string | number): string {
 
 /** 从选项配置中查找值对应的已存颜色；找不到则 fallback 语义推荐 → 分级调色板.
  *
- * 与 {@link getTagColorName} 的区别：resolveTagColor 会消费后端已存的
- * SelectOption.color（优先级最高），且按 options 数组长度选择分级调色板
- * 做 fallback（5 以内核心 5 色 / 6-10 扩展 8 色 / 10+ 完整主推 13 色）.
+ * 三路径取色：
+ * 1. 从 options 中查已存 color（命中且有色 → 直接返回）
+ * 2. 前端语义匹配推荐（和后端 smart_color 规则对齐）
+ * 3. 分级调色板 fallback —— 命中选项时用该选项在 options 中的**自身位置**
+ *    （稳定可复现：同一选项在单选/多选/看板中颜色恒定，编辑字段对话框可复现同一色）；
+ *    未命中任何选项时才回退调用方传入的 index（如多选单元格内的值序号）.
  *
  * @param value 单元格显示值（label 文本）
  * @param options 字段配置中的选项列表（可以是 string[] 或 {label, value, color}[]）
- * @param index 在选项列表中的位置（fallback 调色板循环用）
+ * @param index 未命中 options 时的 fallback 序号（fallback 调色板循环用）
  */
 export function resolveTagColor(
   value: string | number,
@@ -222,16 +225,23 @@ export function resolveTagColor(
   const key = String(value).trim()
   if (!key) return 'default'
 
-  // 路径 1: 从 options 中查已存 color
+  // 路径 1: 从 options 中查已存 color，同时记录命中位置
+  let matchedPos: number | null = null
   if (Array.isArray(options)) {
-    for (const opt of options) {
+    for (let pos = 0; pos < options.length; pos++) {
+      const opt = options[pos]
       if (typeof opt === 'string') {
-        if (opt === key) break
+        if (opt === key) {
+          matchedPos = pos
+          break
+        }
       } else if (opt && typeof opt === 'object') {
         const o = opt as { label?: string; value?: unknown; color?: string }
         const optLabel = String(o.label ?? o.value ?? '')
-        if (optLabel === key && o.color) {
-          return o.color  // 后端已存颜色，直接使用
+        if (optLabel === key) {
+          matchedPos = pos
+          if (o.color) return o.color  // 后端已存颜色，直接使用
+          break
         }
       }
     }
@@ -244,7 +254,52 @@ export function resolveTagColor(
   // 路径 3: 按 options 总数挑选分级调色板做 fallback
   const paletteSize = Array.isArray(options) ? options.length : 0
   const palette = pickPalette(paletteSize)
-  return palette[index % palette.length]
+  return palette[(matchedPos ?? index) % palette.length]
+}
+
+/** 为一组选项 label 批量生成推荐颜色（与后端 ``smart_color.suggest_colors`` 对齐）.
+ *
+ * 混合策略：
+ * 1. 逐个语义匹配，语义命中的直接用（允许语义同义项重复，如"已完成/通过"同为绿色）
+ * 2. 未命中的按分级调色板 fallback，并避开已占用颜色
+ *    （used 集合 = 语义命中色 + 传入的初始占用色 + 先前 fallback 色），
+ *    调色板被占满后循环取用
+ * 3. 调色板等级由 labels 总数决定（≤5 核心 5 色 / ≤10 扩展 8 色 / 10+ 完整 13 色）
+ *
+ * 纯函数：不读写任何模块缓存，结果只由输入决定。
+ *
+ * @param labels 选项显示文本列表
+ * @param usedColors 额外视为已占用的颜色集合（如既有选项已存的颜色），fallback 会避开
+ */
+export function suggestColorsForLabels(labels: string[], usedColors?: Iterable<string>): string[] {
+  const palette = pickPalette(labels.length)
+  const used = new Set<string>(usedColors ?? [])
+  const result: Array<string | null> = labels.map(l => suggestColorForLabel(l))
+  for (const c of result) {
+    if (c) used.add(c)
+  }
+
+  let fallbackIdx = 0
+  const paletteLen = palette.length
+
+  return result.map(c => {
+    if (c) return c
+    // 调色板已全部被占用 → 直接循环取，不做重复搜索
+    if (palette.every(p => used.has(p))) {
+      return palette[fallbackIdx++ % paletteLen]!
+    }
+    // 正常路径：从调色板里挑未被占用的颜色
+    for (let k = 0; k < paletteLen; k++) {
+      const candidate = palette[fallbackIdx % paletteLen]!
+      fallbackIdx++
+      if (!used.has(candidate)) {
+        used.add(candidate)
+        return candidate
+      }
+    }
+    // 兜底（上面已处理全部占用，理论不可达）：循环取
+    return palette[fallbackIdx++ % paletteLen]!
+  })
 }
 
 /** 清空所有颜色缓存（hash + 语义），用于测试或热更新场景. */

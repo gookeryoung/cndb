@@ -366,7 +366,7 @@ def fallback_palette(index: int, total_count: int = 0) -> str:
     return palette[index % len(palette)]
 
 
-def suggest_colors(labels: list[str]) -> list[str]:
+def suggest_colors(labels: list[str], used_colors: Iterable[str] | None = None) -> list[str]:
     """一键为一组选项 label 生成建议颜色.
 
     混合策略：
@@ -376,6 +376,8 @@ def suggest_colors(labels: list[str]) -> list[str]:
 
     Args:
         labels: 选项显示文本列表.
+        used_colors: 额外视为已占用的颜色集合（如既有选项已存的颜色），
+            fallback 会避开；None 表示无额外占用.
 
     Returns:
         与 labels 等长的 antd 色名列表.
@@ -383,8 +385,10 @@ def suggest_colors(labels: list[str]) -> list[str]:
     palette = _pick_palette(len(labels))
     result: list[str | None] = [match_color(lbl) for lbl in labels]
 
-    # 收集已使用的颜色集合（语义命中的），让 fallback 尽量避开
+    # 收集已使用的颜色集合（语义命中的 + 调用方指定的既有占用），让 fallback 尽量避开
     used: set[str] = {c for c in result if c is not None}
+    if used_colors is not None:
+        used.update(used_colors)
     fallback_idx = 0
     palette_len = len(palette)
 
@@ -394,7 +398,7 @@ def suggest_colors(labels: list[str]) -> list[str]:
             out.append(c)
             continue
         # 调色板已全部被占用 → 直接循环取，不做重复搜索
-        if len(used) >= palette_len:
+        if all(p in used for p in palette):
             pick = palette[fallback_idx % palette_len]
             fallback_idx += 1
             out.append(pick)

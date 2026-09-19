@@ -158,6 +158,21 @@ def test_select_config_dict_input():
     assert cfg.options[0].color == "#ff0000"
 
 
+def test_select_config_auto_fill_colors_on_import():
+    """建表/导入场景：options 未带 color 时校验器自动智能配色（导入 → 编辑字段同步）."""
+    from cndb.plugins.tables.field_types import SelectFieldConfig
+    from cndb.plugins.tables.field_types.smart_color import suggest_colors
+
+    labels = ["紧急", "进行中", "已完成", "玄学词A"]
+    cfg = SelectFieldConfig(options=labels)  # 纯字符串列表 —— 文件导入的典型输入
+    assert [o.label for o in cfg.options] == labels
+    # 每个选项 color 非空，且与 suggest_colors 结果一致
+    assert [o.color for o in cfg.options] == suggest_colors(labels)
+    # 手动设置的颜色不会被覆盖
+    cfg2 = SelectFieldConfig(options=[{"label": "紧急", "value": "紧急", "color": "purple"}])
+    assert cfg2.options[0].color == "purple"
+
+
 def test_select_config_select_option_input():
     """options 以 SelectOption 实例输入."""
     from cndb.plugins.tables.field_types import SelectFieldConfig, SelectOption
