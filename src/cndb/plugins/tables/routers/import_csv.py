@@ -76,6 +76,8 @@ async def import_file_analyze(
     格式自动识别：优先用文件名扩展名，退化到内容特征.
 
     额外返回 sample_rows（前 50 行）供前端渲染"典型数据 + 实时转换预览".
+    性能：文件只解析一次，列分析与样本预览共用同一份行数据；
+    样本仅截取前 50 行（样本只需体现部分典型值），不做第二次全量解析。
     """
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
 
@@ -92,16 +94,17 @@ async def import_file_analyze(
     if filename.lower().endswith(".xls"):
         raise HTTPException(status_code=400, detail="不支持旧版 .xls 格式，请在 Excel 中另存为 .xlsx")
 
-    columns, total_rows, actual_fmt = analyze_file_columns(content, filename=filename)
+    # 解析一次：列分析（全量，保证 total_rows / 空值率精确）与样本预览共用
+    rows, _cols, actual_fmt = parse_file_to_rows(content, filename=filename)
+    columns, total_rows, _ = analyze_file_columns(rows=rows, format=actual_fmt)
 
     valid_cols = [c for c in columns if c["name"].strip()]
     if not valid_cols:
         raise HTTPException(status_code=400, detail="文件没有有效列名")
 
-    # 额外解析前 50 行作为 sample_rows —— 前端用来做"典型数据 + 实时转换预览"
-    sample_rows, _cols, _ = parse_file_to_rows(content, filename=filename)
+    # 样本截断：仅取前 50 行作为"典型数据 + 实时转换预览"
     SAMPLE_ROWS_LIMIT = 50
-    sample_rows_preview: list[dict[str, Any]] = sample_rows[:SAMPLE_ROWS_LIMIT]
+    sample_rows_preview: list[dict[str, Any]] = rows[:SAMPLE_ROWS_LIMIT]
 
     return {
         "columns": columns,

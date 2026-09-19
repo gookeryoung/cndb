@@ -175,6 +175,25 @@ class TestImportFileAnalyzeApi:
         col_names = [c["name"] for c in data["columns"]]
         assert col_names == ["name", "amount"]
 
+    def test_analyze_sample_rows_truncated(self, client, ws_auth):
+        """sample_rows 截断自单次解析的前 50 行 —— total_rows 仍按全量统计."""
+        ws_id, auth = ws_auth
+        lines = ["idx"] + [str(i) for i in range(120)]
+        csv_bytes = _build_csv_bytes("\n".join(lines) + "\n")
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file/analyze",
+            files={"file": ("big.csv", csv_bytes, "text/csv")},
+            headers=auth,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        # 全量统计不受样本截断影响
+        assert data["total_rows"] == 120
+        # 样本仅截取前 50 行，内容为首行起的连续截断
+        assert len(data["sample_rows"]) == 50
+        assert data["sample_rows"][0] == {"idx": "0"}
+        assert data["sample_rows"][-1] == {"idx": "49"}
+
     def test_analyze_empty_file(self, client, ws_auth):
         ws_id, auth = ws_auth
         r = client.post(
