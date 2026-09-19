@@ -20,7 +20,7 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Input, Segmented, Switch, Upload, Popconfirm } from 'antd'
+import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Input, Segmented, Switch, Upload, Popconfirm, Pagination } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
@@ -513,36 +513,31 @@ export default function GridPage() {
     setRowDrafts(prev => { const next = { ...prev }; delete next[key]; return next })
   }
 
-  /** 激活底部空白新增行 —— 按 newRowPosition 自动跳转到能看见 newRow 的页 */
+  /** 激活底部空白新增行 —— 按 newRowPosition 自动跳转到能看见 newRow 的页.
+   *  说明：Table 的 pagination 已设为 false（改用独立 Pagination 组件），
+   *  Table 会完整渲染 dataSource（当前页数据 + newRow），不再被 AntD 客户端切片切掉 newRow.
+   *  因此 'page'（页面尾部）无需翻页——newRow 直接追加在当前页数据末尾即可见；
+   *  'top'/'tail' 需要先跳转到首页/末页，让 newRow 出现在表格首尾的正确位置. */
   const startNewRow = () => {
     if (!canEditRecords) return
     setEditingRowId(null)
 
     const currentTotal = rowList.total
     const currentLimit = limit
-    const currentItems = rowList.items ?? []
     let targetOffset: number | null = null
 
     if (newRowPosition === 'top') {
-      // 表格顶部 — 跳到首页
+      // 表格顶部 — 跳到首页，newRow 会 prepend 在最前
       targetOffset = 0
     } else if (newRowPosition === 'tail') {
-      // 表格尾部 — 跳到整个表格最后一页的起点
+      // 表格尾部 — 跳到整个表格最后一页的起点，newRow 追加在该页末尾
       if (currentTotal === 0) {
         targetOffset = 0
       } else {
         targetOffset = Math.floor((currentTotal - 1) / currentLimit) * currentLimit
       }
-    } else {
-      // 'page'：页面尾部 — 追加到当前页末尾
-      // 如果当前页正好是最后一页且已满员，newRow 会落到下一页，需要翻到那里让它可见
-      const isLastPage = offset + currentLimit >= currentTotal
-      const pageFull = currentItems.length >= currentLimit
-      if (isLastPage && pageFull) {
-        targetOffset = currentTotal
-      }
-      // 否则保持 offset 不变
     }
+    // 'page'：页面尾部 — 直接追加到当前页末尾，Table 完整渲染 dataSource，newRow 立即可见，无需翻页
 
     if (targetOffset !== null && targetOffset !== offset) {
       setOffset(targetOffset)
@@ -1030,28 +1025,71 @@ export default function GridPage() {
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: 48 }}>加载中...</div>
         ) : mode === 'grid' ? (
-          <Table
-            rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns}
-            dataSource={(() => {
-              if (!newRowActive) return (rowList.items || [])
-              const newRow = { id: NEW_ROW_KEY } as unknown as RowResponse
-              const items = rowList.items || []
-              return newRowPosition === 'top' ? [newRow, ...items] : [...items, newRow]
-            })()}
-            bordered={settings.bordered}
-            showHeader={settings.showHeader}
-            style={{ flex: 1, minHeight: 0 }}
-            rowClassName={(record, i) => {
-              const classes: string[] = []
-              if (isNewRow(record.id)) classes.push('cn-table-row-new')
-              if (settings.striped && i % 2 === 1) classes.push('table-row-striped')
-              return classes.join(' ')
-            }}
-            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 40 }}
-            pagination={{
-              current: Math.floor(offset / limit) + 1, pageSize: limit, total: (mode === 'grid' && newRowActive) ? rowList.total + 1 : rowList.total,
-              showSizeChanger: true, pageSizeOptions: [25, 50, 100, 200],
-              onChange: (p, l) => {
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <Table
+              rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns}
+              dataSource={(() => {
+                if (!newRowActive) return (rowList.items || [])
+                const newRow = { id: NEW_ROW_KEY } as unknown as RowResponse
+                const items = rowList.items || []
+                return newRowPosition === 'top' ? [newRow, ...items] : [...items, newRow]
+              })()}
+              bordered={settings.bordered}
+              showHeader={settings.showHeader}
+              style={{ flex: 1, minHeight: 0 }}
+              rowClassName={(record, i) => {
+                const classes: string[] = []
+                if (isNewRow(record.id)) classes.push('cn-table-row-new')
+                if (settings.striped && i % 2 === 1) classes.push('table-row-striped')
+                return classes.join(' ')
+              }}
+              rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 40 }}
+              pagination={false}
+              scroll={{ x: Math.max(gridAreaSize.w, 1200), y: Math.max(gridAreaSize.h - 140, 200) }}
+              virtual
+              onChange={(_pag, _fil, sorter, extra) => {
+                // 只在用户点击列头排序时（extra.action === 'sort'）才处理排序，
+                // 分页/筛选变化时 AntD 也会传当前排序状态，但不应触发 sort 处理逻辑
+                if (extra?.action !== 'sort') {
+                  return
+                }
+                // 处理列排序 — Ant Design sorter 可能是单对象或数组
+                // 受控排序循环：ascend → descend → null（清除）
+                type SorterInfo = { field?: string | number | readonly (string | number)[]; order?: 'ascend' | 'descend' | null }
+                const raw = sorter as SorterInfo | SorterInfo[] | null
+                const items: SorterInfo[] = Array.isArray(raw) ? raw : (raw ? [raw] : [])
+                const validItems = items.filter(it => typeof it?.field === 'string') as Array<{ field: string; order: 'ascend' | 'descend' | null }>
+                if (validItems.length === 0) {
+                  return
+                }
+                const activeItem = validItems.find(it => it.order !== null) ?? validItems[0]
+                const field = activeItem.field
+                const order = activeItem.order
+                if (order === null) {
+                  // 清除：只移除该字段的排序规则，保留其他
+                  updateViewSortings(prev => prev.filter(sr => sr.field_name !== field))
+                } else {
+                  const newSort: SortRule = { field_name: field, direction: order === 'ascend' ? 'asc' : 'desc' }
+                  updateViewSortings(prev => {
+                    const without = prev.filter(sr => sr.field_name !== field)
+                    return [newSort, ...without]
+                  })
+                }
+                setOffset(0)
+              }}
+              onRow={(record) => (
+                isNewRow(record.id) ? {} : ({ onDoubleClick: () => openDetailWithPrefetch(record) })
+              )}
+            />
+            <Pagination
+              style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}
+              current={Math.floor(offset / limit) + 1}
+              pageSize={limit}
+              total={rowList.total}
+              showSizeChanger
+              pageSizeOptions={[25, 50, 100, 200]}
+              showTotal={(t) => `共 ${t} 条`}
+              onChange={(p, l) => {
                 setOffset((p - 1) * l)
                 setLimit(l)
                 // 预取下一页 —— 只有存在下一页且当前是 grid 模式（非全量拉取）时才预取
@@ -1068,45 +1106,9 @@ export default function GridPage() {
                     staleTime: 10_000,
                   })
                 }
-              },
-              showTotal: (t) => `共 ${t} 条`,
-            }}
-            scroll={{ x: Math.max(gridAreaSize.w, 1200), y: Math.max(gridAreaSize.h - 96, 200) }}
-            virtual
-            onChange={(_pag, _fil, sorter, extra) => {
-              // 只在用户点击列头排序时（extra.action === 'sort'）才处理排序，
-              // 分页/筛选变化时 AntD 也会传当前排序状态，但不应触发 sort 处理逻辑
-              if (extra?.action !== 'sort') {
-                return
-              }
-              // 处理列排序 — Ant Design sorter 可能是单对象或数组
-              // 受控排序循环：ascend → descend → null（清除）
-              type SorterInfo = { field?: string | number | readonly (string | number)[]; order?: 'ascend' | 'descend' | null }
-              const raw = sorter as SorterInfo | SorterInfo[] | null
-              const items: SorterInfo[] = Array.isArray(raw) ? raw : (raw ? [raw] : [])
-              const validItems = items.filter(it => typeof it?.field === 'string') as Array<{ field: string; order: 'ascend' | 'descend' | null }>
-              if (validItems.length === 0) {
-                return
-              }
-              const activeItem = validItems.find(it => it.order !== null) ?? validItems[0]
-              const field = activeItem.field
-              const order = activeItem.order
-              if (order === null) {
-                // 清除：只移除该字段的排序规则，保留其他
-                updateViewSortings(prev => prev.filter(sr => sr.field_name !== field))
-              } else {
-                const newSort: SortRule = { field_name: field, direction: order === 'ascend' ? 'asc' : 'desc' }
-                updateViewSortings(prev => {
-                  const without = prev.filter(sr => sr.field_name !== field)
-                  return [newSort, ...without]
-                })
-              }
-              setOffset(0)
-            }}
-            onRow={(record) => (
-              isNewRow(record.id) ? {} : ({ onDoubleClick: () => openDetailWithPrefetch(record) })
-            )}
-          />
+              }}
+            />
+          </div>
         ) : mode === 'kanban' ? (
           <KanbanView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} />
         ) : mode === 'gallery' ? (
