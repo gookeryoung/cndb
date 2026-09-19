@@ -85,24 +85,22 @@ describe('MainLayout 顶部导航', () => {
         expect(adminBtn.compareDocumentPosition(userName) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
-    it('管理台页点击「报表」跳转到最近访问工作区的报表页（而非 /w/undefined/reports）', async () => {
+    it('无工作区上下文（/admin）时「报表」「工作区设置」按钮禁用，不隐式跳转到未知工作区', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
         })
 
-        // 进入管理台（无 wid 上下文），再点击「报表」
+        // 进入管理台（无 wid 上下文，下拉框无当前工作区）
         fireEvent.click(screen.getByRole('button', { name: /管理台/ }))
         await waitFor(() => {
             expect(screen.getByTestId('admin-panel-stub')).toHaveTextContent('/admin')
         })
-        fireEvent.click(screen.getByRole('button', { name: /报表/ }))
 
-        // 应回到最近访问的工作区 10 的报表页
-        await waitFor(() => {
-            expect(screen.getByTestId('reports-page-stub')).toHaveTextContent('/w/10/reports')
-        })
+        // 报表/工作区设置是工作区级功能，目标工作区必须显式选择，应禁用而非跳最近访问工作区
+        expect(screen.getByRole('button', { name: /报表/ })).toBeDisabled()
+        expect(screen.getByTestId('workspace-settings-nav')).toBeDisabled()
     })
 
     it('非系统管理员不显示「管理台」入口', () => {
