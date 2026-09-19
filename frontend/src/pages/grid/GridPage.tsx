@@ -24,8 +24,8 @@ import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdow
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
-  AppstoreOutlined, CopyOutlined, ImportOutlined, UploadOutlined, CloseOutlined,
-  CalendarOutlined, ShareAltOutlined, SwapOutlined, LineChartOutlined,
+  AppstoreOutlined, CopyOutlined, ImportOutlined, UploadOutlined,
+  CalendarOutlined, SwapOutlined, LineChartOutlined,
   SearchOutlined, EditOutlined, MenuOutlined, PartitionOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -728,26 +728,6 @@ export default function GridPage() {
     return cancelPersist
   }, [viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, activeViewId, debouncedPersist, cancelPersist])
 
-  // 分享视图
-  const shareView = useMutation({
-    mutationFn: () => {
-      const vid = activeViewId || (views.find(v => v.default)?.id) || (views[0]?.id)
-      if (!vid) throw new Error('请先创建或选择一个视图')
-      return viewApi.share(wid!, tid!, vid)
-    },
-    onSuccess: (res) => {
-      message.success('分享已生成')
-      // 自动复制到剪贴板
-      navigator.clipboard?.writeText(res.share_url).then(() => message.info('分享链接已复制到剪贴板'))
-    },
-    onError: (err) => message.error(err instanceof Error ? err.message : '分享失败'),
-  })
-  const revokeShare = useMutation({
-    mutationFn: () => viewApi.revokeShare(wid!, tid!, activeViewId || views[0]?.id),
-    onSuccess: () => message.success('已撤销分享'),
-    onError: (err) => message.error(err instanceof Error ? err.message : '撤销分享失败'),
-  })
-
   // 移动表
   const moveTable = useMutation({
     mutationFn: (targetWsId: number | string) => tableApi.move(wid!, tid!, targetWsId),
@@ -878,11 +858,6 @@ export default function GridPage() {
           <Dropdown menu={{
             items: [
               { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
-              { type: 'divider' },
-              { key: 'share', icon: <ShareAltOutlined />, label: '分享视图', onClick: () => shareView.mutate() },
-              { key: 'revoke', icon: <CloseOutlined />, label: '撤销分享', onClick: () => revokeShare.mutate() },
-              { type: 'divider' },
-              { key: 'table-settings-page', icon: <SettingOutlined />, label: '表设置页面', onClick: () => navigate(`/w/${wid}/tables/${tid}/settings`) },
               { type: 'divider' },
               {
                 key: 'copy', icon: <CopyOutlined />, label: '复制表',
@@ -1358,6 +1333,3 @@ export default function GridPage() {
     </div>
   )
 }
-
-// ─────────────── 一些保留但暂隐藏的图标引用（让打包器知道没丢依赖） ───────────────
-void CloseOutlined
