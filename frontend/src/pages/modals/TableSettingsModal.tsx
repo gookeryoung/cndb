@@ -11,7 +11,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Modal, Tabs, Form, Input, Button, Tag, Popconfirm, message, Space, Empty, Tooltip,
+  Modal, Tabs, Form, Input, Button, Tag, Popconfirm, App as AntApp, Space, Empty, Tooltip,
 } from 'antd'
 import {
   InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
@@ -60,6 +60,7 @@ function hasAction(actions: string[] | undefined, action: string): boolean {
 export default function TableSettingsModal({
   open, wid, tid, onClose, onUpdated, initialTab = 'basic', embedded = false,
 }: Props) {
+  const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState(initialTab)
   const [form] = Form.useForm<TableUpdate>()

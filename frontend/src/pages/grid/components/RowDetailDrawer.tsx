@@ -1,7 +1,7 @@
 /** 行详情抽屉 — 编辑字段值 / 历史 / 反向引用. */
 
 import React from 'react'
-import { Drawer, Form, Input, Button, Typography, Timeline, Tag, message, Select, DatePicker, InputNumber, Switch, Upload, Image, Tooltip } from 'antd'
+import { Drawer, Form, Input, Button, Typography, Timeline, Tag, App as AntApp, Select, DatePicker, InputNumber, Switch, Upload, Image, Tooltip } from 'antd'
 import { SaveOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
@@ -22,6 +22,7 @@ interface Props {
 }
 
 export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }: Props) {
+  const { message } = AntApp.useApp()
   const [form] = Form.useForm()
 
   // 行特定的审计日志 / 反向引用 —— 使用统一的自定义 hooks

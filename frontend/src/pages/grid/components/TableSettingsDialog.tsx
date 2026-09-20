@@ -1,7 +1,7 @@
 /** 表格显示设置 Dialog — 全局用户偏好（间距 / 每页行数 / 边框 / 表头 / 斑马纹） */
 
 import { useMemo, useEffect, useState } from 'react'
-import { Button, Modal, Select, Switch, message } from 'antd'
+import { Button, Modal, Select, Switch, App as AntApp } from 'antd'
 import { useTableSettingsStore } from '@/store'
 import { DEFAULT_TABLE_SETTINGS } from '@/theme/tableSettings'
 
@@ -13,6 +13,7 @@ interface TableSettingsDialogProps {
 
 /** 表格显示设置对话框（持久化到浏览器 localStorage，对所有表生效） */
 export default function TableSettingsDialog({ open, onClose, onAfterSave }: TableSettingsDialogProps) {
+  const { message } = AntApp.useApp()
   const density = useTableSettingsStore(s => s.density)
   const defaultPageSize = useTableSettingsStore(s => s.defaultPageSize)
   const bordered = useTableSettingsStore(s => s.bordered)
