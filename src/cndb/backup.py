@@ -64,6 +64,9 @@ class DatabaseInfo:
     row_counts: dict[str, int] = field(default_factory=dict)
     # 备份时数据所处的 alembic schema 版本（空串表示无迁移记录，如旧版备份或手动建表库）
     schema_version: str = ""
+    # 内嵌兜底导出的恢复模式（native 备份内嵌 dump.json 时为 "sqlalchemy"，
+    # 供不支持 native 备份 schema 的程序按交集导入恢复；空串表示无兜底导出）
+    fallback_mode: str = ""
 
 
 @dataclass
@@ -299,6 +302,7 @@ def create_backup(
     database_url: str | None = None,
     upload_dir: Path | None = None,
     fmt: str | None = None,
+    include_fallback: bool = True,
 ) -> Path:
     """创建完整数据备份.
 
@@ -311,6 +315,9 @@ def create_backup(
         upload_dir: 覆盖 settings.UPLOAD_DIR（测试用）.
         fmt: 输出格式 — ``archive`` / ``directory``. 默认 None，自动根据 output 后缀推断；
             若 output 未指定则默认 archive。
+        include_fallback: native 模式是否内嵌 sqlalchemy 兜底导出（dump.json）。
+            内嵌后归档体积增大，但旧版程序或 native 恢复失败时可用 sqlalchemy
+            模式按交集导入恢复（降级恢复，丢弃新版字段数据）；超大库可关闭。
 
     Returns:
         备份产物的绝对路径（归档文件或目录）.
@@ -374,6 +381,11 @@ def create_backup(
             manifest.database.tables = sorted(row_counts.keys())
             manifest.database.row_counts = row_counts
             manifest.database.schema_version = schema_version
+            # 内嵌兜底导出：从一致性快照（而非源库）生成 dump.json，
+            # 保证与 .db 产物数据一致；旧版程序可按交集导入降级恢复
+            if include_fallback:
+                _backup_sqlalchemy(f"sqlite:///{db_dir / 'cndb.db'}", db_dir)
+                manifest.database.fallback_mode = "sqlalchemy"
         else:
             db_file, row_counts, tables, schema_version = _backup_sqlalchemy(db_url, db_dir)
             manifest.database.path = db_file
@@ -423,7 +435,14 @@ def backup_command(args: argparse.Namespace) -> None:
         fmt = getattr(args, "format", None)  # argparse 可能用 format / fmt
         if fmt is None and getattr(args, "dir", False):
             fmt = "directory"
-        result = create_backup(output=output, mode=args.mode, include_uploads=include_uploads, fmt=fmt)
+        include_fallback = not getattr(args, "no_fallback", False)
+        result = create_backup(
+            output=output,
+            mode=args.mode,
+            include_uploads=include_uploads,
+            fmt=fmt,
+            include_fallback=include_fallback,
+        )
         print(f"[ok] 备份成功: {result}")
     except BackupError as exc:
         print(f"[error] {exc}", file=os.sys.stderr)

@@ -73,6 +73,11 @@ class BackupInspection:
         ]
         if db.get("backup_mode", "") == "native" and schema_version:
             parts.append("提示: 备份 schema 旧于当前程序时，恢复时将自动迁移至当前 schema")
+        fallback = db.get("fallback_mode", "")
+        if fallback:
+            parts.append(f"内嵌兜底导出: 有（fallback_mode={fallback}，可用 sqlalchemy 模式降级恢复）")
+        else:
+            parts.append("内嵌兜底导出: 无")
         if up.get("included"):
             parts.append(f"附件: {up.get('file_count', 0)} 个文件, {up.get('total_size', 0)} 字节")
         else:
@@ -265,7 +270,9 @@ def _migrate_after_restore(database_url: str, backup_schema_version: str) -> Non
         migrations.upgrade_to_head(database_url)
     except (SQLAlchemyError, CommandError) as exc:
         raise RestoreError(
-            f"恢复后 schema 迁移失败：备份的 schema 可能新于当前程序，请升级程序后再恢复。原始错误: {exc}"
+            f"恢复后 schema 迁移失败：备份的 schema 可能新于当前程序，请升级程序后再恢复；"
+            f"若备份内嵌了兜底导出（fallback_mode=sqlalchemy），也可改用 sqlalchemy 模式恢复"
+            f"（按旧 schema 交集导入，丢弃新版本字段数据）。原始错误: {exc}"
         ) from exc
 
     # 补建迁移链未覆盖的新插件表（Base.metadata.create_all 只建缺失表，不影响已有表）
@@ -373,6 +380,7 @@ def restore_backup(
     force: bool = False,
     database_url: str | None = None,
     upload_dir: Path | None = None,
+    mode: str | None = None,
 ) -> None:
     """从备份源（归档或目录）恢复数据.
 
@@ -381,6 +389,10 @@ def restore_backup(
         force: 强制覆盖已有数据（默认拒绝）.
         database_url: 覆盖 settings.DATABASE_URL（测试用）.
         upload_dir: 覆盖 settings.UPLOAD_DIR（测试用）.
+        mode: 覆盖恢复模式 — ``native`` / ``sqlalchemy``. None 时按 manifest 的
+            backup_mode 分支。备份 schema 新于当前程序导致 native 恢复失败时，
+            可显式指定 ``sqlalchemy`` 按 dump.json 交集导入降级恢复（需备份
+            内嵌兜底导出，丢弃新版本字段数据）.
 
     Raises:
         RestoreError: 恢复过程中的业务错误（版本不兼容、目标不安全等）.
@@ -407,7 +419,12 @@ def restore_backup(
 
     db_info = manifest.get("database", {})
     up_info = manifest.get("uploads", {})
-    backup_mode = db_info.get("backup_mode", "native")
+    manifest_mode = db_info.get("backup_mode", "native")
+    if mode is not None and mode not in ("native", "sqlalchemy"):
+        raise RestoreError(f"无效的恢复模式: {mode}（可选: native, sqlalchemy）")
+    backup_mode = mode or manifest_mode
+    if mode is not None and mode != manifest_mode:
+        print(f"[restore] 显式指定恢复模式: {mode}（备份标记: {manifest_mode}）")
 
     # 2) 安全检查
     _check_target_safe(db_url, force)
@@ -475,7 +492,7 @@ def restore_command(args: argparse.Namespace) -> None:
             print(inspection.summary)
             return
 
-        restore_backup(archive, force=args.force)
+        restore_backup(archive, force=args.force, mode=getattr(args, "mode", None))
     except RestoreError as exc:
         print(f"[error] {exc}", file=sys.stderr)
         sys.exit(1)
