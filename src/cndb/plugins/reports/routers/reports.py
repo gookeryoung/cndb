@@ -113,6 +113,25 @@ def _resolve_table(db: Session, table_id: int | None) -> int | None:
     return table_id
 
 
+def _normalize_extra_table_ids(db: Session, table_id: int | None, extra_ids: list[int]) -> list[int]:
+    """归一化额外引用表 ID 列表：去重保序、剔除主表自身、校验存在性.
+
+    任一 ID 不存在时 404。
+    """
+    from cndb.plugins.tables.models import DataTable
+
+    seen: set[int] = set()
+    normalized: list[int] = []
+    for etid in extra_ids:
+        if etid == table_id or etid in seen:
+            continue
+        seen.add(etid)
+        if not db.get(DataTable, etid):
+            raise HTTPException(status_code=404, detail=f"数据表不存在 id={etid}")
+        normalized.append(etid)
+    return normalized
+
+
 @router.post("", response_model=TemplateResponse, status_code=201)
 def create_template(
     payload: TemplateCreate,
@@ -121,6 +140,7 @@ def create_template(
 ) -> ReportTemplate:
     _validate_format(payload.output_format)
     _resolve_table(db, payload.table_id)
+    extra_table_ids = _normalize_extra_table_ids(db, payload.table_id, payload.extra_table_ids)
     try:
         _jinja_env.from_string(payload.template_content)
     except Exception as exc:
@@ -132,6 +152,7 @@ def create_template(
         output_format=payload.output_format,
         template_content=payload.template_content,
         parameters=[p.model_dump() for p in payload.parameters],
+        extra_table_ids=extra_table_ids,
     )
     db.add(tpl)
     db.commit()
@@ -176,6 +197,10 @@ def update_template(
         _validate_format(ud["output_format"])
     if "table_id" in ud:
         _resolve_table(db, ud["table_id"])
+    if "extra_table_ids" in ud:
+        # 显式传 null 视为清空（列 nullable=False，不接受 None）
+        base_tid = ud["table_id"] if "table_id" in ud else tpl.table_id
+        ud["extra_table_ids"] = _normalize_extra_table_ids(db, base_tid, ud["extra_table_ids"] or [])
     if "template_content" in ud:
         try:
             _jinja_env.from_string(ud["template_content"])
@@ -215,6 +240,7 @@ def _load_table_records(db: Session, table_id: int) -> tuple[Any, list[dict[str,
     """加载指定表的元数据和全部行数据.
 
     返回 (DataTable, records_list)，records 是扁平 dict 列表。
+    list_rows 默认 limit=100，这里分页拉全量，避免大表报表静默截断。
     """
     from cndb.plugins.tables.models import DataTable
     from cndb.plugins.tables.records import list_rows
@@ -222,8 +248,16 @@ def _load_table_records(db: Session, table_id: int) -> tuple[Any, list[dict[str,
     table = db.get(DataTable, table_id)
     if not table:
         raise HTTPException(status_code=404, detail=f"数据表不存在 id={table_id}")
-    rows, _total = list_rows(db.bind, table, include_trashed=False, db=db)
-    records = [r.get("data", r) for r in rows]
+
+    page_size = 500
+    records: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
+    total = 0
+    while True:
+        rows, total = list_rows(db.bind, table, include_trashed=False, db=db, limit=page_size, offset=len(records))
+        records.extend(r.get("data", r) for r in rows)
+        if not rows or len(records) >= total:
+            break
     return table, records
 
 
@@ -635,10 +669,16 @@ def render_report(
     # 加载主表
     table, records = _load_table_records(db, payload.table_id)
 
-    # 加载 extra 表（如有）
+    # 主表行过滤：row_ids 非空时保持给定顺序，忽略不存在的 id
+    if payload.row_ids:
+        by_id = {r.get("id"): r for r in records}
+        records = [by_id[rid] for rid in payload.row_ids if rid in by_id]
+
+    # 加载 extra 表（请求显式传值优先，否则回落模板持久化的 extra_table_ids）
+    extra_source = payload.extra_table_ids or (tpl.extra_table_ids or [])
     records_by_table: dict[str, list[dict[str, Any]]] = {}
     seen_table_ids: set[int] = {payload.table_id}
-    extra_table_ids = list(dict.fromkeys(payload.extra_table_ids))  # 去重保序
+    extra_table_ids = list(dict.fromkeys(extra_source))  # 去重保序
     for etid in extra_table_ids:
         if etid in seen_table_ids:
             continue

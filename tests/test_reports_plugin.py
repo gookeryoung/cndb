@@ -1,5 +1,7 @@
 """reports 插件集成测试."""
 
+import io
+
 import pytest
 
 from cndb.plugins.accounts.models import User
@@ -512,3 +514,334 @@ def test_render_unsupported_format(client, auth_headers, db):
         json={"table_id": tid, "params": {}},
     )
     assert resp.status_code == 400
+
+
+# ── 额外引用表持久化（extra_table_ids）────────────────
+
+
+def _create_ws_with_two_tables(client, auth_headers, ws_name):
+    """创建工作区 + 两张表，返回 (wid, tid_a, tid_b)."""
+    ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": ws_name})
+    wid = ws.json()["id"]
+    tbl_a = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "主表"})
+    tid_a = tbl_a.json()["id"]
+    tbl_b = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "副表"})
+    tid_b = tbl_b.json()["id"]
+    return wid, tid_a, tid_b
+
+
+class TestExtraTableIdsPersistence:
+    """模板持久化额外引用表测试."""
+
+    def test_create_template_with_extra_table_ids(self, client, auth_headers):
+        """create 携带 extra_table_ids 应持久化并在响应回显."""
+        _wid, tid_a, tid_b = _create_ws_with_two_tables(client, auth_headers, "ws_extra_create")
+        resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "带额外表",
+                "output_format": "docx",
+                "template_content": "x",
+                "table_id": tid_a,
+                "extra_table_ids": [tid_b],
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["extra_table_ids"] == [tid_b]
+
+    def test_create_template_with_invalid_extra_table(self, client, auth_headers):
+        """extra_table_ids 含不存在的表 ID 应 404."""
+        _wid, tid_a, _tid_b = _create_ws_with_two_tables(client, auth_headers, "ws_extra_bad")
+        resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "坏额外表",
+                "output_format": "docx",
+                "template_content": "x",
+                "table_id": tid_a,
+                "extra_table_ids": [99999],
+            },
+        )
+        assert resp.status_code == 404
+
+    def test_create_template_extras_normalized(self, client, auth_headers):
+        """create 时额外表去重保序、剔除主表自身."""
+        _wid, tid_a, tid_b = _create_ws_with_two_tables(client, auth_headers, "ws_extra_norm")
+        resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "归一化",
+                "output_format": "docx",
+                "template_content": "x",
+                "table_id": tid_a,
+                "extra_table_ids": [tid_b, tid_a, tid_b],
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["extra_table_ids"] == [tid_b]
+
+    def test_update_template_extra_table_ids(self, client, auth_headers):
+        """update 显式传 extra_table_ids 应持久化."""
+        _wid, tid_a, tid_b = _create_ws_with_two_tables(client, auth_headers, "ws_extra_update")
+        create_resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={"name": "模板", "output_format": "docx", "template_content": "x", "table_id": tid_a},
+        )
+        rep_id = create_resp.json()["id"]
+        resp = client.put(
+            f"/api/v1/reports/{rep_id}",
+            headers=auth_headers,
+            json={"extra_table_ids": [tid_b]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["extra_table_ids"] == [tid_b]
+
+    def test_update_template_extras_null_clears(self, client, auth_headers):
+        """update 显式传 null 视为清空额外表."""
+        _wid, tid_a, tid_b = _create_ws_with_two_tables(client, auth_headers, "ws_extra_null")
+        create_resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "模板",
+                "output_format": "docx",
+                "template_content": "x",
+                "table_id": tid_a,
+                "extra_table_ids": [tid_b],
+            },
+        )
+        rep_id = create_resp.json()["id"]
+        resp = client.put(
+            f"/api/v1/reports/{rep_id}",
+            headers=auth_headers,
+            json={"extra_table_ids": None},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["extra_table_ids"] == []
+
+    def test_list_response_contains_extra_table_ids(self, client, auth_headers):
+        """列表接口应返回 extra_table_ids 字段."""
+        _wid, tid_a, tid_b = _create_ws_with_two_tables(client, auth_headers, "ws_extra_list")
+        client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "列表模板",
+                "output_format": "docx",
+                "template_content": "x",
+                "table_id": tid_a,
+                "extra_table_ids": [tid_b],
+            },
+        )
+        resp = client.get("/api/v1/reports", headers=auth_headers)
+        assert resp.status_code == 200
+        items = [it for it in resp.json() if it["name"] == "列表模板"]
+        assert len(items) == 1
+        assert items[0]["extra_table_ids"] == [tid_b]
+
+    def test_render_falls_back_to_persisted_extras(self, client, auth_headers):
+        """渲染请求不带 extra_table_ids 时应回落到模板持久化的额外表（xlsx sheet 验证）."""
+        wid, tid_a, tid_b = _create_ws_with_two_tables(client, auth_headers, "ws_extra_render")
+        client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid_b}/fields",
+            headers=auth_headers,
+            json={"name": "项目名", "field_type": "text"},
+        )
+        create_resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "回落渲染",
+                "output_format": "xlsx",
+                "template_content": "回落测试",
+                "table_id": tid_a,
+                "extra_table_ids": [tid_b],
+            },
+        )
+        rep_id = create_resp.json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{rep_id}/render",
+            headers=auth_headers,
+            json={"table_id": tid_a, "params": {}},
+        )
+        assert resp.status_code == 200
+        from openpyxl import load_workbook
+
+        wb = load_workbook(io.BytesIO(resp.content))
+        assert "副表" in wb.sheetnames, f"额外表 Sheet 缺失，实际 {wb.sheetnames}"
+
+    def test_render_request_extras_override_persisted(self, client, auth_headers):
+        """渲染请求显式传 extra_table_ids 时优先于模板持久化值."""
+        wid, tid_a, tid_b = _create_ws_with_two_tables(client, auth_headers, "ws_extra_override")
+        tbl_c = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "副表C"})
+        tid_c = tbl_c.json()["id"]
+        create_resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "覆盖渲染",
+                "output_format": "xlsx",
+                "template_content": "覆盖测试",
+                "table_id": tid_a,
+                "extra_table_ids": [tid_b],
+            },
+        )
+        rep_id = create_resp.json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{rep_id}/render",
+            headers=auth_headers,
+            json={"table_id": tid_a, "params": {}, "extra_table_ids": [tid_c]},
+        )
+        assert resp.status_code == 200
+        from openpyxl import load_workbook
+
+        wb = load_workbook(io.BytesIO(resp.content))
+        assert "副表C" in wb.sheetnames
+        assert "副表" not in wb.sheetnames
+
+
+# ── row_ids 行过滤 + 渲染上下文对齐 ───────────────────
+
+
+def _create_table_with_rows(client, auth_headers, ws_name, row_count):
+    """创建工作区 + 含姓名字段表 + 批量插入 row_count 行，返回 (wid, tid, row_ids)."""
+    ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": ws_name})
+    wid = ws.json()["id"]
+    tbl = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "成员表"})
+    tid = tbl.json()["id"]
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+        headers=auth_headers,
+        json={"name": "姓名", "field_type": "text"},
+    )
+    names = [f"成员{i:03d}" for i in range(row_count)]
+    bulk = client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/records/bulk-create",
+        headers=auth_headers,
+        json={"rows": [{"values": {"姓名": n}} for n in names]},
+    )
+    assert bulk.status_code == 201, bulk.text
+    return wid, tid, bulk.json()["ids"]
+
+
+def _render_docx_text(client, auth_headers, template_id, tid, body):
+    """渲染 docx 模板并返回正文文本，便于断言."""
+    resp = client.post(
+        f"/api/v1/reports/{template_id}/render",
+        headers=auth_headers,
+        json={"table_id": tid, "params": {}, **body},
+    )
+    assert resp.status_code == 200, resp.text
+    from docx import Document
+
+    doc = Document(io.BytesIO(resp.content))
+    return "\n".join(p.text for p in doc.paragraphs)
+
+
+class TestRenderRowFiltering:
+    """row_ids 主表行过滤测试."""
+
+    def test_row_ids_filters_records(self, client, auth_headers):
+        """row_ids 非空时只渲染指定行."""
+        _wid, tid, ids = _create_table_with_rows(client, auth_headers, "ws_rowids_1", 3)
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "行过滤",
+                "output_format": "docx",
+                "template_content": "共 {{ records | length }} 条",
+            },
+        )
+        rep_id = tpl.json()["id"]
+        text = _render_docx_text(client, auth_headers, rep_id, tid, {"row_ids": [ids[0], ids[2]]})
+        assert "共 2 条" in text
+
+    def test_row_ids_preserves_order(self, client, auth_headers):
+        """row_ids 保持给定顺序输出."""
+        _wid, tid, ids = _create_table_with_rows(client, auth_headers, "ws_rowids_2", 3)
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "行序",
+                "output_format": "docx",
+                "template_content": "{% for r in records %}{{ r.姓名 }}{% endfor %}",
+            },
+        )
+        rep_id = tpl.json()["id"]
+        text = _render_docx_text(client, auth_headers, rep_id, tid, {"row_ids": [ids[2], ids[0]]})
+        # 成员000/001/002 对应 ids[0]/ids[1]/ids[2]
+        assert "成员002成员000" in text
+
+    def test_row_ids_missing_ids_ignored(self, client, auth_headers):
+        """row_ids 含不存在的 id 应忽略，不影响渲染."""
+        _wid, tid, ids = _create_table_with_rows(client, auth_headers, "ws_rowids_3", 2)
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "缺行",
+                "output_format": "docx",
+                "template_content": "共 {{ records | length }} 条",
+            },
+        )
+        rep_id = tpl.json()["id"]
+        text = _render_docx_text(client, auth_headers, rep_id, tid, {"row_ids": [ids[0], 999999]})
+        assert "共 1 条" in text
+
+    def test_row_ids_empty_renders_all(self, client, auth_headers):
+        """row_ids 缺省/为空时渲染全部行."""
+        _wid, tid, _ids = _create_table_with_rows(client, auth_headers, "ws_rowids_4", 3)
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "全量",
+                "output_format": "docx",
+                "template_content": "共 {{ records | length }} 条",
+            },
+        )
+        rep_id = tpl.json()["id"]
+        text = _render_docx_text(client, auth_headers, rep_id, tid, {})
+        assert "共 3 条" in text
+
+
+class TestRenderFullRows:
+    """渲染行数上限修复 + 上下文对齐测试."""
+
+    def test_render_over_100_rows(self, client, auth_headers):
+        """超过 100 行的表应全量渲染（修复 list_rows 默认 limit=100 静默截断）."""
+        _wid, tid, _ids = _create_table_with_rows(client, auth_headers, "ws_full_rows", 120)
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "全量渲染",
+                "output_format": "docx",
+                "template_content": "共 {{ records | length }} 条",
+            },
+        )
+        rep_id = tpl.json()["id"]
+        text = _render_docx_text(client, auth_headers, rep_id, tid, {})
+        assert "共 120 条" in text, f"应渲染 120 行，实际输出: {text!r}"
+
+    def test_records_contain_id(self, client, auth_headers):
+        """渲染上下文 records 应含 id 键（与前端预览上下文对齐）."""
+        _wid, tid, ids = _create_table_with_rows(client, auth_headers, "ws_ctx_id", 1)
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "上下文id",
+                "output_format": "docx",
+                "template_content": "id={{ records[0].id }}",
+            },
+        )
+        rep_id = tpl.json()["id"]
+        text = _render_docx_text(client, auth_headers, rep_id, tid, {})
+        assert f"id={ids[0]}" in text

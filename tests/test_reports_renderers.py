@@ -45,11 +45,12 @@ def sample_tables(client, auth_headers):
         headers=auth_headers,
         json={"name": "姓名", "field_type": "text"},
     )
-    client.post(
+    rec_a = client.post(
         f"/api/v1/workspaces/{wid}/tables/{tid_a}/records",
         headers=auth_headers,
-        json={"data": {"姓名": "张三"}},
+        json={"values": {"姓名": "张三"}},
     )
+    assert rec_a.status_code == 201, rec_a.text
     # 表 B
     tbl_b = client.post(
         f"/api/v1/workspaces/{wid}/tables",
@@ -62,11 +63,12 @@ def sample_tables(client, auth_headers):
         headers=auth_headers,
         json={"name": "项目名", "field_type": "text"},
     )
-    client.post(
+    rec_b = client.post(
         f"/api/v1/workspaces/{wid}/tables/{tid_b}/records",
         headers=auth_headers,
-        json={"data": {"项目名": "A项目"}},
+        json={"values": {"项目名": "A项目"}},
     )
+    assert rec_b.status_code == 201, rec_b.text
     return wid, tid_a, tid_b
 
 
@@ -392,6 +394,32 @@ class TestRenderTimeout:
 
 
 # ── 向后兼容 ─────────────────────────────────────────
+
+
+def test_row_ids_not_affect_extra_tables(client, auth_headers, sample_tables):
+    """row_ids 仅过滤主表 records，额外表数据不受影响."""
+    _wid, tid_a, tid_b = sample_tables
+    tpl = client.post(
+        "/api/v1/reports",
+        headers=auth_headers,
+        json={
+            "name": "rowids主表隔离",
+            "output_format": "docx",
+            "template_content": "主 {{ records | length }} 额外 {{ records_by_table['项目表'] | length }}",
+        },
+    )
+    tpl_id = tpl.json()["id"]
+    resp = client.post(
+        f"/api/v1/reports/{tpl_id}/render",
+        headers=auth_headers,
+        json={"table_id": tid_a, "params": {}, "extra_table_ids": [tid_b], "row_ids": [1]},
+    )
+    assert resp.status_code == 200
+    from docx import Document
+
+    doc = Document(io.BytesIO(resp.content))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "额外 1" in text, f"额外表不应受 row_ids 影响，实际: {text!r}"
 
 
 def test_backward_compat_single_table_render(client, auth_headers, sample_tables):
