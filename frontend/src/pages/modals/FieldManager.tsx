@@ -76,10 +76,15 @@ function normalizeOptionsFromConfig(raw: unknown): Array<{ key: string; label: s
   return list.map((o, idx) => (o.color ? o : { ...o, color: resolveTagColor(o.label, raw, idx) }))
 }
 
-/** 字段行的备注文字：默认值 + 自动填充规则（备注风格，未配置则返回空串不渲染） */
-function fieldNoteText(f: Field): string {
+/** 字段行的备注文字：必填/唯一状态 + 默认值/自动编号 + 自动填充规则（备注风格，无任何状态则返回空串不渲染） */
+export function fieldNoteText(f: Field): string {
   const parts: string[] = []
-  if (f.default_value !== null && f.default_value !== undefined && f.default_value !== '') {
+  if (f.required) parts.push('必填')
+  if (f.is_unique) parts.push('唯一')
+  const defaultMode = (f.config?.default_mode as string) ?? ''
+  if (f.field_type === 'text' && defaultMode === 'auto_increment') {
+    parts.push(`自动编号：${formatIncrementExample(f.config)} 起`)
+  } else if (f.default_value !== null && f.default_value !== undefined && f.default_value !== '') {
     parts.push(`默认值：${String(f.default_value)}`)
   }
   const autoFill = (f.config?.auto_fill as string) ?? ''
@@ -87,6 +92,16 @@ function fieldNoteText(f: Field): string {
     parts.push(autoFill === 'on_create' ? '创建时自动填充' : '更新时自动填充')
   }
   return parts.join(' · ')
+}
+
+/** 由自动编号 config 拼出示例编号（如 PRJ-0001），供备注与默认值编辑器共用 */
+export function formatIncrementExample(config: Record<string, unknown> | undefined): string {
+  const prefix = String(config?.increment_prefix ?? '')
+  const paddingNum = Number(config?.increment_padding ?? 4)
+  const padding = Number.isFinite(paddingNum) ? Math.max(0, Math.min(10, Math.trunc(paddingNum))) : 4
+  const startNum = Number(config?.increment_start ?? 1)
+  const start = Number.isFinite(startNum) ? Math.max(0, Math.trunc(startNum)) : 1
+  return `${prefix}${String(start).padStart(padding, '0')}`
 }
 
 export default function FieldManager({ open, wid, tid, fields, onClose, onChanged, embedded }: Props) {
@@ -303,7 +318,6 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                   <Tag color={getFieldTypeColor(r.field_type)} style={{ marginInlineEnd: 0 }} title={r.field_type}>
                     {getFieldTypeLabel(r.field_type)}
                   </Tag>
-                  {r.required && <Tag color="orange" style={{ marginInlineEnd: 0 }}>必填</Tag>}
                   {r.hidden && <Tag style={{ marginInlineEnd: 0 }}>隐藏</Tag>}
                 </span>
                 <span className="fm-row-actions">
@@ -1081,15 +1095,26 @@ function buildSelectOptions(raw: unknown): Array<{ label: string; value: string 
  *  - select / multiselect 从 config.options 读选项，选项变化时自动清空已不在列表中的默认值
  *  - date / datetime 用 DatePicker，值与 form store 之间做 dayjs ↔ 字符串互转
  *  - multiselect antd 返回 string[]，提交前会被后端自动 join 为逗号分隔字符串
+ *  - text 支持「静态值 / 自动编号」两种默认值模式（自动编号参数写入 config，建行时由后端生成）
  *  - link / attachment / timestamp 不支持默认值，统一显示禁用态
  */
 function DefaultValueInput({ fieldType, form }: DefaultValueInputProps) {
-  // 订阅 default_value 本身 + config.options（select/multiselect 用）
+  // 订阅 default_value 本身 + config.options（select/multiselect 用）+ config 自动编号配置（text 用）
   const value = Form.useWatch('default_value', form) as unknown
   const optionsRaw = Form.useWatch(['config', 'options'], form)
+  const defaultMode = Form.useWatch(['config', 'default_mode'], form) as string | undefined
+  const incrementPrefix = Form.useWatch(['config', 'increment_prefix'], form) as string | undefined
+  const incrementPadding = Form.useWatch(['config', 'increment_padding'], form) as number | undefined
+  const incrementStart = Form.useWatch(['config', 'increment_start'], form) as number | undefined
   const selectOptions = buildSelectOptions(optionsRaw)
 
   const setValue = (v: unknown) => form.setFieldValue('default_value', v)
+
+  /** 把自动编号模式/参数写入 config（读取现有 config 合并，避免覆盖 options 等其他键） */
+  const setIncrementConfig = (patch: Record<string, unknown>) => {
+    const cfg = (form.getFieldValue('config') as Record<string, unknown> | undefined) ?? {}
+    form.setFieldValue('config', { ...cfg, ...patch })
+  }
 
   // select / multiselect 选项变化后，若当前默认值已不在选项中，自动清空
   useEffect(() => {
@@ -1201,7 +1226,68 @@ function DefaultValueInput({ fieldType, form }: DefaultValueInputProps) {
       )
     }
 
-    // ── 文本类：保留 Input ──
+    // ── 单行文本：静态默认值 / 自动编号 两种模式切换 ──
+    case 'text': {
+      const isAuto = defaultMode === 'auto_increment'
+      return (
+        <div>
+          <Radio.Group
+            size="small"
+            value={isAuto ? 'auto_increment' : 'static'}
+            onChange={(e) => {
+              if (e.target.value === 'auto_increment') {
+                // 自动编号模式：清掉静态默认值，补齐编号参数（已存值优先）
+                setValue(undefined)
+                setIncrementConfig({
+                  default_mode: 'auto_increment',
+                  increment_prefix: incrementPrefix ?? '',
+                  increment_padding: incrementPadding ?? 4,
+                  increment_start: incrementStart ?? 1,
+                })
+              } else {
+                setIncrementConfig({ default_mode: '' })
+              }
+            }}
+          >
+            <Radio.Button value="static">静态值</Radio.Button>
+            <Radio.Button value="auto_increment">自动编号</Radio.Button>
+          </Radio.Group>
+          {isAuto && (
+            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Input
+                size="small"
+                style={{ width: 140 }}
+                placeholder="前缀，如 PRJ-"
+                value={incrementPrefix ?? ''}
+                onChange={(e) => setIncrementConfig({ increment_prefix: e.target.value })}
+              />
+              <InputNumber
+                size="small"
+                min={0}
+                max={10}
+                style={{ width: 110 }}
+                addonBefore="补零"
+                value={incrementPadding ?? 4}
+                onChange={(v) => setIncrementConfig({ increment_padding: v ?? 0 })}
+              />
+              <InputNumber
+                size="small"
+                min={0}
+                style={{ width: 110 }}
+                addonBefore="起始"
+                value={incrementStart ?? 1}
+                onChange={(v) => setIncrementConfig({ increment_start: v ?? 0 })}
+              />
+              <span style={{ color: 'var(--cn-text-secondary)', fontSize: 12 }}>
+                示例：{formatIncrementExample({ increment_prefix: incrementPrefix, increment_padding: incrementPadding, increment_start: incrementStart })}（新增行保存时自动生成，不预填）
+              </span>
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    // ── 其他文本类：保留 Input ──
     default: {
       return (
         <Input

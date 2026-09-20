@@ -10,19 +10,23 @@
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import FieldManager from './FieldManager'
+import FieldManager, { fieldNoteText, formatIncrementExample } from './FieldManager'
 import { renderProviders } from '@/test/render-providers'
 import { fieldApi, tableApi } from '@/api'
 
 const WID = '10'
 const TID = '20'
 
-/** 字段 fixture：覆盖 备注显示 / 缺失 auto_fill 键 / 已配置 auto_fill 三种形态 */
+/** 字段 fixture：覆盖 备注显示 / 缺失 auto_fill 键 / 已配置 auto_fill / 必填唯一自动编号 */
 const FIELDS = [
     { id: 1, name: '状态', field_type: 'text', order: 0, default_value: '待办' },
     { id: 2, name: '创建日期', field_type: 'date', order: 1, config: { auto_fill: 'on_create' } },
     { id: 3, name: '普通日期', field_type: 'date', order: 2, config: {} },
     { id: 4, name: '无设置', field_type: 'text', order: 3 },
+    {
+        id: 5, name: '编号', field_type: 'text', order: 4, required: true, is_unique: true,
+        config: { default_mode: 'auto_increment', increment_prefix: 'PRJ-', increment_padding: 4, increment_start: 1 },
+    },
 ] as any
 
 function renderFieldManager() {
@@ -121,16 +125,77 @@ beforeEach(() => {
 })
 
 describe('FieldManager 字段行备注文字', () => {
-    it('配置了默认值/自动填充的字段行显示备注，未配置的不渲染', () => {
+    it('配置了默认值/自动填充/必填唯一自动编号的字段行显示备注，未配置的不渲染', () => {
         renderFieldManager()
 
         // 状态（text + default_value）→ 仅默认值备注
         expect(screen.getByText('默认值：待办')).toBeInTheDocument()
         // 创建日期（date + on_create）→ 自动填充备注
         expect(screen.getByText('创建时自动填充')).toBeInTheDocument()
+        // 编号（text + auto_increment + required + unique）→ 必填 · 唯一 · 自动编号
+        expect(screen.getByText('必填 · 唯一 · 自动编号：PRJ-0001 起')).toBeInTheDocument()
         // 无备注的字段（普通日期/无设置）不渲染 .fm-row-note
         const notes = document.querySelectorAll('.fm-row-note')
-        expect(notes).toHaveLength(2)
+        expect(notes).toHaveLength(3)
+    })
+})
+
+describe('fieldNoteText / formatIncrementExample 纯函数矩阵', () => {
+    const f = (extra: Partial<Record<string, unknown>> & { config?: Record<string, unknown> }) =>
+        ({ field_type: 'text', ...extra }) as any
+
+    it('空字段返回空串（不渲染备注）', () => {
+        expect(fieldNoteText(f({}))).toBe('')
+    })
+
+    it('必填/唯一单独与组合的顺序为 必填 · 唯一', () => {
+        expect(fieldNoteText(f({ required: true }))).toBe('必填')
+        expect(fieldNoteText(f({ is_unique: true }))).toBe('唯一')
+        expect(fieldNoteText(f({ required: true, is_unique: true }))).toBe('必填 · 唯一')
+    })
+
+    it('静态默认值显示「默认值：xxx」', () => {
+        expect(fieldNoteText(f({ default_value: '待办' }))).toBe('默认值：待办')
+    })
+
+    it('auto_increment 优先于静态默认值，且不显示默认值备注', () => {
+        const field = f({
+            default_value: '静态值',
+            config: { default_mode: 'auto_increment', increment_prefix: 'WO-', increment_padding: 2, increment_start: 7 },
+        })
+        expect(fieldNoteText(field)).toBe('自动编号：WO-07 起')
+    })
+
+    it('必填 + 唯一 + 自动编号（text 三状态组合）', () => {
+        const field = {
+            field_type: 'text', required: true, is_unique: true,
+            config: { default_mode: 'auto_increment', increment_padding: 0, increment_start: 0 },
+        } as any
+        expect(fieldNoteText(field)).toBe('必填 · 唯一 · 自动编号：0 起')
+    })
+
+    it('自动填充（date/datetime）与自动编号（text）按类型互斥，datetime 走自动填充分支', () => {
+        const field = {
+            field_type: 'datetime', required: true, is_unique: true,
+            config: { default_mode: 'auto_increment', auto_fill: 'on_update' },
+        } as any
+        // auto_increment 仅对 text 生效，datetime 上不显示自动编号备注
+        expect(fieldNoteText(field)).toBe('必填 · 唯一 · 更新时自动填充')
+    })
+
+    it('formatIncrementExample：prefix/padding/start 组合', () => {
+        expect(formatIncrementExample({ increment_prefix: 'PRJ-', increment_padding: 4, increment_start: 1 })).toBe('PRJ-0001')
+        expect(formatIncrementExample({ increment_prefix: 'WO-', increment_padding: 2, increment_start: 7 })).toBe('WO-07')
+        expect(formatIncrementExample({ increment_prefix: '', increment_padding: 0, increment_start: 5 })).toBe('5')
+        expect(formatIncrementExample(undefined)).toBe('0001')
+    })
+
+    it('formatIncrementExample：非法值按 clamp 处理（padding 0-10 / start ≥ 0）', () => {
+        expect(formatIncrementExample({ increment_padding: 99 })).toBe('0000000001')
+        expect(formatIncrementExample({ increment_padding: -3 })).toBe('1')
+        expect(formatIncrementExample({ increment_padding: 'abc' })).toBe('0001')
+        expect(formatIncrementExample({ increment_start: -5 })).toBe('0000')
+        expect(formatIncrementExample({ increment_start: 7.9 })).toBe('0007')
     })
 })
 

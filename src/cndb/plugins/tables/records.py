@@ -142,6 +142,40 @@ def _normalize_values(
 # ── 单表 sa.Table 获取（带缓存） ─────────────────────
 
 
+def _apply_auto_increment_defaults(
+    engine: Any,
+    table: DataTable,
+    values: dict[str, Any],
+    normalized: dict[str, Any],
+    assigned: dict[int, list[str]] | None = None,
+) -> None:
+    """把单行文本自动编号默认值写入 normalized（仅创建路径调用）.
+
+    规则：
+    - 字段 trashed / link / 用户显式传过（含 None 清空意图）→ 跳过
+    - 字段类型不支持自动编号（next_increment_value 返回 None）→ 跳过
+    - 自动编号优先于静态 default_value（两者同时配置时编号覆盖静态默认值）
+    - assigned 记录本批次已分配编号（批量创建逐行传递，保证连续递增不重复）
+    """
+    for f in table.fields:
+        if f.trashed or is_link_field(f) or f.name in values:
+            continue
+        ft = default_registry.get(f.field_type)
+        if ft is None:
+            continue
+        next_val = ft.next_increment_value(engine, table, f, extra_seen=assigned.get(f.id, []) if assigned else ())
+        if next_val is None:
+            continue
+        try:
+            normalized[f.db_column_name] = ft.validate_value(next_val, f.config or {})
+        except Exception as exc:
+            # 自动编号生成异常不阻塞建行，留调试日志
+            logger.debug("字段 %s 自动编号 %r 校验失败，跳过: %s", f.name, next_val, exc)
+            continue
+        if assigned is not None:
+            assigned.setdefault(f.id, []).append(next_val)
+
+
 def _get_sa_table(engine: Any, table: DataTable) -> Table:
     """获取已存在的物理表 sa.Table 对象.
 
@@ -166,6 +200,7 @@ def create_row(
     """创建一行，返回完整行数据（含自增 id 和默认值字段）；link 字段同步写关联表."""
     sa_table = _get_sa_table(engine, table)
     normalized, link_values = _normalize_values(table, values)
+    _apply_auto_increment_defaults(engine, table, values, normalized)
 
     with engine.begin() as conn:
         if normalized:
@@ -453,7 +488,14 @@ def bulk_create(
 ) -> list[int]:
     """批量创建，返回新行 id 列表；行内 link 字段同步写关联表."""
     sa_table = _get_sa_table(engine, table)
-    split_rows = [_normalize_values(table, r) for r in rows]
+    # 逐行生成自动编号（顺序递增），再统一写入；assigned 记录本批次已分配编号，
+    # 否则后续行扫描不到前面尚未落库的编号会重复分配
+    assigned: dict[int, list[str]] = {}
+    split_rows: list[tuple[dict[str, Any], list[tuple[DataField, list[int]]]]] = []
+    for r in rows:
+        normalized, link_values = _normalize_values(table, r)
+        _apply_auto_increment_defaults(engine, table, r, normalized, assigned)
+        split_rows.append((normalized, link_values))
 
     ids: list[int] = []
     with engine.begin() as conn:
