@@ -520,7 +520,7 @@ class TestWorkspaceExportImport:
         r = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=_headers(token))
         assert r.status_code == 200
         data = r.json()
-        assert data["version"] == "1"
+        assert data["version"] == "2"
         assert "exported_at" in data
         assert "workspace" in data
         assert "tables" in data
@@ -756,6 +756,82 @@ class TestWorkspaceExportImport:
         data = r.json()
         assert data["imported_tables"] == 1
         assert data["imported_views"] == 1
+
+    def test_import_workspace_legacy_no_version(self, client, owner_user):
+        """v1 旧文件可能缺 version 字段，导入应按 v1 接受."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import",
+            json={"json_data": {"tables": []}},
+            headers=_headers(token),
+        )
+        assert r.status_code == 200
+
+    def test_import_workspace_unknown_version_400(self, client, owner_user):
+        """未知版本的导出文件返回 400 并提示支持版本."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import",
+            json={"json_data": {"version": "9", "tables": []}},
+            headers=_headers(token),
+        )
+        assert r.status_code == 400
+        assert "9" in r.json()["detail"]
+        assert "1" in r.json()["detail"]
+
+    def test_import_workspace_legacy_default_key(self, client, owner_user, db, monkeypatch):
+        """v1 旧文件的视图 default 键导入后正确映射 is_default."""
+        from cndb.plugins.tables.models import DataView
+
+        monkeypatch.setattr("cndb.plugins.tables.ddl.create_table", lambda engine, table: None)
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        payload = {
+            "json_data": {
+                "version": "1",
+                "tables": [
+                    {
+                        "name": "旧键视图表",
+                        "fields": [{"name": "标题", "field_type": "text", "order": 0}],
+                        "views": [{"name": "默认", "view_type": "grid", "default": True}],
+                        "rows": [],
+                    }
+                ],
+            }
+        }
+        r = client.post(f"/api/v1/workspaces/{ws_id}/import", json=payload, headers=_headers(token))
+        assert r.status_code == 200
+        view = db.query(DataView).filter(DataView.name == "默认").first()
+        assert view is not None
+        assert view.is_default is True
+
+    def test_import_workspace_is_default_key(self, client, owner_user, db, monkeypatch):
+        """v2 文件的视图 is_default 键导入后正确生效."""
+        from cndb.plugins.tables.models import DataView
+
+        monkeypatch.setattr("cndb.plugins.tables.ddl.create_table", lambda engine, table: None)
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        payload = {
+            "json_data": {
+                "version": "2",
+                "tables": [
+                    {
+                        "name": "新键视图表",
+                        "fields": [{"name": "标题", "field_type": "text", "order": 0}],
+                        "views": [{"name": "默认", "view_type": "grid", "is_default": True}],
+                        "rows": [],
+                    }
+                ],
+            }
+        }
+        r = client.post(f"/api/v1/workspaces/{ws_id}/import", json=payload, headers=_headers(token))
+        assert r.status_code == 200
+        view = db.query(DataView).filter(DataView.name == "默认").first()
+        assert view is not None
+        assert view.is_default is True
 
 
 class TestWorkspaceOwnerTransfer:

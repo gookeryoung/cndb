@@ -21,6 +21,7 @@ from cndb.restore import (
     _check_target_safe,
     _ensure_manifest_compatible,
     _from_json_safe,
+    _migrate_after_restore,
     _reset_sqlite_database,
     _restore_sqlite_native,
     _restore_uploads,
@@ -526,3 +527,137 @@ def test_restore_command_catch_unexpected_exception(tmp_path: Path) -> None:
     ):
         restore_command(args)
     assert excinfo.value.code == 1
+
+
+# ── 版本协商（SUPPORTED_MANIFEST_VERSIONS）────────────
+
+
+def test_ensure_manifest_compatible_error_lists_supported() -> None:
+    """未知版本的错误信息应列出当前支持的全部版本."""
+    with pytest.raises(RestoreError, match=r"当前支持: 1"):
+        _ensure_manifest_compatible({"version": "9"})
+
+
+# ── BackupInspection.summary schema 版本展示 ──────────
+
+
+def _make_inspection(backup_mode: str = "native", schema_version: str = "") -> BackupInspection:
+    """构造带 schema 信息的 BackupInspection."""
+    return BackupInspection(
+        manifest={
+            "app_version": "1.0",
+            "created_at": "2024-01-01T00:00:00",
+            "database": {
+                "db_type": "sqlite",
+                "backup_mode": backup_mode,
+                "schema_version": schema_version,
+                "tables": ["a"],
+                "row_counts": {"a": 5},
+            },
+            "uploads": {"included": False, "file_count": 0, "total_size": 0},
+        },
+        archive_size=1024,
+    )
+
+
+def test_summary_shows_schema_version_and_migration_hint() -> None:
+    """native 备份带 schema 版本时，摘要应显示版本并提示自动迁移."""
+    summary = _make_inspection(backup_mode="native", schema_version="6399e5f0f61f").summary
+    assert "Schema 版本: 6399e5f0f61f" in summary
+    assert "自动迁移" in summary
+
+
+def test_summary_unknown_schema_version() -> None:
+    """旧版备份无 schema 版本 → 显示未知，且不提示迁移."""
+    summary = _make_inspection(backup_mode="native", schema_version="").summary
+    assert "Schema 版本: 未知（旧版备份）" in summary
+    assert "自动迁移" not in summary
+
+
+# ── 恢复后 schema 迁移（向前兼容核心场景）─────────────
+
+
+def _alembic_head() -> str:
+    """获取当前包内迁移链的 head revision."""
+    import alembic.script
+
+    from cndb.core.migrations import _build_config
+
+    cfg = _build_config("sqlite:///:memory:")
+    return str(alembic.script.ScriptDirectory.from_config(cfg).get_current_head())
+
+
+def test_restore_native_old_schema_auto_migrates(tmp_path: Path) -> None:
+    """旧 schema 备份（alembic_version 停在 initial）恢复后自动迁移到当前 head."""
+    import alembic.command
+
+    from cndb.core.migrations import _build_config
+
+    # 构造"旧版本程序"的库：从零迁移到 initial revision 为止
+    src_db = tmp_path / "old_schema.db"
+    cfg = _build_config(f"sqlite:///{src_db}")
+    alembic.command.upgrade(cfg, "6399e5f0f61f")
+
+    archive = tmp_path / "old.tar.gz"
+    create_backup(output=archive, mode="native", database_url=f"sqlite:///{src_db}")
+
+    # manifest 应记录备份时的 schema 版本
+    inspection = inspect_backup(archive)
+    assert inspection.manifest["database"]["schema_version"] == "6399e5f0f61f"
+
+    target_db = tmp_path / "target.db"
+    restore_backup(archive, force=False, database_url=f"sqlite:///{target_db}")
+
+    # 恢复后 alembic_version 应为当前 head
+    conn = sqlite3.connect(str(target_db))
+    try:
+        version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+    finally:
+        conn.close()
+    assert version == _alembic_head()
+
+
+def test_migrate_after_restore_wraps_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """迁移失败应包装为 RestoreError 并提示升级程序."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    import cndb.core.migrations as migrations_mod
+
+    def _boom(url: str) -> None:
+        raise SQLAlchemyError("boom")
+
+    monkeypatch.setattr(migrations_mod, "upgrade_to_head", _boom)
+    with pytest.raises(RestoreError, match="schema 迁移失败"):
+        _migrate_after_restore(f"sqlite:///{tmp_path / 'x.db'}", "oldrev")
+
+
+# ── sqlalchemy 恢复后补写 alembic 版本 ────────────────
+
+
+def test_restore_sqlalchemy_stamps_alembic_version(tmp_path: Path) -> None:
+    """sqlalchemy 模式恢复（drop_all + create_all）后应补写 alembic_version."""
+    from sqlalchemy import create_engine
+
+    from cndb.core.plugin_registry import plugin_registry
+    from cndb.models.base import Base
+
+    src_db = tmp_path / "src.db"
+    plugin_registry.discover_and_load()
+    engine = create_engine(f"sqlite:///{src_db}")
+    try:
+        Base.metadata.create_all(engine)
+    finally:
+        engine.dispose()
+
+    archive = tmp_path / "sa.tar.gz"
+    create_backup(output=archive, mode="sqlalchemy", database_url=f"sqlite:///{src_db}")
+
+    target_db = tmp_path / "target.db"
+    restore_backup(archive, force=False, database_url=f"sqlite:///{target_db}")
+
+    conn = sqlite3.connect(str(target_db))
+    try:
+        version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+    finally:
+        conn.close()
+    assert version == _alembic_head()

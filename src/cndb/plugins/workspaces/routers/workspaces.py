@@ -581,7 +581,7 @@ def export_workspace(
                 "field_options": v.field_options,
                 "view_options": getattr(v, "view_options", None),
                 "field_order": getattr(v, "field_order", None),
-                "default": v.is_default,
+                "is_default": v.is_default,
             }
             for v in views
         ]
@@ -597,7 +597,7 @@ def export_workspace(
         )
 
     return {
-        "version": "1",
+        "version": "2",
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
         "workspace": workspace_meta,
         "tables": tables_data,
@@ -623,6 +623,13 @@ def import_workspace(
     data = payload.json_data
     if not isinstance(data, dict) or "tables" not in data:
         raise HTTPException(status_code=400, detail="无效的导入数据格式")
+
+    # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
+    version = data.get("version", "1")
+    if version not in ("1", "2"):
+        raise HTTPException(
+            status_code=400, detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2）。请升级程序后再导入。"
+        )
 
     imported_tables = 0
     imported_rows = 0
@@ -713,7 +720,7 @@ def import_workspace(
                 except Exception as exc:
                     logging.getLogger(__name__).warning("表 %s 数据行导入失败: %s", table_name, exc)
 
-            # 创建视图
+            # 创建视图（is_default 兼容 v1 旧键名 default）
             for vd in tbl_data.get("views", []):
                 view = DataView(
                     table_id=table.id,
@@ -725,7 +732,7 @@ def import_workspace(
                     field_options=vd.get("field_options", {}) or {},
                     view_options=vd.get("view_options", {}) or {},
                     field_order=vd.get("field_order"),
-                    is_default=vd.get("is_default", False),
+                    is_default=vd.get("is_default", vd.get("default", False)),
                 )
                 db.add(view)
                 imported_views += 1
