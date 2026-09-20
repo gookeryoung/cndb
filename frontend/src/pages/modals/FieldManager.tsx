@@ -720,8 +720,12 @@ function ConfigEditor({ fieldType, form, tables, isEdit = false, editTargetId = 
     }
   }, [fieldType, isEdit, currentConfig, form])
 
-  // 无配置项的字段类型直接返回 null，不显示空壳
-  if (!HAS_CONFIG_TYPES.has(fieldType)) return null
+  // 无配置项的字段类型（text 等）不渲染编辑器，但仍要注册 config 根字段：
+  // 缺少注册槽时 useWatch('config') 订阅不到更新、setFieldValue 写入也不生效，
+  // 编辑回填的「自动编号」模式 Radio 无法激活（用户报告的“无法点开”）。
+  if (!HAS_CONFIG_TYPES.has(fieldType)) {
+    return <Form.Item name="config" hidden><Input /></Form.Item>
+  }
 
   // 把 config 的子字段映射到独立表单项（antd Form.Item name 支持对象路径）
   const configField = (name: string) => ({ name: ['config', ...name.split('.')] as [string, string] })
@@ -1110,7 +1114,10 @@ function DefaultValueInput({ fieldType, form }: DefaultValueInputProps) {
 
   const setValue = (v: unknown) => form.setFieldValue('default_value', v)
 
-  /** 把自动编号模式/参数写入 config（读取现有 config 合并，避免覆盖 options 等其他键） */
+  /** 把自动编号模式/参数写入 config（读取现有 config 合并，避免覆盖 options 等其他键）.
+   *
+   * 每次写入生成全新对象引用，保证 useWatch 订阅方能稳定感知变更。
+   */
   const setIncrementConfig = (patch: Record<string, unknown>) => {
     const cfg = (form.getFieldValue('config') as Record<string, unknown> | undefined) ?? {}
     form.setFieldValue('config', { ...cfg, ...patch })
@@ -1261,23 +1268,28 @@ function DefaultValueInput({ fieldType, form }: DefaultValueInputProps) {
                 value={incrementPrefix ?? ''}
                 onChange={(e) => setIncrementConfig({ increment_prefix: e.target.value })}
               />
-              <InputNumber
-                size="small"
-                min={0}
-                max={10}
-                style={{ width: 110 }}
-                addonBefore="补零"
-                value={incrementPadding ?? 4}
-                onChange={(v) => setIncrementConfig({ increment_padding: v ?? 0 })}
-              />
-              <InputNumber
-                size="small"
-                min={0}
-                style={{ width: 110 }}
-                addonBefore="起始"
-                value={incrementStart ?? 1}
-                onChange={(v) => setIncrementConfig({ increment_start: v ?? 0 })}
-              />
+              {/* InputNumber 的 addonBefore 已被 antd v5 废弃（触发弃用警告），改用 span 标签 */}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                补零
+                <InputNumber
+                  size="small"
+                  min={0}
+                  max={10}
+                  style={{ width: 72 }}
+                  value={incrementPadding ?? 4}
+                  onChange={(v) => setIncrementConfig({ increment_padding: v ?? 0 })}
+                />
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                起始
+                <InputNumber
+                  size="small"
+                  min={0}
+                  style={{ width: 72 }}
+                  value={incrementStart ?? 1}
+                  onChange={(v) => setIncrementConfig({ increment_start: v ?? 0 })}
+                />
+              </span>
               <span style={{ color: 'var(--cn-text-secondary)', fontSize: 12 }}>
                 示例：{formatIncrementExample({ increment_prefix: incrementPrefix, increment_padding: incrementPadding, increment_start: incrementStart })}（新增行保存时自动生成，不预填）
               </span>
