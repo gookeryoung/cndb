@@ -1,51 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1180" width="1024" height="1180">
   <defs>
-    <!-- 侧面渐变：青色到蓝色 -->
-    <linearGradient id="sideGrad" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="sideGrad2" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#5CE1E6"/>
       <stop offset="100%" stop-color="#1B9AAA"/>
     </linearGradient>
-    <!-- 顶面渐变 -->
-    <linearGradient id="topGrad" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="topGrad2" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#7FF2F6"/>
       <stop offset="100%" stop-color="#3BD0D8"/>
     </linearGradient>
-    <!-- 底部椭圆（暗色阴影） -->
-    <linearGradient id="bottomGrad" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="bottomGrad2" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#1B9AAA"/>
       <stop offset="100%" stop-color="#0D6E8A"/>
     </linearGradient>
+    <!-- cndb 文字渐变 -->
+    <linearGradient id="textGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#7FDBDE"/>
+    </linearGradient>
   </defs>
 
+  <!-- === 图标部分 === -->
   <!-- 第三层（底层）侧面 -->
   <path d="M232 696 L232 768 Q232 804 384 816 L640 816 Q792 804 792 768 L792 696 Z"
-        fill="url(#bottomGrad)"/>
-  <!-- 第三层顶面椭圆 -->
+        fill="url(#bottomGrad2)"/>
+  <!-- 第三层顶面 -->
   <ellipse cx="512" cy="696" rx="280" ry="40" fill="#1FA8B5"/>
 
   <!-- 第二层侧面 -->
   <path d="M232 536 L232 608 Q232 644 384 656 L640 656 Q792 644 792 608 L792 536 Z"
-        fill="url(#sideGrad)"/>
-  <!-- 第二层顶面椭圆 -->
+        fill="url(#sideGrad2)"/>
+  <!-- 第二层顶面 -->
   <ellipse cx="512" cy="536" rx="280" ry="40" fill="#3BD0D8"/>
 
-  <!-- 代码符号 << >> 在第二层 -->
-  <!-- << 部分 -->
+  <!-- 代码符号 << >> -->
   <g fill="#FFFFFF" opacity="0.95">
-    <!-- 左尖括号 -->
     <path d="M396 564 L352 604 L396 644 L420 620 L388 604 L420 588 Z"/>
     <path d="M444 564 L400 604 L444 644 L468 620 L436 604 L468 588 Z"/>
-    <!-- 右尖括号 -->
     <path d="M528 564 L572 604 L528 644 L504 620 L536 604 L504 588 Z"/>
     <path d="M576 564 L620 604 L576 644 L552 620 L584 604 L552 588 Z"/>
   </g>
 
-  <!-- 第一层（顶层）侧面 -->
+  <!-- 第一层侧面 -->
   <path d="M232 376 L232 448 Q232 484 384 496 L640 496 Q792 484 792 448 L792 376 Z"
-        fill="url(#sideGrad)"/>
-  <!-- 第一层顶面椭圆（最亮） -->
-  <ellipse cx="512" cy="376" rx="280" ry="40" fill="url(#topGrad)"/>
+        fill="url(#sideGrad2)"/>
+  <!-- 第一层顶面（最亮） -->
+  <ellipse cx="512" cy="376" rx="280" ry="40" fill="url(#topGrad2)"/>
 
-  <!-- 底层底部椭圆（最暗） -->
+  <!-- 底层底部 -->
   <ellipse cx="512" cy="816" rx="280" ry="40" fill="#0D6E8A"/>
+
+  <!-- === cndb 文字 === -->
+  <text x="512" y="990" text-anchor="middle"
+        font-family="Inter, 'Segoe UI', system-ui, sans-serif"
+        font-size="220" font-weight="700" font-style="italic"
+        fill="url(#textGrad)" letter-spacing="4">cndb</text>
 </svg>
