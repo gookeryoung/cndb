@@ -95,16 +95,10 @@ exclude = [
 [tool.fspack]
 entry-app-types = { cndb = "cli", cndbw = "gui" }
 web-static-dirs = ["src/cndb/static"]
-# fspack 默认镜像 aliyun 同步滞后时，从华为云新路径补拉（与 tool.uv default-index 一致）
-extra-index-urls = ["https://mirrors.huaweicloud.com/repository/pypi/simple"]
 #data-dirs = ["src/alembic/versions"]
 #pyc_strip = true
 #no_site   = true
 # gui = Windows 上用 pythonw 无控制台；Linux/macOS 用 python + DISPLAY
-
-[tool.uv]
-required-version = ">=0.5.0"
-default-index = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 
 [dependency-groups]
 dev = ["cndb[dev]"]
