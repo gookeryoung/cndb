@@ -20,8 +20,7 @@ export interface PreviewPanelProps {
 
 /**
  * 前端 nunjucks 渲染器（Jinja2 兼容子集）。
- * 设置为 autoescape=false 与后端保持一致；throwOnUndefined=true 对齐后端
- * StrictUndefined —— 未定义变量预览直接报「渲染错误」，提前暴露保存后必然 400 的模板。
+ * 设置为 autoescape=false 与后端保持一致。
  * 浏览器端直接渲染字符串，不需要 Node.js 专用的 FileSystemLoader。
  */
 // 浏览器端不需要 FileSystemLoader（Node 专属），renderString 直接用 null loader 即可
@@ -29,7 +28,6 @@ const renderer = new nunjucks.Environment(null, {
   autoescape: false,
   trimBlocks: true,
   lstripBlocks: true,
-  throwOnUndefined: true,
 })
 
 interface RenderResult {
@@ -78,7 +76,7 @@ export default function PreviewPanel({
           {loading && <Spin size="small" />}
           {!loading && tableName && (
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              {tableName} · 预览前 {records.length} 行（渲染用全量数据） · {debouncedResult.elapsed.toFixed(0)}ms
+              {tableName} · {records.length} 行 · {debouncedResult.elapsed.toFixed(0)}ms
             </Typography.Text>
           )}
         </div>
