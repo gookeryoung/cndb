@@ -77,6 +77,24 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// ── polyfill：Blob.stream()（Node 22 undici 的 Response 构造依赖）─────
+// jsdom 的 Blob 实现缺失 stream()。axios responseType:'blob' 的请求经
+// MSW XHR 拦截器会用全局（jsdom）Blob 构造 undici Response，而 Node 22
+// 的 undici extractBody 会对 Blob 调用 object.stream()，缺失即抛
+// "TypeError: object.stream is not a function"，导致下载类请求中断。
+// （Node 25 的 undici 不走该分支，因此本地不会暴露此问题。）
+if (typeof Blob !== 'undefined' && !Blob.prototype.stream) {
+  Blob.prototype.stream = function (this: Blob) {
+    const arrayBufferPromise = this.arrayBuffer()
+    return new ReadableStream({
+      async start(controller) {
+        controller.enqueue(new Uint8Array(await arrayBufferPromise))
+        controller.close()
+      },
+    })
+  }
+}
+
 beforeAll(() => {
   // MSW 网络层拦截：漏配端点直接报错，防止测试悄悄打到真实网络
   server.listen({ onUnhandledRequest: 'error' })
