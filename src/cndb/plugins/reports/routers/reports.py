@@ -199,7 +199,7 @@ def update_template(
         _resolve_table(db, ud["table_id"])
     if "extra_table_ids" in ud:
         # 显式传 null 视为清空（列 nullable=False，不接受 None）
-        base_tid = ud["table_id"] if "table_id" in ud else tpl.table_id
+        base_tid = ud.get("table_id", tpl.table_id)
         ud["extra_table_ids"] = _normalize_extra_table_ids(db, base_tid, ud["extra_table_ids"] or [])
     if "template_content" in ud:
         try:

@@ -14,6 +14,8 @@ export { default as PreviewPanel } from './PreviewPanel'
 export type { PreviewPanelProps } from './PreviewPanel'
 
 export { default as ReportTemplateEditor } from './ReportTemplateEditor'
+export { buildFieldInsertText } from './ReportTemplateEditor'
+export type { FieldGroupInfo } from './ReportTemplateEditor'
 
 export { jinja2Extensions } from './jinja2Highlight'
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Input, Tag, Empty, Typography, Tabs } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { useSortable } from '@dnd-kit/sortable'
@@ -15,13 +15,19 @@ export interface TableFieldGroup {
   isPrimary?: boolean
 }
 
+/** 字段分组信息（onInsert 回调透传，供构造插入语法） */
+export interface FieldGroupInfo {
+  tableName: string
+  isPrimary: boolean
+}
+
 export interface FieldPanelProps {
   /** 关联表的全部字段（单一表模式，向后兼容） */
   fields?: Field[]
   /** 多表字段分组（多表模式，优先使用） */
   tableGroups?: TableFieldGroup[]
-  /** 点击或拖拽字段时的回调（传入字段名） */
-  onInsert: (fieldName: string) => void
+  /** 点击或拖拽字段时的回调（透传字段与其所属分组，语法构造由调用方统一处理） */
+  onInsert: (field: Field, group?: FieldGroupInfo) => void
   /** 拖拽开始时触发（用于编辑器显示 dropzone 高亮） */
   onDragStart?: () => void
   /** 拖拽结束时触发 */
@@ -39,8 +45,8 @@ function DraggableFieldItem({
   onInsert,
 }: {
   field: Field
-  groupInfo?: { tableName: string; isPrimary: boolean }
-  onInsert: (name: string) => void
+  groupInfo?: FieldGroupInfo
+  onInsert: (field: Field, group?: FieldGroupInfo) => void
 }) {
   const fieldId = `field-${field.id}`
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -64,7 +70,7 @@ function DraggableFieldItem({
       style={style}
       {...attributes}
       {...listeners}
-      onClick={() => onInsert(field.name)}
+      onClick={() => onInsert(field, groupInfo)}
       title={`${field.name} — 点击插入，拖拽到编辑器`}
       className="report-field-item"
     >
@@ -89,12 +95,17 @@ export default function FieldPanel({ fields, tableGroups, onInsert }: FieldPanel
 
   const [activeTableId, setActiveTableId] = useState<number | null>(defaultGroupId)
 
-  // tableGroups 变化时同步 activeTableId（用 useEffect 而不是 useMemo）
+  // tableGroups 变化（如新增额外表）时才重置选中 Tab；仅对比 defaultGroupId 自身，
+  // 避免用户手动切换 Tab 被该 effect 回弹到主表
+  const prevDefaultRef = useRef<number | null>(defaultGroupId)
   useEffect(() => {
-    if (defaultGroupId !== null && defaultGroupId !== activeTableId) {
-      setActiveTableId(defaultGroupId)
+    if (prevDefaultRef.current !== defaultGroupId) {
+      prevDefaultRef.current = defaultGroupId
+      if (defaultGroupId !== null) {
+        setActiveTableId(defaultGroupId)
+      }
     }
-  }, [defaultGroupId, activeTableId])
+  }, [defaultGroupId])
 
   // 当前激活的分组
   const activeGroup = useMemo(() => {
@@ -116,17 +127,6 @@ export default function FieldPanel({ fields, tableGroups, onInsert }: FieldPanel
   }, [currentFields, search])
 
   const showSearch = currentFields.length > 10
-
-  // 点击插入时：多表模式自动加上 records_by_table 前缀；单表模式不加
-  const handleInsert = (fieldName: string) => {
-    if (isMultiTable && activeGroup && !activeGroup.isPrimary) {
-      // 额外表字段用 records_by_table 语法
-      onInsert(`{{ records_by_table['${activeGroup.tableName}'][0].${fieldName} }}`)
-    } else {
-      // 主表/单表：简化语法
-      onInsert(fieldName)
-    }
-  }
 
   if (isMultiTable && tableGroups) {
     return (
@@ -177,7 +177,7 @@ export default function FieldPanel({ fields, tableGroups, onInsert }: FieldPanel
                 key={field.id}
                 field={field}
                 groupInfo={activeGroup ? { tableName: activeGroup.tableName, isPrimary: !!activeGroup.isPrimary } : undefined}
-                onInsert={handleInsert}
+                onInsert={onInsert}
               />
             ))
           )}
@@ -223,7 +223,7 @@ export default function FieldPanel({ fields, tableGroups, onInsert }: FieldPanel
           />
         ) : (
           filtered.map(field => (
-            <DraggableFieldItem key={field.id} field={field} onInsert={handleInsert} />
+            <DraggableFieldItem key={field.id} field={field} onInsert={onInsert} />
           ))
         )}
       </div>
