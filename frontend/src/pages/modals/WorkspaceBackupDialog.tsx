@@ -1,7 +1,7 @@
 /** 工作区级整体导入/导出对话框 — JSON 格式备份与恢复. */
 
 import { useState } from 'react'
-import { Modal, Tabs, Button, message, Upload, Space, Alert, Progress } from 'antd'
+import { Modal, Tabs, Button, App as AntApp, Upload, Space, Alert, Progress } from 'antd'
 import { DownloadOutlined, UploadOutlined, InboxOutlined, FileTextOutlined } from '@ant-design/icons'
 import { workspaceApi } from '@/api'
 import type { WorkspaceExportData } from '@/api'
@@ -21,6 +21,7 @@ interface Props {
 const ACCEPTED_EXT = ['.json']
 
 export default function WorkspaceBackupDialog({ open, wid, workspaceName, onClose, onImported }: Props) {
+  const { message } = AntApp.useApp()
   const [exporting, setExporting] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number } | null>(null)

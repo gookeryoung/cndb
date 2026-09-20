@@ -6,7 +6,7 @@
 
 import { useState, useMemo } from 'react'
 import {
-  Card, Avatar, Button, Table, Select, Modal, Tag, Space, Checkbox, message, Popconfirm, Tooltip,
+  Card, Avatar, Button, Table, Select, Modal, Tag, Space, Checkbox, App as AntApp, Popconfirm, Tooltip,
 } from 'antd'
 import {
   SafetyOutlined, UserOutlined, SwapOutlined, PlusOutlined, DeleteOutlined,
@@ -56,6 +56,7 @@ export function buildHiddenSet(hidden: unknown): Set<string> {
 // ───────────────────────── 主组件 ─────────────────────────
 
 export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames, onHiddenNamesChange }: PermissionEditorProps) {
+  const { message } = AntApp.useApp()
   const user = useAuthStore(s => s.user)
   const queryClient = useQueryClient()
   const [transferOpen, setTransferOpen] = useState(false)

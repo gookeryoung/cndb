@@ -1,7 +1,7 @@
 /** API 自动建表 / 数据抓取对话框 — 双模式：新建表 & 追加到已有表. */
 
 import { useState, useCallback } from 'react'
-import { Modal, Form, Input, Select, Button, Table, Alert, message, Space, InputNumber, Collapse, Tag, Descriptions } from 'antd'
+import { Modal, Form, Input, Select, Button, Table, Alert, App as AntApp, Space, InputNumber, Collapse, Tag, Descriptions } from 'antd'
 import { ApiOutlined, SearchOutlined, ThunderboltOutlined, ReloadOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { ApiAnalyzeColumn, ApiAnalyzeResult, ApiFetchRequest } from '@/api'
@@ -56,6 +56,7 @@ function parseHeadersText(text: string): Record<string, string> {
 }
 
 export default function ApiImportDialog({ open, wid, tid, title, onClose, onSuccess, embed }: Props) {
+  const { message } = AntApp.useApp()
   const [form] = Form.useForm()
   const [analyzeResult, setAnalyzeResult] = useState<ApiAnalyzeResult | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -153,7 +154,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
     } finally {
       setImporting(false)
     }
-  }, [analyzeResult, form, mode, wid, tid, buildPayload, onClose, onSuccess])
+  }, [analyzeResult, form, mode, wid, tid, buildPayload, onClose, onSuccess, message])
 
   const columnsPreview = analyzeResult?.columns ?? []
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Modal, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, DatePicker, Switch, Tooltip, message, Alert, Empty, Spin, Divider } from 'antd'
+import { Modal, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, DatePicker, Switch, Tooltip, App as AntApp, Alert, Empty, Spin, Divider } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined, ThunderboltOutlined, BgColorsOutlined, FontSizeOutlined, AlignLeftOutlined, CheckSquareOutlined, FieldNumberOutlined, PercentageOutlined, CalendarOutlined, ClockCircleOutlined, FieldTimeOutlined, TagOutlined, TagsOutlined, MailOutlined, LinkOutlined, PhoneOutlined, ApartmentOutlined, PaperClipOutlined, SettingOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi } from '@/api'
@@ -105,6 +105,7 @@ export function formatIncrementExample(config: Record<string, unknown> | undefin
 }
 
 export default function FieldManager({ open, wid, tid, fields, onClose, onChanged, embedded }: Props) {
+  const { message } = AntApp.useApp()
   const [innerOpen, setInnerOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Field | null>(null)
   const [form] = Form.useForm()
@@ -877,6 +878,7 @@ function isPresetColor(color: string): boolean {
 }
 
 function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0] }) {
+  const { message } = AntApp.useApp()
   // options 的唯一真相源：首次挂载时从 form store 读一次，之后完全由本地 state 驱动。
   // 关键边界：openDialog 用 setTimeout(0) 延迟 setFieldsValue({ config })，
   // ConfigEditor/SelectOptionsEditor 先挂载 → useState lazy init 先跑（此时 Form store

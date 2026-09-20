@@ -6,7 +6,7 @@
 
 import { Suspense, lazy, useMemo, useState } from 'react'
 import {
-  Button, Modal, Form, Input, Table, Typography, Empty, message, Space, Tag, Upload, Dropdown,
+  Button, Modal, Form, Input, Table, Typography, Empty, App as AntApp, Space, Tag, Upload, Dropdown,
   Avatar, Segmented, Badge, Tooltip,
 } from 'antd'
 import {
@@ -65,6 +65,7 @@ function DraggableRow({
 }
 
 export default function TablesList() {
+  const { message } = AntApp.useApp()
   const { wid } = useParams<{ wid: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
