@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Form, Input, Typography, message, Select, Dropdown, Empty, Tabs, Tooltip } from 'antd'
+import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntApp, Select, Dropdown, Empty, Tabs, Tooltip } from 'antd'
 import type { FormInstance } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -25,6 +25,7 @@ const PARAM_TYPES = [
 ]
 
 export default function ReportsPage() {
+  const { message } = AntApp.useApp()
   const { wid } = useParams<{ wid: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()

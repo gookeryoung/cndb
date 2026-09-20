@@ -1,4 +1,4 @@
-import { Card, Form, Input, Button, Typography, message } from 'antd'
+import { Card, Form, Input, Button, Typography, App as AntApp } from 'antd'
 import { UserOutlined, MailOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '@/store'
@@ -20,6 +20,7 @@ interface RegisterFormValues {
 }
 
 export default function RegisterPage() {
+  const { message } = AntApp.useApp()
   const register = useAuthStore(s => s.register)
   const navigate = useNavigate()
 

@@ -20,7 +20,7 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Typography, message, Tooltip, Dropdown, Empty, Input, Segmented, Upload, Pagination } from 'antd'
+import { Table, Button, Space, Tag, Modal, Typography, App as AntApp, Tooltip, Dropdown, Empty, Input, Segmented, Upload, Pagination } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
   FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
@@ -145,6 +145,7 @@ function DndViewTab({ view, active, onClick }: { view: View; active: boolean; on
 }
 
 export default function GridPage() {
+  const { message } = AntApp.useApp()
   const { wid, tid } = useParams<{ wid: string; tid: string }>()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()

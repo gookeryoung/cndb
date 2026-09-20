@@ -2,13 +2,14 @@
 
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Card, Form, Input, Button, Typography, message, Spin, Select, DatePicker, InputNumber, Switch, Tag } from 'antd'
+import { Card, Form, Input, Button, Typography, App as AntApp, Spin, Select, DatePicker, InputNumber, Switch, Tag } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { publicApi } from '@/api'
 
 const { Title, Text } = Typography
 
 export default function PublicFormPage() {
+  const { message } = AntApp.useApp()
   const { slug } = useParams<{ slug: string }>()
   const { data, isLoading } = useQuery({
     queryKey: ['public-form', slug],

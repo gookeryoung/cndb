@@ -1,7 +1,7 @@
 /** Grid 单元格组件 — 支持 inline 编辑. */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Tag, Tooltip, Typography, Input, InputNumber, Select, Checkbox, DatePicker, Button, Popover, message, Upload, Image } from 'antd'
+import { Tag, Tooltip, Typography, Input, InputNumber, Select, Checkbox, DatePicker, Button, Popover, App as AntApp, Upload, Image } from 'antd'
 import { SaveOutlined, CloseOutlined, InboxOutlined, DeleteOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
@@ -34,6 +34,7 @@ interface Props {
  * - 受控模式（editing 为布尔值）：由父级把控编辑态与草稿值，value 即当前草稿。
  */
 export default function GridCell({ value, field, rowId, wid, onSave, editing: controlledEditing, onDraftChange, onDraftCommit, onDraftCancel, showActionButtons }: Props) {
+  const { message } = AntApp.useApp()
   // 说明：prop `editing`（受控模式）与内部 state `editing`（传统模式）同名，
   // 这里在解构时把 prop 重命名为 `controlledEditing`，内部 state 沿用 `editing` 变量名（传统模式）。
   const [editing, setEditing] = useState(false)
@@ -84,7 +85,7 @@ export default function GridCell({ value, field, rowId, wid, onSave, editing: co
     } finally {
       setSaving(false)
     }
-  }, [draft, field, onSave])
+  }, [draft, field, onSave, message])
 
   const handleCancel = useCallback(() => {
     setDraft(value)
