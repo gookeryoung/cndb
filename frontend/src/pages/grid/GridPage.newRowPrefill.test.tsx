@@ -4,6 +4,7 @@
  *  1. text 字段配置 default_value='待办' → 新增行草稿预填「待办」
  *  2. date 字段配置 auto_fill=on_create → 新增行草稿预填当天日期
  *  3. 未配置任何默认的字段保持空白
+ *  4. text 字段启用自动编号（config.default_mode=auto_increment）→ 不预填（编号由后端建行时生成）
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
@@ -20,6 +21,7 @@ const MOCK_FIELDS = [
     { id: 1, name: '姓名', field_type: 'text', order: 1, required: true },
     { id: 2, name: '状态', field_type: 'text', order: 2, default_value: '待办' },
     { id: 3, name: '创建日期', field_type: 'date', order: 3, config: { auto_fill: 'on_create' } },
+    { id: 4, name: '编号', field_type: 'text', order: 4, config: { default_mode: 'auto_increment', increment_prefix: 'PRJ-' } },
 ] as any
 
 /** 生成 N 条 mock 行 */
@@ -102,7 +104,8 @@ describe('GridPage 新增行预填（default_value / auto_fill）', () => {
         expect(within(newRow!).getByDisplayValue('待办')).toBeInTheDocument()
         // auto_fill=on_create 的 date 字段预填今天（DatePicker 输入框显示 YYYY-MM-DD）
         expect(within(newRow!).getByDisplayValue(dayjs().format('YYYY-MM-DD'))).toBeInTheDocument()
-        // 未配置默认的「姓名」保持空白
-        expect(within(newRow!).getByDisplayValue('')).toBeInTheDocument()
+        // 未配置默认的「姓名」与自动编号「编号」保持空白（编号由后端建行时生成，不预填）
+        const blanks = within(newRow!).getAllByDisplayValue('')
+        expect(blanks.length).toBeGreaterThanOrEqual(2)
     })
 })

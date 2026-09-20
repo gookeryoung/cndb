@@ -65,8 +65,15 @@ function ModalFallback() {
   return null
 }
 
-/** 新增行草稿预填值：default_value 优先，其次 date/datetime 的 auto_fill 规则，否则空值. */
+/** 新增行草稿预填值：default_value 优先，其次 date/datetime 的 auto_fill 规则，否则空值.
+ *
+ * text 字段启用自动编号（config.default_mode=auto_increment）时返回 undefined：
+ * 编号由后端建行时按库内已有数据推算（客户端猜测与库内 max 可能不一致），不预填.
+ */
 function defaultValueForNewRow(f: Field): unknown {
+  if (f.field_type === 'text' && (f.config?.default_mode as string) === 'auto_increment') {
+    return undefined
+  }
   if (f.default_value !== null && f.default_value !== undefined && f.default_value !== '') {
     return normalizeCellValueForEdit(f.default_value, f)
   }
