@@ -347,7 +347,12 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
           <Col span={12}>
             <Form.Item name="field_type" label="类型" rules={[{ required: true, message: '请选择类型' }]}>
               <Select
+                showSearch
                 options={FIELD_TYPE_OPTIONS.map(t => ({ label: `${t.label}（${t.category}）`, value: t.value }))}
+                filterOption={(input, option) => {
+                  const label = (option?.label as string) ?? ''
+                  return label.toLowerCase().includes(input.toLowerCase())
+                }}
                 onChange={(v) => {
                   setFieldType(v)
                   // 编辑时切换类型：重置 config 为新类型的默认值（避免旧类型 config 残留）
@@ -379,6 +384,11 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             </Form.Item>
           </Col>
           <Col span={13}>
+            {/* 注册 default_value 到 Form store，让 DefaultValueInput 内的 useWatch / setFieldValue
+                能正常工作（与 ConfigEditor 里注册 config 同模式） */}
+            <Form.Item name="default_value" hidden>
+              <Input />
+            </Form.Item>
             <Form.Item label="默认值（可选）" style={{ marginBottom: 0 }}>
               <DefaultValueInput fieldType={fieldType} form={form} />
             </Form.Item>
@@ -1110,7 +1120,7 @@ function DefaultValueInput({ fieldType, form }: DefaultValueInputProps) {
           style={{ width: '100%' }}
           placeholder={selectOptions.length === 0 ? '请先在下方添加选项' : '请选择默认值'}
           options={selectOptions}
-          value={value !== undefined && value !== null && value !== '' ? String(value) : undefined}
+          value={value !== undefined && value !== null && value !== '' ? String(value) : null}
           onChange={v => setValue(v)}
           allowClear
           disabled={selectOptions.length === 0}
