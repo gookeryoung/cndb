@@ -199,7 +199,13 @@ def _backup_sqlalchemy(database_url: str, target_dir: Path) -> tuple[str, dict[s
 
 
 def _to_json_safe(value: Any) -> Any:
-    """将 datetime/bytes/Decimal 等不可 JSON 序列化的类型转为安全值."""
+    """将 datetime/bytes/Decimal/UUID 等不可 JSON 序列化的类型转为安全值.
+
+    约定用 ``{"__tag__": ...}`` 形式携带还原信号，与 bytes 的 ``__base64__`` 一致。
+    """
+    import uuid
+    from decimal import Decimal
+
     if value is None:
         return None
     if isinstance(value, (dt.datetime, dt.date, dt.time)):
@@ -208,7 +214,10 @@ def _to_json_safe(value: Any) -> Any:
         import base64
 
         return {"__base64__": base64.b64encode(value).decode("ascii")}
-    # Decimal / UUID 等有 __str__ 的类型
+    if isinstance(value, Decimal):
+        return {"__decimal__": str(value)}
+    if isinstance(value, uuid.UUID):
+        return str(value)
     return value
 
 
