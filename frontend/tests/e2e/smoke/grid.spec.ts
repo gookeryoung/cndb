@@ -47,10 +47,13 @@ test.describe("Grid 表格", () => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await gotoGrid(page);
 
-    // 数据量确定性信号：分页 showTotal 显示"共 5 条"（虚拟滚动下行 DOM 不固定为 tr.ant-table-row）
-    await expect(page.getByText(/共 5 条/)).toBeVisible();
-    // 抽查 seed 首行/末行已渲染
-    await expect(page.getByText("王五").first()).toBeVisible();
-    await expect(page.getByText("赵六").first()).toBeVisible();
+    // 分页 showTotal 渲染信号（虚拟滚动下行 DOM 不固定为 tr.ant-table-row）。
+    // 总数不锁死 5：row-crud.spec.ts 与本文件跨文件并行，其 CRUD 窗口内总数
+    // 会瞬时为 6；精确计数断言由同文件串行执行的 row-crud 用例持有。
+    await expect(page.getByText(/共 \d+ 条/)).toBeVisible();
+    // 5 条 seed 姓名逐行可见 —— 比单一计数更确定性地证明 seed 完整（可查出缺行）
+    for (const name of ["张三", "李四", "王五", "赵六", "钱七"]) {
+      await expect(page.getByText(name).first()).toBeVisible();
+    }
   });
 });
