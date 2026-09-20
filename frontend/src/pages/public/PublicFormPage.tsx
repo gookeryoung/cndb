@@ -65,34 +65,34 @@ export default function PublicFormPage() {
   )
 }
 
-/** 简单字段类型渲染器 — 根据 field_type 选择合适的控件. */
-function FieldRenderer({ field }: { field: { field_type: string; config?: unknown } }) {
+/** 简单字段类型渲染器 — 根据 field_type 选择合适的控件（透传 Form.Item 注入的 value/onChange/id 等） */
+function FieldRenderer({ field, ...rest }: { field: { field_type: string; config?: unknown } } & Record<string, any>) {
   const ft = field.field_type
   switch (ft) {
     case 'number':
     case 'decimal':
-      return <InputNumber style={{ width: '100%' }} placeholder="请输入数字" />
+      return <InputNumber {...rest} style={{ width: '100%' }} placeholder="请输入数字" />
     case 'boolean':
-      return <Switch />
+      return <Switch {...rest} />
     case 'date':
-      return <DatePicker style={{ width: '100%' }} />
+      return <DatePicker {...rest} style={{ width: '100%' }} />
     case 'datetime':
-      return <DatePicker showTime style={{ width: '100%' }} />
+      return <DatePicker {...rest} showTime style={{ width: '100%' }} />
     case 'select':
     case 'multi_select': {
       const options = extractSelectOptions(field.config)
-      return <Select mode={ft === 'multi_select' ? 'multiple' : undefined} options={options} placeholder="请选择" />
+      return <Select {...rest} mode={ft === 'multi_select' ? 'multiple' : undefined} options={options} placeholder="请选择" />
     }
     case 'email':
-      return <Input type="email" placeholder="请输入邮箱" />
+      return <Input {...rest} type="email" placeholder="请输入邮箱" />
     case 'url':
-      return <Input type="url" placeholder="https://..." />
+      return <Input {...rest} type="url" placeholder="https://..." />
     case 'phone':
-      return <Input placeholder="请输入手机号" />
+      return <Input {...rest} placeholder="请输入手机号" />
     case 'long_text':
-      return <Input.TextArea rows={4} placeholder="请输入..." />
+      return <Input.TextArea {...rest} rows={4} placeholder="请输入..." />
     default:
-      return <Input placeholder="请输入..." />
+      return <Input {...rest} placeholder="请输入..." />
   }
 }
 

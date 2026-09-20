@@ -114,31 +114,31 @@ function buildTree(
     }
   }
 
-  // 1. 建 rowMap + 按 parent rowId 分组（不是业务值）
-  for (const row of rows) {
-    const rid = rowIdKey(row)
-    rowMap.set(rid, row)
+  // 1. 建 rowMap 与全部主键集合（parentValue 命中主键时可直接作为父行）
+  for (const row of rows) rowMap.set(rowIdKey(row), row)
+  const allIds = new Set<string>(rowMap.keys())
+
+  /** 把 parentValue 归一化为父行主键：主键直配（link/number/文本存父 ID）优先，业务值（如父行名称）反查兜底 */
+  const resolveParentRowId = (row: RowResponse): string | null => {
     const parentValue = extractParentId(row, parentField)
-    // 把 parentValue（业务值）转成 parent rowId（数据库主键）
-    let parentRowId: string | null = null
-    if (parentValue && valueToRowId.has(parentValue)) {
-      parentRowId = valueToRowId.get(parentValue)!
-    }
-    const key = parentRowId ?? '__root__'
+    if (!parentValue) return null
+    if (allIds.has(parentValue)) return parentValue
+    return valueToRowId.get(parentValue) ?? null
+  }
+
+  // 2. 按 parent rowId 分组（不是业务值）
+  for (const row of rows) {
+    const key = resolveParentRowId(row) ?? '__root__'
     const bucket = childrenMap.get(key) || []
     bucket.push(row)
     childrenMap.set(key, bucket)
   }
 
-  // 2. 识别根节点：parent_field 为空，或 parent 指向不存在的行
-  const allIds = new Set<string>(rowMap.keys())
+  // 3. 识别根节点：parent_field 为空，或 parent 指向不存在的行
   const rootRows: RowResponse[] = []
   for (const row of rows) {
     const parentValue = extractParentId(row, parentField)
-    let parentRowId: string | null = null
-    if (parentValue && valueToRowId.has(parentValue)) {
-      parentRowId = valueToRowId.get(parentValue)!
-    }
+    const parentRowId = resolveParentRowId(row)
     if (!parentValue || !parentRowId || !allIds.has(parentRowId)) {
       rootRows.push(row)
     }
@@ -146,7 +146,7 @@ function buildTree(
   // 保持原始顺序
   rootRows.sort((a, b) => rows.indexOf(a) - rows.indexOf(b))
 
-  // 3. 递归构建（含循环检测）
+  // 4. 递归构建（含循环检测）
   let nodeCounter = 0
   function buildNode(
     row: RowResponse,
