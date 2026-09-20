@@ -20,6 +20,7 @@
 - 数据库恢复前自动清理旧数据，避免外键冲突
 - 支持 dry-run 预览备份内容而不实际恢复
 - 旧版本备份在新版本程序上恢复时自动迁移 schema（向前兼容）
+- 新版本备份在旧 schema 上以 sqlalchemy 模式降级恢复时，显式输出数据裁剪报告（跳过表/丢弃列）
 - uploads 恢复时先清空目标目录，避免残留文件
 """
 
@@ -34,12 +35,12 @@ import sqlite3
 import sys
 import tarfile
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-__all__ = ["RestoreError", "inspect_backup", "restore_backup"]
+__all__ = ["RestoreError", "RestoreLossReport", "inspect_backup", "restore_backup"]
 
 # 当前支持恢复的 manifest 协议版本集合（向前兼容框架：新版本格式演进时在此追加）
 SUPPORTED_MANIFEST_VERSIONS = {"1"}
@@ -47,6 +48,32 @@ SUPPORTED_MANIFEST_VERSIONS = {"1"}
 
 class RestoreError(RuntimeError):
     """恢复过程中的业务错误基类."""
+
+
+@dataclass
+class RestoreLossReport:
+    """sqlalchemy 降级恢复的数据裁剪报告.
+
+    交集导入时，备份中本地不存在的表被整体跳过、本地不存在的列被丢弃；
+    本报告显式呈现这些数据丢失面，避免静默丢数据。
+    """
+
+    skipped_tables: list[str] = field(default_factory=list)
+    dropped_columns: dict[str, list[str]] = field(default_factory=dict)
+
+    @property
+    def has_loss(self) -> bool:
+        """是否存在数据丢失."""
+        return bool(self.skipped_tables or self.dropped_columns)
+
+    def summary(self) -> str:
+        """生成人类可读的丢失报告."""
+        parts: list[str] = []
+        if self.skipped_tables:
+            parts.append(f"跳过未知表 {len(self.skipped_tables)} 个: {', '.join(self.skipped_tables)}")
+        for table_name, cols in self.dropped_columns.items():
+            parts.append(f"表 {table_name} 丢弃列 {len(cols)} 个: {', '.join(cols)}")
+        return "\n".join(parts)
 
 
 @dataclass
@@ -73,6 +100,11 @@ class BackupInspection:
         ]
         if db.get("backup_mode", "") == "native" and schema_version:
             parts.append("提示: 备份 schema 旧于当前程序时，恢复时将自动迁移至当前 schema")
+            if not _schema_revision_known(schema_version):
+                parts.append(
+                    "提示: 备份 schema 新于当前程序，native 恢复将失败；"
+                    "可改用 sqlalchemy 模式降级恢复（丢弃新版本字段数据）"
+                )
         fallback = db.get("fallback_mode", "")
         if fallback:
             parts.append(f"内嵌兜底导出: 有（fallback_mode={fallback}，可用 sqlalchemy 模式降级恢复）")
@@ -99,6 +131,27 @@ def _resolve_sqlite_path(database_url: str) -> Path:
     if path_str.startswith("/"):
         path_str = path_str[1:]
     return Path(path_str).resolve()
+
+
+def _schema_revision_known(revision: str) -> bool:
+    """判断 revision 是否存在于当前程序的迁移链上.
+
+    用于检测备份 schema 是否领先于当前程序（备份 revision 不在本地链上
+    即意味着备份由更新版本程序生成）。空串（旧版备份无版本记录）返回 False.
+    """
+    import alembic.script
+    from alembic.util.exc import CommandError
+
+    from cndb.core.migrations import _build_config
+
+    if not revision:
+        return False
+    cfg = _build_config("sqlite:///:memory:")
+    try:
+        return alembic.script.ScriptDirectory.from_config(cfg).get_revision(revision) is not None
+    except CommandError:
+        # alembic 对未知 revision 抛 CommandError（"Can't locate revision"）
+        return False
 
 
 def _ensure_manifest_compatible(manifest: dict[str, Any]) -> None:
@@ -171,8 +224,12 @@ def _restore_sqlite_native(extracted_dir: Path, target_db_path: Path) -> None:
     print(f"[restore] SQLite 数据库已恢复 → {target_db_path}")
 
 
-def _restore_sqlalchemy_json(extracted_dir: Path, database_url: str) -> None:
-    """sqlalchemy 模式：清空重建所有表结构，再按顺序导入数据."""
+def _restore_sqlalchemy_json(extracted_dir: Path, database_url: str) -> RestoreLossReport:
+    """sqlalchemy 模式：清空重建所有表结构，再按顺序导入数据.
+
+    Returns:
+        数据裁剪报告（备份中本地不存在的表与列），供降级恢复显式展示数据丢失面.
+    """
     from sqlalchemy import MetaData, create_engine
 
     from cndb.core.plugin_registry import plugin_registry
@@ -186,6 +243,7 @@ def _restore_sqlalchemy_json(extracted_dir: Path, database_url: str) -> None:
     dump = json.loads(dump_file.read_text(encoding="utf-8"))
     plugin_registry.discover_and_load()
 
+    report = RestoreLossReport()
     engine = create_engine(database_url)
     try:
         # 1) 清库：先 drop_all 再 create_all，获得与 Base.metadata 对齐的空表
@@ -203,15 +261,19 @@ def _restore_sqlalchemy_json(extracted_dir: Path, database_url: str) -> None:
                 table_name = entry["table"]
                 columns = entry["columns"]
                 rows = entry["rows"]
-                if not rows:
-                    continue
-                # 反射目标表确认列存在（忽略备份里多出的无效列）
+                # 交集导入：本地不存在的表整体跳过、不存在的列丢弃，收集进降级报告
                 sa_table = Base.metadata.tables.get(table_name)
                 if sa_table is None:
-                    print(f"[restore] 跳过未知表: {table_name}（可能属于旧版本）")
+                    print(f"[restore] 跳过未知表: {table_name}（可能来自更新版本）")
+                    report.skipped_tables.append(table_name)
                     continue
                 valid_cols = {c.name for c in sa_table.columns}
                 insert_cols = [c for c in columns if c in valid_cols]
+                dropped = sorted(set(columns) - valid_cols)
+                if dropped:
+                    report.dropped_columns[table_name] = dropped
+                if not rows:
+                    continue
                 # 批量插入
                 chunk_size = 500
                 for i in range(0, len(rows), chunk_size):
@@ -225,6 +287,7 @@ def _restore_sqlalchemy_json(extracted_dir: Path, database_url: str) -> None:
         print(f"[restore] 数据库导入完成: {imported_total} 行")
     finally:
         engine.dispose()
+    return report
 
 
 def _from_json_safe(value: Any) -> Any:
@@ -393,7 +456,7 @@ def restore_backup(
     database_url: str | None = None,
     upload_dir: Path | None = None,
     mode: str | None = None,
-) -> None:
+) -> RestoreLossReport | None:
     """从备份源（归档或目录）恢复数据.
 
     Args:
@@ -405,6 +468,10 @@ def restore_backup(
             backup_mode 分支。备份 schema 新于当前程序导致 native 恢复失败时，
             可显式指定 ``sqlalchemy`` 按 dump.json 交集导入降级恢复（需备份
             内嵌兜底导出，丢弃新版本字段数据）.
+
+    Returns:
+        sqlalchemy 模式的数据裁剪报告（跳过表/丢弃列）；native 模式返回 None.
+        有丢失时流程内同时打印报告。
 
     Raises:
         RestoreError: 恢复过程中的业务错误（版本不兼容、目标不安全等）.
@@ -460,6 +527,7 @@ def restore_backup(
         # 4) 恢复数据库
         from cndb.core import migrations
 
+        loss_report: RestoreLossReport | None = None
         print(f"[restore] 恢复数据库（{backup_mode} 模式）...")
         if _is_sqlite_url(db_url):
             target_db = _resolve_sqlite_path(db_url)
@@ -468,7 +536,7 @@ def restore_backup(
                 # 向前兼容：备份来自旧 schema 时，自动迁移到当前程序版本
                 _migrate_after_restore(db_url, db_info.get("schema_version", ""))
             else:
-                _restore_sqlalchemy_json(extracted, db_url)
+                loss_report = _restore_sqlalchemy_json(extracted, db_url)
                 # sqlalchemy 恢复走 drop_all + create_all，alembic_version 会被删掉，补标记
                 print("[restore] 补写 alembic 版本标记...")
                 migrations.stamp_head(db_url)
@@ -476,7 +544,7 @@ def restore_backup(
             # 非 SQLite —— 只支持 sqlalchemy 模式
             if backup_mode != "sqlalchemy":
                 raise RestoreError(f"备份为 {backup_mode} 模式，但当前数据库非 SQLite，无法恢复")
-            _restore_sqlalchemy_json(extracted, db_url)
+            loss_report = _restore_sqlalchemy_json(extracted, db_url)
             print("[restore] 补写 alembic 版本标记...")
             migrations.stamp_head(db_url)
 
@@ -486,7 +554,12 @@ def restore_backup(
         else:
             print("[restore] 备份未包含附件，跳过 uploads 恢复")
 
+        if loss_report is not None and loss_report.has_loss:
+            print("[restore] 降级恢复数据裁剪报告（交集导入丢弃内容）:")
+            print(loss_report.summary())
+
         print("[ok] 恢复完成！")
+        return loss_report
 
     finally:
         if temp_root is not None:
