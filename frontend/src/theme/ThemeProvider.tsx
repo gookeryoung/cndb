@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ConfigProvider, theme as antdTheme } from 'antd'
+import { App as AntApp, ConfigProvider, theme as antdTheme } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { getThemeConfig, loadThemeMode, saveThemeMode, THEME_META, type ThemeMode } from '@/theme/theme'
 
@@ -59,7 +59,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         }}
       >
-        {children}
+        <AntApp>{children}</AntApp>
       </ConfigProvider>
     </ThemeContext.Provider>
   )

@@ -1,7 +1,7 @@
 /** 工作区列表页 — 卡片式布局，支持创建/设置/导入/导出/置顶/成员管理/搜索. */
 
 import { useMemo, useState } from 'react'
-import { Card, Row, Col, Typography, Button, Modal, Form, Input, Select, Switch, Tag, Empty, message } from 'antd'
+import { Card, Row, Col, Typography, Button, Modal, Form, Input, Select, Switch, Tag, Empty, App as AntApp } from 'antd'
 import {
   PlusOutlined, PushpinOutlined, TeamOutlined, TableOutlined,
   DownloadOutlined, SettingOutlined, SearchOutlined,
@@ -32,6 +32,7 @@ const ROLE_BADGE_COLOR: Record<WorkspaceRole, string> = {
 }
 
 export default function WorkspaceList() {
+  const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)

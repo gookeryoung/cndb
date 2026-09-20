@@ -5,7 +5,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App as AntApp } from 'antd'
 import { tableApi, recordApi, viewApi, userApi, auditApi } from './index'
 import type {
   TableDetail, View, RowListResponse,
@@ -112,6 +112,7 @@ export function useRowReferences(wid: string, tid: string, rowId: number | strin
  *  调用点传 wid/tid，返回一个 mutation；调用 mutation.mutate({ rowId, fieldName, value }).
  */
 export function useUpdateRowOptimistic(wid: string, tid: string) {
+  const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   const tableKey = `${wid}/${tid}`
 

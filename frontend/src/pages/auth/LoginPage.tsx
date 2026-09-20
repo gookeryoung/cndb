@@ -1,4 +1,4 @@
-import { Card, Form, Input, Button, Typography, message, Checkbox } from 'antd'
+import { Card, Form, Input, Button, Typography, App as AntApp, Checkbox } from 'antd'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useAuthStore } from '@/store'
@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store'
 const { Title, Text } = Typography
 
 export default function LoginPage() {
+  const { message } = AntApp.useApp()
   const login = useAuthStore(s => s.login)
   const navigate = useNavigate()
   const [sp] = useSearchParams()

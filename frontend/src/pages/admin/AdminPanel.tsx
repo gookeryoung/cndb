@@ -1,7 +1,7 @@
 /** 系统管理台 — 系统信息 / 完整备份 / 完整恢复. */
 
 import { useState } from 'react'
-import { Tabs, Card, Descriptions, Button, Switch, Select, Upload, Alert, message, Progress, Typography, Space, Divider, Popconfirm, Tag, Result } from 'antd'
+import { Tabs, Card, Descriptions, Button, Switch, Select, Upload, Alert, App as AntApp, Progress, Typography, Space, Divider, Popconfirm, Tag, Result } from 'antd'
 import {
   DatabaseOutlined, CloudUploadOutlined, CloudDownloadOutlined,
   InfoCircleOutlined, InboxOutlined, ExclamationCircleOutlined,
@@ -21,6 +21,7 @@ function formatSize(bytes: number): string {
 }
 
 export default function AdminPanel() {
+  const { message } = AntApp.useApp()
   const user = useAuthStore(s => s.user)
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
