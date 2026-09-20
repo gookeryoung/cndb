@@ -38,8 +38,13 @@ def _alembic_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "alembic"
 
 
-def _build_config() -> alembic.config.Config:
-    """构造 alembic.Config（编程式，不读外部 ini）."""
+def _build_config(database_url: str | None = None) -> alembic.config.Config:
+    """构造 alembic.Config（编程式，不读外部 ini）.
+
+    Args:
+        database_url: 目标数据库 URL。None 时使用 settings.DATABASE_URL（默认行为），
+            指定时以传入值为准（供恢复端对非默认库执行迁移/补标记）.
+    """
     alembic_dir = _alembic_dir()
     if not alembic_dir.is_dir():
         raise RuntimeError(f"包内 alembic 目录不存在: {alembic_dir}")
@@ -57,7 +62,7 @@ def _build_config() -> alembic.config.Config:
     cfg.set_main_option("path_separator", "os")
 
     # 注入数据库 URL
-    db_url = settings.DATABASE_URL
+    db_url = database_url or settings.DATABASE_URL
     if "+aiosqlite" in db_url:
         db_url = db_url.replace("+aiosqlite", "")
     cfg.set_main_option("sqlalchemy.url", db_url)
@@ -92,16 +97,33 @@ def _run_upgrade(cfg: alembic.config.Config) -> None:
     alembic.command.upgrade(cfg, "head")
 
 
-def stamp_head() -> None:
+def stamp_head(database_url: str | None = None) -> None:
     """将数据库标记为最新迁移版本（alembic stamp head）.
 
     供自行 create_all 建表的流程（如 seed）在建表后调用：
     补写 alembic_version，避免 serve 启动时 ensure_db_migrated
     误判为"半迁移库"而重放建表迁移报"table already exists"。
     对已存在 alembic_version 的库幂等（仅更新版本行）。
+
+    Args:
+        database_url: 目标数据库 URL。None 时使用 settings.DATABASE_URL.
     """
-    cfg = _build_config()
+    cfg = _build_config(database_url)
     alembic.command.stamp(cfg, "head")
+
+
+def upgrade_to_head(database_url: str) -> None:
+    """对指定数据库执行 alembic upgrade head.
+
+    供恢复端（restore）在覆盖目标库后把旧 schema 升级到当前程序版本，
+    实现"旧备份可在新版本恢复"。与 ensure_db_migrated 不同，本函数
+    不依赖全局 engine，也不做空库兜底，失败时由调用方决定如何处置。
+
+    Args:
+        database_url: 目标数据库 URL（必填，restore 场景明确知道目标）.
+    """
+    cfg = _build_config(database_url)
+    alembic.command.upgrade(cfg, "head")
 
 
 def _run_create_all_and_stamp(cfg: alembic.config.Config) -> None:
