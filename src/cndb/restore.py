@@ -228,16 +228,28 @@ def _restore_sqlalchemy_json(extracted_dir: Path, database_url: str) -> None:
 
 
 def _from_json_safe(value: Any) -> Any:
-    """还原备份时的 JSON safe 值 —— base64 还原 bytes，iso 字符串还原 datetime."""
+    """还原备份时的 JSON safe 值 —— base64 还原 bytes，decimal 还原 Decimal，iso 字符串还原 datetime/date/time."""
+    import re
+
     if value is None:
         return None
-    if isinstance(value, dict) and "__base64__" in value:
-        import base64
+    if isinstance(value, dict):
+        if "__base64__" in value:
+            import base64
 
-        return base64.b64decode(value["__base64__"])
+            return base64.b64decode(value["__base64__"])
+        if "__decimal__" in value:
+            from decimal import Decimal
+
+            return Decimal(value["__decimal__"])
+        return value
     if isinstance(value, str):
-        # 尝试解析 ISO 时间戳，失败则原样返回
+        # 尝试解析 ISO 时间戳：区分纯日期、纯时间与 datetime
         try:
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+                return dt.date.fromisoformat(value)
+            if re.fullmatch(r"\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2})?", value):
+                return dt.time.fromisoformat(value)
             if len(value) >= 10:
                 return dt.datetime.fromisoformat(value)
         except ValueError:

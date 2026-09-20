@@ -406,11 +406,21 @@ def test_to_json_safe_bytes() -> None:
 
 
 def test_to_json_safe_null_and_other() -> None:
+    import json
+    import uuid
+
     assert _to_json_safe(None) is None
     assert _to_json_safe(42) == 42
-    # Decimal 无专门处理 → 原样返回
+    # Decimal → __decimal__ 字典，确保 json.dumps 可序列化
     dec = Decimal("3.14")
-    assert _to_json_safe(dec) is dec
+    safe_dec = _to_json_safe(dec)
+    assert safe_dec == {"__decimal__": "3.14"}
+    json.dumps(safe_dec)  # 不抛 TypeError 才算通过
+    # UUID → 字符串，JSON 可序列化
+    uid = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    safe_uid = _to_json_safe(uid)
+    assert safe_uid == "12345678-1234-5678-1234-567812345678"
+    json.dumps(safe_uid)
 
 
 # ── _collect_uploads upload_dir 不存在 ───────────────
