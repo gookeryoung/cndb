@@ -25,6 +25,28 @@ interface ReportTemplateEditorProps {
   editorRef?: React.RefObject<TemplateEditorHandle | null>
 }
 
+/** 字段分组信息（用于构造插入语法） */
+export interface FieldGroupInfo {
+  tableName: string
+  isPrimary: boolean
+}
+
+/**
+ * 构造字段插入文本 —— 插入语法的单一来源.
+ *
+ * 主表/无分组：`{{ name }}`；额外表：`{{ records_by_table['表名'][0].name }}`
+ * （[0] 首行语义，与 FieldPanel 页脚提示一致）。
+ */
+export function buildFieldInsertText(
+  field: Pick<Field, 'name'>,
+  group?: FieldGroupInfo,
+): string {
+  if (group && !group.isPrimary) {
+    return `{{ records_by_table['${group.tableName}'][0].${field.name} }}`
+  }
+  return `{{ ${field.name} }}`
+}
+
 /** 编辑器 dropzone —— 用 useDroppable 正确注册 */
 function EditorDropzone({
   value,
@@ -101,14 +123,14 @@ export default function ReportTemplateEditor({
   // 展平所有字段（tableGroups 优先）生成 SortableContext items
   const { fieldIds, fieldMap } = useMemo(() => {
     const ids: string[] = []
-    const map = new Map<string, { field: Field; group?: TableFieldGroup }>()
+    const map = new Map<string, { field: Field; group?: FieldGroupInfo }>()
 
     if (tableGroups && tableGroups.length > 0) {
       for (const group of tableGroups) {
         for (const f of group.fields) {
           const id = `field-${f.id}`
           ids.push(id)
-          map.set(id, { field: f, group })
+          map.set(id, { field: f, group: { tableName: group.tableName, isPrimary: !!group.isPrimary } })
         }
       }
     } else {
@@ -121,15 +143,6 @@ export default function ReportTemplateEditor({
 
     return { fieldIds: ids, fieldMap: map }
   }, [tableGroups, fields])
-
-  // 构造要插入的模板代码（多表模式自动加 records_by_table 前缀）
-  const buildInsertText = (item: { field: Field; group?: TableFieldGroup }): string => {
-    const { field, group } = item
-    if (group && !group.isPrimary) {
-      return `{{ records_by_table['${group.tableName}'][0].${field.name} }}`
-    }
-    return `{{ ${field.name} }}`
-  }
 
   const handleDragStart = (_event: DragStartEvent) => {
     setIsDragActive(true)
@@ -152,16 +165,16 @@ export default function ReportTemplateEditor({
     const item = fieldMap.get(fieldId)
 
     if (item) {
-      internalRef.current?.insertText(buildInsertText(item))
+      internalRef.current?.insertText(buildFieldInsertText(item.field, item.group))
     } else if (data?.fieldName) {
       // fallback：仅插入简单语法
       internalRef.current?.insertText(`{{ ${data.fieldName} }}`)
     }
   }
 
-  // 点击插入（FieldPanel onInsert 回调）
-  const handleFieldInsert = (fieldName: string) => {
-    internalRef.current?.insertText(`{{ ${fieldName} }}`)
+  // 点击插入（FieldPanel onInsert 回调）—— 与拖拽共用同一语法构造，避免双包裹
+  const handleFieldInsert = (field: Field, group?: FieldGroupInfo) => {
+    internalRef.current?.insertText(buildFieldInsertText(field, group))
   }
 
   return (

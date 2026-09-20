@@ -390,6 +390,8 @@ export interface ReportTemplateSummary {
   description: string
   output_format: string
   parameters: ReportParameter[]
+  /** 持久化的额外引用表 ID 列表（不含主表自身） */
+  extra_table_ids: number[]
 }
 
 /** 报告模板（详情，含模板内容） */
@@ -406,6 +408,7 @@ export interface ReportTemplateCreate {
   template_content: string
   table_id?: number | null
   parameters?: ReportParameter[]
+  extra_table_ids?: number[]
 }
 
 export interface ReportTemplateUpdate {
@@ -415,6 +418,7 @@ export interface ReportTemplateUpdate {
   template_content?: string
   table_id?: number | null
   parameters?: ReportParameter[]
+  extra_table_ids?: number[]
 }
 
 export interface ReportRenderRequest {
