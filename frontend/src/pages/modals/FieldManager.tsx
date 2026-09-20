@@ -53,26 +53,6 @@ const FIELD_TYPE_ICONS: Partial<Record<FieldType, ReactNode>> = {
   attachment: <PaperClipOutlined />,
 }
 
-/** 字段类型一句话说明（类型 Select 下拉的 optionRender 展示；文案与帮助中心「字段类型参考」对齐） */
-const FIELD_TYPE_HINTS: Partial<Record<FieldType, string>> = {
-  text: '单行文本：适合姓名、标题等短文字',
-  longtext: '多行文本：适合描述、备注等长内容',
-  boolean: '是/否：勾选框，适合状态开关',
-  number: '整数：适合数量、序号等整数值',
-  float: '小数：适合金额、评分等精确数值',
-  percentage: '百分比：输入数字自动按百分比展示',
-  date: '日期：适合生日、截止日等日期值',
-  datetime: '日期时间：同时包含日期与具体时刻',
-  timestamp: '时间戳：记录精确到秒的时间点',
-  select: '单选：从预设选项中选一个，可配色',
-  multiselect: '多选：从预设选项中选多个，可配色',
-  email: '邮箱：自动校验格式，可点击发信',
-  url: '链接：自动校验格式，可点击跳转',
-  phone: '电话：手机/座机格式校验',
-  link: '关联：引用其他表的一行或多行数据',
-  attachment: '附件：上传图片、文档等文件',
-}
-
 /** 把后端 SelectOption 格式归一化为前端编辑用的 { key, label, value, color }.
  *
  * 归一化后对 color 为空的选项按 `resolveTagColor` 自动补色（与表格渲染完全同源），
@@ -374,15 +354,11 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
               rules={[{ required: true, message: '请选择类型' }]}
             >
               <Select
+                showSearch
                 options={FIELD_TYPE_OPTIONS.map(t => ({ label: `${t.label}（${t.category}）`, value: t.value }))}
-                optionRender={(option) => {
-                  const hint = FIELD_TYPE_HINTS[option.value as FieldType]
-                  return (
-                    <div>
-                      <div>{option.label}</div>
-                      {hint && <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', lineHeight: 1.5 }}>{hint}</div>}
-                    </div>
-                  )
+                filterOption={(input, option) => {
+                  const label = (option?.label as string) ?? ''
+                  return label.toLowerCase().includes(input.toLowerCase())
                 }}
                 onChange={(v) => {
                   setFieldType(v)
@@ -417,10 +393,12 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             <HelpTip title="隐藏：默认不在表格中显示该列，可在显示模式中重新打开" />
           </Col>
           <Col span={13}>
-            <Form.Item
-              label={<>默认值（可选）<HelpTip title="新增行时自动填入的值；修改已保存字段的默认值会触发表重建，数据量大时稍慢" /></>}
-              style={{ marginBottom: 0 }}
-            >
+            {/* 注册 default_value 到 Form store，让 DefaultValueInput 内的 useWatch / setFieldValue
+                能正常工作（与 ConfigEditor 里注册 config 同模式） */}
+            <Form.Item name="default_value" hidden>
+              <Input />
+            </Form.Item>
+            <Form.Item label="默认值（可选）" style={{ marginBottom: 0 }}>
               <DefaultValueInput fieldType={fieldType} form={form} />
             </Form.Item>
           </Col>
@@ -1151,7 +1129,7 @@ function DefaultValueInput({ fieldType, form }: DefaultValueInputProps) {
           style={{ width: '100%' }}
           placeholder={selectOptions.length === 0 ? '请先在下方添加选项' : '请选择默认值'}
           options={selectOptions}
-          value={value !== undefined && value !== null && value !== '' ? String(value) : undefined}
+          value={value !== undefined && value !== null && value !== '' ? String(value) : null}
           onChange={v => setValue(v)}
           allowClear
           disabled={selectOptions.length === 0}
