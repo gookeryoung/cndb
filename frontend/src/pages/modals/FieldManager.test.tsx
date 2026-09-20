@@ -6,6 +6,9 @@
  *  3. 编辑配置了 auto_fill=on_create 的 date 字段时「创建时」Radio 激活
  *  4. DefaultValueInput 按字段类型渲染不同控件（Select/DatePicker/InputNumber/Switch）
  *  5. 不支持默认值的类型（link/attachment/timestamp）默认值控件禁用
+ *  6. 编辑/新建已配置自动编号的 text 字段：模式 Radio 正确激活、参数可编辑，
+ *     除 rc-util isEqual 对 rc-field-form 内部 meta 的已知误报外无任何警告
+ *     （误报成因与白名单见 isUpstreamCircularNoise 注释）
  */
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
@@ -635,6 +638,105 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
                 const input = control.querySelector('input') as HTMLInputElement
                 expect(input.value).toBe('2025-12-31')
             })
+        })
+    })
+
+    // ─────── 单行文本自动编号 UI ───────
+
+    describe('单行文本自动编号 UI', () => {
+        /** 捕获 console.warn/error 消息，返回读回函数（供零容忍断言） */
+        function captureConsole() {
+            const messages: string[] = []
+            const push = (...args: unknown[]) => messages.push(args.map(String).join(' '))
+            const warnSpy = vi.spyOn(console, 'warn').mockImplementation(push)
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(push)
+            return {
+                messages,
+                restore: () => { warnSpy.mockRestore(); errorSpy.mockRestore() },
+            }
+        }
+
+        /** 上游 rc-util isEqual 的已知误报白名单：rc-field-form 内部 meta 的
+         *  errors/warnings 引用同一个 EMPTY_ERRORS 常量数组，同一被比较对象在两个键下
+         *  重复出现该数组时，deepEqual 的 refSet（先查 has、后 add、且只 add a）会把它
+         *  误判为循环引用。经堆栈定位，比较对象 keys 均为 rc 内部 meta 字段
+         *  （touched,validating,errors,...），与本组件写入的 config 数据无关；
+         *  该警告仅是开发态控制台噪音（rc-util warning 生产构建不输出），白名单化。
+         */
+        function isUpstreamCircularNoise(m: string): boolean {
+            return m.includes('There may be circular references')
+        }
+
+        it('编辑已配置自动编号的字段：对话框正常打开且模式 Radio 激活（无异常警告）', async () => {
+            const captured = captureConsole()
+            try {
+                renderFieldManager()
+                clickEditRow('编号')
+
+                await waitFor(() => {
+                    expect(radioWrapper('自动编号')).toHaveClass('ant-radio-button-wrapper-checked')
+                })
+                // 参数编辑区渲染：前缀/补零/起始输入框 + 示例文字
+                await waitFor(() => {
+                    const control = defaultValueControl()
+                    expect(control.querySelector('input[placeholder="前缀，如 PRJ-"]')).not.toBeNull()
+                    expect(control.textContent).toContain('PRJ-0001')
+                })
+                // 除上游 isEqual 误报外，任何警告/错误零容忍
+                expect(captured.messages.filter(m => !isUpstreamCircularNoise(m))).toEqual([])
+            } finally {
+                captured.restore()
+            }
+        })
+
+        it('编辑已配置自动编号的字段：回填参数正确且可切回静态值再切回（无异常警告）', async () => {
+            const captured = captureConsole()
+            try {
+                renderFieldManager()
+                clickEditRow('编号')
+
+                await waitFor(() => {
+                    expect(radioWrapper('自动编号')).toHaveClass('ant-radio-button-wrapper-checked')
+                })
+                // 切回静态值
+                fireEvent.click(radioWrapper('静态值')!)
+                await waitFor(() => {
+                    expect(radioWrapper('静态值')).toHaveClass('ant-radio-button-wrapper-checked')
+                })
+                // 再切回自动编号
+                fireEvent.click(radioWrapper('自动编号')!)
+                await waitFor(() => {
+                    expect(radioWrapper('自动编号')).toHaveClass('ant-radio-button-wrapper-checked')
+                    expect(defaultValueControl().querySelector('input[placeholder="前缀，如 PRJ-"]')).not.toBeNull()
+                })
+                expect(captured.messages.filter(m => !isUpstreamCircularNoise(m))).toEqual([])
+            } finally {
+                captured.restore()
+            }
+        })
+
+        it('新建单行文本字段：点击「自动编号」展开参数区并写入 config（无异常警告）', async () => {
+            const captured = captureConsole()
+            try {
+                await openNewDialogAndSelectType('单行文本')
+
+                fireEvent.click(radioWrapper('自动编号')!)
+                await waitFor(() => {
+                    const control = defaultValueControl()
+                    expect(control.querySelector('input[placeholder="前缀，如 PRJ-"]')).not.toBeNull()
+                    expect(control.textContent).toContain('示例：0001')
+                })
+
+                // 修改前缀 → 示例实时更新
+                const prefixInput = defaultValueControl().querySelector('input[placeholder="前缀，如 PRJ-"]') as HTMLInputElement
+                fireEvent.change(prefixInput, { target: { value: 'WO-' } })
+                await waitFor(() => {
+                    expect(defaultValueControl().textContent).toContain('示例：WO-0001')
+                })
+                expect(captured.messages.filter(m => !isUpstreamCircularNoise(m))).toEqual([])
+            } finally {
+                captured.restore()
+            }
         })
     })
 })
