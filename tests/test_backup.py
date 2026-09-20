@@ -87,16 +87,39 @@ def test_backup_sqlite_native_copies_and_counts(tmp_path: Path) -> None:
     db = _setup_sqlite(tmp_path)
     target = tmp_path / "backup_dest"
     target.mkdir()
-    fname, counts = _backup_sqlite_native(db, target)
+    fname, counts, schema_version = _backup_sqlite_native(db, target)
 
     assert fname == "cndb.db"
     assert (target / "cndb.db").is_file()
     assert counts["users"] == 2
     assert counts["posts"] == 3
+    # 无 alembic_version 表 → schema 版本为空串
+    assert schema_version == ""
     # 备份文件与原文件行数一致
     conn = sqlite3.connect(str(target / "cndb.db"))
     assert conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 2
     conn.close()
+
+
+def test_backup_sqlite_native_reads_schema_version(tmp_path: Path) -> None:
+    """源库含 alembic_version 表时，备份应记录其 schema 版本."""
+    db = tmp_path / "with_alembic.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript(
+        """
+        CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL);
+        INSERT INTO alembic_version (version_num) VALUES ('6399e5f0f61f');
+        INSERT INTO users (name) VALUES ('张三');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    target = tmp_path / "backup_dest"
+    target.mkdir()
+    _, _, schema_version = _backup_sqlite_native(db, target)
+    assert schema_version == "6399e5f0f61f"
 
 
 # ── _collect_uploads 单元 ─────────────────────────────
@@ -168,6 +191,8 @@ def test_create_backup_native_full_flow(tmp_path: Path) -> None:
         assert manifest["database"]["backup_mode"] == "native"
         assert manifest["database"]["row_counts"]["users"] == 2
         assert manifest["database"]["row_counts"]["posts"] == 3
+        # 测试库无 alembic_version 表 → schema 版本为空串
+        assert manifest["database"]["schema_version"] == ""
         assert manifest["uploads"]["included"] is True
         assert manifest["uploads"]["file_count"] == 2
 

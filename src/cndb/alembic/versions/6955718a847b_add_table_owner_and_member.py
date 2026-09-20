@@ -36,19 +36,17 @@ def upgrade() -> None:
     op.drop_table('workflows_workflow')
 
     # 2. DataTable 新增 owner_id 列
-    op.add_column(
-        'tables_datatable',
-        sa.Column('owner_id', sa.Integer(), nullable=True),
-    )
-    op.create_index(op.f('ix_tables_datatable_owner_id'), 'tables_datatable', ['owner_id'], unique=False)
-    op.create_foreign_key(
-        'fk_tables_datatable_owner_id_accounts_user',
-        'tables_datatable',
-        'accounts_user',
-        ['owner_id'],
-        ['id'],
-        ondelete='SET NULL',
-    )
+    # SQLite 不支持裸 ALTER 加约束，统一走 batch 模式（copy-and-move 重建表）
+    with op.batch_alter_table('tables_datatable') as batch_op:
+        batch_op.add_column(sa.Column('owner_id', sa.Integer(), nullable=True))
+        batch_op.create_index(op.f('ix_tables_datatable_owner_id'), ['owner_id'], unique=False)
+        batch_op.create_foreign_key(
+            'fk_tables_datatable_owner_id_accounts_user',
+            'accounts_user',
+            ['owner_id'],
+            ['id'],
+            ondelete='SET NULL',
+        )
 
     # 3. 新建 TableMember 表
     op.create_table(
@@ -109,10 +107,11 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_tables_tablemember_table_id'), table_name='tables_tablemember')
     op.drop_table('tables_tablemember')
 
-    # 2. 删除 DataTable.owner_id
-    op.drop_constraint('fk_tables_datatable_owner_id_accounts_user', 'tables_datatable', type_='foreignkey')
-    op.drop_index(op.f('ix_tables_datatable_owner_id'), table_name='tables_datatable')
-    op.drop_column('tables_datatable', 'owner_id')
+    # 2. 删除 DataTable.owner_id（SQLite 需 batch 模式）
+    with op.batch_alter_table('tables_datatable') as batch_op:
+        batch_op.drop_constraint('fk_tables_datatable_owner_id_accounts_user', type_='foreignkey')
+        batch_op.drop_index(op.f('ix_tables_datatable_owner_id'))
+        batch_op.drop_column('owner_id')
 
     # 3. 重建 workflows 表
     op.create_table(

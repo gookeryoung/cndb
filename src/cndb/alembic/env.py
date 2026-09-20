@@ -38,11 +38,16 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# 动态注入 DATABASE_URL（优先 env.py，回退 settings）
-_db_url = settings.DATABASE_URL
-if "+aiosqlite" in _db_url:
-    _db_url = _db_url.replace("+aiosqlite", "")
-config.set_main_option("sqlalchemy.url", _db_url)
+# 动态注入 DATABASE_URL：
+# - 编程式调用（config_file_name 为 None）：_build_config 已显式注入目标 URL，不覆盖
+#   （restore 等场景的迁移目标可能与 settings.DATABASE_URL 不同）
+# - CLI（alembic.ini）：以 settings.DATABASE_URL 为准回退覆盖
+_db_url = config.get_main_option("sqlalchemy.url")
+if config.config_file_name is not None or not _db_url:
+    _db_url = settings.DATABASE_URL
+    if "+aiosqlite" in _db_url:
+        _db_url = _db_url.replace("+aiosqlite", "")
+    config.set_main_option("sqlalchemy.url", _db_url)
 
 target_metadata = Base.metadata
 

@@ -7,16 +7,19 @@
 恢复流程::
 
     1. 校验 tar 归档完整性（列出成员 + 确认 manifest.json 存在）
-    2. 检查 manifest 版本兼容性（目前仅支持 v1）
+    2. 检查 manifest 版本兼容性（集合协商，见 SUPPORTED_MANIFEST_VERSIONS）
     3. 确认目标数据库可恢复（检测冲突 —— 有数据且未加 --force 时拒绝）
     4. 解压到临时目录
     5. 恢复数据库（根据 backup_mode 分支）
+       - native：恢复旧 schema 备份后自动执行 alembic upgrade head 迁移
+       - sqlalchemy：重建当前 schema 导入数据后补写 alembic 版本标记
     6. 恢复 uploads 目录（若备份包含）
     7. 校验并清理临时目录
 
 关键特性：
 - 数据库恢复前自动清理旧数据，避免外键冲突
 - 支持 dry-run 预览备份内容而不实际恢复
+- 旧版本备份在新版本程序上恢复时自动迁移 schema（向前兼容）
 - uploads 恢复时先清空目标目录，避免残留文件
 """
 
@@ -38,6 +41,9 @@ from urllib.parse import urlparse
 
 __all__ = ["RestoreError", "inspect_backup", "restore_backup"]
 
+# 当前支持恢复的 manifest 协议版本集合（向前兼容框架：新版本格式演进时在此追加）
+SUPPORTED_MANIFEST_VERSIONS = {"1"}
+
 
 class RestoreError(RuntimeError):
     """恢复过程中的业务错误基类."""
@@ -56,13 +62,17 @@ class BackupInspection:
         """生成人类可读的摘要."""
         db = self.manifest.get("database", {})
         up = self.manifest.get("uploads", {})
+        schema_version = db.get("schema_version", "")
         parts: list[str] = [
             f"应用版本: {self.manifest.get('app_version', '?')}",
             f"备份时间: {self.manifest.get('created_at', '?')}",
             f"数据库类型: {db.get('db_type', '?')} ({db.get('backup_mode', '?')})",
+            f"Schema 版本: {schema_version or '未知（旧版备份）'}",
             f"数据表数: {len(db.get('tables', []))}",
             f"总行数: {sum(db.get('row_counts', {}).values())}",
         ]
+        if db.get("backup_mode", "") == "native" and schema_version:
+            parts.append("提示: 备份 schema 旧于当前程序时，恢复时将自动迁移至当前 schema")
         if up.get("included"):
             parts.append(f"附件: {up.get('file_count', 0)} 个文件, {up.get('total_size', 0)} 字节")
         else:
@@ -89,11 +99,13 @@ def _resolve_sqlite_path(database_url: str) -> Path:
 def _ensure_manifest_compatible(manifest: dict[str, Any]) -> None:
     """检查 manifest 版本兼容性.
 
-    目前仅支持 version="1"，更高或更低的版本都视为不兼容。
+    版本不在 SUPPORTED_MANIFEST_VERSIONS 集合内时视为不兼容，
+    错误信息列出当前支持的全部版本，便于用户判断是否需升级程序。
     """
     version = manifest.get("version", "?")
-    if version != "1":
-        raise RestoreError(f"不支持的备份版本: {version}（当前仅支持 v1）")
+    if version not in SUPPORTED_MANIFEST_VERSIONS:
+        supported = ", ".join(sorted(SUPPORTED_MANIFEST_VERSIONS))
+        raise RestoreError(f"不支持的备份版本: {version}（当前支持: {supported}）。请升级程序后再恢复。")
 
 
 def _check_target_safe(database_url: str, force: bool) -> None:
@@ -226,6 +238,47 @@ def _from_json_safe(value: Any) -> Any:
         except ValueError:
             pass
     return value
+
+
+def _migrate_after_restore(database_url: str, backup_schema_version: str) -> None:
+    """native 恢复后把旧 schema 迁移到当前程序版本（向前兼容核心步骤）.
+
+    备份的 .db 文件自带其创建时的 alembic_version，upgrade head 会自动
+    补齐中间迁移。之后执行 create_all 补建迁移链从未覆盖的新插件表
+    （幂等：已存在的表不受影响）。失败（含备份 schema 新于当前程序的
+    "Can't locate revision"）时包装为 RestoreError，由上层终止恢复流程。
+
+    Args:
+        database_url: 目标数据库 URL.
+        backup_schema_version: 备份来源的 schema 版本（仅用于日志展示）.
+    """
+    from alembic.util.exc import CommandError
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from cndb.core import migrations
+    from cndb.core.plugin_registry import plugin_registry
+    from cndb.models.base import Base
+
+    print(f"[restore] 执行 schema 迁移（备份版本: {backup_schema_version or '未知'} → 当前 head）...")
+    try:
+        migrations.upgrade_to_head(database_url)
+    except (SQLAlchemyError, CommandError) as exc:
+        raise RestoreError(
+            f"恢复后 schema 迁移失败：备份的 schema 可能新于当前程序，请升级程序后再恢复。原始错误: {exc}"
+        ) from exc
+
+    # 补建迁移链未覆盖的新插件表（Base.metadata.create_all 只建缺失表，不影响已有表）
+    try:
+        plugin_registry.discover_and_load()
+        engine = create_engine(database_url)
+        try:
+            Base.metadata.create_all(bind=engine)
+        finally:
+            engine.dispose()
+    except SQLAlchemyError as exc:
+        raise RestoreError(f"恢复后补建缺失表失败: {exc}") from exc
+    print("[restore] schema 迁移完成")
 
 
 def _restore_uploads(extracted_dir: Path, target_upload_dir: Path, included: bool) -> int:
@@ -376,18 +429,27 @@ def restore_backup(
                 tar.extractall(temp_root, filter="data")
 
         # 4) 恢复数据库
+        from cndb.core import migrations
+
         print(f"[restore] 恢复数据库（{backup_mode} 模式）...")
         if _is_sqlite_url(db_url):
             target_db = _resolve_sqlite_path(db_url)
             if backup_mode == "native":
                 _restore_sqlite_native(extracted, target_db)
+                # 向前兼容：备份来自旧 schema 时，自动迁移到当前程序版本
+                _migrate_after_restore(db_url, db_info.get("schema_version", ""))
             else:
                 _restore_sqlalchemy_json(extracted, db_url)
+                # sqlalchemy 恢复走 drop_all + create_all，alembic_version 会被删掉，补标记
+                print("[restore] 补写 alembic 版本标记...")
+                migrations.stamp_head(db_url)
         else:
             # 非 SQLite —— 只支持 sqlalchemy 模式
             if backup_mode != "sqlalchemy":
                 raise RestoreError(f"备份为 {backup_mode} 模式，但当前数据库非 SQLite，无法恢复")
             _restore_sqlalchemy_json(extracted, db_url)
+            print("[restore] 补写 alembic 版本标记...")
+            migrations.stamp_head(db_url)
 
         # 5) 恢复 uploads
         if up_info.get("included", False):

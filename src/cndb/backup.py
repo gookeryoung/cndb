@@ -13,7 +13,7 @@
 归档结构::
 
     backup-<timestamp>.tar.gz
-    ├── manifest.json          # 备份元信息（版本、时间、表清单、文件统计）
+    ├── manifest.json          # 备份元信息（版本、时间、表清单、文件统计、schema 版本）
     ├── database/              # 数据库备份
     │   ├── cndb.db            # native 模式下的原始文件（SQLite）
     │   └── dump.json          # sqlalchemy 模式下的 JSON 导出
@@ -62,6 +62,8 @@ class DatabaseInfo:
     backup_mode: str = "native"
     tables: list[str] = field(default_factory=list)
     row_counts: dict[str, int] = field(default_factory=dict)
+    # 备份时数据所处的 alembic schema 版本（空串表示无迁移记录，如旧版备份或手动建表库）
+    schema_version: str = ""
 
 
 @dataclass
@@ -94,11 +96,24 @@ def _resolve_sqlite_path(database_url: str) -> Path:
     return Path(path_str).resolve()
 
 
-def _backup_sqlite_native(db_path: Path, target_dir: Path) -> tuple[str, dict[str, int]]:
+def _read_schema_version_sqlite(conn: sqlite3.Connection) -> str:
+    """从 SQLite 连接读取 alembic_version 表的 version_num.
+
+    Returns:
+        schema 版本号；alembic_version 表不存在或为空时返回空串.
+    """
+    try:
+        row = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    return str(row[0]) if row else ""
+
+
+def _backup_sqlite_native(db_path: Path, target_dir: Path) -> tuple[str, dict[str, int], str]:
     """使用 sqlite3 的 backup() API 热备份数据库文件.
 
     Returns:
-        (备份文件名, 表名 → 行数 映射)
+        (备份文件名, 表名 → 行数 映射, 备份库的 schema 版本)
     """
     dest = target_dir / "cndb.db"
     # 使用 sqlite3.Connection.backup() 做联机备份
@@ -112,7 +127,7 @@ def _backup_sqlite_native(db_path: Path, target_dir: Path) -> tuple[str, dict[st
     finally:
         src_conn.close()
 
-    # 统计表行数
+    # 统计表行数 + 读取 schema 版本
     row_counts: dict[str, int] = {}
     conn = sqlite3.connect(str(dest))
     try:
@@ -123,18 +138,20 @@ def _backup_sqlite_native(db_path: Path, target_dir: Path) -> tuple[str, dict[st
         for table in tables:
             count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
             row_counts[table] = count
+        schema_version = _read_schema_version_sqlite(conn)
     finally:
         conn.close()
-    return "cndb.db", row_counts
+    return "cndb.db", row_counts, schema_version
 
 
-def _backup_sqlalchemy(database_url: str, target_dir: Path) -> tuple[str, dict[str, int], list[str]]:
+def _backup_sqlalchemy(database_url: str, target_dir: Path) -> tuple[str, dict[str, int], list[str], str]:
     """通过 SQLAlchemy 序列化所有表数据（跨数据库兼容）.
 
     Returns:
-        (备份文件名, 表名 → 行数 映射, 表清单)
+        (备份文件名, 表名 → 行数 映射, 表清单, 源库 schema 版本)
     """
     from sqlalchemy import MetaData, create_engine, text
+    from sqlalchemy.exc import SQLAlchemyError
 
     from cndb.core.plugin_registry import plugin_registry
 
@@ -146,6 +163,7 @@ def _backup_sqlalchemy(database_url: str, target_dir: Path) -> tuple[str, dict[s
         metadata.reflect(bind=engine)
         tables_info: list[dict[str, Any]] = []
         row_counts: dict[str, int] = {}
+        schema_version = ""
 
         with engine.connect() as conn:
             for table_name in sorted(metadata.tables.keys()):
@@ -162,6 +180,11 @@ def _backup_sqlalchemy(database_url: str, target_dir: Path) -> tuple[str, dict[s
                 # 转成普通 dict，处理 datetime 等不可序列化类型
                 clean_rows = [{k: _to_json_safe(v) for k, v in row.items()} for row in rows]
                 tables_info.append({"table": table_name, "columns": columns, "rows": clean_rows})
+            # 读取源库 schema 版本（alembic_version 表不存在时静默跳过）
+            try:
+                schema_version = str(conn.execute(text("SELECT version_num FROM alembic_version")).scalar() or "")
+            except SQLAlchemyError:
+                schema_version = ""
 
         dump = {"tables": tables_info}
     finally:
@@ -169,7 +192,7 @@ def _backup_sqlalchemy(database_url: str, target_dir: Path) -> tuple[str, dict[s
 
     dest = target_dir / "dump.json"
     dest.write_text(json.dumps(dump, ensure_ascii=False, indent=2), encoding="utf-8")
-    return "dump.json", row_counts, sorted(metadata.tables.keys())
+    return "dump.json", row_counts, sorted(metadata.tables.keys()), schema_version
 
 
 def _to_json_safe(value: Any) -> Any:
@@ -346,15 +369,17 @@ def create_backup(
             db_path = _resolve_sqlite_path(db_url)
             if not db_path.is_file():
                 raise BackupError(f"SQLite 数据库文件不存在: {db_path}")
-            db_file, row_counts = _backup_sqlite_native(db_path, db_dir)
+            db_file, row_counts, schema_version = _backup_sqlite_native(db_path, db_dir)
             manifest.database.path = db_file
             manifest.database.tables = sorted(row_counts.keys())
             manifest.database.row_counts = row_counts
+            manifest.database.schema_version = schema_version
         else:
-            db_file, row_counts, tables = _backup_sqlalchemy(db_url, db_dir)
+            db_file, row_counts, tables, schema_version = _backup_sqlalchemy(db_url, db_dir)
             manifest.database.path = db_file
             manifest.database.tables = tables
             manifest.database.row_counts = row_counts
+            manifest.database.schema_version = schema_version
 
         total_rows = sum(row_counts.values())
         print(f"[backup] 数据库备份完成: {len(row_counts)} 张表, 共 {total_rows} 行")
