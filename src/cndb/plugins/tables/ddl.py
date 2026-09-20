@@ -267,7 +267,71 @@ def drop_unique_constraint(engine: Any, table: DataTable, field: DataField) -> N
     logger.info("唯一索引已删除: %s", idx_name)
 
 
+# ── 数据巡检（字段变更保存前预检） ─────────────────────
+
+
+def find_null_rows(engine: Any, table: DataTable, field: DataField, limit: int = 20) -> list[int]:
+    """返回该物理列值为 NULL 的行 id 列表（含软删行，物理 NOT NULL 对全表生效）.
+
+    用于把字段设为必填前的数据预检；物理表不存在或字段无物理列时返回空列表.
+    """
+    ft = default_registry.get(field.field_type)
+    if ft is None or not ft.has_physical_column:
+        return []
+    if not table_exists(engine, table.db_table_name):
+        return []
+
+    sql = text(
+        f'SELECT id FROM "{table.db_table_name}" WHERE "{field.db_column_name}" IS NULL ORDER BY id LIMIT :limit'
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"limit": limit}).all()
+    return [int(r[0]) for r in rows]
+
+
+def find_duplicate_values(
+    engine: Any, table: DataTable, field: DataField, limit: int = 10
+) -> list[tuple[Any, list[int]]]:
+    """返回 (重复值, 行 id 列表) 列表；NULL 不参与判重（唯一索引允许多个 NULL）.
+
+    用于启用唯一约束前的数据预检；物理表不存在或字段无物理列时返回空列表.
+    """
+    ft = default_registry.get(field.field_type)
+    if ft is None or not ft.has_physical_column:
+        return []
+    if not table_exists(engine, table.db_table_name):
+        return []
+
+    sql = text(
+        f'SELECT "{field.db_column_name}", GROUP_CONCAT(id) FROM "{table.db_table_name}" '
+        f'WHERE "{field.db_column_name}" IS NOT NULL '
+        f'GROUP BY "{field.db_column_name}" HAVING COUNT(*) > 1 ORDER BY MIN(id) LIMIT :limit'
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"limit": limit}).all()
+
+    result: list[tuple[Any, list[int]]] = []
+    for value, ids_raw in rows:
+        ids = [int(x) for x in str(ids_raw).split(",") if x]
+        result.append((value, ids))
+    return result
+
+
 # ── 列变更检测与物理重建 ──────────────────────────────
+
+
+def _not_null_placeholder(col_type: Any) -> str:
+    """按 SQLAlchemy 列类型推导 ADD COLUMN NOT NULL 时的 DDL 合规默认值字面量.
+
+    数值/布尔用 0，其余（字符串/日期等）用空串；仅作 SQLite DDL 合规占位。
+    """
+    try:
+        py_type = col_type.python_type
+    except (NotImplementedError, TypeError):
+        return "''"
+    if py_type in (int, float, bool):
+        return "0"
+    return "''"
 
 
 def _column_needs_rebuild(old_field: DataField, new_field: DataField) -> bool:
@@ -308,6 +372,10 @@ def rebuild_column(engine: Any, table: DataTable, old_field: DataField, new_fiel
     col_def = f'"{col.name}" {col.type.compile(engine.dialect)}'
     if not col.nullable:
         col_def += " NOT NULL"
+        # SQLite 约束：ADD COLUMN 的 NOT NULL 列必须带非 NULL 默认值，否则直接报错。
+        # 应用层 required 校验保证实际写入总是提供值，此默认值仅为 DDL 合规占位，
+        # 仅在未来 INSERT 缺省该列时兜底生效（copy 步骤会覆盖所有存量行）。
+        col_def += f" DEFAULT {_not_null_placeholder(col.type)}"
 
     with engine.begin() as conn:
         # 1. rename old → bak
@@ -357,6 +425,8 @@ __all__ = [
     "drop_link_table",
     "drop_table",
     "drop_unique_constraint",
+    "find_duplicate_values",
+    "find_null_rows",
     "get_engine",
     "rebuild_column",
     "table_exists",

@@ -17,6 +17,8 @@ from cndb.plugins.tables.ddl import (
     add_unique_constraint,
     drop_column,
     drop_unique_constraint,
+    find_duplicate_values,
+    find_null_rows,
     rebuild_column,
 )
 from cndb.plugins.tables.field_ops import clone_fields_between_tables, resolve_source_fields
@@ -144,7 +146,7 @@ def update_field(
     if "field_type" in update_data and update_data["field_type"] is not None:
         update_data["field_type"] = normalize_field_type(update_data["field_type"])
 
-    # 备份旧状态（用于后续物理变更检测）
+    # 备份旧状态（用于后续物理变更检测与失败回退）
     old_field_type = df.field_type
     old_required = df.required
     old_is_unique = df.is_unique
@@ -172,6 +174,37 @@ def update_field(
         raw_config = update_data.get("config", df.config or {})
         update_data["config"] = _validate_field_config(effective_field_type, raw_config, db)
 
+    # ── 保存前数据预检：已有数据违反必填/唯一时拒绝保存（metadata 尚未变更） ──
+    engine = db.get_bind()
+    effective_required = update_data.get("required", old_required)
+    effective_is_unique = update_data.get("is_unique", old_is_unique)
+
+    if effective_required and not old_required:
+        null_ids = find_null_rows(engine, dt, df)
+        if null_ids:
+            shown = "、".join(f"行 {i}" for i in null_ids)
+            suffix = "（仅展示前 20 行）" if len(null_ids) >= 20 else ""
+            raise HTTPException(
+                status_code=400, detail=f"字段「{df.name}」设为必填失败，以下行该字段为空：{shown}{suffix}"
+            )
+
+    if effective_is_unique and not old_is_unique:
+        dups = find_duplicate_values(engine, dt, df)
+        if dups:
+            shown = "、".join(f"'{value}'（行 {'、'.join(str(i) for i in ids)}）" for value, ids in dups)
+            suffix = "（仅展示前 10 组）" if len(dups) >= 10 else ""
+            raise HTTPException(status_code=400, detail=f"字段「{df.name}」启用唯一失败，存在重复值：{shown}{suffix}")
+
+    # 记录变更前旧值（物理 DDL 失败时恢复 metadata，保证与物理状态一致）
+    old_values = {key: getattr(df, key) for key in update_data}
+
+    def _revert_metadata() -> None:
+        """物理 DDL 失败兜底：把已提交的 metadata 恢复为旧值（rollback 撤销不了已 commit 的状态）."""
+        db.rollback()
+        for key, value in old_values.items():
+            setattr(df, key, value)
+        db.commit()
+
     for key, value in update_data.items():
         setattr(df, key, value)
 
@@ -179,14 +212,13 @@ def update_field(
     db.refresh(df)
 
     # ── 物理变更检测与执行 ──
-    engine = db.get_bind()
 
     # 1. field_type / required 变更 → 列重建
     if _column_needs_rebuild(old_field, df):
         try:
             rebuild_column(engine, dt, old_field, df)
         except Exception as exc:
-            db.rollback()
+            _revert_metadata()
             raise HTTPException(status_code=500, detail=f"物理列重建失败: {exc}") from exc
 
     # 2. is_unique 切换
@@ -197,7 +229,7 @@ def update_field(
             else:
                 drop_unique_constraint(engine, dt, df)
         except Exception as exc:
-            db.rollback()
+            _revert_metadata()
             raise HTTPException(status_code=500, detail=f"唯一约束变更失败: {exc}") from exc
 
     return df
