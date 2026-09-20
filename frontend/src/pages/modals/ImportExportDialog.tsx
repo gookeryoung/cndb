@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Modal, Tabs, Button, Progress, message, Space, Select, Alert, Empty, Upload, Switch, Table, Tag, Collapse, Radio, Descriptions, Tooltip, Checkbox } from 'antd'
+import { Modal, Tabs, Button, Progress, App as AntApp, Space, Select, Alert, Empty, Upload, Switch, Table, Tag, Collapse, Radio, Descriptions, Tooltip, Checkbox } from 'antd'
 import { InboxOutlined, UploadOutlined, DownloadOutlined, FileTextOutlined, ApiOutlined, SettingOutlined, ReloadOutlined, SwapOutlined, PlusCircleOutlined, EditOutlined } from '@ant-design/icons'
 import { importApi, exportApi } from '@/api'
 import type { ImportTaskInfo, Field } from '@/api'
@@ -57,6 +57,7 @@ function fmtValue(v: unknown, limit = 80): string {
 }
 
 export default function ImportExportDialog({ open, wid, tid, fields = [], onClose, onImported, viewId, viewName }: Props) {
+  const { message } = AntApp.useApp()
   const [task, setTask] = useState<ImportTaskInfo | null>(null)
   const [phase, setPhase] = useState<Phase>('idle')
   const [polling, setPolling] = useState(false)
@@ -128,7 +129,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
         pollTimer.current = null
       }
     }
-  }, [polling, task, wid, tid, onImported])
+  }, [polling, task, wid, tid, onImported, message])
 
   // 上传文件（不带 matchKeys，让后端全部归为 new）
   const beforeUpload = useCallback((file: any) => {
@@ -148,7 +149,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
         message.error(msg)
       })
     return false
-  }, [wid, tid, unknownColsStrategy])
+  }, [wid, tid, unknownColsStrategy, message])
 
   // 执行 DIFF — 用户改了 matchKeys 后重新 analyze
   const handleRunDiff = useCallback(async () => {
@@ -161,7 +162,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
       setDiffing(false)
       message.error(err instanceof Error ? err.message : '执行 DIFF 失败')
     }
-  }, [task, wid, tid, matchKeys, unknownColsStrategy])
+  }, [task, wid, tid, matchKeys, unknownColsStrategy, message])
 
   // 清空参考列（回到全量预览）
   const handleClearMatchKeys = useCallback(async () => {
@@ -175,7 +176,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
       setDiffing(false)
       message.error(err instanceof Error ? err.message : '清空参考列失败')
     }
-  }, [task, wid, tid, unknownColsStrategy])
+  }, [task, wid, tid, unknownColsStrategy, message])
 
   const handleExport = useCallback(async () => {
     try {
@@ -198,7 +199,7 @@ export default function ImportExportDialog({ open, wid, tid, fields = [], onClos
     } finally {
       setExporting(false)
     }
-  }, [wid, tid, selectedFormat, useViewFilter, viewId])
+  }, [wid, tid, selectedFormat, useViewFilter, viewId, message])
 
   // 确认导入（当前 matchKeys + unknownColsStrategy + droppedColumns + 清洗建议）
   const handleConfirm = async () => {

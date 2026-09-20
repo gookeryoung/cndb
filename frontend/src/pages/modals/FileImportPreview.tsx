@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useMemo, useState, useEffect } from 'react'
-import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Popover, message } from 'antd'
+import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Popover, App as AntApp } from 'antd'
 import type { TableProps } from 'antd'
 import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined, CheckOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
@@ -188,6 +188,7 @@ function collectUniqueValues(rows: Array<Record<string, unknown>>, colName: stri
 }
 
 export default function FileImportPreview({ open, wid, file, analyzeResult, onClose, onSuccess }: Props) {
+  const { message } = AntApp.useApp()
   const [overrides, setOverrides] = useState<Record<string, ColumnOverride>>({})
   const [tableName, setTableName] = useState('')
   const [creating, setCreating] = useState(false)
