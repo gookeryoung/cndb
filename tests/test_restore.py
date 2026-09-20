@@ -723,3 +723,132 @@ def test_restore_backup_invalid_mode(tmp_path: Path) -> None:
     archive, target_db = _make_backup_archive(tmp_path)
     with pytest.raises(RestoreError, match="无效的恢复模式"):
         restore_backup(archive, force=True, database_url=f"sqlite:///{target_db}", mode="auto")
+
+
+# ── 第 2 期：降级恢复报告与备份领先提示 ───────────────
+
+
+def test_schema_revision_known() -> None:
+    """迁移链判定三态：链上 revision / 未知 revision / 空串."""
+    from cndb.restore import _schema_revision_known
+
+    assert _schema_revision_known("6399e5f0f61f") is True
+    assert _schema_revision_known("deadbeef0000") is False
+    assert _schema_revision_known("") is False
+
+
+def test_summary_backup_ahead_hint() -> None:
+    """备份 schema 领先（revision 不在本地链上）时摘要给出降级恢复指引."""
+    ahead = _make_inspection(schema_version="deadbeef0000").summary
+    assert "备份 schema 新于当前程序" in ahead
+    assert "sqlalchemy" in ahead
+    on_chain = _make_inspection(schema_version="6399e5f0f61f").summary
+    assert "备份 schema 新于当前程序" not in on_chain
+
+
+def test_restore_sqlalchemy_loss_report(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """sqlalchemy 降级恢复：未知表与未知列收集进报告并打印."""
+    import json
+
+    from sqlalchemy import create_engine
+    from sqlalchemy import text as sa_text
+
+    # 手工构造"来自更新版本"的目录备份：未知表 + 已知表带未知列
+    backup_dir = tmp_path / "future_backup"
+    (backup_dir / "database").mkdir(parents=True)
+    manifest = {
+        "version": "1",
+        "app_version": "9.9",
+        "created_at": "2026-09-21T00:00:00",
+        "database": {
+            "db_type": "sqlite",
+            "backup_mode": "sqlalchemy",
+            "schema_version": "deadbeef0000",
+            "fallback_mode": "",
+            "tables": ["future_table", "workspaces_workspace"],
+            "row_counts": {"future_table": 1, "workspaces_workspace": 1},
+        },
+        "uploads": {"included": False, "file_count": 0, "total_size": 0},
+    }
+    (backup_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    dump = {
+        "tables": [
+            {
+                "table": "future_table",
+                "columns": ["id", "payload"],
+                "rows": [{"id": 1, "payload": "未来版本的数据"}],
+            },
+            {
+                "table": "workspaces_workspace",
+                "columns": ["id", "name", "future_col"],
+                "rows": [{"id": 1, "name": "降级恢复测试", "future_col": "将丢弃"}],
+            },
+        ]
+    }
+    (backup_dir / "database" / "dump.json").write_text(json.dumps(dump, ensure_ascii=False), encoding="utf-8")
+
+    target_db = tmp_path / "target.db"
+    report = restore_backup(backup_dir, force=False, database_url=f"sqlite:///{target_db}")
+
+    assert report is not None
+    assert report.has_loss
+    assert report.skipped_tables == ["future_table"]
+    assert report.dropped_columns == {"workspaces_workspace": ["future_col"]}
+    assert "跳过未知表 1 个: future_table" in report.summary()
+    # 报告随流程打印
+    out = capsys.readouterr().out
+    assert "降级恢复数据裁剪报告" in out
+    assert "future_col" in out
+    # 已知列数据正常导入，未知列数据不落库
+    engine = create_engine(f"sqlite:///{target_db}")
+    try:
+        with engine.connect() as conn:
+            name = conn.execute(sa_text("SELECT name FROM workspaces_workspace")).scalar()
+    finally:
+        engine.dispose()
+    assert name == "降级恢复测试"
+
+
+def test_restore_sqlalchemy_no_loss(tmp_path: Path) -> None:
+    """交集完全命中时报告无丢失."""
+    import json
+
+    # 目录备份仅含已知表已知列
+    backup_dir = tmp_path / "clean_backup"
+    (backup_dir / "database").mkdir(parents=True)
+    manifest = {
+        "version": "1",
+        "app_version": "1.0",
+        "created_at": "2026-09-21T00:00:00",
+        "database": {
+            "db_type": "sqlite",
+            "backup_mode": "sqlalchemy",
+            "schema_version": "",
+            "fallback_mode": "",
+            "tables": ["workspaces_workspace"],
+            "row_counts": {"workspaces_workspace": 1},
+        },
+        "uploads": {"included": False, "file_count": 0, "total_size": 0},
+    }
+    (backup_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    dump = {
+        "tables": [
+            {
+                "table": "workspaces_workspace",
+                "columns": ["id", "name"],
+                "rows": [{"id": 1, "name": "完整表"}],
+            }
+        ]
+    }
+    (backup_dir / "database" / "dump.json").write_text(json.dumps(dump, ensure_ascii=False), encoding="utf-8")
+
+    report = restore_backup(backup_dir, force=False, database_url=f"sqlite:///{tmp_path / 't.db'}")
+    assert report is not None
+    assert not report.has_loss
+
+
+def test_restore_native_returns_none_loss_report(tmp_path: Path) -> None:
+    """native 模式恢复无交集概念 → 返回 None."""
+    archive, target_db = _make_backup_archive(tmp_path)
+    report = restore_backup(archive, force=False, database_url=f"sqlite:///{target_db}")
+    assert report is None

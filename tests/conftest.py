@@ -74,6 +74,18 @@ def _fast_bcrypt(monkeypatch_session):
     monkeypatch_session.setattr(bcrypt, "gensalt", lambda *a, **kw: orig_gensalt(4))
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_upload_dir(tmp_path_factory, monkeypatch_session):
+    """把 settings.UPLOAD_DIR 重定向到 session 级临时目录.
+
+    备份/恢复流程默认读写 settings.UPLOAD_DIR，未显式传参的测试会触碰
+    真实用户附件目录（清空重建导致附件丢失）。全局隔离，xdist 下每
+    worker 各自独立临时目录，顺带消除并行文件锁冲突。
+    """
+    upload_dir = tmp_path_factory.mktemp("uploads")
+    monkeypatch_session.setattr(settings, "UPLOAD_DIR", upload_dir)
+
+
 @pytest.fixture
 def db(_session_factory):
     """function 级 session — 每个测试独立 session."""
