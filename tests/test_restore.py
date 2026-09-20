@@ -541,7 +541,9 @@ def test_ensure_manifest_compatible_error_lists_supported() -> None:
 # ── BackupInspection.summary schema 版本展示 ──────────
 
 
-def _make_inspection(backup_mode: str = "native", schema_version: str = "") -> BackupInspection:
+def _make_inspection(
+    backup_mode: str = "native", schema_version: str = "", fallback_mode: str = ""
+) -> BackupInspection:
     """构造带 schema 信息的 BackupInspection."""
     return BackupInspection(
         manifest={
@@ -551,6 +553,7 @@ def _make_inspection(backup_mode: str = "native", schema_version: str = "") -> B
                 "db_type": "sqlite",
                 "backup_mode": backup_mode,
                 "schema_version": schema_version,
+                "fallback_mode": fallback_mode,
                 "tables": ["a"],
                 "row_counts": {"a": 5},
             },
@@ -572,6 +575,14 @@ def test_summary_unknown_schema_version() -> None:
     summary = _make_inspection(backup_mode="native", schema_version="").summary
     assert "Schema 版本: 未知（旧版备份）" in summary
     assert "自动迁移" not in summary
+
+
+def test_summary_shows_fallback_export() -> None:
+    """摘要按 manifest 的 fallback_mode 显示兜底导出有无."""
+    with_fallback = _make_inspection(fallback_mode="sqlalchemy").summary
+    assert "内嵌兜底导出: 有（fallback_mode=sqlalchemy" in with_fallback
+    without_fallback = _make_inspection().summary
+    assert "内嵌兜底导出: 无" in without_fallback
 
 
 # ── 恢复后 schema 迁移（向前兼容核心场景）─────────────
@@ -661,3 +672,54 @@ def test_restore_sqlalchemy_stamps_alembic_version(tmp_path: Path) -> None:
     finally:
         conn.close()
     assert version == _alembic_head()
+
+
+# ── 降级恢复：native 归档以 sqlalchemy 模式恢复 ───────
+
+
+def test_restore_native_backup_via_sqlalchemy_mode(tmp_path: Path) -> None:
+    """native 归档内嵌兜底导出时，可显式用 sqlalchemy 模式降级恢复."""
+    from sqlalchemy import create_engine
+    from sqlalchemy import text as sa_text
+
+    from cndb.core.plugin_registry import plugin_registry
+    from cndb.models.base import Base
+    from cndb.plugins.workspaces.models import Workspace
+
+    # 源库：当前 schema + 一行业务数据
+    src_db = tmp_path / "src.db"
+    plugin_registry.discover_and_load()
+    engine = create_engine(f"sqlite:///{src_db}")
+    try:
+        Base.metadata.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(Workspace.__table__.insert().values(name="降级恢复测试"))
+    finally:
+        engine.dispose()
+
+    archive = tmp_path / "mixed.tar.gz"
+    create_backup(output=archive, mode="native", database_url=f"sqlite:///{src_db}")
+    inspection = inspect_backup(archive)
+    assert inspection.manifest["database"]["fallback_mode"] == "sqlalchemy"
+    assert "内嵌兜底导出: 有" in inspection.summary
+
+    target_db = tmp_path / "target.db"
+    restore_backup(archive, force=False, database_url=f"sqlite:///{target_db}", mode="sqlalchemy")
+
+    # 降级恢复成功：业务数据存在，alembic_version 为当前 head
+    check = create_engine(f"sqlite:///{target_db}")
+    try:
+        with check.connect() as conn:
+            name = conn.execute(sa_text("SELECT name FROM workspaces_workspace")).scalar()
+            version = conn.execute(sa_text("SELECT version_num FROM alembic_version")).scalar()
+    finally:
+        check.dispose()
+    assert name == "降级恢复测试"
+    assert version == _alembic_head()
+
+
+def test_restore_backup_invalid_mode(tmp_path: Path) -> None:
+    """非法 mode 参数在恢复开始前报 RestoreError."""
+    archive, target_db = _make_backup_archive(tmp_path)
+    with pytest.raises(RestoreError, match="无效的恢复模式"):
+        restore_backup(archive, force=True, database_url=f"sqlite:///{target_db}", mode="auto")

@@ -470,3 +470,45 @@ def test_backup_command_catch_unexpected(tmp_path: Path) -> None:
     ):
         backup_command(args)
     assert excinfo.value.code == 1
+
+
+# ── native 内嵌 sqlalchemy 兜底导出（降级恢复）─────────
+
+
+def _read_archive_member(archive: Path, member: str) -> bytes:
+    """从备份归档读取单个成员内容（归档内统一带 backup/ 前缀）."""
+    import tarfile
+
+    with tarfile.open(archive, "r:gz") as tar:
+        handle = tar.extractfile(f"backup/{member}")
+        assert handle is not None
+        return handle.read()
+
+
+def test_create_backup_native_embeds_fallback_dump(tmp_path: Path) -> None:
+    """native 备份默认内嵌 sqlalchemy 兜底导出，manifest 标记 fallback_mode."""
+    db = _setup_sqlite(tmp_path)
+    archive = tmp_path / "fb.tar.gz"
+    create_backup(output=archive, mode="native", database_url=f"sqlite:///{db}")
+
+    manifest = json.loads(_read_archive_member(archive, "manifest.json"))
+    assert manifest["database"]["fallback_mode"] == "sqlalchemy"
+    # dump.json 与 .db 取自同一快照，数据一致
+    dump = json.loads(_read_archive_member(archive, "database/dump.json"))
+    tables = {t["table"]: len(t["rows"]) for t in dump["tables"]}
+    assert tables["users"] == 2
+    assert tables["posts"] == 3
+
+
+def test_create_backup_native_no_fallback(tmp_path: Path) -> None:
+    """include_fallback=False 时不内嵌 dump.json，fallback_mode 为空."""
+    db = _setup_sqlite(tmp_path)
+    archive = tmp_path / "nofb.tar.gz"
+    create_backup(output=archive, mode="native", database_url=f"sqlite:///{db}", include_fallback=False)
+
+    manifest = json.loads(_read_archive_member(archive, "manifest.json"))
+    assert manifest["database"]["fallback_mode"] == ""
+    import tarfile
+
+    with tarfile.open(archive, "r:gz") as tar:
+        assert "backup/database/dump.json" not in tar.getnames()
