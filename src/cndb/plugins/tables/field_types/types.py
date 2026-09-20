@@ -3,10 +3,14 @@ from __future__ import annotations
 import enum
 import math
 import re
-from typing import Any, override
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, override
 
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, Integer, String, Text, text
+
+if TYPE_CHECKING:
+    from cndb.plugins.tables.models import DataField, DataTable
 
 
 class FieldTypeCategory(enum.StrEnum):
@@ -55,6 +59,38 @@ class FieldType:
     def default_value(self, _config: dict[str, Any]) -> Any:
         return None
 
+    def next_increment_value(
+        self, engine: Any, table: DataTable, field: DataField, extra_seen: Sequence[str] = ()
+    ) -> str | None:
+        """推算自动编号默认值的下一个值；不支持自动编号的字段类型返回 None.
+
+        Args:
+            engine: 数据库引擎（供物理列扫描，基类默认实现未使用）.
+            table: 数据表元数据.
+            field: 字段元数据.
+            extra_seen: 本批次已分配但尚未落库的值，参与编号推算（批量创建时保证逐行递增）.
+        """
+        _ = engine, table, field, extra_seen
+        return None
+
+
+class TextFieldConfig(FieldTypeConfig):
+    """单行文本字段的可配置项.
+
+    Attributes:
+        default_mode: 默认值模式。空字符串表示静态默认值（default_value），
+            "auto_increment" 表示按「前缀 + 补零编号」自动生成（如 PRJ-0001），
+            建行时由后端按库内已有数据推算下一编号.
+        increment_prefix: 自动编号前缀，如 "PRJ-"（可为空）.
+        increment_padding: 编号数字补零位数（0 表示不补零）.
+        increment_start: 起始编号（库内无匹配值时使用）.
+    """
+
+    default_mode: str = Field(default="", pattern=r"^(auto_increment)?$")
+    increment_prefix: str = ""
+    increment_padding: int = Field(default=4, ge=0, le=10)
+    increment_start: int = Field(default=1, ge=0)
+
 
 class TextFieldType(FieldType):
     name = "text"
@@ -62,6 +98,48 @@ class TextFieldType(FieldType):
     category = FieldTypeCategory.BASIC
     sqlalchemy_type = String
     sqlalchemy_length = 255
+    config_schema = TextFieldConfig
+
+    @override
+    def next_increment_value(
+        self, engine: Any, table: DataTable, field: DataField, extra_seen: Sequence[str] = ()
+    ) -> str | None:
+        """推算自动编号的下一个值；未启用 auto_increment 时返回 None.
+
+        扫描物理列全部非 NULL 值（含软删行，与唯一索引口径一致），按
+        ``^{前缀转义}(\\d+)$`` 提取已有编号取最大值，下一编号为
+        ``max(最大值 + 1, increment_start)``，按补零位数格式化；
+        ``extra_seen``（本批次已分配未落库值）同样参与取最大.
+        """
+        from cndb.plugins.tables.ddl import table_exists
+
+        cfg = TextFieldConfig(**(field.config or {}))
+        if cfg.default_mode != "auto_increment":
+            return None
+        fallback = f"{cfg.increment_prefix}{str(cfg.increment_start).zfill(cfg.increment_padding)}"
+        if not table_exists(engine, table.db_table_name):
+            return fallback
+
+        prefix_re = re.compile(re.escape(cfg.increment_prefix) + r"(\d+)")
+        max_seen: int | None = None
+        sql = text(
+            f'SELECT "{field.db_column_name}" FROM "{table.db_table_name}" WHERE "{field.db_column_name}" IS NOT NULL'
+        )
+        with engine.connect() as conn:
+            for (value,) in conn.execute(sql):
+                m = prefix_re.fullmatch(str(value))
+                if m:
+                    num = int(m.group(1))
+                    if max_seen is None or num > max_seen:
+                        max_seen = num
+        for value in extra_seen:
+            m = prefix_re.fullmatch(str(value))
+            if m:
+                num = int(m.group(1))
+                if max_seen is None or num > max_seen:
+                    max_seen = num
+        next_num = max(max_seen + 1 if max_seen is not None else cfg.increment_start, cfg.increment_start)
+        return f"{cfg.increment_prefix}{str(next_num).zfill(cfg.increment_padding)}"
 
 
 class LongTextFieldType(FieldType):
@@ -957,6 +1035,7 @@ __all__ = [
     "SelectFieldConfig",
     "SelectFieldType",
     "SelectOption",
+    "TextFieldConfig",
     "TextFieldType",
     "TimestampFieldType",
     "UrlFieldType",
