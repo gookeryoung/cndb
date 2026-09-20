@@ -266,6 +266,11 @@ def main() -> None:
         action="store_true",
         help="不包含 uploads 目录的附件文件（仅备份数据库）",
     )
+    p_backup.add_argument(
+        "--no-fallback",
+        action="store_true",
+        help="native 模式不内嵌 sqlalchemy 兜底导出（减小归档体积；关闭后旧版程序无法降级恢复该备份）",
+    )
 
     # restore 子命令
     p_restore = sub.add_parser("restore", help="从 .tar.gz 归档或文件夹恢复数据（自动识别源类型）")
@@ -282,6 +287,12 @@ def main() -> None:
         "--dry-run",
         action="store_true",
         help="仅检查备份源完整性并预览内容，不实际恢复",
+    )
+    p_restore.add_argument(
+        "--mode",
+        choices=["native", "sqlalchemy"],
+        default=None,
+        help="覆盖恢复模式：默认按备份标记分支；备份 schema 新于当前程序时可用 sqlalchemy 按 dump.json 交集导入降级恢复",
     )
 
     # users 子命令组
