@@ -27,6 +27,8 @@ class TemplateCreate(BaseModel):
     template_content: str
     table_id: int | None = None
     parameters: list[ParameterDef] = Field(default_factory=list)
+    # 持久化的额外引用表 ID 列表（服务端去重保序、剔除主表自身）
+    extra_table_ids: list[int] = Field(default_factory=list)
 
 
 class TemplateUpdate(BaseModel):
@@ -38,6 +40,7 @@ class TemplateUpdate(BaseModel):
     template_content: str | None = None
     table_id: int | None = None
     parameters: list[ParameterDef] | None = None
+    extra_table_ids: list[int] | None = None
 
 
 class TemplateResponse(BaseModel):
@@ -52,6 +55,7 @@ class TemplateResponse(BaseModel):
     output_format: str
     template_content: str
     parameters: list[dict[str, Any]]
+    extra_table_ids: list[int]
     created_at: dt.datetime
     updated_at: dt.datetime
 
@@ -67,6 +71,7 @@ class TemplateListResponse(BaseModel):
     description: str
     output_format: str
     parameters: list[dict[str, Any]]
+    extra_table_ids: list[int]
 
 
 class RenderRequest(BaseModel):
@@ -74,9 +79,9 @@ class RenderRequest(BaseModel):
 
     table_id: int
     params: dict[str, Any] = Field(default_factory=dict)
-    # 可选：过滤行（空=全部）
+    # 可选：主表行过滤（保持给定顺序，忽略不存在的 id；空/缺省=全部行）
     row_ids: list[int] | None = None
-    # 可选：额外引用的数据表 ID 列表，渲染上下文注入 records_by_table
+    # 可选：额外引用的数据表 ID 列表（显式传值优先，否则回落模板持久化的 extra_table_ids）
     extra_table_ids: list[int] = Field(default_factory=list)
 
 
