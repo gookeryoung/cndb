@@ -26,11 +26,9 @@ class ReportTemplate(TimestampMixin, Base):
     """报告模板：用 Jinja2 语法定义，渲染时注入 table records + 用户参数.
 
     template_content 为 Jinja2 模板字符串，渲染上下文包含：
-    - records: 主表行数据列表（dict，含 id 与字段值）
+    - records: 行数据列表（dict）
     - table_name: 表名（str）
     - params: 用户传入的参数（dict）
-    - records_by_table: 额外表数据（表名 -> 行列表），来源为
-      渲染请求显式传入的 extra_table_ids，未传时回落到模板持久化的该列
     """
 
     __tablename__ = "reports_template"
@@ -48,9 +46,6 @@ class ReportTemplate(TimestampMixin, Base):
         nullable=True,
         index=True,
     )
-    # 持久化的额外引用表 ID 列表（去重保序、不含主表自身）；
-    # 渲染请求显式传入 extra_table_ids 时优先使用请求值
-    extra_table_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"ReportTemplate(id={self.id}, name={self.name!r}, format={self.output_format!r})"

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, Typography, App as AntApp, Select, Dropdown, Empty, Tabs, Tooltip } from 'antd'
+import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntApp, Select, Dropdown, Empty, Tabs, Tooltip } from 'antd'
 import type { FormInstance } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -121,7 +121,6 @@ export default function ReportsPage() {
       template_content: 'Hello {{ table_name }}!\n共 {{ records | length }} 条记录\n\n{% for row in records %}- {{ row.name }}{% endfor %}',
       table_id: null,
       parameters: [],
-      extra_table_ids: [],
     })
     setEditorOpen(true)
   }
@@ -136,7 +135,6 @@ export default function ReportsPage() {
         template_content: full.template_content,
         table_id: full.table_id,
         parameters: full.parameters as ReportParameter[],
-        extra_table_ids: full.extra_table_ids ?? [],
       })
       setEditorOpen(true)
     }).catch((err: unknown) => {
@@ -309,10 +307,6 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null)
   // 额外选择的表 ID 列表
   const [extraTableIds, setExtraTableIds] = useState<number[]>([])
-  // 模板参数定义（表单联动；有定义时预览 Tab 顶部显示参数输入条）
-  const paramDefs = (Form.useWatch('parameters', form) as ReportParameter[] | undefined) || []
-  // 预览参数原始值（按参数名键控）
-  const [previewParams, setPreviewParams] = useState<Record<string, unknown>>({})
   // CodeMirror 引用（供 SyntaxHelpPanel 插入代码使用）
   const editorRef = useRef<TemplateEditorHandle | null>(null)
 
@@ -336,24 +330,30 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     enabled: extraTableIds.length > 0 && !!workspaceId,
   })
 
-  // 关联表的前 10 行真实数据（用于预览；保留 id 与后端渲染上下文一致）
+  // 关联表的前 10 行真实数据（用于预览）
   const { data: previewRows = [], isLoading: previewLoading } = useQuery({
     queryKey: ['workspaces', workspaceId, 'tables', selectedTableId, 'records', 'preview'],
     queryFn: async () => {
       const resp = await recordApi.list(workspaceId, selectedTableId!, { limit: 10 })
-      return resp.items as unknown as Array<Record<string, unknown>>
+      return resp.items.map(r => {
+        const { id: _id, created_at: _ca, updated_at: _ua, created_by: _cb, updated_by: _ub, ...rest } = r as any
+        return rest
+      }) as Array<Record<string, unknown>>
     },
     enabled: !!selectedTableId && !!workspaceId,
   })
 
-  // 额外表的预览数据（用于 PreviewPanel records_by_table；行数与主表统一取 10）
+  // 额外表的预览数据（用于 PreviewPanel records_by_table）
   const { data: extraPreviewMap = {} } = useQuery<Record<number, Array<Record<string, unknown>>>>({
     queryKey: ['workspaces', workspaceId, 'extra-preview', extraTableIds],
     queryFn: async () => {
       const result: Record<number, Array<Record<string, unknown>>> = {}
       await Promise.all(extraTableIds.map(async (tid) => {
-        const resp = await recordApi.list(workspaceId, tid, { limit: 10 })
-        result[tid] = resp.items as unknown as Array<Record<string, unknown>>
+        const resp = await recordApi.list(workspaceId, tid, { limit: 5 })
+        result[tid] = resp.items.map(r => {
+          const { id: _id, created_at: _ca, updated_at: _ua, created_by: _cb, updated_by: _ub, ...rest } = r as any
+          return rest
+        })
       }))
       return result
     },
@@ -445,30 +445,6 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     return result
   }, [extraTableIds, extraPreviewMap, tables])
 
-  // 参数定义变化时清空预览参数（避免残留失效键）
-  const paramNamesKey = paramDefs.map(p => p.name).join(',')
-  useEffect(() => {
-    setPreviewParams({})
-  }, [paramNamesKey])
-
-  // 预览参数按类型强转（number→Number、空值剔除），与渲染时上下文一致
-  const coercedPreviewParams = useMemo(() => {
-    const result: Record<string, unknown> = {}
-    for (const p of paramDefs) {
-      const raw = previewParams[p.name]
-      if (raw === undefined || raw === null || raw === '') continue
-      if (p.type === 'number') {
-        const n = Number(raw)
-        if (!Number.isNaN(n)) result[p.name] = n
-      } else if (p.type === 'boolean') {
-        result[p.name] = Boolean(raw)
-      } else {
-        result[p.name] = raw
-      }
-    }
-    return result
-  }, [paramDefs, previewParams])
-
   // extra 表选项（排除已选的主表）
   const extraTableOptions = useMemo(() => {
     return tableOptions.filter(o => o.value !== selectedTableId)
@@ -556,54 +532,13 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
                   key: 'preview',
                   label: '实时预览',
                   children: (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
-                      {paramDefs.length > 0 && (
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', padding: '6px 10px', background: '#fafafa', borderRadius: 6 }}>
-                          <Text type="secondary" style={{ fontSize: 12 }}>预览参数</Text>
-                          {paramDefs.map(p => (
-                            <span key={p.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <Text style={{ fontSize: 12 }}>{p.label || p.name}</Text>
-                              {p.type === 'boolean' ? (
-                                <Select
-                                  size="small"
-                                  style={{ width: 72 }}
-                                  allowClear
-                                  placeholder="—"
-                                  value={typeof previewParams[p.name] === 'boolean' ? (previewParams[p.name] as boolean) : undefined}
-                                  onChange={v => setPreviewParams(prev => ({ ...prev, [p.name]: v }))}
-                                  options={[{ value: true, label: '是' }, { value: false, label: '否' }]}
-                                />
-                              ) : p.type === 'number' ? (
-                                <InputNumber
-                                  size="small"
-                                  style={{ width: 96 }}
-                                  placeholder={p.name}
-                                  value={typeof previewParams[p.name] === 'number' ? (previewParams[p.name] as number) : undefined}
-                                  onChange={v => setPreviewParams(prev => ({ ...prev, [p.name]: v ?? undefined }))}
-                                />
-                              ) : (
-                                <Input
-                                  size="small"
-                                  style={{ width: 120 }}
-                                  type={p.type === 'date' ? 'date' : 'text'}
-                                  placeholder={p.name}
-                                  value={typeof previewParams[p.name] === 'string' ? (previewParams[p.name] as string) : ''}
-                                  onChange={e => setPreviewParams(prev => ({ ...prev, [p.name]: e.target.value }))}
-                                />
-                              )}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      <PreviewPanel
-                        template={templateValue}
-                        records={previewRows as Array<Record<string, unknown>>}
-                        tableName={selectedTableName}
-                        loading={previewLoading}
-                        params={coercedPreviewParams}
-                        recordsByTable={recordsByTable}
-                      />
-                    </div>
+                    <PreviewPanel
+                      template={templateValue}
+                      records={previewRows as Array<Record<string, unknown>>}
+                      tableName={selectedTableName}
+                      loading={previewLoading}
+                      recordsByTable={recordsByTable}
+                    />
                   ),
                 },
                 {
@@ -703,8 +638,7 @@ function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting
       const initial: Record<string, unknown> = {}
       target.parameters.forEach(p => { if (p.default !== undefined) initial[p.name] = p.default })
       form.setFieldsValue(initial as any)
-      // 默认带上模板持久化的额外引用表（渲染请求显式传值优先）
-      setExtraTableIds(target.extra_table_ids ?? [])
+      setExtraTableIds([])
     }
   }, [open, target, form])
 
@@ -727,18 +661,7 @@ function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting
       onOk={async () => {
         try {
           const values = await form.validateFields()
-          // number 类型参数统一 Number() 强转（Input 产出 string），与预览/后端上下文一致
-          const coerced: Record<string, unknown> = {}
-          target?.parameters.forEach(p => {
-            const v = values[p.name]
-            if (p.type === 'number' && v !== undefined && v !== null && v !== '') {
-              const n = Number(v)
-              coerced[p.name] = Number.isNaN(n) ? v : n
-            } else {
-              coerced[p.name] = v
-            }
-          })
-          onSubmit(coerced, extraTableIds.length > 0 ? extraTableIds : undefined)
+          onSubmit(values as Record<string, unknown>, extraTableIds.length > 0 ? extraTableIds : undefined)
         } catch { /* 用户取消校验 */ }
       }}
     >

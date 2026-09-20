@@ -1,6 +1,8 @@
 /**
- * PreviewPanel 测试：nunjucks 实时预览渲染、throwOnUndefined 对齐后端
- * StrictUndefined、records_by_table / params 上下文注入.
+ * PreviewPanel 组件测试 —— 报告模板实时预览（前端 nunjucks 渲染）.
+ *
+ * 覆盖：空模板 Empty / 变量与 table_name 渲染 / records 循环 / params /
+ * 语法错误 Alert / 空输出占位 / loading Spin / 行数 meta。渲染有 300ms 防抖，断言用带超时的 findBy。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -8,68 +10,74 @@ import { screen } from '@testing-library/react'
 import PreviewPanel from './PreviewPanel'
 import { renderProviders } from '@/test/render-providers'
 
-describe('PreviewPanel', () => {
-  it('基础渲染：records 循环与 length 过滤器', async () => {
+const FIND_OPTS = { timeout: 2000 } as const
+
+describe('PreviewPanel 实时预览', () => {
+  it('空模板显示 Empty 引导文案', () => {
+    renderProviders(<PreviewPanel template="   " records={[]} />)
+
+    expect(screen.getByText('实时预览')).toBeInTheDocument()
+    expect(screen.getByText('在左侧编辑器输入模板后，这里会显示渲染结果')).toBeInTheDocument()
+  })
+
+  it('渲染变量与 table_name', async () => {
+    renderProviders(<PreviewPanel template="Hello {{ table_name }}!" records={[]} tableName="客户表" />)
+
+    expect(await screen.findByText('Hello 客户表!', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
+  it('records 循环渲染行数据', async () => {
+    const rows = [{ name: '张三' }, { name: '李四' }]
+    renderProviders(
+      <PreviewPanel template="{% for r in records %}[{{ r.name }}]{% endfor %}" records={rows} />,
+    )
+
+    expect(await screen.findByText('[张三][李四]', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
+  it('params 参与渲染', async () => {
+    renderProviders(
+      <PreviewPanel template="{{ params.title }}" records={[]} params={{ title: '周报' }} />,
+    )
+
+    expect(await screen.findByText('周报', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
+  it('records_by_table 参与渲染', async () => {
     renderProviders(
       <PreviewPanel
-        template="共 {{ records | length }} 行\n{% for r in records %}- {{ r.name }}\\n{% endfor %}"
-        records={[{ name: '张三' }, { name: '李四' }]}
-        tableName="员工表"
-      />,
-    )
-
-    expect(await screen.findByText(/共 2 行/)).toBeInTheDocument()
-    expect(await screen.findByText(/张三/)).toBeInTheDocument()
-  })
-
-  it('元信息行显示预览行数上限提示', () => {
-    renderProviders(
-      <PreviewPanel template="x" records={[{ a: 1 }]} tableName="员工表" />,
-    )
-    expect(screen.getByText(/预览前 1 行（渲染用全量数据）/)).toBeInTheDocument()
-  })
-
-  it('未定义变量显示渲染错误（throwOnUndefined 对齐后端 StrictUndefined）', async () => {
-    renderProviders(
-      <PreviewPanel template="{{ 不存在的变量 }}" records={[]} tableName="员工表" />,
-    )
-    // 防抖 300ms 后才更新，findBy* 自带等待
-    expect(await screen.findByText('渲染错误')).toBeInTheDocument()
-  })
-
-  it('default 过滤器对未定义变量仍然生效', async () => {
-    renderProviders(
-      <PreviewPanel template="{{ missing | default('备用值') }}" records={[]} tableName="员工表" />,
-    )
-    expect(await screen.findByText(/备用值/)).toBeInTheDocument()
-  })
-
-  it('records_by_table 注入生效（额外表首行取值）', async () => {
-    renderProviders(
-      <PreviewPanel
-        template="{{ records_by_table['项目表'][0].项目名 }}"
+        template="{{ records_by_table.订单 | length }} 单"
         records={[]}
-        tableName="员工表"
-        recordsByTable={{ 项目表: [{ 项目名: '银河项目' }] }}
+        recordsByTable={{ 订单: [{ id: 1 }, { id: 2 }] }}
       />,
     )
-    expect(await screen.findByText(/银河项目/)).toBeInTheDocument()
+
+    expect(await screen.findByText('2 单', {}, FIND_OPTS)).toBeInTheDocument()
   })
 
-  it('params 注入生效', async () => {
+  it('模板语法错误显示渲染错误 Alert', async () => {
+    renderProviders(<PreviewPanel template="{% if %}bad" records={[]} />)
+
+    expect(await screen.findByText('渲染错误', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
+  it('渲染输出为空时显示 (空输出) 占位', async () => {
+    renderProviders(<PreviewPanel template="{{ '' }}" records={[]} />)
+
+    expect(await screen.findByText('(空输出)', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
+  it('loading 时渲染 Spin；有 tableName 时 meta 显示行数', async () => {
     renderProviders(
-      <PreviewPanel
-        template="{{ params.msg }}"
-        records={[]}
-        tableName="员工表"
-        params={{ msg: '你好参数' }}
-      />,
+      <PreviewPanel template="" records={[{ a: 1 }, { a: 2 }]} tableName="客户表" loading />,
     )
-    expect(await screen.findByText(/你好参数/)).toBeInTheDocument()
+
+    expect(document.querySelector('.ant-spin-spinning')).not.toBeNull()
   })
 
-  it('模板为空时显示占位提示', () => {
-    renderProviders(<PreviewPanel template="  " records={[]} tableName="员工表" />)
-    expect(screen.getByText(/在左侧编辑器输入模板后/)).toBeInTheDocument()
+  it('非 loading 且有 tableName 时显示"表名 · 行数"meta', async () => {
+    renderProviders(<PreviewPanel template="" records={[{ a: 1 }, { a: 2 }]} tableName="客户表" />)
+
+    expect(await screen.findByText(/客户表 · 2 行/, {}, FIND_OPTS)).toBeInTheDocument()
   })
 })
