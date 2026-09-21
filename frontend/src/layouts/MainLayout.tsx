@@ -6,7 +6,7 @@ import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
   FileTextOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
-  SettingOutlined, SafetyOutlined, QuestionCircleOutlined, PlusOutlined,
+  SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
@@ -196,43 +196,47 @@ export default function MainLayout() {
           width={240} collapsedWidth={60}
           style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
         >
-          <div data-testid="sider-tables">
-            <div style={{
-              padding: '12px 16px', borderBottom: '1px solid var(--cn-border)',
-              display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
+          {!wid ? (
+            // 未进入工作区：不渲染"数据表"导航，提示用户从顶部选择
+            <div data-testid="sider-no-workspace" style={{
+              padding: '24px 16px', textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13,
+              display: collapsed ? 'none' : 'block',
             }}>
-              <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
+              <p style={{ margin: 0 }}>请先从顶部选择一个工作区</p>
             </div>
-            <div style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
-              数据表 ({orderedTables.length})
-            </div>
-            {tables.length === 0 ? (
-              collapsed ? (
-                <div style={{ padding: 16, textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>无表</div>
+          ) : (
+            <div data-testid="sider-tables">
+              <div style={{
+                padding: '12px 16px', borderBottom: '1px solid var(--cn-border)',
+                display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
+              </div>
+              <div style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
+                数据表 ({orderedTables.length})
+              </div>
+              {tables.length === 0 ? (
+                collapsed ? (
+                  <div style={{ padding: 16, textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>无表</div>
+                ) : (
+                  <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>
+                    <p style={{ margin: 0 }}>还没有数据表，先创建或导入一张吧</p>
+                  </div>
+                )
               ) : (
-                <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>
-                  <p style={{ marginBottom: 12 }}>还没有数据表，先创建或导入一张吧</p>
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<PlusOutlined />}
-                    onClick={() => navigate(wid ? `/w/${wid}/tables` : '/w')}
-                  >新建表</Button>
-                </div>
-              )
-            ) : (
-              <Menu
-                mode="inline"
-                selectedKeys={tid ? [String(tid)] : []}
-                items={orderedTables.map(t => ({
-                  key: String(t.id),
-                  icon: <TableOutlined />,
-                  label: t.name,
-                  onClick: () => navigateToTable(wid!, t.id),
-                }))}
-              />
-            )}
-          </div>
+                <Menu
+                  mode="inline"
+                  selectedKeys={tid ? [String(tid)] : []}
+                  items={orderedTables.map(t => ({
+                    key: String(t.id),
+                    icon: <TableOutlined />,
+                    label: t.name,
+                    onClick: () => navigateToTable(wid!, t.id),
+                  }))}
+                />
+              )}
+            </div>
+          )}
         </Sider>
 
         <Content style={{ background: 'var(--cn-bg-page)', flex: 1, minHeight: 0, overflow: 'auto' }}>
