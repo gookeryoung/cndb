@@ -207,6 +207,8 @@ export default function GridPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailRow, setDetailRow] = useState<RowResponse | null>(null)
+  /** 新建行 drawer 预填值（非 grid 视图下新增卡片时把分组字段预填好） */
+  const [createInitialValues, setCreateInitialValues] = useState<RowValues | undefined>(undefined)
   const [fieldMgrOpen, setFieldMgrOpen] = useState(false)
   const [importExportOpen, setImportExportOpen] = useState(false)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
@@ -258,6 +260,13 @@ export default function GridPage() {
       })
     }
   }, [wid, tid, queryClient])
+
+  /** 打开新建行抽屉（非 grid 视图下新增卡片入口使用） */
+  const openCreateDrawer = useCallback((initialValues?: RowValues) => {
+    setCreateInitialValues(initialValues)
+    setDetailRow(null)
+    setDetailOpen(true)
+  }, [])
 
   const { data: table, isLoading } = useTable(wid!, tid!)
   const { data: views = [] } = useTableViews(wid!, tid!)
@@ -462,6 +471,13 @@ export default function GridPage() {
 
   const deleteRows = useDeleteRowsOptimistic(wid!, tid!)
   const updateRow = useUpdateRowOptimistic(wid!, tid!)
+
+  /** 看板等视图删除单张卡片 */
+  const handleDeleteCard = useCallback((r: RowResponse) => {
+    deleteRows.mutate([r.id as number | string], {
+      onSuccess: () => message.success('已删除'),
+    })
+  }, [deleteRows, message])
   const copyRow = useMutation({
     mutationFn: async (ids: Array<number | string>) => {
       const copies: Array<Record<string, unknown>> = []
@@ -855,18 +871,20 @@ export default function GridPage() {
         <div style={{ flex: 1 }} />
         {/* 右侧主操作区 */}
         <Space size={6}>
-          <Tooltip title={newRowActive || editingRowId != null ? '请先完成当前编辑' : '新增一行：在表格末尾添加空记录，逐格填写后回车保存'}>
-            <Button
-              type="primary"
-              size="middle"
-              icon={<PlusOutlined />}
-              data-testid="add-row-btn"
-              onClick={startNewRow}
-              disabled={!canEditRecords || newRowActive || editingRowId != null}
-            >
-              新增行
-            </Button>
-          </Tooltip>
+          {mode === 'grid' && (
+            <Tooltip title={newRowActive || editingRowId != null ? '请先完成当前编辑' : '新增一行：在表格末尾添加空记录，逐格填写后回车保存'}>
+              <Button
+                type="primary"
+                size="middle"
+                icon={<PlusOutlined />}
+                data-testid="add-row-btn"
+                onClick={startNewRow}
+                disabled={!canEditRecords || newRowActive || editingRowId != null}
+              >
+                新增行
+              </Button>
+            </Tooltip>
+          )}
           <Tooltip title="表设置：管理字段结构、视图列表与权限授权">
             <Button
               data-testid="table-settings-btn"
@@ -1177,7 +1195,18 @@ export default function GridPage() {
             />
           </div>
         ) : mode === 'kanban' ? (
-          <KanbanView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} />
+          <KanbanView
+            rows={rowList.items || []}
+            fields={table?.fields || []}
+            view={activeView}
+            density={settings.density}
+            sortings={viewSortings}
+            onRowClick={openDetailWithPrefetch}
+            onDeleteCard={handleDeleteCard}
+            canDelete={canEditRecords}
+            onAddCard={openCreateDrawer}
+            canAdd={canEditRecords}
+          />
         ) : mode === 'gallery' ? (
           <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
         ) : mode === 'gantt' ? (
@@ -1217,9 +1246,20 @@ export default function GridPage() {
       )}
 
       {/* 抽屉 & 对话框 */}
-      {detailOpen && detailRow && (
-        <RowDetailDrawer open={detailOpen} row={detailRow} fields={table?.fields || []} wid={wid} tid={tid}
-          onClose={() => { setDetailOpen(false); setDetailRow(null) }} />
+      {detailOpen && (
+        <RowDetailDrawer
+          open={detailOpen}
+          row={detailRow}
+          fields={table?.fields || []}
+          wid={wid}
+          tid={tid}
+          initialValues={createInitialValues}
+          onClose={() => {
+            setDetailOpen(false)
+            setDetailRow(null)
+            setCreateInitialValues(undefined)
+          }}
+        />
       )}
       <Suspense fallback={<ModalFallback />}>
         {fieldMgrOpen && (
