@@ -21,6 +21,8 @@ from typing import Any
 import pytest
 
 from cndb.plugins.tables import transfer
+from cndb.plugins.tables.column_profiler import profile_columns
+from cndb.plugins.tables.diff_reporter import DiffReporter
 from cndb.plugins.tables.field_types import default_registry
 
 # ── 一、列推断矩阵（组 01-44，每组一列样本 → 期望 field_type）──────────
@@ -729,6 +731,76 @@ class TestXlsxDateInference:
         date_col = next(c for c in columns if c["name"] == "打卡日期")
         assert "options" not in date_col
         assert date_col["sample_values"][0] == "2026-09-01"
+
+
+class TestThreeEntryConsistency:
+    """三入口类型一致性：analyze_csv_columns / profile_columns / infer_new_column_type.
+
+    提升链收口（promote_inferred_column_type）后，同一列样本在导入预览
+    （analyze_csv）、画像（profile_columns）、schema diff 新列建议
+    （infer_new_column_type）三侧必须产出同一类型与同一 options，
+    消除既有的"预览类型与落库类型不对称"遗留。
+    """
+
+    @staticmethod
+    def _profile(samples: list[str]) -> dict[str, Any]:
+        rows: list[dict[str, Any]] = [{"col": v} for v in samples]
+        profiles, _summary = profile_columns(rows, ["col"])
+        return profiles[0]
+
+    @pytest.mark.parametrize(
+        ("label", "samples", "expected"),
+        [
+            ("秒级时间戳", ["1700000000", "1700086400", "1700172800"], "timestamp"),
+            ("毫秒级时间戳", ["1700000000000", "1700086400000", "1700172800000"], "timestamp"),
+            ("换行长文本", ["第一行\n第二行", "单行备注", "再来一行\n好"], "longtext"),
+            ("逗号列表", ["python,go", "python,java", "go,rust", "python,go"], "multiselect"),
+            ("低基数文本", ["active", "done", "pending", "active", "done", "pending"], "select"),
+        ],
+    )
+    def test_three_entries_same_type(self, label: str, samples: list[str], expected: str) -> None:
+        cols, _n = transfer.analyze_csv_columns(_column_csv(samples))
+        profile = self._profile(samples)
+        diff_type, _diff_options = DiffReporter.infer_new_column_type(samples)
+
+        assert cols[0]["field_type"] == expected, f"{label}: analyze_csv_columns 不符"
+        assert profile["inferred_type"] == expected, f"{label}: profile_columns 不符"
+        assert diff_type == expected, f"{label}: infer_new_column_type 不符"
+
+    def test_multiselect_options_identical_across_entries(self) -> None:
+        """multiselect 提升命中的 options 在三入口间完全一致（含顺序）."""
+        samples = ["python,go", "python,java", "go,rust", "python,go"]
+        cols, _n = transfer.analyze_csv_columns(_column_csv(samples))
+        profile = self._profile(samples)
+        _t, diff_options = DiffReporter.infer_new_column_type(samples)
+
+        csv_options = cols[0]["options"]
+        assert csv_options, "csv 入口必须带 options"
+        assert csv_options == diff_options
+        assert profile["select_options"] == csv_options
+
+    def test_select_options_identical_across_entries(self) -> None:
+        """select 提升命中的 options 在三入口间完全一致（含顺序）."""
+        samples = ["active", "done", "pending", "active", "done", "pending"]
+        cols, _n = transfer.analyze_csv_columns(_column_csv(samples))
+        profile = self._profile(samples)
+        _t, diff_options = DiffReporter.infer_new_column_type(samples)
+
+        csv_options = cols[0]["options"]
+        assert csv_options == ["active", "done", "pending"]
+        assert csv_options == diff_options
+        assert profile["select_options"] == csv_options
+
+    def test_timestamp_no_options_anywhere(self) -> None:
+        """timestamp/longtext 提升不带 options，三入口一致为空."""
+        samples = ["1700000000", "1700086400", "1700172800"]
+        cols, _n = transfer.analyze_csv_columns(_column_csv(samples))
+        profile = self._profile(samples)
+        _t, diff_options = DiffReporter.infer_new_column_type(samples)
+
+        assert "options" not in cols[0]
+        assert "select_options" not in profile
+        assert diff_options == []
 
 
 __all__ = []
