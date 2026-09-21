@@ -728,6 +728,11 @@ class TimestampFieldType(FieldType):
     sqlalchemy_type = Integer
     sqlalchemy_length = None
 
+    # 秒级上限 4102444800（2100-01-01），毫秒级上限为秒级 ×1000；
+    # 与 transfer._TS_EPOCH_* 推断候选值域双向锁定
+    _TS_MAX_SEC = 4102444800
+    _TS_MAX_MS = 4102444800000
+
     @override
     def validate_value(self, value: Any, _config: dict[str, Any]) -> int | None:
         if value is None:
@@ -738,9 +743,15 @@ class TimestampFieldType(FieldType):
             ts = int(value)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"时间戳必须是整数秒: {value!r}") from exc
-        if ts < 0 or ts > 4102444800:
-            raise ValueError(f"时间戳超出合理范围 (0~4102444800): {ts}")
-        return ts
+        if ts < 0:
+            raise ValueError(f"时间戳不能为负数: {ts}")
+        if ts <= self._TS_MAX_SEC:
+            return ts
+        # 毫秒区间归一为整数秒落库（截断到秒是标准行为）；
+        # 秒级上界 +1（4102444801）恰落毫秒区间，按毫秒归一语义处理
+        if ts <= self._TS_MAX_MS:
+            return ts // 1000
+        raise ValueError(f"时间戳超出合理范围 (0~{self._TS_MAX_SEC} 秒 或 ~{self._TS_MAX_MS} 毫秒): {ts}")
 
 
 # ── 字段类型别名归一化 ─────────────────────────────────
