@@ -15,15 +15,17 @@
  * - pin_urgent:        是否把逾期/紧急卡片置顶（默认 true，有 due_date_field 时）
  */
 
-import { memo, useMemo, useRef } from 'react'
-import { Tag, Progress, Tooltip, Empty } from 'antd'
+import { memo, useMemo, useRef, useState } from 'react'
+import { Tag, Progress, Tooltip, Empty, Button, Modal } from 'antd'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   CalendarOutlined,
   ClockCircleOutlined,
   WarningOutlined,
+  DeleteOutlined,
+  PlusOutlined,
 } from '@ant-design/icons'
-import type { RowResponse, Field, View } from '@/api'
+import type { RowResponse, Field, View, RowValues } from '@/api'
 import { resolveTagColor } from '@/utils/tagColors'
 import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, KANBAN_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
@@ -149,10 +151,13 @@ interface KanbanCardProps {
   opts: Record<string, unknown>   // 已由 KanbanView 顶层 resolveOpts 统一默认值
   density: Density
   onRowClick?: (r: RowResponse) => void
+  onDelete?: (r: RowResponse) => void
+  canDelete?: boolean
 }
 
-const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowClick }: KanbanCardProps) {
+const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowClick, onDelete, canDelete }: KanbanCardProps) {
   const cs = densityCardStyle(density)
+  const [hovered, setHovered] = useState(false)
 
   // 字段解析（opts 已 resolve 默认值；title_field 走 schema 自动推断 fallback）
   const titleField: string = (opts.title_field as string)
@@ -199,6 +204,8 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   return (
     <div
       onClick={() => onRowClick?.(row)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         padding: cs.padding,
         marginBottom: cs.marginBottom,
@@ -206,18 +213,42 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
         borderRadius: cs.borderRadius,
         cursor: 'pointer',
         transition: 'box-shadow 0.15s ease, transform 0.15s ease',
+        position: 'relative',
         ...borderStyle,
         ...bgStyle,
       }}
-      onMouseEnter={(e) => {
+      onMouseOver={(e) => {
         e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'
         e.currentTarget.style.transform = 'translateY(-1px)'
       }}
-      onMouseLeave={(e) => {
+      onMouseOut={(e) => {
         e.currentTarget.style.boxShadow = 'none'
         e.currentTarget.style.transform = 'none'
       }}
     >
+      {/* 删除按钮 —— hover 显示 */}
+      {canDelete && hovered && onDelete && (
+        <Tooltip title="删除此卡片">
+          <Button
+            size="small"
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            style={{ position: 'absolute', top: 4, right: 4, zIndex: 10, opacity: 0.85 }}
+            onClick={(e) => {
+              e.stopPropagation()
+              Modal.confirm({
+                title: '确定删除此卡片？',
+                content: title,
+                okText: '删除',
+                okType: 'danger',
+                cancelText: '取消',
+                onOk: () => onDelete(row),
+              })
+            }}
+          />
+        </Tooltip>
+      )}
       {/* 标题行 */}
       <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word' }}>
         {title}
@@ -342,9 +373,13 @@ interface KanbanColumnProps {
   density: Density
   colStyle: ReturnType<typeof densityColumnStyle>
   onRowClick?: (r: RowResponse) => void
+  onDeleteCard?: (r: RowResponse) => void
+  canDelete?: boolean
+  onAddCard?: (initialValues: RowValues) => void
+  canAdd?: boolean
 }
 
-function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick }: KanbanColumnProps) {
+function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDeleteCard, canDelete, onAddCard, canAdd }: KanbanColumnProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const useVirtual = col.rows.length >= 100
   const estimatedSize = estimateCardHeight(density)
@@ -359,6 +394,17 @@ function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick }: Kanb
   const items = useVirtual
     ? virtualizer.getVirtualItems()
     : col.rows.map((_, i) => ({ index: i, start: 0, size: estimatedSize, key: i, lane: 0 }))
+
+  // 新增卡片时预填 group_field 的值
+  const handleAddCard = () => {
+    if (!onAddCard) return
+    const groupFieldName = (opts.group_field as string)
+    if (groupFieldName && col.rawValue !== undefined) {
+      onAddCard({ [groupFieldName]: col.rawValue })
+    } else {
+      onAddCard({})
+    }
+  }
 
   return (
     <div
@@ -444,16 +490,38 @@ function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick }: Kanb
                   opts={opts}
                   density={density}
                   onRowClick={onRowClick}
+                  onDelete={onDeleteCard}
+                  canDelete={canDelete}
                 />
               </div>
             ))}
           </div>
         ) : (
           col.rows.map((r) => (
-            <KanbanCard key={r.id} row={r} fields={fields} opts={opts} density={density} onRowClick={onRowClick} />
+            <KanbanCard
+              key={r.id}
+              row={r}
+              fields={fields}
+              opts={opts}
+              density={density}
+              onRowClick={onRowClick}
+              onDelete={onDeleteCard}
+              canDelete={canDelete}
+            />
           ))
         )}
       </div>
+
+      {/* 列底部：新增卡片入口 */}
+      {canAdd && onAddCard && (
+        <Button
+          type="text"
+          size="small"
+          icon={<PlusOutlined />}
+          onClick={handleAddCard}
+          style={{ marginTop: 8, color: 'var(--cn-text-muted)', justifyContent: 'flex-start' }}
+        >+ 新增卡片</Button>
+      )}
     </div>
   )
 }
@@ -467,6 +535,10 @@ export default function KanbanView({
   density,
   sortings,
   onRowClick,
+  onDeleteCard,
+  canDelete,
+  onAddCard,
+  canAdd,
 }: {
   rows: RowResponse[]
   fields: Field[]
@@ -474,6 +546,10 @@ export default function KanbanView({
   density: Density
   sortings?: Array<{ field_name: string; direction: 'asc' | 'desc' }>
   onRowClick?: (r: RowResponse) => void
+  onDeleteCard?: (r: RowResponse) => void
+  canDelete?: boolean
+  onAddCard?: (initialValues: RowValues) => void
+  canAdd?: boolean
 }) {
   const opts = useMemo(
     () => resolveOpts(view?.view_options as Record<string, unknown> | undefined, KANBAN_OPTIONS),
@@ -517,6 +593,10 @@ export default function KanbanView({
           density={density}
           colStyle={colStyle}
           onRowClick={onRowClick}
+          onDeleteCard={onDeleteCard}
+          canDelete={canDelete}
+          onAddCard={onAddCard}
+          canAdd={canAdd}
         />
       ))}
     </div>

@@ -22,6 +22,8 @@ export interface KanbanColumnData {
   rows: RowResponse[]
   /** 列内紧急/逾期卡片数（列头红色徽章） */
   urgentCount: number
+  /** 分组字段在该列的原始值 —— 新增卡片时用于预填 group_field；无分组或无法确定时为 undefined */
+  rawValue?: unknown
 }
 
 // ── 紧急级别与优先级 ──────────────────────────────────
@@ -190,6 +192,25 @@ function groupKeyForRow(row: RowResponse, groupField: string, groupFieldDef: Fie
   return key
 }
 
+/** 从单行的 group_field 值里提取原始值（用于新增卡片预填）—— 与 groupKeyForRow 分支对齐 */
+function extractRawGroupValue(row: RowResponse, groupField: string, groupFieldDef: Field | undefined): unknown {
+  const rawVal = row[groupField]
+  if (rawVal === null || rawVal === undefined || rawVal === '') return undefined
+  if (groupFieldDef) {
+    const ft = groupFieldDef.field_type
+    if (ft === 'multi_select' || ft === 'multiselect') {
+      return Array.isArray(rawVal) ? rawVal[0] : rawVal
+    }
+    if (ft === 'link') {
+      // link 字段通常是 id 或 id 数组，取首值
+      return Array.isArray(rawVal) ? rawVal[0] : rawVal
+    }
+    // select 及其它：直接返回原始值
+    return rawVal
+  }
+  return rawVal
+}
+
 /** 按分组字段聚合成看板列：每列先排序（sortKanbanCards），再统计紧急/逾期卡片数 */
 export function groupKanbanColumns(
   rows: RowResponse[],
@@ -205,7 +226,7 @@ export function groupKanbanColumns(
   const urgentThreshold = Number(opts.urgent_threshold_days)
   const dueDateField = opts.due_date_field as string | undefined
 
-  const makeCol = (key: string, title: string, list: RowResponse[]) => {
+  const makeCol = (key: string, title: string, list: RowResponse[], rawValue?: unknown) => {
     const sorted = sortKanbanCards(list, fields, opts, sortings)
     let urgentCount = 0
     if (dueDateField) {
@@ -216,24 +237,28 @@ export function groupKanbanColumns(
         if (dl < 0 || dl <= urgentThreshold) urgentCount++
       }
     }
-    cols.push({ key, title, rows: sorted, urgentCount })
+    cols.push({ key, title, rows: sorted, urgentCount, rawValue })
   }
 
   if (!groupField) {
-    // 无分组 → 单列
+    // 无分组 → 单列，rawValue 无意义
     makeCol('all', '全部', rows)
     return cols
   }
 
-  const groups = new Map<string, RowResponse[]>()
+  const groups = new Map<string, { rows: RowResponse[]; rawValue: unknown }>()
   for (const r of rows) {
     const key = groupKeyForRow(r, groupField, groupFieldDef)
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key)!.push(r)
+    let bucket = groups.get(key)
+    if (!bucket) {
+      bucket = { rows: [], rawValue: extractRawGroupValue(r, groupField, groupFieldDef) }
+      groups.set(key, bucket)
+    }
+    bucket.rows.push(r)
   }
 
-  for (const [title, list] of groups) {
-    makeCol(title, title, list)
+  for (const [title, bucket] of groups) {
+    makeCol(title, title, bucket.rows, bucket.rawValue)
   }
 
   return cols
