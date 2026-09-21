@@ -1,9 +1,10 @@
-"""数据管理健壮性测试 — 语义等价 diff / 预览截断 / 导出特殊字符 / 损坏文件 / 端到端 roundtrip.
+"""数据管理健壮性测试 — 语义等价 diff / 预览截断 / 导出特殊字符 / 公式注入防护 / 损坏文件 / 端到端 roundtrip.
 
 聚焦错误场景与边界锁定：
 - upsert diff 语义等价（"1.0" vs 1、True vs "true"、文本空白不误报）
 - preview 200 行截断（计数不截断、预览截断）
 - 导出特殊字符往返一致（逗号/引号/换行/emoji/公式串/参差行）
+- CSV 公式注入防护（危险前缀转义 / XLSX 公式单元格回字符串 / 失败行导出）
 - 损坏文件解析（垃圾字节 xlsx、仅表头 CSV、重复表头）
 - 导入→导出→再导入 roundtrip 一致性
 """
@@ -20,9 +21,11 @@ from sqlalchemy.orm import Session
 
 from cndb.plugins.tables import ddl
 from cndb.plugins.tables.diff_reporter import _json_safe
+from cndb.plugins.tables.failed_row_exporter import FailedRowExporter
 from cndb.plugins.tables.import_tasks import create_import_task, execute_import_task
 from cndb.plugins.tables.importer import Importer
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.row_validator import Issue, ValidationResult
 from cndb.plugins.tables.transfer import export_rows_to_csv, export_rows_to_xlsx
 from tests.helpers import wait_import_settled
 
@@ -175,16 +178,19 @@ class TestExportSpecialChars:
     ]
 
     def test_csv_roundtrip_special_chars(self):
-        """CSV 导出含逗号/引号/换行/emoji/公式串 → DictReader 解析回逐值相等."""
+        """CSV 导出含逗号/引号/换行/emoji → DictReader 解析回逐值相等；公式串按注入防护转义."""
         out = export_rows_to_csv(self._SPECIAL_ROWS)
         reader = csv.DictReader(io.StringIO(out))
         parsed = list(reader)
         assert len(parsed) == 2
         for original, row in zip(self._SPECIAL_ROWS, parsed, strict=True):
             for key, expected in original.items():
+                if key == "cmd":
+                    continue  # 公式样串走注入防护转义，下方单独断言
                 assert row[key] == expected, f"列 {key} 往返不一致: {row[key]!r} != {expected!r}"
-        # 公式样串原样保留（当前实现不做注入转义，锁定现状）
-        assert parsed[0]["cmd"] == "=cmd()"
+        # 公式样串前缀 ' 转义（OWASP CSV 注入防护）
+        assert parsed[0]["cmd"] == "'=cmd()"
+        assert parsed[1]["cmd"] == "'+1+1"
 
     def test_xlsx_roundtrip_special_chars(self):
         """XLSX 导出同值域 → load_workbook 读回逐值相等."""
@@ -220,6 +226,101 @@ class TestExportSpecialChars:
         assert ws is not None
         data_rows = list(ws.iter_rows(min_row=2, values_only=True))
         assert data_rows[1] == ("2", None)
+
+
+# ── B2: CSV 公式注入防护 ────────────────────────────
+
+
+class TestCsvFormulaInjectionProtection:
+    """导出链路对 CSV 公式注入的防护（OWASP 缓解：危险前缀加 ' 前缀）."""
+
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            ("=cmd|' /C calc'!A0", "'=cmd|' /C calc'!A0"),
+            ("+SUM(A1)", "'+SUM(A1)"),
+            ("-2+3", "'-2+3"),
+            ("@SUM(1)", "'@SUM(1)"),
+            ("\t缩进值", "'\t缩进值"),
+            ("\rCR值", "'\rCR值"),
+        ],
+        ids=["dde_cmd", "plus_formula", "minus_expr", "at_formula", "tab_prefix", "cr_prefix"],
+    )
+    def test_csv_dangerous_prefix_escaped(self, payload: str, expected: str):
+        """以 =/+/-/@/Tab/CR 开头的字符串值导出时前缀 ' 转义，不被 Excel 当公式求值."""
+        out = export_rows_to_csv([{"cmd": payload}])
+        parsed = list(csv.DictReader(io.StringIO(out)))
+        assert parsed[0]["cmd"] == expected
+
+    def test_csv_safe_values_not_escaped(self):
+        """普通字符串与非 str 值（int/float/bool/None）不做转义."""
+        rows = [{"s": "abc", "paren": "(1,234)", "num": 123, "neg": -1.5, "flag": True, "blank": None}]
+        out = export_rows_to_csv(rows)
+        parsed = next(iter(csv.DictReader(io.StringIO(out))))
+        assert parsed["s"] == "abc"
+        assert parsed["paren"] == "(1,234)"
+        assert parsed["num"] == "123"
+        assert parsed["neg"] == "-1.5"
+        assert parsed["flag"] == "True"
+        assert parsed["blank"] == ""
+
+    def test_csv_header_dangerous_prefix_escaped(self):
+        """危险前缀表头同步转义，数据列仍按转义后列名对齐."""
+        out = export_rows_to_csv([{"=bad": "x", "ok": "=SUM(B1)"}])
+        parsed = list(csv.DictReader(io.StringIO(out)))
+        assert list(parsed[0].keys()) == ["'=bad", "ok"]
+        assert parsed[0]["'=bad"] == "x"
+        assert parsed[0]["ok"] == "'=SUM(B1)"
+
+    def test_xlsx_formula_cell_forced_to_string(self):
+        """= 开头单元格 data_type 强制为 's'，值原样保留，Excel 打开不被求值."""
+        xlsx_bytes = export_rows_to_xlsx([{"cmd": "=SUM(A1)", "note": "+1+1"}])
+        wb = load_workbook(io.BytesIO(xlsx_bytes))
+        ws = wb.active
+        assert ws is not None
+        assert ws["A2"].value == "=SUM(A1)"
+        assert ws["A2"].data_type == "s"
+        # + 开头在 XLSX 中本就存为字符串类型
+        assert ws["B2"].value == "+1+1"
+        assert ws["B2"].data_type == "s"
+
+    def test_xlsx_header_formula_cell_forced_to_string(self):
+        """表头 = 开头单元格同样强制字符串（值不丢）."""
+        xlsx_bytes = export_rows_to_xlsx([{"=bad": "x"}])
+        wb = load_workbook(io.BytesIO(xlsx_bytes))
+        ws = wb.active
+        assert ws is not None
+        assert ws["A1"].value == "=bad"
+        assert ws["A1"].data_type == "s"
+
+    def test_failed_rows_csv_escaped(self):
+        """失败行 CSV 导出对危险前缀值同样转义，_error 列保持可读."""
+        result = ValidationResult(
+            row_number=3,
+            values={"name": "=cmd()", "qty": "abc"},
+            status="error",
+            issues=[Issue(field="qty", level="error", message="qty 必须为数字")],
+        )
+        data = FailedRowExporter.export_failed_rows([result], "csv")
+        parsed = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))
+        assert parsed[0]["name"] == "'=cmd()"
+        assert parsed[0]["_error"] == "qty 必须为数字"
+
+    def test_failed_rows_xlsx_formula_cell_forced_to_string(self):
+        """失败行 XLSX 导出 = 开头值强制字符串，值原样保留."""
+        result = ValidationResult(
+            row_number=1,
+            values={"name": '=HYPERLINK("http://evil")'},
+            status="error",
+            issues=[Issue(field="name", level="error", message="必填校验失败")],
+        )
+        data = FailedRowExporter.export_failed_rows([result], "xlsx")
+        wb = load_workbook(io.BytesIO(data))
+        ws = wb.active
+        assert ws is not None
+        cell = ws["A2"]
+        assert cell.value == '=HYPERLINK("http://evil")'
+        assert cell.data_type == "s"
 
 
 # ── C: 损坏文件解析 ─────────────────────────────────

@@ -14,6 +14,7 @@ import json
 from typing import Any
 
 from .row_validator import ValidationResult
+from .transfer import _fix_xlsx_formula_cells, _sanitize_csv_cell
 
 _Format = str
 
@@ -70,16 +71,18 @@ class FailedRowExporter:
 
     def _to_csv(self, results: list[ValidationResult]) -> bytes:
         cols = self._collect_all_columns(results)
-        fieldnames = [*cols, "_row_number", "_error"]
+        # 表头与值统一做公式注入防护（危险前缀加 '），列名键同步替换
+        key_map = {c: _sanitize_csv_cell(c) for c in cols}
+        fieldnames = [*key_map.values(), "_row_number", "_error"]
         buf = io.StringIO()
         # 写 BOM，让 Excel 打开时中文不乱码
         buf.write("\ufeff")
         writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for r in results:
-            row = dict(r.values)
+            row = {key_map[k]: _sanitize_csv_cell(v) for k, v in r.values.items()}
             row["_row_number"] = r.row_number
-            row["_error"] = self._error_text(r.issues)
+            row["_error"] = _sanitize_csv_cell(self._error_text(r.issues))
             writer.writerow(row)
         return buf.getvalue().encode("utf-8")
 
@@ -94,9 +97,11 @@ class FailedRowExporter:
         assert ws is not None
         ws.title = "Failed Rows"
         ws.append(headers)
+        _fix_xlsx_formula_cells(ws, 1)
         for r in results:
             row_values = [r.values.get(c) for c in cols]
             ws.append([*row_values, r.row_number, self._error_text(r.issues)])
+            _fix_xlsx_formula_cells(ws, ws.max_row)
 
         buf = io.BytesIO()
         wb.save(buf)

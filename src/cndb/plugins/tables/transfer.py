@@ -871,21 +871,58 @@ def export_rows_to_json(rows: list[dict[str, Any]]) -> str:
     return json.dumps(rows, ensure_ascii=False, indent=2, default=str)
 
 
+# ── 公式注入防护 ──────────────────────────────────────
+
+# Excel/WPS 打开 CSV 时会把以这些前缀开头的单元格当作公式求值（OWASP 缓解：前缀 '）
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _sanitize_csv_cell(value: Any) -> Any:
+    """CSV 公式注入防护：以危险前缀开头的字符串值前加 ``'`` 前缀.
+
+    仅处理 str —— int/float/bool/date 等序列化后为纯字面量，不会被当作公式.
+    """
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
+def _fix_xlsx_formula_cells(ws: Any, row_idx: int) -> None:
+    """把 XLSX 某行中以 ``=`` 开头被 openpyxl 判为公式的单元格强制回字符串类型.
+
+    openpyxl 对 ``=`` 开头字符串自动设 ``data_type='f'``，Excel 打开即执行；
+    赋值后强制 ``data_type='s'`` 值原样保留。``+``/``-``/``@`` 开头在 XLSX 中
+    本就存为字符串类型，无需处理.
+    """
+    for cell in ws[row_idx]:
+        if isinstance(cell.value, str) and cell.value.startswith("="):
+            cell.data_type = "s"
+
+
 def export_rows_to_csv(rows: list[dict[str, Any]]) -> str:
-    """把行列表转为 CSV 字符串（link 摘要序列化为分号分隔 id）."""
+    """把行列表转为 CSV 字符串（link 摘要序列化为分号分隔 id）.
+
+    公式注入防护：以 ``=``/``+``/``-``/``@``/Tab/CR 开头的字符串单元格（含表头）
+    前加 ``'`` 前缀，避免 Excel/WPS 打开时被当作公式求值.
+    """
     rows = _exportable_rows(rows)
     if not rows:
         return ""
     buf = io.StringIO()
-    fieldnames = list(rows[0].keys())
-    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    # 表头一并转义；已知列名同步替换为转义后列名，未知列名保留交由 extrasaction 处理
+    key_map = {k: _sanitize_csv_cell(k) for k in rows[0]}
+    writer = csv.DictWriter(buf, fieldnames=list(key_map.values()))
     writer.writeheader()
-    writer.writerows(rows)
+    for row in rows:
+        writer.writerow({key_map.get(k, k): _sanitize_csv_cell(v) for k, v in row.items()})
     return buf.getvalue()
 
 
 def export_rows_to_xlsx(rows: list[dict[str, Any]]) -> bytes:
-    """把行列表转为 XLSX 字节串（link 摘要序列化为分号分隔 id）."""
+    """把行列表转为 XLSX 字节串（link 摘要序列化为分号分隔 id）.
+
+    公式注入防护：``=`` 开头字符串单元格强制回字符串类型，Excel 打开不被求值.
+    """
     from openpyxl import Workbook
 
     rows = _exportable_rows(rows)
@@ -898,8 +935,10 @@ def export_rows_to_xlsx(rows: list[dict[str, Any]]) -> bytes:
     # Header
     fieldnames = list(rows[0].keys())
     ws.append(fieldnames)
+    _fix_xlsx_formula_cells(ws, 1)
     for r in rows:
         ws.append([r.get(k) for k in fieldnames])
+        _fix_xlsx_formula_cells(ws, ws.max_row)
     return _wb_to_bytes(wb)
 
 
