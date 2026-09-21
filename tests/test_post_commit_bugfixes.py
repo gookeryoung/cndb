@@ -81,10 +81,7 @@ def test_create_row_invalid_link_target_not_persisted(client, auth_headers) -> N
         headers=auth_headers,
         json={"values": {"d": "oops", "ref": [99999]}},
     )
-    assert r.status_code == 400, (
-        f"应返回 400（link target 无效），但收到 {r.status_code}。"
-        f"Body: {r.text[:200]}"
-    )
+    assert r.status_code == 400, f"应返回 400（link target 无效），但收到 {r.status_code}。Body: {r.text[:200]}"
 
     # Critical: source table must have zero rows — no orphan commits
     rows = client.post(
@@ -94,7 +91,4 @@ def test_create_row_invalid_link_target_not_persisted(client, auth_headers) -> N
     )
     assert rows.status_code == 200, f"list failed: {rows.status_code}"
     body = rows.json()
-    assert body["total"] == 0, (
-        f"源表不应有残留行，但 total={body['total']} —— Bug 未修："
-        f"主行已脏提交但 link 写入失败"
-    )
+    assert body["total"] == 0, f"源表不应有残留行，但 total={body['total']} —— Bug 未修：主行已脏提交但 link 写入失败"
