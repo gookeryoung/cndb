@@ -16,11 +16,7 @@ from decimal import Decimal
 from typing import Any
 
 from cndb.plugins.tables.models import DataField
-from cndb.plugins.tables.transfer import (
-    _infer_single_value,
-    _pick_inferred_type,
-    _promote_to_select_if_low_cardinality,
-)
+from cndb.plugins.tables.transfer import infer_column_type
 
 from .row_validator import ValidationResult
 
@@ -185,7 +181,8 @@ class DiffReporter:
     def infer_new_column_type(samples: list[str]) -> tuple[str, list[str]]:
         """从样本值推断一个新列的字段类型.
 
-        复用 transfer 模块的 _infer_single_value + _promote_to_select_if_low_cardinality.
+        复用 transfer.infer_column_type（单值推断 + 众数 + 完整提升链），
+        与 analyze_csv_columns / column_profiler 三入口类型口径一致.
 
         Returns:
             (field_type, options) — field_type 不支持时回退为 "text".
@@ -194,22 +191,12 @@ class DiffReporter:
         if not non_empty:
             return "text", []
 
-        type_counts: dict[str, int] = {}
-        for v in non_empty:
-            t = _infer_single_value(str(v))
-            if t != "empty":
-                type_counts[t] = type_counts.get(t, 0) + 1
-
-        inferred = _pick_inferred_type(type_counts) if type_counts else "text"
-        if inferred == "empty":
-            inferred = "text"
-
-        # 低基数 select 提升（只对 text 类型做）
-        final_type, options = _promote_to_select_if_low_cardinality(inferred, non_empty)
+        final_type, options = infer_column_type([str(v) for v in non_empty])
 
         # 安全兜底：不支持的类型一律转 text
         _ALLOWED = {
             "text",
+            "longtext",
             "number",
             "float",
             "boolean",
@@ -218,8 +205,10 @@ class DiffReporter:
             "phone",
             "date",
             "datetime",
+            "timestamp",
             "percentage",
             "select",
+            "multiselect",
             "json",
         }
         if final_type not in _ALLOWED:
