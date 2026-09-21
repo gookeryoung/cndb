@@ -19,7 +19,7 @@ import pytest
 from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
-from cndb.plugins.tables import ddl
+from cndb.plugins.tables import ddl, transfer
 from cndb.plugins.tables.diff_reporter import _json_safe
 from cndb.plugins.tables.failed_row_exporter import FailedRowExporter
 from cndb.plugins.tables.import_tasks import create_import_task, execute_import_task
@@ -370,6 +370,76 @@ class TestCorruptFileParsing:
         assert file_columns == ["name", "name"]
         assert len(rows) == 1
         assert rows[0]["name"] == "b"
+
+
+# ── E2: transfer 路径 CSV 结构守卫 ────────────────────
+
+
+class TestCsvStructuralGuard:
+    """transfer 建表/导入路径的 CSV 结构守卫：明确报错优于静默丢数据.
+
+    与 Importer._parse_csv（增量导入，按列位置映射，重复表头为既有兼容行为）
+    语义不同 —— transfer 路径以表头名建字段/寻址，重复名/空名会静默丢数据，
+    多列溢出源于未转义逗号，均属结构性缺陷必须报错。
+    """
+
+    def test_analyze_duplicate_headers_raises(self):
+        """重复列名 → 报错并列出重复项（修复前后列静默覆盖丢前列）."""
+        with pytest.raises(ValueError, match=r"重复列名.*name"):
+            transfer.analyze_csv_columns("name,name\na,b\n")
+
+    def test_analyze_blank_header_raises(self):
+        """空列名（含 None 列名）→ 报错."""
+        with pytest.raises(ValueError, match="空列名"):
+            transfer.analyze_csv_columns("name,,email\na,b,c\n")
+
+    def test_analyze_row_overflow_raises(self):
+        """行值数超出表头列数（restkey）→ 报错并指明行号."""
+        with pytest.raises(ValueError, match=r"第 2 行.*超出表头列数"):
+            transfer.analyze_csv_columns("name,email\n张三,a@x.com,多余值\n")
+
+    def test_analyze_short_row_not_error(self):
+        """少列短行（尾逗号截断常态）不报错，缺列按空值统计."""
+        cols, n = transfer.analyze_csv_columns("name,email,age\n张三,a@x.com,\n李四\n")
+        assert n == 2
+        by_name = {c["name"]: c for c in cols}
+        assert by_name["name"]["field_type"] in ("text", "select")
+        assert by_name["age"]["null_ratio"] == 1.0
+
+    def test_import_rows_duplicate_headers_raises(self, test_session):
+        """import_rows_from_csv 独立导入路径同样触发表头守卫."""
+        engine, session = test_session
+        table = _make_table_with_fields(session, engine, [("name", "text")])
+
+        with pytest.raises(ValueError, match="重复列名"):
+            transfer.import_rows_from_csv(engine, table, "name,name\na,b\n", db=session)
+
+    def test_import_rows_overflow_raises(self, test_session):
+        """import_rows_from_csv 行值溢出同样报错."""
+        engine, session = test_session
+        table = _make_table_with_fields(session, engine, [("name", "text")])
+
+        with pytest.raises(ValueError, match="超出表头列数"):
+            transfer.import_rows_from_csv(engine, table, "name\n张三,多余\n", db=session)
+
+    def test_create_table_from_csv_blank_header_raises(self, test_session):
+        """create_table_from_csv 链路经 analyze 天然继承守卫，空列名报错且无残留."""
+        engine, session = test_session
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.workspaces.models import Workspace
+
+        u = User(username="guard_user")
+        u.set_password("pass")
+        session.add(u)
+        session.flush()
+        ws = Workspace(name="GUARD_WS", created_by_id=u.id)
+        session.add(ws)
+        session.commit()
+
+        with pytest.raises(ValueError, match="空列名"):
+            transfer.create_table_from_csv(engine, session, ws.id, "守卫表", "name,,email\na,b,c\n")
+        leftovers = session.query(DataTable).filter(DataTable.workspace_id == ws.id).all()
+        assert leftovers == [], "守卫报错后不得残留半残表"
 
 
 # ── F: 端到端 roundtrip ─────────────────────────────

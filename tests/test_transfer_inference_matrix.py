@@ -84,6 +84,17 @@ INFERENCE_MATRIX: list[tuple[str, str, list[str], str]] = [
     ("46", "全角分隔列表提升", ["阅读；旅行", "阅读；运动", "旅行；摄影", "阅读；旅行"], "multiselect"),
     ("47", "个人信息串不提升", ["张三,男,北京", "李四,女,上海", "王五,男,广州", "赵六,女,深圳"], "text"),
     ("48", "少数列表值不提升", ["普通备注", "a,b", "另一条", "c,d", "备注三", "e,f"], "text"),
+    # ── 49-53 Unix 时间戳列级表决 ──
+    ("49", "秒级时间戳列", ["1700000000", "1700086400", "1700172800"], "timestamp"),
+    ("50", "毫秒级时间戳列", ["1700000000000", "1700086400000", "1700172800000"], "timestamp"),
+    ("51", "秒毫秒混合时间戳列", ["1700000000", "1700086400000", "1700172800"], "timestamp"),
+    ("52", "散布编号列保持number", ["1000000001", "42", "999999"], "number"),
+    ("53", "越界整数保持number", ["9999999999", "9999999998"], "number"),
+    # ── 54-57 longtext 提升 ──
+    ("54", "含换行文本提升longtext", ["第一行\n第二行", "普通文本", "备注内容"], "longtext"),
+    ("55", "超长文本提升longtext", ["长" * 200, "短文本", "另一样本"], "longtext"),
+    ("56", "仅30%超长也提升", ["长" * 250, "短", "短"], "longtext"),
+    ("57", "普通短备注保持text", ["备注-甲", "备注-乙", "备注-丙", "备注-丁", "备注-戊", "备注-己"], "text"),
 ]
 
 # ── 二、数值归一值正确性矩阵（B1 修复验收：值不得变形）──────────────
@@ -158,6 +169,15 @@ VALIDATE_ALIGN_MATRIX: list[tuple[str, str, dict[str, Any], Any]] = [
     # json：对象/数组字符串原样保留
     ("json", '{"a":1}', {}, '{"a":1}'),
     ("json", "[1,2,3]", {}, "[1,2,3]"),
+    # timestamp：秒级原样、毫秒归一为秒（//1000），与推断候选值域双向锁定
+    ("timestamp", 1700000000, {}, 1700000000),  # int 输入直接通过
+    ("timestamp", "1700000000", {}, 1700000000),
+    ("timestamp", "0", {}, 0),
+    ("timestamp", "4102444800", {}, 4102444800),  # 秒级上界边界值
+    ("timestamp", "1699999999999", {}, 1699999999),  # 毫秒归一
+    ("timestamp", "4102444800000", {}, 4102444800),  # 毫秒上界归一
+    # 秒级上界 +1 恰落毫秒区间，按毫秒归一语义处理（边界注释见 TimestampFieldType）
+    ("timestamp", "4102444801", {}, 4102444),
 ]
 
 VALIDATE_RAISE_MATRIX: list[tuple[str, str, dict[str, Any], str]] = [
@@ -172,6 +192,10 @@ VALIDATE_RAISE_MATRIX: list[tuple[str, str, dict[str, Any], str]] = [
     ("percentage", "nan%", {}, "有限数字"),  # %-后缀绕过值域但须排除 NaN/inf
     ("percentage", "inf%", {}, "有限数字"),
     ("multiselect", "a,z", {"options": [{"label": "a", "value": "a"}]}, "不在可选值"),  # 拆分后逐项校验
+    # timestamp：毫秒超上界拒绝；负值拒绝；非整数毫秒串拒绝
+    ("timestamp", "4102444800001", {}, "超出合理范围"),
+    ("timestamp", "-1", {}, "不能为负数"),
+    ("timestamp", "1699999999999.5", {}, "时间戳必须是整数秒"),
 ]
 
 
@@ -406,6 +430,57 @@ class TestEndToEndAlignment:
         row2 = rec.get_row(engine, dt, ids[1])
         assert row2["技能标签"] == "前端,测试"
 
+    def test_timestamp_column_end_to_end(self, csv_workspace):
+        """Unix 时间戳列端到端：秒级原样落库，毫秒级归一为秒."""
+        engine, db, ws = csv_workspace
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["创建时间", "更新时间"])
+        w.writerow(["1700000000", "1700000000000"])
+        w.writerow(["1700086400", "1700086400000"])
+
+        dt, ids = transfer.create_table_from_csv(engine, db, ws.id, "时间戳表", buf.getvalue())
+        assert len(ids) == 2
+        fmap = {f.name: f.field_type for f in dt.fields}
+        assert fmap["创建时间"] == "timestamp"
+        assert fmap["更新时间"] == "timestamp"
+
+        from cndb.plugins.tables import records as rec
+
+        row1 = rec.get_row(engine, dt, ids[0])
+        assert row1["创建时间"] == 1700000000
+        assert row1["更新时间"] == 1700000000  # 毫秒 1700000000000 → //1000
+        row2 = rec.get_row(engine, dt, ids[1])
+        assert row2["创建时间"] == 1700086400
+        assert row2["更新时间"] == 1700086400
+
+    def test_longtext_column_end_to_end(self, csv_workspace):
+        """含换行长文本列端到端：建表为 longtext 且换行值落库保真."""
+        engine, db, ws = csv_workspace
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["公告"])
+        w.writerow(["第一行\n第二行"])
+        w.writerow(["只有一行"])
+
+        dt, ids = transfer.create_table_from_csv(engine, db, ws.id, "长文本表", buf.getvalue())
+        assert dt.fields[0].field_type == "longtext"
+
+        from cndb.plugins.tables import records as rec
+
+        row1 = rec.get_row(engine, dt, ids[0])
+        assert row1["公告"] == "第一行\n第二行"
+
+    def test_duplicate_header_raises_and_cleans(self, csv_workspace):
+        """重复列名 CSV 建表报错且半残表被清理（修复前两列静默覆盖丢数据）."""
+        from cndb.plugins.tables.models import DataTable
+
+        engine, db, ws = csv_workspace
+        with pytest.raises(ValueError, match="重复列名"):
+            transfer.create_table_from_csv(engine, db, ws.id, "重复列表", "a,a\n1,2\n")
+        leftovers = db.query(DataTable).filter(DataTable.workspace_id == ws.id).all()
+        assert leftovers == [], "建表失败后元数据未清理"
+
 
 class TestJsonInferenceAlignment:
     """analyze_json_columns 的 multiselect 提升（JSON/XLSX 文件路径）."""
@@ -522,6 +597,39 @@ class TestJsonInferenceAlignment:
         assert row1["技能标签"] == "前端,后端"
         row2 = rec.get_row(engine, dt, ids[1])
         assert row2["技能标签"] == "前端,测试"
+
+
+class TestJsonTimestampLongtextAlignment:
+    """analyze_json_columns 的 timestamp 表决与 longtext 提升（JSON 路径同规则）."""
+
+    def test_epoch_int_column_promoted(self):
+        """JSON int 样本（str 化后）落入候选值域 → 列级表决提升 timestamp."""
+        rows: list[dict[str, Any]] = [
+            {"ts": 1700000000},
+            {"ts": 1700086400},
+            {"ts": 1700172800},
+        ]
+        cols = transfer.analyze_json_columns(rows)
+        assert cols[0]["field_type"] == "timestamp"
+
+    def test_epoch_ms_int_column_promoted(self):
+        rows: list[dict[str, Any]] = [{"ts": 1700000000000}, {"ts": 1700086400000}]
+        cols = transfer.analyze_json_columns(rows)
+        assert cols[0]["field_type"] == "timestamp"
+
+    def test_scattered_int_column_not_promoted(self):
+        """值域散布的普通整数列不被误提升."""
+        rows: list[dict[str, Any]] = [{"id": 1000000001}, {"id": 42}, {"id": 999999}]
+        cols = transfer.analyze_json_columns(rows)
+        assert cols[0]["field_type"] == "number"
+
+    def test_newline_text_column_promoted(self):
+        """含换行 text 列提升 longtext，且不被 select 抢走."""
+        rows: list[dict[str, Any]] = [{"备注": "行一\n行二"}, {"备注": "单行"}, {"备注": "再来一行\n好"}]
+        cols = transfer.analyze_json_columns(rows)
+        col = cols[0]
+        assert col["field_type"] == "longtext"
+        assert "options" not in col
 
 
 class TestXlsxDateInference:
