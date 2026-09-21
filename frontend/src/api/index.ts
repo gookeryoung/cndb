@@ -527,12 +527,20 @@ export interface BackupManifest {
     backup_mode: string
     tables: string[]
     row_counts: Record<string, number>
+    /** 备份时的 alembic schema 版本（旧版备份可能缺失） */
+    schema_version?: string
+    /** 内嵌兜底导出的恢复模式（native 备份内嵌 dump.json 时为 "sqlalchemy"） */
+    fallback_mode?: string
   }
   uploads: {
     included: boolean
     file_count: number
     total_size: number
   }
+  /** inspect 附加判定：备份 schema 版本在本地迁移链上（旧版备份无版本记录时为 true） */
+  schema_known?: boolean
+  /** inspect 附加判定：备份 schema 新于当前程序，native 恢复将失败 */
+  backup_ahead?: boolean
 }
 
 export const adminApi = {
@@ -557,13 +565,16 @@ export const adminApi = {
     }).then(r => r.data)
   },
 
-  /** 执行系统级恢复（破坏性操作） */
-  restore: (file: File, force = true) => {
+  /** 执行系统级恢复（破坏性操作）。mode 覆盖恢复模式：备份 schema 新于当前程序时可传 "sqlalchemy" 降级恢复 */
+  restore: (file: File, force = true, mode?: string) => {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('force', String(force))
-    return api.post<{ status: string; message: string }>('/v1/admin/restore', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then(r => r.data)
+    if (mode) fd.append('mode', mode)
+    return api.post<{ status: string; message: string; loss_report: { summary: string; skipped_tables: string[]; dropped_columns: Record<string, string[]> } | null }>(
+      '/v1/admin/restore',
+      fd,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    ).then(r => r.data)
   },
 }

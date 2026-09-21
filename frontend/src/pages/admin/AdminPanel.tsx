@@ -21,7 +21,7 @@ function formatSize(bytes: number): string {
 }
 
 export default function AdminPanel() {
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const user = useAuthStore(s => s.user)
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
@@ -64,11 +64,14 @@ export default function AdminPanel() {
   const [restoreFile, setRestoreFile] = useState<File | null>(null)
   const [manifest, setManifest] = useState<BackupManifest | null>(null)
   const [restoring, setRestoring] = useState(false)
+  // 恢复模式：auto 跟随备份标记；备份 schema 领先时校验通过自动切 sqlalchemy 降级
+  const [restoreMode, setRestoreMode] = useState('auto')
 
   const inspectMutation = useMutation({
     mutationFn: (file: File) => adminApi.restoreInspect(file),
     onSuccess: (data) => {
       setManifest(data)
+      if (data.backup_ahead) setRestoreMode('sqlalchemy')
       message.success('备份文件校验通过')
     },
     onError: (err) => {
@@ -78,13 +81,29 @@ export default function AdminPanel() {
   })
 
   const restoreMutation = useMutation({
-    mutationFn: (file: File) => adminApi.restore(file, true),
+    mutationFn: (file: File) =>
+      adminApi.restore(file, true, restoreMode === 'auto' ? undefined : restoreMode),
     onMutate: () => { setRestoring(true) },
     onSuccess: (data) => {
-      message.success(data.message || '系统恢复完成')
       setRestoring(false)
       setRestoreFile(null)
       setManifest(null)
+      setRestoreMode('auto')
+      if (data.loss_report) {
+        // 降级恢复：交集导入裁剪了数据，弹窗显式呈现丢失面
+        modal.warning({
+          title: '降级恢复完成 — 已裁剪部分数据',
+          width: 560,
+          content: (
+            <div style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
+              {data.loss_report.summary}
+            </div>
+          ),
+          okText: '知道了',
+        })
+      } else {
+        message.success(data.message || '系统恢复完成')
+      }
     },
     onError: (err) => {
       message.error(err instanceof Error ? err.message : '恢复失败')
@@ -224,6 +243,16 @@ export default function AdminPanel() {
         >
           {manifest ? (
             <>
+              {manifest.backup_ahead && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  icon={<WarningOutlined />}
+                  message="备份 schema 新于当前程序"
+                  description="该备份由更新版本的程序生成，native 模式恢复将失败。已自动选择 sqlalchemy 模式降级恢复（按交集导入，丢弃备份中新增表/列的数据）。"
+                  style={{ marginBottom: 12 }}
+                />
+              )}
               <Descriptions column={2} size="small" bordered>
                 <Descriptions.Item label="备份版本">{manifest.version}</Descriptions.Item>
                 <Descriptions.Item label="应用版本">{manifest.app_version}</Descriptions.Item>
@@ -233,16 +262,39 @@ export default function AdminPanel() {
                 <Descriptions.Item label="数据库类型">
                   {manifest.database.db_type}（{manifest.database.backup_mode}）
                 </Descriptions.Item>
+                <Descriptions.Item label="Schema 版本">
+                  {manifest.database.schema_version || <Tag>未知（旧版备份）</Tag>}
+                </Descriptions.Item>
+                <Descriptions.Item label="内嵌兜底导出">
+                  {manifest.database.fallback_mode
+                    ? <Tag color="blue">有（{manifest.database.fallback_mode}）</Tag>
+                    : <Tag>无</Tag>}
+                </Descriptions.Item>
                 <Descriptions.Item label="数据表数">{manifest.database.tables.length}</Descriptions.Item>
                 <Descriptions.Item label="总行数">
                   {Object.values(manifest.database.row_counts).reduce((a, b) => a + b, 0).toLocaleString()}
                 </Descriptions.Item>
-                <Descriptions.Item label="附件">
+                <Descriptions.Item label="附件" span={2}>
                   {manifest.uploads.included
                     ? `${manifest.uploads.file_count} 个文件，共 ${formatSize(manifest.uploads.total_size)}`
                     : <Tag>未包含</Tag>}
                 </Descriptions.Item>
               </Descriptions>
+
+              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Text>恢复模式：</Text>
+                <Select
+                  value={restoreMode}
+                  onChange={setRestoreMode}
+                  disabled={restoring}
+                  style={{ width: 320 }}
+                  options={[
+                    { value: 'auto', label: 'auto（跟随备份模式，推荐）' },
+                    { value: 'native', label: 'native（SQLite 直接文件覆盖）' },
+                    { value: 'sqlalchemy', label: 'sqlalchemy（交集导入，可降级恢复）' },
+                  ]}
+                />
+              </div>
 
               {manifest.database.tables.length > 0 && (
                 <div style={{ marginTop: 12 }}>
