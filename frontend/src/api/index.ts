@@ -212,6 +212,9 @@ export const fieldApi = {
   /** 从其他表引入字段 schema 到当前表 */
   importFields: (wid: number | string, tid: number | string, data: FieldImportRequest) =>
     api.post<FieldImportResponse>(`/v1/workspaces/${wid}/tables/${tid}/fields/import`, data).then(r => r.data),
+  /** 批量调整字段顺序（按传入顺序赋值 order 字段） */
+  reorder: (wid: number | string, tid: number | string, fieldIds: Array<number | string>) =>
+    api.post<Field[]>(`/v1/workspaces/${wid}/tables/${tid}/fields/reorder`, { field_ids: fieldIds }).then(r => r.data),
 }
 
 // ─────────────── Views ───────────────

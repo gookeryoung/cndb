@@ -1,8 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Modal, Button, Tag, Input, Select, Form, Row, Col, Popconfirm, Checkbox, InputNumber, Radio, ColorPicker, DatePicker, Switch, Tooltip, App as AntApp, Alert, Empty, Spin, Divider } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined, ThunderboltOutlined, BgColorsOutlined, FontSizeOutlined, AlignLeftOutlined, CheckSquareOutlined, FieldNumberOutlined, PercentageOutlined, CalendarOutlined, ClockCircleOutlined, FieldTimeOutlined, TagOutlined, TagsOutlined, MailOutlined, LinkOutlined, PhoneOutlined, ApartmentOutlined, PaperClipOutlined, SettingOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, EditOutlined, ImportOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined, MinusOutlined, ThunderboltOutlined, BgColorsOutlined, FontSizeOutlined, AlignLeftOutlined, CheckSquareOutlined, FieldNumberOutlined, PercentageOutlined, CalendarOutlined, ClockCircleOutlined, FieldTimeOutlined, TagOutlined, TagsOutlined, MailOutlined, LinkOutlined, PhoneOutlined, ApartmentOutlined, PaperClipOutlined, SettingOutlined, HolderOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { fieldApi, tableApi } from '@/api'
 import type { Field, FieldCreate, FieldType, TableSummary, FieldImportResponse as FieldImportResponseType, FieldImportSuggestion } from '@/api'
 import dayjs from 'dayjs'
@@ -152,6 +167,23 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     onError: (err) => message.error(err instanceof Error ? err.message : '删除字段失败'),
   })
 
+  // ── 字段顺序拖拽 ──
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+  const reorderFields = useMutation({
+    mutationFn: (ids: Array<number | string>) => fieldApi.reorder(wid, tid, ids),
+    onSuccess: () => onChanged(),
+    onError: (err) => message.error(err instanceof Error ? err.message : '字段排序失败'),
+  })
+  const handleFieldDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = sorted.findIndex(f => String(f.id) === String(active.id))
+    const newIndex = sorted.findIndex(f => String(f.id) === String(over.id))
+    if (oldIndex < 0 || newIndex < 0) return
+    const reordered = arrayMove(sorted, oldIndex, newIndex)
+    reorderFields.mutate(reordered.map(f => f.id))
+  }
+
   // ── 预览建议映射 ──
   const runPreview = async () => {
     if (!sourceTableId) return
@@ -289,7 +321,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   const fieldListContent = (
     <>
       <div className="fm-toolbar">
-        <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>共 {sorted.length} 个字段</span>
+        <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>共 {sorted.length} 个字段 · 拖拽手柄可调整顺序</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <Button icon={<ImportOutlined />} onClick={openImportDialog}>
             从其他表引入
@@ -304,39 +336,19 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         <Empty description="暂无字段，点击右上角「新建字段」创建" style={{ padding: 32 }} />
       ) : (
         <div style={{ maxHeight: 480, overflowY: 'auto' }}>
-          {sorted.map((r) => {
-            return (
-              <div key={String(r.id)} className="fm-row">
-                <span className="fm-row-icon" title={getFieldTypeLabel(r.field_type)}>
-                  {FIELD_TYPE_ICONS[r.field_type] ?? <TagOutlined />}
-                </span>
-                <span className="fm-row-name">{r.name}</span>
-                {fieldNoteText(r) && (
-                  <span className="fm-row-note" title={fieldNoteText(r)}>{fieldNoteText(r)}</span>
-                )}
-                <span className="fm-row-tags">
-                  {r.is_primary && <Tag color="gold" style={{ marginInlineEnd: 0 }}>PK</Tag>}
-                  <Tag color={getFieldTypeColor(r.field_type)} style={{ marginInlineEnd: 0 }} title={r.field_type}>
-                    {getFieldTypeLabel(r.field_type)}
-                  </Tag>
-                  {r.hidden && <Tag style={{ marginInlineEnd: 0 }}>隐藏</Tag>}
-                </span>
-                <span className="fm-row-actions">
-                  <Tooltip title="编辑字段类型与配置">
-                    <Button size="small" type="text" icon={<EditOutlined />}
-                      onClick={() => openDialog(r)} />
-                  </Tooltip>
-                  {!r.is_primary && (
-                    <Popconfirm title="确认删除？" onConfirm={() => remove.mutate(r.id)}>
-                      <Tooltip title="删除字段（列及其数据将从表中移除）">
-                        <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-                      </Tooltip>
-                    </Popconfirm>
-                  )}
-                </span>
-              </div>
-            )
-          })}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFieldDragEnd}>
+            <SortableContext items={sorted.map(f => String(f.id))} strategy={verticalListSortingStrategy}>
+              {sorted.map((r) => (
+                <SortableFieldRow
+                  key={String(r.id)}
+                  field={r}
+                  onEdit={() => openDialog(r)}
+                  onRemove={() => remove.mutate(r.id)}
+                  isReordering={reorderFields.isPending}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
         </div>
       )}
     </>
@@ -673,6 +685,69 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       {editDialog}
       {importDialog}
     </Modal>
+  )
+}
+
+// ─────────────── 可拖拽字段行 ───────────────
+
+interface SortableFieldRowProps {
+  field: Field
+  onEdit: () => void
+  onRemove: () => void
+  isReordering: boolean
+}
+
+/** 字段行卡片 —— 带左侧拖拽手柄，配合 DndContext + SortableContext 使用. */
+function SortableFieldRow({ field, onEdit, onRemove, isReordering }: SortableFieldRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: String(field.id),
+  })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    cursor: isDragging ? 'grabbing' : 'default',
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className="fm-row">
+      <span
+        className="fm-row-drag-handle"
+        title="拖拽调整字段顺序"
+        {...attributes}
+        {...listeners}
+        style={{ cursor: isReordering ? 'grabbing' : 'grab', color: 'var(--cn-text-muted)', marginRight: 4 }}
+      >
+        <HolderOutlined />
+      </span>
+      <span className="fm-row-icon" title={getFieldTypeLabel(field.field_type)}>
+        {FIELD_TYPE_ICONS[field.field_type] ?? <TagOutlined />}
+      </span>
+      <span className="fm-row-name">{field.name}</span>
+      {fieldNoteText(field) && (
+        <span className="fm-row-note" title={fieldNoteText(field)}>{fieldNoteText(field)}</span>
+      )}
+      <span className="fm-row-tags">
+        {field.is_primary && <Tag color="gold" style={{ marginInlineEnd: 0 }}>PK</Tag>}
+        <Tag color={getFieldTypeColor(field.field_type)} style={{ marginInlineEnd: 0 }} title={field.field_type}>
+          {getFieldTypeLabel(field.field_type)}
+        </Tag>
+        {field.hidden && <Tag style={{ marginInlineEnd: 0 }}>隐藏</Tag>}
+      </span>
+      <span className="fm-row-actions">
+        <Tooltip title="编辑字段类型与配置">
+          <Button size="small" type="text" icon={<EditOutlined />} onClick={onEdit} />
+        </Tooltip>
+        {!field.is_primary && (
+          <Popconfirm title="确认删除？" onConfirm={onRemove}>
+            <Tooltip title="删除字段（列及其数据将从表中移除）">
+              <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+            </Tooltip>
+          </Popconfirm>
+        )}
+      </span>
+    </div>
   )
 }
 
