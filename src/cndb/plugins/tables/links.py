@@ -54,7 +54,7 @@ def set_links(
     """
     ids = list(dict.fromkeys(target_ids))
     if db is not None and ids:
-        _ensure_targets_exist(engine, field, ids, db)
+        ensure_link_targets_exist(engine, field, ids, db)
     link_table = _get_link_sa_table(engine, field.link_table_name)
     with engine.begin() as conn:
         conn.execute(link_table.delete().where(link_table.c.row_id == row_id))
@@ -207,8 +207,11 @@ def _target_data_table(db: Session, field: DataField) -> DataTable | None:
     return db.get(DataTable, target_id)
 
 
-def _ensure_targets_exist(engine: Engine, field: DataField, ids: list[int], db: Session) -> None:
-    """校验关联目标行在目标物理表中存在（越界 id 拒绝写入）."""
+def ensure_link_targets_exist(engine: Engine, field: DataField, ids: list[int], db: Session) -> None:
+    """校验关联目标行在目标物理表中存在（越界 id 拒绝写入）.
+
+    主行 INSERT/UPDATE 之前调用，避免主行已提交但 link 写入失败留下孤儿主行。
+    """
     target = _target_data_table(db, field)
     if target is None:
         raise ValueError(f"字段 {field.name} 的关联目标表不存在")

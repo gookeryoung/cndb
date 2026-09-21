@@ -29,7 +29,13 @@ from cndb.plugins.tables.audit import (
     log_action,
 )
 from cndb.plugins.tables.field_types import default_registry
-from cndb.plugins.tables.links import attach_links, clear_row_links, is_link_field, set_links
+from cndb.plugins.tables.links import (
+    attach_links,
+    clear_row_links,
+    ensure_link_targets_exist,
+    is_link_field,
+    set_links,
+)
 from cndb.plugins.tables.models import DataField, DataTable
 
 logger = logging.getLogger(__name__)
@@ -202,6 +208,12 @@ def create_row(
     normalized, link_values = _normalize_values(table, values)
     _apply_auto_increment_defaults(engine, table, values, normalized)
 
+    # 主行提交前预校验 link 目标存在，避免主行已入库但 link 写入失败返回 500
+    if db is not None:
+        for field, ids in link_values:
+            if ids:
+                ensure_link_targets_exist(engine, field, ids, db)
+
     with engine.begin() as conn:
         if normalized:
             result = conn.execute(sa_table.insert().values(**normalized))
@@ -372,6 +384,12 @@ def update_row(
     if not normalized and not link_values:
         return get_row(engine, table, row_id, db=db)
 
+    # 主行提交前预校验 link 目标存在，避免主行已提交但 link 写入失败
+    if db is not None:
+        for field, ids in link_values:
+            if ids:
+                ensure_link_targets_exist(engine, field, ids, db)
+
     row_scope = _build_row_scope_where(table, sa_table, db)
     base_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
     if row_scope is not None:
@@ -497,6 +515,13 @@ def bulk_create(
         _apply_auto_increment_defaults(engine, table, r, normalized, assigned)
         split_rows.append((normalized, link_values))
 
+    # 所有主行提交前预校验全部 link 目标存在，避免部分主行已入库但后续 link 写入失败
+    if db is not None:
+        for _values, link_values in split_rows:
+            for field, ids in link_values:
+                if ids:
+                    ensure_link_targets_exist(engine, field, ids, db)
+
     ids: list[int] = []
     with engine.begin() as conn:
         for values, _link_values in split_rows:
@@ -530,6 +555,12 @@ def bulk_update(
 
     if not normalized and not link_values:
         return 0
+
+    # 主行提交前预校验 link 目标存在，避免物理列已更新但 link 写入失败
+    if db is not None:
+        for field, ids in link_values:
+            if ids:
+                ensure_link_targets_exist(engine, field, ids, db)
 
     row_scope = _build_row_scope_where(table, sa_table, db)
     count = 0
@@ -721,6 +752,18 @@ def bulk_update_rows(
     sa_table = _get_sa_table(engine, table)
     row_scope = _build_row_scope_where(table, sa_table, db)
     total = 0
+
+    # 总事务前预校验所有待更新行的 link 目标存在，避免部分行已提交但 link 失败
+    if db is not None:
+        for item in updates:
+            values = item.get("values") or {}
+            if not values:
+                continue
+            _normalized, link_values = _normalize_values(table, values, for_update=True)
+            for field, ids in link_values:
+                if ids:
+                    ensure_link_targets_exist(engine, field, ids, db)
+
     # 逐行在同一个事务里执行（SQLite/PostgreSQL 对 100-500 行循环开销可接受）
     with engine.begin() as conn:
         for item in updates:
