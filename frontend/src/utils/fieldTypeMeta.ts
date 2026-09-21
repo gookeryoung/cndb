@@ -76,8 +76,10 @@ export const FIELD_TYPE_OPTIONS: Array<{ value: FieldType; label: string; catego
  *
  * 沿用原 FileImportPreview 的过滤语义：排除 link/attachment/formula 等
  * 不适合从原始数据推断的类型.
+ * 包含 longtext/timestamp —— 后端推断层可产出这两种类型，
+ * 下拉必须能显示其中文标签且允许用户手动切换回其它类型.
  */
 export const PREVIEW_FIELD_TYPE_VALUES: readonly string[] = [
-    'text', 'number', 'float', 'boolean', 'date', 'datetime',
-    'select', 'multiselect', 'email', 'url', 'phone', 'percentage',
+    'text', 'longtext', 'number', 'float', 'boolean', 'date', 'datetime',
+    'timestamp', 'select', 'multiselect', 'email', 'url', 'phone', 'percentage',
 ]
