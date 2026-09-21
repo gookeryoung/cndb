@@ -185,7 +185,7 @@ class TestInternalHelpers:
         db.flush()
         f = DataField(table_id=tbl.id, name="linkx", field_type="link", config=None)
         with pytest.raises(ValueError, match="关联目标表不存在"):
-            links._ensure_targets_exist(db_engine, f, [1], db)
+            links.ensure_link_targets_exist(db_engine, f, [1], db)
 
     def test_target_summaries_empty_ids(self, db_engine):
         assert links._target_summaries(db_engine, MagicMock(), []) == {}
