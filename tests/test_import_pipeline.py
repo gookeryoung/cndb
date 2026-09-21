@@ -449,6 +449,49 @@ class TestFailedRowExporter:
         assert len(reader) == 1
         assert reader[0]["_row_number"] == "2"
 
+    def test_include_warning_rows_when_error_only_false(self, test_session):
+        """error_only=False 时 warning 行也一并导出（error + warning 共 2 行）."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "name", "text", order=0)
+        _add_field(session, table, "phone", "phone", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+
+        rv = RowValidator(table)
+        rows = [
+            {"name": "a", "phone": "13800000000"},  # valid（不导出）
+            {"name": "b", "phone": "bad"},  # error
+            {"name": "c", "phone": "13900000000", "ex": "x"},  # warning（未知列）
+        ]
+        results = rv.validate_all(rows)
+        csv_bytes = FailedRowExporter.export_failed_rows(results, format="csv", error_only=False)
+        text = csv_bytes.decode("utf-8-sig") if isinstance(csv_bytes, bytes) else csv_bytes
+        reader = list(csv.DictReader(io.StringIO(text)))
+        assert len(reader) == 2
+        assert {r["_row_number"] for r in reader} == {"2", "3"}
+
+    def test_multi_error_semicolon_join(self, test_session):
+        """单行多错误 → _error 列按 "; " 拼接全部 issue.message."""
+        results = self._build_results(test_session)
+        # 第 2 行（name 必填缺失 + email 格式错误）有两个 error
+        error_row = next(r for r in results if r.status == "error")
+        assert len(error_row.issues) == 2
+        expected = "; ".join(i.message for i in error_row.issues)
+
+        csv_bytes = FailedRowExporter.export_failed_rows(results, format="csv")
+        text = csv_bytes.decode("utf-8-sig") if isinstance(csv_bytes, bytes) else csv_bytes
+        reader = list(csv.DictReader(io.StringIO(text)))
+        assert len(reader) == 1
+        assert reader[0]["_error"] == expected
+
+    def test_csv_bom_present(self, test_session):
+        """CSV 导出带 UTF-8 BOM（Excel 打开中文不乱码）."""
+        results = self._build_results(test_session)
+        csv_bytes = FailedRowExporter.export_failed_rows(results, format="csv")
+        assert isinstance(csv_bytes, bytes)
+        assert csv_bytes.startswith(b"\xef\xbb\xbf")
+
 
 # ── Importer ────────────────────────────────────
 
