@@ -795,6 +795,8 @@ class Importer:
     def _parse_xlsx(content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
         from openpyxl import load_workbook
 
+        from cndb.plugins.tables.transfer import _check_xlsx_row_overflow, _validate_xlsx_header
+
         raw = content if isinstance(content, bytes) else content.encode()
         wb = load_workbook(io.BytesIO(raw))
         ws = wb.active
@@ -802,13 +804,16 @@ class Importer:
         all_rows = list(ws.iter_rows(values_only=True))
         if not all_rows:
             return [], []
-        file_columns = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(all_rows[0])]
-        # 长数字保护：对每个单元格值做精度保护转换
-        rows = [
-            {k: _coerce_long_numeric_to_text(v) for k, v in zip(file_columns, r, strict=False)}
-            for r in all_rows[1:]
-            if any(c is not None for c in r)
-        ]
+        file_columns = [str(c) if c is not None else "" for c in all_rows[0]]
+        # 表头空列名/重复列名与行溢出明确报错（与 transfer XLSX 守卫同语义）
+        _validate_xlsx_header(file_columns)
+        rows: list[dict[str, Any]] = []
+        for sheet_row, r in enumerate(all_rows[1:], start=2):
+            if not any(c is not None for c in r):
+                continue
+            _check_xlsx_row_overflow(r, sheet_row, len(file_columns))
+            # 长数字保护：对每个单元格值做精度保护转换
+            rows.append({k: _coerce_long_numeric_to_text(v) for k, v in zip(file_columns, r, strict=False)})
         return rows, file_columns
 
     @staticmethod
