@@ -442,6 +442,134 @@ class TestCsvStructuralGuard:
         assert leftovers == [], "守卫报错后不得残留半残表"
 
 
+# ── E3: XLSX 结构守卫（与 CSV 守卫对齐）────────────────
+
+
+def _xlsx_bytes(rows: list[list[object]]) -> bytes:
+    """构建最小 XLSX 字节串（iter_rows values_only 读出与写入一致）."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    for r in rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+class TestXlsxStructuralGuard:
+    """XLSX 三条解析路径的结构守卫：空列名/重复列名/行溢出明确报错.
+
+    与 CSV 守卫同款决策：重复列名按名建 dict 时后列覆盖前列、空列名无法
+    按名寻址 —— 均属结构性缺陷必须报错；短行保持补 None 空值语义不报错
+    （对齐 CSV 尾逗号截断常态）。取代旧的 col_{i} 静默兜底。
+
+    行溢出守卫为防御性兜底（openpyxl 普通 iter_rows 为矩形读取，短行自动
+    补 None 到 max_col，实际读出的行不会超宽，见 data_beyond_header 用例：
+    真实症状是表头右侧出现空列名）。
+    """
+
+    def test_parse_xlsx_bytes_duplicate_headers_raises(self):
+        with pytest.raises(ValueError, match=r"重复列名.*name"):
+            transfer._parse_xlsx_bytes(_xlsx_bytes([["name", "name"], ["a", "b"]]))
+
+    def test_parse_xlsx_bytes_blank_header_raises(self):
+        with pytest.raises(ValueError, match="空列名"):
+            transfer._parse_xlsx_bytes(_xlsx_bytes([["name", None, "email"], ["a", "b", "c"]]))
+
+    def test_parse_xlsx_bytes_row_overflow_raises(self):
+        """行溢出守卫：值数超出表头列数报错并指明行号（直接单测守卫函数）."""
+        with pytest.raises(ValueError, match=r"第 3 行.*超出表头列数"):
+            transfer._check_xlsx_row_overflow(("a", "b", "多余值"), 3, 2)
+
+    def test_parse_xlsx_bytes_data_beyond_header_raises_blank(self):
+        """数据超出表头宽度：openpyxl 矩形读取把表头补 None → 命中空列名守卫.
+
+        真实世界"行比表头长"的症状即此 —— 表头行右侧实际存在空列名，
+        报错优于旧版静默生成 col_{i}/"None" 列。
+        """
+        with pytest.raises(ValueError, match="空列名"):
+            transfer._parse_xlsx_bytes(
+                _xlsx_bytes([["name", "email"], ["张三", "a@x.com"], ["李四", "b@x.com", "多余值"]])
+            )
+
+    def test_parse_xlsx_bytes_short_row_not_error(self):
+        """少列短行不报错，缺列按 None 空值补齐."""
+        rows, cols = transfer._parse_xlsx_bytes(_xlsx_bytes([["name", "email"], ["张三", None], ["李四"]]))
+        assert cols == ["name", "email"]
+        assert rows[0] == {"name": "张三", "email": None}
+        assert rows[1] == {"name": "李四", "email": None}
+
+    def test_import_rows_from_xlsx_duplicate_headers_raises(self, test_session):
+        """import_rows_from_xlsx 独立导入路径同样触发表头守卫."""
+        engine, session = test_session
+        table = _make_table_with_fields(session, engine, [("name", "text")])
+
+        with pytest.raises(ValueError, match="重复列名"):
+            transfer.import_rows_from_xlsx(engine, table, _xlsx_bytes([["name", "name"], ["a", "b"]]), db=session)
+
+    def test_import_rows_from_xlsx_data_beyond_header_raises(self, test_session):
+        """import_rows_from_xlsx 数据超出表头宽度 → 空列名守卫报错."""
+        engine, session = test_session
+        table = _make_table_with_fields(session, engine, [("name", "text")])
+
+        with pytest.raises(ValueError, match="空列名"):
+            transfer.import_rows_from_xlsx(engine, table, _xlsx_bytes([["name"], ["张三", "多余值"]]), db=session)
+
+    def test_importer_parse_xlsx_duplicate_headers_raises(self):
+        """Importer._parse_xlsx 增量导入路径同样触发守卫."""
+        with pytest.raises(ValueError, match="重复列名"):
+            Importer._parse_xlsx(_xlsx_bytes([["name", "name"], ["a", "b"]]))
+
+    def test_importer_parse_xlsx_blank_header_raises(self):
+        with pytest.raises(ValueError, match="空列名"):
+            Importer._parse_xlsx(_xlsx_bytes([[None, "age"], [1, 2]]))
+
+    def test_task_structural_bad_xlsx_fails_with_message(self, test_session, db):
+        """异步任务：重复表头 xlsx → status=failed 且 error_message 含守卫文案."""
+        engine, session = test_session
+        table = _make_table_with_fields(session, engine, [("name", "text")])
+
+        task = create_import_task(
+            session,
+            table_id=table.id,
+            user_id=1,
+            filename="dup.xlsx",
+            fmt="xlsx",
+            content=_xlsx_bytes([["name", "name"], ["a", "b"]]),
+        )
+        execute_import_task(session, task.id)
+        db.refresh(task)
+
+        assert task.status == "failed"
+        assert "重复列名" in (task.error_message or "")
+
+    def test_sync_import_endpoint_bad_xlsx_maps_400(self, client, db, auth_headers):
+        """bulk /import 同步端点：结构性缺陷 xlsx → ValueError 映射 400 中文错误."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "xlsx_guard_ws"})
+        assert ws.status_code in (200, 201), f"创建 workspace 失败: {ws.status_code} {ws.text[:100]}"
+        wid = ws.json()["id"]
+        tbl = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "XlsxGuard"})
+        assert tbl.status_code in (200, 201), f"创建 table 失败: {tbl.status_code} {tbl.text[:100]}"
+        tid = tbl.json()["id"]
+
+        resp = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/import",
+            headers=auth_headers,
+            files={
+                "file": (
+                    "dup.xlsx",
+                    io.BytesIO(_xlsx_bytes([["name", "name"], ["a", "b"]])),
+                    "application/octet-stream",
+                )
+            },
+        )
+        assert resp.status_code == 400, f"期望 400，实际 {resp.status_code} {resp.text[:200]}"
+        assert "重复列名" in resp.json()["detail"]
+
+
 # ── F: 端到端 roundtrip ─────────────────────────────
 
 

@@ -827,6 +827,37 @@ def _check_csv_row_overflow(row: dict[Any, Any], line_num: int, header_len: int)
         )
 
 
+def _validate_xlsx_header(headers: list[str]) -> None:
+    """XLSX 表头结构守卫：空列名 / 重复列名明确报错，语义与 CSV 守卫对齐.
+
+    重复列名按名构建行 dict 时后列覆盖前列（前列数据静默丢失），空列名
+    数据无法按名寻址 —— 均属结构性缺陷，报错优于静默变形（与 CSV 守卫
+    同款决策）。取代旧的 col_{i} 静默兜底。
+    """
+    seen: set[str] = set()
+    dup: list[str] = []
+    for name in headers:
+        if not name or not name.strip():
+            raise ValueError("XLSX 表头存在空列名，请检查表头行")
+        if name in seen and name not in dup:
+            dup.append(name)
+        seen.add(name)
+    if dup:
+        raise ValueError(f"XLSX 表头存在重复列名: {', '.join(dup)}")
+
+
+def _check_xlsx_row_overflow(row_cells: Sequence[Any], sheet_row: int, header_len: int) -> None:
+    """检查 XLSX 单行值数是否超出表头列数，超出即报错.
+
+    zip 对超长行会静默截断丢数据；短行保持既有补 None 空值语义不报错
+    （对齐 CSV"尾逗号截断属常态"）。sheet_row 为 1-based 的 Excel 行号。
+    """
+    if len(row_cells) > header_len:
+        raise ValueError(
+            f"XLSX 第 {sheet_row} 行有 {len(row_cells)} 个值，超出表头列数 {header_len}，请检查是否列错位或表头缺失"
+        )
+
+
 def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dict[str, Any]], int]:
     """分析 CSV 文本，推断每列字段类型 + 空值占比 + 样本值（按首次出现去重）.
 
@@ -1171,16 +1202,21 @@ def import_rows_from_xlsx(
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
         return []
-    header = [str(c) for c in rows[0]]
+    header = [str(c) if c is not None else "" for c in rows[0]]
+    _validate_xlsx_header(header)
     # 长数字保护：对每个单元格值做精度保护转换
-    data = [
-        _parse_link_import_value(
-            table,
-            {k: _coerce_long_numeric_to_text(v) for k, v in zip(header, row, strict=False)},
+    data = []
+    for sheet_row, row in enumerate(rows[1:], start=2):
+        if not any(c is not None for c in row):
+            continue
+        # 行溢出明确报错（zip 静默截断会丢数据）；短行按缺列补 None 空值语义
+        _check_xlsx_row_overflow(row, sheet_row, len(header))
+        data.append(
+            _parse_link_import_value(
+                table,
+                {k: _coerce_long_numeric_to_text(v) for k, v in zip(header, row, strict=False)},
+            )
         )
-        for row in rows[1:]
-        if any(c is not None for c in row)
-    ]
     _prefill_before_bulk(db, table, data)
     ids = rec.bulk_create(engine, table, data, db=db)
     _sync_after_bulk(db, table)
@@ -1562,7 +1598,7 @@ def _parse_json_text(text: str) -> tuple[list[dict[str, Any]], list[str]]:
 
 
 def _parse_xlsx_bytes(xlsx_bytes: bytes) -> tuple[list[dict[str, Any]], list[str]]:
-    """解析 XLSX 字节串."""
+    """解析 XLSX 字节串（表头空列名/重复列名/行溢出明确报错）."""
     from openpyxl import load_workbook
 
     wb = load_workbook(io.BytesIO(xlsx_bytes))
@@ -1571,11 +1607,13 @@ def _parse_xlsx_bytes(xlsx_bytes: bytes) -> tuple[list[dict[str, Any]], list[str
     all_rows = list(ws.iter_rows(values_only=True))
     if not all_rows:
         return [], []
-    file_columns = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(all_rows[0])]
+    file_columns = [str(c) if c is not None else "" for c in all_rows[0]]
+    _validate_xlsx_header(file_columns)
     rows: list[dict[str, Any]] = []
-    for r in all_rows[1:]:
+    for sheet_row, r in enumerate(all_rows[1:], start=2):
         if not any(c is not None for c in r):
             continue
+        _check_xlsx_row_overflow(r, sheet_row, len(file_columns))
         row_dict: dict[str, Any] = {}
         for i, key in enumerate(file_columns):
             v = r[i] if i < len(r) else None
