@@ -263,3 +263,47 @@ def test_datetime_validate_date_input():
     result = ft.validate_value(date(2026, 9, 12), {})
     assert isinstance(result, datetime)
     assert result.date() == date(2026, 9, 12)
+
+
+# ── 健壮性补充：类型校验边界矩阵 ─────────────────────
+
+
+def test_boolean_string_unknown_is_false():
+    """BooleanFieldType — 未命中真值白名单的字符串静默返回 False（历史行为锁定）."""
+    ft = _ft("boolean")
+    assert ft.validate_value("maybe", {}) is False
+    assert ft.validate_value("否", {}) is False
+    assert ft.validate_value("是", {}) is True
+
+
+def test_boolean_unsupported_type_raises():
+    """BooleanFieldType — 非 str/int/float 输入抛 ValueError，消息含原值."""
+    ft = _ft("boolean")
+    with pytest.raises(ValueError, match="转为布尔值"):
+        ft.validate_value(["x"], {})
+
+
+def test_datetime_numeric_tz_offset_stripped():
+    """DateTimeFieldType — 数字时区偏移后缀 "+08:00" 被剥离，按无时区语义存储."""
+    from datetime import datetime
+
+    ft = _ft("datetime")
+    result = ft.validate_value("2024-01-15T10:30:45+08:00", {})
+    assert result == datetime(2024, 1, 15, 10, 30, 45)
+    assert result.tzinfo is None
+
+
+def test_date_invalid_message():
+    """DateFieldType — 无效日期字符串报错消息含"日期格式错误"与原值."""
+    ft = _ft("date")
+    with pytest.raises(ValueError, match=r"日期格式错误: not-a-date"):
+        ft.validate_value("not-a-date", {})
+
+
+def test_float_string_boundary_violation():
+    """FloatFieldType — config 边界用字符串形式（"100"）同样生效，"100.5" 报大于最大值."""
+    ft = _ft("float")
+    # decimals=2 避免默认 0 位小数取整干扰
+    assert ft.validate_value("99.5", {"max": "100", "decimals": 2}) == 99.5
+    with pytest.raises(ValueError, match="大于最大值"):
+        ft.validate_value("100.5", {"max": "100", "decimals": 2})
