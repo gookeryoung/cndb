@@ -703,6 +703,47 @@ def _promote_to_multiselect_if_list_like(
     return "multiselect", options
 
 
+def promote_inferred_column_type(inferred: str, samples: list[str]) -> tuple[str, list[str]]:
+    """对已推断的列类型运行完整提升链 —— 列级类型推断的单一收口.
+
+    链序固定为 timestamp → longtext → multiselect → select（后两者顺序
+    不可交换：低基数列表值同样满足 select 低基数条件，先到先得）。
+    analyze_csv_columns / column_profiler / diff_reporter 三处入口统一
+    经本函数做二次提升，保证同一列在预览、画像、落库三侧类型一致。
+
+    Args:
+        inferred: 已由单值推断 + 众数投票得到的列类型.
+        samples: 列非空样本字符串列表（非 str 值由调用方 str() 归一）.
+
+    Returns:
+        (最终字段类型, options 列表 —— multiselect/select 提升命中时非空)
+    """
+    inferred = _promote_to_timestamp_if_epoch_like(inferred, samples)
+    inferred = _promote_to_longtext_if_chunky(inferred, samples)
+    inferred, options = _promote_to_multiselect_if_list_like(inferred, samples)
+    if not options:
+        inferred, options = _promote_to_select_if_low_cardinality(inferred, samples)
+    return inferred, options
+
+
+def infer_column_type(samples: list[str]) -> tuple[str, list[str]]:
+    """从非空字符串样本推断列类型（单值推断 → 众数 → 完整提升链）.
+
+    供 analyze_csv_columns / diff_reporter 等以字符串样本为输入的入口复用；
+    column_profiler 因需处理非 str 原始值分类，计数自持、仅复用提升链.
+
+    Returns:
+        (最终字段类型, options 列表 —— 提升命中时非空)
+    """
+    type_counts: dict[str, int] = {}
+    for v in samples:
+        t = _infer_single_value(v)
+        if t != "empty":
+            type_counts[t] = type_counts.get(t, 0) + 1
+    inferred = _pick_inferred_type(type_counts) if type_counts else "text"
+    return promote_inferred_column_type(inferred, samples)
+
+
 def _options_strings_to_dicts(options: list[str]) -> list[dict[str, Any]]:
     """把 list[str] 格式的 select options 转为 [{label, value}] 字典格式.
 
@@ -837,13 +878,8 @@ def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dic
                 type_counts[t] = type_counts.get(t, 0) + 1
 
         inferred = _pick_inferred_type(type_counts)
-        # timestamp/longtext 提升在 multiselect/select 之前：类型守卫保证提升后自然跳过后续链
-        inferred = _promote_to_timestamp_if_epoch_like(inferred, samples)
-        inferred = _promote_to_longtext_if_chunky(inferred, samples)
-        # multiselect 提升须在 select 之前：低基数列表值同样满足 select 低基数条件会被抢走
-        inferred, promote_options = _promote_to_multiselect_if_list_like(inferred, samples)
-        if not promote_options:
-            inferred, promote_options = _promote_to_select_if_low_cardinality(inferred, samples)
+        # 完整提升链统一收口：timestamp → longtext → multiselect → select
+        inferred, promote_options = promote_inferred_column_type(inferred, samples)
 
         col_info: dict[str, Any] = {
             "name": name,
@@ -1790,7 +1826,9 @@ __all__ = [
     "import_rows_from_csv",
     "import_rows_from_json",
     "import_rows_from_xlsx",
+    "infer_column_type",
     "ingest_from_api",
     "parse_file_to_rows",
+    "promote_inferred_column_type",
     "sniff_csv_delimiter",
 ]

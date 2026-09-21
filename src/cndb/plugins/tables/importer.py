@@ -673,7 +673,7 @@ class Importer:
             field_type = plan.get("field_type", "text")
             options = plan.get("options") or []
             cfg: dict[str, Any] = {}
-            if field_type == "select" and options:
+            if field_type in ("select", "multiselect") and options:
                 cfg["options"] = _options_strings_to_dicts(options)
             # float 字段自动推断 decimals（NumberFieldConfig 默认 0 会导致 round(5.5, 0)=6）
             if field_type in ("float", "number"):

@@ -17,7 +17,7 @@ from cndb.plugins.tables.transfer import (
     _classify_date_like,
     _infer_single_value,
     _pick_inferred_type,
-    _promote_to_select_if_low_cardinality,
+    promote_inferred_column_type,
 )
 
 # 只在 sample_limit 行上做统计，避免大文件 O(n) 扫描
@@ -227,7 +227,8 @@ def _profile_single_column(
 
     # 类型推断 + confidence
     inferred = _pick_inferred_type(type_counts) if type_counts else "text"
-    inferred, select_opts = _promote_to_select_if_low_cardinality(inferred, [str(v) for v in non_null_values])
+    # 完整提升链统一收口：timestamp → longtext → multiselect → select（与 analyze_csv_columns 一致）
+    inferred, promote_opts = promote_inferred_column_type(inferred, [str(v) for v in non_null_values])
     max_type_count = max(type_counts.values()) if type_counts else 0
     confidence = round(max_type_count / non_null_count, 3) if non_null_count > 0 else 1.0
     fallback_type = "text" if confidence < CONFIDENCE_WARN_THRESHOLD and inferred != "text" else None
@@ -334,8 +335,9 @@ def _profile_single_column(
         "type_conflicts": conflicts,
         "outliers": outliers,
     }
-    if select_opts:
-        profile["select_options"] = select_opts
+    if promote_opts:
+        # 键名沿用 select_options（历史兼容）：现承载 select/multiselect 提升命中的 options
+        profile["select_options"] = promote_opts
     if numeric_stats:
         profile.update(numeric_stats)  # min/max/mean/std
         profile["distribution_bins"] = distribution_bins

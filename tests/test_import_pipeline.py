@@ -2460,7 +2460,8 @@ class TestDiffReporterEdgeCases:
         """推断出不在 _ALLOWED 里的类型 → 安全兜底为 text."""
         from cndb.plugins.tables import diff_reporter as dr
 
-        monkeypatch.setattr(dr, "_promote_to_select_if_low_cardinality", lambda _t, _s: ("unknown_weird_type", []))
+        # patch 本模块命名空间的 infer_column_type（链收口后的注入点）
+        monkeypatch.setattr(dr, "infer_column_type", lambda _s: ("unknown_weird_type", []))
         t, opts = DiffReporter.infer_new_column_type(["hello", "world"])
         assert t == "text"  # 安全兜底
         assert opts == []
