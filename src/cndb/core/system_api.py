@@ -13,13 +13,13 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fastapi import Depends, HTTPException, UploadFile
+from fastapi import Depends, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from cndb.backup import BackupError, create_backup
 from cndb.core.config import DATA_DIR
 from cndb.plugins.accounts.models import User, UserRole
-from cndb.restore import RestoreError, inspect_backup, restore_backup
+from cndb.restore import RestoreError, _schema_revision_known, inspect_backup, restore_backup
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -127,15 +127,32 @@ def register_system_routes(app: FastAPI) -> None:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-        return info.manifest
+        manifest: dict[str, Any] = dict(info.manifest)
+        # 附加 schema 领先判定：备份 revision 不在本地迁移链上时，
+        # native 恢复将失败，前端据此提示改用 sqlalchemy 降级恢复
+        db = manifest.get("database", {})
+        schema_version = str(db.get("schema_version", "") or "")
+        manifest["schema_known"] = _schema_revision_known(schema_version) if schema_version else True
+        manifest["backup_ahead"] = bool(
+            db.get("backup_mode", "") == "native" and schema_version and not manifest["schema_known"]
+        )
+        return manifest
 
     @router.post("/restore")
     async def admin_restore(
         file: UploadFile,
-        force: bool = True,
+        mode: str | None = Form(default=None),
+        force: bool = Form(default=True),
         current_user: User | None = Depends(get_current_user),
     ) -> dict[str, Any]:
-        """从上传的备份文件恢复系统数据（破坏性操作）."""
+        """从上传的备份文件恢复系统数据（破坏性操作）.
+
+        Args:
+            file: 上传的 .tar.gz 备份归档.
+            mode: 覆盖恢复模式 — ``native`` / ``sqlalchemy``。None 时按备份标记分支；
+                备份 schema 新于当前程序时可显式指定 sqlalchemy 降级恢复.
+            force: 强制覆盖（恢复即覆盖，恒为 True）.
+        """
         _require_superuser(current_user)
 
         tmp = Path(tempfile.mkdtemp(prefix="cndb-api-restore-"))
@@ -144,7 +161,7 @@ def register_system_routes(app: FastAPI) -> None:
             content = await file.read()
             archive_path.write_bytes(content)
             inspect_backup(archive_path)  # 前置完整性检查
-            restore_backup(archive_path, force=force)
+            loss = restore_backup(archive_path, force=force, mode=mode)
         except RestoreError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
@@ -152,6 +169,19 @@ def register_system_routes(app: FastAPI) -> None:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-        return {"status": "ok", "message": "恢复完成。建议在空闲时重启服务以确保所有组件状态一致。"}
+        # 降级恢复（sqlalchemy 交集导入）的裁剪报告：显式呈现跳过表/丢弃列
+        report: dict[str, Any] | None = None
+        if loss is not None and loss.has_loss:
+            report = {
+                "skipped_tables": loss.skipped_tables,
+                "dropped_columns": loss.dropped_columns,
+                "summary": loss.summary(),
+            }
+
+        return {
+            "status": "ok",
+            "message": "恢复完成。建议在空闲时重启服务以确保所有组件状态一致。",
+            "loss_report": report,
+        }
 
     app.include_router(router)

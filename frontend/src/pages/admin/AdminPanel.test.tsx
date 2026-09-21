@@ -37,8 +37,12 @@ const MANIFEST: BackupManifest = {
     backup_mode: 'native',
     tables: ['workspaces', 'tables'],
     row_counts: { workspaces: 3, tables: 5 },
+    schema_version: '6399e5f0f61f',
+    fallback_mode: 'sqlalchemy',
   },
   uploads: { included: true, file_count: 2, total_size: 2048 },
+  schema_known: true,
+  backup_ahead: false,
 }
 
 function renderPanel(user = mockUser) {
@@ -119,5 +123,61 @@ describe('AdminPanel 系统管理台', () => {
     expect(await screen.findByText('备份版本')).toBeInTheDocument()
     // 表清单标签渲染为 "表名 (行数)"
     expect(screen.getByText('workspaces (3)')).toBeInTheDocument()
+    // schema 元信息与恢复模式选择器
+    expect(screen.getByText('Schema 版本')).toBeInTheDocument()
+    expect(screen.getByText('有（sqlalchemy）')).toBeInTheDocument()
+    expect(screen.getByText('auto（跟随备份模式，推荐）')).toBeInTheDocument()
+  })
+
+  it('备份 schema 领先时显示降级警告并自动选中 sqlalchemy 模式', async () => {
+    server.use(http.get('/api/v1/admin/info', () => HttpResponse.json(INFO)))
+    vi.spyOn(apiModule.adminApi, 'restoreInspect').mockResolvedValue({
+      ...MANIFEST,
+      schema_known: false,
+      backup_ahead: true,
+    })
+    renderPanel()
+
+    await activateTab(/系\s*统\s*恢\s*复/)
+    const file = new File(['fake-tar-gz'], 'backup.tar.gz', { type: 'application/gzip' })
+    const input = document.querySelector('input[type="file"]')
+    fireEvent.change(input as Element, { target: { files: [file] } })
+
+    expect(await screen.findByText('备份 schema 新于当前程序')).toBeInTheDocument()
+    // 校验通过后恢复模式自动切到 sqlalchemy 降级
+    expect(await screen.findByText('sqlalchemy（交集导入，可降级恢复）')).toBeInTheDocument()
+  })
+
+  it('降级恢复返回裁剪报告时弹窗呈现丢失面', async () => {
+    server.use(http.get('/api/v1/admin/info', () => HttpResponse.json(INFO)))
+    const file = new File(['fake-tar-gz'], 'backup.tar.gz', { type: 'application/gzip' })
+    vi.spyOn(apiModule.adminApi, 'restoreInspect').mockResolvedValue(MANIFEST)
+    const restoreSpy = vi.spyOn(apiModule.adminApi, 'restore').mockResolvedValue({
+      status: 'ok',
+      message: '恢复完成',
+      loss_report: {
+        summary: '跳过未知表 1 个: future_table',
+        skipped_tables: ['future_table'],
+        dropped_columns: {},
+      },
+    })
+    renderPanel()
+
+    await activateTab(/系\s*统\s*恢\s*复/)
+    const input = document.querySelector('input[type="file"]')
+    fireEvent.change(input as Element, { target: { files: [file] } })
+    // 恢复按钮包在 Popconfirm 内：先点开气泡再点确认
+    fireEvent.click(await screen.findByRole('button', { name: /执行系统恢复（覆盖）/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /确认恢复/ }))
+
+    // restore 调用未显式传 mode（auto → undefined），报告经 modal 呈现
+    await waitFor(() => expect(restoreSpy).toHaveBeenCalledTimes(1))
+    expect(restoreSpy).toHaveBeenCalledWith(file, true, undefined)
+    expect(
+      await screen.findByText('降级恢复完成 — 已裁剪部分数据', { selector: '.ant-modal-title' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('跳过未知表 1 个: future_table', { selector: '.ant-modal-body div' }),
+    ).toBeInTheDocument()
   })
 })
