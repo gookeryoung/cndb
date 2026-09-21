@@ -20,7 +20,7 @@
 import { useCallback, useMemo, useState, useEffect } from 'react'
 import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Popover, App as AntApp } from 'antd'
 import type { TableProps } from 'antd'
-import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined, CheckOutlined, InfoCircleOutlined } from '@ant-design/icons'
+import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined, CheckOutlined, InfoCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { FileAnalyzeResult, FileImportResult } from '@/api'
 import { PREVIEW_FIELD_TYPE_VALUES, FIELD_TYPE_META, getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
@@ -86,6 +86,12 @@ interface Props {
   onSuccess?: (result: FileImportResult) => void
 }
 
+/** timestamp 候选值域常量 —— 与后端 TimestampFieldType/transfer 推断层双向锁定：
+ * 秒级 [1e9, 4102444800]，毫秒级 (4102444800, 4102444800000]（预览时 //1000 归一为秒显示） */
+const TS_EPOCH_MIN_SEC = 1e9
+const TS_EPOCH_MAX_SEC = 4102444800
+const TS_EPOCH_MAX_MS = 4102444800000
+
 /** 判断原始值能否转为目标类型 —— 返回转换后的字符串或 null（失败） */
 function tryConvert(raw: unknown, targetType: string): CellTransform {
   const rawText = raw == null ? '' : String(raw)
@@ -138,6 +144,18 @@ function tryConvert(raw: unknown, targetType: string): CellTransform {
     case 'select':
     case 'multiselect':
       return { rawText, convertedText: stripped, failed: false }
+    case 'timestamp': {
+      // 与后端 TimestampFieldType.validate_value 对齐：秒级原样，毫秒级归一为秒显示
+      const n = Number(stripped.replace(/,/g, ''))
+      if (!Number.isInteger(n)) return { rawText, convertedText: null, failed: true }
+      if (n >= TS_EPOCH_MIN_SEC && n <= TS_EPOCH_MAX_SEC) {
+        return { rawText, convertedText: String(n), failed: false }
+      }
+      if (n > TS_EPOCH_MAX_SEC && n <= TS_EPOCH_MAX_MS) {
+        return { rawText, convertedText: String(Math.floor(n / 1000)), failed: false }
+      }
+      return { rawText, convertedText: null, failed: true }
+    }
     case 'email':
       return { rawText, convertedText: stripped, failed: false }
     case 'url':
@@ -336,6 +354,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         const baseCol = analyzeResult?.columns.find(c => c.name === col.name)
         const isAutoType = !overrides[col.name]
         const isDate = col.field_type === 'date' || col.field_type === 'datetime'
+        const isTimestamp = col.field_type === 'timestamp'
+        const isLongtext = col.field_type === 'longtext'
         const isSelect = col.field_type === 'select' || col.field_type === 'multiselect'
         const hasError = failCnt > 0
         // 卡片背景：选中 > 有异常 > 无异常（绿色）
@@ -402,7 +422,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
               </div>
             )}
 
-            {/* 类型识别提示（date/select 特别提示） */}
+            {/* 类型识别提示（date/timestamp/longtext/select 特别提示） */}
             {isSelect && (
               <div style={{ fontSize: 11, color: '#d97706', marginBottom: 2 }}>
                 <SwapOutlined /> 低基数 → select（{col.options?.length ?? 0}）
@@ -411,6 +431,16 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
             {isDate && (
               <div style={{ fontSize: 11, color: '#16a34a', marginBottom: 2 }}>
                 <FileTextOutlined /> 识别为日期
+              </div>
+            )}
+            {isTimestamp && (
+              <div style={{ fontSize: 11, color: '#16a34a', marginBottom: 2 }}>
+                <ClockCircleOutlined /> 识别为时间戳（秒/毫秒自动归一）
+              </div>
+            )}
+            {isLongtext && (
+              <div style={{ fontSize: 11, color: '#0891b2', marginBottom: 2 }}>
+                <FileTextOutlined /> 识别为长文本
               </div>
             )}
 

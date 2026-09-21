@@ -62,13 +62,16 @@ describe('fieldTypeMeta 字段类型元数据', () => {
     }
   })
 
-  it('PREVIEW_FIELD_TYPE_VALUES 恰为导入预览可切换的 12 项子集', () => {
+  it('PREVIEW_FIELD_TYPE_VALUES 恰为导入预览可切换的 14 项子集', () => {
     expect(PREVIEW_FIELD_TYPE_VALUES).toEqual([
-      'text', 'number', 'float', 'boolean', 'date', 'datetime',
-      'select', 'multiselect', 'email', 'url', 'phone', 'percentage',
+      'text', 'longtext', 'number', 'float', 'boolean', 'date', 'datetime',
+      'timestamp', 'select', 'multiselect', 'email', 'url', 'phone', 'percentage',
     ])
     expect(PREVIEW_FIELD_TYPE_VALUES).not.toContain('link')
     expect(PREVIEW_FIELD_TYPE_VALUES).not.toContain('attachment')
+    // 后端推断层可产出 timestamp/longtext —— 预览下拉必须能展示与切换这两种类型
+    expect(PREVIEW_FIELD_TYPE_VALUES).toContain('timestamp')
+    expect(PREVIEW_FIELD_TYPE_VALUES).toContain('longtext')
     // 子集内每项在元数据表中均可查
     for (const v of PREVIEW_FIELD_TYPE_VALUES) {
       expect(FIELD_TYPE_META[v]).toBeDefined()

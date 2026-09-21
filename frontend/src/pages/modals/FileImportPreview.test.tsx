@@ -127,3 +127,56 @@ describe('FileImportPreview 文件导入预览', () => {
     expect(onSuccess).not.toHaveBeenCalled()
   })
 })
+
+describe('FileImportPreview 推断提示展示（timestamp/longtext）', () => {
+  /** 后端推断层可产出 timestamp/longtext —— analyze 结果含这两类列 */
+  const tsResult: FileAnalyzeResult = {
+    filename: '事件日志.csv',
+    format: 'csv',
+    total_rows: 2,
+    columns: [
+      { name: '创建时间戳', field_type: 'timestamp', sample_values: ['1717200000000'], null_ratio: 0 },
+      { name: '备注', field_type: 'longtext', sample_values: ['第一行\n第二行'], null_ratio: 0 },
+    ],
+    sample_rows: [
+      { 创建时间戳: '1717200000000', 备注: '第一行\n第二行' },
+      { 创建时间戳: 'oops', 备注: '' },
+    ],
+  }
+
+  function setupTs() {
+    renderProviders(
+      <FileImportPreview
+        open
+        wid={10}
+        file={file}
+        analyzeResult={tsResult}
+        onClose={() => { }}
+      />,
+    )
+  }
+
+  it('推断出的 timestamp/longtext 在下拉中显示中文标签而非原始英文值', () => {
+    setupTs()
+
+    // 下拉选中值与右侧表头 Tag 均以中文标签渲染（时间戳/多行文本）
+    expect(screen.getAllByText('时间戳').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('多行文本').length).toBeGreaterThan(0)
+  })
+
+  it('识别提示行：timestamp/longtext 各自显示推断来源提示', () => {
+    setupTs()
+
+    expect(screen.getByText(/识别为时间戳/)).toBeInTheDocument()
+    expect(screen.getByText(/识别为长文本/)).toBeInTheDocument()
+  })
+
+  it('timestamp 转换预览：毫秒归一为秒显示 → 对比，值域外原值警示', () => {
+    setupTs()
+
+    // '1717200000000'（毫秒）→ 归一为秒显示转换对比
+    expect(screen.getByText('→ 1717200000')).toBeInTheDocument()
+    // 'oops' 不在候选值域 → 原值保留（失败警示）
+    expect(screen.getByText('oops')).toBeInTheDocument()
+  })
+})
