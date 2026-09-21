@@ -49,7 +49,14 @@ def _authenticate_jwt(token: str, db: Session) -> User | None:
     sub = payload.get("sub")
     if not sub:
         return None
-    return db.query(User).filter(User.id == int(sub), User.is_active.is_(True)).first()
+    try:
+        user_id = int(sub)
+    except (ValueError, TypeError):
+        # 防御：sub 不是合法整数（如格式错误或签名已知的伪造令牌）时返回 None，
+        # 避免 ValueError 穿透到 FastAPI 变成 500
+        logger.warning("JWT sub claim 不是合法整数: %r", sub)
+        return None
+    return db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
 
 
 def get_current_user(
