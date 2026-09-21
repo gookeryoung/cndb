@@ -2,12 +2,12 @@
 
 import React from 'react'
 import { Drawer, Form, Input, Button, Typography, Timeline, Tag, App as AntApp, Select, DatePicker, InputNumber, Switch, Upload, Image, Tooltip } from 'antd'
-import { SaveOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
+import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { recordApi, fileApi } from '@/api'
 import { useRowAudit, useRowReferences, useUpdateRowOptimistic } from '@/api/hooks'
-import type { RowResponse, Field, AttachmentFile } from '@/api'
+import type { RowResponse, Field, AttachmentFile, RowValues } from '@/api'
 import { extractSelectOptions } from './fieldOps'
 
 const { Title, Text } = Typography
@@ -19,37 +19,78 @@ interface Props {
   wid: string
   tid: string
   onClose: () => void
+  /** 新建行模式下的预填值（例如看板某列的分组字段） */
+  initialValues?: RowValues
+  /** 创建成功后回调 */
+  onCreated?: () => void
 }
 
-export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }: Props) {
+export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, initialValues, onCreated }: Props) {
   const { message } = AntApp.useApp()
+  const queryClient = useQueryClient()
   const [form] = Form.useForm()
 
-  // 行特定的审计日志 / 反向引用 —— 使用统一的自定义 hooks
+  // 模式：row 存在 → 编辑；否则 → 新建
+  const isCreate = !row
+
+  // 行特定的审计日志 / 反向引用 —— 新建模式下不请求
   const { data: audit = [] } = useRowAudit(wid, tid, row?.id, open && !!row)
   const { data: references = [] } = useRowReferences(wid, tid, row?.id, open && !!row)
 
-  // 行更新 —— 使用乐观更新 hook，立即反映到 cache，失败回滚
+  // 编辑模式 —— 乐观更新
   const updateRow = useUpdateRowOptimistic(wid, tid)
 
-  React.useEffect(() => {
-    if (row) form.setFieldsValue(row)
-    else form.resetFields()
-  }, [row, form])
+  // 新建模式 —— create mutation
+  const createRow = useMutation({
+    mutationFn: (values: RowValues) => recordApi.create(wid, tid, { values }),
+    onSuccess: () => {
+      message.success('已新增 1 行')
+      const tableKey = `${wid}/${tid}`
+      queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+      queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+      onClose()
+      onCreated?.()
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '新增行失败'),
+  })
 
-  if (!row) return null
+  React.useEffect(() => {
+    if (row) {
+      form.setFieldsValue(row)
+    } else {
+      form.resetFields()
+      if (initialValues) form.setFieldsValue(initialValues)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row, initialValues, open])
+
+  if (!open) return null
+
+  const handleSubmit = () => {
+    const values = form.getFieldsValue()
+    if (isCreate) {
+      createRow.mutate(values)
+    } else if (row) {
+      updateRow.mutate(
+        { rowId: row.id, values },
+        { onSuccess: () => message.success('已保存') },
+      )
+    }
+  }
 
   return (
     <Drawer
-      title={`行详情 #${row.id}`} width={600} open={open} onClose={onClose}
+      title={isCreate ? '新建行' : `行详情 #${row!.id}`}
+      width={600}
+      open={open}
+      onClose={onClose}
       extra={
-        <Button type="primary" icon={<SaveOutlined />} onClick={() => {
-          if (!row) return
-          updateRow.mutate(
-            { rowId: row.id, values: form.getFieldsValue() },
-            { onSuccess: () => message.success('已保存') },
-          )
-        }} loading={updateRow.isPending}>保存</Button>
+        <Button
+          type="primary"
+          icon={isCreate ? <PlusOutlined /> : <SaveOutlined />}
+          onClick={handleSubmit}
+          loading={isCreate ? createRow.isPending : updateRow.isPending}
+        >{isCreate ? '创建' : '保存'}</Button>
       }
     >
       {/* 字段值编辑 */}
@@ -62,39 +103,43 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose }
         ))}
       </Form>
 
-      {/* 反向引用 */}
-      {references.length > 0 && (
+      {!isCreate && (
         <>
-          <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
-          <Title level={5}><LinkOutlined /> 被引用 ({references.length})</Title>
-          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-            {references.map(ref => (
-              <div key={`${ref.table_id}-${ref.row_id}`} style={{ padding: '6px 0', borderBottom: '1px solid #f8fafc' }}>
-                <Tag color="blue">{ref.table_name || `表 #${ref.table_id}`}</Tag>
-                <Text>{ref.row_summary || `行 #${ref.row_id}`}</Text>
+          {/* 反向引用 */}
+          {references.length > 0 && (
+            <>
+              <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
+              <Title level={5}><LinkOutlined /> 被引用 ({references.length})</Title>
+              <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                {references.map(ref => (
+                  <div key={`${ref.table_id}-${ref.row_id}`} style={{ padding: '6px 0', borderBottom: '1px solid #f8fafc' }}>
+                    <Tag color="blue">{ref.table_name || `表 #${ref.table_id}`}</Tag>
+                    <Text>{ref.row_summary || `行 #${ref.row_id}`}</Text>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </>
-      )}
+            </>
+          )}
 
-      {/* 操作历史 */}
-      <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
-      <Title level={5}><HistoryOutlined /> 操作历史</Title>
-      {audit.length === 0 ? (
-        <Text type="secondary" italic>暂无历史记录</Text>
-      ) : (
-        <Timeline
-          items={audit.map(a => ({
-            color: a.action.includes('delete') ? 'red' : a.action.includes('create') ? 'green' : 'blue',
-            children: (
-              <div>
-                <Tag>{a.action}</Tag>
-                <span style={{ color: '#94a3b8', fontSize: 12 }}>{a.actor_name || '系统'} · {a.created_at || ''}</span>
-              </div>
-            ),
-          }))}
-        />
+          {/* 操作历史 */}
+          <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
+          <Title level={5}><HistoryOutlined /> 操作历史</Title>
+          {audit.length === 0 ? (
+            <Text type="secondary" italic>暂无历史记录</Text>
+          ) : (
+            <Timeline
+              items={audit.map(a => ({
+                color: a.action.includes('delete') ? 'red' : a.action.includes('create') ? 'green' : 'blue',
+                children: (
+                  <div>
+                    <Tag>{a.action}</Tag>
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>{a.actor_name || '系统'} · {a.created_at || ''}</span>
+                  </div>
+                ),
+              }))}
+            />
+          )}
+        </>
       )}
     </Drawer>
   )
