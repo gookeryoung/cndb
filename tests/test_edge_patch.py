@@ -34,6 +34,21 @@ class TestAccountsAuthEdge:
         assert r.status_code == 400
         assert "邮箱" in r.json()["detail"]
 
+    def test_register_commit_race_integrity_error(self, client, db, monkeypatch):
+        """并发竞态：_ensure_unique 通过后 commit 撞唯一约束，应降级 400 明确提示而非 500."""
+        from sqlalchemy.exc import IntegrityError
+
+        def race_commit():
+            raise IntegrityError("UNIQUE constraint failed: accounts_user.username", None, Exception("dup"))
+
+        monkeypatch.setattr(db, "commit", race_commit)
+        r = client.post(
+            "/api/v1/accounts/auth/register",
+            json={"username": "race_user", "password": "passw0rd"},
+        )
+        assert r.status_code == 400
+        assert "已被使用" in r.json()["detail"]
+
 
 # ── accounts/preferences 零散 ───────────────────────
 

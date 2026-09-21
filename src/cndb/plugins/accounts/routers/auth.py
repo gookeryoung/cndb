@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -47,6 +48,21 @@ def _ensure_unique(db: Session, username: str, email: str | None) -> None:
         raise HTTPException(status_code=400, detail="邮箱已被使用")
 
 
+def _create_user(db: Session, user: User, password: str) -> None:
+    """设置密码、写入并提交用户.
+
+    并发竞态下（两个请求同时通过 _ensure_unique 检查）唯一约束冲突会
+    在 commit 时抛 IntegrityError，此处降级为 400 明确提示，而非 500。
+    """
+    user.set_password(password)
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="用户名或邮箱已被使用") from exc
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
     """公开注册新用户.
@@ -69,9 +85,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
         email=payload.email,
         nickname=payload.nickname,
     )
-    user.set_password(payload.password)
-    db.add(user)
-    db.commit()
+    _create_user(db, user, payload.password)
     db.refresh(user)
     return user
 
@@ -115,9 +129,7 @@ def admin_register(
     # 指定角色对应的语义化 nickname（如果没填）
     if not user.nickname:
         user.nickname = validated.display_name
-    user.set_password(payload.password)
-    db.add(user)
-    db.commit()
+    _create_user(db, user, payload.password)
     db.refresh(user)
     return user
 
