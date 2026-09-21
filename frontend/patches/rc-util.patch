@@ -1,27 +1,27 @@
 diff --git a/es/isEqual.js b/es/isEqual.js
-index 703e47a8b7114025a166ecdbf765ee1aa37f4fbf..77e0f369e39a371cb3251bcccc6c61ae46fd7e88 100644
+index 703e47a..9ccd4bb 100644
 --- a/es/isEqual.js
 +++ b/es/isEqual.js
-@@ -3,6 +3,18 @@ import warning from "./warning";
+@@ -1,8 +1,17 @@
+ import _typeof from "@babel/runtime/helpers/esm/typeof";
+-import warning from "./warning";
  
  /**
   * Deeply compares two object literals.
 + *
 + * 修复说明（2026-09）：
-+ * 原实现使用全局 refSet 记录已访问过的 `a` 节点，但只在进入时 add、从不移除，
-+ * 导致 DAG（同一子对象通过多条属性路径可达）被误判为循环引用并持续打印警告。
++ * 原实现使用全局 refSet + warning 做循环引用检测，但存在两个问题：
++ *   1. refSet 只 add 不 remove，DAG（同一子对象多条路径可达）被误报为循环
++ *   2. rc-table columns 结构合法包含 Function 自引用，真循环场景不应打 warning
 + *
-+ * 修复改为「祖先集合」语义：
-+ *   1. 先做 a === b 身份短路（避免 refSet 记录冗余的已命中节点）
-+ *   2. 用 `ancestors` 集合只追踪**当前递归路径上的祖先**，而非所有曾访问过的节点
-+ *   3. 进入子节点时 add，回溯时 delete —— 这样只有真循环（节点出现在自己的祖先链上）才触发警告
-+ *
-+ * 保持原函数签名与行为（真循环仍视为不相等并打印 warning）。
++ * 修复方案：
++ *   - 改用「祖先链」追踪：只记录当前递归路径上的祖先，DAG 不误报
++ *   - 彻底移除 warning 调用：真循环静默返回 false（行为保持，不输出噪音）
 + *
   * @param obj1 object 1
   * @param obj2 object 2
   * @param shallow shallow compare
-@@ -10,29 +22,41 @@ import warning from "./warning";
+@@ -10,29 +19,39 @@ import warning from "./warning";
   */
  function isEqual(obj1, obj2) {
    var shallow = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : false;
@@ -30,23 +30,22 @@ index 703e47a8b7114025a166ecdbf765ee1aa37f4fbf..77e0f369e39a371cb3251bcccc6c61ae
    function deepEqual(a, b) {
 -    var level = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 1;
 -    var circular = refSet.has(a);
+-    warning(!circular, 'Warning: There may be circular references');
+-    if (circular) {
+-      return false;
+-    }
 +    var ancestors = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : [];
 +    var level = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 1;
 +
 +    // 身份完全相同：短路返回相等，不触碰祖先集合
-+    if (a === b) {
-+      return true;
-+    }
-+
-+    // 只追踪「当前递归路径上的祖先」——节点已在祖先链上 = 真循环
-+    var circular = ancestors.includes(a);
-     warning(!circular, 'Warning: There may be circular references');
-     if (circular) {
-       return false;
+     if (a === b) {
+       return true;
      }
--    if (a === b) {
--      return true;
--    }
++
++    // 祖先链上已出现过 a —— 真循环，静默返回 false
++    if (ancestors.includes(a)) {
++      return false;
++    }
 +
      if (shallow && level > 1) {
        return false;
@@ -72,7 +71,7 @@ index 703e47a8b7114025a166ecdbf765ee1aa37f4fbf..77e0f369e39a371cb3251bcccc6c61ae
            return false;
          }
        }
-@@ -44,12 +68,12 @@ function isEqual(obj1, obj2) {
+@@ -44,12 +63,11 @@ function isEqual(obj1, obj2) {
          return false;
        }
        return keys.every(function (key) {
@@ -80,18 +79,20 @@ index 703e47a8b7114025a166ecdbf765ee1aa37f4fbf..77e0f369e39a371cb3251bcccc6c61ae
 +        return deepEqual(a[key], b[key], nextAncestors, newLevel);
        });
      }
-     // other
+-    // other
      return false;
    }
 -  return deepEqual(obj1, obj2);
 +  return deepEqual(obj1, obj2, [], 1);
  }
- export default isEqual;
+-export default isEqual;
+\ No newline at end of file
++export default isEqual;
 diff --git a/lib/isEqual.js b/lib/isEqual.js
-index af34622fe2535fbeb037f6a859e4ceb165147fa4..eafd5045ee374c5fce08bf41febec8f2f24e3705 100644
+index af34622..0586578 100644
 --- a/lib/isEqual.js
 +++ b/lib/isEqual.js
-@@ -1,14 +1,16 @@
+@@ -1,14 +1,22 @@
  "use strict";
  
  var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault").default;
@@ -101,17 +102,24 @@ index af34622fe2535fbeb037f6a859e4ceb165147fa4..eafd5045ee374c5fce08bf41febec8f2
 +Object.defineProperty(exports, "__esModule", { value: true });
  exports.default = void 0;
  var _typeof2 = _interopRequireDefault(require("@babel/runtime/helpers/typeof"));
- var _warning = _interopRequireDefault(require("./warning"));
+-var _warning = _interopRequireDefault(require("./warning"));
 +
  /**
   * Deeply compares two object literals.
 + *
-+ * 修复说明：把「全局 refSet」改成「祖先链」追踪，消除 DAG 误判为循环引用的警告。
++ * 修复说明（2026-09）：
++ * 原实现使用全局 refSet + warning 做循环引用检测，但存在两个问题：
++ *   1. refSet 只 add 不 remove，DAG（同一子对象多条路径可达）被误报为循环
++ *   2. rc-table columns 结构合法包含 Function 自引用，真循环场景不应打 warning
++ *
++ * 修复方案：
++ *   - 改用「祖先链」追踪：只记录当前递归路径上的祖先，DAG 不误报
++ *   - 彻底移除 warning 调用：真循环静默返回 false（行为保持，不输出噪音）
 + *
   * @param obj1 object 1
   * @param obj2 object 2
   * @param shallow shallow compare
-@@ -16,46 +18,38 @@ var _warning = _interopRequireDefault(require("./warning"));
+@@ -16,46 +24,37 @@ var _warning = _interopRequireDefault(require("./warning"));
   */
  function isEqual(obj1, obj2) {
    var shallow = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : false;
@@ -120,14 +128,7 @@ index af34622fe2535fbeb037f6a859e4ceb165147fa4..eafd5045ee374c5fce08bf41febec8f2
    function deepEqual(a, b) {
 -    var level = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 1;
 -    var circular = refSet.has(a);
-+    var ancestors = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : [];
-+    var level = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 1;
-+
-+    // 身份相同短路
-+    if (a === b) return true;
-+
-+    var circular = ancestors.includes(a);
-     (0, _warning.default)(!circular, 'Warning: There may be circular references');
+-    (0, _warning.default)(!circular, 'Warning: There may be circular references');
 -    if (circular) {
 -      return false;
 -    }
@@ -138,7 +139,14 @@ index af34622fe2535fbeb037f6a859e4ceb165147fa4..eafd5045ee374c5fce08bf41febec8f2
 -      return false;
 -    }
 -    refSet.add(a);
-+    if (circular) return false;
++    var ancestors = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : [];
++    var level = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 1;
++
++    // 身份完全相同：短路返回相等，不触碰祖先集合
++    if (a === b) return true;
++
++    // 祖先链上已出现过 a —— 真循环，静默返回 false
++    if (ancestors.includes(a)) return false;
 +
 +    if (shallow && level > 1) return false;
 +
@@ -175,4 +183,6 @@ index af34622fe2535fbeb037f6a859e4ceb165147fa4..eafd5045ee374c5fce08bf41febec8f2
 -  return deepEqual(obj1, obj2);
 +  return deepEqual(obj1, obj2, [], 1);
  }
- var _default = exports.default = isEqual;
+-var _default = exports.default = isEqual;
+\ No newline at end of file
++var _default = exports.default = isEqual;
