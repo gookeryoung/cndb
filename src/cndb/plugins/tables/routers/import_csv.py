@@ -96,7 +96,11 @@ async def import_file_analyze(
 
     # 解析一次：列分析（全量，保证 total_rows / 空值率精确）与样本预览共用
     rows, _cols, actual_fmt = parse_file_to_rows(content, filename=filename)
-    columns, total_rows, _ = analyze_file_columns(rows=rows, format=actual_fmt)
+    try:
+        columns, total_rows, _ = analyze_file_columns(rows=rows, format=actual_fmt)
+    except ValueError as exc:
+        # CSV 结构守卫（空列名/重复列名/行值溢出）等客户端输入缺陷 → 400
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     valid_cols = [c for c in columns if c["name"].strip()]
     if not valid_cols:
@@ -170,6 +174,9 @@ async def import_file_create_table(
             owner_id=current_user.id,
             column_overrides=overrides,
         )
+    except ValueError as exc:
+        # CSV 结构守卫等客户端输入缺陷 → 400（区别于服务端故障的 500）
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"建表或导入失败: {exc}") from exc
 
@@ -218,7 +225,11 @@ def analyze_csv(
         if len(lines) > 1:
             text = "".join(lines[1:])
 
-    columns, total_rows = analyze_csv_columns(text)
+    try:
+        columns, total_rows = analyze_csv_columns(text)
+    except ValueError as exc:
+        # CSV 结构守卫（空列名/重复列名/行值溢出）→ 400
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     valid_cols = [c for c in columns if c["name"].strip()]
     if not valid_cols:
@@ -241,7 +252,11 @@ def import_csv_create_table(
     if not csv_text:
         raise HTTPException(status_code=400, detail="CSV 内容为空")
 
-    columns, _total = analyze_csv_columns(csv_text)
+    try:
+        columns, _total = analyze_csv_columns(csv_text)
+    except ValueError as exc:
+        # CSV 结构守卫 → 400
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     valid_cols = [c for c in columns if c["name"].strip()]
     if not valid_cols:
         raise HTTPException(status_code=400, detail="CSV 没有有效列名")
@@ -251,6 +266,9 @@ def import_csv_create_table(
         dt, ids = create_table_from_csv(
             engine, db, workspace_id, payload.table_name, csv_text, owner_id=current_user.id
         )
+    except ValueError as exc:
+        # CSV 结构守卫等客户端输入缺陷 → 400（区别于服务端故障的 500）
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"建表或导入失败: {exc}") from exc
 

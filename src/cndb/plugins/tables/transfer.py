@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import re
+from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any
 
@@ -536,6 +537,59 @@ def _promote_to_select_if_low_cardinality(inferred_type: str, samples: list[str]
     return inferred_type, []
 
 
+# ── Unix 时间戳列级表决参数 ──────────────────────────────
+# 候选值域与 TimestampFieldType.validate_value 上限对齐（双向锁定）：
+# 秒级 [1e9, 4102444800]（2001-09-09 ~ 2100-01-01），毫秒级为秒级 ×1000
+_TS_EPOCH_MIN_SEC = 1_000_000_000
+_TS_EPOCH_MAX_SEC = 4_102_444_800
+_TS_EPOCH_MIN_MS = 1_000_000_000_000
+_TS_EPOCH_MAX_MS = 41_024_448_000_000
+
+
+def _is_epoch_candidate(value: str) -> bool:
+    """单个样本是否落在 Unix 时间戳候选值域（秒或毫秒）.
+
+    负数不是候选（validate_value 拒绝负值，双向一致）；
+    10 位以内 < 1e9、11/12/14 位的整数落在两值域间隙，均判非候选。
+    """
+    if not value.isdigit():
+        return False
+    n = int(value)
+    return _TS_EPOCH_MIN_SEC <= n <= _TS_EPOCH_MAX_SEC or _TS_EPOCH_MIN_MS <= n <= _TS_EPOCH_MAX_MS
+
+
+def _promote_to_timestamp_if_epoch_like(inferred_type: str, samples: list[str]) -> str:
+    """列级表决：number 列 ≥80% 样本落入 Unix 秒/毫秒候选值域则提升 timestamp.
+
+    单个 10/13 位整数与普通编号（订单号、用户 ID）无法区分，必须整列表决 ——
+    编号列值域散布或带固定前缀，命中率难达阈值；时间戳列几乎全列命中。
+    10/13 位混合列按值域并集判定。
+    """
+    if inferred_type != "number" or not samples:
+        return inferred_type
+    hit = sum(1 for v in samples if _is_epoch_candidate(v))
+    if hit * 5 >= len(samples) * 4:
+        return "timestamp"
+    return inferred_type
+
+
+def _promote_to_longtext_if_chunky(inferred_type: str, samples: list[str]) -> str:
+    """text 列含换行样本或大比例超长样本时提升为 longtext（多行文本）.
+
+    须在 multiselect/select 提升之前调用 —— 含换行的文本不是合格的 select
+    选项；提升后 multiselect/select 因类型守卫（仅 text/json 可提升）自然跳过。
+    阈值保守取值（任一换行 或 ≥20% 样本 ≥200 字符），避免普通备注列误提升。
+    """
+    if inferred_type != "text" or not samples:
+        return inferred_type
+    if any("\n" in v for v in samples):
+        return "longtext"
+    long_hits = sum(1 for v in samples if len(v) >= 200)
+    if long_hits * 5 >= len(samples):
+        return "longtext"
+    return inferred_type
+
+
 # ── multiselect 列表值识别启发式参数 ──────────────────────
 _LIST_LIKE_MIN_SEGMENTS = 2  # 单值最少拆出段数（1 段是普通文本）
 _LIST_LIKE_MAX_SEGMENTS = 6  # 单值最多拆出段数（过多像自由文本）
@@ -698,6 +752,40 @@ def _dedupe_samples(samples: list[str], limit: int = 5) -> list[str]:
     return out
 
 
+def _validate_csv_structure(fieldnames: Sequence[str]) -> None:
+    """CSV 表头结构守卫：空列名 / 重复列名明确报错，避免静默丢数据.
+
+    DictReader 对重复列名取后列值（前列数据静默丢失），空表头列数据无法
+    按名寻址 —— 均属结构性缺陷，报错优于静默变形（与参差行导出
+    extrasaction=raise 哲学一致）。少列短行不在此守卫（尾逗号截断属常态）；
+    多列溢出（restkey）在行循环内检查。
+    """
+    seen: set[str] = set()
+    dup: list[str] = []
+    for name in fieldnames:
+        # DictReader 对异常短的表头行会产出 None 列名，一并拦截
+        if not name or not name.strip():
+            raise ValueError("CSV 表头存在空列名，请检查表头行")
+        if name in seen and name not in dup:
+            dup.append(name)
+        seen.add(name)
+    if dup:
+        raise ValueError(f"CSV 表头存在重复列名: {', '.join(dup)}")
+
+
+def _check_csv_row_overflow(row: dict[Any, Any], line_num: int, header_len: int) -> None:
+    """检查单行值数是否超出表头列数（DictReader restkey 行为），超出即报错.
+
+    多余值通常来自字段内未转义的逗号/换行 —— 静默丢弃会丢数据，报错提示修复。
+    """
+    extra = row.get(None)
+    if extra:
+        raise ValueError(
+            f"CSV 第 {line_num} 行有 {header_len + len(extra)} 个值，"
+            f"超出表头列数 {header_len}，请检查值中未转义的逗号或换行"
+        )
+
+
 def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dict[str, Any]], int]:
     """分析 CSV 文本，推断每列字段类型 + 空值占比 + 样本值（按首次出现去重）.
 
@@ -711,6 +799,7 @@ def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dic
     buf = io.StringIO(csv_text)
     reader = csv.DictReader(buf)
     fieldnames = reader.fieldnames or []
+    _validate_csv_structure(fieldnames)
 
     sample_data: dict[str, list[str]] = {name: [] for name in fieldnames}
     null_counts: dict[str, int] = dict.fromkeys(fieldnames, 0)
@@ -718,6 +807,7 @@ def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dic
 
     for row in reader:
         total_rows += 1
+        _check_csv_row_overflow(row, reader.line_num, len(fieldnames))
         for name in fieldnames:
             value = (row.get(name) or "").strip()
             if not value:
@@ -747,6 +837,9 @@ def analyze_csv_columns(csv_text: str, sample_rows: int = 100) -> tuple[list[dic
                 type_counts[t] = type_counts.get(t, 0) + 1
 
         inferred = _pick_inferred_type(type_counts)
+        # timestamp/longtext 提升在 multiselect/select 之前：类型守卫保证提升后自然跳过后续链
+        inferred = _promote_to_timestamp_if_epoch_like(inferred, samples)
+        inferred = _promote_to_longtext_if_chunky(inferred, samples)
         # multiselect 提升须在 select 之前：低基数列表值同样满足 select 低基数条件会被抢走
         inferred, promote_options = _promote_to_multiselect_if_list_like(inferred, samples)
         if not promote_options:
@@ -1006,9 +1099,12 @@ def import_rows_from_csv(
     """从 CSV 文本导入行数据，返回新行 id 列表."""
     buf = io.StringIO(csv_text)
     reader = csv.DictReader(buf)
+    _validate_csv_structure(reader.fieldnames or [])
+    header_len = len(reader.fieldnames or [])
     # 把 CSV 空单元格（空字符串或仅空白）归一为 None — 否则 number/date 等类型校验会因 '' 抛 ValueError
     rows = []
     for r in reader:
+        _check_csv_row_overflow(r, reader.line_num, header_len)
         cleaned: dict[str, Any] = {}
         for k, v in r.items():
             if isinstance(v, str):
@@ -1263,9 +1359,12 @@ def analyze_json_columns(
             continue
 
         inferred = _pick_inferred_type(type_counts[key])
+        # timestamp/longtext 提升在 multiselect/select 之前；样本统一按 str 处理
+        col_samples = samples[key]
+        inferred = _promote_to_timestamp_if_epoch_like(inferred, col_samples)
+        inferred = _promote_to_longtext_if_chunky(inferred, col_samples)
         # multiselect 提升须在 select 之前；含 dict 编码样本的列不做列表提升
         # （dict 行落 multiselect 会把 "{'a': 1, 'b': 2}" 拆出垃圾选项）
-        col_samples = samples[key]
         promote_options: list[str] = []
         if not any(s.lstrip().startswith("{") for s in col_samples):
             parser = _split_json_array_like if inferred == "json" else None
