@@ -317,3 +317,71 @@ describe('groupKanbanColumns', () => {
     expect(cols[0].urgentCount).toBe(0)
   })
 })
+
+// ── rawValue（新增卡片预填分组值，与 groupKeyForRow 分支对齐）──
+
+describe('groupKanbanColumns rawValue', () => {
+  const baseOpts = { urgent_threshold_days: 3 }
+
+  it('select 分组：rawValue 为原始值（供新增卡片预填）', () => {
+    const rows = [
+      makeRow({ id: 1, 状态: 'todo' }),
+      makeRow({ id: 2, 状态: 'doing' }),
+    ]
+    const cols = groupKanbanColumns(rows, fields, baseOpts, '状态', statusField)
+    expect(cols.map(c => c.rawValue)).toEqual(['todo', 'doing'])
+  })
+
+  it('multi_select 分组：rawValue 取数组首值', () => {
+    const rows = [
+      makeRow({ id: 1, 标签: ['fe', 'be'] }),
+      makeRow({ id: 2, 标签: 'solo' }), // 非数组值原样保留
+    ]
+    const cols = groupKanbanColumns(rows, fields, baseOpts, '标签', tagsField)
+    expect(cols.map(c => c.rawValue)).toEqual(['fe', 'solo'])
+  })
+
+  it('link 分组：rawValue 取数组首元素（对象或 id）', () => {
+    const rows = [
+      makeRow({ id: 1, 所属: [{ id: 1, label: '前端组' }] }),
+      makeRow({ id: 2, 所属: [42] }),
+    ]
+    const cols = groupKanbanColumns(rows, fields, baseOpts, '所属', linkField)
+    expect(cols[0]!.rawValue).toEqual({ id: 1, label: '前端组' })
+    expect(cols[1]!.rawValue).toBe(42)
+  })
+
+  it('无字段定义：rawValue 为原始值', () => {
+    const rows = [makeRow({ id: 1, 其它: '丙' })]
+    const cols = groupKanbanColumns(rows, fields, baseOpts, '其它', undefined)
+    expect(cols[0]!.rawValue).toBe('丙')
+  })
+
+  it('空值归「未分组」列：rawValue 为 undefined', () => {
+    const rows = [
+      makeRow({ id: 1, 状态: null }),
+      makeRow({ id: 2, 状态: '' }),
+      makeRow({ id: 3 }),
+    ]
+    const cols = groupKanbanColumns(rows, fields, baseOpts, '状态', statusField)
+    expect(cols).toHaveLength(1)
+    expect(cols[0]!.title).toBe('未分组')
+    expect(cols[0]!.rawValue).toBeUndefined()
+  })
+
+  it('无分组字段：单列 rawValue 无意义（undefined）', () => {
+    const rows = [makeRow({ id: 1, 状态: 'todo' })]
+    const cols = groupKanbanColumns(rows, fields, baseOpts, undefined, undefined)
+    expect(cols[0]!.rawValue).toBeUndefined()
+  })
+
+  it('同列多行：rawValue 取首行分组值', () => {
+    const rows = [
+      makeRow({ id: 1, 状态: 'todo' }),
+      makeRow({ id: 2, 状态: 'todo' }),
+    ]
+    const cols = groupKanbanColumns(rows, fields, baseOpts, '状态', statusField)
+    expect(cols).toHaveLength(1)
+    expect(cols[0]!.rawValue).toBe('todo')
+  })
+})

@@ -9,13 +9,48 @@
  *  6. 编辑/新建已配置自动编号的 text 字段：模式 Radio 正确激活、参数可编辑，
  *     除 rc-util isEqual 对 rc-field-form 内部 meta 的已知误报外无任何警告
  *     （误报成因与白名单见 isUpstreamCircularNoise 注释）
+ *  7. 字段顺序拖拽：手柄渲染、dragEnd 交换后按新顺序提交 reorder、成功回调 onChanged、失败提示
  */
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
+import type { ReactNode } from 'react'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import FieldManager, { fieldNoteText, formatIncrementExample } from './FieldManager'
 import { renderProviders } from '@/test/render-providers'
 import { fieldApi, tableApi } from '@/api'
+
+/** dnd-kit mock 共享状态：DndContext 挂载时捕获 onDragEnd 供用例直接驱动拖拽完成回调 */
+const dnd = vi.hoisted(() => ({
+    dragEnd: null as ((event: { active: { id: unknown }; over: { id: unknown } | null }) => void) | null,
+}))
+
+vi.mock('@dnd-kit/core', () => ({
+    // 记录 onDragEnd（jsdom 下模拟 PointerSensor 拖拽不可靠，直接驱动回调验证核心逻辑）
+    DndContext: ({ children, onDragEnd }: { children: ReactNode; onDragEnd?: (e: unknown) => void }) => {
+        dnd.dragEnd = onDragEnd ?? null
+        return <>{children}</>
+    },
+    closestCenter: () => null,
+    PointerSensor: class { },
+    useSensor: () => ({}),
+    useSensors: (...sensors: unknown[]) => sensors,
+}))
+
+vi.mock('@dnd-kit/sortable', async (importOriginal) => {
+    const actual = await importOriginal<Record<string, unknown>>()
+    return {
+        ...actual, // 保留 arrayMove / verticalListSortingStrategy 真实现
+        SortableContext: ({ children }: { children: ReactNode }) => <>{children}</>,
+        useSortable: () => ({
+            attributes: {},
+            listeners: {},
+            setNodeRef: () => { },
+            transform: null,
+            transition: undefined,
+            isDragging: false,
+        }),
+    }
+})
 
 const WID = '10'
 const TID = '20'
@@ -738,5 +773,78 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
                 captured.restore()
             }
         })
+    })
+})
+
+// ─────────────── 字段顺序拖拽（reorder）───────────────
+
+describe('FieldManager 字段顺序拖拽', () => {
+    /** 驱动 dnd-kit onDragEnd 回调（拖拽交互已 mock，直接触发完成事件） */
+    function fireDragEnd(activeId: string | number, overId: string | number | null) {
+        expect(dnd.dragEnd).not.toBeNull()
+        dnd.dragEnd!({ active: { id: activeId }, over: overId === null ? null : { id: overId } })
+    }
+
+    /** 渲染带 spies 的 FieldManager：返回 onChanged spy */
+    function renderWithSpies() {
+        const onChanged = vi.fn()
+        renderProviders(
+            <FieldManager open wid={WID} tid={TID} fields={FIELDS} onClose={() => { }} onChanged={onChanged} embedded />,
+            { initialAuth: { user: { id: 1, username: 'alice', role: 'system_admin' } as any, token: 'fake' } },
+        )
+        return { onChanged }
+    }
+
+    it('每个字段行渲染拖拽手柄，工具栏提示可拖拽调整顺序', () => {
+        renderWithSpies()
+
+        const handles = document.querySelectorAll('.fm-row-drag-handle')
+        expect(handles).toHaveLength(FIELDS.length)
+        handles.forEach(h => expect(h.getAttribute('title')).toBe('拖拽调整字段顺序'))
+        expect(screen.getByText(/共 5 个字段 · 拖拽手柄可调整顺序/)).toBeInTheDocument()
+    })
+
+    it('拖拽第 1 个字段到第 3 位：按新顺序提交 reorder 并回调 onChanged', async () => {
+        const { onChanged } = renderWithSpies()
+        const reorderSpy = vi.spyOn(fieldApi, 'reorder').mockResolvedValue([] as any)
+
+        // FIELDS 按 order 排序为 [1,2,3,4,5]，把 id=1 移到 id=3 的位置 → [2,3,1,4,5]
+        fireDragEnd('1', '3')
+
+        await waitFor(() => {
+            expect(reorderSpy).toHaveBeenCalledTimes(1)
+            expect(reorderSpy).toHaveBeenCalledWith(WID, TID, [2, 3, 1, 4, 5])
+        })
+        await waitFor(() => {
+            expect(onChanged).toHaveBeenCalledTimes(1)
+        })
+    })
+
+    it('拖拽目标为 null（拖出列表）时不提交', () => {
+        renderWithSpies()
+        const reorderSpy = vi.spyOn(fieldApi, 'reorder').mockResolvedValue([] as any)
+
+        fireDragEnd('1', null)
+
+        expect(reorderSpy).not.toHaveBeenCalled()
+    })
+
+    it('拖回原位（active === over）时不提交', () => {
+        renderWithSpies()
+        const reorderSpy = vi.spyOn(fieldApi, 'reorder').mockResolvedValue([] as any)
+
+        fireDragEnd('2', '2')
+
+        expect(reorderSpy).not.toHaveBeenCalled()
+    })
+
+    it('reorder 失败时提示错误且不回调 onChanged', async () => {
+        const { onChanged } = renderWithSpies()
+        vi.spyOn(fieldApi, 'reorder').mockRejectedValue(new Error('排序冲突'))
+
+        fireDragEnd('1', '3')
+
+        expect(await screen.findByText('排序冲突')).toBeInTheDocument()
+        expect(onChanged).not.toHaveBeenCalled()
     })
 })
