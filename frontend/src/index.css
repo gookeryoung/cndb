@@ -1039,6 +1039,7 @@ body.theme-dark [style*="color:'#999'"] {
   transition: opacity 0.18s ease;
   z-index: 1;
 }
+
 .cn-segmented-wrap.is-scroll-right::after {
   opacity: 1;
 }
@@ -1048,7 +1049,8 @@ body.theme-dark [style*="color:'#999'"] {
   content: '';
   position: absolute;
   top: 0;
-  left: 16px; /* 与 wrap 左侧 padding 对齐 */
+  left: 16px;
+  /* 与 wrap 左侧 padding 对齐 */
   bottom: 0;
   width: 32px;
   pointer-events: none;
@@ -1057,6 +1059,7 @@ body.theme-dark [style*="color:'#999'"] {
   transition: opacity 0.18s ease;
   z-index: 1;
 }
+
 .cn-segmented-wrap.is-scroll-left::before {
   opacity: 1;
 }
@@ -1083,18 +1086,24 @@ body.theme-dark [style*="color:'#999'"] {
   font-size: 11px;
   line-height: 1;
 }
+
 .cn-seg-scroll-btn:hover {
   background: var(--cn-bg-subtle, var(--cn-bg-container));
   color: var(--cn-text-primary);
 }
+
 .cn-seg-scroll-btn:active {
   transform: translateY(-50%) scale(0.92);
 }
+
 .cn-seg-scroll-btn-left {
-  left: 16px; /* 与 wrap 左侧 padding 对齐 */
+  left: 16px;
+  /* 与 wrap 左侧 padding 对齐 */
 }
+
 .cn-seg-scroll-btn-right {
-  right: 4px; /* 避开 wrap 最右边缘 */
+  right: 4px;
+  /* 避开 wrap 最右边缘 */
 }
 
 .cn-segmented {
@@ -1401,5 +1410,172 @@ body.theme-dark [style*="color:'#999'"] {
 
   .vcvd-col-1 {
     grid-column: 1 / -1;
+  }
+}
+
+/* ─────────────── 看板卡片完成庆祝动画 ───────────────
+ * 卡片从未完成翻转为完成时：卡片弹跳一次 + 对勾弹性放大 + 彩纸从卡片中部迸发。
+ * 仅在翻转瞬间由 JS 加类（kb-done-celebrate/kb-check-pop），初始加载即为完成的卡片不播。 */
+
+@keyframes kb-done-card-pop {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  35% {
+    transform: scale(1.03);
+    box-shadow: 0 6px 22px color-mix(in srgb, #52c41a 35%, transparent);
+  }
+}
+
+@keyframes kb-check-pop {
+  0% {
+    transform: scale(0);
+  }
+
+  60% {
+    transform: scale(1.45);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes kb-confetti-fly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(var(--kb-cx), var(--kb-cy)) scale(0.4) rotate(220deg);
+  }
+}
+
+.kb-done-celebrate {
+  animation: kb-done-card-pop 0.5s ease;
+}
+
+.kb-check-pop {
+  display: inline-block;
+  animation: kb-check-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.kb-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.kb-confetti i {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  opacity: 0;
+  animation: kb-confetti-fly 0.9s ease-out forwards;
+}
+
+/* 各粒子迸发方向与颜色（成功绿为主，点缀金/蓝，呼应完成主题） */
+.kb-confetti i:nth-child(1) {
+  --kb-cx: -52px;
+  --kb-cy: -46px;
+  background: #52c41a;
+}
+
+.kb-confetti i:nth-child(2) {
+  --kb-cx: 0px;
+  --kb-cy: -64px;
+  background: #faad14;
+  animation-delay: 0.05s;
+}
+
+.kb-confetti i:nth-child(3) {
+  --kb-cx: 52px;
+  --kb-cy: -46px;
+  background: #52c41a;
+}
+
+.kb-confetti i:nth-child(4) {
+  --kb-cx: -70px;
+  --kb-cy: -8px;
+  background: #1677ff;
+  animation-delay: 0.1s;
+}
+
+.kb-confetti i:nth-child(5) {
+  --kb-cx: 70px;
+  --kb-cy: -8px;
+  background: #52c41a;
+  animation-delay: 0.05s;
+}
+
+.kb-confetti i:nth-child(6) {
+  --kb-cx: -40px;
+  --kb-cy: 30px;
+  background: #faad14;
+  animation-delay: 0.12s;
+}
+
+.kb-confetti i:nth-child(7) {
+  --kb-cx: 40px;
+  --kb-cy: 30px;
+  background: #1677ff;
+  animation-delay: 0.08s;
+}
+
+.kb-confetti i:nth-child(8) {
+  --kb-cx: -16px;
+  --kb-cy: 46px;
+  background: #52c41a;
+  animation-delay: 0.15s;
+}
+
+.kb-confetti i:nth-child(9) {
+  --kb-cx: 16px;
+  --kb-cy: 46px;
+  background: #faad14;
+  animation-delay: 0.1s;
+}
+
+.kb-confetti i:nth-child(10) {
+  --kb-cx: 0px;
+  --kb-cy: 56px;
+  background: #1677ff;
+  animation-delay: 0.18s;
+}
+
+/* 尊重系统减少动态偏好：庆祝动画退化为淡入淡出 */
+@media (prefers-reduced-motion: reduce) {
+
+  .kb-done-celebrate,
+  .kb-check-pop {
+    animation: none;
+  }
+
+  .kb-confetti i {
+    animation-duration: 0.5s;
+  }
+
+  @keyframes kb-confetti-fly {
+
+    0% {
+      opacity: 0.8;
+      transform: translate(0, 0);
+    }
+
+    100% {
+      opacity: 0;
+      transform: translate(calc(var(--kb-cx) * 0.4), calc(var(--kb-cy) * 0.4));
+    }
   }
 }
