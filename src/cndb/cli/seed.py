@@ -28,7 +28,8 @@ def _get_datasets_dir() -> Path | None:
     pkg_datasets = Path(__file__).resolve().parent / "datasets"
     if pkg_datasets.is_dir():
         return pkg_datasets
-    src_root = Path(__file__).resolve().parent.parent.parent
+    # 本文件位于 src/cndb/cli/seed.py，向上四级才是仓库根（移入 cli 包后层级 +1）
+    src_root = Path(__file__).resolve().parents[3]
     candidate = src_root / "examples" / "datasets"
     if candidate.is_dir():
         return candidate

@@ -13,9 +13,14 @@
  *
  * 滚动策略：用一个真实的 overflow-x: auto 横向滚动容器包住右侧全部时间轴内容，
  * header 和 body 各自独立但横向同步；同时支持鼠标滚轮转横向 + 滚动到今天按钮。
+ *
+ * 纵向虚拟化：任务行（含分组头）展平为定高序列，用 @tanstack/react-virtual 切片渲染，
+ * 左侧任务名列与右侧时间轴共享同一个 virtualizer，两侧窗口与滚动位置严格对齐，
+ * 2000 条任务上限下 DOM 节点保持在百级。
  */
 
 import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 import { Segmented, Button, Tooltip, Empty } from 'antd'
 import { LeftOutlined, RightOutlined, ReloadOutlined, CalendarOutlined, HomeOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
@@ -365,7 +370,28 @@ function TodayLine({
   )
 }
 
-// ── 主组件 ────────────────────────────────────────────
+// ── 虚拟行类型 ────────────────────────────────────────
+
+/** 分组聚合结构（左侧 WBS 头与右侧组背景条共用） */
+interface GanttGroup {
+  key: string
+  label: string
+  tasks: GanttTask[]
+  color: string
+  index: number // 组序号（1-based，用于 WBS 编号）
+}
+
+/** 扁平化虚拟行：分组头或任务行，左右两栏按同一序列切片 */
+type GanttFlatItem =
+  | { kind: 'group'; key: string; size: number; group: GanttGroup }
+  | {
+    kind: 'task'
+    key: string
+    size: number
+    group: GanttGroup
+    task: GanttTask
+    tIndex: number
+  }
 
 export default function GanttView({
   rows,
@@ -429,6 +455,16 @@ export default function GanttView({
   const { anchorSegments, currentSegments, pxPerDay, levelDef } = dualTimeline
   const totalTimelineWidth = anchorSegments.reduce((s, t) => s + t.width, 0)
 
+  // 次分隔线（day/week 段严格等宽）：用单层 repeating 渐变替代每段一个 0 宽 div，
+  // 避免大跨度（如上千天）下产生上千个常驻 DOM 节点
+  const secondaryGrid = useMemo(() => {
+    if (levelDef.anchorScale !== 'month') return null
+    if (levelDef.currentScale !== 'day' && levelDef.currentScale !== 'week') return null
+    if (currentSegments.length < 2) return null
+    const segWidth = currentSegments[0].width
+    return { segWidth, width: (currentSegments.length - 1) * segWidth }
+  }, [levelDef.anchorScale, levelDef.currentScale, currentSegments])
+
   // ── 滚动容器 ref —— 整个右侧时间轴用真实 overflow-x: auto ──
   const hScrollRef = useRef<HTMLDivElement>(null)
 
@@ -466,14 +502,8 @@ export default function GanttView({
   }, [totalTimelineWidth])
 
   // 按分组聚合（用于左侧分组分隔 + WBS 编号）
-  const groupedTasks = useMemo(() => {
-    const groups: Array<{
-      key: string
-      label: string
-      tasks: GanttTask[]
-      color: string
-      index: number   // 组序号（1-based，用于 WBS 编号）
-    }> = []
+  const groupedTasks = useMemo<GanttGroup[]>(() => {
+    const groups: GanttGroup[] = []
     for (const t of tasks) {
       const gkey = t.groupValue || '__nogroup__'
       let g = groups.find(g => g.key === gkey)
@@ -491,6 +521,40 @@ export default function GanttView({
     }
     return groups
   }, [tasks])
+
+  // 展平为「组头 + 任务行」定高序列 —— 左右两栏共享同一个 virtualizer，
+  // 保证滚动窗口内两侧行严格对齐
+  const hasGroup = !!groupField
+  const flatItems = useMemo<GanttFlatItem[]>(() => {
+    const items: GanttFlatItem[] = []
+    for (const group of groupedTasks) {
+      if (hasGroup) {
+        items.push({ kind: 'group', key: `g-${group.key}`, size: ds.groupHeaderHeight, group })
+      }
+      group.tasks.forEach((task, tIndex) => {
+        items.push({ kind: 'task', key: `t-${String(task.row.id)}`, size: ds.rowHeight, group, task, tIndex })
+      })
+    }
+    return items
+  }, [groupedTasks, hasGroup, ds.groupHeaderHeight, ds.rowHeight])
+
+  // 纵向虚拟化：右侧时间轴 body 是真实滚动元素；callback ref 把元素交给
+  // virtualizer（空态分支不挂载该元素），左列通过 scroll 事件跟随
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null)
+  const attachBody = useCallback((el: HTMLDivElement | null) => {
+    bodyRef.current = el
+    setBodyEl(el)
+  }, [])
+  const rowVirtualizer = useVirtualizer({
+    count: flatItems.length,
+    getScrollElement: () => bodyEl,
+    estimateSize: (index) => flatItems[index]?.size ?? ds.rowHeight,
+    getItemKey: (index) => flatItems[index].key,
+    overscan: 8,
+  })
+  const virtualItems = rowVirtualizer.getVirtualItems()
+  const totalBodyHeight = rowVirtualizer.getTotalSize()
 
   // 空状态
   const startField = opts.start_date_field as string | undefined
@@ -631,13 +695,15 @@ export default function GanttView({
             {groupField ? 'WBS 分解' : '任务名称'}
           </div>
 
-          {/* 左侧 body —— 跟随右侧纵向滚动 */}
+          {/* 左侧 body —— 与右侧共享虚拟窗口，滚动位置双向同步 */}
           <LeftColBody
-            groupedTasks={groupedTasks}
+            items={flatItems}
+            virtualItems={virtualItems}
+            totalSize={totalBodyHeight}
+            hasGroup={hasGroup}
             ds={ds}
-            groupField={!!groupField}
             onRowClick={onRowClick}
-            rightScrollRef={hScrollRef}
+            bodyRef={bodyRef}
           />
         </div>
 
@@ -697,45 +763,73 @@ export default function GanttView({
               ))}
             </div>
 
-            {/* 下层：当前刻度层（day / week / month / quarter）—— flex 布局 */}
+            {/* 下层：当前刻度层（day / week / month / quarter）。
+                day/week 段等宽且标签稀疏：竖线交给单层渐变，仅渲染带标签的段（absolute）；
+                month/quarter 段数少且全部带标签，保留 flex 布局 */}
             <div
               data-testid="gantt-header-row"
               data-layer="current"
               style={{
+                position: 'relative',
                 height: ds.headerHeight,
                 minWidth: totalTimelineWidth,
-                display: 'flex',
                 background: 'var(--cn-bg-subtle)',
               }}
             >
-              {currentSegments.map((seg) => (
+              {secondaryGrid && (
                 <div
-                  key={`c-${seg.left}`}
-                  data-testid={seg.showLabel ? 'gantt-timeline-label' : undefined}
-                  data-layer="current"
+                  aria-hidden
                   style={{
-                    width: seg.width,
-                    minWidth: seg.width,
-                    padding: '0 3px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRight: `1px solid ${levelDef.anchorScale === 'year' ? 'var(--cn-border)' : 'var(--cn-border-secondary, #f0f0f0)'}`,
-                    fontSize: ds.headerFontSize,
-                    color: 'var(--cn-text-muted)',
-                    flexShrink: 0,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: 0,
+                    width: totalTimelineWidth,
+                    backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent ${secondaryGrid.segWidth - 1}px, var(--cn-border-secondary, #f0f0f0) ${secondaryGrid.segWidth - 1}px, var(--cn-border-secondary, #f0f0f0) ${secondaryGrid.segWidth}px)`,
                   }}
-                >
-                  {seg.showLabel ? seg.label : null}
-                </div>
-              ))}
+                />
+              )}
+              {currentSegments.map((seg) => {
+                // day/week 的无标签空段不渲染（竖线由渐变层承担）
+                if (secondaryGrid && !seg.showLabel) return null
+                return (
+                  <div
+                    key={`c-${seg.left}`}
+                    data-testid={seg.showLabel ? 'gantt-timeline-label' : undefined}
+                    data-layer="current"
+                    style={{
+                      position: secondaryGrid ? 'absolute' : 'relative',
+                      left: secondaryGrid ? seg.left : undefined,
+                      top: secondaryGrid ? 0 : undefined,
+                      height: secondaryGrid ? '100%' : undefined,
+                      width: seg.width,
+                      minWidth: seg.width,
+                      padding: '0 3px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRight: secondaryGrid
+                        ? undefined
+                        : `1px solid ${levelDef.anchorScale === 'year' ? 'var(--cn-border)' : 'var(--cn-border-secondary, #f0f0f0)'}`,
+                      fontSize: ds.headerFontSize,
+                      color: 'var(--cn-text-muted)',
+                      flexShrink: 0,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      background: 'var(--cn-bg-subtle)',
+                    }}
+                  >
+                    {seg.showLabel ? seg.label : null}
+                  </div>
+                )
+              })}
             </div>
           </div>
 
-          {/* body 行区 —— 垂直滚动 */}
+          {/* body 行区 —— 纵向虚拟滚动（本元素即左列滚动同步源） */}
           <div
+            ref={attachBody}
+            data-testid="gantt-body"
             style={{
               position: 'relative',
               flex: 1,
@@ -751,7 +845,7 @@ export default function GanttView({
                 top: 0,
                 left: 0,
                 width: totalTimelineWidth,
-                height: '100%',
+                height: totalBodyHeight,
                 pointerEvents: 'none',
                 zIndex: 0,
               }}
@@ -770,53 +864,59 @@ export default function GanttView({
                   }}
                 />
               ))}
-              {/* 次分隔线：当前粒度（仅当粒度 < 锚定粒度时渲染） */}
-              {levelDef.anchorScale === 'month' && levelDef.currentScale === 'day' && currentSegments.map((seg, i) => (
-                i < currentSegments.length - 1 ? (
-                  <div
-                    key={`cg-${seg.left}`}
-                    style={{
-                      position: 'absolute',
-                      left: seg.left + seg.width,
-                      top: 0,
-                      bottom: 0,
-                      width: 0,
-                      borderRight: '1px dashed var(--cn-border-secondary, #eee)',
-                    }}
-                  />
-                ) : null
-              ))}
-              {levelDef.anchorScale === 'month' && levelDef.currentScale === 'week' && currentSegments.map((seg, i) => (
-                i < currentSegments.length - 1 ? (
-                  <div
-                    key={`cg-${seg.left}`}
-                    style={{
-                      position: 'absolute',
-                      left: seg.left + seg.width,
-                      top: 0,
-                      bottom: 0,
-                      width: 0,
-                      borderRight: '1px dashed var(--cn-border-secondary, #eee)',
-                    }}
-                  />
-                ) : null
-              ))}
+              {/* 次分隔线：当前粒度（day/week 等宽段，渐变周期复刻每段右边界 1px 线） */}
+              {secondaryGrid && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: secondaryGrid.width,
+                    backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent ${secondaryGrid.segWidth - 1}px, var(--cn-border-secondary, #eee) ${secondaryGrid.segWidth - 1}px, var(--cn-border-secondary, #eee) ${secondaryGrid.segWidth}px)`,
+                  }}
+                />
+              )}
               {showToday && timeRange && <TodayLine range={timeRange} pxPerDay={pxPerDay} />}
             </div>
 
-            {/* 分组 + 任务行 */}
-            {groupedTasks.map((group) => (
-              <GroupBlock
-                key={group.key}
-                group={group}
-                ds={ds}
-                groupField={!!groupField}
-                timeRange={timeRange!}
-                pxPerDay={pxPerDay}
-                totalTimelineWidth={totalTimelineWidth}
-                onRowClick={onRowClick}
-              />
-            ))}
+            {/* 虚拟行容器：仅渲染滚动窗口（含 overscan）内的组头与任务行 */}
+            <div
+              style={{
+                position: 'relative',
+                width: totalTimelineWidth,
+                height: totalBodyHeight,
+                zIndex: 1,
+              }}
+            >
+              {virtualItems.map((vi) => {
+                const item = flatItems[vi.index]
+                if (item.kind === 'group') {
+                  return (
+                    <VirtualGroupHeader
+                      key={vi.key}
+                      top={vi.start}
+                      width={totalTimelineWidth}
+                      height={item.size}
+                      color={item.group.color}
+                    />
+                  )
+                }
+                return (
+                  <VirtualTaskRow
+                    key={vi.key}
+                    task={item.task}
+                    top={vi.start}
+                    height={item.size}
+                    width={totalTimelineWidth}
+                    timeRange={timeRange!}
+                    pxPerDay={pxPerDay}
+                    barHeight={ds.barHeight}
+                    onRowClick={onRowClick}
+                  />
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -853,56 +953,48 @@ export default function GanttView({
   )
 }
 
-// ── 左侧列 body —— 与右侧纵向滚动同步 ──────────────────
+// ── 左侧列 body —— 与右侧共享纵向虚拟窗口 ─────────────────
 
 interface LeftColBodyProps {
-  groupedTasks: Array<{
-    key: string
-    label: string
-    tasks: GanttTask[]
-    color: string
-    index: number
-  }>
+  items: GanttFlatItem[]
+  virtualItems: VirtualItem[]
+  totalSize: number
+  hasGroup: boolean
   ds: ReturnType<typeof densityStyle>
-  groupField: boolean
   onRowClick?: (r: RowResponse) => void
-  rightScrollRef: React.RefObject<HTMLDivElement>
+  bodyRef: React.RefObject<HTMLDivElement | null>
 }
 
-const LeftColBody = memo(function LeftColBody({ groupedTasks, ds, groupField, onRowClick, rightScrollRef }: LeftColBodyProps) {
+function LeftColBody({ items, virtualItems, totalSize, hasGroup, ds, onRowClick, bodyRef }: LeftColBodyProps) {
   const leftRef = useRef<HTMLDivElement>(null)
 
-  // 同步右侧 body 的纵向滚动 —— 用 MutationObserver 或直接 wheel 事件
-  // 简单方案：监听左侧 wheel，转发到右侧；监听右侧 scroll，同步左侧
+  // 滚动双向同步：右侧 body 是 virtualizer 的滚动元素，右滚时左列跟随 scrollTop；
+  // 左列滚动条/滚轮则转发到右侧，由 virtualizer 统一驱动两侧窗口切片
   useEffect(() => {
     const leftEl = leftRef.current
-    const rightEl = rightScrollRef.current
+    const rightEl = bodyRef.current
     if (!leftEl || !rightEl) return
-
-    // 找到右侧 body 里的纵向滚动容器（overflow: auto）
-    const rightBody = rightEl.querySelector<HTMLDivElement>('div[style*="overflow: auto"]')
-    if (!rightBody) return
 
     let syncing = false
     const onRightScroll = () => {
       if (syncing) return
       syncing = true
-      leftEl.scrollTop = rightBody.scrollTop
+      leftEl.scrollTop = rightEl.scrollTop
       requestAnimationFrame(() => { syncing = false })
     }
     const onLeftScroll = () => {
       if (syncing) return
       syncing = true
-      rightBody.scrollTop = leftEl.scrollTop
+      rightEl.scrollTop = leftEl.scrollTop
       requestAnimationFrame(() => { syncing = false })
     }
-    rightBody.addEventListener('scroll', onRightScroll)
+    rightEl.addEventListener('scroll', onRightScroll)
     leftEl.addEventListener('scroll', onLeftScroll)
     return () => {
-      rightBody.removeEventListener('scroll', onRightScroll)
+      rightEl.removeEventListener('scroll', onRightScroll)
       leftEl.removeEventListener('scroll', onLeftScroll)
     }
-  }, [rightScrollRef])
+  }, [bodyRef])
 
   return (
     <div
@@ -913,182 +1005,202 @@ const LeftColBody = memo(function LeftColBody({ groupedTasks, ds, groupField, on
         overflowX: 'hidden',
       }}
     >
-      {groupedTasks.map((group) => (
-        <div key={group.key}>
-          {/* 分组 header —— 有 group_field 时显示，否则不显示（任务直接平铺） */}
-          {groupField && (
-            <div
-              style={{
-                height: ds.groupHeaderHeight,
-                padding: '0 12px',
-                background: `${group.color}15`,
-                borderBottom: '1px solid var(--cn-border)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                fontSize: ds.metaFontSize,
-                fontWeight: 600,
-                color: group.color,
-                position: 'relative',
-                flexShrink: 0,
-              }}
-            >
-              {/* 左侧色条 */}
-              <span
-                style={{
-                  width: 3,
-                  height: 16,
-                  borderRadius: 2,
-                  background: group.color,
-                  flexShrink: 0,
-                }}
-              />
-              {/* WBS 组编号 */}
-              <span
-                style={{
-                  fontSize: ds.metaFontSize - 1,
-                  color: 'var(--cn-text-muted)',
-                  fontWeight: 500,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                }}
-              >
-                G{group.index}
-              </span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {group.label}
-              </span>
-              <span style={{ color: 'var(--cn-text-muted)', fontWeight: 400, marginLeft: 'auto' }}>
-                ({group.tasks.length})
-              </span>
-            </div>
-          )}
-
-          {/* 任务行 —— 带树状连接线 */}
-          {group.tasks.map((task, tIdx) => {
-            const isLast = tIdx === group.tasks.length - 1
+      <div style={{ position: 'relative', height: totalSize }}>
+        {virtualItems.map((vi) => {
+          const item = items[vi.index]
+          if (item.kind === 'group') {
+            const group = item.group
             return (
               <div
-                key={task.row.id}
-                onClick={() => onRowClick?.(task.row)}
+                key={vi.key}
                 style={{
-                  height: ds.rowHeight,
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: item.size,
+                  transform: `translateY(${vi.start}px)`,
                   padding: '0 12px',
+                  background: `${group.color}15`,
                   borderBottom: '1px solid var(--cn-border)',
-                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  position: 'relative',
                   gap: 8,
-                  transition: 'background 0.15s',
+                  fontSize: ds.metaFontSize,
+                  fontWeight: 600,
+                  color: group.color,
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--cn-bg-subtle)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = '' }}
               >
-                {/* WBS 编号 */}
+                {/* 左侧色条 */}
+                <span
+                  style={{
+                    width: 3,
+                    height: 16,
+                    borderRadius: 2,
+                    background: group.color,
+                    flexShrink: 0,
+                  }}
+                />
+                {/* WBS 组编号 */}
                 <span
                   style={{
                     fontSize: ds.metaFontSize - 1,
                     color: 'var(--cn-text-muted)',
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                    flexShrink: 0,
-                    minWidth: groupField ? 36 : 28,
-                  }}
-                >
-                  {groupField ? `G${group.index}.${tIdx + 1}` : `${tIdx + 1}`}
-                </span>
-                {/* 树状连接符 */}
-                <span
-                  style={{
-                    color: 'var(--cn-text-muted)',
-                    fontSize: ds.titleFontSize,
-                    lineHeight: 1,
-                    flexShrink: 0,
-                    width: 10,
-                    textAlign: 'center',
-                  }}
-                >
-                  {groupField ? (isLast ? '└' : '├') : (tIdx === group.tasks.length - 1 ? '—' : '│')}
-                </span>
-                {/* 任务标题 */}
-                <div
-                  style={{
-                    flex: 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    fontSize: ds.titleFontSize,
                     fontWeight: 500,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                   }}
                 >
-                  {task.title}
-                </div>
+                  G{group.index}
+                </span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {group.label}
+                </span>
+                <span style={{ color: 'var(--cn-text-muted)', fontWeight: 400, marginLeft: 'auto' }}>
+                  ({group.tasks.length})
+                </span>
               </div>
             )
-          })}
-        </div>
-      ))}
+          }
+
+          {/* 任务行 —— 带树状连接线 */ }
+          const { group, task, tIndex } = item
+          const isLast = tIndex === group.tasks.length - 1
+          return (
+            <div
+              key={vi.key}
+              onClick={() => onRowClick?.(task.row)}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: item.size,
+                transform: `translateY(${vi.start}px)`,
+                padding: '0 12px',
+                borderBottom: '1px solid var(--cn-border)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--cn-bg-subtle)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '' }}
+            >
+              {/* WBS 编号 */}
+              <span
+                style={{
+                  fontSize: ds.metaFontSize - 1,
+                  color: 'var(--cn-text-muted)',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  flexShrink: 0,
+                  minWidth: hasGroup ? 36 : 28,
+                }}
+              >
+                {hasGroup ? `G${group.index}.${tIndex + 1}` : `${tIndex + 1}`}
+              </span>
+              {/* 树状连接符 */}
+              <span
+                style={{
+                  color: 'var(--cn-text-muted)',
+                  fontSize: ds.titleFontSize,
+                  lineHeight: 1,
+                  flexShrink: 0,
+                  width: 10,
+                  textAlign: 'center',
+                }}
+              >
+                {hasGroup ? (isLast ? '└' : '├') : (isLast ? '—' : '│')}
+              </span>
+              {/* 任务标题 */}
+              <div
+                style={{
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontSize: ds.titleFontSize,
+                  fontWeight: 500,
+                }}
+              >
+                {task.title}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
+  )
+}
+
+// ── 右侧时间轴虚拟行 ──────────────────────────────────
+
+interface VirtualGroupHeaderProps {
+  top: number
+  width: number
+  height: number
+  color: string
+}
+
+/** 右侧分组头：仅渲染背景条（文字信息在左列），高度与左列组头一致 */
+const VirtualGroupHeader = memo(function VirtualGroupHeader({ top, width, height, color }: VirtualGroupHeaderProps) {
+  return (
+    <div
+      aria-hidden
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width,
+        height,
+        transform: `translateY(${top}px)`,
+        background: `${color}15`,
+        borderBottom: '1px solid var(--cn-border)',
+      }}
+    />
   )
 })
 
-// ── 分组块（右侧 body 里的一组任务行 + 甘特条） ────────────
-
-interface GroupBlockProps {
-  group: {
-    key: string
-    label: string
-    tasks: GanttTask[]
-    color: string
-    index: number
-  }
-  ds: ReturnType<typeof densityStyle>
-  groupField: boolean
+interface VirtualTaskRowProps {
+  task: GanttTask
+  top: number
+  height: number
+  width: number
   timeRange: { min: Date; max: Date }
   pxPerDay: number
-  totalTimelineWidth: number
+  barHeight: number
   onRowClick?: (r: RowResponse) => void
 }
 
-const GroupBlock = memo(function GroupBlock({ group, ds, groupField, timeRange, pxPerDay, totalTimelineWidth, onRowClick }: GroupBlockProps) {
+/** 右侧任务行：行底框 + 甘特条，absolute 定位于虚拟窗口坐标 */
+const VirtualTaskRow = memo(function VirtualTaskRow({
+  task, top, height, width, timeRange, pxPerDay, barHeight, onRowClick,
+}: VirtualTaskRowProps) {
   return (
-    <div style={{ position: 'relative', width: totalTimelineWidth, zIndex: 1 }}>
-      {/* 分组 header 背景条 —— 与左侧高度一致 */}
-      {groupField && (
-        <div
-          aria-hidden
-          style={{
-            height: ds.groupHeaderHeight,
-            background: `${group.color}15`,
-            borderBottom: '1px solid var(--cn-border)',
-          }}
-        />
-      )}
-
-      {/* 任务行 */}
-      {group.tasks.map((task) => (
-        <div
-          key={task.row.id}
-          onClick={() => onRowClick?.(task.row)}
-          style={{
-            height: ds.rowHeight,
-            borderBottom: '1px solid var(--cn-border)',
-            position: 'relative',
-            background: 'var(--cn-bg-container)',
-            cursor: 'pointer',
-            transition: 'background 0.15s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--cn-bg-subtle)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = '' }}
-        >
-          <GanttBar
-            task={task}
-            range={timeRange}
-            pxPerDay={pxPerDay}
-            barHeight={ds.barHeight}
-            onRowClick={onRowClick}
-          />
-        </div>
-      ))}
+    <div
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width,
+        height,
+        transform: `translateY(${top}px)`,
+        borderBottom: '1px solid var(--cn-border)',
+        background: 'var(--cn-bg-container)',
+        cursor: 'pointer',
+        transition: 'background 0.15s',
+      }}
+      onClick={() => onRowClick?.(task.row)}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--cn-bg-subtle)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = '' }}
+    >
+      <GanttBar
+        task={task}
+        range={timeRange}
+        pxPerDay={pxPerDay}
+        barHeight={barHeight}
+        onRowClick={onRowClick}
+      />
     </div>
   )
 })
