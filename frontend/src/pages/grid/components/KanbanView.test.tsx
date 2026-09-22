@@ -136,3 +136,60 @@ describe('KanbanView 看板视图', () => {
     expect(screen.getByText('任务A')).toBeInTheDocument()
   })
 })
+
+describe('KanbanView 完成标志', () => {
+  /** 任务C 状态=已完成（匹配完成标志），其余任务进行中/待办 */
+  const doneRows: RowResponse[] = [
+    { id: 1, 名称: '任务A', 状态: '进行中', 进度: 50, 截止: offsetDate(-5), 优先级: '高' },
+    { id: 2, 名称: '任务B', 状态: '进行中', 进度: 20, 截止: offsetDate(1), 优先级: '中' },
+    { id: 3, 名称: '任务C', 状态: '已完成', 进度: 100, 截止: offsetDate(-10), 优先级: '低' },
+  ]
+  const doneView: View = {
+    id: 1, name: '看板', view_type: 'kanban', is_default: false,
+    view_options: { ...VIEW_OPTIONS, done_field: '状态', done_value: '已完成' },
+  }
+
+  it('完成卡片隐藏截止日期徽章（逾期/还剩都不再显示），未完成卡片照常显示', () => {
+    renderKanban({ rows: doneRows, view: doneView })
+
+    // 任务C 已完成且逾期 10 天 → 不显示逾期徽章；任务A 未完成 → 照常显示
+    expect(screen.queryByText(/逾期 10天/)).not.toBeInTheDocument()
+    expect(screen.getByText(/逾期 5天/)).toBeInTheDocument()
+    expect(screen.getByText(/还剩 1天/)).toBeInTheDocument()
+  })
+
+  it('完成卡片应用完成背景色与灰色标题文字', () => {
+    renderKanban({ rows: doneRows, view: doneView })
+
+    // 标题元素带 color；其父级卡片容器带 background/borderLeft
+    // （jsdom 会把 hex 色值序列化为 rgb 形式，故按 rgb 断言）
+    const titleEl = screen.getByText('任务C')
+    const cardEl = titleEl.parentElement as HTMLElement
+    expect(cardEl.style.background).toContain('var(--cn-bg-success-subtle)')
+    expect(cardEl.style.borderLeft).toContain('rgb(82, 196, 26)') // #52c41a
+    expect(titleEl.style.color).toBe('var(--cn-text-muted)')
+  })
+
+  it('自定义背景/文字颜色时应用配置色值', () => {
+    const customView: View = {
+      id: 1, name: '看板', view_type: 'kanban', is_default: false,
+      view_options: {
+        ...VIEW_OPTIONS, done_field: '状态', done_value: '已完成',
+        done_bg_color: '#e6f4ff', done_text_color: '#1677ff',
+      },
+    }
+    renderKanban({ rows: doneRows, view: customView })
+
+    const titleEl = screen.getByText('任务C')
+    const cardEl = titleEl.parentElement as HTMLElement
+    expect(cardEl.style.background).toBe('rgb(230, 244, 255)') // #e6f4ff
+    expect(titleEl.style.color).toBe('rgb(22, 119, 255)') // #1677ff
+  })
+
+  it('完成卡片不计入列头紧急计数', () => {
+    renderKanban({ rows: doneRows, view: doneView })
+
+    // 进行中列：任务A 逾期 + 任务B 紧急 → 2 紧急；任务C 已完成逾期不计（且在其他列）
+    expect(screen.getByText(/2 紧急/)).toBeInTheDocument()
+  })
+})

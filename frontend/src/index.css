@@ -173,6 +173,7 @@ body.theme-modern {
   --cn-brand-color: #3b82f6;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
+  --cn-bg-success-subtle: #f6ffed;
 }
 
 body.theme-github-dark,
@@ -192,6 +193,7 @@ body.theme-dark {
   --cn-brand-color: #58a6ff;
   --cn-bg-danger-subtle: #3b1313;
   --cn-bg-warning-subtle: #3b2e12;
+  --cn-bg-success-subtle: #122b13;
 }
 
 body.theme-github-light {
@@ -210,6 +212,7 @@ body.theme-github-light {
   --cn-brand-color: #0969da;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
+  --cn-bg-success-subtle: #f6ffed;
 }
 
 body.theme-minimal {
@@ -228,6 +231,7 @@ body.theme-minimal {
   --cn-brand-color: #525252;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
+  --cn-bg-success-subtle: #f6ffed;
 }
 
 /* 海洋 — 青蓝清爽 */
@@ -247,6 +251,7 @@ body.theme-ocean {
   --cn-brand-color: #0891b2;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
+  --cn-bg-success-subtle: #f6ffed;
 }
 
 /* 森野 — 翠绿自然 */
@@ -266,6 +271,7 @@ body.theme-forest {
   --cn-brand-color: #16a34a;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
+  --cn-bg-success-subtle: #f6ffed;
 }
 
 /* 纸感 — 米黄护眼 */
@@ -285,6 +291,7 @@ body.theme-sepia {
   --cn-brand-color: #a16207;
   --cn-bg-danger-subtle: #f9e8d9;
   --cn-bg-warning-subtle: #f7ecd0;
+  --cn-bg-success-subtle: #f6ffed;
 }
 
 /* 樱粉 — 柔和粉色 */
@@ -304,6 +311,7 @@ body.theme-sakura {
   --cn-brand-color: #db2777;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fff7fa;
+  --cn-bg-success-subtle: #f6ffed;
 }
 
 /* 午夜紫 — 深紫夜色 */
@@ -323,6 +331,7 @@ body.theme-midnight {
   --cn-brand-color: #a78bfa;
   --cn-bg-danger-subtle: #421c2e;
   --cn-bg-warning-subtle: #3d2f16;
+  --cn-bg-success-subtle: #14301e;
 }
 
 /* 极夜黑 — 纯黑高对比 */
@@ -342,6 +351,7 @@ body.theme-oled {
   --cn-brand-color: #22d3ee;
   --cn-bg-danger-subtle: #2d1212;
   --cn-bg-warning-subtle: #2e2410;
+  --cn-bg-success-subtle: #0f2412;
 }
 
 /* ─────────────── 表格斑马纹（按主题覆盖） ─────────────── */

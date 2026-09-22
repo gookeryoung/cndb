@@ -8,7 +8,7 @@
 import type { RowResponse, Field } from '@/api'
 import { extractSelectOptions } from './fieldOps'
 import { parseDate, daysFromToday } from './dateUtils'
-import { getSelectLabel, getLinkFirstLabel, getMultiSelectFirstLabel } from './fieldValueFormat'
+import { getSelectLabel, getLinkFirstLabel, getMultiSelectFirstLabel, formatMultiSelectValue } from './fieldValueFormat'
 
 // ── 类型 ──────────────────────────────────────────────
 
@@ -41,6 +41,76 @@ export function getUrgencyRank(
   if (dl < 0) return 2
   if (dl <= urgentThreshold) return 1
   return 0
+}
+
+// ── 完成标志判定 ──────────────────────────────────────
+
+/** 完成标志上下文（从 opts 解析一次，行级判定复用） */
+export interface DoneCtx {
+  /** 完成标志字段名 */
+  field: string
+  /** 匹配值：boolean | string | string[]（按字段类型） */
+  value: unknown
+  /** 字段定义（用于类型分派与 select options 提取） */
+  fieldDef?: Field
+}
+
+/** 从 opts 解析完成标志配置（view_options.done_field + done_value）；未配置或不完整返回 null */
+export function resolveDoneCtx(opts: Record<string, unknown>, fields: Field[]): DoneCtx | null {
+  const field = opts.done_field as string | undefined
+  const value = opts.done_value
+  // 注意：value === false 是布尔字段的合法配置值，不能当"未配置"过滤
+  if (!field || value === undefined || value === null || value === '') return null
+  return { field, value, fieldDef: fields.find((f) => f.name === field) }
+}
+
+/** 判定单行是否匹配完成标志（ctx 为 null 时恒 false）.
+ *
+ * 按字段类型分派：
+ * - boolean: 严格相等（false 是合法匹配值）
+ * - select: 匹配 option 的 value 或 label（兼容旧 list[str] config，与 getPriorityRank 先例一致）
+ * - multiselect: 行值数组与配置值数组任一交集（value/label 归一后比较）
+ * - text/longtext/其他: 去首尾空格后精确相等
+ */
+export function isDoneRow(row: RowResponse, ctx: DoneCtx | null): boolean {
+  if (!ctx) return false
+  const raw = row[ctx.field]
+  const ft = ctx.fieldDef?.field_type
+
+  if (ft === 'boolean') {
+    return raw === ctx.value
+  }
+
+  if (ft === 'select') {
+    if (raw === null || raw === undefined || raw === '') return false
+    const strVal = String(raw)
+    const options = ctx.fieldDef?.config ? extractSelectOptions(ctx.fieldDef.config) : []
+    if (options.length) {
+      const hit = options.find((o) => o.value === strVal || o.label === strVal)
+      // 行值命中 option 时，比较命中项的 value/label 与配置值；未命中 option 时直接比较原值
+      if (hit) return hit.value === ctx.value || hit.label === ctx.value
+      return strVal === String(ctx.value)
+    }
+    return strVal === String(ctx.value)
+  }
+
+  if (ft === 'multiselect' || ft === 'multi_select') {
+    const rowVals = formatMultiSelectValue(raw)
+    if (!rowVals.length) return false
+    const cfgVals = Array.isArray(ctx.value) ? ctx.value.map(String) : [String(ctx.value)]
+    const options = ctx.fieldDef?.config ? extractSelectOptions(ctx.fieldDef.config) : []
+    // 行值与配置值都先归一为 option value（label → value），再求交集
+    const toValue = (s: string): string => {
+      const hit = options.find((o) => o.value === s || o.label === s)
+      return hit ? hit.value : s
+    }
+    const rowSet = new Set(rowVals.map(toValue))
+    return cfgVals.some((v) => rowSet.has(toValue(v)))
+  }
+
+  // text / longtext 及其他类型：精确匹配（去首尾空格）
+  if (raw === null || raw === undefined) return false
+  return String(raw).trim() === String(ctx.value).trim()
 }
 
 /** 按优先级字段值计算排序权重（高→低） */
@@ -104,6 +174,8 @@ export function sortKanbanCards(
   const cardSortField = opts.card_sort_field as string | undefined
   const cardSortDir = opts.card_sort_direction as 'asc' | 'desc'
   const priorityFieldDef = priorityField ? fields.find((f) => f.name === priorityField) : undefined
+  // 完成卡片不参与紧急置顶（完成态优先于逾期/紧急）
+  const doneCtx = resolveDoneCtx(opts, fields)
 
   // 把所有排序规则拼成有序列表
   // 优先级：紧急置顶 > card_sort_field > 级联 view_sortings > 优先级权重 > 创建时间倒序
@@ -115,10 +187,10 @@ export function sortKanbanCards(
   }
 
   return [...rows].sort((a, b) => {
-    // 1) 紧急置顶（逾期 > 紧急 > 正常）
+    // 1) 紧急置顶（逾期 > 紧急 > 正常）；完成卡片视为正常不置顶
     if (pinUrgent) {
-      const au = getUrgencyRank(a, dueDateField, urgentThreshold)
-      const bu = getUrgencyRank(b, dueDateField, urgentThreshold)
+      const au = isDoneRow(a, doneCtx) ? 0 : getUrgencyRank(a, dueDateField, urgentThreshold)
+      const bu = isDoneRow(b, doneCtx) ? 0 : getUrgencyRank(b, dueDateField, urgentThreshold)
       if (au !== bu) return bu - au // 权重 2 排在最前
     }
 
@@ -225,12 +297,15 @@ export function groupKanbanColumns(
   // 统计每个分组的紧急/逾期卡片数（opts 已 resolve，直接取值）
   const urgentThreshold = Number(opts.urgent_threshold_days)
   const dueDateField = opts.due_date_field as string | undefined
+  // 完成卡片不计入紧急数（完成态优先于逾期/紧急）
+  const doneCtx = resolveDoneCtx(opts, fields)
 
   const makeCol = (key: string, title: string, list: RowResponse[], rawValue?: unknown) => {
     const sorted = sortKanbanCards(list, fields, opts, sortings)
     let urgentCount = 0
     if (dueDateField) {
       for (const r of sorted) {
+        if (isDoneRow(r, doneCtx)) continue
         const dueDate = parseDate(r[dueDateField])
         if (!dueDate) continue
         const dl = daysFromToday(dueDate)

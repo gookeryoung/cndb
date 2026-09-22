@@ -6,6 +6,7 @@ import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
 import { getOpsForField, extractSelectOptions } from './fieldOps'
 import { getOptionSchema, resolveFieldOptions } from './viewOptionSchema'
 import type { ViewOptionSchema } from './viewOptionSchema'
+import DoneFlagFields from './DoneFlagFields'
 import type { Field } from '@/api'
 import HelpTip from '@/components/HelpTip'
 
@@ -226,6 +227,28 @@ export default function ViewConfigDialog({
                       value={(currentValue ?? fallbackValue) as string | number}
                       onChange={v => setDraftOpt(prev => ({ ...prev, [opt.key]: v }))}
                       options={opt.enumOptions?.map(o => ({ value: o.value, label: o.label })) || []}
+                    />
+                  </div>
+                )
+              }
+
+              // 完成标志：字段下拉 + 匹配值复合控件（存 done_field + done_value 两键）
+              if (opt.kind === 'done_flag') {
+                return (
+                  <div key={opt.key} style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: 'var(--cn-text-primary)', marginBottom: 4 }}>{opt.label}</div>
+                    <DoneFlagFields
+                      fields={fields}
+                      doneField={draftOpt.done_field as string | undefined}
+                      doneValue={draftOpt.done_value}
+                      onChange={(patch) => setDraftOpt(prev => {
+                        const next = { ...prev }
+                        for (const [k, v] of Object.entries(patch)) {
+                          if (v === undefined) delete next[k]
+                          else next[k] = v
+                        }
+                        return next
+                      })}
                     />
                   </div>
                 )

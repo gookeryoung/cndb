@@ -4,7 +4,7 @@ import type { RowResponse, Field } from '@/api'
 import { makeField } from '@/test/fixtures'
 import {
   getUrgencyRank, getPriorityRank, compareField, sortKanbanCards,
-  resolveGroupField, groupKanbanColumns,
+  resolveGroupField, groupKanbanColumns, resolveDoneCtx, isDoneRow,
 } from './kanbanBoard'
 
 /** 构造相对今天偏移 N 天的 'YYYY-MM-DD' 日期串（getUrgencyRank 依赖当前时间，动态构造保证用例稳定） */
@@ -383,5 +383,104 @@ describe('groupKanbanColumns rawValue', () => {
     const cols = groupKanbanColumns(rows, fields, baseOpts, '状态', statusField)
     expect(cols).toHaveLength(1)
     expect(cols[0]!.rawValue).toBe('todo')
+  })
+})
+
+// ── 完成标志判定（resolveDoneCtx / isDoneRow） ────────
+
+describe('resolveDoneCtx', () => {
+  it('未配置 / 缺值时返回 null', () => {
+    expect(resolveDoneCtx({}, fields)).toBeNull()
+    expect(resolveDoneCtx({ done_field: '状态' }, fields)).toBeNull()
+    expect(resolveDoneCtx({ done_field: '状态', done_value: '' }, fields)).toBeNull()
+    expect(resolveDoneCtx({ done_field: '状态', done_value: undefined }, fields)).toBeNull()
+  })
+
+  it('配置完整时返回 ctx 并解析字段定义', () => {
+    const ctx = resolveDoneCtx({ done_field: '状态', done_value: 'done' }, fields)
+    expect(ctx).not.toBeNull()
+    expect(ctx!.field).toBe('状态')
+    expect(ctx!.value).toBe('done')
+    expect(ctx!.fieldDef).toBe(statusField)
+  })
+
+  it('done_value=false 是布尔字段的合法配置值，不视为未配置', () => {
+    const ctx = resolveDoneCtx({ done_field: '完成', done_value: false }, fields)
+    expect(ctx).not.toBeNull()
+    expect(ctx!.value).toBe(false)
+  })
+})
+
+describe('isDoneRow', () => {
+  const boolField = makeField({ id: 6, name: '完成', field_type: 'boolean' })
+  const doneFields: Field[] = [...fields, boolField]
+
+  it('未配置时恒为 false', () => {
+    expect(isDoneRow(makeRow({ id: 1, 状态: 'done' }), null)).toBe(false)
+  })
+
+  it('boolean 字段：严格相等（false 是合法匹配值）', () => {
+    const ctxTrue = resolveDoneCtx({ done_field: '完成', done_value: true }, doneFields)!
+    const ctxFalse = resolveDoneCtx({ done_field: '完成', done_value: false }, doneFields)!
+    expect(isDoneRow(makeRow({ id: 1, 完成: true }), ctxTrue)).toBe(true)
+    expect(isDoneRow(makeRow({ id: 1, 完成: true }), ctxFalse)).toBe(false)
+    expect(isDoneRow(makeRow({ id: 1, 完成: false }), ctxFalse)).toBe(true)
+    expect(isDoneRow(makeRow({ id: 1, 完成: null }), ctxFalse)).toBe(false)
+  })
+
+  it('select 字段：value 与 label 均可匹配', () => {
+    const ctxValue = resolveDoneCtx({ done_field: '状态', done_value: 'done' }, fields)!
+    const ctxLabel = resolveDoneCtx({ done_field: '状态', done_value: '已完成' }, fields)!
+    expect(isDoneRow(makeRow({ id: 1, 状态: 'done' }), ctxValue)).toBe(true)
+    expect(isDoneRow(makeRow({ id: 1, 状态: 'done' }), ctxLabel)).toBe(true)
+    expect(isDoneRow(makeRow({ id: 1, 状态: 'todo' }), ctxValue)).toBe(false)
+    expect(isDoneRow(makeRow({ id: 1, 状态: null }), ctxValue)).toBe(false)
+  })
+
+  it('multiselect 字段：数组值任一交集（value/label 归一）', () => {
+    const ctxValue = resolveDoneCtx({ done_field: '标签', done_value: ['fe'] }, fields)!
+    const ctxLabel = resolveDoneCtx({ done_field: '标签', done_value: ['后端'] }, fields)!
+    expect(isDoneRow(makeRow({ id: 1, 标签: ['fe', 'ux'] }), ctxValue)).toBe(true)
+    expect(isDoneRow(makeRow({ id: 1, 标签: 'fe, ux' }), ctxValue)).toBe(true) // 逗号串兼容
+    expect(isDoneRow(makeRow({ id: 1, 标签: ['be'] }), ctxLabel)).toBe(true)
+    expect(isDoneRow(makeRow({ id: 1, 标签: ['ux'] }), ctxValue)).toBe(false)
+    expect(isDoneRow(makeRow({ id: 1, 标签: null }), ctxValue)).toBe(false)
+  })
+
+  it('text 字段：去首尾空格后精确相等', () => {
+    const ctx = resolveDoneCtx({ done_field: '名称', done_value: '已完成' }, fields)!
+    expect(isDoneRow(makeRow({ id: 1, 名称: '已完成' }), ctx)).toBe(true)
+    expect(isDoneRow(makeRow({ id: 1, 名称: ' 已完成 ' }), ctx)).toBe(true)
+    // 包含关系不算匹配（「未完成」≠「已完成」）
+    expect(isDoneRow(makeRow({ id: 1, 名称: '未完成' }), ctx)).toBe(false)
+    expect(isDoneRow(makeRow({ id: 1, 名称: null }), ctx)).toBe(false)
+  })
+})
+
+describe('完成标志与紧急置顶/计数的交互', () => {
+  const doneOpts = {
+    urgent_threshold_days: 3, due_date_field: '截止', pin_urgent: true,
+    done_field: '状态', done_value: 'done',
+  }
+
+  it('sortKanbanCards：完成卡片即使逾期也不参与紧急置顶', () => {
+    const rows = [
+      makeRow({ id: 1, created_at: '2026-01-01T00:00:00', 状态: 'done', 截止: dateStr(-5) }), // 完成且逾期
+      makeRow({ id: 2, created_at: '2026-01-01T00:00:00', 状态: 'todo', 截止: dateStr(-5) }), // 逾期
+    ]
+    const sorted = sortKanbanCards(rows, fields, doneOpts)
+    // 两者 created_at 相同 → 走 id 倒序兜底；若完成卡仍参与置顶则会是 [1, 2]
+    expect(sorted.map(r => r.id)).toEqual([2, 1])
+  })
+
+  it('groupKanbanColumns：完成卡片不计入列头 urgentCount', () => {
+    const rows = [
+      makeRow({ id: 1, 状态: 'done', 截止: dateStr(-5) }), // 完成 + 逾期 → 不计
+      makeRow({ id: 2, 状态: 'todo', 截止: dateStr(-5) }), // 逾期 → 计
+      makeRow({ id: 3, 状态: 'todo', 截止: dateStr(2) }), // 紧急 → 计
+      makeRow({ id: 4, 状态: 'todo' }), // 无截止 → 不计
+    ]
+    const cols = groupKanbanColumns(rows, fields, doneOpts, undefined, undefined)
+    expect(cols[0]!.urgentCount).toBe(2)
   })
 })
