@@ -1,6 +1,6 @@
 /** 用户设置面板 — 主题切换 + 操作风格. */
 
-import { Modal, Button, Radio, Typography, Tabs, Select } from 'antd'
+import { Modal, Button, Radio, Typography, Tabs, Select, Switch } from 'antd'
 import { useTheme } from '@/theme/ThemeProvider'
 import { THEME_META, THEME_MODES, type ThemeMode } from '@/theme/theme'
 import { useTableSettingsStore } from '@/store'
@@ -131,6 +131,7 @@ function ThemePanel() {
 /** 操作风格分页内容 */
 function OperationPanel() {
   const newRowPosition = useTableSettingsStore(s => s.newRowPosition)
+  const autoFillLocked = useTableSettingsStore(s => s.autoFillLocked)
   const updateSettings = useTableSettingsStore(s => s.updateSettings)
 
   const positionOptions: Array<{ value: NewRowPosition; label: string; description: string }> = [
@@ -154,8 +155,21 @@ function OperationPanel() {
           options={positionOptions.map(o => ({ value: o.value, label: o.label }))}
         />
       </div>
-      <div style={{ fontSize: 12, color: '#8c8c8c', marginLeft: 0, marginTop: 4 }}>
+      <div style={{ fontSize: 12, color: '#8c8c8c', marginLeft: 0, marginTop: 4, marginBottom: 16 }}>
         {positionOptions.find(o => o.value === newRowPosition)?.description}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 4 }}>
+        <Text style={{ fontSize: 13 }}>自动填充锁定</Text>
+        <Switch
+          checked={autoFillLocked}
+          onChange={(checked) => updateSettings({ autoFillLocked: checked })}
+          checkedChildren="开启"
+          unCheckedChildren="关闭"
+        />
+      </div>
+      <div style={{ fontSize: 12, color: '#8c8c8c', marginLeft: 0, marginTop: 4 }}>
+        开启后，新增行时由默认值或自动填充规则预填的字段将设为只读，避免误修改，提高录入速度
       </div>
     </div>
   )
