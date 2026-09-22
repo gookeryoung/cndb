@@ -25,7 +25,7 @@
  * - 配置了 done_field 且当前用户可编辑时，未完成卡片 hover 后在删除按钮左侧显示完成勾选框（单向勾为完成）。
  */
 
-import { memo, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Tag, Progress, Tooltip, Empty, Button, Modal, Checkbox } from 'antd'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
@@ -173,6 +173,10 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   const cs = densityCardStyle(density)
   const [hovered, setHovered] = useState(false)
 
+  // 完成庆祝动画：仅在「未完成 → 完成」翻转时触发（初始加载即为完成的卡片不播）
+  const [celebrate, setCelebrate] = useState(false)
+  const prevDoneRef = useRef<boolean | null>(null)
+
   // 字段解析（opts 已 resolve 默认值；title_field 走 schema 自动推断 fallback）
   const titleField: string = (opts.title_field as string)
     || resolveAutoField(fields, findOptionSchema('kanban', 'title_field'))
@@ -192,6 +196,22 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   // 计算状态
   const doneCtx = useMemo(() => resolveDoneCtx(opts, fields), [opts, fields])
   const isDone = isDoneRow(row, doneCtx)
+
+  // 检测「未完成 → 完成」翻转，触发 1.2s 庆祝动画（卡片弹跳 + 彩纸）
+  // prevDoneRef 以 null 表示「尚未初始化」：首次 effect 只记录当前状态，刷新加载时不播动画
+  useEffect(() => {
+    if (prevDoneRef.current === null) {
+      prevDoneRef.current = isDone
+      return
+    }
+    const wasDone = prevDoneRef.current
+    prevDoneRef.current = isDone
+    if (isDone && !wasDone) {
+      setCelebrate(true)
+      const timer = setTimeout(() => setCelebrate(false), 1200)
+      return () => clearTimeout(timer)
+    }
+  }, [isDone])
   // 配置了完成标志且可编辑时，仅未完成卡片 hover 显示勾选框（完成后单向不可逆）
   const showDoneToggle = !!canEdit && !!doneCtx && !!onToggleDone && !isDone
   const dueDate = dueDateField ? parseDate(row[dueDateField]) : null
@@ -227,6 +247,7 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
       onClick={() => onRowClick?.(row)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      className={celebrate ? 'kb-done-celebrate' : undefined}
       style={{
         padding: cs.padding,
         marginBottom: cs.marginBottom,
@@ -280,10 +301,16 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
           />
         </Tooltip>
       )}
+      {/* 庆祝彩纸 —— 仅完成瞬间播放（kb-confetti 内粒子角度/颜色由 CSS nth-child 定义） */}
+      {celebrate && (
+        <div className="kb-confetti" aria-hidden>
+          {Array.from({ length: 10 }, (_, i) => <i key={i} />)}
+        </div>
+      )}
       {/* 标题行（完成卡片：删除线 + 标题后绿色对勾 + 灰色文字）；截止日期徽章紧贴标题右侧、同一行 */}
       <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word', ...(isDone ? { color: 'var(--cn-text-muted)', textDecoration: 'line-through' } : {}) }}>
         {title}
-        {isDone && <CheckCircleFilled style={{ color: '#52c41a', marginLeft: 6, fontSize: cs.titleFontSize }} />}
+        {isDone && <CheckCircleFilled className={celebrate ? 'kb-check-pop' : undefined} style={{ color: '#52c41a', marginLeft: 6, fontSize: cs.titleFontSize }} />}
         {/* 完成卡片整体隐藏截止日期徽章（逾期/还剩/X天后都不再显示） */}
         {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
       </div>
