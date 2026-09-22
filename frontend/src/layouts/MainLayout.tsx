@@ -95,7 +95,6 @@ export default function MainLayout() {
     { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
     { type: 'divider' },
     { key: 'settings', icon: <SettingOutlined />, label: '个人设置', onClick: () => setSettingsOpen(true) },
-    { key: 'help', icon: <QuestionCircleOutlined />, label: '帮助中心', onClick: () => setHelpOpen(true) },
     { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: onLogout },
   ]
