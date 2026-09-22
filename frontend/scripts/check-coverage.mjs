@@ -38,13 +38,13 @@ const GLOBAL_LINES_MIN = 70
  * 含 Task 11 大组件抽取产物 ganttTimeline.ts / kanbanBoard.ts。
  */
 const CORE_FILES = [
-  // grid 领域
-  'src/pages/grid/components/fieldOps.ts',
-  'src/pages/grid/components/fieldValueFormat.ts',
-  'src/pages/grid/components/dateUtils.ts',
-  'src/pages/grid/components/viewOptionSchema.ts',
-  'src/pages/grid/components/ganttTimeline.ts',
-  'src/pages/grid/components/kanbanBoard.ts',
+  // grid 领域（重构后按域归位：cells / view-config / views）
+  'src/pages/grid/cells/fieldOps.ts',
+  'src/pages/grid/cells/fieldValueFormat.ts',
+  'src/pages/grid/cells/dateUtils.ts',
+  'src/pages/grid/view-config/viewOptionSchema.ts',
+  'src/pages/grid/views/ganttTimeline.ts',
+  'src/pages/grid/views/kanbanBoard.ts',
   // 通用
   'src/utils/tagColors.ts',
   'src/hooks/useResponsive.ts',
