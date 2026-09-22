@@ -306,7 +306,7 @@ def _apply_coerce(
             return None, True
         if t in ("number", "float", "percentage"):
             try:
-                from cndb.plugins.tables.transfer import _normalize_numeric
+                from cndb.plugins.tables.services.transfer import _normalize_numeric
 
                 norm = _normalize_numeric(str(v))
                 if norm is None:
@@ -324,7 +324,7 @@ def _apply_coerce(
             return None, False
         if t in ("date", "datetime"):
             # 只验证能被解析，归一化交给 RowValidator
-            from cndb.plugins.tables.transfer import (
+            from cndb.plugins.tables.services.transfer import (
                 _CN_DATE_RE,
                 _GENERIC_DATE_RE,
                 _ISO_DATE_RE,

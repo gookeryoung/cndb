@@ -17,6 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.models import Base, DataField, DataTable
 from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.tables.services.fields.field_ops import (
     _extract_values_from_rows,
@@ -25,7 +26,6 @@ from cndb.plugins.tables.services.fields.field_ops import (
     prefill_select_options_from_rows,
     sync_select_options_from_table,
 )
-from cndb.plugins.tables.models import Base, DataField, DataTable
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
 
 # ── field_ops._merge_new_options ──────────────────────────

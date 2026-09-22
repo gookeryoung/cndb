@@ -1,0 +1,177 @@
+"""导入导出 — CSV/XLSX 导入 + JSON/XLSX 导出（由 transfer.py 按函数簇拆分）.
+
+子模块职责：
+- normalize: 列类型推断与值归一（单值推断 / 众数投票 / 提升链 / 精度保护）
+- spreadsheet: 文件解析与格式识别（编码检测 / 分隔符嗅探 / 结构守卫）
+- options: select options 与样本值规整
+- exporting: 行导出序列化与公式注入防护
+- table_create: 列分析与建表导入编排
+- api_ingest: API 摄取编排
+
+link 字段约定：
+- 导出：行响应中 link 值为 [{"id", "value"}] 摘要列表，序列化为分号分隔的目标行 id 串；
+- 导入：CSV/XLSX 中 link 列的分号分隔 id 串（或单个 id）解析回列表写入关联表.
+
+本包聚合导出原 transfer.py 全部公共与内部名称，保持
+``from cndb.plugins.tables.services.transfer import X``（含私有名）可用。
+"""
+
+from __future__ import annotations
+
+from cndb.plugins.tables.services.transfer.api_ingest import ingest_from_api
+from cndb.plugins.tables.services.transfer.exporting import (
+    _exportable_rows,
+    _fix_xlsx_formula_cells,
+    _parse_link_import_value,
+    _sanitize_csv_cell,
+    _serialize_link_value,
+    export_rows_to_csv,
+    export_rows_to_json,
+    export_rows_to_xlsx,
+)
+from cndb.plugins.tables.services.transfer.normalize import (
+    _CN_DATE_RE,
+    _GENERIC_DATE_RE,
+    _ISO_DATE_RE,
+    _ISO_DATETIME_RE,
+    _check_cn_date,
+    _check_compact_date,
+    _check_en_date,
+    _check_generic_date,
+    _check_generic_datetime,
+    _check_iso_date,
+    _check_json_string,
+    _check_long_integer,
+    _check_percentage,
+    _check_phone,
+    _classify_date_like,
+    _coerce_long_numeric_to_text,
+    _format_date_like_sample,
+    _infer_single_value,
+    _is_boolean,
+    _is_epoch_candidate,
+    _is_float,
+    _is_integer,
+    _is_select_candidate,
+    _is_valid_date,
+    _normalize_numeric,
+    _pick_inferred_type,
+    _promote_to_longtext_if_chunky,
+    _promote_to_multiselect_if_list_like,
+    _promote_to_select_if_low_cardinality,
+    _promote_to_timestamp_if_epoch_like,
+    _python_type_to_field_type,
+    _split_json_array_like,
+    _split_list_like,
+    infer_column_type,
+    promote_inferred_column_type,
+)
+from cndb.plugins.tables.services.transfer.options import (
+    _dedupe_samples,
+    _infer_decimals_config,
+    _options_strings_to_dicts,
+)
+from cndb.plugins.tables.services.transfer.spreadsheet import (
+    _check_csv_row_overflow,
+    _check_xlsx_row_overflow,
+    _parse_delimited_text,
+    _parse_json_text,
+    _parse_xlsx_bytes,
+    _validate_csv_structure,
+    _validate_xlsx_header,
+    decode_bytes_auto,
+    guess_format_from_filename,
+    parse_file_to_rows,
+    sniff_csv_delimiter,
+)
+from cndb.plugins.tables.services.transfer.table_create import (
+    _analyze_dict_rows_as_csv,
+    _apply_column_overrides,
+    _cleanup_partial_table,
+    _prefill_before_bulk,
+    _sync_after_bulk,
+    analyze_csv_columns,
+    analyze_file_columns,
+    analyze_json_columns,
+    create_table_from_csv,
+    create_table_from_file,
+    create_table_from_json_data,
+    import_rows_from_csv,
+    import_rows_from_json,
+    import_rows_from_xlsx,
+)
+
+__all__ = [
+    "_CN_DATE_RE",
+    "_GENERIC_DATE_RE",
+    "_ISO_DATETIME_RE",
+    "_ISO_DATE_RE",
+    "_analyze_dict_rows_as_csv",
+    "_apply_column_overrides",
+    "_check_cn_date",
+    "_check_compact_date",
+    "_check_csv_row_overflow",
+    "_check_en_date",
+    "_check_generic_date",
+    "_check_generic_datetime",
+    "_check_iso_date",
+    "_check_json_string",
+    "_check_long_integer",
+    "_check_percentage",
+    "_check_phone",
+    "_check_xlsx_row_overflow",
+    "_classify_date_like",
+    "_cleanup_partial_table",
+    "_coerce_long_numeric_to_text",
+    "_dedupe_samples",
+    "_exportable_rows",
+    "_fix_xlsx_formula_cells",
+    "_format_date_like_sample",
+    "_infer_decimals_config",
+    "_infer_single_value",
+    "_is_boolean",
+    "_is_epoch_candidate",
+    "_is_float",
+    "_is_integer",
+    "_is_select_candidate",
+    "_is_valid_date",
+    "_normalize_numeric",
+    "_options_strings_to_dicts",
+    "_parse_delimited_text",
+    "_parse_json_text",
+    "_parse_link_import_value",
+    "_parse_xlsx_bytes",
+    "_pick_inferred_type",
+    "_prefill_before_bulk",
+    "_promote_to_longtext_if_chunky",
+    "_promote_to_multiselect_if_list_like",
+    "_promote_to_select_if_low_cardinality",
+    "_promote_to_timestamp_if_epoch_like",
+    "_python_type_to_field_type",
+    "_sanitize_csv_cell",
+    "_serialize_link_value",
+    "_split_json_array_like",
+    "_split_list_like",
+    "_sync_after_bulk",
+    "_validate_csv_structure",
+    "_validate_xlsx_header",
+    "analyze_csv_columns",
+    "analyze_file_columns",
+    "analyze_json_columns",
+    "create_table_from_csv",
+    "create_table_from_file",
+    "create_table_from_json_data",
+    "decode_bytes_auto",
+    "export_rows_to_csv",
+    "export_rows_to_json",
+    "export_rows_to_xlsx",
+    "guess_format_from_filename",
+    "import_rows_from_csv",
+    "import_rows_from_json",
+    "import_rows_from_xlsx",
+    "infer_column_type",
+    "ingest_from_api",
+    "parse_file_to_rows",
+    "promote_inferred_column_type",
+    "sniff_csv_delimiter",
+]

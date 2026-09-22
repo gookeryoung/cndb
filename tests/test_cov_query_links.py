@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table
 
-from cndb.plugins.tables.services.core import query
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services.core import query
 
 
 def _make_table_with_link(db, ws_id, target_table_id, link_name="rel"):

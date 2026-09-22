@@ -26,7 +26,7 @@ from cndb.models.base import Base
 
 # ── ORM 模型（必须先 import 确保 Base.metadata 完整）─
 from cndb.plugins.accounts.models import User, UserRole
-from cndb.plugins.tables.transfer import _coerce_long_numeric_to_text
+from cndb.plugins.tables.services.transfer import _coerce_long_numeric_to_text
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
 
 # 列头宽松别名映射（不区分大小写 + 前后空格）

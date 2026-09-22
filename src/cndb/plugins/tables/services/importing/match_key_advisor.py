@@ -18,8 +18,8 @@ from typing import Any
 
 from sqlalchemy import distinct, func, select
 
-from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services.core import records as rec
 
 logger = logging.getLogger(__name__)
 

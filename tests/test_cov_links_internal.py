@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from cndb.plugins.tables.services.core import links
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services.core import links
 
 
 def _create_full_link_scenario(client, auth_headers, db):

@@ -12,14 +12,14 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
 
+from cndb.plugins.tables.ddl import create_table
 from sqlalchemy import MetaData, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from cndb.core.config import settings
 from cndb.models.base import Base
-from cndb.plugins.tables import transfer
-from cndb.plugins.tables.ddl import create_table
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services import transfer
 
 
 def setup_db() -> tuple[Any, Any]:

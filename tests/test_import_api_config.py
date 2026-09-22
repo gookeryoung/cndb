@@ -291,7 +291,7 @@ class TestApiImportCreateTableExceptions:
     def test_import_create_value_error(self, client, ws_with_auth):
         ws_id, auth = ws_with_auth
         with patch(
-            "cndb.plugins.tables.transfer.ingest_from_api",
+            "cndb.plugins.tables.services.transfer.ingest_from_api",
             side_effect=ValueError("bad url"),
         ):
             r = client.post(
@@ -304,7 +304,7 @@ class TestApiImportCreateTableExceptions:
     def test_import_create_general_exception(self, client, ws_with_auth):
         ws_id, auth = ws_with_auth
         with patch(
-            "cndb.plugins.tables.transfer.ingest_from_api",
+            "cndb.plugins.tables.services.transfer.ingest_from_api",
             side_effect=RuntimeError("boom"),
         ):
             r = client.post(

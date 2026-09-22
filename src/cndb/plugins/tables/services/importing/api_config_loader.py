@@ -183,7 +183,7 @@ def ingest_tables_from_config(
         ApiConfigError: 配置问题
         ValueError: 建表/导入失败
     """
-    from cndb.plugins.tables.transfer import ingest_from_api
+    from cndb.plugins.tables.services.transfer import ingest_from_api
 
     results: list[dict[str, Any]] = []
 

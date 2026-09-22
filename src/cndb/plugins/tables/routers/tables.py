@@ -12,8 +12,6 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.access import TableAction, check_action
-from cndb.plugins.tables.ddl import create_table as ddl_create
 from cndb.plugins.tables.models import DataField, DataTable, DataView, TableMember, ensure_default_view
 from cndb.plugins.tables.schemas import (
     OwnerBrief,
@@ -25,6 +23,8 @@ from cndb.plugins.tables.schemas import (
     ViewBrief,
     WorkspaceBrief,
 )
+from cndb.plugins.tables.services.core.access import TableAction, check_action
+from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
 from cndb.plugins.workspaces.models import (
     ROLE_RANK,
     Workspace,
@@ -199,8 +199,8 @@ def _import_fields_on_create(
     失败时自动回滚（删除新创建的 DataTable + DROP 物理表），
     不让一个半初始化的表残留在数据库里。
     """
-    from cndb.plugins.tables import field_ops as _fo
-    from cndb.plugins.tables.ddl import drop_table as ddl_drop
+    from cndb.plugins.tables.services.core.ddl import drop_table as ddl_drop
+    from cndb.plugins.tables.services.fields import field_ops as _fo
 
     src = db.get(DataTable, source_table_id)
     if src is None or src.trashed:
@@ -427,7 +427,7 @@ def copy_table(
 
     向后兼容：旧客户端传 include_data=true 等价于 mode=all.
     """
-    from cndb.plugins.tables import field_ops as _fo
+    from cndb.plugins.tables.services.fields import field_ops as _fo
 
     src = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
 
@@ -474,7 +474,7 @@ def copy_table(
         )
     except Exception as exc:
         # 回滚：删除 DataTable metadata + DROP 物理表
-        from cndb.plugins.tables.ddl import drop_table as _ddl_drop
+        from cndb.plugins.tables.services.core.ddl import drop_table as _ddl_drop
 
         db.delete(dst)
         db.commit()
@@ -490,7 +490,7 @@ def copy_table(
 
     # 复制数据（all 或 view）
     if effective_mode in ("all", "view"):
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rows, _ = rec.list_rows(
             db.get_bind(),
@@ -576,7 +576,7 @@ def get_record_references(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
     """查询哪些表的哪些行通过 link 字段引用了当前行（跨工作区反查）."""
-    from cndb.plugins.tables.links import find_back_references
+    from cndb.plugins.tables.services.core.links import find_back_references
 
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 

@@ -10,8 +10,12 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.access import TableAction
-from cndb.plugins.tables.ddl import (
+from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, default_registry, normalize_field_type
+from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.routers.tables import _get_table_or_404
+from cndb.plugins.tables.schemas import FieldCreate, FieldImportRequest, FieldImportResponse, FieldResponse, FieldUpdate
+from cndb.plugins.tables.services.core.access import TableAction
+from cndb.plugins.tables.services.core.ddl import (
     _column_needs_rebuild,
     add_column,
     add_unique_constraint,
@@ -21,11 +25,7 @@ from cndb.plugins.tables.ddl import (
     find_null_rows,
     rebuild_column,
 )
-from cndb.plugins.tables.field_ops import clone_fields_between_tables, resolve_source_fields
-from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, default_registry, normalize_field_type
-from cndb.plugins.tables.models import DataField, DataTable
-from cndb.plugins.tables.routers.tables import _get_table_or_404
-from cndb.plugins.tables.schemas import FieldCreate, FieldImportRequest, FieldImportResponse, FieldResponse, FieldUpdate
+from cndb.plugins.tables.services.fields.field_ops import clone_fields_between_tables, resolve_source_fields
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
 
@@ -351,7 +351,7 @@ def import_fields(
             raise HTTPException(status_code=400, detail=f"field_mapping 中存在源表没有的字段: {sorted(unknown)}")
 
     # ── 构造缺口分析 + 智能建议（无论 preview 与否都返回，供前端渲染） ──
-    from cndb.plugins.tables.field_mapping import (
+    from cndb.plugins.tables.services.importing.field_mapping import (
         analyze_field_gaps,
         apply_user_mapping,
         build_default_mapping,

@@ -67,12 +67,12 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
     Returns:
         (成功创建的数据表总数, 工作区名 -> Workspace 对象映射, 工作区名 -> 表名 -> DataTable 映射)
     """
-    from cndb.plugins.tables.api_config_loader import (
+    from cndb.plugins.tables.services.importing.api_config_loader import (
         ApiConfigError,
         build_fetch_config,
         load_api_config_file,
     )
-    from cndb.plugins.tables.transfer import create_table_from_csv, ingest_from_api
+    from cndb.plugins.tables.services.transfer import create_table_from_csv, ingest_from_api
     from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
 
     datasets_dir = _get_datasets_dir()
@@ -184,7 +184,7 @@ def _apply_field_import_rules(db: Any, engine: Any, ws_name: str, tables_map: di
       让子表可以独立存储（不依赖 link 字段和 lookup 计算）；
     - 失败不阻断其它规则执行（单条规则失败只打印）。
     """
-    from cndb.plugins.tables import field_ops as _fo
+    from cndb.plugins.tables.services.fields import field_ops as _fo
 
     rules: dict[str, list[tuple[str, str, list[str]]]] = {
         # 项目进展表 / 科研经费表 都需要从 科研项目 表知道项目状态和立项年份
@@ -224,9 +224,9 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
         (创建的数据表数量, 表名 -> DataTable 映射)
     """
     from cndb.plugins.reports.models import ReportTemplate
-    from cndb.plugins.tables.ddl import create_table
     from cndb.plugins.tables.models import DataField, DataTable
-    from cndb.plugins.tables.records import create_row
+    from cndb.plugins.tables.services.core.ddl import create_table
+    from cndb.plugins.tables.services.core.records import create_row
 
     extra_tables: dict[str, Any] = {}
 

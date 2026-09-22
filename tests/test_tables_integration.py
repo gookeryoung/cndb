@@ -3,9 +3,9 @@
 import pytest
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 
 
@@ -329,9 +329,9 @@ class TestRecordsEngine:
         assert rec.get_row(db_engine, dt, row["id"]) is not None
 
     def test_validation_error(self, db_engine, db, workspace):
+        from cndb.plugins.tables.models import DataField, DataTable
         from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.services.core import records as rec
-        from cndb.plugins.tables.models import DataField, DataTable
 
         dt = DataTable(workspace_id=workspace.id, name="必填测试表")
         dt.ensure_db_name()

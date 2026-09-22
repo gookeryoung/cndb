@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cndb.plugins.tables import transfer
+from cndb.plugins.tables.services import transfer
 
 
 class TestAnalyzeCsvColumns:
@@ -165,12 +165,12 @@ class TestImportFailureCleanup:
         before_count = db.query(DataTable).filter(DataTable.workspace_id == ws.id).count()
 
         # mock bulk_create 让它在数据导入阶段失败
-        from cndb.plugins.tables import transfer as transfer_mod
+        from cndb.plugins.tables.services.core import records as rec_mod
 
         def _boom_bulk_create(*args, **kwargs):
             raise RuntimeError("模拟导入失败：字段类型不匹配")
 
-        monkeypatch.setattr(transfer_mod.rec, "bulk_create", _boom_bulk_create)
+        monkeypatch.setattr(rec_mod, "bulk_create", _boom_bulk_create)
 
         csv = "name,age\nAlice,30\n"
         with pytest.raises(RuntimeError, match="模拟导入失败"):
@@ -192,15 +192,15 @@ class TestImportFailureCleanup:
         """create_table_from_file 走的也是同一条清理路径."""
         engine, db, ws = csv_workspace
 
-        from cndb.plugins.tables import transfer as transfer_mod
         from cndb.plugins.tables.models import DataTable
+        from cndb.plugins.tables.services.core import records as rec_mod
 
         before_count = db.query(DataTable).filter(DataTable.workspace_id == ws.id).count()
 
         def _boom_bulk_create(*args, **kwargs):
             raise ValueError("模拟文件导入失败")
 
-        monkeypatch.setattr(transfer_mod.rec, "bulk_create", _boom_bulk_create)
+        monkeypatch.setattr(rec_mod, "bulk_create", _boom_bulk_create)
 
         csv_bytes = b"name,age\nAlice,30\n"
         with pytest.raises(ValueError, match="模拟文件导入失败"):
@@ -220,15 +220,15 @@ class TestImportFailureCleanup:
         """create_table_from_json_data 同样应清理."""
         engine, db, ws = csv_workspace
 
-        from cndb.plugins.tables import transfer as transfer_mod
         from cndb.plugins.tables.models import DataTable
+        from cndb.plugins.tables.services.core import records as rec_mod
 
         before_count = db.query(DataTable).filter(DataTable.workspace_id == ws.id).count()
 
         def _boom_bulk_create(*args, **kwargs):
             raise RuntimeError("模拟 JSON 导入失败")
 
-        monkeypatch.setattr(transfer_mod.rec, "bulk_create", _boom_bulk_create)
+        monkeypatch.setattr(rec_mod, "bulk_create", _boom_bulk_create)
 
         rows = [{"name": "Alice", "age": 30}]
         with pytest.raises(RuntimeError, match="模拟 JSON 导入失败"):

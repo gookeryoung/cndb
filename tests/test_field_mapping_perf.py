@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from cndb.plugins.tables.models import DataField
 from cndb.plugins.tables.services.importing.field_mapping import (
     apply_gap_filling,
     remap_row,
     suggest_mapping,
 )
-from cndb.plugins.tables.models import DataField
 
 
 def _mkf(name: str, ft: str = "text") -> DataField:

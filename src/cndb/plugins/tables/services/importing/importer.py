@@ -29,16 +29,16 @@ from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
+from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core import records as rec
+from cndb.plugins.tables.services.core.ddl import add_column
 from cndb.plugins.tables.services.importing.cleaning import apply_cleaning_actions, generate_cleaning_suggestions
 from cndb.plugins.tables.services.importing.column_profiler import profile_columns
-from cndb.plugins.tables.services.core.ddl import add_column
 from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
 from cndb.plugins.tables.services.importing.field_mapping import GapFilling
 from cndb.plugins.tables.services.importing.match_key_advisor import recommend_match_keys
-from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.importing.row_validator import RowValidator, ValidationResult
-from cndb.plugins.tables.transfer import (
+from cndb.plugins.tables.services.transfer import (
     _coerce_long_numeric_to_text,
     _dedupe_samples,
     decode_bytes_auto,
@@ -664,7 +664,7 @@ class Importer:
         fields_to_create: list[DataField] = []
 
         # ── 第一阶段：构造所有 DataField 对象（ORM add 但不 commit） ──
-        from cndb.plugins.tables.transfer import _options_strings_to_dicts
+        from cndb.plugins.tables.services.transfer import _options_strings_to_dicts
 
         for plan in planned_columns:
             name = plan["name"]
@@ -795,7 +795,7 @@ class Importer:
     def _parse_xlsx(content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
         from openpyxl import load_workbook
 
-        from cndb.plugins.tables.transfer import _check_xlsx_row_overflow, _validate_xlsx_header
+        from cndb.plugins.tables.services.transfer import _check_xlsx_row_overflow, _validate_xlsx_header
 
         raw = content if isinstance(content, bytes) else content.encode()
         wb = load_workbook(io.BytesIO(raw))

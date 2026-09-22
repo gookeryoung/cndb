@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.models import DataTable, TablePermission
 from cndb.plugins.tables.services.core.access import (
     TableAction,
     apply_field_hiding,
@@ -19,7 +20,6 @@ from cndb.plugins.tables.services.core.audit import (
     query_row_history,
     query_table_history,
 )
-from cndb.plugins.tables.models import DataTable, TablePermission
 from cndb.plugins.workspaces.models import WorkspaceRole
 
 # ── access.py 基础工具函数 ──────────────────────────────

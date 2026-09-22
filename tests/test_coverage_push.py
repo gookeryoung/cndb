@@ -13,55 +13,55 @@ import pytest
 
 class TestNormalizeNumericBranches:
     def test_normalize_plus_prefix(self):
-        from cndb.plugins.tables.transfer import _normalize_numeric
+        from cndb.plugins.tables.services.transfer import _normalize_numeric
 
         assert _normalize_numeric("+123.45") == "123.45"
 
     def test_normalize_empty_after_sign(self):
-        from cndb.plugins.tables.transfer import _normalize_numeric
+        from cndb.plugins.tables.services.transfer import _normalize_numeric
 
         assert _normalize_numeric("-") is None
         assert _normalize_numeric("+") is None
 
     def test_normalize_only_comma_trailing_2_digits(self):
-        from cndb.plugins.tables.transfer import _normalize_numeric
+        from cndb.plugins.tables.services.transfer import _normalize_numeric
 
         assert _normalize_numeric("1234,56") == "1234.56"
 
     def test_normalize_only_comma_many_digits(self):
-        from cndb.plugins.tables.transfer import _normalize_numeric
+        from cndb.plugins.tables.services.transfer import _normalize_numeric
 
         assert _normalize_numeric("1,234,567") == "1234567"
 
     def test_normalize_only_dot_trailing_2_digits(self):
-        from cndb.plugins.tables.transfer import _normalize_numeric
+        from cndb.plugins.tables.services.transfer import _normalize_numeric
 
         assert _normalize_numeric("1234.56") == "1234.56"
 
     def test_normalize_only_dot_many_digits(self):
-        from cndb.plugins.tables.transfer import _normalize_numeric
+        from cndb.plugins.tables.services.transfer import _normalize_numeric
 
         assert _normalize_numeric("1.234.567") == "1234567"
 
     def test_normalize_both_comma_and_dot_comma_behind(self):
-        from cndb.plugins.tables.transfer import _normalize_numeric
+        from cndb.plugins.tables.services.transfer import _normalize_numeric
 
         assert _normalize_numeric("1.234,56") == "1234.56"
 
     def test_normalize_both_comma_and_dot_dot_behind(self):
-        from cndb.plugins.tables.transfer import _normalize_numeric
+        from cndb.plugins.tables.services.transfer import _normalize_numeric
 
         assert _normalize_numeric("1,234.56") == "1234.56"
 
     def test_normalize_with_currency_symbols(self):
-        from cndb.plugins.tables.transfer import _normalize_numeric
+        from cndb.plugins.tables.services.transfer import _normalize_numeric
 
         assert _normalize_numeric("¥1234") == "1234"
         assert _normalize_numeric("$-99.9") == "-99.9"
         assert _normalize_numeric("€1.234,56") == "1234.56"
 
     def test_normalize_invalid_after_normalization(self):
-        from cndb.plugins.tables.transfer import _normalize_numeric
+        from cndb.plugins.tables.services.transfer import _normalize_numeric
 
         assert _normalize_numeric("abc") is None
         assert _normalize_numeric("12.34.56.78") is None
@@ -69,7 +69,7 @@ class TestNormalizeNumericBranches:
 
 class TestInferTypeHelpers:
     def test_is_integer_standard_and_with_commas(self):
-        from cndb.plugins.tables.transfer import _is_integer
+        from cndb.plugins.tables.services.transfer import _is_integer
 
         assert _is_integer("42") is True
         assert _is_integer("-1,000") is True
@@ -77,7 +77,7 @@ class TestInferTypeHelpers:
         assert _is_integer("12.5") is False
 
     def test_is_float_standard_and_variants(self):
-        from cndb.plugins.tables.transfer import _is_float
+        from cndb.plugins.tables.services.transfer import _is_float
 
         assert _is_float("3.14") is True
         assert _is_float("-0,5") is True
@@ -85,7 +85,7 @@ class TestInferTypeHelpers:
         assert _is_float("42") is False
 
     def test_check_phone_variants(self):
-        from cndb.plugins.tables.transfer import _check_phone
+        from cndb.plugins.tables.services.transfer import _check_phone
 
         assert _check_phone("+86 138-0013-8000") is True
         assert _check_phone("8613800138000") is True
@@ -93,7 +93,7 @@ class TestInferTypeHelpers:
         assert _check_phone("12800138000") is False
 
     def test_check_percentage_and_long_integer(self):
-        from cndb.plugins.tables.transfer import _check_long_integer, _check_percentage
+        from cndb.plugins.tables.services.transfer import _check_long_integer, _check_percentage
 
         assert _check_percentage("50%") is True
         assert _check_percentage("3.14%") is True
@@ -102,7 +102,7 @@ class TestInferTypeHelpers:
         assert _check_long_integer("91234567890") is False
 
     def test_pick_inferred_type(self):
-        from cndb.plugins.tables.transfer import _pick_inferred_type
+        from cndb.plugins.tables.services.transfer import _pick_inferred_type
 
         assert _pick_inferred_type({}) == "text"
         assert _pick_inferred_type({"number": 5, "text": 2}) == "number"
@@ -113,27 +113,27 @@ class TestInferTypeHelpers:
 
 class TestDecodeBytesAutoBranches:
     def test_non_bytes_input_passthrough(self):
-        from cndb.plugins.tables.transfer import decode_bytes_auto
+        from cndb.plugins.tables.services.transfer import decode_bytes_auto
 
         text, enc, _conf = decode_bytes_auto("already-text")  # type: ignore[arg-type]
         assert text == "already-text"
         assert enc == "utf-8"
 
     def test_utf8_bytes_detected(self):
-        from cndb.plugins.tables.transfer import decode_bytes_auto
+        from cndb.plugins.tables.services.transfer import decode_bytes_auto
 
         text, enc, _conf = decode_bytes_auto("hello世界".encode())
         assert text == "hello世界"
         assert enc in ("utf-8-sig", "utf-8")
 
     def test_gbk_bytes_detected(self):
-        from cndb.plugins.tables.transfer import decode_bytes_auto
+        from cndb.plugins.tables.services.transfer import decode_bytes_auto
 
         text, _enc, _conf = decode_bytes_auto("中文测试".encode("gbk"))
         assert "中文" in text
 
     def test_latin1_fallback_path(self):
-        from cndb.plugins.tables.transfer import decode_bytes_auto
+        from cndb.plugins.tables.services.transfer import decode_bytes_auto
 
         invalid = bytes([0xFF, 0xFE, 0x00, 0x01, 0x02])
         text, _enc, _conf = decode_bytes_auto(invalid)
@@ -145,20 +145,20 @@ class TestDecodeBytesAutoBranches:
 
 class TestSniffAndGuess:
     def test_sniff_empty_text_returns_comma(self):
-        from cndb.plugins.tables.transfer import sniff_csv_delimiter
+        from cndb.plugins.tables.services.transfer import sniff_csv_delimiter
 
         assert sniff_csv_delimiter("") == ","
         assert sniff_csv_delimiter("   \n  ") == ","
 
     def test_sniff_various_delimiters(self):
-        from cndb.plugins.tables.transfer import sniff_csv_delimiter
+        from cndb.plugins.tables.services.transfer import sniff_csv_delimiter
 
         assert sniff_csv_delimiter("a;b;c\n1;2;3") == ";"
         assert sniff_csv_delimiter("a\tb\tc\n1\t2\t3") == "\t"
         assert sniff_csv_delimiter("a|b|c\n1|2|3") == "|"
 
     def test_guess_format_all_extensions(self):
-        from cndb.plugins.tables.transfer import guess_format_from_filename
+        from cndb.plugins.tables.services.transfer import guess_format_from_filename
 
         assert guess_format_from_filename("data.xlsx") == "xlsx"
         assert guess_format_from_filename("data.XLSX") == "xlsx"
@@ -174,7 +174,7 @@ class TestSniffAndGuess:
 
 class TestLinkImportExport:
     def test_parse_link_import_no_links(self):
-        from cndb.plugins.tables.transfer import _parse_link_import_value
+        from cndb.plugins.tables.services.transfer import _parse_link_import_value
 
         table = MagicMock()
         table.active_fields.return_value = []
@@ -182,7 +182,7 @@ class TestLinkImportExport:
         assert result == {"a": 1}
 
     def test_parse_link_import_variants(self):
-        from cndb.plugins.tables.transfer import _parse_link_import_value
+        from cndb.plugins.tables.services.transfer import _parse_link_import_value
 
         f1 = MagicMock()
         f1.name = "rel"
@@ -198,7 +198,7 @@ class TestLinkImportExport:
             _parse_link_import_value(table, {"rel": "abc;def"})
 
     def test_serialize_link_value(self):
-        from cndb.plugins.tables.transfer import _exportable_rows, _serialize_link_value
+        from cndb.plugins.tables.services.transfer import _exportable_rows, _serialize_link_value
 
         assert _serialize_link_value([{"id": 1}, {"id": 2}]) == "1;2"
         assert _serialize_link_value(42) == 42
@@ -213,12 +213,12 @@ class TestLinkImportExport:
 
 class TestAnalyzeJsonColumnsPush:
     def test_empty_rows_returns_empty(self):
-        from cndb.plugins.tables.transfer import analyze_json_columns
+        from cndb.plugins.tables.services.transfer import analyze_json_columns
 
         assert analyze_json_columns([]) == []
 
     def test_non_dict_rows_skipped(self):
-        from cndb.plugins.tables.transfer import analyze_json_columns
+        from cndb.plugins.tables.services.transfer import analyze_json_columns
 
         rows: list[Any] = ["not-a-dict", 42, None, {"a": 1}]
         cols = analyze_json_columns(rows)
@@ -226,7 +226,7 @@ class TestAnalyzeJsonColumnsPush:
         assert cols[0]["name"] == "a"
 
     def test_all_null_column(self):
-        from cndb.plugins.tables.transfer import analyze_json_columns
+        from cndb.plugins.tables.services.transfer import analyze_json_columns
 
         rows = [{"a": None}, {"a": None}, {"a": ""}]
         cols = analyze_json_columns(rows)
@@ -239,7 +239,7 @@ class TestAnalyzeJsonColumnsPush:
 
 class TestPythonTypeToFieldType:
     def test_various_types(self):
-        from cndb.plugins.tables.transfer import _python_type_to_field_type
+        from cndb.plugins.tables.services.transfer import _python_type_to_field_type
 
         assert _python_type_to_field_type(None) == "empty"
         assert _python_type_to_field_type(True) == "boolean"
@@ -425,31 +425,31 @@ class TestCleaningMoreBranches:
 
 class TestInferSingleValueChecks:
     def test_date_chinese_format(self):
-        from cndb.plugins.tables.transfer import _infer_single_value
+        from cndb.plugins.tables.services.transfer import _infer_single_value
 
         assert _infer_single_value("2024年1月15日") == "date"
 
     def test_date_iso_format(self):
-        from cndb.plugins.tables.transfer import _infer_single_value
+        from cndb.plugins.tables.services.transfer import _infer_single_value
 
         assert _infer_single_value("2024-01-15") == "date"
         assert _infer_single_value("2024/01/15") == "date"
 
     def test_boolean_variants(self):
-        from cndb.plugins.tables.transfer import _infer_single_value
+        from cndb.plugins.tables.services.transfer import _infer_single_value
 
         assert _infer_single_value("true") == "boolean"
         assert _infer_single_value("False") == "boolean"
         assert _infer_single_value("yes") == "boolean"
 
     def test_url_inference(self):
-        from cndb.plugins.tables.transfer import _infer_single_value
+        from cndb.plugins.tables.services.transfer import _infer_single_value
 
         assert _infer_single_value("https://example.com") == "url"
         assert _infer_single_value("http://test.org/path?q=1") == "url"
 
     def test_empty_string_inference(self):
-        from cndb.plugins.tables.transfer import _infer_single_value
+        from cndb.plugins.tables.services.transfer import _infer_single_value
 
         assert _infer_single_value("") == "empty"
         assert _infer_single_value("   ") == "empty"
@@ -460,7 +460,7 @@ class TestInferSingleValueChecks:
 
 class TestAnalyzeCsvColumnsEdgeCases:
     def test_empty_csv_content(self):
-        from cndb.plugins.tables.transfer import analyze_csv_columns
+        from cndb.plugins.tables.services.transfer import analyze_csv_columns
 
         cols, total = analyze_csv_columns("a,b\n")
         # 只有 header 无数据行 → 各列 null_ratio=0, 但实际是空行
@@ -468,7 +468,7 @@ class TestAnalyzeCsvColumnsEdgeCases:
         assert len(cols) == 2
 
     def test_csv_with_all_null_values(self):
-        from cndb.plugins.tables.transfer import analyze_csv_columns
+        from cndb.plugins.tables.services.transfer import analyze_csv_columns
 
         cols, total = analyze_csv_columns("a,b\n,\n,\n")
         assert total == 2
@@ -477,7 +477,7 @@ class TestAnalyzeCsvColumnsEdgeCases:
         assert cols[0]["null_ratio"] == 1.0
 
     def test_csv_with_low_cardinality_promoted_to_select(self):
-        from cndb.plugins.tables.transfer import analyze_csv_columns
+        from cndb.plugins.tables.services.transfer import analyze_csv_columns
 
         data = "status\n" + "\n".join(["new", "done", "pending"] * 5)
         cols, _ = analyze_csv_columns(data)
@@ -510,7 +510,7 @@ class TestChardetAndMore:
         # 用 mock chardet 让它返回一个低置信度但刚好 ≥ 0.5 的编码
         import chardet
 
-        from cndb.plugins.tables import transfer as tr
+        from cndb.plugins.tables.services import transfer as tr
 
         def fake_detect(data):
             return {"encoding": "utf-8", "confidence": 0.99}
@@ -524,7 +524,7 @@ class TestChardetAndMore:
         """chardet.detect 抛异常 → 走 except → latin-1 兜底."""
         import chardet
 
-        from cndb.plugins.tables import transfer as tr
+        from cndb.plugins.tables.services import transfer as tr
 
         def boom(data):
             raise RuntimeError("chardet 挂了")
@@ -537,7 +537,7 @@ class TestChardetAndMore:
 
 class TestAnalyzeJsonColumnsMore:
     def test_nested_dict_in_json_rows(self):
-        from cndb.plugins.tables.transfer import analyze_json_columns
+        from cndb.plugins.tables.services.transfer import analyze_json_columns
 
         # 带嵌套 dict 的 JSON — 走 json.dumps 分支
         rows = [{"data": {"a": 1}, "name": "x"}]
@@ -548,14 +548,14 @@ class TestAnalyzeJsonColumnsMore:
         assert "{" in data_col["sample_values"][0]
 
     def test_list_values_in_json_rows(self):
-        from cndb.plugins.tables.transfer import analyze_json_columns
+        from cndb.plugins.tables.services.transfer import analyze_json_columns
 
         rows = [{"tags": ["a", "b"], "n": 1}]
         cols = analyze_json_columns(rows)
         assert len(cols) == 2
 
     def test_rows_iteration_over_key_counts(self):
-        from cndb.plugins.tables.transfer import analyze_json_columns
+        from cndb.plugins.tables.services.transfer import analyze_json_columns
 
         # 多行跨不同 key → 覆盖 key_counts 遍历
         rows = [{"a": 1}, {"b": 2}, {"a": 3, "c": None}]
@@ -569,7 +569,7 @@ class TestAnalyzeJsonColumnsMore:
 
 class TestPythonTypeToFieldTypeMore:
     def test_dict_becomes_json(self):
-        from cndb.plugins.tables.transfer import _python_type_to_field_type
+        from cndb.plugins.tables.services.transfer import _python_type_to_field_type
 
         assert _python_type_to_field_type({"k": "v"}) == "json"
         assert _python_type_to_field_type([1, 2]) == "json"
@@ -704,7 +704,7 @@ class TestFinalCoveragePushes:
         """decode_bytes_auto 走 chardet 成功 + 质量检查通过 → return 分支."""
         import chardet
 
-        from cndb.plugins.tables import transfer as tr
+        from cndb.plugins.tables.services import transfer as tr
 
         # 造一个前面候选会解但质量差的 bytes？实际上直接让 chardet 返回高质量
         def fake_detect(data):
@@ -721,7 +721,7 @@ class TestFinalCoveragePushes:
 
     def test_transfer_is_float_value_error_branch(self):
         """_is_float 里 float(normalized) 抛 ValueError → 返回 False."""
-        from cndb.plugins.tables import transfer as tr
+        from cndb.plugins.tables.services import transfer as tr
 
         # _normalize_numeric 对这个应该返回 None → _is_float 也返回 False
         assert tr._is_float("not-a-number") is False
@@ -730,7 +730,7 @@ class TestFinalCoveragePushes:
         # 所以这个 branch partial 可能不需要补
 
     def test_transfer_sniff_various_delimiters_more(self):
-        from cndb.plugins.tables.transfer import sniff_csv_delimiter
+        from cndb.plugins.tables.services.transfer import sniff_csv_delimiter
 
         # csv.Sniffer 失败时走退化分支
         # 让 csv.Sniffer 抛异常 — 传它不喜欢的输入
