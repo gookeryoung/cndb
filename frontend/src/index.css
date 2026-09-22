@@ -176,6 +176,8 @@ body.theme-modern {
   --cn-bg-success-subtle: #f6ffed;
 }
 
+body.theme-midnight,
+body.theme-oled,
 body.theme-github-dark,
 body.theme-dark {
   --cn-bg-page: #0d1117;
@@ -396,6 +398,8 @@ body.theme-oled {
 
 /* ─────────────── 暗色模式全局微调 ─────────────── */
 
+body.theme-midnight a,
+body.theme-oled a,
 body.theme-github-dark a,
 body.theme-dark a {
   color: #58a6ff;
@@ -437,6 +441,20 @@ body.theme-oled a {
 }
 
 /* ─────────────── 深色主题 antd 组件兜底覆盖 — 防外围漏白 ─────────────── */
+body.theme-midnight .ant-table-wrapper,
+body.theme-midnight .ant-table-container,
+body.theme-midnight .ant-table-content,
+body.theme-midnight .ant-table-body,
+body.theme-midnight .ant-table-cell-scrollbar,
+body.theme-midnight .ant-spin-nested-loading,
+body.theme-midnight .ant-empty,
+body.theme-oled .ant-table-wrapper,
+body.theme-oled .ant-table-container,
+body.theme-oled .ant-table-content,
+body.theme-oled .ant-table-body,
+body.theme-oled .ant-table-cell-scrollbar,
+body.theme-oled .ant-spin-nested-loading,
+body.theme-oled .ant-empty,
 body.theme-github-dark .ant-table-wrapper,
 body.theme-dark .ant-table-wrapper,
 body.theme-github-dark .ant-table-container,
@@ -455,6 +473,10 @@ body.theme-dark .ant-empty {
 }
 
 /* 分页区域、空状态、占位文本 */
+body.theme-midnight .ant-pagination,
+body.theme-midnight .ant-empty-description,
+body.theme-oled .ant-pagination,
+body.theme-oled .ant-empty-description,
 body.theme-github-dark .ant-pagination,
 body.theme-dark .ant-pagination,
 body.theme-github-dark .ant-empty-description,
@@ -463,11 +485,15 @@ body.theme-dark .ant-empty-description {
 }
 
 /* Table wrapper 外层 & loading overlay */
+body.theme-midnight .ant-table,
+body.theme-oled .ant-table,
 body.theme-github-dark .ant-table,
 body.theme-dark .ant-table {
   background: var(--cn-bg-page) !important;
 }
 
+body.theme-midnight .ant-spin-container::after,
+body.theme-oled .ant-spin-container::after,
 body.theme-github-dark .ant-spin-container::after,
 body.theme-dark .ant-spin-container::after {
   background: var(--cn-bg-page) !important;
@@ -522,6 +548,8 @@ body.theme-sakura .ant-spin-container::after {
 }
 
 /* Tag / Button / Segmented 背景兜底 */
+body.theme-midnight .ant-tag,
+body.theme-oled .ant-tag,
 body.theme-github-dark .ant-tag,
 body.theme-dark .ant-tag {
   background: var(--cn-bg-container) !important;
@@ -529,16 +557,22 @@ body.theme-dark .ant-tag {
   color: var(--cn-text-primary) !important;
 }
 
+body.theme-midnight .ant-segmented,
+body.theme-oled .ant-segmented,
 body.theme-github-dark .ant-segmented,
 body.theme-dark .ant-segmented {
   background: var(--cn-bg-container) !important;
 }
 
+body.theme-midnight .ant-segmented-item-label,
+body.theme-oled .ant-segmented-item-label,
 body.theme-github-dark .ant-segmented-item-label,
 body.theme-dark .ant-segmented-item-label {
   color: var(--cn-text-secondary) !important;
 }
 
+body.theme-midnight .ant-segmented-item-selected .ant-segmented-item-label,
+body.theme-oled .ant-segmented-item-selected .ant-segmented-item-label,
 body.theme-github-dark .ant-segmented-item-selected .ant-segmented-item-label,
 body.theme-dark .ant-segmented-item-selected .ant-segmented-item-label {
   color: var(--cn-text-primary) !important;
@@ -550,6 +584,22 @@ body.theme-dark .ant-segmented-item-selected .ant-segmented-item-label {
  * 注意：只覆盖容器背景和边框，不覆盖功能色（红/绿/蓝图标）。 */
 
 /* 常见浅灰背景 */
+body.theme-midnight [style*="background: #fafafa"],
+body.theme-midnight [style*="background:#fafafa"],
+body.theme-midnight [style*="background: #f8fafc"],
+body.theme-midnight [style*="background:#f8fafc"],
+body.theme-midnight [style*="background: #f6f8fa"],
+body.theme-midnight [style*="background:#f6f8fa"],
+body.theme-midnight [style*="background: #f1f5f9"],
+body.theme-midnight [style*="background:#f1f5f9"],
+body.theme-oled [style*="background: #fafafa"],
+body.theme-oled [style*="background:#fafafa"],
+body.theme-oled [style*="background: #f8fafc"],
+body.theme-oled [style*="background:#f8fafc"],
+body.theme-oled [style*="background: #f6f8fa"],
+body.theme-oled [style*="background:#f6f8fa"],
+body.theme-oled [style*="background: #f1f5f9"],
+body.theme-oled [style*="background:#f1f5f9"],
 body.theme-github-dark [style*="background: #fafafa"],
 body.theme-dark [style*="background: #fafafa"],
 body.theme-github-dark [style*="background:#fafafa"],
@@ -570,6 +620,22 @@ body.theme-dark [style*="background:#f1f5f9"] {
 }
 
 /* 危险/警告区域 — 浅色底 */
+body.theme-midnight [style*="background: #fef2f2"],
+body.theme-midnight [style*="background:#fef2f2"],
+body.theme-midnight [style*="background: #fff2f0"],
+body.theme-midnight [style*="background:#fff2f0"],
+body.theme-midnight [style*="background: #fef3c7"],
+body.theme-midnight [style*="background:#fef3c7"],
+body.theme-midnight [style*="background: #fffbe6"],
+body.theme-midnight [style*="background:#fffbe6"],
+body.theme-oled [style*="background: #fef2f2"],
+body.theme-oled [style*="background:#fef2f2"],
+body.theme-oled [style*="background: #fff2f0"],
+body.theme-oled [style*="background:#fff2f0"],
+body.theme-oled [style*="background: #fef3c7"],
+body.theme-oled [style*="background:#fef3c7"],
+body.theme-oled [style*="background: #fffbe6"],
+body.theme-oled [style*="background:#fffbe6"],
 body.theme-github-dark [style*="background: #fef2f2"],
 body.theme-dark [style*="background: #fef2f2"],
 body.theme-github-dark [style*="background:#fef2f2"],
@@ -589,7 +655,27 @@ body.theme-dark [style*="background:#fffbe6"] {
   background: var(--cn-bg-danger-subtle) !important;
 }
 
+/* 浅灰标签底（如"无变化"Tag 背景） */
+body.theme-midnight [style*="background: #f3f4f6"],
+body.theme-oled [style*="background: #f3f4f6"],
+body.theme-github-dark [style*="background: #f3f4f6"],
+body.theme-dark [style*="background: #f3f4f6"],
+body.theme-midnight [style*="background:#f3f4f6"],
+body.theme-oled [style*="background:#f3f4f6"],
+body.theme-github-dark [style*="background:#f3f4f6"],
+body.theme-dark [style*="background:#f3f4f6"] {
+  background: var(--cn-bg-subtle) !important;
+}
+
 /* 危险区域边框 */
+body.theme-midnight [style*="border: 1px solid #fecaca"],
+body.theme-midnight [style*="border:1px solid #fecaca"],
+body.theme-midnight [style*="border: 1px solid #ffccc7"],
+body.theme-midnight [style*="border:1px solid #ffccc7"],
+body.theme-oled [style*="border: 1px solid #fecaca"],
+body.theme-oled [style*="border:1px solid #fecaca"],
+body.theme-oled [style*="border: 1px solid #ffccc7"],
+body.theme-oled [style*="border:1px solid #ffccc7"],
 body.theme-github-dark [style*="border: 1px solid #fecaca"],
 body.theme-dark [style*="border: 1px solid #fecaca"],
 body.theme-github-dark [style*="border:1px solid #fecaca"],
@@ -602,6 +688,26 @@ body.theme-dark [style*="border:1px solid #ffccc7"] {
 }
 
 /* 浅灰实线边框 */
+body.theme-midnight [style*="border: 1px solid #e5e7eb"],
+body.theme-midnight [style*="border:1px solid #e5e7eb"],
+body.theme-midnight [style*="border: 1px solid #e2e8f0"],
+body.theme-midnight [style*="border:1px solid #e2e8f0"],
+body.theme-midnight [style*="border: 1px solid #f1f5f9"],
+body.theme-midnight [style*="border:1px solid #f1f5f9"],
+body.theme-midnight [style*="border: 1px solid #f0f0f0"],
+body.theme-midnight [style*="border:1px solid #f0f0f0"],
+body.theme-midnight [style*="borderBottom: '1px solid #f0f0f0'"],
+body.theme-midnight [style*="border-bottom: 1px solid #f0f0f0"],
+body.theme-oled [style*="border: 1px solid #e5e7eb"],
+body.theme-oled [style*="border:1px solid #e5e7eb"],
+body.theme-oled [style*="border: 1px solid #e2e8f0"],
+body.theme-oled [style*="border:1px solid #e2e8f0"],
+body.theme-oled [style*="border: 1px solid #f1f5f9"],
+body.theme-oled [style*="border:1px solid #f1f5f9"],
+body.theme-oled [style*="border: 1px solid #f0f0f0"],
+body.theme-oled [style*="border:1px solid #f0f0f0"],
+body.theme-oled [style*="borderBottom: '1px solid #f0f0f0'"],
+body.theme-oled [style*="border-bottom: 1px solid #f0f0f0"],
 body.theme-github-dark [style*="border: 1px solid #e5e7eb"],
 body.theme-dark [style*="border: 1px solid #e5e7eb"],
 body.theme-github-dark [style*="border:1px solid #e5e7eb"],
@@ -626,6 +732,14 @@ body.theme-dark [style*="border-bottom: 1px solid #f0f0f0"] {
 }
 
 /* 浅灰虚线边框 */
+body.theme-midnight [style*="border: 1px dashed #e2e8f0"],
+body.theme-midnight [style*="border:1px dashed #e2e8f0"],
+body.theme-midnight [style*="border: 1px dashed #d9d9d9"],
+body.theme-midnight [style*="border:1px dashed #d9d9d9"],
+body.theme-oled [style*="border: 1px dashed #e2e8f0"],
+body.theme-oled [style*="border:1px dashed #e2e8f0"],
+body.theme-oled [style*="border: 1px dashed #d9d9d9"],
+body.theme-oled [style*="border:1px dashed #d9d9d9"],
 body.theme-github-dark [style*="border: 1px dashed #e2e8f0"],
 body.theme-dark [style*="border: 1px dashed #e2e8f0"],
 body.theme-github-dark [style*="border:1px dashed #e2e8f0"],
@@ -639,6 +753,30 @@ body.theme-dark [style*="border:1px dashed #d9d9d9"] {
 
 /* ─────────────── 深色模式兜底：常见浅色文字色，自动替换为 muted 色 ───────────────
  * #475569 / #374151 / #1f2937 这类深色模式下会变得不可见的文字色。 */
+body.theme-midnight [style*="color: '#475569'"],
+body.theme-midnight [style*="color:'#475569'"],
+body.theme-midnight [style*="color: '#374151'"],
+body.theme-midnight [style*="color:'#374151'"],
+body.theme-midnight [style*="color: '#64748b'"],
+body.theme-midnight [style*="color:'#64748b'"],
+body.theme-midnight [style*="color: '#6b7280'"],
+body.theme-midnight [style*="color:'#6b7280'"],
+body.theme-midnight [style*="color: '#9ca3af'"],
+body.theme-midnight [style*="color:'#9ca3af'"],
+body.theme-midnight [style*="color: '#999'"],
+body.theme-midnight [style*="color:'#999'"],
+body.theme-oled [style*="color: '#475569'"],
+body.theme-oled [style*="color:'#475569'"],
+body.theme-oled [style*="color: '#374151'"],
+body.theme-oled [style*="color:'#374151'"],
+body.theme-oled [style*="color: '#64748b'"],
+body.theme-oled [style*="color:'#64748b'"],
+body.theme-oled [style*="color: '#6b7280'"],
+body.theme-oled [style*="color:'#6b7280'"],
+body.theme-oled [style*="color: '#9ca3af'"],
+body.theme-oled [style*="color:'#9ca3af'"],
+body.theme-oled [style*="color: '#999'"],
+body.theme-oled [style*="color:'#999'"],
 body.theme-github-dark [style*="color: '#475569'"],
 body.theme-dark [style*="color: '#475569'"],
 body.theme-github-dark [style*="color:'#475569'"],
@@ -662,7 +800,23 @@ body.theme-dark [style*="color:'#9ca3af'"],
 body.theme-github-dark [style*="color: '#999'"],
 body.theme-dark [style*="color: '#999'"],
 body.theme-github-dark [style*="color:'#999'"],
-body.theme-dark [style*="color:'#999'"] {
+body.theme-dark [style*="color:'#999'"],
+body.theme-midnight [style*="color: '#334155'"],
+body.theme-oled [style*="color: '#334155'"],
+body.theme-github-dark [style*="color: '#334155'"],
+body.theme-dark [style*="color: '#334155'"],
+body.theme-midnight [style*="color:'#334155'"],
+body.theme-oled [style*="color:'#334155'"],
+body.theme-github-dark [style*="color:'#334155'"],
+body.theme-dark [style*="color:'#334155'"],
+body.theme-midnight [style*="color: '#94a3b8'"],
+body.theme-oled [style*="color: '#94a3b8'"],
+body.theme-github-dark [style*="color: '#94a3b8'"],
+body.theme-dark [style*="color: '#94a3b8'"],
+body.theme-midnight [style*="color:'#94a3b8'"],
+body.theme-oled [style*="color:'#94a3b8'"],
+body.theme-github-dark [style*="color:'#94a3b8'"],
+body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-muted) !important;
 }
 
