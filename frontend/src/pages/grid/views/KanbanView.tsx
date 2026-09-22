@@ -21,7 +21,7 @@
  *                      已完成卡片可再次点击勾选框取消（写回取消值，语义见 buildDoneToggleValue）。
  *
  * 交互约定:
- * - 截止日期徽章（逾期/还剩 X天/X天后）与标题同一行、紧贴标题右侧显示。
+ * - 截止日期徽章（时钟图标 + X天，逾期为 -X天）与标题同一行、紧贴标题右侧显示。
  * - 配置了 done_field 且当前用户可编辑时，卡片 hover 后在删除按钮左侧显示完成勾选框（可勾选/取消）。
  */
 
@@ -29,9 +29,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Tag, Progress, Tooltip, Empty, Button, Modal, Checkbox } from 'antd'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
-  CalendarOutlined,
   ClockCircleOutlined,
-  WarningOutlined,
   DeleteOutlined,
   PlusOutlined,
   CheckCircleFilled,
@@ -41,7 +39,7 @@ import { resolveTagColor } from '@/utils/tagColors'
 import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, KANBAN_OPTIONS, resolveAutoField, findOptionSchema } from '../view-config/viewOptionSchema'
 import { formatFieldDisplayValue } from '../cells/fieldValueFormat'
-import { parseDate, daysFromToday } from '../cells/dateUtils'
+import { parseDate, daysFromToday, fmtDate } from '../cells/dateUtils'
 import { type KanbanColumnData, resolveGroupField, groupKanbanColumns, resolveDoneCtx, isDoneRow, buildDoneToggleValue } from './kanbanBoard'
 
 // ── 密度样式映射 ──────────────────────────────────────
@@ -313,7 +311,7 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
       <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word', ...(isDone ? { color: 'var(--cn-text-muted)', textDecoration: 'line-through' } : {}) }}>
         {title}
         {isDone && <CheckCircleFilled className={celebrate ? 'kb-check-pop' : undefined} style={{ color: '#52c41a', marginLeft: 6, fontSize: cs.titleFontSize }} />}
-        {/* 完成卡片整体隐藏截止日期徽章（逾期/还剩/X天后都不再显示） */}
+        {/* 完成卡片整体隐藏截止日期徽章（X天/-X天都不再显示） */}
         {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
       </div>
 
@@ -389,33 +387,14 @@ function DueDateBadge({
   daysLeft: number | null
   urgentThreshold: number
 }) {
-  if (!dueDate) return null
+  if (!dueDate || daysLeft === null) return null
 
-  let color: string
-  let label: string
-  let icon: React.ReactNode
-
-  if (daysLeft === null) {
-    color = 'default'
-    label = dueDate.toISOString().slice(0, 10)
-    icon = <CalendarOutlined />
-  } else if (daysLeft < 0) {
-    color = 'red'
-    label = `逾期 ${Math.abs(daysLeft)}天`
-    icon = <WarningOutlined />
-  } else if (daysLeft <= urgentThreshold) {
-    color = 'orange'
-    label = `还剩 ${daysLeft}天`
-    icon = <ClockCircleOutlined />
-  } else {
-    color = 'default'
-    label = `${daysLeft}天后`
-    icon = <CalendarOutlined />
-  }
+  // 精简标签：统一时钟图标 + 天数（逾期为负数 -X天）；颜色保留红/橙/默认三级提醒
+  const color = daysLeft < 0 ? 'red' : daysLeft <= urgentThreshold ? 'orange' : 'default'
 
   return (
-    <Tooltip title={dueDate.toISOString().slice(0, 10)}>
-      <Tag color={color} icon={icon} style={{ margin: 0, marginLeft: 6, verticalAlign: 'middle', fontWeight: 400 }}>{label}</Tag>
+    <Tooltip title={fmtDate(dueDate)}>
+      <Tag color={color} icon={<ClockCircleOutlined />} style={{ margin: 0, marginLeft: 6, verticalAlign: 'middle', fontWeight: 400 }}>{daysLeft}天</Tag>
     </Tooltip>
   )
 }

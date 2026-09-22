@@ -97,20 +97,21 @@ describe('KanbanView 看板视图', () => {
     expect(document.querySelectorAll('.ant-progress')).toHaveLength(3)
   })
 
-  it('逾期卡片显示红色逾期徽章并计入紧急计数', () => {
+  it('逾期卡片显示红色 -X天 徽章并计入紧急计数', () => {
     renderKanban()
 
-    // 任务A 截止为 5 天前 → "逾期 5天"
-    expect(screen.getByText(/逾期 5天/)).toBeInTheDocument()
+    // 任务A 截止为 5 天前 → "-5天"
+    expect(screen.getByText(/-5天/)).toBeInTheDocument()
     // 列头紧急计数：逾期（-5天）与临近（+1天）各计 1 → 2
     expect(screen.getByText(/2 紧急/)).toBeInTheDocument()
   })
 
-  it('临近截止（阈值内）显示"还剩 X天"徽章', () => {
+  it('临近截止（阈值内）与未来截止显示时钟图标 + X天 徽章', () => {
     renderKanban()
 
-    // 任务B 截止为明天 → "还剩 1天"
-    expect(screen.getByText(/还剩 1天/)).toBeInTheDocument()
+    // 任务B 截止为明天（阈值内）→ "1天"；任务C 截止为 10 天后 → "10天"
+    expect(screen.getByText('1天')).toBeInTheDocument()
+    expect(screen.getByText('10天')).toBeInTheDocument()
   })
 
   it('截止日期徽章与标题同一行（渲染在标题元素内，紧贴标题右侧）', () => {
@@ -119,7 +120,7 @@ describe('KanbanView 看板视图', () => {
     const titleEl = screen.getByText('任务A')
     // 徽章作为标题元素的子节点 → 同一行显示，不再单独占一行
     expect(titleEl.querySelector('.ant-tag')).not.toBeNull()
-    expect(titleEl.textContent).toContain('逾期 5天')
+    expect(titleEl.textContent).toContain('-5天')
   })
 
   it('优先级与负责人渲染为 Tag', () => {
@@ -162,13 +163,12 @@ describe('KanbanView 完成标志', () => {
     view_options: { ...VIEW_OPTIONS, done_field: '状态', done_value: '已完成' },
   }
 
-  it('完成卡片隐藏截止日期徽章（逾期/还剩都不再显示），未完成卡片照常显示', () => {
+  it('完成卡片隐藏截止日期徽章（-X天/X天都不再显示），未完成卡片照常显示', () => {
     renderKanban({ rows: doneRows, view: doneView })
 
-    // 任务C 已完成且逾期 10 天 → 不显示逾期徽章；任务A 未完成 → 照常显示
-    expect(screen.queryByText(/逾期 10天/)).not.toBeInTheDocument()
-    expect(screen.getByText(/逾期 5天/)).toBeInTheDocument()
-    expect(screen.getByText(/还剩 1天/)).toBeInTheDocument()
+    // 任务C 已完成且逾期 10 天 → 不显示 -10天 徽章；任务A 未完成 → 照常显示
+    expect(screen.queryByText(/-10天/)).not.toBeInTheDocument()
+    expect(screen.getByText(/-5天/)).toBeInTheDocument()
   })
 
   it('完成卡片应用固定主题完成样式：绿底 + 绿色左边框 + 灰色文字 + 删除线 + 标题后绿色对勾', () => {
