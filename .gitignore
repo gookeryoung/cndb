@@ -54,8 +54,8 @@ backup-*.tar.gz
 .pnpm-store
 
 # 本地协作产物（需求/迭代记录/规则等，不进版本库）
-/.trae/
-/.trae-cn/
+.trae/*
+!.trae/rules/git-commit-message.md
 
 # SQLite 内存 DB / URI 临时文件
 file:*
