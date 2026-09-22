@@ -31,11 +31,6 @@ import { arrayMove } from '@dnd-kit/sortable'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { tableApi, recordApi, viewApi, auditApi } from '@/api'
 import type { ID, RowValues, Field, RowResponse, View, ViewCreate } from '@/api'
-import KanbanView from './views/KanbanView'
-import CalendarView from './views/CalendarView'
-import GalleryView from './views/GalleryView'
-import GanttView from './views/GanttView'
-import WbsView from './views/WbsView'
 import RowDetailDrawer from './layout/RowDetailDrawer'
 import ViewConfigDialog, { type FilterRule, type SortRule } from './view-config/ViewConfigDialog'
 import MoveTableForm from './layout/MoveTableForm'
@@ -58,9 +53,23 @@ import { useGridData } from './useGridData'
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
 const ImportExportDialog = lazy(() => import('@/pages/import-export/ImportExportDialog'))
+// 非 grid 视图按 mode 懒加载：默认表格视图不下载看板/甘特/日历等代码
+const KanbanView = lazy(() => import('./views/KanbanView'))
+const CalendarView = lazy(() => import('./views/CalendarView'))
+const GalleryView = lazy(() => import('./views/GalleryView'))
+const GanttView = lazy(() => import('./views/GanttView'))
+const WbsView = lazy(() => import('./views/WbsView'))
 
 function ModalFallback() {
   return null
+}
+
+function ViewFallback() {
+  return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cn-text-muted)', fontSize: 14 }}>
+      视图加载中...
+    </div>
+  )
 }
 
 /** 新增行草稿预填值：default_value 优先，其次 date/datetime 的 auto_fill 规则，否则空值.
@@ -563,13 +572,20 @@ export default function GridPage() {
     }
   }, [newRowActive, editingRowId, rowDrafts, gridFields]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // inlineOps 不做 useMemo — 每次 render 重建代价可忽略
-  const inlineOps: RowInlineOps | undefined = canEditRecords ? {
-    getInlineEdit,
-    onEdit: startEditRow,
-    onSave: saveInline,
-    onCancel: cancelInline,
-  } : undefined
+  // 行内编辑桥接：最新操作集每次渲染同步写入 ref，对外只暴露引用稳定的 inlineOps。
+  // 这样 buildColumns 的 useMemo 不会持有陈旧闭包（旧实现 deps 漏掉 inlineOps，
+  // 草稿打字时 render 闭包可能读到旧 rowDrafts），高频更新也不重建整表列定义。
+  const inlineOpsRef = useRef<RowInlineOps | null>(null)
+  inlineOpsRef.current = canEditRecords
+    ? { getInlineEdit, onEdit: startEditRow, onSave: saveInline, onCancel: cancelInline }
+    : null
+
+  const inlineOps = useMemo<RowInlineOps | undefined>(() => canEditRecords ? {
+    getInlineEdit: (record) => inlineOpsRef.current?.getInlineEdit(record) ?? null,
+    onEdit: (recordId) => { inlineOpsRef.current?.onEdit(recordId) },
+    onSave: (recordId) => { inlineOpsRef.current?.onSave(recordId) },
+    onCancel: (recordId) => { inlineOpsRef.current?.onCancel(recordId) },
+  } : undefined, [canEditRecords])
 
   const createView = useMutation({
     mutationFn: (data: ViewCreate) => viewApi.create(wid!, tid!, data),
@@ -743,24 +759,29 @@ export default function GridPage() {
     _onFilterReset,
     _onCellSave,
     inlineOps,
-    // inlineOps 每次 render 重建是预期内的（依赖多个 useState），但 buildColumns 本身很轻
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave])
-  const numericFields = (table?.fields || []).filter(f => ['number', 'decimal'].includes(f.field_type))
-  const selectedRows = (rowList.items || []).filter(r => selectedRowKeys.includes(r.id))
+  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps])
+
+  // 选中行聚合：过滤与计算收敛到同一个 useMemo。
+  // 旧实现的 numericFields / selectedRows 每次渲染都是新数组，使本 memo 依赖恒变、缓存完全失效。
+  // 选中键用 Set 查询，顺带把原来的 O(行数 × 选中数) includes 降为 O(行数)。
   const aggregates = useMemo(() => {
+    const numericFields = (table?.fields || []).filter(
+      f => f.field_type === 'number' || f.field_type === 'decimal',
+    )
+    if (numericFields.length === 0 || selectedRowKeys.length === 0) return {}
+    const selectedKeySet = new Set(selectedRowKeys)
+    const selectedRows = (rowList.items || []).filter(r => selectedKeySet.has(r.id))
     const out: Record<string, { count: number; sum: number; avg: number }> = {}
     for (const f of numericFields) {
       let sum = 0, count = 0
       for (const r of selectedRows) {
-        const col = f.name
-        const v = Number(r[col])
+        const v = Number(r[f.name])
         if (!Number.isNaN(v)) { sum += v; count++ }
       }
       if (count > 0) out[f.name] = { count, sum, avg: sum / count }
     }
     return out
-  }, [selectedRows, numericFields])
+  }, [table?.fields, rowList.items, selectedRowKeys])
 
   /** 右侧模式按钮组 —— 仅渲染数据表实际拥有的视图类型；仅 grid 时隐藏（推导逻辑在 viewModes.ts，纯函数可单测） */
   const { buttons: modeButtons, visible: showModeSwitch } = useMemo(
@@ -867,27 +888,31 @@ export default function GridPage() {
               }
             }}
           />
-        ) : mode === 'kanban' ? (
-          <KanbanView
-            rows={rowList.items || []}
-            fields={table?.fields || []}
-            view={activeView}
-            density={settings.density}
-            sortings={viewSortings}
-            onRowClick={openDetailWithPrefetch}
-            onDeleteCard={handleDeleteCard}
-            canDelete={canEditRecords}
-            onAddCard={openCreateDrawer}
-            canAdd={canEditRecords}
-          />
-        ) : mode === 'gallery' ? (
-          <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
-        ) : mode === 'gantt' ? (
-          <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} />
-        ) : mode === 'wbs' ? (
-          <WbsView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
         ) : (
-          <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
+          <Suspense fallback={<ViewFallback />}>
+            {mode === 'kanban' ? (
+              <KanbanView
+                rows={rowList.items || []}
+                fields={table?.fields || []}
+                view={activeView}
+                density={settings.density}
+                sortings={viewSortings}
+                onRowClick={openDetailWithPrefetch}
+                onDeleteCard={handleDeleteCard}
+                canDelete={canEditRecords}
+                onAddCard={openCreateDrawer}
+                canAdd={canEditRecords}
+              />
+            ) : mode === 'gallery' ? (
+              <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
+            ) : mode === 'gantt' ? (
+              <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} />
+            ) : mode === 'wbs' ? (
+              <WbsView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
+            ) : (
+              <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
+            )}
+          </Suspense>
         )}
       </div>
 

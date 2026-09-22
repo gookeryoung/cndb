@@ -70,6 +70,13 @@ jobs:
       - name: Frontend tests + coverage
         run: cd frontend && pnpm test:coverage
 
+      - name: Build frontend
+        run: cd frontend && pnpm build
+
+      # 关键 chunk（主入口 / GridPage）gzip 体积门禁：基线 +5% 容差，超限失败
+      - name: Bundle size budget
+        run: cd frontend && pnpm bundle:budget
+
   test:
     name: Test (Python 3.12)
     runs-on: ubuntu-latest

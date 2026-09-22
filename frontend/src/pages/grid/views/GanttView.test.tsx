@@ -5,7 +5,7 @@
  * 分组 WBS 头 / 甘特条点击回调 / 时间刻度切换。
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import dayjs from 'dayjs'
 import { fireEvent, screen, within } from '@testing-library/react'
 import GanttView from './GanttView'
@@ -55,6 +55,31 @@ function renderGantt(props?: {
 }
 
 describe('GanttView 甘特图视图', () => {
+    // jsdom 无布局引擎，滚动元素视口高度为 0，react-virtual 会直接返回空窗口；
+    // 用「observe 时立即以 600px 高度回调」的 ResizeObserver 替身模拟真实视口
+    beforeEach(() => {
+        vi.stubGlobal(
+            'ResizeObserver',
+            class {
+                constructor(private readonly cb: ResizeObserverCallback) { }
+                observe = (el: Element) => {
+                    this.cb(
+                        [
+                            { target: el, borderBoxSize: [{ inlineSize: 1000, blockSize: 600 }] },
+                        ] as unknown as ResizeObserverEntry[],
+                        this as unknown as ResizeObserver,
+                    )
+                }
+                unobserve = () => { }
+                disconnect = () => { }
+            },
+        )
+    })
+
+    afterEach(() => {
+        vi.unstubAllGlobals()
+    })
+
     it('缺 start/end 字段配置时显示配置引导空态', () => {
         renderProviders(
             <GanttView rows={ROWS} fields={FIELDS} view={{ id: 1, name: '甘特', view_type: 'gantt' } as View} density="comfortable" />,
@@ -139,5 +164,45 @@ describe('GanttView 甘特图视图', () => {
         // day 刻度自动选中更高像素档位「月-半周」，旧档位名消失
         expect(await screen.findByText('月-半周')).toBeInTheDocument()
         expect(screen.queryByText('月-双周')).not.toBeInTheDocument()
+    })
+
+    // ── 纵向虚拟化（非 grid 视图数据上限 2000 条，全量渲染会产生海量 DOM）──
+    const BIG_ROWS: RowResponse[] = Array.from({ length: 200 }, (_, i) => ({
+        id: 1000 + i,
+        名称: `大任务${String(i + 1).padStart(3, '0')}`,
+        开始: offsetDate(-10),
+        结束: offsetDate(10),
+        进度: null,
+        状态: '进行中',
+    }))
+
+    it('大数据量时仅渲染滚动窗口（含 overscan）内的任务行', () => {
+        renderGantt({ rows: BIG_ROWS })
+
+        // 600px 视口 ≈ 13 行 + 两端 overscan 8，远小于 200
+        const bars = screen.getAllByTestId('gantt-bar')
+        expect(bars.length).toBeGreaterThan(0)
+        expect(bars.length).toBeLessThan(30)
+        // 总高度按 200 行 × 44px（comfortable 行高）撑开滚动条
+        const body = screen.getByTestId('gantt-body')
+        expect(body.querySelector('[aria-hidden="true"]')).toHaveStyle({ height: '8800px' })
+        expect(screen.queryByText('大任务200')).not.toBeInTheDocument()
+    })
+
+    it('纵向滚动后窗口切片移动到对应区间', () => {
+        renderGantt({ rows: BIG_ROWS })
+
+        const body = screen.getByTestId('gantt-body')
+        // jsdom 无布局引擎，scrollTop 会被 clamp 为 0；覆盖 accessor 模拟滚到第 180 行
+        const top = 180 * 44
+        Object.defineProperty(body, 'scrollTop', {
+            configurable: true,
+            get: () => top,
+        })
+        fireEvent.scroll(body)
+
+        // 第 180 行进入窗口（含左列标题），首行离开窗口
+        expect(screen.getByText('大任务180')).toBeInTheDocument()
+        expect(screen.queryByText('大任务001')).not.toBeInTheDocument()
     })
 })

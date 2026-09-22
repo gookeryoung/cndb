@@ -36,3 +36,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </QueryClientProvider>
   </React.StrictMode>,
 )
+
+// Web Vitals 动态加载，独立 chunk，不占用首屏关键路径
+void import('./utils/webVitals').then((m) => m.reportWebVitals())
