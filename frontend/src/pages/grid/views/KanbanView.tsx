@@ -284,8 +284,8 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
           />
         </Tooltip>
       )}
-      {/* 标题行（完成卡片用不显眼的灰色文字）；截止日期徽章紧贴标题右侧、同一行 */}
-      <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word', ...(isDone ? { color: doneTextColor } : {}) }}>
+      {/* 标题行（完成卡片用删除线 + 不显眼的灰色文字）；截止日期徽章紧贴标题右侧、同一行 */}
+      <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word', ...(isDone ? { color: doneTextColor, textDecoration: 'line-through' } : {}) }}>
         {title}
         {/* 完成卡片整体隐藏截止日期徽章（逾期/还剩/X天后都不再显示） */}
         {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
