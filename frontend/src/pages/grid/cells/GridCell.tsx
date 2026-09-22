@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Tag, Tooltip, Typography, Input, InputNumber, Select, Checkbox, DatePicker, Button, Popover, App as AntApp, Upload, Image } from 'antd'
-import { SaveOutlined, CloseOutlined, InboxOutlined, DeleteOutlined } from '@ant-design/icons'
+import { SaveOutlined, CloseOutlined, InboxOutlined, DeleteOutlined, LockOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
 import type { AttachmentFile, Field, RowResponse } from '@/api'
@@ -26,6 +26,8 @@ interface Props {
   onDraftCancel?: () => void
   /** 是否渲染单元格底部自带的"保存/取消"按钮（行级编辑时由行操作列统一承载，置 false） */
   showActionButtons?: boolean
+  /** 受控模式下的只读字段标记 —— 自动填充锁定开启时，预填字段不允许修改 */
+  readOnly?: boolean
 }
 
 /**
@@ -33,7 +35,7 @@ interface Props {
  * - 传统模式（无 editing prop）：双击切到编辑态，回车/失焦通过 onSave 保存单个字段。
  * - 受控模式（editing 为布尔值）：由父级把控编辑态与草稿值，value 即当前草稿。
  */
-export default function GridCell({ value, field, rowId, wid, onSave, editing: controlledEditing, onDraftChange, onDraftCommit, onDraftCancel, showActionButtons }: Props) {
+export default function GridCell({ value, field, rowId, wid, onSave, editing: controlledEditing, onDraftChange, onDraftCommit, onDraftCancel, showActionButtons, readOnly }: Props) {
   const { message } = AntApp.useApp()
   // 说明：prop `editing`（受控模式）与内部 state `editing`（传统模式）同名，
   // 这里在解构时把 prop 重命名为 `controlledEditing`，内部 state 沿用 `editing` 变量名（传统模式）。
@@ -99,6 +101,17 @@ export default function GridCell({ value, field, rowId, wid, onSave, editing: co
 
   // 受控模式：编辑态与草稿值由父级决定
   if (controlled) {
+    // 自动填充锁定开启时，预填字段只读 —— 直接展示 DisplayCell 并加锁图标/提示
+    if (readOnly) {
+      return (
+        <Tooltip title="此字段为自动预填，已锁定（可在个人设置 > 操作风格中关闭）">
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, width: '100%' }}>
+            <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
+            <LockOutlined style={{ fontSize: 10, color: '#bfbfbf', marginLeft: 2 }} />
+          </span>
+        </Tooltip>
+      )
+    }
     // 草稿值即 value（父级传入的当前值）；回车提交走 onDraftCommit（行级保存统一由父级处理）
     return (
       <EditCell

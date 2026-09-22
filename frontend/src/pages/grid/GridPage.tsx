@@ -107,6 +107,7 @@ export default function GridPage() {
   const showHeader = useTableSettingsStore(s => s.showHeader)
   const striped = useTableSettingsStore(s => s.striped)
   const newRowPosition = useTableSettingsStore(s => s.newRowPosition)
+  const autoFillLocked = useTableSettingsStore(s => s.autoFillLocked)
   const settings = { density, defaultPageSize, bordered, showHeader, striped }
 
   // —— 视图状态从 GridViewStore 订阅 ——
@@ -180,6 +181,8 @@ export default function GridPage() {
   const [newRowActive, setNewRowActive] = useState(false)
   /** 各编辑态行的草稿值，key 为 `row-${id}`；新增行固定用 NEW_ROW_KEY */
   const [rowDrafts, setRowDrafts] = useState<Record<string, RowValues>>({})
+  /** 新增行的锁定字段集合（自动填充预填的字段名集合） */
+  const [newRowLockedFields, setNewRowLockedFields] = useState<Set<string>>(new Set())
 
   const rowKeyOf = (recordId: ID) => `row-${recordId}`
   const isNewRow = (recordId: ID) => String(recordId) === NEW_ROW_KEY
@@ -421,6 +424,7 @@ export default function GridPage() {
     onSuccess: () => {
       message.success('已新增 1 行')
       setNewRowActive(false)
+      setNewRowLockedFields(new Set())
       setRowDrafts(prev => { const next = { ...prev }; delete next[NEW_ROW_KEY]; return next })
       queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
@@ -431,6 +435,18 @@ export default function GridPage() {
   })
 
   const gridFields = (table?.fields || []) as Field[]
+
+  /** 计算自动预填锁定的字段集合（新增行场景下，autoFillLocked 开启时生效） */
+  const computeLockedFields = useCallback(() => {
+    if (!autoFillLocked) return new Set<string>()
+    const locked = new Set<string>()
+    for (const f of gridFields) {
+      if (!isEditableInlineField(f)) continue
+      const v = defaultValueForNewRow(f)
+      if (v !== undefined) locked.add(f.name)
+    }
+    return locked
+  }, [autoFillLocked, gridFields])
 
   /** 依据原行（或空白）为每个可编辑字段初始化草稿；新增行按 default_value / auto_fill 规则预填 */
   const draftFor = (record: RowResponse | null): RowValues => {
@@ -481,6 +497,7 @@ export default function GridPage() {
     }
 
     setNewRowActive(true)
+    setNewRowLockedFields(computeLockedFields())
     setRowDrafts(prev => ({ ...prev, [NEW_ROW_KEY]: draftFor(null) }))
   }
 
@@ -496,7 +513,7 @@ export default function GridPage() {
   const cancelInline = (recordId: ID) => {
     const key = inlineDataKey(recordId)
     clearDraft(key)
-    if (isNewRow(recordId)) setNewRowActive(false)
+    if (isNewRow(recordId)) { setNewRowActive(false); setNewRowLockedFields(new Set()) }
     else setEditingRowId(null)
   }
 
@@ -549,8 +566,10 @@ export default function GridPage() {
       onFieldChange: (fieldName, value) => updateDraft(key, fieldName, value),
       onFieldCommit: () => { }, // 行级统一保存，回车 noop
       onFieldCancel: () => { if (isNew) setNewRowActive(false); else setEditingRowId(null) },
+      // 仅新增行应用自动填充锁定；存量行整行编辑不受锁定限制
+      lockedFields: isNew ? newRowLockedFields : new Set<string>(),
     }
-  }, [newRowActive, editingRowId, rowDrafts, gridFields]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [newRowActive, editingRowId, rowDrafts, gridFields, newRowLockedFields]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 行内编辑桥接：最新操作集每次渲染同步写入 ref，对外只暴露引用稳定的 inlineOps。
   // 这样 buildColumns 的 useMemo 不会持有陈旧闭包（旧实现 deps 漏掉 inlineOps，
