@@ -106,6 +106,9 @@ beforeAll(() => {
 // 避免 afterEach 触发 persist 写 localStorage 与异常注入用例互相干扰。
 afterEach(() => {
   cleanup()
+  // antd 静态 Modal.confirm / message 渲染在 React 树之外的容器，cleanup() 无法卸载；
+  // jsdom 不跑动画导致 destroyAll 的离场动画永不结束，残留的遮罩与文本会干扰后续用例
+  document.querySelectorAll('.ant-modal-root, .ant-message, .ant-notification').forEach((n) => n.remove())
   window.localStorage.clear()
   window.sessionStorage.clear()
   server.resetHandlers()

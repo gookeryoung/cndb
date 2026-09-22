@@ -1,11 +1,12 @@
 /**
  * ReportsPage 页面组件测试 —— 报告模板列表页.
  *
- * 覆盖：加载态 / 列表渲染 / 空态 / 新建模板弹窗 / 删除确认回调查询 / 未关联表渲染禁用.
+ * 覆盖：加载态 / 列表渲染 / 空态 / 新建模板弹窗 / 删除确认回调查询 / 未关联表渲染禁用
+ * + 渲染下载（无参数直渲 / 参数弹窗回填与提交 / 额外表 / 失败提示）/ 编辑模板回填与保存.
  * 注：组件用 useParams 取 wid，必须包在 Routes 内渲染。
  */
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
 import { Routes, Route } from 'react-router-dom'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
@@ -111,5 +112,163 @@ describe('ReportsPage 报表模板页', () => {
 
         const btn = await screen.findByRole('button', { name: /渲\s*染\s*下\s*载/ })
         expect(btn).toBeDisabled()
+    })
+})
+
+// ─────────────── 渲染下载 / 编辑保存流程 ───────────────
+
+const originalCreateObjectURL = URL.createObjectURL
+const originalRevokeObjectURL = URL.revokeObjectURL
+
+/** stub 下载链路：createObjectURL / revokeObjectURL / a.click（jsdom 不支持，且避免导航报错）
+ *  注意：不能整体替换 URL（会破坏 new URL()），只赋值缺失的静态方法 */
+function stubDownload() {
+    URL.createObjectURL = vi.fn(() => 'blob:mock-url')
+    URL.revokeObjectURL = vi.fn()
+    return vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => { })
+}
+
+afterEach(() => {
+    URL.createObjectURL = originalCreateObjectURL
+    URL.revokeObjectURL = originalRevokeObjectURL
+    vi.restoreAllMocks()
+})
+
+/** 渲染接口拦截：记录请求体并返回二进制 Blob */
+function useRenderHandler(id: number, bodies: Record<string, unknown>[]) {
+    server.use(
+        http.post(`/api/v1/reports/${id}/render`, async ({ request }) => {
+            bodies.push(await request.json() as Record<string, unknown>)
+            return new HttpResponse(new Blob(['doc-bytes']), {
+                headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+            })
+        }),
+    )
+}
+
+const TPL_WITH_PARAMS: ReportTemplateSummary = {
+    ...TPL,
+    id: 3,
+    name: '含参数模板',
+    parameters: [
+        { name: '月份', type: 'string', default: '2026-09', required: true },
+        { name: '含税', type: 'boolean', required: false },
+    ],
+}
+
+describe('ReportsPage 渲染下载', () => {
+    it('无参数模板点击渲染下载直接发起渲染并触发下载', async () => {
+        const anchorClick = stubDownload()
+        const bodies: Record<string, unknown>[] = []
+        server.use(http.get('/api/v1/reports', () => HttpResponse.json([{ ...TPL, id: 5, parameters: [] }])))
+        useRenderHandler(5, bodies)
+        renderPage()
+
+        fireEvent.click(await screen.findByRole('button', { name: /渲\s*染\s*下\s*载/ }))
+        await waitFor(() => expect(bodies).toHaveLength(1))
+        expect(bodies[0]).toMatchObject({ table_id: 100, params: {} })
+        expect(URL.createObjectURL).toHaveBeenCalledOnce()
+        expect(anchorClick).toHaveBeenCalledOnce()
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
+    })
+
+    it('带参数模板打开渲染参数弹窗，默认值回填并随渲染提交', async () => {
+        stubDownload()
+        const bodies: Record<string, unknown>[] = []
+        server.use(http.get('/api/v1/reports', () => HttpResponse.json([TPL_WITH_PARAMS])))
+        useRenderHandler(3, bodies)
+        renderPage()
+
+        fireEvent.click(await screen.findByRole('button', { name: /渲\s*染\s*下\s*载/ }))
+        expect(await screen.findByText('渲染模板：含参数模板')).toBeInTheDocument()
+        // 默认值回填后用户改为 2026-10
+        const monthInput = screen.getByDisplayValue('2026-09')
+        fireEvent.change(monthInput, { target: { value: '2026-10' } })
+        fireEvent.click(screen.getByRole('button', { name: '生成报告' }))
+
+        await waitFor(() => expect(bodies).toHaveLength(1))
+        expect(bodies[0]).toMatchObject({ table_id: 100, params: { 月份: '2026-10' } })
+    })
+
+    it('渲染参数弹窗选择额外引用表后随请求提交 extra_table_ids', async () => {
+        stubDownload()
+        const bodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([TPL_WITH_PARAMS])),
+            http.get('/api/v1/workspaces/10/tables', () =>
+                HttpResponse.json([{ id: 101, name: '订单表', record_count: 0, field_count: 0, view_count: 0 }]),
+            ),
+        )
+        useRenderHandler(3, bodies)
+        renderPage()
+
+        fireEvent.click(await screen.findByRole('button', { name: /渲\s*染\s*下\s*载/ }))
+        await screen.findByText('渲染模板：含参数模板')
+        // 打开额外引用表下拉（弹窗内第一个 combobox 即额外引用表选择器）并选择「订单表」
+        const combos = screen.getAllByRole('combobox')
+        fireEvent.mouseDown(combos[0])
+        fireEvent.click(await screen.findByText('订单表'))
+        fireEvent.click(screen.getByRole('button', { name: '生成报告' }))
+
+        await waitFor(() => expect(bodies).toHaveLength(1))
+        expect(bodies[0]).toMatchObject({ table_id: 100, extra_table_ids: [101] })
+    })
+
+    it('渲染失败时弹出错误提示', async () => {
+        stubDownload()
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([{ ...TPL, id: 6, name: '失败模板', parameters: [] }])),
+            http.post('/api/v1/reports/6/render', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+        )
+        renderPage()
+
+        fireEvent.click(await screen.findByRole('button', { name: /渲\s*染\s*下\s*载/ }))
+        // client.ts 拦截器会把 blob 错误响应中的 detail 归一化进 err.message，toast 显示后端文案
+        expect(await screen.findByText('boom')).toBeInTheDocument()
+    })
+})
+
+describe('ReportsPage 编辑与新建保存', () => {
+    it('编辑模板：详情回填表单，保存发起 PUT 更新', async () => {
+        const putBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([TPL])),
+            http.get('/api/v1/reports/1', () => HttpResponse.json({ ...TPL, template_content: 'Hello {{ table_name }}' })),
+            http.put('/api/v1/reports/1', async ({ request }) => {
+                putBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({})
+            }),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        expect(await screen.findByText(/编辑模板「月度销售汇总」/)).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+        await waitFor(() => expect(putBodies).toHaveLength(1))
+        expect(putBodies[0]).toMatchObject({ name: '月度销售汇总', template_content: 'Hello {{ table_name }}' })
+    })
+
+    it('新建模板：填写名称保存后发起 POST 创建并关闭弹窗', async () => {
+        const postBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([])),
+            http.post('/api/v1/reports', async ({ request }) => {
+                postBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({ id: 9 })
+            }),
+        )
+        renderPage()
+
+        fireEvent.click((await screen.findAllByRole('button', { name: /新\s*建\s*模\s*板/ }))[0])
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('新建模板'))
+        fireEvent.change(screen.getByPlaceholderText('例如：月度销售汇总'), { target: { value: '销售月报' } })
+        fireEvent.click(screen.getByRole('button', { name: /^创\s*建$/ }))
+
+        await waitFor(() => expect(postBodies).toHaveLength(1))
+        expect(postBodies[0]).toMatchObject({ name: '销售月报', output_format: 'docx' })
+        expect(postBodies[0].template_content).toContain('{{ table_name }}')
+        expect(await screen.findByText('模板已创建')).toBeInTheDocument()
     })
 })

@@ -155,3 +155,127 @@ def test_admin_restore_invalid_mode_rejected(
     r = _upload(client, superuser_headers, archive, mode="bogus")
     assert r.status_code == 400
     assert "无效的恢复模式" in r.json()["detail"]
+
+
+# ── 权限边界 ──────────────────────────────────────────
+
+
+def test_admin_endpoints_require_login(client: TestClient, tmp_path: Path) -> None:
+    """未携带 token 访问 admin 端点 → 401."""
+    assert client.get("/api/v1/admin/info").status_code == 401
+    assert client.post("/api/v1/admin/backup").status_code == 401
+
+    archive = _make_archive(tmp_path)
+    data = io.BytesIO(archive.read_bytes())
+    r = client.post(
+        "/api/v1/admin/restore/inspect",
+        files={"file": ("backup.tar.gz", data, "application/gzip")},
+    )
+    assert r.status_code == 401
+
+
+# ── admin/info ────────────────────────────────────────
+
+
+def test_admin_info_returns_system_fields(client: TestClient, superuser_headers: dict[str, str]) -> None:
+    """登录用户可读系统信息（版本 / 数据库 / 数据目录 / 时区）."""
+    r = client.get("/api/v1/admin/info", headers=superuser_headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["app_name"]
+    assert body["app_version"]
+    assert body["database_url"]
+    assert "data_dir" in body
+    assert "upload_dir" in body
+    assert body["timezone"] == "UTC"
+
+
+# ── admin/backup ──────────────────────────────────────
+
+
+def test_admin_backup_archive_download(
+    client: TestClient,
+    superuser_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """archive 格式备份 → 200 返回 tar.gz 下载流（Content-Disposition 带文件名）."""
+    src_db = _setup_src_sqlite(tmp_path)
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{src_db}")
+    monkeypatch.setattr(settings, "UPLOAD_DIR", tmp_path / "uploads")
+
+    r = client.post(
+        "/api/v1/admin/backup",
+        headers=superuser_headers,
+        json={"format": "archive", "include_uploads": False, "mode": "native"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/gzip"
+    assert "attachment" in r.headers["content-disposition"]
+    assert "cndb-backup-" in r.headers["content-disposition"]
+    assert len(r.content) > 0
+    # gzip 魔数校验
+    assert r.content[:2] == b"\x1f\x8b"
+
+
+def test_admin_backup_rejects_directory_format(client: TestClient, superuser_headers: dict[str, str]) -> None:
+    """Web 端不支持 directory 格式 → 400 并提示使用 CLI."""
+    r = client.post(
+        "/api/v1/admin/backup",
+        headers=superuser_headers,
+        json={"format": "directory"},
+    )
+    assert r.status_code == 400
+    assert "cndb backup" in r.json()["detail"]
+
+
+def test_admin_backup_error_maps_to_400(
+    client: TestClient,
+    superuser_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """create_backup 抛 BackupError → 400 转换."""
+    from cndb.cli.backup import BackupError
+    from cndb.core import system_api
+
+    def _boom(**_kwargs: object) -> None:
+        raise BackupError("模拟备份失败")
+
+    monkeypatch.setattr(system_api, "create_backup", _boom)
+    r = client.post("/api/v1/admin/backup", headers=superuser_headers, json={"format": "archive"})
+    assert r.status_code == 400
+    assert "模拟备份失败" in r.json()["detail"]
+
+
+# ── restore 错误分支 ──────────────────────────────────
+
+
+def test_admin_restore_inspect_invalid_archive_rejected(client: TestClient, superuser_headers: dict[str, str]) -> None:
+    """上传损坏的归档 → inspect 返回 400."""
+    r = client.post(
+        "/api/v1/admin/restore/inspect",
+        headers=superuser_headers,
+        files={"file": ("broken.tar.gz", io.BytesIO(b"not-a-tar"), "application/gzip")},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]
+
+
+def test_admin_restore_unexpected_error_maps_to_500(
+    client: TestClient,
+    superuser_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """restore_backup 抛非 RestoreError 异常 → 500（避免裸 500 无信息）."""
+    from cndb.core import system_api
+
+    archive = _make_archive(tmp_path)
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("数据库引擎爆炸")
+
+    monkeypatch.setattr(system_api, "restore_backup", _boom)
+    r = _upload(client, superuser_headers, archive)
+    assert r.status_code == 500
+    assert "数据库引擎爆炸" in r.json()["detail"]
