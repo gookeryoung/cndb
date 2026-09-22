@@ -239,8 +239,8 @@ export default function ViewConfigDialog({
                     <Input size="small" value={rule.value as string | undefined}
                       onChange={(e) => updateFilter(idx, { value: e.target.value })} style={{ flex: 1 }} placeholder="值" />
                   )}
-                  <Tooltip title="删除这条筛选规则（至少保留一条）">
-                    <Button size="small" type="text" danger disabled={draftFilters.length <= 1} icon={<DeleteOutlined />}
+                  <Tooltip title="删除这条筛选规则">
+                    <Button size="small" type="text" danger icon={<DeleteOutlined />}
                       className="vcvd-rule-del" onClick={() => removeFilter(idx)} />
                   </Tooltip>
                 </div>
@@ -276,8 +276,8 @@ export default function ViewConfigDialog({
                   onChange={(v: 'asc' | 'desc') => updateSort(idx, { direction: v })}
                   style={{ width: 100 }}
                   options={[{ value: 'asc', label: '升序 ↑' }, { value: 'desc', label: '降序 ↓' }]} />
-                <Tooltip title="删除这条排序规则（至少保留一条）">
-                  <Button size="small" type="text" danger disabled={draftSorts.length <= 1} icon={<DeleteOutlined />}
+                <Tooltip title="删除这条排序规则">
+                  <Button size="small" type="text" danger icon={<DeleteOutlined />}
                     className="vcvd-rule-del" onClick={() => removeSort(idx)} />
                 </Tooltip>
               </div>

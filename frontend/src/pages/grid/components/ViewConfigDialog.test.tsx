@@ -123,12 +123,70 @@ describe('ViewConfigDialog 视图配置', () => {
     expect(screen.getByText('降序 ↓')).toBeInTheDocument()
   })
 
-  it('仅一条筛选规则时删除按钮禁用（至少保留一条）', () => {
+  it('单条筛选规则的删除按钮可用（已放开删除至 0 条）', () => {
     renderDialog({ filters: [{ field_name: '姓名', op: 'contains', value: '张' }] })
 
-    // 规则行的删除按钮为图标按钮（danger text），只有一条时 disabled
-    const delBtn = screen.getByRole('button', { name: /delete/ })
-    expect(delBtn).toBeDisabled()
+    // 规则行的删除按钮为图标按钮（danger text）；仅一条时不再禁用
+    expect(screen.getByRole('button', { name: /delete/ })).toBeEnabled()
+  })
+})
+
+describe('ViewConfigDialog 空态分支', () => {
+  it('删除唯一一条筛选规则后渲染筛选空态', () => {
+    renderDialog({ filters: [{ field_name: '姓名', op: 'contains', value: '张' }] })
+    expect(screen.queryByText('暂无筛选条件')).not.toBeInTheDocument()
+
+    fireEvent.click(document.querySelector('.vcvd-rule-del') as HTMLElement)
+
+    expect(screen.getByText('暂无筛选条件')).toHaveClass('vcvd-empty')
+    expect(document.querySelectorAll('.vcvd-rule')).toHaveLength(0)
+  })
+
+  it('筛选空态下重新添加可恢复为一条规则', () => {
+    renderDialog({ filters: [{ field_name: '姓名', op: 'contains' }] })
+    fireEvent.click(document.querySelector('.vcvd-rule-del') as HTMLElement)
+    expect(screen.getByText('暂无筛选条件')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /添加筛选条件/ }))
+
+    expect(screen.queryByText('暂无筛选条件')).not.toBeInTheDocument()
+    expect(document.querySelectorAll('.vcvd-rule')).toHaveLength(1)
+  })
+
+  it('筛选规则全部删除后保存回调携带空数组', async () => {
+    const spies = renderDialog({ filters: [{ field_name: '姓名', op: 'contains', value: '张' }] })
+    fireEvent.click(document.querySelector('.vcvd-rule-del') as HTMLElement)
+
+    fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+    await waitFor(() => expect(spies.onSaveFilters).toHaveBeenCalledWith([]))
+  })
+
+  it('删除唯一一条排序规则后渲染排序空态', () => {
+    renderDialog({ sortings: [{ field_name: '姓名', direction: 'desc' }] })
+    fireEvent.click(screen.getByText('排序 (1)'))
+    expect(screen.queryByText('暂无排序规则')).not.toBeInTheDocument()
+
+    // Tabs 保留非激活面板 DOM，删除按钮需按行内定位而非全局查
+    const row = screen.getByText('降序 ↓').closest('.vcvd-rule') as HTMLElement
+    fireEvent.click(row.querySelector('.vcvd-rule-del') as HTMLElement)
+
+    expect(screen.getByText('暂无排序规则')).toHaveClass('vcvd-empty')
+  })
+
+  it('排序空态下重新添加可恢复为一条规则', () => {
+    renderDialog({ sortings: [{ field_name: '姓名', direction: 'desc' }] })
+    fireEvent.click(screen.getByText('排序 (1)'))
+
+    const row = screen.getByText('降序 ↓').closest('.vcvd-rule') as HTMLElement
+    fireEvent.click(row.querySelector('.vcvd-rule-del') as HTMLElement)
+    expect(screen.getByText('暂无排序规则')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /添加排序/ }))
+
+    expect(screen.queryByText('暂无排序规则')).not.toBeInTheDocument()
+    // 新规则为默认升序，原「降序」行已被替换
+    expect(screen.getByText('升序 ↑')).toBeInTheDocument()
+    expect(screen.queryByText('降序 ↓')).not.toBeInTheDocument()
   })
 })
 
