@@ -56,7 +56,7 @@ import GridViewModals from './gridViewModals'
 import { useGridData } from './useGridData'
 
 // Modal 组件 lazy import：点击打开时才加载
-const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
+const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
 const ImportExportDialog = lazy(() => import('@/pages/import-export/ImportExportDialog'))
 
 function ModalFallback() {
