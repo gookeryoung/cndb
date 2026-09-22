@@ -2,7 +2,7 @@
  * api/hooks React Query hooks 测试 —— 查询与乐观更新 mutation.
  *
  * 覆盖：
- * 1. 查询 hooks（useTable/useTableViews/useActiveViewPreference/useTableRecords/
+ * 1. 查询 hooks（useTable/useTableViews/useTableRecords/
  *    useRowAudit/useRowReferences）成功路径与 enabled 守卫
  * 2. useTableRecords 过滤参数序列化到请求 URL
  * 3. useUpdateRowOptimistic：乐观写 cache 成功 / 失败回滚
@@ -19,7 +19,6 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import {
-  useActiveViewPreference,
   useDeleteRowsOptimistic,
   useRowAudit,
   useRowReferences,
@@ -69,13 +68,6 @@ describe('查询 hooks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toHaveLength(1)
     expect(result.current.data?.[0]?.name).toBe('全部数据')
-  })
-
-  it('useActiveViewPreference 返回激活视图偏好（默认 handler）', async () => {
-    const { result } = renderHookProviders(() => useActiveViewPreference(100))
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(result.current.data?.active_view_id).toBeNull()
   })
 
   it('useTableRecords 返回行数据（默认 handler）', async () => {

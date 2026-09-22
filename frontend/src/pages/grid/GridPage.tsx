@@ -29,13 +29,13 @@ import {
   SearchOutlined, EditOutlined, MenuOutlined, PartitionOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useTable, useTableViews, useActiveViewPreference, useTableRecords, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
+import { useTable, useTableViews, useTableRecords, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
 import {
   DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors,
 } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { tableApi, recordApi, viewApi, userApi, auditApi } from '@/api'
+import { tableApi, recordApi, viewApi, auditApi } from '@/api'
 import type { ID, RowValues, Field, RowResponse, View, ViewCreate } from '@/api'
 import KanbanView from './components/KanbanView'
 import CalendarView from './components/CalendarView'
@@ -270,13 +270,6 @@ export default function GridPage() {
 
   const { data: table, isLoading } = useTable(wid!, tid!)
   const { data: views = [] } = useTableViews(wid!, tid!)
-  /** 用户偏好：当前表的激活视图 ID（per-user per-table 持久化） */
-  const { data: activeViewPreference } = useActiveViewPreference(Number(tid))
-  /** 保存激活视图偏好（debounce 在 loadView 里手动控制） */
-  const saveActiveViewPref = useMutation({
-    mutationFn: (vid: number | null) => userApi.setTableActiveView(Number(tid!), vid),
-    onError: (err) => message.error(err instanceof Error ? err.message : '视图偏好保存失败'),
-  })
   /** 把后端存储的 filters（dict 或 list）归一化成 list 形式 */
   function normalizeFilters(raw: unknown): FilterRule[] {
     if (!raw) return []
@@ -333,8 +326,6 @@ export default function GridPage() {
         params.set('view', String(v.id))
         params.set('mode', newMode)
         setSearchParams(params, { replace: true })
-        // 用户主动切换视图 —— 持久化偏好到后端
-        saveActiveViewPref.mutate(Number(v.id))
       }
     } else {
       patchView({
@@ -364,47 +355,40 @@ export default function GridPage() {
   // 当前激活的视图对象（含 view_options）
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
 
-  // 视图初始化 / 重新匹配：URL ?view= 深链 > URL ?mode= 匹配 > localStorage mode 匹配 > 用户偏好 active_view_id > is_default > 第一个
-  // 每次 wid/tid/searchParams/views/activeViewPreference 变化时都重新评估，
-  // 但只有当目标视图和当前 activeViewId 不同时才实际切换，避免无限循环.
+  // 视图初始化 / 重新匹配：URL ?view= 深链 > 默认视图(is_default) > mode 兜底 > 第一个
+  // 默认视图是「进入数据表的落地视图」：只要表存在默认视图，除 ?view= 深链外任何因素都不得覆盖它。
+  // ?mode= / localStorage 仅在表缺少默认视图时兜底（正常情况下每张表都有「全部」默认视图）。
+  // 每次 wid/tid/searchParams/views 变化时都重新评估，但只在目标和当前 activeViewId 不同时才切换，避免无限循环.
   useEffect(() => {
     if (!views.length) return
 
     // ── 计算最匹配的目标视图 ──
     let target: View | null = null
 
-    // 1. URL 深链优先（精确 view id）
+    // 1. URL 深链优先（精确 view id，分享 / 刷新直达指定视图）
     const vidParam = searchParams.get('view')
     if (vidParam) {
       target = views.find(v => String(v.id) === vidParam) || null
     }
-    // 2. URL mode 匹配（刷新 / 从其它表带 ?mode= 导航过来时保留展示模式）
+    // 2. 默认视图 —— 进入数据表的落地视图
+    if (!target) {
+      target = views.find(v => v.is_default) || null
+    }
+    // 3. 兜底：URL mode / localStorage mode（仅表无默认视图时才会走到）
     if (!target) {
       const spMode = searchParams.get('mode') as ViewMode | null
       if (spMode && VALID_MODES.includes(spMode)) {
         target = views.find(v => v.view_type === spMode) || null
       }
-    }
-    // 3. localStorage mode 匹配（侧边栏点表导航丢失 URL 参数时的兜底）
-    if (!target) {
-      const lsMode = _readModeFromStorage()
-      if (lsMode) {
-        target = views.find(v => v.view_type === lsMode) || null
+      if (!target) {
+        const lsMode = _readModeFromStorage()
+        if (lsMode) target = views.find(v => v.view_type === lsMode) || null
       }
     }
-    // 4. 用户偏好的激活视图（后端存储 per-table）—— 异步加载完成后也能触发重新评估
-    if (!target) {
-      const prefVid = activeViewPreference?.active_view_id
-      if (prefVid != null) {
-        target = views.find(v => Number(v.id) === prefVid) || null
-      }
-    }
-    // 5. 最后：default 或第一个
-    if (!target) {
-      target = views.find(v => v.is_default) || views[0] || null
-    }
+    // 4. 最后退化为第一个视图
+    if (!target) target = views[0] || null
 
-    // ── 只在目标和当前不同时才切换（初始化都不持久化 mode，避免覆盖用户偏好） ──
+    // ── 只在目标和当前不同时才切换（初始化不持久化 mode，避免污染 localStorage） ──
     if (target) {
       if (activeViewId !== String(target.id)) {
         loadView(target, false, false)
@@ -412,7 +396,7 @@ export default function GridPage() {
     } else if (activeViewId !== null) {
       loadView(null, false, false)
     }
-  }, [views, searchParams, wid, tid, activeViewPreference])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [views, searchParams, wid, tid])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // searchQuery URL 深链：?q=关键词
   useEffect(() => {

@@ -81,10 +81,6 @@ export const handlers = [
   // 视图
   http.get('/api/v1/workspaces/:wid/tables/:tid/views', () =>
     HttpResponse.json(mockViews)),
-
-  // 用户偏好（激活视图）
-  http.get('/api/v1/accounts/preferences/tables/:tid/active-view', () =>
-    HttpResponse.json({ table_id: mockTable.id, active_view_id: null })),
 ]
 
 export const server = setupServer(...handlers)

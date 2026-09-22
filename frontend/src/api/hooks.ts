@@ -6,7 +6,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { App as AntApp } from 'antd'
-import { tableApi, recordApi, viewApi, userApi, auditApi } from './index'
+import { tableApi, recordApi, viewApi, auditApi } from './index'
 import type {
   TableDetail, View, RowListResponse,
   AuditLog, Reference,
@@ -29,15 +29,6 @@ export function useTableViews(wid: string, tid: string) {
     queryKey: ['table-views', tableKey],
     queryFn: () => viewApi.list(wid, tid),
     enabled: !!wid && !!tid,
-  })
-}
-
-export function useActiveViewPreference(tid: number | string) {
-  return useQuery<{ table_id: number; active_view_id: number | null }>({
-    queryKey: ['user-pref-active-view', tid],
-    queryFn: () => userApi.getTableActiveView(tid),
-    enabled: !!tid,
-    staleTime: 60_000,
   })
 }
 
