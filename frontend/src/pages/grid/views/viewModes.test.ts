@@ -4,7 +4,7 @@ import { VALID_MODES, collectAvailableViewTypes, deriveModeSwitch, type ViewMode
 
 /** 与 GridPage.MODE_BUTTONS 同序的测试替身（不含 icon） */
 const ALL_BUTTONS: Array<{ mode: ViewMode }> = [
-  { mode: 'grid' }, { mode: 'kanban' }, { mode: 'gallery' },
+  { mode: 'grid' }, { mode: 'kanban' },
   { mode: 'calendar' }, { mode: 'gantt' }, { mode: 'wbs' },
 ]
 
@@ -38,15 +38,15 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
     expect(buttons).toEqual([{ mode: 'grid' }])
   })
 
-  it('科研项目（grid+kanban+gallery）→ 3 个按钮', () => {
-    const { buttons, visible } = deriveModeSwitch(view('grid', 'kanban', 'gallery'), ALL_BUTTONS)
+  it('科研项目（grid+kanban+calendar）→ 3 个按钮', () => {
+    const { buttons, visible } = deriveModeSwitch(view('grid', 'kanban', 'calendar'), ALL_BUTTONS)
     expect(visible).toBe(true)
-    expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kanban', 'gallery'])
+    expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kanban', 'calendar'])
   })
 
-  it('项目进展（grid+kanban+gallery+calendar）→ 4 个按钮', () => {
+  it('项目进展（grid+kanban+calendar+gantt）→ 4 个按钮', () => {
     const { buttons, visible } = deriveModeSwitch(
-      view('grid', 'kanban', 'gallery', 'calendar'), ALL_BUTTONS,
+      view('grid', 'kanban', 'calendar', 'gantt'), ALL_BUTTONS,
     )
     expect(visible).toBe(true)
     expect(buttons).toHaveLength(4)
@@ -60,18 +60,18 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
     expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kanban', 'calendar', 'gantt', 'wbs'])
   })
 
-  it('产品开发（grid+kanban+gallery+calendar+gantt，缺 wbs）→ 5 个按钮且无 wbs', () => {
+  it('产品开发（grid+kanban+calendar+gantt，缺 wbs）→ 4 个按钮且无 wbs', () => {
     const { buttons, visible } = deriveModeSwitch(
-      view('grid', 'kanban', 'gallery', 'calendar', 'gantt'), ALL_BUTTONS,
+      view('grid', 'kanban', 'calendar', 'gantt'), ALL_BUTTONS,
     )
     expect(visible).toBe(true)
-    expect(buttons).toHaveLength(5)
+    expect(buttons).toHaveLength(4)
     expect(buttons.some((b) => b.mode === 'wbs')).toBe(false)
   })
 })
 
 describe('VALID_MODES', () => {
-  it('与 6 种模式一一对应（URL/storage 校验共用）', () => {
-    expect(VALID_MODES).toEqual(['grid', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs'])
+  it('与 5 种模式一一对应（URL/storage 校验共用）', () => {
+    expect(VALID_MODES).toEqual(['grid', 'kanban', 'calendar', 'gantt', 'wbs'])
   })
 })

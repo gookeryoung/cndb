@@ -1,4 +1,4 @@
-/** 视图专属配置字段 schema — Kanban / Calendar / Gallery 共用的真相源.
+/** 视图专属配置字段 schema — Kanban / Calendar / Gantt / WBS 共用的真相源.
  *
  * ViewConfigDialog（编辑已存视图的视图设置 Tab）和 CreateEditViewForm（创建/编辑视图时的配置表单）
  * 都应该从这里拿字段定义，确保 label / 类型约束 / 默认值三处一致。
@@ -130,30 +130,6 @@ export const CALENDAR_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
-/** Gallery 画廊视图的专属配置字段（共 5 项） */
-export const GALLERY_OPTIONS: ViewOptionSchema[] = [
-  {
-    key: 'title_field', label: '标题字段', group: '标题与图片', tooltip: '留空则自动选第一个文本字段',
-    kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
-  },
-  {
-    key: 'subtitle_field', label: '副标题字段', group: '标题与图片', tooltip: '卡片标题下方的补充文字',
-    kind: 'field_select', fieldTypes: ['__all__'],
-  },
-  {
-    key: 'tag_field', label: '标签字段', group: '标签与信息', tooltip: '显示为卡片右上角徽章',
-    kind: 'field_select', fieldTypes: ['select', 'multiselect', 'boolean'],
-  },
-  {
-    key: 'meta_fields', label: '附加信息字段', group: '标签与信息', tooltip: '显示在卡片底部的小标签（可多选）',
-    kind: 'field_multi_select', fieldTypes: ['__all__'],
-  },
-  {
-    key: 'image_field', label: '图片/附件字段', group: '标题与图片', tooltip: '留空则自动选第一个附件字段',
-    kind: 'field_select', fieldTypes: ['attachment', 'image'],
-  },
-]
-
 /** Gantt 甘特图视图的专属配置字段（共 9 项） */
 export const GANTT_OPTIONS: ViewOptionSchema[] = [
   {
@@ -245,7 +221,6 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
   switch (viewType) {
     case 'kanban': return KANBAN_OPTIONS
     case 'calendar': return CALENDAR_OPTIONS
-    case 'gallery': return GALLERY_OPTIONS
     case 'gantt': return GANTT_OPTIONS
     case 'wbs': return WBS_OPTIONS
     default: return []
@@ -320,7 +295,7 @@ export function resolveFieldOptions(fields: Field[], schema: ViewOptionSchema): 
 
 /** 按 schema 从原始 opts 对象解析出完整配置 — 自动应用 defaultValue 回退.
  *
- * KanbanView / CalendarView / GalleryView 在组件顶层调用一次，
+ * KanbanView / CalendarView / GanttView / WbsView 在组件顶层调用一次，
  * 得到统一默认值后的配置对象，再传给内部子组件（KanbanCard / sortKanbanCards 等），
  * 避免每个子组件各自写一遍 `opts.xxx ?? default` 回退逻辑。
  */
