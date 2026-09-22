@@ -434,7 +434,7 @@ export default function GridPage() {
     },
   })
 
-  const gridFields = (table?.fields || []) as Field[]
+  const gridFields = useMemo(() => (table?.fields || []) as Field[], [table?.fields])
 
   /** 计算自动预填锁定的字段集合（新增行场景下，autoFillLocked 开启时生效） */
   const computeLockedFields = useCallback(() => {
