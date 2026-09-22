@@ -5,7 +5,7 @@
  */
 
 import type { Field } from '@/api'
-import { FIELD_TYPE_ALIASES } from './fieldOps'
+import { FIELD_TYPE_ALIASES } from '../cells/fieldOps'
 
 // ── schema 类型 ──────────────────────────────────────────
 

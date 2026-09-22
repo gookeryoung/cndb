@@ -20,7 +20,7 @@ import {
   resolveFieldOptions,
 } from './viewOptionSchema'
 import type { ViewOptionSchema } from './viewOptionSchema'
-import DoneFlagFields from './DoneFlagFields'
+import DoneFlagFields from '../views/DoneFlagFields'
 
 // ── 类型 ──────────────────────────────────────────
 

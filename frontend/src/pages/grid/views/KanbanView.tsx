@@ -35,9 +35,9 @@ import {
 import type { RowResponse, Field, View, RowValues } from '@/api'
 import { resolveTagColor } from '@/utils/tagColors'
 import type { Density } from '@/theme/tableSettings'
-import { resolveOpts, KANBAN_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
-import { formatFieldDisplayValue } from './fieldValueFormat'
-import { parseDate, daysFromToday } from './dateUtils'
+import { resolveOpts, KANBAN_OPTIONS, resolveAutoField, findOptionSchema } from '../view-config/viewOptionSchema'
+import { formatFieldDisplayValue } from '../cells/fieldValueFormat'
+import { parseDate, daysFromToday } from '../cells/dateUtils'
 import { type KanbanColumnData, resolveGroupField, groupKanbanColumns, resolveDoneCtx, isDoneRow } from './kanbanBoard'
 
 // ── 密度样式映射 ──────────────────────────────────────
@@ -141,7 +141,7 @@ function densityColumnStyle(density: Density) {
   }
 }
 
-// ── 工具函数（link/multi_select/select/通用格式化已抽到 ./fieldValueFormat.ts；日期工具已抽到 ./dateUtils.ts） ──
+// ── 工具函数（link/multi_select/select/通用格式化已抽到 ../cells/fieldValueFormat.ts；日期工具已抽到 ../cells/dateUtils.ts） ──
 
 // ── 自动配色 Tag ──────────────────────────────────────
 function AutoTag({ value, style, options }: { value: string; style?: React.CSSProperties; options?: unknown }) {

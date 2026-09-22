@@ -7,7 +7,7 @@
  */
 
 import { create } from 'zustand'
-import type { FilterRule, SortRule } from '@/pages/grid/components/ViewConfigDialog'
+import type { FilterRule, SortRule } from '@/pages/grid/view-config/ViewConfigDialog'
 
 export type ViewMode = 'grid' | 'kanban' | 'gallery' | 'calendar' | 'gantt' | 'wbs'
 

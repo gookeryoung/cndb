@@ -14,7 +14,7 @@ import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 
 // Modal 组件 lazy import：点击打开时才加载
-const SettingsModal = lazy(() => import('@/pages/modals/SettingsModal'))
+const SettingsModal = lazy(() => import('@/pages/settings/SettingsModal'))
 // 帮助中心抽屉 lazy import：点击打开时才加载
 const HelpCenterDrawer = lazy(() => import('@/components/HelpCenterDrawer'))
 // 新手引导：MainLayout 挂载一次，内部自行判定触发时机

@@ -4,7 +4,7 @@ import { useParams, Link } from 'react-router-dom'
 import { Card, Table, Typography, Spin, Empty, Tag, Space } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { publicApi } from '@/api'
-import GridCell from '@/pages/grid/components/GridCell'
+import GridCell from '@/pages/grid/cells/GridCell'
 
 const { Title, Text } = Typography
 

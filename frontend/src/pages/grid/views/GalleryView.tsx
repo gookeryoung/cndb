@@ -18,8 +18,8 @@ import { Row, Col, Empty, Grid as AntDGrid } from 'antd'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
-import { resolveOpts, GALLERY_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
-import { formatFieldDisplayValue, extractImageUrl } from './fieldValueFormat'
+import { resolveOpts, GALLERY_OPTIONS, resolveAutoField, findOptionSchema } from '../view-config/viewOptionSchema'
+import { formatFieldDisplayValue, extractImageUrl } from '../cells/fieldValueFormat'
 
 // ── 渐变色调色板 ──────────────────────────────────────
 

@@ -37,21 +37,21 @@ import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove 
 import { CSS } from '@dnd-kit/utilities'
 import { tableApi, recordApi, viewApi, auditApi } from '@/api'
 import type { ID, RowValues, Field, RowResponse, View, ViewCreate } from '@/api'
-import KanbanView from './components/KanbanView'
-import CalendarView from './components/CalendarView'
-import GalleryView from './components/GalleryView'
-import GanttView from './components/GanttView'
-import WbsView from './components/WbsView'
-import RowDetailDrawer from './components/RowDetailDrawer'
-import ViewConfigDialog, { type FilterRule, type SortRule } from './components/ViewConfigDialog'
-import CreateEditViewForm from './components/CreateEditViewForm'
-import MoveTableForm from './components/MoveTableForm'
-import TableSettingsDialog from './components/TableSettingsDialog'
-import TableSettingsModal from '@/pages/modals/TableSettingsModal'
-import { buildColumns, type RowInlineOps, type InlineEditCellProps } from './components/buildColumns'
-import { useNewRowAutoScroll, type TableScrollTarget } from './useNewRowAutoScroll'
-import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCellValueForEdit } from './components/GridCell'
-import { type ViewMode, VALID_MODES, deriveModeSwitch } from './viewModes'
+import KanbanView from './views/KanbanView'
+import CalendarView from './views/CalendarView'
+import GalleryView from './views/GalleryView'
+import GanttView from './views/GanttView'
+import WbsView from './views/WbsView'
+import RowDetailDrawer from './layout/RowDetailDrawer'
+import ViewConfigDialog, { type FilterRule, type SortRule } from './view-config/ViewConfigDialog'
+import CreateEditViewForm from './view-config/CreateEditViewForm'
+import MoveTableForm from './layout/MoveTableForm'
+import TableSettingsDialog from './view-config/TableSettingsDialog'
+import TableSettingsModal from '@/pages/settings/TableSettingsModal'
+import { buildColumns, type RowInlineOps, type InlineEditCellProps } from './cells/buildColumns'
+import { useNewRowAutoScroll, type TableScrollTarget } from './cells/useNewRowAutoScroll'
+import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCellValueForEdit } from './cells/GridCell'
+import { type ViewMode, VALID_MODES, deriveModeSwitch } from './views/viewModes'
 import { useTableSettingsStore, useGridViewStore } from '@/store'
 import { densityToSize } from '@/theme/tableSettings'
 import { useElementSize, useDebouncedCallback } from '@/hooks'
@@ -59,7 +59,7 @@ import dayjs from 'dayjs'
 
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
-const ImportExportDialog = lazy(() => import('@/pages/modals/ImportExportDialog'))
+const ImportExportDialog = lazy(() => import('@/pages/import-export/ImportExportDialog'))
 
 function ModalFallback() {
   return null

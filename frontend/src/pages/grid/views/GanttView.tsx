@@ -20,9 +20,9 @@ import { Segmented, Button, Tooltip, Empty } from 'antd'
 import { LeftOutlined, RightOutlined, ReloadOutlined, CalendarOutlined, HomeOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
-import { resolveOpts, GANTT_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
-import { formatFieldDisplayValue, getLinkFirstLabel, getMultiSelectFirstLabel, getSelectLabel } from './fieldValueFormat'
-import { parseDate, fmtDate } from './dateUtils'
+import { resolveOpts, GANTT_OPTIONS, resolveAutoField, findOptionSchema } from '../view-config/viewOptionSchema'
+import { formatFieldDisplayValue, getLinkFirstLabel, getMultiSelectFirstLabel, getSelectLabel } from '../cells/fieldValueFormat'
+import { parseDate, fmtDate } from '../cells/dateUtils'
 import {
   type GanttTask, type TimeScale,
   daysBetween, computeTimeRange, ZOOM_LEVELS,

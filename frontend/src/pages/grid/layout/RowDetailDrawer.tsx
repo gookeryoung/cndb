@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { recordApi, fileApi } from '@/api'
 import { useRowAudit, useRowReferences, useUpdateRowOptimistic } from '@/api/hooks'
 import type { RowResponse, Field, AttachmentFile, RowValues } from '@/api'
-import { extractSelectOptions } from './fieldOps'
+import { extractSelectOptions } from '../cells/fieldOps'
 
 const { Title, Text } = Typography
 

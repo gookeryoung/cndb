@@ -3,7 +3,7 @@
 import { Breadcrumb, Button, Typography } from 'antd'
 import { ArrowLeftOutlined, HomeOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
-import WorkspaceSettingsContent from '@/pages/modals/WorkspaceSettingsContent'
+import WorkspaceSettingsContent from '@/pages/settings/WorkspaceSettingsContent'
 import { useQuery } from '@tanstack/react-query'
 import { workspaceApi } from '@/api'
 

@@ -27,10 +27,10 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from '@dnd-kit/utilities'
 import { tableApi, permissionApi, viewApi } from '@/api'
 import type { TableDetail, TableUpdate, ViewCreate, View } from '@/api'
-import PermissionEditor, { buildHiddenSet } from '@/pages/grid/components/PermissionEditor'
+import PermissionEditor, { buildHiddenSet } from '@/pages/grid/permissions/PermissionEditor'
 
 const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
-const CreateEditViewForm = lazy(() => import('@/pages/grid/components/CreateEditViewForm'))
+const CreateEditViewForm = lazy(() => import('@/pages/grid/view-config/CreateEditViewForm'))
 
 /** 视图类型 → 中文标签 + 图标（与 GridPage MODE_BUTTONS 保持一致） */
 const VIEW_MODE_META: Record<string, { label: string; icon: ReactNode }> = {
