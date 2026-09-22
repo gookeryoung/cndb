@@ -39,3 +39,35 @@ describe('DoneFlagFields 操作符与匹配值联动', () => {
         expect(onChange).toHaveBeenLastCalledWith({ done_value: '已完成' })
     })
 })
+
+describe('DoneFlagFields 日期类匹配值控件', () => {
+    const dateFields: Field[] = [
+        makeField({ id: 3, name: '完成日', field_type: 'date' }),
+        makeField({ id: 4, name: '完成时刻', field_type: 'datetime' }),
+    ]
+
+    it('date 字段渲染 DatePicker（而非文本输入框）', () => {
+        render(<DoneFlagFields fields={dateFields} doneField="完成日" onChange={vi.fn()} />)
+        expect(document.querySelector('.ant-picker')).not.toBeNull()
+        expect(screen.queryByPlaceholderText('输入完成匹配文本（精确匹配）')).not.toBeInTheDocument()
+    })
+
+    it('datetime 字段同样渲染 DatePicker', () => {
+        render(<DoneFlagFields fields={dateFields} doneField="完成时刻" onChange={vi.fn()} />)
+        expect(document.querySelector('.ant-picker')).not.toBeNull()
+    })
+
+    it('选择日期后以 YYYY-MM-DD 字符串回写 done_value', () => {
+        const onChange = vi.fn()
+        render(<DoneFlagFields fields={dateFields} doneField="完成日" onChange={onChange} />)
+        const input = document.querySelector('.ant-picker input') as HTMLInputElement
+        fireEvent.change(input, { target: { value: '2026-01-02' } })
+        fireEvent.keyDown(input, { key: 'Enter', keyCode: 13 })
+        expect(onChange).toHaveBeenLastCalledWith({ done_value: '2026-01-02' })
+    })
+
+    it('已有 done_value 时回显到 DatePicker', () => {
+        render(<DoneFlagFields fields={dateFields} doneField="完成日" doneValue="2026-06-01" onChange={vi.fn()} />)
+        expect((document.querySelector('.ant-picker input') as HTMLInputElement).value).toBe('2026-06-01')
+    })
+})
