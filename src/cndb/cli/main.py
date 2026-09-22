@@ -25,7 +25,8 @@ from cndb.cli.restore import restore_command
 from cndb.cli.seed import seed as seed_command
 
 # 源码根目录（仅开发命令可用；wheel 安装后不存在）
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+# 本文件位于 src/cndb/cli/main.py，向上四级才是仓库根（移入 cli 包后层级 +1）
+ROOT_DIR = Path(__file__).resolve().parents[3]
 FRONTEND_DIR = ROOT_DIR / "frontend"
 
 

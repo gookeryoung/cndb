@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { visualizer } from 'rollup-plugin-visualizer'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -55,8 +56,21 @@ function syncStaticPlugin() {
   }
 }
 
-export default defineConfig({
-  plugins: [react(), syncStaticPlugin()],
+export default defineConfig(({ mode }) => ({
+  plugins: [
+    react(),
+    // bundle 体积分析：仅 `vite build --mode analyze`（pnpm analyze）时启用，
+    // 报告输出到 frontend/stats.html（dist 外，避免被 syncStaticPlugin 同步到后端 static）
+    ...(mode === 'analyze'
+      ? [visualizer({
+        filename: path.resolve(__dirname, 'stats.html'),
+        gzipSize: true,
+        brotliSize: true,
+        open: false,
+      })]
+      : []),
+    syncStaticPlugin(),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -111,4 +125,4 @@ export default defineConfig({
       reportsDirectory: 'coverage',
     },
   },
-})
+}))

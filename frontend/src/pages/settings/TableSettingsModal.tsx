@@ -28,9 +28,10 @@ import { CSS } from '@dnd-kit/utilities'
 import { tableApi, permissionApi, viewApi } from '@/api'
 import type { TableDetail, TableUpdate, ViewCreate, View } from '@/api'
 import PermissionEditor, { buildHiddenSet } from '@/pages/grid/permissions/PermissionEditor'
+// 静态引入：gridViewModals 同为静态引入，混用 lazy 会让动态分包失效并产生构建告警
+import CreateEditViewForm from '@/pages/grid/view-config/CreateEditViewForm'
 
 const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
-const CreateEditViewForm = lazy(() => import('@/pages/grid/view-config/CreateEditViewForm'))
 
 /** 视图类型 → 中文标签 + 图标（与 GridPage MODE_BUTTONS 保持一致） */
 const VIEW_MODE_META: Record<string, { label: string; icon: ReactNode }> = {
@@ -541,29 +542,27 @@ export default function TableSettingsModal({
       className="cevf-modal"
       destroyOnHidden
     >
-      <Suspense fallback={<div style={{ padding: 48, textAlign: 'center' }}>加载表单...</div>}>
-        <CreateEditViewForm
-          fields={table?.fields ?? []}
-          initialName={viewEditorInitial.name}
-          initialType={viewEditorInitial.viewType}
-          initialOptions={viewEditorInitial.options}
-          submitLabel={viewEditorInitial.vid ? '保存' : '创建'}
-          onSubmit={(name, vt, opts) => {
-            if (viewEditorInitial.vid != null) {
-              updateView.mutate({
-                vid: viewEditorInitial.vid,
-                data: { name, view_type: vt, ...(opts && Object.keys(opts).length ? { view_options: opts } : {}) },
-              })
-            } else {
-              createView.mutate({
-                name, view_type: vt,
-                ...(opts && Object.keys(opts).length ? { view_options: opts } : {}),
-              })
-            }
-            setViewEditorOpen(false)
-          }}
-        />
-      </Suspense>
+      <CreateEditViewForm
+        fields={table?.fields ?? []}
+        initialName={viewEditorInitial.name}
+        initialType={viewEditorInitial.viewType}
+        initialOptions={viewEditorInitial.options}
+        submitLabel={viewEditorInitial.vid ? '保存' : '创建'}
+        onSubmit={(name, vt, opts) => {
+          if (viewEditorInitial.vid != null) {
+            updateView.mutate({
+              vid: viewEditorInitial.vid,
+              data: { name, view_type: vt, ...(opts && Object.keys(opts).length ? { view_options: opts } : {}) },
+            })
+          } else {
+            createView.mutate({
+              name, view_type: vt,
+              ...(opts && Object.keys(opts).length ? { view_options: opts } : {}),
+            })
+          }
+          setViewEditorOpen(false)
+        }}
+      />
     </Modal>
   )
 

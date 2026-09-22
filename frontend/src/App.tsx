@@ -4,15 +4,16 @@ import { Suspense, lazy, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/store'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import MainLayout from '@/layouts/MainLayout'
 import AuthLayout from '@/layouts/AuthLayout'
 import PublicLayout from '@/layouts/PublicLayout'
-import LoginPage from '@/pages/auth/LoginPage'
-import RegisterPage from '@/pages/auth/RegisterPage'
-import WorkspaceList from '@/pages/workspace/WorkspaceList'
-import TablesList from '@/pages/workspace/TablesList'
 
-// 重页面 lazy load：首次进入该路由时才加载 chunk
+// 全部页面级组件 lazy load：主框架与登录页各自独立成 chunk，
+// 未登录用户不再下载 MainLayout / 数据表列表等认证后代码
+const MainLayout = lazy(() => import('@/layouts/MainLayout'))
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage'))
+const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'))
+const WorkspaceList = lazy(() => import('@/pages/workspace/WorkspaceList'))
+const TablesList = lazy(() => import('@/pages/workspace/TablesList'))
 const GridPage = lazy(() => import('@/pages/grid/GridPage'))
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'))
 const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
@@ -31,41 +32,43 @@ function PageFallback() {
 
 function AuthenticatedApp() {
   return (
-    <Routes>
-      <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
-      <Route path="/register" element={<AuthLayout><RegisterPage /></AuthLayout>} />
+    <Suspense fallback={<PageFallback />}>
+      <Routes>
+        <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
+        <Route path="/register" element={<AuthLayout><RegisterPage /></AuthLayout>} />
 
-      <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
-        <Route index element={<Navigate to="/w" replace />} />
-        <Route path="w" element={<WorkspaceList />} />
-        <Route path="w/:wid" element={<Navigate to="tables" replace />} />
-        <Route path="w/:wid/tables" element={<TablesList />} />
-        <Route path="w/:wid/settings" element={
-          <Suspense fallback={<PageFallback />}><WorkspaceSettingsPage /></Suspense>
-        } />
-        <Route path="w/:wid/tables/:tid" element={
-          <Suspense fallback={<PageFallback />}><GridPage /></Suspense>
-        } />
-        <Route path="w/:wid/reports" element={
-          <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
-        } />
-        <Route path="admin" element={
-          <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>
-        } />
-      </Route>
+        <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
+          <Route index element={<Navigate to="/w" replace />} />
+          <Route path="w" element={<WorkspaceList />} />
+          <Route path="w/:wid" element={<Navigate to="tables" replace />} />
+          <Route path="w/:wid/tables" element={<TablesList />} />
+          <Route path="w/:wid/settings" element={
+            <Suspense fallback={<PageFallback />}><WorkspaceSettingsPage /></Suspense>
+          } />
+          <Route path="w/:wid/tables/:tid" element={
+            <Suspense fallback={<PageFallback />}><GridPage /></Suspense>
+          } />
+          <Route path="w/:wid/reports" element={
+            <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
+          } />
+          <Route path="admin" element={
+            <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>
+          } />
+        </Route>
 
-      <Route path="/public" element={<PublicLayout />}>
-        <Route index element={<div style={{ padding: 24 }}>公开路由</div>} />
-        <Route path="form/:slug" element={
-          <Suspense fallback={<PageFallback />}><PublicFormPage /></Suspense>
-        } />
-        <Route path="share/:slug" element={
-          <Suspense fallback={<PageFallback />}><PublicSharePage /></Suspense>
-        } />
-      </Route>
+        <Route path="/public" element={<PublicLayout />}>
+          <Route index element={<div style={{ padding: 24 }}>公开路由</div>} />
+          <Route path="form/:slug" element={
+            <Suspense fallback={<PageFallback />}><PublicFormPage /></Suspense>
+          } />
+          <Route path="share/:slug" element={
+            <Suspense fallback={<PageFallback />}><PublicSharePage /></Suspense>
+          } />
+        </Route>
 
-      <Route path="*" element={<Navigate to="/w" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/w" replace />} />
+      </Routes>
+    </Suspense>
   )
 }
 
