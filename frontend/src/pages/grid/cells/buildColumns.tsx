@@ -6,7 +6,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { FilterOutlined, SortAscendingOutlined, SortDescendingOutlined, SaveOutlined, CloseOutlined, EditOutlined } from '@ant-design/icons'
 import type { RowResponse, Field, RowValues, ID } from '@/api'
 import GridCell from './GridCell'
-import ColumnFilterDropdown from './ColumnFilterDropdown'
+import ColumnFilterDropdown from '../layout/ColumnFilterDropdown'
 
 /** 行内编辑（新增行/整行编辑）注入单元格所需的能力 */
 export interface InlineEditCellProps {

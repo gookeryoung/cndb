@@ -1,7 +1,7 @@
 /** store/gridView 单元测试 —— setters、函数式更新、patch 批量、reset */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useGridViewStore } from './gridView'
-import type { FilterRule, SortRule } from '@/pages/grid/components/ViewConfigDialog'
+import type { FilterRule, SortRule } from '@/pages/grid/view-config/ViewConfigDialog'
 
 const filter: FilterRule = { field_name: 'status', op: '=', value: 'active' }
 const sorting: SortRule = { field_name: 'created_at', direction: 'desc' }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button, Select, Input } from 'antd'
-import { getOpsForField, FIELD_TYPE_ALIASES, extractSelectOptions, type FieldOp } from './fieldOps'
+import { getOpsForField, FIELD_TYPE_ALIASES, extractSelectOptions, type FieldOp } from '../cells/fieldOps'
 import type { Field } from '@/api'
 
 interface ColumnFilterDropdownProps {

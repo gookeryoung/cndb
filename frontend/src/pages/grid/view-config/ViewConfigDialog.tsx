@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Modal, Select, Space, Switch, Tabs, Input, InputNumber, Tooltip } from 'antd'
 import { PlusOutlined, DeleteOutlined, RightOutlined } from '@ant-design/icons'
-import { getOpsForField, extractSelectOptions } from './fieldOps'
+import { getOpsForField, extractSelectOptions } from '../cells/fieldOps'
 import {
   COLLAPSED_BY_DEFAULT_GROUPS,
   getOptionSchema,
@@ -12,7 +12,7 @@ import {
   resolveFieldOptions,
 } from './viewOptionSchema'
 import type { ViewOptionSchema } from './viewOptionSchema'
-import DoneFlagFields from './DoneFlagFields'
+import DoneFlagFields from '../views/DoneFlagFields'
 import type { Field } from '@/api'
 import HelpTip from '@/components/HelpTip'
 

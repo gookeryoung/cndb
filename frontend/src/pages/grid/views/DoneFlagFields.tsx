@@ -6,8 +6,8 @@
 
 import { Input, Select } from 'antd'
 import type { Field } from '@/api'
-import { extractSelectOptions } from './fieldOps'
-import { findOptionSchema, resolveFieldOptions } from './viewOptionSchema'
+import { extractSelectOptions } from '../cells/fieldOps'
+import { findOptionSchema, resolveFieldOptions } from '../view-config/viewOptionSchema'
 
 export interface DoneFlagFieldsProps {
   fields: Field[]

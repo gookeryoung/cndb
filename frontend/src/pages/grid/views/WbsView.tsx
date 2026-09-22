@@ -17,8 +17,8 @@ import { Empty, Tag } from 'antd'
 import { DownOutlined, RightOutlined, PartitionOutlined } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
-import { resolveOpts, WBS_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
-import { formatFieldDisplayValue, getSelectLabel } from './fieldValueFormat'
+import { resolveOpts, WBS_OPTIONS, resolveAutoField, findOptionSchema } from '../view-config/viewOptionSchema'
+import { formatFieldDisplayValue, getSelectLabel } from '../cells/fieldValueFormat'
 
 // ── 类型定义 ──────────────────────────────────────────
 

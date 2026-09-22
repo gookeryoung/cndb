@@ -11,8 +11,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { workspaceApi } from '@/api'
 import type { Workspace, WorkspaceRole, WorkspaceVisibility } from '@/api'
-import WorkspaceSettingsModal from '@/pages/modals/WorkspaceSettingsModal'
-import WorkspaceBackupDialog from '@/pages/modals/WorkspaceBackupDialog'
+import WorkspaceSettingsModal from '@/pages/settings/WorkspaceSettingsModal'
+import WorkspaceBackupDialog from '@/pages/settings/WorkspaceBackupDialog'
 
 const { Title, Text } = Typography
 
