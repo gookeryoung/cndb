@@ -1,4 +1,5 @@
 import type { Field } from '@/api'
+import dayjs from 'dayjs'
 
 /** 新增行草稿预填值：default_value 优先，其次 date/datetime 的 auto_fill 规则，否则 undefined.
  *
@@ -16,14 +17,9 @@ export function defaultValueForNewRow(f: Field): unknown {
   }
   const autoFill = (f.config?.auto_fill as string) ?? ''
   if (f.field_type === 'date' && (autoFill === 'on_create' || autoFill === 'on_update')) {
-    // 延迟 import：fieldOps.ts 是纯工具模块，不预先加载 dayjs
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const dayjs = require('dayjs')
     return dayjs().format('YYYY-MM-DD')
   }
   if (f.field_type === 'datetime' && (autoFill === 'on_create' || autoFill === 'on_update')) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const dayjs = require('dayjs')
     return dayjs().format('YYYY-MM-DD HH:mm:ss')
   }
   return undefined
