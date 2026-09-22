@@ -11,9 +11,13 @@ import {
 import { makeField } from '@/test/fixtures'
 
 describe('getOptionSchema 五种视图 + 未知类型', () => {
-  it('kanban 返回 11 项 schema', () => {
-    expect(getOptionSchema('kanban')).toHaveLength(11)
+  it('kanban 返回 14 项 schema', () => {
+    expect(getOptionSchema('kanban')).toHaveLength(14)
     expect(getOptionSchema('kanban').map((o) => o.key)).toContain('group_field')
+    // 完成标志相关三项
+    expect(getOptionSchema('kanban').map((o) => o.key)).toEqual(
+      expect.arrayContaining(['done_field', 'done_bg_color', 'done_text_color']),
+    )
   })
 
   it('calendar 返回 4 项，start_field 必填', () => {
@@ -107,6 +111,12 @@ describe('resolveOpts 默认值回退', () => {
       expect(out.urgent_threshold_days).toBe(3)
       expect(out.pin_urgent).toBe(true)
     }
+  })
+
+  it('完成卡片颜色未配置时回退跟随主题（auto）', () => {
+    const out = resolveOpts({}, schema)
+    expect(out.done_bg_color).toBe('auto')
+    expect(out.done_text_color).toBe('auto')
   })
 
   it('switch 的 false 是有效值，不回退 defaultValue（expand_all=false 场景，用 wbs 验证）', () => {

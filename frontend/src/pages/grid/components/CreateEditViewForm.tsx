@@ -8,6 +8,7 @@ import { Button, Form, Input, Select, Switch } from 'antd'
 import type { Field } from '@/api'
 import { getOptionSchema, resolveFieldOptions } from './viewOptionSchema'
 import type { ViewOptionSchema } from './viewOptionSchema'
+import DoneFlagFields from './DoneFlagFields'
 
 // ── 类型 ──────────────────────────────────────────
 
@@ -60,6 +61,20 @@ function ConfigItem({ opt, fields, opts, updateOpt }: {
           value={(currentValue ?? fallbackValue) as string | number}
           onChange={v => updateOpt(opt.key, v)}
           options={opt.enumOptions?.map(o => ({ value: o.value, label: o.label })) || []}
+        />
+      </Form.Item>
+    )
+  }
+
+  // 完成标志：字段下拉 + 匹配值复合控件（存 done_field + done_value 两键）
+  if (opt.kind === 'done_flag') {
+    return (
+      <Form.Item label={opt.label} tooltip={opt.tooltip}>
+        <DoneFlagFields
+          fields={fields}
+          doneField={opts.done_field as string | undefined}
+          doneValue={opts.done_value}
+          onChange={(patch) => Object.entries(patch).forEach(([k, v]) => updateOpt(k, v))}
         />
       </Form.Item>
     )

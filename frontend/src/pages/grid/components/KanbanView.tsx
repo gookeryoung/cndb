@@ -13,6 +13,13 @@
  * - card_sort_field:   卡片排序字段（可选）；留空则按 API 返回顺序
  * - card_sort_direction: 卡片排序方向 'asc' | 'desc'，默认 desc
  * - pin_urgent:        是否把逾期/紧急卡片置顶（默认 true，有 due_date_field 时）
+ * - done_field:        完成标志字段（boolean/select/multiselect/text 等）
+ * - done_value:        完成匹配值（boolean 字段为 true/false；select 为 option value；
+ *                      multiselect 为 value 数组任一命中；text 为精确匹配文本）
+ * - done_bg_color:     完成卡片背景色（'auto'=跟随主题默认绿，或具体色值）
+ * - done_text_color:   完成卡片标题文字颜色（'auto'=跟随主题默认灰，或具体色值）
+ *                      匹配完成的卡片：绿底灰字 + 绿色左边框，隐藏截止日期徽章，
+ *                      不参与紧急置顶、不计入列头紧急计数。
  */
 
 import { memo, useMemo, useRef, useState } from 'react'
@@ -31,7 +38,7 @@ import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, KANBAN_OPTIONS, resolveAutoField, findOptionSchema } from './viewOptionSchema'
 import { formatFieldDisplayValue } from './fieldValueFormat'
 import { parseDate, daysFromToday } from './dateUtils'
-import { type KanbanColumnData, resolveGroupField, groupKanbanColumns } from './kanbanBoard'
+import { type KanbanColumnData, resolveGroupField, groupKanbanColumns, resolveDoneCtx, isDoneRow } from './kanbanBoard'
 
 // ── 密度样式映射 ──────────────────────────────────────
 
@@ -176,6 +183,10 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   const findField = (name: string): Field | undefined => fields.find((f) => f.name === name)
 
   // 计算状态
+  const doneCtx = useMemo(() => resolveDoneCtx(opts, fields), [opts, fields])
+  const isDone = isDoneRow(row, doneCtx)
+  const doneBg = opts.done_bg_color === 'auto' ? 'var(--cn-bg-success-subtle)' : (opts.done_bg_color as string)
+  const doneTextColor = opts.done_text_color === 'auto' ? 'var(--cn-text-muted)' : (opts.done_text_color as string)
   const dueDate = dueDateField ? parseDate(row[dueDateField]) : null
   const daysLeft = dueDate ? daysFromToday(dueDate) : null
   const isOverdue = daysLeft !== null && daysLeft < 0
@@ -190,10 +201,13 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
     ? formatFieldDisplayValue(titleFieldDef, row[titleField]) || String(row.id)
     : String(row[titleField] ?? row.id)
 
-  // 卡片边框样式（紧急提醒）
+  // 卡片边框样式（完成态优先于逾期/紧急提醒）
   let borderStyle: React.CSSProperties = {}
   let bgStyle: React.CSSProperties = {}
-  if (isOverdue) {
+  if (isDone) {
+    borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #52c41a` }
+    bgStyle = { background: doneBg }
+  } else if (isOverdue) {
     borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #ff4d4f` }
     bgStyle = { background: 'var(--cn-bg-danger-subtle)' }
   } else if (isUrgent) {
@@ -249,8 +263,8 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
           />
         </Tooltip>
       )}
-      {/* 标题行 */}
-      <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word' }}>
+      {/* 标题行（完成卡片用不显眼的灰色文字） */}
+      <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word', ...(isDone ? { color: doneTextColor } : {}) }}>
         {title}
       </div>
 
@@ -271,7 +285,8 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
         {priorityField && (
           <PriorityBadge field={findField(priorityField)} value={row[priorityField]} />
         )}
-        {dueDateField && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
+        {/* 完成卡片整体隐藏截止日期徽章（逾期/还剩/X天后都不再显示） */}
+        {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
         {assigneeField && (() => {
           const assigneeFieldObj = findField(assigneeField)
           const rawVal = assigneeFieldObj

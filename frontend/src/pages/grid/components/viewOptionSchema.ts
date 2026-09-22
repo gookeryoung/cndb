@@ -21,12 +21,13 @@ export interface ViewOptionSchema {
   required?: boolean
   /** 值编辑控件类型 */
   kind:
-    | 'field_select'       // 单字段下拉
-    | 'field_multi_select'  // 多字段下拉
-    | 'enum_select'         // 固定 enum 值下拉
-    | 'direction'           // 升/降方向
-    | 'switch'              // 开/关
-    | 'number_enum'         // 数值枚举下拉
+  | 'field_select'       // 单字段下拉
+  | 'field_multi_select'  // 多字段下拉
+  | 'enum_select'         // 固定 enum 值下拉
+  | 'direction'           // 升/降方向
+  | 'switch'              // 开/关
+  | 'number_enum'         // 数值枚举下拉
+  | 'done_flag'           // 完成标志：字段下拉 + 按字段类型动态切换的匹配值控件（存 done_field + done_value 两键）
   /** 允许的后端 field_type 原始名 + 历史别名集合（FieldType.name 或别名都可匹配）.
    *  数组顺序即自动推断时的优先级（先排先试）。 */
   fieldTypes?: string[]
@@ -42,7 +43,7 @@ export interface ViewOptionSchema {
 
 // ── 各视图的 option schema 列表 ─────────────────────────
 
-/** Kanban 看板视图的专属配置字段（共 11 项） */
+/** Kanban 看板视图的专属配置字段（共 14 项） */
 export const KANBAN_OPTIONS: ViewOptionSchema[] = [
   {
     key: 'group_field', label: '分组字段', tooltip: '按哪个字段分组显示为看板列',
@@ -94,6 +95,34 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
     enumOptions: [
       { value: 1, label: '1 天' }, { value: 3, label: '3 天' },
       { value: 5, label: '5 天' }, { value: 7, label: '7 天' },
+    ],
+  },
+  {
+    key: 'done_field', label: '完成标志', tooltip: '选择字段并指定匹配值，满足条件的卡片以完成状态显示（绿底灰字、隐藏倒计时提醒）',
+    kind: 'done_flag', fieldTypes: ['boolean', 'select', 'multiselect', 'text', 'longtext'],
+  },
+  {
+    key: 'done_bg_color', label: '完成卡片背景色', tooltip: '完成状态卡片的背景颜色',
+    kind: 'enum_select', defaultValue: 'auto',
+    enumOptions: [
+      { value: 'auto', label: '跟随主题（默认绿）' },
+      { value: '#f6ffed', label: '绿色' },
+      { value: '#e6f4ff', label: '蓝色' },
+      { value: '#f9f0ff', label: '紫色' },
+      { value: '#fff7e6', label: '橙色' },
+      { value: '#f5f5f5', label: '灰色' },
+    ],
+  },
+  {
+    key: 'done_text_color', label: '完成卡片文字颜色', tooltip: '完成状态卡片标题的文字颜色',
+    kind: 'enum_select', defaultValue: 'auto',
+    enumOptions: [
+      { value: 'auto', label: '跟随主题（默认灰）' },
+      { value: '#8c8c8c', label: '灰色' },
+      { value: '#595959', label: '深灰' },
+      { value: '#389e0d', label: '绿色' },
+      { value: '#1677ff', label: '蓝色' },
+      { value: '#cf1322', label: '红色' },
     ],
   },
 ]
