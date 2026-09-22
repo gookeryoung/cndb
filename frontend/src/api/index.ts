@@ -32,7 +32,7 @@ import type {
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportRenderRequest,
   AttachmentFile,
-  PreferencesResponse, ActiveViewResponse,
+  PreferencesResponse,
   ApiFetchRequest, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
   ApiConfigValidateResult, ApiConfigImportResult,
   TableMember, MemberCreate, MemberUpdate, OwnerTransferPayload,
@@ -54,7 +54,7 @@ export type {
   ReportParameter, ReportRenderRequest, ReportRenderResult,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
   AttachmentFile,
-  PreferencesResponse, ActiveViewResponse,
+  PreferencesResponse,
   ApiFetchRequest, ApiAnalyzeColumn, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
   ApiConfigRequest, ApiConfigValidateResult, ApiConfigImportResult,
   TableOwnerInfo, TableMember, MemberCreate, MemberUpdate, OwnerTransferPayload,
@@ -86,12 +86,6 @@ export const userApi = {
   /** 获取当前用户全部偏好 */
   getPreferences: () =>
     api.get<PreferencesResponse>('/v1/accounts/preferences').then(r => r.data),
-  /** 查询某表的激活视图偏好 */
-  getTableActiveView: (tid: number | string) =>
-    api.get<ActiveViewResponse>(`/v1/accounts/preferences/tables/${tid}/active-view`).then(r => r.data),
-  /** 设置或清除某表的激活视图偏好（upsert） */
-  setTableActiveView: (tid: number | string, activeViewId: number | null) =>
-    api.put<ActiveViewResponse>(`/v1/accounts/preferences/tables/${tid}/active-view`, { active_view_id: activeViewId }).then(r => r.data),
 }
 
 // ─────────────── Workspaces ───────────────

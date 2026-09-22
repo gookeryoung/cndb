@@ -30,8 +30,6 @@ coverage.xml
 .env
 .env.*
 
-.trae/
-!.trae/ideas/*
 *.py.bak
 src/cndb/static/*
 !src/cndb/static/.gitkeep
