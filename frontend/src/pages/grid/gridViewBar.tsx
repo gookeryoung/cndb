@@ -54,6 +54,7 @@ interface GridViewBarProps {
   modeButtons: ReadonlyArray<{ mode: ViewMode; tooltip: string; icon: React.ReactNode }>
   showModeSwitch: boolean
   hasFilters: boolean
+  hasSorts: boolean
   searchQuery: string
   onSearchChange: (q: string) => void
   onSelectView: (v: View | null) => void
@@ -78,7 +79,7 @@ function computeScrollState(el: HTMLElement | null): { canLeft: boolean; canRigh
 
 export default function GridViewBar({
   wid, tid, views, activeViewId, mode, modeButtons, showModeSwitch,
-  hasFilters, searchQuery, onSearchChange, onSelectView, onModeChange, onDragEnd,
+  hasFilters, hasSorts, searchQuery, onSearchChange, onSelectView, onModeChange, onDragEnd,
   onCreate, onEdit, onDelete, onImport,
   onOpenViewConfig, onOpenDisplaySettings,
 }: GridViewBarProps) {
@@ -329,11 +330,11 @@ export default function GridViewBar({
           onChange={e => onSearchChange(e.target.value)}
           style={{ width: 160 }}
         />
-        <Tooltip title="筛选规则：按字段条件过滤当前视图的行，规则保存在视图中">
+        <Tooltip title="筛选排序规则：按字段条件过滤和排序当前视图的行，规则保存在视图中">
           <Button
             size="small"
             icon={<FilterOutlined />}
-            type={hasFilters ? 'primary' : 'default'}
+            type={hasFilters || hasSorts ? 'primary' : 'default'}
             data-testid="view-filter-btn"
             onClick={onOpenViewConfig}
           />
