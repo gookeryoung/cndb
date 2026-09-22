@@ -75,7 +75,12 @@ def bulk_create_records(
     except Exception:
         pass
 
-    ids = rec.bulk_create(db.get_bind(), dt, normalized, db=db)
+    ids: list[int]
+    try:
+        ids = rec.bulk_create(db.get_bind(), dt, normalized, db=db)
+    except ValueError as exc:
+        # link 目标预校验失败（如关联行不存在）——返回 400 而非 500
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
         from cndb.plugins.tables.field_ops import sync_select_options_from_table
@@ -131,7 +136,12 @@ def bulk_update_records(
     except Exception:
         pass
 
-    updated = rec.bulk_update(db.get_bind(), dt, row_ids, values, db=db)
+    updated: int
+    try:
+        updated = rec.bulk_update(db.get_bind(), dt, row_ids, values, db=db)
+    except ValueError as exc:
+        # link 目标预校验失败（如关联行不存在）——返回 400 而非 500
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # 更新后同步 select/multiselect options（兜底：物理表中可能有其他行的值未覆盖）
     try:

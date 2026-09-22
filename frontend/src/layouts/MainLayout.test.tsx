@@ -28,8 +28,8 @@ function ReportsStub() {
     return <div data-testid="reports-page-stub">{loc.pathname}</div>
 }
 
-/** 按真实路由结构渲染 MainLayout，初始落在第一个工作区的表列表页 */
-function renderLayout(authUser: UserResponse) {
+/** 按真实路由结构渲染 MainLayout，初始落在指定路径（默认第一个工作区的表列表页） */
+function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
     return renderProviders(
         <Routes>
             <Route path="/" element={<MainLayout />}>
@@ -39,7 +39,7 @@ function renderLayout(authUser: UserResponse) {
             </Route>
         </Routes>,
         {
-            route: '/w/10/tables',
+            route,
             initialAuth: { user: authUser, token: 'fake-token' },
         },
     )
@@ -106,5 +106,26 @@ describe('MainLayout 顶部导航', () => {
     it('非系统管理员不显示「管理台」入口', () => {
         renderLayout({ ...mockUser, role: 'user' })
         expect(screen.queryByRole('button', { name: /管理台/ })).toBeNull()
+    })
+})
+
+describe('MainLayout 侧边栏工作区上下文', () => {
+    it('进入工作区（有 wid）时渲染数据表导航，不渲染未选择提示', async () => {
+        renderLayout(mockUser)
+
+        await waitFor(() => {
+            expect(screen.getByTestId('sider-tables')).toBeVisible()
+        })
+        expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
+    })
+
+    it('未进入工作区（/admin 无 wid）时侧边栏提示先选工作区，不渲染数据表导航', async () => {
+        renderLayout(mockUser, '/admin')
+
+        // 数据表导航以 wid 存在为前提；无 wid 时显示引导提示而非空列表
+        await waitFor(() => {
+            expect(screen.getByTestId('sider-no-workspace')).toHaveTextContent('请先从顶部选择一个工作区')
+        })
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 })
