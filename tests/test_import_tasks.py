@@ -161,8 +161,8 @@ def test_execute_import_task_invalid_format(db, auth_headers, client):
 
 def test_create_import_task_bytes_content(db):
     """bytes 内容应正确解码存储."""
-    from cndb.plugins.tables.services.importing.import_tasks import create_import_task
     from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
     dt = DataTable(workspace_id=1, name="unused")
     dt.db_table_name = "table_testunused123"
@@ -220,11 +220,11 @@ def test_execute_import_task_csv_path(db, auth_headers, client):
 
 def test_execute_import_task_xlsx_format(db):
     """xlsx 格式应触发 base64 decode（但 transfer 里没实际 xlsx 解析，会失败）."""
+    from cndb.plugins.tables.models import DataTable
     from cndb.plugins.tables.services.importing.import_tasks import (
         create_import_task,
         execute_import_task,
     )
-    from cndb.plugins.tables.models import DataTable
 
     dt = DataTable(workspace_id=1, name="unused_xlsx")
     dt.db_table_name = "table_testxlsx123"
@@ -255,8 +255,8 @@ def test_execute_import_task_xlsx_format(db):
 
 def test_create_import_task_xlsx_str_content(db):
     """xlsx 格式 + str content 应走 encode 分支."""
-    from cndb.plugins.tables.services.importing.import_tasks import create_import_task
     from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
     dt = DataTable(workspace_id=1, name="unused_xlsx_str")
     dt.db_table_name = "table_testxlsxs123"
@@ -282,8 +282,8 @@ def test_create_import_task_xlsx_str_content(db):
 
 def test_execute_import_task_invalid_json_swallows_count_error(db):
     """无效 JSON 字符串应在估算行数阶段被静默吞掉 — 覆盖 L74-75."""
-    from cndb.plugins.tables.services.importing.import_tasks import create_import_task, execute_import_task
     from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.tables.services.importing.import_tasks import create_import_task, execute_import_task
 
     dt = DataTable(workspace_id=1, name="badjson_t")
     dt.db_table_name = "table_badjson123"
@@ -311,9 +311,9 @@ def test_execute_import_task_invalid_json_swallows_count_error(db):
 
 def test_execute_import_task_status_conflict_fallback(db, monkeypatch):
     """_transition_status 失败时应回退到直接赋值 — 覆盖 L111-113."""
+    from cndb.plugins.tables.models import DataTable
     from cndb.plugins.tables.services.importing import import_tasks as it
     from cndb.plugins.tables.services.importing.import_tasks import create_import_task, execute_import_task
-    from cndb.plugins.tables.models import DataTable
 
     real = it._transition_status
 
@@ -385,8 +385,8 @@ def _poll_pending_confirm(client, wid, tid, task_id, auth_headers, timeout=10):
 
 def test_gbk_csv_import_direct_analyze(client, auth_headers, db):
     """GBK 编码 CSV —— Importer 直接 analyze 能正确解码中文字段."""
-    from cndb.plugins.tables.services.importing.import_tasks import analyze_import_task, create_import_task
     from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.tables.services.importing.import_tasks import analyze_import_task, create_import_task
 
     _wid, tid = _create_workspace_and_table(client, auth_headers, db)
     gbk_bytes = "姓名,年龄\n张三,25\n李四,30\n".encode("gbk")
@@ -407,8 +407,8 @@ def test_gbk_csv_import_direct_analyze(client, auth_headers, db):
 
 def test_utf8_bom_csv_import_direct_analyze(client, auth_headers, db):
     """UTF-8 BOM CSV —— analyze_import_task 应自动去除 BOM."""
-    from cndb.plugins.tables.services.importing.import_tasks import analyze_import_task, create_import_task
     from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.tables.services.importing.import_tasks import analyze_import_task, create_import_task
 
     _wid, tid = _create_workspace_and_table(client, auth_headers, db)
     bom_bytes = "姓名,年龄\n张三,25\n".encode("utf-8-sig")

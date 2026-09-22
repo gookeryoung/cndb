@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.access import TableAction
 from cndb.plugins.tables.models import DataField, DataView
 from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import ViewCreate, ViewResponse, ViewUpdate
+from cndb.plugins.tables.services.core.access import TableAction
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/views", tags=["views"])
 
@@ -306,7 +306,7 @@ def get_view_rows(
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, object]:
     """按视图的 filters + sortings 查询行."""
-    from cndb.plugins.tables import records as rec
+    from cndb.plugins.tables.services.core import records as rec
 
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
@@ -344,7 +344,7 @@ def get_view_kanban(
     """
     from collections import defaultdict
 
-    from cndb.plugins.tables import records as rec
+    from cndb.plugins.tables.services.core import records as rec
 
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
@@ -406,7 +406,7 @@ def get_view_calendar(
     limit: int = Query(default=500, ge=1, le=10000),
 ) -> dict[str, object]:
     """日历视图：按日期字段过滤并返回行列表."""
-    from cndb.plugins.tables import records as rec
+    from cndb.plugins.tables.services.core import records as rec
 
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()

@@ -15,11 +15,11 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
 from cndb.plugins.tables.services.importing.failed_row_exporter import FailedRowExporter
 from cndb.plugins.tables.services.importing.importer import Importer, guess_format_from_content
-from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.importing.row_validator import RowValidator
 from tests.helpers import wait_import_settled
 
@@ -819,8 +819,8 @@ class TestImportPipelineEndpoints:
 
     def _create_ws_table_fields(self, client, db, auth_headers, *, ws_name, tbl_name, fields):
         """创建 workspace + table + fields（通过 API），返回 (wid, tid)."""
-        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import ddl
 
         ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": ws_name})
         assert ws.status_code in (200, 201), f"创建 workspace 失败: {ws.status_code} {ws.text[:100]}"
@@ -2160,8 +2160,8 @@ class TestDiffReporterV2BackwardCompat:
 
         from sqlalchemy import select as sa_select
 
-        from cndb.plugins.tables.services.importing import importer as importer_mod
         from cndb.plugins.tables.models import DataField
+        from cndb.plugins.tables.services.importing import importer as importer_mod
 
         before = session.execute(sa_select(DataField.id).where(DataField.table_id == table.id)).all()
 
@@ -2185,14 +2185,14 @@ class TestTransferModuleCoverage:
     """补充 transfer 模块（importer 依赖的底层解析工具）的基础覆盖."""
 
     def test_analyze_json_columns_basic(self):
-        from cndb.plugins.tables.transfer import analyze_json_columns
+        from cndb.plugins.tables.services.transfer import analyze_json_columns
 
         rows = [{"name": "a", "count": 1}, {"name": "b", "count": 2}]
         cols = analyze_json_columns(rows)
         assert {c["name"] for c in cols} == {"name", "count"}
 
     def test_analyze_csv_columns_basic(self):
-        from cndb.plugins.tables.transfer import analyze_csv_columns
+        from cndb.plugins.tables.services.transfer import analyze_csv_columns
 
         csv_text = "name,age\nAlice,30\nBob,25\n"
         cols, total = analyze_csv_columns(csv_text)
@@ -2200,7 +2200,7 @@ class TestTransferModuleCoverage:
         assert {c["name"] for c in cols} == {"name", "age"}
 
     def test_guess_format_from_filename(self):
-        from cndb.plugins.tables.transfer import guess_format_from_filename
+        from cndb.plugins.tables.services.transfer import guess_format_from_filename
 
         assert guess_format_from_filename("a.json") == "json"
         assert guess_format_from_filename("a.csv") == "csv"
@@ -2209,7 +2209,7 @@ class TestTransferModuleCoverage:
             guess_format_from_filename("a.unknown")
 
     def test_export_rows_roundtrip(self):
-        from cndb.plugins.tables.transfer import export_rows_to_csv, export_rows_to_json, export_rows_to_xlsx
+        from cndb.plugins.tables.services.transfer import export_rows_to_csv, export_rows_to_json, export_rows_to_xlsx
 
         rows = [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
         # JSON
@@ -2223,7 +2223,7 @@ class TestTransferModuleCoverage:
         assert isinstance(xlsx_bytes, bytes) and len(xlsx_bytes) > 0
 
     def test_python_type_to_field_type(self):
-        from cndb.plugins.tables.transfer import _python_type_to_field_type
+        from cndb.plugins.tables.services.transfer import _python_type_to_field_type
 
         assert _python_type_to_field_type(1) == "number"
         assert _python_type_to_field_type(1.5) == "float"
@@ -2706,13 +2706,13 @@ class TestExecuteImportTask:
 
     def test_execute_with_validation_report_uses_importer(self, test_session):
         """已有 validation_report → 走 Importer.execute 链路，task 字段被正确填充."""
+        from cndb.plugins.tables.models import DataField, DataTable
         from cndb.plugins.tables.services.core import ddl as _ddl
         from cndb.plugins.tables.services.importing.import_tasks import (
             analyze_import_task,
             create_import_task,
             execute_import_task,
         )
-        from cndb.plugins.tables.models import DataField, DataTable
 
         engine, session = test_session
         # 建表 + 字段
@@ -2800,11 +2800,11 @@ class TestImportTasksErrorPaths:
 
     def test_analyze_table_not_found_raises(self, test_session):
         """analyze_import_task 中 table 被删除 → 抛 RuntimeError 进入 except (line 73-74)."""
+        from cndb.plugins.tables.models import DataTable
         from cndb.plugins.tables.services.importing.import_tasks import (
             analyze_import_task,
             create_import_task,
         )
-        from cndb.plugins.tables.models import DataTable
 
         _engine, session = test_session
         # 建一个表然后删掉它

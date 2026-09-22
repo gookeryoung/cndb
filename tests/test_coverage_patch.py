@@ -7,15 +7,15 @@ import subprocess
 import pytest
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.services.core import access as access_mod
-from cndb.plugins.tables.services.core import ddl
-from cndb.plugins.tables import transfer as transfer_mod
 from cndb.plugins.tables.models import (
     DataField,
     DataTable,
     TableMember,
     TablePermission,
 )
+from cndb.plugins.tables.services import transfer as transfer_mod
+from cndb.plugins.tables.services.core import access as access_mod
+from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
 
 # ── access.py 单元测试 ───────────────────────────────

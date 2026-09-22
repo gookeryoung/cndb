@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from cndb.plugins.tables.transfer import (
+from cndb.plugins.tables.services.transfer import (
     _classify_date_like,
     _infer_single_value,
     _pick_inferred_type,

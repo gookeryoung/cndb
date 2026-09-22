@@ -614,8 +614,8 @@ def import_workspace(
     """从 JSON 数据导入表结构、视图和数据行到指定工作区（ADMIN+）."""
     import logging
 
-    from cndb.plugins.tables.ddl import create_table as ddl_create
     from cndb.plugins.tables.models import DataField, DataTable, DataView, ensure_default_view
+    from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
 
     ws = _get_workspace_or_404(workspace_id, db)
     _require_admin(ws, current_user, db)

@@ -6,10 +6,10 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from cndb.plugins.tables.services.core import ddl
-from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.field_types import DateFieldConfig, DateFieldType, DateTimeFieldType
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services.core import ddl
+from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.workspaces.models import Workspace
 
 

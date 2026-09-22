@@ -18,8 +18,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cndb.plugins.tables import transfer
 from cndb.plugins.tables.models import DataTable, ImportTask
+from cndb.plugins.tables.services import transfer
 
 # 追踪所有后台线程，供测试 fixture 等待完成
 _background_threads: list[threading.Thread] = []
@@ -305,7 +305,7 @@ def create_import_task(
     dropped_columns: list[str] | None = None,
 ) -> ImportTask:
     """创建异步导入任务并入库."""
-    from cndb.plugins.tables.transfer import decode_bytes_auto
+    from cndb.plugins.tables.services.transfer import decode_bytes_auto
 
     if fmt == "xlsx":
         if isinstance(content, bytes):

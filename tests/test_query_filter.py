@@ -328,8 +328,8 @@ class TestOrAndGrouping:
         """传入 dict 形式的 __or__ 组 → 生成合法 where clause."""
         from sqlalchemy import Column, Integer, MetaData, String, Table
 
-        from cndb.plugins.tables.services.core import query
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import query
 
         tbl = DataTable(workspace_id=1, name="t_or1")
         tbl.ensure_db_name()
@@ -365,8 +365,8 @@ class TestOrAndGrouping:
         """list 顶层含 __or__ dict."""
         from sqlalchemy import Column, Integer, MetaData, String, Table
 
-        from cndb.plugins.tables.services.core import query
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import query
 
         tbl = DataTable(workspace_id=1, name="t_or2")
         tbl.ensure_db_name()
@@ -405,8 +405,8 @@ class TestOrAndGrouping:
     def test_and_group_explicit(self, db):
         from sqlalchemy import Boolean, Column, Integer, MetaData, String, Table
 
-        from cndb.plugins.tables.services.core import query
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import query
 
         tbl = DataTable(workspace_id=1, name="t_and1")
         tbl.ensure_db_name()
@@ -444,8 +444,8 @@ class TestOrAndGrouping:
     def test_empty_or_group_returns_none(self, db):
         from sqlalchemy import Column, Integer, MetaData, String, Table
 
-        from cndb.plugins.tables.services.core import query
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import query
 
         tbl = DataTable(workspace_id=1, name="t_empty")
         tbl.ensure_db_name()
@@ -468,8 +468,8 @@ class TestOrAndGrouping:
     def test_non_dict_items_in_group_skipped(self, db):
         from sqlalchemy import Column, Integer, MetaData, String, Table
 
-        from cndb.plugins.tables.services.core import query
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import query
 
         tbl = DataTable(workspace_id=1, name="t_skip")
         tbl.ensure_db_name()

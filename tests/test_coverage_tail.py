@@ -12,13 +12,11 @@ from fastapi import HTTPException
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.services.core import ddl
-from cndb.plugins.tables.services.importing.api_fetch import FetchConfig, _resolve_path, fetch_json
-from cndb.plugins.tables.services.importing.column_profiler import profile_columns
-from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
 from cndb.plugins.tables.field_types import build_default_registry, default_registry
-from cndb.plugins.tables.services.core.links import _get_link_sa_table, _get_sa_table_by_name, _row_summaries
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.routers.public import _get_public_view, _make_field_sort_key
+from cndb.plugins.tables.services.core import ddl
+from cndb.plugins.tables.services.core.links import _get_link_sa_table, _get_sa_table_by_name, _row_summaries
 from cndb.plugins.tables.services.core.query import (
     _build_condition,
     _compile_filter_item,
@@ -26,7 +24,9 @@ from cndb.plugins.tables.services.core.query import (
     _compile_link_condition,
     _normalize_filters,
 )
-from cndb.plugins.tables.routers.public import _get_public_view, _make_field_sort_key
+from cndb.plugins.tables.services.importing.api_fetch import FetchConfig, _resolve_path, fetch_json
+from cndb.plugins.tables.services.importing.column_profiler import profile_columns
+from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
 from cndb.plugins.workspaces.routers.roles import _validate_permissions
 

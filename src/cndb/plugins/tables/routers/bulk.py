@@ -12,13 +12,13 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables import records as rec
-from cndb.plugins.tables import transfer
-from cndb.plugins.tables.access import TableAction
-from cndb.plugins.tables.import_tasks import create_import_task, run_task_in_background
 from cndb.plugins.tables.models import ImportTask
 from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import BulkDeleteRequest
+from cndb.plugins.tables.services import transfer
+from cndb.plugins.tables.services.core import records as rec
+from cndb.plugins.tables.services.core.access import TableAction
+from cndb.plugins.tables.services.importing.import_tasks import create_import_task, run_task_in_background
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}", tags=["bulk"])
 
@@ -65,7 +65,7 @@ def bulk_create_records(
 
     # 导入前预填充 + 导入后同步 select/multiselect options
     try:
-        from cndb.plugins.tables.field_ops import (
+        from cndb.plugins.tables.services.fields.field_ops import (
             prefill_select_options_from_rows,
             sync_select_options_from_table,
         )
@@ -83,7 +83,7 @@ def bulk_create_records(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        from cndb.plugins.tables.field_ops import sync_select_options_from_table
+        from cndb.plugins.tables.services.fields.field_ops import sync_select_options_from_table
 
         sync_select_options_from_table(db, dt)
     except Exception:
@@ -129,7 +129,7 @@ def bulk_update_records(
 
     # 更新前预填充 select/multiselect options（让新值的校验能通过）
     try:
-        from cndb.plugins.tables.field_ops import prefill_select_options_from_rows
+        from cndb.plugins.tables.services.fields.field_ops import prefill_select_options_from_rows
 
         # values 是 {"field_name": new_value} 格式，转换成 rows=[values] 让 prefill 能提取
         prefill_select_options_from_rows(db, dt, [values])
@@ -145,7 +145,7 @@ def bulk_update_records(
 
     # 更新后同步 select/multiselect options（兜底：物理表中可能有其他行的值未覆盖）
     try:
-        from cndb.plugins.tables.field_ops import sync_select_options_from_table
+        from cndb.plugins.tables.services.fields.field_ops import sync_select_options_from_table
 
         sync_select_options_from_table(db, dt)
     except Exception:
@@ -617,8 +617,8 @@ def download_failed_rows(
     # 或者从 validation_report 里只能拿到 errors/warnings 明细，没有 values
     # 实际上 Importer.execute 内部已经过滤了，validation_report 里有所有 row_number
     # 但要导出完整的 values，需要重新 parse + validate
-    from cndb.plugins.tables.failed_row_exporter import FailedRowExporter
-    from cndb.plugins.tables.importer import Importer
+    from cndb.plugins.tables.services.importing.failed_row_exporter import FailedRowExporter
+    from cndb.plugins.tables.services.importing.importer import Importer
 
     engine = db.get_bind()
     importer = Importer(engine, db, dt)

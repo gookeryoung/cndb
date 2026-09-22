@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from cndb.plugins.tables.services.core import ddl, links
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services.core import ddl, links
 
 
 def _make_table(db, ws_id, name="t_x"):

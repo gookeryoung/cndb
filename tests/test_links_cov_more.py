@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core import links
 from cndb.plugins.tables.services.core.ddl import create_table
-from cndb.plugins.tables.models import DataField, DataTable
 
 # ── 复用 test_cov_links_internal 里的场景（自包含） ──
 

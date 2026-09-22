@@ -17,9 +17,9 @@ from fastapi import Depends, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from cndb.cli.backup import BackupError, create_backup
+from cndb.cli.restore import RestoreError, _schema_revision_known, inspect_backup, restore_backup
 from cndb.core.config import DATA_DIR
 from cndb.plugins.accounts.models import User, UserRole
-from cndb.cli.restore import RestoreError, _schema_revision_known, inspect_backup, restore_backup
 
 if TYPE_CHECKING:
     from fastapi import FastAPI

@@ -20,6 +20,8 @@ from typing import Any
 
 from sqlalchemy import MetaData, Table, and_, func, or_, select
 
+from cndb.plugins.tables.field_types import default_registry
+from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core.audit import (
     ACTION_CREATE,
     ACTION_DELETE,
@@ -28,7 +30,6 @@ from cndb.plugins.tables.services.core.audit import (
     ACTION_UPDATE,
     log_action,
 )
-from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.services.core.links import (
     attach_links,
     clear_row_links,
@@ -36,7 +37,6 @@ from cndb.plugins.tables.services.core.links import (
     is_link_field,
     set_links,
 )
-from cndb.plugins.tables.models import DataField, DataTable
 
 logger = logging.getLogger(__name__)
 

@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.transfer import (
+from cndb.plugins.tables.services.transfer import (
     analyze_csv_columns,
     analyze_file_columns,
     create_table_from_csv,

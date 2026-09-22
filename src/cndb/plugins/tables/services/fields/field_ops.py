@@ -21,11 +21,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from cndb.plugins.tables.services.core import ddl as _ddl
-from cndb.plugins.tables.services.importing.field_mapping import apply_user_mapping, build_default_mapping
 from cndb.plugins.tables.field_types import split_multi_select_string
-from cndb.plugins.tables.services.core.links import is_link_field
 from cndb.plugins.tables.models import DataField, DataTable, generate_db_column_name
+from cndb.plugins.tables.services.core import ddl as _ddl
+from cndb.plugins.tables.services.core.links import is_link_field
+from cndb.plugins.tables.services.importing.field_mapping import apply_user_mapping, build_default_mapping
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

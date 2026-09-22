@@ -53,8 +53,8 @@ class TestRoutersFields:
 
 class TestDDLMore:
     def test_create_table_idempotent(self, db_engine, db):
-        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import ddl
 
         tbl = DataTable(workspace_id=1, name="t_idem")
         tbl.ensure_db_name()
@@ -71,8 +71,8 @@ class TestDDLMore:
         assert ddl.table_exists(db_engine, tbl.db_table_name)
 
     def test_drop_column_link_field(self, db_engine, db):
-        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import ddl
 
         tbl = DataTable(workspace_id=1, name="t_dc_link")
         tbl.ensure_db_name()
@@ -96,8 +96,8 @@ class TestDDLMore:
         assert not ddl.table_exists(db_engine, f.link_table_name)
 
     def test_add_column_link_field(self, db_engine, db):
-        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import ddl
 
         tbl = DataTable(workspace_id=1, name="t_ac_link")
         tbl.ensure_db_name()

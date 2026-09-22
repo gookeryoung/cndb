@@ -11,7 +11,7 @@ import json
 import pytest
 
 from cndb.plugins.tables.services.importing.importer import Importer, guess_format_from_content
-from cndb.plugins.tables.transfer import (
+from cndb.plugins.tables.services.transfer import (
     _normalize_numeric,
     decode_bytes_auto,
     sniff_csv_delimiter,

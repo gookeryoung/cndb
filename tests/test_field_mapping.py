@@ -168,8 +168,8 @@ class TestRemapRow:
 
 class TestApplyGapFilling:
     def test_strategy_empty_keeps_none(self):
-        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
         from cndb.plugins.tables.models import DataField
+        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
 
         f = DataField(name="missing", field_type="text", default_value=None)
         row: dict[str, object] = {}
@@ -177,8 +177,8 @@ class TestApplyGapFilling:
         assert result["missing"] is None
 
     def test_strategy_default(self):
-        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
         from cndb.plugins.tables.models import DataField
+        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
 
         f = DataField(name="missing", field_type="text", default_value="NA")
         row: dict[str, object] = {}
@@ -230,8 +230,8 @@ class TestApplyGapFilling:
 
 class TestAutoMatchFields:
     def test_basic(self, db):
-        from cndb.plugins.tables.services.importing.field_mapping import auto_match_fields
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.importing.field_mapping import auto_match_fields
 
         src = DataTable(workspace_id=1, name="S", owner_id=1)
         src.ensure_db_name()
@@ -609,9 +609,9 @@ class TestRowValidatorWithFieldMapping:
 
 class TestImporterWithFieldMapping:
     def test_end_to_end_with_mapping(self, db, _dst_table3):
+        from cndb.plugins.tables.models import DataTable
         from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.services.importing.importer import Importer
-        from cndb.plugins.tables.models import DataTable
 
         _wid, tid = _dst_table3
         table = db.get(DataTable, tid)
@@ -694,9 +694,9 @@ class TestFieldOpsPlanWithMapping:
 
     def test_skip_conflicts_false_with_mapping_no_throw(self, db):
         """execute_field_import skip_conflicts=False 但有 mapping 时不提前报错（冲突延后到 plan 内处理）."""
-        from cndb.plugins.tables.services.fields import field_ops as _fo
-        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.fields import field_ops as _fo
 
         engine = db.get_bind()
 
@@ -728,8 +728,8 @@ class TestFieldOpsPlanWithMapping:
 
     def test_plan_field_import_mapping_skip_none(self, db):
         """plan_field_import 的 field_mapping={name: None} 跳过."""
-        from cndb.plugins.tables.services.fields import field_ops as _fo
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.fields import field_ops as _fo
 
         dst = DataTable(workspace_id=1, name="D_plan_map", owner_id=1)
         dst.ensure_db_name()
@@ -1120,8 +1120,8 @@ class TestRowValidatorNormalizedNoneBranch:
     """覆盖 row_validator line 238->exit：validate_value 返回 None 时 normalized 不写入."""
 
     def test_validate_value_returns_none_not_in_normalized(self, db, monkeypatch):
-        from cndb.plugins.tables.services.importing import row_validator as rv_mod
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.importing import row_validator as rv_mod
 
         src = DataTable(workspace_id=1, name="S_none_norm", owner_id=1)
         src.ensure_db_name()

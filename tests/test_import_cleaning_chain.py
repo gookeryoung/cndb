@@ -9,8 +9,8 @@ def _get_task_fresh(db, task_id):
     """用全新 session 读取 ImportTask，规避 StaticPool 连接共享导致的 identity map 问题."""
     from sqlalchemy.orm import Session
 
-    from cndb.plugins.tables.services.importing.import_tasks import join_background_threads
     from cndb.plugins.tables.models import ImportTask
+    from cndb.plugins.tables.services.importing.import_tasks import join_background_threads
 
     join_background_threads(timeout=10)
     fresh = Session(bind=db.get_bind())

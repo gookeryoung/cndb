@@ -19,15 +19,15 @@ import pytest
 from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
+from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services import transfer
 from cndb.plugins.tables.services.core import ddl
-from cndb.plugins.tables import transfer
 from cndb.plugins.tables.services.importing.diff_reporter import _json_safe
 from cndb.plugins.tables.services.importing.failed_row_exporter import FailedRowExporter
 from cndb.plugins.tables.services.importing.import_tasks import create_import_task, execute_import_task
 from cndb.plugins.tables.services.importing.importer import Importer
-from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.importing.row_validator import Issue, ValidationResult
-from cndb.plugins.tables.transfer import export_rows_to_csv, export_rows_to_xlsx
+from cndb.plugins.tables.services.transfer import export_rows_to_csv, export_rows_to_xlsx
 from tests.helpers import wait_import_settled
 
 # ── 公共 Fixture 与造数工具 ─────────────────────────

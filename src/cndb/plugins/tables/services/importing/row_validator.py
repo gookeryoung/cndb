@@ -25,6 +25,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from cndb.plugins.tables.field_types import default_registry
+from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services.core.links import is_link_field
 from cndb.plugins.tables.services.importing.field_mapping import (
     GapFilling,
     apply_gap_filling,
@@ -32,9 +35,6 @@ from cndb.plugins.tables.services.importing.field_mapping import (
     build_default_mapping,
     remap_row,
 )
-from cndb.plugins.tables.field_types import default_registry
-from cndb.plugins.tables.services.core.links import is_link_field
-from cndb.plugins.tables.models import DataField, DataTable
 
 # ── 类型别名 ──────────────────────────────────────
 

@@ -3,9 +3,9 @@
 import pytest
 
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core import ddl, query
 from cndb.plugins.tables.services.core import records as rec
-from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 
 

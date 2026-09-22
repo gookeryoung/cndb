@@ -7,13 +7,13 @@ import io
 import pytest
 from sqlalchemy import Column, Integer, MetaData, Table
 
+from cndb.plugins.tables.models import DataTable, TablePermission
 from cndb.plugins.tables.services.core.access import (
     TableAction,
     _get_member_role,
     check_action,
     get_hidden_field_names,
 )
-from cndb.plugins.tables.models import DataTable, TablePermission
 
 
 def _make_table(db, ws_id, name="t_x"):
@@ -127,18 +127,18 @@ class TestQueryCompile:
 
 class TestTransferLinkSerialization:
     def test_serialize_link_dict_list(self):
-        from cndb.plugins.tables.transfer import _serialize_link_value
+        from cndb.plugins.tables.services.transfer import _serialize_link_value
 
         val = [{"id": 1, "value": "a"}, {"id": 2, "value": "b"}]
         assert _serialize_link_value(val) == "1;2"
 
     def test_serialize_link_plain_value(self):
-        from cndb.plugins.tables.transfer import _serialize_link_value
+        from cndb.plugins.tables.services.transfer import _serialize_link_value
 
         assert _serialize_link_value("plain") == "plain"
 
     def test_export_csv_with_link_summary(self):
-        from cndb.plugins.tables.transfer import export_rows_to_csv
+        from cndb.plugins.tables.services.transfer import export_rows_to_csv
 
         rows = [
             {"name": "row1", "links": [{"id": 1, "value": "a"}, {"id": 2, "value": "b"}]},
@@ -149,7 +149,7 @@ class TestTransferLinkSerialization:
         assert "1;2" in csv_text
 
     def test_parse_link_empty_string(self, db, client, auth_headers):
-        from cndb.plugins.tables.transfer import _parse_link_import_value
+        from cndb.plugins.tables.services.transfer import _parse_link_import_value
 
         ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_tf1"})
         wid = ws.json()["id"]
@@ -185,7 +185,7 @@ class TestTransferLinkSerialization:
         assert result["link_to_target"] is None
 
     def test_parse_link_invalid_raises(self, db, client, auth_headers):
-        from cndb.plugins.tables.transfer import _parse_link_import_value
+        from cndb.plugins.tables.services.transfer import _parse_link_import_value
 
         ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_tf2"})
         wid = ws.json()["id"]
@@ -215,7 +215,7 @@ class TestTransferLinkSerialization:
     def test_import_xlsx_empty(self, db_engine):
         from openpyxl import Workbook
 
-        from cndb.plugins.tables.transfer import import_rows_from_xlsx
+        from cndb.plugins.tables.services.transfer import import_rows_from_xlsx
 
         wb = Workbook()
         ws_wb = wb.active
