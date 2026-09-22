@@ -85,7 +85,7 @@ def test_link_field_via_api_chain(client, auth_headers, db):
 
 def test_is_link_field_and_link_fields(client, auth_headers, db):
     """单元测试：is_link_field / link_fields."""
-    from cndb.plugins.tables.links import is_link_field, link_fields
+    from cndb.plugins.tables.services.core.links import is_link_field, link_fields
     from cndb.plugins.tables.models import DataField, DataTable
 
     dt = DataTable(name="t_test", db_table_name="table_test123456")
@@ -103,7 +103,7 @@ def test_is_link_field_and_link_fields(client, auth_headers, db):
 
 def test_clear_row_links_noop_for_missing_table(db_engine, db):
     """clear_row_links 对不存在物理表不应抛错（无关联记录时的安全调用）."""
-    from cndb.plugins.tables.links import clear_row_links
+    from cndb.plugins.tables.services.core.links import clear_row_links
     from cndb.plugins.tables.models import DataField, DataTable
 
     dt = DataTable(name="t_empty", db_table_name="table_never_exist123456")
@@ -120,6 +120,6 @@ def test_clear_row_links_noop_for_missing_table(db_engine, db):
 
 def test_link_table_exists(db_engine):
     """link_table_exists 对从未创建的表返回 False."""
-    from cndb.plugins.tables.links import link_table_exists
+    from cndb.plugins.tables.services.core.links import link_table_exists
 
     assert link_table_exists(db_engine, "link_never_created_abcdef123") is False

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.access import (
+from cndb.plugins.tables.services.core.access import (
     TableAction,
     apply_field_hiding,
     apply_field_hiding_rows,
@@ -12,7 +12,7 @@ from cndb.plugins.tables.access import (
     get_row_scope,
     row_filter_conjunction,
 )
-from cndb.plugins.tables.audit import (
+from cndb.plugins.tables.services.core.audit import (
     ACTION_CREATE,
     ACTION_UPDATE,
     log_action,

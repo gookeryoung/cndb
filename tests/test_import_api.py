@@ -147,7 +147,7 @@ class TestCreateTableFromJsonData:
         assert v.view_type == "grid"
         assert v.is_default is True
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         got_rows, _total = rec.list_rows(db_engine, dt, db=db)
         assert len(got_rows) == 3

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table
 
-from cndb.plugins.tables import query
+from cndb.plugins.tables.services.core import query
 from cndb.plugins.tables.models import DataField, DataTable
 
 

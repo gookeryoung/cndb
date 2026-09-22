@@ -3,7 +3,7 @@
 import pytest
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables import ddl
+from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
@@ -181,7 +181,7 @@ class TestDDLEngine:
 class TestRecordsEngine:
     def test_create_and_get_row(self, db_engine, table_with_fields):
         dt, _ = table_with_fields
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row = rec.create_row(db_engine, dt, {"姓名": "张三", "年龄": 28})
         assert row is not None
@@ -196,7 +196,7 @@ class TestRecordsEngine:
 
     def test_update_row(self, db_engine, table_with_fields):
         dt, _ = table_with_fields
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row = rec.create_row(db_engine, dt, {"姓名": "李四", "年龄": 30})
         updated = rec.update_row(db_engine, dt, row["id"], {"年龄": 31})
@@ -205,7 +205,7 @@ class TestRecordsEngine:
 
     def test_delete_row(self, db_engine, table_with_fields):
         dt, _ = table_with_fields
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row = rec.create_row(db_engine, dt, {"姓名": "王五", "年龄": 25})
         assert rec.delete_row(db_engine, dt, row["id"])
@@ -213,7 +213,7 @@ class TestRecordsEngine:
 
     def test_list_rows_with_filter(self, db_engine, table_with_fields):
         dt, _ = table_with_fields
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.create_row(db_engine, dt, {"姓名": "赵六", "年龄": 22})
         rec.create_row(db_engine, dt, {"姓名": "钱七", "年龄": 35})
@@ -234,7 +234,7 @@ class TestRecordsEngine:
     def test_list_rows_dict_filter_form(self, db_engine, table_with_fields):
         """list_rows 接受 dict {field: value} 形式的 filters."""
         dt, _ = table_with_fields
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.create_row(db_engine, dt, {"姓名": "张三", "年龄": 22})
         rec.create_row(db_engine, dt, {"姓名": "李四", "年龄": 35})
@@ -253,7 +253,7 @@ class TestRecordsEngine:
     def test_list_rows_query_keyword(self, db_engine, table_with_fields):
         """list_rows 的 dict filters 支持 $query 做全局关键词搜索."""
         dt, _ = table_with_fields
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.create_row(db_engine, dt, {"姓名": "张三丰", "年龄": 50})
         rec.create_row(db_engine, dt, {"姓名": "李四", "年龄": 30})
@@ -271,7 +271,7 @@ class TestRecordsEngine:
 
     def test_list_rows_with_sort(self, db_engine, table_with_fields):
         dt, _ = table_with_fields
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.create_row(db_engine, dt, {"姓名": "A", "年龄": 30})
         rec.create_row(db_engine, dt, {"姓名": "B", "年龄": 20})
@@ -289,7 +289,7 @@ class TestRecordsEngine:
 
     def test_bulk_operations(self, db_engine, table_with_fields):
         dt, _ = table_with_fields
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(
             db_engine,
@@ -310,7 +310,7 @@ class TestRecordsEngine:
 
     def test_soft_delete_and_restore(self, db_engine, table_with_fields):
         dt, _ = table_with_fields
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row = rec.create_row(db_engine, dt, {"姓名": "软删", "年龄": 18})
         rec.trash_row(db_engine, dt, row["id"])
@@ -329,8 +329,8 @@ class TestRecordsEngine:
         assert rec.get_row(db_engine, dt, row["id"]) is not None
 
     def test_validation_error(self, db_engine, db, workspace):
-        from cndb.plugins.tables import ddl
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import ddl
+        from cndb.plugins.tables.services.core import records as rec
         from cndb.plugins.tables.models import DataField, DataTable
 
         dt = DataTable(workspace_id=workspace.id, name="必填测试表")
@@ -359,7 +359,7 @@ class TestQueryCompile:
         dt, _ = table_with_fields
         from sqlalchemy import MetaData
 
-        from cndb.plugins.tables.query import compile_filters
+        from cndb.plugins.tables.services.core.query import compile_filters
 
         sa_table = ddl.build_sa_table(MetaData(), dt)
         compiled = compile_filters(
@@ -375,7 +375,7 @@ class TestQueryCompile:
         dt, _ = table_with_fields
         from sqlalchemy import MetaData
 
-        from cndb.plugins.tables.query import compile_filters
+        from cndb.plugins.tables.services.core.query import compile_filters
 
         sa_table = ddl.build_sa_table(MetaData(), dt)
         with pytest.raises(ValueError, match="未知操作符"):

@@ -7,7 +7,7 @@ import io
 import pytest
 from sqlalchemy import Column, Integer, MetaData, Table
 
-from cndb.plugins.tables.access import (
+from cndb.plugins.tables.services.core.access import (
     TableAction,
     _get_member_role,
     check_action,
@@ -111,7 +111,7 @@ class TestCheckActionRealRoleFallback:
 
 class TestQueryCompile:
     def test_unknown_field_name_returns_none(self, db):
-        from cndb.plugins.tables import query
+        from cndb.plugins.tables.services.core import query
 
         tbl = _make_table(db, 1, "t_q")
         result = query.compile_filters(

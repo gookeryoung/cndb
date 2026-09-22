@@ -726,7 +726,7 @@ class TestWorkspaceExportImport:
     def test_import_workspace_full_flow(self, client, owner_user, monkeypatch):
         """import 完整流程（mock DDL 绕过物理表创建）."""
         # mock DDL create_table，什么都不做
-        monkeypatch.setattr("cndb.plugins.tables.ddl.create_table", lambda engine, table: None)
+        monkeypatch.setattr("cndb.plugins.tables.services.core.ddl.create_table", lambda engine, table: None)
         token = _login_token(client, "owner", "passw0rd")
         ws_id = self._create_ws(client, token)
         payload = {
@@ -785,7 +785,7 @@ class TestWorkspaceExportImport:
         """v1 旧文件的视图 default 键导入后正确映射 is_default."""
         from cndb.plugins.tables.models import DataView
 
-        monkeypatch.setattr("cndb.plugins.tables.ddl.create_table", lambda engine, table: None)
+        monkeypatch.setattr("cndb.plugins.tables.services.core.ddl.create_table", lambda engine, table: None)
         token = _login_token(client, "owner", "passw0rd")
         ws_id = self._create_ws(client, token)
         payload = {
@@ -811,7 +811,7 @@ class TestWorkspaceExportImport:
         """v2 文件的视图 is_default 键导入后正确生效."""
         from cndb.plugins.tables.models import DataView
 
-        monkeypatch.setattr("cndb.plugins.tables.ddl.create_table", lambda engine, table: None)
+        monkeypatch.setattr("cndb.plugins.tables.services.core.ddl.create_table", lambda engine, table: None)
         token = _login_token(client, "owner", "passw0rd")
         ws_id = self._create_ws(client, token)
         payload = {
