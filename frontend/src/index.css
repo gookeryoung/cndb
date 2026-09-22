@@ -1018,11 +1018,83 @@ body.theme-dark [style*="color:'#999'"] {
 /* ─────────────── 视图切换栏 Segmented 紧凑化 + 滚动优化 ───────────────
  * 核心思路：Segmented 外层 .cn-segmented-wrap 设 overflow:hidden，
  * 内部 .ant-segmented 开启横向滚动（overflow-x:auto），
- * 配合 scrollbar 细条隐藏 + 边缘渐隐遮罩，让多视图时的滚动自然融入整体. */
+ * 配合 scrollbar 细条隐藏 + 边缘渐隐遮罩 + 左右滚动箭头，让多视图时的滚动自然融入整体. */
 
 .cn-segmented-wrap {
   position: relative;
-  /* 左右渐隐遮罩：仅当可滚动时由 JS/状态切换类名控制，默认关闭避免正常视图数时出现 */
+  /* 左右渐隐遮罩：仅当可滚动时由 JS 切换 is-scroll-left / is-scroll-right 类名触发 */
+}
+
+/* 右侧渐隐遮罩：当右侧还有未显示内容时叠加提示 */
+.cn-segmented-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 32px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--cn-bg-container) 70%);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 1;
+}
+.cn-segmented-wrap.is-scroll-right::after {
+  opacity: 1;
+}
+
+/* 左侧渐隐遮罩：当左侧已滚离起点时叠加（遮罩方向反） */
+.cn-segmented-wrap::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px; /* 与 wrap 左侧 padding 对齐 */
+  bottom: 0;
+  width: 32px;
+  pointer-events: none;
+  background: linear-gradient(to left, transparent, var(--cn-bg-container) 70%);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 1;
+}
+.cn-segmented-wrap.is-scroll-left::before {
+  opacity: 1;
+}
+
+/* 滚动箭头按钮 */
+.cn-seg-scroll-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--cn-border);
+  background: var(--cn-bg-container);
+  color: var(--cn-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+}
+.cn-seg-scroll-btn:hover {
+  background: var(--cn-bg-subtle, var(--cn-bg-container));
+  color: var(--cn-text-primary);
+}
+.cn-seg-scroll-btn:active {
+  transform: translateY(-50%) scale(0.92);
+}
+.cn-seg-scroll-btn-left {
+  left: 16px; /* 与 wrap 左侧 padding 对齐 */
+}
+.cn-seg-scroll-btn-right {
+  right: 4px; /* 避开 wrap 最右边缘 */
 }
 
 .cn-segmented {
@@ -1032,7 +1104,7 @@ body.theme-dark [style*="color:'#999'"] {
   /* 让 AntD Segmented 内部 items 可横向滚动 */
 }
 
-.cn-segmented>.ant-segmented-item-container {
+.cn-segmented>.ant-segmented-group {
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: smooth;
@@ -1040,25 +1112,25 @@ body.theme-dark [style*="color:'#999'"] {
 }
 
 /* 细滚动条 —— 视觉上不突兀，但仍可拖动 */
-.cn-segmented>.ant-segmented-item-container::-webkit-scrollbar {
+.cn-segmented>.ant-segmented-group::-webkit-scrollbar {
   height: 4px;
 }
 
-.cn-segmented>.ant-segmented-item-container::-webkit-scrollbar-track {
+.cn-segmented>.ant-segmented-group::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.cn-segmented>.ant-segmented-item-container::-webkit-scrollbar-thumb {
+.cn-segmented>.ant-segmented-group::-webkit-scrollbar-thumb {
   background: var(--cn-border);
   border-radius: 4px;
 }
 
-.cn-segmented>.ant-segmented-item-container::-webkit-scrollbar-thumb:hover {
+.cn-segmented>.ant-segmented-group::-webkit-scrollbar-thumb:hover {
   background: var(--cn-text-muted);
 }
 
 /* Firefox 滚动条 */
-.cn-segmented>.ant-segmented-item-container {
+.cn-segmented>.ant-segmented-group {
   scrollbar-width: thin;
   scrollbar-color: var(--cn-border) transparent;
 }
