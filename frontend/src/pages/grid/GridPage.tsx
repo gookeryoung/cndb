@@ -1303,6 +1303,8 @@ export default function GridPage() {
         open={createViewOpen}
         onCancel={() => setCreateViewOpen(false)}
         footer={null}
+        width={720}
+        className="cevf-modal"
         destroyOnHidden
       >
         <CreateEditViewForm
@@ -1323,6 +1325,8 @@ export default function GridPage() {
         open={editViewOpen}
         onCancel={() => setEditViewOpen(false)}
         footer={null}
+        width={720}
+        className="cevf-modal"
         destroyOnHidden
       >
         {activeView && (

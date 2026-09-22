@@ -1064,3 +1064,111 @@ body.theme-dark [style*="color:'#999'"] {
 .cn-segmented .ant-segmented-item[style*="opacity: 0.5"] {
   cursor: grabbing !important;
 }
+
+/* ─────────────── 创建/编辑视图表单 — 紧凑化（两列网格 + 分区卡片 + 折叠） ───────────────
+ * 原布局为单列 vertical，kanban 场景要纵向排 16 行；这里改为两列网格 + 分区卡片，
+ * 并给 Modal body 设高度上限内滚动，避免对话框被内容撑长。 */
+
+/* Modal body 高度受控 + 细滚动条 */
+.cevf-modal .ant-modal-body {
+  max-height: min(62vh, 520px);
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.cevf-modal .ant-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.cevf-modal .ant-modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cevf-modal .ant-modal-body::-webkit-scrollbar-thumb {
+  background: var(--cn-border);
+  border-radius: 3px;
+}
+
+.cevf-modal .ant-modal-body::-webkit-scrollbar-thumb:hover {
+  background: var(--cn-text-muted);
+}
+
+/* 分区卡片 */
+.cevf-section {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--cn-border);
+  border-radius: 8px;
+  background: var(--cn-bg-subtle);
+}
+
+/* 分区标题（可折叠时为 button，不可折叠时为 div） */
+.cevf-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--cn-text-secondary);
+  text-align: left;
+}
+
+.cevf-section-head:not(button) {
+  cursor: default;
+}
+
+.cevf-section-chevron {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+.cevf-section.collapsed .cevf-section-chevron {
+  transform: rotate(-90deg);
+}
+
+.cevf-section-body {
+  margin-top: 8px;
+}
+
+/* 两列网格：长控件整行，短控件单列 */
+.cevf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+
+.cevf-col-1 {
+  min-width: 0;
+}
+
+.cevf-col-2 {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+/* 压缩 antd 默认 24px 的 Form.Item 下边距 */
+.cevf-grid .ant-form-item {
+  margin-bottom: 8px;
+}
+
+.cevf-footer {
+  text-align: right;
+  margin-top: 4px;
+}
+
+/* 窄屏回退单列，避免两列被压扁 */
+@media (max-width: 560px) {
+  .cevf-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cevf-col-1 {
+    grid-column: 1 / -1;
+  }
+}
