@@ -20,21 +20,15 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Table, Button, Space, Tag, Modal, Typography, App as AntApp, Tooltip, Dropdown, Empty, Input, Segmented, Upload, Pagination } from 'antd'
+import { Modal, Empty, App as AntApp } from 'antd'
 import {
-  PlusOutlined, DeleteOutlined, ReloadOutlined, ColumnHeightOutlined,
-  FilterOutlined, MoreOutlined, ArrowLeftOutlined, EyeOutlined, SettingOutlined,
-  AppstoreOutlined, CopyOutlined, ImportOutlined, ExportOutlined, UploadOutlined,
-  CalendarOutlined, SwapOutlined, LineChartOutlined,
-  SearchOutlined, EditOutlined, MenuOutlined, PartitionOutlined, HolderOutlined,
+  ColumnHeightOutlined, EyeOutlined, AppstoreOutlined,
+  CalendarOutlined, LineChartOutlined, PartitionOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useTable, useTableViews, useTableRecords, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
-import {
-  DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors,
-} from '@dnd-kit/core'
-import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
+import { arrayMove } from '@dnd-kit/sortable'
+import type { DragEndEvent } from '@dnd-kit/core'
 import { tableApi, recordApi, viewApi, auditApi } from '@/api'
 import type { ID, RowValues, Field, RowResponse, View, ViewCreate } from '@/api'
 import KanbanView from './views/KanbanView'
@@ -44,7 +38,6 @@ import GanttView from './views/GanttView'
 import WbsView from './views/WbsView'
 import RowDetailDrawer from './layout/RowDetailDrawer'
 import ViewConfigDialog, { type FilterRule, type SortRule } from './view-config/ViewConfigDialog'
-import CreateEditViewForm from './view-config/CreateEditViewForm'
 import MoveTableForm from './layout/MoveTableForm'
 import TableSettingsDialog from './view-config/TableSettingsDialog'
 import TableSettingsModal from '@/pages/settings/TableSettingsModal'
@@ -53,9 +46,14 @@ import { useNewRowAutoScroll, type TableScrollTarget } from './cells/useNewRowAu
 import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCellValueForEdit } from './cells/GridCell'
 import { type ViewMode, VALID_MODES, deriveModeSwitch } from './views/viewModes'
 import { useTableSettingsStore, useGridViewStore } from '@/store'
-import { densityToSize } from '@/theme/tableSettings'
 import { useElementSize, useDebouncedCallback } from '@/hooks'
 import dayjs from 'dayjs'
+import GridToolbar from './gridToolbar'
+import GridViewBar from './gridViewBar'
+import GridTableSection, { NEW_ROW_KEY } from './gridTableSection'
+import GridAggregationBar from './gridAggregationBar'
+import GridViewModals from './gridViewModals'
+import { useGridData } from './useGridData'
 
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
@@ -87,7 +85,6 @@ function defaultValueForNewRow(f: Field): unknown {
   return normalizeCellValueForEdit(null, f)
 }
 
-const { Text } = Typography
 const MODE_STORAGE_KEY = 'cndb_current_mode'
 
 /** 右侧模式按钮配置 —— 顺序即显示顺序；仅当数据表存在对应 view_type 的视图时才渲染. */
@@ -112,36 +109,6 @@ function _readModeFromStorage(): ViewMode | null {
     if (m && (VALID_MODES as readonly string[]).includes(m)) return m as ViewMode
   } catch { /* localStorage 不可用时忽略 */ }
   return null
-}
-
-/** 可拖拽视图 Tab 标签 —— 供 Segmented.options.label 使用，配合 DndContext + SortableContext. */
-function DndViewTab({ view, active, onClick }: { view: View; active: boolean; onClick: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: String(view.id),
-  })
-  return (
-    <span
-      ref={setNodeRef}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 4,
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : 1,
-        cursor: active ? 'pointer' : 'grab',
-        userSelect: 'none',
-      }}
-      data-testid={`view-tab-${view.id}`}
-      {...attributes}
-      {...listeners}
-      onClick={(e) => { e.stopPropagation(); onClick() }}
-    >
-      <HolderOutlined style={{ fontSize: 10, color: '#bfbfbf' }} />
-      <span>{view.name}</span>
-      {view.is_default && <Tag color="blue" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
-    </span>
-  )
 }
 
 export default function GridPage() {
@@ -223,7 +190,6 @@ export default function GridPage() {
   const tableKey = `${wid}/${tid}`
 
   // ── 行内编辑（新增行 / 整行编辑）状态 ──
-  const NEW_ROW_KEY = '__new__'
   /** 整行编辑模式下的行 id（null 表示无行处于整行编辑） */
   const [editingRowId, setEditingRowId] = useState<ID | null>(null)
   /** 底部空白新增行是否激活 */
@@ -409,39 +375,16 @@ export default function GridPage() {
     setSearchParams(params, { replace: true })
   }, [searchQuery])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 当前生效的筛选条件（视图筛选 + 全局关键词）
-  const effectiveFilters = useMemo(() => {
-    const list: Array<Record<string, unknown>> = viewFilters as unknown as Array<Record<string, unknown>>
-    if (searchQuery.trim()) list.push({ field_name: '__query__', op: 'contains', value: searchQuery.trim() })
-    return list.length ? list : undefined
-  }, [viewFilters, searchQuery])
-
-  // 当前生效的排序条件
-  const sortsParam = useMemo(() => {
-    return viewSortings.length ? (viewSortings as unknown as Array<Record<string, unknown>>) : undefined
-  }, [viewSortings])
-
-  // 非 grid 视图需要数据做分组/聚合。降低上限到 2000（覆盖 99% 使用场景，避免每次切换拉 5000 条的网络+渲染压力）
-  const VIEW_FETCH_ALL_LIMIT = 2000
-  const effectiveLimit = mode === 'grid' ? limit : VIEW_FETCH_ALL_LIMIT
-  const effectiveOffset = mode === 'grid' ? offset : 0
+  // 当前生效的筛选/排序/分页参数 + 行数据（装配逻辑在 useGridData）
+  const { effectiveFilters, sortsParam, rowList } = useGridData({
+    wid, tid, mode, limit, offset, viewFilters, viewSortings, viewFilterLogic, searchQuery,
+  })
 
   // 当前用户在本表的权限（来自后端 current_user_actions）
   const userActions = table?.current_user_actions ?? []
   const hasAction = (a: string) => userActions.includes(a)
   const canEditSchema = hasAction('edit_schema')
   const canEditRecords = hasAction('edit_records')
-
-  const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 } } = useTableRecords(
-    wid!, tid!, mode,
-    {
-      offset: effectiveOffset,
-      limit: effectiveLimit,
-      filters: effectiveFilters,
-      sorts: sortsParam,
-      filter_logic: viewFilterLogic,
-    },
-  )
 
   /** 新增行激活后自动滚动聚焦 —— tail 跳页时以行数变化为重同步信号，数据到达后二次校准. */
   useNewRowAutoScroll({
@@ -686,7 +629,6 @@ export default function GridPage() {
   })
 
   // ── 视图顺序拖拽 ──
-  const viewDragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const reorderViews = useMutation({
     mutationFn: (ids: Array<number | string>) => viewApi.reorder(wid!, tid!, ids),
     onSuccess: () => {
@@ -820,19 +762,6 @@ export default function GridPage() {
     return out
   }, [selectedRows, numericFields])
 
-  // 视图 Segmented 选项（支持拖拽排序）
-  // 注意：loadView 未用 useCallback 包裹，随渲染重建；此处直接计算，避免 lint 缺依赖警告
-  const segmentedOptions = views.map(v => ({
-    label: (
-      <DndViewTab
-        view={v}
-        active={activeViewId != null && String(v.id) === String(activeViewId)}
-        onClick={() => loadView(v)}
-      />
-    ),
-    value: String(v.id),
-  }))
-
   /** 右侧模式按钮组 —— 仅渲染数据表实际拥有的视图类型；仅 grid 时隐藏（推导逻辑在 viewModes.ts，纯函数可单测） */
   const { buttons: modeButtons, visible: showModeSwitch } = useMemo(
     () => deriveModeSwitch(views, MODE_BUTTONS),
@@ -845,339 +774,99 @@ export default function GridPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* 顶部工具栏 */}
-      <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-container)', display: 'flex', gap: 8, alignItems: 'center' }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)}>返回</Button>
-        <Text strong style={{ fontSize: 16 }}>{table?.name || '...'}</Text>
-        {/* 统计小徽标（来自后端增强字段） */}
-        {table?.record_count != null && table.record_count > 0 && (
-          <Tag color="blue" style={{ marginLeft: 0 }}>{table.record_count} 条记录</Tag>
-        )}
-        <div style={{ flex: 1 }} />
-        {/* 右侧主操作区 */}
-        <Space size={6}>
-          {mode === 'grid' && (
-            <Tooltip title={newRowActive || editingRowId != null ? '请先完成当前编辑' : '新增一行：在表格末尾添加空记录，逐格填写后回车保存'}>
-              <Button
-                type="primary"
-                size="middle"
-                icon={<PlusOutlined />}
-                data-testid="add-row-btn"
-                onClick={startNewRow}
-                disabled={!canEditRecords || newRowActive || editingRowId != null}
-              >
-                新增行
-              </Button>
-            </Tooltip>
-          )}
-          <Tooltip title="表设置：管理字段结构、视图列表与权限授权">
-            <Button
-              data-testid="table-settings-btn"
-              icon={<MenuOutlined />}
-              onClick={() => setTableSettingsOpen(true)}
-            >
-              表设置
-            </Button>
-          </Tooltip>
-          <Tooltip title="导入 / 导出：批量更新或新增数据（upsert）、导出 CSV / Excel / JSON">
-            <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={() => setImportExportOpen(true)}>更新/导出</Button>
-          </Tooltip>
-          <Dropdown menu={{
-            items: [
-              { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
-              { type: 'divider' },
-              {
-                key: 'copy', icon: <CopyOutlined />, label: '复制表',
-                children: [
-                  { key: 'copy-structure', label: '仅复制表结构', onClick: () => copyTable.mutate({ mode: 'structure' }) },
-                  { key: 'copy-all', label: '复制表结构 + 全部数据', onClick: () => copyTable.mutate({ mode: 'all' }) },
-                  {
-                    key: 'copy-view',
-                    label: `复制当前视图数据${activeView ? `（${activeView.name}）` : ''}`,
-                    disabled: !activeView,
-                    onClick: () => activeView && copyTable.mutate({ mode: 'view', viewId: activeView.id }),
-                  },
-                ],
-              },
-              { key: 'move', icon: <SwapOutlined />, label: '移动到其他工作区', onClick: () => setMoveOpen(true) },
-              { type: 'divider' },
-              {
-                key: 'delete', icon: <DeleteOutlined />, danger: true, label: '删除表',
-                disabled: !canEditSchema,
-                onClick: () => Modal.confirm({
-                  title: `删除表 "${table?.name}" ？`,
-                  content: '表内所有记录和字段将被永久移除。此操作不可恢复。',
-                  okText: '删除',
-                  okType: 'danger',
-                  cancelText: '取消',
-                  onOk: () => tableApi.remove(wid!, tid!).then(() => {
-                    message.success('表已删除')
-                    queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
-                    navigate(`/w/${wid}`)
-                  }),
-                }),
-              },
-            ]
-          }}><Tooltip title="更多操作：刷新、复制表、移动工作区、删除表"><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></Tooltip></Dropdown>
-        </Space>
-      </div>
+      <GridToolbar
+        wid={wid!}
+        tid={tid!}
+        tableKey={tableKey}
+        tableName={table?.name}
+        recordCount={table?.record_count}
+        mode={mode}
+        addRowDisabled={!canEditRecords || newRowActive || editingRowId != null}
+        onAddRow={startNewRow}
+        canEditSchema={canEditSchema}
+        onOpenTableSettings={() => setTableSettingsOpen(true)}
+        onOpenImportExport={() => setImportExportOpen(true)}
+        activeViewName={activeView?.name}
+        activeViewId={activeView?.id}
+        onCopyTable={(opts) => copyTable.mutate(opts)}
+        onMove={() => setMoveOpen(true)}
+      />
 
       {/* 视图切换 + 操作栏（支持拖拽排序） */}
-      <div style={{
-        padding: '0 8px 0 0',
-        background: 'var(--cn-bg-container)',
-        borderBottom: '1px solid var(--cn-border)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        minHeight: 36,
-      }}>
-        {/* Segmented —— flex:1 占满弹性空间，min-width:0 允许在窄屏下被压缩从而触发内部滚动 */}
-        <div className="cn-segmented-wrap" style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', padding: '4px 0 4px 16px' }}>
-          <DndContext sensors={viewDragSensors} collisionDetection={closestCenter} onDragEnd={handleViewDragEnd}>
-            <SortableContext items={views.map(v => String(v.id))} strategy={horizontalListSortingStrategy}>
-              <Segmented
-                value={activeViewId != null ? String(activeViewId) : undefined}
-                onChange={(v) => {
-                  const key = String(v)
-                  loadView(views.find(vv => String(vv.id) === key) || null)
-                }}
-                options={segmentedOptions}
-                className="cn-segmented"
-                style={{ width: '100%' }}
-              />
-            </SortableContext>
-          </DndContext>
-        </div>
-
-        {/* 右侧紧凑按钮组 —— flex-shrink:0 保证不被 Segmented 挤压 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, paddingRight: 8 }}>
-          {/* 视图新建（常显）+ 更多操作收进 Dropdown */}
-          <Tooltip title="新建视图">
-            <Button size="small" type="text" icon={<PlusOutlined />} onClick={() => setCreateViewOpen(true)} />
-          </Tooltip>
-          <Dropdown
-            trigger={['click']}
-            menu={{
-              items: [
-                {
-                  key: 'edit',
-                  icon: <EditOutlined />,
-                  label: '编辑当前视图',
-                  disabled: !activeView,
-                  onClick: () => setEditViewOpen(true),
-                },
-                {
-                  key: 'delete',
-                  icon: <DeleteOutlined />,
-                  danger: true,
-                  label: '删除当前视图',
-                  disabled: !activeView,
-                  onClick: () => {
-                    if (activeView) {
-                      Modal.confirm({
-                        title: '确定删除此视图？',
-                        content: activeView.name,
-                        okText: '删除',
-                        okType: 'danger',
-                        cancelText: '取消',
-                        onOk: () => activeViewId != null && removeView.mutate(String(activeViewId)),
-                      })
-                    }
-                  },
-                },
-                { type: 'divider' },
-                {
-                  key: 'import',
-                  icon: <ImportOutlined />,
-                  label: '导入视图',
-                  onClick: () => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) },
-                },
-                {
-                  key: 'export',
-                  icon: <ExportOutlined />,
-                  label: '导出视图',
-                  onClick: async () => {
-                    try {
-                      const data = await viewApi.exportViews(wid!, tid!)
-                      if (!data.length) {
-                        message.warning('当前表暂无视图可导出')
-                        return
-                      }
-                      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = 'views.json'
-                      document.body.appendChild(a)
-                      a.click()
-                      document.body.removeChild(a)
-                      URL.revokeObjectURL(url)
-                      message.success(`已导出 ${data.length} 个视图`)
-                    } catch (err) {
-                      message.error(err instanceof Error ? err.message : '导出失败')
-                    }
-                  },
-                },
-              ],
-            }}
-          >
-            <Tooltip title="视图更多操作">
-              <Button size="small" type="text" icon={<MoreOutlined />} />
-            </Tooltip>
-          </Dropdown>
-
-          <div style={{ width: 1, height: 16, background: 'var(--cn-border)', margin: '0 4px' }} />
-
-          {/* 视图模式切换 —— 仅渲染数据表实际拥有的视图类型；仅 grid 一种时隐藏 */}
-          {showModeSwitch && (
-            <Space.Compact size="small" data-testid="view-mode-switch">
-              {modeButtons.map((b) => (
-                <Tooltip key={b.mode} title={b.tooltip}>
-                  <Button
-                    size="small"
-                    type={mode === b.mode ? 'primary' : 'default'}
-                    icon={b.icon}
-                    data-mode={b.mode}
-                    onClick={() => handleModeChange(b.mode)}
-                  />
-                </Tooltip>
-              ))}
-            </Space.Compact>
-          )}
-
-          <Input.Search
-            size="small"
-            placeholder="搜索当前视图..."
-            allowClear
-            prefix={<SearchOutlined />}
-            value={searchQuery}
-            onChange={e => { setSearchQuery(e.target.value); setOffset(0) }}
-            style={{ width: 160 }}
-          />
-          <Tooltip title="筛选规则：按字段条件过滤当前视图的行，规则保存在视图中">
-            <Button
-              size="small"
-              icon={<FilterOutlined />}
-              type={viewFilters.length ? 'primary' : 'default'}
-              data-testid="view-filter-btn"
-              onClick={() => setViewConfigOpen(true)}
-            />
-          </Tooltip>
-          <Tooltip title="显示模式：设置行密度、边框、斑马纹等（对所有视图生效）">
-            <Button
-              size="small"
-              icon={<SettingOutlined />}
-              data-testid="display-settings-btn"
-              onClick={() => setSettingsOpen(true)}
-            />
-          </Tooltip>
-        </div>
-      </div>
+      <GridViewBar
+        wid={wid!}
+        tid={tid!}
+        views={views}
+        activeViewId={activeViewId}
+        mode={mode}
+        modeButtons={modeButtons}
+        showModeSwitch={showModeSwitch}
+        hasFilters={viewFilters.length > 0}
+        searchQuery={searchQuery}
+        onSearchChange={(q) => { setSearchQuery(q); setOffset(0) }}
+        onSelectView={(v) => loadView(v)}
+        onModeChange={handleModeChange}
+        onDragEnd={handleViewDragEnd}
+        onCreate={() => setCreateViewOpen(true)}
+        onEdit={() => setEditViewOpen(true)}
+        onDelete={() => activeViewId != null && removeView.mutate(String(activeViewId))}
+        onImport={() => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) }}
+        onOpenViewConfig={() => setViewConfigOpen(true)}
+        onOpenDisplaySettings={() => setSettingsOpen(true)}
+      />
 
       {/* 主内容 — flex:1 占满剩余空间，overflow:hidden 交给内部 Table 的虚拟滚动 */}
       <div ref={gridAreaRef} style={{ flex: 1, minHeight: 0, padding: '12px 16px', background: 'var(--cn-bg-page)', display: 'flex', flexDirection: 'column' }}>
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: 48 }}>加载中...</div>
         ) : mode === 'grid' ? (
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <Table
-              ref={tableRef as any}
-              rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns}
-              locale={{
-                emptyText: (
-                  <div style={{ padding: '32px 0' }} data-testid="grid-empty-state">
-                    <Empty description="这张表还没有数据，点击下方按钮录入第一行，或通过「更新/导出」批量导入" />
-                    <Button
-                      type="primary"
-                      icon={<PlusOutlined />}
-                      style={{ marginTop: 12 }}
-                      disabled={!canEditRecords}
-                      onClick={startNewRow}
-                    >新增一行</Button>
-                  </div>
-                ),
-              }}
-              dataSource={(() => {
-                if (!newRowActive) return (rowList.items || [])
-                const newRow = { id: NEW_ROW_KEY } as unknown as RowResponse
-                const items = rowList.items || []
-                return newRowPosition === 'top' ? [newRow, ...items] : [...items, newRow]
-              })()}
-              bordered={settings.bordered}
-              showHeader={settings.showHeader}
-              style={{ flex: 1, minHeight: 0 }}
-              rowClassName={(record, i) => {
-                const classes: string[] = []
-                if (isNewRow(record.id)) classes.push('cn-table-row-new')
-                if (settings.striped && i % 2 === 1) classes.push('table-row-striped')
-                return classes.join(' ')
-              }}
-              rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 40 }}
-              pagination={false}
-              scroll={{ x: Math.max(gridAreaSize.width, 1200), y: Math.max(gridAreaSize.height - 140, 200) }}
-              virtual
-              onChange={(_pag, _fil, sorter, extra) => {
-                // 只在用户点击列头排序时（extra.action === 'sort'）才处理排序，
-                // 分页/筛选变化时 AntD 也会传当前排序状态，但不应触发 sort 处理逻辑
-                if (extra?.action !== 'sort') {
-                  return
-                }
-                // 处理列排序 — Ant Design sorter 可能是单对象或数组
-                // 受控排序循环：ascend → descend → null（清除）
-                type SorterInfo = { field?: string | number | readonly (string | number)[]; order?: 'ascend' | 'descend' | null }
-                const raw = sorter as SorterInfo | SorterInfo[] | null
-                const items: SorterInfo[] = Array.isArray(raw) ? raw : (raw ? [raw] : [])
-                const validItems = items.filter(it => typeof it?.field === 'string') as Array<{ field: string; order: 'ascend' | 'descend' | null }>
-                if (validItems.length === 0) {
-                  return
-                }
-                const activeItem = validItems.find(it => it.order !== null) ?? validItems[0]
-                const field = activeItem.field
-                const order = activeItem.order
-                if (order === null) {
-                  // 清除：只移除该字段的排序规则，保留其他
-                  updateViewSortings(prev => prev.filter(sr => sr.field_name !== field))
-                } else {
-                  const newSort: SortRule = { field_name: field, direction: order === 'ascend' ? 'asc' : 'desc' }
-                  updateViewSortings(prev => {
-                    const without = prev.filter(sr => sr.field_name !== field)
-                    return [newSort, ...without]
-                  })
-                }
-                setOffset(0)
-              }}
-              onRow={(record) => (
-                isNewRow(record.id) ? {} : ({ onDoubleClick: () => openDetailWithPrefetch(record) })
-              )}
-            />
-            <Pagination
-              style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}
-              current={Math.floor(offset / limit) + 1}
-              pageSize={limit}
-              total={rowList.total}
-              showSizeChanger
-              pageSizeOptions={[25, 50, 100, 200]}
-              showTotal={(t) => `共 ${t} 条`}
-              onChange={(p, l) => {
-                setOffset((p - 1) * l)
-                setLimit(l)
-                // 预取下一页 —— 只有存在下一页且当前是 grid 模式（非全量拉取）时才预取
-                const nextOffset = p * l
-                if (mode === 'grid' && nextOffset < rowList.total) {
-                  void queryClient.prefetchQuery({
-                    queryKey: ['table-records', tableKey, mode, nextOffset, l, effectiveFilters ?? [], sortsParam ?? [], viewFilterLogic],
-                    queryFn: () => recordApi.list(wid!, tid!, {
-                      offset: nextOffset, limit: l,
-                      filters: effectiveFilters?.length ? effectiveFilters : undefined,
-                      sorts: sortsParam?.length ? sortsParam : undefined,
-                      filter_logic: viewFilterLogic,
-                    }),
-                    staleTime: 10_000,
-                  })
-                }
-              }}
-            />
-          </div>
+          <GridTableSection
+            tableRef={tableRef}
+            columns={columns}
+            settings={{ density, bordered, showHeader, striped }}
+            isLoading={isLoading}
+            rows={rowList.items || []}
+            total={rowList.total}
+            newRowActive={newRowActive}
+            newRowPosition={newRowPosition}
+            canEditRecords={canEditRecords}
+            selectedRowKeys={selectedRowKeys}
+            onSelectionChange={setSelectedRowKeys}
+            onAddRow={startNewRow}
+            onRowDoubleClick={openDetailWithPrefetch}
+            onSort={(field, direction) => {
+              if (direction === null) {
+                // 清除：只移除该字段的排序规则，保留其他
+                updateViewSortings(prev => prev.filter(sr => sr.field_name !== field))
+              } else {
+                const newSort: SortRule = { field_name: field, direction }
+                updateViewSortings(prev => {
+                  const without = prev.filter(sr => sr.field_name !== field)
+                  return [newSort, ...without]
+                })
+              }
+              setOffset(0)
+            }}
+            gridAreaSize={gridAreaSize}
+            offset={offset}
+            limit={limit}
+            onPageChange={(p, l) => { setOffset((p - 1) * l); setLimit(l) }}
+            prefetchNext={(nextOffset, l) => {
+              // 预取下一页 —— 只有存在下一页且当前是 grid 模式（非全量拉取）时才预取
+              if (mode === 'grid' && nextOffset < rowList.total) {
+                void queryClient.prefetchQuery({
+                  queryKey: ['table-records', tableKey, mode, nextOffset, l, effectiveFilters ?? [], sortsParam ?? [], viewFilterLogic],
+                  queryFn: () => recordApi.list(wid!, tid!, {
+                    offset: nextOffset, limit: l,
+                    filters: effectiveFilters?.length ? effectiveFilters : undefined,
+                    sorts: sortsParam?.length ? sortsParam : undefined,
+                    filter_logic: viewFilterLogic,
+                  }),
+                  staleTime: 10_000,
+                })
+              }
+            }}
+          />
         ) : mode === 'kanban' ? (
           <KanbanView
             rows={rowList.items || []}
@@ -1203,31 +892,17 @@ export default function GridPage() {
       </div>
 
       {/* 底部聚合条 */}
-      {selectedRowKeys.length > 0 && (
-        <div style={{ padding: '8px 16px', borderTop: '1px solid var(--cn-border)', background: 'var(--cn-bg-container)', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <Tag color="blue" style={{ margin: 0 }}>已选 {selectedRowKeys.length} 行</Tag>
-          <Space size="middle">
-            {Object.entries(aggregates).map(([name, a]) => (
-              <Tag key={name} style={{ margin: 0 }}>{name}: {a.count}条 · 和 {a.sum.toFixed(2)} · 均值 {a.avg.toFixed(2)}</Tag>
-            ))}
-          </Space>
-          <div style={{ marginLeft: 'auto' }}>
-            <Space>
-              <Button size="small" icon={<CopyOutlined />} loading={copyRow.isPending}
-                onClick={() => copyRow.mutate(selectedRowKeys as Array<number | string>)}>复制选中</Button>
-              <Button size="small" danger icon={<DeleteOutlined />}
-                onClick={() => Modal.confirm({
-                  title: `确定删除 ${selectedRowKeys.length} 行？`,
-                  onOk: () => deleteRows.mutate(selectedRowKeys as Array<number | string>, {
-                    onSuccess: () => { message.success('已删除'); setSelectedRowKeys([]) },
-                  }),
-                })}
-                loading={deleteRows.isPending}>删除选中</Button>
-              <Button size="small" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
-            </Space>
-          </div>
-        </div>
-      )}
+      <GridAggregationBar
+        selectedCount={selectedRowKeys.length}
+        aggregates={aggregates}
+        copyLoading={copyRow.isPending}
+        deleteLoading={deleteRows.isPending}
+        onCopy={() => copyRow.mutate(selectedRowKeys as Array<number | string>)}
+        onDelete={() => deleteRows.mutate(selectedRowKeys as Array<number | string>, {
+          onSuccess: () => { message.success('已删除'); setSelectedRowKeys([]) },
+        })}
+        onClear={() => setSelectedRowKeys([])}
+      />
 
       {/* 抽屉 & 对话框 */}
       {detailOpen && (
@@ -1281,111 +956,24 @@ export default function GridPage() {
         onSaveOptions={(o) => { setViewOptionsDraft(o) }}
       />
 
-      {/* 创建新视图 Modal */}
-      <Modal
-        title="创建新视图"
-        open={createViewOpen}
-        onCancel={() => setCreateViewOpen(false)}
-        footer={null}
-        width={720}
-        className="cevf-modal"
-        destroyOnHidden
-      >
-        <CreateEditViewForm
-          fields={table?.fields || []}
-          submitLabel="创建"
-          onSubmit={(name, vt, opts) => {
-            const payload: { name: string; view_type: string; view_options?: Record<string, unknown> } = { name, view_type: vt }
-            if (opts && Object.keys(opts).length) payload.view_options = opts
-            createView.mutate(payload)
-            setCreateViewOpen(false)
-          }}
-        />
-      </Modal>
-
-      {/* 编辑视图 Modal */}
-      <Modal
-        title="编辑视图"
-        open={editViewOpen}
-        onCancel={() => setEditViewOpen(false)}
-        footer={null}
-        width={720}
-        className="cevf-modal"
-        destroyOnHidden
-      >
-        {activeView && (
-          <CreateEditViewForm
-            fields={table?.fields || []}
-            initialName={activeView.name}
-            initialType={activeView.view_type}
-            initialOptions={activeView.view_options || undefined}
-            submitLabel="保存"
-            onSubmit={(name, vt, opts) => {
-              const payload: { name: string; view_type: string; view_options?: Record<string, unknown> } = { name, view_type: vt }
-              if (opts && Object.keys(opts).length) payload.view_options = opts
-              updateView.mutate({ vid: activeView.id, ...payload })
-              setEditViewOpen(false)
-            }}
-          />
-        )}
-      </Modal>
-
-      {/* 导入视图 Modal */}
-      <Modal
-        title="导入视图"
-        open={importViewsOpen}
-        onCancel={() => setImportViewsOpen(false)}
-        width={560}
-        onOk={() => {
-          if (!importFileContent) {
-            message.warning('请先选择或拖入 JSON 文件')
-            return
-          }
-          let parsed: ViewCreate[]
-          try {
-            parsed = JSON.parse(importFileContent)
-            if (!Array.isArray(parsed)) throw new Error('JSON 根节点必须是数组')
-          } catch (e) {
-            message.error('JSON 解析失败: ' + (e instanceof Error ? e.message : String(e)))
-            return
-          }
-          importViews.mutate(parsed)
-        }}
-        confirmLoading={importViews.isPending}
-        okText="导入"
-        cancelText="取消"
-        okButtonProps={{ disabled: !importFileContent }}
-      >
-        <Upload.Dragger
-          accept=".json,application/json"
-          maxCount={1}
-          fileList={importFile ? [{ uid: '-1', name: importFile.name, status: 'done' }] : []}
-          beforeUpload={(file: File) => {
-            const reader = new FileReader()
-            reader.onload = () => {
-              setImportFile(file)
-              setImportFileContent(String(reader.result ?? ''))
-            }
-            reader.onerror = () => {
-              message.error('读取文件失败')
-              setImportFile(null)
-              setImportFileContent('')
-            }
-            reader.readAsText(file, 'utf-8')
-            return false
-          }}
-          onRemove={() => { setImportFile(null); setImportFileContent(''); return true }}
-        >
-          <p className="ant-upload-drag-icon"><UploadOutlined /></p>
-          <p className="ant-upload-text">点击或拖拽 JSON 文件到此处</p>
-          <p className="ant-upload-hint">支持 .json 格式，内容为视图配置数组</p>
-        </Upload.Dragger>
-        {importFile && (
-          <div style={{ marginTop: 12, fontSize: 12, color: '#1677ff', textAlign: 'center' }}>
-            已选择：{importFile.name}（{(importFile.size / 1024).toFixed(1)} KB）
-          </div>
-        )}
-      </Modal>
+      {/* 创建 / 编辑 / 导入视图 Modal 组 */}
+      <GridViewModals
+        fields={table?.fields || []}
+        activeView={activeView}
+        createOpen={createViewOpen}
+        onCloseCreate={() => setCreateViewOpen(false)}
+        editOpen={editViewOpen}
+        onCloseEdit={() => setEditViewOpen(false)}
+        importOpen={importViewsOpen}
+        onCloseImport={() => setImportViewsOpen(false)}
+        onCreate={(payload) => { createView.mutate(payload); setCreateViewOpen(false) }}
+        onEditSave={(vid, payload) => { updateView.mutate({ vid, ...payload }); setEditViewOpen(false) }}
+        onImport={(parsed) => importViews.mutate(parsed)}
+        importPending={importViews.isPending}
+        importFile={importFile}
+        importFileContent={importFileContent}
+        onImportFileChange={(f, content) => { setImportFile(f); setImportFileContent(content) }}
+      />
 
       {/* 移动表 Modal */}
       <Modal
