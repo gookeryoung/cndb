@@ -240,7 +240,9 @@ class TestIngestTablesFromConfig:
         mock_dt = MagicMock()
         mock_dt.id = 42
 
-        with patch("cndb.plugins.tables.services.transfer.ingest_from_api", return_value=(mock_dt, [1, 2, 3], ["a", "b"])):
+        with patch(
+            "cndb.plugins.tables.services.transfer.ingest_from_api", return_value=(mock_dt, [1, 2, 3], ["a", "b"])
+        ):
             results = acl.ingest_tables_from_config(
                 engine=MagicMock(),
                 db=MagicMock(),
