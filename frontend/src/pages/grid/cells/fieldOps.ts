@@ -1,3 +1,34 @@
+import type { Field } from '@/api'
+
+/** 新增行草稿预填值：default_value 优先，其次 date/datetime 的 auto_fill 规则，否则 undefined.
+ *
+ * text 字段启用自动编号（config.default_mode=auto_increment）时返回 undefined：
+ * 编号由后端建行时按库内已有数据推算（客户端猜测与库内 max 可能不一致），不预填.
+ *
+ * 供 GridPage 行内新增 和 RowDetailDrawer 抽屉新建行共用 —— 两处必须保持相同的预填语义.
+ */
+export function defaultValueForNewRow(f: Field): unknown {
+  if (f.field_type === 'text' && (f.config?.default_mode as string) === 'auto_increment') {
+    return undefined
+  }
+  if (f.default_value !== null && f.default_value !== undefined && f.default_value !== '') {
+    return f.default_value
+  }
+  const autoFill = (f.config?.auto_fill as string) ?? ''
+  if (f.field_type === 'date' && (autoFill === 'on_create' || autoFill === 'on_update')) {
+    // 延迟 import：fieldOps.ts 是纯工具模块，不预先加载 dayjs
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const dayjs = require('dayjs')
+    return dayjs().format('YYYY-MM-DD')
+  }
+  if (f.field_type === 'datetime' && (autoFill === 'on_create' || autoFill === 'on_update')) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const dayjs = require('dayjs')
+    return dayjs().format('YYYY-MM-DD HH:mm:ss')
+  }
+  return undefined
+}
+
 /** 字段类型 → 可用筛选操作符映射 + 别名解析.
  *
  * 被 ColumnFilterDropdown、ViewConfigDialog 和 GridPage 的列构建器共用.
