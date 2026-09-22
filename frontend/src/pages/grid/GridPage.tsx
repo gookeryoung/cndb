@@ -39,6 +39,7 @@ import TableSettingsModal from '@/pages/settings/TableSettingsModal'
 import { buildColumns, type RowInlineOps, type InlineEditCellProps } from './cells/buildColumns'
 import { useNewRowAutoScroll, type TableScrollTarget } from './cells/useNewRowAutoScroll'
 import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCellValueForEdit } from './cells/GridCell'
+import { defaultValueForNewRow } from './cells/fieldOps'
 import { type ViewMode, VALID_MODES, deriveModeSwitch } from './views/viewModes'
 import { useTableSettingsStore, useGridViewStore } from '@/store'
 import { useElementSize, useDebouncedCallback } from '@/hooks'
@@ -70,28 +71,6 @@ function ViewFallback() {
       视图加载中...
     </div>
   )
-}
-
-/** 新增行草稿预填值：default_value 优先，其次 date/datetime 的 auto_fill 规则，否则空值.
- *
- * text 字段启用自动编号（config.default_mode=auto_increment）时返回 undefined：
- * 编号由后端建行时按库内已有数据推算（客户端猜测与库内 max 可能不一致），不预填.
- */
-function defaultValueForNewRow(f: Field): unknown {
-  if (f.field_type === 'text' && (f.config?.default_mode as string) === 'auto_increment') {
-    return undefined
-  }
-  if (f.default_value !== null && f.default_value !== undefined && f.default_value !== '') {
-    return normalizeCellValueForEdit(f.default_value, f)
-  }
-  const autoFill = (f.config?.auto_fill as string) ?? ''
-  if (f.field_type === 'date' && (autoFill === 'on_create' || autoFill === 'on_update')) {
-    return dayjs().format('YYYY-MM-DD')
-  }
-  if (f.field_type === 'datetime' && (autoFill === 'on_create' || autoFill === 'on_update')) {
-    return dayjs().format('YYYY-MM-DD HH:mm:ss')
-  }
-  return normalizeCellValueForEdit(null, f)
 }
 
 const MODE_STORAGE_KEY = 'cndb_current_mode'

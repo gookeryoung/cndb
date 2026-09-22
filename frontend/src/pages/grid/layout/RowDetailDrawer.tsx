@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { recordApi, fileApi } from '@/api'
 import { useRowAudit, useRowReferences, useUpdateRowOptimistic } from '@/api/hooks'
 import type { RowResponse, Field, AttachmentFile, RowValues } from '@/api'
-import { extractSelectOptions } from '../cells/fieldOps'
+import { extractSelectOptions, defaultValueForNewRow } from '../cells/fieldOps'
 
 const { Title, Text } = Typography
 
@@ -59,7 +59,15 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
       form.setFieldsValue(row)
     } else {
       form.resetFields()
-      if (initialValues) form.setFieldsValue(initialValues)
+      // 先按 fields 生成所有字段的自动预填值（default_value + auto_fill=on_create/on_update）
+      const prefilled: RowValues = {}
+      for (const f of fields) {
+        const v = defaultValueForNewRow(f)
+        if (v !== undefined) prefilled[f.name] = v
+      }
+      // 再应用外部传入的 initialValues（如看板某列的分组字段）—— 同名字段由 initialValues 覆盖
+      if (initialValues) Object.assign(prefilled, initialValues)
+      if (Object.keys(prefilled).length > 0) form.setFieldsValue(prefilled)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row, initialValues, open])
