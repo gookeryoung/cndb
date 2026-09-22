@@ -15,7 +15,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import FieldManager, { fieldNoteText, formatIncrementExample } from './FieldManager'
+import FieldManager, { fieldNoteText, formatIncrementExample } from './index'
 import { renderProviders } from '@/test/render-providers'
 import { fieldApi, tableApi } from '@/api'
 
