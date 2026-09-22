@@ -29,7 +29,7 @@ export interface ViewOptionSchema {
   | 'direction'           // 升/降方向
   | 'switch'              // 开/关
   | 'number_enum'         // 数值枚举下拉
-  | 'done_flag'           // 完成标志：字段下拉 + 按字段类型动态切换的匹配值控件（存 done_field + done_value 两键）
+  | 'done_flag'           // 完成标志：字段下拉 + 判定操作符 + 按字段类型动态切换的匹配值控件（存 done_field + done_op + done_value 三键）
   /** 允许的后端 field_type 原始名 + 历史别名集合（FieldType.name 或别名都可匹配）.
    *  数组顺序即自动推断时的优先级（先排先试）。 */
   fieldTypes?: string[]
@@ -100,7 +100,7 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
     ],
   },
   {
-    key: 'done_field', label: '完成标志', group: '完成状态', tooltip: '选择字段并指定匹配值，满足条件的卡片以完成状态显示（标题删除线 + 绿色对勾、完成卡片自动置底、隐藏倒计时提醒）',
+    key: 'done_field', label: '完成标志', group: '完成状态', tooltip: '选择字段并指定判定条件，满足条件的卡片以完成状态显示（标题删除线 + 绿色对勾、完成卡片自动置底、隐藏倒计时提醒）。文本/日期等字段可选「不为空」作为完成条件，无需填匹配值',
     kind: 'done_flag', fieldTypes: ['boolean', 'select', 'multiselect', 'text', 'longtext', 'date', 'datetime'],
   },
 ]

@@ -103,13 +103,14 @@ function ConfigItem({ opt, fields, opts, updateOpt }: {
     )
   }
 
-  // 完成标志：字段下拉 + 匹配值复合控件（存 done_field + done_value 两键）
+  // 完成标志：字段下拉 + 操作符 + 匹配值复合控件（存 done_field + done_op + done_value 三键）
   if (opt.kind === 'done_flag') {
     return (
       <Form.Item label={opt.label} tooltip={opt.tooltip}>
         <DoneFlagFields
           fields={fields}
           doneField={opts.done_field as string | undefined}
+          doneOp={opts.done_op as string | undefined}
           doneValue={opts.done_value}
           onChange={(patch) => Object.entries(patch).forEach(([k, v]) => updateOpt(k, v))}
         />

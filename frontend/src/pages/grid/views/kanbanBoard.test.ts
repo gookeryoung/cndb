@@ -458,6 +458,38 @@ describe('isDoneRow', () => {
   })
 })
 
+describe('resolveDoneCtx op 支持', () => {
+  it('缺省 done_op 视为等值（旧数据零迁移）', () => {
+    const ctx = resolveDoneCtx({ done_field: '状态', done_value: 'done' }, fields)!
+    expect(ctx!.op).toBe('=')
+  })
+
+  it('is_not_empty 无需 done_value 即成立', () => {
+    const ctx = resolveDoneCtx({ done_field: '截止', done_op: 'is_not_empty' }, fields)!
+    expect(ctx!.op).toBe('is_not_empty')
+    expect(ctx!.value).toBeUndefined()
+  })
+
+  it('等值 op 仍要求 done_value 非空', () => {
+    expect(resolveDoneCtx({ done_field: '状态', done_op: '=' }, fields)).toBeNull()
+  })
+})
+
+describe('isDoneRow op 判定', () => {
+  it('date 字段 + is_not_empty：非空即完成（核心新能力）', () => {
+    const ctx = resolveDoneCtx({ done_field: '截止', done_op: 'is_not_empty' }, fields)!
+    expect(isDoneRow(makeRow({ id: 1, 截止: '2026-01-01' }), ctx)).toBe(true)
+    expect(isDoneRow(makeRow({ id: 1, 截止: null }), ctx)).toBe(false)
+  })
+
+  it('text 字段 + is_not_empty：非空串完成、空串未完成', () => {
+    const ctx = resolveDoneCtx({ done_field: '名称', done_op: 'is_not_empty' }, fields)!
+    expect(isDoneRow(makeRow({ id: 1, 名称: 'x' }), ctx)).toBe(true)
+    expect(isDoneRow(makeRow({ id: 1, 名称: '' }), ctx)).toBe(false)
+    expect(isDoneRow(makeRow({ id: 1, 名称: null }), ctx)).toBe(false)
+  })
+})
+
 // ── 完成勾选切换值（buildDoneToggleValue） ─────────────
 
 describe('buildDoneToggleValue', () => {
@@ -467,6 +499,11 @@ describe('buildDoneToggleValue', () => {
   it('select 未完成 → 勾选写入 done_value', () => {
     const ctx = resolveDoneCtx({ done_field: '状态', done_value: 'done' }, fields)!
     expect(buildDoneToggleValue(makeRow({ id: 1, 状态: 'todo' }), ctx)).toBe('done')
+  })
+
+  it('无值 op（is_not_empty）返回 undefined 哨兵，调用方据此禁用勾选', () => {
+    const ctx = resolveDoneCtx({ done_field: '截止', done_op: 'is_not_empty' }, fields)!
+    expect(buildDoneToggleValue(makeRow({ id: 1, 截止: '2026-01-01' }), ctx)).toBeUndefined()
   })
 
   it('select 已完成 → 取消清空（null）', () => {
