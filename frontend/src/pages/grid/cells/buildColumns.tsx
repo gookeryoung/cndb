@@ -49,10 +49,11 @@ export function buildColumns(
     .map<NonNullable<ColumnsType<RowResponse>>[number]>(f => {
       const sortRule = viewSortings.find(s => s.field_name === f.name)
       // 所有有排序规则的列都受控 sortOrder，保证 AntD 内部状态与 viewSortings 同步
-      // 这样任何排序列都能正确经历 ascend→descend→null 循环
-      const sortOrder: 'ascend' | 'descend' | null | undefined = sortRule
+      // 这样任何排序列都能正确经历 ascend → descend → null 循环
+      // 关键点：始终受控（null 表示无排序），避免受控/非受控切换导致 AntD 内部状态丢失
+      const sortOrder: 'ascend' | 'descend' | null = sortRule
         ? (sortRule.direction === 'asc' ? 'ascend' : 'descend')
-        : undefined
+        : null
       // 表头图标：任何有排序规则的列都显示箭头（视觉提示）
       const hasSortIndicator = !!sortRule
       const filterRule = viewFilters.find(fr => fr.field_name === f.name)
