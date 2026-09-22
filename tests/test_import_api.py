@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.transfer import (
+from cndb.plugins.tables.services.transfer import (
     analyze_json_columns,
     create_table_from_json_data,
 )

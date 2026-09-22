@@ -11,8 +11,15 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.access import TableAction
-from cndb.plugins.tables.records import (
+from cndb.plugins.tables.routers.tables import _get_table_or_404
+from cndb.plugins.tables.schemas import (
+    RecordCreate,
+    RecordListRequest,
+    RecordListResponse,
+    RecordUpdate,
+)
+from cndb.plugins.tables.services.core.access import TableAction
+from cndb.plugins.tables.services.core.records import (
     create_row,
     delete_row,
     get_row,
@@ -20,13 +27,6 @@ from cndb.plugins.tables.records import (
     restore_row,
     trash_row,
     update_row,
-)
-from cndb.plugins.tables.routers.tables import _get_table_or_404
-from cndb.plugins.tables.schemas import (
-    RecordCreate,
-    RecordListRequest,
-    RecordListResponse,
-    RecordUpdate,
 )
 
 logger = logging.getLogger(__name__)

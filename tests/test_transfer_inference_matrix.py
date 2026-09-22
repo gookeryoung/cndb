@@ -20,10 +20,10 @@ from typing import Any
 
 import pytest
 
-from cndb.plugins.tables import transfer
+from cndb.plugins.tables.field_types import default_registry
+from cndb.plugins.tables.services import transfer
 from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
-from cndb.plugins.tables.field_types import default_registry
 
 # ── 一、列推断矩阵（组 01-44，每组一列样本 → 期望 field_type）──────────
 

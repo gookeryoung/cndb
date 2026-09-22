@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.access import TableAction
 from cndb.plugins.tables.models import TablePermission
 from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import PermissionCreate, PermissionResponse, PermissionUpdate
+from cndb.plugins.tables.services.core.access import TableAction
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/permissions", tags=["permissions"])
 

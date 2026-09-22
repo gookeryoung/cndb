@@ -217,7 +217,7 @@ def _load_table_records(db: Session, table_id: int) -> tuple[Any, list[dict[str,
     返回 (DataTable, records_list)，records 是扁平 dict 列表。
     """
     from cndb.plugins.tables.models import DataTable
-    from cndb.plugins.tables.records import list_rows
+    from cndb.plugins.tables.services.core.records import list_rows
 
     table = db.get(DataTable, table_id)
     if not table:

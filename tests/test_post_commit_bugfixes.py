@@ -190,8 +190,8 @@ def test_bulk_update_invalid_link_target_not_applied(client, auth_headers) -> No
 
 def test_bulk_update_rows_invalid_link_target_not_applied(client, auth_headers, db_engine, db) -> None:
     """Bug 2 变体: bulk_update_rows（导入 upsert 分流路径）预校验失败抛 ValueError，物理列不更新."""
-    from cndb.plugins.tables.services.core import records as rec
     from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.tables.services.core import records as rec
 
     wid, tid_src, _ = _make_ws_with_link_pair(client, auth_headers, "bur")
     rid = client.post(

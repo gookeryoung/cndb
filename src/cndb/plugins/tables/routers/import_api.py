@@ -19,15 +19,15 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.api_config_loader import (
+from cndb.plugins.tables.models import DataTable
+from cndb.plugins.tables.services.importing.api_config_loader import (
     ApiConfigError,
     build_fetch_config,
     ingest_tables_from_config,
     load_api_config_text,
 )
-from cndb.plugins.tables.api_fetch import FetchConfig, fetch_json
-from cndb.plugins.tables.models import DataTable
-from cndb.plugins.tables.transfer import (
+from cndb.plugins.tables.services.importing.api_fetch import FetchConfig, fetch_json
+from cndb.plugins.tables.services.transfer import (
     analyze_json_columns,
     import_rows_from_json,
 )
@@ -134,7 +134,7 @@ def api_import_create_table(
     """抓 API + 自动建表 + 导入数据."""
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
 
-    from cndb.plugins.tables.transfer import ingest_from_api
+    from cndb.plugins.tables.services.transfer import ingest_from_api
 
     engine = db.get_bind()
 

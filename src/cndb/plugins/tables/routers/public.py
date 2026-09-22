@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from cndb.core.database import get_db
-from cndb.plugins.tables import records as rec
 from cndb.plugins.tables.models import DataField, DataTable, DataView
+from cndb.plugins.tables.services.core import records as rec
 
 router = APIRouter(prefix="/api/v1/public", tags=["public"])
 

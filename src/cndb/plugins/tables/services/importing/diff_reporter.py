@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any
 
 from cndb.plugins.tables.models import DataField
-from cndb.plugins.tables.transfer import infer_column_type
+from cndb.plugins.tables.services.transfer import infer_column_type
 
 from .row_validator import ValidationResult
 

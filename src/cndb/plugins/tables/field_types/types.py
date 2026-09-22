@@ -111,7 +111,7 @@ class TextFieldType(FieldType):
         ``max(最大值 + 1, increment_start)``，按补零位数格式化；
         ``extra_seen``（本批次已分配未落库值）同样参与取最大.
         """
-        from cndb.plugins.tables.ddl import table_exists
+        from cndb.plugins.tables.services.core.ddl import table_exists
 
         cfg = TextFieldConfig(**(field.config or {}))
         if cfg.default_mode != "auto_increment":
@@ -224,7 +224,7 @@ def _normalize_numeric_string(value: str) -> str | None:
     （transfer → records/models → field_types），复用推断层同一套归一逻辑，
     保证"识别出的格式一定能转换"。
     """
-    from cndb.plugins.tables.transfer import _normalize_numeric
+    from cndb.plugins.tables.services.transfer import _normalize_numeric
 
     return _normalize_numeric(value)
 

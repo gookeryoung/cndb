@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import inspect
 
 import cndb.plugins.tables.routers.fields as fields_router
-from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.models import DataTable
+from cndb.plugins.tables.services.core import records as rec
 
 # ── 通用脚手架 ────────────────────────────────────────
 
@@ -254,8 +254,8 @@ class TestMetadataRevertOnDdlFailure:
 class TestInspectionHelpers:
     def test_helpers_skip_non_physical_and_missing_table(self, db, db_engine):
         """无物理列字段 / 物理表不存在时巡检函数容错返回空。"""
-        from cndb.plugins.tables.services.core.ddl import find_duplicate_values, find_null_rows
         from cndb.plugins.tables.models import DataField
+        from cndb.plugins.tables.services.core.ddl import find_duplicate_values, find_null_rows
 
         dt = DataTable(workspace_id=1, name="t_helper")
         dt.ensure_db_name()
@@ -290,8 +290,8 @@ class TestInspectionHelpers:
 
     def test_inspection_helpers_ignore_invalid_callable(self, monkeypatch):
         """类型注册表被替换为 None 时巡检函数返回空（防御分支）。"""
-        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import ddl
 
         dt = DataTable(workspace_id=1, name="t_helper3")
         df = DataField(table_id=0, name="编号", field_type="text")
