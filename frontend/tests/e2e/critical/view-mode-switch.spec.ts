@@ -7,9 +7,9 @@
  *          若仅 grid 一种视图类型则整个按钮组隐藏（避免单按钮视觉噪音）.
  *
  * 精简说明（2026-09，测试金字塔下沉）：
- *      原 5 条"换表+换按钮数"矩阵收敛为代表性 1 例（科研项目 3 按钮）；
+ *      原 5 条"换表+换按钮数"矩阵收敛为代表性 1 例（科研项目 2 按钮）；
  *      矩阵全量断言下沉至单元层 src/pages/grid/viewModes.test.ts（deriveModeSwitch，
- *      与 seed 数据 1:1 对应：部门表 0/科研项目 3/项目进展 4/WBS任务分解 5/产品开发 5）；
+ *      与 seed 数据 1:1 对应：部门表 0/科研项目 2/项目进展 3/WBS任务分解 5/产品开发 4）；
  *      保留"点击切换"与"跨表导航"两条端到端链路断言.
  */
 import { test, expect } from "../fixtures/auth";
@@ -73,7 +73,7 @@ const ANON = ["setup", "chromium-anon"];
 
 test.describe("视图类型切换按钮 — 按数据表 views 动态配置", () => {
   // 代表性 1 例（矩阵全量断言已下沉至 viewModes.test.ts）
-  test("科研项目（科研项目管理）→ 模式按钮组显示 3 个按钮", async ({
+  test("科研项目（科研项目管理）→ 模式按钮组显示 2 个按钮", async ({
     page,
     request,
   }) => {
@@ -81,7 +81,7 @@ test.describe("视图类型切换按钮 — 按数据表 views 动态配置", ()
 
     const wid = await getWorkspaceId(request, "科研项目管理");
     await gotoTable(page, request, wid, "科研项目");
-    await assertModeButtonCount(page, 3);
+    await assertModeButtonCount(page, 2);
   });
 });
 
@@ -94,7 +94,7 @@ test.describe("动态按钮组 — 点击切换行为回归", () => {
     const wid = await getWorkspaceId(request, "科研项目管理");
     await gotoTable(page, request, wid, "科研项目");
 
-    await assertModeButtonCount(page, 3);
+    await assertModeButtonCount(page, 2);
 
     // 点击看板按钮 → Segmented 跳转到 kanban 类型的视图
     const kanbanBtn = page.locator('.ant-btn[data-mode="kanban"]');

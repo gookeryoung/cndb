@@ -38,18 +38,18 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
     expect(buttons).toEqual([{ mode: 'grid' }])
   })
 
-  it('科研项目（grid+kanban+calendar）→ 3 个按钮', () => {
-    const { buttons, visible } = deriveModeSwitch(view('grid', 'kanban', 'calendar'), ALL_BUTTONS)
+  it('科研项目（grid+kanban）→ 2 个按钮', () => {
+    const { buttons, visible } = deriveModeSwitch(view('grid', 'kanban'), ALL_BUTTONS)
     expect(visible).toBe(true)
-    expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kanban', 'calendar'])
+    expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kanban'])
   })
 
-  it('项目进展（grid+kanban+calendar+gantt）→ 4 个按钮', () => {
+  it('项目进展（grid+kanban+calendar）→ 3 个按钮', () => {
     const { buttons, visible } = deriveModeSwitch(
-      view('grid', 'kanban', 'calendar', 'gantt'), ALL_BUTTONS,
+      view('grid', 'kanban', 'calendar'), ALL_BUTTONS,
     )
     expect(visible).toBe(true)
-    expect(buttons).toHaveLength(4)
+    expect(buttons).toHaveLength(3)
   })
 
   it('WBS任务分解（grid+kanban+calendar+gantt+wbs）→ 5 个按钮', () => {
