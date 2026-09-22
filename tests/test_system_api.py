@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from cndb.backup import create_backup
+from cndb.cli.backup import create_backup
 from cndb.core.config import settings
 from cndb.plugins.accounts.models import User
 

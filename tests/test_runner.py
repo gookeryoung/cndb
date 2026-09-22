@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from cndb import runner
+from cndb.cli import main as runner
 
 
 def test_info_command_prints_version() -> None:
@@ -235,7 +235,7 @@ def test_build_success() -> None:
         patch.object(subprocess, "run", fake_run),
         patch.object(runner, "FRONTEND_DIR", fake_frontend),
         patch.object(runner, "ROOT_DIR", fake_root),
-        patch("cndb.runner.shutil.copytree"),
+        patch("cndb.cli.main.shutil.copytree"),
     ):
         runner.build(args)
 
@@ -278,7 +278,7 @@ def test_build_without_dist_dir_skips_copy() -> None:
         patch.object(runner, "_ensure_dev_env"),
         patch.object(subprocess, "run", fake_run),
         patch.object(runner, "FRONTEND_DIR", fake_frontend),
-        patch("cndb.runner.shutil.copytree") as mock_copy,
+        patch("cndb.cli.main.shutil.copytree") as mock_copy,
     ):
         runner.build(args)
 
@@ -323,8 +323,8 @@ def test_build_with_existing_static_dir() -> None:
         patch.object(subprocess, "run", fake_run),
         patch.object(runner, "FRONTEND_DIR", fake_frontend),
         patch.object(runner, "ROOT_DIR", fake_root),
-        patch("cndb.runner.shutil.rmtree", mock_rmtree),
-        patch("cndb.runner.shutil.copytree", mock_copy),
+        patch("cndb.cli.main.shutil.rmtree", mock_rmtree),
+        patch("cndb.cli.main.shutil.copytree", mock_copy),
     ):
         runner.build(args)
 

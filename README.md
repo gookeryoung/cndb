@@ -24,7 +24,7 @@
 uv sync --extra dev
 
 # 建表 + 注入演示数据
-uv run python -m cndb.seed
+uv run python -m cndb.cli.seed
 
 # 启动服务（默认 http://localhost:8000）
 uv run cndb serve

@@ -37,7 +37,7 @@ requires-python = ">=3.12"
 version         = "0.2.0"
 
 [project.scripts]
-cndb  = "cndb.runner:main"
+cndb  = "cndb.cli.main:main"
 cndbw = "cndb.gui.main_window:main"
 
 [project.optional-dependencies]
@@ -105,8 +105,8 @@ dev = ["cndb[dev]"]
 
 [tool.coverage.run]
 omit = [
-    "src/cndb/runner.py",
-    "src/cndb/seed.py",
+    "src/cndb/cli/main.py",
+    "src/cndb/cli/seed.py",
     "src/cndb/gui/**",
     "src/cndb/plugins/tables/routers/files.py",
 ]
