@@ -119,21 +119,17 @@ export default function GridViewBar({
 
       {/* 右侧紧凑按钮组 —— flex-shrink:0 保证不被 Segmented 挤压 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, paddingRight: 8 }}>
-        {/* 视图新建（常显）+ 更多操作收进 Dropdown */}
+        {/* 视图新建 + 编辑（均常显）+ 更多操作收进 Dropdown */}
         <Tooltip title="新建视图">
           <Button size="small" type="text" icon={<PlusOutlined />} onClick={onCreate} />
+        </Tooltip>
+        <Tooltip title="编辑当前视图">
+          <Button size="small" type="text" icon={<EditOutlined />} onClick={onEdit} disabled={!activeView} />
         </Tooltip>
         <Dropdown
           trigger={['click']}
           menu={{
             items: [
-              {
-                key: 'edit',
-                icon: <EditOutlined />,
-                label: '编辑当前视图',
-                disabled: !activeView,
-                onClick: onEdit,
-              },
               {
                 key: 'delete',
                 icon: <DeleteOutlined />,
