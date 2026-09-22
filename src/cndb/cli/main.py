@@ -20,9 +20,9 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from cndb.backup import backup_command
-from cndb.restore import restore_command
-from cndb.seed import seed as seed_command
+from cndb.cli.backup import backup_command
+from cndb.cli.restore import restore_command
+from cndb.cli.seed import seed as seed_command
 
 # 源码根目录（仅开发命令可用；wheel 安装后不存在）
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -296,7 +296,7 @@ def main() -> None:
     )
 
     # users 子命令组
-    from cndb.cli_users import register_users_subparser
+    from cndb.cli.users import register_users_subparser
 
     register_users_subparser(sub)
 
@@ -325,7 +325,7 @@ def main() -> None:
     elif args.command == "info":
         sys.exit(info_command())
     elif args.command == "users":
-        from cndb.cli_users import users_command
+        from cndb.cli.users import users_command
 
         users_command(args)
     else:
