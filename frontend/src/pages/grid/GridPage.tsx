@@ -414,6 +414,11 @@ export default function GridPage() {
       onSuccess: () => message.success('已删除'),
     })
   }, [deleteRows, message])
+
+  /** 看板卡片勾选/取消完成 —— 直接把 done_field 目标值写回该行 */
+  const handleToggleDone = useCallback((r: RowResponse, values: RowValues) => {
+    updateRow.mutate({ rowId: r.id as number | string, values })
+  }, [updateRow])
   const copyRow = useMutation({
     mutationFn: async (ids: Array<number | string>) => {
       const copies: Array<Record<string, unknown>> = []
@@ -902,6 +907,8 @@ export default function GridPage() {
                 canDelete={canEditRecords}
                 onAddCard={openCreateDrawer}
                 canAdd={canEditRecords}
+                onToggleDone={handleToggleDone}
+                canEdit={canEditRecords}
               />
             ) : mode === 'gallery' ? (
               <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
