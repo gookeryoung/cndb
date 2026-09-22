@@ -17,6 +17,8 @@ export interface InlineEditCellProps {
   /** 单元格回车提交（行级编辑通常为 noop，由行操作列统一保存） */
   onFieldCommit: (fieldName: string) => void
   onFieldCancel: () => void
+  /** 自动填充锁定时，预填字段名集合 —— 这些字段在受控编辑态下只读 */
+  lockedFields?: Set<string>
 }
 
 /** 行内编辑操作列回调 —— 新增行 / 整行编辑共用的操作挂载点 */
@@ -92,6 +94,7 @@ export function buildColumns(
           // 行内编辑 override：优先渲染受控编辑态，非编辑行回退到普通 GridCell
           const inline = inlineOps?.getInlineEdit(record)
           if (inline) {
+            const locked = inline.lockedFields?.has(f.name) ?? false
             return (
               <GridCell
                 value={inline.values[f.name]}
@@ -103,6 +106,7 @@ export function buildColumns(
                 onDraftCommit={inline.onFieldCommit}
                 onDraftCancel={inline.onFieldCancel}
                 showActionButtons={false}
+                readOnly={locked}
               />
             )
           }

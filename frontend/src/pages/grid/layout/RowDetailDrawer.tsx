@@ -2,13 +2,14 @@
 
 import React from 'react'
 import { Drawer, Form, Input, Button, Typography, Timeline, Tag, App as AntApp, Select, DatePicker, InputNumber, Switch, Upload, Image, Tooltip } from 'antd'
-import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons'
+import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined, LockOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { recordApi, fileApi } from '@/api'
 import { useRowAudit, useRowReferences, useUpdateRowOptimistic } from '@/api/hooks'
 import type { RowResponse, Field, AttachmentFile, RowValues } from '@/api'
 import { extractSelectOptions, defaultValueForNewRow } from '../cells/fieldOps'
+import { useTableSettingsStore } from '@/store'
 
 const { Title, Text } = Typography
 
@@ -29,9 +30,20 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   const [form] = Form.useForm()
+  const autoFillLocked = useTableSettingsStore(s => s.autoFillLocked)
 
   // 模式：row 存在 → 编辑；否则 → 新建
   const isCreate = !row
+
+  // 新建模式下计算锁定字段集合（自动填充锁定开启时，预填字段不允许修改）
+  const lockedFieldNames = React.useMemo(() => {
+    if (!isCreate || !autoFillLocked) return new Set<string>()
+    const locked = new Set<string>()
+    for (const f of fields) {
+      if (defaultValueForNewRow(f) !== undefined) locked.add(f.name)
+    }
+    return locked
+  }, [isCreate, autoFillLocked, fields])
 
   // 行特定的审计日志 / 反向引用 —— 新建模式下不请求
   const { data: audit = [] } = useRowAudit(wid, tid, row?.id, open && !!row)
@@ -104,11 +116,28 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
       {/* 字段值编辑 */}
       <Title level={5}>字段值</Title>
       <Form form={form} layout="vertical">
-        {fields.map(f => (
-          <Form.Item key={String(f.id)} label={f.name} name={f.name} style={{ marginBottom: 12 }}>
-            <FieldEditor field={f} wid={wid} />
-          </Form.Item>
-        ))}
+        {fields.map(f => {
+          const locked = lockedFieldNames.has(f.name)
+          return (
+            <Form.Item
+              key={String(f.id)}
+              label={
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  {f.name}
+                  {locked && (
+                    <Tooltip title="此字段为自动预填，已锁定（可在个人设置 > 操作风格中关闭）">
+                      <LockOutlined style={{ fontSize: 11, color: '#bfbfbf' }} />
+                    </Tooltip>
+                  )}
+                </span>
+              }
+              name={f.name}
+              style={{ marginBottom: 12 }}
+            >
+              <FieldEditor field={f} wid={wid} disabled={locked} />
+            </Form.Item>
+          )
+        })}
       </Form>
 
       {!isCreate && (
@@ -159,11 +188,13 @@ function FieldEditor({
   value,
   onChange = () => { },
   wid,
+  disabled,
 }: {
   field: Field
   value?: unknown
   onChange?: (v: unknown) => void
   wid: string
+  disabled?: boolean
 }) {
   const ft = field.field_type
 
@@ -194,6 +225,7 @@ function FieldEditor({
         options={options}
         value={ids.length ? ids : undefined}
         onChange={v => onChange(v)}
+        disabled={disabled}
       />
     )
   }
@@ -201,9 +233,9 @@ function FieldEditor({
   switch (ft) {
     case 'number':
     case 'decimal':
-      return <InputNumber style={{ width: '100%' }} value={value as number | undefined} onChange={onChange} placeholder="数字" />
+      return <InputNumber style={{ width: '100%' }} value={value as number | undefined} onChange={onChange} placeholder="数字" disabled={disabled} />
     case 'boolean':
-      return <Switch checked={!!value} onChange={onChange} />
+      return <Switch checked={!!value} onChange={onChange} disabled={disabled} />
     case 'date':
       return (
         <DatePicker
@@ -211,6 +243,7 @@ function FieldEditor({
           value={value != null && value !== '' ? dayjs(String(value)) : null}
           onChange={(_d, dateStr) => onChange(dateStr)}
           placeholder="日期"
+          disabled={disabled}
         />
       )
     case 'datetime':
@@ -221,6 +254,7 @@ function FieldEditor({
           value={value != null && value !== '' ? dayjs(String(value)) : null}
           onChange={(_d, dateStr) => onChange(dateStr)}
           placeholder="日期时间"
+          disabled={disabled}
         />
       )
     case 'select':
@@ -235,19 +269,20 @@ function FieldEditor({
           onChange={onChange}
           placeholder="请选择"
           allowClear
+          disabled={disabled}
         />
       )
     }
     case 'long_text':
-      return <Input.TextArea rows={3} value={value as string} onChange={e => onChange(e.target.value)} placeholder="请输入..." />
+      return <Input.TextArea rows={3} value={value as string} onChange={e => onChange(e.target.value)} placeholder="请输入..." disabled={disabled} />
     case 'email':
-      return <Input type="email" value={value as string} onChange={e => onChange(e.target.value)} placeholder="email@example.com" />
+      return <Input type="email" value={value as string} onChange={e => onChange(e.target.value)} placeholder="email@example.com" disabled={disabled} />
     case 'url':
-      return <Input type="url" value={value as string} onChange={e => onChange(e.target.value)} placeholder="https://..." />
+      return <Input type="url" value={value as string} onChange={e => onChange(e.target.value)} placeholder="https://..." disabled={disabled} />
     case 'phone':
-      return <Input value={value as string} onChange={e => onChange(e.target.value)} placeholder="手机号" />
+      return <Input value={value as string} onChange={e => onChange(e.target.value)} placeholder="手机号" disabled={disabled} />
     case 'json':
-      return <Input.TextArea rows={3} value={typeof value === 'string' ? value : JSON.stringify(value ?? '', null, 2)} onChange={e => onChange(e.target.value)} placeholder="JSON" />
+      return <Input.TextArea rows={3} value={typeof value === 'string' ? value : JSON.stringify(value ?? '', null, 2)} onChange={e => onChange(e.target.value)} placeholder="JSON" disabled={disabled} />
     case 'attachment': {
       const files: AttachmentFile[] = Array.isArray(value)
         ? (value as AttachmentFile[])
@@ -265,6 +300,7 @@ function FieldEditor({
             accept={(field.config?.allowed_mime_types as string[])?.join(',') || undefined}
             beforeUpload={f => { upload(f); return false }}
             style={{ padding: '4px 8px', marginBottom: 8 }}
+            disabled={disabled}
           >
             <div style={{ fontSize: 12, color: '#94a3b8', margin: '2px 0' }}>
               <InboxOutlined /> 点击或拖拽上传
@@ -279,27 +315,31 @@ function FieldEditor({
                     <div key={f.file_key} style={{ position: 'relative', width: 56, height: 56 }}>
                       <Image width={56} height={56} src={fileApi.getUrl(wid, f.file_key, true)}
                         style={{ objectFit: 'cover', borderRadius: 4 }} />
-                      <Tooltip title="删除该附件">
-                        <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                          style={{ position: 'absolute', top: -4, right: -4, background: 'var(--cn-bg-container)', padding: 0 }}
-                          onClick={() => {
-                            fileApi.remove(wid, f.file_key).catch(() => { })
-                            onChange(files.filter((_, j) => j !== i))
-                          }} />
-                      </Tooltip>
+                      {!disabled && (
+                        <Tooltip title="删除该附件">
+                          <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                            style={{ position: 'absolute', top: -4, right: -4, background: 'var(--cn-bg-container)', padding: 0 }}
+                            onClick={() => {
+                              fileApi.remove(wid, f.file_key).catch(() => { })
+                              onChange(files.filter((_, j) => j !== i))
+                            }} />
+                        </Tooltip>
+                      )}
                     </div>
                   )
                 }
                 return (
                   <span key={f.file_key} style={{ fontSize: 12, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 4 }}>
                     📎 <a href={fileApi.getUrl(wid, f.file_key)} target="_blank" rel="noreferrer">{f.filename}</a>
-                    <Tooltip title="删除该附件">
-                      <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                        onClick={() => {
-                          fileApi.remove(wid, f.file_key).catch(() => { })
-                          onChange(files.filter((_, j) => j !== i))
-                        }} />
-                    </Tooltip>
+                    {!disabled && (
+                      <Tooltip title="删除该附件">
+                        <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                          onClick={() => {
+                            fileApi.remove(wid, f.file_key).catch(() => { })
+                            onChange(files.filter((_, j) => j !== i))
+                          }} />
+                      </Tooltip>
+                    )}
                   </span>
                 )
               })}
@@ -309,6 +349,6 @@ function FieldEditor({
       )
     }
     default:
-      return <Input value={value as string} onChange={e => onChange(e.target.value)} placeholder="请输入..." />
+      return <Input value={value as string} onChange={e => onChange(e.target.value)} placeholder="请输入..." disabled={disabled} />
   }
 }

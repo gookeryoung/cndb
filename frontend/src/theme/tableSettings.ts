@@ -23,6 +23,8 @@ export interface TableSettings {
   striped: boolean
   /** 新增行默认插入位置 */
   newRowPosition: NewRowPosition
+  /** 是否锁定自动填充字段（新增行时预填的 default_value / auto_fill 字段只读，提高录入速度） */
+  autoFillLocked: boolean
 }
 
 export const DEFAULT_TABLE_SETTINGS: TableSettings = {
@@ -32,6 +34,7 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   showHeader: true,
   striped: false,
   newRowPosition: 'tail',
+  autoFillLocked: true,
 }
 
 const STORAGE_KEY = 'cndb_table_settings'
