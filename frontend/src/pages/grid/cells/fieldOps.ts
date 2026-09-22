@@ -185,6 +185,78 @@ export function getOpsForField(fieldType: string): FieldOp[] {
   return FIELD_OPS_BY_TYPE[resolved] || FIELD_OPS_BY_TYPE.text
 }
 
+// ── 客户端行级判定（完成标志等共用） ──────────────────────
+
+/** 完成标志允许的操作符子集 —— 必须逐项存在于 FIELD_OPS_BY_TYPE 的类型组中（op 名称与筛选契约对齐） */
+export const DONE_FLAG_OPS = ['=', 'is_empty', 'is_not_empty'] as const
+
+/** 判空口径：null / undefined / 空字符串 / 空数组（与 compareField 的空值口径一致） */
+function isEmptyValue(raw: unknown): boolean {
+  if (raw === null || raw === undefined || raw === '') return true
+  if (Array.isArray(raw) && raw.length === 0) return true
+  return false
+}
+
+/** 行级判定纯函数：按字段类型 × 操作符判定 raw 是否满足条件.
+ *
+ * 被 kanbanBoard 的 isDoneRow 消费（完成标志判定）。
+ * op 名称与后端 filters 契约一致（见 DONE_FLAG_OPS）。
+ *
+ * 分派规则：
+ * - is_empty / is_not_empty：无值直通，口径见 isEmptyValue（注意 needValue=true 的语义是"无需输入值"）
+ * - '='：boolean 严格相等（false 是合法匹配值）；select 命中 option 时比较 value/label；
+ *   multiselect 行值与配置值归一为 option value 后求交集；其余类型去首尾空格后字符串精确相等
+ * - 未知操作符保守返回 false（不误判为完成）
+ */
+export function matchValueCondition(
+  raw: unknown,
+  op: string,
+  value: unknown,
+  fieldDef?: Pick<Field, 'field_type' | 'config'>,
+): boolean {
+  if (op === 'is_empty') return isEmptyValue(raw)
+  if (op === 'is_not_empty') return !isEmptyValue(raw)
+
+  if (op !== '=') return false
+
+  const ft = fieldDef ? (FIELD_TYPE_ALIASES[fieldDef.field_type] ?? fieldDef.field_type) : undefined
+
+  if (ft === 'boolean') {
+    return raw === value
+  }
+
+  if (ft === 'select') {
+    if (raw === null || raw === undefined || raw === '') return false
+    const strVal = String(raw)
+    const options = fieldDef?.config ? extractSelectOptions(fieldDef.config) : []
+    if (options.length) {
+      const hit = options.find((o) => o.value === strVal || o.label === strVal)
+      // 行值命中 option 时，比较命中项的 value/label 与配置值；未命中 option 时直接比较原值
+      if (hit) return hit.value === value || hit.label === value
+      return strVal === String(value)
+    }
+    return strVal === String(value)
+  }
+
+  if (ft === 'multiselect') {
+    if (isEmptyValue(raw)) return false
+    const rowVals = Array.isArray(raw) ? raw.map(String) : [String(raw)]
+    const cfgVals = Array.isArray(value) ? value.map(String) : [String(value)]
+    const options = fieldDef?.config ? extractSelectOptions(fieldDef.config) : []
+    // 行值与配置值都先归一为 option value（label → value），再求交集
+    const toValue = (s: string): string => {
+      const hit = options.find((o) => o.value === s || o.label === s)
+      return hit ? hit.value : s
+    }
+    const rowSet = new Set(rowVals.map(toValue))
+    return cfgVals.some((v) => rowSet.has(toValue(v)))
+  }
+
+  // text / date / 其他类型：去首尾空格后精确相等
+  if (raw === null || raw === undefined) return false
+  return String(raw).trim() === String(value).trim()
+}
+
 // ── select / multiselect 字段 options 提取 ──────────────
 
 /** 从 field.config 里提取 select options，统一转为 [{value, label}] 格式.
