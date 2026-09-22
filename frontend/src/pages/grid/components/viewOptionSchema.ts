@@ -15,6 +15,8 @@ export interface ViewOptionSchema {
   key: string
   /** 显示 label */
   label: string
+  /** 表单分区名（创建/编辑视图对话框的分区卡片与折叠）; 缺省归入「其他」 */
+  group?: string
   /** 可选的 tooltip 说明 */
   tooltip?: string
   /** 是否必填（影响 CreateEditViewForm 的 Form.Item required prop） */
@@ -46,35 +48,35 @@ export interface ViewOptionSchema {
 /** Kanban 看板视图的专属配置字段（共 14 项） */
 export const KANBAN_OPTIONS: ViewOptionSchema[] = [
   {
-    key: 'group_field', label: '分组字段', tooltip: '按哪个字段分组显示为看板列',
+    key: 'group_field', label: '分组字段', group: '分组与标题', tooltip: '按哪个字段分组显示为看板列',
     kind: 'field_select', fieldTypes: ['select', 'multiselect', 'boolean', 'link'], required: true,
   },
   {
-    key: 'title_field', label: '卡片标题字段', tooltip: '留空使用主键字段',
+    key: 'title_field', label: '卡片标题字段', group: '分组与标题', tooltip: '留空使用主键字段',
     kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
   },
   {
-    key: 'progress_field', label: '进度百分比字段', tooltip: '0-100 的数值字段，显示进度条',
+    key: 'progress_field', label: '进度百分比字段', group: '字段映射', tooltip: '0-100 的数值字段，显示进度条',
     kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
   },
   {
-    key: 'due_date_field', label: '截止日期字段', tooltip: '配置后自动显示逾期/临近提醒',
+    key: 'due_date_field', label: '截止日期字段', group: '字段映射', tooltip: '配置后自动显示逾期/临近提醒',
     kind: 'field_select', fieldTypes: ['date', 'datetime'],
   },
   {
-    key: 'priority_field', label: '优先级字段', tooltip: 'Select 字段，不同值显示不同颜色徽章',
+    key: 'priority_field', label: '优先级字段', group: '字段映射', tooltip: 'Select 字段，不同值显示不同颜色徽章',
     kind: 'field_select', fieldTypes: ['select', 'multiselect'],
   },
   {
-    key: 'assignee_field', label: '负责人字段',
+    key: 'assignee_field', label: '负责人字段', group: '字段映射',
     kind: 'field_select', fieldTypes: ['text', 'longtext'],
   },
   {
-    key: 'card_sort_field', label: '卡片排序字段', tooltip: '每列卡片按此字段排序；留空则按 API 返回顺序 + 紧急置顶',
+    key: 'card_sort_field', label: '卡片排序字段', group: '排序与提醒', tooltip: '每列卡片按此字段排序；留空则按 API 返回顺序 + 紧急置顶',
     kind: 'field_select', fieldTypes: ['__all__'],
   },
   {
-    key: 'card_sort_direction', label: '卡片排序方向', tooltip: '配合卡片排序字段使用',
+    key: 'card_sort_direction', label: '卡片排序方向', group: '排序与提醒', tooltip: '配合卡片排序字段使用',
     kind: 'direction', defaultValue: 'desc',
     enumOptions: [
       { value: 'asc', label: '升序 ↑' },
@@ -82,15 +84,15 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
     ],
   },
   {
-    key: 'pin_urgent', label: '逾期/紧急卡片置顶', tooltip: '有截止日期时，逾期和临近截止的卡片始终排在列顶',
+    key: 'pin_urgent', label: '逾期/紧急卡片置顶', group: '排序与提醒', tooltip: '有截止日期时，逾期和临近截止的卡片始终排在列顶',
     kind: 'switch', defaultValue: true,
   },
   {
-    key: 'card_fields', label: '卡片额外字段', tooltip: '在卡片底部以标签形式展示',
+    key: 'card_fields', label: '卡片额外字段', group: '分组与标题', tooltip: '在卡片底部以标签形式展示',
     kind: 'field_multi_select', fieldTypes: ['__all__'],
   },
   {
-    key: 'urgent_threshold_days', label: '紧急阈值（天）', tooltip: '截止日期前多少天标记为紧急',
+    key: 'urgent_threshold_days', label: '紧急阈值（天）', group: '排序与提醒', tooltip: '截止日期前多少天标记为紧急',
     kind: 'number_enum', defaultValue: 3,
     enumOptions: [
       { value: 1, label: '1 天' }, { value: 3, label: '3 天' },
@@ -98,11 +100,11 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
     ],
   },
   {
-    key: 'done_field', label: '完成标志', tooltip: '选择字段并指定匹配值，满足条件的卡片以完成状态显示（绿底灰字、隐藏倒计时提醒）',
+    key: 'done_field', label: '完成标志', group: '完成状态', tooltip: '选择字段并指定匹配值，满足条件的卡片以完成状态显示（绿底灰字、隐藏倒计时提醒）',
     kind: 'done_flag', fieldTypes: ['boolean', 'select', 'multiselect', 'text', 'longtext'],
   },
   {
-    key: 'done_bg_color', label: '完成卡片背景色', tooltip: '完成状态卡片的背景颜色',
+    key: 'done_bg_color', label: '完成卡片背景色', group: '完成状态', tooltip: '完成状态卡片的背景颜色',
     kind: 'enum_select', defaultValue: 'auto',
     enumOptions: [
       { value: 'auto', label: '跟随主题（默认绿）' },
@@ -114,7 +116,7 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
     ],
   },
   {
-    key: 'done_text_color', label: '完成卡片文字颜色', tooltip: '完成状态卡片标题的文字颜色',
+    key: 'done_text_color', label: '完成卡片文字颜色', group: '完成状态', tooltip: '完成状态卡片标题的文字颜色',
     kind: 'enum_select', defaultValue: 'auto',
     enumOptions: [
       { value: 'auto', label: '跟随主题（默认灰）' },
@@ -130,19 +132,19 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
 /** Calendar 日历视图的专属配置字段（共 4 项） */
 export const CALENDAR_OPTIONS: ViewOptionSchema[] = [
   {
-    key: 'start_field', label: '日期字段', tooltip: '事件的日期',
+    key: 'start_field', label: '日期字段', group: '日历配置', tooltip: '事件的日期',
     kind: 'field_select', fieldTypes: ['date', 'datetime'], required: true,
   },
   {
-    key: 'title_field', label: '事件标题字段', tooltip: '日历格中显示的事件文字；留空则自动选第一个文本字段',
+    key: 'title_field', label: '事件标题字段', group: '日历配置', tooltip: '日历格中显示的事件文字；留空则自动选第一个文本字段',
     kind: 'field_select', fieldTypes: ['text', 'longtext', 'is_primary'],
   },
   {
-    key: 'group_field', label: '分组/颜色字段', tooltip: 'Select 字段，不同值渲染不同颜色侧边条',
+    key: 'group_field', label: '分组/颜色字段', group: '日历配置', tooltip: 'Select 字段，不同值渲染不同颜色侧边条',
     kind: 'field_select', fieldTypes: ['select', 'multiselect'],
   },
   {
-    key: 'calendar_mode', label: '默认打开的日历层级',
+    key: 'calendar_mode', label: '默认打开的日历层级', group: '日历配置',
     kind: 'enum_select', defaultValue: 'month',
     enumOptions: [
       { value: 'year', label: '年视图（12 月概览）' },
@@ -155,23 +157,23 @@ export const CALENDAR_OPTIONS: ViewOptionSchema[] = [
 /** Gallery 画廊视图的专属配置字段（共 5 项） */
 export const GALLERY_OPTIONS: ViewOptionSchema[] = [
   {
-    key: 'title_field', label: '标题字段', tooltip: '留空则自动选第一个文本字段',
+    key: 'title_field', label: '标题字段', group: '标题与图片', tooltip: '留空则自动选第一个文本字段',
     kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
   },
   {
-    key: 'subtitle_field', label: '副标题字段', tooltip: '卡片标题下方的补充文字',
+    key: 'subtitle_field', label: '副标题字段', group: '标题与图片', tooltip: '卡片标题下方的补充文字',
     kind: 'field_select', fieldTypes: ['__all__'],
   },
   {
-    key: 'tag_field', label: '标签字段', tooltip: '显示为卡片右上角徽章',
+    key: 'tag_field', label: '标签字段', group: '标签与信息', tooltip: '显示为卡片右上角徽章',
     kind: 'field_select', fieldTypes: ['select', 'multiselect', 'boolean'],
   },
   {
-    key: 'meta_fields', label: '附加信息字段', tooltip: '显示在卡片底部的小标签（可多选）',
+    key: 'meta_fields', label: '附加信息字段', group: '标签与信息', tooltip: '显示在卡片底部的小标签（可多选）',
     kind: 'field_multi_select', fieldTypes: ['__all__'],
   },
   {
-    key: 'image_field', label: '图片/附件字段', tooltip: '留空则自动选第一个附件字段',
+    key: 'image_field', label: '图片/附件字段', group: '标题与图片', tooltip: '留空则自动选第一个附件字段',
     kind: 'field_select', fieldTypes: ['attachment', 'image'],
   },
 ]
@@ -179,35 +181,35 @@ export const GALLERY_OPTIONS: ViewOptionSchema[] = [
 /** Gantt 甘特图视图的专属配置字段（共 9 项） */
 export const GANTT_OPTIONS: ViewOptionSchema[] = [
   {
-    key: 'start_date_field', label: '开始日期字段', tooltip: '任务/项目的开始日期',
+    key: 'start_date_field', label: '开始日期字段', group: '日期字段', tooltip: '任务/项目的开始日期',
     kind: 'field_select', fieldTypes: ['date', 'datetime'], required: true,
   },
   {
-    key: 'end_date_field', label: '结束日期字段', tooltip: '任务/项目的截止日期或计划交付日期',
+    key: 'end_date_field', label: '结束日期字段', group: '日期字段', tooltip: '任务/项目的截止日期或计划交付日期',
     kind: 'field_select', fieldTypes: ['date', 'datetime'], required: true,
   },
   {
-    key: 'actual_end_field', label: '实际完成日期字段', tooltip: '可选：用于显示实际完成时间与计划的对比',
+    key: 'actual_end_field', label: '实际完成日期字段', group: '日期字段', tooltip: '可选：用于显示实际完成时间与计划的对比',
     kind: 'field_select', fieldTypes: ['date', 'datetime'],
   },
   {
-    key: 'title_field', label: '任务名称字段', tooltip: '甘特条左侧显示的任务名称；留空自动选第一个文本字段',
+    key: 'title_field', label: '任务名称字段', group: '显示字段', tooltip: '甘特条左侧显示的任务名称；留空自动选第一个文本字段',
     kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
   },
   {
-    key: 'group_field', label: '分组/着色字段', tooltip: 'Select 字段，不同分组渲染不同颜色的甘特条',
+    key: 'group_field', label: '分组/着色字段', group: '显示字段', tooltip: 'Select 字段，不同分组渲染不同颜色的甘特条',
     kind: 'field_select', fieldTypes: ['select', 'multiselect'],
   },
   {
-    key: 'progress_field', label: '进度百分比字段', tooltip: '0-100 的数值字段，在甘特条上显示进度填充',
+    key: 'progress_field', label: '进度百分比字段', group: '显示字段', tooltip: '0-100 的数值字段，在甘特条上显示进度填充',
     kind: 'field_select', fieldTypes: ['number', 'float', 'percentage'],
   },
   {
-    key: 'assignee_field', label: '负责人字段', tooltip: '在甘特条下方显示负责人名称',
+    key: 'assignee_field', label: '负责人字段', group: '显示字段', tooltip: '在甘特条下方显示负责人名称',
     kind: 'field_select', fieldTypes: ['text', 'longtext'],
   },
   {
-    key: 'time_scale', label: '时间刻度', tooltip: '默认显示的时间粒度',
+    key: 'time_scale', label: '时间刻度', group: '时间轴', tooltip: '默认显示的时间粒度',
     kind: 'enum_select', defaultValue: 'month',
     enumOptions: [
       { value: 'day', label: '天（精细）' },
@@ -217,7 +219,7 @@ export const GANTT_OPTIONS: ViewOptionSchema[] = [
     ],
   },
   {
-    key: 'show_today_line', label: '显示今日标线', tooltip: '在甘特图中用红色竖线标记今天的位置',
+    key: 'show_today_line', label: '显示今日标线', group: '时间轴', tooltip: '在甘特图中用红色竖线标记今天的位置',
     kind: 'switch', defaultValue: true,
   },
 ]
@@ -225,39 +227,39 @@ export const GANTT_OPTIONS: ViewOptionSchema[] = [
 /** WBS 工作分解结构视图的专属配置字段（共 9 项） */
 export const WBS_OPTIONS: ViewOptionSchema[] = [
   {
-    key: 'parent_field', label: '父任务字段', tooltip: '哪个字段存储父任务关联（link 指向同表自身，或文本/数字存父 ID）',
+    key: 'parent_field', label: '父任务字段', group: '结构字段', tooltip: '哪个字段存储父任务关联（link 指向同表自身，或文本/数字存父 ID）',
     kind: 'field_select', fieldTypes: ['link', 'text', 'number', 'decimal', 'is_primary'], required: true,
   },
   {
-    key: 'title_field', label: '任务名称字段', tooltip: '树节点显示的主标题；留空自动选第一个文本字段',
+    key: 'title_field', label: '任务名称字段', group: '结构字段', tooltip: '树节点显示的主标题；留空自动选第一个文本字段',
     kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
   },
   {
-    key: 'progress_field', label: '进度百分比字段', tooltip: '0-100 的数值字段；父节点自动按子节点平均计算',
+    key: 'progress_field', label: '进度百分比字段', group: '显示字段', tooltip: '0-100 的数值字段；父节点自动按子节点平均计算',
     kind: 'field_select', fieldTypes: ['number', 'float', 'percentage'],
   },
   {
-    key: 'status_field', label: '状态字段', tooltip: 'Select 字段，显示为状态徽章',
+    key: 'status_field', label: '状态字段', group: '显示字段', tooltip: 'Select 字段，显示为状态徽章',
     kind: 'field_select', fieldTypes: ['select', 'multiselect'],
   },
   {
-    key: 'assignee_field', label: '负责人字段', tooltip: '在节点右侧显示负责人名称',
+    key: 'assignee_field', label: '负责人字段', group: '显示字段', tooltip: '在节点右侧显示负责人名称',
     kind: 'field_select', fieldTypes: ['text', 'longtext'],
   },
   {
-    key: 'start_date_field', label: '开始日期字段', tooltip: '可选：在节点上显示时间跨度',
+    key: 'start_date_field', label: '开始日期字段', group: '显示字段', tooltip: '可选：在节点上显示时间跨度',
     kind: 'field_select', fieldTypes: ['date', 'datetime'],
   },
   {
-    key: 'end_date_field', label: '结束日期字段', tooltip: '可选：与开始日期配合显示区间',
+    key: 'end_date_field', label: '结束日期字段', group: '显示字段', tooltip: '可选：与开始日期配合显示区间',
     kind: 'field_select', fieldTypes: ['date', 'datetime'],
   },
   {
-    key: 'show_numbering', label: '显示层级编号', tooltip: '在任务名前显示 1 / 1.1 / 1.1.1 样式的编号',
+    key: 'show_numbering', label: '显示层级编号', group: '操作', tooltip: '在任务名前显示 1 / 1.1 / 1.1.1 样式的编号',
     kind: 'switch', defaultValue: true,
   },
   {
-    key: 'expand_all', label: '默认全部展开', tooltip: '首次加载时是否展开所有层级；关闭则只展开第一层',
+    key: 'expand_all', label: '默认全部展开', group: '操作', tooltip: '首次加载时是否展开所有层级；关闭则只展开第一层',
     kind: 'switch', defaultValue: false,
   },
 ]
@@ -273,6 +275,54 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
     default: return []
   }
 }
+
+// ── 表单分区（创建/编辑视图对话框） ─────────────────────
+
+/** 一个表单分区：分区标题 + 该分区下的 option（保持 schema 原顺序） */
+export interface ViewOptionSection {
+  /** 分区标题（取自 option.group） */
+  label: string
+  /** 分区内的 option 列表 */
+  items: ViewOptionSchema[]
+}
+
+/** 按 option.group 保序切分 schema.
+ *
+ * 分区顺序 = 分区名首次出现的顺序；同分区内保持 schema 原顺序；
+ * 未标注 group 的 option 统一归入「其他」（因此排在最后，除非显式声明过该名）。
+ */
+export function groupOptionSchema(schema: ViewOptionSchema[]): ViewOptionSection[] {
+  const sections: ViewOptionSection[] = []
+  for (const opt of schema) {
+    const label = opt.group ?? '其他'
+    let section = sections.find((s) => s.label === label)
+    if (!section) {
+      section = { label, items: [] }
+      sections.push(section)
+    }
+    section.items.push(opt)
+  }
+  return sections
+}
+
+/** option 在创建/编辑视图表单两列网格中占的列数.
+ *
+ * 短控件（开关 / 方向 / 枚举下拉）占 1 列；字段下拉与复合控件占 2 列（整行），
+ * 因为它们的候选文本较长、两列并排会被压扁。
+ */
+export function optionColSpan(kind: ViewOptionSchema['kind']): 1 | 2 {
+  if (kind === 'switch' || kind === 'direction' || kind === 'enum_select' || kind === 'number_enum') {
+    return 1
+  }
+  return 2
+}
+
+/** 创建/编辑视图对话框中默认收起的分区（次要配置，收起以压缩首屏高度） */
+export const COLLAPSED_BY_DEFAULT_GROUPS: ReadonlySet<string> = new Set([
+  '完成状态',
+  '时间轴',
+  '操作',
+])
 
 // ── 从 schema 生成 options 下拉列表的辅助 ──────────────
 

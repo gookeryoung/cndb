@@ -2,8 +2,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   _fieldMatchesSchema,
+  COLLAPSED_BY_DEFAULT_GROUPS,
   findOptionSchema,
   getOptionSchema,
+  groupOptionSchema,
+  optionColSpan,
   resolveAutoField,
   resolveFieldOptions,
   resolveOpts,
@@ -174,5 +177,77 @@ describe('resolveAutoField 自动推断', () => {
   it('schema 无 fieldTypes/includePrimary/literalFallback 时返回 undefined', () => {
     const bareSchema = { key: 'x', label: 'x', kind: 'field_select' as const }
     expect(resolveAutoField(fields, bareSchema)).toBeUndefined()
+  })
+})
+
+describe('groupOptionSchema 分区切分', () => {
+  it('kanban 按 group 保序切分为四个分区', () => {
+    const schema = getOptionSchema('kanban')
+    const sections = groupOptionSchema(schema)
+
+    // 分区顺序 = 分区名首次出现顺序
+    expect(sections.map((s) => s.label)).toEqual(['分组与标题', '字段映射', '排序与提醒', '完成状态'])
+    // 分区内保持 schema 原顺序（card_fields 虽在 schema 中靠后，仍归首分区且排在末位）
+    expect(sections[0].items.map((i) => i.key)).toEqual(['group_field', 'title_field', 'card_fields'])
+    expect(sections[1].items.map((i) => i.key)).toEqual([
+      'progress_field', 'due_date_field', 'priority_field', 'assignee_field',
+    ])
+    expect(sections[2].items.map((i) => i.key)).toEqual([
+      'card_sort_field', 'card_sort_direction', 'pin_urgent', 'urgent_threshold_days',
+    ])
+    expect(sections[3].items.map((i) => i.key)).toEqual([
+      'done_field', 'done_bg_color', 'done_text_color',
+    ])
+    // 无遗漏：分区展平后与 schema 项数一致
+    expect(sections.flatMap((s) => s.items)).toHaveLength(schema.length)
+  })
+
+  it('无 group 的 option 归入「其他」', () => {
+    const sections = groupOptionSchema([
+      { key: 'a', label: 'A', kind: 'switch', group: 'G1' },
+      { key: 'b', label: 'B', kind: 'switch' },
+    ])
+
+    expect(sections.map((s) => s.label)).toEqual(['G1', '其他'])
+    expect(sections[1].items.map((i) => i.key)).toEqual(['b'])
+  })
+
+  it('空 schema 返回空数组', () => {
+    expect(groupOptionSchema([])).toEqual([])
+  })
+})
+
+describe('optionColSpan 两列网格列宽', () => {
+  it('短控件（开关/方向/枚举下拉）占单列', () => {
+    expect(optionColSpan('switch')).toBe(1)
+    expect(optionColSpan('direction')).toBe(1)
+    expect(optionColSpan('enum_select')).toBe(1)
+    expect(optionColSpan('number_enum')).toBe(1)
+  })
+
+  it('字段下拉与复合控件占整行', () => {
+    expect(optionColSpan('field_select')).toBe(2)
+    expect(optionColSpan('field_multi_select')).toBe(2)
+    expect(optionColSpan('done_flag')).toBe(2)
+  })
+})
+
+describe('schema group 完整性', () => {
+  it('五种视图的每个 option 都标注了 group（漏标即失败）', () => {
+    for (const vt of ['kanban', 'calendar', 'gallery', 'gantt', 'wbs']) {
+      for (const opt of getOptionSchema(vt)) {
+        expect(opt.group, `${vt}.${opt.key} 缺 group`).toBeTruthy()
+      }
+    }
+  })
+
+  it('默认收起的分区名都是实际存在的分区', () => {
+    const allLabels = new Set(
+      ['kanban', 'calendar', 'gallery', 'gantt', 'wbs']
+        .flatMap((vt) => groupOptionSchema(getOptionSchema(vt)).map((s) => s.label)),
+    )
+    for (const label of COLLAPSED_BY_DEFAULT_GROUPS) {
+      expect(allLabels.has(label), `默认收起分区「${label}」不存在`).toBe(true)
+    }
   })
 })

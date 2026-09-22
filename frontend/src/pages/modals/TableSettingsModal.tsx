@@ -431,6 +431,8 @@ export default function TableSettingsModal({
       open={true}
       onCancel={() => setViewEditorOpen(false)}
       footer={null}
+      width={720}
+      className="cevf-modal"
       destroyOnHidden
     >
       <Suspense fallback={<div style={{ padding: 48, textAlign: 'center' }}>加载表单...</div>}>
