@@ -2,9 +2,15 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Modal, Select, Space, Switch, Tabs, Input, InputNumber, Tooltip } from 'antd'
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, RightOutlined } from '@ant-design/icons'
 import { getOpsForField, extractSelectOptions } from './fieldOps'
-import { getOptionSchema, resolveFieldOptions } from './viewOptionSchema'
+import {
+  COLLAPSED_BY_DEFAULT_GROUPS,
+  getOptionSchema,
+  groupOptionSchema,
+  optionColSpan,
+  resolveFieldOptions,
+} from './viewOptionSchema'
 import type { ViewOptionSchema } from './viewOptionSchema'
 import DoneFlagFields from './DoneFlagFields'
 import type { Field } from '@/api'
@@ -31,6 +37,85 @@ export interface ViewConfigDialogProps {
 }
 
 // ── 组件 ──────────────────────────────────────────
+
+/** 单个视图专属设置项 —— 控件分支与 CreateEditViewForm 保持一致（真相源同在 viewOptionSchema.ts）.
+ *
+ * 列宽由 optionColSpan 决定（短控件单列、字段下拉与复合控件整行），由调用方包裹定位容器。
+ */
+interface ViewOptionItemProps {
+  opt: ViewOptionSchema
+  fields: Field[]
+  opts: Record<string, unknown>
+  onSet: (key: string, value: unknown) => void
+  onPatch: (patch: Record<string, unknown>) => void
+}
+
+function ViewOptionItem({ opt, fields, opts, onSet, onPatch }: ViewOptionItemProps) {
+  const currentValue = opts[opt.key]
+  const label = <div className="vcvd-item-label">{opt.label}</div>
+
+  if (opt.kind === 'switch') {
+    return (
+      <div className="vcvd-item">
+        {label}
+        <Switch
+          checked={currentValue !== false && currentValue !== undefined}
+          onChange={v => onSet(opt.key, v)}
+          checkedChildren="开"
+          unCheckedChildren="关"
+        />
+      </div>
+    )
+  }
+
+  if (opt.kind === 'direction' || opt.kind === 'enum_select' || opt.kind === 'number_enum') {
+    return (
+      <div className="vcvd-item">
+        {label}
+        <Select
+          style={{ width: '100%' }}
+          value={(currentValue ?? opt.defaultValue) as string | number}
+          onChange={v => onSet(opt.key, v)}
+          options={opt.enumOptions?.map(o => ({ value: o.value, label: o.label })) || []}
+        />
+      </div>
+    )
+  }
+
+  // 完成标志：字段下拉 + 匹配值复合控件（存 done_field + done_value 两键）
+  if (opt.kind === 'done_flag') {
+    return (
+      <div className="vcvd-item">
+        {label}
+        <DoneFlagFields
+          fields={fields}
+          doneField={opts.done_field as string | undefined}
+          doneValue={opts.done_value}
+          onChange={onPatch}
+        />
+      </div>
+    )
+  }
+
+  // field_select / field_multi_select
+  const fieldOptions = resolveFieldOptions(fields, opt)
+  const isMultiple = opt.kind === 'field_multi_select'
+  return (
+    <div className="vcvd-item">
+      {label}
+      <Select
+        mode={isMultiple ? 'multiple' : undefined}
+        style={{ width: '100%' }}
+        allowClear
+        showSearch
+        placeholder={isMultiple ? '选择多个字段' : '选择字段'}
+        options={fieldOptions}
+        value={isMultiple ? (currentValue as string[]) || [] : ((currentValue as string) || undefined)}
+        onChange={v => onSet(opt.key, isMultiple ? v : (v ?? ''))}
+      />
+    </div>
+  )
+}
 
 /** 视图配置对话框（筛选 / 排序 / 视图专属设置可视化编辑） */
 export default function ViewConfigDialog({
@@ -76,6 +161,20 @@ export default function ViewConfigDialog({
     [viewType],
   )
 
+  // 按 group 切分为分区卡片：低频分区（完成状态 / 时间轴 / 操作）默认收起
+  const viewSections = useMemo(() => groupOptionSchema(viewOptFields), [viewOptFields])
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(
+      groupOptionSchema(getOptionSchema(viewType))
+        .map(s => [s.label, COLLAPSED_BY_DEFAULT_GROUPS.has(s.label)]),
+    ),
+  )
+  useEffect(() => {
+    setCollapsed(Object.fromEntries(
+      viewSections.map(s => [s.label, COLLAPSED_BY_DEFAULT_GROUPS.has(s.label)]),
+    ))
+  }, [viewSections])
+
   const viewTabItems = useMemo(() => {
     const items: Array<{ key: string; label: React.ReactNode; children: React.ReactNode }> = [
       {
@@ -87,21 +186,19 @@ export default function ViewConfigDialog({
           </span>
         ),
         children: (
-          <div style={{ minHeight: 120 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid var(--cn-border)' }}>
-              <span style={{ fontSize: 13, color: 'var(--cn-text-primary)' }}>条件组合：</span>
+          <div className="vcvd-tab-body">
+            <div className="vcvd-logic-bar">
+              <span className="vcvd-logic-label">条件组合：</span>
               <Space.Compact size="small">
                 <Button type={draftFilterLogic === 'AND' ? 'primary' : 'default'} onClick={() => setDraftFilterLogic('AND')}>全部满足（AND）</Button>
                 <Button type={draftFilterLogic === 'OR' ? 'primary' : 'default'} onClick={() => setDraftFilterLogic('OR')}>任一满足（OR）</Button>
               </Space.Compact>
-              <span style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>
+              <span className="vcvd-logic-hint">
                 {draftFilterLogic === 'AND' ? '所有筛选条件同时生效' : '任一筛选条件生效即可'}
               </span>
             </div>
             {draftFilters.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--cn-text-muted)', padding: '20px 0', border: '1px dashed var(--cn-border)', borderRadius: 6 }}>
-                暂无筛选条件
-              </div>
+              <div className="vcvd-empty">暂无筛选条件</div>
             )}
             {draftFilters.map((rule, idx) => {
               const currentField = filterableFields.find(f => f.name === rule.field_name)
@@ -111,8 +208,8 @@ export default function ViewConfigDialog({
               const fieldOpts = filterableFields.map(f => ({ value: f.name, label: f.name }))
               const selectFieldOpts = extractSelectOptions(currentField?.config).map((o) => o.value)
               return (
-                <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: 'var(--cn-text-muted)', width: 24, textAlign: 'center', flexShrink: 0 }}>#{idx + 1}</span>
+                <div key={idx} className="vcvd-rule">
+                  <span className="vcvd-rule-index">#{idx + 1}</span>
                   <Select size="small" value={rule.field_name || undefined}
                     onChange={(v) => {
                       const nextField = filterableFields.find(f => f.name === v)
@@ -124,7 +221,7 @@ export default function ViewConfigDialog({
                     onChange={(v) => updateFilter(idx, { op: v, value: undefined })}
                     placeholder="操作符" style={{ width: 130 }} options={ops.map(o => ({ value: o.op, label: o.label }))} />
                   {needValue ? (
-                    <span style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>（无需值）</span>
+                    <span className="vcvd-rule-note">（无需值）</span>
                   ) : currentOp?.valueKind === 'boolean' ? (
                     <Switch size="small" checked={!!rule.value} onChange={(v) => updateFilter(idx, { value: v })} />
                   ) : currentOp?.valueKind === 'number' ? (
@@ -144,12 +241,12 @@ export default function ViewConfigDialog({
                   )}
                   <Tooltip title="删除这条筛选规则（至少保留一条）">
                     <Button size="small" type="text" danger disabled={draftFilters.length <= 1} icon={<DeleteOutlined />}
-                      onClick={() => removeFilter(idx)} />
+                      className="vcvd-rule-del" onClick={() => removeFilter(idx)} />
                   </Tooltip>
                 </div>
               )
             })}
-            <div style={{ marginTop: 8 }}>
+            <div className="vcvd-rule-actions">
               <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addFilter}>添加筛选条件</Button>
             </div>
           </div>
@@ -164,15 +261,13 @@ export default function ViewConfigDialog({
           </span>
         ),
         children: (
-          <div style={{ minHeight: 120 }}>
+          <div className="vcvd-tab-body">
             {draftSorts.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--cn-text-muted)', padding: '20px 0', border: '1px dashed var(--cn-border)', borderRadius: 6 }}>
-                暂无排序规则
-              </div>
+              <div className="vcvd-empty">暂无排序规则</div>
             )}
             {draftSorts.map((rule, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--cn-text-muted)', width: 24, textAlign: 'center', flexShrink: 0 }}>#{idx + 1}</span>
+              <div key={idx} className="vcvd-rule">
+                <span className="vcvd-rule-index">#{idx + 1}</span>
                 <Select size="small" value={rule.field_name || undefined}
                   onChange={(v) => updateSort(idx, { field_name: v })}
                   placeholder="字段" style={{ flex: 1 }}
@@ -183,97 +278,62 @@ export default function ViewConfigDialog({
                   options={[{ value: 'asc', label: '升序 ↑' }, { value: 'desc', label: '降序 ↓' }]} />
                 <Tooltip title="删除这条排序规则（至少保留一条）">
                   <Button size="small" type="text" danger disabled={draftSorts.length <= 1} icon={<DeleteOutlined />}
-                    onClick={() => removeSort(idx)} />
+                    className="vcvd-rule-del" onClick={() => removeSort(idx)} />
                 </Tooltip>
               </div>
             ))}
-            <div style={{ marginTop: 8 }}>
+            <div className="vcvd-rule-actions">
               <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addSort}>添加排序</Button>
             </div>
           </div>
         ),
       },
     ]
-    if (viewOptFields.length > 0) {
+    if (viewSections.length > 0) {
       items.push({
         key: 'view',
         label: `${viewType} 专属设置`,
         children: (
-          <div>
-            {viewOptFields.map(opt => {
-              const currentValue = draftOpt[opt.key]
-              const fallbackValue = opt.defaultValue
-
-              if (opt.kind === 'switch') {
-                return (
-                  <div key={opt.key} style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: 'var(--cn-text-primary)', marginBottom: 4 }}>{opt.label}</div>
-                    <Switch
-                      checked={currentValue !== false && currentValue !== undefined}
-                      onChange={v => setDraftOpt(prev => ({ ...prev, [opt.key]: v }))}
-                      checkedChildren="开"
-                      unCheckedChildren="关"
-                    />
-                  </div>
-                )
-              }
-
-              if (opt.kind === 'direction' || opt.kind === 'enum_select' || opt.kind === 'number_enum') {
-                return (
-                  <div key={opt.key} style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: 'var(--cn-text-primary)', marginBottom: 4 }}>{opt.label}</div>
-                    <Select
-                      style={{ width: '100%' }}
-                      value={(currentValue ?? fallbackValue) as string | number}
-                      onChange={v => setDraftOpt(prev => ({ ...prev, [opt.key]: v }))}
-                      options={opt.enumOptions?.map(o => ({ value: o.value, label: o.label })) || []}
-                    />
-                  </div>
-                )
-              }
-
-              // 完成标志：字段下拉 + 匹配值复合控件（存 done_field + done_value 两键）
-              if (opt.kind === 'done_flag') {
-                return (
-                  <div key={opt.key} style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: 'var(--cn-text-primary)', marginBottom: 4 }}>{opt.label}</div>
-                    <DoneFlagFields
-                      fields={fields}
-                      doneField={draftOpt.done_field as string | undefined}
-                      doneValue={draftOpt.done_value}
-                      onChange={(patch) => setDraftOpt(prev => {
-                        const next = { ...prev }
-                        for (const [k, v] of Object.entries(patch)) {
-                          if (v === undefined) delete next[k]
-                          else next[k] = v
-                        }
-                        return next
-                      })}
-                    />
-                  </div>
-                )
-              }
-
-              // field_select / field_multi_select
-              const fieldOptions = resolveFieldOptions(fields, opt)
-              const isMultiple = opt.kind === 'field_multi_select'
+          <div className="vcvd-tab-body">
+            {viewSections.map(section => {
+              const isCollapsed = !!collapsed[section.label]
               return (
-                <div key={opt.key} style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--cn-text-primary)', marginBottom: 4 }}>{opt.label}</div>
-                  <Select
-                    mode={isMultiple ? 'multiple' : undefined}
-                    style={{ width: '100%' }}
-                    allowClear
-                    showSearch
-                    placeholder={isMultiple ? '选择多个字段' : '选择字段'}
-                    options={fieldOptions}
-                    value={isMultiple ? (currentValue as string[]) || [] : ((currentValue as string) || undefined)}
-                    onChange={v => {
-                      if (isMultiple) setDraftOpt(prev => ({ ...prev, [opt.key]: v }))
-                      else setDraftOpt(prev => ({ ...prev, [opt.key]: v ?? '' }))
-                    }}
-                  />
-                </div>
+                <section key={section.label} className={`vcvd-section${isCollapsed ? ' collapsed' : ''}`}>
+                  <button
+                    type="button"
+                    className="vcvd-section-head"
+                    aria-expanded={!isCollapsed}
+                    onClick={() => setCollapsed(prev => ({ ...prev, [section.label]: !prev[section.label] }))}
+                  >
+                    <RightOutlined className="vcvd-section-chevron" />
+                    <span>{section.label}</span>
+                  </button>
+                  {!isCollapsed && (
+                    <div className="vcvd-section-body vcvd-grid">
+                      {section.items.map(opt => (
+                        <div
+                          key={opt.key}
+                          className={optionColSpan(opt.kind) === 2 ? 'vcvd-col-2' : 'vcvd-col-1'}
+                        >
+                          <ViewOptionItem
+                            opt={opt}
+                            fields={fields}
+                            opts={draftOpt}
+                            onSet={(key, value) => setDraftOpt(prev => ({ ...prev, [key]: value }))}
+                            onPatch={(patch) => setDraftOpt(prev => {
+                              const next = { ...prev }
+                              for (const [k, v] of Object.entries(patch)) {
+                                if (v === undefined) delete next[k]
+                                else next[k] = v
+                              }
+                              return next
+                            })}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
               )
             })}
           </div>
@@ -281,14 +341,15 @@ export default function ViewConfigDialog({
       })
     }
     return items
-  }, [draftFilters, draftSorts, draftFilterLogic, filterableFields, sortableFields, viewOptFields, draftOpt, viewType, fields])
+  }, [draftFilters, draftSorts, draftFilterLogic, filterableFields, sortableFields, viewSections, collapsed, draftOpt, viewType, fields])
 
   return (
     <Modal
       title={viewType === 'grid' ? '视图配置' : `视图配置 — ${viewType} 专属设置`}
       open={open}
       onCancel={onClose}
-      width={640}
+      width={680}
+      className="vcvd-modal"
       footer={[
         <Button key="cancel" onClick={onClose}>取消</Button>,
         <Button key="ok" type="primary" onClick={() => {
