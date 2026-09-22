@@ -146,7 +146,7 @@ describe('CreateEditViewForm 视图表单', () => {
 })
 
 describe('CreateEditViewForm 分区与折叠布局', () => {
-  /** 渲染 kanban 表单（kanban 的「完成状态」为默认收起分区，覆盖分区/折叠全部场景） */
+  /** 渲染 kanban 表单 */
   function renderKanban(onSubmit = vi.fn()) {
     renderProviders(
       <CreateEditViewForm
@@ -174,20 +174,20 @@ describe('CreateEditViewForm 分区与折叠布局', () => {
     expect(screen.getByText('卡片排序方向').closest('.cevf-col-1')).not.toBeNull()
   })
 
-  it('次要分区默认收起：完成状态内容不渲染，点击可展开再收起', () => {
+  it('次要分区默认展开：完成状态内容默认渲染，点击可收起再展开', () => {
     renderKanban()
 
     const head = screen.getByRole('button', { name: /完成状态/ })
-    expect(head).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
-
-    fireEvent.click(head)
     expect(head).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('完成标志')).toBeInTheDocument()
 
     fireEvent.click(head)
     expect(head).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
+
+    fireEvent.click(head)
+    expect(head).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('完成标志')).toBeInTheDocument()
   })
 
   it('默认展开的分区可手动收起', () => {
@@ -201,8 +201,9 @@ describe('CreateEditViewForm 分区与折叠布局', () => {
   it('切换视图类型后按新 schema 重置折叠状态', async () => {
     renderKanban()
 
+    // 手动把 kanban 默认展开的「完成状态」收起
     fireEvent.click(screen.getByRole('button', { name: /完成状态/ }))
-    expect(screen.getByText('完成标志')).toBeInTheDocument()
+    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
 
     openSelect(0)
     await pickOption('日历（Calendar）')
@@ -210,9 +211,9 @@ describe('CreateEditViewForm 分区与折叠布局', () => {
 
     openSelect(0)
     await pickOption('看板（Kanban）')
-    // 回到 kanban：「完成状态」恢复默认收起
-    expect(screen.getByRole('button', { name: /完成状态/ })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
+    // 回到 kanban：「完成状态」恢复默认展开
+    expect(screen.getByRole('button', { name: /完成状态/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('完成标志')).toBeInTheDocument()
   })
 
   it('grid 类型只渲染「基础信息」一个分区（无视图专属分区）', () => {
