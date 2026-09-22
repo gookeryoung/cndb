@@ -516,6 +516,21 @@ function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDele
               {col.urgentCount} 紧急
             </Tag>
           )}
+          {/* 新增项入口 —— 位于列头最右侧，hover 放大图标与背景色 */}
+          {canAdd && onAddCard && (
+            <Tooltip title={`在「${col.title}」中新增一项（仅标题字段需填写，其余自动生成）`}>
+              <Button
+                type="text"
+                size="small"
+                icon={<PlusOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleAddCard()
+                }}
+                style={{ padding: 2, color: 'var(--cn-text-muted)' }}
+              />
+            </Tooltip>
+          )}
         </span>
       </div>
 
@@ -580,16 +595,6 @@ function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDele
         )}
       </div>
 
-      {/* 列底部：新增卡片入口 */}
-      {canAdd && onAddCard && (
-        <Button
-          type="text"
-          size="small"
-          icon={<PlusOutlined />}
-          onClick={handleAddCard}
-          style={{ marginTop: 8, color: 'var(--cn-text-muted)', justifyContent: 'flex-start' }}
-        >+ 新增卡片</Button>
-      )}
     </div>
   )
 }
