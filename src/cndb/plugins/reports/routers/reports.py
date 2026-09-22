@@ -211,18 +211,21 @@ def delete_template(
 # ── 渲染器签名：renderer(rendered_text: str, ctx: dict[str, Any]) -> bytes ──
 
 
-def _load_table_records(db: Session, table_id: int) -> tuple[Any, list[dict[str, Any]]]:
-    """加载指定表的元数据和全部行数据.
+def _load_table_records(db: Session, table_id: int, user: User) -> tuple[Any, list[dict[str, Any]]]:
+    """加载指定表的元数据和全部行数据（带 READ 权限校验 + 字段隐藏）.
 
     返回 (DataTable, records_list)，records 是扁平 dict 列表。
     """
     from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.tables.services.core.access import TableAction, check_action
     from cndb.plugins.tables.services.core.records import list_rows
 
     table = db.get(DataTable, table_id)
     if not table:
         raise HTTPException(status_code=404, detail=f"数据表不存在 id={table_id}")
-    rows, _total = list_rows(db.bind, table, include_trashed=False, db=db)
+    if not check_action(db, table, user, TableAction.READ):
+        raise HTTPException(status_code=403, detail="无权访问该数据表")
+    rows, _total = list_rows(db.bind, table, include_trashed=False, db=db, user=user)
     records = [r.get("data", r) for r in rows]
     return table, records
 
@@ -632,10 +635,10 @@ def render_report(
     if not tpl:
         raise HTTPException(status_code=404, detail="模板不存在")
 
-    # 加载主表
-    table, records = _load_table_records(db, payload.table_id)
+    # 加载主表（带 READ 权限校验 + 字段隐藏）
+    table, records = _load_table_records(db, payload.table_id, _current_user)
 
-    # 加载 extra 表（如有）
+    # 加载 extra 表（如有，同样带权限校验）
     records_by_table: dict[str, list[dict[str, Any]]] = {}
     seen_table_ids: set[int] = {payload.table_id}
     extra_table_ids = list(dict.fromkeys(payload.extra_table_ids))  # 去重保序
@@ -646,7 +649,7 @@ def render_report(
         etable = db.get(DataTable, etid)
         if etable is None:
             raise HTTPException(status_code=404, detail=f"额外数据表不存在 id={etid}")
-        _, erecords = _load_table_records(db, etid)
+        _, erecords = _load_table_records(db, etid, _current_user)
         records_by_table[etable.name] = erecords
 
     # 构建渲染上下文
