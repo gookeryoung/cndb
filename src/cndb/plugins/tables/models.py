@@ -62,7 +62,6 @@ class ViewType(enum.StrEnum):
     GRID = "grid"
     KANBAN = "kanban"
     CALENDAR = "calendar"
-    GALLERY = "gallery"
     FORM = "form"
 
 

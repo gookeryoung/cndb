@@ -33,9 +33,6 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         "group_field",
         "start_field",
         "title_field",
-        "image_field",
-        "subtitle_field",
-        "tag_field",
         # Gantt 甘特图（v1 未校验，此次补齐）
         "start_date_field",
         "end_date_field",
@@ -49,10 +46,6 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:
             return False, f"view_options.{opt_key}='{opt_val}' 不存在"
-    # meta_fields 是字符串数组，每项都需校验
-    for mf in vo.get("meta_fields") or []:
-        if mf not in valid_fields:
-            return False, f"view_options.meta_fields 包含不存在的字段 '{mf}'"
     return True, None
 
 

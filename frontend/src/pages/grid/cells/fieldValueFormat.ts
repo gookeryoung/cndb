@@ -1,6 +1,6 @@
 /** 字段值格式化工具 —— 根据字段类型把 API 返回的原始值转为前端可显示字符串.
  *
- * 来源：从 KanbanView / GridCell 抽取的公共逻辑，统一 Gallery / Kanban / Calendar 视图的
+ * 来源：从 KanbanView / GridCell 抽取的公共逻辑，统一 Kanban / Calendar / Gantt / WBS 视图的
  * 字段值渲染行为（link 字段返回 [{id, value}] 数组，multi_select 返回数组，
  * 直接 String() 会得到 "[object Object]"）.
  */
