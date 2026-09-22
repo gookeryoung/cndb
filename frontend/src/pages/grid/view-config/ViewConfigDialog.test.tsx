@@ -61,13 +61,13 @@ describe('ViewConfigDialog 视图配置', () => {
       />,
     )
 
-    expect(screen.queryByText('视图配置')).not.toBeInTheDocument()
+    expect(screen.queryByText('筛选排序规则')).not.toBeInTheDocument()
   })
 
   it('grid 类型只有筛选/排序两个 Tab（无专属设置）', () => {
     renderDialog()
 
-    expect(screen.getByText('视图配置')).toBeInTheDocument()
+    expect(screen.getByText('筛选排序规则')).toBeInTheDocument()
     expect(screen.getByText('筛选')).toBeInTheDocument()
     expect(screen.getByText('排序')).toBeInTheDocument()
     expect(screen.queryByText('grid 专属设置')).not.toBeInTheDocument()
@@ -77,7 +77,7 @@ describe('ViewConfigDialog 视图配置', () => {
     renderDialog({ viewType: 'kanban' })
 
     expect(screen.getByText('kanban 专属设置')).toBeInTheDocument()
-    expect(screen.getByText('视图配置 — kanban 专属设置')).toBeInTheDocument()
+    expect(screen.getByText('筛选排序规则 — kanban 专属设置')).toBeInTheDocument()
   })
 
   it('传入已有筛选规则时 Tab label 显示计数并回显操作符', () => {
