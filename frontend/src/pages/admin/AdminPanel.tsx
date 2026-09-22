@@ -198,7 +198,7 @@ export default function AdminPanel() {
           <div style={{ fontSize: 13 }}>
             Web 管理台输出 .tar.gz 方便下载；若需要直接备份到服务器文件夹（不压缩），请在服务器终端执行：
             <br />
-            <code style={{ background: '#f5f5f5', padding: '2px 6px', borderRadius: 4 }}>cndb backup --dir -o /path/to/backup_dir</code>
+            <code style={{ background: 'var(--cn-bg-muted)', padding: '2px 6px', borderRadius: 4 }}>cndb backup --dir -o /path/to/backup_dir</code>
           </div>
         }
       />
@@ -360,7 +360,7 @@ export default function AdminPanel() {
         style={{ marginTop: 12 }}
       />
       <div style={{ marginTop: 8, fontSize: 13 }}>
-        <code style={{ background: '#f5f5f5', padding: '2px 6px', borderRadius: 4 }}>cndb restore /path/to/backup_dir --force</code>
+        <code style={{ background: 'var(--cn-bg-muted)', padding: '2px 6px', borderRadius: 4 }}>cndb restore /path/to/backup_dir --force</code>
       </div>
     </div>
   )

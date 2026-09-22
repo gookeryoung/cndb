@@ -50,15 +50,15 @@ export default function ExportPanel({ wid, tid, viewId, viewName }: ExportPanelP
     <div>
       <Empty
         description={
-          <span style={{ color: '#64748b' }}>
+          <span style={{ color: 'var(--cn-text-muted)' }}>
             将表中的数据导出为所选格式（最多 10000 行）
           </span>
         }
       />
       {viewId != null && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: '#f1f5f9', borderRadius: 6, marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'var(--cn-bg-subtle)', borderRadius: 6, marginBottom: 8 }}>
           <Switch size="small" checked={useViewFilter} onChange={setUseViewFilter} />
-          <span style={{ fontSize: 13, color: '#334155' }}>
+          <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)' }}>
             {useViewFilter
               ? `按当前视图「${viewName || ''}」筛选后导出`
               : '导出全表数据（忽略视图筛选）'}

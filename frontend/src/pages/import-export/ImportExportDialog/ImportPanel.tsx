@@ -228,16 +228,16 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         }
 
         return (
-            <div style={{ marginTop: 12, padding: '10px 14px', background: '#f6f8fa', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+            <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--cn-bg-subtle)', borderRadius: 8, border: '1px solid var(--cn-border-soft)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                     {/* 左：文件 + 进度 */}
                     <div style={{ flex: 1, minWidth: 280 }}>
-                        <div style={{ fontSize: 13, color: '#475569', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ fontSize: 13, color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <FileTextOutlined />
                             <span style={{ fontWeight: 500 }}>{task.filename}</span>
-                            <span style={{ color: '#94a3b8' }}>· {(task.format || '').toUpperCase()}</span>
-                            <span style={{ color: '#94a3b8' }}>·</span>
-                            <span style={{ color: '#64748b', fontSize: 12 }}>
+                            <span style={{ color: 'var(--cn-text-muted)' }}>· {(task.format || '').toUpperCase()}</span>
+                            <span style={{ color: 'var(--cn-text-muted)' }}>·</span>
+                            <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>
                                 {textMap[task.status] || task.status}
                                 {task.imported_rows != null && task.status === 'done' && ` · 已导入 ${task.imported_rows} 行`}
                             </span>
@@ -291,8 +291,8 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         return (
             <div style={{ marginBottom: 12 }}>
                 {/* 参考列选择 */}
-                <div style={{ padding: 12, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 8 }}>
+                <div style={{ padding: 12, background: 'var(--cn-bg-subtle)', borderRadius: 8, border: '1px solid var(--cn-border-soft)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--cn-text-secondary)', marginBottom: 8 }}>
                         <SwapOutlined style={{ marginRight: 6 }} />
                         选择参考列（按此匹配已有行做更新 / 新增）
                         <HelpTip title="参考列即匹配键：导入时用这些列的值在表中查找同值行，找到则更新该行，找不到则新增一行" />
@@ -328,7 +328,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                             ★ 推荐参考列：{recommendedFields.join('、')}（文件与表内取值唯一，匹配最可靠）
                         </div>
                     )}
-                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
+                    <div style={{ fontSize: 12, color: 'var(--cn-text-muted)', marginTop: 6 }}>
                         提示：选择一个或多个字段（如『ID』、『名称』），系统将用它们匹配表中已有行，相同值视为更新，无匹配视为新增。
                     </div>
                 </div>
@@ -378,7 +378,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
 
                 {/* 清洗建议（如果有） */}
                 {suggestions.length > 0 && (
-                    <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                    <div style={{ marginBottom: 16, padding: 12, background: 'var(--cn-bg-subtle)', borderRadius: 8, border: '1px solid var(--cn-border-soft)' }}>
                         <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>
                             <SettingOutlined /> 清洗建议（勾选后将在确认导入时执行）
                         </div>
@@ -426,11 +426,11 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                 <div style={{ display: 'flex', gap: 24, marginBottom: 10 }}>
                                     <span>唯一值 <b>{p.unique_count}</b></span>
                                     <span>空值 <b>{p.null_count}</b></span>
-                                    {p.fallback_type && <span style={{ color: '#dc2626' }}>建议降级: {p.fallback_type}</span>}
+                                    {p.fallback_type && <span style={{ color: '#ef4444' }}>建议降级: {p.fallback_type}</span>}
                                 </div>
                                 {/* 空值率进度条 */}
                                 <div style={{ marginBottom: 10 }}>
-                                    <span style={{ color: '#64748b', marginRight: 8 }}>空值率</span>
+                                    <span style={{ color: 'var(--cn-text-muted)', marginRight: 8 }}>空值率</span>
                                     <Progress
                                         size="small"
                                         percent={Math.round(p.null_ratio * 100)}
@@ -439,17 +439,17 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                 </div>
                                 {/* 数值列 min/max/mean */}
                                 {p.min !== undefined && (
-                                    <div style={{ marginBottom: 10, color: '#475569' }}>
+                                    <div style={{ marginBottom: 10, color: 'var(--cn-text-secondary)' }}>
                                         最小 <b>{p.min}</b> / 最大 <b>{p.max}</b> / 均值 <b>{p.mean?.toFixed(2)}</b>
                                     </div>
                                 )}
                                 {/* 类型冲突 */}
                                 {p.type_conflicts?.length > 0 && (
                                     <div style={{ marginBottom: 10 }}>
-                                        <div style={{ color: '#dc2626', marginBottom: 4 }}>⚠ 类型冲突（{p.type_conflicts.length} 条）</div>
+                                        <div style={{ color: '#ef4444', marginBottom: 4 }}>⚠ 类型冲突（{p.type_conflicts.length} 条）</div>
                                         {p.type_conflicts.slice(0, 5).map((c: any, i: number) => (
-                                            <div key={i} style={{ color: '#64748b' }}>
-                                                行 {c.row_number}: <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 3 }}>{String(c.value).slice(0, 40)}</code>
+                                            <div key={i} style={{ color: 'var(--cn-text-muted)' }}>
+                                                行 {c.row_number}: <code style={{ background: 'var(--cn-bg-muted)', padding: '1px 4px', borderRadius: 3 }}>{String(c.value).slice(0, 40)}</code>
                                                 被识别为 <Tag>{c.conflicting_type}</Tag>
                                             </div>
                                         ))}
@@ -458,8 +458,8 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                 {/* 异常值 */}
                                 {p.outliers?.length > 0 && (
                                     <div style={{ marginBottom: 10 }}>
-                                        <div style={{ color: '#d97706', marginBottom: 4 }}>⚠ 异常值（{p.outliers.length} 个）</div>
-                                        <div style={{ color: '#64748b' }}>
+                                        <div style={{ color: '#f59e0b', marginBottom: 4 }}>⚠ 异常值（{p.outliers.length} 个）</div>
+                                        <div style={{ color: 'var(--cn-text-muted)' }}>
                                             {p.outliers.slice(0, 5).map((o: any, i: number) => (
                                                 <Tag key={i} color="orange" style={{ marginBottom: 2 }}>{String(o.value)}</Tag>
                                             ))}
@@ -469,7 +469,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                 {/* 分布直方图（数值列） */}
                                 {p.distribution_bins?.length > 0 && (
                                     <div style={{ marginBottom: 10 }}>
-                                        <div style={{ color: '#475569', marginBottom: 4 }}>数值分布</div>
+                                        <div style={{ color: 'var(--cn-text-secondary)', marginBottom: 4 }}>数值分布</div>
                                         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 50 }}>
                                             {p.distribution_bins.map((b: any, i: number) => {
                                                 const maxC = Math.max(...p.distribution_bins.map((x: any) => x.count))
@@ -492,9 +492,9 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                 {/* 离散列 Top N */}
                                 {p.value_counts?.length > 0 && (
                                     <div style={{ marginBottom: 10 }}>
-                                        <div style={{ color: '#475569', marginBottom: 4 }}>Top {Math.min(5, p.value_counts.length)} 取值</div>
+                                        <div style={{ color: 'var(--cn-text-secondary)', marginBottom: 4 }}>Top {Math.min(5, p.value_counts.length)} 取值</div>
                                         {p.value_counts.slice(0, 5).map((v: any, i: number) => (
-                                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
+                                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--cn-text-muted)' }}>
                                                 <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{String(v.value)}</span>
                                                 <span>{v.count}</span>
                                             </div>
@@ -503,7 +503,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                 )}
                                 {/* 样本值 */}
                                 {p.sample_values?.length > 0 && (
-                                    <div style={{ color: '#64748b' }}>
+                                    <div style={{ color: 'var(--cn-text-muted)' }}>
                                         样本: {p.sample_values.map((v: string, i: number) => (
                                             <Tag key={i} style={{ marginBottom: 2 }}>{String(v).slice(0, 30)}</Tag>
                                         ))}
@@ -524,7 +524,9 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         report?: any,
     ) => {
         const isNew = mode === 'new'
-        const rowBg = isNew ? '#f0fdf4' : '#eff6ff'          // 新增绿 / 更新蓝
+        const rowBg = isNew
+            ? 'color-mix(in srgb, #22c55e 8%, var(--cn-bg-container))'   // 新增绿
+            : 'color-mix(in srgb, #3b82f6 8%, var(--cn-bg-container))'   // 更新蓝
         const rowBorder = isNew ? '#22c55e' : '#3b82f6'       // 左侧竖条颜色
         const badgeColor = isNew ? 'green' : 'blue'
         const BadgeIcon = isNew ? PlusCircleOutlined : EditOutlined
@@ -536,7 +538,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
                         description={
-                            <span style={{ color: '#64748b', fontSize: 13 }}>
+                            <span style={{ color: 'var(--cn-text-muted)', fontSize: 13 }}>
                                 未选择参考列，所有行将作为<b>新增</b>导入
                                 <br />
                                 <span style={{ fontSize: 12 }}>选择参考列并执行更新数据比对分析后，此处将显示新旧字段对比</span>
@@ -547,7 +549,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
                         description={
-                            <span style={{ color: '#64748b', fontSize: 13 }}>
+                            <span style={{ color: 'var(--cn-text-muted)', fontSize: 13 }}>
                                 没有需要更新的行
                                 <br />
                                 <span style={{ fontSize: 12 }}>按参考列「{matchKeys.join('、')}」未匹配到已有数据</span>
@@ -568,10 +570,10 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
             const chipBase: CSSProperties = diffChipStyle()
             return (
                 <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
-                    <span style={{ ...chipBase, background: '#fef2f2', color: '#b91c1c', textDecoration: 'line-through' }}>
+                    <span style={{ ...chipBase, background: 'color-mix(in srgb, #ef4444 12%, var(--cn-bg-container))', color: '#ef4444', textDecoration: 'line-through' }}>
                         − {oldText || '(空)'}
                     </span>
-                    <span style={{ ...chipBase, background: '#f0fdf4', color: '#15803d', fontWeight: 500 }}>
+                    <span style={{ ...chipBase, background: 'color-mix(in srgb, #22c55e 12%, var(--cn-bg-container))', color: '#22c55e', fontWeight: 500 }}>
                         + {newText || '(清空)'}
                     </span>
                 </div>
@@ -610,7 +612,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                 render: (_: unknown, row: any) => {
                     const n = changedCountOf(row)
                     if (n === 0) {
-                        return <Tag style={{ margin: 0, color: '#6b7280', background: '#f3f4f6', borderColor: '#e5e7eb' }}>无变化</Tag>
+                        return <Tag style={{ margin: 0, color: 'var(--cn-text-muted)', background: 'var(--cn-bg-muted)', borderColor: 'var(--cn-border-soft)' }}>无变化</Tag>
                     }
                     const names: string[] = Object.keys(row.field_diffs)
                     return (
@@ -673,7 +675,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     style={{ '--diff-row-bg': rowBg, '--diff-row-border': rowBorder } as any}
                 />
                 {preview.length >= 200 && (
-                    <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>仅预览前 200 行，完整数据将全部导入</div>
+                    <div style={{ color: 'var(--cn-text-muted)', fontSize: 12, marginTop: 4 }}>仅预览前 200 行，完整数据将全部导入</div>
                 )}
             </>
         )
@@ -742,8 +744,8 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                             <Tag color="blue" style={{ marginRight: 6 }}>新字段</Tag>
                                             检测到 {plannedColumns.length} 个文件里有、但表中尚未建立的字段
                                             {unknownColsStrategy === 'add_text_field'
-                                                ? <span style={{ color: '#0284c7', marginLeft: 4 }}>— 勾选要自动创建的字段，未勾选的将被丢弃</span>
-                                                : <span style={{ color: '#d97706', marginLeft: 4 }}>— 当前为「丢弃」策略，切换到上方高级设置开启自动新增</span>}
+                                                ? <span style={{ color: '#0ea5e9', marginLeft: 4 }}>— 勾选要自动创建的字段，未勾选的将被丢弃</span>
+                                                : <span style={{ color: '#f59e0b', marginLeft: 4 }}>— 当前为「丢弃」策略，切换到上方高级设置开启自动新增</span>}
                                         </div>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                             {plannedColumns.map((pc: any) => {
@@ -754,8 +756,10 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                                         style={{
                                                             display: 'flex', alignItems: 'center', gap: 8,
                                                             padding: '4px 8px',
-                                                            background: isDropped ? '#fef2f2' : '#f0fdf4',
-                                                            border: `1px solid ${isDropped ? '#fecaca' : '#bbf7d0'}`,
+                                                            background: isDropped
+                                                                ? 'color-mix(in srgb, #ef4444 8%, var(--cn-bg-container))'
+                                                                : 'color-mix(in srgb, #22c55e 8%, var(--cn-bg-container))',
+                                                            border: `1px solid color-mix(in srgb, ${isDropped ? '#ef4444' : '#22c55e'} 40%, transparent)`,
                                                             borderRadius: 4,
                                                             cursor: unknownColsStrategy === 'add_text_field' ? 'pointer' : 'not-allowed',
                                                             opacity: unknownColsStrategy === 'add_text_field' ? 1 : 0.55,
@@ -775,7 +779,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                                         <span style={{ fontWeight: 500 }}>{pc.name}</span>
                                                         <Tag color={isDropped ? 'default' : 'blue'} style={{ margin: 0 }}>{pc.field_type}</Tag>
                                                         {pc.sample_values?.length > 0 && (
-                                                            <span style={{ color: '#64748b', fontSize: 11 }}>
+                                                            <span style={{ color: 'var(--cn-text-muted)', fontSize: 11 }}>
                                                                 样本: {pc.sample_values.join(' / ')}
                                                             </span>
                                                         )}
@@ -787,7 +791,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                             })}
                                         </div>
                                         {unknownColsStrategy === 'add_text_field' && droppedColumns.length > 0 && (
-                                            <div style={{ marginTop: 6, color: '#dc2626', fontSize: 11 }}>
+                                            <div style={{ marginTop: 6, color: '#ef4444', fontSize: 11 }}>
                                                 其中 {droppedColumns.length} 个字段被勾选丢弃，不会自动创建
                                             </div>
                                         )}
@@ -797,7 +801,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                     <div>
                                         <Tag color="orange">已忽略的文件列</Tag>
                                         {report.skipped_columns.join(', ')}
-                                        <span style={{ marginLeft: 8, color: '#d97706' }}>（自动新增字段已关闭，可在上方设置中开启）</span>
+                                        <span style={{ marginLeft: 8, color: '#f59e0b' }}>（自动新增字段已关闭，可在上方设置中开启）</span>
                                     </div>
                                 )}
                                 {report.missing_required?.length > 0 && (
@@ -847,7 +851,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                     )}
                                     {report.warnings.length > 0 && (
                                         <div style={{ marginTop: 12 }}>
-                                            <div style={{ marginBottom: 4, color: '#92400e', fontSize: 13 }}>警告</div>
+                                            <div style={{ marginBottom: 4, color: '#f59e0b', fontSize: 13 }}>警告</div>
                                             <Table
                                                 size="small" pagination={{ pageSize: 10 }}
                                                 dataSource={report.warnings.map((w: any, i: number) => ({ ...w, __key: `w${i}` }))} rowKey="__key"
@@ -939,7 +943,7 @@ function MiniStat({ label, value, color, compact }: { label: string; value: numb
             borderLeft: `3px solid ${color}`, minWidth: 72, textAlign: 'center',
         }}>
             <div style={{ fontSize: 16, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>{label}</div>
+            <div style={{ fontSize: 11, color: 'var(--cn-text-muted)' }}>{label}</div>
         </div>
     ) : (
         <div style={{
@@ -947,7 +951,7 @@ function MiniStat({ label, value, color, compact }: { label: string; value: numb
             borderLeft: `3px solid ${color}`, minWidth: 90,
         }}>
             <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>{label}</div>
+            <div style={{ fontSize: 11, color: 'var(--cn-text-muted)' }}>{label}</div>
         </div>
     )
 }

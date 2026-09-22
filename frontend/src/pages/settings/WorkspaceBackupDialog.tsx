@@ -25,7 +25,7 @@ export default function WorkspaceBackupDialog({ open, wid, workspaceName, onClos
   const [exporting, setExporting] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number } | null>(null)
-  
+
   // 导出
   const handleExport = async () => {
     try {
@@ -149,7 +149,7 @@ export default function WorkspaceBackupDialog({ open, wid, workspaceName, onClos
                 )}
 
                 {importResult && !importing && (
-                  <div style={{ marginTop: 16, padding: 16, background: '#f0fdf4', borderRadius: 8 }}>
+                  <div style={{ marginTop: 16, padding: 16, background: 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))', borderRadius: 8 }}>
                     <FileTextOutlined style={{ color: '#22c55e', fontSize: 20 }} />
                     <span style={{ marginLeft: 8, color: '#15803d' }}>
                       导入完成：{importResult.tables} 表 / {importResult.rows} 行 / {importResult.views} 视图
