@@ -615,8 +615,56 @@ body.theme-dark [style*="background:#f6f8fa"],
 body.theme-github-dark [style*="background: #f1f5f9"],
 body.theme-dark [style*="background: #f1f5f9"],
 body.theme-github-dark [style*="background:#f1f5f9"],
-body.theme-dark [style*="background:#f1f5f9"] {
+body.theme-dark [style*="background:#f1f5f9"],
+body.theme-midnight [style*="background: #f5f5f5"],
+body.theme-midnight [style*="background:#f5f5f5"],
+body.theme-oled [style*="background: #f5f5f5"],
+body.theme-oled [style*="background:#f5f5f5"],
+body.theme-github-dark [style*="background: #f5f5f5"],
+body.theme-dark [style*="background: #f5f5f5"],
+body.theme-github-dark [style*="background:#f5f5f5"],
+body.theme-dark [style*="background:#f5f5f5"] {
   background: var(--cn-bg-subtle) !important;
+}
+
+/* 绿色/蓝色功能背景 — 新增行 / 更新行 / diff chip.
+   用 color-mix 混合品牌色 + 容器底，深浅主题都能自动适配. */
+body.theme-midnight [style*="background: #f0fdf4"],
+body.theme-midnight [style*="background:#f0fdf4"],
+body.theme-midnight [style*="background: #dcfce7"],
+body.theme-midnight [style*="background:#dcfce7"],
+body.theme-oled [style*="background: #f0fdf4"],
+body.theme-oled [style*="background:#f0fdf4"],
+body.theme-oled [style*="background: #dcfce7"],
+body.theme-oled [style*="background:#dcfce7"],
+body.theme-github-dark [style*="background: #f0fdf4"],
+body.theme-dark [style*="background: #f0fdf4"],
+body.theme-github-dark [style*="background:#f0fdf4"],
+body.theme-dark [style*="background:#f0fdf4"],
+body.theme-github-dark [style*="background: #dcfce7"],
+body.theme-dark [style*="background: #dcfce7"],
+body.theme-github-dark [style*="background:#dcfce7"],
+body.theme-dark [style*="background:#dcfce7"] {
+  background: color-mix(in srgb, #22c55e 18%, var(--cn-bg-container)) !important;
+}
+
+body.theme-midnight [style*="background: #eff6ff"],
+body.theme-midnight [style*="background:#eff6ff"],
+body.theme-oled [style*="background: #eff6ff"],
+body.theme-oled [style*="background:#eff6ff"],
+body.theme-github-dark [style*="background: #eff6ff"],
+body.theme-dark [style*="background: #eff6ff"],
+body.theme-github-dark [style*="background:#eff6ff"],
+body.theme-dark [style*="background:#eff6ff"],
+body.theme-midnight [style*="background: #dbeafe"],
+body.theme-midnight [style*="background:#dbeafe"],
+body.theme-oled [style*="background: #dbeafe"],
+body.theme-oled [style*="background:#dbeafe"],
+body.theme-github-dark [style*="background: #dbeafe"],
+body.theme-dark [style*="background: #dbeafe"],
+body.theme-github-dark [style*="background:#dbeafe"],
+body.theme-dark [style*="background:#dbeafe"] {
+  background: color-mix(in srgb, #3b82f6 18%, var(--cn-bg-container)) !important;
 }
 
 /* 危险/警告区域 — 浅色底 */
@@ -628,6 +676,8 @@ body.theme-midnight [style*="background: #fef3c7"],
 body.theme-midnight [style*="background:#fef3c7"],
 body.theme-midnight [style*="background: #fffbe6"],
 body.theme-midnight [style*="background:#fffbe6"],
+body.theme-midnight [style*="background: #fffbeb"],
+body.theme-midnight [style*="background:#fffbeb"],
 body.theme-oled [style*="background: #fef2f2"],
 body.theme-oled [style*="background:#fef2f2"],
 body.theme-oled [style*="background: #fff2f0"],
@@ -636,6 +686,8 @@ body.theme-oled [style*="background: #fef3c7"],
 body.theme-oled [style*="background:#fef3c7"],
 body.theme-oled [style*="background: #fffbe6"],
 body.theme-oled [style*="background:#fffbe6"],
+body.theme-oled [style*="background: #fffbeb"],
+body.theme-oled [style*="background:#fffbeb"],
 body.theme-github-dark [style*="background: #fef2f2"],
 body.theme-dark [style*="background: #fef2f2"],
 body.theme-github-dark [style*="background:#fef2f2"],
@@ -651,7 +703,11 @@ body.theme-dark [style*="background:#fef3c7"],
 body.theme-github-dark [style*="background: #fffbe6"],
 body.theme-dark [style*="background: #fffbe6"],
 body.theme-github-dark [style*="background:#fffbe6"],
-body.theme-dark [style*="background:#fffbe6"] {
+body.theme-dark [style*="background:#fffbe6"],
+body.theme-github-dark [style*="background: #fffbeb"],
+body.theme-dark [style*="background: #fffbeb"],
+body.theme-github-dark [style*="background:#fffbeb"],
+body.theme-dark [style*="background:#fffbeb"] {
   background: var(--cn-bg-danger-subtle) !important;
 }
 
@@ -685,6 +741,41 @@ body.theme-dark [style*="border: 1px solid #ffccc7"],
 body.theme-github-dark [style*="border:1px solid #ffccc7"],
 body.theme-dark [style*="border:1px solid #ffccc7"] {
   border-color: #67242a !important;
+}
+
+/* 绿色/蓝色/黄色功能边框 — 新增卡片 / 更新卡片 / 黄色警告卡.
+   深色主题下浅绿/浅蓝/浅黄边框会变成刺眼的白线，用更深的同色系替代. */
+body.theme-midnight [style*="border: 1px solid #bbf7d0"],
+body.theme-midnight [style*="border:1px solid #bbf7d0"],
+body.theme-oled [style*="border: 1px solid #bbf7d0"],
+body.theme-oled [style*="border:1px solid #bbf7d0"],
+body.theme-github-dark [style*="border: 1px solid #bbf7d0"],
+body.theme-dark [style*="border: 1px solid #bbf7d0"],
+body.theme-github-dark [style*="border:1px solid #bbf7d0"],
+body.theme-dark [style*="border:1px solid #bbf7d0"] {
+  border-color: #166534 !important;
+}
+
+body.theme-midnight [style*="border: 1px solid #93c5fd"],
+body.theme-midnight [style*="border:1px solid #93c5fd"],
+body.theme-oled [style*="border: 1px solid #93c5fd"],
+body.theme-oled [style*="border:1px solid #93c5fd"],
+body.theme-github-dark [style*="border: 1px solid #93c5fd"],
+body.theme-dark [style*="border: 1px solid #93c5fd"],
+body.theme-github-dark [style*="border:1px solid #93c5fd"],
+body.theme-dark [style*="border:1px solid #93c5fd"] {
+  border-color: #1e40af !important;
+}
+
+body.theme-midnight [style*="border: 1px solid #fcd34d"],
+body.theme-midnight [style*="border:1px solid #fcd34d"],
+body.theme-oled [style*="border: 1px solid #fcd34d"],
+body.theme-oled [style*="border:1px solid #fcd34d"],
+body.theme-github-dark [style*="border: 1px solid #fcd34d"],
+body.theme-dark [style*="border: 1px solid #fcd34d"],
+body.theme-github-dark [style*="border:1px solid #fcd34d"],
+body.theme-dark [style*="border:1px solid #fcd34d"] {
+  border-color: #92400e !important;
 }
 
 /* 浅灰实线边框 */
