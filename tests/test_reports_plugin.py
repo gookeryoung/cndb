@@ -512,3 +512,56 @@ def test_render_unsupported_format(client, auth_headers, db):
         json={"table_id": tid, "params": {}},
     )
     assert resp.status_code == 400
+
+
+def test_render_denied_when_user_no_read_permission(client, auth_headers, db):
+    """无工作区成员身份的用户不应能通过 render 端点拿到其他表的数据。"""
+    # 用户 A（auth_headers）创建 workspace + table + record + template
+    ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_secret"})
+    wid = ws.json()["id"]
+    tbl = client.post(
+        f"/api/v1/workspaces/{wid}/tables",
+        headers=auth_headers,
+        json={"name": "secret_table"},
+    )
+    tid = tbl.json()["id"]
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+        headers=auth_headers,
+        json={"name": "姓名", "field_type": "text"},
+    )
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+        headers=auth_headers,
+        json={"data": {"姓名": "机密数据"}},
+    )
+    tpl = client.post(
+        "/api/v1/reports",
+        headers=auth_headers,
+        json={
+            "name": "泄漏测试",
+            "output_format": "docx",
+            "template_content": "{{ records }}",
+        },
+    )
+    rep_id = tpl.json()["id"]
+
+    # 用户 B（全新账号，不在 A 的 workspace 里）
+    client.post(
+        "/api/v1/accounts/auth/register",
+        json={"username": "user_b", "email": "b@b.com", "password": "passw0rd"},
+    )
+    r = client.post(
+        "/api/v1/accounts/auth/login",
+        json={"login": "user_b", "password": "passw0rd"},
+    )
+    token_b = r.json()["access_token"]
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    # B 尝试渲染 A 的表 → 应该 403
+    resp = client.post(
+        f"/api/v1/reports/{rep_id}/render",
+        headers=headers_b,
+        json={"table_id": tid, "params": {}},
+    )
+    assert resp.status_code == 403, f"应返回 403 但实际 {resp.status_code}: {resp.text}"
