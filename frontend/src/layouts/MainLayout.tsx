@@ -129,7 +129,7 @@ export default function MainLayout() {
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 18, color: 'var(--cn-brand-color)', marginRight: 8, cursor: 'pointer' }}
             data-testid="home-logo"
             onClick={() => navigate('/w')}>
-            <HomeOutlined style={{ fontSize: 16 }} /> 主页
+            <HomeOutlined style={{ fontSize: 14 }} /> cndb
           </div>
         </Tooltip>
 
