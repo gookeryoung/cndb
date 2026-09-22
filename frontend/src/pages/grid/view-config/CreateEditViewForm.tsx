@@ -186,7 +186,6 @@ export default function CreateEditViewForm({
   const viewTypeOptions = [
     { value: 'grid', label: '表格（Grid）' },
     { value: 'kanban', label: '看板（Kanban）' },
-    { value: 'gallery', label: '画廊（Gallery）' },
     { value: 'calendar', label: '日历（Calendar）' },
     { value: 'gantt', label: '甘特图（Gantt）' },
     { value: 'wbs', label: '工作分解（WBS）' },

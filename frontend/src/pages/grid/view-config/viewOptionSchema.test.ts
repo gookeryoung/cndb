@@ -13,7 +13,7 @@ import {
 } from './viewOptionSchema'
 import { makeField } from '@/test/fixtures'
 
-describe('getOptionSchema 五种视图 + 未知类型', () => {
+describe('getOptionSchema 四种视图 + 未知类型', () => {
   it('kanban 返回 12 项 schema', () => {
     expect(getOptionSchema('kanban')).toHaveLength(12)
     expect(getOptionSchema('kanban').map((o) => o.key)).toContain('group_field')
@@ -30,10 +30,6 @@ describe('getOptionSchema 五种视图 + 未知类型', () => {
     const schema = getOptionSchema('calendar')
     expect(schema).toHaveLength(4)
     expect(schema.find((o) => o.key === 'start_field')?.required).toBe(true)
-  })
-
-  it('gallery 返回 5 项', () => {
-    expect(getOptionSchema('gallery')).toHaveLength(5)
   })
 
   it('gantt 返回 9 项，start/end date 必填', () => {
@@ -230,8 +226,8 @@ describe('optionColSpan 两列网格列宽', () => {
 })
 
 describe('schema group 完整性', () => {
-  it('五种视图的每个 option 都标注了 group（漏标即失败）', () => {
-    for (const vt of ['kanban', 'calendar', 'gallery', 'gantt', 'wbs']) {
+  it('四种视图的每个 option 都标注了 group（漏标即失败）', () => {
+    for (const vt of ['kanban', 'calendar', 'gantt', 'wbs']) {
       for (const opt of getOptionSchema(vt)) {
         expect(opt.group, `${vt}.${opt.key} 缺 group`).toBeTruthy()
       }
@@ -240,7 +236,7 @@ describe('schema group 完整性', () => {
 
   it('默认收起的分区名都是实际存在的分区', () => {
     const allLabels = new Set(
-      ['kanban', 'calendar', 'gallery', 'gantt', 'wbs']
+      ['kanban', 'calendar', 'gantt', 'wbs']
         .flatMap((vt) => groupOptionSchema(getOptionSchema(vt)).map((s) => s.label)),
     )
     for (const label of COLLAPSED_BY_DEFAULT_GROUPS) {
