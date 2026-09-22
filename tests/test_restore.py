@@ -14,8 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
-from cndb.backup import create_backup
-from cndb.restore import (
+from cndb.cli.backup import create_backup
+from cndb.cli.restore import (
     BackupInspection,
     RestoreError,
     _check_target_safe,
@@ -318,7 +318,7 @@ def test_restore_missing_archive(tmp_path: Path) -> None:
 def test_restore_command_accepts_archive_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import argparse
 
-    from cndb.restore import restore_command
+    from cndb.cli.restore import restore_command
 
     archive, target = _make_backup_archive(tmp_path)
     monkeypatch.chdir(tmp_path)
@@ -343,7 +343,7 @@ def test_restore_command_accepts_archive_path(tmp_path: Path, monkeypatch: pytes
 def test_restore_command_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import argparse
 
-    from cndb.restore import restore_command
+    from cndb.cli.restore import restore_command
 
     archive, _ = _make_backup_archive(tmp_path)
     # dry-run 不应创建目标库
@@ -365,7 +365,7 @@ def test_restore_command_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_restore_command_exit_on_error(tmp_path: Path) -> None:
-    from cndb.restore import restore_command
+    from cndb.cli.restore import restore_command
 
     args = argparse.Namespace(archive=str(tmp_path / "no.tar.gz"), force=False, dry_run=False)
     with pytest.raises(SystemExit) as excinfo:
@@ -514,8 +514,8 @@ def test_restore_backup_no_uploads_in_backup(tmp_path: Path) -> None:
 
 def test_restore_command_catch_unexpected_exception(tmp_path: Path) -> None:
     """restore_command 捕获 RestoreError 之外的异常 → sys.exit(1)."""
-    from cndb import restore as restore_mod
-    from cndb.restore import restore_command
+    from cndb.cli import restore as restore_mod
+    from cndb.cli.restore import restore_command
 
     archive = tmp_path / "no.tar.gz"
     args = argparse.Namespace(archive=str(archive), force=False, dry_run=False)
@@ -730,7 +730,7 @@ def test_restore_backup_invalid_mode(tmp_path: Path) -> None:
 
 def test_schema_revision_known() -> None:
     """迁移链判定三态：链上 revision / 未知 revision / 空串."""
-    from cndb.restore import _schema_revision_known
+    from cndb.cli.restore import _schema_revision_known
 
     assert _schema_revision_known("6399e5f0f61f") is True
     assert _schema_revision_known("deadbeef0000") is False

@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from cndb.backup import (
+from cndb.cli.backup import (
     MANIFEST_VERSION,
     BackupError,
     _backup_sqlite_native,
@@ -285,7 +285,7 @@ def test_backup_command_calls_create_backup(tmp_path: Path, monkeypatch: pytest.
     """backup_command 应正确转发到 create_backup."""
     import argparse
 
-    from cndb.backup import backup_command
+    from cndb.cli.backup import backup_command
     from cndb.core.config import settings
 
     db_path = _setup_sqlite(tmp_path)
@@ -307,7 +307,7 @@ def test_backup_command_exit_on_backup_error(tmp_path: Path, monkeypatch: pytest
     """BackupError 应导致 sys.exit(1)."""
     import argparse
 
-    from cndb.backup import backup_command
+    from cndb.cli.backup import backup_command
     from cndb.core.config import settings
 
     monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{tmp_path / 'no_such.db'}")
@@ -322,7 +322,7 @@ def test_backup_command_exit_on_backup_error(tmp_path: Path, monkeypatch: pytest
 
 
 def test_runner_backup_subcommand_dispatches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from cndb import runner
+    from cndb.cli import main as runner
     from cndb.core.config import settings
 
     db_path = _setup_sqlite(tmp_path)
@@ -348,8 +348,8 @@ def test_runner_backup_subcommand_dispatches(tmp_path: Path, monkeypatch: pytest
 
 
 def test_runner_restore_subcommand_dispatches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from cndb import runner
-    from cndb.backup import create_backup
+    from cndb.cli import main as runner
+    from cndb.cli.backup import create_backup
 
     # 先做备份
     db_path = _setup_sqlite(tmp_path)
@@ -466,8 +466,8 @@ def test_create_backup_sqlite_file_missing(tmp_path: Path) -> None:
 
 def test_backup_command_catch_unexpected(tmp_path: Path) -> None:
     """backup_command 捕获 BackupError 之外的异常 → sys.exit(1)."""
-    from cndb import backup as backup_mod
-    from cndb.backup import backup_command
+    from cndb.cli import backup as backup_mod
+    from cndb.cli.backup import backup_command
 
     args = argparse.Namespace(
         output=str(tmp_path / "out.tar.gz"),

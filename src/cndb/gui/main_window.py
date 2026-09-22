@@ -753,7 +753,7 @@ class BackupTab(_BaseTab):
         self._begin_op("正在备份...")
 
         def _run() -> None:
-            from cndb.backup import BackupError, create_backup
+            from cndb.cli.backup import BackupError, create_backup
 
             try:
                 result = create_backup(output=out_path, mode=mode, include_uploads=include_uploads)
@@ -784,7 +784,7 @@ class BackupTab(_BaseTab):
         self._begin_op("正在恢复...")
 
         def _run() -> None:
-            from cndb.restore import RestoreError, restore_backup
+            from cndb.cli.restore import RestoreError, restore_backup
 
             try:
                 with redirect_output(self.app.log_queue):
@@ -812,7 +812,7 @@ class BackupTab(_BaseTab):
         self._begin_op("正在预演...")
 
         def _run() -> None:
-            from cndb.restore import RestoreError, inspect_backup
+            from cndb.cli.restore import RestoreError, inspect_backup
 
             try:
                 with redirect_output(self.app.log_queue):
@@ -907,7 +907,7 @@ class InfoTab(_BaseTab):
             import io
             import sys
 
-            from cndb.runner import info_command
+            from cndb.cli.main import info_command
 
             buf = io.StringIO()
             old = sys.stdout
