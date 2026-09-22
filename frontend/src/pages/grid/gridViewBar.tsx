@@ -1,10 +1,11 @@
 /** Grid 视图切换栏 — 可拖拽视图 Segmented + 右侧紧凑按钮组（从 GridPage 抽出）. */
 
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Dropdown, Input, Segmented, Space, Tooltip } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, FilterOutlined, MoreOutlined,
   SearchOutlined, SettingOutlined, EditOutlined, ImportOutlined, ExportOutlined,
-  HolderOutlined,
+  HolderOutlined, LeftOutlined, RightOutlined,
 } from '@ant-design/icons'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -66,6 +67,15 @@ interface GridViewBarProps {
   onOpenDisplaySettings: () => void
 }
 
+/** 根据可滚动容器的 scrollLeft / scrollWidth / clientWidth 计算左右两端是否可继续滚动. */
+function computeScrollState(el: HTMLElement | null): { canLeft: boolean; canRight: boolean } {
+  if (!el) return { canLeft: false, canRight: false }
+  const sl = el.scrollLeft
+  const maxLeft = el.scrollWidth - el.clientWidth
+  // 容差 2px 避免 subpixel 误差导致边界抖动
+  return { canLeft: sl > 2, canRight: sl < maxLeft - 2 }
+}
+
 export default function GridViewBar({
   wid, tid, views, activeViewId, mode, modeButtons, showModeSwitch,
   hasFilters, searchQuery, onSearchChange, onSelectView, onModeChange, onDragEnd,
@@ -75,6 +85,82 @@ export default function GridViewBar({
   const { message } = AntApp.useApp()
   const viewDragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
+
+  // 滚动控制：获取 Segmented 内部的可横向滚动容器
+  const segmentedWrapRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLElement | null>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  /** 查询并缓存内部的 .ant-segmented-group 元素 */
+  const resolveScrollContainer = useCallback((): HTMLElement | null => {
+    const el = segmentedWrapRef.current?.querySelector('.cn-segmented > .ant-segmented-group') as HTMLElement | null
+    scrollContainerRef.current = el
+    return el
+  }, [])
+
+  /** 根据 DOM 当前状态更新左右可滚动标记 */
+  const refreshScrollState = useCallback(() => {
+    const el = resolveScrollContainer()
+    const s = computeScrollState(el)
+    setCanScrollLeft(s.canLeft)
+    setCanScrollRight(s.canRight)
+  }, [resolveScrollContainer])
+
+  /** 平滑横向滚动指定像素 */
+  const scrollBy = useCallback((delta: number) => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    el.scrollBy({ left: delta, behavior: 'smooth' })
+  }, [])
+
+  /** 选中项若不在可见区域内，平滑滚动使其完全可见 */
+  const scrollSelectedIntoView = useCallback(() => {
+    const container = resolveScrollContainer()
+    if (!container) return
+    const selected = container.querySelector('.ant-segmented-item-selected') as HTMLElement | null
+    if (!selected) return
+    const cRect = container.getBoundingClientRect()
+    const sRect = selected.getBoundingClientRect()
+    if (sRect.left < cRect.left || sRect.right > cRect.right) {
+      selected.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' })
+    }
+  }, [resolveScrollContainer])
+
+  // 挂载后绑定 scroll 监听 + ResizeObserver；视图变化、窗口尺寸变化时刷新可滚动状态
+  useEffect(() => {
+    const container = resolveScrollContainer()
+    if (!container) return
+
+    const onScroll = () => refreshScrollState()
+    container.addEventListener('scroll', onScroll, { passive: true })
+
+    let ro: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => refreshScrollState())
+      ro.observe(container)
+      // 同时观察 wrap 根，防止外部 flex 变化导致宽度变化
+      if (segmentedWrapRef.current) ro.observe(segmentedWrapRef.current)
+    }
+
+    refreshScrollState()
+    return () => {
+      container.removeEventListener('scroll', onScroll)
+      ro?.disconnect()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [views.length])
+
+  // activeViewId 变化时，选中项自动滚入可见区
+  useEffect(() => {
+    // 用 rAF 等 Segmented indicator 布局完成
+    const raf = requestAnimationFrame(() => {
+      scrollSelectedIntoView()
+      refreshScrollState()
+    })
+    return () => cancelAnimationFrame(raf)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeViewId, views.length])
 
   // 视图 Segmented 选项（支持拖拽排序）
   // 注意：loadView 未用 useCallback 包裹，随渲染重建；此处直接计算，避免 lint 缺依赖警告
@@ -100,7 +186,15 @@ export default function GridViewBar({
       minHeight: 36,
     }}>
       {/* Segmented —— flex:1 占满弹性空间，min-width:0 允许在窄屏下被压缩从而触发内部滚动 */}
-      <div className="cn-segmented-wrap" style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', padding: '4px 0 4px 16px' }}>
+      <div
+        ref={segmentedWrapRef}
+        className={[
+          'cn-segmented-wrap',
+          canScrollLeft ? 'is-scroll-left' : '',
+          canScrollRight ? 'is-scroll-right' : '',
+        ].filter(Boolean).join(' ')}
+        style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', padding: '4px 0 4px 16px' }}
+      >
         <DndContext sensors={viewDragSensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={views.map(v => String(v.id))} strategy={horizontalListSortingStrategy}>
             <Segmented
@@ -115,6 +209,28 @@ export default function GridViewBar({
             />
           </SortableContext>
         </DndContext>
+
+        {/* 左右滚动箭头按钮 —— 仅对应方向可滚动时出现；置于渐隐遮罩之上 */}
+        {canScrollLeft && (
+          <button
+            type="button"
+            className="cn-seg-scroll-btn cn-seg-scroll-btn-left"
+            aria-label="向左滚动视图列表"
+            onClick={() => scrollBy(-160)}
+          >
+            <LeftOutlined />
+          </button>
+        )}
+        {canScrollRight && (
+          <button
+            type="button"
+            className="cn-seg-scroll-btn cn-seg-scroll-btn-right"
+            aria-label="向右滚动视图列表"
+            onClick={() => scrollBy(160)}
+          >
+            <RightOutlined />
+          </button>
+        )}
       </div>
 
       {/* 右侧紧凑按钮组 —— flex-shrink:0 保证不被 Segmented 挤压 */}
