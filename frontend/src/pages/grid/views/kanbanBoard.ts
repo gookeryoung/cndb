@@ -113,6 +113,38 @@ export function isDoneRow(row: RowResponse, ctx: DoneCtx | null): boolean {
   return String(raw).trim() === String(ctx.value).trim()
 }
 
+/** 计算「勾选/取消完成」应写入 done_field 的新值.
+ *
+ * - 勾选（当前未完成）：写入配置的 done_value（multiselect 归一为数组）
+ * - 取消（当前已完成）：boolean 取反；multiselect 从行值中移除匹配项（移空则清空）；
+ *   select/text 等其余类型清空（null）
+ */
+export function buildDoneToggleValue(row: RowResponse, ctx: DoneCtx): unknown {
+  const ft = ctx.fieldDef?.field_type
+
+  if (isDoneRow(row, ctx)) {
+    if (ft === 'boolean') return !ctx.value
+    if (ft === 'multiselect' || ft === 'multi_select') {
+      const rowVals = formatMultiSelectValue(row[ctx.field])
+      const cfgVals = (Array.isArray(ctx.value) ? ctx.value : [ctx.value]).map(String)
+      const options = ctx.fieldDef?.config ? extractSelectOptions(ctx.fieldDef.config) : []
+      const toValue = (s: string): string => {
+        const hit = options.find((o) => o.value === s || o.label === s)
+        return hit ? hit.value : s
+      }
+      const cfgSet = new Set(cfgVals.map(toValue))
+      const remain = rowVals.filter((v) => !cfgSet.has(toValue(v)))
+      return remain.length ? remain : null
+    }
+    return null
+  }
+
+  if (ft === 'multiselect' || ft === 'multi_select') {
+    return Array.isArray(ctx.value) ? ctx.value : [ctx.value]
+  }
+  return ctx.value
+}
+
 /** 按优先级字段值计算排序权重（高→低） */
 export function getPriorityRank(_row: RowResponse, field?: Field, value?: unknown): number {
   if (!field || !field.config) return 0

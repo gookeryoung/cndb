@@ -46,6 +46,8 @@ function renderKanban(props?: {
   rows?: RowResponse[]
   view?: View | null
   onRowClick?: (r: RowResponse) => void
+  canEdit?: boolean
+  onToggleDone?: (r: RowResponse, values: Record<string, unknown>) => void
 }) {
   const view = props?.view !== undefined ? props.view
     : { id: 1, name: '看板', view_type: 'kanban', is_default: false, view_options: VIEW_OPTIONS }
@@ -56,6 +58,8 @@ function renderKanban(props?: {
       view={view}
       density="comfortable"
       onRowClick={props?.onRowClick}
+      canEdit={props?.canEdit}
+      onToggleDone={props?.onToggleDone}
     />,
   )
 }
@@ -107,6 +111,15 @@ describe('KanbanView 看板视图', () => {
 
     // 任务B 截止为明天 → "还剩 1天"
     expect(screen.getByText(/还剩 1天/)).toBeInTheDocument()
+  })
+
+  it('截止日期徽章与标题同一行（渲染在标题元素内，紧贴标题右侧）', () => {
+    renderKanban()
+
+    const titleEl = screen.getByText('任务A')
+    // 徽章作为标题元素的子节点 → 同一行显示，不再单独占一行
+    expect(titleEl.querySelector('.ant-tag')).not.toBeNull()
+    expect(titleEl.textContent).toContain('逾期 5天')
   })
 
   it('优先级与负责人渲染为 Tag', () => {
@@ -191,5 +204,60 @@ describe('KanbanView 完成标志', () => {
 
     // 进行中列：任务A 逾期 + 任务B 紧急 → 2 紧急；任务C 已完成逾期不计（且在其他列）
     expect(screen.getByText(/2 紧急/)).toBeInTheDocument()
+  })
+})
+
+describe('KanbanView 完成勾选框', () => {
+  const doneRows: RowResponse[] = [
+    { id: 1, 名称: '任务A', 状态: '进行中', 进度: 50, 截止: offsetDate(-5), 优先级: '高' },
+    { id: 3, 名称: '任务C', 状态: '已完成', 进度: 100, 截止: offsetDate(-10), 优先级: '低' },
+  ]
+  const doneView: View = {
+    id: 1, name: '看板', view_type: 'kanban', is_default: false,
+    view_options: { ...VIEW_OPTIONS, done_field: '状态', done_value: '已完成' },
+  }
+  /** 取某张卡片容器（标题元素的父节点） */
+  const cardOf = (title: string) => screen.getByText(title).parentElement as HTMLElement
+
+  it('未配置完成标志时不显示勾选框', () => {
+    renderKanban({ rows: doneRows, canEdit: true, onToggleDone: vi.fn() })
+
+    fireEvent.mouseEnter(cardOf('任务A'))
+
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('无编辑权限时不显示勾选框', () => {
+    renderKanban({ rows: doneRows, view: doneView, canEdit: false, onToggleDone: vi.fn() })
+
+    fireEvent.mouseEnter(cardOf('任务A'))
+
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('hover 后显示勾选框，点击未完成卡片写回 done_value', () => {
+    const onToggleDone = vi.fn()
+    renderKanban({ rows: doneRows, view: doneView, canEdit: true, onToggleDone })
+
+    fireEvent.mouseEnter(cardOf('任务A'))
+    const box = screen.getByRole('checkbox')
+    expect(box).not.toBeChecked()
+
+    fireEvent.click(box)
+    expect(onToggleDone).toHaveBeenCalledTimes(1)
+    expect(onToggleDone.mock.calls[0][0].id).toBe(1)
+    expect(onToggleDone.mock.calls[0][1]).toEqual({ 状态: '已完成' })
+  })
+
+  it('已完成卡片勾选框为选中态，点击取消写回清空值', () => {
+    const onToggleDone = vi.fn()
+    renderKanban({ rows: doneRows, view: doneView, canEdit: true, onToggleDone })
+
+    fireEvent.mouseEnter(cardOf('任务C'))
+    const box = screen.getByRole('checkbox')
+    expect(box).toBeChecked()
+
+    fireEvent.click(box)
+    expect(onToggleDone.mock.calls[0][1]).toEqual({ 状态: null })
   })
 })

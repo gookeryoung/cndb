@@ -20,10 +20,15 @@
  * - done_text_color:   完成卡片标题文字颜色（'auto'=跟随主题默认灰，或具体色值）
  *                      匹配完成的卡片：绿底灰字 + 绿色左边框，隐藏截止日期徽章，
  *                      不参与紧急置顶、不计入列头紧急计数。
+ *
+ * 交互约定:
+ * - 截止日期徽章（逾期/还剩 X天/X天后）与标题同一行、紧贴标题右侧显示。
+ * - 配置了 done_field 且当前用户可编辑时，卡片 hover 后在删除按钮左侧显示完成勾选框，
+ *   勾选/取消直接写回 done_field（勾选写入 done_value，取消则取反/移除/清空）。
  */
 
 import { memo, useMemo, useRef, useState } from 'react'
-import { Tag, Progress, Tooltip, Empty, Button, Modal } from 'antd'
+import { Tag, Progress, Tooltip, Empty, Button, Modal, Checkbox } from 'antd'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   CalendarOutlined,
@@ -38,7 +43,7 @@ import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, KANBAN_OPTIONS, resolveAutoField, findOptionSchema } from '../view-config/viewOptionSchema'
 import { formatFieldDisplayValue } from '../cells/fieldValueFormat'
 import { parseDate, daysFromToday } from '../cells/dateUtils'
-import { type KanbanColumnData, resolveGroupField, groupKanbanColumns, resolveDoneCtx, isDoneRow } from './kanbanBoard'
+import { type KanbanColumnData, resolveGroupField, groupKanbanColumns, resolveDoneCtx, isDoneRow, buildDoneToggleValue } from './kanbanBoard'
 
 // ── 密度样式映射 ──────────────────────────────────────
 
@@ -160,9 +165,12 @@ interface KanbanCardProps {
   onRowClick?: (r: RowResponse) => void
   onDelete?: (r: RowResponse) => void
   canDelete?: boolean
+  /** 勾选/取消完成回调 —— 传入 done_field 的目标值；未配置完成标志或无权限时不传 */
+  onToggleDone?: (r: RowResponse, values: RowValues) => void
+  canEdit?: boolean
 }
 
-const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowClick, onDelete, canDelete }: KanbanCardProps) {
+const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowClick, onDelete, canDelete, onToggleDone, canEdit }: KanbanCardProps) {
   const cs = densityCardStyle(density)
   const [hovered, setHovered] = useState(false)
 
@@ -185,6 +193,8 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   // 计算状态
   const doneCtx = useMemo(() => resolveDoneCtx(opts, fields), [opts, fields])
   const isDone = isDoneRow(row, doneCtx)
+  // 配置了完成标志且可编辑时，hover 显示完成勾选框（位于删除按钮左侧）
+  const showDoneToggle = !!canEdit && !!doneCtx && !!onToggleDone
   const doneBg = opts.done_bg_color === 'auto' ? 'var(--cn-bg-success-subtle)' : (opts.done_bg_color as string)
   const doneTextColor = opts.done_text_color === 'auto' ? 'var(--cn-text-muted)' : (opts.done_text_color as string)
   const dueDate = dueDateField ? parseDate(row[dueDateField]) : null
@@ -240,6 +250,17 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
         e.currentTarget.style.transform = 'none'
       }}
     >
+      {/* 完成勾选框 —— hover 显示，位于删除按钮左侧 */}
+      {showDoneToggle && hovered && (
+        <Tooltip title={isDone ? '标记为未完成' : '标记为完成'}>
+          <Checkbox
+            checked={isDone}
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => onToggleDone!(row, { [doneCtx!.field]: buildDoneToggleValue(row, doneCtx!) })}
+            style={{ position: 'absolute', top: 8, right: canDelete && onDelete ? 32 : 4, zIndex: 10 }}
+          />
+        </Tooltip>
+      )}
       {/* 删除按钮 —— hover 显示 */}
       {canDelete && hovered && onDelete && (
         <Tooltip title="删除此卡片">
@@ -263,9 +284,11 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
           />
         </Tooltip>
       )}
-      {/* 标题行（完成卡片用不显眼的灰色文字） */}
+      {/* 标题行（完成卡片用不显眼的灰色文字）；截止日期徽章紧贴标题右侧、同一行 */}
       <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word', ...(isDone ? { color: doneTextColor } : {}) }}>
         {title}
+        {/* 完成卡片整体隐藏截止日期徽章（逾期/还剩/X天后都不再显示） */}
+        {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
       </div>
 
       {/* 进度条 */}
@@ -280,27 +303,27 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
         </div>
       )}
 
-      {/* 元信息行：优先级 + 截止日期 + 负责人 */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: cs.metaGap, marginBottom: cs.metaMarginBottom }}>
-        {priorityField && (
-          <PriorityBadge field={findField(priorityField)} value={row[priorityField]} />
-        )}
-        {/* 完成卡片整体隐藏截止日期徽章（逾期/还剩/X天后都不再显示） */}
-        {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
-        {assigneeField && (() => {
-          const assigneeFieldObj = findField(assigneeField)
-          const rawVal = assigneeFieldObj
-            ? formatFieldDisplayValue(assigneeFieldObj, row[assigneeField]) || '—'
-            : String(row[assigneeField] || '—')
-          return (
-            <AutoTag
-              value={rawVal}
-              options={assigneeFieldObj?.config?.options}
-              style={{ paddingInline: 6 }}
-            />
-          )
-        })()}
-      </div>
+      {/* 元信息行：优先级 + 负责人（两者都未配置时不占位，保持紧凑） */}
+      {(priorityField || assigneeField) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: cs.metaGap, marginBottom: cs.metaMarginBottom }}>
+          {priorityField && (
+            <PriorityBadge field={findField(priorityField)} value={row[priorityField]} />
+          )}
+          {assigneeField && (() => {
+            const assigneeFieldObj = findField(assigneeField)
+            const rawVal = assigneeFieldObj
+              ? formatFieldDisplayValue(assigneeFieldObj, row[assigneeField]) || '—'
+              : String(row[assigneeField] || '—')
+            return (
+              <AutoTag
+                value={rawVal}
+                options={assigneeFieldObj?.config?.options}
+                style={{ paddingInline: 6 }}
+              />
+            )
+          })()}
+        </div>
+      )}
 
       {/* 卡片额外字段 */}
       {cardFields.length > 0 && (
@@ -366,7 +389,7 @@ function DueDateBadge({
 
   return (
     <Tooltip title={dueDate.toISOString().slice(0, 10)}>
-      <Tag color={color} icon={icon} style={{ margin: 0 }}>{label}</Tag>
+      <Tag color={color} icon={icon} style={{ margin: 0, marginLeft: 6, verticalAlign: 'middle', fontWeight: 400 }}>{label}</Tag>
     </Tooltip>
   )
 }
@@ -392,9 +415,11 @@ interface KanbanColumnProps {
   canDelete?: boolean
   onAddCard?: (initialValues: RowValues) => void
   canAdd?: boolean
+  onToggleDone?: (r: RowResponse, values: RowValues) => void
+  canEdit?: boolean
 }
 
-function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDeleteCard, canDelete, onAddCard, canAdd }: KanbanColumnProps) {
+function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDeleteCard, canDelete, onAddCard, canAdd, onToggleDone, canEdit }: KanbanColumnProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const useVirtual = col.rows.length >= 100
   const estimatedSize = estimateCardHeight(density)
@@ -507,6 +532,8 @@ function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDele
                   onRowClick={onRowClick}
                   onDelete={onDeleteCard}
                   canDelete={canDelete}
+                  onToggleDone={onToggleDone}
+                  canEdit={canEdit}
                 />
               </div>
             ))}
@@ -522,6 +549,8 @@ function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDele
               onRowClick={onRowClick}
               onDelete={onDeleteCard}
               canDelete={canDelete}
+              onToggleDone={onToggleDone}
+              canEdit={canEdit}
             />
           ))
         )}
@@ -554,6 +583,8 @@ export default function KanbanView({
   canDelete,
   onAddCard,
   canAdd,
+  onToggleDone,
+  canEdit,
 }: {
   rows: RowResponse[]
   fields: Field[]
@@ -565,6 +596,9 @@ export default function KanbanView({
   canDelete?: boolean
   onAddCard?: (initialValues: RowValues) => void
   canAdd?: boolean
+  /** 勾选/取消完成回调 —— 仅配置了 done_field 且 canEdit 时卡片才显示勾选框 */
+  onToggleDone?: (r: RowResponse, values: RowValues) => void
+  canEdit?: boolean
 }) {
   const opts = useMemo(
     () => resolveOpts(view?.view_options as Record<string, unknown> | undefined, KANBAN_OPTIONS),
@@ -612,6 +646,8 @@ export default function KanbanView({
           canDelete={canDelete}
           onAddCard={onAddCard}
           canAdd={canAdd}
+          onToggleDone={onToggleDone}
+          canEdit={canEdit}
         />
       ))}
     </div>

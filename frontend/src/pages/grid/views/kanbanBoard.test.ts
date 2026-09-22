@@ -5,6 +5,7 @@ import { makeField } from '@/test/fixtures'
 import {
   getUrgencyRank, getPriorityRank, compareField, sortKanbanCards,
   resolveGroupField, groupKanbanColumns, resolveDoneCtx, isDoneRow,
+  buildDoneToggleValue,
 } from './kanbanBoard'
 
 /** 构造相对今天偏移 N 天的 'YYYY-MM-DD' 日期串（getUrgencyRank 依赖当前时间，动态构造保证用例稳定） */
@@ -454,6 +455,48 @@ describe('isDoneRow', () => {
     // 包含关系不算匹配（「未完成」≠「已完成」）
     expect(isDoneRow(makeRow({ id: 1, 名称: '未完成' }), ctx)).toBe(false)
     expect(isDoneRow(makeRow({ id: 1, 名称: null }), ctx)).toBe(false)
+  })
+})
+
+// ── 完成勾选切换值（buildDoneToggleValue） ─────────────
+
+describe('buildDoneToggleValue', () => {
+  const boolField = makeField({ id: 6, name: '完成', field_type: 'boolean' })
+  const doneFields: Field[] = [...fields, boolField]
+
+  it('select 未完成 → 勾选写入 done_value', () => {
+    const ctx = resolveDoneCtx({ done_field: '状态', done_value: 'done' }, fields)!
+    expect(buildDoneToggleValue(makeRow({ id: 1, 状态: 'todo' }), ctx)).toBe('done')
+  })
+
+  it('select 已完成 → 取消清空（null）', () => {
+    const ctx = resolveDoneCtx({ done_field: '状态', done_value: 'done' }, fields)!
+    expect(buildDoneToggleValue(makeRow({ id: 1, 状态: 'done' }), ctx)).toBeNull()
+  })
+
+  it('text 未完成 → 勾选写入匹配文本；已完成 → 取消清空', () => {
+    const ctx = resolveDoneCtx({ done_field: '名称', done_value: '已完成' }, fields)!
+    expect(buildDoneToggleValue(makeRow({ id: 1, 名称: '待办' }), ctx)).toBe('已完成')
+    expect(buildDoneToggleValue(makeRow({ id: 1, 名称: '已完成' }), ctx)).toBeNull()
+  })
+
+  it('boolean done_value=true：勾选写 true，取消写 false', () => {
+    const ctx = resolveDoneCtx({ done_field: '完成', done_value: true }, doneFields)!
+    expect(buildDoneToggleValue(makeRow({ id: 1, 完成: false }), ctx)).toBe(true)
+    expect(buildDoneToggleValue(makeRow({ id: 1, 完成: true }), ctx)).toBe(false)
+  })
+
+  it('boolean done_value=false（false 即完成）：勾选写 false，取消写 true', () => {
+    const ctx = resolveDoneCtx({ done_field: '完成', done_value: false }, doneFields)!
+    expect(buildDoneToggleValue(makeRow({ id: 1, 完成: true }), ctx)).toBe(false)
+    expect(buildDoneToggleValue(makeRow({ id: 1, 完成: false }), ctx)).toBe(true)
+  })
+
+  it('multiselect：勾选写入匹配数组，取消移除匹配项（移空则清空）', () => {
+    const ctx = resolveDoneCtx({ done_field: '标签', done_value: ['fe'] }, fields)!
+    expect(buildDoneToggleValue(makeRow({ id: 1, 标签: ['be'] }), ctx)).toEqual(['fe'])
+    expect(buildDoneToggleValue(makeRow({ id: 1, 标签: ['fe', 'be'] }), ctx)).toEqual(['be'])
+    expect(buildDoneToggleValue(makeRow({ id: 1, 标签: ['fe'] }), ctx)).toBeNull()
   })
 })
 
