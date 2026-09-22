@@ -25,8 +25,8 @@ import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate, FileAnalyzeResult } from '@/api'
 import { useAuthStore } from '@/store'
 
-const ApiImportDialog = lazy(() => import('@/pages/modals/ApiImportDialog'))
-const FileImportPreview = lazy(() => import('@/pages/modals/FileImportPreview'))
+const ApiImportDialog = lazy(() => import('@/pages/import-export/ApiImportDialog'))
+const FileImportPreview = lazy(() => import('@/pages/import-export/FileImportPreview'))
 
 const { Title, Text } = Typography
 
