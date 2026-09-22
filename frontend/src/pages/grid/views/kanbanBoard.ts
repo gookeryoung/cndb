@@ -191,7 +191,8 @@ export function compareField(
 
 // ── 卡片排序 ──────────────────────────────────────────
 
-/** 对一列卡片应用完整排序：先紧急置顶，再按 card_sort_field / 级联 view_sortings 排序 */
+/** 对一列卡片应用完整排序：未完成在前、已完成置底；未完成内部按紧急置顶 + card_sort_field + view_sortings；
+ * 已完成内部按完成时间倒序（后完成在顶部）：优先用 done_field 的日期值，其次用 updated_at，最后用 created_at 倒序 */
 export function sortKanbanCards(
   rows: RowResponse[],
   fields: Field[],
@@ -206,11 +207,13 @@ export function sortKanbanCards(
   const cardSortField = opts.card_sort_field as string | undefined
   const cardSortDir = opts.card_sort_direction as 'asc' | 'desc'
   const priorityFieldDef = priorityField ? fields.find((f) => f.name === priorityField) : undefined
-  // 完成卡片不参与紧急置顶（完成态优先于逾期/紧急）
   const doneCtx = resolveDoneCtx(opts, fields)
+  // done_field 是否为日期类型 —— 已完成内部排序时优先用它作为"完成时间"
+  const doneFieldDef = doneCtx?.fieldDef
+  const doneIsDate = !!doneFieldDef && ['date', 'datetime', 'timestamp'].includes(doneFieldDef.field_type)
 
   // 把所有排序规则拼成有序列表
-  // 优先级：紧急置顶 > card_sort_field > 级联 view_sortings > 优先级权重 > 创建时间倒序
+  // 优先级（未完成内部）：紧急置顶 > card_sort_field > 级联 view_sortings > 优先级权重 > 创建时间倒序
   const sortKeys: Array<{ field_name: string; direction: 'asc' | 'desc' }> = []
   if (cardSortField) sortKeys.push({ field_name: cardSortField, direction: cardSortDir })
   for (const s of viewSortings) {
@@ -218,11 +221,46 @@ export function sortKanbanCards(
     sortKeys.push(s)
   }
 
+  /** 从行取完成排序用的时间戳：done_field 日期值 > updated_at > created_at */
+  const getDoneTime = (r: RowResponse): number => {
+    if (doneIsDate) {
+      const v = r[doneCtx!.field]
+      if (v !== null && v !== undefined) {
+        const t = new Date(String(v)).getTime()
+        if (!Number.isNaN(t)) return t
+      }
+    }
+    const u = (r.updated_at as string | undefined) || ''
+    if (u) {
+      const t = new Date(u).getTime()
+      if (!Number.isNaN(t)) return t
+    }
+    const c = (r.created_at as string | undefined) || ''
+    if (c) {
+      const t = new Date(c).getTime()
+      if (!Number.isNaN(t)) return t
+    }
+    return 0
+  }
+
   return [...rows].sort((a, b) => {
-    // 1) 紧急置顶（逾期 > 紧急 > 正常）；完成卡片视为正常不置顶
+    const aDone = isDoneRow(a, doneCtx)
+    const bDone = isDoneRow(b, doneCtx)
+
+    // 0) 未完成 vs 已完成：未完成（0）在前，已完成（1）在后
+    if (aDone !== bDone) return aDone ? 1 : -1
+
+    // 已完成内部：后完成的排顶部（完成时间倒序）
+    if (aDone) {
+      return getDoneTime(b) - getDoneTime(a)
+    }
+
+    // --- 以下为未完成内部的排序规则 ---
+
+    // 1) 紧急置顶（逾期 > 紧急 > 正常）
     if (pinUrgent) {
-      const au = isDoneRow(a, doneCtx) ? 0 : getUrgencyRank(a, dueDateField, urgentThreshold)
-      const bu = isDoneRow(b, doneCtx) ? 0 : getUrgencyRank(b, dueDateField, urgentThreshold)
+      const au = getUrgencyRank(a, dueDateField, urgentThreshold)
+      const bu = getUrgencyRank(b, dueDateField, urgentThreshold)
       if (au !== bu) return bu - au // 权重 2 排在最前
     }
 
