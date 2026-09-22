@@ -7,6 +7,7 @@ import {
   FileTextOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
+  HomeOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
@@ -124,8 +125,13 @@ export default function MainLayout() {
         background: 'var(--cn-bg-container)', padding: '0 16px', height: 52, lineHeight: '52px', flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--cn-border)',
       }}>
-        <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--cn-brand-color)', marginRight: 8, cursor: 'pointer' }}
-          onClick={() => navigate('/w')}>cndb</div>
+        <Tooltip title="主页">
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 18, color: 'var(--cn-brand-color)', marginRight: 8, cursor: 'pointer' }}
+            data-testid="home-logo"
+            onClick={() => navigate('/w')}>
+            <HomeOutlined style={{ fontSize: 16 }} /> 主页
+          </div>
+        </Tooltip>
 
         {/* 工作区下拉 */}
         <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
