@@ -346,7 +346,7 @@ def test_find_project_root_alembic_ini_fallback(tmp_path, monkeypatch):
 
 def test_type_compat_none():
     """_type_compat(None, ...) 返回 0.0."""
-    from cndb.plugins.tables.field_mapping import _type_compat
+    from cndb.plugins.tables.services.importing.field_mapping import _type_compat
 
     assert _type_compat(None, None) == 0.0
     assert _type_compat("text", None) == 0.0
@@ -355,7 +355,7 @@ def test_type_compat_none():
 
 def test_name_similarity_high_match():
     """ratio >= 0.75 → '名称相似'."""
-    from cndb.plugins.tables.field_mapping import _name_similarity
+    from cndb.plugins.tables.services.importing.field_mapping import _name_similarity
 
     ratio, label = _name_similarity("amount", "amount_total")
     assert isinstance(ratio, float)
@@ -369,7 +369,7 @@ def test_name_similarity_high_match():
 
 def test_get_member_role_ws_none(db):
     """_get_member_role: Workspace 查询为 None → return None."""
-    from cndb.plugins.tables.access import _get_member_role
+    from cndb.plugins.tables.services.core.access import _get_member_role
 
     class FakeTable:
         workspace_id = 999999
@@ -427,7 +427,7 @@ def test_json_field_validate_value_list():
 
 def test_name_similarity_ratio_high_not_contains():
     """ratio >= 0.75 但互不包含 → '名称相似'."""
-    from cndb.plugins.tables.field_mapping import _name_similarity
+    from cndb.plugins.tables.services.importing.field_mapping import _name_similarity
 
     # customer vs customary 应得到较高 ratio 但互不包含
     ratio, label = _name_similarity("customer", "customary")
@@ -440,7 +440,7 @@ def test_name_similarity_ratio_high_not_contains():
 
 def test_api_fetch_resolve_path_non_dict_node():
     """resolve_path 中间节点不是 dict → None."""
-    from cndb.plugins.tables.api_fetch import _resolve_path
+    from cndb.plugins.tables.services.importing.api_fetch import _resolve_path
 
     result = _resolve_path({"a": [1, 2]}, "a.b")
     assert result is None

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from cndb.plugins.tables import api_fetch as af
+from cndb.plugins.tables.services.importing import api_fetch as af
 
 # ── validate_url ──────────────────────────────────────
 

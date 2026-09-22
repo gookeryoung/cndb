@@ -181,7 +181,7 @@ class TestImportFailureCleanup:
         assert after_count == before_count, f"期望表被清理: 之前 {before_count} 现在 {after_count}"
 
         # 断言：物理表应不存在
-        from cndb.plugins.tables import ddl
+        from cndb.plugins.tables.services.core import ddl
 
         insp = ddl.inspect(engine)
         existing_tables = insp.get_table_names()
@@ -301,25 +301,25 @@ class TestGuessFormatEncoding:
     """Importer.guess_format_from_content 在编码修复后的行为."""
 
     def test_utf8_csv_bytes(self):
-        from cndb.plugins.tables.importer import guess_format_from_content
+        from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
         data = b"name,age\nAlice,30\n"
         assert guess_format_from_content(data) == "csv"
 
     def test_gbk_csv_bytes(self):
-        from cndb.plugins.tables.importer import guess_format_from_content
+        from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
         data = "姓名,年龄\n张三,25\n".encode("gbk")
         assert guess_format_from_content(data) == "csv"
 
     def test_binary_bytes_returns_xlsx(self):
-        from cndb.plugins.tables.importer import guess_format_from_content
+        from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
         bad_bytes = bytes(range(0x80, 0xC0)) + bytes(range(0xF5, 0xFF))
         assert guess_format_from_content(bad_bytes) == "xlsx"
 
     def test_json_bytes(self):
-        from cndb.plugins.tables.importer import guess_format_from_content
+        from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
         data = '[{"name": "张三"}]'.encode()
         assert guess_format_from_content(data) == "json"

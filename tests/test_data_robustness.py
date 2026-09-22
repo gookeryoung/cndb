@@ -19,13 +19,14 @@ import pytest
 from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
-from cndb.plugins.tables import ddl, transfer
-from cndb.plugins.tables.diff_reporter import _json_safe
-from cndb.plugins.tables.failed_row_exporter import FailedRowExporter
-from cndb.plugins.tables.import_tasks import create_import_task, execute_import_task
-from cndb.plugins.tables.importer import Importer
+from cndb.plugins.tables.services.core import ddl
+from cndb.plugins.tables import transfer
+from cndb.plugins.tables.services.importing.diff_reporter import _json_safe
+from cndb.plugins.tables.services.importing.failed_row_exporter import FailedRowExporter
+from cndb.plugins.tables.services.importing.import_tasks import create_import_task, execute_import_task
+from cndb.plugins.tables.services.importing.importer import Importer
 from cndb.plugins.tables.models import DataField, DataTable
-from cndb.plugins.tables.row_validator import Issue, ValidationResult
+from cndb.plugins.tables.services.importing.row_validator import Issue, ValidationResult
 from cndb.plugins.tables.transfer import export_rows_to_csv, export_rows_to_xlsx
 from tests.helpers import wait_import_settled
 
@@ -87,7 +88,7 @@ class TestUpsertSemanticEquivalence:
     def test_upsert_numeric_string_no_false_diff(self, test_session):
         """number 库内 1 vs 文件 "1.0" —— 数值语义等价，无变化."""
         engine, session = test_session
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         table = _make_table_with_fields(session, engine, [("code", "text"), ("qty", "number")])
         rec.bulk_create(engine, table, [{"code": "A1", "qty": 1}], db=session)
@@ -103,7 +104,7 @@ class TestUpsertSemanticEquivalence:
     def test_upsert_boolean_string_no_false_diff(self, test_session):
         """boolean 库内 True vs 文件 "true" —— 布尔语义等价，无变化."""
         engine, session = test_session
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         table = _make_table_with_fields(session, engine, [("code", "text"), ("active", "boolean")])
         rec.bulk_create(engine, table, [{"code": "A1", "active": True}], db=session)
@@ -118,7 +119,7 @@ class TestUpsertSemanticEquivalence:
     def test_upsert_whitespace_no_false_diff(self, test_session):
         """text "abc" vs " abc " —— 字符串去空白比较，无变化."""
         engine, session = test_session
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         table = _make_table_with_fields(session, engine, [("code", "text"), ("name", "text")])
         rec.bulk_create(engine, table, [{"code": "A1", "name": "abc"}], db=session)
@@ -140,7 +141,7 @@ class TestPreviewLimit:
     def test_update_preview_truncated_at_200(self, test_session):
         """205 行全命中已有 key → update_count==205 但 update_preview 仅 200 条."""
         engine, session = test_session
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         table = _make_table_with_fields(session, engine, [("code", "text"), ("name", "text")])
         rec.bulk_create(engine, table, [{"code": f"K{i:04d}", "name": f"旧{i}"} for i in range(205)], db=session)

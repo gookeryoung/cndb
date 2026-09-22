@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from cndb.plugins.tables.column_profiler import (
+from cndb.plugins.tables.services.importing.column_profiler import (
     DEFAULT_SAMPLE_LIMIT,
     _build_histogram,
     _estimate_duplicate_rows,

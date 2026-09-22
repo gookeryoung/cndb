@@ -420,7 +420,7 @@ class TestLinkFieldImport:
         src_tid = r.json()["id"]
 
         # 手动在 DB 里写一个指向不存在表的 link 字段
-        from cndb.plugins.tables.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
 
         dt = db.get(DataTable, src_tid)
@@ -511,7 +511,7 @@ class TestCreateTableWithImport:
 
 class TestFieldOpsUnit:
     def test_resolve_source_fields_by_ids(self, db):
-        from cndb.plugins.tables.field_ops import resolve_source_fields
+        from cndb.plugins.tables.services.fields.field_ops import resolve_source_fields
         from cndb.plugins.tables.models import DataField, DataTable
 
         src = DataTable(workspace_id=1, name="S", owner_id=1)
@@ -530,7 +530,7 @@ class TestFieldOpsUnit:
         assert [f.name for f in fields] == ["a", "c"]
 
     def test_resolve_source_fields_by_names_missing(self, db):
-        from cndb.plugins.tables.field_ops import resolve_source_fields
+        from cndb.plugins.tables.services.fields.field_ops import resolve_source_fields
         from cndb.plugins.tables.models import DataField, DataTable
 
         src = DataTable(workspace_id=1, name="S", owner_id=1)
@@ -547,7 +547,7 @@ class TestFieldOpsUnit:
             resolve_source_fields(src, field_names=["only", "missing"])
 
     def test_plan_field_import_conflict(self, db):
-        from cndb.plugins.tables.field_ops import plan_field_import
+        from cndb.plugins.tables.services.fields.field_ops import plan_field_import
         from cndb.plugins.tables.models import DataField, DataTable
 
         dst = DataTable(workspace_id=1, name="D", owner_id=1)
@@ -570,7 +570,7 @@ class TestFieldOpsUnit:
         assert "dup" in skipped[0]
 
     def test_validate_link_targets_missing(self, db):
-        from cndb.plugins.tables.field_ops import validate_link_targets_exist
+        from cndb.plugins.tables.services.fields.field_ops import validate_link_targets_exist
         from cndb.plugins.tables.models import DataField
 
         bad = DataField(name="ghost", field_type="link", config={"target_table_id": 99999})
@@ -669,7 +669,7 @@ class TestCopyTableRegression:
         copy_tid = r.json()["id"]
 
         # 复制后的字段 link_table_name 在物理表中存在
-        from cndb.plugins.tables.links import is_link_field, link_table_exists
+        from cndb.plugins.tables.services.core.links import is_link_field, link_table_exists
         from cndb.plugins.tables.models import DataTable
 
         copy_table = db.get(DataTable, copy_tid)
@@ -740,7 +740,7 @@ class TestFieldImportDDL:
 class TestFieldOpsCoverage:
     def test_plan_field_import_with_explicit_start_order(self, db):
         """plan_field_import 指定 start_order 时使用指定值."""
-        from cndb.plugins.tables.field_ops import plan_field_import
+        from cndb.plugins.tables.services.fields.field_ops import plan_field_import
         from cndb.plugins.tables.models import DataField, DataTable
 
         dst = DataTable(workspace_id=1, name="D", owner_id=1)
@@ -756,7 +756,7 @@ class TestFieldOpsCoverage:
 
     def test_plan_field_import_default_start_order(self, db):
         """plan_field_import start_order=None 时从最大 order+1 开始."""
-        from cndb.plugins.tables.field_ops import plan_field_import
+        from cndb.plugins.tables.services.fields.field_ops import plan_field_import
         from cndb.plugins.tables.models import DataField, DataTable
 
         dst = DataTable(workspace_id=1, name="D2", owner_id=1)
@@ -775,8 +775,8 @@ class TestFieldOpsCoverage:
 
     def test_execute_field_import_basic(self, db):
         """execute_field_import 基本路径（clone_fields_between_tables 的低级 API）."""
-        from cndb.plugins.tables import field_ops as _fo
-        from cndb.plugins.tables.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.fields import field_ops as _fo
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
 
         engine = db.get_bind()
@@ -804,8 +804,8 @@ class TestFieldOpsCoverage:
 
     def test_execute_field_import_skip_conflicts(self, db):
         """execute_field_import skip_conflicts=True 时跳过冲突."""
-        from cndb.plugins.tables import field_ops as _fo
-        from cndb.plugins.tables.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.fields import field_ops as _fo
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
 
         engine = db.get_bind()
@@ -842,8 +842,8 @@ class TestFieldOpsCoverage:
 
     def test_execute_field_import_empty_plan(self, db):
         """execute_field_import 所有字段都冲突时返回空列表."""
-        from cndb.plugins.tables import field_ops as _fo
-        from cndb.plugins.tables.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.fields import field_ops as _fo
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
 
         engine = db.get_bind()
@@ -876,7 +876,7 @@ class TestFieldOpsCoverage:
 
     def test_generate_column_name_uniqueness(self):
         """generate_column_name 返回唯一的列名."""
-        from cndb.plugins.tables.field_ops import generate_column_name
+        from cndb.plugins.tables.services.fields.field_ops import generate_column_name
 
         names = {generate_column_name() for _ in range(100)}
         assert len(names) == 100
@@ -887,8 +887,8 @@ class TestFieldOpsCoverage:
         """clone_fields_between_tables 克隆 is_unique=True 字段时物理加唯一索引."""
         from sqlalchemy import inspect
 
-        from cndb.plugins.tables import field_ops as _fo
-        from cndb.plugins.tables.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.fields import field_ops as _fo
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
 
         engine = db.get_bind()
@@ -920,7 +920,7 @@ class TestFieldOpsCoverage:
 
     def test_link_field_no_target_table_id_skipped(self, db):
         """validate_link_targets_exist 遇到 link 字段 config.target_table_id=None 时跳过."""
-        from cndb.plugins.tables.field_ops import validate_link_targets_exist
+        from cndb.plugins.tables.services.fields.field_ops import validate_link_targets_exist
         from cndb.plugins.tables.models import DataField
 
         # link 字段没有 target_table_id — 不应该报错
@@ -930,8 +930,8 @@ class TestFieldOpsCoverage:
 
     def test_clone_all_conflict_returns_empty(self, db):
         """clone_fields_between_tables skip_conflicts=True 且全部冲突时返回空."""
-        from cndb.plugins.tables import field_ops as _fo
-        from cndb.plugins.tables.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.fields import field_ops as _fo
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
 
         engine = db.get_bind()
@@ -967,8 +967,8 @@ class TestFieldOpsCoverage:
         """execute_field_import unique 字段时物理加唯一索引."""
         from sqlalchemy import inspect
 
-        from cndb.plugins.tables import field_ops as _fo
-        from cndb.plugins.tables.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.fields import field_ops as _fo
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
 
         engine = db.get_bind()
@@ -1000,8 +1000,8 @@ class TestFieldOpsCoverage:
         """execute_field_import DDL 失败时回滚并抛异常 (行 220-223)."""
         from unittest.mock import patch
 
-        from cndb.plugins.tables import field_ops as _fo
-        from cndb.plugins.tables.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.fields import field_ops as _fo
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
 
         engine = db.get_bind()
@@ -1024,7 +1024,7 @@ class TestFieldOpsCoverage:
         ddl_create(engine, dst)
 
         with (
-            patch("cndb.plugins.tables.field_ops._ddl.add_column", side_effect=RuntimeError("boom")),
+            patch("cndb.plugins.tables.services.fields.field_ops._ddl.add_column", side_effect=RuntimeError("boom")),
             pytest.raises(RuntimeError, match="boom"),
         ):
             _fo.execute_field_import(engine, db, dst, [src_f])
@@ -1033,8 +1033,8 @@ class TestFieldOpsCoverage:
         """clone_fields_between_tables DDL 失败时回滚并抛异常 (行 279-281)."""
         from unittest.mock import patch
 
-        from cndb.plugins.tables import field_ops as _fo
-        from cndb.plugins.tables.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.fields import field_ops as _fo
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
 
         engine = db.get_bind()
@@ -1057,7 +1057,7 @@ class TestFieldOpsCoverage:
         ddl_create(engine, dst)
 
         with (
-            patch("cndb.plugins.tables.field_ops._ddl.add_column", side_effect=RuntimeError("boom")),
+            patch("cndb.plugins.tables.services.fields.field_ops._ddl.add_column", side_effect=RuntimeError("boom")),
             pytest.raises(RuntimeError, match="boom"),
         ):
             _fo.clone_fields_between_tables(engine, db, src, dst, field_ids=[src_f.id])

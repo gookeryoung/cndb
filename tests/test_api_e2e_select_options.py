@@ -494,7 +494,7 @@ class TestSyncFromExistingData:
         sync 扫物理表把存量 + 新值都补全到 options."""
         from sqlalchemy import MetaData
 
-        from cndb.plugins.tables import ddl as table_ddl
+        from cndb.plugins.tables.services.core import ddl as table_ddl
 
         wid = workspace.id
 

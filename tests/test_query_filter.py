@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table
 
 from cndb.plugins.tables.models import DataField
-from cndb.plugins.tables.query import compile_filters, compile_sorts
+from cndb.plugins.tables.services.core.query import compile_filters, compile_sorts
 
 
 @pytest.fixture
@@ -328,7 +328,7 @@ class TestOrAndGrouping:
         """传入 dict 形式的 __or__ 组 → 生成合法 where clause."""
         from sqlalchemy import Column, Integer, MetaData, String, Table
 
-        from cndb.plugins.tables import query
+        from cndb.plugins.tables.services.core import query
         from cndb.plugins.tables.models import DataField, DataTable
 
         tbl = DataTable(workspace_id=1, name="t_or1")
@@ -365,7 +365,7 @@ class TestOrAndGrouping:
         """list 顶层含 __or__ dict."""
         from sqlalchemy import Column, Integer, MetaData, String, Table
 
-        from cndb.plugins.tables import query
+        from cndb.plugins.tables.services.core import query
         from cndb.plugins.tables.models import DataField, DataTable
 
         tbl = DataTable(workspace_id=1, name="t_or2")
@@ -405,7 +405,7 @@ class TestOrAndGrouping:
     def test_and_group_explicit(self, db):
         from sqlalchemy import Boolean, Column, Integer, MetaData, String, Table
 
-        from cndb.plugins.tables import query
+        from cndb.plugins.tables.services.core import query
         from cndb.plugins.tables.models import DataField, DataTable
 
         tbl = DataTable(workspace_id=1, name="t_and1")
@@ -444,7 +444,7 @@ class TestOrAndGrouping:
     def test_empty_or_group_returns_none(self, db):
         from sqlalchemy import Column, Integer, MetaData, String, Table
 
-        from cndb.plugins.tables import query
+        from cndb.plugins.tables.services.core import query
         from cndb.plugins.tables.models import DataField, DataTable
 
         tbl = DataTable(workspace_id=1, name="t_empty")
@@ -468,7 +468,7 @@ class TestOrAndGrouping:
     def test_non_dict_items_in_group_skipped(self, db):
         from sqlalchemy import Column, Integer, MetaData, String, Table
 
-        from cndb.plugins.tables import query
+        from cndb.plugins.tables.services.core import query
         from cndb.plugins.tables.models import DataField, DataTable
 
         tbl = DataTable(workspace_id=1, name="t_skip")

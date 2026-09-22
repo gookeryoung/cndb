@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cndb.plugins.tables import links
-from cndb.plugins.tables.ddl import create_table
+from cndb.plugins.tables.services.core import links
+from cndb.plugins.tables.services.core.ddl import create_table
 from cndb.plugins.tables.models import DataField, DataTable
 
 # ── 复用 test_cov_links_internal 里的场景（自包含） ──
@@ -70,7 +70,7 @@ class TestSetLinksEdgeCases:
         fa = db.query(DataField).filter_by(table_id=tid_a, name="link_to_target").first()
         # 目标表已插入 3 行记录（id=1,2,3 左右）
         # 取真实存在的 target ids
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         target_tbl = db.query(DataTable).filter_by(id=_tid_b).first()
         target_rows, _ = rec.list_rows(db_engine, target_tbl, db=db)
