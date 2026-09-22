@@ -45,7 +45,7 @@ export interface ViewOptionSchema {
 
 // ── 各视图的 option schema 列表 ─────────────────────────
 
-/** Kanban 看板视图的专属配置字段（共 14 项） */
+/** Kanban 看板视图的专属配置字段（共 12 项） */
 export const KANBAN_OPTIONS: ViewOptionSchema[] = [
   {
     key: 'group_field', label: '分组字段', group: '分组与标题', tooltip: '按哪个字段分组显示为看板列',
@@ -100,32 +100,8 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
     ],
   },
   {
-    key: 'done_field', label: '完成标志', group: '完成状态', tooltip: '选择字段并指定匹配值，满足条件的卡片以完成状态显示（绿底灰字、隐藏倒计时提醒）；也可把日期字段作为完成日期使用，勾选/取消会自动填入或清空',
+    key: 'done_field', label: '完成标志', group: '完成状态', tooltip: '选择字段并指定匹配值，满足条件的卡片以完成状态显示（标题删除线 + 绿色对勾、完成卡片自动置底、隐藏倒计时提醒）',
     kind: 'done_flag', fieldTypes: ['boolean', 'select', 'multiselect', 'text', 'longtext', 'date', 'datetime'],
-  },
-  {
-    key: 'done_bg_color', label: '完成卡片背景色', group: '完成状态', tooltip: '完成状态卡片的背景颜色',
-    kind: 'enum_select', defaultValue: 'auto',
-    enumOptions: [
-      { value: 'auto', label: '跟随主题（默认绿）' },
-      { value: '#f6ffed', label: '绿色' },
-      { value: '#e6f4ff', label: '蓝色' },
-      { value: '#f9f0ff', label: '紫色' },
-      { value: '#fff7e6', label: '橙色' },
-      { value: '#f5f5f5', label: '灰色' },
-    ],
-  },
-  {
-    key: 'done_text_color', label: '完成卡片文字颜色', group: '完成状态', tooltip: '完成状态卡片标题的文字颜色',
-    kind: 'enum_select', defaultValue: 'auto',
-    enumOptions: [
-      { value: 'auto', label: '跟随主题（默认灰）' },
-      { value: '#8c8c8c', label: '灰色' },
-      { value: '#595959', label: '深灰' },
-      { value: '#389e0d', label: '绿色' },
-      { value: '#1677ff', label: '蓝色' },
-      { value: '#cf1322', label: '红色' },
-    ],
   },
 ]
 
