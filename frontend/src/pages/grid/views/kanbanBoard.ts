@@ -6,7 +6,7 @@
  */
 
 import type { RowResponse, Field } from '@/api'
-import { extractSelectOptions } from '../cells/fieldOps'
+import { extractSelectOptions, matchValueCondition } from '../cells/fieldOps'
 import { parseDate, daysFromToday } from '../cells/dateUtils'
 import { getSelectLabel, getLinkFirstLabel, getMultiSelectFirstLabel, formatMultiSelectValue } from '../cells/fieldValueFormat'
 
@@ -49,68 +49,43 @@ export function getUrgencyRank(
 export interface DoneCtx {
   /** 完成标志字段名 */
   field: string
-  /** 匹配值：boolean | string | string[]（按字段类型） */
+  /** 判定操作符 —— 复用筛选契约（FIELD_OPS_BY_TYPE），缺省 '=' 等值；is_empty/is_not_empty 无值直通 */
+  op: string
+  /** 匹配值：boolean | string | string[]（按字段类型）；无值操作符下为 undefined */
   value: unknown
   /** 字段定义（用于类型分派与 select options 提取） */
   fieldDef?: Field
 }
 
-/** 从 opts 解析完成标志配置（view_options.done_field + done_value）；未配置或不完整返回 null */
+/** 从 opts 解析完成标志配置（view_options.done_field + done_op + done_value）；未配置或不完整返回 null.
+ *
+ * done_op 缺省 '='（旧数据零迁移）；无值操作符（is_empty/is_not_empty）不要求 done_value。
+ */
 export function resolveDoneCtx(opts: Record<string, unknown>, fields: Field[]): DoneCtx | null {
   const field = opts.done_field as string | undefined
+  if (!field) return null
+  const op = typeof opts.done_op === 'string' && opts.done_op ? opts.done_op : '='
   const value = opts.done_value
-  // 注意：value === false 是布尔字段的合法配置值，不能当"未配置"过滤
-  if (!field || value === undefined || value === null || value === '') return null
-  return { field, value, fieldDef: fields.find((f) => f.name === field) }
+  // 等值操作符必须有匹配值；注意 value === false 是布尔字段的合法配置值，不能当"未配置"过滤
+  if (op !== 'is_empty' && op !== 'is_not_empty' && (value === undefined || value === null || value === '')) {
+    return null
+  }
+  return { field, op, value, fieldDef: fields.find((f) => f.name === field) }
 }
 
 /** 判定单行是否匹配完成标志（ctx 为 null 时恒 false）.
  *
- * 按字段类型分派：
- * - boolean: 严格相等（false 是合法匹配值）
- * - select: 匹配 option 的 value 或 label（兼容旧 list[str] config，与 getPriorityRank 先例一致）
- * - multiselect: 行值数组与配置值数组任一交集（value/label 归一后比较）
- * - text/longtext/其他: 去首尾空格后精确相等
+ * 类型分派与无值直通统一委托 fieldOps.matchValueCondition（与筛选契约同一套语义）；
+ * multiselect 在委托前先经 formatMultiSelectValue 归一（兼容逗号分隔串）。
  */
 export function isDoneRow(row: RowResponse, ctx: DoneCtx | null): boolean {
   if (!ctx) return false
-  const raw = row[ctx.field]
+  let raw = row[ctx.field]
   const ft = ctx.fieldDef?.field_type
-
-  if (ft === 'boolean') {
-    return raw === ctx.value
-  }
-
-  if (ft === 'select') {
-    if (raw === null || raw === undefined || raw === '') return false
-    const strVal = String(raw)
-    const options = ctx.fieldDef?.config ? extractSelectOptions(ctx.fieldDef.config) : []
-    if (options.length) {
-      const hit = options.find((o) => o.value === strVal || o.label === strVal)
-      // 行值命中 option 时，比较命中项的 value/label 与配置值；未命中 option 时直接比较原值
-      if (hit) return hit.value === ctx.value || hit.label === ctx.value
-      return strVal === String(ctx.value)
-    }
-    return strVal === String(ctx.value)
-  }
-
   if (ft === 'multiselect' || ft === 'multi_select') {
-    const rowVals = formatMultiSelectValue(raw)
-    if (!rowVals.length) return false
-    const cfgVals = Array.isArray(ctx.value) ? ctx.value.map(String) : [String(ctx.value)]
-    const options = ctx.fieldDef?.config ? extractSelectOptions(ctx.fieldDef.config) : []
-    // 行值与配置值都先归一为 option value（label → value），再求交集
-    const toValue = (s: string): string => {
-      const hit = options.find((o) => o.value === s || o.label === s)
-      return hit ? hit.value : s
-    }
-    const rowSet = new Set(rowVals.map(toValue))
-    return cfgVals.some((v) => rowSet.has(toValue(v)))
+    raw = formatMultiSelectValue(raw)
   }
-
-  // text / longtext 及其他类型：精确匹配（去首尾空格）
-  if (raw === null || raw === undefined) return false
-  return String(raw).trim() === String(ctx.value).trim()
+  return matchValueCondition(raw, ctx.op, ctx.value, ctx.fieldDef)
 }
 
 /** 计算「勾选/取消完成」应写入 done_field 的新值.
@@ -121,6 +96,10 @@ export function isDoneRow(row: RowResponse, ctx: DoneCtx | null): boolean {
  */
 export function buildDoneToggleValue(row: RowResponse, ctx: DoneCtx): unknown {
   const ft = ctx.fieldDef?.field_type
+
+  // 无值操作符（is_empty/is_not_empty）没有确定的对侧值：勾选/取消都会破坏判定语义，
+  // 返回 undefined 哨兵，调用方（完成勾选 UI）据此禁用该交互
+  if (ctx.op === 'is_empty' || ctx.op === 'is_not_empty') return undefined
 
   if (isDoneRow(row, ctx)) {
     if (ft === 'boolean') return !ctx.value

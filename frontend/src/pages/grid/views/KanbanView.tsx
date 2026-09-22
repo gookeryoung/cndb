@@ -268,8 +268,9 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
         e.currentTarget.style.transform = 'none'
       }}
     >
-      {/* 完成勾选框 —— hover 显示，仅未完成卡片可见（完成后不可逆），位于删除按钮左侧 */}
-      {showDoneToggle && hovered && (
+      {/* 完成勾选框 —— hover 显示，仅未完成卡片可见（完成后不可逆），位于删除按钮左侧；
+          无值操作符（is_empty/is_not_empty）下 buildDoneToggleValue 返回 undefined 哨兵 → 不渲染勾选框 */}
+      {showDoneToggle && hovered && doneCtx && buildDoneToggleValue(row, doneCtx) !== undefined && (
         <Tooltip title="标记为完成">
           <Checkbox
             onClick={(e) => e.stopPropagation()}
