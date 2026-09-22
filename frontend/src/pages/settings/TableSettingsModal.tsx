@@ -29,7 +29,7 @@ import { tableApi, permissionApi, viewApi } from '@/api'
 import type { TableDetail, TableUpdate, ViewCreate, View } from '@/api'
 import PermissionEditor, { buildHiddenSet } from '@/pages/grid/permissions/PermissionEditor'
 
-const FieldManager = lazy(() => import('@/pages/modals/FieldManager'))
+const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
 const CreateEditViewForm = lazy(() => import('@/pages/grid/view-config/CreateEditViewForm'))
 
 /** 视图类型 → 中文标签 + 图标（与 GridPage MODE_BUTTONS 保持一致） */
