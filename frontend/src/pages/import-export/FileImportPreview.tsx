@@ -359,14 +359,17 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         const isSelect = col.field_type === 'select' || col.field_type === 'multiselect'
         const hasError = failCnt > 0
         // 卡片背景：选中 > 有异常 > 无异常（绿色）
-        let cardBg = '#fafafa'
-        let cardBorder = '#e5e7eb'
+        let cardBg = 'var(--cn-bg-muted)'
+        let cardBorder = 'var(--cn-border-soft)'
         if (selectedField === col.name) {
-          cardBg = '#eff6ff'; cardBorder = '#93c5fd'
+          cardBg = 'color-mix(in srgb, #3b82f6 10%, var(--cn-bg-container))'
+          cardBorder = 'color-mix(in srgb, #3b82f6 45%, transparent)'
         } else if (hasError) {
-          cardBg = '#fef2f2'; cardBorder = '#fecaca'
+          cardBg = 'color-mix(in srgb, #ef4444 10%, var(--cn-bg-container))'
+          cardBorder = 'color-mix(in srgb, #ef4444 40%, transparent)'
         } else {
-          cardBg = '#f0fdf4'; cardBorder = '#bbf7d0'
+          cardBg = 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))'
+          cardBorder = 'color-mix(in srgb, #22c55e 40%, transparent)'
         }
         return (
           <div
@@ -411,7 +414,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
 
             {/* 空值率进度条 */}
             {baseCol?.null_ratio != null && baseCol.null_ratio > 0 && (
-              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span>空值</span>
                 <Progress
                   size="small"
@@ -424,30 +427,30 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
 
             {/* 类型识别提示（date/timestamp/longtext/select 特别提示） */}
             {isSelect && (
-              <div style={{ fontSize: 11, color: '#d97706', marginBottom: 2 }}>
+              <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 2 }}>
                 <SwapOutlined /> 低基数 → select（{col.options?.length ?? 0}）
               </div>
             )}
             {isDate && (
-              <div style={{ fontSize: 11, color: '#16a34a', marginBottom: 2 }}>
+              <div style={{ fontSize: 11, color: '#22c55e', marginBottom: 2 }}>
                 <FileTextOutlined /> 识别为日期
               </div>
             )}
             {isTimestamp && (
-              <div style={{ fontSize: 11, color: '#16a34a', marginBottom: 2 }}>
+              <div style={{ fontSize: 11, color: '#22c55e', marginBottom: 2 }}>
                 <ClockCircleOutlined /> 识别为时间戳（秒/毫秒自动归一）
               </div>
             )}
             {isLongtext && (
-              <div style={{ fontSize: 11, color: '#0891b2', marginBottom: 2 }}>
+              <div style={{ fontSize: 11, color: '#06b6d4', marginBottom: 2 }}>
                 <FileTextOutlined /> 识别为长文本
               </div>
             )}
 
             {/* 样本值 */}
-            <div style={{ fontSize: 11, color: '#64748b' }}>
+            <div style={{ fontSize: 11, color: 'var(--cn-text-muted)' }}>
               样本: {(col.sample_values ?? []).slice(0, 3).map((v, i) => (
-                <Tag key={i} style={{ marginBottom: 1, background: '#f1f5f9' }}>{v}</Tag>
+                <Tag key={i} style={{ marginBottom: 1, background: 'var(--cn-bg-muted)' }}>{v}</Tag>
               ))}
             </div>
           </div>
@@ -468,8 +471,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
     const options = overrides[col.name]?.options ?? col.options ?? []
 
     return (
-      <div style={{ marginTop: 8, padding: 12, background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#92400e', marginBottom: 8 }}>
+      <div style={{ marginTop: 8, padding: 12, background: 'var(--cn-bg-warning-subtle)', border: '1px solid color-mix(in srgb, #f59e0b 45%, transparent)', borderRadius: 6 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'color-mix(in srgb, #f59e0b 70%, var(--cn-text-primary))', marginBottom: 8 }}>
           <SwapOutlined /> 编辑 {col.name} 的选项（{options.length} 个）
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
@@ -527,13 +530,13 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
           const raw = row[col.name]
           const t = tryConvert(raw, col.field_type)
           if (t.rawText === '' || t.convertedText === '') {
-            return <span style={{ color: '#cbd5e1', fontStyle: 'italic' }}>(空)</span>
+            return <span style={{ color: 'var(--cn-text-disabled)', fontStyle: 'italic' }}>(空)</span>
           }
           if (t.failed) {
             return (
               <Tooltip title={`原始值 "${t.rawText}" 无法转为 ${col.field_type}`}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ color: '#dc2626', textDecoration: 'line-through' }}>{t.rawText}</span>
+                  <span style={{ color: '#ef4444', textDecoration: 'line-through' }}>{t.rawText}</span>
                   <WarningOutlined style={{ color: '#ef4444', fontSize: 12 }} />
                 </span>
               </Tooltip>
@@ -543,8 +546,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
           if (t.convertedText !== t.rawText) {
             return (
               <span>
-                <span style={{ color: '#9ca3af', textDecoration: 'line-through', fontSize: 11 }}>{t.rawText}</span>
-                <span style={{ color: '#16a34a', marginLeft: 4, fontWeight: 500 }}>→ {t.convertedText}</span>
+                <span style={{ color: 'var(--cn-text-muted)', textDecoration: 'line-through', fontSize: 11 }}>{t.rawText}</span>
+                <span style={{ color: '#22c55e', marginLeft: 4, fontWeight: 500 }}>→ {t.convertedText}</span>
               </span>
             )
           }
@@ -561,12 +564,12 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
     const okFieldCount = cols.length - errorFieldCount
 
     // 统计卡片公共样式
-    const statBox = (bg: string, numColor = '#0f172a', icon: any = null, num: any = 0, label = '') => (
+    const statBox = (bg: string, numColor = 'var(--cn-text-primary)', icon: any = null, num: any = 0, label = '') => (
       <div style={{ padding: '4px 6px', background: bg, borderRadius: 4, textAlign: 'center' }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: numColor, lineHeight: 1.2 }}>
           {icon}{num}
         </div>
-        <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>{label}</div>
+        <div style={{ fontSize: 10, color: 'var(--cn-text-muted)', marginTop: 1 }}>{label}</div>
       </div>
     )
 
@@ -574,12 +577,12 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {/* 汇总栏：6 项统计（固定高度，不随表滚动） */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexShrink: 0 }}>
-          {statBox('#f1f5f9', '#0f172a', null, analyzeResult.total_rows, '总行数')}
-          {statBox('#f1f5f9', '#0f172a', null, cols.length, '字段数')}
-          {statBox('#f1f5f9', '#0f172a', null, sampleRows.length, '预览行')}
-          {statBox(okFieldCount > 0 ? '#f0fdf4' : '#f1f5f9', '#16a34a', <CheckOutlined style={{ marginRight: 1 }} />, okFieldCount, '正常')}
-          {statBox(errorFieldCount > 0 ? '#fef2f2' : '#f1f5f9', '#dc2626', <WarningOutlined style={{ marginRight: 1 }} />, errorFieldCount, '异常')}
-          {statBox(failedRows.length > 0 ? '#fef2f2' : '#f0fdf4', failedRows.length > 0 ? '#dc2626' : '#16a34a', null, failedRows.length, '异常行')}
+          {statBox('var(--cn-bg-muted)', 'var(--cn-text-primary)', null, analyzeResult.total_rows, '总行数')}
+          {statBox('var(--cn-bg-muted)', 'var(--cn-text-primary)', null, cols.length, '字段数')}
+          {statBox('var(--cn-bg-muted)', 'var(--cn-text-primary)', null, sampleRows.length, '预览行')}
+          {statBox(okFieldCount > 0 ? 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))' : 'var(--cn-bg-muted)', okFieldCount > 0 ? '#22c55e' : 'var(--cn-text-primary)', <CheckOutlined style={{ marginRight: 1 }} />, okFieldCount, '正常')}
+          {statBox(errorFieldCount > 0 ? 'color-mix(in srgb, #ef4444 10%, var(--cn-bg-container))' : 'var(--cn-bg-muted)', errorFieldCount > 0 ? '#ef4444' : 'var(--cn-text-primary)', <WarningOutlined style={{ marginRight: 1 }} />, errorFieldCount, '异常')}
+          {statBox(failedRows.length > 0 ? 'color-mix(in srgb, #ef4444 10%, var(--cn-bg-container))' : 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))', failedRows.length > 0 ? '#ef4444' : '#22c55e', null, failedRows.length, '异常行')}
         </div>
 
         {/* Table 容器 —— 用 flex 撑满剩余空间，通过注入样式让 antd 内层 body 滚动 */}
@@ -648,7 +651,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       <div style={{ flexShrink: 0, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>表名：</span>
         <Input value={tableName} onChange={e => setTableName(e.target.value)} style={{ flex: 1 }} placeholder="自动使用文件名" />
-        <span style={{ color: '#64748b', fontSize: 12 }}>
+        <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>
           {analyzeResult?.format?.toUpperCase() ?? '-'} · {analyzeResult?.total_rows ?? 0} 行
         </span>
       </div>
@@ -662,11 +665,11 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
-          borderRight: '1px solid #f0f0f0',
+          borderRight: '1px solid var(--cn-border-soft)',
           paddingRight: 10,
         }}>
           {/* 左栏标题（固定） */}
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6, flexShrink: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--cn-text-secondary)', marginBottom: 6, flexShrink: 0 }}>
             字段与类型（{effectiveColumns.length}）
           </div>
           {/* 字段列表（滚动） */}
@@ -683,7 +686,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
           <div style={{
             fontSize: 13,
             fontWeight: 600,
-            color: '#334155',
+            color: 'var(--cn-text-secondary)',
             marginBottom: 6,
             display: 'flex',
             alignItems: 'center',
@@ -698,7 +701,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
                 <div style={{ maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {/* 数据类型颜色图例 */}
                   <div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, fontWeight: 600 }}>数据类型颜色</div>
+                    <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', marginBottom: 6, fontWeight: 600 }}>数据类型颜色</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                       {PREVIEW_TYPE_OPTIONS.map(t => (
                         <Tag key={t.value} color={getFieldTypeColor(t.value)} style={{ margin: 0 }}>
@@ -709,8 +712,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
                   </div>
                   {/* 转换状态图例 */}
                   <div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, fontWeight: 600 }}>转换状态</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: '#475569' }}>
+                    <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', marginBottom: 6, fontWeight: 600 }}>转换状态</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: 'var(--cn-text-secondary)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <Tag color="success" icon={<CheckOutlined />} style={{ margin: 0 }} />
                         <span>字段无类型转换异常</span>
@@ -720,12 +723,12 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
                         <span>部分行无法转换为此类型</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ color: '#cbd5e1', fontStyle: 'italic' }}>(空)</span>
+                        <span style={{ color: 'var(--cn-text-disabled)', fontStyle: 'italic' }}>(空)</span>
                         <span>该单元格原始值为空</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ color: '#9ca3af', textDecoration: 'line-through' }}>原始</span>
-                        <span style={{ color: '#16a34a' }}>→ 转换后</span>
+                        <span style={{ color: 'var(--cn-text-muted)', textDecoration: 'line-through' }}>原始</span>
+                        <span style={{ color: '#22c55e' }}>→ 转换后</span>
                         <span>格式发生变化（如 2024/01/05 → 2024-01-05）</span>
                       </div>
                     </div>
