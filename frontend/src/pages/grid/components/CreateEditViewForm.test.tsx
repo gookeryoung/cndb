@@ -144,3 +144,81 @@ describe('CreateEditViewForm 视图表单', () => {
     expect(onSubmit).toHaveBeenCalledWith('我的看板', 'kanban', { group_field: '状态' })
   })
 })
+
+describe('CreateEditViewForm 分区与折叠布局', () => {
+  /** 渲染 kanban 表单（kanban 的「完成状态」为默认收起分区，覆盖分区/折叠全部场景） */
+  function renderKanban(onSubmit = vi.fn()) {
+    renderProviders(
+      <CreateEditViewForm
+        fields={fields} initialType="kanban" initialName="看板" onSubmit={onSubmit}
+      />,
+    )
+    return onSubmit
+  }
+
+  it('按 schema 分区渲染分区卡片：基础信息不可折叠，其余为可折叠按钮', () => {
+    renderKanban()
+
+    expect(screen.getByText('基础信息')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /基础信息/ })).not.toBeInTheDocument()
+
+    for (const label of ['分组与标题', '字段映射', '排序与提醒', '完成状态']) {
+      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument()
+    }
+  })
+
+  it('列宽按 optionColSpan 分配：字段下拉整行，方向下拉单列', () => {
+    renderKanban()
+
+    expect(screen.getByText('分组字段').closest('.cevf-col-2')).not.toBeNull()
+    expect(screen.getByText('卡片排序方向').closest('.cevf-col-1')).not.toBeNull()
+  })
+
+  it('次要分区默认收起：完成状态内容不渲染，点击可展开再收起', () => {
+    renderKanban()
+
+    const head = screen.getByRole('button', { name: /完成状态/ })
+    expect(head).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
+
+    fireEvent.click(head)
+    expect(head).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('完成标志')).toBeInTheDocument()
+
+    fireEvent.click(head)
+    expect(head).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
+  })
+
+  it('默认展开的分区可手动收起', () => {
+    renderKanban()
+    expect(screen.getByText('分组字段')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /分组与标题/ }))
+    expect(screen.queryByText('分组字段')).not.toBeInTheDocument()
+  })
+
+  it('切换视图类型后按新 schema 重置折叠状态', async () => {
+    renderKanban()
+
+    fireEvent.click(screen.getByRole('button', { name: /完成状态/ }))
+    expect(screen.getByText('完成标志')).toBeInTheDocument()
+
+    openSelect(0)
+    await pickOption('日历（Calendar）')
+    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
+
+    openSelect(0)
+    await pickOption('看板（Kanban）')
+    // 回到 kanban：「完成状态」恢复默认收起
+    expect(screen.getByRole('button', { name: /完成状态/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
+  })
+
+  it('grid 类型只渲染「基础信息」一个分区（无视图专属分区）', () => {
+    renderProviders(<CreateEditViewForm fields={fields} onSubmit={vi.fn()} />)
+
+    expect(screen.getByText('基础信息')).toBeInTheDocument()
+    expect(document.querySelectorAll('.cevf-section')).toHaveLength(1)
+  })
+})

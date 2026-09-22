@@ -1,12 +1,24 @@
 /** 创建 / 编辑视图表单（合并版，消除 GridPage 里 CreateViewForm 与 EditViewForm 的 90% 重复）.
  *
  * 通过 initialName / initialType / initialOptions 三个可选 prop 区分创建 vs 编辑场景.
+ *
+ * 布局为「两列网格 + 分区卡片 + 可折叠」，以压缩对话框高度：原单列 vertical 布局会把
+ * 该视图的全部专属配置项（kanban 多达 14 项）顺次纵向堆叠，导致对话框过长。
+ * 分区归属与列宽元数据均来自 viewOptionSchema（group / optionColSpan），组件本身不硬编码。
  */
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Button, Form, Input, Select, Switch } from 'antd'
+import { RightOutlined } from '@ant-design/icons'
 import type { Field } from '@/api'
-import { getOptionSchema, resolveFieldOptions } from './viewOptionSchema'
+import {
+  COLLAPSED_BY_DEFAULT_GROUPS,
+  getOptionSchema,
+  groupOptionSchema,
+  optionColSpan,
+  resolveFieldOptions,
+} from './viewOptionSchema'
 import type { ViewOptionSchema } from './viewOptionSchema'
 import DoneFlagFields from './DoneFlagFields'
 
@@ -21,14 +33,39 @@ interface CreateEditViewFormProps {
   onSubmit: (name: string, viewType: string, viewOptions: Record<string, unknown>) => void
 }
 
-// ── 视图类型配置区 ──────────────────────────────────
+// ── 分区卡片 ──────────────────────────────────────
 
-interface ViewTypeConfigProps {
-  vt: string
-  opts: Record<string, unknown>
-  fields: Field[]
-  updateOpt: (key: string, value: unknown) => void
+interface SectionCardProps {
+  title: string
+  collapsed?: boolean
+  collapsible?: boolean
+  onToggle?: () => void
+  children: ReactNode
 }
+
+/** 分区卡片：标题 + 折叠开关；collapsible=false 时标题不可点、内容常显 */
+function SectionCard({ title, collapsed = false, collapsible = true, onToggle, children }: SectionCardProps) {
+  return (
+    <section className={`cevf-section${collapsed ? ' collapsed' : ''}`}>
+      {collapsible ? (
+        <button
+          type="button"
+          className="cevf-section-head"
+          aria-expanded={!collapsed}
+          onClick={onToggle}
+        >
+          <RightOutlined className="cevf-section-chevron" />
+          <span>{title}</span>
+        </button>
+      ) : (
+        <div className="cevf-section-head"><span>{title}</span></div>
+      )}
+      {!collapsed && <div className="cevf-section-body">{children}</div>}
+    </section>
+  )
+}
+
+// ── 单项配置控件 ──────────────────────────────────
 
 /** 渲染单个 ViewOptionSchema item 为 Form.Item 块 */
 function ConfigItem({ opt, fields, opts, updateOpt }: {
@@ -102,49 +139,6 @@ function ConfigItem({ opt, fields, opts, updateOpt }: {
   )
 }
 
-/** 通用视图专属配置块 — 从 viewOptionSchema 渲染指定 view_type 的所有 option 字段 */
-function ConfigBlock({ vt, opts, fields, updateOpt }: ViewTypeConfigProps) {
-  const schema = getOptionSchema(vt)
-  if (schema.length === 0) return null
-  return (
-    <>
-      {schema.map(opt => (
-        <ConfigItem key={opt.key} opt={opt} fields={fields} opts={opts} updateOpt={updateOpt} />
-      ))}
-    </>
-  )
-}
-
-/** 看板视图专属配置字段 — 由 viewOptionSchema.ts 驱动 */
-function KanbanConfig(props: ViewTypeConfigProps) {
-  if (props.vt !== 'kanban') return null
-  return <ConfigBlock {...props} />
-}
-
-/** 日历视图专属配置字段 — 由 viewOptionSchema.ts 驱动 */
-function CalendarConfig(props: ViewTypeConfigProps) {
-  if (props.vt !== 'calendar') return null
-  return <ConfigBlock {...props} />
-}
-
-/** 画廊视图专属配置字段 — 由 viewOptionSchema.ts 驱动 */
-function GalleryConfig(props: ViewTypeConfigProps) {
-  if (props.vt !== 'gallery') return null
-  return <ConfigBlock {...props} />
-}
-
-/** 甘特图视图专属配置字段 — 由 viewOptionSchema.ts 驱动 */
-function GanttConfig(props: ViewTypeConfigProps) {
-  if (props.vt !== 'gantt') return null
-  return <ConfigBlock {...props} />
-}
-
-/** WBS 工作分解结构视图专属配置字段 — 由 viewOptionSchema.ts 驱动 */
-function WbsConfig(props: ViewTypeConfigProps) {
-  if (props.vt !== 'wbs') return null
-  return <ConfigBlock {...props} />
-}
-
 // ── 主表单组件 ──────────────────────────────────────────
 
 /** 合并后的创建/编辑视图表单（根据 initialName 是否存在自动区分模式） */
@@ -159,6 +153,26 @@ export default function CreateEditViewForm({
   const [name, setName] = useState(initialName)
   const [vt, setVt] = useState(initialType)
   const [opts, setOpts] = useState<Record<string, unknown>>(initialOptions ? { ...initialOptions } : {})
+  // 折叠状态：键为分区名；初值按 initialType 的 schema 默认收起集合预置（避免首帧展开闪烁）
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(
+      groupOptionSchema(getOptionSchema(initialType))
+        .map(s => [s.label, COLLAPSED_BY_DEFAULT_GROUPS.has(s.label)]),
+    ),
+  )
+
+  const sections = useMemo(() => groupOptionSchema(getOptionSchema(vt)), [vt])
+
+  // 视图类型切换 → sections 变化 → 按新 schema 的默认收起集合重置折叠状态
+  useEffect(() => {
+    setCollapsed(Object.fromEntries(
+      sections.map(s => [s.label, COLLAPSED_BY_DEFAULT_GROUPS.has(s.label)]),
+    ))
+  }, [sections])
+
+  const toggleSection = (label: string) => {
+    setCollapsed(prev => ({ ...prev, [label]: !prev[label] }))
+  }
 
   const updateOpt = (key: string, value: unknown) => {
     setOpts(prev => {
@@ -179,19 +193,45 @@ export default function CreateEditViewForm({
   ]
 
   return (
-    <Form layout="vertical" style={{ marginTop: 12 }}>
-      <Form.Item label="视图名称" required>
-        <Input placeholder="例如：只看进行中" value={name} onChange={e => setName(e.target.value)} autoFocus />
-      </Form.Item>
-      <Form.Item label="视图类型">
-        <Select value={vt} onChange={(v) => { setVt(v); setOpts({}) }} options={viewTypeOptions} />
-      </Form.Item>
-      <KanbanConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
-      <CalendarConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
-      <GalleryConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
-      <GanttConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
-      <WbsConfig vt={vt} opts={opts} fields={fields} updateOpt={updateOpt} />
-      <div style={{ textAlign: 'right', marginTop: 12 }}>
+    <Form layout="vertical" style={{ marginTop: 8 }}>
+      {/* 基础信息：两列并排，不可折叠 */}
+      <SectionCard title="基础信息" collapsible={false}>
+        <div className="cevf-grid">
+          <div className="cevf-col-1">
+            <Form.Item label="视图名称" required>
+              <Input placeholder="例如：只看进行中" value={name} onChange={e => setName(e.target.value)} autoFocus />
+            </Form.Item>
+          </div>
+          <div className="cevf-col-1">
+            <Form.Item label="视图类型">
+              <Select value={vt} onChange={(v) => { setVt(v); setOpts({}) }} options={viewTypeOptions} />
+            </Form.Item>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* 视图专属配置：按 schema 分区渲染（分区卡片 + 两列网格 + 折叠） */}
+      {sections.map(sec => (
+        <SectionCard
+          key={sec.label}
+          title={sec.label}
+          collapsed={!!collapsed[sec.label]}
+          onToggle={() => toggleSection(sec.label)}
+        >
+          <div className="cevf-grid">
+            {sec.items.map(opt => (
+              <div
+                key={opt.key}
+                className={optionColSpan(opt.kind) === 2 ? 'cevf-col-2' : 'cevf-col-1'}
+              >
+                <ConfigItem opt={opt} fields={fields} opts={opts} updateOpt={updateOpt} />
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      ))}
+
+      <div className="cevf-footer">
         <Button type="primary" disabled={!name.trim()}
           onClick={() => onSubmit(name.trim(), vt, opts)}>{submitLabel}</Button>
       </div>
