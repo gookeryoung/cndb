@@ -249,7 +249,17 @@ def delete_view(
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")
+
+    was_default = dv.is_default
     db.delete(dv)
+    db.flush()
+    if was_default:
+        # 删除的是默认视图 → 把默认标记转移给同表剩余视图（按 order/id 取第一个），避免出现"无默认视图"
+        next_default = (
+            db.query(DataView).filter(DataView.table_id == table_id).order_by(DataView.order, DataView.id).first()
+        )
+        if next_default is not None:
+            next_default.is_default = True
     db.commit()
 
 

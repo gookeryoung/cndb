@@ -297,7 +297,8 @@ export interface ViewCreate {
   sortings?: Record<string, unknown> | Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
   filter_type?: 'AND' | 'OR'
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
-  default?: boolean
+  /** 是否设为默认视图（对齐后端 ViewCreate.is_default） */
+  is_default?: boolean
 }
 export interface ViewUpdate {
   name?: string; view_type?: string
@@ -305,7 +306,8 @@ export interface ViewUpdate {
   sortings?: Record<string, unknown> | Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
   filter_type?: 'AND' | 'OR' | null
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
-  default?: boolean
+  /** 是否设为默认视图（对齐后端 ViewUpdate.is_default） */
+  is_default?: boolean
 }
 
 export interface AuditLog {
@@ -559,17 +561,6 @@ export interface AttachmentFile {
 export interface PreferencesResponse {
   /** 每张表的激活视图映射: table_id(str) -> view_id(int) */
   active_views: Record<string, number>
-}
-
-/** 设置单表激活视图 */
-export interface ActiveViewUpsert {
-  active_view_id: number | null
-}
-
-/** 查询单表激活视图偏好的响应 */
-export interface ActiveViewResponse {
-  table_id: number
-  active_view_id: number | null
 }
 
 // ── API 自动建表 / 数据抓取 ────────────────────────

@@ -9,11 +9,12 @@
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { screen, waitFor, fireEvent } from '@testing-library/react'
+import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import TableSettingsModal from './TableSettingsModal'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
-import { permissionApi } from '@/api'
+import { permissionApi, viewApi } from '@/api'
+import type { View } from '@/api'
 
 const WID = '10'
 const TID = '20'
@@ -61,8 +62,10 @@ function setupTableHandlers() {
     ),
     http.get('/api/v1/workspaces/:wid/members', () =>
       HttpResponse.json([
-        { id: 1, workspace_id: 10, user_id: 1, role: 'owner', pinned: false,
-          user: { id: 1, username: 'alice', nickname: null, email: null } },
+        {
+          id: 1, workspace_id: 10, user_id: 1, role: 'owner', pinned: false,
+          user: { id: 1, username: 'alice', nickname: null, email: null }
+        },
       ]),
     ),
   )
@@ -80,7 +83,7 @@ describe('TableSettingsModal 权限健壮性', () => {
   it('initialTab=permissions 直接打开时自动加载权限数据', async () => {
     const getSpy = vi.spyOn(permissionApi, 'get').mockResolvedValue(permFixture)
     renderProviders(
-      <TableSettingsModal open wid={WID} tid={TID} initialTab="permissions" onClose={() => {}} />,
+      <TableSettingsModal open wid={WID} tid={TID} initialTab="permissions" onClose={() => { }} />,
       { initialAuth: { user: { id: 1, username: 'alice', email: null, role: 'system_admin', is_active: true }, token: 'fake' } },
     )
 
@@ -91,7 +94,7 @@ describe('TableSettingsModal 权限健壮性', () => {
     vi.spyOn(permissionApi, 'get').mockResolvedValue(permFixture)
     const patchSpy = vi.spyOn(permissionApi, 'patch').mockResolvedValue(permFixture)
     renderProviders(
-      <TableSettingsModal open wid={WID} tid={TID} initialTab="permissions" onClose={() => {}} />,
+      <TableSettingsModal open wid={WID} tid={TID} initialTab="permissions" onClose={() => { }} />,
       { initialAuth: { user: { id: 1, username: 'alice', email: null, role: 'system_admin', is_active: true }, token: 'fake' } },
     )
 
@@ -124,7 +127,7 @@ describe('TableSettingsModal 基本信息脏检查', () => {
 
   it('无改动时保存禁用，修改表名后启用', async () => {
     renderProviders(
-      <TableSettingsModal open wid={WID} tid={TID} onClose={() => {}} />,
+      <TableSettingsModal open wid={WID} tid={TID} onClose={() => { }} />,
       { initialAuth: { user: { id: 1, username: 'alice', email: null, role: 'system_admin', is_active: true }, token: 'fake' } },
     )
 
@@ -135,5 +138,49 @@ describe('TableSettingsModal 基本信息脏检查', () => {
 
     fireEvent.change(nameInput, { target: { value: '新表名' } })
     await waitFor(() => expect(saveBtn).toBeEnabled())
+  })
+})
+
+describe('TableSettingsModal 视图列表（拖拽 + 默认）', () => {
+  beforeEach(() => {
+    setupTableHandlers()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const AUTH = { initialAuth: { user: { id: 1, username: 'alice', email: null, role: 'system_admin' as const, is_active: true }, token: 'fake' } }
+
+  it('渲染拖拽手柄，仅非默认视图提供「设为默认视图」', async () => {
+    renderProviders(
+      <TableSettingsModal open wid={WID} tid={TID} initialTab="views" onClose={() => { }} />,
+      AUTH,
+    )
+
+    const row2 = await screen.findByTestId('ts-view-row-2', {}, { timeout: 5000 })
+    within(row2).getByLabelText('拖拽排序 按状态')
+    within(row2).getByRole('button', { name: '设为默认视图 按状态' })
+
+    // 已是默认的视图不再展示该按钮（避免误操作）
+    const row1 = screen.getByTestId('ts-view-row-1')
+    expect(within(row1).queryByRole('button', { name: /设为默认视图/ })).toBeNull()
+  })
+
+  it('点击「设为默认视图」调用 PATCH 且仅携带 is_default', async () => {
+    const updateSpy = vi.spyOn(viewApi, 'update').mockResolvedValue({
+      id: 2, name: '按状态', view_type: 'kanban', is_default: true,
+    } as View)
+
+    renderProviders(
+      <TableSettingsModal open wid={WID} tid={TID} initialTab="views" onClose={() => { }} />,
+      AUTH,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: '设为默认视图 按状态' }, { timeout: 5000 }))
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1))
+    expect(updateSpy.mock.calls[0]![2]).toBe(2)
+    expect(updateSpy.mock.calls[0]![3]).toEqual({ is_default: true })
   })
 })

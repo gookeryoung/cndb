@@ -15,10 +15,16 @@ import {
 } from 'antd'
 import {
   InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
-  SaveOutlined, EditOutlined, PlusOutlined, DeleteOutlined,
+  SaveOutlined, EditOutlined, PlusOutlined, DeleteOutlined, StarOutlined,
   ColumnHeightOutlined, EyeOutlined, CalendarOutlined, LineChartOutlined, PartitionOutlined,
+  HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  DndContext, type DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors,
+} from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { tableApi, permissionApi, viewApi } from '@/api'
 import type { TableDetail, TableUpdate, ViewCreate, View } from '@/api'
 import PermissionEditor, { buildHiddenSet } from '@/pages/grid/components/PermissionEditor'
@@ -51,6 +57,82 @@ interface Props {
 
 function hasAction(actions: string[] | undefined, action: string): boolean {
   return Array.isArray(actions) && actions.includes(action)
+}
+
+/** 可拖拽排序的视图行.
+ *
+ * 拖拽手柄（HolderOutlined）独立挂载 listeners，避免整行拖拽与行内编辑/删除按钮的事件冲突.
+ */
+function SortableViewRow({
+  view, canEdit, onEdit, onDelete, onSetDefault, settingDefault,
+}: {
+  view: View
+  canEdit: boolean
+  onEdit: () => void
+  onDelete: () => void
+  onSetDefault: () => void
+  settingDefault: boolean
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: String(view.id),
+  })
+  const meta = VIEW_MODE_META[view.view_type]
+  return (
+    <div
+      ref={setNodeRef}
+      className="ts-view-row"
+      data-testid={`ts-view-row-${view.id}`}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+    >
+      <span
+        className="ts-view-drag"
+        aria-label={`拖拽排序 ${view.name}`}
+        title={canEdit ? '拖拽调整顺序' : undefined}
+        style={{ cursor: canEdit ? 'grab' : 'default' }}
+        {...attributes}
+        {...listeners}
+      >
+        <HolderOutlined />
+      </span>
+      <span className="ts-view-icon">{meta?.icon ?? <AppstoreOutlined />}</span>
+      <strong className="ts-view-name">{view.name}</strong>
+      <Tag style={{ marginInlineEnd: 0 }}>{meta?.label ?? view.view_type}</Tag>
+      {view.is_default && <Tag color="blue" style={{ marginInlineEnd: 0 }}>默认</Tag>}
+      <span className="ts-view-actions">
+        {canEdit && !view.is_default && (
+          <Tooltip title="设为默认视图">
+            <Button
+              size="small"
+              type="text"
+              icon={<StarOutlined />}
+              aria-label={`设为默认视图 ${view.name}`}
+              loading={settingDefault}
+              onClick={onSetDefault}
+            />
+          </Tooltip>
+        )}
+        <Tooltip title="编辑视图">
+          <Button size="small" type="text" icon={<EditOutlined />} disabled={!canEdit} onClick={onEdit} />
+        </Tooltip>
+        <Popconfirm
+          title={`删除视图 "${view.name}" ？`}
+          okText="删除"
+          okType="danger"
+          cancelText="取消"
+          onConfirm={onDelete}
+          disabled={!canEdit}
+        >
+          <Tooltip title="删除视图（规则一并删除，不影响表数据）">
+            <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!canEdit} />
+          </Tooltip>
+        </Popconfirm>
+      </span>
+    </div>
+  )
 }
 
 /** 表设置 Modal / Content.
@@ -161,6 +243,36 @@ export default function TableSettingsModal({
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '删除视图失败'),
   })
+
+  // 设为默认视图：后端会清除同表其它视图的 default 标记
+  const setDefaultView = useMutation({
+    mutationFn: (vid: number | string) => viewApi.update(wid, tid, vid, { is_default: true }),
+    onSuccess: () => {
+      message.success('已设为默认视图')
+      queryClient.invalidateQueries({ queryKey: ['table-views', wid, tid] })
+      queryClient.invalidateQueries({ queryKey: ['table-settings', wid, tid] })
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '设置默认视图失败'),
+  })
+
+  // ── 视图顺序拖拽 ──
+  const viewDragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+  const reorderViews = useMutation({
+    mutationFn: (ids: Array<number | string>) => viewApi.reorder(wid, tid, ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['table-views', wid, tid] })
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '视图排序失败'),
+  })
+  const handleViewDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    // views 已按后端 order 排序
+    const oldIndex = views.findIndex(v => String(v.id) === String(active.id))
+    const newIndex = views.findIndex(v => String(v.id) === String(over.id))
+    if (oldIndex < 0 || newIndex < 0) return
+    reorderViews.mutate(arrayMove(views, oldIndex, newIndex).map(v => v.id))
+  }
 
   const handleTabChange = (key: string) => {
     setActiveTab(key as typeof initialTab)
@@ -316,7 +428,10 @@ export default function TableSettingsModal({
           children: (
             <div style={{ paddingTop: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>共 {views.length} 个视图</span>
+                <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>
+                  共 {views.length} 个视图
+                  {views.length > 1 && <span style={{ marginLeft: 8, fontSize: 12 }}>· 拖拽左侧手柄调整顺序</span>}
+                </span>
                 <Button
                   type="primary"
                   size="small"
@@ -335,45 +450,36 @@ export default function TableSettingsModal({
                 <Empty description="暂无视图，点击右上角「新建视图」创建" style={{ padding: 32 }} />
               )}
 
-              {views.map((v: View) => {
-                const meta = VIEW_MODE_META[v.view_type]
-                return (
-                  <div key={String(v.id)} className="ts-view-row">
-                    <span className="ts-view-icon">{meta?.icon ?? <AppstoreOutlined />}</span>
-                    <strong className="ts-view-name">{v.name}</strong>
-                    <Tag style={{ marginInlineEnd: 0 }}>{meta?.label ?? v.view_type}</Tag>
-                    {v.is_default && <Tag color="blue" style={{ marginInlineEnd: 0 }}>默认</Tag>}
-                    <span className="ts-view-actions">
-                      <Tooltip title="编辑视图">
-                        <Button
-                          size="small" type="text" icon={<EditOutlined />} disabled={!canEditViews}
-                          onClick={() => {
-                            setViewEditorInitial({
-                              vid: v.id,
-                              name: v.name,
-                              viewType: v.view_type,
-                              options: v.view_options ?? undefined,
-                            })
-                            setViewEditorOpen(true)
-                          }}
-                        />
-                      </Tooltip>
-                      <Popconfirm
-                        title={`删除视图 "${v.name}" ？`}
-                        okText="删除"
-                        okType="danger"
-                        cancelText="取消"
-                        onConfirm={() => removeView.mutate(v.id)}
-                        disabled={!canEditViews}
-                      >
-                        <Tooltip title="删除视图（规则一并删除，不影响表数据）">
-                          <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!canEditViews} />
-                        </Tooltip>
-                      </Popconfirm>
-                    </span>
-                  </div>
-                )
-              })}
+              <DndContext
+                sensors={viewDragSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleViewDragEnd}
+              >
+                <SortableContext
+                  items={views.map((v: View) => String(v.id))}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {views.map((v: View) => (
+                    <SortableViewRow
+                      key={String(v.id)}
+                      view={v}
+                      canEdit={canEditViews}
+                      settingDefault={setDefaultView.isPending && setDefaultView.variables === v.id}
+                      onSetDefault={() => setDefaultView.mutate(v.id)}
+                      onEdit={() => {
+                        setViewEditorInitial({
+                          vid: v.id,
+                          name: v.name,
+                          viewType: v.view_type,
+                          options: v.view_options ?? undefined,
+                        })
+                        setViewEditorOpen(true)
+                      }}
+                      onDelete={() => removeView.mutate(v.id)}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
             </div>
           ),
         },

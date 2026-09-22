@@ -184,6 +184,80 @@ class TestViewsAPI:
         assert len(defaults) == 1
         assert defaults[0]["name"] == "V2"
 
+    def test_delete_default_view_transfers_flag(self, client, ws, table, auth_owner):
+        """删除默认视图后，默认标记自动转移给同表剩余视图（按 order/id 第一个）."""
+        keep_id = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "Keep", "view_type": "grid", "order": 0},
+            headers=auth_owner,
+        ).json()["id"]
+        default_id = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "DefaultOne", "view_type": "grid", "order": 1, "is_default": True},
+            headers=auth_owner,
+        ).json()["id"]
+
+        r = client.delete(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{default_id}",
+            headers=auth_owner,
+        )
+        assert r.status_code == 204
+
+        views = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            headers=auth_owner,
+        ).json()
+        defaults = [v for v in views if v["is_default"]]
+        assert len(defaults) == 1
+        assert defaults[0]["id"] == keep_id
+
+    def test_delete_non_default_view_keeps_default(self, client, ws, table, auth_owner):
+        """删除非默认视图不影响既有的默认标记."""
+        default_id = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "KeepDefault", "is_default": True},
+            headers=auth_owner,
+        ).json()["id"]
+        other_id = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "Other"},
+            headers=auth_owner,
+        ).json()["id"]
+
+        r = client.delete(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{other_id}",
+            headers=auth_owner,
+        )
+        assert r.status_code == 204
+
+        views = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            headers=auth_owner,
+        ).json()
+        defaults = [v for v in views if v["is_default"]]
+        assert len(defaults) == 1
+        assert defaults[0]["id"] == default_id
+
+    def test_delete_only_default_view_no_remaining(self, client, ws, table, auth_owner):
+        """删除唯一的默认视图后无剩余视图，接口正常返回且不报错."""
+        vid = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "OnlyDefault", "is_default": True},
+            headers=auth_owner,
+        ).json()["id"]
+
+        r = client.delete(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            headers=auth_owner,
+        )
+        assert r.status_code == 204
+
+        views = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            headers=auth_owner,
+        ).json()
+        assert views == []
+
     def test_get_view_rows(self, client, ws, table, auth_owner):
         # 先创建视图
         create_r = client.post(

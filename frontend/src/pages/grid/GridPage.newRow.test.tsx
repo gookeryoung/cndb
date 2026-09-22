@@ -48,7 +48,6 @@ vi.mock('@/api/hooks', async (importOriginal) => {
       isLoading: false,
     }),
     useTableViews: () => ({ data: [] }),
-    useActiveViewPreference: () => ({ data: null }),
     useTableRecords: () => ({
       data: { items: makeRows(5), total: 500, offset: 0, limit: 5 },
     }),
@@ -68,7 +67,6 @@ vi.mock('@/api', () => ({
     bulkCreate: vi.fn().mockResolvedValue({ ids: [] }),
   },
   viewApi: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), reorder: vi.fn() },
-  userApi: { setTableActiveView: vi.fn(), getTableActiveView: vi.fn() },
   auditApi: { list: vi.fn() },
 }))
 
