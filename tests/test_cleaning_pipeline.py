@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from cndb.plugins.tables.cleaning import (
+from cndb.plugins.tables.services.importing.cleaning import (
     apply_cleaning_actions,
     generate_cleaning_suggestions,
 )

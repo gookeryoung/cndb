@@ -19,8 +19,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from cndb.plugins.tables import ddl
-from cndb.plugins.tables.field_ops import sync_select_options_from_table
+from cndb.plugins.tables.services.core import ddl
+from cndb.plugins.tables.services.fields.field_ops import sync_select_options_from_table
 from cndb.plugins.tables.models import Base, DataField, DataTable
 from cndb.plugins.tables.transfer import import_rows_from_csv, import_rows_from_json
 

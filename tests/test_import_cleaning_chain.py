@@ -9,7 +9,7 @@ def _get_task_fresh(db, task_id):
     """用全新 session 读取 ImportTask，规避 StaticPool 连接共享导致的 identity map 问题."""
     from sqlalchemy.orm import Session
 
-    from cndb.plugins.tables.import_tasks import join_background_threads
+    from cndb.plugins.tables.services.importing.import_tasks import join_background_threads
     from cndb.plugins.tables.models import ImportTask
 
     join_background_threads(timeout=10)
@@ -168,9 +168,9 @@ class TestExecuteImportTaskPassesCleaningActions:
                     },
                 )()
 
-        monkeypatch.setattr("cndb.plugins.tables.importer.Importer", FakeImporter)
+        monkeypatch.setattr("cndb.plugins.tables.services.importing.importer.Importer", FakeImporter)
 
-        from cndb.plugins.tables import import_tasks
+        from cndb.plugins.tables.services.importing import import_tasks
 
         with suppress(Exception):
             import_tasks.execute_import_task(db, task.id)
@@ -222,9 +222,9 @@ class TestExecuteImportTaskPassesCleaningActions:
                     },
                 )()
 
-        monkeypatch.setattr("cndb.plugins.tables.importer.Importer", FakeImporter)
+        monkeypatch.setattr("cndb.plugins.tables.services.importing.importer.Importer", FakeImporter)
 
-        from cndb.plugins.tables import import_tasks
+        from cndb.plugins.tables.services.importing import import_tasks
 
         with suppress(Exception):
             import_tasks.execute_import_task(db, task.id)

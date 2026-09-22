@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from cndb.plugins.tables import ddl
-from cndb.plugins.tables.match_key_advisor import recommend_match_keys
+from cndb.plugins.tables.services.core import ddl
+from cndb.plugins.tables.services.importing.match_key_advisor import recommend_match_keys
 from tests.test_import_pipeline import _add_field, _make_table
 
 
@@ -33,7 +33,7 @@ class TestRecommendMatchKeys:
         _add_field(session, table, "name", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(
             engine,
@@ -69,7 +69,7 @@ class TestRecommendMatchKeys:
         _add_field(session, table, "remark", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "A", "remark": "x"}], db=session)
         rows = [{"code": "A", "remark": ""}, {"code": "B", "remark": "  "}]
@@ -86,7 +86,7 @@ class TestRecommendMatchKeys:
         _add_field(session, table, "remark", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "A", "remark": "x"}], db=session)
         profiles = [
@@ -107,7 +107,7 @@ class TestRecommendMatchKeys:
         _add_field(session, table, "remark", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         # 库内 remark 全为 NULL（bulk_create 跳过 None）
         rec.bulk_create(engine, table, [{"code": "A"}, {"code": "B"}], db=session)
@@ -153,7 +153,7 @@ class TestRecommendMatchKeys:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "A1"}, {"code": "A2"}], db=session)
         rows = [{"src_code": "A1"}, {"src_code": "A2"}]
@@ -169,7 +169,7 @@ class TestRecommendMatchKeys:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "X"}, {"code": "X"}], db=session)
         rows = [{"code": "X"}, {"code": "Y"}]
@@ -185,7 +185,7 @@ class TestRecommendMatchKeys:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "A"}, {"code": "B"}], db=session)
         # 文件侧一半为空 → nonnull=0.5 → score=0.6*1.0+0.4*0.5=0.8 < 0.9
@@ -217,7 +217,7 @@ class TestRecommendMatchKeys:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "A"}], db=session)
         entries = recommend_match_keys(engine, table, [{"code": "A"}], ["code"], [])

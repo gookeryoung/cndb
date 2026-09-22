@@ -12,14 +12,14 @@ from fastapi import HTTPException
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables import ddl
-from cndb.plugins.tables.api_fetch import FetchConfig, _resolve_path, fetch_json
-from cndb.plugins.tables.column_profiler import profile_columns
-from cndb.plugins.tables.diff_reporter import DiffReporter
+from cndb.plugins.tables.services.core import ddl
+from cndb.plugins.tables.services.importing.api_fetch import FetchConfig, _resolve_path, fetch_json
+from cndb.plugins.tables.services.importing.column_profiler import profile_columns
+from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
 from cndb.plugins.tables.field_types import build_default_registry, default_registry
-from cndb.plugins.tables.links import _get_link_sa_table, _get_sa_table_by_name, _row_summaries
+from cndb.plugins.tables.services.core.links import _get_link_sa_table, _get_sa_table_by_name, _row_summaries
 from cndb.plugins.tables.models import DataField, DataTable
-from cndb.plugins.tables.query import (
+from cndb.plugins.tables.services.core.query import (
     _build_condition,
     _compile_filter_item,
     _compile_group,
@@ -96,7 +96,7 @@ def test_suggest_colors_palette_fallback_idx_wraps():
 
 def test_apply_coerce_number_bad_value():
     """_apply_coerce number ValueError (L316-317) — 用 drop 模式直接拒绝."""
-    from cndb.plugins.tables.cleaning import _apply_coerce
+    from cndb.plugins.tables.services.importing.cleaning import _apply_coerce
 
     rows = [{"v": "abc"}, {"v": "123"}]
     _result, affected = _apply_coerce(rows, "v", "number", "reject")
@@ -106,7 +106,7 @@ def test_apply_coerce_number_bad_value():
 
 def test_apply_coerce_date_bad_value():
     """_apply_coerce date 不匹配 regex (L337) — reject 模式."""
-    from cndb.plugins.tables.cleaning import _apply_coerce
+    from cndb.plugins.tables.services.importing.cleaning import _apply_coerce
 
     rows = [{"v": "not-a-date-at-all-xyz"}]
     _result, affected = _apply_coerce(rows, "v", "date", "reject")
@@ -252,7 +252,7 @@ def test_build_condition_contains_all_non_list_raises():
 
 def test_get_engine_non_sqlite_path():
     """get_engine sqlite 之外的 URL 走 L346 — 但 postgresql 需驱动；patch 掉 create_engine 验证路径."""
-    with patch("cndb.plugins.tables.ddl.create_engine") as spy:
+    with patch("cndb.plugins.tables.services.core.ddl.create_engine") as spy:
         ddl.get_engine("postgresql://u:p@h/db")
         spy.assert_called_once_with("postgresql://u:p@h/db")
 
@@ -318,7 +318,7 @@ def test_fetch_json_redirect_missing_location():
     fake_client.__exit__.return_value = False
 
     with (
-        patch("cndb.plugins.tables.api_fetch.httpx2.Client", return_value=fake_client),
+        patch("cndb.plugins.tables.services.importing.api_fetch.httpx2.Client", return_value=fake_client),
         pytest.raises(ValueError, match="缺少 Location"),
     ):
         fetch_json(FetchConfig(url="http://x.example.com"))
@@ -352,7 +352,7 @@ def test_fetch_json_301_post_downgrades_to_get():
     fake_client.__enter__.return_value.request.side_effect = fake_request
     fake_client.__exit__.return_value = False
 
-    with patch("cndb.plugins.tables.api_fetch.httpx2.Client", return_value=fake_client):
+    with patch("cndb.plugins.tables.services.importing.api_fetch.httpx2.Client", return_value=fake_client):
         fetch_json(FetchConfig(url="http://x.example.com/api", method="POST", body={"k": "v"}))
 
     assert call_records[1]["method"] == "GET"
@@ -392,7 +392,7 @@ def test_run_upgrade_calls_alembic():
 
 def test_get_link_sa_table_missing_raises(db_engine):
     """反射不到 link table → RuntimeError (L198). patch MetaData 让 reflect 不填 tables."""
-    import cndb.plugins.tables.links as lmod
+    import cndb.plugins.tables.services.core.links as lmod
 
     real_init = MetaData.__init__
 
@@ -411,7 +411,7 @@ def test_get_link_sa_table_missing_raises(db_engine):
 
 def test_get_sa_table_by_name_missing_raises(db_engine):
     """反射不到表 → RuntimeError (L228)."""
-    import cndb.plugins.tables.links as lmod
+    import cndb.plugins.tables.services.core.links as lmod
 
     fake_meta = MagicMock()
     fake_meta.tables = {}
@@ -421,7 +421,7 @@ def test_get_sa_table_by_name_missing_raises(db_engine):
 
 def test_row_summaries_validate_exception_sets_none(db_engine):
     """_row_summaries ft.validate_value 抛异常 → normalized=None (L287-288)."""
-    import cndb.plugins.tables.links as lmod
+    import cndb.plugins.tables.services.core.links as lmod
 
     meta = MetaData()
     t = Table(

@@ -9,7 +9,7 @@ def wait_import_settled(client, url, headers, timeout: float = 10) -> dict:
     用 join_background_threads 做确定性等待，替代固定 sleep 轮询；
     返回任务 JSON（调用方自行断言状态）。
     """
-    from cndb.plugins.tables.import_tasks import join_background_threads
+    from cndb.plugins.tables.services.importing.import_tasks import join_background_threads
 
     join_background_threads(timeout=timeout)
     resp = client.get(url, headers=headers)

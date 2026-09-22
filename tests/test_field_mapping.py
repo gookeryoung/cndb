@@ -40,20 +40,20 @@ import pytest
 
 class TestBuildDefaultMapping:
     def test_basic(self):
-        from cndb.plugins.tables.field_mapping import build_default_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import build_default_mapping
 
         result = build_default_mapping(["a", "b", "c"])
         assert result == {"a": "a", "b": "b", "c": "c"}
 
     def test_empty(self):
-        from cndb.plugins.tables.field_mapping import build_default_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import build_default_mapping
 
         assert build_default_mapping([]) == {}
 
 
 class TestApplyUserMapping:
     def test_override(self):
-        from cndb.plugins.tables.field_mapping import (
+        from cndb.plugins.tables.services.importing.field_mapping import (
             apply_user_mapping,
             build_default_mapping,
         )
@@ -63,7 +63,7 @@ class TestApplyUserMapping:
         assert merged == {"src_a": "dst_a", "src_b": "src_b"}
 
     def test_skip_via_none(self):
-        from cndb.plugins.tables.field_mapping import (
+        from cndb.plugins.tables.services.importing.field_mapping import (
             apply_user_mapping,
             build_default_mapping,
         )
@@ -73,7 +73,7 @@ class TestApplyUserMapping:
         assert merged == {"src_b": "src_b"}
 
     def test_unknown_source_field_raises(self):
-        from cndb.plugins.tables.field_mapping import (
+        from cndb.plugins.tables.services.importing.field_mapping import (
             apply_user_mapping,
             build_default_mapping,
         )
@@ -83,7 +83,7 @@ class TestApplyUserMapping:
             apply_user_mapping(base, {"unknown": "x"}, ["src_a"])
 
     def test_empty_mapping_returns_base(self):
-        from cndb.plugins.tables.field_mapping import (
+        from cndb.plugins.tables.services.importing.field_mapping import (
             apply_user_mapping,
             build_default_mapping,
         )
@@ -95,7 +95,7 @@ class TestApplyUserMapping:
 
 class TestAnalyzeFieldGaps:
     def test_no_gaps(self):
-        from cndb.plugins.tables.field_mapping import analyze_field_gaps
+        from cndb.plugins.tables.services.importing.field_mapping import analyze_field_gaps
 
         report = analyze_field_gaps(
             {"a": "a", "b": "b"},
@@ -108,7 +108,7 @@ class TestAnalyzeFieldGaps:
         assert len(report["matched"]) == 2
 
     def test_unmapped_source(self):
-        from cndb.plugins.tables.field_mapping import analyze_field_gaps
+        from cndb.plugins.tables.services.importing.field_mapping import analyze_field_gaps
 
         # source 有 a,b,c — 但 mapping 只有 a,b（c 被跳过）
         report = analyze_field_gaps(
@@ -119,7 +119,7 @@ class TestAnalyzeFieldGaps:
         assert report["unmapped_source"] == ["c"]
 
     def test_target_missing(self):
-        from cndb.plugins.tables.field_mapping import analyze_field_gaps
+        from cndb.plugins.tables.services.importing.field_mapping import analyze_field_gaps
 
         # target 有 x,y — 但 mapping 只覆盖 x
         report = analyze_field_gaps(
@@ -130,7 +130,7 @@ class TestAnalyzeFieldGaps:
         assert report["target_missing"] == ["y"]
 
     def test_conflicts_two_sources_to_same_target(self):
-        from cndb.plugins.tables.field_mapping import analyze_field_gaps
+        from cndb.plugins.tables.services.importing.field_mapping import analyze_field_gaps
 
         report = analyze_field_gaps(
             {"src_a": "same", "src_b": "same"},
@@ -143,21 +143,21 @@ class TestAnalyzeFieldGaps:
 
 class TestRemapRow:
     def test_basic_rename(self):
-        from cndb.plugins.tables.field_mapping import remap_row
+        from cndb.plugins.tables.services.importing.field_mapping import remap_row
 
         row = {"old": 1, "keep": 2}
         mapping = {"old": "new", "keep": "keep"}
         assert remap_row(row, mapping) == {"new": 1, "keep": 2}
 
     def test_extra_source_dropped(self):
-        from cndb.plugins.tables.field_mapping import remap_row
+        from cndb.plugins.tables.services.importing.field_mapping import remap_row
 
         row = {"a": 1, "b": 2, "c": 3}
         # mapping 只覆盖 a,b — c 被丢弃
         assert remap_row(row, {"a": "a", "b": "b"}) == {"a": 1, "b": 2}
 
     def test_missing_source_in_row_becomes_none(self):
-        from cndb.plugins.tables.field_mapping import remap_row
+        from cndb.plugins.tables.services.importing.field_mapping import remap_row
 
         row = {"a": 1}
         mapping = {"a": "a", "b": "b"}  # b 不在 row 里
@@ -168,7 +168,7 @@ class TestRemapRow:
 
 class TestApplyGapFilling:
     def test_strategy_empty_keeps_none(self):
-        from cndb.plugins.tables.field_mapping import apply_gap_filling
+        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
         from cndb.plugins.tables.models import DataField
 
         f = DataField(name="missing", field_type="text", default_value=None)
@@ -177,7 +177,7 @@ class TestApplyGapFilling:
         assert result["missing"] is None
 
     def test_strategy_default(self):
-        from cndb.plugins.tables.field_mapping import apply_gap_filling
+        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
         from cndb.plugins.tables.models import DataField
 
         f = DataField(name="missing", field_type="text", default_value="NA")
@@ -186,7 +186,7 @@ class TestApplyGapFilling:
         assert result["missing"] == "NA"
 
     def test_strategy_value(self):
-        from cndb.plugins.tables.field_mapping import apply_gap_filling
+        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
 
         row: dict[str, object] = {}
         result = apply_gap_filling(
@@ -199,7 +199,7 @@ class TestApplyGapFilling:
         assert result["missing"] == "固定值"
 
     def test_strategy_value_missing_fill_not_specified_treated_as_none(self):
-        from cndb.plugins.tables.field_mapping import apply_gap_filling
+        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
 
         # strategy="value" 没提供 fill_values → 留 None
         row: dict[str, object] = {}
@@ -207,20 +207,20 @@ class TestApplyGapFilling:
         assert result["missing"] is None
 
     def test_strategy_error(self):
-        from cndb.plugins.tables.field_mapping import apply_gap_filling
+        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
 
         with pytest.raises(ValueError, match="缺少目标必填字段"):
             apply_gap_filling({}, ["req"], {}, strategy="error")
 
     def test_strategy_error_no_missing_ok(self):
-        from cndb.plugins.tables.field_mapping import apply_gap_filling
+        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
 
         # 没有缺失字段 — error 策略不报错
         result = apply_gap_filling({"a": 1}, [], {}, strategy="error")
         assert result == {"a": 1}
 
     def test_target_field_not_in_map_defaults_to_none(self):
-        from cndb.plugins.tables.field_mapping import apply_gap_filling
+        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
 
         # 目标字段不在 field_map 里 → default 策略下返回 None
         row: dict[str, object] = {}
@@ -230,7 +230,7 @@ class TestApplyGapFilling:
 
 class TestAutoMatchFields:
     def test_basic(self, db):
-        from cndb.plugins.tables.field_mapping import auto_match_fields
+        from cndb.plugins.tables.services.importing.field_mapping import auto_match_fields
         from cndb.plugins.tables.models import DataField, DataTable
 
         src = DataTable(workspace_id=1, name="S", owner_id=1)
@@ -485,7 +485,7 @@ def _dst_table3(client, auth_headers, db):
 class TestRowValidatorWithFieldMapping:
     def test_basic_rename(self, db, _dst_table3):
         from cndb.plugins.tables.models import DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         _wid, tid = _dst_table3
         table = db.get(DataTable, tid)
@@ -505,7 +505,7 @@ class TestRowValidatorWithFieldMapping:
 
     def test_skip_source_column(self, db, _dst_table3):
         from cndb.plugins.tables.models import DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         _wid, tid = _dst_table3
         table = db.get(DataTable, tid)
@@ -524,7 +524,7 @@ class TestRowValidatorWithFieldMapping:
 
     def test_gap_filling_default(self, db, _dst_table3):
         from cndb.plugins.tables.models import DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         _wid, tid = _dst_table3
         table = db.get(DataTable, tid)
@@ -546,7 +546,7 @@ class TestRowValidatorWithFieldMapping:
 
     def test_gap_filling_value(self, db, _dst_table3):
         from cndb.plugins.tables.models import DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         _wid, tid = _dst_table3
         table = db.get(DataTable, tid)
@@ -567,7 +567,7 @@ class TestRowValidatorWithFieldMapping:
 
     def test_gap_filling_error(self, db, _dst_table3):
         from cndb.plugins.tables.models import DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         _wid, tid = _dst_table3
         table = db.get(DataTable, tid)
@@ -587,7 +587,7 @@ class TestRowValidatorWithFieldMapping:
 
     def test_mapping_not_provided_uses_legacy_behavior(self, db, _dst_table3):
         from cndb.plugins.tables.models import DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         _wid, tid = _dst_table3
         table = db.get(DataTable, tid)
@@ -609,8 +609,8 @@ class TestRowValidatorWithFieldMapping:
 
 class TestImporterWithFieldMapping:
     def test_end_to_end_with_mapping(self, db, _dst_table3):
-        from cndb.plugins.tables.ddl import create_table as ddl_create
-        from cndb.plugins.tables.importer import Importer
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.importing.importer import Importer
         from cndb.plugins.tables.models import DataTable
 
         _wid, tid = _dst_table3
@@ -637,7 +637,7 @@ class TestImporterWithFieldMapping:
 
         assert len(result.imported_ids) == 1
         # 验证实际落库的数据
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rows, _total = rec.list_rows(engine, table, limit=10, db=db)
         assert len(rows) == 1
@@ -694,8 +694,8 @@ class TestFieldOpsPlanWithMapping:
 
     def test_skip_conflicts_false_with_mapping_no_throw(self, db):
         """execute_field_import skip_conflicts=False 但有 mapping 时不提前报错（冲突延后到 plan 内处理）."""
-        from cndb.plugins.tables import field_ops as _fo
-        from cndb.plugins.tables.ddl import create_table as ddl_create
+        from cndb.plugins.tables.services.fields import field_ops as _fo
+        from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
         from cndb.plugins.tables.models import DataField, DataTable
 
         engine = db.get_bind()
@@ -728,7 +728,7 @@ class TestFieldOpsPlanWithMapping:
 
     def test_plan_field_import_mapping_skip_none(self, db):
         """plan_field_import 的 field_mapping={name: None} 跳过."""
-        from cndb.plugins.tables import field_ops as _fo
+        from cndb.plugins.tables.services.fields import field_ops as _fo
         from cndb.plugins.tables.models import DataField, DataTable
 
         dst = DataTable(workspace_id=1, name="D_plan_map", owner_id=1)
@@ -753,7 +753,7 @@ class TestApplyGapFillingEdge:
     """补 apply_gap_filling 的分支覆盖."""
 
     def test_strategy_value_partial_fill_other_becomes_none(self):
-        from cndb.plugins.tables.field_mapping import apply_gap_filling
+        from cndb.plugins.tables.services.importing.field_mapping import apply_gap_filling
 
         # strategy="value" 但 fill_values 只覆盖部分字段 — 没覆盖的变成 None
         row: dict[str, object] = {}
@@ -773,7 +773,7 @@ class TestRowValidatorStrategyValueMissingFill:
 
     def test_strategy_value_partial_fill(self, db, _dst_table3):
         from cndb.plugins.tables.models import DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         _wid, tid = _dst_table3
         table = db.get(DataTable, tid)
@@ -802,7 +802,7 @@ class TestRowValidatorEdgeCoverage:
 
     def test_unknown_field_type(self, db):
         from cndb.plugins.tables.models import DataField, DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         src = DataTable(workspace_id=1, name="S_ut", owner_id=1)
         src.ensure_db_name()
@@ -828,7 +828,7 @@ class TestRowValidatorSkipUnknownColumns:
 
     def test_skip_unknown_columns_true(self, db):
         from cndb.plugins.tables.models import DataField, DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         src = DataTable(workspace_id=1, name="S_suc", owner_id=1)
         src.ensure_db_name()
@@ -857,13 +857,13 @@ class TestRowValidatorDicts:
     """Issue.to_dict / ValidationResult.to_dict — 从来没被测过."""
 
     def test_issue_to_dict(self):
-        from cndb.plugins.tables.row_validator import Issue
+        from cndb.plugins.tables.services.importing.row_validator import Issue
 
         i = Issue(field="name", level="error", message="坏了")
         assert i.to_dict() == {"field": "name", "level": "error", "message": "坏了"}
 
     def test_validation_result_to_dict(self):
-        from cndb.plugins.tables.row_validator import Issue, ValidationResult
+        from cndb.plugins.tables.services.importing.row_validator import Issue, ValidationResult
 
         r = ValidationResult(
             row_number=1,
@@ -886,7 +886,7 @@ class TestRowValidatorRequiredFieldTotallyMissing:
     def test_required_field_not_in_row_at_all(self, db, _dst_table3):
         """直接调 _check_field_set 绕过 gap_filling — 覆盖 line 203 '必填字段缺失'."""
         from cndb.plugins.tables.models import DataTable
-        from cndb.plugins.tables.row_validator import RowValidator, ValidationResult
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator, ValidationResult
 
         _wid, tid = _dst_table3
         table = db.get(DataTable, tid)
@@ -905,29 +905,29 @@ class TestRowValidatorLinkParsing:
     """覆盖 RowValidator._parse_link_value 的多分支."""
 
     def test_link_list_int_ok(self):
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         assert RowValidator._parse_link_value([1, 2, 3]) == [1, 2, 3]
 
     def test_link_list_with_non_int_raises(self):
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         with pytest.raises(ValueError, match="link 字段解析失败"):
             RowValidator._parse_link_value([1, "bad"])
 
     def test_link_single_int(self):
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         assert RowValidator._parse_link_value(42) == [42]
 
     def test_link_empty_string(self):
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         assert RowValidator._parse_link_value("") == []
         assert RowValidator._parse_link_value("   ") == []
 
     def test_link_unsupported_type(self):
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         with pytest.raises(ValueError, match="类型不支持"):
             RowValidator._parse_link_value(3.14)
@@ -938,7 +938,7 @@ class TestRowValidatorNormalizedNone:
 
     def test_validate_value_returns_none_not_in_normalized(self, db):
         from cndb.plugins.tables.models import DataField, DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         # 造一个"validate_value 返回 None"的场景 — number 字段传空字符串
         # 实际上 number 字段类型校验时空串会被转成 None 或报错，试 boolean + 空
@@ -969,7 +969,7 @@ class TestRowValidatorTrashedFieldDefensive:
         from unittest.mock import patch
 
         from cndb.plugins.tables.models import DataField, DataTable
-        from cndb.plugins.tables.row_validator import RowValidator
+        from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
         src = DataTable(workspace_id=1, name="S_trash", owner_id=1)
         src.ensure_db_name()
@@ -1120,7 +1120,7 @@ class TestRowValidatorNormalizedNoneBranch:
     """覆盖 row_validator line 238->exit：validate_value 返回 None 时 normalized 不写入."""
 
     def test_validate_value_returns_none_not_in_normalized(self, db, monkeypatch):
-        from cndb.plugins.tables import row_validator as rv_mod
+        from cndb.plugins.tables.services.importing import row_validator as rv_mod
         from cndb.plugins.tables.models import DataField, DataTable
 
         src = DataTable(workspace_id=1, name="S_none_norm", owner_id=1)
@@ -1164,7 +1164,7 @@ class TestSuggestMappingNormalize:
     """字段名归一化工具函数."""
 
     def test_strip_common_prefix(self):
-        from cndb.plugins.tables.field_mapping import _normalize_name
+        from cndb.plugins.tables.services.importing.field_mapping import _normalize_name
 
         assert _normalize_name("src_amount") == "amount"
         assert _normalize_name("src_amount_total") == "amount_total"
@@ -1173,20 +1173,20 @@ class TestSuggestMappingNormalize:
         assert _normalize_name("srctotal") == "srctotal"
 
     def test_strip_common_suffix(self):
-        from cndb.plugins.tables.field_mapping import _normalize_name
+        from cndb.plugins.tables.services.importing.field_mapping import _normalize_name
 
         assert _normalize_name("amount_src") == "amount"
         assert _normalize_name("name_old") == "name"
 
     def test_separator_normalize(self):
-        from cndb.plugins.tables.field_mapping import _normalize_name
+        from cndb.plugins.tables.services.importing.field_mapping import _normalize_name
 
         assert _normalize_name("Full Name") == "full_name"
         assert _normalize_name("full-name") == "full_name"
         assert _normalize_name("full.name") == "full_name"
 
     def test_lowercase(self):
-        from cndb.plugins.tables.field_mapping import _normalize_name
+        from cndb.plugins.tables.services.importing.field_mapping import _normalize_name
 
         assert _normalize_name("FULL_NAME") == "full_name"
 
@@ -1195,7 +1195,7 @@ class TestSuggestMapping:
     """suggest_mapping 核心行为."""
 
     def test_exact_name_match(self):
-        from cndb.plugins.tables.field_mapping import suggest_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_mapping
 
         src = [_mkf("amount", "number")]
         dst = [_mkf("amount", "number"), _mkf("count", "number")]
@@ -1205,7 +1205,7 @@ class TestSuggestMapping:
         assert results[0]["score"] >= 1.0
 
     def test_abbrev_match(self):
-        from cndb.plugins.tables.field_mapping import suggest_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_mapping
 
         src = [_mkf("amt", "number")]
         dst = [_mkf("amount", "number"), _mkf("count", "number")]
@@ -1215,7 +1215,7 @@ class TestSuggestMapping:
         assert "缩写" in results[0]["reason"]
 
     def test_prefix_stripped_match(self):
-        from cndb.plugins.tables.field_mapping import suggest_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_mapping
 
         src = [_mkf("src_email", "text")]
         dst = [_mkf("email", "text")]
@@ -1224,7 +1224,7 @@ class TestSuggestMapping:
         assert results[0]["will_map"]
 
     def test_no_candidate_when_nothing_similar(self):
-        from cndb.plugins.tables.field_mapping import suggest_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_mapping
 
         src = [_mkf("totally_unknown_xyz", "text")]
         dst = [_mkf("amount", "number"), _mkf("description", "text")]
@@ -1234,7 +1234,7 @@ class TestSuggestMapping:
 
     def test_one_to_one_greedy_assignment(self):
         """两个 src 都能匹配到同一个 dst —— 贪心保证一对一."""
-        from cndb.plugins.tables.field_mapping import suggest_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_mapping
 
         src = [_mkf("name", "text"), _mkf("full_name", "text")]
         dst = [_mkf("full_name", "text"), _mkf("description", "text")]
@@ -1243,7 +1243,7 @@ class TestSuggestMapping:
         assert len(targets) == 2, "两个 src 应拿到两个不同的 dst"
 
     def test_type_compat_bonus(self):
-        from cndb.plugins.tables.field_mapping import suggest_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_mapping
 
         src = [_mkf("count", "number")]
         dst_same = [_mkf("count", "number"), _mkf("cnt", "number")]
@@ -1253,7 +1253,7 @@ class TestSuggestMapping:
         assert results[0]["score"] >= 1.0
 
     def test_min_score_threshold(self):
-        from cndb.plugins.tables.field_mapping import suggest_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_mapping
 
         src = [_mkf("totally_unknown_xyz", "text")]
         dst = [_mkf("amount", "number"), _mkf("description", "text")]
@@ -1266,7 +1266,7 @@ class TestSuggestFieldMapping:
     """suggest_field_mapping 便捷接口 — 返回可直接用的 mapping dict."""
 
     def test_returns_mapping_dict_with_will_map_true_as_target(self):
-        from cndb.plugins.tables.field_mapping import suggest_field_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_field_mapping
 
         src = [_mkf("amount", "number"), _mkf("unknown_xyz", "text")]
         dst = [_mkf("amount", "number")]
@@ -1279,7 +1279,7 @@ class TestSuggestFieldMapping:
 
     def test_mapping_dict_compatible_with_apply_user_mapping(self):
         """suggestion 产出的 mapping dict 可直接 apply_user_mapping 消费."""
-        from cndb.plugins.tables.field_mapping import (
+        from cndb.plugins.tables.services.importing.field_mapping import (
             apply_user_mapping,
             build_default_mapping,
             suggest_field_mapping,
@@ -1299,12 +1299,12 @@ class TestSuggestMappingEdge:
     """suggest_mapping 的边界场景."""
 
     def test_empty_src(self):
-        from cndb.plugins.tables.field_mapping import suggest_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_mapping
 
         assert suggest_mapping([], [_mkf("amount")]) == []
 
     def test_empty_dst_all_no_candidate(self):
-        from cndb.plugins.tables.field_mapping import suggest_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_mapping
 
         results = suggest_mapping([_mkf("amount")], [])
         assert len(results) == 1
@@ -1312,7 +1312,7 @@ class TestSuggestMappingEdge:
         assert results[0]["score"] == 0.0
 
     def test_identical_src_dst_names(self):
-        from cndb.plugins.tables.field_mapping import suggest_mapping
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_mapping
 
         # src 和 dst 字段名完全相同 → 全部 will_map
         src = [_mkf("name", "text"), _mkf("age", "number")]

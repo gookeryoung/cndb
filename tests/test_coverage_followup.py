@@ -17,8 +17,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables import ddl
-from cndb.plugins.tables.field_ops import (
+from cndb.plugins.tables.services.core import ddl
+from cndb.plugins.tables.services.fields.field_ops import (
     _extract_values_from_rows,
     _merge_new_options,
     generate_column_name,
@@ -408,7 +408,7 @@ def test_skip_first_row_dead_code_acknowledged():
 
 def test_parse_to_rows_json_non_list_raises():
     """JSON 根不是 list → ValueError."""
-    from cndb.plugins.tables.import_tasks import _parse_to_rows
+    from cndb.plugins.tables.services.importing.import_tasks import _parse_to_rows
 
     with pytest.raises(ValueError, match="必须是对象数组"):
         _parse_to_rows('{"a": 1}', "json", None, None)
@@ -416,7 +416,7 @@ def test_parse_to_rows_json_non_list_raises():
 
 def test_parse_to_rows_unknown_format_raises():
     """未知格式 → ValueError."""
-    from cndb.plugins.tables.import_tasks import _parse_to_rows
+    from cndb.plugins.tables.services.importing.import_tasks import _parse_to_rows
 
     with pytest.raises(ValueError, match="不支持"):
         _parse_to_rows("a", "xml", None, None)
@@ -424,7 +424,7 @@ def test_parse_to_rows_unknown_format_raises():
 
 def test_parse_to_rows_json_not_dict_items_filtered():
     """JSON list 里有非 dict 项 → 跳过 (只保留 dict)."""
-    from cndb.plugins.tables.import_tasks import _parse_to_rows
+    from cndb.plugins.tables.services.importing.import_tasks import _parse_to_rows
 
     rows, cols, total = _parse_to_rows(
         json.dumps([{"a": 1}, "junk", None, {"a": 2, "b": 3}]),
@@ -439,7 +439,7 @@ def test_parse_to_rows_json_not_dict_items_filtered():
 
 def test_reanalyze_nonexistent_task_returns_none(db):
     """任务不存在 → 打日志后 return (L355-356)."""
-    from cndb.plugins.tables.import_tasks import reanalyze_import_task
+    from cndb.plugins.tables.services.importing.import_tasks import reanalyze_import_task
 
     result = reanalyze_import_task(db, 999999)
     assert result is None
@@ -447,7 +447,7 @@ def test_reanalyze_nonexistent_task_returns_none(db):
 
 def test_reanalyze_wrong_status_raises(db, tmp_path: Path):
     """非 pending_confirm/pending_validation 状态 → ValueError (L358)."""
-    from cndb.plugins.tables.import_tasks import ImportTask, reanalyze_import_task
+    from cndb.plugins.tables.services.importing.import_tasks import ImportTask, reanalyze_import_task
 
     # 先建一个 DataTable 让 FK 通过
     engine = create_engine(f"sqlite:///{tmp_path / 'rt.db'}", connect_args={"check_same_thread": False})
@@ -485,7 +485,7 @@ def test_reanalyze_wrong_status_raises(db, tmp_path: Path):
 
 def test_reanalyze_updates_params_and_runs(db, tmp_path: Path, monkeypatch):
     """正常路径：改 match_keys + unknown_cols_strategy → 跑 analyze (L362, 364, 374 等)."""
-    from cndb.plugins.tables.import_tasks import ImportTask, reanalyze_import_task
+    from cndb.plugins.tables.services.importing.import_tasks import ImportTask, reanalyze_import_task
 
     engine = create_engine(f"sqlite:///{tmp_path / 'ru.db'}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
@@ -529,8 +529,8 @@ def test_reanalyze_updates_params_and_runs(db, tmp_path: Path, monkeypatch):
             def analyze(self, raw, fmt, match_keys=None, unknown_cols_strategy="drop"):
                 return _FakeAnalysis()
 
-        from cndb.plugins.tables import import_tasks as mod
-        from cndb.plugins.tables import importer as imp_mod
+        from cndb.plugins.tables.services.importing import import_tasks as mod
+        from cndb.plugins.tables.services.importing import importer as imp_mod
 
         monkeypatch.setattr(imp_mod, "Importer", _FakeImporter)
         monkeypatch.setattr(mod, "_decode_content", lambda t: t.file_content.encode())
@@ -557,7 +557,7 @@ def test_reanalyze_updates_params_and_runs(db, tmp_path: Path, monkeypatch):
 
 def test_reanalyze_exception_sets_failed(db, tmp_path: Path, monkeypatch):
     """reanalyze 过程抛异常 → task.status=failed (L403-412)."""
-    from cndb.plugins.tables.import_tasks import ImportTask, reanalyze_import_task
+    from cndb.plugins.tables.services.importing.import_tasks import ImportTask, reanalyze_import_task
 
     engine = create_engine(f"sqlite:///{tmp_path / 'rf.db'}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
@@ -586,8 +586,8 @@ def test_reanalyze_exception_sets_failed(db, tmp_path: Path, monkeypatch):
         session.commit()
         session.refresh(task)
 
-        from cndb.plugins.tables import import_tasks as mod
-        from cndb.plugins.tables import importer as imp_mod
+        from cndb.plugins.tables.services.importing import import_tasks as mod
+        from cndb.plugins.tables.services.importing import importer as imp_mod
 
         monkeypatch.setattr(mod, "_decode_content", lambda t: b"x")
 

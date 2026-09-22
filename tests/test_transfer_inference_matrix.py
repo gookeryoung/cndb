@@ -21,8 +21,8 @@ from typing import Any
 import pytest
 
 from cndb.plugins.tables import transfer
-from cndb.plugins.tables.column_profiler import profile_columns
-from cndb.plugins.tables.diff_reporter import DiffReporter
+from cndb.plugins.tables.services.importing.column_profiler import profile_columns
+from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
 from cndb.plugins.tables.field_types import default_registry
 
 # ── 一、列推断矩阵（组 01-44，每组一列样本 → 期望 field_type）──────────
@@ -352,7 +352,7 @@ class TestEndToEndAlignment:
         assert fmap["应收金额"] == "float"
         assert fmap["序号"] == "number"
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row1 = rec.get_row(engine, dt, ids[0])
         assert row1["完成率"] == pytest.approx(0.85)
@@ -378,7 +378,7 @@ class TestEndToEndAlignment:
         dt, ids = transfer.create_table_from_csv(engine, db, ws.id, "科学计数法表", "指标\n1.5e10\n2.5e3\n")
         assert dt.fields[0].field_type == "float"
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row1 = rec.get_row(engine, dt, ids[0])
         assert row1["指标"] == pytest.approx(15_000_000_000.0)
@@ -396,7 +396,7 @@ class TestEndToEndAlignment:
         assert fmap["完成率"] == "percentage"
         assert fmap["增幅"] == "percentage"
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row1 = rec.get_row(engine, dt, ids[0])
         assert row1["完成率"] == pytest.approx(0.85)
@@ -425,7 +425,7 @@ class TestEndToEndAlignment:
         tags_field = next(f for f in dt.fields if f.name == "技能标签")
         assert [o["label"] for o in tags_field.config["options"]] == ["前端", "后端", "测试", "运维"]
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row1 = rec.get_row(engine, dt, ids[0])
         assert row1["技能标签"] == "前端,后端"
@@ -447,7 +447,7 @@ class TestEndToEndAlignment:
         assert fmap["创建时间"] == "timestamp"
         assert fmap["更新时间"] == "timestamp"
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row1 = rec.get_row(engine, dt, ids[0])
         assert row1["创建时间"] == 1700000000
@@ -468,7 +468,7 @@ class TestEndToEndAlignment:
         dt, ids = transfer.create_table_from_csv(engine, db, ws.id, "长文本表", buf.getvalue())
         assert dt.fields[0].field_type == "longtext"
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row1 = rec.get_row(engine, dt, ids[0])
         assert row1["公告"] == "第一行\n第二行"
@@ -593,7 +593,7 @@ class TestJsonInferenceAlignment:
         tags_field = next(f for f in dt.fields if f.name == "技能标签")
         assert [o["label"] for o in tags_field.config["options"]] == ["前端", "后端", "测试", "运维"]
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row1 = rec.get_row(engine, dt, ids[0])
         assert row1["技能标签"] == "前端,后端"
@@ -684,7 +684,7 @@ class TestXlsxDateInference:
 
     def test_profile_layer_date_column_not_select(self):
         """画像层（导入预览）与推断层同规则：日期列不落 text/select."""
-        from cndb.plugins.tables.column_profiler import profile_columns
+        from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 
         base = datetime(2026, 9, 1)
         rows: list[dict[str, Any]] = [{"打卡日期": base.replace(day=1 + i % 5)} for i in range(100)]
@@ -721,7 +721,7 @@ class TestXlsxDateInference:
         assert fmap["操作时间"] == "datetime"
         assert fmap["姓名"] == "text"
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         row1 = rec.get_row(engine, dt, ids[0])
         assert row1["打卡日期"] == date(2026, 9, 1)

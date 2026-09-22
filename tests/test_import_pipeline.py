@@ -15,12 +15,12 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from cndb.plugins.tables import ddl
-from cndb.plugins.tables.diff_reporter import DiffReporter
-from cndb.plugins.tables.failed_row_exporter import FailedRowExporter
-from cndb.plugins.tables.importer import Importer, guess_format_from_content
+from cndb.plugins.tables.services.core import ddl
+from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
+from cndb.plugins.tables.services.importing.failed_row_exporter import FailedRowExporter
+from cndb.plugins.tables.services.importing.importer import Importer, guess_format_from_content
 from cndb.plugins.tables.models import DataField, DataTable
-from cndb.plugins.tables.row_validator import RowValidator
+from cndb.plugins.tables.services.importing.row_validator import RowValidator
 from tests.helpers import wait_import_settled
 
 # ── 公共 Fixture ──────────────────────────────────
@@ -509,7 +509,7 @@ class TestImporter:
     def test_analyze_no_db_write(self, test_session):
         """TR-4.1: analyze 不触发 DB 写入."""
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec._get_sa_table(engine, table)
         count_before = session.execute(select(func.count()).select_from(rec._get_sa_table(engine, table))).scalar()
@@ -526,7 +526,7 @@ class TestImporter:
     def test_execute_imports_valid_rows_only(self, test_session):
         """TR-4.2: execute 只落库 valid 行 + warning 行."""
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
         csv = "name,email\na,a@a.com\nb,bad\nc,c@c.com"
@@ -538,7 +538,7 @@ class TestImporter:
 
     def test_execute_all_valid(self, test_session):
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
         csv = "name,email\na,a@a.com\nb,b@b.com\nc,c@c.com"
@@ -550,7 +550,7 @@ class TestImporter:
 
     def test_execute_no_valid_rows(self, test_session):
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
         csv = "name,email\n,bad\n,bad2"  # 两行都缺必填 name + email 格式错
@@ -563,7 +563,7 @@ class TestImporter:
     def test_execute_with_pre_analysis(self, test_session):
         """传 analysis 跳过解析."""
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
         csv = "name,email\na,a@a.com"
@@ -576,7 +576,7 @@ class TestImporter:
     def test_import_warnings_false_skips_warning_rows(self, test_session):
         """import_warnings=False 时 warning 行也不落库."""
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         # email 格式正确但文件多一个未匹配列
         importer = Importer(engine, session, table)
@@ -590,7 +590,7 @@ class TestImporter:
     def test_json_format(self, test_session):
         """JSON 格式导入."""
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
         data = json.dumps(
@@ -624,7 +624,7 @@ class TestImporter:
         但 text 字段归一化允许空字符串，bulk_create 可正常落库。
         """
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
         # name 必填，空字符串 → RowValidator 记为 error；但 bulk_create 的 text 字段接受空串
@@ -649,7 +649,7 @@ class TestImporter:
     def test_execute_with_rows_param(self, test_session):
         """execute() content=None 但有 rows → analyze 走 rows= 入口."""
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
         rows = [{"name": "hello", "email": "ok@ok.com"}]
@@ -708,7 +708,7 @@ class TestImporter:
     def test_parse_json_with_non_dict_items_filtered(self, test_session):
         """_parse_json 中有非 dict 元素 → 过滤掉（line 190 isinstance(item, dict)）."""
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
         data = json.dumps([{"name": "a", "email": "a@a.com"}, "not-a-dict", None, {"name": "b", "email": "b@b.com"}])
@@ -727,7 +727,7 @@ class TestImporter:
     def test_import_warnings_true_includes_warning_rows(self, test_session):
         """import_warnings=True 默认 → warning 行（unknown column）也落库，覆盖 line 144."""
         engine, session, table = self._make_table(test_session)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
         # email 合法但多一个 extra 列 → unknown column warning（非 error）
@@ -819,7 +819,7 @@ class TestImportPipelineEndpoints:
 
     def _create_ws_table_fields(self, client, db, auth_headers, *, ws_name, tbl_name, fields):
         """创建 workspace + table + fields（通过 API），返回 (wid, tid)."""
-        from cndb.plugins.tables import ddl
+        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
 
         ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": ws_name})
@@ -931,7 +931,7 @@ class TestImportPipelineEndpoints:
 
     def test_confirm_endpoint_returns_running(self, client, db, auth_headers):
         """POST /import/{task_id}/confirm 触发执行."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -967,7 +967,7 @@ class TestImportPipelineEndpoints:
 
     def test_confirm_wrong_status_rejected(self, client, db, auth_headers):
         """pending 状态直接 confirm —— 根据状态机决定是否允许."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -989,7 +989,7 @@ class TestImportPipelineEndpoints:
 
     def test_failed_rows_endpoint_no_report(self, client, db, auth_headers):
         """validation_report 为空时返回 400."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -1046,7 +1046,7 @@ class TestImportPipelineEndpoints:
 
     def test_failed_rows_table_mismatch_404(self, client, db, auth_headers):
         """task.table_id != dt.id → 404（line 384）."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         _wid1, tid1 = self._create_ws_table_fields(
             client,
@@ -1077,7 +1077,7 @@ class TestImportPipelineEndpoints:
         import csv as _csv
         import io as _io
 
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -1116,7 +1116,7 @@ class TestImportPipelineEndpoints:
 
     def test_failed_rows_json_format(self, client, db, auth_headers):
         """download_failed_rows JSON 格式正常返回."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -1147,7 +1147,7 @@ class TestImportPipelineEndpoints:
 
     def test_failed_rows_xlsx_format(self, client, db, auth_headers):
         """download_failed_rows XLSX 格式正常返回."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -1191,7 +1191,7 @@ class TestImportPipelineEndpoints:
 
     def test_get_task_table_mismatch_404(self, client, db, auth_headers):
         """get_import_task task.table_id != dt.id → 404（line 252）."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         _wid1, tid1 = self._create_ws_table_fields(
             client,
@@ -1218,7 +1218,7 @@ class TestImportPipelineEndpoints:
 
     def test_get_task_validation_report_invalid_json_raw(self, client, db, auth_headers):
         """get_import_task validation_report 非合法 JSON → validation_report_raw（line 275-276）."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -1243,7 +1243,7 @@ class TestImportPipelineEndpoints:
 
     def test_get_task_validation_report_valid_json_parsed(self, client, db, auth_headers):
         """get_import_task validation_report 合法 JSON → 解析为 dict（lines 273-274）."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -1378,7 +1378,7 @@ class TestImportPipelineEndpoints:
 
     def test_confirm_endpoint_override_match_keys(self, client, db, auth_headers):
         """confirm 阶段覆盖 match_keys 触发 need_reanalyze 分支."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -1440,7 +1440,7 @@ class TestImportPipelineEndpoints:
         )
         assert resp.status_code == 200, resp.text
         # analyze 会触发后台线程，先 join 再读任务行，避免与线程写库竞争
-        from cndb.plugins.tables.import_tasks import join_background_threads
+        from cndb.plugins.tables.services.importing.import_tasks import join_background_threads
 
         join_background_threads()
         task = db.get(ImportTask, resp.json()["task_id"])
@@ -1470,7 +1470,7 @@ class TestImportPipelineEndpoints:
 
     def test_confirm_match_keys_comma_separated_fallback(self, client, db, auth_headers):
         """confirm 端点 match_keys 非 JSON → JSONDecodeError → fallback (line 393-395)."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -1506,7 +1506,7 @@ class TestImportPipelineEndpoints:
 
     def test_confirm_unknown_strategy_changed(self, client, db, auth_headers):
         """confirm 端点覆盖 unknown_cols_strategy → 触发 need_reanalyze 分支 (line 405-406)."""
-        from cndb.plugins.tables.import_tasks import create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import create_import_task
 
         wid, tid = self._create_ws_table_fields(
             client,
@@ -1592,7 +1592,7 @@ class TestImportTaskAnalyzeBranch:
     """import_tasks._parse_to_rows 三格式解析覆盖."""
 
     def test_parse_csv(self, test_session):
-        from cndb.plugins.tables.import_tasks import _parse_to_rows
+        from cndb.plugins.tables.services.importing.import_tasks import _parse_to_rows
 
         engine, _session = test_session
         rows, cols, total = _parse_to_rows("a,b\n1,2\n3,4", "csv", engine, None)
@@ -1601,7 +1601,7 @@ class TestImportTaskAnalyzeBranch:
         assert len(rows) == 2
 
     def test_parse_json(self, test_session):
-        from cndb.plugins.tables.import_tasks import _parse_to_rows
+        from cndb.plugins.tables.services.importing.import_tasks import _parse_to_rows
 
         engine, _session = test_session
         import json
@@ -1616,7 +1616,7 @@ class TestImportTaskAnalyzeBranch:
 
         from openpyxl import Workbook
 
-        from cndb.plugins.tables.import_tasks import _parse_to_rows
+        from cndb.plugins.tables.services.importing.import_tasks import _parse_to_rows
 
         wb = Workbook()
         ws = wb.active
@@ -1632,14 +1632,14 @@ class TestImportTaskAnalyzeBranch:
         assert len(rows) == 2
 
     def test_parse_json_not_array(self, test_session):
-        from cndb.plugins.tables.import_tasks import _parse_to_rows
+        from cndb.plugins.tables.services.importing.import_tasks import _parse_to_rows
 
         engine, _session = test_session
         with pytest.raises(ValueError):
             _parse_to_rows('{"a": 1}', "json", engine, None)
 
     def test_parse_csv_empty(self, test_session):
-        from cndb.plugins.tables.import_tasks import _parse_to_rows
+        from cndb.plugins.tables.services.importing.import_tasks import _parse_to_rows
 
         engine, _session = test_session
         rows, _cols, _total = _parse_to_rows("x,y\n", "csv", engine, None)
@@ -1662,7 +1662,7 @@ class TestFindRowsByKey:
         session.commit()
         ddl.create_table(engine, table)
         # 预插入两行
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "A001", "name": "苹果"}, {"code": "A002", "name": "香蕉"}], db=session)
         # 文件行里有 A001、A003（A001 命中，A003 新增）
@@ -1680,7 +1680,7 @@ class TestFindRowsByKey:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "X"}], db=session)
         exact_map, _conf = rec.find_rows_by_key(engine, table, ["code"], [{"code": "X"}, {"code": "Y"}])
@@ -1694,7 +1694,7 @@ class TestFindRowsByKey:
         _add_field(session, table, "lang", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "A", "lang": "EN"}, {"code": "A", "lang": "ZH"}], db=session)
         exact_map, _conf = rec.find_rows_by_key(
@@ -1712,7 +1712,7 @@ class TestFindRowsByKey:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         assert rec.find_rows_by_key(engine, table, ["code"], []) == ({}, {})
         assert rec.find_rows_by_key(engine, table, [], [{"code": "X"}]) == ({}, {})
@@ -1724,7 +1724,7 @@ class TestFindRowsByKey:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(engine, table, [{"code": "DUP"}, {"code": "DUP"}], db=session)
         # ids[0] < ids[1]
@@ -1740,7 +1740,7 @@ class TestFindRowsByKey:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         created_ids = rec.bulk_create(engine, table, [{"code": None}], db=session)
         exact_map, _conf = rec.find_rows_by_key(engine, table, ["code"], [{"code": None}])
@@ -1755,7 +1755,7 @@ class TestFindRowsByKey:
         _add_field(session, table, "name", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(
             engine,
@@ -1787,7 +1787,7 @@ class TestImporterUpsertAnalyze:
         _add_field(session, table, "name", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         existing_ids = rec.bulk_create(engine, table, [{"code": "A001", "name": "苹果"}], db=session)
 
@@ -1831,7 +1831,7 @@ class TestImporterUpsertAnalyze:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "DUP"}, {"code": "DUP"}], db=session)
 
@@ -1849,7 +1849,7 @@ class TestImporterUpsertAnalyze:
         _add_field(session, table, "name", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         # A001 name 将变化；A002 完全一致
         rec.bulk_create(engine, table, [{"code": "A001", "name": "苹果"}, {"code": "A002", "name": "香蕉"}], db=session)
@@ -1896,7 +1896,7 @@ class TestImporterUpsertExecute:
         _add_field(session, table, "name", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(engine, table, [{"code": "A001", "name": "苹果"}], db=session)
 
@@ -1983,7 +1983,7 @@ class TestUnknownColumnStrategy:
         assert price_field.field_type in ("number", "float")
 
         # 物理列存在 + 值正确 —— 用 records.list_rows 读回来
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rows, total = rec.list_rows(engine, table, db=session, limit=100)
         assert total == 1
@@ -2027,7 +2027,7 @@ class TestPerformanceAC7:
         session.commit()
         ddl.create_table(engine, table)
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         # 预插入 2500 行，构造一半命中一半不命中
         existing = [{"code": f"C{i:05d}", "val": i} for i in range(2500)]
@@ -2050,7 +2050,7 @@ class TestDiffReporterV2BackwardCompat:
 
     def test_no_upsert_result_falls_back_to_valid(self):
         """upsert_result=None → new_count=valid_count, update_count=0."""
-        from cndb.plugins.tables.row_validator import ValidationResult
+        from cndb.plugins.tables.services.importing.row_validator import ValidationResult
 
         results = [
             ValidationResult(row_number=1, status="valid", values={"a": 1}, issues=[]),
@@ -2064,7 +2064,7 @@ class TestDiffReporterV2BackwardCompat:
 
     def test_unknown_strategy_default_empty_planned(self):
         """未传 planned_columns → planned_columns=[]."""
-        from cndb.plugins.tables.row_validator import ValidationResult
+        from cndb.plugins.tables.services.importing.row_validator import ValidationResult
 
         results = [ValidationResult(row_number=1, status="valid", values={}, issues=[])]
         report = DiffReporter.build(results, [], ["a"])
@@ -2160,7 +2160,7 @@ class TestDiffReporterV2BackwardCompat:
 
         from sqlalchemy import select as sa_select
 
-        from cndb.plugins.tables import importer as importer_mod
+        from cndb.plugins.tables.services.importing import importer as importer_mod
         from cndb.plugins.tables.models import DataField
 
         before = session.execute(sa_select(DataField.id).where(DataField.table_id == table.id)).all()
@@ -2168,7 +2168,7 @@ class TestDiffReporterV2BackwardCompat:
         def _failing_add(*_args, **_kwargs):
             raise RuntimeError("模拟 DDL 失败")
 
-        # add_column 在 importer 里是 from cndb.plugins.tables.ddl import add_column 导入的本地名字
+        # add_column 在 importer 里是 from cndb.plugins.tables.services.core.ddl import add_column 导入的本地名字
         monkeypatch.setattr(importer_mod, "add_column", _failing_add)
         imp = Importer(engine, session, table)
         with pytest.raises(RuntimeError, match="模拟 DDL 失败"):
@@ -2245,7 +2245,7 @@ class TestRecordsEdgeCases:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "X"}], db=session)
         # 全部是不存在的字段 → effective_cols = []
@@ -2258,7 +2258,7 @@ class TestRecordsEdgeCases:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         assert rec.bulk_update_rows(engine, table, [], db=session) == 0
 
@@ -2269,7 +2269,7 @@ class TestRecordsEdgeCases:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(engine, table, [{"code": "A"}], db=session)
         updates = [
@@ -2295,7 +2295,7 @@ class TestImporterEdgeCases:
         session.commit()
         ddl.create_table(engine, table)
 
-        from cndb.plugins.tables.row_validator import ValidationResult
+        from cndb.plugins.tables.services.importing.row_validator import ValidationResult
 
         imp = Importer(engine, session, table)
         # 模拟全 error 的 results
@@ -2352,7 +2352,7 @@ class TestImporterEdgeCases:
         session.commit()
         ddl.create_table(engine, table)
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         # 预存一行，拿到 id
         created_ids = rec.bulk_create(engine, table, [{"code": "A", "name": "Old", "age": 20}], db=session)
@@ -2458,7 +2458,7 @@ class TestDiffReporterEdgeCases:
 
     def test_infer_non_standard_type_falls_back_to_text(self, monkeypatch):
         """推断出不在 _ALLOWED 里的类型 → 安全兜底为 text."""
-        from cndb.plugins.tables import diff_reporter as dr
+        from cndb.plugins.tables.services.importing import diff_reporter as dr
 
         # patch 本模块命名空间的 infer_column_type（链收口后的注入点）
         monkeypatch.setattr(dr, "infer_column_type", lambda _s: ("unknown_weird_type", []))
@@ -2479,7 +2479,7 @@ class TestCoverageFill:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(engine, table, [{"code": "A"}], db=session)
         # values 里只有 code（表字段），但没有任何 active_field 对应值... 等等 code 就是 active_field
@@ -2495,7 +2495,7 @@ class TestCoverageFill:
         _add_field(session, table, "name", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(engine, table, [{"code": "A", "name": "Old"}], db=session)
         # 软删
@@ -2514,7 +2514,7 @@ class TestCoverageFill:
         f1.trashed = True
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "X"}], db=session)
         # key_cols=["code", "code2"] — code 虽然存在但已 trashed → effective_cols=[]
@@ -2534,7 +2534,7 @@ class TestCoverageFill:
         f.field_type = "nonexistent_type_xyz"
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         # bulk_create 内部会走 _normalize_values
         with pytest.raises(ValueError, match="未知字段类型"):
@@ -2545,7 +2545,7 @@ class TestCoverageFill:
         engine, session = test_session
         table = _make_table(session, engine)
         # 不调用 ddl.create_table → 物理表不存在
-        from cndb.plugins.tables.records import _get_sa_table
+        from cndb.plugins.tables.services.core.records import _get_sa_table
 
         # SQLAlchemy reflect 会抛 InvalidRequestError，我们捕获两种
         try:
@@ -2706,8 +2706,8 @@ class TestExecuteImportTask:
 
     def test_execute_with_validation_report_uses_importer(self, test_session):
         """已有 validation_report → 走 Importer.execute 链路，task 字段被正确填充."""
-        from cndb.plugins.tables import ddl as _ddl
-        from cndb.plugins.tables.import_tasks import (
+        from cndb.plugins.tables.services.core import ddl as _ddl
+        from cndb.plugins.tables.services.importing.import_tasks import (
             analyze_import_task,
             create_import_task,
             execute_import_task,
@@ -2792,7 +2792,7 @@ class TestImportTasksErrorPaths:
 
     def test_analyze_task_not_found_noop(self, test_session):
         """analyze_import_task 传入不存在的 task_id → noop（line 63-65)."""
-        from cndb.plugins.tables.import_tasks import analyze_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import analyze_import_task
 
         _engine, session = test_session
         # 不应抛异常，只是 log + return
@@ -2800,7 +2800,7 @@ class TestImportTasksErrorPaths:
 
     def test_analyze_table_not_found_raises(self, test_session):
         """analyze_import_task 中 table 被删除 → 抛 RuntimeError 进入 except (line 73-74)."""
-        from cndb.plugins.tables.import_tasks import (
+        from cndb.plugins.tables.services.importing.import_tasks import (
             analyze_import_task,
             create_import_task,
         )
@@ -2832,14 +2832,14 @@ class TestImportTasksErrorPaths:
 
     def test_parse_to_rows_unknown_format(self, test_session):
         """_parse_to_rows 不支持的格式 → 抛 ValueError（line 159)."""
-        from cndb.plugins.tables.import_tasks import _parse_to_rows
+        from cndb.plugins.tables.services.importing.import_tasks import _parse_to_rows
 
         with pytest.raises(ValueError, match="不支持的格式"):
             _parse_to_rows("foo", "xml", None, None)
 
     def test_execute_task_not_found_noop(self, test_session):
         """execute_import_task 传入不存在的 task_id → noop（line 173-175)."""
-        from cndb.plugins.tables.import_tasks import execute_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import execute_import_task
 
         _engine, session = test_session
         execute_import_task(session, task_id=99999)
@@ -2855,7 +2855,7 @@ class TestRecordsUpsertDedup:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(engine, table, [{"code": "X"}], db=session)
         # 输入里同一个 key 出现 3 次 → 应只查一次、返回一个结果
@@ -2877,7 +2877,7 @@ class TestRecordsUpsertDedup:
         _add_field(session, table, "code", "text", order=0)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(engine, table, [{"code": "A"}], db=session)
         # values 里是 foo/bar 这样不存在的字段 → normalize 结果空
@@ -3107,7 +3107,7 @@ class TestImporterLooseEqualAndResolvePaths:
         imp = Importer(engine, session, table)
         from unittest.mock import MagicMock
 
-        from cndb.plugins.tables.row_validator import ValidationResult
+        from cndb.plugins.tables.services.importing.row_validator import ValidationResult
 
         analysis = MagicMock()
         analysis.results = [
@@ -3219,7 +3219,7 @@ class TestImporterMatchKeyRecommendations:
         _add_field(session, table, "name", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"code": "A001", "name": "苹果"}], db=session)
         imp = Importer(engine, session, table)
@@ -3248,7 +3248,7 @@ class TestImporterMatchKeyRecommendations:
             raise RuntimeError("模拟推荐失败")
 
         # importer 以 from-import 绑定推荐函数，须 patch importer 命名空间才能拦截
-        monkeypatch.setattr("cndb.plugins.tables.importer.recommend_match_keys", _boom)
+        monkeypatch.setattr("cndb.plugins.tables.services.importing.importer.recommend_match_keys", _boom)
         imp = Importer(engine, session, table)
         result = imp.analyze("code\nA\n", "csv")
         assert result.report["match_key_recommendations"] == []
@@ -3266,7 +3266,7 @@ class TestImporterNormalizedMatch:
         _add_field(session, table, "name", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(engine, table, [{"sn": 1001, "name": "旧"}], db=session)
         imp = Importer(engine, session, table)
@@ -3284,7 +3284,7 @@ class TestImporterNormalizedMatch:
         _add_field(session, table, "due", "date", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(engine, table, [{"ondate": "2024-01-15", "due": "2024-02-01"}], db=session)
         imp = Importer(engine, session, table)
@@ -3306,7 +3306,7 @@ class TestImporterNormalizedMatch:
         _add_field(session, table, "name", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         ids = rec.bulk_create(engine, table, [{"ts": "2024-01-15 10:30:00", "name": "旧"}], db=session)
         imp = Importer(engine, session, table)
@@ -3338,7 +3338,7 @@ class TestJsonSafeReport:
 
     def test_json_safe_scalar_types(self):
         """_json_safe 覆盖 datetime/date/time/Decimal/bytes/tuple/set/嵌套结构."""
-        from cndb.plugins.tables.diff_reporter import _json_safe
+        from cndb.plugins.tables.services.importing.diff_reporter import _json_safe
 
         assert _json_safe(None) is None
         assert _json_safe("x") == "x"
@@ -3362,7 +3362,7 @@ class TestJsonSafeReport:
         ddl.create_table(engine, table)
         from openpyxl import Workbook
 
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"ondate": "2024-01-15", "name": "旧"}], db=session)
 
@@ -3392,7 +3392,7 @@ class TestAnalyzeTaskDateCellsEndToEnd:
         """xlsx 含日期列走完整 analyze 任务链：validation_report 正常写入且可反序列化."""
         from openpyxl import Workbook
 
-        from cndb.plugins.tables.import_tasks import analyze_import_task, create_import_task
+        from cndb.plugins.tables.services.importing.import_tasks import analyze_import_task, create_import_task
 
         engine, session = test_session
         table = _make_table(session, engine)
@@ -3400,7 +3400,7 @@ class TestAnalyzeTaskDateCellsEndToEnd:
         _add_field(session, table, "name", "text", order=1)
         session.commit()
         ddl.create_table(engine, table)
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.bulk_create(engine, table, [{"ondate": "2024-01-15", "name": "旧"}], db=session)
 

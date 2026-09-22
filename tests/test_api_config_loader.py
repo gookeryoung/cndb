@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cndb.plugins.tables import api_config_loader as acl
-from cndb.plugins.tables import api_fetch as af
-from cndb.plugins.tables.api_config_loader import ApiConfigError
+from cndb.plugins.tables.services.importing import api_config_loader as acl
+from cndb.plugins.tables.services.importing import api_fetch as af
+from cndb.plugins.tables.services.importing.api_config_loader import ApiConfigError
 
 # ── validate_api_config 错误分支 ───────────────────
 

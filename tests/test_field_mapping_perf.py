@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cndb.plugins.tables.field_mapping import (
+from cndb.plugins.tables.services.importing.field_mapping import (
     apply_gap_filling,
     remap_row,
     suggest_mapping,

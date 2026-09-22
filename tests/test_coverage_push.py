@@ -257,7 +257,7 @@ class TestPythonTypeToFieldType:
 
 class TestCleaningPrivateFuncs:
     def test_apply_dedupe_keep_first_and_last(self):
-        from cndb.plugins.tables.cleaning import _apply_dedupe
+        from cndb.plugins.tables.services.importing.cleaning import _apply_dedupe
 
         rows = [{"id": 1, "v": "a"}, {"id": 1, "v": "a"}, {"id": 2, "v": "b"}]
         result, count = _apply_dedupe(rows)
@@ -266,7 +266,7 @@ class TestCleaningPrivateFuncs:
         assert result2 == [] and count2 == 0
 
     def test_apply_trim(self):
-        from cndb.plugins.tables.cleaning import _apply_trim
+        from cndb.plugins.tables.services.importing.cleaning import _apply_trim
 
         rows = [{"name": "  hello  ", "n": "  world  "}, {"name": "ok", "n": "fine"}]
         result, _count = _apply_trim(rows, "name")
@@ -274,7 +274,7 @@ class TestCleaningPrivateFuncs:
         assert result[1]["name"] == "ok"
 
     def test_apply_coerce_number(self):
-        from cndb.plugins.tables.cleaning import _apply_coerce
+        from cndb.plugins.tables.services.importing.cleaning import _apply_coerce
 
         rows = [{"age": "10"}, {"age": "bad"}, {"age": "20"}]
         result, _count = _apply_coerce(rows, "age", target_type="number", on_fail="nullify")
@@ -283,7 +283,7 @@ class TestCleaningPrivateFuncs:
         assert result[2]["age"] == 20
 
     def test_generate_suggestions_empty_data(self):
-        from cndb.plugins.tables.cleaning import generate_cleaning_suggestions
+        from cndb.plugins.tables.services.importing.cleaning import generate_cleaning_suggestions
 
         result = generate_cleaning_suggestions([], {})
         assert result == []
@@ -294,23 +294,23 @@ class TestCleaningPrivateFuncs:
 
 class TestImporterGuessFormatContent:
     def test_guess_format_from_content_bytes(self):
-        from cndb.plugins.tables.importer import guess_format_from_content
+        from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
         r = guess_format_from_content(b"\x00\x01\x02\x03")
         assert r in ("xlsx", "csv")
 
     def test_guess_format_from_content_json(self):
-        from cndb.plugins.tables.importer import guess_format_from_content
+        from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
         assert guess_format_from_content(json.dumps([{"a": 1}])) == "json"
 
     def test_guess_format_from_content_empty(self):
-        from cndb.plugins.tables.importer import guess_format_from_content
+        from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
         assert guess_format_from_content("") == "csv"
 
     def test_guess_format_from_content_tsv(self):
-        from cndb.plugins.tables.importer import guess_format_from_content
+        from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
         assert guess_format_from_content("a\tb\tc\n1\t2\t3") == "tsv"
 
@@ -320,14 +320,14 @@ class TestImporterGuessFormatContent:
 
 class TestColumnProfilerBranches:
     def test_profiler_empty_columns_only(self):
-        from cndb.plugins.tables.column_profiler import profile_columns
+        from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 
         profiles, summary = profile_columns([], ["a", "b"])
         assert len(profiles) == 2  # 即使无行也返回列画像
         assert summary["total_rows"] == 0
 
     def test_profiler_all_null(self):
-        from cndb.plugins.tables.column_profiler import profile_columns
+        from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 
         rows = [{"a": None, "b": "ok"}, {"a": None, "b": None}]
         profiles, _summary = profile_columns(rows, ["a", "b"])
@@ -337,7 +337,7 @@ class TestColumnProfilerBranches:
         assert b["null_ratio"] == 0.5
 
     def test_profiler_numeric_outliers(self):
-        from cndb.plugins.tables.column_profiler import profile_columns
+        from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 
         nums = [*list(range(100)), 10000]
         rows = [{"v": n} for n in nums]
@@ -352,7 +352,7 @@ class TestColumnProfilerBranches:
 
 class TestColumnProfilerMoreBranches:
     def test_profiler_single_row_no_conflicts(self):
-        from cndb.plugins.tables.column_profiler import profile_columns
+        from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 
         rows = [{"x": 42, "y": "hello", "z": None}]
         profiles, _summary = profile_columns(rows, ["x", "y", "z"])
@@ -362,7 +362,7 @@ class TestColumnProfilerMoreBranches:
         assert x_p["confidence"] >= 0.5
 
     def test_profiler_phone_conflict_with_text(self):
-        from cndb.plugins.tables.column_profiler import profile_columns
+        from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 
         # 多数是手机号 + 一些坏值
         phones = ["13800138000", "13900139000", "abc", "def"]
@@ -378,7 +378,7 @@ class TestColumnProfilerMoreBranches:
 
 class TestCleaningMoreBranches:
     def test_apply_fill_null_mean(self):
-        from cndb.plugins.tables.cleaning import _apply_fill_null
+        from cndb.plugins.tables.services.importing.cleaning import _apply_fill_null
 
         rows = [{"a": 10}, {"a": None}, {"a": 30}]
         profile = {"mean": 20}
@@ -386,21 +386,21 @@ class TestCleaningMoreBranches:
         assert result[1]["a"] == 20
 
     def test_apply_fill_null_empty_strategy_noop(self):
-        from cndb.plugins.tables.cleaning import _apply_fill_null
+        from cndb.plugins.tables.services.importing.cleaning import _apply_fill_null
 
         rows = [{"a": None}, {"a": 1}]
         _result, count = _apply_fill_null(rows, "a", strategy="empty", profile={})
         assert count == 0
 
     def test_apply_fill_null_missing_fill_value_noop(self):
-        from cndb.plugins.tables.cleaning import _apply_fill_null
+        from cndb.plugins.tables.services.importing.cleaning import _apply_fill_null
 
         rows = [{"a": None}, {"a": 1}]
         _result, count = _apply_fill_null(rows, "a", strategy="mean", profile={})
         assert count == 0
 
     def test_apply_drop_outliers_with_profile(self):
-        from cndb.plugins.tables.cleaning import _apply_drop_outliers
+        from cndb.plugins.tables.services.importing.cleaning import _apply_drop_outliers
 
         rows = [{"v": 1}, {"v": 2}, {"v": 999}]
         profile = {
@@ -412,7 +412,7 @@ class TestCleaningMoreBranches:
         assert result[2]["v"] is None
 
     def test_apply_drop_outliers_no_outliers(self):
-        from cndb.plugins.tables.cleaning import _apply_drop_outliers
+        from cndb.plugins.tables.services.importing.cleaning import _apply_drop_outliers
 
         rows = [{"v": 1}, {"v": 2}]
         profile = {"outliers": []}
@@ -491,12 +491,12 @@ class TestAnalyzeCsvColumnsEdgeCases:
 
 class TestGuessFormatMorePaths:
     def test_guess_format_csv_with_header(self):
-        from cndb.plugins.tables.importer import guess_format_from_content
+        from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
         assert guess_format_from_content("a,b,c\n1,2,3") == "csv"
 
     def test_guess_format_tsv_detected(self):
-        from cndb.plugins.tables.importer import guess_format_from_content
+        from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
         assert guess_format_from_content("name\tage\nAlice\t30") == "tsv"
 
@@ -582,7 +582,7 @@ class TestPythonTypeToFieldTypeMore:
 class TestCleaningFinalBranches:
     def test_apply_fill_null_with_distribution_bins_median(self):
         """median 策略 + profile 里有 distribution_bins → 走二分查找."""
-        from cndb.plugins.tables.cleaning import _apply_fill_null
+        from cndb.plugins.tables.services.importing.cleaning import _apply_fill_null
 
         rows = [{"a": 10}, {"a": None}, {"a": 30}, {"a": 5}]
         bins = [
@@ -601,15 +601,15 @@ class TestCleaningFinalBranches:
 
 class TestSmallModuleBranches:
     def test_failed_row_exporter_unsupported_format(self):
-        from cndb.plugins.tables.failed_row_exporter import FailedRowExporter
-        from cndb.plugins.tables.row_validator import ValidationResult
+        from cndb.plugins.tables.services.importing.failed_row_exporter import FailedRowExporter
+        from cndb.plugins.tables.services.importing.row_validator import ValidationResult
 
         results = [ValidationResult(row_number=1, values={"a": 1}, status="error", issues=["bad"])]
         with pytest.raises(ValueError, match="不支持的导出格式"):
             FailedRowExporter.export_failed_rows(results, format="pdf")
 
     def test_diff_reporter_build_empty_results(self):
-        from cndb.plugins.tables.diff_reporter import DiffReporter
+        from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
 
         # build 传空 results + 空 file_columns → 正常返回
         report = DiffReporter.build([], [], [])
@@ -617,7 +617,7 @@ class TestSmallModuleBranches:
 
     def test_column_profiler_low_confidence(self):
         """profile_columns 里 mixed types → confidence < 1.0."""
-        from cndb.plugins.tables.column_profiler import profile_columns
+        from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 
         rows = [{"v": 42}, {"v": "hello"}, {"v": 100}]
         profiles, _summary = profile_columns(rows, ["v"])

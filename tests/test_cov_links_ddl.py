@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cndb.plugins.tables import ddl, links
+from cndb.plugins.tables.services.core import ddl, links
 from cndb.plugins.tables.models import DataField, DataTable
 
 
@@ -221,7 +221,7 @@ class TestDDLColumnRebuild:
         ddl.create_table(db_engine, tbl)
 
         # 先加一行文本数据
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         rec.create_row(db_engine, tbl, {"score": "hello"}, db=db)
 

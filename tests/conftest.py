@@ -101,7 +101,7 @@ def _cleanup_tables(db_engine):
     """autouse：每个测试后等后台线程结束，再清空全部表 + 重置自增计数器."""
     yield
     # 等待 import_tasks 中所有后台线程完成，避免残留线程与清表冲突
-    from cndb.plugins.tables.import_tasks import join_background_threads
+    from cndb.plugins.tables.services.importing.import_tasks import join_background_threads
 
     join_background_threads(timeout=10)
     with db_engine.connect() as conn:

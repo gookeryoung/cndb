@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import create_engine
 
 from cndb.plugins.accounts.models import User, UserRole
-from cndb.plugins.tables import ddl
+from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.tables.models import DataField, DataTable, TableMember
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 
@@ -396,7 +396,7 @@ class TestAccessControlWithCustomRole:
         return table_for_role
 
     def test_direct_check_action_respects_custom_role(self, db, role_assigned_member, another_user):
-        from cndb.plugins.tables.access import TableAction, check_action
+        from cndb.plugins.tables.services.core.access import TableAction, check_action
 
         table = role_assigned_member
         # READ 应 True
@@ -410,7 +410,7 @@ class TestAccessControlWithCustomRole:
         self, db, auth_sysadmin, ws_with_owner, table_for_role, normal_user
     ):
         """内置 write 角色：EDIT_SCHEMA 仍为 False（与旧逻辑一致）."""
-        from cndb.plugins.tables.access import TableAction, check_action
+        from cndb.plugins.tables.services.core.access import TableAction, check_action
 
         # normal_user 已是工作区 EDITOR，用 write 成员也应允许 EDIT_RECORDS
         assert check_action(db, table_for_role, normal_user, TableAction.EDIT_RECORDS) is True
@@ -419,7 +419,7 @@ class TestAccessControlWithCustomRole:
 
     def test_role_no_permissions_nonexistent_code_falls_through(self, db, ws_with_owner, table_for_role, another_user):
         """TableMember.role 指向不存在的 Role.code 时，回落到工作区角色默认判定."""
-        from cndb.plugins.tables.access import TableAction, check_action
+        from cndb.plugins.tables.services.core.access import TableAction, check_action
 
         db.add(
             TableMember(

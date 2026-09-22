@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import httpx2
 import pytest
 
-from cndb.plugins.tables import api_fetch as af
+from cndb.plugins.tables.services.importing import api_fetch as af
 
 # ── _is_private_or_reserved_ip DNS 解析分支 ─────────
 

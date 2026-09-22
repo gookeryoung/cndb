@@ -6,7 +6,7 @@ import pytest
 
 from cndb.core.config import settings
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables import ddl
+from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 
@@ -304,7 +304,7 @@ class TestTablesRecordsMore:
 class TestRecordsExceptionBranches:
     def test_create_record_value_error(self, client, auth_owner_cov, ws_cov, db_engine, db):
         """触发 create_record 里的 ValueError 分支 —— 给必填字段缺失."""
-        from cndb.plugins.tables import ddl
+        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
 
         # 建一个带 required 字段的表
@@ -329,7 +329,7 @@ class TestRecordsExceptionBranches:
 
     def test_number_field_min_max_validation(self, client, auth_owner_cov, ws_cov, db_engine, db):
         """NumberFieldType 的 min/max 校验分支."""
-        from cndb.plugins.tables import ddl
+        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
 
         dt = DataTable(workspace_id=ws_cov.id, name="NumberTable")
@@ -359,7 +359,7 @@ class TestRecordsExceptionBranches:
 
     def test_float_field_validation(self, client, auth_owner_cov, ws_cov, db_engine, db):
         """FloatFieldType 的 validate 分支."""
-        from cndb.plugins.tables import ddl
+        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
 
         dt = DataTable(workspace_id=ws_cov.id, name="FloatTable")
@@ -388,7 +388,7 @@ class TestRecordsExceptionBranches:
 
     def test_select_field_validation(self, client, auth_owner_cov, ws_cov, db_engine, db):
         """SelectFieldType 的 validate 分支."""
-        from cndb.plugins.tables import ddl
+        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
 
         dt = DataTable(workspace_id=ws_cov.id, name="SelTable")
@@ -417,7 +417,7 @@ class TestRecordsExceptionBranches:
 
     def test_multiselect_field_validation(self, client, auth_owner_cov, ws_cov, db_engine, db):
         """MultiSelectFieldType 的 validate 分支."""
-        from cndb.plugins.tables import ddl
+        from cndb.plugins.tables.services.core import ddl
         from cndb.plugins.tables.models import DataField, DataTable
 
         dt = DataTable(workspace_id=ws_cov.id, name="MSelTable")

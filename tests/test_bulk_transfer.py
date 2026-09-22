@@ -5,7 +5,8 @@ import json
 import pytest
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables import ddl, transfer
+from cndb.plugins.tables.services.core import ddl
+from cndb.plugins.tables import transfer
 from cndb.plugins.tables.models import DataField, DataTable, DataView
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 
@@ -99,7 +100,7 @@ def table(db, ws):
     db.refresh(dt)
     ddl.create_table(engine, dt)
     # 加几条数据
-    from cndb.plugins.tables import records as rec
+    from cndb.plugins.tables.services.core import records as rec
 
     rec.create_row(engine, dt, {"姓名": "张三", "年龄": 20})
     rec.create_row(engine, dt, {"姓名": "李四", "年龄": 30})
@@ -380,7 +381,7 @@ class TestBulkAPI:
     def test_export_with_view_id_or_logic(self, client, ws, table, db, auth_owner):
         """filter_type=OR 时，满足任一条件的行都应被导出."""
         # 追加几条带不同年龄值的数据，用于 OR 条件筛选
-        from cndb.plugins.tables import records as rec
+        from cndb.plugins.tables.services.core import records as rec
 
         engine = db.get_bind()
         rec.create_row(engine, table, {"姓名": "赵六", "年龄": 50})

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cndb.plugins.tables import ddl
-from cndb.plugins.tables import records as rec
+from cndb.plugins.tables.services.core import ddl
+from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.field_types import TextFieldConfig, TextFieldType
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.workspaces.models import Workspace

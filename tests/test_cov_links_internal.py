@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cndb.plugins.tables import links
+from cndb.plugins.tables.services.core import links
 from cndb.plugins.tables.models import DataField, DataTable
 
 
@@ -77,7 +77,7 @@ class TestAttachLinks:
 class TestTargetSummariesInternal:
     def test_target_summary_without_db_fallback(self, db_engine, db, client, auth_headers):
         """_target_summaries with db=None -> returns #id placeholders."""
-        from cndb.plugins.tables.links import _target_summaries
+        from cndb.plugins.tables.services.core.links import _target_summaries
 
         _wid, _tid_b, tid_a = _create_full_link_scenario(client, auth_headers, db)
         fa = db.query(DataField).filter_by(table_id=tid_a, name="link_to_target").first()
@@ -89,7 +89,7 @@ class TestTargetSummariesInternal:
 class TestFindBackReferencesNoSource:
     def test_no_ref_fields_returns_empty(self, db_engine, db):
         """find_back_references when no candidate fields point to target."""
-        from cndb.plugins.tables.links import find_back_references
+        from cndb.plugins.tables.services.core.links import find_back_references
 
         tbl = DataTable(workspace_id=1, name="t_target_br")
         tbl.ensure_db_name()
