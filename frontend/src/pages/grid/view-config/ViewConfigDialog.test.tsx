@@ -223,14 +223,16 @@ describe('ViewConfigDialog 紧凑布局', () => {
     renderDialog({ viewType: 'kanban' })
     fireEvent.click(screen.getByText('kanban 专属设置'))
 
+    // kanban 中「完成状态」现已默认展开；「排序与提醒」默认展开；
+    // 「完成状态」默认展开；仅时间轴/操作类分区默认收起——kanban 无此类分区，
+    // 用「完成状态」验证默认展开、点击可收起卸载
     const head = screen.getByRole('button', { name: /完成状态/ })
-    expect(head).toHaveAttribute('aria-expanded', 'false')
-    // 收起时卸载 DOM，不参与查询
-    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
-
-    fireEvent.click(head)
     expect(head).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('完成标志')).toBeInTheDocument()
+
+    fireEvent.click(head)
+    expect(head).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
   })
 
   it('默认展开的分区可收起并卸载其配置项', () => {
@@ -263,9 +265,9 @@ describe('ViewConfigDialog 紧凑布局', () => {
     const { rerender } = renderProviders(<ViewConfigDialog {...baseProps} viewType="kanban" />)
 
     fireEvent.click(screen.getByText('kanban 专属设置'))
-    // 手动展开 kanban 的「完成状态」
+    // 手动把 kanban 默认展开的「完成状态」收起
     fireEvent.click(screen.getByRole('button', { name: /完成状态/ }))
-    expect(screen.getByText('完成标志')).toBeInTheDocument()
+    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
 
     // 切到 wbs：分区集合不同，折叠态应回到默认（「操作」默认收起）
     rerender(<ViewConfigDialog {...baseProps} viewType="wbs" />)
