@@ -100,8 +100,8 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
     ],
   },
   {
-    key: 'done_field', label: '完成标志', group: '完成状态', tooltip: '选择字段并指定匹配值，满足条件的卡片以完成状态显示（绿底灰字、隐藏倒计时提醒）',
-    kind: 'done_flag', fieldTypes: ['boolean', 'select', 'multiselect', 'text', 'longtext'],
+    key: 'done_field', label: '完成标志', group: '完成状态', tooltip: '选择字段并指定匹配值，满足条件的卡片以完成状态显示（绿底灰字、隐藏倒计时提醒）；也可把日期字段作为完成日期使用，勾选/取消会自动填入或清空',
+    kind: 'done_flag', fieldTypes: ['boolean', 'select', 'multiselect', 'text', 'longtext', 'date', 'datetime'],
   },
   {
     key: 'done_bg_color', label: '完成卡片背景色', group: '完成状态', tooltip: '完成状态卡片的背景颜色',
@@ -319,7 +319,6 @@ export function optionColSpan(kind: ViewOptionSchema['kind']): 1 | 2 {
 
 /** 创建/编辑视图对话框中默认收起的分区（次要配置，收起以压缩首屏高度） */
 export const COLLAPSED_BY_DEFAULT_GROUPS: ReadonlySet<string> = new Set([
-  '完成状态',
   '时间轴',
   '操作',
 ])
