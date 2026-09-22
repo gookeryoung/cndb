@@ -224,21 +224,30 @@ describe('KanbanView 完成勾选框', () => {
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
   })
 
-  it('未完成卡片 hover 显示勾选框，点击写回 done_value；已完成卡片 hover 不显示勾选框（单向不可逆）', () => {
+  it('未完成卡片 hover 显示勾选框，点击写回 done_value', () => {
     const onToggleDone = vi.fn()
     renderKanban({ rows: doneRows, view: doneView, canEdit: true, onToggleDone })
 
-    // 任务A 未完成 → hover 显示勾选框
     fireEvent.mouseEnter(cardOf('任务A'))
     expect(screen.getByRole('checkbox')).not.toBeChecked()
     fireEvent.click(screen.getByRole('checkbox'))
     expect(onToggleDone).toHaveBeenCalledTimes(1)
     expect(onToggleDone.mock.calls[0][0].id).toBe(1)
     expect(onToggleDone.mock.calls[0][1]).toEqual({ 状态: '已完成' })
+  })
 
-    // 任务C 已完成 → hover 不显示勾选框
-    fireEvent.mouseLeave(cardOf('任务A'))
+  it('已完成卡片 hover 显示已勾选的勾选框，再次点击写回取消值（可逆）', () => {
+    const onToggleDone = vi.fn()
+    renderKanban({ rows: doneRows, view: doneView, canEdit: true, onToggleDone })
+
+    // 任务C 已完成 → hover 显示勾选框且为勾选态
     fireEvent.mouseEnter(cardOf('任务C'))
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    const checkbox = screen.getByRole('checkbox')
+    expect(checkbox).toBeChecked()
+    fireEvent.click(checkbox)
+    // select 类完成标志：取消写回 null 清空
+    expect(onToggleDone).toHaveBeenCalledTimes(1)
+    expect(onToggleDone.mock.calls[0][0].id).toBe(3)
+    expect(onToggleDone.mock.calls[0][1]).toEqual({ 状态: null })
   })
 })

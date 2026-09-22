@@ -4,7 +4,8 @@
  * 数据存储为 view_options 的三个扁平键：done_field（字段名）+ done_op（判定操作符，缺省 = 等值）+ done_value（匹配值）。
  */
 
-import { Input, Select } from 'antd'
+import { DatePicker, Input, Select } from 'antd'
+import dayjs from 'dayjs'
 import type { Field } from '@/api'
 import { DONE_FLAG_OPS, extractSelectOptions, getOpsForField } from '../cells/fieldOps'
 import { findOptionSchema, resolveFieldOptions } from '../view-config/viewOptionSchema'
@@ -94,6 +95,20 @@ export default function DoneFlagFields({ fields, doneField, doneOp, doneValue, o
         value={Array.isArray(doneValue) ? (doneValue as string[]) : []}
         onChange={(v) => onChange({ done_value: v })}
         options={opts}
+      />
+    )
+  } else if (ft === 'date' || ft === 'datetime') {
+    // 日期类用 DatePicker：回写格式与行值存储格式一致（date → 'YYYY-MM-DD'，datetime → 'YYYY-MM-DD HH:mm:ss'）
+    valueControl = (
+      <DatePicker
+        style={{ width: '100%' }}
+        showTime={ft === 'datetime'}
+        value={doneValue ? dayjs(String(doneValue)) : null}
+        onChange={(d) => onChange({
+          done_value: d
+            ? (ft === 'datetime' ? d.format('YYYY-MM-DD HH:mm:ss') : d.format('YYYY-MM-DD'))
+            : undefined,
+        })}
       />
     )
   } else {

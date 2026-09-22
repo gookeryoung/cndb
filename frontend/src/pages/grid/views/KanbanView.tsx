@@ -18,11 +18,11 @@
  *                      multiselect 为 value 数组任一命中；text 为精确匹配文本）
  *                      匹配完成的卡片：标题删除线 + 标题后绿色对勾、绿色左边框 + 主题绿底，
  *                      隐藏截止日期徽章，不参与紧急置顶、不计入列头紧急计数，自动置底。
- *                      已完成卡片不可取消（hover 不显示勾选框），标记后单向不可逆。
+ *                      已完成卡片可再次点击勾选框取消（写回取消值，语义见 buildDoneToggleValue）。
  *
  * 交互约定:
  * - 截止日期徽章（逾期/还剩 X天/X天后）与标题同一行、紧贴标题右侧显示。
- * - 配置了 done_field 且当前用户可编辑时，未完成卡片 hover 后在删除按钮左侧显示完成勾选框（单向勾为完成）。
+ * - 配置了 done_field 且当前用户可编辑时，卡片 hover 后在删除按钮左侧显示完成勾选框（可勾选/取消）。
  */
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
@@ -212,8 +212,8 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
       return () => clearTimeout(timer)
     }
   }, [isDone])
-  // 配置了完成标志且可编辑时，仅未完成卡片 hover 显示勾选框（完成后单向不可逆）
-  const showDoneToggle = !!canEdit && !!doneCtx && !!onToggleDone && !isDone
+  // 配置了完成标志且可编辑时，卡片 hover 显示勾选框（未完成未勾选 / 已完成已勾选，可双向切换）
+  const showDoneToggle = !!canEdit && !!doneCtx && !!onToggleDone
   const dueDate = dueDateField ? parseDate(row[dueDateField]) : null
   const daysLeft = dueDate ? daysFromToday(dueDate) : null
   const isOverdue = daysLeft !== null && daysLeft < 0
@@ -268,13 +268,14 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
         e.currentTarget.style.transform = 'none'
       }}
     >
-      {/* 完成勾选框 —— hover 显示，仅未完成卡片可见（完成后不可逆），位于删除按钮左侧；
+      {/* 完成勾选框 —— hover 显示，未完成/已完成都可见（点击双向切换）；
           无值操作符（is_empty/is_not_empty）下 buildDoneToggleValue 返回 undefined 哨兵 → 不渲染勾选框 */}
       {showDoneToggle && hovered && doneCtx && buildDoneToggleValue(row, doneCtx) !== undefined && (
-        <Tooltip title="标记为完成">
+        <Tooltip title={isDone ? '取消完成' : '标记为完成'}>
           <Checkbox
+            checked={isDone}
             onClick={(e) => e.stopPropagation()}
-            onChange={() => onToggleDone!(row, { [doneCtx!.field]: buildDoneToggleValue(row, doneCtx!) })}
+            onChange={() => onToggleDone!(row, { [doneCtx!.field]: buildDoneToggleValue(row, doneCtx!) } as RowValues)}
             style={{ position: 'absolute', top: 8, right: canDelete && onDelete ? 32 : 4, zIndex: 10 }}
           />
         </Tooltip>

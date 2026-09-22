@@ -6,6 +6,7 @@
  */
 
 import type { RowResponse, Field } from '@/api'
+import dayjs from 'dayjs'
 import { extractSelectOptions, matchValueCondition } from '../cells/fieldOps'
 import { parseDate, daysFromToday } from '../cells/dateUtils'
 import { getSelectLabel, getLinkFirstLabel, getMultiSelectFirstLabel, formatMultiSelectValue } from '../cells/fieldValueFormat'
@@ -93,13 +94,25 @@ export function isDoneRow(row: RowResponse, ctx: DoneCtx | null): boolean {
  * - 勾选（当前未完成）：写入配置的 done_value（multiselect 归一为数组）
  * - 取消（当前已完成）：boolean 取反；multiselect 从行值中移除匹配项（移空则清空）；
  *   select/text 等其余类型清空（null）
+ * - 日期类字段（date/datetime）+ 无值操作符（is_empty/is_not_empty）：
+ *   「有日期即完成 / 有日期即未完成」双向语义明确 —— 勾选与取消时写入/清空今天，
+ *   date 用 'YYYY-MM-DD'，datetime 用 'YYYY-MM-DD HH:mm:ss'，确保清空后重新勾选可往返
+ * - 其余类型 + 无值操作符：没有确定的对侧值，返回 undefined 哨兵，调用方据此禁用该交互
  */
 export function buildDoneToggleValue(row: RowResponse, ctx: DoneCtx): unknown {
   const ft = ctx.fieldDef?.field_type
 
-  // 无值操作符（is_empty/is_not_empty）没有确定的对侧值：勾选/取消都会破坏判定语义，
-  // 返回 undefined 哨兵，调用方（完成勾选 UI）据此禁用该交互
-  if (ctx.op === 'is_empty' || ctx.op === 'is_not_empty') return undefined
+  if (ctx.op === 'is_empty' || ctx.op === 'is_not_empty') {
+    if (ft === 'date' || ft === 'datetime') {
+      const today = ft === 'datetime' ? dayjs().format('YYYY-MM-DD HH:mm:ss') : dayjs().format('YYYY-MM-DD')
+      // 目标状态与当前相反：is_not_empty 的完成态是"有日期"，is_empty 的完成态是"空"
+      // → 未完成勾选：写入 is_not_empty 的完成值（今天）或 is_empty 的完成值（null）
+      // → 已完成取消：反向写回
+      if (isDoneRow(row, ctx)) return ctx.op === 'is_empty' ? today : null
+      return ctx.op === 'is_empty' ? null : today
+    }
+    return undefined
+  }
 
   if (isDoneRow(row, ctx)) {
     if (ft === 'boolean') return !ctx.value

@@ -1,5 +1,6 @@
 /** kanbanBoard 纯函数单元测试 — 紧急级别/优先级/比较器/排序/分组聚合 */
 import { describe, it, expect } from 'vitest'
+import dayjs from 'dayjs'
 import type { RowResponse, Field } from '@/api'
 import { makeField } from '@/test/fixtures'
 import {
@@ -501,11 +502,6 @@ describe('buildDoneToggleValue', () => {
     expect(buildDoneToggleValue(makeRow({ id: 1, 状态: 'todo' }), ctx)).toBe('done')
   })
 
-  it('无值 op（is_not_empty）返回 undefined 哨兵，调用方据此禁用勾选', () => {
-    const ctx = resolveDoneCtx({ done_field: '截止', done_op: 'is_not_empty' }, fields)!
-    expect(buildDoneToggleValue(makeRow({ id: 1, 截止: '2026-01-01' }), ctx)).toBeUndefined()
-  })
-
   it('select 已完成 → 取消清空（null）', () => {
     const ctx = resolveDoneCtx({ done_field: '状态', done_value: 'done' }, fields)!
     expect(buildDoneToggleValue(makeRow({ id: 1, 状态: 'done' }), ctx)).toBeNull()
@@ -534,6 +530,31 @@ describe('buildDoneToggleValue', () => {
     expect(buildDoneToggleValue(makeRow({ id: 1, 标签: ['be'] }), ctx)).toEqual(['fe'])
     expect(buildDoneToggleValue(makeRow({ id: 1, 标签: ['fe', 'be'] }), ctx)).toEqual(['be'])
     expect(buildDoneToggleValue(makeRow({ id: 1, 标签: ['fe'] }), ctx)).toBeNull()
+  })
+
+  it('date + is_not_empty：未完成（无日期）勾选写入今天；已完成（有日期）取消清空', () => {
+    const ctx = resolveDoneCtx({ done_field: '截止', done_op: 'is_not_empty' }, fields)!
+    expect(buildDoneToggleValue(makeRow({ id: 1, 截止: null }), ctx)).toBe(dateStr(0))
+    expect(buildDoneToggleValue(makeRow({ id: 1, 截止: '2026-01-01' }), ctx)).toBeNull()
+  })
+
+  it('date + is_empty：已完成（空）取消写入今天；未完成（有日期）勾选清空', () => {
+    const ctx = resolveDoneCtx({ done_field: '截止', done_op: 'is_empty' }, fields)!
+    expect(buildDoneToggleValue(makeRow({ id: 1, 截止: null }), ctx)).toBe(dateStr(0))
+    expect(buildDoneToggleValue(makeRow({ id: 1, 截止: '2026-01-01' }), ctx)).toBeNull()
+  })
+
+  it('datetime + is_not_empty：勾选写入带时间的今天（YYYY-MM-DD HH:mm:ss）', () => {
+    const dtField = makeField({ id: 7, name: '完成时间', field_type: 'datetime' })
+    const ctx = resolveDoneCtx({ done_field: '完成时间', done_op: 'is_not_empty' }, [...fields, dtField])!
+    const v = buildDoneToggleValue(makeRow({ id: 1, 完成时间: null }), ctx) as string
+    expect(v).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+    expect(dayjs(v).format('YYYY-MM-DD')).toBe(dateStr(0))
+  })
+
+  it('非日期字段 + 无值操作符：仍返回 undefined 哨兵（无法造值，调用方禁用勾选）', () => {
+    const ctx = resolveDoneCtx({ done_field: '名称', done_op: 'is_not_empty' }, fields)!
+    expect(buildDoneToggleValue(makeRow({ id: 1, 名称: '' }), ctx)).toBeUndefined()
   })
 })
 
