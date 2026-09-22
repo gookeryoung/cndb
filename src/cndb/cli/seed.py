@@ -353,16 +353,13 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
                 f"的 sorting field_name='{s.get('field_name')}' 不存在"
             )
             return False
-    # kanban 的 group_field / calendar 的 start_field / gallery 的 title_field / gantt 的 start_date_field 等
+    # kanban 的 group_field / calendar 的 start_field / kanban/gantt/wbs 的 title_field 等
     vo = vc.get("view_options", {})
     for opt_key in (
         "group_field",
         "start_field",
         "end_field",
         "title_field",
-        "image_field",
-        "subtitle_field",
-        "tag_field",
         "start_date_field",
         "end_date_field",
         "actual_end_field",
@@ -374,14 +371,6 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
             print(
                 f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' "
                 f"的 view_options.{opt_key}='{opt_val}' 不存在"
-            )
-            return False
-    # meta_fields 是字符串数组，每项都需校验
-    for mf in vo.get("meta_fields") or []:
-        if mf not in valid_fields:
-            print(
-                f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' "
-                f"的 view_options.meta_fields 包含不存在的字段 '{mf}'"
             )
             return False
     return True

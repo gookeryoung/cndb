@@ -122,14 +122,14 @@ test.describe("跨表导航 — 模式按钮组跟随数据表 views 变化", ()
     await gotoTable(page, request, wid, "部门表");
     await assertModeButtonCount(page, 0);
 
-    // 2. 产品开发表：5 个模式按钮（缺 wbs）
+    // 2. 产品开发表：4 个模式按钮（缺 wbs，gallery 已移除）
     await gotoTable(page, request, wid, "产品开发");
-    await assertModeButtonCount(page, 5);
+    await assertModeButtonCount(page, 4);
     await assertModeButtonExists(page, "wbs", false);
 
-    // 3. 客户流失表：3 个模式按钮（grid+kanban+gallery）
+    // 3. 客户流失表：2 个模式按钮（grid+kanban，gallery 已移除）
     await gotoTable(page, request, wid, "客户流失");
-    await assertModeButtonCount(page, 3);
+    await assertModeButtonCount(page, 2);
     await assertModeButtonExists(page, "wbs", false);
   });
 });

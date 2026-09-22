@@ -4,7 +4,6 @@
  *   components/
  *     ├─ KanbanView.tsx         — 看板视图
  *     ├─ CalendarView.tsx       — 日历视图
- *     ├─ GalleryView.tsx        — 画廊视图
  *     ├─ GridCell.tsx           — inline 编辑单元格
  *     ├─ RowDetailDrawer.tsx     — 行详情抽屉
  *     ├─ ViewConfigDialog.tsx    — 筛选/排序/视图设置对话框
@@ -22,7 +21,7 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState, useCallback } fro
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Modal, Empty, App as AntApp } from 'antd'
 import {
-  ColumnHeightOutlined, EyeOutlined, AppstoreOutlined,
+  ColumnHeightOutlined, AppstoreOutlined,
   CalendarOutlined, LineChartOutlined, PartitionOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -56,7 +55,6 @@ const ImportExportDialog = lazy(() => import('@/pages/import-export/ImportExport
 // 非 grid 视图按 mode 懒加载：默认表格视图不下载看板/甘特/日历等代码
 const KanbanView = lazy(() => import('./views/KanbanView'))
 const CalendarView = lazy(() => import('./views/CalendarView'))
-const GalleryView = lazy(() => import('./views/GalleryView'))
 const GanttView = lazy(() => import('./views/GanttView'))
 const WbsView = lazy(() => import('./views/WbsView'))
 
@@ -105,7 +103,6 @@ interface ModeBtn {
 const MODE_BUTTONS: readonly ModeBtn[] = [
   { mode: 'grid', tooltip: '表格视图：行列结构，适合录入与批量管理', icon: <ColumnHeightOutlined /> },
   { mode: 'kanban', tooltip: '看板视图：按选择字段分组拖拽流转，适合任务跟踪', icon: <AppstoreOutlined /> },
-  { mode: 'gallery', tooltip: '画廊视图：图片卡片展示，适合素材与档案', icon: <EyeOutlined /> },
   { mode: 'calendar', tooltip: '日历视图：按日期字段排布在月历上', icon: <CalendarOutlined /> },
   { mode: 'gantt', tooltip: '甘特图视图：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
   { mode: 'wbs', tooltip: 'WBS 视图：树状层级分解任务', icon: <PartitionOutlined /> },
@@ -277,7 +274,7 @@ export default function GridPage() {
   const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
-      const KANBAN_MODES = new Set<string>(['kanban', 'gallery', 'calendar', 'gantt', 'wbs'])
+      const KANBAN_MODES = new Set<string>(['kanban', 'calendar', 'gantt', 'wbs'])
       const vt = v.view_type ?? ''
       const newMode: ViewMode = KANBAN_MODES.has(vt) ? (vt as ViewMode) : 'grid'
 
@@ -910,8 +907,6 @@ export default function GridPage() {
                 onToggleDone={handleToggleDone}
                 canEdit={canEditRecords}
               />
-            ) : mode === 'gallery' ? (
-              <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'gantt' ? (
               <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'wbs' ? (
