@@ -69,11 +69,6 @@ const viewModeContent = (
             <Text type="secondary">按日期字段把每行数据显示在月历上，适合排期、日程类数据。创建时需选择「开始时间字段」。</Text>
         </div>
         <div>
-            <Text strong>画廊视图（Gallery）</Text>
-            <br />
-            <Text type="secondary">以图片卡片形式展示每行数据，适合素材库、人员档案等以图片为主的场景。创建时需选择「标题字段」和「图片字段」。</Text>
-        </div>
-        <div>
             <Text strong>甘特图视图（Gantt）</Text>
             <br />
             <Text type="secondary">时间轴上展示任务的起止时间与进度，适合项目排期。需表中含日期类型字段。</Text>

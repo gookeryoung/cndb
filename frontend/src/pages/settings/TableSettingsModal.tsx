@@ -16,7 +16,7 @@ import {
 import {
   InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
   SaveOutlined, EditOutlined, PlusOutlined, DeleteOutlined, StarOutlined,
-  ColumnHeightOutlined, EyeOutlined, CalendarOutlined, LineChartOutlined, PartitionOutlined,
+  ColumnHeightOutlined, CalendarOutlined, LineChartOutlined, PartitionOutlined,
   HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -37,7 +37,6 @@ const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
 const VIEW_MODE_META: Record<string, { label: string; icon: ReactNode }> = {
   grid: { label: '表格', icon: <ColumnHeightOutlined /> },
   kanban: { label: '看板', icon: <AppstoreOutlined /> },
-  gallery: { label: '画廊', icon: <EyeOutlined /> },
   calendar: { label: '日历', icon: <CalendarOutlined /> },
   gantt: { label: '甘特图', icon: <LineChartOutlined /> },
   wbs: { label: '工作分解', icon: <PartitionOutlined /> },

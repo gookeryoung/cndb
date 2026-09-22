@@ -8,10 +8,10 @@
 // ── 类型与常量 ────────────────────────────────────────
 
 /** 网格页支持的视图展示模式 */
-export type ViewMode = 'grid' | 'kanban' | 'gallery' | 'calendar' | 'gantt' | 'wbs'
+export type ViewMode = 'grid' | 'kanban' | 'calendar' | 'gantt' | 'wbs'
 
 /** 合法模式集合 —— URL ?mode= 与 localStorage 偏好校验共用 */
-export const VALID_MODES: readonly ViewMode[] = ['grid', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs']
+export const VALID_MODES: readonly ViewMode[] = ['grid', 'kanban', 'calendar', 'gantt', 'wbs']
 
 // ── 推导函数 ──────────────────────────────────────────
 
