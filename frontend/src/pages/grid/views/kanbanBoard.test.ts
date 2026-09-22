@@ -506,14 +506,42 @@ describe('完成标志与紧急置顶/计数的交互', () => {
     done_field: '状态', done_value: 'done',
   }
 
-  it('sortKanbanCards：完成卡片即使逾期也不参与紧急置顶', () => {
+  it('sortKanbanCards：未完成卡在前，已完成卡统一置底（即使完成卡逾期也不参与置顶）', () => {
     const rows = [
       makeRow({ id: 1, created_at: '2026-01-01T00:00:00', 状态: 'done', 截止: dateStr(-5) }), // 完成且逾期
-      makeRow({ id: 2, created_at: '2026-01-01T00:00:00', 状态: 'todo', 截止: dateStr(-5) }), // 逾期
+      makeRow({ id: 2, created_at: '2026-01-01T00:00:00', 状态: 'todo', 截止: dateStr(-5) }), // 逾期未完成
+      makeRow({ id: 3, created_at: '2026-01-01T00:00:00', 状态: 'doing', 截止: dateStr(30) }), // 正常未完成
     ]
     const sorted = sortKanbanCards(rows, fields, doneOpts)
-    // 两者 created_at 相同 → 走 id 倒序兜底；若完成卡仍参与置顶则会是 [1, 2]
-    expect(sorted.map(r => r.id)).toEqual([2, 1])
+    // 未完成（id=2、3）按紧急排序（逾期在前）→ [2, 3]；已完成（id=1）置底
+    expect(sorted.map(r => r.id)).toEqual([2, 3, 1])
+  })
+
+  it('sortKanbanCards：已完成内部按完成时间倒序（后完成的在顶部）', () => {
+    const rows = [
+      makeRow({ id: 1, created_at: '2026-01-01T00:00:00', updated_at: '2026-06-01T00:00:00', 状态: 'done' }), // 先完成
+      makeRow({ id: 2, created_at: '2026-01-01T00:00:00', updated_at: '2026-12-01T00:00:00', 状态: 'done' }), // 后完成
+      makeRow({ id: 3, created_at: '2026-01-01T00:00:00', 状态: 'todo' }), // 未完成
+    ]
+    const sorted = sortKanbanCards(rows, fields, doneOpts)
+    // 未完成（id=3）在前，已完成内部 updated_at 倒序 → 2 后完成（顶）、1 先完成（底）
+    expect(sorted.map(r => r.id)).toEqual([3, 2, 1])
+  })
+
+  it('sortKanbanCards：已完成内部 — done_field 为 date 类型时，用行的 done_field 值（完成日期）作为排序依据', () => {
+    // done_field 类型为 date 时，doneIsDate=true，getDoneTime 优先取行上 done_field 字段的值
+    // 用 boolean 字段作对照：若 done_field 非日期，则回退到 updated_at / created_at
+    const boolField = makeField({ id: 6, name: '完成', field_type: 'boolean' })
+    const boolDoneFields: Field[] = [...fields, boolField]
+    const rows = [
+      makeRow({ id: 1, created_at: '2026-01-01T00:00:00', updated_at: '2026-06-01T00:00:00', 完成: true }), // 先完成
+      makeRow({ id: 2, created_at: '2026-01-01T00:00:00', updated_at: '2026-12-01T00:00:00', 完成: true }), // 后完成
+      makeRow({ id: 3, created_at: '2026-01-01T00:00:00', 完成: false }), // 未完成
+    ]
+    const opts = { ...doneOpts, done_field: '完成', done_value: true }
+    const sorted = sortKanbanCards(rows, boolDoneFields, opts)
+    // 未完成在前，已完成内部 updated_at 倒序 → 2（后完成，顶）、1（先完成，底）
+    expect(sorted.map(r => r.id)).toEqual([3, 2, 1])
   })
 
   it('groupKanbanColumns：完成卡片不计入列头 urgentCount', () => {

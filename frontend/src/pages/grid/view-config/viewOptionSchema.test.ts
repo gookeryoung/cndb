@@ -14,12 +14,15 @@ import {
 import { makeField } from '@/test/fixtures'
 
 describe('getOptionSchema 五种视图 + 未知类型', () => {
-  it('kanban 返回 14 项 schema', () => {
-    expect(getOptionSchema('kanban')).toHaveLength(14)
+  it('kanban 返回 12 项 schema', () => {
+    expect(getOptionSchema('kanban')).toHaveLength(12)
     expect(getOptionSchema('kanban').map((o) => o.key)).toContain('group_field')
-    // 完成标志相关三项
+    // 完成标志仅 done_field 一项（已移除 done_bg_color / done_text_color）
     expect(getOptionSchema('kanban').map((o) => o.key)).toEqual(
-      expect.arrayContaining(['done_field', 'done_bg_color', 'done_text_color']),
+      expect.arrayContaining(['done_field']),
+    )
+    expect(getOptionSchema('kanban').map((o) => o.key)).not.toEqual(
+      expect.arrayContaining(['done_bg_color', 'done_text_color']),
     )
   })
 
@@ -116,12 +119,6 @@ describe('resolveOpts 默认值回退', () => {
     }
   })
 
-  it('完成卡片颜色未配置时回退跟随主题（auto）', () => {
-    const out = resolveOpts({}, schema)
-    expect(out.done_bg_color).toBe('auto')
-    expect(out.done_text_color).toBe('auto')
-  })
-
   it('switch 的 false 是有效值，不回退 defaultValue（expand_all=false 场景，用 wbs 验证）', () => {
     const wbsSchema = getOptionSchema('wbs')
     const out = resolveOpts({ expand_all: false }, wbsSchema)
@@ -196,7 +193,7 @@ describe('groupOptionSchema 分区切分', () => {
       'card_sort_field', 'card_sort_direction', 'pin_urgent', 'urgent_threshold_days',
     ])
     expect(sections[3].items.map((i) => i.key)).toEqual([
-      'done_field', 'done_bg_color', 'done_text_color',
+      'done_field',
     ])
     // 无遗漏：分区展平后与 schema 项数一致
     expect(sections.flatMap((s) => s.items)).toHaveLength(schema.length)
