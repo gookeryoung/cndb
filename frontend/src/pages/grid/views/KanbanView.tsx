@@ -13,18 +13,16 @@
  * - card_sort_field:   卡片排序字段（可选）；留空则按 API 返回顺序
  * - card_sort_direction: 卡片排序方向 'asc' | 'desc'，默认 desc
  * - pin_urgent:        是否把逾期/紧急卡片置顶（默认 true，有 due_date_field 时）
- * - done_field:        完成标志字段（boolean/select/multiselect/text 等）
+ * - done_field:        完成标志字段（boolean/select/multiselect/text/date 等）
  * - done_value:        完成匹配值（boolean 字段为 true/false；select 为 option value；
  *                      multiselect 为 value 数组任一命中；text 为精确匹配文本）
- * - done_bg_color:     完成卡片背景色（'auto'=跟随主题默认绿，或具体色值）
- * - done_text_color:   完成卡片标题文字颜色（'auto'=跟随主题默认灰，或具体色值）
- *                      匹配完成的卡片：绿底灰字 + 绿色左边框，隐藏截止日期徽章，
- *                      不参与紧急置顶、不计入列头紧急计数。
+ *                      匹配完成的卡片：标题删除线 + 标题后绿色对勾、绿色左边框 + 主题绿底，
+ *                      隐藏截止日期徽章，不参与紧急置顶、不计入列头紧急计数，自动置底。
+ *                      已完成卡片不可取消（hover 不显示勾选框），标记后单向不可逆。
  *
  * 交互约定:
  * - 截止日期徽章（逾期/还剩 X天/X天后）与标题同一行、紧贴标题右侧显示。
- * - 配置了 done_field 且当前用户可编辑时，卡片 hover 后在删除按钮左侧显示完成勾选框，
- *   勾选/取消直接写回 done_field（勾选写入 done_value，取消则取反/移除/清空）。
+ * - 配置了 done_field 且当前用户可编辑时，未完成卡片 hover 后在删除按钮左侧显示完成勾选框（单向勾为完成）。
  */
 
 import { memo, useMemo, useRef, useState } from 'react'
@@ -36,6 +34,7 @@ import {
   WarningOutlined,
   DeleteOutlined,
   PlusOutlined,
+  CheckCircleFilled,
 } from '@ant-design/icons'
 import type { RowResponse, Field, View, RowValues } from '@/api'
 import { resolveTagColor } from '@/utils/tagColors'
@@ -193,10 +192,8 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   // 计算状态
   const doneCtx = useMemo(() => resolveDoneCtx(opts, fields), [opts, fields])
   const isDone = isDoneRow(row, doneCtx)
-  // 配置了完成标志且可编辑时，hover 显示完成勾选框（位于删除按钮左侧）
-  const showDoneToggle = !!canEdit && !!doneCtx && !!onToggleDone
-  const doneBg = opts.done_bg_color === 'auto' ? 'var(--cn-bg-success-subtle)' : (opts.done_bg_color as string)
-  const doneTextColor = opts.done_text_color === 'auto' ? 'var(--cn-text-muted)' : (opts.done_text_color as string)
+  // 配置了完成标志且可编辑时，仅未完成卡片 hover 显示勾选框（完成后单向不可逆）
+  const showDoneToggle = !!canEdit && !!doneCtx && !!onToggleDone && !isDone
   const dueDate = dueDateField ? parseDate(row[dueDateField]) : null
   const daysLeft = dueDate ? daysFromToday(dueDate) : null
   const isOverdue = daysLeft !== null && daysLeft < 0
@@ -216,7 +213,7 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   let bgStyle: React.CSSProperties = {}
   if (isDone) {
     borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #52c41a` }
-    bgStyle = { background: doneBg }
+    bgStyle = { background: 'var(--cn-bg-success-subtle)' }
   } else if (isOverdue) {
     borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #ff4d4f` }
     bgStyle = { background: 'var(--cn-bg-danger-subtle)' }
@@ -250,11 +247,10 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
         e.currentTarget.style.transform = 'none'
       }}
     >
-      {/* 完成勾选框 —— hover 显示，位于删除按钮左侧 */}
+      {/* 完成勾选框 —— hover 显示，仅未完成卡片可见（完成后不可逆），位于删除按钮左侧 */}
       {showDoneToggle && hovered && (
-        <Tooltip title={isDone ? '标记为未完成' : '标记为完成'}>
+        <Tooltip title="标记为完成">
           <Checkbox
-            checked={isDone}
             onClick={(e) => e.stopPropagation()}
             onChange={() => onToggleDone!(row, { [doneCtx!.field]: buildDoneToggleValue(row, doneCtx!) })}
             style={{ position: 'absolute', top: 8, right: canDelete && onDelete ? 32 : 4, zIndex: 10 }}
@@ -284,9 +280,10 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
           />
         </Tooltip>
       )}
-      {/* 标题行（完成卡片用删除线 + 不显眼的灰色文字）；截止日期徽章紧贴标题右侧、同一行 */}
-      <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word', ...(isDone ? { color: doneTextColor, textDecoration: 'line-through' } : {}) }}>
+      {/* 标题行（完成卡片：删除线 + 标题后绿色对勾 + 灰色文字）；截止日期徽章紧贴标题右侧、同一行 */}
+      <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word', ...(isDone ? { color: 'var(--cn-text-muted)', textDecoration: 'line-through' } : {}) }}>
         {title}
+        {isDone && <CheckCircleFilled style={{ color: '#52c41a', marginLeft: 6, fontSize: cs.titleFontSize }} />}
         {/* 完成卡片整体隐藏截止日期徽章（逾期/还剩/X天后都不再显示） */}
         {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
       </div>

@@ -171,32 +171,21 @@ describe('KanbanView 完成标志', () => {
     expect(screen.getByText(/还剩 1天/)).toBeInTheDocument()
   })
 
-  it('完成卡片应用完成背景色与灰色标题文字', () => {
+  it('完成卡片应用固定主题完成样式：绿底 + 绿色左边框 + 灰色文字 + 删除线 + 标题后绿色对勾', () => {
     renderKanban({ rows: doneRows, view: doneView })
 
-    // 标题元素带 color；其父级卡片容器带 background/borderLeft
-    // （jsdom 会把 hex 色值序列化为 rgb 形式，故按 rgb 断言）
     const titleEl = screen.getByText('任务C')
     const cardEl = titleEl.parentElement as HTMLElement
+    // 固定主题样式：绿底 / 绿色左边框 / 灰色标题文字
     expect(cardEl.style.background).toContain('var(--cn-bg-success-subtle)')
     expect(cardEl.style.borderLeft).toContain('rgb(82, 196, 26)') // #52c41a
     expect(titleEl.style.color).toBe('var(--cn-text-muted)')
-  })
-
-  it('自定义背景/文字颜色时应用配置色值', () => {
-    const customView: View = {
-      id: 1, name: '看板', view_type: 'kanban', is_default: false,
-      view_options: {
-        ...VIEW_OPTIONS, done_field: '状态', done_value: '已完成',
-        done_bg_color: '#e6f4ff', done_text_color: '#1677ff',
-      },
-    }
-    renderKanban({ rows: doneRows, view: customView })
-
-    const titleEl = screen.getByText('任务C')
-    const cardEl = titleEl.parentElement as HTMLElement
-    expect(cardEl.style.background).toBe('rgb(230, 244, 255)') // #e6f4ff
-    expect(titleEl.style.color).toBe('rgb(22, 119, 255)') // #1677ff
+    expect(titleEl.style.textDecoration).toContain('line-through')
+    // 标题后紧跟绿色对勾图标
+    const checkIcon = titleEl.querySelector('.anticon-check-circle') || titleEl.querySelector('.anticon-check-circle-filled')
+    expect(checkIcon).not.toBeNull()
+    const styleCheck = (checkIcon as HTMLElement)?.style?.color
+    expect(styleCheck || getComputedStyle(checkIcon!).color).toContain('82, 196, 26') // #52c41a
   })
 
   it('完成卡片不计入列头紧急计数', () => {
@@ -235,29 +224,21 @@ describe('KanbanView 完成勾选框', () => {
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
   })
 
-  it('hover 后显示勾选框，点击未完成卡片写回 done_value', () => {
+  it('未完成卡片 hover 显示勾选框，点击写回 done_value；已完成卡片 hover 不显示勾选框（单向不可逆）', () => {
     const onToggleDone = vi.fn()
     renderKanban({ rows: doneRows, view: doneView, canEdit: true, onToggleDone })
 
+    // 任务A 未完成 → hover 显示勾选框
     fireEvent.mouseEnter(cardOf('任务A'))
-    const box = screen.getByRole('checkbox')
-    expect(box).not.toBeChecked()
-
-    fireEvent.click(box)
+    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    fireEvent.click(screen.getByRole('checkbox'))
     expect(onToggleDone).toHaveBeenCalledTimes(1)
     expect(onToggleDone.mock.calls[0][0].id).toBe(1)
     expect(onToggleDone.mock.calls[0][1]).toEqual({ 状态: '已完成' })
-  })
 
-  it('已完成卡片勾选框为选中态，点击取消写回清空值', () => {
-    const onToggleDone = vi.fn()
-    renderKanban({ rows: doneRows, view: doneView, canEdit: true, onToggleDone })
-
+    // 任务C 已完成 → hover 不显示勾选框
+    fireEvent.mouseLeave(cardOf('任务A'))
     fireEvent.mouseEnter(cardOf('任务C'))
-    const box = screen.getByRole('checkbox')
-    expect(box).toBeChecked()
-
-    fireEvent.click(box)
-    expect(onToggleDone.mock.calls[0][1]).toEqual({ 状态: null })
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
   })
 })
