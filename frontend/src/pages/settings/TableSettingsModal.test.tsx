@@ -10,6 +10,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import TableSettingsModal from './TableSettingsModal'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
@@ -182,5 +183,85 @@ describe('TableSettingsModal 视图列表（拖拽 + 默认）', () => {
     await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1))
     expect(updateSpy.mock.calls[0]![2]).toBe(2)
     expect(updateSpy.mock.calls[0]![3]).toEqual({ is_default: true })
+  })
+})
+
+// ─────────────── 删除表后导航 ───────────────
+
+function LocationProbe() {
+  const loc = useLocation()
+  return <span data-testid="location">{loc.pathname}</span>
+}
+
+/**
+ * 删除表测试专用 render —— 共享同一 element，让 Modal 能在路由切换中保留删除成功后的状态传播.
+ * 初始路由放在表详情页 /w/:wid/tables/:tid，验证删除后跳回 /w/:wid/tables.
+ */
+function renderDeleteFlow() {
+  const modal = (
+    <TableSettingsModal
+      open
+      wid={WID}
+      tid={TID}
+      initialTab="basic"
+      onClose={() => { }}
+    />
+  )
+  return renderProviders(
+    <Routes>
+      <Route path="/w/:wid/tables" element={<LocationProbe />} />
+      <Route path="/w/:wid/tables/:tid" element={<>{modal}<LocationProbe /></>} />
+    </Routes>,
+    {
+      route: `/w/${WID}/tables/${TID}`,
+      initialAuth: { user: { id: 1, username: 'alice', email: null, role: 'system_admin' as const, is_active: true }, token: 'fake' },
+    },
+  )
+}
+
+describe('TableSettingsModal 删除表后导航', () => {
+  beforeEach(() => {
+    setupTableHandlers()
+    server.use(
+      http.delete('/api/v1/workspaces/:wid/tables/:tid', () => HttpResponse.json({})),
+    )
+  })
+
+  it('删除表成功后提示成功、关闭弹窗并 navigate 到工作区表列表', async () => {
+    renderDeleteFlow()
+
+    // 等待「基本信息」Tab 表单回填（确认 Modal 挂载完成）
+    await screen.findByDisplayValue('任务表', {}, { timeout: 5000 })
+
+    // 点击删除 → Popconfirm 弹窗
+    fireEvent.click(screen.getByRole('button', { name: /删\s*除\s*表/ }))
+    // Popconfirm 的「删除」按钮确认
+    fireEvent.click(await screen.findByRole('button', { name: /^删\s*除$/ }))
+
+    // 成功提示
+    expect(await screen.findByText('表已删除')).toBeInTheDocument()
+
+    // 关键断言：路由从 /w/10/tables/20 跳回 /w/10/tables
+    await waitFor(
+      () => expect(screen.getByTestId('location')).toHaveTextContent(`/w/${WID}/tables`),
+      { timeout: 3000 },
+    )
+  })
+
+  it('删除表失败时停留在当前页，不 navigate', async () => {
+    server.use(
+      http.delete('/api/v1/workspaces/:wid/tables/:tid', () =>
+        HttpResponse.json({ detail: '表不存在' }, { status: 404 }),
+      ),
+    )
+    renderDeleteFlow()
+
+    await screen.findByDisplayValue('任务表', {}, { timeout: 5000 })
+    fireEvent.click(screen.getByRole('button', { name: /删\s*除\s*表/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /^删\s*除$/ }))
+
+    expect(await screen.findByText('表不存在')).toBeInTheDocument()
+    // 路由保持在表详情页
+    expect(screen.getByTestId('location')).toHaveTextContent(`/w/${WID}/tables/${TID}`)
   })
 })

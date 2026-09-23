@@ -20,6 +20,7 @@ import {
   HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import {
   DndContext, type DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors,
 } from '@dnd-kit/core'
@@ -144,6 +145,7 @@ export default function TableSettingsModal({
 }: Props) {
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState(initialTab)
   const [form] = Form.useForm<TableUpdate>()
   const [viewEditorOpen, setViewEditorOpen] = useState(false)
@@ -203,6 +205,8 @@ export default function TableSettingsModal({
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid] })
       onUpdated?.()
       onClose?.()
+      // 从表详情页（GridPage）内触发删除时，必须退出到工作区表列表，避免停留在已删除表的路由上
+      navigate(`/w/${wid}/tables`)
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '删除表失败'),
   })
