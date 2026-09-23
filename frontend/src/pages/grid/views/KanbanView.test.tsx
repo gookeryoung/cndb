@@ -175,7 +175,8 @@ describe('KanbanView 完成标志', () => {
     renderKanban({ rows: doneRows, view: doneView })
 
     const titleEl = screen.getByText('任务C')
-    const cardEl = titleEl.parentElement as HTMLElement
+    // 标题文本 → 标题 flex 容器(header-row) → 卡片根
+    const cardEl = titleEl.parentElement?.parentElement as HTMLElement
     // 固定主题样式：绿底 / 绿色左边框 / 灰色标题文字
     expect(cardEl.style.background).toContain('var(--cn-bg-success-subtle)')
     expect(cardEl.style.borderLeft).toContain('rgb(82, 196, 26)') // #52c41a

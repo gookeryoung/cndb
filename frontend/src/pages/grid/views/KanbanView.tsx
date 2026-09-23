@@ -266,53 +266,85 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
         e.currentTarget.style.transform = 'none'
       }}
     >
-      {/* 完成勾选框 —— hover 显示，未完成/已完成都可见（点击双向切换）；
-          无值操作符（is_empty/is_not_empty）下 buildDoneToggleValue 返回 undefined 哨兵 → 不渲染勾选框 */}
-      {showDoneToggle && hovered && doneCtx && buildDoneToggleValue(row, doneCtx) !== undefined && (
-        <Tooltip title={isDone ? '取消完成' : '标记为完成'}>
-          <Checkbox
-            checked={isDone}
-            onClick={(e) => e.stopPropagation()}
-            onChange={() => onToggleDone!(row, { [doneCtx!.field]: buildDoneToggleValue(row, doneCtx!) } as RowValues)}
-            style={{ position: 'absolute', top: 4, right: canDelete && onDelete ? 32 : 4, zIndex: 10 }}
-          />
-        </Tooltip>
-      )}
-      {/* 删除按钮 —— hover 显示 */}
-      {canDelete && hovered && onDelete && (
-        <Tooltip title="删除此卡片">
-          <Button
-            size="small"
-            type="text"
-            danger
-            icon={<DeleteOutlined />}
-            style={{ position: 'absolute', top: 4, right: 4, zIndex: 10, opacity: 0.85 }}
-            onClick={(e) => {
-              e.stopPropagation()
-              Modal.confirm({
-                title: '确定删除此卡片？',
-                content: title,
-                okText: '删除',
-                okType: 'danger',
-                cancelText: '取消',
-                onOk: () => onDelete(row),
-              })
-            }}
-          />
-        </Tooltip>
-      )}
       {/* 庆祝彩纸 —— 仅完成瞬间播放（kb-confetti 内粒子角度/颜色由 CSS nth-child 定义） */}
       {celebrate && (
         <div className="kb-confetti" aria-hidden>
           {Array.from({ length: 10 }, (_, i) => <i key={i} />)}
         </div>
       )}
-      {/* 标题行（完成卡片：删除线 + 标题后绿色对勾 + 灰色文字）；截止日期徽章紧贴标题右侧、同一行 */}
-      <div style={{ fontWeight: 600, fontSize: cs.titleFontSize, marginBottom: cs.titleMarginBottom, lineHeight: cs.titleLineHeight, wordBreak: 'break-word', ...(isDone ? { color: 'var(--cn-text-muted)', textDecoration: 'line-through' } : {}) }}>
-        {title}
-        {isDone && <CheckCircleFilled className={celebrate ? 'kb-check-pop' : undefined} style={{ color: '#52c41a', marginLeft: 6, fontSize: cs.titleFontSize }} />}
-        {/* 完成卡片整体隐藏截止日期徽章（X天/-X天都不再显示） */}
-        {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
+      {/* 标题行（flex 行容器：左边标题文本 + 日期徽章 + 完成对勾，右边完成勾选框 + 删除按钮；
+          alignItems: center 保证所有元素纵向居中对齐；hover 才显示的控件以 flex 子项加入控制组，不再绝对定位） */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          marginBottom: cs.titleMarginBottom,
+        }}
+      >
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontWeight: 600,
+            fontSize: cs.titleFontSize,
+            lineHeight: cs.titleLineHeight,
+            wordBreak: 'break-word',
+            ...(isDone ? { color: 'var(--cn-text-muted)', textDecoration: 'line-through' } : {}),
+          }}
+        >
+          {title}
+          {isDone && <CheckCircleFilled className={celebrate ? 'kb-check-pop' : undefined} style={{ color: '#52c41a', marginLeft: 6, fontSize: cs.titleFontSize }} />}
+          {/* 完成卡片整体隐藏截止日期徽章（X天/-X天都不再显示） */}
+          {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
+        </div>
+        {/* hover 显示的控制组 —— flex 子项，右侧对齐，与标题/日期徽章同一水平基线 */}
+        {hovered && (showDoneToggle || (canDelete && onDelete)) && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              flexShrink: 0,
+              marginLeft: 4,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 完成勾选框 —— hover 显示，未完成/已完成都可见（点击双向切换）；
+                无值操作符（is_empty/is_not_empty）下 buildDoneToggleValue 返回 undefined 哨兵 → 不渲染勾选框 */}
+            {showDoneToggle && doneCtx && buildDoneToggleValue(row, doneCtx) !== undefined && (
+              <Tooltip title={isDone ? '取消完成' : '标记为完成'}>
+                <Checkbox
+                  checked={isDone}
+                  onChange={() => onToggleDone!(row, { [doneCtx!.field]: buildDoneToggleValue(row, doneCtx!) } as RowValues)}
+                  style={{ margin: 0 }}
+                />
+              </Tooltip>
+            )}
+            {/* 删除按钮 —— hover 显示 */}
+            {canDelete && onDelete && (
+              <Tooltip title="删除此卡片">
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  style={{ opacity: 0.85 }}
+                  onClick={() => {
+                    Modal.confirm({
+                      title: '确定删除此卡片？',
+                      content: title,
+                      okText: '删除',
+                      okType: 'danger',
+                      cancelText: '取消',
+                      onOk: () => onDelete(row),
+                    })
+                  }}
+                />
+              </Tooltip>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 进度条 */}
