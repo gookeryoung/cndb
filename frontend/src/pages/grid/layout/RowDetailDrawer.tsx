@@ -5,10 +5,11 @@ import { Drawer, Form, Input, Button, Typography, Timeline, Tag, App as AntApp, 
 import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined, LockOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { recordApi, fileApi } from '@/api'
+import { recordApi, fileApi, fieldApi } from '@/api'
 import { useRowAudit, useRowReferences, useUpdateRowOptimistic } from '@/api/hooks'
 import type { RowResponse, Field, AttachmentFile, RowValues } from '@/api'
 import { extractSelectOptions, defaultValueForNewRow } from '../cells/fieldOps'
+import { pickLinkLabelFieldName, buildLinkRowLabel } from '../cells/fieldValueFormat'
 import { useTableSettingsStore } from '@/store'
 
 const { Title, Text } = Typography
@@ -207,12 +208,19 @@ function FieldEditor({
     enabled: ft === 'link' && !!wid && !!targetTableId,
   })
   const targetRows: RowResponse[] = (targetRowsData as any)?.items || []
+  // 目标表字段列表 —— 找主字段做下拉选项标签，避免纯 #id 数字标签
+  const { data: targetFields } = useQuery({
+    queryKey: ['link-target-fields', targetTableId],
+    queryFn: () => fieldApi.list(wid, targetTableId!),
+    enabled: ft === 'link' && !!wid && !!targetTableId,
+  })
+  const labelField = ft === 'link' ? pickLinkLabelFieldName(targetFields ?? []) : null
 
   if (ft === 'link') {
     const ids = Array.isArray(value) ? value : value ? [value] : []
     const options = targetRows.map((r: any) => ({
       value: r.id,
-      label: (r.name || r.title || (String(r.id))),
+      label: buildLinkRowLabel(r, labelField),
     }))
     return (
       <Select

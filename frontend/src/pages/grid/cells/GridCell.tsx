@@ -6,8 +6,9 @@ import { SaveOutlined, CloseOutlined, InboxOutlined, DeleteOutlined, LockOutline
 import dayjs, { Dayjs } from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
 import type { AttachmentFile, Field, RowResponse } from '@/api'
-import { recordApi, fileApi } from '@/api'
+import { recordApi, fileApi, fieldApi } from '@/api'
 import { getTagColorName, resolveTagColor } from '@/utils/tagColors'
+import { pickLinkLabelFieldName, buildLinkRowLabel } from './fieldValueFormat'
 
 interface Props {
   value: unknown
@@ -316,12 +317,20 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
   // link 字段用的 query —— 必须在组件顶层调用，enabled 控制非 link 类型时不执行
   const targetTableId = (field.config?.target_table_id as number | undefined)
   const multiple = Boolean(field.config?.multiple ?? true)
+  const isLink = ft === 'link'
   const { data: targetRowsData, isLoading: linkLoading } = useQuery({
     queryKey: ['link-target-rows', targetTableId],
     queryFn: () => recordApi.list(wid!, targetTableId!, { limit: 500 }),
-    enabled: !!wid && !!targetTableId,
+    enabled: isLink && !!wid && !!targetTableId,
   })
   const targetRows: RowResponse[] = (targetRowsData as any)?.items || []
+  // 目标表字段列表 —— 找主字段做下拉选项标签，避免纯 #id 数字标签
+  const { data: targetFields } = useQuery({
+    queryKey: ['link-target-fields', targetTableId],
+    queryFn: () => fieldApi.list(wid!, targetTableId!),
+    enabled: isLink && !!wid && !!targetTableId,
+  })
+  const labelField = isLink ? pickLinkLabelFieldName(targetFields ?? []) : null
 
   switch (ft) {
     case 'text':
@@ -498,7 +507,7 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
 
       const options = targetRows.map((r: any) => ({
         value: r.id,
-        label: extractRowLabel(r),
+        label: buildLinkRowLabel(r, labelField),
       }))
 
       return (
@@ -630,13 +639,6 @@ function extractLinkIds(value: unknown): number[] {
   }
   if (typeof value === 'number') return [value]
   return []
-}
-
-/** 从目标行数据中提取可读的标签文本用于 Select 选项. */
-function extractRowLabel(r: RowResponse | Record<string, unknown>): string {
-  // 优先用 text 字段，否则用 id
-  const text = String(r.id ?? '')
-  return text ? `#${text}` : '行'
 }
 
 /** 离开编辑态保存前：把编辑器的草稿值转换成后端 schema 需要的格式 */

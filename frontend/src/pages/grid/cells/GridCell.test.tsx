@@ -227,7 +227,7 @@ describe('GridCell 受控编辑', () => {
 // ─────────────── link 字段编辑（MSW 拉取目标表行）───────────────
 
 describe('GridCell link 字段编辑', () => {
-  it('受控编辑时经 MSW 拉取目标表行作为下拉选项', async () => {
+  it('受控编辑时经 MSW 拉取目标表行，下拉选项用主字段值而非纯 id', async () => {
     const field = makeField({
       id: 1, name: '关联', field_type: 'link',
       config: { target_table_id: 100, multiple: true },
@@ -238,11 +238,11 @@ describe('GridCell link 字段编辑', () => {
       />,
     )
 
-    // 预选值 id=1 → 以目标行 label 展示为选中项（证明 MSW options 已就绪）
-    expect(await screen.findByText('#1')).toBeInTheDocument()
+    // 预选值 id=1 → 目标行 label 为"张三"（主字段姓名的值），不再是 #1
+    expect(await screen.findByText('张三')).toBeInTheDocument()
 
-    // 打开下拉断言第二个选项来自 MSW mockRecords
+    // 打开下拉，第二个选项同样用主字段值"李四"
     fireEvent.mouseDown(document.querySelector('.ant-select-selector')!)
-    expect(await screen.findByText('#2')).toBeInTheDocument()
+    expect(await screen.findByText('李四')).toBeInTheDocument()
   })
 })

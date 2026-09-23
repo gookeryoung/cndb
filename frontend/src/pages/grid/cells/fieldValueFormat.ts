@@ -6,9 +6,34 @@
  */
 
 import { extractSelectOptions } from './fieldOps'
-import type { Field } from '@/api'
+import type { Field, RowResponse } from '@/api'
 
 // ── link 字段 ──────────────────────────────────────────
+
+/** 从目标表字段列表中挑出适合做"行标签"的字段名（link 下拉选项展示用）.
+ *
+ * 优先级：is_primary 的 text 字段 → 第一个 text 字段 → null（调用方回退 #id）。
+ * longtext 内容往往过长，不参与选择。
+ */
+export function pickLinkLabelFieldName(fields: Field[]): string | null {
+  const textFields = fields.filter((f) => f.field_type === 'text' && !f.trashed)
+  const primary = textFields.find((f) => f.is_primary)
+  return (primary ?? textFields[0])?.name ?? null
+}
+
+/** 用目标表行数据构造 link 下拉选项的可读标签.
+ *
+ * 优先取 labelField 对应的业务值；无 labelField / 值为空 / 值为对象时回退 `#id`。
+ */
+export function buildLinkRowLabel(row: RowResponse, labelField?: string | null): string {
+  if (labelField) {
+    const v = (row as Record<string, unknown>)[labelField]
+    if (v !== null && v !== undefined && v !== '' && typeof v !== 'object') {
+      return String(v)
+    }
+  }
+  return `#${row.id}`
+}
 
 /** 把 link 字段的 API 返回值（[{id, value}]）展平为可读字符串数组. */
 export function formatLinkValue(value: unknown): string[] {
