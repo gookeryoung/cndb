@@ -299,6 +299,18 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     setImportMapping(next)
   }
 
+  /** link 字段的关联目标提示（解析目标表所在工作区，跨工作区时提醒用户） */
+  function linkTargetHint(sf: Field): string | null {
+    if (sf.field_type !== 'link') return null
+    const targetTid = Number(sf.config?.target_table_id)
+    if (!Number.isFinite(targetTid)) return null
+    const inSource = sourceTables.find(t => Number(t.id) === targetTid)
+    if (inSource) return `关联目标：${inSource.name}（源工作区）`
+    const inCurrent = tables.find(t => Number(t.id) === targetTid)
+    if (inCurrent) return `关联目标：${inCurrent.name}（当前工作区）`
+    return `关联目标：表 #${targetTid}（其他工作区）`
+  }
+
   /** 映射面板单行渲染（推荐/低置信度两组共用） */
   const renderSuggestionRow = (s: FieldImportSuggestion) => {
     const isSkipped = importMapping[s.source] === null || importMapping[s.source] === undefined
@@ -328,6 +340,11 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
           <div style={{ fontSize: 11, color: '#999' }}>
             {getFieldTypeLabel(sourceFields.find(f => f.name === s.source)?.field_type ?? 'unknown')}
           </div>
+          {(() => {
+            const sf = sourceFields.find(f => f.name === s.source)
+            const hint = sf ? linkTargetHint(sf) : null
+            return hint ? <div style={{ fontSize: 11, color: '#999' }}>{hint}</div> : null
+          })()}
         </div>
 
         {/* 箭头 */}
@@ -406,7 +423,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="字段将被复制为当前表的新字段（独立副本，不与源表保持同步）"
+        message="字段将被复制为当前表的新字段（独立副本，不与源表保持同步）；link 字段引入后仍指向原关联目标表（支持跨工作区关联）"
       />
 
       {/* 源工作区 + 源表级联选择（支持跨工作区） */}
@@ -473,18 +490,24 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                 style={{ width: '100%' }}
               >
                 <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4, padding: 8 }}>
-                  {filteredSourceFields.map((sf) => (
-                    <div key={sf.id} style={{ padding: '4px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Checkbox value={sf.id} disabled={sf.is_primary}>
-                        <span style={{ fontWeight: sf.is_primary ? 500 : 400 }}>{sf.name}</span>
-                        {sf.is_primary && <Tag color="gold" style={{ marginLeft: 4 }}>PK</Tag>}
-                        <Tag color={getFieldTypeColor(sf.field_type)} style={{ marginLeft: 4 }}>{getFieldTypeLabel(sf.field_type)}</Tag>
-                        {sf.conflict && (
-                          <Tag color="orange" style={{ marginLeft: 4 }}>重名</Tag>
-                        )}
-                      </Checkbox>
-                    </div>
-                  ))}
+                  {filteredSourceFields.map((sf) => {
+                    const hint = linkTargetHint(sf)
+                    return (
+                      <div key={sf.id} style={{ padding: '4px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Checkbox value={sf.id} disabled={sf.is_primary}>
+                          <span style={{ fontWeight: sf.is_primary ? 500 : 400 }}>{sf.name}</span>
+                          {sf.is_primary && <Tag color="gold" style={{ marginLeft: 4 }}>PK</Tag>}
+                          <Tag color={getFieldTypeColor(sf.field_type)} style={{ marginLeft: 4 }}>{getFieldTypeLabel(sf.field_type)}</Tag>
+                          {sf.conflict && (
+                            <Tag color="orange" style={{ marginLeft: 4 }}>重名</Tag>
+                          )}
+                          {hint && (
+                            <span style={{ fontSize: 11, color: '#999', marginLeft: 4 }}>{hint}</span>
+                          )}
+                        </Checkbox>
+                      </div>
+                    )
+                  })}
                 </div>
               </Checkbox.Group>
 

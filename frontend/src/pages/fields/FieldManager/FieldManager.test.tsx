@@ -948,6 +948,21 @@ describe('FieldManager 从其他表引入字段', () => {
         })
     })
 
+    it('link 字段显示关联目标所在工作区提示', async () => {
+        vi.spyOn(fieldApi, 'list').mockResolvedValue([
+            ...SOURCE_FIELDS,
+            { id: 104, name: '外部关联', field_type: 'link', order: 3, config: { target_table_id: 30 } },
+            { id: 105, name: '未知关联', field_type: 'link', order: 4, config: { target_table_id: 999 } },
+        ] as any)
+
+        await openImportDialogWithSource()
+
+        // 目标表 #30 在源工作区表列表里 → "（源工作区）"
+        expect(screen.getByText('关联目标：外部表（源工作区）')).toBeInTheDocument()
+        // 目标表 #999 解析不到 → 兜底"其他工作区"
+        expect(screen.getByText('关联目标：表 #999（其他工作区）')).toBeInTheDocument()
+    })
+
     it('AC-5: 映射面板分组展示，仅引入已匹配把低置信度置为跳过', async () => {
         const previewResp = {
             created: [], skipped: [], total_source_count: 2,
