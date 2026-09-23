@@ -34,6 +34,8 @@ export interface ViewConfigDialogProps {
   onSaveFilters: (f: FilterRule[]) => void
   onSaveSortings: (s: SortRule[]) => void
   onSaveOptions: (o: Record<string, unknown> | null) => void
+  /** 显式保存按钮触发时调用 — 绕过 debounce 立即持久化到后端 */
+  onSaveNow?: () => void
 }
 
 // ── 组件 ──────────────────────────────────────────
@@ -121,7 +123,7 @@ function ViewOptionItem({ opt, fields, opts, onSet, onPatch }: ViewOptionItemPro
 /** 视图配置对话框（筛选 / 排序 / 视图专属设置可视化编辑） */
 export default function ViewConfigDialog({
   open, viewType, filters, sortings, viewOptions, fields, onClose,
-  filterLogic, onSaveFilterLogic, onSaveFilters, onSaveSortings, onSaveOptions,
+  filterLogic, onSaveFilterLogic, onSaveFilters, onSaveSortings, onSaveOptions, onSaveNow,
 }: ViewConfigDialogProps) {
   const [draftFilters, setDraftFilters] = useState<FilterRule[]>([])
   const [draftSorts, setDraftSorts] = useState<SortRule[]>([])
@@ -346,7 +348,7 @@ export default function ViewConfigDialog({
 
   return (
     <Modal
-      title={viewType === 'grid' ? '视图配置' : `视图配置 — ${viewType} 专属设置`}
+      title={viewType === 'grid' ? '筛选排序规则' : `筛选排序规则 — ${viewType} 专属设置`}
       open={open}
       onCancel={onClose}
       width={680}
@@ -363,6 +365,8 @@ export default function ViewConfigDialog({
             Object.entries(draftOpt).filter(([, v]) => v !== '' && v != null && (Array.isArray(v) ? v.length > 0 : true)),
           )
           onSaveOptions(Object.keys(cleanOpt).length ? cleanOpt : null)
+          // 显式保存 — 绕过自动保存的 debounce，确保刷新/关闭后配置不丢失
+          onSaveNow?.()
           onClose()
         }}>保存</Button>,
       ]}
