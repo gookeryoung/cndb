@@ -110,6 +110,11 @@ export default defineConfig(({ mode }) => ({
     restoreMocks: true,
     // 单元/组件测试遵循就近放置约定：src 下的 *.test.ts(x)
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // 纯逻辑 *.test.ts 不需要 DOM，跑 node 省掉 jsdom 每文件的环境创建开销；
+    // 需要 DOM 的 .ts 测试用文件级 pragma `// @vitest-environment jsdom` 单独声明
+    environmentMatchGlobs: [
+      ['src/**/*.test.ts', 'node'],
+    ],
     coverage: {
       provider: 'v8',
       include: ['src/**'],

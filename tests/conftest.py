@@ -114,17 +114,32 @@ def _cleanup_tables(db_engine):
         conn.commit()
 
 
+@pytest.fixture(scope="session")
+def _session_client():
+    """session 级 TestClient 单例 — lifespan 只进一次（迁移已在别处跳过），
+    避免每个测试重建 portal/客户端. 依赖覆盖由 client fixture 按测试切换."""
+    from cndb.app import app
+
+    with TestClient(app) as c:
+        yield c
+
+
 @pytest.fixture
-def client(db):
+def client(db, _session_client):
+    """每个测试切换 get_db 覆盖到当前测试的 session，用毕移除并清 cookie."""
     from cndb.app import app
 
     def _override_get_db():
         yield db
 
     app.dependency_overrides[get_db] = _override_get_db
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+    try:
+        yield _session_client
+    finally:
+        # 只移除本 fixture 注册的键（app 是全局单例，clear() 会误伤其他覆盖）
+        app.dependency_overrides.pop(get_db, None)
+        # 单例客户端跨测试复用，清掉上一测试残留的会话 cookie
+        _session_client.cookies.clear()
 
 
 @pytest.fixture
