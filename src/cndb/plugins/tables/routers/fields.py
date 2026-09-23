@@ -14,7 +14,7 @@ from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, de
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import FieldCreate, FieldImportRequest, FieldImportResponse, FieldResponse, FieldUpdate
-from cndb.plugins.tables.services.core.access import TableAction
+from cndb.plugins.tables.services.core.access import TableAction, check_action
 from cndb.plugins.tables.services.core.ddl import (
     _column_needs_rebuild,
     add_column,
@@ -26,6 +26,7 @@ from cndb.plugins.tables.services.core.ddl import (
     rebuild_column,
 )
 from cndb.plugins.tables.services.fields.field_ops import clone_fields_between_tables, resolve_source_fields
+from cndb.plugins.workspaces.models import Workspace
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
 
@@ -310,12 +311,17 @@ def import_fields(
 
     dst = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
 
-    # 源表必须存在（允许跨工作区，但用户必须在目标表工作区有 ADMIN 权限）
+    # 源表必须存在（允许跨工作区，但用户必须对源工作区有读权限）
     src = db.get(DataTable, payload.source_table_id)
     if src is None:
         raise HTTPException(status_code=400, detail=f"源表不存在: {payload.source_table_id}")
     if src.trashed:
         raise HTTPException(status_code=400, detail="源表已进回收站，不能引入字段")
+    src_ws = db.get(Workspace, src.workspace_id)
+    if not check_action(db, src, current_user, TableAction.READ):
+        # 不泄露源表字段信息：detail 只到工作区级
+        ws_name = src_ws.name if src_ws is not None else "未知"
+        raise HTTPException(status_code=400, detail=f"没有源工作区「{ws_name}」的读取权限，无法引入其字段")
 
     # 解析源字段 —— 三种模式互斥
     if payload.import_all_fields:

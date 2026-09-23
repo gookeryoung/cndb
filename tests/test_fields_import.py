@@ -1061,3 +1061,122 @@ class TestFieldOpsCoverage:
             pytest.raises(RuntimeError, match="boom"),
         ):
             _fo.clone_fields_between_tables(engine, db, src, dst, field_ids=[src_f.id])
+
+
+# ── 跨工作区权限收紧 ──────────────────────────────────
+
+
+def _register_and_login(client, username: str, email: str) -> dict[str, str]:
+    """注册 + 登录第二个用户，返回 auth headers."""
+    r = client.post(
+        "/api/v1/accounts/auth/register",
+        json={"username": username, "email": email, "password": "passw0rd"},
+    )
+    assert r.status_code in (200, 201), r.text
+    r = client.post(
+        "/api/v1/accounts/auth/login",
+        json={"login": username, "password": "passw0rd"},
+    )
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def _create_table_with_field(client, headers: dict, ws_name: str, table_name: str, field_name: str) -> tuple[int, int]:
+    """创建工作区 + 表 + 单字段，返回 (wid, tid)."""
+    r = client.post("/api/v1/workspaces", headers=headers, json={"name": ws_name})
+    assert r.status_code == 201, r.text
+    wid = r.json()["id"]
+    r = client.post(f"/api/v1/workspaces/{wid}/tables", headers=headers, json={"name": table_name})
+    assert r.status_code == 201, r.text
+    tid = r.json()["id"]
+    r = client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+        headers=headers,
+        json={"name": field_name, "field_type": "text", "order": 0},
+    )
+    assert r.status_code == 201, r.text
+    return wid, tid
+
+
+class TestCrossWorkspacePermission:
+    def test_import_denied_without_source_workspace_access(self, client, auth_headers):
+        """AC-1: 对源工作区无任何权限 → 400，detail 含源工作区名（含 preview_only）."""
+        # user2 拥有源工作区
+        headers2 = _register_and_login(client, "wsperm_other", "wsperm_other@t.com")
+        _, src_tid = _create_table_with_field(client, headers2, "机密工作区", "SecretTable", "secret_col")
+
+        # user1 在自己的工作区建目标表
+        r = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "WSDST1"})
+        dst_wid = r.json()["id"]
+        r = client.post(f"/api/v1/workspaces/{dst_wid}/tables", headers=auth_headers, json={"name": "Dst"})
+        dst_tid = r.json()["id"]
+
+        r = client.post(
+            f"/api/v1/workspaces/{dst_wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={"source_table_id": src_tid, "import_all_fields": True},
+        )
+        assert r.status_code == 400, r.text
+        assert "机密工作区" in r.json()["detail"]
+
+        # preview_only 同样受限
+        r = client.post(
+            f"/api/v1/workspaces/{dst_wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={"source_table_id": src_tid, "import_all_fields": True, "preview_only": True},
+        )
+        assert r.status_code == 400, r.text
+        assert "机密工作区" in r.json()["detail"]
+
+    def test_import_allowed_with_source_read_access(self, client, auth_headers):
+        """AC-2: 同一用户拥有两个工作区（对源表有 READ）→ 跨工作区 preview + 引入成功."""
+        _, src_tid = _create_table_with_field(client, auth_headers, "WS_SRC_X", "CrossSrc", "cross_name")
+        dst_wid, dst_tid = _create_table_with_field(client, auth_headers, "WS_DST_X", "CrossDst", "dst_col")
+
+        # preview：gap_analysis 可用且不创建（路由默认 201，preview 也是 201）
+        r = client.post(
+            f"/api/v1/workspaces/{dst_wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={"source_table_id": src_tid, "import_all_fields": True, "preview_only": True},
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["created"] == []
+        assert r.json()["total_source_count"] == 1
+
+        # 实际引入
+        r = client.post(
+            f"/api/v1/workspaces/{dst_wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={"source_table_id": src_tid, "import_all_fields": True},
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert len(body["created"]) == 1
+        assert body["created"][0]["name"] == "cross_name"
+
+    def test_import_denied_source_workspace_deleted_guard(self, client, auth_headers, db):
+        """源工作区不存在（防御分支）→ 400，detail 不崩溃."""
+        from cndb.plugins.tables.models import DataTable
+
+        dst_wid, dst_tid = _create_table_with_field(client, auth_headers, "WS_GUARD", "GuardDst", "g_col")
+
+        # 直插一个 workspace_id 指向不存在工作区的表
+        ghost = DataTable(
+            name="GhostSrc",
+            workspace_id=999999,
+            owner_id=None,
+            trashed=False,
+            description="",
+            db_table_name="ghost_src_table",
+        )
+        db.add(ghost)
+        db.commit()
+        assert ghost.id is not None
+
+        r = client.post(
+            f"/api/v1/workspaces/{dst_wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={"source_table_id": ghost.id, "import_all_fields": True},
+        )
+        assert r.status_code == 400, r.text
+        assert "未知" in r.json()["detail"]
