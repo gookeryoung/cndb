@@ -135,3 +135,42 @@ describe('persist 持久化边界', () => {
     expect(persisted.state.token).toBeNull()
   })
 })
+
+describe('expired 标志生命周期', () => {
+  it('初始 expired=false，login 后仍为 false', async () => {
+    expect(useAuthStore.getState().expired).toBe(false)
+    mockedAuthApi.login.mockResolvedValueOnce({ access_token: 'tok' } as never)
+    mockedAuthApi.me.mockResolvedValueOnce(fakeUserResponse as never)
+    await useAuthStore.getState().login({ login: 'a', password: 'b' })
+    expect(useAuthStore.getState().expired).toBe(false)
+  })
+
+  it('logout 重置 expired 为 false（主动退出 ≠ 过期）', () => {
+    useAuthStore.setState({ expired: true })
+    useAuthStore.getState().logout()
+    expect(useAuthStore.getState().expired).toBe(false)
+  })
+
+  it('notifyExpired 清 token + user，并置 expired=true', () => {
+    setToken('tok-expired')
+    useAuthStore.setState({ token: 'tok-expired', user: fakeUserResponse as never, expired: false })
+
+    useAuthStore.getState().notifyExpired()
+
+    const s = useAuthStore.getState()
+    expect(getToken()).toBeNull()
+    expect(s.token).toBeNull()
+    expect(s.user).toBeNull()
+    expect(s.expired).toBe(true)
+  })
+
+  it('refresh 失败时置 expired=true', async () => {
+    setToken('tok-bad')
+    useAuthStore.setState({ token: 'tok-bad', loading: true, expired: false })
+    mockedAuthApi.me.mockRejectedValueOnce(new Error('401'))
+
+    await useAuthStore.getState().refresh()
+
+    expect(useAuthStore.getState().expired).toBe(true)
+  })
+})

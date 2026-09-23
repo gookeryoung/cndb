@@ -1,11 +1,13 @@
 /** SPA 路由配置 — 按页面 lazy import 实现代码分包. */
 
-import { Suspense, lazy, useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Suspense, lazy, useEffect, useRef } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { App as AntApp } from 'antd'
 import { useAuthStore } from '@/store'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import AuthLayout from '@/layouts/AuthLayout'
 import PublicLayout from '@/layouts/PublicLayout'
+import { onAuthExpired } from '@/api/client'
 
 // 全部页面级组件 lazy load：主框架与登录页各自独立成 chunk，
 // 未登录用户不再下载 MainLayout / 数据表列表等认证后代码
@@ -74,11 +76,39 @@ function AuthenticatedApp() {
 
 function App() {
   const refresh = useAuthStore(s => s.refresh)
+  const notifyExpired = useAuthStore(s => s.notifyExpired)
+  const location = useLocation()
+  const { message } = AntApp.useApp()
 
+  // 应用启动时恢复登录态（token 已由 persist 从 localStorage 恢复）
   useEffect(() => {
-    // 应用启动时恢复登录态（token 已由 persist 从 localStorage 恢复）
     refresh()
   }, [refresh])
+
+  /** 令牌过期事件订阅 —— axios 拦截器防抖触发后，统一在此处：
+   *   1. 更新 auth store（置 expired 标志 + 清 user）
+   *   2. 弹出友好提示
+   *   3. ProtectedRoute 检测到 user=null 后自然重定向到 login
+   *
+   *  用 ref 做一次性保证 —— 500ms 防抖窗口内可能多次触发，但用户只看一条提示。
+   *  公开 /login /register /public 页面不弹提示（用户自己在鉴权页或公开页，
+   *  此时 401 要么无意义要么是公开接口权限问题，与登录过期无关）。
+   */
+  const notifiedExpiredRef = useRef(false)
+  useEffect(() => {
+    notifiedExpiredRef.current = false
+    const unsubscribe = onAuthExpired(() => {
+      notifyExpired()
+      const isAuthOrPublic = location.pathname.startsWith('/login')
+        || location.pathname.startsWith('/register')
+        || location.pathname.startsWith('/public')
+      if (!notifiedExpiredRef.current && !isAuthOrPublic) {
+        notifiedExpiredRef.current = true
+        message.warning('登录已过期，请重新登录', 3)
+      }
+    })
+    return unsubscribe
+  }, [notifyExpired, location.pathname, message])
 
   return <AuthenticatedApp />
 }

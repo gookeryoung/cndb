@@ -1,7 +1,7 @@
-/** api/client 单元测试 —— token 存取、拦截器注入、detail 归一化、401 重定向 */
+/** api/client 单元测试 —— token 存取、拦截器注入、detail 归一化、401 事件派发 */
 import { AxiosError, type AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import api, { clearToken, getToken, setToken } from './client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import api, { clearToken, getToken, onAuthExpired, setToken } from './client'
 
 const TOKEN_KEY = 'cndb_access_token'
 
@@ -97,7 +97,7 @@ describe('请求拦截器', () => {
   })
 })
 
-// ── 响应拦截器：detail 归一化 + 401 重定向 ──────────────
+// ── 响应拦截器：detail 归一化 + 401 事件派发 ────────────
 
 /** 安装返回指定错误响应的 adapter.
  *
@@ -121,23 +121,6 @@ function installErrorAdapter(status: number, data: unknown) {
       null,
       response as never,
     )
-  }
-}
-
-/** 替换 window.location 为可控 stub（jsdom 的 location 属性可 delete 后重定义） */
-function stubLocation(pathname: string, search = '') {
-  const original = window.location
-  Reflect.deleteProperty(window, 'location')
-  const stub = { pathname, search, href: `http://localhost${pathname}${search}` }
-  Object.defineProperty(window, 'location', { value: stub, writable: true, configurable: true })
-  return {
-    stub,
-    restore() {
-      Reflect.deleteProperty(window, 'location')
-      Object.defineProperty(window, 'location', {
-        value: original, writable: false, configurable: true,
-      })
-    },
   }
 }
 
@@ -169,59 +152,68 @@ describe('响应拦截器 detail 归一化', () => {
   })
 })
 
-describe('响应拦截器 401 重定向', () => {
+describe('响应拦截器 401 事件派发', () => {
+  beforeEach(() => vi.useFakeTimers())
   afterEach(() => {
     delete api.defaults.adapter
+    vi.useRealTimers()
   })
 
-  it('401 时清除 token 并跳转 /login?return_to=<path+query>', async () => {
+  it('401 时清除 token 并派发 auth:expired 事件', async () => {
     setToken('will-be-cleared')
-    const { stub, restore } = stubLocation('/grid/1', '?view=2')
+    const cb = vi.fn()
+    const off = onAuthExpired(cb)
     try {
       installErrorAdapter(401, { detail: '未认证' })
       await expect(api.get('/x')).rejects.toBeTruthy()
       expect(getToken()).toBeNull()
-      expect(stub.href).toBe(`/login?return_to=${encodeURIComponent('/grid/1?view=2')}`)
+      vi.runAllTimers()
+      expect(cb).toHaveBeenCalledTimes(1)
     } finally {
-      restore()
+      off()
     }
   })
 
-  it('当前已在 /login 页面时不重定向', async () => {
-    setToken('t')
-    const { stub, restore } = stubLocation('/login')
+  it('订阅函数返回取消订阅，卸载后不再触发', async () => {
+    const cb = vi.fn()
+    const off = onAuthExpired(cb)
+    off()
+    installErrorAdapter(401, {})
+    await expect(api.get('/x')).rejects.toBeTruthy()
+    vi.runAllTimers()
+    expect(cb).not.toHaveBeenCalled()
+  })
+
+  it('同一防抖窗口内多个 401 只派发一次事件', async () => {
+    setToken('multi-401')
+    const cb = vi.fn()
+    const off = onAuthExpired(cb)
     try {
       installErrorAdapter(401, {})
-      await expect(api.get('/x')).rejects.toBeTruthy()
-      expect(getToken()).toBeNull()
-      expect(stub.href).toBe('http://localhost/login')
+      await Promise.all([
+        api.get('/a').catch(() => {}),
+        api.get('/b').catch(() => {}),
+        api.get('/c').catch(() => {}),
+      ])
+      vi.runAllTimers()
+      expect(cb).toHaveBeenCalledTimes(1)
     } finally {
-      restore()
+      off()
     }
   })
 
-  it('当前在 /public 路径时不重定向', async () => {
+  it('非 401 错误不派发事件也不清 token', async () => {
     setToken('t')
-    const { stub, restore } = stubLocation('/public/share/abc')
-    try {
-      installErrorAdapter(401, {})
-      await expect(api.get('/x')).rejects.toBeTruthy()
-      expect(stub.href).toBe('http://localhost/public/share/abc')
-    } finally {
-      restore()
-    }
-  })
-
-  it('非 401 错误不触发重定向', async () => {
-    setToken('t')
-    const { stub, restore } = stubLocation('/grid')
+    const cb = vi.fn()
+    const off = onAuthExpired(cb)
     try {
       installErrorAdapter(403, {})
       await expect(api.get('/x')).rejects.toBeTruthy()
       expect(getToken()).toBe('t')
-      expect(stub.href).toBe('http://localhost/grid')
+      vi.runAllTimers()
+      expect(cb).not.toHaveBeenCalled()
     } finally {
-      restore()
+      off()
     }
   })
 })
