@@ -1,6 +1,7 @@
 /** fieldValueFormat 单元测试 —— 各字段类型值的展示格式化 */
 import { describe, expect, it } from 'vitest'
 import {
+  buildLinkRowLabel,
   extractImageUrl,
   formatFieldDisplayValue,
   formatLinkValue,
@@ -8,6 +9,7 @@ import {
   getLinkFirstLabel,
   getMultiSelectFirstLabel,
   getSelectLabel,
+  pickLinkLabelFieldName,
 } from './fieldValueFormat'
 import { makeField } from '@/test/fixtures'
 
@@ -49,6 +51,66 @@ describe('getLinkFirstLabel', () => {
     expect(getLinkFirstLabel([{ id: 1, value: '首' }, { id: 2, value: '次' }])).toBe('首')
     expect(getLinkFirstLabel([])).toBe('')
     expect(getLinkFirstLabel(null)).toBe('')
+  })
+})
+
+describe('pickLinkLabelFieldName（link 下拉标签字段选择）', () => {
+  it('优先取 is_primary 的 text 字段', () => {
+    const fields = [
+      makeField({ id: 1, name: '备注', field_type: 'text', order: 0 }),
+      makeField({ id: 2, name: '标题', field_type: 'text', is_primary: true, order: 1 }),
+    ]
+    expect(pickLinkLabelFieldName(fields)).toBe('标题')
+  })
+
+  it('无主字段时取第一个 text 字段', () => {
+    const fields = [
+      makeField({ id: 1, name: '数量', field_type: 'number', order: 0 }),
+      makeField({ id: 2, name: '名称', field_type: 'text', order: 1 }),
+    ]
+    expect(pickLinkLabelFieldName(fields)).toBe('名称')
+  })
+
+  it('longtext 不参与选择（内容过长不适合做标签）', () => {
+    const fields = [
+      makeField({ id: 1, name: '正文', field_type: 'longtext', order: 0 }),
+      makeField({ id: 2, name: '名称', field_type: 'text', order: 1 }),
+    ]
+    expect(pickLinkLabelFieldName(fields)).toBe('名称')
+  })
+
+  it('无 text 字段 / 空列表返回 null', () => {
+    expect(pickLinkLabelFieldName([makeField({ id: 1, name: 'n', field_type: 'number' })])).toBeNull()
+    expect(pickLinkLabelFieldName([])).toBeNull()
+  })
+
+  it('已删除（trashed）的 text 字段不参与选择', () => {
+    const fields = [
+      makeField({ id: 1, name: '废字段', field_type: 'text', trashed: true, order: 0 }),
+      makeField({ id: 2, name: '名称', field_type: 'text', order: 1 }),
+    ]
+    expect(pickLinkLabelFieldName(fields)).toBe('名称')
+  })
+})
+
+describe('buildLinkRowLabel（link 下拉选项标签）', () => {
+  it('优先取 labelField 对应的业务值', () => {
+    expect(buildLinkRowLabel({ id: 1, 姓名: '张三' }, '姓名')).toBe('张三')
+  })
+
+  it('labelField 值为空 / 缺失时回退 #id', () => {
+    expect(buildLinkRowLabel({ id: 3, 姓名: '' }, '姓名')).toBe('#3')
+    expect(buildLinkRowLabel({ id: 3, 姓名: null }, '姓名')).toBe('#3')
+    expect(buildLinkRowLabel({ id: 3 }, '姓名')).toBe('#3')
+  })
+
+  it('无 labelField 时直接回退 #id', () => {
+    expect(buildLinkRowLabel({ id: 5, 姓名: '张三' }, null)).toBe('#5')
+    expect(buildLinkRowLabel({ id: 5, 姓名: '张三' }, undefined)).toBe('#5')
+  })
+
+  it('值为对象（如 link/attachment 嵌套）时不适合做标签，回退 #id', () => {
+    expect(buildLinkRowLabel({ id: 2, 数据: { a: 1 } }, '数据')).toBe('#2')
   })
 })
 
