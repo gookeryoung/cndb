@@ -5,7 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  rc-util: b516c45383762a3d9fdd4ca7afeb3149cf11372d7b965f1f92c6d944e0156a2b
+  rc-util:
+    hash: b516c45383762a3d9fdd4ca7afeb3149cf11372d7b965f1f92c6d944e0156a2b
+    path: patches/rc-util.patch
 
 importers:
 

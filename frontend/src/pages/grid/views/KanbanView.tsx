@@ -227,7 +227,9 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
     : String(row[titleField] ?? row.id)
 
   // 卡片边框样式（完成态优先于逾期/紧急提醒）
-  let borderStyle: React.CSSProperties = {}
+  // 注意：不能与 border 简写属性混用（React 会警告并可能渲染异常），
+  // 下方 style 已拆成 borderTop/borderRight/borderBottom，此处仅控制 borderLeft
+  let borderStyle: React.CSSProperties = { borderLeft: '1px solid var(--cn-border)' }
   let bgStyle: React.CSSProperties = {}
   if (isDone) {
     borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #52c41a` }
@@ -249,7 +251,9 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
       style={{
         padding: cs.padding,
         marginBottom: cs.marginBottom,
-        border: '1px solid var(--cn-border)',
+        borderTop: '1px solid var(--cn-border)',
+        borderRight: '1px solid var(--cn-border)',
+        borderBottom: '1px solid var(--cn-border)',
         borderRadius: cs.borderRadius,
         cursor: 'pointer',
         transition: 'box-shadow 0.15s ease, transform 0.15s ease',
