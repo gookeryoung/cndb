@@ -683,6 +683,10 @@ export default function GridPage() {
     return cancelPersist
   }, [viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, activeViewId, debouncedPersist, cancelPersist])
 
+  /** 自动持久化视图配置（debounce 500ms，防抖统一收敛到 useDebouncedCallback）
+   *  —— 必须声明在 saveViewNow 之前，避免 TDZ 引用错误 */
+  const [debouncedPersist, cancelPersist] = useDebouncedCallback(persistCurrentView, 500)
+
   /** 立即保存视图（绕过 debounce）— 用于 ViewConfigDialog 保存按钮等显式保存场景 */
   const saveViewNow = useCallback(() => {
     cancelPersist()
@@ -714,6 +718,15 @@ export default function GridPage() {
       _persistModeOnly(newMode)
     }
   }
+
+  /** 自动持久化视图配置（debounce 500ms，防抖统一收敛到 useDebouncedCallback） */
+  const [debouncedPersist, cancelPersist] = useDebouncedCallback(persistCurrentView, 500)
+  useEffect(() => {
+    if (!activeViewId || skipSaveRef.current) return
+    debouncedPersist()
+    // cleanup 取消 pending —— 与原手写 clearTimeout 语义一致（dep 变化即取消旧计时器）
+    return cancelPersist
+  }, [viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, activeViewId, debouncedPersist, cancelPersist])
 
   // 移动表
   const moveTable = useMutation({
