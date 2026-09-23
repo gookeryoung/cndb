@@ -1,10 +1,12 @@
-/** 导入导出 API — CSV/文件导入、异步任务、导出下载、附件文件 */
+/** 导入导出 API — CSV/文件/API 导入、异步任务、导出下载、附件文件 */
 
 import api from './client'
 import type {
   CsvAnalyzeResult, CsvImportResult,
   FileAnalyzeResult, FileImportResult,
   ImportTaskInfo,
+  ApiFetchRequest, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
+  ApiConfigValidateResult, ApiConfigImportResult,
   AttachmentFile,
 } from './types'
 
@@ -131,6 +133,28 @@ export const importApi = {
     )
     return resp.data as unknown as Blob
   },
+
+  // ── API 抓取（import-api 路由） ──
+  /** 抓 API + 分析列类型（不写库） */
+  fetchAnalyze: (wid: number | string, payload: ApiFetchRequest) =>
+    api.post<ApiAnalyzeResult>(`/v1/workspaces/${wid}/import-api/analyze`, payload).then(r => r.data),
+  /** 抓 API + 自动建表 + 导入数据 */
+  fetchCreateTable: (wid: number | string, tableName: string, payload: ApiFetchRequest) =>
+    api.post<ApiImportResult>(`/v1/workspaces/${wid}/import-api`, { ...payload, table_name: tableName }).then(r => r.data),
+  /** 抓 API + 追加数据到已有表 */
+  fetchAppend: (wid: number | string, tid: number | string, payload: ApiFetchRequest) =>
+    api.post<ApiAppendResult>(`/v1/workspaces/${wid}/tables/${tid}/import-api`, payload).then(r => r.data),
+
+  // ── JSON 配置文件批量建表 ──
+  /** 校验 JSON 配置文件（不建表） */
+  configValidate: (wid: number | string, configJson: string) =>
+    api.post<ApiConfigValidateResult>(`/v1/workspaces/${wid}/import-api/config/validate`, { config_json: configJson }).then(r => r.data),
+  /** 从 JSON 配置文件批量建表 */
+  configImport: (wid: number | string, configJson: string, stopOnError = true) =>
+    api.post<ApiConfigImportResult>(`/v1/workspaces/${wid}/import-api/config`, {
+      config_json: configJson,
+      stop_on_error: stopOnError,
+    }).then(r => r.data),
 }
 
 export const exportApi = {

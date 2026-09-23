@@ -14,6 +14,7 @@
  * - /api/v1/public/*               → 公开分享（全局挂载）
  * - reports 插件单独挂载（见 reports plugin route_prefix）
  */
+
 export { authApi, userApi } from './auth'
 export { workspaceApi } from './workspaces'
 export { tableApi, fieldApi, auditApi, permissionApi, tableMembersApi } from './tables'
@@ -42,5 +43,7 @@ export type {
   ImportTaskStatus, ImportTaskInfo, TablePermission,
   AttachmentFile,
   PreferencesResponse,
+  ApiFetchRequest, ApiAnalyzeColumn, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
+  ApiConfigRequest, ApiConfigValidateResult, ApiConfigImportResult,
   TableOwnerInfo, TableMember, MemberCreate, MemberUpdate, OwnerTransferPayload,
 } from './types'

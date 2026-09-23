@@ -435,6 +435,17 @@ def test_name_similarity_ratio_high_not_contains():
     assert "名称相似" in label
 
 
+# ── api_fetch.py L235: node 不是 dict → return None ──
+
+
+def test_api_fetch_resolve_path_non_dict_node():
+    """resolve_path 中间节点不是 dict → None."""
+    from cndb.plugins.tables.services.importing.api_fetch import _resolve_path
+
+    result = _resolve_path({"a": [1, 2]}, "a.b")
+    assert result is None
+
+
 # ── roles.py L60: unknown permissions → 400 ───────────
 
 
