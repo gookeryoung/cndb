@@ -322,12 +322,16 @@ class TestWorkspacesRouterEdge:
         assert body["total_rows"] == 2
 
     def test_export_workspace_rows_reads_data(self, client, db, db_engine, ws_id, auth_owner, src_table):
-        """导出读取物理数据行：默认无 trashed_at 列走全量分支，补列后走过滤分支."""
+        """导出读取物理数据行：默认无 trashed_at 列走全量分支，补列后走过滤分支.
+
+        行键为业务字段名（物理列名跨库恢复时会重新生成，不能作为导出行键）.
+        """
         dt, _ = src_table
         r1 = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=auth_owner)
         assert r1.status_code == 200
         rows1 = r1.json()["tables"][0]["rows"]
         assert len(rows1) == 2
+        assert {row["姓名"] for row in rows1} == {"张三", "李四"}
 
         # 物理表补一列 trashed_at（模拟列漂移），其中一行打上标记
         db.execute(text(f'ALTER TABLE "{dt.db_table_name}" ADD COLUMN "trashed_at" TEXT'))
@@ -340,9 +344,10 @@ class TestWorkspacesRouterEdge:
         r2 = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=auth_owner)
         assert r2.status_code == 200
         rows2 = r2.json()["tables"][0]["rows"]
-        # trashed_at 非空的行被过滤掉
+        # trashed_at 非空的行被过滤掉（王五不出现），且行键只含业务字段名
         assert len(rows2) == 2
-        assert all("trashed_at" in row for row in rows2)
+        assert all("王五" not in row.values() for row in rows2)
+        assert all(set(row) == {"姓名", "年龄"} for row in rows2)
 
     def test_import_workspace_skips_same_name(self, client, db, ws_id, auth_owner):
         """导入时与现存表同名 → 跳过."""
@@ -444,6 +449,37 @@ class TestWorkspacesRouterEdge:
         r = client.post(f"/api/v1/workspaces/{ws_id}/import", json={"json_data": payload}, headers=auth_owner)
         assert r.status_code == 400
         assert "导入失败" in r.json()["detail"]
+
+    def test_workspace_backup_roundtrip_preserves_rows(self, client, ws_id, auth_owner, src_table):
+        """导出 → 导入到新工作区，数据行不丢且值一致（v3 行键为业务字段名）.
+
+        回归背景：旧版导出行键为随机物理列名（field_xxx），导入时字段重新
+        随机生成列名导致键永远匹配不上，恢复后数据行全部丢失。
+        """
+        r_export = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=auth_owner)
+        assert r_export.status_code == 200
+        backup = r_export.json()
+        assert backup["version"] == "3"
+
+        # 建一个全新工作区接收导入，避免同名表被跳过
+        r_new_ws = client.post("/api/v1/workspaces", json={"name": "恢复WS"}, headers=auth_owner)
+        assert r_new_ws.status_code == 201
+        new_ws_id = r_new_ws.json()["id"]
+
+        r_import = client.post(
+            f"/api/v1/workspaces/{new_ws_id}/import",
+            json={"json_data": backup},
+            headers=auth_owner,
+        )
+        assert r_import.status_code == 200, r_import.text
+        assert r_import.json()["imported_tables"] == 1
+        assert r_import.json()["imported_rows"] == 2
+
+        # 再导出恢复后的工作区，验证行值一致
+        r_verify = client.get(f"/api/v1/workspaces/{new_ws_id}/export", headers=auth_owner)
+        assert r_verify.status_code == 200
+        restored = r_verify.json()["tables"][0]["rows"]
+        assert {row["姓名"]: row["年龄"] for row in restored} == {"张三": 28, "李四": 35}
 
 
 # ── bulk.py ────────────────────────────────────────────

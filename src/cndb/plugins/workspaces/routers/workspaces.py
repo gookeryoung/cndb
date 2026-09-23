@@ -510,9 +510,9 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2"):
+    if version not in ("1", "2", "3"):
         raise HTTPException(
-            status_code=400, detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2）。请升级程序后再导入。"
+            status_code=400, detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3）。请升级程序后再导入。"
         )
 
     imported_tables = 0
@@ -609,7 +609,10 @@ def _import_backup_into_workspace(
                     for raw in rows_data:
                         values = {}
                         for f in fields_order:
-                            if f.db_column_name in raw:
+                            # v3 行键为业务字段名；回退物理列名以兼容旧版 v1/v2 备份
+                            if f.name in raw:
+                                values[f.db_column_name] = raw[f.name]
+                            elif f.db_column_name in raw:
                                 values[f.db_column_name] = raw[f.db_column_name]
                         if values:
                             row_values.append(values)
@@ -715,15 +718,17 @@ def export_workspace(
             for f in fields
         ]
 
-        # 数据行
+        # 数据行：行键用业务字段名（字段物理列名跨库恢复时会重新随机生成，
+        # 直接导出物理列名会导致导入端键匹配不上、数据行全部丢失）
         rows_data: list[dict[str, Any]] = []
+        colname_to_field = {f.db_column_name: f.name for f in fields}
         try:
             sa_table = __import__("sqlalchemy").Table(tbl.db_table_name, metadata, autoload_with=db.bind)
             if "trashed_at" in sa_table.columns:
                 result = db.execute(select(sa_table).where(sa_table.c.trashed_at.is_(None))).mappings().all()
             else:
                 result = db.execute(select(sa_table)).mappings().all()
-            rows_data = [dict(r) for r in result]
+            rows_data = [{colname_to_field[k]: v for k, v in dict(r).items() if k in colname_to_field} for r in result]
         except Exception:  # pragma: no cover - 表结构异常
             pass
 
@@ -755,7 +760,7 @@ def export_workspace(
         )
 
     return {
-        "version": "2",
+        "version": "3",
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
         "workspace": workspace_meta,
         "tables": tables_data,
