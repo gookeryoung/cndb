@@ -274,7 +274,7 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
             checked={isDone}
             onClick={(e) => e.stopPropagation()}
             onChange={() => onToggleDone!(row, { [doneCtx!.field]: buildDoneToggleValue(row, doneCtx!) } as RowValues)}
-            style={{ position: 'absolute', top: 8, right: canDelete && onDelete ? 32 : 4, zIndex: 10 }}
+            style={{ position: 'absolute', top: 4, right: canDelete && onDelete ? 32 : 4, zIndex: 10 }}
           />
         </Tooltip>
       )}
