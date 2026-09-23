@@ -44,4 +44,10 @@ export const workspaceApi = {
       `/v1/workspaces/${wid}/import`,
       { json_data: jsonData },
     ).then(r => r.data),
+  /** 从备份 JSON 创建全新工作区（同时导入表结构、数据和视图） */
+  importFromBackup: (payload: { name?: string; json_data: Record<string, unknown> }) =>
+    api.post<{ workspace: Workspace; imported_tables: number; imported_rows: number; imported_views: number }>(
+      '/v1/workspaces/import',
+      payload,
+    ).then(r => r.data),
 }
