@@ -147,8 +147,80 @@ def _backup_sqlite_native(db_path: Path, target_dir: Path) -> tuple[str, dict[st
     return "cndb.db", row_counts, schema_version
 
 
+def _coerce_raw_value(raw: Any, column_type: Any) -> Any:
+    """将 SQLite 原生返回值安全转换为 Python 类型.
+
+    SQLite 是动态类型系统，声明为 TIMESTAMP/DATETIME 的列实际可能存了：
+    - ISO 格式字符串（SQLAlchemy 的 str_to_date 能处理）
+    - NULL（处理器已做 null 检查）
+    - Unix 时间戳（int / float）—— str_to_date 直接 ``fromisoformat(int)`` 炸
+    - 空字符串 —— ``fromisoformat('')`` 抛 ValueError
+
+    因此绕开 SQLAlchemy 的自动 processor，用原生 SQL 拉值后按列声明类型手动转换.
+    """
+    import datetime as dt
+
+    from sqlalchemy.types import Date, DateTime, Time
+
+    if raw is None:
+        return None
+
+    if isinstance(column_type, DateTime):
+        if isinstance(raw, dt.datetime):
+            return raw
+        if isinstance(raw, (int, float)):
+            return dt.datetime.fromtimestamp(raw)
+        if isinstance(raw, str):
+            s = raw.strip()
+            if not s:
+                return None
+            try:
+                return dt.datetime.fromisoformat(s)
+            except ValueError:
+                # 兼容 SQLite 原生格式 'YYYY-MM-DD HH:MM:SS'
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+                    try:
+                        return dt.datetime.strptime(s, fmt)
+                    except ValueError:
+                        continue
+                return raw  # 无法解析则原样保留
+        # bytes / 其他类型 —— 让 _to_json_safe 兜底
+
+    elif isinstance(column_type, Date):
+        if isinstance(raw, dt.date):
+            return raw
+        if isinstance(raw, (int, float)):
+            return dt.date.fromtimestamp(raw)
+        if isinstance(raw, str):
+            s = raw.strip()
+            if not s:
+                return None
+            try:
+                return dt.date.fromisoformat(s)
+            except ValueError:
+                return raw
+
+    elif isinstance(column_type, Time):
+        if isinstance(raw, dt.time):
+            return raw
+        if isinstance(raw, str):
+            s = raw.strip()
+            if not s:
+                return None
+            try:
+                return dt.time.fromisoformat(s)
+            except ValueError:
+                return raw
+
+    return raw
+
+
 def _backup_sqlalchemy(database_url: str, target_dir: Path) -> tuple[str, dict[str, int], list[str], str]:
     """通过 SQLAlchemy 序列化所有表数据（跨数据库兼容）.
+
+    绕过 SQLAlchemy DateTime/Date/Time 列的自动 processor，改用原生 SQL 拉取
+    SQLite 原始值（避免动态类型库中 Unix 时间戳、空字符串等非法输入让
+    ``str_to_date`` / ``str_to_datetime`` 崩溃），再按反射出的列声明类型手动转换.
 
     Returns:
         (备份文件名, 表名 → 行数 映射, 表清单, 源库 schema 版本)
@@ -171,17 +243,24 @@ def _backup_sqlalchemy(database_url: str, target_dir: Path) -> tuple[str, dict[s
         with engine.connect() as conn:
             for table_name in sorted(metadata.tables.keys()):
                 sa_table = metadata.tables[table_name]
-                # 反射列名（按顺序）
-                columns = [c.name for c in sa_table.columns]
+                # 反射列名（按顺序）+ 列类型字典，用于后续安全转换
+                columns = [str(c.name) for c in sa_table.columns]
+                col_types: dict[str, Any] = {str(c.name): c.type for c in sa_table.columns}
                 # 统计行数
                 count = conn.execute(text(f'SELECT COUNT(*) FROM "{table_name}"')).scalar() or 0
                 row_counts[table_name] = count
-                # 导出所有行（limit 保护：单表超 100 万行报警）
-                rows = conn.execute(sa_table.select()).mappings().all()
+                # 用原生 SQL 拉取原始值，绕开 DateTime 列的 str_to_date processor
+                # 该 processor 假定 SQLite 返回 ISO 字符串，遇到 Unix 时间戳（int）会直接 TypeError
+                rows = [
+                    dict(raw_row) for raw_row in conn.execute(text(f'SELECT * FROM "{table_name}"')).mappings().all()
+                ]
                 if len(rows) > 1_000_000:
                     print(f"[backup] 警告：表 {table_name} 行数 {len(rows)} 超过一百万，序列化体积较大")
-                # 转成普通 dict，处理 datetime 等不可序列化类型
-                clean_rows = [{k: _to_json_safe(v) for k, v in row.items()} for row in rows]
+                # 按声明类型安全转换后再做 JSON safe 序列化
+                clean_rows = [
+                    {str(k): _to_json_safe(_coerce_raw_value(v, col_types.get(str(k)))) for k, v in row.items()}
+                    for row in rows
+                ]
                 tables_info.append({"table": table_name, "columns": columns, "rows": clean_rows})
             # 读取源库 schema 版本（alembic_version 表不存在时静默跳过）
             try:
