@@ -8,6 +8,7 @@ import { Form, Row, Col, Input, InputNumber, Checkbox, Radio, Select, Tag, Toolt
 import { PlusOutlined, DeleteOutlined, TagOutlined, BgColorsOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons'
 import type { FieldType, TableSummary } from '@/api'
 import { resolveTagColor, suggestColorsForLabels } from '@/utils/tagColors'
+import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 
 /** 字段类型分类，决定需要渲染哪些 config 子表单 */
 export const TYPE_CATEGORIES = {
@@ -126,7 +127,7 @@ export function ConfigEditor({ fieldType, form, tables, isEdit = false, editTarg
       <Form.Item name="config" hidden>
         <Input />
       </Form.Item>
-      <div className="fm-config-title"><SettingOutlined />字段配置</div>
+      <div className="fm-config-title"><SettingOutlined />类型专属配置 · {getFieldTypeLabel(fieldType)}</div>
 
       {/* ── 数字类（number / decimal / percentage） ── */}
       {TYPE_CATEGORIES.numeric.includes(fieldType) && (

@@ -1148,6 +1148,57 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   background: var(--cn-bg-muted);
 }
 
+/* ── 统一字段配置面板（FieldConfigPanel）分区卡片 ──
+   基础属性 / 默认值 / 类型专属配置 三区共用同一视觉语言 */
+.fm-section {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--cn-border);
+  border-radius: 8px;
+  background: var(--cn-bg-muted);
+}
+
+.fm-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--cn-text-secondary);
+}
+
+/* 默认值分区：标题由 Form.Item label 兼任，压平为分区标题样式 */
+.fm-section .ant-form-item-label {
+  padding-bottom: 4px;
+}
+
+.fm-section .ant-form-item-label > label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--cn-text-secondary);
+}
+
+.fm-section-title-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 基础属性：三个开关一行排布，紧凑不换行 */
+.fm-attr-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.fm-attr-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .fm-config-title {
   display: flex;
   align-items: center;
