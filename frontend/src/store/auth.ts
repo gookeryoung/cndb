@@ -14,10 +14,14 @@ interface AuthState {
   user: UserResponse | null
   token: string | null
   loading: boolean
+  /** 会话是否因 token 过期而失效（true 时 ProtectedRoute 展示友好过期提示） */
+  expired: boolean
   login: (payload: LoginRequest) => Promise<void>
   register: (payload: RegisterRequest) => Promise<UserResponse>
   logout: () => void
   refresh: () => Promise<void>
+  /** 外部（如 axios 401 拦截器）通知会话过期 —— 清 token + 置 expired 标志 */
+  notifyExpired: () => void
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -26,6 +30,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       token: getToken(),
       loading: true,
+      expired: false,
 
       refresh: async () => {
         const t = getToken()
@@ -36,10 +41,12 @@ export const useAuthStore = create<AuthState>()(
         set({ token: t, loading: true })
         try {
           const me = await authApi.me()
-          set({ user: me, loading: false })
+          set({ user: me, loading: false, expired: false })
         } catch {
+          // me 请求也走 axios 拦截器，token 过期时拦截器已经调过 notifyExpired
+          // 这里兜底：无论什么原因 me 失败，都视为会话失效
           clearToken()
-          set({ token: null, user: null, loading: false })
+          set({ token: null, user: null, loading: false, expired: true })
         }
       },
 
@@ -47,7 +54,7 @@ export const useAuthStore = create<AuthState>()(
         const res = await authApi.login(payload)
         persistToken(res.access_token)
         const me = await authApi.me()
-        set({ token: res.access_token, user: me })
+        set({ token: res.access_token, user: me, expired: false })
       },
 
       register: async (payload) => {
@@ -55,13 +62,23 @@ export const useAuthStore = create<AuthState>()(
         // 注册成功后自动登录
         const res = await authApi.login({ login: payload.username, password: payload.password })
         persistToken(res.access_token)
-        set({ token: res.access_token, user: u })
+        set({ token: res.access_token, user: u, expired: false })
         return u
       },
 
       logout: () => {
         clearToken()
-        set({ token: null, user: null })
+        set({ token: null, user: null, expired: false })
+      },
+
+      notifyExpired: () => {
+        /** axios 拦截器捕获 401 时调用，统一登出入口。
+         *
+         *  expired 标志与 logout 的 false 区分：ProtectedRoute 会据此展示
+         *  "登录已过期" 提示文案，而 logout() 对应"用户主动退出"。
+         */
+        clearToken()
+        set({ token: null, user: null, expired: true })
       },
     }),
     {
