@@ -31,6 +31,7 @@ export default function WorkspaceSettingsModal({
         wid={wid}
         initialTab={initialTab}
         onUpdated={onUpdated}
+        onDeleted={onClose}
       />
     </Modal>
   )
