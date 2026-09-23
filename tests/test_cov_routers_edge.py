@@ -17,13 +17,12 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-import cndb.plugins.tables.services.fields.field_ops as field_ops
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataField, DataTable, DataView, ImportTask, TableMember
 from cndb.plugins.tables.routers.tables import _fill_table_stats
 from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.tables.services.core import records as rec
-
+from cndb.plugins.tables.services.fields import field_ops
 
 # ── 复用基建的小工具 ────────────────────────────────────
 
@@ -310,7 +309,7 @@ class TestTablesRouterEdge:
 class TestWorkspacesRouterEdge:
     def test_workspace_detail_total_rows_and_suppress(self, client, db, ws_id, auth_owner, src_table):
         """详情统计 total_rows：正常累加 + 物理表缺失时 suppress 跳过."""
-        dt, _ = src_table
+        _dt, _ = src_table
         # 幻影表：只有元数据没有物理表 → autoload 异常被 suppress
         phantom = DataTable(workspace_id=ws_id, name="幻影表")
         phantom.ensure_db_name()

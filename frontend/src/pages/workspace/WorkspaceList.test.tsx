@@ -112,7 +112,7 @@ describe('WorkspaceList 路由跳转', () => {
 function makeWs(overrides: Partial<Workspace> & { id: number; name: string }): Workspace {
   return {
     description: '', visibility: 'member', tags: [], allow_edit: true,
-    created_by_id: 1, created_at: '', updated_at: '',
+    created_at: '', updated_at: '',
     ...overrides,
   }
 }
@@ -171,7 +171,6 @@ describe('WorkspaceList 列表渲染与交互', () => {
       http.get('/api/v1/workspaces', () =>
         HttpResponse.json([makeWs({
           id: 10, name: '测试工作区', allow_edit: false, current_user_role: 'owner',
-          table_count: 3, member_count: 5,
         })])),
     )
     renderWorkspaceList()
