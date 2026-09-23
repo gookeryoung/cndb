@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import (
     RecordCreate,
@@ -31,6 +32,43 @@ from cndb.plugins.tables.services.core.records import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/records", tags=["records"])
+
+
+def _list_response(
+    db: Session,
+    dt: DataTable,
+    user: User,
+    *,
+    filters: list[dict[str, Any]] | None,
+    filter_logic: str,
+    sorts: list[dict[str, Any]] | None,
+    limit: int,
+    offset: int,
+    include_trashed: bool,
+) -> RecordListResponse:
+    """调用 list_rows 并统一错误映射（ValueError→400，其余→500），GET/POST 列表端点共用."""
+    try:
+        rows, total = list_rows(
+            db.get_bind(),
+            dt,
+            filters=filters,
+            filter_logic=filter_logic,
+            sorts=sorts,
+            limit=limit,
+            offset=offset,
+            include_trashed=include_trashed,
+            db=db,
+            user=user,
+        )
+    except ValueError as exc:
+        # 业务语义错误（未知操作符、非法字段等）— 客户端可修正
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        # SQLAlchemy / 数据库等运行时错误 — 记录日志后统一返回 500
+        logger.exception("list_rows 运行时异常")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return RecordListResponse(rows=rows, total=total, limit=limit, offset=offset)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -89,28 +127,17 @@ def list_records_get(
             return [x for x in v if isinstance(x, dict)]
         return None
 
-    try:
-        rows, total = list_rows(
-            db.get_bind(),
-            dt,
-            filters=_parse(filters, "filters"),
-            filter_logic=filter_logic,
-            sorts=_parse(sorts, "sorts"),
-            limit=limit,
-            offset=offset,
-            include_trashed=include_trashed,
-            db=db,
-            user=current_user,
-        )
-    except ValueError as exc:
-        # 业务语义错误（未知操作符、非法字段等）— 客户端可修正
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        # SQLAlchemy / 数据库等运行时错误 — 记录日志后统一返回 500
-        logger.exception("list_rows 运行时异常")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    return RecordListResponse(rows=rows, total=total, limit=limit, offset=offset)
+    return _list_response(
+        db,
+        dt,
+        current_user,
+        filters=_parse(filters, "filters"),
+        filter_logic=filter_logic,
+        sorts=_parse(sorts, "sorts"),
+        limit=limit,
+        offset=offset,
+        include_trashed=include_trashed,
+    )
 
 
 @router.post("/list", response_model=RecordListResponse)
@@ -124,30 +151,16 @@ def list_records(
 ) -> RecordListResponse:
     dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    try:
-        rows, total = list_rows(
-            db.get_bind(),
-            dt,
-            filters=payload.filters if payload.filters else None,
-            filter_logic=payload.filter_logic,
-            sorts=payload.sorts if payload.sorts else None,
-            limit=payload.limit,
-            offset=payload.offset,
-            include_trashed=include_trashed,
-            db=db,
-            user=current_user,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.exception("list_rows 运行时异常")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    return RecordListResponse(
-        rows=rows,
-        total=total,
+    return _list_response(
+        db,
+        dt,
+        current_user,
+        filters=payload.filters if payload.filters else None,
+        filter_logic=payload.filter_logic,
+        sorts=payload.sorts if payload.sorts else None,
         limit=payload.limit,
         offset=payload.offset,
+        include_trashed=include_trashed,
     )
 
 

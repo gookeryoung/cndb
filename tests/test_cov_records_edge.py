@@ -262,6 +262,34 @@ class TestRecordsRouterEdgeCases:
         )
         assert r.status_code == 200
 
+    def test_get_records_valid_filters_and_sorts(self, client, auth_headers):
+        """GET /records 携带合法 filters + sorts（URL 编码 JSON）→ 正常过滤排序返回."""
+        wid, tid = self._make_table(client, auth_headers)
+        client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+            headers=auth_headers,
+            json={"values": {"name": "Alice"}},
+        )
+        client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+            headers=auth_headers,
+            json={"values": {"name": "Bob"}},
+        )
+        r = client.get(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+            headers=auth_headers,
+            params={
+                "filters": '[{"field_name": "name", "op": "=", "value": "Alice"}]',
+                "sorts": '[{"field_name": "name", "direction": "asc"}]',
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        assert body["rows"][0]["name"] == "Alice"
+
     def test_get_records_invalid_filters_json(self, client, auth_headers):
         """GET /records with malformed filters JSON → degrades gracefully."""
         wid, tid = self._make_table(client, auth_headers)
