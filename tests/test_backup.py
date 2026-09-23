@@ -522,3 +522,158 @@ def test_create_backup_native_no_fallback(tmp_path: Path) -> None:
 
     with tarfile.open(archive, "r:gz") as tar:
         assert "backup/database/dump.json" not in tar.getnames()
+
+
+# ── SQLite 动态类型 DateTime 列安全转换 ─────────────
+#
+# 真实项目中，SQLite（动态类型）声明为 TIMESTAMP/DATETIME 的列
+# 实际可能存 Unix 时间戳（int / float）、空字符串、NULL 或 ISO 字符串.
+# 修复前 SQLAlchemy 的 str_to_date / str_to_datetime processor 假定一定是
+# ISO 字符串，遇到非 str 直接 TypeError；测试 _backup_sqlalchemy 必须覆盖.
+
+
+def _setup_sqlite_with_dynamic_types(tmp_path: Path) -> Path:
+    """创建含 TIMESTAMP 列且塞入多种动态类型值的 SQLite 库."""
+    db = tmp_path / "dyn_types.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript(
+        """
+        CREATE TABLE dyn_events (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        );
+        INSERT INTO dyn_events (name, created_at, updated_at)
+        VALUES ('unix_int', 1704067200, NULL);
+        INSERT INTO dyn_events (name, created_at, updated_at)
+        VALUES ('unix_float', 1704067200.123, '');
+        INSERT INTO dyn_events (name, created_at, updated_at)
+        VALUES ('valid_iso', '2024-06-15T10:30:00', '2024-06-15 11:30:00');
+        INSERT INTO dyn_events (name, created_at, updated_at)
+        VALUES ('all_null', NULL, NULL);
+        INSERT INTO dyn_events (name, created_at, updated_at)
+        VALUES ('all_empty', '', '');
+        """
+    )
+    conn.commit()
+    conn.close()
+    return db
+
+
+def test_coerce_raw_value_datetime_variants() -> None:
+    """_coerce_raw_value 应对 DateTime 列的各种 SQLite 实际值安全返回."""
+    import datetime as dt
+
+    from sqlalchemy.types import Date, DateTime, Time
+
+    from cndb.cli.backup import _coerce_raw_value
+
+    # DateTime
+    int_ts = _coerce_raw_value(1704067200, DateTime())
+    assert isinstance(int_ts, dt.datetime)
+    assert int_ts == dt.datetime.fromtimestamp(1704067200)
+
+    float_ts = _coerce_raw_value(1704067200.123, DateTime())
+    assert isinstance(float_ts, dt.datetime)
+    assert float_ts.microsecond == 123000
+
+    valid = _coerce_raw_value("2024-06-15T10:30:00", DateTime())
+    assert valid == dt.datetime(2024, 6, 15, 10, 30, 0)
+
+    sqlfmt = _coerce_raw_value("2024-06-15 10:30:00", DateTime())
+    assert sqlfmt == dt.datetime(2024, 6, 15, 10, 30, 0)
+
+    sqlfmt_ms = _coerce_raw_value("2024-06-15 10:30:00.123456", DateTime())
+    assert sqlfmt_ms.microsecond == 123456
+
+    assert _coerce_raw_value("", DateTime()) is None
+    assert _coerce_raw_value(None, DateTime()) is None
+    assert _coerce_raw_value(dt.datetime(2024, 1, 1), DateTime()) == dt.datetime(2024, 1, 1)
+
+    # Date
+    assert _coerce_raw_value("2024-01-01", Date()) == dt.date(2024, 1, 1)
+    assert _coerce_raw_value("", Date()) is None
+    assert _coerce_raw_value(None, Date()) is None
+
+    # Time
+    assert _coerce_raw_value("12:00:00", Time()) == dt.time(12, 0, 0)
+    assert _coerce_raw_value("", Time()) is None
+    assert _coerce_raw_value(None, Time()) is None
+
+
+def test_create_backup_native_embeds_fallback_with_datetime(tmp_path: Path) -> None:
+    """native + include_fallback 模式：库内 DATETIME 列存了 Unix 时间戳/空串，
+    内嵌 dump.json 仍应生成，且 datetime 值被安全转换."""
+    db = _setup_sqlite_with_dynamic_types(tmp_path)
+    archive = tmp_path / "dyn.tar.gz"
+
+    # 不应抛 TypeError: fromisoformat: argument must be str
+    result = create_backup(output=archive, mode="native", database_url=f"sqlite:///{db}", include_fallback=True)
+    assert archive.is_file()
+
+    manifest = json.loads(_read_archive_member(result, "manifest.json"))
+    assert manifest["database"]["fallback_mode"] == "sqlalchemy"
+
+    dump = json.loads(_read_archive_member(result, "database/dump.json"))
+    rows = {r["name"]: r for r in dump["tables"][0]["rows"]}
+    assert len(rows) == 5
+
+    # Unix 时间戳应被转成 ISO 字符串
+    assert rows["unix_int"]["created_at"] == "2024-01-01T00:00:00"
+    assert rows["unix_int"]["updated_at"] is None
+
+    # Unix float + 空串 → 空串视为 None
+    assert rows["unix_float"]["created_at"] == "2024-01-01T00:00:00.123000"
+    assert rows["unix_float"]["updated_at"] is None
+
+    # ISO / SQLite 空格格式都应被识别
+    assert rows["valid_iso"]["created_at"] == "2024-06-15T10:30:00"
+    assert rows["valid_iso"]["updated_at"] == "2024-06-15T11:30:00"
+
+    assert rows["all_null"]["created_at"] is None
+    assert rows["all_empty"]["created_at"] is None
+
+
+def test_backup_sqlalchemy_dynamic_datetime(tmp_path: Path) -> None:
+    """直接走 sqlalchemy 备份模式（非 fallback 嵌入），同样应能处理动态类型 DATETIME."""
+    db = _setup_sqlite_with_dynamic_types(tmp_path)
+    archive = tmp_path / "sa.tar.gz"
+
+    result = create_backup(
+        output=archive,
+        mode="sqlalchemy",
+        database_url=f"sqlite:///{db}",
+        upload_dir=tmp_path / "no_such_uploads",
+        include_uploads=False,
+    )
+    assert archive.is_file()
+
+    manifest = json.loads(_read_archive_member(result, "manifest.json"))
+    assert manifest["database"]["backup_mode"] == "sqlalchemy"
+
+    dump = json.loads(_read_archive_member(result, "database/dump.json"))
+    rows = {r["name"]: r for r in dump["tables"][0]["rows"]}
+    assert rows["unix_int"]["created_at"] == "2024-01-01T00:00:00"
+    assert rows["all_empty"]["created_at"] is None
+
+
+def test_create_backup_sqlalchemy_unknown_datetime_string(tmp_path: Path) -> None:
+    """无法解析的 DATETIME 字符串（如 'garbage'）应原样保留而非崩溃."""
+    db = tmp_path / "weird.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript(
+        """
+        CREATE TABLE weird (id INTEGER PRIMARY KEY, ts TIMESTAMP);
+        INSERT INTO weird (ts) VALUES ('not-a-timestamp');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    archive = tmp_path / "w.tar.gz"
+    result = create_backup(output=archive, mode="sqlalchemy", database_url=f"sqlite:///{db}", include_uploads=False)
+    assert archive.is_file()
+
+    dump = json.loads(_read_archive_member(result, "database/dump.json"))
+    assert dump["tables"][0]["rows"][0]["ts"] == "not-a-timestamp"
