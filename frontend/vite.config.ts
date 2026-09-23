@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 // ── 前端构建产物同步到 src/cndb/static（保留 .gitkeep）────────────────
@@ -115,6 +116,9 @@ export default defineConfig(({ mode }) => ({
     environmentMatchGlobs: [
       ['src/**/*.test.ts', 'node'],
     ],
+    // worker 数实测（24 核）：16 最优（24.7s）；23 因 fork 创建+内存压力回吐收益（27.7s）；
+    // 12 与默认持平（2026-09 实测数据）。上限 16，低核 CI 机器按核数降档防过订阅
+    maxWorkers: Math.min(16, os.availableParallelism()),
     coverage: {
       provider: 'v8',
       include: ['src/**'],
