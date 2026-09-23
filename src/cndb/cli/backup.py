@@ -169,7 +169,8 @@ def _coerce_raw_value(raw: Any, column_type: Any) -> Any:
         if isinstance(raw, dt.datetime):
             return raw
         if isinstance(raw, (int, float)):
-            return dt.datetime.fromtimestamp(raw)
+            # Unix 时间戳一律按 UTC 语义转换并去掉 tzinfo，输出不受运行环境时区影响
+            return dt.datetime.fromtimestamp(raw, tz=dt.UTC).replace(tzinfo=None)
         if isinstance(raw, str):
             s = raw.strip()
             if not s:
@@ -190,7 +191,8 @@ def _coerce_raw_value(raw: Any, column_type: Any) -> Any:
         if isinstance(raw, dt.date):
             return raw
         if isinstance(raw, (int, float)):
-            return dt.date.fromtimestamp(raw)
+            # 与 DateTime 分支一致：按 UTC 转换，保证跨时区结果一致
+            return dt.datetime.fromtimestamp(raw, tz=dt.UTC).date()
         if isinstance(raw, str):
             s = raw.strip()
             if not s:

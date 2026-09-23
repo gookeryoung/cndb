@@ -572,7 +572,8 @@ def test_coerce_raw_value_datetime_variants() -> None:
     # DateTime
     int_ts = _coerce_raw_value(1704067200, DateTime())
     assert isinstance(int_ts, dt.datetime)
-    assert int_ts == dt.datetime.fromtimestamp(1704067200)
+    # Unix 时间戳按 UTC 转换，不受运行环境时区影响
+    assert int_ts == dt.datetime(2024, 1, 1, 0, 0, 0)
 
     float_ts = _coerce_raw_value(1704067200.123, DateTime())
     assert isinstance(float_ts, dt.datetime)
