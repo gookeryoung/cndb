@@ -35,6 +35,8 @@ interface Props {
   initialTab?: 'basic' | 'permissions' | 'stats'
   /** 设置保存后通知工作区列表刷新 */
   onUpdated?: () => void
+  /** 删除工作区成功后回调（Modal 模式下用于关闭弹窗，回到工作区列表视图） */
+  onDeleted?: () => void
 }
 
 const ROLE_LABEL: Record<WorkspaceRole, string> = {
@@ -76,7 +78,7 @@ function sortMembersByRole(members: WorkspaceMember[]): WorkspaceMember[] {
 }
 
 export default function WorkspaceSettingsContent({
-  wid, initialTab = 'basic', onUpdated,
+  wid, initialTab = 'basic', onUpdated, onDeleted,
 }: Props) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -219,6 +221,8 @@ export default function WorkspaceSettingsContent({
     onSuccess: () => {
       message.success('工作区已删除')
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+      // Modal 模式下先关闭弹窗露出工作区列表，再执行独立页面模式的跳转
+      onDeleted?.()
       // 删除工作区后统一回到工作区列表（无论嵌入在独立页面还是 Modal）
       navigate('/w', { replace: true })
     },
