@@ -663,7 +663,7 @@ export default function GridPage() {
   }
 
   /** 持久化当前视图到后端（自动保存 useEffect 唯一真相源：viewFilters / viewSortings 等 state 变化自动触发）. */
-  const persistCurrentView = () => {
+  const persistCurrentView = useCallback(() => {
     if (!activeViewId) return
     updateView.mutate({
       vid: activeViewId,
@@ -672,7 +672,13 @@ export default function GridPage() {
       filter_type: viewFilterLogic,
       view_options: viewOptionsDraft,
     })
-  }
+  }, [activeViewId, viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, updateView])
+
+  /** 立即保存视图（绕过 debounce）— 用于 ViewConfigDialog 保存按钮等显式保存场景 */
+  const saveViewNow = useCallback(() => {
+    cancelPersist()
+    persistCurrentView()
+  }, [cancelPersist, persistCurrentView])
 
   /** 右侧模式按钮组的统一处理：
    *  - 若当前激活视图已是目标类型 → 仅切换本地渲染模式.
@@ -822,6 +828,7 @@ export default function GridPage() {
         modeButtons={modeButtons}
         showModeSwitch={showModeSwitch}
         hasFilters={viewFilters.length > 0}
+        hasSorts={viewSortings.length > 0}
         searchQuery={searchQuery}
         onSearchChange={(q) => { setSearchQuery(q); setOffset(0) }}
         onSelectView={(v) => loadView(v)}
@@ -978,6 +985,7 @@ export default function GridPage() {
         onSaveFilters={(f) => { setViewFilters(f); setOffset(0) }}
         onSaveSortings={(s) => { setViewSortings(s); setOffset(0) }}
         onSaveOptions={(o) => { setViewOptionsDraft(o) }}
+        onSaveNow={saveViewNow}
       />
 
       {/* 创建 / 编辑 / 导入视图 Modal 组 */}
