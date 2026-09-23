@@ -305,7 +305,7 @@ function DefaultValueInput({ fieldType, form }: { fieldType: FieldType | undefin
             <Radio.Button value="static">静态值</Radio.Button>
             <Radio.Button value="auto_increment">自动编号</Radio.Button>
           </Radio.Group>
-          {isAuto && (
+          {isAuto ? (
             <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <Input
                 size="small"
@@ -340,6 +340,15 @@ function DefaultValueInput({ fieldType, form }: { fieldType: FieldType | undefin
                 示例：{formatIncrementExample({ increment_prefix: incrementPrefix, increment_padding: incrementPadding, increment_start: incrementStart })}（新增行保存时自动生成，不预填）
               </span>
             </div>
+          ) : (
+            <Input
+              size="small"
+              style={{ marginTop: 8 }}
+              placeholder="可留空；填写后新建行将自动填入该文本"
+              allowClear
+              value={value === undefined || value === null ? '' : String(value)}
+              onChange={(e) => setValue(e.target.value || undefined)}
+            />
           )}
         </div>
       )
