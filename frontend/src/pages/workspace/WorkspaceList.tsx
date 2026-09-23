@@ -1,11 +1,12 @@
 /** 工作区列表页 — 卡片式布局，支持创建/设置/导入/导出/置顶/成员管理/搜索. */
 
 import { useMemo, useState } from 'react'
-import { Card, Row, Col, Typography, Button, Modal, Form, Input, Select, Switch, Tag, Empty, App as AntApp } from 'antd'
+import { Card, Row, Col, Typography, Button, Modal, Form, Input, Select, Switch, Tag, Empty, App as AntApp, Upload, Alert, Progress } from 'antd'
 import {
   PlusOutlined, PushpinOutlined, TeamOutlined, TableOutlined,
   DownloadOutlined, SettingOutlined, SearchOutlined,
   GlobalOutlined, LockOutlined, SafetyCertificateOutlined,
+  UploadOutlined, InboxOutlined, FileTextOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -38,8 +39,10 @@ export default function WorkspaceList() {
   const [createOpen, setCreateOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState<Workspace | null>(null)
   const [backupOpen, setBackupOpen] = useState<Workspace | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [form] = Form.useForm()
+  const [importForm] = Form.useForm()
 
   type WSWithStats = Workspace & {
     table_count?: number; member_count?: number;
@@ -115,6 +118,13 @@ export default function WorkspaceList() {
             data-testid="create-workspace-btn"
           >
             新建工作区
+          </Button>
+          <Button
+            icon={<UploadOutlined />}
+            onClick={() => { importForm.resetFields(); setImportOpen(true) }}
+            data-testid="import-workspace-btn"
+          >
+            导入工作区
           </Button>
         </div>
       </div>
@@ -274,9 +284,162 @@ export default function WorkspaceList() {
           wid={String(backupOpen.id)}
           workspaceName={backupOpen.name}
           onClose={() => setBackupOpen(null)}
-          onImported={() => queryClient.invalidateQueries({ queryKey: ['workspaces'] })}
         />
       )}
+
+      {/* 导入工作区 Modal — 从备份 JSON 创建全新工作区 */}
+      {importOpen && <ImportWorkspaceModal
+        open={importOpen}
+        form={importForm}
+        onCancel={() => setImportOpen(false)}
+        onSuccess={(w) => {
+          setImportOpen(false)
+          queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+          message.success(`已导入工作区「${w.name}」`)
+          navigate(`/w/${w.id}/tables`)
+        }}
+        onError={(err) => message.error(err instanceof Error ? err.message : '导入失败')}
+      />}
     </div>
+  )
+}
+
+/** 允许导入的文件扩展名 */
+const ACCEPTED_BACKUP_EXT = ['.json']
+
+interface ImportWorkspaceModalProps {
+  open: boolean
+  form: ReturnType<typeof Form.useForm>[0]
+  onCancel: () => void
+  onSuccess: (w: Workspace) => void
+  onError: (err: unknown) => void
+}
+
+function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: ImportWorkspaceModalProps) {
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number } | null>(null)
+  const [pendingJson, setPendingJson] = useState<Record<string, unknown> | null>(null)
+
+  const reset = () => {
+    setImportResult(null)
+    setPendingJson(null)
+    form.resetFields()
+  }
+
+  const beforeUpload = async (file: File) => {
+    const name = file.name.toLowerCase()
+    if (!ACCEPTED_BACKUP_EXT.some(ext => name.endsWith(ext))) {
+      onError(new Error('仅支持 JSON 备份文件'))
+      return false
+    }
+    try {
+      const text = await file.text()
+      const json = JSON.parse(text)
+      setPendingJson(json)
+      setImportResult(null)
+      // 自动从备份文件里的 workspace.name 填充工作区名称
+      const wsMeta = (json as Record<string, any>).workspace
+      if (wsMeta?.name) {
+        form.setFieldsValue({ name: wsMeta.name })
+      }
+    } catch {
+      onError(new Error('文件内容不是有效的 JSON'))
+    }
+    // 返回 false 阻止 Upload 组件自动上传，手动在 onOk 里提交
+    return false
+  }
+
+  const handleSubmit = async () => {
+    if (!pendingJson) {
+      onError(new Error('请先选择备份文件'))
+      return
+    }
+    const raw: unknown = await form.validateFields().catch(() => null)
+    if (!raw) return
+    const values = raw as { name?: string }
+
+    try {
+      setImporting(true)
+      const result = await workspaceApi.importFromBackup({
+        name: values.name,
+        json_data: pendingJson,
+      })
+      setImportResult({
+        tables: result.imported_tables,
+        rows: result.imported_rows,
+        views: result.imported_views,
+      })
+      // 延迟一下让用户看到成功信息，然后跳转
+      setTimeout(() => onSuccess(result.workspace), 800)
+    } catch (err) {
+      onError(err)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="导入工作区"
+      open={open}
+      onCancel={() => { reset(); onCancel() }}
+      onOk={handleSubmit}
+      confirmLoading={importing}
+      okText="开始导入"
+      cancelText="取消"
+      destroyOnHidden
+      width={560}
+    >
+      <Alert
+        type="info"
+        showIcon
+        message="从备份 JSON 创建一个全新的工作区"
+        description="备份文件中的表结构、数据行和视图都会一并导入，当前用户自动成为该工作区所有者。"
+        style={{ marginBottom: 16 }}
+      />
+
+      {!importResult && (
+        <Form form={form} layout="vertical">
+          <Form.Item name="name" label="工作区名称（可修改）">
+            <Input placeholder="默认使用备份文件中的工作区名称" />
+          </Form.Item>
+
+          <div style={{ marginBottom: 16 }}>
+            <Upload.Dragger
+              multiple={false}
+              accept={ACCEPTED_BACKUP_EXT.join(',')}
+              beforeUpload={beforeUpload}
+              disabled={importing}
+              showUploadList={false}
+            >
+              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+              <p className="ant-upload-text">点击或拖拽 JSON 备份文件到此处</p>
+              <p className="ant-upload-hint">从其他工作区导出的 JSON 备份文件</p>
+            </Upload.Dragger>
+          </div>
+        </Form>
+      )}
+
+      {importing && (
+        <div style={{ textAlign: 'center', padding: '24px 0' }}>
+          <Progress percent={100} status="active" showInfo={false} />
+          <div style={{ marginTop: 8, color: '#64748b' }}>正在导入，请稍候...</div>
+        </div>
+      )}
+
+      {importResult && !importing && (
+        <div style={{
+          padding: 16,
+          background: 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))',
+          borderRadius: 8,
+          textAlign: 'center',
+        }}>
+          <FileTextOutlined style={{ color: '#22c55e', fontSize: 20 }} />
+          <span style={{ marginLeft: 8, color: '#15803d' }}>
+            导入完成：{importResult.tables} 表 / {importResult.rows} 行 / {importResult.views} 视图
+          </span>
+        </div>
+      )}
+    </Modal>
   )
 }
