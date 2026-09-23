@@ -13,11 +13,10 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import ImportTask
-from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import BulkDeleteRequest
 from cndb.plugins.tables.services import transfer
 from cndb.plugins.tables.services.core import records as rec
-from cndb.plugins.tables.services.core.access import TableAction
+from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
 from cndb.plugins.tables.services.importing.import_tasks import create_import_task, run_task_in_background
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}", tags=["bulk"])
@@ -56,7 +55,7 @@ def bulk_create_records(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
     rows = payload.get("rows", [])
     if not rows:
         raise HTTPException(status_code=400, detail="rows 不能为空")
@@ -103,7 +102,7 @@ def bulk_delete_records(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
     deleted = rec.bulk_delete(db.get_bind(), dt, payload.row_ids, db=db)
     return {"deleted": deleted}
 
@@ -119,7 +118,7 @@ def bulk_update_records(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
     row_ids = payload.get("row_ids", [])
     values = payload.get("values", {})
     if not row_ids:
@@ -179,7 +178,7 @@ def export_table(
     Returns:
         对应格式的文件二进制响应
     """
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     filters: list[dict[str, Any]] | None = None
     sorts: list[dict[str, Any]] | None = None
@@ -231,7 +230,7 @@ async def import_table(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         fmt = transfer.guess_format_from_filename(file.filename or "")
@@ -277,7 +276,7 @@ async def import_table_async(
     V2: 支持 match_keys（upsert 参考列，JSON 序列化字符串如 "[\"code\"]"）
     和 unknown_cols_strategy（未知列策略：drop / add_text_field）.
     """
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         fmt = transfer.guess_format_from_filename(file.filename or "")
@@ -319,7 +318,7 @@ def get_import_task(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """查询异步导入任务进度."""
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     task = db.get(ImportTask, task_id)
     if task is None:
@@ -378,7 +377,7 @@ async def import_table_analyze(
     """
     import json as _json
 
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         fmt = transfer.guess_format_from_filename(file.filename or "")
@@ -463,7 +462,7 @@ def import_table_confirm(
         后端原样存入 task.cleaning_actions，execute 阶段在 RowValidator 之前应用.
     V4: 支持 dropped_columns（用户勾选丢弃的未知字段名列表）。
     """
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     task = db.get(ImportTask, task_id)
     if task is None or task.table_id != dt.id:
@@ -545,7 +544,7 @@ def import_table_reanalyze(
     适用场景：用户先上传文件看全量数据，再选参考列，重新 DIFF 得到 new/update 分类.
     任务必须处于 pending_confirm 或 pending_validation 状态.
     """
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     task = db.get(ImportTask, task_id)
     if task is None or task.table_id != dt.id:
@@ -605,7 +604,7 @@ def download_failed_rows(
     format: str = "csv",
 ) -> Response:
     """下载失败行文件（CSV / XLSX / JSON）."""
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     task = db.get(ImportTask, task_id)
     if task is None or task.table_id != dt.id:

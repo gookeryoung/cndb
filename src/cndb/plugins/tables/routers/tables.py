@@ -23,7 +23,12 @@ from cndb.plugins.tables.schemas import (
     ViewBrief,
     WorkspaceBrief,
 )
-from cndb.plugins.tables.services.core.access import TableAction, check_action, check_workspace_permission
+from cndb.plugins.tables.services.core.access import (
+    TableAction,
+    check_action,
+    check_workspace_permission,
+    get_table_or_404,
+)
 from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
 from cndb.plugins.workspaces.models import (
     Workspace,
@@ -99,47 +104,6 @@ def _fill_table_stats(
     return base
 
 
-def _check_table_permission(workspace_id: int, user: User, db: Session, min_role: WorkspaceRole) -> None:
-    """工作区级角色最低门槛检查（用于无具体 table 的操作，如创建表、工作区级 trash 操作）."""
-    check_workspace_permission(db, workspace_id, user, min_role)
-
-
-def _get_table_or_404(
-    table_id: int,
-    workspace_id: int,
-    db: Session,
-    user: User | None = None,
-    action: TableAction | None = None,
-) -> DataTable:
-    """按 workspace_id + table_id 查数据表，可选同时做表级动作权限检查.
-
-    Args:
-        table_id: 数据表 ID
-        workspace_id: 工作区 ID
-        db: 数据库会话
-        user: 当前用户；提供了则配合 action 做 check_action 校验
-        action: 需要校验的表级动作；仅当 user 非 None 时生效
-
-    Raises:
-        HTTPException(401): 需要认证但 user 为 None
-        HTTPException(404): 表不存在或工作区不匹配
-        HTTPException(403): 表级权限不足（由 check_action 判定）
-    """
-    dt = db.query(DataTable).filter(DataTable.id == table_id, DataTable.workspace_id == workspace_id).first()
-    if dt is None:
-        raise HTTPException(status_code=404, detail="表不存在")
-    if action is not None:
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="需要认证",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        if not check_action(db, dt, user, action):
-            raise HTTPException(status_code=403, detail="表级权限不足")
-    return dt
-
-
 @router.post("", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
 def create_table(
     workspace_id: int,
@@ -147,7 +111,7 @@ def create_table(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataTable:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.ADMIN)
     dt = DataTable(
         workspace_id=workspace_id,
         owner_id=current_user.id,
@@ -225,7 +189,7 @@ def list_tables(
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = False,
 ) -> list[TableResponse]:
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
     query = db.query(DataTable).filter(DataTable.workspace_id == workspace_id)
     if not include_trashed:
         query = query.filter(DataTable.trashed == False)  # noqa: E712
@@ -279,7 +243,7 @@ def reorder_tables(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[DataTable]:
     """批量调整表顺序（按传入顺序赋值 order 字段）."""
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.ADMIN)
 
     tables = (
         db.query(DataTable)
@@ -308,7 +272,7 @@ def get_table(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> TableDetailResponse:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     # 1) 统计 + 基础 TableResponse 字段
     base = _fill_table_stats(db, dt, current_user=current_user)
@@ -326,7 +290,7 @@ def get_table(
     views = sorted(dt.views, key=_view_sort_key)
     view_briefs = [ViewBrief.model_validate(v, from_attributes=True) for v in views]
 
-    # 4) 工作区 + 当前用户角色 + owner（复用 _check_table_permission 已查过的 ws）
+    # 4) 工作区 + 当前用户角色 + owner（复用 check_workspace_permission 已查过的 ws）
     ws = db.get(Workspace, workspace_id)
     member_role = get_member_role(current_user, ws, db) if ws else None
     actions: list[str] = []
@@ -379,7 +343,7 @@ def update_table(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataTable:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(dt, key, value)
@@ -395,7 +359,7 @@ def delete_table(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     dt.trashed = True
     db.commit()
 
@@ -423,7 +387,7 @@ def copy_table(
     """
     from cndb.plugins.tables.services.fields import field_ops as _fo
 
-    src = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
+    src = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
 
     # 兼容旧参数：include_data=true 等价于 mode=all
     effective_mode = mode
@@ -525,9 +489,9 @@ def move_table(
     from cndb.plugins.tables.models import TableMember
     from cndb.plugins.workspaces.models import WorkspaceMember
 
-    _check_table_permission(target_workspace_id, current_user, db, WorkspaceRole.EDITOR)
+    check_workspace_permission(db, target_workspace_id, current_user, WorkspaceRole.EDITOR)
 
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     dt.workspace_id = target_workspace_id
 
     # 跨工作区移动后清空表级成员列表（成员授权不跨工作区）
@@ -572,7 +536,7 @@ def get_record_references(
     """查询哪些表的哪些行通过 link 字段引用了当前行（跨工作区反查）."""
     from cndb.plugins.tables.services.core.links import find_back_references
 
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     refs = find_back_references(db, cast("Engine", db.get_bind()), dt, record_id)
     return {

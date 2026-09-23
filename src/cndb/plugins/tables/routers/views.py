@@ -12,9 +12,8 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataField, DataView
-from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import ViewCreate, ViewResponse, ViewUpdate
-from cndb.plugins.tables.services.core.access import TableAction
+from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/views", tags=["views"])
 
@@ -77,7 +76,7 @@ def create_view(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataView:
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     # 同表视图名唯一
     existing = db.query(DataView).filter(DataView.table_id == table_id, DataView.name == payload.name).first()
@@ -107,7 +106,7 @@ def import_views(
 
     同名视图自动跳过，字段引用不存在时跳过并返回 warnings.
     """
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     existing_names = {r[0] for r in db.query(DataView.name).filter(DataView.table_id == table_id).all()}
     created: list[DataView] = []
@@ -145,7 +144,7 @@ def list_views(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[DataView]:
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     return db.query(DataView).filter(DataView.table_id == table_id).order_by(DataView.order, DataView.id).all()
 
 
@@ -162,7 +161,7 @@ def export_views(
     - 不传 ids → 导出该表全部视图
     - 传 ids → 仅导出指定视图（不存在的 id 自动跳过）
     """
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     q = db.query(DataView).filter(DataView.table_id == table_id)
     if ids:
@@ -197,7 +196,7 @@ def get_view(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataView:
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")
@@ -213,7 +212,7 @@ def update_view(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataView:
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")
@@ -238,7 +237,7 @@ def delete_view(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")
@@ -265,7 +264,7 @@ def reorder_views(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[DataView]:
     """批量调整视图顺序（按传入顺序赋值 order 字段）."""
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
 
     views = (
         db.query(DataView)
@@ -301,7 +300,7 @@ def get_view_rows(
     """按视图的 filters + sortings 查询行."""
     from cndb.plugins.tables.services.core import records as rec
 
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")
@@ -339,7 +338,7 @@ def get_view_kanban(
 
     from cndb.plugins.tables.services.core import records as rec
 
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")
@@ -401,7 +400,7 @@ def get_view_calendar(
     """日历视图：按日期字段过滤并返回行列表."""
     from cndb.plugins.tables.services.core import records as rec
 
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")
@@ -443,7 +442,7 @@ def create_view_share(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
     """为视图生成公开分享 slug."""
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")
@@ -469,7 +468,7 @@ def revoke_view_share(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
     """撤销视图公开分享."""
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")

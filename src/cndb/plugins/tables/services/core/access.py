@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
@@ -149,6 +149,42 @@ def check_workspace_permission(
     return ws
 
 
+def get_table_or_404(
+    table_id: int,
+    workspace_id: int,
+    db: Session,
+    user: User | None = None,
+    action: TableAction | None = None,
+) -> DataTable:
+    """按 workspace_id + table_id 查数据表，可选同时做表级动作权限检查.
+
+    Args:
+        table_id: 数据表 ID
+        workspace_id: 工作区 ID
+        db: 数据库会话
+        user: 当前用户；提供了则配合 action 做 check_action 校验
+        action: 需要校验的表级动作；仅当 user 非 None 时生效
+
+    Raises:
+        HTTPException(401): 需要认证但 user 为 None
+        HTTPException(404): 表不存在或工作区不匹配
+        HTTPException(403): 表级权限不足（由 check_action 判定）
+    """
+    dt = db.query(DataTable).filter(DataTable.id == table_id, DataTable.workspace_id == workspace_id).first()
+    if dt is None:
+        raise HTTPException(status_code=404, detail="表不存在")
+    if action is not None:
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="需要认证",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if not check_action(db, dt, user, action):
+            raise HTTPException(status_code=403, detail="表级权限不足")
+    return dt
+
+
 def get_row_scope(db: Session, table: DataTable) -> list[dict[str, Any]]:
     """获取表级行级过滤规则（空列表 = 无限制）.
 
@@ -228,5 +264,6 @@ __all__ = [
     "check_workspace_permission",
     "get_hidden_field_names",
     "get_row_scope",
+    "get_table_or_404",
     "row_filter_conjunction",
 ]

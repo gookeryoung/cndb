@@ -11,8 +11,8 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import AuditLog, DataTable, TableMember
-from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import MemberCreate, MemberOut, MemberUpdate, OwnerTransfer
+from cndb.plugins.tables.services.core.access import check_workspace_permission, get_table_or_404
 from cndb.plugins.workspaces.models import Role, WorkspaceMember, WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}", tags=["table-members"])
@@ -116,10 +116,8 @@ def list_members(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict[str, Any]]:
     """列出表的所有成员（含用户名）."""
-    from cndb.plugins.tables.routers.tables import _check_table_permission
-
-    table = _get_table_or_404(table_id, workspace_id, db)
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    table = get_table_or_404(table_id, workspace_id, db)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
 
     rows = (
         db.query(TableMember, User.username, User.nickname)
@@ -152,7 +150,7 @@ def add_member(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """为表添加成员."""
-    table = _get_table_or_404(table_id, workspace_id, db)
+    table = get_table_or_404(table_id, workspace_id, db)
     _require_table_admin(table, current_user, db)
 
     _validate_member_role(db, payload.role)
@@ -195,7 +193,7 @@ def update_member(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """变更成员角色."""
-    table = _get_table_or_404(table_id, workspace_id, db)
+    table = get_table_or_404(table_id, workspace_id, db)
     _require_table_admin(table, current_user, db)
 
     _validate_member_role(db, payload.role)
@@ -231,7 +229,7 @@ def remove_member(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     """移除表成员."""
-    table = _get_table_or_404(table_id, workspace_id, db)
+    table = get_table_or_404(table_id, workspace_id, db)
     _require_table_admin(table, current_user, db)
 
     tm = db.query(TableMember).filter(TableMember.table_id == table.id, TableMember.user_id == user_id).first()
@@ -261,7 +259,7 @@ def transfer_owner(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """转让表所有权."""
-    table = _get_table_or_404(table_id, workspace_id, db)
+    table = get_table_or_404(table_id, workspace_id, db)
 
     # 调用方必须是当前 owner 或工作区 ADMIN/OWNER
     is_owner = table.owner_id is not None and table.owner_id == current_user.id

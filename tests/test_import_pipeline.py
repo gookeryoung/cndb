@@ -807,7 +807,7 @@ class TestImportPipelineEndpoints:
     """通过 TestClient 调 analyze / confirm 端点.
 
     所有测试都先通过 API 创建真实的 workspace + table + fields + DDL，
-    再走端点路由，避免 _check_table_permission 因 workspace 不存在返回 404.
+    再走端点路由，避免 check_workspace_permission 因 workspace 不存在返回 404.
     """
 
     def _make_csv_file(self, content=None):
