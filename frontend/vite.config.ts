@@ -111,11 +111,6 @@ export default defineConfig(({ mode }) => ({
     restoreMocks: true,
     // 单元/组件测试遵循就近放置约定：src 下的 *.test.ts(x)
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    // 纯逻辑 *.test.ts 不需要 DOM，跑 node 省掉 jsdom 每文件的环境创建开销；
-    // 需要 DOM 的 .ts 测试用文件级 pragma `// @vitest-environment jsdom` 单独声明
-    environmentMatchGlobs: [
-      ['src/**/*.test.ts', 'node'],
-    ],
     // worker 数实测（24 核）：16 最优（24.7s）；23 因 fork 创建+内存压力回吐收益（27.7s）；
     // 12 与默认持平（2026-09 实测数据）。上限 16，低核 CI 机器按核数降档防过订阅
     maxWorkers: Math.min(16, os.availableParallelism()),
