@@ -624,6 +624,143 @@ class TestWorkspaceExportImport:
         r = client.post(f"/api/v1/workspaces/{ws_id}/import", json=payload, headers=_headers(token))
         assert r.status_code == 200
 
+    def test_full_backup_roundtrip_restores_ws_tables_and_views(self, client, owner_user, db, db_engine):
+        """全流程备份验证：工作区配置、字段定义、数据行、视图配置经导出→导入后逐项一致."""
+        from cndb.plugins.tables.models import DataField, DataTable, DataView
+        from cndb.plugins.tables.services.core import ddl
+        from cndb.plugins.tables.services.core import records as rec
+
+        token = _login_token(client, "owner", "passw0rd")
+        headers = _headers(token)
+
+        # ── 源工作区：非默认配置，确保恢复时逐项可比 ──
+        r_ws = client.post(
+            "/api/v1/workspaces",
+            json={
+                "name": "备份源工作区",
+                "description": "全流程验证",
+                "visibility": "private",
+                "tags": ["备份", "回归"],
+                "allow_edit": False,
+            },
+            headers=headers,
+        )
+        assert r_ws.status_code == 201, r_ws.text
+        ws_id = r_ws.json()["id"]
+
+        # ── 源表：字段定义覆盖 config/required/is_unique/default_value/hidden/order ──
+        dt = DataTable(workspace_id=ws_id, owner_id=owner_user.id, name="员工表", description="人员信息")
+        dt.ensure_db_name()
+        db.add(dt)
+        db.flush()
+        f_name = DataField(table_id=dt.id, name="姓名", field_type="text", order=0)
+        f_name.ensure_db_name()
+        f_age = DataField(table_id=dt.id, name="年龄", field_type="number", order=1, required=True)
+        f_age.ensure_db_name()
+        f_level = DataField(
+            table_id=dt.id,
+            name="职级",
+            field_type="text",
+            order=2,
+            config={"options": ["P4", "P5"]},
+            is_unique=True,
+            default_value="P4",
+        )
+        f_level.ensure_db_name()
+        f_note = DataField(table_id=dt.id, name="备注", field_type="text", order=3, hidden=True)
+        f_note.ensure_db_name()
+        db.add_all([f_name, f_age, f_level, f_note])
+        db.commit()
+        db.refresh(dt)
+        ddl.create_table(db_engine, dt)
+        rec.create_row(db_engine, dt, {"姓名": "张三", "年龄": 28, "职级": "P5", "备注": "无"})
+        rec.create_row(db_engine, dt, {"姓名": "李四", "年龄": 35, "职级": "P4", "备注": "有"})
+
+        # ── 源视图：默认视图 + 带筛选排序的自定义视图（含「全部」可跳过自动默认视图） ──
+        db.add_all(
+            [
+                DataView(
+                    table_id=dt.id,
+                    name="全部",
+                    view_type="grid",
+                    is_default=True,
+                    field_options={"姓名": {"width": 120}},
+                    view_options={"row_height": "tall"},
+                    field_order=["姓名", "年龄", "职级", "备注"],
+                ),
+                DataView(
+                    table_id=dt.id,
+                    name="重点行",
+                    view_type="grid",
+                    is_default=False,
+                    filter_type="AND",
+                    filters=[{"field_name": "年龄", "op": ">", "value": 30}],
+                    sortings=[{"field_name": "年龄", "direction": "desc"}],
+                ),
+            ]
+        )
+        db.commit()
+
+        # ── 导出备份 ──
+        r_export = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=headers)
+        assert r_export.status_code == 200
+        backup = r_export.json()
+        assert backup["version"] == "3"
+
+        # ── 从备份创建全新工作区（不传 name，应取备份中的 workspace.name） ──
+        r_restore = client.post("/api/v1/workspaces/import", json={"json_data": backup}, headers=headers)
+        assert r_restore.status_code == 201, r_restore.text
+        body = r_restore.json()
+        assert body["imported_tables"] == 1
+        assert body["imported_rows"] == 2
+        assert body["imported_views"] == 2
+
+        # 工作区配置逐项还原
+        restored_ws = body["workspace"]
+        assert restored_ws["name"] == "备份源工作区"
+        assert restored_ws["description"] == "全流程验证"
+        assert restored_ws["visibility"] == "private"
+        assert restored_ws["tags"] == ["备份", "回归"]
+        assert restored_ws["allow_edit"] is False
+
+        # ── 恢复后的工作区再导出，逐项对比 ──
+        r_verify = client.get(f"/api/v1/workspaces/{restored_ws['id']}/export", headers=headers)
+        assert r_verify.status_code == 200
+        src_table, dst_table = backup["tables"][0], r_verify.json()["tables"][0]
+
+        # 表定义
+        assert dst_table["name"] == "员工表"
+        assert dst_table["description"] == "人员信息"
+
+        # 字段定义一致（含 config/required/is_unique/default_value/hidden/order）
+        src_fields = {f["name"]: f for f in src_table["fields"]}
+        dst_fields = {f["name"]: f for f in dst_table["fields"]}
+        assert dst_fields == src_fields
+        assert src_fields["职级"]["config"] == {"options": ["P4", "P5"]}
+        assert src_fields["职级"]["is_unique"] is True
+        assert src_fields["职级"]["default_value"] == "P4"
+        assert src_fields["年龄"]["required"] is True
+        assert src_fields["备注"]["hidden"] is True
+
+        # 数据行一致（键为业务字段名，值逐行还原）
+        dst_rows = {row["姓名"]: row for row in dst_table["rows"]}
+        assert dst_rows == {
+            "张三": {"姓名": "张三", "年龄": 28, "职级": "P5", "备注": "无"},
+            "李四": {"姓名": "李四", "年龄": 35, "职级": "P4", "备注": "有"},
+        }
+
+        # 视图一致（按 name 对齐，顺序不敏感）
+        src_views = {v["name"]: v for v in src_table["views"]}
+        dst_views = {v["name"]: v for v in dst_table["views"]}
+        assert dst_views == src_views
+        assert src_views["全部"]["is_default"] is True
+        assert src_views["全部"]["field_options"] == {"姓名": {"width": 120}}
+        assert src_views["全部"]["view_options"] == {"row_height": "tall"}
+        assert src_views["全部"]["field_order"] == ["姓名", "年龄", "职级", "备注"]
+        assert src_views["重点行"]["is_default"] is False
+        assert src_views["重点行"]["filters"] == [{"field_name": "年龄", "op": ">", "value": 30}]
+        assert src_views["重点行"]["sortings"] == [{"field_name": "年龄", "direction": "desc"}]
+
     def test_add_member_nonexistent_user(self, client, owner_user):
         """add_member 对不存在的用户返回 404."""
         token = _login_token(client, "owner", "passw0rd")
