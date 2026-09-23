@@ -757,6 +757,48 @@ class TestWorkspaceExportImport:
         assert data["imported_tables"] == 1
         assert data["imported_views"] == 1
 
+    def test_import_workspace_all_view_name_collision(self, client, owner_user, db, monkeypatch):
+        """真实导出文件必含默认视图「全部」：导入时不应与自动生成的默认视图重名冲突."""
+        from cndb.plugins.tables.models import DataTable, DataView
+
+        monkeypatch.setattr("cndb.plugins.tables.services.core.ddl.create_table", lambda engine, table: None)
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        payload = {
+            "json_data": {
+                "version": "2",
+                "tables": [
+                    {
+                        "name": "房价表",
+                        "fields": [
+                            {"name": "标题", "field_type": "text", "order": 0},
+                            {"name": "房价_万元", "field_type": "number", "order": 1},
+                        ],
+                        "views": [
+                            {
+                                "name": "全部",
+                                "view_type": "grid",
+                                "is_default": True,
+                                "sortings": [{"field_name": "房价_万元", "direction": "desc"}],
+                            },
+                        ],
+                        "rows": [],
+                    }
+                ],
+            }
+        }
+        r = client.post(f"/api/v1/workspaces/{ws_id}/import", json=payload, headers=_headers(token))
+        assert r.status_code == 200, r.json()
+        data = r.json()
+        assert data["imported_tables"] == 1
+        assert data["imported_views"] == 1
+        table = db.query(DataTable).filter(DataTable.name == "房价表").first()
+        views = db.query(DataView).filter(DataView.table_id == table.id).all()
+        assert len(views) == 1
+        assert views[0].name == "全部"
+        assert views[0].is_default is True
+        assert views[0].sortings == [{"field_name": "房价_万元", "direction": "desc"}]
+
     def test_import_workspace_legacy_no_version(self, client, owner_user):
         """v1 旧文件可能缺 version 字段，导入应按 v1 接受."""
         token = _login_token(client, "owner", "passw0rd")
