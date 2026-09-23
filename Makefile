@@ -35,6 +35,9 @@ frontend-typecheck ft: frontend-sync ## 前端 TypeScript 类型检查
 frontend-test ftest: frontend-sync ## 前端单测/组件测试 + 覆盖率双门槛校验
 	cd frontend && pnpm test:coverage
 
+frontend-test-quick ftq: frontend-sync ## 前端单测/组件测试（免覆盖率，check-fast 日常用）
+	cd frontend && pnpm test
+
 frontend-check fc: frontend-typecheck frontend-lint frontend-test ## 前端门禁（typecheck + lint + test:coverage）
 
 frontend-build fb: frontend-sync ## 构建前端（Vite，产物输出到 src/cndb/static/）
@@ -70,7 +73,8 @@ lint: frontend-typecheck frontend-lint ## 代码风格检查 (ruff, 与 CI 对�
 typecheck: ## 类型检查 (pyrefly)
 	uv run pyrefly check -j 0
 
-check-fast: gitkeep-check lint typecheck frontend-check ## 轻量门禁（不含覆盖率，适合日常快速验证）
+# lint 已含 frontend-typecheck/frontend-lint，这里只补免覆盖率的快速单测
+check-fast: gitkeep-check lint typecheck frontend-test-quick ## 轻量门禁（覆盖率只在 make check / CI 跑）
 
 # cov（pytest）是最长尾，最先启动，与 4 项门禁并行执行
 check: ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-check + cov，cov 与门禁并行)
