@@ -1,15 +1,13 @@
-/** 导入/导出对话框 — Tab 容器：更新（导入）/ 导出 / API 抓取.
+/** 导入/导出对话框 — Tab 容器：更新（导入）/ 导出.
  *
  * 拆分说明（重构自 1100 行单体）:
  *   ImportPanel.tsx  — 导入全流程（上传 / 预览 / DIFF / 进度轮询 / 数据质量）
  *   ExportPanel.tsx  — 导出（格式选择 / 视图筛选 / Blob 下载）
  *   importPreview.ts — 导入预览纯逻辑（阶段常量 / Diff 列构建 / fmtValue）
- *   ApiImportDialog  — API 抓取追加（embed 模式，同目录）
  */
 import { Modal, Tabs, Button } from 'antd'
-import { UploadOutlined, DownloadOutlined, ApiOutlined } from '@ant-design/icons'
+import { UploadOutlined, DownloadOutlined } from '@ant-design/icons'
 import type { Field } from '@/api'
-import ApiImportDialog from '../ApiImportDialog'
 import ImportPanel from './ImportPanel'
 import ExportPanel from './ExportPanel'
 
@@ -65,19 +63,6 @@ export default function ImportExportDialog({ open, wid, tid, fields, onClose, on
             key: 'export',
             label: <span><DownloadOutlined /> 导出</span>,
             children: <ExportPanel wid={wid} tid={tid} viewId={viewId} viewName={viewName} />,
-          },
-          {
-            key: 'api',
-            label: <span><ApiOutlined /> API 抓取</span>,
-            children: (
-              <ApiImportDialog
-                embed
-                wid={wid}
-                tid={tid}
-                title="API 抓取 · 追加到当前表"
-                onSuccess={() => onImported?.()}
-              />
-            ),
           },
         ]}
       />
