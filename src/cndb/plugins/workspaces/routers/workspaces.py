@@ -590,8 +590,11 @@ def _import_backup_into_workspace(
                 db.rollback()
                 raise HTTPException(status_code=400, detail=f"创建表 {table_name} 失败: {exc}") from exc
 
-            # 自动生成默认视图「全部」（若导入的 views 里已存在同名则跳过）
-            ensure_default_view(db, table, owner_id=current_user.id, commit=False)
+            # 自动生成默认视图「全部」（若导入的 views 里已存在同名则跳过，
+            # 避免与 uniq_table_view_name 约束冲突）
+            views_data = tbl_data.get("views", [])
+            if not any(vd.get("name") == "全部" for vd in views_data):
+                ensure_default_view(db, table, owner_id=current_user.id, commit=False)
 
             # 插入数据行（用 raw INSERT 避免依赖 transfer.py 的复杂逻辑）
             rows_data = tbl_data.get("rows", [])
@@ -617,7 +620,7 @@ def _import_backup_into_workspace(
                     logging.getLogger(__name__).warning("表 %s 数据行导入失败: %s", table_name, exc)
 
             # 创建视图（is_default 兼容 v1 旧键名 default）
-            for vd in tbl_data.get("views", []):
+            for vd in views_data:
                 view = DataView(
                     table_id=table.id,
                     name=vd.get("name", ""),
