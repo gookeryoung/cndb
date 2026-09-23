@@ -11,6 +11,7 @@
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import { message } from 'antd'
 import { screen, waitFor, fireEvent, render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
@@ -173,13 +174,18 @@ async function waitDetailLoaded() {
 }
 
 /**
- * 断言静态 message toast 出现.
+ * 监听 antd 静态 message（success/error），返回两个 spy.
  *
- * 组件用的是 antd 静态 message（渲染在 React 树外、act 环境之外），
- * RTL 的 getByText 可访问性过滤偶尔查不到该节点，改用 body.textContent 等待。
+ * 静态 message 容器是模块级单例：同文件前序用例触发过 message 后，
+ * setup.ts 的 afterEach 会把 .ant-message 节点摘出 DOM，后续 message
+ * 全部写入游离节点，DOM 文本断言不可靠 —— 因此改用 spy 断言调用参数。
+ * vite 配置 restoreMocks: true，用例结束后自动还原。
  */
-function findToast(text: string) {
-  return waitFor(() => expect(document.body.textContent).toContain(text), { timeout: 3000 })
+function spyToast() {
+  return {
+    success: vi.spyOn(message, 'success'),
+    error: vi.spyOn(message, 'error'),
+  }
 }
 
 describe('WorkspaceSettingsContent 基本设置与保存', () => {
@@ -191,6 +197,7 @@ describe('WorkspaceSettingsContent 基本设置与保存', () => {
         return HttpResponse.json({ id: 10 })
       }),
     )
+    const toast = spyToast()
     renderContent()
     await waitDetailLoaded()
 
@@ -202,8 +209,7 @@ describe('WorkspaceSettingsContent 基本设置与保存', () => {
     await user.type(nameInput, '新名称')
     await user.click(screen.getByRole('button', { name: '保存设置' }))
 
-    // 静态 message 渲染在 React 树外（act 之外），用 textContent 等待
-    await findToast('设置已保存')
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('设置已保存'))
     expect(patched).toMatchObject({ name: '新名称' })
   })
 
@@ -212,12 +218,13 @@ describe('WorkspaceSettingsContent 基本设置与保存', () => {
       http.patch('/api/v1/workspaces/10', () =>
         HttpResponse.json({ detail: '名称与已有工作区重复' }, { status: 409 })),
     )
+    const toast = spyToast()
     renderContent()
     await waitDetailLoaded()
 
     fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
 
-    await findToast('名称与已有工作区重复')
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('名称与已有工作区重复'))
   })
 
   it('名称清空后保存被必填校验拦截且不发起 PATCH', async () => {
@@ -264,6 +271,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
         return HttpResponse.json({ id: 10 })
       }),
     )
+    const toast = spyToast()
     renderContent('owner')
     await waitDetailLoaded()
 
@@ -273,7 +281,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
 
     fireEvent.click(sw)
 
-    await findToast('编辑权限已更新')
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('编辑权限已更新'))
     expect(patched).toMatchObject({ allow_edit: false })
   })
 
@@ -285,6 +293,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
         return HttpResponse.json({ id: 9, role: 'editor' })
       }),
     )
+    const toast = spyToast()
     renderContent('owner')
     await waitDetailLoaded()
 
@@ -297,14 +306,16 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     const okBtn = within(modal).getByRole('button', { name: /^添\s*加$/ })
     expect(okBtn).toBeDisabled()
 
-    // 弹窗内第一个 combobox 是用户搜索 Select，打开后选择候选 eve（用 role 定位避免重复匹配）
+    // 弹窗内第一个 combobox 是用户搜索 Select；'eve' 同时命中 rc-select 的
+    // aria-live 副本与选项 label 的 <strong>，用 selector 限定后者（点击后冒泡选中）
     fireEvent.mouseDown(within(modal).getAllByRole('combobox')[0]!)
-    fireEvent.click(await screen.findByRole('option', { name: 'eve' }))
-    await waitFor(() => expect(okBtn).toBeEnabled())
+    fireEvent.click(await screen.findByText('eve', { selector: 'strong' }))
+    // 每次轮询重新查询按钮节点，避免 re-render 替换节点导致旧引用失真
+    await waitFor(() => expect(within(modal).getByRole('button', { name: /^添\s*加$/ })).toBeEnabled())
 
-    fireEvent.click(okBtn)
+    fireEvent.click(within(modal).getByRole('button', { name: /^添\s*加$/ }))
 
-    await findToast('已添加成员')
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('已添加成员'))
     expect(postBody).toMatchObject({ username: 'eve', role: 'editor' })
   })
 
@@ -316,16 +327,18 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
         return HttpResponse.json({ id: 3, role: 'admin' })
       }),
     )
+    const toast = spyToast()
     renderContent('owner')
     await waitDetailLoaded()
 
     fireEvent.click(screen.getByText('权限'))
 
-    // carol（editor）的角色 Select —— owner 可管理；未开弹窗时它是唯一可访问的 combobox
+    // carol（editor）的角色 Select —— owner 可管理；未开弹窗时它是唯一可访问的 combobox。
+    // optionRender 把角色名渲染在内层 div（直接文本节点），点击后冒泡到选项节点完成选中
     fireEvent.mouseDown(await screen.findByRole('combobox'))
-    fireEvent.click(await screen.findByRole('option', { name: '管理员' }))
+    fireEvent.click(await screen.findByText('管理员'))
 
-    await findToast('角色已更新')
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('角色已更新'))
     expect(patched).toMatchObject({ role: 'admin' })
   })
 
@@ -337,6 +350,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
         return HttpResponse.json({})
       }),
     )
+    const toast = spyToast()
     renderContent('owner')
     await waitDetailLoaded()
 
@@ -354,7 +368,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     await waitFor(() => expect(document.querySelector('.ant-popconfirm')).not.toBeNull())
     fireEvent.click(document.querySelector('.ant-popconfirm .ant-btn-primary')!)
 
-    await findToast('已移除成员')
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('已移除成员'))
     expect(deleteCalled).toBe(true)
   })
 })

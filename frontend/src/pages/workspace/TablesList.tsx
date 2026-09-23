@@ -312,7 +312,7 @@ export default function TablesList() {
                   key: 'rename',
                   icon: <EditOutlined />,
                   label: '重命名/编辑',
-                  onClick: () => { setEditOpen(record); editForm.setFieldsValue({ name: record.name, description: record.description }) },
+                  onClick: (e) => { e?.domEvent?.stopPropagation?.(); setEditOpen(record); editForm.setFieldsValue({ name: record.name, description: record.description }) },
                 },
                 {
                   key: 'copy',
