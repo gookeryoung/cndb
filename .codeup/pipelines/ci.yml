@@ -1,0 +1,127 @@
+# CodeUp CI 流水线 — cndb
+# 等价迁移自 .github/workflows/ci.yml，工具链版本与 GitHub Actions 对齐。
+#
+# 触发：push main/develop 分支、push tag
+# 并行 3 个 job（阶段内默认并行，无 needs）：
+#   lint-typecheck  →  gitkeep + ruff + pyrefly（Python 静态门禁）
+#   frontend-check  →  typecheck + eslint + vitest coverage + vite build + bundle budget
+#   test            →  pytest --cov（95% 门槛，Python 3.12）
+#
+# 运行环境：CodeUp 公共 K8s 集群 public/cn-beijing + alinux3:latest 容器
+
+name: cndb-ci
+
+sources:
+  cndb:
+    type: codeup
+    name: cndb
+    endpoint: https://codeup.aliyun.com/cndev/python/cndb.git
+    branch: main
+    triggerEvents:
+      - push
+      - tagPush
+    certificate:
+      type: serviceConnection
+      serviceConnection: x9jakytjkjrnm8sb
+
+stages:
+  check_stage:
+    name: CI 门禁
+    jobs:
+      # ── Python 静态门禁 ─────────────────────────────────────────
+      lint_typecheck:
+        name: Lint & Typecheck (Python)
+        runsOn:
+          group: public/cn-beijing
+          container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/alinux3:latest
+          instanceType: MEDIUM_2C4G
+        timeoutMinutes: 15
+        steps:
+          setup:
+            name: 安装 Python 工具链
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                echo "[setup] install uv ..."
+                curl -LsSf https://astral.sh/uv/install.sh | sh
+                export PATH="$HOME/.local/bin:$PATH"
+                uv python install 3.12
+          check:
+            name: 运行 Python 门禁
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                export PATH="$HOME/.local/bin:$PATH"
+                uv sync --frozen --extra lint --python 3.12
+                uv run python scripts/check_gitkeep.py
+                uv run ruff check src tests
+                uv run ruff format --check src tests
+                uv run pyrefly check
+
+      # ── 前端门禁 ─────────────────────────────────────────────────
+      frontend_check:
+        name: Frontend Check
+        runsOn:
+          group: public/cn-beijing
+          container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/alinux3:latest
+          instanceType: MEDIUM_2C4G
+        timeoutMinutes: 20
+        steps:
+          setup:
+            name: 安装 Node/pnpm
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                echo "[setup] install Node.js 22 ..."
+                curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+                dnf install -y nodejs
+                echo "[setup] install pnpm 12.4.2 ..."
+                npm install -g pnpm@12.4.2
+                node --version
+                pnpm --version
+          check:
+            name: 运行前端门禁
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                cd frontend
+                pnpm install --frozen-lockfile
+                pnpm typecheck
+                pnpm lint
+                pnpm test:coverage
+                pnpm build
+                pnpm bundle:budget
+
+      # ── Python 单测 + 覆盖率 ─────────────────────────────────────
+      test:
+        name: Test (Python 3.12)
+        runsOn:
+          group: public/cn-beijing
+          container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/alinux3:latest
+          instanceType: LARGE_4C8G
+        timeoutMinutes: 20
+        steps:
+          setup:
+            name: 安装 Python 工具链
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                echo "[setup] install uv ..."
+                curl -LsSf https://astral.sh/uv/install.sh | sh
+                export PATH="$HOME/.local/bin:$PATH"
+                uv python install 3.12
+          test:
+            name: 运行单测（覆盖率门槛 95%）
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                export PATH="$HOME/.local/bin:$PATH"
+                uv sync --frozen --extra test --python 3.12
+                uv run pytest -m "not slow" --cov=cndb --cov-fail-under=95 \
+                  --cov-report=term-missing -n auto

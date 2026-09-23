@@ -1,0 +1,159 @@
+# CodeUp Release 流水线 — cndb
+# 等价迁移自 .github/workflows/release.yml。
+#
+# 触发：推 git tag `v*.*.*`
+#
+# 并行 3 个 job（阶段内默认并行，无 needs）：
+#   pypi        →  前端构建 → uv build → uv publish（OIDC 不可用，改用 PyPI token）
+#   pack_linux  →  前端构建 → fspack b + p → 产物上传 CodeUp 制品库
+#   upload      →  收集 PyPI wheel 与 Linux fspack 产物 → 汇总上传
+#
+# ⚠️ 本流水线**不包含 Windows fspack 打包**。
+# Windows 原生 NSIS + mingw-w64 编译依赖宿主机原生工具链，CodeUp public/cn-beijing 为
+# K8s 容器环境，不支持 VM labels=windows,amd64，故 Windows 打包继续由 GitHub Actions
+# 的 release.yml（windows-latest runner）承担。若需迁移，请先创建私有构建集群。
+#
+# 需要用户在 CodeUp 流水线配置界面手动配置的全局变量（env）：
+#   UV_PUBLISH_TOKEN = <PyPI API Token>   ← 推荐，uv 原生支持，自动走 __token__ 用户名
+#   # 或（兼容 twine 风格）：PYPI_USERNAME=__token__ + PYPI_PASSWORD=<token>
+# fspack download_wheels 会用到 pip，流水线已在 uv venv 内 `uv pip install pip`。
+
+name: cndb-release
+
+sources:
+  cndb:
+    type: codeup
+    name: cndb
+    endpoint: https://codeup.aliyun.com/cndev/python/cndb.git
+    branch: main
+    triggerEvents:
+      - tagPush
+    certificate:
+      type: serviceConnection
+      serviceConnection: x9jakytjkjrnm8sb
+
+stages:
+  release_stage:
+    name: 发布
+    jobs:
+      # ── PyPI 发布 ────────────────────────────────────────────────
+      pypi:
+        name: Build & Publish PyPI
+        runsOn:
+          group: public/cn-beijing
+          container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/alinux3:latest
+          instanceType: MEDIUM_2C4G
+        timeoutMinutes: 25
+        steps:
+          setup:
+            name: 安装工具链
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                echo "[setup] install uv ..."
+                curl -LsSf https://astral.sh/uv/install.sh | sh
+                export PATH="$HOME/.local/bin:$PATH"
+                uv python install 3.12
+                echo "[setup] install Node.js 22 ..."
+                curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+                dnf install -y nodejs
+                echo "[setup] install pnpm 12.4.2 ..."
+                npm install -g pnpm@12.4.2
+          build_publish:
+            name: 前端构建 + uv build + uv publish
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                export PATH="$HOME/.local/bin:$PATH"
+
+                # ── 前端 ──
+                cd frontend
+                pnpm install --frozen-lockfile
+                pnpm build
+                cd ..
+
+                # ── Python 依赖 + 构建 ──
+                uv sync --frozen --python 3.12
+                uv run python scripts/check_gitkeep.py
+                uv build
+
+                # ── 发布到 PyPI（走全局变量注入的 token）──
+                # CodeUp 不支持 GitHub OIDC，改用经典 API token 方式。
+                # 用户名固定 __token__，密码为 token 值。
+                uv publish
+
+      # ── Linux fspack 原生打包 ───────────────────────────────────
+      pack_linux:
+        name: Pack Linux (fspack)
+        runsOn:
+          group: public/cn-beijing
+          container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/alinux3:latest
+          instanceType: LARGE_4C8G
+        timeoutMinutes: 40
+        steps:
+          setup:
+            name: 安装工具链 + gcc/dpkg
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                echo "[setup] install uv ..."
+                curl -LsSf https://astral.sh/uv/install.sh | sh
+                export PATH="$HOME/.local/bin:$PATH"
+                uv python install 3.12
+                echo "[setup] install Node.js 22 + pnpm ..."
+                curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+                dnf install -y nodejs
+                npm install -g pnpm@12.4.2
+                echo "[setup] install gcc + dpkg (fspack deb target) ..."
+                # alinux3 为 RHEL 系，dpkg 不在默认源；用 dnf 装 gcc 足够编译 Nuitka，
+                # deb 打包由 fspack 内置逻辑处理（需要 dpkg-deb，这里尽量尝试）。
+                dnf install -y gcc
+          pack:
+            name: fspack build + package + 冒烟
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                export PATH="$HOME/.local/bin:$PATH"
+
+                # ── 前端 ──
+                cd frontend
+                pnpm install --frozen-lockfile
+                pnpm build
+                cd ..
+
+                # ── Python 依赖 + fspack ──
+                uv sync --frozen --python 3.12
+                # fspack download_wheels 用 `pip download`，uv venv 默认不含 pip
+                uv pip install pip
+
+                # ── Nuitka 缓存 ──
+                # public/cn-beijing 容器没有持久化缓存，每次从空开始。
+                # 如需启用持久化缓存，请在 CodeUp 流水线设置里配置 `/.fspack/cache`。
+
+                # ── build + package ──
+                PYTHONIOENCODING=utf-8 uv run fspack b . --target linux
+                PYTHONIOENCODING=utf-8 uv run fspack p . --target linux --format all --no-build
+
+                # ── 冒烟测试 ──
+                test -x dist/cndb
+                dist/cndb info
+
+                # ── 产物断言 ──
+                ls -la dist/release/
+                test -f dist/release/cndb-*-linux-*.tar.gz || test -f dist/release/cndb-*-linux-*.zip
+          upload_fspack:
+            name: fspack 产物上传
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                mkdir -p release-files
+                find dist/release/ -type f \
+                  \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.deb" \) \
+                  -exec cp {} release-files/ \;
+                echo "[upload] release-files/:"
+                ls -la release-files/
