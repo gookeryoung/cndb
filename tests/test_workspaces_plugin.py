@@ -520,7 +520,7 @@ class TestWorkspaceExportImport:
         r = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=_headers(token))
         assert r.status_code == 200
         data = r.json()
-        assert data["version"] == "2"
+        assert data["version"] == "3"
         assert "exported_at" in data
         assert "workspace" in data
         assert "tables" in data
