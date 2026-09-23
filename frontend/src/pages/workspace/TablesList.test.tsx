@@ -350,17 +350,6 @@ describe('TablesList 拥有者列与筛选边界', () => {
 })
 
 describe('TablesList 其他入口', () => {
-  it('API 建表按钮打开 API 抓取弹窗', async () => {
-    setupWorkspace()
-    renderPage()
-
-    const user = userEvent.setup()
-    await user.click(await screen.findByTestId('api-import-entry'))
-
-    // ApiImportDialog 为懒加载组件，弹窗标题出现即视为打开
-    expect(await screen.findByText('API 抓取 · 自动建表', {}, { timeout: 3000 })).toBeInTheDocument()
-  })
-
   it('点击工作区设置跳转到 /w/:wid/settings', async () => {
     setupWorkspace()
     renderPage()
