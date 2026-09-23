@@ -74,6 +74,8 @@ Production target: services/core/access.py（迁入）、tables.py（迁出）�
   - c) 全面整合：按目标模块合并进行为命名文件 + 重命名类（churn 最大，建议另立专项）
 - 若选 b：每删一批跑 `uv run pytest tests/<file> && pytest --cov` 确认 cov 不降；单行删除可追溯到重复证据。
 
+> **执行结果（已闭环）**：采用 b。AST 全量比对（精确函数体 + 抹平字面量/命名两级归一化）显示 16 文件间 **0 个完全重复用例**；仅 1 组参数化式结构相似（7 例，各测不同校验器，非重复）。按"删除需可证实重复"的保守标准，**未删除任何用例**，维持上轮"不动"判断。
+
 ## 四、门禁（每 Phase 完成后必过）
 
 1. `uv run ruff check src tests` + `uv run pyrefly check`
