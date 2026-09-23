@@ -992,5 +992,6 @@ describe('FieldManager 从其他表引入字段', () => {
             const okBtn = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement
             expect(okBtn.textContent).toBe('确认引入（1 个字段）')
         })
-    })
+        // 多轮 AntD 异步渲染，全量并发时偶发超过全局 5s，显式放宽
+    }, 15000)
 })
