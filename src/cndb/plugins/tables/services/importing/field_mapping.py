@@ -350,6 +350,30 @@ def _name_similarity(src_norm: str, dst_norm: str) -> tuple[float, str]:
     return ratio, f"弱匹配 (相似度 {ratio:.2f})"
 
 
+def _pair_score(
+    sf: DataField, df: DataField, name_score: float, reason: str, type_bonus: float
+) -> tuple[float, str] | None:
+    """组合语义修正后的最终得分；返回 ``None`` 表示该配对不兼容，应从候选中剔除.
+
+    link 字段语义门控（回归：部门负责人 vs 关联部门）：
+    - link ↔ 非 link：不互相推荐（名字相似度再高也不生效）；
+    - link ↔ link：``target_table_id`` 相同则加分（指向同一张表的强语义信号），
+      不同则不推荐；任一侧缺失 target_table_id（历史数据）时退回名字+类型打分.
+    """
+    s_link = sf.field_type == "link"
+    d_link = df.field_type == "link"
+    if s_link != d_link:
+        return None  # 类型不兼容（link ↔ 非 link），调用方剔除该候选
+    if s_link and d_link:
+        src_t = (sf.config or {}).get("target_table_id")
+        dst_t = (df.config or {}).get("target_table_id")
+        if src_t is not None and dst_t is not None:
+            if str(src_t) == str(dst_t):
+                return name_score + type_bonus + 0.3, f"{reason}；link 指向同一目标表"
+            return None  # link 指向不同的目标表，语义不兼容
+    return name_score + type_bonus, reason
+
+
 def suggest_mapping(
     src_fields: list[DataField],
     dst_fields: list[DataField],
@@ -358,7 +382,8 @@ def suggest_mapping(
 ) -> list[dict[str, Any]]:
     """为源表每个字段在目标表中推荐一个最佳匹配.
 
-    评分公式：``final = name_score + type_bonus``.
+    评分公式：``final = name_score + type_bonus``（link 字段按
+    :func:`_pair_score` 的语义门控修正/剔除）.
 
     Args:
         src_fields: 源表字段列表.
@@ -381,8 +406,11 @@ def suggest_mapping(
         for df in dst_fields:
             name_score, reason = _name_similarity(src_norm_map[sf.name], dst_norm_map[df.name])
             type_bonus = _type_compat(sf.field_type, df.field_type)
-            final = name_score + type_bonus
-            scored.append((final, sf.name, df.name, reason))
+            pair = _pair_score(sf, df, name_score, reason, type_bonus)
+            if pair is None:
+                continue  # link 语义不兼容的配对不进入候选
+            final, final_reason = pair
+            scored.append((final, sf.name, df.name, final_reason))
 
     # 贪心分配：按 score 降序，每个 src 先到先得一个 dst
     def _score_tuple_key(r: tuple[float, str, str, str]) -> float:
