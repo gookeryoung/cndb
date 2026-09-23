@@ -90,6 +90,74 @@ class TestRowFilterConjunction:
         assert row_filter_conjunction(db, tbl) == "AND"
 
 
+class TestCheckWorkspacePermission:
+    """工作区级权限门槛检查（services 层单一实现，routers 三处调用点共用）."""
+
+    @staticmethod
+    def _make_user_ws(db, username: str, role=WorkspaceRole.OWNER):
+        from cndb.plugins.accounts.models import User as _User
+        from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
+
+        u = _User(username=username)
+        u.set_password("pass")
+        db.add(u)
+        db.flush()
+        ws = Workspace(name=f"WS_{username}", created_by_id=u.id)
+        db.add(ws)
+        db.flush()
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=u.id, role=role))
+        db.commit()
+        db.refresh(ws)
+        return u, ws
+
+    def test_member_with_sufficient_role_returns_workspace(self, db):
+        from cndb.plugins.tables.services.core.access import check_workspace_permission
+
+        u, ws = self._make_user_ws(db, "cwp_owner")
+        result = check_workspace_permission(db, ws.id, u, WorkspaceRole.VIEWER)
+        assert result.id == ws.id
+
+    def test_missing_workspace_raises_404(self, db):
+        import pytest
+        from fastapi import HTTPException
+
+        from cndb.plugins.tables.services.core.access import check_workspace_permission
+
+        u, _ = self._make_user_ws(db, "cwp_missing")
+        with pytest.raises(HTTPException) as exc:
+            check_workspace_permission(db, 99999999, u, WorkspaceRole.VIEWER)
+        assert exc.value.status_code == 404
+        assert exc.value.detail == "工作区不存在"
+
+    def test_insufficient_role_raises_403(self, db):
+        import pytest
+        from fastapi import HTTPException
+
+        from cndb.plugins.tables.services.core.access import check_workspace_permission
+
+        u, ws = self._make_user_ws(db, "cwp_viewer", role=WorkspaceRole.VIEWER)
+        with pytest.raises(HTTPException) as exc:
+            check_workspace_permission(db, ws.id, u, WorkspaceRole.EDITOR)
+        assert exc.value.status_code == 403
+        assert exc.value.detail == "权限不足"
+
+    def test_non_member_raises_403(self, db):
+        import pytest
+        from fastapi import HTTPException
+
+        from cndb.plugins.accounts.models import User as _User
+        from cndb.plugins.tables.services.core.access import check_workspace_permission
+
+        _owner, ws = self._make_user_ws(db, "cwp_wsowner")
+        outsider = _User(username="cwp_outsider")
+        outsider.set_password("pass")
+        db.add(outsider)
+        db.commit()
+        with pytest.raises(HTTPException) as exc:
+            check_workspace_permission(db, ws.id, outsider, WorkspaceRole.VIEWER)
+        assert exc.value.status_code == 403
+
+
 class TestCheckAction:
     def test_no_permission_fallback(self, db, client, auth_headers):
         """无表级覆盖走默认角色 — VIEWER 可读但不可改 schema."""

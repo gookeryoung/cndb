@@ -9,11 +9,12 @@ from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataTable, TableMember, TablePermission
-from cndb.plugins.workspaces.models import ROLE_RANK, Role, WorkspaceRole
+from cndb.plugins.workspaces.models import ROLE_RANK, Role, Workspace, WorkspaceRole
 
 
 class TableAction(StrEnum):
@@ -126,6 +127,28 @@ def check_action(
     return ROLE_RANK[user_role] >= ROLE_RANK[default_required]
 
 
+def check_workspace_permission(
+    db: Session,
+    workspace_id: int,
+    user: User,
+    min_role: WorkspaceRole,
+) -> Workspace:
+    """工作区级角色最低门槛检查.
+
+    工作区不存在 → HTTPException 404；角色缺失或低于 min_role → HTTPException 403；
+    通过则返回该 Workspace（部分调用点需要 workspace 对象）.
+    """
+    from cndb.plugins.workspaces.permissions import get_member_role
+
+    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+    if ws is None:
+        raise HTTPException(status_code=404, detail="工作区不存在")
+    role = get_member_role(user, ws, db)
+    if role is None or ROLE_RANK[role] < ROLE_RANK[min_role]:
+        raise HTTPException(status_code=403, detail="权限不足")
+    return ws
+
+
 def get_row_scope(db: Session, table: DataTable) -> list[dict[str, Any]]:
     """获取表级行级过滤规则（空列表 = 无限制）.
 
@@ -202,6 +225,7 @@ __all__ = [
     "apply_field_hiding",
     "apply_field_hiding_rows",
     "check_action",
+    "check_workspace_permission",
     "get_hidden_field_names",
     "get_row_scope",
     "row_filter_conjunction",

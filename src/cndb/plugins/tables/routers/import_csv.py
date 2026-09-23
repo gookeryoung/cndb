@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.tables.services.transfer import (
     analyze_csv_columns,
     analyze_file_columns,
@@ -28,8 +29,7 @@ from cndb.plugins.tables.services.transfer import (
     create_table_from_file,
     parse_file_to_rows,
 )
-from cndb.plugins.workspaces.models import ROLE_RANK, Workspace, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 
 # 新通用路由 prefix —— 主入口
 router = APIRouter(prefix="/{workspace_id}", tags=["import-file"])
@@ -44,13 +44,8 @@ def _check_workspace_permission(
     db: Session,
     min_role: WorkspaceRole,
 ) -> Workspace:
-    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
-    if ws is None:
-        raise HTTPException(status_code=404, detail="工作区不存在")
-    role = get_member_role(user, ws, db)
-    if role is None or ROLE_RANK[role] < ROLE_RANK[min_role]:
-        raise HTTPException(status_code=403, detail="权限不足")
-    return ws
+    """委托 services 层共享实现（历史签名保留，调用点无需改动）."""
+    return check_workspace_permission(db, workspace_id, user, min_role)
 
 
 def _guess_table_name(filename: str) -> str:
