@@ -21,7 +21,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.config import settings
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.routers.tables import _check_table_permission
+from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/files", tags=["files"])
@@ -128,7 +128,7 @@ async def upload_file(
         {"file_key": "...", "filename": "...", "size": 123, "mime_type": "...", "created_at": "..."}
     """
     # 鉴权：登录即可上传（实际行级权限由 row update 时再校验）
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
 
     safe_name = _safe_filename(file.filename or "unnamed")
     suffix = PathLib(safe_name).suffix.lower()
@@ -177,7 +177,7 @@ def download_file(
     - ``inline=true``：浏览器尝试在标签页内预览（图片、PDF 等）
     - ``inline=false``：强制下载
     """
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.VIEWER)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
 
     target = _file_path(workspace_id, file_key)
     if not target.is_file():
@@ -203,7 +203,7 @@ def delete_file(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     """删除附件（只删物理文件；业务层通常在更新行值时同步清理）."""
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
 
     target = _file_path(workspace_id, file_key)
     if target.is_file():

@@ -12,9 +12,8 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, default_registry, normalize_field_type
 from cndb.plugins.tables.models import DataField, DataTable
-from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import FieldCreate, FieldImportRequest, FieldImportResponse, FieldResponse, FieldUpdate
-from cndb.plugins.tables.services.core.access import TableAction, check_action
+from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
 from cndb.plugins.tables.services.core.ddl import (
     _column_needs_rebuild,
     add_column,
@@ -69,7 +68,7 @@ def create_field(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataField:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
 
     # 校验 field_type 是否存在
     ft = default_registry.get(payload.field_type)
@@ -121,7 +120,7 @@ def list_fields(
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = False,
 ) -> list[DataField]:
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     query = db.query(DataField).filter(DataField.table_id == table_id)
     if not include_trashed:
         query = query.filter(DataField.trashed == False)  # noqa: E712
@@ -137,7 +136,7 @@ def update_field(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataField:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     df = db.query(DataField).filter(DataField.id == field_id, DataField.table_id == table_id).first()
     if df is None:
         raise HTTPException(status_code=404, detail="字段不存在")
@@ -245,7 +244,7 @@ def reorder_fields(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[DataField]:
     """批量调整字段顺序（按传入顺序赋值 order 字段）."""
-    _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)  # 校验表存在
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)  # 校验表存在
 
     fields = (
         db.query(DataField)
@@ -273,7 +272,7 @@ def delete_field(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     df = db.query(DataField).filter(DataField.id == field_id, DataField.table_id == table_id).first()
     if df is None:
         raise HTTPException(status_code=404, detail="字段不存在")
@@ -309,7 +308,7 @@ def import_fields(
     - preview_only=True 时只返回建议映射/缺口分析，不实际创建字段（供前端先展示参照对比面板）.
     """
 
-    dst = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
+    dst = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
 
     # 源表必须存在（允许跨工作区，但用户必须对源工作区有读权限）
     src = db.get(DataTable, payload.source_table_id)

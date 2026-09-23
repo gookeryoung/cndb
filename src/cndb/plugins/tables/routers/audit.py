@@ -11,8 +11,8 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import AuditLog
-from cndb.plugins.tables.routers.tables import _check_table_permission, _get_table_or_404
 from cndb.plugins.tables.schemas.comments import AuditLogResponse
+from cndb.plugins.tables.services.core.access import check_workspace_permission, get_table_or_404
 from cndb.plugins.workspaces.models import WorkspaceRole
 
 router = APIRouter(tags=["audit"])
@@ -32,8 +32,8 @@ def list_audit_logs(
     limit: int = Query(default=100, ge=1, le=1000),
 ) -> list[AuditLog]:
     """列出表的审计日志，可按 action 或 row_id 过滤."""
-    _check_table_permission(workspace_id, current_user, db, WorkspaceRole.ADMIN)
-    _get_table_or_404(table_id, workspace_id, db)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.ADMIN)
+    get_table_or_404(table_id, workspace_id, db)
     q = db.query(AuditLog).filter(AuditLog.table_id == table_id)
     if action:
         q = q.filter(AuditLog.action == action)

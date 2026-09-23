@@ -12,14 +12,13 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataTable
-from cndb.plugins.tables.routers.tables import _get_table_or_404
 from cndb.plugins.tables.schemas import (
     RecordCreate,
     RecordListRequest,
     RecordListResponse,
     RecordUpdate,
 )
-from cndb.plugins.tables.services.core.access import TableAction
+from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
 from cndb.plugins.tables.services.core.records import (
     create_row,
     delete_row,
@@ -79,7 +78,7 @@ def create_record(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         row = create_row(db.get_bind(), dt, payload.values, db=db)
@@ -113,7 +112,7 @@ def list_records_get(
     """
     import json as _json
 
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     def _parse(s: str | None, label: str) -> list[dict[str, Any]] | None:
         if not s:
@@ -149,7 +148,7 @@ def list_records(
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = Query(default=False),
 ) -> RecordListResponse:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     return _list_response(
         db,
@@ -172,7 +171,7 @@ def get_record(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     row = get_row(db.get_bind(), dt, record_id, db=db, user=current_user)
     if row is None:
         raise HTTPException(status_code=404, detail="行不存在")
@@ -188,7 +187,7 @@ def update_record(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     try:
         row = update_row(db.get_bind(), dt, record_id, payload.values, db=db)
@@ -209,7 +208,7 @@ def delete_record(
     db: Annotated[Session, Depends(get_db)],
     soft: bool = Query(default=True, description="软删除 vs 硬删除"),
 ) -> None:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
     if soft:
         ok = trash_row(db.get_bind(), dt, record_id, db=db)
@@ -228,7 +227,7 @@ def restore_record(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    dt = _get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
     ok = restore_row(db.get_bind(), dt, record_id, db=db)
     if not ok:
         raise HTTPException(status_code=404, detail="行不存在或未在回收站中")
