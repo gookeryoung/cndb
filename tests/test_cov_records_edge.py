@@ -89,7 +89,9 @@ class TestUpdateNullClearField:
     def test_patch_select_null_clears_field(self, client, auth_headers, db):
         """PATCH records/{id}: select 字段传 null → 字段被清空（看板取消完成场景）."""
         wid, tid = self._make_table(
-            client, auth_headers, "select",
+            client,
+            auth_headers,
+            "select",
             config={"options": [{"value": "todo", "label": "待办"}, {"value": "done", "label": "已完成"}]},
         )
         create = client.post(
@@ -153,7 +155,9 @@ class TestUpdateNullClearField:
     def test_bulk_update_null_clears_field(self, client, auth_headers, db):
         """bulk-update: 多行同时传 null 清空字段."""
         wid, tid = self._make_table(
-            client, auth_headers, "select",
+            client,
+            auth_headers,
+            "select",
             config={"options": [{"value": "todo", "label": "待办"}, {"value": "done", "label": "已完成"}]},
         )
         ids = []

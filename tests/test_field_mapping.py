@@ -33,6 +33,8 @@ from __future__ import annotations
 
 import pytest
 
+from cndb.plugins.tables.models import DataField
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Part 1 — field_mapping 核心工具单元测试
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -249,6 +251,65 @@ class TestAutoMatchFields:
         assert mapping == {"a": "a", "b": "b", "c": "c"}
         assert gap["unmapped_source"] == []
         assert gap["target_missing"] == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Part 1.5 — link 字段语义匹配（回归：部门负责人 vs 关联部门）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestLinkSemanticMapping:
+    """link 字段建议映射必须考虑 target_table_id 语义，而非仅名字相似度."""
+
+    @staticmethod
+    def _mf(name: str, ftype: str, target_table_id: int | None = None) -> DataField:
+        cfg = {"target_table_id": target_table_id} if target_table_id is not None else {}
+        return DataField(name=name, field_type=ftype, config=cfg, order=0, required=False)
+
+    def test_link_vs_non_link_not_recommended(self):
+        """回归场景：部门(text) 不应靠名字包含匹配到 关联部门(link)."""
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_field_mapping
+
+        src = [self._mf("部门", "text"), self._mf("部门负责人", "link", target_table_id=999)]
+        dst = [self._mf("姓名", "text"), self._mf("关联部门", "link", target_table_id=888)]
+        mapping, suggestions = suggest_field_mapping(src, dst)
+
+        by_src = {s["source"]: s for s in suggestions}
+        # text → link 不再产生 will_map 建议（部门 仅剩弱候选）
+        assert by_src["部门"]["will_map"] is False
+        assert by_src["部门"]["target"] != "关联部门"
+        # link(→员工表) 与 link(→部门表) 指向不同目标表，也不映射
+        assert by_src["部门负责人"]["will_map"] is False
+        assert by_src["部门负责人"]["target"] != "关联部门"
+        # 映射字典里两者都不应被自动占用目标字段
+        assert mapping.get("部门") is None
+        assert mapping.get("部门负责人") is None
+
+    def test_same_target_link_boosted(self):
+        """两个 link 字段指向同一目标表时，即使名字不完全相同也应给语义加分."""
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_field_mapping
+
+        src = [self._mf("部门链接", "link", target_table_id=888)]
+        dst = [self._mf("关联部门", "link", target_table_id=888)]
+        mapping, suggestions = suggest_field_mapping(src, dst)
+
+        s = suggestions[0]
+        assert s["will_map"] is True
+        assert "link" in s["reason"]
+        assert mapping["部门链接"] == "关联部门"
+
+    def test_diff_target_link_not_recommended(self):
+        """link 字段指向不同目标表 → 不建议映射，理由说明目标表不一致."""
+        from cndb.plugins.tables.services.importing.field_mapping import suggest_field_mapping
+
+        src = [self._mf("部门负责人", "link", target_table_id=999)]
+        dst = [self._mf("关联部门", "link", target_table_id=888)]
+        mapping, suggestions = suggest_field_mapping(src, dst)
+
+        s = suggestions[0]
+        assert s["will_map"] is False
+        assert s["target"] != "关联部门"
+        assert mapping.get("部门负责人") is None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
