@@ -23,10 +23,9 @@ from cndb.plugins.tables.schemas import (
     ViewBrief,
     WorkspaceBrief,
 )
-from cndb.plugins.tables.services.core.access import TableAction, check_action
+from cndb.plugins.tables.services.core.access import TableAction, check_action, check_workspace_permission
 from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
 from cndb.plugins.workspaces.models import (
-    ROLE_RANK,
     Workspace,
     WorkspaceMember,
     WorkspaceRole,
@@ -102,12 +101,7 @@ def _fill_table_stats(
 
 def _check_table_permission(workspace_id: int, user: User, db: Session, min_role: WorkspaceRole) -> None:
     """工作区级角色最低门槛检查（用于无具体 table 的操作，如创建表、工作区级 trash 操作）."""
-    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
-    if ws is None:
-        raise HTTPException(status_code=404, detail="工作区不存在")
-    role = get_member_role(user, ws, db)
-    if role is None or ROLE_RANK[role] < ROLE_RANK[min_role]:
-        raise HTTPException(status_code=403, detail="权限不足")
+    check_workspace_permission(db, workspace_id, user, min_role)
 
 
 def _get_table_or_404(

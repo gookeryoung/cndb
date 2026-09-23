@@ -20,6 +20,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataTable
+from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.tables.services.importing.api_config_loader import (
     ApiConfigError,
     build_fetch_config,
@@ -31,20 +32,14 @@ from cndb.plugins.tables.services.transfer import (
     analyze_json_columns,
     import_rows_from_json,
 )
-from cndb.plugins.workspaces.models import ROLE_RANK, Workspace, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}", tags=["import-api"])
 
 
 def _check_workspace_permission(workspace_id: int, user: User, db: Session, min_role: WorkspaceRole) -> Workspace:
-    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
-    if ws is None:
-        raise HTTPException(status_code=404, detail="工作区不存在")
-    role = get_member_role(user, ws, db)
-    if role is None or ROLE_RANK[role] < ROLE_RANK[min_role]:
-        raise HTTPException(status_code=403, detail="权限不足")
-    return ws
+    """委托 services 层共享实现（历史签名保留，调用点无需改动）."""
+    return check_workspace_permission(db, workspace_id, user, min_role)
 
 
 class ApiFetchRequest(BaseModel):
