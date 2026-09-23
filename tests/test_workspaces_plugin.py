@@ -1012,6 +1012,105 @@ class TestWorkspaceExportImport:
         assert view is not None
         assert view.is_default is True
 
+    def test_import_multi_table_backup_with_same_name_skip(self, client, owner_user, db, db_engine):
+        """多表备份导入：同名表跳过，其余表连同字段/数据行/视图全量还原."""
+        from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import ddl
+        from cndb.plugins.tables.services.core import records as rec
+
+        token = _login_token(client, "owner", "passw0rd")
+        headers = _headers(token)
+        ws_id = self._create_ws(client, token)
+
+        # 现存表「员工表」（与备份同名，应被跳过且数据不受影响）
+        dt = DataTable(workspace_id=ws_id, owner_id=owner_user.id, name="员工表")
+        dt.ensure_db_name()
+        db.add(dt)
+        db.flush()
+        f = DataField(table_id=dt.id, name="姓名", field_type="text", order=0)
+        f.ensure_db_name()
+        db.add(f)
+        db.commit()
+        db.refresh(dt)
+        ddl.create_table(db_engine, dt)
+        rec.create_row(db_engine, dt, {"姓名": "原有行"})
+
+        backup = {
+            "version": "3",
+            "tables": [
+                {
+                    "name": "员工表",  # 同名 → 跳过
+                    "fields": [{"name": "姓名", "field_type": "text", "order": 0}],
+                    "rows": [],
+                    "views": [],
+                },
+                {
+                    "name": "项目表",
+                    "fields": [
+                        {"name": "项目名", "field_type": "text", "order": 0},
+                        {"name": "预算", "field_type": "number", "order": 1},
+                    ],
+                    "rows": [
+                        {"项目名": "Alpha", "预算": 100},
+                        {"项目名": "Beta", "预算": 200},
+                    ],
+                    "views": [{"name": "全部", "view_type": "grid", "is_default": True}],
+                },
+            ],
+        }
+        r = client.post(f"/api/v1/workspaces/{ws_id}/import", json={"json_data": backup}, headers=headers)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["imported_tables"] == 1
+        assert data["imported_rows"] == 2
+        assert data["imported_views"] == 1
+
+        # 再导出验证：员工表原数据未被破坏，项目表全量还原
+        r_verify = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=headers)
+        assert r_verify.status_code == 200
+        tables = {t["name"]: t for t in r_verify.json()["tables"]}
+        assert set(tables) == {"员工表", "项目表"}
+        assert tables["员工表"]["rows"] == [{"姓名": "原有行"}]
+        assert tables["项目表"]["rows"] == [
+            {"项目名": "Alpha", "预算": 100},
+            {"项目名": "Beta", "预算": 200},
+        ]
+        assert {v["name"] for v in tables["项目表"]["views"]} == {"全部"}
+
+    def test_import_backup_without_all_view_auto_creates_default(self, client, owner_user, db, monkeypatch):
+        """备份视图不含「全部」时，导入自动补建默认视图「全部」，且不打乱原视图的默认标志."""
+        from cndb.plugins.tables.models import DataView
+
+        monkeypatch.setattr("cndb.plugins.tables.services.core.ddl.create_table", lambda engine, table: None)
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        payload = {
+            "json_data": {
+                "version": "3",
+                "tables": [
+                    {
+                        "name": "无默认视图表",
+                        "fields": [{"name": "标题", "field_type": "text", "order": 0}],
+                        "rows": [],
+                        "views": [{"name": "重点", "view_type": "kanban", "is_default": False}],
+                    }
+                ],
+            }
+        }
+        r = client.post(f"/api/v1/workspaces/{ws_id}/import", json=payload, headers=_headers(token))
+        assert r.status_code == 200, r.text
+        assert r.json()["imported_views"] == 1
+
+        focus = db.query(DataView).filter(DataView.name == "重点").first()
+        assert focus is not None
+        views = db.query(DataView).filter(DataView.table_id == focus.table_id).all()
+        by_name = {v.name: v for v in views}
+        assert set(by_name) == {"重点", "全部"}  # 自动补建默认视图
+        assert by_name["全部"].is_default is True
+        assert by_name["全部"].view_type == "grid"
+        assert by_name["重点"].is_default is False
+        assert by_name["重点"].view_type == "kanban"
+
 
 class TestWorkspaceOwnerTransfer:
     """工作区所有权转让接口 POST /{wid}/owner."""
