@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -11,7 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
+from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole, WorkspaceVisibility
 from cndb.plugins.workspaces.permissions import get_member_role, has_role
 from cndb.plugins.workspaces.schemas import (
     MemberAddRequest,
@@ -20,6 +19,8 @@ from cndb.plugins.workspaces.schemas import (
     PinRequest,
     PinToggleResponse,
     WorkspaceCreate,
+    WorkspaceCreateFromBackup,
+    WorkspaceCreateFromBackupResponse,
     WorkspaceDetailResponse,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
@@ -495,137 +496,20 @@ def toggle_pin(
 # ── 工作区整体导入导出 ──────────────────────────────
 
 
-@router.get("/{workspace_id}/export")
-def export_workspace(
+def _import_backup_into_workspace(
     workspace_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-) -> dict[str, Any]:
-    """导出整个工作区为 JSON：工作区元信息 + 所有表结构 + 数据行 + 视图配置."""
-    import datetime as dt
-
-    from sqlalchemy import MetaData, select
-
-    from cndb.plugins.tables.models import DataField, DataTable, DataView
-
-    ws = _get_workspace_or_404(workspace_id, db)
-    _require_member(ws, current_user, db)
-
-    # 工作区元信息
-    workspace_meta = {
-        "name": ws.name,
-        "description": ws.description,
-        "visibility": ws.visibility.value,
-        "tags": ws.tags,
-        "allow_edit": ws.allow_edit,
-    }
-
-    # 导出所有表（含字段、数据、视图）
-    tables_data: list[dict[str, Any]] = []
-    tables = (
-        db.query(DataTable)
-        .filter(
-            DataTable.workspace_id == workspace_id,
-            DataTable.trashed_at.is_(None),
-        )
-        .all()
-    )
-
-    metadata = MetaData()
-    for tbl in tables:
-        # 字段定义
-        fields = (
-            db.query(DataField)
-            .filter(
-                DataField.table_id == tbl.id,
-                DataField.trashed.is_(False),
-            )
-            .order_by(DataField.order, DataField.id)
-            .all()
-        )
-        fields_data = [
-            {
-                "name": f.name,
-                "field_type": f.field_type,
-                "config": f.config,
-                "required": f.required,
-                "is_unique": f.is_unique,
-                "default_value": f.default_value,
-                "hidden": f.hidden,
-                "order": f.order,
-            }
-            for f in fields
-        ]
-
-        # 数据行
-        rows_data: list[dict[str, Any]] = []
-        try:
-            sa_table = __import__("sqlalchemy").Table(tbl.db_table_name, metadata, autoload_with=db.bind)
-            if "trashed_at" in sa_table.columns:
-                result = db.execute(select(sa_table).where(sa_table.c.trashed_at.is_(None))).mappings().all()
-            else:
-                result = db.execute(select(sa_table)).mappings().all()
-            rows_data = [dict(r) for r in result]
-        except Exception:  # pragma: no cover - 表结构异常
-            pass
-
-        # 视图配置
-        views = db.query(DataView).filter(DataView.table_id == tbl.id).all()
-        views_data = [
-            {
-                "name": v.name,
-                "view_type": v.view_type,
-                "filter_type": v.filter_type,
-                "filters": v.filters,
-                "sortings": v.sortings,
-                "field_options": v.field_options,
-                "view_options": getattr(v, "view_options", None),
-                "field_order": getattr(v, "field_order", None),
-                "is_default": v.is_default,
-            }
-            for v in views
-        ]
-
-        tables_data.append(
-            {
-                "name": tbl.name,
-                "description": tbl.description,
-                "fields": fields_data,
-                "views": views_data,
-                "rows": rows_data,
-            }
-        )
-
-    return {
-        "version": "2",
-        "exported_at": dt.datetime.now(dt.UTC).isoformat(),
-        "workspace": workspace_meta,
-        "tables": tables_data,
-    }
-
-
-@router.post("/{workspace_id}/import", response_model=WorkspaceImportResponse)
-def import_workspace(
-    workspace_id: int,
-    payload: WorkspaceImportRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
+    json_data: dict[str, Any],
+    current_user: User,
+    db: Session,
 ) -> WorkspaceImportResponse:
-    """从 JSON 数据导入表结构、视图和数据行到指定工作区（ADMIN+）."""
+    """把备份 JSON 中的表/行/视图导入到指定工作区（内部 helper，不做权限校验）."""
     import logging
 
     from cndb.plugins.tables.models import DataField, DataTable, DataView, ensure_default_view
     from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
 
-    ws = _get_workspace_or_404(workspace_id, db)
-    _require_admin(ws, current_user, db)
-
-    data = payload.json_data
-    if not isinstance(data, dict) or "tables" not in data:
-        raise HTTPException(status_code=400, detail="无效的导入数据格式")
-
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
-    version = data.get("version", "1")
+    version = json_data.get("version", "1")
     if version not in ("1", "2"):
         raise HTTPException(
             status_code=400, detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2）。请升级程序后再导入。"
@@ -635,11 +519,8 @@ def import_workspace(
     imported_rows = 0
     imported_views = 0
 
-    with contextlib.suppress(Exception):
-        db.begin()
-
     try:
-        for tbl_data in data.get("tables", []):
+        for tbl_data in json_data.get("tables", []):
             table_name = tbl_data.get("name", "").strip()
             if not table_name:
                 continue
@@ -753,6 +634,185 @@ def import_workspace(
         imported_rows=imported_rows,
         imported_views=imported_views,
     )
+
+
+@router.get("/{workspace_id}/export")
+def export_workspace(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """导出整个工作区为 JSON：工作区元信息 + 所有表结构 + 数据行 + 视图配置."""
+    import datetime as dt
+
+    from sqlalchemy import MetaData, select
+
+    from cndb.plugins.tables.models import DataField, DataTable, DataView
+
+    ws = _get_workspace_or_404(workspace_id, db)
+    _require_member(ws, current_user, db)
+
+    # 工作区元信息
+    workspace_meta = {
+        "name": ws.name,
+        "description": ws.description,
+        "visibility": ws.visibility.value,
+        "tags": ws.tags,
+        "allow_edit": ws.allow_edit,
+    }
+
+    # 导出所有表（含字段、数据、视图）
+    tables_data: list[dict[str, Any]] = []
+    tables = (
+        db.query(DataTable)
+        .filter(
+            DataTable.workspace_id == workspace_id,
+            DataTable.trashed_at.is_(None),
+        )
+        .all()
+    )
+
+    metadata = MetaData()
+    for tbl in tables:
+        # 字段定义
+        fields = (
+            db.query(DataField)
+            .filter(
+                DataField.table_id == tbl.id,
+                DataField.trashed.is_(False),
+            )
+            .order_by(DataField.order, DataField.id)
+            .all()
+        )
+        fields_data = [
+            {
+                "name": f.name,
+                "field_type": f.field_type,
+                "config": f.config,
+                "required": f.required,
+                "is_unique": f.is_unique,
+                "default_value": f.default_value,
+                "hidden": f.hidden,
+                "order": f.order,
+            }
+            for f in fields
+        ]
+
+        # 数据行
+        rows_data: list[dict[str, Any]] = []
+        try:
+            sa_table = __import__("sqlalchemy").Table(tbl.db_table_name, metadata, autoload_with=db.bind)
+            if "trashed_at" in sa_table.columns:
+                result = db.execute(select(sa_table).where(sa_table.c.trashed_at.is_(None))).mappings().all()
+            else:
+                result = db.execute(select(sa_table)).mappings().all()
+            rows_data = [dict(r) for r in result]
+        except Exception:  # pragma: no cover - 表结构异常
+            pass
+
+        # 视图配置
+        views = db.query(DataView).filter(DataView.table_id == tbl.id).all()
+        views_data = [
+            {
+                "name": v.name,
+                "view_type": v.view_type,
+                "filter_type": v.filter_type,
+                "filters": v.filters,
+                "sortings": v.sortings,
+                "field_options": v.field_options,
+                "view_options": getattr(v, "view_options", None),
+                "field_order": getattr(v, "field_order", None),
+                "is_default": v.is_default,
+            }
+            for v in views
+        ]
+
+        tables_data.append(
+            {
+                "name": tbl.name,
+                "description": tbl.description,
+                "fields": fields_data,
+                "views": views_data,
+                "rows": rows_data,
+            }
+        )
+
+    return {
+        "version": "2",
+        "exported_at": dt.datetime.now(dt.UTC).isoformat(),
+        "workspace": workspace_meta,
+        "tables": tables_data,
+    }
+
+
+@router.post("/import", response_model=WorkspaceCreateFromBackupResponse, status_code=status.HTTP_201_CREATED)
+def create_workspace_from_backup(
+    payload: WorkspaceCreateFromBackup,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> WorkspaceCreateFromBackupResponse:
+    """从备份 JSON 创建全新工作区：先创建工作区（owner 为当前用户），再把备份中的表结构、数据和视图导入."""
+    data = payload.json_data
+    if not isinstance(data, dict) or "tables" not in data:
+        raise HTTPException(status_code=400, detail="无效的备份文件格式")
+
+    # 从备份里读取 workspace meta 作为创建工作区的默认值
+    ws_meta = data.get("workspace") or {}
+    backup_name = payload.name or (ws_meta.get("name") or "").strip() or "未命名工作区"
+
+    try:
+        visibility_str = ws_meta.get("visibility", "member")
+        visibility = WorkspaceVisibility(visibility_str)
+    except (ValueError, TypeError):
+        visibility = WorkspaceVisibility.MEMBER
+
+    ws = Workspace(
+        name=backup_name,
+        description=ws_meta.get("description", "") or "",
+        visibility=visibility,
+        tags=ws_meta.get("tags", []) or [],
+        allow_edit=bool(ws_meta.get("allow_edit", True)),
+        created_by_id=current_user.id,
+    )
+    db.add(ws)
+    db.flush()  # 拿到 ws.id
+
+    member = WorkspaceMember(workspace_id=ws.id, user_id=current_user.id, role=WorkspaceRole.OWNER)
+    db.add(member)
+    db.commit()
+    db.refresh(ws)
+
+    # 导入备份中的表/数据/视图
+    try:
+        import_result = _import_backup_into_workspace(ws.id, data, current_user, db)
+    except HTTPException:
+        # 导入失败：清理刚创建的工作区，避免脏数据残留
+        db.delete(ws)
+        db.commit()
+        raise
+
+    return WorkspaceCreateFromBackupResponse(
+        workspace=ws,
+        imported_tables=import_result.imported_tables,
+        imported_rows=import_result.imported_rows,
+        imported_views=import_result.imported_views,
+    )
+
+
+@router.post("/{workspace_id}/import", response_model=WorkspaceImportResponse)
+def import_workspace(
+    workspace_id: int,
+    payload: WorkspaceImportRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> WorkspaceImportResponse:
+    """从 JSON 数据导入表结构、视图和数据行到指定工作区（ADMIN+）."""
+    _require_admin(_get_workspace_or_404(workspace_id, db), current_user, db)
+    data = payload.json_data
+    if not isinstance(data, dict) or "tables" not in data:
+        raise HTTPException(status_code=400, detail="无效的导入数据格式")
+
+    return _import_backup_into_workspace(workspace_id, data, current_user, db)
 
 
 __all__ = ["router"]

@@ -1,7 +1,8 @@
 /**
- * WorkspaceBackupDialog 组件测试 —— 工作区导入/导出.
+ * WorkspaceBackupDialog 组件测试 —— 工作区备份（仅导出 JSON）.
  *
- * 覆盖：Tab 结构 / 导出下载（含 createObjectURL mock）/ 导入 JSON 成功 / 非 JSON 拒绝。
+ * 覆盖：对话框标题 / 导出下载（含 createObjectURL mock）/ 导出失败。
+ * 导入工作区功能已统一移至工作区列表页顶部按钮，见 WorkspaceList 组件。
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
@@ -26,15 +27,17 @@ afterEach(() => {
 describe('WorkspaceBackupDialog 工作区备份', () => {
   it('open=false 时不渲染', () => {
     renderProviders(<WorkspaceBackupDialog open={false} wid="10" onClose={() => { }} />)
-    expect(screen.queryByText('工作区导入 / 导出')).not.toBeInTheDocument()
+    expect(screen.queryByText('备份工作区')).not.toBeInTheDocument()
   })
 
-  it('open=true 渲染导出/导入两个 Tab', () => {
-    renderProviders(<WorkspaceBackupDialog open wid="10" onClose={() => { }} />)
+  it('open=true 渲染备份对话框（仅导出）', () => {
+    renderProviders(
+      <WorkspaceBackupDialog open wid="10" workspaceName="测试工作区" onClose={() => { }} />,
+    )
 
-    expect(screen.getByText('工作区导入 / 导出')).toBeInTheDocument()
-    expect(screen.getByText('导出工作区')).toBeInTheDocument()
-    expect(screen.getByText('导入到工作区')).toBeInTheDocument()
+    expect(screen.getByText('备份工作区')).toBeInTheDocument()
+    expect(screen.getByText(/将备份整个工作区「测试工作区」的完整数据/)).toBeInTheDocument()
+    expect(screen.getByText('下载 JSON 备份')).toBeInTheDocument()
   })
 
   it('导出成功：触发下载并提示表数量', async () => {
@@ -51,7 +54,7 @@ describe('WorkspaceBackupDialog 工作区备份', () => {
 
     fireEvent.click(screen.getByText('下载 JSON 备份'))
 
-    expect(await screen.findByText('已导出 1 张表')).toBeInTheDocument()
+    expect(await screen.findByText('已备份 1 张表')).toBeInTheDocument()
     expect(URL.createObjectURL).toHaveBeenCalled()
   })
 
@@ -66,38 +69,5 @@ describe('WorkspaceBackupDialog 工作区备份', () => {
 
     // api 拦截器把后端 detail 提取为 Error.message（见 client.test.ts 约定）
     expect(await screen.findByText('boom')).toBeInTheDocument()
-  })
-
-  it('导入 JSON 备份成功：显示导入统计并回调 onImported', async () => {
-    const importSpy = vi.fn(() =>
-      HttpResponse.json({ imported_tables: 2, imported_rows: 5, imported_views: 1 }))
-    server.use(http.post('/api/v1/workspaces/10/import', importSpy))
-    const onImported = vi.fn()
-    renderProviders(
-      <WorkspaceBackupDialog open wid="10" onClose={() => { }} onImported={onImported} />,
-    )
-
-    // 切到导入 Tab 并通过隐藏 input 上传文件
-    fireEvent.click(screen.getByText('导入到工作区'))
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    expect(input).not.toBeNull()
-    const file = new File([JSON.stringify({ tables: [] })], 'backup.json', { type: 'application/json' })
-    Object.defineProperty(input, 'files', { value: [file] })
-    fireEvent.change(input)
-
-    expect(await screen.findByText(/导入完成：2 表 \/ 5 行 \/ 1 视图/)).toBeInTheDocument()
-    expect(onImported).toHaveBeenCalledTimes(1)
-  })
-
-  it('上传非 JSON 文件被拒绝', async () => {
-    renderProviders(<WorkspaceBackupDialog open wid="10" onClose={() => { }} />)
-
-    fireEvent.click(screen.getByText('导入到工作区'))
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    const file = new File(['plain'], 'backup.txt', { type: 'text/plain' })
-    Object.defineProperty(input, 'files', { value: [file] })
-    fireEvent.change(input)
-
-    expect(await screen.findByText('仅支持 JSON 文件')).toBeInTheDocument()
   })
 })

@@ -153,6 +153,25 @@ class WorkspaceImportResponse(BaseModel):
     imported_views: int
 
 
+class WorkspaceCreateFromBackup(BaseModel):
+    """从备份 JSON 创建工作区请求."""
+
+    name: str | None = None
+    """新工作区名称，为空则使用备份文件中的 workspace.name."""
+
+    json_data: dict[str, Any]
+    """备份文件的完整 JSON 内容."""
+
+
+class WorkspaceCreateFromBackupResponse(BaseModel):
+    """从备份创建工作区响应."""
+
+    workspace: WorkspaceResponse
+    imported_tables: int
+    imported_rows: int
+    imported_views: int
+
+
 # ── Role schemas ──────────────────────────────────────
 
 
@@ -222,6 +241,8 @@ __all__ = [
     "RoleResponse",
     "RoleUpdate",
     "WorkspaceCreate",
+    "WorkspaceCreateFromBackup",
+    "WorkspaceCreateFromBackupResponse",
     "WorkspaceDetailResponse",
     "WorkspaceExportResponse",
     "WorkspaceImportRequest",
