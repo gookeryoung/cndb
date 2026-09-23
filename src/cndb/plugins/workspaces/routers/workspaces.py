@@ -519,6 +519,13 @@ def _import_backup_into_workspace(
     imported_rows = 0
     imported_views = 0
 
+    # 循环前先提交任何待处理事务，确保连接以干净状态进入逐表循环。
+    # 原因：SQLite 的隐式事务（由 flush() 开启）会持有 RESERVED 锁，
+    # 阻止任何连接（包括 engine 新创建的）执行需要 EXCLUSIVE 锁的 DDL。
+    # 参考：tables.py 正常建表流程也是先 commit 再 ddl_create。
+    if db.in_transaction():
+        db.commit()
+
     try:
         for tbl_data in json_data.get("tables", []):
             table_name = tbl_data.get("name", "").strip()
@@ -567,6 +574,14 @@ def _import_backup_into_workspace(
                 fields_order.append(field)
 
             db.flush()
+
+            # ★ 关键：在执行 DDL 前先提交 flush 出的 DataTable / DataField 元数据。
+            # SQLite flush() 隐式开启的事务会持有 RESERVED 锁，
+            # 必须释放才能让 DDL 获取 EXCLUSIVE 锁（CREATE TABLE 需要）。
+            # —— 逐表 commit 而非循环外统一 commit，使导入具备部分成功能力：
+            # 单表失败不影响已成功表；整体失败时上层（create_workspace_from_backup）
+            # 会回滚整个工作区级联清理。
+            db.commit()
 
             # DDL 创建物理表（create_table 自动从 table.fields 拿字段）
             try:
@@ -618,10 +633,9 @@ def _import_backup_into_workspace(
                 db.add(view)
                 imported_views += 1
 
-            db.flush()
+            # 每个表的视图/行数据独立提交，避免再次持锁影响后续 DDL
+            db.commit()
             imported_tables += 1
-
-        db.commit()
     except HTTPException:
         db.rollback()
         raise
