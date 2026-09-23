@@ -17,7 +17,7 @@ import type { ReactNode } from 'react'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import FieldManager, { fieldNoteText, formatIncrementExample } from './index'
 import { renderProviders } from '@/test/render-providers'
-import { fieldApi, tableApi } from '@/api'
+import { fieldApi, tableApi, workspaceApi } from '@/api'
 
 /** dnd-kit mock 共享状态：DndContext 挂载时捕获 onDragEnd 供用例直接驱动拖拽完成回调 */
 const dnd = vi.hoisted(() => ({
@@ -846,5 +846,136 @@ describe('FieldManager 字段顺序拖拽', () => {
 
         expect(await screen.findByText('排序冲突')).toBeInTheDocument()
         expect(onChanged).not.toHaveBeenCalled()
+    })
+})
+
+// ─────────────── 从其他表引入字段对话框（跨工作区） ───────────────
+
+describe('FieldManager 从其他表引入字段', () => {
+    const WORKSPACES = [
+        { id: 10, name: '当前工作区' },
+        { id: 11, name: '其他工作区' },
+    ] as any
+
+    const SOURCE_FIELDS = [
+        { id: 101, name: '名称', field_type: 'text', order: 0 },
+        { id: 102, name: '金额', field_type: 'number', order: 1 },
+        { id: 103, name: '主键列', field_type: 'text', order: 2, is_primary: true },
+    ] as any
+
+    /** 打开引入对话框并选中"其他工作区"→"外部表"，等源字段渲染完成 */
+    async function openImportDialogWithSource() {
+        renderFieldManager()
+        fireEvent.click(screen.getByRole('button', { name: /从其他表引入/ }))
+
+        await waitFor(() => {
+            expect(screen.getByText('选择源工作区')).toBeInTheDocument()
+        })
+
+        // 选工作区：打开第一个 Select 下拉 → 点"其他工作区"
+        const selectors = document.querySelectorAll('.ant-modal-body .ant-select .ant-select-selector')
+        fireEvent.mouseDown(selectors[0]!)
+        await waitFor(() => {
+            const opt = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
+                .find(el => el.textContent === '其他工作区')
+            expect(opt).toBeDefined()
+            fireEvent.click(opt!)
+        })
+
+        // 选源表：先打开第二个 Select（源表）下拉，再点"外部表"
+        await waitFor(() => {
+            expect(document.querySelectorAll('.ant-modal-body .ant-select .ant-select-selector').length).toBeGreaterThanOrEqual(2)
+        })
+        fireEvent.mouseDown(document.querySelectorAll('.ant-modal-body .ant-select .ant-select-selector')[1]!)
+        await waitFor(() => {
+            const opt = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
+                .find(el => el.textContent === '外部表')
+            expect(opt).toBeDefined()
+            fireEvent.click(opt!)
+        })
+
+        // 等源字段勾选区渲染
+        await waitFor(() => {
+            expect(screen.getByText('选择要引入的字段')).toBeInTheDocument()
+        })
+    }
+
+    beforeEach(() => {
+        vi.spyOn(tableApi, 'list').mockImplementation(((wid: unknown) => {
+            if (String(wid) === '11') {
+                return Promise.resolve([
+                    { id: 20, name: '内部表' },
+                    { id: 30, name: '外部表' },
+                ]) as any
+            }
+            return Promise.resolve([]) as any
+        }) as any)
+        vi.spyOn(workspaceApi, 'list').mockResolvedValue(WORKSPACES as any)
+        vi.spyOn(fieldApi, 'list').mockResolvedValue(SOURCE_FIELDS as any)
+    })
+
+    it('AC-3: 工作区下拉列出可访问工作区，选表后用源工作区 wid 拉字段', async () => {
+        await openImportDialogWithSource()
+
+        // 源字段按源工作区 wid=11 拉取
+        expect(fieldApi.list).toHaveBeenCalledWith('11', '30')
+        // 勾选区渲染 3 个源字段
+        expect(screen.getByText('名称')).toBeInTheDocument()
+        expect(screen.getByText('金额')).toBeInTheDocument()
+    })
+
+    it('AC-4: 过滤后全选只作用于可见项，主键字段不可选', async () => {
+        await openImportDialogWithSource()
+
+        // 过滤"名称" → 可见项只剩 名称
+        fireEvent.change(screen.getByPlaceholderText('按字段名过滤'), { target: { value: '名称' } })
+        await waitFor(() => {
+            expect(screen.queryByText('金额')).not.toBeInTheDocument()
+        })
+
+        // 全选 → 只勾上"名称"（AntD 双汉字按钮会自动插入空格，用正则匹配）
+        const allBtn = screen.getByRole('button', { name: /全\s*选/ })
+        fireEvent.click(allBtn)
+        await waitFor(() => {
+            expect(screen.getByText(/已选 1\/3/)).toBeInTheDocument()
+        })
+
+        // 清空过滤 → 全选补齐剩余（金额），主键仍不可选
+        fireEvent.change(screen.getByPlaceholderText('按字段名过滤'), { target: { value: '' } })
+        fireEvent.click(screen.getByRole('button', { name: /全\s*选/ }))
+        await waitFor(() => {
+            expect(screen.getByText(/已选 2\/3/)).toBeInTheDocument()
+        })
+    })
+
+    it('AC-5: 映射面板分组展示，仅引入已匹配把低置信度置为跳过', async () => {
+        const previewResp = {
+            created: [], skipped: [], total_source_count: 2,
+            gap_analysis: { matched: ['名称'], unmapped_source: ['金额'], target_missing: [], conflicts: [] },
+            suggestions: [
+                { source: '名称', target: '状态', score: 0.9, reason: '完全同名', will_map: true },
+                { source: '金额', target: '状态', score: 0.3, reason: '弱匹配', will_map: false },
+            ],
+        } as any
+        vi.spyOn(fieldApi, 'importFields').mockResolvedValue(previewResp)
+
+        await openImportDialogWithSource()
+
+        // 两个源字段都勾上 → 点"分析字段映射"
+        fireEvent.click(screen.getByRole('button', { name: /全\s*选/ }))
+        fireEvent.click(screen.getByRole('button', { name: /分析字段映射/ }))
+
+        await waitFor(() => {
+            expect(screen.getByText(/已匹配推荐/)).toBeInTheDocument()
+            // 组头 Tag 文案（"低置信度 1"在按钮文案里也出现，改用唯一片段）
+            expect(screen.getByText(/默认将引入为新字段/)).toBeInTheDocument()
+        })
+
+        // 点击"仅引入已匹配" → 金额被跳过 → 确认按钮计数变为 1
+        fireEvent.click(screen.getByRole('button', { name: /仅引入已匹配/ }))
+        await waitFor(() => {
+            const okBtn = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement
+            expect(okBtn.textContent).toBe('确认引入（1 个字段）')
+        })
     })
 })
