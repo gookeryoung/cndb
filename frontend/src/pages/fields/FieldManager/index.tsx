@@ -114,10 +114,12 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         preview_only: true,
       })
       setImportPreview(resp)
-      // 用 suggestions 初始化 importMapping
+      // 用 suggestions 初始化 importMapping —— 所有有 target 的 suggestion 都预填充，
+      // 包括低置信度项（让用户看到系统推荐了什么目标），后续「仅引入已匹配」会把
+      // will_map=false 的置为 null（跳过）
       const mapping: Record<string, string | null> = {}
       resp.suggestions?.forEach((s: FieldImportSuggestion) => {
-        mapping[s.source] = s.will_map && s.target ? s.target : null
+        mapping[s.source] = s.target ?? null
       })
       setImportMapping(mapping)
     } catch (err) {
