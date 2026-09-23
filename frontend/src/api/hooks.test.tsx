@@ -197,6 +197,31 @@ describe('useUpdateRowOptimistic', () => {
     const cached = qc.getQueryData<RowListResponse>(key)
     expect(cached?.items[0]).toMatchObject({ id: 1, 姓名: '张三' })
   })
+
+  it('values 模式传 null 清空字段：cache 乐观更新为 null（看板取消完成场景）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/tables/100/records', async () => {
+        await delay('infinite')
+        return HttpResponse.json(mockRecords)
+      }),
+      http.patch('/api/v1/workspaces/10/tables/100/records/1', () =>
+        HttpResponse.json({ id: 1, 状态: null })),
+    )
+    const { qc, Wrapper } = makeMutationWrapper()
+    const key = seedRecords(qc, [
+      { id: 1, 姓名: '张三', 状态: '已完成' },
+      { id: 2, 姓名: '王五', 状态: '进行中' },
+    ])
+
+    const { result } = renderHook(() => useUpdateRowOptimistic('10', '100'), { wrapper: Wrapper })
+    // 看板取消完成：多字段 values 模式 + null 清空 select 字段
+    result.current.mutate({ rowId: 1, values: { 状态: null } })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    const cached = qc.getQueryData<RowListResponse>(key)
+    expect(cached?.items[0].状态).toBeNull()
+    expect(cached?.items[1].状态).toBe('进行中')
+  })
 })
 
 describe('useDeleteRowsOptimistic', () => {
