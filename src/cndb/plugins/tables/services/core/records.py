@@ -55,7 +55,7 @@ def _normalize_values(
     - 根据 DataField.field_type 调用 validate_value 做类型强转和校验
     - link 字段不产生物理列值，拆分为 (DataField, 目标 id 列表) 由调用方写入关联表；
       值为 None 表示显式清空，归一为空列表
-    - 跳过 None（除非 required 字段）
+    - 创建路径跳过 None（required 字段报错），更新路径 null 视为显式清空意图写入数据库
     - 字段不存在于 table.fields 时忽略（安全起见不报错）
     - date/datetime 字段的 auto_fill 自动填充（on_create 创建时补、on_update 每次都覆盖）
     - DataField.default_value 默认值填充（仅创建路径、用户未传该字段时；校验失败跳过）
@@ -81,8 +81,14 @@ def _normalize_values(
             link_values.append((f, ids))
             continue
         if raw is None:
-            if f.required and not for_update:  # pragma: no cover - 必填校验分支
-                raise ValueError(f"必填字段 {field_name} 不能为空")
+            if not for_update:
+                # 创建路径：None 表示未提供该字段值，依赖 default_value 填充；
+                # 必填字段在此 raise，交由上层报错
+                if f.required:  # pragma: no cover - 必填校验分支
+                    raise ValueError(f"必填字段 {field_name} 不能为空")
+                continue
+            # 更新路径：None 是前端显式清空意图，写入数据库 NULL
+            result[f.db_column_name] = None
             continue
         try:
             result[f.db_column_name] = ft.validate_value(raw, f.config)
