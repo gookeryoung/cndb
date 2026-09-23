@@ -1,6 +1,6 @@
 /** 工作区表列表页 — 数据资产目录视图.
  *
- * 支持创建/重命名/复制/删除 + CSV 自动建表 + 拖拽排序.
+ * 支持创建/重命名/复制/删除 + CSV 自动建表 + API 自动建表 + 拖拽排序.
  * 展示 Owner / MyAccess / MemberCount 三个权限元信息列, 并提供按访问级别筛选.
  */
 
@@ -11,7 +11,7 @@ import {
 } from 'antd'
 import {
   PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined,
-  UploadOutlined, SettingOutlined, TeamOutlined, UserOutlined,
+  UploadOutlined, SettingOutlined, ApiOutlined, TeamOutlined, UserOutlined,
   LoginOutlined, MoreOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -25,6 +25,7 @@ import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate, FileAnalyzeResult } from '@/api'
 import { useAuthStore } from '@/store'
 
+const ApiImportDialog = lazy(() => import('@/pages/import-export/ApiImportDialog'))
 const FileImportPreview = lazy(() => import('@/pages/import-export/FileImportPreview'))
 
 const { Title, Text } = Typography
@@ -71,6 +72,7 @@ export default function TablesList() {
   const user = useAuthStore(s => s.user)
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState<TableSummary | null>(null)
+  const [apiImportOpen, setApiImportOpen] = useState(false)
   const [filter, setFilter] = useState<AccessFilter>('all')
   // 文件导入预览 Modal 状态
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -408,6 +410,13 @@ export default function TablesList() {
             </Button>
           </Upload>
           <Button
+            icon={<ApiOutlined />}
+            onClick={() => setApiImportOpen(true)}
+            data-testid="api-import-entry"
+          >
+            API 建表
+          </Button>
+          <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateOpen(true)}
@@ -541,6 +550,20 @@ export default function TablesList() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* API 建表 Dialog（建表模式） */}
+      <Suspense fallback={null}>
+        <ApiImportDialog
+          open={apiImportOpen}
+          wid={wid!}
+          onClose={() => setApiImportOpen(false)}
+          onSuccess={(res) => {
+            if (res.table_id) {
+              navigate(`/w/${wid}/tables/${res.table_id}`)
+            }
+          }}
+        />
+      </Suspense>
 
       {/* 文件导入预览 Modal */}
       <Suspense fallback={null}>

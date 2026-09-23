@@ -24,6 +24,7 @@ from cndb.plugins.tables.services.core.query import (
     _compile_link_condition,
     _normalize_filters,
 )
+from cndb.plugins.tables.services.importing.api_fetch import FetchConfig, _resolve_path, fetch_json
 from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
@@ -294,6 +295,70 @@ def test_add_column_with_default_and_not_null():
     assert True
 
 
+# ── api_fetch: L235, L522, L531-533 ──
+
+
+def test_resolve_path_non_dict_intermediate_returns_none():
+    """中间节点不是 dict → return None (L235)."""
+    data = {"a": [1, 2, 3]}
+    assert _resolve_path(data, "a[0].b") is None
+
+
+def test_fetch_json_redirect_missing_location():
+    """3xx 响应缺 Location → ValueError (L522)."""
+    from unittest.mock import MagicMock as _M
+
+    fake_resp = _M()
+    fake_resp.status_code = 302
+    fake_resp.headers = {}
+    fake_resp.content = b""
+
+    fake_client = _M()
+    fake_client.__enter__.return_value.request.return_value = fake_resp
+    fake_client.__exit__.return_value = False
+
+    with (
+        patch("cndb.plugins.tables.services.importing.api_fetch.httpx2.Client", return_value=fake_client),
+        pytest.raises(ValueError, match="缺少 Location"),
+    ):
+        fetch_json(FetchConfig(url="http://x.example.com"))
+
+
+def test_fetch_json_301_post_downgrades_to_get():
+    """POST 301 → 方法转 GET + body 清 (L531-533). 用 patch 替换模块级 fetch_json 调用."""
+    from unittest.mock import MagicMock as _M
+
+    responses = []
+    r1 = _M()
+    r1.status_code = 301
+    r1.headers = {"location": "/ok"}
+    r1.content = b""
+    r1.text = ""
+    r2 = _M()
+    r2.status_code = 200
+    r2.headers = {}
+    r2.content = b'[{"id": 1}]'
+    r2.text = '[{"id": 1}]'
+    responses.append(r1)
+    responses.append(r2)
+
+    call_records = []
+
+    def fake_request(**kw):
+        call_records.append(kw)
+        return responses.pop(0)
+
+    fake_client = _M()
+    fake_client.__enter__.return_value.request.side_effect = fake_request
+    fake_client.__exit__.return_value = False
+
+    with patch("cndb.plugins.tables.services.importing.api_fetch.httpx2.Client", return_value=fake_client):
+        fetch_json(FetchConfig(url="http://x.example.com/api", method="POST", body={"k": "v"}))
+
+    assert call_records[1]["method"] == "GET"
+    assert call_records[1].get("json") is None
+
+
 # ── migrations: L82-85, L92 ──
 
 
@@ -481,3 +546,18 @@ def test_members_router_require_admin_non_ws_member(client, db, auth_headers):
         headers=auth_headers,
     )
     assert r.status_code == 403
+
+
+def test_import_api_router_valueerror_400(client, db, ws_with_auth):
+    """fetch_json ValueError → 400 (L201)."""
+    ws_id, auth = ws_with_auth
+    r = client.post(f"/api/v1/workspaces/{ws_id}/tables", json={"name": "T1"}, headers=auth)
+    assert r.status_code in (200, 201), r.text
+    table_id = r.json()["id"]
+
+    r2 = client.post(
+        f"/api/v1/workspaces/{ws_id}/tables/{table_id}/import-api",
+        json={"url": "file:///etc/passwd", "method": "GET"},
+        headers=auth,
+    )
+    assert r2.status_code in (400, 502)

@@ -6,6 +6,7 @@
 - options: select options 与样本值规整
 - exporting: 行导出序列化与公式注入防护
 - table_create: 列分析与建表导入编排
+- api_ingest: API 摄取编排
 
 link 字段约定：
 - 导出：行响应中 link 值为 [{"id", "value"}] 摘要列表，序列化为分号分隔的目标行 id 串；
@@ -17,6 +18,7 @@ link 字段约定：
 
 from __future__ import annotations
 
+from cndb.plugins.tables.services.transfer.api_ingest import ingest_from_api
 from cndb.plugins.tables.services.transfer.exporting import (
     _exportable_rows,
     _fix_xlsx_formula_cells,
@@ -168,6 +170,7 @@ __all__ = [
     "import_rows_from_json",
     "import_rows_from_xlsx",
     "infer_column_type",
+    "ingest_from_api",
     "parse_file_to_rows",
     "promote_inferred_column_type",
     "sniff_csv_delimiter",

@@ -8,6 +8,7 @@ from cndb.plugins.tables.routers.audit import router as audit_router
 from cndb.plugins.tables.routers.bulk import router as bulk_router
 from cndb.plugins.tables.routers.fields import router as fields_router
 from cndb.plugins.tables.routers.files import router as files_router
+from cndb.plugins.tables.routers.import_api import router as import_api_router
 from cndb.plugins.tables.routers.import_csv import compat_router as import_csv_router
 from cndb.plugins.tables.routers.import_csv import router as import_file_router
 from cndb.plugins.tables.routers.members import router as members_router
@@ -29,5 +30,6 @@ router.include_router(files_router)
 router.include_router(records_router)
 router.include_router(import_csv_router)
 router.include_router(import_file_router)
+router.include_router(import_api_router)
 
 __all__ = ["router"]

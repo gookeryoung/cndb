@@ -63,12 +63,17 @@ def _get_workspace_view_configs(datasets_dir: Path) -> dict[str, dict[str, Any]]
 
 
 def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any], dict[str, dict[str, Any]]]:
-    """扫描 datasets 目录，按子文件夹建工作区、按 CSV 建表导入.
+    """扫描 datasets 目录，按子文件夹建工作区、按 CSV 建表导入 + 按 api_config.json 建表.
 
     Returns:
         (成功创建的数据表总数, 工作区名 -> Workspace 对象映射, 工作区名 -> 表名 -> DataTable 映射)
     """
-    from cndb.plugins.tables.services.transfer import create_table_from_csv
+    from cndb.plugins.tables.services.importing.api_config_loader import (
+        ApiConfigError,
+        build_fetch_config,
+        load_api_config_file,
+    )
+    from cndb.plugins.tables.services.transfer import create_table_from_csv, ingest_from_api
     from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
 
     datasets_dir = _get_datasets_dir()
@@ -120,6 +125,47 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
                 print(f"[seed-CSV] 建表: {ws_display}/{table_name} → (id={dt.id})")
             except Exception as exc:  # 单表失败不应阻断其它表
                 print(f"[seed-CSV] 建表失败: {ws_display}/{table_name}: {exc}")
+
+        # ── API 配置建表 ──
+        api_config_path = folder / "api_config.json"
+        if api_config_path.is_file():
+            try:
+                table_defs = load_api_config_file(api_config_path)
+            except ApiConfigError as exc:
+                print(f"[seed-API] 配置文件解析失败 {api_config_path.name}: {exc}")
+                continue
+
+            for table_def in table_defs:
+                tbl_name = table_def["table_name"]
+                fetch_cfg = build_fetch_config(table_def)
+                try:
+                    dt, ids, _columns = ingest_from_api(
+                        engine,
+                        db,
+                        ws.id,
+                        tbl_name,
+                        api_url=fetch_cfg.url,
+                        method=fetch_cfg.method,
+                        headers=fetch_cfg.headers,
+                        params=fetch_cfg.params,
+                        body=fetch_cfg.body,
+                        data_path=fetch_cfg.data_path,
+                        timeout=fetch_cfg.timeout,
+                        response_handler=fetch_cfg.response_handler,
+                        encoding=fetch_cfg.encoding,
+                        query_interval=fetch_cfg.query_interval,
+                        owner_id=user.id,
+                    )
+                    table_count += 1
+                    tables_map[ws_display][tbl_name] = dt
+                    print(
+                        f"[seed-API] 建表: {ws_display}/{tbl_name} "
+                        f"(handler={fetch_cfg.response_handler}, "
+                        f"interval={fetch_cfg.query_interval:.0f}s, "
+                        f"{len(ids)} 行, id={dt.id})"
+                    )
+                except Exception as exc:
+                    print(f"[seed-API] 建表失败: {ws_display}/{tbl_name}: {exc}")
 
         # ── 跨表字段引入（表已就绪后执行，避免源表不存在） ──
         _apply_field_import_rules(db, engine, ws_display, tables_map)
