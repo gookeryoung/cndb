@@ -496,6 +496,38 @@ def toggle_pin(
 # ── 工作区整体导入导出 ──────────────────────────────
 
 
+def _coerce_row_value_types(sa_table: Any, row_values: list[dict[str, Any]]) -> None:
+    """按反射列类型归一备份 JSON 中的字符串值（就地修改）.
+
+    备份 JSON 导出时 date/datetime 被序列化为 ISO 字符串，而 SQLAlchemy 的
+    Date/DateTime 列不接受字符串输入（SQLite 下抛 TypeError 导致整表行
+    导入失败），插入前需反序列化还原。
+    """
+    import datetime
+
+    from sqlalchemy import Date, DateTime
+
+    date_cols = {
+        name: col for name, col in sa_table.columns.items() if isinstance(col.type, (Date, DateTime))
+    }
+    if not date_cols:
+        return
+    for values in row_values:
+        for name, col in date_cols.items():
+            v = values.get(name)
+            if v is None or not isinstance(v, str):
+                continue
+            try:
+                if isinstance(col.type, DateTime):
+                    if "T" not in v and " " not in v:
+                        v = f"{v}T00:00:00"
+                    values[name] = datetime.datetime.fromisoformat(v)
+                else:
+                    values[name] = datetime.date.fromisoformat(v[:10])
+            except ValueError:
+                pass  # 非法格式保留原值，交由数据库报出真实错误
+
+
 def _import_backup_into_workspace(
     workspace_id: int,
     json_data: dict[str, Any],
@@ -625,6 +657,7 @@ def _import_backup_into_workspace(
                         if values:
                             row_values.append(values)
                     if row_values:
+                        _coerce_row_value_types(sa_table, row_values)
                         db.execute(insert(sa_table), row_values)
                         imported_rows += len(row_values)
                     if len(row_values) < len(rows_data):
