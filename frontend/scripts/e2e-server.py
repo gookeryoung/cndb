@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 - E2E 脚本需调用 uv 管理后端进程
 import sys
 from pathlib import Path
 
@@ -35,7 +35,7 @@ def main() -> int:
     print(f"[e2e-server] 数据目录隔离: {e2e_data}", flush=True)
 
     print("[e2e-server] seed 演示数据...", flush=True)
-    seed = subprocess.run(
+    seed = subprocess.run(  # nosec B603,B607 - 命令为固定常量，uv 来自 PATH
         ["uv", "run", "cndb", "seed"],
         check=False,
         cwd=root,
@@ -46,7 +46,7 @@ def main() -> int:
 
     print(f"[e2e-server] 启动后端 http://127.0.0.1:{port} ...", flush=True)
     # exec 语义：用 serve 进程替换当前进程，Playwright 能正确感知进程生命周期
-    return subprocess.call(
+    return subprocess.call(  # nosec B603,B607 - 命令为固定常量，uv 来自 PATH
         ["uv", "run", "cndb", "serve", "--host", "127.0.0.1", "--port", port],
         cwd=root,
     )

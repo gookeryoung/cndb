@@ -175,7 +175,7 @@ def validate_url(url: str) -> None:
         return  # 合法公网 IP，放行
 
     # 不是 IP 字面量 — 域名
-    if host.lower() in ("localhost", "0.0.0.0"):
+    if host.lower() in ("localhost", "0.0.0.0"):  # nosec B104 - 仅做本机地址字符串比较，非绑定
         raise ValueError(f"禁止访问 {host}")
     # 也拦截指向内网的域名
     if _is_private_or_reserved_ip(host):

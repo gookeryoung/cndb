@@ -15,7 +15,7 @@ vi.mock('@/api', () => ({
 
 const mockedAuthApi = vi.mocked(authApi)
 
-const fakeUser = { id: 1, username: 'alice', email: 'a@x.com' }
+const fakeUser = { id: 1, username: 'alice', email: 'a@example.com' }
 const fakeUserResponse = { ...fakeUser, is_superuser: false, is_active: true, created_at: '' }
 
 beforeEach(() => {
@@ -51,7 +51,7 @@ describe('register', () => {
     mockedAuthApi.register.mockResolvedValueOnce(fakeUserResponse as never)
     mockedAuthApi.login.mockResolvedValueOnce({ access_token: 'tok-reg' } as never)
 
-    const u = await useAuthStore.getState().register({ username: 'alice', password: 'pw', email: 'a@x.com' })
+    const u = await useAuthStore.getState().register({ username: 'alice', password: 'pw', email: 'a@example.com' })
 
     expect(u).toEqual(fakeUserResponse)
     expect(mockedAuthApi.login).toHaveBeenCalledWith({ login: 'alice', password: 'pw' })
