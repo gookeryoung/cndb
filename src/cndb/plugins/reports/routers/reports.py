@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.reports.models import OutputFormat, ReportTemplate
+from cndb.plugins.reports.models import OutputFormat, ReportTemplate, ThemeStyle
 from cndb.plugins.reports.schemas import (
     RenderRequest,
     TemplateCreate,
@@ -28,6 +28,7 @@ from cndb.plugins.reports.schemas import (
     TemplateResponse,
     TemplateUpdate,
 )
+from cndb.plugins.reports.themes import ThemePreset, get_theme_preset
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -171,6 +172,14 @@ def _validate_format(fmt: str) -> str:
         raise HTTPException(status_code=400, detail=f"不支持的输出格式: {fmt}") from exc
 
 
+def _validate_theme(theme: str) -> str:
+    """校验主题风格值，非法值 400."""
+    try:
+        return ThemeStyle(theme).value
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"不支持的主题风格: {theme}") from exc
+
+
 @router.get("", response_model=list[TemplateListResponse])
 def list_templates(
     db: Session = Depends(get_db),
@@ -210,6 +219,7 @@ def create_template(
     _current_user: User = Depends(get_current_user),
 ) -> ReportTemplate:
     _validate_format(payload.output_format)
+    _validate_theme(payload.theme)
     _resolve_table(db, payload.table_id)
     extra_ids = _resolve_extra_tables(db, payload.extra_table_ids)
     try:
@@ -224,6 +234,7 @@ def create_template(
         template_content=payload.template_content,
         parameters=[p.model_dump() for p in payload.parameters],
         extra_table_ids=extra_ids,
+        theme=payload.theme,
     )
     db.add(tpl)
     db.commit()
@@ -266,6 +277,8 @@ def update_template(
 
     if "output_format" in ud:
         _validate_format(ud["output_format"])
+    if "theme" in ud and ud["theme"] is not None:
+        ud["theme"] = _validate_theme(ud["theme"])
     if "table_id" in ud:
         _resolve_table(db, ud["table_id"])
     if "extra_table_ids" in ud and ud["extra_table_ids"] is not None:
@@ -374,16 +387,50 @@ _MD_CODE_RE = re.compile(r"`([^`]+)`")
 _MD_TABLE_SEP_RE = re.compile(r"^:?-{3,}:?$")
 
 
-def _render_docx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
-    """DOCX 渲染：支持 Markdown 风格标题 + 加粗 + 代码 + 表格.
+def _render_docx(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle.MINIMAL.value) -> bytes:
+    """DOCX 渲染：支持 Markdown 风格标题 + 加粗 + 代码 + 表格，并按主题风格应用文字与格式.
 
     ctx 保留签名一致性，未来可用于渲染 data table 等结构化元素.
     """
     from docx import Document
-    from docx.shared import Pt
+    from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
+    from docx.styles.style import ParagraphStyle as DocxParagraphStyle
 
+    preset = get_theme_preset(theme)
     _ = ctx  # 预留：未来可用于生成 data table 等结构化元素
     doc = Document()
+
+    # 全局正文样式（Normal）应用主题正文字体/字号，含中文东亚字体映射
+    normal = doc.styles["Normal"]
+    assert isinstance(normal, DocxParagraphStyle)
+    normal.font.name = preset.body_font
+    normal.font.size = Pt(preset.body_size)
+    normal.element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), preset.body_font)
+
+    def _apply_run_font(run: Any, font: str, size: float | None = None, color: str | None = None) -> None:
+        """给 run 设置字体名（含东亚映射）、字号、颜色."""
+        run.font.name = font
+        run._element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), font)
+        if size is not None:
+            run.font.size = Pt(size)
+        if color is not None:
+            run.font.color.rgb = RGBColor.from_string(color.lstrip("#"))
+
+    def _add_themed_heading(text: str, level: int) -> None:
+        """按主题添加标题段落；主题色/字号/字体应用于标题 run."""
+        idx = min(level, 3) - 1
+        try:
+            p = doc.add_heading(text, level=level)
+        except (KeyError, ValueError):
+            # 某些 Word 版本没有 Heading 5+
+            p = doc.add_paragraph()
+            run = p.add_run(text)
+            run.bold = True
+            _apply_run_font(run, preset.heading_font, preset.heading_sizes[idx], preset.heading_colors[idx])
+            return
+        for run in p.runs:
+            _apply_run_font(run, preset.heading_font, preset.heading_sizes[idx], preset.heading_colors[idx])
 
     table_buffer: list[str] = []
     in_table = False
@@ -393,7 +440,7 @@ def _render_docx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
         return s.startswith("|") and s.endswith("|")
 
     def _flush_table() -> None:
-        """把缓冲的 markdown 表格行写入 docx 表格对象（跳过分隔行，首行加粗）."""
+        """把缓冲的 markdown 表格行写入 docx 表格对象（跳过分隔行，首行加粗 + 主题底纹）."""
         nonlocal in_table, table_buffer
         rows = [[c.strip() for c in raw.strip().strip("|").split("|")] for raw in table_buffer if raw.strip()]
         # 跳过 markdown 分隔行（| --- | :---: |）
@@ -410,8 +457,14 @@ def _render_docx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
                     if i == 0:
                         run = p.add_run(cell_text)
                         run.bold = True
+                        # 表头主题：底纹 + 文字色
+                        shd = cell._tc.get_or_add_tcPr().makeelement(qn("w:shd"), {})
+                        shd.set(qn("w:val"), "clear")
+                        shd.set(qn("w:fill"), preset.table_header_bg.lstrip("#"))
+                        cell._tc.get_or_add_tcPr().append(shd)
+                        _apply_run_font(run, preset.body_font, color=preset.table_header_color)
                     else:
-                        _add_rich_runs(p, cell_text)
+                        _add_rich_runs(p, cell_text, preset.table_body_font, preset.code_font)
         in_table = False
         table_buffer = []
 
@@ -435,14 +488,7 @@ def _render_docx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
         if m:
             level = min(len(m.group(1)), 9)
             text = m.group(2).strip()
-            try:
-                doc.add_heading(text, level=level)
-            except (KeyError, ValueError):
-                # 某些 Word 版本没有 Heading 5+
-                p = doc.add_paragraph()
-                run = p.add_run(text)
-                run.bold = True
-                run.font.size = Pt(16 - level)
+            _add_themed_heading(text, level)
             continue
 
         # 换页标记
@@ -452,7 +498,7 @@ def _render_docx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
 
         # 普通段落，处理粗体和代码
         p = doc.add_paragraph()
-        _add_rich_runs(p, line)
+        _add_rich_runs(p, line, preset.body_font, preset.code_font)
 
     # 收尾：提交剩余表格
     if in_table:
@@ -464,8 +510,8 @@ def _render_docx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
     return buf.getvalue()
 
 
-def _add_rich_runs(paragraph: Any, text: str) -> None:
-    """在 docx 段落中按 **bold** 和 `code` 分段添加 Run."""
+def _add_rich_runs(paragraph: Any, text: str, body_font: str = "Calibri", code_font: str = "Courier New") -> None:
+    """在 docx 段落中按 **bold** 和 `code` 分段添加 Run，正文/代码分别应用主题字体."""
     # 先用代码段切分（优先级高）
     code_parts = re.split(r"(`[^`]+`)", text)
     for part in code_parts:
@@ -473,7 +519,7 @@ def _add_rich_runs(paragraph: Any, text: str) -> None:
             continue
         if part.startswith("`") and part.endswith("`"):
             run = paragraph.add_run(part[1:-1])
-            run.font.name = "Courier New"
+            run.font.name = code_font
             continue
         # 再按粗体切分
         bold_parts = _MD_BOLD_RE.split(part)
@@ -482,8 +528,10 @@ def _add_rich_runs(paragraph: Any, text: str) -> None:
                 # 奇数位是粗体内容
                 run = paragraph.add_run(bp)
                 run.bold = True
+                run.font.name = body_font
             elif bp:
-                paragraph.add_run(bp)
+                run = paragraph.add_run(bp)
+                run.font.name = body_font
 
 
 # ── PDF 渲染器 ───────────────────────────────────────
@@ -527,8 +575,12 @@ def _ensure_pdf_font() -> None:
     _pdf_font_state[0] = True
 
 
-def _render_pdf(rendered_text: str, ctx: dict[str, Any]) -> bytes:
-    """PDF 渲染：Platypus 框架 + 自动分页 + 页眉页脚."""
+def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle.MINIMAL.value) -> bytes:
+    """PDF 渲染：Platypus 框架 + 自动分页 + 页眉页脚，按主题应用字号与颜色.
+
+    注意：reportlab 仅使用已注册字体（Helvetica 系列），主题预设只取字号/颜色，不改字体名.
+    """
+    from reportlab.lib.colors import HexColor
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.platypus import (
@@ -539,6 +591,7 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any]) -> bytes:
     )
 
     _ensure_pdf_font()
+    preset = get_theme_preset(theme)
     buf = io.BytesIO()
     title = ctx.get("table_name", "Report")
 
@@ -547,14 +600,21 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any]) -> bytes:
         "Body",
         parent=styles["Normal"],
         fontName="Helvetica",
-        fontSize=10.5,
-        leading=15,
+        fontSize=preset.body_size,
+        leading=preset.body_size * 1.5,
         spaceAfter=4,
     )
     heading_styles = {
-        1: ParagraphStyle("H1", parent=styles["Heading1"], fontSize=18, leading=22, spaceBefore=12, spaceAfter=8),
-        2: ParagraphStyle("H2", parent=styles["Heading2"], fontSize=15, leading=19, spaceBefore=10, spaceAfter=6),
-        3: ParagraphStyle("H3", parent=styles["Heading3"], fontSize=13, leading=16, spaceBefore=8, spaceAfter=4),
+        i + 1: ParagraphStyle(
+            f"H{i + 1}",
+            parent=styles[f"Heading{i + 1}"],
+            fontSize=preset.heading_sizes[i],
+            leading=preset.heading_sizes[i] * 1.25,
+            spaceBefore=12 - i * 2,
+            spaceAfter=8 - i * 2,
+            textColor=HexColor(preset.heading_colors[i]),
+        )
+        for i in range(3)
     }
 
     story: list[Any] = []
@@ -575,7 +635,7 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any]) -> bytes:
         elif in_table:
             # 表格结束，提交表格
             if table_buffer:
-                story.append(_make_pdf_table(table_buffer))
+                story.append(_make_pdf_table(table_buffer, preset))
             in_table = False
             table_buffer = []
             # 继续处理当前这行
@@ -604,7 +664,7 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any]) -> bytes:
 
     # 收尾：提交剩余表格
     if in_table and table_buffer:
-        story.append(_make_pdf_table(table_buffer))
+        story.append(_make_pdf_table(table_buffer, preset))
 
     # 分页回调（页眉 + 页脚页码）
     def _on_page(canvas: Any, doc: Any) -> None:
@@ -651,9 +711,24 @@ def _pdf_markdown_to_rml(text: str) -> str:
     return escaped
 
 
-def _make_pdf_table(rows: list[list[str]]) -> Any:
-    """构造 reportlab Table（带表头样式 + 跨页重复）."""
+def _pdf_table_style_cmds(preset: ThemePreset) -> list[tuple[Any, ...]]:
+    """按主题预设构造 PDF 表格样式命令列表（表头底色/文字色 + 斑马纹 + 网格）."""
     from reportlab.lib import colors
+
+    return [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(preset.table_header_bg)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor(preset.table_header_color)),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTSIZE", (0, 1), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8F9FA")]),
+    ]
+
+
+def _make_pdf_table(rows: list[list[str]], preset: ThemePreset | None = None) -> Any:
+    """构造 reportlab Table（带主题表头样式 + 跨页重复）."""
     from reportlab.platypus import Table, TableStyle
 
     if not rows:
@@ -662,22 +737,16 @@ def _make_pdf_table(rows: list[list[str]]) -> Any:
     max_cols = max(len(r) for r in rows)
     norm_rows = [r + [""] * (max_cols - len(r)) for r in rows]
     table = Table(norm_rows, repeatRows=1, hAlign="LEFT")
-    style = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E6EEF5")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1A5276")),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 10),
-        ("FONTSIZE", (0, 1), (-1, -1), 9),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8F9FA")]),
-    ]
-    table.setStyle(TableStyle(style))
+    table.setStyle(TableStyle(_pdf_table_style_cmds(preset or get_theme_preset("minimal"))))
     return table
 
 
-def _render_xlsx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
-    """XLSX 渲染：按 records_by_table 中每张表创建独立 Sheet."""
+def _render_xlsx(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle.MINIMAL.value) -> bytes:
+    """XLSX 渲染：按 records_by_table 中每张表创建独立 Sheet.
+
+    theme 参数保留签名统一；XLSX 为数据导向，不应用主题样式.
+    """
+    _ = theme
     from openpyxl import Workbook
     from openpyxl.styles import Font
 
@@ -854,7 +923,7 @@ def render_report(
     if renderer is None:
         raise HTTPException(status_code=400, detail=f"不支持的输出格式: {tpl.output_format}")
     try:
-        file_bytes = renderer(rendered_text, ctx)
+        file_bytes = renderer(rendered_text, ctx, tpl.theme or ThemeStyle.MINIMAL.value)
     except Exception as exc:
         logger.error("文件生成失败 template_id=%s format=%s: %s", template_id, tpl.output_format, exc)
         raise HTTPException(status_code=500, detail=f"文件生成失败: {exc}") from exc

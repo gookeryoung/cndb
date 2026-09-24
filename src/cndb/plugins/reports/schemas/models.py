@@ -29,6 +29,8 @@ class TemplateCreate(BaseModel):
     parameters: list[ParameterDef] = Field(default_factory=list)
     # 额外引用表（可跨工作区，渲染时注入 records_by_table）
     extra_table_ids: list[int] = Field(default_factory=list)
+    # 主题风格（business/minimal/modern/engineering/academic）
+    theme: str = "minimal"
 
 
 class TemplateUpdate(BaseModel):
@@ -41,6 +43,7 @@ class TemplateUpdate(BaseModel):
     table_id: int | None = None
     parameters: list[ParameterDef] | None = None
     extra_table_ids: list[int] | None = None
+    theme: str | None = None
 
 
 class TemplateResponse(BaseModel):
@@ -56,6 +59,7 @@ class TemplateResponse(BaseModel):
     template_content: str
     parameters: list[dict[str, Any]]
     extra_table_ids: list[int] = Field(default_factory=list)
+    theme: str = "minimal"
     created_at: dt.datetime
     updated_at: dt.datetime
 
@@ -72,6 +76,7 @@ class TemplateListResponse(BaseModel):
     output_format: str
     parameters: list[dict[str, Any]]
     extra_table_ids: list[int] = Field(default_factory=list)
+    theme: str = "minimal"
 
 
 class RenderRequest(BaseModel):

@@ -8,7 +8,7 @@ import type { FormInstance } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { reportApi, tableApi, fieldApi, recordApi, workspaceApi } from '@/api'
-import type { ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter, TableSummary, Field, Workspace } from '@/api'
+import type { ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter, ReportTheme, TableSummary, Field, Workspace } from '@/api'
 import { ReportTemplateEditor, PreviewPanel, SyntaxHelpPanel } from '@/components/report-editor'
 import type { TemplateEditorHandle } from '@/components/report-editor'
 
@@ -17,6 +17,13 @@ const FORMAT_OPTIONS = [
   { value: 'docx', label: 'Word (.docx)' },
   { value: 'pdf', label: 'PDF (.pdf)' },
   { value: 'xlsx', label: 'Excel (.xlsx)' },
+]
+const THEME_OPTIONS: Array<{ value: ReportTheme; label: string }> = [
+  { value: 'minimal', label: '简约' },
+  { value: 'business', label: '商务' },
+  { value: 'modern', label: '现代' },
+  { value: 'engineering', label: '工程' },
+  { value: 'academic', label: '学术' },
 ]
 const PARAM_TYPES = [
   { value: 'string', label: '文本' },
@@ -124,6 +131,7 @@ export default function ReportsPage() {
       template_content: 'Hello {{ table_name }}!\n共 {{ records | length }} 条记录\n\n{% for row in records %}- {{ row.name }}{% endfor %}',
       table_id: null,
       parameters: [],
+      theme: 'minimal',
     })
     setEditorOpen(true)
   }
@@ -138,6 +146,7 @@ export default function ReportsPage() {
         template_content: full.template_content,
         table_id: full.table_id,
         parameters: full.parameters as ReportParameter[],
+        theme: full.theme ?? 'minimal',
       })
       setEditorOpen(true)
     }).catch((err: unknown) => {
@@ -547,6 +556,10 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
           </Form.Item>
           <Form.Item name="output_format" label="输出格式" style={{ width: 150, marginBottom: 8 }}>
             <Select options={FORMAT_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="theme" label="主题风格" className="report-theme-row" style={{ width: 120, marginBottom: 8 }} tooltip="影响导出文档的标题/正文/表格样式">
+            {/* 选项仅 5 个，关闭虚拟滚动（jsdom 高度为 0 时虚拟列表渲染不全） */}
+            <Select options={THEME_OPTIONS} virtual={false} />
           </Form.Item>
           <Form.Item name="table_id" label="关联表" style={{ width: 220, marginBottom: 8 }}>
             <Select

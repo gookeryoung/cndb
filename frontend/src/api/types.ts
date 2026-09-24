@@ -384,6 +384,9 @@ export interface ReportParameter {
   label?: string
 }
 
+/** 报告主题风格取值（与后端 ThemeStyle 对齐） */
+export type ReportTheme = 'business' | 'minimal' | 'modern' | 'engineering' | 'academic'
+
 /** 报告模板（列表精简） */
 export interface ReportTemplateSummary {
   id: ID
@@ -394,6 +397,8 @@ export interface ReportTemplateSummary {
   parameters: ReportParameter[]
   /** 持久化的额外引用表 ID 列表（不含主表自身） */
   extra_table_ids: number[]
+  /** 主题风格，默认简约 */
+  theme: ReportTheme
 }
 
 /** 报告模板（详情，含模板内容） */
@@ -411,6 +416,7 @@ export interface ReportTemplateCreate {
   table_id?: number | null
   parameters?: ReportParameter[]
   extra_table_ids?: number[]
+  theme?: ReportTheme
 }
 
 export interface ReportTemplateUpdate {
@@ -421,6 +427,7 @@ export interface ReportTemplateUpdate {
   table_id?: number | null
   parameters?: ReportParameter[]
   extra_table_ids?: number[]
+  theme?: ReportTheme
 }
 
 export interface ReportRenderRequest {

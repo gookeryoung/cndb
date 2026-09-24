@@ -1,6 +1,6 @@
 """reports 插件渲染器与安全增强集成测试.
 
-覆盖：多表引用、DOCX/PDF/XLSX 富格式、安全沙箱、超时保护.
+覆盖：多表引用、DOCX/PDF/XLSX 富格式、安全沙箱、超时保护、主题风格应用.
 """
 
 from __future__ import annotations
@@ -137,6 +137,172 @@ class TestMultiTableRender:
 
 
 # ── DOCX 富文本 ──────────────────────────────────────
+
+
+def _docx_heading(paragraph_text: str, content: bytes):
+    """渲染 docx 字节流，返回文本为 paragraph_text 的段落对象."""
+    from docx import Document
+
+    doc = Document(io.BytesIO(content))
+    for p in doc.paragraphs:
+        if p.text == paragraph_text:
+            return p
+    raise AssertionError(f"未找到段落: {paragraph_text!r}")
+
+
+def _docx_cell_fill(cell) -> str | None:
+    """读取 docx 单元格底纹 fill 色值（无底纹返回 None）."""
+    from docx.oxml.ns import qn
+
+    tc_pr = cell._tc.tcPr
+    if tc_pr is None:
+        return None
+    shd = tc_pr.find(qn("w:shd"))
+    return shd.get(qn("w:fill")) if shd is not None else None
+
+
+class TestThemedDocxRender:
+    """主题风格在 DOCX 渲染中的应用：标题色/字号、表头底纹、代码字体、端到端模板 theme."""
+
+    _TEXT = "# 一级标题\n正文段落\n| 列1 | 列2 |\n| --- | --- |\n| a | `code` |"
+
+    def test_default_and_minimal_produce_identical_output(self):
+        """不传 theme（默认 minimal）与显式 minimal 语义一致（回归保障，不做字节比较——docx 内嵌 ZIP 时间戳跨秒会变）."""
+        from docx import Document
+
+        from cndb.plugins.reports.routers.reports import _render_docx
+
+        def _fingerprint(content: bytes) -> tuple[list[tuple[str, str]], str, float]:
+            """段落(文本, 样式名) + 标题 run 颜色/字号 摘要."""
+            doc = Document(io.BytesIO(content))
+            paras = [(p.text, p.style.name) for p in doc.paragraphs]
+            heading = next(p for p in doc.paragraphs if p.text == "一级标题")
+            run = heading.runs[0]
+            return paras, str(run.font.color.rgb), run.font.size.pt
+
+        assert _fingerprint(_render_docx(self._TEXT, {})) == _fingerprint(_render_docx(self._TEXT, {}, "minimal"))
+
+    def test_minimal_heading_black_18pt(self):
+        """minimal 主题：标题黑色 18pt."""
+        from cndb.plugins.reports.routers.reports import _render_docx
+
+        content = _render_docx(self._TEXT, {}, "minimal")
+        p = _docx_heading("一级标题", content)
+        run = p.runs[0]
+        assert str(run.font.color.rgb) == "000000"
+        assert run.font.size.pt == pytest.approx(18.0)
+
+    def test_business_heading_brand_color(self):
+        """business 主题：H1 深蓝 #1F3864."""
+        from cndb.plugins.reports.routers.reports import _render_docx
+
+        content = _render_docx(self._TEXT, {}, "business")
+        p = _docx_heading("一级标题", content)
+        assert str(p.runs[0].font.color.rgb) == "1F3864"
+
+    def test_business_table_header_shading(self):
+        """business 主题：表头单元格底纹 #D9E2F3，表头文字同色系."""
+        from docx import Document
+
+        from cndb.plugins.reports.routers.reports import _render_docx
+
+        content = _render_docx(self._TEXT, {}, "business")
+        doc = Document(io.BytesIO(content))
+        assert doc.tables, "应有表格"
+        t = doc.tables[0]
+        assert _docx_cell_fill(t.cell(0, 0)) == "D9E2F3"
+        assert t.cell(0, 0).paragraphs[0].runs[0].bold is True
+
+    def test_engineering_code_font(self):
+        """engineering 主题：行内代码用 Consolas."""
+        from docx import Document
+
+        from cndb.plugins.reports.routers.reports import _render_docx
+
+        content = _render_docx(self._TEXT, {}, "engineering")
+        doc = Document(io.BytesIO(content))
+        code_runs = [
+            r for row in doc.tables[0].rows for c in row.cells for p in c.paragraphs for r in p.runs if r.text == "code"
+        ]
+        assert code_runs, "应存在代码 run"
+        assert code_runs[0].font.name == "Consolas"
+
+    def test_render_endpoint_applies_template_theme(self, client, auth_headers, sample_tables):
+        """端到端：模板持久化 theme=business，渲染端点按其应用标题色."""
+        _wid, tid, _ = sample_tables
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "主题端到端",
+                "table_id": tid,
+                "output_format": "docx",
+                "template_content": "# 主题标题",
+                "theme": "business",
+            },
+        )
+        assert tpl.status_code == 201, tpl.text
+        resp = client.post(
+            f"/api/v1/reports/{tpl.json()['id']}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200, resp.text
+        p = _docx_heading("主题标题", resp.content)
+        assert str(p.runs[0].font.color.rgb) == "1F3864"
+
+
+# ── PDF 主题 ─────────────────────────────────────────
+
+
+class TestThemedPdfRender:
+    """主题风格在 PDF 渲染中的应用：表格预设色、全主题 smoke、端到端."""
+
+    def test_table_style_uses_preset_colors(self):
+        """_pdf_table_style_cmds 按 preset 产出表头底色/文字色命令."""
+        from reportlab.lib import colors
+
+        from cndb.plugins.reports.routers.reports import _pdf_table_style_cmds
+        from cndb.plugins.reports.themes import get_theme_preset
+
+        cmds = _pdf_table_style_cmds(get_theme_preset("business"))
+        assert ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9E2F3")) in cmds
+        assert ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1F3864")) in cmds
+
+    def test_render_pdf_all_themes_smoke(self):
+        """五类主题 PDF 渲染均成功（防预设字体名破坏 reportlab 字体注册）."""
+        from cndb.plugins.reports.routers.reports import _render_pdf
+
+        text = "# 标题\n## 二级\n正文段落\n| a | b |\n| --- | --- |\n| 1 | `c` |"
+        for theme in ("business", "minimal", "modern", "engineering", "academic"):
+            data = _render_pdf(text, {}, theme)
+            assert data.startswith(b"%PDF"), theme
+
+    def test_render_endpoint_pdf_theme_smoke(self, client, auth_headers, sample_tables):
+        """端到端：theme=modern 的 PDF 模板渲染成功."""
+        _wid, tid, _ = sample_tables
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "PDF主题",
+                "table_id": tid,
+                "output_format": "pdf",
+                "template_content": "# 主题标题\n正文",
+                "theme": "modern",
+            },
+        )
+        assert tpl.status_code == 201, tpl.text
+        resp = client.post(
+            f"/api/v1/reports/{tpl.json()['id']}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.content.startswith(b"%PDF")
+
+
+# ── DOCX 富文本（既有） ────────────────────────────────
 
 
 class TestDocxRenderer:

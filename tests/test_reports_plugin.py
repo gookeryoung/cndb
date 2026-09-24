@@ -1168,3 +1168,57 @@ def _login(client, username: str) -> dict:
     resp = client.post("/api/v1/accounts/auth/login", json={"login": username, "password": "pass1234"})
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+class TestTemplateTheme:
+    """模板主题风格字段：默认 minimal、合法值回显、非法值 400."""
+
+    _BASE = {
+        "name": "主题模板",
+        "template_content": "# 标题\n正文",
+    }
+
+    def test_create_default_theme_is_minimal(self, client, auth_headers):
+        """创建模板不传 theme 时默认 minimal."""
+        resp = client.post("/api/v1/reports", headers=auth_headers, json=self._BASE)
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["theme"] == "minimal"
+
+    def test_create_echoes_valid_theme(self, client, auth_headers):
+        """创建模板传合法 theme 应原样回显."""
+        for theme in ("business", "minimal", "modern", "engineering", "academic"):
+            resp = client.post("/api/v1/reports", headers=auth_headers, json={**self._BASE, "theme": theme})
+            assert resp.status_code == 201, resp.text
+            assert resp.json()["theme"] == theme
+
+    def test_create_rejects_invalid_theme(self, client, auth_headers):
+        """创建模板传非法 theme 应 400."""
+        resp = client.post("/api/v1/reports", headers=auth_headers, json={**self._BASE, "theme": "invalid"})
+        assert resp.status_code == 400
+        assert "主题" in resp.json()["detail"]
+
+    def test_update_theme_roundtrip(self, client, auth_headers):
+        """更新 theme 应持久化."""
+        tpl_id = _mk_tpl_id(client, auth_headers, "主题更新", "正文")
+        resp = client.put(f"/api/v1/reports/{tpl_id}", headers=auth_headers, json={"theme": "academic"})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["theme"] == "academic"
+        resp = client.get(f"/api/v1/reports/{tpl_id}", headers=auth_headers)
+        assert resp.json()["theme"] == "academic"
+
+    def test_update_rejects_invalid_theme(self, client, auth_headers):
+        """更新为非法 theme 应 400 且不落库."""
+        tpl_id = _mk_tpl_id(client, auth_headers, "主题非法更新", "正文")
+        resp = client.put(f"/api/v1/reports/{tpl_id}", headers=auth_headers, json={"theme": "nope"})
+        assert resp.status_code == 400
+        resp = client.get(f"/api/v1/reports/{tpl_id}", headers=auth_headers)
+        assert resp.json()["theme"] == "minimal"
+
+    def test_list_contains_theme(self, client, auth_headers):
+        """列表响应应包含 theme 字段."""
+        client.post("/api/v1/reports", headers=auth_headers, json={**self._BASE, "theme": "business"})
+        resp = client.get("/api/v1/reports", headers=auth_headers)
+        assert resp.status_code == 200
+        items = resp.json()
+        assert items, "应至少有一个模板"
+        assert all("theme" in it for it in items)

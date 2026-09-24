@@ -22,6 +22,16 @@ class OutputFormat(enum.StrEnum):
     XLSX = "xlsx"
 
 
+class ThemeStyle(enum.StrEnum):
+    """报告主题风格：影响导出文档的文字与格式."""
+
+    BUSINESS = "business"
+    MINIMAL = "minimal"
+    MODERN = "modern"
+    ENGINEERING = "engineering"
+    ACADEMIC = "academic"
+
+
 class ReportTemplate(TimestampMixin, Base):
     """报告模板：用 Jinja2 语法定义，渲染时注入 table records + 用户参数.
 
@@ -48,9 +58,13 @@ class ReportTemplate(TimestampMixin, Base):
     )
     # 额外引用表 id 列表（可跨工作区，渲染时注入 records_by_table；迁移 b3c4d5e6f7a8 已建列）
     extra_table_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    # 主题风格（迁移 add_report_template_theme 已建列，存量行为 minimal）
+    theme: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=ThemeStyle.MINIMAL.value, server_default=ThemeStyle.MINIMAL.value
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
-        return f"ReportTemplate(id={self.id}, name={self.name!r}, format={self.output_format!r})"
+        return f"ReportTemplate(id={self.id}, name={self.name!r}, format={self.output_format!r}, theme={self.theme!r})"
 
 
-__all__ = ["OutputFormat", "ReportTemplate"]
+__all__ = ["OutputFormat", "ReportTemplate", "ThemeStyle"]

@@ -23,6 +23,7 @@ const TPL: ReportTemplateSummary = {
     output_format: 'docx',
     parameters: [{ name: '月份', type: 'string', required: true }],
     extra_table_ids: [],
+    theme: 'minimal',
 }
 
 function renderPage() {
@@ -315,5 +316,96 @@ describe('ReportsPage 编辑与新建保存', () => {
         await waitFor(() => expect(postBodies).toHaveLength(1))
         expect(postBodies[0].extra_table_ids).toEqual([200])
         expect(await screen.findByText('模板已创建')).toBeInTheDocument()
+    })
+})
+
+describe('ReportsPage 主题风格', () => {
+    /** 打开编辑器弹窗内"主题风格"下拉的 combobox */
+    const themeCombo = () => {
+        const row = document.querySelector('.report-theme-row')
+        expect(row).not.toBeNull()
+        const combo = row!.querySelector('.ant-select-selector')
+        expect(combo).not.toBeNull()
+        return combo!
+    }
+
+    it('新建模板主题默认简约，保存时随 payload 提交 theme=minimal', async () => {
+        const postBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([])),
+            http.post('/api/v1/reports', async ({ request }) => {
+                postBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({ id: 9 })
+            }),
+        )
+        renderPage()
+
+        fireEvent.click((await screen.findAllByRole('button', { name: /新\s*建\s*模\s*板/ }))[0])
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('新建模板'))
+
+        // 主题选择入口存在且默认显示"简约"
+        await waitFor(() => expect(themeCombo().textContent).toContain('简约'))
+        // 下拉含全部五类主题
+        fireEvent.mouseDown(themeCombo())
+        expect(await screen.findByRole('option', { name: '商务' })).toBeInTheDocument()
+        expect(screen.getByRole('option', { name: '现代' })).toBeInTheDocument()
+        expect(screen.getByRole('option', { name: '工程' })).toBeInTheDocument()
+        expect(screen.getByRole('option', { name: '学术' })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('option', { name: '简约' }))
+
+        fireEvent.change(screen.getByPlaceholderText('例如：月度销售汇总'), { target: { value: '简约月报' } })
+        fireEvent.click(screen.getByRole('button', { name: /^创\s*建$/ }))
+
+        await waitFor(() => expect(postBodies).toHaveLength(1))
+        expect(postBodies[0].theme).toBe('minimal')
+    })
+
+    it('新建模板选择商务主题后随保存提交 theme=business', async () => {
+        const postBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([])),
+            http.post('/api/v1/reports', async ({ request }) => {
+                postBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({ id: 9 })
+            }),
+        )
+        renderPage()
+
+        fireEvent.click((await screen.findAllByRole('button', { name: /新\s*建\s*模\s*板/ }))[0])
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('新建模板'))
+
+        fireEvent.mouseDown(themeCombo())
+        fireEvent.click(await screen.findByRole('option', { name: '商务' }))
+        await waitFor(() => expect(themeCombo().textContent).toContain('商务'))
+
+        fireEvent.change(screen.getByPlaceholderText('例如：月度销售汇总'), { target: { value: '商务月报' } })
+        fireEvent.click(screen.getByRole('button', { name: /^创\s*建$/ }))
+
+        await waitFor(() => expect(postBodies).toHaveLength(1))
+        expect(postBodies[0].theme).toBe('business')
+    })
+
+    it('编辑模板：已有主题回显，保存时随 PUT 提交', async () => {
+        const putBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([{ ...TPL, theme: 'academic' }])),
+            http.get('/api/v1/reports/1', () =>
+                HttpResponse.json({ ...TPL, theme: 'academic', template_content: 'Hello' })),
+            http.put('/api/v1/reports/1', async ({ request }) => {
+                putBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({})
+            }),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+        // 回显为学术主题
+        await waitFor(() => expect(themeCombo().textContent).toContain('学术'))
+        fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+        await waitFor(() => expect(putBodies).toHaveLength(1))
+        expect(putBodies[0].theme).toBe('academic')
     })
 })
