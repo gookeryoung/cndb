@@ -518,6 +518,7 @@ def _import_backup_into_workspace(
     imported_tables = 0
     imported_rows = 0
     imported_views = 0
+    errors: list[str] = []
 
     # 循环前先提交任何待处理事务，确保连接以干净状态进入逐表循环。
     # 原因：SQLite 的隐式事务（由 flush() 开启）会持有 RESERVED 锁，
@@ -598,7 +599,11 @@ def _import_backup_into_workspace(
 
             # 插入数据行（用 raw INSERT 避免依赖 transfer.py 的复杂逻辑）
             rows_data = tbl_data.get("rows", [])
-            if rows_data and fields_order:
+            if rows_data and not fields_order:
+                msg = f"表 {table_name} 无字段定义，{len(rows_data)} 行数据无法导入，已跳过"
+                errors.append(msg)
+                logging.getLogger(__name__).warning("%s", msg)
+            elif rows_data and fields_order:
                 try:
                     from sqlalchemy import MetaData, insert
                     from sqlalchemy import Table as SATable
@@ -609,6 +614,9 @@ def _import_backup_into_workspace(
                     for raw in rows_data:
                         values = {}
                         for f in fields_order:
+                            # link 等字段无主表物理列（值存关联表），跳过避免整表 INSERT 失败
+                            if f.db_column_name not in sa_table.columns:
+                                continue
                             # v3 行键为业务字段名；回退物理列名以兼容旧版 v1/v2 备份
                             if f.name in raw:
                                 values[f.db_column_name] = raw[f.name]
@@ -619,8 +627,19 @@ def _import_backup_into_workspace(
                     if row_values:
                         db.execute(insert(sa_table), row_values)
                         imported_rows += len(row_values)
+                    if len(row_values) < len(rows_data):
+                        # 行键无法匹配（如旧版备份的随机物理列名）时不许静默丢数据
+                        dropped = len(rows_data) - len(row_values)
+                        msg = (
+                            f"表 {table_name} 有 {dropped}/{len(rows_data)} 行数据"
+                            "无法匹配到字段（旧版备份的物理列名不可映射），已跳过"
+                        )
+                        errors.append(msg)
+                        logging.getLogger(__name__).warning("%s", msg)
                 except Exception as exc:
-                    logging.getLogger(__name__).warning("表 %s 数据行导入失败: %s", table_name, exc)
+                    msg = f"表 {table_name} 数据行导入失败，已跳过 {len(rows_data)} 行: {exc}"
+                    errors.append(msg)
+                    logging.getLogger(__name__).warning("%s", msg)
 
             # 创建视图（is_default 兼容 v1 旧键名 default）
             for vd in views_data:
@@ -653,6 +672,7 @@ def _import_backup_into_workspace(
         imported_tables=imported_tables,
         imported_rows=imported_rows,
         imported_views=imported_views,
+        errors=errors,
     )
 
 
@@ -818,6 +838,7 @@ def create_workspace_from_backup(
         imported_tables=import_result.imported_tables,
         imported_rows=import_result.imported_rows,
         imported_views=import_result.imported_views,
+        errors=import_result.errors,
     )
 
 
