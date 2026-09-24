@@ -109,6 +109,11 @@ export default defineConfig(({ mode }) => ({
     setupFiles: ['./src/test/setup.ts'],
     // 每个用例结束后自动 restore 所有 spyOn mock，防止异常分支的 mock 泄漏到后续用例
     restoreMocks: true,
+    // 全量并发（16 workers）下 jsdom + antd 渲染负载高，部分含
+    // mutation→message→navigate 长链路的用例会超过默认 5s（2026-09 实测
+    // 861 例中 8 例偶发超时，单文件运行均在 1s 内）。放宽到 10s 只影响
+    // 超时阈值，不改变断言语义。
+    testTimeout: 10_000,
     // 单元/组件测试遵循就近放置约定：src 下的 *.test.ts(x)
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     // worker 数实测（24 核）：16 最优（24.7s）；23 因 fork 创建+内存压力回吐收益（27.7s）；
