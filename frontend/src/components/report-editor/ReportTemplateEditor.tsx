@@ -122,13 +122,13 @@ export default function ReportTemplateEditor({
     return { fieldIds: ids, fieldMap: map }
   }, [tableGroups, fields])
 
-  // 构造要插入的模板代码（多表模式自动加 records_by_table 前缀）
+  // 构造要插入的模板代码（统一完整可渲染表达式：主表取首行，额外表走 records_by_table）
   const buildInsertText = (item: { field: Field; group?: TableFieldGroup }): string => {
     const { field, group } = item
     if (group && !group.isPrimary) {
       return `{{ records_by_table['${group.tableName}'][0].${field.name} }}`
     }
-    return `{{ ${field.name} }}`
+    return `{{ records[0].${field.name} }}`
   }
 
   const handleDragStart = (_event: DragStartEvent) => {
@@ -154,8 +154,8 @@ export default function ReportTemplateEditor({
     if (item) {
       internalRef.current?.insertText(buildInsertText(item))
     } else if (data?.fieldName) {
-      // fallback：仅插入简单语法
-      internalRef.current?.insertText(`{{ ${data.fieldName} }}`)
+      // fallback：主表字段统一插入完整可渲染表达式
+      internalRef.current?.insertText(`{{ records[0].${data.fieldName} }}`)
     }
   }
 

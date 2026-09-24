@@ -43,6 +43,14 @@ describe('PreviewPanel 实时预览', () => {
     expect(await screen.findByText('周报', {}, FIND_OPTS)).toBeInTheDocument()
   })
 
+  it('generated_at 生成日期参与渲染（与后端上下文一致）', async () => {
+    renderProviders(
+      <PreviewPanel template="生成于 {{ generated_at }}" records={[]} />,
+    )
+
+    expect(await screen.findByText(/生成于 \d{4}-\d{2}-\d{2} \d{2}:\d{2}/, {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
   it('records_by_table 参与渲染', async () => {
     renderProviders(
       <PreviewPanel

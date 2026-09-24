@@ -271,4 +271,49 @@ describe('ReportsPage 编辑与新建保存', () => {
         expect(postBodies[0].template_content).toContain('{{ table_name }}')
         expect(await screen.findByText('模板已创建')).toBeInTheDocument()
     })
+
+    it('新建模板：跨工作区引入额外表后随保存提交 extra_table_ids', async () => {
+        const postBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([])),
+            http.get('/api/v1/workspaces', () =>
+                HttpResponse.json([
+                    { id: 10, name: '销售工作区' },
+                    { id: 20, name: '科研工作区' },
+                ]),
+            ),
+            http.get('/api/v1/workspaces/10/tables', () =>
+                HttpResponse.json([{ id: 100, name: '客户表', record_count: 0, field_count: 0, view_count: 0 }]),
+            ),
+            http.get('/api/v1/workspaces/20/tables', () =>
+                HttpResponse.json([{ id: 200, name: '科研经费表', record_count: 0, field_count: 0, view_count: 0 }]),
+            ),
+            http.post('/api/v1/reports', async ({ request }) => {
+                postBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({ id: 9 })
+            }),
+        )
+        renderPage()
+
+        fireEvent.click((await screen.findAllByRole('button', { name: /新\s*建\s*模\s*板/ }))[0])
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('新建模板'))
+
+        // 等跨工作区级联行渲染（workspaces query 就绪后出现）
+        await waitFor(() => expect(document.querySelector('.report-crossws-row')).not.toBeNull())
+        const rowCombo = () => screen.getAllByRole('combobox').find(c => c.closest('.report-crossws-row'))!
+        // 先点源工作区按钮（不是下拉），设 importWsId → 触发源表 query
+        fireEvent.click(screen.getByText('科研工作区'))
+        // 等 React Query 状态更新 + options prop 填充，再 mouseDown 打开下拉
+        await waitFor(() => { fireEvent.mouseDown(rowCombo()) })
+        expect(await screen.findByText('科研经费表')).toBeInTheDocument()
+        fireEvent.click(screen.getByText('科研经费表'))
+        fireEvent.click(screen.getByRole('button', { name: /^引\s*入$/ }))
+
+        fireEvent.change(screen.getByPlaceholderText('例如：月度销售汇总'), { target: { value: '跨区报表' } })
+        fireEvent.click(screen.getByRole('button', { name: /^创\s*建$/ }))
+
+        await waitFor(() => expect(postBodies).toHaveLength(1))
+        expect(postBodies[0].extra_table_ids).toEqual([200])
+        expect(await screen.findByText('模板已创建')).toBeInTheDocument()
+    })
 })

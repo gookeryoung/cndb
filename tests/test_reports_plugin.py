@@ -1,5 +1,8 @@
 """reports 插件集成测试."""
 
+import io
+import re
+
 import pytest
 
 from cndb.plugins.accounts.models import User
@@ -293,6 +296,64 @@ class TestReportRender:
         assert resp.status_code == 200
         assert "spreadsheetml" in resp.headers["content-type"]
 
+    def test_render_injects_generated_at(self, client, auth_headers, db):
+        """渲染上下文应注入 generated_at 生成日期标签（YYYY-MM-DD HH:mm）."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-date"})
+        wid = ws.json()["id"]
+        table_resp = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "日期表"})
+        tid = table_resp.json()["id"]
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "日期标签报告",
+                "output_format": "docx",
+                "template_content": "生成于 {{ generated_at }}",
+            },
+        )
+        tpl_id = tpl.json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{tpl_id}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200
+
+        from docx import Document
+
+        doc = Document(io.BytesIO(resp.content))
+        text = "\n".join(p.text for p in doc.paragraphs)
+        m = re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", text)
+        assert m is not None, f"正文未包含生成日期，实际：{text!r}"
+        assert text.strip() == f"生成于 {m.group(0)}"
+
+    def test_render_filename_with_timestamp(self, client, auth_headers, db):
+        """下载文件名应含模板名与生成时间戳，便于区分不同批次生成的报告."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-fn"})
+        wid = ws.json()["id"]
+        table_resp = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "文件名表"})
+        tid = table_resp.json()["id"]
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "月度汇总",
+                "output_format": "docx",
+                "template_content": "ok",
+            },
+        )
+        tpl_id = tpl.json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{tpl_id}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200
+        disposition = resp.headers["content-disposition"]
+        # filename* (RFC 5987) 携带 UTF-8 中文名 + 时间戳 {模板名}_{YYYYMMDD_HHMMSS}.docx
+        assert "filename*=UTF-8''" in disposition
+        assert re.search(r"%E6%9C%88%E5%BA%A6%E6%B1%87%E6%80%BB_\d{8}_\d{6}\.docx", disposition)
+
     def test_render_template_not_found(self, client, auth_headers):
         resp = client.post(
             "/api/v1/reports/99999/render",
@@ -565,3 +626,247 @@ def test_render_denied_when_user_no_read_permission(client, auth_headers, db):
         json={"table_id": tid, "params": {}},
     )
     assert resp.status_code == 403, f"应返回 403 但实际 {resp.status_code}: {resp.text}"
+
+
+# ── 跨工作区额外引用表（extra_table_ids）──────────────────
+
+
+def _mk_table(client, headers, ws_name, table_name, field_name="名称", value="v1"):
+    """辅助：建工作区 + 表 + 字段 + 一条记录，返回 (wid, tid)."""
+    ws = client.post("/api/v1/workspaces", headers=headers, json={"name": ws_name})
+    wid = ws.json()["id"]
+    tbl = client.post(f"/api/v1/workspaces/{wid}/tables", headers=headers, json={"name": table_name})
+    tid = tbl.json()["id"]
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+        headers=headers,
+        json={"name": field_name, "field_type": "text"},
+    )
+    # records 创建负载契约是 {values: {...}}（FastAPI RowCreate 为准）
+    created = client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+        headers=headers,
+        json={"values": {field_name: value}},
+    )
+    assert created.status_code == 201, created.text
+    return wid, tid
+
+
+def test_extra_table_ids_persist_roundtrip(client, auth_headers):
+    """extra_table_ids 应随模板持久化：create 写入 → get 读回 → update 修改."""
+    _ws, tid_a = _mk_table(client, auth_headers, "ws-per-a", "主表A")
+    _ws2, tid_b = _mk_table(client, auth_headers, "ws-per-b", "额外表B")
+    _ws3, tid_c = _mk_table(client, auth_headers, "ws-per-c", "额外表C")
+
+    create_resp = client.post(
+        "/api/v1/reports",
+        headers=auth_headers,
+        json={
+            "name": "持久化模板",
+            "table_id": tid_a,
+            "extra_table_ids": [tid_b],
+            "output_format": "docx",
+            "template_content": "x",
+        },
+    )
+    assert create_resp.status_code == 201
+    assert create_resp.json()["extra_table_ids"] == [tid_b]
+
+    rep_id = create_resp.json()["id"]
+    got = client.get(f"/api/v1/reports/{rep_id}", headers=auth_headers)
+    assert got.json()["extra_table_ids"] == [tid_b]
+
+    upd = client.put(f"/api/v1/reports/{rep_id}", headers=auth_headers, json={"extra_table_ids": [tid_b, tid_c]})
+    assert upd.status_code == 200
+    assert upd.json()["extra_table_ids"] == [tid_b, tid_c]
+
+    # 未传 extra_table_ids 的模板默认空列表
+    plain = client.post(
+        "/api/v1/reports",
+        headers=auth_headers,
+        json={"name": "无额外表模板", "output_format": "docx", "template_content": "x"},
+    )
+    assert plain.json()["extra_table_ids"] == []
+
+
+def test_extra_table_ids_create_rejects_missing_table(client, auth_headers):
+    """create/update 时 extra_table_ids 含不存在的表 id 应 404."""
+    _ws, tid_a = _mk_table(client, auth_headers, "ws-ex-a", "表A")
+    resp = client.post(
+        "/api/v1/reports",
+        headers=auth_headers,
+        json={
+            "name": "坏引用",
+            "table_id": tid_a,
+            "extra_table_ids": [999999],
+            "output_format": "docx",
+            "template_content": "x",
+        },
+    )
+    assert resp.status_code == 404
+
+
+def test_render_cross_workspace_extra_table(client, auth_headers):
+    """渲染时应能引用其他工作区（有 READ 权限）的表数据."""
+    _ws1, tid_a = _mk_table(client, auth_headers, "ws-cx-a", "主表甲")
+    _ws2, tid_b = _mk_table(client, auth_headers, "ws-cx-b", "跨区表乙", field_name="跨区字段", value="跨区数据")
+
+    tpl = client.post(
+        "/api/v1/reports",
+        headers=auth_headers,
+        json={
+            "name": "跨区渲染",
+            "table_id": tid_a,
+            "extra_table_ids": [tid_b],
+            "output_format": "docx",
+            "template_content": "值={{ records_by_table['跨区表乙'][0].跨区字段 }}",
+        },
+    )
+    rep_id = tpl.json()["id"]
+    resp = client.post(
+        f"/api/v1/reports/{rep_id}/render",
+        headers=auth_headers,
+        json={"table_id": tid_a, "params": {}, "extra_table_ids": [tid_b]},
+    )
+    assert resp.status_code == 200
+
+    from docx import Document
+
+    doc = Document(io.BytesIO(resp.content))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "值=跨区数据" in text
+
+
+# ── 迭代 3：统计计算函数 ─────────────────────────────
+
+
+def _mk_table_with_fields(client, auth_headers, wid, name, fields):
+    """建表 + 字段（fields 是 list[tuple[str, str]]：(字段名, field_type)），返回 tid."""
+    tbl = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": name})
+    tid = tbl.json()["id"]
+    for fname, ftype in fields:
+        client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+            headers=auth_headers,
+            json={"name": fname, "field_type": ftype},
+        )
+    return tid
+
+
+class TestStatsFunctions:
+    """Jinja2 沙箱注册的统计函数测试."""
+
+    def test_render_stats_sum_avg_count(self, client, auth_headers, db):
+        """stats(records, '金额') 应返回 {sum, avg, count, min, max}."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-stats"}).json()
+        wid = ws["id"]
+        tid = _mk_table_with_fields(client, auth_headers, wid, "销售表", [("名称", "text"), ("金额", "number")])
+        # 三条记录：100 / 200 / 300
+        for amt in (100, 200, 300):
+            client.post(
+                f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+                headers=auth_headers,
+                json={"values": {"名称": f"商品{amt}", "金额": amt}},
+            )
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "统计汇总",
+                "output_format": "docx",
+                "template_content": (
+                    "总金额={{ stats(records, '金额').sum }}\n"
+                    "平均={{ stats(records, '金额').avg }}\n"
+                    "数量={{ stats(records, '金额').count }}\n"
+                    "最小={{ stats(records, '金额').min }}\n"
+                    "最大={{ stats(records, '金额').max }}"
+                ),
+            },
+        ).json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200
+        from docx import Document
+
+        text = "\n".join(p.text for p in Document(io.BytesIO(resp.content)).paragraphs)
+        # 600.0 或 600 都可以
+        assert re.search(r"总金额=600(\.0+)?", text), text
+        assert re.search(r"平均=200(\.0+)?", text), text
+        assert "数量=3" in text
+        assert re.search(r"最小=100(\.0+)?", text), text
+        assert re.search(r"最大=300(\.0+)?", text), text
+
+    def test_render_group_stats(self, client, auth_headers, db):
+        """group_stats(records, '类别', '金额') 应按类别分组聚合金额."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-grp"}).json()
+        wid = ws["id"]
+        tid = _mk_table_with_fields(client, auth_headers, wid, "分类表", [("类别", "text"), ("金额", "number")])
+        for cat, amt in (("A", 100), ("A", 200), ("B", 300), ("B", 400)):
+            client.post(
+                f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+                headers=auth_headers,
+                json={"values": {"类别": cat, "金额": amt}},
+            )
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "分组汇总",
+                "output_format": "docx",
+                "template_content": (
+                    "{% for g in group_stats(records, '类别', '金额') %}{{ g.key }}={{ g.sum }}\n{% endfor %}"
+                ),
+            },
+        ).json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200
+        from docx import Document
+
+        text = "\n".join(p.text for p in Document(io.BytesIO(resp.content)).paragraphs)
+        assert re.search(r"A=300(\.0+)?", text), text
+        assert re.search(r"B=700(\.0+)?", text), text
+
+    def test_render_stats_on_extra_table(self, client, auth_headers, db):
+        """stats 应能对额外引用表的数据做统计（records_by_table['经费表']）."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-stats-extra"}).json()
+        wid = ws["id"]
+        tid_main = _mk_table_with_fields(client, auth_headers, wid, "项目表", [("项目名", "text")])
+        tid_extra = _mk_table_with_fields(client, auth_headers, wid, "经费表", [("项目名", "text"), ("预算", "number")])
+        client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid_main}/records",
+            headers=auth_headers,
+            json={"values": {"项目名": "科研项目X"}},
+        )
+        for budget in (50000, 80000, 120000):
+            client.post(
+                f"/api/v1/workspaces/{wid}/tables/{tid_extra}/records",
+                headers=auth_headers,
+                json={"values": {"项目名": "科研项目X", "预算": budget}},
+            )
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "跨表统计",
+                "output_format": "docx",
+                "template_content": "经费总额={{ stats(records_by_table['经费表'], '预算').sum }}",
+                "extra_table_ids": [tid_extra],
+            },
+        ).json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid_main, "params": {}, "extra_table_ids": [tid_extra]},
+        )
+        assert resp.status_code == 200
+        from docx import Document
+
+        text = "\n".join(p.text for p in Document(io.BytesIO(resp.content)).paragraphs)
+        assert re.search(r"经费总额=250000(\.0+)?", text), text

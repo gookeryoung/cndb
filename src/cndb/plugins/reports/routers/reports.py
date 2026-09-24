@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import io
 import logging
 import re
 import threading
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -57,8 +59,10 @@ _ALLOWED_FILTERS = {
     "last",
     "dictsort",
     "unique",
-    "reject",
     "select",
+    "reject",
+    "selectattr",
+    "rejectattr",
     "map",
     "sum",
     "abs",
@@ -84,6 +88,76 @@ _jinja_env.filters = {k: v for k, v in _jinja_env.filters.items() if k in _ALLOW
 _unsafe_builtins = ("open", "exec", "eval", "compile", "__import__", "input", "print", "breakpoint", "exit", "quit")
 for _name in _unsafe_builtins:
     _jinja_env.globals.__setitem__(_name, None)  # type: ignore[unsupported-operation]
+
+
+# ── 统计函数 ──────────────────────────────────
+# 这两个函数在 SandboxedEnvironment.globals 注册，模板内可直接调用。
+# 输入 records 是 list[dict]，field 是字段名。返回的都是纯数据结构（dict / list[dict]），
+# 方便 Jinja2 用 .sum/.count 之类的属性访问。
+
+
+def _coerce_numeric(value: Any) -> float | None:
+    """把字段值强转为数字；None / 非数字 / 空串返回 None."""
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _stats(records: list[dict[str, Any]], field: str) -> dict[str, Any]:
+    """对 records 的 field 列做聚合，返回 {count, sum, avg, min, max, non_empty}."""
+    values = [_coerce_numeric(r.get(field)) for r in records]
+    nums = [v for v in values if v is not None]
+    non_empty = sum(1 for v in values if v is not None)
+    if not nums:
+        return {"count": 0, "sum": 0, "avg": 0, "min": None, "max": None, "non_empty": non_empty}
+    total = sum(nums)
+    return {
+        "count": len(nums),
+        "sum": total,
+        "avg": total / len(nums),
+        "min": min(nums),
+        "max": max(nums),
+        "non_empty": non_empty,
+    }
+
+
+def _group_stats(
+    records: list[dict[str, Any]],
+    key_field: str,
+    value_field: str,
+) -> list[dict[str, Any]]:
+    """按 key_field 分组，对 value_field 做聚合，返回 list[dict with key + stats]."""
+    groups: dict[Any, list[Any]] = {}
+    for r in records:
+        k = r.get(key_field)
+        if k not in groups:
+            groups[k] = []
+        groups[k].append(r.get(value_field))
+    result: list[dict[str, Any]] = []
+    for key, vals in groups.items():
+        nums = [v for v in (_coerce_numeric(v) for v in vals) if v is not None]
+        if nums:
+            total = sum(nums)
+            result.append(
+                {
+                    "key": key,
+                    "count": len(nums),
+                    "sum": total,
+                    "avg": total / len(nums),
+                    "min": min(nums),
+                    "max": max(nums),
+                }
+            )
+        else:
+            result.append({"key": key, "count": 0, "sum": 0, "avg": 0, "min": None, "max": None})
+    return result
+
+
+_jinja_env.globals.__setitem__("stats", _stats)  # type: ignore[unsupported-operation]
+_jinja_env.globals.__setitem__("group_stats", _group_stats)  # type: ignore[unsupported-operation]
 
 
 def _validate_format(fmt: str) -> str:
@@ -113,6 +187,18 @@ def _resolve_table(db: Session, table_id: int | None) -> int | None:
     return table_id
 
 
+def _resolve_extra_tables(db: Session, extra_table_ids: list[int]) -> list[int]:
+    """校验额外引用表 id 列表（去重保序），任一不存在则 404；渲染时的 READ 权限在渲染端校验."""
+    from cndb.plugins.tables.models import DataTable
+
+    resolved: list[int] = []
+    for tid in dict.fromkeys(extra_table_ids):
+        if not db.get(DataTable, tid):
+            raise HTTPException(status_code=404, detail=f"额外引用表不存在 id={tid}")
+        resolved.append(tid)
+    return resolved
+
+
 @router.post("", response_model=TemplateResponse, status_code=201)
 def create_template(
     payload: TemplateCreate,
@@ -121,6 +207,7 @@ def create_template(
 ) -> ReportTemplate:
     _validate_format(payload.output_format)
     _resolve_table(db, payload.table_id)
+    extra_ids = _resolve_extra_tables(db, payload.extra_table_ids)
     try:
         _jinja_env.from_string(payload.template_content)
     except Exception as exc:
@@ -132,6 +219,7 @@ def create_template(
         output_format=payload.output_format,
         template_content=payload.template_content,
         parameters=[p.model_dump() for p in payload.parameters],
+        extra_table_ids=extra_ids,
     )
     db.add(tpl)
     db.commit()
@@ -176,6 +264,8 @@ def update_template(
         _validate_format(ud["output_format"])
     if "table_id" in ud:
         _resolve_table(db, ud["table_id"])
+    if "extra_table_ids" in ud and ud["extra_table_ids"] is not None:
+        ud["extra_table_ids"] = _resolve_extra_tables(db, ud["extra_table_ids"])
     if "template_content" in ud:
         try:
             _jinja_env.from_string(ud["template_content"])
@@ -622,6 +712,13 @@ _CONTENT_TYPES: dict[str, str] = {
 }
 
 
+def _render_filename(template_name: str, fmt: str) -> str:
+    """构造带生成时间戳的下载文件名：{模板名}_{YYYYMMDD_HHMMSS}.{ext}，便于区分不同批次."""
+    ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe = re.sub(r'[\\/:*?"<>|]', "_", template_name).strip() or "report"
+    return f"{safe}_{ts}.{fmt}"
+
+
 @router.post("/{template_id}/render")
 def render_report(
     template_id: int,
@@ -658,6 +755,7 @@ def render_report(
         "table_name": table.name,
         "params": payload.params,
         "records_by_table": records_by_table,
+        "generated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
 
     # Jinja2 渲染（带超时保护 + 安全沙箱）
@@ -687,11 +785,15 @@ def render_report(
         raise HTTPException(status_code=500, detail=f"文件生成失败: {exc}") from exc
 
     content_type = _CONTENT_TYPES[tpl.output_format]
-    filename = "report." + tpl.output_format
+    filename = _render_filename(tpl.name, tpl.output_format)
+    quoted = quote(filename)
     return StreamingResponse(
         io.BytesIO(file_bytes),
         media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            # ASCII fallback + RFC 5987 filename*（中文模板名）
+            "Content-Disposition": f"attachment; filename=\"report.{tpl.output_format}\"; filename*=UTF-8''{quoted}"
+        },
     )
 
 

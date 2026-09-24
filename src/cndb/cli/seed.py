@@ -332,6 +332,127 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
     return 2, extra_tables
 
 
+def _seed_report_templates(db: Any, tables_map: dict[str, dict[str, Any]], owner_id: int | None = None) -> None:
+    """幂等创建报告模板：按工作区+模板名查重，已存在跳过.
+
+    模板内容使用 Jinja2 SandboxedEnvironment 安全子集，
+    结合 stats / group_stats 统计函数与 generated_at 日期标签。
+    """
+    from cndb.plugins.reports.models import ReportTemplate
+
+    # ── 科研项目季度汇报 ──
+    rs_ws = tables_map.get("科研项目管理")
+    if rs_ws is not None:
+        main_tbl = rs_ws.get("科研项目")
+        jf_tbl = rs_ws.get("科研经费")
+        jz_tbl = rs_ws.get("项目进展")
+        fzr_tbl = rs_ws.get("课题负责人")
+        if main_tbl is None:
+            print("[seed-模板] 跳过：科研项目管理工作区缺少 '科研项目' 主表")
+        else:
+            existing = (
+                db.query(ReportTemplate)
+                .filter(
+                    ReportTemplate.table_id == main_tbl.id,
+                    ReportTemplate.name == "科研项目季度汇报",
+                )
+                .first()
+            )
+            if existing:
+                print(f"[seed-模板] 已存在: 科研项目季度汇报 (id={existing.id})")
+            else:
+                tpl_content = (
+                    "# 科研项目季度汇报\n"
+                    "\n"
+                    "> 生成日期：{{ generated_at }}\n"
+                    "\n"
+                    "## 一、项目概览\n"
+                    "\n"
+                    "| 指标 | 数值 |\n"
+                    "| --- | --- |\n"
+                    "| 项目总数 | {{ stats(records, '课题编号').count }} |\n"
+                    "| 在研项目数 | {{ stats(records_by_table['项目进展'], '课题编号').non_empty }} |\n"
+                    "| 经费总额（万元） | {{ stats(records, '经费总额_万元').sum | round(2) }} |\n"
+                    "| 经费平均值（万元） | {{ stats(records, '经费总额_万元').avg | round(2) }} |\n"
+                    "\n"
+                    "## 二、按项目类别统计\n"
+                    "\n"
+                    "| 项目类别 | 数量 | 经费合计（万元） |\n"
+                    "| --- | --- | --- |\n"
+                    "{% for g in group_stats(records, '项目类别', '经费总额_万元') %}"
+                    "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(2) }} |\n"
+                    "{% endfor %}"
+                    "\n"
+                    "## 三、按项目状态统计\n"
+                    "\n"
+                    "| 项目状态 | 数量 | 经费合计（万元） |\n"
+                    "| --- | --- | --- |\n"
+                    "{% for g in group_stats(records, '项目状态', '经费总额_万元') %}"
+                    "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(2) }} |\n"
+                    "{% endfor %}"
+                    "\n"
+                    "## 四、经费拨付汇总\n"
+                    "\n"
+                    "{% if records_by_table['科研经费'] %}"
+                    "| 预算科目 | 预算金额（万元） | 已拨金额（万元） | 拨付率 |\n"
+                    "| --- | --- | --- | --- |\n"
+                    "{% for g in group_stats(records_by_table['科研经费'], '预算科目', '预算金额_万元') %}"
+                    "{% set g2 = group_stats(records_by_table['科研经费'], '预算科目', '已拨金额_万元') %}"
+                    "{% set matched = g2 | selectattr('key', 'equalto', g.key) | list %}"
+                    "{% set disbursed = matched[0].sum if matched else 0 %}"
+                    "| {{ g.key }} | {{ g.sum | round(2) }} | {{ disbursed | round(2) }} | {{ '%.1f%%' | format(disbursed / g.sum * 100) if g.sum > 0 else 'N/A' }} |\n"
+                    "{% endfor %}"
+                    "\n"
+                    "经费状态统计：\n"
+                    "{% for g in group_stats(records_by_table['科研经费'], '经费状态', '已拨金额_万元') %}"
+                    "- **{{ g.key }}**：{{ g.count }} 笔，已拨 {{ g.sum | round(2) }} 万元\n"
+                    "{% endfor %}"
+                    "{% endif %}"
+                    "\n"
+                    "## 五、研究进展汇总\n"
+                    "\n"
+                    "{% if records_by_table['项目进展'] %}"
+                    "| 进展阶段 | 条目数 | 平均进度 |\n"
+                    "| --- | --- | --- |\n"
+                    "{% for g in group_stats(records_by_table['项目进展'], '进展阶段', '进度百分比') %}"
+                    "| {{ g.key }} | {{ g.count }} | {{ g.avg | round(1) }}% |\n"
+                    "{% endfor %}"
+                    "\n"
+                    "按季度分布：\n"
+                    "{% for g in group_stats(records_by_table['项目进展'], '报告季度', '进度百分比') %}"
+                    "- **{{ g.key }}**：{{ g.count }} 条进展记录\n"
+                    "{% endfor %}"
+                    "{% endif %}"
+                    "\n"
+                    "## 六、负责人名录\n"
+                    "\n"
+                    "{% if records_by_table['课题负责人'] %}"
+                    "| 姓名 | 职称 | 是否 PI | 研究方向 |\n"
+                    "| --- | --- | --- | --- |\n"
+                    "{% for r in records_by_table['课题负责人'] %}"
+                    "| {{ r['姓名'] }} | {{ r['职称'] }} | {{ r['是否PI'] }} | {{ r['研究方向'] }} |\n"
+                    "{% endfor %}"
+                    "{% endif %}"
+                    "\n"
+                    "---PAGE---\n"
+                    "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
+                )
+                tpl = ReportTemplate(
+                    name="科研项目季度汇报",
+                    description="汇总科研项目概览、按类别/状态分组统计、经费拨付、研究进展与负责人名录",
+                    table_id=main_tbl.id,
+                    output_format="docx",
+                    template_content=tpl_content,
+                    parameters=[],
+                    owner_id=owner_id,
+                    extra_table_ids=[t.id for t in (jf_tbl, jz_tbl, fzr_tbl) if t is not None],
+                )
+                db.add(tpl)
+                db.commit()
+                db.refresh(tpl)
+                print(f"[seed-模板] 创建: 科研项目季度汇报 (id={tpl.id}, extra={tpl.extra_table_ids})")
+
+
 def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: str, table_name: str) -> bool:
     """校验单个视图配置里引用的所有 field_name 是否在目标表存在.
 
@@ -539,7 +660,10 @@ def seed(_args: argparse.Namespace) -> None:
         datasets_dir = _get_datasets_dir()
         view_count = _seed_views(db, owner, tables_map, datasets_dir)
 
-        # 4) 为"某企业销售管理"工作区添加其他演示成员，使表权限设置能看到可添加的候选成员
+        # 4) 报告模板种子（幂等：按工作区+模板名查重，已存在跳过）
+        _seed_report_templates(db, tables_map, owner_id=owner.id)
+
+        # 5) 为"某企业销售管理"工作区添加其他演示成员，使表权限设置能看到可添加的候选成员
         from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
 
         sales_ws = ws_map.get("某企业销售管理")

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import nunjucks from 'nunjucks'
+import dayjs from 'dayjs'
 import { useDebouncedValue } from '@/hooks'
 import { Alert, Empty, Spin, Typography } from 'antd'
 
@@ -28,6 +29,44 @@ const renderer = new nunjucks.Environment(null, {
   autoescape: false,
   trimBlocks: true,
   lstripBlocks: true,
+})
+
+/** 把字段值转为数字；null/非数字/空串返回 null —— 与后端 _coerce_numeric 同语义 */
+function coerceNumeric(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/** 单列统计 —— 与后端 stats 同语义 */
+renderer.addGlobal('stats', (records: Array<Record<string, unknown>>, field: string) => {
+  const values = records.map(r => coerceNumeric(r[field]))
+  const nums = values.filter((v): v is number => v !== null)
+  const nonEmpty = values.filter(v => v !== null).length
+  if (nums.length === 0) return { count: 0, sum: 0, avg: 0, min: null, max: null, non_empty: nonEmpty }
+  const total = nums.reduce((a, b) => a + b, 0)
+  return { count: nums.length, sum: total, avg: total / nums.length, min: Math.min(...nums), max: Math.max(...nums), non_empty: nonEmpty }
+})
+
+/** 分组统计 —— 与后端 group_stats 同语义 */
+renderer.addGlobal('group_stats', (records: Array<Record<string, unknown>>, keyField: string, valueField: string) => {
+  const groups: Record<string, unknown[]> = {}
+  for (const r of records) {
+    const k = String(r[keyField] ?? '')
+    if (!groups[k]) groups[k] = []
+    groups[k].push(r[valueField])
+  }
+  const result: Array<Record<string, unknown>> = []
+  for (const [key, vals] of Object.entries(groups)) {
+    const nums = vals.map(coerceNumeric).filter((v): v is number => v !== null)
+    if (nums.length > 0) {
+      const total = nums.reduce((a, b) => a + b, 0)
+      result.push({ key, count: nums.length, sum: total, avg: total / nums.length, min: Math.min(...nums), max: Math.max(...nums) })
+    } else {
+      result.push({ key, count: 0, sum: 0, avg: 0, min: null, max: null })
+    }
+  }
+  return result
 })
 
 interface RenderResult {
@@ -60,7 +99,7 @@ export default function PreviewPanel({
     if (!template.trim()) {
       return { output: '', error: null, elapsed: 0 }
     }
-    const ctx = { records, table_name: tableName || '', params, records_by_table: recordsByTable || {} }
+    const ctx = { records, table_name: tableName || '', params, records_by_table: recordsByTable || {}, generated_at: dayjs().format('YYYY-MM-DD HH:mm') }
     return tryRender(template, ctx)
   }, [template, records, tableName, params, recordsByTable])
 

@@ -118,14 +118,14 @@ export default function FieldPanel({ fields, tableGroups, onInsert }: FieldPanel
 
   const showSearch = currentFields.length > 10
 
-  // 点击插入时：多表模式自动加上 records_by_table 前缀；单表模式不加
+  // 点击插入时：统一插入完整可渲染表达式（简化 {{ 字段 }} 不在渲染上下文中，会静默输出空）
   const handleInsert = (fieldName: string) => {
     if (isMultiTable && activeGroup && !activeGroup.isPrimary) {
       // 额外表字段用 records_by_table 语法
       onInsert(`{{ records_by_table['${activeGroup.tableName}'][0].${fieldName} }}`)
     } else {
-      // 主表/单表：简化语法
-      onInsert(fieldName)
+      // 主表/单表：取首行字段值
+      onInsert(`{{ records[0].${fieldName} }}`)
     }
   }
 

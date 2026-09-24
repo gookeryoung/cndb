@@ -46,6 +46,8 @@ class ReportTemplate(TimestampMixin, Base):
         nullable=True,
         index=True,
     )
+    # 额外引用表 id 列表（可跨工作区，渲染时注入 records_by_table；迁移 b3c4d5e6f7a8 已建列）
+    extra_table_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"ReportTemplate(id={self.id}, name={self.name!r}, format={self.output_format!r})"

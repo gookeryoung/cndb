@@ -10,9 +10,9 @@ import SyntaxHelpPanel, { SYNTAX_SECTIONS } from './SyntaxHelpPanel'
 import { renderProviders } from '@/test/render-providers'
 
 describe('SyntaxHelpPanel 语法帮助', () => {
-  it('SYNTAX_SECTIONS 包含 6 组且 key 唯一', () => {
-    expect(SYNTAX_SECTIONS).toHaveLength(6)
-    expect(new Set(SYNTAX_SECTIONS.map(s => s.key)).size).toBe(6)
+  it('SYNTAX_SECTIONS 包含 7 组且 key 唯一', () => {
+    expect(SYNTAX_SECTIONS).toHaveLength(7)
+    expect(new Set(SYNTAX_SECTIONS.map(s => s.key)).size).toBe(7)
     // 每组示例非空
     for (const s of SYNTAX_SECTIONS) expect(s.examples.length).toBeGreaterThan(0)
   })
@@ -31,9 +31,9 @@ describe('SyntaxHelpPanel 语法帮助', () => {
     const onInsert = vi.fn()
     renderProviders(<SyntaxHelpPanel onInsert={onInsert} />)
 
-    // 默认展开的 variables 分组第一个示例 {{ name }}
+    // 默认展开的 variables 分组第一个示例 {{ records[0].name }}
     fireEvent.click(screen.getAllByText('插入')[0])
-    expect(onInsert).toHaveBeenCalledWith('{{ name }}')
+    expect(onInsert).toHaveBeenCalledWith('{{ records[0].name }}')
   })
 
   it('点击未展开的分组标签后展开并插入其示例', () => {
@@ -47,6 +47,6 @@ describe('SyntaxHelpPanel 语法帮助', () => {
     // 定位"转大写"所在示例卡片自己的插入按钮
     const example = screen.getByText('转大写').closest('.report-syntax-example')!
     fireEvent.click(example.querySelector('button')!)
-    expect(onInsert).toHaveBeenCalledWith('{{ name | upper }}')
+    expect(onInsert).toHaveBeenCalledWith('{{ records[0].name | upper }}')
   })
 })

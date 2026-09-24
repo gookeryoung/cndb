@@ -27,6 +27,8 @@ class TemplateCreate(BaseModel):
     template_content: str
     table_id: int | None = None
     parameters: list[ParameterDef] = Field(default_factory=list)
+    # 额外引用表（可跨工作区，渲染时注入 records_by_table）
+    extra_table_ids: list[int] = Field(default_factory=list)
 
 
 class TemplateUpdate(BaseModel):
@@ -38,6 +40,7 @@ class TemplateUpdate(BaseModel):
     template_content: str | None = None
     table_id: int | None = None
     parameters: list[ParameterDef] | None = None
+    extra_table_ids: list[int] | None = None
 
 
 class TemplateResponse(BaseModel):
@@ -52,6 +55,7 @@ class TemplateResponse(BaseModel):
     output_format: str
     template_content: str
     parameters: list[dict[str, Any]]
+    extra_table_ids: list[int] = Field(default_factory=list)
     created_at: dt.datetime
     updated_at: dt.datetime
 
@@ -67,6 +71,7 @@ class TemplateListResponse(BaseModel):
     description: str
     output_format: str
     parameters: list[dict[str, Any]]
+    extra_table_ids: list[int] = Field(default_factory=list)
 
 
 class RenderRequest(BaseModel):

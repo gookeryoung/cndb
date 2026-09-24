@@ -21,11 +21,12 @@ export const SYNTAX_SECTIONS: SyntaxSection[] = [
     key: 'variables',
     label: '变量引用',
     examples: [
-      { title: '引用字段值', code: '{{ name }}', description: 'records 中的字段名，渲染该行的字段值' },
+      { title: '引用字段值', code: '{{ records[0].name }}', description: '主表首行的字段值；循环内请用 row.name' },
       { title: '遍历行访问', code: '{{ row.name }}', description: 'for row in records 循环内访问字段' },
       { title: '表名变量', code: '{{ table_name }}', description: '当前模板关联的表名' },
       { title: '用户参数', code: '{{ params.start_date }}', description: '运行时传入的用户参数字典' },
-      { title: '默认值过滤器', code: '{{ name | default("未填写") }}', description: '字段为空时显示默认值' },
+      { title: '生成日期', code: '{{ generated_at }}', description: '报告生成时间（YYYY-MM-DD HH:mm），每次渲染自动更新' },
+      { title: '默认值过滤器', code: '{{ records[0].name | default("未填写") }}', description: '字段为空时显示默认值' },
     ],
   },
   {
@@ -58,13 +59,23 @@ export const SYNTAX_SECTIONS: SyntaxSection[] = [
     key: 'filters',
     label: '常用过滤器',
     examples: [
-      { title: '转大写', code: '{{ name | upper }}' },
-      { title: '转小写', code: '{{ name | lower }}' },
+      { title: '转大写', code: '{{ records[0].name | upper }}' },
+      { title: '转小写', code: '{{ records[0].name | lower }}' },
       { title: '取长度', code: '{{ records | length }}', description: '行数或列表长度' },
-      { title: '字符串截断', code: '{{ content | truncate(50) }}' },
-      { title: '列表拼接', code: '{{ tags | join(", ") }}' },
-      { title: '数值格式化', code: '{{ amount | round(2) }}' },
-      { title: '日期格式化', code: '{{ row.date | date("%Y-%m-%d") }}', description: '后端 Jinja2 需 date 过滤器可用' },
+      { title: '字符串截断', code: '{{ records[0].content | truncate(50) }}' },
+      { title: '列表拼接', code: '{{ records[0].tags | join(", ") }}' },
+      { title: '数值格式化', code: '{{ records[0].amount | round(2) }}' },
+      { title: '日期格式化', code: '{{ records[0].date | date("%Y-%m-%d") }}', description: '后端 Jinja2 需 date 过滤器可用' },
+    ],
+  },
+  {
+    key: 'functions',
+    label: '统计函数',
+    examples: [
+      { title: '单列统计', code: "{{ stats(records, '金额').sum }}", description: '返回 {count, sum, avg, min, max, non_empty}，用 .sum/.avg 访问' },
+      { title: '计数', code: "{{ stats(records, '金额').count }}", description: '该字段有值的行数' },
+      { title: '分组统计', code: "{% for g in group_stats(records, '类别', '金额') %}\n{{ g.key }}: {{ g.sum }}\n{% endfor %}", description: '按类别分组对金额做聚合，g 含 {key, count, sum, avg, min, max}' },
+      { title: '跨表统计', code: "{{ stats(records_by_table['经费表'], '预算').sum }}", description: '对额外引用表数据做统计' },
     ],
   },
   {
@@ -97,6 +108,7 @@ export const SYNTAX_SECTIONS: SyntaxSection[] = [
       { title: '表名', code: 'table_name', description: 'str，模板关联的数据表名称' },
       { title: '用户参数', code: 'params', description: 'dict，运行时用户输入的动态参数' },
       { title: '额外表数据', code: 'records_by_table', description: 'dict[str, list[dict]]，跨表引用容器' },
+      { title: '生成日期', code: 'generated_at', description: 'str，报告生成时间（YYYY-MM-DD HH:mm）' },
     ],
   },
 ]
@@ -112,7 +124,7 @@ export default function SyntaxHelpPanel({ onInsert }: SyntaxHelpPanelProps) {
         Jinja2 语法帮助
       </Typography.Title>
       <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
-        点击代码块右侧「插入」即可填入编辑器
+        点击代码块右侧「插入」即可填入编辑器。注意：预览与后端均使用 Jinja2 兼容语法，个别后端独有写法（如 for 循环内 if 过滤）以 Word/PDF 实际输出为准。
       </Typography.Text>
 
       <Collapse

@@ -35,14 +35,14 @@ describe('ReportTemplateEditor 报告模板编辑器', () => {
     expect(document.querySelector('.cm-editor')).not.toBeNull()
   })
 
-  it('点击字段插入 {{ 字段 }} 表达式到编辑器', () => {
+  it('点击字段插入 records[0] 完整表达式到编辑器', () => {
     const onChange = vi.fn()
     const ref = { current: null as TemplateEditorHandle | null }
     renderProviders(<ReportTemplateEditor value="" onChange={onChange} fields={FIELDS} editorRef={ref} />)
 
     fireEvent.click(screen.getByText('姓名'))
 
-    expect(ref.current?.getValue()).toBe('{{ 姓名 }}')
+    expect(ref.current?.getValue()).toBe('{{ records[0].姓名 }}')
   })
 
   it('单表模式插入后触发 onChange', () => {
@@ -51,7 +51,7 @@ describe('ReportTemplateEditor 报告模板编辑器', () => {
 
     fireEvent.click(screen.getByText('年龄'))
 
-    expect(onChange).toHaveBeenCalledWith('{{ 年龄 }}')
+    expect(onChange).toHaveBeenCalledWith('{{ records[0].年龄 }}')
   })
 
   it('多表模式：额外表字段插入 records_by_table 表达式且不产生嵌套', () => {

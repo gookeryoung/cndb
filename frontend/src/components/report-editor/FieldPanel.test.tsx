@@ -30,7 +30,7 @@ function renderPanel(props: { fields?: Field[]; tableGroups?: TableFieldGroup[];
 }
 
 describe('FieldPanel 字段面板', () => {
-  it('单表模式：渲染字段数与字段项，点击插入纯字段名', () => {
+  it('单表模式：渲染字段数与字段项，点击插入 records[0] 完整表达式', () => {
     const onInsert = vi.fn()
     const fields = [
       makeField({ id: 1, name: '姓名', field_type: 'text' }),
@@ -43,7 +43,8 @@ describe('FieldPanel 字段面板', () => {
     expect(screen.getByText('年龄')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('姓名'))
-    expect(onInsert).toHaveBeenCalledWith('姓名')
+    // 简化语法 {{ 姓名 }} 在渲染上下文中不存在（前端静默空/后端 400），必须插入完整可渲染表达式
+    expect(onInsert).toHaveBeenCalledWith('{{ records[0].姓名 }}')
   })
 
   it('字段超过 10 个显示搜索框并可过滤', () => {
@@ -89,7 +90,7 @@ describe('FieldPanel 字段面板', () => {
     expect(screen.getByText('姓名')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('姓名'))
-    expect(onInsert).toHaveBeenCalledWith('姓名')
+    expect(onInsert).toHaveBeenCalledWith('{{ records[0].姓名 }}')
   })
 
   it('多表模式：切到额外表后点击字段插入 records_by_table 完整表达式', () => {

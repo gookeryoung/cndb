@@ -2,12 +2,13 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import dayjs from 'dayjs'
 import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntApp, Select, Dropdown, Empty, Tabs, Tooltip } from 'antd'
 import type { FormInstance } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { reportApi, tableApi, fieldApi, recordApi } from '@/api'
-import type { ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter, TableSummary, Field } from '@/api'
+import { reportApi, tableApi, fieldApi, recordApi, workspaceApi } from '@/api'
+import type { ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter, TableSummary, Field, Workspace } from '@/api'
 import { ReportTemplateEditor, PreviewPanel, SyntaxHelpPanel } from '@/components/report-editor'
 import type { TemplateEditorHandle } from '@/components/report-editor'
 
@@ -96,10 +97,12 @@ export default function ReportsPage() {
       }
       const blob = await reportApi.render(tpl.id, body as any)
       const ext = tpl.output_format === 'docx' ? 'docx' : tpl.output_format === 'pdf' ? 'pdf' : tpl.output_format
+      // 文件名带生成时间戳，与后端 Content-Disposition 语义一致，便于区分不同批次
+      const ts = dayjs().format('YYYYMMDD_HHmmss')
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${tpl.name}.${ext}`
+      a.download = `${tpl.name}_${ts}.${ext}`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -305,10 +308,46 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
   const [templateValue, setTemplateValue] = useState('')
   // 当前选中的关联表 ID（从 Form 监听）
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null)
-  // 额外选择的表 ID 列表
+  // 额外选择的表 ID 列表（本工作区 + 跨工作区）
   const [extraTableIds, setExtraTableIds] = useState<number[]>([])
+  // 跨工作区表信息：tableId -> {name, wsId}（级联引入与编辑回显扫描共同填充）
+  const [crossTableInfo, setCrossTableInfo] = useState<Record<number, { name: string; wsId: string }>>({})
+  // 跨工作区级联选择状态
+  const [importWsId, setImportWsId] = useState<string>('')
+  const [importTableId, setImportTableId] = useState<number | null>(null)
   // CodeMirror 引用（供 SyntaxHelpPanel 插入代码使用）
   const editorRef = useRef<TemplateEditorHandle | null>(null)
+
+  // 工作区列表（跨工作区级联选择器数据源）
+  const { data: workspaces = [] } = useQuery<Workspace[]>({
+    queryKey: ['workspaces'],
+    queryFn: () => workspaceApi.list(),
+    enabled: open,
+  })
+
+  // 源工作区的表列表（级联第二步）
+  const { data: importWsTables = [] } = useQuery({
+    queryKey: ['workspaces', importWsId, 'tables'],
+    queryFn: () => tableApi.list(importWsId!),
+    enabled: open && !!importWsId && importWsId !== workspaceId,
+  })
+
+  // 编辑回显：extra_table_ids 中归属未知的表（上次保存的跨工作区表），扫描全部工作区补全信息
+  const missingScan = open && extraTableIds.some(tid => !tables.some(t => t.id === tid) && !crossTableInfo[tid])
+  useEffect(() => {
+    if (!missingScan) return
+    let cancelled = false
+    workspaceApi.list().then(async (wsList) => {
+      const info: Record<number, { name: string; wsId: string }> = {}
+      for (const ws of wsList) {
+        if (String(ws.id) === workspaceId) continue
+        const wsTables = await tableApi.list(ws.id).catch(() => [])
+        for (const t of wsTables) info[Number(t.id)] = { name: t.name, wsId: String(ws.id) }
+      }
+      if (!cancelled) setCrossTableInfo(prev => ({ ...info, ...prev }))
+    }).catch(() => { /* 扫描失败静默，字段/预览退化为本工作区行为 */ })
+    return () => { cancelled = true }
+  }, [missingScan, workspaceId])
 
   // 关联表的字段列表
   const { data: fields = [] } = useQuery<Field[]>({
@@ -317,13 +356,14 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     enabled: !!selectedTableId && !!workspaceId,
   })
 
-  // 额外表的字段列表（批量加载）
+  // 额外表的字段列表（批量加载；跨工作区表按其归属工作区请求）
   const { data: extraFieldsMap = {} } = useQuery<Record<number, Field[]>>({
     queryKey: ['workspaces', workspaceId, 'extra-fields', extraTableIds],
     queryFn: async () => {
       const result: Record<number, Field[]> = {}
       await Promise.all(extraTableIds.map(async (tid) => {
-        result[tid] = await fieldApi.list(workspaceId, tid)
+        const wid = crossTableInfo[tid]?.wsId ?? workspaceId
+        result[tid] = await fieldApi.list(wid, tid)
       }))
       return result
     },
@@ -343,13 +383,14 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     enabled: !!selectedTableId && !!workspaceId,
   })
 
-  // 额外表的预览数据（用于 PreviewPanel records_by_table）
+  // 额外表的预览数据（用于 PreviewPanel records_by_table；跨工作区表按其归属工作区请求）
   const { data: extraPreviewMap = {} } = useQuery<Record<number, Array<Record<string, unknown>>>>({
     queryKey: ['workspaces', workspaceId, 'extra-preview', extraTableIds],
     queryFn: async () => {
       const result: Record<number, Array<Record<string, unknown>>> = {}
       await Promise.all(extraTableIds.map(async (tid) => {
-        const resp = await recordApi.list(workspaceId, tid, { limit: 5 })
+        const wid = crossTableInfo[tid]?.wsId ?? workspaceId
+        const resp = await recordApi.list(wid, tid, { limit: 5 })
         result[tid] = resp.items.map(r => {
           const { id: _id, created_at: _ca, updated_at: _ua, created_by: _cb, updated_by: _ub, ...rest } = r as any
           return rest
@@ -369,6 +410,8 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     setTemplateValue(tplContent)
     setSelectedTableId(tplId)
     setExtraTableIds(extras)
+    setImportWsId('')
+    setImportTableId(null)
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 全局 insert 事件监听（SyntaxHelpPanel → ReportTemplateEditor）
@@ -408,10 +451,34 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     form.setFieldValue('template_content', value)
   }
 
-  // 保存校验
+  // 保存校验（extra_table_ids 随模板持久化，含跨工作区表）
   const handleFormFinish = (v: ReportTemplateCreate) => {
-    onSubmit({ ...v, template_content: templateValue })
+    onSubmit({ ...v, template_content: templateValue, extra_table_ids: extraTableIds })
   }
+
+  // 跨工作区表名解析：本区 tables 优先，其次 crossTableInfo（级联引入 + 回显扫描）
+  const resolveTableName = (tid: number): string | undefined =>
+    tables.find(t => t.id === tid)?.name ?? crossTableInfo[tid]?.name
+
+  // 跨工作区引入：将级联选中的表加入额外引用表
+  const handleImportCrossTable = () => {
+    if (importTableId === null) return
+    const t = importWsTables.find(x => x.id === importTableId)
+    if (!t) return
+    setCrossTableInfo(prev => ({ ...prev, [importTableId]: { name: t.name, wsId: importWsId } }))
+    setExtraTableIds(prev => (prev.includes(importTableId) ? prev : [...prev, importTableId]))
+    setImportTableId(null)
+  }
+
+  // 跨工作区级联选项（排除当前工作区——本区表直接在额外引用表里选）
+  const importWsOptions = useMemo<Array<{ value: string; label: string }>>(
+    () => workspaces.filter((w: Workspace) => String(w.id) !== workspaceId).map((w: Workspace) => ({ value: String(w.id), label: w.name })),
+    [workspaces, workspaceId],
+  )
+  const importTableOptions = useMemo<Array<{ value: number; label: string }>>(
+    () => importWsTables.filter(t => t.id !== selectedTableId).map(t => ({ value: Number(t.id), label: t.name })),
+    [importWsTables, selectedTableId],
+  )
 
   const selectedTableName = selectedTableId
     ? tables.find(t => t.id === selectedTableId)?.name
@@ -424,26 +491,28 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
       groups.push({ tableId: selectedTableId, tableName: selectedTableName, fields, isPrimary: true })
     }
     for (const eid of extraTableIds) {
-      const tname = tables.find(t => t.id === eid)?.name
+      const tname = resolveTableName(eid)
       const efields = extraFieldsMap[eid] || []
       if (tname) {
         groups.push({ tableId: eid, tableName: tname, fields: efields, isPrimary: false })
       }
     }
     return groups
-  }, [selectedTableId, selectedTableName, fields, extraTableIds, extraFieldsMap, tables])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTableId, selectedTableName, fields, extraTableIds, extraFieldsMap, tables, crossTableInfo])
 
   // 构建 recordsByTable
   const recordsByTable = useMemo(() => {
     const result: Record<string, Array<Record<string, unknown>>> = {}
     for (const eid of extraTableIds) {
-      const tname = tables.find(t => t.id === eid)?.name
+      const tname = resolveTableName(eid)
       if (tname && extraPreviewMap[eid]) {
         result[tname] = extraPreviewMap[eid]
       }
     }
     return result
-  }, [extraTableIds, extraPreviewMap, tables])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraTableIds, extraPreviewMap, tables, crossTableInfo])
 
   // extra 表选项（排除已选的主表）
   const extraTableOptions = useMemo(() => {
@@ -499,6 +568,32 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
             />
           </Form.Item>
         </div>
+        {/* 跨工作区引入：先点源工作区按钮，再从源表下拉选择，点「引入」加入额外引用表 */}
+        {importWsOptions.length > 0 && (
+          <div className="report-crossws-row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>跨工作区引入：</Typography.Text>
+            {importWsOptions.map(o => (
+              <Button
+                key={o.value}
+                size="small"
+                type={importWsId === o.value ? 'primary' : 'default'}
+                onClick={() => { setImportWsId(o.value); setImportTableId(null) }}
+              >
+                {o.label}
+              </Button>
+            ))}
+            <Select
+              size="small"
+              style={{ minWidth: 180 }}
+              placeholder="跨工作区源表"
+              value={importTableId}
+              options={importTableOptions}
+              onChange={setImportTableId}
+              allowClear
+            />
+            <Button size="small" type="primary" disabled={importTableId === null} onClick={handleImportCrossTable}>引入</Button>
+          </div>
+        )}
         <Form.Item name="description" label="描述（可选）" style={{ marginBottom: 8 }}>
           <Input.TextArea rows={1} placeholder="简单说明这个模板的用途" />
         </Form.Item>
@@ -638,17 +733,22 @@ function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting
       const initial: Record<string, unknown> = {}
       target.parameters.forEach(p => { if (p.default !== undefined) initial[p.name] = p.default })
       form.setFieldsValue(initial as any)
-      setExtraTableIds([])
+      // 默认带入模板已保存的额外引用表（含跨工作区表）
+      setExtraTableIds(target.extra_table_ids ?? [])
     }
   }, [open, target, form])
 
   const tableNameMap = useMemo(() => new Map(tables.map(t => [t.id, t.name])), [tables])
 
-  // 额外表选项（排除模板关联的主表）
+  // 额外表选项（排除模板关联的主表；跨工作区表不在本区 tables，补占位选项避免选中值显示裸数字）
   const extraTableOptions = useMemo(() => {
-    if (!target?.table_id) return tables.map(t => ({ value: t.id, label: t.name }))
-    return tables.filter(t => t.id !== target.table_id).map(t => ({ value: t.id, label: t.name }))
-  }, [tables, target?.table_id])
+    const base = target?.table_id ? tables.filter(t => t.id !== target.table_id) : tables
+    const opts = base.map(t => ({ value: t.id, label: t.name }))
+    for (const eid of target?.extra_table_ids ?? []) {
+      if (!opts.some(o => o.value === eid)) opts.push({ value: eid, label: `跨工作区表 #${eid}` })
+    }
+    return opts
+  }, [tables, target?.table_id, target?.extra_table_ids])
 
   return (
     <Modal
