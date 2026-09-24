@@ -6,12 +6,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import suppress
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from cndb.api.deps import get_db
@@ -21,7 +22,11 @@ from cndb.models.base import Base
 
 @pytest.fixture(scope="session")
 def db_engine():
-    """session 级共享内存 SQLite engine — 每个 worker 只建一次 schema."""
+    """session 级共享内存 SQLite engine — 每个 worker 只建一次 schema.
+
+    注意：StaticPool 单连接意味着所有 Session 共用同一物理事务，
+    因此导入后台任务必须同步执行（见 _sync_import_tasks）。
+    """
     settings.AUTH_ENABLED = True
     engine = create_engine(
         "sqlite:///:memory:",
@@ -72,6 +77,40 @@ def _fast_bcrypt(monkeypatch_session):
 
     orig_gensalt = bcrypt.gensalt
     monkeypatch_session.setattr(bcrypt, "gensalt", lambda *a, **kw: orig_gensalt(4))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _sync_import_tasks(monkeypatch_session: pytest.MonkeyPatch):
+    """导入后台任务在测试中同步执行.
+
+    测试库是 StaticPool 单连接内存库，所有 Session 共用同一物理事务：
+    后台线程 session 的 rollback/close 会回滚整个物理事务，吃掉请求
+    session 尚未提交的写入，导致 create_import_task 的 db.refresh 偶发
+    "Could not refresh instance"（CI 慢机放大窗口，xdist 下偶发失败）。
+    同步执行消除线程并发，任务流程与状态机语义不变。
+    """
+    import cndb.plugins.tables.routers.bulk as bulk_router
+    from cndb.plugins.tables.services.importing import import_tasks
+
+    def _run_sync(
+        db_session_factory: Callable[[], Session],
+        task_id: int,
+        *,
+        phase: str = "execute",
+    ) -> None:
+        # 与 import_tasks.run_task_in_background._worker 的分发逻辑保持一致
+        session = db_session_factory()
+        try:
+            if phase == "analyze":
+                import_tasks.analyze_import_task(session, task_id)
+            elif phase == "reanalyze":
+                import_tasks.reanalyze_import_task(session, task_id)
+            else:
+                import_tasks.execute_import_task(session, task_id)
+        finally:
+            session.close()
+
+    monkeypatch_session.setattr(bulk_router, "run_task_in_background", _run_sync)
 
 
 @pytest.fixture(scope="session", autouse=True)
