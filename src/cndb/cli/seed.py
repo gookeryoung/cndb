@@ -335,128 +335,52 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
 def _seed_report_templates(db: Any, tables_map: dict[str, dict[str, Any]]) -> None:
     """幂等创建报告模板：按工作区+模板名查重，已存在跳过.
 
-    模板内容使用 Jinja2 SandboxedEnvironment 安全子集，
+    模板定义统一收敛到 REPORT_TEMPLATE_SPECS（数据驱动），
+    内容使用 Jinja2 SandboxedEnvironment 安全子集，
     结合 stats / group_stats 统计函数与 generated_at 日期标签。
     """
     from cndb.plugins.reports.models import ReportTemplate
 
-    # ── 科研项目季度汇报 ──
-    rs_ws = tables_map.get("科研项目管理")
-    if rs_ws is not None:
-        main_tbl = rs_ws.get("科研项目")
-        jf_tbl = rs_ws.get("科研经费")
-        jz_tbl = rs_ws.get("项目进展")
-        fzr_tbl = rs_ws.get("课题负责人")
+    for spec in REPORT_TEMPLATE_SPECS:
+        ws_tables = tables_map.get(spec["workspace"])
+        if not ws_tables:
+            print(f"[seed-模板] 跳过：工作区 '{spec['workspace']}' 不存在（{spec['name']}）")
+            continue
+        main_tbl = ws_tables.get(spec["table"])
         if main_tbl is None:
-            print("[seed-模板] 跳过：科研项目管理工作区缺少 '科研项目' 主表")
-        else:
-            existing = (
-                db.query(ReportTemplate)
-                .filter(
-                    ReportTemplate.table_id == main_tbl.id,
-                    ReportTemplate.name == "科研项目季度汇报",
-                )
-                .first()
+            print(f"[seed-模板] 跳过：{spec['workspace']} 缺少主表 '{spec['table']}'（{spec['name']}）")
+            continue
+        existing = (
+            db.query(ReportTemplate)
+            .filter(
+                ReportTemplate.table_id == main_tbl.id,
+                ReportTemplate.name == spec["name"],
             )
-            if existing:
-                print(f"[seed-模板] 已存在: 科研项目季度汇报 (id={existing.id})")
-            else:
-                tpl_content = (
-                    "# 科研项目季度汇报\n"
-                    "\n"
-                    "> 生成日期：{{ generated_at }}\n"
-                    "\n"
-                    "## 一、项目概览\n"
-                    "\n"
-                    "| 指标 | 数值 |\n"
-                    "| --- | --- |\n"
-                    "| 项目总数 | {{ records | length }} |\n"
-                    "| 在研项目数 | {{ records | selectattr('项目状态', 'equalto', '在研') | list | length }} |\n"
-                    "| 有进展记录的课题数 | {{ stats(records_by_table['项目进展'], '课题编号').non_empty }} |\n"
-                    "| 经费总额（万元） | {{ stats(records, '经费总额_万元').sum | round(2) }} |\n"
-                    "| 经费平均值（万元） | {{ stats(records, '经费总额_万元').avg | round(2) }} |\n"
-                    "\n"
-                    "## 二、按项目类别统计\n"
-                    "\n"
-                    "| 项目类别 | 数量 | 经费合计（万元） |\n"
-                    "| --- | --- | --- |\n"
-                    "{% for g in group_stats(records, '项目类别', '经费总额_万元') %}"
-                    "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(2) }} |\n"
-                    "{% endfor %}"
-                    "\n"
-                    "## 三、按项目状态统计\n"
-                    "\n"
-                    "| 项目状态 | 数量 | 经费合计（万元） |\n"
-                    "| --- | --- | --- |\n"
-                    "{% for g in group_stats(records, '项目状态', '经费总额_万元') %}"
-                    "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(2) }} |\n"
-                    "{% endfor %}"
-                    "\n"
-                    "## 四、经费拨付汇总\n"
-                    "\n"
-                    "{% if records_by_table['科研经费'] %}"
-                    "| 预算科目 | 预算金额（万元） | 已拨金额（万元） | 拨付率 |\n"
-                    "| --- | --- | --- | --- |\n"
-                    "{% for g in group_stats(records_by_table['科研经费'], '预算科目', '预算金额_万元') %}"
-                    "{% set g2 = group_stats(records_by_table['科研经费'], '预算科目', '已拨金额_万元') %}"
-                    "{% set matched = g2 | selectattr('key', 'equalto', g.key) | list %}"
-                    "{% set disbursed = matched[0].sum if matched else 0 %}"
-                    "| {{ g.key }} | {{ g.sum | round(2) }} | {{ disbursed | round(2) }} | {{ '%.1f%%' | format(disbursed / g.sum * 100) if g.sum > 0 else 'N/A' }} |\n"
-                    "{% endfor %}"
-                    "\n"
-                    "经费状态统计：\n"
-                    "{% for g in group_stats(records_by_table['科研经费'], '经费状态', '已拨金额_万元') %}"
-                    "- **{{ g.key }}**：{{ g.count }} 笔，已拨 {{ g.sum | round(2) }} 万元\n"
-                    "{% endfor %}"
-                    "{% endif %}"
-                    "\n"
-                    "## 五、研究进展汇总\n"
-                    "\n"
-                    "{% if records_by_table['项目进展'] %}"
-                    "| 进展阶段 | 条目数 | 平均进度 |\n"
-                    "| --- | --- | --- |\n"
-                    "{% for g in group_stats(records_by_table['项目进展'], '进展阶段', '进度百分比') %}"
-                    "| {{ g.key }} | {{ g.count }} | {{ g.avg | round(1) }}% |\n"
-                    "{% endfor %}"
-                    "\n"
-                    "按季度分布：\n"
-                    "{% for g in group_stats(records_by_table['项目进展'], '报告季度', '进度百分比') %}"
-                    "- **{{ g.key }}**：{{ g.count }} 条进展记录\n"
-                    "{% endfor %}"
-                    "{% endif %}"
-                    "\n"
-                    "## 六、负责人名录\n"
-                    "\n"
-                    "{% if records_by_table['课题负责人'] %}"
-                    "| 姓名 | 职称 | 是否 PI | 研究方向 |\n"
-                    "| --- | --- | --- | --- |\n"
-                    "{% for r in records_by_table['课题负责人'] %}"
-                    "| {{ r['姓名'] }} | {{ r['职称'] }} | {{ r['是否PI'] }} | {{ r['研究方向'] }} |\n"
-                    "{% endfor %}"
-                    "{% endif %}"
-                    "\n"
-                    "---PAGE---\n"
-                    "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
-                )
-                tpl = ReportTemplate(
-                    name="科研项目季度汇报",
-                    description="汇总科研项目概览、按类别/状态分组统计、经费拨付、研究进展与负责人名录",
-                    table_id=main_tbl.id,
-                    output_format="docx",
-                    template_content=tpl_content,
-                    parameters=[],
-                    extra_table_ids=[t.id for t in (jf_tbl, jz_tbl, fzr_tbl) if t is not None],
-                )
-                db.add(tpl)
-                db.commit()
-                db.refresh(tpl)
-                print(f"[seed-模板] 创建: 科研项目季度汇报 (id={tpl.id}, extra={tpl.extra_table_ids})")
+            .first()
+        )
+        if existing:
+            print(f"[seed-模板] 已存在: {spec['name']} (id={existing.id})")
+            continue
+        extra_tbls = [ws_tables.get(extra_name) for extra_name in spec["extra_tables"]]
+        tpl = ReportTemplate(
+            name=spec["name"],
+            description=spec["description"],
+            table_id=main_tbl.id,
+            output_format="docx",
+            template_content=spec["content"],
+            parameters=[],
+            extra_table_ids=[t.id for t in extra_tbls if t is not None],
+        )
+        db.add(tpl)
+        db.commit()
+        db.refresh(tpl)
+        print(f"[seed-模板] 创建: {spec['name']} (id={tpl.id}, extra={tpl.extra_table_ids})")
 
 
 def _generate_sample_reports(
     db: Any, tables_map: dict[str, dict[str, Any]], owner: Any, datasets_dir: Path | None
 ) -> None:
-    """渲染"科研项目季度汇报"模板并生成示例报告 docx，落盘到工作区数据集目录.
+    """渲染 REPORT_TEMPLATE_SPECS 中的全部示例模板，生成示例报告 docx 落盘到对应工作区数据集目录.
 
     复用渲染端点的沙箱环境 / 统计函数 / docx 渲染器，端到端验证模板可渲染；
     固定文件名（不带时间戳，避免 git 反复变更），每次 seed 覆盖重写。
@@ -471,64 +395,370 @@ def _generate_sample_reports(
         _load_table_records,
         _render_with_timeout,
     )
-
-    rs_ws = tables_map.get("科研项目管理")
-    if rs_ws is None or rs_ws.get("科研项目") is None:
-        print("[seed-示例报告] 跳过：未找到科研项目管理工作区/主表")
-        return
-    main_tbl = rs_ws["科研项目"]
-    tpl = (
-        db.query(ReportTemplate)
-        .filter(ReportTemplate.table_id == main_tbl.id, ReportTemplate.name == "科研项目季度汇报")
-        .first()
-    )
-    if tpl is None:
-        print("[seed-示例报告] 跳过：模板未创建")
-        return
-
-    # 构建渲染上下文（与渲染端点 render_report 一致：主表 + extra 表 + generated_at）
     from cndb.plugins.tables.models import DataTable
-
-    table, records = _load_table_records(db, main_tbl.id, owner)
-    records_by_table: dict[str, list[dict[str, Any]]] = {}
-    for etid in tpl.extra_table_ids:
-        etable = db.get(DataTable, etid)
-        if etable is None:
-            continue
-        _, erecords = _load_table_records(db, etid, owner)
-        records_by_table[etable.name] = erecords
-    ctx: dict[str, Any] = {
-        "records": records,
-        "table_name": table.name,
-        "params": {},
-        "records_by_table": records_by_table,
-        "generated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-    }
-
-    try:
-        jinja_tmpl = _jinja_env.from_string(tpl.template_content)
-        rendered = _render_with_timeout(jinja_tmpl, ctx)
-        renderer = _FORMAT_RENDERERS.get(tpl.output_format)
-        if renderer is None:
-            print(f"[seed-示例报告] 跳过：不支持的输出格式 {tpl.output_format}")
-            return
-        file_bytes = renderer(rendered, ctx)
-    except Exception as exc:  # 模板/数据问题不应阻塞 seed
-        print(f"[seed-示例报告] 渲染失败（请检查模板与数据集字段匹配）: {exc}")
-        return
 
     if datasets_dir is None:
         print("[seed-示例报告] 跳过：datasets 目录不可用")
         return
-    out_dir = datasets_dir / "工作区-科研项目管理"
-    try:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / "科研项目季度汇报-示例报告.docx"
-        out_path.write_bytes(file_bytes)
-    except OSError as exc:
-        print(f"[seed-示例报告] 写入失败: {exc}")
-        return
-    print(f"[seed-示例报告] 生成: {out_path} ({len(file_bytes)} bytes)")
+
+    for spec in REPORT_TEMPLATE_SPECS:
+        ws_tables = tables_map.get(spec["workspace"]) or {}
+        main_tbl = ws_tables.get(spec["table"])
+        if main_tbl is None:
+            print(f"[seed-示例报告] 跳过：未找到 {spec['workspace']}/{spec['table']}（{spec['name']}）")
+            continue
+        tpl = (
+            db.query(ReportTemplate)
+            .filter(ReportTemplate.table_id == main_tbl.id, ReportTemplate.name == spec["name"])
+            .first()
+        )
+        if tpl is None:
+            print(f"[seed-示例报告] 跳过：模板未创建（{spec['name']}）")
+            continue
+
+        # 构建渲染上下文（与渲染端点 render_report 一致：主表 + extra 表 + generated_at）
+        table, records = _load_table_records(db, main_tbl.id, owner)
+        records_by_table: dict[str, list[dict[str, Any]]] = {}
+        for etid in tpl.extra_table_ids:
+            etable = db.get(DataTable, etid)
+            if etable is None:
+                continue
+            _, erecords = _load_table_records(db, etid, owner)
+            records_by_table[etable.name] = erecords
+        ctx: dict[str, Any] = {
+            "records": records,
+            "table_name": table.name,
+            "params": {},
+            "records_by_table": records_by_table,
+            "generated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }
+
+        try:
+            jinja_tmpl = _jinja_env.from_string(tpl.template_content)
+            rendered = _render_with_timeout(jinja_tmpl, ctx)
+            renderer = _FORMAT_RENDERERS.get(tpl.output_format)
+            if renderer is None:
+                print(f"[seed-示例报告] 跳过：不支持的输出格式 {tpl.output_format}（{spec['name']}）")
+                continue
+            file_bytes = renderer(rendered, ctx)
+        except Exception as exc:  # 模板/数据问题不应阻塞 seed
+            print(f"[seed-示例报告] {spec['name']} 渲染失败（请检查模板与数据集字段匹配）: {exc}")
+            continue
+
+        out_dir = datasets_dir / f"工作区-{spec['workspace']}"
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / f"{spec['name']}-示例报告.docx"
+            out_path.write_bytes(file_bytes)
+        except OSError as exc:
+            print(f"[seed-示例报告] 写入失败（{spec['name']}）: {exc}")
+            continue
+        print(f"[seed-示例报告] 生成: {out_path} ({len(file_bytes)} bytes)")
+
+
+# ── 示例报告模板定义 ────────────────────────────────────
+# 6 组典型示例（含既有科研项目季度汇报），覆盖 datasets 各工作区的代表性场景：
+# 1. 科研项目季度汇报 —— 跨表引用 + selectattr 匹配分组（科研项目管理）
+# 2. 电商销售月报 —— 单表分组聚合（某企业销售管理/电商销售）
+# 3. 产品开发交付进度报告 —— non_empty 空值统计 + 分页（某企业销售管理/产品开发）
+# 4. WBS 任务进度周报 —— selectattr 过滤 + 多维统计（项目管理）
+# 5. 城市气温天气月报 —— min/max 极值 + 嵌套分组匹配（某地区数据）
+# 6. 数据质量体检报告 —— 脏数据完整性边界 + 多表（低质量数据）
+REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
+    {
+        "workspace": "科研项目管理",
+        "table": "科研项目",
+        "extra_tables": ["科研经费", "项目进展", "课题负责人"],
+        "name": "科研项目季度汇报",
+        "description": "汇总科研项目概览、按类别/状态分组统计、经费拨付、研究进展与负责人名录",
+        "content": (
+            "# 科研项目季度汇报\n"
+            "\n"
+            "> 生成日期：{{ generated_at }}\n"
+            "\n"
+            "## 一、项目概览\n"
+            "\n"
+            "| 指标 | 数值 |\n"
+            "| --- | --- |\n"
+            "| 项目总数 | {{ records | length }} |\n"
+            "| 在研项目数 | {{ records | selectattr('项目状态', 'equalto', '在研') | list | length }} |\n"
+            "| 有进展记录的课题数 | {{ stats(records_by_table['项目进展'], '课题编号').non_empty }} |\n"
+            "| 经费总额（万元） | {{ stats(records, '经费总额_万元').sum | round(2) }} |\n"
+            "| 经费平均值（万元） | {{ stats(records, '经费总额_万元').avg | round(2) }} |\n"
+            "\n"
+            "## 二、按项目类别统计\n"
+            "\n"
+            "| 项目类别 | 数量 | 经费合计（万元） |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '项目类别', '经费总额_万元') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(2) }} |\n"
+            "{% endfor %}"
+            "\n"
+            "## 三、按项目状态统计\n"
+            "\n"
+            "| 项目状态 | 数量 | 经费合计（万元） |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '项目状态', '经费总额_万元') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(2) }} |\n"
+            "{% endfor %}"
+            "\n"
+            "## 四、经费拨付汇总\n"
+            "\n"
+            "{% if records_by_table['科研经费'] %}"
+            "| 预算科目 | 预算金额（万元） | 已拨金额（万元） | 拨付率 |\n"
+            "| --- | --- | --- | --- |\n"
+            "{% for g in group_stats(records_by_table['科研经费'], '预算科目', '预算金额_万元') %}"
+            "{% set g2 = group_stats(records_by_table['科研经费'], '预算科目', '已拨金额_万元') %}"
+            "{% set matched = g2 | selectattr('key', 'equalto', g.key) | list %}"
+            "{% set disbursed = matched[0].sum if matched else 0 %}"
+            "| {{ g.key }} | {{ g.sum | round(2) }} | {{ disbursed | round(2) }} | {{ '%.1f%%' | format(disbursed / g.sum * 100) if g.sum > 0 else 'N/A' }} |\n"
+            "{% endfor %}"
+            "\n"
+            "经费状态统计：\n"
+            "{% for g in group_stats(records_by_table['科研经费'], '经费状态', '已拨金额_万元') %}"
+            "- **{{ g.key }}**：{{ g.count }} 笔，已拨 {{ g.sum | round(2) }} 万元\n"
+            "{% endfor %}"
+            "{% endif %}"
+            "\n"
+            "## 五、研究进展汇总\n"
+            "\n"
+            "{% if records_by_table['项目进展'] %}"
+            "| 进展阶段 | 条目数 | 平均进度 |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records_by_table['项目进展'], '进展阶段', '进度百分比') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.avg | round(1) }}% |\n"
+            "{% endfor %}"
+            "\n"
+            "按季度分布：\n"
+            "{% for g in group_stats(records_by_table['项目进展'], '报告季度', '进度百分比') %}"
+            "- **{{ g.key }}**：{{ g.count }} 条进展记录\n"
+            "{% endfor %}"
+            "{% endif %}"
+            "\n"
+            "## 六、负责人名录\n"
+            "\n"
+            "{% if records_by_table['课题负责人'] %}"
+            "| 姓名 | 职称 | 是否 PI | 研究方向 |\n"
+            "| --- | --- | --- | --- |\n"
+            "{% for r in records_by_table['课题负责人'] %}"
+            "| {{ r['姓名'] }} | {{ r['职称'] }} | {{ r['是否PI'] }} | {{ r['研究方向'] }} |\n"
+            "{% endfor %}"
+            "{% endif %}"
+            "\n"
+            "---PAGE---\n"
+            "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
+        ),
+    },
+    {
+        "workspace": "某企业销售管理",
+        "table": "电商销售",
+        "extra_tables": [],
+        "name": "电商销售月报",
+        "description": "按商品类别与支付方式分组汇总销售额、客单价与评分",
+        "content": (
+            "# 电商销售月报\n"
+            "\n"
+            "> 生成日期：{{ generated_at }}\n"
+            "\n"
+            "## 一、销售概览\n"
+            "\n"
+            "| 指标 | 数值 |\n"
+            "| --- | --- |\n"
+            "| 订单总数 | {{ records | length }} |\n"
+            "| 销售额合计（元） | {{ stats(records, '销售额').sum | round(2) }} |\n"
+            "| 平均客单价（元） | {{ stats(records, '销售额').avg | round(2) }} |\n"
+            "| 平均评分 | {{ stats(records, '评分').avg | round(1) }} |\n"
+            "| 商品类别数 | {{ group_stats(records, '商品类别', '销售额') | length }} |\n"
+            "\n"
+            "## 二、按商品类别汇总\n"
+            "\n"
+            "| 商品类别 | 订单数 | 销售额（元） |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '商品类别', '销售额') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(2) }} |\n"
+            "{% endfor %}"
+            "\n"
+            "## 三、按支付方式汇总\n"
+            "\n"
+            "| 支付方式 | 订单数 | 销售额（元） |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '支付方式', '销售额') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(2) }} |\n"
+            "{% endfor %}"
+            "\n"
+            "---PAGE---\n"
+            "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
+        ),
+    },
+    {
+        "workspace": "某企业销售管理",
+        "table": "产品开发",
+        "extra_tables": [],
+        "name": "产品开发交付进度报告",
+        "description": "项目交付状态概览（含未交付空值统计）、按状态与片区分组汇总",
+        "content": (
+            "# 产品开发交付进度报告\n"
+            "\n"
+            "> 生成日期：{{ generated_at }}\n"
+            "\n"
+            "## 一、项目概览\n"
+            "\n"
+            "| 指标 | 数值 |\n"
+            "| --- | --- |\n"
+            "| 项目总数 | {{ records | length }} |\n"
+            "| 已交付项目数 | {{ stats(records, '实际交付日期').non_empty }} |\n"
+            "| 未交付项目数 | {{ records | length - stats(records, '实际交付日期').non_empty }} |\n"
+            "| 合同总额（万元） | {{ stats(records, '合同金额_万元').sum | round(2) }} |\n"
+            "| 平均进度 | {{ stats(records, '进度百分比').avg | round(1) }}% |\n"
+            "\n"
+            "## 二、按项目状态统计\n"
+            "\n"
+            "| 项目状态 | 项目数 | 平均进度 |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '项目状态', '进度百分比') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.avg | round(1) }}% |\n"
+            "{% endfor %}"
+            "\n"
+            "## 三、按片区汇总\n"
+            "\n"
+            "| 片区 | 项目数 | 合同金额（万元） |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '片区', '合同金额_万元') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(2) }} |\n"
+            "{% endfor %}"
+            "\n"
+            "---PAGE---\n"
+            "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
+        ),
+    },
+    {
+        "workspace": "项目管理",
+        "table": "WBS任务分解",
+        "extra_tables": [],
+        "name": "WBS任务进度周报",
+        "description": "顶层/子任务结构概览，按任务状态与优先级多维统计进度与工期",
+        "content": (
+            "# WBS 任务进度周报\n"
+            "\n"
+            "> 生成日期：{{ generated_at }}\n"
+            "\n"
+            "## 一、任务概览\n"
+            "\n"
+            "| 指标 | 数值 |\n"
+            "| --- | --- |\n"
+            "| 任务总数 | {{ records | length }} |\n"
+            "| 顶层任务数 | {{ records | selectattr('父任务ID', 'equalto', 'ROOT') | list | length }} |\n"
+            "| 总工期（天） | {{ stats(records, '工期_天').sum }} |\n"
+            "| 平均进度 | {{ stats(records, '进度百分比').avg | round(1) }}% |\n"
+            "\n"
+            "## 二、按任务状态统计\n"
+            "\n"
+            "| 任务状态 | 任务数 | 平均进度 |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '任务状态', '进度百分比') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.avg | round(1) }}% |\n"
+            "{% endfor %}"
+            "\n"
+            "## 三、按优先级统计\n"
+            "\n"
+            "| 优先级 | 任务数 | 工期合计（天） |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '优先级', '工期_天') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.sum }} |\n"
+            "{% endfor %}"
+            "\n"
+            "---PAGE---\n"
+            "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
+        ),
+    },
+    {
+        "workspace": "某地区数据",
+        "table": "气温天气",
+        "extra_tables": [],
+        "name": "城市气温天气月报",
+        "description": "全局极值与分城市最高/最低气温、平均湿度嵌套分组统计",
+        "content": (
+            "# 城市气温天气月报\n"
+            "\n"
+            "> 生成日期：{{ generated_at }}\n"
+            "\n"
+            "## 一、总体概况\n"
+            "\n"
+            "| 指标 | 数值 |\n"
+            "| --- | --- |\n"
+            "| 记录条数 | {{ records | length }} |\n"
+            "| 覆盖城市数 | {{ group_stats(records, '城市', '最高温_℃') | length }} |\n"
+            "| 全局最高气温（℃） | {{ stats(records, '最高温_℃').max }} |\n"
+            "| 全局最低气温（℃） | {{ stats(records, '最低温_℃').min }} |\n"
+            "| 平均湿度（%） | {{ stats(records, '湿度_%').avg | round(1) }} |\n"
+            "\n"
+            "## 二、分城市统计\n"
+            "\n"
+            "| 城市 | 记录数 | 最高气温（℃） | 最低气温（℃） | 平均湿度（%） |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "{% for g in group_stats(records, '城市', '最高温_℃') %}"
+            "{% set g_low = group_stats(records, '城市', '最低温_℃') | selectattr('key', 'equalto', g.key) | list %}"
+            "{% set g_hum = group_stats(records, '城市', '湿度_%') | selectattr('key', 'equalto', g.key) | list %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.max }} | {{ g_low[0].min if g_low else 'N/A' }} | {{ g_hum[0].avg | round(1) if g_hum else 'N/A' }} |\n"
+            "{% endfor %}"
+            "\n"
+            "## 三、天气类型分布\n"
+            "\n"
+            "| 天气 | 天数 |\n"
+            "| --- | --- |\n"
+            "{% for g in group_stats(records, '天气', '最高温_℃') %}"
+            "| {{ g.key }} | {{ g.count }} |\n"
+            "{% endfor %}"
+            "\n"
+            "---PAGE---\n"
+            "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
+        ),
+    },
+    {
+        "workspace": "低质量数据",
+        "table": "19-特殊值杂项",
+        "extra_tables": ["17-数字格式大全"],
+        "name": "数据质量体检报告",
+        "description": "按字段统计非空条数与完整率，覆盖 JSON/长号等特殊值与多表附加检查",
+        "content": (
+            "# 数据质量体检报告\n"
+            "\n"
+            "> 生成日期：{{ generated_at }}\n"
+            "\n"
+            "## 一、主表完整性检查（特殊值杂项）\n"
+            "\n"
+            "| 字段 | 非空条数 | 记录总数 | 完整率 |\n"
+            "| --- | --- | --- | --- |\n"
+            "{% for f in ['JSON对象', '邮箱', '手机号', '客户备注', '混合数值'] %}"
+            "{% set s = stats(records, f) %}"
+            "| {{ f }} | {{ s.non_empty }} | {{ records | length }} | {{ '%.1f%%' | format(s.non_empty / records | length * 100) if records else 'N/A' }} |\n"
+            "{% endfor %}"
+            "\n"
+            "混合数值合计：{{ stats(records, '混合数值').sum | round(2) }}\n"
+            "\n"
+            "## 二、附加表完整性检查（数字格式大全）\n"
+            "\n"
+            "{% if records_by_table['17-数字格式大全'] %}"
+            "{% set extra_records = records_by_table['17-数字格式大全'] %}"
+            "| 字段 | 非空条数 | 记录总数 |\n"
+            "| --- | --- | --- |\n"
+            "{% for f in ['千分位整数', '科学计数法', '前导零编号', '十五位长号'] %}"
+            "{% set s = stats(extra_records, f) %}"
+            "| {{ f }} | {{ s.non_empty }} | {{ extra_records | length }} |\n"
+            "{% endfor %}"
+            "{% else %}附加表无数据{% endif %}\n"
+            "\n"
+            "## 三、检查说明\n"
+            "\n"
+            "- 完整率 100% 表示该字段全部记录非空；\n"
+            "- 非空计数按原始值统计（None 与空串视为空），与前端报表统计口径一致；\n"
+            "- 数字格式类字段仅检查存在性，不校验格式合法性。\n"
+            "\n"
+            "---PAGE---\n"
+            "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
+        ),
+    },
+]
 
 
 def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: str, table_name: str) -> bool:
