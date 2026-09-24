@@ -39,7 +39,7 @@ export type {
   FileAnalyzeResult, FileImportResult,
   PublicForm, SharedGrid,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
-  ReportParameter, ReportRenderRequest, ReportRenderResult,
+  ReportParameter, ReportRenderRequest, ReportRenderResult, ReportTheme,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
   AttachmentFile,
   PreferencesResponse,
