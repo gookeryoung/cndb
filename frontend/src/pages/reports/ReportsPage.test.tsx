@@ -415,7 +415,8 @@ describe('ReportsPage 编辑与新建保存', () => {
         expect(putBodies[0].theme).toBe('minimal')
     })
 
-    it('编辑模板重复打开（先建后改）下拉默认值不残留为空', async () => {
+    // CI 慢机下多次 waitFor 可能超过全局 5s 超时，放宽到 15s
+    it('编辑模板重复打开（先建后改）下拉默认值不残留为空', { timeout: 15000 }, async () => {
         const putBodies: Record<string, unknown>[] = []
         server.use(
             http.get('/api/v1/reports', () => HttpResponse.json([{ ...TPL, output_format: null, theme: null }])),
