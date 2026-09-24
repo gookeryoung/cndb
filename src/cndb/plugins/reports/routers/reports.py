@@ -107,10 +107,14 @@ def _coerce_numeric(value: Any) -> float | None:
 
 
 def _stats(records: list[dict[str, Any]], field: str) -> dict[str, Any]:
-    """对 records 的 field 列做聚合，返回 {count, sum, avg, min, max, non_empty}."""
-    values = [_coerce_numeric(r.get(field)) for r in records]
-    nums = [v for v in values if v is not None]
-    non_empty = sum(1 for v in values if v is not None)
+    """对 records 的 field 列做聚合，返回 {count, sum, avg, min, max, non_empty}.
+
+    count/sum/avg/min/max 只统计可解析为数值的行；
+    non_empty 统计原始值非空（非 None 且非空串）的行数，可用于文本字段计数。
+    """
+    raw_values = [r.get(field) for r in records]
+    nums = [v for v in (_coerce_numeric(x) for x in raw_values) if v is not None]
+    non_empty = sum(1 for v in raw_values if v is not None and v != "")
     if not nums:
         return {"count": 0, "sum": 0, "avg": 0, "min": None, "max": None, "non_empty": non_empty}
     total = sum(nums)
@@ -359,10 +363,11 @@ def _render_with_timeout(jinja_tmpl: Any, ctx: dict[str, Any], timeout: int = RE
 _MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
 _MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _MD_CODE_RE = re.compile(r"`([^`]+)`")
+_MD_TABLE_SEP_RE = re.compile(r"^:?-{3,}:?$")
 
 
 def _render_docx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
-    """DOCX 渲染：支持 Markdown 风格标题 + 加粗 + 代码.
+    """DOCX 渲染：支持 Markdown 风格标题 + 加粗 + 代码 + 表格.
 
     ctx 保留签名一致性，未来可用于渲染 data table 等结构化元素.
     """
@@ -372,8 +377,48 @@ def _render_docx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
     _ = ctx  # 预留：未来可用于生成 data table 等结构化元素
     doc = Document()
 
+    table_buffer: list[str] = []
+    in_table = False
+
+    def _is_table_row(line: str) -> bool:
+        s = line.strip()
+        return s.startswith("|") and s.endswith("|")
+
+    def _flush_table() -> None:
+        """把缓冲的 markdown 表格行写入 docx 表格对象（跳过分隔行，首行加粗）."""
+        nonlocal in_table, table_buffer
+        rows = [[c.strip() for c in raw.strip().strip("|").split("|")] for raw in table_buffer if raw.strip()]
+        # 跳过 markdown 分隔行（| --- | :---: |）
+        rows = [r for r in rows if not all(_MD_TABLE_SEP_RE.match(c or "-") for c in r)]
+        if rows:
+            max_cols = max(len(r) for r in rows)
+            norm_rows = [r + [""] * (max_cols - len(r)) for r in rows]
+            t = doc.add_table(rows=len(norm_rows), cols=max_cols)
+            t.style = "Table Grid"
+            for i, row_cells in enumerate(norm_rows):
+                for j, cell_text in enumerate(row_cells):
+                    cell = t.cell(i, j)
+                    p = cell.paragraphs[0]
+                    if i == 0:
+                        run = p.add_run(cell_text)
+                        run.bold = True
+                    else:
+                        _add_rich_runs(p, cell_text)
+        in_table = False
+        table_buffer = []
+
     for raw_line in rendered_text.split("\n"):
         line = raw_line.rstrip()
+
+        if _is_table_row(line):
+            if not in_table:
+                in_table = True
+                table_buffer = []
+            table_buffer.append(line)
+            continue
+        if in_table:
+            _flush_table()
+
         if not line.strip():
             doc.add_paragraph("")
             continue
@@ -392,9 +437,18 @@ def _render_docx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
                 run.font.size = Pt(16 - level)
             continue
 
+        # 换页标记
+        if line.strip() == "---PAGE---":
+            doc.add_page_break()
+            continue
+
         # 普通段落，处理粗体和代码
         p = doc.add_paragraph()
         _add_rich_runs(p, line)
+
+    # 收尾：提交剩余表格
+    if in_table:
+        _flush_table()
 
     buf = io.BytesIO()
     doc.save(buf)

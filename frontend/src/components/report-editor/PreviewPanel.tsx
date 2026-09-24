@@ -38,11 +38,11 @@ function coerceNumeric(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-/** 单列统计 —— 与后端 stats 同语义 */
+/** 单列统计 —— 与后端 stats 同语义；non_empty 统计原始值非空行数（可用于文本字段计数） */
 renderer.addGlobal('stats', (records: Array<Record<string, unknown>>, field: string) => {
-  const values = records.map(r => coerceNumeric(r[field]))
-  const nums = values.filter((v): v is number => v !== null)
-  const nonEmpty = values.filter(v => v !== null).length
+  const rawValues = records.map(r => r[field])
+  const nums = rawValues.map(coerceNumeric).filter((v): v is number => v !== null)
+  const nonEmpty = rawValues.filter(v => v !== null && v !== undefined && v !== '').length
   if (nums.length === 0) return { count: 0, sum: 0, avg: 0, min: null, max: null, non_empty: nonEmpty }
   const total = nums.reduce((a, b) => a + b, 0)
   return { count: nums.length, sum: total, avg: total / nums.length, min: Math.min(...nums), max: Math.max(...nums), non_empty: nonEmpty }

@@ -233,6 +233,43 @@ class TestReportRender:
         assert "application/vnd.openxmlformats" in resp.headers["content-type"]
         assert len(resp.content) > 0
 
+    def test_render_docx_markdown_table(self, client, auth_headers, db):
+        """docx 渲染器应把 markdown 表格转成表格对象（首行加粗、跳过分隔行）."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-docx-tbl"}).json()
+        wid = ws["id"]
+        tid = _mk_table_with_fields(client, auth_headers, wid, "明细表", [("名称", "text"), ("数量", "number")])
+        client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+            headers=auth_headers,
+            json={"values": {"名称": "甲", "数量": 1}},
+        )
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "表格报告",
+                "output_format": "docx",
+                "template_content": (
+                    "# 汇总\n\n"
+                    "| 名称 | 数量 |\n| --- | --- |\n"
+                    "{% for r in records %}| {{ r['名称'] }} | {{ r['数量'] }} |\n{% endfor %}"
+                ),
+            },
+        ).json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200
+        from docx import Document
+
+        doc = Document(io.BytesIO(resp.content))
+        assert len(doc.tables) == 1, "markdown 表格应转换为 docx 表格对象"
+        t = doc.tables[0]
+        assert [c.text for c in t.rows[0].cells] == ["名称", "数量"]
+        assert [c.text for c in t.rows[1].cells] == ["甲", "1"]
+
     def test_render_pdf(self, client, auth_headers, db):
         ws = client.post(
             "/api/v1/workspaces",
@@ -779,7 +816,8 @@ class TestStatsFunctions:
                     "平均={{ stats(records, '金额').avg }}\n"
                     "数量={{ stats(records, '金额').count }}\n"
                     "最小={{ stats(records, '金额').min }}\n"
-                    "最大={{ stats(records, '金额').max }}"
+                    "最大={{ stats(records, '金额').max }}\n"
+                    "非空={{ stats(records, '名称').non_empty }}"
                 ),
             },
         ).json()["id"]
@@ -798,6 +836,8 @@ class TestStatsFunctions:
         assert "数量=3" in text
         assert re.search(r"最小=100(\.0+)?", text), text
         assert re.search(r"最大=300(\.0+)?", text), text
+        # non_empty 统计原始值非空（文本字段 '名称' 全部非空）
+        assert "非空=3" in text, text
 
     def test_render_group_stats(self, client, auth_headers, db):
         """group_stats(records, '类别', '金额') 应按类别分组聚合金额."""

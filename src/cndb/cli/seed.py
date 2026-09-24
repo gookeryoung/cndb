@@ -332,7 +332,7 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
     return 2, extra_tables
 
 
-def _seed_report_templates(db: Any, tables_map: dict[str, dict[str, Any]], owner_id: int | None = None) -> None:
+def _seed_report_templates(db: Any, tables_map: dict[str, dict[str, Any]]) -> None:
     """幂等创建报告模板：按工作区+模板名查重，已存在跳过.
 
     模板内容使用 Jinja2 SandboxedEnvironment 安全子集，
@@ -370,8 +370,9 @@ def _seed_report_templates(db: Any, tables_map: dict[str, dict[str, Any]], owner
                     "\n"
                     "| 指标 | 数值 |\n"
                     "| --- | --- |\n"
-                    "| 项目总数 | {{ stats(records, '课题编号').count }} |\n"
-                    "| 在研项目数 | {{ stats(records_by_table['项目进展'], '课题编号').non_empty }} |\n"
+                    "| 项目总数 | {{ records | length }} |\n"
+                    "| 在研项目数 | {{ records | selectattr('项目状态', 'equalto', '在研') | list | length }} |\n"
+                    "| 有进展记录的课题数 | {{ stats(records_by_table['项目进展'], '课题编号').non_empty }} |\n"
                     "| 经费总额（万元） | {{ stats(records, '经费总额_万元').sum | round(2) }} |\n"
                     "| 经费平均值（万元） | {{ stats(records, '经费总额_万元').avg | round(2) }} |\n"
                     "\n"
@@ -444,13 +445,90 @@ def _seed_report_templates(db: Any, tables_map: dict[str, dict[str, Any]], owner
                     output_format="docx",
                     template_content=tpl_content,
                     parameters=[],
-                    owner_id=owner_id,
                     extra_table_ids=[t.id for t in (jf_tbl, jz_tbl, fzr_tbl) if t is not None],
                 )
                 db.add(tpl)
                 db.commit()
                 db.refresh(tpl)
                 print(f"[seed-模板] 创建: 科研项目季度汇报 (id={tpl.id}, extra={tpl.extra_table_ids})")
+
+
+def _generate_sample_reports(
+    db: Any, tables_map: dict[str, dict[str, Any]], owner: Any, datasets_dir: Path | None
+) -> None:
+    """渲染"科研项目季度汇报"模板并生成示例报告 docx，落盘到工作区数据集目录.
+
+    复用渲染端点的沙箱环境 / 统计函数 / docx 渲染器，端到端验证模板可渲染；
+    固定文件名（不带时间戳，避免 git 反复变更），每次 seed 覆盖重写。
+    渲染失败仅告警不中断 seed（模板/数据问题不应阻塞演示数据注入）。
+    """
+    import datetime as dt
+
+    from cndb.plugins.reports.models import ReportTemplate
+    from cndb.plugins.reports.routers.reports import (
+        _FORMAT_RENDERERS,
+        _jinja_env,
+        _load_table_records,
+        _render_with_timeout,
+    )
+
+    rs_ws = tables_map.get("科研项目管理")
+    if rs_ws is None or rs_ws.get("科研项目") is None:
+        print("[seed-示例报告] 跳过：未找到科研项目管理工作区/主表")
+        return
+    main_tbl = rs_ws["科研项目"]
+    tpl = (
+        db.query(ReportTemplate)
+        .filter(ReportTemplate.table_id == main_tbl.id, ReportTemplate.name == "科研项目季度汇报")
+        .first()
+    )
+    if tpl is None:
+        print("[seed-示例报告] 跳过：模板未创建")
+        return
+
+    # 构建渲染上下文（与渲染端点 render_report 一致：主表 + extra 表 + generated_at）
+    from cndb.plugins.tables.models import DataTable
+
+    table, records = _load_table_records(db, main_tbl.id, owner)
+    records_by_table: dict[str, list[dict[str, Any]]] = {}
+    for etid in tpl.extra_table_ids:
+        etable = db.get(DataTable, etid)
+        if etable is None:
+            continue
+        _, erecords = _load_table_records(db, etid, owner)
+        records_by_table[etable.name] = erecords
+    ctx: dict[str, Any] = {
+        "records": records,
+        "table_name": table.name,
+        "params": {},
+        "records_by_table": records_by_table,
+        "generated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+
+    try:
+        jinja_tmpl = _jinja_env.from_string(tpl.template_content)
+        rendered = _render_with_timeout(jinja_tmpl, ctx)
+        renderer = _FORMAT_RENDERERS.get(tpl.output_format)
+        if renderer is None:
+            print(f"[seed-示例报告] 跳过：不支持的输出格式 {tpl.output_format}")
+            return
+        file_bytes = renderer(rendered, ctx)
+    except Exception as exc:  # 模板/数据问题不应阻塞 seed
+        print(f"[seed-示例报告] 渲染失败（请检查模板与数据集字段匹配）: {exc}")
+        return
+
+    if datasets_dir is None:
+        print("[seed-示例报告] 跳过：datasets 目录不可用")
+        return
+    out_dir = datasets_dir / "工作区-科研项目管理"
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / "科研项目季度汇报-示例报告.docx"
+        out_path.write_bytes(file_bytes)
+    except OSError as exc:
+        print(f"[seed-示例报告] 写入失败: {exc}")
+        return
+    print(f"[seed-示例报告] 生成: {out_path} ({len(file_bytes)} bytes)")
 
 
 def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: str, table_name: str) -> bool:
@@ -661,7 +739,10 @@ def seed(_args: argparse.Namespace) -> None:
         view_count = _seed_views(db, owner, tables_map, datasets_dir)
 
         # 4) 报告模板种子（幂等：按工作区+模板名查重，已存在跳过）
-        _seed_report_templates(db, tables_map, owner_id=owner.id)
+        _seed_report_templates(db, tables_map)
+
+        # 4b) 示例报告生成：渲染"科研项目季度汇报"落盘到数据集目录
+        _generate_sample_reports(db, tables_map, owner, datasets_dir)
 
         # 5) 为"某企业销售管理"工作区添加其他演示成员，使表权限设置能看到可添加的候选成员
         from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
