@@ -647,7 +647,7 @@ def test_render_denied_when_user_no_read_permission(client, auth_headers, db):
     # 用户 B（全新账号，不在 A 的 workspace 里）
     client.post(
         "/api/v1/accounts/auth/register",
-        json={"username": "user_b", "email": "b@b.com", "password": "passw0rd"},
+        json={"username": "user_b", "email": "b@example.com", "password": "passw0rd"},
     )
     r = client.post(
         "/api/v1/accounts/auth/login",

@@ -815,7 +815,7 @@ class TestViewReorder:
         from cndb.plugins.accounts.models import User
         from cndb.plugins.workspaces.models import WorkspaceMember
 
-        viewer = User(username="viewer", email="v@t.com")
+        viewer = User(username="viewer", email="v@example.com")
         viewer.set_password("pw")
         viewer.role = "user"
         db.add(viewer)

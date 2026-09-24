@@ -11,7 +11,7 @@ class TestAnalyzeCsvColumns:
     """analyze_csv_columns 纯函数测试."""
 
     def test_basic_types(self):
-        csv = "name,age,email,score,join_date,is_active\nZhang,25,a@b.com,85.5,2024-01-15,true\n"
+        csv = "name,age,email,score,join_date,is_active\nZhang,25,a@example.com,85.5,2024-01-15,true\n"
         cols, n = transfer.analyze_csv_columns(csv)
         assert n == 1
         types = {c["name"]: c["field_type"] for c in cols}

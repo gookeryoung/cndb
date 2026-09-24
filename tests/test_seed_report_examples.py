@@ -64,7 +64,7 @@ def seed_env(db, db_engine):
     if datasets_dir is None:
         pytest.skip("examples/datasets 目录不可用（wheel 安装环境）")
 
-    user = User(username="seedreport", email="seedreport@test.local", nickname="示例报告测试")
+    user = User(username="seedreport", email="seedreport@example.com", nickname="示例报告测试")
     user.set_password("pass1234")
     db.add(user)
     db.commit()

@@ -8,7 +8,7 @@ from cndb.plugins.accounts.models import User
 @pytest.fixture
 def superuser_token(db, client):
     """创建一个超级管理员并返回 JWT，同时 db session 已同步."""
-    u = User(username="su_seed", email="su@x.com")
+    u = User(username="su_seed", email="su@example.com")
     u.set_password("pw1234")
     u.is_superuser = True
     db.add(u)
@@ -79,7 +79,7 @@ class TestRoleField:
     def test_user_default_role_is_user(self, db):
         from cndb.plugins.accounts.models import UserRole
 
-        u = User(username="plain", email="p@x.com")
+        u = User(username="plain", email="p@example.com")
         u.set_password("pw1234")
         db.add(u)
         db.flush()  # flush 触发 SQLAlchemy default

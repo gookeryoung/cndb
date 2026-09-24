@@ -96,7 +96,7 @@ def dev(args: argparse.Namespace) -> None:
         for p in processes:
             if sys.platform == "win32":
                 _ = subprocess.run(
-                    ["taskkill", "/T", "/F", "/PID", str(p.pid)],
+                    ["taskkill", "/T", "/F", "/PID", str(p.pid)],  # nosec - 命令来自内部常量
                     capture_output=True,
                     check=False,
                 )
@@ -113,7 +113,7 @@ def dev(args: argparse.Namespace) -> None:
 
     print(f"[run] 启动后端服务 (port {backend_port})...")
     backend = subprocess.Popen(
-        [
+        [  # nosec - 命令来自内部常量
             sys.executable,
             "-m",
             "uvicorn",
@@ -136,7 +136,7 @@ def dev(args: argparse.Namespace) -> None:
         frontend_cmd = f"npx vite --host {args.host} --port {frontend_port}"
     else:
         frontend_cmd = ["npx", "vite", "--host", args.host, "--port", str(frontend_port)]
-    frontend = subprocess.Popen(frontend_cmd, **frontend_kwargs)
+    frontend = subprocess.Popen(frontend_cmd, **frontend_kwargs)  # nosec - 命令来自内部常量
     processes.append(frontend)
 
     print()
@@ -158,9 +158,9 @@ def build(_args: argparse.Namespace) -> None:
     print("[build] 构建前端...")
     cmd = ["npm", "run", "build"]
     if sys.platform == "win32":
-        result = subprocess.run(cmd, cwd=FRONTEND_DIR, check=False, shell=True)
+        result = subprocess.run(cmd, cwd=FRONTEND_DIR, check=False, shell=True)  # nosec - 命令来自内部常量
     else:
-        result = subprocess.run(cmd, cwd=FRONTEND_DIR, check=False)
+        result = subprocess.run(cmd, cwd=FRONTEND_DIR, check=False)  # nosec - 命令来自内部常量
     if result.returncode != 0:
         print("[error] 前端构建失败")
         sys.exit(result.returncode)

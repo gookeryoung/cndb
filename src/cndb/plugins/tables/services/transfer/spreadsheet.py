@@ -7,7 +7,7 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from cndb.plugins.tables.services.transfer.normalize import _coerce_long_numeric_to_text
 
@@ -69,7 +69,7 @@ def decode_bytes_auto(data: bytes) -> tuple[str, str, float]:
                     if bad / len(text) < 0.10:
                         return text, chardet_enc, chardet_conf
             except (UnicodeDecodeError, LookupError):
-                pass
+                logger.debug("候选编码 %s 解码失败，尝试下一个", chardet_enc, exc_info=True)
     except Exception:  # chardet 自身也可能失败
         logger.debug("chardet 检测失败，继续 latin-1 兜底", exc_info=True)
 
@@ -92,7 +92,7 @@ def sniff_csv_delimiter(text: str) -> str:
         if dialect.delimiter in (",", ";", "\t", "|"):
             return dialect.delimiter
     except (csv.Error, Exception):
-        pass
+        logger.debug("csv.Sniffer 分隔符嗅探失败，退化为计数统计", exc_info=True)
     # 退化：按候选分隔符统计头 10 行出现频率，选第一行里计数最高的
     candidates = [",", ";", "\t", "|"]
     first_lines = text.splitlines()[:10]
@@ -290,10 +290,10 @@ def _parse_json_text(text: str) -> tuple[list[dict[str, Any]], list[str]]:
 def _parse_xlsx_bytes(xlsx_bytes: bytes) -> tuple[list[dict[str, Any]], list[str]]:
     """解析 XLSX 字节串（表头空列名/重复列名/行溢出明确报错）."""
     from openpyxl import load_workbook
+    from openpyxl.worksheet.worksheet import Worksheet
 
     wb = load_workbook(io.BytesIO(xlsx_bytes))
-    ws = wb.active
-    assert ws is not None
+    ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
     all_rows = list(ws.iter_rows(values_only=True))
     if not all_rows:
         return [], []

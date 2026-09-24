@@ -30,6 +30,7 @@ import argparse
 import contextlib
 import datetime as dt
 import json
+import logging
 import shutil
 import sqlite3
 import sys
@@ -37,8 +38,10 @@ import tarfile
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["RestoreError", "RestoreLossReport", "inspect_backup", "restore_backup"]
 
@@ -190,7 +193,7 @@ def _check_target_safe(database_url: str, force: bool) -> None:
         total = 0
         for t in tables:
             with contextlib.suppress(sqlite3.Error):
-                total += conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+                total += conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]  # nosec B608 - 表名来自 sqlite_master 枚举
         if total > 0 and not force:
             raise RestoreError(
                 f"目标数据库已有 {len(tables)} 张表、{total} 行数据。若确认要覆盖，请使用 --force 参数。"
@@ -316,7 +319,7 @@ def _from_json_safe(value: Any) -> Any:
             if len(value) >= 10:
                 return dt.datetime.fromisoformat(value)
         except ValueError:
-            pass
+            logger.debug("日期时间解析失败，按原始文本处理", exc_info=True)
     return value
 
 
@@ -519,7 +522,7 @@ def restore_backup(
     try:
         if fmt == "archive":
             print("[restore] 解压归档...")
-            assert temp_root is not None  # 类型收窄
+            temp_root = cast(Path, temp_root)  # 类型收窄（archive 分支已创建）
             with tarfile.open(archive_path, "r:gz") as tar:
                 # filter="data"：跳过可能有安全风险的元数据，但保留正常文件内容（Python 3.12+ 推荐）
                 tar.extractall(temp_root, filter="data")

@@ -54,7 +54,7 @@ def test_user_role_enum_invalid_string():
     """User.role 是非法字符串 → role_enum 回退到 USER."""
     from cndb.plugins.accounts.models import User, UserRole
 
-    u = User(username="x", email="x@x.com", role="completely_invalid_role")
+    u = User(username="x", email="x@example.com", role="completely_invalid_role")
     assert u.role_enum == UserRole.USER
     assert u.is_system_admin is False
 

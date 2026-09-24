@@ -97,7 +97,7 @@ class TestCheckActionRealRoleFallback:
             "/api/v1/accounts/auth/register",
             json={
                 "username": "outsider",
-                "email": "o@o.com",
+                "email": "o@example.com",
                 "password": "passw0rd",
             },
         )

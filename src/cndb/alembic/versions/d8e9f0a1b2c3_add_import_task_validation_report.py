@@ -7,8 +7,12 @@ Create Date: 2026-09-16 10:00:00.000000
 """
 from typing import Sequence, Union
 
+import logging
+
 from alembic import op
 import sqlalchemy as sa
+
+logger = logging.getLogger(__name__)
 
 
 # revision identifiers, used by Alembic.
@@ -89,7 +93,7 @@ def upgrade() -> None:
             )
     except Exception:
         # 某些 SQLite 版本不支持 batch_alter，跳过（String 长度在 SQLite 下不强制）
-        pass
+        logger.debug("batch_alter 调整列类型失败，跳过", exc_info=True)
 
 
 def downgrade() -> None:
@@ -105,4 +109,4 @@ def downgrade() -> None:
                 existing_nullable=False,
             )
     except Exception:
-        pass
+        logger.debug("batch_alter 恢复列类型失败，跳过", exc_info=True)

@@ -898,7 +898,7 @@ def seed(_args: argparse.Namespace) -> None:
         # 系统管理员（同时是超级管理员，用于首次安装时的初始管理员）
         admin = User(
             username="admin",
-            email="admin@cndb.local",
+            email="admin@example.com",
             nickname="系统管理员",
             role=UserRole.SYSTEM_ADMIN.value,
             is_superuser=True,
@@ -912,7 +912,7 @@ def seed(_args: argparse.Namespace) -> None:
         # 安全管理员
         sec_admin = User(
             username="sec_admin",
-            email="sec_admin@cndb.local",
+            email="sec_admin@example.com",
             nickname="安全管理员",
             role=UserRole.SECURITY_ADMIN.value,
         )
@@ -925,7 +925,7 @@ def seed(_args: argparse.Namespace) -> None:
         # 审计管理员
         audit_admin = User(
             username="audit_admin",
-            email="audit_admin@cndb.local",
+            email="audit_admin@example.com",
             nickname="审计管理员",
             role=UserRole.AUDIT_ADMIN.value,
         )
@@ -938,7 +938,7 @@ def seed(_args: argparse.Namespace) -> None:
         # 普通用户（示例）
         demo = User(
             username="demo",
-            email="demo@cndb.local",
+            email="demo@example.com",
             nickname="演示用户",
             role=UserRole.USER.value,
         )

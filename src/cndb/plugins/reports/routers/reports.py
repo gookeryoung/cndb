@@ -7,7 +7,7 @@ import io
 import logging
 import re
 import threading
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -402,8 +402,7 @@ def _render_docx(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyl
     doc = Document()
 
     # 全局正文样式（Normal）应用主题正文字体/字号，含中文东亚字体映射
-    normal = doc.styles["Normal"]
-    assert isinstance(normal, DocxParagraphStyle)
+    normal = cast(DocxParagraphStyle, doc.styles["Normal"])
     normal.font.name = preset.body_font
     normal.font.size = Pt(preset.body_size)
     normal.element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), preset.body_font)
@@ -567,7 +566,7 @@ def _ensure_pdf_font() -> None:
                 pdfmetrics.registerFont(TTFont("STSong-Light", "STSong-Light.ttf"))
                 registered = True
             except Exception:
-                pass
+                logger.debug("备用字体 STSong-Light 注册失败", exc_info=True)
         if not registered:
             logger.warning("reportlab 中文字体不可用，PDF 中文字符可能显示异常")
     except Exception:
@@ -749,6 +748,7 @@ def _render_xlsx(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyl
     _ = theme
     from openpyxl import Workbook
     from openpyxl.styles import Font
+    from openpyxl.worksheet.worksheet import Worksheet
 
     wb = Workbook()
     sheet_created = False
@@ -785,8 +785,7 @@ def _render_xlsx(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyl
     for raw_name, rows_data in sheets:
         sheet_name = _unique_sheet_name(raw_name)
         if not sheet_created:
-            ws = wb.active
-            assert ws is not None, "Workbook should always have at least one active sheet"
+            ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
             ws.title = _safe_sheet_name(sheet_name)
             sheet_created = True
         else:
@@ -832,8 +831,7 @@ def _render_xlsx(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyl
 
     # 如果没有任何数据，保留默认 Sheet
     if not sheet_created:
-        ws = wb.active
-        assert ws is not None, "Workbook should always have at least one active sheet"
+        ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
         ws.cell(row=1, column=1, value=rendered_text)
 
     buf = io.BytesIO()

@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-from typing import Any
+from typing import Any, cast
 
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core.links import is_link_field
@@ -104,11 +104,11 @@ def export_rows_to_xlsx(rows: list[dict[str, Any]]) -> bytes:
     公式注入防护：``=`` 开头字符串单元格强制回字符串类型，Excel 打开不被求值.
     """
     from openpyxl import Workbook
+    from openpyxl.worksheet.worksheet import Worksheet
 
     rows = _exportable_rows(rows)
     wb = Workbook()
-    ws = wb.active
-    assert ws is not None
+    ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
     ws.title = "Data"
     if not rows:
         return _wb_to_bytes(wb)

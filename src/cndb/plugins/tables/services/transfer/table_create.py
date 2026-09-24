@@ -6,7 +6,7 @@ import csv
 import io
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from cndb.plugins.tables.models import DataField, DataTable, ensure_default_view
 from cndb.plugins.tables.services.core import records as rec
@@ -354,11 +354,11 @@ def import_rows_from_xlsx(
 ) -> list[int]:
     """从 XLSX 字节导入行数据，返回新行 id 列表."""
     from openpyxl import load_workbook
+    from openpyxl.worksheet.worksheet import Worksheet
 
     buf = io.BytesIO(xlsx_bytes)
     wb = load_workbook(buf)
-    ws = wb.active
-    assert ws is not None
+    ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
         return []

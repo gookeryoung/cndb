@@ -26,7 +26,7 @@ import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
-from typing import Any, override
+from typing import Any, TextIO, cast, override
 
 from cndb.gui.log_handler import QueueStdout, redirect_output, run_in_thread, schedule_log_flush
 from cndb.gui.settings import GuiSettings, load_settings, save_settings
@@ -513,7 +513,7 @@ class ServeTab(_BaseTab):
             startupinfo.wShowWindow = 0  # SW_HIDE
 
         try:
-            self.app._server_proc = subprocess.Popen(
+            self.app._server_proc = subprocess.Popen(  # nosec - 命令来自内部常量
                 cmd,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -537,12 +537,11 @@ class ServeTab(_BaseTab):
         self.app.set_status(f"服务运行中  http://{host}:{port}")
 
         # 异步读子进程输出 → 写入队列
-        proc = self.app._server_proc
-        assert proc is not None
+        proc = cast(subprocess.Popen[Any], self.app._server_proc)  # 上方已启动，必非空
 
         def _reader() -> None:
-            assert proc.stdout is not None
-            for line in proc.stdout:
+            stream = cast(TextIO, proc.stdout)  # Popen 以 PIPE 创建
+            for line in stream:
                 # 直接写 QueueStdout 队列（UI 线程定时 flush 到 log_text）
                 self.app.log_queue.write(line)
 

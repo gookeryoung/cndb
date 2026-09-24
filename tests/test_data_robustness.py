@@ -397,11 +397,11 @@ class TestCsvStructuralGuard:
     def test_analyze_row_overflow_raises(self):
         """行值数超出表头列数（restkey）→ 报错并指明行号."""
         with pytest.raises(ValueError, match=r"第 2 行.*超出表头列数"):
-            transfer.analyze_csv_columns("name,email\n张三,a@x.com,多余值\n")
+            transfer.analyze_csv_columns("name,email\n张三,a@example.com,多余值\n")
 
     def test_analyze_short_row_not_error(self):
         """少列短行（尾逗号截断常态）不报错，缺列按空值统计."""
-        cols, n = transfer.analyze_csv_columns("name,email,age\n张三,a@x.com,\n李四\n")
+        cols, n = transfer.analyze_csv_columns("name,email,age\n张三,a@example.com,\n李四\n")
         assert n == 2
         by_name = {c["name"]: c for c in cols}
         assert by_name["name"]["field_type"] in ("text", "select")
@@ -493,7 +493,7 @@ class TestXlsxStructuralGuard:
         """
         with pytest.raises(ValueError, match="空列名"):
             transfer._parse_xlsx_bytes(
-                _xlsx_bytes([["name", "email"], ["张三", "a@x.com"], ["李四", "b@x.com", "多余值"]])
+                _xlsx_bytes([["name", "email"], ["张三", "a@example.com"], ["李四", "b@example.com", "多余值"]])
             )
 
     def test_parse_xlsx_bytes_short_row_not_error(self):
@@ -632,7 +632,7 @@ class TestImportExportRoundtripE2E:
             client, auth_headers, ws_name="roundtrip_ws", tbl_name="RoundtripA", fields=fields
         )
 
-        csv_content = "name,email\n张三,zhang@x.com\n李四,li@x.com\n王五,bad-email\n"
+        csv_content = "name,email\n张三,zhang@example.com\n李四,li@example.com\n王五,bad-email\n"
         self._import_via_two_phase(client, auth_headers, wid, tid, csv_content)
 
         # 导出表 A 的 JSON 行数据

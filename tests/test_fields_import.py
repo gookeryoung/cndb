@@ -1102,7 +1102,7 @@ class TestCrossWorkspacePermission:
     def test_import_denied_without_source_workspace_access(self, client, auth_headers):
         """AC-1: 对源工作区无任何权限 → 400，detail 含源工作区名（含 preview_only）."""
         # user2 拥有源工作区
-        headers2 = _register_and_login(client, "wsperm_other", "wsperm_other@t.com")
+        headers2 = _register_and_login(client, "wsperm_other", "wsperm_other@example.com")
         _, src_tid = _create_table_with_field(client, headers2, "机密工作区", "SecretTable", "secret_col")
 
         # user1 在自己的工作区建目标表
