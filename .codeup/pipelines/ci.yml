@@ -8,6 +8,29 @@
 #   test            →  pytest --cov（95% 门槛，Python 3.12）
 #
 # 运行环境：CodeUp 公共 K8s 集群 public/cn-beijing + alinux3:latest 容器
+#
+# 并行与排队优化：
+#   - 同一 stage 内 job 默认并行，无需显式声明依赖
+#   - maxRunningJobInstances 默认为 1，会导致同 job 在多次触发间排队（frontend-check
+#     尤其受影响），显式调高至 4 允许多实例并行
+#   - preemptOldest 等价于 GitHub Actions 的 concurrency.cancel-in-progress：
+#     新推送抢占旧运行，避免过期实例占用公共集群资源加剧排队
+#   - cache 远端缓存 pnpm store 与 uv cache，缩短依赖安装时间，减少占机时长
+
+# 流水线并发：单实例 + 抢占旧运行（等价 GitHub concurrency.cancel-in-progress）
+concurrencyConfig:
+  maxRunningPipelineInstances: 1
+  pipelineMaxRunningBehavior: preemptOldest
+  # 允许同一 job 在连续触发的流水线实例间并行，避免排队等服务器
+  maxRunningJobInstances: 4
+
+# 远端缓存：跨运行复用依赖下载（公共构建集群仅支持 remote）
+cache:
+  cacheDirs:
+    - /root/.cache/uv        # uv 下载缓存（Python 依赖）
+    - /root/.local/share/uv  # uv 托管的 Python 解释器与虚拟环境工具链
+    - /root/.pnpm-store      # pnpm store（setup 步骤中显式指定 store-dir）
+  cacheMode: remote
 
 name: cndb-ci
 
@@ -80,6 +103,7 @@ stages:
                 dnf install -y nodejs
                 echo "[setup] install pnpm 12.4.2 ..."
                 npm install -g pnpm@12.4.2
+                pnpm config set store-dir /root/.pnpm-store
                 node --version
                 pnpm --version
           check:
@@ -89,7 +113,7 @@ stages:
               run: |
                 set -euo pipefail
                 cd frontend
-                pnpm install --frozen-lockfile
+                pnpm install --frozen-lockfile --prefer-offline
                 pnpm typecheck
                 pnpm lint
                 pnpm test:coverage
