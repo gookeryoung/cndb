@@ -39,6 +39,8 @@ export default function ReportsPage() {
   const queryClient = useQueryClient()
   const [editorOpen, setEditorOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<ReportTemplate | null>(null)
+  // 编辑器初始模板内容：由列表行详情显式传入，避免经 Form store 的时序间接层
+  const [initialContent, setInitialContent] = React.useState('')
   const [renderParamsOpen, setRenderParamsOpen] = React.useState(false)
   const [renderTarget, setRenderTarget] = React.useState<ReportTemplateSummary | null>(null)
 
@@ -124,6 +126,7 @@ export default function ReportsPage() {
 
   const openCreate = () => {
     setEditing(null)
+    setInitialContent('Hello {{ table_name }}!\n共 {{ records | length }} 条记录\n\n{% for row in records %}- {{ row.name }}{% endfor %}')
     form.setFieldsValue({
       name: '',
       description: '',
@@ -139,6 +142,8 @@ export default function ReportsPage() {
   const openEdit = (tpl: ReportTemplateSummary) => {
     reportApi.get(tpl.id).then(full => {
       setEditing(full)
+      // 模板内容直接驱动编辑器（不依赖 Form 回读），保证与所点行一致
+      setInitialContent(full.template_content ?? '')
       form.setFieldsValue({
         name: full.name,
         description: full.description,
@@ -271,6 +276,7 @@ export default function ReportsPage() {
         tables={tables}
         workspaceId={wid!}
         form={form}
+        initialContent={initialContent}
         onClose={() => { setEditorOpen(false); setEditing(null); form.resetFields() }}
         onSubmit={(v) => {
           if (editing) update.mutate({ id: editing.id, data: v })
@@ -305,12 +311,14 @@ interface EditorProps {
   tables: TableSummary[]
   workspaceId: string
   form: FormInstance
+  /** 编辑器初始模板内容（由所点行的详情显式传入） */
+  initialContent: string
   onClose: () => void
   onSubmit: (data: ReportTemplateCreate) => void
   submitting: boolean
 }
 
-function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onSubmit, submitting }: EditorProps) {
+function TemplateEditor({ open, editing, tables, workspaceId, form, initialContent, onClose, onSubmit, submitting }: EditorProps) {
   const tableOptions = useMemo(() => tables.map(t => ({ value: t.id, label: t.name })), [tables])
 
   // 编辑器 value（受控）
@@ -413,13 +421,13 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
   // Modal 打开时初始化值
   useEffect(() => {
     if (!open) return
-    const tplContent: string = form.getFieldValue('template_content') || ''
     const tplId: number | null = form.getFieldValue('table_id') ?? null
     const extras: number[] = form.getFieldValue('extra_table_ids') || []
+    // 模板内容使用外部显式传入的 initialContent（与所点行绑定，不回读 Form）
+    setTemplateValue(initialContent)
     // 输出格式 / 主题风格兜底默认值（旧数据或字段被清空时避免下拉显示为空）
     if (form.getFieldValue('output_format') == null) form.setFieldValue('output_format', 'docx')
     if (form.getFieldValue('theme') == null) form.setFieldValue('theme', 'minimal')
-    setTemplateValue(tplContent)
     setSelectedTableId(tplId)
     setExtraTableIds(extras)
     setImportWsId('')

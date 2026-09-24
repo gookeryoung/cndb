@@ -7,6 +7,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import React from 'react'
 import { delay, http, HttpResponse } from 'msw'
 import { Routes, Route } from 'react-router-dom'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
@@ -230,6 +231,14 @@ describe('ReportsPage 渲染下载', () => {
 })
 
 describe('ReportsPage 编辑与新建保存', () => {
+    /** 读取 CodeMirror 当前文档文本 */
+    const cmDocText = () => {
+        const content = document.querySelector('.cm-content')
+        expect(content).not.toBeNull()
+        // cm-line 逐行拼接，避免依赖内联 DOM 结构细节
+        return Array.from(content!.querySelectorAll('.cm-line')).map(l => l.textContent ?? '').join('\n')
+    }
+
     it('编辑模板：详情回填表单，保存发起 PUT 更新', async () => {
         const putBodies: Record<string, unknown>[] = []
         server.use(
@@ -249,6 +258,66 @@ describe('ReportsPage 编辑与新建保存', () => {
 
         await waitFor(() => expect(putBodies).toHaveLength(1))
         expect(putBodies[0]).toMatchObject({ name: '月度销售汇总', template_content: 'Hello {{ table_name }}' })
+    })
+
+    it('编辑模板：CodeMirror 编辑器显示对应行的模板内容（非空）', async () => {
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([TPL])),
+            http.get('/api/v1/reports/1', () =>
+                HttpResponse.json({ ...TPL, template_content: '# 月度报告\n{{ records | length }} 行' })),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+        // 编辑器文档内容与列表行对应的模板一致（双向绑定：显示非空且等于详情内容）
+        await waitFor(() => expect(cmDocText()).toBe('# 月度报告\n{{ records | length }} 行'))
+    })
+
+    it('编辑模板：编辑第二行时编辑器内容对应第二行模板（按行 id 绑定）', async () => {
+        server.use(
+            http.get('/api/v1/reports', () =>
+                HttpResponse.json([
+                    TPL,
+                    { ...TPL, id: 2, name: '库存月报' },
+                ])),
+            http.get('/api/v1/reports/1', () =>
+                HttpResponse.json({ ...TPL, template_content: '内容甲' })),
+            http.get('/api/v1/reports/2', () =>
+                HttpResponse.json({ ...TPL, id: 2, name: '库存月报', template_content: '内容乙' })),
+        )
+        renderPage()
+
+        // 编辑第二行（more 按钮有两个，取第二行的下拉）
+        const moreBtns = await screen.findAllByRole('button', { name: 'more' })
+        expect(moreBtns).toHaveLength(2)
+        fireEvent.mouseEnter(moreBtns[1])
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(screen.getByText(/编辑模板「库存月报」/)).toBeInTheDocument())
+        await waitFor(() => expect(cmDocText()).toBe('内容乙'))
+    })
+
+    it('编辑模板：StrictMode 双挂载下编辑器仍显示对应行内容（对齐应用真实环境）', async () => {
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([TPL])),
+            http.get('/api/v1/reports/1', () =>
+                HttpResponse.json({ ...TPL, template_content: '严格模式内容' })),
+        )
+        // main.tsx 使用 React.StrictMode，双挂载时序下 CodeMirror 初始化可能吞掉首帧 value
+        renderProviders(
+            <React.StrictMode>
+                <Routes>
+                    <Route path="/w/:wid/reports" element={<ReportsPage />} />
+                </Routes>
+            </React.StrictMode>,
+            { route: '/w/10/reports' },
+        )
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+        await waitFor(() => expect(cmDocText()).toBe('严格模式内容'))
     })
 
     it('新建模板：填写名称保存后发起 POST 创建并关闭弹窗', async () => {
