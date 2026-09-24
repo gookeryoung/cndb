@@ -560,6 +560,7 @@ def _ensure_pdf_font() -> None:
                 registered = True
                 break
             except Exception:
+                logger.debug("候选中文字体注册失败，尝试下一个", exc_info=True)
                 continue
         if not registered:
             try:

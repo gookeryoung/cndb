@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import signal
-import subprocess
+import subprocess  # nosec B404 - CLI 需管理前后端子进程，命令均来自内部常量
 import sys
 from contextlib import suppress
 from pathlib import Path

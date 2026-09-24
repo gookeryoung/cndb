@@ -38,9 +38,9 @@ _USER_IMPORT_COLUMN_ALIASES: dict[str, str] = {
     "登录名": "username",
     "用户名": "username",
     # password
-    "password": "password",
-    "pwd": "password",
-    "user_password": "password",
+    "password": "password",  # nosec B105 - 字段名映射，非密码值
+    "pwd": "password",  # nosec B105 - 字段名映射，非密码值
+    "user_password": "password",  # nosec B105 - 字段名映射，非密码值
     "密码": "password",
     # email
     "email": "email",
@@ -268,10 +268,10 @@ def cmd_create(args: argparse.Namespace) -> CreateResult:
         # 密码处理
         if not args.password:
             password = _generate_password()
-            password_note = "（自动生成）"
+            password_note = "（自动生成）"  # nosec B105 - 展示备注，非密码值
         else:
             password = args.password
-            password_note = ""
+            password_note = ""  # nosec B105 - 展示备注，非密码值
             if len(password) < 6:
                 raise SystemExit("[error] 密码至少 6 位")
 

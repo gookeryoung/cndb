@@ -235,7 +235,7 @@ _ABBREV_DICT: dict[str, str] = {
     "tgt": "target",
     "usr": "user",
     "adm": "admin",
-    "pwd": "password",
+    "pwd": "password",  # nosec B105 - 缩写字段名映射，非密码值
     "addr": "address",
     "tel": "telephone",
     "phone": "phone",

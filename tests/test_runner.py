@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
+import subprocess  # nosec B404 - 测试需调用内部命令
 import sys
 from io import StringIO
 from unittest.mock import MagicMock, Mock, patch

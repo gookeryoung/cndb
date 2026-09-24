@@ -19,7 +19,7 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import re
-import subprocess
+import subprocess  # nosec B404 - GUI 需管理 uvicorn 服务子进程
 import sys
 import threading
 import time
