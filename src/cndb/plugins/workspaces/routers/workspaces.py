@@ -507,9 +507,7 @@ def _coerce_row_value_types(sa_table: Any, row_values: list[dict[str, Any]]) -> 
 
     from sqlalchemy import Date, DateTime
 
-    date_cols = {
-        name: col for name, col in sa_table.columns.items() if isinstance(col.type, (Date, DateTime))
-    }
+    date_cols = {name: col for name, col in sa_table.columns.items() if isinstance(col.type, (Date, DateTime))}
     if not date_cols:
         return
     for values in row_values:

@@ -158,9 +158,7 @@ class TestSeedViewHelpers:
         # sorting 引用不存在字段 → 拒绝
         assert _validate_view_fields({"name": "v", "sortings": [{"field_name": "缺失"}]}, valid, "ws", "t") is False
         # view_options 字段引用不存在 → 拒绝
-        assert (
-            _validate_view_fields({"name": "v", "view_options": {"group_field": "缺失"}}, valid, "ws", "t") is False
-        )
+        assert _validate_view_fields({"name": "v", "view_options": {"group_field": "缺失"}}, valid, "ws", "t") is False
 
 
 class TestCoerceRowValueTypes:
