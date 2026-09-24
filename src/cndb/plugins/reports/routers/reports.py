@@ -308,6 +308,7 @@ def delete_template(
 def _load_table_records(db: Session, table_id: int, user: User) -> tuple[Any, list[dict[str, Any]]]:
     """加载指定表的元数据和全部行数据（带 READ 权限校验 + 字段隐藏）.
 
+    list_rows 默认 limit=100，报表必须拿到完整数据，这里按页循环取全量。
     返回 (DataTable, records_list)，records 是扁平 dict 列表。
     """
     from cndb.plugins.tables.models import DataTable
@@ -319,8 +320,15 @@ def _load_table_records(db: Session, table_id: int, user: User) -> tuple[Any, li
         raise HTTPException(status_code=404, detail=f"数据表不存在 id={table_id}")
     if not check_action(db, table, user, TableAction.READ):
         raise HTTPException(status_code=403, detail="无权访问该数据表")
-    rows, _total = list_rows(db.bind, table, include_trashed=False, db=db, user=user)
-    records = [r.get("data", r) for r in rows]
+    page_size = 500
+    offset = 0
+    records: list[dict[str, Any]] = []
+    while True:
+        rows, total = list_rows(db.bind, table, include_trashed=False, offset=offset, limit=page_size, db=db, user=user)
+        records.extend(r.get("data", r) for r in rows)
+        offset += len(rows)
+        if not rows or offset >= total:
+            break
     return table, records
 
 
@@ -675,26 +683,38 @@ def _render_xlsx(rendered_text: str, ctx: dict[str, Any]) -> bytes:
 
     wb = Workbook()
     sheet_created = False
-    sheets_data: dict[str, list[dict[str, Any]]] = {}
+    used_names: set[str] = set()
+    sheets: list[tuple[str, list[dict[str, Any]]]] = []
 
-    # 收集所有表的数据：主表 + extra 表
+    # 收集所有表的数据：主表 + extra 表（list 而非 dict，避免同名表互相覆盖丢数据）
     # 即使 records 为空也要创建 Sheet（表名有意义时）
     records = ctx.get("records", [])
     table_name = ctx.get("table_name", "Sheet1")
     if table_name and table_name != "Sheet1":
-        sheets_data[table_name] = records  # 允许空 records，仍创建 Sheet
+        sheets.append((table_name, records))
 
-    records_by_table = ctx.get("records_by_table", {})
-    for tname, trecords in records_by_table.items():
-        if tname not in sheets_data:
-            sheets_data[tname] = trecords  # 同上，允许空 records
+    for tname, trecords in ctx.get("records_by_table", {}).items():
+        sheets.append((tname, trecords))
 
     # 去非法 Sheet 名字符，截断到 31 字符
     def _safe_sheet_name(name: str) -> str:
         safe = "".join(c for c in name if c not in "*?:/\\[]").strip()
         return safe[:31] or "Sheet"
 
-    for sheet_name, rows_data in sheets_data.items():
+    # 同名表（如跨工作区）追加序号后缀，保证不重名也不丢数据
+    def _unique_sheet_name(name: str) -> str:
+        base = _safe_sheet_name(name)
+        candidate = base
+        n = 1
+        while candidate in used_names:
+            suffix = str(n)
+            candidate = f"{base[: 31 - len(suffix)]}{suffix}"
+            n += 1
+        used_names.add(candidate)
+        return candidate
+
+    for raw_name, rows_data in sheets:
+        sheet_name = _unique_sheet_name(raw_name)
         if not sheet_created:
             ws = wb.active
             assert ws is not None, "Workbook should always have at least one active sheet"
@@ -790,9 +810,10 @@ def render_report(
     table, records = _load_table_records(db, payload.table_id, _current_user)
 
     # 加载 extra 表（如有，同样带权限校验）
+    # 合并模板持久化的 extra_table_ids（模板自包含，请求可不重复传）与请求临时指定的，去重保序
     records_by_table: dict[str, list[dict[str, Any]]] = {}
     seen_table_ids: set[int] = {payload.table_id}
-    extra_table_ids = list(dict.fromkeys(payload.extra_table_ids))  # 去重保序
+    extra_table_ids = list(dict.fromkeys([*(tpl.extra_table_ids or []), *payload.extra_table_ids]))
     for etid in extra_table_ids:
         if etid in seen_table_ids:
             continue

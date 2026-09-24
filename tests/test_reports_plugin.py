@@ -910,3 +910,261 @@ class TestStatsFunctions:
 
         text = "\n".join(p.text for p in Document(io.BytesIO(resp.content)).paragraphs)
         assert re.search(r"经费总额=250000(\.0+)?", text), text
+
+
+# ── 极端情况 ─────────────────────────────────────────
+
+
+def _add_ws_member(client, headers, ws_id: int, username: str, role: str) -> None:
+    """把已有用户加入工作区."""
+    r = client.post(
+        f"/api/v1/workspaces/{ws_id}/members",
+        headers=headers,
+        json={"username": username, "role": role},
+    )
+    assert r.status_code in (200, 201), r.text
+
+
+def _mk_user(client, db, username: str) -> dict:
+    """注册并登录新用户，返回其 Authorization headers."""
+    u = User(username=username, email=f"{username}@b.c", nickname=username)
+    u.set_password("pass1234")
+    db.add(u)
+    db.commit()
+    resp = client.post("/api/v1/accounts/auth/login", json={"login": username, "password": "pass1234"})
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+class TestRenderExtremeCases:
+    """极端数据下的渲染行为：全量行数、模板自包含、权限、脏数据、命名冲突."""
+
+    def test_render_over_100_rows_not_truncated(self, client, auth_headers, db):
+        """超过 list_rows 默认 limit=100 的表，报表必须包含全部行（回归：静默截断）."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-ext-big"}).json()
+        wid = ws["id"]
+        tid = _mk_table_with_fields(client, auth_headers, wid, "大表", [("序号", "number")])
+        for i in range(1, 251):
+            r = client.post(
+                f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+                headers=auth_headers,
+                json={"values": {"序号": i}},
+            )
+            assert r.status_code == 201
+        tpl = _mk_tpl_id(client, auth_headers, "全量行数", "共{{ records|length }}行")
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200
+        text = _extract_docx_text(resp.content)
+        assert "共250行" in text, text
+        # 统计函数同样不能被截断
+        tpl2 = _mk_tpl_id(client, auth_headers, "全量统计", "{{ stats(records, '序号').sum }}")
+        resp2 = client.post(
+            f"/api/v1/reports/{tpl2}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        text2 = _extract_docx_text(resp2.content)
+        assert re.search(r"31375(\.0+)?", text2), text2  # 1..250 求和
+
+    def test_render_uses_template_persisted_extra_table_ids(self, client, auth_headers, db):
+        """请求不传 extra_table_ids 时，应回退到模板持久化的额外表（模板自包含）."""
+        _ws1, tid_a = _mk_table(client, auth_headers, "ws-ext-cx1", "主表甲")
+        _ws2, tid_b = _mk_table(client, auth_headers, "ws-ext-cx2", "额外表乙", field_name="跨区字段", value="跨区数据")
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "自包含模板",
+                "table_id": tid_a,
+                "extra_table_ids": [tid_b],
+                "output_format": "docx",
+                "template_content": "值={{ records_by_table['额外表乙'][0].跨区字段 }}",
+            },
+        ).json()["id"]
+        # 请求只传主表，不传 extra_table_ids
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid_a, "params": {}},
+        )
+        assert resp.status_code == 200
+        assert "值=跨区数据" in _extract_docx_text(resp.content)
+
+    def test_render_extra_table_ids_dedup(self, client, auth_headers, db):
+        """请求重复传同一额外表 id、且与模板持久化值重叠时，应去重不报错."""
+        _ws1, tid_a = _mk_table(client, auth_headers, "ws-ext-dd1", "主表去重")
+        _ws2, tid_b = _mk_table(client, auth_headers, "ws-ext-dd2", "额外表去重", field_name="v", value="x")
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "去重模板",
+                "table_id": tid_a,
+                "extra_table_ids": [tid_b],
+                "output_format": "docx",
+                "template_content": "ok={{ records_by_table['额外表去重'][0].v }}",
+            },
+        ).json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid_a, "params": {}, "extra_table_ids": [tid_b, tid_b]},
+        )
+        assert resp.status_code == 200
+        assert "ok=x" in _extract_docx_text(resp.content)
+
+    def test_render_extra_table_no_read_permission(self, client, auth_headers, db):
+        """对模板额外引用表无 READ 权限的用户渲染时应 403（防止借模板越权读数据）."""
+        ws1 = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-ext-p1"}).json()
+        tid_main = _mk_table_with_fields(client, auth_headers, ws1["id"], "成员主表", [("a", "text")])
+        _ws2, tid_secret = _mk_table(client, auth_headers, "ws-ext-p2", "机密表", field_name="s", value="机密")
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "越权探针",
+                "table_id": tid_main,
+                "extra_table_ids": [tid_secret],
+                "output_format": "docx",
+                "template_content": "{{ records_by_table['机密表'][0].s }}",
+            },
+        ).json()["id"]
+        # 用户 B 只加入 ws1（主表所在工作区），不在 ws2
+        _mk_user(client, db, "ext_viewer")
+        _add_ws_member(client, auth_headers, ws1["id"], "ext_viewer", "viewer")
+        headers_b = _login(client, "ext_viewer")
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=headers_b,
+            json={"table_id": tid_main, "params": {}},
+        )
+        assert resp.status_code == 403, resp.text
+        assert "机密" not in resp.text
+
+    def test_render_empty_table_records_first_element_is_400(self, client, auth_headers, db):
+        """空表上模板取 records[0] 应返回 400（StrictUndefined 行为固化），而非 500."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-ext-empty"}).json()
+        tid = _mk_table_with_fields(client, auth_headers, ws["id"], "空表", [("名称", "text")])
+        tpl = _mk_tpl_id(client, auth_headers, "空表模板", "{{ records[0].名称 }}")
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 400
+        assert "模板渲染失败" in resp.json()["detail"]
+
+    def test_render_stats_skips_dirty_numeric_values(self, client, auth_headers, db):
+        """文本列混入数字串/非数字/空串/缺省时，stats 数值口径跳过脏值，non_empty 只数原始非空."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-ext-dirty"}).json()
+        wid = ws["id"]
+        tid = _mk_table_with_fields(client, auth_headers, wid, "脏数据表", [("渠道", "text"), ("金额", "text")])
+        rows = [
+            {"渠道": "线上", "金额": "abc"},  # 非数字字符串
+            {"渠道": "线下", "金额": "200"},  # 数字串（可解析）
+            {"渠道": "其他", "金额": ""},  # 空串
+            {"渠道": "缺失"},  # 字段缺省（None）
+        ]
+        for row in rows:
+            r = client.post(
+                f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+                headers=auth_headers,
+                json={"values": row},
+            )
+            assert r.status_code == 201, r.text
+        tpl = _mk_tpl_id(
+            client,
+            auth_headers,
+            "脏值统计",
+            "sum={{ stats(records, '金额').sum }} count={{ stats(records, '金额').count }} "
+            "nonempty={{ stats(records, '金额').non_empty }}",
+        )
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200
+        text = _extract_docx_text(resp.content)
+        assert re.search(r"sum=200(\.0+)?", text), text
+        assert "count=1" in text, text
+        assert "nonempty=2" in text, text  # 200 与 "abc" 原始非空；""/None 不计
+
+    def test_render_xlsx_duplicate_sheet_names(self, client, auth_headers, db):
+        """主表与跨工作区额外表同名时，xlsx 应产出两个 sheet 而不报错."""
+        _ws1, tid_a = _mk_table(client, auth_headers, "ws-ext-ds1", "同名表", field_name="值", value="a")
+        _ws2, tid_b = _mk_table(client, auth_headers, "ws-ext-ds2", "同名表", field_name="值", value="b")
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "重名表报告",
+                "table_id": tid_a,
+                "extra_table_ids": [tid_b],
+                "output_format": "xlsx",
+                "template_content": "ok",
+            },
+        ).json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid_a, "params": {}},
+        )
+        assert resp.status_code == 200
+        from openpyxl import load_workbook
+
+        wb = load_workbook(io.BytesIO(resp.content))
+        assert len(wb.sheetnames) == 2, wb.sheetnames
+
+    def test_render_pdf_renders_xml_special_chars(self, client, auth_headers, db):
+        """PDF 正文/表格含 <tag>、& 等特殊字符时应转义渲染成功而非 500."""
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws-ext-pdf"}).json()
+        wid = ws["id"]
+        tid = _mk_table_with_fields(client, auth_headers, wid, "特殊字符表", [("内容", "text")])
+        client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+            headers=auth_headers,
+            json={"values": {"内容": "<b>&amp;</b> 1<2>0"}},
+        )
+        tpl = _mk_tpl_id(
+            client,
+            auth_headers,
+            "特殊字符报告",
+            "| 内容 |\n| --- |\n{% for r in records %}| {{ r.内容 }} |\n{% endfor %}\n正文：{{ records[0].内容 }}",
+            fmt="pdf",
+        )
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.content.startswith(b"%PDF")
+
+
+def _mk_tpl_id(client, headers, name: str, content: str, fmt: str = "docx", **kw) -> int:
+    """快速创建模板，返回 id."""
+    r = client.post(
+        "/api/v1/reports",
+        headers=headers,
+        json={"name": name, "output_format": fmt, "template_content": content, **kw},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def _extract_docx_text(content: bytes) -> str:
+    """从 docx 字节流提取全部段落文本."""
+    from docx import Document
+
+    return "\n".join(p.text for p in Document(io.BytesIO(content)).paragraphs)
+
+
+def _login(client, username: str) -> dict:
+    """按用户名登录，返回 Authorization headers."""
+    resp = client.post("/api/v1/accounts/auth/login", json={"login": username, "password": "pass1234"})
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
