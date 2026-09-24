@@ -107,6 +107,7 @@ def _normalize_values(
         try:
             cfg = DateFieldConfig(**(f.config or {}))
         except Exception:
+            logger.debug("日期字段配置解析失败，跳过自动填充", exc_info=True)
             continue
         if not cfg.should_auto_fill(for_update=for_update):
             continue

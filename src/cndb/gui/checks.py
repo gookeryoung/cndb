@@ -17,7 +17,7 @@ import contextlib
 import re
 import shutil
 import socket
-import subprocess
+import subprocess  # nosec B404 - 环境检查需调用内部命令
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
