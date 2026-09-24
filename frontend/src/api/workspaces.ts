@@ -40,14 +40,17 @@ export const workspaceApi = {
     api.get<WorkspaceExportData>(`/v1/workspaces/${wid}/export`).then(r => r.data),
   /** 从 JSON 数据导入工作区（创建新表、字段、数据、视图） */
   importWorkspace: (wid: number | string, jsonData: Record<string, unknown>) =>
-    api.post<{ imported_tables: number; imported_rows: number; imported_views: number }>(
+    api.post<{ imported_tables: number; imported_rows: number; imported_views: number; errors?: string[] }>(
       `/v1/workspaces/${wid}/import`,
       { json_data: jsonData },
     ).then(r => r.data),
   /** 从备份 JSON 创建全新工作区（同时导入表结构、数据和视图） */
   importFromBackup: (payload: { name?: string; json_data: Record<string, unknown> }) =>
-    api.post<{ workspace: Workspace; imported_tables: number; imported_rows: number; imported_views: number }>(
-      '/v1/workspaces/import',
-      payload,
-    ).then(r => r.data),
+    api.post<{
+      workspace: Workspace
+      imported_tables: number
+      imported_rows: number
+      imported_views: number
+      errors?: string[]
+    }>('/v1/workspaces/import', payload).then(r => r.data),
 }

@@ -151,6 +151,8 @@ class WorkspaceImportResponse(BaseModel):
     imported_tables: int
     imported_rows: int
     imported_views: int
+    errors: list[str] = []
+    """部分内容导入失败/跳过的明细（空列表表示全部成功）。"""
 
 
 class WorkspaceCreateFromBackup(BaseModel):
@@ -170,6 +172,8 @@ class WorkspaceCreateFromBackupResponse(BaseModel):
     imported_tables: int
     imported_rows: int
     imported_views: int
+    errors: list[str] = []
+    """部分内容导入失败/跳过的明细（空列表表示全部成功）。"""
 
 
 # ── Role schemas ──────────────────────────────────────

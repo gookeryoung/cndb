@@ -1111,6 +1111,121 @@ class TestWorkspaceExportImport:
         assert by_name["重点"].is_default is False
         assert by_name["重点"].view_type == "kanban"
 
+    def test_full_backup_roundtrip_multi_table_with_link_field(self, client, owner_user, db, db_engine):
+        """多表真实备份还原：含 link 字段（无主表物理列）的表不应拖垮数据行导入."""
+        from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import ddl
+        from cndb.plugins.tables.services.core import records as rec
+
+        token = _login_token(client, "owner", "passw0rd")
+        headers = _headers(token)
+        ws_id = self._create_ws(client, token)
+
+        # 表A：常规字段
+        dt_a = DataTable(workspace_id=ws_id, owner_id=owner_user.id, name="普通表")
+        dt_a.ensure_db_name()
+        db.add(dt_a)
+        db.flush()
+        fa = DataField(table_id=dt_a.id, name="名称", field_type="text", order=0)
+        fa.ensure_db_name()
+        db.add(fa)
+        db.commit()
+        db.refresh(dt_a)
+        ddl.create_table(db_engine, dt_a)
+        rec.create_row(db_engine, dt_a, {"名称": "甲"})
+
+        # 表B：含 link 字段（主表无对应物理列，值存关联表）
+        dt_b = DataTable(workspace_id=ws_id, owner_id=owner_user.id, name="关联表")
+        dt_b.ensure_db_name()
+        db.add(dt_b)
+        db.flush()
+        fb1 = DataField(table_id=dt_b.id, name="标题", field_type="text", order=0)
+        fb1.ensure_db_name()
+        fb2 = DataField(table_id=dt_b.id, name="关联项", field_type="link", order=1)
+        fb2.ensure_db_name()
+        db.add_all([fb1, fb2])
+        db.commit()
+        db.refresh(dt_b)
+        ddl.create_table(db_engine, dt_b)
+        rec.create_row(db_engine, dt_b, {"标题": "任务一"})
+        rec.create_row(db_engine, dt_b, {"标题": "任务二"})
+
+        r_export = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=headers)
+        assert r_export.status_code == 200
+        backup = r_export.json()
+
+        r_restore = client.post("/api/v1/workspaces/import", json={"json_data": backup}, headers=headers)
+        assert r_restore.status_code == 201, r_restore.text
+        body = r_restore.json()
+        assert body["imported_tables"] == 2
+        assert body["imported_rows"] == 3
+        assert body["errors"] == []
+
+        r_verify = client.get(f"/api/v1/workspaces/{body['workspace']['id']}/export", headers=headers)
+        assert r_verify.status_code == 200
+        tables = {t["name"]: t for t in r_verify.json()["tables"]}
+        assert tables["普通表"]["rows"] == [{"名称": "甲"}]
+        assert tables["关联表"]["rows"] == [{"标题": "任务一"}, {"标题": "任务二"}]
+
+    def test_import_legacy_backup_reports_unmatched_rows(self, client, owner_user, db, monkeypatch):
+        """旧版备份行键为随机物理列名且无法映射 → 不静默丢数据，errors 明确上报."""
+        monkeypatch.setattr("cndb.plugins.tables.services.core.ddl.create_table", lambda engine, table: None)
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        payload = {
+            "json_data": {
+                "version": "2",
+                "tables": [
+                    {
+                        "name": "旧表",
+                        "fields": [{"name": "姓名", "field_type": "text", "order": 0}],
+                        "rows": [{"field_abc123def456": "张三"}],  # 旧版导出的物理列名键
+                        "views": [],
+                    }
+                ],
+            }
+        }
+        r = client.post(f"/api/v1/workspaces/{ws_id}/import", json=payload, headers=_headers(token))
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["imported_rows"] == 0
+        assert len(data["errors"]) == 1
+        assert "旧表" in data["errors"][0]
+        assert "1" in data["errors"][0]  # 提示丢失行数
+
+    def test_import_reports_row_insert_failure(self, client, owner_user, db, db_engine):
+        """行插入失败（required 字段 NOT NULL 违反）→ errors 上报表名，导入不中断，表结构/视图仍还原."""
+        from cndb.plugins.tables.models import DataView
+
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        payload = {
+            "json_data": {
+                "version": "3",
+                "tables": [
+                    {
+                        "name": "冲突表",
+                        "fields": [
+                            {"name": "必填列", "field_type": "text", "order": 0, "required": True},
+                        ],
+                        "rows": [{"必填列": None}],  # NOT NULL 列插入 None
+                        "views": [{"name": "全部", "view_type": "grid", "is_default": True}],
+                    }
+                ],
+            }
+        }
+        r = client.post(f"/api/v1/workspaces/{ws_id}/import", json=payload, headers=_headers(token))
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["imported_rows"] == 0
+        assert data["imported_tables"] == 1
+        assert data["imported_views"] == 1
+        assert len(data["errors"]) == 1
+        assert "冲突表" in data["errors"][0]
+        # 表结构与视图仍正常还原
+        view = db.query(DataView).filter(DataView.name == "全部").first()
+        assert view is not None
+
 
 class TestWorkspaceOwnerTransfer:
     """工作区所有权转让接口 POST /{wid}/owner."""
