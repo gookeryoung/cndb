@@ -50,7 +50,7 @@ const validationReport = {
       match_key_values: { 姓名: '王五' },
       existing_row_id: 7,
       field_sample: { 姓名: '王五' },
-      field_diffs: { 邮箱: { old: 'old@x.com', new: 'new@x.com', changed: true } },
+      field_diffs: { 邮箱: { old: 'old@example.com', new: 'new@example.com', changed: true } },
     },
   ],
   warnings: [],
@@ -79,7 +79,7 @@ const doneTask = {
 /** 通过 Dragger 的隐藏 input 上传文件 */
 function uploadFile(name = 'data.csv') {
   const input = document.querySelector('input[type="file"]') as HTMLInputElement
-  const file = new File(['姓名,邮箱\n张三,a@x.com'], name, { type: 'text/csv' })
+  const file = new File(['姓名,邮箱\n张三,a@example.com'], name, { type: 'text/csv' })
   Object.defineProperty(input, 'files', { value: [file] })
   fireEvent.change(input)
 }

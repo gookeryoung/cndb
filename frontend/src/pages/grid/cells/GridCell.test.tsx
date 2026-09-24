@@ -83,8 +83,8 @@ describe('GridCell 展示态', () => {
 
   it('email 渲染 mailto 链接', () => {
     const field = makeField({ id: 1, name: '邮箱', field_type: 'email' })
-    renderProviders(<GridCell value="a@x.com" field={field} rowId={1} />)
-    expect(screen.getByText('a@x.com')).toHaveAttribute('href', 'mailto:a@x.com')
+    renderProviders(<GridCell value="a@example.com" field={field} rowId={1} />)
+    expect(screen.getByText('a@example.com')).toHaveAttribute('href', 'mailto:a@example.com')
   })
 
   it('long_text 超过 40 字符截断加省略号', () => {

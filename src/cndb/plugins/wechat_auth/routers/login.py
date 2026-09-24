@@ -135,6 +135,6 @@ def wechat_login(
 
     return WechatLoginResponse(
         access_token=access_token,
-        token_type="bearer",
+        token_type="bearer",  # nosec B106 - OAuth2 规范的 token_type 字段值，非凭证
         user=_serialize_user(user),
     )
