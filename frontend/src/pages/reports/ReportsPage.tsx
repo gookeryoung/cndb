@@ -142,7 +142,7 @@ export default function ReportsPage() {
       form.setFieldsValue({
         name: full.name,
         description: full.description,
-        output_format: full.output_format,
+        output_format: full.output_format ?? 'docx',
         template_content: full.template_content,
         table_id: full.table_id,
         parameters: full.parameters as ReportParameter[],
@@ -416,6 +416,9 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     const tplContent: string = form.getFieldValue('template_content') || ''
     const tplId: number | null = form.getFieldValue('table_id') ?? null
     const extras: number[] = form.getFieldValue('extra_table_ids') || []
+    // 输出格式 / 主题风格兜底默认值（旧数据或字段被清空时避免下拉显示为空）
+    if (form.getFieldValue('output_format') == null) form.setFieldValue('output_format', 'docx')
+    if (form.getFieldValue('theme') == null) form.setFieldValue('theme', 'minimal')
     setTemplateValue(tplContent)
     setSelectedTableId(tplId)
     setExtraTableIds(extras)
@@ -460,9 +463,15 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
     form.setFieldValue('template_content', value)
   }
 
-  // 保存校验（extra_table_ids 随模板持久化，含跨工作区表）
+  // 保存校验（extra_table_ids 随模板持久化，含跨工作区表；输出格式/主题兜底默认值）
   const handleFormFinish = (v: ReportTemplateCreate) => {
-    onSubmit({ ...v, template_content: templateValue, extra_table_ids: extraTableIds })
+    onSubmit({
+      ...v,
+      output_format: v.output_format ?? 'docx',
+      theme: v.theme ?? 'minimal',
+      template_content: templateValue,
+      extra_table_ids: extraTableIds,
+    })
   }
 
   // 跨工作区表名解析：本区 tables 优先，其次 crossTableInfo（级联引入 + 回显扫描）
@@ -708,7 +717,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, onClose, onS
       </div>
 
       {/* 底部按钮区 */}
-      <div style={{ padding: '12px 24px', borderTop: '1px solid #f0f0f0', textAlign: 'right' }}>
+      <div style={{ padding: '12px 24px', borderTop: '1px solid var(--cn-border-soft)', textAlign: 'right' }}>
         <Space>
           <Button onClick={onClose}>取消</Button>
           <Button

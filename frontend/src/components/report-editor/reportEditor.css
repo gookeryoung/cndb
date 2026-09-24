@@ -34,8 +34,8 @@
   width: 220px;
   height: 100%;
   flex-shrink: 0;
-  background: #fafafa;
-  border: 1px solid #e8e8e8;
+  background: var(--cn-bg-subtle);
+  border: 1px solid var(--cn-border-soft);
   border-radius: 6px;
   display: flex;
   flex-direction: column;
@@ -44,8 +44,8 @@
 
 .report-field-panel-header {
   padding: 10px 12px 6px;
-  border-bottom: 1px solid #f0f0f0;
-  background: #fafafa;
+  border-bottom: 1px solid var(--cn-border-soft);
+  background: var(--cn-bg-subtle);
 }
 
 .report-field-search {
@@ -73,7 +73,7 @@
 }
 
 .report-field-item:hover {
-  background: #e6f4ff;
+  background: color-mix(in srgb, #1677ff 18%, var(--cn-bg-container));
 }
 
 .report-field-item:active {
@@ -88,9 +88,9 @@
 
 .report-field-panel-footer {
   padding: 6px 12px 10px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--cn-border-soft);
   text-align: center;
-  background: #fafafa;
+  background: var(--cn-bg-subtle);
 }
 
 /* ── 中间 CodeMirror 编辑器 ── */
@@ -145,10 +145,10 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid #e8e8e8;
+  border: 1px solid var(--cn-border-soft);
   border-radius: 6px;
   overflow: hidden;
-  background: #fff;
+  background: var(--cn-bg-container);
 }
 
 .report-right-panel .ant-tabs {
@@ -160,8 +160,8 @@
 .report-right-panel .ant-tabs-nav {
   margin-bottom: 0;
   padding: 0 8px;
-  background: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
+  background: var(--cn-bg-subtle);
+  border-bottom: 1px solid var(--cn-border-soft);
 }
 
 .report-right-panel .ant-tabs-content-holder {
@@ -186,8 +186,8 @@
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid #f0f0f0;
-  background: #fafafa;
+  border-bottom: 1px solid var(--cn-border-soft);
+  background: var(--cn-bg-subtle);
 }
 
 .report-preview-meta {
@@ -225,17 +225,17 @@
 }
 
 .report-syntax-example {
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--cn-border-soft);
   border-radius: 6px;
   padding: 8px 10px;
-  background: #fafafa;
+  background: var(--cn-bg-subtle);
 }
 
 .report-syntax-example-title {
   font-weight: 500;
   font-size: 13px;
   margin-bottom: 6px;
-  color: #262626;
+  color: var(--cn-text-primary);
 }
 
 .report-syntax-example-code {
@@ -275,7 +275,7 @@
 .report-syntax-example-desc {
   margin-top: 6px;
   font-size: 11px;
-  color: #8c8c8c;
+  color: var(--cn-text-muted);
 }
 
 /* 响应式：窄屏下右侧面板再收一点 */

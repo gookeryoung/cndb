@@ -317,6 +317,65 @@ describe('ReportsPage 编辑与新建保存', () => {
         expect(postBodies[0].extra_table_ids).toEqual([200])
         expect(await screen.findByText('模板已创建')).toBeInTheDocument()
     })
+
+    it('编辑旧模板 output_format/theme 为 null 时回显默认值并随 PUT 提交 docx/minimal', async () => {
+        const putBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () =>
+                HttpResponse.json([{ ...TPL, output_format: null, theme: null }])),
+            http.get('/api/v1/reports/1', () =>
+                HttpResponse.json({ ...TPL, output_format: null, theme: null, template_content: 'Hello' })),
+            http.put('/api/v1/reports/1', async ({ request }) => {
+                putBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({})
+            }),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+        // 输出格式 / 主题风格不为空，回显默认项
+        const themeRow = document.querySelector('.report-theme-row')
+        expect(themeRow?.textContent).toContain('简约')
+        expect(screen.getAllByText('Word (.docx)').length).toBeGreaterThan(0)
+        fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+        await waitFor(() => expect(putBodies).toHaveLength(1))
+        expect(putBodies[0].output_format).toBe('docx')
+        expect(putBodies[0].theme).toBe('minimal')
+    })
+
+    it('编辑模板重复打开（先建后改）下拉默认值不残留为空', async () => {
+        const putBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([{ ...TPL, output_format: null, theme: null }])),
+            http.get('/api/v1/reports/1', () =>
+                HttpResponse.json({ ...TPL, output_format: null, theme: null, template_content: 'Hello' })),
+            http.put('/api/v1/reports/1', async ({ request }) => {
+                putBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({})
+            }),
+        )
+        renderPage()
+
+        // 第一次打开编辑弹窗再关闭
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+        fireEvent.click(await screen.findByRole('button', { name: /^取\s*消$/ }))
+
+        // 再次打开，输出格式 / 主题风格仍回显默认项（preserve=false + destroyOnHidden 场景）
+        fireEvent.mouseEnter(screen.getByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+        await waitFor(() => expect(document.querySelector('.report-theme-row')?.textContent).toContain('简约'))
+        fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+        await waitFor(() => expect(putBodies).toHaveLength(1))
+        expect(putBodies[0].output_format).toBe('docx')
+        expect(putBodies[0].theme).toBe('minimal')
+    })
 })
 
 describe('ReportsPage 主题风格', () => {
