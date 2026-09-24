@@ -450,13 +450,32 @@ def copy_table(
     if effective_mode in ("all", "view"):
         from cndb.plugins.tables.services.core import records as rec
 
+        # 内存安全上限：克隆将全量行载入 Python 内存再逐条写入，超过此上限拒绝服务
+        _CLONE_ROW_CAP = 500_000
+
+        # 先做 COUNT 检查总量 —— 避免在超大表上拉全量数据
+        rows, total = rec.list_rows(
+            db.get_bind(),
+            src,
+            filters=view_filters,
+            filter_logic=view_filter_logic,
+            include_trashed=False,
+            limit=1,
+            db=db,
+        )
+        if total > _CLONE_ROW_CAP:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"源表有 {total} 行，超过克隆上限 {_CLONE_ROW_CAP} 行，请先过滤数据后再克隆.",
+            )
+
         rows, _ = rec.list_rows(
             db.get_bind(),
             src,
             filters=view_filters,
             filter_logic=view_filter_logic,
             include_trashed=False,
-            limit=10000,
+            limit=None,
             db=db,
         )
         if rows:

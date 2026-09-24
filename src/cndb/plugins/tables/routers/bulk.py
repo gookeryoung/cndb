@@ -197,16 +197,24 @@ def export_table(
         sorts = dv.sortings or None
         filter_logic = dv.filter_type or "AND"
 
-    rows, _total = rec.list_rows(
+    rows, total = rec.list_rows(
         db.get_bind(),
         dt,
-        limit=10000,
+        limit=None,
         db=db,
         user=current_user,
         filters=filters,
         sorts=sorts,
         filter_logic=filter_logic,
     )
+
+    # 内存安全上限：导出函数将全量行载入 Python 内存再序列化，超过此上限拒绝服务
+    _EXPORT_ROW_CAP = 500_000
+    if total > _EXPORT_ROW_CAP:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"当前表有 {total} 行，超过导出上限 {_EXPORT_ROW_CAP} 行，请分批导出或联系管理员.",
+        )
 
     fmt = format.lower()
     if fmt == "json":
