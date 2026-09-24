@@ -38,10 +38,10 @@ _USER_IMPORT_COLUMN_ALIASES: dict[str, str] = {
     "login": "username",
     "登录名": "username",
     "用户名": "username",
-    # password（拼接构造，规避通用密码字面量检测）
-    "password": _pw_field,  # nosec B105 - 字段名映射，非密码值
+    # password（字段名映射，非密码值；拼接别名仅为规避密钥扫描误报）
+    "password": _pw_field,  # nosec B105 - nosemgrep:generic.secrets.security.detected-generic-password
     "pwd": _pw_field,  # nosec B105 - 字段名映射，非密码值
-    "user_password": _pw_field,  # nosec B105 - 字段名映射，非密码值
+    "user_password": _pw_field,  # nosec B105 - nosemgrep:generic.secrets.security.detected-generic-password
     "密码": _pw_field,
     # email
     "email": "email",
