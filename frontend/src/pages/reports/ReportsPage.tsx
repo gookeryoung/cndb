@@ -127,15 +127,7 @@ export default function ReportsPage() {
   const openCreate = () => {
     setEditing(null)
     setInitialContent('Hello {{ table_name }}!\n共 {{ records | length }} 条记录\n\n{% for row in records %}- {{ row.name }}{% endfor %}')
-    form.setFieldsValue({
-      name: '',
-      description: '',
-      output_format: 'docx',
-      template_content: 'Hello {{ table_name }}!\n共 {{ records | length }} 条记录\n\n{% for row in records %}- {{ row.name }}{% endfor %}',
-      table_id: null,
-      parameters: [],
-      theme: 'minimal',
-    })
+    // Form 值统一在 TemplateEditor useEffect([open]) 内设置，避免与 destroyOnHidden + preserve=false 时序冲突
     setEditorOpen(true)
   }
 
@@ -144,15 +136,7 @@ export default function ReportsPage() {
       setEditing(full)
       // 模板内容直接驱动编辑器（不依赖 Form 回读），保证与所点行一致
       setInitialContent(full.template_content ?? '')
-      form.setFieldsValue({
-        name: full.name,
-        description: full.description,
-        output_format: full.output_format ?? 'docx',
-        template_content: full.template_content,
-        table_id: full.table_id,
-        parameters: full.parameters as ReportParameter[],
-        theme: full.theme ?? 'minimal',
-      })
+      // Form 值统一在 TemplateEditor useEffect([open]) 内设置
       setEditorOpen(true)
     }).catch((err: unknown) => {
       message.error(err instanceof Error ? err.message : '加载模板失败')
@@ -418,17 +402,41 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     enabled: extraTableIds.length > 0 && !!workspaceId,
   })
 
-  // Modal 打开时初始化值
+  // Modal 打开时统一初始化所有表单值（在 Form.Items mount 之后，避免 destroyOnHidden 时序错乱）
   useEffect(() => {
     if (!open) return
+    // 编辑态：从 editing 详情对象取；新建态：默认值
+    if (editing) {
+      form.setFieldsValue({
+        name: editing.name,
+        description: editing.description,
+        output_format: editing.output_format ?? 'docx',
+        template_content: editing.template_content,
+        table_id: editing.table_id,
+        parameters: editing.parameters as ReportParameter[],
+        theme: editing.theme ?? 'minimal',
+        extra_table_ids: editing.extra_table_ids ?? [],
+      })
+      setExtraTableIds(editing.extra_table_ids ?? [])
+    } else {
+      form.setFieldsValue({
+        name: '',
+        description: '',
+        output_format: 'docx',
+        template_content: initialContent,
+        table_id: null,
+        parameters: [],
+        theme: 'minimal',
+        extra_table_ids: [],
+      })
+      setExtraTableIds([])
+    }
+    // 模板内容使用外部显式传入的 initialContent（与所点行绑定）
+    setTemplateValue(initialContent)
     const tplId: number | null = form.getFieldValue('table_id') ?? null
     const extras: number[] = form.getFieldValue('extra_table_ids') || []
-    // 模板内容使用外部显式传入的 initialContent（与所点行绑定，不回读 Form）
-    setTemplateValue(initialContent)
-    // 输出格式 / 主题风格兜底默认值（旧数据或字段被清空时避免下拉显示为空）
-    if (form.getFieldValue('output_format') == null) form.setFieldValue('output_format', 'docx')
-    if (form.getFieldValue('theme') == null) form.setFieldValue('theme', 'minimal')
     setSelectedTableId(tplId)
+    // 额外表多选框 value 同步 state（让 Form.List 的 select 有受控值）
     setExtraTableIds(extras)
     setImportWsId('')
     setImportTableId(null)
@@ -559,11 +567,10 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
       footer={null}
       styles={{ body: { padding: 0, maxHeight: 'calc(92vh - 110px)', overflowY: 'auto' } }}
     >
-      {/* 顶部：模板元信息 */}
+      {/* 单一 Form：所有 Form.Items 共享一个 form 实例 + onFinish */}
       <Form
         form={form}
         layout="vertical"
-        preserve={false}
         style={{ padding: '16px 24px 0' }}
         onFinish={handleFormFinish}
       >
@@ -627,65 +634,61 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
         <Form.Item name="description" label="描述（可选）" style={{ marginBottom: 8 }}>
           <Input.TextArea rows={1} placeholder="简单说明这个模板的用途" />
         </Form.Item>
-      </Form>
 
-      {/* 隐藏的 template_content 字段 — 实际值由 CodeMirror 控制 */}
-      <Form form={form} preserve={false} style={{ display: 'none' }}>
-        <Form.Item name="template_content" rules={[{ required: true, message: '请输入模板内容' }]}>
+        {/* 隐藏的 template_content 字段 — 实际值由 CodeMirror 控制 */}
+        <Form.Item name="template_content" rules={[{ required: true, message: '请输入模板内容' }]} style={{ display: 'none' }}>
           <Input />
         </Form.Item>
-      </Form>
 
-      {/* 编辑器主体：字段面板 + 编辑器 + 预览（统一 ReportTemplateEditor，无重复） */}
-      <div style={{ padding: '12px 24px 0' }}>
-        <div className="report-editor-body" style={{ height: 520 }}>
-          <ReportTemplateEditor
-            fields={selectedTableId !== null ? (fields as Field[]) : undefined}
-            tableGroups={tableGroups.length > 0 ? tableGroups : undefined}
-            value={templateValue}
-            onChange={handleTemplateChange}
-            editorRef={editorRef}
-          />
-
-          {/* 右侧：Tabs（预览 / 语法帮助） */}
-          <div className="report-right-panel">
-            <Tabs
-              defaultActiveKey="preview"
-              size="small"
-              items={[
-                {
-                  key: 'preview',
-                  label: '实时预览',
-                  children: (
-                    <PreviewPanel
-                      template={templateValue}
-                      records={previewRows as Array<Record<string, unknown>>}
-                      tableName={selectedTableName}
-                      loading={previewLoading}
-                      recordsByTable={recordsByTable}
-                    />
-                  ),
-                },
-                {
-                  key: 'help',
-                  label: '语法帮助',
-                  children: (
-                    <SyntaxHelpPanel
-                      onInsert={(code) => {
-                        window.dispatchEvent(new CustomEvent('report-editor-insert', { detail: { code } }))
-                      }}
-                    />
-                  ),
-                },
-              ]}
+        {/* 编辑器主体：字段面板 + 编辑器 + 预览（Form 内可嵌套非 Form 内容） */}
+        <div style={{ padding: '12px 24px 0' }}>
+          <div className="report-editor-body" style={{ height: 520 }}>
+            <ReportTemplateEditor
+              fields={selectedTableId !== null ? (fields as Field[]) : undefined}
+              tableGroups={tableGroups.length > 0 ? tableGroups : undefined}
+              value={templateValue}
+              onChange={handleTemplateChange}
+              editorRef={editorRef}
             />
+
+            {/* 右侧：Tabs（预览 / 语法帮助） */}
+            <div className="report-right-panel">
+              <Tabs
+                defaultActiveKey="preview"
+                size="small"
+                items={[
+                  {
+                    key: 'preview',
+                    label: '实时预览',
+                    children: (
+                      <PreviewPanel
+                        template={templateValue}
+                        records={previewRows as Array<Record<string, unknown>>}
+                        tableName={selectedTableName}
+                        loading={previewLoading}
+                        recordsByTable={recordsByTable}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'help',
+                    label: '语法帮助',
+                    children: (
+                      <SyntaxHelpPanel
+                        onInsert={(code) => {
+                          window.dispatchEvent(new CustomEvent('report-editor-insert', { detail: { code } }))
+                        }}
+                      />
+                    ),
+                  },
+                ]}
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* 参数定义区 */}
-      <div style={{ padding: '12px 24px 0' }}>
-        <Form form={form} layout="vertical" preserve={false}>
+        {/* 参数定义区（Form.Items 嵌套在主 Form 内） */}
+        <div style={{ padding: '12px 24px 0' }}>
           <Form.Item label="模板参数" tooltip="运行时传入的动态参数（可选）" style={{ marginBottom: 0 }}>
             <Form.List name="parameters">
               {(paramFields, { add, remove }) => (
@@ -705,7 +708,8 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
                         <Form.Item {...restField} name={[name, 'label']}>
                           <Input placeholder="显示名" style={{ width: 100 }} />
                         </Form.Item>
-                        <Form.Item {...restField} name={[name, 'required']} valuePropName="checked">
+                        {/* Select 用 value prop 而非 checked，移除 valuePropName="checked" */}
+                        <Form.Item {...restField} name={[name, 'required']}>
                           <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} style={{ width: 80 }} />
                         </Form.Item>
                         <Tooltip title="删除该参数">
@@ -721,8 +725,8 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
               )}
             </Form.List>
           </Form.Item>
-        </Form>
-      </div>
+        </div>
+      </Form>{/* 关闭单一 Form — 覆盖元信息 + 编辑器 + 参数区 */}
 
       {/* 底部按钮区 */}
       <div style={{ padding: '12px 24px', borderTop: '1px solid var(--cn-border-soft)', textAlign: 'right' }}>
@@ -739,7 +743,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
           </Button>
         </Space>
       </div>
-    </Modal>
+    </Modal >
   )
 }
 

@@ -537,3 +537,94 @@ describe('ReportsPage 主题风格', () => {
         expect(putBodies[0].theme).toBe('academic')
     })
 })
+
+// ─────────────── 编辑回显完整性（extra_table_ids + parameters.required） ───────────────
+
+/** 带有 extra_table_ids 和完整 parameters（含 required/type/default/label）的详情响应 */
+const TPL_FULL_EDIT_RESP = {
+    id: 7,
+    table_id: 100,
+    name: '完整参数模板',
+    description: '带额外表和完整参数',
+    output_format: 'pdf',
+    template_content: '# 完整模板\n{{ records | length }} 行',
+    theme: 'modern',
+    extra_table_ids: [201, 202],
+    parameters: [
+        { name: '月份', type: 'string', default: '2026-09', required: true, label: '报告月份' },
+        { name: '含税', type: 'boolean', default: true, required: false, label: '含税价格' },
+        { name: '年份', type: 'number', default: 2026, required: false, label: '年份' },
+    ],
+}
+
+describe('ReportsPage 编辑回显完整性', () => {
+    it('编辑模板：extra_table_ids 正确回显，保存时随 PUT 提交', async () => {
+        const putBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([{ ...TPL, id: 7, extra_table_ids: [201, 202] }])),
+            http.get('/api/v1/reports/7', () => HttpResponse.json(TPL_FULL_EDIT_RESP)),
+            http.put('/api/v1/reports/7', async ({ request }) => {
+                putBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({})
+            }),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+
+        // 额外引用表的多选框应显示已选的 201、202
+        const extraSelectors = document.querySelectorAll('.ant-select-multiple .ant-select-selection-item')
+        const selectedLabels = Array.from(extraSelectors).map(el => el.textContent ?? '')
+        // 额外表不在本区 tables，Select 应该显示 "跨工作区表 #201" / "#202" 或表名
+        expect(selectedLabels.some(l => l.includes('201')) || selectedLabels.some(l => l.includes('科研经费表'))).toBeTruthy()
+        expect(selectedLabels.some(l => l.includes('202'))).toBeTruthy()
+
+        fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+        await waitFor(() => expect(putBodies).toHaveLength(1))
+        expect(putBodies[0].extra_table_ids).toEqual(expect.arrayContaining([201, 202]))
+    })
+
+    it('编辑模板：parameters 的 name/type/default/label/required 全部回显，保存时随 PUT 提交', async () => {
+        const putBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([{ ...TPL, id: 7 }])),
+            http.get('/api/v1/reports/7', () => HttpResponse.json(TPL_FULL_EDIT_RESP)),
+            http.put('/api/v1/reports/7', async ({ request }) => {
+                putBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({})
+            }),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+
+        // 参数编辑区：有 3 个参数的 form-item 容器 + 每个有 name/type/default/label/required 子控件
+        // 用 getByDisplayValue 精确查唯一值；"年份"在参数名和显示名中都出现可能重复，用 getAll 检查
+        await waitFor(() => {
+            // 有 3 个参数名输入框
+            const nameInputs = document.querySelectorAll('input[placeholder="参数名"]')
+            expect(nameInputs.length).toBe(3)
+            // 前两个参数名正确
+            const nameValues = Array.from(nameInputs).map(i => (i as HTMLInputElement).value)
+            expect(nameValues).toEqual(expect.arrayContaining(['月份', '含税', '年份']))
+        })
+
+        // 必填下拉（required: true 应显示 "必填"）——至少有一个 Select 显示 "必填"
+        const selectors = document.querySelectorAll('.ant-select-selector')
+        const selectorTexts = Array.from(selectors).map(s => s.textContent ?? '')
+        expect(selectorTexts.some(t => t.includes('必填'))).toBeTruthy()
+
+        fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+        await waitFor(() => expect(putBodies).toHaveLength(1))
+        const params = putBodies[0].parameters as Array<Record<string, unknown>>
+        expect(params).toBeDefined()
+        expect(params).toHaveLength(3)
+        expect(params[0]).toMatchObject({ name: '月份', required: true })
+        expect(params[1]).toMatchObject({ name: '含税', required: false })
+        expect(params[2]).toMatchObject({ name: '年份', required: false })
+    })
+})
