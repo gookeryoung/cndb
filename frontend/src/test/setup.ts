@@ -7,6 +7,7 @@
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
+import { message } from 'antd'
 import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 import { server } from './msw'
 
@@ -106,6 +107,11 @@ beforeAll(() => {
 // 避免 afterEach 触发 persist 写 localStorage 与异常注入用例互相干扰。
 afterEach(() => {
   cleanup()
+  // message.destroy() 先于 DOM 摘除：卸载静态 message 容器内的全部挂起通知，
+  // 触发 React unmount 清理 rc-notification 的自动关闭定时器 —— 否则定时器在
+  // 测试文件结束、jsdom 环境销毁后仍会触发，回调访问 window 抛
+  // "ReferenceError: window is not defined"，vitest 计为 unhandled error。
+  message.destroy()
   // antd 静态 Modal.confirm / message 渲染在 React 树之外的容器，cleanup() 无法卸载；
   // jsdom 不跑动画导致 destroyAll 的离场动画永不结束，残留的遮罩与文本会干扰后续用例
   document.querySelectorAll('.ant-modal-root, .ant-message, .ant-notification').forEach((n) => n.remove())
