@@ -294,7 +294,7 @@ def list_rows(
     filters: list[dict[str, Any]] | None = None,
     filter_logic: str = "AND",
     sorts: list[dict[str, str]] | None = None,
-    limit: int = 100,
+    limit: int | None = 100,
     offset: int = 0,
     include_trashed: bool = False,
     db: Any = None,
@@ -307,7 +307,7 @@ def list_rows(
             关联字段支持 is_null/has_any/has_all.
         filter_logic: "AND" 或 "OR"，多条件组合方式.
         sorts: 排序列表，每项 {field_name, direction}，direction="asc"|"desc".
-        limit / offset: 分页.
+        limit / offset: 分页. limit=None 或 limit=0 表示不限制数量（谨慎使用）.
         include_trashed: 是否包含软删除行.
         db: 元数据库会话（提供时 link 字段输出目标行摘要，否则回退 "#id"）.
         user: 当前用户（提供时按 TablePermission.hidden_fields 做字段隐藏）.
@@ -353,8 +353,11 @@ def list_rows(
         if sorts:
             query = query.order_by(*compile_sorts(table, sa_table, sorts))
 
-        # 分页
-        query = query.limit(limit).offset(offset)
+        # 分页 —— limit=None 或 <=0 表示不加 LIMIT（全量查询）
+        if limit and limit > 0:
+            query = query.limit(limit).offset(offset)
+        elif offset:
+            query = query.offset(offset)
 
         rows = conn.execute(query).all()
 
