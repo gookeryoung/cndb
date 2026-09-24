@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -781,7 +782,7 @@ def export_workspace(
                 result = db.execute(select(sa_table)).mappings().all()
             rows_data = [{colname_to_field[k]: v for k, v in dict(r).items() if k in colname_to_field} for r in result]
         except Exception:  # pragma: no cover - 表结构异常
-            pass
+            logging.getLogger(__name__).debug("导出读取表数据失败，跳过", exc_info=True)
 
         # 视图配置
         views = db.query(DataView).filter(DataView.table_id == tbl.id).all()

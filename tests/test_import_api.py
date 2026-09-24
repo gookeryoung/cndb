@@ -57,7 +57,7 @@ class TestAnalyzeJsonColumns:
 
     def test_email_url_date_inference(self):
         rows = [
-            {"email": "a@b.com", "site": "https://x.com", "birthday": "1990-01-01"},
+            {"email": "a@example.com", "site": "https://x.com", "birthday": "1990-01-01"},
         ]
         cols = analyze_json_columns(rows)
         name_map = {c["name"]: c for c in cols}

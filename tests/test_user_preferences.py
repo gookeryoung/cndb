@@ -36,7 +36,7 @@ def _make_table_with_view(db, owner: User) -> tuple[Workspace, DataTable, DataVi
 class TestUserPreferencesDefault:
     def test_new_user_has_default_preferences(self, db):
         """新注册用户 preferences 字段应含空 active_views dict."""
-        user = User(username="pref_user", email="p@u.com", nickname="P")
+        user = User(username="pref_user", email="p@example.com", nickname="P")
         user.set_password("passw0rd")
         db.add(user)
         db.commit()

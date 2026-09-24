@@ -43,7 +43,7 @@ def _emit(log: Callable[[str], object] | None, message: str) -> None:
 def _run(cmd: list[str]) -> tuple[int, str, str]:
     """执行命令，返回 ``(returncode, stdout, stderr)``；异常视为失败."""
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # nosec - 命令来自内部常量
         return proc.returncode, (proc.stdout or ""), (proc.stderr or "")
     except OSError:
         return -1, "", ""
@@ -227,7 +227,7 @@ def build_static(log: Callable[[str], object] | None = None, *, frontend_dir: Pa
     kwargs: dict[str, object] = {"cwd": str(frontend), "capture_output": True, "text": True}
     if sys.platform == "win32":
         kwargs["shell"] = True
-    proc = subprocess.run(cmd, check=False, **kwargs)  # type: ignore[arg-type]
+    proc = subprocess.run(cmd, check=False, **kwargs)  # type: ignore[arg-type]  # nosec - 命令来自内部常量
     if proc.returncode != 0:
         tail = (getattr(proc, "stderr", None) or getattr(proc, "stdout", None) or "").strip()
         raise RuntimeError(f"前端构建失败: {tail}" if tail else "前端构建失败")

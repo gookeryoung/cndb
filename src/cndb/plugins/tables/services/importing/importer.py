@@ -143,7 +143,8 @@ class Importer:
         传入已解析的 ``rows`` 可跳过解析阶段（比如前端直接传 JSON 对象数组）.
         """
         if rows is None:
-            assert format is not None, "必须提供 format 或 rows"
+            if format is None:
+                raise ValueError("必须提供 format 或 rows")
             rows, file_columns = self._parse(content, format)
         else:
             file_columns = self._collect_columns(rows)
@@ -155,7 +156,7 @@ class Importer:
 
                 prefill_select_options_from_rows(self.db, self.table, rows)
             except Exception:
-                pass
+                logger.debug("导入前预填充 select options 失败，跳过", exc_info=True)
 
         rv = RowValidator(
             self.table,
@@ -260,7 +261,8 @@ class Importer:
         else:
             # 先 parse 原始 rows，可能做清洗
             if rows is None:
-                assert format is not None, "必须提供 format 或 rows"
+                if format is None:
+                    raise ValueError("必须提供 format 或 rows")
                 rows, _orig_cols = self._parse(content or "", format)
             if cleaning_actions:
                 # 需要列画像来做 IQR / fill_null，先快速跑一次 analyze 拿 profiles
@@ -357,7 +359,7 @@ class Importer:
 
             sync_select_options_from_table(self.db, self.table)
         except Exception:
-            pass
+            logger.debug("导入后同步 select options 失败，跳过", exc_info=True)
 
         return ImportExecuteResult(
             imported_ids=new_ids,
@@ -794,13 +796,13 @@ class Importer:
     @staticmethod
     def _parse_xlsx(content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
         from openpyxl import load_workbook
+        from openpyxl.worksheet.worksheet import Worksheet
 
         from cndb.plugins.tables.services.transfer import _check_xlsx_row_overflow, _validate_xlsx_header
 
         raw = content if isinstance(content, bytes) else content.encode()
         wb = load_workbook(io.BytesIO(raw))
-        ws = wb.active
-        assert ws is not None
+        ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
         all_rows = list(ws.iter_rows(values_only=True))
         if not all_rows:
             return [], []
@@ -862,7 +864,7 @@ def guess_format_from_content(content: bytes | str) -> _Format:
             json.loads(stripped[:2048])
             return "json"
         except Exception:
-            pass
+            logger.debug("JSON 格式探测失败，继续其他格式判断", exc_info=True)
     # 快速检查：是否包含制表符 — 若是优先判为 tsv
     first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
     if "\t" in first_line and "," not in first_line and ";" not in first_line:

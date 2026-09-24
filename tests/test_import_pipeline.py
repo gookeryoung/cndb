@@ -98,7 +98,7 @@ class TestRowValidatorBasic:
         rows = [
             {"name": "张三", "email": "good@example.com"},
             {"name": "李四", "email": "not-an-email"},  # error
-            {"name": "王五", "email": "ok@test.org"},
+            {"name": "王五", "email": "ok@example.com"},
         ]
         results = rv.validate_all(rows)
         assert len(results) == 3
@@ -319,9 +319,9 @@ class TestDiffReporter:
         table, _session = self._make_table_and_fields(test_session)
         rv = RowValidator(table)
         rows = [
-            {"name": "ok1", "email": "a@b.com"},
+            {"name": "ok1", "email": "a@example.com"},
             {"name": "bad", "email": "xxx"},  # error
-            {"name": "ok2", "email": "c@d.com"},
+            {"name": "ok2", "email": "c@example.com"},
             {"name": "ok3", "extra": "w"},  # warning (unknown col)
         ]
         results = rv.validate_all(rows)
@@ -336,7 +336,7 @@ class TestDiffReporter:
         """TR-2.2: 直接 json.dumps 不报错."""
         table, _session = self._make_table_and_fields(test_session)
         rv = RowValidator(table)
-        results = rv.validate_all([{"name": "n", "email": "e@e.com"}])
+        results = rv.validate_all([{"name": "n", "email": "e@example.com"}])
         report = DiffReporter.build(results, table.active_fields(), ["name", "email"])
         text = json.dumps(report, ensure_ascii=False)
         assert isinstance(text, str)
@@ -346,7 +346,7 @@ class TestDiffReporter:
         """TR-2.3: skipped_columns / missing_required 正确体现."""
         table, _session = self._make_table_and_fields(test_session)
         rv = RowValidator(table)
-        results = rv.validate_all([{"email": "e@e.com", "frog": "ribbit"}])
+        results = rv.validate_all([{"email": "e@example.com", "frog": "ribbit"}])
         report = DiffReporter.build(results, table.active_fields(), ["email", "frog"])
         # table 有 name + email；文件有 email + frog
         assert "frog" in report["skipped_columns"]
@@ -359,7 +359,7 @@ class TestDiffReporter:
         results = rv.validate_all(
             [
                 {"name": "a", "email": "bad"},
-                {"name": "b", "email": "b@b.com", "ex": "1"},
+                {"name": "b", "email": "b@example.com", "ex": "1"},
             ]
         )
         report = DiffReporter.build(results, table.active_fields(), ["name", "email", "ex"])
@@ -382,9 +382,9 @@ class TestFailedRowExporter:
         ddl.create_table(engine, table)
         rv = RowValidator(table)
         rows = [
-            {"name": "ok", "email": "ok@ok.com"},  # valid
+            {"name": "ok", "email": "ok@example.com"},  # valid
             {"name": "", "email": "bad"},  # error x2
-            {"name": "n2", "email": "a@b.com"},  # valid
+            {"name": "n2", "email": "a@example.com"},  # valid
         ]
         return rv.validate_all(rows)
 
@@ -515,7 +515,7 @@ class TestImporter:
         count_before = session.execute(select(func.count()).select_from(rec._get_sa_table(engine, table))).scalar()
 
         importer = Importer(engine, session, table)
-        csv = "name,email\nok,ok@ok.com\nbad,not-email"
+        csv = "name,email\nok,ok@example.com\nbad,not-email"
         result = importer.analyze(csv, format="csv")
 
         count_after = session.execute(select(func.count()).select_from(rec._get_sa_table(engine, table))).scalar()
@@ -529,7 +529,7 @@ class TestImporter:
         from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
-        csv = "name,email\na,a@a.com\nb,bad\nc,c@c.com"
+        csv = "name,email\na,a@example.com\nb,bad\nc,c@example.com"
         result = importer.execute(csv, format="csv")
 
         count = session.execute(select(func.count()).select_from(rec._get_sa_table(engine, table))).scalar()
@@ -541,7 +541,7 @@ class TestImporter:
         from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
-        csv = "name,email\na,a@a.com\nb,b@b.com\nc,c@c.com"
+        csv = "name,email\na,a@example.com\nb,b@example.com\nc,c@example.com"
         result = importer.execute(csv, format="csv")
 
         count = session.execute(select(func.count()).select_from(rec._get_sa_table(engine, table))).scalar()
@@ -566,7 +566,7 @@ class TestImporter:
         from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
-        csv = "name,email\na,a@a.com"
+        csv = "name,email\na,a@example.com"
         analysis = importer.analyze(csv, format="csv")
         importer.execute(analysis=analysis)
 
@@ -580,7 +580,7 @@ class TestImporter:
 
         # email 格式正确但文件多一个未匹配列
         importer = Importer(engine, session, table)
-        csv = "name,email,extra\na,a@a.com,ex"  # extra 是 warning（未匹配列）
+        csv = "name,email,extra\na,a@example.com,ex"  # extra 是 warning（未匹配列）
         importer.execute(csv, format="csv", import_warnings=False)
 
         count = session.execute(select(func.count()).select_from(rec._get_sa_table(engine, table))).scalar()
@@ -595,7 +595,7 @@ class TestImporter:
         importer = Importer(engine, session, table)
         data = json.dumps(
             [
-                {"name": "a", "email": "a@a.com"},
+                {"name": "a", "email": "a@example.com"},
                 {"name": "b", "email": "bad"},
             ]
         )
@@ -608,7 +608,7 @@ class TestImporter:
         """ImportAnalysisResult.to_dict / ImportExecuteResult.to_dict 覆盖 line 43 / 59."""
         engine, session, table = self._make_table(test_session)
         importer = Importer(engine, session, table)
-        csv = "name,email\na,a@a.com"
+        csv = "name,email\na,a@example.com"
         analysis = importer.analyze(csv, format="csv")
         d = analysis.to_dict()
         assert "report" in d and "total" in d and "file_columns" in d
@@ -628,7 +628,7 @@ class TestImporter:
 
         importer = Importer(engine, session, table)
         # name 必填，空字符串 → RowValidator 记为 error；但 bulk_create 的 text 字段接受空串
-        csv = "name,email\ngood,a@b.com\n,a@b.com"  # 第二行 name 为空（error）
+        csv = "name,email\ngood,a@example.com\n,a@example.com"  # 第二行 name 为空（error）
         result = importer.execute(csv, format="csv", skip_errors=False)
 
         count = session.execute(select(func.count()).select_from(rec._get_sa_table(engine, table))).scalar()
@@ -640,7 +640,7 @@ class TestImporter:
         """rows 参数直接传入 → 走 _collect_columns 跳过解析（line 101）."""
         engine, session, table = self._make_table(test_session)
         importer = Importer(engine, session, table)
-        rows = [{"name": "a", "email": "a@a.com"}, {"name": "b", "extra": "x"}]
+        rows = [{"name": "a", "email": "a@example.com"}, {"name": "b", "extra": "x"}]
         result = importer.analyze("", rows=rows)
         # _collect_columns 收集 name / email / extra
         assert "extra" in result.file_columns
@@ -652,7 +652,7 @@ class TestImporter:
         from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
-        rows = [{"name": "hello", "email": "ok@ok.com"}]
+        rows = [{"name": "hello", "email": "ok@example.com"}]
         result = importer.execute(rows=rows)  # content=None, format=None, 有 rows
         count = session.execute(select(func.count()).select_from(rec._get_sa_table(engine, table))).scalar()
         assert count == 1
@@ -681,8 +681,8 @@ class TestImporter:
         wb = Workbook()
         ws = wb.active
         ws.append(["name", "email"])
-        ws.append(["alice", "a@a.com"])
-        ws.append(["bob", "b@b.com"])
+        ws.append(["alice", "a@example.com"])
+        ws.append(["bob", "b@example.com"])
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)
@@ -711,7 +711,9 @@ class TestImporter:
         from cndb.plugins.tables.services.core import records as rec
 
         importer = Importer(engine, session, table)
-        data = json.dumps([{"name": "a", "email": "a@a.com"}, "not-a-dict", None, {"name": "b", "email": "b@b.com"}])
+        data = json.dumps(
+            [{"name": "a", "email": "a@example.com"}, "not-a-dict", None, {"name": "b", "email": "b@example.com"}]
+        )
         importer.execute(data, format="json")
         count = session.execute(select(func.count()).select_from(rec._get_sa_table(engine, table))).scalar()
         assert count == 2  # 只有两个 dict 元素
@@ -731,7 +733,7 @@ class TestImporter:
 
         importer = Importer(engine, session, table)
         # email 合法但多一个 extra 列 → unknown column warning（非 error）
-        csv = "name,email,extra\na,a@a.com,ex"
+        csv = "name,email,extra\na,a@example.com,ex"
         result = importer.execute(csv, format="csv", import_warnings=True)  # 默认 True
 
         count = session.execute(select(func.count()).select_from(rec._get_sa_table(engine, table))).scalar()
@@ -814,7 +816,7 @@ class TestImportPipelineEndpoints:
         import io
 
         if content is None:
-            content = "name,email\nok,ok@ok.com\nbad,not-email"
+            content = "name,email\nok,ok@example.com\nbad,not-email"
         return io.BytesIO(content.encode("utf-8"))
 
     def _create_ws_table_fields(self, client, db, auth_headers, *, ws_name, tbl_name, fields):
@@ -1090,7 +1092,7 @@ class TestImportPipelineEndpoints:
                 {"name": "email", "field_type": "email", "order": 1},
             ],
         )
-        csv_content = b"name,email\ngood,a@b.com\n,not-email"  # 第二行 error
+        csv_content = b"name,email\ngood,a@example.com\n,not-email"  # 第二行 error
         task = create_import_task(db, table_id=tid, user_id=1, filename="x.csv", fmt="csv", content=csv_content)
         # 伪造 validation_report（让 line 385 通过）
         task.validation_report = json.dumps(
@@ -1129,7 +1131,7 @@ class TestImportPipelineEndpoints:
                 {"name": "email", "field_type": "email", "order": 1},
             ],
         )
-        csv_content = b"name,email\ngood,a@b.com\n,not-email"
+        csv_content = b"name,email\ngood,a@example.com\n,not-email"
         task = create_import_task(db, table_id=tid, user_id=1, filename="x.csv", fmt="csv", content=csv_content)
         task.validation_report = '{"total":2,"valid_count":1,"error_count":1}'
         db.commit()
@@ -1168,7 +1170,7 @@ class TestImportPipelineEndpoints:
         wb = Workbook()
         ws = wb.active
         ws.append(["name", "email"])
-        ws.append(["good", "a@b.com"])
+        ws.append(["good", "a@example.com"])
         ws.append(["", "not-email"])  # error: name 空 + email 格式错
         buf = io.BytesIO()
         wb.save(buf)
@@ -2381,12 +2383,12 @@ class TestImporterEdgeCases:
         assert sample["desc"].endswith("...")
 
     def test_execute_no_analysis_no_format_skips_parse(self, test_session):
-        """execute 传 analysis=None + rows=None + content=None + format=None → format is None assert 触发."""
+        """execute 传 analysis=None + rows=None + content=None + format=None → format 为 None 抛 ValueError."""
         engine, session = test_session
         table = _make_table(session, engine)
         session.commit()
         imp = Importer(engine, session, table)
-        with pytest.raises(AssertionError):
+        with pytest.raises(ValueError, match="必须提供 format 或 rows"):
             imp.execute(content=None, format=None)
 
     def test_execute_content_none_format_present_uses_empty(self, test_session):
@@ -2402,12 +2404,12 @@ class TestImporterEdgeCases:
         assert result.imported_ids == []
 
     def test_analyze_empty_rows_no_format(self, test_session):
-        """analyze 没传 rows 也没传 format → assert 触发."""
+        """analyze 没传 rows 也没传 format → 抛 ValueError."""
         engine, session = test_session
         table = _make_table(session, engine)
         session.commit()
         imp = Importer(engine, session, table)
-        with pytest.raises(AssertionError):
+        with pytest.raises(ValueError, match="必须提供 format 或 rows"):
             imp.analyze(content="", format=None)
 
     def test_guess_format_json_array(self):

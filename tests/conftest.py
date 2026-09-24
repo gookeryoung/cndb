@@ -193,7 +193,7 @@ def auth_headers(client, db):
         # 用户不存在，注册
         r = client.post(
             "/api/v1/accounts/auth/register",
-            json={"username": "testuser", "email": "t@t.com", "password": "passw0rd"},
+            json={"username": "testuser", "email": "t@example.com", "password": "passw0rd"},
         )
         assert r.status_code in (200, 201), f"Register failed: {r.text}"
         r = client.post(

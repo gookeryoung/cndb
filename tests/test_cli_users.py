@@ -313,9 +313,9 @@ class TestCmdImport:
         csv_file = tmp_path / "users.csv"
         csv_file.write_text(
             "username,password,email,nickname,role\n"
-            "csv_a,pw1234,a@x.com,A,user\n"
+            "csv_a,pw1234,a@example.com,A,user\n"
             "csv_b,pw1234,,B,system_admin\n"
-            "csv_c,,c@x.com,C,user\n",
+            "csv_c,,c@example.com,C,user\n",
             encoding="utf-8",
         )
         report = cmd_import(_ns(file=str(csv_file), dry_run=False))
@@ -384,7 +384,7 @@ class TestCmdImport:
         wb = Workbook()
         ws = wb.active
         ws.append(["username", "password", "email", "role"])
-        ws.append(["xl_a", "pw1234", "a@x.com", "user"])
+        ws.append(["xl_a", "pw1234", "a@example.com", "user"])
         ws.append(["xl_b", "pw1234", "", "security_admin"])
         ws.append(["xl_c", "", "", "user"])  # 空密码 → 自动生成
         xlsx_path = tmp_path / "users.xlsx"
@@ -590,11 +590,25 @@ class TestEdgeCases:
         from cndb.cli.users import cmd_create
 
         cmd_create(
-            _ns(username="e1", password="pw1234", email="dup@x.com", nickname=None, role="user", is_superuser=False)
+            _ns(
+                username="e1",
+                password="pw1234",
+                email="dup@example.com",
+                nickname=None,
+                role="user",
+                is_superuser=False,
+            )
         )
         with pytest.raises(SystemExit) as ei:
             cmd_create(
-                _ns(username="e2", password="pw1234", email="dup@x.com", nickname=None, role="user", is_superuser=False)
+                _ns(
+                    username="e2",
+                    password="pw1234",
+                    email="dup@example.com",
+                    nickname=None,
+                    role="user",
+                    is_superuser=False,
+                )
             )
         assert "邮箱" in str(ei.value)
 

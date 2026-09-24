@@ -139,7 +139,7 @@ def _backup_sqlite_native(db_path: Path, target_dir: Path) -> tuple[str, dict[st
         )
         tables = [row[0] for row in cursor.fetchall()]
         for table in tables:
-            count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+            count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]  # nosec B608 - 表名来自 sqlite_master 枚举
             row_counts[table] = count
         schema_version = _read_schema_version_sqlite(conn)
     finally:
@@ -249,12 +249,13 @@ def _backup_sqlalchemy(database_url: str, target_dir: Path) -> tuple[str, dict[s
                 columns = [str(c.name) for c in sa_table.columns]
                 col_types: dict[str, Any] = {str(c.name): c.type for c in sa_table.columns}
                 # 统计行数
-                count = conn.execute(text(f'SELECT COUNT(*) FROM "{table_name}"')).scalar() or 0
+                count = conn.execute(text(f'SELECT COUNT(*) FROM "{table_name}"')).scalar() or 0  # nosec B608 - 表名来自 ORM 反射元数据
                 row_counts[table_name] = count
                 # 用原生 SQL 拉取原始值，绕开 DateTime 列的 str_to_date processor
                 # 该 processor 假定 SQLite 返回 ISO 字符串，遇到 Unix 时间戳（int）会直接 TypeError
                 rows = [
-                    dict(raw_row) for raw_row in conn.execute(text(f'SELECT * FROM "{table_name}"')).mappings().all()
+                    dict(raw_row)
+                    for raw_row in conn.execute(text(f'SELECT * FROM "{table_name}"')).mappings().all()  # nosec B608 - 表名来自 ORM 反射元数据
                 ]
                 if len(rows) > 1_000_000:
                     print(f"[backup] 警告：表 {table_name} 行数 {len(rows)} 超过一百万，序列化体积较大")

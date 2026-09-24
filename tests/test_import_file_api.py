@@ -75,7 +75,7 @@ class TestImportFileAnalyzeApi:
 
     def test_analyze_csv(self, client, ws_auth):
         ws_id, auth = ws_auth
-        csv_bytes = _build_csv_bytes("name,age,email\nAlice,30,a@b.com\nBob,25,c@d.com\n")
+        csv_bytes = _build_csv_bytes("name,age,email\nAlice,30,a@example.com\nBob,25,c@example.com\n")
         r = client.post(
             f"/api/v1/workspaces/{ws_id}/import-file/analyze",
             files={"file": ("people.csv", csv_bytes, "text/csv")},

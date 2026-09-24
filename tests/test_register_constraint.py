@@ -17,7 +17,7 @@ from cndb.plugins.accounts.models import User
 @pytest.fixture
 def su(db, client):
     """注入一个超级管理员并返回 JWT."""
-    u = User(username="su_seed_rc", email="su_rc@x.com")
+    u = User(username="su_seed_rc", email="su_rc@example.com")
     u.set_password("pw1234")
     u.is_superuser = True
     db.add(u)

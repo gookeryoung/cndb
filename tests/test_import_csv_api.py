@@ -38,7 +38,7 @@ def workspace_with_auth(db, client):
 class TestImportCsvAnalyzeApi:
     def test_analyze_ok(self, client, workspace_with_auth):
         ws_id, auth = workspace_with_auth
-        csv_text = "name,age,email\nAlice,30,a@b.com\n"
+        csv_text = "name,age,email\nAlice,30,a@example.com\n"
         r = client.post(
             f"/api/v1/workspaces/{ws_id}/import-csv/analyze",
             json={"csv_text": csv_text},

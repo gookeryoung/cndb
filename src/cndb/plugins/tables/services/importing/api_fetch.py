@@ -23,7 +23,7 @@ import re
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urljoin, urlparse
 
 import httpx2
@@ -535,7 +535,7 @@ def fetch_json(config: FetchConfig) -> list[dict[str, Any]]:
                 break
         except httpx2.RequestError as exc:
             raise ValueError(f"请求失败: {exc}") from exc
-        assert resp is not None
+        resp = cast(httpx2.Response, resp)  # 上面循环至少执行一次并 break，必非空
 
         # 检查状态码
         if resp.status_code >= 400:

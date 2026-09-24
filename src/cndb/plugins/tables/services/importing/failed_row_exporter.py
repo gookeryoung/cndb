@@ -11,7 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-from typing import Any
+from typing import Any, cast
 
 from cndb.plugins.tables.services.transfer import _fix_xlsx_formula_cells, _sanitize_csv_cell
 
@@ -89,13 +89,13 @@ class FailedRowExporter:
 
     def _to_xlsx(self, results: list[ValidationResult]) -> bytes:
         from openpyxl import Workbook
+        from openpyxl.worksheet.worksheet import Worksheet
 
         cols = self._collect_all_columns(results)
         headers = [*cols, "_row_number", "_error"]
 
         wb = Workbook()
-        ws = wb.active
-        assert ws is not None
+        ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
         ws.title = "Failed Rows"
         ws.append(headers)
         _fix_xlsx_formula_cells(ws, 1)

@@ -36,7 +36,7 @@ def _setup_sqlite(tmp_path: Path) -> Path:
         """
         CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT);
         CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT);
-        INSERT INTO users (name, email) VALUES ('张三', 'a@b.com'), ('李四', 'c@d.com');
+        INSERT INTO users (name, email) VALUES ('张三', 'a@example.com'), ('李四', 'c@example.com');
         INSERT INTO posts (user_id, title) VALUES (1, '第一篇'), (1, '第二篇'), (2, '第三篇');
         """
     )

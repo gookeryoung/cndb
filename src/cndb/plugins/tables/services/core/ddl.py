@@ -282,7 +282,7 @@ def find_null_rows(engine: Any, table: DataTable, field: DataField, limit: int =
         return []
 
     sql = text(
-        f'SELECT id FROM "{table.db_table_name}" WHERE "{field.db_column_name}" IS NULL ORDER BY id LIMIT :limit'
+        f'SELECT id FROM "{table.db_table_name}" WHERE "{field.db_column_name}" IS NULL ORDER BY id LIMIT :limit'  # nosec B608 - 标识符来自内部元数据
     )
     with engine.connect() as conn:
         rows = conn.execute(sql, {"limit": limit}).all()
@@ -303,7 +303,7 @@ def find_duplicate_values(
         return []
 
     sql = text(
-        f'SELECT "{field.db_column_name}", GROUP_CONCAT(id) FROM "{table.db_table_name}" '
+        f'SELECT "{field.db_column_name}", GROUP_CONCAT(id) FROM "{table.db_table_name}" '  # nosec B608 - 标识符来自内部元数据
         f'WHERE "{field.db_column_name}" IS NOT NULL '
         f'GROUP BY "{field.db_column_name}" HAVING COUNT(*) > 1 ORDER BY MIN(id) LIMIT :limit'
     )
@@ -385,7 +385,7 @@ def rebuild_column(engine: Any, table: DataTable, old_field: DataField, new_fiel
         # 3. copy data（做宽松类型转换：CASE WHEN）
         conn.execute(
             text(
-                f'UPDATE "{table.db_table_name}" SET "{new_col}" = CAST("{bak_col}" AS {col.type.compile(engine.dialect)}) '
+                f'UPDATE "{table.db_table_name}" SET "{new_col}" = CAST("{bak_col}" AS {col.type.compile(engine.dialect)}) '  # nosec B608 - 标识符来自内部元数据
                 f'WHERE "{bak_col}" IS NOT NULL'
             )
         )

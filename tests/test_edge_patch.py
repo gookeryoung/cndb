@@ -11,12 +11,12 @@ class TestAccountsAuthEdge:
     def test_register_duplicate_username(self, client, db):
         r = client.post(
             "/api/v1/accounts/auth/register",
-            json={"username": "dup_user", "email": "a@b.com", "password": "passw0rd"},
+            json={"username": "dup_user", "email": "a@example.com", "password": "passw0rd"},
         )
         assert r.status_code in (200, 201)
         r = client.post(
             "/api/v1/accounts/auth/register",
-            json={"username": "dup_user", "email": "c@d.com", "password": "passw0rd"},
+            json={"username": "dup_user", "email": "c@example.com", "password": "passw0rd"},
         )
         assert r.status_code == 400
         assert "用户名" in r.json()["detail"]
@@ -24,12 +24,12 @@ class TestAccountsAuthEdge:
     def test_register_duplicate_email(self, client, db):
         r = client.post(
             "/api/v1/accounts/auth/register",
-            json={"username": "email_u1", "email": "dup@mail.com", "password": "passw0rd"},
+            json={"username": "email_u1", "email": "dup@example.com", "password": "passw0rd"},
         )
         assert r.status_code in (200, 201)
         r = client.post(
             "/api/v1/accounts/auth/register",
-            json={"username": "email_u2", "email": "dup@mail.com", "password": "passw0rd"},
+            json={"username": "email_u2", "email": "dup@example.com", "password": "passw0rd"},
         )
         assert r.status_code == 400
         assert "邮箱" in r.json()["detail"]

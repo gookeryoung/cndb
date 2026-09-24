@@ -14,7 +14,7 @@ import base64
 import json
 import logging
 import threading
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
@@ -160,11 +160,11 @@ def _parse_to_rows(
         return [r for r in data if isinstance(r, dict)], file_columns, len(data)
     if fmt == "xlsx":
         from openpyxl import load_workbook
+        from openpyxl.worksheet.worksheet import Worksheet
 
         buf = __import__("io").BytesIO(raw if isinstance(raw, bytes) else raw.encode())
         wb = load_workbook(buf)
-        ws = wb.active
-        assert ws is not None
+        ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
         all_rows = list(ws.iter_rows(values_only=True))
         if not all_rows:
             return [], [], 0
@@ -238,13 +238,16 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
             db_session.commit()
 
             if task.format == "json":
-                assert isinstance(raw, str)
+                if not isinstance(raw, str):
+                    raise ValueError("JSON 导入内容必须为文本")
                 ids = transfer.import_rows_from_json(engine, table, raw, db=db_session)
             elif task.format == "csv":
-                assert isinstance(raw, str)
+                if not isinstance(raw, str):
+                    raise ValueError("CSV 导入内容必须为文本")
                 ids = transfer.import_rows_from_csv(engine, table, raw, db=db_session)
             elif task.format == "xlsx":
-                assert isinstance(raw, bytes)
+                if not isinstance(raw, bytes):
+                    raise ValueError("XLSX 导入内容必须为字节")
                 ids = transfer.import_rows_from_xlsx(engine, table, raw, db=db_session)
             else:
                 raise ValueError(f"不支持的格式: {task.format}")
@@ -284,7 +287,7 @@ def _estimate_total_rows(raw: bytes | str, fmt: str) -> int:
         if fmt == "csv" and isinstance(raw, str):
             return raw.count("\n")
     except Exception:
-        pass
+        logger.debug("估算导入总行数失败，按 0 处理", exc_info=True)
     return 0
 
 

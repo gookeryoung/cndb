@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, UploadFile, status
@@ -20,6 +21,8 @@ from cndb.plugins.tables.services.core.access import TableAction, get_table_or_4
 from cndb.plugins.tables.services.importing.import_tasks import create_import_task, run_task_in_background
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}", tags=["bulk"])
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_cleaning_actions(
@@ -72,7 +75,7 @@ def bulk_create_records(
         if normalized:
             prefill_select_options_from_rows(db, dt, normalized)
     except Exception:
-        pass
+        logger.debug("导入前预填充 select options 失败，跳过", exc_info=True)
 
     ids: list[int]
     try:
@@ -86,7 +89,7 @@ def bulk_create_records(
 
         sync_select_options_from_table(db, dt)
     except Exception:
-        pass
+        logger.debug("导入后同步 select options 失败，跳过", exc_info=True)
 
     return {"created": len(ids), "ids": ids}
 
@@ -133,7 +136,7 @@ def bulk_update_records(
         # values 是 {"field_name": new_value} 格式，转换成 rows=[values] 让 prefill 能提取
         prefill_select_options_from_rows(db, dt, [values])
     except Exception:
-        pass
+        logger.debug("更新前预填充 select options 失败，跳过", exc_info=True)
 
     updated: int
     try:
@@ -148,7 +151,7 @@ def bulk_update_records(
 
         sync_select_options_from_table(db, dt)
     except Exception:
-        pass
+        logger.debug("更新后同步 select options 失败，跳过", exc_info=True)
 
     return {"updated": updated}
 

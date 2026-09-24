@@ -247,7 +247,7 @@ class TestPythonTypeToFieldType:
         assert _python_type_to_field_type(3.14) == "float"
         assert _python_type_to_field_type("") == "empty"
         assert _python_type_to_field_type("  ") == "empty"
-        assert _python_type_to_field_type("hello@x.com") == "email"
+        assert _python_type_to_field_type("hello@example.com") == "email"
         assert _python_type_to_field_type([1, 2]) == "json"
         assert _python_type_to_field_type({"a": 1}) == "json"
 

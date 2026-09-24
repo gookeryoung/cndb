@@ -64,7 +64,7 @@ class TextFieldType(FieldType):
         prefix_re = re.compile(re.escape(cfg.increment_prefix) + r"(\d+)")
         max_seen: int | None = None
         sql = text(
-            f'SELECT "{field.db_column_name}" FROM "{table.db_table_name}" WHERE "{field.db_column_name}" IS NOT NULL'
+            f'SELECT "{field.db_column_name}" FROM "{table.db_table_name}" WHERE "{field.db_column_name}" IS NOT NULL'  # nosec B608 - 标识符来自内部字段元数据
         )
         with engine.connect() as conn:
             for (value,) in conn.execute(sql):

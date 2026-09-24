@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -307,8 +307,8 @@ def transfer_owner(
     db.commit()
     db.refresh(table)
 
-    assert table.owner_id is not None
-    return _member_out(db, table.owner_id, "owner")
+    owner_id = cast(int, table.owner_id)  # 上方已转移所有者，必非空
+    return _member_out(db, owner_id, "owner")
 
 
 __all__ = ["router"]

@@ -48,7 +48,8 @@ def _validate_field_config(field_type: str, payload_config: dict[str, Any], db: 
 
     # link 字段额外校验 target_table_id
     if field_type == "link":
-        assert isinstance(cfg, LinkFieldConfig)
+        if not isinstance(cfg, LinkFieldConfig):
+            raise HTTPException(status_code=400, detail="link 字段 config 缺少 target_table_id")
         target = db.get(DataTable, cfg.target_table_id)
         if target is None or target.trashed:
             raise HTTPException(status_code=400, detail=f"关联目标表不存在: {cfg.target_table_id}")

@@ -67,7 +67,7 @@ def _fill_table_stats(
     # 物理表 COUNT —— 表结构异常时用 None
     record_count: int | None = None
     try:
-        result = db.execute(text(f"SELECT COUNT(*) FROM {table.db_table_name}"))
+        result = db.execute(text(f"SELECT COUNT(*) FROM {table.db_table_name}"))  # nosec B608 - 表名来自内部元数据
         record_count = result.scalar() or 0
     except Exception:
         record_count = None

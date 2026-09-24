@@ -68,7 +68,7 @@ INFERENCE_MATRIX: list[tuple[str, str, list[str], str]] = [
     # ── 33-36 联系方式 ──
     ("33", "手机号", ["13800138000", "15912345678"], "phone"),
     ("34", "带区号手机号", ["+8613800138000", "+8613800138001"], "phone"),
-    ("35", "邮箱", ["user@example.com", "alice@test.org"], "email"),
+    ("35", "邮箱", ["user@example.com", "alice@example.com"], "email"),
     ("36", "网址", ["https://example.com", "http://test.org/path?a=1"], "url"),
     # ── 37-38 JSON 字符串 ──
     ("37", "JSON对象", ['{"a":1}', '{"b":"x"}'], "json"),
