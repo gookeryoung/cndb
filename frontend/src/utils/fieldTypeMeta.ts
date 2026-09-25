@@ -37,6 +37,7 @@ export const FIELD_TYPE_META: Record<string, FieldTypeMeta> = {
     url: { label: '链接', category: '高级', color: 'geekblue' },
     phone: { label: '电话', category: '高级', color: 'geekblue' },
     link: { label: '关联', category: '关联', color: 'magenta' },
+    lookup: { label: '引用', category: '关联', color: 'magenta' },
     attachment: { label: '附件', category: '高级', color: 'volcano' },
     // ── 历史别名（后端自动归一化，展示兜底）──
     long_text: { label: '多行文本', category: '基础', color: 'cyan' },
