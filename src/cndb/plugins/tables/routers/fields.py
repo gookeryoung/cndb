@@ -189,6 +189,12 @@ def update_field(
     effective_required = update_data.get("required", old_required)
     effective_is_unique = update_data.get("is_unique", old_is_unique)
 
+    # lookup 字段值由关联源实时解析决定，行级约束无法在物理层强制，明确拒绝而非静默放行
+    if df.field_type == "lookup" and (
+        (effective_required and not old_required) or (effective_is_unique and not old_is_unique)
+    ):
+        raise HTTPException(status_code=400, detail=f"引用字段「{df.name}」的值由关联解析决定，不支持设置必填/唯一约束")
+
     if effective_required and not old_required:
         if is_link_field(df):
             null_ids = find_null_link_rows(engine, dt, df)
@@ -203,7 +209,7 @@ def update_field(
 
     if effective_is_unique and not old_is_unique:
         if is_link_field(df):
-            dups = find_duplicate_link_values(engine, dt, df)
+            dups = find_duplicate_link_values(engine, df)
         else:
             dups = find_duplicate_values(engine, dt, df)
         if dups:

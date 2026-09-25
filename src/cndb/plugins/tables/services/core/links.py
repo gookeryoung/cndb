@@ -211,16 +211,25 @@ def find_null_link_rows(engine: Any, table: DataTable, field: DataField, limit: 
     return [int(r[0]) for r in rows]
 
 
-def find_duplicate_link_values(
-    engine: Any, _table: DataTable, field: DataField, limit: int = 10
-) -> list[tuple[str, list[int]]]:
+def find_duplicate_link_values(engine: Any, field: DataField, limit: int = 10) -> list[tuple[str, list[int]]]:
     """返回 (关联签名, 行 id 列表) 列表：两行关联同一目标集合视为重复，空关联不参与判重.
 
     关联签名为目标行 id 分号拼接字符串；用于启用唯一约束前的数据预检，
     关联表不存在时返回空列表.
     """
+    sig_map = _link_signature_map(engine, field)
+    result = [(";".join(str(t) for t in sig), sorted(row_ids)) for sig, row_ids in sig_map.items() if len(row_ids) > 1]
+    result.sort(key=lambda item: item[1][0])
+    return result[:limit]
+
+
+def _link_signature_map(engine: Any, field: DataField) -> dict[tuple[int, ...], list[int]]:
+    """构建关联表的 {目标 id 集合签名: 行 id 列表} 映射，空关联行不参与.
+
+    关联表不存在时返回空映射.
+    """
     if not link_table_exists(engine, field.link_table_name):
-        return []
+        return {}
     link_table = _get_link_sa_table(engine, field.link_table_name)
     with engine.connect() as conn:
         rows = conn.execute(
@@ -231,13 +240,42 @@ def find_duplicate_link_values(
     for row_id, target_id in rows:
         mapping.setdefault(int(row_id), []).append(int(target_id))
 
-    groups: dict[tuple[int, ...], list[int]] = {}
+    sig_map: dict[tuple[int, ...], list[int]] = {}
     for row_id, targets in mapping.items():
-        groups.setdefault(tuple(targets), []).append(row_id)
+        sig_map.setdefault(tuple(sorted(targets)), []).append(row_id)
+    return sig_map
 
-    result = [(";".join(str(t) for t in sig), sorted(row_ids)) for sig, row_ids in groups.items() if len(row_ids) > 1]
-    result.sort(key=lambda item: item[1][0])
-    return result[:limit]
+
+def validate_link_write(
+    engine: Engine,
+    link_values: list[tuple[DataField, list[int]]],
+    *,
+    exclude_row_ids: Sequence[int] = (),
+    batch_signatures: dict[int, set[tuple[int, ...]]] | None = None,
+) -> None:
+    """写入关联前校验 link 字段必填/唯一元数据约束，违反时抛 ValueError（路由层映射为 400）.
+
+    - required：目标列表为空即违反
+    - unique：目标集合非空时，数据库中已有其他行（排除 exclude_row_ids）关联同一集合即违反；
+      批量调用方共享同一个 batch_signatures 捕获批内多行互撞
+    """
+    exclude = {int(i) for i in exclude_row_ids}
+    for field, ids in link_values:
+        if field.trashed:
+            continue
+        if field.required and not ids:
+            raise ValueError(f"必填字段 {field.name} 不能为空")
+        if not field.is_unique or not ids:
+            continue
+        sig = tuple(sorted({int(i) for i in ids}))
+        if batch_signatures is not None and sig in batch_signatures.setdefault(field.id, set()):
+            raise ValueError(f"唯一字段 {field.name}：批量写入中存在多行关联同一目标集合")
+        conflict = [rid for rid in _link_signature_map(engine, field).get(sig, ()) if rid not in exclude]
+        if conflict:
+            shown = "、".join(str(r) for r in sorted(conflict)[:5])
+            raise ValueError(f"唯一字段 {field.name}：行 {shown} 已关联同一目标集合")
+        if batch_signatures is not None:
+            batch_signatures[field.id].add(sig)
 
 
 # ── 内部辅助 ─────────────────────────────────────────

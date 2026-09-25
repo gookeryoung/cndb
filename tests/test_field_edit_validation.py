@@ -295,6 +295,189 @@ class TestLinkFieldPrecheck:
         assert _get_field(client, auth_headers, wid, tid, fid)["required"] is False
 
 
+# ── link 字段写入路径必填/唯一约束 ─────────────────────
+
+
+class TestLinkWriteConstraints:
+    def _setup(self, client, auth_headers, *, required: bool = False, unique: bool = False):
+        """建两张表 + link 字段（可指定约束）。
+
+        dst 预置 D1、D0 两行；src 预置一行关联 D0（保证 required 开启时数据干净，
+        且不占用 D1，供后续用例使用）。返回 (wid, tid_src, tid_dst, fid, d1)。
+        """
+        wid = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_link_write"}).json()["id"]
+        dst = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "w_dst"})
+        tid_dst = dst.json()["id"]
+        src = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "w_src"})
+        tid_src = src.json()["id"]
+        f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid_src,
+            {"name": "关联目标", "field_type": "link", "order": 0, "config": {"target_table_id": tid_dst}},
+        )
+        d1 = _add_record(client, auth_headers, wid, tid_dst, {"title": "D1"})
+        d0 = _add_record(client, auth_headers, wid, tid_dst, {"title": "D0"})
+        _add_record(client, auth_headers, wid, tid_src, {"关联目标": [d0["id"]]})
+        r = _patch_field(client, auth_headers, wid, tid_src, f["id"], {"required": required, "is_unique": unique})
+        assert r.status_code == 200, r.text
+        return wid, tid_src, tid_dst, f["id"], d1
+
+    def test_create_row_required_link_empty_rejected(self, client, auth_headers, db):
+        """required link 字段创建行未传关联 → 400."""
+        wid, tid_src, _tid_dst, _fid, _d1 = self._setup(client, auth_headers, required=True)
+        r = client.post(f"/api/v1/workspaces/{wid}/tables/{tid_src}/records", headers=auth_headers, json={"values": {}})
+        assert r.status_code == 400
+        assert "关联目标" in r.json()["detail"]
+
+    def test_create_row_required_link_ok(self, client, auth_headers, db):
+        """required link 字段传入关联 → 201."""
+        wid, tid_src, _tid_dst, _fid, d1 = self._setup(client, auth_headers, required=True)
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid_src}/records",
+            headers=auth_headers,
+            json={"values": {"关联目标": [d1["id"]]}},
+        )
+        assert r.status_code == 201, r.text
+
+    def test_update_clearing_required_link_rejected(self, client, auth_headers, db):
+        """required link 字段更新为空关联（显式清空）→ 400."""
+        wid, tid_src, _tid_dst, _fid, d1 = self._setup(client, auth_headers, required=True)
+        row = _add_record(client, auth_headers, wid, tid_src, {"关联目标": [d1["id"]]})
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{tid_src}/records/{row['id']}",
+            headers=auth_headers,
+            json={"values": {"关联目标": None}},
+        )
+        assert r.status_code == 400
+        assert "关联目标" in r.json()["detail"]
+
+    def test_update_own_same_link_allowed(self, client, auth_headers, db):
+        """unique link 字段更新为自身已有集合 → 200（排除自身）。"""
+        wid, tid_src, _tid_dst, _fid, d1 = self._setup(client, auth_headers, unique=True)
+        row = _add_record(client, auth_headers, wid, tid_src, {"关联目标": [d1["id"]]})
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{tid_src}/records/{row['id']}",
+            headers=auth_headers,
+            json={"values": {"关联目标": [d1["id"]]}},
+        )
+        assert r.status_code == 200, r.text
+
+    def test_update_to_conflicting_link_rejected(self, client, auth_headers, db):
+        """unique link 字段更新为另一行已关联的集合 → 400."""
+        wid, tid_src, tid_dst, _fid, d1 = self._setup(client, auth_headers, unique=True)
+        d2 = _add_record(client, auth_headers, wid, tid_dst, {"title": "D2"})
+        _add_record(client, auth_headers, wid, tid_src, {"关联目标": [d1["id"]]})  # 占用 D1
+        row = _add_record(client, auth_headers, wid, tid_src, {"关联目标": [d2["id"]]})
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{tid_src}/records/{row['id']}",
+            headers=auth_headers,
+            json={"values": {"关联目标": [d1["id"]]}},
+        )
+        assert r.status_code == 400
+        assert "已关联同一目标集合" in r.json()["detail"]
+
+    def test_bulk_create_unique_conflict_rejected(self, client, auth_headers, db):
+        """unique link 字段批量创建两行关联同一目标 → 400 且不落库."""
+        wid, tid_src, _tid_dst, _fid, d1 = self._setup(client, auth_headers, unique=True)
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid_src}/records/bulk-create",
+            headers=auth_headers,
+            json={"rows": [{"values": {"关联目标": [d1["id"]]}}, {"values": {"关联目标": [d1["id"]]}}]},
+        )
+        assert r.status_code == 400
+        assert "批量写入中存在多行" in r.json()["detail"]
+
+    def test_bulk_update_unique_multi_row_rejected(self, client, auth_headers, db):
+        """unique link 字段批量更新 N>1 行为同一集合 → 400."""
+        wid, tid_src, tid_dst, _fid, d1 = self._setup(client, auth_headers, unique=True)
+        d2 = _add_record(client, auth_headers, wid, tid_dst, {"title": "D2"})
+        r1 = _add_record(client, auth_headers, wid, tid_src, {"关联目标": [d1["id"]]})
+        r2 = _add_record(client, auth_headers, wid, tid_src, {"关联目标": [d2["id"]]})
+        rr = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid_src}/records/bulk-update",
+            headers=auth_headers,
+            json={"row_ids": [r1["id"], r2["id"]], "values": {"关联目标": [d1["id"]]}},
+        )
+        assert rr.status_code == 400
+
+    def test_bulk_update_unique_conflict_with_existing_rejected(self, client, auth_headers, db):
+        """unique link 字段批量更新 1 行为已有行的集合 → 400."""
+        wid, tid_src, tid_dst, _fid, d1 = self._setup(client, auth_headers, unique=True)
+        d2 = _add_record(client, auth_headers, wid, tid_dst, {"title": "D2"})
+        _add_record(client, auth_headers, wid, tid_src, {"关联目标": [d1["id"]]})  # 占用 D1
+        row = _add_record(client, auth_headers, wid, tid_src, {"关联目标": [d2["id"]]})
+        rr = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid_src}/records/bulk-update",
+            headers=auth_headers,
+            json={"row_ids": [row["id"]], "values": {"关联目标": [d1["id"]]}},
+        )
+        assert rr.status_code == 400
+        assert "已关联同一目标集合" in rr.json()["detail"]
+
+
+# ── lookup 字段约束拒绝 ────────────────────────────────
+
+
+class TestLookupConstraintRejection:
+    def _setup(self, client, auth_headers):
+        """建两张表：dst 含 select 字段，src 含 link 指向 dst + 引用 dst 字段的 lookup。"""
+        wid = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_lkp_rej"}).json()["id"]
+        dst = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "l_dst"})
+        tid_dst = dst.json()["id"]
+        src = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "l_src"})
+        tid_src = src.json()["id"]
+        status_f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid_dst,
+            {
+                "name": "状态",
+                "field_type": "select",
+                "order": 0,
+                "config": {"options": [{"label": "待办", "color": "#f00"}]},
+            },
+        )
+        link_f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid_src,
+            {"name": "关联目标", "field_type": "link", "order": 0, "config": {"target_table_id": tid_dst}},
+        )
+        lk = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid_src,
+            {
+                "name": "源状态",
+                "field_type": "lookup",
+                "order": 1,
+                "config": {
+                    "source_table_id": tid_dst,
+                    "source_field_id": status_f["id"],
+                    "via_link_field_id": link_f["id"],
+                },
+            },
+        )
+        return wid, tid_src, lk["id"]
+
+    def test_lookup_required_rejected(self, client, auth_headers, db):
+        wid, tid_src, fid = self._setup(client, auth_headers)
+        r = _patch_field(client, auth_headers, wid, tid_src, fid, {"required": True})
+        assert r.status_code == 400
+        assert "不支持设置必填/唯一约束" in r.json()["detail"]
+
+    def test_lookup_unique_rejected(self, client, auth_headers, db):
+        wid, tid_src, fid = self._setup(client, auth_headers)
+        r = _patch_field(client, auth_headers, wid, tid_src, fid, {"is_unique": True})
+        assert r.status_code == 400
+        assert "不支持设置必填/唯一约束" in r.json()["detail"]
+
+
 # ── 物理 DDL 失败的 metadata 回退兜底 ──────────────────
 
 
