@@ -1222,3 +1222,166 @@ class TestTemplateTheme:
         items = resp.json()
         assert items, "应至少有一个模板"
         assert all("theme" in it for it in items)
+
+
+class TestFlattenForReport:
+    """link/lookup 字段扁平化 —— 给 Jinja2 模板可读值."""
+
+    def test_link_field_single_target(self):
+        from cndb.plugins.reports.routers.reports import _flatten_for_report
+        from cndb.plugins.tables.models import DataField, DataTable
+
+        table = DataTable(name="员工表", db_table_name="t_link_emp")
+        table.fields = [
+            DataField(name="姓名", field_type="text", db_column_name="f_name"),
+            DataField(name="部门", field_type="link", db_column_name="f_dept", config={"target_table_id": 1}),
+        ]
+        records = [
+            {"姓名": "张三", "部门": [{"id": 1, "value": "研发"}]},
+            {"姓名": "李四", "部门": []},
+        ]
+        _flatten_for_report(records, table)
+        assert records[0]["部门"] == "研发"
+        assert records[1]["部门"] == ""
+
+    def test_link_field_multiple_targets(self):
+        from cndb.plugins.reports.routers.reports import _flatten_for_report
+        from cndb.plugins.tables.models import DataField, DataTable
+
+        table = DataTable(name="项目", db_table_name="t_link_proj")
+        table.fields = [
+            DataField(name="项目名", field_type="text", db_column_name="f_name"),
+            DataField(name="成员", field_type="link", db_column_name="f_members", config={"target_table_id": 1, "multiple": True}),
+        ]
+        records = [
+            {"项目名": "A项目", "成员": [{"id": 1, "value": "张三"}, {"id": 2, "value": "李四"}]},
+        ]
+        _flatten_for_report(records, table)
+        assert records[0]["成员"] == "张三, 李四"
+
+    def test_link_field_fallback_to_id_when_value_missing(self):
+        from cndb.plugins.reports.routers.reports import _flatten_for_report
+        from cndb.plugins.tables.models import DataField, DataTable
+
+        table = DataTable(name="t", db_table_name="t_x")
+        table.fields = [DataField(name="rel", field_type="link", db_column_name="f_rel", config={"target_table_id": 1})]
+        records = [{"rel": [{"id": 42}]}]
+        _flatten_for_report(records, table)
+        assert records[0]["rel"] == "#42"
+
+    def test_lookup_field_multiple_values(self):
+        from cndb.plugins.reports.routers.reports import _flatten_for_report
+        from cndb.plugins.tables.models import DataField, DataTable
+
+        table = DataTable(name="员工表", db_table_name="t_lk_emp")
+        table.fields = [
+            DataField(name="姓名", field_type="text", db_column_name="f_name"),
+            DataField(name="部门名", field_type="lookup", db_column_name="f_lk_name", config={}),
+        ]
+        records = [{"姓名": "张三", "部门名": ["研发部", "产品部"]}]
+        _flatten_for_report(records, table)
+        assert records[0]["部门名"] == "研发部, 产品部"
+
+    def test_plain_text_field_not_touched(self):
+        from cndb.plugins.reports.routers.reports import _flatten_for_report
+        from cndb.plugins.tables.models import DataField, DataTable
+
+        table = DataTable(name="t", db_table_name="t_plain")
+        table.fields = [DataField(name="姓名", field_type="text", db_column_name="f_name")]
+        records = [{"姓名": "张三"}]
+        _flatten_for_report(records, table)
+        assert records[0]["姓名"] == "张三"
+
+    def test_no_link_no_lookup_field_noop(self):
+        from cndb.plugins.reports.routers.reports import _flatten_for_report
+        from cndb.plugins.tables.models import DataField, DataTable
+
+        table = DataTable(name="t", db_table_name="t_empty")
+        table.fields = [DataField(name="a", field_type="text", db_column_name="f_a")]
+        records = [{"a": "v"}]
+        _flatten_for_report(records, table)
+        assert records[0]["a"] == "v"
+
+
+def test_render_docx_flattens_link_field_for_jinja2(client, auth_headers, db):
+    """集成测试：link 字段在 Jinja2 模板中应渲染为可读文本（不是 [object Object]）."""
+    # 建工作区 + 表 B（部门，link 目标）
+    ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_link_report"})
+    wid = ws.json()["id"]
+    tbl_b = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "部门"})
+    tid_b = tbl_b.json()["id"]
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid_b}/fields",
+        headers=auth_headers,
+        json={"name": "名称", "field_type": "text", "order": 0},
+    )
+    # 2 个部门
+    dept_ids = []
+    for d in ["研发", "市场"]:
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid_b}/records",
+            headers=auth_headers,
+            json={"values": {"名称": d}},
+        )
+        dept_ids.append(r.json()["id"])
+
+    # 表 A（员工，有 link 字段指向部门）
+    tbl_a = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "员工"})
+    tid_a = tbl_a.json()["id"]
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid_a}/fields",
+        headers=auth_headers,
+        json={"name": "姓名", "field_type": "text", "order": 0},
+    )
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid_a}/fields",
+        headers=auth_headers,
+        json={
+            "name": "部门",
+            "field_type": "link",
+            "order": 1,
+            "config": {"target_table_id": tid_b, "multiple": False},
+        },
+    )
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid_a}/records",
+        headers=auth_headers,
+        json={"values": {"姓名": "张三", "部门": [dept_ids[0]]}},
+    )
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid_a}/records",
+        headers=auth_headers,
+        json={"values": {"姓名": "李四", "部门": [dept_ids[1]]}},
+    )
+
+    # 创建模板：逐行输出 姓名: 部门
+    tpl = client.post(
+        "/api/v1/reports",
+        headers=auth_headers,
+        json={
+            "name": "员工部门",
+            "output_format": "docx",
+            "template_content": "{% for row in records %}{{ row.姓名 }}: {{ row.部门 }}\n{% endfor %}",
+            "table_id": tid_a,
+        },
+    )
+    tid = tpl.json()["id"]
+
+    # 渲染 DOCX
+    r = client.post(
+        f"/api/v1/reports/{tid}/render",
+        headers=auth_headers,
+        json={"table_id": tid_a},
+    )
+    assert r.status_code == 200, r.text
+
+    # 读回 DOCX 文本验证 link 字段是可读值
+    from docx import Document
+
+    doc = Document(io.BytesIO(r.content))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "张三: 研发" in text, f"link 字段应展开为部门名，实际: {text!r}"
+    assert "李四: 市场" in text, f"link 字段应展开为部门名，实际: {text!r}"
+    # 关键断言：不应出现原始对象 repr
+    assert "[object Object]" not in text
+    assert "{" not in text  # 不应残留字典字面量

@@ -318,11 +318,36 @@ def delete_template(
 # ── 渲染器签名：renderer(rendered_text: str, ctx: dict[str, Any]) -> bytes ──
 
 
+def _flatten_for_report(records: list[dict[str, Any]], table: Any) -> None:
+    """把行记录中 link/lookup 等展示型字段扁平化为可读字符串（原地修改）.
+
+    list_rows 返回的 link 字段是 [{"id", "value"}] 摘要列表、lookup 字段可能是列表，
+    前端网格 UI 需要这个结构，但 Jinja2 模板里 `{{ row.部门 }}` 直接渲染对象会出
+    `[object Object]`。这里把它们展开：link 取 .value 用逗号拼接，lookup 列表同样拼接。
+    """
+    from cndb.plugins.tables.services.core.links import is_link_field
+
+    link_names = {f.name for f in table.active_fields() if is_link_field(f)}
+    lookup_names = {f.name for f in table.active_fields() if f.field_type == "lookup"}
+    if not link_names and not lookup_names:
+        return
+    for row in records:
+        for name in link_names:
+            raw = row.get(name)
+            if isinstance(raw, list):
+                parts = [str(item.get("value", f"#{item.get('id')}")) for item in raw if isinstance(item, dict)]
+                row[name] = ", ".join(parts) if parts else ""
+        for name in lookup_names:
+            raw = row.get(name)
+            if isinstance(raw, list):
+                row[name] = ", ".join(str(v) for v in raw if v is not None)
+
+
 def _load_table_records(db: Session, table_id: int, user: User) -> tuple[Any, list[dict[str, Any]]]:
     """加载指定表的元数据和全部行数据（带 READ 权限校验 + 字段隐藏）.
 
     list_rows 默认 limit=100，报表必须拿到完整数据，这里按页循环取全量。
-    返回 (DataTable, records_list)，records 是扁平 dict 列表。
+    返回 (DataTable, records_list)，records 是扁平 dict 列表，link/lookup 字段已展开为可读字符串。
     """
     from cndb.plugins.tables.models import DataTable
     from cndb.plugins.tables.services.core.access import TableAction, check_action
@@ -342,6 +367,7 @@ def _load_table_records(db: Session, table_id: int, user: User) -> tuple[Any, li
         offset += len(rows)
         if not rows or offset >= total:
             break
+    _flatten_for_report(records, table)
     return table, records
 
 
