@@ -619,14 +619,15 @@ def _import_backup_into_workspace(
                 field.ensure_db_name()
                 db.add(field)
                 fields_order.append(field)
-                # v4：记录 id 映射；跨表字段（link/lookup）延后统一重写 config
-                old_field_id = fd.get("id")
-                if isinstance(old_field_id, int):
-                    field_id_map[old_field_id] = field.id
                 if fd.get("field_type") in ("link", "lookup"):
                     pending_field_refs.append((field, fd))
 
             db.flush()
+            # v4：flush 拿到字段 id 后记录 旧字段 id → 新字段 id；跨表字段延后统一重写 config
+            for fd, field in zip(fields_data, fields_order, strict=False):
+                old_field_id = fd.get("id")
+                if isinstance(old_field_id, int):
+                    field_id_map[old_field_id] = field.id
 
             # ★ 关键：在执行 DDL 前先提交 flush 出的 DataTable / DataField 元数据。
             # SQLite flush() 隐式开启的事务会持有 RESERVED 锁，
@@ -748,16 +749,16 @@ def _import_backup_into_workspace(
             if changed:
                 field.config = cfg
                 db.add(field)
-                logging.getLogger(__name__).warning("[DEBUG remap] %s.%s -> %s", fd.get("name"), fd.get("field_type"), cfg)
         if pending_field_refs:
             db.commit()
 
         for link_field, table, pairs in pending_link_rows:
             try:
-                link_cfg = link_field.config or {}
-                target_table_id = table_id_map.get(link_cfg.get("target_table_id"))
+                # config 已在上一阶段重映射，target_table_id 即新工作区表 id
+                target_table_id = (link_field.config or {}).get("target_table_id")
                 row_map = row_id_maps.get(table.id, {})
-                target_map = row_id_maps.get(target_table_id, {})
+                target_map = row_id_maps.get(target_table_id) if isinstance(target_table_id, int) else None
+                target_map = target_map or {}
                 link_values = [
                     {"row_id": row_map[ri], "target_row_id": target_map[ti]}
                     for ri, ti in pairs
@@ -765,8 +766,9 @@ def _import_backup_into_workspace(
                 ]
                 if not link_values:
                     continue
-                from sqlalchemy import MetaData, insert as sa_insert
+                from sqlalchemy import MetaData
                 from sqlalchemy import Table as SATable
+                from sqlalchemy import insert as sa_insert
 
                 lt = SATable(link_field.link_table_name, MetaData(), autoload_with=db.bind)
                 db.execute(sa_insert(lt), link_values)
@@ -923,7 +925,9 @@ def export_workspace(
                 continue  # pragma: no cover - 关联表异常时跳过该字段
             idx_map = row_index_maps.get(tbl.id, {})
             target_cfg = field_row.config or {}
-            target_idx_map = row_index_maps.get(target_cfg.get("target_table_id"), {})
+            old_target_id = target_cfg.get("target_table_id")
+            target_idx_map = row_index_maps.get(old_target_id) if isinstance(old_target_id, int) else None
+            target_idx_map = target_idx_map or {}
             idx_pairs = [
                 [idx_map[int(r)], target_idx_map[int(t)]]
                 for r, t in pairs
