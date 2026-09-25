@@ -207,6 +207,94 @@ class TestRequiredPrecheck:
         assert _get_field(client, auth_headers, wid, tid, f["id"])["required"] is False
 
 
+# ── link 字段必填/唯一保存前预检 ──────────────────────
+
+
+class TestLinkFieldPrecheck:
+    def _setup(self, client, auth_headers) -> tuple[int, int, int, list[dict]]:
+        """建两张表：t_link_src 含 link 字段指向 t_link_dst；src 两行均关联到 dst 同一行。
+
+        返回 (wid, tid, link_fid, src 行列表)。
+        """
+        wid = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_link_pre"}).json()["id"]
+        dst = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t_link_dst"})
+        dst_tid = dst.json()["id"]
+        src = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t_link_src"})
+        tid = src.json()["id"]
+        f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid,
+            {"name": "关联目标", "field_type": "link", "order": 0, "config": {"target_table_id": dst_tid}},
+        )
+        dst_row = _add_record(client, auth_headers, wid, dst_tid, {"title": "D1"})
+        row1 = _add_record(client, auth_headers, wid, tid, {"关联目标": [dst_row["id"]]})
+        row2 = _add_record(client, auth_headers, wid, tid, {"关联目标": [dst_row["id"]]})
+        return wid, tid, f["id"], [row1, row2]
+
+    def test_enable_unique_blocked_by_duplicate_links(self, client, auth_headers, db):
+        """两行关联同一目标时启用唯一 → 400 且 metadata 不变."""
+        wid, tid, fid, rows = self._setup(client, auth_headers)
+
+        r = _patch_field(client, auth_headers, wid, tid, fid, {"is_unique": True})
+        assert r.status_code == 400
+        detail = r.json()["detail"]
+        assert "关联目标" in detail
+        assert str(rows[0]["id"]) in detail and str(rows[1]["id"]) in detail
+
+        # metadata 未被污染
+        assert _get_field(client, auth_headers, wid, tid, fid)["is_unique"] is False
+
+    def test_enable_unique_success_after_distinct_links(self, client, auth_headers, db):
+        """两行关联不同目标后启用唯一 → 200."""
+        wid, tid, fid, rows = self._setup(client, auth_headers)
+        # 把第二行改为不设关联以外的目标：先清空再留一行空（空不参与判重）
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records/{rows[1]['id']}",
+            headers=auth_headers,
+            json={"values": {"关联目标": []}},
+        )
+        assert r.status_code == 200
+
+        r = _patch_field(client, auth_headers, wid, tid, fid, {"is_unique": True})
+        assert r.status_code == 200, r.text
+
+    def test_enable_required_blocked_by_unlinked_rows(self, client, auth_headers, db):
+        """存在未关联行时设为必填 → 400 且 metadata 不变."""
+        wid, tid, fid, _ = self._setup(client, auth_headers)
+        # 追加一行无关联
+        empty_row = _add_record(client, auth_headers, wid, tid, {})
+
+        r = _patch_field(client, auth_headers, wid, tid, fid, {"required": True})
+        assert r.status_code == 400
+        detail = r.json()["detail"]
+        assert "关联目标" in detail
+        assert f"行 {empty_row['id']}" in detail
+
+        # metadata 未变更
+        assert _get_field(client, auth_headers, wid, tid, fid)["required"] is False
+
+    def test_enable_required_success_after_linking(self, client, auth_headers, db):
+        """补齐关联后设为必填 → 200（link 字段不走物理列重建，不得 500）."""
+        wid, tid, fid, _rows = self._setup(client, auth_headers)
+        assert _get_field(client, auth_headers, wid, tid, fid)["required"] is False
+
+        r = _patch_field(client, auth_headers, wid, tid, fid, {"required": True})
+        assert r.status_code == 200, r.text
+        assert _get_field(client, auth_headers, wid, tid, fid)["required"] is True
+
+    def test_required_toggle_off_no_precheck(self, client, auth_headers, db):
+        """link 字段必填 True→False 不触发预检（回归保护）。"""
+        wid, tid, fid, _ = self._setup(client, auth_headers)
+        r = _patch_field(client, auth_headers, wid, tid, fid, {"required": True})
+        assert r.status_code == 200, r.text
+
+        r = _patch_field(client, auth_headers, wid, tid, fid, {"required": False})
+        assert r.status_code == 200
+        assert _get_field(client, auth_headers, wid, tid, fid)["required"] is False
+
+
 # ── 物理 DDL 失败的 metadata 回退兜底 ──────────────────
 
 

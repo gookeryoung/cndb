@@ -24,6 +24,11 @@ from cndb.plugins.tables.services.core.ddl import (
     find_null_rows,
     rebuild_column,
 )
+from cndb.plugins.tables.services.core.links import (
+    find_duplicate_link_values,
+    find_null_link_rows,
+    is_link_field,
+)
 from cndb.plugins.tables.services.fields.field_ops import (
     clone_fields_between_tables,
     import_fields_as_lookup,
@@ -185,7 +190,10 @@ def update_field(
     effective_is_unique = update_data.get("is_unique", old_is_unique)
 
     if effective_required and not old_required:
-        null_ids = find_null_rows(engine, dt, df)
+        if is_link_field(df):
+            null_ids = find_null_link_rows(engine, dt, df)
+        else:
+            null_ids = find_null_rows(engine, dt, df)
         if null_ids:
             shown = "、".join(f"行 {i}" for i in null_ids)
             suffix = "（仅展示前 20 行）" if len(null_ids) >= 20 else ""
@@ -194,7 +202,10 @@ def update_field(
             )
 
     if effective_is_unique and not old_is_unique:
-        dups = find_duplicate_values(engine, dt, df)
+        if is_link_field(df):
+            dups = find_duplicate_link_values(engine, dt, df)
+        else:
+            dups = find_duplicate_values(engine, dt, df)
         if dups:
             shown = "、".join(f"'{value}'（行 {'、'.join(str(i) for i in ids)}）" for value, ids in dups)
             suffix = "（仅展示前 10 组）" if len(dups) >= 10 else ""
