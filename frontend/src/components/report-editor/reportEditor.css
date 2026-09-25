@@ -24,10 +24,9 @@
   gap: 12px;
 }
 
-/* DndContext 可能渲染出 wrapper div，让它不参与布局 */
-.report-template-editor>* {
-  display: contents;
-}
+/* 注意：DndContext/SortableContext 不渲染 DOM 元素，
+ * .report-field-panel 与编辑器 dropzone 就是 .report-template-editor 的直接 flex 子项，
+ * 禁止对子项使用 contents 型 display 声明（会使其盒模型失效，三栏布局错乱） */
 
 /* ── 左侧字段面板 ── */
 .report-field-panel {

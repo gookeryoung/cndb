@@ -26,6 +26,14 @@ describe('reportEditor.css 深色主题适配', () => {
     expect(css).toMatch(/\.report-field-panel\s*{[^}]*var\(--cn-bg-subtle\)/)
   })
 
+  it('三栏布局子元素不得使用 display: contents', () => {
+    // dnd-kit 的 DndContext/SortableContext 不渲染 DOM，
+    // `.report-template-editor > *` 会命中字段面板/编辑器根节点，
+    // display: contents 使其盒模型失效（宽度/边框/flex 尺寸全丢），三栏布局错乱
+    expect(css).not.toMatch(/\.report-template-editor[^{]*{[^}]*display:\s*contents/)
+    expect(css).not.toContain('display: contents')
+  })
+
   it('文字颜色使用主题变量', () => {
     expect(css).not.toMatch(/color:\s*#262626\b/)
     expect(css).not.toMatch(/color:\s*#8c8c8c\b/)
