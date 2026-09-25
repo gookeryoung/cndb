@@ -18,9 +18,11 @@ const FIELDS: Field[] = [
     makeField({ id: 1, name: '姓名', field_type: 'text' }),
     makeField({ id: 2, name: '年龄', field_type: 'number' }),
     makeField({ id: 3, name: '状态', field_type: 'select', config: { options: ['高', '中', '低'] } }),
+    // link 字段：无 target_table_id 以禁用目标行下拉查询（本用例只验证值归一化）
+    makeField({ id: 4, name: '部门', field_type: 'link' }),
 ]
 
-const ROW: RowResponse = { id: 5, 姓名: '张三', 年龄: 20, 状态: '高' }
+const ROW: RowResponse = { id: 5, 姓名: '张三', 年龄: 20, 状态: '高', 部门: [{ id: 7, value: '研发部' }, { id: 8, value: '产品部' }] }
 
 /** audit / references 默认空数据，特殊用例用 server.use 覆盖 */
 function setup(audit: unknown[] = [], references: unknown[] = []) {
@@ -116,6 +118,25 @@ describe('RowDetailDrawer 行详情抽屉', () => {
 
         await waitFor(() => expect(patchSpy).toHaveBeenCalledTimes(1))
         expect(await screen.findByText('已保存')).toBeInTheDocument()
+    })
+
+    it('编辑保存：link 字段的 [{id,value}] 摘要归一化为目标行 id 列表再提交', async () => {
+        setup()
+        let patchBody: Record<string, unknown> = {}
+        server.use(http.patch('/api/v1/workspaces/10/tables/20/records/5', async ({ request }) => {
+            patchBody = await request.clone().json() as Record<string, unknown>
+            return HttpResponse.json({ id: 5 })
+        }))
+        renderDrawer()
+
+        // 不触碰 link 字段，仅触发一次其他字段编辑后保存
+        const nameInput = screen.getByDisplayValue('张三')
+        fireEvent.change(nameInput, { target: { value: '李四' } })
+        fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
+
+        await waitFor(() => expect(patchBody.values).toBeDefined())
+        const values = (patchBody as { values: Record<string, unknown> }).values
+        expect(values.部门).toEqual([7, 8])
     })
 })
 

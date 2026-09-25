@@ -187,6 +187,59 @@ def find_back_references(
     return results
 
 
+# ── 数据巡检（link 字段变更保存前预检） ───────────────
+
+
+def find_null_link_rows(engine: Any, table: DataTable, field: DataField, limit: int = 20) -> list[int]:
+    """返回源物理表中未关联任何目标行的行 id 列表（含软删行，必填对全表生效）.
+
+    用于 link 字段设为必填前的数据预检；源表或关联表不存在时返回空列表.
+    """
+    names = set(inspect(engine).get_table_names())
+    if field.link_table_name not in names or table.db_table_name not in names:
+        return []
+    link_table = _get_link_sa_table(engine, field.link_table_name)
+    sa_table = _get_sa_table_by_name(engine, table.db_table_name)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(sa_table.c.id)
+            .outerjoin(link_table, link_table.c.row_id == sa_table.c.id)
+            .where(link_table.c.row_id.is_(None))
+            .order_by(sa_table.c.id)
+            .limit(limit)
+        ).all()
+    return [int(r[0]) for r in rows]
+
+
+def find_duplicate_link_values(
+    engine: Any, table: DataTable, field: DataField, limit: int = 10
+) -> list[tuple[str, list[int]]]:
+    """返回 (关联签名, 行 id 列表) 列表：两行关联同一目标集合视为重复，空关联不参与判重.
+
+    关联签名为目标行 id 分号拼接字符串；用于启用唯一约束前的数据预检，
+    关联表不存在时返回空列表.
+    """
+    if not link_table_exists(engine, field.link_table_name):
+        return []
+    link_table = _get_link_sa_table(engine, field.link_table_name)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(link_table.c.row_id, link_table.c.target_row_id).order_by(link_table.c.row_id, link_table.c.id)
+        ).all()
+
+    mapping: dict[int, list[int]] = {}
+    for row_id, target_id in rows:
+        mapping.setdefault(int(row_id), []).append(int(target_id))
+
+    groups: dict[tuple[int, ...], list[int]] = {}
+    for row_id, targets in mapping.items():
+        groups.setdefault(tuple(targets), []).append(row_id)
+
+    result = [(";".join(str(t) for t in sig), sorted(row_ids)) for sig, row_ids in groups.items() if len(row_ids) > 1]
+    result.sort(key=lambda item: item[1][0])
+    return result[:limit]
+
+
 # ── 内部辅助 ─────────────────────────────────────────
 
 

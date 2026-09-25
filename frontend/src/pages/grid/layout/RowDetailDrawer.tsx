@@ -14,6 +14,22 @@ import { useTableSettingsStore } from '@/store'
 
 const { Title, Text } = Typography
 
+/**
+ * 提取 link 字段值中的目标行 id 列表.
+ * 兼容后端读取返回的 [{id, value}] 摘要、纯 id 数组、单个 id 标量与字符串数字.
+ */
+function extractLinkTargetIds(value: unknown): number[] {
+  if (value === null || value === undefined) return []
+  const items = Array.isArray(value) ? value : [value]
+  return items
+    .map((item: unknown) => {
+      if (item && typeof item === 'object') return (item as { id?: unknown }).id
+      return item
+    })
+    .map(Number)
+    .filter(n => Number.isInteger(n) && n > 0)
+}
+
 interface Props {
   open: boolean
   row: RowResponse | null
@@ -88,7 +104,14 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
   if (!open) return null
 
   const handleSubmit = () => {
-    const values = form.getFieldsValue()
+    const raw = form.getFieldsValue()
+    // link 字段归一化：[{id,value}] 摘要 / 单个 id / 标量统一转为目标行 id 列表（后端校验要求）
+    const values: RowValues = { ...raw }
+    for (const f of fields) {
+      if (f.field_type === 'link' && f.name in values) {
+        values[f.name] = extractLinkTargetIds(values[f.name]) as RowValues[string]
+      }
+    }
     if (isCreate) {
       createRow.mutate(values)
     } else if (row) {
@@ -217,7 +240,8 @@ function FieldEditor({
   const labelField = ft === 'link' ? pickLinkLabelFieldName(targetFields ?? []) : null
 
   if (ft === 'link') {
-    const ids = Array.isArray(value) ? value : value ? [value] : []
+    // 回显值可能是 [{id,value}] 摘要，统一转成 id 供 Select 消费
+    const ids = extractLinkTargetIds(value)
     const options = targetRows.map((r: any) => ({
       value: r.id,
       label: buildLinkRowLabel(r, labelField),
@@ -231,7 +255,7 @@ function FieldEditor({
         allowClear
         showSearch
         options={options}
-        value={ids.length ? ids : undefined}
+        value={multiple ? (ids.length ? ids : undefined) : (ids[0] ?? undefined)}
         onChange={v => onChange(v)}
         disabled={disabled}
       />

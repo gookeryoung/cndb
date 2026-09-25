@@ -340,7 +340,13 @@ def _column_needs_rebuild(old_field: DataField, new_field: DataField) -> bool:
     以下变更需要重建：
     - field_type 改变（SQLAlchemy 类型或长度可能变了）
     - required 从 False 改为 True（SQLite 不支持 ALTER COLUMN）
+
+    任一侧字段无物理列（link/lookup 等关联族字段）时不重建，仅 metadata 层生效.
     """
+    ft_old = default_registry.get(old_field.field_type)
+    ft_new = default_registry.get(new_field.field_type)
+    if ft_old is None or ft_new is None or not ft_old.has_physical_column or not ft_new.has_physical_column:
+        return False
     return old_field.field_type != new_field.field_type or (
         old_field.required != new_field.required and new_field.required
     )
