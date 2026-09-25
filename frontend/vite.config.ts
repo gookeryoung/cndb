@@ -130,7 +130,9 @@ export default defineConfig(({ mode }) => ({
         'src/**/*.d.ts',
         'src/vite-env.d.ts',
       ],
-      reporter: ['text', 'json-summary', 'html'],
+      // CI 下只输出 text + json-summary（check-coverage.mjs 依赖 json-summary），
+      // 省去 html 报告生成开销；本地保留 html 便于浏览
+      reporter: process.env.CI ? ['text', 'json-summary'] : ['text', 'json-summary', 'html'],
       reportsDirectory: 'coverage',
     },
   },
