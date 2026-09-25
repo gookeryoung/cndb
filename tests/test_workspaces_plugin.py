@@ -735,7 +735,10 @@ class TestWorkspaceExportImport:
         # 字段定义一致（含 config/required/is_unique/default_value/hidden/order；id 为新工作区重新生成，不比对）
         src_fields = {f["name"]: f for f in src_table["fields"]}
         dst_fields = {f["name"]: f for f in dst_table["fields"]}
-        strip_id = lambda f: {k: v for k, v in f.items() if k != "id"}
+
+        def strip_id(f: dict) -> dict:
+            return {k: v for k, v in f.items() if k != "id"}
+
         assert {n: strip_id(f) for n, f in dst_fields.items()} == {n: strip_id(f) for n, f in src_fields.items()}
         assert src_fields["职级"]["config"] == {"options": ["P4", "P5"]}
         assert src_fields["职级"]["is_unique"] is True

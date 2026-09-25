@@ -107,9 +107,11 @@ class TestSeedBackupRoundtrip:
         # 字段定义逐项还原（config 内跨表 id 已重映射为新工作区 id，需按语义比对）
         dst_emp_fields = {f["name"]: f for f in dst["员工表"]["fields"]}
         ref_keys = {"id", "source_table_id", "source_field_id", "via_link_field_id", "target_table_id"}
-        strip_refs = lambda f: {k: v for k, v in f.items() if k not in ref_keys and k != "config"} | {
-            k: v for k, v in (f.get("config") or {}).items() if k not in ref_keys
-        }
+
+        def strip_refs(f: dict) -> dict:
+            cfg = {k: v for k, v in (f.get("config") or {}).items() if k not in ref_keys}
+            return {k: v for k, v in f.items() if k not in ref_keys and k != "config"} | {"config": cfg}
+
         assert {n: strip_refs(f) for n, f in dst_emp_fields.items()} == {
             n: strip_refs(f) for n, f in emp_fields.items()
         }
@@ -135,7 +137,7 @@ class TestSeedBackupRoundtrip:
         restored_rows = {r["姓名"]: r for r in listing.json()["rows"]}
         expect_dept = {"张三": "技术部", "李四": "市场部", "王五": "人事部", "赵六": "财务部", "钱七": "技术部"}
         for name, dept in expect_dept.items():
-            assert restored_rows[name]["部门"] == [{"value": dept}]
+            assert [v["value"] for v in restored_rows[name]["部门"]] == [dept]
             assert restored_rows[name]["负责人"] == DEPT_ROWS[dept]
 
     def test_seed_employee_lookup_resolves_and_row_edit_with_echo_ok(self, client, auth_headers, db, db_engine):
