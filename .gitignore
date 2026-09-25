@@ -57,6 +57,9 @@ backup-*.tar.gz
 file:*
 ?cache=*
 
+./trae/docs/
+./trae/req/
+
 # 工具缓存
 .eslintcache
 .pytest_cache/
