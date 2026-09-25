@@ -138,10 +138,25 @@
   pointer-events: none !important;
 }
 
-/* ── 右侧 Tab 容器（预览 + 语法帮助） ── */
-.report-right-panel {
-  width: 340px;
-  flex-shrink: 0;
+/* ── 编辑器顶部模式切换栏（编辑/预览/帮助） ── */
+.report-editor-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+/* 编辑视图容器（ReportTemplateEditor 挂载点，切换视图时仅隐藏不卸载） */
+.report-editor-editpane {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+/* 预览/语法帮助视图容器（占满编辑区剩余宽度） */
+.report-editor-viewpane {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--cn-border-soft);
@@ -150,25 +165,7 @@
   background: var(--cn-bg-container);
 }
 
-.report-right-panel .ant-tabs {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.report-right-panel .ant-tabs-nav {
-  margin-bottom: 0;
-  padding: 0 8px;
-  background: var(--cn-bg-subtle);
-  border-bottom: 1px solid var(--cn-border-soft);
-}
-
-.report-right-panel .ant-tabs-content-holder {
-  flex: 1;
-  overflow: hidden;
-}
-
-.report-right-panel .ant-tabs-content {
+.report-editor-viewpane .report-syntax-panel {
   height: 100%;
   overflow-y: auto;
 }
@@ -277,23 +274,15 @@
   color: var(--cn-text-muted);
 }
 
-/* 响应式：窄屏下右侧面板再收一点 */
+/* 响应式：窄屏下字段面板收窄 */
 @media (max-width: 1200px) {
   .report-field-panel {
     width: 200px;
-  }
-
-  .report-right-panel {
-    width: 300px;
   }
 }
 
 @media (max-width: 1024px) {
   .report-field-panel {
     width: 180px;
-  }
-
-  .report-right-panel {
-    width: 280px;
   }
 }

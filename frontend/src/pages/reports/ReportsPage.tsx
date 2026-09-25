@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
-import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntApp, Select, Dropdown, Empty, Tabs, Tooltip } from 'antd'
+import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntApp, Select, Dropdown, Empty, Tooltip, Segmented } from 'antd'
 import type { FormInstance } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -318,6 +318,8 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
   const [importTableId, setImportTableId] = useState<number | null>(null)
   // CodeMirror 引用（供 SyntaxHelpPanel 插入代码使用）
   const editorRef = useRef<TemplateEditorHandle | null>(null)
+  // 主区视图模式：编辑器保持挂载仅隐藏显示，避免切换后丢失内容与插入能力
+  const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'help'>('edit')
 
   // 工作区列表（跨工作区级联选择器数据源）
   const { data: workspaces = [] } = useQuery<Workspace[]>({
@@ -440,6 +442,8 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     setExtraTableIds(extras)
     setImportWsId('')
     setImportTableId(null)
+    // 每次打开弹窗回到编辑模式，避免上次停留在预览/帮助视图
+    setViewMode('edit')
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 全局 insert 事件监听（SyntaxHelpPanel → ReportTemplateEditor）
@@ -640,50 +644,53 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
           <Input />
         </Form.Item>
 
-        {/* 编辑器主体：字段面板 + 编辑器 + 预览（Form 内可嵌套非 Form 内容） */}
+        {/* 编辑器主体：顶部模式切换 + 字段面板/编辑器/预览单区切换（比三栏并排更紧凑，避免整体超宽） */}
         <div style={{ padding: '12px 24px 0' }}>
-          <div className="report-editor-body" style={{ height: 520 }}>
-            <ReportTemplateEditor
-              fields={selectedTableId !== null ? (fields as Field[]) : undefined}
-              tableGroups={tableGroups.length > 0 ? tableGroups : undefined}
-              value={templateValue}
-              onChange={handleTemplateChange}
-              editorRef={editorRef}
+          <div className="report-editor-toolbar">
+            <Segmented
+              size="small"
+              value={viewMode}
+              onChange={(v) => setViewMode(v as 'edit' | 'preview' | 'help')}
+              options={[
+                { label: '编辑模板', value: 'edit' },
+                { label: '实时预览', value: 'preview' },
+                { label: '语法帮助', value: 'help' },
+              ]}
             />
-
-            {/* 右侧：Tabs（预览 / 语法帮助） */}
-            <div className="report-right-panel">
-              <Tabs
-                defaultActiveKey="preview"
-                size="small"
-                items={[
-                  {
-                    key: 'preview',
-                    label: '实时预览',
-                    children: (
-                      <PreviewPanel
-                        template={templateValue}
-                        records={previewRows as Array<Record<string, unknown>>}
-                        tableName={selectedTableName}
-                        loading={previewLoading}
-                        recordsByTable={recordsByTable}
-                      />
-                    ),
-                  },
-                  {
-                    key: 'help',
-                    label: '语法帮助',
-                    children: (
-                      <SyntaxHelpPanel
-                        onInsert={(code) => {
-                          window.dispatchEvent(new CustomEvent('report-editor-insert', { detail: { code } }))
-                        }}
-                      />
-                    ),
-                  },
-                ]}
+          </div>
+          <div className="report-editor-body" style={{ height: 520 }}>
+            {/* 编辑视图：保持挂载，仅切换显示，保证内容与插入能力不丢失 */}
+            <div className="report-editor-editpane" style={{ display: viewMode === 'edit' ? undefined : 'none' }}>
+              <ReportTemplateEditor
+                fields={selectedTableId !== null ? (fields as Field[]) : undefined}
+                tableGroups={tableGroups.length > 0 ? tableGroups : undefined}
+                value={templateValue}
+                onChange={handleTemplateChange}
+                editorRef={editorRef}
               />
             </div>
+
+            {viewMode === 'preview' && (
+              <div className="report-editor-viewpane">
+                <PreviewPanel
+                  template={templateValue}
+                  records={previewRows as Array<Record<string, unknown>>}
+                  tableName={selectedTableName}
+                  loading={previewLoading}
+                  recordsByTable={recordsByTable}
+                />
+              </div>
+            )}
+
+            {viewMode === 'help' && (
+              <div className="report-editor-viewpane">
+                <SyntaxHelpPanel
+                  onInsert={(code) => {
+                    window.dispatchEvent(new CustomEvent('report-editor-insert', { detail: { code } }))
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
 

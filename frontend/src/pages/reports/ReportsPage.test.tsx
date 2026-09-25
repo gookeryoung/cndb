@@ -81,6 +81,28 @@ describe('ReportsPage 报表模板页', () => {
         await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull())
     })
 
+    it('编辑器主区支持编辑/预览/帮助模式切换且切回后内容保留', async () => {
+        server.use(http.get('/api/v1/reports', () => HttpResponse.json([TPL])))
+        renderPage()
+
+        fireEvent.click((await screen.findAllByRole('button', { name: /新\s*建\s*模\s*板/ }))[0])
+        await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull())
+
+        // 切到实时预览：显示预览面板，编辑器隐藏但保持挂载
+        fireEvent.click(screen.getByText('实时预览'))
+        await waitFor(() => expect(document.querySelector('.report-preview-panel')).not.toBeNull())
+        expect(document.querySelector('.report-editor-editpane')).toHaveStyle({ display: 'none' })
+
+        // 切到语法帮助
+        fireEvent.click(screen.getByText('语法帮助'))
+        await waitFor(() => expect(document.querySelector('.report-syntax-panel')).not.toBeNull())
+
+        // 切回编辑：CodeMirror 仍在且重新可见
+        fireEvent.click(screen.getByText('编辑模板'))
+        await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull())
+        expect(document.querySelector('.report-editor-editpane')).not.toHaveStyle({ display: 'none' })
+    })
+
     it('删除模板：更多菜单确认后发起 DELETE 请求', async () => {
         let deleteCalled = false
         server.use(

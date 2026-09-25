@@ -22,7 +22,7 @@ describe('reportEditor.css 深色主题适配', () => {
       expect(css.match(re)).toBeNull()
     }
     // 关键容器使用变量
-    expect(css).toMatch(/\.report-right-panel\s*{[^}]*var\(--cn-bg-container\)/)
+    expect(css).toMatch(/\.report-editor-viewpane\s*{[^}]*var\(--cn-bg-container\)/)
     expect(css).toMatch(/\.report-field-panel\s*{[^}]*var\(--cn-bg-subtle\)/)
   })
 
