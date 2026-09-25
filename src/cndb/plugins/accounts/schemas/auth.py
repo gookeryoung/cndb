@@ -29,6 +29,18 @@ class AdminRegisterRequest(RegisterRequest):
     role: str = Field(description="用户角色: system_admin / security_admin / audit_admin / user")
 
 
+class ProfileUpdateRequest(BaseModel):
+    """个人资料更新请求体 —— 当前用户自助修改昵称/邮箱.
+
+    两个字段均可选，仅提交的字段会被更新；username/角色等不开放自助修改。
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    nickname: str | None = Field(default=None, max_length=150, description="昵称")
+    email: str | None = Field(default=None, max_length=255, description="邮箱（传空字符串表示清空）")
+
+
 class LoginRequest(BaseModel):
     """用户登录请求体（支持用户名或邮箱）."""
 

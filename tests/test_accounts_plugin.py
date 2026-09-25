@@ -73,6 +73,77 @@ class TestAuthAPI:
         assert r.status_code == 401
 
 
+class TestProfileUpdate:
+    """当前用户自助更新个人资料（PATCH /auth/me）."""
+
+    def _register_and_login(self, client, username: str, email: str | None = None) -> str:
+        payload: dict = {"username": username, "password": "passw0rd"}
+        if email:
+            payload["email"] = email
+        client.post("/api/v1/accounts/auth/register", json=payload)
+        return client.post("/api/v1/accounts/auth/login", json={"login": username, "password": "passw0rd"}).json()[
+            "access_token"
+        ]
+
+    def test_update_nickname_and_email(self, client):
+        token = self._register_and_login(client, "prof1")
+        r = client.patch(
+            "/api/v1/accounts/auth/me",
+            json={"nickname": "新昵称", "email": "prof1@example.com"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["nickname"] == "新昵称"
+        assert r.json()["email"] == "prof1@example.com"
+        me = client.get("/api/v1/accounts/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert me.json()["nickname"] == "新昵称"
+
+    def test_partial_update_keeps_other_field(self, client):
+        token = self._register_and_login(client, "prof2", email="prof2@example.com")
+        r = client.patch(
+            "/api/v1/accounts/auth/me",
+            json={"nickname": "只改昵称"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 200
+        assert r.json()["nickname"] == "只改昵称"
+        assert r.json()["email"] == "prof2@example.com"
+
+    def test_duplicate_email_rejected(self, client):
+        self._register_and_login(client, "prof3a", email="taken@example.com")
+        token_b = self._register_and_login(client, "prof3b")
+        r = client.patch(
+            "/api/v1/accounts/auth/me",
+            json={"email": "taken@example.com"},
+            headers={"Authorization": f"Bearer {token_b}"},
+        )
+        assert r.status_code == 400
+        assert "邮箱" in r.json()["detail"]
+
+    def test_keep_own_email_idempotent(self, client):
+        token = self._register_and_login(client, "prof4", email="prof4@example.com")
+        r = client.patch(
+            "/api/v1/accounts/auth/me",
+            json={"email": "prof4@example.com"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 200
+
+    def test_clear_email_with_empty_string(self, client):
+        token = self._register_and_login(client, "prof5", email="prof5@example.com")
+        r = client.patch(
+            "/api/v1/accounts/auth/me",
+            json={"email": "  "},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 200
+        assert r.json()["email"] is None
+
+    def test_no_auth_rejected(self, client):
+        r = client.patch("/api/v1/accounts/auth/me", json={"nickname": "x"})
+        assert r.status_code == 401
+
+
 class TestRoleField:
     """UserRole 枚举与 role 字段行为."""
 
