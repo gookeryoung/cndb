@@ -321,8 +321,8 @@ export default function WorkspaceSettingsContent({
           />
           <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>
             {detail?.allow_edit ?? true
-              ? '已开启：编辑者（editor）及以上角色可修改数据'
-              : '已关闭：仅所有者和管理员可修改数据，编辑者降级为只读'}
+              ? '已开启：编辑者及以上角色可以修改数据'
+              : '已关闭：仅所有者和管理员可以修改数据，其他成员只能查看'}
           </span>
         </div>
       </Card>

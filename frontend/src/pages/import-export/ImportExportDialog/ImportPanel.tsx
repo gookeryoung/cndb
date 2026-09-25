@@ -15,6 +15,7 @@ import { InboxOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined, Rel
 import { importApi } from '@/api'
 import type { ImportTaskInfo, Field } from '@/api'
 import HelpTip from '@/components/HelpTip'
+import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 import { ACCEPTED_EXT, changedCountOf, collectDiffColumnKeys, diffChipStyle, fmtValue, type Phase } from './importPreview'
 
 const { Dragger } = Upload
@@ -415,9 +416,9 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         label: (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <span style={{ fontWeight: 500 }}>{p.name}</span>
-                                <Tag color="blue">{p.inferred_type}</Tag>
+                                <Tag color="blue">{getFieldTypeLabel(p.inferred_type)}</Tag>
                                 <Tag color={p.confidence >= 0.9 ? 'green' : p.confidence >= 0.7 ? 'orange' : 'red'} style={{ margin: 0 }}>
-                                    置信 {Math.round(p.confidence * 100)}%
+                                    自动识别 {Math.round(p.confidence * 100)}%
                                 </Tag>
                             </div>
                         ),
@@ -426,7 +427,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                 <div style={{ display: 'flex', gap: 24, marginBottom: 10 }}>
                                     <span>唯一值 <b>{p.unique_count}</b></span>
                                     <span>空值 <b>{p.null_count}</b></span>
-                                    {p.fallback_type && <span style={{ color: '#ef4444' }}>建议降级: {p.fallback_type}</span>}
+                                    {p.fallback_type && <span style={{ color: '#ef4444' }}>部分值无法识别，建议改用：{getFieldTypeLabel(p.fallback_type)}</span>}
                                 </div>
                                 {/* 空值率进度条 */}
                                 <div style={{ marginBottom: 10 }}>

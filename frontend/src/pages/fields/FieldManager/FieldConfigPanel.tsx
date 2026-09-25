@@ -176,7 +176,7 @@ function DefaultValueInput({ fieldType, form }: { fieldType: FieldType | undefin
 
   if (NO_DEFAULT_VALUE_TYPES.has(fieldType)) {
     return (
-      <Tooltip title={`${getFieldTypeLabel(fieldType)} 类型暂不支持默认值`}>
+      <Tooltip title={`「${getFieldTypeLabel(fieldType)}」暂不支持设置默认值`}>
         <Input disabled placeholder="不支持" />
       </Tooltip>
     )

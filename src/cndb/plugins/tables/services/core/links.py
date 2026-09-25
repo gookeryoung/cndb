@@ -212,7 +212,7 @@ def find_null_link_rows(engine: Any, table: DataTable, field: DataField, limit: 
 
 
 def find_duplicate_link_values(
-    engine: Any, table: DataTable, field: DataField, limit: int = 10
+    engine: Any, _table: DataTable, field: DataField, limit: int = 10
 ) -> list[tuple[str, list[int]]]:
     """返回 (关联签名, 行 id 列表) 列表：两行关联同一目标集合视为重复，空关联不参与判重.
 

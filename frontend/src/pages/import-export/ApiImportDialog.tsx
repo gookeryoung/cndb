@@ -115,7 +115,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
 
   const handleImport = useCallback(async () => {
     if (!analyzeResult) {
-      message.warning('请先点击"分析"获取 API 返回结构')
+      message.warning('请先点击"分析"，确认能读取到数据后再导入')
       return
     }
     try {
