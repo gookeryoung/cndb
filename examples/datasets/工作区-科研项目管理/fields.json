@@ -1,0 +1,41 @@
+{
+  "settings": {
+    "科研项目": {
+      "课题编号": {"required": true, "unique": true},
+      "项目名称": {"required": true}
+    },
+    "课题负责人": {
+      "负责人编号": {"required": true, "unique": true},
+      "电子邮箱": {"unique": true}
+    },
+    "项目进展": {
+      "进展编号": {"required": true, "unique": true}
+    },
+    "科研经费": {
+      "经费编号": {"required": true, "unique": true}
+    }
+  },
+  "link_lookups": [
+    {
+      "table": "课题负责人",
+      "source_table": "科研项目",
+      "link_name": "关联课题",
+      "multiple": false,
+      "fields": ["项目名称", "立项年份", "经费总额_万元"]
+    },
+    {
+      "table": "项目进展",
+      "source_table": "科研项目",
+      "link_name": "关联课题",
+      "multiple": false,
+      "fields": ["项目名称", "承担单位", "项目类别"]
+    },
+    {
+      "table": "科研经费",
+      "source_table": "科研项目",
+      "link_name": "关联课题",
+      "multiple": false,
+      "fields": ["项目名称", "承担单位", "立项年份"]
+    }
+  ]
+}

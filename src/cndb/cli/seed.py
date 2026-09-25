@@ -3,7 +3,9 @@
 数据源：
 1. examples/datasets/<工作区名>/*.csv — 按文件夹名自动建工作区，CSV 自动推断字段建表导入
 2. examples/datasets/<工作区名>/views.json — 每个工作区独立的视图种子配置，按 表名 -> 视图列表 组织
-3. 硬编码业务表 — 部门表 + 员工表 + 报告模板 + 工作流，绑定到 datasets 创建的
+3. examples/datasets/<工作区名>/fields.json — 每个工作区独立的字段设置种子：必填/唯一约束、
+   关联（link）+ 引用（lookup）示例字段，用于演示字段设置能力
+4. 硬编码业务表 — 部门表 + 员工表 + 报告模板 + 工作流，绑定到 datasets 创建的
    "某企业销售管理"工作区，与 CSV 数据共同构成完整销售场景
 """
 
@@ -216,6 +218,115 @@ def _apply_field_import_rules(db: Any, engine: Any, ws_name: str, tables_map: di
                 print(f"[seed-字段引入] {ws_name}: {src_name} → {dst_name} (成功 {len(created)}, 跳过 {len(skipped)})")
         except Exception as exc:
             print(f"[seed-字段引入] {ws_name}: {src_name} → {dst_name} 失败: {exc}")
+
+
+def _load_field_settings(datasets_dir: Path | None) -> dict[str, dict[str, Any]]:
+    """读取每个工作区文件夹下的 fields.json 字段设置种子配置.
+
+    配置结构（均可缺省，解析失败仅告警跳过）::
+
+        {
+          "settings": {"表名": {"字段名": {"required": true, "unique": true}}},
+          "link_lookups": [
+            {"table": "目标表", "source_table": "源表", "fields": ["源字段名"],
+             "link_name": "关联课题", "multiple": false}
+          ]
+        }
+
+    Returns:
+        工作区显示名 -> fields.json 解析结果的映射.
+    """
+    result: dict[str, dict[str, Any]] = {}
+    if datasets_dir is None or not datasets_dir.is_dir():
+        return result
+    for folder in sorted(datasets_dir.iterdir()):
+        if not folder.is_dir() or folder.name.startswith("."):
+            continue
+        fields_path = folder / "fields.json"
+        if not fields_path.is_file():
+            continue
+        ws_name = folder.name
+        ws_display = ws_name[len("工作区-") :] if ws_name.startswith("工作区-") else ws_name
+        try:
+            cfg = json.loads(fields_path.read_text(encoding="utf-8-sig"))
+            if not isinstance(cfg, dict):
+                raise ValueError("顶层必须是对象")
+            result[ws_display] = cfg
+        except (json.JSONDecodeError, ValueError, OSError) as exc:
+            print(f"[seed-字段设置] {folder.name}/fields.json 解析失败: {exc}")
+    return result
+
+
+def _apply_field_settings(
+    db: Any, engine: Any, tables_map: dict[str, dict[str, Any]], datasets_dir: Path | None
+) -> None:
+    """按 fields.json 为数据集表补充字段设置示例：必填/唯一约束 + 关联/引用字段.
+
+    - settings：直接改写 DataField.required / is_unique 标志（仅对已存在字段生效）；
+    - link_lookups：复用 field_ops.import_fields_as_lookup 建实时关联（link + lookup），
+      单行业务表通过 multiple=False 演示单选关联；
+    - 幂等：重复执行时 settings 重设标志，link 复用、同名 lookup 跳过；
+    - 单表/单条失败仅打印，不阻断其它工作区。
+    """
+    from cndb.plugins.tables.services.fields import field_ops as _fo
+
+    ws_configs = _load_field_settings(datasets_dir)
+    if not ws_configs:
+        return
+
+    for ws_display, cfg in ws_configs.items():
+        ws_tables = tables_map.get(ws_display, {})
+
+        # 1) 必填 / 唯一约束设置
+        for tbl_name, field_cfgs in (cfg.get("settings") or {}).items():
+            tbl = ws_tables.get(tbl_name)
+            if tbl is None:
+                print(f"[seed-字段设置] {ws_display}: 表 '{tbl_name}' 不存在，跳过设置")
+                continue
+            field_by_name = {f.name: f for f in tbl.fields if not f.trashed}
+            for fname, flags in field_cfgs.items():
+                field = field_by_name.get(fname)
+                if field is None:
+                    print(f"[seed-字段设置] {ws_display}/{tbl_name}: 字段 '{fname}' 不存在，跳过")
+                    continue
+                if "required" in flags:
+                    field.required = bool(flags["required"])
+                if "unique" in flags:
+                    field.is_unique = bool(flags["unique"])
+                db.commit()
+            print(f"[seed-字段设置] {ws_display}/{tbl_name}: 应用必填/唯一设置 {len(field_cfgs)} 项")
+
+        # 2) 关联 + 引用示例字段
+        for rule in cfg.get("link_lookups") or []:
+            dst = ws_tables.get(rule.get("table", ""))
+            src = ws_tables.get(rule.get("source_table", ""))
+            src_field_names = rule.get("fields") or []
+            if dst is None or src is None:
+                print(
+                    f"[seed-字段设置] {ws_display}: 关联规则表缺失"
+                    f"（{rule.get('source_table')} -> {rule.get('table')}），跳过"
+                )
+                continue
+            src_fields = [f for f in src.active_fields() if f.name in src_field_names]
+            if not src_fields:
+                print(f"[seed-字段设置] {ws_display}: 源字段 {src_field_names} 均不存在，跳过")
+                continue
+            try:
+                created, skipped = _fo.import_fields_as_lookup(
+                    engine,
+                    db,
+                    src,
+                    dst,
+                    src_fields,
+                    link_name=rule.get("link_name"),
+                    link_multiple=bool(rule.get("multiple", True)),
+                )
+                print(
+                    f"[seed-字段设置] {ws_display}: {src.name} → {dst.name} 关联引入"
+                    f"（新建 {len(created)}, 跳过 {len(skipped)}）"
+                )
+            except Exception as exc:
+                print(f"[seed-字段设置] {ws_display}: {src.name} → {dst.name} 关联引入失败: {exc}")
 
 
 def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = None) -> tuple[int, dict[str, Any]]:
@@ -984,8 +1095,11 @@ def seed(_args: argparse.Namespace) -> None:
         else:
             print("[seed] 未找到 '某企业销售管理' 工作区，跳过部门表/员工表注入")
 
-        # 3) 视图种子（依赖所有表已就绪，扫描每个工作区文件夹下的 views.json）
+        # 2b) 字段设置种子（依赖所有表已就绪，含硬编码业务表；扫描每个工作区文件夹下的 fields.json）
         datasets_dir = _get_datasets_dir()
+        _apply_field_settings(db, engine, tables_map, datasets_dir)
+
+        # 3) 视图种子（依赖所有表已就绪，扫描每个工作区文件夹下的 views.json）
         view_count = _seed_views(db, owner, tables_map, datasets_dir)
 
         # 4) 报告模板种子（幂等：按工作区+模板名查重，已存在跳过）

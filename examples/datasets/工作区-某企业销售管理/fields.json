@@ -1,0 +1,16 @@
+{
+  "settings": {
+    "部门表": {
+      "部门名称": {"required": true, "unique": true}
+    },
+    "员工表": {
+      "姓名": {"required": true}
+    },
+    "电商销售": {
+      "订单号": {"required": true, "unique": true}
+    },
+    "客户流失": {
+      "客户ID": {"required": true, "unique": true}
+    }
+  }
+}

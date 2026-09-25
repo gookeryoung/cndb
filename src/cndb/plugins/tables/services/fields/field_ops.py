@@ -351,6 +351,9 @@ def import_fields_as_lookup(
     src_table: DataTable,
     dst_table: DataTable,
     src_fields: list[DataField],
+    *,
+    link_name: str | None = None,
+    link_multiple: bool = True,
 ) -> tuple[list[DataField], list[str]]:
     """把源字段以"字段关联"方式引入目标表：自动建/复用 link 字段 + 每个源字段一个 lookup 字段.
 
@@ -359,6 +362,15 @@ def import_fields_as_lookup(
     - 目标表已有指向源表的 link 字段则复用，否则自动创建"关联 <源表名>"；
     - lookup 字段不落物理列，值在行读取时通过关联表实时解析；
     - 目标表已存在同名字段时跳过（与复制模式的 skip_conflicts 行为一致）。
+
+    Args:
+        engine: SQLAlchemy engine.
+        db: 数据库会话.
+        src_table: 源数据表（lookup 取值来源）.
+        dst_table: 目标数据表（link/lookup 字段挂载方）.
+        src_fields: 源字段列表（link/lookup 类型会被跳过）.
+        link_name: 自建 link 字段名；None 时用默认名 "关联 <源表名>"，已有可复用 link 时忽略.
+        link_multiple: 自建 link 字段是否多选（config.multiple）；单行业务表传 False 表示单选关联.
 
     Returns:
         (创建的 DataField 列表（link + lookup）, 跳过原因说明列表).
@@ -388,9 +400,9 @@ def import_fields_as_lookup(
     if link_field is None:
         link_field = DataField(
             table_id=dst_table.id,
-            name=_unique_dst_name(dst_table, f"关联 {src_table.name}"),
+            name=_unique_dst_name(dst_table, link_name or f"关联 {src_table.name}"),
             field_type="link",
-            config={"target_table_id": src_table.id},
+            config={"target_table_id": src_table.id, "multiple": link_multiple},
             order=max((f.order for f in dst_table.fields if not f.trashed), default=-1) + 1,
         )
         link_field.ensure_db_name()
