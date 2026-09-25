@@ -200,3 +200,55 @@ describe('RowDetailDrawer 新建行模式', () => {
         expect(onClose).not.toHaveBeenCalled()
     })
 })
+
+// ─────────────── lookup 只读引用字段 ───────────────
+
+describe('RowDetailDrawer lookup 只读字段', () => {
+    const LOOKUP_FIELD: Field = makeField({ id: 6, name: '负责人', field_type: 'lookup' })
+    const FIELDS_WITH_LOOKUP: Field[] = [...FIELDS, LOOKUP_FIELD]
+    const ROW_WITH_LOOKUP: RowResponse = { ...ROW, 负责人: '李四' }
+
+    it('lookup 字段以禁用输入框只读展示解析值', () => {
+        setup()
+        renderProviders(
+            <RowDetailDrawer
+                open
+                row={ROW_WITH_LOOKUP}
+                fields={FIELDS_WITH_LOOKUP}
+                wid="10"
+                tid="20"
+                onClose={() => { }}
+            />,
+        )
+
+        const input = screen.getByDisplayValue('李四')
+        expect(input).toBeDisabled()
+    })
+
+    it('保存时从提交体剔除 lookup 字段（无物理列，回传值会导致后端 500）', async () => {
+        setup()
+        let patchBody: Record<string, unknown> = {}
+        server.use(http.patch('/api/v1/workspaces/10/tables/20/records/5', async ({ request }) => {
+            patchBody = await request.clone().json() as Record<string, unknown>
+            return HttpResponse.json({ id: 5 })
+        }))
+        renderProviders(
+            <RowDetailDrawer
+                open
+                row={ROW_WITH_LOOKUP}
+                fields={FIELDS_WITH_LOOKUP}
+                wid="10"
+                tid="20"
+                onClose={() => { }}
+            />,
+        )
+
+        fireEvent.change(screen.getByDisplayValue('张三'), { target: { value: '张三改' } })
+        fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
+
+        await waitFor(() => expect(patchBody.values).toBeDefined())
+        const values = (patchBody as { values: Record<string, unknown> }).values
+        expect(values.姓名).toBe('张三改')
+        expect(values).not.toHaveProperty('负责人')
+    })
+})

@@ -66,10 +66,13 @@ class TestSeedBackupRoundtrip:
         tables = {t["name"]: t for t in backup["tables"]}
         assert set(tables) == {"部门表", "员工表"}
 
-        # 导出内容：员工表字段类型齐全（含 link），select config 带选项
+        # 导出内容：员工表字段类型齐全（含单选 link 与 lookup 负责人），select config 带选项
         emp_fields = {f["name"]: f for f in tables["员工表"]["fields"]}
-        assert set(emp_fields) == {"姓名", "部门", "入职日期", "薪资", "是否在职"}
+        assert set(emp_fields) == {"姓名", "部门", "负责人", "入职日期", "薪资", "是否在职"}
         assert emp_fields["部门"]["field_type"] == "link"
+        assert emp_fields["部门"]["config"]["multiple"] is False
+        assert emp_fields["负责人"]["field_type"] == "lookup"
+        assert set(emp_fields["负责人"]["config"]) == {"source_table_id", "source_field_id", "via_link_field_id"}
         assert emp_fields["是否在职"]["config"] == {"options": ["是", "否"]}
         assert len(tables["部门表"]["rows"]) == 4
         assert len(tables["员工表"]["rows"]) == 5
@@ -108,6 +111,42 @@ class TestSeedBackupRoundtrip:
         # 数据表对象也应存在（物理表 + 元数据）
         restored_tables = db.query(DataTable).filter(DataTable.workspace_id == restored["id"]).all()
         assert {t.name for t in restored_tables} == {"部门表", "员工表"}
+
+    def test_seed_employee_lookup_resolves_and_row_edit_with_echo_ok(self, client, auth_headers, db, db_engine):
+        """真实 seed：员工表「负责人」lookup 经单选「部门」关联解析；整行回传 lookup 编辑不报 500."""
+        owner = db.query(User).filter(User.username == "testuser").first()
+        ws = _make_sales_workspace(db, owner)
+        _, tables_map = _seed_sales_tables(db, db_engine, ws, owner_id=owner.id)
+        dept_tbl, emp_tbl = tables_map["部门表"], tables_map["员工表"]
+        headers = auth_headers
+
+        dept_rows = client.get(f"/api/v1/workspaces/{ws.id}/tables/{dept_tbl.id}/records", headers=headers).json()[
+            "rows"
+        ]
+        dept_id = {r["部门名称"]: r["id"] for r in dept_rows}
+
+        listing = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{emp_tbl.id}/records/list",
+            headers=headers,
+            json={"filters": [], "sorts": [], "limit": 10, "offset": 0},
+        )
+        assert listing.status_code == 200, listing.text
+        # 员工 → 所属部门负责人（钱七在技术部，负责人为张三）
+        expect_head = {"张三": "张三", "李四": "李四", "王五": "王五", "赵六": "赵六", "钱七": "张三"}
+        emp_rows = {r["姓名"]: r for r in listing.json()["rows"]}
+        assert set(emp_rows) == set(expect_head)
+        for name, head in expect_head.items():
+            assert emp_rows[name]["负责人"] == head
+
+        # 编辑赵六的部门为市场部：整行表单原样回传「负责人」旧值，历史上此处 500
+        target = emp_rows["赵六"]
+        r = client.patch(
+            f"/api/v1/workspaces/{ws.id}/tables/{emp_tbl.id}/records/{target['id']}",
+            headers=headers,
+            json={"values": {"部门": [dept_id["市场部"]], "负责人": "赵六"}},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["负责人"] == "李四"
 
     def test_seed_backup_import_into_existing_ws_skips_same_name(self, client, auth_headers, db, db_engine):
         """seed 备份导入到已有同结构工作区：同名表全部跳过且原数据不受影响."""

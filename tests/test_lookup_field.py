@@ -596,3 +596,121 @@ class TestLinkModePreview:
         assert planned_types == ["link", "lookup"]
         # 未实际创建
         assert _get_fields(client, auth_headers, wid, dst_tid) == []
+
+
+# ── 写入回归：整行表单回传 lookup 值不得 500 ─────────
+
+
+def _setup_dept_emp_single_link(client, auth_headers):
+    """构造「部门表 → 员工表」单选关联 + 负责人 lookup 环境.
+
+    复刻 seed 业务形态：部门表（部门名称/负责人），员工表
+    （姓名/部门=单选 link/负责人=lookup 经部门字段解析）。
+    返回 (wid, dept_tid, emp_tid, dept_rows)，dept_rows 为 {部门名称: 行id}。
+    """
+    r = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "WS_LOOKUP_WRITE"})
+    assert r.status_code == 201, r.text
+    wid = r.json()["id"]
+    dept_tid = _create_table(client, auth_headers, wid, "部门表")
+    emp_tid = _create_table(client, auth_headers, wid, "员工表")
+
+    _add_field(client, auth_headers, wid, dept_tid, "部门名称", "text")
+    _add_field(client, auth_headers, wid, dept_tid, "负责人", "text")
+    _add_field(client, auth_headers, wid, emp_tid, "姓名", "text")
+    link_field = _add_field(
+        client,
+        auth_headers,
+        wid,
+        emp_tid,
+        "部门",
+        "link",
+        {"target_table_id": dept_tid, "multiple": False},
+    )
+    _add_field(
+        client,
+        auth_headers,
+        wid,
+        emp_tid,
+        "负责人",
+        "lookup",
+        {
+            "source_table_id": dept_tid,
+            "source_field_id": next(
+                f for f in _get_fields(client, auth_headers, wid, dept_tid) if f["name"] == "负责人"
+            )["id"],
+            "via_link_field_id": link_field["id"],
+        },
+    )
+
+    dept_rows: dict[str, int] = {}
+    for dname, head in [("技术部", "张三"), ("市场部", "李四")]:
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dept_tid}/records",
+            headers=auth_headers,
+            json={"values": {"部门名称": dname, "负责人": head}},
+        )
+        assert r.status_code == 201, r.text
+        dept_rows[dname] = r.json()["id"]
+    return wid, dept_tid, emp_tid, dept_rows
+
+
+class TestLookupWritePayloadIgnored:
+    """整行表单（含 lookup 原值回传）写入场景 —— 历史上曾 500（CompileError）."""
+
+    def test_create_row_echo_lookup_value_ok(self, client, auth_headers):
+        """新建行 values 同时携带单选 link 与 lookup 回传值：201 且 lookup 实时解析."""
+        wid, _dept_tid, emp_tid, dept_rows = _setup_dept_emp_single_link(client, auth_headers)
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{emp_tid}/records",
+            headers=auth_headers,
+            json={"values": {"姓名": "李四", "部门": [dept_rows["市场部"]], "负责人": "李四"}},
+        )
+        assert r.status_code == 201, r.text
+        row = r.json()
+        assert row["负责人"] == "李四"
+
+    def test_update_row_echo_lookup_value_ok(self, client, auth_headers):
+        """编辑修改部门字段（整行表单回传 lookup 原值）：200 且 lookup 随新关联重算."""
+        wid, _dept_tid, emp_tid, dept_rows = _setup_dept_emp_single_link(client, auth_headers)
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{emp_tid}/records",
+            headers=auth_headers,
+            json={"values": {"姓名": "张三", "部门": [dept_rows["技术部"]]}},
+        )
+        assert r.status_code == 201, r.text
+        row_id = r.json()["id"]
+        assert r.json()["负责人"] == "张三"
+
+        # 改部门为市场部（同时把表单中的 lookup 原值回传，模拟整行编辑提交）
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{emp_tid}/records/{row_id}",
+            headers=auth_headers,
+            json={"values": {"姓名": "张三", "部门": [dept_rows["市场部"]], "负责人": "张三"}},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["负责人"] == "李四"
+
+    def test_bulk_create_echo_lookup_value_ok(self, client, auth_headers):
+        """批量创建行携带 lookup 值：201，逐行解析正确."""
+        wid, _dept_tid, emp_tid, dept_rows = _setup_dept_emp_single_link(client, auth_headers)
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{emp_tid}/records/bulk-create",
+            headers=auth_headers,
+            json={
+                "rows": [
+                    {"values": {"姓名": "张三", "部门": [dept_rows["技术部"]], "负责人": "张三"}},
+                    {"values": {"姓名": "李四", "部门": [dept_rows["市场部"]], "负责人": "李四"}},
+                ]
+            },
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["created"] == 2
+
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{emp_tid}/records/list",
+            headers=auth_headers,
+            json={"filters": [], "sorts": [], "limit": 10, "offset": 0},
+        )
+        assert listing.status_code == 200, listing.text
+        heads = {row["姓名"]: row["负责人"] for row in listing.json()["rows"]}
+        assert heads == {"张三": "张三", "李四": "李四"}

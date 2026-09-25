@@ -597,9 +597,9 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
 
 // ─────────────── 辅助函数 ───────────────
 
-/** 只读字段（系统自动维护的字段）不能 inline 编辑 */
+/** 只读字段（系统自动维护 / 无物理列实时解析）不能 inline 编辑 */
 function isReadonlyField(field: Field): boolean {
-  const readonly = new Set(['auto_id', 'created_time', 'updated_time', 'created_by', 'updated_by', 'formula'])
+  const readonly = new Set(['auto_id', 'created_time', 'updated_time', 'created_by', 'updated_by', 'formula', 'lookup'])
   return readonly.has(field.field_type) || Boolean(field.is_primary && field.field_type === 'auto_id')
 }
 

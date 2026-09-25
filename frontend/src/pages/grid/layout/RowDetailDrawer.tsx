@@ -15,6 +15,12 @@ import { useTableSettingsStore } from '@/store'
 const { Title, Text } = Typography
 
 /**
+ * 无物理列的只读虚拟字段类型：值由后端实时解析，不参与写入。
+ * 整行表单提交时必须剔除，否则后端写入会因缺少物理列报错。
+ */
+const READONLY_VIRTUAL_FIELD_TYPES = new Set(['lookup'])
+
+/**
  * 提取 link 字段值中的目标行 id 列表.
  * 兼容后端读取返回的 [{id, value}] 摘要、纯 id 数组、单个 id 标量与字符串数字.
  */
@@ -110,6 +116,10 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
     for (const f of fields) {
       if (f.field_type === 'link' && f.name in values) {
         values[f.name] = extractLinkTargetIds(values[f.name]) as RowValues[string]
+      }
+      if (READONLY_VIRTUAL_FIELD_TYPES.has(f.field_type) && f.name in values) {
+        // lookup 等只读字段无物理列，提交值一律剔除（值由后端按关联实时解析）
+        delete values[f.name]
       }
     }
     if (isCreate) {
@@ -258,6 +268,22 @@ function FieldEditor({
         value={multiple ? (ids.length ? ids : undefined) : (ids[0] ?? undefined)}
         onChange={v => onChange(v)}
         disabled={disabled}
+      />
+    )
+  }
+
+  if (ft === 'lookup') {
+    // lookup 为只读引用字段：值由后端按 link 关联实时解析，不允许编辑也不参与提交
+    const text = Array.isArray(value)
+      ? value.map(v => (v === null || v === undefined ? '' : String(v))).join(', ')
+      : (value === null || value === undefined ? '' : String(value))
+    return (
+      <Input
+        style={{ width: '100%' }}
+        value={text}
+        placeholder="无关联值"
+        readOnly
+        disabled
       />
     )
   }
