@@ -81,6 +81,12 @@ def _normalize_values(
             ids = ft.validate_value(raw, f.config) if raw is not None else []
             link_values.append((f, ids))
             continue
+        if not ft.has_physical_column:
+            # lookup 等只读虚拟字段无物理列：整行表单可能原样回传其值，
+            # 写入时必须忽略（值由读取阶段实时解析），否则 INSERT/UPDATE
+            # 编译会因反射表缺少该列报 CompileError（路由层表现为 500）
+            logger.debug("只读虚拟字段 %s（%s）无物理列，忽略写入值", field_name, f.field_type)
+            continue
         if raw is None:
             if not for_update:
                 # 创建路径：None 表示未提供该字段值，依赖 default_value 填充；
@@ -134,7 +140,8 @@ def _normalize_values(
             if dv is None or dv == "":
                 continue
             ft = default_registry.get(f.field_type)
-            if ft is None:
+            if ft is None or not ft.has_physical_column:
+                # lookup 等无物理列字段的默认值无法落库，跳过
                 continue
             try:
                 result[f.db_column_name] = ft.validate_value(dv, f.config or {})
@@ -146,6 +153,10 @@ def _normalize_values(
     if not for_update:
         for f in table.fields:
             if f.trashed or not f.required or is_link_field(f):
+                continue
+            ftype = default_registry.get(f.field_type)
+            if ftype is None or not ftype.has_physical_column:
+                # lookup 等无物理列的只读字段不参与必填校验
                 continue
             if f.db_column_name not in result:
                 raise ValueError(f"必填字段 {f.name} 不能为空")
@@ -186,7 +197,7 @@ def _apply_auto_increment_defaults(
         if f.trashed or is_link_field(f) or f.name in values:
             continue
         ft = default_registry.get(f.field_type)
-        if ft is None:
+        if ft is None or not ft.has_physical_column:
             continue
         next_val = ft.next_increment_value(engine, table, f, extra_seen=assigned.get(f.id, []) if assigned else ())
         if next_val is None:

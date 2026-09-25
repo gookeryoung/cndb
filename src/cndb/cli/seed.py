@@ -272,11 +272,13 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
 
     field_specs: list[tuple[str, str, dict[str, Any], bool]] = [
         ("姓名", "text", {}, True),
-        ("部门", "link", {"target_table_id": dept_tbl.id}, False),
+        # 部门为单选关联（multiple=False）：一名员工仅归属一个部门
+        ("部门", "link", {"target_table_id": dept_tbl.id, "multiple": False}, False),
         ("入职日期", "date", {}, False),
         ("薪资", "number", {}, False),
         ("是否在职", "select", {"options": ["是", "否"]}, False),
     ]
+    emp_fields: dict[str, DataField] = {}
     for idx, (fname, ftype, cfg, req) in enumerate(field_specs):
         f = DataField(
             table_id=emp_tbl.id,
@@ -288,6 +290,24 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
         )
         f.ensure_db_name()
         db.add(f)
+        emp_fields[fname] = f
+    # flush 先拿到字段 id，再追加引用部门表「负责人」的 lookup 字段（经「部门」关联实时解析）
+    db.flush()
+    dept_head_field = next(f for f in dept_tbl.fields if f.name == "负责人")
+    lookup_head = DataField(
+        table_id=emp_tbl.id,
+        name="负责人",
+        field_type="lookup",
+        config={
+            "source_table_id": dept_tbl.id,
+            "source_field_id": dept_head_field.id,
+            "via_link_field_id": emp_fields["部门"].id,
+        },
+        order=len(field_specs),
+        required=False,
+    )
+    lookup_head.ensure_db_name()
+    db.add(lookup_head)
     db.commit()
     create_table(engine, emp_tbl)
 
