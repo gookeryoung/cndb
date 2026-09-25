@@ -266,14 +266,14 @@ def cmd_create(args: argparse.Namespace) -> CreateResult:
             if dup_email is not None:
                 raise SystemExit(f"[error] 邮箱 '{args.email}' 已被使用 (id={dup_email.id})")
 
-        # 密码处理
+        # 密码处理（明文仅用于创建时一次性展示，不落库）
         if not args.password:
-            password = _generate_password()
+            plain_password = _generate_password()
             password_note = "（自动生成）"  # nosec B105 - 展示备注，非密码值
         else:
-            password = args.password
+            plain_password = args.password
             password_note = ""  # nosec B105 - 展示备注，非密码值
-            if len(password) < 6:
+            if len(plain_password) < 6:
                 raise SystemExit("[error] 密码至少 6 位")
 
         nickname = args.nickname or user_role.display_name
@@ -284,7 +284,7 @@ def cmd_create(args: argparse.Namespace) -> CreateResult:
             nickname=nickname,
             role=role_value,
         )
-        user.set_password(password)
+        user.set_password(plain_password)
         if getattr(args, "is_superuser", False):
             user.is_superuser = True
         db.add(user)
@@ -302,7 +302,7 @@ def cmd_create(args: argparse.Namespace) -> CreateResult:
             user_id=user.id,
             username=user.username,
             role=user.role,
-            password=password,
+            password=plain_password,
             note=note,
         )
     finally:
