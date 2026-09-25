@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from typing import Any, Literal
 
 from cndb.plugins.tables.models import DataField
@@ -274,6 +275,7 @@ def _normalize_name(name: str) -> str:
     return n
 
 
+@lru_cache(maxsize=4096)
 def _expand_abbrev(name: str) -> list[str]:
     """返回字段名的候选扩展形式（含原词 + 每个 token 展开后的版本）."""
     tokens = name.split("_")
@@ -285,6 +287,12 @@ def _expand_abbrev(name: str) -> list[str]:
             tokens_copy[i] = expanded
             candidates.append("_".join(tokens_copy))
     return candidates
+
+
+@lru_cache(maxsize=4096)
+def _get_tokens(norm_name: str) -> frozenset[str]:
+    """缓存字段名的 token 集合（按 _ 拆分）."""
+    return frozenset(norm_name.split("_"))
 
 
 # 字段类型兼容矩阵（同组内 +0.12 分，跨组但可安全互转 +0.05）
@@ -323,27 +331,48 @@ def _type_compat(src_type: str | None, dst_type: str | None) -> float:
 
 
 def _name_similarity(src_norm: str, dst_norm: str) -> tuple[float, str]:
-    """基于归一化名称计算相似度 + 返回匹配理由."""
+    """基于归一化名称计算相似度 + 返回匹配理由.
+
+    分层短路避免全量 SequenceMatcher（O(N*M) → 只对候选集精算）:
+    1. 完全匹配 → 1.0
+    2. 包含关系 → 0.85（长度差异大也可能是包含关系，须在长度检查之前）
+    3. 缩写双向匹配 → 0.92（短路）
+    4. 长度差异过大 → 快速拒绝
+    5. Token 粗筛（多 token 无共同 token → 拒绝）
+    6. SequenceMatcher.ratio() 精算
+    """
     import difflib
 
     # 完全匹配
     if src_norm == dst_norm:
         return 1.0, "同名"
 
-    # 缩写双向匹配
+    # 包含关系（在长度检查之前：age ⊂ person_age 这种长度差大但包含的场景）
+    if src_norm in dst_norm or dst_norm in src_norm:
+        return 0.85, "包含匹配"
+
+    # 缩写双向匹配（短路 SequenceMatcher）
     for s_cand in _expand_abbrev(src_norm):
         for d_cand in _expand_abbrev(dst_norm):
             if s_cand == d_cand and (s_cand != src_norm or d_cand != dst_norm):
                 return 0.92, f"缩写扩展: {src_norm} ≡ {dst_norm}"
 
-    # SequenceMatcher
+    # 长度差异过大 → 快速拒绝（包含匹配已在上层处理过）
+    len_s, len_d = len(src_norm), len(dst_norm)
+    if abs(len_s - len_d) > max(4, min(len_s, len_d)):
+        return 0.0, "长度差异过大"
+
+    # Token 粗筛：多 token 字段无任何共同 token → 大概率不匹配，省 SequenceMatcher
+    # 例: employee_name vs staff_name 有共同 token "name" → 放行
+    # 例: employee_name vs headcount 无共同 token → 拒绝
+    # 例: salary vs wage 单 token → 直接放行
+    ts = _get_tokens(src_norm)
+    td = _get_tokens(dst_norm)
+    if len(ts) >= 2 and len(td) >= 2 and not (ts & td):
+        return 0.0, "无共同 token"
+
+    # SequenceMatcher 精算（只在有希望的候选上跑）
     ratio = difflib.SequenceMatcher(None, src_norm, dst_norm).ratio()
-
-    # 包含关系
-    if src_norm in dst_norm or dst_norm in src_norm:
-        ratio = max(ratio, 0.85)
-        return ratio, f"包含匹配 (相似度 {ratio:.2f})"
-
     if ratio >= 0.75:
         return ratio, f"名称相似 (相似度 {ratio:.2f})"
 
