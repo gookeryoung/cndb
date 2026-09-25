@@ -18,7 +18,9 @@ from cndb.plugins.tables.services.core.ddl import (
     _column_needs_rebuild,
     add_column,
     add_unique_constraint,
+    create_link_table,
     drop_column,
+    drop_link_table,
     drop_unique_constraint,
     find_duplicate_values,
     find_null_rows,
@@ -235,6 +237,9 @@ def update_field(
 
     # ── 物理变更检测与执行 ──
 
+    old_is_link = is_link_field(old_field)
+    new_is_link = is_link_field(df)
+
     # 1. field_type / required 变更 → 列重建
     if _column_needs_rebuild(old_field, df):
         try:
@@ -242,6 +247,21 @@ def update_field(
         except Exception as exc:
             _revert_metadata()
             raise HTTPException(status_code=500, detail=f"物理列重建失败: {exc}") from exc
+
+    # 1b. 物理列 ↔ link 互转：无物理列重建路径，需显式切换物理结构 ——
+    #     改为 link 时删旧物理列并创建关联表；改回物理列时删关联表并补物理列。
+    #     缺失任一步都会让后续行写入因反射不到关联表/物理列而 500。
+    elif old_is_link != new_is_link:
+        try:
+            if new_is_link:
+                drop_column(engine, dt, old_field)
+                create_link_table(engine, df)
+            else:
+                drop_link_table(engine, old_field)
+                add_column(engine, dt, df)
+        except Exception as exc:
+            _revert_metadata()
+            raise HTTPException(status_code=500, detail=f"字段类型切换物理结构变更失败: {exc}") from exc
 
     # 源字段类型变更 → 引用它的 lookup 字段标记失效
     if old_field_type != df.field_type:
