@@ -1251,7 +1251,12 @@ class TestFlattenForReport:
         table = DataTable(name="项目", db_table_name="t_link_proj")
         table.fields = [
             DataField(name="项目名", field_type="text", db_column_name="f_name"),
-            DataField(name="成员", field_type="link", db_column_name="f_members", config={"target_table_id": 1, "multiple": True}),
+            DataField(
+                name="成员",
+                field_type="link",
+                db_column_name="f_members",
+                config={"target_table_id": 1, "multiple": True},
+            ),
         ]
         records = [
             {"项目名": "A项目", "成员": [{"id": 1, "value": "张三"}, {"id": 2, "value": "李四"}]},
