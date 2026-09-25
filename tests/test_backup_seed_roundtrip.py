@@ -62,7 +62,7 @@ class TestSeedBackupRoundtrip:
         r_export = client.get(f"/api/v1/workspaces/{ws.id}/export", headers=headers)
         assert r_export.status_code == 200
         backup = r_export.json()
-        assert backup["version"] == "3"
+        assert backup["version"] == "4"
         tables = {t["name"]: t for t in backup["tables"]}
         assert set(tables) == {"部门表", "员工表"}
 
@@ -104,13 +104,39 @@ class TestSeedBackupRoundtrip:
             assert emp_rows[name]["薪资"] == salary
             assert emp_rows[name]["是否在职"] == active
 
-        # 字段定义逐项还原（含 select 选项与 link 类型）
+        # 字段定义逐项还原（config 内跨表 id 已重映射为新工作区 id，需按语义比对）
         dst_emp_fields = {f["name"]: f for f in dst["员工表"]["fields"]}
-        assert dst_emp_fields == emp_fields
+        ref_keys = {"id", "source_table_id", "source_field_id", "via_link_field_id", "target_table_id"}
+        strip_refs = lambda f: {k: v for k, v in f.items() if k not in ref_keys and k != "config"} | {
+            k: v for k, v in (f.get("config") or {}).items() if k not in ref_keys
+        }
+        assert {n: strip_refs(f) for n, f in dst_emp_fields.items()} == {
+            n: strip_refs(f) for n, f in emp_fields.items()
+        }
+        # 跨表引用重映射语义：部门 link 指向新工作区的部门表，负责人 lookup 指向新表新字段
+        dst_tables = {t["name"]: t for t in r_verify.json()["tables"]}
+        new_dept_tbl_id = next(t["id"] for t in r_verify.json()["tables"] if t["name"] == "部门表")
+        new_dept_fields = {f["name"]: f["id"] for f in dst_tables["部门表"]["fields"]}
+        assert dst_emp_fields["部门"]["config"]["target_table_id"] == new_dept_tbl_id
+        assert dst_emp_fields["负责人"]["config"]["source_table_id"] == new_dept_tbl_id
+        assert dst_emp_fields["负责人"]["config"]["source_field_id"] == new_dept_fields["负责人"]
+        assert dst_emp_fields["负责人"]["config"]["via_link_field_id"] == dst_emp_fields["部门"]["id"]
 
-        # 数据表对象也应存在（物理表 + 元数据）
+        # v4：跨表引用保真 —— 恢复后 link 关联保留、lookup 实时解析正确
         restored_tables = db.query(DataTable).filter(DataTable.workspace_id == restored["id"]).all()
         assert {t.name for t in restored_tables} == {"部门表", "员工表"}
+        emp_tbl = next(t for t in restored_tables if t.name == "员工表")
+        listing = client.post(
+            f"/api/v1/workspaces/{restored['id']}/tables/{emp_tbl.id}/records/list",
+            headers=headers,
+            json={"filters": [], "sorts": [], "limit": 10, "offset": 0},
+        )
+        assert listing.status_code == 200, listing.text
+        restored_rows = {r["姓名"]: r for r in listing.json()["rows"]}
+        expect_dept = {"张三": "技术部", "李四": "市场部", "王五": "人事部", "赵六": "财务部", "钱七": "技术部"}
+        for name, dept in expect_dept.items():
+            assert restored_rows[name]["部门"] == [{"value": dept}]
+            assert restored_rows[name]["负责人"] == DEPT_ROWS[dept]
 
     def test_seed_employee_lookup_resolves_and_row_edit_with_echo_ok(self, client, auth_headers, db, db_engine):
         """真实 seed：员工表「负责人」lookup 经单选「部门」关联解析；整行回传 lookup 编辑不报 500."""
