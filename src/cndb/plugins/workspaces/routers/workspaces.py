@@ -541,15 +541,26 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2", "3"):
+    if version not in ("1", "2", "3", "4"):
         raise HTTPException(
-            status_code=400, detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3）。请升级程序后再导入。"
+            status_code=400, detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4）。请升级程序后再导入。"
         )
 
     imported_tables = 0
     imported_rows = 0
     imported_views = 0
     errors: list[str] = []
+
+    # v4 跨表引用重映射的收集器（v1-v3 备份无 id 信息，保持原样跳过重映射）：
+    # - table_id_map / field_id_map：备份内旧表/字段 id → 新工作区的表/字段 id
+    # - pending_field_refs：含跨表 id 的字段（link/lookup），待全部表创建后统一重写 config
+    # - row_id_maps：表 id → {行索引 → 新物理行 id}，用于回填 link 关联行
+    # - pending_link_rows：待回填的 link 关联行 (字段, 所属表, 行索引对)
+    table_id_map: dict[int, int] = {}
+    field_id_map: dict[int, int] = {}
+    pending_field_refs: list[tuple[DataField, dict[str, Any]]] = []
+    row_id_maps: dict[int, dict[int, int]] = {}
+    pending_link_rows: list[tuple[DataField, DataTable, list[list[int]]]] = []
 
     # 循环前先提交任何待处理事务，确保连接以干净状态进入逐表循环。
     # 原因：SQLite 的隐式事务（由 flush() 开启）会持有 RESERVED 锁，
@@ -585,6 +596,10 @@ def _import_backup_into_workspace(
             table.ensure_db_name()
             db.add(table)
             db.flush()
+            # v4：备份内旧表 id → 新表 id（同名跳过的表不进映射，引用它的字段保持原 config）
+            old_table_id = tbl_data.get("id")
+            if isinstance(old_table_id, int):
+                table_id_map[old_table_id] = table.id
 
             # 创建 DataField
             fields_data = tbl_data.get("fields", [])
@@ -604,6 +619,12 @@ def _import_backup_into_workspace(
                 field.ensure_db_name()
                 db.add(field)
                 fields_order.append(field)
+                # v4：记录 id 映射；跨表字段（link/lookup）延后统一重写 config
+                old_field_id = fd.get("id")
+                if isinstance(old_field_id, int):
+                    field_id_map[old_field_id] = field.id
+                if fd.get("field_type") in ("link", "lookup"):
+                    pending_field_refs.append((field, fd))
 
             db.flush()
 
@@ -636,29 +657,36 @@ def _import_backup_into_workspace(
                 logging.getLogger(__name__).warning("%s", msg)
             elif rows_data and fields_order:
                 try:
-                    from sqlalchemy import MetaData, insert
+                    from sqlalchemy import MetaData, insert, select
                     from sqlalchemy import Table as SATable
 
                     metadata = MetaData()
                     sa_table = SATable(table.db_table_name, metadata, autoload_with=db.bind)
                     row_values = []
-                    for raw in rows_data:
+                    row_orig_idx: list[int] = []
+                    for idx, raw in enumerate(rows_data):
                         values = {}
                         for f in fields_order:
                             # link 等字段无主表物理列（值存关联表），跳过避免整表 INSERT 失败
                             if f.db_column_name not in sa_table.columns:
                                 continue
-                            # v3 行键为业务字段名；回退物理列名以兼容旧版 v1/v2 备份
+                            # v3+ 行键为业务字段名；回退物理列名以兼容旧版 v1/v2 备份
                             if f.name in raw:
                                 values[f.db_column_name] = raw[f.name]
                             elif f.db_column_name in raw:
                                 values[f.db_column_name] = raw[f.db_column_name]
                         if values:
                             row_values.append(values)
+                            row_orig_idx.append(idx)
                     if row_values:
                         _coerce_row_value_types(sa_table, row_values)
                         db.execute(insert(sa_table), row_values)
                         imported_rows += len(row_values)
+                        # v4：记录 行索引 → 新物理行 id（自增 id 单调递增，按 id 排序即插入序），
+                        # 供 link 关联行回填定位
+                        if isinstance(old_table_id, int):
+                            new_ids = [r[0] for r in db.execute(select(sa_table.c.id).order_by(sa_table.c.id)).all()]
+                            row_id_maps[table.id] = dict(zip(row_orig_idx, new_ids, strict=False))
                     if len(row_values) < len(rows_data):
                         # 行键无法匹配（如旧版备份的随机物理列名）时不许静默丢数据
                         dropped = len(rows_data) - len(row_values)
@@ -690,9 +718,64 @@ def _import_backup_into_workspace(
                 db.add(view)
                 imported_views += 1
 
+            # v4：收集 link 关联行（行索引对），待全部表建完后统一回填
+            for ld in tbl_data.get("links", []):
+                pairs = ld.get("pairs", [])
+                link_field = next((f for f in fields_order if f.name == ld.get("field")), None)
+                if link_field and link_field.field_type == "link" and pairs:
+                    pending_link_rows.append((link_field, table, pairs))
+
             # 每个表的视图/行数据独立提交，避免再次持锁影响后续 DDL
             db.commit()
             imported_tables += 1
+
+        # ── v4 第二阶段：跨表引用重映射 + link 关联行回填 ──
+        for field, fd in pending_field_refs:
+            cfg = dict(field.config or {})
+            changed = False
+            if fd.get("field_type") == "link":
+                old = cfg.get("target_table_id")
+                if isinstance(old, int) and old in table_id_map:
+                    cfg["target_table_id"] = table_id_map[old]
+                    changed = True
+            else:  # lookup: source_table_id / source_field_id / via_link_field_id
+                for key in ("source_table_id", "source_field_id", "via_link_field_id"):
+                    old = cfg.get(key)
+                    mapping = table_id_map if key == "source_table_id" else field_id_map
+                    if isinstance(old, int) and old in mapping:
+                        cfg[key] = mapping[old]
+                        changed = True
+            if changed:
+                field.config = cfg
+                db.add(field)
+                logging.getLogger(__name__).warning("[DEBUG remap] %s.%s -> %s", fd.get("name"), fd.get("field_type"), cfg)
+        if pending_field_refs:
+            db.commit()
+
+        for link_field, table, pairs in pending_link_rows:
+            try:
+                link_cfg = link_field.config or {}
+                target_table_id = table_id_map.get(link_cfg.get("target_table_id"))
+                row_map = row_id_maps.get(table.id, {})
+                target_map = row_id_maps.get(target_table_id, {})
+                link_values = [
+                    {"row_id": row_map[ri], "target_row_id": target_map[ti]}
+                    for ri, ti in pairs
+                    if ri in row_map and ti in target_map
+                ]
+                if not link_values:
+                    continue
+                from sqlalchemy import MetaData, insert as sa_insert
+                from sqlalchemy import Table as SATable
+
+                lt = SATable(link_field.link_table_name, MetaData(), autoload_with=db.bind)
+                db.execute(sa_insert(lt), link_values)
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                msg = f"表 {table.name} 字段 {link_field.name} 的关联数据回填失败: {exc}"
+                errors.append(msg)
+                logging.getLogger(__name__).warning("%s", msg)
     except HTTPException:
         db.rollback()
         raise
@@ -745,8 +828,10 @@ def export_workspace(
     )
 
     metadata = MetaData()
+    # v4：每表的 行 id → 行索引 映射与字段 id，供关联数据跨表重映射
+    row_index_maps: dict[int, dict[int, int]] = {}
     for tbl in tables:
-        # 字段定义
+        # 字段定义（含字段 id：导入端据此重映射 link/lookup config 内的跨表引用）
         fields = (
             db.query(DataField)
             .filter(
@@ -758,6 +843,7 @@ def export_workspace(
         )
         fields_data = [
             {
+                "id": f.id,
                 "name": f.name,
                 "field_type": f.field_type,
                 "config": f.config,
@@ -771,16 +857,21 @@ def export_workspace(
         ]
 
         # 数据行：行键用业务字段名（字段物理列名跨库恢复时会重新随机生成，
-        # 直接导出物理列名会导致导入端键匹配不上、数据行全部丢失）
+        # 直接导出物理列名会导致导入端键匹配不上、数据行全部丢失）；
+        # 按 id 排序保证导出顺序稳定（导入端按导出顺序重建行并映射关联）
         rows_data: list[dict[str, Any]] = []
         colname_to_field = {f.db_column_name: f.name for f in fields}
         try:
             sa_table = __import__("sqlalchemy").Table(tbl.db_table_name, metadata, autoload_with=db.bind)
+            query = select(sa_table)
             if "trashed_at" in sa_table.columns:
-                result = db.execute(select(sa_table).where(sa_table.c.trashed_at.is_(None))).mappings().all()
-            else:
-                result = db.execute(select(sa_table)).mappings().all()
+                query = query.where(sa_table.c.trashed_at.is_(None))
+            if "id" in sa_table.columns:
+                query = query.order_by(sa_table.c.id)
+            result = db.execute(query).mappings().all()
             rows_data = [{colname_to_field[k]: v for k, v in dict(r).items() if k in colname_to_field} for r in result]
+            if "id" in sa_table.columns:
+                row_index_maps[tbl.id] = {int(r["id"]): i for i, r in enumerate(result)}
         except Exception:  # pragma: no cover - 表结构异常
             logging.getLogger(__name__).debug("导出读取表数据失败，跳过", exc_info=True)
 
@@ -803,16 +894,47 @@ def export_workspace(
 
         tables_data.append(
             {
+                "id": tbl.id,
                 "name": tbl.name,
                 "description": tbl.description,
                 "fields": fields_data,
                 "views": views_data,
                 "rows": rows_data,
+                "links": [],
             }
         )
 
+    # v4：link 字段关联行导出（行以导出顺序的索引定位，跨表重映射在导入端完成）。
+    # 放在主循环后：target 表的行索引映射可能此时尚未构建。
+    from sqlalchemy import Table as SATable
+
+    for tbl, tbl_data in zip(tables, tables_data, strict=False):
+        links_data: list[dict[str, Any]] = []
+        for f in tbl_data["fields"]:
+            if f["field_type"] != "link":
+                continue
+            field_row = db.query(DataField).filter(DataField.id == f["id"]).first()
+            if field_row is None:
+                continue
+            try:
+                lt = SATable(field_row.link_table_name, metadata, autoload_with=db.bind)
+                pairs = db.execute(select(lt.c.row_id, lt.c.target_row_id)).all()
+            except Exception:
+                continue  # pragma: no cover - 关联表异常时跳过该字段
+            idx_map = row_index_maps.get(tbl.id, {})
+            target_cfg = field_row.config or {}
+            target_idx_map = row_index_maps.get(target_cfg.get("target_table_id"), {})
+            idx_pairs = [
+                [idx_map[int(r)], target_idx_map[int(t)]]
+                for r, t in pairs
+                if int(r) in idx_map and int(t) in target_idx_map
+            ]
+            if idx_pairs:
+                links_data.append({"field": f["name"], "pairs": idx_pairs})
+        tbl_data["links"] = links_data
+
     return {
-        "version": "3",
+        "version": "4",
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
         "workspace": workspace_meta,
         "tables": tables_data,

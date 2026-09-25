@@ -459,7 +459,7 @@ class TestWorkspacesRouterEdge:
         r_export = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=auth_owner)
         assert r_export.status_code == 200
         backup = r_export.json()
-        assert backup["version"] == "3"
+        assert backup["version"] == "4"
 
         # 建一个全新工作区接收导入，避免同名表被跳过
         r_new_ws = client.post("/api/v1/workspaces", json={"name": "恢复WS"}, headers=auth_owner)

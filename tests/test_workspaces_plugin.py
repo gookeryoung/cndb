@@ -520,7 +520,7 @@ class TestWorkspaceExportImport:
         r = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=_headers(token))
         assert r.status_code == 200
         data = r.json()
-        assert data["version"] == "3"
+        assert data["version"] == "4"
         assert "exported_at" in data
         assert "workspace" in data
         assert "tables" in data
@@ -705,7 +705,7 @@ class TestWorkspaceExportImport:
         r_export = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=headers)
         assert r_export.status_code == 200
         backup = r_export.json()
-        assert backup["version"] == "3"
+        assert backup["version"] == "4"
 
         # ── 从备份创建全新工作区（不传 name，应取备份中的 workspace.name） ──
         r_restore = client.post("/api/v1/workspaces/import", json={"json_data": backup}, headers=headers)
@@ -732,10 +732,11 @@ class TestWorkspaceExportImport:
         assert dst_table["name"] == "员工表"
         assert dst_table["description"] == "人员信息"
 
-        # 字段定义一致（含 config/required/is_unique/default_value/hidden/order）
+        # 字段定义一致（含 config/required/is_unique/default_value/hidden/order；id 为新工作区重新生成，不比对）
         src_fields = {f["name"]: f for f in src_table["fields"]}
         dst_fields = {f["name"]: f for f in dst_table["fields"]}
-        assert dst_fields == src_fields
+        strip_id = lambda f: {k: v for k, v in f.items() if k != "id"}
+        assert {n: strip_id(f) for n, f in dst_fields.items()} == {n: strip_id(f) for n, f in src_fields.items()}
         assert src_fields["职级"]["config"] == {"options": ["P4", "P5"]}
         assert src_fields["职级"]["is_unique"] is True
         assert src_fields["职级"]["default_value"] == "P4"
