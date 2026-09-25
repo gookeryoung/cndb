@@ -3,6 +3,7 @@
 import api from './client'
 import type {
     AdminRegisterRequest, LoginRequest, RegisterRequest,
+    ProfileUpdateRequest,
     UserResponse,
     PreferencesResponse,
 } from './types'
@@ -14,6 +15,9 @@ export const authApi = {
         api.post<{ access_token: string; token_type: string }>('/v1/accounts/auth/login', data).then(r => r.data),
     me: () =>
         api.get<UserResponse>('/v1/accounts/auth/me').then(r => r.data),
+    /** 当前用户自助更新个人资料（昵称/邮箱） */
+    updateProfile: (data: ProfileUpdateRequest) =>
+        api.patch<UserResponse>('/v1/accounts/auth/me', data).then(r => r.data),
     /** 管理员创建用户（需超级管理员 token） */
     adminRegister: (data: AdminRegisterRequest) =>
         api.post<UserResponse>('/v1/accounts/auth/admin-register', data).then(r => r.data),

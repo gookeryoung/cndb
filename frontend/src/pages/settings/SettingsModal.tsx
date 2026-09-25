@@ -1,9 +1,11 @@
-/** 用户设置面板 — 主题切换 + 操作风格. */
+/** 用户设置面板 — 个人资料 + 主题切换 + 操作风格. */
 
-import { Modal, Button, Radio, Typography, Tabs, Select, Switch } from 'antd'
+import { useEffect } from 'react'
+import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App } from 'antd'
 import { useTheme } from '@/theme/ThemeProvider'
 import { THEME_META, THEME_MODES, type ThemeMode } from '@/theme/theme'
-import { useTableSettingsStore } from '@/store'
+import { useTableSettingsStore, useAuthStore } from '@/store'
+import { authApi } from '@/api'
 import type { NewRowPosition } from '@/theme/tableSettings'
 
 interface Props {
@@ -13,16 +15,16 @@ interface Props {
 
 /** 每个主题对应的色板（展示用，不影响实际渲染） */
 const themeSwatches: Record<ThemeMode, { primary: string; bg: string; text: string; border: string }> = {
-  modern:      { primary: '#3b82f6', bg: '#ffffff', text: '#1f2937', border: '#d1d5db' },
+  modern: { primary: '#3b82f6', bg: '#ffffff', text: '#1f2937', border: '#d1d5db' },
   'github-dark': { primary: '#58a6ff', bg: '#0d1117', text: '#e6edf3', border: '#30363d' },
   'github-light': { primary: '#0969da', bg: '#ffffff', text: '#1f2328', border: '#d0d7de' },
-  minimal:     { primary: '#525252', bg: '#fafafa', text: '#262626', border: '#d4d4d4' },
-  ocean:       { primary: '#0891b2', bg: '#ffffff', text: '#0f3a45', border: '#cfe2e8' },
-  forest:      { primary: '#16a34a', bg: '#ffffff', text: '#14301b', border: '#d3e4d5' },
-  sepia:       { primary: '#a16207', bg: '#fbf6ea', text: '#43341f', border: '#ddcfae' },
-  sakura:      { primary: '#db2777', bg: '#ffffff', text: '#3d2230', border: '#f2d9e5' },
-  midnight:    { primary: '#a78bfa', bg: '#1d1830', text: '#e9e4f5', border: '#383150' },
-  oled:        { primary: '#22d3ee', bg: '#0a0a0a', text: '#f5f5f5', border: '#262626' },
+  minimal: { primary: '#525252', bg: '#fafafa', text: '#262626', border: '#d4d4d4' },
+  ocean: { primary: '#0891b2', bg: '#ffffff', text: '#0f3a45', border: '#cfe2e8' },
+  forest: { primary: '#16a34a', bg: '#ffffff', text: '#14301b', border: '#d3e4d5' },
+  sepia: { primary: '#a16207', bg: '#fbf6ea', text: '#43341f', border: '#ddcfae' },
+  sakura: { primary: '#db2777', bg: '#ffffff', text: '#3d2230', border: '#f2d9e5' },
+  midnight: { primary: '#a78bfa', bg: '#1d1830', text: '#e9e4f5', border: '#383150' },
+  oled: { primary: '#22d3ee', bg: '#0a0a0a', text: '#f5f5f5', border: '#262626' },
 }
 
 const { Text } = Typography
@@ -78,6 +80,74 @@ function ThemeCard({ mode, selected, onSelect }: {
         }}>{meta.description}</div>
       </div>
     </label>
+  )
+}
+
+/** 个人资料分页内容 — 昵称/邮箱自助更新 */
+function ProfilePanel() {
+  const { message } = App.useApp()
+  const user = useAuthStore(s => s.user)
+  const refresh = useAuthStore(s => s.refresh)
+  const [form] = Form.useForm()
+
+  // 每次打开/用户变化时用 store 中最新值重置表单
+  useEffect(() => {
+    if (user) {
+      form.setFieldsValue({ nickname: user.nickname ?? '', email: user.email ?? '' })
+    }
+  }, [user, form])
+
+  const handleSave = async (values: { nickname: string; email: string }) => {
+    try {
+      await authApi.updateProfile({ nickname: values.nickname, email: values.email })
+      await refresh()
+      message.success('个人资料已保存')
+    } catch (err: unknown) {
+      // axios 错误响应里带后端 400 明细（如邮箱已被使用）
+      const detail =
+        typeof err === 'object' && err !== null && 'response' in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          : undefined
+      message.error(detail ?? '保存失败，请稍后重试')
+    }
+  }
+
+  return (
+    <div style={{ padding: '12px 0' }}>
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <Text strong style={{ fontSize: 14 }}>个人资料</Text>
+        {user && (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            用户名：{user.username}（不可修改）
+          </Text>
+        )}
+      </div>
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleSave}
+        style={{ maxWidth: 420 }}
+      >
+        <Form.Item
+          name="nickname"
+          label="昵称"
+          rules={[{ max: 150, message: '昵称不能超过 150 个字符' }]}
+        >
+          <Input placeholder="输入昵称" allowClear />
+        </Form.Item>
+        <Form.Item
+          name="email"
+          label="邮箱"
+          rules={[
+            { type: 'email', message: '邮箱格式不正确' },
+            { max: 255, message: '邮箱不能超过 255 个字符' },
+          ]}
+        >
+          <Input placeholder="输入邮箱" allowClear />
+        </Form.Item>
+        <Button type="primary" htmlType="submit">保存</Button>
+      </Form>
+    </div>
   )
 }
 
@@ -187,6 +257,7 @@ export default function SettingsModal({ open, onClose }: Props) {
     >
       <Tabs
         items={[
+          { key: 'profile', label: '个人资料', children: <ProfilePanel /> },
           { key: 'theme', label: '主题', children: <ThemePanel /> },
           { key: 'operation', label: '操作风格', children: <OperationPanel /> },
         ]}

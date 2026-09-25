@@ -25,6 +25,8 @@ export interface UserResponse {
 }
 
 export interface LoginRequest { login: string; password: string }
+/** 当前用户自助更新个人资料请求体 —— 仅提交的字段会被更新，邮箱传空串表示清空. */
+export interface ProfileUpdateRequest { nickname?: string; email?: string }
 /** 公开注册请求体 —— 已收窄为仅普通用户，不接受 role 参数. */
 export interface RegisterRequest { username: string; email?: string | null; password: string; nickname?: string }
 /** 管理员创建用户请求体 —— role 必填（三员 + user 任意）. */

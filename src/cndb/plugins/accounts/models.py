@@ -58,7 +58,7 @@ class User(TimestampMixin, Base):
     __table_args__ = {"extend_existing": True}
 
     username: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
     nickname: Mapped[str] = mapped_column(String(150), nullable=False, default="")
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

@@ -20,6 +20,7 @@ from cndb.plugins.accounts.models import User, UserRole
 from cndb.plugins.accounts.schemas.auth import (
     AdminRegisterRequest,
     LoginRequest,
+    ProfileUpdateRequest,
     RegisterRequest,
     TokenResponse,
     UserResponse,
@@ -162,6 +163,48 @@ def me(current_user: User = Depends(get_current_user)) -> User:
     """返回当前登录用户信息."""
     if current_user is None:
         raise HTTPException(status_code=401, detail="未认证")
+    return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_profile(
+    payload: ProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """当前用户自助更新个人资料（昵称/邮箱）.
+
+    仅更新请求中显式提交的字段；邮箱传空字符串表示清空（置为 NULL）。
+    邮箱全库唯一，冲突时返回 400 明细。
+
+    Args:
+        payload: 资料更新请求体（nickname/email 可选）
+        db: 数据库会话
+        current_user: 当前登录用户
+
+    Returns:
+        更新后的 User 对象
+    """
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="未认证")
+
+    if payload.nickname is not None:
+        current_user.nickname = payload.nickname
+    if payload.email is not None:
+        email = payload.email.strip() or None
+        if email and email != current_user.email:
+            exists = db.query(User).filter(User.email == email, User.id != current_user.id).first()
+            if exists is not None:
+                raise HTTPException(status_code=400, detail="邮箱已被使用")
+        # email 列 nullable=True，空串会规整为 None 表示清空
+        current_user.email = email
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="邮箱已被使用") from exc
+    db.refresh(current_user)
     return current_user
 
 
