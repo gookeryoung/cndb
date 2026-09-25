@@ -391,6 +391,123 @@ class TestLookupFilterSort:
         assert len(body["rows"]) == 1
 
 
+# ── C2: 嵌套分组（or/and）中的 lookup 条件 ────────────
+
+
+def _setup_lookup_rows_with_tag(client, auth_headers, _lookup_env):
+    """在 _setup_lookup_rows 基础上给 dst 表加 text 字段 dst_tag 并赋值.
+
+    dst 行 1：lookup=[alpha]，dst_tag=x；行 2：lookup=[beta, alpha]，dst_tag=y；
+    行 3：无关联，dst_tag=z。
+    """
+    wid, dst_tid, _link_name, lookup_name, row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+    _add_field(client, auth_headers, wid, dst_tid, "dst_tag", "text")
+    tags = ["x", "y", "z"]
+    for rid, tag in zip(row_ids, tags, strict=True):
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/{rid}",
+            headers=auth_headers,
+            json={"values": {"dst_tag": tag}},
+        )
+        assert r.status_code == 200, r.text
+    return wid, dst_tid, lookup_name, row_ids
+
+
+class TestLookupNestedFilter:
+    def test_or_group_with_lookup(self, client, auth_headers, _lookup_env):
+        """__or__ 分组含 lookup 条件：命中 lookup 含 beta 或 dst_tag=x 的行."""
+        wid, dst_tid, lookup_name, row_ids = _setup_lookup_rows_with_tag(client, auth_headers, _lookup_env)
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={
+                "filters": [
+                    {
+                        "__or__": [
+                            {"field_name": lookup_name, "op": "contains", "value": "beta"},
+                            {"field_name": "dst_tag", "op": "=", "value": "x"},
+                        ]
+                    }
+                ],
+                "sorts": [],
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        body = listing.json()
+        assert body["total"] == 2
+        assert [r["id"] for r in body["rows"]] == [row_ids[0], row_ids[1]]
+
+    def test_and_group_with_lookup(self, client, auth_headers, _lookup_env):
+        """__and__ 分组含 lookup 条件：组内物理列条件一并内存求值."""
+        wid, dst_tid, lookup_name, row_ids = _setup_lookup_rows_with_tag(client, auth_headers, _lookup_env)
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={
+                "filters": [
+                    {
+                        "__and__": [
+                            {"field_name": lookup_name, "op": "contains", "value": "a"},
+                            {"field_name": "dst_tag", "op": "=", "value": "y"},
+                        ]
+                    }
+                ],
+                "sorts": [],
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        body = listing.json()
+        assert body["total"] == 1
+        assert [r["id"] for r in body["rows"]] == [row_ids[1]]
+
+    def test_or_logic_mixing_sql_and_lookup(self, client, auth_headers, _lookup_env):
+        """filter_logic=OR 且顶层 SQL 条件与 lookup 条件混合：整体 OR 语义."""
+        wid, dst_tid, lookup_name, row_ids = _setup_lookup_rows_with_tag(client, auth_headers, _lookup_env)
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={
+                "filters": [
+                    {"field_name": lookup_name, "op": "contains", "value": "beta"},
+                    {"field_name": "dst_tag", "op": "=", "value": "z"},
+                ],
+                "filter_logic": "OR",
+                "sorts": [],
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        body = listing.json()
+        assert body["total"] == 2
+        assert [r["id"] for r in body["rows"]] == [row_ids[1], row_ids[2]]
+
+    def test_and_logic_mixing_sql_and_lookup(self, client, auth_headers, _lookup_env):
+        """filter_logic=AND 混合：SQL 条件下推，lookup 条件内存过滤，取交集."""
+        wid, dst_tid, lookup_name, _row_ids = _setup_lookup_rows_with_tag(client, auth_headers, _lookup_env)
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={
+                "filters": [
+                    {"field_name": lookup_name, "op": "contains", "value": "a"},
+                    {"field_name": "dst_tag", "op": "=", "value": "z"},
+                ],
+                "filter_logic": "AND",
+                "sorts": [],
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        body = listing.json()
+        assert body["total"] == 0
+
+
 # ── B4: 源字段失效 → lookup broken ───────────────────
 
 

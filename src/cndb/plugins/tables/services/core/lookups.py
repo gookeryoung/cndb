@@ -130,14 +130,49 @@ def lookup_field_names(table: DataTable) -> set[str]:
     return {f.name for f in lookup_fields(table)}
 
 
+_GROUP_KEYS = ("__or__", "__and__", "__query_or__")
+
+
+def _group_items(value: Any) -> list[dict[str, Any]]:
+    """把嵌套分组的值归一为标准条件列表（支持 list 或 dict 形式）."""
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        items: list[dict[str, Any]] = []
+        for key, val in value.items():
+            if key in ("__or__", "__and__"):
+                items.append({key: val})
+            elif isinstance(val, dict) and "op" in val and "value" in val:
+                items.append({"field_name": key, **val})
+            else:
+                items.append({"field_name": key, "op": "=", "value": val})
+        return items
+    return []
+
+
+def _contains_lookup(names: set[str], value: Any) -> bool:
+    """递归判断条件子树中是否含 lookup 字段条件."""
+    for item in _group_items(value):
+        for group_key in _GROUP_KEYS:
+            if group_key in item:
+                if _contains_lookup(names, item[group_key]):
+                    return True
+                break
+        else:
+            if (item.get("field_name") or item.get("field")) in names:
+                return True
+    return False
+
+
 def split_lookup_filters(
     table: DataTable,
     filters: Any,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """把过滤条件拆为 (SQL 端条件, lookup 内存条件).
 
-    仅拆分顶层标准项；嵌套分组（__or__/__and__）整体留在 SQL 端，
-    其中的 lookup 条件由 query 编译层安全忽略（无物理列）。
+    递归处理：含 lookup 条件的嵌套分组（__or__/__and__）整体留在内存侧
+    （含组内物理列条件，由 match_row_filters 统一求值）；纯物理条件的
+    子树留在 SQL 端下推。
     filters 为 None 或 dict 时原样交给 SQL 端（由调用方归一）。
     """
     if not isinstance(filters, list) or not filters:
@@ -148,14 +183,19 @@ def split_lookup_filters(
     sql_items: list[dict[str, Any]] = []
     lookup_items: list[dict[str, Any]] = []
     for item in filters:
-        if not isinstance(item, dict) or "__or__" in item or "__and__" in item or "__query_or__" in item:
+        if not isinstance(item, dict):
             sql_items.append(item)
             continue
-        field_name = item.get("field_name") or item.get("field")
-        if field_name in names:
-            lookup_items.append(item)
+        for group_key in _GROUP_KEYS:
+            if group_key in item:
+                (lookup_items if _contains_lookup(names, item[group_key]) else sql_items).append(item)
+                break
         else:
-            sql_items.append(item)
+            field_name = item.get("field_name") or item.get("field")
+            if field_name in names:
+                lookup_items.append(item)
+            else:
+                sql_items.append(item)
     return sql_items, lookup_items
 
 
@@ -199,6 +239,138 @@ def match_lookup_value(value: Any, op: str, expected: Any) -> bool:
         return any(v is not None and v <= expected for v in vals)
     logger.warning("lookup 过滤不支持操作符 %s，按不匹配处理", op)
     return False
+
+
+def _match_physical_value(value: Any, op: str, expected: Any) -> bool:
+    """对物理列行值做内存条件匹配（语义与 query._build_condition 的 SQL 端一致）.
+
+    类型不可直接比较时回退字符串比较；无法求值的操作符按不匹配处理。
+    """
+    op = (op or "=").lower()
+    if op in ("is_empty",):
+        return value is None or value == ""
+    if op in ("is_not_empty",):
+        return not (value is None or value == "")
+    if op in ("is_null",):
+        return value is None
+    if op in ("is_not_null",):
+        return value is not None
+    if value is None:
+        return False
+    if op in ("=", "eq"):
+        return value == expected
+    if op in ("!=", "neq"):
+        return value != expected
+    if op == "in":
+        return value in list(expected or [])
+    if op == "not_in":
+        return value not in list(expected or [])
+    if op == "contains":
+        return str(expected) in str(value)
+    if op == "starts_with":
+        return str(value).startswith(str(expected))
+    if op == "ends_with":
+        return str(value).endswith(str(expected))
+    if op == "contains_any":
+        return any(str(v) in str(value) for v in (expected or []))
+    if op == "contains_all":
+        return all(str(v) in str(value) for v in (expected or []))
+    if op in (">", ">=", "<", "<="):
+        try:
+            if op == ">":
+                return value > expected
+            if op == ">=":
+                return value >= expected
+            if op == "<":
+                return value < expected
+            return value <= expected
+        except TypeError:
+            try:
+                s1, s2 = str(value), str(expected)
+                return s1 > s2 if op == ">" else s1 >= s2 if op == ">=" else s1 < s2 if op == "<" else s1 <= s2
+            except Exception:  # 防御性：无法比较即不匹配
+                return False
+    if op in ("between", "date_range"):
+        if not isinstance(expected, (list, tuple)) or len(expected) != 2:
+            return False
+        start_val, end_val = expected
+        return _match_physical_value(value, ">=", start_val) and _match_physical_value(value, "<=", end_val)
+    logger.warning("内存过滤不支持操作符 %s，按不匹配处理", op)
+    return False
+
+
+def _match_link_value(value: Any, op: str, expected: Any) -> bool:
+    """对 attach 后的 link 行值（[{id, value}] 摘要列表）做内存条件匹配."""
+    op = (op or "=").lower()
+    ids: list[Any] = (
+        [d.get("id") for d in value if isinstance(d, dict) and d.get("id") is not None]
+        if isinstance(value, list)
+        else []
+    )
+    if op in ("is_null", "is_empty"):
+        return not ids
+    if op in ("is_not_null", "is_not_empty"):
+        return bool(ids)
+    if op in ("has_any",):
+        try:
+            id_set = {int(i) for i in ids}
+            return any(int(t) in id_set for t in (expected or []))
+        except (TypeError, ValueError):
+            return False
+    if op in ("has_all",):
+        try:
+            id_set = {int(i) for i in ids}
+            return all(int(t) in id_set for t in (expected or []))
+        except (TypeError, ValueError):
+            return False
+    logger.warning("link 字段内存过滤不支持操作符 %s，按不匹配处理", op)
+    return False
+
+
+def match_row_filters(
+    table: DataTable,
+    row: dict[str, Any],
+    filters: Any,
+    logic: str = "AND",
+) -> bool:
+    """对已 attach 的行递归求值过滤条件（lookup / 物理列 / link 混合，支持嵌套分组）.
+
+    语义与 SQL 端编译（query.compile_filters）对齐：
+    - lookup 叶子走 match_lookup_value（聚合列表语义）；
+    - 物理列叶子走 _match_physical_value；
+    - link 叶子走 _match_link_value（is_null/has_any/has_all）；
+    - __or__ / __and__ / __query_or__ 嵌套分组递归求值。
+    """
+    names = lookup_field_names(table)
+    link_names = {f.name for f in table.active_fields() if f.field_type == "link"}
+
+    def _eval(items: list[dict[str, Any]], group_logic: str) -> bool:
+        all_mode = str(group_logic).upper() != "OR"
+        results: list[bool] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for group_key, group_logic_key in (("__or__", "OR"), ("__and__", "AND"), ("__query_or__", "OR")):
+                if group_key in item:
+                    results.append(_eval(_group_items(item[group_key]), group_logic_key))
+                    break
+            else:
+                field_name = item.get("field_name") or item.get("field")
+                op = str(item.get("op") or item.get("operator") or "=")
+                expected = item.get("value")
+                if field_name in names:
+                    results.append(match_lookup_value(row.get(str(field_name)), op, expected))
+                elif field_name in link_names:
+                    results.append(_match_link_value(row.get(str(field_name)), op, expected))
+                else:
+                    results.append(_match_physical_value(row.get(str(field_name)), op, expected))
+        if not results:
+            return True
+        return all(results) if all_mode else any(results)
+
+    return _eval(
+        _group_items(filters) if not isinstance(filters, list) else [i for i in filters if isinstance(i, dict)], logic
+    )
 
 
 def _lookup_sort_rank(value: Any, is_desc: bool = False) -> Any:
@@ -312,6 +484,7 @@ __all__ = [
     "lookup_fields",
     "mark_dependent_lookups_broken",
     "match_lookup_value",
+    "match_row_filters",
     "sort_rows_in_memory",
     "split_lookup_filters",
 ]
