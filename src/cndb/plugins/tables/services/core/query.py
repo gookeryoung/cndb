@@ -40,13 +40,16 @@ logger = logging.getLogger(__name__)
 
 
 def _is_link_field(table: DataTable, field_name: str) -> DataField | None:
-    """若字段为关联字段则返回字段对象，否则 None."""
+    """若字段为 link 关联字段则返回字段对象，否则 None.
+
+    仅 link 类型走 EXISTS 子查询路径；lookup 等其他无物理列类型
+    由 records.list_rows 在 attach 后做内存过滤/排序。
+    """
     field_map: dict[str, DataField] = {f.name: f for f in table.fields if not f.trashed}
     f = field_map.get(field_name)
     if f is None:
         return None
-    ft = default_registry.get(f.field_type)
-    if ft is not None and not ft.has_physical_column:
+    if f.field_type == "link":
         return f
     return None
 
