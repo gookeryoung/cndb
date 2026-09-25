@@ -21,6 +21,7 @@ from cndb.plugins.tables.field_types.date import (
     TimestampFieldType,
 )
 from cndb.plugins.tables.field_types.files import AttachmentFieldConfig, AttachmentFieldType
+from cndb.plugins.tables.field_types.lookup import LOOKUP_FIELD_TYPE, LookupFieldConfig, LookupFieldType
 from cndb.plugins.tables.field_types.number import (
     BooleanFieldType,
     FloatFieldType,
@@ -57,6 +58,7 @@ from cndb.plugins.tables.field_types.text import (
 )
 
 __all__ = [
+    "LOOKUP_FIELD_TYPE",
     "MULTI_SELECT_SPLIT_RE",
     "_FIELD_TYPE_ALIASES",
     "AttachmentFieldConfig",
@@ -75,6 +77,8 @@ __all__ = [
     "LinkFieldConfig",
     "LinkFieldType",
     "LongTextFieldType",
+    "LookupFieldConfig",
+    "LookupFieldType",
     "MultiSelectFieldConfig",
     "MultiSelectFieldType",
     "NumberFieldConfig",

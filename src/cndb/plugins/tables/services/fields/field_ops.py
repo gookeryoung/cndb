@@ -331,6 +331,112 @@ def generate_column_name() -> str:
     return generate_db_column_name()
 
 
+# ── 字段关联引入（lookup） ───────────────────────────
+
+
+def _unique_dst_name(dst_table: DataTable, base: str) -> str:
+    """在目标表上为 base 取不冲突的字段名（冲突时追加序号后缀）."""
+    existing = {f.name for f in dst_table.fields if not f.trashed}
+    if base not in existing:
+        return base
+    idx = 2
+    while f"{base} {idx}" in existing:
+        idx += 1
+    return f"{base} {idx}"
+
+
+def import_fields_as_lookup(
+    engine: Any,
+    db: Session,
+    src_table: DataTable,
+    dst_table: DataTable,
+    src_fields: list[DataField],
+) -> tuple[list[DataField], list[str]]:
+    """把源字段以"字段关联"方式引入目标表：自动建/复用 link 字段 + 每个源字段一个 lookup 字段.
+
+    与 :func:`clone_fields_between_tables` 的复制语义不同，本函数建立**实时关联**：
+    - link/lookup 类型的源字段不支持关联引入 → 跳过并说明（禁止递归）；
+    - 目标表已有指向源表的 link 字段则复用，否则自动创建"关联 <源表名>"；
+    - lookup 字段不落物理列，值在行读取时通过关联表实时解析；
+    - 目标表已存在同名字段时跳过（与复制模式的 skip_conflicts 行为一致）。
+
+    Returns:
+        (创建的 DataField 列表（link + lookup）, 跳过原因说明列表).
+    """
+    created: list[DataField] = []
+    skipped: list[str] = []
+
+    # 1. 过滤不支持关联引入的源字段
+    eligible: list[DataField] = []
+    for f in src_fields:
+        if f.field_type in ("link", "lookup"):
+            skipped.append(f"{f.name} — {f.field_type} 类型的源字段不支持关联引入")
+        else:
+            eligible.append(f)
+    if not eligible:
+        return [], skipped
+
+    # 2. 复用或创建指向源表的 link 字段
+    link_field = next(
+        (
+            f
+            for f in dst_table.active_fields()
+            if f.field_type == "link" and (f.config or {}).get("target_table_id") == src_table.id
+        ),
+        None,
+    )
+    if link_field is None:
+        link_field = DataField(
+            table_id=dst_table.id,
+            name=_unique_dst_name(dst_table, f"关联 {src_table.name}"),
+            field_type="link",
+            config={"target_table_id": src_table.id},
+            order=max((f.order for f in dst_table.fields if not f.trashed), default=-1) + 1,
+        )
+        link_field.ensure_db_name()
+        db.add(link_field)
+        db.commit()
+        db.refresh(link_field)
+        _ddl.create_link_table(engine, link_field)
+        created.append(link_field)
+        logger.info("[field_ops] 自动创建关联字段 %r → 表 %s", link_field.name, src_table.name)
+
+    # 3. 每个源字段创建一个 lookup 字段
+    next_order = max((f.order for f in dst_table.fields if not f.trashed), default=-1) + 1
+    existing_names = {f.name for f in dst_table.fields if not f.trashed}
+    for src in eligible:
+        if src.name in existing_names:
+            skipped.append(f"{src.name} — 目标表已存在同名字段，跳过")
+            continue
+        existing_names.add(src.name)
+        lookup_field = DataField(
+            table_id=dst_table.id,
+            name=src.name,
+            field_type="lookup",
+            config={
+                "source_table_id": src_table.id,
+                "source_field_id": src.id,
+                "via_link_field_id": link_field.id,
+            },
+            order=next_order,
+        )
+        next_order += 1
+        lookup_field.ensure_db_name()
+        db.add(lookup_field)
+        db.commit()
+        db.refresh(lookup_field)
+        created.append(lookup_field)
+
+    lookup_count = sum(1 for f in created if f.field_type == "lookup")
+    logger.info(
+        "[field_ops] 关联引入 %d 个 lookup 字段到 %s（link 字段: %s）",
+        lookup_count,
+        dst_table.name,
+        link_field.name,
+    )
+    return created, skipped
+
+
 # ── select / multiselect options 自动补全 ────────────
 
 
@@ -554,6 +660,7 @@ __all__ = [
     "clone_fields_between_tables",
     "execute_field_import",
     "generate_column_name",
+    "import_fields_as_lookup",
     "plan_field_import",
     "resolve_source_fields",
     "sync_select_options_from_table",

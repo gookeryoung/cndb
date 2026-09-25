@@ -24,7 +24,11 @@ from cndb.plugins.tables.services.core.ddl import (
     find_null_rows,
     rebuild_column,
 )
-from cndb.plugins.tables.services.fields.field_ops import clone_fields_between_tables, resolve_source_fields
+from cndb.plugins.tables.services.fields.field_ops import (
+    clone_fields_between_tables,
+    import_fields_as_lookup,
+    resolve_source_fields,
+)
 from cndb.plugins.workspaces.models import Workspace
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
@@ -222,6 +226,12 @@ def update_field(
             _revert_metadata()
             raise HTTPException(status_code=500, detail=f"物理列重建失败: {exc}") from exc
 
+    # 源字段类型变更 → 引用它的 lookup 字段标记失效
+    if old_field_type != df.field_type:
+        from cndb.plugins.tables.services.core.lookups import mark_dependent_lookups_broken
+
+        mark_dependent_lookups_broken(db, df.id)
+
     # 2. is_unique 切换
     if old_is_unique != df.is_unique:
         try:
@@ -281,6 +291,11 @@ def delete_field(
     # 软删除 metadata
     df.trashed = True
     db.commit()
+
+    # 引用该字段的 lookup 字段标记失效
+    from cndb.plugins.tables.services.core.lookups import mark_dependent_lookups_broken
+
+    mark_dependent_lookups_broken(db, df.id)
 
     # 物理删列（失败则回滚 metadata）
     try:
@@ -381,8 +396,26 @@ def import_fields(
         merged = apply_user_mapping(base, auto_mapping, src_names_list)
         gap_analysis = analyze_field_gaps(merged, src_names_list, dst_names)
 
-    # ── 预览模式：直接返回，不执行克隆 ──
+    # ── 预览模式：直接返回，不执行引入 ──
     if payload.preview_only:
+        if payload.import_mode == "link":
+            # link 模式：给出将创建的字段清单（自动 link 字段 + 每个可关联源字段一个 lookup 字段）
+            existing_names = {f.name for f in dst.fields if not f.trashed}
+            has_link = any(
+                f.field_type == "link" and (f.config or {}).get("target_table_id") == src.id
+                for f in dst.active_fields()
+            )
+            planned: list[dict[str, Any]] = []
+            if not has_link:
+                planned.append({"name": f"关联 {src.name}", "field_type": "link"})
+            for sf in src_fields:
+                if sf.field_type in ("link", "lookup"):
+                    continue
+                if sf.name in existing_names:
+                    continue
+                planned.append({"name": sf.name, "field_type": "lookup"})
+            gap_analysis = dict(gap_analysis) if gap_analysis else {}
+            gap_analysis["planned_fields"] = planned
         return FieldImportResponse(
             created=[],
             skipped=[],
@@ -391,22 +424,28 @@ def import_fields(
             suggestions=suggestions,
         )
 
-    # ── 执行克隆（field_mapping 仅在用户显式传入时才应用；否则沿用 legacy 同名默认） ──
+    # ── 执行引入：link=字段关联模式；copy（默认）=字段定义复制模式 ──
     engine = db.get_bind()
-    try:
-        created, skipped = clone_fields_between_tables(
-            engine,
-            db,
-            src,
-            dst,
-            field_ids=[f.id for f in src_fields],
-            skip_conflicts=payload.skip_conflicts,
-            field_mapping=payload.field_mapping,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"字段导入失败: {exc}") from exc
+    if payload.import_mode == "link":
+        try:
+            created, skipped = import_fields_as_lookup(engine, db, src, dst, src_fields)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"字段关联引入失败: {exc}") from exc
+    else:
+        try:
+            created, skipped = clone_fields_between_tables(
+                engine,
+                db,
+                src,
+                dst,
+                field_ids=[f.id for f in src_fields],
+                skip_conflicts=payload.skip_conflicts,
+                field_mapping=payload.field_mapping,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"字段导入失败: {exc}") from exc
 
     return FieldImportResponse(
         created=[FieldResponse.model_validate(f, from_attributes=True) for f in created],

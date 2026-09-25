@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
@@ -158,6 +158,8 @@ class FieldImportRequest(BaseModel):
     exclude_trashed: bool = True
     skip_conflicts: bool = False
     field_mapping: dict[str, str | None] | None = None
+    # 引入模式：copy=复制字段定义（默认，现状行为）；link=字段关联（自动建 link 字段 + lookup 字段，值实时解析）
+    import_mode: Literal["copy", "link"] = "copy"
     # 预览模式：True 时只返回建议/缺口分析，不实际创建字段（前端先让用户确认映射再执行）
     preview_only: bool = False
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from cndb.plugins.tables.field_types.base import FieldType
 from cndb.plugins.tables.field_types.date import DateFieldType, DateTimeFieldType, TimestampFieldType
 from cndb.plugins.tables.field_types.files import AttachmentFieldType
+from cndb.plugins.tables.field_types.lookup import LookupFieldType
 from cndb.plugins.tables.field_types.number import (
     BooleanFieldType,
     FloatFieldType,
@@ -104,6 +105,7 @@ def build_default_registry() -> FieldTypeRegistry:
     reg.register(PercentageFieldType())
     reg.register(TimestampFieldType())
     reg.register(LinkFieldType())
+    reg.register(LookupFieldType())
     reg.register(AttachmentFieldType())
     reg.register(JsonFieldType())
     return reg

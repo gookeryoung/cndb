@@ -263,6 +263,10 @@ def get_row(
     if row is None:
         return None
     result = attach_links(engine, table, [_row_to_dict(table, sa_table, row)], db=db)[0]
+    if db is not None:
+        from cndb.plugins.tables.services.core.lookups import attach_lookup_values
+
+        result = attach_lookup_values(engine, table, [result], db=db)[0]
     if db is not None and user is not None:
         from cndb.plugins.tables.services.core.access import apply_field_hiding, get_hidden_field_names
 
@@ -363,6 +367,10 @@ def list_rows(
         rows = conn.execute(query).all()
 
     result = attach_links(engine, table, [_row_to_dict(table, sa_table, r) for r in rows], db=db)
+    if db is not None:
+        from cndb.plugins.tables.services.core.lookups import attach_lookup_values
+
+        result = attach_lookup_values(engine, table, result, db=db)
 
     # 字段隐藏
     if db is not None and user is not None:
