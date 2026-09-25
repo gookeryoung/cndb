@@ -180,8 +180,16 @@ export interface FieldImportRequest {
   skip_conflicts?: boolean
   /** 源字段 → 目标字段 重命名/跳过映射；None 表示跳过 */
   field_mapping?: Record<string, string | null> | null
+  /** 引入模式：copy=复制字段定义（默认）；link=字段关联（自动建 link 字段 + lookup 字段，值实时解析） */
+  import_mode?: 'copy' | 'link'
   /** 预览模式：只返回建议映射/缺口分析，不实际创建 */
   preview_only?: boolean
+}
+
+/** link 模式预览返回的将创建字段清单项 */
+export interface PlannedImportField {
+  name: string
+  field_type: 'link' | 'lookup'
 }
 
 export interface FieldImportGapAnalysis {
@@ -189,6 +197,8 @@ export interface FieldImportGapAnalysis {
   unmapped_source: string[]
   target_missing: string[]
   conflicts: Array<{ src_a: string; src_b: string; dst: string }>
+  /** link 模式预览：将创建的字段清单（自动 link 字段 + lookup 字段） */
+  planned_fields?: PlannedImportField[]
 }
 
 export interface FieldImportSuggestion {
@@ -212,7 +222,7 @@ export interface FieldImportResponse {
 export type FieldType =
   | 'text' | 'longtext' | 'number' | 'float' | 'boolean'
   | 'date' | 'datetime' | 'timestamp' | 'select' | 'multiselect'
-  | 'email' | 'url' | 'phone' | 'link' | 'attachment' | 'percentage'
+  | 'email' | 'url' | 'phone' | 'link' | 'lookup' | 'attachment' | 'percentage'
   // 历史别名（后端自动归一化）
   | 'long_text' | 'decimal' | 'multi_select' | 'json'
   | 'formula' | 'auto_id' | 'created_time' | 'updated_time'
