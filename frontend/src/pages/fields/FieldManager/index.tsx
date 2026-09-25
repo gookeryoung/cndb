@@ -6,7 +6,7 @@
  *   typeConfigPanel.tsx — 类型专属 config 编辑区（数字/日期/选择/关联/附件）
  */
 import { useMemo, useState } from 'react'
-import { Modal, Button, Tag, Input, Select, Checkbox, Tooltip, App as AntApp, Alert, Empty, Spin, Divider, Form } from 'antd'
+import { Modal, Button, Tag, Input, Select, Checkbox, Tooltip, App as AntApp, Alert, Empty, Spin, Divider, Form, Radio } from 'antd'
 import { MinusOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi, workspaceApi } from '@/api'
@@ -45,6 +45,8 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   const [sourceTableId, setSourceTableId] = useState<number | string | null>(null)
   const [importSelectedIds, setImportSelectedIds] = useState<Array<number | string>>([])
   const [importSkipConflicts, setImportSkipConflicts] = useState(true)
+  // 引入模式：copy = 复制独立副本；link = 创建 link + lookup 字段实时引用源表
+  const [importMode, setImportMode] = useState<'copy' | 'link'>('copy')
   const [fieldFilter, setFieldFilter] = useState('')
   // 新增：预览返回的 suggestions + gap_analysis
   const [importPreview, setImportPreview] = useState<FieldImportResponseType | null>(null)
@@ -111,6 +113,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         field_ids: importSelectedIds.length > 0 ? importSelectedIds.map(Number) : undefined,
         import_all_fields: importSelectedIds.length === 0,
         skip_conflicts: importSkipConflicts,
+        import_mode: importMode,
         preview_only: true,
       })
       setImportPreview(resp)
@@ -138,8 +141,9 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         field_ids: importSelectedIds.length > 0 ? importSelectedIds.map(Number) : undefined,
         import_all_fields: importSelectedIds.length === 0,
         skip_conflicts: importSkipConflicts,
-        // 把用户调整后的 mapping 传过去（null 条目表示跳过）
-        field_mapping: importMapping,
+        import_mode: importMode,
+        // 把用户调整后的 mapping 传过去（null 条目表示跳过；link 模式不走映射）
+        field_mapping: importMode === 'copy' ? importMapping : undefined,
       })
     },
     onSuccess: (resp) => {
@@ -169,6 +173,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     setSourceTableId(null)
     setImportSelectedIds([])
     setImportSkipConflicts(true)
+    setImportMode('copy')
     setFieldFilter('')
     setImportOpen(true)
   }
@@ -425,8 +430,22 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="字段将被复制为当前表的新字段（独立副本，不与源表保持同步）；link 字段引入后仍指向原关联目标表（支持跨工作区关联）"
+        message={importMode === 'link'
+          ? '将创建 link 关联字段与 lookup 引用字段：值实时读取源表，源表更新自动同步（不复制数据）；源字段删除或改类型时引用自动标记失效'
+          : '字段将被复制为当前表的新字段（独立副本，不与源表保持同步）；link 字段引入后仍指向原关联目标表（支持跨工作区关联）'}
       />
+
+      {/* 引入模式选择 */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 4, fontWeight: 500 }}>引入方式</div>
+        <Radio.Group
+          value={importMode}
+          onChange={(e) => { setImportMode(e.target.value as 'copy' | 'link'); setImportPreview(null); setImportMapping({}) }}
+        >
+          <Radio value="copy">复制副本（独立数据）</Radio>
+          <Radio value="link">关联引用（实时同步）</Radio>
+        </Radio.Group>
+      </div>
 
       {/* 源工作区 + 源表级联选择（支持跨工作区） */}
       <div style={{ marginBottom: 12 }}>
@@ -530,8 +549,28 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         </Spin>
       )}
 
-      {/* 映射对比面板 */}
-      {importPreview && importPreview.suggestions && importPreview.suggestions.length > 0 && (
+      {/* link 模式预览：展示将创建的关联字段清单 */}
+      {importMode === 'link' && importPreview && (
+        <div style={{ marginTop: 16 }}>
+          <Divider style={{ margin: '8px 0' }}>关联字段预览</Divider>
+          <div style={{ color: '#64748b', fontSize: 12, marginBottom: 8 }}>将创建以下关联字段：</div>
+          <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4, padding: 8 }}>
+            {(importPreview.gap_analysis?.planned_fields ?? []).map((p, i) => (
+              <div key={i} style={{ padding: '4px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CheckCircleOutlined style={{ color: 'var(--cn-success, #52c41a)' }} />
+                <span style={{ fontWeight: 500 }}>{p.name}</span>
+                <Tag color={getFieldTypeColor(p.field_type)} style={{ marginLeft: 4 }}>{getFieldTypeLabel(p.field_type)}</Tag>
+              </div>
+            ))}
+            {(importPreview.gap_analysis?.planned_fields ?? []).length === 0 && (
+              <div style={{ color: '#999', fontSize: 12 }}>无可创建的关联字段（所选源字段类型均不支持关联引入）</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 映射对比面板（copy 模式专用） */}
+      {importMode === 'copy' && importPreview && importPreview.suggestions && importPreview.suggestions.length > 0 && (
         <div style={{ marginTop: 16 }}>
           <Divider style={{ margin: '8px 0' }}>字段映射对照</Divider>
 

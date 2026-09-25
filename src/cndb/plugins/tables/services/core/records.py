@@ -317,9 +317,28 @@ def list_rows(
         db: 元数据库会话（提供时 link 字段输出目标行摘要，否则回退 "#id"）.
         user: 当前用户（提供时按 TablePermission.hidden_fields 做字段隐藏）.
     """
+    from cndb.plugins.tables.services.core.lookups import (
+        lookup_field_names,
+        match_lookup_value,
+        sort_rows_in_memory,
+        split_lookup_filters,
+    )
     from cndb.plugins.tables.services.core.query import compile_filters, compile_sorts
 
     sa_table = _get_sa_table(engine, table)
+
+    # lookup 条件拆分：顶层 lookup 过滤/排序改在 attach 后内存执行（无物理列）
+    lk_names = lookup_field_names(table) if db is not None else set()
+    sql_filters: Any = filters
+    lk_filters: list[dict[str, Any]] = []
+    if lk_names and filters:
+        sql_filters, lk_filters = split_lookup_filters(table, filters)
+    lk_sorts: list[dict[str, str]] = (
+        [s for s in sorts or [] if isinstance(s, dict) and (s.get("field_name") or s.get("field")) in lk_names]
+        if lk_names
+        else []
+    )
+    needs_post = bool(lk_filters) or bool(lk_sorts)
 
     # 基础 where（trashed 条件始终与业务过滤 AND 组合）
     base_where: list[Any] = []
@@ -333,8 +352,8 @@ def list_rows(
 
     # 业务过滤
     business_where: Any | None = None
-    if filters:
-        business_where = compile_filters(table, sa_table, filters, filter_logic)
+    if sql_filters:
+        business_where = compile_filters(table, sa_table, sql_filters, filter_logic)
 
     # 构建 base query —— trashed AND 权限 AND 业务过滤
     query = sa_table.select()
@@ -347,22 +366,24 @@ def list_rows(
         else:
             query = query.where(and_(*final_where))
 
-    # total count
+    # total count（含 lookup 条件时由内存过滤后修正）
     with engine.connect() as conn:
         count_query = select(func.count(sa_table.c.id))
         if final_where:
             count_query = count_query.where(*final_where)
         total = conn.execute(count_query).scalar()
 
-        # 排序
-        if sorts:
+        # 排序（含 lookup 排序时改为全量查询后内存排序）
+        if sorts and not lk_sorts:
             query = query.order_by(*compile_sorts(table, sa_table, sorts))
 
-        # 分页 —— limit=None 或 <=0 表示不加 LIMIT（全量查询）
-        if limit and limit > 0:
-            query = query.limit(limit).offset(offset)
-        elif offset:
-            query = query.offset(offset)
+        # 分页 —— limit=None 或 <=0 表示不加 LIMIT（全量查询）；
+        # 有 lookup 过滤/排序时不下推分页，由内存阶段完成
+        if not needs_post:
+            if limit and limit > 0:
+                query = query.limit(limit).offset(offset)
+            elif offset:
+                query = query.offset(offset)
 
         rows = conn.execute(query).all()
 
@@ -371,6 +392,30 @@ def list_rows(
         from cndb.plugins.tables.services.core.lookups import attach_lookup_values
 
         result = attach_lookup_values(engine, table, result, db=db)
+
+    # lookup 内存过滤 / 排序 / 分页
+    if lk_filters:
+        conj_all = str(filter_logic).upper() != "OR"
+        result = [
+            row
+            for row in result
+            if (all if conj_all else any)(
+                match_lookup_value(
+                    row.get(str(f.get("field_name") or f.get("field") or "")),
+                    str(f.get("op") or "="),
+                    f.get("value"),
+                )
+                for f in lk_filters
+            )
+        ]
+    if needs_post:
+        if sorts:
+            result = sort_rows_in_memory(result, sorts)
+        total = len(result)
+        if limit and limit > 0:
+            result = result[offset : offset + limit]
+        elif offset:
+            result = result[offset:]
 
     # 字段隐藏
     if db is not None and user is not None:

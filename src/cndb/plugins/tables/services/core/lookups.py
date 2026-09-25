@@ -125,6 +125,135 @@ def _resolve_lookup_values(
     return result
 
 
+def lookup_field_names(table: DataTable) -> set[str]:
+    """返回表中全部未回收 lookup 字段的名称集合（用户可见名）."""
+    return {f.name for f in lookup_fields(table)}
+
+
+def split_lookup_filters(
+    table: DataTable,
+    filters: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """把过滤条件拆为 (SQL 端条件, lookup 内存条件).
+
+    仅拆分顶层标准项；嵌套分组（__or__/__and__）整体留在 SQL 端，
+    其中的 lookup 条件由 query 编译层安全忽略（无物理列）。
+    filters 为 None 或 dict 时原样交给 SQL 端（由调用方归一）。
+    """
+    if not isinstance(filters, list) or not filters:
+        return filters, []
+    names = lookup_field_names(table)
+    if not names:
+        return filters, []
+    sql_items: list[dict[str, Any]] = []
+    lookup_items: list[dict[str, Any]] = []
+    for item in filters:
+        if not isinstance(item, dict) or "__or__" in item or "__and__" in item or "__query_or__" in item:
+            sql_items.append(item)
+            continue
+        field_name = item.get("field_name") or item.get("field")
+        if field_name in names:
+            lookup_items.append(item)
+        else:
+            sql_items.append(item)
+    return sql_items, lookup_items
+
+
+def match_lookup_value(value: Any, op: str, expected: Any) -> bool:
+    """对已解析的 lookup 行值做内存条件匹配.
+
+    行值可能是聚合列表（multiple link）、标量或 None（无关联）。
+    """
+    op = (op or "=").lower()
+    vals: list[Any] = value if isinstance(value, list) else [value] if value is not None else []
+
+    if op in ("is_empty", "is_null"):
+        return not vals
+    if op in ("is_not_empty", "is_not_null"):
+        return bool(vals)
+    if op in ("=", "eq"):
+        return value == expected
+    if op in ("!=", "neq"):
+        return value != expected
+    if op == "in":
+        return value in list(expected or [])
+    if op == "not_in":
+        return value not in list(expected or [])
+    if op == "contains":
+        return any(str(expected) in str(v) for v in vals)
+    if op == "starts_with":
+        return any(str(v).startswith(str(expected)) for v in vals)
+    if op == "ends_with":
+        return any(str(v).endswith(str(expected)) for v in vals)
+    if op == "contains_any":
+        return any(v in list(expected or []) for v in vals)
+    if op == "contains_all":
+        return all(e in vals for e in (expected or []))
+    if op == ">":
+        return any(v is not None and v > expected for v in vals)
+    if op == ">=":
+        return any(v is not None and v >= expected for v in vals)
+    if op == "<":
+        return any(v is not None and v < expected for v in vals)
+    if op == "<=":
+        return any(v is not None and v <= expected for v in vals)
+    logger.warning("lookup 过滤不支持操作符 %s，按不匹配处理", op)
+    return False
+
+
+def _lookup_sort_rank(value: Any, is_desc: bool = False) -> Any:
+    """把 lookup 行值转为排序键：None 恒最后；列表按方向取极值（asc 取最小、desc 取最大）."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        if not value:
+            return None
+        return max(value, key=str) if is_desc else min(value, key=str)
+    return value
+
+
+def sort_rows_in_memory(rows: list[dict[str, Any]], sorts: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """按 sorts 列表顺序对已解析行做内存排序（物理列与 lookup 字段通用）.
+
+    None 值恒排最后（与 asc/desc 无关）；多级排序按列表顺序依次比较；
+    类型不可直接比较时回退字符串比较，避免整个查询崩溃。
+    """
+    import functools
+
+    specs: list[tuple[str, bool]] = []
+    for s in sorts or []:
+        if not isinstance(s, dict):
+            continue
+        field_name = s.get("field_name") or s.get("field")
+        if not field_name:
+            continue
+        direction = (s.get("direction") or s.get("dir") or "asc").lower()
+        specs.append((field_name, direction == "desc"))
+    if not specs:
+        return rows
+
+    def _cmp(r1: dict[str, Any], r2: dict[str, Any]) -> int:
+        for field_name, is_desc in specs:
+            k1 = _lookup_sort_rank(r1.get(field_name), is_desc)
+            k2 = _lookup_sort_rank(r2.get(field_name), is_desc)
+            if k1 is None and k2 is None:
+                continue
+            if k1 is None:
+                return 1  # None 恒最后，不随方向反转
+            if k2 is None:
+                return -1
+            if k1 == k2:
+                continue
+            try:
+                c = -1 if k1 < k2 else 1
+            except TypeError:
+                c = -1 if str(k1) < str(k2) else 1
+            return -c if is_desc else c
+        return 0
+
+    return sorted(rows, key=functools.cmp_to_key(_cmp))
+
+
 def _find_link_field(table: DataTable, via_link_field_id: Any) -> DataField | None:
     """在本表中查找 via_link_field_id 对应的未回收 link 字段."""
     if not isinstance(via_link_field_id, int):
@@ -179,6 +308,10 @@ __all__ = [
     "LOOKUP_FIELD_TYPE",
     "attach_lookup_values",
     "is_lookup_field",
+    "lookup_field_names",
     "lookup_fields",
     "mark_dependent_lookups_broken",
+    "match_lookup_value",
+    "sort_rows_in_memory",
+    "split_lookup_filters",
 ]

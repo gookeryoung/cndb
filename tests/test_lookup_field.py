@@ -253,6 +253,144 @@ class TestLookupValueResolution:
         assert rows[0]["src_title"] == ["solo"]
 
 
+# ── C1: lookup 字段过滤 / 排序 ───────────────────────
+
+
+def _setup_lookup_rows(client, auth_headers, _lookup_env):
+    """引入 lookup 后造 3 条源行 + 3 条 dst 关联行，返回上下文与行值映射.
+
+    dst 行 1 关联 [alpha]，行 2 关联 [beta, alpha]，行 3 无关联。
+    """
+    wid, src_tid, dst_tid, src_field = _lookup_env
+    src_ids: dict[str, int] = {}
+    for title in ("alpha", "beta", "gamma"):
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{src_tid}/records",
+            headers=auth_headers,
+            json={"values": {"src_title": title}},
+        )
+        assert r.status_code == 201, r.text
+        src_ids[title] = r.json()["id"]
+
+    r = client.post(
+        f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields/import",
+        headers=auth_headers,
+        json={"source_table_id": src_tid, "field_ids": [src_field["id"]], "import_mode": "link"},
+    )
+    assert r.status_code == 201, r.text
+    created = r.json()["created"]
+    link_name = next(f["name"] for f in created if f["field_type"] == "link")
+    lookup_name = next(f["name"] for f in created if f["field_type"] == "lookup")
+
+    row_ids: list[int] = []
+    for targets in ([src_ids["alpha"]], [src_ids["beta"], src_ids["alpha"]], []):
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records",
+            headers=auth_headers,
+            json={"values": {link_name: targets} if targets else {}},
+        )
+        assert r.status_code == 201, r.text
+        row_ids.append(r.json()["id"])
+    return wid, dst_tid, link_name, lookup_name, row_ids
+
+
+class TestLookupFilterSort:
+    def test_filter_lookup_contains(self, client, auth_headers, _lookup_env):
+        """lookup 字段 contains 过滤：命中包含 'beta' 的行."""
+        wid, dst_tid, _link, lookup_name, row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={
+                "filters": [{"field_name": lookup_name, "op": "contains", "value": "beta"}],
+                "sorts": [],
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        body = listing.json()
+        assert body["total"] == 1
+        assert [r["id"] for r in body["rows"]] == [row_ids[1]]
+
+    def test_filter_lookup_eq_scalar(self, client, auth_headers, _lookup_env):
+        """lookup 字段 = 过滤：multiple link 下标量为列表精确匹配."""
+        wid, dst_tid, _link, lookup_name, row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={
+                "filters": [{"field_name": lookup_name, "op": "=", "value": ["alpha"]}],
+                "sorts": [],
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        body = listing.json()
+        assert body["total"] == 1
+        assert [r["id"] for r in body["rows"]] == [row_ids[0]]
+
+    def test_filter_lookup_is_empty(self, client, auth_headers, _lookup_env):
+        """lookup 字段 is_empty 过滤：命中无关联行."""
+        wid, dst_tid, _link, lookup_name, row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={
+                "filters": [{"field_name": lookup_name, "op": "is_empty", "value": None}],
+                "sorts": [],
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        body = listing.json()
+        assert body["total"] == 1
+        assert [r["id"] for r in body["rows"]] == [row_ids[2]]
+
+    def test_sort_lookup_asc_desc(self, client, auth_headers, _lookup_env):
+        """lookup 字段排序：asc/desc 按解析值比较，None 值排最后."""
+        wid, dst_tid, _link, lookup_name, row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+
+        def _list(direction: str) -> list[int]:
+            listing = client.post(
+                f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+                headers=auth_headers,
+                json={
+                    "filters": [],
+                    "sorts": [{"field_name": lookup_name, "direction": direction}],
+                    "limit": 10,
+                    "offset": 0,
+                },
+            )
+            assert listing.status_code == 200, listing.text
+            return [r["id"] for r in listing.json()["rows"]]
+
+        asc = _list("asc")
+        desc = _list("desc")
+        assert asc == [row_ids[0], row_ids[1], row_ids[2]]  # alpha < beta.. < None
+        assert desc == [row_ids[1], row_ids[0], row_ids[2]]  # None 仍排最后
+
+    def test_lookup_filter_with_pagination(self, client, auth_headers, _lookup_env):
+        """lookup 过滤后 total 与分页一致."""
+        wid, dst_tid, _link, lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={
+                "filters": [{"field_name": lookup_name, "op": "contains", "value": "a"}],
+                "sorts": [],
+                "limit": 1,
+                "offset": 0,
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        body = listing.json()
+        assert body["total"] == 2  # alpha 出现于行 1、行 2
+        assert len(body["rows"]) == 1
+
+
 # ── B4: 源字段失效 → lookup broken ───────────────────
 
 

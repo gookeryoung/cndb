@@ -994,4 +994,49 @@ describe('FieldManager 从其他表引入字段', () => {
         })
         // 多轮 AntD 异步渲染，全量并发时偶发超过全局 5s，显式放宽
     }, 15000)
+
+    // ─────────── 引入模式选择（复制 copy / 关联引用 link） ───────────
+
+    it('默认复制模式：请求 import_mode=copy，映射面板正常展示', async () => {
+        const spy = vi.spyOn(fieldApi, 'importFields').mockResolvedValue({
+            created: [], skipped: [], total_source_count: 0,
+            gap_analysis: { matched: [], unmapped_source: [], target_missing: [], conflicts: [] },
+            suggestions: [],
+        } as any)
+        await openImportDialogWithSource()
+        fireEvent.click(screen.getByRole('button', { name: /分析字段映射/ }))
+        await waitFor(() => {
+            expect(spy).toHaveBeenCalled()
+        })
+        expect(spy.mock.calls[0]![2]!.import_mode).toBe('copy')
+    })
+
+    it('切换关联引用模式：请求带 import_mode=link，预览展示将创建的关联字段', async () => {
+        const spy = vi.spyOn(fieldApi, 'importFields').mockResolvedValue({
+            created: [], skipped: [], total_source_count: 1,
+            gap_analysis: {
+                matched: [], unmapped_source: [], target_missing: [], conflicts: [],
+                planned_fields: [
+                    { name: '名称', field_type: 'lookup', action: 'create' },
+                    { name: '名称_link', field_type: 'link', action: 'create' },
+                ],
+            },
+            suggestions: [],
+        } as any)
+        await openImportDialogWithSource()
+
+        // 切到"关联引用"模式
+        fireEvent.click(screen.getByText('关联引用（实时同步）'))
+        fireEvent.click(screen.getByRole('button', { name: /分析字段映射/ }))
+
+        await waitFor(() => {
+            expect(spy).toHaveBeenCalled()
+        })
+        expect(spy.mock.calls[0]![2]!.import_mode).toBe('link')
+        // link 模式展示将创建的字段清单，不展示 copy 语义的映射对照
+        await waitFor(() => {
+            expect(screen.getByText(/将创建以下关联字段/)).toBeInTheDocument()
+        })
+        expect(screen.queryByText('字段映射对照')).not.toBeInTheDocument()
+    })
 })
