@@ -9,48 +9,14 @@ import pytest
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core import links
 from cndb.plugins.tables.services.core.ddl import create_table
+from tests.test_cov_links_internal import _create_full_link_scenario
 
-# ── 复用 test_cov_links_internal 里的场景（自包含） ──
+# ── 复用 test_cov_links_internal 里的场景（单一实现，避免夹具重复） ──
 
 
 def _make_full_link(db, db_engine, client, auth_headers):
-    """创建带 link field 的表场景：目标表 lt + 源表 ls."""
-
-    ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_links"})
-    wid = ws.json()["id"]
-    # 目标表
-    tb = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "ltarget"})
-    tid_b = tb.json()["id"]
-    client.post(
-        f"/api/v1/workspaces/{wid}/tables/{tid_b}/fields",
-        headers=auth_headers,
-        json={"name": "tname", "field_type": "text", "order": 0},
-    )
-    for _n in ["aaa", "bbb", "ccc"]:
-        client.post(
-            f"/api/v1/workspaces/{wid}/tables/{tid_b}/records",
-            headers=auth_headers,
-            json={"values": {"tname": _n}},
-        )
-    # 源表（有 link field）
-    ta = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "lsrc"})
-    tid_a = ta.json()["id"]
-    client.post(
-        f"/api/v1/workspaces/{wid}/tables/{tid_a}/fields",
-        headers=auth_headers,
-        json={"name": "sname", "field_type": "text", "order": 0},
-    )
-    client.post(
-        f"/api/v1/workspaces/{wid}/tables/{tid_a}/fields",
-        headers=auth_headers,
-        json={
-            "name": "link_to_target",
-            "field_type": "link",
-            "order": 1,
-            "config": {"target_table_id": tid_b, "multiple": True},
-        },
-    )
-    return wid, tid_b, tid_a
+    """委托 test_cov_links_internal 的共享夹具：目标表 lt + 源表 ls."""
+    return _create_full_link_scenario(client, auth_headers, db)
 
 
 # ── set_links 边界 ─────────────────────────────────
