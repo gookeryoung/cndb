@@ -119,17 +119,17 @@ function SortableViewRow({
         <Tooltip title="编辑视图">
           <Button size="small" type="text" icon={<EditOutlined />} disabled={!canEdit} onClick={onEdit} />
         </Tooltip>
+        {/* 不能在 Popconfirm 内嵌 Tooltip：Tooltip 浮层会覆盖确认弹层导致无法确认 */}
         <Popconfirm
           title={`删除视图 "${view.name}" ？`}
+          description="视图规则一并删除，不影响表数据"
           okText="删除"
           okType="danger"
           cancelText="取消"
           onConfirm={onDelete}
           disabled={!canEdit}
         >
-          <Tooltip title="删除视图（规则一并删除，不影响表数据）">
-            <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!canEdit} />
-          </Tooltip>
+          <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!canEdit} aria-label={`删除视图 ${view.name}`} />
         </Popconfirm>
       </span>
     </div>

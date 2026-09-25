@@ -191,10 +191,17 @@ function SortableFieldRow({ field, onEdit, onRemove, isReordering }: SortableFie
           <Button size="small" type="text" icon={<EditOutlined />} onClick={onEdit} />
         </Tooltip>
         {!field.is_primary && (
-          <Popconfirm title="确认删除？" onConfirm={onRemove}>
-            <Tooltip title="删除字段（列及其数据将从表中移除）">
-              <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-            </Tooltip>
+          // 不能在 Popconfirm 内嵌 Tooltip：Tooltip 浮层会覆盖确认弹层导致无法确认，
+          // 提示文案并入 Popconfirm 标题
+          <Popconfirm
+            title={`删除字段 "${field.name}" ？`}
+            description="列及其数据将从表中移除，不可恢复"
+            okText="删除"
+            okType="danger"
+            cancelText="取消"
+            onConfirm={onRemove}
+          >
+            <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label={`删除字段 ${field.name}`} />
           </Popconfirm>
         )}
       </span>

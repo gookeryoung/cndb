@@ -22,6 +22,7 @@ describe('fieldTypeMeta 字段类型元数据', () => {
       url: ['链接', '高级', 'geekblue'],
       phone: ['电话', '高级', 'geekblue'],
       link: ['关联', '关联', 'magenta'],
+      lookup: ['引用', '关联', 'magenta'],
       attachment: ['附件', '高级', 'volcano'],
     }
     for (const [type, [label, category, color]] of Object.entries(expected)) {
