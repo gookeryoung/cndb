@@ -569,3 +569,130 @@ class TestInspectionHelpers:
         monkeypatch.setattr(ddl.default_registry, "get", lambda _name: None)
         assert ddl.find_null_rows(None, dt, df) == []
         assert ddl.find_duplicate_values(None, dt, df) == []
+
+
+# ── 字段类型与 link 互转的物理结构变更 ─────────────────
+
+
+class TestTypeChangeLinkTransition:
+    """物理列字段改为 link（或反向）后，关联表/物理列必须同步创建或清理。
+
+    回归背景：select 字段改为 link 后未创建关联物理表，编辑行写入关联值时
+    set_links 反射不到关联表抛 RuntimeError → 路由层未捕获返回 500。
+    """
+
+    def _setup_with_target(self, client, auth_headers, db) -> tuple[int, int, int, int, dict]:
+        """建员工表（select 字段「部门」）+ 部门表（含一行），返回 (wid, tid, 部门字段id, 部门表id, 部门行)。"""
+        wid, tid = _make_table(client, auth_headers, "员工表")
+        f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid,
+            {
+                "name": "部门",
+                "field_type": "select",
+                "order": 0,
+                "config": {"options": [{"label": "研发部", "value": "研发部", "color": ""}]},
+            },
+        )
+        _add_record(client, auth_headers, wid, tid, {"部门": "研发部"})
+
+        t2 = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "部门表"})
+        tid_dept = t2.json()["id"]
+        _add_field(client, auth_headers, wid, tid_dept, {"name": "负责人", "field_type": "text", "order": 0})
+        dept_row = _add_record(client, auth_headers, wid, tid_dept, {"负责人": "张三"})
+        return wid, tid, f["id"], tid_dept, dept_row
+
+    def test_select_to_link_then_edit_record(self, client, auth_headers, db):
+        """select 改为 link 后编辑行关联值 → 应成功而非 500."""
+        wid, tid, fid, tid_dept, dept_row = self._setup_with_target(client, auth_headers, db)
+
+        r = _patch_field(
+            client,
+            auth_headers,
+            wid,
+            tid,
+            fid,
+            {"field_type": "link", "config": {"target_table_id": tid_dept, "multiple": False}},
+        )
+        assert r.status_code == 200, r.text
+
+        rows = client.get(f"/api/v1/workspaces/{wid}/tables/{tid}/records", headers=auth_headers)
+        assert rows.status_code == 200, rows.text
+        row_id = rows.json()["rows"][0]["id"]
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records/{row_id}",
+            headers=auth_headers,
+            json={"values": {"部门": [dept_row["id"]]}},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["部门"] == [{"id": dept_row["id"], "value": "张三"}]
+
+    def test_select_to_link_import_lookup_still_resolves(self, client, auth_headers, db):
+        """select 改为 link 后，经「字段关联引入」引入的 lookup 字段可实时解析."""
+        wid, tid, fid, tid_dept, dept_row = self._setup_with_target(client, auth_headers, db)
+
+        r = _patch_field(
+            client,
+            auth_headers,
+            wid,
+            tid,
+            fid,
+            {"field_type": "link", "config": {"target_table_id": tid_dept, "multiple": False}},
+        )
+        assert r.status_code == 200, r.text
+
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields/import",
+            headers=auth_headers,
+            json={"source_table_id": tid_dept, "field_names": ["负责人"], "import_mode": "link"},
+        )
+        assert r.status_code == 201, r.text
+
+        rows = client.get(f"/api/v1/workspaces/{wid}/tables/{tid}/records", headers=auth_headers)
+        assert rows.status_code == 200, rows.text
+        row_id = rows.json()["rows"][0]["id"]
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records/{row_id}",
+            headers=auth_headers,
+            json={"values": {"部门": [dept_row["id"]]}},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["负责人"] == "张三"
+
+    def test_link_to_select_creates_physical_column(self, client, auth_headers, db):
+        """link 改回 select 后写行值 → 新物理列已创建，写入成功而非 500."""
+        wid, tid_dept = _make_table(client, auth_headers, "部门表2")
+        link_f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid_dept,
+            {"name": "负责人", "field_type": "link", "order": 0, "config": {"target_table_id": tid_dept}},
+        )
+        _add_record(client, auth_headers, wid, tid_dept, {})
+
+        r = _patch_field(
+            client,
+            auth_headers,
+            wid,
+            tid_dept,
+            link_f["id"],
+            {
+                "field_type": "select",
+                "config": {"options": [{"label": "张三", "value": "张三", "color": ""}]},
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        rows = client.get(f"/api/v1/workspaces/{wid}/tables/{tid_dept}/records", headers=auth_headers)
+        assert rows.status_code == 200, rows.text
+        row_id = rows.json()["rows"][0]["id"]
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{tid_dept}/records/{row_id}",
+            headers=auth_headers,
+            json={"values": {"负责人": "张三"}},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["负责人"] == "张三"
