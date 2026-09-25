@@ -124,9 +124,9 @@ describe('AdminPanel 系统管理台', () => {
     // 表清单标签渲染为 "表名 (行数)"
     expect(screen.getByText('workspaces (3)')).toBeInTheDocument()
     // schema 元信息与恢复模式选择器
-    expect(screen.getByText('Schema 版本')).toBeInTheDocument()
-    expect(screen.getByText('有（sqlalchemy）')).toBeInTheDocument()
-    expect(screen.getByText('auto（跟随备份模式，推荐）')).toBeInTheDocument()
+    expect(screen.getByText('数据结构版本')).toBeInTheDocument()
+    expect(screen.getByText('有')).toBeInTheDocument()
+    expect(screen.getByText('自动选择（推荐）')).toBeInTheDocument()
   })
 
   it('备份 schema 领先时显示降级警告并自动选中 sqlalchemy 模式', async () => {
@@ -143,9 +143,9 @@ describe('AdminPanel 系统管理台', () => {
     const input = document.querySelector('input[type="file"]')
     fireEvent.change(input as Element, { target: { files: [file] } })
 
-    expect(await screen.findByText('备份 schema 新于当前程序')).toBeInTheDocument()
-    // 校验通过后恢复模式自动切到 sqlalchemy 降级
-    expect(await screen.findByText('sqlalchemy（交集导入，可降级恢复）')).toBeInTheDocument()
+    expect(await screen.findByText('备份由更新版本的程序生成')).toBeInTheDocument()
+    // 校验通过后恢复模式自动切到"兼容恢复"
+    expect(await screen.findByText('兼容恢复（逐表导入，适用范围更广）')).toBeInTheDocument()
   })
 
   it('降级恢复返回裁剪报告时弹窗呈现丢失面', async () => {
@@ -174,7 +174,7 @@ describe('AdminPanel 系统管理台', () => {
     await waitFor(() => expect(restoreSpy).toHaveBeenCalledTimes(1))
     expect(restoreSpy).toHaveBeenCalledWith(file, true, undefined)
     expect(
-      await screen.findByText('降级恢复完成 — 已裁剪部分数据', { selector: '.ant-modal-title' }),
+      await screen.findByText('恢复完成 — 部分数据未导入', { selector: '.ant-modal-title' }),
     ).toBeInTheDocument()
     expect(
       screen.getByText('跳过未知表 1 个: future_table', { selector: '.ant-modal-body div' }),

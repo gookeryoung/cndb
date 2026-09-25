@@ -404,7 +404,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             style={{ margin: 0, fontSize: 11 }}
             icon={s.will_map ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
           >
-            {s.will_map ? '推荐' : '低置信度'}
+            {s.will_map ? '推荐' : '未能自动对应'}
           </Tag>
         </Tooltip>
         <span style={{ fontSize: 11, color: scoreColor, width: 42, textAlign: 'right' }}>
@@ -431,8 +431,8 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         showIcon
         style={{ marginBottom: 12 }}
         message={importMode === 'link'
-          ? '将创建 link 关联字段与 lookup 引用字段：值实时读取源表，源表更新自动同步（不复制数据）；源字段删除或改类型时引用自动标记失效'
-          : '字段将被复制为当前表的新字段（独立副本，不与源表保持同步）；link 字段引入后仍指向原关联目标表（支持跨工作区关联）'}
+          ? '将通过「关联引用」实时引用源表的数据：这里显示的值始终与源表保持一致，源表改动会自动同步（不复制数据）；若源表中的字段被删除或修改，引用会标记为已失效'
+          : '字段会被复制成当前表的新字段，之后两边修改互不影响；若源字段是「关联」类型，复制后仍指向原来的目标表（支持跨工作区关联）'}
       />
 
       {/* 引入模式选择 */}
@@ -563,7 +563,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
               </div>
             ))}
             {(importPreview.gap_analysis?.planned_fields ?? []).length === 0 && (
-              <div style={{ color: '#999', fontSize: 12 }}>无可创建的关联字段（所选源字段类型均不支持关联引入）</div>
+              <div style={{ color: '#999', fontSize: 12 }}>所选表中没有可引入的字段（「关联」「引用」类型的字段暂不支持引入）</div>
             )}
           </div>
         </div>
@@ -602,7 +602,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                   <Tag color="green" style={{ margin: 0 }}>已匹配推荐 {matched.length}</Tag>
                   {hasLowConfidence && (
                     <Button size="small" type="link" onClick={keepMatchedOnly}>
-                      仅引入已匹配（跳过低置信度 {lowConfidence.length} 个）
+                      仅引入已匹配（跳过 {lowConfidence.length} 个未能自动对应的）
                     </Button>
                   )}
                 </div>
@@ -610,7 +610,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                 {hasLowConfidence && (
                   <>
                     <div style={{ padding: '6px 12px', background: '#fffbeb', borderBottom: '1px solid #f0f0f0' }}>
-                      <Tag color="orange" style={{ margin: 0 }}>低置信度 {lowConfidence.length}（默认将引入为新字段，可改名或跳过）</Tag>
+                      <Tag color="orange" style={{ margin: 0 }}>未能自动对应 {lowConfidence.length} 个（默认将引入为新字段，可改名或跳过）</Tag>
                     </div>
                     {lowConfidence.map(renderSuggestionRow)}
                   </>

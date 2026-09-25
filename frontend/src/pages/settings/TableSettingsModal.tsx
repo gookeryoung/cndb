@@ -393,7 +393,7 @@ export default function TableSettingsModal({
                   </Popconfirm>
                   {!canDeleteTable && table && (
                     <Tag color="warning" style={{ marginLeft: 8 }}>
-                      需要 edit_schema 权限才能删除此表
+                      需要「编辑表结构」权限才能删除此表
                     </Tag>
                   )}
                 </Space>

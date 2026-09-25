@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { AttachmentFile, Field, RowResponse } from '@/api'
 import { recordApi, fileApi, fieldApi } from '@/api'
 import { getTagColorName, resolveTagColor } from '@/utils/tagColors'
+import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 import { pickLinkLabelFieldName, buildLinkRowLabel } from './fieldValueFormat'
 
 interface Props {
@@ -586,7 +587,7 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
     default: {
       return (
         <div style={wrap}>
-          <span style={{ color: '#999' }}>类型 {ft} 暂不支持 inline 编辑</span>
+          <span style={{ color: '#999' }}>「{getFieldTypeLabel(ft)}」暂不支持在表格里直接编辑</span>
           {actions}
         </div>
       )

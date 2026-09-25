@@ -92,7 +92,7 @@ export default function AdminPanel() {
       if (data.loss_report) {
         // 降级恢复：交集导入裁剪了数据，弹窗显式呈现丢失面
         modal.warning({
-          title: '降级恢复完成 — 已裁剪部分数据',
+          title: '恢复完成 — 部分数据未导入',
           width: 560,
           content: (
             <div style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
@@ -119,7 +119,7 @@ export default function AdminPanel() {
           status="403"
           icon={<SafetyOutlined />}
           title="无权访问系统管理台"
-          subTitle="系统备份与恢复需要 system_admin 或 superuser 权限。请联系系统管理员。"
+          subTitle="系统备份与恢复仅系统管理员可以操作，请联系系统管理员。"
         />
       </div>
     )
@@ -152,9 +152,9 @@ export default function AdminPanel() {
               onChange={setBackupMode}
               style={{ width: 200 }}
               options={[
-                { value: 'auto', label: 'auto（自动选择，推荐）' },
-                { value: 'native', label: 'native（SQLite 直接文件复制，最快）' },
-                { value: 'sqlalchemy', label: 'sqlalchemy（跨数据库兼容）' },
+                { value: 'auto', label: '自动选择（推荐）' },
+                { value: 'native', label: '完整备份（打包整个数据库文件，最快）' },
+                { value: 'sqlalchemy', label: '兼容备份（逐表导出，适用面更广）' },
               ]}
             />
           </div>
@@ -248,8 +248,8 @@ export default function AdminPanel() {
                   type="warning"
                   showIcon
                   icon={<WarningOutlined />}
-                  message="备份 schema 新于当前程序"
-                  description="该备份由更新版本的程序生成，native 模式恢复将失败。已自动选择 sqlalchemy 模式降级恢复（按交集导入，丢弃备份中新增表/列的数据）。"
+                  message="备份由更新版本的程序生成"
+                  description="该备份由更高版本的程序生成，无法使用快速恢复。已自动选择「兼容恢复」：按当前程序支持的表结构逐表导入，备份中多出的表或字段的数据会被跳过。"
                   style={{ marginBottom: 12 }}
                 />
               )}
@@ -262,12 +262,12 @@ export default function AdminPanel() {
                 <Descriptions.Item label="数据库类型">
                   {manifest.database.db_type}（{manifest.database.backup_mode}）
                 </Descriptions.Item>
-                <Descriptions.Item label="Schema 版本">
+                <Descriptions.Item label="数据结构版本">
                   {manifest.database.schema_version || <Tag>未知（旧版备份）</Tag>}
                 </Descriptions.Item>
-                <Descriptions.Item label="内嵌兜底导出">
+                <Descriptions.Item label="兼容备份包">
                   {manifest.database.fallback_mode
-                    ? <Tag color="blue">有（{manifest.database.fallback_mode}）</Tag>
+                    ? <Tag color="blue">有</Tag>
                     : <Tag>无</Tag>}
                 </Descriptions.Item>
                 <Descriptions.Item label="数据表数">{manifest.database.tables.length}</Descriptions.Item>
@@ -289,9 +289,9 @@ export default function AdminPanel() {
                   disabled={restoring}
                   style={{ width: 320 }}
                   options={[
-                    { value: 'auto', label: 'auto（跟随备份模式，推荐）' },
-                    { value: 'native', label: 'native（SQLite 直接文件覆盖）' },
-                    { value: 'sqlalchemy', label: 'sqlalchemy（交集导入，可降级恢复）' },
+                    { value: 'auto', label: '自动选择（推荐）' },
+                    { value: 'native', label: '快速恢复（直接覆盖数据库文件）' },
+                    { value: 'sqlalchemy', label: '兼容恢复（逐表导入，适用范围更广）' },
                   ]}
                 />
               </div>

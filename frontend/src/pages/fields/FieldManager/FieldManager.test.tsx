@@ -459,7 +459,8 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
             fireEvent.change(screen.getByPlaceholderText('例如：姓名') as HTMLInputElement, {
                 target: { value: '优先级' },
             })
-            fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
+            // 用模态框底部主按钮定位：字段列表中「创建日期」字段的删除按钮 aria-label 也含"创建"，会误匹配
+            fireEvent.click(document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement)
 
             await waitFor(() => {
                 expect(createSpy).toHaveBeenCalled()
@@ -480,7 +481,8 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
             fireEvent.change(screen.getByPlaceholderText('例如：姓名') as HTMLInputElement, {
                 target: { value: '备注' },
             })
-            fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
+            // 同上：用模态框底部主按钮定位，避免误匹配「删除字段 创建日期」
+            fireEvent.click(document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement)
 
             await waitFor(() => {
                 expect(createSpy).toHaveBeenCalled()
