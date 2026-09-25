@@ -36,6 +36,7 @@ from cndb.plugins.tables.services.core.links import (
     ensure_link_targets_exist,
     is_link_field,
     set_links,
+    validate_link_write,
 )
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,17 @@ def _normalize_values(
 # ── 单表 sa.Table 获取（带缓存） ─────────────────────
 
 
+def _ensure_required_links_provided(table: DataTable, link_values: list[tuple[DataField, list[int]]]) -> None:
+    """创建路径校验：required link 字段必须显式提供非空关联值.
+
+    未提供该字段与显式传 None/空列表均视为缺失，违反时抛 ValueError.
+    """
+    provided = {f.id for f, ids in link_values if ids}
+    for f in table.fields:
+        if not f.trashed and is_link_field(f) and f.required and f.id not in provided:
+            raise ValueError(f"必填字段 {f.name} 不能为空")
+
+
 def _apply_auto_increment_defaults(
     engine: Any,
     table: DataTable,
@@ -220,6 +232,10 @@ def create_row(
         for field, ids in link_values:
             if ids:
                 ensure_link_targets_exist(engine, field, ids, db)
+
+    # link 必填/唯一约束校验（新行 id 尚未分配，无需排除；未提供的 required link 一并拦截）
+    _ensure_required_links_provided(table, link_values)
+    validate_link_write(engine, link_values)
 
     with engine.begin() as conn:
         if normalized:
@@ -446,6 +462,9 @@ def update_row(
             if ids:
                 ensure_link_targets_exist(engine, field, ids, db)
 
+    # link 必填/唯一约束校验（排除本行自身，更新为同一集合不视为冲突）
+    validate_link_write(engine, link_values, exclude_row_ids=(row_id,))
+
     row_scope = _build_row_scope_where(table, sa_table, db)
     base_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
     if row_scope is not None:
@@ -578,6 +597,12 @@ def bulk_create(
                 if ids:
                     ensure_link_targets_exist(engine, field, ids, db)
 
+    # link 必填/唯一约束校验：batch_signatures 共享以捕获批内多行关联同一集合
+    batch_sigs: dict[int, set[tuple[int, ...]]] = {}
+    for _values, link_values in split_rows:
+        _ensure_required_links_provided(table, link_values)
+        validate_link_write(engine, link_values, batch_signatures=batch_sigs)
+
     ids: list[int] = []
     with engine.begin() as conn:
         for values, _link_values in split_rows:
@@ -635,6 +660,13 @@ def bulk_update(
             count = result.rowcount
     else:
         count = len(valid_ids)
+
+    # link 必填/唯一约束校验：同一非空关联集合写多行即互撞；排除本批行自身
+    batch_sigs: dict[int, set[tuple[int, ...]]] = {}
+    for field, ids in link_values:
+        if is_link_field(field) and field.is_unique and ids and len(valid_ids) > 1:
+            raise ValueError(f"唯一字段 {field.name}：批量更新会令 {len(valid_ids)} 行关联同一目标集合")
+        validate_link_write(engine, [(field, ids)], exclude_row_ids=valid_ids, batch_signatures=batch_sigs)
 
     if valid_ids and link_values:
         for row_id in valid_ids:
@@ -809,7 +841,7 @@ def bulk_update_rows(
     row_scope = _build_row_scope_where(table, sa_table, db)
     total = 0
 
-    # 总事务前预校验所有待更新行的 link 目标存在，避免部分行已提交但 link 失败
+    # 总事务前预校验所有待更新行的 link 目标存在 + 必填/唯一约束，避免部分行已提交但 link 失败
     if db is not None:
         for item in updates:
             values = item.get("values") or {}
@@ -819,6 +851,18 @@ def bulk_update_rows(
             for field, ids in link_values:
                 if ids:
                     ensure_link_targets_exist(engine, field, ids, db)
+
+    # link 必填/唯一约束校验：排除各自行自身，batch_signatures 捕获批内多行互撞
+    batch_sigs: dict[int, set[tuple[int, ...]]] = {}
+    for item in updates:
+        values = item.get("values") or {}
+        row_id = item.get("row_id")
+        if not values:
+            continue
+        _normalized, link_values = _normalize_values(table, values, for_update=True)
+        validate_link_write(
+            engine, link_values, exclude_row_ids=(row_id,) if row_id is not None else (), batch_signatures=batch_sigs
+        )
 
     # 逐行在同一个事务里执行（SQLite/PostgreSQL 对 100-500 行循环开销可接受）
     with engine.begin() as conn:
