@@ -13,7 +13,7 @@
  *      取消交互细节下沉至组件层 GridCell.test.tsx（Escape 取消草稿编辑）.
  */
 import { test, expect } from "../fixtures/auth";
-import { getAdminToken, getTableId } from "../helpers/api";
+import { getAdminToken, getRowId, getTableId } from "../helpers/api";
 import type { APIResponse } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
@@ -171,22 +171,29 @@ test.describe("行 CRUD", () => {
     await cleanupExtraRows(request, tid);
     await gotoGridAndCheckCount(page, 5);
 
-    // 定位 "张三" 行，进入整行编辑（虚拟滚动行是 div，用 data-row-key 过滤）
-    const zhangRow = page.locator("[data-row-key]").filter({ hasText: "张三" }).first();
+    // 通过 API 拿到张三行的真实 row id —— 彻底规避 hasText 子串匹配
+    // 被操作列按钮文字（如"编辑"）误命中的风险，以及虚拟滚动下行 DOM 顺序
+    // 与数据顺序不一致导致 .first() 拿错行的问题
+    const zhangRowId = await getRowId(request, WID, tid, "姓名", "张三");
+
+    // 用精确 row-key 定位张三行，点击进入整行编辑
+    const zhangRow = page.locator(`[data-row-key="${zhangRowId}"]`);
+    await expect(zhangRow.getByTestId("row-edit-btn")).toBeVisible();
     await zhangRow.getByTestId("row-edit-btn").click();
 
-    // 编辑态重渲染后行内容不再嵌套在 [data-row-key] 容器内，
-    // 且编辑态下仅当前行有保存按钮 —— 用全局 testid 定位
+    // 编辑态下仅当前行有保存按钮 —— 用全局 testid 定位
     const saveBtn = page.getByTestId("row-save-btn");
     await expect(saveBtn).toBeVisible();
 
-    // 确认 "姓名" 字段回填正确（表格内第一个文本输入框）
-    const nameInput = page.locator(".ant-table").getByRole("textbox").first();
+    // 用具体 [data-row-key] 容器定位姓名输入框，避免虚拟滚动下
+    // .ant-table .textbox.first() 只拿到视口顶部输入框的不稳定问题
+    const nameInput = zhangRow.getByRole("textbox").first();
     await expect(nameInput).toHaveValue("张三");
 
-    // 提交保存 → 整行编辑退出，行数据仍可见
+    // 提交保存 → 整行编辑退出，行数据仍可见（虚拟滚动中"张三"文本可能
+    // 出现在多行 DOM 中，strict mode 下需 .first() 消除歧义）
     await saveBtn.click();
     await expect(saveBtn).not.toBeVisible();
-    await expect(page.getByText("张三")).toBeVisible();
+    await expect(zhangRow.getByText("张三").first()).toBeVisible();
   });
 });
