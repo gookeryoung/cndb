@@ -319,7 +319,7 @@ def list_rows(
     """
     from cndb.plugins.tables.services.core.lookups import (
         lookup_field_names,
-        match_lookup_value,
+        match_row_filters,
         sort_rows_in_memory,
         split_lookup_filters,
     )
@@ -327,12 +327,17 @@ def list_rows(
 
     sa_table = _get_sa_table(engine, table)
 
-    # lookup 条件拆分：顶层 lookup 过滤/排序改在 attach 后内存执行（无物理列）
+    # lookup 条件拆分：含 lookup 的顶层项/嵌套分组改在 attach 后内存求值（无物理列）
     lk_names = lookup_field_names(table) if db is not None else set()
     sql_filters: Any = filters
     lk_filters: list[dict[str, Any]] = []
     if lk_names and filters:
         sql_filters, lk_filters = split_lookup_filters(table, filters)
+        # OR 逻辑下 SQL 与 lookup 条件混合时，SQL 条件也并入内存求值，
+        # 避免「SQL 侧 OR 组 AND 内存侧 OR 组」的错误语义
+        if lk_filters and sql_filters and str(filter_logic).upper() == "OR":
+            lk_filters = [item for item in filters if isinstance(item, dict)]
+            sql_filters = None
     lk_sorts: list[dict[str, str]] = (
         [s for s in sorts or [] if isinstance(s, dict) and (s.get("field_name") or s.get("field")) in lk_names]
         if lk_names
@@ -393,21 +398,9 @@ def list_rows(
 
         result = attach_lookup_values(engine, table, result, db=db)
 
-    # lookup 内存过滤 / 排序 / 分页
+    # lookup 内存过滤（含嵌套分组与混合物理列条件）/ 排序 / 分页
     if lk_filters:
-        conj_all = str(filter_logic).upper() != "OR"
-        result = [
-            row
-            for row in result
-            if (all if conj_all else any)(
-                match_lookup_value(
-                    row.get(str(f.get("field_name") or f.get("field") or "")),
-                    str(f.get("op") or "="),
-                    f.get("value"),
-                )
-                for f in lk_filters
-            )
-        ]
+        result = [row for row in result if match_row_filters(table, row, lk_filters, filter_logic)]
     if needs_post:
         if sorts:
             result = sort_rows_in_memory(result, sorts)
