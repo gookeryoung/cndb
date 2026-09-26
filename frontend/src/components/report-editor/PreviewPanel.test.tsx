@@ -43,6 +43,28 @@ describe('PreviewPanel 实时预览', () => {
     expect(await screen.findByText('周报', {}, FIND_OPTS)).toBeInTheDocument()
   })
 
+  it('params.get(key, default) — key 存在返回值', async () => {
+    renderProviders(
+      <PreviewPanel
+        template="{% set status = params.get('在职状态', '在职') %}状态:{{ status }}"
+        records={[]}
+        params={{ '在职状态': '离职' }}
+      />,
+    )
+    expect(await screen.findByText('状态:离职', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
+  it('params.get(key, default) — key 缺失回退默认值', async () => {
+    renderProviders(
+      <PreviewPanel
+        template="{% set status = params.get('在职状态', '在职') %}状态:{{ status }}"
+        records={[]}
+        params={{}}
+      />,
+    )
+    expect(await screen.findByText('状态:在职', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
   it('generated_at 生成日期参与渲染（与后端上下文一致）', async () => {
     renderProviders(
       <PreviewPanel template="生成于 {{ generated_at }}" records={[]} />,

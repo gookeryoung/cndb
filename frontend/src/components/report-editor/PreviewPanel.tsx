@@ -31,11 +31,29 @@ const renderer = new nunjucks.Environment(null, {
   lstripBlocks: true,
 })
 
-/** 把字段值转为数字；null/非数字/空串返回 null —— 与后端 _coerce_numeric 同语义 */
+/**
+ * 把字段值转为数字；null/非数字/空串返回 null —— 与后端 _coerce_numeric 同语义
+ */
 function coerceNumeric(v: unknown): number | null {
   if (v === null || v === undefined || v === '') return null
   const n = Number(v)
   return Number.isFinite(n) ? n : null
+}
+
+/**
+ * 给前端渲染上下文注入 Jinja2 dict 的 .get(key, default) 方法。
+ *
+ * 后端使用 Jinja2（Python dict 原生支持 .get），前端预览使用 Nunjucks
+ * （JS plain object 没有 .get）。此包装让双端对 `params.get('key', '默认值')`
+ * 语法行为一致 —— key 存在返回值，不存在或值为 null/undefined 时返回默认值。
+ */
+function wrapParams(raw: Record<string, unknown> | undefined): Record<string, unknown> {
+  const obj: Record<string, unknown> = { ...(raw || {}) }
+  obj.get = function (key: string, defaultValue?: unknown): unknown {
+    const v = this[key]
+    return v === null || v === undefined ? defaultValue : v
+  }
+  return obj
 }
 
 /** 单列统计 —— 与后端 stats 同语义；non_empty 统计原始值非空行数（可用于文本字段计数） */
@@ -99,7 +117,7 @@ export default function PreviewPanel({
     if (!template.trim()) {
       return { output: '', error: null, elapsed: 0 }
     }
-    const ctx = { records, table_name: tableName || '', params, records_by_table: recordsByTable || {}, generated_at: dayjs().format('YYYY-MM-DD HH:mm') }
+    const ctx = { records, table_name: tableName || '', params: wrapParams(params), records_by_table: recordsByTable || {}, generated_at: dayjs().format('YYYY-MM-DD HH:mm') }
     return tryRender(template, ctx)
   }, [template, records, tableName, params, recordsByTable])
 
