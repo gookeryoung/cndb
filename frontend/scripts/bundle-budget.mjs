@@ -39,7 +39,8 @@ const TOLERANCE = 1.05
 /** 关键 chunk 基线（gzip bytes，2025-07-01 分包瘦身 + 运行时优化后实测） */
 const BASELINES = [
   { name: '主入口 index', file: mainMatch[1], baseline: 185_324 },
-  { name: 'GridPage（表页闭包）', file: gridFile, baseline: 34_355 },
+  // 2026-09-26：排序三态、列宽估算/拖宽、列序 DnD 及重置入口三项功能提交（b05350d/95a638e/b3c7f5c）使 GridPage 增长约 2.5KB gzip
+  { name: 'GridPage（表页闭包）', file: gridFile, baseline: 36_946 },
 ]
 
 let over = false
