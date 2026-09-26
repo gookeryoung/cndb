@@ -78,3 +78,32 @@ export async function getTableId(
   if (!t) throw new Error(`未找到表: ${tableName}`);
   return t.id;
 }
+
+/** 在指定表内按字段名+值精确匹配，返回首条行的 id；未找到则抛出.
+ *
+ *  用途：Grid 虚拟滚动场景下，`hasText("张三")` 这种子串匹配会被
+ *  操作列按钮文字（如"张三编辑"）误命中，`first()` 拿到的往往是
+ *  视口顶部的相邻行。通过 API 拿真实 row id 再用 `[data-row-key]`
+ *  精准定位，彻底规避 DOM 子串匹配的脆弱性。
+ */
+export async function getRowId(
+  request: APIRequestContext,
+  wid: number,
+  tid: number,
+  fieldName: string,
+  fieldValue: unknown,
+): Promise<number> {
+  const token = await getAdminToken(request);
+  const resp = await request.get(
+    `/api/v1/workspaces/${wid}/tables/${tid}/records?limit=500`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  const body = (await resp.json()) as {
+    items?: Array<{ id: number; [k: string]: unknown }>;
+    results?: Array<{ id: number; [k: string]: unknown }>;
+  };
+  const items = body.items || body.results || [];
+  const hit = items.find((r) => r[fieldName] === fieldValue);
+  if (!hit) throw new Error(`未找到行: ${fieldName}=${String(fieldValue)}`);
+  return hit.id;
+}
