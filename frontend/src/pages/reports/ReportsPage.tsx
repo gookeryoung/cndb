@@ -17,6 +17,7 @@ const FORMAT_OPTIONS = [
   { value: 'docx', label: 'Word (.docx)' },
   { value: 'pdf', label: 'PDF (.pdf)' },
   { value: 'xlsx', label: 'Excel (.xlsx)' },
+  { value: 'html', label: 'HTML (.html)' },
 ]
 const THEME_OPTIONS: Array<{ value: ReportTheme; label: string }> = [
   { value: 'minimal', label: '简约' },

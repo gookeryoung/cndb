@@ -351,9 +351,11 @@ EMPLOYEE_ROSTER_TEMPLATE: str = (
     "| --- | --- |\n"
     "| 员工总数 | {{ records | length }} |\n"
     "| 在职人数 | {{ records | selectattr('是否在职', 'equalto', '是') | list | length }} |\n"
+    "| 离职人数 | {{ records | rejectattr('是否在职', 'equalto', '是') | list | length }} |\n"
     "| 覆盖部门数 | {{ group_stats(records, '部门', '薪资') | length }} |\n"
     "| 平均薪资（元） | {{ (stats(records, '薪资').avg or 0) | round(0) | int }} |\n"
     "| 薪资区间（元） | {{ (stats(records, '薪资').min or 0) | int }} ~ {{ (stats(records, '薪资').max or 0) | int }} |\n"
+    "| 月度薪资总成本（元） | {{ (stats(records, '薪资').sum or 0) | int }} |\n"
     "\n"
     "## 二、员工名册\n"
     "\n"
@@ -361,10 +363,11 @@ EMPLOYEE_ROSTER_TEMPLATE: str = (
     "{% if status == '离职' %}{% set shown = records | rejectattr('是否在职', 'equalto', '是') | list %}"
     "{% elif status == '全部' %}{% set shown = records %}"
     "{% else %}{% set shown = records | rejectattr('是否在职', 'equalto', '否') | list %}{% endif %}\n"
-    "| 姓名 | 部门 | 部门负责人 | 入职日期 | 薪资（元） | 是否在职 |\n"
-    "| --- | --- | --- | --- | --- | --- |\n"
+    "| 工号 | 姓名 | 职位 | 部门 | 部门负责人 | 入职日期 | 薪资（元） | 手机号 | 是否在职 |\n"
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
     "{% for r in shown %}"
-    "| {{ r['姓名'] }} | {{ r['部门'] }} | {{ r['负责人'] }} | {{ r['入职日期'] }} | {{ r['薪资'] }} | {{ r['是否在职'] }} |\n"
+    "| {{ r['工号'] }} | {{ r['姓名'] }} | {{ r['职位'] }} | {{ r['部门'] }} | {{ r['负责人'] }} "
+    "| {{ r['入职日期'] }} | {{ r['薪资'] }} | {{ r['手机号'] }} | {{ r['是否在职'] }} |\n"
     "{% endfor %}"
     "\n"
     "## 三、按部门统计\n"
@@ -375,14 +378,22 @@ EMPLOYEE_ROSTER_TEMPLATE: str = (
     "| {{ g.key }} | {{ g.count }} | {{ g.avg | round(0) | int }} | {{ g.sum | int }} |\n"
     "{% endfor %}"
     "\n"
-    "## 四、离职人员名单\n"
+    "## 四、按职位统计\n"
+    "\n"
+    "| 职位 | 人数 | 平均薪资（元） | 最高薪资（元） |\n"
+    "| --- | --- | --- | --- |\n"
+    "{% for g in group_stats(records, '职位', '薪资') %}"
+    "| {{ g.key }} | {{ g.count }} | {{ g.avg | round(0) | int }} | {{ g.max | int }} |\n"
+    "{% endfor %}"
+    "\n"
+    "## 五、离职人员名单\n"
     "\n"
     "{% set left = records | rejectattr('是否在职', 'equalto', '是') | list %}\n"
     "{% if left %}\n"
-    "| 姓名 | 部门 | 入职日期 |\n"
-    "| --- | --- | --- |\n"
+    "| 工号 | 姓名 | 部门 | 入职日期 | 手机号 |\n"
+    "| --- | --- | --- | --- | --- |\n"
     "{% for r in left %}"
-    "| {{ r['姓名'] }} | {{ r['部门'] }} | {{ r['入职日期'] }} |\n"
+    "| {{ r['工号'] }} | {{ r['姓名'] }} | {{ r['部门'] }} | {{ r['入职日期'] }} | {{ r['手机号'] }} |\n"
     "{% endfor %}"
     "{% else %}\n"
     "无离职人员。\n"
@@ -446,11 +457,15 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
     print(f"[seed] 创建数据表: 员工表 (id={emp_tbl.id})")
 
     field_specs: list[tuple[str, str, dict[str, Any], bool]] = [
+        ("工号", "text", {}, True),
         ("姓名", "text", {}, True),
         # 部门为单选关联（multiple=False）：一名员工仅归属一个部门
         ("部门", "link", {"target_table_id": dept_tbl.id, "multiple": False}, False),
+        ("职位", "select", {"options": ["总监", "经理", "工程师", "专员", "会计", "出纳"]}, False),
         ("入职日期", "date", {}, False),
         ("薪资", "number", {}, False),
+        ("手机号", "phone", {}, False),
+        ("邮箱", "email", {}, False),
         ("是否在职", "select", {"options": ["是", "否"]}, False),
     ]
     emp_fields: dict[str, DataField] = {}
@@ -495,21 +510,142 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
         dept_rows = {r[dept_name_col]: r.id for r in _conn.execute(dept_sa.select()).mappings()}
 
     samples = [
-        {"姓名": "张三", "部门": [dept_rows["技术部"]], "入职日期": date(2023, 1, 15), "薪资": 15000, "是否在职": "是"},
-        {"姓名": "李四", "部门": [dept_rows["市场部"]], "入职日期": date(2022, 6, 1), "薪资": 12000, "是否在职": "是"},
-        {"姓名": "王五", "部门": [dept_rows["人事部"]], "入职日期": date(2024, 3, 20), "薪资": 10000, "是否在职": "是"},
         {
+            "工号": "E001",
+            "姓名": "张三",
+            "部门": [dept_rows["技术部"]],
+            "职位": "总监",
+            "入职日期": date(2023, 1, 15),
+            "薪资": 15000,
+            "手机号": "13800138001",
+            "邮箱": "zhangsan@example.com",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E002",
+            "姓名": "李四",
+            "部门": [dept_rows["市场部"]],
+            "职位": "总监",
+            "入职日期": date(2022, 6, 1),
+            "薪资": 12000,
+            "手机号": "13800138002",
+            "邮箱": "lisi@example.com",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E003",
+            "姓名": "王五",
+            "部门": [dept_rows["人事部"]],
+            "职位": "经理",
+            "入职日期": date(2024, 3, 20),
+            "薪资": 10000,
+            "手机号": "13800138003",
+            "邮箱": "wangwu@example.com",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E004",
             "姓名": "赵六",
             "部门": [dept_rows["财务部"]],
+            "职位": "经理",
             "入职日期": date(2021, 11, 10),
             "薪资": 13000,
+            "手机号": "13800138004",
+            "邮箱": "zhaoliu@example.com",
             "是否在职": "否",
         },
-        {"姓名": "钱七", "部门": [dept_rows["技术部"]], "入职日期": date(2023, 8, 5), "薪资": 18000, "是否在职": "是"},
+        {
+            "工号": "E005",
+            "姓名": "钱七",
+            "部门": [dept_rows["技术部"]],
+            "职位": "工程师",
+            "入职日期": date(2023, 8, 5),
+            "薪资": 18000,
+            "手机号": "13900139005",
+            "邮箱": "qianqi@example.com",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E006",
+            "姓名": "孙八",
+            "部门": [dept_rows["技术部"]],
+            "职位": "工程师",
+            "入职日期": date(2024, 2, 14),
+            "薪资": 16000,
+            "手机号": "13900139006",
+            "邮箱": "sunba@example.com",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E007",
+            "姓名": "周九",
+            "部门": [dept_rows["技术部"]],
+            "职位": "工程师",
+            "入职日期": date(2023, 12, 1),
+            "薪资": 14000,
+            "手机号": "13900139007",
+            "邮箱": "zhoujiu@example.com",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E008",
+            "姓名": "吴十",
+            "部门": [dept_rows["市场部"]],
+            "职位": "专员",
+            "入职日期": date(2024, 7, 1),
+            "薪资": 9000,
+            "手机号": "13900139008",
+            "邮箱": "wushi@example.com",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E009",
+            "姓名": "郑一",
+            "部门": [dept_rows["市场部"]],
+            "职位": "经理",
+            "入职日期": date(2022, 9, 15),
+            "薪资": 13000,
+            "手机号": "13900139009",
+            "邮箱": "zhengyi@example.com",
+            "是否在职": "否",
+        },
+        {
+            "工号": "E010",
+            "姓名": "冯二",
+            "部门": [dept_rows["人事部"]],
+            "职位": "专员",
+            "入职日期": date(2025, 4, 1),
+            "薪资": 8000,
+            "手机号": "13900139010",
+            "邮箱": "fenger@example.com",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E011",
+            "姓名": "陈三",
+            "部门": [dept_rows["财务部"]],
+            "职位": "会计",
+            "入职日期": date(2023, 5, 20),
+            "薪资": 11000,
+            "手机号": "13900139011",
+            "邮箱": "chensan@example.com",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E012",
+            "姓名": "褚四",
+            "部门": [dept_rows["财务部"]],
+            "职位": "出纳",
+            "入职日期": date(2024, 10, 8),
+            "薪资": 9500,
+            "手机号": "13900139012",
+            "邮箱": "chusi@example.com",
+            "是否在职": "否",
+        },
     ]
     for data in samples:
         create_row(engine, emp_tbl, values=data, db=db)
-    print("[seed] 插入 5 条员工记录")
+    print(f"[seed] 插入 {len(samples)} 条员工记录")
 
     # 报告模板（绑定员工表）：内容提取为模块级常量，pdf + business 主题 + 在职状态参数
     tpl = ReportTemplate(
@@ -659,14 +795,16 @@ def _generate_sample_reports(
 
 
 # ── 示例报告模板定义 ────────────────────────────────────
-# 6 组典型示例（含既有科研项目季度汇报），覆盖 datasets 各工作区的代表性场景，
-# 并在输出格式（docx/xlsx/pdf）、主题风格、参数化、跨工作区引用上保持配置多样性：
+# 8 组典型示例（含既有科研项目季度汇报），覆盖 datasets 各工作区的代表性场景，
+# 并在输出格式（docx/xlsx/pdf/html）、主题风格、参数化、跨工作区引用上保持配置多样性：
 # 1. 科研项目季度汇报 —— 跨表引用 + selectattr 匹配分组（科研项目管理，docx/business）
 # 2. 电商销售月报 —— 单表分组聚合（某企业销售管理/电商销售，xlsx 数据导出）
 # 3. 产品开发交付进度报告 —— non_empty 空值统计 + 分页（某企业销售管理/产品开发，docx/modern）
 # 4. WBS 任务进度周报 —— selectattr 过滤 + 多维统计（项目管理，docx/engineering）
 # 5. 城市气温天气月报 —— min/max 极值 + 嵌套分组 + 城市参数明细（某地区数据，pdf/academic）
 # 6. 数据质量体检报告 —— 脏数据完整性边界 + 跨工作区抽检（低质量数据，docx/academic）
+# 7. 日常待办任务清单 —— 任务状态/优先级/类型多维统计 + 高优先级明细（某企业销售管理/日常待办，html/modern）
+# 8. 营销活动效果报告 —— 预算/线索/转化率聚合 + 渠道分组 + 活动明细（某企业销售管理/营销活动，html/business）
 REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
     {
         "workspace": "科研项目管理",
@@ -996,6 +1134,115 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
             "- 完整率 100% 表示该字段全部记录非空；\n"
             "- 非空计数按原始值统计（None 与空串视为空），与前端报表统计口径一致；\n"
             "- 数字格式类字段仅检查存在性，不校验格式合法性。\n"
+            "\n"
+            "---PAGE---\n"
+            "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
+        ),
+    },
+    {
+        "workspace": "某企业销售管理",
+        "table": "日常待办",
+        "extra_tables": [],
+        "name": "日常待办任务清单",
+        "description": "按状态/优先级/类型多维统计销售团队待办任务，附高优先级任务明细（html 输出）",
+        "output_format": "html",
+        "theme": "modern",
+        "content": (
+            "# 日常待办任务清单\n"
+            "\n"
+            "> 生成日期：{{ generated_at }}\n"
+            "\n"
+            "## 一、任务概览\n"
+            "\n"
+            "| 指标 | 数值 |\n"
+            "| --- | --- |\n"
+            "| 任务总数 | {{ records | length }} |\n"
+            "| 已完成 | {{ records | selectattr('状态', 'equalto', '已完成') | list | length }} |\n"
+            "| 进行中 | {{ records | selectattr('状态', 'equalto', '进行中') | list | length }} |\n"
+            "| 待办 | {{ records | selectattr('状态', 'equalto', '待办') | list | length }} |\n"
+            "| 已取消 | {{ records | selectattr('状态', 'equalto', '已取消') | list | length }} |\n"
+            "| 高优先级任务数 | {{ records | selectattr('优先级', 'equalto', '高') | list | length }} |\n"
+            "\n"
+            "## 二、按优先级统计\n"
+            "\n"
+            "| 优先级 | 任务数 | 占比 |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '优先级', '优先级') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ '%.1f%%' | format(g.count / records | length * 100) if records else 'N/A' }} |\n"
+            "{% endfor %}"
+            "\n"
+            "## 三、按任务类型统计\n"
+            "\n"
+            "| 任务类型 | 任务数 | 已完成数 |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '待办类型', '优先级') %}"
+            "{% set done = records | selectattr('待办类型', 'equalto', g.key) | selectattr('状态', 'equalto', '已完成') | list | length %}"
+            "| {{ g.key }} | {{ g.count }} | {{ done }} |\n"
+            "{% endfor %}"
+            "\n"
+            "## 四、高优先级任务明细\n"
+            "\n"
+            "{% set high = records | selectattr('优先级', 'equalto', '高') | list %}\n"
+            "| 待办编号 | 待办标题 | 待办类型 | 状态 | 截止日期 | 备注 |\n"
+            "| --- | --- | --- | --- | --- | --- |\n"
+            "{% for r in high %}"
+            "| {{ r['待办编号'] }} | {{ r['待办标题'] }} | {{ r['待办类型'] }} | {{ r['状态'] }} | {{ r['截止日期'] }} | {{ r['备注'] or '-' }} |\n"
+            "{% endfor %}"
+            "\n"
+            "---PAGE---\n"
+            "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
+        ),
+    },
+    {
+        "workspace": "某企业销售管理",
+        "table": "营销活动",
+        "extra_tables": [],
+        "name": "营销活动效果报告",
+        "description": "汇总营销活动预算/线索/转化率，按渠道与状态分组，附重点活动明细（html 输出）",
+        "output_format": "html",
+        "theme": "business",
+        "content": (
+            "# 营销活动效果报告\n"
+            "\n"
+            "> 生成日期：{{ generated_at }}\n"
+            "\n"
+            "## 一、总体效果概览\n"
+            "\n"
+            "| 指标 | 数值 |\n"
+            "| --- | --- |\n"
+            "| 活动总数 | {{ records | length }} |\n"
+            "| 重点活动数 | {{ records | selectattr('是否重点', 'equalto', '是') | list | length }} |\n"
+            "| 预算合计（元） | {{ stats(records, '预算_元').sum | round(0) | int }} |\n"
+            "| 实际花费合计（元） | {{ stats(records, '实际花费_元').sum | round(0) | int }} |\n"
+            "| 线索总数 | {{ stats(records, '线索数').sum | round(0) | int }} |\n"
+            "| 平均转化率（%） | {{ stats(records, '转化率_%').avg | round(2) }} |\n"
+            "\n"
+            "## 二、按渠道类型统计\n"
+            "\n"
+            "| 渠道类型 | 活动数 | 预算合计（元） | 线索合计 |\n"
+            "| --- | --- | --- | --- |\n"
+            "{% for g in group_stats(records, '渠道类型', '预算_元') %}"
+            "{% set gl = group_stats(records, '渠道类型', '线索数') | selectattr('key', 'equalto', g.key) | list %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(0) | int }} | {{ gl[0].sum | int if gl else 0 }} |\n"
+            "{% endfor %}"
+            "\n"
+            "## 三、按活动状态统计\n"
+            "\n"
+            "| 活动状态 | 活动数 | 预算合计（元） |\n"
+            "| --- | --- | --- |\n"
+            "{% for g in group_stats(records, '活动状态', '预算_元') %}"
+            "| {{ g.key }} | {{ g.count }} | {{ g.sum | round(0) | int }} |\n"
+            "{% endfor %}"
+            "\n"
+            "## 四、重点活动明细\n"
+            "\n"
+            "{% set key_acts = records | selectattr('是否重点', 'equalto', '是') | list %}\n"
+            "| 活动编号 | 活动名称 | 渠道类型 | 负责人 | 联系邮箱 | 活动页面 | 预算（元） | 线索数 | 转化率（%） |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+            "{% for r in key_acts %}"
+            "| {{ r['活动编号'] }} | {{ r['活动名称'] }} | {{ r['渠道类型'] }} | {{ r['负责人'] }} "
+            "| {{ r['负责人邮箱'] }} | {{ r['活动页面'] }} | {{ r['预算_元'] }} | {{ r['线索数'] }} | {{ r['转化率_%'] }} |\n"
+            "{% endfor %}"
             "\n"
             "---PAGE---\n"
             "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"

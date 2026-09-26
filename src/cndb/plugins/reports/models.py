@@ -20,6 +20,7 @@ class OutputFormat(enum.StrEnum):
     DOCX = "docx"
     PDF = "pdf"
     XLSX = "xlsx"
+    HTML = "html"
 
 
 class ThemeStyle(enum.StrEnum):

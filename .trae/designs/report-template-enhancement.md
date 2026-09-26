@@ -1,17 +1,24 @@
-# 报表模板增强设计（模板多样化 / PDF 中文 / 示例模板丰富化）
+# 报表模板增强设计（模板多样化 / PDF 中文 / HTML 输出 / 示例模板丰富化）
 
-需求来源：`.trae/req/` 报表完善需求——1) 种子模板配置多样化；2) PDF 输出乱码修复；3) 员工名册等示例模板内容丰富化。涉及文件：`src/cndb/plugins/reports/routers/reports.py`、`src/cndb/cli/seed.py`、`tests/test_reports_renderers.py`、`tests/test_seed_report_examples.py`。
+需求来源：`.trae/req/` 报表完善需求——1) 种子模板配置多样化；2) PDF 输出乱码修复；3) 员工名册等示例模板内容丰富化；4) 输出格式覆盖 html、字段类型多样化、示例数据贴近真实业务。涉及文件：`src/cndb/plugins/reports/routers/reports.py`、`src/cndb/plugins/reports/models.py`、`src/cndb/cli/seed.py`、`frontend/src/pages/reports/ReportsPage.tsx`、`tests/test_reports_renderers.py`、`tests/test_seed_report_examples.py`、`tests/test_backup_seed_roundtrip.py`。
+
+## 0. HTML 输出格式
+
+- `OutputFormat` 新增 `HTML = "html"`；`_FORMAT_RENDERERS` 注册 `_render_html`；`_CONTENT_TYPES` 映射 `text/html; charset=utf-8`。
+- `_render_html(rendered_text, ctx, theme)`：Markdown 风格标题/表格/`**粗体**`/`` `代码` ``/引用块转自包含 HTML 文档；`---PAGE---` 转 `page-break-after: always` 打印分页符；文本先经 `_html_escape` 转义再加标签（`_html_rich_text`），防注入。
+- 主题应用：`get_theme_preset(theme)` 的 `heading_colors[0]` 作标题色、`table_header_bg/table_header_color` 作表头配色，内联 CSS 无外部依赖。
+- 前端 `ReportsPage.tsx` FORMAT_OPTIONS 新增 `{ value: 'html', label: 'HTML (.html)' }`；`api/types.ts` 的 `output_format` 为 string 无需改类型。
 
 ## 1. 模板配置多样化（seed 数据驱动）
 
 REPORT_TEMPLATE_SPECS 每项新增可选键（缺省保持旧行为）：
 
-- `output_format: str`（docx/xlsx/pdf，缺省 docx）
+- `output_format: str`（docx/xlsx/pdf/html，缺省 docx）
 - `theme: str`（business/minimal/modern/engineering/academic，缺省 minimal）
 - `parameters: list[dict]`（ParameterDef 形状：name/type/default/required/label）
 - `cross_workspace_tables: list[tuple[str, str]]`（跨工作区引用：(工作区名, 表名)，从 tables_map 全局解析后并入 extra_table_ids）
 
-分配矩阵（7 个模板，覆盖 3 种输出格式 / 5 种主题 / 参数化 / 跨工作区）：
+分配矩阵（8 个模板，覆盖 4 种输出格式 / 5 种主题 / 参数化 / 跨工作区）：
 
 | 模板 | 格式 | 主题 | 参数 | 跨工作区 |
 | --- | --- | --- | --- | --- |
@@ -21,7 +28,13 @@ REPORT_TEMPLATE_SPECS 每项新增可选键（缺省保持旧行为）：
 | WBS任务进度周报 | docx | engineering | - | - |
 | 城市气温天气月报 | pdf | academic | 城市（string，默认"全部"） | - |
 | 数据质量体检报告 | docx | academic | - | (某地区数据, 气温天气) |
+| 日常待办任务清单 | html | modern | - | - |
+| 营销活动效果报告 | html | business | - | - |
 | 员工名册 | pdf | business | 在职状态（string，默认"在职"） | - |
+
+- 新增数据集 `examples/datasets/工作区-某企业销售管理/营销活动.csv`（14 行）：字段类型覆盖 text/select/number/float/date/email/url/phone/boolean（是否重点 是/否），演示 CSV 导入类型推断多样性。
+- 日常待办任务清单：任务概览（按状态计数 + 高优先级数）、按优先级统计（含占比）、按任务类型统计（已完成数）、高优先级任务明细表。
+- 营销活动效果报告：总体概览（预算/实际花费/线索/平均转化率）、按渠道类型分组（嵌套 selectattr 匹配线索合计）、按活动状态分组、重点活动明细表（含邮箱/活动页面字段）。
 
 - `_seed_report_templates` 读取上述键创建 ReportTemplate；`_generate_sample_reports` 输出扩展名改为按 `tpl.output_format`（`{模板名}-示例报告.{ext}`）。
 - 带参数的模板在 Jinja 中用 `params.get('参数名', 默认值)` 取值（沙箱允许 dict.get），默认值与 parameters.default 一致，保证 `params={}` 渲染结果与既有测试断言兼容。
@@ -39,19 +52,28 @@ REPORT_TEMPLATE_SPECS 每项新增可选键（缺省保持旧行为）：
 - `_render_pdf`：`cjk = _ensure_pdf_font() or "Helvetica"`；Body/Heading 段落样式、表格样式命令（`_pdf_table_style_cmds(preset, cjk)` 的 FONTNAME 两行）、页眉/页脚 `canvas.setFont(cjk, ...)`、页眉标题 drawString 全部改用 cjk 字体；`_pdf_markdown_to_rml(text, cjk)` 的行内代码 `<font name>` 同步改用 cjk（Courier 无中文字形）。
 - `_pdf_table_style_cmds` 新增可选参数 `cjk_font="Helvetica"`（默认值保持既有单参调用兼容）。
 
-## 3. 员工名册模板内容（EMPLOYEE_ROSTER_TEMPLATE）
+## 3. 员工表与员工名册模板
 
-records 为员工扁平 dict（姓名/部门/部门负责人/入职日期/薪资/是否在职，link/lookup 已由 `_flatten_for_report` 展开为字符串）：
+员工表（`_seed_sales_tables` 硬编码）扩展为 12 行真实规模数据，字段类型覆盖 text/link/lookup/select/date/number/phone/email：
+
+- 字段：工号(text, required)、姓名(text, required)、部门(link→部门表 单选)、职位(select：总监/经理/工程师/专员/会计/出纳)、入职日期(date)、薪资(number)、手机号(phone)、邮箱(email)、是否在职(select 是/否)、负责人(lookup 经部门解析)。
+- 行数据：12 名员工分布 4 部门（技术 4 / 市场 3 / 人事 2 / 财务 3），在职 9 人、离职 3 人（赵六/郑一/褚四），薪资 8000~18000。
+
+records 为员工扁平 dict（link/lookup 已由 `_flatten_for_report` 展开为字符串），EMPLOYEE_ROSTER_TEMPLATE：
 
 - 头部：生成日期 + 统计范围（params 在职状态，默认"在职"）。
-- 一、人员概览：员工总数 / 在职人数 / 覆盖部门数 / 平均薪资 / 薪资区间（min~max，空数据用 `or 0` 兜底）。
-- 二、员工名册：全字段表格，按在职状态参数过滤（在职/离职/全部）。
+- 一、人员概览：员工总数 / 在职人数 / 离职人数 / 覆盖部门数 / 平均薪资 / 薪资区间 / 月度薪资总成本（空数据用 `or 0` 兜底）。
+- 二、员工名册：工号|姓名|职位|部门|部门负责人|入职日期|薪资|手机号|是否在职 全字段表格，按在职状态参数过滤（在职/离职/全部）。
 - 三、按部门统计：group_stats 人数/平均薪资/薪资合计。
-- 四、离职人员名单：rejectattr 过滤，空列表输出"无"。
+- 四、按职位统计：人数/平均薪资/最高薪资。
+- 五、离职人员名单：rejectattr 过滤，含手机号，空列表输出"无"。
 - 尾部：`---PAGE---` + 落款。
 
 ## 异常与兼容
 
 - 字体注册全失败时回退 Helvetica 并 warning（旧行为，中文仍可能乱码但不崩溃）。
+- HTML 转义：所有渲染文本先 `_html_escape` 再加标签，`<script>` 等内容不生效。
 - `_generate_sample_reports` 渲染失败仅告警不中断 seed（既有约定不变）。
-- API schema 无变化，前端类型无需同步。
+- seed 生成的示例报告产物（`examples/datasets/**/*-示例报告.*`）已加入 .gitignore，不入库，每次 seed 覆盖重写。
+- API schema 无变化（output_format 为 string 枚举校验在服务端），前端仅新增格式选项。
+- 员工表字段/行数扩展同步影响 `test_backup_seed_roundtrip.py`（字段集/16 行还原断言）与 `test_seed_report_examples.py`（名册 12 行期望值）。

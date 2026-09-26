@@ -325,6 +325,94 @@ class TestThemedPdfRender:
         assert resp.content.startswith(b"%PDF")
 
 
+# ── HTML 渲染器 ────────────────────────────────────────
+
+
+class TestHtmlRenderer:
+    """HTML 输出格式：markdown 结构转自包含 HTML、主题配色、转义与端到端."""
+
+    def test_render_html_basic_structure(self):
+        """标题/表格/加粗/代码/引用转换为对应 HTML 标签."""
+        from cndb.plugins.reports.routers.reports import _render_html
+
+        text = (
+            "# 员工月报\n"
+            "\n"
+            "> 生成日期：2026-09-26\n"
+            "\n"
+            "## 一、概览\n"
+            "\n"
+            "| 姓名 | 部门 |\n"
+            "| --- | --- |\n"
+            "| **张三** | `研发` |\n"
+            "\n"
+            "---PAGE---\n"
+            "正文段落\n"
+        )
+        html = _render_html(text, {"table_name": "员工表"}, "business").decode("utf-8")
+        assert html.lstrip().startswith("<!DOCTYPE html>")
+        assert '<meta charset="utf-8">' in html
+        assert "<h1>员工月报</h1>" in html
+        assert "<h2>一、概览</h2>" in html
+        assert "<table" in html and "<th>姓名</th>" in html
+        assert "<strong>张三</strong>" in html
+        assert "<code>研发</code>" in html
+        assert "<blockquote>" in html
+        assert "page-break-after: always" in html
+        assert "<p>正文段落</p>" in html
+
+    def test_render_html_escapes_special_chars(self):
+        """表格与段落中的 HTML 特殊字符应被转义（防注入）."""
+        from cndb.plugins.reports.routers.reports import _render_html
+
+        text = "| 内容 |\n| --- |\n| <script>alert(1)</script> |\n"
+        html = _render_html(text, {}, "minimal").decode("utf-8")
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+    def test_render_html_applies_theme_colors(self):
+        """主题 preset 的标题色与表头底色应出现在内联 CSS 中."""
+        from cndb.plugins.reports.routers.reports import _render_html
+        from cndb.plugins.reports.themes import get_theme_preset
+
+        preset = get_theme_preset("business")
+        html = _render_html("# 标题\n| a |\n| --- |\n| 1 |", {}, "business").decode("utf-8")
+        assert preset.heading_colors[0].lower() in html.lower()
+        assert preset.table_header_bg.lower() in html.lower()
+
+    def test_render_html_all_themes_smoke(self):
+        """五类主题 HTML 渲染均成功。"""
+        from cndb.plugins.reports.routers.reports import _render_html
+
+        text = "# 标题\n## 二级\n正文段落\n| a | b |\n| --- | --- |\n| 1 | `c` |"
+        for theme in ("business", "minimal", "modern", "engineering", "academic"):
+            data = _render_html(text, {}, theme)
+            assert data.startswith(b"<!DOCTYPE html>"), theme
+
+    def test_render_endpoint_html_smoke(self, client, auth_headers, sample_tables):
+        """端到端：output_format=html 的模板渲染返回 text/html 文档."""
+        _wid, tid, _ = sample_tables
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "HTML模板",
+                "table_id": tid,
+                "output_format": "html",
+                "template_content": "# HTML 标题\n| a | b |\n| --- | --- |\n| 1 | 2 |",
+            },
+        )
+        assert tpl.status_code == 201, tpl.text
+        resp = client.post(
+            f"/api/v1/reports/{tpl.json()['id']}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["content-type"].startswith("text/html")
+        assert b"<!DOCTYPE html>" in resp.content
+
+
 # ── DOCX 富文本（既有） ────────────────────────────────
 
 

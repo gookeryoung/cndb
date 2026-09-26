@@ -26,7 +26,7 @@ from cndb.cli.seed import (
 
 # 5 组新增示例涉及的数据集表（工作区显示名 -> 表名列表，对应仓库 examples/datasets/*.csv）
 REQUIRED_TABLES: dict[str, list[str]] = {
-    "某企业销售管理": ["电商销售", "产品开发"],
+    "某企业销售管理": ["电商销售", "产品开发", "日常待办", "营销活动"],
     "项目管理": ["WBS任务分解"],
     "某地区数据": ["气温天气"],
     "低质量数据": ["19-特殊值杂项", "17-数字格式大全"],
@@ -132,11 +132,11 @@ def _render_spec(db, user, tables_map: dict[str, dict[str, Any]], spec_name: str
 
 
 def test_spec_definitions_unique_and_compilable():
-    """6 组 spec 名称唯一，模板内容均可通过沙箱环境编译（语法校验）。"""
+    """8 组 spec 名称唯一，模板内容均可通过沙箱环境编译（语法校验）。"""
     from cndb.plugins.reports.routers.reports import _jinja_env
 
     names = [s["name"] for s in REPORT_TEMPLATE_SPECS]
-    assert len(names) == 6
+    assert len(names) == 8
     assert len(set(names)) == len(names)
     for spec in REPORT_TEMPLATE_SPECS:
         assert spec["content"].strip(), f"{spec['name']} 模板内容为空"
@@ -160,9 +160,9 @@ def test_specs_reference_existing_dataset_tables():
 
 
 def test_spec_config_diversity():
-    """模板配置多样性：输出格式覆盖 docx/xlsx/pdf，主题风格>=3 种，含参数化与跨工作区引用."""
+    """模板配置多样性：输出格式覆盖 docx/xlsx/pdf/html，主题风格>=3 种，含参数化与跨工作区引用."""
     formats = {spec.get("output_format", "docx") for spec in REPORT_TEMPLATE_SPECS}
-    assert formats == {"docx", "xlsx", "pdf"}, f"输出格式应覆盖三种，实际 {formats}"
+    assert formats == {"docx", "xlsx", "pdf", "html"}, f"输出格式应覆盖四种，实际 {formats}"
     themes = {spec.get("theme", "minimal") for spec in REPORT_TEMPLATE_SPECS}
     assert len(themes) >= 3, f"主题风格应至少 3 种，实际 {themes}"
     with_params = [s for s in REPORT_TEMPLATE_SPECS if s.get("parameters")]
@@ -183,9 +183,9 @@ def test_seed_report_templates_idempotent(seed_env, db):
     from cndb.plugins.reports.models import ReportTemplate
 
     tables_map, _user = seed_env
-    assert db.query(ReportTemplate).count() == 5  # 科研模板因工作区缺失跳过
+    assert db.query(ReportTemplate).count() == 7  # 科研模板因工作区缺失跳过
     _seed_report_templates(db, tables_map)
-    assert db.query(ReportTemplate).count() == 5
+    assert db.query(ReportTemplate).count() == 7
     names = {t.name for t in db.query(ReportTemplate).all()}
     assert names == {s["name"] for s in REPORT_TEMPLATE_SPECS} - {"科研项目季度汇报"}
 
@@ -272,15 +272,142 @@ def test_render_data_quality(seed_env, db):
 
 
 def _render_employee_roster(params: dict[str, Any]) -> str:
-    """用与 seed 数据一致的员工扁平记录渲染 EMPLOYEE_ROSTER_TEMPLATE."""
+    """用与 seed 数据一致的员工扁平记录（12 行、含工号/职位/手机号等新字段）渲染 EMPLOYEE_ROSTER_TEMPLATE."""
     from cndb.plugins.reports.routers.reports import _jinja_env, _render_with_timeout
 
     records: list[dict[str, Any]] = [
-        {"姓名": "张三", "部门": "技术部", "负责人": "张三", "入职日期": "2023-01-15", "薪资": 15000, "是否在职": "是"},
-        {"姓名": "李四", "部门": "市场部", "负责人": "李四", "入职日期": "2022-06-01", "薪资": 12000, "是否在职": "是"},
-        {"姓名": "王五", "部门": "人事部", "负责人": "王五", "入职日期": "2024-03-20", "薪资": 10000, "是否在职": "是"},
-        {"姓名": "赵六", "部门": "财务部", "负责人": "赵六", "入职日期": "2021-11-10", "薪资": 13000, "是否在职": "否"},
-        {"姓名": "钱七", "部门": "技术部", "负责人": "张三", "入职日期": "2023-08-05", "薪资": 18000, "是否在职": "是"},
+        {
+            "工号": "E001",
+            "姓名": "张三",
+            "职位": "总监",
+            "部门": "技术部",
+            "负责人": "张三",
+            "入职日期": "2023-01-15",
+            "薪资": 15000,
+            "手机号": "13800138001",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E002",
+            "姓名": "李四",
+            "职位": "总监",
+            "部门": "市场部",
+            "负责人": "李四",
+            "入职日期": "2022-06-01",
+            "薪资": 12000,
+            "手机号": "13800138002",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E003",
+            "姓名": "王五",
+            "职位": "经理",
+            "部门": "人事部",
+            "负责人": "王五",
+            "入职日期": "2024-03-20",
+            "薪资": 10000,
+            "手机号": "13800138003",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E004",
+            "姓名": "赵六",
+            "职位": "经理",
+            "部门": "财务部",
+            "负责人": "赵六",
+            "入职日期": "2021-11-10",
+            "薪资": 13000,
+            "手机号": "13800138004",
+            "是否在职": "否",
+        },
+        {
+            "工号": "E005",
+            "姓名": "钱七",
+            "职位": "工程师",
+            "部门": "技术部",
+            "负责人": "张三",
+            "入职日期": "2023-08-05",
+            "薪资": 18000,
+            "手机号": "13900139005",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E006",
+            "姓名": "孙八",
+            "职位": "工程师",
+            "部门": "技术部",
+            "负责人": "张三",
+            "入职日期": "2024-02-14",
+            "薪资": 16000,
+            "手机号": "13900139006",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E007",
+            "姓名": "周九",
+            "职位": "工程师",
+            "部门": "技术部",
+            "负责人": "张三",
+            "入职日期": "2023-12-01",
+            "薪资": 14000,
+            "手机号": "13900139007",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E008",
+            "姓名": "吴十",
+            "职位": "专员",
+            "部门": "市场部",
+            "负责人": "李四",
+            "入职日期": "2024-07-01",
+            "薪资": 9000,
+            "手机号": "13900139008",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E009",
+            "姓名": "郑一",
+            "职位": "经理",
+            "部门": "市场部",
+            "负责人": "李四",
+            "入职日期": "2022-09-15",
+            "薪资": 13000,
+            "手机号": "13900139009",
+            "是否在职": "否",
+        },
+        {
+            "工号": "E010",
+            "姓名": "冯二",
+            "职位": "专员",
+            "部门": "人事部",
+            "负责人": "王五",
+            "入职日期": "2025-04-01",
+            "薪资": 8000,
+            "手机号": "13900139010",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E011",
+            "姓名": "陈三",
+            "职位": "会计",
+            "部门": "财务部",
+            "负责人": "赵六",
+            "入职日期": "2023-05-20",
+            "薪资": 11000,
+            "手机号": "13900139011",
+            "是否在职": "是",
+        },
+        {
+            "工号": "E012",
+            "姓名": "褚四",
+            "职位": "出纳",
+            "部门": "财务部",
+            "负责人": "赵六",
+            "入职日期": "2024-10-08",
+            "薪资": 9500,
+            "手机号": "13900139012",
+            "是否在职": "否",
+        },
     ]
     ctx: dict[str, Any] = {
         "records": records,
@@ -293,41 +420,88 @@ def _render_employee_roster(params: dict[str, Any]) -> str:
 
 
 def test_employee_roster_template_default_renders_rich_content():
-    """默认参数（在职）渲染：概览统计、名册表格、按部门分组、离职名单均非空."""
+    """默认参数（在职）渲染：概览统计、名册表格、按部门/按职位分组、离职名单均非空."""
     text = _render_employee_roster({})
     # 概览
-    assert "| 员工总数 | 5 |" in text
-    assert "| 在职人数 | 4 |" in text
+    assert "| 员工总数 | 12 |" in text
+    assert "| 在职人数 | 9 |" in text
+    assert "| 离职人数 | 3 |" in text
     assert "| 覆盖部门数 | 4 |" in text
-    assert "| 平均薪资（元） | 13600 |" in text  # (15000+12000+10000+13000+18000)/5
-    assert "| 薪资区间（元） | 10000 ~ 18000 |" in text
-    # 名册表（默认在职：4 行，不含赵六）
-    assert "| 张三 | 技术部 |" in text
-    assert "| 钱七 | 技术部 | 张三 | 2023-08-05 | 18000 | 是 |" in text
-    assert "赵六" not in text.split("## 四、离职人员名单")[0].split("## 二、员工名册")[1]
-    # 按部门统计：技术部 2 人
-    assert "| 技术部 | 2 | 16500 | 33000 |" in text
-    # 离职名单含赵六
-    assert "| 赵六 | 财务部 | 2021-11-10 |" in text
+    assert "| 平均薪资（元） | 12375 |" in text  # 148500 / 12
+    assert "| 薪资区间（元） | 8000 ~ 18000 |" in text
+    assert "| 月度薪资总成本（元） | 148500 |" in text
+    # 名册表（默认在职：9 行，不含赵六，含工号/职位/手机号等新字段）
+    assert "| E001 | 张三 | 总监 | 技术部 | 张三 | 2023-01-15 | 15000 | 13800138001 | 是 |" in text
+    assert "| E008 | 吴十 | 专员 | 市场部 | 李四 | 2024-07-01 | 9000 | 13900139008 | 是 |" in text
+    roster = text.split("## 二、员工名册")[1].split("## 三、按部门统计")[0]
+    # 赵六本人不在名册（但其作为财务部负责人经 lookup 出现在陈三行，按工号行前缀判断）
+    assert "| E004 | 赵六" not in roster
+    # 按部门统计：技术部 4 人 / 市场部 3 人（avg 34000/3 → 11333）
+    assert "| 技术部 | 4 | 15750 | 63000 |" in text
+    assert "| 市场部 | 3 | 11333 | 34000 |" in text
+    # 按职位统计：工程师 3 人 avg 16000 max 18000
+    assert "| 工程师 | 3 | 16000 | 18000 |" in text
+    # 离职名单含赵六（含手机号）
+    assert "| E004 | 赵六 | 财务部 | 2021-11-10 | 13800138004 |" in text
 
 
 def test_employee_roster_template_params_filter():
-    """参数化：在职状态=离职 时名册仅含离职员工；=全部 时含全部员工."""
+    """参数化：在职状态=离职 时名册仅含离职员工；=全部 时含全部 12 名员工."""
     left_text = _render_employee_roster({"在职状态": "离职"})
     roster = left_text.split("## 二、员工名册")[1].split("## 三、按部门统计")[0]
     assert "| 赵六 |" in roster
     assert "| 张三 |" not in roster
     all_text = _render_employee_roster({"在职状态": "全部"})
     roster = all_text.split("## 二、员工名册")[1].split("## 三、按部门统计")[0]
-    for name in ("张三", "李四", "王五", "赵六", "钱七"):
+    for name in ("张三", "李四", "王五", "赵六", "钱七", "孙八", "周九", "吴十", "郑一", "冯二", "陈三", "褚四"):
         assert f"| {name} |" in roster
+
+
+# ── 新增 html 模板渲染断言 ──────────────────────────────
+
+
+def test_render_daily_todo(seed_env, db):
+    """日常待办任务清单：任务总数与高优先级数与数据独立重算一致。"""
+    tables_map, user = seed_env
+    ctx, text = _render_spec(db, user, tables_map, "日常待办任务清单")
+    records = ctx["records"]
+    assert records, "日常待办表应有数据"
+    assert f"| 任务总数 | {len(records)} |" in text
+    high = sum(1 for r in records if r.get("优先级") == "高")
+    assert f"| 高优先级任务数 | {high} |" in text
+    done = sum(1 for r in records if r.get("状态") == "已完成")
+    assert f"| 已完成 | {done} |" in text
+    # 高优先级明细包含编号与标题
+    first_high = next(r for r in records if r.get("优先级") == "高")
+    assert f"| {first_high['待办编号']} |" in text
+    assert first_high["待办标题"] in text
+
+
+def test_render_marketing_campaign(seed_env, db):
+    """营销活动效果报告：预算合计/重点活动数/渠道分组与数据独立重算一致。"""
+    tables_map, user = seed_env
+    ctx, text = _render_spec(db, user, tables_map, "营销活动效果报告")
+    records = ctx["records"]
+    assert records, "营销活动表应有数据"
+    assert f"| 活动总数 | {len(records)} |" in text
+    expected_budget = int(_num_sum(records, "预算_元"))
+    assert f"| 预算合计（元） | {expected_budget} |" in text
+    key_acts = sum(1 for r in records if r.get("是否重点") == "是")
+    assert f"| 重点活动数 | {key_acts} |" in text
+    leads = int(_num_sum(records, "线索数"))
+    assert f"| 线索总数 | {leads} |" in text
+    # 按渠道分组：首个渠道的预算合计正确
+    first_ch = records[0]["渠道类型"]
+    ch_budget = int(_num_sum([r for r in records if r["渠道类型"] == first_ch], "预算_元"))
+    assert f"| {first_ch} |" in text
+    assert f"{ch_budget} |" in text
 
 
 # ── 端到端示例报告生成 ──────────────────────────────────
 
 
 def test_generate_sample_reports_writes_files(seed_env, db, tmp_path: Path):
-    """_generate_sample_reports 按模板输出格式落盘（docx/xlsx/pdf），docx 文档含标题与表格."""
+    """_generate_sample_reports 按模板输出格式落盘（docx/xlsx/pdf/html），docx 文档含标题与表格."""
     from docx import Document
     from openpyxl import load_workbook
 
@@ -341,7 +515,7 @@ def test_generate_sample_reports_writes_files(seed_env, db, tmp_path: Path):
     expected_names = {f"{s['name']}-示例报告.{s.get('output_format', 'docx')}" for s in REPORT_TEMPLATE_SPECS} - {
         "科研项目季度汇报-示例报告.docx"
     }
-    files = sorted(p for p in out_dir.rglob("*-示例报告.*") if p.suffix in {".docx", ".xlsx", ".pdf"})
+    files = sorted(p for p in out_dir.rglob("*-示例报告.*") if p.suffix in {".docx", ".xlsx", ".pdf", ".html"})
     assert {f.name for f in files} == expected_names
     for f in files:
         assert f.stat().st_size > 1000, f"{f.name} 体积异常"
@@ -352,5 +526,9 @@ def test_generate_sample_reports_writes_files(seed_env, db, tmp_path: Path):
         elif f.suffix == ".xlsx":
             wb = load_workbook(str(f))
             assert len(wb.sheetnames) >= 1, f"{f.name} 缺少 Sheet"
+        elif f.suffix == ".html":
+            content = f.read_bytes()
+            assert content.lstrip().startswith(b"<!DOCTYPE html>"), f"{f.name} 应为 HTML 文档"
+            assert "<table" in content.decode("utf-8"), f"{f.name} 缺少表格"
         else:
             assert f.read_bytes().startswith(b"%PDF"), f"{f.name} 应为 PDF"
