@@ -43,6 +43,72 @@ describe('PreviewPanel 实时预览', () => {
     expect(await screen.findByText('周报', {}, FIND_OPTS)).toBeInTheDocument()
   })
 
+  // ── selectattr / rejectattr Jinja2 三参数（测试名）语义 —— 员工名册过滤场景 ──
+
+  /** 员工名册式数据：是否在职 为 是/否 文本 */
+  const EMP_ROWS = [
+    { 姓名: '张三', 部门: '技术部', 是否在职: '是', 薪资: 15000 },
+    { 姓名: '赵六', 部门: '财务部', 是否在职: '否', 薪资: 13000 },
+    { 姓名: '钱七', 部门: '技术部', 是否在职: '是', 薪资: 18000 },
+  ]
+
+  it('rejectattr(attr, equalto, 值) 按测试名排除（Jinja2 三参数形式）', async () => {
+    renderProviders(
+      <PreviewPanel
+        template="{% set shown = records | rejectattr('是否在职', 'equalto', '否') | list %}[{{ shown | length }}]{% for r in shown %}{{ r.姓名 }}{% endfor %}"
+        records={EMP_ROWS}
+      />,
+    )
+
+    expect(await screen.findByText('[2]张三钱七', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
+  it('selectattr(attr, equalto, 值) 按测试名筛选（Jinja2 三参数形式）', async () => {
+    renderProviders(
+      <PreviewPanel
+        template="{% set left = records | selectattr('是否在职', 'equalto', '否') | list %}[{{ left | length }}]{% for r in left %}{{ r.姓名 }}{% endfor %}"
+        records={EMP_ROWS}
+      />,
+    )
+
+    expect(await screen.findByText('[1]赵六', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
+  it('selectattr/rejectattr 单参数真值形式保持可用', async () => {
+    renderProviders(
+      <PreviewPanel
+        template="{% set withDept = records | selectattr('部门') | list %}[{{ withDept | length }}]{% set noDept = records | rejectattr('部门') | list %}[{{ noDept | length }}]"
+        records={[{ 姓名: '甲', 部门: '技术部' }, { 姓名: '乙' }]}
+      />,
+    )
+
+    expect(await screen.findByText('[1][1]', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
+  it('数值比较测试（gt）与字符串测试（startswith）可用', async () => {
+    renderProviders(
+      <PreviewPanel
+        template="{% set hi = records | selectattr('薪资', 'gt', 14000) | list %}[{{ hi | length }}]{% set tech = records | selectattr('部门', 'startswith', '技') | list %}[{{ tech | length }}]"
+        records={EMP_ROWS}
+      />,
+    )
+
+    expect(await screen.findByText('[2][2]', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
+  it('员工名册模板概览统计与后端渲染一致（员工总数非 0）', async () => {
+    renderProviders(
+      <PreviewPanel
+        template="{% set status = params.get('在职状态', '在职') %}{% if status == '离职' %}{% set shown = records | rejectattr('是否在职', 'equalto', '是') | list %}{% elif status == '全部' %}{% set shown = records %}{% else %}{% set shown = records | rejectattr('是否在职', 'equalto', '否') | list %}{% endif %}员工总数 {{ shown | length }} ｜ 离职人数 {{ shown | selectattr('是否在职', 'equalto', '是') | rejectattr('是否在职', 'equalto', '是') | list | length }}"
+        records={EMP_ROWS}
+        params={{}}
+      />,
+    )
+
+    // 修复前 Nunjucks 不支持三参数测试名 → shown 为空 → 统计显示 0
+    expect(await screen.findByText('员工总数 2 ｜ 离职人数 0', {}, FIND_OPTS)).toBeInTheDocument()
+  })
+
   it('params.get(key, default) — key 存在返回值', async () => {
     renderProviders(
       <PreviewPanel

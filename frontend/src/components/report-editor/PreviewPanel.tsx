@@ -56,6 +56,96 @@ function wrapParams(raw: Record<string, unknown> | undefined): Record<string, un
   return obj
 }
 
+// ── Jinja2 测试（tests）兼容层 ──
+// Nunjucks 的 selectattr/rejectattr 仅支持「属性真值」过滤，不支持 Jinja2 的
+// 三参数形式 selectattr('字段', 'equalto', 值)。这里注册常用测试名，
+// 并覆写四个过滤器，使双端（Jinja2 / Nunjucks）对同一模板渲染语义一致。
+
+/** Jinja2 测试函数签名：value 为被测值，extra 为比较目标 */
+type JinjaTest = (value: unknown, extra?: unknown) => boolean
+
+const JINJA_TESTS: Record<string, JinjaTest> = {
+  equalto: (v, e) => v === e,
+  eq: (v, e) => v === e,
+  sameas: (v, e) => v === e,
+  ne: (v, e) => v !== e,
+  gt: (v, e) => Number(v) > Number(e),
+  greaterthan: (v, e) => Number(v) > Number(e),
+  ge: (v, e) => Number(v) >= Number(e),
+  gte: (v, e) => Number(v) >= Number(e),
+  lt: (v, e) => Number(v) < Number(e),
+  lessthan: (v, e) => Number(v) < Number(e),
+  le: (v, e) => Number(v) <= Number(e),
+  lte: (v, e) => Number(v) <= Number(e),
+  in: (v, e) => {
+    if (Array.isArray(e) || typeof e === 'string') return (e as Array<unknown> | string).includes(v as never)
+    if (e !== null && typeof e === 'object') return Object.values(e).includes(v)
+    return false
+  },
+  contains: (v, e) => {
+    if (Array.isArray(v) || typeof v === 'string') return (v as Array<unknown> | string).includes(e as never)
+    return false
+  },
+  startswith: (v, e) => typeof v === 'string' && v.startsWith(String(e)),
+  endswith: (v, e) => typeof v === 'string' && v.endsWith(String(e)),
+  defined: (v) => v !== undefined,
+  undefined: (v) => v === undefined,
+  none: (v) => v === null,
+  even: (v) => Number(v) % 2 === 0,
+  odd: (v) => Math.abs(Number(v)) % 2 === 1,
+  number: (v) => typeof v === 'number',
+  string: (v) => typeof v === 'string',
+}
+
+/** 按测试名求值；单参数真值形式（无测试名）退化为 Boolean */
+function runTest(value: unknown, testName: string | undefined, testArg: unknown): boolean {
+  if (testName === undefined) return Boolean(value)
+  const test = JINJA_TESTS[testName]
+  if (!test) throw new Error(`预览暂不支持 Jinja2 测试: ${testName}`)
+  return test(value, testArg)
+}
+
+function attrValue(item: unknown, attr: string): unknown {
+  return (item as Record<string, unknown> | null)?.[attr]
+}
+
+function selectRecords(
+  records: Array<Record<string, unknown>> | undefined,
+  attr: string,
+  keep: boolean,
+  testName?: string,
+  testArg?: unknown,
+): Array<Record<string, unknown>> {
+  const list = records || []
+  return list.filter((r) => {
+    const ok = runTest(attrValue(r, attr), testName, testArg)
+    return keep ? ok : !ok
+  })
+}
+
+function rejectOrSelectValue(
+  records: Array<Record<string, unknown>> | undefined,
+  keep: boolean,
+  testName?: string,
+  testArg?: unknown,
+): Array<Record<string, unknown>> {
+  const list = records || []
+  return list.filter((r) => {
+    const ok = runTest(r, testName, testArg)
+    return keep ? ok : !ok
+  })
+}
+
+// 覆写内置 selectattr/rejectattr（属性真值）与 select/reject（值本身），补齐 Jinja2 三参数语义
+renderer.addFilter('selectattr', (records: Array<Record<string, unknown>> | undefined, attr: string, testName?: string, testArg?: unknown) =>
+  selectRecords(records, attr, true, testName, testArg))
+renderer.addFilter('rejectattr', (records: Array<Record<string, unknown>> | undefined, attr: string, testName?: string, testArg?: unknown) =>
+  selectRecords(records, attr, false, testName, testArg))
+renderer.addFilter('select', (records: Array<Record<string, unknown>> | undefined, testName?: string, testArg?: unknown) =>
+  rejectOrSelectValue(records, true, testName, testArg))
+renderer.addFilter('reject', (records: Array<Record<string, unknown>> | undefined, testName?: string, testArg?: unknown) =>
+  rejectOrSelectValue(records, false, testName, testArg))
+
 /** 单列统计 —— 与后端 stats 同语义；non_empty 统计原始值非空行数（可用于文本字段计数） */
 renderer.addGlobal('stats', (records: Array<Record<string, unknown>>, field: string) => {
   const rawValues = records.map(r => r[field])

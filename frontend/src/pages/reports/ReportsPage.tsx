@@ -303,8 +303,8 @@ interface EditorProps {
   submitting: boolean
 }
 
-/** 编辑器弹窗页签 key */
-type EditorTabKey = 'basic' | 'editor' | 'params'
+/** 编辑器弹窗页签 key（模板参数已整合进基本信息页签） */
+type EditorTabKey = 'basic' | 'editor'
 
 /** 表单字段 → 所属页签映射（保存校验失败时按此跳转；新增表单字段时必须同步维护此表） */
 const FIELD_TAB_MAP: Record<string, EditorTabKey> = {
@@ -314,8 +314,8 @@ const FIELD_TAB_MAP: Record<string, EditorTabKey> = {
   table_id: 'basic',
   extra_table_ids: 'basic',
   description: 'basic',
+  parameters: 'basic',
   template_content: 'editor',
-  parameters: 'params',
 }
 
 function TemplateEditor({ open, editing, tables, workspaceId, form, initialContent, onClose, onSubmit, submitting }: EditorProps) {
@@ -532,7 +532,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
       }
       setErroredTabs(tabs)
       // 跳到第一个含错误的页签
-      const order: EditorTabKey[] = ['basic', 'editor', 'params']
+      const order: EditorTabKey[] = ['basic', 'editor']
       const first = order.find(t => tabs.has(t))
       if (first) {
         if (first === 'editor') setEditorVisited(true)
@@ -637,7 +637,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
       footer={null}
       styles={{ body: { padding: 0, maxHeight: 'calc(92vh - 110px)', overflowY: 'auto' } }}
     >
-      {/* 单一 Form：所有 Form.Items 共享一个 form 实例 + onFinish；内容按 Tabs 分三页签（页签标题在校验失败时叠加错误红点） */}
+      {/* 单一 Form：所有 Form.Items 共享一个 form 实例 + onFinish；内容按 Tabs 分两页签（页签标题在校验失败时叠加错误红点） */}
       <Form
         form={form}
         layout="vertical"
@@ -714,6 +714,47 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
                   <Form.Item name="description" label="描述（可选）" style={{ marginBottom: 8 }}>
                     <Input.TextArea rows={1} placeholder="简单说明这个模板的用途" />
                   </Form.Item>
+
+                  {/* 模板参数定义区（整合进基本信息页签） */}
+                  <Form.Item label="模板参数" tooltip="运行时传入的动态参数（可选）" style={{ marginBottom: 0 }}>
+                    <Form.List name="parameters">
+                      {(paramFields, { add, remove }) => (
+                        <>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                            {paramFields.map(({ key, name, ...restField }) => (
+                              <Space key={key} style={{ display: 'flex', marginBottom: 4 }} align="baseline">
+                                <Form.Item {...restField} name={[name, 'name']} rules={[{ required: true }]}>
+                                  <Input placeholder="参数名" style={{ width: 120 }} />
+                                </Form.Item>
+                                <Form.Item {...restField} name={[name, 'type']}>
+                                  <Select options={PARAM_TYPES} style={{ width: 90 }} />
+                                </Form.Item>
+                                <Form.Item {...restField} name={[name, 'default']}>
+                                  <Input placeholder="默认值" style={{ width: 100 }} />
+                                </Form.Item>
+                                <Form.Item {...restField} name={[name, 'label']}>
+                                  <Input placeholder="显示名" style={{ width: 100 }} />
+                                </Form.Item>
+                                <Form.Item {...restField} name={[name, 'optionsText']} tooltip="逗号分隔的可选值，非空时渲染时显示下拉菜单">
+                                  <Input placeholder="选项(逗号分隔)" style={{ width: 120 }} />
+                                </Form.Item>
+                                {/* Select 用 value prop 而非 checked，移除 valuePropName="checked" */}
+                                <Form.Item {...restField} name={[name, 'required']}>
+                                  <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} style={{ width: 80 }} />
+                                </Form.Item>
+                                <Tooltip title="删除该参数">
+                                  <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
+                                </Tooltip>
+                              </Space>
+                            ))}
+                          </div>
+                          <Button type="dashed" onClick={() => add({ name: '', type: 'string', default: null, label: '', required: false })} block icon={<PlusOutlined />}>
+                            添加参数
+                          </Button>
+                        </>
+                      )}
+                    </Form.List>
+                  </Form.Item>
                 </>
               ),
             },
@@ -772,52 +813,6 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
                 </>
               ) : null,
             },
-            {
-              key: 'params',
-              label: erroredTabs.has('params') ? <Badge dot>模板参数</Badge> : '模板参数',
-              forceRender: true,
-              children: (
-                <Form.Item label="模板参数" tooltip="运行时传入的动态参数（可选）" style={{ marginBottom: 0 }}>
-                  <Form.List name="parameters">
-                    {(paramFields, { add, remove }) => (
-                      <>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                          {paramFields.map(({ key, name, ...restField }) => (
-                            <Space key={key} style={{ display: 'flex', marginBottom: 4 }} align="baseline">
-                              <Form.Item {...restField} name={[name, 'name']} rules={[{ required: true }]}>
-                                <Input placeholder="参数名" style={{ width: 120 }} />
-                              </Form.Item>
-                              <Form.Item {...restField} name={[name, 'type']}>
-                                <Select options={PARAM_TYPES} style={{ width: 90 }} />
-                              </Form.Item>
-                              <Form.Item {...restField} name={[name, 'default']}>
-                                <Input placeholder="默认值" style={{ width: 100 }} />
-                              </Form.Item>
-                              <Form.Item {...restField} name={[name, 'label']}>
-                                <Input placeholder="显示名" style={{ width: 100 }} />
-                              </Form.Item>
-                              <Form.Item {...restField} name={[name, 'optionsText']} tooltip="逗号分隔的可选值，非空时渲染时显示下拉菜单">
-                                <Input placeholder="选项(逗号分隔)" style={{ width: 120 }} />
-                              </Form.Item>
-                              {/* Select 用 value prop 而非 checked，移除 valuePropName="checked" */}
-                              <Form.Item {...restField} name={[name, 'required']}>
-                                <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} style={{ width: 80 }} />
-                              </Form.Item>
-                              <Tooltip title="删除该参数">
-                                <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
-                              </Tooltip>
-                            </Space>
-                          ))}
-                        </div>
-                        <Button type="dashed" onClick={() => add({ name: '', type: 'string', default: null, label: '', required: false })} block icon={<PlusOutlined />}>
-                          添加参数
-                        </Button>
-                      </>
-                    )}
-                  </Form.List>
-                </Form.Item>
-              ),
-            },
           ]}
         />
 
@@ -825,7 +820,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
         <Form.Item name="template_content" rules={[{ required: true, message: '请输入模板内容' }]} style={{ display: 'none' }}>
           <Input />
         </Form.Item>
-      </Form>{/* 关闭单一 Form — Tabs 三页签（基本信息 / 模板编辑 / 模板参数） */}
+      </Form>{/* 关闭单一 Form — Tabs 两页签（基本信息含模板参数 / 模板编辑） */}
 
       {/* 底部按钮区 */}
       <div style={{ padding: '12px 24px', borderTop: '1px solid var(--cn-border-soft)', textAlign: 'right' }}>

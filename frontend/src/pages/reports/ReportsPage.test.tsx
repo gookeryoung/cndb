@@ -724,7 +724,7 @@ describe('ReportsPage 编辑回显完整性', () => {
     })
 })
 
-// ─────────────── 编辑器弹窗页签布局（基本信息 / 模板编辑 / 模板参数） ───────────────
+// ─────────────── 编辑器弹窗页签布局（基本信息含模板参数 / 模板编辑） ───────────────
 
 describe('ReportsPage 编辑器页签布局', () => {
     /** 读取 CodeMirror 当前文档文本 */
@@ -756,14 +756,14 @@ describe('ReportsPage 编辑器页签布局', () => {
         expect(activeTabText()).toContain('模板编辑')
         await waitFor(() => expect(cmDocText()).toBe('# 往返保留\n{{ records | length }} 行'))
 
-        // 切到模板参数再切回：编辑器保持挂载且内容不丢
-        clickTab('模板参数')
-        expect(activeTabText()).toContain('模板参数')
+        // 切到基本信息再切回：编辑器保持挂载且内容不丢
+        clickTab('基本信息')
+        expect(activeTabText()).toContain('基本信息')
         clickTab('模板编辑')
         await waitFor(() => expect(cmDocText()).toBe('# 往返保留\n{{ records | length }} 行'))
     })
 
-    it('新建态校验失败（名称为空）时自动跳回基本信息页签并显示错误标记', async () => {
+    it('新建态校验失败（名称为空）时从模板编辑页签跳回基本信息并显示错误标记', async () => {
         server.use(http.get('/api/v1/reports', () => HttpResponse.json([])))
         renderPage()
 
@@ -771,9 +771,9 @@ describe('ReportsPage 编辑器页签布局', () => {
         await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('新建模板'))
         expect(activeTabText()).toContain('基本信息')
 
-        // 切到模板参数页签后直接点创建：名称为空校验失败，应跳回基本信息
-        clickTab('模板参数')
-        expect(activeTabText()).toContain('模板参数')
+        // 切到模板编辑页签后直接点创建：名称为空校验失败，应跳回基本信息
+        clickTab('模板编辑')
+        expect(activeTabText()).toContain('模板编辑')
         fireEvent.click(screen.getByRole('button', { name: /^创\s*建$/ }))
 
         await waitFor(() => expect(activeTabText()).toContain('基本信息'))
@@ -782,7 +782,6 @@ describe('ReportsPage 编辑器页签布局', () => {
             const active = document.querySelector('.ant-tabs-tab-active')
             expect(active?.querySelector('.ant-badge-dot')).not.toBeNull()
         })
-        // 校验通过提交后错误标记清空（此处校验仍失败，标记持续存在即可）
         expect(activeTabText()).toContain('基本信息')
     })
 })
