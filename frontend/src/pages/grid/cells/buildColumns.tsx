@@ -30,6 +30,73 @@ export interface InlineEditCellProps {
   lockedFields?: Set<string>
 }
 
+/** 字段类型 → 基础列宽（px）。未命中类型回退 DEFAULT_COLUMN_WIDTH */
+const TYPE_BASE_WIDTH: Record<string, number> = {
+  longtext: 240,
+  text: 180,
+  link: 180,
+  lookup: 180,
+  multiselect: 190,
+  select: 150,
+  number: 130,
+  decimal: 140,
+  float: 140,
+  percentage: 130,
+  date: 140,
+  datetime: 180,
+  timestamp: 180,
+  boolean: 110,
+}
+
+const DEFAULT_COLUMN_WIDTH = 160
+/** 列宽拖拽约束（与 GridTableSection resize 手柄共用语义） */
+export const MIN_COLUMN_WIDTH = 60
+export const MAX_COLUMN_WIDTH = 600
+
+/** 按字段类型估算默认列宽.
+ *
+ * 规则：TYPE_BASE_WIDTH 命中取基础宽度，否则 160；
+ * 表头字符数修正 —— 超过 4 字每字 +14px，最多 +60px（保证长字段名完整可读）。
+ */
+export function estimateColumnWidth(field: Pick<Field, 'name' | 'field_type'>): number {
+  const base = TYPE_BASE_WIDTH[field.field_type] ?? DEFAULT_COLUMN_WIDTH
+  const overflow = Math.max(0, field.name.length - 4)
+  return base + Math.min(overflow * 14, 60)
+}
+
+/** 视图级列序与列宽覆盖 */
+export interface ColumnOptions {
+  /** key 为字段 id 字符串的视图级宽度覆盖 */
+  columnWidths?: Record<string, number>
+  /** 视图级列序（字段 id 字符串数组）；缺项按 Field.order 追加归位 */
+  fieldOrder?: string[]
+  /** 拖宽结束时回调（宽度已夹取到 [MIN, MAX]） */
+  onColumnResize?: (fieldId: string, width: number) => void
+  /** 拖拽列 A 落到列 B 时回调；目标为操作列时由 GridTableSection 屏蔽 */
+  onColumnOrderMove?: (fieldId: string, targetFieldId: string) => void
+}
+
+/** 按视图级 field_order 重排字段顺序.
+ *
+ * fieldOrder 中存在且匹配的字段排前（保持数组顺序），其余字段按原有 Field.order 追加；
+ * fieldOrder 里的未知 id 忽略。fieldOrder 缺省/为空时原样返回。
+ */
+export function applyFieldOrder(fields: Field[], fieldOrder: string[] | undefined): Field[] {
+  if (!fieldOrder || fieldOrder.length === 0) return fields
+  const byId = new Map(fields.map(f => [String(f.id), f]))
+  const ordered: Field[] = []
+  for (const id of fieldOrder) {
+    const f = byId.get(id)
+    if (f) {
+      ordered.push(f)
+      byId.delete(id)
+    }
+  }
+  // 剩余未出现在 fieldOrder 的字段（新建字段）按 Field.order 追加
+  ordered.push(...[...byId.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)))
+  return ordered
+}
+
 /** 行内编辑操作列回调 —— 新增行 / 整行编辑共用的操作挂载点 */
 export interface RowInlineOps {
   /** 为指定行返回行内编辑能力；null 表示该行普通展示 */
@@ -40,6 +107,13 @@ export interface RowInlineOps {
   onSave: (recordId: ID) => void
   /** 取消该行编辑 / 放弃新增 */
   onCancel: (recordId: ID) => void
+}
+
+/** 视图级列宽覆盖读取：非法值（非有限数）返回 undefined 走估算宽度 */
+function clampColumnWidth(raw: unknown): number | undefined {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return undefined
+  return Math.min(Math.max(n, MIN_COLUMN_WIDTH), MAX_COLUMN_WIDTH)
 }
 
 /** 构建 Grid 列定义 */
@@ -53,8 +127,13 @@ export function buildColumns(
   onCellSave?: (rowId: number | string, fieldName: string, value: unknown) => Promise<unknown>,
   /** 可选：行内编辑能力（新增行/整行编辑）。提供后追加一个固定右侧的操作列 */
   inlineOps?: RowInlineOps,
+  /** 可选：视图级列宽覆盖与列序（见 ColumnOptions） */
+  options?: ColumnOptions,
 ): ColumnsType<RowResponse> {
-  const cols: NonNullable<ColumnsType<RowResponse>>[number][] = fields.filter(f => !f.hidden).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const cols: NonNullable<ColumnsType<RowResponse>>[number][] = applyFieldOrder(
+    fields.filter(f => !f.hidden).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    options?.fieldOrder,
+  )
     .map<NonNullable<ColumnsType<RowResponse>>[number]>(f => {
       const sortRule = viewSortings.find(s => s.field_name === f.name)
       // 所有有排序规则的列都受控 sortOrder，保证 AntD 内部状态与 viewSortings 同步
@@ -129,7 +208,8 @@ export function buildColumns(
         ),
         dataIndex: f.name,
         ellipsis: true,
-        width: 160,
+        // 视图级覆盖优先，否则按字段类型估算（拖拽 resize 期间的实时预览也走此受控 width）
+        width: clampColumnWidth(options?.columnWidths?.[String(f.id)]) ?? estimateColumnWidth(f),
         sorter: true,
         sortOrder,
         filterDropdown: ({ confirm, clearFilters }) => (

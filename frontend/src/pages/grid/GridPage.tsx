@@ -758,13 +758,46 @@ export default function GridPage() {
     : (rowId: number | string, fieldName: string, value: unknown) => updateRow.mutateAsync({ rowId, fieldName, value }),
     [updateRow])
 
+  // 视图级列配置：宽度覆盖 / 列序（存 view_options，随防抖保存持久化）
+  const columnWidths = useMemo(() => {
+    const raw = viewOptionsDraft?.column_widths
+    return raw && typeof raw === 'object' ? raw as Record<string, number> : undefined
+  }, [viewOptionsDraft])
+  const fieldOrder = useMemo(() => {
+    const raw = viewOptionsDraft?.field_order
+    return Array.isArray(raw) ? raw.map(String) : undefined
+  }, [viewOptionsDraft])
+
+  /** 拖宽结束：写回 viewOptionsDraft.column_widths 并走防抖保存 */
+  const handleColumnResize = useCallback((fieldId: string, width: number) => {
+    setViewOptionsDraft({
+      ...(viewOptionsDraft ?? {}),
+      column_widths: { ...(viewOptionsDraft?.column_widths as Record<string, number> | undefined), [fieldId]: width },
+    })
+  }, [viewOptionsDraft, setViewOptionsDraft])
+
+  /** 拖拽列序：初始化/更新 viewOptionsDraft.field_order 并走防抖保存 */
+  const handleColumnOrderMove = useCallback((srcFieldId: string, targetFieldId: string) => {
+    // 以当前可见列顺序为基线初始化 field_order（首次拖拽时才生成）
+    const current = fieldOrder?.length
+      ? fieldOrder
+      : (table?.fields || []).filter(f => !f.hidden).map(f => String(f.id))
+    const from = current.indexOf(srcFieldId)
+    const to = current.indexOf(targetFieldId)
+    if (from < 0 || to < 0 || from === to) return
+    const next = [...current]
+    next.splice(to, 0, ...next.splice(from, 1))
+    setViewOptionsDraft({ ...(viewOptionsDraft ?? {}), field_order: next })
+  }, [fieldOrder, table?.fields, viewOptionsDraft, setViewOptionsDraft])
+
   const columns = useMemo(() => buildColumns(
     table?.fields || [], wid, viewSortings, viewFilters,
     _onFilterApply,
     _onFilterReset,
     _onCellSave,
     inlineOps,
-  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps])
+    { columnWidths, fieldOrder },
+  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder])
 
   // 选中行聚合：过滤与计算收敛到同一个 useMemo。
   // 旧实现的 numericFields / selectedRows 每次渲染都是新数组，使本 memo 依赖恒变、缓存完全失效。
@@ -861,6 +894,8 @@ export default function GridPage() {
             onSelectionChange={setSelectedRowKeys}
             onAddRow={startNewRow}
             onRowDoubleClick={openDetailWithPrefetch}
+            onColumnResize={handleColumnResize}
+            onColumnOrderMove={handleColumnOrderMove}
             onSort={(field, direction) => {
               if (direction === null) {
                 // 清除：只移除该字段的排序规则，保留其他
