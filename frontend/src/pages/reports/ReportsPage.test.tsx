@@ -70,14 +70,17 @@ describe('ReportsPage 报表模板页', () => {
         expect(screen.getAllByRole('button', { name: /新\s*建\s*模\s*板/ })).toHaveLength(2)
     })
 
-    it('点击新建模板打开编辑器弹窗并挂载编辑器', async () => {
+    it('点击新建模板打开编辑器弹窗，默认基本信息页签，切到模板编辑后挂载编辑器', async () => {
         server.use(http.get('/api/v1/reports', () => HttpResponse.json([TPL])))
         renderPage()
 
         fireEvent.click((await screen.findAllByRole('button', { name: /新\s*建\s*模\s*板/ }))[0])
 
         await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('新建模板'))
-        // CodeMirror 编辑器已挂载
+        // 新建态默认落在「基本信息」页签
+        expect(document.querySelector('.ant-tabs-tab-active')?.textContent).toContain('基本信息')
+        // 切到「模板编辑」页签后 CodeMirror 编辑器挂载
+        fireEvent.click(screen.getByText('模板编辑'))
         await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull())
     })
 
@@ -86,6 +89,8 @@ describe('ReportsPage 报表模板页', () => {
         renderPage()
 
         fireEvent.click((await screen.findAllByRole('button', { name: /新\s*建\s*模\s*板/ }))[0])
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('新建模板'))
+        fireEvent.click(screen.getByText('模板编辑'))
         await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull())
 
         // 切到实时预览：显示预览面板，编辑器隐藏但保持挂载
@@ -716,5 +721,68 @@ describe('ReportsPage 编辑回显完整性', () => {
         expect(params[0]).toMatchObject({ name: '月份', required: true })
         expect(params[1]).toMatchObject({ name: '含税', required: false })
         expect(params[2]).toMatchObject({ name: '年份', required: false })
+    })
+})
+
+// ─────────────── 编辑器弹窗页签布局（基本信息 / 模板编辑 / 模板参数） ───────────────
+
+describe('ReportsPage 编辑器页签布局', () => {
+    /** 读取 CodeMirror 当前文档文本 */
+    const cmDocText = () => {
+        const content = document.querySelector('.cm-content')
+        expect(content).not.toBeNull()
+        return Array.from(content!.querySelectorAll('.cm-line')).map(l => l.textContent ?? '').join('\n')
+    }
+    /** 当前激活页签的文本 */
+    const activeTabText = () => document.querySelector('.ant-tabs-tab-active')?.textContent ?? ''
+    /** 点击指定文本的页签（避免与 pane 内同名表单标签歧义） */
+    const clickTab = (text: string) => {
+        const tab = Array.from(document.querySelectorAll('.ant-tabs-tab')).find(t => t.textContent?.includes(text))
+        expect(tab).not.toBeNull()
+        fireEvent.click(tab!)
+    }
+
+    it('编辑态默认落在模板编辑页签，页签往返切换后编辑器内容保留', async () => {
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([TPL])),
+            http.get('/api/v1/reports/1', () =>
+                HttpResponse.json({ ...TPL, template_content: '# 往返保留\n{{ records | length }} 行' })),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+        expect(activeTabText()).toContain('模板编辑')
+        await waitFor(() => expect(cmDocText()).toBe('# 往返保留\n{{ records | length }} 行'))
+
+        // 切到模板参数再切回：编辑器保持挂载且内容不丢
+        clickTab('模板参数')
+        expect(activeTabText()).toContain('模板参数')
+        clickTab('模板编辑')
+        await waitFor(() => expect(cmDocText()).toBe('# 往返保留\n{{ records | length }} 行'))
+    })
+
+    it('新建态校验失败（名称为空）时自动跳回基本信息页签并显示错误标记', async () => {
+        server.use(http.get('/api/v1/reports', () => HttpResponse.json([])))
+        renderPage()
+
+        fireEvent.click((await screen.findAllByRole('button', { name: /新\s*建\s*模\s*板/ }))[0])
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('新建模板'))
+        expect(activeTabText()).toContain('基本信息')
+
+        // 切到模板参数页签后直接点创建：名称为空校验失败，应跳回基本信息
+        clickTab('模板参数')
+        expect(activeTabText()).toContain('模板参数')
+        fireEvent.click(screen.getByRole('button', { name: /^创\s*建$/ }))
+
+        await waitFor(() => expect(activeTabText()).toContain('基本信息'))
+        // 错误页签标题叠加红点标记
+        await waitFor(() => {
+            const active = document.querySelector('.ant-tabs-tab-active')
+            expect(active?.querySelector('.ant-badge-dot')).not.toBeNull()
+        })
+        // 校验通过提交后错误标记清空（此处校验仍失败，标记持续存在即可）
+        expect(activeTabText()).toContain('基本信息')
     })
 })

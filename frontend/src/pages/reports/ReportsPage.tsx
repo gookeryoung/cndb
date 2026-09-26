@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
-import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntApp, Select, Dropdown, Empty, Tooltip, Segmented } from 'antd'
+import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntApp, Select, Dropdown, Empty, Tooltip, Segmented, Tabs, Badge } from 'antd'
 import type { FormInstance } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -303,6 +303,21 @@ interface EditorProps {
   submitting: boolean
 }
 
+/** 编辑器弹窗页签 key */
+type EditorTabKey = 'basic' | 'editor' | 'params'
+
+/** 表单字段 → 所属页签映射（保存校验失败时按此跳转；新增表单字段时必须同步维护此表） */
+const FIELD_TAB_MAP: Record<string, EditorTabKey> = {
+  name: 'basic',
+  output_format: 'basic',
+  theme: 'basic',
+  table_id: 'basic',
+  extra_table_ids: 'basic',
+  description: 'basic',
+  template_content: 'editor',
+  parameters: 'params',
+}
+
 function TemplateEditor({ open, editing, tables, workspaceId, form, initialContent, onClose, onSubmit, submitting }: EditorProps) {
   const tableOptions = useMemo(() => tables.map(t => ({ value: t.id, label: t.name })), [tables])
 
@@ -321,6 +336,12 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
   const editorRef = useRef<TemplateEditorHandle | null>(null)
   // 主区视图模式：编辑器保持挂载仅隐藏显示，避免切换后丢失内容与插入能力
   const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'help'>('edit')
+  // 弹窗页签：新建态默认基本信息，编辑态默认模板编辑
+  const [activeTab, setActiveTab] = useState<EditorTabKey>('basic')
+  // 校验失败涉及的页签（页签标题显示错误标记）
+  const [erroredTabs, setErroredTabs] = useState<Set<EditorTabKey>>(new Set())
+  // 编辑器页签是否已被访问（CodeMirror 避免在隐藏容器中初始化，首次激活后才挂载，之后保持挂载）
+  const [editorVisited, setEditorVisited] = useState(false)
 
   // 工作区列表（跨工作区级联选择器数据源）
   const { data: workspaces = [] } = useQuery<Workspace[]>({
@@ -449,6 +470,10 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     setImportTableId(null)
     // 每次打开弹窗回到编辑模式，避免上次停留在预览/帮助视图
     setViewMode('edit')
+    // 新建态默认落在基本信息页签，编辑态默认落在模板编辑页签；清空错误标记
+    setActiveTab(editing ? 'editor' : 'basic')
+    setErroredTabs(new Set())
+    setEditorVisited(Boolean(editing))
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 全局 insert 事件监听（SyntaxHelpPanel → ReportTemplateEditor）
@@ -486,6 +511,34 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
   const handleTemplateChange = (value: string) => {
     setTemplateValue(value)
     form.setFieldValue('template_content', value)
+  }
+
+  // 页签切换（首次进入模板编辑页签时挂载编辑器，之后保持挂载）
+  const handleTabChange = (key: string) => {
+    if (key === 'editor') setEditorVisited(true)
+    setActiveTab(key as EditorTabKey)
+  }
+
+  // 保存校验：失败时按字段→页签映射跳转并显示错误标记，成功后提交并清空标记
+  const handleSave = () => {
+    form.validateFields().then((v) => {
+      setErroredTabs(new Set())
+      handleFormFinish(v as Parameters<typeof handleFormFinish>[0])
+    }).catch((err: { errorFields?: Array<{ name?: Array<string | number> }> }) => {
+      const tabs = new Set<EditorTabKey>()
+      for (const f of err.errorFields ?? []) {
+        const tab = FIELD_TAB_MAP[String(f.name?.[0])]
+        if (tab) tabs.add(tab)
+      }
+      setErroredTabs(tabs)
+      // 跳到第一个含错误的页签
+      const order: EditorTabKey[] = ['basic', 'editor', 'params']
+      const first = order.find(t => tabs.has(t))
+      if (first) {
+        if (first === 'editor') setEditorVisited(true)
+        setActiveTab(first)
+      }
+    })
   }
 
   // 保存校验（extra_table_ids 随模板持久化，含跨工作区表；输出格式/主题兜底默认值）
@@ -584,184 +637,201 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
       footer={null}
       styles={{ body: { padding: 0, maxHeight: 'calc(92vh - 110px)', overflowY: 'auto' } }}
     >
-      {/* 单一 Form：所有 Form.Items 共享一个 form 实例 + onFinish */}
+      {/* 单一 Form：所有 Form.Items 共享一个 form 实例 + onFinish；内容按 Tabs 分三页签（页签标题在校验失败时叠加错误红点） */}
       <Form
         form={form}
         layout="vertical"
-        style={{ padding: '16px 24px 0' }}
+        style={{ padding: '12px 24px 0' }}
         onFinish={handleFormFinish}
       >
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <Form.Item name="name" label="模板名称" rules={[{ required: true, message: '请输入名称' }]} style={{ flex: '1 1 220px', marginBottom: 8 }}>
-            <Input placeholder="例如：月度销售汇总" />
-          </Form.Item>
-          <Form.Item name="output_format" label="输出格式" style={{ width: 150, marginBottom: 8 }}>
-            <Select options={FORMAT_OPTIONS} />
-          </Form.Item>
-          <Form.Item name="theme" label="主题风格" className="report-theme-row" style={{ width: 120, marginBottom: 8 }} tooltip="影响导出文档的标题/正文/表格样式">
-            {/* 选项仅 5 个，关闭虚拟滚动（jsdom 高度为 0 时虚拟列表渲染不全） */}
-            <Select options={THEME_OPTIONS} virtual={false} />
-          </Form.Item>
-          <Form.Item name="table_id" label="关联表" style={{ width: 220, marginBottom: 8 }}>
-            <Select
-              options={tableOptions}
-              allowClear
-              placeholder="选填（建议关联）"
-              onChange={handleTableChange}
-            />
-          </Form.Item>
-          <Form.Item name="extra_table_ids" label="额外引用表" style={{ flex: '1 1 220px', marginBottom: 8 }} tooltip="模板中可通过 records_by_table['表名'] 引用这些表的数据">
-            <Select
-              mode="multiple"
-              options={extraTableOptions}
-              placeholder="选择额外引用的数据表（可选）"
-              onChange={handleExtraTablesChange}
-              value={extraTableIds}
-              allowClear
-              maxTagCount={3}
-            />
-          </Form.Item>
-        </div>
-        {/* 跨工作区引入：先点源工作区按钮，再从源表下拉选择，点「引入」加入额外引用表 */}
-        {importWsOptions.length > 0 && (
-          <div className="report-crossws-row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>跨工作区引入：</Typography.Text>
-            {importWsOptions.map(o => (
-              <Button
-                key={o.value}
-                size="small"
-                type={importWsId === o.value ? 'primary' : 'default'}
-                onClick={() => { setImportWsId(o.value); setImportTableId(null) }}
-              >
-                {o.label}
-              </Button>
-            ))}
-            <Select
-              size="small"
-              style={{ minWidth: 180 }}
-              placeholder="跨工作区源表"
-              value={importTableId}
-              options={importTableOptions}
-              onChange={setImportTableId}
-              allowClear
-            />
-            <Button size="small" type="primary" disabled={importTableId === null} onClick={handleImportCrossTable}>引入</Button>
-          </div>
-        )}
-        <Form.Item name="description" label="描述（可选）" style={{ marginBottom: 8 }}>
-          <Input.TextArea rows={1} placeholder="简单说明这个模板的用途" />
-        </Form.Item>
+        <Tabs
+          activeKey={activeTab}
+          onChange={handleTabChange}
+          items={[
+            {
+              key: 'basic',
+              label: erroredTabs.has('basic') ? <Badge dot>基本信息</Badge> : '基本信息',
+              forceRender: true,
+              children: (
+                <>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <Form.Item name="name" label="模板名称" rules={[{ required: true, message: '请输入名称' }]} style={{ flex: '1 1 220px', marginBottom: 8 }}>
+                      <Input placeholder="例如：月度销售汇总" />
+                    </Form.Item>
+                    <Form.Item name="output_format" label="输出格式" style={{ width: 150, marginBottom: 8 }}>
+                      <Select options={FORMAT_OPTIONS} />
+                    </Form.Item>
+                    <Form.Item name="theme" label="主题风格" className="report-theme-row" style={{ width: 120, marginBottom: 8 }} tooltip="影响导出文档的标题/正文/表格样式">
+                      {/* 选项仅 5 个，关闭虚拟滚动（jsdom 高度为 0 时虚拟列表渲染不全） */}
+                      <Select options={THEME_OPTIONS} virtual={false} />
+                    </Form.Item>
+                    <Form.Item name="table_id" label="关联表" style={{ width: 220, marginBottom: 8 }}>
+                      <Select
+                        options={tableOptions}
+                        allowClear
+                        placeholder="选填（建议关联）"
+                        onChange={handleTableChange}
+                      />
+                    </Form.Item>
+                    <Form.Item name="extra_table_ids" label="额外引用表" style={{ flex: '1 1 220px', marginBottom: 8 }} tooltip="模板中可通过 records_by_table['表名'] 引用这些表的数据">
+                      <Select
+                        mode="multiple"
+                        options={extraTableOptions}
+                        placeholder="选择额外引用的数据表（可选）"
+                        onChange={handleExtraTablesChange}
+                        value={extraTableIds}
+                        allowClear
+                        maxTagCount={3}
+                      />
+                    </Form.Item>
+                  </div>
+                  {/* 跨工作区引入：先点源工作区按钮，再从源表下拉选择，点「引入」加入额外引用表 */}
+                  {importWsOptions.length > 0 && (
+                    <div className="report-crossws-row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>跨工作区引入：</Typography.Text>
+                      {importWsOptions.map(o => (
+                        <Button
+                          key={o.value}
+                          size="small"
+                          type={importWsId === o.value ? 'primary' : 'default'}
+                          onClick={() => { setImportWsId(o.value); setImportTableId(null) }}
+                        >
+                          {o.label}
+                        </Button>
+                      ))}
+                      <Select
+                        size="small"
+                        style={{ minWidth: 180 }}
+                        placeholder="跨工作区源表"
+                        value={importTableId}
+                        options={importTableOptions}
+                        onChange={setImportTableId}
+                        allowClear
+                      />
+                      <Button size="small" type="primary" disabled={importTableId === null} onClick={handleImportCrossTable}>引入</Button>
+                    </div>
+                  )}
+                  <Form.Item name="description" label="描述（可选）" style={{ marginBottom: 8 }}>
+                    <Input.TextArea rows={1} placeholder="简单说明这个模板的用途" />
+                  </Form.Item>
+                </>
+              ),
+            },
+            {
+              key: 'editor',
+              label: erroredTabs.has('editor') ? <Badge dot>模板编辑</Badge> : '模板编辑',
+              children: editorVisited ? (
+                <>
+                  {/* 编辑器主体：内部模式切换 + 字段面板/编辑器/预览单区切换 */}
+                  <div className="report-editor-toolbar">
+                    <Segmented
+                      size="small"
+                      value={viewMode}
+                      onChange={(v) => setViewMode(v as 'edit' | 'preview' | 'help')}
+                      options={[
+                        { label: '编辑模板', value: 'edit' },
+                        { label: '实时预览', value: 'preview' },
+                        { label: '语法帮助', value: 'help' },
+                      ]}
+                    />
+                  </div>
+                  <div className="report-editor-body" style={{ height: 'min(56vh, 640px)' }}>
+                    {/* 编辑视图：保持挂载，仅切换显示，保证内容与插入能力不丢失 */}
+                    <div className="report-editor-editpane" style={{ display: viewMode === 'edit' ? undefined : 'none' }}>
+                      <ReportTemplateEditor
+                        fields={selectedTableId !== null ? (fields as Field[]) : undefined}
+                        tableGroups={tableGroups.length > 0 ? tableGroups : undefined}
+                        value={templateValue}
+                        onChange={handleTemplateChange}
+                        editorRef={editorRef}
+                      />
+                    </div>
+
+                    {viewMode === 'preview' && (
+                      <div className="report-editor-viewpane">
+                        <PreviewPanel
+                          template={templateValue}
+                          records={previewRows as Array<Record<string, unknown>>}
+                          tableName={selectedTableName}
+                          loading={previewLoading}
+                          recordsByTable={recordsByTable}
+                        />
+                      </div>
+                    )}
+
+                    {viewMode === 'help' && (
+                      <div className="report-editor-viewpane">
+                        <SyntaxHelpPanel
+                          onInsert={(code) => {
+                            window.dispatchEvent(new CustomEvent('report-editor-insert', { detail: { code } }))
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : null,
+            },
+            {
+              key: 'params',
+              label: erroredTabs.has('params') ? <Badge dot>模板参数</Badge> : '模板参数',
+              forceRender: true,
+              children: (
+                <Form.Item label="模板参数" tooltip="运行时传入的动态参数（可选）" style={{ marginBottom: 0 }}>
+                  <Form.List name="parameters">
+                    {(paramFields, { add, remove }) => (
+                      <>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                          {paramFields.map(({ key, name, ...restField }) => (
+                            <Space key={key} style={{ display: 'flex', marginBottom: 4 }} align="baseline">
+                              <Form.Item {...restField} name={[name, 'name']} rules={[{ required: true }]}>
+                                <Input placeholder="参数名" style={{ width: 120 }} />
+                              </Form.Item>
+                              <Form.Item {...restField} name={[name, 'type']}>
+                                <Select options={PARAM_TYPES} style={{ width: 90 }} />
+                              </Form.Item>
+                              <Form.Item {...restField} name={[name, 'default']}>
+                                <Input placeholder="默认值" style={{ width: 100 }} />
+                              </Form.Item>
+                              <Form.Item {...restField} name={[name, 'label']}>
+                                <Input placeholder="显示名" style={{ width: 100 }} />
+                              </Form.Item>
+                              <Form.Item {...restField} name={[name, 'optionsText']} tooltip="逗号分隔的可选值，非空时渲染时显示下拉菜单">
+                                <Input placeholder="选项(逗号分隔)" style={{ width: 120 }} />
+                              </Form.Item>
+                              {/* Select 用 value prop 而非 checked，移除 valuePropName="checked" */}
+                              <Form.Item {...restField} name={[name, 'required']}>
+                                <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} style={{ width: 80 }} />
+                              </Form.Item>
+                              <Tooltip title="删除该参数">
+                                <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
+                              </Tooltip>
+                            </Space>
+                          ))}
+                        </div>
+                        <Button type="dashed" onClick={() => add({ name: '', type: 'string', default: null, label: '', required: false })} block icon={<PlusOutlined />}>
+                          添加参数
+                        </Button>
+                      </>
+                    )}
+                  </Form.List>
+                </Form.Item>
+              ),
+            },
+          ]}
+        />
 
         {/* 隐藏的 template_content 字段 — 实际值由 CodeMirror 控制 */}
         <Form.Item name="template_content" rules={[{ required: true, message: '请输入模板内容' }]} style={{ display: 'none' }}>
           <Input />
         </Form.Item>
-
-        {/* 编辑器主体：顶部模式切换 + 字段面板/编辑器/预览单区切换（比三栏并排更紧凑，避免整体超宽） */}
-        <div style={{ padding: '12px 24px 0' }}>
-          <div className="report-editor-toolbar">
-            <Segmented
-              size="small"
-              value={viewMode}
-              onChange={(v) => setViewMode(v as 'edit' | 'preview' | 'help')}
-              options={[
-                { label: '编辑模板', value: 'edit' },
-                { label: '实时预览', value: 'preview' },
-                { label: '语法帮助', value: 'help' },
-              ]}
-            />
-          </div>
-          <div className="report-editor-body" style={{ height: 520 }}>
-            {/* 编辑视图：保持挂载，仅切换显示，保证内容与插入能力不丢失 */}
-            <div className="report-editor-editpane" style={{ display: viewMode === 'edit' ? undefined : 'none' }}>
-              <ReportTemplateEditor
-                fields={selectedTableId !== null ? (fields as Field[]) : undefined}
-                tableGroups={tableGroups.length > 0 ? tableGroups : undefined}
-                value={templateValue}
-                onChange={handleTemplateChange}
-                editorRef={editorRef}
-              />
-            </div>
-
-            {viewMode === 'preview' && (
-              <div className="report-editor-viewpane">
-                <PreviewPanel
-                  template={templateValue}
-                  records={previewRows as Array<Record<string, unknown>>}
-                  tableName={selectedTableName}
-                  loading={previewLoading}
-                  recordsByTable={recordsByTable}
-                />
-              </div>
-            )}
-
-            {viewMode === 'help' && (
-              <div className="report-editor-viewpane">
-                <SyntaxHelpPanel
-                  onInsert={(code) => {
-                    window.dispatchEvent(new CustomEvent('report-editor-insert', { detail: { code } }))
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 参数定义区（Form.Items 嵌套在主 Form 内） */}
-        <div style={{ padding: '12px 24px 0' }}>
-          <Form.Item label="模板参数" tooltip="运行时传入的动态参数（可选）" style={{ marginBottom: 0 }}>
-            <Form.List name="parameters">
-              {(paramFields, { add, remove }) => (
-                <>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                    {paramFields.map(({ key, name, ...restField }) => (
-                      <Space key={key} style={{ display: 'flex', marginBottom: 4 }} align="baseline">
-                        <Form.Item {...restField} name={[name, 'name']} rules={[{ required: true }]}>
-                          <Input placeholder="参数名" style={{ width: 120 }} />
-                        </Form.Item>
-                        <Form.Item {...restField} name={[name, 'type']}>
-                          <Select options={PARAM_TYPES} style={{ width: 90 }} />
-                        </Form.Item>
-                        <Form.Item {...restField} name={[name, 'default']}>
-                          <Input placeholder="默认值" style={{ width: 100 }} />
-                        </Form.Item>
-                        <Form.Item {...restField} name={[name, 'label']}>
-                          <Input placeholder="显示名" style={{ width: 100 }} />
-                        </Form.Item>
-                        <Form.Item {...restField} name={[name, 'optionsText']} tooltip="逗号分隔的可选值，非空时渲染时显示下拉菜单">
-                          <Input placeholder="选项(逗号分隔)" style={{ width: 120 }} />
-                        </Form.Item>
-                        {/* Select 用 value prop 而非 checked，移除 valuePropName="checked" */}
-                        <Form.Item {...restField} name={[name, 'required']}>
-                          <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} style={{ width: 80 }} />
-                        </Form.Item>
-                        <Tooltip title="删除该参数">
-                          <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
-                        </Tooltip>
-                      </Space>
-                    ))}
-                  </div>
-                  <Button type="dashed" onClick={() => add({ name: '', type: 'string', default: null, label: '', required: false })} block icon={<PlusOutlined />}>
-                    添加参数
-                  </Button>
-                </>
-              )}
-            </Form.List>
-          </Form.Item>
-        </div>
-      </Form>{/* 关闭单一 Form — 覆盖元信息 + 编辑器 + 参数区 */}
+      </Form>{/* 关闭单一 Form — Tabs 三页签（基本信息 / 模板编辑 / 模板参数） */}
 
       {/* 底部按钮区 */}
       <div style={{ padding: '12px 24px', borderTop: '1px solid var(--cn-border-soft)', textAlign: 'right' }}>
         <Space>
           <Button onClick={onClose}>取消</Button>
-          <Button
-            type="primary"
-            loading={submitting}
-            onClick={() => {
-              form.validateFields().then(handleFormFinish).catch(() => { })
-            }}
-          >
+          <Button type="primary" loading={submitting} onClick={handleSave}>
             {editing ? '保存' : '创建'}
           </Button>
         </Space>
