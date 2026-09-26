@@ -1,5 +1,6 @@
 /** Grid 表格主体 — grid 模式下的 Table + 独立分页（从 GridPage 抽出）. */
 
+import { useMemo } from 'react'
 import { Table, Button, Empty, Pagination, type TableProps } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import type { RowResponse } from '@/api'
@@ -47,11 +48,34 @@ export default function GridTableSection({
   selectedRowKeys, onSelectionChange, onAddRow, onRowDoubleClick, onSort,
   gridAreaSize, offset, limit, onPageChange, prefetchNext,
 }: GridTableSectionProps) {
+  // 排序列点击三态循环：asc → desc → null（取消），由受控 sortOrder 计算下一状态。
+  // 不走 antd Table onChange 的 sorter 参数 —— antd 取消排序时因 legacy 兼容逻辑
+  // 会把 sorter.field 清成 undefined，事件无法定位字段（详见 gridTableSection.sort.test.tsx）。
+  const sortableColumns = useMemo(
+    () => columns?.map(col => {
+      if ('children' in col) return col
+      if (!col.sorter || Array.isArray(col.dataIndex) || typeof col.dataIndex !== 'string') return col
+      const field = col.dataIndex
+      const next = col.sortOrder === 'ascend' ? 'desc' : col.sortOrder === 'descend' ? null : 'asc'
+      return {
+        ...col,
+        onHeaderCell: () => ({
+          onClick: () => onSort(field, next),
+          // 键盘可达性：Enter 触发与点击一致的三态循环
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.keyCode === 13) onSort(field, next)
+          },
+        }),
+      }
+    }),
+    [columns, onSort],
+  )
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <Table
         ref={tableRef as any}
-        rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={columns}
+        rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={sortableColumns}
         locale={{
           emptyText: (
             <div style={{ padding: '32px 0' }} data-testid="grid-empty-state">
@@ -84,25 +108,12 @@ export default function GridTableSection({
         pagination={false}
         scroll={{ x: Math.max(gridAreaSize.width, 1200), y: Math.max(gridAreaSize.height - 140, 200) }}
         virtual
-        onChange={(_pag, _fil, sorter, extra) => {
-          // 只在用户点击列头排序时（extra.action === 'sort'）才处理排序，
-          // 分页/筛选变化时 AntD 也会传当前排序状态，但不应触发 sort 处理逻辑
-          if (extra?.action !== 'sort') {
+        onChange={(_pag, _fil, _sorter, extra) => {
+          // 排序已由 onHeaderCell 受控三态循环处理（见 sortableColumns），
+          // 这里忽略 sort 动作；仅防分页/筛选变化触发无效处理
+          if (extra?.action === 'sort') {
             return
           }
-          // 处理列排序 — Ant Design sorter 可能是单对象或数组
-          // 受控排序循环：ascend → descend → null（清除）
-          type SorterInfo = { field?: string | number | readonly (string | number)[]; order?: 'ascend' | 'descend' | null }
-          const raw = sorter as SorterInfo | SorterInfo[] | null
-          const items: SorterInfo[] = Array.isArray(raw) ? raw : (raw ? [raw] : [])
-          const validItems = items.filter(it => typeof it?.field === 'string') as Array<{ field: string; order: 'ascend' | 'descend' | null }>
-          if (validItems.length === 0) {
-            return
-          }
-          const activeItem = validItems.find(it => it.order !== null) ?? validItems[0]
-          const field = activeItem.field
-          const order = activeItem.order
-          onSort(field, order === 'ascend' ? 'asc' : order === 'descend' ? 'desc' : null)
         }}
         onRow={(record) => (
           isNewRow(record.id) ? {} : ({ onDoubleClick: () => onRowDoubleClick(record) })
