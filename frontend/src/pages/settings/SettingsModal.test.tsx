@@ -1,7 +1,8 @@
 /**
- * SettingsModal 组件测试 —— 个人设置（个人资料 + 主题 + 操作风格）.
+ * SettingsModal 组件测试 —— 个人设置（用户资料 + 主题/字体 + 操作风格）.
  *
- * 覆盖：Tab 结构 / 个人资料表单保存 / 主题卡片选择持久化 / 操作风格下拉变更写入 store。
+ * 覆盖：Tab 结构 / 用户资料紧凑表单（用户名只读）保存 / 主题卡片选择持久化 /
+ * 字体设置（字号/加粗）持久化 / 操作风格下拉变更写入 store。
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
@@ -33,29 +34,40 @@ const profileUser = {
 
 describe('SettingsModal 个人设置', () => {
   beforeEach(() => {
+    localStorage.clear()
     useAuthStore.setState({ user: null, token: null, loading: false, expired: false })
   })
 
-  it('渲染三个 Tab 与全部主题卡片（10 张）', () => {
+  it('渲染三个 Tab 与全部主题卡片（10 张），主题页含配色与字体两节', () => {
     renderProviders(<SettingsModal open onClose={() => { }} />)
 
-    expect(screen.getByRole('tab', { name: '个人资料' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '用户资料' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '主题' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '操作风格' })).toBeInTheDocument()
     // 主题卡片惰性渲染，切到主题 Tab 后才能查到
     fireEvent.click(screen.getByRole('tab', { name: '主题' }))
     const grid = document.querySelector('[data-testid="theme-grid"]')
     expect(grid?.querySelectorAll('[data-theme-card]')).toHaveLength(10)
+    // 首节标题为「配色」（不再叫「主题」），并新增「字体」节
+    expect(screen.getByText('配色')).toBeInTheDocument()
+    expect(screen.getByText('字体')).toBeInTheDocument()
   })
 
-  it('个人资料 Tab：展示当前用户并保存昵称邮箱后刷新 auth store', async () => {
+  it('用户资料 Tab：用户名只读，昵称邮箱同行紧凑排布，保存后刷新 auth store', async () => {
     const refreshSpy = vi.spyOn(useAuthStore.getState(), 'refresh').mockResolvedValue(undefined)
     renderProviders(<SettingsModal open onClose={() => { }} />, {
       initialAuth: { user: profileUser, token: 't' },
     })
 
-    fireEvent.click(screen.getByRole('tab', { name: '个人资料' }))
-    expect(await screen.findByText('用户名：me（不可修改）')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: '用户资料' }))
+
+    // 用户名只读且展示当前账号，附不可修改说明
+    const usernameInput = screen.getByLabelText('用户名') as HTMLInputElement
+    expect(usernameInput).toHaveValue('me')
+    expect(usernameInput).toBeDisabled()
+    expect(screen.getByText('注册后不可修改')).toBeInTheDocument()
+    // 不再有重复的「个人资料」节标题
+    expect(screen.queryByText('个人资料')).not.toBeInTheDocument()
 
     const nicknameInput = screen.getByLabelText('昵称')
     expect(nicknameInput).toHaveValue('旧昵称')
@@ -74,7 +86,7 @@ describe('SettingsModal 个人设置', () => {
   it('点击主题卡片切换主题并持久化到 localStorage', async () => {
     renderProviders(<SettingsModal open onClose={() => { }} />)
 
-    // 默认 Tab 为个人资料，先切到主题 Tab
+    // 默认 Tab 为用户资料，先切到主题 Tab
     fireEvent.click(screen.getByRole('tab', { name: '主题' }))
     const oceanCard = document.querySelector<HTMLElement>('[data-theme-card="ocean"]')
     expect(oceanCard).not.toBeNull()
@@ -82,6 +94,34 @@ describe('SettingsModal 个人设置', () => {
 
     await waitFor(() => expect(localStorage.getItem('cndb_theme')).toBe('ocean'))
     expect(oceanCard!.style.border).toContain('2px solid')
+  })
+
+  it('字体节：切换字号档位持久化到 localStorage 并同步 body 字号', async () => {
+    renderProviders(<SettingsModal open onClose={() => { }} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: '主题' }))
+    // mousedown 需派发到 rc-select 的 combobox 输入元素才能打开下拉
+    fireEvent.mouseDown(screen.getByRole('combobox'))
+    fireEvent.click(await screen.findByText('大', { selector: '.ant-select-item-option-content' }))
+
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem('cndb_font') ?? '{}') as { scale?: string }
+      expect(persisted.scale).toBe('large')
+    })
+    expect(document.body.style.fontSize).toBe('16px')
+  })
+
+  it('字体节：开启全局加粗持久化到 localStorage 并同步 body 字重', async () => {
+    renderProviders(<SettingsModal open onClose={() => { }} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: '主题' }))
+    fireEvent.click(document.querySelector<HTMLElement>('[data-testid="font-bold-switch"]')!)
+
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem('cndb_font') ?? '{}') as { bold?: boolean }
+      expect(persisted.bold).toBe(true)
+    })
+    expect(document.body.style.fontWeight).toBe('600')
   })
 
   it('操作风格 Tab：新增行默认位置变更写入 store 与 localStorage', async () => {

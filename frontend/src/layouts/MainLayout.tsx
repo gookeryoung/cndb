@@ -189,7 +189,8 @@ export default function MainLayout() {
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Space style={{ cursor: 'pointer' }}>
               <Avatar size="small" icon={<UserOutlined />} />
-              {!isMobile && <span>{user?.username || ''}</span>}
+              {/* 右上角优先展示昵称，无昵称时回退账号名 */}
+              {!isMobile && <span>{user?.nickname || user?.username || ''}</span>}
             </Space>
           </Dropdown>
         </div>
