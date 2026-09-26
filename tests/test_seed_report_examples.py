@@ -4,7 +4,8 @@
 - spec 定义一致性与 datasets 数据集引用有效性；
 - 模板配置多样性（输出格式/主题/参数/跨工作区引用）；
 - _seed_report_templates 幂等创建；
-- 5 组新增示例模板基于真实 datasets 数据的渲染断言（期望值独立重算）；
+- 全部 8 组示例模板基于真实 datasets 数据的渲染断言（期望值独立重算）；
+- 模板正文叙述丰富性（摘要/结论与建议/叙述量/数据插值）；
 - 员工名册模板常量渲染与参数化断言；
 - _generate_sample_reports 端到端按输出格式落盘。
 """
@@ -25,8 +26,9 @@ from cndb.cli.seed import (
     _seed_report_templates,
 )
 
-# 5 组新增示例涉及的数据集表（工作区显示名 -> 表名列表，对应仓库 examples/datasets/*.csv）
+# 全部示例模板涉及的数据集表（工作区显示名 -> 表名列表，对应仓库 examples/datasets/*.csv）
 REQUIRED_TABLES: dict[str, list[str]] = {
+    "科研项目管理": ["科研项目", "科研经费", "项目进展", "课题负责人"],
     "某企业销售管理": ["电商销售", "产品开发", "日常待办", "营销活动"],
     "项目管理": ["WBS任务分解"],
     "某地区数据": ["气温天气"],
@@ -184,14 +186,14 @@ def test_seed_report_templates_idempotent(seed_env, db):
     from cndb.plugins.reports.models import ReportTemplate
 
     tables_map, _user = seed_env
-    assert db.query(ReportTemplate).count() == 7  # 科研模板因工作区缺失跳过
+    assert db.query(ReportTemplate).count() == 8  # 全部 spec 均应创建
     _seed_report_templates(db, tables_map)
-    assert db.query(ReportTemplate).count() == 7
+    assert db.query(ReportTemplate).count() == 8
     names = {t.name for t in db.query(ReportTemplate).all()}
-    assert names == {s["name"] for s in REPORT_TEMPLATE_SPECS} - {"科研项目季度汇报"}
+    assert names == {s["name"] for s in REPORT_TEMPLATE_SPECS}
 
 
-# ── 5 组示例模板渲染断言 ────────────────────────────────
+# ── 示例模板渲染断言 ────────────────────────────────
 
 
 def test_render_ecommerce_monthly(seed_env, db):
@@ -516,6 +518,57 @@ def test_render_marketing_campaign(seed_env, db):
     assert f"{ch_budget} |" in text
 
 
+# ── 模板正文叙述丰富性 ──────────────────────────────────
+
+# 非叙述性行的前缀：标题/表格/引用/列表/斜体落款（正文段落应不以这些开头）
+_PROSE_SKIP_PREFIXES = ("#", "|", ">", "-", "*")
+
+
+def _prose_chars(text: str) -> int:
+    """统计叙述性正文字符数：排除空行、标题、表格行、引用块、列表项、分页标记.
+
+    用于量化模板"正文叙述是否丰富"：纯表格+标题的报告该值接近 0。
+    """
+    total = 0
+    for raw in text.split("\n"):
+        line = raw.strip()
+        if not line or line == "---PAGE---" or line.startswith(_PROSE_SKIP_PREFIXES):
+            continue
+        total += len(line)
+    return total
+
+
+def test_all_specs_contain_narrative_sections(seed_env, db):
+    """所有示例模板均含「摘要」与「结论与建议」叙述节，且叙述性正文不少于 200 字符."""
+    tables_map, user = seed_env
+    for spec in REPORT_TEMPLATE_SPECS:
+        _, text = _render_spec(db, user, tables_map, spec["name"])
+        assert "## 摘要" in text, f"{spec['name']} 缺少「摘要」叙述节"
+        assert "## 结论与建议" in text, f"{spec['name']} 缺少「结论与建议」叙述节"
+        prose = _prose_chars(text)
+        assert prose >= 200, f"{spec['name']} 叙述性正文仅 {prose} 字符，内容不够丰富"
+
+
+def test_narrative_interpolates_seed_data(seed_env, db):
+    """摘要是数据驱动叙述：电商月报摘要应插值订单总数与销售额合计，而非固定文案."""
+    tables_map, user = seed_env
+    ctx, text = _render_spec(db, user, tables_map, "电商销售月报")
+    records = ctx["records"]
+    assert f"本期共录入 {len(records)} 笔订单" in text
+    expected_total = round(_num_sum(records, "销售额"), 2)
+    assert f"销售额合计 {expected_total} 元" in text
+
+
+def test_employee_roster_contains_narrative():
+    """员工名册模板同样包含摘要与结论叙述，且摘要随参数口径插值（在职 9 人/离职 3 人）."""
+    text = _render_employee_roster({})
+    assert "## 摘要" in text
+    assert "## 结论与建议" in text
+    assert "共收录 9 人" in text
+    left_text = _render_employee_roster({"在职状态": "离职"})
+    assert "共收录 3 人" in left_text
+
+
 # ── 端到端示例报告生成 ──────────────────────────────────
 
 
@@ -531,9 +584,7 @@ def test_generate_sample_reports_writes_files(seed_env, db, tmp_path: Path):
 
     _generate_sample_reports(db, tables_map, user, out_dir)
 
-    expected_names = {f"{s['name']}-示例报告.{s.get('output_format', 'docx')}" for s in REPORT_TEMPLATE_SPECS} - {
-        "科研项目季度汇报-示例报告.docx"
-    }
+    expected_names = {f"{s['name']}-示例报告.{s.get('output_format', 'docx')}" for s in REPORT_TEMPLATE_SPECS}
     files = sorted(p for p in out_dir.rglob("*-示例报告.*") if p.suffix in {".docx", ".xlsx", ".pdf", ".html"})
     assert {f.name for f in files} == expected_names
     for f in files:
