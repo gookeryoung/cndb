@@ -248,6 +248,7 @@ def create_row(
     _ensure_required_links_provided(table, link_values)
     validate_link_write(engine, link_values)
 
+    # 主行 + link 字段在同一个事务内写入，link 写入失败时主行同步回滚，避免孤立行
     with engine.begin() as conn:
         if normalized:
             result = conn.execute(sa_table.insert().values(**normalized))
@@ -256,8 +257,8 @@ def create_row(
             result = conn.execute(sa_table.insert().values(_trashed=False))
         row_id = result.lastrowid
 
-    for field, target_ids in link_values:
-        set_links(engine, field, row_id, target_ids, db=db)
+        for field, target_ids in link_values:
+            set_links(engine, field, row_id, target_ids, db=db)
 
     row = get_row(engine, table, row_id, db=db)
     if row is not None:
@@ -491,8 +492,8 @@ def update_row(
             if existing is None:
                 return None
 
-    for field, target_ids in link_values:
-        set_links(engine, field, row_id, target_ids, db=db)
+        for field, target_ids in link_values:
+            set_links(engine, field, row_id, target_ids, db=db)
 
     row = get_row(engine, table, row_id, db=db)
     if row is not None:
@@ -615,18 +616,18 @@ def bulk_create(
         validate_link_write(engine, link_values, batch_signatures=batch_sigs)
 
     ids: list[int] = []
+    # 主行 + link 字段在同一个事务内写入，link 写入失败时全部回滚
     with engine.begin() as conn:
-        for values, _link_values in split_rows:
+        for values, link_values in split_rows:
             if values:
                 result = conn.execute(sa_table.insert().values(**values))
             else:
                 # 行仅有 link 值（无物理列值）：显式写软删标记保证 INSERT 合法
                 result = conn.execute(sa_table.insert().values(_trashed=False))
-            ids.append(result.lastrowid)
-
-    for row_id, (_values, link_values) in zip(ids, split_rows, strict=True):
-        for field, target_ids in link_values:
-            set_links(engine, field, row_id, target_ids, db=db)
+            row_id = result.lastrowid
+            ids.append(row_id)
+            for field, target_ids in link_values:
+                set_links(engine, field, row_id, target_ids, db=db)
 
     return ids
 
@@ -662,16 +663,6 @@ def bulk_update(
             valid_where.append(row_scope)
         valid_ids = [int(r[0]) for r in conn.execute(select(sa_table.c.id).where(*valid_where)).all()]
 
-    if normalized:
-        update_where: list[Any] = [sa_table.c.id.in_(valid_ids)]
-        if row_scope is not None:
-            update_where.append(row_scope)
-        with engine.begin() as conn:
-            result = conn.execute(sa_table.update().where(*update_where).values(**normalized))
-            count = result.rowcount
-    else:
-        count = len(valid_ids)
-
     # link 必填/唯一约束校验：同一非空关联集合写多行即互撞；排除本批行自身
     batch_sigs: dict[int, set[tuple[int, ...]]] = {}
     for field, ids in link_values:
@@ -679,10 +670,21 @@ def bulk_update(
             raise ValueError(f"唯一字段 {field.name}：批量更新会令 {len(valid_ids)} 行关联同一目标集合")
         validate_link_write(engine, [(field, ids)], exclude_row_ids=valid_ids, batch_signatures=batch_sigs)
 
-    if valid_ids and link_values:
-        for row_id in valid_ids:
-            for field, target_ids in link_values:
-                set_links(engine, field, row_id, target_ids, db=db)
+    # 主行 + link 字段在同一个事务内写入，link 写入失败时主行同步回滚
+    with engine.begin() as conn:
+        if normalized:
+            update_where: list[Any] = [sa_table.c.id.in_(valid_ids)]
+            if row_scope is not None:
+                update_where.append(row_scope)
+            result = conn.execute(sa_table.update().where(*update_where).values(**normalized))
+            count = result.rowcount
+        else:
+            count = len(valid_ids)
+
+        if valid_ids and link_values:
+            for row_id in valid_ids:
+                for field, target_ids in link_values:
+                    set_links(engine, field, row_id, target_ids, db=db)
 
     return count
 

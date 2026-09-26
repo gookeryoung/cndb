@@ -30,7 +30,7 @@ def db_engine():
     settings.AUTH_ENABLED = True
     engine = create_engine(
         "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "isolation_level": None},
         poolclass=StaticPool,
     )
     # 确保所有模型已注册到 Base.metadata

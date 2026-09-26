@@ -13,10 +13,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from cndb.core.config import settings
 
-# SQLite 特殊参数：跨线程访问需关闭 check_same_thread
+# SQLite 特殊参数：跨线程访问需关闭 check_same_thread；
+# isolation_level=None 禁用 sqlite3 的隐式事务（默认 "" 模式），
+# 让 SQLAlchemy 的 Transaction/Connection 完整掌控事务生命周期，
+# 避免嵌套 engine.begin() 在 autoload_with 时触发隐式 ROLLBACK 导致数据丢失。
 _connect_args: dict[str, object] = {}
 if "sqlite" in settings.DATABASE_URL:
-    _connect_args = {"check_same_thread": False}
+    _connect_args = {"check_same_thread": False, "isolation_level": None}
 
 engine = create_engine(
     settings.DATABASE_URL,
