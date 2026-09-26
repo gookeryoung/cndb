@@ -52,6 +52,7 @@ uploads
 .trae-html-share-packages/*
 backup-*.tar.gz
 .pnpm-store
+*.docx
 
 # SQLite 内存 DB / URI 临时文件
 file:*
