@@ -866,4 +866,66 @@ describe('ReportsPage 跨工作区模板编辑与参数展示', () => {
         // 关联表下拉回显跨工作区表名（而非 "#200"）；下拉项与字段面板分组可能同时出现
         expect(screen.getAllByText('员工表').length).toBeGreaterThanOrEqual(1)
     })
+
+    it('编辑模板：跨工作区主表 + 跨工作区额外表（特殊值杂项场景）字段面板均按归属工作区加载', async () => {
+        server.use(
+            http.get('/api/v1/reports', () =>
+                HttpResponse.json([{
+                    ...TPL,
+                    id: 11,
+                    name: '特殊值杂项分析',
+                    table_id: 300,
+                    extra_table_ids: [301, 400],
+                    parameters: [],
+                }])),
+            http.get('/api/v1/reports/11', () =>
+                HttpResponse.json({
+                    ...TPL,
+                    id: 11,
+                    name: '特殊值杂项分析',
+                    table_id: 300,
+                    extra_table_ids: [301, 400],
+                    template_content: '# 杂项',
+                })),
+            http.get('/api/v1/workspaces', () =>
+                HttpResponse.json([
+                    { id: 10, name: '销售工作区' },
+                    { id: 20, name: '低质量数据' },
+                    { id: 30, name: '某地区数据' },
+                ])),
+            http.get('/api/v1/workspaces/20/tables', () =>
+                HttpResponse.json([
+                    { id: 300, name: '19-特殊值杂项', record_count: 0, field_count: 0, view_count: 0 },
+                    { id: 301, name: '17-数字格式大全', record_count: 0, field_count: 0, view_count: 0 },
+                ])),
+            http.get('/api/v1/workspaces/30/tables', () =>
+                HttpResponse.json([{ id: 400, name: '气温天气', record_count: 0, field_count: 0, view_count: 0 }])),
+            http.get('/api/v1/workspaces/20/tables/300/fields', () =>
+                HttpResponse.json([{ id: 1, name: '杂项名称', field_type: 'text' }])),
+            http.get('/api/v1/workspaces/20/tables/301/fields', () =>
+                HttpResponse.json([{ id: 2, name: '数字格式', field_type: 'text' }])),
+            http.get('/api/v1/workspaces/30/tables/400/fields', () =>
+                HttpResponse.json([{ id: 3, name: '气温', field_type: 'float' }])),
+            http.get('/api/v1/workspaces/20/tables/300/records', () =>
+                HttpResponse.json({ items: [], total: 0 })),
+            http.get('/api/v1/workspaces/20/tables/301/records', () =>
+                HttpResponse.json({ items: [], total: 0 })),
+            http.get('/api/v1/workspaces/30/tables/400/records', () =>
+                HttpResponse.json({ items: [], total: 0 })),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+
+        // 主表字段按归属工作区加载；额外表分组页签（跨工作区解析出表名）存在
+        expect(await screen.findByText('杂项名称')).toBeInTheDocument()
+        // 切到「17-数字格式大全」分组页签，其字段也应显示
+        fireEvent.click(screen.getByText('17-数字格式大全'))
+        expect(await screen.findByText('数字格式')).toBeInTheDocument()
+        // 切到跨工作区「气温天气」分组页签
+        fireEvent.click(screen.getByText('气温天气'))
+        expect(await screen.findByText('气温')).toBeInTheDocument()
+    })
 })

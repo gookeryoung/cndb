@@ -387,9 +387,15 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     enabled: !!selectedTableId,
   })
 
+  // 额外表归属工作区是否全部解析（跨工作区表需等扫描补全后才能按正确工作区请求）
+  const extrasResolved = extraTableIds.every(tid =>
+    tables.some(t => t.id === tid) || !!crossTableInfo[tid])
+  // 额外表归属工作区签名（进入 query key，解析结果变化时触发重新请求）
+  const extraWsKey = extraTableIds.map(tid => crossTableInfo[tid]?.wsId ?? 'local').join(',')
+
   // 额外表的字段列表（批量加载；跨工作区表按其归属工作区请求）
   const { data: extraFieldsMap = {} } = useQuery<Record<number, Field[]>>({
-    queryKey: ['workspaces', workspaceId, 'extra-fields', extraTableIds],
+    queryKey: ['workspaces', workspaceId, 'extra-fields', extraTableIds, extraWsKey],
     queryFn: async () => {
       const result: Record<number, Field[]> = {}
       await Promise.all(extraTableIds.map(async (tid) => {
@@ -398,7 +404,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
       }))
       return result
     },
-    enabled: extraTableIds.length > 0 && !!workspaceId,
+    enabled: extraTableIds.length > 0 && extrasResolved,
   })
 
   // 关联表的前 10 行真实数据（用于预览；跨工作区主表按其归属工作区请求）
@@ -416,7 +422,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
 
   // 额外表的预览数据（用于 PreviewPanel records_by_table；跨工作区表按其归属工作区请求）
   const { data: extraPreviewMap = {} } = useQuery<Record<number, Array<Record<string, unknown>>>>({
-    queryKey: ['workspaces', workspaceId, 'extra-preview', extraTableIds],
+    queryKey: ['workspaces', workspaceId, 'extra-preview', extraTableIds, extraWsKey],
     queryFn: async () => {
       const result: Record<number, Array<Record<string, unknown>>> = {}
       await Promise.all(extraTableIds.map(async (tid) => {
@@ -429,7 +435,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
       }))
       return result
     },
-    enabled: extraTableIds.length > 0 && !!workspaceId,
+    enabled: extraTableIds.length > 0 && extrasResolved,
   })
 
   // Modal 打开时统一初始化所有表单值（在 Form.Items mount 之后，避免 destroyOnHidden 时序错乱）

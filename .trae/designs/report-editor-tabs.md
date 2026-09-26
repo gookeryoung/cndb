@@ -40,6 +40,7 @@
 - `crossTableInfo` 扫描范围覆盖主表：`primaryTableMissing`（主表不在本区 tables 且未解析）也触发全工作区扫描。
 - 主表归属工作区 `primaryTableWsId = crossTableInfo[tableId]?.wsId ?? workspaceId`，字段列表与预览数据查询均按其归属工作区发起。
 - 主表名经 `resolveTableName`（本区 tables 优先，其次 crossTableInfo）解析；「关联表」下拉选项在跨工作区主表场景下补充 `{ value, label: 表名 }` 选项，避免仅显示 `#id`。
+- 额外表字段/预览查询增加 `extrasResolved` 门控（全部表归属解析后才请求）且 `extraWsKey`（归属工作区签名）进入 query key，避免解析完成前用当前工作区误请求且缓存不失效。
 
 ## 模板参数行布局
 
@@ -61,4 +62,5 @@
 - [x] 回归用例覆盖（ReportsPage.test.tsx「编辑器页签布局」组、PreviewPanel.test.tsx 过滤语义组）
 - [x] 模板参数长内容（默认值/显示名/选项）输入框弹性伸缩可完整展示
 - [x] 跨工作区关联表模板（员工名册等）编辑时字段面板按归属工作区加载字段，关联表下拉回显表名
+- [x] 跨工作区主表 + 额外表组合场景（特殊值杂项分析）额外表分组字段按归属工作区加载
 - [x] make check 全绿
