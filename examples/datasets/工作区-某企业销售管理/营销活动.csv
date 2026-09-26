@@ -1,0 +1,15 @@
+活动编号,活动名称,渠道类型,活动状态,开始日期,结束日期,预算_元,实际花费_元,线索数,转化率_%,负责人,负责人邮箱,活动页面,联系电话,是否重点
+MKT0001,华中交通智慧制造峰会,展会,已结束,2026-06-12,2026-06-14,180000,172500,142,12.68,李四,lisi@example.com,https://market.example.com/summit-2026,0755-88021001,是
+MKT0002,智能仓储 WMS 线上直播,线上广告,已结束,2026-06-20,2026-06-20,45000,43800,268,8.21,吴十,wushi@example.com,https://market.example.com/webinar-wms,0755-88021002,否
+MKT0003,数字孪生白皮书投放,内容营销,已结束,2026-05-08,2026-06-30,60000,58200,311,6.43,吴十,wushi@example.com,https://market.example.com/whitepaper-dt,0755-88021002,是
+MKT0004,华南工业展参展,展会,已结束,2026-07-15,2026-07-18,220000,215000,187,14.97,郑一,zhengyi@example.com,https://market.example.com/expo-south,0755-88021003,是
+MKT0005,搜索引擎关键词投放,线上广告,进行中,2026-08-01,2026-11-30,150000,96000,423,5.67,李四,lisi@example.com,https://market.example.com/sem-landing,0755-88021001,是
+MKT0006,客户案例视频系列,内容营销,进行中,2026-08-15,2026-12-15,80000,41000,96,9.38,吴十,wushi@example.com,https://market.example.com/case-videos,0755-88021002,否
+MKT0007,华北钢铁方案推介会,渠道合作,筹备中,2026-10-20,2026-10-22,95000,0,0,0,郑一,zhengyi@example.com,https://market.example.com/beijing-roadshow,0755-88021003,是
+MKT0008,集成商渠道联合推广,渠道合作,进行中,2026-09-01,2026-12-31,120000,52000,74,10.81,郑一,zhengyi@example.com,https://market.example.com/partner-joint,0755-88021003,否
+MKT0009,大数据平台产品发布,线上广告,筹备中,2026-11-05,2026-11-07,260000,0,0,0,李四,lisi@example.com,https://market.example.com/launch-bigdata,0755-88021001,是
+MKT0010,制造业数字化沙龙,内容营销,已结束,2026-07-02,2026-07-02,32000,30500,58,15.52,吴十,wushi@example.com,https://market.example.com/salon-mfg,0755-88021002,否
+MKT0011,中储粮定制化推广,渠道合作,已结束,2026-05-16,2026-06-05,70000,68400,45,17.78,郑一,zhengyi@example.com,https://market.example.com/grain-custom,0755-88021003,否
+MKT0012,信息流广告投放,线上广告,进行中,2026-09-10,2026-12-10,110000,38000,205,4.88,吴十,wushi@example.com,https://market.example.com/feed-ads,0755-88021002,否
+MKT0013,南方电网年度答谢会,展会,筹备中,2026-12-18,2026-12-20,150000,0,0,0,李四,lisi@example.com,https://market.example.com/gala-2026,0755-88021001,是
+MKT0014,技术博客专栏运营,内容营销,进行中,2026-04-01,2026-12-31,40000,29600,133,7.52,吴十,wushi@example.com,https://market.example.com/tech-blog,0755-88021002,否

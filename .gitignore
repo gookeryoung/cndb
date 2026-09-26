@@ -54,6 +54,9 @@ backup-*.tar.gz
 .pnpm-store
 *.docx
 
+# seed 生成的示例报告产物（每次 seed 覆盖重写，不入库）
+examples/datasets/**/*-示例报告.*
+
 # SQLite 内存 DB / URI 临时文件
 file:*
 ?cache=*

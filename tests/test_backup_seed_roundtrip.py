@@ -35,13 +35,20 @@ DEPT_ROWS = {
     "财务部": "赵六",
 }
 
-# 员工表 5 行的期望值（姓名 → (入职日期, 薪资, 是否在职)）
+# 员工表 12 行的期望值（姓名 → (入职日期, 薪资, 是否在职)）
 EMP_ROWS = {
     "张三": ("2023-01-15", 15000, "是"),
     "李四": ("2022-06-01", 12000, "是"),
     "王五": ("2024-03-20", 10000, "是"),
     "赵六": ("2021-11-10", 13000, "否"),
     "钱七": ("2023-08-05", 18000, "是"),
+    "孙八": ("2024-02-14", 16000, "是"),
+    "周九": ("2023-12-01", 14000, "是"),
+    "吴十": ("2024-07-01", 9000, "是"),
+    "郑一": ("2022-09-15", 13000, "否"),
+    "冯二": ("2025-04-01", 8000, "是"),
+    "陈三": ("2023-05-20", 11000, "是"),
+    "褚四": ("2024-10-08", 9500, "否"),
 }
 
 
@@ -68,14 +75,28 @@ class TestSeedBackupRoundtrip:
 
         # 导出内容：员工表字段类型齐全（含单选 link 与 lookup 负责人），select config 带选项
         emp_fields = {f["name"]: f for f in tables["员工表"]["fields"]}
-        assert set(emp_fields) == {"姓名", "部门", "负责人", "入职日期", "薪资", "是否在职"}
+        assert set(emp_fields) == {
+            "工号",
+            "姓名",
+            "部门",
+            "职位",
+            "负责人",
+            "入职日期",
+            "薪资",
+            "手机号",
+            "邮箱",
+            "是否在职",
+        }
         assert emp_fields["部门"]["field_type"] == "link"
         assert emp_fields["部门"]["config"]["multiple"] is False
         assert emp_fields["负责人"]["field_type"] == "lookup"
         assert set(emp_fields["负责人"]["config"]) == {"source_table_id", "source_field_id", "via_link_field_id"}
+        assert emp_fields["职位"]["config"] == {"options": ["总监", "经理", "工程师", "专员", "会计", "出纳"]}
         assert emp_fields["是否在职"]["config"] == {"options": ["是", "否"]}
+        assert emp_fields["手机号"]["field_type"] == "phone"
+        assert emp_fields["邮箱"]["field_type"] == "email"
         assert len(tables["部门表"]["rows"]) == 4
-        assert len(tables["员工表"]["rows"]) == 5
+        assert len(tables["员工表"]["rows"]) == 12
 
         # 从备份创建全新工作区
         r_restore = client.post("/api/v1/workspaces/import", json={"json_data": backup}, headers=headers)
@@ -83,7 +104,7 @@ class TestSeedBackupRoundtrip:
         body = r_restore.json()
         assert body["errors"] == [], f"导入报错: {body['errors']}"
         assert body["imported_tables"] == 2
-        assert body["imported_rows"] == 9
+        assert body["imported_rows"] == 16
         restored = body["workspace"]
         assert restored["name"] == "某企业销售管理"
 
@@ -131,11 +152,24 @@ class TestSeedBackupRoundtrip:
         listing = client.post(
             f"/api/v1/workspaces/{restored['id']}/tables/{emp_tbl.id}/records/list",
             headers=headers,
-            json={"filters": [], "sorts": [], "limit": 10, "offset": 0},
+            json={"filters": [], "sorts": [], "limit": 20, "offset": 0},
         )
         assert listing.status_code == 200, listing.text
         restored_rows = {r["姓名"]: r for r in listing.json()["rows"]}
-        expect_dept = {"张三": "技术部", "李四": "市场部", "王五": "人事部", "赵六": "财务部", "钱七": "技术部"}
+        expect_dept = {
+            "张三": "技术部",
+            "李四": "市场部",
+            "王五": "人事部",
+            "赵六": "财务部",
+            "钱七": "技术部",
+            "孙八": "技术部",
+            "周九": "技术部",
+            "吴十": "市场部",
+            "郑一": "市场部",
+            "冯二": "人事部",
+            "陈三": "财务部",
+            "褚四": "财务部",
+        }
         for name, dept in expect_dept.items():
             assert [v["value"] for v in restored_rows[name]["部门"]] == [dept]
             assert restored_rows[name]["负责人"] == DEPT_ROWS[dept]
@@ -156,11 +190,24 @@ class TestSeedBackupRoundtrip:
         listing = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{emp_tbl.id}/records/list",
             headers=headers,
-            json={"filters": [], "sorts": [], "limit": 10, "offset": 0},
+            json={"filters": [], "sorts": [], "limit": 20, "offset": 0},
         )
         assert listing.status_code == 200, listing.text
         # 员工 → 所属部门负责人（钱七在技术部，负责人为张三）
-        expect_head = {"张三": "张三", "李四": "李四", "王五": "王五", "赵六": "赵六", "钱七": "张三"}
+        expect_head = {
+            "张三": "张三",
+            "李四": "李四",
+            "王五": "王五",
+            "赵六": "赵六",
+            "钱七": "张三",
+            "孙八": "张三",
+            "周九": "张三",
+            "吴十": "李四",
+            "郑一": "李四",
+            "冯二": "王五",
+            "陈三": "赵六",
+            "褚四": "赵六",
+        }
         emp_rows = {r["姓名"]: r for r in listing.json()["rows"]}
         assert set(emp_rows) == set(expect_head)
         for name, head in expect_head.items():
@@ -197,7 +244,7 @@ class TestSeedBackupRoundtrip:
         r_verify = client.get(f"/api/v1/workspaces/{ws.id}/export", headers=headers)
         tables = {t["name"]: t for t in r_verify.json()["tables"]}
         assert len(tables["部门表"]["rows"]) == 4
-        assert len(tables["员工表"]["rows"]) == 5
+        assert len(tables["员工表"]["rows"]) == 12
 
 
 class TestSeedViewHelpers:
