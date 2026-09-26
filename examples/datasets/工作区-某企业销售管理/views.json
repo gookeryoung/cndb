@@ -511,5 +511,98 @@
       },
       "order": 3
     }
+  ],
+  "日常待办": [
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "截止日期",
+          "direction": "asc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "待办看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "状态",
+        "title_field": "待办标题",
+        "due_date_field": "截止日期",
+        "assignee_field": "负责员工",
+        "card_sort_field": "优先级",
+        "card_sort_direction": "desc",
+        "group_order": [
+          "待办",
+          "进行中",
+          "已完成",
+          "已取消"
+        ]
+      },
+      "order": 1
+    },
+    {
+      "name": "高优先级任务",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "优先级",
+          "op": "=",
+          "value": "高"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "截止日期",
+          "direction": "asc"
+        }
+      ],
+      "order": 2
+    },
+    {
+      "name": "按员工看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "负责员工",
+        "title_field": "待办标题",
+        "due_date_field": "截止日期",
+        "card_sort_field": "截止日期",
+        "card_sort_direction": "asc"
+      },
+      "order": 3
+    },
+    {
+      "name": "待办日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "截止日期",
+        "title_field": "待办标题",
+        "group_field": "状态"
+      },
+      "order": 4
+    },
+    {
+      "name": "进行中任务",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "状态",
+          "op": "=",
+          "value": "进行中"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "截止日期",
+          "direction": "asc"
+        }
+      ],
+      "order": 5
+    }
   ]
 }
