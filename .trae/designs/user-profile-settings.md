@@ -36,6 +36,7 @@
 - `loadFontSettings()`：解析 localStorage `cndb_font`（JSON），非法档位回退 standard，`bold` 仅接受 `true`，JSON 损坏/读写异常回退默认。
 - `saveFontSettings(settings)` 写回 `cndb_font`。
 - `useTheme()` 上下文新增：`font: FontSettings`、`setFontScale(s)`、`setFontBold(b)`，setter 内即时持久化。
+- `getThemeConfig(mode)` 在原主题配置上注入 `components.Segmented`：`itemSelectedBg = colorPrimary`（激活滑块填充主题色）、`itemSelectedColor = SEGMENTED_ON_PRIMARY[mode]`（逐主题反色文字，高亮度主题色 github-dark/midnight/oled 用深字保证可读），返回合并后的新对象；配套删除 index.css 中深色主题 `.ant-segmented-item-selected` 文字色的 CSS 覆盖，避免 `!important` 压过 token。
 
 ## 数据模型 / 持久化
 | 键 | 内容 | 说明 |

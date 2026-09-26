@@ -94,9 +94,21 @@ describe('saveThemeMode / getThemeConfig', () => {
     expect(localStorage.getItem('cndb_theme')).toBe('forest')
   })
 
-  it('getThemeConfig 返回对应主题配置', () => {
-    expect(getThemeConfig('modern')).toBe(THEMES.modern)
-    expect(getThemeConfig('oled')).toBe(THEMES.oled)
+  it('getThemeConfig 返回对应主题配置并注入 Segmented 强对比 token', () => {
+    // 保留原主题 token / components，且 Segmented 激活滑块=主题色、文字=反色
+    const modern = getThemeConfig('modern')
+    expect(modern.token).toMatchObject(THEMES.modern.token ?? {})
+    expect(modern.components?.Segmented).toEqual({
+      itemSelectedBg: '#3b82f6',
+      itemSelectedColor: '#ffffff',
+    })
+    // 高亮度主题色（极夜黑青色）激活文字用深色保证可读
+    const oled = getThemeConfig('oled')
+    expect(oled.components?.Segmented).toEqual({
+      itemSelectedBg: '#22d3ee',
+      itemSelectedColor: '#0a0a0a',
+    })
+    expect(oled.components?.Switch).toEqual(THEMES.oled.components?.Switch)
   })
 })
 

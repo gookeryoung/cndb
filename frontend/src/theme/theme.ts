@@ -610,8 +610,33 @@ export function saveThemeMode(mode: ThemeMode) {
   try { localStorage.setItem(THEME_KEY, mode) } catch { /* noop */ }
 }
 
+/** 各主题 Segmented 激活滑块（主题色底）上的可读前景色 — 亮度较高的主题色用深字保证对比 */
+const SEGMENTED_ON_PRIMARY: Record<ThemeMode, string> = {
+  modern: '#ffffff',
+  'github-dark': '#0d1117',
+  'github-light': '#ffffff',
+  minimal: '#ffffff',
+  ocean: '#ffffff',
+  forest: '#ffffff',
+  sepia: '#ffffff',
+  sakura: '#ffffff',
+  midnight: '#1d1830',
+  oled: '#0a0a0a',
+}
+
 export function getThemeConfig(mode: ThemeMode): ThemeConfig {
-  return THEMES[mode]
+  const config = THEMES[mode]
+  return {
+    ...config,
+    components: {
+      ...config.components,
+      // Segmented 激活滑块填充主题色 + 反色文字，强化激活项与未激活项的对比
+      Segmented: {
+        itemSelectedBg: config.token?.colorPrimary ?? '#1677ff',
+        itemSelectedColor: SEGMENTED_ON_PRIMARY[mode],
+      },
+    },
+  }
 }
 
 /* ─────────────── 字体设置（字号 / 加粗） ─────────────── */
