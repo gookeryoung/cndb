@@ -33,6 +33,18 @@
 - Nunjucks 内置的 `selectattr/rejectattr` 仅支持「属性真值」单参数形式，**不支持** Jinja2 的三参数形式 `selectattr('字段', 'equalto', 值)`，导致员工名册等使用该语法的模板在预览中 `shown` 为空、统计字段全部显示 0（后端渲染正常）。
 - 修复：PreviewPanel 覆写 `selectattr/rejectattr/select/reject` 四个过滤器，实现 Jinja2 测试名兼容层 `JINJA_TESTS`（equalto/eq/sameas/ne/gt/greaterthan/ge/gte/lt/lessthan/le/lte/in/contains/startswith/endswith/defined/undefined/none/even/odd/number/string）；单参数真值形式退化为 Boolean；不支持的测试名抛出渲染错误并显示在预览 Alert 中。
 
+## 跨工作区主表回显
+
+报表模板全局存在（不分区），seed 模板（员工名册/电商销售月报等）的关联表可归属其他工作区。编辑此类模板时：
+
+- `crossTableInfo` 扫描范围覆盖主表：`primaryTableMissing`（主表不在本区 tables 且未解析）也触发全工作区扫描。
+- 主表归属工作区 `primaryTableWsId = crossTableInfo[tableId]?.wsId ?? workspaceId`，字段列表与预览数据查询均按其归属工作区发起。
+- 主表名经 `resolveTableName`（本区 tables 优先，其次 crossTableInfo）解析；「关联表」下拉选项在跨工作区主表场景下补充 `{ value, label: 表名 }` 选项，避免仅显示 `#id`。
+
+## 模板参数行布局
+
+参数行不再使用 Space 定宽组合，改为逐行 flex 容器（`flexBasis: 100%`，可换行）：参数名 140 / 类型 90 / 必填 80 固定宽；默认值 `flex: 1 1 160px`、显示名 `flex: 1 1 140px`、选项 `flex: 2 1 220px` 弹性伸缩，长内容（长默认值/显示名/选项列表）可完整展示。
+
 ## 约束
 
 - 数据流零改动：templateValue 受控、extraTableIds/crossTableInfo state、handleFormFinish 提交逻辑均保持原样。
@@ -47,4 +59,6 @@
 - [x] 页签往返切换后编辑器内容/参数行不丢失
 - [x] 预览中 selectattr/rejectattr 三参数测试名语义与后端一致，员工名册预览统计不再显示 0
 - [x] 回归用例覆盖（ReportsPage.test.tsx「编辑器页签布局」组、PreviewPanel.test.tsx 过滤语义组）
+- [x] 模板参数长内容（默认值/显示名/选项）输入框弹性伸缩可完整展示
+- [x] 跨工作区关联表模板（员工名册等）编辑时字段面板按归属工作区加载字段，关联表下拉回显表名
 - [x] make check 全绿

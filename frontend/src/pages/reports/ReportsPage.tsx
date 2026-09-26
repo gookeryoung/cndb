@@ -357,8 +357,9 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     enabled: open && !!importWsId && importWsId !== workspaceId,
   })
 
-  // 编辑回显：extra_table_ids 中归属未知的表（上次保存的跨工作区表），扫描全部工作区补全信息
-  const missingScan = open && extraTableIds.some(tid => !tables.some(t => t.id === tid) && !crossTableInfo[tid])
+  // 编辑回显：主表或 extra_table_ids 中归属未知的表（如 seed 生成的跨工作区模板），扫描全部工作区补全信息
+  const primaryTableMissing = selectedTableId !== null && !tables.some(t => t.id === selectedTableId) && !crossTableInfo[selectedTableId]
+  const missingScan = open && (primaryTableMissing || extraTableIds.some(tid => !tables.some(t => t.id === tid) && !crossTableInfo[tid]))
   useEffect(() => {
     if (!missingScan) return
     let cancelled = false
@@ -374,11 +375,16 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     return () => { cancelled = true }
   }, [missingScan, workspaceId])
 
+  // 主表归属工作区：本区表直接用当前工作区，跨工作区表（seed 模板等）经 crossTableInfo 解析
+  const primaryTableWsId = selectedTableId !== null
+    ? (crossTableInfo[selectedTableId]?.wsId ?? workspaceId)
+    : workspaceId
+
   // 关联表的字段列表
   const { data: fields = [] } = useQuery<Field[]>({
-    queryKey: ['workspaces', workspaceId, 'tables', selectedTableId, 'fields'],
-    queryFn: () => fieldApi.list(workspaceId, selectedTableId!),
-    enabled: !!selectedTableId && !!workspaceId,
+    queryKey: ['workspaces', primaryTableWsId, 'tables', selectedTableId, 'fields'],
+    queryFn: () => fieldApi.list(primaryTableWsId, selectedTableId!),
+    enabled: !!selectedTableId,
   })
 
   // 额外表的字段列表（批量加载；跨工作区表按其归属工作区请求）
@@ -395,11 +401,11 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     enabled: extraTableIds.length > 0 && !!workspaceId,
   })
 
-  // 关联表的前 10 行真实数据（用于预览）
+  // 关联表的前 10 行真实数据（用于预览；跨工作区主表按其归属工作区请求）
   const { data: previewRows = [], isLoading: previewLoading } = useQuery({
-    queryKey: ['workspaces', workspaceId, 'tables', selectedTableId, 'records', 'preview'],
+    queryKey: ['workspaces', primaryTableWsId, 'tables', selectedTableId, 'records', 'preview'],
     queryFn: async () => {
-      const resp = await recordApi.list(workspaceId, selectedTableId!, { limit: 10 })
+      const resp = await recordApi.list(primaryTableWsId, selectedTableId!, { limit: 10 })
       return resp.items.map(r => {
         const { id: _id, created_at: _ca, updated_at: _ua, created_by: _cb, updated_by: _ub, ...rest } = r as any
         return rest
@@ -584,9 +590,19 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     [importWsTables, selectedTableId],
   )
 
-  const selectedTableName = selectedTableId
-    ? tables.find(t => t.id === selectedTableId)?.name
-    : undefined
+  // 主表名解析：本区表优先，其次 crossTableInfo（跨工作区主表，如 seed 模板的关联表）
+  const selectedTableName = selectedTableId !== null ? resolveTableName(selectedTableId) : undefined
+
+  // 关联表下拉选项：本区表 + 跨工作区主表（避免编辑 seed 模板时仅显示 "#id"）
+  const tableSelectOptions = useMemo(() => {
+    if (selectedTableId === null) return tableOptions
+    const existing = tableOptions.some(o => o.value === selectedTableId)
+    if (existing) return tableOptions
+    const name = resolveTableName(selectedTableId)
+    if (name === undefined) return tableOptions
+    return [{ value: selectedTableId, label: name }, ...tableOptions]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableOptions, selectedTableId, crossTableInfo, tables])
 
   // 构建多表字段分组
   const tableGroups = useMemo(() => {
@@ -667,7 +683,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
                     </Form.Item>
                     <Form.Item name="table_id" label="关联表" style={{ width: 220, marginBottom: 8 }}>
                       <Select
-                        options={tableOptions}
+                        options={tableSelectOptions}
                         allowClear
                         placeholder="选填（建议关联）"
                         onChange={handleTableChange}
@@ -722,30 +738,31 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
                         <>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                             {paramFields.map(({ key, name, ...restField }) => (
-                              <Space key={key} style={{ display: 'flex', marginBottom: 4 }} align="baseline">
-                                <Form.Item {...restField} name={[name, 'name']} rules={[{ required: true }]}>
-                                  <Input placeholder="参数名" style={{ width: 120 }} />
+                              /* 每行一个参数：默认值/显示名/选项用 flex 弹性宽度，长内容可完整展示 */
+                              <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', flexBasis: '100%' }}>
+                                <Form.Item {...restField} name={[name, 'name']} rules={[{ required: true }]} style={{ width: 140, marginBottom: 4 }}>
+                                  <Input placeholder="参数名" />
                                 </Form.Item>
-                                <Form.Item {...restField} name={[name, 'type']}>
-                                  <Select options={PARAM_TYPES} style={{ width: 90 }} />
+                                <Form.Item {...restField} name={[name, 'type']} style={{ width: 90, marginBottom: 4 }}>
+                                  <Select options={PARAM_TYPES} />
                                 </Form.Item>
-                                <Form.Item {...restField} name={[name, 'default']}>
-                                  <Input placeholder="默认值" style={{ width: 100 }} />
+                                <Form.Item {...restField} name={[name, 'default']} style={{ flex: '1 1 160px', minWidth: 160, marginBottom: 4 }}>
+                                  <Input placeholder="默认值" />
                                 </Form.Item>
-                                <Form.Item {...restField} name={[name, 'label']}>
-                                  <Input placeholder="显示名" style={{ width: 100 }} />
+                                <Form.Item {...restField} name={[name, 'label']} style={{ flex: '1 1 140px', minWidth: 140, marginBottom: 4 }}>
+                                  <Input placeholder="显示名" />
                                 </Form.Item>
-                                <Form.Item {...restField} name={[name, 'optionsText']} tooltip="逗号分隔的可选值，非空时渲染时显示下拉菜单">
-                                  <Input placeholder="选项(逗号分隔)" style={{ width: 120 }} />
+                                <Form.Item {...restField} name={[name, 'optionsText']} tooltip="逗号分隔的可选值，非空时渲染时显示下拉菜单" style={{ flex: '2 1 220px', minWidth: 220, marginBottom: 4 }}>
+                                  <Input placeholder="选项(逗号分隔)" />
                                 </Form.Item>
                                 {/* Select 用 value prop 而非 checked，移除 valuePropName="checked" */}
-                                <Form.Item {...restField} name={[name, 'required']}>
-                                  <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} style={{ width: 80 }} />
+                                <Form.Item {...restField} name={[name, 'required']} style={{ width: 80, marginBottom: 4 }}>
+                                  <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} />
                                 </Form.Item>
                                 <Tooltip title="删除该参数">
                                   <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
                                 </Tooltip>
-                              </Space>
+                              </div>
                             ))}
                           </div>
                           <Button type="dashed" onClick={() => add({ name: '', type: 'string', default: null, label: '', required: false })} block icon={<PlusOutlined />}>

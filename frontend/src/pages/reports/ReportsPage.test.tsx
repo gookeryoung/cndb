@@ -785,3 +785,85 @@ describe('ReportsPage 编辑器页签布局', () => {
         expect(activeTabText()).toContain('基本信息')
     })
 })
+
+// ─────────────── 跨工作区模板编辑与模板参数展示 ───────────────
+
+describe('ReportsPage 跨工作区模板编辑与参数展示', () => {
+    /** 当前激活页签的文本 */
+    const activeTabText = () => document.querySelector('.ant-tabs-tab-active')?.textContent ?? ''
+
+    it('编辑模板：参数默认值/显示名/选项为长内容时输入框弹性伸缩可完整展示', async () => {
+        server.use(
+            http.get('/api/v1/reports', () => HttpResponse.json([{ ...TPL, id: 8, name: '员工名册' }])),
+            http.get('/api/v1/reports/8', () =>
+                HttpResponse.json({
+                    ...TPL,
+                    id: 8,
+                    name: '员工名册',
+                    template_content: '# 名册',
+                    parameters: [
+                        {
+                            name: '统计口径',
+                            type: 'string',
+                            default: '按已支付金额（不含退款）统计',
+                            label: '统计口径说明（用于报告表头）',
+                            required: false,
+                            options: ['按已支付金额（不含退款）统计', '按下单金额统计'],
+                        },
+                    ],
+                })),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+
+        // 长内容完整回显（未因输入框过窄而截断丢失）
+        expect(screen.getAllByDisplayValue('按已支付金额（不含退款）统计').length).toBeGreaterThanOrEqual(1)
+        expect(screen.getByDisplayValue('统计口径说明（用于报告表头）')).toBeInTheDocument()
+        // options 数组转逗号分隔文本回填
+        const optionsInput = screen.getByDisplayValue('按已支付金额（不含退款）统计,按下单金额统计')
+        expect(optionsInput).toBeInTheDocument()
+        // 选项/默认值/显示名输入框为 flex 弹性宽度（可随内容伸缩）
+        const optionsItem = optionsInput.closest('.ant-form-item') as HTMLElement | null
+        expect(optionsItem?.style.flex).toBeTruthy()
+        expect(optionsItem?.style.minWidth).toBeTruthy()
+    })
+
+    it('编辑模板：关联表属于其他工作区时字段面板仍显示该表字段（员工名册场景）', async () => {
+        server.use(
+            http.get('/api/v1/reports', () =>
+                HttpResponse.json([{ ...TPL, id: 9, name: '员工名册', table_id: 200, parameters: [] }])),
+            http.get('/api/v1/reports/9', () =>
+                HttpResponse.json({ ...TPL, id: 9, name: '员工名册', table_id: 200, template_content: '# 名册' })),
+            http.get('/api/v1/workspaces', () =>
+                HttpResponse.json([
+                    { id: 10, name: '销售工作区' },
+                    { id: 20, name: '人事工作区' },
+                ])),
+            http.get('/api/v1/workspaces/10/tables', () =>
+                HttpResponse.json([{ id: 100, name: '客户表', record_count: 0, field_count: 0, view_count: 0 }])),
+            http.get('/api/v1/workspaces/20/tables', () =>
+                HttpResponse.json([{ id: 200, name: '员工表', record_count: 0, field_count: 0, view_count: 0 }])),
+            http.get('/api/v1/workspaces/20/tables/200/fields', () =>
+                HttpResponse.json([
+                    { id: 1, name: '姓名', field_type: 'text' },
+                    { id: 2, name: '职位', field_type: 'select' },
+                ])),
+            http.get('/api/v1/workspaces/20/tables/200/records', () =>
+                HttpResponse.json({ items: [], total: 0 })),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('编辑模板'))
+        // 编辑态默认落在模板编辑页签，字段面板应按归属工作区（人事工作区）加载员工表字段
+        expect(activeTabText()).toContain('模板编辑')
+        expect(await screen.findByText('姓名')).toBeInTheDocument()
+        expect(screen.getByText('职位')).toBeInTheDocument()
+        // 关联表下拉回显跨工作区表名（而非 "#200"）；下拉项与字段面板分组可能同时出现
+        expect(screen.getAllByText('员工表').length).toBeGreaterThanOrEqual(1)
+    })
+})
