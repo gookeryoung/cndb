@@ -47,6 +47,8 @@ interface GridTableSectionProps {
   onColumnResize?: (fieldId: string, width: number) => void
   /** 拖拽列 srcFieldId 落到 targetFieldId 上（列序调整，调用方负责持久化） */
   onColumnOrderMove?: (srcFieldId: string, targetFieldId: string) => void
+  /** 双击右缘热区：重置该列宽度为类型化估算值（调用方删除覆盖） */
+  onColumnResetWidth?: (fieldId: string) => void
   gridAreaSize: { width: number; height: number }
   offset: number
   limit: number
@@ -63,7 +65,7 @@ export default function GridTableSection({
   tableRef, columns, settings, isLoading, rows, total,
   newRowActive, newRowPosition, canEditRecords,
   selectedRowKeys, onSelectionChange, onAddRow, onRowDoubleClick, onSort,
-  onColumnResize, onColumnOrderMove,
+  onColumnResize, onColumnOrderMove, onColumnResetWidth,
   gridAreaSize, offset, limit, onPageChange, prefetchNext,
 }: GridTableSectionProps) {
   // resize 拖拽中的实时预览宽度（key 为列 key）；拖拽结束清空、宽度交由视图持久化
@@ -148,6 +150,11 @@ export default function GridTableSection({
         headerCell.onMouseLeave = (e: React.MouseEvent) => {
           (e.currentTarget as HTMLElement).style.cursor = ''
         }
+        // 双击热区：重置该列宽度（删除视图级覆盖，回退类型化估算）
+        headerCell.onDoubleClick = (e: React.MouseEvent) => {
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+          if (rect.right - e.clientX <= RESIZE_HOTZONE_PX) onColumnResetWidth?.(colKey)
+        }
         headerCell.draggable = true
         headerCell.onDragStart = (e: React.DragEvent) => {
           // resize 进行中禁止拖列序（互斥）
@@ -173,7 +180,7 @@ export default function GridTableSection({
 
       return { ...col, width, onHeaderCell: () => headerCell }
     }),
-    [columns, onSort, onColumnOrderMove, previewWidths, beginResize],
+    [columns, onSort, onColumnOrderMove, onColumnResetWidth, previewWidths, beginResize],
   )
 
   // 横向滚动宽度 = 各列宽之和（含 rowSelection 40），保证列宽自适应后无空白拉伸

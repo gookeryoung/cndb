@@ -23,6 +23,7 @@
     - `fieldOrder?: string[]` — 视图级列序。
     - `onColumnResize?: (fieldId: string, width: number) => void` — 由 GridTableSection 在拖拽结束时回调（宽度传实际拖出的像素值，已夹取最小/最大约束）。
     - `onColumnOrderMove?: (fieldId: string, targetFieldId: string) => void` — 拖拽列 A 落到列 B 上时回调；目标为操作列时忽略。
+    - `onColumnResetWidth?: (fieldId: string) => void` — 双击 th 右缘热区时回调；GridPage 删除该字段宽度覆盖，回退类型化估算；无覆盖时短路不产生写入。
   - 宽度计算：`columnWidths[String(f.id)]` 优先；否则按字段类型估算（`estimateColumnWidth(f)` 导出纯函数便于测试），再叠加表头字符数修正（每超出 4 字 +14px，上限 +60）。
   - 列序计算：`applyFieldOrder(fields, fieldOrder)` 导出纯函数 — 先按 fieldOrder 中出现且存在的 id 排前，其余字段按 `Field.order` 追加；隐藏字段照旧先过滤。
 
@@ -34,6 +35,11 @@
   - 调宽：th 右缘 8px 热区 — mousemove 时该区间置 `cursor: col-resize`；mousedown 在热区内开始拖拽（记录起始 x 与列宽，`stopPropagation` 阻断排序 click），document mousemove 实时更新宽度预览（受控 `width`），mouseup 提交 `onColumnResize(fieldId, width)`；拖拽期间置全局 `suppressClickRef`，th onClick 检测到即跳过排序。宽度约束：最小 60px、最大 600px。
   - 列序：th 注入 `draggable: true` 与 HTML5 DnD 事件（dragstart 记录源 fieldId，dragover preventDefault，drop 回调 `onColumnOrderMove`）。resize 拖拽进行中禁止 dragstart（互斥）。操作列（`__row_ops__`）不参与排序注入与拖放。
 - `scroll.x` 改为「各列宽之和 + rowSelection 40」，下限保留 `Math.max(..., 1200)` 语义改为列宽总和与 1200 取大。
+
+### gridToolbar.tsx
+
+- 新增可选 prop `onResetColumnLayout?: () => void`：更多菜单追加「重置列宽与列序」项；缺省（非 grid 模式或无覆盖）时菜单项置灰。
+- GridPage 传入条件：`mode === 'grid' && hasColumnLayoutOverride`（column_widths 非空或 field_order 非空）。
 
 ### GridPage.tsx
 
@@ -62,3 +68,4 @@
 - [x] 表头拖拽可调整列顺序，刷新后保持；操作列固定最右不参与
 - [x] 拖宽/拖列序不误触排序；排序三态循环回归测试不破坏
 - [x] 未保存视图草稿时同样生效；切换视图各自独立记忆
+- [x] 重置入口：双击表头右缘重置单列宽度；更多菜单「重置列宽与列序」一键清空覆盖
