@@ -1,9 +1,12 @@
-/** 用户设置面板 — 个人资料 + 主题切换 + 操作风格. */
+/** 用户设置面板 — 用户资料 + 主题（配色/字体）+ 操作风格. */
 
 import { useEffect } from 'react'
 import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App } from 'antd'
 import { useTheme } from '@/theme/ThemeProvider'
-import { THEME_META, THEME_MODES, type ThemeMode } from '@/theme/theme'
+import {
+  THEME_META, THEME_MODES, FONT_SCALES, FONT_SCALE_META,
+  type ThemeMode,
+} from '@/theme/theme'
 import { useTableSettingsStore, useAuthStore } from '@/store'
 import { authApi } from '@/api'
 import type { NewRowPosition } from '@/theme/tableSettings'
@@ -83,7 +86,7 @@ function ThemeCard({ mode, selected, onSelect }: {
   )
 }
 
-/** 个人资料分页内容 — 昵称/邮箱自助更新 */
+/** 用户资料分页内容 — 用户名只读，昵称/邮箱自助更新 */
 function ProfilePanel() {
   const { message } = App.useApp()
   const user = useAuthStore(s => s.user)
@@ -93,7 +96,11 @@ function ProfilePanel() {
   // 每次打开/用户变化时用 store 中最新值重置表单
   useEffect(() => {
     if (user) {
-      form.setFieldsValue({ nickname: user.nickname ?? '', email: user.email ?? '' })
+      form.setFieldsValue({
+        username: user.username,
+        nickname: user.nickname ?? '',
+        email: user.email ?? '',
+      })
     }
   }, [user, form])
 
@@ -101,7 +108,7 @@ function ProfilePanel() {
     try {
       await authApi.updateProfile({ nickname: values.nickname, email: values.email })
       await refresh()
-      message.success('个人资料已保存')
+      message.success('用户资料已保存')
     } catch (err: unknown) {
       // axios 错误响应里带后端 400 明细（如邮箱已被使用）
       const detail =
@@ -114,50 +121,54 @@ function ProfilePanel() {
 
   return (
     <div style={{ padding: '12px 0' }}>
-      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <Text strong style={{ fontSize: 14 }}>个人资料</Text>
-        {user && (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            用户名：{user.username}（不可修改）
-          </Text>
-        )}
-      </div>
       <Form
         form={form}
         layout="vertical"
         onFinish={handleSave}
-        style={{ maxWidth: 420 }}
       >
-        <Form.Item
-          name="nickname"
-          label="昵称"
-          rules={[{ max: 150, message: '昵称不能超过 150 个字符' }]}
-        >
-          <Input placeholder="输入昵称" allowClear />
-        </Form.Item>
-        <Form.Item
-          name="email"
-          label="邮箱"
-          rules={[
-            { type: 'email', message: '邮箱格式不正确' },
-            { max: 255, message: '邮箱不能超过 255 个字符' },
-          ]}
-        >
-          <Input placeholder="输入邮箱" allowClear />
-        </Form.Item>
+        {/* 用户名/昵称/邮箱同行紧凑排布；用户名只读 */}
+        <div style={{ display: 'flex', gap: 12 }}>
+          <Form.Item
+            name="username"
+            label="用户名"
+            extra="注册后不可修改"
+            style={{ flex: 1, minWidth: 0, marginBottom: 12 }}
+          >
+            <Input disabled />
+          </Form.Item>
+          <Form.Item
+            name="nickname"
+            label="昵称"
+            rules={[{ max: 150, message: '昵称不能超过 150 个字符' }]}
+            style={{ flex: 1, minWidth: 0, marginBottom: 12 }}
+          >
+            <Input placeholder="输入昵称" allowClear />
+          </Form.Item>
+          <Form.Item
+            name="email"
+            label="邮箱"
+            rules={[
+              { type: 'email', message: '邮箱格式不正确' },
+              { max: 255, message: '邮箱不能超过 255 个字符' },
+            ]}
+            style={{ flex: 1.3, minWidth: 0, marginBottom: 12 }}
+          >
+            <Input placeholder="输入邮箱" allowClear />
+          </Form.Item>
+        </div>
         <Button type="primary" htmlType="submit">保存</Button>
       </Form>
     </div>
   )
 }
 
-/** 主题分页内容 */
+/** 主题分页内容 — 配色 + 字体 */
 function ThemePanel() {
-  const { mode, setMode } = useTheme()
+  const { mode, setMode, font, setFontScale, setFontBold } = useTheme()
   return (
     <div style={{ padding: '12px 0' }}>
       <div style={{ marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 14 }}>主题</Text>
+        <Text strong style={{ fontSize: 14 }}>配色</Text>
         <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
           设置会自动保存到浏览器
         </Text>
@@ -193,6 +204,31 @@ function ThemePanel() {
             onSelect={() => setMode(m)}
           />
         ))}
+      </div>
+
+      <div style={{ marginTop: 20, marginBottom: 12 }}>
+        <Text strong style={{ fontSize: 14 }}>字体</Text>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 13 }}>字号</Text>
+          <Select
+            data-testid="font-scale-select"
+            value={font.scale}
+            onChange={(v) => setFontScale(v)}
+            style={{ width: 96 }}
+            options={FONT_SCALES.map(s => ({ value: s, label: FONT_SCALE_META[s].label }))}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 13 }}>全局加粗</Text>
+          <Switch
+            data-testid="font-bold-switch"
+            checked={font.bold}
+            onChange={setFontBold}
+          />
+        </div>
+        <Text type="secondary" style={{ fontSize: 12 }}>即时生效，自动保存到浏览器</Text>
       </div>
     </div>
   )
@@ -257,7 +293,7 @@ export default function SettingsModal({ open, onClose }: Props) {
     >
       <Tabs
         items={[
-          { key: 'profile', label: '个人资料', children: <ProfilePanel /> },
+          { key: 'profile', label: '用户资料', children: <ProfilePanel /> },
           { key: 'theme', label: '主题', children: <ThemePanel /> },
           { key: 'operation', label: '操作风格', children: <OperationPanel /> },
         ]}

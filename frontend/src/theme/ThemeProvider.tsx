@@ -4,13 +4,22 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import { App as AntApp, ConfigProvider, theme as antdTheme } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
-import { getThemeConfig, loadThemeMode, saveThemeMode, THEME_META, type ThemeMode } from '@/theme/theme'
+import {
+  getThemeConfig, loadThemeMode, saveThemeMode,
+  loadFontSettings, saveFontSettings,
+  FONT_SCALE_META, THEME_META,
+  type ThemeMode, type FontScale, type FontSettings,
+} from '@/theme/theme'
 
 interface ThemeContextValue {
   mode: ThemeMode
   setMode: (m: ThemeMode) => void
   /** 当前主题是否深色 — 方便组件内做针对性分支 */
   isDark: boolean
+  /** 字体设置（字号档位 / 全局加粗） */
+  font: FontSettings
+  setFontScale: (s: FontScale) => void
+  setFontBold: (b: boolean) => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined)
@@ -42,21 +51,57 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     saveThemeMode(m)
   }, [])
 
+  const [font, setFontState] = useState<FontSettings>(loadFontSettings)
+
+  const setFontScale = useCallback((s: FontScale) => {
+    setFontState(prev => {
+      const next = { ...prev, scale: s }
+      saveFontSettings(next)
+      return next
+    })
+  }, [])
+
+  const setFontBold = useCallback((b: boolean) => {
+    setFontState(prev => {
+      const next = { ...prev, bold: b }
+      saveFontSettings(next)
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     applyBodyClass(mode)
   }, [mode])
 
+  // 字体设置：注入 body 基础字号与加粗（antd 组件字号经 ConfigProvider token 下发）
+  useEffect(() => {
+    document.body.style.fontSize = `${FONT_SCALE_META[font.scale].px}px`
+    document.body.style.fontWeight = font.bold ? '600' : ''
+  }, [font])
+
   const isDark = THEME_META[mode].isDark
 
-  const value = useMemo<ThemeContextValue>(() => ({ mode, setMode, isDark }), [mode, setMode, isDark])
+  const value = useMemo<ThemeContextValue>(
+    () => ({ mode, setMode, isDark, font, setFontScale, setFontBold }),
+    [mode, setMode, isDark, font, setFontScale, setFontBold],
+  )
+
+  const baseConfig = getThemeConfig(mode)
 
   return (
     <ThemeContext.Provider value={value}>
       <ConfigProvider
         locale={zhCN}
         theme={{
-          ...getThemeConfig(mode),
+          ...baseConfig,
           algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+          // 字体设置覆盖主题 token 的字号/字重，其余 token（配色等）保持主题原值
+          token: {
+            ...baseConfig.token,
+            fontSize: FONT_SCALE_META[font.scale].px,
+            // 加粗时同步抬升 antd 强调字重，否则保持组件默认
+            ...(font.bold ? { fontWeightStrong: 700 } : {}),
+          },
         }}
       >
         <AntApp>{children}</AntApp>

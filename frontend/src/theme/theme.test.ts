@@ -13,6 +13,11 @@ import {
   getThemeConfig,
   loadThemeMode,
   saveThemeMode,
+  FONT_SCALES,
+  FONT_SCALE_META,
+  DEFAULT_FONT_SETTINGS,
+  loadFontSettings,
+  saveFontSettings,
 } from './theme'
 
 afterEach(() => {
@@ -92,5 +97,59 @@ describe('saveThemeMode / getThemeConfig', () => {
   it('getThemeConfig 返回对应主题配置', () => {
     expect(getThemeConfig('modern')).toBe(THEMES.modern)
     expect(getThemeConfig('oled')).toBe(THEMES.oled)
+  })
+})
+
+describe('字体设置常量结构', () => {
+  it('FONT_SCALES 含 4 个档位且 FONT_SCALE_META 全量覆盖、px 递增', () => {
+    expect(FONT_SCALES).toHaveLength(4)
+    expect(new Set(FONT_SCALES).size).toBe(4)
+    for (const s of FONT_SCALES) {
+      expect(FONT_SCALE_META[s].id).toBe(s)
+      expect(FONT_SCALE_META[s].label.length).toBeGreaterThan(0)
+      expect(FONT_SCALE_META[s].px).toBeGreaterThan(0)
+    }
+    const pxList = FONT_SCALES.map(s => FONT_SCALE_META[s].px)
+    expect([...pxList].sort((a, b) => a - b)).toEqual(pxList)
+  })
+
+  it('默认字体设置为标准字号且不加粗', () => {
+    expect(DEFAULT_FONT_SETTINGS).toEqual({ scale: 'standard', bold: false })
+  })
+})
+
+describe('loadFontSettings', () => {
+  it('无存储值时返回默认设置', () => {
+    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: false })
+  })
+
+  it('合法持久化值原样返回', () => {
+    localStorage.setItem('cndb_font', JSON.stringify({ scale: 'large', bold: true }))
+    expect(loadFontSettings()).toEqual({ scale: 'large', bold: true })
+  })
+
+  it('非法字号档位回退标准，bold 仅接受 true', () => {
+    localStorage.setItem('cndb_font', JSON.stringify({ scale: 'giant', bold: 'yes' }))
+    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: false })
+  })
+
+  it('JSON 损坏时回退默认设置', () => {
+    localStorage.setItem('cndb_font', '{broken')
+    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: false })
+  })
+
+  it('localStorage 抛异常时回退默认设置', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage unavailable')
+    })
+    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: false })
+  })
+})
+
+describe('saveFontSettings', () => {
+  it('写入 localStorage 且与 loadFontSettings 往返一致', () => {
+    saveFontSettings({ scale: 'huge', bold: true })
+    expect(JSON.parse(localStorage.getItem('cndb_font') ?? '')).toEqual({ scale: 'huge', bold: true })
+    expect(loadFontSettings()).toEqual({ scale: 'huge', bold: true })
   })
 })

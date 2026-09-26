@@ -2,7 +2,7 @@
  * ThemeProvider 组件测试 —— 多主题状态与 antd 注入.
  *
  * 覆盖：默认主题 / 切换主题（body class + localStorage）/ isDark 派生 /
- * 首次进入持久化默认值 / useTheme 越界使用报错。
+ * 首次进入持久化默认值 / useTheme 越界使用报错 / 字体设置（字号/加粗）应用与持久化。
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -19,6 +19,19 @@ function ThemeProbe() {
       <span data-testid="is-dark">{String(isDark)}</span>
       <button onClick={() => setMode('oled')}>切到 oled</button>
       <button onClick={() => setMode('sakura')}>切到 sakura</button>
+    </div>
+  )
+}
+
+/** 字体探针 —— 展示字体设置并提供变更按钮 */
+function FontProbe() {
+  const { font, setFontScale, setFontBold } = useTheme()
+  return (
+    <div>
+      <span data-testid="font-scale">{font.scale}</span>
+      <span data-testid="font-bold">{String(font.bold)}</span>
+      <button onClick={() => setFontScale('large')}>切到 large</button>
+      <button onClick={() => setFontBold(true)}>开加粗</button>
     </div>
   )
 }
@@ -86,5 +99,69 @@ describe('ThemeProvider', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => { })
     expect(() => render(<ThemeProbe />)).toThrow('useTheme must be used inside <ThemeProvider>')
     spy.mockRestore()
+  })
+})
+
+describe('ThemeProvider 字体设置', () => {
+  it('默认字体设置：standard / 不加粗，body 基础字号 14px', () => {
+    localStorage.clear()
+    render(
+      <ThemeProvider>
+        <FontProbe />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByTestId('font-scale')).toHaveTextContent('standard')
+    expect(screen.getByTestId('font-bold')).toHaveTextContent('false')
+    expect(document.body.style.fontSize).toBe('14px')
+    expect(document.body.style.fontWeight).toBe('')
+  })
+
+  it('切换字号档位：body 字号同步更新并持久化到 localStorage', () => {
+    localStorage.clear()
+    render(
+      <ThemeProvider>
+        <FontProbe />
+      </ThemeProvider>,
+    )
+
+    fireEvent.click(screen.getByText('切到 large'))
+
+    expect(screen.getByTestId('font-scale')).toHaveTextContent('large')
+    expect(document.body.style.fontSize).toBe('16px')
+    const persisted = JSON.parse(localStorage.getItem('cndb_font') ?? '{}') as { scale?: string; bold?: boolean }
+    expect(persisted.scale).toBe('large')
+    expect(persisted.bold).toBe(false)
+  })
+
+  it('开启全局加粗：body 字重同步更新并持久化', () => {
+    localStorage.clear()
+    render(
+      <ThemeProvider>
+        <FontProbe />
+      </ThemeProvider>,
+    )
+
+    fireEvent.click(screen.getByText('开加粗'))
+
+    expect(screen.getByTestId('font-bold')).toHaveTextContent('true')
+    expect(document.body.style.fontWeight).toBe('600')
+    const persisted = JSON.parse(localStorage.getItem('cndb_font') ?? '{}') as { scale?: string; bold?: boolean }
+    expect(persisted.bold).toBe(true)
+  })
+
+  it('localStorage 已有字体设置时以其为初始值', () => {
+    localStorage.clear()
+    localStorage.setItem('cndb_font', JSON.stringify({ scale: 'huge', bold: true }))
+    render(
+      <ThemeProvider>
+        <FontProbe />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByTestId('font-scale')).toHaveTextContent('huge')
+    expect(screen.getByTestId('font-bold')).toHaveTextContent('true')
+    expect(document.body.style.fontSize).toBe('18px')
+    expect(document.body.style.fontWeight).toBe('600')
   })
 })

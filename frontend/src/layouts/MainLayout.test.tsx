@@ -76,13 +76,25 @@ describe('MainLayout 顶部导航', () => {
 
         const adminBtn = screen.getByRole('button', { name: /管理台/ })
         const reportBtn = screen.getByRole('button', { name: /报表/ })
-        // 用户菜单触发区含用户名文本
-        const userName = screen.getByText('alice')
+        // 右上角用户区优先展示昵称
+        const userName = screen.getByText('爱丽丝')
 
-        // DOM 顺序：报表（常规导航区）→ 管理台 → 用户名（头像区）
+        // DOM 顺序：报表（常规导航区）→ 管理台 → 昵称（头像区）
         // FOLLOWING(4)：后者在前者之后
         expect(reportBtn.compareDocumentPosition(adminBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
         expect(adminBtn.compareDocumentPosition(userName) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('右上角无昵称时回退显示账号名', async () => {
+        renderLayout({ ...mockUser, nickname: undefined })
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
+        })
+
+        // 昵称为空 → 头像区显示账号名（菜单项同时含账号名，故用 getAllByText）
+        expect(screen.getAllByText('alice').length).toBeGreaterThanOrEqual(1)
+        expect(screen.queryByText('爱丽丝')).toBeNull()
     })
 
     it('无工作区上下文（/admin）时「报表」「工作区设置」按钮禁用，不隐式跳转到未知工作区', async () => {
