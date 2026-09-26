@@ -1040,6 +1040,15 @@ def render_report(
     if not tpl:
         raise HTTPException(status_code=404, detail="模板不存在")
 
+    # 参数取值校验：声明了 options 的参数，传入值必须在可选列表内
+    for p in tpl.parameters or []:
+        opts = p.get("options") or []
+        if opts and p.get("name") in payload.params and payload.params[p["name"]] not in ([None, "", *opts]):
+            raise HTTPException(
+                status_code=400,
+                detail=f"参数 {p['name']} 取值无效，可选值：{'/'.join(opts)}",
+            )
+
     # 加载主表（带 READ 权限校验 + 字段隐藏）
     table, records = _load_table_records(db, payload.table_id, _current_user)
 

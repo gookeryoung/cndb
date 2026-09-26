@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from cndb.cli.seed import (
+    EMPLOYEE_ROSTER_PARAMETER,
     EMPLOYEE_ROSTER_TEMPLATE,
     REPORT_TEMPLATE_SPECS,
     _generate_sample_reports,
@@ -422,26 +423,26 @@ def _render_employee_roster(params: dict[str, Any]) -> str:
 def test_employee_roster_template_default_renders_rich_content():
     """默认参数（在职）渲染：概览统计、名册表格、按部门/按职位分组、离职名单均非空."""
     text = _render_employee_roster({})
-    # 概览
-    assert "| 员工总数 | 12 |" in text
+    # 概览（在职 9 人：sum=113000, avg=12556, 部门 4 个）
+    assert "| 员工总数 | 9 |" in text
     assert "| 在职人数 | 9 |" in text
-    assert "| 离职人数 | 3 |" in text
+    assert "| 离职人数 | 0 |" in text
     assert "| 覆盖部门数 | 4 |" in text
-    assert "| 平均薪资（元） | 12375 |" in text  # 148500 / 12
+    assert "| 平均薪资（元） | 12556 |" in text  # 113000 / 9
     assert "| 薪资区间（元） | 8000 ~ 18000 |" in text
-    assert "| 月度薪资总成本（元） | 148500 |" in text
+    assert "| 月度薪资总成本（元） | 113000 |" in text
     # 名册表（默认在职：9 行，不含赵六，含工号/职位/手机号等新字段）
     assert "| E001 | 张三 | 总监 | 技术部 | 张三 | 2023-01-15 | 15000 | 13800138001 | 是 |" in text
     assert "| E008 | 吴十 | 专员 | 市场部 | 李四 | 2024-07-01 | 9000 | 13900139008 | 是 |" in text
     roster = text.split("## 二、员工名册")[1].split("## 三、按部门统计")[0]
     # 赵六本人不在名册（但其作为财务部负责人经 lookup 出现在陈三行，按工号行前缀判断）
     assert "| E004 | 赵六" not in roster
-    # 按部门统计：技术部 4 人 / 市场部 3 人（avg 34000/3 → 11333）
+    # 按部门统计（在职：技术部 4 人 / 市场部 1 人）
     assert "| 技术部 | 4 | 15750 | 63000 |" in text
-    assert "| 市场部 | 3 | 11333 | 34000 |" in text
-    # 按职位统计：工程师 3 人 avg 16000 max 18000
+    assert "| 市场部 | 2 | 10500 | 21000 |" in text
+    # 按职位统计（在职：工程师 3 人 avg 16000 max 18000）
     assert "| 工程师 | 3 | 16000 | 18000 |" in text
-    # 离职名单含赵六（含手机号）
+    # 离职名单（固定基于全量 records）含赵六（含手机号）
     assert "| E004 | 赵六 | 财务部 | 2021-11-10 | 13800138004 |" in text
 
 
@@ -451,10 +452,28 @@ def test_employee_roster_template_params_filter():
     roster = left_text.split("## 二、员工名册")[1].split("## 三、按部门统计")[0]
     assert "| 赵六 |" in roster
     assert "| 张三 |" not in roster
+    # 概览统计也随参数过滤（离职 3 人：13000+13000+9500=35500, avg≈11833）
+    assert "| 员工总数 | 3 |" in left_text
+    assert "| 在职人数 | 0 |" in left_text
+    assert "| 离职人数 | 3 |" in left_text
+    assert "| 月度薪资总成本（元） | 35500 |" in left_text
     all_text = _render_employee_roster({"在职状态": "全部"})
     roster = all_text.split("## 二、员工名册")[1].split("## 三、按部门统计")[0]
     for name in ("张三", "李四", "王五", "赵六", "钱七", "孙八", "周九", "吴十", "郑一", "冯二", "陈三", "褚四"):
         assert f"| {name} |" in roster
+    # 全部时概览回到 12 人全量口径
+    assert "| 员工总数 | 12 |" in all_text
+    assert "| 在职人数 | 9 |" in all_text
+    assert "| 离职人数 | 3 |" in all_text
+    assert "| 平均薪资（元） | 12375 |" in all_text  # 148500 / 12
+    assert "| 月度薪资总成本（元） | 148500 |" in all_text
+
+
+def test_employee_roster_parameter_declares_options():
+    """seed 参数应声明 options（在职/离职/全部）与默认值，前端据此渲染下拉菜单、端点据此校验取值."""
+    assert EMPLOYEE_ROSTER_PARAMETER["options"] == ["在职", "离职", "全部"]
+    assert EMPLOYEE_ROSTER_PARAMETER["default"] == "在职"
+    assert EMPLOYEE_ROSTER_PARAMETER["name"] == "在职状态"
 
 
 # ── 新增 html 模板渲染断言 ──────────────────────────────

@@ -394,6 +394,8 @@ export interface ReportParameter {
   default?: unknown
   required?: boolean
   label?: string
+  /** 可选值列表：非空时渲染参数弹窗渲染下拉菜单 */
+  options?: string[]
 }
 
 /** 报告主题风格取值（与后端 ThemeStyle 对齐） */

@@ -61,13 +61,23 @@ REPORT_TEMPLATE_SPECS 每项新增可选键（缺省保持旧行为）：
 
 records 为员工扁平 dict（link/lookup 已由 `_flatten_for_report` 展开为字符串），EMPLOYEE_ROSTER_TEMPLATE：
 
+- 参数 `在职状态`：`EMPLOYEE_ROSTER_PARAMETER` 声明 `options: ["在职", "离职", "全部"]`、default "在职"；前端渲染参数弹窗对含 options 的参数渲染下拉菜单，渲染端点校验取值（非法值 400，空值/缺省放行由模板 default 兜底）。
 - 头部：生成日期 + 统计范围（params 在职状态，默认"在职"）。
-- 一、人员概览：员工总数 / 在职人数 / 离职人数 / 覆盖部门数 / 平均薪资 / 薪资区间 / 月度薪资总成本（空数据用 `or 0` 兜底）。
-- 二、员工名册：工号|姓名|职位|部门|部门负责人|入职日期|薪资|手机号|是否在职 全字段表格，按在职状态参数过滤（在职/离职/全部）。
-- 三、按部门统计：group_stats 人数/平均薪资/薪资合计。
-- 四、按职位统计：人数/平均薪资/最高薪资。
-- 五、离职人员名单：rejectattr 过滤，含手机号，空列表输出"无"。
+- 模板顶部按参数计算 `shown` 集合（离职=rejectattr 在职=是；全部=全量；否则=rejectattr 否），以下各节统一基于 `shown`。
+- 一、人员概览：员工总数 / 在职人数 / 离职人数 / 覆盖部门数 / 平均薪资 / 薪资区间 / 月度薪资总成本（基于 `shown`，空数据用 `or 0` 兜底）。
+- 二、员工名册：工号|姓名|职位|部门|部门负责人|入职日期|薪资|手机号|是否在职 全字段表格，遍历 `shown`。
+- 三、按部门统计：group_stats(shown) 人数/平均薪资/薪资合计。
+- 四、按职位统计：group_stats(shown) 人数/平均薪资/最高薪资。
+- 五、离职人员名单：固定基于全量 records（语义为"全公司离职人员"），rejectattr 过滤，含手机号，空列表输出"无"。
 - 尾部：`---PAGE---` + 落款。
+
+## 模板参数 options（前后端契约）
+
+- 后端 `ParameterDef.options: list[str]`（默认空列表），随 TemplateCreate/Update 持久化到 `reports_template.parameters` JSON。
+- 渲染端点（`POST /api/v1/reports/{id}/render`）：对声明了 options 的参数，若请求 params 携带该参数且取值不在 `options`（放行 None/空串），返回 400 + "参数 X 取值无效，可选值：a/b/c"。
+- 前端 `ReportParameter.options?: string[]`：
+  - 渲染参数弹窗（RenderParamsModal）：`options` 非空渲染 antd Select 下拉（`virtual={false}`），否则按 type 渲染 Input。
+  - 模板编辑器参数区：新增「选项(逗号分隔)」输入（中英文逗号均支持），提交时转换为 `options` 数组；编辑回显时 `options` 数组转为逗号分隔文本。
 
 ## 异常与兼容
 
@@ -77,3 +87,4 @@ records 为员工扁平 dict（link/lookup 已由 `_flatten_for_report` 展开�
 - seed 生成的示例报告产物（`examples/datasets/**/*-示例报告.*`）已加入 .gitignore，不入库，每次 seed 覆盖重写。
 - API schema 无变化（output_format 为 string 枚举校验在服务端），前端仅新增格式选项。
 - 员工表字段/行数扩展同步影响 `test_backup_seed_roundtrip.py`（字段集/16 行还原断言）与 `test_seed_report_examples.py`（名册 12 行期望值）。
+- 参数 options 校验仅约束"携带了该参数"的请求，`params={}` 兼容既有语义；五、离职人员名单保持全量口径不受参数影响。

@@ -16,6 +16,8 @@ class ParameterDef(BaseModel):
     default: Any = None
     required: bool = False
     label: str = ""
+    # 可选值列表（如 ["在职", "离职", "全部"]）：非空时前端渲染下拉菜单，渲染时校验取值
+    options: list[str] = Field(default_factory=list)
 
 
 class TemplateCreate(BaseModel):

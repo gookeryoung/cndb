@@ -214,6 +214,36 @@ describe('ReportsPage 渲染下载', () => {
         expect(bodies[0]).toMatchObject({ table_id: 100, params: { 月份: '2026-10' } })
     })
 
+    it('options 参数渲染下拉菜单，选中值随渲染提交（员工名册在职状态）', async () => {
+        stubDownload()
+        const bodies: Record<string, unknown>[] = []
+        const tplWithOptions: ReportTemplateSummary = {
+            ...TPL,
+            id: 7,
+            name: '员工名册',
+            parameters: [
+                { name: '在职状态', type: 'string', default: '在职', required: false, label: '名册范围（在职/离职/全部）', options: ['在职', '离职', '全部'] },
+            ],
+        }
+        server.use(http.get('/api/v1/reports', () => HttpResponse.json([tplWithOptions])))
+        useRenderHandler(7, bodies)
+        renderPage()
+
+        fireEvent.click(await screen.findByRole('button', { name: /渲\s*染\s*下\s*载/ }))
+        await screen.findByText('渲染模板：员工名册')
+        // 参数有 options → 渲染为下拉（combobox），且默认值「在职」已回填；不应出现文本输入框
+        const combos = screen.getAllByRole('combobox')
+        expect(combos.length).toBeGreaterThanOrEqual(1)
+        expect(screen.queryByDisplayValue('在职')).toBeNull()
+        // 打开在职状态下拉并选择「离职」
+        fireEvent.mouseDown(combos[combos.length - 1])
+        fireEvent.click(await screen.findByText('离职'))
+        fireEvent.click(screen.getByRole('button', { name: '生成报告' }))
+
+        await waitFor(() => expect(bodies).toHaveLength(1))
+        expect(bodies[0]).toMatchObject({ table_id: 100, params: { 在职状态: '离职' } })
+    })
+
     it('渲染参数弹窗选择额外引用表后随请求提交 extra_table_ids', async () => {
         stubDownload()
         const bodies: Record<string, unknown>[] = []
@@ -280,6 +310,43 @@ describe('ReportsPage 编辑与新建保存', () => {
 
         await waitFor(() => expect(putBodies).toHaveLength(1))
         expect(putBodies[0]).toMatchObject({ name: '月度销售汇总', template_content: 'Hello {{ table_name }}' })
+    })
+
+    it('编辑模板：optionsText 回填为逗号分隔文本，保存时转换为 options 数组', async () => {
+        const putBodies: Record<string, unknown>[] = []
+        server.use(
+            http.get('/api/v1/reports', () =>
+                HttpResponse.json([{
+                    ...TPL,
+                    parameters: [
+                        { name: '在职状态', type: 'string', default: '在职', required: false, options: ['在职', '离职', '全部'] },
+                    ],
+                }])),
+            http.get('/api/v1/reports/1', () =>
+                HttpResponse.json({
+                    ...TPL,
+                    template_content: 'x',
+                    parameters: [
+                        { name: '在职状态', type: 'string', default: '在职', required: false, options: ['在职', '离职', '全部'] },
+                    ],
+                })),
+            http.put('/api/v1/reports/1', async ({ request }) => {
+                putBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({})
+            }),
+        )
+        renderPage()
+
+        fireEvent.mouseEnter(await screen.findByRole('button', { name: 'more' }))
+        fireEvent.click(await screen.findByText('编辑'))
+        // options 数组回填为逗号分隔文本（编辑器 Input 可见可改）
+        const optionsInput = await screen.findByDisplayValue('在职,离职,全部')
+        fireEvent.change(optionsInput, { target: { value: '在职, 离职，全部,停薪留职' } })
+        fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+        await waitFor(() => expect(putBodies).toHaveLength(1))
+        const params = (putBodies[0] as { parameters: Array<{ options?: string[] }> }).parameters
+        expect(params[0].options).toEqual(['在职', '离职', '全部', '停薪留职'])
     })
 
     it('编辑模板：CodeMirror 编辑器显示对应行的模板内容（非空）', async () => {

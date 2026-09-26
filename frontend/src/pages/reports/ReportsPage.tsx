@@ -416,7 +416,11 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
         output_format: editing.output_format ?? 'docx',
         template_content: editing.template_content,
         table_id: editing.table_id,
-        parameters: editing.parameters as ReportParameter[],
+        parameters: (editing.parameters as ReportParameter[]).map(p => ({
+          ...p,
+          // options 数组转逗号分隔文本，供编辑器 Input 展示
+          optionsText: (p.options ?? []).join(','),
+        })) as ReportParameter[],
         theme: editing.theme ?? 'minimal',
         extra_table_ids: editing.extra_table_ids ?? [],
       })
@@ -485,13 +489,21 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
   }
 
   // 保存校验（extra_table_ids 随模板持久化，含跨工作区表；输出格式/主题兜底默认值）
-  const handleFormFinish = (v: ReportTemplateCreate) => {
+  // 表单参数额外携带 optionsText（编辑用），提交前转换为 options 数组
+  const handleFormFinish = (v: Omit<ReportTemplateCreate, 'parameters'> & { parameters?: Array<ReportParameter & { optionsText?: string }> }) => {
     onSubmit({
       ...v,
       output_format: v.output_format ?? 'docx',
       theme: v.theme ?? 'minimal',
       template_content: templateValue,
       extra_table_ids: extraTableIds,
+      // optionsText（逗号分隔字符串）→ options（字符串数组），与后端 ParameterDef 对齐
+      parameters: (v.parameters ?? []).map(p => ({
+        ...p,
+        options: typeof p.optionsText === 'string' && p.optionsText.trim()
+          ? p.optionsText.split(/[，,]/).map(s => s.trim()).filter(Boolean)
+          : [],
+      })),
     })
   }
 
@@ -716,6 +728,9 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
                         <Form.Item {...restField} name={[name, 'label']}>
                           <Input placeholder="显示名" style={{ width: 100 }} />
                         </Form.Item>
+                        <Form.Item {...restField} name={[name, 'optionsText']} tooltip="逗号分隔的可选值，非空时渲染时显示下拉菜单">
+                          <Input placeholder="选项(逗号分隔)" style={{ width: 120 }} />
+                        </Form.Item>
                         {/* Select 用 value prop 而非 checked，移除 valuePropName="checked" */}
                         <Form.Item {...restField} name={[name, 'required']}>
                           <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} style={{ width: 80 }} />
@@ -842,6 +857,8 @@ function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting
           >
             {p.type === 'boolean' ? (
               <Select options={[{ value: true, label: '是' }, { value: false, label: '否' }]} />
+            ) : p.options && p.options.length > 0 ? (
+              <Select options={p.options.map(o => ({ value: o, label: o }))} virtual={false} placeholder={`请选择 ${p.label || p.name}`} />
             ) : p.type === 'number' ? (
               <Input type="number" placeholder={`请输入 ${p.name}`} />
             ) : p.type === 'date' ? (

@@ -72,6 +72,69 @@ def sample_tables(client, auth_headers):
     return wid, tid_a, tid_b
 
 
+# ── 参数 options 校验 ────────────────────────────────
+
+
+class TestParameterOptions:
+    """声明了 options 的参数：渲染端点校验取值，合法值通过、非法值 400."""
+
+    def _create_tpl(self, client, auth_headers):
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "参数校验模板",
+                "output_format": "docx",
+                "template_content": "范围：{{ params.get('状态', '在职') }}",
+                "parameters": [
+                    {
+                        "name": "状态",
+                        "type": "string",
+                        "default": "在职",
+                        "required": False,
+                        "options": ["在职", "离职", "全部"],
+                    },
+                ],
+            },
+        )
+        assert tpl.status_code == 201, tpl.text
+        return tpl.json()["id"]
+
+    def test_valid_option_renders(self, client, auth_headers, sample_tables):
+        _wid, tid_a, _tid_b = sample_tables
+        tpl_id = self._create_tpl(client, auth_headers)
+        resp = client.post(
+            f"/api/v1/reports/{tpl_id}/render",
+            headers=auth_headers,
+            json={"table_id": tid_a, "params": {"状态": "离职"}},
+        )
+        assert resp.status_code == 200
+        assert len(resp.content) > 0
+
+    def test_invalid_option_rejected_400(self, client, auth_headers, sample_tables):
+        _wid, tid_a, _tid_b = sample_tables
+        tpl_id = self._create_tpl(client, auth_headers)
+        resp = client.post(
+            f"/api/v1/reports/{tpl_id}/render",
+            headers=auth_headers,
+            json={"table_id": tid_a, "params": {"状态": "已退休"}},
+        )
+        assert resp.status_code == 400
+        assert "在职/离职/全部" in resp.json()["detail"]
+
+    def test_empty_param_value_allowed(self, client, auth_headers, sample_tables):
+        """空值/缺省允许通过（模板按 default 兜底），不因 options 校验被拒."""
+        _wid, tid_a, _tid_b = sample_tables
+        tpl_id = self._create_tpl(client, auth_headers)
+        for params in ({}, {"状态": None}, {"状态": ""}):
+            resp = client.post(
+                f"/api/v1/reports/{tpl_id}/render",
+                headers=auth_headers,
+                json={"table_id": tid_a, "params": params},
+            )
+            assert resp.status_code == 200, f"params={params}: {resp.text}"
+
+
 # ── 多表引用 ────────────────────────────────────────
 
 
