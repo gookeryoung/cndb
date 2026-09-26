@@ -258,6 +258,29 @@ class TestThemedDocxRender:
 class TestThemedPdfRender:
     """主题风格在 PDF 渲染中的应用：表格预设色、全主题 smoke、端到端."""
 
+    def test_pdf_embeds_cjk_font_when_available(self):
+        """中文内容渲染的 PDF 应嵌入注册的 CJK 字体（修复乱码：字体名出现在 PDF 结构中）."""
+        from cndb.plugins.reports.routers.reports import _ensure_pdf_font, _render_pdf
+
+        font = _ensure_pdf_font()
+        if font is None:
+            pytest.skip("当前系统无可用中文字体")
+        data = _render_pdf("# 员工月报\n正文中文段落\n| 姓名 | 部门 |\n| --- | --- |\n| 张三 | 研发 |", {}, "minimal")
+        assert data.startswith(b"%PDF")
+        assert font.encode() in data, f"PDF 应嵌入字体 {font}"
+
+    def test_ensure_pdf_font_registers_family(self):
+        """注册成功的字体应同时注册同名字体族（<b>/<i> 标签映射回同字体不崩溃）."""
+        from reportlab.lib.fonts import tt2ps
+
+        from cndb.plugins.reports.routers.reports import _ensure_pdf_font
+
+        font = _ensure_pdf_font()
+        if font is None:
+            pytest.skip("当前系统无可用中文字体")
+        assert tt2ps(font, 1, 0) == font  # bold 映射
+        assert tt2ps(font, 0, 1) == font  # italic 映射
+
     def test_table_style_uses_preset_colors(self):
         """_pdf_table_style_cmds 按 preset 产出表头底色/文字色命令."""
         from reportlab.lib import colors

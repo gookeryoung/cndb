@@ -562,49 +562,74 @@ def _add_rich_runs(paragraph: Any, text: str, body_font: str = "Calibri", code_f
 # ── PDF 渲染器 ───────────────────────────────────────
 
 
-_pdf_font_state: list[bool] = [False]
+_pdf_font_state: list[str | None] = [None]
 
 
-def _ensure_pdf_font() -> None:
-    """注册 reportlab 中文字体（懒加载，避免无 PDF 需求时的开销）."""
-    if _pdf_font_state[0]:
-        return
+def _cjk_font_candidates() -> list[tuple[str, str, int | None]]:
+    """返回中文字体候选列表 (注册名, 文件路径, subfontIndex).
+
+    Windows 优先系统自带字体（SimHei/微软雅黑等）；Linux 保留 Noto/WenQuanYi 候选。
+    TTC 字体集合需指定 subfontIndex。
+    """
+    win_fonts = "C:/Windows/Fonts"
+    return [
+        ("SimHei", f"{win_fonts}/simhei.ttf", None),
+        ("MicrosoftYaHei", f"{win_fonts}/msyh.ttc", 0),
+        ("MicrosoftJhengHei", f"{win_fonts}/msjh.ttc", 0),
+        ("SimSun", f"{win_fonts}/simsun.ttc", 0),
+        ("NotoSansSC-Regular", "NotoSansSC-Regular.otf", None),
+        ("NotoSansSC", "NotoSansSC.ttf", None),
+        ("WenQuanYiMicroHei", "WenQuanYiMicroHei.ttf", None),
+        ("WenQuanYiZenHei", "WenQuanYiZenHei.ttf", None),
+    ]
+
+
+def _ensure_pdf_font() -> str | None:
+    """注册 reportlab 中文字体（懒加载），返回注册名；全部失败返回 None.
+
+    注册成功后同时注册同名字体族（normal/bold/italic 均映射同一字体），
+    使 RML <b>/<i> 标签不会因缺少粗体/斜体变体而崩溃。
+    """
+    if _pdf_font_state[0] is not None:
+        return _pdf_font_state[0]
     try:
+        from pathlib import Path
+
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
 
-        font_candidates = [
-            ("NotoSansSC-Regular", "NotoSansSC-Regular.otf"),
-            ("NotoSansSC", "NotoSansSC.ttf"),
-            ("WenQuanYiMicroHei", "WenQuanYiMicroHei.ttf"),
-            ("WenQuanYiZenHei", "WenQuanYiZenHei.ttf"),
-        ]
-        registered = False
-        for font_name, font_file in font_candidates:
-            try:
-                pdfmetrics.registerFont(TTFont(font_name, font_file))
-                registered = True
-                break
-            except Exception:
-                logger.debug("候选中文字体注册失败，尝试下一个", exc_info=True)
+        for font_name, font_file, subfont_index in _cjk_font_candidates():
+            if not Path(font_file).is_file():
                 continue
-        if not registered:
             try:
-                pdfmetrics.registerFont(TTFont("STSong-Light", "STSong-Light.ttf"))
-                registered = True
+                if subfont_index is not None:
+                    pdfmetrics.registerFont(TTFont(font_name, font_file, subfontIndex=subfont_index))
+                else:
+                    pdfmetrics.registerFont(TTFont(font_name, font_file))
+                pdfmetrics.registerFontFamily(
+                    font_name,
+                    normal=font_name,
+                    bold=font_name,
+                    italic=font_name,
+                    boldItalic=font_name,
+                )
+                _pdf_font_state[0] = font_name
+                return font_name
             except Exception:
-                logger.debug("备用字体 STSong-Light 注册失败", exc_info=True)
-        if not registered:
+                logger.debug("候选中文字体注册失败: %s，尝试下一个", font_file, exc_info=True)
+                continue
+        if not _pdf_font_state[0]:
             logger.warning("reportlab 中文字体不可用，PDF 中文字符可能显示异常")
     except Exception:
         logger.debug("reportlab 字体注册跳过", exc_info=True)
-    _pdf_font_state[0] = True
+    return _pdf_font_state[0]
 
 
 def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle.MINIMAL.value) -> bytes:
     """PDF 渲染：Platypus 框架 + 自动分页 + 页眉页脚，按主题应用字号与颜色.
 
-    注意：reportlab 仅使用已注册字体（Helvetica 系列），主题预设只取字号/颜色，不改字体名.
+    中文字符依赖 _ensure_pdf_font 注册的系统 CJK 字体；注册失败时回退 Helvetica
+    （此时中文可能乱码但不崩溃）。主题预设只取字号/颜色，不改字体名.
     """
     from reportlab.lib.colors import HexColor
     from reportlab.lib.pagesizes import A4
@@ -616,7 +641,7 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle
         Spacer,
     )
 
-    _ensure_pdf_font()
+    cjk_font = _ensure_pdf_font() or "Helvetica"
     preset = get_theme_preset(theme)
     buf = io.BytesIO()
     title = ctx.get("table_name", "Report")
@@ -625,7 +650,7 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle
     body_style = ParagraphStyle(
         "Body",
         parent=styles["Normal"],
-        fontName="Helvetica",
+        fontName=cjk_font,
         fontSize=preset.body_size,
         leading=preset.body_size * 1.5,
         spaceAfter=4,
@@ -634,6 +659,7 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle
         i + 1: ParagraphStyle(
             f"H{i + 1}",
             parent=styles[f"Heading{i + 1}"],
+            fontName=cjk_font,
             fontSize=preset.heading_sizes[i],
             leading=preset.heading_sizes[i] * 1.25,
             spaceBefore=12 - i * 2,
@@ -661,7 +687,7 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle
         elif in_table:
             # 表格结束，提交表格
             if table_buffer:
-                story.append(_make_pdf_table(table_buffer, preset))
+                story.append(_make_pdf_table(table_buffer, preset, cjk_font))
             in_table = False
             table_buffer = []
             # 继续处理当前这行
@@ -686,16 +712,16 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle
             continue
 
         # 普通段落（处理粗体）
-        story.append(Paragraph(_pdf_markdown_to_rml(line), body_style))
+        story.append(Paragraph(_pdf_markdown_to_rml(line, cjk_font), body_style))
 
     # 收尾：提交剩余表格
     if in_table and table_buffer:
-        story.append(_make_pdf_table(table_buffer, preset))
+        story.append(_make_pdf_table(table_buffer, preset, cjk_font))
 
     # 分页回调（页眉 + 页脚页码）
     def _on_page(canvas: Any, doc: Any) -> None:
         canvas.saveState()
-        canvas.setFont("Helvetica", 8)
+        canvas.setFont(cjk_font, 8)
         # 页眉
         canvas.drawString(50, A4[1] - 30, str(title))
         canvas.drawRightString(A4[0] - 50, A4[1] - 30, cndb_report_header())
@@ -729,23 +755,24 @@ def _pdf_escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _pdf_markdown_to_rml(text: str) -> str:
-    """将 Markdown 粗体/代码转为 reportlab RML."""
+def _pdf_markdown_to_rml(text: str, cjk_font: str = "Helvetica") -> str:
+    """将 Markdown 粗体/代码转为 reportlab RML（代码字体用 cjk_font，Courier 无中文字形）."""
     escaped = _pdf_escape(text)
     escaped = _MD_BOLD_RE.sub(r"<b>\1</b>", escaped)
-    escaped = _MD_CODE_RE.sub(r"<font name='Courier'><i>\1</i></font>", escaped)
+    escaped = _MD_CODE_RE.sub(rf"<font name='{cjk_font}'><i>\1</i></font>", escaped)
     return escaped
 
 
-def _pdf_table_style_cmds(preset: ThemePreset) -> list[tuple[Any, ...]]:
-    """按主题预设构造 PDF 表格样式命令列表（表头底色/文字色 + 斑马纹 + 网格）."""
+def _pdf_table_style_cmds(preset: ThemePreset, cjk_font: str = "Helvetica") -> list[tuple[Any, ...]]:
+    """按主题预设构造 PDF 表格样式命令列表（表头底色/文字色 + 斑马纹 + 网格 + 中文字体）."""
     from reportlab.lib import colors
 
     return [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(preset.table_header_bg)),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor(preset.table_header_color)),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), cjk_font),
         ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTNAME", (0, 1), (-1, -1), cjk_font),
         ("FONTSIZE", (0, 1), (-1, -1), 9),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -753,8 +780,8 @@ def _pdf_table_style_cmds(preset: ThemePreset) -> list[tuple[Any, ...]]:
     ]
 
 
-def _make_pdf_table(rows: list[list[str]], preset: ThemePreset | None = None) -> Any:
-    """构造 reportlab Table（带主题表头样式 + 跨页重复）."""
+def _make_pdf_table(rows: list[list[str]], preset: ThemePreset | None = None, cjk_font: str = "Helvetica") -> Any:
+    """构造 reportlab Table（带主题表头样式 + 中文字体 + 跨页重复）."""
     from reportlab.platypus import Table, TableStyle
 
     if not rows:
@@ -763,7 +790,7 @@ def _make_pdf_table(rows: list[list[str]], preset: ThemePreset | None = None) ->
     max_cols = max(len(r) for r in rows)
     norm_rows = [r + [""] * (max_cols - len(r)) for r in rows]
     table = Table(norm_rows, repeatRows=1, hAlign="LEFT")
-    table.setStyle(TableStyle(_pdf_table_style_cmds(preset or get_theme_preset("minimal"))))
+    table.setStyle(TableStyle(_pdf_table_style_cmds(preset or get_theme_preset("minimal"), cjk_font)))
     return table
 
 

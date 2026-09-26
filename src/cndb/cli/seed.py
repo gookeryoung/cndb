@@ -329,6 +329,70 @@ def _apply_field_settings(
                 print(f"[seed-字段设置] {ws_display}: {src.name} → {dst.name} 关联引入失败: {exc}")
 
 
+# ── 员工名册模板定义 ────────────────────────────────────
+# 提取为常量便于单元测试直接渲染；参数化"在职状态"过滤名册范围（在职/离职/全部）。
+# records 为员工表扁平 dict（姓名/部门/负责人/入职日期/薪资/是否在职，link/lookup 已展开为字符串）。
+EMPLOYEE_ROSTER_PARAMETER: dict[str, Any] = {
+    "name": "在职状态",
+    "type": "string",
+    "default": "在职",
+    "required": False,
+    "label": "名册范围（在职/离职/全部）",
+}
+
+EMPLOYEE_ROSTER_TEMPLATE: str = (
+    "# 员工名册\n"
+    "\n"
+    "> 生成日期：{{ generated_at }} ｜ 统计范围：{{ params.get('在职状态', '在职') }}\n"
+    "\n"
+    "## 一、人员概览\n"
+    "\n"
+    "| 指标 | 数值 |\n"
+    "| --- | --- |\n"
+    "| 员工总数 | {{ records | length }} |\n"
+    "| 在职人数 | {{ records | selectattr('是否在职', 'equalto', '是') | list | length }} |\n"
+    "| 覆盖部门数 | {{ group_stats(records, '部门', '薪资') | length }} |\n"
+    "| 平均薪资（元） | {{ (stats(records, '薪资').avg or 0) | round(0) | int }} |\n"
+    "| 薪资区间（元） | {{ (stats(records, '薪资').min or 0) | int }} ~ {{ (stats(records, '薪资').max or 0) | int }} |\n"
+    "\n"
+    "## 二、员工名册\n"
+    "\n"
+    "{% set status = params.get('在职状态', '在职') %}\n"
+    "{% if status == '离职' %}{% set shown = records | rejectattr('是否在职', 'equalto', '是') | list %}"
+    "{% elif status == '全部' %}{% set shown = records %}"
+    "{% else %}{% set shown = records | rejectattr('是否在职', 'equalto', '否') | list %}{% endif %}\n"
+    "| 姓名 | 部门 | 部门负责人 | 入职日期 | 薪资（元） | 是否在职 |\n"
+    "| --- | --- | --- | --- | --- | --- |\n"
+    "{% for r in shown %}"
+    "| {{ r['姓名'] }} | {{ r['部门'] }} | {{ r['负责人'] }} | {{ r['入职日期'] }} | {{ r['薪资'] }} | {{ r['是否在职'] }} |\n"
+    "{% endfor %}"
+    "\n"
+    "## 三、按部门统计\n"
+    "\n"
+    "| 部门 | 人数 | 平均薪资（元） | 薪资合计（元） |\n"
+    "| --- | --- | --- | --- |\n"
+    "{% for g in group_stats(records, '部门', '薪资') %}"
+    "| {{ g.key }} | {{ g.count }} | {{ g.avg | round(0) | int }} | {{ g.sum | int }} |\n"
+    "{% endfor %}"
+    "\n"
+    "## 四、离职人员名单\n"
+    "\n"
+    "{% set left = records | rejectattr('是否在职', 'equalto', '是') | list %}\n"
+    "{% if left %}\n"
+    "| 姓名 | 部门 | 入职日期 |\n"
+    "| --- | --- | --- |\n"
+    "{% for r in left %}"
+    "| {{ r['姓名'] }} | {{ r['部门'] }} | {{ r['入职日期'] }} |\n"
+    "{% endfor %}"
+    "{% else %}\n"
+    "无离职人员。\n"
+    "{% endif %}\n"
+    "\n"
+    "---PAGE---\n"
+    "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
+)
+
+
 def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = None) -> tuple[int, dict[str, Any]]:
     """在"某企业销售管理"工作区下创建硬编码业务表（部门/员工/报告）.
 
@@ -447,14 +511,15 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
         create_row(engine, emp_tbl, values=data, db=db)
     print("[seed] 插入 5 条员工记录")
 
-    # 报告模板（绑定员工表）
+    # 报告模板（绑定员工表）：内容提取为模块级常量，pdf + business 主题 + 在职状态参数
     tpl = ReportTemplate(
         name="员工名册",
-        description="列出所有在职员工的基本信息",
+        description="按在职状态筛选并列出员工名册，含人员概览、按部门统计与离职名单",
         table_id=emp_tbl.id,
-        output_format="docx",
-        template_content="# {{ table_name }}",
-        parameters=[],
+        output_format="pdf",
+        theme="business",
+        template_content=EMPLOYEE_ROSTER_TEMPLATE,
+        parameters=[dict(EMPLOYEE_ROSTER_PARAMETER)],
     )
     db.add(tpl)
     db.commit()
@@ -493,13 +558,19 @@ def _seed_report_templates(db: Any, tables_map: dict[str, dict[str, Any]]) -> No
             print(f"[seed-模板] 已存在: {spec['name']} (id={existing.id})")
             continue
         extra_tbls = [ws_tables.get(extra_name) for extra_name in spec["extra_tables"]]
+        # 跨工作区引用：从 tables_map 全局解析（工作区名, 表名）
+        cross_tables = [
+            tables_map.get(ws_name, {}).get(tbl_name) for ws_name, tbl_name in spec.get("cross_workspace_tables", [])
+        ]
+        extra_tbls.extend(t for t in cross_tables if t is not None)
         tpl = ReportTemplate(
             name=spec["name"],
             description=spec["description"],
             table_id=main_tbl.id,
-            output_format="docx",
+            output_format=spec.get("output_format", "docx"),
+            theme=spec.get("theme", "minimal"),
             template_content=spec["content"],
-            parameters=[],
+            parameters=[dict(p) for p in spec.get("parameters", [])],
             extra_table_ids=[t.id for t in extra_tbls if t is not None],
         )
         db.add(tpl)
@@ -511,7 +582,7 @@ def _seed_report_templates(db: Any, tables_map: dict[str, dict[str, Any]]) -> No
 def _generate_sample_reports(
     db: Any, tables_map: dict[str, dict[str, Any]], owner: Any, datasets_dir: Path | None
 ) -> None:
-    """渲染 REPORT_TEMPLATE_SPECS 中的全部示例模板，生成示例报告 docx 落盘到对应工作区数据集目录.
+    """渲染 REPORT_TEMPLATE_SPECS 中的全部示例模板，按模板输出格式（docx/xlsx/pdf）落盘到对应工作区数据集目录.
 
     复用渲染端点的沙箱环境 / 统计函数 / docx 渲染器，端到端验证模板可渲染；
     固定文件名（不带时间戳，避免 git 反复变更），每次 seed 覆盖重写。
@@ -579,7 +650,7 @@ def _generate_sample_reports(
         out_dir = datasets_dir / f"工作区-{spec['workspace']}"
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_path = out_dir / f"{spec['name']}-示例报告.docx"
+            out_path = out_dir / f"{spec['name']}-示例报告.{tpl.output_format}"
             out_path.write_bytes(file_bytes)
         except OSError as exc:
             print(f"[seed-示例报告] 写入失败（{spec['name']}）: {exc}")
@@ -588,13 +659,14 @@ def _generate_sample_reports(
 
 
 # ── 示例报告模板定义 ────────────────────────────────────
-# 6 组典型示例（含既有科研项目季度汇报），覆盖 datasets 各工作区的代表性场景：
-# 1. 科研项目季度汇报 —— 跨表引用 + selectattr 匹配分组（科研项目管理）
-# 2. 电商销售月报 —— 单表分组聚合（某企业销售管理/电商销售）
-# 3. 产品开发交付进度报告 —— non_empty 空值统计 + 分页（某企业销售管理/产品开发）
-# 4. WBS 任务进度周报 —— selectattr 过滤 + 多维统计（项目管理）
-# 5. 城市气温天气月报 —— min/max 极值 + 嵌套分组匹配（某地区数据）
-# 6. 数据质量体检报告 —— 脏数据完整性边界 + 多表（低质量数据）
+# 6 组典型示例（含既有科研项目季度汇报），覆盖 datasets 各工作区的代表性场景，
+# 并在输出格式（docx/xlsx/pdf）、主题风格、参数化、跨工作区引用上保持配置多样性：
+# 1. 科研项目季度汇报 —— 跨表引用 + selectattr 匹配分组（科研项目管理，docx/business）
+# 2. 电商销售月报 —— 单表分组聚合（某企业销售管理/电商销售，xlsx 数据导出）
+# 3. 产品开发交付进度报告 —— non_empty 空值统计 + 分页（某企业销售管理/产品开发，docx/modern）
+# 4. WBS 任务进度周报 —— selectattr 过滤 + 多维统计（项目管理，docx/engineering）
+# 5. 城市气温天气月报 —— min/max 极值 + 嵌套分组 + 城市参数明细（某地区数据，pdf/academic）
+# 6. 数据质量体检报告 —— 脏数据完整性边界 + 跨工作区抽检（低质量数据，docx/academic）
 REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
     {
         "workspace": "科研项目管理",
@@ -602,6 +674,8 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
         "extra_tables": ["科研经费", "项目进展", "课题负责人"],
         "name": "科研项目季度汇报",
         "description": "汇总科研项目概览、按类别/状态分组统计、经费拨付、研究进展与负责人名录",
+        "output_format": "docx",
+        "theme": "business",
         "content": (
             "# 科研项目季度汇报\n"
             "\n"
@@ -685,7 +759,8 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
         "table": "电商销售",
         "extra_tables": [],
         "name": "电商销售月报",
-        "description": "按商品类别与支付方式分组汇总销售额、客单价与评分",
+        "description": "按商品类别与支付方式分组汇总销售额、客单价与评分（xlsx 数据导出）",
+        "output_format": "xlsx",
         "content": (
             "# 电商销售月报\n"
             "\n"
@@ -727,6 +802,8 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
         "extra_tables": [],
         "name": "产品开发交付进度报告",
         "description": "项目交付状态概览（含未交付空值统计）、按状态与片区分组汇总",
+        "output_format": "docx",
+        "theme": "modern",
         "content": (
             "# 产品开发交付进度报告\n"
             "\n"
@@ -768,6 +845,8 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
         "extra_tables": [],
         "name": "WBS任务进度周报",
         "description": "顶层/子任务结构概览，按任务状态与优先级多维统计进度与工期",
+        "output_format": "docx",
+        "theme": "engineering",
         "content": (
             "# WBS 任务进度周报\n"
             "\n"
@@ -807,7 +886,12 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
         "table": "气温天气",
         "extra_tables": [],
         "name": "城市气温天气月报",
-        "description": "全局极值与分城市最高/最低气温、平均湿度嵌套分组统计",
+        "description": "全局极值与分城市最高/最低气温、平均湿度嵌套分组统计，附城市明细",
+        "output_format": "pdf",
+        "theme": "academic",
+        "parameters": [
+            {"name": "城市", "type": "string", "default": "全部", "required": False, "label": "明细筛选城市"}
+        ],
         "content": (
             "# 城市气温天气月报\n"
             "\n"
@@ -841,6 +925,19 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
             "| {{ g.key }} | {{ g.count }} |\n"
             "{% endfor %}"
             "\n"
+            "## 附录：城市明细（前 10 条）\n"
+            "\n"
+            "{% set city = params.get('城市', '全部') %}\n"
+            "{% if city == '全部' %}{% set scoped = records %}"
+            "{% else %}{% set scoped = records | selectattr('城市', 'equalto', city) | list %}{% endif %}\n"
+            "统计范围：{{ city }}\n"
+            "\n"
+            "| 城市 | 天气 | 最高温_℃ | 最低温_℃ | 湿度_% |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "{% for r in scoped[:10] %}"
+            "| {{ r['城市'] }} | {{ r['天气'] }} | {{ r['最高温_℃'] }} | {{ r['最低温_℃'] }} | {{ r['湿度_%'] }} |\n"
+            "{% endfor %}"
+            "\n"
             "---PAGE---\n"
             "*本报告由 cndb 自动生成，数据截止 {{ generated_at }}*"
         ),
@@ -850,7 +947,10 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
         "table": "19-特殊值杂项",
         "extra_tables": ["17-数字格式大全"],
         "name": "数据质量体检报告",
-        "description": "按字段统计非空条数与完整率，覆盖 JSON/长号等特殊值与多表附加检查",
+        "description": "按字段统计非空条数与完整率，覆盖 JSON/长号等特殊值、跨工作区抽检与多表附加检查",
+        "output_format": "docx",
+        "theme": "academic",
+        "cross_workspace_tables": [("某地区数据", "气温天气")],
         "content": (
             "# 数据质量体检报告\n"
             "\n"
@@ -879,7 +979,19 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
             "{% endfor %}"
             "{% else %}附加表无数据{% endif %}\n"
             "\n"
-            "## 三、检查说明\n"
+            "## 三、跨工作区抽检（某地区数据/气温天气）\n"
+            "\n"
+            "{% if records_by_table['气温天气'] %}"
+            "{% set wx = records_by_table['气温天气'] %}"
+            "| 字段 | 非空条数 | 记录总数 | 完整率 |\n"
+            "| --- | --- | --- | --- |\n"
+            "{% for f in ['城市', '天气', '最高温_℃', '最低温_℃'] %}"
+            "{% set s = stats(wx, f) %}"
+            "| {{ f }} | {{ s.non_empty }} | {{ wx | length }} | {{ '%.1f%%' | format(s.non_empty / wx | length * 100) if wx else 'N/A' }} |\n"
+            "{% endfor %}"
+            "{% else %}跨工作区数据不可用{% endif %}\n"
+            "\n"
+            "## 四、检查说明\n"
             "\n"
             "- 完整率 100% 表示该字段全部记录非空；\n"
             "- 非空计数按原始值统计（None 与空串视为空），与前端报表统计口径一致；\n"

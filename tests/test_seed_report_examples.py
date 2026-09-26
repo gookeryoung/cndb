@@ -2,9 +2,11 @@
 
 覆盖：
 - spec 定义一致性与 datasets 数据集引用有效性；
+- 模板配置多样性（输出格式/主题/参数/跨工作区引用）；
 - _seed_report_templates 幂等创建；
 - 5 组新增示例模板基于真实 datasets 数据的渲染断言（期望值独立重算）；
-- _generate_sample_reports 端到端 docx 落盘。
+- 员工名册模板常量渲染与参数化断言；
+- _generate_sample_reports 端到端按输出格式落盘。
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from typing import Any
 import pytest
 
 from cndb.cli.seed import (
+    EMPLOYEE_ROSTER_TEMPLATE,
     REPORT_TEMPLATE_SPECS,
     _generate_sample_reports,
     _get_datasets_dir,
@@ -141,7 +144,7 @@ def test_spec_definitions_unique_and_compilable():
 
 
 def test_specs_reference_existing_dataset_tables():
-    """每个 spec 引用的主表/额外表都必须在 datasets 目录中存在对应 CSV."""
+    """每个 spec 引用的主表/额外表（含跨工作区）都必须在 datasets 目录中存在对应 CSV."""
     datasets_dir = _get_datasets_dir()
     if datasets_dir is None:
         pytest.skip("examples/datasets 目录不可用（wheel 安装环境）")
@@ -151,6 +154,25 @@ def test_specs_reference_existing_dataset_tables():
         assert (folder / f"{spec['table']}.csv").is_file(), f"{spec['name']} 主表 CSV 缺失"
         for extra in spec["extra_tables"]:
             assert (folder / f"{extra}.csv").is_file(), f"{spec['name']} 额外表 CSV 缺失"
+        for ws_name, tbl_name in spec.get("cross_workspace_tables", []):
+            cross_csv = datasets_dir / f"工作区-{ws_name}" / f"{tbl_name}.csv"
+            assert cross_csv.is_file(), f"{spec['name']} 跨工作区表 CSV 缺失: {cross_csv}"
+
+
+def test_spec_config_diversity():
+    """模板配置多样性：输出格式覆盖 docx/xlsx/pdf，主题风格>=3 种，含参数化与跨工作区引用."""
+    formats = {spec.get("output_format", "docx") for spec in REPORT_TEMPLATE_SPECS}
+    assert formats == {"docx", "xlsx", "pdf"}, f"输出格式应覆盖三种，实际 {formats}"
+    themes = {spec.get("theme", "minimal") for spec in REPORT_TEMPLATE_SPECS}
+    assert len(themes) >= 3, f"主题风格应至少 3 种，实际 {themes}"
+    with_params = [s for s in REPORT_TEMPLATE_SPECS if s.get("parameters")]
+    assert with_params, "应存在参数化模板"
+    for spec in with_params:
+        for p in spec["parameters"]:
+            assert {"name", "type", "default"} <= set(p), f"{spec['name']} 参数定义不完整"
+    cross = [s for s in REPORT_TEMPLATE_SPECS if s.get("cross_workspace_tables")]
+    assert len(cross) == 1 and cross[0]["name"] == "数据质量体检报告"
+    assert ("某地区数据", "气温天气") in cross[0]["cross_workspace_tables"]
 
 
 # ── seed 幂等 ─────────────────────────────────────────
@@ -240,14 +262,74 @@ def test_render_data_quality(seed_env, db):
     assert f"混合数值合计：{expected_mix}" in text
     extra_records = ctx["records_by_table"]["17-数字格式大全"]
     assert f"| 十五位长号 | {_non_empty(extra_records, '十五位长号')} |" in text
+    # 跨工作区抽检节：主表记录数应与气温天气表记录数一致出现
+    wx_records = ctx["records_by_table"]["气温天气"]
+    assert wx_records, "跨工作区引用的气温天气表应有数据"
+    assert f"| 城市 | {_non_empty(wx_records, '城市')} | {len(wx_records)} |" in text
 
 
-# ── 端到端 docx 生成 ───────────────────────────────────
+# ── 员工名册模板常量渲染 ────────────────────────────────
 
 
-def test_generate_sample_reports_writes_docx(seed_env, db, tmp_path: Path):
-    """_generate_sample_reports 为全部示例模板落盘 docx，且文档含标题与表格。"""
+def _render_employee_roster(params: dict[str, Any]) -> str:
+    """用与 seed 数据一致的员工扁平记录渲染 EMPLOYEE_ROSTER_TEMPLATE."""
+    from cndb.plugins.reports.routers.reports import _jinja_env, _render_with_timeout
+
+    records: list[dict[str, Any]] = [
+        {"姓名": "张三", "部门": "技术部", "负责人": "张三", "入职日期": "2023-01-15", "薪资": 15000, "是否在职": "是"},
+        {"姓名": "李四", "部门": "市场部", "负责人": "李四", "入职日期": "2022-06-01", "薪资": 12000, "是否在职": "是"},
+        {"姓名": "王五", "部门": "人事部", "负责人": "王五", "入职日期": "2024-03-20", "薪资": 10000, "是否在职": "是"},
+        {"姓名": "赵六", "部门": "财务部", "负责人": "赵六", "入职日期": "2021-11-10", "薪资": 13000, "是否在职": "否"},
+        {"姓名": "钱七", "部门": "技术部", "负责人": "张三", "入职日期": "2023-08-05", "薪资": 18000, "是否在职": "是"},
+    ]
+    ctx: dict[str, Any] = {
+        "records": records,
+        "table_name": "员工表",
+        "params": params,
+        "records_by_table": {},
+        "generated_at": "2026-09-26 12:00",
+    }
+    return _render_with_timeout(_jinja_env.from_string(EMPLOYEE_ROSTER_TEMPLATE), ctx)
+
+
+def test_employee_roster_template_default_renders_rich_content():
+    """默认参数（在职）渲染：概览统计、名册表格、按部门分组、离职名单均非空."""
+    text = _render_employee_roster({})
+    # 概览
+    assert "| 员工总数 | 5 |" in text
+    assert "| 在职人数 | 4 |" in text
+    assert "| 覆盖部门数 | 4 |" in text
+    assert "| 平均薪资（元） | 13600 |" in text  # (15000+12000+10000+13000+18000)/5
+    assert "| 薪资区间（元） | 10000 ~ 18000 |" in text
+    # 名册表（默认在职：4 行，不含赵六）
+    assert "| 张三 | 技术部 |" in text
+    assert "| 钱七 | 技术部 | 张三 | 2023-08-05 | 18000 | 是 |" in text
+    assert "赵六" not in text.split("## 四、离职人员名单")[0].split("## 二、员工名册")[1]
+    # 按部门统计：技术部 2 人
+    assert "| 技术部 | 2 | 16500 | 33000 |" in text
+    # 离职名单含赵六
+    assert "| 赵六 | 财务部 | 2021-11-10 |" in text
+
+
+def test_employee_roster_template_params_filter():
+    """参数化：在职状态=离职 时名册仅含离职员工；=全部 时含全部员工."""
+    left_text = _render_employee_roster({"在职状态": "离职"})
+    roster = left_text.split("## 二、员工名册")[1].split("## 三、按部门统计")[0]
+    assert "| 赵六 |" in roster
+    assert "| 张三 |" not in roster
+    all_text = _render_employee_roster({"在职状态": "全部"})
+    roster = all_text.split("## 二、员工名册")[1].split("## 三、按部门统计")[0]
+    for name in ("张三", "李四", "王五", "赵六", "钱七"):
+        assert f"| {name} |" in roster
+
+
+# ── 端到端示例报告生成 ──────────────────────────────────
+
+
+def test_generate_sample_reports_writes_files(seed_env, db, tmp_path: Path):
+    """_generate_sample_reports 按模板输出格式落盘（docx/xlsx/pdf），docx 文档含标题与表格."""
     from docx import Document
+    from openpyxl import load_workbook
 
     tables_map, user = seed_env
     out_dir = tmp_path / "datasets"
@@ -256,11 +338,19 @@ def test_generate_sample_reports_writes_docx(seed_env, db, tmp_path: Path):
 
     _generate_sample_reports(db, tables_map, user, out_dir)
 
-    files = sorted(out_dir.rglob("*-示例报告.docx"))
-    expected_names = {f"{s['name']}-示例报告.docx" for s in REPORT_TEMPLATE_SPECS} - {"科研项目季度汇报-示例报告.docx"}
+    expected_names = {f"{s['name']}-示例报告.{s.get('output_format', 'docx')}" for s in REPORT_TEMPLATE_SPECS} - {
+        "科研项目季度汇报-示例报告.docx"
+    }
+    files = sorted(p for p in out_dir.rglob("*-示例报告.*") if p.suffix in {".docx", ".xlsx", ".pdf"})
     assert {f.name for f in files} == expected_names
     for f in files:
         assert f.stat().st_size > 1000, f"{f.name} 体积异常"
-        doc = Document(str(f))
-        assert any(p.style.name.startswith("Heading") for p in doc.paragraphs), f"{f.name} 缺少标题"
-        assert doc.tables, f"{f.name} 缺少表格"
+        if f.suffix == ".docx":
+            doc = Document(str(f))
+            assert any(p.style.name.startswith("Heading") for p in doc.paragraphs), f"{f.name} 缺少标题"
+            assert doc.tables, f"{f.name} 缺少表格"
+        elif f.suffix == ".xlsx":
+            wb = load_workbook(str(f))
+            assert len(wb.sheetnames) >= 1, f"{f.name} 缺少 Sheet"
+        else:
+            assert f.read_bytes().startswith(b"%PDF"), f"{f.name} 应为 PDF"
