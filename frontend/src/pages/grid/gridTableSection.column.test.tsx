@@ -195,6 +195,42 @@ describe('gridTableSection 表头交互：调宽 / 列序', () => {
     expect(onSort).toHaveBeenCalledWith('年龄', 'asc')
   })
 
+  it('双击右缘热区：回调 onColumnResetWidth；双击热区外不回调', () => {
+    const onResetWidth = vi.fn()
+    const columns = buildColumns(FIELDS, 10, [], [], () => { }, () => { })
+    renderProviders(
+      <GridTableSection
+        tableRef={{ current: null }}
+        columns={columns}
+        settings={{ density: 'comfortable', bordered: false, showHeader: true, striped: false }}
+        isLoading={false}
+        rows={ROWS}
+        total={ROWS.length}
+        newRowActive={false}
+        newRowPosition="top"
+        canEditRecords={true}
+        selectedRowKeys={[]}
+        onSelectionChange={() => { }}
+        onAddRow={() => { }}
+        onRowDoubleClick={() => { }}
+        onSort={() => { }}
+        onColumnResetWidth={onResetWidth}
+        gridAreaSize={{ width: 1200, height: 600 }}
+        offset={0}
+        limit={50}
+        onPageChange={() => { }}
+        prefetchNext={() => { }}
+      />,
+    )
+    const header = screen.getByText('年龄').closest('th') as HTMLElement
+    // 双击热区内（clientX=196，rect.right=200）
+    fireEvent.doubleClick(header, { clientX: 196 })
+    expect(onResetWidth).toHaveBeenCalledWith('2')
+    // 双击热区外（clientX=50）
+    fireEvent.doubleClick(header, { clientX: 50 })
+    expect(onResetWidth).toHaveBeenCalledTimes(1)
+  })
+
   it('列拖放：dragStart 姓名 → drop 年龄 → onColumnOrderMove("1","2")', () => {
     const onOrderMove = vi.fn()
     const dataTransfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' }

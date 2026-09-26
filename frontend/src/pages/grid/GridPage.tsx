@@ -790,6 +790,30 @@ export default function GridPage() {
     setViewOptionsDraft({ ...(viewOptionsDraft ?? {}), field_order: next })
   }, [fieldOrder, table?.fields, viewOptionsDraft, setViewOptionsDraft])
 
+  /** 双击热区重置单列宽度：删除该字段的宽度覆盖（回退类型化估算） */
+  const handleColumnResetWidth = useCallback((fieldId: string) => {
+    if (!viewOptionsDraft || !(viewOptionsDraft.column_widths as Record<string, number> | undefined)?.[fieldId]) return
+    const widths = { ...(viewOptionsDraft.column_widths as Record<string, number>) }
+    delete widths[fieldId]
+    const next = { ...viewOptionsDraft }
+    if (Object.keys(widths).length) next.column_widths = widths
+    else delete next.column_widths
+    setViewOptionsDraft(next)
+  }, [viewOptionsDraft, setViewOptionsDraft])
+
+  /** 重置列布局：清空列宽覆盖与列序（更多菜单入口，仅 grid 模式有覆盖时可用） */
+  const hasColumnLayoutOverride = !!(
+    (viewOptionsDraft?.column_widths && Object.keys(viewOptionsDraft.column_widths as object).length > 0)
+    || (viewOptionsDraft?.field_order && (viewOptionsDraft.field_order as unknown[]).length > 0)
+  )
+  const handleResetColumnLayout = useCallback(() => {
+    if (!viewOptionsDraft) return
+    const next = { ...viewOptionsDraft }
+    delete next.column_widths
+    delete next.field_order
+    setViewOptionsDraft(next)
+  }, [viewOptionsDraft, setViewOptionsDraft])
+
   const columns = useMemo(() => buildColumns(
     table?.fields || [], wid, viewSortings, viewFilters,
     _onFilterApply,
@@ -849,6 +873,7 @@ export default function GridPage() {
         activeViewId={activeView?.id}
         onCopyTable={(opts) => copyTable.mutate(opts)}
         onMove={() => setMoveOpen(true)}
+        onResetColumnLayout={mode === 'grid' && hasColumnLayoutOverride ? handleResetColumnLayout : undefined}
       />
 
       {/* 视图切换 + 操作栏（支持拖拽排序） */}
@@ -896,6 +921,7 @@ export default function GridPage() {
             onRowDoubleClick={openDetailWithPrefetch}
             onColumnResize={handleColumnResize}
             onColumnOrderMove={handleColumnOrderMove}
+            onColumnResetWidth={handleColumnResetWidth}
             onSort={(field, direction) => {
               if (direction === null) {
                 // 清除：只移除该字段的排序规则，保留其他

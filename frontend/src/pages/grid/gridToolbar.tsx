@@ -4,7 +4,7 @@ import { Button, Space, Tag, Modal, Typography, Tooltip, Dropdown } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined,
   MoreOutlined, ArrowLeftOutlined, CopyOutlined, ImportOutlined,
-  SwapOutlined, MenuOutlined,
+  SwapOutlined, MenuOutlined, ColumnWidthOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -30,12 +30,14 @@ interface GridToolbarProps {
   activeViewId?: number | string | null
   onCopyTable: (opts: { mode: 'structure' | 'all' | 'view'; viewId?: number | string }) => void
   onMove: () => void
+  /** 重置列布局（列宽覆盖 + 列序）；缺省表示当前模式不可用（菜单项置灰） */
+  onResetColumnLayout?: () => void
 }
 
 export default function GridToolbar({
   wid, tid, tableKey, tableName, recordCount, mode, addRowDisabled, onAddRow,
   canEditSchema, onOpenTableSettings, onOpenImportExport,
-  activeViewName, activeViewId, onCopyTable, onMove,
+  activeViewName, activeViewId, onCopyTable, onMove, onResetColumnLayout,
 }: GridToolbarProps) {
   const { message } = AntApp.useApp()
   const navigate = useNavigate()
@@ -81,6 +83,7 @@ export default function GridToolbar({
         <Dropdown menu={{
           items: [
             { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
+            { key: 'reset-layout', icon: <ColumnWidthOutlined />, label: '重置列宽与列序', disabled: !onResetColumnLayout, onClick: onResetColumnLayout },
             { type: 'divider' },
             {
               key: 'copy', icon: <CopyOutlined />, label: '复制表',
