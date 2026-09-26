@@ -616,6 +616,8 @@ export default function GridPage() {
       filter_type?: 'AND' | 'OR'
       view_type?: string
       view_options?: Record<string, unknown> | null
+      /** 静默保存：自动保存场景传 true，不弹成功提示 */
+      silent?: boolean
     }) =>
       viewApi.update(wid!, tid!, args.vid, {
         name: args.name,
@@ -625,8 +627,8 @@ export default function GridPage() {
         view_type: args.view_type,
         view_options: args.view_options ?? undefined,
       }),
-    onSuccess: () => {
-      message.success('视图已保存')
+    onSuccess: (_data, vars) => {
+      if (!vars.silent) message.success('视图已保存')
       queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
     },
     onError: (err) => {
@@ -662,8 +664,10 @@ export default function GridPage() {
     reorderViews.mutate(reordered.map(v => v.id))
   }
 
-  /** 持久化当前视图到后端（自动保存 useEffect 唯一真相源：viewFilters / viewSortings 等 state 变化自动触发）. */
-  const persistCurrentView = useCallback(() => {
+  /** 持久化当前视图到后端（自动保存 useEffect 唯一真相源：viewFilters / viewSortings 等 state 变化自动触发）.
+   *  自动保存默认走静默模式（silent=true），避免频繁操作时弹窗刷屏；
+   *  显式保存入口 saveViewNow 会传 silent=false 弹出成功提示. */
+  const persistCurrentView = useCallback((silent = true) => {
     if (!activeViewId) return
     updateView.mutate({
       vid: activeViewId,
@@ -671,6 +675,7 @@ export default function GridPage() {
       sortings: viewSortings.length ? viewSortings : null,
       filter_type: viewFilterLogic,
       view_options: viewOptionsDraft,
+      silent,
     })
   }, [activeViewId, viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, updateView])
 
@@ -683,10 +688,10 @@ export default function GridPage() {
     return cancelPersist
   }, [viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, activeViewId, debouncedPersist, cancelPersist])
 
-  /** 立即保存视图（绕过 debounce）— 用于 ViewConfigDialog 保存按钮等显式保存场景 */
+  /** 立即保存视图（绕过 debounce）— 用于 ViewConfigDialog 保存按钮等显式保存场景，弹出成功提示 */
   const saveViewNow = useCallback(() => {
     cancelPersist()
-    persistCurrentView()
+    persistCurrentView(false)
   }, [cancelPersist, persistCurrentView])
 
   /** 右侧模式按钮组的统一处理：
