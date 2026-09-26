@@ -11,6 +11,26 @@
     },
     "客户流失": {
       "客户ID": {"required": true, "unique": true}
+    },
+    "日常待办": {
+      "待办编号": {"required": true, "unique": true},
+      "待办标题": {"required": true}
     }
-  }
+  },
+  "link_lookups": [
+    {
+      "table": "日常待办",
+      "source_table": "产品开发",
+      "link_name": "关联项目",
+      "multiple": false,
+      "fields": ["片区", "项目类别", "项目状态"]
+    },
+    {
+      "table": "日常待办",
+      "source_table": "员工表",
+      "link_name": "负责员工",
+      "multiple": false,
+      "fields": ["姓名", "是否在职"]
+    }
+  ]
 }
