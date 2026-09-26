@@ -275,10 +275,20 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
           onChange={(vals) => onHiddenNamesChange(vals as string[])}
           style={{ width: '100%' }}
         >
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px 16px' }}>
             {fields.filter(f => !f.hidden).map(f => (
-              <Checkbox key={String(f.id)} value={f.name}>
-                <span style={{ fontSize: 13 }}>
+              <Checkbox key={String(f.id)} value={f.name} style={{ marginInlineStart: 0 }}>
+                <span
+                  style={{
+                    fontSize: 13,
+                    display: 'inline-block',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    verticalAlign: 'bottom',
+                  }}
+                >
                   {f.name} <span style={{ color: 'var(--cn-text-muted)', fontSize: 11 }}>({f.field_type})</span>
                 </span>
               </Checkbox>
