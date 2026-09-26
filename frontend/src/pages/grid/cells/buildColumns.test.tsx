@@ -129,30 +129,20 @@ describe('buildColumns 列构建', () => {
       expect(icon).not.toBeNull()
     })
 
-    it('关联字段表头显示品红 LinkOutlined + 字段名品红实线底', () => {
+    it('关联字段表头显示品红 LinkOutlined 图标', () => {
       const linkFields: Field[] = [makeField({ id: 1, name: '客户', field_type: 'link' })]
       renderGrid(linkFields)
       expect(screen.getByTestId('header-flag-关联')).toBeInTheDocument()
       const icon = document.querySelector('.anticon-link')
       expect(icon).not.toBeNull()
-      // 字段名容器应有品红实线 border-bottom
-      const nameSpan = screen.getByText('客户')
-      const style = window.getComputedStyle(nameSpan)
-      expect(style.borderBottomColor).toBe('rgb(235, 47, 150)') // #eb2f96
-      expect(style.borderBottomStyle).toBe('solid')
     })
 
-    it('引用字段表头显示紫 BulbOutlined + 字段名紫虚线底', () => {
+    it('引用字段表头显示紫 BulbOutlined 图标', () => {
       const lookupFields: Field[] = [makeField({ id: 1, name: '客户名称', field_type: 'lookup' })]
       renderGrid(lookupFields)
       expect(screen.getByTestId('header-flag-引用')).toBeInTheDocument()
       const icon = document.querySelector('.anticon-bulb')
       expect(icon).not.toBeNull()
-      // 字段名容器应有紫色虚线 border-bottom
-      const nameSpan = screen.getByText('客户名称')
-      const style = window.getComputedStyle(nameSpan)
-      expect(style.borderBottomColor).toBe('rgb(114, 46, 209)') // #722ed1
-      expect(style.borderBottomStyle).toBe('dashed')
     })
 
     it('普通字段（非必填/唯一/关联/引用）不渲染任何标识', () => {

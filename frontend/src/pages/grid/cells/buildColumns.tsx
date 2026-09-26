@@ -4,7 +4,7 @@ import { Space, Tooltip } from 'antd'
 import { Button } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { FilterOutlined, SortAscendingOutlined, SortDescendingOutlined, SaveOutlined, CloseOutlined, EditOutlined, LinkOutlined, KeyOutlined, BulbOutlined } from '@ant-design/icons'
-import type { ReactNode, CSSProperties } from 'react'
+import type { ReactNode } from 'react'
 import type { RowResponse, Field, RowValues, ID } from '@/api'
 import GridCell from './GridCell'
 import ColumnFilterDropdown from '../layout/ColumnFilterDropdown'
@@ -148,15 +148,6 @@ export function buildColumns(
       const currentFilter = filterRule
         ? { op: filterRule.op, value: filterRule.value }
         : undefined
-      // 字段类型标识：link → 关联，lookup → 引用（配不同线型底边框）
-      const isLinkField = f.field_type === 'link'
-      const isLookupField = f.field_type === 'lookup'
-      const nameBorderStyle: CSSProperties = isLookupField
-        ? { borderBottom: `1px dashed ${HEADER_FLAG.lookup}` }
-        : isLinkField
-          ? { borderBottom: `1px solid ${HEADER_FLAG.link}` }
-          : {}
-
       /** 生成带 Tooltip 的状态图标 —— 紧凑、11px 字号 */
       const flagIcon = (icon: ReactNode, tooltip: string, _color: string) => (
         <Tooltip title={tooltip}>
@@ -170,8 +161,8 @@ export function buildColumns(
         key: String(f.id),
         title: (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-            {/* 字段名 —— link 实线底、lookup 虚线底 */}
-            <span style={nameBorderStyle}>{f.name}</span>
+            {/* 字段名 */}
+            <span>{f.name}</span>
 
             {/* 必填 —— 红 * 号 */}
             {f.required && (
@@ -186,12 +177,12 @@ export function buildColumns(
             )}
 
             {/* 关联字段 —— 品红 LinkOutlined */}
-            {isLinkField && flagIcon(
+            {f.field_type === 'link' && flagIcon(
               <LinkOutlined style={{ fontSize: 11, color: HEADER_FLAG.link }} />, '关联', HEADER_FLAG.link,
             )}
 
-            {/* 引用字段 —— 紫 BulbOutlined（虚线底已施加到字段名） */}
-            {isLookupField && flagIcon(
+            {/* 引用字段 —— 紫 BulbOutlined */}
+            {f.field_type === 'lookup' && flagIcon(
               <BulbOutlined style={{ fontSize: 11, color: HEADER_FLAG.lookup }} />, '引用', HEADER_FLAG.lookup,
             )}
 
