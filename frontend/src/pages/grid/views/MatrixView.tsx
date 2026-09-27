@@ -3,8 +3,10 @@
  * 视觉采用「左侧彩色竖条 + 区域标题加粗」组合模式：
  * - 纵轴行头与横轴列头复用 MatrixAxisHeader —— 4px 圆角彩色竖条 + 加粗标题 + 数量徽章；
  *   竖条颜色按索引从 antd v5 官方预设主色循环取色（行列各算一组）。
+ * - 左上角标注格展示「纵轴/横轴」主题色徽章 + 加粗字段名，品牌色淡染底突出方位语义。
  * - 布局为 CSS Grid：首列行头 sticky left、首行列头 sticky top，左上角标注格双向 sticky；
  *   网格区域独立滚动，行头/列头在滚动时保持可见。
+ * - 单元格高度随内容自适应（无硬上限），行轨道高度由该行最高单元格决定。
  *
  * view_options 契约见 .trae/designs/matrix-view.md：
  * - row_field（必填）/ column_field（必填）/ date_granularity（默认 month）/ title_field（可选）
@@ -128,6 +130,32 @@ function MatrixAxisHeader({
   )
 }
 
+/** 左上角标注格轴标签：主题色「纵轴/横轴」徽章 + 加粗字段名 */
+function MatrixCornerAxis({ axis, name }: { axis: '纵轴' | '横轴'; name: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+      <span
+        style={{
+          flexShrink: 0, fontSize: 11, fontWeight: 600, lineHeight: '18px',
+          padding: '0 6px', borderRadius: 4,
+          color: 'var(--cn-brand-color)',
+          background: 'color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container))',
+        }}
+      >
+        {axis}
+      </span>
+      <span
+        style={{
+          fontSize: 12.5, fontWeight: 600, color: 'var(--cn-text-primary)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}
+      >
+        {name}
+      </span>
+    </div>
+  )
+}
+
 export default function MatrixView({ rows, fields, view, density, onRowClick }: MatrixViewProps) {
   const opts = useMemo(
     () => resolveOpts(view?.view_options as Record<string, unknown> | undefined, MATRIX_OPTIONS),
@@ -187,17 +215,19 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
       }}
     >
       <div style={{ display: 'grid', gridTemplateColumns, minWidth: 'min-content' }}>
-        {/* 左上角标注格：纵轴 \ 横轴 */}
+        {/* 左上角标注格：纵轴 / 横轴（品牌色淡染底突出方位语义） */}
         <div
+          data-testid="matrix-corner"
           style={{
             position: 'sticky', left: 0, top: 0, zIndex: 3,
-            background: 'var(--cn-bg-page)', borderBottom: '1px solid var(--cn-border)', borderRight: '1px solid var(--cn-border)',
-            padding: '8px 10px', fontSize: 12,
-            display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2,
+            background: 'color-mix(in srgb, var(--cn-brand-color) 7%, var(--cn-bg-page))',
+            borderBottom: '1px solid var(--cn-border)', borderRight: '1px solid var(--cn-border)',
+            padding: '10px 12px',
+            display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 5,
           }}
         >
-          <span style={{ fontWeight: 600 }}>{rowDef?.name ?? rowField}</span>
-          <span style={{ color: 'var(--cn-text-secondary)' }}>\ {colDef?.name ?? columnField}</span>
+          <MatrixCornerAxis axis="纵轴" name={rowDef?.name ?? rowField} />
+          <MatrixCornerAxis axis="横轴" name={colDef?.name ?? columnField} />
         </div>
 
         {/* 横轴列头行 */}
@@ -228,7 +258,7 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
                 position: 'sticky', left: 0, zIndex: 1,
                 background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)',
                 padding: '10px 10px',
-                display: 'flex', alignItems: 'flex-start',
+                display: 'flex', alignItems: 'center',
               }}
             >
               <MatrixAxisHeader title={rk} color={axisColor(ri)} count={rowTotals.get(rk)} />
@@ -243,7 +273,6 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
                     padding: style.cellPadding,
                     borderBottom: '1px solid var(--cn-border)',
                     display: 'flex', flexDirection: 'column', gap: style.cardGap,
-                    maxHeight: 220, overflowY: list && list.length > 3 ? 'auto' : undefined,
                     background: list?.length ? undefined : 'var(--cn-bg-page)',
                   }}
                 >
