@@ -356,12 +356,6 @@ body.theme-oled {
   --cn-bg-success-subtle: #0f2412;
 }
 
-/* ─────────────── 表格斑马纹（按主题覆盖） ─────────────── */
-
-.table-row-striped>td {
-  background-color: var(--cn-bg-subtle);
-}
-
 /* ─────────────── 新增行高亮（主题自适应） ───────────────
  * AntD 虚拟滚动把行渲染成扁平 div（.ant-table-row > .ant-table-cell），
  * 非虚拟模式则是标准 tr > td。下面同时兼容两种形态。

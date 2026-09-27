@@ -22,9 +22,6 @@ const RESIZE_HOTZONE_PX = 8
 
 export interface GridDisplaySettings {
   density: Density
-  bordered: boolean
-  showHeader: boolean
-  striped: boolean
 }
 
 interface GridTableSectionProps {
@@ -213,15 +210,8 @@ export default function GridTableSection({
           const newRow = { id: NEW_ROW_KEY } as unknown as RowResponse
           return newRowPosition === 'top' ? [newRow, ...rows] : [...rows, newRow]
         })()}
-        bordered={settings.bordered}
-        showHeader={settings.showHeader}
         style={{ flex: 1, minHeight: 0 }}
-        rowClassName={(record, i) => {
-          const classes: string[] = []
-          if (isNewRow(record.id)) classes.push('cn-table-row-new')
-          if (settings.striped && i % 2 === 1) classes.push('table-row-striped')
-          return classes.join(' ')
-        }}
+        rowClassName={(record) => (isNewRow(record.id) ? 'cn-table-row-new' : '')}
         rowSelection={{ selectedRowKeys, onChange: onSelectionChange, columnWidth: 40 }}
         pagination={false}
         scroll={{ x: scrollX, y: Math.max(gridAreaSize.height - 140, 200) }}

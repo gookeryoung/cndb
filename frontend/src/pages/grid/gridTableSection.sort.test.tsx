@@ -33,7 +33,7 @@ function Harness({ onSortChange }: { onSortChange: (field: string, direction: 'a
     <GridTableSection
       tableRef={{ current: null }}
       columns={columns}
-      settings={{ density: 'comfortable', bordered: false, showHeader: true, striped: false }}
+      settings={{ density: 'comfortable' }}
       isLoading={false}
       rows={ROWS}
       total={ROWS.length}

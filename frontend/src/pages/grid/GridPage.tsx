@@ -101,12 +101,9 @@ export default function GridPage() {
   const queryClient = useQueryClient()
   const density = useTableSettingsStore(s => s.density)
   const defaultPageSize = useTableSettingsStore(s => s.defaultPageSize)
-  const bordered = useTableSettingsStore(s => s.bordered)
-  const showHeader = useTableSettingsStore(s => s.showHeader)
-  const striped = useTableSettingsStore(s => s.striped)
   const newRowPosition = useTableSettingsStore(s => s.newRowPosition)
   const autoFillLocked = useTableSettingsStore(s => s.autoFillLocked)
-  const settings = { density, defaultPageSize, bordered, showHeader, striped }
+  const settings = { density, defaultPageSize }
 
   // —— 视图状态从 GridViewStore 订阅 ——
   const mode = useGridViewStore(s => s.mode)
@@ -918,7 +915,7 @@ export default function GridPage() {
           <GridTableSection
             tableRef={tableRef}
             columns={columns}
-            settings={{ density, bordered, showHeader, striped }}
+            settings={{ density }}
             isLoading={isLoading}
             rows={rowList.items || []}
             total={rowList.total}

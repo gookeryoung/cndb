@@ -3,7 +3,7 @@
  *
  * 覆盖：Tab 结构与 initialTab 定位 / 用户资料紧凑表单（用户名只读）保存 /
  * 主题卡片选择持久化 / 字体设置（字号/加粗）持久化 /
- * 表格页签：显示模式（间距/每页/边框/表头/斑马纹）即时生效写 store /
+ * 表格页签：显示模式（间距/每页）即时生效写 store /
  * 操作风格（新增行位置）写入 store / 恢复默认。
  */
 
@@ -167,19 +167,6 @@ describe('SettingsModal 个人设置', () => {
     expect(persisted.state?.defaultPageSize).toBe(100)
   })
 
-  it('表格 Tab：边框/表头/斑马纹开关即时写入 store', async () => {
-    renderProviders(<SettingsModal open initialTab="table" onClose={() => { }} />)
-
-    expect(useTableSettingsStore.getState().bordered).toBe(false)
-    fireEvent.click(document.querySelector<HTMLElement>('[data-testid="bordered-switch"]')!)
-    fireEvent.click(document.querySelector<HTMLElement>('[data-testid="striped-switch"]')!)
-
-    await waitFor(() => {
-      expect(useTableSettingsStore.getState().bordered).toBe(true)
-      expect(useTableSettingsStore.getState().striped).toBe(true)
-    })
-  })
-
   it('表格 Tab：新增行默认位置变更写入 store 与 localStorage', async () => {
     renderProviders(<SettingsModal open initialTab="table" onClose={() => { }} />)
 
@@ -197,14 +184,14 @@ describe('SettingsModal 个人设置', () => {
   })
 
   it('表格 Tab：恢复默认重置全部设置项', async () => {
-    useTableSettingsStore.getState().updateSettings({ density: 'spacious', bordered: true, newRowPosition: 'top' })
+    useTableSettingsStore.getState().updateSettings({ density: 'spacious', defaultPageSize: 200, newRowPosition: 'top' })
     renderProviders(<SettingsModal open initialTab="table" onClose={() => { }} />)
 
     fireEvent.click(screen.getByRole('button', { name: '恢复默认' }))
 
     await waitFor(() => {
       expect(useTableSettingsStore.getState().density).toBe('comfortable')
-      expect(useTableSettingsStore.getState().bordered).toBe(false)
+      expect(useTableSettingsStore.getState().defaultPageSize).toBe(DEFAULT_TABLE_SETTINGS.defaultPageSize)
       expect(useTableSettingsStore.getState().newRowPosition).toBe('tail')
     })
     expect(screen.getByText('适中')).toBeInTheDocument()

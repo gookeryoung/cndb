@@ -75,9 +75,6 @@ beforeEach(() => {
   useTableSettingsStore.setState({
     density: 'comfortable',
     defaultPageSize: 5,
-    bordered: false,
-    showHeader: true,
-    striped: false,
     newRowPosition: 'page',
   })
 })

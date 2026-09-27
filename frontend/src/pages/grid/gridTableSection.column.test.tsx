@@ -94,7 +94,7 @@ describe('gridTableSection 表头交互：调宽 / 列序', () => {
       <GridTableSection
         tableRef={{ current: null }}
         columns={columns}
-        settings={{ density: 'comfortable', bordered: false, showHeader: true, striped: false }}
+        settings={{ density: 'comfortable' }}
         isLoading={false}
         rows={ROWS}
         total={ROWS.length}
@@ -125,7 +125,7 @@ describe('gridTableSection 表头交互：调宽 / 列序', () => {
       <GridTableSection
         tableRef={{ current: null }}
         columns={columns}
-        settings={{ density: 'comfortable', bordered: false, showHeader: true, striped: false }}
+        settings={{ density: 'comfortable' }}
         isLoading={false}
         rows={ROWS}
         total={ROWS.length}
@@ -165,7 +165,7 @@ describe('gridTableSection 表头交互：调宽 / 列序', () => {
       <GridTableSection
         tableRef={{ current: null }}
         columns={columns}
-        settings={{ density: 'comfortable', bordered: false, showHeader: true, striped: false }}
+        settings={{ density: 'comfortable' }}
         isLoading={false}
         rows={ROWS}
         total={ROWS.length}
@@ -202,7 +202,7 @@ describe('gridTableSection 表头交互：调宽 / 列序', () => {
       <GridTableSection
         tableRef={{ current: null }}
         columns={columns}
-        settings={{ density: 'comfortable', bordered: false, showHeader: true, striped: false }}
+        settings={{ density: 'comfortable' }}
         isLoading={false}
         rows={ROWS}
         total={ROWS.length}

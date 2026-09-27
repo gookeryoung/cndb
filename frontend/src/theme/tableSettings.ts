@@ -15,12 +15,6 @@ export interface TableSettings {
   density: Density
   /** 默认每页行数（仅表格视图） */
   defaultPageSize: number
-  /** 是否显示表格边框（仅表格视图） */
-  bordered: boolean
-  /** 是否显示表头（仅表格视图） */
-  showHeader: boolean
-  /** 是否启用斑马纹（仅表格视图） */
-  striped: boolean
   /** 新增行默认插入位置 */
   newRowPosition: NewRowPosition
   /** 是否锁定自动填充字段（新增行时预填的 default_value / auto_fill 字段只读，提高录入速度） */
@@ -30,9 +24,6 @@ export interface TableSettings {
 export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   density: 'comfortable',
   defaultPageSize: 50,
-  bordered: false,
-  showHeader: true,
-  striped: false,
   newRowPosition: 'tail',
   autoFillLocked: true,
 }
