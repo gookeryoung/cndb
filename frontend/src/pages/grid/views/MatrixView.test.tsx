@@ -93,18 +93,18 @@ describe('MatrixView 矩阵视图', () => {
   it('轴区纵横双色淡染与分轴分界线', () => {
     renderMatrix()
 
-    // 纵轴行头复用品牌色 4% 淡染，横轴列头用独立轴色 4% 淡染，角格上下双色分段 7%
+    // 纵轴行头复用品牌色 12% 淡染，横轴列头用独立轴色 12% 淡染，角格上下双色分段 16%
     for (const h of screen.getAllByTestId('matrix-row-header')) {
-      expect(h.style.background).toContain('4%')
+      expect(h.style.background).toContain('12%')
       expect(h.style.background).toContain('var(--cn-brand-color)')
     }
     for (const h of screen.getAllByTestId('matrix-col-header')) {
-      expect(h.style.background).toContain('4%')
+      expect(h.style.background).toContain('12%')
       expect(h.style.background).toContain('var(--cn-axis-col-color)')
     }
     const corner = screen.getByTestId('matrix-corner')
     expect(corner.style.backgroundImage).toContain('linear-gradient')
-    expect(corner.style.backgroundImage).toContain('7%')
+    expect(corner.style.backgroundImage).toContain('16%')
     expect(corner.style.borderBottom).toContain('var(--cn-axis-col-color)')
     expect(corner.style.borderRight).toContain('var(--cn-brand-color)')
 
