@@ -41,6 +41,9 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         # WBS 工作分解结构
         "parent_field",
         "status_field",
+        # Matrix 矩阵视图（纵横轴字段）
+        "row_field",
+        "column_field",
     ):
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:

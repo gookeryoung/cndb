@@ -190,6 +190,7 @@ export default function CreateEditViewForm({
     { value: 'calendar', label: '日历（Calendar）' },
     { value: 'gantt', label: '甘特图（Gantt）' },
     { value: 'wbs', label: '工作分解（WBS）' },
+    { value: 'matrix', label: '矩阵（Matrix）' },
   ]
 
   return (

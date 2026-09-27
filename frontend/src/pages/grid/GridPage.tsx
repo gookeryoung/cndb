@@ -22,6 +22,7 @@ import { Modal, Empty, App as AntApp, Skeleton } from 'antd'
 import {
   ColumnHeightOutlined, AppstoreOutlined,
   CalendarOutlined, LineChartOutlined, PartitionOutlined,
+  TableOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
@@ -55,6 +56,7 @@ const KanbanView = lazy(() => import('./views/KanbanView'))
 const CalendarView = lazy(() => import('./views/CalendarView'))
 const GanttView = lazy(() => import('./views/GanttView'))
 const WbsView = lazy(() => import('./views/WbsView'))
+const MatrixView = lazy(() => import('./views/MatrixView'))
 
 function ModalFallback() {
   return null
@@ -113,6 +115,7 @@ const MODE_BUTTONS: readonly ModeBtn[] = [
   { mode: 'calendar', tooltip: '日历视图：按日期字段排布在月历上', icon: <CalendarOutlined /> },
   { mode: 'gantt', tooltip: '甘特图视图：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
   { mode: 'wbs', tooltip: 'WBS 视图：树状层级分解任务', icon: <PartitionOutlined /> },
+  { mode: 'matrix', tooltip: '矩阵视图：纵横两轴分类交叉，数据按类别填入单元格', icon: <TableOutlined /> },
 ]
 
 /** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */
@@ -191,6 +194,7 @@ export default function GridPage() {
       void import('./views/CalendarView')
       void import('./views/GanttView')
       void import('./views/WbsView')
+      void import('./views/MatrixView')
     }
     if (typeof requestIdleCallback === 'function') {
       const id = requestIdleCallback(preload)
@@ -305,7 +309,7 @@ export default function GridPage() {
   const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
-      const KANBAN_MODES = new Set<string>(['kanban', 'calendar', 'gantt', 'wbs'])
+      const KANBAN_MODES = new Set<string>(['kanban', 'calendar', 'gantt', 'wbs', 'matrix'])
       const vt = v.view_type ?? ''
       const newMode: ViewMode = KANBAN_MODES.has(vt) ? (vt as ViewMode) : 'grid'
 
@@ -1040,6 +1044,8 @@ export default function GridPage() {
               <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'wbs' ? (
               <WbsView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
+            ) : mode === 'matrix' ? (
+              <MatrixView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             ) : (
               <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             )}
