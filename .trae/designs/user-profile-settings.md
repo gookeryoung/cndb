@@ -73,9 +73,10 @@
 
 ## UI 结构约定
 - 个人设置 Modal 三个页签：`用户资料` / `主题` / `表格`；默认激活用户资料（`initialTab` 可覆盖）。
-- 用户资料页：无重复节标题；用户名（disabled Input，extra「注册后不可修改」）/ 昵称 / 邮箱同行 flex 紧凑排布（flex 比例 1 / 1 / 1.3），保存按钮在下方。
-- 主题页：第一节标题「配色」（10 主题 Radio 按钮组 + 卡片网格）；第二节标题「字体」（字号 Select 4 档 + 全局加粗 Switch + 自动保存说明）。
+- 用户资料页：无重复节标题；用户名（disabled Input）/ 昵称 / 邮箱同行 flex 紧凑排布（flex 比例 1 / 1 / 1.3），用户名列底部附提示「注册后不可修改」，保存按钮在下方。
+- 主题页：第一节标题「配色」（10 主题 Radio 按钮组 + 卡片网格）；第二节标题「字体」（字号 Select 4 档 + 全局加粗 Switch）。
 - 表格页：第一节标题「显示模式」（间距 Select + 每页行数 Select 同行，副注说明间距影响全部视图的卡片密度）；第二节标题「操作风格」（新增行默认位置 Select + 自动填充锁定 Switch）；底部「恢复默认」按钮。
+- 提示文字统一样式：全部用 `Text type="secondary"` + `fontSize: 12`（antd colorTextSecondary token），不硬编码颜色，不用 Form.Item extra（其默认色 colorTextDescription 偏浅，与提示体系不一致）；节级提示跟节标题同行（marginLeft 8），控件级说明独立成行（marginTop 4、display block）与控件左对齐。
 
 ## Edge cases & risks
 | Category | Notes |
