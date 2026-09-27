@@ -90,6 +90,36 @@ describe('MatrixView 矩阵视图', () => {
     expect(corner.textContent).toContain('排期日期')
   })
 
+  it('轴区淡染与数据区分界（透明度底色 + 同色相分界线）', () => {
+    renderMatrix()
+
+    // 行头/列头统一 4% 品牌淡染，角格 7% 更重（自角向外层次衰减）
+    for (const h of screen.getAllByTestId('matrix-row-header')) {
+      expect(h.style.background).toContain('4%')
+    }
+    for (const h of screen.getAllByTestId('matrix-col-header')) {
+      expect(h.style.background).toContain('4%')
+    }
+    expect(screen.getByTestId('matrix-corner').style.background).toContain('7%')
+
+    // 轴区内侧分界线为品牌色混入边框色（与淡染同色相）
+    for (const h of screen.getAllByTestId('matrix-col-header')) {
+      expect(h.style.borderBottom).toContain('color-mix')
+    }
+    for (const h of screen.getAllByTestId('matrix-row-header')) {
+      expect(h.style.borderRight).toContain('color-mix')
+    }
+
+    // 数据单元格显式 container 白底与轴区对比；空单元格保持中性弱底
+    const cells = screen.getAllByTestId('matrix-cell')
+    const filled = cells.filter((c) => c.textContent !== '')
+    const empty = cells.filter((c) => c.textContent === '')
+    expect(filled.length).toBeGreaterThan(0)
+    expect(empty.length).toBeGreaterThan(0)
+    for (const c of filled) expect(c.style.background).toBe('var(--cn-bg-container)')
+    for (const c of empty) expect(c.style.background).toBe('var(--cn-bg-page)')
+  })
+
   it('单元格高度自适应（无 maxHeight 硬上限）', () => {
     renderMatrix()
 
