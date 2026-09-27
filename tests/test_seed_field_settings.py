@@ -3,7 +3,8 @@
 覆盖：
 - _load_field_settings：解析真实 datasets 配置 / 顶层非对象 / 目录缺失；
 - _apply_field_settings：必填/唯一标志应用、关联引入（link+lookup）、
-  缺表/缺字段优雅跳过、重复执行幂等；
+  match 行关联回填、backfills 物理列数据回填、缺表/缺字段优雅跳过、
+  重复执行幂等；
 - import_fields_as_lookup 的 link_name / link_multiple 参数。
 """
 
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -71,11 +73,20 @@ def test_load_field_settings_from_real_datasets():
     # 唯一示例字段存在且同时声明 required + unique
     topic_cfg = cfg["settings"]["科研项目"]["课题编号"]
     assert topic_cfg == {"required": True, "unique": True}
-    # 关联引入规则引用真实表名
+    # 关联引入规则引用真实表名，且声明 match（行关联回填）
     for rule in cfg["link_lookups"]:
         assert rule["table"] in {"课题负责人", "项目进展", "科研经费"}
         assert rule["source_table"] == "科研项目"
         assert rule.get("multiple") is False
+        assert rule.get("match") == {"local": "课题编号", "source": "课题编号"}
+    # backfills 覆盖全部克隆字段的数据回填
+    backfills = cfg.get("backfills") or []
+    backfill_map = {r["table"]: r for r in backfills}
+    assert backfill_map["课题负责人"]["fields"] == ["项目状态"]
+    assert backfill_map["项目进展"]["fields"] == ["项目状态", "立项年份"]
+    assert backfill_map["科研经费"]["fields"] == ["项目状态", "项目类别"]
+    for rule in backfills:
+        assert rule["match"] == {"local": "课题编号", "source": "课题编号"}
 
 
 def test_load_field_settings_invalid_top_level(tmp_path):
@@ -208,3 +219,141 @@ def test_apply_link_lookups_missing_table(seed_env, db, db_engine, tmp_path):
     owner_tbl = seed_env["演示"]["负责人表"]
     names = [f.name for f in owner_tbl.fields if not f.trashed]
     assert "项目名称" not in names
+
+
+def test_apply_link_lookups_match_backfills_links(seed_env, db, db_engine, tmp_path):
+    """link_lookups 声明 match 时按本地/源匹配列回填行关联，lookup 可实时解析."""
+    datasets_dir = _write_fields_json(
+        tmp_path,
+        {
+            "link_lookups": [
+                {
+                    "table": "负责人表",
+                    "source_table": "课题表",
+                    "link_name": "关联课题",
+                    "multiple": False,
+                    "fields": ["项目名称", "立项年份"],
+                    "match": {"local": "课题编号", "source": "课题编号"},
+                }
+            ]
+        },
+    )
+    _apply_field_settings(db, db_engine, seed_env, datasets_dir)
+
+    from cndb.plugins.tables.services.core.links import load_links
+    from cndb.plugins.tables.services.core.lookups import attach_lookup_values
+
+    topic_tbl = seed_env["演示"]["课题表"]
+    owner_tbl = seed_env["演示"]["负责人表"]
+    owner_rows = [
+        {"id": r["id"], "课题编号": r["课题编号"]} for r in db_engine_connect_rows(db_engine, owner_tbl, ["课题编号"])
+    ]
+    topic_ids_by_code = {r["课题编号"]: r["id"] for r in db_engine_connect_rows(db_engine, topic_tbl, ["课题编号"])}
+    links = load_links(
+        db_engine,
+        next(f for f in owner_tbl.active_fields() if f.field_type == "link"),
+        [r["id"] for r in owner_rows],
+    )
+    for row in owner_rows:
+        expected = topic_ids_by_code[row["课题编号"]]
+        assert links.get(row["id"]) == [expected], f"行 {row['id']} 关联应回填为课题 {expected}"
+
+    # lookup 实时解析：负责人行应拿到对应课题的项目名称
+    enriched = attach_lookup_values(db_engine, owner_tbl, [dict(r) for r in owner_rows], db=db)
+    names = {
+        r["课题编号"]: r["项目名称"] for r in db_engine_connect_rows(db_engine, topic_tbl, ["课题编号", "项目名称"])
+    }
+    for r in enriched:
+        assert r["项目名称"] == names[r["课题编号"]]
+
+
+def test_apply_backfills_value_fields(seed_env, db, db_engine, tmp_path):
+    """backfills 段按匹配列把源表字段值写入目标表克隆物理列."""
+    from cndb.plugins.tables.services.fields.field_ops import clone_fields_between_tables
+
+    topic_tbl = seed_env["演示"]["课题表"]
+    owner_tbl = seed_env["演示"]["负责人表"]
+    # 模拟 _apply_field_import_rules：克隆字段结构（无数据）
+    clone_fields_between_tables(db_engine, db, topic_tbl, owner_tbl, field_names=["立项年份"])
+
+    datasets_dir = _write_fields_json(
+        tmp_path,
+        {
+            "backfills": [
+                {
+                    "table": "负责人表",
+                    "source_table": "课题表",
+                    "fields": ["立项年份"],
+                    "match": {"local": "课题编号", "source": "课题编号"},
+                }
+            ]
+        },
+    )
+    _apply_field_settings(db, db_engine, seed_env, datasets_dir)
+
+    year_by_code = {
+        r["课题编号"]: r["立项年份"] for r in db_engine_connect_rows(db_engine, topic_tbl, ["课题编号", "立项年份"])
+    }
+    for r in db_engine_connect_rows(db_engine, owner_tbl, ["课题编号", "立项年份"]):
+        assert r["立项年份"] == year_by_code[r["课题编号"]], (
+            f"行课题 {r['课题编号']} 的立项年份应回填为 {year_by_code[r['课题编号']]}"
+        )
+
+
+def test_apply_backfills_idempotent_and_unmatched_skipped(seed_env, db, db_engine, tmp_path):
+    """重复回填结果一致；匹配不上的行保持原值不被清空."""
+    from cndb.plugins.tables.services.fields.field_ops import clone_fields_between_tables
+
+    topic_tbl = seed_env["演示"]["课题表"]
+    owner_tbl = seed_env["演示"]["负责人表"]
+    clone_fields_between_tables(db_engine, db, topic_tbl, owner_tbl, field_names=["立项年份"])
+
+    datasets_dir = _write_fields_json(
+        tmp_path,
+        {
+            "backfills": [
+                {
+                    "table": "负责人表",
+                    "source_table": "课题表",
+                    "fields": ["立项年份"],
+                    "match": {"local": "课题编号", "source": "课题编号"},
+                }
+            ]
+        },
+    )
+    _apply_field_settings(db, db_engine, seed_env, datasets_dir)
+    rows_first = db_engine_connect_rows(db_engine, owner_tbl, ["负责人编号", "课题编号", "立项年份"])
+
+    _apply_field_settings(db, db_engine, seed_env, datasets_dir)
+    rows_second = db_engine_connect_rows(db_engine, owner_tbl, ["负责人编号", "课题编号", "立项年份"])
+    assert rows_first == rows_second
+
+
+def test_backfill_rows_by_match_missing_columns(seed_env, db, db_engine):
+    """匹配列不存在时返回 0 且不抛异常."""
+    from cndb.cli.seed import _backfill_rows_by_match
+
+    topic_tbl = seed_env["演示"]["课题表"]
+    owner_tbl = seed_env["演示"]["负责人表"]
+    assert _backfill_rows_by_match(db_engine, db, owner_tbl, topic_tbl, "不存在列", "课题编号") == 0
+    assert _backfill_rows_by_match(db_engine, db, owner_tbl, topic_tbl, "课题编号", "不存在列") == 0
+
+
+def db_engine_connect_rows(engine: Any, table: Any, col_names: list[str]) -> list[dict[str, Any]]:
+    """按字段名读取物理表全部行（测试辅助，返回 {字段名: 值} 含 id）."""
+    from sqlalchemy import select
+
+    from cndb.cli.seed import _get_sa_table_by_name
+
+    sa_tbl = _get_sa_table_by_name(engine, table.db_table_name)
+    cols = {f.name: f.db_column_name for f in table.active_fields()}
+    with engine.connect() as conn:
+        rows = conn.execute(select(sa_tbl.c.id, *[sa_tbl.c[cols[n]] for n in col_names])).all()
+    result = []
+    for r in rows:
+        mapping = dict(r._mapping)
+        item: dict[str, Any] = {"id": mapping["id"]}
+        for name in col_names:
+            item[name] = mapping[cols[name]]
+        result.append(item)
+    return result
