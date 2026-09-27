@@ -25,13 +25,13 @@ test.describe("工作区 + 表列表", () => {
     await expect(page.locator('button:has-text("新建表")').first()).toBeVisible();
   });
 
-  test("seed 数据：至少有 6 张表（某企业销售管理）", async ({ page }) => {
+  test("seed 数据：至少有 8 张表（某企业销售管理）", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await gotoWorkspace(page);
 
-    // WID=1 某企业销售管理有 6 张 seed 表
+    // WID=1 某企业销售管理有 8 张 seed 表（6 张 CSV + 部门表 + 员工表）
     const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-    await expect(rows).toHaveCount(6);
+    await expect(rows).toHaveCount(8);
   });
 
   test("表列表 owner 列正确展示拥有者用户名", async ({ page }) => {
@@ -40,7 +40,7 @@ test.describe("工作区 + 表列表", () => {
 
     // 等待表列表加载完成
     const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-    await expect(rows).toHaveCount(6);
+    await expect(rows).toHaveCount(8);
 
     // 表头应包含「拥有者」列
     await expect(page.locator("th", { hasText: "拥有者" }).first()).toBeVisible();
