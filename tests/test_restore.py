@@ -405,10 +405,23 @@ def test_check_target_safe_non_sqlite_url(tmp_path: Path) -> None:
 def test_restore_sqlite_native_missing_src_db(tmp_path: Path) -> None:
     """native 备份目录中缺 cndb.db → RestoreError."""
     extracted = tmp_path / "extracted"
-    (extracted / "database").mkdir(parents=True)
+    (extracted / "data").mkdir(parents=True)
     target = tmp_path / "target.db"
     with pytest.raises(RestoreError, match=r"缺失 cndb.db"):
         _restore_sqlite_native(extracted, target)
+
+
+def test_restore_sqlite_native_legacy_database_dir(tmp_path: Path) -> None:
+    """旧版归档使用 database/ 目录名 → 定位回退后仍可恢复."""
+    extracted = tmp_path / "legacy_extracted"
+    legacy_dir = extracted / "database"
+    legacy_dir.mkdir(parents=True)
+    src_db = tmp_path / "src.db"
+    sqlite3.connect(str(src_db)).close()
+    (legacy_dir / "cndb.db").write_bytes(src_db.read_bytes())
+    target = tmp_path / "legacy_target.db"
+    _restore_sqlite_native(extracted, target)
+    assert target.is_file()
 
 
 # ── _from_json_safe 全分支 ────────────────────────────
@@ -499,7 +512,7 @@ def test_restore_backup_no_uploads_in_backup(tmp_path: Path) -> None:
         tar.addfile(info, io.BytesIO(manifest_bytes))
         # 添加空 cndb.db
         db_bytes = src_db.read_bytes()
-        info2 = tarfile.TarInfo(name="backup/database/cndb.db")
+        info2 = tarfile.TarInfo(name="backup/data/cndb.db")
         info2.size = len(db_bytes)
         tar.addfile(info2, io.BytesIO(db_bytes))
 
@@ -754,6 +767,7 @@ def test_restore_sqlalchemy_loss_report(tmp_path: Path, capsys: pytest.CaptureFi
     from sqlalchemy import text as sa_text
 
     # 手工构造"来自更新版本"的目录备份：未知表 + 已知表带未知列
+    # 刻意沿用旧版 database/ 目录名，兼作旧归档兼容回退的 sqlalchemy 恢复回归
     backup_dir = tmp_path / "future_backup"
     (backup_dir / "database").mkdir(parents=True)
     manifest = {
@@ -813,9 +827,9 @@ def test_restore_sqlalchemy_no_loss(tmp_path: Path) -> None:
     """交集完全命中时报告无丢失."""
     import json
 
-    # 目录备份仅含已知表已知列
+    # 目录备份仅含已知表已知列（新版 data/ 目录名）
     backup_dir = tmp_path / "clean_backup"
-    (backup_dir / "database").mkdir(parents=True)
+    (backup_dir / "data").mkdir(parents=True)
     manifest = {
         "version": "1",
         "app_version": "1.0",
@@ -840,7 +854,7 @@ def test_restore_sqlalchemy_no_loss(tmp_path: Path) -> None:
             }
         ]
     }
-    (backup_dir / "database" / "dump.json").write_text(json.dumps(dump, ensure_ascii=False), encoding="utf-8")
+    (backup_dir / "data" / "dump.json").write_text(json.dumps(dump, ensure_ascii=False), encoding="utf-8")
 
     report = restore_backup(backup_dir, force=False, database_url=f"sqlite:///{tmp_path / 't.db'}")
     assert report is not None

@@ -180,7 +180,7 @@ def test_create_backup_native_full_flow(tmp_path: Path) -> None:
     with tarfile.open(archive, "r:gz") as tar:
         names = tar.getnames()
         assert "backup/manifest.json" in names
-        assert "backup/database/cndb.db" in names
+        assert "backup/data/cndb.db" in names
         assert "backup/uploads/1/f1.txt" in names
 
         manifest_file = tar.extractfile("backup/manifest.json")
@@ -504,7 +504,7 @@ def test_create_backup_native_embeds_fallback_dump(tmp_path: Path) -> None:
     manifest = json.loads(_read_archive_member(archive, "manifest.json"))
     assert manifest["database"]["fallback_mode"] == "sqlalchemy"
     # dump.json 与 .db 取自同一快照，数据一致
-    dump = json.loads(_read_archive_member(archive, "database/dump.json"))
+    dump = json.loads(_read_archive_member(archive, "data/dump.json"))
     tables = {t["table"]: len(t["rows"]) for t in dump["tables"]}
     assert tables["users"] == 2
     assert tables["posts"] == 3
@@ -521,7 +521,7 @@ def test_create_backup_native_no_fallback(tmp_path: Path) -> None:
     import tarfile
 
     with tarfile.open(archive, "r:gz") as tar:
-        assert "backup/database/dump.json" not in tar.getnames()
+        assert "backup/data/dump.json" not in tar.getnames()
 
 
 # ── SQLite 动态类型 DateTime 列安全转换 ─────────────
@@ -616,7 +616,7 @@ def test_create_backup_native_embeds_fallback_with_datetime(tmp_path: Path) -> N
     manifest = json.loads(_read_archive_member(result, "manifest.json"))
     assert manifest["database"]["fallback_mode"] == "sqlalchemy"
 
-    dump = json.loads(_read_archive_member(result, "database/dump.json"))
+    dump = json.loads(_read_archive_member(result, "data/dump.json"))
     rows = {r["name"]: r for r in dump["tables"][0]["rows"]}
     assert len(rows) == 5
 
@@ -653,7 +653,7 @@ def test_backup_sqlalchemy_dynamic_datetime(tmp_path: Path) -> None:
     manifest = json.loads(_read_archive_member(result, "manifest.json"))
     assert manifest["database"]["backup_mode"] == "sqlalchemy"
 
-    dump = json.loads(_read_archive_member(result, "database/dump.json"))
+    dump = json.loads(_read_archive_member(result, "data/dump.json"))
     rows = {r["name"]: r for r in dump["tables"][0]["rows"]}
     assert rows["unix_int"]["created_at"] == "2024-01-01T00:00:00"
     assert rows["all_empty"]["created_at"] is None
@@ -676,5 +676,5 @@ def test_create_backup_sqlalchemy_unknown_datetime_string(tmp_path: Path) -> Non
     result = create_backup(output=archive, mode="sqlalchemy", database_url=f"sqlite:///{db}", include_uploads=False)
     assert archive.is_file()
 
-    dump = json.loads(_read_archive_member(result, "database/dump.json"))
+    dump = json.loads(_read_archive_member(result, "data/dump.json"))
     assert dump["tables"][0]["rows"][0]["ts"] == "not-a-timestamp"

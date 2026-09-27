@@ -14,7 +14,7 @@
 
     backup-<timestamp>.tar.gz
     ├── manifest.json          # 备份元信息（版本、时间、表清单、文件统计、schema 版本）
-    ├── database/              # 数据库备份
+    ├── data/                  # 数据库备份（与用户数据目录 ~/.cndb/data 同名对应）
     │   ├── cndb.db            # native 模式下的原始文件（SQLite）
     │   └── dump.json          # sqlalchemy 模式下的 JSON 导出
     └── uploads/               # 附件文件目录（按 workspace_id 隔离）
@@ -348,7 +348,7 @@ def _copy_to_directory(source_dir: Path, output_dir: Path) -> None:
     """将 source_dir 完整复制到 output_dir.
 
     output_dir 不存在则创建；存在时要求为空目录，避免与已有文件冲突。
-    目录模式下，manifest.json、database/、uploads/ 直接位于 output_dir 根下。
+    目录模式下，manifest.json、data/、uploads/ 直接位于 output_dir 根下。
     """
     if output_dir.exists():
         if not output_dir.is_dir():
@@ -448,10 +448,10 @@ def create_backup(
     else:
         output = Path(output).resolve()
 
-    # 临时目录：拼装 manifest / database / uploads 后一次性打包
+    # 临时目录：拼装 manifest / data / uploads 后一次性打包
     temp_root = Path(tempfile.mkdtemp(prefix="cndb-backup-"))
     try:
-        db_dir = temp_root / "database"
+        db_dir = temp_root / "data"
         db_dir.mkdir()
 
         manifest = BackupManifest(

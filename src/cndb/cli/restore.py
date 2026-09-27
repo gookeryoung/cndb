@@ -217,9 +217,22 @@ def _reset_sqlite_database(db_path: Path) -> None:
     conn.close()
 
 
+def _extracted_db_dir(extracted_dir: Path) -> Path:
+    """定位备份内的数据库目录.
+
+    新版归档使用 ``data/``（与用户数据目录 ~/.cndb/data 命名一致）；
+    旧版归档使用 ``database/``，恢复时自动回退兼容.
+    """
+    for name in ("data", "database"):
+        candidate = extracted_dir / name
+        if candidate.is_dir():
+            return candidate
+    return extracted_dir / "data"
+
+
 def _restore_sqlite_native(extracted_dir: Path, target_db_path: Path) -> None:
     """native 模式：直接用备份的 .db 文件覆盖目标."""
-    src_db = extracted_dir / "database" / "cndb.db"
+    src_db = _extracted_db_dir(extracted_dir) / "cndb.db"
     if not src_db.is_file():
         raise RestoreError(f"native 备份缺失 cndb.db: {src_db}")
     _reset_sqlite_database(target_db_path)
@@ -238,7 +251,7 @@ def _restore_sqlalchemy_json(extracted_dir: Path, database_url: str) -> RestoreL
     from cndb.core.plugin_registry import plugin_registry
     from cndb.models.base import Base
 
-    dump_file = extracted_dir / "database" / "dump.json"
+    dump_file = _extracted_db_dir(extracted_dir) / "dump.json"
     if not dump_file.is_file():
         raise RestoreError(f"sqlalchemy 备份缺失 dump.json: {dump_file}")
 
