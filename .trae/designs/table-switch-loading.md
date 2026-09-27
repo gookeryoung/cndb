@@ -32,6 +32,7 @@
 - `GridTableSection` 的 `isLoading` prop 改传行数据加载态：`isFetching`（表元数据加载态只用于主内容骨架屏判断）。
 - 主内容容器（`gridAreaRef` 所在 div）加 `key={tableKey}`：切表整块重挂载，清空内部局部状态。
 - 主内容加载分支：表元数据 `isLoading` 时渲染表形状骨架（`TableSkeleton`，本地组件），替换纯文字。
+- `TableSkeleton` 列数对齐：组件接收可选 `columnCount`（估计列数，`columnCount || 6` 兜底）；GridPage 以 ref 记录最近一次已加载表的可见字段数（`hidden` 不计入，useEffect 随 `gridFields` 同步），切表元数据未到时骨架按该参考渲染，冷启动无参考退化 6 列。
 - `ViewFallback`：由居中文字改为与主内容同形状的占位（flex:1 + 骨架条）。
 - 挂载后空闲预取四个非 grid 视图 chunk（`requestIdleCallback`，不支持时 `setTimeout` 退化，卸载时取消）。
 

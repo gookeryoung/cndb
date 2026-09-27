@@ -70,8 +70,10 @@ function ViewFallback() {
   )
 }
 
-/** 表形状骨架屏 —— 表头 + 占位行，与真实表格区域同形状，切换时高度稳定不跳动 */
-function TableSkeleton() {
+/** 表形状骨架屏 —— 表头 + 占位行，与真实表格区域同形状，切换时高度稳定不跳动.
+ *  columnCount 为估计列数（最近一次已加载表的可见字段数）；冷启动无参考时退化为 6. */
+export function TableSkeleton({ columnCount }: { columnCount?: number }) {
+  const cols = columnCount || 6
   return (
     <div
       data-testid="table-skeleton"
@@ -82,13 +84,13 @@ function TableSkeleton() {
       }}
     >
       <div style={{ display: 'flex', gap: 16, padding: '10px 16px', borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-page)' }}>
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: cols }).map((_, i) => (
           <div key={i} style={{ height: 14, borderRadius: 4, background: 'var(--cn-border)', width: `${8 + ((i * 5) % 10)}%` }} />
         ))}
       </div>
       {Array.from({ length: 10 }).map((_, i) => (
         <div key={i} style={{ display: 'flex', gap: 16, padding: '12px 16px', borderBottom: '1px solid var(--cn-border)' }}>
-          {Array.from({ length: 6 }).map((_, j) => (
+          {Array.from({ length: cols }).map((_, j) => (
             <div key={j} style={{ height: 12, borderRadius: 4, background: 'var(--cn-border)', opacity: 0.6, width: `${10 + ((i * 7 + j * 11) % 14)}%` }} />
           ))}
         </div>
@@ -483,6 +485,14 @@ export default function GridPage() {
   })
 
   const gridFields = useMemo(() => (table?.fields || []) as Field[], [table?.fields])
+
+  /** 骨架屏列数参考 —— 记录最近一次已加载表的可见字段数；切表元数据未到（isLoading）时
+   *  TableSkeleton 按它渲染，避免骨架列数与真实表差距过大；冷启动无参考退化为 6. */
+  const lastVisibleFieldsCountRef = useRef(0)
+  useEffect(() => {
+    const n = gridFields.filter(f => !f.hidden).length
+    if (n > 0) lastVisibleFieldsCountRef.current = n
+  }, [gridFields])
 
   /** 计算自动预填锁定的字段集合（新增行场景下，autoFillLocked 开启时生效） */
   const computeLockedFields = useCallback(() => {
@@ -957,7 +967,7 @@ export default function GridPage() {
           key={tableKey}：切表整块重挂载，清空列宽预览等内部局部状态；cn-page-enter 提供切换淡入 */}
       <div key={tableKey} ref={gridAreaRef} className="cn-page-enter" style={{ flex: 1, minHeight: 0, padding: '12px 16px', background: 'var(--cn-bg-page)', display: 'flex', flexDirection: 'column' }}>
         {isLoading ? (
-          <TableSkeleton />
+          <TableSkeleton columnCount={lastVisibleFieldsCountRef.current} />
         ) : mode === 'grid' ? (
           <GridTableSection
             tableRef={tableRef}
