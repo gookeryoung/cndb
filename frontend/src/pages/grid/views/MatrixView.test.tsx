@@ -2,7 +2,7 @@
  * MatrixView 组件测试 —— 矩阵视图.
  *
  * 覆盖：未配置轴字段空态 / 空数据空态 / 纵轴行头与横轴列头渲染（彩色竖条+加粗标题+计数）/
- * 单元格卡片归属与点击回调 / 日期轴分桶粒度。
+ * 左上角标注格轴徽章 / 单元格高度自适应 / 单元格卡片归属与点击回调 / 日期轴分桶粒度。
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -77,6 +77,27 @@ describe('MatrixView 矩阵视图', () => {
     // 区域标题加粗
     for (const h of rowHeaders) {
       expect(h.querySelector('span[style*="font-weight"]')).not.toBeNull()
+    }
+  })
+
+  it('左上角标注格展示纵轴/横轴徽章与字段名', () => {
+    renderMatrix()
+
+    const corner = screen.getByTestId('matrix-corner')
+    expect(screen.getByText('纵轴')).toBeInTheDocument()
+    expect(screen.getByText('横轴')).toBeInTheDocument()
+    expect(corner.textContent).toContain('团队')
+    expect(corner.textContent).toContain('排期日期')
+  })
+
+  it('单元格高度自适应（无 maxHeight 硬上限）', () => {
+    renderMatrix()
+
+    const cells = screen.getAllByTestId('matrix-cell')
+    expect(cells.length).toBeGreaterThan(0)
+    for (const cell of cells) {
+      expect(cell.style.maxHeight).toBe('')
+      expect(cell.style.overflowY).toBe('')
     }
   })
 

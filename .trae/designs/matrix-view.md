@@ -26,9 +26,10 @@
 
 ## 渲染（MatrixView.tsx）
 
-- 布局：左上角「纵轴\横轴」标注格 + 顶部横轴列头行 + 左侧纵轴行头列 + 右侧单元格网格；网格区域独立横向/纵向滚动，行头与列头分别 sticky。
+- 布局：左上角标注格 + 顶部横轴列头行 + 左侧纵轴行头列 + 右侧单元格网格；网格区域独立横向/纵向滚动，行头与列头分别 sticky。
+- 左上角标注格：两行「纵轴/横轴」主题色徽章（brand 色 12% 淡染 chip）+ 加粗字段名，底色为 brand 色 7% 淡染（color-mix + var(--cn-*)，随主题切换），突出方位语义。
 - 区域标题：`MatrixAxisHeader` 组件统一渲染 —— 左侧 4px 圆角彩色竖条 + 加粗标题 + 数量徽章；纵轴行头与横轴列头复用，颜色按索引循环调色板（复用 `resolveTagColor` 同源色板）。
-- 单元格：渲染该格全部行卡片（title_field 格式化值，density 控制间距），点击卡片触发 onRowClick 打开行详情；空单元格淡色底。
+- 单元格：渲染该格全部行卡片（title_field 格式化值，density 控制间距），点击卡片触发 onRowClick 打开行详情；空单元格淡色底。单元格高度随内容自适应（不设 maxHeight/内部滚动），CSS Grid 行轨道高度由该行最高单元格决定；纵轴行头垂直居中。
 - density 三档（compact/comfortable/spacious）影响卡片 padding 与字号，参照 KanbanView 密度映射模式。
 
 ## 后端
@@ -62,7 +63,7 @@
 ## 测试
 
 - `matrixBoard.test.ts`：分桶粒度、分组 key 类型分派、桶排序、空值归组。
-- `MatrixView.test.tsx`：轴头渲染（竖条+加粗）、单元格卡片归属、点击回调、未配置空态。
+- `MatrixView.test.tsx`：轴头渲染（竖条+加粗）、左上角标注格轴徽章与字段名、单元格高度自适应（无 maxHeight/overflowY 硬上限）、单元格卡片归属、点击回调、未配置空态。
 - 后端：视图创建校验用例覆盖 row_field/column_field 不存在返回 400。
 - seed 回归：test_backup_seed_roundtrip、test_seed_report_examples 不受新增数据集影响。
 
