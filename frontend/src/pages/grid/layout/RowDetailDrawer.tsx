@@ -159,7 +159,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   {f.name}
                   {locked && (
-                    <Tooltip title="此字段为自动预填，已锁定（可在个人设置 > 操作风格中关闭）">
+                    <Tooltip title="此字段为自动预填，已锁定（可在个人设置 > 表格 > 操作风格中关闭）">
                       <LockOutlined style={{ fontSize: 11, color: '#bfbfbf' }} />
                     </Tooltip>
                   )}

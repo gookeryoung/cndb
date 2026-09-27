@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
-import { useAuthStore } from '@/store'
+import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 
 // Modal 组件 lazy import：点击打开时才加载
@@ -36,7 +36,10 @@ export default function MainLayout() {
   const { isMobile } = useResponsive()
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsOpen = useUiStore(s => s.settingsOpen)
+  const settingsTab = useUiStore(s => s.settingsTab)
+  const openSettings = useUiStore(s => s.openSettings)
+  const closeSettings = useUiStore(s => s.closeSettings)
   const [helpOpen, setHelpOpen] = useState(false)
   const [searchParams] = useSearchParams()
 
@@ -95,7 +98,7 @@ export default function MainLayout() {
   const userMenuItems: MenuProps['items'] = [
     { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
     { type: 'divider' },
-    { key: 'settings', icon: <SettingOutlined />, label: '个人设置', onClick: () => setSettingsOpen(true) },
+    { key: 'settings', icon: <SettingOutlined />, label: '个人设置', onClick: () => openSettings() },
     { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: onLogout },
   ]
@@ -251,7 +254,7 @@ export default function MainLayout() {
       </Layout>
 
       <Suspense fallback={<ModalFallback />}>
-        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <SettingsModal open={settingsOpen} initialTab={settingsTab} onClose={closeSettings} />
       </Suspense>
 
       <Suspense fallback={<ModalFallback />}>

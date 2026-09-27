@@ -11,7 +11,6 @@
  *     ├─ ColumnFilterDropdown.tsx — 列级筛选下拉
  *     ├─ PermissionEditor.tsx    — 权限编辑器
  *     ├─ MoveTableForm.tsx       — 移动表表单
- *     ├─ TableSettingsDialog.tsx — 全局显示设置
  *     ├─ buildColumns.tsx        — Grid 列构建函数
  *     ├─ fieldOps.ts             — 字段操作符常量（统一真相源）
  *     └─ fieldValueFormat.ts     — 字段值格式化工具
@@ -33,14 +32,13 @@ import type { ID, RowValues, Field, RowResponse, View, ViewCreate } from '@/api'
 import RowDetailDrawer from './layout/RowDetailDrawer'
 import ViewConfigDialog, { type FilterRule, type SortRule } from './view-config/ViewConfigDialog'
 import MoveTableForm from './layout/MoveTableForm'
-import TableSettingsDialog from './view-config/TableSettingsDialog'
 import TableSettingsModal from '@/pages/settings/TableSettingsModal'
 import { buildColumns, type RowInlineOps, type InlineEditCellProps } from './cells/buildColumns'
 import { useNewRowAutoScroll, type TableScrollTarget } from './cells/useNewRowAutoScroll'
 import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCellValueForEdit } from './cells/GridCell'
 import { defaultValueForNewRow } from './cells/fieldOps'
 import { type ViewMode, VALID_MODES, deriveModeSwitch } from './views/viewModes'
-import { useTableSettingsStore, useGridViewStore } from '@/store'
+import { useTableSettingsStore, useGridViewStore, useUiStore } from '@/store'
 import { useElementSize, useDebouncedCallback } from '@/hooks'
 import GridToolbar from './gridToolbar'
 import GridViewBar from './gridViewBar'
@@ -155,7 +153,14 @@ export default function GridPage() {
     setLimit(settings.defaultPageSize)
   }, [wid, tid]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const openSettings = useUiStore(s => s.openSettings)
+
+  // 「每页行数」全局偏好变更时同步分页状态（个人设置即时生效，不再有保存回调）
+  useEffect(() => {
+    setLimit(settings.defaultPageSize)
+    setOffset(0)
+  }, [settings.defaultPageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailRow, setDetailRow] = useState<RowResponse | null>(null)
@@ -902,7 +907,7 @@ export default function GridPage() {
         onDelete={() => activeViewId != null && removeView.mutate(String(activeViewId))}
         onImport={() => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) }}
         onOpenViewConfig={() => setViewConfigOpen(true)}
-        onOpenDisplaySettings={() => setSettingsOpen(true)}
+        onOpenTableSettings={() => openSettings('table')}
       />
 
       {/* 主内容 — flex:1 占满剩余空间，overflow:hidden 交给内部 Table 的虚拟滚动 */}
@@ -1087,13 +1092,6 @@ export default function GridPage() {
       >
         <MoveTableForm currentWid={wid!} />
       </Modal>
-
-      {/* 表格显示设置 Modal — 全局生效 */}
-      <TableSettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onAfterSave={() => { setLimit(settings.defaultPageSize); setOffset(0) }}
-      />
 
       {/* 新增行 & 整行编辑改用行内编辑（见 buildColumns inlineOps / 操作列），不再使用弹窗 */}
 

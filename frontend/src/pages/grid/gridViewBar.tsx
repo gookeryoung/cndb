@@ -65,7 +65,8 @@ interface GridViewBarProps {
   onDelete: () => void
   onImport: () => void
   onOpenViewConfig: () => void
-  onOpenDisplaySettings: () => void
+  /** 打开「个人设置 → 表格」页签（显示模式与操作风格全局快捷入口） */
+  onOpenTableSettings: () => void
 }
 
 /** 根据可滚动容器的 scrollLeft / scrollWidth / clientWidth 计算左右两端是否可继续滚动. */
@@ -81,7 +82,7 @@ export default function GridViewBar({
   wid, tid, views, activeViewId, mode, modeButtons, showModeSwitch,
   hasFilters, hasSorts, searchQuery, onSearchChange, onSelectView, onModeChange, onDragEnd,
   onCreate, onEdit, onDelete, onImport,
-  onOpenViewConfig, onOpenDisplaySettings,
+  onOpenViewConfig, onOpenTableSettings,
 }: GridViewBarProps) {
   const { message } = AntApp.useApp()
   const viewDragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
@@ -339,12 +340,12 @@ export default function GridViewBar({
             onClick={onOpenViewConfig}
           />
         </Tooltip>
-        <Tooltip title="显示模式：设置行密度、边框、斑马纹等（对所有视图生效）">
+        <Tooltip title="表格设置：显示模式与操作风格（全局偏好，在个人设置中维护）">
           <Button
             size="small"
             icon={<SettingOutlined />}
             data-testid="display-settings-btn"
-            onClick={onOpenDisplaySettings}
+            onClick={onOpenTableSettings}
           />
         </Tooltip>
       </div>
