@@ -21,6 +21,35 @@ from typing import Any
 from sqlalchemy import MetaData, select
 
 
+def _set_seed_sqlite_pragmas(engine: Any) -> Any:
+    """seed 加速：SQLite 连接建立时关闭 fsync（synchronous=OFF），返回监听器句柄.
+
+    seed 为一次性批量重建演示库场景，崩溃安全性由"重建即覆盖"语义兜底；
+    关闭 fsync 后逐条写入从 ~2ms/条（每次独立事务刷盘）降到 ~0.3ms/条。
+    非 SQLite 方言（PostgreSQL 等）无操作，返回 None。
+    """
+    from sqlalchemy import event
+
+    if engine.dialect.name != "sqlite":
+        return None
+
+    def _set_pragma(dbapi_conn: Any, _record: Any) -> None:
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA synchronous=OFF")
+        cursor.close()
+
+    event.listen(engine, "connect", _set_pragma)
+    return _set_pragma
+
+
+def _remove_seed_sqlite_pragmas(engine: Any, handler: Any) -> None:
+    """移除 _set_seed_sqlite_pragmas 注册的连接监听器（handler 为 None 时无操作）."""
+    from sqlalchemy import event
+
+    if handler is not None:
+        event.remove(engine, "connect", handler)
+
+
 def _get_datasets_dir() -> Path | None:
     """定位 datasets 目录（包内优先，fallback 仓库根，均找不到则返回 None 优雅降级）.
 
@@ -1690,6 +1719,7 @@ def seed(_args: argparse.Namespace) -> None:
     # 触发所有插件 register_models，确保 Base.metadata 完整注册
     plugin_registry.discover_and_load()
 
+    seed_pragma_handler = _set_seed_sqlite_pragmas(engine)
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     # 补写 alembic_version（seed 自行建表绕过了迁移），避免 serve 启动时
@@ -1808,3 +1838,4 @@ def seed(_args: argparse.Namespace) -> None:
         )
     finally:
         db.close()
+        _remove_seed_sqlite_pragmas(engine, seed_pragma_handler)
