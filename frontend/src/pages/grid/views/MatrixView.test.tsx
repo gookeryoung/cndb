@@ -93,18 +93,18 @@ describe('MatrixView 矩阵视图', () => {
   it('列方向色相透明色区分，轴区中性底与行细实线', () => {
     renderMatrix()
 
-    // 列头：按列索引取 8 色板色相 12% 混入 bg-subtle（不透明，sticky 不透底），不同列色相不同
+    // 列头：按列索引取 8 色板色相 20% 混入 bg-subtle（不透明，sticky 不透底），不同列色相不同
     const colHeads = screen.getAllByTestId('matrix-col-header')
     expect(colHeads).toHaveLength(2)
     for (const h of colHeads) {
       expect(h.style.background).toContain('color-mix')
-      expect(h.style.background).toContain('12%')
+      expect(h.style.background).toContain('20%')
       expect(h.style.background).toContain('var(--cn-bg-subtle)')
       expect(h.style.borderBottom).toBe('1px solid var(--cn-border)')
     }
     expect(colHeads[0].style.background).not.toBe(colHeads[1].style.background)
 
-    // 数据格：列色相透明淡染贯通（hex15 半透明，同甘特分组模式），空格同色列带连贯，无列间竖线
+    // 数据格：列色相透明淡染贯通（hex26 ≈15%，浓度高于甘特行背景档以区分相邻色相），空格同色列带连贯，无列间竖线
     const cells = screen.getAllByTestId('matrix-cell')
     expect(cells).toHaveLength(6)
     const col0 = cells.filter((_, i) => i % 2 === 0)
