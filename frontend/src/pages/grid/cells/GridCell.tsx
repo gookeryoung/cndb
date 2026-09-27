@@ -106,7 +106,7 @@ export default function GridCell({ value, field, rowId, wid, onSave, editing: co
     // 自动填充锁定开启时，预填字段只读 —— 直接展示 DisplayCell 并加锁图标/提示
     if (readOnly) {
       return (
-        <Tooltip title="此字段为自动预填，已锁定（可在个人设置 > 操作风格中关闭）">
+        <Tooltip title="此字段为自动预填，已锁定（可在个人设置 > 表格 > 操作风格中关闭）">
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, width: '100%' }}>
             <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
             <LockOutlined style={{ fontSize: 10, color: '#bfbfbf', marginLeft: 2 }} />

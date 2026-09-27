@@ -1,4 +1,4 @@
-/** 用户设置面板 — 用户资料 + 主题（配色/字体）+ 操作风格. */
+/** 用户设置面板 — 用户资料 + 主题（配色/字体）+ 表格（显示/操作）. */
 
 import { useEffect } from 'react'
 import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App } from 'antd'
@@ -7,13 +7,15 @@ import {
   THEME_META, THEME_MODES, FONT_SCALES, FONT_SCALE_META,
   type ThemeMode,
 } from '@/theme/theme'
-import { useTableSettingsStore, useAuthStore } from '@/store'
+import { useTableSettingsStore, useAuthStore, type SettingsTab } from '@/store'
 import { authApi } from '@/api'
-import type { NewRowPosition } from '@/theme/tableSettings'
+import type { Density, NewRowPosition } from '@/theme/tableSettings'
 
 interface Props {
   open: boolean
   onClose: () => void
+  /** 打开时定位的页签（Modal destroyOnHidden，每次打开重新挂载生效） */
+  initialTab?: SettingsTab
 }
 
 /** 每个主题对应的色板（展示用，不影响实际渲染） */
@@ -234,11 +236,18 @@ function ThemePanel() {
   )
 }
 
-/** 操作风格分页内容 */
-function OperationPanel() {
+/** 表格分页内容 — 显示模式（全局偏好）+ 操作风格，全部即时生效并持久化到浏览器 */
+function TablePanel() {
+  const { message } = App.useApp()
+  const density = useTableSettingsStore(s => s.density)
+  const defaultPageSize = useTableSettingsStore(s => s.defaultPageSize)
+  const bordered = useTableSettingsStore(s => s.bordered)
+  const showHeader = useTableSettingsStore(s => s.showHeader)
+  const striped = useTableSettingsStore(s => s.striped)
   const newRowPosition = useTableSettingsStore(s => s.newRowPosition)
   const autoFillLocked = useTableSettingsStore(s => s.autoFillLocked)
   const updateSettings = useTableSettingsStore(s => s.updateSettings)
+  const resetSettings = useTableSettingsStore(s => s.resetSettings)
 
   const positionOptions: Array<{ value: NewRowPosition; label: string; description: string }> = [
     { value: 'top', label: '表格顶部', description: '新增行作为第一条数据显示在表格开头' },
@@ -246,10 +255,75 @@ function OperationPanel() {
     { value: 'page', label: '页面尾部', description: '新增行追加到当前可见页的末尾' },
   ]
 
+  const densityOptions: Array<{ value: Density; label: string }> = [
+    { value: 'compact', label: '紧凑' },
+    { value: 'comfortable', label: '适中' },
+    { value: 'spacious', label: '宽松' },
+  ]
+
   return (
     <div style={{ padding: '12px 0' }}>
+      <div style={{ marginBottom: 12 }}>
+        <Text strong style={{ fontSize: 14 }}>显示模式</Text>
+        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+          全局生效，适用于所有数据表
+        </Text>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
+        <Text style={{ fontSize: 13 }}>间距</Text>
+        <Select
+          data-testid="density-select"
+          value={density}
+          onChange={(v: Density) => updateSettings({ density: v })}
+          style={{ width: 120 }}
+          options={densityOptions}
+        />
+        <Text style={{ fontSize: 13 }}>每页行数</Text>
+        <Select
+          data-testid="page-size-select"
+          value={defaultPageSize}
+          onChange={(v: number) => updateSettings({ defaultPageSize: v })}
+          style={{ width: 120 }}
+          options={[25, 50, 100, 200].map(n => ({ value: n, label: `${n} 条` }))}
+        />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 24, margin: '8px 0 4px' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+          <Switch
+            size="small"
+            data-testid="bordered-switch"
+            checked={bordered}
+            onChange={(v) => updateSettings({ bordered: v })}
+          />
+          <span>边框</span>
+        </label>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+          <Switch
+            size="small"
+            data-testid="show-header-switch"
+            checked={showHeader}
+            onChange={(v) => updateSettings({ showHeader: v })}
+          />
+          <span>表头</span>
+        </label>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+          <Switch
+            size="small"
+            data-testid="striped-switch"
+            checked={striped}
+            onChange={(v) => updateSettings({ striped: v })}
+          />
+          <span>斑马纹</span>
+        </label>
+      </div>
+      <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 4, marginBottom: 20 }}>
+        边框 / 表头 / 斑马纹仅对表格视图生效；间距同样影响看板、画廊、日历的卡片密度
+      </div>
+
       <div style={{ marginBottom: 16 }}>
-        <Text strong style={{ fontSize: 14 }}>表格操作</Text>
+        <Text strong style={{ fontSize: 14 }}>操作风格</Text>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
@@ -277,11 +351,19 @@ function OperationPanel() {
       <div style={{ fontSize: 12, color: '#8c8c8c', marginLeft: 0, marginTop: 4 }}>
         开启后，新增行时由默认值或自动填充规则预填的字段将设为只读，避免误修改，提高录入速度
       </div>
+
+      <Button
+        size="small"
+        style={{ marginTop: 20 }}
+        onClick={() => { resetSettings(); message.info('已恢复表格设置为默认值') }}
+      >
+        恢复默认
+      </Button>
     </div>
   )
 }
 
-export default function SettingsModal({ open, onClose }: Props) {
+export default function SettingsModal({ open, onClose, initialTab }: Props) {
   return (
     <Modal
       title="个人设置"
@@ -292,10 +374,11 @@ export default function SettingsModal({ open, onClose }: Props) {
       destroyOnHidden
     >
       <Tabs
+        defaultActiveKey={initialTab ?? 'profile'}
         items={[
           { key: 'profile', label: '用户资料', children: <ProfilePanel /> },
           { key: 'theme', label: '主题', children: <ThemePanel /> },
-          { key: 'operation', label: '操作风格', children: <OperationPanel /> },
+          { key: 'table', label: '表格', children: <TablePanel /> },
         ]}
       />
     </Modal>
