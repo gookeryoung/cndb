@@ -90,24 +90,30 @@ describe('MatrixView 矩阵视图', () => {
     expect(corner.textContent).toContain('排期日期')
   })
 
-  it('轴区淡染与数据区分界（透明度底色 + 同色相分界线）', () => {
+  it('轴区纵横双色淡染与分轴分界线', () => {
     renderMatrix()
 
-    // 行头/列头统一 4% 品牌淡染，角格 7% 更重（自角向外层次衰减）
+    // 纵轴行头复用品牌色 4% 淡染，横轴列头用独立轴色 4% 淡染，角格上下双色分段 7%
     for (const h of screen.getAllByTestId('matrix-row-header')) {
       expect(h.style.background).toContain('4%')
+      expect(h.style.background).toContain('var(--cn-brand-color)')
     }
     for (const h of screen.getAllByTestId('matrix-col-header')) {
       expect(h.style.background).toContain('4%')
+      expect(h.style.background).toContain('var(--cn-axis-col-color)')
     }
-    expect(screen.getByTestId('matrix-corner').style.background).toContain('7%')
+    const corner = screen.getByTestId('matrix-corner')
+    expect(corner.style.backgroundImage).toContain('linear-gradient')
+    expect(corner.style.backgroundImage).toContain('7%')
+    expect(corner.style.borderBottom).toContain('var(--cn-axis-col-color)')
+    expect(corner.style.borderRight).toContain('var(--cn-brand-color)')
 
-    // 轴区内侧分界线为品牌色混入边框色（与淡染同色相）
+    // 轴区内侧分界线随所在轴着色
     for (const h of screen.getAllByTestId('matrix-col-header')) {
-      expect(h.style.borderBottom).toContain('color-mix')
+      expect(h.style.borderBottom).toContain('var(--cn-axis-col-color)')
     }
     for (const h of screen.getAllByTestId('matrix-row-header')) {
-      expect(h.style.borderRight).toContain('color-mix')
+      expect(h.style.borderRight).toContain('var(--cn-brand-color)')
     }
 
     // 数据单元格显式 container 白底与轴区对比；空单元格保持中性弱底
@@ -118,6 +124,46 @@ describe('MatrixView 矩阵视图', () => {
     expect(empty.length).toBeGreaterThan(0)
     for (const c of filled) expect(c.style.background).toBe('var(--cn-bg-container)')
     for (const c of empty) expect(c.style.background).toBe('var(--cn-bg-page)')
+  })
+
+  it('未分组虚线边界与数据列间淡竖线', () => {
+    renderMatrix({
+      rows: [
+        ...ROWS,
+        { id: 4, 任务名称: '无团队任务', 团队: null, 排期日期: '2026-07-10' },
+        { id: 5, 任务名称: '无日期任务', 团队: '研发组', 排期日期: null },
+      ] as unknown as RowResponse[],
+    })
+
+    // 3 列（2026-07 / 2026-08 / 未分组）× 4 行（含未分组行）= 12 格，行内按列序排列
+    const cells = screen.getAllByTestId('matrix-cell')
+    expect(cells).toHaveLength(12)
+
+    // 「未分组」列：列头与各格左缘虚线（横轴色）
+    const udgColHeader = screen.getAllByTestId('matrix-col-header')
+      .find((h) => h.textContent!.includes('未分组'))
+    expect(udgColHeader).toBeDefined()
+    expect(udgColHeader!.style.borderLeft).toContain('dashed')
+    for (let i = 2; i < cells.length; i += 3) {
+      expect(cells[i].style.borderLeft).toContain('dashed')
+    }
+
+    // 「未分组」行：行头与各格上缘虚线（纵轴色）
+    const udgRowHeader = screen.getAllByTestId('matrix-row-header')
+      .find((h) => h.textContent!.includes('未分组'))
+    expect(udgRowHeader).toBeDefined()
+    expect(udgRowHeader!.style.borderTop).toContain('dashed')
+    for (let i = 9; i < cells.length; i += 1) {
+      expect(cells[i].style.borderTop).toContain('dashed')
+    }
+
+    // 数据列间淡竖线：首列无 borderLeft（行头右缘分界线覆盖），其余列 1px solid
+    for (let i = 0; i < cells.length; i += 3) {
+      expect(cells[i].style.borderLeft).toBe('')
+    }
+    for (let i = 1; i < cells.length; i += 3) {
+      expect(cells[i].style.borderLeft).toContain('1px solid')
+    }
   })
 
   it('单元格高度自适应（无 maxHeight 硬上限）', () => {
