@@ -289,6 +289,23 @@
         "group_field": "经费状态"
       },
       "order": 5
+    },
+    {
+      "name": "经费投入矩阵",
+      "view_type": "matrix",
+      "sortings": [
+        {
+          "field_name": "拨付日期",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "row_field": "项目类别",
+        "column_field": "拨付日期",
+        "date_granularity": "year",
+        "title_field": "预算科目"
+      },
+      "order": 6
     }
   ],
   "项目进展": [

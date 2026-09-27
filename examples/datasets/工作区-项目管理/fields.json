@@ -1,0 +1,9 @@
+{
+  "settings": {
+    "资源排期": {
+      "排期编号": {"required": true, "unique": true}
+    }
+  },
+  "link_lookups": [],
+  "backfills": []
+}

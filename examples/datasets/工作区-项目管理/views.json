@@ -1,5 +1,5 @@
 {
-  "_comment": "项目管理视图种子配置：WBS 任务分解表支持 WBS（工作分解结构）/Gantt/Kanban/Calendar 四种核心视图形态。WBS 视图通过 parent_field=父任务ID 字段构建层级树，父节点进度自动由子节点汇总。",
+  "_comment": "项目管理视图种子配置：WBS 任务分解表支持 WBS（工作分解结构）/Gantt/Kanban/Calendar 四种核心视图形态。WBS 视图通过 parent_field=父任务ID 字段构建层级树，父节点进度自动由子节点汇总。资源排期表提供矩阵视图典型示例（纵轴团队 × 横轴日期）。",
   "WBS任务分解": [
     {
       "name": "全部任务",
@@ -143,6 +143,48 @@
         "group_field": "任务状态"
       },
       "order": 7
+    }
+  ],
+  "资源排期": [
+    {
+      "name": "全部排期",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "排期日期",
+          "direction": "asc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "资源排期矩阵",
+      "view_type": "matrix",
+      "sortings": [
+        {
+          "field_name": "排期日期",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "row_field": "团队",
+        "column_field": "排期日期",
+        "date_granularity": "week",
+        "title_field": "任务名称"
+      },
+      "order": 1
+    },
+    {
+      "name": "团队月度投入矩阵",
+      "view_type": "matrix",
+      "view_options": {
+        "row_field": "团队",
+        "column_field": "排期日期",
+        "date_granularity": "month",
+        "title_field": "任务名称"
+      },
+      "order": 2
     }
   ]
 }

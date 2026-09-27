@@ -67,6 +67,41 @@ class TestViewsAPI:
         assert data["view_type"] == "grid"
         assert data["is_default"] is True
 
+    def test_create_matrix_view_ok(self, client, ws, table, auth_owner):
+        """矩阵视图：row_field/column_field 引用存在字段时应创建成功."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "排期矩阵",
+                "view_type": "matrix",
+                "view_options": {
+                    "row_field": "姓名",
+                    "column_field": "姓名",
+                    "date_granularity": "month",
+                    "title_field": "姓名",
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 201
+        data = r.json()
+        assert data["view_type"] == "matrix"
+        assert data["view_options"]["row_field"] == "姓名"
+
+    def test_create_matrix_view_invalid_axis_field(self, client, ws, table, auth_owner):
+        """矩阵视图：轴字段引用不存在字段时应返回 400."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "坏轴矩阵",
+                "view_type": "matrix",
+                "view_options": {"row_field": "姓名", "column_field": "不存在字段"},
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "column_field" in r.json()["detail"]
+
     def test_list_views(self, client, ws, table, auth_owner):
         # 先创建两个
         client.post(

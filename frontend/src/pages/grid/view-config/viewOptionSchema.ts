@@ -216,6 +216,34 @@ export const WBS_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
+/** Matrix 矩阵视图的专属配置字段（共 4 项） */
+export const MATRIX_OPTIONS: ViewOptionSchema[] = [
+  {
+    key: 'row_field', label: '纵轴字段', group: '轴字段', tooltip: '左侧纵向分类（如团队、课题方向）',
+    kind: 'field_select', fieldTypes: ['select', 'multiselect', 'link', 'text', 'longtext', 'date', 'datetime'], required: true,
+  },
+  {
+    key: 'column_field', label: '横轴字段', group: '轴字段', tooltip: '顶部横向分类（如日期、年度、状态）',
+    kind: 'field_select', fieldTypes: ['select', 'multiselect', 'link', 'text', 'longtext', 'date', 'datetime'], required: true,
+  },
+  {
+    key: 'date_granularity', label: '日期分桶粒度', group: '轴字段',
+    tooltip: '轴字段为日期时按此粒度分桶（年/季度/月/周/日）',
+    kind: 'enum_select', defaultValue: 'month',
+    enumOptions: [
+      { value: 'year', label: '年' },
+      { value: 'quarter', label: '季度' },
+      { value: 'month', label: '月' },
+      { value: 'week', label: '周' },
+      { value: 'day', label: '日' },
+    ],
+  },
+  {
+    key: 'title_field', label: '卡片标题字段', group: '显示', tooltip: '单元格卡片显示的文字；留空取主键字段',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
+  },
+]
+
 /** 按 view_type 名返回 option schema 列表 */
 export function getOptionSchema(viewType: string): ViewOptionSchema[] {
   switch (viewType) {
@@ -223,6 +251,7 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
     case 'calendar': return CALENDAR_OPTIONS
     case 'gantt': return GANTT_OPTIONS
     case 'wbs': return WBS_OPTIONS
+    case 'matrix': return MATRIX_OPTIONS
     default: return []
   }
 }
