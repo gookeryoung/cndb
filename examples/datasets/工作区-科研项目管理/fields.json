@@ -21,21 +21,44 @@
       "source_table": "科研项目",
       "link_name": "关联课题",
       "multiple": false,
-      "fields": ["项目名称", "立项年份", "经费总额_万元"]
+      "fields": ["项目名称", "立项年份", "经费总额_万元"],
+      "match": {"local": "课题编号", "source": "课题编号"}
     },
     {
       "table": "项目进展",
       "source_table": "科研项目",
       "link_name": "关联课题",
       "multiple": false,
-      "fields": ["项目名称", "承担单位", "项目类别"]
+      "fields": ["项目名称", "承担单位", "项目类别"],
+      "match": {"local": "课题编号", "source": "课题编号"}
     },
     {
       "table": "科研经费",
       "source_table": "科研项目",
       "link_name": "关联课题",
       "multiple": false,
-      "fields": ["项目名称", "承担单位", "立项年份"]
+      "fields": ["项目名称", "承担单位", "立项年份"],
+      "match": {"local": "课题编号", "source": "课题编号"}
+    }
+  ],
+  "backfills": [
+    {
+      "table": "课题负责人",
+      "source_table": "科研项目",
+      "fields": ["项目状态"],
+      "match": {"local": "课题编号", "source": "课题编号"}
+    },
+    {
+      "table": "项目进展",
+      "source_table": "科研项目",
+      "fields": ["项目状态", "立项年份"],
+      "match": {"local": "课题编号", "source": "课题编号"}
+    },
+    {
+      "table": "科研经费",
+      "source_table": "科研项目",
+      "fields": ["项目状态", "项目类别"],
+      "match": {"local": "课题编号", "source": "课题编号"}
     }
   ]
 }
