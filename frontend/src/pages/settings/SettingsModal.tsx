@@ -128,16 +128,18 @@ function ProfilePanel() {
         layout="vertical"
         onFinish={handleSave}
       >
-        {/* 用户名/昵称/邮箱同行紧凑排布；用户名只读 */}
+        {/* 用户名/昵称/邮箱同行紧凑排布；用户名只读。
+            说明文字统一用 Text secondary 12px（与主题/表格页签提示一致），
+            不用 Form.Item extra（其默认色为 colorTextDescription，比其他提示浅） */}
         <div style={{ display: 'flex', gap: 12 }}>
-          <Form.Item
-            name="username"
-            label="用户名"
-            extra="注册后不可修改"
-            style={{ flex: 1, minWidth: 0, marginBottom: 12 }}
-          >
-            <Input disabled />
-          </Form.Item>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Form.Item name="username" label="用户名" style={{ marginBottom: 0 }}>
+              <Input disabled />
+            </Form.Item>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+              注册后不可修改
+            </Text>
+          </div>
           <Form.Item
             name="nickname"
             label="昵称"
@@ -210,6 +212,9 @@ function ThemePanel() {
 
       <div style={{ marginTop: 20, marginBottom: 12 }}>
         <Text strong style={{ fontSize: 14 }}>字体</Text>
+        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+          即时生效，自动保存到浏览器
+        </Text>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -230,7 +235,6 @@ function ThemePanel() {
             onChange={setFontBold}
           />
         </div>
-        <Text type="secondary" style={{ fontSize: 12 }}>即时生效，自动保存到浏览器</Text>
       </div>
     </div>
   )
@@ -285,11 +289,11 @@ function TablePanel() {
           options={[25, 50, 100, 200].map(n => ({ value: n, label: `${n} 条` }))}
         />
       </div>
-      <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 4, marginBottom: 20 }}>
+      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4, marginBottom: 20 }}>
         间距同样影响看板、画廊、日历的卡片密度
-      </div>
+      </Text>
 
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 12 }}>
         <Text strong style={{ fontSize: 14 }}>操作风格</Text>
       </div>
 
@@ -302,9 +306,9 @@ function TablePanel() {
           options={positionOptions.map(o => ({ value: o.value, label: o.label }))}
         />
       </div>
-      <div style={{ fontSize: 12, color: '#8c8c8c', marginLeft: 0, marginTop: 4, marginBottom: 16 }}>
+      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4, marginBottom: 16 }}>
         {positionOptions.find(o => o.value === newRowPosition)?.description}
-      </div>
+      </Text>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 4 }}>
         <Text style={{ fontSize: 13 }}>自动填充锁定</Text>
@@ -315,9 +319,9 @@ function TablePanel() {
           unCheckedChildren="关闭"
         />
       </div>
-      <div style={{ fontSize: 12, color: '#8c8c8c', marginLeft: 0, marginTop: 4 }}>
+      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
         开启后，新增行时由默认值或自动填充规则预填的字段将设为只读，避免误修改，提高录入速度
-      </div>
+      </Text>
 
       <Button
         size="small"
