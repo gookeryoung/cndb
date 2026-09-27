@@ -4,9 +4,9 @@
  * - 纵轴行头与横轴列头复用 MatrixAxisHeader —— 4px 圆角彩色竖条 + 加粗标题 + 数量徽章；
  *   竖条颜色按索引从 antd v5 官方预设主色循环取色（行列各算一组）。
  * - 配色基础对齐其他视图：角格/行头列/列头行等轴区结构底色用中性 var(--cn-bg-subtle)，
- *   边框为普通 1px var(--cn-border)；列方向用 8 色板色相透明色区分（列头 12% 混 bg-subtle，
- *   数据格 `${hex}15` 半透明，同甘特分组模式，空格同色使列带连贯）；行方向用 1px 细实线区分
- *   （数据格 borderBottom，行头 borderBottom 贯通）。
+ *   边框为普通 1px var(--cn-border)；列方向用 8 色板色相透明色区分（列头 20% 混 bg-subtle，
+ *   数据格 `${hex}26` ≈15% 半透明——整列长带浓度须高于甘特小面积行背景 8% 档，空格同色使列带连贯）；
+ *   行方向用 1px 细实线区分（数据格 borderBottom，行头 borderBottom 贯通）。
  * - 左上角标注格展示「纵轴/横轴」主题色徽章 + 加粗字段名。
  * - 布局为 CSS Grid：首列行头 sticky left、首行列头 sticky top，左上角标注格双向 sticky；
  *   网格区域独立滚动，行头/列头在滚动时保持可见。
@@ -48,10 +48,12 @@ const axisColor = (index: number): string => AXIS_COLORS[index % AXIS_COLORS.len
 // 配色对齐其他视图（参考甘特/看板表头与甘特分组 `${color}15` 透明色模式）：
 // - 轴区结构底色用中性 var(--cn-bg-subtle)，边框回归普通 1px var(--cn-border)
 // - 列方向区分：每列（列头 + 数据格）按列索引取 8 色板色相的透明淡染；列头 sticky 需不透明，
-//   用 color-mix 混入 bg-subtle；数据格非 sticky，直接用 `${hex}15` 半透明（与其他视图同款）
+//   用 color-mix 混入 bg-subtle；数据格非 sticky，直接用 hex alpha 后缀。
+//   浓度档位：甘特 `${color}15`（≈8%）是小面积行背景，整列长带需更高浓度才能区分相邻色相
+//   （8% 下蓝/青、绿/青 ΔRGB<6 不可辨）——数据格 `hex26`（≈15%）、列头 20% 保持表头深一档
 // - 行方向区分：行间 1px 细实线（数据格 borderBottom，行头 borderBottom 贯通）
-const COL_HEADER_BG = (hex: string) => `color-mix(in srgb, ${hex} 12%, var(--cn-bg-subtle))`
-const CELL_BG = (hex: string) => `${hex}15`
+const COL_HEADER_BG = (hex: string) => `color-mix(in srgb, ${hex} 20%, var(--cn-bg-subtle))`
+const CELL_BG = (hex: string) => `${hex}26`
 
 /** 密度 → 单元格卡片间距/字号 */
 function densityCardStyle(density: Density) {
