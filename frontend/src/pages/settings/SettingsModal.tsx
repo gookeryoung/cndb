@@ -5,6 +5,7 @@ import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, Ap
 import { useTheme } from '@/theme/ThemeProvider'
 import {
   THEME_META, THEME_MODES, FONT_SCALES, FONT_SCALE_META,
+  DEFAULT_FONT_SETTINGS, DEFAULT_THEME_MODE,
   type ThemeMode,
 } from '@/theme/theme'
 import { useTableSettingsStore, useAuthStore, type SettingsTab } from '@/store'
@@ -168,7 +169,17 @@ function ProfilePanel() {
 
 /** 主题分页内容 — 配色 + 字体 */
 function ThemePanel() {
+  const { message } = App.useApp()
   const { mode, setMode, font, setFontScale, setFontBold } = useTheme()
+
+  // 恢复默认：复用既有 setter 即时持久化（主题 modern / 字号标准 / 不加粗）
+  const handleReset = () => {
+    setMode(DEFAULT_THEME_MODE)
+    setFontScale(DEFAULT_FONT_SETTINGS.scale)
+    setFontBold(DEFAULT_FONT_SETTINGS.bold)
+    message.info('已恢复主题设置为默认值')
+  }
+
   return (
     <div style={{ padding: '12px 0' }}>
       <div style={{ marginBottom: 12 }}>
@@ -236,6 +247,10 @@ function ThemePanel() {
           />
         </div>
       </div>
+
+      <Button size="small" style={{ marginTop: 20 }} onClick={handleReset}>
+        恢复默认
+      </Button>
     </div>
   )
 }

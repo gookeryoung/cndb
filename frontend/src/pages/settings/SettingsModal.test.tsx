@@ -196,4 +196,18 @@ describe('SettingsModal 个人设置', () => {
     })
     expect(screen.getByText('适中')).toBeInTheDocument()
   })
+
+  it('主题 Tab：恢复默认重置配色与字体', () => {
+    localStorage.setItem('cndb_theme', 'oled')
+    localStorage.setItem('cndb_font', JSON.stringify({ scale: 'huge', bold: true }))
+    renderProviders(<SettingsModal open initialTab="theme" onClose={() => { }} />)
+
+    expect(screen.getByText('特大')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '恢复默认' }))
+
+    expect(localStorage.getItem('cndb_theme')).toBe('modern')
+    expect(JSON.parse(localStorage.getItem('cndb_font') ?? '{}')).toEqual({ scale: 'standard', bold: false })
+    expect(screen.getByText('标准')).toBeInTheDocument()
+    expect(screen.queryByText('特大')).not.toBeInTheDocument()
+  })
 })
