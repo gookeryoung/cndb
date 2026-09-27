@@ -3,6 +3,9 @@
  * 视觉采用「左侧彩色竖条 + 区域标题加粗」组合模式：
  * - 纵轴行头与横轴列头复用 MatrixAxisHeader —— 4px 圆角彩色竖条 + 加粗标题 + 数量徽章；
  *   竖条颜色按索引从 antd v5 官方预设主色循环取色（行列各算一组）。
+ * - 轴区（角格 + 行头列 + 列头行）统一品牌色低透明度淡染底（color-mix 混入 bg-page，不透明）：
+ *   角格 7% 最重、行列头 4%，与数据区（container 白底 / 空格 page 弱底）形成明确对比；
+ *   轴区内侧分界线用品牌色 25% 混入边框色，与淡染同色相。
  * - 左上角标注格展示「纵轴/横轴」主题色徽章 + 加粗字段名，品牌色淡染底突出方位语义。
  * - 布局为 CSS Grid：首列行头 sticky left、首行列头 sticky top，左上角标注格双向 sticky；
  *   网格区域独立滚动，行头/列头在滚动时保持可见。
@@ -40,6 +43,13 @@ const AXIS_COLORS: readonly string[] = [
 ]
 
 const axisColor = (index: number): string => AXIS_COLORS[index % AXIS_COLORS.length]
+
+// 轴区淡染底色 —— 品牌色低比例混入页面底色（不透明，保证 sticky 滚动不透底）；
+// 角格 7% 最重（轴之轴）、行列头 4% 次之、数据区 0，形成自角向外的层次衰减
+const CORNER_BG = 'color-mix(in srgb, var(--cn-brand-color) 7%, var(--cn-bg-page))'
+const AXIS_ZONE_BG = 'color-mix(in srgb, var(--cn-brand-color) 4%, var(--cn-bg-page))'
+// 轴区与数据区的分界线 —— 品牌色低比例混入边框色，与淡染同色相，明确轴区边界
+const AXIS_ZONE_BORDER = 'color-mix(in srgb, var(--cn-brand-color) 25%, var(--cn-border))'
 
 /** 密度 → 单元格卡片间距/字号 */
 function densityCardStyle(density: Density) {
@@ -215,13 +225,13 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
       }}
     >
       <div style={{ display: 'grid', gridTemplateColumns, minWidth: 'min-content' }}>
-        {/* 左上角标注格：纵轴 / 横轴（品牌色淡染底突出方位语义） */}
+        {/* 左上角标注格：纵轴 / 横轴（品牌色淡染最重，与行列头形成层次） */}
         <div
           data-testid="matrix-corner"
           style={{
             position: 'sticky', left: 0, top: 0, zIndex: 3,
-            background: 'color-mix(in srgb, var(--cn-brand-color) 7%, var(--cn-bg-page))',
-            borderBottom: '1px solid var(--cn-border)', borderRight: '1px solid var(--cn-border)',
+            background: CORNER_BG,
+            borderBottom: `1px solid ${AXIS_ZONE_BORDER}`, borderRight: `1px solid ${AXIS_ZONE_BORDER}`,
             padding: '10px 12px',
             display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 5,
           }}
@@ -237,7 +247,7 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
             data-testid="matrix-col-header"
             style={{
               position: 'sticky', top: 0, zIndex: 2,
-              background: 'var(--cn-bg-page)', borderBottom: '1px solid var(--cn-border)',
+              background: AXIS_ZONE_BG, borderBottom: `1px solid ${AXIS_ZONE_BORDER}`,
               padding: '8px 10px',
             }}
           >
@@ -256,7 +266,7 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
               data-testid="matrix-row-header"
               style={{
                 position: 'sticky', left: 0, zIndex: 1,
-                background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)',
+                background: AXIS_ZONE_BG, borderRight: `1px solid ${AXIS_ZONE_BORDER}`,
                 padding: '10px 10px',
                 display: 'flex', alignItems: 'center',
               }}
@@ -273,7 +283,8 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
                     padding: style.cellPadding,
                     borderBottom: '1px solid var(--cn-border)',
                     display: 'flex', flexDirection: 'column', gap: style.cardGap,
-                    background: list?.length ? undefined : 'var(--cn-bg-page)',
+                    // 数据区显式 container 白底与轴区淡染对比；空单元格中性弱底
+                    background: list?.length ? 'var(--cn-bg-container)' : 'var(--cn-bg-page)',
                   }}
                 >
                   {(list ?? []).map((r) => (
