@@ -4,7 +4,7 @@
  * - 纵轴行头与横轴列头复用 MatrixAxisHeader —— 4px 圆角彩色竖条 + 加粗标题 + 数量徽章；
  *   竖条颜色按索引从 antd v5 官方预设主色循环取色（行列各算一组）。
  * - 轴区（角格 + 行头列 + 列头行）纵横双色淡染（color-mix 混入 bg-page，不透明）：
- *   纵轴复用 --cn-brand-color、横轴用 --cn-axis-col-color，角格 7% 上下双色分段、行列头 4% 各随其轴，
+ *   纵轴复用 --cn-brand-color、横轴用 --cn-axis-col-color，角格 16% 上下双色分段、行列头 12% 各随其轴，
  *   与数据区（container 白底 / 空格 page 弱底）形成明确对比；轴区分界线为轴色 25% 混入边框色；
  *   「未分组」兜底桶用轴色 35% 虚线边界，数据列间另加中性淡竖线。
  * - 左上角标注格展示「纵轴/横轴」主题色徽章 + 加粗字段名。
@@ -47,7 +47,8 @@ const AXIS_COLORS: readonly string[] = [
 const axisColor = (index: number): string => AXIS_COLORS[index % AXIS_COLORS.length]
 
 // 轴区双色契约：纵轴复用品牌色，横轴用独立轴色 --cn-axis-col-color（index.css 每主题定义）；
-// 淡染底不透明（color-mix 混入 bg-page）保证 sticky 滚动不透底；层次自角向外衰减（角格 7%、行列头 4%、数据区 0）
+// 淡染底不透明（color-mix 混入 bg-page）保证 sticky 滚动不透底；层次自角向外衰减
+// （角格 16%、行列头 12%、数据区 0——档位须高于感知阈值，4% 级别色差 ΔRGB<5 视觉不可辨）
 const ROW_AXIS = 'var(--cn-brand-color)'
 const COL_AXIS = 'var(--cn-axis-col-color)'
 // 轴色低比例混入页面底色 → 淡染底
@@ -241,7 +242,7 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
           data-testid="matrix-corner"
           style={{
             position: 'sticky', left: 0, top: 0, zIndex: 3,
-            backgroundImage: `linear-gradient(to bottom, ${axisTint(ROW_AXIS, 7)} 0 50%, ${axisTint(COL_AXIS, 7)} 50% 100%)`,
+            backgroundImage: `linear-gradient(to bottom, ${axisTint(ROW_AXIS, 16)} 0 50%, ${axisTint(COL_AXIS, 16)} 50% 100%)`,
             borderBottom: `1px solid ${axisZoneBorder(COL_AXIS)}`, borderRight: `1px solid ${axisZoneBorder(ROW_AXIS)}`,
             padding: '10px 12px',
             display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 5,
@@ -258,7 +259,7 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
             data-testid="matrix-col-header"
             style={{
               position: 'sticky', top: 0, zIndex: 2,
-              background: axisTint(COL_AXIS, 4), borderBottom: `1px solid ${axisZoneBorder(COL_AXIS)}`,
+              background: axisTint(COL_AXIS, 12), borderBottom: `1px solid ${axisZoneBorder(COL_AXIS)}`,
               borderLeft: ck === UNGROUPED_LABEL ? `1px dashed ${axisBucketDash(COL_AXIS)}` : undefined,
               padding: '8px 10px',
             }}
@@ -278,7 +279,7 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
               data-testid="matrix-row-header"
               style={{
                 position: 'sticky', left: 0, zIndex: 1,
-                background: axisTint(ROW_AXIS, 4), borderRight: `1px solid ${axisZoneBorder(ROW_AXIS)}`,
+                background: axisTint(ROW_AXIS, 12), borderRight: `1px solid ${axisZoneBorder(ROW_AXIS)}`,
                 borderTop: rk === UNGROUPED_LABEL ? `1px dashed ${axisBucketDash(ROW_AXIS)}` : undefined,
                 padding: '10px 10px',
                 display: 'flex', alignItems: 'center',
