@@ -588,6 +588,9 @@ export const THEMES: Record<ThemeMode, ThemeConfig> = {
 
 /* ─────────────── 持久化 helpers ─────────────── */
 
+/** 默认主题 — loadThemeMode 兜底与主题页「恢复默认」共用单一来源 */
+export const DEFAULT_THEME_MODE: ThemeMode = 'modern'
+
 const THEME_KEY = 'cndb_theme'
 
 /** 兼容老版本的 'light' / 'dark' 值 */
@@ -599,11 +602,11 @@ const LEGACY_MAP: Record<string, ThemeMode> = {
 export function loadThemeMode(): ThemeMode {
   try {
     const raw = localStorage.getItem(THEME_KEY)
-    if (!raw) return 'modern'
+    if (!raw) return DEFAULT_THEME_MODE
     if (raw in LEGACY_MAP) return LEGACY_MAP[raw]
     if ((THEME_MODES as readonly string[]).includes(raw)) return raw as ThemeMode
   } catch { /* noop */ }
-  return 'modern'
+  return DEFAULT_THEME_MODE
 }
 
 export function saveThemeMode(mode: ThemeMode) {
