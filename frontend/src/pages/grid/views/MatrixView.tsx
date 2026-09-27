@@ -3,10 +3,11 @@
  * 视觉采用「左侧彩色竖条 + 区域标题加粗」组合模式：
  * - 纵轴行头与横轴列头复用 MatrixAxisHeader —— 4px 圆角彩色竖条 + 加粗标题 + 数量徽章；
  *   竖条颜色按索引从 antd v5 官方预设主色循环取色（行列各算一组）。
- * - 轴区（角格 + 行头列 + 列头行）统一品牌色低透明度淡染底（color-mix 混入 bg-page，不透明）：
- *   角格 7% 最重、行列头 4%，与数据区（container 白底 / 空格 page 弱底）形成明确对比；
- *   轴区内侧分界线用品牌色 25% 混入边框色，与淡染同色相。
- * - 左上角标注格展示「纵轴/横轴」主题色徽章 + 加粗字段名，品牌色淡染底突出方位语义。
+ * - 轴区（角格 + 行头列 + 列头行）纵横双色淡染（color-mix 混入 bg-page，不透明）：
+ *   纵轴复用 --cn-brand-color、横轴用 --cn-axis-col-color，角格 7% 上下双色分段、行列头 4% 各随其轴，
+ *   与数据区（container 白底 / 空格 page 弱底）形成明确对比；轴区分界线为轴色 25% 混入边框色；
+ *   「未分组」兜底桶用轴色 35% 虚线边界，数据列间另加中性淡竖线。
+ * - 左上角标注格展示「纵轴/横轴」主题色徽章 + 加粗字段名。
  * - 布局为 CSS Grid：首列行头 sticky left、首行列头 sticky top，左上角标注格双向 sticky；
  *   网格区域独立滚动，行头/列头在滚动时保持可见。
  * - 单元格高度随内容自适应（无硬上限），行轨道高度由该行最高单元格决定。
@@ -25,6 +26,7 @@ import {
   buildMatrixGrid,
   bucketTitle,
   cellKey,
+  UNGROUPED_LABEL,
   type MatrixDateGranularity,
 } from './matrixBoard'
 
@@ -44,12 +46,21 @@ const AXIS_COLORS: readonly string[] = [
 
 const axisColor = (index: number): string => AXIS_COLORS[index % AXIS_COLORS.length]
 
-// 轴区淡染底色 —— 品牌色低比例混入页面底色（不透明，保证 sticky 滚动不透底）；
-// 角格 7% 最重（轴之轴）、行列头 4% 次之、数据区 0，形成自角向外的层次衰减
-const CORNER_BG = 'color-mix(in srgb, var(--cn-brand-color) 7%, var(--cn-bg-page))'
-const AXIS_ZONE_BG = 'color-mix(in srgb, var(--cn-brand-color) 4%, var(--cn-bg-page))'
-// 轴区与数据区的分界线 —— 品牌色低比例混入边框色，与淡染同色相，明确轴区边界
-const AXIS_ZONE_BORDER = 'color-mix(in srgb, var(--cn-brand-color) 25%, var(--cn-border))'
+// 轴区双色契约：纵轴复用品牌色，横轴用独立轴色 --cn-axis-col-color（index.css 每主题定义）；
+// 淡染底不透明（color-mix 混入 bg-page）保证 sticky 滚动不透底；层次自角向外衰减（角格 7%、行列头 4%、数据区 0）
+const ROW_AXIS = 'var(--cn-brand-color)'
+const COL_AXIS = 'var(--cn-axis-col-color)'
+// 轴色低比例混入页面底色 → 淡染底
+const axisTint = (axis: string, pct: number) =>
+  `color-mix(in srgb, ${axis} ${pct}%, var(--cn-bg-page))`
+// 轴色低比例混入边框色 → 轴区分界线（与淡染同色相，随所在轴着色）
+const axisZoneBorder = (axis: string) =>
+  `color-mix(in srgb, ${axis} 25%, var(--cn-border))`
+// 轴色中比例混入边框色 → 「未分组」兜底桶虚线边界
+const axisBucketDash = (axis: string) =>
+  `color-mix(in srgb, ${axis} 35%, var(--cn-border))`
+// 数据列间淡竖线（非轴结构，中性极淡）
+const COL_SEP = 'color-mix(in srgb, var(--cn-text) 7%, transparent)'
 
 /** 密度 → 单元格卡片间距/字号 */
 function densityCardStyle(density: Density) {
@@ -225,13 +236,13 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
       }}
     >
       <div style={{ display: 'grid', gridTemplateColumns, minWidth: 'min-content' }}>
-        {/* 左上角标注格：纵轴 / 横轴（品牌色淡染最重，与行列头形成层次） */}
+        {/* 左上角标注格：纵轴 / 横轴（上下双色分段，各随其轴） */}
         <div
           data-testid="matrix-corner"
           style={{
             position: 'sticky', left: 0, top: 0, zIndex: 3,
-            background: CORNER_BG,
-            borderBottom: `1px solid ${AXIS_ZONE_BORDER}`, borderRight: `1px solid ${AXIS_ZONE_BORDER}`,
+            backgroundImage: `linear-gradient(to bottom, ${axisTint(ROW_AXIS, 7)} 0 50%, ${axisTint(COL_AXIS, 7)} 50% 100%)`,
+            borderBottom: `1px solid ${axisZoneBorder(COL_AXIS)}`, borderRight: `1px solid ${axisZoneBorder(ROW_AXIS)}`,
             padding: '10px 12px',
             display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 5,
           }}
@@ -247,7 +258,8 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
             data-testid="matrix-col-header"
             style={{
               position: 'sticky', top: 0, zIndex: 2,
-              background: AXIS_ZONE_BG, borderBottom: `1px solid ${AXIS_ZONE_BORDER}`,
+              background: axisTint(COL_AXIS, 4), borderBottom: `1px solid ${axisZoneBorder(COL_AXIS)}`,
+              borderLeft: ck === UNGROUPED_LABEL ? `1px dashed ${axisBucketDash(COL_AXIS)}` : undefined,
               padding: '8px 10px',
             }}
           >
@@ -266,14 +278,15 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
               data-testid="matrix-row-header"
               style={{
                 position: 'sticky', left: 0, zIndex: 1,
-                background: AXIS_ZONE_BG, borderRight: `1px solid ${AXIS_ZONE_BORDER}`,
+                background: axisTint(ROW_AXIS, 4), borderRight: `1px solid ${axisZoneBorder(ROW_AXIS)}`,
+                borderTop: rk === UNGROUPED_LABEL ? `1px dashed ${axisBucketDash(ROW_AXIS)}` : undefined,
                 padding: '10px 10px',
                 display: 'flex', alignItems: 'center',
               }}
             >
               <MatrixAxisHeader title={rk} color={axisColor(ri)} count={rowTotals.get(rk)} />
             </div>
-            {grid.columnKeys.map((ck) => {
+            {grid.columnKeys.map((ck, ci) => {
               const list = grid.cells.get(cellKey(rk, ck))
               return (
                 <div
@@ -282,6 +295,13 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
                   style={{
                     padding: style.cellPadding,
                     borderBottom: '1px solid var(--cn-border)',
+                    // 列间淡竖线（首列由行头右缘分界线覆盖）；「未分组」列虚线；「未分组」行上缘虚线
+                    borderLeft: ci === 0
+                      ? undefined
+                      : ck === UNGROUPED_LABEL
+                        ? `1px dashed ${axisBucketDash(COL_AXIS)}`
+                        : `1px solid ${COL_SEP}`,
+                    borderTop: rk === UNGROUPED_LABEL ? `1px dashed ${axisBucketDash(ROW_AXIS)}` : undefined,
                     display: 'flex', flexDirection: 'column', gap: style.cardGap,
                     // 数据区显式 container 白底与轴区淡染对比；空单元格中性弱底
                     background: list?.length ? 'var(--cn-bg-container)' : 'var(--cn-bg-page)',
