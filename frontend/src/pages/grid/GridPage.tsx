@@ -18,7 +18,7 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Modal, Empty, App as AntApp } from 'antd'
+import { Modal, Empty, App as AntApp, Skeleton } from 'antd'
 import {
   ColumnHeightOutlined, AppstoreOutlined,
   CalendarOutlined, LineChartOutlined, PartitionOutlined,
@@ -62,8 +62,37 @@ function ModalFallback() {
 
 function ViewFallback() {
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cn-text-muted)', fontSize: 14 }}>
-      视图加载中...
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: '60%' }}>
+        <Skeleton active title paragraph={{ rows: 4 }} />
+      </div>
+    </div>
+  )
+}
+
+/** 表形状骨架屏 —— 表头 + 占位行，与真实表格区域同形状，切换时高度稳定不跳动 */
+function TableSkeleton() {
+  return (
+    <div
+      data-testid="table-skeleton"
+      className="cn-page-enter"
+      style={{
+        flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+        background: 'var(--cn-bg-container)', border: '1px solid var(--cn-border)', borderRadius: 8, overflow: 'hidden',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 16, padding: '10px 16px', borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-page)' }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} style={{ height: 14, borderRadius: 4, background: 'var(--cn-border)', width: `${8 + ((i * 5) % 10)}%` }} />
+        ))}
+      </div>
+      {Array.from({ length: 10 }).map((_, i) => (
+        <div key={i} style={{ display: 'flex', gap: 16, padding: '12px 16px', borderBottom: '1px solid var(--cn-border)' }}>
+          {Array.from({ length: 6 }).map((_, j) => (
+            <div key={j} style={{ height: 12, borderRadius: 4, background: 'var(--cn-border)', opacity: 0.6, width: `${10 + ((i * 7 + j * 11) % 14)}%` }} />
+          ))}
+        </div>
+      ))}
     </div>
   )
 }
@@ -151,6 +180,23 @@ export default function GridPage() {
   }, [wid, tid]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openSettings = useUiStore(s => s.openSettings)
+
+  // 空闲时预取非 grid 视图 chunk —— 首次切看板/日历/甘特/WBS 不再等待代码下载
+  // （bundler 对动态 import 去重，已加载时为 no-op；requestIdleCallback 不可用时退化 setTimeout）
+  useEffect(() => {
+    const preload = () => {
+      void import('./views/KanbanView')
+      void import('./views/CalendarView')
+      void import('./views/GanttView')
+      void import('./views/WbsView')
+    }
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(preload)
+      return () => cancelIdleCallback(id)
+    }
+    const t = window.setTimeout(preload, 200)
+    return () => window.clearTimeout(t)
+  }, [])
 
   // 「每页行数」全局偏好变更时同步分页状态（个人设置即时生效，不再有保存回调）
   useEffect(() => {
@@ -365,7 +411,7 @@ export default function GridPage() {
   }, [searchQuery])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // 当前生效的筛选/排序/分页参数 + 行数据（装配逻辑在 useGridData）
-  const { effectiveFilters, sortsParam, rowList } = useGridData({
+  const { effectiveFilters, sortsParam, rowList, isFetching: rowsFetching } = useGridData({
     wid, tid, mode, limit, offset, viewFilters, viewSortings, viewFilterLogic, searchQuery,
   })
 
@@ -907,16 +953,17 @@ export default function GridPage() {
         onOpenTableSettings={() => openSettings('table')}
       />
 
-      {/* 主内容 — flex:1 占满剩余空间，overflow:hidden 交给内部 Table 的虚拟滚动 */}
-      <div ref={gridAreaRef} style={{ flex: 1, minHeight: 0, padding: '12px 16px', background: 'var(--cn-bg-page)', display: 'flex', flexDirection: 'column' }}>
+      {/* 主内容 — flex:1 占满剩余空间，overflow:hidden 交给内部 Table 的虚拟滚动.
+          key={tableKey}：切表整块重挂载，清空列宽预览等内部局部状态；cn-page-enter 提供切换淡入 */}
+      <div key={tableKey} ref={gridAreaRef} className="cn-page-enter" style={{ flex: 1, minHeight: 0, padding: '12px 16px', background: 'var(--cn-bg-page)', display: 'flex', flexDirection: 'column' }}>
         {isLoading ? (
-          <div style={{ textAlign: 'center', padding: 48 }}>加载中...</div>
+          <TableSkeleton />
         ) : mode === 'grid' ? (
           <GridTableSection
             tableRef={tableRef}
             columns={columns}
             settings={{ density }}
-            isLoading={isLoading}
+            isLoading={rowsFetching}
             rows={rowList.items || []}
             total={rowList.total}
             newRowActive={newRowActive}

@@ -25,6 +25,20 @@ function ModalFallback() {
   return null
 }
 
+/** 内容区骨架 —— 懒加载页面在 Content 内挂起时的占位，避免整页高度跳动 */
+function ContentFallback() {
+  return (
+    <div style={{ padding: 24 }} aria-label="页面加载中">
+      <div style={{ height: 28, width: 220, borderRadius: 6, background: 'var(--cn-border)', marginBottom: 16 }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} style={{ height: 40, borderRadius: 8, background: 'var(--cn-border)', opacity: 0.5 }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const { Header, Sider, Content } = Layout
 
 export default function MainLayout() {
@@ -54,6 +68,15 @@ export default function MainLayout() {
     const qs = params.toString()
     navigate(`/w/${targetWid}/tables/${targetTid}${qs ? `?${qs}` : ''}`)
   }, [searchParams, navigate])
+
+  /** hover 预取表详情 —— 点击进表时 useTable 命中缓存，减少冷启动白屏（queryKey 与 useTable 一致）. */
+  const prefetchTable = useCallback((targetWid: string, targetTid: string | number) => {
+    void queryClient.prefetchQuery({
+      queryKey: ['table', `${targetWid}/${targetTid}`],
+      queryFn: () => tableApi.get(targetWid, String(targetTid)),
+      staleTime: 60_000,
+    })
+  }, [queryClient])
 
   const { data: workspaces = [], isLoading: wsLoading } = useQuery({
     queryKey: ['workspaces'],
@@ -239,7 +262,7 @@ export default function MainLayout() {
                   items={orderedTables.map(t => ({
                     key: String(t.id),
                     icon: <TableOutlined />,
-                    label: t.name,
+                    label: <span onMouseEnter={() => prefetchTable(wid!, t.id)}>{t.name}</span>,
                     onClick: () => navigateToTable(wid!, t.id),
                   }))}
                 />
@@ -248,8 +271,15 @@ export default function MainLayout() {
           )}
         </Sider>
 
-        <Content style={{ background: 'var(--cn-bg-page)', flex: 1, minHeight: 0, overflow: 'auto' }}>
-          <Outlet />
+        <Content
+          key={location}
+          className="cn-page-enter"
+          style={{ background: 'var(--cn-bg-page)', flex: 1, minHeight: 0, overflow: 'auto' }}
+        >
+          {/* 懒加载页面在 Content 内挂起 —— MainLayout 保持挂载，仅内容区显示骨架，整页不再跳动 */}
+          <Suspense fallback={<ContentFallback />}>
+            <Outlet />
+          </Suspense>
         </Content>
       </Layout>
 

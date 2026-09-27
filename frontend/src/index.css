@@ -1840,9 +1840,25 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   animation-delay: 0.18s;
 }
 
+/* 页面/视图切换入场：内容淡入，替代硬切（路由容器与表格骨架均挂 .cn-page-enter） */
+@keyframes cn-page-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.cn-page-enter {
+  animation: cn-page-enter 0.18s ease-out both;
+}
+
 /* 尊重系统减少动态偏好：庆祝动画退化为淡入淡出 */
 @media (prefers-reduced-motion: reduce) {
 
+  .cn-page-enter,
   .kb-done-celebrate,
   .kb-check-pop {
     animation: none;
