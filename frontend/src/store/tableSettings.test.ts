@@ -14,21 +14,15 @@ describe('初始状态', () => {
     const s = useTableSettingsStore.getState()
     expect(s.density).toBe(DEFAULT_TABLE_SETTINGS.density)
     expect(s.defaultPageSize).toBe(DEFAULT_TABLE_SETTINGS.defaultPageSize)
-    expect(s.bordered).toBe(DEFAULT_TABLE_SETTINGS.bordered)
-    expect(s.showHeader).toBe(DEFAULT_TABLE_SETTINGS.showHeader)
-    expect(s.striped).toBe(DEFAULT_TABLE_SETTINGS.striped)
   })
 })
 
 describe('updateSettings 批量合并', () => {
   it('只更新传入字段，其余保持不变', () => {
-    useTableSettingsStore.getState().updateSettings({ density: 'compact', striped: true })
+    useTableSettingsStore.getState().updateSettings({ density: 'compact' })
     const s = useTableSettingsStore.getState()
     expect(s.density).toBe('compact')
-    expect(s.striped).toBe(true)
     expect(s.defaultPageSize).toBe(DEFAULT_TABLE_SETTINGS.defaultPageSize)
-    expect(s.bordered).toBe(DEFAULT_TABLE_SETTINGS.bordered)
-    expect(s.showHeader).toBe(DEFAULT_TABLE_SETTINGS.showHeader)
   })
 
   it('更新后写入 localStorage（persist 中间件）', () => {
@@ -43,11 +37,11 @@ describe('updateSettings 批量合并', () => {
 
 describe('resetSettings', () => {
   it('重置为默认值并同步持久化', () => {
-    useTableSettingsStore.getState().updateSettings({ density: 'spacious', bordered: true })
+    useTableSettingsStore.getState().updateSettings({ density: 'spacious', defaultPageSize: 100 })
     useTableSettingsStore.getState().resetSettings()
     const s = useTableSettingsStore.getState()
     expect(s.density).toBe(DEFAULT_TABLE_SETTINGS.density)
-    expect(s.bordered).toBe(DEFAULT_TABLE_SETTINGS.bordered)
+    expect(s.defaultPageSize).toBe(DEFAULT_TABLE_SETTINGS.defaultPageSize)
     const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as { state: Record<string, unknown> }
     expect(persisted.state.density).toBe(DEFAULT_TABLE_SETTINGS.density)
   })

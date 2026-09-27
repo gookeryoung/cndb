@@ -241,9 +241,6 @@ function TablePanel() {
   const { message } = App.useApp()
   const density = useTableSettingsStore(s => s.density)
   const defaultPageSize = useTableSettingsStore(s => s.defaultPageSize)
-  const bordered = useTableSettingsStore(s => s.bordered)
-  const showHeader = useTableSettingsStore(s => s.showHeader)
-  const striped = useTableSettingsStore(s => s.striped)
   const newRowPosition = useTableSettingsStore(s => s.newRowPosition)
   const autoFillLocked = useTableSettingsStore(s => s.autoFillLocked)
   const updateSettings = useTableSettingsStore(s => s.updateSettings)
@@ -288,38 +285,8 @@ function TablePanel() {
           options={[25, 50, 100, 200].map(n => ({ value: n, label: `${n} 条` }))}
         />
       </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24, margin: '8px 0 4px' }}>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
-          <Switch
-            size="small"
-            data-testid="bordered-switch"
-            checked={bordered}
-            onChange={(v) => updateSettings({ bordered: v })}
-          />
-          <span>边框</span>
-        </label>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
-          <Switch
-            size="small"
-            data-testid="show-header-switch"
-            checked={showHeader}
-            onChange={(v) => updateSettings({ showHeader: v })}
-          />
-          <span>表头</span>
-        </label>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
-          <Switch
-            size="small"
-            data-testid="striped-switch"
-            checked={striped}
-            onChange={(v) => updateSettings({ striped: v })}
-          />
-          <span>斑马纹</span>
-        </label>
-      </div>
       <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 4, marginBottom: 20 }}>
-        边框 / 表头 / 斑马纹仅对表格视图生效；间距同样影响看板、画廊、日历的卡片密度
+        间距同样影响看板、画廊、日历的卡片密度
       </div>
 
       <div style={{ marginBottom: 16 }}>

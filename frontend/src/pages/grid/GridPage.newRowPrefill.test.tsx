@@ -74,9 +74,6 @@ beforeEach(() => {
     useTableSettingsStore.setState({
         density: 'comfortable',
         defaultPageSize: 5,
-        bordered: false,
-        showHeader: true,
-        striped: false,
         newRowPosition: 'page',
         // 本测试断言预填值进入可编辑输入框，需显式关闭「自动预填锁定」（默认开启，开启时预填字段渲染为只读文本）
         autoFillLocked: false,
