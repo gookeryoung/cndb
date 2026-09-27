@@ -4,7 +4,7 @@
  * 展示 Owner / MyAccess / MemberCount 三个权限元信息列, 并提供按访问级别筛选.
  */
 
-import { Suspense, lazy, useMemo, useState } from 'react'
+import { Suspense, lazy, useCallback, useMemo, useState } from 'react'
 import {
   Button, Modal, Form, Input, Table, Typography, Empty, App as AntApp, Space, Tag, Upload, Dropdown,
   Avatar, Segmented, Badge, Tooltip,
@@ -95,6 +95,16 @@ export default function TablesList() {
     queryFn: () => tableApi.list(wid!),
     enabled: !!wid,
   })
+
+  /** hover 预取表详情 —— 点击进表时 useTable 命中缓存，减少冷启动白屏（queryKey 与 useTable 一致）. */
+  const prefetchTable = useCallback((targetTid: string | number) => {
+    if (!wid) return
+    void queryClient.prefetchQuery({
+      queryKey: ['table', `${wid}/${targetTid}`],
+      queryFn: () => tableApi.get(wid, String(targetTid)),
+      staleTime: 60_000,
+    })
+  }, [wid, queryClient])
 
   // ── 筛选后的表列表 ──
   const filteredTables = useMemo(() => {
@@ -462,6 +472,7 @@ export default function TablesList() {
             components={{ body: { row: DraggableRow } }}
             onRow={(record) => ({
               onClick: () => navigate(`/w/${wid}/tables/${record.id}`),
+              onMouseEnter: () => prefetchTable(record.id),
               'data-testid': `table-row-${record.id}`,
             })}
             locale={{

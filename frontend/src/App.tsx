@@ -23,12 +23,17 @@ const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 
+/** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
 function PageFallback() {
   return (
-    <div style={{
-      display: 'flex', justifyContent: 'center', alignItems: 'center',
-      height: '50vh', color: '#9ca3af', fontSize: 14,
-    }}>加载中...</div>
+    <div style={{ padding: 24 }} aria-label="页面加载中">
+      <div style={{ height: 28, width: 220, borderRadius: 6, background: 'var(--cn-border)', marginBottom: 16 }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} style={{ height: 40, borderRadius: 8, background: 'var(--cn-border)', opacity: 0.5 }} />
+        ))}
+      </div>
+    </div>
   )
 }
 

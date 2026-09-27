@@ -75,6 +75,10 @@ export function useTableRecords(
         filter_logic: params.filter_logic,
       }),
     enabled: !!wid && !!tid,
+    // 同表（翻页/筛选/排序/切视图）保留上一份数据，请求期间 isFetching 驱动 loading 遮罩；
+    // 跨表（tableKey 变化）返回 undefined 走正常 loading，避免旧表行配新表列
+    placeholderData: (prev, prevQuery) =>
+      (prevQuery?.queryKey[1] as string | undefined) === tableKey ? prev : undefined,
     // staleTime 由 main.tsx 的 setQueryDefaults 全局配置（table-records: 10s），此处不重复覆盖
   })
 }
