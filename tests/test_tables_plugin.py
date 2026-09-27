@@ -154,6 +154,27 @@ class TestSelectFieldType:
         with pytest.raises(ValueError, match="不在可选值"):
             ft.validate_value("x", {"options": ["a", "b"]})
 
+    def test_validate_empty_options_passthrough(self):
+        """options 为空（导入预填充前的过渡期）时任意值放行."""
+        ft = SelectFieldType()
+        assert ft.validate_value("任意", {}) == "任意"
+        assert ft.validate_value(None, {"options": ["a"]}) is None
+
+    def test_validate_dict_options_uses_value(self):
+        """dict 形式 options 按 value 校验，value 缺省回退 label（与 Pydantic 归一语义一致）."""
+        ft = SelectFieldType()
+        cfg = {"options": [{"label": "甲", "value": "a"}, {"label": "乙"}]}
+        assert ft.validate_value("a", cfg) == "a"
+        assert ft.validate_value("乙", cfg) == "乙"
+        with pytest.raises(ValueError, match="不在可选值"):
+            ft.validate_value("甲", cfg)
+
+    def test_validate_rejects_bool_options_conflict(self):
+        """轻量路径同样拦截非选项值（str/bool 混合 options 场景）."""
+        ft = SelectFieldType()
+        with pytest.raises(ValueError, match="不在可选值"):
+            ft.validate_value("nope", {"options": ["yes", "no"]})
+
 
 class TestMultiSelectFieldType:
     def test_validate_list(self):
@@ -164,6 +185,18 @@ class TestMultiSelectFieldType:
     def test_validate_single(self):
         ft = MultiSelectFieldType()
         assert ft.validate_value("a", {"options": ["a", "b"]}) == "a"
+
+    def test_validate_dict_options_and_invalid(self):
+        """dict options 按 value 校验 + 非法项报错."""
+        ft = MultiSelectFieldType()
+        cfg = {"options": [{"label": "甲", "value": "a"}, {"label": "乙", "value": "b"}]}
+        assert ft.validate_value("a、b", cfg) == "a,b"
+        with pytest.raises(ValueError, match="不在可选值"):
+            ft.validate_value("a、z", cfg)
+
+    def test_validate_empty_options_passthrough(self):
+        ft = MultiSelectFieldType()
+        assert ft.validate_value("x,y", {}) == "x,y"
 
 
 class TestDateFieldType:

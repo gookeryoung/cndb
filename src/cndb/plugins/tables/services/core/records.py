@@ -615,19 +615,46 @@ def bulk_create(
         _ensure_required_links_provided(table, link_values)
         validate_link_write(engine, link_values, batch_signatures=batch_sigs)
 
-    ids: list[int] = []
+    ids: list[Any] = [None] * len(split_rows)
     # 主行 + link 字段在同一个事务内写入，link 写入失败时全部回滚
     with engine.begin() as conn:
-        for values, link_values in split_rows:
-            if values:
-                result = conn.execute(sa_table.insert().values(**values))
+        i = 0
+        total = len(split_rows)
+        while i < total:
+            values, link_values = split_rows[i]
+            if any(target_ids for _field, target_ids in link_values):
+                # 有 link 值的行：逐行插入（需要 lastrowid 立即写关联表）
+                if values:
+                    result = conn.execute(sa_table.insert().values(**values))
+                else:
+                    # 行仅有 link 值（无物理列值）：显式写软删标记保证 INSERT 合法
+                    result = conn.execute(sa_table.insert().values(_trashed=False))
+                row_id = result.lastrowid
+                ids[i] = row_id
+                for field, target_ids in link_values:
+                    set_links(engine, field, row_id, target_ids, db=db)
+                i += 1
             else:
-                # 行仅有 link 值（无物理列值）：显式写软删标记保证 INSERT 合法
-                result = conn.execute(sa_table.insert().values(_trashed=False))
-            row_id = result.lastrowid
-            ids.append(row_id)
-            for field, target_ids in link_values:
-                set_links(engine, field, row_id, target_ids, db=db)
+                # 无 link 值的连续段 [i, j)：RETURNING 批量插入（单条多值语句，快一个数量级以上）。
+                # executemany 要求各行参数键一致，段内按列集合签名分组执行；
+                # SQLite insertmanyvalues 返回 id 与参数顺序严格一一对应。
+                j = i
+                while j < total and not any(t for _f, t in split_rows[j][1]):
+                    j += 1
+                groups: dict[tuple[str, ...], list[int]] = {}
+                for k in range(i, j):
+                    v = split_rows[k][0]
+                    key = tuple(sorted(v.keys())) if v else ("_trashed",)
+                    groups.setdefault(key, []).append(k)
+                for key, indices in groups.items():
+                    if key == ("_trashed",):
+                        param_rows: list[dict[str, Any]] = [{"_trashed": False} for _ in indices]
+                    else:
+                        param_rows = [split_rows[k][0] for k in indices]
+                    seg_result = conn.execute(sa_table.insert().returning(sa_table.c.id), param_rows)
+                    for k, row in zip(indices, seg_result.all(), strict=True):
+                        ids[k] = row[0]
+                i = j
 
     return ids
 

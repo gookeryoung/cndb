@@ -131,14 +131,11 @@ class SelectFieldType(FieldType):
     def validate_value(self, value: Any, _config: dict[str, Any]) -> str | None:
         if value is None:
             return None
-        cfg = SelectFieldConfig(**_config)
         # options 为空时放行（导入前预填充 options 前的过渡期）
-        if not cfg.options:
-            return str(value)
-        allowed = cfg.option_values()
+        allowed = _allowed_values_from_config(_config)
         str_val = str(value)
-        if str_val not in allowed:
-            raise ValueError(f"{value!r} 不在可选值 {allowed} 中")
+        if allowed is not None and str_val not in allowed:
+            raise ValueError(f"{value!r} 不在可选值 {sorted(allowed)} 中")
         return str_val
 
 
@@ -161,6 +158,28 @@ def split_multi_select_string(value: str) -> list[str]:
     return [p.strip() for p in MULTI_SELECT_SPLIT_RE.split(value) if p.strip()]
 
 
+def _allowed_values_from_config(_config: dict[str, Any]) -> frozenset[str] | None:
+    """从原始 config 提取选项值集合（None 表示无 options，校验放行）.
+
+    跳过 SelectFieldConfig Pydantic 重建：options 在字段创建时已通过校验，
+    批量导入逐行重建会重复触发 _normalize_options 校验器与智能配色，
+    纯开销且结果不变（value 提取语义与 _normalize_options 的 val 一致：
+    dict 取 value 缺省回退 label）。
+    """
+    options = _config.get("options")
+    if not options:
+        return None
+    result: set[str] = set()
+    for item in options:
+        if isinstance(item, dict):
+            result.add(str(item.get("value", item.get("label", ""))))
+        elif isinstance(item, SelectOption):
+            result.add(str(item.value))
+        else:
+            result.add(str(item))
+    return frozenset(result)
+
+
 class MultiSelectFieldType(FieldType):
     name = "multiselect"
     label = "多选"
@@ -173,8 +192,6 @@ class MultiSelectFieldType(FieldType):
     def validate_value(self, value: Any, _config: dict[str, Any]) -> str | None:
         if value is None:
             return None
-        cfg = MultiSelectFieldConfig(**_config)
-        # options 为空时放行（导入前预填充 options 前的过渡期）
         if isinstance(value, list):
             values = value
         elif isinstance(value, str):
@@ -182,15 +199,12 @@ class MultiSelectFieldType(FieldType):
             values = split_multi_select_string(value)
         else:
             values = [value]
+        # options 为空时放行（导入前预填充 options 前的过渡期）
+        allowed = _allowed_values_from_config(_config)
         result: list[str] = []
-        if cfg.options:
-            allowed = cfg.option_values()
-            for v in values:
-                str_v = str(v)
-                if str_v not in allowed:
-                    raise ValueError(f"{v!r} 不在可选值 {allowed} 中")
-                result.append(str_v)
-        else:
-            for v in values:
-                result.append(str(v))
+        for v in values:
+            str_v = str(v)
+            if allowed is not None and str_v not in allowed:
+                raise ValueError(f"{v!r} 不在可选值 {sorted(allowed)} 中")
+            result.append(str_v)
         return ",".join(result)
