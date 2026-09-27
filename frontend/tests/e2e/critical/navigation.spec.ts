@@ -40,7 +40,7 @@ test.describe("表列表 owner 列 + 访问级筛选器", () => {
     await page.goto(`/w/${WID}/tables`)
     await page.waitForURL(/\/tables$/)
     // 等待表列表渲染
-    await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(6, { timeout: 10000 })
+    await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(8, { timeout: 10000 })
   }
 
   test("访问级筛选器：「我拥有的」可筛选出全部表（admin 是所有 seed 表的 owner）", async ({ page }) => {
@@ -52,7 +52,7 @@ test.describe("表列表 owner 列 + 访问级筛选器", () => {
     await seg.click()
     await expect(seg).toHaveClass(/ant-segmented-item-selected/)
 
-    // seed 所有 6 张表的 owner 都是 admin（当前用户），筛选后仍应显示 6 张
-    await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(6, { timeout: 5000 })
+    // seed 所有 8 张表的 owner 都是 admin（当前用户），筛选后仍应显示 8 张
+    await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(8, { timeout: 5000 })
   })
 })

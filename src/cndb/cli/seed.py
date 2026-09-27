@@ -475,8 +475,8 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
     print(f"[seed] 创建数据表: 员工表 (id={emp_tbl.id})")
 
     field_specs: list[tuple[str, str, dict[str, Any], bool]] = [
-        ("工号", "text", {}, True),
         ("姓名", "text", {}, True),
+        ("工号", "text", {}, True),
         # 部门为单选关联（multiple=False）：一名员工仅归属一个部门
         ("部门", "link", {"target_table_id": dept_tbl.id, "multiple": False}, False),
         ("职位", "select", {"options": ["总监", "经理", "工程师", "专员", "会计", "出纳"]}, False),
