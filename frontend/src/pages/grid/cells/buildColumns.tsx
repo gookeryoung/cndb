@@ -240,7 +240,7 @@ export function buildColumns(
               field={f}
               rowId={record.id}
               wid={wid}
-              onSave={onCellSave ? (fieldName, value) => onCellSave(record.id, fieldName, value) : undefined}
+              onCellSave={onCellSave}
             />
           )
         },

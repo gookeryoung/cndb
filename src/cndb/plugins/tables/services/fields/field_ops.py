@@ -609,8 +609,9 @@ def sync_select_options_from_table(db: Session, table: DataTable) -> list[DataFi
     """
     from typing import Any as _Any
 
-    from sqlalchemy import MetaData
     from sqlalchemy import select as _sa_select
+
+    from cndb.plugins.tables.services.core.ddl import get_reflected_table
 
     changed: list[DataField] = []
     select_fields = [f for f in table.active_fields() if f.field_type in ("select", "multiselect")]
@@ -618,10 +619,9 @@ def sync_select_options_from_table(db: Session, table: DataTable) -> list[DataFi
         return changed
 
     engine: _Any = db.get_bind()
-    metadata = MetaData()
-    metadata.reflect(bind=engine, only=[table.db_table_name])
-    sa_table = metadata.tables.get(table.db_table_name)
-    if sa_table is None:
+    try:
+        sa_table = get_reflected_table(engine, table.db_table_name)
+    except RuntimeError:
         logger.warning("[sync_select_options] 物理表 %s 不存在，跳过", table.db_table_name)
         return changed
 

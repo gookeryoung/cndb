@@ -20,6 +20,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_offline import FastAPIOffline
@@ -70,6 +71,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# gzip 压缩（注册在 CORS 之后成为最外层）：静态资源与 API JSON 统一压缩，
+# 1KB 以下小响应不压缩（压缩收益低于开销）
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 @app.get("/api/health", tags=["framework"])

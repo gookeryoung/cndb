@@ -509,3 +509,47 @@ class TestUpdateFieldTypeChange:
                 headers=auth_headers,
             )
         assert resp.status_code == 500
+
+
+class TestReflectedTableCache:
+    """ddl.get_reflected_table 反射缓存与 DDL 失效契约."""
+
+    def test_same_engine_returns_cached_object(self, db_engine, db):
+        tbl = _make_table(db, 1, "t_refc1")
+        f1 = DataField(table_id=tbl.id, name="name", field_type="text", order=0)
+        f1.ensure_db_name()
+        db.add(f1)
+        db.commit()
+        db.refresh(tbl)
+        ddl.create_table(db_engine, tbl)
+
+        t1 = ddl.get_reflected_table(db_engine, tbl.db_table_name)
+        t2 = ddl.get_reflected_table(db_engine, tbl.db_table_name)
+        assert t1 is t2
+
+    def test_invalidate_after_add_column(self, db_engine, db):
+        tbl = _make_table(db, 1, "t_refc2")
+        f1 = DataField(table_id=tbl.id, name="name", field_type="text", order=0)
+        f1.ensure_db_name()
+        db.add(f1)
+        db.commit()
+        db.refresh(tbl)
+        ddl.create_table(db_engine, tbl)
+
+        before = ddl.get_reflected_table(db_engine, tbl.db_table_name)
+        f2 = DataField(table_id=tbl.id, name="age", field_type="number", order=1)
+        f2.ensure_db_name()
+        db.add(f2)
+        db.commit()
+        db.refresh(f2)
+        ddl.add_column(db_engine, tbl, f2)
+
+        after = ddl.get_reflected_table(db_engine, tbl.db_table_name)
+        assert after is not before
+        assert f2.db_column_name in after.c
+
+    def test_missing_table_raises_with_custom_message(self, db_engine):
+        import pytest
+
+        with pytest.raises(RuntimeError, match="自定义缺失文案"):
+            ddl.get_reflected_table(db_engine, "t_no_such_xyz", missing_message="自定义缺失文案")

@@ -391,31 +391,14 @@ def test_run_upgrade_calls_alembic():
 
 
 def test_get_link_sa_table_missing_raises(db_engine):
-    """反射不到 link table → RuntimeError (L198). patch MetaData 让 reflect 不填 tables."""
-    import cndb.plugins.tables.services.core.links as lmod
-
-    real_init = MetaData.__init__
-
-    def patched_init(self, *a, **kw):
-        real_init(self, *a, **kw)
-        self.reflect = MagicMock()  # reflect 空实现 → tables 永远空
-
-    with patch.object(lmod, "MetaData") as MetaClass:
-        # MetaClass 被 _get_link_sa_table 调用，它 new 出来的对象.tables 永远为空
-        fake_meta = MagicMock()
-        fake_meta.tables = {}
-        MetaClass.return_value = fake_meta
-        with pytest.raises(RuntimeError, match="关联物理表"):
-            _get_link_sa_table(db_engine, "ghost_link")
+    """反射不到 link table → RuntimeError（缓存层把 reflect 的 InvalidRequestError 归一为 RuntimeError）."""
+    with pytest.raises(RuntimeError, match="关联物理表"):
+        _get_link_sa_table(db_engine, "ghost_link")
 
 
 def test_get_sa_table_by_name_missing_raises(db_engine):
-    """反射不到表 → RuntimeError (L228)."""
-    import cndb.plugins.tables.services.core.links as lmod
-
-    fake_meta = MagicMock()
-    fake_meta.tables = {}
-    with patch.object(lmod, "MetaData", return_value=fake_meta), pytest.raises(RuntimeError, match="物理表"):
+    """反射不到表 → RuntimeError（缓存层归一，无需打桩）."""
+    with pytest.raises(RuntimeError, match="物理表"):
         _get_sa_table_by_name(db_engine, "ghost3")
 
 

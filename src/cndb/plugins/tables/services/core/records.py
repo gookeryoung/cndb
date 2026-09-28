@@ -18,7 +18,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import MetaData, Table, and_, func, or_, select
+from sqlalchemy import Table, and_, func, or_, select
 
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
@@ -30,6 +30,7 @@ from cndb.plugins.tables.services.core.audit import (
     ACTION_UPDATE,
     log_action,
 )
+from cndb.plugins.tables.services.core.ddl import get_reflected_table
 from cndb.plugins.tables.services.core.links import (
     attach_links,
     clear_row_links,
@@ -213,15 +214,16 @@ def _apply_auto_increment_defaults(
 
 
 def _get_sa_table(engine: Any, table: DataTable) -> Table:
-    """获取已存在的物理表 sa.Table 对象.
+    """获取已存在的物理表 sa.Table 对象（带反射缓存）.
 
-    优先从 engine.dialect 反射；不存在则抛异常（create_table 应先被调用）.
+    优先命中 ddl 模块的 engine 级反射缓存；不存在则抛异常（create_table 应先被调用），
+    物理 DDL 变更由 ddl 模块负责失效缓存.
     """
-    metadata = MetaData()
-    metadata.reflect(bind=engine, only=[table.db_table_name])
-    if table.db_table_name not in metadata.tables:
-        raise RuntimeError(f"物理表 {table.db_table_name} 不存在，请先调用 create_table()")
-    return metadata.tables[table.db_table_name]
+    return get_reflected_table(
+        engine,
+        table.db_table_name,
+        missing_message=f"物理表 {table.db_table_name} 不存在，请先调用 create_table()",
+    )
 
 
 # ── CREATE ───────────────────────────────────────────

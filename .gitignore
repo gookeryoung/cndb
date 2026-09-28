@@ -51,6 +51,7 @@ uploads
 .e2e-data/
 .trae-html-share-packages/*
 backup-*.tar.gz
+!examples/backups/**/backup-*.tar.gz
 .pnpm-store
 *.docx
 
