@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import Depends, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from cndb.cli.backup import BackupError, create_backup
+from cndb.cli.backup import BackupError, create_backup, format_backup_filename
 from cndb.cli.restore import RestoreError, _schema_revision_known, inspect_backup, restore_backup
 from cndb.core.config import DATA_DIR
 from cndb.plugins.accounts.models import User, UserRole
@@ -85,7 +85,7 @@ def register_system_routes(app: FastAPI) -> None:
 
         ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
         tmp_dir = Path(tempfile.mkdtemp(prefix="cndb-api-backup-"))
-        archive_path = tmp_dir / f"backup-{ts}.tar.gz"
+        archive_path = tmp_dir / f"tmp-{ts}.tar.gz"
 
         try:
             create_backup(
@@ -101,7 +101,8 @@ def register_system_routes(app: FastAPI) -> None:
         data = archive_path.read_bytes()
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
-        filename = f"cndb-backup-{ts}.tar.gz"
+        # 下载文件名统一带软件版本与数据库格式版本（与 CLI 默认名同一格式契约）
+        filename = format_backup_filename(prefix="cndb-backup")
         return StreamingResponse(
             io.BytesIO(data),
             media_type="application/gzip",
