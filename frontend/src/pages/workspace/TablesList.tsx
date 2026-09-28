@@ -265,6 +265,7 @@ export default function TablesList() {
             count={n ?? 0}
             showZero
             overflowCount={99}
+            size="small"
             color={(n ?? 0) > 0 ? 'var(--cn-brand-color)' : undefined}
           >
             <TeamOutlined style={{ fontSize: 16, color: 'var(--cn-text-muted)' }} />
