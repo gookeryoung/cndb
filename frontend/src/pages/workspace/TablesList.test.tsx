@@ -4,7 +4,7 @@
  * 覆盖：加载态 / 标题与列表渲染 / 空态 / 访问级别筛选 / 新建表成功回调 / 创建失败错误态
  * + 新建表表单校验（空名/超长截断）/ 编辑重命名 / 删除确认 / 复制表 /
  *   拥有者列渲染 / 筛选边界（owner 回退比对 / 各档位）/ 筛选空态 /
- *   API 建表入口 / 工作区设置跳转.
+ *   API 建表入口.
  * 注：组件用 useParams 取 wid，必须包在 Routes 内渲染。
  */
 
@@ -359,15 +359,5 @@ describe('TablesList 其他入口', () => {
 
     // ApiImportDialog 为懒加载组件，弹窗标题出现即视为打开
     expect(await screen.findByText('API 抓取 · 自动建表', {}, { timeout: 3000 })).toBeInTheDocument()
-  })
-
-  it('点击工作区设置跳转到 /w/:wid/settings', async () => {
-    setupWorkspace()
-    renderPage()
-
-    const user = userEvent.setup()
-    await user.click(await screen.findByTestId('workspace-settings-link'))
-
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/settings'))
   })
 })

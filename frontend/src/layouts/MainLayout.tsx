@@ -1,10 +1,9 @@
 import React, { Suspense, lazy, useState, useCallback } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip } from 'antd'
-import type { MenuProps } from 'antd'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip, Tabs } from 'antd'
+import type { MenuProps, TabsProps } from 'antd'
 import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
-  FileTextOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
   HomeOutlined,
@@ -94,6 +93,19 @@ export default function MainLayout() {
 
   const currentWs = workspaces.find(w => String(w.id) === wid)
 
+  /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），覆盖数据表、报表与设置入口. */
+  const wsTabItems: TabsProps['items'] = [
+    { key: 'tables', label: '数据资产' },
+    { key: 'reports', label: '报表' },
+    { key: 'settings', label: '工作区设置' },
+  ]
+  // 激活态由 pathname 驱动：表详情页（/w/:wid/tables/:tid）同样落在「数据资产」
+  const activeWsTab = location.includes('/reports')
+    ? 'reports'
+    : location.includes('/settings')
+      ? 'settings'
+      : 'tables'
+
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
   const onLogout = useCallback(() => {
@@ -165,31 +177,6 @@ export default function MainLayout() {
             {currentWs?.name || '工作区'}
           </Button>
         </Dropdown>
-
-        {/* Header 常规导航按钮 —— 工作区级功能，显式作用于左侧下拉框当前工作区；无工作区时禁用（管理台在右上角用户区，与常规功能区分） */}
-        <Space size={4}>
-          <Tooltip title={currentWs ? '报表' : '请先选择工作区'}>
-            <span style={{ display: 'inline-flex' }}>
-              <Button
-                type={location.includes('/reports') ? 'primary' : 'text'}
-                size="small" icon={<FileTextOutlined />}
-                disabled={!currentWs}
-                onClick={() => currentWs && navigate(`/w/${currentWs.id}/reports`)}
-              >{!isMobile && '报表'}</Button>
-            </span>
-          </Tooltip>
-          <Tooltip title={currentWs ? '工作区设置' : '请先选择工作区'}>
-            <span style={{ display: 'inline-flex' }}>
-              <Button
-                type={location.includes('/settings') ? 'primary' : 'text'}
-                size="small" icon={<SettingOutlined />}
-                disabled={!currentWs}
-                data-testid="workspace-settings-nav"
-                onClick={() => currentWs && navigate(`/w/${currentWs.id}/settings`)}
-              >{!isMobile && '工作区设置'}</Button>
-            </span>
-          </Tooltip>
-        </Space>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
           {/* 帮助中心入口 —— 所有登录用户可见 */}
@@ -271,16 +258,31 @@ export default function MainLayout() {
           )}
         </Sider>
 
-        <Content
-          key={location}
-          className="cn-page-enter"
-          style={{ background: 'var(--cn-bg-page)', flex: 1, minHeight: 0, overflow: 'auto' }}
-        >
-          {/* 懒加载页面在 Content 内挂起 —— MainLayout 保持挂载，仅内容区显示骨架，整页不再跳动 */}
-          <Suspense fallback={<ContentFallback />}>
-            <Outlet />
-          </Suspense>
-        </Content>
+        <Layout style={{ flex: 1, minHeight: 0 }}>
+          {/* 工作区级分页导航 —— 位于 Content 之外，跨页切换不重挂载；无工作区上下文时不渲染 */}
+          {wid && (
+            <div style={{
+              background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', flexShrink: 0,
+            }}>
+              <Tabs
+                activeKey={activeWsTab}
+                items={wsTabItems}
+                tabBarStyle={{ margin: 0, padding: '0 16px' }}
+                onChange={(key) => navigate(`/w/${wid}/${key}`)}
+              />
+            </div>
+          )}
+          <Content
+            key={location}
+            className="cn-page-enter"
+            style={{ background: 'var(--cn-bg-page)', flex: 1, minHeight: 0, overflow: 'auto' }}
+          >
+            {/* 懒加载页面在 Content 内挂起 —— MainLayout 保持挂载，仅内容区显示骨架，整页不再跳动 */}
+            <Suspense fallback={<ContentFallback />}>
+              <Outlet />
+            </Suspense>
+          </Content>
+        </Layout>
       </Layout>
 
       <Suspense fallback={<ModalFallback />}>
