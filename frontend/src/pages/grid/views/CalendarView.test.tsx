@@ -109,7 +109,13 @@ describe('CalendarView 日历视图', () => {
   })
 
   it('切换年视图显示 12 个月与当月事件计数', () => {
-    renderCalendar()
+    // 锚定当月月初，避免今天临近月末时 offsetDate(2) 跨月导致计数漂移
+    const base = dayjs().startOf('month')
+    const rows: RowResponse[] = [
+      { id: 1, 名称: '发布评审', 截止: base.format('YYYY-MM-DD') },
+      { id: 2, 名称: '周会', 截止: base.add(2, 'day').format('YYYY-MM-DD') },
+    ]
+    renderCalendar({ rows })
 
     fireEvent.click(screen.getByText('年'))
 
