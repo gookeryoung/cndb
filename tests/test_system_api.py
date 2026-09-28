@@ -10,12 +10,14 @@
 from __future__ import annotations
 
 import io
+import re
 import sqlite3
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+import cndb
 from cndb.cli.backup import create_backup
 from cndb.core.config import settings
 from cndb.plugins.accounts.models import User
@@ -212,7 +214,12 @@ def test_admin_backup_archive_download(
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "application/gzip"
     assert "attachment" in r.headers["content-disposition"]
-    assert "cndb-backup-" in r.headers["content-disposition"]
+    # 下载名带版本标注：cndb-backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz
+    m = re.search(r'filename="(cndb-backup-[^"]+)"', r.headers["content-disposition"])
+    assert m is not None, r.headers["content-disposition"]
+    assert re.fullmatch(rf"cndb-backup-{re.escape(cndb.__version__)}-v\d+-\d{{8}}T\d{{6}}Z\.tar\.gz", m.group(1)), (
+        m.group(1)
+    )
     assert len(r.content) > 0
     # gzip 魔数校验
     assert r.content[:2] == b"\x1f\x8b"

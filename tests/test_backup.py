@@ -221,7 +221,12 @@ def test_create_backup_no_uploads(tmp_path: Path) -> None:
 
 
 def test_create_backup_default_output_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """output=None 时应生成 backup-<timestamp>.tar.gz 默认名."""
+    """output=None 时应生成 backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz 默认名."""
+    import re
+
+    import cndb
+    from cndb.cli.backup import MANIFEST_VERSION
+
     db_path = _setup_sqlite(tmp_path)
     monkeypatch.chdir(tmp_path)
 
@@ -232,8 +237,8 @@ def test_create_backup_default_output_name(tmp_path: Path, monkeypatch: pytest.M
         upload_dir=tmp_path / "uploads",
     )
 
-    assert result.name.startswith("backup-")
-    assert result.name.endswith(".tar.gz")
+    pattern = rf"backup-{re.escape(cndb.__version__)}-v{MANIFEST_VERSION}-\d{{8}}T\d{{6}}Z\.tar\.gz"
+    assert re.fullmatch(pattern, result.name), f"默认文件名 {result.name} 不符合版本标注格式"
 
 
 def test_create_backup_nonexistent_sqlite_file(tmp_path: Path) -> None:

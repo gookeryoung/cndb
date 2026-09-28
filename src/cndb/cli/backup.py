@@ -12,7 +12,7 @@
 
 归档结构::
 
-    backup-<timestamp>.tar.gz
+    backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz
     ├── manifest.json          # 备份元信息（版本、时间、表清单、文件统计、schema 版本）
     ├── data/                  # 数据库备份（与用户数据目录 ~/.cndb/data 同名对应）
     │   ├── cndb.db            # native 模式下的原始文件（SQLite）
@@ -35,9 +35,28 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-__all__ = ["BackupError", "BackupManifest", "create_backup"]
+__all__ = ["BackupError", "BackupManifest", "create_backup", "format_backup_filename"]
 
 MANIFEST_VERSION = "1"  # 当前 manifest 协议版本，restore 端检查此值做兼容性判断
+
+
+def format_backup_filename(prefix: str = "backup", ext: str = ".tar.gz") -> str:
+    """生成带版本标注的默认备份文件名.
+
+    格式：``<prefix>-<软件版本>-v<数据库格式版本>-<UTC时间戳><ext>``
+    示例：``backup-0.2.0-v1-20260928T032702Z.tar.gz``。
+
+    Args:
+        prefix: 文件名前缀（CLI 默认名用 ``backup``，Web 下载名用 ``cndb-backup``）.
+        ext: 文件名后缀（归档 ``.tar.gz`` / 目录模式传空串）.
+
+    Returns:
+        带软件版本与数据库格式版本的文件名.
+    """
+    import cndb
+
+    ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    return f"{prefix}-{cndb.__version__}-v{MANIFEST_VERSION}-{ts}{ext}"
 
 
 class BackupError(RuntimeError):
@@ -399,7 +418,8 @@ def create_backup(
 
     Args:
         output: 输出路径 — ``archive`` 模式下是 ``.tar.gz`` 文件路径；``directory`` 模式下是目标目录。
-            默认按格式生成文件名：``backup-<timestamp>.tar.gz``（归档）或 ``backup-<timestamp>``（目录）.
+            默认按格式生成文件名：``backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz``（归档）或
+            同名无后缀（目录），示例 ``backup-0.2.0-v1-20260928T032702Z.tar.gz``.
         mode: 备份模式 — ``auto``（SQLite 用 native，其它 sqlalchemy）/ ``native`` / ``sqlalchemy``.
         include_uploads: 是否包含 uploads 目录附件.
         database_url: 覆盖 settings.DATABASE_URL（测试用）.
@@ -440,11 +460,10 @@ def create_backup(
 
     # 设置默认输出路径
     if output is None:
-        ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
         if resolved_fmt == "archive":
-            output = Path(f"backup-{ts}.tar.gz").resolve()
+            output = Path(format_backup_filename()).resolve()
         else:
-            output = Path(f"backup-{ts}").resolve()
+            output = Path(format_backup_filename(ext="")).resolve()
     else:
         output = Path(output).resolve()
 
