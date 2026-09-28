@@ -16,20 +16,20 @@ test.describe("MainLayout Header 导航按钮", () => {
     await page.waitForURL(/\/tables$/)
   }
 
-  test("Header 可见 报表 / 工作区设置 按钮", async ({ page }) => {
+  test("Content 分页导航可见 报表 / 工作区设置 Tab", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
-    await expect(page.getByRole("button", { name: /报表/ })).toBeVisible()
-    // 工作区设置是 Tooltip 包裹的图标按钮
-    await expect(page.locator("[data-testid='workspace-settings-nav']")).toBeVisible()
+    // MainLayout 重构后，报表 / 工作区设置从 Header 按钮迁移为 Content 上方的 Tabs
+    await expect(page.getByRole("tab", { name: /报表/ })).toBeVisible()
+    await expect(page.getByRole("tab", { name: /工作区设置/ })).toBeVisible()
   })
 
-  test("Header 报表按钮 → /w/:wid/reports", async ({ page }) => {
+  test("报表 Tab → /w/:wid/reports", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
-    await page.getByRole("button", { name: /报表/ }).click()
+    await page.getByRole("tab", { name: /报表/ }).click()
     await page.waitForURL(/\/reports$/)
     await expect(page.locator("h3", { hasText: /报表模板/ })).toBeVisible({ timeout: 5000 })
   })
