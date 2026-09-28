@@ -669,7 +669,7 @@ export interface FontSettings {
   bold: boolean
 }
 
-export const DEFAULT_FONT_SETTINGS: FontSettings = { scale: 'standard', bold: false }
+export const DEFAULT_FONT_SETTINGS: FontSettings = { scale: 'standard', bold: true }
 
 const FONT_KEY = 'cndb_font'
 
@@ -678,11 +678,14 @@ export function loadFontSettings(): FontSettings {
     const raw = localStorage.getItem(FONT_KEY)
     if (!raw) return { ...DEFAULT_FONT_SETTINGS }
     const parsed = JSON.parse(raw) as Partial<FontSettings>
-    // 非法档位回退标准，避免持久化脏数据导致渲染异常
+    // 非法档位回退默认，避免持久化脏数据导致渲染异常
     const scale = FONT_SCALES.includes(parsed.scale as FontScale)
       ? (parsed.scale as FontScale)
       : DEFAULT_FONT_SETTINGS.scale
-    return { scale, bold: parsed.bold === true }
+    const bold = typeof parsed.bold === 'boolean'
+      ? parsed.bold
+      : DEFAULT_FONT_SETTINGS.bold
+    return { scale, bold }
   } catch { /* noop */ }
   return { ...DEFAULT_FONT_SETTINGS }
 }
