@@ -69,6 +69,23 @@ def _silence_proactor_reset_noise() -> None:
     transport_cls._call_connection_lost = _quiet_call_connection_lost
 
 
+def _lan_ip() -> str:
+    """探测本机局域网 IP（仅用于启动提示展示，不影响实际绑定地址）."""
+    import socket
+
+    with suppress(OSError), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("10.255.255.255", 1))
+        return str(s.getsockname()[0])
+    with suppress(OSError):
+        return socket.gethostbyname(socket.gethostname())
+    return "127.0.0.1"
+
+
+def _display_host(host: str) -> str:
+    """0.0.0.0 绑定时提示用局域网 IP，其余原样返回."""
+    return _lan_ip() if host == "0.0.0.0" else host
+
+
 def serve(args: argparse.Namespace) -> None:
     """启动 uvicorn 服务器（生产可用，不依赖源码目录）."""
     try:
@@ -78,6 +95,8 @@ def serve(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     _silence_proactor_reset_noise()
+    if args.host == "0.0.0.0":
+        print(f"[run] 局域网可访问: http://{_lan_ip()}:{args.port}")
     uvicorn.run(
         "cndb.app:app",
         host=args.host,
@@ -140,9 +159,9 @@ def dev(args: argparse.Namespace) -> None:
     processes.append(frontend)
 
     print()
-    print(f"  后端:   http://{args.host}:{backend_port}")
-    print(f"  前端:   http://{args.host}:{frontend_port}")
-    print(f"  API文档: http://{args.host}:{backend_port}/docs")
+    print(f"  后端:   http://{_display_host(args.host)}:{backend_port}")
+    print(f"  前端:   http://{_display_host(args.host)}:{frontend_port}")
+    print(f"  API文档: http://{_display_host(args.host)}:{backend_port}/docs")
     print()
     print("按 Ctrl+C 停止所有服务")
 
@@ -231,13 +250,13 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command")
 
     p_serve = sub.add_parser("serve", help="启动 uvicorn 服务器")
-    p_serve.add_argument("--host", default="127.0.0.1")
+    p_serve.add_argument("--host", default="0.0.0.0", help="绑定地址（默认 0.0.0.0 允许局域网访问）")
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--reload", action="store_true")
     p_serve.add_argument("--workers", type=int, default=1)
 
     p_dev = sub.add_parser("dev", help="开发模式：同时启动前后端")
-    p_dev.add_argument("--host", default="127.0.0.1")
+    p_dev.add_argument("--host", default="0.0.0.0", help="绑定地址（默认 0.0.0.0 允许局域网访问）")
     p_dev.add_argument("--port", type=int, default=8772, help="后端端口（默认 8772，与 Vite 代理对齐）")
 
     sub.add_parser("build", help="构建前后端（需源码目录）")
@@ -305,7 +324,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command is None:
-        args.host = "127.0.0.1"
+        args.host = "0.0.0.0"
         args.port = 8000
         args.reload = False
         args.workers = 1

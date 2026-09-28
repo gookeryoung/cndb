@@ -30,7 +30,7 @@ _SETTINGS_FORMAT_VERSION = 1
 class ServeConfig:
     """「启动服务」Tab 配置."""
 
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: str = "8000"
     reload: bool = False
     workers: str = "1"

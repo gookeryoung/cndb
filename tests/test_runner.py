@@ -87,6 +87,30 @@ def test_main_serve_subcommand_dispatches() -> None:
         mock_serve.assert_called_once()
 
 
+def test_main_serve_default_host_lan_accessible() -> None:
+    """serve 未显式传 --host 时默认绑定 0.0.0.0（局域网可访问）."""
+    with patch.object(runner, "serve") as mock_serve:
+        with patch.object(sys, "argv", ["cndb", "serve"]):
+            runner.main()
+        assert mock_serve.call_args.args[0].host == "0.0.0.0"
+
+
+def test_main_dev_default_host_lan_accessible() -> None:
+    """dev 未显式传 --host 时默认绑定 0.0.0.0（局域网可访问）."""
+    with patch.object(runner, "dev") as mock_dev:
+        with patch.object(sys, "argv", ["cndb", "dev"]):
+            runner.main()
+        assert mock_dev.call_args.args[0].host == "0.0.0.0"
+
+
+def test_main_no_command_default_host_lan_accessible() -> None:
+    """无子命令直接 cndb 启动时默认绑定 0.0.0.0（局域网可访问）."""
+    with patch.object(runner, "serve") as mock_serve:
+        with patch.object(sys, "argv", ["cndb"]):
+            runner.main()
+        assert mock_serve.call_args.args[0].host == "0.0.0.0"
+
+
 def test_main_dev_subcommand_dispatches() -> None:
     """main dev 子命令应调用 dev（启动前后端子进程）."""
     with patch.object(runner, "dev") as mock_dev:
