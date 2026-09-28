@@ -209,7 +209,7 @@ const faqContent = (
         <div>
             <Text strong>为什么有些按钮是灰色的？</Text>
             <br />
-            <Text type="secondary">顶部「报表」「工作区设置」按钮需要先在左上角选择工作区；部分操作需要更高角色权限（如删除工作区仅 owner 可用）。将鼠标悬停在按钮上可查看说明。</Text>
+            <Text type="secondary">内容区顶部的「数据资产」「报表」「工作区设置」分页导航需要先在左上角选择工作区；部分操作需要更高角色权限（如删除工作区仅 owner 可用）。将鼠标悬停在按钮上可查看说明。</Text>
         </div>
         <div>
             <Text strong>数据存在哪里？</Text>

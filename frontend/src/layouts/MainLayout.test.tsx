@@ -28,6 +28,12 @@ function ReportsStub() {
     return <div data-testid="reports-page-stub">{loc.pathname}</div>
 }
 
+/** 工作区设置路由桩 —— 展示当前 pathname 供断言 */
+function SettingsStub() {
+    const loc = useLocation()
+    return <div data-testid="settings-page-stub">{loc.pathname}</div>
+}
+
 /** 按真实路由结构渲染 MainLayout，初始落在指定路径（默认第一个工作区的表列表页） */
 function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
     return renderProviders(
@@ -35,6 +41,7 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
             <Route path="/" element={<MainLayout />}>
                 <Route path="w/:wid/tables" element={<TablesStub />} />
                 <Route path="w/:wid/reports" element={<ReportsStub />} />
+                <Route path="w/:wid/settings" element={<SettingsStub />} />
                 <Route path="admin" element={<AdminStub />} />
             </Route>
         </Routes>,
@@ -67,22 +74,49 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.queryByTestId('tables-page-stub')).toBeNull()
     })
 
-    it('管理台入口位于右上角用户头像左侧（区别于常规导航区）', async () => {
+    it('工作区级按钮已从顶部移除，管理台入口位于右上角用户区左侧', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
         })
 
+        // 「报表」「工作区设置」是工作区级功能，已移入 Content 分页导航，顶部不再保留
+        expect(screen.queryByRole('button', { name: /报表/ })).toBeNull()
+        expect(screen.queryByTestId('workspace-settings-nav')).toBeNull()
+
         const adminBtn = screen.getByRole('button', { name: /管理台/ })
-        const reportBtn = screen.getByRole('button', { name: /报表/ })
         // 右上角用户区优先展示昵称
         const userName = screen.getByText('爱丽丝')
 
-        // DOM 顺序：报表（常规导航区）→ 管理台 → 昵称（头像区）
+        // DOM 顺序：管理台 → 昵称（头像区）
         // FOLLOWING(4)：后者在前者之后
-        expect(reportBtn.compareDocumentPosition(adminBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
         expect(adminBtn.compareDocumentPosition(userName) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('Content 分页导航：默认激活「数据资产」，点击 tab 正确导航且激活态随路由变化', async () => {
+        renderLayout(mockUser)
+
+        // 初始在表列表页，「数据资产」激活
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
+        expect(screen.getByRole('tab', { name: '数据资产' }).closest('.ant-tabs-tab'))
+            .toHaveClass('ant-tabs-tab-active')
+
+        // 点击「工作区设置」tab → /w/10/settings
+        fireEvent.click(screen.getByRole('tab', { name: '工作区设置' }))
+        await waitFor(() => {
+            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
+        })
+        expect(screen.getByRole('tab', { name: '工作区设置' }).closest('.ant-tabs-tab'))
+            .toHaveClass('ant-tabs-tab-active')
+
+        // 点击「报表」tab → /w/10/reports
+        fireEvent.click(screen.getByRole('tab', { name: '报表' }))
+        await waitFor(() => {
+            expect(screen.getByTestId('reports-page-stub')).toHaveTextContent('/w/10/reports')
+        })
     })
 
     it('右上角无昵称时回退显示账号名', async () => {
@@ -97,7 +131,7 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.queryByText('爱丽丝')).toBeNull()
     })
 
-    it('无工作区上下文（/admin）时「报表」「工作区设置」按钮禁用，不隐式跳转到未知工作区', async () => {
+    it('无工作区上下文（/admin）时不渲染工作区分页导航，避免隐式作用到未知工作区', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
@@ -110,9 +144,10 @@ describe('MainLayout 顶部导航', () => {
             expect(screen.getByTestId('admin-panel-stub')).toHaveTextContent('/admin')
         })
 
-        // 报表/工作区设置是工作区级功能，目标工作区必须显式选择，应禁用而非跳最近访问工作区
-        expect(screen.getByRole('button', { name: /报表/ })).toBeDisabled()
-        expect(screen.getByTestId('workspace-settings-nav')).toBeDisabled()
+        // 分页导航依赖 wid 渲染；无工作区上下文时整体不渲染，侧边栏由「请先从顶部选择一个工作区」提示引导
+        expect(screen.queryByRole('tab', { name: '数据资产' })).toBeNull()
+        expect(screen.queryByRole('tab', { name: '报表' })).toBeNull()
+        expect(screen.queryByRole('tab', { name: '工作区设置' })).toBeNull()
     })
 
     it('非系统管理员不显示「管理台」入口', () => {

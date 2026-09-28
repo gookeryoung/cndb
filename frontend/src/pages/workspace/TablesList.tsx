@@ -11,7 +11,7 @@ import {
 } from 'antd'
 import {
   PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined,
-  UploadOutlined, SettingOutlined, ApiOutlined, TeamOutlined, UserOutlined,
+  UploadOutlined, ApiOutlined, TeamOutlined, UserOutlined,
   LoginOutlined, MoreOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -390,13 +390,6 @@ export default function TablesList() {
           </Text>
         </div>
         <Space>
-          <Button
-            icon={<SettingOutlined />}
-            data-testid="workspace-settings-link"
-            onClick={() => navigate(`/w/${wid}/settings`)}
-          >
-            工作区设置
-          </Button>
           <Upload
             accept=".csv,.tsv,.json,.xlsx"
             showUploadList={false}
