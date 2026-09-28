@@ -23,14 +23,16 @@
       "source_table": "产品开发",
       "link_name": "关联项目",
       "multiple": false,
-      "fields": ["片区", "项目类别", "项目状态"]
+      "fields": ["片区", "项目类别", "项目状态"],
+      "match": {"local": "项目编号", "source": "项目编号"}
     },
     {
       "table": "日常待办",
       "source_table": "员工表",
       "link_name": "负责员工",
       "multiple": false,
-      "fields": ["姓名", "是否在职"]
+      "fields": ["姓名", "是否在职"],
+      "match": {"local": "负责人", "source": "姓名"}
     }
   ]
 }
