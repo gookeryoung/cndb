@@ -12,14 +12,13 @@ async function gotoWorkspace(page: any) {
 }
 
 test.describe("工作区 + 表列表", () => {
-  test("主应用骨架：顶部导航 + 表列表页", async ({ page }) => {
+  test("主应用骨架：顶部导航 + Content Tabs + 表列表页", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await gotoWorkspace(page);
 
-    // 顶部导航 — Header「工作区设置」与页内 TablesList 按钮同名，必须用 testid 定位避免 strict mode 歧义
-    await expect(page.getByRole("button", { name: /报表/ })).toBeVisible();
-    await expect(page.getByTestId("workspace-settings-nav")).toBeVisible();
-    await expect(page.getByTestId("workspace-settings-link")).toBeVisible();
+    // MainLayout 重构后：报表 / 工作区设置从 Header 按钮迁移为 Content 上方的 Tabs 导航
+    await expect(page.getByRole("tab", { name: /报表/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /工作区设置/ })).toBeVisible();
 
     // 表列表页 — TablesList（用 :has-text 避免匹配到空状态 placeholder row）
     await expect(page.locator('button:has-text("新建表")').first()).toBeVisible();
