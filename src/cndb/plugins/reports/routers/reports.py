@@ -433,7 +433,9 @@ def _render_with_timeout(jinja_tmpl: Any, ctx: dict[str, Any], timeout: int = RE
 _MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
 _MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _MD_CODE_RE = re.compile(r"`([^`]+)`")
-_MD_TABLE_SEP_RE = re.compile(r"^:?-{3,}:?$")
+# GFM 表格分隔行：至少 1 个短横线（允许前后各一个冒号表示对齐）
+# 参考 https://github.github.com/gfm/#tables-extension-
+_MD_TABLE_SEP_RE = re.compile(r"^:?-{1,}:?$")
 
 
 def _render_docx(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle.MINIMAL.value) -> bytes:

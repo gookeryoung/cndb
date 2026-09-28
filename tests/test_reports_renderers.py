@@ -531,6 +531,124 @@ class TestDocxRenderer:
         assert has_bold, "期望有粗体 Run"
 
 
+class TestMarkdownTableSepFilter:
+    """markdown 表格分隔行过滤：GFM 要求至少 1 个短横线即可构成分隔行.
+
+    场景：AI 生成或手写模板时，可能用 `| - | - |` 或 `| -- | -- |` 作为分隔行；
+    若过滤器正则过严（只匹配 3+ 短横线），这些分隔行会被当作数据行保留下来，
+    导致导出文档的表格第一行出现 `--` 内容。本类覆盖 docx 和 html 两种渲染路径。
+    """
+
+    @pytest.mark.parametrize(
+        "sep_line",
+        [
+            "| - | - |",          # GFM 下限：单横线
+            "| -- | -- |",        # 双横线（用户常见问题）
+            "| --- | --- |",      # 标准三横线
+            "| ---- | ---- |",    # 四横线
+            "| :--- | ---: |",    # 带对齐冒号
+            "| :--: | --: |",     # 1+ 短横线 + 对齐冒号
+        ],
+    )
+    def test_docx_separator_filter_accepts_any_hyphen_count(self, sep_line):
+        """DOCX 渲染：1/2/3+ 短横线分隔行 + 对齐冒号，都应被正确过滤.
+
+        期望输出表格只有两行：表头（粗体）+ 数据行，分隔行被丢弃。
+        """
+        from docx import Document
+
+        from cndb.plugins.reports.routers.reports import _render_docx
+
+        text = f"| 姓名 | 部门 |\n{sep_line}\n| 张三 | 研发 |\n"
+        data = _render_docx(text, {"table_name": "t"}, "minimal")
+        doc = Document(io.BytesIO(data))
+        tables = doc.tables
+        assert len(tables) == 1, f"期望 1 张表格，实际 {len(tables)}"
+        rows = tables[0].rows
+        assert len(rows) == 2, f"分隔行 {sep_line!r} 应被过滤，期望 2 行（表头+数据），实际 {len(rows)}"
+        # 表头首行必须是 "姓名"，不该残留短横线
+        assert rows[0].cells[0].text.strip() == "姓名"
+        assert rows[1].cells[0].text.strip() == "张三"
+
+    @pytest.mark.parametrize(
+        "sep_line",
+        [
+            "| - | - |",
+            "| -- | -- |",
+            "| --- | --- |",
+            "| :---: | ---: |",
+        ],
+    )
+    def test_html_separator_filter_accepts_any_hyphen_count(self, sep_line):
+        """HTML 渲染：1/2/3+ 短横线分隔行都应被过滤为 <th> + <td>.
+
+        不应出现 `<td>-</td>` 或 `<td>--</td>` 作为第一行数据。
+        """
+        from cndb.plugins.reports.routers.reports import _render_html
+
+        text = f"| 姓名 | 部门 |\n{sep_line}\n| 张三 | 研发 |\n"
+        html = _render_html(text, {}, "minimal").decode("utf-8")
+        # 应有 1 个 <thead> 行（<tr><th>...）和 1 个 <tbody> 行（<tr><td>...）
+        # 简化断言：不应包含 "-</td>" 或 "--</td>" 这类残留
+        assert "<th>姓名</th>" in html
+        assert "<td>张三</td>" in html
+        # 分隔行内容不应作为数据单元格出现
+        assert ">--<" not in html.split("<table")[1].split("</table>")[0], "分隔行残留 '--'"
+        assert ">-<" not in html.split("<table")[1].split("</table>")[0], "分隔行残留 '-'"
+
+    def test_partial_hyphen_row_not_treated_as_separator(self):
+        """只有部分列是短横线的行不应被当作分隔行.
+
+        例：`| -- | 研发 |` 第一列是 -- 但第二列是普通文本，应保留为数据行。
+        """
+        from docx import Document
+
+        from cndb.plugins.reports.routers.reports import _render_docx
+
+        text = "| 姓名 | 部门 |\n| --- | --- |\n| -- | 研发 |\n| 张三 | 销售 |\n"
+        data = _render_docx(text, {"table_name": "t"}, "minimal")
+        doc = Document(io.BytesIO(data))
+        rows = doc.tables[0].rows
+        # 分隔行被过滤，保留 1 表头 + 2 数据行
+        assert len(rows) == 3, f"期望 3 行，实际 {len(rows)}"
+        assert rows[0].cells[0].text.strip() == "姓名"  # 表头
+        assert rows[1].cells[0].text.strip() == "--"     # 正常数据（不是整行都是短横线）
+        assert rows[2].cells[0].text.strip() == "张三"
+
+    def test_blank_cells_with_hyphen_separator(self):
+        """空单元格 + 短横线分隔行的组合应正确处理.
+
+        例：`| | 部门 |` 表头某列是空，分隔行 `| - | - |` 应被过滤。
+        """
+        from docx import Document
+
+        from cndb.plugins.reports.routers.reports import _render_docx
+
+        text = "| | 部门 |\n| - | - |\n| 张三 | 研发 |\n"
+        data = _render_docx(text, {"table_name": "t"}, "minimal")
+        doc = Document(io.BytesIO(data))
+        rows = doc.tables[0].rows
+        assert len(rows) == 2, f"期望 2 行（空表头 + 数据），实际 {len(rows)}"
+        # 表头第一列是空字符串（分隔行里的 "-" 被正则匹配，空单元格经 c or "-" 回退也能匹配）
+        assert rows[1].cells[0].text.strip() == "张三"
+
+    def test_two_row_table_no_separator(self):
+        """极端防御：若模板缺分隔行（非法 markdown），不应把表头整个吞掉."""
+        from docx import Document
+
+        from cndb.plugins.reports.routers.reports import _render_docx
+
+        # 模板缺了分隔行，直接表头+数据
+        text = "| 姓名 | 部门 |\n| 张三 | 研发 |\n"
+        data = _render_docx(text, {"table_name": "t"}, "minimal")
+        doc = Document(io.BytesIO(data))
+        rows = doc.tables[0].rows
+        # 两行列都不是分隔行（都含有非短横线内容），应保留两行
+        assert len(rows) == 2
+        assert rows[0].cells[0].text.strip() == "姓名"
+        assert rows[1].cells[0].text.strip() == "张三"
+
+
 # ── PDF 渲染 ─────────────────────────────────────────
 
 
