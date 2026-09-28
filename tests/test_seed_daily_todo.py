@@ -19,17 +19,17 @@ import pytest
 
 # ── 测试数据（CSV 原文 + 配置） ────────────────────────────
 
-DAILY_TODO_CSV = """待办编号,待办标题,待办类型,优先级,截止日期,完成日期,状态,备注
-TODO00001,拜访客户 CIO,跟进拜访,高,2026-10-01,,待办,客户方组织架构调整
-TODO00002,提交智能仓储二期方案,方案设计,高,2026-10-05,,进行中,方案需补充 GPU 章节
-TODO00003,确认技术指标,需求确认,中,2026-10-10,,待办,
-TODO00004,起草合同条款,合同签订,高,2026-10-03,2026-09-20,已完成,法务已出初稿
-TODO00005,检查部署环境,实施交付,中,2026-10-15,,待办,
-TODO00006,处理告警工单,运维支持,低,2026-09-28,2026-09-25,已完成,告警单 #ALM-003
-TODO00007,协调部门资源,内部协调,中,2026-10-08,,进行中,
-TODO00008,用户培训,客户培训,低,2026-10-20,,待办,
-TODO00009,催收二期回款,回款催收,高,2026-10-25,,待办,
-TODO00010,竞品信息收集,内部协调,低,2026-11-01,,已取消,对方战略调整
+DAILY_TODO_CSV = """待办编号,待办标题,负责人,项目编号,待办类型,优先级,截止日期,完成日期,状态,备注
+TODO00001,拜访客户 CIO,李四,PRJ000001,跟进拜访,高,2026-10-01,,待办,客户方组织架构调整
+TODO00002,提交智能仓储二期方案,钱七,PRJ000002,方案设计,高,2026-10-05,,进行中,方案需补充 GPU 章节
+TODO00003,确认技术指标,孙八,,需求确认,中,2026-10-10,,待办,
+TODO00004,起草合同条款,陈三,PRJ000001,合同签订,高,2026-10-03,2026-09-20,已完成,法务已出初稿
+TODO00005,检查部署环境,周九,,实施交付,中,2026-10-15,,待办,
+TODO00006,处理告警工单,周九,PRJ000002,运维支持,低,2026-09-28,2026-09-25,已完成,告警单 #ALM-003
+TODO00007,协调部门资源,王五,,内部协调,中,2026-10-08,,进行中,
+TODO00008,用户培训,吴十,PRJ000001,客户培训,低,2026-10-20,,待办,
+TODO00009,催收二期回款,陈三,PRJ000002,回款催收,高,2026-10-25,,待办,
+TODO00010,竞品信息收集,李四,,内部协调,低,2026-11-01,,已取消,对方战略调整
 """
 
 PRODUCT_DEV_CSV = """项目编号,片区,客户名称,项目类别,项目名称,负责人,合同金额_万元,启动日期,计划交付日期,实际交付日期,当前交付节点,进度百分比,项目状态,备注
@@ -51,6 +51,7 @@ FIELDS_JSON = {
             "link_name": "关联项目",
             "multiple": False,
             "fields": ["片区", "项目类别", "项目状态"],
+            "match": {"local": "项目编号", "source": "项目编号"},
         },
         {
             "table": "日常待办",
@@ -58,6 +59,7 @@ FIELDS_JSON = {
             "link_name": "负责员工",
             "multiple": False,
             "fields": ["姓名", "是否在职"],
+            "match": {"local": "负责人", "source": "姓名"},
         },
     ],
 }
@@ -189,13 +191,24 @@ def sales_todo_seed(db, db_engine, tmp_path):
 
 
 def test_daily_todo_csv_seeded(sales_todo_seed):
-    """日常待办 CSV 正确建表：8 列 × 10 行."""
+    """日常待办 CSV 正确建表：10 列 × 10 行."""
     tables, _ = sales_todo_seed
     todo_tbl = tables["日常待办"]
     assert todo_tbl is not None
     todo_fields = {f.name: f for f in todo_tbl.fields if not f.trashed}
-    # 先只验证基础 8 列（link/lookup 是后续加的，另测）
-    base_cols = {"待办编号", "待办标题", "待办类型", "优先级", "截止日期", "完成日期", "状态", "备注"}
+    # 先只验证基础 10 列（link/lookup 是后续加的，另测）
+    base_cols = {
+        "待办编号",
+        "待办标题",
+        "负责人",
+        "项目编号",
+        "待办类型",
+        "优先级",
+        "截止日期",
+        "完成日期",
+        "状态",
+        "备注",
+    }
     assert base_cols.issubset(set(todo_fields.keys()))
 
 
@@ -283,12 +296,12 @@ def test_daily_todo_view_seeded(sales_todo_seed, db):
 
 
 def test_daily_todo_link_lookup_total_fields(sales_todo_seed):
-    """日常待办表字段总数 = 8 基础 + 2 link + 3 产品开发 lookup + 2 员工表 lookup = 15."""
+    """日常待办表字段总数 = 10 基础 + 2 link + 3 产品开发 lookup + 2 员工表 lookup = 17."""
     tables, _ = sales_todo_seed
     todo_tbl = tables["日常待办"]
     fields = [f for f in todo_tbl.fields if not f.trashed]
-    # 8 基础 + 2 link + 3 lookup(产品开发) + 2 lookup(员工表) = 15
-    assert len(fields) == 15, f"期望 15 字段，实际 {len(fields)}: {[f.name for f in fields]}"
+    # 10 基础 + 2 link + 3 lookup(产品开发) + 2 lookup(员工表) = 17
+    assert len(fields) == 17, f"期望 17 字段，实际 {len(fields)}: {[f.name for f in fields]}"
 
 
 def test_daily_todo_settings_loading_from_real_datasets():
@@ -318,6 +331,10 @@ def test_daily_todo_settings_loading_from_real_datasets():
     rule_fields = {r["source_table"]: r["fields"] for r in link_rules}
     assert rule_fields["产品开发"] == ["片区", "项目类别", "项目状态"]
     assert rule_fields["员工表"] == ["姓名", "是否在职"]
+    # match 声明：按本地/源匹配列回填行关联（项目编号同名、负责人→姓名）
+    match_pairs = {r["source_table"]: r["match"] for r in link_rules}
+    assert match_pairs["产品开发"] == {"local": "项目编号", "source": "项目编号"}
+    assert match_pairs["员工表"] == {"local": "负责人", "source": "姓名"}
 
 
 def test_daily_todo_views_config_from_real_datasets():
@@ -340,7 +357,7 @@ def test_daily_todo_views_config_from_real_datasets():
 
 
 def test_daily_todo_csv_has_10_rows(tmp_path):
-    """日常待办 CSV 基础校验：8 列 × 10 行，字段名正确."""
+    """日常待办 CSV 基础校验：10 列 × 10 行，字段名正确."""
     ws_dir = tmp_path / "daily_todo_test"
     ws_dir.mkdir()
     csv_path = ws_dir / "日常待办.csv"
@@ -351,10 +368,76 @@ def test_daily_todo_csv_has_10_rows(tmp_path):
         header = next(reader)
         rows = list(reader)
 
-    assert header == ["待办编号", "待办标题", "待办类型", "优先级", "截止日期", "完成日期", "状态", "备注"]
+    assert header == [
+        "待办编号",
+        "待办标题",
+        "负责人",
+        "项目编号",
+        "待办类型",
+        "优先级",
+        "截止日期",
+        "完成日期",
+        "状态",
+        "备注",
+    ]
     assert len(rows) == 10
     # 待办编号唯一
     ids = [r[0] for r in rows]
     assert len(ids) == len(set(ids))
     assert ids[0] == "TODO00001"
     assert ids[-1] == "TODO00010"
+
+
+def test_daily_todo_match_backfill(sales_todo_seed, db, db_engine):
+    """link_lookups.match 行关联回填：匹配行写关联表，无匹配列值的行保持空.
+
+    - 负责员工：CSV 10 行全部填了负责人姓名 → 10 行全部回填关联；
+    - 关联项目：仅 6 行填了项目编号（TODO00003/05/07/10 留空）→ 6 行回填、4 行保持空；
+    - 关联目标语义正确（TODO00001 → PRJ000001 行、TODO00002 → PRJ000002 行）。
+    """
+    from sqlalchemy import MetaData, Table, select
+
+    from cndb.plugins.tables.services.core.links import load_links
+
+    tables, _ = sales_todo_seed
+    todo_tbl = tables["日常待办"]
+    todo_fields = {f.name: f for f in todo_tbl.fields if not f.trashed}
+    product_tbl = tables["产品开发"]
+    product_fields = {f.name: f for f in product_tbl.fields if not f.trashed}
+    emp_tbl = tables["员工表"]
+    emp_fields = {f.name: f for f in emp_tbl.fields if not f.trashed}
+
+    def _read_id_key_map(tbl, key_field):
+        sa_tbl = Table(tbl.db_table_name, MetaData(), autoload_with=db_engine)
+        with db_engine.connect() as conn:
+            rows = conn.execute(select(sa_tbl.c.id, sa_tbl.c[key_field.db_column_name])).all()
+        return {key: rid for rid, key in rows}
+
+    todo_id_by_no = _read_id_key_map(todo_tbl, todo_fields["待办编号"])
+    assert len(todo_id_by_no) == 10
+
+    # 负责员工：10 行全覆盖，每行单目标
+    emp_links = load_links(db_engine, todo_fields["负责员工"], list(todo_id_by_no.values()))
+    assert set(emp_links) == set(todo_id_by_no.values()), "全部待办行都应回填负责员工关联"
+    assert all(len(targets) == 1 for targets in emp_links.values())
+    emp_id_by_name = _read_id_key_map(emp_tbl, emp_fields["姓名"])
+    assert emp_links[todo_id_by_no["TODO00001"]] == [emp_id_by_name["李四"]]
+    assert emp_links[todo_id_by_no["TODO00009"]] == [emp_id_by_name["陈三"]]
+
+    # 关联项目：6 行有关联、4 行保持空，目标语义正确
+    proj_links = load_links(db_engine, todo_fields["关联项目"], list(todo_id_by_no.values()))
+    assert set(proj_links) == {
+        todo_id_by_no["TODO00001"],
+        todo_id_by_no["TODO00002"],
+        todo_id_by_no["TODO00004"],
+        todo_id_by_no["TODO00006"],
+        todo_id_by_no["TODO00008"],
+        todo_id_by_no["TODO00009"],
+    }
+    assert all(len(targets) == 1 for targets in proj_links.values())
+    proj_id_by_no = _read_id_key_map(product_tbl, product_fields["项目编号"])
+    assert proj_links[todo_id_by_no["TODO00001"]] == [proj_id_by_no["PRJ000001"]]
+    assert proj_links[todo_id_by_no["TODO00006"]] == [proj_id_by_no["PRJ000002"]]
+    # 留空项目编号的行不触碰（无对应源行）
+    for no in ("TODO00003", "TODO00005", "TODO00007", "TODO00010"):
+        assert todo_id_by_no[no] not in proj_links, f"{no} 项目编号为空，不应有关联"
