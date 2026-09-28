@@ -512,6 +512,82 @@ class TestReportTemplateOwnership:
         assert resp.status_code == 404
 
 
+class TestReportWorkspaceScope:
+    """报表归属工作区：列表过滤 + 创建归属解析."""
+
+    def _create_workspace(self, client, auth_headers, name: str) -> int:
+        resp = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": name})
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    def _create_table(self, client, auth_headers, workspace_id: int, name: str) -> int:
+        resp = client.post(f"/api/v1/workspaces/{workspace_id}/tables", headers=auth_headers, json={"name": name})
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    def test_list_filter_by_workspace(self, client, auth_headers):
+        """传 workspace_id 只返回归属该工作区的模板，缺省返回全量."""
+        ws_a = self._create_workspace(client, auth_headers, "报表工作区A")
+        ws_b = self._create_workspace(client, auth_headers, "报表工作区B")
+        tbl_a = self._create_table(client, auth_headers, ws_a, "A源表")
+        tbl_b = self._create_table(client, auth_headers, ws_b, "B源表")
+        for name, tid in (("A模板", tbl_a), ("B模板", tbl_b)):
+            resp = client.post(
+                "/api/v1/reports",
+                headers=auth_headers,
+                json={"name": name, "table_id": tid, "output_format": "docx", "template_content": "x"},
+            )
+            assert resp.status_code == 201, resp.text
+        # 缺省全量
+        resp = client.get("/api/v1/reports", headers=auth_headers)
+        assert resp.status_code == 200
+        assert len(resp.json()) == 2
+        # 过滤 A 工作区
+        resp = client.get(f"/api/v1/reports?workspace_id={ws_a}", headers=auth_headers)
+        assert resp.status_code == 200
+        items = resp.json()
+        assert len(items) == 1
+        assert items[0]["workspace_id"] == ws_a
+        assert items[0]["name"] == "A模板"
+
+    def test_create_workspace_derived_from_table(self, client, auth_headers):
+        """只传 table_id 时归属由表反推."""
+        ws_id = self._create_workspace(client, auth_headers, "反推工作区")
+        tid = self._create_table(client, auth_headers, ws_id, "反推源表")
+        resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={"name": "反推模板", "table_id": tid, "output_format": "docx", "template_content": "x"},
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["workspace_id"] == ws_id
+
+    def test_create_explicit_workspace_404(self, client, auth_headers):
+        """显式指定不存在的工作区应 404."""
+        resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "坏归属",
+                "workspace_id": 999999,
+                "output_format": "docx",
+                "template_content": "x",
+            },
+        )
+        assert resp.status_code == 404
+        assert "工作区不存在" in resp.json()["detail"]
+
+    def test_create_without_workspace_null(self, client, auth_headers):
+        """无 workspace_id 且无 table_id 时归属为 NULL."""
+        resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={"name": "无归属模板", "output_format": "docx", "template_content": "x"},
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["workspace_id"] is None
+
+
 def test_update_template_parameters(client, auth_headers):
     """更新 parameters 字段应正确生效."""
     create_resp = client.post(

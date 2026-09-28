@@ -38,6 +38,8 @@ export interface Workspace {
   pinned?: boolean; created_at?: string; updated_at?: string
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
   current_user_role?: WorkspaceRole | null
+  /** 归属报表数量 —— GET /v1/workspaces 列表聚合字段（与 table_count 同事务） */
+  report_count?: number
 }
 export interface WorkspaceDetail extends Workspace {
   member_count?: number; table_count?: number
@@ -405,6 +407,8 @@ export type ReportTheme = 'business' | 'minimal' | 'modern' | 'engineering' | 'a
 export interface ReportTemplateSummary {
   id: ID
   table_id: number | null
+  /** 归属工作区（显式优先，其次由 table 反推；皆无为 null——不归属任何工作区） */
+  workspace_id: number | null
   name: string
   description: string
   output_format: string
@@ -428,6 +432,8 @@ export interface ReportTemplateCreate {
   output_format?: string
   template_content: string
   table_id?: number | null
+  /** 归属工作区：显式优先（不存在 404）；未传且 table_id 存在时由表反推；皆无落 null */
+  workspace_id?: number | null
   parameters?: ReportParameter[]
   extra_table_ids?: number[]
   theme?: ReportTheme

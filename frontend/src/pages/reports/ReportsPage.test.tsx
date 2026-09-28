@@ -19,6 +19,7 @@ import type { ReportTemplateSummary } from '@/api'
 const TPL: ReportTemplateSummary = {
     id: 1,
     table_id: 100,
+    workspace_id: 10,
     name: '月度销售汇总',
     description: '按月汇总销售数据',
     output_format: 'docx',
@@ -81,7 +82,8 @@ describe('ReportsPage 报表模板页', () => {
         expect(document.querySelector('.ant-tabs-tab-active')?.textContent).toContain('基本信息')
         // 切到「模板编辑」页签后 CodeMirror 编辑器挂载
         fireEvent.click(screen.getByText('模板编辑'))
-        await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull())
+        // React.lazy 编辑器 chunk（CodeMirror）冷加载在全量并发测试下可超默认 1s，放宽该处等待上限
+        await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull(), { timeout: 10_000 })
     })
 
     it('编辑器主区支持编辑/预览/帮助模式切换且切回后内容保留', async () => {

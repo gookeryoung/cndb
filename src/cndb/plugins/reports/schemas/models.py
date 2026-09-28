@@ -28,6 +28,8 @@ class TemplateCreate(BaseModel):
     output_format: str = "docx"
     template_content: str
     table_id: int | None = None
+    # 归属工作区：显式优先（不存在 404）；未传且 table_id 存在时由表反推；皆无落 NULL
+    workspace_id: int | None = None
     parameters: list[ParameterDef] = Field(default_factory=list)
     # 额外引用表（可跨工作区，渲染时注入 records_by_table）
     extra_table_ids: list[int] = Field(default_factory=list)
@@ -55,6 +57,7 @@ class TemplateResponse(BaseModel):
 
     id: int
     table_id: int | None = None
+    workspace_id: int | None = None
     name: str
     description: str
     output_format: str
@@ -73,6 +76,7 @@ class TemplateListResponse(BaseModel):
 
     id: int
     table_id: int | None = None
+    workspace_id: int | None = None
     name: str
     description: str
     output_format: str

@@ -63,6 +63,14 @@ class ReportTemplate(TimestampMixin, Base):
     theme: Mapped[str] = mapped_column(
         String(16), nullable=False, default=ThemeStyle.MINIMAL.value, server_default=ThemeStyle.MINIMAL.value
     )
+    # 归属工作区：显式归属优先于 table_id 反推，皆无落 NULL；工作区删除 SET NULL
+    # （迁移 e5f6a7b8c9d0 已建列+索引；链上加列迁移不建 FK——b2c3d4e5f6a7/d4e5f6a7b8c9 先例，
+    # FK 由本 ORM 声明，create_all 新库生效，SQLite 默认不强制 FK）
+    workspace_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"ReportTemplate(id={self.id}, name={self.name!r}, format={self.output_format!r}, theme={self.theme!r})"

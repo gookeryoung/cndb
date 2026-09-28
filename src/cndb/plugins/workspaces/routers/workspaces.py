@@ -63,7 +63,7 @@ def list_workspaces(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[WorkspaceWithPinnedResponse]:
-    """列出当前用户所属的工作区，钉住的置顶，附带 table_count / member_count."""
+    """列出当前用户所属的工作区，钉住的置顶，附带 table_count / member_count / report_count."""
     from sqlalchemy import case, func, select
 
     from cndb.plugins.tables.models import DataTable
@@ -98,6 +98,18 @@ def list_workspaces(
             .all()
         )
     }
+    # 报表数统计（workspace_id 为 NULL 的模板不归属任何工作区，不计入）
+    from cndb.plugins.reports.models import ReportTemplate
+
+    report_counts: dict[int, int] = {
+        row[0]: row[1]
+        for row in (
+            db.query(ReportTemplate.workspace_id, func.count(ReportTemplate.id))
+            .filter(ReportTemplate.workspace_id.in_(ws_ids))
+            .group_by(ReportTemplate.workspace_id)
+            .all()
+        )
+    }
 
     result: list[WorkspaceWithPinnedResponse] = []
     for ws, member in rows:
@@ -107,6 +119,7 @@ def list_workspaces(
         # 前端列表类型声明时用 Workspace & { table_count, member_count } 接收）
         d["table_count"] = table_counts.get(ws.id, 0)
         d["member_count"] = member_counts.get(ws.id, 0)
+        d["report_count"] = report_counts.get(ws.id, 0)
         d["current_user_role"] = member.role.value if member.role else None
         result.append(WorkspaceWithPinnedResponse.model_validate(d))
     return result

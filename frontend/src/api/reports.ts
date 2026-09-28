@@ -8,7 +8,9 @@ import type {
 
 export const reportApi = {
   /** 列出所有报告模板 */
-  list: () => api.get<ReportTemplateSummary[]>('/v1/reports').then(r => r.data),
+  /** 列出报表模板；传 workspace_id 时仅返回归属该工作区的模板，缺省返回全量 */
+  list: (params?: { workspace_id?: number }) =>
+    api.get<ReportTemplateSummary[]>('/v1/reports', { params }).then(r => r.data),
   /** 获取模板详情（含 template_content） */
   get: (id: number | string) => api.get<ReportTemplate>(`/v1/reports/${id}`).then(r => r.data),
   /** 创建报告模板 */

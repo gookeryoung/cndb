@@ -504,6 +504,35 @@ class TestWorkspaceDetailWithStats:
         assert isinstance(item["table_count"], int)
         assert isinstance(item["member_count"], int)
 
+    def test_list_workspaces_report_count(self, client, owner_user):
+        """列表接口附带 report_count：NULL 归属模板不计入任何工作区."""
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        headers = {"Authorization": f"Bearer {token}"}
+        r = client.get("/api/v1/workspaces", headers=headers)
+        assert r.status_code == 200
+        item = next(i for i in r.json() if i["id"] == ws_id)
+        assert item["report_count"] == 0
+        # 建 1 个归属模板（table_id 反推）+ 1 个无归属模板
+        tbl = client.post(f"/api/v1/workspaces/{ws_id}/tables", headers=headers, json={"name": "报表源表"})
+        assert tbl.status_code == 201, tbl.text
+        tid = tbl.json()["id"]
+        r1 = client.post(
+            "/api/v1/reports",
+            headers=headers,
+            json={"name": "归属模板", "table_id": tid, "output_format": "docx", "template_content": "x"},
+        )
+        assert r1.status_code == 201, r1.text
+        r2 = client.post(
+            "/api/v1/reports",
+            headers=headers,
+            json={"name": "无归属模板", "output_format": "docx", "template_content": "x"},
+        )
+        assert r2.status_code == 201, r2.text
+        r = client.get("/api/v1/workspaces", headers=headers)
+        item = next(i for i in r.json() if i["id"] == ws_id)
+        assert item["report_count"] == 1
+
     def _create_ws(self, client, owner_token: str) -> int:
         r = client.post("/api/v1/workspaces", json={"name": "WS"}, headers=_headers(owner_token))
         assert r.status_code == 201

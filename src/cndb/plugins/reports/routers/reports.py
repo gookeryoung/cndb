@@ -182,10 +182,14 @@ def _validate_theme(theme: str) -> str:
 
 @router.get("", response_model=list[TemplateListResponse])
 def list_templates(
+    workspace_id: int | None = None,
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
 ) -> list[ReportTemplate]:
+    """列出报表模板；传 workspace_id 时仅返回归属该工作区的模板，缺省返回全量."""
     stmt = select(ReportTemplate).order_by(ReportTemplate.id)
+    if workspace_id is not None:
+        stmt = stmt.where(ReportTemplate.workspace_id == workspace_id)
     return list(db.scalars(stmt).all())
 
 
@@ -198,6 +202,23 @@ def _resolve_table(db: Session, table_id: int | None) -> int | None:
     if not db.get(DataTable, table_id):
         raise HTTPException(status_code=404, detail=f"数据表不存在 id={table_id}")
     return table_id
+
+
+def _resolve_workspace_id(db: Session, workspace_id: int | None, table_id: int | None) -> int | None:
+    """解析模板归属工作区：显式指定优先（不存在 404），否则按所属表反推，皆无落 None."""
+    if workspace_id is not None:
+        from cndb.plugins.workspaces.models import Workspace
+
+        if db.get(Workspace, workspace_id) is None:
+            raise HTTPException(status_code=404, detail=f"工作区不存在 id={workspace_id}")
+        return workspace_id
+    if table_id is not None:
+        from cndb.plugins.tables.models import DataTable
+
+        table = db.get(DataTable, table_id)
+        if table is not None:
+            return table.workspace_id
+    return None
 
 
 def _resolve_extra_tables(db: Session, extra_table_ids: list[int]) -> list[int]:
@@ -221,6 +242,7 @@ def create_template(
     _validate_format(payload.output_format)
     _validate_theme(payload.theme)
     _resolve_table(db, payload.table_id)
+    workspace_id = _resolve_workspace_id(db, payload.workspace_id, payload.table_id)
     extra_ids = _resolve_extra_tables(db, payload.extra_table_ids)
     try:
         _jinja_env.from_string(payload.template_content)
@@ -228,6 +250,7 @@ def create_template(
         raise HTTPException(status_code=400, detail=f"模板语法错误: {exc}") from exc
     tpl = ReportTemplate(
         table_id=payload.table_id,
+        workspace_id=workspace_id,
         name=payload.name,
         description=payload.description,
         output_format=payload.output_format,

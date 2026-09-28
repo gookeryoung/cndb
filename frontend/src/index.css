@@ -372,6 +372,15 @@ body.theme-oled {
   animation: cn-new-row-pulse 2.4s ease-in-out infinite;
 }
 
+/* ─────────────── 工作区分页导航 tab 数量徽标 ───────────────
+ * MainLayout wsTabItems 在 label 内嵌计数 span（0 也显示），
+ * 颜色走主题变量，随八套主题自适应。 */
+.cn-ws-tab-count {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--cn-text-secondary);
+}
+
 /* 非虚拟模式兜底：标准 tr > td */
 .ant-table-tbody>tr.cn-table-row-new>td {
   background-color: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container)) !important;

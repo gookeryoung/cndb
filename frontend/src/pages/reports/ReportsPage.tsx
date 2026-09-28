@@ -1,16 +1,23 @@
 /** 报表模板页 — 模板 CRUD + 可视化编辑器 + 渲染下载. */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
-import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntApp, Select, Dropdown, Empty, Tooltip, Segmented, Tabs, Badge } from 'antd'
+import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntApp, Select, Dropdown, Empty, Tooltip, Segmented, Tabs, Badge, Spin } from 'antd'
 import type { FormInstance } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { reportApi, tableApi, fieldApi, recordApi, workspaceApi } from '@/api'
 import type { ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter, ReportTheme, TableSummary, Field, Workspace } from '@/api'
-import { ReportTemplateEditor, PreviewPanel, SyntaxHelpPanel } from '@/components/report-editor'
 import type { TemplateEditorHandle } from '@/components/report-editor'
+
+// 编辑器三组件懒加载：共享同一动态 import 落同一 chunk，首屏不加载 CodeMirror
+const ReportTemplateEditor = React.lazy(() =>
+  import('@/components/report-editor').then(m => ({ default: m.ReportTemplateEditor })))
+const PreviewPanel = React.lazy(() =>
+  import('@/components/report-editor').then(m => ({ default: m.PreviewPanel })))
+const SyntaxHelpPanel = React.lazy(() =>
+  import('@/components/report-editor').then(m => ({ default: m.SyntaxHelpPanel })))
 
 const { Title, Text } = Typography
 const FORMAT_OPTIONS = [
@@ -32,6 +39,15 @@ const PARAM_TYPES = [
   { value: 'date', label: '日期' },
   { value: 'boolean', label: '布尔' },
 ]
+
+/** 编辑器 chunk 懒加载占位 — 与编辑器主体同高，避免布局跳动 */
+function EditorLoadingFallback() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'min(56vh, 640px)' }}>
+      <Spin />
+    </div>
+  )
+}
 
 export default function ReportsPage() {
   const { message } = AntApp.useApp()
@@ -55,8 +71,9 @@ export default function ReportsPage() {
   }
 
   const { data: templates = [], isLoading } = useQuery<ReportTemplateSummary[]>({
-    queryKey: ['report-templates'],
-    queryFn: () => reportApi.list(),
+    // 按 workspace_id 过滤：仅显示当前工作区拥有的报表模板（wid 缺省时后端返回全量）
+    queryKey: ['report-templates', wid],
+    queryFn: () => reportApi.list(wid ? { workspace_id: Number(wid) } : undefined),
   })
 
   const { data: tables = [] } = useQuery({
@@ -70,6 +87,8 @@ export default function ReportsPage() {
     onSuccess: () => {
       message.success('模板已创建')
       queryClient.invalidateQueries({ queryKey: ['report-templates'] })
+      // 工作区列表缓存含 report_count，新建后同步刷新 tab 徽标
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       setEditorOpen(false)
       form.resetFields()
     },
@@ -81,6 +100,8 @@ export default function ReportsPage() {
     onSuccess: () => {
       message.success('模板已更新')
       queryClient.invalidateQueries({ queryKey: ['report-templates'] })
+      // update 可变更归属表进而影响归属工作区，同步刷新徽标
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       setEditorOpen(false)
       setEditing(null)
       form.resetFields()
@@ -93,6 +114,8 @@ export default function ReportsPage() {
     onSuccess: () => {
       message.success('模板已删除')
       queryClient.invalidateQueries({ queryKey: ['report-templates'] })
+      // 工作区列表缓存含 report_count，删除后同步刷新 tab 徽标
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] })
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '删除模板失败'),
   })
@@ -785,7 +808,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
               key: 'editor',
               label: erroredTabs.has('editor') ? <Badge dot>模板编辑</Badge> : '模板编辑',
               children: editorVisited ? (
-                <>
+                <Suspense fallback={<EditorLoadingFallback />}>
                   {/* 编辑器主体：内部模式切换 + 字段面板/编辑器/预览单区切换 */}
                   <div className="report-editor-toolbar">
                     <Segmented
@@ -833,7 +856,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
                       </div>
                     )}
                   </div>
-                </>
+                </Suspense>
               ) : null,
             },
           ]}
