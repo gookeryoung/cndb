@@ -2,7 +2,7 @@
  * KanbanView 组件测试 —— 看板视图.
  *
  * 覆盖：空数据 / 分组列头与计数 / 卡片标题 / 进度条 / 逾期与紧急徽章 /
- * 优先级与负责人 Tag / 额外字段 / 点击回调 / 缺分组字段空态。
+ * 优先级与负责人 Tag / 额外字段 / 负责人与额外字段空值不渲染占位标签 / 点击回调 / 缺分组字段空态。
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -44,6 +44,7 @@ const ROWS: RowResponse[] = [
 
 function renderKanban(props?: {
   rows?: RowResponse[]
+  fields?: Field[]
   view?: View | null
   onRowClick?: (r: RowResponse) => void
   canEdit?: boolean
@@ -54,7 +55,7 @@ function renderKanban(props?: {
   return renderProviders(
     <KanbanView
       rows={props?.rows ?? ROWS}
-      fields={FIELDS}
+      fields={props?.fields ?? FIELDS}
       view={view}
       density="comfortable"
       onRowClick={props?.onRowClick}
@@ -129,6 +130,44 @@ describe('KanbanView 看板视图', () => {
     expect(screen.getByText('高')).toBeInTheDocument()
     expect(screen.getByText('alice')).toBeInTheDocument()
     expect(screen.getByText('carol')).toBeInTheDocument()
+  })
+
+  it('负责人与额外字段值为空时不渲染空白占位标签', () => {
+    const rows: RowResponse[] = [
+      { id: 1, 名称: '任务A', 状态: '进行中', 负责人: null, 描述: null },
+      { id: 2, 名称: '任务B', 状态: '进行中', 负责人: 'alice', 描述: '要点B' },
+    ]
+    renderKanban({ rows })
+
+    // 负责人为空：不渲染 '—' 占位 Tag
+    expect(screen.queryByText('—')).not.toBeInTheDocument()
+    // 负责人有值：照常渲染
+    expect(screen.getByText('alice')).toBeInTheDocument()
+    // 额外字段为空：不渲染空值 "描述:" 标签（仅要点B 的描述标签存在，共 1 个）
+    expect(screen.getAllByText(/^描述:/)).toHaveLength(1)
+    expect(screen.getByText('描述: 要点B')).toBeInTheDocument()
+  })
+
+  it('负责人为 link 类型且值为空数组时不渲染标签，有值时正常渲染', () => {
+    const linkFields: Field[] = [
+      makeField({ id: 1, name: '名称', field_type: 'text' }),
+      makeField({ id: 2, name: '状态', field_type: 'select', config: { options: ['待办', '进行中', '已完成'] } }),
+      makeField({ id: 8, name: '责任部门', field_type: 'link' }),
+    ]
+    const view: View = {
+      id: 1, name: '看板', view_type: 'kanban', is_default: false,
+      view_options: { group_field: '状态', title_field: '名称', assignee_field: '责任部门' },
+    }
+    const rows: RowResponse[] = [
+      { id: 1, 名称: '任务A', 状态: '进行中', 责任部门: [] },
+      { id: 2, 名称: '任务B', 状态: '进行中', 责任部门: [{ id: 1, value: '研发部' }] },
+    ]
+    renderKanban({ rows, fields: linkFields, view })
+
+    // link 空数组：formatFieldDisplayValue 返回空串 → 不渲染占位标签
+    expect(screen.queryByText('—')).not.toBeInTheDocument()
+    // link 有值：取 value 标签照常渲染
+    expect(screen.getByText('研发部')).toBeInTheDocument()
   })
 
   it('点击卡片回调对应行', () => {

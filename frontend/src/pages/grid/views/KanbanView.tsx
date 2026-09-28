@@ -21,6 +21,7 @@
  *                      已完成卡片可再次点击勾选框取消（写回取消值，语义见 buildDoneToggleValue）。
  *
  * 交互约定:
+ * - 优先级/负责人/额外字段值为空时不渲染对应 Tag（不显示 '—' 等空白占位标签）。
  * - 截止日期徽章（时钟图标 + X天，逾期为 -X天）与标题同一行、紧贴标题右侧显示。
  * - 配置了 done_field 且当前用户可编辑时，卡片 hover 后在删除按钮左侧显示完成勾选框（可勾选/取消）。
  */
@@ -220,6 +221,14 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   const progressVal = progressField ? Number(row[progressField]) : NaN
   const progress = Number.isFinite(progressVal) ? Math.max(0, Math.min(100, progressVal)) : NaN
 
+  // 负责人显示值 —— 格式化后为空（null/undefined/''/空数组等）时不渲染 Tag，避免空白占位标签
+  const assigneeFieldObj = assigneeField ? findField(assigneeField) : undefined
+  const assigneeDisplay = assigneeField
+    ? assigneeFieldObj
+      ? formatFieldDisplayValue(assigneeFieldObj, row[assigneeField])
+      : String(row[assigneeField] ?? '')
+    : ''
+
   // 卡片标题 — 用字段定义正确格式化 link/select 等类型
   const titleFieldDef = findField(titleField)
   const title = titleFieldDef
@@ -363,25 +372,19 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
         </div>
       )}
 
-      {/* 元信息行：优先级 + 负责人（两者都未配置时不占位，保持紧凑） */}
+      {/* 元信息行：优先级 + 负责人（两者都未配置时不占位；值为空的字段不渲染 Tag，避免空白标签） */}
       {(priorityField || assigneeField) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: cs.metaGap, marginBottom: cs.metaMarginBottom }}>
           {priorityField && (
             <PriorityBadge field={findField(priorityField)} value={row[priorityField]} />
           )}
-          {assigneeField && (() => {
-            const assigneeFieldObj = findField(assigneeField)
-            const rawVal = assigneeFieldObj
-              ? formatFieldDisplayValue(assigneeFieldObj, row[assigneeField]) || '—'
-              : String(row[assigneeField] || '—')
-            return (
-              <AutoTag
-                value={rawVal}
-                options={assigneeFieldObj?.config?.options}
-                style={{ paddingInline: 6 }}
-              />
-            )
-          })()}
+          {assigneeDisplay && (
+            <AutoTag
+              value={assigneeDisplay}
+              options={assigneeFieldObj?.config?.options}
+              style={{ paddingInline: 6 }}
+            />
+          )}
         </div>
       )}
 
