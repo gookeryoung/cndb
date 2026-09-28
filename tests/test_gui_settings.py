@@ -15,7 +15,7 @@ def test_defaults_auto_refresh_enabled() -> None:
     s = GuiSettings()
     assert s.info.auto_refresh is True
     assert s.info.interval == "10 秒"
-    assert s.serve.host == "127.0.0.1"
+    assert s.serve.host == "0.0.0.0"
     assert s.serve.port == "8000"
     assert s.window_geometry == ""
 

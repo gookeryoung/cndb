@@ -446,7 +446,7 @@ class ServeTab(_BaseTab):
             messagebox.showinfo("提示", "服务已在运行")
             return
 
-        host = self.host_var.get().strip() or "127.0.0.1"
+        host = self.host_var.get().strip() or "0.0.0.0"
         port = int(self.port_var.get().strip() or "8000")
         reload = self.reload_var.get()
         workers = 1 if reload else int(self.workers_var.get().strip() or "1")
@@ -573,12 +573,14 @@ class ServeTab(_BaseTab):
     def open_browser(self) -> None:
         import webbrowser
 
-        url = f"http://{self.host_var.get().strip() or '127.0.0.1'}:{self.port_var.get().strip() or '8000'}"
+        # 0.0.0.0 绑定时本机浏览器用回环地址打开
+        host = self.host_var.get().strip() or "0.0.0.0"
+        url = f"http://{'127.0.0.1' if host == '0.0.0.0' else host}:{self.port_var.get().strip() or '8000'}"
         webbrowser.open(url)
 
     @override
     def persist(self, settings: GuiSettings) -> None:
-        settings.serve.host = self.host_var.get().strip() or "127.0.0.1"
+        settings.serve.host = self.host_var.get().strip() or "0.0.0.0"
         settings.serve.port = self.port_var.get().strip() or "8000"
         settings.serve.reload = self.reload_var.get()
         settings.serve.workers = self.workers_var.get().strip() or "1"
