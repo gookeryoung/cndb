@@ -453,7 +453,9 @@ def _read_source_values(
     target_row_ids: list[int],
 ) -> dict[int, Any] | None:
     """从源物理表批量读取字段值：源行 id -> 值；物理表缺列时返回 None."""
-    from sqlalchemy import MetaData, inspect
+    from sqlalchemy import inspect
+
+    from cndb.plugins.tables.services.core.ddl import get_reflected_table
 
     source_table = source_field.table
     if source_table is None:
@@ -465,9 +467,7 @@ def _read_source_values(
     if source_field.db_column_name not in col_names:
         return None
 
-    metadata = MetaData()
-    metadata.reflect(bind=engine, only=[source_table.db_table_name])
-    sa_table = metadata.tables[source_table.db_table_name]
+    sa_table = get_reflected_table(engine, source_table.db_table_name)
     col = sa_table.c.get(source_field.db_column_name)
     if col is None:
         return None

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
+from weakref import WeakKeyDictionary
 
 from sqlalchemy import (
     Column,
@@ -24,6 +25,7 @@ from sqlalchemy import (
     inspect,
     text,
 )
+from sqlalchemy.exc import InvalidRequestError
 
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
@@ -32,6 +34,62 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
+
+
+# ── sa.Table 反射缓存 ─────────────────────────────────
+
+
+# 缓存结构：engine（弱引用）→ {物理表名: sa.Table}。
+# 键用 engine 弱引用：测试中每个临时 engine 各持独立缓存，engine 回收后缓存自动释放。
+_sa_table_cache: WeakKeyDictionary[Any, dict[str, Table]] = WeakKeyDictionary()
+
+
+def get_reflected_table(engine: Any, db_table_name: str, *, missing_message: str | None = None) -> Table:
+    """反射获取物理表 sa.Table，带 engine 级缓存.
+
+    同一 engine 下同名表复用同一 Table 对象，避免每次行 CRUD / list_rows
+    都向数据库发出反射查询。物理 DDL 变更后须调用 invalidate_reflected_table。
+
+    Args:
+        engine: SQLAlchemy Engine.
+        db_table_name: 物理表名.
+        missing_message: 表不存在时 RuntimeError 的文案；缺省为通用文案.
+
+    Raises:
+        RuntimeError: 物理表不存在（指向 DDL 未执行的编程错误）.
+    """
+    per_engine = _sa_table_cache.get(engine)
+    if per_engine is None:
+        per_engine = {}
+        _sa_table_cache[engine] = per_engine
+    cached = per_engine.get(db_table_name)
+    if cached is not None:
+        return cached
+
+    metadata = MetaData()
+    try:
+        metadata.reflect(bind=engine, only=[db_table_name])
+    except InvalidRequestError as exc:
+        # 反射不到目标表（only 模式）统一转为 RuntimeError，保持既有错误语义
+        raise RuntimeError(missing_message or f"物理表 {db_table_name} 不存在") from exc
+    if db_table_name not in metadata.tables:
+        raise RuntimeError(missing_message or f"物理表 {db_table_name} 不存在")
+    sa_table = metadata.tables[db_table_name]
+    per_engine[db_table_name] = sa_table
+    return sa_table
+
+
+def invalidate_reflected_table(db_table_name: str | None = None) -> None:
+    """物理 DDL 变更后失效反射缓存.
+
+    Args:
+        db_table_name: 待失效的物理表名；None 时清空所有引擎的全部缓存.
+    """
+    for per_engine in list(_sa_table_cache.values()):
+        if db_table_name is None:
+            per_engine.clear()
+        else:
+            per_engine.pop(db_table_name, None)
 
 
 # ── sa.Table 构建 ─────────────────────────────────────
@@ -110,6 +168,7 @@ def create_table(engine: Any, table: DataTable) -> None:
         metadata = MetaData()
         sa_table = build_sa_table(metadata, table)
         metadata.create_all(engine)
+        invalidate_reflected_table(table.db_table_name)
         logger.info("物理表已创建: %s（%d 个字段）", table.db_table_name, len(sa_table.columns) - 1)
 
     for field in table.active_fields():
@@ -148,6 +207,7 @@ def add_column(engine: Any, table: DataTable, field: DataField) -> None:
     sql = f'ALTER TABLE "{table.db_table_name}" ADD COLUMN {col_def}'
     with engine.begin() as conn:
         conn.execute(text(sql))
+    invalidate_reflected_table(table.db_table_name)
     logger.info("物理表 %s 新增列: %s (%s)", table.db_table_name, field.db_column_name, field.name)
 
 
@@ -170,6 +230,7 @@ def drop_column(engine: Any, table: DataTable, field: DataField) -> None:
     sql = f'ALTER TABLE "{table.db_table_name}" DROP COLUMN "{field.db_column_name}"'
     with engine.begin() as conn:
         conn.execute(text(sql))
+    invalidate_reflected_table(table.db_table_name)
     logger.info("物理表 %s 删除列: %s", table.db_table_name, field.db_column_name)
 
 
@@ -192,6 +253,7 @@ def create_link_table(engine: Any, field: DataField) -> None:
         UniqueConstraint("row_id", "target_row_id", name=f"uniq_{name}"),
     )
     metadata.create_all(engine)
+    invalidate_reflected_table(name)
     logger.info("关联物理表已创建: %s（字段 %s）", name, field.name)
 
 
@@ -210,6 +272,7 @@ def drop_table(engine: Any, db_table_name: str) -> None:
         return
     with engine.begin() as conn:
         conn.execute(text(f'DROP TABLE IF EXISTS "{db_table_name}"'))
+    invalidate_reflected_table(db_table_name)
     logger.info("物理表已删除: %s", db_table_name)
 
 
@@ -401,6 +464,7 @@ def rebuild_column(engine: Any, table: DataTable, old_field: DataField, new_fiel
         except Exception as exc:  # pragma: no cover - 低版本 SQLite 兜底
             logger.warning("删除备份列 %s 失败（低版本 SQLite？）: %s", bak_col, exc)
 
+    invalidate_reflected_table(table.db_table_name)
     logger.info(
         "物理列已重建: %s.%s (%s → %s)",
         table.db_table_name,
@@ -434,6 +498,8 @@ __all__ = [
     "find_duplicate_values",
     "find_null_rows",
     "get_engine",
+    "get_reflected_table",
+    "invalidate_reflected_table",
     "rebuild_column",
     "table_exists",
 ]

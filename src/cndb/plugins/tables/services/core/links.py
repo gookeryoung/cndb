@@ -13,10 +13,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import MetaData, Table, inspect, select, text
+from sqlalchemy import Table, inspect, select, text
 
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services.core.ddl import get_reflected_table
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -282,12 +283,12 @@ def validate_link_write(
 
 
 def _get_link_sa_table(engine: Engine, name: str) -> Table:
-    """反射获取关联物理表的 sa.Table（不存在时抛错，指向 DDL 未执行的编程错误）."""
-    metadata = MetaData()
-    metadata.reflect(bind=engine, only=[name])
-    if name not in metadata.tables:
-        raise RuntimeError(f"关联物理表 {name} 不存在，请先通过 DDL 引擎创建")
-    return metadata.tables[name]
+    """获取关联物理表的 sa.Table（带反射缓存；不存在时抛错，指向 DDL 未执行的编程错误）."""
+    return get_reflected_table(
+        engine,
+        name,
+        missing_message=f"关联物理表 {name} 不存在，请先通过 DDL 引擎创建",
+    )
 
 
 def _target_data_table(db: Session, field: DataField) -> DataTable | None:
@@ -316,11 +317,12 @@ def ensure_link_targets_exist(engine: Engine, field: DataField, ids: list[int], 
 
 
 def _get_sa_table_by_name(engine: Engine, db_table_name: str) -> Table:
-    metadata = MetaData()
-    metadata.reflect(bind=engine, only=[db_table_name])
-    if db_table_name not in metadata.tables:
-        raise RuntimeError(f"物理表 {db_table_name} 不存在")
-    return metadata.tables[db_table_name]
+    """按物理表名获取 sa.Table（带反射缓存；不存在时抛错）."""
+    return get_reflected_table(
+        engine,
+        db_table_name,
+        missing_message=f"物理表 {db_table_name} 不存在",
+    )
 
 
 def _summary_fields(table: DataTable) -> list[DataField]:

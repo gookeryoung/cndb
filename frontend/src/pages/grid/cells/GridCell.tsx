@@ -1,6 +1,6 @@
 /** Grid 单元格组件 — 支持 inline 编辑. */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Tag, Tooltip, Typography, Input, InputNumber, Select, Checkbox, DatePicker, Button, Popover, App as AntApp, Upload, Image } from 'antd'
 import { SaveOutlined, CloseOutlined, InboxOutlined, DeleteOutlined, LockOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
@@ -18,6 +18,8 @@ interface Props {
   wid?: number | string
   /** 传统按单元格编辑：双击进入编辑态，回车/失焦调用该回调保存单个字段 */
   onSave?: (fieldName: string, value: unknown) => Promise<unknown>
+  /** 稳定引用版行级保存回调（onSave 的替代）：GridCell 内部组合 rowId 调用，供 memo 生效 */
+  onCellSave?: (rowId: number | string, fieldName: string, value: unknown) => Promise<unknown>
   /** 受控编辑模式：为 true 时强制渲染编辑态，value 作为受控草稿值，供"行内新增/整行编辑"复用 */
   editing?: boolean
   /** 受控模式下草稿变化回调 */
@@ -37,8 +39,15 @@ interface Props {
  * - 传统模式（无 editing prop）：双击切到编辑态，回车/失焦通过 onSave 保存单个字段。
  * - 受控模式（editing 为布尔值）：由父级把控编辑态与草稿值，value 即当前草稿。
  */
-export default function GridCell({ value, field, rowId, wid, onSave, editing: controlledEditing, onDraftChange, onDraftCommit, onDraftCancel, showActionButtons, readOnly }: Props) {
+function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: controlledEditing, onDraftChange, onDraftCommit, onDraftCancel, showActionButtons, readOnly }: Props) {
   const { message } = AntApp.useApp()
+  // 稳定引用版回调：父级传 onCellSave 时在内部组合 rowId，避免每次渲染新建闭包破坏 memo
+  const effectiveOnSave = useMemo(
+    () => (onCellSave
+      ? (fieldName: string, val: unknown) => onCellSave(rowId, fieldName, val)
+      : onSave),
+    [onCellSave, onSave, rowId],
+  )
   // 说明：prop `editing`（受控模式）与内部 state `editing`（传统模式）同名，
   // 这里在解构时把 prop 重命名为 `controlledEditing`，内部 state 沿用 `editing` 变量名（传统模式）。
   const [editing, setEditing] = useState(false)
@@ -77,11 +86,11 @@ export default function GridCell({ value, field, rowId, wid, onSave, editing: co
   }, [controlled, value, field])
 
   const handleSave = useCallback(async () => {
-    if (!onSave) { setEditing(false); return }
+    if (!effectiveOnSave) { setEditing(false); return }
     setSaving(true)
     try {
       const finalize = finalizeValueFromEdit(draft, field)
-      await onSave(field.name, finalize)
+      await effectiveOnSave(field.name, finalize)
       setEditing(false)
       message.success('已保存')
     } catch (err) {
@@ -89,7 +98,7 @@ export default function GridCell({ value, field, rowId, wid, onSave, editing: co
     } finally {
       setSaving(false)
     }
-  }, [draft, field, onSave, message])
+  }, [draft, field, effectiveOnSave, message])
 
   const handleCancel = useCallback(() => {
     setDraft(value)
@@ -135,8 +144,8 @@ export default function GridCell({ value, field, rowId, wid, onSave, editing: co
     return (
       <div
         onDoubleClick={handleStartEdit}
-        style={{ padding: '2px 4px', cursor: onSave ? 'pointer' : 'default', minHeight: 22 }}
-        title={onSave ? '双击编辑' : undefined}
+        style={{ padding: '2px 4px', cursor: effectiveOnSave ? 'pointer' : 'default', minHeight: 22 }}
+        title={effectiveOnSave ? '双击编辑' : undefined}
       >
         <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
       </div>
@@ -156,6 +165,10 @@ export default function GridCell({ value, field, rowId, wid, onSave, editing: co
     />
   )
 }
+
+// memo 化：父级（buildColumns 普通分支）传稳定引用的 onCellSave 时，
+// 表格重渲染仅重绘值发生变化的单元格
+export default memo(GridCell)
 
 // ─────────────── 展示态 ───────────────
 

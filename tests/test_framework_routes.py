@@ -37,3 +37,10 @@ def test_navigation_endpoint(client: TestClient) -> None:
     assert r.status_code == 200
     nav = r.json()["navigation"]
     assert isinstance(nav, list)
+
+
+def test_gzip_middleware_registered() -> None:
+    """app 应注册 GZipMiddleware（静态资源与 API JSON 统一 gzip，1KB 以下不压缩）."""
+    from fastapi.middleware.gzip import GZipMiddleware
+
+    assert any(m.cls is GZipMiddleware for m in app.user_middleware)

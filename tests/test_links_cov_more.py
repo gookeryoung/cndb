@@ -116,21 +116,13 @@ class TestFindBackReferencesEdge:
 
 class TestInternalHelpers:
     def test_get_link_sa_table_missing(self, db_engine):
-        """_get_link_sa_table 物理表不存在 → SQLAlchemy 直接抛 InvalidRequestError.
-
-        注：links.py 里写的 RuntimeError 分支实际上永远不会触发，
-        因为 SQLAlchemy reflect(only=[missing]) 会先抛 InvalidRequestError.
-        我们验证确实抛错即可。
-        """
-        from sqlalchemy.exc import InvalidRequestError
-
-        with pytest.raises(InvalidRequestError):
+        """_get_link_sa_table 物理表不存在 → 统一转为 RuntimeError（含「关联物理表」文案）."""
+        with pytest.raises(RuntimeError, match="关联物理表"):
             links._get_link_sa_table(db_engine, "nonexistent_link_table_xyz")
 
     def test_get_sa_table_by_name_missing(self, db_engine):
-        from sqlalchemy.exc import InvalidRequestError
-
-        with pytest.raises(InvalidRequestError):
+        """_get_sa_table_by_name 物理表不存在 → 统一转为 RuntimeError."""
+        with pytest.raises(RuntimeError, match="物理表"):
             links._get_sa_table_by_name(db_engine, "no_such_table_xyz")
 
     def test_target_data_table_no_config(self, db_engine, db):
