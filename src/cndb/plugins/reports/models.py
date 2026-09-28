@@ -58,7 +58,9 @@ class ReportTemplate(TimestampMixin, Base):
         index=True,
     )
     # 额外引用表 id 列表（可跨工作区，渲染时注入 records_by_table；迁移 b3c4d5e6f7a8 已建列）
-    extra_table_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    # server_default 与迁移对齐：schema 自愈（core/migrations.py）对存量库补列时
+    # NOT NULL 列必须带 DEFAULT 才能安全 ADD COLUMN
+    extra_table_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
     # 主题风格（迁移 add_report_template_theme 已建列，存量行为 minimal）
     theme: Mapped[str] = mapped_column(
         String(16), nullable=False, default=ThemeStyle.MINIMAL.value, server_default=ThemeStyle.MINIMAL.value

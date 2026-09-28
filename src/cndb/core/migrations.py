@@ -18,11 +18,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import NoReturn
+from typing import Any, NoReturn
 
 import alembic.command
 import alembic.config
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
+from sqlalchemy.schema import CreateColumn, CreateIndex
+from sqlalchemy.sql.schema import Column
 
 from cndb.core.config import settings
 from cndb.models.base import Base
@@ -140,6 +142,105 @@ def _run_create_all_and_stamp(cfg: alembic.config.Config) -> None:
     logger.info("兜底迁移完成（create_all + stamp head）")
 
 
+def _render_add_column_ddl(col: Column[Any], dialect: Any) -> str | None:
+    """将 ORM 列编译为 ``ALTER TABLE ADD COLUMN`` 的列定义片段.
+
+    返回 None 表示该列无法安全补建：
+    - 主键自增列（表已存在时不会缺失）
+    - NOT NULL 且无 server_default（存量表有数据时 ADD COLUMN 必失败）
+    """
+    if col.primary_key:
+        return None
+    if not col.nullable and col.server_default is None:
+        return None
+    return str(CreateColumn(col).compile(dialect=dialect)).strip()
+
+
+def _heal_missing_columns(engine: Any) -> list[str]:
+    """对照 ORM 元数据，为库中已存在但缺列的表补建列.
+
+    返回补建的 ``表名.列名`` 列表。单列补建失败只记 warning 不中断，
+    避免个别异常列让启动从"缺列可用"变成"完全不可启动"。
+    """
+    insp = inspect(engine)
+    existing = set(insp.get_table_names())
+    healed: list[str] = []
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing:
+                continue
+            actual = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in actual:
+                    continue
+                ddl = _render_add_column_ddl(col, engine.dialect)
+                if ddl is None:
+                    logger.warning(
+                        "列 %s.%s 缺失且无法安全补建（NOT NULL 且无 server_default），跳过",
+                        table.name,
+                        col.name,
+                    )
+                    continue
+                try:
+                    conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {ddl}"))
+                except Exception as exc:
+                    logger.warning("补建列 %s.%s 失败: %s", table.name, col.name, exc)
+                    continue
+                healed.append(f"{table.name}.{col.name}")
+                logger.info("补建缺失列 %s.%s", table.name, col.name)
+    return healed
+
+
+def _heal_missing_indexes(engine: Any) -> list[str]:
+    """对照 ORM 元数据，为库中已存在但缺索引的表补建索引.
+
+    返回补建的索引名列表。与缺列同源：版本标记越过建索引迁移后，
+    正常 upgrade 不再重放，这里兜底补齐（仅限 ORM 元数据声明的显式索引）。
+    """
+    insp = inspect(engine)
+    existing = set(insp.get_table_names())
+    healed: list[str] = []
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing:
+                continue
+            have = {ix["name"] for ix in insp.get_indexes(table.name)}
+            for ix in table.indexes:
+                if not ix.name or ix.name in have:
+                    continue
+                try:
+                    conn.execute(text(str(CreateIndex(ix).compile(dialect=engine.dialect)).strip()))
+                except Exception as exc:
+                    logger.warning("补建索引 %s 失败: %s", ix.name, exc)
+                    continue
+                healed.append(ix.name)
+                logger.info("补建缺失索引 %s", ix.name)
+    return healed
+
+
+def _heal_schema_drift() -> None:
+    """schema 自愈：对照 ORM 元数据修复存量库的缺列/缺索引.
+
+    背景：历史上 create_all 兜底 / seed / restore 等流程曾把 alembic_version
+    stamp 到当时的 head，而表结构是更旧模型建的 —— 版本标记越过了中间的
+    加列迁移，之后 upgrade head 永远 no-op，缺列永不修复（表现为 INSERT 报
+    "no column named ..."）。本层在每次启动迁移完成后统一校验实际 schema，
+    纯增量补建（ADD COLUMN / CREATE INDEX），不改动既有数据。
+
+    自愈失败只记 warning，不阻断启动（保持"缺列可诊断"优于"整库不可用"）。
+    """
+    from cndb.core.database import engine
+
+    try:
+        healed_cols = _heal_missing_columns(engine)
+        healed_idx = _heal_missing_indexes(engine)
+    except Exception as exc:
+        logger.warning("schema 自愈检查失败（不阻断启动）: %s", exc)
+        return
+    if healed_cols or healed_idx:
+        logger.warning("schema 自愈完成：补建缺失列 %s，补建缺失索引 %s", healed_cols, healed_idx)
+
+
 def ensure_db_migrated() -> None:
     """确保数据库 schema 已处于最新迁移版本.
 
@@ -148,6 +249,7 @@ def ensure_db_migrated() -> None:
     - 有未应用迁移 → upgrade
     - 全新空库 → create_all + stamp
     - 半迁移残留 → 先尝试 upgrade，失败则兜底 create_all
+    - 任一路径结束后跑 schema 自愈，对照 ORM 元数据补齐缺列/缺索引
     """
     cfg = _build_config()
 
@@ -158,6 +260,7 @@ def ensure_db_migrated() -> None:
         logger.info("检测到全新数据库，执行 create_all + stamp head")
         Base.metadata.create_all(bind=engine)
         stamp_head()
+        _heal_schema_drift()
         logger.info("数据库初始化完成（create_all + stamp head）")
         return
 
@@ -172,6 +275,8 @@ def ensure_db_migrated() -> None:
         except Exception as exc2:
             logger.error("兜底迁移也失败: %s", exc2)
             raise RuntimeError(f"数据库迁移彻底失败: {exc2}") from exc
+
+    _heal_schema_drift()
 
 
 __all__ = ["ensure_db_migrated", "stamp_head"]

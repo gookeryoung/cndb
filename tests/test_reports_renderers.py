@@ -542,12 +542,12 @@ class TestMarkdownTableSepFilter:
     @pytest.mark.parametrize(
         "sep_line",
         [
-            "| - | - |",          # GFM 下限：单横线
-            "| -- | -- |",        # 双横线（用户常见问题）
-            "| --- | --- |",      # 标准三横线
-            "| ---- | ---- |",    # 四横线
-            "| :--- | ---: |",    # 带对齐冒号
-            "| :--: | --: |",     # 1+ 短横线 + 对齐冒号
+            "| - | - |",  # GFM 下限：单横线
+            "| -- | -- |",  # 双横线（用户常见问题）
+            "| --- | --- |",  # 标准三横线
+            "| ---- | ---- |",  # 四横线
+            "| :--- | ---: |",  # 带对齐冒号
+            "| :--: | --: |",  # 1+ 短横线 + 对齐冒号
         ],
     )
     def test_docx_separator_filter_accepts_any_hyphen_count(self, sep_line):
@@ -612,7 +612,7 @@ class TestMarkdownTableSepFilter:
         # 分隔行被过滤，保留 1 表头 + 2 数据行
         assert len(rows) == 3, f"期望 3 行，实际 {len(rows)}"
         assert rows[0].cells[0].text.strip() == "姓名"  # 表头
-        assert rows[1].cells[0].text.strip() == "--"     # 正常数据（不是整行都是短横线）
+        assert rows[1].cells[0].text.strip() == "--"  # 正常数据（不是整行都是短横线）
         assert rows[2].cells[0].text.strip() == "张三"
 
     def test_blank_cells_with_hyphen_separator(self):
