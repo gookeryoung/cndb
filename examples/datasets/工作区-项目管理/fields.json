@@ -2,6 +2,10 @@
   "settings": {
     "资源排期": {
       "排期编号": {"required": true, "unique": true}
+    },
+    "待办事项": {
+      "编号": {"required": true, "unique": true},
+      "事项": {"required": true}
     }
   },
   "link_lookups": [],

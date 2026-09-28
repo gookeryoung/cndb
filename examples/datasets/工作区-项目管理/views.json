@@ -186,5 +186,93 @@
       },
       "order": 2
     }
+  ],
+  "待办事项": [
+    {
+      "name": "全部事项",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "要求节点",
+          "direction": "asc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "按责任人看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "责任人",
+        "title_field": "事项",
+        "due_date_field": "要求节点",
+        "card_sort_field": "要求节点",
+        "card_sort_direction": "asc",
+        "ungrouped_label": "未分派"
+      },
+      "order": 1
+    },
+    {
+      "name": "按类别看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "类别",
+        "title_field": "事项",
+        "due_date_field": "要求节点",
+        "assignee_field": "责任人",
+        "card_sort_field": "要求节点",
+        "card_sort_direction": "asc"
+      },
+      "order": 2
+    },
+    {
+      "name": "事项日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "要求节点",
+        "title_field": "事项",
+        "group_field": "类别"
+      },
+      "order": 3
+    },
+    {
+      "name": "待分派事项",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "责任人",
+          "op": "=",
+          "value": ""
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "要求节点",
+          "direction": "asc"
+        }
+      ],
+      "order": 4
+    },
+    {
+      "name": "未完成事项",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "完成日期",
+          "op": "=",
+          "value": ""
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "要求节点",
+          "direction": "asc"
+        }
+      ],
+      "order": 5
+    }
   ]
 }
