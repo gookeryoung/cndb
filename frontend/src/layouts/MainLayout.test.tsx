@@ -101,7 +101,14 @@ describe('MainLayout 顶部导航', () => {
         await waitFor(() => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
-        expect(screen.getByRole('tab', { name: '数据资产' }).closest('.ant-tabs-tab'))
+        // tab 数量徽标：数据资产显示表数量（msw 返回 1 张表）；报表显示 report_count（mock 0 也显示）
+        await waitFor(() => {
+            expect(screen.getByRole('tab', { name: /数据资产/ })).toHaveTextContent('1')
+        })
+        await waitFor(() => {
+            expect(screen.getByRole('tab', { name: /报表/ })).toHaveTextContent('0')
+        })
+        expect(screen.getByRole('tab', { name: /数据资产/ }).closest('.ant-tabs-tab'))
             .toHaveClass('ant-tabs-tab-active')
 
         // 点击「工作区设置」tab → /w/10/settings
@@ -113,7 +120,7 @@ describe('MainLayout 顶部导航', () => {
             .toHaveClass('ant-tabs-tab-active')
 
         // 点击「报表」tab → /w/10/reports
-        fireEvent.click(screen.getByRole('tab', { name: '报表' }))
+        fireEvent.click(screen.getByRole('tab', { name: /报表/ }))
         await waitFor(() => {
             expect(screen.getByTestId('reports-page-stub')).toHaveTextContent('/w/10/reports')
         })
@@ -145,8 +152,8 @@ describe('MainLayout 顶部导航', () => {
         })
 
         // 分页导航依赖 wid 渲染；无工作区上下文时整体不渲染，侧边栏由「请先从顶部选择一个工作区」提示引导
-        expect(screen.queryByRole('tab', { name: '数据资产' })).toBeNull()
-        expect(screen.queryByRole('tab', { name: '报表' })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /数据资产/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /报表/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: '工作区设置' })).toBeNull()
     })
 

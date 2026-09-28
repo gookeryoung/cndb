@@ -82,7 +82,7 @@ export default function MainLayout() {
     queryFn: () => workspaceApi.list(),
   })
 
-  const { data: tables = [] } = useQuery({
+  const { data: tables = [], isSuccess: tablesReady } = useQuery({
     queryKey: ['workspaces', wid, 'tables'],
     queryFn: () => (wid ? tableApi.list(wid) : Promise.resolve([])),
     enabled: !!wid,
@@ -93,10 +93,33 @@ export default function MainLayout() {
 
   const currentWs = workspaces.find(w => String(w.id) === wid)
 
-  /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），覆盖数据表、报表与设置入口. */
+  /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），覆盖数据表、报表与设置入口.
+   *
+   * 「数据资产」「报表」label 内嵌数量徽标：仅数据就绪后渲染（0 也显示），
+   * 未就绪/字段缺失时不渲染占位，避免加载瞬间误导（class cn-ws-tab-count，
+   * 样式走 var(--cn-*) 主题变量）；「工作区设置」无徽标。
+   */
   const wsTabItems: TabsProps['items'] = [
-    { key: 'tables', label: '数据资产' },
-    { key: 'reports', label: '报表' },
+    {
+      key: 'tables',
+      label: (
+        <span>
+          数据资产
+          {tablesReady && <span className="cn-ws-tab-count">{tables.length}</span>}
+        </span>
+      ),
+    },
+    {
+      key: 'reports',
+      label: (
+        <span>
+          报表
+          {currentWs && currentWs.report_count !== undefined && (
+            <span className="cn-ws-tab-count">{currentWs.report_count}</span>
+          )}
+        </span>
+      ),
+    },
     { key: 'settings', label: '工作区设置' },
   ]
   // 激活态由 pathname 驱动：表详情页（/w/:wid/tables/:tid）同样落在「数据资产」

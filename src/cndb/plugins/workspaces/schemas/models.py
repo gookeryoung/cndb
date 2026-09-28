@@ -52,6 +52,7 @@ class WorkspaceWithPinnedResponse(WorkspaceResponse):
     pinned: bool = False
     table_count: int = 0
     member_count: int = 0
+    report_count: int = 0
     current_user_role: WorkspaceRole | None = None
 
 
