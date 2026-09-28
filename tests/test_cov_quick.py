@@ -240,6 +240,7 @@ def test_ensure_db_migrated_skips_upgrade_when_stamped(tmp_path, monkeypatch):
     """
     from sqlalchemy import create_engine, inspect
 
+    from cndb.core import database as db_mod
     from cndb.core import migrations as mig_mod
     from cndb.core.config import settings
     from cndb.models.base import Base
@@ -253,6 +254,7 @@ def test_ensure_db_migrated_skips_upgrade_when_stamped(tmp_path, monkeypatch):
     Base.metadata.create_all(engine)
     mig_mod.stamp_head()  # 模拟修复后的 seed
     monkeypatch.setattr(mig_mod, "_db_is_fresh", lambda: False)  # 不探测真实库
+    monkeypatch.setattr(db_mod, "engine", engine)  # 自愈层指向 tmp 库，不碰真实库
     try:
         mig_mod.ensure_db_migrated()  # upgrade head 应为 no-op，不抛异常
         assert "alembic_version" in inspect(engine).get_table_names()
@@ -262,19 +264,39 @@ def test_ensure_db_migrated_skips_upgrade_when_stamped(tmp_path, monkeypatch):
 
 def test_ensure_db_migrated_fresh_db(tmp_path, monkeypatch):
     """全新数据库 → 直接 create_all + stamp，不走 upgrade."""
-    from cndb.core import migrations as mig_mod
+    from sqlalchemy import create_engine
 
+    from cndb.core import database as db_mod
+    from cndb.core import migrations as mig_mod
+    from cndb.core.config import settings
+
+    url = f"sqlite:///{(tmp_path / 'fresh.db').as_posix()}"
+    monkeypatch.setattr(settings, "DATABASE_URL", url)
+    engine = create_engine(url)
+    monkeypatch.setattr(db_mod, "engine", engine)  # create_all/stamp/自愈全落 tmp 库
     monkeypatch.setattr(mig_mod, "_db_is_fresh", lambda: True)
     monkeypatch.setattr(
         mig_mod, "_run_upgrade", lambda cfg: (_ for _ in ()).throw(Exception("should not call upgrade"))
     )
 
-    mig_mod.ensure_db_migrated()  # 不抛异常即通过
+    try:
+        mig_mod.ensure_db_migrated()  # 不抛异常即通过
+    finally:
+        engine.dispose()
 
 
 def test_ensure_db_migrated_upgrade_fails_fallback(tmp_path, monkeypatch):
     """upgrade 失败 → 走 create_all + stamp 兜底."""
+    from sqlalchemy import create_engine
+
+    from cndb.core import database as db_mod
     from cndb.core import migrations as mig_mod
+    from cndb.core.config import settings
+
+    url = f"sqlite:///{(tmp_path / 'fallback.db').as_posix()}"
+    monkeypatch.setattr(settings, "DATABASE_URL", url)
+    engine = create_engine(url)
+    monkeypatch.setattr(db_mod, "engine", engine)  # 兜底 create_all/自愈落 tmp 库
 
     stamp_called = []
     monkeypatch.setattr(mig_mod, "_db_is_fresh", lambda: False)
@@ -285,9 +307,11 @@ def test_ensure_db_migrated_upgrade_fails_fallback(tmp_path, monkeypatch):
     import alembic.command
 
     monkeypatch.setattr(alembic.command, "stamp", lambda cfg, rev: stamp_called.append(rev))
-    # create_all 已经在 _run_create_all_and_stamp 里被调用
 
-    mig_mod.ensure_db_migrated()
+    try:
+        mig_mod.ensure_db_migrated()
+    finally:
+        engine.dispose()
     assert stamp_called == ["head"]
 
 
