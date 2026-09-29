@@ -185,12 +185,12 @@ export default function CreateEditViewForm({
   }
 
   const viewTypeOptions = [
-    { value: 'grid', label: '表格（Grid）' },
-    { value: 'kanban', label: '看板（Kanban）' },
-    { value: 'calendar', label: '日历（Calendar）' },
-    { value: 'gantt', label: '甘特图（Gantt）' },
-    { value: 'wbs', label: '工作分解（WBS）' },
-    { value: 'matrix', label: '矩阵（Matrix）' },
+    { value: 'grid', label: '表格' },
+    { value: 'kanban', label: '看板' },
+    { value: 'calendar', label: '日历' },
+    { value: 'gantt', label: '甘特图' },
+    { value: 'wbs', label: '工作分解' },
+    { value: 'matrix', label: '矩阵' },
   ]
 
   return (

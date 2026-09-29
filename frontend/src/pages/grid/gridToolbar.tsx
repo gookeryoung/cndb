@@ -77,7 +77,7 @@ export default function GridToolbar({
             表设置
           </Button>
         </Tooltip>
-        <Tooltip title="导入 / 导出：批量更新或新增数据（upsert）、导出 CSV / Excel / JSON">
+        <Tooltip title="导入 / 导出：批量新增或更新数据、导出 CSV / Excel / JSON">
           <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={onOpenImportExport}>更新/导出</Button>
         </Tooltip>
         <Dropdown menu={{

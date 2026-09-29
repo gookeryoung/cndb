@@ -130,10 +130,10 @@ describe('GanttView 甘特图视图', () => {
         expect(screen.queryByTestId('gantt-today-line')).not.toBeInTheDocument()
     })
 
-    it('配置分组字段后左侧显示 WBS 分解头与分组标签', () => {
+    it('配置分组字段后左侧显示任务分组头与分组标签', () => {
         renderGantt({ view: makeView({ title_field: '名称', group_field: '状态' }) })
 
-        expect(screen.getByText('WBS 分解')).toBeInTheDocument()
+        expect(screen.getByText('任务分组')).toBeInTheDocument()
         expect(screen.getByText('进行中')).toBeInTheDocument()
         // 组序号 + 组内计数
         expect(screen.getByText('G1')).toBeInTheDocument()

@@ -692,7 +692,7 @@ export default function GanttView({
               background: 'var(--cn-bg-subtle)',
             }}
           >
-            {groupField ? 'WBS 分解' : '任务名称'}
+            {groupField ? '任务分组' : '任务名称'}
           </div>
 
           {/* 左侧 body —— 与右侧共享虚拟窗口，滚动位置双向同步 */}

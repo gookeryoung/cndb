@@ -32,12 +32,12 @@ describe('helpContent 帮助内容', () => {
     expect(screen.getByText('创建工作区')).toBeInTheDocument()
   })
 
-  it('权限主题渲染角色表格，含 owner 与 viewer 行', () => {
+  it('权限主题渲染角色表格，含所有者与查看者行', () => {
     const topic = HELP_TOPICS.find(t => t.key === 'roles')!
     renderProviders(<div>{topic.content}</div>)
     const table = document.querySelector('.ant-table-tbody')
-    expect(table?.textContent).toContain('owner')
-    expect(table?.textContent).toContain('viewer')
+    expect(table?.textContent).toContain('所有者')
+    expect(table?.textContent).toContain('查看者')
   })
 
   it('字段类型主题标注 16 种类型', () => {

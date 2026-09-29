@@ -74,7 +74,7 @@ describe('WbsView WBS 工作分解结构视图', () => {
     it('未配置 parent_field 时显示配置引导空态', () => {
         renderWbs({ view: makeView({ parent_field: undefined }) })
 
-        expect(screen.getByText(/需要配置 parent_field/)).toBeInTheDocument()
+        expect(screen.getByText(/需要配置父任务关联字段/)).toBeInTheDocument()
     })
 
     it('无数据显示暂无数据空态', () => {

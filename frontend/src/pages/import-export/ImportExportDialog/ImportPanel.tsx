@@ -886,7 +886,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         <Button onClick={handleDownloadFailed} icon={<DownloadOutlined />}>下载失败行</Button>
                     )}
                     <Tooltip title={matchKeys.length > 0
-                        ? `将按参考列 ${matchKeys.join(', ')} 执行 upsert（新增 ${newCount} / 更新 ${updateChangedCount} / 无变化 ${Math.max(0, updateCount - updateChangedCount)}）`
+                        ? `将按参考列 ${matchKeys.join(', ')} 执行更新/新增（新增 ${newCount} / 更新 ${updateChangedCount} / 无变化 ${Math.max(0, updateCount - updateChangedCount)}）`
                         : '当前全部作为新增导入'}>
                         <Button
                             type="primary"

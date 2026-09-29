@@ -75,7 +75,7 @@ export function buildSteps(): TourStep[] {
       element: TOUR_SELECTORS.importExport,
       popover: {
         title: '导入 / 导出数据',
-        description: '支持 CSV、Excel、JSON 的导入与导出；导入时可按匹配键更新已有数据（upsert），不用手动重复录入。',
+        description: '支持 CSV、Excel、JSON 的导入与导出；导入时可按参考列更新已有数据，不用手动重复录入。',
       },
     },
     {

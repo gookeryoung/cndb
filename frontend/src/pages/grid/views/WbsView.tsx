@@ -338,7 +338,7 @@ export default function WbsView({
   if (!parentField) {
     return (
       <div style={{ padding: 24 }}>
-        <Empty description="WBS 视图需要配置 parent_field（父任务字段）才能构建层级树" />
+        <Empty description="工作分解视图需要配置父任务关联字段（视图设置里的「父任务字段」）才能构建层级树" />
       </div>
     )
   }
@@ -352,7 +352,7 @@ export default function WbsView({
   if (roots.length === 0 && totalNodeCount === 0) {
     return (
       <div style={{ padding: 24 }}>
-        <Empty description="请在视图设置中检查 parent_field 是否正确指向存储父任务关联的字段" />
+        <Empty description="请在视图设置中检查「父任务字段」是否正确指向存储父任务关联的字段" />
       </div>
     )
   }
@@ -360,7 +360,7 @@ export default function WbsView({
   if (roots.length === 0) {
     return (
       <div style={{ padding: 24 }}>
-        <Empty description="当前数据无法构建 WBS 树：请检查父任务字段的赋值是否正确" />
+        <Empty description="当前数据无法构建工作分解树：请检查父任务字段的赋值是否正确" />
       </div>
     )
   }
@@ -562,7 +562,7 @@ export default function WbsView({
       >
         <div style={{ fontWeight: 600, fontSize: ds.titleFontSize + 1, display: 'flex', alignItems: 'center', gap: 6 }}>
           <PartitionOutlined style={{ color: 'var(--cn-brand-color)' }} />
-          WBS 工作分解结构
+          工作分解视图
         </div>
         <Tag color="blue" style={{ margin: 0 }}>
           {totalNodeCount} 个节点 · {roots.length} 个根

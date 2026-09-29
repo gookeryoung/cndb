@@ -39,7 +39,7 @@ const quickStartContent = (
             },
             {
                 title: '按需切换视图',
-                description: '同一份数据可以用表格、看板、日历、画廊、甘特图、WBS 六种视图查看。点击视图栏左侧的 + 新建视图，每个视图可单独配置筛选和排序。',
+                description: '同一份数据可以用表格、看板、日历、画廊、甘特图、工作分解六种视图查看。点击视图栏左侧的 + 新建视图，每个视图可单独配置筛选和排序。',
             },
             {
                 title: '设置权限并协作',
@@ -74,9 +74,9 @@ const viewModeContent = (
             <Text type="secondary">时间轴上展示任务的起止时间与进度，适合项目排期。需表中含日期类型字段。</Text>
         </div>
         <div>
-            <Text strong>WBS 视图（Work Breakdown Structure）</Text>
+            <Text strong>工作分解视图</Text>
             <br />
-            <Text type="secondary">树状层级分解任务（1 / 1.1 / 1.1.1 编号），需配置「父任务关联字段」指定层级关系。</Text>
+            <Text type="secondary">树状层级组织任务（1 / 1.1 / 1.1.1 编号），需配置「父任务关联字段」指定层级关系。</Text>
         </div>
         <div>
             <Text type="secondary">提示：筛选规则与排序规则保存在每个视图里，切换视图互不影响；在「表设置 → 视图」中可重命名、编辑或删除视图。</Text>
@@ -99,9 +99,9 @@ const importExportContent = (
             <Text type="secondary">「导入数据」→ 上传文件 → 预览列类型与数据质量 → 确认导入。导入完成后可在报告页查看错误行明细。</Text>
         </div>
         <div>
-            <Text strong>更新已有数据（upsert）</Text>
+            <Text strong>更新已有数据</Text>
             <br />
-            <Text type="secondary">导入时选择「更新已有数据」模式，并指定一个或多个「匹配键」字段（如工号、邮箱）。系统按匹配键查找已有行：找到则更新，找不到则新增。匹配键推荐选择唯一性高的字段（带 ★ 推荐标记）。</Text>
+            <Text type="secondary">导入时选择「更新已有数据」模式，并指定一个或多个「参考列」字段（如工号、邮箱）。系统按参考列查找已有行：找到则更新，找不到则新增。参考列推荐选择唯一性高的字段（带 ★ 推荐标记）。</Text>
         </div>
         <div>
             <Text strong>导出数据</Text>
@@ -125,16 +125,16 @@ const roleColumns = [
 ]
 
 const roleData = [
-    { key: 'owner', role: 'owner', ws: '全部权限，可删除工作区、转让所有权', tbl: '全部权限' },
-    { key: 'admin', role: 'admin', ws: '管理成员（添加/移除）、编辑设置', tbl: '可编辑表结构与数据' },
-    { key: 'editor', role: 'editor', ws: '编辑数据、创建视图', tbl: '可录入与编辑数据' },
-    { key: 'viewer', role: 'viewer', ws: '只读查看', tbl: '只读查看' },
+    { key: 'owner', role: '所有者', ws: '全部权限，可删除工作区、转让所有权', tbl: '全部权限' },
+    { key: 'admin', role: '管理员', ws: '管理成员（添加/移除）、编辑设置', tbl: '可编辑表结构与数据' },
+    { key: 'editor', role: '编辑者', ws: '编辑数据、创建视图', tbl: '可录入与编辑数据' },
+    { key: 'viewer', role: '查看者', ws: '只读查看', tbl: '只读查看' },
 ]
 
 const roleContent = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div>
-            <Text strong>角色从高到低：owner &gt; admin &gt; editor &gt; viewer</Text>
+            <Text strong>角色从高到低：所有者 &gt; 管理员 &gt; 编辑者 &gt; 查看者</Text>
             <br />
             <Text type="secondary">成员角色在工作区设置的「成员管理」中分配；单张表可在「表设置 → 权限」中对成员/角色做显式授权，未显式授权时遵循工作区角色。</Text>
         </div>
@@ -183,7 +183,7 @@ const fieldTypeContent = (
             <Text strong>关联：</Text>
             <Text type="secondary">关联其他表的一行或多行数据（如下拉选择员工表中的员工），支持搜索选择与空值清空。</Text>
         </div>
-        <Text type="secondary">提示：唯一约束（is_unique）可防止重复值；默认值会在新增行时自动填入；修改默认值会触发表重建，数据量大时稍慢。</Text>
+        <Text type="secondary">提示：唯一值约束可防止重复值；默认值会在新增行时自动填入；修改默认值会触发表重建，数据量大时稍慢。</Text>
     </div>
 )
 
@@ -199,7 +199,7 @@ const faqContent = (
         <div>
             <Text strong>删除的行还能找回吗？</Text>
             <br />
-            <Text type="secondary">删除行是软删除：数据仍保留在数据库中，只是默认不再显示。如需恢复请联系工作区管理员通过接口恢复，删除前请谨慎确认。</Text>
+            <Text type="secondary">删除行不会立即从数据库物理移除：数据仍然保留，只是默认不再显示。如需恢复请联系工作区管理员通过接口恢复，删除前请谨慎确认。</Text>
         </div>
         <div>
             <Text strong>如何让别人填写数据？</Text>
@@ -209,7 +209,7 @@ const faqContent = (
         <div>
             <Text strong>为什么有些按钮是灰色的？</Text>
             <br />
-            <Text type="secondary">内容区顶部的「数据资产」「报表」「工作区设置」分页导航需要先在左上角选择工作区；部分操作需要更高角色权限（如删除工作区仅 owner 可用）。将鼠标悬停在按钮上可查看说明。</Text>
+            <Text type="secondary">内容区顶部的「数据资产」「报表」「工作区设置」分页导航需要先在左上角选择工作区；部分操作需要更高权限（如删除工作区仅所有者可用）。将鼠标悬停在按钮上可查看说明。</Text>
         </div>
         <div>
             <Text strong>数据存在哪里？</Text>

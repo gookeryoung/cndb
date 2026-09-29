@@ -144,8 +144,8 @@ function MatrixAxisHeader({
   )
 }
 
-/** 左上角标注格轴标签：主题色「纵轴/横轴」徽章 + 加粗字段名 */
-function MatrixCornerAxis({ axis, name }: { axis: '纵轴' | '横轴'; name: string }) {
+/** 左上角标注格轴标签：主题色「行 / 列」徽章 + 加粗字段名 */
+function MatrixCornerAxis({ axis, name }: { axis: '行' | '列'; name: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
       <span
@@ -190,7 +190,7 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
   if (!rowField || !columnField) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Empty description="矩阵视图需配置纵轴字段与横轴字段（视图设置）" />
+        <Empty description="矩阵视图需配置行分组字段与列分组字段（视图设置）" />
       </div>
     )
   }
@@ -240,8 +240,8 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
             display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 5,
           }}
         >
-          <MatrixCornerAxis axis="纵轴" name={rowDef?.name ?? rowField} />
-          <MatrixCornerAxis axis="横轴" name={colDef?.name ?? columnField} />
+          <MatrixCornerAxis axis="行" name={rowDef?.name ?? rowField} />
+          <MatrixCornerAxis axis="列" name={colDef?.name ?? columnField} />
         </div>
 
         {/* 横轴列头行 */}

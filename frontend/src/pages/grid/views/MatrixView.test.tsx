@@ -51,7 +51,7 @@ describe('MatrixView 矩阵视图', () => {
       view: { id: 1, name: '矩阵', view_type: 'matrix', is_default: false, view_options: {} },
     })
 
-    expect(screen.getByText(/矩阵视图需配置纵轴字段与横轴字段/)).toBeInTheDocument()
+    expect(screen.getByText(/矩阵视图需配置行分组字段与列分组字段/)).toBeInTheDocument()
   })
 
   it('空数据显示引导空态', () => {
@@ -80,12 +80,12 @@ describe('MatrixView 矩阵视图', () => {
     }
   })
 
-  it('左上角标注格展示纵轴/横轴徽章与字段名', () => {
+  it('左上角标注格展示行/列徽章与字段名', () => {
     renderMatrix()
 
     const corner = screen.getByTestId('matrix-corner')
-    expect(screen.getByText('纵轴')).toBeInTheDocument()
-    expect(screen.getByText('横轴')).toBeInTheDocument()
+    expect(screen.getByText('行')).toBeInTheDocument()
+    expect(screen.getByText('列')).toBeInTheDocument()
     expect(corner.textContent).toContain('团队')
     expect(corner.textContent).toContain('排期日期')
   })
