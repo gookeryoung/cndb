@@ -52,6 +52,32 @@ def test_check_port_used(monkeypatch) -> None:
     assert checks.check_port("", 8000) is True
 
 
+def test_bind_error_idle(monkeypatch) -> None:
+    """端口可 bind 时 bind_error 返回 None（空闲）."""
+    monkeypatch.setattr(checks.socket, "socket", lambda *a, **k: _FakeSocket())
+    assert checks.bind_error("127.0.0.1", 8000) is None
+
+
+def test_bind_error_addr_in_use(monkeypatch) -> None:
+    """bind 报 WSAEADDRINUSE 时返回 errno 10048."""
+    sock = _FakeSocket()
+
+    def _bind(self, _addr: tuple) -> None:
+        raise OSError(10048, "Address already in use")
+
+    sock.bind = _bind.__get__(sock)  # type: ignore[method-assign]
+    monkeypatch.setattr(checks.socket, "socket", lambda *a, **k: sock)
+    assert checks.bind_error("127.0.0.1", 8000) == 10048
+
+
+def test_bind_error_unknown_errno(monkeypatch) -> None:
+    """OSError 无 errno（如测试替身）时映射为 -1."""
+    sock = _FakeSocket()
+    sock._fail_bind = True
+    monkeypatch.setattr(checks.socket, "socket", lambda *a, **k: sock)
+    assert checks.bind_error("127.0.0.1", 8000) == -1
+
+
 def test_find_pid_win_parse(monkeypatch) -> None:
     """Windows netstat 输出解析出监听端口的 PID."""
     monkeypatch.setattr(checks.sys, "platform", "win32")
@@ -92,10 +118,38 @@ def test_ss_pid(monkeypatch) -> None:
     assert checks._ss_pid(8000) == 999
 
 
+def test_process_name_tasklist_no_task_zh(monkeypatch) -> None:
+    """中文环境 tasklist「信息: 没有运行的任务」提示不误判为进程名."""
+    monkeypatch.setattr(checks.sys, "platform", "win32")
+    monkeypatch.setattr(checks, "_run", lambda cmd: (0, "信息: 没有运行的任务匹配指定的标准。\n", ""))
+    assert checks._process_name(32448) == ""
+
+
+def test_process_name_tasklist_no_task_en(monkeypatch) -> None:
+    """英文环境 tasklist「INFO: No tasks」提示同样返回空串."""
+    monkeypatch.setattr(checks.sys, "platform", "win32")
+    monkeypatch.setattr(
+        checks, "_run", lambda cmd: (0, "INFO: No tasks are running which match the specified criteria.\n", "")
+    )
+    assert checks._process_name(32448) == ""
+
+
+def test_pid_alive_win(monkeypatch) -> None:
+    """Windows：tasklist 无匹配任务视为已死；有输出或探测失败视为存活."""
+    monkeypatch.setattr(checks.sys, "platform", "win32")
+    monkeypatch.setattr(checks, "_run", lambda cmd: (0, "信息: 没有运行的任务匹配指定的标准。\n", ""))
+    assert checks._pid_alive(32448) is False
+    monkeypatch.setattr(checks, "_run", lambda cmd: (0, "python.exe    32448 Console 1 25,600 K\n", ""))
+    assert checks._pid_alive(32448) is True
+    monkeypatch.setattr(checks, "_run", lambda cmd: (-1, "", ""))
+    assert checks._pid_alive(32448) is True  # 探测失败保守按存活
+
+
 def test_stop_port_occupant_found(monkeypatch) -> None:
     """找到占用进程并终止，返回提示含 PID."""
     monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 1234)
     monkeypatch.setattr(checks, "_process_name", lambda pid: "python")
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: True)
     killed: list[int] = []
     monkeypatch.setattr(checks, "_kill_pid", killed.append)
     monkeypatch.setattr(checks, "check_port", lambda host, port: False)
@@ -157,23 +211,90 @@ def test_kill_tree_windows_taskkill_tree(monkeypatch) -> None:
     assert cmds == [["taskkill", "/PID", "1234", "/F", "/T"]]
 
 
-def test_stop_port_occupant_stale_pid(monkeypatch) -> None:
-    """残留已死 PID：终止报「进程不存在」不阻断启动，端口确认释放后正常返回."""
+def test_stop_port_occupant_stale_pid_port_idle(monkeypatch) -> None:
+    """残留已死 PID 且端口实际已空闲：不执行终止，提示记录已失效."""
     monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 32448)
     monkeypatch.setattr(checks, "_process_name", lambda pid: "")
-    monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: False)
+    killed: list[int] = []
+    monkeypatch.setattr(checks, "_kill_pid", killed.append)
     monkeypatch.setattr(checks, "check_port", lambda host, port: False)
     msg = checks.stop_port_occupant(8000)
+    assert killed == []
     assert "PID=32448" in msg
-    assert "仍未释放" not in msg
+    assert "已失效" in msg
+
+
+def test_stop_port_occupant_stale_pid_residue(monkeypatch) -> None:
+    """残留已死 PID 且端口仍不可绑定：按残留状态归因而非谎报已停止.
+
+    场景：netstat 残留 LISTENING 条目归属已死 PID，监听句柄被其他进程
+    继承持有，taskkill 对死 PID 是空操作，端口无法释放。
+    """
+    monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 32448)
+    monkeypatch.setattr(checks, "_process_name", lambda pid: "")
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: False)
+    monkeypatch.setattr(checks, "check_port", lambda host, port: True)
+    monkeypatch.setattr(checks, "_port_entries", lambda port: [("LISTENING", 32448)])
+    monkeypatch.setattr(checks, "bind_error", lambda host, port: 10048)
+    msg = checks.stop_port_occupant(8000)
+    assert "已不存在" in msg
+    assert "未发现可终止的存活进程" in msg
+    assert "LISTENING/PID=32448" in msg
+
+
+def test_stop_port_occupant_residue_live_listener(monkeypatch) -> None:
+    """终止后端口仍被其他存活进程监听时，提示其 PID 而非笼统失败."""
+    monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 1234)
+    monkeypatch.setattr(checks, "_process_name", lambda pid: "python")
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
+    monkeypatch.setattr(checks, "check_port", lambda host, port: True)
+    monkeypatch.setattr(checks, "_port_entries", lambda port: [("LISTENING", 999)])
+    msg = checks.stop_port_occupant(8000)
+    assert "PID=999" in msg
+    assert "存活" in msg
+
+
+def test_stop_port_occupant_residue_time_wait(monkeypatch) -> None:
+    """终止后仅剩 TIME_WAIT 残留连接时，提示自动释放等待."""
+    monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 1234)
+    monkeypatch.setattr(checks, "_process_name", lambda pid: "python")
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
+    monkeypatch.setattr(checks, "check_port", lambda host, port: True)
+    monkeypatch.setattr(
+        checks,
+        "_port_entries",
+        lambda port: [("TIME_WAIT", 1234), ("TIME_WAIT", None)],
+    )
+    msg = checks.stop_port_occupant(8000)
+    assert "TIME_WAIT" in msg
+    assert "自动释放" in msg
+
+
+def test_stop_port_occupant_residue_access_denied(monkeypatch) -> None:
+    """bind 被拒绝（errno 10013）时提示系统保留端口段并建议换端口."""
+    monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 1234)
+    monkeypatch.setattr(checks, "_process_name", lambda pid: "python")
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
+    monkeypatch.setattr(checks, "check_port", lambda host, port: True)
+    monkeypatch.setattr(checks, "_port_entries", lambda port: [])
+    monkeypatch.setattr(checks, "bind_error", lambda host, port: 10013)
+    msg = checks.stop_port_occupant(8000)
+    assert "系统保留" in msg
+    assert "更换服务端口" in msg
 
 
 def test_stop_port_occupant_port_still_busy(monkeypatch) -> None:
-    """终止后端口仍不可绑定时，提示异常状态而非谎报成功."""
+    """终止后端口仍不可绑定时，走残留归因提示而非谎报成功."""
     monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 1234)
     monkeypatch.setattr(checks, "_process_name", lambda pid: "python")
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: True)
     monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
     monkeypatch.setattr(checks, "check_port", lambda host, port: True)
+    monkeypatch.setattr(checks, "_port_entries", lambda port: [("TIME_WAIT", None)])
     monkeypatch.setattr(checks, "_PORT_RELEASE_TIMEOUT", 0.0)
     msg = checks.stop_port_occupant(8000)
     assert "仍未释放" in msg
@@ -183,6 +304,7 @@ def test_stop_port_occupant_polls_until_released(monkeypatch) -> None:
     """终止后端口短暂未释放时轮询等待，释放后返回成功提示."""
     monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 1234)
     monkeypatch.setattr(checks, "_process_name", lambda pid: "python")
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: True)
     monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
     results = [True, True, False]
 
