@@ -35,6 +35,42 @@ class _FakeProc:
     stderr = ""
 
 
+class _FakeKernel32:
+    """kernel32 替身：QueryFullProcessImageNameW / GetExitCodeProcess 可编程.
+
+    以普通函数实例属性暴露（而非绑定方法），使被测代码对其赋值
+    ``restype``/``argtypes`` 时与 ctypes 函数指针行为一致。
+    """
+
+    def __init__(self, image: str = "", query_ok: bool = True, exit_code: int = 259, exit_ok: bool = True) -> None:
+        self._image = image
+        self._query_ok = query_ok
+        self._exit_code = exit_code
+        self._exit_ok = exit_ok
+        self.closed: list[int] = []
+
+        def _query(_handle: int, _flags: int, buf, size) -> int:
+            if not self._query_ok:
+                return 0
+            buf.value = self._image
+            size._obj.value = len(self._image)
+            return 1
+
+        def _exit(_handle: int, ref) -> int:
+            if not self._exit_ok:
+                return 0
+            ref._obj.value = self._exit_code
+            return 1
+
+        def _close(handle: int) -> int:
+            self.closed.append(handle)
+            return 1
+
+        self.QueryFullProcessImageNameW = _query
+        self.GetExitCodeProcess = _exit
+        self.CloseHandle = _close
+
+
 # ── 端口检测 ─────────────────────────────────────────────────
 
 
@@ -118,31 +154,57 @@ def test_ss_pid(monkeypatch) -> None:
     assert checks._ss_pid(8000) == 999
 
 
-def test_process_name_tasklist_no_task_zh(monkeypatch) -> None:
-    """中文环境 tasklist「信息: 没有运行的任务」提示不误判为进程名."""
+def test_process_name_win(monkeypatch) -> None:
+    """Windows：Win32 API 查询镜像路径并取 basename，句柄用后关闭."""
     monkeypatch.setattr(checks.sys, "platform", "win32")
-    monkeypatch.setattr(checks, "_run", lambda cmd: (0, "信息: 没有运行的任务匹配指定的标准。\n", ""))
+    monkeypatch.setattr(checks, "_win_open_process", lambda pid: 4242)
+    fake = _FakeKernel32(image=r"C:\Program Files\Python312\python.exe")
+    monkeypatch.setattr(checks, "_kernel32", lambda: fake)
+    assert checks._process_name(1234) == "python.exe"
+    assert fake.closed == [4242]
+
+
+def test_process_name_win_open_failed(monkeypatch) -> None:
+    """Windows：句柄打不开（进程不存在/无权限）返回空串."""
+    monkeypatch.setattr(checks.sys, "platform", "win32")
+    monkeypatch.setattr(checks, "_win_open_process", lambda pid: 0)
     assert checks._process_name(32448) == ""
 
 
-def test_process_name_tasklist_no_task_en(monkeypatch) -> None:
-    """英文环境 tasklist「INFO: No tasks」提示同样返回空串."""
+def test_process_name_win_query_failed(monkeypatch) -> None:
+    """Windows：QueryFullProcessImageNameW 失败返回空串，句柄仍被关闭."""
     monkeypatch.setattr(checks.sys, "platform", "win32")
-    monkeypatch.setattr(
-        checks, "_run", lambda cmd: (0, "INFO: No tasks are running which match the specified criteria.\n", "")
-    )
+    monkeypatch.setattr(checks, "_win_open_process", lambda pid: 4242)
+    fake = _FakeKernel32(query_ok=False)
+    monkeypatch.setattr(checks, "_kernel32", lambda: fake)
     assert checks._process_name(32448) == ""
+    assert fake.closed == [4242]
 
 
 def test_pid_alive_win(monkeypatch) -> None:
-    """Windows：tasklist 无匹配任务视为已死；有输出或探测失败视为存活."""
+    """Windows：Win32 退出码 STILL_ACTIVE 判活；查询失败保守判活且句柄已关闭."""
     monkeypatch.setattr(checks.sys, "platform", "win32")
-    monkeypatch.setattr(checks, "_run", lambda cmd: (0, "信息: 没有运行的任务匹配指定的标准。\n", ""))
-    assert checks._pid_alive(32448) is False
-    monkeypatch.setattr(checks, "_run", lambda cmd: (0, "python.exe    32448 Console 1 25,600 K\n", ""))
+    monkeypatch.setattr(checks, "_win_open_process", lambda pid: 4242)
+    alive = _FakeKernel32(exit_code=259)
+    monkeypatch.setattr(checks, "_kernel32", lambda: alive)
     assert checks._pid_alive(32448) is True
-    monkeypatch.setattr(checks, "_run", lambda cmd: (-1, "", ""))
-    assert checks._pid_alive(32448) is True  # 探测失败保守按存活
+    assert alive.closed == [4242]
+    dead = _FakeKernel32(exit_code=0)
+    monkeypatch.setattr(checks, "_kernel32", lambda: dead)
+    assert checks._pid_alive(32448) is False
+    broken = _FakeKernel32(exit_ok=False)
+    monkeypatch.setattr(checks, "_kernel32", lambda: broken)
+    assert checks._pid_alive(32448) is True  # 查询失败保守按存活
+
+
+def test_pid_alive_win_open_failed(monkeypatch) -> None:
+    """Windows：句柄打不开时按最后错误码判定（87=不存在判死，其余保守判活）."""
+    monkeypatch.setattr(checks.sys, "platform", "win32")
+    monkeypatch.setattr(checks, "_win_open_process", lambda pid: 0)
+    monkeypatch.setattr(checks.ctypes, "get_last_error", lambda: 87)
+    assert checks._pid_alive(32448) is False
+    monkeypatch.setattr(checks.ctypes, "get_last_error", lambda: 5)
+    assert checks._pid_alive(32448) is True
 
 
 def test_stop_port_occupant_found(monkeypatch) -> None:

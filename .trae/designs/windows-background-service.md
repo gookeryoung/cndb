@@ -35,7 +35,7 @@ GUI 入口（[src/cndb/gui/main_window.py](file:///f:/Dev/cndb/src/cndb/gui/main
 - enable：`build_run_command` → `_write_run_value`（CreateKeyEx + SetValueEx）。
 - run 单实例保护（双重校验，任一命中即拒绝）：① pidfile 存在且 `_pid_alive(pid)` 为真；② `cndb.gui.checks.port_status(port, host).used` 为真（checks 无 tkinter 依赖，可从 CLI 复用；host 须与服务绑定地址一致，Windows 下 wildcard 绑定被占时 specific-IP 仍可绑定成功）。
 - run 派生：`subprocess.Popen([*_exe_command(), "serve", ...], stdin=DEVNULL, stdout=SERVICE_LOG.open("ab"), stderr=STDOUT, creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS)`，随后写 pidfile、打印确认并退出；非 Windows 不传 creationflags。
-- `_pid_alive`：Windows 用 `tasklist /FI "PID eq <pid>" /NH` 输出包含判定；POSIX 用 `os.kill(pid, 0)`（ProcessLookupError→False，PermissionError→True）。
+- `_pid_alive`：委托 `cndb.gui.checks._pid_alive`——Windows 用 Win32 API（`OpenProcess`+`GetExitCodeProcess`）判定，不调用 `tasklist` 子进程（该命令在部分会话环境启动即失败 0xc0000142 并弹系统模态错误框）；句柄打不开时按最后错误码区分：PID 不存在（ERROR_INVALID_PARAMETER）判死，权限不足等保守判活。POSIX 用 `os.kill(pid, 0)`（ProcessLookupError→False，PermissionError→True）。
 - stop：读 pidfile → 存活则 `taskkill /T /F /PID`（POSIX `os.kill(pid, 15)`）→ 删 pidfile。pidfile 缺失或 pid 已死均幂等。
 
 ## 异常处理

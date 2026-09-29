@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from cndb.core.config import CACHE_DIR, LOG_DIR, _is_frozen
+from cndb.gui import checks
 
 # ── 常量 ──────────────────────────────────────────────────────
 
@@ -106,19 +107,11 @@ def _run_cmd(cmd: list[str]) -> tuple[int, str]:
 def _pid_alive(pid: int) -> bool:
     """判断进程是否存活.
 
-    Windows 用 tasklist 按 PID 过滤查询；POSIX 用 ``os.kill(pid, 0)`` 探测
-    （权限不足视为存活，进程不存在视为死亡）。
+    委托 ``cndb.gui.checks`` 的 Win32 实现：Windows 不再调用 tasklist 子进程
+    （规避其 DLL 初始化失败 0xc0000142 时弹出的系统模态错误框）；
+    POSIX 用 ``os.kill(pid, 0)`` 探测（权限不足视为存活，进程不存在视为死亡）。
     """
-    if sys.platform == "win32":
-        code, out = _run_cmd(["tasklist", "/FI", f"PID eq {pid}", "/NH"])
-        return code == 0 and str(pid) in out
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return checks._pid_alive(pid)
 
 
 # ── 核心操作 ──────────────────────────────────────────────────
