@@ -144,6 +144,51 @@ function densityColumnStyle(density: Density) {
   }
 }
 
+// ── 严重程度分级（逾期/紧急按天数细分背景浓度） ──────────
+
+/** 根据 daysLeft 返回卡片边框与背景色 style（按严重程度进一步分级）.
+ *
+ * 逾期（daysLeft < 0）按逾期天数分 3 档：
+ * - 逾期 > 7 天：高浓度危险色
+ * - 逾期 4-7 天：中浓度危险色
+ * - 逾期 1-3 天：低浓度危险色
+ *
+ * 紧急（0 ≤ daysLeft ≤ urgentThreshold）按剩余天数分 2 档：
+ * - 剩 0-1 天（当天/明天）：高浓度警告色
+ * - 剩 2-N 天：低浓度警告色
+ *
+ * 正常或无截止日期返回 null（不设置背景/边框覆盖）.
+ * 颜色用 color-mix 混合主题 CSS 变量，自动适配 10 种主题。
+ */
+function getUrgencyVisual(
+  daysLeft: number | null,
+  urgentThreshold: number,
+  borderLeftWidth: number,
+): { borderLeft: string; background?: string } | null {
+  if (daysLeft === null) return null
+
+  if (daysLeft < 0) {
+    const overdue = -daysLeft
+    // 逾期分级
+    const intensity = overdue > 7 ? 80 : overdue > 3 ? 50 : 25
+    return {
+      borderLeft: `${borderLeftWidth}px solid #ff4d4f`,
+      background: `color-mix(in srgb, var(--cn-bg-danger-subtle) ${intensity}%, var(--cn-bg-container))`,
+    }
+  }
+
+  if (daysLeft <= urgentThreshold) {
+    // 紧急分级
+    const intensity = daysLeft <= 1 ? 60 : 30
+    return {
+      borderLeft: `${borderLeftWidth}px solid #faad14`,
+      background: `color-mix(in srgb, var(--cn-bg-warning-subtle) ${intensity}%, var(--cn-bg-container))`,
+    }
+  }
+
+  return null
+}
+
 // ── 工具函数（link/multi_select/select/通用格式化已抽到 ../cells/fieldValueFormat.ts；日期工具已抽到 ../cells/dateUtils.ts） ──
 
 // ── 自动配色 Tag ──────────────────────────────────────
@@ -215,8 +260,6 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   const showDoneToggle = !!canEdit && !!doneCtx && !!onToggleDone
   const dueDate = dueDateField ? parseDate(row[dueDateField]) : null
   const daysLeft = dueDate ? daysFromToday(dueDate) : null
-  const isOverdue = daysLeft !== null && daysLeft < 0
-  const isUrgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= urgentThreshold
 
   const progressVal = progressField ? Number(row[progressField]) : NaN
   const progress = Number.isFinite(progressVal) ? Math.max(0, Math.min(100, progressVal)) : NaN
@@ -243,12 +286,12 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   if (isDone) {
     borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #52c41a` }
     bgStyle = { background: 'var(--cn-bg-success-subtle)' }
-  } else if (isOverdue) {
-    borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #ff4d4f` }
-    bgStyle = { background: 'var(--cn-bg-danger-subtle)' }
-  } else if (isUrgent) {
-    borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #faad14` }
-    bgStyle = { background: 'var(--cn-bg-warning-subtle)' }
+  } else {
+    const urgency = getUrgencyVisual(daysLeft, urgentThreshold, cs.borderLeftWidth)
+    if (urgency) {
+      borderStyle = { borderLeft: urgency.borderLeft }
+      if (urgency.background) bgStyle = { background: urgency.background }
+    }
   }
 
   return (
