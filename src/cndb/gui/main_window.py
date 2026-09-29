@@ -345,6 +345,16 @@ class ServeTab(_BaseTab):
         self.workers_var = tk.StringVar(value=self.app.settings.serve.workers)
         ttk.Entry(cfg, textvariable=self.workers_var, width=6).grid(row=0, column=6, sticky=tk.W, padx=2)
 
+        # 开机自启（后台服务）：仅 Windows 显示，勾选态回显注册表 Run 键实际状态
+        if sys.platform == "win32":
+            from cndb.cli.service import autostart_enabled
+
+            self.autostart_var = tk.BooleanVar(value=autostart_enabled())
+            self.autostart_check = ttk.Checkbutton(
+                cfg, text="开机自启(后台)", variable=self.autostart_var, command=self.toggle_autostart
+            )
+            self.autostart_check.grid(row=1, column=0, columnspan=3, sticky=tk.W, padx=2, pady=(4, 0))
+
         # 环境检查监视区（端口占用 + 静态产物就绪）
         env = ttk.LabelFrame(self.frame, text="环境检查", padding=10)
         env.pack(fill=tk.X, pady=(10, 0))
@@ -558,6 +568,29 @@ class ServeTab(_BaseTab):
 
         self.app._server_thread = threading.Thread(target=_reader, daemon=True)
         self.app._server_thread.start()
+
+    def toggle_autostart(self) -> None:
+        """勾选/取消「开机自启(后台)」，即时写/删注册表 Run 键.
+
+        勾选时按当前 Host/Port 输入框值固化进自启命令；失败时弹窗提示
+        并把勾选态回滚为注册表实际状态。
+        """
+        from cndb.cli.service import autostart_enabled, disable, enable
+
+        try:
+            if self.autostart_var.get():
+                host = self.host_var.get().strip() or "0.0.0.0"
+                port = int(self.port_var.get().strip() or "8000")
+                enable(host, port)
+                self.app.log_queue.write(f"[ok] 已启用开机自启（后台服务 {host}:{port}）\n")
+            else:
+                disable()
+                self.app.log_queue.write("[ok] 已取消开机自启\n")
+        except (OSError, ValueError) as exc:
+            self.app.log_queue.write(f"[error] 开机自启设置失败: {exc}\n")
+            messagebox.showerror("错误", f"开机自启设置失败:\n{exc}")
+        finally:
+            self.autostart_var.set(autostart_enabled())
 
     def stop_server(self) -> None:
         proc = self.app._server_proc
