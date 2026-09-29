@@ -48,36 +48,67 @@ def set_links(
     row_id: int,
     target_ids: Sequence[int],
     db: Session | None = None,
+    *,
+    conn: Any | None = None,
 ) -> None:
     """替换一行的关联集合：先清空再批量写入；提供 db 时校验目标行存在（越界 id 拒绝写入）.
 
-    物理写入独立提交（不与调用方行写入同事务）；目标行不存在时抛 ValueError.
+    conn: 若调用方已持有一个 Connection（通常来自外层 ``engine.begin()``），
+        传入后 link 写入会复用该连接，避免嵌套 ``engine.begin()`` 造成的
+        事务隔离破坏（主行回滚时 link 写入不会被级联回滚）。
+        不传或传 None 时，本函数自己开启独立事务。
+    目标行不存在时抛 ValueError.
     """
     ids = list(dict.fromkeys(target_ids))
     if db is not None and ids:
         ensure_link_targets_exist(engine, field, ids, db)
     link_table = _get_link_sa_table(engine, field.link_table_name)
-    with engine.begin() as conn:
-        conn.execute(link_table.delete().where(link_table.c.row_id == row_id))
+
+    def _do_write(c: Any) -> None:
+        c.execute(link_table.delete().where(link_table.c.row_id == row_id))
         if not ids:
             return
-        conn.execute(
+        c.execute(
             link_table.insert(),
             [{"row_id": row_id, "target_row_id": target_id} for target_id in ids],
         )
 
+    if conn is not None:
+        _do_write(conn)
+    else:
+        with engine.begin() as _inner:
+            _do_write(_inner)
 
-def clear_row_links(engine: Engine, table: DataTable, row_ids: Sequence[int]) -> None:
-    """清理一批行的全部关联记录（行硬删除时调用，防止悬挂引用）."""
+
+def clear_row_links(
+    engine: Engine,
+    table: DataTable,
+    row_ids: Sequence[int],
+    *,
+    conn: Any | None = None,
+) -> None:
+    """清理一批行的全部关联记录（行硬删除时调用，防止悬挂引用）.
+
+    conn: 若调用方已持有一个 Connection（通常来自外层 ``engine.begin()``），
+        传入后清理操作会复用该连接，避免嵌套 ``engine.begin()`` 造成的
+        事务隔离破坏。不传时本函数自己开启独立事务。
+    """
     ids = list(dict.fromkeys(row_ids))
     if not ids:
         return
-    for field in link_fields(table):
-        if not link_table_exists(engine, field.link_table_name):
-            continue
-        link_table = _get_link_sa_table(engine, field.link_table_name)
-        with engine.begin() as conn:
-            conn.execute(link_table.delete().where(link_table.c.row_id.in_(ids)))
+
+    def _do_clear(c: Any) -> None:
+        for field in link_fields(table):
+            if not link_table_exists(engine, field.link_table_name):
+                continue
+            link_table = _get_link_sa_table(engine, field.link_table_name)
+            c.execute(link_table.delete().where(link_table.c.row_id.in_(ids)))
+
+    if conn is not None:
+        _do_clear(conn)
+    else:
+        with engine.begin() as _inner:
+            _do_clear(_inner)
 
 
 # ── 读取 ─────────────────────────────────────────────
@@ -300,20 +331,25 @@ def _target_data_table(db: Session, field: DataField) -> DataTable | None:
 
 
 def ensure_link_targets_exist(engine: Engine, field: DataField, ids: list[int], db: Session) -> None:
-    """校验关联目标行在目标物理表中存在（越界 id 拒绝写入）.
+    """校验关联目标行在目标物理表中存在且未被软删（越界或已软删 id 均拒绝写入）.
 
-    主行 INSERT/UPDATE 之前调用，避免主行已提交但 link 写入失败留下孤儿主行。
+    主行 INSERT/UPDATE 之前调用，避免主行已提交但 link 写入失败留下孤儿主行，
+    也避免创建指向已软删行的"幽灵关联"。
     """
     target = _target_data_table(db, field)
     if target is None:
         raise ValueError(f"字段 {field.name} 的关联目标表不存在")
     sa_table = _get_sa_table_by_name(engine, target.db_table_name)
     with engine.connect() as conn:
-        rows = conn.execute(select(sa_table.c.id).where(sa_table.c.id.in_(ids))).all()
+        stmt = select(sa_table.c.id).where(sa_table.c.id.in_(ids))
+        # 仅对存在 _trashed 列的 DataTable 物理表加软删过滤（非 DataTable 表可能无此列）
+        if hasattr(sa_table.c, "_trashed"):
+            stmt = stmt.where(sa_table.c._trashed.is_(False))
+        rows = conn.execute(stmt).all()
     existing = {int(r[0]) for r in rows}
     missing = [str(i) for i in ids if i not in existing]
     if missing:
-        raise ValueError(f"字段 {field.name} 关联的目标行不存在: {', '.join(missing)}")
+        raise ValueError(f"字段 {field.name} 关联的目标行不存在或已删除: {', '.join(missing)}")
 
 
 def _get_sa_table_by_name(engine: Engine, db_table_name: str) -> Table:
