@@ -7,13 +7,17 @@
 设计约束：
 - 本模块不依赖 tkinter，可在无显示环境（CI）下单元测试纯逻辑。
 - 端口 PID 探测优先使用系统自带命令（无第三方依赖）：
-  Windows 用 ``netstat``/``tasklist``/``taskkill``，
-  POSIX 用 ``lsof``（回退 ``ss``）/``ps``/``kill``。
+  Windows 用 ``netstat``/``taskkill``，POSIX 用 ``lsof``（回退 ``ss``）/``ps``/``kill``。
+- 进程判活与镜像名查询在 Windows 上走 Win32 API（ctypes），不依赖
+  ``tasklist``：该命令在部分会话环境下启动即失败（0xc0000142）并弹
+  系统模态错误框，会阻塞 GUI。
 """
 
 from __future__ import annotations
 
 import contextlib
+import ctypes
+import ntpath
 import os
 import re
 import shutil
@@ -35,6 +39,20 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 # 静态主目录可接近的可接受条件（与 app._SPA_READY 判定一致）
 _STATIC_REQUIRED = ("index.html", "assets")
 
+# Windows：抑制子进程启动硬错误（如 DLL 初始化失败 0xc0000142）的系统
+# 模态错误框，使其降级为普通 ``returncode != 0``；子进程默认继承父进程
+# 错误模式。SEM_FAILCRITICALERRORS(0x0001) | SEM_NOOPENFILEERRORBOX(0x8000)
+if sys.platform == "win32":
+    _windll = getattr(ctypes, "windll", None)
+    if _windll is not None:
+        _windll.kernel32.SetErrorMode(0x0001 | 0x8000)
+
+# GUI 进程调用系统命令时不创建控制台窗口（避免闪烁；POSIX 保持 0）
+if sys.platform == "win32":
+    _CREATION_FLAGS = subprocess.CREATE_NO_WINDOW
+else:  # pragma: no cover - 仅 POSIX
+    _CREATION_FLAGS = 0
+
 
 def _emit(log: Callable[[str], object] | None, message: str) -> None:
     """把消息交给可选回调；未提供时忽略（安静模式）."""
@@ -45,7 +63,9 @@ def _emit(log: Callable[[str], object] | None, message: str) -> None:
 def _run(cmd: list[str]) -> tuple[int, str, str]:
     """执行命令，返回 ``(returncode, stdout, stderr)``；异常视为失败."""
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # nosec - 命令来自内部常量
+        proc = subprocess.run(  # nosec - 命令来自内部常量
+            cmd, capture_output=True, text=True, check=False, creationflags=_CREATION_FLAGS
+        )
         return proc.returncode, (proc.stdout or ""), (proc.stderr or "")
     except OSError:
         return -1, "", ""
@@ -148,30 +168,79 @@ def find_pid_on_port(port: int) -> int | None:
     return _lsof_pid(port) or _ss_pid(port)
 
 
-# tasklist「无匹配任务」提示前缀（中/英文环境）：此时 PID 对应进程不存在
-_TASKLIST_NO_TASK = ("信息:", "INFO:")
+# 进程判活/镜像名查询所需 Win32 常量：最低查询权限、未退出约定退出码、
+# OpenProcess 对不存在 PID 的错误码
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_STILL_ACTIVE = 259
+_ERROR_INVALID_PARAMETER = 87
+
+
+def _kernel32() -> ctypes.WinDLL:
+    """返回 ``kernel32``（``use_last_error=True``）；测试替换本函数注入假对象."""
+    return ctypes.WinDLL("kernel32", use_last_error=True)
+
+
+def _win_open_process(pid: int) -> int:
+    """按 PID 打开进程句柄（QUERY_LIMITED_INFORMATION 权限）；失败返回 0."""
+    kernel32 = _kernel32()
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+    return int(kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid) or 0)
 
 
 def _process_name(pid: int) -> str:
-    """查询进程可执行文件名；探测失败或进程不存在时返回空串."""
+    """查询进程可执行文件名；探测失败或进程不存在时返回空串.
+
+    Windows 用 ``QueryFullProcessImageNameW`` 取镜像路径 basename，
+    不依赖 tasklist 子进程（该命令在部分环境下启动失败并弹系统错误框）。
+    """
     if sys.platform == "win32":
-        rc, out, _ = _run(["tasklist", "/FI", f"PID eq {pid}", "/NH"])
-        line = out.strip()
-        if rc == 0 and line and not line.startswith(_TASKLIST_NO_TASK):
-            return line.split()[0]
-        return ""
+        handle = _win_open_process(pid)
+        if not handle:
+            return ""
+        kernel32 = _kernel32()
+        kernel32.QueryFullProcessImageNameW.restype = ctypes.c_int
+        kernel32.QueryFullProcessImageNameW.argtypes = (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_wchar),
+            ctypes.POINTER(ctypes.c_uint32),
+        )
+        kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+        try:
+            size = ctypes.c_uint32(1024)
+            buf = ctypes.create_unicode_buffer(size.value)
+            ok = bool(kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)))
+        finally:
+            kernel32.CloseHandle(handle)
+        return ntpath.basename(buf.value) if ok else ""
     rc, out, _ = _run(["ps", "-p", str(pid), "-o", "comm="])
     return out.strip() if rc == 0 else ""
 
 
 def _pid_alive(pid: int) -> bool:
-    """判断进程是否存活；探测失败时保守按存活处理（不放过可终止对象）."""
+    """判断进程是否存活；探测失败时保守按存活处理（不放过可终止对象）.
+
+    Windows 用 ``OpenProcess`` + ``GetExitCodeProcess``：句柄打不开时按
+    错误码区分——PID 不存在（ERROR_INVALID_PARAMETER）判死，权限不足等
+    其他失败保守判活；POSIX 用 ``os.kill(pid, 0)`` 探测。
+    """
     if sys.platform == "win32":
-        rc, out, _ = _run(["tasklist", "/FI", f"PID eq {pid}", "/NH"])
-        if rc != 0:
+        handle = _win_open_process(pid)
+        if not handle:
+            return ctypes.get_last_error() != _ERROR_INVALID_PARAMETER
+        kernel32 = _kernel32()
+        kernel32.GetExitCodeProcess.restype = ctypes.c_int
+        kernel32.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
+        kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+        try:
+            exit_code = ctypes.c_uint32()
+            ok = bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)))
+        finally:
+            kernel32.CloseHandle(handle)
+        if not ok:
             return True
-        line = out.strip()
-        return bool(line) and not line.startswith(_TASKLIST_NO_TASK)
+        return exit_code.value == _STILL_ACTIVE
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -359,6 +428,7 @@ def build_static(log: Callable[[str], object] | None = None, *, frontend_dir: Pa
     kwargs: dict[str, object] = {"cwd": str(frontend), "capture_output": True, "text": True}
     if sys.platform == "win32":
         kwargs["shell"] = True
+        kwargs["creationflags"] = _CREATION_FLAGS
     proc = subprocess.run(cmd, check=False, **kwargs)  # type: ignore[arg-type]  # nosec - 命令来自内部常量
     if proc.returncode != 0:
         tail = (getattr(proc, "stderr", None) or getattr(proc, "stdout", None) or "").strip()
