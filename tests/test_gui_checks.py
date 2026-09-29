@@ -98,6 +98,7 @@ def test_stop_port_occupant_found(monkeypatch) -> None:
     monkeypatch.setattr(checks, "_process_name", lambda pid: "python")
     killed: list[int] = []
     monkeypatch.setattr(checks, "_kill_pid", killed.append)
+    monkeypatch.setattr(checks, "check_port", lambda host, port: False)
     msg = checks.stop_port_occupant(8000)
     assert killed == [1234]
     assert "PID=1234" in msg
@@ -112,6 +113,101 @@ def test_stop_port_occupant_idle(monkeypatch) -> None:
     msg = checks.stop_port_occupant(8000)
     assert killed == []
     assert "未检测到占用进程" in msg
+
+
+def test_kill_pid_stale_pid_not_found_is_success(monkeypatch) -> None:
+    """netstat 残留已死 PID 时 taskkill 报「没有找到进程」不视为失败（回归）.
+
+    场景：停止服务后 netstat 短暂残留 LISTENING 条目，启动前清理对
+    不存在的 PID 执行 taskkill 失败会阻断启动，尽管端口实际已释放。
+    """
+    monkeypatch.setattr(checks.sys, "platform", "win32")
+    monkeypatch.setattr(checks, "_run", lambda cmd: (1, "", '错误: 没有找到进程 "32448"。'))
+    checks._kill_pid(32448)  # 不应抛错
+
+
+def test_kill_pid_not_found_english_locale(monkeypatch) -> None:
+    """英文环境 taskkill「not found」报错同样视为进程已不存在."""
+    monkeypatch.setattr(checks.sys, "platform", "win32")
+    monkeypatch.setattr(checks, "_run", lambda cmd: (1, "", 'ERROR: The process "32448" not found.'))
+    checks._kill_pid(32448)  # 不应抛错
+
+
+def test_kill_pid_denied_raises(monkeypatch) -> None:
+    """非「进程不存在」类失败（如拒绝访问）仍上抛 RuntimeError."""
+    monkeypatch.setattr(checks.sys, "platform", "win32")
+    monkeypatch.setattr(checks, "_run", lambda cmd: (1, "", "错误: 拒绝访问。"))
+    with pytest.raises(RuntimeError, match="拒绝访问"):
+        checks._kill_pid(32448)
+
+
+def test_kill_pid_posix_no_such_process(monkeypatch) -> None:
+    """POSIX kill 报「No such process」视为终止成功."""
+    monkeypatch.setattr(checks.sys, "platform", "posix")
+    monkeypatch.setattr(checks, "_run", lambda cmd: (1, "", "kill: (1234) - No such process"))
+    checks._kill_pid(1234)  # 不应抛错
+
+
+def test_kill_tree_windows_taskkill_tree(monkeypatch) -> None:
+    """kill_tree 在 Windows 走 taskkill /F /T 整树终止（供 GUI 停止服务用）."""
+    cmds: list[list[str]] = []
+    monkeypatch.setattr(checks.sys, "platform", "win32")
+    monkeypatch.setattr(checks, "_run", lambda cmd: cmds.append(cmd) or (0, "", ""))
+    checks.kill_tree(1234)
+    assert cmds == [["taskkill", "/PID", "1234", "/F", "/T"]]
+
+
+def test_stop_port_occupant_stale_pid(monkeypatch) -> None:
+    """残留已死 PID：终止报「进程不存在」不阻断启动，端口确认释放后正常返回."""
+    monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 32448)
+    monkeypatch.setattr(checks, "_process_name", lambda pid: "")
+    monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
+    monkeypatch.setattr(checks, "check_port", lambda host, port: False)
+    msg = checks.stop_port_occupant(8000)
+    assert "PID=32448" in msg
+    assert "仍未释放" not in msg
+
+
+def test_stop_port_occupant_port_still_busy(monkeypatch) -> None:
+    """终止后端口仍不可绑定时，提示异常状态而非谎报成功."""
+    monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 1234)
+    monkeypatch.setattr(checks, "_process_name", lambda pid: "python")
+    monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
+    monkeypatch.setattr(checks, "check_port", lambda host, port: True)
+    monkeypatch.setattr(checks, "_PORT_RELEASE_TIMEOUT", 0.0)
+    msg = checks.stop_port_occupant(8000)
+    assert "仍未释放" in msg
+
+
+def test_stop_port_occupant_polls_until_released(monkeypatch) -> None:
+    """终止后端口短暂未释放时轮询等待，释放后返回成功提示."""
+    monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 1234)
+    monkeypatch.setattr(checks, "_process_name", lambda pid: "python")
+    monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
+    results = [True, True, False]
+
+    def _fake_check(host: str, port: int) -> bool:
+        return results.pop(0) if results else False
+
+    monkeypatch.setattr(checks, "check_port", _fake_check)
+    sleeps: list[float] = []
+    monkeypatch.setattr(checks.time, "sleep", sleeps.append)
+    msg = checks.stop_port_occupant(8000)
+    assert "仍未释放" not in msg
+    assert len(sleeps) == 2
+
+
+def test_port_status_host_passthrough(monkeypatch) -> None:
+    """port_status 把 host 透传给 check_port（与服务绑定地址同口径检测）."""
+    seen: list[tuple[str, int]] = []
+
+    def _fake_check(host: str, port: int) -> bool:
+        seen.append((host, port))
+        return False
+
+    monkeypatch.setattr(checks, "check_port", _fake_check)
+    checks.port_status(8000, host="0.0.0.0")
+    assert seen == [("0.0.0.0", 8000)]
 
 
 def test_port_status_used_without_pid(monkeypatch) -> None:

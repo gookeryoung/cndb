@@ -402,7 +402,10 @@ class ServeTab(_BaseTab):
             from cndb.gui import checks
 
             port = int(self.port_var.get().strip() or "8000")
-            info = checks.port_status(port)
+            host = self.host_var.get().strip() or "0.0.0.0"
+            # 检测口径必须与服务实际绑定地址一致：Windows 下 wildcard 绑定
+            # 被占时 specific-IP 仍可绑定成功，用 127.0.0.1 会误报空闲
+            info = checks.port_status(port, host)
             st = checks.static_status()
             if info.used:
                 port_label = f"端口 {port} 已被占用"
@@ -440,7 +443,7 @@ class ServeTab(_BaseTab):
         # 1) 端口占用先清理，避免 uvicorn 绑定失败
         if checks.check_port(host, port):
             self.app.log_queue.write(f"[warn] 端口 {host}:{port} 已被占用，正在停止占用进程...\n")
-            message = checks.stop_port_occupant(port)
+            message = checks.stop_port_occupant(port, host)
             self.app.log_queue.write(f"[ok] {message}\n")
             time.sleep(0.5)  # 留出内核释放端口的时间
 
@@ -596,8 +599,16 @@ class ServeTab(_BaseTab):
         proc = self.app._server_proc
         if proc is None:
             return
-        # Windows 下 terminate() 也能用（等价 SIGTERM），统一调用即可
-        with contextlib.suppress(Exception):
+        if sys.platform == "win32":
+            # 必须整树终止：reload/workers 模式下 uvicorn 会派生子进程持有端口，
+            # 仅 terminate 直接子进程会留下孤儿继续占用端口（表现为「停止服务失败」）
+            from cndb.gui import checks
+
+            try:
+                checks.kill_tree(proc.pid)
+            except Exception:
+                proc.kill()
+        else:
             proc.terminate()
         self.app._server_proc = None
         self.status_label.configure(text="正在停止...", foreground="#d4760a")

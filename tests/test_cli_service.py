@@ -144,7 +144,7 @@ def test_run_spawns_detached_and_writes_pidfile(
     fake_registry: FakeRegistry, fake_paths: None, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """正常路径：无窗口派生 serve、日志重定向、写 pidfile."""
-    monkeypatch.setattr("cndb.gui.checks.port_status", lambda port: type("P", (), {"used": False})())
+    monkeypatch.setattr("cndb.gui.checks.port_status", lambda port, host="127.0.0.1": type("P", (), {"used": False})())
     monkeypatch.setattr(service.subprocess, "Popen", _FakePopen)
 
     rc = service.run("0.0.0.0", 8000)
@@ -183,7 +183,7 @@ def test_run_rejects_when_port_used(
     fake_registry: FakeRegistry, fake_paths: None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """端口被占用时拒绝启动（单实例双重校验）."""
-    monkeypatch.setattr("cndb.gui.checks.port_status", lambda port: type("P", (), {"used": True})())
+    monkeypatch.setattr("cndb.gui.checks.port_status", lambda port, host="127.0.0.1": type("P", (), {"used": True})())
 
     rc = service.run("0.0.0.0", 8000)
 
