@@ -260,9 +260,7 @@ def export_table(
     # filename* 带完整中文，filename 放 ASCII 安全回退（非 ASCII 替换为 _ 以满足 latin-1 编码约束）
     ascii_fallback = "".join(c if ord(c) < 128 else "_" for c in filename)
     quoted = quote(filename)
-    disposition = (
-        f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{quoted}'
-    )
+    disposition = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quoted}"
 
     media_map = {
         "json": "application/json",
