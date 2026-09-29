@@ -260,7 +260,7 @@ def create_row(
         row_id = result.lastrowid
 
         for field, target_ids in link_values:
-            set_links(engine, field, row_id, target_ids, db=db)
+            set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
     row = get_row(engine, table, row_id, db=db)
     if row is not None:
@@ -495,7 +495,7 @@ def update_row(
                 return None
 
         for field, target_ids in link_values:
-            set_links(engine, field, row_id, target_ids, db=db)
+            set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
     row = get_row(engine, table, row_id, db=db)
     if row is not None:
@@ -522,7 +522,7 @@ def delete_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bo
     with engine.begin() as conn:
         result = conn.execute(sa_table.delete().where(*base_where))
         if result.rowcount > 0:
-            clear_row_links(engine, table, [row_id])
+            clear_row_links(engine, table, [row_id], conn=conn)
             try:
                 log_action(db, table, ACTION_DELETE, target_id=row_id)
             except Exception as exc:
@@ -634,7 +634,7 @@ def bulk_create(
                 row_id = result.lastrowid
                 ids[i] = row_id
                 for field, target_ids in link_values:
-                    set_links(engine, field, row_id, target_ids, db=db)
+                    set_links(engine, field, row_id, target_ids, db=db, conn=conn)
                 i += 1
             else:
                 # 无 link 值的连续段 [i, j)：RETURNING 批量插入（单条多值语句，快一个数量级以上）。
@@ -713,7 +713,7 @@ def bulk_update(
         if valid_ids and link_values:
             for row_id in valid_ids:
                 for field, target_ids in link_values:
-                    set_links(engine, field, row_id, target_ids, db=db)
+                    set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
     return count
 
@@ -742,10 +742,11 @@ def bulk_delete(engine: Any, table: DataTable, row_ids: list[int], db: Any = Non
     with engine.begin() as conn:
         result = conn.execute(sa_table.delete().where(*del_where))
         count = result.rowcount
+        # 与 delete 同事务清理关联，避免 delete commit 后 link 清理失败产生孤儿行
+        if count > 0:
+            clear_row_links(engine, table, valid_ids, conn=conn)
 
     if count > 0:
-        # 只清理实际被删除行的 links（valid_ids 一定是 row_ids 的子集）
-        clear_row_links(engine, table, valid_ids)
         for rid in valid_ids:
             try:
                 log_action(db, table, ACTION_DELETE, target_id=rid)
@@ -933,9 +934,9 @@ def bulk_update_rows(
                 if existing is None:
                     continue
                 total += 1
-            # link 同步（事务外 set_links 有自己的 engine.begin）
+            # link 同步（复用外层 conn，避免嵌套 engine.begin 破坏事务隔离）
             for field, target_ids in link_values:
-                set_links(engine, field, row_id, target_ids, db=db)
+                set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
     return total
 
