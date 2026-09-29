@@ -158,7 +158,11 @@ export const importApi = {
 }
 
 export const exportApi = {
-  /** 导出为 JSON / CSV / XLSX（浏览器直接下载 blob）
+  /** 导出为 JSON / CSV / XLSX（浏览器直接下载 blob）.
+   *
+   * 返回完整 AxiosResponse，调用方可通过 response.headers['content-disposition']
+   * 解析后端设置的下载文件名；response.data 为 Blob.
+   *
    *  @param wid 工作区 ID
    *  @param tid 表 ID
    *  @param format 导出格式
@@ -167,7 +171,7 @@ export const exportApi = {
   download: (wid: number | string, tid: number | string, format: 'json' | 'csv' | 'xlsx' = 'json', viewId?: number | string) => {
     const params: Record<string, unknown> = { format }
     if (viewId != null) params.view_id = viewId
-    return api.get(`/v1/workspaces/${wid}/tables/${tid}/export`, { params, responseType: 'blob' }).then(r => r.data)
+    return api.get(`/v1/workspaces/${wid}/tables/${tid}/export`, { params, responseType: 'blob' })
   },
 }
 

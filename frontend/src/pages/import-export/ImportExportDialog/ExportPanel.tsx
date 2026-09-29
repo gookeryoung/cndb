@@ -1,6 +1,8 @@
 /** 导出面板 — 多格式选择 + 视图筛选开关 + Blob 下载.
  *
  * 从 ImportExportDialog 拆出：导出状态（格式 / 是否按视图筛选 / loading）内聚于此.
+ * 文件名优先从后端 Content-Disposition 头解析（支持 RFC 5987 filename* 中文编码），
+ * 格式为「工作区-数据表-视图-YYYYMMDD_HHMMSS.扩展名」；解析失败降级为 table-{tid}-export.{ext}.
  */
 import { useCallback, useState } from 'react'
 import { Button, Empty, Select, Space, Switch } from 'antd'
@@ -17,6 +19,28 @@ interface ExportPanelProps {
   viewName?: string
 }
 
+/** 从 Content-Disposition 头解析文件名.
+ *
+ * 优先级：filename*=UTF-8''...（RFC 5987 编码，支持中文）> filename="..."（ASCII fallback）.
+ * 找不到时返回 null.
+ */
+function parseContentDispositionFilename(header: string | undefined): string | null {
+  if (!header) return null
+  // 优先 filename*（RFC 5987）
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim())
+    } catch {
+      // fall through
+    }
+  }
+  // 再试 filename（带引号）
+  const quotedMatch = header.match(/filename="?([^";]+)"?/i)
+  if (quotedMatch?.[1]) return quotedMatch[1].trim()
+  return null
+}
+
 export default function ExportPanel({ wid, tid, viewId, viewName }: ExportPanelProps) {
   const { message } = AntApp.useApp()
   const [exporting, setExporting] = useState(false)
@@ -27,12 +51,16 @@ export default function ExportPanel({ wid, tid, viewId, viewName }: ExportPanelP
     try {
       setExporting(true)
       const vid = useViewFilter && viewId != null ? viewId : undefined
-      const blob = await exportApi.download(wid, tid, selectedFormat, vid)
-      const url = URL.createObjectURL(blob as Blob)
+      const resp = await exportApi.download(wid, tid, selectedFormat, vid)
+      const blob = resp.data as Blob
+      const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      const tableName = `table-${tid}`
+      // 优先用后端 Content-Disposition 里的文件名（含工作区/数据表/视图名+时间戳）
+      const backendFilename = parseContentDispositionFilename(
+        resp.headers?.['content-disposition'] ?? resp.headers?.['Content-Disposition']
+      )
       const extMap: Record<string, string> = { json: '.json', csv: '.csv', xlsx: '.xlsx' }
-      a.download = `${tableName}-export${extMap[selectedFormat]}`
+      a.download = backendFilename || `table-${tid}-export${extMap[selectedFormat]}`
       a.href = url
       document.body.appendChild(a)
       a.click()
