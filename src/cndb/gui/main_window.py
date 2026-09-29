@@ -368,6 +368,8 @@ class ServeTab(_BaseTab):
         )
         self.env_check_btn = ttk.Button(env, text="重新检查", command=self.refresh_env)
         self.env_check_btn.grid(row=0, column=2, rowspan=2, sticky=tk.E)
+        self.env_kill_btn = ttk.Button(env, text="终止占用", command=self.stop_port_occupant)
+        self.env_kill_btn.grid(row=0, column=3, rowspan=2, sticky=tk.E, padx=(8, 0))
 
         # 按钮区
         btn_row = ttk.Frame(self.frame)
@@ -395,6 +397,7 @@ class ServeTab(_BaseTab):
         """后台刷新端口占用与静态产物状态，渲染到「环境检查」监视区."""
         self._env_busy = True
         self.env_check_btn.configure(state=tk.DISABLED)
+        self.env_kill_btn.configure(state=tk.DISABLED)
         self.port_status_var.set("检测中...")
         self.static_status_var.set("检测中...")
 
@@ -425,8 +428,35 @@ class ServeTab(_BaseTab):
         del static_ok
         self._env_busy = False
         self.env_check_btn.configure(state=tk.NORMAL)
+        self.env_kill_btn.configure(state=tk.NORMAL)
         self.port_status_var.set(port_label)
         self.static_status_var.set(f"静态文件 {static_text}")
+
+    def stop_port_occupant(self) -> None:
+        """终止占用当前配置端口的进程（后台线程执行，完成后刷新环境状态）."""
+        if getattr(self, "_env_busy", False):
+            return
+        port = int(self.port_var.get().strip() or "8000")
+        host = self.host_var.get().strip() or "0.0.0.0"
+        if not messagebox.askyesno("终止端口占用", f"确认终止占用端口 {host}:{port} 的进程？"):
+            return
+        self._env_busy = True
+        self.env_check_btn.configure(state=tk.DISABLED)
+        self.env_kill_btn.configure(state=tk.DISABLED)
+        self.port_status_var.set("终止中...")
+
+        def _run() -> None:
+            from cndb.gui import checks
+
+            try:
+                message = checks.stop_port_occupant(port, host)
+                self.app.log_queue.write(f"[info] {message}\n")
+            except (OSError, RuntimeError) as exc:
+                message = f"终止占用端口 {port} 的进程失败: {exc}"
+                self.app.log_queue.write(f"[error] {message}\n")
+            self.app.root.after(0, self.refresh_env)
+
+        run_in_thread(_run)
 
     def _preflight(self, host: str, port: int) -> None:
         """启动前环境预检：停止占用端口 + 自动构建缺失的静态产物.
