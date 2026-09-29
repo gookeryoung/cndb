@@ -5,6 +5,7 @@
 - dev                开发模式：同时启动前后端（需源码目录）
 - build              构建前后端（需源码目录）
 - info               打印版本/配置/运行环境
+- service            Windows 开机自启后台服务管理（enable/disable/status/stop/run）
 
 实现策略：argparse 标准库（避免引入 typer/click），子命令通过函数分发。
 """
@@ -321,6 +322,11 @@ def main() -> None:
 
     register_users_subparser(sub)
 
+    # service 子命令组（Windows 开机自启后台服务）
+    from cndb.cli.service import register_service_subparser
+
+    register_service_subparser(sub)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -349,6 +355,10 @@ def main() -> None:
         from cndb.cli.users import users_command
 
         users_command(args)
+    elif args.command == "service":
+        from cndb.cli.service import service_command
+
+        service_command(args)
     else:
         parser.print_help()  # pragma: no cover - argparse 默认分支
         sys.exit(1)
