@@ -89,6 +89,33 @@ def _compile_link_condition(
     return and_(*[exists(exists_base.where(link_table.c.target_row_id == int(i))) for i in ids])
 
 
+def _is_pure_date_string(value: Any) -> bool:
+    """判断过滤值是否为纯日期字符串（'YYYY-MM-DD'，不含时间部分）.
+
+    datetime 字段 + 纯日期值时需转换为整天范围，避免 '2026-09-28 14:30:00'
+    这类带时间的存储值在字符串比较时无法命中 '2026-09-28'。
+    """
+    if not isinstance(value, str):
+        return False
+    import re as _re
+
+    return bool(_re.fullmatch(r"\d{4}-\d{2}-\d{2}", value))
+
+
+def _datetime_day_span(value: str) -> tuple[str, str]:
+    """把纯日期字符串拆成当天的起止边界.
+
+    返回 (day_start, next_day_start)，闭开区间 [day_start, next_day_start)
+    对应当天的全部时刻。
+    """
+    from datetime import date, timedelta
+
+    parts = value.split("-")
+    d = date(int(parts[0]), int(parts[1]), int(parts[2]))
+    next_day = d + timedelta(days=1)
+    return f"{d.isoformat()} 00:00:00", f"{next_day.isoformat()} 00:00:00"
+
+
 def _build_condition(
     table: DataTable,
     sa_table: Table,
@@ -118,6 +145,29 @@ def _build_condition(
         return None
 
     op_lower = op.lower()
+
+    # datetime 字段 + 纯日期值 → 把比较操作符转为整天范围，避免时间部分干扰
+    # （SQLite DATETIME 类型存的是带时间的字符串，'2026-09-28 14:30:00'
+    #   直接和 '2026-09-28' 比较会不匹配）
+    _is_dt = f.field_type in ("datetime", "DateTime")
+    if _is_dt and _is_pure_date_string(value) and op_lower in ("=", "eq", "!=", "neq", ">", ">=", "<", "<="):
+        day_start, next_day_start = _datetime_day_span(value)
+        if op_lower in ("=", "eq"):
+            return and_(col >= day_start, col < next_day_start)
+        if op_lower in ("!=", "neq"):
+            return or_(col < day_start, col >= next_day_start)
+        if op_lower == ">":
+            # 晚于当天（不含当天）→ 次日 00:00:00 之后
+            return col >= next_day_start
+        if op_lower == ">=":
+            # 晚于或等于当天 → 当天 00:00:00 之后
+            return col >= day_start
+        if op_lower == "<":
+            # 早于当天（不含当天）→ 当天 00:00:00 之前
+            return col < day_start
+        if op_lower == "<=":
+            # 早于或等于当天 → 次日 00:00:00 之前（即整天范围）
+            return col < next_day_start
 
     if op_lower in ("=", "eq"):
         return col == value
