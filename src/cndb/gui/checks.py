@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import re
 import shutil
 import socket
@@ -62,6 +63,26 @@ class PortStatus:
     process_name: str = ""
 
 
+def bind_error(host: str, port: int) -> int | None:
+    """试探绑定端口，失败时返回 ``errno``（未知映射记为 -1），空闲返回 ``None``.
+
+    与 :func:`check_port` 同口径，额外区分占用原因：
+    ``10048``（WSAEADDRINUSE 地址被占）与 ``10013``（WSAEACCES 被拒绝，
+    常见于 Hyper-V 排除端口段）。
+    """
+    host = host or "127.0.0.1"
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.settimeout(0.5)
+        sock.bind((host, int(port)))
+        return None
+    except OSError as exc:
+        return exc.errno or -1
+    finally:
+        with contextlib.suppress(OSError):
+            sock.close()
+
+
 def check_port(host: str, port: int) -> bool:
     """试探端口是否已被占用（可 bind 即视为空闲）.
 
@@ -72,17 +93,7 @@ def check_port(host: str, port: int) -> bool:
     Returns:
         ``True`` 表示端口已被占用，``False`` 表示空闲。
     """
-    host = host or "127.0.0.1"
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        sock.settimeout(0.5)
-        sock.bind((host, int(port)))
-        return False
-    except OSError:
-        return True
-    finally:
-        with contextlib.suppress(OSError):
-            sock.close()
+    return bind_error(host, port) is not None
 
 
 def _find_pid_win(port: int) -> int | None:
@@ -137,15 +148,37 @@ def find_pid_on_port(port: int) -> int | None:
     return _lsof_pid(port) or _ss_pid(port)
 
 
+# tasklist「无匹配任务」提示前缀（中/英文环境）：此时 PID 对应进程不存在
+_TASKLIST_NO_TASK = ("信息:", "INFO:")
+
+
 def _process_name(pid: int) -> str:
-    """查询进程可执行文件名；探测失败返回空串."""
+    """查询进程可执行文件名；探测失败或进程不存在时返回空串."""
     if sys.platform == "win32":
         rc, out, _ = _run(["tasklist", "/FI", f"PID eq {pid}", "/NH"])
-        if rc == 0 and out.strip():
-            return out.strip().split()[0]
+        line = out.strip()
+        if rc == 0 and line and not line.startswith(_TASKLIST_NO_TASK):
+            return line.split()[0]
         return ""
     rc, out, _ = _run(["ps", "-p", str(pid), "-o", "comm="])
     return out.strip() if rc == 0 else ""
+
+
+def _pid_alive(pid: int) -> bool:
+    """判断进程是否存活；探测失败时保守按存活处理（不放过可终止对象）."""
+    if sys.platform == "win32":
+        rc, out, _ = _run(["tasklist", "/FI", f"PID eq {pid}", "/NH"])
+        if rc != 0:
+            return True
+        line = out.strip()
+        return bool(line) and not line.startswith(_TASKLIST_NO_TASK)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
 
 
 # 终止占用进程后等待内核释放端口的上限与轮询间隔
@@ -197,6 +230,58 @@ def port_status(port: int, host: str = "127.0.0.1") -> PortStatus:
     return PortStatus(used=True, pid=pid, process_name=_process_name(pid) if pid else "")
 
 
+def _port_entries(port: int) -> list[tuple[str, int | None]]:
+    """列出该端口的全部 TCP 条目 ``(state, pid)``；探测失败返回空列表.
+
+    Windows 解析 ``netstat -ano``；POSIX 回退 ``ss -tan``（无 PID 列）。
+    """
+    if sys.platform == "win32":
+        rc, out, _ = _run(["netstat", "-ano"])
+        if rc != 0:
+            return []
+        entries: list[tuple[str, int | None]] = []
+        for line in out.splitlines():
+            parts = line.split()
+            # TCP 行五列：协议/本地/远端/状态/PID；只匹配本地端口
+            if len(parts) >= 5 and parts[0].upper() == "TCP" and parts[1].rsplit(":", 1)[-1] == str(port):
+                pid: int | None = None
+                with contextlib.suppress(ValueError):
+                    pid = int(parts[-1])
+                entries.append((parts[3].upper(), pid))
+        return entries
+    if shutil.which("ss") is None:
+        return []
+    rc, out, _ = _run(["ss", "-tan"])
+    if rc != 0:
+        return []
+    entries = []
+    for line in out.splitlines()[1:]:  # 首行为表头
+        parts = line.split()
+        if len(parts) >= 4 and parts[3].rsplit(":", 1)[-1] == str(port):
+            entries.append((parts[0].upper(), None))
+    return entries
+
+
+# Windows bind 被拒绝（WSAEACCES）：常见于 Hyper-V/排除端口段
+_WSAEACCES = 10013
+
+
+def _residue_message(port: int, host: str, prefix: str) -> str:
+    """端口未释放时的归因提示：区分存活监听、TIME_WAIT 残留与系统保留端口."""
+    entries = _port_entries(port)
+    live = [pid for state, pid in entries if "LISTEN" in state and pid is not None and _pid_alive(pid)]
+    if live:
+        pids = "、".join(f"PID={p}" for p in live)
+        return f"{prefix}；端口仍被存活进程监听（{pids}），请再次终止或手动结束该进程"
+    if entries and all("TIME_WAIT" in state for state, _ in entries):
+        return f"{prefix}；残留连接处于 TIME_WAIT 等待状态（通常 1-4 分钟内自动释放），可稍后重新检查"
+    if bind_error(host, port) == _WSAEACCES:
+        return f"{prefix}；端口被系统保留（如 Hyper-V 排除端口段），建议更换服务端口"
+    detail = "；".join(state + (f"/PID={pid}" if pid is not None else "") for state, pid in entries)
+    suffix = f"（残留条目: {detail}）" if detail else ""
+    return f"{prefix}；未发现可终止的存活进程{suffix}，其监听句柄可能仍被其他进程持有，请稍后重新检查"
+
+
 def stop_port_occupant(port: int, host: str = "127.0.0.1") -> str:
     """停止占用指定端口的进程.
 
@@ -211,14 +296,19 @@ def stop_port_occupant(port: int, host: str = "127.0.0.1") -> str:
     if pid is None:
         return f"端口 {port} 暂未检测到占用进程，可直接启动"
     name = _process_name(pid)
-    _kill_pid(pid)
     display = f"PID={pid}" + (f" ({name})" if name else "")
+    if not _pid_alive(pid):
+        # netstat 残留已死 PID（句柄可能被其他进程继承）：无可终止对象，按残留状态归因
+        if not check_port(host, port):
+            return f"端口 {port} 的占用记录 {display} 已失效，端口实际已空闲，可直接启动"
+        return _residue_message(port, host, f"占用端口 {port} 的记录 {display} 对应进程已不存在")
+    _kill_pid(pid)
     # 内核释放端口存在短暂延迟；轮询确认直至可绑定或超时
     deadline = time.monotonic() + _PORT_RELEASE_TIMEOUT
     while check_port(host, port) and time.monotonic() < deadline:
         time.sleep(_PORT_RELEASE_INTERVAL)
     if check_port(host, port):
-        return f"已停止占用端口 {port} 的进程 {display}，但端口仍未释放（可能为残留连接，请稍后重试）"
+        return _residue_message(port, host, f"已终止占用端口 {port} 的进程 {display}，但端口仍未释放")
     return f"已停止占用端口 {port} 的进程 {display}"
 
 
