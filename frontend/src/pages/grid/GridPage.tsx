@@ -114,8 +114,8 @@ const MODE_BUTTONS: readonly ModeBtn[] = [
   { mode: 'kanban', tooltip: '看板视图：按选择字段分组拖拽流转，适合任务跟踪', icon: <AppstoreOutlined /> },
   { mode: 'calendar', tooltip: '日历视图：按日期字段排布在月历上', icon: <CalendarOutlined /> },
   { mode: 'gantt', tooltip: '甘特图视图：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
-  { mode: 'wbs', tooltip: 'WBS 视图：树状层级分解任务', icon: <PartitionOutlined /> },
-  { mode: 'matrix', tooltip: '矩阵视图：纵横两轴分类交叉，数据按类别填入单元格', icon: <TableOutlined /> },
+  { mode: 'wbs', tooltip: '工作分解视图：树状层级组织任务', icon: <PartitionOutlined /> },
+  { mode: 'matrix', tooltip: '矩阵视图：行列分类交叉，数据按类别填入单元格', icon: <TableOutlined /> },
 ]
 
 /** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */

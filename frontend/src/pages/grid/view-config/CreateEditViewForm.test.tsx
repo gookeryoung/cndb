@@ -35,7 +35,7 @@ describe('CreateEditViewForm 视图表单', () => {
     renderProviders(<CreateEditViewForm fields={fields} onSubmit={onSubmit} />)
 
     expect(screen.getByPlaceholderText('例如：只看进行中')).toBeInTheDocument()
-    expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('表格（Grid）')
+    expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('表格')
     expect(screen.getByRole('button', { name: /创\s*建/ })).toBeDisabled()
 
     fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
@@ -67,7 +67,7 @@ describe('CreateEditViewForm 视图表单', () => {
     renderProviders(<CreateEditViewForm fields={fields} onSubmit={onSubmit} />)
 
     openSelect(0)
-    await pickOption('看板（Kanban）')
+    await pickOption('看板')
 
     // kanban schema 的 11 项配置 label 出现
     expect(screen.getByText('分组字段')).toBeInTheDocument()
@@ -81,7 +81,7 @@ describe('CreateEditViewForm 视图表单', () => {
     renderProviders(<CreateEditViewForm fields={fields} onSubmit={onSubmit} />)
 
     openSelect(0)
-    await pickOption('看板（Kanban）')
+    await pickOption('看板')
 
     // group_field 是第一个配置 Select（整体第 2 个）
     openSelect(1)
@@ -108,7 +108,7 @@ describe('CreateEditViewForm 视图表单', () => {
     // 切回表格类型 → opts 清空
     onSubmit.mockClear()
     openSelect(0)
-    await pickOption('表格（Grid）')
+    await pickOption('表格')
     fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
     expect(onSubmit).toHaveBeenCalledWith('我的看板', 'grid', {})
   })
@@ -206,11 +206,11 @@ describe('CreateEditViewForm 分区与折叠布局', () => {
     expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
 
     openSelect(0)
-    await pickOption('日历（Calendar）')
+    await pickOption('日历')
     expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
 
     openSelect(0)
-    await pickOption('看板（Kanban）')
+    await pickOption('看板')
     // 回到 kanban：「完成状态」恢复默认展开
     expect(screen.getByRole('button', { name: /完成状态/ })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('完成标志')).toBeInTheDocument()

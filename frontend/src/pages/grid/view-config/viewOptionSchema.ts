@@ -161,13 +161,13 @@ export const GANTT_OPTIONS: ViewOptionSchema[] = [
     kind: 'field_select', fieldTypes: ['text', 'longtext'],
   },
   {
-    key: 'time_scale', label: '时间刻度', group: '时间轴', tooltip: '默认显示的时间粒度',
+    key: 'time_scale', label: '时间刻度', group: '时间轴', tooltip: '默认显示的时间刻度',
     kind: 'enum_select', defaultValue: 'month',
     enumOptions: [
       { value: 'day', label: '天（精细）' },
       { value: 'week', label: '周（中等）' },
       { value: 'month', label: '月（标准）' },
-      { value: 'quarter', label: '季度（粗粒度）' },
+      { value: 'quarter', label: '季度（较粗）' },
     ],
   },
   {
@@ -219,16 +219,16 @@ export const WBS_OPTIONS: ViewOptionSchema[] = [
 /** Matrix 矩阵视图的专属配置字段（共 4 项） */
 export const MATRIX_OPTIONS: ViewOptionSchema[] = [
   {
-    key: 'row_field', label: '纵轴字段', group: '轴字段', tooltip: '左侧纵向分类（如团队、课题方向）',
+    key: 'row_field', label: '行分组字段', group: '分组字段', tooltip: '左侧纵向分类（如团队、课题方向）',
     kind: 'field_select', fieldTypes: ['select', 'multiselect', 'link', 'text', 'longtext', 'date', 'datetime'], required: true,
   },
   {
-    key: 'column_field', label: '横轴字段', group: '轴字段', tooltip: '顶部横向分类（如日期、年度、状态）',
+    key: 'column_field', label: '列分组字段', group: '分组字段', tooltip: '顶部横向分类（如日期、年度、状态）',
     kind: 'field_select', fieldTypes: ['select', 'multiselect', 'link', 'text', 'longtext', 'date', 'datetime'], required: true,
   },
   {
-    key: 'date_granularity', label: '日期分桶粒度', group: '轴字段',
-    tooltip: '轴字段为日期时按此粒度分桶（年/季度/月/周/日）',
+    key: 'date_granularity', label: '日期聚合方式', group: '分组字段',
+    tooltip: '分组字段是日期时，按此粒度合并（年/季度/月/周/日）',
     kind: 'enum_select', defaultValue: 'month',
     enumOptions: [
       { value: 'year', label: '年' },
