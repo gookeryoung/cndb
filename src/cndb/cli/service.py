@@ -210,7 +210,7 @@ def run(host: str, port: int) -> int:
 
     from cndb.gui.checks import port_status
 
-    if port_status(port).used:
+    if port_status(port, host).used:
         print(f"[info] 端口 {port} 已被占用，跳过重复启动")
         return 1
 

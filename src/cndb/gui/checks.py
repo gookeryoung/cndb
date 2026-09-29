@@ -19,6 +19,7 @@ import shutil
 import socket
 import subprocess  # nosec B404 - 环境检查需调用内部命令
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -147,26 +148,61 @@ def _process_name(pid: int) -> str:
     return out.strip() if rc == 0 else ""
 
 
+# 终止占用进程后等待内核释放端口的上限与轮询间隔
+_PORT_RELEASE_TIMEOUT = 2.0
+_PORT_RELEASE_INTERVAL = 0.2
+
+
+def _pid_gone_message(err: str) -> bool:
+    """判断终止命令的报错是否为「进程已不存在」.
+
+    netstat 在进程刚退出后会短暂残留 LISTENING 条目（归属已死 PID），
+    据此对不存在的进程执行 taskkill/kill 会报「没有找到进程」，
+    该情况视为终止成功而非失败。
+    """
+    lowered = err.lower()
+    return "没有找到进程" in err or "no such process" in lowered or "not found" in lowered
+
+
 def _kill_pid(pid: int) -> None:
-    """终止进程（Windows 强制带子进程，POSIX 优雅 SIGTERM）."""
+    """终止进程（Windows 强制带子进程，POSIX 优雅 SIGTERM）.
+
+    「进程已不存在」（如 netstat 残留条目）视为终止成功，不抛错。
+    """
     if sys.platform == "win32":
         rc, _, err = _run(["taskkill", "/PID", str(pid), "/F", "/T"])
     else:
         rc, _, err = _run(["kill", str(pid)])
-    if rc != 0:
+    if rc != 0 and not _pid_gone_message(err):
         raise RuntimeError(f"未能终止进程 PID={pid}: {err.strip() or '无权限'}")
 
 
-def port_status(port: int) -> PortStatus:
-    """返回端口占用详情：是否占用 + 占用进程 PID/名称."""
-    if not check_port("127.0.0.1", port):
+def kill_tree(pid: int) -> None:
+    """终止进程及其全部子进程（供 GUI「停止服务」整树终止 uvicorn worker/reload 子进程）."""
+    _kill_pid(pid)
+
+
+def port_status(port: int, host: str = "127.0.0.1") -> PortStatus:
+    """返回端口占用详情：是否占用 + 占用进程 PID/名称.
+
+    Args:
+        port: 待检测端口。
+        host: 与服务实际绑定地址一致的检测主机；Windows 下 wildcard
+            绑定被占时 specific-IP 仍可绑定成功，检测口径必须与服务
+            一致，否则会出现「检查空闲但启动失败」的矛盾结论。
+    """
+    if not check_port(host, port):
         return PortStatus(used=False)
     pid = find_pid_on_port(port)
     return PortStatus(used=True, pid=pid, process_name=_process_name(pid) if pid else "")
 
 
-def stop_port_occupant(port: int) -> str:
+def stop_port_occupant(port: int, host: str = "127.0.0.1") -> str:
     """停止占用指定端口的进程.
+
+    Args:
+        port: 待清理端口。
+        host: 与服务实际绑定地址一致的检测主机（用于停止后确认端口释放）。
 
     Returns:
         面向用户的提示消息（无论是否真的有进程被终止都会返回便于展示的文案）。
@@ -177,6 +213,12 @@ def stop_port_occupant(port: int) -> str:
     name = _process_name(pid)
     _kill_pid(pid)
     display = f"PID={pid}" + (f" ({name})" if name else "")
+    # 内核释放端口存在短暂延迟；轮询确认直至可绑定或超时
+    deadline = time.monotonic() + _PORT_RELEASE_TIMEOUT
+    while check_port(host, port) and time.monotonic() < deadline:
+        time.sleep(_PORT_RELEASE_INTERVAL)
+    if check_port(host, port):
+        return f"已停止占用端口 {port} 的进程 {display}，但端口仍未释放（可能为残留连接，请稍后重试）"
     return f"已停止占用端口 {port} 的进程 {display}"
 
 
