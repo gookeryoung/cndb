@@ -291,3 +291,68 @@ describe('KanbanView 完成勾选框', () => {
     expect(onToggleDone.mock.calls[0][1]).toEqual({ 状态: null })
   })
 })
+
+describe('KanbanView 严重程度分级背景色', () => {
+  /** 任务 fixture —— 同一天、不同截止日期偏移，覆盖 5 个严重程度档位 */
+  const tierRows: RowResponse[] = [
+    { id: 1, 名称: '逾期-10天', 状态: '进行中', 截止: offsetDate(-10) },   // 逾期 > 7 天 → 80% danger
+    { id: 2, 名称: '逾期-5天',  状态: '进行中', 截止: offsetDate(-5) },    // 逾期 4-7 天 → 50% danger
+    { id: 3, 名称: '逾期-2天',  状态: '进行中', 截止: offsetDate(-2) },    // 逾期 1-3 天 → 25% danger
+    { id: 4, 名称: '紧急-明天', 状态: '进行中', 截止: offsetDate(1) },     // 剩 0-1 天 → 60% warning
+    { id: 5, 名称: '紧急-后天', 状态: '进行中', 截止: offsetDate(3) },     // 剩 2-3 天 → 30% warning
+    { id: 6, 名称: '正常-10天', 状态: '进行中', 截止: offsetDate(10) },    // 正常 → 无背景
+  ]
+  const tierView: View = {
+    id: 1, name: '看板', view_type: 'kanban', is_default: false,
+    view_options: { group_field: '状态', title_field: '名称', due_date_field: '截止' },
+  }
+  /** 取卡片根容器 style.background */
+  const cardBgOf = (title: string): string => {
+    const titleEl = screen.getByText(title)
+    const cardEl = titleEl.parentElement?.parentElement as HTMLElement
+    return cardEl.style.background || ''
+  }
+
+  it('逾期 > 7 天 → 高浓度危险背景 (80%)', () => {
+    renderKanban({ rows: tierRows, view: tierView })
+    expect(cardBgOf('逾期-10天')).toContain('80%')
+    expect(cardBgOf('逾期-10天')).toContain('--cn-bg-danger-subtle')
+  })
+
+  it('逾期 4-7 天 → 中浓度危险背景 (50%)', () => {
+    renderKanban({ rows: tierRows, view: tierView })
+    expect(cardBgOf('逾期-5天')).toContain('50%')
+    expect(cardBgOf('逾期-5天')).toContain('--cn-bg-danger-subtle')
+  })
+
+  it('逾期 1-3 天 → 低浓度危险背景 (25%)', () => {
+    renderKanban({ rows: tierRows, view: tierView })
+    expect(cardBgOf('逾期-2天')).toContain('25%')
+    expect(cardBgOf('逾期-2天')).toContain('--cn-bg-danger-subtle')
+  })
+
+  it('紧急剩 0-1 天 → 高浓度警告背景 (60%)', () => {
+    renderKanban({ rows: tierRows, view: tierView })
+    expect(cardBgOf('紧急-明天')).toContain('60%')
+    expect(cardBgOf('紧急-明天')).toContain('--cn-bg-warning-subtle')
+  })
+
+  it('紧急剩 2-N 天 → 低浓度警告背景 (30%)', () => {
+    renderKanban({ rows: tierRows, view: tierView })
+    expect(cardBgOf('紧急-后天')).toContain('30%')
+    expect(cardBgOf('紧急-后天')).toContain('--cn-bg-warning-subtle')
+  })
+
+  it('正常截止 → 不设置自定义背景 (style.background 为空)', () => {
+    renderKanban({ rows: tierRows, view: tierView })
+    expect(cardBgOf('正常-10天')).toBe('')
+  })
+
+  it('无截止日期的卡片 → 不设置自定义背景', () => {
+    const rows: RowResponse[] = [
+      { id: 1, 名称: '无截止', 状态: '进行中', 截止: null },
+    ]
+    renderKanban({ rows, view: tierView })
+    expect(cardBgOf('无截止')).toBe('')
+  })
+})
