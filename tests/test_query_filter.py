@@ -607,3 +607,192 @@ class TestCompileSorts:
             ["not_a_dict", None, {"field_name": "age"}],
         )
         assert len(result) == 1
+
+
+# ── datetime 纯日期值整天范围测试 ──────────────────────
+
+
+@pytest.fixture
+def dt_sa_table():
+    """用 String 列模拟 SQLite DATETIME 的实际存储格式（存 'YYYY-MM-DD HH:MM:SS' 字符串）."""
+    md = MetaData()
+    return Table(
+        "test_dt",
+        md,
+        Column("id", Integer, primary_key=True),
+        Column("done_at", String(32)),
+        Column("planned_date", String(20)),
+    )
+
+
+@pytest.fixture
+def dt_table():
+    """带 datetime + date 字段的 DataTable-like 对象."""
+    from types import SimpleNamespace
+
+    fields = [
+        DataField(id=10, name="完成时间", field_type="datetime", db_column_name="done_at", table_id=1),
+        DataField(id=11, name="计划日期", field_type="date", db_column_name="planned_date", table_id=1),
+    ]
+    return SimpleNamespace(id=1, fields=fields)
+
+
+class TestDatetimePureDateFilter:
+    """datetime 字段前端传纯日期值（'YYYY-MM-DD'）时，应被解释为整天范围."""
+
+    def test_eq_operator_matches_entire_day(self, dt_sa_table, dt_table):
+        """datetime + '= 2026-09-28' → 命中当天全部时刻."""
+        clause = compile_filters(
+            dt_table, dt_sa_table,
+            [{"field_name": "完成时间", "op": "=", "value": "2026-09-28"}],
+        )
+        sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+        assert "2026-09-28 00:00:00" in sql
+        assert "2026-09-29 00:00:00" in sql
+
+    def test_integration_eq_hits_all_day_records(self, dt_sa_table, dt_table):
+        """真实 SQLite 查询：9.28 不同时刻的记录都能被 = 纯日期命中."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test_dt (id INTEGER PRIMARY KEY, done_at TEXT, planned_date TEXT)")
+        conn.executemany(
+            "INSERT INTO test_dt VALUES (?, ?, ?)",
+            [
+                (1, "2026-09-28 00:00:01", "2026-09-28"),
+                (2, "2026-09-28 14:30:00", "2026-09-28"),
+                (3, "2026-09-28 23:59:59", "2026-09-28"),
+                (4, "2026-09-29 00:00:00", "2026-09-29"),
+                (5, None, None),
+            ],
+        )
+        conn.commit()
+
+        clause = compile_filters(
+            dt_table, dt_sa_table,
+            [{"field_name": "完成时间", "op": "=", "value": "2026-09-28"}],
+        )
+        sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+        result = conn.execute(f"SELECT id FROM test_dt WHERE {sql}").fetchall()
+        ids = sorted(r[0] for r in result)
+        assert ids == [1, 2, 3], f"= 操作符应命中当天全部 3 条，实际 {ids}"
+
+    def test_lte_operator_includes_entire_day(self, dt_sa_table, dt_table):
+        """datetime + '<= 2026-09-28' → 不晚于当天结束（含当天）."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test_dt (id INTEGER PRIMARY KEY, done_at TEXT, planned_date TEXT)")
+        conn.executemany(
+            "INSERT INTO test_dt VALUES (?, ?, ?)",
+            [
+                (1, "2026-09-28 23:59:59", "2026-09-28"),
+                (2, "2026-09-29 00:00:00", "2026-09-29"),
+            ],
+        )
+        conn.commit()
+
+        clause = compile_filters(
+            dt_table, dt_sa_table,
+            [{"field_name": "完成时间", "op": "<=", "value": "2026-09-28"}],
+        )
+        sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+        result = conn.execute(f"SELECT id FROM test_dt WHERE {sql}").fetchall()
+        ids = sorted(r[0] for r in result)
+        assert ids == [1], f"<= 应包含当天最后一刻，不包含次日 0 点；实际 {ids}"
+
+    def test_gte_operator_includes_entire_day(self, dt_sa_table, dt_table):
+        """datetime + '>= 2026-09-28' → 从当天 00:00:00 起."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test_dt (id INTEGER PRIMARY KEY, done_at TEXT, planned_date TEXT)")
+        conn.executemany(
+            "INSERT INTO test_dt VALUES (?, ?, ?)",
+            [
+                (1, "2026-09-27 23:59:59", "2026-09-27"),
+                (2, "2026-09-28 00:00:00", "2026-09-28"),
+            ],
+        )
+        conn.commit()
+
+        clause = compile_filters(
+            dt_table, dt_sa_table,
+            [{"field_name": "完成时间", "op": ">=", "value": "2026-09-28"}],
+        )
+        sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+        result = conn.execute(f"SELECT id FROM test_dt WHERE {sql}").fetchall()
+        ids = sorted(r[0] for r in result)
+        assert ids == [2], f">= 应从当天 0 点起；实际 {ids}"
+
+    def test_neq_operator_excludes_entire_day(self, dt_sa_table, dt_table):
+        """datetime + '!= 2026-09-28' → 排除整天."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test_dt (id INTEGER PRIMARY KEY, done_at TEXT, planned_date TEXT)")
+        conn.executemany(
+            "INSERT INTO test_dt VALUES (?, ?, ?)",
+            [
+                (1, "2026-09-28 14:30:00", "2026-09-28"),
+                (2, "2026-09-29 09:00:00", "2026-09-29"),
+            ],
+        )
+        conn.commit()
+
+        clause = compile_filters(
+            dt_table, dt_sa_table,
+            [{"field_name": "完成时间", "op": "!=", "value": "2026-09-28"}],
+        )
+        sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+        result = conn.execute(f"SELECT id FROM test_dt WHERE {sql}").fetchall()
+        ids = sorted(r[0] for r in result)
+        assert ids == [2], f"!= 应排除整天；实际 {ids}"
+
+    def test_datetime_with_time_value_not_converted(self, dt_sa_table, dt_table):
+        """前端传带时间的值（'YYYY-MM-DD HH:MM:SS'）时，不做整天范围转换."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test_dt (id INTEGER PRIMARY KEY, done_at TEXT, planned_date TEXT)")
+        conn.executemany(
+            "INSERT INTO test_dt VALUES (?, ?, ?)",
+            [
+                (1, "2026-09-28 14:30:00", "2026-09-28"),
+                (2, "2026-09-28 14:30:01", "2026-09-28"),
+            ],
+        )
+        conn.commit()
+
+        clause = compile_filters(
+            dt_table, dt_sa_table,
+            [{"field_name": "完成时间", "op": "=", "value": "2026-09-28 14:30:00"}],
+        )
+        sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+        result = conn.execute(f"SELECT id FROM test_dt WHERE {sql}").fetchall()
+        ids = sorted(r[0] for r in result)
+        assert ids == [1], "带时间的值应精确匹配"
+
+    def test_date_field_pure_date_unchanged(self, dt_sa_table, dt_table):
+        """date 类型字段前端传纯日期值时，不做额外转换（原本就能精确匹配）."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test_dt (id INTEGER PRIMARY KEY, done_at TEXT, planned_date TEXT)")
+        conn.executemany(
+            "INSERT INTO test_dt VALUES (?, ?, ?)",
+            [
+                (1, None, "2026-09-28"),
+                (2, None, "2026-09-29"),
+            ],
+        )
+        conn.commit()
+
+        clause = compile_filters(
+            dt_table, dt_sa_table,
+            [{"field_name": "计划日期", "op": "=", "value": "2026-09-28"}],
+        )
+        sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+        result = conn.execute(f"SELECT id FROM test_dt WHERE {sql}").fetchall()
+        ids = sorted(r[0] for r in result)
+        assert ids == [1], "date 字段应正常精确匹配"
