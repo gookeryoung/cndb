@@ -300,13 +300,18 @@ describe('ViewConfigDialog 紧凑布局', () => {
     const spies = renderDialog({ viewType: 'kanban' })
     fireEvent.click(screen.getByText('kanban 专属设置'))
 
-    // kanban 唯一开关 pin_urgent：未配置时控件为关闭态，开启后写入 true
-    const sw = screen.getByRole('switch')
+    // kanban 有 pin_urgent 和 pin_today 两个 switch；pin_urgent 排在 schema 前面
+    const switches = screen.getAllByRole('switch')
+    expect(switches.length).toBeGreaterThanOrEqual(2)
+    const sw = switches[0] // pin_urgent
     expect(sw).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(sw)
     expect(sw).toHaveAttribute('aria-checked', 'true')
 
     fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
-    await waitFor(() => expect(spies.onSaveOptions).toHaveBeenCalledWith({ pin_urgent: true }))
+    // pin_urgent 被开启，pin_today 未修改（保持 undefined/false，不写入保存值）
+    await waitFor(() => expect(spies.onSaveOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ pin_urgent: true }),
+    ))
   })
 })

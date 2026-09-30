@@ -88,6 +88,10 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
     kind: 'switch', defaultValue: true,
   },
   {
+    key: 'pin_today', label: '当天任务优先', group: '排序与提醒', tooltip: '截止日期恰好是今天（还剩 0 天）的任务排在所有紧急任务之前，并以醒目样式突出显示',
+    kind: 'switch', defaultValue: true,
+  },
+  {
     key: 'card_fields', label: '卡片额外字段', group: '分组与标题', tooltip: '在卡片底部以标签形式展示',
     kind: 'field_multi_select', fieldTypes: ['__all__'],
   },
