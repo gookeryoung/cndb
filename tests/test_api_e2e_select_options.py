@@ -193,6 +193,11 @@ def _get_field_by_name(fields: list[dict], name: str) -> dict:
     raise KeyError(f"未找到字段 {name!r}")
 
 
+def _list_to_options(values: list[str]) -> list[dict[str, str]]:
+    """构造 [{label, value, color}] 选项列表（value == label，与前端编辑器一致）."""
+    return [{"label": v, "value": v, "color": ""} for v in values]
+
+
 # ── 测试用例 ──────────────────────────────────────────
 
 
@@ -569,3 +574,176 @@ def app_from_db(db):
 
     app.dependency_overrides[get_db] = _override_get_db
     return app
+
+
+class TestFieldOptionsChangeSyncsData:
+    """PATCH 字段 options 后存量数据同步：改名改写 / 删除清空 / 重排不动."""
+
+    def _patch_options(self, client, wid, tid, fid, auth, options: list[dict]) -> dict:
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields/{fid}",
+            headers=auth,
+            json={"config": {"options": options}},
+        )
+        assert r.status_code == 200, f"更新字段失败: {r.status_code} {r.text}"
+        return r.json()
+
+    def _list_rows(self, client, wid, tid, auth) -> list[dict]:
+        r = client.get(f"/api/v1/workspaces/{wid}/tables/{tid}/records", headers=auth)
+        assert r.status_code == 200, f"查询记录失败: {r.status_code} {r.text}"
+        return r.json()["rows"]
+
+    def test_rename_option_rewrites_existing_rows(self, client, workspace, auth_owner):
+        """改名选项：存量行中的旧值同步改写为新值."""
+        wid = workspace.id
+        tid = _create_table(client, wid, auth_owner, "改名同步表")
+        _create_field(client, wid, tid, auth_owner, "姓名", "text", {}, order=0)
+        f = _create_field(
+            client,
+            wid,
+            tid,
+            auth_owner,
+            "部门",
+            "select",
+            {
+                "options": [
+                    {"label": "技术部", "value": "技术部", "color": "blue"},
+                    {"label": "市场部", "value": "市场部", "color": "gold"},
+                ]
+            },
+            order=1,
+        )
+        _bulk_create(
+            client,
+            wid,
+            tid,
+            auth_owner,
+            [
+                {"姓名": "Alice", "部门": "技术部"},
+                {"姓名": "Bob", "部门": "市场部"},
+                {"姓名": "Carol", "部门": "技术部"},
+            ],
+        )
+
+        updated = self._patch_options(
+            client,
+            wid,
+            tid,
+            f["id"],
+            auth_owner,
+            [
+                {"label": "研发部", "value": "研发部", "color": "blue"},
+                {"label": "市场部", "value": "市场部", "color": "gold"},
+            ],
+        )
+        assert [o["label"] for o in updated["config"]["options"]] == ["研发部", "市场部"]
+
+        rows = self._list_rows(client, wid, tid, auth_owner)
+        by_name = {row["姓名"]: row["部门"] for row in rows}
+        assert by_name == {"Alice": "研发部", "Bob": "市场部", "Carol": "研发部"}
+
+    def test_delete_option_clears_existing_rows(self, client, workspace, auth_owner):
+        """删除选项：引用被删值的存量行清空为 NULL."""
+        wid = workspace.id
+        tid = _create_table(client, wid, auth_owner, "删除同步表")
+        _create_field(client, wid, tid, auth_owner, "姓名", "text", {}, order=0)
+        f = _create_field(
+            client,
+            wid,
+            tid,
+            auth_owner,
+            "状态",
+            "select",
+            {"options": _list_to_options(["todo", "doing", "done"])},
+            order=1,
+        )
+        _bulk_create(
+            client,
+            wid,
+            tid,
+            auth_owner,
+            [
+                {"姓名": "T1", "状态": "todo"},
+                {"姓名": "T2", "状态": "doing"},
+                {"姓名": "T3", "状态": "done"},
+            ],
+        )
+
+        self._patch_options(client, wid, tid, f["id"], auth_owner, _list_to_options(["todo", "done"]))
+
+        rows = self._list_rows(client, wid, tid, auth_owner)
+        by_name = {row["姓名"]: row["状态"] for row in rows}
+        assert by_name == {"T1": "todo", "T2": None, "T3": "done"}
+
+    def test_reorder_options_keeps_rows(self, client, workspace, auth_owner):
+        """纯重排选项：不触发数据迁移，行值保持不变."""
+        wid = workspace.id
+        tid = _create_table(client, wid, auth_owner, "重排同步表")
+        _create_field(client, wid, tid, auth_owner, "姓名", "text", {}, order=0)
+        f = _create_field(
+            client,
+            wid,
+            tid,
+            auth_owner,
+            "优先级",
+            "select",
+            {"options": _list_to_options(["高", "中", "低"])},
+            order=1,
+        )
+        _bulk_create(
+            client,
+            wid,
+            tid,
+            auth_owner,
+            [
+                {"姓名": "R1", "优先级": "高"},
+                {"姓名": "R2", "优先级": "低"},
+            ],
+        )
+
+        self._patch_options(client, wid, tid, f["id"], auth_owner, _list_to_options(["低", "中", "高"]))
+
+        rows = self._list_rows(client, wid, tid, auth_owner)
+        by_name = {row["姓名"]: row["优先级"] for row in rows}
+        assert by_name == {"R1": "高", "R2": "低"}
+
+    def test_multiselect_rename_and_delete_syncs_rows(self, client, workspace, auth_owner):
+        """multiselect：改名项在多值串中同步改写，删除项被摘除，拆空置 NULL."""
+        wid = workspace.id
+        tid = _create_table(client, wid, auth_owner, "多选同步表")
+        _create_field(client, wid, tid, auth_owner, "姓名", "text", {}, order=0)
+        f = _create_field(
+            client,
+            wid,
+            tid,
+            auth_owner,
+            "标签",
+            "multiselect",
+            {"options": _list_to_options(["red", "blue", "green"])},
+            order=1,
+        )
+        _bulk_create(
+            client,
+            wid,
+            tid,
+            auth_owner,
+            [
+                {"姓名": "M1", "标签": ["red", "blue"]},
+                {"姓名": "M2", "标签": ["blue"]},
+                {"姓名": "M3", "标签": ["green"]},
+            ],
+        )
+
+        # red → crimson 改名，blue 删除
+        self._patch_options(
+            client,
+            wid,
+            tid,
+            f["id"],
+            auth_owner,
+            _list_to_options(["crimson", "green"]),
+        )
+
+        rows = self._list_rows(client, wid, tid, auth_owner)
+        by_name = {row["姓名"]: row["标签"] for row in rows}
+        assert by_name == {"M1": "crimson", "M2": None, "M3": "green"}

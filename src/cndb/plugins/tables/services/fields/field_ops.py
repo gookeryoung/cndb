@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import difflib
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -668,13 +669,218 @@ def sync_select_options_from_table(db: Session, table: DataTable) -> list[DataFi
     return changed
 
 
+# ── 选项变更 → 存量数据同步 ──────────────────────────
+
+
+def _ordered_option_values(raw_options: list[Any] | None) -> list[str]:
+    """按顺序提取选项 value 列表（与 _allowed_values_from_config 同一取值语义）.
+
+    兼容三种历史形态：纯字符串 / dict（value 缺省回退 label）/ SelectOption 对象.
+    """
+    from cndb.plugins.tables.field_types.select import SelectOption
+
+    values: list[str] = []
+    for item in raw_options or []:
+        if isinstance(item, dict):
+            values.append(str(item.get("value", item.get("label", ""))))
+        elif isinstance(item, SelectOption):
+            values.append(str(item.value))
+        else:
+            values.append(str(item))
+    return values
+
+
+def diff_select_options(
+    old_raw: list[Any] | None,
+    new_raw: list[Any] | None,
+) -> tuple[dict[str, str], list[str]]:
+    """对比单选/多选字段的新旧选项，计算存量数据需要的迁移动作.
+
+    语义约定（与前端选项编辑器"就地编辑"行为对齐）：
+    - 改名：旧值消失 + 新值出现，且处于 SequenceMatcher 的同一 replace 段；
+      等长段按顺序一一配对，不等长段按顺序配对 min(旧, 新) 个、多余旧值按删除；
+      配对前再校验"旧值不在新列表、新值不在旧列表"，防止纯重排 / 重复值场景误判；
+    - 删除：旧值在新列表中完全不存在且未配对成改名 → 引用该值的存量数据需清空；
+    - 新增 / 纯重排 / 仅颜色调整 → 不产生任何数据迁移。
+
+    Args:
+        old_raw: 旧 config.options 原始列表（str / dict / SelectOption 混合）.
+        new_raw: 新 config.options 原始列表.
+
+    Returns:
+        (rename_map: 旧值 → 新值, removed: 被移除的旧值列表，保序去重).
+    """
+    old_values = _ordered_option_values(old_raw)
+    new_values = _ordered_option_values(new_raw)
+    if old_values == new_values:
+        return {}, []
+
+    old_set, new_set = set(old_values), set(new_values)
+    removed_set = old_set - new_set
+    added_set = new_set - old_set
+
+    rename_map: dict[str, str] = {}
+    matcher = difflib.SequenceMatcher(a=old_values, b=new_values, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag != "replace":
+            continue
+        # 不等长段（如"改名 + 删除相邻项"）按顺序配对 min(旧, 新) 个，多余旧值落删除
+        pair_len = min(i2 - i1, j2 - j1)
+        for k in range(pair_len):
+            src, dst = old_values[i1 + k], new_values[j1 + k]
+            # 双重保险：只有"真消失 → 真新增"才算改名，重排/重复值场景跳过
+            if src in removed_set and dst in added_set:
+                rename_map[src] = dst
+
+    renamed_sources = set(rename_map)
+    removed = [v for v in dict.fromkeys(old_values) if v in removed_set and v not in renamed_sources]
+    return rename_map, removed
+
+
+def _rewrite_select_column(db: Any, sa_table: Any, col: Any, rename_map: dict[str, str], removed: list[str]) -> int:
+    """select 物理列：旧值整格改写为新值，被删值整格置 NULL.
+
+    改名目标只可能来自"新增值"集合（与所有旧值不相交），逐条 UPDATE 无级联风险.
+
+    Returns:
+        受影响行数.
+    """
+    from sqlalchemy import update as _sa_update
+
+    affected = 0
+    for old_v, new_v in rename_map.items():
+        result = db.execute(_sa_update(sa_table).where(col == old_v).values({col: new_v}))
+        affected += max(result.rowcount or 0, 0)
+    for v in removed:
+        result = db.execute(_sa_update(sa_table).where(col == v).values({col: None}))
+        affected += max(result.rowcount or 0, 0)
+    return affected
+
+
+def _rewrite_multiselect_rows(db: Any, sa_table: Any, col: Any, rename_map: dict[str, str], removed: list[str]) -> int:
+    """multiselect 物理列：逐行拆分多值，套用改名/删除后重组写回.
+
+    只改写确实引用了被改名/被删除选项的行；拆移后为空的行置 NULL。
+    按主键逐行更新（executemany），避免中间态值与其他行原文碰撞造成误改。
+
+    Returns:
+        受影响行数.
+    """
+    from sqlalchemy import bindparam
+    from sqlalchemy import select as _sa_select
+    from sqlalchemy import update as _sa_update
+
+    pk_cols = list(sa_table.primary_key.columns)
+    if not pk_cols:
+        logger.warning("[sync_select_data] 物理表 %s 无主键，跳过 multiselect 存量同步", sa_table.name)
+        return 0
+    pk_col = pk_cols[0]
+
+    removed_set = set(removed)
+    rows = db.execute(_sa_select(pk_col, col).where(col.isnot(None)).where(col != "")).all()
+
+    updates: list[dict[str, Any]] = []
+    for row_id, raw in rows:
+        parts = split_multi_select_string(str(raw))
+        if not any(p in removed_set or p in rename_map for p in parts):
+            continue
+        rewritten: list[str] = []
+        seen: set[str] = set()
+        for p in parts:
+            if p in removed_set:
+                continue
+            v = rename_map.get(p, p)
+            if v in seen:
+                continue
+            seen.add(v)
+            rewritten.append(v)
+        new_raw = ",".join(rewritten)
+        if new_raw != str(raw):
+            updates.append({"row_id": row_id, "new_value": new_raw if new_raw else None})
+
+    if not updates:
+        return 0
+
+    db.execute(
+        _sa_update(sa_table).where(pk_col == bindparam("row_id")).values({col: bindparam("new_value")}),
+        updates,
+    )
+    return len(updates)
+
+
+def sync_select_data_on_options_change(
+    db: Any,
+    table: DataTable,
+    field: DataField,
+    old_config: dict[str, Any] | None,
+) -> int:
+    """字段选项变更后，把存量数据同步到新选项（改名改写 / 删除清空）.
+
+    - select：旧值整格改写为新值；被删值整格置 NULL；
+    - multiselect：逐行拆分多值后套用迁移动作再重组，拆移后为空的行置 NULL。
+
+    在调用方事务内执行 DML（不 commit），与字段 metadata 变更原子生效；
+    供 update_field 路由在保存 config 的同一事务中调用。
+
+    Args:
+        db: SQLAlchemy Session（DML 挂在其事务上）.
+        table: 字段所属数据表元数据.
+        field: 已写入新 config 的字段对象.
+        old_config: 变更前的字段 config 快照.
+
+    Returns:
+        受影响行数；无迁移动作或物理结构不可用时为 0.
+    """
+    from cndb.plugins.tables.services.core.ddl import get_reflected_table
+
+    rename_map, removed = diff_select_options(
+        (old_config or {}).get("options"),
+        (field.config or {}).get("options"),
+    )
+    if not rename_map and not removed:
+        return 0
+
+    engine: Any = db.get_bind()
+    try:
+        sa_table = get_reflected_table(engine, table.db_table_name)
+    except RuntimeError:
+        logger.warning("[sync_select_data] 物理表 %s 不存在，跳过存量数据同步", table.db_table_name)
+        return 0
+    col = sa_table.c.get(field.db_column_name)
+    if col is None:
+        logger.warning(
+            "[sync_select_data] 物理表 %s 缺少列 %s，跳过存量数据同步",
+            table.db_table_name,
+            field.db_column_name,
+        )
+        return 0
+
+    if field.field_type == "multiselect":
+        affected = _rewrite_multiselect_rows(db, sa_table, col, rename_map, removed)
+    else:
+        affected = _rewrite_select_column(db, sa_table, col, rename_map, removed)
+
+    if affected:
+        logger.info(
+            "[sync_select_data] 字段 %s（表 %s）选项变更同步 %d 行存量数据（改名 %d 组，删除 %d 项）",
+            field.name,
+            table.name,
+            affected,
+            len(rename_map),
+            len(removed),
+        )
+    return affected
+
+
 __all__ = [
     "clone_fields_between_tables",
+    "diff_select_options",
     "execute_field_import",
     "generate_column_name",
     "import_fields_as_lookup",
     "plan_field_import",
     "resolve_source_fields",
+    "sync_select_data_on_options_change",
     "sync_select_options_from_table",
     "validate_field_import_conflicts",
     "validate_link_targets_exist",

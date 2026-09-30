@@ -35,6 +35,7 @@ from cndb.plugins.tables.services.fields.field_ops import (
     clone_fields_between_tables,
     import_fields_as_lookup,
     resolve_source_fields,
+    sync_select_data_on_options_change,
 )
 from cndb.plugins.workspaces.models import Workspace
 
@@ -181,10 +182,17 @@ def update_field(
     needs_config_validation = "config" in update_data or (
         "field_type" in update_data and update_data["field_type"] != old_field_type
     )
+    needs_select_data_sync = False
     if needs_config_validation:
         effective_field_type = update_data.get("field_type", old_field_type)
         raw_config = update_data.get("config", df.config or {})
         update_data["config"] = _validate_field_config(effective_field_type, raw_config, db)
+        # select/multiselect 选项变更 → 需同步存量数据（改名改写/删除清空）；
+        # 纯新增/重排/配色 diff 为空，同步函数内部直接短路
+        needs_select_data_sync = old_field_type in ("select", "multiselect") and effective_field_type in (
+            "select",
+            "multiselect",
+        )
 
     # ── 保存前数据预检：已有数据违反必填/唯一时拒绝保存（metadata 尚未变更） ──
     engine = db.get_bind()
@@ -231,6 +239,17 @@ def update_field(
 
     for key, value in update_data.items():
         setattr(df, key, value)
+
+    # ── 选项变更 → 存量数据同步：与 config 保存同一事务，原子生效 ──
+    # old_field.config 是变更前的 config 快照（setattr 后 df.config 已是新 dict）
+    if needs_select_data_sync:
+        try:
+            sync_select_data_on_options_change(db, dt, df, old_field.config)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"选项变更同步存量数据失败: {exc}") from exc
 
     db.commit()
     db.refresh(df)
