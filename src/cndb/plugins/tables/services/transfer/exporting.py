@@ -98,10 +98,40 @@ def export_rows_to_csv(rows: list[dict[str, Any]]) -> str:
     return buf.getvalue()
 
 
+def _to_excel_value(value: Any) -> Any:
+    """把任意 Python 值安全转为 openpyxl 可接受的单元格值.
+
+    openpyxl 仅接受 ``int``/``float``/``str``/``bool``/``None``/``datetime``/
+    ``date``/``Decimal``；其他类型（``list``/``set``/``tuple``/``dict``/``UUID``
+    等）在此做降级序列化：
+
+    - list/set/tuple → 分号分隔字符串（multiselect、link 等场景）
+    - dict → JSON 字符串
+    - UUID → str
+    - 其余未知类型 → str(value) 兜底
+    """
+    from datetime import date, datetime
+    from decimal import Decimal
+    from uuid import UUID
+
+    if value is None or isinstance(value, (str, int, float, bool, datetime, date, Decimal)):
+        return value
+    if isinstance(value, (list, tuple, set)):
+        if not value:
+            return ""
+        return ";".join(str(v) for v in value)
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, UUID):
+        return str(value)
+    return str(value)
+
+
 def export_rows_to_xlsx(rows: list[dict[str, Any]]) -> bytes:
     """把行列表转为 XLSX 字节串（link 摘要序列化为分号分隔 id）.
 
     公式注入防护：``=`` 开头字符串单元格强制回字符串类型，Excel 打开不被求值.
+    类型归一：openpyxl 不接受的类型（list/set/tuple/dict/UUID 等）自动降级序列化.
     """
     from openpyxl import Workbook
     from openpyxl.worksheet.worksheet import Worksheet
@@ -117,7 +147,7 @@ def export_rows_to_xlsx(rows: list[dict[str, Any]]) -> bytes:
     ws.append(fieldnames)
     _fix_xlsx_formula_cells(ws, 1)
     for r in rows:
-        ws.append([r.get(k) for k in fieldnames])
+        ws.append([_to_excel_value(r.get(k)) for k in fieldnames])
         _fix_xlsx_formula_cells(ws, ws.max_row)
     return _wb_to_bytes(wb)
 
