@@ -284,6 +284,98 @@ def kill_tree(pid: int) -> None:
     _kill_pid(pid)
 
 
+# 强杀兜底：Toolhelp 快照常量与候选镜像名前缀（小写）
+_TH32CS_SNAPPROCESS = 0x00000002
+_KILLABLE_IMAGE_PREFIXES = ("python", "uvicorn", "node")
+
+
+class _PROCESSENTRY32W(ctypes.Structure):
+    """Win32 ``PROCESSENTRY32W``：Toolhelp 进程快照条目."""
+
+    _fields_ = [
+        ("dwSize", ctypes.c_uint32),
+        ("cntUsage", ctypes.c_uint32),
+        ("th32ProcessID", ctypes.c_uint32),
+        ("th32DefaultHeapID", ctypes.c_size_t),
+        ("th32ModuleID", ctypes.c_uint32),
+        ("cntThreads", ctypes.c_uint32),
+        ("pcPriClassBase", ctypes.c_long),
+        ("dwFlags", ctypes.c_uint32),
+        ("szExeFile", ctypes.c_wchar * 260),
+    ]
+
+
+def _list_pids_by_image_win(prefixes: tuple[str, ...]) -> list[int]:
+    """Windows：用 Toolhelp 快照按镜像名前缀枚举进程 PID.
+
+    纯 ctypes 枚举，不启动 ``tasklist`` 子进程：该命令在部分会话
+    环境下启动即失败（0xc0000142）并弹系统模态错误框，会阻塞 GUI。
+    """
+    kernel32 = _kernel32()
+    kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    kernel32.CreateToolhelp32Snapshot.argtypes = (ctypes.c_uint32, ctypes.c_uint32)
+    kernel32.Process32FirstW.restype = ctypes.c_int
+    kernel32.Process32FirstW.argtypes = (ctypes.c_void_p, ctypes.POINTER(_PROCESSENTRY32W))
+    kernel32.Process32NextW.restype = ctypes.c_int
+    kernel32.Process32NextW.argtypes = (ctypes.c_void_p, ctypes.POINTER(_PROCESSENTRY32W))
+    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+    handle = int(kernel32.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0) or 0)
+    if not handle:
+        return []
+    pids: list[int] = []
+    try:
+        entry = _PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
+        ok = bool(kernel32.Process32FirstW(handle, ctypes.byref(entry)))
+        while ok:
+            if entry.szExeFile.lower().startswith(prefixes):
+                pids.append(int(entry.th32ProcessID))
+            ok = bool(kernel32.Process32NextW(handle, ctypes.byref(entry)))
+    finally:
+        kernel32.CloseHandle(handle)
+    return pids
+
+
+def _list_pids_by_image(prefixes: tuple[str, ...]) -> list[int]:
+    """按镜像名前缀枚举候选进程 PID（Windows 用 Toolhelp，POSIX 用 ``ps``）."""
+    if sys.platform == "win32":
+        return _list_pids_by_image_win(prefixes)
+    rc, out, _ = _run(["ps", "-eo", "pid=", "-o", "comm="])
+    if rc != 0:
+        return []
+    pids = []
+    for line in out.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2 and parts[1].strip().lower().startswith(prefixes):
+            with contextlib.suppress(ValueError):
+                pids.append(int(parts[0]))
+    return pids
+
+
+def _force_release_by_name(port: int, host: str, exclude: frozenset[int]) -> list[int]:
+    """按镜像名强杀可能持有监听句柄的存活进程，并轮询确认端口释放.
+
+    针对「netstat 归属 PID 已死/已终止，但监听句柄被父/子进程继承持有」
+    的场景兜底：枚举 python/uvicorn/node 进程，排除 ``exclude`` 后逐一
+    强杀；端口未释放（或无可终止对象）时返回空列表，由调用方按残留
+    条目归因。
+    """
+    candidates = [p for p in _list_pids_by_image(_KILLABLE_IMAGE_PREFIXES) if p not in exclude]
+    killed: list[int] = []
+    for candidate in candidates:
+        if not _pid_alive(candidate):
+            continue
+        with contextlib.suppress(RuntimeError):  # 单个终止失败不影响其他候选；未释放由调用方归因
+            _kill_pid(candidate)
+            killed.append(candidate)
+    if not killed:
+        return []
+    deadline = time.monotonic() + _PORT_RELEASE_TIMEOUT
+    while check_port(host, port) and time.monotonic() < deadline:
+        time.sleep(_PORT_RELEASE_INTERVAL)
+    return [] if check_port(host, port) else killed
+
+
 def port_status(port: int, host: str = "127.0.0.1") -> PortStatus:
     """返回端口占用详情：是否占用 + 占用进程 PID/名称.
 
@@ -367,9 +459,16 @@ def stop_port_occupant(port: int, host: str = "127.0.0.1") -> str:
     name = _process_name(pid)
     display = f"PID={pid}" + (f" ({name})" if name else "")
     if not _pid_alive(pid):
-        # netstat 残留已死 PID（句柄可能被其他进程继承）：无可终止对象，按残留状态归因
         if not check_port(host, port):
             return f"端口 {port} 的占用记录 {display} 已失效，端口实际已空闲，可直接启动"
+        # 进程死亡但句柄未随之释放，通常被父/子进程继承持有：按镜像名强杀兜底
+        forced = _force_release_by_name(port, host, frozenset({pid, os.getpid()}))
+        if forced:
+            pids = "、".join(f"PID={p}" for p in forced)
+            return (
+                f"占用端口 {port} 的记录 {display} 对应进程已不存在，监听句柄由存活进程持有；"
+                f"已按进程名强制终止（{pids}）并释放端口"
+            )
         return _residue_message(port, host, f"占用端口 {port} 的记录 {display} 对应进程已不存在")
     _kill_pid(pid)
     # 内核释放端口存在短暂延迟；轮询确认直至可绑定或超时
@@ -377,6 +476,13 @@ def stop_port_occupant(port: int, host: str = "127.0.0.1") -> str:
     while check_port(host, port) and time.monotonic() < deadline:
         time.sleep(_PORT_RELEASE_INTERVAL)
     if check_port(host, port):
+        forced = _force_release_by_name(port, host, frozenset({pid, os.getpid()}))
+        if forced:
+            pids = "、".join(f"PID={p}" for p in forced)
+            return (
+                f"已终止占用端口 {port} 的进程 {display}，其监听句柄由存活进程持有；"
+                f"已按进程名强制终止（{pids}）并释放端口"
+            )
         return _residue_message(port, host, f"已终止占用端口 {port} 的进程 {display}，但端口仍未释放")
     return f"已停止占用端口 {port} 的进程 {display}"
 

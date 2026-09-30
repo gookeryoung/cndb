@@ -37,6 +37,7 @@ GUI 入口（[src/cndb/gui/main_window.py](file:///f:/Dev/cndb/src/cndb/gui/main
 - run 派生：`subprocess.Popen([*_exe_command(), "serve", ...], stdin=DEVNULL, stdout=SERVICE_LOG.open("ab"), stderr=STDOUT, creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS)`，随后写 pidfile、打印确认并退出；非 Windows 不传 creationflags。
 - `_pid_alive`：委托 `cndb.gui.checks._pid_alive`——Windows 用 Win32 API（`OpenProcess`+`GetExitCodeProcess`）判定，不调用 `tasklist` 子进程（该命令在部分会话环境启动即失败 0xc0000142 并弹系统模态错误框）；句柄打不开时按最后错误码区分：PID 不存在（ERROR_INVALID_PARAMETER）判死，权限不足等保守判活。POSIX 用 `os.kill(pid, 0)`（ProcessLookupError→False，PermissionError→True）。
 - stop：读 pidfile → 存活则 `taskkill /T /F /PID`（POSIX `os.kill(pid, 15)`）→ 删 pidfile。pidfile 缺失或 pid 已死均幂等。
+- `stop_port_occupant`（checks，GUI 启动前端口清理）：按镜像名强杀兜底——当 netstat 归属 PID 已死但端口仍被继承句柄占用，或终止记录 PID 后端口仍未释放时，枚举镜像名前缀为 python/uvicorn/node 的存活进程（Windows 用 Toolhelp 快照，不依赖 tasklist，规避 0xc0000142 模态框；POSIX 用 `ps`），排除自身与记录 PID 后逐一 `taskkill/kill`，轮询确认端口释放；未释放（或无可终止对象）时按残留条目归因提示。
 
 ## 异常处理
 
