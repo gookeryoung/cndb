@@ -360,7 +360,8 @@ class ServeTab(_BaseTab):
         env.pack(fill=tk.X, pady=(10, 0))
         ttk.Label(env, text="端口占用:").grid(row=0, column=0, sticky=tk.W, padx=(0, 6))
         self.port_status_var = tk.StringVar(value="未检测")
-        ttk.Label(env, textvariable=self.port_status_var, foreground="#888").grid(row=0, column=1, sticky=tk.W, padx=6)
+        self.port_status_label = ttk.Label(env, textvariable=self.port_status_var, foreground="#888")
+        self.port_status_label.grid(row=0, column=1, sticky=tk.W, padx=6)
         ttk.Label(env, text="静态文件:").grid(row=1, column=0, sticky=tk.W, padx=(0, 6))
         self.static_status_var = tk.StringVar(value="未检测")
         ttk.Label(env, textvariable=self.static_status_var, foreground="#888").grid(
@@ -399,6 +400,7 @@ class ServeTab(_BaseTab):
         self.env_check_btn.configure(state=tk.DISABLED)
         self.env_kill_btn.configure(state=tk.DISABLED)
         self.port_status_var.set("检测中...")
+        self.port_status_label.configure(foreground="#888")
         self.static_status_var.set("检测中...")
 
         def _run() -> None:
@@ -419,17 +421,22 @@ class ServeTab(_BaseTab):
             else:
                 port_label = f"端口 {port} 空闲，可启动"
             static_text = "就绪" if st.ready else ("缺失: " + ", ".join(st.missing) if st.missing else "未构建")
-            self.app.root.after(0, lambda: self._render_env(port_label, static_text, st.ready))
+            self.app.root.after(0, lambda: self._render_env(port_label, info.used, static_text, st.ready))
 
         run_in_thread(_run)
 
-    def _render_env(self, port_label: str, static_text: str, static_ok: bool) -> None:
-        """把后台采集到的环境检查结果渲染到监视区（主线程回调）."""
+    def _render_env(self, port_label: str, port_used: bool, static_text: str, static_ok: bool) -> None:
+        """把后台采集到的环境检查结果渲染到监视区（主线程回调）.
+
+        端口结果按状态着色：占用红色（阻断启动）、空闲绿色；检测中/
+        终止中由置文字处统一恢复灰色。
+        """
         del static_ok
         self._env_busy = False
         self.env_check_btn.configure(state=tk.NORMAL)
         self.env_kill_btn.configure(state=tk.NORMAL)
         self.port_status_var.set(port_label)
+        self.port_status_label.configure(foreground="#cf222e" if port_used else "#1a7f37")
         self.static_status_var.set(f"静态文件 {static_text}")
 
     def stop_port_occupant(self) -> None:
@@ -444,6 +451,7 @@ class ServeTab(_BaseTab):
         self.env_check_btn.configure(state=tk.DISABLED)
         self.env_kill_btn.configure(state=tk.DISABLED)
         self.port_status_var.set("终止中...")
+        self.port_status_label.configure(foreground="#888")
 
         def _run() -> None:
             from cndb.gui import checks
