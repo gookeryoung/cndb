@@ -41,6 +41,45 @@ class TestTransferPure:
         data = transfer.export_rows_to_xlsx([])
         assert isinstance(data, bytes)
 
+    def test_export_xlsx_complex_types(self):
+        """multiselect(list[str]) / UUID / dict 等 openpyxl 不接受的类型应被自动序列化."""
+        import uuid
+        from decimal import Decimal
+
+        rows = [
+            {
+                "id": 1,
+                "name": "张三",
+                "tags": ["重要", "紧急", "待办"],  # multiselect → 应转成分号分隔字符串
+                "score": Decimal("95.5"),
+                "uid": uuid.UUID("12345678-1234-5678-1234-567812345678"),
+                "notes": None,
+                "active": True,
+            },
+            {
+                "id": 2,
+                "name": "李四",
+                "tags": [],  # 空 list
+                "score": Decimal("88.0"),
+                "uid": uuid.UUID("87654321-4321-8765-4321-876543210987"),
+                "notes": "done",
+                "active": False,
+            },
+        ]
+        data = transfer.export_rows_to_xlsx(rows)
+        assert isinstance(data, bytes)
+        assert len(data) > 0
+        # 导出后能被 openpyxl 正常读回
+        from openpyxl import load_workbook
+
+        wb = load_workbook(__import__("io").BytesIO(data))
+        ws = wb.active
+        headers = [cell.value for cell in ws[1]]
+        assert "tags" in headers
+        # 第一行 tags 应被序列化成字符串
+        row1_tags = ws.cell(row=2, column=headers.index("tags") + 1).value
+        assert row1_tags == "重要;紧急;待办"
+
     def test_guess_format(self):
         assert transfer.guess_format_from_filename("a.xlsx") == "xlsx"
         assert transfer.guess_format_from_filename("a.CSV") == "csv"
