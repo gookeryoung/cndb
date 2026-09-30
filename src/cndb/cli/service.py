@@ -225,6 +225,10 @@ def run(host: str, port: int) -> int:
 def stop() -> bool:
     """停止后台服务进程并清理 pidfile（幂等）.
 
+    ``_pid_alive`` 探测与 ``os.kill`` / ``taskkill`` 执行之间存在竞态窗口
+    （进程可能在探测后、终止前自行退出），终止命令本身也可能因权限不足或
+    PID 复报失败，这些情况一律吞掉异常并以进程已死处理——调用方不需感知。
+
     Returns:
         是否实际终止了存活进程（False 表示本来就没有运行实例）。
     """
@@ -232,12 +236,21 @@ def stop() -> bool:
     stopped = False
     if pid is not None and _pid_alive(pid):
         if sys.platform == "win32":
-            _run_cmd(["taskkill", "/T", "/F", "/PID", str(pid)])
+            rc, _ = _run_cmd(["taskkill", "/T", "/F", "/PID", str(pid)])
+            # taskkill 对已退出的进程返回非零码（如 128 = ERROR_NOT_FOUND），
+            # 此情形视为终止成功的退化——进程已不在。
+            stopped = rc == 0
         else:
-            os.kill(pid, 15)
-        stopped = True
-    with_pid_file = PID_FILE.exists()
-    if with_pid_file:
+            try:
+                os.kill(pid, 15)
+                stopped = True
+            except ProcessLookupError:
+                # 进程已退出（竞态窗口），视为本来就没东西可杀
+                stopped = False
+            except PermissionError:
+                # 权限不足 —— 无法确认是否已终止，保守按已终止处理以免反复尝试
+                stopped = True
+    if PID_FILE.exists():
         PID_FILE.unlink()
     return stopped
 
