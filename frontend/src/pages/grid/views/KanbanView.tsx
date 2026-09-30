@@ -151,10 +151,10 @@ function densityColumnStyle(density: Density) {
 
 /** 根据 daysLeft 返回卡片边框与背景色 style.
  *
- * 逾期（daysLeft < 0）：深红左边框 + 高浓度危险色背景，与逾期天数无关，
- * 保证视觉上明显比"当天"更深。
+ * 逾期（daysLeft < 0）：橙红（volcano）左边框 + 65% danger-subtle 背景，
+ * 与逾期天数无关，浓度不低于"当天"。
  *
- * 当天截止（pinToday=true && daysLeft === 0）：金橙色左边框 + 中浓度金黄色背景，
+ * 当天截止（pinToday=true && daysLeft === 0）：金橙色左边框 + 55% 金黄背景，
  * 视觉上低于逾期、高于普通紧急。
  *
  * 紧急（0 ≤ daysLeft ≤ urgentThreshold）：橙色左边框 + 低浓度警告色背景。
@@ -171,18 +171,18 @@ function getUrgencyVisual(
   if (daysLeft === null) return null
 
   if (daysLeft < 0) {
-    // 逾期：深红 + 高浓度危险色背景（比当天更深）
+    // 逾期：橙红 volcano + 65% danger-subtle 背景（浓度不低于当天）
     return {
-      borderLeft: `${borderLeftWidth}px solid #cf1322`,
-      background: `color-mix(in srgb, var(--cn-bg-danger-subtle) 85%, var(--cn-bg-container))`,
+      borderLeft: `${borderLeftWidth}px solid #ff7a45`,
+      background: `color-mix(in srgb, var(--cn-bg-danger-subtle) 65%, var(--cn-bg-container))`,
     }
   }
 
   if (pinToday && daysLeft === 0) {
-    // 当天截止：金橙色边框 + 中浓度金黄背景
+    // 当天截止：金橙色边框 + 55% 金黄背景
     return {
       borderLeft: `${borderLeftWidth}px solid #fa8c16`,
-      background: `color-mix(in srgb, #faad14 45%, var(--cn-bg-container))`,
+      background: `color-mix(in srgb, #faad14 55%, var(--cn-bg-container))`,
     }
   }
 
@@ -483,9 +483,9 @@ function DueDateBadge({
 }) {
   if (!dueDate || daysLeft === null) return null
 
-  // 颜色分级：逾期红色；当天（pinToday 开启）金橙色；紧急阈值内橙色；其余默认
+  // 颜色分级：逾期橙红（volcano）；当天金橙；紧急阈值内橙色；其余默认
   const color = daysLeft < 0
-    ? 'red'
+    ? 'volcano'
     : pinToday && daysLeft === 0
       ? 'gold'
       : daysLeft <= urgentThreshold
