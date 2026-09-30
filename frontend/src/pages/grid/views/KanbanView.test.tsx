@@ -313,13 +313,13 @@ describe('KanbanView 严重程度分级背景色', () => {
     return cardEl.style.background || ''
   }
 
-  it('逾期（无论多少天）→ 统一一档深红背景 85%', () => {
+  it('逾期（无论多少天）→ 统一一档橙红 volcano 边框 + 65% danger 背景', () => {
     renderKanban({ rows: tierRows, view: tierView })
     // 三种逾期天数的卡片共享同一背景样式
-    expect(cardBgOf('逾期-10天')).toContain('85%')
+    expect(cardBgOf('逾期-10天')).toContain('65%')
     expect(cardBgOf('逾期-10天')).toContain('--cn-bg-danger-subtle')
-    expect(cardBgOf('逾期-5天')).toContain('85%')
-    expect(cardBgOf('逾期-2天')).toContain('85%')
+    expect(cardBgOf('逾期-5天')).toContain('65%')
+    expect(cardBgOf('逾期-2天')).toContain('65%')
   })
 
   it('紧急剩 0-1 天 → 高浓度警告背景 (60%)', () => {
