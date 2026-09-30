@@ -13,6 +13,9 @@
  * - card_sort_field:   卡片排序字段（可选）；留空则按 API 返回顺序
  * - card_sort_direction: 卡片排序方向 'asc' | 'desc'，默认 desc
  * - pin_urgent:        是否把逾期/紧急卡片置顶（默认 true，有 due_date_field 时）
+ * - pin_today:         是否把截止日期恰好是今天的任务置顶并高亮（默认 true，有 due_date_field 时）
+ *                      开启时：逾期 > 当天 > 紧急 > 正常；关闭时当天归入紧急
+ *                      视觉上当天任务使用独立的金橙色边框 + 金黄色背景 + 金橙色日期徽章
  * - done_field:        完成标志字段（boolean/select/multiselect/text/date 等）
  * - done_value:        完成匹配值（boolean 字段为 true/false；select 为 option value；
  *                      multiselect 为 value 数组任一命中；text 为精确匹配文本）
@@ -153,6 +156,9 @@ function densityColumnStyle(density: Density) {
  * - 逾期 4-7 天：中浓度危险色
  * - 逾期 1-3 天：低浓度危险色
  *
+ * 当天截止（pinToday=true && daysLeft === 0）：专属"今日"样式
+ * - 亮金色左边框 + 高浓度金黄色背景（高于普通紧急，低于逾期）
+ *
  * 紧急（0 ≤ daysLeft ≤ urgentThreshold）按剩余天数分 2 档：
  * - 剩 0-1 天（当天/明天）：高浓度警告色
  * - 剩 2-N 天：低浓度警告色
@@ -164,6 +170,7 @@ function getUrgencyVisual(
   daysLeft: number | null,
   urgentThreshold: number,
   borderLeftWidth: number,
+  pinToday = false,
 ): { borderLeft: string; background?: string } | null {
   if (daysLeft === null) return null
 
@@ -174,6 +181,14 @@ function getUrgencyVisual(
     return {
       borderLeft: `${borderLeftWidth}px solid #ff4d4f`,
       background: `color-mix(in srgb, var(--cn-bg-danger-subtle) ${intensity}%, var(--cn-bg-container))`,
+    }
+  }
+
+  if (pinToday && daysLeft === 0) {
+    // 当天截止：醒目金黄色（介于逾期红色和普通紧急橙色之间）
+    return {
+      borderLeft: `${borderLeftWidth}px solid #fa8c16`,
+      background: `color-mix(in srgb, #faad14 45%, var(--cn-bg-container))`,
     }
   }
 
@@ -233,6 +248,7 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
   const cardFields = (opts.card_fields as string[] | undefined) || []
   const showProgressBar = opts.show_progress_bar !== false && !!progressField
   const urgentThreshold = Number(opts.urgent_threshold_days)
+  const pinToday = opts.pin_today !== false && !!dueDateField
 
   // 查找字段定义（用于格式化复杂类型值）
   const findField = (name: string): Field | undefined => fields.find((f) => f.name === name)
@@ -287,7 +303,7 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
     borderStyle = { borderLeft: `${cs.borderLeftWidth}px solid #52c41a` }
     bgStyle = { background: 'var(--cn-bg-success-subtle)' }
   } else {
-    const urgency = getUrgencyVisual(daysLeft, urgentThreshold, cs.borderLeftWidth)
+    const urgency = getUrgencyVisual(daysLeft, urgentThreshold, cs.borderLeftWidth, pinToday)
     if (urgency) {
       borderStyle = { borderLeft: urgency.borderLeft }
       if (urgency.background) bgStyle = { background: urgency.background }
@@ -352,7 +368,7 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
           {title}
           {isDone && <CheckCircleFilled className={celebrate ? 'kb-check-pop' : undefined} style={{ color: '#52c41a', marginLeft: 6, fontSize: cs.titleFontSize }} />}
           {/* 完成卡片整体隐藏截止日期徽章（X天/-X天都不再显示） */}
-          {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} />}
+          {dueDateField && !isDone && <DueDateBadge dueDate={dueDate} daysLeft={daysLeft} urgentThreshold={urgentThreshold} pinToday={pinToday} />}
         </div>
         {/* hover 显示的控制组 —— flex 子项，右侧对齐，与标题/日期徽章同一水平基线 */}
         {hovered && (showDoneToggle || (canDelete && onDelete)) && (
@@ -464,15 +480,23 @@ function DueDateBadge({
   dueDate,
   daysLeft,
   urgentThreshold,
+  pinToday,
 }: {
   dueDate: Date | null
   daysLeft: number | null
   urgentThreshold: number
+  pinToday?: boolean
 }) {
   if (!dueDate || daysLeft === null) return null
 
-  // 精简标签：统一时钟图标 + 天数（逾期为负数 -X天）；颜色保留红/橙/默认三级提醒
-  const color = daysLeft < 0 ? 'red' : daysLeft <= urgentThreshold ? 'orange' : 'default'
+  // 颜色分级：逾期红色；当天（pinToday 开启）金橙色；紧急阈值内橙色；其余默认
+  const color = daysLeft < 0
+    ? 'red'
+    : pinToday && daysLeft === 0
+      ? 'gold'
+      : daysLeft <= urgentThreshold
+        ? 'orange'
+        : 'default'
 
   return (
     <Tooltip title={fmtDate(dueDate)}>

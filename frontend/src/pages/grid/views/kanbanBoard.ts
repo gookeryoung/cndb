@@ -29,17 +29,25 @@ export interface KanbanColumnData {
 
 // ── 紧急级别与优先级 ──────────────────────────────────
 
-/** 计算卡片紧急级别（0=正常, 1=紧急, 2=逾期），用于置顶排序 */
+/** 计算卡片紧急级别（用于置顶排序）.
+ *
+ * 默认 3 级：0=正常, 1=紧急（0 ≤ daysLeft ≤ threshold）, 2=逾期.
+ * pinToday=true 时扩展为 4 级，把 daysLeft===0（当天截止）单独提升到逾期与紧急之间：
+ *   0=正常, 1=紧急（1 ≤ daysLeft ≤ threshold）, 2=当天, 3=逾期.
+ * 当天任务优先开关关闭时，daysLeft===0 仍归入紧急级别。
+ */
 export function getUrgencyRank(
   row: RowResponse,
   dueDateField?: string,
   urgentThreshold = 3,
+  pinToday = false,
 ): number {
   if (!dueDateField) return 0
   const due = parseDate(row[dueDateField])
   if (!due) return 0
   const dl = daysFromToday(due)
-  if (dl < 0) return 2
+  if (dl < 0) return pinToday ? 3 : 2
+  if (pinToday && dl === 0) return 2
   if (dl <= urgentThreshold) return 1
   return 0
 }
@@ -196,6 +204,7 @@ export function sortKanbanCards(
   const dueDateField = opts.due_date_field as string | undefined
   const priorityField = opts.priority_field as string | undefined
   const pinUrgent = opts.pin_urgent !== false && !!dueDateField
+  const pinToday = opts.pin_today !== false && !!dueDateField
   const cardSortField = opts.card_sort_field as string | undefined
   const cardSortDir = opts.card_sort_direction as 'asc' | 'desc'
   const priorityFieldDef = priorityField ? fields.find((f) => f.name === priorityField) : undefined
@@ -251,8 +260,8 @@ export function sortKanbanCards(
 
     // 1) 紧急置顶（逾期 > 紧急 > 正常）
     if (pinUrgent) {
-      const au = getUrgencyRank(a, dueDateField, urgentThreshold)
-      const bu = getUrgencyRank(b, dueDateField, urgentThreshold)
+      const au = getUrgencyRank(a, dueDateField, urgentThreshold, pinToday)
+      const bu = getUrgencyRank(b, dueDateField, urgentThreshold, pinToday)
       if (au !== bu) return bu - au // 权重 2 排在最前
     }
 

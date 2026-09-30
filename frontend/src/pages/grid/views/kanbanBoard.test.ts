@@ -65,6 +65,31 @@ describe('getUrgencyRank', () => {
   it('远期（30 天后）返回 0', () => {
     expect(getUrgencyRank(makeRow({ id: 1, 截止: dateStr(30) }), '截止', 3)).toBe(0)
   })
+
+  // ── pin_today 扩展等级 ────────────────────────────
+
+  it('pinToday=true：逾期返回 3（最高）', () => {
+    expect(getUrgencyRank(makeRow({ id: 1, 截止: dateStr(-1) }), '截止', 3, true)).toBe(3)
+  })
+
+  it('pinToday=true：当天（dl=0）返回 2（介于逾期和紧急之间）', () => {
+    expect(getUrgencyRank(makeRow({ id: 1, 截止: dateStr(0) }), '截止', 3, true)).toBe(2)
+  })
+
+  it('pinToday=true：普通紧急（dl=2）返回 1', () => {
+    expect(getUrgencyRank(makeRow({ id: 1, 截止: dateStr(2) }), '截止', 3, true)).toBe(1)
+  })
+
+  it('pinToday=false：当天（dl=0）仍归入紧急，返回 1', () => {
+    expect(getUrgencyRank(makeRow({ id: 1, 截止: dateStr(0) }), '截止', 3, false)).toBe(1)
+  })
+
+  it('pinToday 缺省（默认 false）：向后兼容原有 3 级', () => {
+    expect(getUrgencyRank(makeRow({ id: 1, 截止: dateStr(-1) }), '截止', 3)).toBe(2)
+    expect(getUrgencyRank(makeRow({ id: 1, 截止: dateStr(0) }), '截止', 3)).toBe(1)
+    expect(getUrgencyRank(makeRow({ id: 1, 截止: dateStr(2) }), '截止', 3)).toBe(1)
+    expect(getUrgencyRank(makeRow({ id: 1, 截止: dateStr(30) }), '截止', 3)).toBe(0)
+  })
 })
 
 // ── getPriorityRank ───────────────────────────────────
@@ -208,6 +233,53 @@ describe('sortKanbanCards', () => {
     ]
     const sorted = sortKanbanCards(rows, fields, { urgent_threshold_days: 3 })
     expect(sorted.map(r => r.id)).toEqual([5, 1])
+  })
+
+  // ── pin_today 排序 ────────────────────────────────
+
+  it('pin_today=true：排序优先级为 逾期 > 当天 > 紧急 > 正常', () => {
+    const rows = [
+      makeRow({ id: 1, 截止: dateStr(30) }), // 正常
+      makeRow({ id: 2, 截止: dateStr(-1) }), // 逾期
+      makeRow({ id: 3, 截止: dateStr(0) }),  // 当天
+      makeRow({ id: 4, 截止: dateStr(2) }),  // 紧急
+    ]
+    const sorted = sortKanbanCards(rows, fields, {
+      urgent_threshold_days: 3, due_date_field: '截止', pin_urgent: true, pin_today: true,
+    })
+    expect(sorted.map(r => r.id)).toEqual([2, 3, 4, 1])
+  })
+
+  it('pin_today=false：当天任务归入紧急组，与普通紧急同级', () => {
+    const rows = [
+      makeRow({ id: 1, 截止: dateStr(30) }), // 正常
+      makeRow({ id: 2, 截止: dateStr(-1) }), // 逾期
+      makeRow({ id: 3, 截止: dateStr(0) }),  // 当天（关 pin_today → 紧急级）
+      makeRow({ id: 4, 截止: dateStr(2) }),  // 紧急
+    ]
+    const sorted = sortKanbanCards(rows, fields, {
+      urgent_threshold_days: 3, due_date_field: '截止', pin_urgent: true, pin_today: false,
+    })
+    // 逾期(id=2)置顶；紧急组内 id 倒序兜底：4 比 3 新（或更大）在前；正常(id=1)在末尾
+    expect(sorted[0].id).toBe(2)
+    // 3 和 4 同紧急级，顺序不确定，但都在正常之前
+    expect(sorted.map(r => r.id).slice(-1)).toEqual([1])
+  })
+
+  it('pin_today 默认开启（resolveOpts 会给 true），不传时也生效', () => {
+    // schema 里 pin_today.defaultValue=true，resolveOpts 会自动填充
+    // sortKanbanCards 读 opts.pin_today !== false，即未显式设 false 都算开启
+    const rows = [
+      makeRow({ id: 1, 截止: dateStr(30) }),
+      makeRow({ id: 2, 截止: dateStr(0) }),  // 当天
+      makeRow({ id: 3, 截止: dateStr(2) }),  // 紧急
+    ]
+    const sorted = sortKanbanCards(rows, fields, {
+      urgent_threshold_days: 3, due_date_field: '截止', pin_urgent: true,
+      // 未显式传 pin_today —— 模拟 resolveOpts 解析后的默认 true 行为
+      pin_today: true,
+    })
+    expect(sorted.map(r => r.id)).toEqual([2, 3, 1])
   })
 })
 

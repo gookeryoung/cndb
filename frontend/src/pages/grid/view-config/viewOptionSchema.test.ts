@@ -14,8 +14,8 @@ import {
 import { makeField } from '@/test/fixtures'
 
 describe('getOptionSchema 四种视图 + 未知类型', () => {
-  it('kanban 返回 12 项 schema', () => {
-    expect(getOptionSchema('kanban')).toHaveLength(12)
+  it('kanban 返回 13 项 schema', () => {
+    expect(getOptionSchema('kanban')).toHaveLength(13)
     expect(getOptionSchema('kanban').map((o) => o.key)).toContain('group_field')
     // 完成标志仅 done_field 一项（已移除 done_bg_color / done_text_color）
     expect(getOptionSchema('kanban').map((o) => o.key)).toEqual(
@@ -186,7 +186,7 @@ describe('groupOptionSchema 分区切分', () => {
       'progress_field', 'due_date_field', 'priority_field', 'assignee_field',
     ])
     expect(sections[2].items.map((i) => i.key)).toEqual([
-      'card_sort_field', 'card_sort_direction', 'pin_urgent', 'urgent_threshold_days',
+      'card_sort_field', 'card_sort_direction', 'pin_urgent', 'pin_today', 'urgent_threshold_days',
     ])
     expect(sections[3].items.map((i) => i.key)).toEqual([
       'done_field',
