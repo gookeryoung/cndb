@@ -213,6 +213,7 @@ def test_stop_kills_process_and_removes_pidfile(
     killed: list[list[str]] = []
     monkeypatch.setattr(service, "_pid_alive", lambda pid: True)
     monkeypatch.setattr(service, "_run_cmd", lambda cmd: killed.append(cmd) or (0, ""))
+    monkeypatch.setattr(service.sys, "platform", "win32")
 
     assert service.stop() is True
     assert killed and "4242" in killed[0]
@@ -228,8 +229,22 @@ def test_stop_dead_pid_removes_pidfile_only(fake_paths: None, tmp_path: Any, mon
         "_run_cmd",
         lambda cmd: pytest.fail("进程已死不应 taskkill"),  # type: ignore[arg-type,return-value]
     )
+    monkeypatch.setattr(service.sys, "platform", "win32")
 
     assert service.stop() is False
+    assert not service.PID_FILE.exists()
+
+
+def test_stop_posix_race_condition_no_crash(fake_paths: None, tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """POSIX：_pid_alive 返回 True 但进程在 os.kill 前退出（竞态窗口），幂等处理不崩溃.
+
+    覆盖 service.stop() 对 ProcessLookupError 的处理——历史版本在这种竞态下会抛出
+    ProcessLookupError 终止调用方；修复后改为返回 False 并清理 pidfile。
+    """
+    service.PID_FILE.write_text("9999", encoding="utf-8")
+    monkeypatch.setattr(service, "_pid_alive", lambda pid: True)
+    # 不 monkeypatch sys.platform，让代码走 POSIX 的 os.kill 分支
+    assert service.stop() is False  # ProcessLookupError 被捕获
     assert not service.PID_FILE.exists()
 
 
