@@ -7,6 +7,9 @@ monkeypatch 隔离，避免测试受宿主机环境干扰。
 
 from __future__ import annotations
 
+import ctypes
+import os
+
 import pytest
 
 from cndb.gui import checks
@@ -69,6 +72,48 @@ class _FakeKernel32:
         self.QueryFullProcessImageNameW = _query
         self.GetExitCodeProcess = _exit
         self.CloseHandle = _close
+
+
+class _FakeToolhelpKernel32:
+    """kernel32 替身：Toolhelp 进程快照枚举（CreateToolhelp32Snapshot 系列）.
+
+    以普通函数实例属性暴露（而非绑定方法），使被测代码对其赋值
+    ``restype``/``argtypes`` 时与 ctypes 函数指针行为一致。
+    """
+
+    def __init__(self, entries: list[tuple[int, str]], snapshot_ok: bool = True) -> None:
+        self._entries = entries
+        self._snapshot_ok = snapshot_ok
+        self._index = 0
+        self.closed: list[int] = []
+
+        def _snapshot(_flags: int, _pid: int) -> int:
+            return 4242 if self._snapshot_ok else 0
+
+        def _first(_handle: int, entry) -> int:
+            self._index = 0
+            return self._fill(entry, 0) if self._entries else 0
+
+        def _next(_handle: int, entry) -> int:
+            self._index += 1
+            return self._fill(entry, self._index) if self._index < len(self._entries) else 0
+
+        def _close(handle: int) -> int:
+            self.closed.append(handle)
+            return 1
+
+        self.CreateToolhelp32Snapshot = _snapshot
+        self.Process32FirstW = _first
+        self.Process32NextW = _next
+        self.CloseHandle = _close
+
+    def _fill(self, ref, index: int) -> int:
+        entry = getattr(ref, "_obj", ref)  # byref 包装时解包 CArgObject
+        pid, name = self._entries[index]
+        entry.dwSize = ctypes.sizeof(checks._PROCESSENTRY32W)
+        entry.th32ProcessID = pid
+        entry.szExeFile = name
+        return 1
 
 
 # ── 端口检测 ─────────────────────────────────────────────────
@@ -299,6 +344,7 @@ def test_stop_port_occupant_stale_pid_residue(monkeypatch) -> None:
     monkeypatch.setattr(checks, "check_port", lambda host, port: True)
     monkeypatch.setattr(checks, "_port_entries", lambda port: [("LISTENING", 32448)])
     monkeypatch.setattr(checks, "bind_error", lambda host, port: 10048)
+    monkeypatch.setattr(checks, "_force_release_by_name", lambda port, host, exclude: [])
     msg = checks.stop_port_occupant(8000)
     assert "已不存在" in msg
     assert "未发现可终止的存活进程" in msg
@@ -313,6 +359,7 @@ def test_stop_port_occupant_residue_live_listener(monkeypatch) -> None:
     monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
     monkeypatch.setattr(checks, "check_port", lambda host, port: True)
     monkeypatch.setattr(checks, "_port_entries", lambda port: [("LISTENING", 999)])
+    monkeypatch.setattr(checks, "_force_release_by_name", lambda port, host, exclude: [])
     msg = checks.stop_port_occupant(8000)
     assert "PID=999" in msg
     assert "存活" in msg
@@ -330,6 +377,7 @@ def test_stop_port_occupant_residue_time_wait(monkeypatch) -> None:
         "_port_entries",
         lambda port: [("TIME_WAIT", 1234), ("TIME_WAIT", None)],
     )
+    monkeypatch.setattr(checks, "_force_release_by_name", lambda port, host, exclude: [])
     msg = checks.stop_port_occupant(8000)
     assert "TIME_WAIT" in msg
     assert "自动释放" in msg
@@ -344,6 +392,7 @@ def test_stop_port_occupant_residue_access_denied(monkeypatch) -> None:
     monkeypatch.setattr(checks, "check_port", lambda host, port: True)
     monkeypatch.setattr(checks, "_port_entries", lambda port: [])
     monkeypatch.setattr(checks, "bind_error", lambda host, port: 10013)
+    monkeypatch.setattr(checks, "_force_release_by_name", lambda port, host, exclude: [])
     msg = checks.stop_port_occupant(8000)
     assert "系统保留" in msg
     assert "更换服务端口" in msg
@@ -358,6 +407,7 @@ def test_stop_port_occupant_port_still_busy(monkeypatch) -> None:
     monkeypatch.setattr(checks, "check_port", lambda host, port: True)
     monkeypatch.setattr(checks, "_port_entries", lambda port: [("TIME_WAIT", None)])
     monkeypatch.setattr(checks, "_PORT_RELEASE_TIMEOUT", 0.0)
+    monkeypatch.setattr(checks, "_force_release_by_name", lambda port, host, exclude: [])
     msg = checks.stop_port_occupant(8000)
     assert "仍未释放" in msg
 
@@ -379,6 +429,92 @@ def test_stop_port_occupant_polls_until_released(monkeypatch) -> None:
     msg = checks.stop_port_occupant(8000)
     assert "仍未释放" not in msg
     assert len(sleeps) == 2
+
+
+def test_stop_port_occupant_stale_pid_forced_by_name(monkeypatch) -> None:
+    """残留已死 PID 但句柄被存活进程继承：按镜像名强杀兜底并释放端口."""
+    monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 32448)
+    monkeypatch.setattr(checks, "_process_name", lambda pid: "")
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: False)
+    monkeypatch.setattr(checks, "check_port", lambda host, port: True)
+    monkeypatch.setattr(checks, "_force_release_by_name", lambda port, host, exclude: [111])
+    msg = checks.stop_port_occupant(8000)
+    assert "已不存在" in msg
+    assert "PID=111" in msg
+    assert "强制终止" in msg
+
+
+def test_stop_port_occupant_killed_pid_forced_by_name(monkeypatch) -> None:
+    """终止记录 PID 后端口仍被继承句柄占用：按镜像名强杀兜底."""
+    monkeypatch.setattr(checks, "find_pid_on_port", lambda port: 1234)
+    monkeypatch.setattr(checks, "_process_name", lambda pid: "python")
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
+    monkeypatch.setattr(checks, "check_port", lambda host, port: True)
+    monkeypatch.setattr(checks, "_PORT_RELEASE_TIMEOUT", 0.0)
+    monkeypatch.setattr(checks, "_force_release_by_name", lambda port, host, exclude: [222])
+    msg = checks.stop_port_occupant(8000)
+    assert "强制终止" in msg
+    assert "PID=222" in msg
+
+
+def test_force_release_by_name_kills_candidates(monkeypatch) -> None:
+    """强杀兜底枚举候选进程并排除 exclude 集合成员后逐一终止，端口释放返回被杀 PID."""
+    monkeypatch.setattr(checks, "_list_pids_by_image", lambda prefixes: [5, 10, os.getpid(), 99])
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: pid != 99)
+    killed: list[int] = []
+    monkeypatch.setattr(checks, "_kill_pid", killed.append)
+    monkeypatch.setattr(checks, "check_port", lambda host, port: False)
+    assert checks._force_release_by_name(8000, "127.0.0.1", frozenset({7, os.getpid()})) == [5, 10]
+    assert killed == [5, 10]
+
+
+def test_force_release_by_name_no_candidates(monkeypatch) -> None:
+    """无可终止候选（全部排除或已死）时直接返回空列表，不做端口轮询."""
+    monkeypatch.setattr(checks, "_list_pids_by_image", lambda prefixes: [os.getpid()])
+    called: list[int] = []
+    monkeypatch.setattr(checks, "check_port", lambda host, port: called.append(port))
+    assert checks._force_release_by_name(8000, "127.0.0.1", frozenset({os.getpid()})) == []
+    assert called == []
+
+
+def test_force_release_by_name_polls_until_released(monkeypatch) -> None:
+    """强杀后端口未立即释放时轮询等待，释放后返回被杀 PID."""
+    monkeypatch.setattr(checks, "_list_pids_by_image", lambda prefixes: [5])
+    monkeypatch.setattr(checks, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(checks, "_kill_pid", lambda pid: None)
+    results = [True, True, False]
+
+    def _fake_check(host: str, port: int) -> bool:
+        return results.pop(0) if results else False
+
+    monkeypatch.setattr(checks, "check_port", _fake_check)
+    sleeps: list[float] = []
+    monkeypatch.setattr(checks.time, "sleep", sleeps.append)
+    assert checks._force_release_by_name(8000, "127.0.0.1", frozenset()) == [5]
+    assert len(sleeps) == 2
+
+
+def test_list_pids_by_image_win(monkeypatch) -> None:
+    """Windows Toolhelp 快照按镜像名前缀枚举 PID，非候选镜像被过滤."""
+    fake = _FakeToolhelpKernel32([(100, "python.exe"), (200, "NODE.EXE"), (300, "explorer.exe")])
+    monkeypatch.setattr(checks, "_kernel32", lambda: fake)
+    assert checks._list_pids_by_image_win(checks._KILLABLE_IMAGE_PREFIXES) == [100, 200]
+    assert fake.closed == [4242]
+
+
+def test_list_pids_by_image_win_snapshot_failed(monkeypatch) -> None:
+    """快照创建失败（句柄 0）时返回空列表而非抛错."""
+    fake = _FakeToolhelpKernel32([], snapshot_ok=False)
+    monkeypatch.setattr(checks, "_kernel32", lambda: fake)
+    assert checks._list_pids_by_image_win(checks._KILLABLE_IMAGE_PREFIXES) == []
+
+
+def test_list_pids_by_image_posix(monkeypatch) -> None:
+    """POSIX 用 ps 按镜像名前缀枚举候选 PID，非候选镜像被过滤."""
+    monkeypatch.setattr(checks.sys, "platform", "posix")
+    monkeypatch.setattr(checks, "_run", lambda cmd: (0, "  100 python3\n  200 node\n  300 systemd\n", ""))
+    assert checks._list_pids_by_image(("python", "node")) == [100, 200]
 
 
 def test_port_status_host_passthrough(monkeypatch) -> None:
