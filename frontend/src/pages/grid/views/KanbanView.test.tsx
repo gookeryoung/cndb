@@ -295,9 +295,9 @@ describe('KanbanView 完成勾选框', () => {
 describe('KanbanView 严重程度分级背景色', () => {
   /** 任务 fixture —— 同一天、不同截止日期偏移，覆盖 5 个严重程度档位 */
   const tierRows: RowResponse[] = [
-    { id: 1, 名称: '逾期-10天', 状态: '进行中', 截止: offsetDate(-10) },   // 逾期 > 7 天 → 80% danger
-    { id: 2, 名称: '逾期-5天',  状态: '进行中', 截止: offsetDate(-5) },    // 逾期 4-7 天 → 50% danger
-    { id: 3, 名称: '逾期-2天',  状态: '进行中', 截止: offsetDate(-2) },    // 逾期 1-3 天 → 25% danger
+    { id: 1, 名称: '逾期-10天', 状态: '进行中', 截止: offsetDate(-10) },   // 逾期（统一一档 85% danger）
+    { id: 2, 名称: '逾期-5天',  状态: '进行中', 截止: offsetDate(-5) },    // 逾期（同上，与逾期天数无关）
+    { id: 3, 名称: '逾期-2天',  状态: '进行中', 截止: offsetDate(-2) },    // 逾期（同上）
     { id: 4, 名称: '紧急-明天', 状态: '进行中', 截止: offsetDate(1) },     // 剩 0-1 天 → 60% warning
     { id: 5, 名称: '紧急-后天', 状态: '进行中', 截止: offsetDate(3) },     // 剩 2-3 天 → 30% warning
     { id: 6, 名称: '正常-10天', 状态: '进行中', 截止: offsetDate(10) },    // 正常 → 无背景
@@ -313,22 +313,13 @@ describe('KanbanView 严重程度分级背景色', () => {
     return cardEl.style.background || ''
   }
 
-  it('逾期 > 7 天 → 高浓度危险背景 (80%)', () => {
+  it('逾期（无论多少天）→ 统一一档深红背景 85%', () => {
     renderKanban({ rows: tierRows, view: tierView })
-    expect(cardBgOf('逾期-10天')).toContain('80%')
+    // 三种逾期天数的卡片共享同一背景样式
+    expect(cardBgOf('逾期-10天')).toContain('85%')
     expect(cardBgOf('逾期-10天')).toContain('--cn-bg-danger-subtle')
-  })
-
-  it('逾期 4-7 天 → 中浓度危险背景 (50%)', () => {
-    renderKanban({ rows: tierRows, view: tierView })
-    expect(cardBgOf('逾期-5天')).toContain('50%')
-    expect(cardBgOf('逾期-5天')).toContain('--cn-bg-danger-subtle')
-  })
-
-  it('逾期 1-3 天 → 低浓度危险背景 (25%)', () => {
-    renderKanban({ rows: tierRows, view: tierView })
-    expect(cardBgOf('逾期-2天')).toContain('25%')
-    expect(cardBgOf('逾期-2天')).toContain('--cn-bg-danger-subtle')
+    expect(cardBgOf('逾期-5天')).toContain('85%')
+    expect(cardBgOf('逾期-2天')).toContain('85%')
   })
 
   it('紧急剩 0-1 天 → 高浓度警告背景 (60%)', () => {

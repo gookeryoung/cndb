@@ -149,19 +149,15 @@ function densityColumnStyle(density: Density) {
 
 // ── 严重程度分级（逾期/紧急按天数细分背景浓度） ──────────
 
-/** 根据 daysLeft 返回卡片边框与背景色 style（按严重程度进一步分级）.
+/** 根据 daysLeft 返回卡片边框与背景色 style.
  *
- * 逾期（daysLeft < 0）按逾期天数分 3 档：
- * - 逾期 > 7 天：高浓度危险色
- * - 逾期 4-7 天：中浓度危险色
- * - 逾期 1-3 天：低浓度危险色
+ * 逾期（daysLeft < 0）：深红左边框 + 高浓度危险色背景，与逾期天数无关，
+ * 保证视觉上明显比"当天"更深。
  *
- * 当天截止（pinToday=true && daysLeft === 0）：专属"今日"样式
- * - 亮金色左边框 + 高浓度金黄色背景（高于普通紧急，低于逾期）
+ * 当天截止（pinToday=true && daysLeft === 0）：金橙色左边框 + 中浓度金黄色背景，
+ * 视觉上低于逾期、高于普通紧急。
  *
- * 紧急（0 ≤ daysLeft ≤ urgentThreshold）按剩余天数分 2 档：
- * - 剩 0-1 天（当天/明天）：高浓度警告色
- * - 剩 2-N 天：低浓度警告色
+ * 紧急（0 ≤ daysLeft ≤ urgentThreshold）：橙色左边框 + 低浓度警告色背景。
  *
  * 正常或无截止日期返回 null（不设置背景/边框覆盖）.
  * 颜色用 color-mix 混合主题 CSS 变量，自动适配 10 种主题。
@@ -175,17 +171,15 @@ function getUrgencyVisual(
   if (daysLeft === null) return null
 
   if (daysLeft < 0) {
-    const overdue = -daysLeft
-    // 逾期分级
-    const intensity = overdue > 7 ? 80 : overdue > 3 ? 50 : 25
+    // 逾期：深红 + 高浓度危险色背景（比当天更深）
     return {
-      borderLeft: `${borderLeftWidth}px solid #ff4d4f`,
-      background: `color-mix(in srgb, var(--cn-bg-danger-subtle) ${intensity}%, var(--cn-bg-container))`,
+      borderLeft: `${borderLeftWidth}px solid #cf1322`,
+      background: `color-mix(in srgb, var(--cn-bg-danger-subtle) 85%, var(--cn-bg-container))`,
     }
   }
 
   if (pinToday && daysLeft === 0) {
-    // 当天截止：醒目金黄色（介于逾期红色和普通紧急橙色之间）
+    // 当天截止：金橙色边框 + 中浓度金黄背景
     return {
       borderLeft: `${borderLeftWidth}px solid #fa8c16`,
       background: `color-mix(in srgb, #faad14 45%, var(--cn-bg-container))`,
@@ -193,7 +187,7 @@ function getUrgencyVisual(
   }
 
   if (daysLeft <= urgentThreshold) {
-    // 紧急分级
+    // 紧急：橙色边框 + 低浓度警告色背景
     const intensity = daysLeft <= 1 ? 60 : 30
     return {
       borderLeft: `${borderLeftWidth}px solid #faad14`,
