@@ -643,7 +643,8 @@ class TestDatetimePureDateFilter:
     def test_eq_operator_matches_entire_day(self, dt_sa_table, dt_table):
         """datetime + '= 2026-09-28' → 命中当天全部时刻."""
         clause = compile_filters(
-            dt_table, dt_sa_table,
+            dt_table,
+            dt_sa_table,
             [{"field_name": "完成时间", "op": "=", "value": "2026-09-28"}],
         )
         sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
@@ -669,7 +670,8 @@ class TestDatetimePureDateFilter:
         conn.commit()
 
         clause = compile_filters(
-            dt_table, dt_sa_table,
+            dt_table,
+            dt_sa_table,
             [{"field_name": "完成时间", "op": "=", "value": "2026-09-28"}],
         )
         sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
@@ -693,7 +695,8 @@ class TestDatetimePureDateFilter:
         conn.commit()
 
         clause = compile_filters(
-            dt_table, dt_sa_table,
+            dt_table,
+            dt_sa_table,
             [{"field_name": "完成时间", "op": "<=", "value": "2026-09-28"}],
         )
         sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
@@ -717,7 +720,8 @@ class TestDatetimePureDateFilter:
         conn.commit()
 
         clause = compile_filters(
-            dt_table, dt_sa_table,
+            dt_table,
+            dt_sa_table,
             [{"field_name": "完成时间", "op": ">=", "value": "2026-09-28"}],
         )
         sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
@@ -741,7 +745,8 @@ class TestDatetimePureDateFilter:
         conn.commit()
 
         clause = compile_filters(
-            dt_table, dt_sa_table,
+            dt_table,
+            dt_sa_table,
             [{"field_name": "完成时间", "op": "!=", "value": "2026-09-28"}],
         )
         sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
@@ -765,7 +770,8 @@ class TestDatetimePureDateFilter:
         conn.commit()
 
         clause = compile_filters(
-            dt_table, dt_sa_table,
+            dt_table,
+            dt_sa_table,
             [{"field_name": "完成时间", "op": "=", "value": "2026-09-28 14:30:00"}],
         )
         sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
@@ -789,7 +795,8 @@ class TestDatetimePureDateFilter:
         conn.commit()
 
         clause = compile_filters(
-            dt_table, dt_sa_table,
+            dt_table,
+            dt_sa_table,
             [{"field_name": "计划日期", "op": "=", "value": "2026-09-28"}],
         )
         sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
