@@ -1692,6 +1692,14 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-muted);
 }
 
+/* 必填字段被视图隐藏的警示标注 */
+.vcvd-field-warn-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--cn-warning, #d46b08);
+  cursor: help;
+}
+
 /* 视图专属设置：两列网格（列宽由 optionColSpan 决定） */
 .vcvd-grid {
   display: grid;

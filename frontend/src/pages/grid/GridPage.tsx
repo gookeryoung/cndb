@@ -543,6 +543,12 @@ export default function GridPage() {
     if (!canEditRecords) return
     setEditingRowId(null)
 
+    // 防护：必填字段被视图隐藏时，隐藏列无法输入，新增行必然无法通过必填校验——提前预警
+    const hiddenRequired = gridFields.filter(f => f.required && hiddenFieldIds.has(String(f.id)))
+    if (hiddenRequired.length > 0) {
+      message.warning(`必填字段「${hiddenRequired.map(f => f.name).join('、')}」在本视图被隐藏，无法在此填写；请先在视图配置的字段显示中恢复显示`)
+    }
+
     const currentTotal = rowList.total
     const currentLimit = limit
     let targetOffset: number | null = null
@@ -591,11 +597,16 @@ export default function GridPage() {
     const draft = rowDrafts[key]
     if (!draft) return
 
-    // 必填校验：可编辑必填字段最终值非空
+    // 必填校验：可编辑必填字段最终值非空；被视图隐藏的必填字段给出可行动提示
+    // （隐藏列无输入框，用户没有「忘记填写」而是「无处填写」，报错须指向恢复显示）
     for (const f of gridFields) {
       if (!f.required || !isEditableInlineField(f)) continue
       if (isBlankCellValue(finalizeCellValue(draft[f.name], f))) {
-        message.error(`请填写必填字段：${f.name}`)
+        if (hiddenFieldIds.has(String(f.id))) {
+          message.error(`必填字段「${f.name}」在本视图被隐藏，无法填写；请先在视图配置的字段显示中恢复显示`)
+        } else {
+          message.error(`请填写必填字段：${f.name}`)
+        }
         return
       }
     }
