@@ -490,13 +490,19 @@ export default function GridPage() {
 
   const gridFields = useMemo(() => (table?.fields || []) as Field[], [table?.fields])
 
+  /** 视图级隐藏字段（view_options.hidden_fields 黑名单，元素为字段 id 字符串） */
+  const hiddenFieldIds = useMemo(() => {
+    const raw = viewOptionsDraft?.hidden_fields
+    return new Set<string>(Array.isArray(raw) ? raw.map(String) : [])
+  }, [viewOptionsDraft])
+
   /** 骨架屏列数参考 —— 记录最近一次已加载表的可见字段数；切表元数据未到（isLoading）时
    *  TableSkeleton 按它渲染，避免骨架列数与真实表差距过大；冷启动无参考退化为 6. */
   const lastVisibleFieldsCountRef = useRef(0)
   useEffect(() => {
-    const n = gridFields.filter(f => !f.hidden).length
+    const n = gridFields.filter(f => !f.hidden && !hiddenFieldIds.has(String(f.id))).length
     if (n > 0) lastVisibleFieldsCountRef.current = n
-  }, [gridFields])
+  }, [gridFields, hiddenFieldIds])
 
   /** 计算自动预填锁定的字段集合（新增行场景下，autoFillLocked 开启时生效） */
   const computeLockedFields = useCallback(() => {
@@ -868,16 +874,18 @@ export default function GridPage() {
     setViewOptionsDraft(next)
   }, [viewOptionsDraft, setViewOptionsDraft])
 
-  /** 重置列布局：清空列宽覆盖与列序（更多菜单入口，仅 grid 模式有覆盖时可用） */
+  /** 重置列布局：清空列宽覆盖 / 列序 / 视图隐藏字段（更多菜单入口，仅 grid 模式有覆盖时可用） */
   const hasColumnLayoutOverride = !!(
     (viewOptionsDraft?.column_widths && Object.keys(viewOptionsDraft.column_widths as object).length > 0)
     || (viewOptionsDraft?.field_order && (viewOptionsDraft.field_order as unknown[]).length > 0)
+    || (viewOptionsDraft?.hidden_fields && (viewOptionsDraft.hidden_fields as unknown[]).length > 0)
   )
   const handleResetColumnLayout = useCallback(() => {
     if (!viewOptionsDraft) return
     const next = { ...viewOptionsDraft }
     delete next.column_widths
     delete next.field_order
+    delete next.hidden_fields
     setViewOptionsDraft(next)
   }, [viewOptionsDraft, setViewOptionsDraft])
 
@@ -887,15 +895,16 @@ export default function GridPage() {
     _onFilterReset,
     _onCellSave,
     inlineOps,
-    { columnWidths, fieldOrder },
-  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder])
+    { columnWidths, fieldOrder, hiddenFieldIds },
+  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder, hiddenFieldIds])
 
   // 选中行聚合：过滤与计算收敛到同一个 useMemo。
   // 旧实现的 numericFields / selectedRows 每次渲染都是新数组，使本 memo 依赖恒变、缓存完全失效。
   // 选中键用 Set 查询，顺带把原来的 O(行数 × 选中数) includes 降为 O(行数)。
+  // 视图隐藏的列不参与聚合 —— 聚合栏以字段名展示，隐藏列的数字无上下文。
   const aggregates = useMemo(() => {
     const numericFields = (table?.fields || []).filter(
-      f => f.field_type === 'number' || f.field_type === 'decimal',
+      f => (f.field_type === 'number' || f.field_type === 'decimal') && !hiddenFieldIds.has(String(f.id)),
     )
     if (numericFields.length === 0 || selectedRowKeys.length === 0) return {}
     const selectedKeySet = new Set(selectedRowKeys)
@@ -910,7 +919,7 @@ export default function GridPage() {
       if (count > 0) out[f.name] = { count, sum, avg: sum / count }
     }
     return out
-  }, [table?.fields, rowList.items, selectedRowKeys])
+  }, [table?.fields, rowList.items, selectedRowKeys, hiddenFieldIds])
 
   /** 右侧模式按钮组 —— 仅渲染数据表实际拥有的视图类型；仅 grid 时隐藏（推导逻辑在 viewModes.ts，纯函数可单测） */
   const { buttons: modeButtons, visible: showModeSwitch } = useMemo(

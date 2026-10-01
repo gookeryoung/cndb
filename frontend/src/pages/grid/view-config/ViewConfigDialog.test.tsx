@@ -16,6 +16,7 @@ import type { Field } from '@/api'
 const FIELDS: Field[] = [
   makeField({ id: 1, name: '姓名', field_type: 'text' }),
   makeField({ id: 2, name: '状态', field_type: 'select', config: { options: ['高', '中'] } }),
+  makeField({ id: 3, name: '备注', field_type: 'text', hidden: true }),
 ]
 
 /** 空规则常量：rerender 场景需保持引用稳定，否则会触发对话框的 open effect 重置 Tab */
@@ -27,6 +28,7 @@ function renderDialog(props?: {
   filters?: FilterRule[]
   sortings?: SortRule[]
   viewOptions?: Record<string, unknown> | null
+  fields?: Field[]
 }) {
   const spies = {
     onSaveFilterLogic: vi.fn(),
@@ -42,7 +44,7 @@ function renderDialog(props?: {
       filters={props?.filters ?? []}
       sortings={props?.sortings ?? []}
       viewOptions={props?.viewOptions ?? null}
-      fields={FIELDS}
+      fields={props?.fields ?? FIELDS}
       filterLogic="AND"
       {...spies}
     />,
@@ -64,20 +66,22 @@ describe('ViewConfigDialog 视图配置', () => {
     expect(screen.queryByText('筛选排序规则')).not.toBeInTheDocument()
   })
 
-  it('grid 类型只有筛选/排序两个 Tab（无专属设置）', () => {
+  it('grid 类型有筛选/排序/字段显示三个 Tab（无专属设置）', () => {
     renderDialog()
 
     expect(screen.getByText('筛选排序规则')).toBeInTheDocument()
     expect(screen.getByText('筛选')).toBeInTheDocument()
     expect(screen.getByText('排序')).toBeInTheDocument()
+    expect(screen.getByText('字段显示')).toBeInTheDocument()
     expect(screen.queryByText('grid 专属设置')).not.toBeInTheDocument()
   })
 
-  it('kanban 类型追加专属设置 Tab', () => {
+  it('kanban 类型追加专属设置 Tab 且无字段显示 Tab', () => {
     renderDialog({ viewType: 'kanban' })
 
     expect(screen.getByText('kanban 专属设置')).toBeInTheDocument()
     expect(screen.getByText('筛选排序规则 — kanban 专属设置')).toBeInTheDocument()
+    expect(screen.queryByText('字段显示')).not.toBeInTheDocument()
   })
 
   it('传入已有筛选规则时 Tab label 显示计数并回显操作符', () => {
@@ -128,6 +132,50 @@ describe('ViewConfigDialog 视图配置', () => {
 
     // 规则行的删除按钮为图标按钮（danger text）；仅一条时不再禁用
     expect(screen.getByRole('button', { name: /delete/ })).toBeEnabled()
+  })
+
+  describe('字段显示 Tab（grid 专属）', () => {
+    it('渲染全字段 checkbox：普通字段可选，字段级 hidden 字段禁用并标注', () => {
+      renderDialog()
+      fireEvent.click(screen.getByText('字段显示'))
+
+      expect(screen.getByRole('checkbox', { name: '姓名' })).toBeEnabled()
+      expect(screen.getByRole('checkbox', { name: '状态' })).toBeEnabled()
+      const locked = screen.getByRole('checkbox', { name: '备注' })
+      expect(locked).toBeDisabled()
+      expect(screen.getByText('字段已隐藏')).toBeInTheDocument()
+    })
+
+    it('默认全显：全部勾选，保存时 onSaveOptions 不含 hidden_fields', () => {
+      const spies = renderDialog()
+
+      fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+      expect(spies.onSaveOptions).toHaveBeenCalledWith(null)
+    })
+
+    it('取消勾选字段后保存，onSaveOptions 收到 hidden_fields id 数组', () => {
+      const spies = renderDialog()
+      fireEvent.click(screen.getByText('字段显示'))
+
+      fireEvent.click(screen.getByRole('checkbox', { name: '状态' }))
+      fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+      expect(spies.onSaveOptions).toHaveBeenCalledWith({ hidden_fields: ['2'] })
+    })
+
+    it('已有 hidden_fields 时回显为未勾选，恢复勾选后保存清除该键', () => {
+      const spies = renderDialog({ viewOptions: { hidden_fields: ['1'] } })
+      fireEvent.click(screen.getByText('字段显示'))
+
+      expect(screen.getByRole('checkbox', { name: '姓名' })).not.toBeChecked()
+      expect(screen.getByRole('checkbox', { name: '状态' })).toBeChecked()
+
+      // 恢复勾选（取消视图隐藏）→ 全显 → hidden_fields 键被清除
+      fireEvent.click(screen.getByRole('checkbox', { name: '姓名' }))
+      fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+      expect(spies.onSaveOptions).toHaveBeenCalledWith(null)
+    })
   })
 })
 

@@ -29,6 +29,7 @@ function renderGrid(fields: Field[], opts?: {
   sortings?: Array<{ field_name: string; direction: 'asc' | 'desc' }>
   filters?: Array<{ field_name: string; op: string; value?: unknown }>
   inlineOps?: RowInlineOps
+  hiddenFieldIds?: ReadonlySet<string>
 }) {
   const columns = buildColumns(
     fields, 10,
@@ -36,6 +37,7 @@ function renderGrid(fields: Field[], opts?: {
     () => { }, () => { },
     undefined,
     opts?.inlineOps,
+    { hiddenFieldIds: opts?.hiddenFieldIds },
   )
   return renderProviders(<Table rowKey="id" columns={columns} dataSource={ROWS} pagination={false} />)
 }
@@ -44,6 +46,54 @@ describe('buildColumns 列构建', () => {
   it('hidden 字段被过滤，其余按 order 升序排列', () => {
     const columns = buildColumns(FIELDS, 10, [], [], () => { }, () => { })
     expect(columns.map(c => c.key)).toEqual(['1', '2'])
+  })
+
+  describe('视图级隐藏字段（hiddenFieldIds 黑名单叠加）', () => {
+    it('视图隐藏字段不出列，其余字段正常渲染', () => {
+      const columns = buildColumns(
+        FIELDS, 10, [], [], () => { }, () => { },
+        undefined, undefined,
+        { hiddenFieldIds: new Set(['1']) },
+      )
+      // 字段级 hidden 的 id=3 照旧过滤；视图级隐藏 id=1（姓名）
+      expect(columns.map(c => c.key)).toEqual(['2'])
+    })
+
+    it('字段级 hidden 与视图级 hidden 同时生效（两层互不替代）', () => {
+      // 视图隐藏 id=2（年龄）+ 字段级 hidden id=3（隐藏列）→ 仅剩 id=1 姓名
+      renderGrid(FIELDS, { hiddenFieldIds: new Set(['2']) })
+      const headers = screen.getAllByRole('columnheader')
+      expect(headers.filter(h => h.textContent?.includes('姓名'))).toHaveLength(1)
+      expect(headers.filter(h => h.textContent?.includes('年龄'))).toHaveLength(0)
+      expect(headers.filter(h => h.textContent?.includes('隐藏列'))).toHaveLength(0)
+    })
+
+    it('空 Set 与不传 options 行为一致（全部显示，回归保证）', () => {
+      const withEmpty = buildColumns(
+        FIELDS, 10, [], [], () => { }, () => { },
+        undefined, undefined,
+        { hiddenFieldIds: new Set() },
+      )
+      const withoutOptions = buildColumns(FIELDS, 10, [], [], () => { }, () => { })
+      expect(withEmpty.map(c => c.key)).toEqual(withoutOptions.map(c => c.key))
+    })
+
+    it('视图隐藏字段仍可参与 field_order 位次，取消隐藏后按原位次恢复', () => {
+      // field_order 声明 [2,1]（年龄在前），视图隐藏 id=2 → 仅剩姓名；
+      // 取消隐藏后 applyFieldOrder 按 field_order 恢复「年龄在前」
+      const hiddenCols = buildColumns(
+        FIELDS, 10, [], [], () => { }, () => { },
+        undefined, undefined,
+        { hiddenFieldIds: new Set(['2']), fieldOrder: ['2', '1'] },
+      )
+      expect(hiddenCols.map(c => c.key)).toEqual(['1'])
+      const restoredCols = buildColumns(
+        FIELDS, 10, [], [], () => { }, () => { },
+        undefined, undefined,
+        { fieldOrder: ['2', '1'] },
+      )
+      expect(restoredCols.map(c => c.key)).toEqual(['2', '1'])
+    })
   })
 
   it('渲染表头：字段名 + 必填星号，且按 order 输出列顺序', () => {

@@ -1,7 +1,7 @@
-/** 视图配置对话框 — 三个 Tab：筛选规则 / 排序规则 / 视图专属设置. */
+/** 视图配置对话框 — Tab：筛选规则 / 排序规则 / 字段显示（仅 grid）/ 视图专属设置. */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Modal, Select, Space, Switch, Tabs, Input, InputNumber, Tooltip } from 'antd'
+import { Button, Checkbox, Modal, Select, Space, Switch, Tabs, Input, InputNumber, Tooltip } from 'antd'
 import { PlusOutlined, DeleteOutlined, RightOutlined } from '@ant-design/icons'
 import { getOpsForField, extractSelectOptions } from '../cells/fieldOps'
 import {
@@ -164,6 +164,12 @@ export default function ViewConfigDialog({
     [viewType],
   )
 
+  /** 视图级隐藏字段 id 集合（draftOpt.hidden_fields 黑名单） */
+  const viewHiddenFieldIds = useMemo(() => {
+    const raw = draftOpt.hidden_fields
+    return new Set<string>(Array.isArray(raw) ? raw.map(String) : [])
+  }, [draftOpt])
+
   // 按 group 切分为分区卡片：低频分区（完成状态 / 时间轴 / 操作）默认收起
   const viewSections = useMemo(() => groupOptionSchema(viewOptFields), [viewOptFields])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(
@@ -292,6 +298,53 @@ export default function ViewConfigDialog({
         ),
       },
     ]
+    // 字段显示 tab（仅 grid）：不进 viewOptionSchema 的原因是交互形态不同——
+    // 全字段 checkbox + 字段级 hidden 禁用态，而非按类型过滤的有限选择。
+    if (viewType === 'grid') {
+      items.push({
+        key: 'fields',
+        label: (
+          <span>
+            字段显示
+            <HelpTip title="取消勾选的字段仅在本视图的表格中不显示（列布局），不影响筛选、排序与行详情；字段管理器的「隐藏」为全局开关" />
+          </span>
+        ),
+        children: (
+          <div className="vcvd-tab-body">
+            {fields.length === 0 && <div className="vcvd-empty">暂无字段</div>}
+            <div className="vcvd-field-list">
+              {fields.map(f => {
+                const fid = String(f.id)
+                const viewHidden = viewHiddenFieldIds.has(fid)
+                return (
+                  <div key={fid} className="vcvd-field-item">
+                    <Checkbox
+                      checked={!viewHidden}
+                      disabled={!!f.hidden}
+                      onChange={e => {
+                        const next = new Set(viewHiddenFieldIds)
+                        if (e.target.checked) next.delete(fid)
+                        else next.add(fid)
+                        setDraftOpt(prev => {
+                          const arr = [...next]
+                          const p = { ...prev }
+                          if (arr.length) p.hidden_fields = arr
+                          else delete p.hidden_fields
+                          return p
+                        })
+                      }}
+                    >
+                      {f.name}
+                    </Checkbox>
+                    {f.hidden && <span className="vcvd-field-locked-tag">字段已隐藏</span>}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ),
+      })
+    }
     if (viewSections.length > 0) {
       items.push({
         key: 'view',
@@ -344,7 +397,7 @@ export default function ViewConfigDialog({
       })
     }
     return items
-  }, [draftFilters, draftSorts, draftFilterLogic, filterableFields, sortableFields, viewSections, collapsed, draftOpt, viewType, fields])
+  }, [draftFilters, draftSorts, draftFilterLogic, filterableFields, sortableFields, viewSections, collapsed, draftOpt, viewHiddenFieldIds, viewType, fields])
 
   return (
     <Modal

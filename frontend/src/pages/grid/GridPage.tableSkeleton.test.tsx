@@ -14,7 +14,12 @@ import GridPage from './GridPage'
 
 /** hoisted 持有可变 useTable 返回值，用例内按场景改写后 rerender（避免 TDZ） */
 const tableRef = vi.hoisted(() => ({
-  current: { isLoading: true, data: undefined as any },
+    current: { isLoading: true, data: undefined as any },
+}))
+
+/** hoisted 持有可变 useTableViews 返回值（视图隐藏字段场景注入带 view_options 的默认视图） */
+const viewsRef = vi.hoisted(() => ({
+    current: [] as any[],
 }))
 
 vi.mock('@/api/hooks', async (importOriginal) => {
@@ -22,7 +27,7 @@ vi.mock('@/api/hooks', async (importOriginal) => {
     return {
         ...actual,
         useTable: () => tableRef.current,
-        useTableViews: () => ({ data: [] }),
+        useTableViews: () => ({ data: viewsRef.current }),
         useTableRecords: () => ({ data: { items: [], total: 0, offset: 0, limit: 20 }, isFetching: false }),
         useUpdateRowOptimistic: () => ({ mutate: vi.fn(), isPending: false }),
         useDeleteRowsOptimistic: () => ({ mutate: vi.fn(), isPending: false }),
@@ -92,5 +97,31 @@ describe('TableSkeleton 列数对齐 table.fields', () => {
         tableRef.current = { isLoading: true, data: undefined }
         rerender(ui)
         expect(skeletonColCount()).toBe(4)
+    })
+
+    it('视图隐藏字段不计入骨架列数（view_options.hidden_fields 叠加过滤）', async () => {
+        // 默认视图声明视图级隐藏 id=1（甲）→ 可见 = 4 可见 - 1 视图隐藏 = 3
+        viewsRef.current = [{
+            id: 7, name: '全部', view_type: 'grid', is_default: true,
+            view_options: { hidden_fields: ['1'] },
+            filters: [], sortings: [], filter_type: 'AND', field_order: [], order: 0,
+        }]
+
+        try {
+            // 1) 元数据到达 + 默认视图激活（骨架消失）
+            tableRef.current = {
+                isLoading: false,
+                data: { id: 1, workspace_id: 1, name: '表A', fields: FIELDS, current_user_actions: ['edit_records'] },
+            }
+            const { rerender } = renderGrid()
+            await waitFor(() => expect(document.querySelector('[data-testid="table-skeleton"]')).toBeNull())
+
+            // 2) 切表：元数据未到，骨架按视图过滤后的可见字段数 3 渲染
+            tableRef.current = { isLoading: true, data: undefined }
+            rerender(ui)
+            expect(skeletonColCount()).toBe(3)
+        } finally {
+            viewsRef.current = []
+        }
     })
 })
