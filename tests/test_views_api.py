@@ -1010,3 +1010,167 @@ class TestViewExport:
         assert kanban["filter_type"] == "AND"
         assert kanban["view_options"]["group_field"] == "姓名"
         assert kanban["is_default"] is True
+
+
+# ── 回归测试：Bug 修复覆盖 ────────────────────────────
+
+
+class TestUpdateViewPermissionFix:
+    """修复：update_view 原只校验 READ 权限（应为 EDIT_VIEWS），VIEWER 可 PATCH 修改视图."""
+
+    def test_viewer_cannot_update_view(self, client, db, ws, table, auth_owner):
+        """VIEWER 用户 PATCH 视图应返回 403."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.workspaces.models import WorkspaceMember
+
+        viewer = User(username="viewer2", email="v2@example.com")
+        viewer.set_password("pw")
+        viewer.role = "user"
+        db.add(viewer)
+        db.flush()
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=viewer.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+        db.refresh(viewer)
+
+        login = client.post(
+            "/api/v1/accounts/auth/login",
+            json={"login": "viewer2", "password": "pw"},
+        )
+        viewer_h = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        # 先建一个视图
+        vr = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "v_perm_test", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = vr.json()["id"]
+
+        # VIEWER 尝试更新视图名 —— 应被拒绝
+        r = client.patch(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            json={"name": "hacked"},
+            headers=viewer_h,
+        )
+        assert r.status_code == 403
+
+
+class TestViewRowsHiddenFieldsFix:
+    """修复：视图驱动端点未传 user 参数，hidden_fields 字段隐藏逻辑完全失效."""
+
+    def test_view_rows_endpoint_honors_hidden_fields(self, client, db, ws, table, auth_owner):
+        """VIEWER 通过 /views/{id}/rows 端点查询时，被 hidden_fields 配置的字段不应出现."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.tables.models import DataField, TablePermission
+        from cndb.plugins.tables.services.core import ddl as table_ddl
+        from cndb.plugins.workspaces.models import WorkspaceMember
+
+        # 添加一个敏感字段
+        secret = DataField(table_id=table.id, name="工资", field_type="text", order=1)
+        secret.ensure_db_name()
+        db.add(secret)
+        db.flush()
+        db.add(TablePermission(table_id=table.id, hidden_fields={"viewer": ["工资"]}))
+        table_ddl.add_column(db.get_bind(), table, secret)
+        db.commit()
+
+        # 创建视图
+        vr = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "grid_view", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = vr.json()["id"]
+
+        # 建一行数据（含敏感字段）
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records",
+            json={"values": {"姓名": "张三", "工资": "99999"}},
+            headers=auth_owner,
+        )
+
+        # 创建 VIEWER 用户
+        viewer = User(username="viewer3", email="v3@example.com")
+        viewer.set_password("pw")
+        viewer.role = "user"
+        db.add(viewer)
+        db.flush()
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=viewer.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+        db.refresh(viewer)
+
+        login = client.post(
+            "/api/v1/accounts/auth/login",
+            json={"login": "viewer3", "password": "pw"},
+        )
+        viewer_h = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        # VIEWER 通过 /views/{id}/rows 查询
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/rows",
+            headers=viewer_h,
+        )
+        assert r.status_code == 200
+        rows = r.json()["rows"]
+        assert len(rows) == 1
+        row = rows[0]
+        # 关键断言：隐藏字段不应出现在响应中
+        assert "工资" not in row, "hidden_fields 未生效：VIEWER 看到了敏感字段"
+        assert "姓名" in row
+
+    def test_kanban_endpoint_honors_hidden_fields(self, client, db, ws, table, auth_owner):
+        """看板端点 /views/{id}/kanban 同样应隐藏敏感字段."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.tables.models import DataField, TablePermission
+        from cndb.plugins.tables.services.core import ddl as table_ddl
+        from cndb.plugins.workspaces.models import WorkspaceMember
+
+        secret = DataField(table_id=table.id, name="薪资", field_type="text", order=1)
+        secret.ensure_db_name()
+        db.add(secret)
+        db.flush()
+        db.add(TablePermission(table_id=table.id, hidden_fields={"viewer": ["薪资"]}))
+        table_ddl.add_column(db.get_bind(), table, secret)
+        db.commit()
+
+        vr = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "kb_view",
+                "view_type": "kanban",
+                "view_options": {"group_field": "姓名"},
+            },
+            headers=auth_owner,
+        )
+        vid = vr.json()["id"]
+
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records",
+            json={"values": {"姓名": "张三", "薪资": "99999"}},
+            headers=auth_owner,
+        )
+
+        viewer = User(username="viewer4", email="v4@example.com")
+        viewer.set_password("pw")
+        viewer.role = "user"
+        db.add(viewer)
+        db.flush()
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=viewer.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+        db.refresh(viewer)
+
+        login = client.post(
+            "/api/v1/accounts/auth/login",
+            json={"login": "viewer4", "password": "pw"},
+        )
+        viewer_h = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/kanban",
+            headers=viewer_h,
+        )
+        assert r.status_code == 200
+        # 看板返回按分组，需要遍历所有 group 里的 rows
+        for group_rows in r.json()["columns"].values():
+            for row in group_rows:
+                assert "薪资" not in row, "看板端点 hidden_fields 未生效"

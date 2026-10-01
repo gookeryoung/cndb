@@ -215,7 +215,7 @@ def update_view(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataView:
-    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
     dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
     if dv is None:
         raise HTTPException(status_code=404, detail="视图不存在")
@@ -317,6 +317,7 @@ def get_view_rows(
         limit=limit,
         offset=offset,
         db=db,
+        user=current_user,
     )
     return {"rows": rows, "total": total, "view_id": view_id}
 
@@ -362,6 +363,7 @@ def get_view_kanban(
         sorts=dv.sortings or None,
         limit=limit,
         db=db,
+        user=current_user,
     )
     grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in rows:
@@ -429,6 +431,7 @@ def get_view_calendar(
         sorts=sorts,
         limit=limit,
         db=db,
+        user=current_user,
     )
     return {"rows": rows, "total": total, "start_field": start_field}
 
