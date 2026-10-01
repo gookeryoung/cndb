@@ -1671,6 +1671,27 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   border-radius: 6px;
 }
 
+/* 字段显示 tab：三列网格紧凑排列 */
+.vcvd-field-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px 14px;
+}
+
+.vcvd-field-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 字段级全局隐藏的禁用标注 */
+.vcvd-field-locked-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--cn-text-muted);
+}
+
 /* 视图专属设置：两列网格（列宽由 optionColSpan 决定） */
 .vcvd-grid {
   display: grid;

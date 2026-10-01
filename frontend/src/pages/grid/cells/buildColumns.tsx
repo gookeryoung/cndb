@@ -70,6 +70,8 @@ export interface ColumnOptions {
   columnWidths?: Record<string, number>
   /** 视图级列序（字段 id 字符串数组）；缺项按 Field.order 追加归位 */
   fieldOrder?: string[]
+  /** 视图级隐藏字段（元素为字段 id 字符串，黑名单语义）；缺省全部显示 */
+  hiddenFieldIds?: ReadonlySet<string>
   /** 拖宽结束时回调（宽度已夹取到 [MIN, MAX]） */
   onColumnResize?: (fieldId: string, width: number) => void
   /** 拖拽列 A 落到列 B 时回调；目标为操作列时由 GridTableSection 屏蔽 */
@@ -131,7 +133,9 @@ export function buildColumns(
   options?: ColumnOptions,
 ): ColumnsType<RowResponse> {
   const cols: NonNullable<ColumnsType<RowResponse>>[number][] = applyFieldOrder(
-    fields.filter(f => !f.hidden).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    fields
+      .filter(f => !f.hidden && !options?.hiddenFieldIds?.has(String(f.id)))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     options?.fieldOrder,
   )
     .map<NonNullable<ColumnsType<RowResponse>>[number]>(f => {
