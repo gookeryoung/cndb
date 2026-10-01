@@ -1,6 +1,6 @@
 /** 视图配置对话框 — Tab：筛选规则 / 排序规则 / 字段显示（仅 grid）/ 视图专属设置. */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Checkbox, Modal, Select, Space, Switch, Tabs, Input, InputNumber, Tooltip } from 'antd'
 import { PlusOutlined, DeleteOutlined, RightOutlined } from '@ant-design/icons'
 import { getOpsForField, extractSelectOptions } from '../cells/fieldOps'
@@ -129,16 +129,20 @@ export default function ViewConfigDialog({
   const [draftSorts, setDraftSorts] = useState<SortRule[]>([])
   const [draftFilterLogic, setDraftFilterLogic] = useState<'AND' | 'OR'>('AND')
   const [draftOpt, setDraftOpt] = useState<Record<string, unknown>>({})
-  const [activeTab, setActiveTab] = useState<'filter' | 'sort' | 'view'>('filter')
+  const [activeTab, setActiveTab] = useState<'filter' | 'sort' | 'fields' | 'view'>('filter')
 
+  /** 草稿初始化守卫：仅在对话框打开瞬间执行。父组件 props 后续变化（如防抖保存
+   *  触发 views refetch 重建 viewOptions 引用）不应重置用户正在操作的 tab 与草稿. */
+  const wasOpenRef = useRef(false)
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpenRef.current) {
       setDraftFilters(filters.length ? [...filters] : [{ field_name: '', op: 'contains' }])
       setDraftSorts(sortings.length ? [...sortings] : [{ field_name: '', direction: 'asc' }])
       setDraftFilterLogic(filterLogic)
       setDraftOpt((viewOptions || {}) as Record<string, unknown>)
       setActiveTab('filter')
     }
+    wasOpenRef.current = open
   }, [open, filters, sortings, filterLogic, viewOptions])
 
   const filterableFields = fields.filter(f => !f.hidden)
@@ -337,6 +341,11 @@ export default function ViewConfigDialog({
                       {f.name}
                     </Checkbox>
                     {f.hidden && <span className="vcvd-field-locked-tag">字段已隐藏</span>}
+                    {!f.hidden && viewHidden && f.required && (
+                      <Tooltip title="必填字段在本视图隐藏后，内联新增行将无法填写该字段、无法保存">
+                        <span className="vcvd-field-warn-tag">必填</span>
+                      </Tooltip>
+                    )}
                   </div>
                 )
               })}

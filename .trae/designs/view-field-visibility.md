@@ -43,6 +43,21 @@
 - 各视图 `view_options` 独立，互不影响。
 - 视图内联新增行走 grid 列布局，被隐藏字段不出现在新增行（与字段级 hidden 同边界同行为）。
 
+## 必填字段隐藏防护（三层提示，不硬禁止）
+
+必填字段被视图隐藏时，内联新增行没有该字段输入框、必然无法通过 `saveInline` 必填校验——保留「展示视图隐藏必填字段」的合理性（该视图仅浏览），用三层提示保证用户知情：
+
+1. **配置时**（ViewConfigDialog 字段显示 tab）：必填字段被取消勾选时，行内显示「必填」警示标注（`vcvd-field-warn-tag`，warning 色），Tooltip 说明后果。
+2. **新增行激活时**（GridPage `startNewRow`）：存在 required + 视图隐藏字段时 `message.warning` 预警（文案含字段名与恢复路径）。
+3. **保存校验失败时**（GridPage `saveInline`）：被视图隐藏的必填字段报错文案区别于普通「请填写必填字段」，指向「在视图配置的字段显示中恢复显示」——用户是「无处填写」而非「忘记填写」。
+
+## E2E 测试
+
+- 位置：`frontend/tests/e2e/critical/view-field-visibility.spec.ts`（chromium-authed）。
+- 前置：e2e server serve `src/cndb/static` 构建产物，改动源码后必须先 `make frontend-build`（`make e2e` 已含）。
+- 用例：隐藏/恢复列、重置列宽与列序清理 hidden_fields、必填字段隐藏三层防护链路。
+- 隔离：beforeEach/afterEach 经 API 清空员工表全部视图 `view_options`（PATCH views/{vid} → `{}`），避免污染共享 seed 数据的其他 spec。
+
 ## 验收标准
 
 - [x] 视图 A 隐藏字段 X 后 grid 不渲染 X 列；同表视图 B 不受影响（各视图 view_options 独立）
@@ -52,3 +67,5 @@
 - [x] 字段级 hidden 字段在「字段显示」tab 呈禁用态并标注「字段已隐藏」
 - [x] 保存走既有 onSaveOptions → viewOptionsDraft → 防抖链路，后端零改动（hidden_fields 空数组经 cleanOpt 空值清洗自动剔除）
 - [x] 隐藏列不参与选中行聚合栏（aggregates memo 叠加 hiddenFieldIds 过滤）
+- [x] 必填字段被视图隐藏：三层提示防护（配置时「必填」警示标注 / 新增行预警 toast / 保存报可行动错误），e2e 全链路覆盖
+- [x] ViewConfigDialog 草稿初始化仅在打开瞬间执行（wasOpenRef 守卫）——修复防抖保存触发 views refetch 后对话框 tab 被重置回「筛选」的真 bug（e2e 抓到）

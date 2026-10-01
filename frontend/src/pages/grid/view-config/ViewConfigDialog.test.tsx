@@ -176,6 +176,33 @@ describe('ViewConfigDialog 视图配置', () => {
 
       expect(spies.onSaveOptions).toHaveBeenCalledWith(null)
     })
+
+    it('必填字段被视图隐藏时显示「必填」警示标注，恢复显示后标注消失', () => {
+      const requiredFields = [
+        makeField({ id: 1, name: '姓名', field_type: 'text', required: true }),
+        makeField({ id: 2, name: '状态', field_type: 'select', config: { options: ['高', '中'] } }),
+      ]
+      const spies = renderDialog({ viewOptions: { hidden_fields: ['1'] }, fields: requiredFields })
+      fireEvent.click(screen.getByText('字段显示'))
+
+      expect(screen.getByText('必填')).toBeInTheDocument()
+
+      // 恢复显示 → 警示标注消失
+      fireEvent.click(screen.getByRole('checkbox', { name: '姓名' }))
+      expect(screen.queryByText('必填')).not.toBeInTheDocument()
+      expect(spies.onSaveOptions).not.toHaveBeenCalled()
+    })
+
+    it('必填字段未隐藏时不显示警示标注', () => {
+      const requiredFields = [
+        makeField({ id: 1, name: '姓名', field_type: 'text', required: true }),
+        makeField({ id: 2, name: '状态', field_type: 'select', config: { options: ['高', '中'] } }),
+      ]
+      renderDialog({ fields: requiredFields })
+      fireEvent.click(screen.getByText('字段显示'))
+
+      expect(screen.queryByText('必填')).not.toBeInTheDocument()
+    })
   })
 })
 
