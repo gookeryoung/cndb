@@ -307,3 +307,26 @@ def test_float_string_boundary_violation():
     assert ft.validate_value("99.5", {"max": "100", "decimals": 2}) == 99.5
     with pytest.raises(ValueError, match="大于最大值"):
         ft.validate_value("100.5", {"max": "100", "decimals": 2})
+
+
+def test_float_rejects_non_finite():
+    """FloatFieldType — 拒绝 NaN / 无穷大（float 或字符串形式）.
+
+    非有限浮点数能存入 SQLite 但 FastAPI JSONResponse 序列化时会抛 ValueError，
+    导致全部行列表/详情端点返回 500。PercentageFieldType 已有同样守卫。
+    """
+    ft = _ft("float")
+
+    # 直接传非有限 float
+    for v in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="有限数字"):
+            ft.validate_value(v, {})
+
+    # 字符串形式（CSV 导入路径）
+    for s in ("nan", "NaN", "inf", "INF", "infinity", "-inf", "1e400"):
+        with pytest.raises(ValueError, match="有限数字"):
+            ft.validate_value(s, {})
+
+    # 正常值不受影响
+    assert ft.validate_value(3.14, {"decimals": 2}) == 3.14
+    assert ft.validate_value("1.5", {"decimals": 0}) == 2.0  # round(1.5, 0)=2.0
