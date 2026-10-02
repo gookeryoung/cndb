@@ -82,7 +82,14 @@ class FloatFieldType(FieldType):
                 raise ValueError(f"无法将 {value!r} 转为小数")
             value = normalized
         cfg = NumberFieldConfig(**_config)
-        v = float(value)
+        try:
+            v = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"无法将 {value!r} 转为小数") from exc
+        # 拒绝 NaN / 无穷大：这些值能入库但 FastAPI JSONResponse 序列化时会炸，
+        # 导致全部行列表/详情端点返回 500；PercentageFieldType 已有同样守卫
+        if not math.isfinite(v):
+            raise ValueError(f"小数必须是有限数字，收到 {value!r}")
         if cfg.min is not None and v < cfg.min:
             raise ValueError(f"值 {v} 小于最小值 {cfg.min}")
         if cfg.max is not None and v > cfg.max:
