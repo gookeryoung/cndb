@@ -180,6 +180,15 @@ def _kernel32() -> ctypes.WinDLL:
     return ctypes.WinDLL("kernel32", use_last_error=True)
 
 
+def _last_error() -> int:
+    """返回 Win32 最后错误码（kernel32 以 ``use_last_error=True`` 加载后）.
+
+    独立窄函数供测试注入：``ctypes.get_last_error`` 符号仅在 Windows
+    CPython 上存在，跨平台测试需经由本函数替换而非直接改 ``ctypes`` 模块。
+    """
+    return ctypes.get_last_error()
+
+
 def _win_open_process(pid: int) -> int:
     """按 PID 打开进程句柄（QUERY_LIMITED_INFORMATION 权限）；失败返回 0."""
     kernel32 = _kernel32()
@@ -228,7 +237,7 @@ def _pid_alive(pid: int) -> bool:
     if sys.platform == "win32":
         handle = _win_open_process(pid)
         if not handle:
-            return ctypes.get_last_error() != _ERROR_INVALID_PARAMETER
+            return _last_error() != _ERROR_INVALID_PARAMETER
         kernel32 = _kernel32()
         kernel32.GetExitCodeProcess.restype = ctypes.c_int
         kernel32.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
