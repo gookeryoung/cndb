@@ -246,9 +246,9 @@ def test_pid_alive_win_open_failed(monkeypatch) -> None:
     """Windows：句柄打不开时按最后错误码判定（87=不存在判死，其余保守判活）."""
     monkeypatch.setattr(checks.sys, "platform", "win32")
     monkeypatch.setattr(checks, "_win_open_process", lambda pid: 0)
-    monkeypatch.setattr(checks.ctypes, "get_last_error", lambda: 87)
+    monkeypatch.setattr(checks, "_last_error", lambda: 87)
     assert checks._pid_alive(32448) is False
-    monkeypatch.setattr(checks.ctypes, "get_last_error", lambda: 5)
+    monkeypatch.setattr(checks, "_last_error", lambda: 5)
     assert checks._pid_alive(32448) is True
 
 
