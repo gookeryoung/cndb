@@ -58,6 +58,8 @@ def wechat_login(
     Returns:
         access_token + user 信息
     """
+    if settings.LOCAL_MODE:
+        raise HTTPException(status_code=403, detail="单机模式已禁用微信登录")
     if not settings.WECHAT_AUTH_ENABLED:
         raise HTTPException(status_code=403, detail="微信登录未启用")
 

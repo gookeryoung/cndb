@@ -8,10 +8,12 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import uuid
 from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
@@ -36,6 +38,49 @@ def get_request_id(x_request_id: str | None = Header(default=None)) -> str:
 
 
 # ── 认证依赖 ──────────────────────────────────────────
+
+# 单机模式内置本地用户名（get-or-create 幂等键）
+_LOCAL_USERNAME = "local"
+
+
+def _get_local_user(db: Session) -> User:
+    """返回单机模式内置本地用户（惰性 get-or-create，幂等）.
+
+    用户不存在时创建：is_superuser=True 保证单机用户拥有全部能力；
+    hashed_password 取随机不可知值（local 模式下 login 入口已 403，
+    密码永不参与校验）。并发首建（多 worker 同时首次访问）撞 username
+    unique 约束时回退重查，必命中先建方的用户行。
+
+    Args:
+        db: 数据库会话
+
+    Returns:
+        username='local' 的内置用户行
+    """
+    from cndb.plugins.accounts.models import User
+
+    user = db.query(User).filter(User.username == _LOCAL_USERNAME).first()
+    if user is not None:
+        return user
+
+    user = User(
+        username=_LOCAL_USERNAME,
+        nickname="本地用户",
+        is_superuser=True,
+    )
+    user.hashed_password = secrets.token_urlsafe(32)
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        # 并发首建竞态：另一方已提交同名用户，回退重查
+        db.rollback()
+        user = db.query(User).filter(User.username == _LOCAL_USERNAME).first()
+        if user is None:
+            raise
+        return user
+    logger.info("单机模式首次访问，已创建内置本地用户: id=%s", user.id)
+    return user
 
 
 def _authenticate_jwt(token: str, db: Session) -> User | None:
@@ -65,10 +110,19 @@ def get_current_user(
 ) -> object | None:
     """JWT 认证：解析 Bearer 令牌并加载用户.
 
+    LOCAL_MODE=True（单机模式）时完全忽略 Authorization 头（包括同机
+    持有的旧 token），所有请求统一归属内置本地用户——这是单机定位的
+    明确语义，非缺陷。
+
     返回：
-        认证成功返回 User 对象；AUTH_ENABLED=False 或无认证头时返回 None；
+        单机模式返回内置本地用户；否则认证成功返回 User 对象，
+        AUTH_ENABLED=False 或无认证头时返回 None；
         AUTH_ENABLED=True 但认证失败时抛 401.
     """
+
+    if settings.LOCAL_MODE:
+        # 单机模式：免登录，直接映射内置本地用户
+        return _get_local_user(db)
 
     if not settings.AUTH_ENABLED:
         return None

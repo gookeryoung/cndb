@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from cndb.core.config import settings
 from cndb.core.database import get_db
 from cndb.plugins.tables.models import DataField, DataTable, DataView
 from cndb.plugins.tables.services.core import records as rec
@@ -16,7 +17,13 @@ router = APIRouter(prefix="/api/v1/public", tags=["public"])
 
 
 def _get_public_view(db: Session, slug: str) -> tuple[DataView, DataTable]:
-    """按 public_slug 查找公开视图及其表。"""
+    """按 public_slug 查找公开视图及其表。
+
+    单机模式（LOCAL_MODE=True）下公开分享/表单属于网络暴露面，
+    统一在此 403 拦截（share 与 forms 两个路由都经过本函数）。
+    """
+    if settings.LOCAL_MODE:
+        raise HTTPException(status_code=403, detail="单机模式已禁用公开分享")
     dv = db.query(DataView).filter(DataView.public_slug == slug, DataView.is_public == True).first()  # noqa: E712
     if dv is None:
         raise HTTPException(status_code=404, detail="分享链接无效或已关闭")

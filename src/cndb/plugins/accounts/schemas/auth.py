@@ -1,6 +1,8 @@
-"""认证相关 Pydantic schema: 注册 / 登录 / Token 响应."""
+"""认证相关 Pydantic schema: 注册 / 登录 / Token 响应 / 认证模式."""
 
 from __future__ import annotations
+
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -55,6 +57,15 @@ class TokenResponse(BaseModel):
 
     access_token: str = Field(description="JWT 访问令牌")
     token_type: str = Field(default="bearer", description="令牌类型")
+
+
+class AuthModeResponse(BaseModel):
+    """认证模式响应（无认证端点，前端启动时探测）.
+
+    local = 单机免登录模式（LOCAL_MODE=True）；jwt = 常规 JWT 认证.
+    """
+
+    mode: Literal["local", "jwt"] = Field(description="认证模式")
 
 
 class UserResponse(BaseModel):
