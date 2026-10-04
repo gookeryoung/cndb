@@ -88,19 +88,42 @@ def _display_host(host: str) -> str:
 
 
 def serve(args: argparse.Namespace) -> None:
-    """启动 uvicorn 服务器（生产可用，不依赖源码目录）."""
+    """启动 uvicorn 服务器（生产可用，不依赖源码目录）.
+
+    单机模式（``--local`` 或环境变量 LOCAL_MODE/CNDB_LOCAL_MODE 开启）：
+    host 未显式指定时绑定 127.0.0.1，且强制回环校验——非回环地址拒绝
+    启动（安全不变量：单机免登录与局域网暴露互斥）。
+    """
     try:
         import uvicorn
     except ImportError:
         print("[error] uvicorn 未安装，请执行 `uv sync`", file=sys.stderr)
         sys.exit(1)
 
+    from cndb.core.config import settings
+
+    local_requested = bool(getattr(args, "local", False)) or settings.LOCAL_MODE
+    host = args.host or ("127.0.0.1" if local_requested else "0.0.0.0")
+
+    if local_requested:
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            print(
+                f"[error] 单机模式仅允许本机访问，拒绝绑定 {host}。\n"
+                "        单机模式免登录（自动以内置本地用户操作），暴露到局域网\n"
+                "        等同于向全网开放超管权限。请去掉 --host 或改用 127.0.0.1。",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        # uvicorn.run 以字符串导入 cndb.app:app，共享本进程 settings 单例
+        settings.LOCAL_MODE = True
+        print("[run] 单机模式：127.0.0.1 免登录（仅本机可访问）")
+
     _silence_proactor_reset_noise()
-    if args.host == "0.0.0.0":
+    if host == "0.0.0.0":
         print(f"[run] 局域网可访问: http://{_lan_ip()}:{args.port}")
     uvicorn.run(
         "cndb.app:app",
-        host=args.host,
+        host=host,
         port=args.port,
         reload=args.reload,
         workers=1 if args.reload else args.workers,
@@ -251,10 +274,15 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command")
 
     p_serve = sub.add_parser("serve", help="启动 uvicorn 服务器")
-    p_serve.add_argument("--host", default="0.0.0.0", help="绑定地址（默认 0.0.0.0 允许局域网访问）")
+    p_serve.add_argument("--host", default=None, help="绑定地址（默认 0.0.0.0；--local 时默认 127.0.0.1）")
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--reload", action="store_true")
     p_serve.add_argument("--workers", type=int, default=1)
+    p_serve.add_argument(
+        "--local",
+        action="store_true",
+        help="单机模式：免登录（内置本地用户）+ 仅本机访问（强制回环绑定）",
+    )
 
     p_dev = sub.add_parser("dev", help="开发模式：同时启动前后端")
     p_dev.add_argument("--host", default="0.0.0.0", help="绑定地址（默认 0.0.0.0 允许局域网访问）")
@@ -334,6 +362,7 @@ def main() -> None:
         args.port = 8000
         args.reload = False
         args.workers = 1
+        args.local = False
         serve(args)
         return
 

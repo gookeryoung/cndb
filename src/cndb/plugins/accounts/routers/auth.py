@@ -14,11 +14,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
+from cndb.core.config import settings
 from cndb.core.database import get_db
 from cndb.core.security import create_access_token
 from cndb.plugins.accounts.models import User, UserRole
 from cndb.plugins.accounts.schemas.auth import (
     AdminRegisterRequest,
+    AuthModeResponse,
     LoginRequest,
     ProfileUpdateRequest,
     RegisterRequest,
@@ -27,6 +29,22 @@ from cndb.plugins.accounts.schemas.auth import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _reject_in_local_mode(action: str) -> None:
+    """单机模式下拒绝多用户网络行为（注册/登录等），统一 403.
+
+    Args:
+        action: 被禁用的行为中文名（用于错误明细）
+
+    Raises:
+        HTTPException: 403，detail 格式「单机模式已禁用<行为>」
+    """
+    if settings.LOCAL_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"单机模式已禁用{action}",
+        )
 
 
 def _validate_role(role: str) -> UserRole:
@@ -79,6 +97,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
     Returns:
         创建后的 User 对象
     """
+    _reject_in_local_mode("注册")
     _ensure_unique(db, payload.username, payload.email)
 
     user = User(
@@ -135,6 +154,20 @@ def admin_register(
     return user
 
 
+@router.get("/auth-mode", response_model=AuthModeResponse)
+def auth_mode() -> AuthModeResponse:
+    """返回当前认证模式（无认证端点，供前端启动时探测）.
+
+    local = 单机免登录模式（LOCAL_MODE=True），前端据此无头填充用户态；
+    jwt = 常规 JWT 认证，走登录流程。独立于 /api/health，避免污染
+    运维探针语义。
+
+    Returns:
+        AuthModeResponse（mode: "local" | "jwt"）
+    """
+    return AuthModeResponse(mode="local" if settings.LOCAL_MODE else "jwt")
+
+
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     """用户登录，返回 JWT.
@@ -148,6 +181,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
     Returns:
         JWT 令牌响应
     """
+    _reject_in_local_mode("登录")
     user = db.query(User).filter((User.username == payload.login) | (User.email == payload.login)).first()
     if user is None or not user.is_active or not user.check_password(payload.password):
         raise HTTPException(

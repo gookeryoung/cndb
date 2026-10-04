@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+import os
 import re
 import subprocess  # nosec B404 - GUI 需管理 uvicorn 服务子进程
 import sys
@@ -345,6 +346,12 @@ class ServeTab(_BaseTab):
         self.workers_var = tk.StringVar(value=self.app.settings.serve.workers)
         ttk.Entry(cfg, textvariable=self.workers_var, width=6).grid(row=0, column=6, sticky=tk.W, padx=2)
 
+        # 单机模式：免登录（内置本地用户）+ 仅本机访问；默认勾选（单机定位）
+        self.local_mode_var = tk.BooleanVar(value=self.app.settings.serve.local_mode)
+        ttk.Checkbutton(cfg, text="单机模式(免登录·仅本机)", variable=self.local_mode_var).grid(
+            row=1, column=4, columnspan=3, sticky=tk.W, padx=12, pady=(4, 0)
+        )
+
         # 开机自启（后台服务）：仅 Windows 显示，勾选态回显注册表 Run 键实际状态
         if sys.platform == "win32":
             from cndb.cli.service import autostart_enabled
@@ -497,10 +504,25 @@ class ServeTab(_BaseTab):
             messagebox.showinfo("提示", "服务已在运行")
             return
 
-        host = self.host_var.get().strip() or "0.0.0.0"
+        local_mode = self.local_mode_var.get()
+        if local_mode:
+            host_input = self.host_var.get().strip() or "0.0.0.0"
+            if host_input not in ("127.0.0.1", "localhost", "::1"):
+                messagebox.showwarning(
+                    "单机模式",
+                    f"单机模式仅允许本机访问，Host 已从 {host_input} 调整为 127.0.0.1。",
+                )
+                self.host_var.set("127.0.0.1")
+            host = "127.0.0.1"
+        else:
+            host = self.host_var.get().strip() or "0.0.0.0"
         port = int(self.port_var.get().strip() or "8000")
         reload = self.reload_var.get()
         workers = 1 if reload else int(self.workers_var.get().strip() or "1")
+
+        # 单机模式经环境变量注入子进程（uvicorn 新进程读取 settings）；
+        # 取消勾选时显式置 "0"，防止上一次启动残留
+        os.environ["CNDB_LOCAL_MODE"] = "1" if local_mode else "0"
 
         # ── 启动前环境预检：停止占用端口 + 确保静态产物就绪 ──
         try:
@@ -586,6 +608,9 @@ class ServeTab(_BaseTab):
         self.open_btn.configure(state=tk.NORMAL)
         self.status_label.configure(text=f"运行中 http://{host}:{port}", foreground="#1a7f37")
         self.app.set_status(f"服务运行中  http://{host}:{port}")
+        if local_mode:
+            # 显式提示行：覆盖 gui.json 旧配置缺 local_mode 键回退默认勾选的静默切换
+            self.app.log_queue.write("[info] 单机模式已启用：免登录，仅本机可访问（局域网请取消勾选）\n")
 
         # 异步读子进程输出 → 写入队列
         proc = cast(subprocess.Popen[Any], self.app._server_proc)  # 上方已启动，必非空
@@ -620,9 +645,11 @@ class ServeTab(_BaseTab):
 
         try:
             if self.autostart_var.get():
-                host = self.host_var.get().strip() or "0.0.0.0"
                 port = int(self.port_var.get().strip() or "8000")
-                enable(host, port)
+                local_mode = self.local_mode_var.get()
+                # 单机模式固化回环地址，避免注册表残留非回环 host
+                host = "127.0.0.1" if local_mode else (self.host_var.get().strip() or "0.0.0.0")
+                enable(host, port, local=local_mode)
                 self.app.log_queue.write(f"[ok] 已启用开机自启（后台服务 {host}:{port}）\n")
             else:
                 disable()
@@ -666,6 +693,7 @@ class ServeTab(_BaseTab):
         settings.serve.port = self.port_var.get().strip() or "8000"
         settings.serve.reload = self.reload_var.get()
         settings.serve.workers = self.workers_var.get().strip() or "1"
+        settings.serve.local_mode = self.local_mode_var.get()
 
 
 # ═══════════════════════════════════════════════════════════════

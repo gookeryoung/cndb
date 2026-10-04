@@ -88,11 +88,15 @@ def test_main_serve_subcommand_dispatches() -> None:
 
 
 def test_main_serve_default_host_lan_accessible() -> None:
-    """serve 未显式传 --host 时默认绑定 0.0.0.0（局域网可访问）."""
+    """serve 未显式传 --host 时 host 为 None，由 serve() 推导绑定地址.
+
+    推导规则：LOCAL_MODE 关闭 → 0.0.0.0（局域网可访问）；--local → 127.0.0.1
+    （推导与回环校验逻辑见 test_local_mode.py::TestCliServeLocal）。
+    """
     with patch.object(runner, "serve") as mock_serve:
         with patch.object(sys, "argv", ["cndb", "serve"]):
             runner.main()
-        assert mock_serve.call_args.args[0].host == "0.0.0.0"
+        assert mock_serve.call_args.args[0].host is None
 
 
 def test_main_dev_default_host_lan_accessible() -> None:

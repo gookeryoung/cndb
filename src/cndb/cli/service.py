@@ -128,23 +128,32 @@ def _exe_command() -> list[str]:
     return [sys.executable, "-m", "cndb.cli.main"]
 
 
-def build_run_command(host: str, port: int) -> str:
+def build_run_command(host: str, port: int, local: bool = False) -> str:
     """构造写进 Run 键的命令行字符串（登录时由系统执行）."""
     cmd = [*_exe_command(), "service", "run", "--host", host, "--port", str(port)]
+    if local:
+        cmd.append("--local")
     return subprocess.list2cmdline(cmd)
 
 
-def enable(host: str, port: int) -> str:
+def enable(host: str, port: int, local: bool = False) -> str:
     """注册开机自启（已存在则覆盖更新）.
 
     Args:
         host: 服务绑定地址。
         port: 服务端口。
+        local: 是否单机模式（免登录 + 仅本机访问，run 派生时透传给 serve）。
 
     Returns:
         写入的命令行字符串。
+
+    Raises:
+        ValueError: 单机模式下 host 非回环地址（安全不变量：免登录
+            与局域网暴露互斥）。
     """
-    command = build_run_command(host, port)
+    if local and host not in ("127.0.0.1", "localhost", "::1"):
+        raise ValueError(f"单机模式仅允许本机访问，拒绝绑定 {host}")
+    command = build_run_command(host, port, local)
     _write_run_value(command)
     return command
 
@@ -183,7 +192,7 @@ def collect_status() -> ServiceStatus:
     )
 
 
-def run(host: str, port: int) -> int:
+def run(host: str, port: int, local: bool = False) -> int:
     """自启入口：无窗口派生 ``cndb serve`` 子进程后本进程立即退出.
 
     单实例保护：pidfile 进程存活或端口已被占用时拒绝启动。
@@ -192,6 +201,8 @@ def run(host: str, port: int) -> int:
     Args:
         host: 服务绑定地址。
         port: 服务端口。
+        local: 单机模式——派生前设 ``CNDB_LOCAL_MODE=1`` 并向 serve
+            传 ``--local``（serve 侧统一做回环校验兜底）。
 
     Returns:
         退出码：0 成功派生；1 因已有实例/端口占用拒绝。
@@ -215,7 +226,13 @@ def run(host: str, port: int) -> int:
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
 
+    if local:
+        # 双通道注入：环境变量供 settings 读取，--local 由 serve 显式校验
+        os.environ["CNDB_LOCAL_MODE"] = "1"
+
     cmd = [*_exe_command(), "serve", "--host", host, "--port", str(port)]
+    if local:
+        cmd.append("--local")
     proc = subprocess.Popen(cmd, **kwargs)  # nosec - 命令来自内部构造，无用户可控输入
     PID_FILE.write_text(str(proc.pid), encoding="utf-8")
     print(f"[ok] 后台服务已启动 (PID {proc.pid})，日志: {SERVICE_LOG}")
@@ -266,6 +283,7 @@ def register_service_subparser(sub: Any) -> None:
     p_enable = service_sub.add_parser("enable", help="启用开机自启（后台服务）")
     p_enable.add_argument("--host", default="0.0.0.0", help="服务绑定地址（默认 0.0.0.0）")
     p_enable.add_argument("--port", type=int, default=8000, help="服务端口（默认 8000）")
+    p_enable.add_argument("--local", action="store_true", help="单机模式：免登录 + 仅本机访问")
 
     service_sub.add_parser("disable", help="取消开机自启")
     service_sub.add_parser("status", help="查看自启与后台服务状态")
@@ -274,6 +292,7 @@ def register_service_subparser(sub: Any) -> None:
     p_run = service_sub.add_parser("run", help="自启入口：派生无窗口后台服务（由 Run 键调用）")
     p_run.add_argument("--host", default="0.0.0.0", help="服务绑定地址（默认 0.0.0.0）")
     p_run.add_argument("--port", type=int, default=8000, help="服务端口（默认 8000）")
+    p_run.add_argument("--local", action="store_true", help="单机模式：免登录 + 仅本机访问")
 
 
 def service_command(args: argparse.Namespace) -> None:
@@ -284,7 +303,7 @@ def service_command(args: argparse.Namespace) -> None:
 
     cmd = getattr(args, "service_cmd", None)
     if cmd == "enable":
-        command = enable(args.host, args.port)
+        command = enable(args.host, args.port, getattr(args, "local", False))
         print(f"[ok] 已启用开机自启: {command}")
     elif cmd == "disable":
         disable()
@@ -301,7 +320,7 @@ def service_command(args: argparse.Namespace) -> None:
         else:
             print("[info] 后台服务未在运行")
     elif cmd == "run":
-        sys.exit(run(args.host, args.port))
+        sys.exit(run(args.host, args.port, getattr(args, "local", False)))
     else:
         print("[error] 缺少 service 子命令，可用: enable / disable / status / stop / run", file=sys.stderr)
         sys.exit(2)
