@@ -26,6 +26,10 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
         curl \
         git \
         build-essential \
+        fontconfig \
+        fonts-wqy-microhei \
+        fonts-wqy-zenhei \
+    && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
 
 

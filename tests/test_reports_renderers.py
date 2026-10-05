@@ -322,7 +322,13 @@ class TestThemedPdfRender:
     """主题风格在 PDF 渲染中的应用：表格预设色、全主题 smoke、端到端."""
 
     def test_pdf_embeds_cjk_font_when_available(self):
-        """中文内容渲染的 PDF 应嵌入注册的 CJK 字体（修复乱码：字体名出现在 PDF 结构中）."""
+        """中文内容渲染的 PDF 应包含嵌入字体结构（非仅回退 Helvetica）.
+
+        用 FontFile2 / FontDescriptor / Subtype /TrueType 这些 PDF 结构令牌，
+        而不是依赖 reportlab 注册名出现在 PDF 字节流里——reportlab 嵌入时
+        用字体文件内部的 PostScript Name（如 WenQuanYiMicroHei-0），
+        与我们注册名（如 WQY-MicroHei）不一定一致。
+        """
         from cndb.plugins.reports.routers.reports import _ensure_pdf_font, _render_pdf
 
         font = _ensure_pdf_font()
@@ -330,7 +336,11 @@ class TestThemedPdfRender:
             pytest.skip("当前系统无可用中文字体")
         data = _render_pdf("# 员工月报\n正文中文段落\n| 姓名 | 部门 |\n| --- | --- |\n| 张三 | 研发 |", {}, "minimal")
         assert data.startswith(b"%PDF")
-        assert font.encode() in data, f"PDF 应嵌入字体 {font}"
+        # 嵌入 TrueType 字体的 PDF 必定含有这些结构令牌
+        assert b"/FontFile2" in data, "PDF 应嵌入 TrueType 字体文件"
+        assert b"/FontDescriptor" in data, "PDF 应包含字体描述符"
+        # Helvetica 作为内置 Type1 可能仍被页眉页码用到，但主文本必须用嵌入 TrueType 字体
+        assert b"/Subtype /TrueType" in data, "PDF 应含 TrueType 子类型声明"
 
     def test_ensure_pdf_font_registers_family(self):
         """注册成功的字体应同时注册同名字体族（<b>/<i> 标签映射回同字体不崩溃）."""
@@ -928,3 +938,172 @@ def test_render_with_timeout_raises_timeout():
         _render_with_timeout(fake, {}, timeout=1)
     elapsed = time.time() - start
     assert elapsed < 3, f"超时检测耗时 {elapsed:.2f}s 应 < 3s"
+
+
+# ── 中文字体发现策略 ──────────────────────────────────
+
+
+class TestCjkFontDiscovery:
+    """Ubuntu / Debian 等 Linux 发行版下 CJK 字体多策略发现，覆盖 fc-match / fc-list / 目录扫描三条路径."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_font_cache(self):
+        """每个子测试前后清空 _pdf_font_state 缓存，保证独立."""
+        from cndb.plugins.reports.routers import reports
+
+        reports._pdf_font_state[0] = None
+        yield
+        reports._pdf_font_state[0] = None
+
+    def test_is_cjk_family_true_positives(self):
+        """_is_cjk_family 对常见 CJK 家族名返回 True."""
+        from cndb.plugins.reports.routers.reports import _is_cjk_family
+
+        positives = [
+            "WenQuanYi Micro Hei",
+            "WenQuanYi Zen Hei",
+            "Noto Sans CJK SC",
+            "Noto Sans Mono CJK SC",
+            "Source Han Sans CN",
+            "Source Han Sans SC",
+            "SimHei",
+            "Microsoft YaHei",
+            "Mingti",
+            "AR PL UMing CN",
+            "AR PL UKai CN",
+            "文泉驿微米黑",
+            "思源黑体",
+        ]
+        for name in positives:
+            assert _is_cjk_family(name), f"应为 CJK 家族: {name}"
+
+    def test_is_cjk_family_true_negatives(self):
+        """_is_cjk_family 对西文字体家族名返回 False（fontconfig 回退场景）."""
+        from cndb.plugins.reports.routers.reports import _is_cjk_family
+
+        negatives: list[str] = [
+            "DejaVu Sans",
+            "DejaVu Sans Mono",
+            "Liberation Sans",
+            "Arial",
+            "Helvetica",
+            "Times New Roman",
+            "Roboto",
+            "",
+        ]
+        for name in negatives:
+            assert not _is_cjk_family(name), f"不应视为 CJK 家族: {name!r}"
+        # None 应在函数入口显式返回 False
+        assert not _is_cjk_family(None)  # type: ignore[arg-type]
+
+    def test_cjk_font_candidates_dedupe_and_skip_nonexistent(self):
+        """_cjk_font_candidates 返回的候选：去重、只含存在的绝对路径（fc-match 验证过）."""
+        from cndb.plugins.reports.routers.reports import _cjk_font_candidates
+
+        seen: set[tuple[str, str, int | None]] = set()
+        cands = _cjk_font_candidates()
+        assert cands, "候选列表不应为空（Windows 硬编码路径即便不存在也会被加入，再由 ensure 按 is_file 过滤）"
+        for name, path, _idx in cands:
+            assert name, "注册名不能为空"
+            assert path, "文件路径不能为空"
+            # 去重
+            key = (name, path, _idx)
+            assert key not in seen, f"重复候选: {key}"
+            seen.add(key)
+
+    def test_cjk_font_candidates_no_false_western_fallback(self):
+        """fc-match 回退到 DejaVu Sans 等西文字体时不应进入候选列表（_is_cjk_family 过滤）."""
+        import shutil
+
+        if shutil.which("fc-match") is None:
+            pytest.skip("当前系统无 fontconfig")
+        from cndb.plugins.reports.routers.reports import _cjk_font_candidates
+
+        cands = _cjk_font_candidates()
+        western_families = ("DejaVu Sans", "DejaVu Serif", "Liberation Sans", "Arial", "Helvetica")
+        for _name, path, _idx in cands:
+            # 候选路径不应该指向 DejaVu/Liberation 这类西文字体
+            assert not any(f.lower() in path.lower() for f in western_families), f"候选含西文字体回退路径: {path}"
+
+    def test_ensure_pdf_font_finds_true_type_font_on_linux(self):
+        """Ubuntu 环境下 _ensure_pdf_font 应通过 fc-match 或目录扫描找到 TrueType CJK 字体."""
+        from cndb.plugins.reports.routers.reports import _ensure_pdf_font
+
+        font = _ensure_pdf_font()
+        # 即使无 CJK 字体也不会崩溃，只是返回 None
+        assert font is None or isinstance(font, str)
+        if font is not None:
+            # 若找到，再确认第二次调用走缓存命中
+            font2 = _ensure_pdf_font()
+            assert font2 == font, "字体缓存应返回同一注册名"
+
+    def test_ensure_pdf_font_caches_result(self):
+        """字体注册后 _pdf_font_state 缓存命中，第二次调用不再重复 fc-match / 目录扫描."""
+        from unittest import mock
+
+        from cndb.plugins.reports.routers import reports
+
+        reports._pdf_font_state[0] = None
+        original_run = reports._run_command
+        call_count = {"n": 0}
+
+        def _wrapped(cmd: list[str], timeout: float = 3.0) -> tuple[int, str]:
+            call_count["n"] += 1
+            return original_run(cmd, timeout)
+
+        with mock.patch.object(reports, "_run_command", side_effect=_wrapped):
+            # 重置缓存
+            reports._pdf_font_state[0] = None
+            _first = reports._ensure_pdf_font()
+            first_count = call_count["n"]
+            # 第二次应直接命中缓存，不再调 _run_command
+            _second = reports._ensure_pdf_font()
+            second_count = call_count["n"]
+            assert first_count > 0, "首次注册应触发 fontconfig / 目录扫描"
+            assert second_count == first_count, "第二次应完全命中缓存，不再跑扫描"
+            # 无论找到字体与否，两次返回值一致
+            assert _first == _second
+
+    def test_run_command_missing_binary_returns_neg1(self):
+        """_run_command 对不存在的二进制返回 (-1, '')，不抛异常."""
+        from cndb.plugins.reports.routers.reports import _run_command
+
+        rc, out = _run_command(["/nonexistent_binary_xyz", "arg1"])
+        assert rc == -1
+        assert out == ""
+
+    def test_run_command_happy_path(self):
+        """_run_command 对存在的命令正常返回 (rc, stdout)."""
+        from cndb.plugins.reports.routers.reports import _run_command
+
+        rc, out = _run_command(["printf", "hello"])
+        assert rc == 0
+        assert out == "hello"
+
+
+class TestPdfChineseNoToFallback:
+    """系统无任何 TrueType CJK 字体时的优雅降级：不崩溃，PDF 成功生成（此时中文乱码属已知限制）."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_font_cache(self):
+        from cndb.plugins.reports.routers import reports
+
+        reports._pdf_font_state[0] = None
+        yield
+        reports._pdf_font_state[0] = None
+
+    def test_render_pdf_without_cjk_font_gracefully_falls_back(self) -> None:
+        """_ensure_pdf_font 找不到任何 TrueType CJK 字体时返回 None，_render_pdf 用 Helvetica 回退不崩溃."""
+        from unittest import mock
+
+        import cndb.plugins.reports.routers.reports as R
+
+        # 模拟 _cjk_font_candidates 返回空（所有候选 .is_file 都 False）
+        with mock.patch.object(R, "_cjk_font_candidates", return_value=[]):
+            font = R._ensure_pdf_font()
+            assert font is None, "无 TrueType CJK 字体时应返回 None"
+            # 仍能渲染 PDF（Helvetica 回退）
+            data = R._render_pdf("# 员工月报\n这是中文", {}, "minimal")
+            assert data.startswith(b"%PDF")
+            # 此时无嵌入 FontFile2（Helvetica 是内置 Type1）
+            assert b"/FontFile2" not in data

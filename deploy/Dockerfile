@@ -41,6 +41,16 @@ ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
 # 安装 curl（healthcheck 用）和 uv
 RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ curl uv
 
+# 安装 TrueType CJK 字体（reportlab PDF 导出用；wqy 是 TrueType 轮廓，
+# Noto Sans CJK 是 OpenType/CFF reportlab 不支持，因此选 wqy 系列）
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        fontconfig \
+        fonts-wqy-microhei \
+        fonts-wqy-zenhei \
+    && fc-cache -fv \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # 先复制依赖描述文件利用层缓存
