@@ -819,10 +819,16 @@ def _ensure_pdf_font() -> str | None:
     """注册 reportlab 中文字体（懒加载），返回注册名；全部失败返回 None.
 
     注册成功后同时注册同名字体族（normal/bold/italic 均映射同一字体），
-    使 RML <b>/<i> 标签不会因缺少粗体/斜体变体而崩溃。
+    使 RML <b>/<i> 标签不会因缺少粗体/斜体变体而崩溃.
+
+    三态缓存:
+        None   → 未扫描过
+        ""     → 已扫描过, 系统无可用 CJK 字体
+        非空 str → 已注册成功的字体族名
+    这样在无中文字体的环境下第二次调用直接返回 None, 不再重跑 fc-match / 目录扫描.
     """
     if _pdf_font_state[0] is not None:
-        return _pdf_font_state[0]
+        return _pdf_font_state[0] or None
     try:
         from pathlib import Path
 
@@ -854,11 +860,13 @@ def _ensure_pdf_font() -> str | None:
             except Exception:
                 logger.debug("候选中文字体注册失败: %s，尝试下一个", font_file, exc_info=True)
                 continue
-        if not _pdf_font_state[0]:
-            logger.warning("reportlab 中文字体不可用，PDF 中文字符可能显示异常")
+        # 全部候选耗尽仍未注册成功 —— 缓存空串, 避免每次 PDF 渲染都重跑 fontconfig
+        _pdf_font_state[0] = ""
+        logger.warning("reportlab 中文字体不可用，PDF 中文字符可能显示异常（已缓存扫描结果）")
     except Exception:
         logger.debug("reportlab 字体注册跳过", exc_info=True)
-    return _pdf_font_state[0]
+        _pdf_font_state[0] = ""
+    return None
 
 
 def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle.MINIMAL.value) -> bytes:
