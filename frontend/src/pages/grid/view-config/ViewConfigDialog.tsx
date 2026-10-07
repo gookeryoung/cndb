@@ -60,11 +60,14 @@ function ViewOptionItem({ opt, fields, opts, onSet, onPatch }: ViewOptionItemPro
   const label = <div className="vcvd-item-label">{opt.label}</div>
 
   if (opt.kind === 'switch') {
+    // 当 currentValue 未显式配置时，用 opt.defaultValue 回退；
+    // false / true 为显式值不回退。与 resolveOpts 行为保持一致。
+    const effective = currentValue !== undefined && currentValue !== null ? !!currentValue : !!opt.defaultValue
     return (
       <div className="vcvd-item">
         {label}
         <Switch
-          checked={currentValue !== false && currentValue !== undefined}
+          checked={effective}
           onChange={v => onSet(opt.key, v)}
           checkedChildren="开"
           unCheckedChildren="关"
@@ -501,6 +504,7 @@ export default function ViewConfigDialog({
       })
     }
     return items
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftFilters, draftSorts, draftFilterLogic, filterableFields, sortableFields, viewSections, collapsed, draftOpt, viewHiddenFieldIds, viewType, fields, isChartView, chartList, activeIdx, activeChartOpts])
 
   return (

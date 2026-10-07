@@ -375,18 +375,18 @@ describe('ViewConfigDialog 紧凑布局', () => {
     const spies = renderDialog({ viewType: 'kanban' })
     fireEvent.click(screen.getByText('kanban 专属设置'))
 
-    // kanban 有 pin_urgent 和 pin_today 两个 switch；pin_urgent 排在 schema 前面
+    // kanban 有 pin_urgent 和 pin_today 两个 switch；两者 defaultValue=true，初始应显示为 checked
     const switches = screen.getAllByRole('switch')
     expect(switches.length).toBeGreaterThanOrEqual(2)
     const sw = switches[0] // pin_urgent
+    expect(sw).toHaveAttribute('aria-checked', 'true') // defaultValue=true
+    fireEvent.click(sw) // 显式关闭
     expect(sw).toHaveAttribute('aria-checked', 'false')
-    fireEvent.click(sw)
-    expect(sw).toHaveAttribute('aria-checked', 'true')
 
     fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
-    // pin_urgent 被开启，pin_today 未修改（保持 undefined/false，不写入保存值）
+    // pin_urgent 被显式关闭，写入保存值；pin_today 未修改（仍是 undefined，不写入）
     await waitFor(() => expect(spies.onSaveOptions).toHaveBeenCalledWith(
-      expect.objectContaining({ pin_urgent: true }),
+      expect.objectContaining({ pin_urgent: false }),
     ))
   })
 })
@@ -459,5 +459,112 @@ describe('ViewConfigDialog chart 多图条目管理', () => {
     expect(spies.onSaveOptions).toHaveBeenCalledWith({
       chart_type: 'scatter', x_field: '工时', y_field: '销售额',
     })
+  })
+
+  it('show_stats_panel 开关在多图各条目独立生效：默认开启，显式关闭后保存', () => {
+    const spies = renderDialog({
+      viewType: 'chart',
+      fields: CHART_FIELDS,
+      viewOptions: {
+        charts: [
+          { chart_type: 'bar', dimension_field: '月份', measure_field: '销售额' },
+          { chart_type: 'line', dimension_field: '月份', measure_field: '销售额' },
+        ],
+      },
+    })
+    fireEvent.click(screen.getByText('chart 专属设置'))
+
+    // 图表 1：show_stats_panel 默认开启（defaultValue=true，draftOpt 里没有）
+    // 进入"显示"分区找 switch
+    // show_stats_panel 属于"显示"group
+    // 先点"图表 1"确认 activeIdx
+    fireEvent.click(screen.getByText('图表 1'))
+    // 找 switch——多图管理那两个 Button 不是 switch，只有配置项里有
+    // 在 antd Segmented 之后、sections 里才有 switch
+    // 先展开所有 section
+    const sectionHeads = document.querySelectorAll('.vcvd-section-head')
+    sectionHeads.forEach(head => {
+      if ((head as HTMLElement).getAttribute('aria-expanded') === 'false') {
+        fireEvent.click(head)
+      }
+    })
+    const switches = screen.getAllByRole('switch')
+    // show_stats_panel: 图表 1 未显式设置，defaultValue=true → checked
+    expect(switches[0]).toHaveAttribute('aria-checked', 'true') // 图表 1 的 show_stats_panel
+
+    // 显式关闭图表 1 的 show_stats_panel
+    fireEvent.click(switches[0])
+    expect(switches[0]).toHaveAttribute('aria-checked', 'false')
+
+    // 切到图表 2
+    fireEvent.click(screen.getByText('图表 2'))
+    // 图表 2 的 show_stats_panel 也是默认开启（因为各条目独立，图表 2 也没显式设置）
+    const switches2 = screen.getAllByRole('switch')
+    expect(switches2[0]).toHaveAttribute('aria-checked', 'true')
+
+    // 保存 —— 图表 1 show_stats_panel: false，图表 2 没显式设置（不写入）
+    fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+    const saved = spies.onSaveOptions.mock.calls[0][0] as { charts: Array<Record<string, unknown>> }
+    expect(saved.charts).toHaveLength(2)
+    // 图表 1 显式关闭 show_stats_panel: false
+    expect(saved.charts[0]).toHaveProperty('show_stats_panel', false)
+    // 图表 2 没有 show_stats_panel 键（因为 serializeChartList 清洗 undefined）
+    expect(saved.charts[1]).not.toHaveProperty('show_stats_panel')
+  })
+
+  it('新添加的空条目 show_stats_panel 因 defaultValue=true 初始显示开启', () => {
+    renderDialog({
+      viewType: 'chart',
+      fields: CHART_FIELDS,
+      viewOptions: { chart_type: 'bar', dimension_field: '月份', measure_field: '销售额' },
+    })
+    fireEvent.click(screen.getByText('chart 专属设置'))
+
+    // 添加图表 2 → 空条目 {}
+    fireEvent.click(screen.getByRole('button', { name: /添加图表/ }))
+    fireEvent.click(screen.getByText('图表 2'))
+
+    // 展开所有 section
+    const sectionHeads = document.querySelectorAll('.vcvd-section-head')
+    sectionHeads.forEach(head => {
+      if ((head as HTMLElement).getAttribute('aria-expanded') === 'false') {
+        fireEvent.click(head)
+      }
+    })
+
+    // 空条目 show_stats_panel = undefined，但 defaultValue=true → checked
+    const switches = screen.getAllByRole('switch')
+    expect(switches.length).toBeGreaterThanOrEqual(1)
+    expect(switches[0]).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('chart_type 切换后 show_stats_panel 的 defaultValue 回退仍正确（scatter 新增 show_trend_line）', () => {
+    renderDialog({
+      viewType: 'chart',
+      fields: CHART_FIELDS,
+      viewOptions: { chart_type: 'scatter', x_field: '工时', y_field: '销售额' },
+    })
+    fireEvent.click(screen.getByText('chart 专属设置'))
+
+    // scatter 类型除了 show_stats_panel 还多一个 show_trend_line switch（defaultValue=false）
+    const sectionHeads = document.querySelectorAll('.vcvd-section-head')
+    sectionHeads.forEach(head => {
+      if ((head as HTMLElement).getAttribute('aria-expanded') === 'false') {
+        fireEvent.click(head)
+      }
+    })
+
+    const switches = screen.getAllByRole('switch')
+    expect(switches.length).toBe(2)
+    // show_stats_panel: defaultValue=true
+    expect(switches[0]).toHaveAttribute('aria-checked', 'true')
+    // show_trend_line: defaultValue=false
+    expect(switches[1]).toHaveAttribute('aria-checked', 'false')
+
+    // 开启 show_trend_line，然后关掉 show_stats_panel
+    fireEvent.click(switches[1])
+    fireEvent.click(switches[0])
+    expect(switches[1]).toHaveAttribute('aria-checked', 'true')
+    expect(switches[0]).toHaveAttribute('aria-checked', 'false')
   })
 })
