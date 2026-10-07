@@ -130,6 +130,13 @@ describe('GanttView 甘特图视图', () => {
         expect(screen.queryByTestId('gantt-today-line')).not.toBeInTheDocument()
     })
 
+    it('时间轴最右边界渲染虚线（header 双层 + body grid 共 3 处）', () => {
+        renderGantt()
+
+        const lines = screen.getAllByTestId('gantt-boundary-line')
+        expect(lines).toHaveLength(3) // anchor layer + current layer + body grid
+    })
+
     it('配置分组字段后左侧显示任务分组头与分组标签', () => {
         renderGantt({ view: makeView({ title_field: '名称', group_field: '状态' }) })
 
