@@ -6,7 +6,7 @@ import {
   markCurrentAnchors, sparseCurrentLabels,
   buildDualTimeline, selectZoomLevelForScale, autoAdjustLevel,
   ZOOM_LEVELS,
-  type GanttTask, type TimelineSegment,
+  type GanttTask, type TimelineSegment, type TimeScale,
 } from './ganttTimeline'
 
 /** 快捷构造甘特任务（日期用本地时区，避免 UTC 偏移干扰断言） */
@@ -82,16 +82,19 @@ describe('buildCurrentSegments', () => {
     expect(segs.every(s => s.width === 18 && s.days === 1 && !s.showLabel)).toBe(true)
   })
 
-  it('week 粒度：对齐到周一（周日历头），每段固定 7 天', () => {
-    // 2026-03-04 是周三 → 首段对齐到 03-01（周日）
+  it('week 粒度：对齐到周日历头，首尾段按 range 裁剪可见天数', () => {
+    // 2026-03-04 是周三 → 首段对齐到 03-01（周日），但可见天数从 03-04 起算；
+    // 末段 03-15~03-20 被 range.max 裁剪为 6 天
     const segs = buildCurrentSegments(
       { min: new Date(2026, 2, 4), max: new Date(2026, 2, 20) },
       'week', 10, '${m}/${d}',
     )
     expect(segs).toHaveLength(3)
     expect(segs.map(s => s.label)).toEqual(['3/1', '3/8', '3/15'])
-    expect(segs.every(s => s.days === 7 && s.width === 70)).toBe(true)
-    expect(segs[1].left).toBe(70)
+    expect(segs.map(s => s.days)).toEqual([4, 7, 6]) // 03-04~03-07 / 整周 / 03-15~03-20
+    // 首段不再按整周 7 天计宽，第二段 left 不漂移
+    expect(segs[1].left).toBe(40)
+    expect(segs.reduce((s, t) => s + t.width, 0)).toBe(17 * 10) // 总宽 == 总天数 × pxPerDay
   })
 
   it('month 粒度：按自然月分段，首尾段按 range 裁剪天数，全部显示', () => {
@@ -114,6 +117,36 @@ describe('buildCurrentSegments', () => {
     expect(segs.map(s => s.label)).toEqual(['Q1', 'Q2', 'Q3'])
     expect(segs.map(s => s.days)).toEqual([76, 91, 2]) // 01-15~03-31 / 04-01~06-30 / 07-01~07-02
     expect(segs[2].left).toBe(152 + 182)
+  })
+})
+
+describe('分段对齐不变量（header 刻度与甘特条逐日对齐）', () => {
+  // 首段/末段需要裁剪的边界形态：周中起跨月、整年
+  const RANGES = [
+    { min: new Date(2026, 2, 4), max: new Date(2026, 3, 10) },
+    { min: new Date(2026, 0, 1), max: new Date(2026, 11, 31) },
+  ]
+  const SCALES: Array<[TimeScale, number]> = [['day', 18], ['week', 10], ['month', 4], ['quarter', 2]]
+
+  RANGES.forEach((range, ri) => {
+    const totalDays = daysBetween(range.min, range.max)
+    SCALES.forEach(([scale, pxd]) => {
+      it(`range${ri} ${scale}：各段天数之和 == 总天数 ${totalDays}，总宽 == totalDays × pxPerDay`, () => {
+        const segs = buildCurrentSegments(range, scale, pxd, 'x')
+        expect(segs.reduce((s, t) => s + t.days, 0)).toBe(totalDays)
+        expect(segs.reduce((s, t) => s + t.width, 0)).toBe(totalDays * pxd)
+      })
+    })
+  })
+
+  it('全部 8 档档位下细粒度层与锚定层总宽一致（header 与网格同宽）', () => {
+    const range = { min: new Date(2026, 2, 4), max: new Date(2026, 3, 10) }
+    ZOOM_LEVELS.forEach((_, level) => {
+      const { anchorSegments, currentSegments } = buildDualTimeline(range, level)
+      const anchorW = anchorSegments.reduce((s, t) => s + t.width, 0)
+      const currentW = currentSegments.reduce((s, t) => s + t.width, 0)
+      expect(currentW).toBe(anchorW)
+    })
   })
 })
 

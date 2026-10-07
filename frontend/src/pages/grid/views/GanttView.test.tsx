@@ -116,6 +116,20 @@ describe('GanttView 甘特图视图', () => {
         expect(screen.getByText('50%')).toBeInTheDocument()
     })
 
+    it('甘特条几何与进度填充按 pxPerDay 精确换算（年-月档 4px/天）', () => {
+        renderGantt()
+
+        // 任务B：-5 ~ +10 共 16 天；range.min = -57 → left = 52 天 × 4 = 208px，width = 16 × 4 = 64px
+        const bar = document.querySelector('[data-testid="gantt-bar"][data-row-id="2"]') as HTMLElement
+        expect(bar).not.toBeNull()
+        expect(bar.style.left).toBe('208px')
+        expect(bar.style.width).toBe('64px')
+        // 进度填充 50%：width 百分比 + maxWidth 不超过条宽（32px）
+        const fill = bar.firstElementChild as HTMLElement
+        expect(fill.style.width).toBe('50%')
+        expect(fill.style.maxWidth).toBe('32px')
+    })
+
     it('显示今日标线与底部时间范围（前后各扩展 7/21 天）', () => {
         renderGantt()
 

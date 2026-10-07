@@ -119,11 +119,17 @@ export function buildCurrentSegments(range: { min: Date; max: Date }, scale: Tim
   } else if (scale === 'week') {
     let cursor = new Date(range.min)
     while (cursor <= range.max) {
+      // 对齐到本周周日（周日历头）；首段起点可能早于 range.min、末段终点可能晚于 range.max，
+      // 与 month/quarter 一致按裁剪后的可见天数计宽，保证各段天数之和恒等于总天数
+      //（否则 header 总宽超出甘特条网格，周刻度下条与刻度漂移、右缘条看似被截断）
       const weekStart = new Date(cursor)
       weekStart.setDate(cursor.getDate() - cursor.getDay())
       const weekEnd = new Date(weekStart)
       weekEnd.setDate(weekStart.getDate() + 6)
-      const days = daysBetween(weekStart, weekEnd)
+      const days = daysBetween(
+        weekStart < range.min ? range.min : weekStart,
+        weekEnd > range.max ? range.max : weekEnd,
+      )
       segments.push({
         label: fmtWithTemplate(labelTemplate, weekStart),
         date: weekStart,
