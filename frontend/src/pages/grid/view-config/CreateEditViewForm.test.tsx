@@ -354,3 +354,98 @@ describe('CreateEditViewForm 图表视图配置', () => {
     })
   })
 })
+
+describe('CreateEditViewForm chart 多图条目管理', () => {
+  const chartFields = [
+    ...fields,
+    makeField({ id: 5, name: '金额', field_type: 'number' }),
+    makeField({ id: 6, name: '工时', field_type: 'number' }),
+  ]
+
+  it('新建多图：添加图表后逐条目配置，提交为 charts[] 形态', async () => {
+    const onSubmit = vi.fn()
+    renderProviders(
+      <CreateEditViewForm
+        fields={chartFields} initialName="多图概览" initialType="chart" onSubmit={onSubmit}
+      />,
+    )
+
+    // 图表 1：配置维度字段（chart_type 默认即 bar，受控同值再点不触发 onChange，无需重选）
+    expect(screen.getByRole('button', { name: /删除当前图表/ })).toBeDisabled()
+    openSelect(2)
+    await pickOption('状态 (select)')
+
+    // 添加图表 → 切到图表 2：散点图 + X/Y 字段
+    fireEvent.click(screen.getByRole('button', { name: /添加图表/ }))
+    fireEvent.click(screen.getByText('图表 2'))
+    openSelect(1)
+    await pickOption('散点图')
+    openSelect(2)
+    await pickOption('金额 (number)')
+    openSelect(3)
+    await pickOption('工时 (number)')
+
+    fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
+    expect(onSubmit).toHaveBeenCalledWith('多图概览', 'chart', {
+      charts: [
+        { dimension_field: '状态' },
+        { chart_type: 'scatter', x_field: '金额', y_field: '工时' },
+      ],
+    })
+  })
+
+  it('编辑多图视图：条目回显可切换，修改当前条目后 charts[] 原样保留其余条目', async () => {
+    const onSubmit = vi.fn()
+    renderProviders(
+      <CreateEditViewForm
+        fields={chartFields} initialName="概览" initialType="chart" submitLabel="保存"
+        initialOptions={{
+          charts: [
+            { chart_type: 'bar', dimension_field: '状态' },
+            { chart_type: 'scatter', x_field: '金额', y_field: '工时' },
+          ],
+        }}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    // Segmented 回显两条目；图表 1 为 bar → 维度字段可见
+    expect(screen.getByText('图表 2')).toBeInTheDocument()
+    expect(screen.getByText('维度字段')).toBeInTheDocument()
+
+    // 切到图表 2（scatter）→ 散点专属项可见；打开趋势线
+    fireEvent.click(screen.getByText('图表 2'))
+    expect(screen.getByText('X 数值字段')).toBeInTheDocument()
+    const trendSwitch = [...document.querySelectorAll('.ant-switch')]
+      .find(el => !el.classList.contains('ant-switch-checked'))!
+    fireEvent.click(trendSwitch)
+
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+    expect(onSubmit).toHaveBeenCalledWith('概览', 'chart', {
+      charts: [
+        { chart_type: 'bar', dimension_field: '状态' },
+        { chart_type: 'scatter', x_field: '金额', y_field: '工时', show_trend_line: true },
+      ],
+    })
+  })
+
+  it('扁平单图编辑时添加再删除：写回扁平键形态，双形态不并存', async () => {
+    const onSubmit = vi.fn()
+    renderProviders(
+      <CreateEditViewForm
+        fields={chartFields} initialName="饼图" initialType="chart" submitLabel="保存"
+        initialOptions={{ chart_type: 'pie', dimension_field: '状态' }} onSubmit={onSubmit}
+      />,
+    )
+
+    // 添加（进入 charts[] 形态）再删除（回到扁平形态）
+    fireEvent.click(screen.getByRole('button', { name: /添加图表/ }))
+    fireEvent.click(screen.getByRole('button', { name: /删除当前图表/ }))
+
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+    expect(onSubmit).toHaveBeenCalledWith('饼图', 'chart', {
+      chart_type: 'pie',
+      dimension_field: '状态',
+    })
+  })
+})
