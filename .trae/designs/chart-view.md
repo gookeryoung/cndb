@@ -35,7 +35,8 @@
 - 转换真相源在 `viewOptionSchema.ts`：
   - `normalizeChartList(draftOpt)`：charts 非空数组 → 逐条目浅拷贝；否则从扁平键提取 CHART_OPTIONS 键组装单条目（hidden_fields 等非图表键不进入条目）。
   - `serializeChartList(list)`：图表数 >1 → `{ charts: [...] }`；==1 → 扁平键对象；条目级空值清洗（''/null/undefined/空数组剔除），清洗后为空的条目整体剔除，全部为空返回 null。
-- ViewConfigDialog 保存出口：先删 cleanOpt 的 charts 键与全部 CHART_OPTIONS 扁平键，再合入 serialize 产物（防止添加图表后扁平键残留）。
+- 条目编辑态统一收敛在 `useChartListDraft.ts` 共享 hook（ViewConfigDialog 与 CreateEditViewForm 的单一真相源）：当前条目索引（clamp）、`patchEntry`（条目级 patch）、`addEntry` / `removeEntry`，以及 `writeBackChartList` 双形态写回（条目数 ==1 → 删 charts 键与全部 CHART_OPTIONS 扁平键后合入条目；>1 → 写回 charts[]，双形态不并存）。
+- ViewConfigDialog 保存出口与 CreateEditViewForm 提交出口同规则：先删 charts 键与全部 CHART_OPTIONS 扁平键，再合入 serialize 产物（防止添加图表后扁平键残留；CreateEditViewForm 场景保留非图表键）。
 - 后端校验：`views.py _validate_view_fields` 与 `seed.py _validate_view_fields` 在扁平键白名单外追加——`charts` 为 list 时逐条目校验（元素非 dict 返回 400「view_options.charts[i] 不是对象」；dict 内 dimension_field/measure_field/x_field/y_field/group_field 引用不存在字段返回 400，detail 定位 `view_options.charts[i].<key>`）。ViewType 枚举不扩（view_type 为自由字符串）。
 
 ### 多图渲染与条目管理
@@ -44,7 +45,8 @@
 - 多图：dashboard 式自适应网格 `repeat(auto-fill, minmax(420px, 1fr))`、gap 12px，每卡独立 ChartCard（边框卡片 + 自动标注卡片头 `{类型中文} · {关键字段名}`，纯展示不可配 title；scatter 取 `x × y`，histogram/boxplot 取度量，其余取维度）。每卡独立 ECharts 实例 / 统计面板 / 散点点击语义；实例随卡片卸载 dispose。上限 6（待用户复核）。
 - 单图（扁平来源）：保持既有全宽 flex 容器，无卡片头——渲染行为与多图上线前完全一致。
 - 空态分档：无行 → 视图级 chart-empty-rows；多图某卡必填缺失 → 该卡内空态，data-testid 带索引后缀 `chart-empty-config-{i}`（单图保持 `chart-empty-config`）；卡片头 testid `chart-card-title-{i}`。
-- ViewConfigDialog（仅 view_type='chart' 的专属设置 tab 顶部）：Segmented（`图表 1 / 图表 2 / …`）+ 「添加图表」（上限 6 禁用 + tooltip）+ 「删除当前图表」（单条目禁用；删至单条目写回扁平形态）；分区渲染传当前条目 opts 使 visibleWhen 按该条 chart_type 显隐；activeChartIdx 在对话框打开时重置为 0；折叠重置 effect 依赖分区标签 join 不受条目切换影响。
+- ViewConfigDialog（仅 view_type='chart' 的专属设置 tab 顶部）：Segmented（`图表 1 / 图表 2 / …`）+ 「添加图表」（上限 6 禁用 + tooltip）+ 「删除当前图表」（单条目禁用；删至单条目写回扁平形态）；分区渲染传当前条目 opts 使 visibleWhen 按该条 chart_type 显隐；条目索引在对话框打开时重置为 0；折叠重置 effect 依赖分区标签 join 不受条目切换影响。
+- CreateEditViewForm（创建 / 编辑视图表单）同套多图配置：chart 类型时渲染条目管理条（Segmented + 添加 / 删除，语义与 ViewConfigDialog 一致），配置项读写走 hook 当前条目；编辑 `charts[]` 视图时逐条目回显可切换；视图类型切换时 opts 清空并重置条目索引；提交出口经 serialize 保证双形态不并存。
 
 ## 数据流与算法（chartBoard.ts 纯逻辑层）
 
@@ -86,7 +88,7 @@
 - `ChartView.test.tsx`（19 条）：空态（必填字段缺失 / 空行 / scatter 缺 X/Y）/ bar 聚合 option+类目序+未分组末尾 / group_field 多系列+legend / line 类型 / scatter OLS 趋势线 / 统计面板数值+截断口径 / 散点附加 Pearson r/R²/回归系数 / show_stats_panel 关闭 / 主题切换重建 option / pie option（series.type、扇区 name/value/itemStyle.color）/ histogram option（series.type=bar、barCategoryGap=0、bins labels 做 xAxis）/ boxplot option（主 series=boxplot+离群值 scatter、xAxis.data=拼音序分组）/ scatter 点击散点触发 onRowClick / scatter 非散点系列（趋势线）不触发；多图 3 条——charts 两元素渲染 2 容器+卡片头标注 / 每卡独立统计面板 / 某卡必填缺失对应索引空态。
 - `ViewConfigDialog.test.tsx`：chart 多图条目管理 3 条——扁平单图 Segmented 仅图表 1+禁删最后 / 添加图表保存输出 charts[]（空条目清洗）/ 切换条目 visibleWhen 按该条 chart_type 显隐+删除后保存回扁平形态。
 - `viewOptionSchema.test.ts`：normalizeChartList / serializeChartList 5 条——扁平归一单条目 / charts[] 浅拷贝 / ==1 扁平 >1 charts[] / 条目级空值清洗 / 多图往返幂等。
-- `CreateEditViewForm.test.tsx`：图表类型渲染、visibleWhen 条件显隐（scatter 出 X/Y 隐维度/聚合；histogram 出分箱）、提交 opts。
+- `CreateEditViewForm.test.tsx`：图表类型渲染、visibleWhen 条件显隐（scatter 出 X/Y 隐维度/聚合；histogram 出分箱）、提交 opts；chart 多图条目管理 3 条——新建多图添加后逐条目配置提交为 charts[] 形态 / 编辑 charts[] 视图条目回显可切换且修改仅落当前条目 / 扁平单图添加再删除写回扁平形态（双形态不并存）。
 - `test_views_api.py`：chart 视图创建 201（bar + scatter + line + pie + boxplot + histogram 全 6 种类型）与 400（measure_field/x_field/group_field 不存在）；多图 charts[] 合法创建 201 并原样存取、charts[1].measure_field 不存在 400（detail 定位索引）、charts 元素非 dict 400；6 种 chart_type 在同一张表上连续创建（模拟 seed 注入）都通过校验并正确列出。
 - `examples/datasets/*/views.json` 所有 chart 视图引用字段经 CSV 表头/硬编码表字段校验通过；扫描验证 15 个 chart 视图（10 个多图视图共 29 个图表配置 + 5 个扁平单图，bar×9 / line×5 / pie×5 / scatter×4 / histogram×6 / boxplot×5）全部字段引用有效。
 - e2e `view-mode-switch.spec.ts`：电商销售表点图表按钮 → SVG 图表 + 统计面板渲染。

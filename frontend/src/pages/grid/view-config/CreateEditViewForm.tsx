@@ -9,17 +9,21 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Form, Input, Select, Switch } from 'antd'
-import { RightOutlined } from '@ant-design/icons'
+import { Button, Form, Input, Segmented, Select, Switch, Tooltip } from 'antd'
+import { DeleteOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons'
 import type { Field } from '@/api'
 import {
+  CHART_OPTIONS,
   COLLAPSED_BY_DEFAULT_GROUPS,
   getOptionSchema,
   groupOptionSchema,
+  normalizeChartList,
   optionColSpan,
   resolveFieldOptions,
+  serializeChartList,
 } from './viewOptionSchema'
 import type { ViewOptionSchema } from './viewOptionSchema'
+import { useChartListDraft } from './useChartListDraft'
 import DoneFlagFields from '../views/DoneFlagFields'
 
 // ── 类型 ──────────────────────────────────────────
@@ -164,9 +168,15 @@ export default function CreateEditViewForm({
         .map(s => [s.label, COLLAPSED_BY_DEFAULT_GROUPS.has(s.label)]),
     ),
   )
+  // chart 多图条目草稿（共享 hook：条目切换 / patch / 增删 + 双形态写回；仅 chart 视图消费）
+  const chartDraft = useChartListDraft(opts, setOpts)
+  const isChartView = vt === 'chart'
 
-  // 传 opts 使 visibleWhen 生效（chart 等视图按 chart_type 条件显隐）；既有 schema 无 visibleWhen，语义不变
-  const sections = useMemo(() => groupOptionSchema(getOptionSchema(vt), opts), [vt, opts])
+  // 传 opts 使 visibleWhen 生效（chart 按当前条目的 chart_type 条件显隐）；既有 schema 无 visibleWhen，语义不变
+  const sections = useMemo(
+    () => groupOptionSchema(getOptionSchema(vt), isChartView ? chartDraft.activeEntry : opts),
+    [vt, opts, isChartView, chartDraft.activeEntry],
+  )
   // 折叠重置只跟随分区标签集合变化（chart_type 切换时分区 items 变但标签恒定，不应重置用户折叠态）
   const sectionLabels = sections.map(s => s.label).join('\u0000')
 
@@ -213,13 +223,35 @@ export default function CreateEditViewForm({
           </div>
           <div className="cevf-col-1">
             <Form.Item label="视图类型">
-              <Select value={vt} onChange={(v) => { setVt(v); setOpts({}) }} options={viewTypeOptions} />
+              <Select value={vt} onChange={(v) => { setVt(v); setOpts({}); chartDraft.setActiveIdx(0) }} options={viewTypeOptions} />
             </Form.Item>
           </div>
         </div>
       </SectionCard>
 
-      {/* 视图专属配置：按 schema 分区渲染（分区卡片 + 两列网格 + 折叠） */}
+      {/* chart 多图条目管理条：切换 / 添加 / 删除（与 ViewConfigDialog 语义一致，上限 6、至少 1 个） */}
+      {isChartView && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0 4px', flexWrap: 'wrap' }}>
+          <Segmented
+            size="small"
+            value={chartDraft.activeIdx}
+            onChange={(v) => chartDraft.setActiveIdx(Number(v))}
+            options={chartDraft.list.map((_, i) => ({ label: `图表 ${i + 1}`, value: i }))}
+          />
+          <Tooltip title={chartDraft.list.length >= 6 ? '最多 6 个图表' : '新增一个图表条目'}>
+            <Button size="small" type="dashed" icon={<PlusOutlined />} disabled={chartDraft.list.length >= 6} onClick={chartDraft.addEntry}>
+              添加图表
+            </Button>
+          </Tooltip>
+          <Tooltip title={chartDraft.list.length <= 1 ? '至少保留一个图表' : '删除当前图表'}>
+            <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={chartDraft.list.length <= 1} onClick={chartDraft.removeEntry}>
+              删除当前图表
+            </Button>
+          </Tooltip>
+        </div>
+      )}
+
+      {/* 视图专属配置：按 schema 分区渲染（分区卡片 + 两列网格 + 折叠）；chart 时读写当前图表条目 */}
       {sections.map(sec => (
         <SectionCard
           key={sec.label}
@@ -233,7 +265,15 @@ export default function CreateEditViewForm({
                 key={opt.key}
                 className={optionColSpan(opt.kind) === 2 ? 'cevf-col-2' : 'cevf-col-1'}
               >
-                <ConfigItem opt={opt} fields={fields} opts={opts} updateOpt={updateOpt} />
+                <ConfigItem
+                  opt={opt}
+                  fields={fields}
+                  opts={isChartView ? chartDraft.activeEntry : opts}
+                  updateOpt={(key, value) => {
+                    if (isChartView) { chartDraft.patchEntry({ [key]: value }); return }
+                    updateOpt(key, value)
+                  }}
+                />
               </div>
             ))}
           </div>
@@ -242,7 +282,19 @@ export default function CreateEditViewForm({
 
       <div className="cevf-footer">
         <Button type="primary" disabled={!name.trim()}
-          onClick={() => onSubmit(name.trim(), vt, opts)}>{submitLabel}</Button>
+          onClick={() => {
+            let finalOpts = opts
+            if (vt === 'chart') {
+              // chart：以 normalize/serialize 双向转换产物为准（charts[] 与扁平键不并存，条目级空值清洗）
+              const base: Record<string, unknown> = { ...opts }
+              delete base.charts
+              for (const opt of CHART_OPTIONS) delete base[opt.key]
+              const ser = serializeChartList(normalizeChartList(opts))
+              if (ser) Object.assign(base, ser)
+              finalOpts = base
+            }
+            onSubmit(name.trim(), vt, finalOpts)
+          }}>{submitLabel}</Button>
       </div>
     </Form>
   )
