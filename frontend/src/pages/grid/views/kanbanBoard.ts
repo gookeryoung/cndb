@@ -300,7 +300,12 @@ export function resolveGroupField(fields: Field[], opts: Record<string, unknown>
   return { name, def }
 }
 
-/** 计算单行在分组字段上的列 key（link/multi_select/select 按首值标签，空值归 '未分组'） */
+/** 计算单行在分组字段上的列 key.
+ *
+ * 类型分派与 matrixBoard.axisKeyForRow 对齐：link/multi_select 取首值标签，
+ * select 按字段 options 映射标签，date/datetime 按天分桶（YYYY-MM-DD），
+ * boolean 按 是/否，空值归 '未分组'。
+ */
 function groupKeyForRow(row: RowResponse, groupField: string, groupFieldDef: Field | undefined): string {
   const rawVal = row[groupField]
   let key: string
@@ -313,6 +318,19 @@ function groupKeyForRow(row: RowResponse, groupField: string, groupFieldDef: Fie
       key = getMultiSelectFirstLabel(rawVal)
     } else if (ft === 'select') {
       key = getSelectLabel(groupFieldDef, rawVal) || String(rawVal || '')
+    } else if (ft === 'date' || ft === 'datetime') {
+      if (rawVal === null || rawVal === undefined || rawVal === '') {
+        key = ''
+      } else {
+        const d = dayjs(String(rawVal))
+        key = d.isValid() ? d.format('YYYY-MM-DD') : ''
+      }
+    } else if (ft === 'boolean') {
+      if (rawVal === null || rawVal === undefined || rawVal === '') {
+        key = ''
+      } else {
+        key = rawVal ? '是' : '否'
+      }
     } else {
       key = rawVal !== null && rawVal !== undefined && rawVal !== '' ? String(rawVal) : ''
     }
