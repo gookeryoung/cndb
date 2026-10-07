@@ -438,10 +438,11 @@ export default function GanttView({
   const totalDays = timeRange ? daysBetween(timeRange.min, timeRange.max) : 365
   const resolvedLevel = zoomLevel ?? (timeRange ? selectZoomLevelForScale(scale, totalDays) : 2)
 
-  // 只有用户还没手动调过 zoom 时才做视口宽度微调（避免覆盖用户手动选择）
+  // 只有用户还没手动调过 zoom 时才做视口宽度微调（避免覆盖用户手动选择）。
+  // 传入 scale 限制 autoAdjustLevel 只在同粒度档位内调整，避免用户切换天/周/月/季时粒度漂移。
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200
   const finalLevel = zoomLevel == null && timeRange
-    ? autoAdjustLevel(resolvedLevel, totalDays, viewportWidth)
+    ? autoAdjustLevel(resolvedLevel, totalDays, viewportWidth, scale)
     : resolvedLevel
 
   // 构建双层时间轴
