@@ -58,6 +58,15 @@
 - `journal_mode=WAL` 切换失败（锁竞争/文件系统不支持）：记 warning，本次连接沿用默认日志模式，synchronous 保持默认。
 - 反射缓存未命中且表不存在：按调用方原错误文案抛 RuntimeError，错误语义与缓存化前一致。
 
+## 看板切换渲染性能（F4）
+
+- **根因**：KanbanView 根容器仅有 `minHeight: 300` 无高度约束，列随内容生长到全高 → 列内 `overflowY: auto` 永不滚动、`useVirtualizer` 视口测量失效（视口=全量内容）；叠加虚拟化阈值 100，真实数据（500 行产品开发表按片区/项目类别分组）单列 60-90 行全部走非虚拟分支 → 切换视图时同步全量挂载 500 张重型 antd 卡片（Tag/Tooltip/Progress），主线程长任务卡顿。
+- **修复契约**：
+  - KanbanView 根容器 `flex: 1, minHeight: 300`——作为 GridPage 主内容区（column flex）的 flex item 占满剩余高度，列高度受约束；卡片列表滚动容器加 `minHeight: 0` 允许在 flex column 内收缩，内容超高时列内滚动而非撑开整列。
+  - 列内虚拟化阈值 100 → 30：单列 ≥ 30 行启用虚拟滚动（估算高度 + `measureElement` 动态修正），30 行以下全量渲染。
+  - GridPage `handleDeleteCard` / `handleToggleDone` 的 `useCallback` 依赖改用 `mutate`（React Query 保证稳定）而非 mutation 结果对象——结果对象每渲染都是新引用，会使回调每渲染重建、`KanbanCard` 的 memo 全部失效并全量重渲染。
+- **回归测试**：KanbanView.test.tsx「大数据量渲染性能」——90 行单列（低于旧阈值、超过新阈值）断言挂载卡片数 < 50；jsdom 下虚拟器视口为 0，仅渲染窗口内条目，断言确定性成立。
+
 ## 实现状态
 
 - [x] F1 后端 GZipMiddleware（app.py，`minimum_size=1024`）
@@ -65,6 +74,7 @@
 - [x] B2 物理表反射缓存 + DDL 失效钩子（ddl.py `get_reflected_table` / `invalidate_reflected_table`，records/links/lookups/field_ops 接入）
 - [x] F2 GridCell memo + props 稳定化（onCellSave 契约，buildColumns 普通分支改传）
 - [x] F3 报表编辑器 React.lazy + Suspense（ReportsPage，编辑器独立按需 chunk）
+- [x] F4 看板切换渲染性能（KanbanView 高度约束 + 虚拟化阈值 30 + GridPage 回调稳定化）
 
 ## 待实现（后续批次）
 

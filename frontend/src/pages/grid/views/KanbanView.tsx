@@ -508,7 +508,7 @@ function estimateCardHeight(density: Density): number {
   return 115
 }
 
-/** 单列看板列组件 —— 当 rows >= 100 时启用虚拟滚动，否则全量渲染更简单 */
+/** 单列看板列组件 —— 当 rows >= 30 时启用虚拟滚动，否则全量渲染更简单 */
 interface KanbanColumnProps {
   col: KanbanColumnData
   fields: Field[]
@@ -526,7 +526,9 @@ interface KanbanColumnProps {
 
 function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDeleteCard, canDelete, onAddCard, canAdd, onToggleDone, canEdit }: KanbanColumnProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const useVirtual = col.rows.length >= 100
+  // 阈值 30：真实数据（如 500 行项目表按片区分组）单列常在 60-90 行，
+  // 旧阈值 100 下这些列全量挂载重型 antd 卡片导致切看板卡顿
+  const useVirtual = col.rows.length >= 30
   const estimatedSize = estimateCardHeight(density)
 
   const virtualizer = useVirtualizer({
@@ -615,8 +617,8 @@ function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDele
         </span>
       </div>
 
-      {/* 卡片列表 */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto' }}>
+      {/* 卡片列表 —— minHeight:0 允许在 flex column 内收缩，内容超高时列内滚动而非撑开整列 */}
+      <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {col.rows.length === 0 ? (
           <div
             style={{
@@ -740,6 +742,9 @@ export default function KanbanView({
         gap: colStyle.gap,
         overflowX: 'auto',
         paddingBottom: colStyle.padding,
+        // flex:1 占满主内容区剩余高度 —— 列高度受约束后卡片列表才能在列内滚动，
+        // 虚拟化视口测量才有效；无高度约束时列随内容生长，500 张卡片全量挂载导致切看板卡顿
+        flex: 1,
         minHeight: 300,
       }}
     >

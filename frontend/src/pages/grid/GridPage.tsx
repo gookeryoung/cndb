@@ -443,16 +443,18 @@ export default function GridPage() {
   const updateRow = useUpdateRowOptimistic(wid!, tid!)
 
   /** 看板等视图删除单张卡片 */
+  // 依赖 mutate（React Query 保证稳定）而非 mutation 结果对象 —— 结果对象每渲染都是
+  // 新引用，会导致回调每渲染重建、看板卡片 memo 全部失效并全量重渲染
   const handleDeleteCard = useCallback((r: RowResponse) => {
     deleteRows.mutate([r.id as number | string], {
       onSuccess: () => message.success('已删除'),
     })
-  }, [deleteRows, message])
+  }, [deleteRows.mutate, message])
 
   /** 看板卡片勾选/取消完成 —— 直接把 done_field 目标值写回该行 */
   const handleToggleDone = useCallback((r: RowResponse, values: RowValues) => {
     updateRow.mutate({ rowId: r.id as number | string, values })
-  }, [updateRow])
+  }, [updateRow.mutate])
   const copyRow = useMutation({
     mutationFn: async (ids: Array<number | string>) => {
       const copies: Array<Record<string, unknown>> = []
