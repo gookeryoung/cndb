@@ -111,13 +111,13 @@ interface ModeBtn {
   icon: React.ReactNode
 }
 const MODE_BUTTONS: readonly ModeBtn[] = [
-  { mode: 'grid', tooltip: '表格视图：行列结构，适合录入与批量管理', icon: <ColumnHeightOutlined /> },
-  { mode: 'kanban', tooltip: '看板视图：按选择字段分组拖拽流转，适合任务跟踪', icon: <AppstoreOutlined /> },
-  { mode: 'calendar', tooltip: '日历视图：按日期字段排布在月历上', icon: <CalendarOutlined /> },
-  { mode: 'gantt', tooltip: '甘特图视图：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
-  { mode: 'wbs', tooltip: '工作分解视图：树状层级组织任务', icon: <PartitionOutlined /> },
-  { mode: 'matrix', tooltip: '矩阵视图：行列分类交叉，数据按类别填入单元格', icon: <TableOutlined /> },
-  { mode: 'chart', tooltip: '图表视图：柱状/折线/饼图/散点/直方图/箱线图与统计分析', icon: <BarChartOutlined /> },
+  { mode: 'grid', tooltip: '表格 (Grid)：行列结构，适合录入与批量管理', icon: <ColumnHeightOutlined /> },
+  { mode: 'kanban', tooltip: '看板 (Kanban)：按选择字段分组拖拽流转，适合任务跟踪', icon: <AppstoreOutlined /> },
+  { mode: 'calendar', tooltip: '日历 (Calendar)：按日期字段排布在月历上', icon: <CalendarOutlined /> },
+  { mode: 'gantt', tooltip: '甘特图 (Gantt)：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
+  { mode: 'wbs', tooltip: '工作分解 (WBS)：树状层级组织任务', icon: <PartitionOutlined /> },
+  { mode: 'matrix', tooltip: '矩阵 (Matrix)：行列分类交叉，数据按类别填入单元格', icon: <TableOutlined /> },
+  { mode: 'chart', tooltip: '图表 (Chart)：柱状/折线/饼图/散点/直方图/箱线图与统计分析', icon: <BarChartOutlined /> },
 ]
 
 /** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */

@@ -17,7 +17,7 @@ import {
   InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
   SaveOutlined, EditOutlined, PlusOutlined, DeleteOutlined, StarOutlined,
   ColumnHeightOutlined, CalendarOutlined, LineChartOutlined, PartitionOutlined,
-  HolderOutlined,
+  HolderOutlined, TableOutlined, BarChartOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -36,11 +36,13 @@ const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
 
 /** 视图类型 → 中文标签 + 图标（与 GridPage MODE_BUTTONS 保持一致） */
 const VIEW_MODE_META: Record<string, { label: string; icon: ReactNode }> = {
-  grid: { label: '表格', icon: <ColumnHeightOutlined /> },
-  kanban: { label: '看板', icon: <AppstoreOutlined /> },
-  calendar: { label: '日历', icon: <CalendarOutlined /> },
-  gantt: { label: '甘特图', icon: <LineChartOutlined /> },
-  wbs: { label: '工作分解', icon: <PartitionOutlined /> },
+  grid: { label: '表格 (Grid)', icon: <ColumnHeightOutlined /> },
+  kanban: { label: '看板 (Kanban)', icon: <AppstoreOutlined /> },
+  calendar: { label: '日历 (Calendar)', icon: <CalendarOutlined /> },
+  gantt: { label: '甘特图 (Gantt)', icon: <LineChartOutlined /> },
+  wbs: { label: '工作分解 (WBS)', icon: <PartitionOutlined /> },
+  matrix: { label: '矩阵 (Matrix)', icon: <TableOutlined /> },
+  chart: { label: '图表 (Chart)', icon: <BarChartOutlined /> },
 }
 
 interface Props {
