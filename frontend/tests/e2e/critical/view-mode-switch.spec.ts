@@ -71,9 +71,17 @@ async function assertModeButtonExists(
 
 const ANON = ["setup", "chromium-anon"];
 
+/** 与 seed 真实数据对齐的按钮数预期（2026-10 校准，chart 全面注入）：
+ *  部门表 → 0（仅 grid，按钮组隐藏）
+ *  科研项目 → 3（grid+kanban+chart）
+ *  产品开发 → 5（grid+kanban+calendar+gantt+chart）
+ *  客户流失 → 3（grid+kanban+chart）
+ *  电商销售 → 3（grid+kanban+chart，另含 seed 注入的 chart 视图）
+ */
+
 test.describe("视图类型切换按钮 — 按数据表 views 动态配置", () => {
   // 代表性 1 例（矩阵全量断言已下沉至 viewModes.test.ts）
-  test("科研项目（科研项目管理）→ 模式按钮组显示 2 个按钮", async ({
+  test("科研项目（科研项目管理）→ 模式按钮组显示 3 个按钮", async ({
     page,
     request,
   }) => {
@@ -81,7 +89,7 @@ test.describe("视图类型切换按钮 — 按数据表 views 动态配置", ()
 
     const wid = await getWorkspaceId(request, "科研项目管理");
     await gotoTable(page, request, wid, "科研项目");
-    await assertModeButtonCount(page, 2);
+    await assertModeButtonCount(page, 3);
   });
 });
 
@@ -94,7 +102,7 @@ test.describe("动态按钮组 — 点击切换行为回归", () => {
     const wid = await getWorkspaceId(request, "科研项目管理");
     await gotoTable(page, request, wid, "科研项目");
 
-    await assertModeButtonCount(page, 2);
+    await assertModeButtonCount(page, 3);
 
     // 点击看板按钮 → Segmented 跳转到 kanban 类型的视图
     const kanbanBtn = page.locator('.ant-btn[data-mode="kanban"]');
@@ -126,11 +134,11 @@ test.describe("图表视图 — seed 注入的 chart 视图", () => {
     await settle(page);
 
     // ECharts SVGRenderer 在容器内渲染 svg
-    const container = page.getByTestId("chart-container");
+    const container = page.getByTestId("chart-container").first();
     await expect(container).toBeVisible({ timeout: 10000 });
     await expect(container.locator("svg").first()).toBeVisible();
     // 统计面板默认显示（show_stats_panel 未配置 → 默认开）
-    await expect(page.getByTestId("chart-stats-panel")).toBeVisible();
+    await expect(page.getByTestId("chart-stats-panel").first()).toBeVisible();
   });
 });
 
@@ -145,18 +153,18 @@ test.describe("跨表导航 — 模式按钮组跟随数据表 views 变化", ()
 
     const wid = await getWorkspaceId(request, "企业销售");
 
-    // 1. 部门表：0 个模式按钮（仅 grid）
+    // 1. 部门表：0 个模式按钮（仅 grid，按钮组隐藏）
     await gotoTable(page, request, wid, "部门表");
     await assertModeButtonCount(page, 0);
 
-    // 2. 产品开发表：4 个模式按钮（缺 wbs，gallery 已移除）
+    // 2. 产品开发表：5 个模式按钮（grid+kanban+calendar+gantt+chart，缺 wbs）
     await gotoTable(page, request, wid, "产品开发");
-    await assertModeButtonCount(page, 4);
+    await assertModeButtonCount(page, 5);
     await assertModeButtonExists(page, "wbs", false);
 
-    // 3. 客户流失表：2 个模式按钮（grid+kanban，gallery 已移除）
+    // 3. 客户流失表：3 个模式按钮（grid+kanban+chart）
     await gotoTable(page, request, wid, "客户流失");
-    await assertModeButtonCount(page, 2);
+    await assertModeButtonCount(page, 3);
     await assertModeButtonExists(page, "wbs", false);
   });
 });
