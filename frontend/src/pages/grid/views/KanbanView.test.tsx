@@ -292,12 +292,30 @@ describe('KanbanView 完成勾选框', () => {
   })
 })
 
+describe('KanbanView 大数据量渲染性能', () => {
+  it('单列行数超过虚拟化阈值时启用虚拟滚动，不全量挂载所有卡片', () => {
+    // 90 行单列（低于旧阈值 100、超过新阈值）：真实场景为 500 行产品开发表
+    // 按片区分组后的大列 —— 旧逻辑走非虚拟分支全量挂载 90 张卡片导致切看板卡顿
+    const bigRows: RowResponse[] = Array.from({ length: 90 }, (_, i) => ({
+      id: i + 1,
+      名称: `任务${i + 1}`,
+      状态: '进行中',
+      进度: 50,
+    }))
+    renderKanban({ rows: bigRows })
+
+    // 虚拟化生效时仅挂载可视窗口 + overscan 的卡片；若全量挂载则为 200 张
+    const mountedCards = document.querySelectorAll('.ant-progress').length
+    expect(mountedCards).toBeLessThan(50)
+  })
+})
+
 describe('KanbanView 严重程度分级背景色', () => {
   /** 任务 fixture —— 同一天、不同截止日期偏移，覆盖 5 个严重程度档位 */
   const tierRows: RowResponse[] = [
     { id: 1, 名称: '逾期-10天', 状态: '进行中', 截止: offsetDate(-10) },   // 逾期（统一一档 85% danger）
-    { id: 2, 名称: '逾期-5天',  状态: '进行中', 截止: offsetDate(-5) },    // 逾期（同上，与逾期天数无关）
-    { id: 3, 名称: '逾期-2天',  状态: '进行中', 截止: offsetDate(-2) },    // 逾期（同上）
+    { id: 2, 名称: '逾期-5天', 状态: '进行中', 截止: offsetDate(-5) },    // 逾期（同上，与逾期天数无关）
+    { id: 3, 名称: '逾期-2天', 状态: '进行中', 截止: offsetDate(-2) },    // 逾期（同上）
     { id: 4, 名称: '紧急-明天', 状态: '进行中', 截止: offsetDate(1) },     // 剩 0-1 天 → 60% warning
     { id: 5, 名称: '紧急-后天', 状态: '进行中', 截止: offsetDate(3) },     // 剩 2-3 天 → 30% warning
     { id: 6, 名称: '正常-10天', 状态: '进行中', 截止: offsetDate(10) },    // 正常 → 无背景
