@@ -29,6 +29,8 @@ if (!mainMatch) fail('dist/index.html 未找到主入口 script，请先执行 p
 const assets = readdirSync(assetsDir)
 const gridFile = assets.find((f) => /^GridPage-.*\.js$/.test(f))
 if (!gridFile) fail('dist/assets 未找到 GridPage chunk，请先执行 pnpm build')
+const chartFile = assets.find((f) => /^ChartView-.*\.js$/.test(f))
+if (!chartFile) fail('dist/assets 未找到 ChartView chunk，请先执行 pnpm build')
 
 /** gzip 字节数，与生产服务器 Content-Encoding: gzip 的实际传输体积一致 */
 const gzipSize = (file) => gzipSync(readFileSync(path.join(assetsDir, file))).length
@@ -40,7 +42,10 @@ const TOLERANCE = 1.05
 const BASELINES = [
   { name: '主入口 index', file: mainMatch[1], baseline: 185_324 },
   // 2026-09-26：排序三态、列宽估算/拖宽、列序 DnD 及重置入口三项功能提交（b05350d/95a638e/b3c7f5c）使 GridPage 增长约 2.5KB gzip
-  { name: 'GridPage（表页闭包）', file: gridFile, baseline: 36_946 },
+  // 2026-10-07：图表视图接线（chart 模式按钮 + lazy 渲染分支 + KANBAN_MODES fetch-all 集合）使 GridPage 增长约 1.8KB gzip
+  { name: 'GridPage（表页闭包）', file: gridFile, baseline: 38_793 },
+  // 2026-10-07：图表视图新增 ChartView chunk（echarts/core 按需 + SVGRenderer + simple-statistics，懒加载不进主包）
+  { name: 'ChartView（图表视图）', file: chartFile, baseline: 204_265 },
 ]
 
 let over = false

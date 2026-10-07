@@ -41,6 +41,8 @@ export interface ViewOptionSchema {
   enumOptions?: Array<{ value: string | number | boolean; label: string }>
   /** 默认值（未配置时回退） */
   defaultValue?: unknown
+  /** 条件显隐：根据当前 opts（含其他 option 的值）判断本项是否渲染；undefined 恒显示（既有 schema 语义不变） */
+  visibleWhen?: (opts: Record<string, unknown>) => boolean
 }
 
 // ── 各视图的 option schema 列表 ─────────────────────────
@@ -248,6 +250,105 @@ export const MATRIX_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
+/** Chart 图表视图的专属配置字段（共 11 项）— 各项按 chart_type 条件显隐（visibleWhen） */
+export const CHART_OPTIONS: ViewOptionSchema[] = [
+  {
+    key: 'chart_type', label: '图表类型', group: '图表配置',
+    tooltip: '柱状图/折线图/饼图适合维度聚合；散点图看两变量关系；直方图/箱线图看分布',
+    kind: 'enum_select', defaultValue: 'bar',
+    enumOptions: [
+      { value: 'bar', label: '柱状图' },
+      { value: 'line', label: '折线图' },
+      { value: 'pie', label: '饼图' },
+      { value: 'scatter', label: '散点图' },
+      { value: 'histogram', label: '直方图' },
+      { value: 'boxplot', label: '箱线图' },
+    ],
+  },
+  {
+    key: 'dimension_field', label: '维度字段', group: '图表配置',
+    tooltip: 'X 轴（或饼图扇区）的分类字段；日期字段可按粒度分桶',
+    kind: 'field_select',
+    fieldTypes: ['select', 'multiselect', 'link', 'text', 'longtext', 'date', 'datetime', 'boolean'],
+    required: true,
+    visibleWhen: (o) => ['bar', 'line', 'pie', 'boxplot'].includes(String(o.chart_type ?? 'bar')),
+  },
+  {
+    key: 'measure_field', label: '度量字段', group: '图表配置',
+    tooltip: '被聚合/统计的数值字段（散点图改用 X/Y 字段）',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
+    required: true,
+    visibleWhen: (o) => ['bar', 'line', 'pie', 'histogram', 'boxplot'].includes(String(o.chart_type ?? 'bar')),
+  },
+  {
+    key: 'x_field', label: 'X 数值字段', group: '图表配置',
+    tooltip: '散点图横轴的数值字段',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
+    required: true,
+    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'scatter',
+  },
+  {
+    key: 'y_field', label: 'Y 数值字段', group: '图表配置',
+    tooltip: '散点图纵轴的数值字段',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
+    required: true,
+    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'scatter',
+  },
+  {
+    key: 'group_field', label: '系列分组字段', group: '图表配置',
+    tooltip: '按此字段的值拆分为多个系列（如各产品线各一条折线）',
+    kind: 'field_select', fieldTypes: ['select', 'multiselect', 'link'],
+    visibleWhen: (o) => ['bar', 'line'].includes(String(o.chart_type ?? 'bar')),
+  },
+  {
+    key: 'aggregation', label: '聚合方式', group: '聚合与分箱',
+    tooltip: '同一维度桶内多行如何合成一个数值',
+    kind: 'enum_select', defaultValue: 'sum',
+    enumOptions: [
+      { value: 'sum', label: '求和 (sum)' },
+      { value: 'avg', label: '平均 (avg)' },
+      { value: 'count', label: '计数 (count)' },
+      { value: 'min', label: '最小值 (min)' },
+      { value: 'max', label: '最大值 (max)' },
+    ],
+    visibleWhen: (o) => ['bar', 'line', 'pie'].includes(String(o.chart_type ?? 'bar')),
+  },
+  {
+    key: 'date_granularity', label: '日期分桶粒度', group: '聚合与分箱',
+    tooltip: '维度字段是日期时，按此粒度合并（年/季度/月/周/日）',
+    kind: 'enum_select', defaultValue: 'month',
+    enumOptions: [
+      { value: 'year', label: '年' },
+      { value: 'quarter', label: '季度' },
+      { value: 'month', label: '月' },
+      { value: 'week', label: '周' },
+      { value: 'day', label: '日' },
+    ],
+  },
+  {
+    key: 'bin_policy', label: '分箱策略', group: '聚合与分箱',
+    tooltip: '直方图分箱数计算方法：自动=平方根 / Sturges / Freedman-Diaconis（IQR=0 时回退 Sturges）',
+    kind: 'enum_select', defaultValue: 'auto',
+    enumOptions: [
+      { value: 'auto', label: '自动（平方根）' },
+      { value: 'sturges', label: 'Sturges' },
+      { value: 'freedman-diaconis', label: 'Freedman-Diaconis' },
+    ],
+    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'histogram',
+  },
+  {
+    key: 'show_stats_panel', label: '显示统计面板', group: '显示',
+    tooltip: '图表下方展示描述统计（均值/中位数/标准差/分位数/偏度/离群值等）',
+    kind: 'switch', defaultValue: true,
+  },
+  {
+    key: 'show_trend_line', label: '显示趋势线', group: '显示',
+    tooltip: '散点图叠加最小二乘回归线并展示 Pearson r 与 R²',
+    kind: 'switch', defaultValue: false,
+    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'scatter',
+  },
+]
+
 /** 按 view_type 名返回 option schema 列表 */
 export function getOptionSchema(viewType: string): ViewOptionSchema[] {
   switch (viewType) {
@@ -256,6 +357,7 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
     case 'gantt': return GANTT_OPTIONS
     case 'wbs': return WBS_OPTIONS
     case 'matrix': return MATRIX_OPTIONS
+    case 'chart': return CHART_OPTIONS
     default: return []
   }
 }
@@ -274,10 +376,17 @@ export interface ViewOptionSection {
  *
  * 分区顺序 = 分区名首次出现的顺序；同分区内保持 schema 原顺序；
  * 未标注 group 的 option 统一归入「其他」（因此排在最后，除非显式声明过该名）。
+ *
+ * 传入 opts 时先按 visibleWhen 过滤（undefined 恒保留），全部项被过滤掉的分区整体剔除；
+ * opts 为 undefined 时不做过滤（既有调用语义不变）。
  */
-export function groupOptionSchema(schema: ViewOptionSchema[]): ViewOptionSection[] {
+export function groupOptionSchema(
+  schema: ViewOptionSchema[],
+  opts?: Record<string, unknown>,
+): ViewOptionSection[] {
   const sections: ViewOptionSection[] = []
   for (const opt of schema) {
+    if (opts !== undefined && opt.visibleWhen && !opt.visibleWhen(opts)) continue
     const label = opt.group ?? '其他'
     let section = sections.find((s) => s.label === label)
     if (!section) {

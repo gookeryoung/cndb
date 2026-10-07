@@ -24,9 +24,14 @@ function openSelect(idx: number) {
   fireEvent.mouseDown(selector)
 }
 
-/** 点击下拉选项 content 元素（冒泡到选项根触发选中） */
+/** 点击下拉选项 content 元素（冒泡到选项根触发选中）.
+ *
+ * findAllByText + 取最后一个：连续操作多个下拉时，前一个下拉的 portal 选项可能
+ * 仍残留在 DOM（同一文本命中多个），最新打开的下拉渲染在最后。
+ */
 async function pickOption(text: string) {
-  fireEvent.click(await screen.findByText(text, { selector: '.ant-select-item-option-content' }))
+  const opts = await screen.findAllByText(text, { selector: '.ant-select-item-option-content' })
+  fireEvent.click(opts.at(-1)!)
 }
 
 describe('CreateEditViewForm 视图表单', () => {
@@ -221,5 +226,92 @@ describe('CreateEditViewForm 分区与折叠布局', () => {
 
     expect(screen.getByText('基础信息')).toBeInTheDocument()
     expect(document.querySelectorAll('.cevf-section')).toHaveLength(1)
+  })
+})
+
+describe('CreateEditViewForm 图表视图配置', () => {
+  const chartFields = [
+    ...fields,
+    makeField({ id: 5, name: '金额', field_type: 'number' }),
+    makeField({ id: 6, name: '工时', field_type: 'number' }),
+  ]
+
+  it('切换类型到图表：渲染 chart 专属配置与三个分区', async () => {
+    renderProviders(<CreateEditViewForm fields={chartFields} onSubmit={vi.fn()} />)
+
+    openSelect(0)
+    await pickOption('图表')
+
+    expect(screen.getByText('图表类型')).toBeInTheDocument()
+    expect(screen.getByText('维度字段')).toBeInTheDocument()
+    expect(screen.getByText('度量字段')).toBeInTheDocument()
+    expect(screen.getByText('系列分组字段')).toBeInTheDocument()
+    expect(screen.getByText('聚合方式')).toBeInTheDocument()
+    expect(screen.getByText('日期分桶粒度')).toBeInTheDocument()
+    expect(screen.getByText('显示统计面板')).toBeInTheDocument()
+  })
+
+  it('chart_type 切到散点图：X/Y 数值字段出现，维度字段与聚合方式隐藏（visibleWhen），提交携带 chart_type', async () => {
+    const onSubmit = vi.fn()
+    renderProviders(
+      <CreateEditViewForm
+        fields={chartFields} initialName="散点" initialType="chart" onSubmit={onSubmit}
+      />,
+    )
+
+    // chart_type 是 chart 模式下第一个配置 Select（整体第 2 个）
+    openSelect(1)
+    await pickOption('散点图')
+
+    expect(screen.getByText('X 数值字段')).toBeInTheDocument()
+    expect(screen.getByText('Y 数值字段')).toBeInTheDocument()
+    expect(screen.getByText('显示趋势线')).toBeInTheDocument()
+    expect(screen.queryByText('维度字段')).not.toBeInTheDocument()
+    expect(screen.queryByText('系列分组字段')).not.toBeInTheDocument()
+    expect(screen.queryByText('聚合方式')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
+    expect(onSubmit).toHaveBeenCalledWith('散点', 'chart', { chart_type: 'scatter' })
+  })
+
+  it('chart_type 切到直方图：分箱策略出现、维度字段与散点专属项隐藏', async () => {
+    renderProviders(
+      <CreateEditViewForm
+        fields={chartFields} initialName="直方" initialType="chart" onSubmit={vi.fn()}
+      />,
+    )
+
+    openSelect(1)
+    await pickOption('直方图')
+
+    expect(screen.getByText('分箱策略')).toBeInTheDocument()
+    expect(screen.getByText('度量字段')).toBeInTheDocument()
+    expect(screen.queryByText('维度字段')).not.toBeInTheDocument()
+    expect(screen.queryByText('X 数值字段')).not.toBeInTheDocument()
+    expect(screen.queryByText('显示趋势线')).not.toBeInTheDocument()
+  })
+
+  it('散点图配置 X/Y 字段后提交：opts 携带 x_field / y_field', async () => {
+    const onSubmit = vi.fn()
+    renderProviders(
+      <CreateEditViewForm
+        fields={chartFields} initialName="金额散点" initialType="chart" onSubmit={onSubmit}
+      />,
+    )
+
+    openSelect(1)
+    await pickOption('散点图')
+    // X 数值字段（整体第 2 个 Select）、Y 数值字段（第 3 个）—— 候选仅数值类字段
+    openSelect(2)
+    await pickOption('金额 (number)')
+    openSelect(3)
+    await pickOption('工时 (number)')
+
+    fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
+    expect(onSubmit).toHaveBeenCalledWith('金额散点', 'chart', {
+      chart_type: 'scatter',
+      x_field: '金额',
+      y_field: '工时',
+    })
   })
 })

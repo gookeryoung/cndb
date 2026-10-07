@@ -107,6 +107,33 @@ test.describe("动态按钮组 — 点击切换行为回归", () => {
   });
 });
 
+// ──────────────────────────── 图表视图切换回归 ────────────────────────────
+
+test.describe("图表视图 — seed 注入的 chart 视图", () => {
+  test("电商销售表点图表按钮 → 切到 chart 视图并渲染 SVG 图表与统计面板", async ({
+    page,
+    request,
+  }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    const wid = await getWorkspaceId(request, "企业销售");
+    await gotoTable(page, request, wid, "电商销售");
+
+    // seed 注入「月度销售额趋势」chart 视图 → 图表按钮存在
+    await assertModeButtonExists(page, "chart", true);
+
+    await page.locator('.ant-btn[data-mode="chart"]').click();
+    await settle(page);
+
+    // ECharts SVGRenderer 在容器内渲染 svg
+    const container = page.getByTestId("chart-container");
+    await expect(container).toBeVisible({ timeout: 10000 });
+    await expect(container.locator("svg").first()).toBeVisible();
+    // 统计面板默认显示（show_stats_panel 未配置 → 默认开）
+    await expect(page.getByTestId("chart-stats-panel")).toBeVisible();
+  });
+});
+
 // ──────────────────────────── 跨表导航切换回归 ────────────────────────────
 
 test.describe("跨表导航 — 模式按钮组跟随数据表 views 变化", () => {

@@ -9,7 +9,7 @@
 import { create } from 'zustand'
 import type { FilterRule, SortRule } from '@/pages/grid/view-config/ViewConfigDialog'
 
-export type ViewMode = 'grid' | 'kanban' | 'calendar' | 'gantt' | 'wbs' | 'matrix'
+export type ViewMode = 'grid' | 'kanban' | 'calendar' | 'gantt' | 'wbs' | 'matrix' | 'chart'
 
 interface GridViewState {
   /** 视图模式 */

@@ -174,19 +174,23 @@ export default function ViewConfigDialog({
     return new Set<string>(Array.isArray(raw) ? raw.map(String) : [])
   }, [draftOpt])
 
-  // 按 group 切分为分区卡片：低频分区（完成状态 / 时间轴 / 操作）默认收起
-  const viewSections = useMemo(() => groupOptionSchema(viewOptFields), [viewOptFields])
+  // 按 group 切分为分区卡片：低频分区（完成状态 / 时间轴 / 操作）默认收起；
+  // 传 draftOpt 使 visibleWhen 生效（chart 按 chart_type 条件显隐），既有 schema 无 visibleWhen 语义不变
+  const viewSections = useMemo(() => groupOptionSchema(viewOptFields, draftOpt), [viewOptFields, draftOpt])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(
     () => Object.fromEntries(
       groupOptionSchema(getOptionSchema(viewType))
         .map(s => [s.label, COLLAPSED_BY_DEFAULT_GROUPS.has(s.label)]),
     ),
   )
+  // 折叠重置只跟随分区标签集合变化（chart_type 切换时分区 items 变但标签恒定，不应重置用户折叠态）
+  const viewSectionLabels = viewSections.map(s => s.label).join('\u0000')
   useEffect(() => {
     setCollapsed(Object.fromEntries(
       viewSections.map(s => [s.label, COLLAPSED_BY_DEFAULT_GROUPS.has(s.label)]),
     ))
-  }, [viewSections])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewSectionLabels])
 
   const viewTabItems = useMemo(() => {
     const items: Array<{ key: string; label: React.ReactNode; children: React.ReactNode }> = [

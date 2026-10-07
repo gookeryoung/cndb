@@ -39,10 +39,12 @@
     "axios": "^1.20.0",
     "dayjs": "^1.11.23",
     "driver.js": "^1.8.0",
+    "echarts": "^6.1.0",
     "nunjucks": "^3.2.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.6",
+    "simple-statistics": "^7.12.1",
     "web-vitals": "^6.2.2",
     "zustand": "^5.0.15"
   },

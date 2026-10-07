@@ -162,14 +162,18 @@ export default function CreateEditViewForm({
     ),
   )
 
-  const sections = useMemo(() => groupOptionSchema(getOptionSchema(vt)), [vt])
+  // 传 opts 使 visibleWhen 生效（chart 等视图按 chart_type 条件显隐）；既有 schema 无 visibleWhen，语义不变
+  const sections = useMemo(() => groupOptionSchema(getOptionSchema(vt), opts), [vt, opts])
+  // 折叠重置只跟随分区标签集合变化（chart_type 切换时分区 items 变但标签恒定，不应重置用户折叠态）
+  const sectionLabels = sections.map(s => s.label).join('\u0000')
 
   // 视图类型切换 → sections 变化 → 按新 schema 的默认收起集合重置折叠状态
   useEffect(() => {
     setCollapsed(Object.fromEntries(
       sections.map(s => [s.label, COLLAPSED_BY_DEFAULT_GROUPS.has(s.label)]),
     ))
-  }, [sections])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionLabels])
 
   const toggleSection = (label: string) => {
     setCollapsed(prev => ({ ...prev, [label]: !prev[label] }))
@@ -191,6 +195,7 @@ export default function CreateEditViewForm({
     { value: 'gantt', label: '甘特图' },
     { value: 'wbs', label: '工作分解' },
     { value: 'matrix', label: '矩阵' },
+    { value: 'chart', label: '图表' },
   ]
 
   return (
