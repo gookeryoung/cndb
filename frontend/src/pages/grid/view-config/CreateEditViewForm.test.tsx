@@ -118,7 +118,7 @@ describe('CreateEditViewForm 视图表单', () => {
     expect(onSubmit).toHaveBeenCalledWith('我的看板', 'grid', {})
   })
 
-  it('switch 配置项：初始 undefined 显示为关，打开后写入 opts', async () => {
+  it('switch 配置项：初始 undefined 回退 defaultValue，写入 opts 时仅保留显式修改', async () => {
     const onSubmit = vi.fn()
     renderProviders(
       <CreateEditViewForm
@@ -126,13 +126,52 @@ describe('CreateEditViewForm 视图表单', () => {
       />,
     )
 
-    // pin_urgent switch：opts 无值（undefined）→ 判定为关
+    // pin_urgent defaultValue=true → 初始应该是"开"态
+    const sw = document.querySelector('.ant-switch')!
+    expect(sw).toHaveClass('ant-switch-checked')
+    // 手动关闭 → 写入 false
+    fireEvent.click(sw)
+    expect(sw).not.toHaveClass('ant-switch-checked')
+
+    fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
+    expect(onSubmit).toHaveBeenCalledWith('看板', 'kanban', { pin_urgent: false })
+  })
+
+  it('switch 配置项：显式传入 false 时回显为关，不受 defaultValue 影响', async () => {
+    const onSubmit = vi.fn()
+    renderProviders(
+      <CreateEditViewForm
+        fields={fields} initialName="看板" initialType="kanban"
+        initialOptions={{ pin_urgent: false }} onSubmit={onSubmit}
+      />,
+    )
+
+    // pin_urgent 显式 false → 回显为关（defaultValue=true 被覆盖）
     const sw = document.querySelector('.ant-switch')!
     expect(sw).not.toHaveClass('ant-switch-checked')
+    // 打开 → 写入 true
     fireEvent.click(sw)
+    expect(sw).toHaveClass('ant-switch-checked')
 
     fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
     expect(onSubmit).toHaveBeenCalledWith('看板', 'kanban', { pin_urgent: true })
+  })
+
+  it('switch 配置项：defaultValue=false 的 expand_all（WBS）初始显示为关', async () => {
+    const onSubmit = vi.fn()
+    renderProviders(
+      <CreateEditViewForm
+        fields={fields} initialName="WBS" initialType="wbs" onSubmit={onSubmit}
+      />,
+    )
+
+    // expand_all 属于「操作」分区，该分区默认折叠，先展开
+    fireEvent.click(screen.getByRole('button', { name: /操作/ }))
+
+    // 操作分区有两个 switch：show_numbering (defaultValue=true) 在前，expand_all (defaultValue=false) 在后
+    const switches = document.querySelectorAll('.ant-switch')
+    expect(switches[0]).toHaveClass('ant-switch-checked')
+    expect(switches[1]).not.toHaveClass('ant-switch-checked')
   })
 
   it('编辑场景：initialName/initialOptions 回显，自定义提交文案', async () => {
