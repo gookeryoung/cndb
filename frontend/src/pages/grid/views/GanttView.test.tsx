@@ -166,13 +166,13 @@ describe('GanttView 甘特图视图', () => {
         expect(screen.queryByText('年-月')).not.toBeInTheDocument()
     })
 
-    it('切换时间刻度为"周"后档位在 week 范围内（月-双周）', async () => {
+    it('切换时间刻度为"周"后档位在 week 范围内（月-周）', async () => {
         renderGantt()
 
         fireEvent.click(screen.getByRole('radio', { name: '周' }))
 
-        // week 刻度在 week 档位范围内（level 2-3），129 天选到 level 2 = 月-双周
-        expect(await screen.findByText('月-双周')).toBeInTheDocument()
+        // week 粒度区间内 level 2/3 都在，取中间 level 3 = 月-周
+        expect(await screen.findByText('月-周')).toBeInTheDocument()
         expect(screen.queryByText('年-月')).not.toBeInTheDocument()
     })
 
@@ -224,5 +224,90 @@ describe('GanttView 甘特图视图', () => {
         // 第 180 行进入窗口（含左列标题），首行离开窗口
         expect(screen.getByText('大任务180')).toBeInTheDocument()
         expect(screen.queryByText('大任务001')).not.toBeInTheDocument()
+    })
+
+    // ── Header 渲染结构：覆盖 month/quarter/day/week 四种粒度的标签与定位 ──
+
+    it('month 粒度 header：双层结构，anchor 层显示年份，current 层显示月份，全部 absolute 定位', () => {
+        renderGantt() // 默认 time_scale=month → level 1 (年-月)
+
+        const headerRows = screen.getAllByTestId('gantt-header-row')
+        expect(headerRows).toHaveLength(2)
+
+        // anchor 层（上层）
+        const anchorLayer = headerRows.find(r => r.getAttribute('data-layer') === 'anchor')!
+        expect(anchorLayer).not.toBeNull()
+        const anchorLabels = anchorLayer.querySelectorAll('[data-testid="gantt-timeline-label"]')
+        expect(anchorLabels.length).toBeGreaterThanOrEqual(1)
+        // anchor 层段全部 absolute 定位
+        anchorLabels.forEach(lbl => {
+            expect(lbl).toHaveStyle({ position: 'absolute' })
+        })
+        // anchor 层应该有年份标签（2025/2026）
+        expect(anchorLayer.textContent).toMatch(/\d{4}年/)
+
+        // current 层（下层）—— 这是之前 month/quarter 模式下出 bug 的层
+        const currentLayer = headerRows.find(r => r.getAttribute('data-layer') === 'current')!
+        expect(currentLayer).not.toBeNull()
+        const currentLabels = currentLayer.querySelectorAll('[data-testid="gantt-timeline-label"]')
+        expect(currentLabels.length).toBeGreaterThanOrEqual(1)
+        // 关键修复：current 层段也必须是 absolute 定位（之前 month 模式下错误退回 relative 导致垂直堆叠）
+        currentLabels.forEach(lbl => {
+            expect(lbl).toHaveStyle({ position: 'absolute' })
+        })
+        // current 层应该有月份标签
+        expect(currentLayer.textContent).toMatch(/\d+月/)
+    })
+
+    it('quarter 粒度 header：双层结构，current 层显示季度标签，absolute 定位不丢失', async () => {
+        renderGantt()
+
+        fireEvent.click(screen.getByRole('radio', { name: '季' }))
+        await screen.findByText('年-季度')
+
+        const headerRows = screen.getAllByTestId('gantt-header-row')
+        expect(headerRows).toHaveLength(2)
+
+        const currentLayer = headerRows.find(r => r.getAttribute('data-layer') === 'current')!
+        const currentLabels = currentLayer.querySelectorAll('[data-testid="gantt-timeline-label"]')
+        expect(currentLabels.length).toBeGreaterThanOrEqual(1)
+        // quarter 模式下 current 层的段同样必须是 absolute
+        currentLabels.forEach(lbl => {
+            expect(lbl).toHaveStyle({ position: 'absolute' })
+        })
+        // current 层应含 Q1/Q2/Q3/Q4 中的若干
+        expect(currentLayer.textContent).toMatch(/Q[1-4]/)
+    })
+
+    it('day 粒度 header：current 层稀疏化后仍正确 absolute 定位', async () => {
+        renderGantt()
+
+        fireEvent.click(screen.getByRole('radio', { name: '天' }))
+        await screen.findByText('月-半周')
+
+        const headerRows = screen.getAllByTestId('gantt-header-row')
+        const currentLayer = headerRows.find(r => r.getAttribute('data-layer') === 'current')!
+        const currentLabels = currentLayer.querySelectorAll('[data-testid="gantt-timeline-label"]')
+        // day 粒度下标签稀疏化，应该有若干 visible label（每月 1 号锚点 + 间隔填充）
+        expect(currentLabels.length).toBeGreaterThan(0)
+        // 全部 absolute 定位
+        currentLabels.forEach(lbl => {
+            expect(lbl).toHaveStyle({ position: 'absolute' })
+        })
+    })
+
+    it('week 粒度 header：current 层的段 absolute 定位 + 稀疏化', async () => {
+        renderGantt()
+
+        fireEvent.click(screen.getByRole('radio', { name: '周' }))
+        await screen.findByText('月-周')
+
+        const headerRows = screen.getAllByTestId('gantt-header-row')
+        const currentLayer = headerRows.find(r => r.getAttribute('data-layer') === 'current')!
+        const currentLabels = currentLayer.querySelectorAll('[data-testid="gantt-timeline-label"]')
+        expect(currentLabels.length).toBeGreaterThan(0)
+        currentLabels.forEach(lbl => {
+            expect(lbl).toHaveStyle({ position: 'absolute' })
+        })
     })
 })
