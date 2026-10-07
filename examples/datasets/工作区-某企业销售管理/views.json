@@ -188,6 +188,18 @@
         "show_today_line": true
       },
       "order": 10
+    },
+    {
+      "name": "片区项目数",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "bar",
+        "dimension_field": "片区",
+        "measure_field": "项目编号",
+        "aggregation": "count",
+        "show_stats_panel": true
+      },
+      "order": 11
     }
   ],
   "客户流失": [
@@ -324,6 +336,29 @@
         }
       ],
       "order": 7
+    },
+    {
+      "name": "合约类型流失率",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "bar",
+        "dimension_field": "合约类型",
+        "measure_field": "是否流失",
+        "aggregation": "avg",
+        "show_stats_panel": true
+      },
+      "order": 8
+    },
+    {
+      "name": "月消费金额分布",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "histogram",
+        "measure_field": "月消费_元",
+        "bin_policy": "sturges",
+        "show_stats_panel": true
+      },
+      "order": 9
     }
   ],
   "电商销售": [
@@ -394,6 +429,53 @@
         "show_stats_panel": true
       },
       "order": 4
+    },
+    {
+      "name": "商品类别销售额排名",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "bar",
+        "dimension_field": "商品类别",
+        "measure_field": "销售额",
+        "aggregation": "sum",
+        "show_stats_panel": true
+      },
+      "order": 5
+    },
+    {
+      "name": "支付方式销售占比",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "pie",
+        "dimension_field": "支付方式",
+        "measure_field": "销售额",
+        "aggregation": "sum",
+        "show_stats_panel": true
+      },
+      "order": 6
+    },
+    {
+      "name": "订单评分分布",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "histogram",
+        "measure_field": "评分",
+        "bin_policy": "auto",
+        "show_stats_panel": true
+      },
+      "order": 7
+    },
+    {
+      "name": "单价与数量散点",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "scatter",
+        "x_field": "单价",
+        "y_field": "数量",
+        "show_trend_line": true,
+        "show_stats_panel": true
+      },
+      "order": 8
     }
   ],
   "部门表": [
@@ -484,6 +566,17 @@
         "show_stats_panel": true
       },
       "order": 4
+    },
+    {
+      "name": "全公司薪资分布",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "histogram",
+        "measure_field": "薪资",
+        "bin_policy": "auto",
+        "show_stats_panel": true
+      },
+      "order": 5
     }
   ],
   "出差统计": [
@@ -627,6 +720,55 @@
         }
       ],
       "order": 5
+    },
+    {
+      "name": "状态任务数",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "bar",
+        "dimension_field": "状态",
+        "measure_field": "待办编号",
+        "aggregation": "count",
+        "show_stats_panel": true
+      },
+      "order": 6
+    }
+  ],
+  "营销活动": [
+    {
+      "name": "渠道预算对比",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "bar",
+        "dimension_field": "渠道类型",
+        "measure_field": "预算_元",
+        "aggregation": "sum",
+        "show_stats_panel": true
+      },
+      "order": 0
+    },
+    {
+      "name": "预算与实际花费散点",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "scatter",
+        "x_field": "预算_元",
+        "y_field": "实际花费_元",
+        "show_trend_line": true,
+        "show_stats_panel": true
+      },
+      "order": 1
+    },
+    {
+      "name": "活动转化率分布",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "histogram",
+        "measure_field": "转化率_%",
+        "bin_policy": "freedman-diaconis",
+        "show_stats_panel": true
+      },
+      "order": 2
     }
   ]
 }

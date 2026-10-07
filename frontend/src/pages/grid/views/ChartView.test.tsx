@@ -254,4 +254,122 @@ describe('ChartView 图表视图', () => {
     // 图表实例不重建（init 仍 1 次），仅覆盖 option
     expect(echartsMock.init).toHaveBeenCalledTimes(1)
   })
+
+  it('pie：series[0].type=pie，data=[{name,value,itemStyle.color}]', () => {
+    renderChart({
+      view: makeView({
+        chart_type: 'pie',
+        dimension_field: '团队',
+        measure_field: '销售额',
+        aggregation: 'sum',
+      }),
+    })
+
+    const option = echartsMock.setOption.mock.calls[0][0] as Record<string, any>
+    expect(option.series).toHaveLength(1)
+    expect(option.series[0].type).toBe('pie')
+    // ROWS 里团队无空值，两个分组按拼音序：设计组 she < 研发组 yan
+    // 设计组：id=2(50)+id=4(90)=140；研发组：id=1(100)+id=3(30)=130；id=5 销售额为 null 剔除
+    const names = option.series[0].data.map((d: any) => d.name)
+    expect(names).toEqual(['设计组', '研发组'])
+    const values = option.series[0].data.map((d: any) => d.value)
+    expect(values).toEqual([140, 130])
+    // 每个扇区都有 itemStyle.color（按系列色循环）
+    for (const d of option.series[0].data) {
+      expect(d.itemStyle?.color).toBeDefined()
+    }
+  })
+
+  it('histogram：series[0].type=bar、barCategoryGap=0、bins labels 做 xAxis', () => {
+    renderChart({
+      view: makeView({
+        chart_type: 'histogram',
+        measure_field: '销售额',
+        bin_policy: 'auto',
+      }),
+    })
+
+    const option = echartsMock.setOption.mock.calls[0][0] as Record<string, any>
+    expect(option.series).toHaveLength(1)
+    expect(option.series[0].type).toBe('bar')
+    expect(option.series[0].barCategoryGap).toBe(0)
+    expect(option.series[0].barGap).toBe(0)
+    // 销售额有效值 [100,50,30,90] 合计 4 箱左右
+    expect(option.series[0].data.length).toBeGreaterThanOrEqual(2)
+    expect(option.xAxis.data.length).toBe(option.series[0].data.length)
+  })
+
+  it('boxplot：主 series=boxplot + 离群值 scatter，categories 来自维度分组', () => {
+    // 构造有明显离群的两组数据
+    const boxRows: RowResponse[] = [
+      { id: 1, 月份: '2026-07-05', 销售额: 1, 团队: '研发组', 工时: 1 },
+      { id: 2, 月份: '2026-08-10', 销售额: 2, 团队: '研发组', 工时: 2 },
+      { id: 3, 月份: '2026-07-20', 销售额: 3, 团队: '研发组', 工时: 3 },
+      { id: 4, 月份: '2026-08-15', 销售额: 4, 团队: '研发组', 工时: 4 },
+      { id: 5, 月份: '2026-08-01', 销售额: 100, 团队: '研发组', 工时: 5 }, // 离群
+      { id: 6, 月份: '2026-08-02', 销售额: 10, 团队: '设计组', 工时: 1 },
+      { id: 7, 月份: '2026-08-03', 销售额: 20, 团队: '设计组', 工时: 2 },
+      { id: 8, 月份: '2026-08-04', 销售额: 30, 团队: '设计组', 工时: 3 },
+    ] as unknown as RowResponse[]
+
+    renderChart({
+      rows: boxRows,
+      view: makeView({
+        chart_type: 'boxplot',
+        dimension_field: '团队',
+        measure_field: '销售额',
+      }),
+    })
+
+    const option = echartsMock.setOption.mock.calls[0][0] as Record<string, any>
+    expect(option.series).toHaveLength(2)
+    expect(option.series[0].type).toBe('boxplot')
+    expect(option.series[1].type).toBe('scatter')
+    // 两个分组的五数概括
+    expect(option.series[0].data).toHaveLength(2)
+    // 离群值 100 属于研发组，分组按拼音序 ['设计组', '研发组'] → 研发组索引 1
+    expect(option.series[1].data).toEqual([[1, 100]])
+    // xAxis.data 应为分组名（按 zh-CN 拼音序：设计组 she < 研发组 yan）
+    expect(option.xAxis.data).toEqual(['设计组', '研发组'])
+  })
+
+  it('scatter 点击散点 → onRowClick 触发对应行', () => {
+    const onRowClick = vi.fn()
+    renderChart({
+      view: makeView({
+        chart_type: 'scatter',
+        x_field: '工时',
+        y_field: '销售额',
+      }),
+      onRowClick,
+    })
+
+    // echartsMock.on 被调用一次，传入 'click' + handler
+    expect(echartsMock.on).toHaveBeenCalled()
+    const clickHandler = echartsMock.on.mock.calls.find(([type]) => type === 'click')?.[1]
+    expect(clickHandler).toBeDefined()
+
+    // 散点第 0 点对应 ROWS 里 id=1 的行（x=1, y=100）
+    clickHandler!({ seriesType: 'scatter', dataIndex: 0 })
+    expect(onRowClick).toHaveBeenCalledTimes(1)
+    expect(onRowClick).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }))
+  })
+
+  it('scatter 点击非散点系列（趋势线）不触发 onRowClick', () => {
+    const onRowClick = vi.fn()
+    renderChart({
+      view: makeView({
+        chart_type: 'scatter',
+        x_field: '工时',
+        y_field: '销售额',
+        show_trend_line: true,
+      }),
+      onRowClick,
+    })
+
+    const clickHandler = echartsMock.on.mock.calls.find(([type]) => type === 'click')?.[1]
+    // seriesType !== 'scatter' → 直接 return，不触发
+    clickHandler!({ seriesType: 'line', dataIndex: 0 })
+    expect(onRowClick).not.toHaveBeenCalled()
+  })
 })

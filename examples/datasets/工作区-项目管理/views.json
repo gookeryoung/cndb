@@ -143,6 +143,41 @@
         "group_field": "任务状态"
       },
       "order": 7
+    },
+    {
+      "name": "状态任务数",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "bar",
+        "dimension_field": "任务状态",
+        "measure_field": "任务ID",
+        "aggregation": "count",
+        "show_stats_panel": true
+      },
+      "order": 8
+    },
+    {
+      "name": "任务负责人占比",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "pie",
+        "dimension_field": "负责人",
+        "measure_field": "任务ID",
+        "aggregation": "count",
+        "show_stats_panel": true
+      },
+      "order": 9
+    },
+    {
+      "name": "工期分布",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "histogram",
+        "measure_field": "工期_天",
+        "bin_policy": "auto",
+        "show_stats_panel": true
+      },
+      "order": 10
     }
   ],
   "资源排期": [
@@ -185,6 +220,43 @@
         "title_field": "任务名称"
       },
       "order": 2
+    },
+    {
+      "name": "团队投入人天",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "bar",
+        "dimension_field": "团队",
+        "measure_field": "投入人天",
+        "aggregation": "sum",
+        "show_stats_panel": true
+      },
+      "order": 3
+    },
+    {
+      "name": "月度投入趋势（按团队分组）",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "line",
+        "dimension_field": "排期日期",
+        "date_granularity": "month",
+        "measure_field": "投入人天",
+        "aggregation": "sum",
+        "group_field": "团队",
+        "show_stats_panel": true
+      },
+      "order": 4
+    },
+    {
+      "name": "排期月度投入分布",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "boxplot",
+        "dimension_field": "团队",
+        "measure_field": "投入人天",
+        "show_stats_panel": true
+      },
+      "order": 5
     }
   ],
   "待办事项": [
@@ -273,6 +345,18 @@
         }
       ],
       "order": 5
+    },
+    {
+      "name": "类别占比",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "pie",
+        "dimension_field": "类别",
+        "measure_field": "编号",
+        "aggregation": "count",
+        "show_stats_panel": true
+      },
+      "order": 6
     }
   ]
 }

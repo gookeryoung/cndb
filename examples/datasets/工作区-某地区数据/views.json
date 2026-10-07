@@ -81,6 +81,40 @@
         }
       ],
       "order": 4
+    },
+    {
+      "name": "房龄与房价散点",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "scatter",
+        "x_field": "房龄_年",
+        "y_field": "房价_万元",
+        "show_trend_line": true,
+        "show_stats_panel": true
+      },
+      "order": 5
+    },
+    {
+      "name": "各城市房价分布",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "boxplot",
+        "dimension_field": "城市",
+        "measure_field": "房价_万元",
+        "show_stats_panel": true
+      },
+      "order": 6
+    },
+    {
+      "name": "房间数量与房价散点",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "scatter",
+        "x_field": "房间数",
+        "y_field": "房价_万元",
+        "show_stats_panel": true
+      },
+      "order": 7
     }
   ],
   "气温天气": [
@@ -146,6 +180,31 @@
         }
       ],
       "order": 3
+    },
+    {
+      "name": "城市月度最高温趋势",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "line",
+        "dimension_field": "日期",
+        "date_granularity": "month",
+        "measure_field": "最高温_℃",
+        "aggregation": "avg",
+        "group_field": "城市",
+        "show_stats_panel": true
+      },
+      "order": 4
+    },
+    {
+      "name": "城市风速分布",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "boxplot",
+        "dimension_field": "城市",
+        "measure_field": "风速_m/s",
+        "show_stats_panel": true
+      },
+      "order": 5
     }
   ]
 }
