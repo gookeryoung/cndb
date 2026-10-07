@@ -266,4 +266,40 @@ describe('autoAdjustLevel', () => {
     // 5 天 * 40px = 200 < 600，档位 7 已是最大无法再升
     expect(autoAdjustLevel(7, 5, 1000)).toBe(7)
   })
+
+  // ── currentScale 参数：锁定在同一粒度档位边界内 ──
+  it('指定 currentScale=quarter 时即使宽度太窄也不跨越到 month', () => {
+    // quarter 只有 level 0 一个档位，365*1.5=547.5 < 600，但无法升档
+    const lv = autoAdjustLevel(0, 365, 1000, 'quarter')
+    expect(lv).toBe(0)
+    expect(ZOOM_LEVELS[lv].currentScale).toBe('quarter')
+  })
+
+  it('指定 currentScale=month 时只在 month 档位（level 1）内，不漂到 week', () => {
+    // 129 天 * 4px = 516 < 600，但 month 只有 level 1
+    const lv = autoAdjustLevel(1, 129, 1000, 'month')
+    expect(lv).toBe(1)
+    expect(ZOOM_LEVELS[lv].currentScale).toBe('month')
+  })
+
+  it('指定 currentScale=week 时只在 level 2-3 范围内调整', () => {
+    // 129 天从 level 2（7px=903px）起，在 week 档位内调
+    const lv = autoAdjustLevel(2, 129, 1000, 'week')
+    expect([2, 3]).toContain(lv)
+    expect(ZOOM_LEVELS[lv].currentScale).toBe('week')
+  })
+
+  it('指定 currentScale=day 时只在 level 4-7 范围内调整', () => {
+    // 129 天在 day 档位内调整，不跨越到 week
+    const lv = autoAdjustLevel(4, 129, 1000, 'day')
+    expect([4, 5, 6, 7]).toContain(lv)
+    expect(ZOOM_LEVELS[lv].currentScale).toBe('day')
+  })
+
+  it('传入的起始 level 超出 currentScale 范围时被 clamp 到边界', () => {
+    // 从 level 0（quarter）开始但指定 currentScale=day，clamp 到 level 4
+    const lv = autoAdjustLevel(0, 30, 800, 'day')
+    expect([4, 5, 6, 7]).toContain(lv)
+    expect(ZOOM_LEVELS[lv].currentScale).toBe('day')
+  })
 })

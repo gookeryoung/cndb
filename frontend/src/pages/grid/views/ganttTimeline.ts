@@ -335,24 +335,50 @@ export function selectZoomLevelForScale(scale: TimeScale, totalDays: number): nu
 }
 
 /** 根据视口宽度和时间跨度做二次缩放 —— 如果默认档位产生的总宽度偏离太远则微调 level.
- *  这个函数返回调整后的 level（不直接改 pxPerDay，保持档位离散）。 */
+ *  这个函数返回调整后的 level（不直接改 pxPerDay，保持档位离散）。
+ *
+ *  @param level         由 selectZoomLevelForScale 选定的起始档位
+ *  @param totalDays     时间轴总天数
+ *  @param viewportWidth 视图宽度（像素）
+ *  @param currentScale  可选：若传入则严格限制在该 currentScale 范围内调档，
+ *                       避免跨越不同时间粒度边界（用户切换天/周/月/季时粒度不漂移） */
 export function autoAdjustLevel(
   level: number,
   totalDays: number,
   viewportWidth: number,
+  currentScale?: TimeScale,
 ): number {
   const targetMinPx = viewportWidth * 0.6
   const targetMaxPx = viewportWidth * 2
-  let lv = level
+
+  // 确定允许调整的档位边界（若指定了 currentScale，则只在同粒度档位内调整）
+  let minLv = 0
+  let maxLv = ZOOM_LEVELS.length - 1
+  if (currentScale) {
+    for (let i = 0; i < ZOOM_LEVELS.length; i++) {
+      if (ZOOM_LEVELS[i].currentScale === currentScale) {
+        minLv = i
+        break
+      }
+    }
+    for (let i = ZOOM_LEVELS.length - 1; i >= 0; i--) {
+      if (ZOOM_LEVELS[i].currentScale === currentScale) {
+        maxLv = i
+        break
+      }
+    }
+  }
+
+  let lv = Math.max(minLv, Math.min(maxLv, level))
   let safety = 0
   while (safety < ZOOM_LEVELS.length) {
     const w = totalDays * ZOOM_LEVELS[lv].pxPerDay
     if (w >= targetMinPx && w <= targetMaxPx) break
     if (w < targetMinPx) {
-      if (lv < ZOOM_LEVELS.length - 1) lv++
+      if (lv < maxLv) lv++
       else break
     } else {
-      if (lv > 0) lv--
+      if (lv > minLv) lv--
       else break
     }
     safety++
