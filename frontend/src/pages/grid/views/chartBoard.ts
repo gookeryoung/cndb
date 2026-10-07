@@ -320,10 +320,23 @@ export interface HistogramBin {
 /** 分箱数绝对上限（防 FD 在 IQR 极小时产生海量窄箱拖垮渲染） */
 const MAX_BIN_COUNT = 512
 
-/** 数值显示：整数原样，否则 6 位有效数字去尾零 */
-function fmtNum(v: number): string {
+/** 数值显示：整数原样；浮点按 sig 位有效数字去尾零（默认 6 位） */
+function fmtNum(v: number, sig = 6): string {
   if (Number.isInteger(v)) return String(v)
-  return String(parseFloat(v.toPrecision(6)))
+  return String(parseFloat(v.toPrecision(sig)))
+}
+
+/** 分箱边界标签的有效数字位数：保证相邻边界（相差 ≥ 箱宽）在标签中可辨识.
+ *
+ * 固定 6 位在大量级窄区间（如 1e6 + 0.1 步进）下会把不同边界折叠成同串，
+ * 多个箱标签重复为 X~X 导致类目轴不可读；按整数位数 + 箱宽所需小数位自适应升位
+ * （下限 6 位保持既有契约，上限 17 位防超出 double 精度）。
+ */
+function labelPrecision(width: number, max: number): number {
+  if (!Number.isFinite(width) || width <= 0) return 6
+  const intDigits = Math.max(1, Math.ceil(Math.log10(Math.abs(max) + 1)))
+  const fracDigits = Math.max(0, Math.ceil(-Math.log10(width)) + 1)
+  return Math.min(17, Math.max(6, intDigits + fracDigits))
 }
 
 /** Sturges 分箱数：ceil(log2(n) + 1) */
@@ -361,6 +374,7 @@ export function histogramBins(values: number[], policy: BinPolicy = 'auto'): His
   binCount = Math.max(1, Math.min(binCount, n, MAX_BIN_COUNT))
 
   const width = (max - min) / binCount
+  const sig = labelPrecision(width, max)
   const bins: HistogramBin[] = []
   for (let i = 0; i < binCount; i++) {
     const from = min + i * width
@@ -369,7 +383,7 @@ export function histogramBins(values: number[], policy: BinPolicy = 'auto'): His
       const inBin = i === binCount - 1 ? (v >= from && v <= to) : (v >= from && v < to)
       return acc + (inBin ? 1 : 0)
     }, 0)
-    bins.push({ label: `${fmtNum(from)}~${fmtNum(to)}`, count, from, to })
+    bins.push({ label: `${fmtNum(from, sig)}~${fmtNum(to, sig)}`, count, from, to })
   }
   return bins
 }

@@ -1,0 +1,182 @@
+{
+  "_comment": "低质量数据视图种子配置：四张极端数据表各配一个多图图表视图，用于验证图表在低质量数据下的健壮性——日期多格式与非法日期整桶归未分组、大量级窄区间分箱标签可辨识（labelPrecision 自适应精度）、boolean 维度按 是/否 归桶、COUNT 聚合剔除空值行、负值与全角数字聚合不崩。",
+  "16-日期格式大全": [
+    {
+      "name": "全部日期行",
+      "view_type": "grid",
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "日期格式解析概览",
+      "view_type": "chart",
+      "view_options": {
+        "charts": [
+          {
+            "chart_type": "bar",
+            "dimension_field": "ISO日期",
+            "date_granularity": "year",
+            "measure_field": "非法日期",
+            "aggregation": "count",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "bar",
+            "dimension_field": "斜杠日期",
+            "date_granularity": "quarter",
+            "measure_field": "非法日期",
+            "aggregation": "count",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "bar",
+            "dimension_field": "紧凑日期",
+            "date_granularity": "week",
+            "measure_field": "非法日期",
+            "aggregation": "count",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "line",
+            "dimension_field": "美式日期",
+            "date_granularity": "day",
+            "measure_field": "非法日期",
+            "aggregation": "count",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "line",
+            "dimension_field": "中文日期",
+            "date_granularity": "month",
+            "measure_field": "非法日期",
+            "aggregation": "count",
+            "show_stats_panel": true
+          }
+        ]
+      },
+      "order": 1
+    }
+  ],
+  "17-数字格式大全": [
+    {
+      "name": "全部数字行",
+      "view_type": "grid",
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "数字格式分布概览",
+      "view_type": "chart",
+      "view_options": {
+        "charts": [
+          {
+            "chart_type": "histogram",
+            "measure_field": "会计负数",
+            "bin_policy": "sturges",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "histogram",
+            "measure_field": "科学计数法",
+            "bin_policy": "freedman-diaconis",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "scatter",
+            "x_field": "货币金额",
+            "y_field": "欧元小数",
+            "show_stats_panel": true
+          }
+        ]
+      },
+      "order": 1
+    }
+  ],
+  "18-布尔与百分比": [
+    {
+      "name": "全部布尔行",
+      "view_type": "grid",
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "布尔与比例概览",
+      "view_type": "chart",
+      "view_options": {
+        "charts": [
+          {
+            "chart_type": "bar",
+            "dimension_field": "是否",
+            "measure_field": "完成率",
+            "aggregation": "avg",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "bar",
+            "dimension_field": "布尔英文",
+            "measure_field": "精确比例",
+            "aggregation": "min",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "pie",
+            "dimension_field": "中文真假",
+            "measure_field": "完成率",
+            "aggregation": "max",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "histogram",
+            "measure_field": "全角比例",
+            "bin_policy": "auto",
+            "show_stats_panel": true
+          }
+        ]
+      },
+      "order": 1
+    }
+  ],
+  "19-特殊值杂项": [
+    {
+      "name": "全部杂项行",
+      "view_type": "grid",
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "特殊值聚合概览",
+      "view_type": "chart",
+      "view_options": {
+        "charts": [
+          {
+            "chart_type": "bar",
+            "dimension_field": "订单状态",
+            "measure_field": "混合数值",
+            "aggregation": "sum",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "bar",
+            "dimension_field": "订单状态",
+            "measure_field": "混合数值",
+            "aggregation": "count",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "histogram",
+            "measure_field": "混合数值",
+            "bin_policy": "auto",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "boxplot",
+            "dimension_field": "订单状态",
+            "measure_field": "混合数值",
+            "show_stats_panel": true
+          }
+        ]
+      },
+      "order": 1
+    }
+  ]
+}

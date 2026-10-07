@@ -80,6 +80,13 @@ describe('axisKeyForRow 轴 key 求值', () => {
     expect(axisKeyForRow({ id: 1, 负责人: null } as unknown as RowResponse, textField, 'month')).toBe('')
     expect(axisKeyForRow({} as unknown as RowResponse, undefined, 'month')).toBe('')
   })
+
+  it('boolean 按 是/否 分桶（非 true/false），空值返回空串', () => {
+    const boolField = makeField({ id: 7, name: '是否', field_type: 'boolean' })
+    expect(axisKeyForRow({ id: 1, 是否: true } as unknown as RowResponse, boolField, 'month')).toBe('是')
+    expect(axisKeyForRow({ id: 2, 是否: false } as unknown as RowResponse, boolField, 'month')).toBe('否')
+    expect(axisKeyForRow({ id: 3, 是否: null } as unknown as RowResponse, boolField, 'month')).toBe('')
+  })
 })
 
 describe('sortAxisKeys 轴排序', () => {
