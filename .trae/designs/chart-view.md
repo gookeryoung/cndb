@@ -88,64 +88,45 @@
 - `viewOptionSchema.test.ts`：normalizeChartList / serializeChartList 5 条——扁平归一单条目 / charts[] 浅拷贝 / ==1 扁平 >1 charts[] / 条目级空值清洗 / 多图往返幂等。
 - `CreateEditViewForm.test.tsx`：图表类型渲染、visibleWhen 条件显隐（scatter 出 X/Y 隐维度/聚合；histogram 出分箱）、提交 opts。
 - `test_views_api.py`：chart 视图创建 201（bar + scatter + line + pie + boxplot + histogram 全 6 种类型）与 400（measure_field/x_field/group_field 不存在）；多图 charts[] 合法创建 201 并原样存取、charts[1].measure_field 不存在 400（detail 定位索引）、charts 元素非 dict 400；6 种 chart_type 在同一张表上连续创建（模拟 seed 注入）都通过校验并正确列出。
-- `examples/datasets/*/views.json` 所有 chart 视图引用字段经 CSV 表头/硬编码表字段校验通过；`python -c` 扫描验证 34 个 chart 视图（bar×9 / line×5 / pie×5 / scatter×4 / histogram×6 / boxplot×5）全部字段引用有效。
+- `examples/datasets/*/views.json` 所有 chart 视图引用字段经 CSV 表头/硬编码表字段校验通过；扫描验证 15 个 chart 视图（10 个多图视图共 29 个图表配置 + 5 个扁平单图，bar×9 / line×5 / pie×5 / scatter×4 / histogram×6 / boxplot×5）全部字段引用有效。
 - e2e `view-mode-switch.spec.ts`：电商销售表点图表按钮 → SVG 图表 + 统计面板渲染。
 - bundle-budget：新增 ChartView 基线 204_265 gzip bytes；GridPage 基线更新 38_793（接线 +1.8KB gzip）。
 
-## seed 示例（覆盖全部 6 种 chart_type）
+## seed 示例（覆盖全部 6 种 chart_type，双形态）
 
-所有示例位于 `examples/datasets/<工作区名>/views.json`，字段名与同名 CSV 表头 / 硬编码表 DataField.name 一致；合计 34 个 chart 视图，每类 type 至少 4 条。
+所有示例位于 `examples/datasets/<工作区名>/views.json`，字段名与同名 CSV 表头 / 硬编码表 DataField.name 一致。同表 ≥2 个 chart 视图已合并为一个 charts[] 多图视图（10 个多图视图承载 29 个图表配置），恰 1 个 chart 视图的表保持扁平单图形态（5 个）——双形态契约均有示例覆盖；34 个图表配置（bar×9 / line×5 / pie×5 / scatter×4 / histogram×6 / boxplot×5）全部字段引用有效。图表序列记法：类型(维度→度量或X×Y, 聚合, 分箱策略)；日期桶标注在维度后，group=多系列分组字段。
 
-### 工作区-某企业销售管理（8 张表中 6 张含 chart 视图）
+### 工作区-某企业销售管理
 
-| 表名 | 视图名 | chart_type | 关键配置 |
-|------|--------|------------|----------|
-| 电商销售 | 月度销售额趋势 | line | dimension_field=日期, date_granularity=month, measure_field=销售额, aggregation=sum |
-| 电商销售 | 商品类别销售额排名 | bar | dimension_field=商品类别, measure_field=销售额, aggregation=sum |
-| 电商销售 | 支付方式销售占比 | pie | dimension_field=支付方式, measure_field=销售额, aggregation=sum |
-| 电商销售 | 订单评分分布 | histogram | measure_field=评分, bin_policy=auto |
-| 电商销售 | 单价与数量散点 | scatter | x_field=单价, y_field=数量, show_trend_line=true |
-| 营销活动 | 渠道预算对比 | bar | dimension_field=渠道类型, measure_field=预算_元, aggregation=sum |
-| 营销活动 | 预算与实际花费散点 | scatter | x_field=预算_元, y_field=实际花费_元, show_trend_line=true |
-| 营销活动 | 活动转化率分布 | histogram | measure_field=转化率_%, bin_policy=freedman-diaconis |
-| 客户流失 | 合约类型流失率 | bar | dimension_field=合约类型, measure_field=是否流失, aggregation=avg |
-| 客户流失 | 月消费金额分布 | histogram | measure_field=月消费_元, bin_policy=sturges |
-| 产品开发 | 片区项目数 | bar | dimension_field=片区, measure_field=项目编号, aggregation=count |
-| 员工表 | 部门薪资分布 | boxplot | dimension_field=部门, measure_field=薪资 |
-| 员工表 | 全公司薪资分布 | histogram | measure_field=薪资, bin_policy=auto |
-| 日常待办 | 状态任务数 | bar | dimension_field=状态, measure_field=待办编号, aggregation=count |
+| 表名 | 视图名 | 图表序列 |
+|------|--------|----------|
+| 电商销售 | 销售经营概览（多图×5） | line(日期/月→销售额,sum) · bar(商品类别→销售额,sum) · pie(支付方式→销售额,sum) · histogram(评分,auto) · scatter(单价×数量,趋势线) |
+| 营销活动 | 营销活动效果概览（多图×3） | bar(渠道类型→预算_元,sum) · scatter(预算_元×实际花费_元,趋势线) · histogram(转化率_%,freedman-diaconis) |
+| 客户流失 | 客户流失分析（多图×2） | bar(合约类型→是否流失,avg) · histogram(月消费_元,sturges) |
+| 员工表 | 员工薪资分析（多图×2） | boxplot(部门→薪资) · histogram(薪资,auto) |
+| 产品开发 | 片区项目数（单图） | bar(片区→项目编号,count) |
+| 日常待办 | 状态任务数（单图） | bar(状态→待办编号,count) |
 
-### 工作区-项目管理（3 张表中 3 张含 chart 视图）
+### 工作区-项目管理
 
-| 表名 | 视图名 | chart_type | 关键配置 |
-|------|--------|------------|----------|
-| WBS任务分解 | 状态任务数 | bar | dimension_field=任务状态, measure_field=任务ID, aggregation=count |
-| WBS任务分解 | 任务负责人占比 | pie | dimension_field=负责人, measure_field=任务ID, aggregation=count |
-| WBS任务分解 | 工期分布 | histogram | measure_field=工期_天, bin_policy=auto |
-| 资源排期 | 团队投入人天 | bar | dimension_field=团队, measure_field=投入人天, aggregation=sum |
-| 资源排期 | 月度投入趋势（按团队分组） | line | dimension_field=排期日期, date_granularity=month, measure_field=投入人天, aggregation=sum, group_field=团队 |
-| 资源排期 | 排期月度投入分布 | boxplot | dimension_field=团队, measure_field=投入人天 |
-| 待办事项 | 类别占比 | pie | dimension_field=类别, measure_field=编号, aggregation=count |
+| 表名 | 视图名 | 图表序列 |
+|------|--------|----------|
+| WBS任务分解 | 任务执行概览（多图×3） | bar(任务状态→任务ID,count) · pie(负责人→任务ID,count) · histogram(工期_天,auto) |
+| 资源排期 | 资源投入概览（多图×3） | bar(团队→投入人天,sum) · line(排期日期/月→投入人天,sum,group=团队) · boxplot(团队→投入人天) |
+| 待办事项 | 类别占比（单图） | pie(类别→编号,count) |
 
-### 工作区-科研项目管理（4 张表中 4 张含 chart 视图）
+### 工作区-科研项目管理
 
-| 表名 | 视图名 | chart_type | 关键配置 |
-|------|--------|------------|----------|
-| 科研项目 | 立项年份经费趋势 | line | dimension_field=立项年份, measure_field=经费总额_万元, aggregation=sum |
-| 科研项目 | 项目类别经费对比 | bar | dimension_field=项目类别, measure_field=经费总额_万元, aggregation=sum |
-| 科研项目 | 项目类别数量占比 | pie | dimension_field=项目类别, measure_field=课题编号, aggregation=count |
-| 科研项目 | 计划周期分布 | histogram | measure_field=计划周期_月, bin_policy=sturges |
-| 科研经费 | 预算科目已拨金额 | bar | dimension_field=预算科目, measure_field=已拨金额_万元, aggregation=sum |
-| 科研经费 | 拨付日期年度投入趋势 | line | dimension_field=拨付日期, date_granularity=year, measure_field=已拨金额_万元, aggregation=sum |
-| 项目进展 | 进展阶段进度分布 | boxplot | dimension_field=进展阶段, measure_field=进度百分比 |
-| 课题负责人 | 职称分布占比 | pie | dimension_field=职称, measure_field=负责人编号, aggregation=count |
+| 表名 | 视图名 | 图表序列 |
+|------|--------|----------|
+| 科研项目 | 科研项目经费概览（多图×4） | line(立项年份→经费总额_万元,sum) · bar(项目类别→经费总额_万元,sum) · pie(项目类别→课题编号,count) · histogram(计划周期_月,sturges) |
+| 科研经费 | 经费投入概览（多图×2） | bar(预算科目→已拨金额_万元,sum) · line(拨付日期/年→已拨金额_万元,sum) |
+| 项目进展 | 进展阶段进度分布（单图） | boxplot(进展阶段→进度百分比) |
+| 课题负责人 | 职称分布占比（单图） | pie(职称→负责人编号,count) |
 
-### 工作区-某地区数据（2 张表中 2 张含 chart 视图）
+### 工作区-某地区数据
 
-| 表名 | 视图名 | chart_type | 关键配置 |
-|------|--------|------------|----------|
-| 房价预测 | 房龄与房价散点 | scatter | x_field=房龄_年, y_field=房价_万元, show_trend_line=true |
-| 房价预测 | 各城市房价分布 | boxplot | dimension_field=城市, measure_field=房价_万元 |
-| 房价预测 | 房间数量与房价散点 | scatter | x_field=房间数, y_field=房价_万元 |
-| 气温天气 | 城市月度最高温趋势 | line | dimension_field=日期, date_granularity=month, measure_field=最高温_℃, aggregation=avg, group_field=城市 |
-| 气温天气 | 城市风速分布 | boxplot | dimension_field=城市, measure_field=风速_m/s |
+| 表名 | 视图名 | 图表序列 |
+|------|--------|----------|
+| 房价预测 | 房价分析概览（多图×3） | scatter(房龄_年×房价_万元,趋势线) · boxplot(城市→房价_万元) · scatter(房间数×房价_万元) |
+| 气温天气 | 城市气候概览（多图×2） | line(日期/月→最高温_℃,avg,group=城市) · boxplot(城市→风速_m/s) |
