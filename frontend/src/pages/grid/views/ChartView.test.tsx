@@ -429,3 +429,123 @@ describe('ChartView 多图（view_options.charts）', () => {
     expect(echartsMock.init).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('ChartView 选项调整重渲染（配置/聚合/分箱调整场景）', () => {
+  const BASE_OPTS = {
+    chart_type: 'bar',
+    dimension_field: '月份',
+    measure_field: '销售额',
+    aggregation: 'sum',
+    date_granularity: 'month',
+  }
+
+  function rerenderWith(harness: ReturnType<typeof renderChart>, opts: Record<string, unknown>) {
+    harness.rerender(
+      <ChartView rows={ROWS} fields={FIELDS} view={makeView(opts)} />,
+    )
+  }
+
+  it('聚合方式 sum→count：实例不重建，option 数据按新口径更新', () => {
+    const harness = renderChart({ view: makeView({ ...BASE_OPTS }) })
+    expect(echartsMock.setOption).toHaveBeenCalledTimes(1)
+
+    rerenderWith(harness, { ...BASE_OPTS, aggregation: 'count' })
+
+    expect(echartsMock.init).toHaveBeenCalledTimes(1)
+    expect(echartsMock.setOption).toHaveBeenCalledTimes(2)
+    // count 口径（COUNT(col)：id5 销售额 null 剔除）：2026-07=2、2026-08=1、未分组=1
+    const opt2 = echartsMock.setOption.mock.calls[1][0] as Record<string, any>
+    expect(opt2.series[0].data).toEqual([2, 1, 1])
+  })
+
+  it('日期粒度 month→year：类目合并为年桶', () => {
+    const harness = renderChart({ view: makeView({ ...BASE_OPTS }) })
+
+    rerenderWith(harness, { ...BASE_OPTS, date_granularity: 'year' })
+
+    const opt2 = echartsMock.setOption.mock.calls[1][0] as Record<string, any>
+    // 2026 = id1+id2+id3（180）；id4 月份空归未分组（90）；id5 销售额 null 剔除
+    expect(opt2.xAxis.data).toEqual(['2026', '未分组'])
+    expect(opt2.series[0].data).toEqual([180, 90])
+  })
+
+  it('分箱策略 auto→sturges：箱数随策略变化（n=4：2 箱→3 箱）', () => {
+    const harness = renderChart({
+      view: makeView({ chart_type: 'histogram', measure_field: '销售额', bin_policy: 'auto' }),
+    })
+    const opt1 = echartsMock.setOption.mock.calls[0][0] as Record<string, any>
+    expect(opt1.xAxis.data).toHaveLength(2)
+
+    rerenderWith(harness, { chart_type: 'histogram', measure_field: '销售额', bin_policy: 'sturges' })
+
+    expect(echartsMock.init).toHaveBeenCalledTimes(1)
+    const opt2 = echartsMock.setOption.mock.calls[1][0] as Record<string, any>
+    expect(opt2.xAxis.data).toHaveLength(3)
+    expect(opt2.series[0].data).toHaveLength(3)
+  })
+
+  it('图表类型 bar→scatter：series 类型替换、无旧系列残留（notMerge）', () => {
+    const harness = renderChart({ view: makeView({ ...BASE_OPTS }) })
+
+    rerenderWith(harness, { chart_type: 'scatter', x_field: '工时', y_field: '销售额' })
+
+    expect(echartsMock.init).toHaveBeenCalledTimes(1)
+    const opt2 = echartsMock.setOption.mock.calls[1][0] as Record<string, any>
+    expect(opt2.series).toHaveLength(1)
+    expect(opt2.series[0].type).toBe('scatter')
+    expect(opt2.series[0].data).toEqual([[1, 100], [2, 50], [3, 30], [4, 90]])
+  })
+})
+
+describe('ChartView 极端数据不崩（空值/单行/负值/大量级）', () => {
+  it('度量全部为空：容器照常渲染、空类目轴，不抛异常', () => {
+    const emptyMeasure = ROWS.map((r) => ({ ...r, 销售额: null })) as unknown as RowResponse[]
+    expect(() => renderChart({ rows: emptyMeasure })).not.toThrow()
+    expect(screen.getByTestId('chart-container')).toBeInTheDocument()
+    const option = echartsMock.setOption.mock.calls[0][0] as Record<string, any>
+    expect(option.xAxis.data).toEqual([])
+    expect(option.series[0].data).toEqual([])
+  })
+
+  it('单行直方图：单箱 42~42', () => {
+    renderChart({
+      rows: [{ id: 1, 销售额: 42 }] as unknown as RowResponse[],
+      view: makeView({ chart_type: 'histogram', measure_field: '销售额', bin_policy: 'auto' }),
+    })
+    const option = echartsMock.setOption.mock.calls[0][0] as Record<string, any>
+    expect(option.xAxis.data).toEqual(['42~42'])
+    expect(option.series[0].data).toEqual([1])
+  })
+
+  it('大量级窄区间直方图：xAxis 标签两两可辨', () => {
+    const rows = [1000000.399, 1000000.679, 1000000.307, 1000000.11, 1000000.445, 1000000.261]
+      .map((v, i) => ({ id: i + 1, 销售额: v })) as unknown as RowResponse[]
+    renderChart({
+      rows,
+      view: makeView({ chart_type: 'histogram', measure_field: '销售额', bin_policy: 'auto' }),
+    })
+    const option = echartsMock.setOption.mock.calls[0][0] as Record<string, any>
+    const labels = option.xAxis.data as string[]
+    expect(new Set(labels).size).toBe(labels.length)
+    for (const label of labels) {
+      const [from, to] = label.split('~')
+      expect(from).not.toBe(to)
+    }
+  })
+
+  it('负值度量 avg 聚合：柱状图正常产出负数系列', () => {
+    const rows = [
+      { id: 1, 月份: '2026-07-05', 销售额: -100 },
+      { id: 2, 月份: '2026-07-20', 销售额: 50 },
+    ] as unknown as RowResponse[]
+    renderChart({
+      rows,
+      view: makeView({
+        chart_type: 'bar', dimension_field: '月份', measure_field: '销售额',
+        aggregation: 'avg', date_granularity: 'month',
+      }),
+    })
+    const option = echartsMock.setOption.mock.calls[0][0] as Record<string, any>
+    expect(option.series[0].data).toEqual([-25])
+  })
+})

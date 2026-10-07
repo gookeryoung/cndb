@@ -69,7 +69,7 @@ export function bucketTitle(key: string, granularity: MatrixDateGranularity): st
 /** 计算单行在某轴上的分组 key；空值/解析失败返回空串（调用方归「未分组」）.
  *
  * 类型分派与看板 groupKeyForRow 对齐：link/multi_select 取首值标签，select 按字段
- * options 映射标签，date/datetime 按粒度分桶，text 及未知类型 String 化。
+ * options 映射标签，date/datetime 按粒度分桶，boolean 按 是/否，text 及未知类型 String 化。
  */
 export function axisKeyForRow(
   row: RowResponse,
@@ -84,6 +84,10 @@ export function axisKeyForRow(
     if (ft === 'link') return getLinkFirstLabel(rawVal)
     if (ft === 'multi_select' || ft === 'multiselect') return getMultiSelectFirstLabel(rawVal)
     if (ft === 'select') return getSelectLabel(fieldDef, rawVal)
+    if (ft === 'boolean') {
+      if (rawVal === null || rawVal === undefined || rawVal === '') return ''
+      return rawVal ? '是' : '否'
+    }
   }
   if (rawVal === null || rawVal === undefined || rawVal === '') return ''
   return String(rawVal)

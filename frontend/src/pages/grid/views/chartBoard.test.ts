@@ -261,6 +261,124 @@ describe('histogramBins 分箱策略', () => {
   })
 })
 
+// ── 极端数据：分箱不变式与标签可辨识性 ────────────────
+
+describe('histogramBins 极端数据不变式（分箱策略调整场景）', () => {
+  const POLICIES = ['auto', 'sturges', 'freedman-diaconis'] as const
+
+  /** 不变式：计数不丢、from<=to、边界单调、首箱含 min 末箱含 max */
+  function expectInvariants(values: number[], policy: (typeof POLICIES)[number]) {
+    const bins = histogramBins(values, policy)
+    expect(bins.length).toBeGreaterThan(0)
+    expect(bins.reduce((a, b) => a + b.count, 0)).toBe(values.length)
+    expect(bins[0].from).toBe(Math.min(...values))
+    expect(bins[bins.length - 1].to).toBe(Math.max(...values))
+    for (const b of bins) expect(b.from).toBeLessThanOrEqual(b.to)
+    for (let i = 1; i < bins.length; i++) expect(bins[i].from).toBeGreaterThanOrEqual(bins[i - 1].from)
+    return bins
+  }
+
+  it('大量级窄区间（1e6 + 小数）：标签两两可辨，不退化为同串', () => {
+    // 修复前：fmtNum 6 位有效数字把 1000000.399 与 1000000.016 都折叠成 1000000，
+    // 多个箱标签重复为 1000000~1000000，ECharts 类目轴完全不可读
+    const values = [
+      1000000.399, 1000000.679, 1000000.307, 1000000.11, 1000000.445, 1000000.261,
+      1000000.016, 1000000.388, 1000000.285, 1000000.149, 1000000.69, 1000000.345,
+    ]
+    for (const policy of POLICIES) {
+      const bins = expectInvariants(values, policy)
+      const labels = bins.map((b) => b.label)
+      expect(new Set(labels).size, `策略 ${policy} 标签重复: ${labels.join(', ')}`).toBe(labels.length)
+      for (const b of bins) {
+        const [from, to] = b.label.split('~')
+        expect(from, `策略 ${policy} 标签 ${b.label}`).not.toBe(to)
+      }
+    }
+  })
+
+  it('负值与混合量级：计数不丢、边界单调', () => {
+    const values = [-1234, -2500, -99.5, 0, 1234.56, 2500.5, 999999, -1e6]
+    for (const policy of POLICIES) expectInvariants(values, policy)
+  })
+
+  it('科学计数法量级跨度（2.5e3 ~ 1.5e10）：标签不塌缩', () => {
+    const values = [1.5e10, 2.5e3, 7.5e9, 1.2e8, 3.3e5, 4.4e6, 8.8e7, 6.6e4]
+    for (const policy of POLICIES) {
+      const bins = expectInvariants(values, policy)
+      const labels = bins.map((b) => b.label)
+      expect(new Set(labels).size, `策略 ${policy} 标签重复: ${labels.join(', ')}`).toBe(labels.length)
+    }
+  })
+
+  it('FD 极小非零 IQR：箱数 clamp 到上限且不丢值', () => {
+    // 集中在 1e9 附近的 4 个值：IQR 极小但 > 0，FD 原始箱数天文数字 → clamp 后仍完备
+    const values = [1e9, 1e9 + 1, 1e9 + 2, 1e9 + 3]
+    const bins = histogramBins(values, 'freedman-diaconis')
+    expect(bins.length).toBeLessThanOrEqual(512)
+    expect(bins.reduce((a, b) => a + b.count, 0)).toBe(values.length)
+  })
+})
+
+// ── 极端数据：boolean 维度归桶与空度量口径 ────────────
+
+describe('buildChartData 极端维度场景', () => {
+  it('boolean 维度按「是/否」分桶（而非 true/false），空值归未分组', () => {
+    // 低质量数据工作区「布尔与百分比」表场景：维度=是否（boolean），度量=完成率（percentage）
+    const boolField = makeField({ id: 20, name: '是否', field_type: 'boolean' })
+    const rateField = makeField({ id: 21, name: '完成率', field_type: 'percentage' })
+    const rows: RowResponse[] = [
+      row({ id: 1, 是否: true, 完成率: 85 }),
+      row({ id: 2, 是否: false, 完成率: 92 }),
+      row({ id: 3, 是否: true, 完成率: 50 }),
+      row({ id: 4, 是否: null, 完成率: 10 }),
+    ]
+    const data = buildChartData(rows, [boolField, rateField], cfg({
+      chart_type: 'bar', dimension_field: '是否', measure_field: '完成率', aggregation: 'avg',
+    }))
+    expect(data.kind).toBe('category')
+    if (data.kind !== 'category') return
+    // zh-CN 拼音序：否(no) < 是(shi)，未分组恒末尾
+    expect(data.categories).toEqual(['否', '是', '未分组'])
+    expect(data.series[0].data).toEqual([92, 67.5, 10])
+  })
+
+  it('度量全部为空的 bar：类目为空数组，不抛异常', () => {
+    const emptyMeasure = AGG_ROWS.map((r) => row({ ...r, 销售额: null }))
+    const d = buildChartData(emptyMeasure, AGG_FIELDS, cfg({
+      chart_type: 'bar', dimension_field: '日期', measure_field: '销售额', aggregation: 'sum',
+    }))
+    expect(d.kind).toBe('category')
+    if (d.kind !== 'category') return
+    expect(d.categories).toEqual([])
+    expect(d.series[0].data).toEqual([])
+  })
+
+  it('单行全同值 histogram：单箱且 count=1', () => {
+    const data = buildChartData(
+      [row({ id: 1, 销售额: 42 })], [amountField],
+      cfg({ chart_type: 'histogram', measure_field: '销售额', bin_policy: 'auto' }),
+    )
+    expect(data.kind).toBe('histogram')
+    if (data.kind !== 'histogram') return
+    expect(data.bins).toEqual([{ label: '42~42', count: 1, from: 42, to: 42 }])
+  })
+
+  it('日期维度非法值（中文日期等不可解析串）整桶归未分组', () => {
+    const rows: RowResponse[] = [
+      row({ id: 1, 日期: '2024年1月15日', 销售额: 10 }),
+      row({ id: 2, 日期: '2023年6月20日', 销售额: 20 }),
+    ]
+    const data = buildChartData(rows, [dateField, amountField], cfg({
+      chart_type: 'bar', dimension_field: '日期', measure_field: '销售额',
+      date_granularity: 'month', aggregation: 'sum',
+    }))
+    expect(data.kind).toBe('category')
+    if (data.kind !== 'category') return
+    expect(data.categories).toEqual(['未分组'])
+    expect(data.series[0].data).toEqual([30])
+  })
+})
+
 // ── computeStats 描述统计 ─────────────────────────────
 
 describe('computeStats 已知数据集精确值', () => {
