@@ -44,6 +44,11 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         # Matrix 矩阵视图（纵横轴字段）
         "row_field",
         "column_field",
+        # Chart 图表视图（维度/度量/散点双轴字段；group_field 已在上方）
+        "dimension_field",
+        "measure_field",
+        "x_field",
+        "y_field",
     ):
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:

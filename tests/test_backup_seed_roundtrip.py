@@ -273,6 +273,14 @@ class TestSeedViewHelpers:
         assert _validate_view_fields({"name": "v", "sortings": [{"field_name": "缺失"}]}, valid, "ws", "t") is False
         # view_options 字段引用不存在 → 拒绝
         assert _validate_view_fields({"name": "v", "view_options": {"group_field": "缺失"}}, valid, "ws", "t") is False
+        # chart 图表视图字段引用不存在 → 拒绝（dimension_field / measure_field / x_field 路径）
+        assert (
+            _validate_view_fields(
+                {"name": "v", "view_options": {"dimension_field": "缺失", "measure_field": "薪资"}}, valid, "ws", "t"
+            )
+            is False
+        )
+        assert _validate_view_fields({"name": "v", "view_options": {"x_field": "缺失"}}, valid, "ws", "t") is False
 
 
 class TestCoerceRowValueTypes:

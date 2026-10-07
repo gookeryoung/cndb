@@ -381,6 +381,19 @@
         }
       ],
       "order": 3
+    },
+    {
+      "name": "月度销售额趋势",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "line",
+        "dimension_field": "日期",
+        "date_granularity": "month",
+        "measure_field": "销售额",
+        "aggregation": "sum",
+        "show_stats_panel": true
+      },
+      "order": 4
     }
   ],
   "部门表": [
@@ -460,6 +473,17 @@
         }
       ],
       "order": 3
+    },
+    {
+      "name": "部门薪资分布",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "boxplot",
+        "dimension_field": "部门",
+        "measure_field": "薪资",
+        "show_stats_panel": true
+      },
+      "order": 4
     }
   ],
   "出差统计": [

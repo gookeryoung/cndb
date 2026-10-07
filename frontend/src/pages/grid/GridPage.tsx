@@ -22,7 +22,7 @@ import { Modal, Empty, App as AntApp, Skeleton } from 'antd'
 import {
   ColumnHeightOutlined, AppstoreOutlined,
   CalendarOutlined, LineChartOutlined, PartitionOutlined,
-  TableOutlined,
+  TableOutlined, BarChartOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
@@ -57,6 +57,7 @@ const CalendarView = lazy(() => import('./views/CalendarView'))
 const GanttView = lazy(() => import('./views/GanttView'))
 const WbsView = lazy(() => import('./views/WbsView'))
 const MatrixView = lazy(() => import('./views/MatrixView'))
+const ChartView = lazy(() => import('./views/ChartView'))
 
 function ModalFallback() {
   return null
@@ -116,6 +117,7 @@ const MODE_BUTTONS: readonly ModeBtn[] = [
   { mode: 'gantt', tooltip: '甘特图视图：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
   { mode: 'wbs', tooltip: '工作分解视图：树状层级组织任务', icon: <PartitionOutlined /> },
   { mode: 'matrix', tooltip: '矩阵视图：行列分类交叉，数据按类别填入单元格', icon: <TableOutlined /> },
+  { mode: 'chart', tooltip: '图表视图：柱状/折线/饼图/散点/直方图/箱线图与统计分析', icon: <BarChartOutlined /> },
 ]
 
 /** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */
@@ -309,7 +311,7 @@ export default function GridPage() {
   const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
-      const KANBAN_MODES = new Set<string>(['kanban', 'calendar', 'gantt', 'wbs', 'matrix'])
+      const KANBAN_MODES = new Set<string>(['kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart'])
       const vt = v.view_type ?? ''
       const newMode: ViewMode = KANBAN_MODES.has(vt) ? (vt as ViewMode) : 'grid'
 
@@ -1066,6 +1068,8 @@ export default function GridPage() {
               <WbsView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'matrix' ? (
               <MatrixView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
+            ) : mode === 'chart' ? (
+              <ChartView rows={rowList.items || []} fields={table?.fields || []} view={activeView} total={rowList.total} onRowClick={openDetailWithPrefetch} />
             ) : (
               <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             )}

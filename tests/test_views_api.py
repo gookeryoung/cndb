@@ -102,6 +102,76 @@ class TestViewsAPI:
         assert r.status_code == 400
         assert "column_field" in r.json()["detail"]
 
+    def test_create_chart_view_ok(self, client, ws, table, auth_owner):
+        """图表视图：维度/度量/散点双轴字段引用存在字段时应创建成功."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "薪资分布",
+                "view_type": "chart",
+                "view_options": {
+                    "chart_type": "bar",
+                    "dimension_field": "姓名",
+                    "measure_field": "姓名",
+                    "aggregation": "sum",
+                    "date_granularity": "month",
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 201
+        data = r.json()
+        assert data["view_type"] == "chart"
+        assert data["view_options"]["dimension_field"] == "姓名"
+
+        # scatter：x_field / y_field 路径同样放行
+        r2 = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "相关散点",
+                "view_type": "chart",
+                "view_options": {
+                    "chart_type": "scatter",
+                    "x_field": "姓名",
+                    "y_field": "姓名",
+                    "show_trend_line": True,
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r2.status_code == 201
+        assert r2.json()["view_options"]["x_field"] == "姓名"
+
+    def test_create_chart_view_invalid_field(self, client, ws, table, auth_owner):
+        """图表视图：维度/度量字段引用不存在字段时应返回 400."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "坏图表",
+                "view_type": "chart",
+                "view_options": {
+                    "chart_type": "bar",
+                    "dimension_field": "姓名",
+                    "measure_field": "不存在字段",
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "measure_field" in r.json()["detail"]
+
+        r2 = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "坏散点",
+                "view_type": "chart",
+                "view_options": {"chart_type": "scatter", "x_field": "不存在字段", "y_field": "姓名"},
+            },
+            headers=auth_owner,
+        )
+        assert r2.status_code == 400
+        assert "x_field" in r2.json()["detail"]
+
     def test_list_views(self, client, ws, table, auth_owner):
         # 先创建两个
         client.post(
