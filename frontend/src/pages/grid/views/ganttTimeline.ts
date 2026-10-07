@@ -309,7 +309,8 @@ export function buildDualTimeline(
 }
 
 /** 根据用户选定的 scale + 时间跨度，从 ZOOM_LEVELS 中选出最合适的档位.
- *  策略：优先匹配 currentScale，再选 pxPerDay 使总宽度落在 [600, 3000] 区间。 */
+ *  策略：优先匹配 currentScale，再选 pxPerDay 使总宽度落在 [600, 3000] 区间；
+ *  区间内有多个档位时取中间档（避免总是选最小 pxPerDay 造成视图过密）。 */
 export function selectZoomLevelForScale(scale: TimeScale, totalDays: number): number {
   const candidates = ZOOM_LEVELS
     .map((lv, i) => ({ lv, i }))
@@ -317,15 +318,28 @@ export function selectZoomLevelForScale(scale: TimeScale, totalDays: number): nu
 
   if (candidates.length === 0) return 2 // fallback
 
-  // 计算期望总宽度
-  const totalDaysNum = totalDays
-  // 找最合适的档位：总宽度落在 [600, 3000] 内的第一个，否则取中间
-  let best = candidates[Math.floor(candidates.length / 2)]
+  // 目标宽度区间：[600, 3000]，兼顾最小可读性与横向滚动体验
+  const W_MIN = 600
+  const W_MAX = 3000
+
+  // 先筛选所有落在区间内的档位
+  const inRange = candidates.filter(c => {
+    const w = totalDays * c.lv.pxPerDay
+    return w >= W_MIN && w <= W_MAX
+  })
+
+  if (inRange.length > 0) {
+    // 区间内有多个档位时，取中间档（day 粒度下 129 天会选到 level 5 而非 level 4）
+    const mid = Math.floor(inRange.length / 2)
+    return inRange[mid].i
+  }
+
+  // 全部不在区间内，取 score 最小的
+  let best = candidates[0]
   let bestScore = Infinity
   for (const c of candidates) {
-    const w = totalDaysNum * c.lv.pxPerDay
-    // 评分：落在区间内得 0 分，偏离量越小越好
-    const score = w < 600 ? 600 - w : w > 3000 ? w - 3000 : 0
+    const w = totalDays * c.lv.pxPerDay
+    const score = w < W_MIN ? W_MIN - w : w - W_MAX
     if (score < bestScore) {
       bestScore = score
       best = c

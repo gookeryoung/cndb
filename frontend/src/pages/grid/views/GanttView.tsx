@@ -799,12 +799,11 @@ export default function GanttView({
                     data-testid={seg.showLabel ? 'gantt-timeline-label' : undefined}
                     data-layer="current"
                     style={{
-                      position: secondaryGrid ? 'absolute' : 'relative',
-                      left: secondaryGrid ? seg.left : undefined,
-                      top: secondaryGrid ? 0 : undefined,
-                      height: secondaryGrid ? '100%' : undefined,
+                      position: 'absolute',
+                      left: seg.left,
+                      top: 0,
+                      height: '100%',
                       width: seg.width,
-                      minWidth: seg.width,
                       padding: '0 3px',
                       display: 'flex',
                       alignItems: 'center',
@@ -814,10 +813,10 @@ export default function GanttView({
                         : `1px solid ${levelDef.anchorScale === 'year' ? 'var(--cn-border)' : 'var(--cn-border-secondary, #f0f0f0)'}`,
                       fontSize: ds.headerFontSize,
                       color: 'var(--cn-text-muted)',
-                      flexShrink: 0,
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       background: 'var(--cn-bg-subtle)',
+                      boxSizing: 'border-box',
                     }}
                   >
                     {seg.showLabel ? seg.label : null}

@@ -225,23 +225,30 @@ describe('buildDualTimeline', () => {
 })
 
 describe('selectZoomLevelForScale', () => {
-  it('day 粒度 30 天：选总宽度落入 [600,3000] 的最小偏离档位（月-日 18px）', () => {
-    expect(selectZoomLevelForScale('day', 30)).toBe(6)
+  it('day 粒度 129 天：区间内有 level 4/5 两档，取中间档 level 5（月-日）', () => {
+    // 129×14=1806, 129×18=2322 都在 [600,3000]，取中间
+    expect(selectZoomLevelForScale('day', 129)).toBe(5)
   })
 
-  it('day 粒度 10 天：跨度太短，选最大像素档（日-细 40px）', () => {
+  it('day 粒度 30 天：level 6/7 在区间内，取中间档 level 7（日-细）', () => {
+    // 30×26=780, 30×40=1200 都在区间，取中间
+    expect(selectZoomLevelForScale('day', 30)).toBe(7)
+  })
+
+  it('day 粒度 10 天：跨度太短全部档 < 600，选 score 最小的 level 7（日-细）', () => {
     expect(selectZoomLevelForScale('day', 10)).toBe(7)
   })
 
-  it('day 粒度 200 天：跨度长，选较小像素档（月-半周 14px）', () => {
+  it('day 粒度 200 天：仅 level 4 (2800px) 在区间内，选它', () => {
     expect(selectZoomLevelForScale('day', 200)).toBe(4)
   })
 
-  it('week 粒度 100 天：两个候选都落区间，取第一个（月-双周 7px）', () => {
-    expect(selectZoomLevelForScale('week', 100)).toBe(2)
+  it('week 粒度 100 天：level 2/3 都落区间，取中间档 level 3（月-周）', () => {
+    // 100×7=700, 100×10=1000 都在区间，取中间
+    expect(selectZoomLevelForScale('week', 100)).toBe(3)
   })
 
-  it('quarter 粒度 365 天：唯一候选年-季度档', () => {
+  it('quarter 粒度 365 天：唯一候选 level 0（年-季度），即使不在区间也返回', () => {
     expect(selectZoomLevelForScale('quarter', 365)).toBe(0)
   })
 })
