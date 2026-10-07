@@ -350,10 +350,10 @@ def test_daily_todo_views_config_from_real_datasets():
     assert sm_tables is not None
     todo_views = sm_tables.get("日常待办")
     assert todo_views is not None, "views.json 应包含日常待办表"
-    assert len(todo_views) == 6, f"期望 6 个日常待办视图，实际 {len(todo_views)}"
+    assert len(todo_views) == 7, f"期望 7 个日常待办视图，实际 {len(todo_views)}"
 
     names = {v["name"] for v in todo_views}
-    assert {"全部", "待办看板", "高优先级任务", "按员工看板", "待办日历", "进行中任务"} == names
+    assert {"全部", "待办看板", "高优先级任务", "按员工看板", "待办日历", "进行中任务", "状态任务数"} == names
 
 
 def test_daily_todo_csv_has_10_rows(tmp_path):

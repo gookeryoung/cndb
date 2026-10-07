@@ -6,10 +6,12 @@ import {
   findOptionSchema,
   getOptionSchema,
   groupOptionSchema,
+  normalizeChartList,
   optionColSpan,
   resolveAutoField,
   resolveFieldOptions,
   resolveOpts,
+  serializeChartList,
 } from './viewOptionSchema'
 import { makeField } from '@/test/fixtures'
 
@@ -242,5 +244,70 @@ describe('schema group 完整性', () => {
     for (const label of COLLAPSED_BY_DEFAULT_GROUPS) {
       expect(allLabels.has(label), `默认收起分区「${label}」不存在`).toBe(true)
     }
+  })
+})
+
+describe('normalizeChartList / serializeChartList chart 多图双向转换', () => {
+  it('扁平 view_options 归一为单条目（仅取 CHART_OPTIONS 键）', () => {
+    const draft = {
+      chart_type: 'bar',
+      dimension_field: '月份',
+      measure_field: '销售额',
+      hidden_fields: ['1'], // 非图表键不进入条目
+    }
+    const list = normalizeChartList(draft)
+    expect(list).toHaveLength(1)
+    expect(list[0]).toEqual({ chart_type: 'bar', dimension_field: '月份', measure_field: '销售额' })
+  })
+
+  it('charts[] 非空数组逐条目浅拷贝返回', () => {
+    const entry = { chart_type: 'scatter', x_field: '工时', y_field: '销售额' }
+    const list = normalizeChartList({ charts: [entry, {}] })
+    expect(list).toHaveLength(2)
+    expect(list[0]).toEqual(entry)
+    expect(list[0]).not.toBe(entry) // 浅拷贝，不共享引用
+    expect(list[1]).toEqual({})
+  })
+
+  it('serialize：图表数 ==1 输出扁平键，>1 输出 charts[]（确定性保存规则）', () => {
+    const flat = serializeChartList([{ chart_type: 'bar', dimension_field: '月份' }])
+    expect(flat).toEqual({ chart_type: 'bar', dimension_field: '月份' })
+
+    const multi = serializeChartList([
+      { chart_type: 'bar', dimension_field: '月份' },
+      { chart_type: 'pie', dimension_field: '团队' },
+    ])
+    expect(multi).toEqual({
+      charts: [
+        { chart_type: 'bar', dimension_field: '月份' },
+        { chart_type: 'pie', dimension_field: '团队' },
+      ],
+    })
+  })
+
+  it('serialize 条目级空值清洗：空串/null/空数组剔除，清洗后为空的条目整体剔除', () => {
+    const out = serializeChartList([
+      { chart_type: 'bar', dimension_field: '', measure_field: null, group_field: [] },
+      { dimension_field: '' }, // 清洗后为空 → 整体剔除
+      { chart_type: 'scatter', x_field: '工时' },
+    ])
+    expect(out).toEqual({
+      charts: [{ chart_type: 'bar' }, { chart_type: 'scatter', x_field: '工时' }],
+    })
+
+    // 全部为空 → null
+    expect(serializeChartList([{ dimension_field: '' }])).toBeNull()
+    expect(serializeChartList([])).toBeNull()
+  })
+
+  it('往返：charts[] 多图 normalize→serialize 幂等', () => {
+    const origin = {
+      charts: [
+        { chart_type: 'bar', dimension_field: '月份', measure_field: '销售额' },
+        { chart_type: 'scatter', x_field: '工时', y_field: '销售额', show_trend_line: true },
+      ],
+    }
+    const out = serializeChartList(normalizeChartList(origin))
+    expect(out).toEqual(origin)
   })
 })

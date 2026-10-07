@@ -464,6 +464,58 @@ export function resolveOpts(
   return out
 }
 
+// ── chart 多图双向转换（normalize / serialize） ─────────
+
+/** 把 draftOpt 归一为图表条目列表（ViewConfigDialog 内部编辑形态）.
+ *
+ * - draftOpt.charts 为非空数组 → 逐条目浅拷贝返回（多图形态）
+ * - 否则 → 从扁平键中仅提取 CHART_OPTIONS 定义的键，组装为单条目
+ *   （hidden_fields 等非图表键不进入条目，由调用方在 draftOpt 中继续持有）
+ */
+export function normalizeChartList(
+  draftOpt: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const charts = draftOpt.charts
+  if (Array.isArray(charts) && charts.length > 0) {
+    return charts
+      .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object' && !Array.isArray(c))
+      .map((c) => ({ ...c }))
+  }
+  const flat: Record<string, unknown> = {}
+  for (const opt of CHART_OPTIONS) {
+    if (draftOpt[opt.key] !== undefined) flat[opt.key] = draftOpt[opt.key]
+  }
+  return [flat]
+}
+
+/** 把图表条目列表序列化回 view_options 片段（保存出口，规则确定性）.
+ *
+ * - 图表数 >1 → 输出 `{ charts: [...] }`（多图形态）
+ * - ==1 → 输出扁平键对象（既有单图契约）
+ * - 条目级空值清洗与 ViewConfigDialog cleanOpt 同款：''/null/undefined 剔除、空数组剔除；
+ *   清洗后为空的条目整体剔除；全部为空返回 null（交由调用方决定是否落盘）
+ */
+export function serializeChartList(
+  list: Array<Record<string, unknown>>,
+): Record<string, unknown> | null {
+  const clean = (entry: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(entry)) {
+      if (v === '' || v == null) continue
+      if (Array.isArray(v) && v.length === 0) continue
+      out[k] = v
+    }
+    return out
+  }
+  if (list.length === 0) return null
+  if (list.length === 1) {
+    const one = clean(list[0])
+    return Object.keys(one).length ? one : null
+  }
+  const charts = list.map(clean).filter((e) => Object.keys(e).length > 0)
+  return charts.length ? { charts } : null
+}
+
 // ── 自动推断字段名（消费方 fallback） ──────────────────
 
 /** 从 schema 里找指定 key 的 option 定义 */

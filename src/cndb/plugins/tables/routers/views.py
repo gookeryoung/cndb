@@ -53,6 +53,16 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:
             return False, f"view_options.{opt_key}='{opt_val}' 不存在"
+    # chart 多图形态：charts[] 逐条目校验字段引用（detail 定位到 charts[i].<key>）
+    charts = vo.get("charts")
+    if isinstance(charts, list):
+        for i, entry in enumerate(charts):
+            if not isinstance(entry, dict):
+                return False, f"view_options.charts[{i}] 不是对象"
+            for opt_key in ("dimension_field", "measure_field", "x_field", "y_field", "group_field"):
+                opt_val = entry.get(opt_key)
+                if opt_val and opt_val not in valid_fields:
+                    return False, f"view_options.charts[{i}].{opt_key}='{opt_val}' 不存在"
     return True, None
 
 

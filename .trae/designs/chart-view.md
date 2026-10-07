@@ -1,10 +1,10 @@
 # 图表视图设计
 
-对应需求：`.trae/req/req-18-图表视图.md`。实施计划：`.claude/artifacts/plans/chart-view.md`。
+对应需求：`.trae/req/req-18-图表视图.md`（单图）、`.trae/req/req-19-图表视图多图.md`（多图）。实施计划：`.claude/artifacts/plans/chart-view.md`、`.claude/artifacts/plans/chart-view-multi.md`。
 
 ## 概念
 
-图表视图（view_type = "chart"）是纯前端聚合的可视化视图：行数据在浏览器内按配置归桶/聚合后交 ECharts（SVGRenderer）渲染，同时附带描述统计面板。6 种图表类型共用一套 view_options 契约，经 `visibleWhen` 按 chart_type 条件显隐。
+图表视图（view_type = "chart"）是纯前端聚合的可视化视图：行数据在浏览器内按配置归桶/聚合后交 ECharts（SVGRenderer）渲染，同时附带描述统计面板。6 种图表类型共用一套 view_options 契约，经 `visibleWhen` 按 chart_type 条件显隐。一个 chart 视图支持单图（扁平键）与多图（charts[] 数组）双形态，渲染端与校验端同时支持。
 
 ## 依赖项
 
@@ -27,8 +27,24 @@
 | bin_policy | string | 否 | auto | 直方图分箱策略：auto（平方根）/ sturges / freedman-diaconis；仅 histogram |
 | show_stats_panel | boolean | 否 | true | 是否显示描述统计面板 |
 | show_trend_line | boolean | 否 | — | 散点图叠加 OLS 趋势线；仅 scatter |
+| charts | array | 否 | — | 多图形态：元素为上述扁平键集的配置对象（同表结构），非空数组时按多图网格渲染 |
 
-后端校验：`views.py _validate_view_fields` 与 `seed.py _validate_view_fields` 的 view_options 白名单均增加 `dimension_field` / `measure_field` / `x_field` / `y_field`（group_field 已在），引用不存在字段返回 400；ViewType 枚举不扩（view_type 为自由字符串）。
+### 单图 / 多图双形态与双向转换
+
+- 扁平键（上表除 charts 外）为合法单图形态；`charts` 为非空对象数组时为多图形态，两形态**不并存**（保存出口保证）。
+- 转换真相源在 `viewOptionSchema.ts`：
+  - `normalizeChartList(draftOpt)`：charts 非空数组 → 逐条目浅拷贝；否则从扁平键提取 CHART_OPTIONS 键组装单条目（hidden_fields 等非图表键不进入条目）。
+  - `serializeChartList(list)`：图表数 >1 → `{ charts: [...] }`；==1 → 扁平键对象；条目级空值清洗（''/null/undefined/空数组剔除），清洗后为空的条目整体剔除，全部为空返回 null。
+- ViewConfigDialog 保存出口：先删 cleanOpt 的 charts 键与全部 CHART_OPTIONS 扁平键，再合入 serialize 产物（防止添加图表后扁平键残留）。
+- 后端校验：`views.py _validate_view_fields` 与 `seed.py _validate_view_fields` 在扁平键白名单外追加——`charts` 为 list 时逐条目校验（元素非 dict 返回 400「view_options.charts[i] 不是对象」；dict 内 dimension_field/measure_field/x_field/y_field/group_field 引用不存在字段返回 400，detail 定位 `view_options.charts[i].<key>`）。ViewType 枚举不扩（view_type 为自由字符串）。
+
+### 多图渲染与条目管理
+
+- 渲染端 `resolveChartList(viewOptions)`（ChartView.tsx 内）：charts 非空数组 → 逐条目 resolveOpts（multi=true）；否则扁平键整体解析一次（multi=false）。
+- 多图：dashboard 式自适应网格 `repeat(auto-fill, minmax(420px, 1fr))`、gap 12px，每卡独立 ChartCard（边框卡片 + 自动标注卡片头 `{类型中文} · {关键字段名}`，纯展示不可配 title；scatter 取 `x × y`，histogram/boxplot 取度量，其余取维度）。每卡独立 ECharts 实例 / 统计面板 / 散点点击语义；实例随卡片卸载 dispose。上限 6（待用户复核）。
+- 单图（扁平来源）：保持既有全宽 flex 容器，无卡片头——渲染行为与多图上线前完全一致。
+- 空态分档：无行 → 视图级 chart-empty-rows；多图某卡必填缺失 → 该卡内空态，data-testid 带索引后缀 `chart-empty-config-{i}`（单图保持 `chart-empty-config`）；卡片头 testid `chart-card-title-{i}`。
+- ViewConfigDialog（仅 view_type='chart' 的专属设置 tab 顶部）：Segmented（`图表 1 / 图表 2 / …`）+ 「添加图表」（上限 6 禁用 + tooltip）+ 「删除当前图表」（单条目禁用；删至单条目写回扁平形态）；分区渲染传当前条目 opts 使 visibleWhen 按该条 chart_type 显隐；activeChartIdx 在对话框打开时重置为 0；折叠重置 effect 依赖分区标签 join 不受条目切换影响。
 
 ## 数据流与算法（chartBoard.ts 纯逻辑层）
 
@@ -43,11 +59,12 @@
 
 ## 渲染（ChartView.tsx）
 
+- 组件结构：主组件解析 resolveChartList 并负责布局壳（单图全宽 flex / 多图 grid）；`ChartCard` 子组件封装单卡内容——missing 判定、buildChartData、ECharts option 装配、生命周期、StatsPanel、必填缺失空态；`missingFieldLabels` / `chartKeyFieldLabel` / `CHART_TYPE_LABELS` 为文件内纯函数。
 - 生命周期：`echarts.init(container, undefined, { renderer: 'svg' })` 仅在必填字段齐备时挂载；chart_type 切换不重建实例，`setOption(option, true)` notMerge 覆盖；ResizeObserver 随 init 挂载/卸载；卸载 dispose。
 - 主题桥接：`useTheme()` 的 mode 进 option memo 依赖——主题切换触发重渲染，`getComputedStyle` 重读 `var(--cn-text-primary/--cn-text-secondary/--cn-border/--cn-bg-container)`（jsdom 回退浅色默认）重建 option；系列色用 antd 8 色预设（同 MatrixView AXIS_COLORS 策略，按索引循环，不绑主题变量）。
 - 散点点击行详情：rowIds 与 points 平行，经 clickCtxRef/onRowClickRef 每次 render 更新防 init effect 闭包过期；`params.seriesType === 'scatter'` 才触发（趋势线/箱线离群点不触发）。
 - 统计面板 StatsPanel：14 项指标 + 「样本量 N / 总行数 M」（total prop，暴露 fetch-all 截断口径）+ 口径 tooltip；散点附加 Pearson r / R² / 斜率 / 截距；`fmtStat`（null→'—'，整数原样，浮点 6 位有效数字）。
-- 空态两档：必填字段缺失（chart-empty-config，按 chart_type 提示维度/度量或 X/Y 字段）/ 无行（chart-empty-rows）。
+- 空态：无行 → 视图级 chart-empty-rows（多图/单图共用，先于卡片判定）；必填字段缺失 → 卡内 chart-empty-config（多图带索引后缀，见「多图渲染与条目管理」）。
 - GridPage 接线：MODE_BUTTONS 增 chart 项；KANBAN_MODES（fetch-all 集合）增 'chart'；lazy import。
 
 ## 表单（visibleWhen 机制）
@@ -60,15 +77,17 @@
 - 度量值无效（空/非数值/Infinity）：聚合与统计口径统一剔除；散点任一轴无效整行剔除。
 - 维度空值归「未分组」桶（排序恒末尾）；多系列无值桶为 null（不虚构 0）。
 - 直方图 FD 策略 IQR=0（数据过度集中）：回退 Sturges；单值/全同值收敛单箱。
-- 后端 400：view_options 引用不存在字段（dimension_field/measure_field/x_field/y_field），detail 含具体键名。
+- 后端 400：view_options 引用不存在字段（扁平键 dimension_field/measure_field/x_field/y_field，及 charts[i] 内五字段键），detail 含具体键名并定位到 `charts[i].<key>`；charts 元素非 dict 返回 400。
 - 前端空态兜底：历史数据/清空场景缺必填字段时引导配置，不渲染图表。
 
 ## 测试约定
 
 - `chartBoard.test.ts`（23 条）：toNumber/extractNumbers 边界 / 聚合五口径+日期分桶+空值剔除+未分组 / group_field 多系列 null 桶 / pie 扇区数据 / scatter 无效行剔除+rowIds 平行 / boxplot 五数概括+IQR 离群 / 分箱三策略+FD IQR=0 回退+边界 / computeStats 精确值+偏度+空数组 / pearson 完美相关+奇异 / olsLine 精确斜率截距。
-- `ChartView.test.tsx`（16 条）：空态（必填字段缺失 / 空行 / scatter 缺 X/Y）/ bar 聚合 option+类目序+未分组末尾 / group_field 多系列+legend / line 类型 / scatter OLS 趋势线 / 统计面板数值+截断口径 / 散点附加 Pearson r/R²/回归系数 / show_stats_panel 关闭 / 主题切换重建 option / pie option（series.type、扇区 name/value/itemStyle.color）/ histogram option（series.type=bar、barCategoryGap=0、bins labels 做 xAxis）/ boxplot option（主 series=boxplot+离群值 scatter、xAxis.data=拼音序分组）/ scatter 点击散点触发 onRowClick / scatter 非散点系列（趋势线）不触发。
+- `ChartView.test.tsx`（19 条）：空态（必填字段缺失 / 空行 / scatter 缺 X/Y）/ bar 聚合 option+类目序+未分组末尾 / group_field 多系列+legend / line 类型 / scatter OLS 趋势线 / 统计面板数值+截断口径 / 散点附加 Pearson r/R²/回归系数 / show_stats_panel 关闭 / 主题切换重建 option / pie option（series.type、扇区 name/value/itemStyle.color）/ histogram option（series.type=bar、barCategoryGap=0、bins labels 做 xAxis）/ boxplot option（主 series=boxplot+离群值 scatter、xAxis.data=拼音序分组）/ scatter 点击散点触发 onRowClick / scatter 非散点系列（趋势线）不触发；多图 3 条——charts 两元素渲染 2 容器+卡片头标注 / 每卡独立统计面板 / 某卡必填缺失对应索引空态。
+- `ViewConfigDialog.test.tsx`：chart 多图条目管理 3 条——扁平单图 Segmented 仅图表 1+禁删最后 / 添加图表保存输出 charts[]（空条目清洗）/ 切换条目 visibleWhen 按该条 chart_type 显隐+删除后保存回扁平形态。
+- `viewOptionSchema.test.ts`：normalizeChartList / serializeChartList 5 条——扁平归一单条目 / charts[] 浅拷贝 / ==1 扁平 >1 charts[] / 条目级空值清洗 / 多图往返幂等。
 - `CreateEditViewForm.test.tsx`：图表类型渲染、visibleWhen 条件显隐（scatter 出 X/Y 隐维度/聚合；histogram 出分箱）、提交 opts。
-- `test_views_api.py`：chart 视图创建 201（bar + scatter + line + pie + boxplot + histogram 全 6 种类型）与 400（measure_field/x_field/group_field 不存在）；6 种 chart_type 在同一张表上连续创建（模拟 seed 注入）都通过校验并正确列出。
+- `test_views_api.py`：chart 视图创建 201（bar + scatter + line + pie + boxplot + histogram 全 6 种类型）与 400（measure_field/x_field/group_field 不存在）；多图 charts[] 合法创建 201 并原样存取、charts[1].measure_field 不存在 400（detail 定位索引）、charts 元素非 dict 400；6 种 chart_type 在同一张表上连续创建（模拟 seed 注入）都通过校验并正确列出。
 - `examples/datasets/*/views.json` 所有 chart 视图引用字段经 CSV 表头/硬编码表字段校验通过；`python -c` 扫描验证 34 个 chart 视图（bar×9 / line×5 / pie×5 / scatter×4 / histogram×6 / boxplot×5）全部字段引用有效。
 - e2e `view-mode-switch.spec.ts`：电商销售表点图表按钮 → SVG 图表 + 统计面板渲染。
 - bundle-budget：新增 ChartView 基线 204_265 gzip bytes；GridPage 基线更新 38_793（接线 +1.8KB gzip）。

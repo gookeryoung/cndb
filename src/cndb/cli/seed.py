@@ -1643,6 +1643,23 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
                 f"的 view_options.{opt_key}='{opt_val}' 不存在"
             )
             return False
+    # chart 多图形态：charts[] 逐条目校验字段引用（打印定位到 charts[i].<key>）
+    charts = vo.get("charts")
+    if isinstance(charts, list):
+        for i, entry in enumerate(charts):
+            if not isinstance(entry, dict):
+                print(
+                    f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' 的 view_options.charts[{i}] 不是对象"
+                )
+                return False
+            for opt_key in ("dimension_field", "measure_field", "x_field", "y_field", "group_field"):
+                opt_val = entry.get(opt_key)
+                if opt_val and opt_val not in valid_fields:
+                    print(
+                        f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' "
+                        f"的 view_options.charts[{i}].{opt_key}='{opt_val}' 不存在"
+                    )
+                    return False
     return True
 
 
