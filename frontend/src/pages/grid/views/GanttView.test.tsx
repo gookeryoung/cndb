@@ -152,18 +152,38 @@ describe('GanttView 甘特图视图', () => {
         expect(onRowClick.mock.calls[0][0].id).toBe(1)
     })
 
-    it('切换时间刻度为"天"后缩放档位随之重选', async () => {
+    it('切换时间刻度为"天"后档位重选且粒度保持 day', async () => {
         renderGantt()
 
         const info = screen.getByTestId('gantt-scale-info')
-        // 129 天跨度 + month 刻度 → 初始档位「月-双周」
-        expect(within(info).getByText('月-双周')).toBeInTheDocument()
+        // 129 天跨度 + month 刻度 → 档位保持在 month 粒度（年-月），不再漂移到 week
+        expect(within(info).getByText('年-月')).toBeInTheDocument()
 
         fireEvent.click(screen.getByRole('radio', { name: '天' }))
 
-        // day 刻度自动选中更高像素档位「月-半周」，旧档位名消失
+        // day 刻度在 day 档位范围内重选（月-半周），旧 month 档位名消失
         expect(await screen.findByText('月-半周')).toBeInTheDocument()
-        expect(screen.queryByText('月-双周')).not.toBeInTheDocument()
+        expect(screen.queryByText('年-月')).not.toBeInTheDocument()
+    })
+
+    it('切换时间刻度为"周"后档位在 week 范围内（月-双周）', async () => {
+        renderGantt()
+
+        fireEvent.click(screen.getByRole('radio', { name: '周' }))
+
+        // week 刻度在 week 档位范围内（level 2-3），129 天选到 level 2 = 月-双周
+        expect(await screen.findByText('月-双周')).toBeInTheDocument()
+        expect(screen.queryByText('年-月')).not.toBeInTheDocument()
+    })
+
+    it('切换时间刻度为"季"后档位保持 quarter（年-季度）', async () => {
+        renderGantt()
+
+        fireEvent.click(screen.getByRole('radio', { name: '季' }))
+
+        // quarter 只有 level 0 一个档位，129 天显示「年-季度」
+        expect(await screen.findByText('年-季度')).toBeInTheDocument()
+        expect(screen.queryByText('年-月')).not.toBeInTheDocument()
     })
 
     // ── 纵向虚拟化（非 grid 视图数据上限 2000 条，全量渲染会产生海量 DOM）──
