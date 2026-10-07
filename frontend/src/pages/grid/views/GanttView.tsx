@@ -826,15 +826,17 @@ export default function GanttView({
             </div>
           </div>
 
-          {/* body 行区 —— 纵向虚拟滚动（本元素即左列滚动同步源） */}
+          {/* body 行区 —— 纵向虚拟滚动（本元素即左列滚动同步源）；
+              横向滚动由外层 hScrollRef 统一承担，内层禁用横向滚动条以避免双滚动条 */}
           <div
             ref={attachBody}
             data-testid="gantt-body"
             style={{
               position: 'relative',
               flex: 1,
-              overflow: 'auto',
-              minWidth: totalTimelineWidth,
+              minWidth: 0,
+              overflowY: 'auto',
+              overflowX: 'hidden',
             }}
           >
             {/* 时间轴网格背景层 —— 双层：主分隔（锚定粒度深色）+ 次分隔（当前粒度浅色） */}
