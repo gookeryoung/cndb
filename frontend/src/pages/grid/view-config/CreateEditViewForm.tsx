@@ -78,10 +78,13 @@ function ConfigItem({ opt, fields, opts, updateOpt }: {
   const fallbackValue = opt.defaultValue
 
   if (opt.kind === 'switch') {
+    // 与 ViewConfigDialog ViewOptionItem 保持一致：undefined/null 时回退 defaultValue
+    // （resolveOpts 行为：显式值 false 是有效值不回退，undefined/null 才回退 defaultValue）
+    const effective = currentValue !== undefined && currentValue !== null ? !!currentValue : !!opt.defaultValue
     return (
       <Form.Item label={opt.label} tooltip={opt.tooltip} valuePropName="checked">
         <Switch
-          checked={currentValue !== false && currentValue !== undefined}
+          checked={effective}
           onChange={v => updateOpt(opt.key, v)}
           checkedChildren="开"
           unCheckedChildren="关"
