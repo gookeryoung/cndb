@@ -1,5 +1,9 @@
 """DataView 视图端点测试."""
 
+from __future__ import annotations
+
+from typing import Any
+
 import pytest
 
 from cndb.plugins.accounts.models import User
@@ -171,6 +175,72 @@ class TestViewsAPI:
         )
         assert r2.status_code == 400
         assert "x_field" in r2.json()["detail"]
+
+    @pytest.mark.parametrize("ct", ["pie", "histogram", "boxplot", "line"])
+    def test_create_chart_various_types_ok(self, client, ws, table, auth_owner, ct):
+        """所有 6 种 chart_type 都能通过 API 创建（pie / histogram / boxplot / line 分支）."""
+        # pie / line：dimension_field + measure_field；histogram 只需 measure_field；boxplot 同 pie
+        opts: dict[str, Any] = {"chart_type": ct, "measure_field": "姓名"}
+        if ct in ("pie", "line", "boxplot"):
+            opts["dimension_field"] = "姓名"
+            opts["aggregation"] = "sum"
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": f"{ct}_chart", "view_type": "chart", "view_options": opts},
+            headers=auth_owner,
+        )
+        assert r.status_code == 201, f"{ct} chart 创建失败: {r.status_code} {r.json()}"
+        assert r.json()["view_options"]["chart_type"] == ct
+
+    def test_create_chart_group_field_invalid(self, client, ws, table, auth_owner):
+        """chart bar/line 引用不存在的 group_field 也应返回 400."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "坏分组图表",
+                "view_type": "chart",
+                "view_options": {
+                    "chart_type": "line",
+                    "dimension_field": "姓名",
+                    "measure_field": "姓名",
+                    "group_field": "不存在字段",
+                    "aggregation": "sum",
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "group_field" in r.json()["detail"]
+
+    def test_seed_all_chart_types_create_ok(self, client, ws, table, auth_owner):
+        """覆盖 seed 全部 6 种 chart_type（bar / line / pie / scatter / histogram / boxplot）
+        在真实表上连续创建都通过校验，模拟 seed.py 批量注入场景."""
+        specs: list[tuple[str, dict[str, Any]]] = [
+            ("bar", {"dimension_field": "姓名", "measure_field": "姓名", "aggregation": "sum"}),
+            ("line", {"dimension_field": "姓名", "measure_field": "姓名", "aggregation": "avg", "group_field": "姓名"}),
+            ("pie", {"dimension_field": "姓名", "measure_field": "姓名", "aggregation": "count"}),
+            ("scatter", {"x_field": "姓名", "y_field": "姓名", "show_trend_line": True}),
+            ("histogram", {"measure_field": "姓名", "bin_policy": "sturges"}),
+            ("boxplot", {"dimension_field": "姓名", "measure_field": "姓名"}),
+        ]
+        created: list[dict[str, Any]] = []
+        for ct, extra in specs:
+            r = client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+                json={
+                    "name": f"seed_{ct}",
+                    "view_type": "chart",
+                    "view_options": {"chart_type": ct, **extra},
+                },
+                headers=auth_owner,
+            )
+            assert r.status_code == 201, f"{ct} 创建失败: {r.status_code} {r.json()}"
+            created.append(r.json())
+        # 最终列出来全是 chart 视图
+        r2 = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=auth_owner)
+        assert r2.status_code == 200
+        chart_names = {v["name"] for v in r2.json() if v["view_type"] == "chart"}
+        assert chart_names == {f"seed_{ct}" for ct, _ in specs}
 
     def test_list_views(self, client, ws, table, auth_owner):
         # 先创建两个
