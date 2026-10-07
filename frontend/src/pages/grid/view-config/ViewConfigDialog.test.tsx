@@ -390,3 +390,74 @@ describe('ViewConfigDialog 紧凑布局', () => {
     ))
   })
 })
+
+describe('ViewConfigDialog chart 多图条目管理', () => {
+  const CHART_FIELDS: Field[] = [
+    makeField({ id: 1, name: '月份', field_type: 'date' }),
+    makeField({ id: 2, name: '销售额', field_type: 'number' }),
+    makeField({ id: 3, name: '工时', field_type: 'number' }),
+  ]
+
+  it('扁平单图打开：Segmented 仅图表 1，禁删最后一项', () => {
+    renderDialog({
+      viewType: 'chart',
+      fields: CHART_FIELDS,
+      viewOptions: { chart_type: 'bar', dimension_field: '月份', measure_field: '销售额' },
+    })
+    fireEvent.click(screen.getByText('chart 专属设置'))
+
+    expect(screen.getByText('图表 1')).toBeInTheDocument()
+    expect(screen.queryByText('图表 2')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /删除当前图表/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /添加图表/ })).toBeEnabled()
+  })
+
+  it('添加图表后保存：onSaveOptions 收到 charts[] 形态（首条继承扁平键，空条目被清洗）', () => {
+    const spies = renderDialog({
+      viewType: 'chart',
+      fields: CHART_FIELDS,
+      viewOptions: { chart_type: 'bar', dimension_field: '月份', measure_field: '销售额' },
+    })
+    fireEvent.click(screen.getByText('chart 专属设置'))
+
+    fireEvent.click(screen.getByRole('button', { name: /添加图表/ }))
+    expect(screen.getByText('图表 2')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+    expect(spies.onSaveOptions).toHaveBeenCalledWith({
+      charts: [{ chart_type: 'bar', dimension_field: '月份', measure_field: '销售额' }],
+    })
+  })
+
+  it('切换条目后分区按该条 chart_type 显隐；删除条目后保存回到扁平形态', () => {
+    const spies = renderDialog({
+      viewType: 'chart',
+      fields: CHART_FIELDS,
+      viewOptions: {
+        charts: [
+          { chart_type: 'scatter', x_field: '工时', y_field: '销售额' },
+          { chart_type: 'bar', dimension_field: '月份', measure_field: '销售额', aggregation: 'sum' },
+        ],
+      },
+    })
+    fireEvent.click(screen.getByText('chart 专属设置'))
+
+    // 条目 1（scatter）→ 显示 X 数值字段，不显示维度字段
+    expect(screen.getByText('X 数值字段')).toBeInTheDocument()
+    expect(screen.queryByText('维度字段')).not.toBeInTheDocument()
+
+    // 切到图表 2（bar）→ 维度字段出现、X 数值字段消失（visibleWhen 按该条目显隐）
+    fireEvent.click(screen.getByText('图表 2'))
+    expect(screen.getByText('维度字段')).toBeInTheDocument()
+    expect(screen.queryByText('X 数值字段')).not.toBeInTheDocument()
+
+    // 删除当前图表（图表 2）→ 回到单条目
+    fireEvent.click(screen.getByRole('button', { name: /删除当前图表/ }))
+    expect(screen.queryByText('图表 2')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+    expect(spies.onSaveOptions).toHaveBeenCalledWith({
+      chart_type: 'scatter', x_field: '工时', y_field: '销售额',
+    })
+  })
+})

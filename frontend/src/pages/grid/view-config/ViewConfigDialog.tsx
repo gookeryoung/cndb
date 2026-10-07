@@ -1,15 +1,18 @@
 /** 视图配置对话框 — Tab：筛选规则 / 排序规则 / 字段显示（仅 grid）/ 视图专属设置. */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Checkbox, Modal, Select, Space, Switch, Tabs, Input, InputNumber, Tooltip } from 'antd'
+import { Button, Checkbox, Modal, Segmented, Select, Space, Switch, Tabs, Input, InputNumber, Tooltip } from 'antd'
 import { PlusOutlined, DeleteOutlined, RightOutlined } from '@ant-design/icons'
 import { getOpsForField, extractSelectOptions } from '../cells/fieldOps'
 import {
+  CHART_OPTIONS,
   COLLAPSED_BY_DEFAULT_GROUPS,
   getOptionSchema,
   groupOptionSchema,
+  normalizeChartList,
   optionColSpan,
   resolveFieldOptions,
+  serializeChartList,
 } from './viewOptionSchema'
 import type { ViewOptionSchema } from './viewOptionSchema'
 import DoneFlagFields from '../views/DoneFlagFields'
@@ -130,6 +133,8 @@ export default function ViewConfigDialog({
   const [draftFilterLogic, setDraftFilterLogic] = useState<'AND' | 'OR'>('AND')
   const [draftOpt, setDraftOpt] = useState<Record<string, unknown>>({})
   const [activeTab, setActiveTab] = useState<'filter' | 'sort' | 'fields' | 'view'>('filter')
+  /** chart 多图：当前编辑的图表条目索引（对话框打开时重置为 0） */
+  const [activeChartIdx, setActiveChartIdx] = useState(0)
 
   /** 草稿初始化守卫：仅在对话框打开瞬间执行。父组件 props 后续变化（如防抖保存
    *  触发 views refetch 重建 viewOptions 引用）不应重置用户正在操作的 tab 与草稿. */
@@ -140,6 +145,7 @@ export default function ViewConfigDialog({
       setDraftSorts(sortings.length ? [...sortings] : [{ field_name: '', direction: 'asc' }])
       setDraftFilterLogic(filterLogic)
       setDraftOpt((viewOptions || {}) as Record<string, unknown>)
+      setActiveChartIdx(0)
       setActiveTab('filter')
     }
     wasOpenRef.current = open
@@ -168,6 +174,62 @@ export default function ViewConfigDialog({
     [viewType],
   )
 
+  // ── chart 多图条目管理（仅 view_type='chart'） ──
+  const isChartView = viewType === 'chart'
+  const chartList = useMemo(
+    () => (isChartView ? normalizeChartList(draftOpt) : []),
+    [isChartView, draftOpt],
+  )
+  const activeIdx = Math.min(activeChartIdx, chartList.length - 1)
+  const activeChartOpts: Record<string, unknown> = isChartView ? (chartList[activeIdx] ?? {}) : draftOpt
+
+  /** 把 patch 写入当前图表条目（不可变更新；单条目写回扁平键、多条目写回 charts[]） */
+  const patchChartEntry = (patch: Record<string, unknown>) => {
+    setDraftOpt(prev => {
+      const list = normalizeChartList(prev)
+      const idx = Math.min(activeIdx, list.length - 1)
+      const entry = { ...(list[idx] ?? {}) }
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === undefined) delete entry[k]
+        else entry[k] = v
+      }
+      list[idx] = entry
+      const next = { ...prev }
+      if (list.length === 1) {
+        delete next.charts
+        for (const opt of CHART_OPTIONS) delete next[opt.key]
+        Object.assign(next, entry)
+      } else {
+        next.charts = list
+      }
+      return next
+    })
+  }
+
+  /** 添加图表条目（上限 6；新条目为空配置，切为当前编辑对象） */
+  const addChart = () => {
+    setActiveChartIdx(chartList.length)
+    setDraftOpt(prev => ({ ...prev, charts: [...normalizeChartList(prev), {}] }))
+  }
+
+  /** 删除当前图表条目（至少保留 1 个；删至单条目时写回扁平键形态） */
+  const removeChart = () => {
+    const idx = activeIdx
+    setDraftOpt(prev => {
+      const list = normalizeChartList(prev).filter((_, i) => i !== idx)
+      const next = { ...prev }
+      if (list.length === 1) {
+        delete next.charts
+        for (const opt of CHART_OPTIONS) delete next[opt.key]
+        Object.assign(next, list[0])
+      } else {
+        next.charts = list
+      }
+      return next
+    })
+    setActiveChartIdx(Math.max(0, idx - 1))
+  }
+
   /** 视图级隐藏字段 id 集合（draftOpt.hidden_fields 黑名单） */
   const viewHiddenFieldIds = useMemo(() => {
     const raw = draftOpt.hidden_fields
@@ -175,8 +237,11 @@ export default function ViewConfigDialog({
   }, [draftOpt])
 
   // 按 group 切分为分区卡片：低频分区（完成状态 / 时间轴 / 操作）默认收起；
-  // 传 draftOpt 使 visibleWhen 生效（chart 按 chart_type 条件显隐），既有 schema 无 visibleWhen 语义不变
-  const viewSections = useMemo(() => groupOptionSchema(viewOptFields, draftOpt), [viewOptFields, draftOpt])
+  // chart 传当前图表条目（visibleWhen 按该条目 chart_type 显隐），其余传 draftOpt（既有语义不变）
+  const viewSections = useMemo(
+    () => groupOptionSchema(viewOptFields, isChartView ? (chartList[activeIdx] ?? {}) : draftOpt),
+    [viewOptFields, isChartView, chartList, activeIdx, draftOpt],
+  )
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(
     () => Object.fromEntries(
       groupOptionSchema(getOptionSchema(viewType))
@@ -364,6 +429,26 @@ export default function ViewConfigDialog({
         label: `${viewType} 专属设置`,
         children: (
           <div className="vcvd-tab-body">
+            {isChartView && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                <Segmented
+                  size="small"
+                  value={activeIdx}
+                  onChange={(v) => setActiveChartIdx(Number(v))}
+                  options={chartList.map((_, i) => ({ label: `图表 ${i + 1}`, value: i }))}
+                />
+                <Tooltip title={chartList.length >= 6 ? '最多 6 个图表' : '新增一个图表条目'}>
+                  <Button size="small" type="dashed" icon={<PlusOutlined />} disabled={chartList.length >= 6} onClick={addChart}>
+                    添加图表
+                  </Button>
+                </Tooltip>
+                <Tooltip title={chartList.length <= 1 ? '至少保留一个图表' : '删除当前图表'}>
+                  <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={chartList.length <= 1} onClick={removeChart}>
+                    删除当前图表
+                  </Button>
+                </Tooltip>
+              </div>
+            )}
             {viewSections.map(section => {
               const isCollapsed = !!collapsed[section.label]
               return (
@@ -387,16 +472,22 @@ export default function ViewConfigDialog({
                           <ViewOptionItem
                             opt={opt}
                             fields={fields}
-                            opts={draftOpt}
-                            onSet={(key, value) => setDraftOpt(prev => ({ ...prev, [key]: value }))}
-                            onPatch={(patch) => setDraftOpt(prev => {
-                              const next = { ...prev }
-                              for (const [k, v] of Object.entries(patch)) {
-                                if (v === undefined) delete next[k]
-                                else next[k] = v
-                              }
-                              return next
-                            })}
+                            opts={activeChartOpts}
+                            onSet={(key, value) => {
+                              if (isChartView) { patchChartEntry({ [key]: value }); return }
+                              setDraftOpt(prev => ({ ...prev, [key]: value }))
+                            }}
+                            onPatch={(patch) => {
+                              if (isChartView) { patchChartEntry(patch); return }
+                              setDraftOpt(prev => {
+                                const next = { ...prev }
+                                for (const [k, v] of Object.entries(patch)) {
+                                  if (v === undefined) delete next[k]
+                                  else next[k] = v
+                                }
+                                return next
+                              })
+                            }}
                           />
                         </div>
                       ))}
@@ -410,7 +501,7 @@ export default function ViewConfigDialog({
       })
     }
     return items
-  }, [draftFilters, draftSorts, draftFilterLogic, filterableFields, sortableFields, viewSections, collapsed, draftOpt, viewHiddenFieldIds, viewType, fields])
+  }, [draftFilters, draftSorts, draftFilterLogic, filterableFields, sortableFields, viewSections, collapsed, draftOpt, viewHiddenFieldIds, viewType, fields, isChartView, chartList, activeIdx, activeChartOpts])
 
   return (
     <Modal
@@ -430,6 +521,13 @@ export default function ViewConfigDialog({
           const cleanOpt = Object.fromEntries(
             Object.entries(draftOpt).filter(([, v]) => v !== '' && v != null && (Array.isArray(v) ? v.length > 0 : true)),
           )
+          if (viewType === 'chart') {
+            // chart：以 normalize/serialize 双向转换产物为准（charts[] 与扁平键不并存，条目级空值清洗）
+            delete cleanOpt.charts
+            for (const opt of CHART_OPTIONS) delete cleanOpt[opt.key]
+            const ser = serializeChartList(normalizeChartList(draftOpt))
+            if (ser) Object.assign(cleanOpt, ser)
+          }
           onSaveOptions(Object.keys(cleanOpt).length ? cleanOpt : null)
           // 显式保存 — 绕过自动保存的 debounce，确保刷新/关闭后配置不丢失
           onSaveNow?.()

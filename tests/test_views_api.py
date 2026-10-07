@@ -212,6 +212,64 @@ class TestViewsAPI:
         assert r.status_code == 400
         assert "group_field" in r.json()["detail"]
 
+    def test_create_chart_multi_charts_ok(self, client, ws, table, auth_owner):
+        """chart 多图形态：charts[] 合法条目创建 201 并原样存取."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "多图仪表盘",
+                "view_type": "chart",
+                "view_options": {
+                    "charts": [
+                        {
+                            "chart_type": "bar",
+                            "dimension_field": "姓名",
+                            "measure_field": "姓名",
+                            "aggregation": "sum",
+                        },
+                        {"chart_type": "scatter", "x_field": "姓名", "y_field": "姓名"},
+                    ],
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 201, r.text
+        charts = r.json()["view_options"]["charts"]
+        assert len(charts) == 2
+        assert charts[0]["chart_type"] == "bar"
+        assert charts[1]["chart_type"] == "scatter"
+
+    def test_create_chart_multi_charts_invalid(self, client, ws, table, auth_owner):
+        """chart 多图形态：条目字段引用不存在 / 元素非 dict 均返回 400 且 detail 定位到 charts[i]."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "坏多图",
+                "view_type": "chart",
+                "view_options": {
+                    "charts": [
+                        {"chart_type": "bar", "dimension_field": "姓名", "measure_field": "姓名"},
+                        {"chart_type": "bar", "dimension_field": "姓名", "measure_field": "不存在字段"},
+                    ],
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "charts[1].measure_field" in r.json()["detail"]
+
+        r2 = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "坏多图2",
+                "view_type": "chart",
+                "view_options": {"charts": ["不是对象"]},
+            },
+            headers=auth_owner,
+        )
+        assert r2.status_code == 400
+        assert "charts[0]" in r2.json()["detail"]
+
     def test_seed_all_chart_types_create_ok(self, client, ws, table, auth_owner):
         """覆盖 seed 全部 6 种 chart_type（bar / line / pie / scatter / histogram / boxplot）
         在真实表上连续创建都通过校验，模拟 seed.py 批量注入场景."""

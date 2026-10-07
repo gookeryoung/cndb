@@ -9,6 +9,8 @@
  * - scatter 点击散点打开行详情（rowIds 与 points 平行，经 ref 持最新值避免闭包过期）
  * - StatsPanel：描述统计（样本标准差 n-1 / 线性插值分位 / IQR 离群值）+ 样本量/总行数，
  *   暴露 fetch-all 截断口径；散点图附加 Pearson r / R² / 回归系数
+ * - 多图：view_options.charts 非空数组时逐条目渲染 ChartCard（dashboard 式自适应网格）；
+ *   扁平键仍为合法单图形态（全宽容器，渲染行为与多图上线前一致）
  */
 
 import { useEffect, useMemo, useRef } from 'react'
@@ -346,16 +348,7 @@ function StatsPanel({
   )
 }
 
-// ── 主组件 ────────────────────────────────────────────
-
-interface ChartViewProps {
-  rows: RowResponse[]
-  fields: Field[]
-  view?: View | null
-  /** 服务端总行数（StatsPanel 显示「样本量 N / 总行数 M」暴露 fetch-all 截断口径） */
-  total?: number
-  onRowClick?: (r: RowResponse) => void
-}
+// ── 图表卡片 ──────────────────────────────────────────
 
 /** 检查 chart_type 对应的必填字段是否已配置且存在；返回缺失项的中文标签列表 */
 function missingFieldLabels(cfg: ChartConfig, fields: Field[]): string[] {
@@ -373,15 +366,43 @@ function missingFieldLabels(cfg: ChartConfig, fields: Field[]): string[] {
   return out
 }
 
-export default function ChartView({ rows, fields, view, total, onRowClick }: ChartViewProps) {
+/** 图表类型中文标签映射（来自 CHART_OPTIONS chart_type 枚举，用于卡片头自动标注） */
+const CHART_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  (CHART_OPTIONS.find((o) => o.key === 'chart_type')?.enumOptions ?? []).map(
+    (o) => [String(o.value), String(o.label)],
+  ),
+)
+
+/** 卡片头关键字段名（纯展示；scatter 取双轴，直方图/箱线图取度量，其余取维度） */
+function chartKeyFieldLabel(cfg: ChartConfig): string {
+  if (cfg.chart_type === 'scatter') {
+    return [cfg.x_field, cfg.y_field].filter(Boolean).join(' × ') || '未配置'
+  }
+  if (cfg.chart_type === 'histogram' || cfg.chart_type === 'boxplot') {
+    return cfg.measure_field || '未配置'
+  }
+  return cfg.dimension_field || '未配置'
+}
+
+interface ChartCardProps {
+  cfg: ChartConfig
+  rows: RowResponse[]
+  fields: Field[]
+  /** 服务端总行数（StatsPanel 显示「样本量 N / 总行数 M」暴露 fetch-all 截断口径） */
+  total?: number
+  onRowClick?: (r: RowResponse) => void
+  /** 必填缺失空态的 data-testid（多图模式加索引后缀便于定位，默认保持单图契约） */
+  emptyConfigTestId?: string
+}
+
+/** 单个图表卡片：ECharts 实例生命周期 + 描述统计面板 + 必填缺失空态.
+ *
+ * 只渲染图表容器与统计面板内容；卡片外壳（边框/标题/网格布局）由调用方负责，
+ * 因此单图（扁平 view_options）与多图（charts[]）共用同一渲染逻辑。
+ */
+function ChartCard({ cfg, rows, fields, total, onRowClick, emptyConfigTestId = 'chart-empty-config' }: ChartCardProps) {
   // 订阅主题：主题切换触发重渲染 → 重新读 CSS 变量重建 option（ThemeProvider 主题 state 驱动联动）
   const { mode: themeMode } = useTheme()
-
-  const opts = useMemo(
-    () => resolveOpts(view?.view_options as Record<string, unknown> | undefined, CHART_OPTIONS),
-    [view?.view_options],
-  )
-  const cfg = opts as unknown as ChartConfig
 
   const missing = useMemo(() => missingFieldLabels(cfg, fields), [cfg, fields])
   const hasChart = missing.length === 0
@@ -458,12 +479,57 @@ export default function ChartView({ rows, fields, view, total, onRowClick }: Cha
   if (!hasChart) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Empty description={`图表视图需配置${missing.join('与')}（视图设置）`} data-testid="chart-empty-config" />
+        <Empty description={`图表视图需配置${missing.join('与')}（视图设置）`} data-testid={emptyConfigTestId} />
       </div>
     )
   }
 
-  // 无数据 → 引导空态（与矩阵/看板语义一致）
+  return (
+    <>
+      <div ref={containerRef} data-testid="chart-container" style={{ flex: 1, minHeight: 320 }} />
+      {cfg.show_stats_panel !== false && stats && statsField && (
+        <StatsPanel stats={stats} total={total} fieldName={statsField} scatter={scatterSummary} />
+      )}
+    </>
+  )
+}
+
+// ── 主组件 ────────────────────────────────────────────
+
+interface ChartViewProps {
+  rows: RowResponse[]
+  fields: Field[]
+  view?: View | null
+  /** 服务端总行数（StatsPanel 显示「样本量 N / 总行数 M」暴露 fetch-all 截断口径） */
+  total?: number
+  onRowClick?: (r: RowResponse) => void
+}
+
+/** 解析 view_options 为图表配置列表.
+ *
+ * - view_options.charts 为非空数组 → 多图形态，逐条目经 resolveOpts 解析（multi=true）
+ * - 否则 → 扁平键单图形态（既有契约，零迁移），整体解析一次（multi=false）
+ */
+function resolveChartList(
+  rawOpts: Record<string, unknown> | undefined,
+): { list: ChartConfig[]; multi: boolean } {
+  const charts = rawOpts?.charts
+  if (Array.isArray(charts) && charts.length > 0) {
+    return {
+      list: charts.map(
+        (c) => resolveOpts(c as Record<string, unknown>, CHART_OPTIONS) as unknown as ChartConfig,
+      ),
+      multi: true,
+    }
+  }
+  return { list: [resolveOpts(rawOpts, CHART_OPTIONS) as unknown as ChartConfig], multi: false }
+}
+
+export default function ChartView({ rows, fields, view, total, onRowClick }: ChartViewProps) {
+  const rawOpts = view?.view_options as Record<string, unknown> | undefined
+  const { list, multi } = useMemo(() => resolveChartList(rawOpts), [rawOpts])
+
+  // 无数据 → 视图级引导空态（与矩阵/看板语义一致；多图/单图共用）
   if (!rows.length) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -472,18 +538,50 @@ export default function ChartView({ rows, fields, view, total, onRowClick }: Cha
     )
   }
 
+  // 单图（扁平 view_options）：保持既有全宽 flex 容器，无卡片头（AC-2 渲染行为不变）
+  if (!multi) {
+    return (
+      <div
+        style={{
+          flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12,
+          padding: '12px 16px', overflow: 'auto', background: 'var(--cn-bg-container)',
+          border: '1px solid var(--cn-border)', borderRadius: 8,
+        }}
+      >
+        <ChartCard cfg={list[0]} rows={rows} fields={fields} total={total} onRowClick={onRowClick} />
+      </div>
+    )
+  }
+
+  // 多图（charts[]）：dashboard 式自适应网格同屏展示，每卡独立实例/统计面板/点击语义
   return (
     <div
       style={{
-        flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12,
-        padding: '12px 16px', overflow: 'auto', background: 'var(--cn-bg-container)',
-        border: '1px solid var(--cn-border)', borderRadius: 8,
+        flex: 1, minHeight: 0, overflow: 'auto', display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', gap: 12, alignContent: 'start',
       }}
     >
-      <div ref={containerRef} data-testid="chart-container" style={{ flex: 1, minHeight: 320 }} />
-      {cfg.show_stats_panel !== false && stats && statsField && (
-        <StatsPanel stats={stats} total={total} fieldName={statsField} scatter={scatterSummary} />
-      )}
+      {list.map((cfg, i) => (
+        <div
+          key={i}
+          style={{
+            display: 'flex', flexDirection: 'column', gap: 12, minHeight: 420,
+            padding: '12px 16px', background: 'var(--cn-bg-container)',
+            border: '1px solid var(--cn-border)', borderRadius: 8,
+          }}
+        >
+          <div
+            data-testid={`chart-card-title-${i}`}
+            style={{ fontWeight: 600, fontSize: 13, color: 'var(--cn-text-primary)' }}
+          >
+            {CHART_TYPE_LABELS[cfg.chart_type] ?? cfg.chart_type} · {chartKeyFieldLabel(cfg)}
+          </div>
+          <ChartCard
+            cfg={cfg} rows={rows} fields={fields} total={total} onRowClick={onRowClick}
+            emptyConfigTestId={`chart-empty-config-${i}`}
+          />
+        </div>
+      ))}
     </div>
   )
 }

@@ -373,3 +373,59 @@ describe('ChartView 图表视图', () => {
     expect(onRowClick).not.toHaveBeenCalled()
   })
 })
+
+describe('ChartView 多图（view_options.charts）', () => {
+  const MULTI_VIEW = makeView({
+    charts: [
+      {
+        chart_type: 'bar',
+        dimension_field: '月份',
+        measure_field: '销售额',
+        aggregation: 'sum',
+        date_granularity: 'month',
+      },
+      { chart_type: 'scatter', x_field: '工时', y_field: '销售额' },
+    ],
+  })
+
+  it('charts 两元素渲染 2 个独立图表容器与卡片头标注', () => {
+    renderChart({ view: MULTI_VIEW })
+
+    expect(screen.getAllByTestId('chart-container')).toHaveLength(2)
+    expect(echartsMock.init).toHaveBeenCalledTimes(2)
+    expect(echartsMock.setOption).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId('chart-card-title-0')).toHaveTextContent('柱状图 · 月份')
+    expect(screen.getByTestId('chart-card-title-1')).toHaveTextContent('散点图 · 工时 × 销售额')
+  })
+
+  it('每卡独立统计面板（按各自度量字段）', () => {
+    renderChart({ view: MULTI_VIEW, total: 5 })
+
+    expect(screen.getAllByTestId('chart-stats-panel')).toHaveLength(2)
+    // 卡 1 度量=销售额（均值 67.5）；卡 2 散点 Y=销售额 → 两卡都出现 67.5
+    expect(screen.getAllByText('67.5')).toHaveLength(2)
+    expect(screen.getAllByTestId('chart-stats-scope')).toHaveLength(2)
+  })
+
+  it('多图某卡必填缺失 → 对应索引空态，另一卡正常渲染', () => {
+    renderChart({
+      view: makeView({
+        charts: [
+          {
+            chart_type: 'bar',
+            dimension_field: '月份',
+            measure_field: '销售额',
+            aggregation: 'sum',
+          },
+          { chart_type: 'scatter', y_field: '销售额' }, // 缺 x_field
+        ],
+      }),
+    })
+
+    expect(screen.getByTestId('chart-empty-config-1')).toBeInTheDocument()
+    expect(screen.getByText(/图表视图需配置X 数值字段/)).toBeInTheDocument()
+    // 仅卡 0 init 图表
+    expect(screen.getAllByTestId('chart-container')).toHaveLength(1)
+    expect(echartsMock.init).toHaveBeenCalledTimes(1)
+  })
+})

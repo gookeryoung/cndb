@@ -251,7 +251,7 @@ def test_real_datasets_views_json_has_todo_views():
     assert pm_views is not None
     todo_views = pm_views.get("待办事项")
     assert todo_views is not None, "views.json 应包含待办事项"
-    assert len(todo_views) == 6, f"期望 6 个待办事项视图，实际 {len(todo_views)}"
+    assert len(todo_views) == 7, f"期望 7 个待办事项视图，实际 {len(todo_views)}"
 
     names = {v["name"] for v in todo_views}
     assert names == {
@@ -261,6 +261,7 @@ def test_real_datasets_views_json_has_todo_views():
         "事项日历",
         "待分派事项",
         "未完成事项",
+        "类别占比",
     }
 
     assignee_kanban = next(v for v in todo_views if v["name"] == "按责任人看板")
