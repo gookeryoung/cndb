@@ -146,51 +146,40 @@
       "order": 8
     },
     {
-      "name": "立项年份经费趋势",
+      "name": "科研项目经费概览",
       "view_type": "chart",
       "view_options": {
-        "chart_type": "line",
-        "dimension_field": "立项年份",
-        "measure_field": "经费总额_万元",
-        "aggregation": "sum",
-        "show_stats_panel": true
+        "charts": [
+          {
+            "chart_type": "line",
+            "dimension_field": "立项年份",
+            "measure_field": "经费总额_万元",
+            "aggregation": "sum",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "bar",
+            "dimension_field": "项目类别",
+            "measure_field": "经费总额_万元",
+            "aggregation": "sum",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "pie",
+            "dimension_field": "项目类别",
+            "measure_field": "课题编号",
+            "aggregation": "count",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "histogram",
+            "measure_field": "计划周期_月",
+            "bin_policy": "sturges",
+            "show_stats_panel": true
+          }
+        ]
       },
       "order": 9
-    },
-    {
-      "name": "项目类别经费对比",
-      "view_type": "chart",
-      "view_options": {
-        "chart_type": "bar",
-        "dimension_field": "项目类别",
-        "measure_field": "经费总额_万元",
-        "aggregation": "sum",
-        "show_stats_panel": true
-      },
-      "order": 10
-    },
-    {
-      "name": "项目类别数量占比",
-      "view_type": "chart",
-      "view_options": {
-        "chart_type": "pie",
-        "dimension_field": "项目类别",
-        "measure_field": "课题编号",
-        "aggregation": "count",
-        "show_stats_panel": true
-      },
-      "order": 11
-    },
-    {
-      "name": "计划周期分布",
-      "view_type": "chart",
-      "view_options": {
-        "chart_type": "histogram",
-        "measure_field": "计划周期_月",
-        "bin_policy": "sturges",
-        "show_stats_panel": true
-      },
-      "order": 12
     }
   ],
   "课题负责人": [
@@ -367,29 +356,28 @@
       "order": 6
     },
     {
-      "name": "预算科目已拨金额",
+      "name": "经费投入概览",
       "view_type": "chart",
       "view_options": {
-        "chart_type": "bar",
-        "dimension_field": "预算科目",
-        "measure_field": "已拨金额_万元",
-        "aggregation": "sum",
-        "show_stats_panel": true
+        "charts": [
+          {
+            "chart_type": "bar",
+            "dimension_field": "预算科目",
+            "measure_field": "已拨金额_万元",
+            "aggregation": "sum",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "line",
+            "dimension_field": "拨付日期",
+            "date_granularity": "year",
+            "measure_field": "已拨金额_万元",
+            "aggregation": "sum",
+            "show_stats_panel": true
+          }
+        ]
       },
       "order": 7
-    },
-    {
-      "name": "拨付日期年度投入趋势",
-      "view_type": "chart",
-      "view_options": {
-        "chart_type": "line",
-        "dimension_field": "拨付日期",
-        "date_granularity": "year",
-        "measure_field": "已拨金额_万元",
-        "aggregation": "sum",
-        "show_stats_panel": true
-      },
-      "order": 8
     }
   ],
   "项目进展": [
