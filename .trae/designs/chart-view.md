@@ -65,13 +65,68 @@
 
 ## 测试约定
 
-- `chartBoard.test.ts`：聚合五口径 / 日期分桶 / 多系列 null 桶 / pie / scatter 剔除+rowIds / boxplot 五数与离群 / 分箱三策略+FD 回退+边界 / computeStats 精确值 / pearson / ols。
-- `ChartView.test.tsx`：mock echarts 断言 setOption option 结构（notMerge/类目序/未分组末尾）、StatsPanel 数值与截断口径、show_stats_panel 关闭、主题切换联动（setMode 后 setOption 重建且 init 不重建）、空态。
+- `chartBoard.test.ts`（23 条）：toNumber/extractNumbers 边界 / 聚合五口径+日期分桶+空值剔除+未分组 / group_field 多系列 null 桶 / pie 扇区数据 / scatter 无效行剔除+rowIds 平行 / boxplot 五数概括+IQR 离群 / 分箱三策略+FD IQR=0 回退+边界 / computeStats 精确值+偏度+空数组 / pearson 完美相关+奇异 / olsLine 精确斜率截距。
+- `ChartView.test.tsx`（16 条）：空态（必填字段缺失 / 空行 / scatter 缺 X/Y）/ bar 聚合 option+类目序+未分组末尾 / group_field 多系列+legend / line 类型 / scatter OLS 趋势线 / 统计面板数值+截断口径 / 散点附加 Pearson r/R²/回归系数 / show_stats_panel 关闭 / 主题切换重建 option / pie option（series.type、扇区 name/value/itemStyle.color）/ histogram option（series.type=bar、barCategoryGap=0、bins labels 做 xAxis）/ boxplot option（主 series=boxplot+离群值 scatter、xAxis.data=拼音序分组）/ scatter 点击散点触发 onRowClick / scatter 非散点系列（趋势线）不触发。
 - `CreateEditViewForm.test.tsx`：图表类型渲染、visibleWhen 条件显隐（scatter 出 X/Y 隐维度/聚合；histogram 出分箱）、提交 opts。
-- `test_views_api.py`：chart 视图创建 201（bar + scatter 路径）与 400（measure_field/x_field 不存在）。
+- `test_views_api.py`：chart 视图创建 201（bar + scatter + line + pie + boxplot + histogram 全 6 种类型）与 400（measure_field/x_field/group_field 不存在）；6 种 chart_type 在同一张表上连续创建（模拟 seed 注入）都通过校验并正确列出。
+- `examples/datasets/*/views.json` 所有 chart 视图引用字段经 CSV 表头/硬编码表字段校验通过；`python -c` 扫描验证 34 个 chart 视图（bar×9 / line×5 / pie×5 / scatter×4 / histogram×6 / boxplot×5）全部字段引用有效。
 - e2e `view-mode-switch.spec.ts`：电商销售表点图表按钮 → SVG 图表 + 统计面板渲染。
 - bundle-budget：新增 ChartView 基线 204_265 gzip bytes；GridPage 基线更新 38_793（接线 +1.8KB gzip）。
 
-## seed 示例
+## seed 示例（覆盖全部 6 种 chart_type）
 
-- 工作区-某企业销售管理 `views.json`：电商销售表「月度销售额趋势」（line，dimension_field=日期 date_granularity=month，measure_field=销售额，aggregation=sum）；员工表「部门薪资分布」（boxplot，dimension_field=部门，measure_field=薪资）。
+所有示例位于 `examples/datasets/<工作区名>/views.json`，字段名与同名 CSV 表头 / 硬编码表 DataField.name 一致；合计 34 个 chart 视图，每类 type 至少 4 条。
+
+### 工作区-某企业销售管理（8 张表中 6 张含 chart 视图）
+
+| 表名 | 视图名 | chart_type | 关键配置 |
+|------|--------|------------|----------|
+| 电商销售 | 月度销售额趋势 | line | dimension_field=日期, date_granularity=month, measure_field=销售额, aggregation=sum |
+| 电商销售 | 商品类别销售额排名 | bar | dimension_field=商品类别, measure_field=销售额, aggregation=sum |
+| 电商销售 | 支付方式销售占比 | pie | dimension_field=支付方式, measure_field=销售额, aggregation=sum |
+| 电商销售 | 订单评分分布 | histogram | measure_field=评分, bin_policy=auto |
+| 电商销售 | 单价与数量散点 | scatter | x_field=单价, y_field=数量, show_trend_line=true |
+| 营销活动 | 渠道预算对比 | bar | dimension_field=渠道类型, measure_field=预算_元, aggregation=sum |
+| 营销活动 | 预算与实际花费散点 | scatter | x_field=预算_元, y_field=实际花费_元, show_trend_line=true |
+| 营销活动 | 活动转化率分布 | histogram | measure_field=转化率_%, bin_policy=freedman-diaconis |
+| 客户流失 | 合约类型流失率 | bar | dimension_field=合约类型, measure_field=是否流失, aggregation=avg |
+| 客户流失 | 月消费金额分布 | histogram | measure_field=月消费_元, bin_policy=sturges |
+| 产品开发 | 片区项目数 | bar | dimension_field=片区, measure_field=项目编号, aggregation=count |
+| 员工表 | 部门薪资分布 | boxplot | dimension_field=部门, measure_field=薪资 |
+| 员工表 | 全公司薪资分布 | histogram | measure_field=薪资, bin_policy=auto |
+| 日常待办 | 状态任务数 | bar | dimension_field=状态, measure_field=待办编号, aggregation=count |
+
+### 工作区-项目管理（3 张表中 3 张含 chart 视图）
+
+| 表名 | 视图名 | chart_type | 关键配置 |
+|------|--------|------------|----------|
+| WBS任务分解 | 状态任务数 | bar | dimension_field=任务状态, measure_field=任务ID, aggregation=count |
+| WBS任务分解 | 任务负责人占比 | pie | dimension_field=负责人, measure_field=任务ID, aggregation=count |
+| WBS任务分解 | 工期分布 | histogram | measure_field=工期_天, bin_policy=auto |
+| 资源排期 | 团队投入人天 | bar | dimension_field=团队, measure_field=投入人天, aggregation=sum |
+| 资源排期 | 月度投入趋势（按团队分组） | line | dimension_field=排期日期, date_granularity=month, measure_field=投入人天, aggregation=sum, group_field=团队 |
+| 资源排期 | 排期月度投入分布 | boxplot | dimension_field=团队, measure_field=投入人天 |
+| 待办事项 | 类别占比 | pie | dimension_field=类别, measure_field=编号, aggregation=count |
+
+### 工作区-科研项目管理（4 张表中 4 张含 chart 视图）
+
+| 表名 | 视图名 | chart_type | 关键配置 |
+|------|--------|------------|----------|
+| 科研项目 | 立项年份经费趋势 | line | dimension_field=立项年份, measure_field=经费总额_万元, aggregation=sum |
+| 科研项目 | 项目类别经费对比 | bar | dimension_field=项目类别, measure_field=经费总额_万元, aggregation=sum |
+| 科研项目 | 项目类别数量占比 | pie | dimension_field=项目类别, measure_field=课题编号, aggregation=count |
+| 科研项目 | 计划周期分布 | histogram | measure_field=计划周期_月, bin_policy=sturges |
+| 科研经费 | 预算科目已拨金额 | bar | dimension_field=预算科目, measure_field=已拨金额_万元, aggregation=sum |
+| 科研经费 | 拨付日期年度投入趋势 | line | dimension_field=拨付日期, date_granularity=year, measure_field=已拨金额_万元, aggregation=sum |
+| 项目进展 | 进展阶段进度分布 | boxplot | dimension_field=进展阶段, measure_field=进度百分比 |
+| 课题负责人 | 职称分布占比 | pie | dimension_field=职称, measure_field=负责人编号, aggregation=count |
+
+### 工作区-某地区数据（2 张表中 2 张含 chart 视图）
+
+| 表名 | 视图名 | chart_type | 关键配置 |
+|------|--------|------------|----------|
+| 房价预测 | 房龄与房价散点 | scatter | x_field=房龄_年, y_field=房价_万元, show_trend_line=true |
+| 房价预测 | 各城市房价分布 | boxplot | dimension_field=城市, measure_field=房价_万元 |
+| 房价预测 | 房间数量与房价散点 | scatter | x_field=房间数, y_field=房价_万元 |
+| 气温天气 | 城市月度最高温趋势 | line | dimension_field=日期, date_granularity=month, measure_field=最高温_℃, aggregation=avg, group_field=城市 |
+| 气温天气 | 城市风速分布 | boxplot | dimension_field=城市, measure_field=风速_m/s |
