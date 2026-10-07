@@ -143,7 +143,17 @@ function aggregateValues(values: number[], agg: ChartAggregation): number {
   }
 }
 
-/** 维度归桶公共骨架：dimKey → seriesKey → 数值列表（空维度归「未分组」；空值行剔除） */
+/** 检查某字段值是否为空（null/undefined/空串视为空） */
+function isEmptyValue(v: unknown): boolean {
+  return v === null || v === undefined || (typeof v === 'string' && v.trim() === '')
+}
+
+/** 维度归桶公共骨架：dimKey → seriesKey → 数值列表（空维度归「未分组」；空值行剔除）.
+ *
+ * - 当 aggregation === 'count' 时，measure_field 可为任意类型（字符串/数字皆可），
+ *   按 SQL COUNT(col) 语义只剔除 NULL/空值行，桶内放占位 1，最终 count = values.length.
+ * - 其余聚合（sum/avg/min/max）要求 measure_field 值可转数值，非数值行剔除.
+ */
 function bucketByDimension(
   rows: RowResponse[],
   fields: Field[],
@@ -153,14 +163,23 @@ function bucketByDimension(
   const dimDef = fields.find((f) => f.name === cfg.dimension_field)
   const groupDef = fields.find((f) => f.name === cfg.group_field)
   const granularity = cfg.date_granularity ?? 'month'
+  const isCount = cfg.aggregation === 'count'
   const buckets = new Map<string, Map<string, number[]>>()
   for (const r of rows) {
     const dimKey = axisKeyForRow(r, dimDef, granularity) || UNGROUPED_LABEL
     const seriesKey = withGroup
       ? (axisKeyForRow(r, groupDef, granularity) || UNGROUPED_LABEL)
       : SINGLE_SERIES
-    const v = toNumber(cfg.measure_field ? r[cfg.measure_field] : undefined)
-    if (v === null) continue
+    let v: number | null
+    if (isCount) {
+      // COUNT(col)：空值跳过即可，实际值用 1 占位
+      const raw = cfg.measure_field ? r[cfg.measure_field] : undefined
+      if (isEmptyValue(raw)) continue
+      v = 1
+    } else {
+      v = toNumber(cfg.measure_field ? r[cfg.measure_field] : undefined)
+      if (v === null) continue
+    }
     let series = buckets.get(dimKey)
     if (!series) {
       series = new Map()

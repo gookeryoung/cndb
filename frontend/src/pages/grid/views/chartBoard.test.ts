@@ -103,6 +103,29 @@ describe('buildChartData — bar/line 维度聚合', () => {
     expect(build('max')).toEqual([200, 50, 70])
   })
 
+  it('count 聚合支持字符串度量字段（COUNT(col) 语义，空值跳过）', () => {
+    // 产品开发「片区项目数」视图场景：维度=片区，度量=项目编号（字符串），聚合=count
+    const rows = [
+      row({ id: 1, 片区: '华东', 项目编号: 'PRJ001' }),
+      row({ id: 2, 片区: '华东', 项目编号: 'PRJ002' }),
+      row({ id: 3, 片区: '华南', 项目编号: 'PRJ003' }),
+      row({ id: 4, 片区: '华南', 项目编号: null }),     // 空值跳过
+      row({ id: 5, 片区: '华南', 项目编号: '' }),       // 空串跳过
+      row({ id: 6, 片区: '华北', 项目编号: 'PRJ006' }),
+    ]
+    const areaField = makeField({ id: 10, name: '片区', field_type: 'text' })
+    const prjField = makeField({ id: 11, name: '项目编号', field_type: 'text' })
+    const data = buildChartData(rows, [areaField, prjField], cfg({
+      chart_type: 'bar', dimension_field: '片区', measure_field: '项目编号',
+      aggregation: 'count',
+    }))
+    expect(data.kind).toBe('category')
+    if (data.kind !== 'category') return
+    // 文本维度按 zh-CN locale 排序（拼音序：华北 huabei < 华东 huadong < 华南 huanan）
+    expect(data.categories).toEqual(['华北', '华东', '华南'])
+    expect(data.series[0].data).toEqual([1, 2, 1])  // 华北 1，华东 2，华南 1（跳过 2 空值）
+  })
+
   it('group_field 多系列：无值桶为 null 不虚构 0', () => {
     const rows: RowResponse[] = [
       row({ id: 1, 日期: '2026-01-05', 产品: 'A', 销售额: 100 }),
