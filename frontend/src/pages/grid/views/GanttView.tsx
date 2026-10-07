@@ -370,6 +370,60 @@ function TodayLine({
   )
 }
 
+// ── 时间轴右边界虚线 ──────────────────────────────────
+
+/** 在时间轴最右端（range.max 位置）画一条虚线，标记"截至日期/时间范围边界"，
+ *  覆盖 header 双层与 body grid 背景三处容器的右边界。 */
+function RightBoundaryLine({
+  totalWidth,
+  visible = true,
+  label,
+}: {
+  /** 时间轴总宽度（= totalTimelineWidth） */
+  totalWidth: number
+  visible?: boolean
+  /** 角标文本（可选，默认不显示） */
+  label?: string
+}) {
+  if (!visible || totalWidth <= 0) return null
+  return (
+    <div
+      data-testid="gantt-boundary-line"
+      aria-hidden
+      style={{
+        position: 'absolute',
+        left: totalWidth,
+        top: 0,
+        bottom: 0,
+        width: 0,
+        borderLeft: '2px dashed var(--cn-text-muted, #bfbfbf)',
+        zIndex: 3,
+        pointerEvents: 'none',
+      }}
+    >
+      {label && (
+        <span
+          style={{
+            position: 'absolute',
+            top: 2,
+            left: 2,
+            fontSize: 10,
+            color: 'var(--cn-text-muted, #999)',
+            background: 'var(--cn-bg-container, #fff)',
+            padding: '0 3px',
+            borderRadius: 2,
+            whiteSpace: 'nowrap',
+            border: '1px solid var(--cn-border, #e8e8e8)',
+            lineHeight: 1.4,
+          }}
+        >
+          {label}
+        </span>
+      )}
+    </div>
+  )
+}
+
 // ── 虚拟行类型 ────────────────────────────────────────
 
 /** 分组聚合结构（左侧 WBS 头与右侧组背景条共用） */
@@ -762,6 +816,8 @@ export default function GanttView({
                   {seg.showLabel ? seg.label : null}
                 </div>
               ))}
+              {/* 时间轴右边界虚线 */}
+              <RightBoundaryLine totalWidth={totalTimelineWidth} />
             </div>
 
             {/* 下层：当前刻度层（day / week / month / quarter）。
@@ -823,6 +879,8 @@ export default function GanttView({
                   </div>
                 )
               })}
+              {/* 时间轴右边界虚线 */}
+              <RightBoundaryLine totalWidth={totalTimelineWidth} />
             </div>
           </div>
 
@@ -880,6 +938,8 @@ export default function GanttView({
                 />
               )}
               {showToday && timeRange && <TodayLine range={timeRange} pxPerDay={pxPerDay} />}
+              {/* 时间轴右边界虚线 —— 覆盖 body grid 背景右边界 */}
+              <RightBoundaryLine totalWidth={totalTimelineWidth} />
             </div>
 
             {/* 虚拟行容器：仅渲染滚动窗口（含 overscan）内的组头与任务行 */}
