@@ -524,7 +524,18 @@ interface KanbanColumnProps {
   canEdit?: boolean
 }
 
-function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDeleteCard, canDelete, onAddCard, canAdd, onToggleDone, canEdit }: KanbanColumnProps) {
+/** KanbanColumn —— 单列看板列组件.
+ *
+ *  内部使用虚拟化（useVirtualizer）只 mount 可视窗口 + overscan 的卡片，
+ *  避免 500 行真实数据全量挂载重型 antd 卡片（Progress / Tag / Tooltip）.
+ *  外层 memo 包装阻止 GridPage 无关重渲染时所有列重渲；
+ *  列内 virtualizer 只在列首次 mount 时初始化，后续 GridPage 重渲染不触发列内重建。 */
+const KanbanColumn = memo(function KanbanColumn(props: KanbanColumnProps) {
+  return <KanbanColumnInner {...props} />
+})
+
+/** 完整的 KanbanColumn 内容 —— 含 useVirtualizer + KanbanCard 树. */
+const KanbanColumnInner = memo(function KanbanColumnInner({ col, fields, opts, density, colStyle, onRowClick, onDeleteCard, canDelete, onAddCard, canAdd, onToggleDone, canEdit }: KanbanColumnProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // 阈值 30：真实数据（如 500 行项目表按片区分组）单列常在 60-90 行，
   // 旧阈值 100 下这些列全量挂载重型 antd 卡片导致切看板卡顿
@@ -680,11 +691,11 @@ function KanbanColumn({ col, fields, opts, density, colStyle, onRowClick, onDele
 
     </div>
   )
-}
+})
 
-// ── 看板主视图 ────────────────────────────────────────
+// ── 看板主视图 —— 同样用 memo 包装，阻止 GridPage 无关重渲染时重算 columns ──
 
-export default function KanbanView({
+export default memo(function KanbanView({
   rows,
   fields,
   view,
@@ -767,4 +778,4 @@ export default function KanbanView({
       ))}
     </div>
   )
-}
+})
