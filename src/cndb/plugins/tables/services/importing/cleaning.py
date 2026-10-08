@@ -290,11 +290,15 @@ def _numeric_values(rows: list[dict[str, Any]], column: str | None) -> list[floa
 
 
 def _apply_dedupe(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
-    """按全部列 hash 去重，保留第一条."""
+    """按全部列 hash 去重，保留第一条.
+
+    key 用 repr(v) 而非 str(v)，避免不同类型值（如 int 5 与 str "5"、
+    bool True 与 str "True"）被误判为相同而静默丢弃。
+    """
     seen: set[tuple[Any, ...]] = set()
     kept: list[dict[str, Any]] = []
     for r in rows:
-        key = tuple(sorted((k, str(v) if v is not None else "") for k, v in r.items()))
+        key = tuple(sorted((k, repr(v)) for k, v in r.items()))
         if key in seen:
             continue
         seen.add(key)
