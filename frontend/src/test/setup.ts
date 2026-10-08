@@ -6,7 +6,7 @@
  * - 每个用例后清空 localStorage / sessionStorage，保证用例间隔离
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { act, cleanup } from '@testing-library/react'
 import { message } from 'antd'
 import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 import { server } from './msw'
@@ -96,6 +96,22 @@ if (typeof Blob !== 'undefined' && !Blob.prototype.stream) {
   }
 }
 
+// ── 抑制 antd 内部 holder 的 act 警告（已确认为无害噪音）──────────────
+// ThemeProvider 渲染的 <AntApp> 挂载的 rc-notification holder 及 rc-motion
+// 会在 requestAnimationFrame 中更新 Notifications 状态，发生在 RTL 的 act
+// 作用域之外，产生 "An update to Notifications inside a test was not wrapped
+// in act(...)" 警告。该更新仅涉弹层动画时序，不影响任何断言；仅过滤栈内
+// 命中 node_modules 下 antd / rc-* 包的此类警告，业务组件自身的 act 警告
+// 仍正常抛出，避免掩盖真实问题。
+const originalConsoleError = console.error.bind(console)
+console.error = (...args: unknown[]) => {
+  const text = args.map((a) => (typeof a === 'string' ? a : String(a))).join('\n')
+  if (text.includes('not wrapped in act') && /node_modules[\\/].*(?:antd|rc-[a-z-]+)/.test(text)) {
+    return
+  }
+  originalConsoleError(...args)
+}
+
 beforeAll(() => {
   // MSW 网络层拦截：漏配端点直接报错，防止测试悄悄打到真实网络
   server.listen({ onUnhandledRequest: 'error' })
@@ -105,13 +121,17 @@ beforeAll(() => {
 // 注：zustand store 为单例（按测试文件隔离），store 状态由 renderProviders
 // 的 initialAuth 或各测试文件的 beforeEach 管理，不在此全局复位 ——
 // 避免 afterEach 触发 persist 写 localStorage 与异常注入用例互相干扰。
-afterEach(() => {
+afterEach(async () => {
   cleanup()
   // message.destroy() 先于 DOM 摘除：卸载静态 message 容器内的全部挂起通知，
   // 触发 React unmount 清理 rc-notification 的自动关闭定时器 —— 否则定时器在
   // 测试文件结束、jsdom 环境销毁后仍会触发，回调访问 window 抛
   // "ReferenceError: window is not defined"，vitest 计为 unhandled error。
-  message.destroy()
+  // 首次调用会经 rc-util 在独立 ReactDOM root 上挂载静态 holder，包一层 act
+  // 避免 "An update to Root ... not wrapped in act" 警告。
+  await act(async () => {
+    message.destroy()
+  })
   // antd 静态 Modal.confirm / message 渲染在 React 树之外的容器，cleanup() 无法卸载；
   // jsdom 不跑动画导致 destroyAll 的离场动画永不结束，残留的遮罩与文本会干扰后续用例
   document.querySelectorAll('.ant-modal-root, .ant-message, .ant-notification').forEach((n) => n.remove())
