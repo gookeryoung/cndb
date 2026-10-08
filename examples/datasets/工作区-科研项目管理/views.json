@@ -143,6 +143,16 @@
           "direction": "asc"
         }
       ],
+      "order": 7
+    },
+    {
+      "name": "结题日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "结题日期",
+        "title_field": "项目名称",
+        "group_field": "项目状态"
+      },
       "order": 8
     },
     {

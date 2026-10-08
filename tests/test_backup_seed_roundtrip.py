@@ -8,9 +8,17 @@
 
 from __future__ import annotations
 
+import csv
 import json
 
-from cndb.cli.seed import _get_workspace_view_configs, _seed_sales_tables, _validate_view_fields
+import pytest
+
+from cndb.cli.seed import (
+    FIELD_IMPORT_RULES,
+    _get_workspace_view_configs,
+    _seed_sales_tables,
+    _validate_view_fields,
+)
 from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
 from cndb.plugins.workspaces.routers.workspaces import _coerce_row_value_types
@@ -281,6 +289,200 @@ class TestSeedViewHelpers:
             is False
         )
         assert _validate_view_fields({"name": "v", "view_options": {"x_field": "缺失"}}, valid, "ws", "t") is False
+
+    def test_validate_view_fields_charts_entries(self):
+        """chart 多图形态 charts[] 逐条目校验：合法通过、字段缺失拒绝、非对象拒绝."""
+        valid = {"姓名", "薪资"}
+
+        # 合法 charts[] 通过
+        assert (
+            _validate_view_fields(
+                {
+                    "name": "v",
+                    "view_options": {
+                        "charts": [{"chart_type": "bar", "dimension_field": "姓名", "measure_field": "薪资"}]
+                    },
+                },
+                valid,
+                "ws",
+                "t",
+            )
+            is True
+        )
+        # charts[i] 引用不存在字段 → 拒绝
+        assert (
+            _validate_view_fields(
+                {"name": "v", "view_options": {"charts": [{"measure_field": "缺失"}]}},
+                valid,
+                "ws",
+                "t",
+            )
+            is False
+        )
+        # charts[i] 不是对象 → 拒绝
+        assert _validate_view_fields({"name": "v", "view_options": {"charts": ["bar"]}}, valid, "ws", "t") is False
+
+
+class TestSeedViewsIntegrity:
+    """真实 datasets views.json 全量完整性校验（无 DB）.
+
+    保证视图种子配置与数据集字段持续对齐，防止视图在 seed 时被
+    _validate_view_fields 静默跳过：
+
+    - view_type 均为 7 种合法视图模式；
+    - 同表内视图名与 order 不重复；
+    - filters/sortings/view_options/charts[] 引用的字段均可在建表来源中解析
+      （CSV 表头 + fields.json link_lookups 引入字段 / 硬编码业务表字段；
+      API 建表等无法静态解析的来源仅校验 view_type）；
+    - 7 种视图模式在全部工作区中均有覆盖。
+    """
+
+    VALID_VIEW_TYPES = {"grid", "kanban", "calendar", "gantt", "wbs", "matrix", "chart"}
+
+    # 与 seed._seed_sales_tables 保持一致的硬编码业务表字段
+    HARDCODED_TABLE_FIELDS: dict[str, dict[str, set[str]]] = {
+        "某企业销售管理": {
+            "部门表": {"部门名称", "负责人"},
+            "员工表": {
+                "工号",
+                "姓名",
+                "部门",
+                "职位",
+                "负责人",
+                "入职日期",
+                "薪资",
+                "手机号",
+                "邮箱",
+                "是否在职",
+            },
+        }
+    }
+
+    # view_options 中携带字段引用的键（与 seed._validate_view_fields 白名单一致）
+    _OPTION_FIELD_KEYS = (
+        "group_field",
+        "start_field",
+        "end_field",
+        "title_field",
+        "start_date_field",
+        "end_date_field",
+        "actual_end_field",
+        "progress_field",
+        "assignee_field",
+        "row_field",
+        "column_field",
+        "dimension_field",
+        "measure_field",
+        "x_field",
+        "y_field",
+    )
+
+    @pytest.fixture(scope="class")
+    def ws_configs(self) -> tuple:
+        from cndb.cli.seed import _get_datasets_dir
+
+        datasets_dir = _get_datasets_dir()
+        if datasets_dir is None:
+            pytest.skip("examples/datasets 目录不可用（wheel 安装环境）")
+        configs = _get_workspace_view_configs(datasets_dir)
+        if not configs:
+            pytest.skip("未发现任何 views.json")
+        return datasets_dir, configs
+
+    @classmethod
+    def _field_refs(cls, vc: dict) -> set[str]:
+        """提取单个视图配置引用的全部字段名."""
+        refs = {f.get("field_name") for f in vc.get("filters", [])}
+        refs |= {s.get("field_name") for s in vc.get("sortings", [])}
+        vo = vc.get("view_options", {})
+        for key in cls._OPTION_FIELD_KEYS:
+            if vo.get(key):
+                refs.add(vo[key])
+        charts = vo.get("charts")
+        if isinstance(charts, list):
+            for entry in charts:
+                if isinstance(entry, dict):
+                    for key in ("dimension_field", "measure_field", "x_field", "y_field", "group_field"):
+                        if entry.get(key):
+                            refs.add(entry[key])
+        refs.discard(None)
+        return refs
+
+    @classmethod
+    def _resolve_fields(cls, datasets_dir, ws_name: str, table_name: str) -> set[str] | None:
+        """按建表来源解析字段集合；无法静态解析（API 建表等）返回 None."""
+        hardcoded = cls.HARDCODED_TABLE_FIELDS.get(ws_name, {})
+        if table_name in hardcoded:
+            return set(hardcoded[table_name])
+        ws_dir = datasets_dir / f"工作区-{ws_name}"
+        csv_path = ws_dir / f"{table_name}.csv"
+        if not csv_path.is_file():
+            return None
+        with csv_path.open(encoding="utf-8-sig", newline="") as fh:
+            fields = set(next(csv.reader(fh)))
+        # fields.json link_lookups 引入 link 字段（link_name）与 lookup 字段（fields）
+        fields_path = ws_dir / "fields.json"
+        if fields_path.is_file():
+            spec = json.loads(fields_path.read_text(encoding="utf-8-sig"))
+            for lk in spec.get("link_lookups", []):
+                if lk.get("table") == table_name:
+                    if lk.get("link_name"):
+                        fields.add(lk["link_name"])
+                    fields.update(lk.get("fields", []))
+        # seed 主流程字段克隆规则引入的物理列（FIELD_IMPORT_RULES 单一真相源）
+        for dst_name, _src_name, field_names in FIELD_IMPORT_RULES.get(ws_name, []):
+            if dst_name == table_name:
+                fields.update(field_names)
+        return fields
+
+    def test_view_types_all_valid(self, ws_configs):
+        _, configs = ws_configs
+        for ws_name, tables in configs.items():
+            for table_name, view_list in tables.items():
+                if table_name.startswith("_"):
+                    continue
+                for vc in view_list:
+                    assert vc.get("view_type", "grid") in self.VALID_VIEW_TYPES, (
+                        f"{ws_name}/{table_name} 视图'{vc.get('name')}' 的 view_type 非法"
+                    )
+
+    def test_view_names_and_orders_unique_per_table(self, ws_configs):
+        _, configs = ws_configs
+        for ws_name, tables in configs.items():
+            for table_name, view_list in tables.items():
+                if table_name.startswith("_"):
+                    continue
+                names = [vc["name"] for vc in view_list]
+                assert len(names) == len(set(names)), f"{ws_name}/{table_name} 视图名重复: {names}"
+                orders = [vc.get("order") for vc in view_list]
+                assert len(orders) == len(set(orders)), f"{ws_name}/{table_name} order 重复: {orders}"
+
+    def test_field_references_resolve(self, ws_configs):
+        datasets_dir, configs = ws_configs
+        checked = 0
+        for ws_name, tables in configs.items():
+            for table_name, view_list in tables.items():
+                if table_name.startswith("_"):
+                    continue
+                fields = self._resolve_fields(datasets_dir, ws_name, table_name)
+                if fields is None:
+                    continue
+                for vc in view_list:
+                    for ref in self._field_refs(vc):
+                        checked += 1
+                        assert ref in fields, f"{ws_name}/{table_name} 视图'{vc['name']}' 引用不存在的字段: {ref}"
+        assert checked > 0, "至少应校验一个字段引用"
+
+    def test_all_seven_view_types_covered(self, ws_configs):
+        _, configs = ws_configs
+        types = {
+            vc.get("view_type", "grid")
+            for tables in configs.values()
+            for view_list in tables.values()
+            if isinstance(view_list, list)  # 跳过 _comment 等元数据字符串
+            for vc in view_list
+        }
+        assert types == self.VALID_VIEW_TYPES, f"7 种视图模式应全部覆盖，实际: {types}"
 
 
 class TestCoerceRowValueTypes:

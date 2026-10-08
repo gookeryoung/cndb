@@ -38,35 +38,44 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
     expect(buttons).toEqual([{ mode: 'grid' }])
   })
 
-  it('科研项目（grid+kanban）→ 2 个按钮', () => {
-    const { buttons, visible } = deriveModeSwitch(view('grid', 'kanban'), ALL_BUTTONS)
+  it('科研项目（grid+kanban+chart）→ 3 个按钮', () => {
+    const { buttons, visible } = deriveModeSwitch(view('grid', 'kanban', 'chart'), ALL_BUTTONS)
     expect(visible).toBe(true)
-    expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kanban'])
+    expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kanban', 'chart'])
   })
 
-  it('项目进展（grid+kanban+calendar）→ 3 个按钮', () => {
+  it('项目进展（grid+kanban+calendar+chart）→ 4 个按钮', () => {
     const { buttons, visible } = deriveModeSwitch(
-      view('grid', 'kanban', 'calendar'), ALL_BUTTONS,
-    )
-    expect(visible).toBe(true)
-    expect(buttons).toHaveLength(3)
-  })
-
-  it('WBS任务分解（grid+kanban+calendar+gantt+wbs）→ 5 个按钮', () => {
-    const { buttons, visible } = deriveModeSwitch(
-      view('grid', 'kanban', 'calendar', 'gantt', 'wbs'), ALL_BUTTONS,
-    )
-    expect(visible).toBe(true)
-    expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kanban', 'calendar', 'gantt', 'wbs'])
-  })
-
-  it('产品开发（grid+kanban+calendar+gantt，缺 wbs）→ 4 个按钮且无 wbs', () => {
-    const { buttons, visible } = deriveModeSwitch(
-      view('grid', 'kanban', 'calendar', 'gantt'), ALL_BUTTONS,
+      view('grid', 'kanban', 'calendar', 'chart'), ALL_BUTTONS,
     )
     expect(visible).toBe(true)
     expect(buttons).toHaveLength(4)
+  })
+
+  it('WBS任务分解（grid+kanban+calendar+gantt+wbs+chart）→ 6 个按钮', () => {
+    const { buttons, visible } = deriveModeSwitch(
+      view('grid', 'kanban', 'calendar', 'gantt', 'wbs', 'chart'), ALL_BUTTONS,
+    )
+    expect(visible).toBe(true)
+    expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kanban', 'calendar', 'gantt', 'wbs', 'chart'])
+  })
+
+  it('产品开发（grid+kanban+calendar+gantt+chart，缺 wbs/matrix）→ 5 个按钮', () => {
+    const { buttons, visible } = deriveModeSwitch(
+      view('grid', 'kanban', 'calendar', 'gantt', 'chart'), ALL_BUTTONS,
+    )
+    expect(visible).toBe(true)
+    expect(buttons).toHaveLength(5)
     expect(buttons.some((b) => b.mode === 'wbs')).toBe(false)
+    expect(buttons.some((b) => b.mode === 'matrix')).toBe(false)
+  })
+
+  it('气温天气（grid+kanban+calendar+matrix+chart）→ 含 matrix 按钮（seed 2026-10 补充）', () => {
+    const { buttons, visible } = deriveModeSwitch(
+      view('grid', 'kanban', 'calendar', 'matrix', 'chart'), ALL_BUTTONS,
+    )
+    expect(visible).toBe(true)
+    expect(buttons.some((b) => b.mode === 'matrix')).toBe(true)
   })
 })
 
