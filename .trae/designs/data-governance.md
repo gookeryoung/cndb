@@ -81,7 +81,7 @@ pending → running → done | failed（非法转换抛 ValueError）
 
 ### clean（`governance/clean.py`）
 
-1. 校验 actions 非空、column 均存在（字段名 → `DataField`）。
+1. 校验 actions 非空、column 均存在（字段名 → `DataField`）；fill_null 额外校验：strategy 必须为 mean/median/default/empty（缺失或非法报错，禁止静默无效）、default 必须提供 fill_value、mean/median 仅适用于数值列（number/float/percentage）。
 2. 实时统计 profile：fill_null 的 mean/median、drop_outliers 的 IQR 阈值（`statistics.quantiles` n=4 inclusive；样本 < 4 返回空集）。
 3. 预览与执行走**同一路径**保证一致：分批扫描（`BATCH_SIZE=1000`）→ `cleaning_core` 纯变换 → 预览模式只输出 samples（前 3 条 before/after）不写库；执行模式仅 UPDATE 值变化的行。
 4. 报告 `{mode: preview|execute, affected:[{action,column,strategy,affected_rows}], samples}`；affected 键为 `(action, column, strategy)` 三元组。
@@ -90,6 +90,8 @@ pending → running → done | failed（非法转换抛 ValueError）
 ### 共享变换层（`cleaning_core.py`）
 
 从导入侧 `cleaning.py` 抽出 4 个纯函数 `apply_trim / apply_fill_null / apply_coerce / apply_drop_outliers`；导入侧改为顶部导入复用（保留 `_apply_dedupe`）。新增 profile 键支持：`{"median"}`（优先于 distribution_bins）、`{"fill_value"}`（strategy=default）。
+
+导入侧 `apply_cleaning_actions` 不再直接透传列画像，而是经 `_build_fill_profile` 构建填充口径：default 取自动作配置 `fill_value`；mean/median 优先取画像统计值（画像仅在数值样本 ≥ 4 时含 mean/bins），缺失时回退为对当前行实时计算（内存全量行，口径全局一致）。`apply_drop_outliers` 用 `math.isclose`（rel_tol=1e-9，abs_tol=5e-7）容差匹配异常值，兼容画像中 round(6) 截断。
 
 ## 审计
 
@@ -100,12 +102,12 @@ pending → running → done | failed（非法转换抛 ValueError）
 - 类型：`frontend/src/api/types.ts`（GovernanceTask/Detect/Merge/Clean + TablePermission.manage_data_role）；封装：`frontend/src/api/governance.ts`。
 - 治理弹窗：`frontend/src/pages/grid/governance/GovernanceDialog.tsx`。按类别组织（AntD Tabs），两个页签相互独立、不依赖另一方的执行结果：
   - 「重复数据」：判重配置（字段 + 归一化选项）与合并确认同屏一体化——检测完成后，有重复组时直接展示分组表（逐组选保留行 + 全局融合策略）并提交合并，无重复组时提示"未发现重复行"；检测前置不再阻塞其他类别。
-  - 「数据清洗」：预览 → 确认执行，可独立使用，无需先运行检测。
+  - 「数据清洗」：预览 → 确认执行，可独立使用，无需先运行检测。fill_null 须选填充策略（均值/中位数/自定义值），自定义值时填充值必填（前后端双重校验）。
   - 任务进度 useQuery refetchInterval 轮询；打开弹窗时重置全部状态并回到「重复数据」页签。
 - 入口：GridToolbar「数据治理」按钮（无 `manage_data` 动作时禁用）；表设置权限 Tab「数据治理」角色阈值下拉（空 = 默认管理员）。
 
 ## 测试与基准
 
-- 单测：`tests/test_governance_tasks.py`（17）、`test_governance_detect.py`（12）、`test_governance_merge.py`（12）、`test_governance_clean.py`（12）、`test_cleaning_core.py`（18）、`test_governance_permissions.py`（12，含 403 矩阵/阈值覆盖/自定义 Role/表拥有者）、`test_governance_api.py`（8）。
+- 单测：`tests/test_governance_tasks.py`（17）、`test_governance_detect.py`（12）、`test_governance_merge.py`（12）、`test_governance_clean.py`（17，含 fill_null 策略校验）、`test_cleaning_core.py`（20，含异常值容差匹配）、`test_governance_permissions.py`（12，含 403 矩阵/阈值覆盖/自定义 Role/表拥有者）、`test_governance_api.py`（8）。
 - 性能基准：`scripts/bench_governance_detect.py`（AC-6：10 万行 < 60s，实测 SQLite 0.31s，--check 作门禁）。
 - 测试环境注意：conftest `_sync_governance_tasks` 将治理后台任务同步执行（StaticPool 单连接）；`_cleanup_tables` join 治理线程。

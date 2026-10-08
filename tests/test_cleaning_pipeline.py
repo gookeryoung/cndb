@@ -366,3 +366,100 @@ class TestApplyCleaningActions:
         )
         assert cleaned == rows
         assert len(applied) == 1 and applied[0]["affected_rows"] == 0
+
+
+class TestFillNullProfileBuild:
+    """fill_null 统计口径构建：default 取自动作配置，mean/median 画像缺失时回退行内计算.
+
+    回归背景：apply_cleaning_actions 曾把列画像直接透传给 apply_fill_null，
+    而画像仅在数值样本 >= 4 时才含 mean / distribution_bins，且永远不含
+    fill_value，导致 default 与小样本 mean/median 填充静默失效。
+    """
+
+    def test_default_fills_from_action_fill_value(self):
+        """default 策略：填充值取自动作配置而非列画像."""
+        rows = [{"city": None}, {"city": "上海"}, {"city": "   "}]
+        cleaned, applied = apply_cleaning_actions(
+            rows, [], [{"column": "city", "action": "fill_null", "strategy": "default", "fill_value": "未知"}]
+        )
+        assert cleaned[0]["city"] == "未知"
+        assert cleaned[1]["city"] == "上海"
+        assert cleaned[2]["city"] == "未知"  # 空白字符串视为空值
+        assert applied[0]["affected_rows"] == 2
+
+    def test_default_without_fill_value_noop(self):
+        """default 策略缺 fill_value → 不填充（不误填 None）."""
+        rows = [{"city": None}, {"city": "上海"}]
+        cleaned, applied = apply_cleaning_actions(
+            rows, [], [{"column": "city", "action": "fill_null", "strategy": "default"}]
+        )
+        assert cleaned[0]["city"] is None
+        assert applied[0]["affected_rows"] == 0
+
+    def test_mean_fallback_computed_from_rows(self):
+        """mean 策略：画像无统计值（数值样本 < 4）时回退为行内实时计算."""
+        rows = [{"price": None}, {"price": 10}, {"price": 20}]
+        # 画像不含 mean（模拟小样本列）
+        profile = _mk_profile("price", "number")
+        cleaned, applied = apply_cleaning_actions(
+            rows, [profile], [{"column": "price", "action": "fill_null", "strategy": "mean"}]
+        )
+        assert cleaned[0]["price"] == 15.0
+        assert applied[0]["affected_rows"] == 1
+
+    def test_mean_uses_profile_when_present(self):
+        """mean 策略：画像有统计值时优先使用（含字符串数值行的行内统计差异场景）."""
+        rows = [{"price": None}, {"price": 100}, {"price": 200}]
+        profile = _mk_profile("price", "number", mean=42.0)
+        cleaned, _applied = apply_cleaning_actions(
+            rows, [profile], [{"column": "price", "action": "fill_null", "strategy": "mean"}]
+        )
+        assert cleaned[0]["price"] == 42.0
+
+    def test_mean_no_numeric_values_noop(self):
+        """mean 策略：列中无可解析数值 → 不填充."""
+        rows = [{"price": None}, {"price": "abc"}]
+        profile = _mk_profile("price", "number")
+        cleaned, applied = apply_cleaning_actions(
+            rows, [profile], [{"column": "price", "action": "fill_null", "strategy": "mean"}]
+        )
+        assert cleaned[0]["price"] is None
+        assert applied[0]["affected_rows"] == 0
+
+    def test_median_fallback_odd_and_even(self):
+        """median 策略：画像无 median / bins 时行内计算，奇偶行数都正确."""
+        rows_odd = [{"v": None}, {"v": 1}, {"v": 2}, {"v": 100}]
+        cleaned_odd, applied_odd = apply_cleaning_actions(
+            rows_odd, [], [{"column": "v", "action": "fill_null", "strategy": "median"}]
+        )
+        assert cleaned_odd[0]["v"] == 2.0
+        assert applied_odd[0]["affected_rows"] == 1
+
+        rows_even = [{"v": None}, {"v": 1}, {"v": 2}, {"v": 3}, {"v": 4}]
+        cleaned_even, _applied = apply_cleaning_actions(
+            rows_even, [], [{"column": "v", "action": "fill_null", "strategy": "median"}]
+        )
+        assert cleaned_even[0]["v"] == 2.5
+
+    def test_median_fallback_parses_string_numbers(self):
+        """median 策略：行内字符串数值也可参与统计."""
+        rows = [{"v": None}, {"v": "10"}, {"v": "30"}, {"v": "20"}]
+        cleaned, applied = apply_cleaning_actions(
+            rows, [], [{"column": "v", "action": "fill_null", "strategy": "median"}]
+        )
+        assert cleaned[0]["v"] == 20.0
+        assert applied[0]["affected_rows"] == 1
+
+    def test_fill_null_runs_after_prior_actions(self):
+        """统计基于前序动作变换后的行（trim 后空白串视为空并被填充）."""
+        rows = [{"v": "  "}, {"v": 10}, {"v": 20}]
+        cleaned, applied = apply_cleaning_actions(
+            rows,
+            [],
+            [
+                {"column": "v", "action": "trim_whitespace"},
+                {"column": "v", "action": "fill_null", "strategy": "mean"},
+            ],
+        )
+        assert cleaned[0]["v"] == 15.0
+        assert applied[1]["affected_rows"] == 1

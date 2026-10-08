@@ -142,21 +142,30 @@ def apply_drop_outliers(
     column: str,
     profile: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], int]:
-    """把数值列的异常值置空（异常值列表从 profile 读取）."""
+    """把数值列的异常值置空（异常值列表从 profile 读取）.
+
+    匹配采用容差比较（math.isclose）：列画像中的异常值样本可能经过 round(6)
+    精度截断（最大绝对误差 5e-7），精确匹配会漏置空高精度原始值。
+    """
+    import math
+
     outliers = profile.get("outliers", [])
     if not outliers:
         return rows, 0
     # 从 outliers 取异常值列表，置空行中的对应值
-    outlier_values = {o["value"] for o in outliers if o.get("type") == "numeric"}
+    outlier_values = [o["value"] for o in outliers if o.get("type") == "numeric"]
     affected = 0
     for r in rows:
         v = r.get(column)
+        if v is None or isinstance(v, bool):
+            continue
         try:
-            if v is not None and float(v) in outlier_values:
-                r[column] = None
-                affected += 1
+            fv = float(v)
         except (ValueError, TypeError):
             continue
+        if any(fv == o or math.isclose(fv, o, rel_tol=1e-9, abs_tol=5e-7) for o in outlier_values):
+            r[column] = None
+            affected += 1
     return rows, affected
 
 

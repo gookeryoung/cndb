@@ -146,7 +146,7 @@ def generate_cleaning_suggestions(
 
         # 4) 文本列有明显前后空格 → trim_whitespace
         if inferred == "text" and sample_values:
-            has_whitespace = any(isinstance(v, str) and (v != v.strip() or v != v.strip()) for v in sample_values)
+            has_whitespace = any(isinstance(v, str) and v != v.strip() for v in sample_values)
             if has_whitespace:
                 suggestions.append(
                     {
@@ -220,7 +220,8 @@ def apply_cleaning_actions(
         profile = profiles_by_col.get(column, {})
 
         if act_type == "fill_null":
-            cleaned, affected = _apply_fill_null(cleaned, column, strategy, profile)
+            fill_profile = _build_fill_profile(cleaned, column, strategy, action, profile)
+            cleaned, affected = _apply_fill_null(cleaned, column, strategy, fill_profile)
         elif act_type == "trim_whitespace":
             cleaned, affected = _apply_trim(cleaned, column)
         elif act_type == "coerce_type":
@@ -233,6 +234,59 @@ def apply_cleaning_actions(
         applied.append({"action": act_type, "column": column, "strategy": strategy, "affected_rows": affected})
 
     return cleaned, applied
+
+
+def _build_fill_profile(
+    rows: list[dict[str, Any]],
+    column: str | None,
+    strategy: str | None,
+    action: dict[str, Any],
+    profile: dict[str, Any],
+) -> dict[str, Any]:
+    """为 fill_null 构建统计口径 profile.
+
+    列画像中只有数值样本 >= 4 时才含 mean / distribution_bins，样本不足时缺失，
+    直接透传画像会导致填充静默失效。因此：
+    - default: 填充值取自动作配置 fill_value（画像中不存在该键）；
+    - mean/median: 优先取画像统计值，缺失时回退为对当前行实时计算
+      （rows 为内存全量数据，统计口径全局一致）。
+    """
+    if strategy == "default":
+        return {"fill_value": action.get("fill_value")}
+    if strategy == "mean":
+        if profile.get("mean") is not None:
+            return {"mean": profile["mean"]}
+        values = _numeric_values(rows, column)
+        return {"mean": sum(values) / len(values)} if values else {}
+    if strategy == "median":
+        if profile.get("median") is not None:
+            return {"median": profile["median"]}
+        if profile.get("distribution_bins"):
+            return {"distribution_bins": profile["distribution_bins"]}
+        values = sorted(_numeric_values(rows, column))
+        if values:
+            n = len(values)
+            mid = n // 2
+            median = values[mid] if n % 2 else (values[mid - 1] + values[mid]) / 2
+            return {"median": median}
+        return {}
+    return {}
+
+
+def _numeric_values(rows: list[dict[str, Any]], column: str | None) -> list[float]:
+    """收集某列的可解析数值（跳过 None / 布尔 / 不可解析值）."""
+    if not column:
+        return []
+    values: list[float] = []
+    for r in rows:
+        v = r.get(column)
+        if v is None or isinstance(v, bool):
+            continue
+        try:
+            values.append(float(v))
+        except (TypeError, ValueError):
+            continue
+    return values
 
 
 def _apply_dedupe(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
