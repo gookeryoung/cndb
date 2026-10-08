@@ -1131,6 +1131,8 @@ export default function GridPage() {
         {importExportOpen && (
           <ImportExportDialog open={importExportOpen} wid={wid} tid={tid}
             fields={table?.fields || []}
+            viewId={activeViewId}
+            viewName={activeView?.name}
             onClose={() => setImportExportOpen(false)}
             onImported={() => {
               queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
