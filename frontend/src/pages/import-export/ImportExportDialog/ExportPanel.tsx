@@ -21,8 +21,10 @@ interface ExportPanelProps {
   viewId?: number | string | null
   /** 当前激活的视图名称（仅用于提示） */
   viewName?: string
-  /** 返回视图内容区根元素（GridPage 主内容容器），PDF 视觉快照导出使用 */
-  getPdfTarget?: () => HTMLElement | null
+  /** 进入 PDF 导出模式（GridPage 关闭虚拟滚动、全量渲染）并返回视图内容区根元素，resolve 前已等待重渲染完成 */
+  getPdfTarget?: () => Promise<HTMLElement | null>
+  /** PDF 导出结束后调用（GridPage 退出导出模式，恢复虚拟滚动） */
+  releasePdfTarget?: () => void
 }
 
 /** 生成本地时间戳 YYYYMMDD_HHMMSS（PDF 文件名用） */
@@ -53,21 +55,23 @@ function parseContentDispositionFilename(header: string | undefined): string | n
   return null
 }
 
-export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget }: ExportPanelProps) {
+export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, releasePdfTarget }: ExportPanelProps) {
   const { message } = AntApp.useApp()
   const [exporting, setExporting] = useState(false)
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('csv')
   const [useViewFilter, setUseViewFilter] = useState(true)
 
-  /** PDF 视觉快照导出：捕获视图内容区 → 生成 PDF → 触发下载 */
+  /** PDF 视觉快照导出：进入导出模式取目标 → 生成 PDF → 触发下载 → 退出导出模式 */
   const handleExportPdf = useCallback(async () => {
-    const target = getPdfTarget?.()
-    if (!target) {
-      message.error('未找到可导出的视图内容')
-      return
-    }
+    let target: HTMLElement | null = null
     try {
       setExporting(true)
+      // getPdfTarget 内部先切换导出模式（关闭虚拟滚动、全量渲染）再返回目标元素
+      target = (await getPdfTarget?.()) ?? null
+      if (!target) {
+        message.error('未找到可导出的视图内容')
+        return
+      }
       const ts = formatTimestamp(new Date())
       const filename = viewName ? `view-${viewName}-${ts}.pdf` : `table-${tid}-view.pdf`
       await exportViewToPdf(target, filename)
@@ -75,9 +79,10 @@ export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget }
     } catch (err) {
       message.error(err instanceof Error ? err.message : '导出失败')
     } finally {
+      releasePdfTarget?.()
       setExporting(false)
     }
-  }, [getPdfTarget, viewName, tid, message])
+  }, [getPdfTarget, releasePdfTarget, viewName, tid, message])
 
   const handleExport = useCallback(async () => {
     if (selectedFormat === 'pdf') {
