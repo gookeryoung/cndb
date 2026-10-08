@@ -50,15 +50,22 @@ function columnHeader(page: Page, name: string) {
     return page.locator("th", { hasText: name }).first();
 }
 
-/** 通过 API 清空员工表全部视图的 view_options（测试隔离）. */
+/** 通过 API 清空员工表默认视图的 view_options（测试隔离）.
+ *
+ * 仅清默认视图：本 spec 用例全部落在默认视图上操作，只可能污染它。
+ * 不可清空全部视图——seed 的 kanban/matrix/calendar/chart 视图 view_options
+ * 是功能配置（分组字段/轴字段等），清掉会破坏并行运行的其他 spec
+ * （如 matrix-view.spec 依赖「人力分布矩阵」的轴配置）。
+ */
 async function cleanupViewOptions(request: APIRequestContext) {
     const token = await getAdminToken(request);
     const tid = await getTableId(request, WID, TABLE_NAME);
     const resp = await request.get(`/api/v1/workspaces/${WID}/tables/${tid}/views`, {
         headers: { Authorization: `Bearer ${token}` },
     });
-    const views = (await resp.json()) as Array<{ id: number; view_options?: unknown }>;
+    const views = (await resp.json()) as Array<{ id: number; is_default?: boolean; view_options?: unknown }>;
     for (const v of views) {
+        if (!v.is_default) continue;
         if (v.view_options && Object.keys(v.view_options as object).length > 0) {
             await request.patch(`/api/v1/workspaces/${WID}/tables/${tid}/views/${v.id}`, {
                 headers: { Authorization: `Bearer ${token}` },
