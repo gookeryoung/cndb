@@ -45,6 +45,8 @@ interface GanttViewProps {
   view?: View | null
   density: Density
   onRowClick?: (r: RowResponse) => void
+  /** PDF 导出模式：绕过纵向虚拟化全量渲染行，并放开表头裁剪使整个时间轴进入快照 */
+  pdfExporting?: boolean
 }
 
 // ── 预设色板（复用 CalendarView 风格） ────────────────
@@ -459,6 +461,7 @@ export default function GanttView({
   density,
   sortings,
   onRowClick,
+  pdfExporting,
 }: GanttViewProps & {
   sortings?: Array<{ field_name: string; direction: 'asc' | 'desc' }>
 }) {
@@ -636,8 +639,21 @@ export default function GanttView({
     getItemKey: (index) => flatItems[index].key,
     overscan: 8,
   })
-  const virtualItems = rowVirtualizer.getVirtualItems()
-  const totalBodyHeight = rowVirtualizer.getTotalSize()
+  // PDF 导出模式：行高全部为定高常量，手动累计偏移合成全量窗口替代虚拟切片，
+  // 左右两栏共用同一序列保证严格对齐（enabled:false 会使 getVirtualItems 返回空，不可用）
+  const exportVirtualItems = useMemo<Array<VirtualItem> | null>(() => {
+    if (!pdfExporting) return null
+    let y = 0
+    return flatItems.map((item, index) => {
+      const start = y
+      y += item.size
+      return { index, key: item.key, start, end: y, size: item.size, lane: 0 }
+    })
+  }, [pdfExporting, flatItems])
+  const virtualItems = exportVirtualItems ?? rowVirtualizer.getVirtualItems()
+  const totalBodyHeight = exportVirtualItems
+    ? (exportVirtualItems[exportVirtualItems.length - 1]?.end ?? 0)
+    : rowVirtualizer.getTotalSize()
 
   // 空状态
   const startField = opts.start_date_field as string | undefined
@@ -748,7 +764,8 @@ export default function GanttView({
 
       {/* ─── 主体：左列固定 + 右列横向可滚动 ─── */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        {/* 左侧固定列（header + body 合并为一个区域） */}
+        {/* 左侧固定列（header + body 合并为一个区域）；
+            PDF 导出模式放开 hidden 裁剪，全量行溢出列框渲染才能进入快照 */}
         <div
           style={{
             width: ds.leftColWidth,
@@ -758,7 +775,7 @@ export default function GanttView({
             display: 'flex',
             flexDirection: 'column',
             flexShrink: 0,
-            overflow: 'hidden',
+            overflow: pdfExporting ? 'visible' : 'hidden',
           }}
         >
           {/* 左侧 header —— 高度对齐右侧双层表头（2 × headerHeight），保证左右行不错位 */}
@@ -801,7 +818,7 @@ export default function GanttView({
           }}
         >
           {/* header —— 双层；overflow:hidden 裁剪，scrollLeft 由同步逻辑跟随 body */}
-          <div ref={headerScrollRef} data-testid="gantt-header-scroll" style={{ flexShrink: 0, minWidth: 0, overflow: 'hidden' }}>
+          <div ref={headerScrollRef} data-testid="gantt-header-scroll" style={{ flexShrink: 0, minWidth: 0, overflow: pdfExporting ? 'visible' : 'hidden' }}>
             <div style={{ minWidth: totalTimelineWidth }}>
               {/* 上层：锚定层（month / year）—— 合并渲染 */}
               <div

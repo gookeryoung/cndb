@@ -253,9 +253,10 @@ describe('ImportExportDialog 导入/导出对话框', () => {
       }),
     )
     const target = document.createElement('div')
+    const release = vi.fn()
     renderProviders(
       <ImportExportDialog open wid={WID} tid={TID} onClose={() => { }}
-        viewId={200} viewName="全部数据" getPdfTarget={() => target} />,
+        viewId={200} viewName="全部数据" getPdfTarget={() => Promise.resolve(target)} releasePdfTarget={release} />,
     )
 
     fireEvent.click(screen.getByRole('tab', { name: /导出/ }))
@@ -271,11 +272,13 @@ describe('ImportExportDialog 导入/导出对话框', () => {
     expect(exportViewToPdf).toHaveBeenCalledTimes(1)
     expect(exportViewToPdf).toHaveBeenCalledWith(target, expect.stringMatching(/^view-全部数据-\d{8}_\d{6}\.pdf$/))
     expect(exportCalled).toBe(false)
+    // 导出结束后退出导出模式（恢复虚拟滚动）
+    expect(release).toHaveBeenCalledTimes(1)
   })
 
   it('PDF 导出：目标容器缺失时提示错误且不调用生成', async () => {
     renderProviders(
-      <ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} getPdfTarget={() => null} />,
+      <ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} getPdfTarget={() => Promise.resolve(null)} />,
     )
 
     fireEvent.click(screen.getByRole('tab', { name: /导出/ }))
