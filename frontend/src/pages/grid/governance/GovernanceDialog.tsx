@@ -1,17 +1,16 @@
-/** 数据治理向导 — 重复检测 → 确认合并 → 数据清洗.
+/** 数据治理 — 按类别组织：重复数据（检测 + 合并一体化）/ 数据清洗.
  *
- * 三步向导（AntD Steps）：
- *  1. 检测配置：选择判重字段 + 归一化选项，提交 detect 任务并轮询
- *  2. 确认合并：逐组选择保留行与融合策略，提交 merge 任务
- *  3. 数据清洗：配置 4 动作（复用导入侧动作），先预览再执行
+ * 两个类别（AntD Tabs）相互独立、可自由切换，均不依赖另一方的执行结果：
+ *  - 重复数据：配置判重字段提交检测，完成后同屏展示分组结果，直接选择保留行并提交合并
+ *  - 数据清洗：配置 4 动作（复用导入侧动作），先预览再执行
  *
  * 所有任务异步提交后通过 useQuery refetchInterval 轮询进度。
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Modal, Steps, Select, Checkbox, Button, Table, Tag, Space, Alert, App as AntApp,
-  Input, Empty, Typography, Popconfirm, Spin,
+  Modal, Tabs, Select, Checkbox, Button, Table, Tag, Space, Alert, App as AntApp,
+  Input, Typography, Popconfirm, Spin,
 } from 'antd'
 import { SearchOutlined, MergeCellsOutlined, ClearOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
@@ -79,20 +78,20 @@ function useGovernanceReport(wid: string, tid: string, task: GovernanceTask | un
 
 export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDataChanged }: Props) {
   const { message } = AntApp.useApp()
-  const [step, setStep] = useState(0)
+  const [tab, setTab] = useState<'dedupe' | 'clean'>('dedupe')
 
-  // ── 步骤 1：检测配置 ──
+  // ── 类别 1：重复数据（检测 + 合并一体化）──
   const [matchFields, setMatchFields] = useState<string[]>([])
   const [ignoreCase, setIgnoreCase] = useState(false)
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false)
   const [detectTaskId, setDetectTaskId] = useState<number | null>(null)
 
-  // ── 步骤 2：合并确认 ──
+  // ── 类别 1：合并确认 ──
   const [survivors, setSurvivors] = useState<Record<number, number>>({})
   const [survivorship, setSurvivorship] = useState<Survivorship>('non_empty_first')
   const [mergeTaskId, setMergeTaskId] = useState<number | null>(null)
 
-  // ── 步骤 3：清洗配置 ──
+  // ── 类别 2：清洗配置 ──
   const [cleanActions, setCleanActions] = useState<Array<{
     action: 'trim_whitespace' | 'fill_null' | 'coerce_type' | 'drop_outliers'
     column: string
@@ -108,10 +107,10 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
   const detectReport = useGovernanceReport(wid, tid, detectTask.data) as { data?: DetectReport | null }
   const mergeReport = useGovernanceReport(wid, tid, mergeTask.data) as { data?: MergeReport | null }
   const cleanReport = useGovernanceReport(wid, tid, cleanTask.data) as { data?: CleanReport | null }
-  // 打开时重置向导
+  // 打开时重置
   useEffect(() => {
     if (open) {
-      setStep(0)
+      setTab('dedupe')
       setMatchFields([])
       setDetectTaskId(null)
       setMergeTaskId(null)
@@ -201,67 +200,12 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
 
   const taskFailed = (t: GovernanceTask | undefined) => t?.status === 'failed' ? t.error_message : null
 
-  // ── 步骤 1 内容 ──
-  const detectStep = (
-    <div>
-      <div style={{ marginBottom: 8 }}>
-        <Text type="secondary">选择用于判重的字段（值完全相同的行归为一组）：</Text>
-      </div>
-      <Select
-        mode="multiple"
-        style={{ width: '100%' }}
-        placeholder="选择判重字段"
-        value={matchFields}
-        onChange={setMatchFields}
-        options={columnOptions}
-        data-testid="governance-match-fields"
-      />
-      <Space style={{ marginTop: 12 }}>
-        <Checkbox checked={ignoreCase} onChange={e => setIgnoreCase(e.target.checked)}>忽略大小写</Checkbox>
-        <Checkbox checked={ignoreWhitespace} onChange={e => setIgnoreWhitespace(e.target.checked)}>忽略首尾空白</Checkbox>
-      </Space>
-      <div style={{ marginTop: 16 }}>
-        {detectTaskId == null ? (
-          <Button
-            type="primary"
-            icon={<SearchOutlined />}
-            disabled={matchFields.length === 0}
-            loading={detectTask.isFetching && !detectTask.data}
-            onClick={startDetect}
-          >
-            开始检测
-          </Button>
-        ) : detectTask.data?.status === 'done' ? (
-          <Alert
-            type="success"
-            showIcon
-            message={`检测完成：共 ${detectReport.data?.group_count ?? 0} 组重复（${detectReport.data?.duplicate_row_count ?? 0} 行）`}
-          />
-        ) : detectTask.data?.status === 'failed' ? (
-          <Alert type="error" showIcon message="检测失败" description={taskFailed(detectTask.data)} />
-        ) : (
-          <Space><Spin size="small" /><Text type="secondary">正在检测...</Text></Space>
-        )}
-      </div>
-      {detectTask.data?.status === 'done' && (
-        <div style={{ marginTop: 16 }}>
-          <Button type="primary" disabled={(detectReport.data?.group_count ?? 0) === 0} onClick={() => setStep(1)}>
-            下一步：确认合并
-          </Button>
-          {(detectReport.data?.group_count ?? 0) === 0 && (
-            <Text type="secondary" style={{ marginLeft: 8 }}>未发现重复行，无需合并</Text>
-          )}
-        </div>
-      )}
-    </div>
-  )
-
-  // ── 步骤 2 内容 ──
-  const mergeStep = (() => {
+  // ── 合并确认面板：检测出重复组后同屏展示 ──
+  const mergePanel = (() => {
     const report = detectReport.data
-    if (!report) return <Empty description="暂无检测报告" />
+    if (!report) return null
     return (
-      <div>
+      <div style={{ marginTop: 16 }}>
         <div style={{ marginBottom: 8 }}>
           <Text type="secondary">每组选择要保留的行；其余行合并进保留行后移入回收站（可恢复）。link 引用会自动迁移到保留行。</Text>
         </div>
@@ -325,7 +269,7 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
             <Alert
               type="success"
               showIcon
-              message={`合并完成：${mergeReport.data?.merged_count ?? 0} 组已合并`}
+              message={`合并完成：${mergeReport.data?.merged_count ?? 0} 组已合并，可前往「数据清洗」继续`}
             />
           ) : mergeTask.data?.status === 'failed' ? (
             <Alert type="error" showIcon message="合并失败" description={taskFailed(mergeTask.data)} />
@@ -333,17 +277,63 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
             <Space><Spin size="small" /><Text type="secondary">正在合并...</Text></Space>
           )}
         </div>
-        {mergeTask.data?.status === 'done' && (
-          <div style={{ marginTop: 16 }}>
-            <Button type="primary" onClick={() => setStep(2)}>下一步：数据清洗</Button>
-          </div>
-        )}
       </div>
     )
   })()
 
-  // ── 步骤 3 内容 ──
-  const cleanStep = (
+  // ── 类别 1 内容：检测配置 + 合并确认同屏一体化 ──
+  const dedupeTab = (
+    <div>
+      <div style={{ marginBottom: 8 }}>
+        <Text type="secondary">选择用于判重的字段（值完全相同的行归为一组）：</Text>
+      </div>
+      <Select
+        mode="multiple"
+        style={{ width: '100%' }}
+        placeholder="选择判重字段"
+        value={matchFields}
+        onChange={setMatchFields}
+        options={columnOptions}
+        data-testid="governance-match-fields"
+      />
+      <Space style={{ marginTop: 12 }}>
+        <Checkbox checked={ignoreCase} onChange={e => setIgnoreCase(e.target.checked)}>忽略大小写</Checkbox>
+        <Checkbox checked={ignoreWhitespace} onChange={e => setIgnoreWhitespace(e.target.checked)}>忽略首尾空白</Checkbox>
+      </Space>
+      <div style={{ marginTop: 16 }}>
+        {detectTaskId == null ? (
+          <Button
+            type="primary"
+            icon={<SearchOutlined />}
+            disabled={matchFields.length === 0}
+            loading={detectTask.isFetching && !detectTask.data}
+            onClick={startDetect}
+          >
+            开始检测
+          </Button>
+        ) : detectTask.data?.status === 'done' ? (
+          <Alert
+            type="success"
+            showIcon
+            message={`检测完成：共 ${detectReport.data?.group_count ?? 0} 组重复（${detectReport.data?.duplicate_row_count ?? 0} 行）`}
+          />
+        ) : detectTask.data?.status === 'failed' ? (
+          <Alert type="error" showIcon message="检测失败" description={taskFailed(detectTask.data)} />
+        ) : (
+          <Space><Spin size="small" /><Text type="secondary">正在检测...</Text></Space>
+        )}
+      </div>
+      {detectTask.data?.status === 'done' && (detectReport.data?.group_count ?? 0) > 0 && mergePanel}
+      {detectTask.data?.status === 'done' && (detectReport.data?.group_count ?? 0) === 0 && (
+        <div style={{ marginTop: 16 }}>
+          <Text type="secondary">未发现重复行，无需合并</Text>
+        </div>
+      )}
+    </div>
+  )
+
+  // ── 类别 2 内容：数据清洗 ──
+  const cleanTab = (
     <div>
       <div style={{ marginBottom: 8 }}>
         <Text type="secondary">配置清洗动作（复用导入侧动作），先预览受影响行数，确认后执行。</Text>
@@ -462,18 +452,14 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
       destroyOnHidden
       footer={null}
     >
-      <Steps
-        size="small"
-        current={step}
-        items={[{ title: '重复检测' }, { title: '确认合并' }, { title: '数据清洗' }]}
-        style={{ marginBottom: 20 }}
+      <Tabs
+        activeKey={tab}
+        onChange={k => setTab(k as 'dedupe' | 'clean')}
+        items={[
+          { key: 'dedupe', label: '重复数据', children: dedupeTab },
+          { key: 'clean', label: '数据清洗', children: cleanTab },
+        ]}
       />
-      {step === 0 && detectStep}
-      {step === 1 && mergeStep}
-      {step === 2 && cleanStep}
-      <div style={{ marginTop: 16 }}>
-        {step > 0 && <Button onClick={() => setStep(s => s - 1)}>上一步</Button>}
-      </div>
     </Modal>
   )
 }
