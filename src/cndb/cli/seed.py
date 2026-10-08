@@ -207,6 +207,17 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
 
 # ── 字段引入规则 ──────────────────────────────────────
 
+# 同工作区字段克隆规则：(目标表, 源表, 要引入的字段名列表)。
+# 提为模块级常量供测试与 views.json 完整性校验复用，保持单一真相源。
+FIELD_IMPORT_RULES: dict[str, list[tuple[str, str, list[str]]]] = {
+    # 项目进展表 / 科研经费表 都需要从 科研项目 表知道项目状态和立项年份
+    "科研项目管理": [
+        ("项目进展", "科研项目", ["项目状态", "立项年份"]),
+        ("科研经费", "科研项目", ["项目状态", "项目类别"]),
+        ("课题负责人", "科研项目", ["项目状态"]),
+    ],
+}
+
 
 def _apply_field_import_rules(db: Any, engine: Any, ws_name: str, tables_map: dict[str, dict[str, Any]]) -> None:
     """按预定义规则在同一工作区内把源表字段克隆到目标表.
@@ -219,17 +230,7 @@ def _apply_field_import_rules(db: Any, engine: Any, ws_name: str, tables_map: di
     """
     from cndb.plugins.tables.services.fields import field_ops as _fo
 
-    rules: dict[str, list[tuple[str, str, list[str]]]] = {
-        # 项目进展表 / 科研经费表 都需要从 科研项目 表知道项目状态和立项年份
-        "科研项目管理": [
-            # (目标表, 源表, 要引入的字段名列表)
-            ("项目进展", "科研项目", ["项目状态", "立项年份"]),
-            ("科研经费", "科研项目", ["项目状态", "项目类别"]),
-            ("课题负责人", "科研项目", ["项目状态"]),
-        ],
-    }
-
-    ws_rules = rules.get(ws_name)
+    ws_rules = FIELD_IMPORT_RULES.get(ws_name)
     if not ws_rules:
         return
 

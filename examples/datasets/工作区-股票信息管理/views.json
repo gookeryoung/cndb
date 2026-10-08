@@ -1,0 +1,33 @@
+{
+  "_comment": "股票信息管理视图种子配置：API 建表（api_config.json，tencent_stock 处理器）补充图表视图，字段名为处理器产出的英文列名。grid 视图（按市值排序/涨幅排行/成交额TOP）由 api_config.json 内 views 定义。",
+  "A股典型个股行情": [
+    {
+      "name": "行情分布概览",
+      "view_type": "chart",
+      "view_options": {
+        "charts": [
+          {
+            "chart_type": "bar",
+            "dimension_field": "stock_name",
+            "measure_field": "change_percent",
+            "aggregation": "avg",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "histogram",
+            "measure_field": "turnover_rate",
+            "bin_policy": "auto",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "scatter",
+            "x_field": "amount_wan",
+            "y_field": "turnover_rate",
+            "show_stats_panel": true
+          }
+        ]
+      },
+      "order": 3
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 {
-  "_comment": "视图种子配置：按 表名 -> 视图列表 组织。字段名必须与 CSV 建表时的 DataField.name 一致。看板视图可通过 view_options.card_sort_field 配置列内卡片排序。",
+  "_comment": "视图种子配置：按 表名 -> 视图列表 组织。字段名必须与 CSV 建表时的 DataField.name 一致。看板视图可通过 view_options.card_sort_field 配置列内卡片排序；matrix 视图 row_field/column_field 必填，column 为日期字段时配 date_granularity。",
   "房价预测": [
     {
       "name": "全部",
@@ -198,6 +198,33 @@
         ]
       },
       "order": 4
+    },
+    {
+      "name": "天气日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "日期",
+        "title_field": "城市",
+        "group_field": "天气"
+      },
+      "order": 5
+    },
+    {
+      "name": "城市月份气候矩阵",
+      "view_type": "matrix",
+      "sortings": [
+        {
+          "field_name": "日期",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "row_field": "城市",
+        "column_field": "日期",
+        "date_granularity": "month",
+        "title_field": "天气"
+      },
+      "order": 6
     }
   ]
 }
