@@ -61,11 +61,12 @@ def _normalize_cleaning_actions(
 
     前端会把 analyze 阶段返回的 cleaning_suggestions 中被勾选的条目原封不动传过来，
     这些条目里包含 id / reason / preview_before 等展示字段；后端只需要
-    column / action / strategy / on_fail 四个字段.
+    column / action / strategy / on_fail / fill_value 五个字段
+    （fill_value 是 fill_null default 策略的填充值，缺失会导致填充静默失效）.
     """
     if not raw:
         return []
-    valid_keys = {"column", "action", "strategy", "on_fail"}
+    valid_keys = {"column", "action", "strategy", "on_fail", "fill_value"}
     normalized: list[dict[str, Any]] = []
     for act in raw:
         if not isinstance(act, dict):

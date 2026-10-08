@@ -123,6 +123,28 @@ class TestConfirmRouteCleaningActionsNormalize:
 
         assert _normalize_cleaning_actions(None) == []
 
+    def test_normalize_preserves_fill_value(self):
+        """fill_value 是 fill_null default 策略的填充值，规范化时必须保留."""
+        from cndb.plugins.tables.routers.bulk import _normalize_cleaning_actions
+
+        raw = [
+            {
+                "id": "city_fill_null",
+                "column": "city",
+                "action": "fill_null",
+                "strategy": "default",
+                "fill_value": "未知",
+                "reason": "空值率高",
+                "preview_before": [],
+                "preview_after": [],
+            },
+        ]
+        result = _normalize_cleaning_actions(raw)
+        assert len(result) == 1
+        assert result[0]["fill_value"] == "未知"
+        assert "reason" not in result[0]
+        assert "id" not in result[0]
+
 
 class TestExecuteImportTaskPassesCleaningActions:
     """execute_import_task 应把 task.cleaning_actions 传给 importer.execute."""

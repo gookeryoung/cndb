@@ -120,3 +120,22 @@ class TestApplyDropOutliers:
         rows = [{"v": 5.0}]
         _, affected = apply_drop_outliers(rows, "v", {})
         assert affected == 0
+
+    def test_rounded_outlier_value_matched_with_tolerance(self) -> None:
+        """画像异常值经 round(6) 截断后仍能容差匹配高精度原始值."""
+        raw = 0.123456789123
+        profile = {"outliers": [{"value": round(raw, 6), "type": "numeric"}]}
+        rows = [{"v": raw}, {"v": 1.0}]
+        cleaned, affected = apply_drop_outliers(rows, "v", profile)
+        assert affected == 1
+        assert cleaned[0]["v"] is None
+        assert cleaned[1]["v"] == 1.0
+
+    def test_bool_and_non_numeric_skipped(self) -> None:
+        """布尔与不可转数值的值跳过，不误置空."""
+        profile = {"outliers": [{"value": 1.0, "type": "numeric"}]}
+        rows = [{"v": True}, {"v": "abc"}, {"v": None}]
+        cleaned, affected = apply_drop_outliers(rows, "v", profile)
+        assert affected == 0
+        assert cleaned[0]["v"] is True
+        assert cleaned[2]["v"] is None

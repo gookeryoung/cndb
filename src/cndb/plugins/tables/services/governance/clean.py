@@ -44,6 +44,12 @@ BATCH_SIZE = 1000
 # 预览样例条数
 SAMPLE_LIMIT = 3
 
+# fill_null 支持的策略
+FILL_STRATEGIES = ("mean", "median", "default", "empty")
+
+# 数值字段类型（mean/median 仅适用于数值列）
+_NUMERIC_FIELD_TYPES = {"number", "float", "percentage"}
+
 
 def execute_clean_task(db_session: Any, task: Any) -> None:
     """执行清洗任务（任务已处于 running 状态），写报告与进度."""
@@ -187,6 +193,14 @@ def _validate_actions(table: DataTable, actions: list[dict[str, Any]]) -> list[A
         f = physical.get(column)
         if f is None:
             raise GovernanceTaskError(f"清洗字段不存在或无物理列: {column}")
+        if act == "fill_null":
+            strategy = action.get("strategy")
+            if strategy not in FILL_STRATEGIES:
+                raise GovernanceTaskError(f"fill_null 策略无效: {strategy}，可选 {'/'.join(FILL_STRATEGIES)}")
+            if strategy == "default" and action.get("fill_value") is None:
+                raise GovernanceTaskError(f"fill_null default 策略必须提供 fill_value: {column}")
+            if strategy in ("mean", "median") and f.field_type not in _NUMERIC_FIELD_TYPES:
+                raise GovernanceTaskError(f"fill_null {strategy} 策略仅适用于数值列: {column}")
         if column not in seen:
             seen.add(column)
             involved.append(f)

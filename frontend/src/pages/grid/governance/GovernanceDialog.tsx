@@ -43,6 +43,13 @@ const COERCE_STRATEGIES = [
   { value: 'boolean', label: '转布尔' },
 ]
 
+// fill_null 填充策略（empty 为不填充，不在 UI 提供）
+const FILL_STRATEGIES = [
+  { value: 'mean', label: '均值填充' },
+  { value: 'median', label: '中位数填充' },
+  { value: 'default', label: '自定义值' },
+]
+
 interface Props {
   open: boolean
   wid: string
@@ -153,6 +160,18 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
   }
 
   const runClean = (preview: boolean) => {
+    for (const a of cleanActions) {
+      if (a.action === 'fill_null') {
+        if (!a.strategy) {
+          message.warning(`列「${a.column}」的填充空值需先选择填充策略`)
+          return
+        }
+        if (a.strategy === 'default' && (a.fill_value == null || a.fill_value === '')) {
+          message.warning(`列「${a.column}」选择自定义值策略时必须填写填充值`)
+          return
+        }
+      }
+    }
     const actions = cleanActions.map(a => ({
       action: a.action,
       column: a.column,
@@ -354,9 +373,18 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
             options={columnOptions}
           />
           {a.action === 'fill_null' && (
+            <Select
+              style={{ width: 130 }}
+              placeholder="填充策略"
+              value={a.strategy ?? undefined}
+              onChange={v => setCleanActions(arr => arr.map((x, j) => j === i ? { ...x, strategy: v } : x))}
+              options={FILL_STRATEGIES}
+            />
+          )}
+          {a.action === 'fill_null' && a.strategy === 'default' && (
             <Input
               style={{ width: 140 }}
-              placeholder="填充值（可选）"
+              placeholder="填充值（必填）"
               value={a.fill_value ?? ''}
               onChange={e => setCleanActions(arr => arr.map((x, j) => j === i ? { ...x, fill_value: e.target.value } : x))}
             />

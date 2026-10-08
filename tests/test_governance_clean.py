@@ -251,3 +251,57 @@ class TestCleanValidation:
         db.commit()
         with pytest.raises(GovernanceTaskError, match="action"):
             gov_clean.execute_clean_task(db, task)
+
+    def test_fill_null_missing_strategy_rejected(self, db, ws) -> None:
+        """fill_null 缺 strategy → 显式报错而非静默无效."""
+        table = _make_table(db, ws)
+        task = create_governance_task(
+            db,
+            table=table,
+            user_id=None,
+            kind="clean",
+            config={"actions": [{"action": "fill_null", "column": "年龄"}]},
+        )
+        _transition_status(task, "running")
+        db.commit()
+        with pytest.raises(GovernanceTaskError, match="策略无效"):
+            gov_clean.execute_clean_task(db, task)
+
+    def test_fill_null_default_without_fill_value_rejected(self, db, ws) -> None:
+        """default 策略缺 fill_value → 显式报错."""
+        table = _make_table(db, ws)
+        task = create_governance_task(
+            db,
+            table=table,
+            user_id=None,
+            kind="clean",
+            config={"actions": [{"action": "fill_null", "column": "城市", "strategy": "default"}]},
+        )
+        _transition_status(task, "running")
+        db.commit()
+        with pytest.raises(GovernanceTaskError, match="fill_value"):
+            gov_clean.execute_clean_task(db, task)
+
+    def test_fill_null_mean_on_text_column_rejected(self, db, ws) -> None:
+        """mean/median 策略用于非数值列 → 显式报错."""
+        table = _make_table(db, ws)
+        task = create_governance_task(
+            db,
+            table=table,
+            user_id=None,
+            kind="clean",
+            config={"actions": [{"action": "fill_null", "column": "姓名", "strategy": "mean"}]},
+        )
+        _transition_status(task, "running")
+        db.commit()
+        with pytest.raises(GovernanceTaskError, match="数值列"):
+            gov_clean.execute_clean_task(db, task)
+
+    def test_fill_null_median_on_number_column_ok(self, db, ws) -> None:
+        """median 策略用于数值列 → 正常执行（校验放行）."""
+        table = _make_table(db, ws)
+        bulk_create(db.get_bind(), table, [{"年龄": None}, {"年龄": 1}, {"年龄": 3}], db=db)
+        task = _run_clean(db, table, [{"action": "fill_null", "column": "年龄", "strategy": "median"}], preview=True)
+        report = json.loads(task.report)
+        assert report["affected"][0]["affected_rows"] == 1
+        assert report["samples"][0]["after"]["年龄"] == 2
