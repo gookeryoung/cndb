@@ -9,11 +9,18 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { fireEvent, screen } from '@testing-library/react'
 import ImportExportDialog from './ImportExportDialog'
+import { exportViewToPdf } from './ImportExportDialog/exportPdf'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
 import { makeField } from '@/test/fixtures'
 import { importApi } from '@/api'
 import type { ImportTaskInfo } from '@/api'
+
+const exportViewToPdfMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+
+vi.mock('./ImportExportDialog/exportPdf', () => ({
+  exportViewToPdf: exportViewToPdfMock,
+}))
 
 const WID = '10'
 const TID = '100'
@@ -115,11 +122,19 @@ beforeEach(() => {
     createObjectURL: vi.fn(() => 'blob:fake'),
     revokeObjectURL: vi.fn(),
   }))
+  exportViewToPdfMock.mockClear()
+  exportViewToPdfMock.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
+
+/** 在导出 Tab 中把格式切换为 PDF */
+async function selectPdfFormat() {
+  fireEvent.mouseDown(screen.getByRole('combobox'))
+  fireEvent.click(await screen.findByText('PDF（当前视图画面）'))
+}
 
 describe('ImportExportDialog 导入/导出对话框', () => {
   it('open=false 时不渲染', () => {
@@ -227,5 +242,47 @@ describe('ImportExportDialog 导入/导出对话框', () => {
     fireEvent.click(screen.getByRole('button', { name: /下\s*载$/ }))
 
     expect(await screen.findByText('导出配额已用尽')).toBeInTheDocument()
+  })
+
+  it('PDF 导出：调用 exportViewToPdf、隐藏范围开关、不请求后端导出接口', async () => {
+    let exportCalled = false
+    server.use(
+      http.get(exportUrl, () => {
+        exportCalled = true
+        return HttpResponse.json({ rows: [] })
+      }),
+    )
+    const target = document.createElement('div')
+    renderProviders(
+      <ImportExportDialog open wid={WID} tid={TID} onClose={() => { }}
+        viewId={200} viewName="全部数据" getPdfTarget={() => target} />,
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: /导出/ }))
+    expect(screen.getByText(/按当前视图「全部数据」筛选后导出/)).toBeInTheDocument()
+    await selectPdfFormat()
+    // PDF 为视觉快照：范围开关隐藏，展示 PDF 提示
+    expect(screen.queryByText(/按当前视图/)).not.toBeInTheDocument()
+    expect(screen.getByText(/导出当前视图可见内容画面/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /下\s*载$/ }))
+
+    expect(await screen.findByText('导出完成')).toBeInTheDocument()
+    expect(exportViewToPdf).toHaveBeenCalledTimes(1)
+    expect(exportViewToPdf).toHaveBeenCalledWith(target, expect.stringMatching(/^view-全部数据-\d{8}_\d{6}\.pdf$/))
+    expect(exportCalled).toBe(false)
+  })
+
+  it('PDF 导出：目标容器缺失时提示错误且不调用生成', async () => {
+    renderProviders(
+      <ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} getPdfTarget={() => null} />,
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: /导出/ }))
+    await selectPdfFormat()
+    fireEvent.click(screen.getByRole('button', { name: /下\s*载$/ }))
+
+    expect(await screen.findByText('未找到可导出的视图内容')).toBeInTheDocument()
+    expect(exportViewToPdf).not.toHaveBeenCalled()
   })
 })
