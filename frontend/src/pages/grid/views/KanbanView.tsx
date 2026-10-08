@@ -522,6 +522,8 @@ interface KanbanColumnProps {
   canAdd?: boolean
   onToggleDone?: (r: RowResponse, values: RowValues) => void
   canEdit?: boolean
+  /** PDF 导出模式：强制全量渲染卡片（虚拟滚动关闭），使滚动区外卡片进入 DOM */
+  pdfExporting?: boolean
 }
 
 /** KanbanColumn —— 单列看板列组件.
@@ -535,11 +537,12 @@ const KanbanColumn = memo(function KanbanColumn(props: KanbanColumnProps) {
 })
 
 /** 完整的 KanbanColumn 内容 —— 含 useVirtualizer + KanbanCard 树. */
-const KanbanColumnInner = memo(function KanbanColumnInner({ col, fields, opts, density, colStyle, onRowClick, onDeleteCard, canDelete, onAddCard, canAdd, onToggleDone, canEdit }: KanbanColumnProps) {
+const KanbanColumnInner = memo(function KanbanColumnInner({ col, fields, opts, density, colStyle, onRowClick, onDeleteCard, canDelete, onAddCard, canAdd, onToggleDone, canEdit, pdfExporting }: KanbanColumnProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // 阈值 30：真实数据（如 500 行项目表按片区分组）单列常在 60-90 行，
-  // 旧阈值 100 下这些列全量挂载重型 antd 卡片导致切看板卡顿
-  const useVirtual = col.rows.length >= 30
+  // 旧阈值 100 下这些列全量挂载重型 antd 卡片导致切看板卡顿；
+  // PDF 导出模式下强制全量渲染，滚动区外的卡片才能进入快照
+  const useVirtual = col.rows.length >= 30 && !pdfExporting
   const estimatedSize = estimateCardHeight(density)
 
   const virtualizer = useVirtualizer({
@@ -708,6 +711,7 @@ export default memo(function KanbanView({
   canAdd,
   onToggleDone,
   canEdit,
+  pdfExporting,
 }: {
   rows: RowResponse[]
   fields: Field[]
@@ -722,6 +726,8 @@ export default memo(function KanbanView({
   /** 勾选/取消完成回调 —— 仅配置了 done_field 且 canEdit 时卡片才显示勾选框 */
   onToggleDone?: (r: RowResponse, values: RowValues) => void
   canEdit?: boolean
+  /** PDF 导出模式：列内强制全量渲染卡片 */
+  pdfExporting?: boolean
 }) {
   const opts = useMemo(
     () => resolveOpts(view?.view_options as Record<string, unknown> | undefined, KANBAN_OPTIONS),
@@ -774,6 +780,7 @@ export default memo(function KanbanView({
           canAdd={canAdd}
           onToggleDone={onToggleDone}
           canEdit={canEdit}
+          pdfExporting={pdfExporting}
         />
       ))}
     </div>

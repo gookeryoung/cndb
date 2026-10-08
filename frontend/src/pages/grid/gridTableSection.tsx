@@ -51,6 +51,8 @@ interface GridTableSectionProps {
   limit: number
   onPageChange: (page: number, pageSize: number) => void
   prefetchNext: (nextOffset: number, l: number) => void
+  /** PDF 导出模式：关闭虚拟滚动并去掉 scroll.y，当前页全部行进入 DOM 供视觉快照捕获 */
+  pdfExporting?: boolean
 }
 
 const isNewRow = (recordId: unknown) => String(recordId) === NEW_ROW_KEY
@@ -63,7 +65,7 @@ export default function GridTableSection({
   newRowActive, newRowPosition, canEditRecords,
   selectedRowKeys, onSelectionChange, onAddRow, onRowDoubleClick, onSort,
   onColumnResize, onColumnOrderMove, onColumnResetWidth,
-  gridAreaSize, offset, limit, onPageChange, prefetchNext,
+  gridAreaSize, offset, limit, onPageChange, prefetchNext, pdfExporting,
 }: GridTableSectionProps) {
   // resize 拖拽中的实时预览宽度（key 为列 key）；拖拽结束清空、宽度交由视图持久化
   const [previewWidths, setPreviewWidths] = useState<Record<string, number>>({})
@@ -214,8 +216,8 @@ export default function GridTableSection({
         rowClassName={(record) => (isNewRow(record.id) ? 'cn-table-row-new' : '')}
         rowSelection={{ selectedRowKeys, onChange: onSelectionChange, columnWidth: 40 }}
         pagination={false}
-        scroll={{ x: scrollX, y: Math.max(gridAreaSize.height - 140, 200) }}
-        virtual
+        scroll={pdfExporting ? { x: scrollX } : { x: scrollX, y: Math.max(gridAreaSize.height - 140, 200) }}
+        virtual={!pdfExporting}
         onChange={(_pag, _fil, _sorter, extra) => {
           // 排序已由 onHeaderCell 受控三态循环处理（见 sortableColumns），
           // 这里忽略 sort 动作；仅防分页/筛选变化触发无效处理

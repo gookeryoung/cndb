@@ -250,6 +250,9 @@ export default function GridPage() {
   /** AntD Table ref —— 暴露 scrollTo 方法，虚拟滚动场景下是唯一正确的滚动入口 */
   const tableRef = useRef<TableScrollTarget | null>(null)
 
+  /** PDF 导出模式 —— 关闭虚拟滚动、放开视图内部裁剪，使滚动区外内容全部进入 DOM 供 html2canvas 捕获 */
+  const [pdfExporting, setPdfExporting] = useState(false)
+
   /** 切换视图 loadView 期间临时阻止自动保存（刚加载完的 state 不应立即回写）. */
   const skipSaveRef = useRef(false)
 
@@ -1012,6 +1015,7 @@ export default function GridPage() {
             columns={columns}
             settings={{ density }}
             isLoading={rowsFetching}
+            pdfExporting={pdfExporting}
             rows={rowList.items || []}
             total={rowList.total}
             newRowActive={newRowActive}
@@ -1065,6 +1069,7 @@ export default function GridPage() {
                 fields={table?.fields || []}
                 view={activeView}
                 density={settings.density}
+                pdfExporting={pdfExporting}
                 sortings={viewSortings}
                 onRowClick={openDetailWithPrefetch}
                 onDeleteCard={handleDeleteCard}
@@ -1075,7 +1080,7 @@ export default function GridPage() {
                 canEdit={canEditRecords}
               />
             ) : mode === 'gantt' ? (
-              <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} />
+              <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} pdfExporting={pdfExporting} />
             ) : mode === 'wbs' ? (
               <WbsView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'matrix' ? (
@@ -1133,7 +1138,16 @@ export default function GridPage() {
             fields={table?.fields || []}
             viewId={activeViewId}
             viewName={activeView?.name}
-            getPdfTarget={() => gridAreaRef.current}
+            getPdfTarget={async () => {
+              if (!gridAreaRef.current) return null
+              setPdfExporting(true)
+              // 等待导出模式重渲染提交（虚拟滚动关闭、全量行进入 DOM）并完成布局
+              await new Promise<void>((resolve) => {
+                requestAnimationFrame(() => { requestAnimationFrame(() => resolve()) })
+              })
+              return gridAreaRef.current
+            }}
+            releasePdfTarget={() => setPdfExporting(false)}
             onClose={() => setImportExportOpen(false)}
             onImported={() => {
               queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
