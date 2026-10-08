@@ -5,14 +5,6 @@ export type WorkspaceVisibility = 'public' | 'member' | 'private'
 /** 用户角色 —— 三员 + 普通用户（参考 GB/T 22239 等级保护模型） */
 export type UserRole = 'system_admin' | 'security_admin' | 'audit_admin' | 'user'
 
-/** 角色中文显示名映射 */
-export const USER_ROLE_LABEL: Record<UserRole, string> = {
-  system_admin: '系统管理员',
-  security_admin: '安全管理员',
-  audit_admin: '审计管理员',
-  user: '普通用户',
-}
-
 export interface UserResponse {
   id: ID
   username: string
@@ -581,14 +573,6 @@ export interface AttachmentFile {
   created_at?: string
 }
 
-
-// ── User Preferences ───────────────────────────────
-
-/** 用户偏好：每张表的激活视图映射 */
-export interface PreferencesResponse {
-  /** 每张表的激活视图映射: table_id(str) -> view_id(int) */
-  active_views: Record<string, number>
-}
 
 // ── API 自动建表 / 数据抓取 ────────────────────────
 

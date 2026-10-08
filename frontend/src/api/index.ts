@@ -15,7 +15,7 @@
  * - reports 插件单独挂载（见 reports plugin route_prefix）
  */
 
-export { authApi, userApi } from './auth'
+export { authApi } from './auth'
 export { workspaceApi } from './workspaces'
 export { tableApi, fieldApi, auditApi, permissionApi, tableMembersApi } from './tables'
 export { recordApi } from './records'
@@ -42,7 +42,6 @@ export type {
   ReportParameter, ReportRenderRequest, ReportRenderResult, ReportTheme,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
   AttachmentFile,
-  PreferencesResponse,
   ApiFetchRequest, ApiAnalyzeColumn, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
   ApiConfigRequest, ApiConfigValidateResult, ApiConfigImportResult,
   TableOwnerInfo, TableMember, MemberCreate, MemberUpdate, OwnerTransferPayload,

@@ -1,11 +1,10 @@
-/** 认证与用户偏好 API — /api/v1/accounts/auth/* 与 /api/v1/accounts/preferences */
+/** 认证与用户管理 API — /api/v1/accounts/auth/* */
 
 import api from './client'
 import type {
     AdminRegisterRequest, LoginRequest, RegisterRequest,
     ProfileUpdateRequest,
     UserResponse,
-    PreferencesResponse,
 } from './types'
 
 export const authApi = {
@@ -29,8 +28,3 @@ export const authApi = {
         api.patch<UserResponse>(`/v1/accounts/auth/users/${userId}/role`, null, { params: { new_role: newRole } }).then(r => r.data),
 }
 
-export const userApi = {
-    /** 获取当前用户全部偏好 */
-    getPreferences: () =>
-        api.get<PreferencesResponse>('/v1/accounts/preferences').then(r => r.data),
-}
