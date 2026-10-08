@@ -139,6 +139,8 @@ export default function ViewConfigDialog({
   const [activeTab, setActiveTab] = useState<'filter' | 'sort' | 'fields' | 'view'>('filter')
   // chart 多图条目草稿（共享 hook：条目切换 / patch / 增删 + 双形态写回）
   const chartDraft = useChartListDraft(draftOpt, setDraftOpt)
+  // setActiveIdx 为 useState setter（稳定引用），解构供初始化 effect 依赖
+  const { setActiveIdx: setChartActiveIdx } = chartDraft
 
   /** 草稿初始化守卫：仅在对话框打开瞬间执行。父组件 props 后续变化（如防抖保存
    *  触发 views refetch 重建 viewOptions 引用）不应重置用户正在操作的 tab 与草稿. */
@@ -150,10 +152,10 @@ export default function ViewConfigDialog({
       setDraftFilterLogic(filterLogic)
       setDraftOpt((viewOptions || {}) as Record<string, unknown>)
       setActiveTab('filter')
-      chartDraft.setActiveIdx(0)
+      setChartActiveIdx(0)
     }
     wasOpenRef.current = open
-  }, [open, filters, sortings, filterLogic, viewOptions])
+  }, [open, filters, sortings, filterLogic, viewOptions, setChartActiveIdx])
 
   const filterableFields = fields.filter(f => !f.hidden)
   const sortableFields = fields.filter(f => !f.hidden)
