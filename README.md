@@ -10,12 +10,15 @@
 
 - **插件化架构**：accounts / workspaces / tables / reports / health，可独立部署
 - **动态数据表**：SQLAlchemy Core 运行时建表 / 改字段，运行中即可扩 schema
-- **多维字段类型**：text / longtext / number / float / boolean / date / datetime / select / multiselect / link（跨表关联）
+- **17 种字段类型**：text / longtext / email / url / phone / json / number / float / percentage / boolean / date / datetime / timestamp / select / multiselect / link（跨表关联）/ attachment
+- **7 种视图**：表格（Grid）/ 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表，视图级筛选、排序、字段显隐与配置持久化
 - **行级协作**：编辑评论 / 审计日志 / 回收站 / 公开分享
 - **link 字段关系图**：`GET /workspaces/{id}/tables/graph` 返回所有表间依赖
-- **异步导入**：CSV / JSON / XLSX 异步导入 + 进度轮询
-- **Jinja2 报告模板**：沙箱环境，绑定表的模板直接出 Word/PDF
+- **异步导入**：CSV / JSON / XLSX / API 抓取异步导入 + 进度轮询
+- **Jinja2 报告模板**：沙箱环境，绑定表的模板直接出 Word / PDF / Excel / HTML
 - **权限体系**：viewer / editor / admin / owner 四级，表级 + 工作区级双重校验
+- **备份恢复**：`cndb backup` / `cndb restore` 全库归档（.tar.gz），跨机器迁移
+- **桌面 GUI**：`cndbw` 启动 Tkinter 管理面板（启动服务 / 备份恢复 / Windows 后台服务管理）
 
 ## 快速上手
 
@@ -23,14 +26,14 @@
 # 克隆 + 依赖
 uv sync --extra dev
 
-# 建表 + 注入演示数据
-uv run python -m cndb.cli.seed
+# 建表 + 注入演示数据（幂等）
+uv run cndb seed
 
-# 启动服务（默认 http://localhost:8000）
+# 启动服务（默认绑定 0.0.0.0，http://localhost:8000）
 uv run cndb serve
 
 # 登录账号：demo / demo1234
-# 然后用 Postman / curl 或前端调用 API
+# 浏览器访问 http://localhost:8000 即用前端界面，或用 Postman / curl 调用 API
 ```
 
 ### Docker 部署（生产形态）
@@ -138,13 +141,13 @@ uv run cndb serve --host 127.0.0.1 --port 8000  # 后台运行
 uv run cndb seed
 
 # 2. 安装 Playwright 浏览器
-cd frontend && npx playwright install chromium
+cd frontend && pnpm exec playwright install chromium
 
 # 3. 运行测试
-npm run e2e:setup       # 一次登录 → 持久化 StorageState
-npm run e2e:smoke       # smoke 测试（登录 → Grid → 退出）
-npm run e2e:critical    # critical 测试（行 CRUD 全链路）
-npm run e2e             # 全部
+pnpm e2e:setup       # 一次登录 → 持久化 StorageState
+pnpm e2e:smoke       # smoke 测试（登录 → Grid → 退出）
+pnpm e2e:critical    # critical 测试（行 CRUD 全链路）
+pnpm e2e             # 全部
 ```
 
 ## 项目结构
@@ -152,16 +155,43 @@ npm run e2e             # 全部
 ```
 src/cndb/
 ├── api/              # 认证依赖 (get_current_user)
+├── alembic/          # 数据库迁移脚本
+├── cli/              # 命令行入口
+│   ├── main.py       #   cndb 主命令（serve/dev/build/info）
+│   ├── seed.py       #   演示数据注入（幂等）
+│   ├── backup.py     #   备份（.tar.gz 归档）
+│   ├── restore.py    #   恢复
+│   ├── users.py      #   用户管理
+│   └── service.py    #   Windows 后台服务
 ├── core/             # 配置 / 数据库 / 安全 / 健康检查 (system_api.py)
+├── gui/              # Tkinter 桌面管理面板（`cndbw` 入口）
+├── models/           # SQLAlchemy 声明式基类
 ├── plugins/
 │   ├── accounts/     # 用户注册 / 登录 / JWT
 │   ├── workspaces/   # 工作区 + 成员 + 角色
-│   ├── tables/       # 动态表 / 字段 / 记录 / DDL / 查询
+│   ├── tables/       # 动态表 / 字段 / 记录 / DDL / 查询 / 视图
 │   ├── reports/      # 报告模板 (Jinja2 sandbox)
 │   └── wechat_auth/  # 微信登录
-├── seed.py           # 演示数据注入（幂等）
-└── runner.py         # 启动入口 `cndb serve`
+├── app.py            # FastAPI 应用装配 + SPA 静态托管
+└── static/           # 前端构建产物（pnpm build 输出，同源托管）
 ```
+
+## CLI 命令
+
+`cndb --help` 查看全部子命令：
+
+| 命令 | 说明 |
+|------|------|
+| `cndb serve` | 启动 uvicorn 服务器（默认绑定 0.0.0.0，`--host 127.0.0.1` 仅本机） |
+| `cndb dev` | 开发模式：同时启动前后端 |
+| `cndb build` | 构建前后端（需源码目录） |
+| `cndb info` | 打印版本 / 配置 / 运行环境 |
+| `cndb seed` | 注入演示数据（幂等） |
+| `cndb backup` | 备份数据库和附件为 .tar.gz 归档或文件夹 |
+| `cndb restore` | 从归档或文件夹恢复（自动识别源类型） |
+| `cndb users` | 用户管理（create / delete / list / import） |
+| `cndb service` | Windows 开机自启后台服务（enable / disable / status / stop / run） |
+| `cndbw` | 启动 Tkinter 桌面管理面板 |
 
 ## API 概览
 
