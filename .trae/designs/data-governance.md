@@ -98,7 +98,10 @@ pending → running → done | failed（非法转换抛 ValueError）
 ## 前端
 
 - 类型：`frontend/src/api/types.ts`（GovernanceTask/Detect/Merge/Clean + TablePermission.manage_data_role）；封装：`frontend/src/api/governance.ts`。
-- 治理向导：`frontend/src/pages/grid/governance/GovernanceDialog.tsx`（三步：检测配置 → 组确认（逐组选保留行 + 全局融合策略）→ 清洗（预览 → 确认执行））；任务进度 useQuery refetchInterval 轮询。
+- 治理弹窗：`frontend/src/pages/grid/governance/GovernanceDialog.tsx`。按类别组织（AntD Tabs），两个页签相互独立、不依赖另一方的执行结果：
+  - 「重复数据」：判重配置（字段 + 归一化选项）与合并确认同屏一体化——检测完成后，有重复组时直接展示分组表（逐组选保留行 + 全局融合策略）并提交合并，无重复组时提示"未发现重复行"；检测前置不再阻塞其他类别。
+  - 「数据清洗」：预览 → 确认执行，可独立使用，无需先运行检测。
+  - 任务进度 useQuery refetchInterval 轮询；打开弹窗时重置全部状态并回到「重复数据」页签。
 - 入口：GridToolbar「数据治理」按钮（无 `manage_data` 动作时禁用）；表设置权限 Tab「数据治理」角色阈值下拉（空 = 默认管理员）。
 
 ## 测试与基准
