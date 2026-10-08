@@ -42,7 +42,7 @@
 ### 多图渲染与条目管理
 
 - 渲染端 `resolveChartList(viewOptions)`（ChartView.tsx 内）：charts 非空数组 → 逐条目 resolveOpts（multi=true）；否则扁平键整体解析一次（multi=false）。
-- 多图：dashboard 式自适应网格 `repeat(auto-fill, minmax(420px, 1fr))`、gap 12px，每卡独立 ChartCard（边框卡片 + 自动标注卡片头 `{类型中文} · {关键字段名}`，纯展示不可配 title；scatter 取 `x × y`，histogram/boxplot 取度量，其余取维度）。每卡独立 ECharts 实例 / 统计面板 / 散点点击语义；实例随卡片卸载 dispose。上限 6（待用户复核）。
+- 多图：dashboard 式自适应网格 `repeat(auto-fill, minmax(420px, 1fr))`、gap 12px，每卡独立 ChartCard（边框卡片 + 自动标注卡片头 `{类型中文} · {关键字段名}`，纯展示不可配 title；scatter 取 `x × y`，histogram/boxplot 取度量，其余取维度）。每卡独立 ECharts 实例 / 统计面板 / 散点点击语义；实例随卡片卸载 dispose。上限 6（用户已拍定）。
 - 单图（扁平来源）：保持既有全宽 flex 容器，无卡片头——渲染行为与多图上线前完全一致。
 - 空态分档：无行 → 视图级 chart-empty-rows；多图某卡必填缺失 → 该卡内空态，data-testid 带索引后缀 `chart-empty-config-{i}`（单图保持 `chart-empty-config`）；卡片头 testid `chart-card-title-{i}`。
 - ViewConfigDialog（仅 view_type='chart' 的专属设置 tab 顶部）：Segmented（`图表 1 / 图表 2 / …`）+ 「添加图表」（上限 6 禁用 + tooltip）+ 「删除当前图表」（单条目禁用；删至单条目写回扁平形态）；分区渲染传当前条目 opts 使 visibleWhen 按该条 chart_type 显隐；条目索引在对话框打开时重置为 0；折叠重置 effect 依赖分区标签 join 不受条目切换影响。

@@ -20,6 +20,7 @@ from cndb.cli.seed import (
     _validate_view_fields,
 )
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.services.importing.api_fetch import TENCENT_STOCK_FIELDS
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
 from cndb.plugins.workspaces.routers.workspaces import _coerce_row_value_types
 
@@ -410,11 +411,22 @@ class TestSeedViewsIntegrity:
 
     @classmethod
     def _resolve_fields(cls, datasets_dir, ws_name: str, table_name: str) -> set[str] | None:
-        """按建表来源解析字段集合；无法静态解析（API 建表等）返回 None."""
+        """按建表来源解析字段集合；无法静态解析（json 数据驱动 API 等）返回 None."""
         hardcoded = cls.HARDCODED_TABLE_FIELDS.get(ws_name, {})
         if table_name in hardcoded:
             return set(hardcoded[table_name])
         ws_dir = datasets_dir / f"工作区-{ws_name}"
+        # API 建表通道：tencent_stock 处理器字段为常量产出可静态解析；
+        # json 等数据驱动 handler 字段取决于响应内容，返回 None 仅校验 view_type
+        api_cfg_path = ws_dir / "api_config.json"
+        if api_cfg_path.is_file():
+            api_spec = json.loads(api_cfg_path.read_text(encoding="utf-8-sig"))
+            for t in api_spec.get("tables", []):
+                if t.get("table_name") == table_name:
+                    handler = (t.get("fetch") or {}).get("response_handler", "json")
+                    if handler == "tencent_stock":
+                        return {name for name, _ftype in TENCENT_STOCK_FIELDS}
+                    return None
         csv_path = ws_dir / f"{table_name}.csv"
         if not csv_path.is_file():
             return None

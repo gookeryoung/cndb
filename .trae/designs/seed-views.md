@@ -26,7 +26,7 @@ seed 命令的视图注入：`examples/datasets/<工作区>/views.json`（CSV/fi
    - `fields.json` `link_lookups`：引入 link 字段（`link_name`）与 lookup 字段（`fields`）；
    - `FIELD_IMPORT_RULES` 克隆的物理列；
    - 硬编码业务表（部门表/员工表）；
-   - API 建表：字段由处理器运行期产出，无法静态解析（完整性校验仅查 view_type）。
+   - API 建表：`tencent_stock` 处理器字段为 `TENCENT_STOCK_FIELDS` 常量产出，可静态解析；`json` 等数据驱动 handler 字段取决于响应内容，无法静态解析（仅查 view_type）。
 
 ## 异常处理
 
@@ -37,7 +37,7 @@ seed 命令的视图注入：`examples/datasets/<工作区>/views.json`（CSV/fi
 
 - view_type ∈ 7 种合法模式（全部工作区全量）。
 - 同表视图名唯一、order 唯一。
-- filters/sortings/view_options/charts[] 引用字段 ∈ 解析来源全集；无静态解析来源的表（API 建表）跳过字段校验。
+- filters/sortings/view_options/charts[] 引用字段 ∈ 解析来源全集；仅 `json` 数据驱动 API 建表跳过字段校验（tencent_stock 经常量通道纳入校验）。
 - 7 种视图模式在全部 views.json 中均有至少一个示例。
 - 新增/改名数据集字段后未同步 views.json 会在该测试失败并定位到 工作区/表/视图/字段。
 
@@ -62,8 +62,13 @@ seed 命令的视图注入：`examples/datasets/<工作区>/views.json`（CSV/fi
 | 项目管理 | WBS任务分解 | grid/kanban/calendar/gantt/wbs/chart |
 | 项目管理 | 资源排期 | grid/matrix/chart |
 | 项目管理 | 待办事项 | grid/kanban/calendar/chart |
-| 低质量数据 | 16~19 四表 | grid/chart（极端数据健壮性专用） |
-| 股票信息管理 | A股典型个股行情 | grid×3（api_config）/chart 多图 |
+| 低质量数据 | 16-日期格式大全 | grid/chart/calendar |
+| 低质量数据 | 17-数字格式大全 | grid/chart（极端数据健壮性专用） |
+| 低质量数据 | 18-布尔与百分比 | grid/chart/matrix |
+| 低质量数据 | 19-特殊值杂项 | grid/chart/kanban |
+| 股票信息管理 | A股典型个股行情 | grid×3（api_config）/chart 多图（字段经 TENCENT_STOCK_FIELDS 通道校验） |
+
+注：低质量数据工作区的 15 个 xlsx 为手动导入样例（seed 仅建 CSV 表），不配 views.json 视图。
 
 ## e2e 锚点
 

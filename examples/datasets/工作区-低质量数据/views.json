@@ -1,5 +1,5 @@
 {
-  "_comment": "低质量数据视图种子配置：四张极端数据表各配一个多图图表视图，用于验证图表在低质量数据下的健壮性——日期多格式与非法日期整桶归未分组、大量级窄区间分箱标签可辨识（labelPrecision 自适应精度）、boolean 维度按 是/否 归桶、COUNT 聚合剔除空值行、负值与全角数字聚合不崩。",
+  "_comment": "低质量数据视图种子配置：四张 CSV 极端数据表（xlsx 样例为手动导入数据，不参与 seed 建表，不配视图）各配一个多图图表视图，用于验证图表在低质量数据下的健壮性——日期多格式与非法日期整桶归未分组、大量级窄区间分箱标签可辨识（labelPrecision 自适应精度）、boolean 维度按 是/否 归桶、COUNT 聚合剔除空值行、负值与全角数字聚合不崩；另为三张表补 calendar/matrix/kanban 视图覆盖更多视图模式。",
   "16-日期格式大全": [
     {
       "name": "全部日期行",
@@ -55,6 +55,14 @@
         ]
       },
       "order": 1
+    },
+    {
+      "name": "日期解析日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "ISO日期"
+      },
+      "order": 2
     }
   ],
   "17-数字格式大全": [
@@ -134,6 +142,15 @@
         ]
       },
       "order": 1
+    },
+    {
+      "name": "布尔分布矩阵",
+      "view_type": "matrix",
+      "view_options": {
+        "row_field": "是否",
+        "column_field": "中文真假"
+      },
+      "order": 2
     }
   ],
   "19-特殊值杂项": [
@@ -177,6 +194,16 @@
         ]
       },
       "order": 1
+    },
+    {
+      "name": "按订单状态看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "订单状态",
+        "card_sort_field": "混合数值",
+        "card_sort_direction": "desc"
+      },
+      "order": 2
     }
   ]
 }
