@@ -26,9 +26,11 @@ interface Props {
   viewId?: number | string | null
   /** 当前激活的视图名称（仅用于提示） */
   viewName?: string
+  /** 返回视图内容区根元素（GridPage 主内容容器），PDF 视觉快照导出使用 */
+  getPdfTarget?: () => HTMLElement | null
 }
 
-export default function ImportExportDialog({ open, wid, tid, fields, onClose, onImported, viewId, viewName }: Props) {
+export default function ImportExportDialog({ open, wid, tid, fields, onClose, onImported, viewId, viewName, getPdfTarget }: Props) {
   return (
     <Modal
       title="更新 / 导出"
@@ -64,7 +66,7 @@ export default function ImportExportDialog({ open, wid, tid, fields, onClose, on
           {
             key: 'export',
             label: <span><DownloadOutlined /> 导出</span>,
-            children: <ExportPanel wid={wid} tid={tid} viewId={viewId} viewName={viewName} />,
+            children: <ExportPanel wid={wid} tid={tid} viewId={viewId} viewName={viewName} getPdfTarget={getPdfTarget} />,
           },
           {
             key: 'api',

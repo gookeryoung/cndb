@@ -40,6 +40,8 @@
     "dayjs": "^1.11.23",
     "driver.js": "^1.8.0",
     "echarts": "^6.1.0",
+    "html2canvas-pro": "^2.5.2",
+    "jspdf": "^4.2.1",
     "nunjucks": "^3.2.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

@@ -102,4 +102,13 @@ describe('GridPage 导出视图接线 — 对话框收到激活视图', () => {
         const stub = await openImportExportDialog()
         expect(stub.getAttribute('data-view-id')).toBe('')
     })
+
+    it('传入 getPdfTarget，调用后返回主内容区元素（PDF 视觉快照目标）', async () => {
+        renderGrid()
+        await openImportExportDialog()
+        const getPdfTarget = dialogProps.current?.getPdfTarget as (() => HTMLElement | null) | undefined
+        expect(typeof getPdfTarget).toBe('function')
+        const el = getPdfTarget?.()
+        expect(el).toBeInstanceOf(HTMLElement)
+    })
 })

@@ -1133,6 +1133,7 @@ export default function GridPage() {
             fields={table?.fields || []}
             viewId={activeViewId}
             viewName={activeView?.name}
+            getPdfTarget={() => gridAreaRef.current}
             onClose={() => setImportExportOpen(false)}
             onImported={() => {
               queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })

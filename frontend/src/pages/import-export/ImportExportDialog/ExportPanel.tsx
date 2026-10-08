@@ -3,12 +3,16 @@
  * 从 ImportExportDialog 拆出：导出状态（格式 / 是否按视图筛选 / loading）内聚于此.
  * 文件名优先从后端 Content-Disposition 头解析（支持 RFC 5987 filename* 中文编码），
  * 格式为「工作区-数据表-视图-YYYYMMDD_HHMMSS.扩展名」；解析失败降级为 table-{tid}-export.{ext}.
+ * PDF 格式为前端视觉快照（exportViewToPdf），不调用后端导出接口、不受范围开关影响.
  */
 import { useCallback, useState } from 'react'
 import { Button, Empty, Select, Space, Switch } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { exportApi } from '@/api'
+import { exportViewToPdf } from './exportPdf'
+
+type ExportFormat = 'json' | 'csv' | 'xlsx' | 'pdf'
 
 interface ExportPanelProps {
   wid: string
@@ -17,6 +21,14 @@ interface ExportPanelProps {
   viewId?: number | string | null
   /** 当前激活的视图名称（仅用于提示） */
   viewName?: string
+  /** 返回视图内容区根元素（GridPage 主内容容器），PDF 视觉快照导出使用 */
+  getPdfTarget?: () => HTMLElement | null
+}
+
+/** 生成本地时间戳 YYYYMMDD_HHMMSS（PDF 文件名用） */
+function formatTimestamp(date: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}_${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`
 }
 
 /** 从 Content-Disposition 头解析文件名.
@@ -41,13 +53,37 @@ function parseContentDispositionFilename(header: string | undefined): string | n
   return null
 }
 
-export default function ExportPanel({ wid, tid, viewId, viewName }: ExportPanelProps) {
+export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget }: ExportPanelProps) {
   const { message } = AntApp.useApp()
   const [exporting, setExporting] = useState(false)
-  const [selectedFormat, setSelectedFormat] = useState<'json' | 'csv' | 'xlsx'>('csv')
+  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('csv')
   const [useViewFilter, setUseViewFilter] = useState(true)
 
+  /** PDF 视觉快照导出：捕获视图内容区 → 生成 PDF → 触发下载 */
+  const handleExportPdf = useCallback(async () => {
+    const target = getPdfTarget?.()
+    if (!target) {
+      message.error('未找到可导出的视图内容')
+      return
+    }
+    try {
+      setExporting(true)
+      const ts = formatTimestamp(new Date())
+      const filename = viewName ? `view-${viewName}-${ts}.pdf` : `table-${tid}-view.pdf`
+      await exportViewToPdf(target, filename)
+      message.success('导出完成')
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '导出失败')
+    } finally {
+      setExporting(false)
+    }
+  }, [getPdfTarget, viewName, tid, message])
+
   const handleExport = useCallback(async () => {
+    if (selectedFormat === 'pdf') {
+      await handleExportPdf()
+      return
+    }
     try {
       setExporting(true)
       const vid = useViewFilter && viewId != null ? viewId : undefined
@@ -72,7 +108,7 @@ export default function ExportPanel({ wid, tid, viewId, viewName }: ExportPanelP
     } finally {
       setExporting(false)
     }
-  }, [wid, tid, selectedFormat, useViewFilter, viewId, message])
+  }, [wid, tid, selectedFormat, useViewFilter, viewId, handleExportPdf, message])
 
   return (
     <div>
@@ -83,7 +119,13 @@ export default function ExportPanel({ wid, tid, viewId, viewName }: ExportPanelP
           </span>
         }
       />
-      {viewId != null && (
+      {selectedFormat === 'pdf' ? (
+        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'var(--cn-bg-subtle)', borderRadius: 6, marginBottom: 8 }}>
+          <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)' }}>
+            导出当前视图可见内容画面（不含顶部栏），PDF 为视觉快照，不受视图筛选影响
+          </span>
+        </div>
+      ) : viewId != null && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'var(--cn-bg-subtle)', borderRadius: 6, marginBottom: 8 }}>
           <Switch size="small" checked={useViewFilter} onChange={setUseViewFilter} />
           <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)' }}>
@@ -97,11 +139,12 @@ export default function ExportPanel({ wid, tid, viewId, viewName }: ExportPanelP
         <Select
           value={selectedFormat}
           onChange={setSelectedFormat}
-          style={{ width: 160 }}
+          style={{ width: 180 }}
           options={[
             { value: 'csv', label: 'CSV（Excel 兼容）' },
             { value: 'json', label: 'JSON' },
             { value: 'xlsx', label: 'XLSX' },
+            { value: 'pdf', label: 'PDF（当前视图画面）' },
           ]}
           disabled={exporting}
         />
