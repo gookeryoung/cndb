@@ -110,13 +110,12 @@ if (typeof Blob !== 'undefined' && !Blob.prototype.stream) {
   }
 }
 
-// ── 抑制 antd 内部 holder 的 act 警告（已确认为无害噪音）──────────────
-// ThemeProvider 渲染的 <AntApp> 挂载的 rc-notification holder 及 rc-motion
-// 会在 requestAnimationFrame 中更新 Notifications 状态，发生在 RTL 的 act
-// 作用域之外，产生 "An update to Notifications inside a test was not wrapped
-// in act(...)" 警告。该更新仅涉弹层动画时序，不影响任何断言；仅过滤栈内
-// 命中 node_modules 下 antd / rc-* 包的此类警告，业务组件自身的 act 警告
-// 仍正常抛出，避免掩盖真实问题。
+// ── 抑制已知的无害 console.error 噪音（antd act 警告）──────────────────
+// antd ThemeProvider 渲染的 <AntApp> 挂载 rc-notification holder 及 rc-motion，
+// 会在 requestAnimationFrame 中更新状态，发生在 RTL act 作用域之外，产生
+// "not wrapped in act(...)" 警告。该更新仅涉弹层动画时序，不影响任何断言；
+// 仅过滤栈内命中 node_modules 下 antd / rc-* 的此类警告，业务组件自身
+// 的 act 警告仍正常抛出。
 const originalConsoleError = console.error.bind(console)
 console.error = (...args: unknown[]) => {
   const text = args.map((a) => (typeof a === 'string' ? a : String(a))).join('\n')
@@ -124,6 +123,41 @@ console.error = (...args: unknown[]) => {
     return
   }
   originalConsoleError(...args)
+}
+
+// ── 抑制 jsdom 伪元素 getComputedStyle 未实现警告 ──────────────────────
+// antd 内部测量滚动条样式时会调 getComputedStyle(ele, '::-webkit-scrollbar')。
+// jsdom 收到非空伪元素参数时会走 notImplementedMethod → virtualConsole
+// → console.error 打印噪音。单线程下 patch console.error 可拦截，但多 worker
+// threads 模式下 vitest 可能把 jsdomError 直接写到 worker 的独立 stderr，
+// 绕过主进程的 console.error patch。因此在源头 patch window.getComputedStyle：
+// 伪元素参数非空时临时屏蔽 virtualConsole，调原始实现后恢复。
+if (typeof window !== 'undefined') {
+  const origGetComputedStyle = window.getComputedStyle.bind(window)
+  const suppressedTypes = new Set<string>(['not-implemented'])
+  window.getComputedStyle = function (elt: Element, pseudoElt?: string | null): CSSStyleDeclaration {
+    // 无伪元素参数或空串：走原始实现，不触发警告
+    if (pseudoElt == null || pseudoElt === '') {
+      return origGetComputedStyle(elt, pseudoElt ?? undefined)
+    }
+    // 伪元素参数非空：临时屏蔽 jsdom virtualConsole 中 type=not-implemented 的事件
+    const vc = (window as unknown as { _virtualConsole?: { emit?: (evt: string, e: { type: string }) => void } })._virtualConsole
+    if (vc && typeof vc.emit === 'function') {
+      const origEmit = vc.emit.bind(vc)
+      vc.emit = (evt: string, e: { type: string }) => {
+        if (evt === 'jsdomError' && e && suppressedTypes.has(e.type)) {
+          return
+        }
+        return origEmit(evt, e)
+      }
+      try {
+        return origGetComputedStyle(elt, pseudoElt)
+      } finally {
+        vc.emit = origEmit
+      }
+    }
+    return origGetComputedStyle(elt, pseudoElt)
+  }
 }
 
 beforeAll(() => {
