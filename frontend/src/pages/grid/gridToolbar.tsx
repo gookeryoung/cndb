@@ -4,7 +4,7 @@ import { Button, Space, Tag, Modal, Typography, Tooltip, Dropdown } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined,
   MoreOutlined, ArrowLeftOutlined, CopyOutlined, ImportOutlined,
-  SwapOutlined, MenuOutlined, ColumnWidthOutlined,
+  SwapOutlined, MenuOutlined, ColumnWidthOutlined, ClearOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -24,8 +24,11 @@ interface GridToolbarProps {
   addRowDisabled: boolean
   onAddRow: () => void
   canEditSchema: boolean
+  /** 是否可执行数据治理（MANAGE_DATA） */
+  canManageData: boolean
   onOpenTableSettings: () => void
   onOpenImportExport: () => void
+  onOpenGovernance: () => void
   activeViewName?: string
   activeViewId?: number | string | null
   onCopyTable: (opts: { mode: 'structure' | 'all' | 'view'; viewId?: number | string }) => void
@@ -36,7 +39,7 @@ interface GridToolbarProps {
 
 export default function GridToolbar({
   wid, tid, tableKey, tableName, recordCount, mode, addRowDisabled, onAddRow,
-  canEditSchema, onOpenTableSettings, onOpenImportExport,
+  canEditSchema, canManageData, onOpenTableSettings, onOpenImportExport, onOpenGovernance,
   activeViewName, activeViewId, onCopyTable, onMove, onResetColumnLayout,
 }: GridToolbarProps) {
   const { message } = AntApp.useApp()
@@ -79,6 +82,16 @@ export default function GridToolbar({
         </Tooltip>
         <Tooltip title="导入 / 导出：批量新增或更新数据、导出 CSV / Excel / JSON">
           <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={onOpenImportExport}>更新/导出</Button>
+        </Tooltip>
+        <Tooltip title="数据治理：重复检测、合并与清洗">
+          <Button
+            icon={<ClearOutlined />}
+            data-testid="governance-btn"
+            disabled={!canManageData}
+            onClick={onOpenGovernance}
+          >
+            数据治理
+          </Button>
         </Tooltip>
         <Dropdown menu={{
           items: [

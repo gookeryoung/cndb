@@ -11,7 +11,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Modal, Tabs, Form, Input, Button, Tag, Popconfirm, App as AntApp, Space, Empty, Tooltip,
+  Modal, Tabs, Form, Input, Button, Tag, Popconfirm, App as AntApp, Space, Empty, Tooltip, Select,
 } from 'antd'
 import {
   InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
@@ -159,6 +159,8 @@ export default function TableSettingsModal({
   }>({})
   /** 权限 Tab 隐藏字段受控 state（保存时直接读取，不再依赖 DOM 采集） */
   const [hiddenNames, setHiddenNames] = useState<string[]>([])
+  /** 数据治理（MANAGE_DATA）最低角色阈值；空串 = 使用默认 ADMIN */
+  const [manageDataRole, setManageDataRole] = useState<string>('')
 
   // 基本信息表单值监听（脏检查用）
   const nameValue = Form.useWatch('name', form)
@@ -292,6 +294,11 @@ export default function TableSettingsModal({
   // 权限数据到达后展平初始化隐藏字段受控 state
   useEffect(() => {
     if (permData) setHiddenNames(Array.from(buildHiddenSet(permData.hidden_fields)))
+  }, [permData])
+
+  // 权限数据到达后初始化数据治理角色阈值
+  useEffect(() => {
+    if (permData) setManageDataRole(permData.manage_data_role ?? '')
   }, [permData])
 
   // 打开 / embedded 模式 / 表切换时，初始化基本信息表单
@@ -502,8 +509,28 @@ export default function TableSettingsModal({
                   {canEditRecords && <Tag color="blue">编辑记录</Tag>}
                   {canEditViews && <Tag color="purple">编辑视图</Tag>}
                   {canEditSchema && <Tag color="gold">编辑结构</Tag>}
+                  {hasAction(actions, 'manage_data') && <Tag color="geekblue">数据治理</Tag>}
                   {!canEditRecords && !canEditViews && !canEditSchema && <Tag color="default">仅查看</Tag>}
                 </Space>
+              </div>
+
+              {/* 数据治理角色阈值：最低需要什么工作区角色才能执行合并/清洗 */}
+              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13 }}>数据治理权限（合并/清洗）：</span>
+                <Select
+                  size="small"
+                  style={{ width: 160 }}
+                  value={manageDataRole}
+                  onChange={setManageDataRole}
+                  disabled={!canEditSchema}
+                  options={[
+                    { value: '', label: '默认（管理员）' },
+                    { value: 'viewer', label: 'viewer（可查看）' },
+                    { value: 'editor', label: 'editor（可编辑）' },
+                    { value: 'admin', label: 'admin（管理员）' },
+                    { value: 'owner', label: 'owner（拥有者）' },
+                  ]}
+                />
               </div>
 
               <PermissionEditor
@@ -522,8 +549,8 @@ export default function TableSettingsModal({
                   loading={savePerm.isPending}
                   disabled={!canEditSchema}
                   onClick={() => {
-                    // 隐藏字段受控 state 直读；不再携带 row_filters（PATCH exclude_unset 语义下避免误清空）
-                    savePerm.mutate({ hidden_fields: { admin: hiddenNames } })
+                    // 隐藏字段受控 state 直读 + 数据治理角色阈值；不再携带 row_filters（PATCH exclude_unset 语义下避免误清空）
+                    savePerm.mutate({ hidden_fields: { admin: hiddenNames }, manage_data_role: manageDataRole })
                   }}
                 >
                   保存权限

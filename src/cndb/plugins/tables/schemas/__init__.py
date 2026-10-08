@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+from cndb.plugins.tables.schemas.governance import (
+    CleanAction,
+    CleanRequest,
+    DetectRequest,
+    GovernanceTaskOut,
+    MergeGroup,
+    MergeRequest,
+)
 from cndb.plugins.tables.schemas.models import (
     BulkDeleteRequest,
     FieldCreate,
@@ -35,14 +43,20 @@ from cndb.plugins.tables.schemas.models import (
 
 __all__ = [
     "BulkDeleteRequest",
+    "CleanAction",
+    "CleanRequest",
+    "DetectRequest",
     "FieldCreate",
     "FieldImportRequest",
     "FieldImportResponse",
     "FieldResponse",
     "FieldUpdate",
+    "GovernanceTaskOut",
     "MemberCreate",
     "MemberOut",
     "MemberUpdate",
+    "MergeGroup",
+    "MergeRequest",
     "OwnerBrief",
     "OwnerTransfer",
     "PermissionCreate",

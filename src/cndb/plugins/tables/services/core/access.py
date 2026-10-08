@@ -24,6 +24,7 @@ class TableAction(StrEnum):
     EDIT_RECORDS = "EDIT_RECORDS"
     EDIT_VIEWS = "EDIT_VIEWS"
     EDIT_SCHEMA = "EDIT_SCHEMA"
+    MANAGE_DATA = "MANAGE_DATA"
 
 
 # 动作 -> TablePermission 字段映射
@@ -32,6 +33,7 @@ _ACTION_PERMISSION_FIELD: dict[TableAction, str] = {
     TableAction.EDIT_RECORDS: "edit_records_role",
     TableAction.EDIT_VIEWS: "edit_views_role",
     TableAction.EDIT_SCHEMA: "edit_schema_role",
+    TableAction.MANAGE_DATA: "manage_data_role",
 }
 
 # 动作 -> 默认工作区角色（表级 permission 为空时回退）
@@ -40,6 +42,7 @@ _ACTION_DEFAULT_ROLE: dict[TableAction, WorkspaceRole] = {
     TableAction.EDIT_RECORDS: WorkspaceRole.EDITOR,
     TableAction.EDIT_VIEWS: WorkspaceRole.EDITOR,
     TableAction.EDIT_SCHEMA: WorkspaceRole.ADMIN,
+    TableAction.MANAGE_DATA: WorkspaceRole.ADMIN,
 }
 
 

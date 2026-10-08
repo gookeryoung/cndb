@@ -51,6 +51,7 @@ import { useGridData } from './useGridData'
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
 const ImportExportDialog = lazy(() => import('@/pages/import-export/ImportExportDialog'))
+const GovernanceDialog = lazy(() => import('@/pages/grid/governance/GovernanceDialog'))
 // 非 grid 视图按 mode 懒加载：默认表格视图不下载看板/甘特/日历等代码
 const KanbanView = lazy(() => import('./views/KanbanView'))
 const CalendarView = lazy(() => import('./views/CalendarView'))
@@ -219,6 +220,7 @@ export default function GridPage() {
   const [createInitialValues, setCreateInitialValues] = useState<RowValues | undefined>(undefined)
   const [fieldMgrOpen, setFieldMgrOpen] = useState(false)
   const [importExportOpen, setImportExportOpen] = useState(false)
+  const [governanceOpen, setGovernanceOpen] = useState(false)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
   const [createViewOpen, setCreateViewOpen] = useState(false)
   const [editViewOpen, setEditViewOpen] = useState(false)
@@ -428,6 +430,7 @@ export default function GridPage() {
   const hasAction = (a: string) => userActions.includes(a)
   const canEditSchema = hasAction('edit_schema')
   const canEditRecords = hasAction('edit_records')
+  const canManageData = hasAction('manage_data')
 
   /** 新增行激活后自动滚动聚焦 —— tail 跳页时以行数变化为重同步信号，数据到达后二次校准. */
   useNewRowAutoScroll({
@@ -961,8 +964,10 @@ export default function GridPage() {
         addRowDisabled={!canEditRecords || newRowActive || editingRowId != null}
         onAddRow={startNewRow}
         canEditSchema={canEditSchema}
+        canManageData={canManageData}
         onOpenTableSettings={() => setTableSettingsOpen(true)}
         onOpenImportExport={() => setImportExportOpen(true)}
+        onOpenGovernance={() => setGovernanceOpen(true)}
         activeViewName={activeView?.name}
         activeViewId={activeView?.id}
         onCopyTable={(opts) => copyTable.mutate(opts)}
@@ -1126,6 +1131,16 @@ export default function GridPage() {
             fields={table?.fields || []}
             onClose={() => setImportExportOpen(false)}
             onImported={() => {
+              queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+              queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+            }}
+          />
+        )}
+        {governanceOpen && (
+          <GovernanceDialog open={governanceOpen} wid={wid!} tid={tid!}
+            fields={table?.fields || []}
+            onClose={() => setGovernanceOpen(false)}
+            onDataChanged={() => {
               queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
               queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
             }}

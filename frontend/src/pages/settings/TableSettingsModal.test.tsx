@@ -109,7 +109,7 @@ describe('TableSettingsModal 权限健壮性', () => {
 
     await waitFor(() => expect(patchSpy).toHaveBeenCalledTimes(1))
     const firstPayload = patchSpy.mock.calls[0]![2]!
-    expect(firstPayload).toEqual({ hidden_fields: { admin: ['密级', '备注'] } })
+    expect(firstPayload).toEqual({ hidden_fields: { admin: ['密级', '备注'] }, manage_data_role: '' })
     expect(firstPayload).not.toHaveProperty('row_filters')
 
     // 取消「密级」→ hiddenNames = ['备注']（空/部分取消也能正确落库）
@@ -117,7 +117,7 @@ describe('TableSettingsModal 权限健壮性', () => {
     fireEvent.click(screen.getByRole('button', { name: /保\s*存\s*权\s*限/ }))
 
     await waitFor(() => expect(patchSpy).toHaveBeenCalledTimes(2))
-    expect(patchSpy.mock.calls[1]![2]!).toEqual({ hidden_fields: { admin: ['备注'] } })
+    expect(patchSpy.mock.calls[1]![2]!).toEqual({ hidden_fields: { admin: ['备注'] }, manage_data_role: '' })
   })
 })
 
