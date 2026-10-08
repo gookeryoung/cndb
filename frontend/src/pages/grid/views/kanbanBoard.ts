@@ -191,27 +191,111 @@ export function compareField(
 
 // ── 卡片排序 ──────────────────────────────────────────
 
+/** 单行的预计算元信息 —— 让 sortKanbanCards 比较器和紧急统计
+ *  都能复用同一份结果，避免对同一行反复 parseDate / isDoneRow / daysFromToday. */
+export interface KanbanRowMeta {
+  /** 该行是否已完成（doneCtx 匹配） */
+  isDone: boolean
+  /** 紧急级别（0=正常, 1=紧急, 2=当天, 3=逾期 — 受 pinToday 控制） */
+  urgencyRank: number
+  /** 紧急天数差值（daysFromToday），用于紧急统计；无截止日期时为 null */
+  daysLeft: number | null
+  /** 已完成内部排序用的"完成时间戳"（done_field 日期 > updated_at > created_at） */
+  doneTime: number
+}
+
+/** 预计算一组行的 KanbanRowMeta —— 一次遍历覆盖 sort + 紧急统计所需的全部中间值.
+ *
+ *  对 N 行只做一次 parseDate / daysFromToday / isDoneRow，
+ *  避免 sortKanbanCards 比较器（O(N log N) 次调用）里反复对同一行重复解析日期字符串。
+ */
+export function precomputeKanbanMeta(
+  rows: RowResponse[],
+  fields: Field[],
+  opts: Record<string, unknown>,
+): Map<RowResponse, KanbanRowMeta> {
+  const urgentThreshold = Number(opts.urgent_threshold_days)
+  const dueDateField = opts.due_date_field as string | undefined
+  const pinUrgent = opts.pin_urgent !== false && !!dueDateField
+  const pinToday = opts.pin_today !== false && !!dueDateField
+  const doneCtx = resolveDoneCtx(opts, fields)
+  const doneFieldDef = doneCtx?.fieldDef
+  const doneIsDate = !!doneFieldDef && ['date', 'datetime', 'timestamp'].includes(doneFieldDef.field_type)
+
+  const meta = new Map<RowResponse, KanbanRowMeta>()
+  for (const r of rows) {
+    const isDone = isDoneRow(r, doneCtx)
+
+    // 截止日期 / daysLeft（紧急统计和排序都需要）
+    let daysLeft: number | null = null
+    if (dueDateField) {
+      const dueDate = parseDate(r[dueDateField])
+      if (dueDate) daysLeft = daysFromToday(dueDate)
+    }
+
+    // 紧急级别（仅在 pinUrgent 时参与排序；始终算好给紧急统计用）
+    let urgencyRank = 0
+    if (!isDone && pinUrgent && daysLeft !== null) {
+      if (daysLeft < 0) urgencyRank = pinToday ? 3 : 2
+      else if (pinToday && daysLeft === 0) urgencyRank = 2
+      else if (daysLeft <= urgentThreshold) urgencyRank = 1
+    }
+
+    // 完成时间戳（仅已完成行排序用）
+    let doneTime = 0
+    if (isDone) {
+      if (doneIsDate) {
+        const v = r[doneCtx!.field]
+        if (v !== null && v !== undefined) {
+          const t = new Date(String(v)).getTime()
+          if (!Number.isNaN(t)) doneTime = t
+        }
+      }
+      if (!doneTime) {
+        const u = (r.updated_at as string | undefined) || ''
+        if (u) {
+          const t = new Date(u).getTime()
+          if (!Number.isNaN(t)) doneTime = t
+        }
+      }
+      if (!doneTime) {
+        const c = (r.created_at as string | undefined) || ''
+        if (c) {
+          const t = new Date(c).getTime()
+          if (!Number.isNaN(t)) doneTime = t
+        }
+      }
+    }
+
+    meta.set(r, { isDone, urgencyRank, daysLeft, doneTime })
+  }
+  return meta
+}
+
 /** 对一列卡片应用完整排序：未完成在前、已完成置底；未完成内部按紧急置顶 + card_sort_field + view_sortings；
- * 已完成内部按完成时间倒序（后完成在顶部）：优先用 done_field 的日期值，其次用 updated_at，最后用 created_at 倒序 */
+ *  已完成内部按完成时间倒序（后完成在顶部）：优先用 done_field 的日期值，其次用 updated_at，最后用 created_at 倒序
+ *
+ *  @param _meta 可选：预先计算好的 KanbanRowMeta Map（由 precomputeKanbanMeta 生成）.
+ *               传入后直接复用，避免比较器内部反复 parseDate / isDoneRow；
+ *               不传时内部自己算一次，行为完全一致。 */
 export function sortKanbanCards(
   rows: RowResponse[],
   fields: Field[],
   opts: Record<string, unknown>,
   viewSortings: Array<{ field_name: string; direction: 'asc' | 'desc' }> = [],
+  _meta?: Map<RowResponse, KanbanRowMeta>,
 ): RowResponse[] {
   // opts 已由 KanbanView 顶层 resolveOpts 统一默认值，此处直接取值即可
-  const urgentThreshold = Number(opts.urgent_threshold_days)
+  // 紧急阈值 / pinToday 等已在 precomputeKanbanMeta 里用于计算 urgencyRank，此处不再重复
   const dueDateField = opts.due_date_field as string | undefined
   const priorityField = opts.priority_field as string | undefined
   const pinUrgent = opts.pin_urgent !== false && !!dueDateField
-  const pinToday = opts.pin_today !== false && !!dueDateField
   const cardSortField = opts.card_sort_field as string | undefined
   const cardSortDir = opts.card_sort_direction as 'asc' | 'desc'
   const priorityFieldDef = priorityField ? fields.find((f) => f.name === priorityField) : undefined
-  const doneCtx = resolveDoneCtx(opts, fields)
-  // done_field 是否为日期类型 —— 已完成内部排序时优先用它作为"完成时间"
-  const doneFieldDef = doneCtx?.fieldDef
-  const doneIsDate = !!doneFieldDef && ['date', 'datetime', 'timestamp'].includes(doneFieldDef.field_type)
+
+  // 行元信息 —— 传入则复用（groupKanbanColumns 场景），否则内部算一次（测试 / 独立调用场景）
+  const meta = _meta ?? precomputeKanbanMeta(rows, fields, opts)
 
   // 把所有排序规则拼成有序列表
   // 优先级（未完成内部）：紧急置顶 > card_sort_field > 级联 view_sortings > 优先级权重 > 创建时间倒序
@@ -222,47 +306,23 @@ export function sortKanbanCards(
     sortKeys.push(s)
   }
 
-  /** 从行取完成排序用的时间戳：done_field 日期值 > updated_at > created_at */
-  const getDoneTime = (r: RowResponse): number => {
-    if (doneIsDate) {
-      const v = r[doneCtx!.field]
-      if (v !== null && v !== undefined) {
-        const t = new Date(String(v)).getTime()
-        if (!Number.isNaN(t)) return t
-      }
-    }
-    const u = (r.updated_at as string | undefined) || ''
-    if (u) {
-      const t = new Date(u).getTime()
-      if (!Number.isNaN(t)) return t
-    }
-    const c = (r.created_at as string | undefined) || ''
-    if (c) {
-      const t = new Date(c).getTime()
-      if (!Number.isNaN(t)) return t
-    }
-    return 0
-  }
-
   return [...rows].sort((a, b) => {
-    const aDone = isDoneRow(a, doneCtx)
-    const bDone = isDoneRow(b, doneCtx)
+    const aMeta = meta.get(a)!
+    const bMeta = meta.get(b)!
 
     // 0) 未完成 vs 已完成：未完成（0）在前，已完成（1）在后
-    if (aDone !== bDone) return aDone ? 1 : -1
+    if (aMeta.isDone !== bMeta.isDone) return aMeta.isDone ? 1 : -1
 
     // 已完成内部：后完成的排顶部（完成时间倒序）
-    if (aDone) {
-      return getDoneTime(b) - getDoneTime(a)
+    if (aMeta.isDone) {
+      return bMeta.doneTime - aMeta.doneTime
     }
 
     // --- 以下为未完成内部的排序规则 ---
 
     // 1) 紧急置顶（逾期 > 紧急 > 正常）
     if (pinUrgent) {
-      const au = getUrgencyRank(a, dueDateField, urgentThreshold, pinToday)
-      const bu = getUrgencyRank(b, dueDateField, urgentThreshold, pinToday)
-      if (au !== bu) return bu - au // 权重 2 排在最前
+      if (aMeta.urgencyRank !== bMeta.urgencyRank) return bMeta.urgencyRank - aMeta.urgencyRank
     }
 
     // 2) 应用配置的字段排序
@@ -383,22 +443,20 @@ export function groupKanbanColumns(
 ): KanbanColumnData[] {
   const cols: KanbanColumnData[] = []
 
-  // 统计每个分组的紧急/逾期卡片数（opts 已 resolve，直接取值）
-  const urgentThreshold = Number(opts.urgent_threshold_days)
+  // 紧急统计依赖 precomputeKanbanMeta 算出的 urgencyRank / isDone，
+  // 这里只需知道 due_date_field 是否配置（控制是否启用紧急计数）
   const dueDateField = opts.due_date_field as string | undefined
-  // 完成卡片不计入紧急数（完成态优先于逾期/紧急）
-  const doneCtx = resolveDoneCtx(opts, fields)
 
   const makeCol = (key: string, title: string, list: RowResponse[], rawValue?: unknown) => {
-    const sorted = sortKanbanCards(list, fields, opts, sortings)
+    // 一次预计算同时覆盖 sort 比较器 + 紧急统计，避免对同一行反复 parseDate / isDoneRow
+    const meta = precomputeKanbanMeta(list, fields, opts)
+    const sorted = sortKanbanCards(list, fields, opts, sortings, meta)
+    // urgentRank >= 1 即为紧急（1）/当天（2）/逾期（3），且未完成
     let urgentCount = 0
     if (dueDateField) {
       for (const r of sorted) {
-        if (isDoneRow(r, doneCtx)) continue
-        const dueDate = parseDate(r[dueDateField])
-        if (!dueDate) continue
-        const dl = daysFromToday(dueDate)
-        if (dl < 0 || dl <= urgentThreshold) urgentCount++
+        const m = meta.get(r)!
+        if (!m.isDone && m.urgencyRank >= 1) urgentCount++
       }
     }
     cols.push({ key, title, rows: sorted, urgentCount, rawValue })

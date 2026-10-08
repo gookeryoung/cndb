@@ -62,13 +62,27 @@ if (typeof window !== 'undefined') {
       toJSON: () => ({}),
     }) as DOMRect
   }
-  // jsdom 未实现 IntersectionObserver（antd 虚拟滚动可能用到）
+  // jsdom 未实现 IntersectionObserver（antd 虚拟滚动 + KanbanColumn 懒挂载用到）
+  // polyfill：observe 后立即触发 isIntersecting=true 的回调（测试环境所有元素"都可见"）
   if (!window.IntersectionObserver) {
     class IntersectionObserverPolyfill {
       root = null
       rootMargin = ''
-      thresholds = []
-      observe = vi.fn()
+      thresholds: number[] = []
+      private callback: IntersectionObserverCallback
+      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        this.callback = callback
+        // IntersectionObserverInit.threshold 可能是 number 或 number[]
+        this.thresholds = options?.threshold !== undefined
+          ? (Array.isArray(options.threshold) ? options.threshold : [options.threshold])
+          : []
+      }
+      observe = (target: Element) => {
+        // 同步触发 isIntersecting=true，让懒挂载组件直接渲染完整内容
+        // KanbanColumn 的 useEffect 在 commit 后 observe，这里同步调 callback
+        // → setVisible(true) 在同一个 microtask 里被 React 批量 flush
+        this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this)
+      }
       unobserve = vi.fn()
       disconnect = vi.fn()
       takeRecords = () => []
