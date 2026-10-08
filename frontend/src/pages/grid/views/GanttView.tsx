@@ -11,8 +11,11 @@
  * - time_scale:        时间粒度 'day' | 'week' | 'month' | 'quarter'（默认 'month'）
  * - show_today_line:   是否显示今日标线（默认 true）
  *
- * 滚动策略：用一个真实的 overflow-x: auto 横向滚动容器包住右侧全部时间轴内容，
- * header 和 body 各自独立但横向同步；同时支持鼠标滚轮转横向 + 滚动到今天按钮。
+ * 滚动策略：右侧 body 是唯一的真实滚动容器（横纵双轴 overflow: auto），
+ * 顶层 header 通过 scrollLeft 单向跟随 body 横向滚动。
+ * 双轴同容器保证横向可达范围与行内容裁剪窗口一致，行右端不会被自身纵向
+ * 滚动条裁掉；header 独立持有避免为跟随纵向滚动而重排表头。
+ * 同时支持 Shift+滚轮横向、滚动到今天按钮与挂载后自动定位到今日标线。
  *
  * 纵向虚拟化：任务行（含分组头）展平为定高序列，用 @tanstack/react-virtual 切片渲染，
  * 左侧任务名列与右侧时间轴共享同一个 virtualizer，两侧窗口与滚动位置严格对齐，
@@ -373,7 +376,9 @@ function TodayLine({
 // ── 时间轴右边界虚线 ──────────────────────────────────
 
 /** 在时间轴最右端（range.max 位置）画一条虚线，标记"截至日期/时间范围边界"，
- *  覆盖 header 双层与 body grid 背景三处容器的右边界。 */
+ *  覆盖 header 双层与 body grid 背景三处容器的右边界。
+ *  虚线整体收在 totalWidth 内侧（left = totalWidth - 2）：若画在 totalWidth 处，
+ *  2px 边框会向右扩展滚动溢出区，导致总宽恰好等于视口时也出现横向滚动条。 */
 function RightBoundaryLine({
   totalWidth,
   visible = true,
@@ -392,7 +397,7 @@ function RightBoundaryLine({
       aria-hidden
       style={{
         position: 'absolute',
-        left: totalWidth,
+        left: totalWidth - 2,
         top: 0,
         bottom: 0,
         width: 0,
@@ -520,17 +525,21 @@ export default function GanttView({
     return { segWidth, width: (currentSegments.length - 1) * segWidth }
   }, [levelDef.anchorScale, levelDef.currentScale, currentSegments])
 
-  // ── 滚动容器 ref —— 整个右侧时间轴用真实 overflow-x: auto ──
-  const hScrollRef = useRef<HTMLDivElement>(null)
+  // ── 滚动容器 —— body 是唯一真实滚动容器（横纵双轴）──
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null)
+  const attachBody = useCallback((el: HTMLDivElement | null) => {
+    bodyRef.current = el
+    setBodyEl(el)
+  }, [])
+  const headerScrollRef = useRef<HTMLDivElement>(null)
 
   const scrollTo = useCallback((delta: number) => {
-    const el = hScrollRef.current
-    if (!el) return
-    el.scrollBy({ left: delta, behavior: 'smooth' })
+    bodyRef.current?.scrollBy({ left: delta, behavior: 'smooth' })
   }, [])
 
   const scrollToToday = useCallback(() => {
-    const el = hScrollRef.current
+    const el = bodyRef.current
     if (!el || !timeRange) return
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -541,20 +550,45 @@ export default function GanttView({
     el.scrollTo({ left: target, behavior: 'smooth' })
   }, [timeRange, pxPerDay])
 
-  // 滚轮转横向
+  // 挂载后自动横向定位到今日标线（不动画），让进度基准线直接可见
+  const didInitScroll = useRef(false)
   useEffect(() => {
-    const el = hScrollRef.current
-    if (!el) return
-    const handler = (e: WheelEvent) => {
-      if (e.shiftKey) return
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        e.preventDefault()
-        el.scrollLeft += e.deltaY
-      }
+    const el = bodyRef.current
+    if (didInitScroll.current || !el || !timeRange) return
+    didInitScroll.current = true
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    if (today < timeRange.min || today > timeRange.max) return
+    const offsetDays = daysBetween(timeRange.min, today) - 1
+    el.scrollLeft = Math.max(0, offsetDays * pxPerDay - el.clientWidth / 2)
+  }, [timeRange, pxPerDay])
+
+  // header 横向跟随 body：body 是横向滚动真理源；header 为 overflow:hidden 裁剪容器，
+  // 但 Shift+滚轮仍可能触发其 scroll 事件，故做带防抖标志的双向同步（同左列模式）
+  useEffect(() => {
+    const body = bodyRef.current
+    const header = headerScrollRef.current
+    if (!body || !header) return
+    let syncing = false
+    const onBodyScroll = () => {
+      if (syncing) return
+      syncing = true
+      header.scrollLeft = body.scrollLeft
+      requestAnimationFrame(() => { syncing = false })
     }
-    el.addEventListener('wheel', handler, { passive: false })
-    return () => el.removeEventListener('wheel', handler)
-  }, [totalTimelineWidth])
+    const onHeaderScroll = () => {
+      if (syncing) return
+      syncing = true
+      body.scrollLeft = header.scrollLeft
+      requestAnimationFrame(() => { syncing = false })
+    }
+    body.addEventListener('scroll', onBodyScroll)
+    header.addEventListener('scroll', onHeaderScroll)
+    return () => {
+      body.removeEventListener('scroll', onBodyScroll)
+      header.removeEventListener('scroll', onHeaderScroll)
+    }
+  }, [bodyEl])
 
   // 按分组聚合（用于左侧分组分隔 + WBS 编号）
   const groupedTasks = useMemo<GanttGroup[]>(() => {
@@ -593,14 +627,8 @@ export default function GanttView({
     return items
   }, [groupedTasks, hasGroup, ds.groupHeaderHeight, ds.rowHeight])
 
-  // 纵向虚拟化：右侧时间轴 body 是真实滚动元素；callback ref 把元素交给
-  // virtualizer（空态分支不挂载该元素），左列通过 scroll 事件跟随
-  const bodyRef = useRef<HTMLDivElement | null>(null)
-  const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null)
-  const attachBody = useCallback((el: HTMLDivElement | null) => {
-    bodyRef.current = el
-    setBodyEl(el)
-  }, [])
+  // 纵向虚拟化：body 元素（见上方 attachBody）即 virtualizer 滚动元素；
+  // 空态分支不挂载该元素
   const rowVirtualizer = useVirtualizer({
     count: flatItems.length,
     getScrollElement: () => bodyEl,
@@ -733,10 +761,10 @@ export default function GanttView({
             overflow: 'hidden',
           }}
         >
-          {/* 左侧 header */}
+          {/* 左侧 header —— 高度对齐右侧双层表头（2 × headerHeight），保证左右行不错位 */}
           <div
             style={{
-              height: ds.headerHeight,
+              height: ds.headerHeight * 2,
               flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
@@ -762,130 +790,130 @@ export default function GanttView({
           />
         </div>
 
-        {/* 右侧时间轴区域 —— 单一真实横向滚动容器 */}
+        {/* 右侧时间轴区域 —— header 裁剪跟随 + body 双轴真实滚动 */}
         <div
-          ref={hScrollRef}
           style={{
             flex: 1,
             minWidth: 0,
             display: 'flex',
             flexDirection: 'column',
-            overflowX: 'auto',
-            overflowY: 'hidden',
             position: 'relative',
           }}
         >
-          {/* header —— 双层 */}
-          <div style={{ flexShrink: 0, minWidth: totalTimelineWidth }}>
-            {/* 上层：锚定层（month / year）—— 合并渲染 */}
-            <div
-              data-testid="gantt-header-row"
-              data-layer="anchor"
-              style={{
-                height: ds.headerHeight,
-                position: 'relative',
-                minWidth: totalTimelineWidth,
-                borderBottom: '1px solid var(--cn-border)',
-                background: 'var(--cn-bg-container)',
-              }}
-            >
-              {anchorSegments.map((seg) => (
-                <div
-                  key={`a-${seg.left}`}
-                  data-testid={seg.showLabel ? 'gantt-timeline-label' : undefined}
-                  data-layer="anchor"
-                  style={{
-                    position: 'absolute',
-                    left: seg.left,
-                    top: 0,
-                    bottom: 0,
-                    width: seg.width,
-                    padding: '0 6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'flex-start',
-                    borderRight: '1px solid var(--cn-border)',
-                    fontSize: ds.headerFontSize,
-                    fontWeight: 600,
-                    color: 'var(--cn-text)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {seg.showLabel ? seg.label : null}
-                </div>
-              ))}
-              {/* 时间轴右边界虚线 */}
-              <RightBoundaryLine totalWidth={totalTimelineWidth} />
-            </div>
-
-            {/* 下层：当前刻度层（day / week / month / quarter）。
-                day/week 段等宽且标签稀疏：竖线交给单层渐变，仅渲染带标签的段（absolute）；
-                month/quarter 段数少且全部带标签，保留 flex 布局 */}
-            <div
-              data-testid="gantt-header-row"
-              data-layer="current"
-              style={{
-                position: 'relative',
-                height: ds.headerHeight,
-                minWidth: totalTimelineWidth,
-                background: 'var(--cn-bg-subtle)',
-              }}
-            >
-              {secondaryGrid && (
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    bottom: 0,
-                    left: 0,
-                    width: totalTimelineWidth,
-                    backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent ${secondaryGrid.segWidth - 1}px, var(--cn-border-secondary, #f0f0f0) ${secondaryGrid.segWidth - 1}px, var(--cn-border-secondary, #f0f0f0) ${secondaryGrid.segWidth}px)`,
-                  }}
-                />
-              )}
-              {currentSegments.map((seg) => {
-                // day/week 的无标签空段不渲染（竖线由渐变层承担）
-                if (secondaryGrid && !seg.showLabel) return null
-                return (
+          {/* header —— 双层；overflow:hidden 裁剪，scrollLeft 由同步逻辑跟随 body */}
+          <div ref={headerScrollRef} data-testid="gantt-header-scroll" style={{ flexShrink: 0, minWidth: 0, overflow: 'hidden' }}>
+            <div style={{ minWidth: totalTimelineWidth }}>
+              {/* 上层：锚定层（month / year）—— 合并渲染 */}
+              <div
+                data-testid="gantt-header-row"
+                data-layer="anchor"
+                style={{
+                  height: ds.headerHeight,
+                  position: 'relative',
+                  minWidth: totalTimelineWidth,
+                  borderBottom: '1px solid var(--cn-border)',
+                  background: 'var(--cn-bg-container)',
+                }}
+              >
+                {anchorSegments.map((seg) => (
                   <div
-                    key={`c-${seg.left}`}
+                    key={`a-${seg.left}`}
                     data-testid={seg.showLabel ? 'gantt-timeline-label' : undefined}
-                    data-layer="current"
+                    data-layer="anchor"
                     style={{
                       position: 'absolute',
                       left: seg.left,
                       top: 0,
-                      height: '100%',
+                      bottom: 0,
                       width: seg.width,
-                      padding: '0 3px',
+                      padding: '0 6px',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRight: secondaryGrid
-                        ? undefined
-                        : `1px solid ${levelDef.anchorScale === 'year' ? 'var(--cn-border)' : 'var(--cn-border-secondary, #f0f0f0)'}`,
+                      justifyContent: 'flex-start',
+                      borderRight: '1px solid var(--cn-border)',
                       fontSize: ds.headerFontSize,
-                      color: 'var(--cn-text-muted)',
+                      fontWeight: 600,
+                      color: 'var(--cn-text)',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
-                      background: 'var(--cn-bg-subtle)',
-                      boxSizing: 'border-box',
+                      textOverflow: 'ellipsis',
                     }}
                   >
                     {seg.showLabel ? seg.label : null}
                   </div>
-                )
-              })}
-              {/* 时间轴右边界虚线 */}
-              <RightBoundaryLine totalWidth={totalTimelineWidth} />
+                ))}
+                {/* 时间轴右边界虚线 */}
+                <RightBoundaryLine totalWidth={totalTimelineWidth} />
+              </div>
+
+              {/* 下层：当前刻度层（day / week / month / quarter）。
+                day/week 段等宽且标签稀疏：竖线交给单层渐变，仅渲染带标签的段（absolute）；
+                month/quarter 段数少且全部带标签，保留 flex 布局 */}
+              <div
+                data-testid="gantt-header-row"
+                data-layer="current"
+                style={{
+                  position: 'relative',
+                  height: ds.headerHeight,
+                  minWidth: totalTimelineWidth,
+                  background: 'var(--cn-bg-subtle)',
+                }}
+              >
+                {secondaryGrid && (
+                  <div
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      bottom: 0,
+                      left: 0,
+                      width: totalTimelineWidth,
+                      backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent ${secondaryGrid.segWidth - 1}px, var(--cn-border-secondary, #f0f0f0) ${secondaryGrid.segWidth - 1}px, var(--cn-border-secondary, #f0f0f0) ${secondaryGrid.segWidth}px)`,
+                    }}
+                  />
+                )}
+                {currentSegments.map((seg) => {
+                  // day/week 的无标签空段不渲染（竖线由渐变层承担）
+                  if (secondaryGrid && !seg.showLabel) return null
+                  return (
+                    <div
+                      key={`c-${seg.left}`}
+                      data-testid={seg.showLabel ? 'gantt-timeline-label' : undefined}
+                      data-layer="current"
+                      style={{
+                        position: 'absolute',
+                        left: seg.left,
+                        top: 0,
+                        height: '100%',
+                        width: seg.width,
+                        padding: '0 3px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRight: secondaryGrid
+                          ? undefined
+                          : `1px solid ${levelDef.anchorScale === 'year' ? 'var(--cn-border)' : 'var(--cn-border-secondary, #f0f0f0)'}`,
+                        fontSize: ds.headerFontSize,
+                        color: 'var(--cn-text-muted)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        background: 'var(--cn-bg-subtle)',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      {seg.showLabel ? seg.label : null}
+                    </div>
+                  )
+                })}
+                {/* 时间轴右边界虚线 */}
+                <RightBoundaryLine totalWidth={totalTimelineWidth} />
+              </div>
             </div>
           </div>
 
-          {/* body 行区 —— 纵向虚拟滚动（本元素即左列滚动同步源）；
-              横向滚动由外层 hScrollRef 统一承担，内层禁用横向滚动条以避免双滚动条 */}
+          {/* body 行区 —— 唯一真实滚动容器（横纵双轴）：
+              双轴同容器保证横向可达范围与行裁剪窗口一致，行右端不会被纵向滚动条裁掉；
+              本元素同时是左列纵向滚动同步源 */}
           <div
             ref={attachBody}
             data-testid="gantt-body"
@@ -894,7 +922,7 @@ export default function GanttView({
               flex: 1,
               minWidth: 0,
               overflowY: 'auto',
-              overflowX: 'hidden',
+              overflowX: 'auto',
             }}
           >
             {/* 时间轴网格背景层 —— 双层：主分隔（锚定粒度深色）+ 次分隔（当前粒度浅色） */}
@@ -1005,13 +1033,13 @@ export default function GanttView({
           <Button size="small" icon={<HomeOutlined />} onClick={scrollToToday} />
         </Tooltip>
         <Tooltip title="回到起点">
-          <Button size="small" icon={<ReloadOutlined />} onClick={() => hScrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' })} />
+          <Button size="small" icon={<ReloadOutlined />} onClick={() => bodyRef.current?.scrollTo({ left: 0, behavior: 'smooth' })} />
         </Tooltip>
         <span style={{ fontSize: ds.metaFontSize, color: 'var(--cn-text-muted)' }}>
           {fmtDate(timeRange.min)} ~ {fmtDate(timeRange.max)}
         </span>
       </div>
-    </div>
+    </div >
   )
 }
 

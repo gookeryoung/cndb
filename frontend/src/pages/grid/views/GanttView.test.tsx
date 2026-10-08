@@ -151,6 +151,38 @@ describe('GanttView 甘特图视图', () => {
         expect(lines).toHaveLength(3) // anchor layer + current layer + body grid
     })
 
+    it('右边界虚线收在总宽内侧（left = 总宽 - 2），不产生额外横向溢出', () => {
+        renderGantt()
+
+        // 总宽取自 header 行的 minWidth
+        const headerRow = document.querySelector('[data-testid="gantt-header-row"]') as HTMLElement
+        const totalWidth = parseInt(headerRow.style.minWidth, 10)
+        expect(totalWidth).toBeGreaterThan(0)
+
+        for (const line of screen.getAllByTestId('gantt-boundary-line')) {
+            expect(line.style.left).toBe(`${totalWidth - 2}px`)
+        }
+    })
+
+    it('挂载后自动横向定位到今日标线（今日在范围内时 scrollLeft > 0）', () => {
+        renderGantt()
+
+        // 测试数据任务 A 跨 -50 ~ +50（含今天），挂载后应居中定位到今日线
+        const body = screen.getByTestId('gantt-body')
+        expect(body.scrollLeft).toBeGreaterThan(0)
+    })
+
+    it('body 横向滚动后 header scrollLeft 同步跟随', () => {
+        renderGantt()
+
+        const body = screen.getByTestId('gantt-body')
+        const header = screen.getByTestId('gantt-header-scroll')
+        body.scrollLeft = 100
+        fireEvent.scroll(body)
+
+        expect(header.scrollLeft).toBe(100)
+    })
+
     it('配置分组字段后左侧显示任务分组头与分组标签', () => {
         renderGantt({ view: makeView({ title_field: '名称', group_field: '状态' }) })
 
