@@ -25,6 +25,7 @@ ACTION_KEYS: tuple[str, ...] = (
     "EDIT_RECORDS",
     "EDIT_VIEWS",
     "EDIT_SCHEMA",
+    "MANAGE_DATA",
 )
 
 # 动作中文显示名
@@ -33,6 +34,7 @@ ACTION_LABELS: dict[str, str] = {
     "EDIT_RECORDS": "编辑数据行",
     "EDIT_VIEWS": "编辑视图",
     "EDIT_SCHEMA": "编辑结构（字段）",
+    "MANAGE_DATA": "数据治理（合并/清洗）",
 }
 
 # 内置角色 code（由迁移种子写入，管理员可修改但不可删除）

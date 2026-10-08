@@ -45,6 +45,7 @@ _ACTION_LABEL: dict[TableAction, str] = {
     TableAction.EDIT_RECORDS: "edit_records",
     TableAction.EDIT_VIEWS: "edit_views",
     TableAction.EDIT_SCHEMA: "edit_schema",
+    TableAction.MANAGE_DATA: "manage_data",
 }
 
 

@@ -114,6 +114,31 @@ def _sync_import_tasks(monkeypatch_session: pytest.MonkeyPatch):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _sync_governance_tasks(monkeypatch_session: pytest.MonkeyPatch):
+    """治理后台任务在测试中同步执行（原因同 _sync_import_tasks：StaticPool 单连接）.
+
+    治理路由模块在 RED 阶段尚不存在，容错导入：存在才打补丁。
+    """
+    from contextlib import suppress
+
+    with suppress(ImportError):
+        import cndb.plugins.tables.routers.governance as governance_router
+        from cndb.plugins.tables.services.governance import tasks as gov_tasks
+
+        def _run_sync(
+            db_session_factory: Callable[[], Session],
+            task_id: int,
+        ) -> None:
+            session = db_session_factory()
+            try:
+                gov_tasks.execute_governance_task(session, task_id)
+            finally:
+                session.close()
+
+        monkeypatch_session.setattr(governance_router, "run_governance_task_in_background", _run_sync)
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _isolate_upload_dir(tmp_path_factory, monkeypatch_session):
     """把 settings.UPLOAD_DIR 重定向到 session 级临时目录.
 
@@ -139,10 +164,12 @@ def db(_session_factory):
 def _cleanup_tables(db_engine):
     """autouse：每个测试后等后台线程结束，再清空全部表 + 重置自增计数器."""
     yield
-    # 等待 import_tasks 中所有后台线程完成，避免残留线程与清表冲突
+    # 等待 import/治理后台线程完成，避免残留线程与清表冲突
+    from cndb.plugins.tables.services.governance.tasks import join_background_threads as join_gov
     from cndb.plugins.tables.services.importing.import_tasks import join_background_threads
 
     join_background_threads(timeout=10)
+    join_gov(timeout=10)
     with db_engine.connect() as conn:
         # DELETE 比 DROP+CREATE 快一个量级；schema 在 session 级 engine 上只建一次
         for table in reversed(Base.metadata.sorted_tables):

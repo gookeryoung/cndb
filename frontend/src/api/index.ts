@@ -25,6 +25,8 @@ export { publicApi } from './public'
 export { reportApi } from './reports'
 export { adminApi } from './admin'
 export type { AdminSystemInfo, BackupManifest } from './admin'
+export { governanceApi } from './governance'
+export type { DetectReport, MergeReport, CleanReport, GovernanceReport } from './governance'
 
 export type {
   ID, UserResponse, AdminRegisterRequest, LoginRequest, RegisterRequest,
@@ -41,6 +43,9 @@ export type {
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportParameter, ReportRenderRequest, ReportRenderResult, ReportTheme,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
+  GovernanceTask, GovernanceTaskKind, GovernanceTaskStatus,
+  GovernanceDetectRequest, GovernanceMergeGroup, GovernanceMergeRequest,
+  GovernanceCleanAction, GovernanceCleanRequest, Survivorship,
   AttachmentFile,
   ApiFetchRequest, ApiAnalyzeColumn, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
   ApiConfigRequest, ApiConfigValidateResult, ApiConfigImportResult,

@@ -291,6 +291,8 @@ class TablePermission(TimestampMixin, Base):
     edit_records_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     edit_views_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     edit_schema_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    # 数据治理（重复合并/清洗）角色阈值；空 = 未配置，回退工作区角色默认
+    manage_data_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     hidden_fields: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     row_filters: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     row_filter_type: Mapped[str] = mapped_column(String(3), nullable=False, default="AND")
@@ -385,12 +387,44 @@ class ImportTask(TimestampMixin, Base):
     cleaning_actions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
 
 
+class GovernanceTask(TimestampMixin, Base):
+    """异步治理任务：重复检测 / 合并 / 清洗的统一任务记录.
+
+    状态机：
+        pending -> running -> done / failed
+    """
+
+    __tablename__ = "tables_governancetask"
+    __table_args__ = {"extend_existing": True}
+
+    table_id: Mapped[int] = mapped_column(
+        ForeignKey("tables_datatable.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # 任务类型：detect（重复检测）/ merge（合并）/ clean（清洗）
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="detect")
+    # 状态
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0-100
+    # 任务配置快照（detect: match_fields/选项；merge: 组配置；clean: 动作列表）
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    # 结果报告（JSON 字符串）：检测报告 / 合并结果 / 清洗结果
+    report: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    error_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 检测/合并分组进度
+    total_groups: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    done_groups: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 __all__ = [
     "AuditLog",
     "DataField",
     "DataTable",
     "DataView",
     "FilterType",
+    "GovernanceTask",
     "ImportTask",
     "TableMember",
     "TablePermission",
