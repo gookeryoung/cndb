@@ -8,7 +8,7 @@
  * 所有任务异步提交后通过 useQuery refetchInterval 轮询进度。
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Modal, Steps, Select, Checkbox, Button, Table, Tag, Space, Alert, App as AntApp,
   Input, Empty, Typography, Popconfirm, Spin,
@@ -175,23 +175,29 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
       .catch(err => message.error(err instanceof Error ? err.message : '创建清洗任务失败'))
   }
 
-  // 任务完成时的提示与刷新
+  // 任务完成时的提示与刷新（以任务 ID 去重，避免 refetch 返回新对象时重复触发）
+  const notifiedRef = useRef<Set<number>>(new Set())
+
   useEffect(() => {
-    if (mergeTask.data?.status === 'done') {
+    const task = mergeTask.data
+    if (task?.status === 'done' && !notifiedRef.current.has(task.id)) {
+      notifiedRef.current.add(task.id)
       message.success('合并完成')
       onDataChanged?.()
     }
-  }, [mergeTask.data?.status])
+  }, [mergeTask.data, message, onDataChanged])
+
   useEffect(() => {
-    if (cleanTask.data?.status === 'done') {
-      if (cleanTask.data.kind === 'clean' && (cleanTask.data.config as { preview?: boolean })?.preview) {
-        setPreviewDone(true)
-      } else {
-        message.success('清洗完成')
-        onDataChanged?.()
-      }
+    const task = cleanTask.data
+    if (task?.status !== 'done' || notifiedRef.current.has(task.id)) return
+    notifiedRef.current.add(task.id)
+    if (task.kind === 'clean' && (task.config as { preview?: boolean })?.preview) {
+      setPreviewDone(true)
+    } else {
+      message.success('清洗完成')
+      onDataChanged?.()
     }
-  }, [cleanTask.data?.status])
+  }, [cleanTask.data, message, onDataChanged])
 
   const taskFailed = (t: GovernanceTask | undefined) => t?.status === 'failed' ? t.error_message : null
 
