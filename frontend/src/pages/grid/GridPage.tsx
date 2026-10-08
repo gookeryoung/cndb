@@ -789,7 +789,9 @@ export default function GridPage() {
    *  - 没有匹配类型的视图 → 仅切本地 mode（降级兜底，后端视图不变）.
    */
   const handleModeChange = (newMode: ViewMode) => {
-    if (mode === newMode) return
+    // mode 与激活视图类型一致才算已就位——仅 mode 一致而视图类型不符（如 localStorage 恢复
+    // matrix 但激活视图是 grid 默认视图）时继续向下查找同类型视图，避免按钮点击成为死操作
+    if (mode === newMode && activeView?.view_type === newMode) return
     const _persistModeOnly = (m: ViewMode) => {
       setMode(m)
       try { localStorage.setItem(MODE_STORAGE_KEY, m) } catch { /* localStorage 不可用时忽略 */ }
