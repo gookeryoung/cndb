@@ -293,7 +293,7 @@ class TestDataTableHelpers:
     def test_trashed_property(self, db_session):
         dt = DataTable(db_table_name="table_000000000002", workspace_id=1, name="t")
         dt.trashed = True
-        dt.trashed_at = dt.datetime.now(dt.UTC) if False else None
+        dt.trashed_at = None
         assert dt.trash_table_name == "trash_000000000002"
 
 

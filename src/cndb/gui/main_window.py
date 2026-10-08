@@ -613,7 +613,7 @@ class ServeTab(_BaseTab):
             self.app.log_queue.write("[info] 单机模式已启用：免登录，仅本机可访问（局域网请取消勾选）\n")
 
         # 异步读子进程输出 → 写入队列
-        proc = cast(subprocess.Popen[Any], self.app._server_proc)  # 上方已启动，必非空
+        proc = self.app._server_proc  # 上方已启动，必非空（pyrefly 数据流已可收窄）
 
         def _reader() -> None:
             stream = cast(TextIO, proc.stdout)  # Popen 以 PIPE 创建
