@@ -43,7 +43,8 @@ const BASELINES = [
   { name: '主入口 index', file: mainMatch[1], baseline: 185_324 },
   // 2026-09-26：排序三态、列宽估算/拖宽、列序 DnD 及重置入口三项功能提交（b05350d/95a638e/b3c7f5c）使 GridPage 增长约 2.5KB gzip
   // 2026-10-07：图表视图接线（chart 模式按钮 + lazy 渲染分支 + KANBAN_MODES fetch-all 集合）使 GridPage 增长约 1.8KB gzip
-  { name: 'GridPage（表页闭包）', file: gridFile, baseline: 38_793 },
+  // 2026-10-08：数据治理向导（GovernanceDialog：重复检测/合并/清洗三步向导）使 GridPage 增长约 1.9KB gzip
+  { name: 'GridPage（表页闭包）', file: gridFile, baseline: 40_751 },
   // 2026-10-07：图表视图新增 ChartView chunk（echarts/core 按需 + SVGRenderer + simple-statistics，懒加载不进主包）
   { name: 'ChartView（图表视图）', file: chartFile, baseline: 204_265 },
 ]
