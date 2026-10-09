@@ -35,9 +35,9 @@ from cndb.cli.restore import restore_backup
 EXAMPLE_BACKUPS = Path(__file__).parent.parent / "examples" / "backups"
 
 # 三版本真实备份文件名（仓库内置，CI 可用）
-BACKUP_0110 = "backup-0.1.10-v1-20260918T044022Z.tar.gz"
-BACKUP_021 = "backup-0.2.1-v1-20261009T044325Z.tar.gz"
-BACKUP_030 = "backup-0.3.0-v1-20261009T045326Z.tar.gz"
+BACKUP_0110 = "cndb-backup-0.1.10-v1-20260918T044022Z.tar.gz"
+BACKUP_021 = "cndb-backup-0.2.1-v1-20261009T044325Z.tar.gz"
+BACKUP_030 = "cndb-backup-0.3.0-v1-20261009T045326Z.tar.gz"
 
 # 典型用户矩阵：seed 时代的原始凭证（普通用户/安全管理员/系统管理员）
 TYPICAL_USERS = [

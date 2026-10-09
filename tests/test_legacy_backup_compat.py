@@ -1,7 +1,7 @@
 """examples 历史版本备份向前兼容回归测试.
 
 针对 examples/backups/ 下随仓库保存的历史版本备份归档（文件名
-``backup-<软件版本>-v<数据库格式版本>-<时间戳>.tar.gz``），逐个验证新版程序：
+``cndb-backup-<软件版本>-v<数据库格式版本>-<时间戳>.tar.gz``），逐个验证新版程序：
 
 1. inspect_backup 读取 manifest 元信息（协议版本、软件版本可解析）；
 2. restore_backup 恢复并把 schema 自动迁移到当前 alembic head；
@@ -9,7 +9,7 @@
 4. 在升级后的库上立即执行完整 seed 重新生成演示数据并保存落库
    （旧库升级后新程序可继续写入，seed 重新建表 + 注入全部演示数据）。
 
-新增历史备份文件无需修改测试：参数化自动纳入下一个 ``backup-*.tar.gz``。
+新增历史备份文件无需修改测试：参数化自动纳入下一个 ``cndb-backup-*.tar.gz``。
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from cndb.cli.restore import inspect_backup, restore_backup
 # 仓库根 examples/backups（本文件位于 tests/ 下，向上一级即仓库根）
 BACKUP_DIR = Path(__file__).resolve().parents[1] / "examples" / "backups"
 
-_ARCHIVES = sorted(BACKUP_DIR.glob("backup-*.tar.gz"))
+_ARCHIVES = sorted(BACKUP_DIR.glob("cndb-backup-*.tar.gz"))
 
 pytestmark = pytest.mark.skipif(not _ARCHIVES, reason="examples/backups 下无历史备份归档")
 
