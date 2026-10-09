@@ -8,7 +8,7 @@
  * 注：组件用 useParams 取 wid，必须包在 Routes 内渲染。
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
@@ -17,6 +17,17 @@ import TablesList from './TablesList'
 import { renderProviders } from '@/test/render-providers'
 import { server, mockUser } from '@/test/msw'
 import type { TableSummary } from '@/api'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，移动端用例在 beforeEach 中切换
+let responsiveState: ResponsiveState = {
+  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+  width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+  return { ...actual, useResponsive: () => responsiveState }
+})
 
 function LocationProbe() {
   const loc = useLocation()
@@ -359,5 +370,42 @@ describe('TablesList 其他入口', () => {
 
     // ApiImportDialog 为懒加载组件，弹窗标题出现即视为打开
     expect(await screen.findByText('API 抓取 · 自动建表', {}, { timeout: 3000 })).toBeInTheDocument()
+  })
+})
+
+describe('TablesList 移动端适配', () => {
+  beforeEach(() => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 375, height: 667,
+    }
+  })
+
+  it('移动端仅渲染核心 4 列，隐藏拖拽/描述/拥有者/成员数/字段/更新时间列', async () => {
+    setupWorkspace()
+    renderPage()
+
+    // 核心列保留（scroll.x 下表头可能重复渲染，用 findAllByText 断言存在即可）
+    expect((await screen.findAllByText('表名')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('我的访问').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('记录').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('操作').length).toBeGreaterThan(0)
+
+    // 次要列裁剪
+    expect(screen.queryByText('描述')).toBeNull()
+    expect(screen.queryByText('拥有者')).toBeNull()
+    expect(screen.queryByText('成员数')).toBeNull()
+    expect(screen.queryAllByText('字段').length).toBe(0)
+    expect(screen.queryByText('更新时间')).toBeNull()
+  })
+
+  it('移动端表格启用横向滚动兜底（scroll.x）', async () => {
+    setupWorkspace()
+    renderPage()
+
+    // AntD scroll.x 生效时 table 内容区出现 ant-table-content 横向滚动容器
+    expect(await screen.findByText('客户表')).toBeInTheDocument()
+    const content = document.querySelector('.ant-table-content')
+    expect(content).not.toBeNull()
   })
 })

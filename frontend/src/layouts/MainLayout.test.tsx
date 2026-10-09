@@ -3,13 +3,24 @@
  * 不得被无-wid 兜底重定向弹回第一个工作区（/admin 为无需 wid 的合法路径）。
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
 import { renderProviders } from '@/test/render-providers'
 import { mockUser } from '@/test/msw'
 import type { UserResponse } from '@/api'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，移动端用例在 beforeEach 中切换
+let responsiveState: ResponsiveState = {
+  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+  width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+  return { ...actual, useResponsive: () => responsiveState }
+})
 
 /** 管理台路由桩 —— 展示当前 pathname 供断言 */
 function AdminStub() {
@@ -181,5 +192,50 @@ describe('MainLayout 侧边栏工作区上下文', () => {
             expect(screen.getByTestId('sider-no-workspace')).toHaveTextContent('请先从顶部选择一个工作区')
         })
         expect(screen.queryByTestId('sider-tables')).toBeNull()
+    })
+})
+
+describe('MainLayout 移动端适配', () => {
+    beforeEach(() => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 375, height: 667,
+        }
+    })
+
+    it('移动端渲染汉堡入口，且不渲染常驻 Sider', async () => {
+        renderLayout(mockUser)
+
+        await waitFor(() => {
+            expect(screen.getByTestId('mobile-nav-btn')).toBeVisible()
+        })
+        // Sider 整体未渲染：DOM 中无 ant-layout-sider
+        expect(document.querySelector('.ant-layout-sider')).toBeNull()
+    })
+
+    it('点击汉堡打开抽屉导航，点击表项后自动收起', async () => {
+        renderLayout(mockUser)
+
+        fireEvent.click(screen.getByTestId('mobile-nav-btn'))
+        // 抽屉打开：出现共享的表导航内容（msw 默认返回 1 张表）
+        expect(await screen.findByText('数据表 (1)')).toBeVisible()
+
+        // 抽屉内点击「客户表」→ 触发导航并自动收起抽屉
+        fireEvent.click(await screen.findByText('客户表'))
+        await waitFor(() => {
+            expect(screen.queryByText('数据表 (1)')).toBeNull()
+        })
+    })
+
+    it('移动端隐藏品牌文字与管理台/帮助按钮文字，仅保留图标', async () => {
+        renderLayout(mockUser)
+
+        await waitFor(() => {
+            expect(screen.getByTestId('mobile-nav-btn')).toBeVisible()
+        })
+        // 品牌文字隐藏（icon 仍渲染）
+        expect(screen.queryByText('cndb')).toBeNull()
+        // 工作区下拉仅图标：按钮内无「测试工作区」文字
+        expect(screen.queryByRole('button', { name: /测试工作区/ })).toBeNull()
     })
 })
