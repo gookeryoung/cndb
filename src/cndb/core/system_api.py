@@ -102,7 +102,7 @@ def register_system_routes(app: FastAPI) -> None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
         # 下载文件名统一带软件版本与数据库格式版本（与 CLI 默认名同一格式契约）
-        filename = format_backup_filename(prefix="cndb-backup")
+        filename = format_backup_filename()
         return StreamingResponse(
             io.BytesIO(data),
             media_type="application/gzip",

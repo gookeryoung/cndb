@@ -47,7 +47,7 @@ def format_backup_filename(prefix: str = "backup", ext: str = ".tar.gz") -> str:
     示例：``backup-0.2.0-v1-20260928T032702Z.tar.gz``。
 
     Args:
-        prefix: 文件名前缀（CLI 默认名用 ``backup``，Web 下载名用 ``cndb-backup``）.
+        prefix: 文件名前缀，CLI 与 Web 下载统一用默认值 ``backup``.
         ext: 文件名后缀（归档 ``.tar.gz`` / 目录模式传空串）.
 
     Returns:
