@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import contextlib
-import datetime as dt
 import re
 import subprocess  # nosec B404 - GUI 需管理 uvicorn 服务子进程
 import sys
@@ -52,8 +51,9 @@ def _default_backup_dir() -> Path:
 
 def _make_backup_name() -> str:
     """生成归档默认文件名，命名约定与 backup.create_backup 一致."""
-    ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
-    return f"backup-{ts}.tar.gz"
+    from cndb.cli.backup import format_backup_filename
+
+    return format_backup_filename()
 
 
 def _detect_tag(line: str) -> str:
@@ -813,12 +813,10 @@ class BackupTab(_BaseTab):
         include_uploads = not self.no_uploads_var.get()
         # 输出路径留空时默认写入备份目录，便于「归档文件」列表直接识别
         if not out:
-            import datetime as dt
-
+            from cndb.cli.backup import format_backup_filename
             from cndb.core.config import settings
 
-            ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
-            out = str(settings.BACKUP_DIR / f"backup-{ts}.tar.gz")
+            out = str(settings.BACKUP_DIR / format_backup_filename())
 
         # 输出路径为目录时，追加时间戳文件名；否则直接使用给定路径
         out_path = Path(out).expanduser().resolve()
