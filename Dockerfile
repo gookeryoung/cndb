@@ -41,7 +41,7 @@ RUN uv python install 3.12
 
 # 预装项目 dev 依赖（仅复制依赖描述文件，利用 Docker 层缓存）
 WORKDIR /workspace
-COPY pyproject.toml tox.ini README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 
 # 同步依赖到 /opt/venv（CI 时直接复用）

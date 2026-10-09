@@ -71,3 +71,28 @@ def test_find_project_root_falls_back_when_no_pyproject() -> None:
         # 直接调私有函数，验证兜底返回值
         result = config_module._find_project_root()
         assert result is not None
+
+
+def test_database_url_accepts_cndb_prefixed_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CNDATABASE_URL 必须生效（compose/.env 模板统一用 CNDB_ 前缀）.
+
+    回归背景：Settings 早期只按字段名读 DATABASE_URL，compose 传入的
+    CNDATABASE_URL 被静默忽略 —— 容器正常启动但始终连 SQLite，无任何报错。
+    """
+    monkeypatch.setenv("CNDATABASE_URL", "postgresql+psycopg://u:p@db:5432/cndb")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert Settings().DATABASE_URL == "postgresql+psycopg://u:p@db:5432/cndb"
+
+
+def test_database_url_still_accepts_plain_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DATABASE_URL 保持可用，避免加alias 后破坏既有部署."""
+    monkeypatch.setenv("DATABASE_URL", "sqlite:////tmp/plain.db")
+    monkeypatch.delenv("CNDATABASE_URL", raising=False)
+    assert Settings().DATABASE_URL == "sqlite:////tmp/plain.db"
+
+
+def test_database_url_default_when_no_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """两个变量都未设置时回落到 SQLite 默认值."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("CNDATABASE_URL", raising=False)
+    assert Settings().DATABASE_URL.startswith("sqlite:///")

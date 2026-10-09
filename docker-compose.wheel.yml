@@ -14,7 +14,10 @@
 #   docker compose -f docker-compose.wheel.yml exec app cndb seed
 #
 # PostgreSQL（可选 profile）：
-#   docker compose -f docker-compose.wheel.yml --profile pg up -d --build
+#   profile 只拉起 postgres 容器，需同时指定 CNDATABASE_URL 指向它，
+#   否则 app 仍连 SQLite（postgres 容器空转）：
+#   CNDATABASE_URL=postgresql+psycopg://cndb:cndb_pass@postgres:5432/cndb \
+#     docker compose -f docker-compose.wheel.yml --profile pg up -d --build
 #   docker compose -f docker-compose.wheel.yml exec app cndb seed
 # ────────────────────────────────────────────────────────────────────
 

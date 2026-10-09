@@ -10,7 +10,10 @@
 #   docker compose exec app uv run cndb seed   # 可选，注入演示数据
 #
 # PostgreSQL:
-#   docker compose --profile pg up -d --build
+#   --profile pg 只负责把postgres 容器拉起来，app 仍读 CNDATABASE_URL，
+#   必须同时显式指向 pg，否则会静默继续用 SQLite（pg 容器空转）：
+#   CNDATABASE_URL=postgresql+psycopg://cndb:cndb_pass@postgres:5432/cndb \
+#     docker compose --profile pg up -d --build
 #   docker compose exec app uv run cndb seed
 # ────────────────────────────────────────────────────────────────────
 
@@ -27,8 +30,8 @@ services:
       # 只设 DATABASE_URL 时 UPLOAD_DIR 等仍派生自 ~/.cndb，
       # 容器重建后用户上传的附件会全部丢失。
       - CNDB_DATA_DIR=/data
+      # Settings 同时接受 CNDATABASE_URL / DATABASE_URL（见 core/config.py）
       - CNDATABASE_URL=${CNDATABASE_URL:-sqlite:////data/data/cndb.db}
-      - CNDATABASE_URL_PG=${CNDATABASE_URL_PG:-postgresql+psycopg://cndb:cndb_pass@postgres:5432/cndb}
     volumes:
       - cndb-data:/data
     restart: unless-stopped
@@ -43,7 +46,8 @@ services:
 
   web:
     build:
-      context: ..
+      # 必须是仓库根：web target 需要 frontend/ 与 deploy/nginx.conf
+      context: .
       dockerfile: deploy/Dockerfile
       target: web
     image: cndb2-web:latest

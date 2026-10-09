@@ -13,11 +13,14 @@
 FROM docker.m.daocloud.io/node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm install --registry=https://registry.npmmirror.com
+# 与仓库一致：前端统一用 pnpm（唯一锁文件 pnpm-lock.yaml，无 package-lock.json）
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+# corepack 读取 package.json 的 packageManager 字段锁定 pnpm@12.4.2，
+# 与本地/CI 版本一致；--frozen-lockfile 保证构建可复现
+RUN corepack enable && pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com
 
 COPY frontend/ ./
-RUN npm run build
+RUN pnpm build
 
 
 # ═══════════════════════════════════════════════════════════════════
