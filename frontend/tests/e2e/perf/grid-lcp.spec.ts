@@ -3,12 +3,14 @@
  * 指标：Largest Contentful Paint（document 生命周期口径，SPA 内工作区/表页跳转
  * 不重置，因此读数覆盖「根路径 → 表页异步数据渲染完成」全过程）。
  *
- * 阈值 3000ms：本地单机（CI 同款 webServer 架构，后端 + 浏览器同机）基线远低于此；
- * CI e2e job 当前为 continue-on-error 观察期且 8 worker 并行抢 CPU，本用例先随
- * 观察期收集波动数据，待并行度/基线稳定后再把阈值固化为硬门禁。
+ * 阈值 3000ms：本地单机（CI 同款 webServer 架构，后端 + 浏览器同机）基线远低于此。
+ *
+ * 运行方式：带 @perf 标签，CI 中从并行分片剔除、在 shard 1 内 --workers=1 串行
+ * 独占运行——并行 worker 抢 CPU 时 LCP 读数反映的是争抢而非页面性能，无意义。
+ * 观察期结论经 continue-on-error 收集，待基线稳定后再把阈值固化为硬门禁。
  *
  * 手动运行（独占机器，数据最可信）：
- *   pnpm e2e --project=chromium-authed tests/e2e/perf
+ *   pnpm e2e --project=chromium-authed tests/e2e/perf --workers=1
  */
 import { test, expect } from "../fixtures/auth";
 import type { Page } from "@playwright/test";
@@ -35,51 +37,55 @@ async function gotoGrid(page: Page) {
 }
 
 test.describe("性能冒烟：进表页 LCP", () => {
-  test("LCP 低于 3000ms", async ({ page }) => {
-    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
+  test(
+    "LCP 低于 3000ms",
+    { tag: "@perf" },
+    async ({ page }) => {
+      test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
 
-    await gotoGrid(page);
+      await gotoGrid(page);
 
-    // 双 rAF + 200ms：等异步数据驱动的最大元素绘制落定，再从 buffered 时间线读最后一条 LCP
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 200))),
-        ),
-    );
+      // 双 rAF + 200ms：等异步数据驱动的最大元素绘制落定，再从 buffered 时间线读最后一条 LCP
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 200))),
+          ),
+      );
 
-    const metrics = await page.evaluate(() => {
-      return new Promise<{ lcp: number; detail: string }>((resolve) => {
-        let lcp = 0;
-        const observer = new PerformanceObserver((list) => {
-          for (const entry of list.getEntries()) {
-            if (entry.startTime > lcp) lcp = entry.startTime;
-          }
-        });
-        observer.observe({ type: "largest-contentful-paint", buffered: true });
-
-        setTimeout(() => {
-          observer.disconnect();
-          const [nav] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
-          const fcpEntry = performance
-            .getEntriesByName("first-contentful-paint")
-            .at(-1);
-          resolve({
-            lcp,
-            detail: JSON.stringify({
-              ttfb: Math.round(nav.responseStart),
-              fcp: fcpEntry ? Math.round(fcpEntry.startTime) : null,
-              domContentLoaded: Math.round(nav.domContentLoadedEventEnd),
-              load: Math.round(nav.loadEventEnd),
-            }),
+      const metrics = await page.evaluate(() => {
+        return new Promise<{ lcp: number; detail: string }>((resolve) => {
+          let lcp = 0;
+          const observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              if (entry.startTime > lcp) lcp = entry.startTime;
+            }
           });
-        }, 200);
-      });
-    });
+          observer.observe({ type: "largest-contentful-paint", buffered: true });
 
-    // 失败时把 TTFB/FCP/DCL/load 一并带出，便于区分是后端慢还是前端渲染慢
-    expect(metrics.lcp, `LCP=${Math.round(metrics.lcp)}ms，导航计时 ${metrics.detail}`).toBeLessThan(
-      LCP_LIMIT_MS,
-    );
-  });
+          setTimeout(() => {
+            observer.disconnect();
+            const [nav] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+            const fcpEntry = performance
+              .getEntriesByName("first-contentful-paint")
+              .at(-1);
+            resolve({
+              lcp,
+              detail: JSON.stringify({
+                ttfb: Math.round(nav.responseStart),
+                fcp: fcpEntry ? Math.round(fcpEntry.startTime) : null,
+                domContentLoaded: Math.round(nav.domContentLoadedEventEnd),
+                load: Math.round(nav.loadEventEnd),
+              }),
+            });
+          }, 200);
+        });
+      });
+
+      // 失败时把 TTFB/FCP/DCL/load 一并带出，便于区分是后端慢还是前端渲染慢
+      expect(metrics.lcp, `LCP=${Math.round(metrics.lcp)}ms，导航计时 ${metrics.detail}`).toBeLessThan(
+        LCP_LIMIT_MS,
+      );
+    },
+  );
 });
