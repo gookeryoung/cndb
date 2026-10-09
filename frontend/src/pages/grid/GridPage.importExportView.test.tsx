@@ -6,13 +6,18 @@
  *      无激活视图时 viewId 为 null，导出全表数据.
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest'
 import { waitFor } from '@testing-library/react'
 import { fireEvent } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import { renderProviders } from '@/test/render-providers'
+import { preloadGridViews } from '@/test/preloadGridViews'
 import { useTableSettingsStore } from '@/store/tableSettings'
 import GridPage from './GridPage'
+
+beforeAll(async () => {
+    await preloadGridViews()
+})
 
 const FIELDS = [{ id: 1, name: '姓名', field_type: 'text', order: 1, required: true }] as any
 

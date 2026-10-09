@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Generator
 from typing import Any
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from cndb.core.config import settings
@@ -70,6 +71,60 @@ def register_sqlite_pragmas(target_engine: Any) -> None:
 
 register_sqlite_pragmas(engine)
 
+# 慢查询阈值（秒）：超过则记 warning 日志，便于单机排障
+SLOW_QUERY_SECONDS = 0.5
+
+
+@event.listens_for(engine, "before_cursor_execute")
+def _before_cursor_execute(
+    _conn: Any, _cursor: Any, _statement: str, _parameters: Any, context: Any, _executemany: Any
+) -> None:
+    """记录 SQL 执行起始时间，供慢查询检测."""
+    context._cndb_query_start = time.perf_counter()  # type: ignore[attr-defined]
+
+
+@event.listens_for(engine, "after_cursor_execute")
+def _after_cursor_execute(
+    _conn: Any, _cursor: Any, statement: str, _parameters: Any, context: Any, _executemany: Any
+) -> None:
+    """SQL 执行结束后检测慢查询，超过阈值记 warning."""
+    start = getattr(context, "_cndb_query_start", None)
+    if start is None:
+        return
+    elapsed = time.perf_counter() - start
+    if elapsed >= SLOW_QUERY_SECONDS:
+        logger.warning(
+            "慢查询 %.3fs: %s",
+            elapsed,
+            " ".join(statement.split())[:200],
+        )
+
+
+def db_readiness() -> dict[str, Any]:
+    """就绪探测快照：DB ping + 迁移版本.
+
+    Returns:
+        {"ok": bool, "db": bool, "migration_current": str | None, "error": str}
+        供 /api/health/ready 返回；DB 不可达时 ok=False。
+    """
+    snapshot: dict[str, Any] = {"db": False, "migration_current": None, "error": ""}
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        snapshot["db"] = True
+    except Exception as exc:
+        snapshot["error"] = str(exc)
+        return snapshot
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT version_num FROM alembic_version")).first()
+        snapshot["migration_current"] = row[0] if row else None
+    except Exception:
+        # alembic_version 缺失属未迁移状态，DB 本身可达，不算失败
+        logger.debug("读取 alembic_version 失败（可能未迁移）", exc_info=True)
+    return snapshot
+
+
 # 会话工厂：autoflush=False 避免隐式 flush 带来的性能问题
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -77,10 +132,15 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def get_db() -> Generator[Session]:
     """FastAPI 依赖注入：为每个请求提供独立的数据库会话.
 
-    使用 generator + yield + finally 保证请求结束后自动关闭会话。
+    使用 generator + yield + finally 保证请求结束后自动关闭会话；
+    请求路径抛异常时先显式 rollback 再关闭，不依赖 close 的隐式回滚语义，
+    避免半提交状态污染连接池中的连接。
     """
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

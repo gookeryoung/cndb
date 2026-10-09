@@ -3,7 +3,7 @@
 覆盖计划验收标准：
 - AC-1 无认证 me 返回内置本地用户（幂等、字段正确、旧 token 被忽略）
 - AC-2 auth-mode 端点双模式返回
-- AC-3 模式内 403 矩阵（register/login/share/forms/wechat）
+- AC-3 模式内 403 矩阵（register/login/share/forms）
 - AC-6 LOCAL_MODE=False 回归（jwt 模式、无头 me 401）
 - _get_local_user 幂等/字段/IntegrityError 回退
 - CLI serve host 推导与回环拒绝、service enable 回环校验
@@ -74,11 +74,6 @@ class TestLocalModeAPI:
     def test_public_form_submit_forbidden(self, local_mode, client):
         r = client.post("/api/v1/public/forms/any-slug", json={})
         assert r.status_code == 403
-
-    def test_wechat_login_forbidden(self, local_mode, client):
-        r = client.post("/api/v1/wechat-auth/login", json={"code": "any"})
-        assert r.status_code == 403
-        assert "单机模式已禁用微信登录" in r.json()["detail"]
 
     def test_business_smoke_create_workspace(self, local_mode, client):
         """业务链冒烟：无认证创建工作区归属本地用户."""

@@ -5,12 +5,17 @@
  *      切表元数据未到（isLoading）时按该参考渲染，冷启动无参考退化为 6。
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest'
 import { waitFor } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import { renderProviders } from '@/test/render-providers'
+import { preloadGridViews } from '@/test/preloadGridViews'
 import { useTableSettingsStore } from '@/store'
 import GridPage from './GridPage'
+
+beforeAll(async () => {
+    await preloadGridViews()
+})
 
 /** hoisted 持有可变 useTable 返回值，用例内按场景改写后 rerender（避免 TDZ） */
 const tableRef = vi.hoisted(() => ({

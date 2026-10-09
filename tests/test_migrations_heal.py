@@ -34,7 +34,6 @@ from sqlalchemy.orm import Session
 import cndb.plugins.accounts.models
 import cndb.plugins.reports.models
 import cndb.plugins.tables.models
-import cndb.plugins.wechat_auth.models
 import cndb.plugins.workspaces.models  # noqa: F401
 from cndb.core import database as db_mod
 from cndb.core import migrations as mig_mod
