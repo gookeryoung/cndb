@@ -149,11 +149,18 @@ jobs:
       - name: Install Playwright Chromium
         run: cd frontend && npx playwright install --with-deps chromium
 
-      - name: Run E2E (webServer 自动 seed + 起后端 :8000)
+      - name: Run E2E (webServer 自动 seed + 起后端 :8000，不含 @perf)
         env:
           CI: "true"
           E2E_SHARD_INDEX: ${{ matrix.shard }}
-        run: cd frontend && pnpm e2e -- --shard=${{ matrix.shard }}/4
+        run: cd frontend && pnpm e2e -- --shard=${{ matrix.shard }}/4 --grep-invert="@perf"
+
+      # @perf 用例必须串行独占：并行 worker 抢 CPU 时 LCP 读数反映争抢而非页面性能
+      - name: Run perf 冒烟（shard 1 内串行独占，观察期）
+        if: matrix.shard == 1
+        env:
+          CI: "true"
+        run: cd frontend && pnpm e2e --project=chromium-authed tests/e2e/perf --workers=1
 
       - name: Upload Playwright report on failure
         if: failure()
