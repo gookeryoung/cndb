@@ -34,9 +34,20 @@
 - [x] 语义：生成 `<prefix>-<软件版本>-v<数据库格式版本>-<UTC时间戳><ext>`；软件版本取 `cndb.__version__`，数据库格式版本取 `MANIFEST_VERSION`（备份协议/数据库格式版本，alembic revision hash 不适合入文件名）。
 - [x] 调用方：CLI 默认名（`prefix="backup"`）、Web 管理台下载名（`prefix="cndb-backup"`），两处共用同一格式契约。
 
+### cndb.cli.restore.classify_table_groups
+
+- [x] 签名：`def classify_table_groups(tables: list[str]) -> dict[str, list[str]]`。
+- [x] 语义：物理表名按前缀分为用户表与系统表 —— 以 `table_`（数据表）/ `trash_`（行回收站影子表）/ `link_`（关联字段关联表）开头者为用户表，其余（`accounts_*`、`workspaces_*`、`tables_*` 元数据、`reports_*`、`wechat_*`、`alembic_version` 等）为系统表；返回 `{"system": [...], "user": [...]}`，两键恒存在，组内保持入参顺序。
+- [x] 调用方：`cndb.core.system_api` 的 `/restore/inspect` 端点，写入响应 `table_groups` 字段供前端分组展示。
+
+### cndb.core.system_api 的 /restore/inspect 响应
+
+- [x] 在原有 manifest 字段基础上追加 `table_groups: {"system": [...], "user": [...]}`（不改变 manifest 本体与协议版本）。
+- [x] 前端 `BackupManifest` 类型同步新增可选 `table_groups`；AdminPanel 恢复预览「表清单」按系统表/用户表分两组展示（各带数量），用户表标签用蓝色区分；响应缺失该字段时回退为全部归入系统表。
+
 ## 数据模型
 
-- manifest 结构不变：`database` 键仍为 DatabaseInfo 序列化结果（描述数据库备份信息，与归档目录名解耦）。
+- manifest 结构不变：`database` 键仍为 DatabaseInfo 序列化结果（描述数据库备份信息，与归档目录名解耦）；`table_groups` 为 inspect 端点附加字段，不写入 manifest.json。
 
 ## 算法与流程
 

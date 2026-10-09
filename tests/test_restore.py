@@ -24,9 +24,32 @@ from cndb.cli.restore import (
     _migrate_after_restore,
     _restore_sqlite_native,
     _restore_uploads,
+    classify_table_groups,
     inspect_backup,
     restore_backup,
 )
+
+
+def test_classify_table_groups_splits_system_and_user() -> None:
+    """用户表按 table_/trash_/link_ 前缀归组，其余归系统表，组内保持入参顺序."""
+    tables = [
+        "accounts_user",
+        "table_ab12cd34ef56",
+        "workspaces_workspace",
+        "trash_ab12cd34ef56",
+        "alembic_version",
+        "link_11aa22bb33cc",
+    ]
+    groups = classify_table_groups(tables)
+
+    assert groups["system"] == ["accounts_user", "workspaces_workspace", "alembic_version"]
+    assert groups["user"] == ["table_ab12cd34ef56", "trash_ab12cd34ef56", "link_11aa22bb33cc"]
+
+
+def test_classify_table_groups_empty() -> None:
+    """空表清单返回两个空组，两键恒存在."""
+    assert classify_table_groups([]) == {"system": [], "user": []}
+
 
 # ── 辅助 ──────────────────────────────────────────────
 

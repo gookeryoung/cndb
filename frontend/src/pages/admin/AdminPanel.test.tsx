@@ -35,14 +35,15 @@ const MANIFEST: BackupManifest = {
     path: '/data/cndb.db',
     db_type: 'sqlite',
     backup_mode: 'native',
-    tables: ['workspaces', 'tables'],
-    row_counts: { workspaces: 3, tables: 5 },
+    tables: ['workspaces', 'table_ab12cd34ef56'],
+    row_counts: { workspaces: 3, table_ab12cd34ef56: 5 },
     schema_version: '6399e5f0f61f',
     fallback_mode: 'sqlalchemy',
   },
   uploads: { included: true, file_count: 2, total_size: 2048 },
   schema_known: true,
   backup_ahead: false,
+  table_groups: { system: ['workspaces'], user: ['table_ab12cd34ef56'] },
 }
 
 function renderPanel(user = mockUser) {
@@ -121,8 +122,11 @@ describe('AdminPanel 系统管理台', () => {
     expect(await screen.findByText(/已选择备份文件/)).toBeInTheDocument()
     expect(inspectSpy).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('备份版本')).toBeInTheDocument()
-    // 表清单标签渲染为 "表名 (行数)"
+    // 表清单按系统表/用户表分组，标签渲染为 "表名 (行数)"
+    expect(screen.getByText('系统表（1）')).toBeInTheDocument()
+    expect(screen.getByText('用户表（1）')).toBeInTheDocument()
     expect(screen.getByText('workspaces (3)')).toBeInTheDocument()
+    expect(screen.getByText('table_ab12cd34ef56 (5)')).toBeInTheDocument()
     // schema 元信息与恢复模式选择器
     expect(screen.getByText('数据结构版本')).toBeInTheDocument()
     expect(screen.getByText('有')).toBeInTheDocument()

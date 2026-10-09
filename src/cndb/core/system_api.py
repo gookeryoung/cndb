@@ -17,7 +17,13 @@ from fastapi import Depends, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from cndb.cli.backup import BackupError, create_backup, format_backup_filename
-from cndb.cli.restore import RestoreError, _schema_revision_known, inspect_backup, restore_backup
+from cndb.cli.restore import (
+    RestoreError,
+    _schema_revision_known,
+    classify_table_groups,
+    inspect_backup,
+    restore_backup,
+)
 from cndb.core.config import DATA_DIR
 from cndb.plugins.accounts.models import User, UserRole
 
@@ -137,6 +143,8 @@ def register_system_routes(app: FastAPI) -> None:
         manifest["backup_ahead"] = bool(
             db.get("backup_mode", "") == "native" and schema_version and not manifest["schema_known"]
         )
+        # 表清单按「系统表 / 用户表」分类，供前端分组展示（用户表为 table_/trash_/link_ 前缀）
+        manifest["table_groups"] = classify_table_groups(list(db.get("tables", []) or []))
         return manifest
 
     @router.post("/restore")
