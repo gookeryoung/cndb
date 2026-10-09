@@ -6,12 +6,17 @@
  *      localStorage mode 均不得抢跑默认视图。
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest'
 import { waitFor } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import { renderProviders } from '@/test/render-providers'
+import { preloadGridViews } from '@/test/preloadGridViews'
 import { useTableSettingsStore } from '@/store/tableSettings'
 import GridPage from './GridPage'
+
+beforeAll(async () => {
+    await preloadGridViews()
+})
 
 const FIELDS = [{ id: 1, name: '姓名', field_type: 'text', order: 1, required: true }] as any
 

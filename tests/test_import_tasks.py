@@ -347,6 +347,48 @@ def test_execute_import_task_status_conflict_fallback(db, monkeypatch):
     db.commit()
 
 
+def test_analyze_import_task_duplicate_dispatch(db, auth_headers, client):
+    """重复触发 analyze（任务已在分析/确认态）应静默忽略，不崩线程."""
+    from cndb.plugins.tables.services.importing.import_tasks import analyze_import_task, create_import_task
+
+    _wid, tid = _create_workspace_and_table(client, auth_headers, db)
+    task = create_import_task(
+        db,
+        table_id=tid,
+        user_id=None,
+        filename="dup.json",
+        fmt="json",
+        content='[{"姓名": "x"}]',
+        status="pending_validation",  # 已处于分析态
+    )
+    # 不应抛异常，状态保持不变
+    analyze_import_task(db, task.id)
+    db.refresh(task)
+    assert task.status == "pending_validation"
+    assert task.validation_report == ""
+
+
+def test_execute_import_task_duplicate_dispatch(db, auth_headers, client):
+    """重复触发 execute（任务已在执行态）应静默忽略，不崩线程."""
+    from cndb.plugins.tables.services.importing.import_tasks import create_import_task, execute_import_task
+
+    _wid, tid = _create_workspace_and_table(client, auth_headers, db)
+    task = create_import_task(
+        db,
+        table_id=tid,
+        user_id=None,
+        filename="dup2.json",
+        fmt="json",
+        content='[{"姓名": "x"}]',
+        status="running",  # 已处于执行态
+    )
+    # 不应抛异常，状态保持不变，未导入任何行
+    execute_import_task(db, task.id)
+    db.refresh(task)
+    assert task.status == "running"
+    assert task.imported_rows == 0
+
+
 # ── 多编码自动检测 + XLSX 导入 e2e ──────────────────────────
 
 

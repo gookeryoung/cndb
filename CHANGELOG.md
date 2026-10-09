@@ -4,12 +4,23 @@
 
 ## [未发布]
 
+### 新增
+
+- 统一错误契约：core/errors.py 定义 CndbError 族（400/403/404/409），全局 handler 映射为统一 `{"detail","code"}` 响应体，未捕获异常返回统一 500
+- 健康检查拆分：`/api/health`（liveness，进程存活）与 `/api/health/ready`（readiness，DB ping + 迁移版本，DB 不可达返回 503）
+- 慢查询日志：SQLAlchemy 引擎级监听，超过 0.5s 的 SQL 记 warning
+- 外部导入源（api_fetch）：幂等 GET 有限重试 + 指数退避
+- 导入任务幂等守卫：analyze/execute 重复派发静默忽略，不崩后台线程
+- 启动迁移失败给出可操作指引（备份恢复/重建），不再裸 traceback
+
 ### 移除
 
+- wechat_auth 插件（微信小程序登录）：路由/模型/客户端/配置项/依赖 `requests` 及配套测试整体移除；历史迁移保留，存量库中的 wechat_accounts 孤儿表不影响升级
 - 前端死代码：未使用的 `userApi` 封装、`USER_ROLE_LABEL` 常量与 hooks barrel 重导出（ruff/knip/eslint 证据驱动）
 
 ### 变更
 
+- `get_db` 请求路径异常时显式 rollback，避免半提交状态污染连接池
 - README 修正项目结构树、CLI 命令、e2e 包管理器与特性清单等失实内容
 
 ## [0.2.7] — 2026-10-01

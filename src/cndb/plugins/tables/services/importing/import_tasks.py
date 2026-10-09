@@ -79,7 +79,12 @@ def analyze_import_task(db_session: Session, task_id: int) -> None:
         logger.error("ImportTask %s 不存在", task_id)
         return
 
-    _transition_status(task, "pending_validation")
+    try:
+        _transition_status(task, "pending_validation")
+    except ValueError:
+        # 幂等守卫：任务已在分析/确认态（重复派发）时静默忽略，不崩线程
+        logger.warning("ImportTask %s 重复触发 analyze（当前状态 %s），忽略", task_id, task.status)
+        return
     task.progress = 5
     db_session.commit()
 
@@ -194,7 +199,12 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
         logger.error("ImportTask %s 不存在", task_id)
         return
 
-    _transition_status(task, "running")
+    try:
+        _transition_status(task, "running")
+    except ValueError:
+        # 幂等守卫：任务已在执行/完成态（重复派发）时静默忽略，不崩线程
+        logger.warning("ImportTask %s 重复触发 execute（当前状态 %s），忽略", task_id, task.status)
+        return
     task.progress = 5
     db_session.commit()
 

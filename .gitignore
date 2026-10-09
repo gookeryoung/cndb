@@ -62,8 +62,8 @@ examples/datasets/**/*-示例报告.*
 file:*
 ?cache=*
 
-.trae/docs/
-.trae/req/
+# 本地协作产物一律不入库
+/.trae/
 
 # 工具缓存
 .eslintcache

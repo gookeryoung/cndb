@@ -149,19 +149,13 @@ class Settings(BaseSettings):
 
     # 单机模式（仅本地单机使用）：免登录自动映射内置本地用户；
     # 强制仅回环绑定（127.0.0.1/localhost/::1，各启动入口校验）；
-    # 模式内禁用注册/登录/公开分享/微信登录。
+    # 模式内禁用注册/登录/公开分享。
     # 与 AUTH_ENABLED 无关：LOCAL_MODE 下认证依赖直接返回本地用户。
     LOCAL_MODE: bool = Field(
         default=False,
         validation_alias=AliasChoices("LOCAL_MODE", "CNDB_LOCAL_MODE"),
         description="单机模式开关；关闭时行为与多用户网络模式完全一致",
     )
-
-    # ── 微信小程序认证 ─────────────────────────────────────
-    WECHAT_AUTH_ENABLED: bool = False
-    WECHAT_APPID: str = ""
-    WECHAT_SECRET: str = ""
-    WECHAT_LOGIN_AUTO_REGISTER: bool = True
 
     # ── 插件自动发现目录 ─────────────────────────────────────
     PLUGINS_AUTO_DISCOVER: bool = True
