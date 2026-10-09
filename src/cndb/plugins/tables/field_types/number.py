@@ -123,6 +123,18 @@ class BooleanFieldType(FieldType):
         raise ValueError(f"无法将 {value!r} 转为布尔值")
 
     @override
+    def parse_query_value(self, value: Any, _config: dict[str, Any]) -> Any:
+        """过滤值归一为真实布尔（列表逐项归一）.
+
+        布尔物理列存 SQLite 1/0，过滤值若是字符串（种子视图 '是'、历史过滤器的
+        'true' 等）直接与列比较永远不命中 —— 与写入侧 validate_value 共用同一
+        值域，保证"勾选后行立即出现在过滤视图中"。
+        """
+        if isinstance(value, (list, tuple)):
+            return [self.validate_value(v, _config) for v in value]
+        return self.validate_value(value, _config)
+
+    @override
     def default_value(self, _config: dict[str, Any]) -> bool:
         return False
 

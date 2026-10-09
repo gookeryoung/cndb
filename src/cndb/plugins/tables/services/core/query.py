@@ -146,6 +146,12 @@ def _build_condition(
 
     op_lower = op.lower()
 
+    # 过滤值类型归一钩子：布尔字段把 '是'/'1'/'true' 等字符串值域归一为真实布尔，
+    # 避免字符串直接与 1/0 物理列比较永远不命中（其余类型 parse_query_value 为恒等）
+    _ft = default_registry.get(f.field_type)
+    if _ft is not None:
+        value = _ft.parse_query_value(value, f.config)
+
     # datetime 字段 + 纯日期值 → 把比较操作符转为整天范围，避免时间部分干扰
     # （SQLite DATETIME 类型存的是带时间的字符串，'2026-09-28 14:30:00'
     #   直接和 '2026-09-28' 比较会不匹配）
