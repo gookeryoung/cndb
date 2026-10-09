@@ -803,3 +803,158 @@ class TestDatetimePureDateFilter:
         result = conn.execute(f"SELECT id FROM test_dt WHERE {sql}").fetchall()
         ids = sorted(r[0] for r in result)
         assert ids == [1], "date 字段应正常精确匹配"
+
+
+# ── boolean 过滤值域归一测试 ──────────────────────────────
+
+
+@pytest.fixture
+def bool_sa_table():
+    md = MetaData()
+    from sqlalchemy import Boolean
+
+    return Table(
+        "test_bool",
+        md,
+        Column("id", Integer, primary_key=True),
+        Column("field_flag", Boolean),
+    )
+
+
+@pytest.fixture
+def bool_table():
+    """带 boolean 字段的 DataTable-like 对象."""
+    from types import SimpleNamespace
+
+    fields = [DataField(id=20, name="是否完成", field_type="boolean", db_column_name="field_flag", table_id=1)]
+    return SimpleNamespace(id=1, fields=fields)
+
+
+class TestBooleanQueryValue:
+    """布尔字段过滤值归一 —— '是'/'1'/'true' 等字符串值域必须命中已勾选行.
+
+    背景：布尔物理列存 SQLite 1/0，种子视图/历史过滤器的字符串值（如 是否在职='是'）
+    直接与列比较永远不命中，导致用户勾选复选框后行不出现在过滤视图中。
+    """
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("是", True),
+            ("true", True),
+            ("TRUE", True),
+            ("1", True),
+            ("真", True),
+            ("√", True),
+            ("y", True),
+            ("否", False),
+            ("false", False),
+            ("0", False),
+            ("", False),
+            (True, True),
+            (False, False),
+            (1, True),
+            (0, False),
+            (None, None),
+        ],
+    )
+    def test_parse_query_value_variants(self, raw, expected):
+        from cndb.plugins.tables.field_types.number import BooleanFieldType
+
+        assert BooleanFieldType().parse_query_value(raw, {}) is expected
+
+    def test_parse_query_value_list(self):
+        """in 操作符的列表值逐项归一."""
+        from cndb.plugins.tables.field_types.number import BooleanFieldType
+
+        assert BooleanFieldType().parse_query_value(["是", "false", 1], {}) == [True, False, True]
+
+    def test_string_true_values_hit_checked_rows(self, bool_sa_table, bool_table):
+        """字符串真值过滤（'是'/'true'/'真'）应命中已勾选行（真实 SQLite 执行）."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test_bool (id INTEGER PRIMARY KEY, field_flag BOOLEAN)")
+        conn.executemany(
+            "INSERT INTO test_bool VALUES (?, ?)",
+            [(1, 1), (2, 0)],
+        )
+        conn.commit()
+
+        for raw in ("是", "true", "真", "1", True, 1):
+            clause = compile_filters(
+                bool_table,
+                bool_sa_table,
+                [{"field_name": "是否完成", "op": "=", "value": raw}],
+            )
+            sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+            result = conn.execute(f"SELECT id FROM test_bool WHERE {sql}").fetchall()
+            ids = sorted(r[0] for r in result)
+            assert ids == [1], f"值 {raw!r} 过滤应命中已勾选行，实际 {ids}"
+
+    def test_string_false_values_hit_unchecked_rows(self, bool_sa_table, bool_table):
+        """字符串假值过滤（'否'/'false'/'0'）应命中未勾选行（真实 SQLite 执行）."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test_bool (id INTEGER PRIMARY KEY, field_flag BOOLEAN)")
+        conn.executemany(
+            "INSERT INTO test_bool VALUES (?, ?)",
+            [(1, 1), (2, 0)],
+        )
+        conn.commit()
+
+        for raw in ("否", "false", "0", False, 0):
+            clause = compile_filters(
+                bool_table,
+                bool_sa_table,
+                [{"field_name": "是否完成", "op": "=", "value": raw}],
+            )
+            sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+            result = conn.execute(f"SELECT id FROM test_bool WHERE {sql}").fetchall()
+            ids = sorted(r[0] for r in result)
+            assert ids == [2], f"值 {raw!r} 过滤应命中未勾选行，实际 {ids}"
+
+    def test_neq_string_true_excludes_checked_rows(self, bool_sa_table, bool_table):
+        """'!=' '是' 应排除已勾选行（真实 SQLite 执行）."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test_bool (id INTEGER PRIMARY KEY, field_flag BOOLEAN)")
+        conn.executemany(
+            "INSERT INTO test_bool VALUES (?, ?)",
+            [(1, 1), (2, 0)],
+        )
+        conn.commit()
+
+        clause = compile_filters(
+            bool_table,
+            bool_sa_table,
+            [{"field_name": "是否完成", "op": "!=", "value": "是"}],
+        )
+        sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+        result = conn.execute(f"SELECT id FROM test_bool WHERE {sql}").fetchall()
+        ids = sorted(r[0] for r in result)
+        assert ids == [2], f"!= '是' 应排除已勾选行，实际 {ids}"
+
+    def test_in_operator_with_string_values(self, bool_sa_table, bool_table):
+        """in 操作符的字符串值逐项归一（真实 SQLite 执行）."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test_bool (id INTEGER PRIMARY KEY, field_flag BOOLEAN)")
+        conn.executemany(
+            "INSERT INTO test_bool VALUES (?, ?)",
+            [(1, 1), (2, 0)],
+        )
+        conn.commit()
+
+        clause = compile_filters(
+            bool_table,
+            bool_sa_table,
+            [{"field_name": "是否完成", "op": "in", "value": ["是", "true"]}],
+        )
+        sql = str(clause.compile(compile_kwargs={"literal_binds": True}))
+        result = conn.execute(f"SELECT id FROM test_bool WHERE {sql}").fetchall()
+        ids = sorted(r[0] for r in result)
+        assert ids == [1], f"in ['是','true'] 应命中已勾选行，实际 {ids}"
