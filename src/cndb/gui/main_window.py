@@ -76,8 +76,8 @@ def _backup_mtime(p: Path) -> float:
 def _scan_backup_files() -> list[Path]:
     """扫描默认备份目录，返回按修改时间倒序排列的备份文件.
 
-    识别 ``.tar.gz`` / ``.tgz`` 归档文件与 ``backup-`` 前缀目录（目录模式备份），
-    最新（修改时间最大）的排在列表首位。
+    识别 ``.tar.gz`` / ``.tgz`` 归档文件与 ``cndb-backup-`` 前缀目录（目录模式备份，
+    兼容历史 ``backup-`` 前缀），最新（修改时间最大）的排在列表首位。
     """
     from cndb.core.config import settings
 
@@ -87,7 +87,7 @@ def _scan_backup_files() -> list[Path]:
         for p in backup_dir.iterdir():
             name = p.name.lower()
             is_archive = p.is_file() and (name.endswith(".tar.gz") or name.endswith(".tgz"))
-            is_backup_dir = p.is_dir() and p.name.startswith("backup-")
+            is_backup_dir = p.is_dir() and (p.name.startswith("cndb-backup-") or p.name.startswith("backup-"))
             if is_archive or is_backup_dir:
                 backups.append(p)
     backups.sort(key=_backup_mtime, reverse=True)

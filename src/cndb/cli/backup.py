@@ -12,7 +12,7 @@
 
 归档结构::
 
-    backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz
+    cndb-backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz
     ├── manifest.json          # 备份元信息（版本、时间、表清单、文件统计、schema 版本）
     ├── data/                  # 数据库备份（与用户数据目录 ~/.cndb/data 同名对应）
     │   ├── cndb.db            # native 模式下的原始文件（SQLite）
@@ -40,14 +40,14 @@ __all__ = ["BackupError", "BackupManifest", "create_backup", "format_backup_file
 MANIFEST_VERSION = "1"  # 当前 manifest 协议版本，restore 端检查此值做兼容性判断
 
 
-def format_backup_filename(prefix: str = "backup", ext: str = ".tar.gz") -> str:
+def format_backup_filename(prefix: str = "cndb-backup", ext: str = ".tar.gz") -> str:
     """生成带版本标注的默认备份文件名.
 
     格式：``<prefix>-<软件版本>-v<数据库格式版本>-<UTC时间戳><ext>``
-    示例：``backup-0.2.0-v1-20260928T032702Z.tar.gz``。
+    示例：``cndb-backup-0.3.0-v1-20261009T114720Z.tar.gz``。
 
     Args:
-        prefix: 文件名前缀，CLI 与 Web 下载统一用默认值 ``backup``.
+        prefix: 文件名前缀，CLI / Web 下载 / GUI 统一用默认值 ``cndb-backup``.
         ext: 文件名后缀（归档 ``.tar.gz`` / 目录模式传空串）.
 
     Returns:
@@ -447,8 +447,8 @@ def create_backup(
         output: 输出路径 — ``archive`` 模式下是 ``.tar.gz`` 文件路径；``directory`` 模式下是目标目录。
             默认存储到 ``~/.cndb/backups``（随 ``CNDB_DATA_DIR`` 环境变量整体覆盖），目录不存在时递归创建；
             目录不可用时降级到系统临时目录并给出警告。默认按格式生成文件名：
-            ``backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz``（归档）或
-            同名无后缀（目录），示例 ``backup-0.2.0-v1-20260928T032702Z.tar.gz``.
+            ``cndb-backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz``（归档）或
+            同名无后缀（目录），示例 ``cndb-backup-0.3.0-v1-20261009T114720Z.tar.gz``.
         mode: 备份模式 — ``auto``（SQLite 用 native，其它 sqlalchemy）/ ``native`` / ``sqlalchemy``.
         include_uploads: 是否包含 uploads 目录附件.
         database_url: 覆盖 settings.DATABASE_URL（测试用）.
