@@ -17,7 +17,7 @@
   - BACKUP_DIR:  备份归档默认输出目录
   - CACHE_DIR:   运行时缓存（临时文件、API 响应缓存等）
   - LOG_DIR:     日志文件
-- STATIC_DIR:  前端静态资源（只读，指向 BASE_DIR/static）
+- STATIC_DIR:  前端静态资源（只读，指向包内 cndb/static）
 """
 
 from __future__ import annotations
@@ -66,6 +66,11 @@ def _is_frozen() -> bool:
 BASE_DIR = _find_project_root()
 HOME_DIR = Path.home()
 
+# cndb 包自身所在目录（core/ 的上一级）。与 BASE_DIR 语义不同：
+# BASE_DIR 指向"项目根"（pyproject.toml / alembic.ini 所在处），
+# _PACKAGE_DIR 指向"包目录"，静态资源永远随包分发，不随项目根移动。
+_PACKAGE_DIR = Path(__file__).resolve().parent.parent
+
 # 统一的用户数据根目录（跨平台一致，不再区分开发/打包模式）。
 # 环境变量 CNDB_DATA_DIR 可整体覆盖（e2e 隔离等场景），子目录与默认
 # DATABASE_URL 均由此派生，保证数据库/上传/日志等一并切换。
@@ -81,7 +86,18 @@ CACHE_DIR = DATA_DIR / "cache"
 LOG_DIR = DATA_DIR / "logs"
 
 # 只读静态资源（前端打包产物）
-STATIC_DIR = BASE_DIR / "static"
+#
+# 必须从包目录（cndb/）推导，不能用 BASE_DIR：
+#   - 开发模式：src/cndb/static
+#   - wheel 安装：site-packages/cndb/static
+#   - fspack 打包：dist/src/src/cndb/static
+# BASE_DIR 在 wheel 模式下会被 _find_project_root() 兜底解析成 site-packages，
+# 导致 STATIC_DIR 指向不存在的 site-packages/static（真实文件在其下的 cndb/ 里）。
+# 该常量是 settings 的对外配置项，也是 CI 冒烟检查的断言对象 ——
+# 解析错误会让"前端产物已打进 wheel"的校验变成假通过。
+#
+# 与 app.py 的 _STATIC、gui/checks.py 的 APP_STATIC_DIR 保持同一算法。
+STATIC_DIR = _PACKAGE_DIR / "static"
 
 # 首次启动时自动创建必要的可写目录（打包模式 / 开发模式均需创建）
 for _d in (DATA_DIR, CONFIG_DIR, DATABASE_DIR, UPLOAD_DIR, PLUGINS_DIR, BACKUP_DIR, CACHE_DIR, LOG_DIR):
@@ -111,7 +127,7 @@ class Settings(BaseSettings):
     - DATA_DIR（用户数据根）→ 可写，统一为 ~/.cndb
     - CONFIG_DIR / DATABASE_DIR / UPLOAD_DIR / PLUGINS_DIR / BACKUP_DIR / CACHE_DIR / LOG_DIR
       → 均为 DATA_DIR 的子目录，启动时自动创建
-    - STATIC_DIR（前端静态资源）→ 只读，指向 BASE_DIR/static
+    - STATIC_DIR（前端静态资源）→ 只读，指向包内 cndb/static（随包分发）
     """
 
     APP_NAME: str = "cndb"
