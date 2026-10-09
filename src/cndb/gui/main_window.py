@@ -345,7 +345,7 @@ class ServeTab(_BaseTab):
             self.autostart_check = ttk.Checkbutton(
                 cfg, text="开机自启(后台)", variable=self.autostart_var, command=self.toggle_autostart
             )
-            self.autostart_check.grid(row=1, column=0, columnspan=3, sticky=tk.W, padx=2, pady=(4, 0))
+            self.autostart_check.grid(row=0, column=4, sticky=tk.W, padx=(16, 2), pady=2)
             # 首次启动默认勾选：若注册表尚未登记则自动写入 Run 键
             if not already_enabled:
                 with contextlib.suppress(Exception):
@@ -679,62 +679,66 @@ class BackupTab(_BaseTab):
         saved = self.app.settings.backup
 
         # ── 上半：创建备份 ──
+        # 两个分组框共用同一网格约定：列 0 为标签列（固定宽度对齐）、
+        # 列 1 为输入列（拉伸占满）、列 2 为行内按钮列，行距统一 pady=6
         back_frame = ttk.LabelFrame(self.frame, text="创建备份", padding=(12, 10))
         back_frame.pack(fill=tk.X)
-        back_frame.columnconfigure(1, weight=1)  # 输入/选择列占满剩余宽度
+        back_frame.columnconfigure(0, minsize=72)
+        back_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(back_frame, text="输出路径:").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+        ttk.Label(back_frame, text="输出路径:").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=6)
         self.out_var = tk.StringVar(value=saved.output or str(_default_backup_dir()))
-        ttk.Entry(back_frame, textvariable=self.out_var).grid(row=0, column=1, sticky=tk.EW, pady=4)
+        ttk.Entry(back_frame, textvariable=self.out_var).grid(row=0, column=1, sticky=tk.EW, pady=6)
         ttk.Button(back_frame, text="浏览", command=self._pick_output, width=8).grid(
-            row=0, column=2, padx=(8, 0), pady=4
+            row=0, column=2, padx=(8, 0), pady=6
         )
 
-        ttk.Label(back_frame, text="模式:").grid(row=1, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+        ttk.Label(back_frame, text="模式:").grid(row=1, column=0, sticky=tk.W, padx=(0, 8), pady=6)
         self.mode_var = tk.StringVar(value=(saved.mode if saved.mode in self._BACKUP_MODES else "auto"))
         ttk.Combobox(
             back_frame, textvariable=self.mode_var, values=list(self._BACKUP_MODES), state="readonly", width=14
-        ).grid(row=1, column=1, sticky=tk.W, pady=4)
+        ).grid(row=1, column=1, sticky=tk.W, pady=6)
 
         self.no_uploads_var = tk.BooleanVar(value=saved.no_uploads)
         ttk.Checkbutton(back_frame, text="不包含附件 (uploads)", variable=self.no_uploads_var).grid(
-            row=1, column=2, sticky=tk.W, padx=(12, 0), pady=4
+            row=1, column=2, sticky=tk.W, padx=(12, 0), pady=6
         )
 
-        self.backup_btn = ttk.Button(back_frame, text="立即备份", command=self.do_backup)
-        self.backup_btn.grid(row=2, column=2, sticky=tk.E, pady=(10, 0))
-
-        # 进度条 + 结果反馈（备份/恢复/预演共用）
+        # 进度条 + 结果反馈（备份/恢复/预演共用），横向填满剩余宽度
         prog_row = ttk.Frame(back_frame)
-        prog_row.grid(row=3, column=0, columnspan=3, sticky=tk.EW, pady=(8, 0))
-        self.progress = ttk.Progressbar(prog_row, mode="determinate", maximum=1, value=0, length=200)
-        self.progress.pack(side=tk.LEFT)
+        prog_row.grid(row=2, column=0, columnspan=3, sticky=tk.EW, pady=(10, 0))
+        self.progress = ttk.Progressbar(prog_row, mode="determinate", maximum=1, value=0)
+        self.progress.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.op_status = ttk.Label(prog_row, text="就绪", foreground="#888")
         self.op_status.pack(side=tk.LEFT, padx=(10, 0))
+
+        self.backup_btn = ttk.Button(back_frame, text="立即备份", command=self.do_backup)
+        self.backup_btn.grid(row=3, column=2, sticky=tk.E, pady=(8, 0))
 
         # ── 下半：恢复 ──
         rest_frame = ttk.LabelFrame(self.frame, text="从归档恢复", padding=(12, 10))
         rest_frame.pack(fill=tk.X, pady=(10, 0))
+        rest_frame.columnconfigure(0, minsize=72)
         rest_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(rest_frame, text="归档文件:").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+        ttk.Label(rest_frame, text="归档文件:").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=6)
         self.archive_var = tk.StringVar()
         self.archive_box = ttk.Combobox(rest_frame, textvariable=self.archive_var, state="readonly")
-        self.archive_box.grid(row=0, column=1, sticky=tk.EW, pady=4)
-        # 归档行内操作按钮集合（成组，视觉紧凑）
+        self.archive_box.grid(row=0, column=1, sticky=tk.EW, pady=6)
+        # 归档行内操作按钮集合（成组，视觉紧凑；宽度与创建备份的「浏览」一致）
         archive_btns = ttk.Frame(rest_frame)
-        archive_btns.grid(row=0, column=2, padx=(8, 0), pady=4)
-        ttk.Button(archive_btns, text="浏览", command=self._pick_archive, width=6).pack(side=tk.LEFT)
+        archive_btns.grid(row=0, column=2, padx=(8, 0), pady=6)
+        ttk.Button(archive_btns, text="浏览", command=self._pick_archive, width=8).pack(side=tk.LEFT)
         ttk.Button(archive_btns, text="刷新列表", command=self._refresh_archives).pack(side=tk.LEFT, padx=(6, 0))
 
         self.force_var = tk.BooleanVar(value=saved.force)
         ttk.Checkbutton(rest_frame, text="强制覆盖已有数据", variable=self.force_var).grid(
-            row=1, column=0, columnspan=2, sticky=tk.W, padx=(0, 8), pady=4
+            row=1, column=0, columnspan=2, sticky=tk.W, padx=(0, 8), pady=6
         )
 
-        # 操作按钮统一右对齐
+        # 操作按钮统一右对齐，与创建备份的「立即备份」同列对齐
         op_row = ttk.Frame(rest_frame)
-        op_row.grid(row=2, column=2, sticky=tk.E, pady=(10, 0))
+        op_row.grid(row=2, column=2, sticky=tk.E, pady=(8, 0))
         self.dry_run_btn = ttk.Button(op_row, text="预演 (dry-run)", command=self.do_restore_dry_run)
         self.dry_run_btn.pack(side=tk.LEFT, padx=(0, 6))
         self.restore_btn = ttk.Button(op_row, text="立即恢复", command=self.do_restore)

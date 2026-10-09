@@ -237,4 +237,3 @@ class TestCliServiceLocal:
 
         with pytest.raises(ValueError, match="单机模式"):
             svc.enable("0.0.0.0", 8000, local=True)
-
