@@ -1,0 +1,300 @@
+# ═══════════════════════════════════════════════════════════════════
+# cndb — CNB 云原生构建流水线
+#
+# 设计目标：在保证门禁不漏的前提下压到最低机时。
+#
+# 机时计费 ≈ (容器 cpus 数) × (容器存活时长)。省机时的四个杠杆：
+#   1. 降配：pytest 覆盖率是最长尾，给足 4 核；lint 这类 IO 型任务给 2 核
+#      而不是全流水线统一 8 核（pytest -n auto 在 4 核上已是瓶颈，再加核
+#      只增加账单、不缩短时间）。
+#   2. 合并容器：CNB 每个 pipeline 起一个容器、每个 stage 串行。
+#      把「装依赖 → 跑检查」放在同一个容器里，避免为装依赖单独付一次容器启动。
+#      合并后前端与后端门禁串行 —— 但两者的失败都会立刻中断，不会出现
+#      「前端已白跑 5 分钟才发现后端编译失败」的浪费。
+#   3. 缓存：uv / pnpm store 走 docker.volumes 节点缓存（copy-on-write），
+#      依赖安装从 ~90s 降到 ~10s，这是单笔最大的省时项。
+#      代码层缓存由 CNB 自动处理。
+#   4. 降低触发频率：PR 只跑快速门禁（不含覆盖率），main 才跑全量，
+#      tag_push 才构建镜像 + 部署。E2E 从 PR 门禁中移除，仅手动触发。
+#
+# 触发矩阵：
+#   pull_request  → 快速门禁（lint + typecheck + 前端 check）2核
+#   main push     → 全量门禁（快速门禁 + pytest 覆盖率 + 前端构建 + bundle budget）4核
+#   tag_push v*   → 构建 wheel + 构建镜像 + 推制品库 + SSH 部署
+#
+# 密钥管理：不在本文件写死任何凭证，走 imports 引用独立密钥仓库的 yaml。
+# ═══════════════════════════════════════════════════════════════════
+
+# ── 共享片段：CI 基础环境 ──────────────────────────────────────
+.ci-env: &ci-env
+  docker:
+    build:
+      dockerfile: .cnb/Dockerfile.ci
+    volumes:
+      # 节点本地缓存（copy-on-write 支持并发构建复用）
+      - /root/.cache/uv:copy-on-write        # uv 下载的 wheel
+      - /root/.local/share/pnpm/store:copy-on-write  # pnpm 全局 store
+      - /root/.cache/ms-playwright:copy-on-write    # Playwright chromium
+
+# ── 共享片段：依赖安装（所有 CI 流水线第一步，缓存命中时约 10s）──
+.deps: &deps |
+  # --frozen 严格按 uv.lock 解析，避免 CI 装到与本地不同的依赖版本
+  uv sync --frozen --extra dev
+  cd frontend && pnpm install --frozen-lockfile && cd ..
+
+# ── 共享片段：快速门禁（后端 lint/类型 + 前端 check）────────────
+# 约 3~5 分钟，是「改一行代码也要跑」的那部分，故配 2 核即可。
+.fast-gate: &fast-gate |
+  echo "── gitkeep ──"
+  uv run python scripts/check_gitkeep.py
+
+  echo "── ruff check ──"
+  uv run ruff check src tests --cache-dir .ruff_cache
+
+  echo "── ruff format ──"
+  uv run ruff format --check src tests
+
+  echo "── pyrefly ──"
+  uv run pyrefly check -j 0
+
+  echo "── 前端 typecheck / lint / test ──"
+  cd frontend
+  pnpm typecheck
+  pnpm lint
+  pnpm test:coverage
+  cd ..
+
+# ═════════════════════════════════════════════════════════════
+# 兜底分支块（$ = 所有未被显式声明的分支）
+# 注意：pull_request 与 api_trigger_e2e 必须写在同一个 `$` 下，
+#      YAML 同名顶层键后者覆盖前者，分成两块 PR 门禁会整个消失。
+# ═════════════════════════════════════════════════════════════
+$:
+  # 1. 快速门禁 —— PR 与分支 push
+  #    2 核：ruff/pyrefly/tsc 均为 IO + 单线程密集型，加核不线性收益
+  # ═════════════════════════════════════════════════════════════
+  pull_request:
+    - name: fast-gate
+      runner:
+        cpus: 2
+      <<: *ci-env
+      stages:
+        - name: 安装依赖
+          script: *deps
+        - name: 快速门禁
+          script: *fast-gate
+
+# ═════════════════════════════════════════════════════════════
+# 2. 全量门禁 —— main 分支 push
+#    4 核：pytest -n4 覆盖率是唯一真正吃 CPU 的环节，
+#    前端 build/budget 放同一容器串行执行，不额外起容器
+# ═══════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════
+# 4. E2E —— 仅手动触发（api_trigger）
+#
+#    刻意不进 PR/main 门禁：Playwright 需要装 chromium（~150MB）
+#    且单层 E2E 约 6~8 分钟，是单笔最贵的任务。
+#    在 GitHub 侧它也是 continue-on-error 的观察期状态，
+#    放到这里用手动触发跑，稳定后再考虑是否提升为门禁。
+#
+#    触发方式：CNB 页面「运行流水线」选择 api_trigger_e2e，或
+#    curl -X POST "https://api.cnb.cool/<slug>/-/runners/trigger?branch=main" \
+#         -H "Authorization: Bearer $CNB_TOKEN" \
+#         -d '{"pipelineName":"api_trigger_e2e"}'
+# ═════════════════════════════════════════════════════════════
+  # 与 pull_request 同属兜底分支块（同一个 `$` 下必须合并，
+  # 否则后一个块会覆盖前一个的 pull_request）
+  api_trigger_e2e:
+    - name: e2e
+      runner:
+        # 4 核：Playwright 单 worker 是主线程瓶颈，核数主要影响
+        # 后端 webServer 与并行 spec 的稳定性
+        cpus: 4
+      <<: *ci-env
+      stages:
+        - name: 安装依赖与浏览器
+          script: |
+            uv sync --frozen --extra dev
+            cd frontend && pnpm install --frozen-lockfile && pnpm build && cd ..
+            # 装到已声明的缓存卷 /root/.cache/ms-playwright，
+            # 第二次触发只需几秒
+            cd frontend && npx playwright install --with-deps chromium && cd ..
+
+        # 单层跑不分片：CNB 每个 pipeline 只起一个容器，
+        # 分片反而要多起容器、并各自重复装浏览器，不划算
+        - name: 运行 E2E
+          script: cd frontend && pnpm e2e
+
+main:
+  push:
+    - name: full-check
+      runner:
+        cpus: 4
+      <<: *ci-env
+      stages:
+        - name: 安装依赖
+          script: *deps
+
+        - name: 快速门禁
+          script: *fast-gate
+
+        # pytest 覆盖率门槛 95%（与 Makefile COV_THRESHOLD 对齐）。
+        # -n 4 匹配 runner 的 4 核；写死而非 -n auto 是为了避免节点扩缩容
+        # 导致 worker 数在 2~8 之间漂移，让耗时不可预测。
+        - name: 覆盖率
+          script: uv run pytest -m "not slow" -n 4 --cov --cov-fail-under=95 --cov-report=term-missing
+
+        # 前端产物直接打进 wheel 的 force-include 目录，
+        # 必须校验非空 —— 否则要到线上打开页面才发现白屏
+        - name: 前端构建 + bundle budget
+          script: |
+            cd frontend
+            pnpm build
+            pnpm bundle:budget
+            cd ..
+            test -n "$(ls -A src/cndb/static/assets 2>/dev/null)" \
+              || { echo "::error::前端产物缺失，wheel 将不含静态资源"; exit 1; }
+
+# ═════════════════════════════════════════════════════════════
+# 3. 构建 + 部署 —— 打 v*.*.* tag 时
+#
+#    刻意不在本流水线跑测试：tag 通常在 main 全量门禁通过后才打，
+#    重复跑一遍纯属浪费机时。这里只做「产出物构建 + 上线」。
+#    若团队习惯直接打 tag，可在此追加一条 `curl .../full-check 状态` 校验。
+# ═══════════════════════════════════════════════════════════════════
+v*.*.*:
+  tag_push:
+    - name: build-and-deploy
+      # 第三方镜像仓库（腾讯云 TCR）+ SSH 凭证，来自密钥仓库
+      # 部署凭证（TCR + SSH）。密钥仓库需为「公开可读」，
+      # 否则流水线无法拉取该文件；仓库本身建议设为私有并只放开 raw 读取。
+      # 变量清单与填写说明见 deploy/cnb-secrets.example.yml
+      imports: https://cnb.cool/gkzhou/cndb-secrets/-/raw/main/deploy-env.yml
+      runner:
+        # 2 核足够：前端 vite build 与 docker build 都是单线程为主，
+        # 镜像层构建的耗时在网络 I/O 而非 CPU
+        cpus: 2
+      docker:
+        build:
+          dockerfile: .cnb/Dockerfile.ci
+        volumes:
+          # buildx 的层缓存落盘，否则每次 docker build 都要从零解包依赖层
+          - /root/.docker:copy-on-write
+          - /root/.cache/uv:copy-on-write
+          - /root/.local/share/pnpm/store:copy-on-write
+      services:
+        - docker
+      stages:
+        - name: 安装依赖
+          script: |
+            uv sync --frozen --extra dev
+            cd frontend && pnpm install --frozen-lockfile && cd ..
+            uv run python scripts/check_gitkeep.py
+
+        - name: 前端构建
+          script: cd frontend && pnpm build && cd ..
+
+        # 镜像 tag 去掉 v 前缀，与 dist 里 wheel 的版本号一致，
+        # 避免线上出现 v0.3.0 与 0.3.0 两套版本号
+        - name: 构建 wheel
+          script: |
+            uv build
+            VERSION="${CNB_TAG#v}"
+            echo "构建版本: ${VERSION}"
+            echo -n "${VERSION}" > /workspace/.version
+
+        # 同时推 TCR（生产用，deploy.sh 按版本精确拉取、支持回滚）
+        # 与 CNB 制品库（开发自测，docker pull 直接可用）。
+        # 单次 buildx 挂两个 tag，避免为第二个仓库重跑一遍构建层
+        - name: 构建并推送镜像
+          script: |
+            set -e
+            VERSION="$(cat /workspace/.version)"
+            PROD="${TCR_REGISTRY}/${TCR_GROUP}/cndb:${VERSION}"
+            # 旧 buildx 导出会报 404，显式加 image-manifest/oci-mediatypes 规避
+            docker buildx build \
+              --platform linux/amd64 \
+              --cache-from "type=registry,ref=${TCR_REGISTRY}/${TCR_GROUP}/cndb:buildcache" \
+              --cache-to   "type=registry,ref=${TCR_REGISTRY}/${TCR_GROUP}/cndb:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
+              -f deploy/Dockerfile.prod \
+              -t "${PROD}" \
+              -t "${TCR_REGISTRY}/${TCR_GROUP}/cndb:latest" \
+              -t "${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/cndb:${VERSION}" \
+              --label org.opencontainers.image.title=cndb \
+              --label org.opencontainers.image.version="${VERSION}" \
+              --label org.opencontainers.image.revision="${CNB_COMMIT}" \
+              --push .
+
+        # 冒烟检查必须放在推生产镜像之后、部署之前：
+        # 前端产物缺失这类问题要在上线前拦住，而不是等用户打开白屏页面
+        - name: 镜像冒烟检查
+          script: |
+            set -e
+            VERSION="$(cat /workspace/.version)"
+            IMAGE="${TCR_REGISTRY}/${TCR_GROUP}/cndb:${VERSION}"
+            # 注意 -i：docker run 默认不接 stdin，缺了它 python - 会读到空输入
+            docker run --rm -i "$IMAGE" python - <<'PY'
+            import cndb
+            from cndb.core.config import STATIC_DIR
+            assert STATIC_DIR.is_dir(), f"前端静态资源缺失: {STATIC_DIR}"
+            assets = list(STATIC_DIR.glob("assets/*")) if (STATIC_DIR / "assets").is_dir() else []
+            assert assets, "前端 assets 目录为空 —— 前端构建产物可能未打进 wheel"
+            print("OK  cndb", cndb.__version__, "| assets:", len(assets))
+            PY
+
+        # SSH 私钥只在容器可写层落一次，后续 stage 复用；
+        # 用完统一删除，避免私钥残留在构建产物中
+        - name: 准备 SSH 密钥
+          script: |
+            set -e
+            install -m 700 -d /root/.ssh
+            printf '%s' "$SSH_PRIVATE_KEY" > /root/.ssh/id_ed25519
+            chmod 600 /root/.ssh/id_ed25519
+            echo "SSH 密钥已就绪"
+
+        # 部署配置同步到服务器。
+        # 只传 compose + 脚本，不传代码：服务器靠拉镜像获得应用本体，
+        # 唯一必须落地的是部署配置（.env 保留在服务器本地，绝不覆盖）
+        - name: 同步部署配置
+          script: |
+            set -e
+            SSH="ssh -i /root/.ssh/id_ed25519 -p ${SSH_PORT:-22} -o StrictHostKeyChecking=accept-new"
+            SCP="scp -i /root/.ssh/id_ed25519 -P ${SSH_PORT:-22} -o StrictHostKeyChecking=accept-new"
+            $SSH "${SSH_USERNAME:-root}@${SSH_HOST}" \
+              'mkdir -p /opt/cndb/deploy /opt/cndb/backups && echo "目录就绪"'
+            $SCP docker-compose.prod.yml "${SSH_USERNAME:-root}@${SSH_HOST}:/opt/cndb/"
+            $SCP deploy/deploy.sh deploy/backup.sh deploy/nginx.conf \
+              "${SSH_USERNAME:-root}@${SSH_HOST}:/opt/cndb/deploy/"
+
+        # 凭证通过环境变量传入而非写进 .env
+        - name: 执行部署
+          script: |
+            set -e
+            VERSION="$(cat /workspace/.version)"
+            ssh -i /root/.ssh/id_ed25519 -p "${SSH_PORT:-22}" \
+              "${SSH_USERNAME:-root}@${SSH_HOST}" \
+              "set -e
+               if [ ! -f /opt/cndb/.env ]; then
+                 echo '::error::服务器 /opt/cndb/.env 不存在，请先手工创建并填写 TCR 地址与 JWT_SECRET'
+                 exit 1
+               fi
+               # 带着占位符上线等于无认证，必须拦住
+               if grep -q CHANGE_ME /opt/cndb/.env; then
+                 echo '::error::JWT_SECRET 仍是占位值，生成: openssl rand -hex 32'
+                 exit 1
+               fi
+               cd /opt/cndb
+               TCR_USERNAME='${TCR_USERNAME}' TCR_PASSWORD='${TCR_PASSWORD}' ./deploy/deploy.sh 'v${VERSION}'"
+
+        # 部署脚本已做健康探测，这里做二次确认，确保外部视角也通
+        - name: 部署验证
+          script: |
+            set -e
+            ssh -i /root/.ssh/id_ed25519 -p "${SSH_PORT:-22}" \
+              "${SSH_USERNAME:-root}@${SSH_HOST}" \
+              'echo "--- 容器状态 ---"
+               docker ps --filter name=cndb --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+               echo "--- 健康端点 ---"
+               curl -fsS http://127.0.0.1:8000/api/health; echo
+               echo "--- 数据卷 ---"
+               docker volume inspect ${CNDB_VOLUME:-cndb-data} --format "{{.Name}} {{.Mountpoint}}"'
