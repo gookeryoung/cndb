@@ -16,8 +16,15 @@ FROM docker.m.daocloud.io/library/node:22-bookworm-slim
 # ── 国内镜像源 + 工具链 ──
 # docker.io 仅装 CLI 客户端（daemon 由 .cnb.yml 的 services: [docker] 提供）
 # fonts-wqy-*：reportlab 生成中文 PDF 必需，缺失会渲染方框
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list \
- && sed -i 's|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list \
+# Debian bookworm 起 apt 源改为 deb822 格式
+# （/etc/apt/sources.list.d/debian.sources），不再有 /etc/apt/sources.list。
+# 直接 sed 后者会报 "No such file or directory" 让整层失败 —— 必须两个路径都处理，
+# 与 deploy/Dockerfile.prod 保持一致。
+# -o 缺失时 sed 静默跳过，这样同一份命令在 bookworm 与更老的 slim 镜像上都能跑。
+RUN sed -i -o 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list \
+ && sed -i -o 's|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list \
+ && sed -i -o 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+ && sed -i -o 's|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates curl git openssh-client build-essential pkg-config \
