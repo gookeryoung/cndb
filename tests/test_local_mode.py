@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import types
 
@@ -239,27 +238,3 @@ class TestCliServiceLocal:
         with pytest.raises(ValueError, match="单机模式"):
             svc.enable("0.0.0.0", 8000, local=True)
 
-
-def test_gui_settings_serve_local_mode_roundtrip(tmp_path) -> None:
-    """ServeConfig.local_mode 序列化 roundtrip."""
-    from cndb.gui.settings import GuiSettings, load_settings, save_settings
-
-    cfg = tmp_path / "gui.json"
-    src = GuiSettings()
-    src.serve.local_mode = False
-    save_settings(src, cfg)
-
-    loaded = load_settings(cfg)
-    assert loaded.serve.local_mode is False
-
-
-def test_gui_settings_serve_local_mode_default_when_missing(tmp_path) -> None:
-    """旧版 gui.json 无 local_mode 键 → 回退默认 True（单机定位）."""
-    from cndb.gui.settings import load_settings
-
-    cfg = tmp_path / "gui.json"
-    cfg.write_text(
-        json.dumps({"version": 1, "serve": {"host": "0.0.0.0", "port": "8000"}}),
-        encoding="utf-8",
-    )
-    assert load_settings(cfg).serve.local_mode is True

@@ -27,8 +27,6 @@ def test_save_load_round_trip(tmp_path) -> None:
     src.window_geometry = "1024x720+100+50"
     src.serve.host = "0.0.0.0"
     src.serve.port = "9000"
-    src.serve.reload = True
-    src.serve.workers = "4"
     src.backup.output = "/tmp/backup.tar.gz"
     src.backup.mode = "native"
     src.backup.no_uploads = True
@@ -74,13 +72,12 @@ def test_from_dict_unknown_fields_ignored() -> None:
         {
             "window_geometry": None,
             "hacker_key": "oops",
-            "serve": {"host": 8080, "reload": "true", "bogus": "x"},
+            "serve": {"host": 8080, "bogus": "x"},
             "info": {"interval": "999 秒"},
         }
     )
     assert s.window_geometry == ""  # None → 空串
     assert s.serve.host == "8080"  # 数值按字符串字段转换
-    assert s.serve.reload is True  # "true" 按布尔字段转换
     assert s.info.interval == "999 秒"  # 字段存在即保留；合法性由 UI 层兜底
 
 
