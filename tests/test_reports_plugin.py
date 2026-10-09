@@ -1466,3 +1466,143 @@ def test_render_docx_flattens_link_field_for_jinja2(client, auth_headers, db):
     # 关键断言：不应出现原始对象 repr
     assert "[object Object]" not in text
     assert "{" not in text  # 不应残留字典字面量
+
+
+# ── 报告模板 CRUD 权限校验回归 ──
+
+
+def _setup_user_a_and_secret_table(client, auth_headers):
+    """辅助：用户 A 创建 workspace + table，返回 (wid, tid, tpl_id)."""
+    ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_secrets"})
+    wid = ws.json()["id"]
+    tbl = client.post(
+        f"/api/v1/workspaces/{wid}/tables",
+        headers=auth_headers,
+        json={"name": "secret_table"},
+    )
+    tid = tbl.json()["id"]
+    client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+        headers=auth_headers,
+        json={"name": "机密", "field_type": "text"},
+    )
+    tpl = client.post(
+        "/api/v1/reports",
+        headers=auth_headers,
+        json={
+            "name": "秘密模板",
+            "output_format": "docx",
+            "template_content": "{{ table_name }}",
+            "table_id": tid,
+        },
+    )
+    tpl_id = tpl.json()["id"]
+    return wid, tid, tpl_id
+
+
+def _register_user_b(client):
+    """辅助：注册并登录用户 B（不在 A 的工作区），返回 headers."""
+    client.post(
+        "/api/v1/accounts/auth/register",
+        json={"username": "user_b", "email": "b@example.com", "password": "passw0rd"},
+    )
+    r = client.post(
+        "/api/v1/accounts/auth/login",
+        json={"login": "user_b", "password": "passw0rd"},
+    )
+    token_b = r.json()["access_token"]
+    return {"Authorization": f"Bearer {token_b}"}
+
+
+def test_cross_user_cannot_get_others_template(client, auth_headers, db):
+    """B 尝试 GET A 绑定到 table 的模板 → 403."""
+    _setup_user_a_and_secret_table(client, auth_headers)
+    # 用户 A 的 tpl_id 需要单独拿
+    tpl_resp = client.get("/api/v1/reports", headers=auth_headers)
+    tpl_id = tpl_resp.json()[0]["id"]
+
+    headers_b = _register_user_b(client)
+    resp = client.get(f"/api/v1/reports/{tpl_id}", headers=headers_b)
+    assert resp.status_code == 403, f"应 403 但 {resp.status_code}: {resp.text}"
+
+
+def test_cross_user_cannot_update_others_template(client, auth_headers, db):
+    """B 尝试 PUT A 的模板 → 403."""
+    _setup_user_a_and_secret_table(client, auth_headers)
+    tpl_resp = client.get("/api/v1/reports", headers=auth_headers)
+    tpl_id = tpl_resp.json()[0]["id"]
+
+    headers_b = _register_user_b(client)
+    resp = client.put(
+        f"/api/v1/reports/{tpl_id}",
+        headers=headers_b,
+        json={"name": "篡改!"},
+    )
+    assert resp.status_code == 403, f"应 403 但 {resp.status_code}: {resp.text}"
+
+
+def test_cross_user_cannot_delete_others_template(client, auth_headers, db):
+    """B 尝试 DELETE A 的模板 → 403."""
+    _setup_user_a_and_secret_table(client, auth_headers)
+    tpl_resp = client.get("/api/v1/reports", headers=auth_headers)
+    tpl_id = tpl_resp.json()[0]["id"]
+
+    headers_b = _register_user_b(client)
+    resp = client.delete(f"/api/v1/reports/{tpl_id}", headers=headers_b)
+    assert resp.status_code == 403, f"应 403 但 {resp.status_code}: {resp.text}"
+
+
+def test_cross_user_cannot_create_template_on_forbidden_table(client, auth_headers, db):
+    """B 尝试在无权的 table 上创建模板 → 403."""
+    _, tid, _ = _setup_user_a_and_secret_table(client, auth_headers)
+
+    headers_b = _register_user_b(client)
+    resp = client.post(
+        "/api/v1/reports",
+        headers=headers_b,
+        json={
+            "name": "越权模板",
+            "output_format": "docx",
+            "template_content": "{{ table_name }}",
+            "table_id": tid,
+        },
+    )
+    assert resp.status_code == 403, f"应 403 但 {resp.status_code}: {resp.text}"
+
+
+def test_cross_user_cannot_list_others_workspace_templates(client, auth_headers, db):
+    """B 尝试列出 A 工作区的模板（传 workspace_id）→ 403."""
+    wid, _, _ = _setup_user_a_and_secret_table(client, auth_headers)
+
+    headers_b = _register_user_b(client)
+    resp = client.get(f"/api/v1/reports?workspace_id={wid}", headers=headers_b)
+    assert resp.status_code == 403, f"应 403 但 {resp.status_code}: {resp.text}"
+
+
+def test_cross_user_extra_table_ids_require_read_permission(client, auth_headers, db):
+    """B 尝试创建模板时把无权的表塞进 extra_table_ids → 403."""
+    _, tid_a, _ = _setup_user_a_and_secret_table(client, auth_headers)
+    # A 再建一个自己的 workspace + table 给 B 有权用
+    ws_b = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_b_open"})
+    wid_b = ws_b.json()["id"]
+    tbl_b = client.post(
+        f"/api/v1/workspaces/{wid_b}/tables",
+        headers=auth_headers,
+        json={"name": "b_table"},
+    )
+    tid_b = tbl_b.json()["id"]
+
+    # B 注册 + 登录，但 B 不是任何 workspace 成员
+    headers_b = _register_user_b(client)
+    # B 尝试：用自己无权的 tid_a 作为 extra_table_ids → 应该 403
+    resp = client.post(
+        "/api/v1/reports",
+        headers=headers_b,
+        json={
+            "name": "恶意模板",
+            "output_format": "docx",
+            "template_content": "{{ table_name }}",
+            "extra_table_ids": [tid_a],
+        },
+    )
+    assert resp.status_code == 403, f"extra_table_ids 越权应 403 但 {resp.status_code}: {resp.text}"
