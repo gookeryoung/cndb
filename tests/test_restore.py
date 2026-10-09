@@ -22,7 +22,6 @@ from cndb.cli.restore import (
     _ensure_manifest_compatible,
     _from_json_safe,
     _migrate_after_restore,
-    _reset_sqlite_database,
     _restore_sqlite_native,
     _restore_uploads,
     inspect_backup,
@@ -114,30 +113,69 @@ def test_check_target_safe_nonempty_with_force(tmp_path: Path) -> None:
     _check_target_safe(f"sqlite:///{src}", force=True)
 
 
-# ── _reset_sqlite_database ────────────────────────────
+# ── _restore_sqlite_native（backup API 语义）──────────
 
 
-def test_reset_sqlite_database_creates_clean_file(tmp_path: Path) -> None:
-    target = tmp_path / "reset.db"
-    # 先写些东西
+def test_restore_sqlite_native_replaces_target_content(tmp_path: Path) -> None:
+    """backup API 恢复应整体替换目标库内容（旧表消失、新表生效）."""
+    src_db = _setup_src_sqlite(tmp_path)
+    extracted = tmp_path / "extracted"
+    (extracted / "data").mkdir(parents=True)
+    (extracted / "data" / "cndb.db").write_bytes(src_db.read_bytes())
+
+    # 目标库先带一份无关旧数据
+    target = tmp_path / "target.db"
     conn = sqlite3.connect(str(target))
-    conn.execute("CREATE TABLE x (a INTEGER)")
+    conn.execute("CREATE TABLE dummy (a TEXT)")
+    conn.execute("INSERT INTO dummy VALUES ('old')")
     conn.commit()
     conn.close()
 
-    # 再附属文件
-    wal = Path(str(target) + "-wal")
-    wal.write_text("junk")
+    _restore_sqlite_native(extracted, target)
 
-    _reset_sqlite_database(target)
-
-    assert target.is_file()
-    assert not wal.exists()
-    # 新库应当是空的（没有任何用户表）
     conn = sqlite3.connect(str(target))
-    tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall()
-    conn.close()
-    assert tables == []
+    try:
+        tables = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        }
+        assert {"customers", "orders"} <= tables
+        assert "dummy" not in tables
+        assert conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 3
+    finally:
+        conn.close()
+
+
+def test_restore_sqlite_native_succeeds_while_target_held_open(tmp_path: Path) -> None:
+    """目标文件被其他连接持有（服务运行中）时恢复仍成功（Windows 文件锁回归）.
+
+    旧实现"unlink + copy2"在此场景抛 WinError 32；backup API 页级覆盖不受影响。
+    """
+    src_db = _setup_src_sqlite(tmp_path)
+    extracted = tmp_path / "extracted"
+    (extracted / "data").mkdir(parents=True)
+    (extracted / "data" / "cndb.db").write_bytes(src_db.read_bytes())
+
+    target = tmp_path / "target.db"
+    holder = sqlite3.connect(str(target))  # 模拟服务进程持有的连接
+    try:
+        holder.execute("CREATE TABLE t (a INTEGER)")
+        holder.commit()
+        # 未 close holder，直接恢复
+        _restore_sqlite_native(extracted, target)
+        # 持有连接在下一个事务即可看到新数据（change counter 已推进）
+        holder.execute("PRAGMA schema_version").fetchone()
+        tables = {
+            r[0]
+            for r in holder.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        }
+        assert "customers" in tables
+    finally:
+        holder.close()
 
 
 # ── inspect_backup ─────────────────────────────────────
@@ -866,3 +904,125 @@ def test_restore_native_returns_none_loss_report(tmp_path: Path) -> None:
     archive, target_db = _make_backup_archive(tmp_path)
     report = restore_backup(archive, force=False, database_url=f"sqlite:///{target_db}")
     assert report is None
+
+
+# ── 0.2.0 备份恢复根因回归（manage_data_role 缺列）────
+
+REVISION_020 = "e5f6a7b8c9d0"  # f7a8b9c0d1e2 之前的 head（0.2.0 时代 schema）
+
+
+def _make_020_schema_db(tmp_path: Path) -> Path:
+    """构造 0.2.0 时代 schema 的库：迁移链建表 + 一行 TablePermission 存量数据."""
+    import alembic.command
+
+    from cndb.core.migrations import _build_config
+
+    src_db = tmp_path / "old_020.db"
+    cfg = _build_config(f"sqlite:///{src_db}")
+    alembic.command.upgrade(cfg, REVISION_020)
+
+    conn = sqlite3.connect(str(src_db))
+    try:
+        conn.execute(
+            "INSERT INTO tables_tablepermission (table_id, read_role, edit_records_role, "
+            "edit_views_role, edit_schema_role, comment_role, hidden_fields, row_filters, row_filter_type) "
+            "VALUES (7, '', '', '', '', '', '{}', '[]', 'AND')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return src_db
+
+
+def test_restore_020_backup_tablepermission_queryable(tmp_path: Path) -> None:
+    """恢复 0.2.0 备份后 tables_tablepermission 全列 SELECT 可用（本次故障直接根因回归）.
+
+    故障形态：旧备份 schema 缺 manage_data_role（历史上只加在 ORM 模型上，
+    迁移链未覆盖），恢复后 ORM 全列查询报 "no such column"，所有数据表内容
+    无法显示。修复后迁移 f7a8b9c0d1e2 在 upgrade head 时补齐该列。
+    """
+    src_db = _make_020_schema_db(tmp_path)
+    # 确认源库确实缺列（模拟 0.2.0 时代 schema）
+    conn = sqlite3.connect(str(src_db))
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(tables_tablepermission)").fetchall()}
+    finally:
+        conn.close()
+    assert "manage_data_role" not in cols
+
+    archive = tmp_path / "old020.tar.gz"
+    create_backup(output=archive, mode="native", database_url=f"sqlite:///{src_db}")
+
+    target_db = tmp_path / "target.db"
+    restore_backup(archive, force=False, database_url=f"sqlite:///{target_db}")
+
+    conn = sqlite3.connect(str(target_db))
+    try:
+        # 模拟 ORM 全列 SELECT（含 manage_data_role）不再报 no such column
+        rows = conn.execute("SELECT table_id, manage_data_role FROM tables_tablepermission").fetchall()
+        version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+    finally:
+        conn.close()
+    assert rows == [(7, "")]
+    assert version == _alembic_head()
+
+
+def test_migrate_after_restore_heals_columns_missed_by_chain(tmp_path: Path) -> None:
+    """恢复后自愈：迁移链之外的缺列由 heal_schema_drift 兜底补齐.
+
+    构造缺 manage_data_role 但 stamp 已在 head 的库（历史 stamp 掩盖缺列形态）：
+    upgrade head 为 no-op，create_all 不修已有表，仅自愈层能补该列。
+    """
+    src_url = f"sqlite:///{(tmp_path / 'stamped.db').as_posix()}"
+
+    import alembic.command
+    import sqlalchemy as sa
+
+    from cndb.core.migrations import _build_config
+
+    cfg = _build_config(src_url)
+    alembic.command.upgrade(cfg, REVISION_020)
+    engine = sa.create_engine(src_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO tables_tablepermission (table_id, read_role, edit_records_role, "
+                    "edit_views_role, edit_schema_role, comment_role, hidden_fields, row_filters, row_filter_type) "
+                    "VALUES (3, '', '', '', '', '', '{}', '[]', 'AND')"
+                )
+            )
+        # 模拟历史 stamp：版本标记越过缺列缺口
+        from cndb.core.migrations import stamp_head
+
+        stamp_head(src_url)
+    finally:
+        engine.dispose()
+
+    _migrate_after_restore(src_url, "e5f6a7b8c9d0")
+
+    engine = sa.create_engine(src_url)
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(sa.text("SELECT table_id, manage_data_role FROM tables_tablepermission")).fetchone()
+    finally:
+        engine.dispose()
+    assert row == (3, "")
+
+
+def test_restore_disposes_global_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """恢复完成后重置全局连接池（同进程恢复读到一致的恢复后数据）."""
+    from cndb.core import database as db_mod
+
+    archive, target_db = _make_backup_archive(tmp_path)
+    disposed: list[bool] = []
+
+    class _FakeEngine:
+        def dispose(self) -> None:
+            disposed.append(True)
+
+    monkeypatch.setattr(db_mod, "engine", _FakeEngine())
+
+    restore_backup(archive, force=False, database_url=f"sqlite:///{target_db}")
+
+    assert disposed == [True]

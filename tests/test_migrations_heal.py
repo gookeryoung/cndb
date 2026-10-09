@@ -233,3 +233,134 @@ class TestSchemaHeal:
 
         cols = {c["name"] for c in inspect(legacy_db).get_columns("accounts_user")}
         assert "created_at" in cols
+
+
+class TestHealNotNullPythonDefault:
+    """NOT NULL 且仅声明 Python 端标量 default 的缺列自愈.
+
+    线上 0.2.0 恢复故障形态：tables_tablepermission.manage_data_role 历史
+    上只加在 ORM 模型上（``default=""``，无 server_default），迁移链从未
+    覆盖。旧库（含 stamp 到 head 的库）永远缺列，业务全列 SELECT 直接报
+    "no such column"（表现为恢复后所有数据表内容无法显示）。自愈层用
+    Python default 合成 DEFAULT 子句完成补建。
+    """
+
+    @staticmethod
+    def _create_legacy_permission_table(engine) -> None:
+        """按 0.2.0 时代 schema 建 tables_tablepermission（缺 manage_data_role）."""
+        metadata = sa.MetaData()
+        sa.Table(
+            "tables_tablepermission",
+            metadata,
+            sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("(CURRENT_TIMESTAMP)"),
+                nullable=False,
+            ),
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("(CURRENT_TIMESTAMP)"),
+                nullable=False,
+            ),
+            sa.Column("table_id", sa.Integer(), nullable=False),
+            sa.Column("read_role", sa.String(16), nullable=False),
+            sa.Column("edit_records_role", sa.String(16), nullable=False),
+            sa.Column("edit_views_role", sa.String(16), nullable=False),
+            sa.Column("edit_schema_role", sa.String(16), nullable=False),
+            sa.Column("comment_role", sa.String(16), nullable=False),
+            sa.Column("hidden_fields", sa.JSON(), nullable=False),
+            sa.Column("row_filters", sa.JSON(), nullable=False),
+            sa.Column("row_filter_type", sa.String(3), nullable=False),
+        )
+        metadata.create_all(engine)
+
+    def _make_legacy_permission_db(self, tmp_path, monkeypatch):
+        """构造缺 manage_data_role 且 stamp 到 head 的库（历史 stamp 掩盖缺列形态）."""
+        url = f"sqlite:///{(tmp_path / 'perm.db').as_posix()}"
+        monkeypatch.setattr(settings, "DATABASE_URL", url)
+        engine = create_engine(url)
+        self._create_legacy_permission_table(engine)
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO tables_tablepermission (table_id, read_role, edit_records_role, "
+                    "edit_views_role, edit_schema_role, comment_role, hidden_fields, row_filters, row_filter_type) "
+                    "VALUES (1, '', '', '', '', '', '{}', '[]', 'AND')"
+                )
+            )
+        _stamp_version(engine, HEAD)
+        monkeypatch.setattr(db_mod, "engine", engine)
+        monkeypatch.setattr(mig_mod, "_db_is_fresh", lambda: False)
+        return engine
+
+    def test_heals_not_null_column_with_python_default(self, tmp_path, monkeypatch):
+        """缺列被补建（NOT NULL + Python default 合成 DEFAULT），存量数据保留."""
+        engine = self._make_legacy_permission_db(tmp_path, monkeypatch)
+        try:
+            mig_mod.ensure_db_migrated()
+
+            cols = {c["name"] for c in inspect(engine).get_columns("tables_tablepermission")}
+            assert "manage_data_role" in cols
+            with engine.connect() as conn:
+                row = conn.execute(
+                    text("SELECT table_id, manage_data_role, read_role FROM tables_tablepermission")
+                ).fetchone()
+            assert row == (1, "", "")
+        finally:
+            engine.dispose()
+
+    def test_permission_query_after_heal(self, tmp_path, monkeypatch):
+        """自愈后 ORM 全列查询可用（复现用户报错操作不再触发 no such column）."""
+        from cndb.plugins.tables.models import TablePermission
+
+        engine = self._make_legacy_permission_db(tmp_path, monkeypatch)
+        try:
+            mig_mod.ensure_db_migrated()
+
+            with Session(engine) as session:
+                perm = session.query(TablePermission).first()
+                assert perm is not None
+                assert perm.table_id == 1
+                assert perm.manage_data_role == ""
+        finally:
+            engine.dispose()
+
+
+class TestHealSchemaDriftFunction:
+    """公开 API heal_schema_drift：按显式 URL 自愈并返回补建清单（restore 用）."""
+
+    def test_heals_and_reports(self, tmp_path):
+        """返回补建的列与索引清单，实际 schema 被修复."""
+        url = f"sqlite:///{(tmp_path / 'drift.db').as_posix()}"
+        engine = create_engine(url)
+        try:
+            Base.metadata.create_all(engine)
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE reports_template DROP COLUMN extra_table_ids"))
+                conn.execute(text("DROP INDEX ix_reports_template_workspace_id"))
+
+            healed = mig_mod.heal_schema_drift(url)
+
+            assert "reports_template.extra_table_ids" in healed
+            assert "ix_reports_template_workspace_id" in healed
+            cols = {c["name"] for c in inspect(engine).get_columns("reports_template")}
+            assert "extra_table_ids" in cols
+            idx_names = {i["name"] for i in inspect(engine).get_indexes("reports_template")}
+            assert "ix_reports_template_workspace_id" in idx_names
+        finally:
+            engine.dispose()
+
+    def test_idempotent(self, tmp_path):
+        """schema 已对齐时返回空清单，重复调用无副作用."""
+        url = f"sqlite:///{(tmp_path / 'aligned.db').as_posix()}"
+        engine = create_engine(url)
+        try:
+            Base.metadata.create_all(engine)
+        finally:
+            engine.dispose()
+
+        assert mig_mod.heal_schema_drift(url) == []
+        assert mig_mod.heal_schema_drift(url) == []
