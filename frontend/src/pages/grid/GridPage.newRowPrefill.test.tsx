@@ -7,13 +7,18 @@
  *  4. text 字段启用自动编号（config.default_mode=auto_increment）→ 不预填（编号由后端建行时生成）
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest'
 import { screen, fireEvent, within } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { renderProviders } from '@/test/render-providers'
+import { preloadGridViews } from '@/test/preloadGridViews'
 import { useTableSettingsStore } from '@/store/tableSettings'
 import GridPage from './GridPage'
+
+beforeAll(async () => {
+    await preloadGridViews()
+})
 
 // ── mock 数据 ──────────────────────────────────────────────────────────────
 

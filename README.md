@@ -192,8 +192,7 @@ src/cndb/
 │   ├── accounts/     # 用户注册 / 登录 / JWT
 │   ├── workspaces/   # 工作区 + 成员 + 角色
 │   ├── tables/       # 动态表 / 字段 / 记录 / DDL / 查询 / 视图
-│   ├── reports/      # 报告模板 (Jinja2 sandbox)
-│   └── wechat_auth/  # 微信登录
+│   └── reports/      # 报告模板 (Jinja2 sandbox)
 ├── app.py            # FastAPI 应用装配 + SPA 静态托管
 └── static/           # 前端构建产物（pnpm build 输出，同源托管）
 ```

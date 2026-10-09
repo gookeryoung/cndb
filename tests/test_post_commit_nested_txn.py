@@ -16,7 +16,6 @@ from sqlalchemy.pool import StaticPool
 import cndb.plugins.accounts.models
 import cndb.plugins.reports.models
 import cndb.plugins.tables.models
-import cndb.plugins.wechat_auth.models
 import cndb.plugins.workspaces.models  # noqa: F401
 from cndb.models.base import Base
 from cndb.plugins.tables.models import DataField, DataTable

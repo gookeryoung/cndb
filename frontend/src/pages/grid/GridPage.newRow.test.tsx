@@ -6,12 +6,17 @@
  * 组件，Table 完整渲染 dataSource，newRow 始终可见。
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest'
 import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import { renderProviders } from '@/test/render-providers'
+import { preloadGridViews } from '@/test/preloadGridViews'
 import { useTableSettingsStore } from '@/store/tableSettings'
 import GridPage from './GridPage'
+
+beforeAll(async () => {
+    await preloadGridViews()
+})
 
 // ── mock 数据 ──────────────────────────────────────────────────────────────
 

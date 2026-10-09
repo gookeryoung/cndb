@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import httpx2
 import pytest
 
 from cndb.plugins.tables.services.importing import api_fetch as af
@@ -140,7 +141,6 @@ class TestExtractArray:
 
 def _mock_client(status_code: int, body: bytes, content_type: str = "application/json"):
     """构建一个 mock 的 httpx2.Client context manager."""
-    from unittest.mock import MagicMock
 
     resp = MagicMock()
     resp.status_code = status_code
@@ -226,12 +226,81 @@ class TestFetchJson:
         with pytest.raises(ValueError):
             af.fetch_json(af.FetchConfig(url="file:///etc/passwd"))
 
+    # ── 幂等 GET 瞬时失败重试 ─────────────────────
+
+    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep", lambda *_: None)
+    @patch("httpx2.Client")
+    def test_get_transient_failure_retries_then_succeeds(self, MockClient):
+        """GET 瞬时失败 → 有限重试后成功返回."""
+
+        body = json.dumps([{"ok": 1}]).encode()
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = body
+        resp.text = body.decode()
+        resp.headers = {"content-type": "application/json"}
+
+        client = MagicMock()
+        client.request.side_effect = [httpx2.ConnectError("conn fail"), resp]
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        rows = af.fetch_json(af.FetchConfig(url="https://example.com/api"))
+        assert rows == [{"ok": 1}]
+        assert client.request.call_count == 2
+
+    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep", lambda *_: None)
+    @patch("httpx2.Client")
+    def test_get_retry_exhausted_raises_valueerror(self, MockClient):
+        """GET 重试耗尽 → 请求失败 ValueError."""
+
+        client = MagicMock()
+        client.request.side_effect = httpx2.ConnectError("conn fail")
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        with pytest.raises(ValueError, match="请求失败"):
+            af.fetch_json(af.FetchConfig(url="https://example.com/api"))
+        # 1 次初始 + MAX_RETRIES 次重试
+        assert client.request.call_count == af.MAX_RETRIES + 1
+
+    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep", lambda *_: None)
+    @patch("httpx2.Client")
+    def test_post_never_retried(self, MockClient):
+        """非幂等 POST 瞬时失败 → 不重试，直接失败."""
+
+        client = MagicMock()
+        client.request.side_effect = httpx2.ConnectError("conn fail")
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        with pytest.raises(ValueError, match="请求失败"):
+            af.fetch_json(af.FetchConfig(url="https://example.com/api", method="POST"))
+        assert client.request.call_count == 1
+
+    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep", lambda *_: None)
+    @patch("httpx2.Client")
+    def test_retry_zero_disables(self, MockClient):
+        """max_retries=0 → GET 也只请求一次."""
+
+        client = MagicMock()
+        client.request.side_effect = httpx2.ConnectError("conn fail")
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        with pytest.raises(ValueError, match="请求失败"):
+            af.fetch_json(af.FetchConfig(url="https://example.com/api", max_retries=0))
+        assert client.request.call_count == 1
+
     # ── 重定向 SSRF 防护 ──────────────────────────
 
     @patch("httpx2.Client")
     def test_redirect_to_private_ip_blocked(self, MockClient):
         """302 跳转到 127.0.0.1 应被 validate_url 拦截 —— 防 SSRF via open redirect."""
-        from unittest.mock import MagicMock
 
         redirect_resp = MagicMock()
         redirect_resp.status_code = 302
@@ -251,7 +320,6 @@ class TestFetchJson:
     @patch("httpx2.Client")
     def test_redirect_to_linklocal_blocked(self, MockClient):
         """302 跳转到 169.254.169.254（云 metadata）应被拦截."""
-        from unittest.mock import MagicMock
 
         redirect_resp = MagicMock()
         redirect_resp.status_code = 302
@@ -271,7 +339,6 @@ class TestFetchJson:
     @patch("httpx2.Client")
     def test_redirect_to_localhost_hostname_blocked(self, MockClient):
         """302 跳转到 localhost 主机名应被拦截."""
-        from unittest.mock import MagicMock
 
         redirect_resp = MagicMock()
         redirect_resp.status_code = 301
@@ -291,7 +358,6 @@ class TestFetchJson:
     @patch("httpx2.Client")
     def test_redirect_to_public_ok(self, MockClient):
         """302 跳转到另一个公网地址应正常跟随."""
-        from unittest.mock import MagicMock
 
         redirect_resp = MagicMock()
         redirect_resp.status_code = 302
@@ -320,7 +386,6 @@ class TestFetchJson:
     @patch("httpx2.Client")
     def test_redirect_relative_url_joined(self, MockClient):
         """相对路径的 location 头应正确拼接到当前 URL 上再校验."""
-        from unittest.mock import MagicMock
 
         redirect_resp = MagicMock()
         redirect_resp.status_code = 302
@@ -350,7 +415,6 @@ class TestFetchJson:
     @patch("httpx2.Client")
     def test_too_many_redirects_rejected(self, MockClient):
         """超过 max_redirects 次重定向应抛 ValueError."""
-        from unittest.mock import MagicMock
 
         redirect_resp = MagicMock()
         redirect_resp.status_code = 302

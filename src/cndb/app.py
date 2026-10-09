@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,15 +22,18 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_offline import FastAPIOffline
 
 from cndb.core.config import settings
+from cndb.core.errors import CndbError
 from cndb.core.migrations import ensure_db_migrated
 from cndb.core.plugin_registry import plugin_registry
 from cndb.core.system_api import register_system_routes
 from cndb.plugins.tables.routers.public import router as public_router
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -38,8 +42,20 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     启动时自动执行数据库迁移（alembic upgrade head），
     确保 schema 处于最新版本。首次运行的全新数据库会自动 create_all。
+    迁移失败时给出可操作指引（备份恢复/重建），而非裸 traceback。
     """
-    ensure_db_migrated()
+    try:
+        ensure_db_migrated()
+    except Exception as exc:
+        logger.critical("数据库初始化失败，服务无法启动: %s", exc, exc_info=True)
+        raise RuntimeError(
+            "数据库初始化失败，服务无法启动。\n"
+            "  处理建议：\n"
+            "  1. 检查数据库文件所在目录是否可写（默认 data/ 下 cndb.db）；\n"
+            "  2. 使用 cndb restore 从最近备份恢复（推荐，可自动对齐 schema）；\n"
+            "  3. 确认无可用备份后再考虑备份后删除数据库文件重建（会丢数据）。\n"
+            f"  原始错误：{exc}"
+        ) from exc
 
     yield
 
@@ -79,8 +95,63 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 @app.get("/api/health", tags=["framework"])
 def health_check() -> dict[str, object]:
-    """框架级健康检查（最简版）."""
+    """框架级健康检查（liveness：仅表明进程存活，不探测依赖）."""
     return {"status": "ok", "version": settings.APP_VERSION, "app": settings.APP_NAME}
+
+
+@app.get("/api/health/ready", tags=["framework"])
+def health_ready() -> JSONResponse:
+    """就绪探测（readiness）：探测 DB 可达性与迁移状态.
+
+    DB 不可达返回 503（部署层可据此摘除实例）；alembic_version 缺失
+    仅在 payload 中标注 migration_current=null，不影响就绪判定。
+    """
+    from cndb.core.database import db_readiness
+
+    snapshot = db_readiness()
+    if not snapshot["db"]:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unready", "version": settings.APP_VERSION, **snapshot},
+        )
+    return JSONResponse(
+        status_code=200,
+        content={"status": "ok", "version": settings.APP_VERSION, **snapshot},
+    )
+
+
+# ── 统一错误契约（core/errors.py）─────────────────────────────────
+
+
+@app.exception_handler(CndbError)
+async def _cndb_error_handler(request: Request, exc: CndbError) -> Response:
+    """业务异常 → 统一错误响应体 ``{"detail", "code"}``.
+
+    服务层抛出的 CndbError 族在此统一映射，路由层无需逐个 try/except。
+    """
+    logger.warning(
+        "业务异常 [%s] %s %s: %s (context=%s)",
+        exc.code,
+        request.method,
+        request.url.path,
+        exc.detail,
+        exc.context,
+    )
+    return JSONResponse(status_code=exc.status_code, content=exc.to_payload())
+
+
+@app.exception_handler(Exception)
+async def _unhandled_error_handler(request: Request, exc: Exception) -> Response:
+    """未捕获异常 → 500 统一响应体 + 完整堆栈日志.
+
+    注意：ServerErrorMiddleware 发送本响应后仍会重抛异常（由 uvicorn 记录），
+    本 handler 的职责是保证客户端拿到统一 JSON 形状而非空白 500。
+    """
+    logger.exception("未处理异常 %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "内部服务器错误", "code": "internal_error"},
+    )
 
 
 @app.get("/api/plugins", tags=["framework"])

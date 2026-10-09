@@ -22,7 +22,7 @@
 
 **目标**：
 1. 统一错误契约：服务层异常在路由层完成映射，业务失败返回 400+明细，消除未映射 500。
-2. 外部依赖（微信 API、HTTP 导入源）具备显式超时/重试/降级策略。
+2. 外部依赖（HTTP 导入源）具备显式超时/重试/降级策略（外部微信登录已按用户决策移除）。
 3. 导入长任务具备幂等恢复与失败可见性（复用现有任务表）。
 4. 健康检查升级为就绪探测（探测 DB 可用性），支持部署层探活。
 5. 宽泛异常清理：仅允许在边界层（CLI/GUI/顶层）捕获宽泛异常并记录。
@@ -50,7 +50,6 @@
 | accounts/workspaces | 身份与协作权限 | core | tables | customer/supplier | request.state.user_id |
 | tables | 元数据驱动的表格/视图/导入导出/治理 | core, workspaces | 前端、文件系统 | conformist | field_types registry 统一字段模型 |
 | reports | 模板渲染（Jinja2） | tables, accounts | 前端/PDF | customer/supplier | 模板上下文字典 |
-| wechat_auth | 外部微信登录 | 微信 API（外部） | accounts | anti-corruption layer | client.py 隔离外部协议 |
 | frontend | SPA | 全部 REST API | — | conformist | FastAPI 为类型真理源 |
 
 信任边界：公开路由（public_router、公开表单/分享页）与鉴权路由之间；系统管理路由（backup/restore，superuser）；文件上传/下载边界。
@@ -63,28 +62,28 @@
 
 ### 阶段一：错误契约统一（最高优先级）
 
-- [ ] R1.1 盘点全部宽泛 `except Exception`/裸 except（当前 43 处/26 文件），分类为：可保留（边界层+已记日志）与须收敛（吞异常/掩盖根因）
-- [ ] R1.2 定义统一异常体系：服务层自定义异常基类 + 错误码，路由层统一 handler 映射为 400/404/409 + 明细，禁止服务层异常裸穿成 500
-- [ ] R1.3 `get_db` 增加异常时显式 `rollback()`（当前仅 close，依赖隐式回滚语义），保证嵌套事务场景（见 test_post_commit_nested_txn）行为不变
-- [ ] R1.4 为每个收敛点补边界测试（畸形输入、并发锁冲突、磁盘失败模拟）
+- [x] R1.1 盘点全部宽泛 `except Exception`/裸 except（当前 43 处/26 文件），分类为：可保留（边界层+已记日志）与须收敛（吞异常/掩盖根因）
+- [x] R1.2 定义统一异常体系：服务层自定义异常基类 + 错误码，路由层统一 handler 映射为 400/404/409 + 明细，禁止服务层异常裸穿成 500
+- [x] R1.3 `get_db` 增加异常时显式 `rollback()`（当前仅 close，依赖隐式回滚语义），保证嵌套事务场景（见 test_post_commit_nested_txn）行为不变
+- [x] R1.4 为每个收敛点补边界测试（畸形输入、并发锁冲突、磁盘失败模拟）
 
 ### 阶段二：外部依赖韧性
 
-- [ ] R2.1 wechat_auth client：显式 connect/read 超时、有限重试（幂等 GET 才重试）、失败降级路径（登录不可用时给出明确错误而非挂起）
-- [ ] R2.2 API 导入源（api_fetch）：同上超时/重试策略，失败行导出已有（failed_row_exporter），补"部分成功"语义测试
-- [ ] R2.3 外部调用统一走带超时的会话工具，禁止无超时请求散落
+- [x] R2.1 wechat_auth client：~~外部微信登录韧性~~（用户决策：微信登录功能整体移除，本项作废）
+- [x] R2.2 API 导入源（api_fetch）：幂等 GET 有限重试 + 指数退避，非幂等方法不重试，失败行导出已有（failed_row_exporter），补"部分成功"语义测试
+- [x] R2.3 外部调用统一走带超时的会话工具，禁止无超时请求散落（外部调用面收敛为 api_fetch 单点）
 
 ### 阶段三：长任务与数据可靠性
 
-- [ ] R3.1 导入任务状态机审计：补齐 任务失败→记录原因→可重试 路径，保证重复触发同一任务幂等
-- [ ] R3.2 启动迁移失败面：`ensure_db_migrated` 失败时 CLI/GUI 给出可操作指引（备份恢复/升级提示），而非裸 traceback
-- [ ] R3.3 备份恢复健壮性已有测试基础（test_backup_restore_robustness / legacy_compat），补备份文件版本号前向兼容约定（沿用 backup-archive-layout.md）
+- [x] R3.1 导入任务状态机审计：补齐 任务失败→记录原因→可重试 路径，保证重复触发同一任务幂等（analyze/execute 入口幂等守卫，重复派发 warning + 静默忽略）
+- [x] R3.2 启动迁移失败面：`ensure_db_migrated` 失败时 CLI/GUI 给出可操作指引（备份恢复/升级提示），而非裸 traceback
+- [x] R3.3 备份恢复健壮性已有测试基础（test_backup_restore_robustness / legacy_compat），补备份文件版本号前向兼容约定（沿用 backup-archive-layout.md）
 
 ### 阶段四：可观测性补全
 
-- [ ] R4.1 `/api/health` 升级：区分 liveness（进程存活）与 readiness（DB ping + 迁移版本），供部署探活
-- [ ] R4.2 慢查询/外部调用耗时结构化日志（logger，禁止 print），便于本地/单机排障
-- [ ] R4.3 关键操作审计覆盖检查（audit 服务已有），补公开路由写操作审计缺口（如存在）
+- [x] R4.1 `/api/health` 升级：区分 liveness（进程存活）与 readiness（DB ping + 迁移版本，不可达 503），供部署探活
+- [x] R4.2 慢查询/外部调用耗时结构化日志（logger，禁止 print），便于本地/单机排障（engine 级 before/after_cursor_execute，阈值 0.5s）
+- [x] R4.3 关键操作审计覆盖检查（audit 服务已有）：公开路由唯一写操作（公开表单提交）走 rec.create_row 已含 audit 记录，无缺口
 
 ## 7. 适应度函数（架构不变量的可测检查）
 
@@ -109,7 +108,6 @@
 ## 9. 运行时依赖责任（设计期采纳标准）
 
 - SQLite（默认）：本地可调试（CLI 查询文件）、可替换（DATABASE_URL）、降级路径（WAL 失败仅告警）、退出路径（迁 PG 仅改 URL+重跑迁移）。维持。
-- 微信 API：不可控外部服务——必须有超时/重试/明确失败语义（R2.1），登录失败不阻塞主功能。
 - httpx2/requests 并存：长期收敛为单一 HTTP 客户端（低优先，不在本方案范围，仅记录）。
 
 ## 10. 可逆性
