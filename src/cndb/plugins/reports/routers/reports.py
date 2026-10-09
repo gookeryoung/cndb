@@ -29,6 +29,12 @@ from cndb.plugins.reports.schemas import (
     TemplateUpdate,
 )
 from cndb.plugins.reports.themes import ThemePreset, get_theme_preset
+from cndb.plugins.tables.services.core.access import (
+    TableAction,
+    check_action,
+    check_workspace_permission,
+)
+from cndb.plugins.workspaces.models import WorkspaceRole
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -180,17 +186,86 @@ def _validate_theme(theme: str) -> str:
         raise HTTPException(status_code=400, detail=f"不支持的主题风格: {theme}") from exc
 
 
+def _authorize_template_workspace(db: Session, workspace_id: int, user: User) -> None:
+    """校验用户对工作区的 VIEWER 级最低权限（模板归属工作区时调用）.
+
+    Args:
+        db: 数据库会话
+        workspace_id: 目标工作区 ID
+        user: 当前用户
+
+    Raises:
+        HTTPException(404): 工作区不存在
+        HTTPException(403): 用户不是工作区成员
+    """
+    check_workspace_permission(db, workspace_id, user, WorkspaceRole.VIEWER)
+
+
+def _authorize_table_for_template(db: Session, table_id: int, user: User, action: TableAction) -> None:
+    """校验用户对数据表的表级权限（模板绑定到具体表时调用）.
+
+    Args:
+        db: 数据库会话
+        table_id: 目标表 ID
+        user: 当前用户
+        action: 需要的表级动作（通常 READ 或 EDIT_VIEWS）
+
+    Raises:
+        HTTPException(404): 表不存在
+        HTTPException(403): 用户无对应表级权限
+    """
+    from cndb.plugins.tables.models import DataTable
+
+    dt = db.get(DataTable, table_id)
+    if dt is None:
+        raise HTTPException(status_code=404, detail=f"数据表不存在 id={table_id}")
+    if not check_action(db, dt, user, action):
+        raise HTTPException(status_code=403, detail="无权访问该数据表")
+
+
+def _authorize_template_access(db: Session, tpl: ReportTemplate, user: User, action: TableAction) -> None:
+    """校验用户对模板的访问权限.
+
+    权限解析优先级：
+      1. 模板绑定 table_id → 走表级 action 校验
+      2. 模板有 workspace_id（无 table_id） → 走工作区级 VIEWER 校验
+      3. 两者都无 → 通用模板，已登录用户均可访问
+    """
+    if tpl.table_id is not None:
+        _authorize_table_for_template(db, tpl.table_id, user, action)
+        return
+    if tpl.workspace_id is not None:
+        _authorize_template_workspace(db, tpl.workspace_id, user)
+        return
+    # 通用模板，已登录用户均可访问 — 到此已证明 user 非 None（由 get_current_user 保证）
+
+
 @router.get("", response_model=list[TemplateListResponse])
 def list_templates(
     workspace_id: int | None = None,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[ReportTemplate]:
-    """列出报表模板；传 workspace_id 时仅返回归属该工作区的模板，缺省返回全量."""
-    stmt = select(ReportTemplate).order_by(ReportTemplate.id)
+    """列出报表模板；传 workspace_id 时仅返回归属该工作区的模板（需是工作区成员）.
+
+    不传 workspace_id 时返回当前用户有权访问的全部模板（归属表有 READ 权限或
+    归属工作区有 VIEWER 角色）。
+    """
     if workspace_id is not None:
-        stmt = stmt.where(ReportTemplate.workspace_id == workspace_id)
-    return list(db.scalars(stmt).all())
+        _authorize_template_workspace(db, workspace_id, current_user)
+        stmt = select(ReportTemplate).where(ReportTemplate.workspace_id == workspace_id).order_by(ReportTemplate.id)
+        return list(db.scalars(stmt).all())
+
+    # 无 workspace_id：筛选用户有权访问的模板
+    all_templates = list(db.scalars(select(ReportTemplate).order_by(ReportTemplate.id)).all())
+    authorized: list[ReportTemplate] = []
+    for tpl in all_templates:
+        try:
+            _authorize_template_access(db, tpl, current_user, TableAction.READ)
+            authorized.append(tpl)
+        except HTTPException:
+            continue
+    return authorized
 
 
 def _resolve_table(db: Session, table_id: int | None) -> int | None:
@@ -237,13 +312,18 @@ def _resolve_extra_tables(db: Session, extra_table_ids: list[int]) -> list[int]:
 def create_template(
     payload: TemplateCreate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ReportTemplate:
     _validate_format(payload.output_format)
     _validate_theme(payload.theme)
-    _resolve_table(db, payload.table_id)
+    # 权限前置：用户必须对目标表有 READ 权限才能创建报表模板
+    if payload.table_id is not None:
+        _authorize_table_for_template(db, payload.table_id, current_user, TableAction.READ)
     workspace_id = _resolve_workspace_id(db, payload.workspace_id, payload.table_id)
     extra_ids = _resolve_extra_tables(db, payload.extra_table_ids)
+    # 额外引用表也需要 READ 权限（防止借模板越权读跨工作区表数据）
+    for etid in extra_ids:
+        _authorize_table_for_template(db, etid, current_user, TableAction.READ)
     try:
         _jinja_env.from_string(payload.template_content)
     except Exception as exc:
@@ -269,11 +349,12 @@ def create_template(
 def get_template(
     template_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ReportTemplate:
     tpl = db.get(ReportTemplate, template_id)
     if not tpl:
         raise HTTPException(status_code=404, detail="模板不存在")
+    _authorize_template_access(db, tpl, current_user, TableAction.READ)
     return tpl
 
 
@@ -282,11 +363,13 @@ def update_template(
     template_id: int,
     payload: TemplateUpdate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ReportTemplate:
     tpl = db.get(ReportTemplate, template_id)
     if not tpl:
         raise HTTPException(status_code=404, detail="模板不存在")
+    # 首先验证用户对模板当前归属有 READ 权限（能读才能更新）
+    _authorize_template_access(db, tpl, current_user, TableAction.READ)
     # exclude_unset 会把显式设为 None 的字段也排除（因为等于默认值），
     # 所以改用显式迭代 model_fields 来检测用户真正设置了哪些字段
     ud: dict[str, Any] = {}
@@ -302,10 +385,16 @@ def update_template(
         _validate_format(ud["output_format"])
     if "theme" in ud and ud["theme"] is not None:
         ud["theme"] = _validate_theme(ud["theme"])
+    # 修改 table_id 时：用户必须对新表有 READ 权限
     if "table_id" in ud:
-        _resolve_table(db, ud["table_id"])
+        new_table_id = ud["table_id"]
+        if new_table_id is not None and new_table_id != tpl.table_id:
+            _authorize_table_for_template(db, new_table_id, current_user, TableAction.READ)
     if "extra_table_ids" in ud and ud["extra_table_ids"] is not None:
-        ud["extra_table_ids"] = _resolve_extra_tables(db, ud["extra_table_ids"])
+        extra_ids = _resolve_extra_tables(db, ud["extra_table_ids"])
+        for etid in extra_ids:
+            _authorize_table_for_template(db, etid, current_user, TableAction.READ)
+        ud["extra_table_ids"] = extra_ids
     if "template_content" in ud:
         try:
             _jinja_env.from_string(ud["template_content"])
@@ -329,11 +418,12 @@ def update_template(
 def delete_template(
     template_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     tpl = db.get(ReportTemplate, template_id)
     if not tpl:
         raise HTTPException(status_code=404, detail="模板不存在")
+    _authorize_template_access(db, tpl, current_user, TableAction.READ)
     db.delete(tpl)
     db.commit()
 
