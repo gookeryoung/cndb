@@ -57,3 +57,20 @@
 - [x] `tests/test_legacy_backup_compat.py` 参数化遍历目录下全部 `backup-*.tar.gz`，新增历史归档自动纳入参数化，无需改测试；目录为空时整组 skip（wheel 安装环境）。
 - [x] 每个归档验证链路：inspect_backup 读取 manifest（协议版本、软件版本、行数清单）→ restore_backup 恢复（native 自动迁移 schema 到当前 head）→ 逐表行数与 manifest 比对（旧数据零丢失）→ 升级后的库上执行完整 seed（演示数据重新生成并保存落库）。
 - [x] seed 隔离：monkeypatch `cndb.core.database` 的 engine/SessionLocal 与 `settings.DATABASE_URL` 指向恢复出的临时库（seed() 函数内 import 运行时解析模块属性）；`_generate_sample_reports` 在测试中替换为空操作，避免向仓库 datasets 目录写示例报告的副作用。
+
+## native 恢复机制（SQLite backup API）
+
+0.2.0 备份恢复故障的附带修复：原实现"删除目标库文件 + copy2 复制"在服务运行中
+（Windows 下 SQLite VFS 打开文件不带 FILE_SHARE_DELETE，`unlink` 抛 WinError 32）
+或同进程连接池持有文件时直接失败。现改为 SQLite backup API 页级覆盖。
+
+- [x] `_restore_sqlite_native(extracted_dir, target_db_path)`：用
+  `sqlite3.Connection.backup` 把备份 `.db` 内容覆盖到目标；不删除目标文件，
+  目标被占用（服务运行中/同进程池）时恢复依然成功；目标文件不存在时自动创建。
+  原 `_reset_sqlite_database`（删除重建目标文件）已删除，不再需要。
+- [x] `restore_backup` 在数据库恢复分支结束后调用 `_dispose_global_engine()`：
+  dispose `cndb.core.database.engine` 连接池，同进程恢复（Web 管理台/GUI）后
+  新请求用全新连接打开恢复后的库文件，避免旧连接携带恢复前状态。
+- [x] `_migrate_after_restore` 在 upgrade head + create_all 补建缺失表之后调用
+  `heal_schema_drift(database_url)` 做 schema 自愈（补齐迁移链从未覆盖的模型列，
+  详见 `.trae/designs/migration-schema-heal.md`）；失败包装为 RestoreError 终止恢复。

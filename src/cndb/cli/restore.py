@@ -17,7 +17,8 @@
     7. 校验并清理临时目录
 
 关键特性：
-- 数据库恢复前自动清理旧数据，避免外键冲突
+- native 恢复使用 SQLite backup API 页级覆盖，目标文件被占用（服务运行中）也可安全恢复
+- 数据库恢复后自动执行 alembic 迁移与 schema 自愈，与当前程序模型对齐
 - 支持 dry-run 预览备份内容而不实际恢复
 - 旧版本备份在新版本程序上恢复时自动迁移 schema（向前兼容）
 - 新版本备份在旧 schema 上以 sqlalchemy 模式降级恢复时，显式输出数据裁剪报告（跳过表/丢弃列）
@@ -202,19 +203,20 @@ def _check_target_safe(database_url: str, force: bool) -> None:
         conn.close()
 
 
-def _reset_sqlite_database(db_path: Path) -> None:
-    """清空 SQLite 数据库（删除旧文件并创建空库）."""
-    if db_path.exists():
-        db_path.unlink()
-    # 同时清理 WAL / SHM 等附属文件
-    for suffix in ("-wal", "-shm", "-journal"):
-        side = Path(str(db_path) + suffix)
-        if side.exists():
-            side.unlink()
-    # 创建空文件
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.close()
+def _dispose_global_engine() -> None:
+    """归还并关闭全局 engine 连接池中的闲置连接.
+
+    同进程恢复（Web 管理台 / GUI）场景下，恢复完成后旧连接池中的连接
+    可能携带恢复前的库状态（预编译语句、页缓存）；dispose 后新请求会用
+    全新连接打开恢复后的库文件，确保读到一致的新数据。
+    """
+    try:
+        from cndb.core.database import engine
+
+        engine.dispose()
+        print("[restore] 已重置数据库连接池")
+    except Exception as exc:  # pragma: no cover - engine 未初始化等边缘场景
+        logger.debug("重置连接池失败（忽略）: %s", exc)
 
 
 def _extracted_db_dir(extracted_dir: Path) -> Path:
@@ -231,12 +233,28 @@ def _extracted_db_dir(extracted_dir: Path) -> Path:
 
 
 def _restore_sqlite_native(extracted_dir: Path, target_db_path: Path) -> None:
-    """native 模式：直接用备份的 .db 文件覆盖目标."""
+    """native 模式：用 SQLite backup API 把备份 .db 的内容恢复到目标.
+
+    使用 ``sqlite3.Connection.backup`` 而非"删除目标文件再复制"：
+    - 不删除目标文件 → Windows 下即使服务进程（或同进程连接池）仍持有
+      目标文件的打开句柄，恢复也不会因文件占用（WinError 32）而失败；
+    - backup API 走 SQLite 自身的页级覆盖协议，会正确推进 change counter
+      并重置目标 WAL，持有旧连接的进程在下一个事务即可读到新数据；
+    - 目标文件不存在时自动创建。
+    """
     src_db = _extracted_db_dir(extracted_dir) / "cndb.db"
     if not src_db.is_file():
         raise RestoreError(f"native 备份缺失 cndb.db: {src_db}")
-    _reset_sqlite_database(target_db_path)
-    shutil.copy2(src_db, target_db_path)
+    target_db_path.parent.mkdir(parents=True, exist_ok=True)
+    src_conn = sqlite3.connect(str(src_db))
+    try:
+        dst_conn = sqlite3.connect(str(target_db_path))
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
     print(f"[restore] SQLite 数据库已恢复 → {target_db_path}")
 
 
@@ -376,6 +394,18 @@ def _migrate_after_restore(database_url: str, backup_schema_version: str) -> Non
             engine.dispose()
     except SQLAlchemyError as exc:
         raise RestoreError(f"恢复后补建缺失表失败: {exc}") from exc
+
+    # schema 自愈：对照 ORM 元数据补建缺列/缺索引。迁移链可能存在缺口
+    # （历史上有列只加在 ORM 上没写迁移），仅靠 upgrade head 无法保证
+    # 恢复库 schema 与当前模型一致；缺列会让业务查询直接报 no such column。
+    try:
+        from cndb.core.migrations import heal_schema_drift
+
+        healed = heal_schema_drift(database_url)
+        if healed:
+            print(f"[restore] schema 自愈补建: {', '.join(healed)}")
+    except SQLAlchemyError as exc:
+        raise RestoreError(f"恢复后 schema 自愈失败: {exc}") from exc
     print("[restore] schema 迁移完成")
 
 
@@ -563,6 +593,9 @@ def restore_backup(
             loss_report = _restore_sqlalchemy_json(extracted, db_url)
             print("[restore] 补写 alembic 版本标记...")
             migrations.stamp_head(db_url)
+
+        # 同进程恢复（Web 管理台 / GUI）：重置连接池，避免旧连接携带恢复前的库状态
+        _dispose_global_engine()
 
         # 5) 恢复 uploads
         if up_info.get("included", False):

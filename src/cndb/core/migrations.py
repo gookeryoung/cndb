@@ -142,17 +142,48 @@ def _run_create_all_and_stamp(cfg: alembic.config.Config) -> None:
     logger.info("兜底迁移完成（create_all + stamp head）")
 
 
+def _scalar_server_default(col: Column[Any]) -> str | None:
+    """把 ORM 列的 Python 端标量默认值合成为 SQL server_default 字面量.
+
+    历史上部分列只声明了 Python 端 default（如 ``default=""``），迁移链与
+    server_default 均未覆盖。自愈补建这类 NOT NULL 列时，缺 DEFAULT 会导致
+    存量表 ADD COLUMN 直接失败，因此用 Python 默认值合成 DEFAULT 子句。
+
+    Returns:
+        可内联到 DDL 的 DEFAULT 字面量；无法合成时返回 None.
+    """
+    if col.server_default is not None:
+        return None  # 已有 server_default，CreateColumn 可直接编译
+    default = col.default
+    if default is None or not getattr(default, "is_scalar", False):
+        return None
+    value = getattr(default, "arg", None)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return "'" + value.replace("'", "''") + "'"
+    return None
+
+
 def _render_add_column_ddl(col: Column[Any], dialect: Any) -> str | None:
     """将 ORM 列编译为 ``ALTER TABLE ADD COLUMN`` 的列定义片段.
 
     返回 None 表示该列无法安全补建：
     - 主键自增列（表已存在时不会缺失）
-    - NOT NULL 且无 server_default（存量表有数据时 ADD COLUMN 必失败）
+    - NOT NULL 且无 server_default、也无法从 Python 端标量 default 合成的列
+      （存量表有数据时 ADD COLUMN 必失败）
     """
     if col.primary_key:
         return None
     if not col.nullable and col.server_default is None:
-        return None
+        if _scalar_server_default(col) is None:
+            return None
+        # 用合成的 server_default 构造影子列参与编译（不改动原 Column 对象）
+        col = Column(col.name, col.type, nullable=col.nullable, server_default=text(_scalar_server_default(col)))  # type: ignore[assignment]
     return str(CreateColumn(col).compile(dialect=dialect)).strip()
 
 
@@ -239,6 +270,36 @@ def _heal_schema_drift() -> None:
         return
     if healed_cols or healed_idx:
         logger.warning("schema 自愈完成：补建缺失列 %s，补建缺失索引 %s", healed_cols, healed_idx)
+
+
+def heal_schema_drift(database_url: str | None = None) -> list[str]:
+    """对指定数据库执行一次 schema 自愈，返回补建的列/索引清单.
+
+    供 restore 等非默认库流程调用：与启动期 ``_heal_schema_drift`` 同源，
+    但目标库由参数显式指定，且失败向上抛出（恢复流程需要显式感知），
+    不像启动期那样静默降级。
+
+    Args:
+        database_url: 目标数据库 URL。None 时使用 settings.DATABASE_URL.
+
+    Returns:
+        补建的 ``表名.列名`` 与索引名列表.
+
+    Raises:
+        SQLAlchemyError: 自愈过程数据库访问失败时向上抛出.
+    """
+    from sqlalchemy import create_engine
+
+    target = database_url or settings.DATABASE_URL
+    engine = create_engine(target)
+    try:
+        healed_cols = _heal_missing_columns(engine)
+        healed_idx = _heal_missing_indexes(engine)
+    finally:
+        engine.dispose()
+    if healed_cols or healed_idx:
+        logger.warning("schema 自愈完成：补建缺失列 %s，补建缺失索引 %s", healed_cols, healed_idx)
+    return [*healed_cols, *healed_idx]
 
 
 def ensure_db_migrated() -> None:
