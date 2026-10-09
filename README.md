@@ -61,7 +61,10 @@ docker compose -f docker-compose.wheel.yml exec app cndb seed
 
 ```bash
 # 带 PostgreSQL 容器启动（可选 profile）
-docker compose -f docker-compose.wheel.yml --profile pg up -d --build
+# 注意：--profile pg 只拉起 postgres 容器，必须同时把 CNDATABASE_URL 指向它，
+# 否则 app 会静默继续使用 SQLite
+CNDATABASE_URL=postgresql+psycopg://cndb:cndb_pass@postgres:5432/cndb \
+  docker compose -f docker-compose.wheel.yml --profile pg up -d --build
 docker compose -f docker-compose.wheel.yml exec app cndb seed
 ```
 
@@ -83,8 +86,9 @@ CNDB_DB_PASSWORD=your_pass
 # SQLite 快速启动：nginx:80 → app:8000
 docker compose up -d --build
 
-# PostgreSQL（可选 profile）
-docker compose --profile pg up -d --build
+# PostgreSQL（可选 profile，需同时指定 CNDATABASE_URL 指向 postgres）
+CNDATABASE_URL=postgresql+psycopg://cndb:cndb_pass@postgres:5432/cndb \
+  docker compose --profile pg up -d --build
 
 # 注入演示数据
 docker compose exec app uv run cndb seed

@@ -119,7 +119,16 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # 数据库配置（默认 SQLite，迁移到生产时可替换为 PostgreSQL/MySQL）
-    DATABASE_URL: str = f"sqlite:///{DATABASE_DIR / 'cndb.db'}"
+    # 同时接受 DATABASE_URL 与 CNDATABASE_URL 两种环境变量名。
+    # 原因：compose / .env 模板 / 部署文档统一用 CNDB_ 前缀（与 CNDB_DATA_DIR 一致），
+    # 而 pydantic-settings 默认按字段名取变量，只认 DATABASE_URL。
+    # 若不加此alias，CNDATABASE_URL 会被静默忽略 —— 容器照常启动但始终连 SQLite，
+    # 且日志无任何异常，属最难排查的一类配置陷阱。
+    DATABASE_URL: str = Field(
+        default=f"sqlite:///{DATABASE_DIR / 'cndb.db'}",
+        validation_alias=AliasChoices("DATABASE_URL", "CNDATABASE_URL"),
+        description="数据库连接串；CNDATABASE_URL 为兼容别名",
+    )
 
     # CORS 配置（开发期放开 Vite 默认端口）
     CORS_ORIGINS: list[str] = [

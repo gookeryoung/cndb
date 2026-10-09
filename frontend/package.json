@@ -77,5 +77,6 @@
     "patchedDependencies": {
       "rc-util@5.44.4": "patches/rc-util.patch"
     }
-  }
+  },
+  "packageManager": "pnpm@12.4.2"
 }

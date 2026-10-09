@@ -10,7 +10,9 @@ __pycache__
 *.pyd
 *.egg-info
 *.egg
-dist/*.tar.gz   # 仅排除 sdist，保留 dist/*.whl 供 wheel 部署镜像使用
+# 注意：Docker 不支持行尾注释，每条规则必须是纯 pattern。
+# 仅排除 sdist，保留 dist/*.whl 供deploy/Dockerfile.wheel 使用。
+dist/*.tar.gz
 build
 .eggs
 
@@ -20,6 +22,26 @@ build
 htmlcov
 .tox
 coverage.xml
+
+# ── 前端（deploy/Dockerfile 会在镜像内重新 pnpm install）──
+# node_modules 约 500MB，排除后构建上下文从~700MB 降到 ~10MB；
+# 不能排除整个 frontend/，镜像构建需要 frontend/ 源码与 pnpm-lock.yaml。
+frontend/node_modules
+frontend/dist
+frontend/coverage
+frontend/.auth
+frontend/playwright-report
+frontend/test-results
+frontend/.eslintcache
+.pnpm-store
+
+# 本地开发数据库与数据目录（容器内用 /data卷，不要把宿主数据打进镜像）
+.cndb
+
+# 工作区元数据
+.workbuddy
+.trae
+.claude
 
 # 虚拟环境
 .venv
