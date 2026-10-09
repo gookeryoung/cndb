@@ -23,7 +23,11 @@ services:
     image: cndb2-app:latest
     container_name: cndb2-app
     environment:
-      - CNDATABASE_URL=${CNDATABASE_URL:-sqlite:////data/cndb.db}
+      # 数据根目录：数据库/附件/备份/日志统一落在 /data 卷内。
+      # 只设 DATABASE_URL 时 UPLOAD_DIR 等仍派生自 ~/.cndb，
+      # 容器重建后用户上传的附件会全部丢失。
+      - CNDB_DATA_DIR=/data
+      - CNDATABASE_URL=${CNDATABASE_URL:-sqlite:////data/data/cndb.db}
       - CNDATABASE_URL_PG=${CNDATABASE_URL_PG:-postgresql+psycopg://cndb:cndb_pass@postgres:5432/cndb}
     volumes:
       - cndb-data:/data
@@ -33,7 +37,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      # 首次启动需跑 alembic 迁移 + create_all，10s 不足以完成，
+      # 过短会在服务其实正常时判定 unhealthy，连带 web 容器无法启动
+      start_period: 60s
 
   web:
     build:

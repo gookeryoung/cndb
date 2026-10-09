@@ -28,16 +28,24 @@ services:
     ports:
       - "${CNDB_PORT:-8000}:8000"
     environment:
-      - CNDATABASE_URL=${CNDATABASE_URL:-sqlite:////data/cndb.db}
+      # 数据根目录：数据库/附件/备份/日志统一落在 /data 卷内。
+      # 只设 DATABASE_URL 是不够的 —— UPLOAD_DIR 等子目录仍会派生自
+      # ~/.cndb 留在容器可写层，容器一重建用户上传的附件就全部丢失。
+      - CNDB_DATA_DIR=/data
+      - CNDATABASE_URL=${CNDATABASE_URL:-sqlite:////data/data/cndb.db}
     volumes:
       - cndb-data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      # 注意：探测 /api/health 而非 /health —— 后者在代码中并不存在
+      # （框架级路由只有 /api/health，见 src/cndb/app.py）。
+      # 打成 /health 会让容器永远 unhealthy，依赖 service_healthy
+      # 的服务将永久无法启动。
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 60s
 
   # ── PostgreSQL（可选 profile）──
   postgres:

@@ -1,0 +1,79 @@
+# ═══════════════════════════════════════════════════════════════════
+# cndb 生产部署编排 — 腾讯云轻量应用服务器 / CVM 单机形态
+#
+# 设计要点：
+#   - 单容器（wheel 已含前端静态，FastAPI 直接托管，无需 nginx 容器）
+#   - 镜像由 CI 推送到 TCR，本文件只 pull 不 build
+#   - CNDB_DATA_DIR=/data 让库/附件/备份/日志统一落盘，容器重建不丢数据
+#   - restart: unless-stopped 保证开机自启 + 崩溃拉起
+#
+# 首次上线：
+#   cp deploy/.env.prod.example .env   && vim .env   # 填 TCR 地址/域名/密钥
+#   ./deploy/deploy.sh v0.3.0                          # 或等 CI 自动部署
+#
+# 手动查看日志：
+#   docker compose --env-file .env -f docker-compose.prod.yml logs -f app
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+  app:
+    # 完整地址来自 .env 的 CNDB_IMAGE（形如 xxx.tencentcloudcr.com/cndb:v0.3.0）
+    image: ${CNDB_IMAGE:?CNDB_IMAGE 未设置，请在 .env 中配置完整镜像地址}
+    container_name: cndb
+    restart: unless-stopped
+
+    # 唯一的数据卷：数据库、用户附件、备份归档、日志全部在内。
+    # 换版本/重建容器不影响此卷 —— 这是数据不丢的根本保证。
+    volumes:
+      - cndb-data:/data
+
+    environment:
+      # 数据根目录（见 deploy/Dockerfile.prod 注释：必须整体覆盖，
+      # 仅设 DATABASE_URL 会导致附件仍落在容器内 ~/.cndb，重建即丢）
+      - CNDB_DATA_DIR=/data
+      # 默认即 sqlite:////data/data/cndb.db（由 CNDB_DATA_DIR 派生），
+      # 此处显式写出便于后续平滑切换 PostgreSQL：
+      # 改成 postgresql+psycopg://user:pass@host:5432/cndb 即可，无需改代码
+      - CNDATABASE_URL=sqlite:////data/data/cndb.db
+
+      # ── 生产必须覆盖的项 ──
+      # JWT 签名密钥：默认值是公开的 dev secret，生产必须改成随机长串
+      # 生成：openssl rand -hex 32
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET 未设置，请在 .env 中配置}
+      - DEBUG=${DEBUG:-false}
+      - AUTH_ENABLED=${AUTH_ENABLED:-true}
+      # 跨域白名单。
+      # 注意必须写成 JSON 数组字符串：Settings 里 CORS_ORIGINS 声明为
+      # list[str]，pydantic-settings 对复杂类型的环境变量一律按 JSON 解析，
+      # 写成 "https://a.com,https://b.com" 会在启动时抛 SettingsError，
+      # 表现为容器启动即崩且日志难以定位。
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:8000"]}
+
+    # 端口只在宿主机绑定，公网暴露与否由安全组 + 是否挂反代决定。
+    # 若前面有 nginx / CLB，建议改成 "127.0.0.1:8000:8000" 只对内网开放。
+    ports:
+      - "${CNDB_BIND:-0.0.0.0:8000}:8000"
+
+    # 日志轮转：不配的话 json-file 会无限增长把磁盘写满（线上常见事故）
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+    # 镜像内已有 HEALTHCHECK，这里做间隔兜底并放宽启动期
+    # （首次启动要跑 alembic 迁移 + create_all，给足时间）
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+    # SQLite 写入 + 文件备份并发时的文件系统表现
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  cndb-data:
+    name: ${CNDB_VOLUME:-cndb-data}

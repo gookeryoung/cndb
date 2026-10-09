@@ -1,0 +1,71 @@
+# ═══════════════════════════════════════════════════════════════════
+# cndb 生产镜像（腾讯云 TCR 版）
+#
+# 与 Dockerfile.wheel 的差异（均为生产必需的修复）：
+#   1. 预建 /data 并授权给非 root 用户 —— 命名卷首次挂载时会继承镜像内
+#      目录的属主，否则 cndb 用户无法在卷上建 SQLite 库（Permission denied）
+#   2. 内置 HEALTHCHECK，探测真实存在的 /api/health
+#      （旧 compose 探测 /health，该端点并不存在，会导致容器永远 unhealthy）
+#   3. 显式声明 CNDB_DATA_DIR=/data，使 DATA_DIR / DATABASE_DIR /
+#      UPLOAD_DIR / BACKUP_DIR 全部落在同一挂载点。
+#      若只设 DATABASE_URL，附件与备份仍会落在容器内 ~/.cndb，
+#      容器一重建历史附件全部丢失 —— 线上事故高发点。
+#   4. 安装中文字体（reportlab 生成 PDF / Jinja2 报告模板需要 CJK 字形，
+#      缺字体会渲染成方框）
+#
+# 构建（需先 make build 产出 dist/*.whl）：
+#   docker build -f deploy/Dockerfile.prod -t <registry>/cndb:v0.3.0 .
+# ═══════════════════════════════════════════════════════════════════
+
+FROM docker.m.daocloud.io/python:3.12-slim
+
+# ── 国内镜像源 ──
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_TRUSTED_HOST=mirrors.aliyun.com \
+    DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# ── 系统依赖：curl 用于健康检查，字体供 reportlab/PDF 渲染中文 ──
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        fontconfig \
+        fonts-wqy-microhei \
+        fonts-wqy-zenhei \
+    && fc-cache -fv \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── 安装 wheel（--no-cache-dir 减小镜像体积）──
+WORKDIR /app
+COPY dist/*.whl ./
+RUN pip install --no-cache-dir ./*.whl \
+    && rm ./*.whl
+
+# ── 非 root 用户 + 预建数据目录 ──
+# /data 必须在此处 chown：Docker 创建命名卷时会复制镜像内该路径的属主，
+# 权限不对则 SQLite 建库直接失败。
+RUN useradd --create-home --shell /bin/bash --uid 1000 cndb \
+    && mkdir -p /data \
+    && chown -R cndb:cndb /app /data
+
+# 数据根目录：所有可写数据（数据库/附件/备份/日志/缓存）统一落在此卷内
+ENV CNDB_DATA_DIR=/data
+
+USER cndb
+WORKDIR /data
+EXPOSE 8000
+
+VOLUME ["/data"]
+
+# 健康检查：探测真实存在的 /api/health（框架级路由，见 src/cndb/app.py）
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
+
+# uvicorn 启动：单进程足够，前端静态由 FastAPI 直接服务。
+# --proxy-headers 配合 nginx 反代，让 request.client 拿到真实客户端 IP
+# （公开分享 / 审计日志依赖）。
+CMD ["uvicorn", "cndb.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
