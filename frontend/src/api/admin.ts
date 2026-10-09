@@ -36,6 +36,11 @@ export interface BackupManifest {
   schema_known?: boolean
   /** inspect 附加判定：备份 schema 新于当前程序，native 恢复将失败 */
   backup_ahead?: boolean
+  /** inspect 附加：表清单按系统表/用户表分类（用户表为 table_/trash_/link_ 前缀） */
+  table_groups?: {
+    system: string[]
+    user: string[]
+  }
 }
 
 export const adminApi = {
