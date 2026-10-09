@@ -14,29 +14,58 @@
 FROM docker.m.daocloud.io/library/node:22-bookworm-slim
 
 # ── 国内镜像源 + 工具链 ──
-# docker.io 仅装 CLI 客户端（daemon 由 .cnb.yml 的 services: [docker] 提供）
 # fonts-wqy-*：reportlab 生成中文 PDF 必需，缺失会渲染方框
 # Debian bookworm 起 apt 源改为 deb822 格式
 # （/etc/apt/sources.list.d/debian.sources），不再有 /etc/apt/sources.list。
-# 直接 sed 后者会报 "No such file or directory" 让整层失败 —— 必须两个路径都处理，
-# 与 deploy/Dockerfile.prod 保持一致。
-# -o 缺失时 sed 静默跳过，这样同一份命令在 bookworm 与更老的 slim 镜像上都能跑。
-RUN sed -i -o 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list \
- && sed -i -o 's|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list \
- && sed -i -o 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
- && sed -i -o 's|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
- && apt-get update \
- && apt-get install -y --no-install-recommends \
+# 用 [ -f ] 判存在再替换：GNU sed 遇到缺失文件会直接报错退出（它没有 -o 选项，
+# 那是 rsync 的），不加判断整层必然失败。
+# 两条路径都处理，使同一份命令兼容 bookworm 与更老的 slim 镜像。
+RUN set -eux; \
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
+      if [ -f "$f" ]; then \
+        sed -i -e 's|deb.debian.org|mirrors.aliyun.com|g' \
+               -e 's|security.debian.org|mirrors.aliyun.com|g' "$f"; \
+      fi; \
+    done; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
       ca-certificates curl git openssh-client build-essential pkg-config \
-      docker.io \
-      fontconfig fonts-wqy-microhei fonts-wqy-zenhei \
- && fc-cache -fv \
- && rm -rf /var/lib/apt/lists/*
+      fontconfig fonts-wqy-microhei fonts-wqy-zenhei; \
+    fc-cache -fv; \
+    rm -rf /var/lib/apt/lists/*
 
-# ── uv（Python 依赖/虚拟环境管理）──
+# ── Docker CLI（仅客户端）──
+# tag 流水线要 buildx 构建并推镜像，但 daemon 由 .cnb.yml 的 services: [docker] 提供。
+# 这里用官方静态二进制而非 apt 的 docker.io：后者会连带装完整 daemon（~250MB），
+# 既臃肿又和外部 daemon 冲突。
+ARG DOCKER_VERSION=27.5.1
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) D_ARCH=x86_64 ;; \
+      arm64) D_ARCH=aarch64 ;; \
+      *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    base="https://download.docker.com/linux/static/stable/${D_ARCH}"; \
+    curl -fsSL "$base/docker-${DOCKER_VERSION}.tgz" -o /tmp/docker.tgz; \
+    tar -xzf /tmp/docker.tgz -C /tmp; \
+    install -m 0755 /tmp/docker/docker /usr/local/bin/docker; \
+    # buildx 插件（docker buildx 子命令）
+    mkdir -p /root/.docker/cli-plugins; \
+    curl -fsSL "https://github.com/docker/buildx/releases/download/v${DOCKER_VERSION}/buildx-v${DOCKER_VERSION}.linux-${D_ARCH}" \
+      -o /root/.docker/cli-plugins/docker-buildx; \
+    chmod 0755 /root/.docker/cli-plugins/docker-buildx; \
+    rm -rf /tmp/docker /tmp/docker.tgz; \
+    docker --version; docker buildx version
+
+# ── uv + Python 3.12 ──
+# 基础镜像 node:22-bookworm-slim 不含任何 Python，
+# 必须显式装 3.12（项目 requires-python = ">=3.12"）。
+# 交给 uv 管理而非 apt：apt 在 bookworm 只有 3.11，且版本会随发行版漂移。
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
  && ln -sf /root/.local/bin/uv /usr/local/bin/uv \
- && ln -sf /root/.local/bin/uvx /usr/local/bin/uvx
+ && ln -sf /root/.local/bin/uvx /usr/local/bin/uvx \
+ && uv python install 3.12
 
 # ── pnpm（须与 frontend/package.json 的 packageManager 字段一致）──
 RUN npm i -g pnpm@12.4.2
