@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { tableApi } from '@/api'
 import { App as AntApp } from 'antd'
+import { useResponsive } from '@/hooks/useResponsive'
 
 const { Text } = Typography
 
@@ -45,11 +46,13 @@ export default function GridToolbar({
   const { message } = AntApp.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  // 移动端按钮收纳为 icon-only，功能入口不变（Tooltip 仍提供说明）
+  const { isMobile } = useResponsive()
 
   return (
     <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-container)', display: 'flex', gap: 8, alignItems: 'center' }}>
-      <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)}>返回</Button>
-      <Text strong style={{ fontSize: 16 }}>{tableName || '...'}</Text>
+      <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)}>{!isMobile && '返回'}</Button>
+      <Text strong ellipsis style={{ fontSize: 16, maxWidth: isMobile ? '36vw' : undefined }}>{tableName || '...'}</Text>
       {/* 统计小徽标（来自后端增强字段） */}
       {recordCount != null && recordCount > 0 && (
         <Tag color="blue" style={{ marginLeft: 0 }}>{recordCount} 条记录</Tag>
@@ -77,11 +80,11 @@ export default function GridToolbar({
             icon={<MenuOutlined />}
             onClick={onOpenTableSettings}
           >
-            表设置
+            {!isMobile && '表设置'}
           </Button>
         </Tooltip>
         <Tooltip title="导入 / 导出：批量新增或更新数据、导出 CSV / Excel / JSON">
-          <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={onOpenImportExport}>更新/导出</Button>
+          <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={onOpenImportExport}>{!isMobile && '更新/导出'}</Button>
         </Tooltip>
         <Tooltip title="数据治理：重复检测、合并与清洗">
           <Button
@@ -90,7 +93,7 @@ export default function GridToolbar({
             disabled={!canManageData}
             onClick={onOpenGovernance}
           >
-            数据治理
+            {!isMobile && '数据治理'}
           </Button>
         </Tooltip>
         <Dropdown menu={{

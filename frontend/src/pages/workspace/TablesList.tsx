@@ -24,6 +24,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate, FileAnalyzeResult } from '@/api'
 import { useAuthStore } from '@/store'
+import { useResponsive } from '@/hooks/useResponsive'
 
 const ApiImportDialog = lazy(() => import('@/pages/import-export/ApiImportDialog'))
 const FileImportPreview = lazy(() => import('@/pages/import-export/FileImportPreview'))
@@ -70,6 +71,7 @@ export default function TablesList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useAuthStore(s => s.user)
+  const { isMobile } = useResponsive()
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState<TableSummary | null>(null)
   const [apiImportOpen, setApiImportOpen] = useState(false)
@@ -378,10 +380,16 @@ export default function TablesList() {
     },
   ]
 
+  // 移动端裁剪次要列：仅保留 表名 / 我的访问 / 记录 / 操作，减少横向滚动成本；
+  // 桌面端保持全列（含拖拽把手、描述、拥有者、更新时间等）。
+  const visibleColumns = isMobile
+    ? columns.filter(c => ['name', 'my_access', 'record_count', 'actions'].includes(String(c.key)))
+    : columns
+
   return (
-    <div style={{ padding: 24 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+    <div style={{ padding: isMobile ? 12 : 24 }}>
+      {/* Header —— 移动端标题与按钮区自动换行 */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <Title level={3} style={{ margin: 0 }}>
             {workspace?.name ? `${workspace.name} · 数据资产` : '数据资产目录'}
@@ -431,8 +439,8 @@ export default function TablesList() {
         </Space>
       </div>
 
-      {/* Filter Segmented */}
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Filter Segmented —— 移动端换行避免挤压 */}
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <Space>
           <Segmented<AccessFilter>
             value={filter}
@@ -460,9 +468,10 @@ export default function TablesList() {
             size="middle"
             loading={isLoading}
             rowKey="id"
-            columns={columns}
+            columns={visibleColumns}
             dataSource={filteredTables}
             pagination={false}
+            scroll={{ x: 'max-content' }}
             components={{ body: { row: DraggableRow } }}
             onRow={(record) => ({
               onClick: () => navigate(`/w/${wid}/tables/${record.id}`),

@@ -1919,3 +1919,30 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     }
   }
 }
+
+/* ─────────────── 移动端全局适配（< 768px，与 useResponsive BREAKPOINTS.mobile 对齐） ───────────────
+ * 目标：弹层（Modal / Drawer）在窄视口不溢出；页面留白收窄。
+ * 仅约束尺寸，不改布局结构；组件级响应式分支由 useResponsive 在 TSX 中驱动。 */
+
+@media (max-width: 767px) {
+
+  /* AntD Modal 默认 width 520px，在 375px 视口会溢出；此处统一收窄 */
+  .ant-modal {
+    max-width: calc(100vw - 16px);
+    margin: 8px auto;
+  }
+
+  .ant-modal .ant-modal-content {
+    padding: 16px;
+  }
+
+  /* Drawer 宽度为组件内联样式（如 640px），须用 !important 覆盖 */
+  .ant-drawer-content-wrapper {
+    max-width: 92vw !important;
+  }
+
+  /* 顶部 Header 两侧留白收窄，给内容让出横向空间 */
+  .ant-layout-header {
+    padding: 0 8px !important;
+  }
+}
