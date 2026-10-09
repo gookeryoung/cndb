@@ -154,7 +154,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: production
-      url: ${{ secrets.SERVER_URL }}
+      # 注意：url 字段不支持 secrets 上下文，引用会导致工作流被判为无效文件
     steps:
       - uses: actions/checkout@v5
 

@@ -1590,7 +1590,7 @@ def test_cross_user_extra_table_ids_require_read_permission(client, auth_headers
         headers=auth_headers,
         json={"name": "b_table"},
     )
-    tid_b = tbl_b.json()["id"]
+    assert tbl_b.json().get("id"), f"建表失败: {tbl_b.text}"
 
     # B 注册 + 登录，但 B 不是任何 workspace 成员
     headers_b = _register_user_b(client)
