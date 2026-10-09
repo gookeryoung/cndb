@@ -16,7 +16,18 @@ import json
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Float,
+    Integer,
+    String,
+    create_engine,
+    inspect,
+    text,
+)
+from sqlalchemy.dialects import sqlite as sqlite_dialect_mod
 from sqlalchemy.orm import Session
 
 # 注册全部插件模型，保证 Base.metadata 与生产一致（自愈遍历的比对基准）
@@ -364,3 +375,133 @@ class TestHealSchemaDriftFunction:
 
         assert mig_mod.heal_schema_drift(url) == []
         assert mig_mod.heal_schema_drift(url) == []
+
+
+class TestScalarServerDefault:
+    """_scalar_server_default 纯函数边界：各类型标量 default 合成与拒绝场景."""
+
+    def test_str_default(self):
+        """str default → 单引号字面量（manage_data_role 契约）."""
+        assert mig_mod._scalar_server_default(Column("x", String(16), default="")) == "''"
+
+    def test_str_default_with_quote_escaped(self):
+        """含单引号的 str default → 单引号转义（防 DDL 注入/语法错误）."""
+        assert mig_mod._scalar_server_default(Column("x", String(16), default="it's")) == "'it''s'"
+
+    def test_bool_default(self):
+        """bool default → '1'/'0'（Boolean 列在 SQLite 中存整型）."""
+        assert mig_mod._scalar_server_default(Column("x", Boolean, default=True)) == "1"
+        assert mig_mod._scalar_server_default(Column("x", Boolean, default=False)) == "0"
+
+    def test_numeric_default(self):
+        """int/float default → 十进制字面量."""
+        assert mig_mod._scalar_server_default(Column("x", Integer, default=0)) == "0"
+        assert mig_mod._scalar_server_default(Column("x", Integer, default=42)) == "42"
+        assert mig_mod._scalar_server_default(Column("x", Float, default=1.5)) == "1.5"
+
+    def test_server_default_present_returns_none(self):
+        """已有 server_default → None（CreateColumn 可直接编译，无需合成）."""
+        assert mig_mod._scalar_server_default(Column("x", String(16), server_default="[]")) is None
+
+    def test_callable_default_returns_none(self):
+        """可调用 default（dict/list/lambda）非标量 → None（存量行无法取值）."""
+        assert mig_mod._scalar_server_default(Column("x", JSON, default=dict)) is None
+        assert mig_mod._scalar_server_default(Column("x", JSON, default=list)) is None
+        assert mig_mod._scalar_server_default(Column("x", String(16), default=lambda: "x")) is None
+
+    def test_no_default_returns_none(self):
+        """无 default → None."""
+        assert mig_mod._scalar_server_default(Column("x", String(16))) is None
+
+
+class TestRenderAddColumnDdl:
+    """_render_add_column_ddl 编译边界：可补建/跳过判定与影子列语义."""
+
+    @staticmethod
+    def _ddl(col: Column) -> str | None:
+        return mig_mod._render_add_column_ddl(col, sqlite_dialect_mod.dialect())
+
+    def test_primary_key_skipped(self):
+        """主键自增列 → None（表已存在时不会缺失，补建无意义）."""
+        assert self._ddl(Column("id", Integer, primary_key=True)) is None
+
+    def test_nullable_column_compiles(self):
+        """nullable 列无 default 也可补建（存量行填 NULL）."""
+        ddl = self._ddl(Column("workspace_id", Integer, nullable=True))
+        assert ddl is not None
+        assert "workspace_id" in ddl
+
+    def test_not_null_with_server_default_compiles(self):
+        """NOT NULL + server_default → 直接编译含 DEFAULT."""
+        ddl = self._ddl(Column("theme", String(16), nullable=False, server_default="minimal"))
+        assert ddl is not None
+        assert "NOT NULL" in ddl and "DEFAULT 'minimal'" in ddl
+
+    def test_not_null_with_python_default_compiles_with_default(self):
+        """NOT NULL 仅 Python 标量 default → 影子列编译出 DEFAULT 子句."""
+        ddl = self._ddl(Column("manage_data_role", String(16), nullable=False, default=""))
+        assert ddl is not None
+        assert "NOT NULL" in ddl and "DEFAULT ''" in ddl
+
+    def test_not_null_without_any_default_skipped(self):
+        """NOT NULL 无 server_default 也无标量 default → None（存量行必失败）."""
+        assert self._ddl(Column("name", String(255), nullable=False)) is None
+
+    def test_original_column_not_mutated(self):
+        """影子列语义：编译后原 Column 对象不被注入 server_default."""
+        col = Column("manage_data_role", String(16), nullable=False, default="")
+        self._ddl(col)
+        assert col.server_default is None
+        assert col.name == "manage_data_role"
+
+
+class TestHealFailureIsolation:
+    """自愈失败降级边界：单列失败不中断、异常按调用方语义传递."""
+
+    def test_single_column_ddl_failure_does_not_abort(self, tmp_path, monkeypatch):
+        """单列 DDL 失败只记 warning，其余列照常补建，函数正常返回.
+
+        通过让全部缺失列编译出垃圾 DDL 模拟执行期失败：函数不抛异常、
+        返回空清单（该列未补成），库保持可诊断状态。
+        """
+        url = f"sqlite:///{(tmp_path / 'partial.db').as_posix()}"
+        engine = create_engine(url)
+        try:
+            Base.metadata.create_all(engine)
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE reports_template DROP COLUMN extra_table_ids"))
+                conn.execute(text("ALTER TABLE reports_template DROP COLUMN theme"))
+            # SQLite 会把裸词解析为合法列名，需带未闭合括号构造真非法 DDL
+            monkeypatch.setattr(mig_mod, "_render_add_column_ddl", lambda col, dialect: "BOGUS ((")
+
+            healed = mig_mod.heal_schema_drift(url)  # 不抛异常
+
+            assert healed == []
+            cols = {c["name"] for c in inspect(engine).get_columns("reports_template")}
+            assert "extra_table_ids" not in cols  # 补建失败，列仍缺失但可诊断
+        finally:
+            engine.dispose()
+
+    def test_heal_schema_drift_raises_on_db_error(self, tmp_path):
+        """目标库不可达（目录不存在）→ SQLAlchemyError 向上抛（restore 需显式感知）."""
+        import sqlalchemy.exc
+
+        bad_url = f"sqlite:///{(tmp_path / 'no_such_dir' / 'x.db').as_posix()}"
+        with pytest.raises(sqlalchemy.exc.SQLAlchemyError):
+            mig_mod.heal_schema_drift(bad_url)
+
+    def test_heal_schema_drift_none_url_uses_settings(self, tmp_path, monkeypatch):
+        """database_url=None → 使用 settings.DATABASE_URL（启动期默认库语义）."""
+        url = f"sqlite:///{(tmp_path / 'default.db').as_posix()}"
+        monkeypatch.setattr(settings, "DATABASE_URL", url)
+        engine = create_engine(url)
+        try:
+            Base.metadata.create_all(engine)
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE reports_template DROP COLUMN theme"))
+        finally:
+            engine.dispose()
+
+        healed = mig_mod.heal_schema_drift()
+
+        assert "reports_template.theme" in healed
