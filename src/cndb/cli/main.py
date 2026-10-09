@@ -298,7 +298,7 @@ def main() -> None:
         "-o",
         "--output",
         help="输出路径 — .tar.gz 文件（归档）或文件夹（目录模式，需配合 --dir）."
-        " 默认 backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz",
+        " 默认 cndb-backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz",
     )
     p_backup.add_argument(
         "--dir",
