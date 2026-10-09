@@ -405,6 +405,33 @@ def _detect_format(output: Path) -> str:
     return "directory"
 
 
+def _ensure_backup_dir(target: Path) -> Path:
+    """确保默认备份目录存在，不可用时优雅降级到系统临时目录.
+
+    Args:
+        target: 期望的默认备份目录（``~/.cndb/backups``，随 CNDB_DATA_DIR 覆盖）.
+
+    Returns:
+        实际可用的备份目录.
+
+    Raises:
+        BackupError: 目标目录与备用目录均无法创建.
+    """
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+    except OSError as exc:
+        fallback = Path(tempfile.gettempdir()) / "cndb-backups"
+        try:
+            fallback.mkdir(parents=True, exist_ok=True)
+        except OSError as fallback_exc:
+            raise BackupError(
+                f"默认备份目录不可创建: {target}（{exc}）；备用目录也不可用: {fallback}（{fallback_exc}）"
+            ) from exc
+        print(f"[backup] 警告：默认备份目录不可用（{exc}），改用备用目录: {fallback}")
+        return fallback
+
+
 def create_backup(
     output: Path | None = None,
     mode: str = "auto",
@@ -418,7 +445,9 @@ def create_backup(
 
     Args:
         output: 输出路径 — ``archive`` 模式下是 ``.tar.gz`` 文件路径；``directory`` 模式下是目标目录。
-            默认按格式生成文件名：``backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz``（归档）或
+            默认存储到 ``~/.cndb/backups``（随 ``CNDB_DATA_DIR`` 环境变量整体覆盖），目录不存在时递归创建；
+            目录不可用时降级到系统临时目录并给出警告。默认按格式生成文件名：
+            ``backup-<软件版本>-v<数据库格式版本>-<timestamp>.tar.gz``（归档）或
             同名无后缀（目录），示例 ``backup-0.2.0-v1-20260928T032702Z.tar.gz``.
         mode: 备份模式 — ``auto``（SQLite 用 native，其它 sqlalchemy）/ ``native`` / ``sqlalchemy``.
         include_uploads: 是否包含 uploads 目录附件.
@@ -458,12 +487,12 @@ def create_backup(
     else:
         resolved_fmt = "archive"
 
-    # 设置默认输出路径
+    # 设置默认输出路径：未指定时落入 ~/.cndb/backups（随 CNDB_DATA_DIR 整体覆盖）
     if output is None:
-        if resolved_fmt == "archive":
-            output = Path(format_backup_filename()).resolve()
-        else:
-            output = Path(format_backup_filename(ext="")).resolve()
+        default_name = format_backup_filename() if resolved_fmt == "archive" else format_backup_filename(ext="")
+        default_dir = _ensure_backup_dir(settings.BACKUP_DIR)
+        output = (default_dir / default_name).resolve()
+        print(f"[backup] 未指定输出路径，默认备份到: {output}")
     else:
         output = Path(output).resolve()
 

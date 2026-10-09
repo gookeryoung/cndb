@@ -19,11 +19,13 @@ from cndb.cli.backup import (
     BackupError,
     _backup_sqlite_native,
     _collect_uploads,
+    _ensure_backup_dir,
     _is_sqlite_url,
     _resolve_sqlite_path,
     _to_json_safe,
     create_backup,
 )
+from cndb.core.config import settings
 
 # ── 辅助 ──────────────────────────────────────────────
 
@@ -229,6 +231,7 @@ def test_create_backup_default_output_name(tmp_path: Path, monkeypatch: pytest.M
 
     db_path = _setup_sqlite(tmp_path)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(settings, "BACKUP_DIR", tmp_path / "backups")
 
     result = create_backup(
         mode="native",
@@ -239,6 +242,63 @@ def test_create_backup_default_output_name(tmp_path: Path, monkeypatch: pytest.M
 
     pattern = rf"backup-{re.escape(cndb.__version__)}-v{MANIFEST_VERSION}-\d{{8}}T\d{{6}}Z\.tar\.gz"
     assert re.fullmatch(pattern, result.name), f"默认文件名 {result.name} 不符合版本标注格式"
+
+
+def test_create_backup_default_output_in_backup_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """output=None 时应默认备份到 settings.BACKUP_DIR，且目录不存在时递归创建."""
+    db_path = _setup_sqlite(tmp_path)
+    backup_dir = tmp_path / "nested" / "backups"  # 多级不存在目录，验证递归创建
+    monkeypatch.setattr(settings, "BACKUP_DIR", backup_dir)
+
+    result = create_backup(
+        mode="native",
+        include_uploads=False,
+        database_url=f"sqlite:///{db_path}",
+        upload_dir=tmp_path / "uploads",
+    )
+
+    assert result.parent == backup_dir.resolve()
+    assert backup_dir.is_dir()
+    assert result.is_file()
+
+
+def test_ensure_backup_dir_fallback_on_unusable_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """目标目录不可创建（父级为文件）时应降级到系统临时目录并给出警告."""
+    import tempfile as tf
+
+    blocker = tmp_path / "blocker.txt"
+    blocker.write_text("not a dir", encoding="utf-8")
+    unusable = blocker / "backups"
+    fake_tmp = tmp_path / "faketmp"
+    fake_tmp.mkdir()
+    monkeypatch.setattr(tf, "gettempdir", lambda: str(fake_tmp))
+
+    with patch("builtins.print") as mock_print:
+        result = _ensure_backup_dir(unusable)
+
+    assert result == fake_tmp / "cndb-backups"
+    assert result.is_dir()
+    assert any("改用备用目录" in str(call) for call in mock_print.call_args_list)
+
+
+def test_ensure_backup_dir_raises_when_fallback_also_unusable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """目标目录与备用目录均不可创建时应抛 BackupError."""
+    import tempfile as tf
+
+    blocker = tmp_path / "blocker.txt"
+    blocker.write_text("not a dir", encoding="utf-8")
+    monkeypatch.setattr(tf, "gettempdir", lambda: str(blocker))
+
+    with pytest.raises(BackupError, match="默认备份目录不可创建"):
+        _ensure_backup_dir(blocker / "backups")
+
+
+def test_ensure_backup_dir_creates_recursively(tmp_path: Path) -> None:
+    """多级不存在目录应递归创建."""
+    target = tmp_path / "a" / "b" / "backups"
+    result = _ensure_backup_dir(target)
+    assert result == target
+    assert target.is_dir()
 
 
 def test_create_backup_nonexistent_sqlite_file(tmp_path: Path) -> None:
