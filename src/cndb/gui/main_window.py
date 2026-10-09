@@ -1,7 +1,7 @@
 """cndbw GUI 主窗口（Tkinter + ttk）.
 
 提供 CLI 主要功能的图形化入口：
-- 启动服务   serve（host/port/workers）
+- 启动服务   serve（host/port）
 - 备份恢复   backup + restore
 - 系统信息   info
 
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
-import os
 import re
 import subprocess  # nosec B404 - GUI 需管理 uvicorn 服务子进程
 import sys
@@ -337,30 +336,22 @@ class ServeTab(_BaseTab):
         self.port_var = tk.StringVar(value=self.app.settings.serve.port)
         ttk.Entry(cfg, textvariable=self.port_var, width=8).grid(row=0, column=3, sticky=tk.W, padx=2)
 
-        self.reload_var = tk.BooleanVar(value=self.app.settings.serve.reload)
-        ttk.Checkbutton(cfg, text="开发模式 (reload)", variable=self.reload_var).grid(
-            row=0, column=4, sticky=tk.W, padx=12
-        )
-
-        ttk.Label(cfg, text="Workers:").grid(row=0, column=5, sticky=tk.W, padx=2)
-        self.workers_var = tk.StringVar(value=self.app.settings.serve.workers)
-        ttk.Entry(cfg, textvariable=self.workers_var, width=6).grid(row=0, column=6, sticky=tk.W, padx=2)
-
-        # 单机模式：免登录（内置本地用户）+ 仅本机访问；默认勾选（单机定位）
-        self.local_mode_var = tk.BooleanVar(value=self.app.settings.serve.local_mode)
-        ttk.Checkbutton(cfg, text="单机模式(免登录·仅本机)", variable=self.local_mode_var).grid(
-            row=1, column=4, columnspan=3, sticky=tk.W, padx=12, pady=(4, 0)
-        )
-
-        # 开机自启（后台服务）：仅 Windows 显示，勾选态回显注册表 Run 键实际状态
+        # 开机自启（后台服务）：仅 Windows 显示；默认勾选（启动时自动注册 Run 键）
         if sys.platform == "win32":
-            from cndb.cli.service import autostart_enabled
+            from cndb.cli.service import autostart_enabled, enable
 
-            self.autostart_var = tk.BooleanVar(value=autostart_enabled())
+            already_enabled = autostart_enabled()
+            self.autostart_var = tk.BooleanVar(value=True)
             self.autostart_check = ttk.Checkbutton(
                 cfg, text="开机自启(后台)", variable=self.autostart_var, command=self.toggle_autostart
             )
             self.autostart_check.grid(row=1, column=0, columnspan=3, sticky=tk.W, padx=2, pady=(4, 0))
+            # 首次启动默认勾选：若注册表尚未登记则自动写入 Run 键
+            if not already_enabled:
+                with contextlib.suppress(Exception):
+                    host_default = self.host_var.get().strip() or "0.0.0.0"
+                    port_default = int(self.port_var.get().strip() or "8000")
+                    enable(host_default, port_default, local=False)
 
         # 环境检查监视区（端口占用 + 静态产物就绪）
         env = ttk.LabelFrame(self.frame, text="环境检查", padding=10)
@@ -504,25 +495,8 @@ class ServeTab(_BaseTab):
             messagebox.showinfo("提示", "服务已在运行")
             return
 
-        local_mode = self.local_mode_var.get()
-        if local_mode:
-            host_input = self.host_var.get().strip() or "0.0.0.0"
-            if host_input not in ("127.0.0.1", "localhost", "::1"):
-                messagebox.showwarning(
-                    "单机模式",
-                    f"单机模式仅允许本机访问，Host 已从 {host_input} 调整为 127.0.0.1。",
-                )
-                self.host_var.set("127.0.0.1")
-            host = "127.0.0.1"
-        else:
-            host = self.host_var.get().strip() or "0.0.0.0"
+        host = self.host_var.get().strip() or "0.0.0.0"
         port = int(self.port_var.get().strip() or "8000")
-        reload = self.reload_var.get()
-        workers = 1 if reload else int(self.workers_var.get().strip() or "1")
-
-        # 单机模式经环境变量注入子进程（uvicorn 新进程读取 settings）；
-        # 取消勾选时显式置 "0"，防止上一次启动残留
-        os.environ["CNDB_LOCAL_MODE"] = "1" if local_mode else "0"
 
         # ── 启动前环境预检：停止占用端口 + 确保静态产物就绪 ──
         try:
@@ -554,8 +528,7 @@ class ServeTab(_BaseTab):
             _bootstrap = (
                 f"import sys; sys.path.insert(0, r'{_pkg_entry_root}'); "
                 "import uvicorn; "
-                f"uvicorn.run('cndb.app:app', host={host!r}, port={port}, "
-                f"reload={reload!r}, workers={workers})"
+                f"uvicorn.run('cndb.app:app', host={host!r}, port={port})"
             )
             cmd: list[str] = [str(_py_bin), "-c", _bootstrap]
         else:
@@ -569,10 +542,6 @@ class ServeTab(_BaseTab):
                 "--port",
                 str(port),
             ]
-            if reload:
-                cmd.append("--reload")
-            elif workers > 1:
-                cmd.extend(["--workers", str(workers)])
 
         # Windows GUI 程序（pythonw 无 console）下 stdin 是无效句柄，
         # Popen 内部 _make_inheritable 会触发 WinError 6；显式设 DEVNULL 规避。
@@ -608,9 +577,6 @@ class ServeTab(_BaseTab):
         self.open_btn.configure(state=tk.NORMAL)
         self.status_label.configure(text=f"运行中 http://{host}:{port}", foreground="#1a7f37")
         self.app.set_status(f"服务运行中  http://{host}:{port}")
-        if local_mode:
-            # 显式提示行：覆盖 gui.json 旧配置缺 local_mode 键回退默认勾选的静默切换
-            self.app.log_queue.write("[info] 单机模式已启用：免登录，仅本机可访问（局域网请取消勾选）\n")
 
         # 异步读子进程输出 → 写入队列
         proc = self.app._server_proc  # 上方已启动，必非空（pyrefly 数据流已可收窄）
@@ -646,10 +612,8 @@ class ServeTab(_BaseTab):
         try:
             if self.autostart_var.get():
                 port = int(self.port_var.get().strip() or "8000")
-                local_mode = self.local_mode_var.get()
-                # 单机模式固化回环地址，避免注册表残留非回环 host
-                host = "127.0.0.1" if local_mode else (self.host_var.get().strip() or "0.0.0.0")
-                enable(host, port, local=local_mode)
+                host = self.host_var.get().strip() or "0.0.0.0"
+                enable(host, port, local=False)
                 self.app.log_queue.write(f"[ok] 已启用开机自启（后台服务 {host}:{port}）\n")
             else:
                 disable()
@@ -691,9 +655,6 @@ class ServeTab(_BaseTab):
     def persist(self, settings: GuiSettings) -> None:
         settings.serve.host = self.host_var.get().strip() or "0.0.0.0"
         settings.serve.port = self.port_var.get().strip() or "8000"
-        settings.serve.reload = self.reload_var.get()
-        settings.serve.workers = self.workers_var.get().strip() or "1"
-        settings.serve.local_mode = self.local_mode_var.get()
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -32,10 +32,6 @@ class ServeConfig:
 
     host: str = "0.0.0.0"
     port: str = "8000"
-    reload: bool = False
-    workers: str = "1"
-    # 单机模式：免登录 + 仅本机访问（单机定位的产品默认，勾选时 host 锁定回环）
-    local_mode: bool = True
 
 
 @dataclass
@@ -75,9 +71,6 @@ class GuiSettings:
             "serve": {
                 "host": self.serve.host,
                 "port": self.serve.port,
-                "reload": self.serve.reload,
-                "workers": self.serve.workers,
-                "local_mode": self.serve.local_mode,
             },
             "backup": {
                 "output": self.backup.output,
