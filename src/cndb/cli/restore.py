@@ -11,7 +11,9 @@
     3. 确认目标数据库可恢复（检测冲突 —— 有数据且未加 --force 时拒绝）
     4. 解压到临时目录
     5. 恢复数据库（根据 backup_mode 分支）
-       - native：恢复旧 schema 备份后自动执行 alembic upgrade head 迁移
+       - native：恢复旧 schema 备份后自动执行 alembic upgrade head 迁移；
+         备份库无 alembic_version 记录（0.1.x 旧版备份）时改走
+         stamp head + create_all + schema 自愈对齐
        - sqlalchemy：重建当前 schema 导入数据后补写 alembic 版本标记
     6. 恢复 uploads 目录（若备份包含）
     7. 校验并清理临时目录
@@ -368,6 +370,7 @@ def _migrate_after_restore(database_url: str, backup_schema_version: str) -> Non
     """
     from alembic.util.exc import CommandError
     from sqlalchemy import create_engine
+    from sqlalchemy import inspect as sa_inspect
     from sqlalchemy.exc import SQLAlchemyError
 
     from cndb.core import migrations
@@ -375,14 +378,31 @@ def _migrate_after_restore(database_url: str, backup_schema_version: str) -> Non
     from cndb.models.base import Base
 
     print(f"[restore] 执行 schema 迁移（备份版本: {backup_schema_version or '未知'} → 当前 head）...")
+
+    # 旧版备份（0.1.x 时代）库内无 alembic_version 表，upgrade head 会从 base
+    # 重放全部迁移并撞上 "table already exists"；改走 stamp head + create_all
+    # + 自愈对齐 schema（与启动期 ensure_db_migrated 的兜底路径同源）
+    probe = create_engine(database_url)
     try:
-        migrations.upgrade_to_head(database_url)
-    except (SQLAlchemyError, CommandError) as exc:
-        raise RestoreError(
-            f"恢复后 schema 迁移失败：备份的 schema 可能新于当前程序，请升级程序后再恢复；"
-            f"若备份内嵌了兜底导出（fallback_mode=sqlalchemy），也可改用 sqlalchemy 模式恢复"
-            f"（按旧 schema 交集导入，丢弃新版本字段数据）。原始错误: {exc}"
-        ) from exc
+        has_version_table = bool(sa_inspect(probe).has_table("alembic_version"))
+    finally:
+        probe.dispose()
+
+    if not has_version_table:
+        print("[restore] 备份无迁移版本记录（旧版备份），改用 stamp + create_all + 自愈对齐")
+        try:
+            migrations.stamp_head(database_url)
+        except (SQLAlchemyError, CommandError) as exc:
+            raise RestoreError(f"恢复后补写迁移版本标记失败: {exc}") from exc
+    else:
+        try:
+            migrations.upgrade_to_head(database_url)
+        except (SQLAlchemyError, CommandError) as exc:
+            raise RestoreError(
+                f"恢复后 schema 迁移失败：备份的 schema 可能新于当前程序，请升级程序后再恢复；"
+                f"若备份内嵌了兜底导出（fallback_mode=sqlalchemy），也可改用 sqlalchemy 模式恢复"
+                f"（按旧 schema 交集导入，丢弃新版本字段数据）。原始错误: {exc}"
+            ) from exc
 
     # 补建迁移链未覆盖的新插件表（Base.metadata.create_all 只建缺失表，不影响已有表）
     try:
@@ -487,7 +507,8 @@ def inspect_backup(archive_path: Path) -> BackupInspection:
             if manifest_file is None:
                 raise RestoreError("归档 manifest.json 无法读取")
             manifest = json.loads(manifest_file.read().decode("utf-8"))
-    except (tarfile.TarError, OSError) as exc:
+    except (tarfile.TarError, OSError, EOFError) as exc:
+        # EOFError：gzip 流被截断（如磁盘写满中断下载）时由 zlib 抛出
         raise RestoreError(f"归档损坏或无法打开: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise RestoreError(f"manifest.json 不是合法 JSON: {exc}") from exc
