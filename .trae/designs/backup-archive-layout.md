@@ -20,7 +20,13 @@
 
 - [x] 临时拼装目录 `db_dir` 由 `temp_root/database` 改为 `temp_root/data`；归档内路径为 `backup/data/...`，目录模式输出根下为 `data/`。
 - [x] 对外函数签名（create_backup / restore_backup / inspect_backup）与参数不变。
-- [x] `output=None` 时默认名经 `format_backup_filename()` 生成（归档带 `.tar.gz` 后缀，目录模式传 `ext=""`）；用户显式指定 output 时不改写文件名。
+- [x] `output=None` 时默认目录为 `settings.BACKUP_DIR`（即 `~/.cndb/backups`，随 `CNDB_DATA_DIR` 环境变量整体覆盖），经 `_ensure_backup_dir` 确保目录递归创建；默认名经 `format_backup_filename()` 生成（归档带 `.tar.gz` 后缀，目录模式传 `ext=""`）；用户显式指定 output 时不改写路径与文件名。
+
+### cndb.cli.backup._ensure_backup_dir
+
+- [x] 签名：`def _ensure_backup_dir(target: Path) -> Path`。
+- [x] 语义：对 `target` 执行 `mkdir(parents=True, exist_ok=True)`，成功返回 `target`；抛出 `OSError`（含 PermissionError 等）时降级到备用目录 `<系统临时目录>/cndb-backups` 并打印警告，返回备用目录；备用目录也不可创建时抛 `BackupError`（文案含两级目录与原始异常）。
+- [x] 调用方：`create_backup` 在 `output=None` 分支解析默认输出目录，实际使用的备份路径经 `[backup]` 前缀日志反馈给用户。
 
 ### cndb.cli.backup.format_backup_filename
 
