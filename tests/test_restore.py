@@ -681,16 +681,66 @@ def test_restore_native_old_schema_auto_migrates(tmp_path: Path) -> None:
 
 def test_migrate_after_restore_wraps_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """迁移失败应包装为 RestoreError 并提示升级程序."""
+    import sqlite3
+
     from sqlalchemy.exc import SQLAlchemyError
 
     import cndb.core.migrations as migrations_mod
+
+    # 前置：目标库已带 alembic_version 表 → 走 upgrade_to_head 分支
+    # （无版本表的旧库走 stamp + create_all 兜底，不经 upgrade_to_head）
+    url = f"sqlite:///{(tmp_path / 'x.db').as_posix()}"
+    conn = sqlite3.connect(tmp_path / "x.db")
+    try:
+        conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        conn.commit()
+    finally:
+        conn.close()
 
     def _boom(url: str) -> None:
         raise SQLAlchemyError("boom")
 
     monkeypatch.setattr(migrations_mod, "upgrade_to_head", _boom)
     with pytest.raises(RestoreError, match="schema 迁移失败"):
-        _migrate_after_restore(f"sqlite:///{tmp_path / 'x.db'}", "oldrev")
+        _migrate_after_restore(url, "oldrev")
+
+
+def test_migrate_after_restore_legacy_db_without_version_table(tmp_path: Path) -> None:
+    """无 alembic_version 记录的旧版备份（0.1.x）恢复走 stamp + create_all 兜底.
+
+    前置：手工建的旧 schema 库（业务表已存在、无 alembic_version 表）；
+    步骤：_migrate_after_restore；预期：不重放迁移（不报 already exists），
+    alembic_version 标记为 head，缺失表由 create_all 补齐。
+    """
+    import sqlite3
+
+    db = tmp_path / "legacy.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        # 模拟 0.1.x 旧库：有业务表，无迁移版本记录
+        conn.execute("CREATE TABLE workspaces_workspace (id INTEGER PRIMARY KEY, name TEXT)")
+        conn.commit()
+    finally:
+        conn.close()
+
+    _migrate_after_restore(f"sqlite:///{db.as_posix()}", "")
+
+    conn = sqlite3.connect(str(db))
+    try:
+        version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        # create_all 补齐缺失表（业务表原有结构不动）
+        tables = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        }
+        rows = conn.execute("SELECT id, name FROM workspaces_workspace").fetchall()
+    finally:
+        conn.close()
+    assert version == _alembic_head()
+    assert "accounts_user" in tables
+    assert rows == []
 
 
 # ── sqlalchemy 恢复后补写 alembic 版本 ────────────────
