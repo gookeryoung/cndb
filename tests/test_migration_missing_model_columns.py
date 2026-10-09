@@ -42,6 +42,15 @@ def _columns(db_path: Path, table: str) -> set[str]:
         conn.close()
 
 
+def _index_flags(db_path: Path, table: str) -> dict[str, int]:
+    """PRAGMA index_list：索引名 → unique 标志（1=唯一索引）."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return {r[1]: r[2] for r in conn.execute(f"PRAGMA index_list({table})").fetchall()}  # nosec B608 - 测试内部常量表名
+    finally:
+        conn.close()
+
+
 class TestAddMissingModelColumns:
     def test_old_schema_db_upgrade_adds_all_columns(self, tmp_path: Path) -> None:
         """0.2.0 时代库（stamp 在 e5f6a7b8c9d0）upgrade head 后四列全部补齐."""
@@ -88,6 +97,45 @@ class TestAddMissingModelColumns:
         assert "public_slug" in _columns(db_path, "tables_dataview")
         # 幂等：重复 upgrade 仍成功
         upgrade_to_head(url)
+
+    def test_upgrade_creates_unique_index_when_column_preexists(self, tmp_path: Path) -> None:
+        """列已存在但唯一索引缺失 → upgrade head 补建 public_slug 唯一索引.
+
+        create_all 时代升级库可能带列无索引（索引历史遗漏），迁移按索引名
+        幂等判断，与加列逻辑独立生效；PRAGMA unique 标志为 1。
+        """
+        db_path = tmp_path / "idx_missing.db"
+        url = f"sqlite:///{db_path.as_posix()}"
+        _upgrade_to(url, PRE_REVISION)
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute("ALTER TABLE tables_dataview ADD COLUMN public_slug VARCHAR(12)")
+            conn.commit()
+        finally:
+            conn.close()
+
+        upgrade_to_head(url)
+
+        flags = _index_flags(db_path, "tables_dataview")
+        assert flags["ix_tables_dataview_public_slug"] == 1  # unique=1
+        # 幂等：重复 upgrade 不因索引已存在而失败
+        upgrade_to_head(url)
+
+    def test_upgrade_unique_index_enforced(self, tmp_path: Path) -> None:
+        """迁移新建索引为 UNIQUE 属性（重复 slug 由 SQLite 拒绝）.
+
+        覆盖默认升级路径（列与索引均不存在）：升级后索引 unique 标志必须
+        为 1——保证 public_slug 分享标识全局唯一语义；重复值约束由
+        SQLite 引擎按该标志强制执行。
+        """
+        db_path = tmp_path / "uniq.db"
+        url = f"sqlite:///{db_path.as_posix()}"
+        _upgrade_to(url, PRE_REVISION)
+
+        upgrade_to_head(url)
+
+        flags = _index_flags(db_path, "tables_dataview")
+        assert flags.get("ix_tables_dataview_public_slug") == 1
 
     def test_upgrade_skips_missing_tables(self, tmp_path: Path) -> None:
         """目标表整体不存在（legacy 库仅 reports_template）→ 迁移跳过不失败.
