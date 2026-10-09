@@ -118,5 +118,5 @@ create_all+stamp）出口统一调用 `_heal_schema_drift()`。
 - [x] 迁移 f7a8b9c0d1e2：0.2.0 时代库 upgrade head 补齐四列；create_all 时代
       已含部分列的库幂等通过；目标表缺失时跳过；存量数据保留取 server_default；
       downgrade 幂等
-- [x] 恢复 0.2.0 备份（examples/backups/backup-0.2.0-*）后全部表
+- [x] 恢复 0.2.1 备份（examples/backups/cndb-backup-0.2.1-*）后全部表
       records/fields/views API 200、TablePermission 全列查询正常
