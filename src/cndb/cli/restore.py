@@ -46,10 +46,41 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["RestoreError", "RestoreLossReport", "inspect_backup", "restore_backup"]
+__all__ = [
+    "RestoreError",
+    "RestoreLossReport",
+    "classify_table_groups",
+    "inspect_backup",
+    "restore_backup",
+]
 
 # 当前支持恢复的 manifest 协议版本集合（向前兼容框架：新版本格式演进时在此追加）
 SUPPORTED_MANIFEST_VERSIONS = {"1"}
+
+# 用户表物理表名前缀：table_（数据表）/ trash_（行回收站影子表）/ link_（关联字段关联表）。
+# 其余为程序固定 ORM 表与迁移版本表（alembic_version），见 plugins/tables/models.py。
+_USER_TABLE_PREFIXES = ("table_", "trash_", "link_")
+
+
+def classify_table_groups(tables: list[str]) -> dict[str, list[str]]:
+    """按「系统表 / 用户表」对物理表名分类.
+
+    用户表指用户在应用内创建的动态数据表及其影子表、关联表，物理表名带
+    ``table_`` / ``trash_`` / ``link_`` 前缀（见 ``plugins/tables/models.py``）；
+    系统表指程序固定的 ORM 表与迁移版本表（如 ``accounts_user``、
+    ``workspaces_workspace``、``alembic_version``）.
+
+    Args:
+        tables: 物理表名列表（来自 manifest 的 ``database.tables``）.
+
+    Returns:
+        ``{"system": [...], "user": [...]}``，两键恒存在；组内保持入参顺序.
+    """
+    system: list[str] = []
+    user: list[str] = []
+    for name in tables:
+        (user if name.startswith(_USER_TABLE_PREFIXES) else system).append(name)
+    return {"system": system, "user": user}
 
 
 class RestoreError(RuntimeError):

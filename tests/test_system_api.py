@@ -103,6 +103,8 @@ def test_admin_restore_inspect_returns_schema_fields(
     assert body["database"]["backup_mode"] == "native"
     assert body["schema_known"] is True  # 空 schema_version（旧版备份）不算领先
     assert body["backup_ahead"] is False
+    # 表清单分类：裸建表 customers 无用户表前缀 → 归系统表；两组恒存在
+    assert body["table_groups"] == {"system": ["customers"], "user": []}
 
 
 # ── restore ───────────────────────────────────────────

@@ -132,6 +132,12 @@ export default function AdminPanel() {
     return false  // 阻止自动上传
   }
 
+  // 表清单分组：优先用后端分类结果；缺失时回退为全部归入系统表（兼容旧响应）
+  const tableGroups = manifest?.table_groups ?? {
+    system: manifest?.database.tables ?? [],
+    user: [],
+  }
+
   const backupTab = (
     <div style={{ padding: '8px 0' }}>
       <Alert
@@ -299,12 +305,26 @@ export default function AdminPanel() {
               {manifest.database.tables.length > 0 && (
                 <div style={{ marginTop: 12 }}>
                   <Text strong style={{ fontSize: 12 }}>表清单：</Text>
-                  <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {manifest.database.tables.map(t => (
-                      <Tag key={t} style={{ marginRight: 0 }}>
-                        {t} ({manifest.database.row_counts[t] ?? 0})
-                      </Tag>
-                    ))}
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {([
+                      ['系统表', tableGroups.system, undefined],
+                      ['用户表', tableGroups.user, 'blue'],
+                    ] as const).map(([label, names, color]) =>
+                      names.length > 0 ? (
+                        <div key={label}>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {label}（{names.length}）
+                          </Text>
+                          <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {names.map(t => (
+                              <Tag key={t} color={color} style={{ marginRight: 0 }}>
+                                {t} ({manifest.database.row_counts[t] ?? 0})
+                              </Tag>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null,
+                    )}
                   </div>
                 </div>
               )}
