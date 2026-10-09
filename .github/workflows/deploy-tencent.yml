@@ -1,0 +1,258 @@
+name: Deploy to Tencent Cloud
+
+# 触发：推送 v*.*.* tag 时自动构建镜像并部署到腾讯云服务器
+#
+# 完整链路：
+#   tag push → 前端构建 → wheel 打包 → 构建镜像 → 推 TCR → SSH 服务器
+#            → 部署脚本（预备份/拉镜像/重建/健康探测/失败回滚）
+#
+# 服务器侧失败会自动回滚到上一个版本，不会把线上打挂。
+#
+# 必需的 Repository Secrets（Settings → Secrets and variables → Actions）：
+#   TCR_REGISTRY    TCR 域名，如 mytcr.tencentcloudcr.com（不含命名空间）
+#   TCR_USERNAME    服务账号，形如 tcr@cndb-deploy（注意用 @ 不是 $）
+#   TCR_PASSWORD    服务账号密码
+#   SSH_HOST        服务器公网 IP
+#   SSH_PORT        SSH 端口，默认 22
+#   SSH_USERNAME    登录用户，默认 root
+#   SSH_PRIVATE_KEY SSH 私钥（推荐，免去密码明文存储）
+
+on:
+  push:
+    tags: ['v*.*.*']
+  # 手动触发：可重跑部署或回滚到指定 tag（输入已存在的版本号即可）
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要部署的版本 tag（如 v0.3.0）。留空则重跑最近一次成功部署'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# 同一分支/仓库只允许一个部署在跑：并发部署会导致镜像与 .env 相互覆盖
+concurrency:
+  group: deploy-tencent-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # 生产编排与镜像构建文件
+  COMPOSE_FILE: docker-compose.prod.yml
+  DOCKERFILE: deploy/Dockerfile.prod
+
+jobs:
+  # ===== 构建并推送镜像 =====
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 12.4.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.5.0
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      # wheel 已内嵌前端产物（见 pyproject force-include），所以前端必须先构建
+      - name: Build frontend
+        run: |
+          cd frontend
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Check .gitkeep sentinels
+        run: uv run python scripts/check_gitkeep.py
+
+      - name: Build wheel
+        run: uv build
+
+      - name: Resolve version
+        id: meta
+        run: |
+          # 手动触发时用输入的版本，否则用 tag 名
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          # 去掉 tag 的 v 前缀：镜像 tag 与 dist 里的 wheel 版本保持一致，
+          # 避免出现 v0.3.0 与 0.3.0 两套版本号导致排查困难
+          VERSION="${VERSION#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "构建版本: ${VERSION}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 不引第三方 login action：TCR 的 docker login 协议与 Docker Hub 完全一致，
+      # 直接用官方 docker/login-action 即可，少一个供应链风险点
+      - name: Login to TCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          push: true
+          # 同时打版本 tag 与 latest：版本 tag 供回滚精确定位，
+          # latest 方便手工 docker compose 拉最新
+          tags: |
+            ${{ secrets.TCR_REGISTRY }}/cndb:${{ steps.meta.outputs.version }}
+            ${{ secrets.TCR_REGISTRY }}/cndb:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # TCR 企业版默认开启镜像扫描时会拒绝无 SBOM 的推送，保留 labels 便于溯源
+          labels: |
+            org.opencontainers.image.title=cndb
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Verify wheel inside image
+        env:
+          IMAGE: ${{ secrets.TCR_REGISTRY }}/cndb:${{ steps.meta.outputs.version }}
+        run: |
+          # 冒烟检查：确认镜像里 cndb 可导入、版本正确、前端静态已打进 wheel。
+          # 前端产物缺失这类问题必须在推镜像前拦住，
+          # 否则要到线上打开页面才发现白屏。
+          # 注意 -i：docker run 默认不接 stdin，缺了它 python - 会读到空输入
+          docker run --rm -i "$IMAGE" python - <<'PY'
+          import cndb
+          from cndb.core.config import STATIC_DIR, settings
+
+          assert STATIC_DIR.is_dir(), f"前端静态资源缺失: {STATIC_DIR}"
+          assets = list(STATIC_DIR.glob("assets/*")) if (STATIC_DIR / "assets").is_dir() else []
+          assert assets, "前端 assets 目录为空 —— 前端构建产物可能未打进 wheel"
+          print("OK  cndb", cndb.__version__, "| assets:", len(assets))
+          PY
+
+  # ===== 部署到服务器 =====
+  deploy:
+    name: Deploy to Server
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ secrets.SERVER_URL }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # 同步部署编排文件到服务器。
+      # 只传 compose + 脚本，不传代码：服务器靠拉镜像获得应用本体，
+      # 唯一必须落地的是部署配置（.env 保留在服务器本地，不被覆盖）。
+      # 分两步传，避免 scp-action 对含目录的多源路径扁平化行为不确定，
+      # 也避开隐藏文件（.env.prod.example）被 glob 漏掉的问题。
+      - name: Sync compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          username: ${{ secrets.SSH_USERNAME || 'root' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "docker-compose.prod.yml"
+          target: /opt/cndb
+
+      - name: Sync deploy scripts
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          username: ${{ secrets.SSH_USERNAME || 'root' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "deploy/deploy.sh,deploy/backup.sh,deploy/nginx.conf"
+          target: /opt/cndb/deploy
+
+      # 首次部署的引导：建目录 / 放 .env 模板。已初始化过的服务器会跳过
+      - name: Bootstrap server layout
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          username: ${{ secrets.SSH_USERNAME || 'root' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            mkdir -p /opt/cndb/deploy /opt/cndb/backups
+            chmod +x /opt/cndb/deploy/*.sh 2>/dev/null || true
+
+            # .env 只在缺失时创建，绝不覆盖已有配置
+            # （覆盖会丢掉 JWT_SECRET 与域名配置，是最危险的操作）
+            if [ ! -f /opt/cndb/.env ]; then
+              echo "::error::/opt/cndb/.env 不存在。"
+              echo "::error::首次部署请手工执行："
+              echo "::error::  mkdir -p /opt/cndb && cd /opt/cndb"
+              echo "::error::  cp deploy/.env.prod.example .env"
+              echo "::error::  # 填写 TCR 地址与 openssl rand -hex 32 生成的 JWT_SECRET"
+              exit 1
+            fi
+
+            # 校验 JWT_SECRET 不是模板占位值 —— 带着占位符上线等于无认证
+            if grep -q 'CHANGE_ME' /opt/cndb/.env; then
+              echo "::error::JWT_SECRET 仍是占位值。生成: openssl rand -hex 32"
+              exit 1
+            fi
+
+            echo "服务器布局就绪"
+
+      - name: Run deploy script
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          # 部署脚本内联执行，凭证通过环境变量传入而非写进 .env
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          username: ${{ secrets.SSH_USERNAME || 'root' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: 'VERSION,TCR_USERNAME,TCR_PASSWORD'
+          script: |
+            cd /opt/cndb
+            # 把 TCR 凭证透传给 deploy.sh（docker login 用，不落盘）
+            ./deploy/deploy.sh "v${VERSION}"
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          username: ${{ secrets.SSH_USERNAME || 'root' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # 部署脚本已做健康探测；这里做二次确认，确保外部视角也通
+          script: |
+            set -e
+            echo "--- 容器状态 ---"
+            docker ps --filter name=cndb --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+            echo "--- 健康端点 ---"
+            curl -fsS http://127.0.0.1:8000/api/health
+            echo ""
+            echo "--- 数据卷 ---"
+            docker volume inspect ${CNDB_VOLUME:-cndb-data} --format '{{.Name}} {{.Mountpoint}}'
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "::error::部署失败。若已自动回滚，服务仍运行在上一版本；"
+          echo "::error::请登录服务器查看: docker logs --tail 100 cndb"

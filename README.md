@@ -103,6 +103,28 @@ docker compose exec app uv run cndb seed
 | nginx 特性 | 无 | 有（gzip / 缓存 / SSL） |
 | 适用场景 | 快速上线、单机部署 | 需要 nginx 高级特性 |
 
+#### 方案三：腾讯云自动发布（生产推荐）
+
+镜像由 CI 构建推送到腾讯云 TCR，服务器拉取即部署，打 tag 触发、失败自动回滚。
+
+```bash
+git tag v0.3.1 && git push origin v0.3.1    # 构建 → 推 TCR → 自动部署
+```
+
+部署链路、服务器准备、TCR 凭证配置、定时备份与 PostgreSQL 迁移：
+详见 **[docs/DEPLOY_TENCENT.md](docs/DEPLOY_TENCENT.md)**。
+
+相关文件：
+
+| 文件 | 作用 |
+|---|---|
+| `docker-compose.prod.yml` | 生产编排（单容器 + 数据卷 + 日志轮转） |
+| `deploy/Dockerfile.prod` | 生产镜像（预授权数据目录 + 健康检查 + 中文字体） |
+| `deploy/deploy.sh` | 服务器端部署（预备份 / 拉镜像 / 健康探测 / 失败回滚） |
+| `deploy/backup.sh` | 定时备份，可选上传 COS |
+| `deploy/.env.prod.example` | 生产环境变量模板 |
+| `.github/workflows/deploy-tencent.yml` | tag 触发的构建与部署流水线 |
+
 #### 常用运维命令
 
 ```bash

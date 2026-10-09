@@ -29,6 +29,8 @@ coverage.xml
 # 环境变量与凭证（勿提交）
 .env
 .env.*
+# 但部署模板必须入库：CI 同步到服务器时要用它初始化 .env
+!deploy/.env.prod.example
 
 *.py.bak
 src/cndb/static/*
