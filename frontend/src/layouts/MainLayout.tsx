@@ -1,12 +1,12 @@
 import React, { Suspense, lazy, useState, useCallback } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip, Tabs } from 'antd'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip, Tabs, Drawer } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
 import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
-  HomeOutlined,
+  HomeOutlined, MenuOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
@@ -55,6 +55,8 @@ export default function MainLayout() {
   const closeSettings = useUiStore(s => s.closeSettings)
   const [helpOpen, setHelpOpen] = useState(false)
   const [searchParams] = useSearchParams()
+  // 移动端抽屉导航开关（仅 isMobile 时渲染汉堡入口）
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   /** 跨表导航时保留当前 URL 的 query params（如 ?mode=calendar、?view=123）. */
   const navigateToTable = useCallback((targetWid: string | number, targetTid: string | number) => {
@@ -180,24 +182,86 @@ export default function MainLayout() {
     }
   }
 
+  /** 表导航内容 —— 桌面端 Sider 与移动端抽屉共用；mobile=true 时点击表项后自动收起抽屉.
+   * collapsed 仅桌面端 Sider 折叠态使用，与既有折叠隐藏逻辑保持一致。 */
+  const renderTableNav = (mobile: boolean, collapsed = false) => {
+    if (!wid) {
+      // 未进入工作区：不渲染"数据表"导航，提示用户从顶部选择
+      return (
+        <div data-testid="sider-no-workspace" style={{
+          padding: '24px 16px', textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13,
+          display: collapsed ? 'none' : 'block',
+        }}>
+          <p style={{ margin: 0 }}>请先从顶部选择一个工作区</p>
+        </div>
+      )
+    }
+    return (
+      <div data-testid="sider-tables">
+        <div style={{
+          padding: '12px 16px', borderBottom: '1px solid var(--cn-border)',
+          display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
+        </div>
+        <div style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
+          数据表 ({orderedTables.length})
+        </div>
+        {tables.length === 0 ? (
+          collapsed ? (
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>无表</div>
+          ) : (
+            <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>
+              <p style={{ margin: 0 }}>还没有数据表，先创建或导入一张吧</p>
+            </div>
+          )
+        ) : (
+          <Menu
+            mode="inline"
+            selectedKeys={tid ? [String(tid)] : []}
+            items={orderedTables.map(t => ({
+              key: String(t.id),
+              icon: <TableOutlined />,
+              label: <span onMouseEnter={() => prefetchTable(wid!, t.id)}>{t.name}</span>,
+              onClick: () => {
+                navigateToTable(wid!, t.id)
+                if (mobile) setMobileNavOpen(false)
+              },
+            }))}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       <Header style={{
         background: 'var(--cn-bg-container)', padding: '0 16px', height: 52, lineHeight: '52px', flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--cn-border)',
       }}>
+        {/* 移动端汉堡入口：替代常驻 Sider，点击打开抽屉导航 */}
+        {isMobile && (
+          <Button
+            type="text"
+            icon={<MenuOutlined />}
+            aria-label="打开导航菜单"
+            data-testid="mobile-nav-btn"
+            onClick={() => setMobileNavOpen(true)}
+          />
+        )}
         <Tooltip title="主页">
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 18, color: 'var(--cn-brand-color)', marginRight: 8, cursor: 'pointer' }}
             data-testid="home-logo"
             onClick={() => navigate('/w')}>
-            <HomeOutlined style={{ fontSize: 14 }} /> cndb
+            <HomeOutlined style={{ fontSize: 14 }} /> {!isMobile && 'cndb'}
           </div>
         </Tooltip>
 
-        {/* 工作区下拉 */}
+        {/* 工作区下拉 —— 移动端仅显示图标，节省横向空间 */}
         <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
           <Button type="text" icon={<AppstoreOutlined />} data-testid="ws-switch-btn">
-            {currentWs?.name || '工作区'}
+            {!isMobile && (currentWs?.name || '工作区')}
           </Button>
         </Dropdown>
 
@@ -233,53 +297,16 @@ export default function MainLayout() {
       </Header>
 
       <Layout style={{ flex: 1, minHeight: 0 }}>
-        <Sider
-          collapsible collapsed={collapsed} onCollapse={setCollapsed}
-          width={240} collapsedWidth={60}
-          style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
-        >
-          {!wid ? (
-            // 未进入工作区：不渲染"数据表"导航，提示用户从顶部选择
-            <div data-testid="sider-no-workspace" style={{
-              padding: '24px 16px', textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13,
-              display: collapsed ? 'none' : 'block',
-            }}>
-              <p style={{ margin: 0 }}>请先从顶部选择一个工作区</p>
-            </div>
-          ) : (
-            <div data-testid="sider-tables">
-              <div style={{
-                padding: '12px 16px', borderBottom: '1px solid var(--cn-border)',
-                display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
-              }}>
-                <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
-              </div>
-              <div style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
-                数据表 ({orderedTables.length})
-              </div>
-              {tables.length === 0 ? (
-                collapsed ? (
-                  <div style={{ padding: 16, textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>无表</div>
-                ) : (
-                  <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>
-                    <p style={{ margin: 0 }}>还没有数据表，先创建或导入一张吧</p>
-                  </div>
-                )
-              ) : (
-                <Menu
-                  mode="inline"
-                  selectedKeys={tid ? [String(tid)] : []}
-                  items={orderedTables.map(t => ({
-                    key: String(t.id),
-                    icon: <TableOutlined />,
-                    label: <span onMouseEnter={() => prefetchTable(wid!, t.id)}>{t.name}</span>,
-                    onClick: () => navigateToTable(wid!, t.id),
-                  }))}
-                />
-              )}
-            </div>
-          )}
-        </Sider>
+        {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变 */}
+        {!isMobile && (
+          <Sider
+            collapsible collapsed={collapsed} onCollapse={setCollapsed}
+            width={240} collapsedWidth={60}
+            style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
+          >
+            {renderTableNav(false, collapsed)}
+          </Sider>
+        )}
 
         <Layout style={{ flex: 1, minHeight: 0 }}>
           {/* 工作区级分页导航 —— 位于 Content 之外，跨页切换不重挂载；无工作区上下文时不渲染 */}
@@ -307,6 +334,18 @@ export default function MainLayout() {
           </Content>
         </Layout>
       </Layout>
+
+      {/* 移动端抽屉导航：替代常驻 Sider，点击表项后自动收起 */}
+      <Drawer
+        title="导航"
+        placement="left"
+        open={isMobile && mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        width={280}
+        styles={{ body: { padding: 0 } }}
+      >
+        {renderTableNav(true)}
+      </Drawer>
 
       <Suspense fallback={<ModalFallback />}>
         <SettingsModal open={settingsOpen} initialTab={settingsTab} onClose={closeSettings} />
