@@ -125,38 +125,37 @@ console.error = (...args: unknown[]) => {
   originalConsoleError(...args)
 }
 
-// ── 抑制 jsdom 伪元素 getComputedStyle 未实现警告 ──────────────────────
-// antd 内部测量滚动条样式时会调 getComputedStyle(ele, '::-webkit-scrollbar')。
-// jsdom 收到非空伪元素参数时会走 notImplementedMethod → virtualConsole
-// → console.error 打印噪音。单线程下 patch console.error 可拦截，但多 worker
-// threads 模式下 vitest 可能把 jsdomError 直接写到 worker 的独立 stderr，
-// 绕过主进程的 console.error patch。因此在源头 patch window.getComputedStyle：
-// 伪元素参数非空时临时屏蔽 virtualConsole，调原始实现后恢复。
+// ── 修复 jsdom 伪元素 getComputedStyle 未实现警告 ──────────────────────
+// antd 内部测量样式时会调 getComputedStyle(ele, '::-webkit-scrollbar')。
+// jsdom 30 收到非空伪元素参数时经 virtualConsole 发 jsdomError（"Not implemented:
+// Window's getComputedStyle() method: with pseudo-elements"）——多 worker 下该
+// 错误直写 worker stderr，patch console.error 拦不住。且 virtualConsole 挂在
+// window._settings 上（非 window._virtualConsole），事件级抑制不可靠。
+// 处理：jsdom 对伪元素本来就只返回元素本身的样式声明（notImplemented 后继续
+// 执行），这里直接降级为无伪元素调用，行为完全一致且不再触发警告。
 if (typeof window !== 'undefined') {
   const origGetComputedStyle = window.getComputedStyle.bind(window)
-  const suppressedTypes = new Set<string>(['not-implemented'])
   window.getComputedStyle = function (elt: Element, pseudoElt?: string | null): CSSStyleDeclaration {
-    // 无伪元素参数或空串：走原始实现，不触发警告
-    if (pseudoElt == null || pseudoElt === '') {
-      return origGetComputedStyle(elt, pseudoElt ?? undefined)
-    }
-    // 伪元素参数非空：临时屏蔽 jsdom virtualConsole 中 type=not-implemented 的事件
-    const vc = (window as unknown as { _virtualConsole?: { emit?: (evt: string, e: { type: string }) => void } })._virtualConsole
-    if (vc && typeof vc.emit === 'function') {
-      const origEmit = vc.emit.bind(vc)
-      vc.emit = (evt: string, e: { type: string }) => {
-        if (evt === 'jsdomError' && e && suppressedTypes.has(e.type)) {
-          return
-        }
-        return origEmit(evt, e)
+    void pseudoElt
+    return origGetComputedStyle(elt)
+  }
+}
+
+// ── 抑制 jsdom "navigation to another Document" 未实现警告 ─────────────
+// 测试中渲染下载 / 导出等逻辑会程序化 a.click() 触发跳转，jsdom 无法跨文档
+// 导航，会经 virtualConsole 发 jsdomError。vitest 把 virtualConsole 转发到
+// worker console 并直写 stderr（绕过 console.error patch），需在 emit 层拦截。
+// 仅过滤该类已知噪音，其他 jsdomError 照常抛出。
+if (typeof window !== 'undefined') {
+  const vc = (window as unknown as { _settings?: { virtualConsole?: { emit?: (evt: string, e: { message?: string }) => void } } })._settings?.virtualConsole
+  if (vc && typeof vc.emit === 'function') {
+    const origEmit = vc.emit.bind(vc)
+    vc.emit = (evt: string, e: { message?: string }) => {
+      if (evt === 'jsdomError' && typeof e?.message === 'string' && e.message.includes('navigation to another Document')) {
+        return
       }
-      try {
-        return origGetComputedStyle(elt, pseudoElt)
-      } finally {
-        vc.emit = origEmit
-      }
+      return origEmit(evt, e)
     }
-    return origGetComputedStyle(elt, pseudoElt)
   }
 }
 

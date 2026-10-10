@@ -1,6 +1,6 @@
 /** Grid 顶部工具栏 — 返回/标题/统计徽标/主操作区（从 GridPage 抽出）. */
 
-import { Button, Space, Tag, Modal, Typography, Tooltip, Dropdown } from 'antd'
+import { Button, Space, Tag, Typography, Tooltip, Dropdown } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined,
   MoreOutlined, ArrowLeftOutlined, CopyOutlined, ImportOutlined,
@@ -43,7 +43,7 @@ export default function GridToolbar({
   canEditSchema, canManageData, onOpenTableSettings, onOpenImportExport, onOpenGovernance,
   activeViewName, activeViewId, onCopyTable, onMove, onResetColumnLayout,
 }: GridToolbarProps) {
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   // 移动端按钮收纳为 icon-only，功能入口不变（Tooltip 仍提供说明）
@@ -119,7 +119,7 @@ export default function GridToolbar({
             {
               key: 'delete', icon: <DeleteOutlined />, danger: true, label: '删除表',
               disabled: !canEditSchema,
-              onClick: () => Modal.confirm({
+              onClick: () => modal.confirm({
                 title: `删除表 "${tableName}" ？`,
                 content: '表内所有记录和字段将被永久移除。此操作不可恢复。',
                 okText: '删除',
