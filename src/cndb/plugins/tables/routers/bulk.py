@@ -12,6 +12,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
@@ -302,17 +303,20 @@ async def import_table(
 
     content = await file.read()
 
-    try:
+    def _run_import() -> list[int]:
+        # 全量解析 + 逐行入库为重 CPU/IO 操作，放线程池避免阻塞事件循环
         if fmt == "json":
             text, _enc, _conf = transfer.decode_bytes_auto(content)
-            ids = transfer.import_rows_from_json(db.get_bind(), dt, text, db=db)
-        elif fmt == "csv":
+            return transfer.import_rows_from_json(db.get_bind(), dt, text, db=db)
+        if fmt == "csv":
             text, _enc, _conf = transfer.decode_bytes_auto(content)
-            ids = transfer.import_rows_from_csv(db.get_bind(), dt, text, db=db)
-        elif fmt == "xlsx":
-            ids = transfer.import_rows_from_xlsx(db.get_bind(), dt, content, db=db)
-        else:
-            raise HTTPException(status_code=400, detail=f"不支持的格式: {fmt}")
+            return transfer.import_rows_from_csv(db.get_bind(), dt, text, db=db)
+        if fmt == "xlsx":
+            return transfer.import_rows_from_xlsx(db.get_bind(), dt, content, db=db)
+        raise HTTPException(status_code=400, detail=f"不支持的格式: {fmt}")
+
+    try:
+        ids = await run_in_threadpool(_run_import)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -347,7 +351,9 @@ async def import_table_async(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     content = await file.read()
-    task = create_import_task(
+    # b64 编码 / 编码检测 + 入库为阻塞操作，放线程池避免阻塞事件循环
+    task = await run_in_threadpool(
+        create_import_task,
         db,
         table_id=dt.id,
         user_id=current_user.id if current_user else None,
@@ -474,7 +480,8 @@ async def import_table_analyze(
     if strategy not in ("drop", "add_text_field"):
         raise HTTPException(status_code=400, detail=f"无效的 unknown_cols_strategy: {strategy}")
 
-    task = create_import_task(
+    task = await run_in_threadpool(
+        create_import_task,
         db,
         table_id=dt.id,
         user_id=current_user.id if current_user else None,

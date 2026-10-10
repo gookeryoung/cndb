@@ -135,8 +135,9 @@ def _seed_xlsx_table(
         )
         print(f"[seed-XLSX] 建表: {table_name} → (id={dt.id})")
         return dt, ids
-    except Exception:
-        pass
+    except Exception as exc:
+        # 策略 1 失败属预期回退，但需留痕：兜底也失败时可追溯根因
+        print(f"[seed-XLSX] {table_name} 常规推断失败，转 text 兜底: {exc}")
 
     # ── 策略 2：openpyxl 预处理 + 全 text 兜底 ──
     try:
