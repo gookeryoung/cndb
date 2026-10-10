@@ -125,7 +125,8 @@ describe('GridCell 传统编辑流', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith('姓名', '李四'))
     // 保存成功后退出编辑态（prop value 未变，展示回显原值）+ 成功提示
     await waitFor(() => expect(screen.queryByDisplayValue('李四')).not.toBeInTheDocument())
-    expect(screen.getByText('已保存')).toBeInTheDocument()
+    // message 经 AntApp portal 异步挂载，必须用自带重试的 findBy，同步 getBy 会与 portal 渲染竞态
+    expect(await screen.findByText('已保存')).toBeInTheDocument()
   })
 
   it('Escape 取消：退出编辑态并回显原值，不调用 onSave', () => {
