@@ -56,8 +56,12 @@ def _get_datasets_dir() -> Path | None:
     搜索顺序：
     1. 包内 cndb/datasets/ —— wheel 安装版，由 hatch force-include 打包
     2. 仓库根 examples/datasets/ —— 源码开发版
+
+    注意层级：本文件位于 <包根>/cndb/cli/seed.py，故包根是 parents[1] 而非
+    parent（parent 只是 cndb/cli/）。曾误写 parent，导致 wheel 安装版始终
+    找不到 datasets，seed 静默降级成"只建账号、0 张数据表"。
     """
-    pkg_datasets = Path(__file__).resolve().parent / "datasets"
+    pkg_datasets = Path(__file__).resolve().parents[1] / "datasets"
     if pkg_datasets.is_dir():
         return pkg_datasets
     # 本文件位于 src/cndb/cli/seed.py，向上四级才是仓库根（移入 cli 包后层级 +1）
