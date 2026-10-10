@@ -8,7 +8,7 @@
 #
 # 做的事：
 #   1. 建目录（/opt/cndb/deploy、/opt/cndb/backups）
-#   2. 落 .env（镜像地址指向 ccr.ccs.tencentyun.com/pydev/pydev）
+#   2. 落 .env（镜像地址指向 ccr.ccs.tencentyun.com/pydev/cndb）
 #      —— 已在 .env 存在时**绝不覆盖**，只补缺失项
 #   3. 生成 JWT_SECRET（缺失时自动生成，不打印明文到日志）
 #   4. 前置检查：docker / compose / 端口占用
@@ -21,7 +21,7 @@ set -Eeuo pipefail
 APP_DIR="${APP_DIR:-/opt/cndb}"
 REGISTRY="ccr.ccs.tencentyun.com"
 GROUP="pydev"
-REPO="pydev"
+REPO="cndb"
 BIND="${BIND:-0.0.0.0:8000}"
 VOLUME="${VOLUME:-cndb-data}"
 ENV_FILE="$APP_DIR/.env"
