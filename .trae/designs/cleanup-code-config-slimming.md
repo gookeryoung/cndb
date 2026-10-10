@@ -64,4 +64,19 @@
 
 - knip 报告的 export 过宽类（保留清单第 4 行）如需收敛，建议单独小轮处理。
 
+## 后端与配置清理（2026-10-10，iter-35）
+
+延续证据驱动清理：后端四维工具（ruff F / vulture / deptry / pyrefly）复扫仍零真阳性，
+新增清理项如下。
+
+| 变更 | 依据 |
+|------|------|
+| 删除根目录遗留 `alembic/` + `alembic.ini`（已停更链，缺 f7a8b9c0d1e2、多出 a7b8c9d0e1f2） | 包内 `src/cndb/alembic/` 唯一真相源；CI/scripts/docs 零引用；用户已确认 |
+| ~~删除 `.codeup/`~~ → **保留**（2026-10-10 用户要求恢复，已从 HEAD 还原） | CNB 迁移虽已放弃，配置去留待用户后续定夺 |
+| 删除 `gui/main_window.py` `_detect_tag` | vulture + grep 双重确认全仓零调用 |
+| 清理 `pyproject.toml` [tool.fspack] 注释残留 | `#data-dirs` / `#pyc_strip` / `#no_site` |
+
+假阳性保留结论沿用下表，deptry 复核结果不变（26 项报告全部假阳性）。
+vulture/deptry 复扫以 `uvx` 临时运行，不写入项目依赖。
+
 > CHANGELOG 版本节失实已于 2026-10-08 回填解决（iter-31）：以 git tag creatordate 为发布日期，0.1.3–0.2.7 全部版本节补齐，`[0.1.12]` 由"未发布"改为 2026-09-19，`[0.1.2]` 日期按 tag 修正为 2026-09-13。

@@ -90,8 +90,8 @@ create_all+stamp）出口统一调用 `_heal_schema_drift()`。
 ## 依赖项描述
 
 - **包内迁移链是唯一真相源**（`src/cndb/alembic/versions/`，运行时经
-  `_alembic_dir()` 定位）。仓库根 `alembic/versions/` 为早期遗留，已停更且与包内链
-  分叉（多出 a7b8c9d0e1f2_add_governance），不做同步；演进迁移只落包内链。
+  `_alembic_dir()` 定位）。仓库根的遗留 `alembic/` 目录与 `alembic.ini` 已删除
+  （2026-10-10 清理），不存在双链分叉；演进迁移只落包内链。
   当前 head：f7a8b9c0d1e2（revises e5f6a7b8c9d0）。
 - 恢复流程（`cli/restore.py::_migrate_after_restore`）在 upgrade head +
   create_all 补建缺失表之后调用 `heal_schema_drift(database_url)`，失败包装为
