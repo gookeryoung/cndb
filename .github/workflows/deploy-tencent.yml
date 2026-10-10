@@ -237,7 +237,7 @@ jobs:
           username: ${{ secrets.SSH_USERNAME || 'root' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           # 注意：不设 strip_components。target 已是 /opt/cndb/deploy，
-          # 保持既有的路径语义（这点在 CNB 迁移期间验证过可用）。
+          # 多级路径会原样保留，这是该 action 一直以来的行为。
           source: |
             deploy/deploy.sh
             deploy/backup.sh
