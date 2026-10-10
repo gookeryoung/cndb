@@ -59,6 +59,32 @@ function syncStaticPlugin() {
   }
 }
 
+// ── chunk 模块级体积归属表 ───────────────────────────────────────────
+// scripts/bundle-budget.mjs 超限时需要回答「是哪个源文件让包变大了」。
+// Vite 自带的 build.manifest 只有 chunk 粒度（不含模块），故用 Rollup 的
+// OutputChunk.modules 自建映射表：dist/.vite/chunk-modules.json
+// { "<chunk 文件名>": [{ id, bytes }] }，id 为模块绝对路径，bytes 为原始字节。
+// 该目录不参与同步到后端 static（见 syncStaticPlugin），不会被打进 wheel。
+function chunkAttributionPlugin() {
+  return {
+    name: 'chunk-attribution',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const table = {}
+      for (const [fileName, chunk] of Object.entries(bundle)) {
+        if (chunk.type !== 'chunk') continue
+        table[fileName] = Object.entries(chunk.modules ?? {}).map(([id, info]) => ({
+          id,
+          bytes: info.originalLength ?? info.code?.length ?? 0,
+        }))
+      }
+      const outDir = path.resolve(__dirname, 'dist/.vite')
+      fs.mkdirSync(outDir, { recursive: true })
+      fs.writeFileSync(path.join(outDir, 'chunk-modules.json'), JSON.stringify(table))
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
@@ -72,6 +98,7 @@ export default defineConfig(({ mode }) => ({
         open: false,
       })]
       : []),
+    chunkAttributionPlugin(),
     syncStaticPlugin(),
   ],
   resolve: {
@@ -95,10 +122,6 @@ export default defineConfig(({ mode }) => ({
     // 现代浏览器目标：去掉 asyncIterator/Map/Set/Proxy 等老 polyfill
     target: 'es2022',
     chunkSizeWarningLimit: 1500,
-    // 产出 dist/.vite/manifest.json（模块 → chunk 映射）。scripts/bundle-budget.mjs
-    // 在超限失败时据此列出该 chunk 内 Top-N 源文件，把「哪个文件让包变大了」变成可定位信息，
-    // 而不是只报一个数字。不会同步到后端 static（见 syncStaticPlugin 的 .vite 排除）。
-    manifest: true,
     rollupOptions: {
       output: {
         // 不使用 manualChunks —— antd 内部模块间有大量交叉引用，
