@@ -12,10 +12,10 @@
 FROM docker.m.daocloud.io/python:3.12-slim AS builder
 
 # ---- 国内镜像源 ----
-ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-ENV PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
-ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-ENV UV_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+ENV PIP_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/web/simple
+ENV PIP_TRUSTED_HOST=mirrors.ustc.edu.cn
+ENV UV_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/web/simple
+ENV UV_TRUSTED_HOST=mirrors.ustc.edu.cn
 
 # 环境变量：非交互 + 路径配置
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -29,8 +29,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # 不能让 uv 默认选托管 Python——它装在 builder 的 /root 下，复制不过去
     UV_PYTHON=/usr/local/bin/python3.12
 
-# 配置 apt 国内镜像（阿里云）并安装编译期系统依赖
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+# 配置 apt 国内镜像（中科大）并安装编译期系统依赖
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -39,7 +39,7 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 uv（国内镜像）
-RUN pip install --no-cache-dir uv -i https://mirrors.aliyun.com/pypi/simple/
+RUN pip install --no-cache-dir uv -i https://mirrors.ustc.edu.cn/pypi/web/simple/
 
 WORKDIR /workspace
 COPY pyproject.toml uv.lock README.md ./
@@ -51,15 +51,15 @@ RUN uv sync --frozen --no-install-project 2>/dev/null || uv sync --no-install-pr
 # ── runtime 阶段：只保留运行必需内容 ──
 FROM docker.m.daocloud.io/python:3.12-slim
 
-ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-    PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn \
+ENV PIP_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/web/simple \
+    PIP_TRUSTED_HOST=mirrors.ustc.edu.cn \
     DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     PATH="/opt/venv/bin:${PATH}"
 
 # 字体供 reportlab 生成 PDF / 报告模板渲染中文；curl 供健康检查与调试
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -71,7 +71,7 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
     && rm -rf /var/lib/apt/lists/*
 
 # uv 仍保留在镜像内，CI 任务可在容器内继续用 uv run / uv sync
-RUN pip install --no-cache-dir uv -i https://mirrors.aliyun.com/pypi/simple/
+RUN pip install --no-cache-dir uv -i https://mirrors.ustc.edu.cn/pypi/web/simple/
 
 # venv 由 builder 以 UV_LINK_MODE=copy 生成（文件为实体拷贝，非缓存硬链接），
 # 跨阶段复制后开箱可用
