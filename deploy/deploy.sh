@@ -213,11 +213,11 @@ if [[ -n "${TCR_USERNAME:-}" && -n "${TCR_PASSWORD:-}" ]]; then
 fi
 
 log "拉取镜像 ${TARGET_IMAGE}..."
-if ! dc pull app; then
-  # 拉取失败的错误信息区分度很高，直接透出避免误判方向：
-  #   401 Unauthorized          → 服务器无 TCR 登录态（CI 场景下正常注入凭证）
-  #   repository does not exist → 命名空间或仓库名写错
-  #   not found                 → 认证通过，但该 tag 不存在（版本没构建/没推上去）
+# compose pull 对不存在的 tag 仍可能返回 0（实测：app Pulled 却没真正拉到），
+# 所以不能只看它的退出码，必须再确认镜像真的在本地了。
+# 这一步必须在写 .env 之前完成 —— 否则 .env 会被改成拉不到的地址，
+# 站点下次重启就起不来。
+if ! dc pull app 2>&1 | tee /tmp/cndb-pull.log; then
   warn "拉取失败。常见原因对照："
   warn "  401 Unauthorized          → 无登录态，检查 TCR_USERNAME/TCR_PASSWORD 是否注入"
   warn "  repository does not exist → 命名空间或仓库名有误"
@@ -225,6 +225,15 @@ if ! dc pull app; then
   rollback "镜像拉取失败"
   exit 1
 fi
+
+if ! docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1; then
+  warn "镜像未实际拉取到本地：${TARGET_IMAGE}"
+  warn "compose pull 返回成功但镜像不存在（tag 可能不存在），这是 compose 的已知行为。"
+  warn "请到 TCR 控制台确认该 tag 已推送。"
+  rollback "镜像拉取失败（镜像不存在）"
+  exit 1
+fi
+ok "镜像已就位: ${TARGET_IMAGE}"
 
 # 3. 写入新镜像地址并重建
 set_image_in_env "$TARGET_IMAGE"
