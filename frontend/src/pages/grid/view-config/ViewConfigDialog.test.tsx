@@ -92,7 +92,6 @@ describe('ViewConfigDialog 视图配置', () => {
   })
 
   it('切换 OR 后保存回调携带 OR 逻辑与空规则过滤', () => {
-    // 一条有效规则 + 默认补位的空规则 → 保存时空规则应被过滤
     const spies = renderDialog({ filters: [{ field_name: '姓名', op: 'contains', value: '张' }] })
 
     fireEvent.click(screen.getByText('任一满足（OR）'))
@@ -207,6 +206,18 @@ describe('ViewConfigDialog 视图配置', () => {
 })
 
 describe('ViewConfigDialog 空态分支', () => {
+  it('初始无筛选条件时直接渲染筛选空态', () => {
+    renderDialog({ filters: [] })
+    expect(screen.getByText('暂无筛选条件')).toHaveClass('vcvd-empty')
+    expect(document.querySelectorAll('.vcvd-rule')).toHaveLength(0)
+  })
+
+  it('初始无排序规则时渲染排序空态', () => {
+    renderDialog({ sortings: [] })
+    fireEvent.click(screen.getByText('排序'))
+    expect(screen.getByText('暂无排序规则')).toHaveClass('vcvd-empty')
+  })
+
   it('删除唯一一条筛选规则后渲染筛选空态', () => {
     renderDialog({ filters: [{ field_name: '姓名', op: 'contains', value: '张' }] })
     expect(screen.queryByText('暂无筛选条件')).not.toBeInTheDocument()
