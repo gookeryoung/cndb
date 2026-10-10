@@ -38,7 +38,7 @@ docker compose version >/dev/null 2>&1 || die "未找到 docker compose v2 插�
 dc() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
 
 TARGET_TAG="${1:-}"
-[[ -n "$TARGET_TAG" ]] || die "用法: $0 <version-tag>   例: $0 v0.3.0"
+[[ -n "$TARGET_TAG" ]] || die "用法: $0 <version-tag>   例: $0 0.3.0  或  v0.3.0"
 
 # ── 读取当前运行中的镜像（用于回滚）─────────────────────────────
 CURRENT_IMAGE="$(docker inspect cndb --format '{{.Config.Image}}' 2>/dev/null || echo "")"
@@ -48,10 +48,36 @@ CURRENT_TAG=""
 log "当前运行版本: ${CURRENT_TAG:-<无, 首次部署>}"
 
 # ── 组装目标镜像地址 ───────────────────────────────────────────
-# 从 CNDB_IMAGE 剥掉版本段，拼接目标 tag —— 这样版本升级不需要改 .env
-BASE_REPO="$(grep -E '^CNDB_IMAGE=' "$ENV_FILE" | cut -d= -f2- | cut -d: -f1)"
-[[ -n "$BASE_REPO" ]] || die ".env 中 CNDB_IMAGE 缺失或格式错误"
+# 优先用 CNDB_IMAGE_OVERRIDE（CI 可显式传完整地址），否则从 .env 的 CNDB_IMAGE 推导。
+#
+# 两个历史坑，都曾导致线上拉不到镜像：
+#
+#   1. tag 前缀不一致：CI 推镜像时用 VERSION="${VERSION#v}" 剥掉了 v，
+#      仓库里实际是 0.3.0；而 git tag 是 v0.3.0。原脚本直接用参数拼 tag，
+#      于是去拉 xxx:v0.3.0 —— 该 tag 不存在，部署必然失败。
+#      现在统一剥掉开头的 v，两种传参都能命中。
+#   2. 无仓库前缀：服务器首次部署前 .env 可能是 cndb:0.3.0（本地构建遗留），
+#      推导出的 BASE_REPO=cndb 会被 Docker 解析成 docker.io/library/cndb。
+#      现在显式校验必须含域名，否则直接报错退出，不让错误地址进入后续步骤。
+TARGET_TAG="${TARGET_TAG#v}"
+
+if [[ -n "${CNDB_IMAGE_OVERRIDE:-}" ]]; then
+  BASE_REPO="${CNDB_IMAGE_OVERRIDE%:*}"
+  log "使用 CI 传入的仓库地址: ${BASE_REPO}"
+else
+  BASE_REPO="$(grep -E '^CNDB_IMAGE=' "$ENV_FILE" | cut -d= -f2- | cut -d: -f1)"
+  [[ -n "$BASE_REPO" ]] || die ".env 中 CNDB_IMAGE 缺失或格式错误"
+  #含 "/" 说明带域名或命名空间，是完整的仓库地址
+  if [[ "$BASE_REPO" != */* ]]; then
+    die "CNDB_IMAGE 缺少仓库地址（当前: ${BASE_REPO}）。
+     期望格式: <域名>/<命名空间>/<仓库>:<版本>，例如:
+       CNDB_IMAGE=ccr.ccs.tencentyun.com/pydev/cndb:v0.3.0
+     若镜像地址在构建时由 CI 决定，可用环境变量 CNDB_IMAGE_OVERRIDE 传入完整前缀。"
+  fi
+fi
+
 TARGET_IMAGE="${BASE_REPO}:${TARGET_TAG}"
+log "目标镜像: ${TARGET_IMAGE}"
 
 log "目标镜像: ${TARGET_IMAGE}"
 
@@ -148,7 +174,18 @@ rollback() {
 
   # 关键：回滚的是**镜像版本**，不是容器配置。compose 文件若未变，
   # 仅需把 .env 的镜像地址改回去再 up -d，卷不受影响。
-  set_image_in_env "${BASE_REPO}:${CURRENT_TAG}"
+  #
+  # 仓库地址必须取自**运行中的镜像**而非 BASE_REPO：若本次用了
+  # CNDB_IMAGE_OVERRIDE 而它与 .env 里的仓库不同，用 BASE_REPO 回滚会把
+  # .env 改成一个从未成功运行过的地址，故障时反而雪上加霜。
+  ROLLBACK_REPO="${CURRENT_IMAGE%:*}"
+  if [[ -z "$ROLLBACK_REPO" || "$ROLLBACK_REPO" == "$CURRENT_IMAGE" ]]; then
+    # CURRENT_IMAGE 没有 tag 段（理论上不该发生），退回 BASE_REPO
+    ROLLBACK_REPO="$BASE_REPO"
+  fi
+  log "回滚目标仓库: ${ROLLBACK_REPO}"
+
+  set_image_in_env "${ROLLBACK_REPO}:${CURRENT_TAG}"
 
   dc up -d --force-recreate app >/dev/null 2>&1 || true
 
@@ -177,6 +214,14 @@ fi
 
 log "拉取镜像 ${TARGET_IMAGE}..."
 if ! dc pull app; then
+  # 拉取失败的错误信息区分度很高，直接透出避免误判方向：
+  #   401 Unauthorized          → 服务器无 TCR 登录态（CI 场景下正常注入凭证）
+  #   repository does not exist → 命名空间或仓库名写错
+  #   not found                 → 认证通过，但该 tag 不存在（版本没构建/没推上去）
+  warn "拉取失败。常见原因对照："
+  warn "  401 Unauthorized          → 无登录态，检查 TCR_USERNAME/TCR_PASSWORD 是否注入"
+  warn "  repository does not exist → 命名空间或仓库名有误"
+  warn "  not found                 → 该 tag 在仓库中不存在，确认构建 job 是否成功推送"
   rollback "镜像拉取失败"
   exit 1
 fi
@@ -188,6 +233,16 @@ ok "更新 .env → ${TARGET_IMAGE}"
 log "重建容器..."
 if ! dc up -d --force-recreate app; then
   rollback "容器重建失败"
+  exit 1
+fi
+
+# 确认跑起来的确实是目标镜像。
+# compose pull 偶发返回成功但实际用的是别的镜像（tag 缺失时可能复用旧层），
+# 到健康检查才暴露，排查成本高；这里提前挡住。
+RUNNING_IMAGE="$(docker inspect cndb --format '{{.Config.Image}}' 2>/dev/null || echo "")"
+if [[ "$RUNNING_IMAGE" != "$TARGET_IMAGE" ]]; then
+  warn "运行镜像与目标不一致：期望 ${TARGET_IMAGE}，实际 ${RUNNING_IMAGE:-<读取失败>}"
+  rollback "镜像地址不匹配"
   exit 1
 fi
 
