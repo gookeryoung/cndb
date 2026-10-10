@@ -1,9 +1,10 @@
 /** 视图配置对话框 — Tab：筛选规则 / 排序规则 / 字段显示（仅 grid）/ 视图专属设置. */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Checkbox, Modal, Segmented, Select, Space, Switch, Tabs, Input, InputNumber, Tooltip } from 'antd'
+import { Alert, Button, Checkbox, Modal, Segmented, Select, Space, Switch, Tabs, Input, InputNumber, Tooltip } from 'antd'
 import { PlusOutlined, DeleteOutlined, RightOutlined } from '@ant-design/icons'
 import { getOpsForField, extractSelectOptions } from '../cells/fieldOps'
+import { validateAndNormalizeDraft } from './filterValueRules'
 import {
   CHART_OPTIONS,
   COLLAPSED_BY_DEFAULT_GROUPS,
@@ -137,6 +138,8 @@ export default function ViewConfigDialog({
   const [draftFilterLogic, setDraftFilterLogic] = useState<'AND' | 'OR'>('AND')
   const [draftOpt, setDraftOpt] = useState<Record<string, unknown>>({})
   const [activeTab, setActiveTab] = useState<'filter' | 'sort' | 'fields' | 'view'>('filter')
+  // 保存校验错误（每条 = 规则序号 + 问题 + 修正方向），非空时渲染 Alert 并阻止保存
+  const [filterErrors, setFilterErrors] = useState<string[]>([])
   // chart 多图条目草稿（共享 hook：条目切换 / patch / 增删 + 双形态写回）
   const chartDraft = useChartListDraft(draftOpt, setDraftOpt)
   // setActiveIdx 为 useState setter（稳定引用），解构供初始化 effect 依赖
@@ -153,6 +156,7 @@ export default function ViewConfigDialog({
       setDraftOpt((viewOptions || {}) as Record<string, unknown>)
       setActiveTab('filter')
       setChartActiveIdx(0)
+      setFilterErrors([])
     }
     wasOpenRef.current = open
   }, [open, filters, sortings, filterLogic, viewOptions, setChartActiveIdx])
@@ -470,11 +474,18 @@ export default function ViewConfigDialog({
       footer={[
         <Button key="cancel" onClick={onClose}>取消</Button>,
         <Button key="ok" type="primary" onClick={() => {
-          const cleanFilters = draftFilters.filter(f => f.field_name)
+          // 统一校验 + 自动归一：可转换输入静默修正（日期零填充、数字解析、空白清理等），
+          // 非法输入列出全部错误并阻止保存（保留草稿供用户修正）
+          const result = validateAndNormalizeDraft(draftFilters, draftSorts, fields)
+          if (result.errors.length) {
+            setFilterErrors(result.errors.map(e => `#${e.index + 1} ${e.message}`))
+            setActiveTab('filter')
+            return
+          }
+          setFilterErrors([])
           onSaveFilterLogic(draftFilterLogic)
-          onSaveFilters(cleanFilters)
-          const cleanSorts = draftSorts.filter(s => s.field_name)
-          onSaveSortings(cleanSorts)
+          onSaveFilters(result.filters)
+          onSaveSortings(result.sorts)
           const cleanOpt = Object.fromEntries(
             Object.entries(draftOpt).filter(([, v]) => v !== '' && v != null && (Array.isArray(v) ? v.length > 0 : true)),
           )
@@ -493,6 +504,19 @@ export default function ViewConfigDialog({
       ]}
       destroyOnHidden
     >
+      {filterErrors.length > 0 && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message={`筛选/排序规则有误（共 ${filterErrors.length} 处），已阻止保存`}
+          description={(
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {filterErrors.map((msg, i) => <li key={i}>{msg}</li>)}
+            </ul>
+          )}
+        />
+      )}
       <Tabs activeKey={activeTab} onChange={(k) => setActiveTab(k as typeof activeTab)} size="small" items={viewTabItems} />
     </Modal>
   )

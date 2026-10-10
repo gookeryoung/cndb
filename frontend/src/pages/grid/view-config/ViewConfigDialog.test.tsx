@@ -568,3 +568,95 @@ describe('ViewConfigDialog chart 多图条目管理', () => {
     expect(switches[0]).toHaveAttribute('aria-checked', 'false')
   })
 })
+
+describe('ViewConfigDialog 保存校验与自动转换', () => {
+  const VALIDATE_FIELDS: Field[] = [
+    makeField({ id: 1, name: '姓名', field_type: 'text' }),
+    makeField({ id: 2, name: '状态', field_type: 'select', config: { options: ['高', '中'] } }),
+    makeField({ id: 3, name: '完成日期', field_type: 'date' }),
+  ]
+
+  it('非法筛选值（select 值不在可选值中）→ 阻止保存并显示 Alert 错误明细', () => {
+    const spies = renderDialog({
+      fields: VALIDATE_FIELDS,
+      filters: [{ field_name: '状态', op: '=', value: '垃圾值' }],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+    expect(spies.onSaveFilters).not.toHaveBeenCalled()
+    expect(spies.onSaveOptions).not.toHaveBeenCalled()
+    expect(spies.onClose).not.toHaveBeenCalled()
+    expect(screen.getByText(/已阻止保存/)).toBeInTheDocument()
+    expect(screen.getByText(/不在可选值中/)).toBeInTheDocument()
+  })
+
+  it('字段已不存在的规则 → 阻止保存并提示删除', () => {
+    const spies = renderDialog({
+      fields: VALIDATE_FIELDS,
+      filters: [{ field_name: '幽灵字段', op: 'contains', value: 'x' }],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+    expect(spies.onSaveFilters).not.toHaveBeenCalled()
+    expect(screen.getByText(/已不存在/)).toBeInTheDocument()
+  })
+
+  it('多条错误全部列出（含规则序号）', () => {
+    renderDialog({
+      fields: VALIDATE_FIELDS,
+      filters: [
+        { field_name: '状态', op: '=', value: '垃圾值' },
+        { field_name: '完成日期', op: '>=', value: '垃圾日期' },
+      ],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+    expect(screen.getByText(/共 2 处/)).toBeInTheDocument()
+    // 错误明细 li 各含规则序号（规则行自身的序号 span 也在文档中，取 Alert 内的 li 断言）
+    const items = document.querySelectorAll('.ant-alert li')
+    expect(items).toHaveLength(2)
+    expect(items[0].textContent).toContain('#1')
+    expect(items[0].textContent).toContain('状态')
+    expect(items[1].textContent).toContain('#2')
+    expect(items[1].textContent).toContain('完成日期')
+  })
+
+  it('可转换输入自动归一：非零填充日期保存为零填充（字符串字典序缺陷修复）', () => {
+    const spies = renderDialog({
+      fields: VALIDATE_FIELDS,
+      filters: [{ field_name: '完成日期', op: '>=', value: '2026-9-28' }],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+    expect(spies.onSaveFilters).toHaveBeenCalledWith([{ field_name: '完成日期', op: '>=', value: '2026-09-28' }])
+  })
+
+  it('文本值 trim 清理后保存', () => {
+    const spies = renderDialog({
+      fields: VALIDATE_FIELDS,
+      filters: [{ field_name: '姓名', op: 'contains', value: '  张三  ' }],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+    expect(spies.onSaveFilters).toHaveBeenCalledWith([{ field_name: '姓名', op: 'contains', value: '张三' }])
+  })
+
+  it('非法排序字段 → 阻止保存', () => {
+    const spies = renderDialog({
+      fields: VALIDATE_FIELDS,
+      filters: [{ field_name: '姓名', op: 'contains', value: '张' }],
+      sortings: [{ field_name: '幽灵', direction: 'asc' }],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+
+    expect(spies.onSaveFilters).not.toHaveBeenCalled()
+    expect(spies.onSaveSortings).not.toHaveBeenCalled()
+    expect(screen.getByText(/排序字段/)).toBeInTheDocument()
+  })
+})

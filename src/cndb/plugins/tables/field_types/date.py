@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, override
 
@@ -9,6 +10,8 @@ from pydantic import Field
 from sqlalchemy import Date, DateTime, Integer
 
 from cndb.plugins.tables.field_types.base import FieldType, FieldTypeCategory, FieldTypeConfig
+
+logger = logging.getLogger(__name__)
 
 # ── 日期字段（含自动填充）─────────────────────────────────
 
@@ -118,6 +121,22 @@ class DateFieldType(FieldType):
             return date.today()
         return None
 
+    @override
+    def parse_query_value(self, value: Any, _config: dict[str, Any]) -> Any:
+        """筛选值归一为零填充 ISO 日期字符串（'YYYY-MM-DD'）.
+
+        SQLite 对日期物理列按字符串字典序比较，非零填充值（'2026-9-28'）会使
+        '2026-10-10' 这类 10 月及之后的日期比较结果错误。复用 validate_value
+        的多格式解析归一为 ISO 格式；解析失败回退原值并记 warning（不炸接口，
+        行为与历史版本一致，仅匹配不到行）。
+        """
+        if isinstance(value, str) and value.strip():
+            try:
+                return self.validate_value(value, _config).isoformat()
+            except ValueError:
+                logger.warning("日期筛选值无法解析，按原值比较: %r", value)
+        return value
+
 
 class DateTimeFieldType(FieldType):
     name = "datetime"
@@ -157,6 +176,32 @@ class DateTimeFieldType(FieldType):
             return datetime.now(UTC).replace(tzinfo=None)
         return None
 
+    @override
+    def parse_query_value(self, value: Any, _config: dict[str, Any]) -> Any:
+        """筛选值归一：日期时间 → 'YYYY-MM-DD HH:MM:SS'，纯日期 → 零填充 ISO 日期.
+
+        带时间的值归一为固定 'YYYY-MM-DD HH:MM:SS' 后与存储值做字符串比较；
+        纯日期值归一为零填充 'YYYY-MM-DD' 后交由 query 层的整天范围逻辑展开
+        （query._is_pure_date_string 仅识别零填充格式）。解析失败回退原值并记
+        warning（不炸接口）。
+        """
+        if isinstance(value, str) and value.strip():
+            from datetime import datetime
+
+            text = _TZ_SUFFIX_RE.sub("", value.strip())
+            for fmt in _DATETIME_PARSE_FORMATS:
+                try:
+                    return datetime.strptime(text, fmt).strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    continue
+            for fmt in _DATE_PARSE_FORMATS:
+                try:
+                    return datetime.strptime(text, fmt).date().isoformat()
+                except ValueError:
+                    continue
+            logger.warning("日期时间筛选值无法解析，按原值比较: %r", value)
+        return value
+
 
 # ── timestamp ───────────────────────────────────────
 
@@ -194,3 +239,16 @@ class TimestampFieldType(FieldType):
         if ts <= self._TS_MAX_MS:
             return ts // 1000
         raise ValueError(f"时间戳超出合理范围 (0~{self._TS_MAX_SEC} 秒 或 ~{self._TS_MAX_MS} 毫秒): {ts}")
+
+    @override
+    def parse_query_value(self, value: Any, _config: dict[str, Any]) -> Any:
+        """筛选值归一：字符串（含毫秒级）转整数秒，失败回退原值并记 warning.
+
+        物理列为 Integer，字符串筛选值与整数比较在 SQLite 中永远不命中。
+        """
+        if isinstance(value, str) and value.strip():
+            try:
+                return self.validate_value(value, _config)
+            except ValueError:
+                logger.warning("时间戳筛选值无法解析，按原值比较: %r", value)
+        return value
