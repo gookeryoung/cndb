@@ -12,7 +12,7 @@ import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dn
 import { CSS } from '@dnd-kit/utilities'
 import { viewApi } from '@/api'
 import type { View } from '@/api'
-import { Tag, Modal, App as AntApp } from 'antd'
+import { Tag, App as AntApp } from 'antd'
 import type { ViewMode } from './views/viewModes'
 
 /** 可拖拽视图 Tab 标签 —— 供 Segmented.options.label 使用，配合 DndContext + SortableContext. */
@@ -84,7 +84,7 @@ export default function GridViewBar({
   onCreate, onEdit, onDelete, onImport,
   onOpenViewConfig, onOpenTableSettings,
 }: GridViewBarProps) {
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const viewDragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
 
@@ -256,7 +256,7 @@ export default function GridViewBar({
                 disabled: !activeView,
                 onClick: () => {
                   if (activeView) {
-                    Modal.confirm({
+                    modal.confirm({
                       title: '确定删除此视图？',
                       content: activeView.name,
                       okText: '删除',

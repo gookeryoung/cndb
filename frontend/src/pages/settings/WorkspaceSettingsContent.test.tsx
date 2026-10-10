@@ -11,7 +11,6 @@
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { message } from 'antd'
 import { screen, waitFor, fireEvent, render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
@@ -173,21 +172,6 @@ async function waitDetailLoaded() {
   await screen.findByDisplayValue('测试')
 }
 
-/**
- * 监听 antd 静态 message（success/error），返回两个 spy.
- *
- * 静态 message 容器是模块级单例：同文件前序用例触发过 message 后，
- * setup.ts 的 afterEach 会把 .ant-message 节点摘出 DOM，后续 message
- * 全部写入游离节点，DOM 文本断言不可靠 —— 因此改用 spy 断言调用参数。
- * vite 配置 restoreMocks: true，用例结束后自动还原。
- */
-function spyToast() {
-  return {
-    success: vi.spyOn(message, 'success'),
-    error: vi.spyOn(message, 'error'),
-  }
-}
-
 describe('WorkspaceSettingsContent 基本设置与保存', () => {
   it('修改名称后保存发起 PATCH 并提示设置已保存', async () => {
     let patched: Record<string, unknown> | undefined
@@ -197,7 +181,6 @@ describe('WorkspaceSettingsContent 基本设置与保存', () => {
         return HttpResponse.json({ id: 10 })
       }),
     )
-    const toast = spyToast()
     renderContent()
     await waitDetailLoaded()
 
@@ -209,7 +192,7 @@ describe('WorkspaceSettingsContent 基本设置与保存', () => {
     await user.type(nameInput, '新名称')
     await user.click(screen.getByRole('button', { name: '保存设置' }))
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('设置已保存'))
+    expect(await screen.findByText('设置已保存')).toBeInTheDocument()
     expect(patched).toMatchObject({ name: '新名称' })
   })
 
@@ -218,13 +201,12 @@ describe('WorkspaceSettingsContent 基本设置与保存', () => {
       http.patch('/api/v1/workspaces/10', () =>
         HttpResponse.json({ detail: '名称与已有工作区重复' }, { status: 409 })),
     )
-    const toast = spyToast()
     renderContent()
     await waitDetailLoaded()
 
     fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('名称与已有工作区重复'))
+    expect(await screen.findByText('名称与已有工作区重复')).toBeInTheDocument()
   })
 
   it('名称清空后保存被必填校验拦截且不发起 PATCH', async () => {
@@ -271,7 +253,6 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
         return HttpResponse.json({ id: 10 })
       }),
     )
-    const toast = spyToast()
     renderContent('owner')
     await waitDetailLoaded()
 
@@ -281,7 +262,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
 
     fireEvent.click(sw)
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('编辑权限已更新'))
+    expect(await screen.findByText('编辑权限已更新')).toBeInTheDocument()
     expect(patched).toMatchObject({ allow_edit: false })
   })
 
@@ -293,7 +274,6 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
         return HttpResponse.json({ id: 9, role: 'editor' })
       }),
     )
-    const toast = spyToast()
     renderContent('owner')
     await waitDetailLoaded()
 
@@ -315,7 +295,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
 
     fireEvent.click(within(modal).getByRole('button', { name: /^添\s*加$/ }))
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('已添加成员'))
+    expect(await screen.findByText('已添加成员')).toBeInTheDocument()
     expect(postBody).toMatchObject({ username: 'eve', role: 'editor' })
   })
 
@@ -327,7 +307,6 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
         return HttpResponse.json({ id: 3, role: 'admin' })
       }),
     )
-    const toast = spyToast()
     renderContent('owner')
     await waitDetailLoaded()
 
@@ -338,7 +317,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     fireEvent.mouseDown(await screen.findByRole('combobox'))
     fireEvent.click(await screen.findByText('管理员'))
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('角色已更新'))
+    expect(await screen.findByText('角色已更新')).toBeInTheDocument()
     expect(patched).toMatchObject({ role: 'admin' })
   })
 
@@ -350,7 +329,6 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
         return HttpResponse.json({})
       }),
     )
-    const toast = spyToast()
     renderContent('owner')
     await waitDetailLoaded()
 
@@ -368,8 +346,8 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     await waitFor(() => expect(document.querySelector('.ant-popconfirm')).not.toBeNull())
     fireEvent.click(document.querySelector('.ant-popconfirm .ant-btn-primary')!)
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('已移除成员'))
-    expect(deleteCalled).toBe(true)
+    await waitFor(() => expect(deleteCalled).toBe(true))
+    expect(await screen.findByText('已移除成员')).toBeInTheDocument()
   })
 })
 

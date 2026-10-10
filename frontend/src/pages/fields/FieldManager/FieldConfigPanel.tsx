@@ -171,13 +171,15 @@ function DefaultValueInput({ fieldType, form }: { fieldType: FieldType | undefin
   }, [selectOptions, fieldType, value, form])
 
   if (!fieldType) {
-    return <Input placeholder="先选择字段类型" disabled />
+    // allowClear 与下方类型分支保持一致：antd Input 在聚焦时动态增删前/后缀会
+    // 重建 DOM 结构导致失焦并触发 dev 警告，兜底控件维持相同 affix 结构
+    return <Input placeholder="先选择字段类型" disabled allowClear />
   }
 
   if (NO_DEFAULT_VALUE_TYPES.has(fieldType)) {
     return (
       <Tooltip title={`「${getFieldTypeLabel(fieldType)}」暂不支持设置默认值`}>
-        <Input disabled placeholder="不支持" />
+        <Input disabled placeholder="不支持" allowClear />
       </Tooltip>
     )
   }
