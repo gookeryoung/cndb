@@ -147,8 +147,8 @@ export default function ViewConfigDialog({
   const wasOpenRef = useRef(false)
   useEffect(() => {
     if (open && !wasOpenRef.current) {
-      setDraftFilters(filters.length ? [...filters] : [{ field_name: '', op: 'contains' }])
-      setDraftSorts(sortings.length ? [...sortings] : [{ field_name: '', direction: 'asc' }])
+      setDraftFilters(filters.length ? [...filters] : [])
+      setDraftSorts(sortings.length ? [...sortings] : [])
       setDraftFilterLogic(filterLogic)
       setDraftOpt((viewOptions || {}) as Record<string, unknown>)
       setActiveTab('filter')
