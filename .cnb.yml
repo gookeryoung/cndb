@@ -222,7 +222,7 @@ v*.*.*:
         # 同时推 TCR（生产用，deploy.sh 按版本精确拉取、支持回滚）
         # 与 CNB 制品库（开发自测，docker pull 直接可用）。
         # 单次 buildx 挂三个 tag，避免为第二个仓库重跑一遍构建层。
-        # 仓库名取自密钥仓库的 TCR_REPO（默认 pydev），
+        # 仓库名取自密钥仓库的 TCR_REPO（默认 cndb），
         # 不硬编码 —— 换仓库只需改密钥，不动流水线。
         - name: 构建并推送镜像
           script: |

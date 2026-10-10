@@ -73,12 +73,12 @@ curl -sL https://cnb.cool/gkzhou/cndb-secrets/-/git/raw/main/deploy-env.yml
 > 私有仓库不行。实测私有时返回 404，API 报
 > `Secret repos do not support token access` —— `imports` 拉不到，tag 流水线必失败。
 
-需要配置的变量（镜像仓库为 `ccr.ccs.tencentyun.com/pydev/pydev`）：
+需要配置的变量（镜像仓库为 `ccr.ccs.tencentyun.com/pydev/cndb`）：
 
 ```
 TCR_REGISTRY     ccr.ccs.tencentyun.com
 TCR_GROUP        pydev
-TCR_REPO         pydev
+TCR_REPO         cndb
 TCR_USERNAME     TCR 用户名，形如 tcr@xxx（注意 @ 不是 $）
 TCR_PASSWORD     访问令牌/密码
 SSH_HOST         服务器公网 IP
@@ -91,7 +91,7 @@ SSH_PRIVATE_KEY  整段私钥原文（含 BEGIN/END 两行）
 **不放这里**——由 `deploy.sh` 在服务器本地原子更新，流水线只校验 `JWT_SECRET` 不是 `CHANGE_ME`：
 
 ```
-CNDB_IMAGE=ccr.ccs.tencentyun.com/pydev/pydev:v0.3.0
+CNDB_IMAGE=ccr.ccs.tencentyun.com/pydev/cndb:v0.3.0
 ```
 
 ### 3. 服务器初始化（仅首次）
