@@ -103,7 +103,12 @@ jobs:
           probe "Debian 官方   " "http://deb.debian.org/debian/dists/bookworm/Release"
 
       # wheel 已内嵌前端产物（见 pyproject force-include），所以前端必须先构建
+      # .npmrc 固定走中科大镜像（国内本地开发用），但 GitHub runner 在海外，
+      # 跨境访问该镜像会极慢甚至挂起导致 pnpm install 卡死，
+      # 故 CI 用 npm_config_registry 覆盖回官方源（lockfile 无 tarball URL，换源安全）
       - name: Build frontend
+        env:
+          npm_config_registry: https://registry.npmjs.org/
         run: |
           cd frontend
           pnpm install --frozen-lockfile
