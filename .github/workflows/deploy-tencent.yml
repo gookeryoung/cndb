@@ -187,11 +187,18 @@ jobs:
 
       - name: Build & push image
         uses: docker/build-push-action@v6
-        timeout-minutes: 25
+        timeout-minutes: 40
+        # BUILDKIT_PROGRESS=plain：默认 fancy 模式会压缩逐层进度，
+        # 跨境推 TCR 卡住时日志里看不到具体卡在哪一层，plain 保留完整时间线。
+        env:
+          BUILDKIT_PROGRESS: plain
         with:
           context: .
           file: ${{ env.DOCKERFILE }}
           push: true
+          # v6 推送时默认生成 provenance attestation（OCI image index 形态），
+          # TCR 个人版对 image index 支持不稳，且平白增加跨境推送体积，显式关掉
+          provenance: false
           # 同时打版本 tag 与 latest：版本 tag 供回滚精确定位，
           # latest 方便手工 docker compose 拉最新
           tags: |
