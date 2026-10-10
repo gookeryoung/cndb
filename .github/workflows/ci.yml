@@ -58,7 +58,13 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: frontend/pnpm-lock.yaml
 
+      # .npmrc 固定走中科大镜像（国内本地开发用），但 GitHub runner 在海外，
+      # 跨境访问该镜像会极慢甚至挂起导致 pnpm install 卡死。
+      # lockfile 中无 tarball URL 条目，换官方源不会触发 lockfile resolution 校验失败，
+      # 故 CI 用 npm_config_registry 覆盖回官方源。
       - name: Install dependencies
+        env:
+          npm_config_registry: https://registry.npmjs.org/
         run: cd frontend && pnpm install --frozen-lockfile
 
       - name: Typecheck
@@ -138,7 +144,10 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Install frontend deps
+      # 同上：CI 用官方源覆盖 .npmrc 的中科大镜像，避免海外 runner 跨境访问卡死
+      - name: Install dependencies
+        env:
+          npm_config_registry: https://registry.npmjs.org/
         run: cd frontend && pnpm install --frozen-lockfile
 
       - name: Build frontend (static -> src/cndb/static)
