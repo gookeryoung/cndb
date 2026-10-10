@@ -64,10 +64,13 @@ TCR 与 SSH 凭证**不能**写进主仓库——任何能读代码的人（含 
 4. 验证可读（imports 要求目标可匿名拉取）：
 
 ```bash
-curl -sL https://cnb.cool/gkzhou/cndb-secrets/-/raw/main/deploy-env.yml
+curl -sL https://cnb.cool/gkzhou/cndb-secrets/-/git/raw/main/deploy-env.yml
 ```
 
-> 私有仓库不行。实测私有时 raw URL 返回 404，API 报
+> URL 必须是 `/-/git/raw/main/`。官方示例里的 `/-/blob/` 和 `/-/raw/` 实测**都返回
+> HTML 页面而非文件内容**，只有 `git/raw` 会真正吐出原始文本。
+>
+> 私有仓库不行。实测私有时返回 404，API 报
 > `Secret repos do not support token access` —— `imports` 拉不到，tag 流水线必失败。
 
 需要配置的变量（镜像仓库为 `ccr.ccs.tencentyun.com/pydev/pydev`）：

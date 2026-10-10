@@ -169,7 +169,11 @@ v*.*.*:
       # 部署凭证（TCR + SSH）。密钥仓库需为「公开可读」，
       # 否则流水线无法拉取该文件；仓库本身建议设为私有并只放开 raw 读取。
       # 变量清单与填写说明见 deploy/cnb-secrets.example.yml
-      imports: https://cnb.cool/gkzhou/cndb-secrets/-/raw/main/deploy-env.yml
+      #
+      # URL 必须是 /-/git/raw/<ref>/<path>：
+      # 官方示例里的 /-/blob/ 与 /-/raw/ 实测都返回 HTML 页面而非文件内容，
+      # 只有 git/raw 会真正吐出原始文本。这个坑踩过一次。
+      imports: https://cnb.cool/gkzhou/cndb-secrets/-/git/raw/main/deploy-env.yml
       runner:
         # 2 核足够：前端 vite build 与 docker build 都是单线程为主，
         # 镜像层构建的耗时在网络 I/O 而非 CPU
