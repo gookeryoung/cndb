@@ -78,8 +78,8 @@ check: ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-check + cov�
 
 BUMP_PART := $(filter-out bump,$(MAKECMDGOALS))
 
-# uvx 临时环境不受项目 [tool.uv.index] 约束，显式指定镜像源（阿里云镜像缺 PEP 658 metadata 会 404）
-UVX_INDEX := --default-index https://mirrors.huaweicloud.com/artifactory/pypi-public/simple/
+# uvx 临时环境不受项目 [tool.uv.index] 约束，显式指定镜像源
+UVX_INDEX := --default-index https://mirrors.cloud.tencent.com/pypi/simple
 
 bump: ## 版本号 bump (默认 patch，用法: make bump [minor|major])
 	@uvx $(UVX_INDEX) bump-my-version bump $(if $(BUMP_PART),$(firstword $(BUMP_PART)),patch) --tag

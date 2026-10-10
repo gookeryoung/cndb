@@ -12,10 +12,10 @@
 FROM docker.m.daocloud.io/python:3.12-slim AS builder
 
 # ---- 国内镜像源 ----
-ENV PIP_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/web/simple
-ENV PIP_TRUSTED_HOST=mirrors.ustc.edu.cn
-ENV UV_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/web/simple
-ENV UV_TRUSTED_HOST=mirrors.ustc.edu.cn
+ENV PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
+ENV PIP_TRUSTED_HOST=mirrors.cloud.tencent.com
+ENV UV_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
+ENV UV_TRUSTED_HOST=mirrors.cloud.tencent.com
 
 # 环境变量：非交互 + 路径配置
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -39,7 +39,7 @@ RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debi
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 uv（国内镜像）
-RUN pip install --no-cache-dir uv -i https://mirrors.ustc.edu.cn/pypi/web/simple/
+RUN pip install --no-cache-dir uv -i https://mirrors.cloud.tencent.com/pypi/simple/
 
 WORKDIR /workspace
 COPY pyproject.toml uv.lock README.md ./
@@ -51,8 +51,8 @@ RUN uv sync --frozen --no-install-project 2>/dev/null || uv sync --no-install-pr
 # ── runtime 阶段：只保留运行必需内容 ──
 FROM docker.m.daocloud.io/python:3.12-slim
 
-ENV PIP_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/web/simple \
-    PIP_TRUSTED_HOST=mirrors.ustc.edu.cn \
+ENV PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple \
+    PIP_TRUSTED_HOST=mirrors.cloud.tencent.com \
     DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
@@ -71,7 +71,7 @@ RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debi
     && rm -rf /var/lib/apt/lists/*
 
 # uv 仍保留在镜像内，CI 任务可在容器内继续用 uv run / uv sync
-RUN pip install --no-cache-dir uv -i https://mirrors.ustc.edu.cn/pypi/web/simple/
+RUN pip install --no-cache-dir uv -i https://mirrors.cloud.tencent.com/pypi/simple/
 
 # venv 由 builder 以 UV_LINK_MODE=copy 生成（文件为实体拷贝，非缓存硬链接），
 # 跨阶段复制后开箱可用
