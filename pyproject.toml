@@ -100,9 +100,6 @@ exclude = [
 [tool.fspack]
 entry-app-types = { cndb = "cli", cndbw = "gui" }
 web-static-dirs = ["src/cndb/static"]
-#data-dirs = ["src/alembic/versions"]
-#pyc_strip = true
-#no_site   = true
 # gui = Windows 上用 pythonw 无控制台；Linux/macOS 用 python + DISPLAY
 
 [dependency-groups]

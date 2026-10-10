@@ -56,18 +56,6 @@ def _make_backup_name() -> str:
     return format_backup_filename()
 
 
-def _detect_tag(line: str) -> str:
-    """根据行首关键字判定 tag，降级为 info."""
-    lower = line.lstrip()
-    if lower.startswith("[ok]"):
-        return "ok"
-    if lower.startswith("[warn]"):
-        return "warn"
-    if lower.startswith("[error]"):
-        return "error"
-    return "info"
-
-
 def _backup_mtime(p: Path) -> float:
     """备份文件/目录的修改时间（排序键）."""
     return p.stat().st_mtime
