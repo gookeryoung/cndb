@@ -16,7 +16,9 @@ import { test, expect } from "../fixtures/auth";
 import type { Page } from "@playwright/test";
 
 const ANON = ["setup", "chromium-anon"];
-const LCP_LIMIT_MS = 3000;
+// 本地单机 ≈ 1500ms；GitHub runner 资源受限 + 多 shard 并行争 CPU，基线 3500-4800ms
+// 阈值设 5000ms 既覆盖 runner 波动，又能在真实性能回归（如新增重型组件）时触发
+const LCP_LIMIT_MS = 5000;
 
 async function gotoGrid(page: Page) {
   await page.goto("/");
