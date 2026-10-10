@@ -303,6 +303,10 @@ jobs:
         uses: appleboy/ssh-action@v1.2.2
         env:
           VERSION: ${{ needs.build.outputs.version }}
+          # 显式传完整仓库前缀（不含 tag），让deploy.sh 无需从 .env 反推。
+          # 反推逻辑在「.env 尚未指向仓库」的首次部署场景下会拼出
+          # docker.io/library/cndb 这类错误地址，实测导致过 403 Forbidden。
+          IMAGE_REPO: ${{ secrets.TCR_REGISTRY }}/${{ secrets.TCR_GROUP }}/cndb
           # 部署脚本内联执行，凭证通过环境变量传入而非写进 .env
           TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
           TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
@@ -311,11 +315,13 @@ jobs:
           port: ${{ secrets.SSH_PORT || 22 }}
           username: ${{ secrets.SSH_USERNAME || 'root' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: 'VERSION,TCR_USERNAME,TCR_PASSWORD'
+          envs: 'VERSION,IMAGE_REPO,TCR_USERNAME,TCR_PASSWORD'
           script: |
             cd /opt/cndb
-            # 把 TCR 凭证透传给 deploy.sh（docker login 用，不落盘）
-            ./deploy/deploy.sh "v${VERSION}"
+            # 凭证透传给 deploy.sh（docker login 用，不落盘）
+            # VERSION 已由 build job 剥掉 v 前缀（0.3.0），deploy.sh 会再剥一次，
+            # 两边传v0.3.0 或 0.3.0 都能命中仓库里的实际 tag。
+            CNDB_IMAGE_OVERRIDE="${IMAGE_REPO}" ./deploy/deploy.sh "${VERSION}"
 
       - name: Verify deployment
         uses: appleboy/ssh-action@v1.2.2
