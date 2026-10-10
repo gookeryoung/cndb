@@ -66,7 +66,7 @@ function DraggableRow({
 }
 
 export default function TablesList() {
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const { wid } = useParams<{ wid: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -352,7 +352,7 @@ export default function TablesList() {
                   danger: true,
                   onClick: (e) => {
                     e?.domEvent?.stopPropagation?.();
-                    Modal.confirm({
+                    modal.confirm({
                       title: `删除表「${record.name}」？`,
                       content: '表内所有记录和字段将被永久移除。',
                       okText: '删除',

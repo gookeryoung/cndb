@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useCallback } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, Modal, Input, Tooltip, Tabs, Drawer } from 'antd'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
 import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
@@ -42,6 +42,7 @@ const { Header, Sider, Content } = Layout
 
 export default function MainLayout() {
   const navigate = useNavigate()
+  const { modal } = AntApp.useApp()
   const { wid, tid } = useParams<{ wid: string; tid?: string }>()
   const location = useLocation().pathname
   const user = useAuthStore(s => s.user)
@@ -134,7 +135,7 @@ export default function MainLayout() {
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
   const onLogout = useCallback(() => {
-    Modal.confirm({
+    modal.confirm({
       title: '退出登录？',
       icon: React.createElement(ExclamationCircleOutlined),
       onOk: () => {
@@ -143,7 +144,7 @@ export default function MainLayout() {
         navigate('/login', { replace: true })
       },
     })
-  }, [logout, navigate, queryClient])
+  }, [logout, navigate, queryClient, modal])
 
   const workspaceMenuItems: MenuProps['items'] = [
     { type: 'group', label: '工作区' },

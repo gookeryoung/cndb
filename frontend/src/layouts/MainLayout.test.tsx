@@ -51,6 +51,9 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
         <Routes>
             <Route path="/" element={<MainLayout />}>
                 <Route path="w/:wid/tables" element={<TablesStub />} />
+                {/* 表详情路由桩：点击侧边栏表项会导航到 /w/:wid/tables/:tid，
+                    缺少该路由时 react-router 会报 "No routes matched location" */}
+                <Route path="w/:wid/tables/:tid" element={<TablesStub />} />
                 <Route path="w/:wid/reports" element={<ReportsStub />} />
                 <Route path="w/:wid/settings" element={<SettingsStub />} />
                 <Route path="admin" element={<AdminStub />} />
@@ -221,9 +224,11 @@ describe('MainLayout 移动端适配', () => {
         expect(await screen.findByText('数据表 (1)')).toBeVisible()
 
         // 抽屉内点击「客户表」→ 触发导航并自动收起抽屉
+        // 注：antd Drawer 关闭后内容仍留在 DOM（无 destroyOnClose），
+        // 用 open 状态类消失判定收起，而非文本移除
         fireEvent.click(await screen.findByText('客户表'))
         await waitFor(() => {
-            expect(screen.queryByText('数据表 (1)')).toBeNull()
+            expect(document.querySelector('.ant-drawer-open')).toBeNull()
         })
     })
 

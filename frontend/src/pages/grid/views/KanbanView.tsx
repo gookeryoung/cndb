@@ -30,7 +30,7 @@
  */
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { Tag, Progress, Tooltip, Empty, Button, Modal, Checkbox } from 'antd'
+import { Tag, Progress, Tooltip, Empty, Button, Checkbox, App as AntApp } from 'antd'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   ClockCircleOutlined,
@@ -223,6 +223,7 @@ interface KanbanCardProps {
 }
 
 const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowClick, onDelete, canDelete, onToggleDone, canEdit }: KanbanCardProps) {
+  const { modal } = AntApp.useApp()
   const cs = densityCardStyle(density)
   const [hovered, setHovered] = useState(false)
 
@@ -397,7 +398,7 @@ const KanbanCard = memo(function KanbanCard({ row, fields, opts, density, onRowC
                   icon={<DeleteOutlined />}
                   style={{ opacity: 0.85 }}
                   onClick={() => {
-                    Modal.confirm({
+                    modal.confirm({
                       title: '确定删除此卡片？',
                       content: title,
                       okText: '删除',

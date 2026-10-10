@@ -147,7 +147,10 @@ export function useUpdateRowOptimistic(wid: string, tid: string) {
         if (data) queryClient.setQueryData(queryKey, data)
       })
       const msg = err instanceof Error ? err.message : '保存失败'
-      console.warn('[useUpdateRowOptimistic] optimistic rollback:', msg)
+      // 回滚诊断日志：测试环境下跳过，避免污染 CI stderr（其余环境保留便于排查）
+      if (import.meta.env.MODE !== 'test') {
+        console.warn('[useUpdateRowOptimistic] optimistic rollback:', msg)
+      }
       message.error(msg)
     },
     onSettled: () => {
