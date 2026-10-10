@@ -58,7 +58,7 @@ git push cnb main
 
 TCR 与 SSH 凭证**不能**写进主仓库——任何能读代码的人（含 fork、CI 日志、git 历史）都能拿到生产凭证。
 
-1. CNB 上创建仓库 `gkzhou/cndb-secrets`
+1. CNB 上创建仓库 `gkzhou/cndb-secrets`，**可见性必须选 Public**
 2. 复制 `deploy/cnb-secrets.example.yml` 内容进去，改名 `deploy-env.yml`，填真实值
 3. 提交到 `main` 分支
 4. 验证可读（imports 要求目标可匿名拉取）：
@@ -67,13 +67,17 @@ TCR 与 SSH 凭证**不能**写进主仓库——任何能读代码的人（含 
 curl -sL https://cnb.cool/gkzhou/cndb-secrets/-/raw/main/deploy-env.yml
 ```
 
-需要配置的变量：
+> 私有仓库不行。实测私有时 raw URL 返回 404，API 报
+> `Secret repos do not support token access` —— `imports` 拉不到，tag 流水线必失败。
+
+需要配置的变量（镜像仓库为 `ccr.ccs.tencentyun.com/pydev/pydev`）：
 
 ```
-TCR_REGISTRY     TCR 域名（不含命名空间，不带 https://）
-TCR_GROUP        命名空间
-TCR_USERNAME     tcr@cndb-deploy    ← 必须是 @ 不是 $
-TCR_PASSWORD     服务账号密码
+TCR_REGISTRY     ccr.ccs.tencentyun.com
+TCR_GROUP        pydev
+TCR_REPO         pydev
+TCR_USERNAME     TCR 用户名，形如 tcr@xxx（注意 @ 不是 $）
+TCR_PASSWORD     访问令牌/密码
 SSH_HOST         服务器公网 IP
 SSH_PORT         SSH 端口，默认 22
 SSH_USERNAME     登录用户，默认 root
@@ -81,7 +85,11 @@ SSH_PRIVATE_KEY  整段私钥原文（含 BEGIN/END 两行）
 ```
 
 服务器 `/opt/cndb/.env` 里的 `CNDB_IMAGE` / `JWT_SECRET` / `CNDB_VOLUME`
-**不放这里**——由 `deploy.sh` 在服务器本地原子更新，流水线只校验 `JWT_SECRET` 不是 `CHANGE_ME`。
+**不放这里**——由 `deploy.sh` 在服务器本地原子更新，流水线只校验 `JWT_SECRET` 不是 `CHANGE_ME`：
+
+```
+CNDB_IMAGE=ccr.ccs.tencentyun.com/pydev/pydev:v0.3.0
+```
 
 ### 3. 服务器初始化（仅首次）
 
@@ -109,6 +117,9 @@ cat ~/.ssh/cndb_deploy.pub >> <服务器>/root/.ssh/authorized_keys
 
 | 问题 | 处理 |
 |---|---|
+| 密钥仓库私有导致 imports 拉不到 | 实测私有时 raw URL 返回 404、API 报 `Secret repos do not support token access`。必须设为公开可读 |
+| **漏了 `docker login`** | CNB 内置凭据只覆盖 CNB 自己的制品库。推 TCR 必须显式 login，否则 `buildx --push` 报 `unauthorized: authentication required`。用 `--password-stdin` 而非 `-p`，避免密码进 shell 历史 |
+| 镜像仓库名硬编码 | 改为从密钥仓库的 `TCR_REPO` 读（默认 `cndb`），换仓库只改密钥、不动流水线 |
 | `$` 兜底分支块重复定义 | `pull_request` 与 `api_trigger_e2e` 合并到同一个 `$` 下。YAML 同名顶层键后者覆盖前者，分成两块会让 PR 门禁**静默消失** |
 | 镜像构建重复 | 单次 `buildx build` 挂三个 tag（版本 / latest / CNB 制品库），原先为第二个仓库重跑一遍构建层 |
 | buildx 导 cache 报 404 | 旧版 buildkit 已知问题，`--cache-to` 补 `image-manifest=true,oci-mediatypes=true` |

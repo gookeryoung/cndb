@@ -203,23 +203,41 @@ v*.*.*:
             echo "构建版本: ${VERSION}"
             echo -n "${VERSION}" > /workspace/.version
 
+        # 登录 TCR。
+        # 必须显式登录：CNB 内置凭据只覆盖 CNB 自己的制品库，
+        # 推第三方仓库（TCR）时若不 login，buildx --push 会报
+        # "unauthorized: authentication required"。
+        # --password-stdin 而非 -p，避免密码进 shell 历史 / 进程列表。
+        - name: 登录镜像仓库
+          script: |
+            set -e
+            printf '%s' "${TCR_PASSWORD}" \
+              | docker login "${TCR_REGISTRY}" -u "${TCR_USERNAME}" --password-stdin
+            # CNB 制品库用内置凭据，无需 login（也无需 CNB_TOKEN）
+
         # 同时推 TCR（生产用，deploy.sh 按版本精确拉取、支持回滚）
         # 与 CNB 制品库（开发自测，docker pull 直接可用）。
-        # 单次 buildx 挂两个 tag，避免为第二个仓库重跑一遍构建层
+        # 单次 buildx 挂三个 tag，避免为第二个仓库重跑一遍构建层。
+        # 仓库名取自密钥仓库的 TCR_REPO（默认 pydev），
+        # 不硬编码 —— 换仓库只需改密钥，不动流水线。
         - name: 构建并推送镜像
           script: |
             set -e
             VERSION="$(cat /workspace/.version)"
-            PROD="${TCR_REGISTRY}/${TCR_GROUP}/cndb:${VERSION}"
-            # 旧 buildx 导出会报 404，显式加 image-manifest/oci-mediatypes 规避
+            REPO="${TCR_REPO:-cndb}"
+            PROD="${TCR_REGISTRY}/${TCR_GROUP}/${REPO}:${VERSION}"
+            # buildcache 单独一个 tag：与生产镜像同仓库，但不进 deploy 流程。
+            # 缓存的是 Dockerfile.prod 的层，最耗时的是 apt 装字体那步。
+            CACHE_REF="${TCR_REGISTRY}/${TCR_GROUP}/${REPO}:buildcache"
+            # image-manifest/oci-mediatypes：旧版 buildkit 导出会报 404
             docker buildx build \
               --platform linux/amd64 \
-              --cache-from "type=registry,ref=${TCR_REGISTRY}/${TCR_GROUP}/cndb:buildcache" \
-              --cache-to   "type=registry,ref=${TCR_REGISTRY}/${TCR_GROUP}/cndb:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
+              --cache-from "type=registry,ref=${CACHE_REF}" \
+              --cache-to   "type=registry,ref=${CACHE_REF},mode=max,image-manifest=true,oci-mediatypes=true" \
               -f deploy/Dockerfile.prod \
               -t "${PROD}" \
-              -t "${TCR_REGISTRY}/${TCR_GROUP}/cndb:latest" \
-              -t "${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/cndb:${VERSION}" \
+              -t "${TCR_REGISTRY}/${TCR_GROUP}/${REPO}:latest" \
+              -t "${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/${REPO}:${VERSION}" \
               --label org.opencontainers.image.title=cndb \
               --label org.opencontainers.image.version="${VERSION}" \
               --label org.opencontainers.image.revision="${CNB_COMMIT}" \
@@ -231,7 +249,7 @@ v*.*.*:
           script: |
             set -e
             VERSION="$(cat /workspace/.version)"
-            IMAGE="${TCR_REGISTRY}/${TCR_GROUP}/cndb:${VERSION}"
+            IMAGE="${TCR_REGISTRY}/${TCR_GROUP}/${TCR_REPO:-cndb}:${VERSION}"
             # 注意 -i：docker run 默认不接 stdin，缺了它 python - 会读到空输入
             docker run --rm -i "$IMAGE" python - <<'PY'
             import cndb
