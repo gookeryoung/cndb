@@ -958,3 +958,184 @@ class TestBooleanQueryValue:
         result = conn.execute(f"SELECT id FROM test_bool WHERE {sql}").fetchall()
         ids = sorted(r[0] for r in result)
         assert ids == [1], f"in ['是','true'] 应命中已勾选行，实际 {ids}"
+
+
+class TestDateQueryValue:
+    """日期字段筛选值归一 —— 非零填充日期必须归一为零填充 ISO 格式.
+
+    背景：SQLite 对日期物理列按字符串字典序比较，筛选值 '2026-9-28' 会使
+    '2026-10-10' 这类 10 月及之后的日期比较结果错误（'1' < '9'）。
+    """
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("2026-9-28", "2026-09-28"),
+            ("2026/9/8", "2026-09-08"),
+            ("2026.09.28", "2026-09-28"),
+            ("20260928", "2026-09-28"),
+            ("2026年9月28日", "2026-09-28"),
+            ("2026-09-28", "2026-09-28"),
+            ("  2026-9-28  ", "2026-09-28"),
+            ("9/28/2026", "2026-09-28"),  # 美式月/日/年（与写入侧解析格式一致）
+        ],
+    )
+    def test_date_normalize(self, raw, expected):
+        from cndb.plugins.tables.field_types.date import DateFieldType
+
+        assert DateFieldType().parse_query_value(raw, {}) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        ["abc", "2026-13-01", "2026-2-30", "", "  "],
+    )
+    def test_date_invalid_passthrough(self, raw):
+        """非法/空筛选值回退原值（不炸接口，行为与历史一致）."""
+        from cndb.plugins.tables.field_types.date import DateFieldType
+
+        assert DateFieldType().parse_query_value(raw, {}) == raw
+
+    @pytest.mark.parametrize("raw", [5, None, ["2026-09-28"]])
+    def test_date_non_string_passthrough(self, raw):
+        from cndb.plugins.tables.field_types.date import DateFieldType
+
+        assert DateFieldType().parse_query_value(raw, {}) is raw
+
+    def test_zero_padded_value_untouched(self):
+        """已是零填充的值原样返回（不做多余转换）."""
+        from cndb.plugins.tables.field_types.date import DateFieldType
+
+        assert DateFieldType().parse_query_value("2026-09-28", {}) == "2026-09-28"
+
+    def test_lexicographic_pitfall_fixed(self):
+        """端到端：归一后 '2026-10-10' 能正确命中 '2026-9-28' 之后的比较（真实字符串比较）."""
+        from cndb.plugins.tables.field_types.date import DateFieldType
+
+        normalized = DateFieldType().parse_query_value("2026-9-28", {})
+        # 未归一时字典序 '2026-10-10' >= '2026-9-28' 为 False（历史缺陷）；
+        # 归一后为 True
+        assert normalized <= "2026-10-10"
+
+
+class TestDatetimeQueryValue:
+    """日期时间字段筛选值归一 —— 带时间归一为固定格式，纯日期交由整天范围逻辑."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("2026-9-28 9:5", "2026-09-28 09:05:00"),
+            ("2026-09-28T14:30:00Z", "2026-09-28 14:30:00"),
+            ("2026/9/28 14:30", "2026-09-28 14:30:00"),
+            ("2026.9.28 8:00:15", "2026-09-28 08:00:15"),
+            ("2026-9-28", "2026-09-28"),  # 纯日期 → 零填充，命中整天范围逻辑
+            ("  2026-9-28  ", "2026-09-28"),
+        ],
+    )
+    def test_datetime_normalize(self, raw, expected):
+        from cndb.plugins.tables.field_types.date import DateTimeFieldType
+
+        assert DateTimeFieldType().parse_query_value(raw, {}) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        ["abc", "2026-13-01 10:00", "2026-09-28 25:00", "", "  "],
+    )
+    def test_datetime_invalid_passthrough(self, raw):
+        from cndb.plugins.tables.field_types.date import DateTimeFieldType
+
+        assert DateTimeFieldType().parse_query_value(raw, {}) == raw
+
+    @pytest.mark.parametrize("raw", [7, None, True])
+    def test_datetime_non_string_passthrough(self, raw):
+        from cndb.plugins.tables.field_types.date import DateTimeFieldType
+
+        assert DateTimeFieldType().parse_query_value(raw, {}) is raw
+
+    def test_normalized_pure_date_hits_day_span(self):
+        """归一后的纯日期应命中 query 层整天范围识别（零填充格式）."""
+        from cndb.plugins.tables.field_types.date import DateTimeFieldType
+        from cndb.plugins.tables.services.core.query import _is_pure_date_string
+
+        normalized = DateTimeFieldType().parse_query_value("2026-9-28", {})
+        assert _is_pure_date_string(normalized) is True
+
+
+class TestNumericQueryValue:
+    """数值族筛选值归一 —— 字符串转数字（千分位/货币/全角），失败回退原值."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("42", 42), ("1,234", 1234), ("￥100", 100), ("１２３", 123), ("  7  ", 7)],
+    )
+    def test_number_normalize(self, raw, expected):
+        from cndb.plugins.tables.field_types.number import NumberFieldType
+
+        assert NumberFieldType().parse_query_value(raw, {}) == expected
+
+    @pytest.mark.parametrize("raw", ["3.5", "abc", "", "  "])
+    def test_number_invalid_passthrough(self, raw):
+        """小数字符串对整数列匹配不到，回退原值不强制转换."""
+        from cndb.plugins.tables.field_types.number import NumberFieldType
+
+        assert NumberFieldType().parse_query_value(raw, {}) == raw
+
+    @pytest.mark.parametrize("raw", [3, None])
+    def test_number_non_string_passthrough(self, raw):
+        from cndb.plugins.tables.field_types.number import NumberFieldType
+
+        assert NumberFieldType().parse_query_value(raw, {}) is raw
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("1,234.5", 1234.5), ("3.14", 3.14), ("２.５", 2.5)],
+    )
+    def test_float_normalize(self, raw, expected):
+        from cndb.plugins.tables.field_types.number import FloatFieldType
+
+        assert FloatFieldType().parse_query_value(raw, {}) == expected
+
+    @pytest.mark.parametrize("raw", ["abc", "", "  "])
+    def test_float_invalid_passthrough(self, raw):
+        from cndb.plugins.tables.field_types.number import FloatFieldType
+
+        assert FloatFieldType().parse_query_value(raw, {}) == raw
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("1700000000", 1700000000),
+            ("1700000000000", 1700000000),  # 毫秒级归一为整数秒
+            ("999", 999),
+        ],
+    )
+    def test_timestamp_normalize(self, raw, expected):
+        from cndb.plugins.tables.field_types.date import TimestampFieldType
+
+        assert TimestampFieldType().parse_query_value(raw, {}) == expected
+
+    @pytest.mark.parametrize("raw", ["abc", "-5", "", "  "])
+    def test_timestamp_invalid_passthrough(self, raw):
+        from cndb.plugins.tables.field_types.date import TimestampFieldType
+
+        assert TimestampFieldType().parse_query_value(raw, {}) == raw
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("85%", 0.85), ("85％", 0.85), ("0.5", 0.5), (" 12% ", 0.12)],
+    )
+    def test_percentage_normalize(self, raw, expected):
+        from cndb.plugins.tables.field_types.number import PercentageFieldType
+
+        assert PercentageFieldType().parse_query_value(raw, {}) == expected
+
+    @pytest.mark.parametrize("raw", ["abc", "85x%", "", "  "])
+    def test_percentage_invalid_passthrough(self, raw):
+        from cndb.plugins.tables.field_types.number import PercentageFieldType
+
+        assert PercentageFieldType().parse_query_value(raw, {}) == raw
+
+    @pytest.mark.parametrize("raw", [0.5, None])
+    def test_percentage_non_string_passthrough(self, raw):
+        from cndb.plugins.tables.field_types.number import PercentageFieldType
+
+        assert PercentageFieldType().parse_query_value(raw, {}) is raw
