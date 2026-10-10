@@ -92,6 +92,18 @@ export const handlers = [
       timezone: 'UTC',
       server_time: '2026-10-10T12:00:00+00:00',
     })),
+
+  // 用户管理（AdminPanel 默认挂载 UsersPage，需提供空分页兜底）
+  http.get('/api/v1/accounts/users', () =>
+    HttpResponse.json({ total: 0, items: [] })),
+  http.patch('/api/v1/accounts/users/:id', () =>
+    HttpResponse.json({ id: 1, username: 'alice', email: null, phone: null, nickname: null, role: 'user', is_active: true, is_superuser: false, created_at: '2026-01-01T00:00:00Z' })),
+  http.post('/api/v1/accounts/users/batch', () =>
+    HttpResponse.json({ total: 0, succeeded: 0, failed: 0, results: [] })),
+  http.get('/api/v1/accounts/users/audit-logs', () =>
+    HttpResponse.json({ total: 0, items: [] })),
+  http.get('/api/v1/accounts/users/:id/audit-logs', () =>
+    HttpResponse.json({ total: 0, items: [] })),
 ]
 
 export const server = setupServer(...handlers)

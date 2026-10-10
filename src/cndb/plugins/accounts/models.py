@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, String
+from sqlalchemy import JSON, Boolean, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cndb.models.base import Base, TimestampMixin
@@ -59,6 +59,7 @@ class User(TimestampMixin, Base):
 
     username: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     nickname: Mapped[str] = mapped_column(String(150), nullable=False, default="")
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -115,4 +116,27 @@ class User(TimestampMixin, Base):
         return verify_password(plain, self.hashed_password)
 
 
-__all__ = ["User", "UserRole"]
+class UserAuditLog(TimestampMixin, Base):
+    """用户管理操作日志（平台级审计，与 tables_auditlog 平行）.
+
+    记录管理员对用户的编辑/角色变更/启禁用/批量操作，detail 保存
+    before/after 快照与批量摘要；日志只增不改不删（不提供写删 API）。
+    """
+
+    __tablename__ = "accounts_userauditlog"
+    __table_args__ = {"extend_existing": True}
+
+    action: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    actor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    target_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"UserAuditLog(id={self.id}, action={self.action!r}, actor_id={self.actor_id}, target={self.target_user_id})"
+
+
+__all__ = ["User", "UserAuditLog", "UserRole"]

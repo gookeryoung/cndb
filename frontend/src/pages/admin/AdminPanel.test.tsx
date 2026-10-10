@@ -68,6 +68,8 @@ describe('AdminPanel 系统管理台', () => {
     server.use(http.get('/api/v1/admin/info', () => HttpResponse.json(INFO)))
     renderPanel()
 
+    // 用户管理为首个 Tab，系统信息需手动切换
+    await activateTab(/系\s*统\s*信\s*息/)
     expect(await screen.findByText('应用名称')).toBeInTheDocument()
     expect(screen.getByText('cndb')).toBeInTheDocument()
     expect(screen.getByText('sqlite:///data/cndb.db')).toBeInTheDocument()

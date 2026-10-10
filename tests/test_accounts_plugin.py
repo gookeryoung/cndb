@@ -256,11 +256,12 @@ class TestAdminRegister:
             )
 
         r = client.get(
-            "/api/v1/accounts/auth/users",
+            "/api/v1/accounts/users",
             headers={"Authorization": f"Bearer {superuser_token}"},
         )
         assert r.status_code == 200
-        assert len(r.json()) >= 3
+        assert r.json()["total"] >= 3
+        assert len(r.json()["items"]) >= 3
 
     def test_list_users_role_filter(self, client, superuser_token):
         client.post(
@@ -270,11 +271,11 @@ class TestAdminRegister:
         )
 
         r = client.get(
-            "/api/v1/accounts/auth/users?role_filter=security_admin",
+            "/api/v1/accounts/users?role=security_admin",
             headers={"Authorization": f"Bearer {superuser_token}"},
         )
         assert r.status_code == 200
-        for item in r.json():
+        for item in r.json()["items"]:
             assert item["role"] == "security_admin"
 
     def test_update_user_role(self, client, superuser_token):
@@ -286,7 +287,8 @@ class TestAdminRegister:
         uid = r.json()["id"]
 
         r = client.patch(
-            f"/api/v1/accounts/auth/users/{uid}/role?new_role=audit_admin",
+            f"/api/v1/accounts/users/{uid}",
+            json={"role": "audit_admin"},
             headers={"Authorization": f"Bearer {superuser_token}"},
         )
         assert r.status_code == 200
@@ -294,7 +296,8 @@ class TestAdminRegister:
 
     def test_update_user_role_404(self, client, superuser_token):
         r = client.patch(
-            "/api/v1/accounts/auth/users/99999/role?new_role=audit_admin",
+            "/api/v1/accounts/users/99999",
+            json={"role": "audit_admin"},
             headers={"Authorization": f"Bearer {superuser_token}"},
         )
         assert r.status_code == 404
@@ -310,7 +313,8 @@ class TestAdminRegister:
             json={"login": "plain_user", "password": "pw1234"},
         ).json()["access_token"]
         r = client.patch(
-            "/api/v1/accounts/auth/users/1/role?new_role=audit_admin",
+            "/api/v1/accounts/users/1",
+            json={"role": "audit_admin"},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 403
@@ -326,7 +330,7 @@ class TestAdminRegister:
         ).json()["access_token"]
 
         r = client.get(
-            "/api/v1/accounts/auth/users",
+            "/api/v1/accounts/users",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 403

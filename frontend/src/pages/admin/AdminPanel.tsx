@@ -1,16 +1,18 @@
-/** 系统管理台 — 系统信息 / 完整备份 / 完整恢复. */
+/** 系统管理台 — 用户管理 / 系统信息 / 完整备份 / 完整恢复. */
 
 import { useState } from 'react'
-import { Tabs, Card, Descriptions, Button, Switch, Select, Upload, Alert, App as AntApp, Progress, Typography, Space, Divider, Popconfirm, Tag, Result } from 'antd'
+import { Tabs, Card, Descriptions, Button, Switch, Upload, Alert, App as AntApp, Progress, Typography, Space, Divider, Popconfirm, Tag, Result, Select } from 'antd'
 import {
   DatabaseOutlined, CloudUploadOutlined, CloudDownloadOutlined,
   InfoCircleOutlined, InboxOutlined, ExclamationCircleOutlined,
   ReloadOutlined, FileZipOutlined, WarningOutlined, SafetyOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { adminApi } from '@/api'
 import { useAuthStore } from '@/store'
 import type { BackupManifest } from '@/api'
+import UsersPage from './UsersPage'
 
 const { Text, Title } = Typography
 
@@ -414,11 +416,16 @@ export default function AdminPanel() {
   return (
     <div style={{ padding: 24, maxWidth: 960 }} data-testid="admin-panel">
       <Title level={3} style={{ marginBottom: 4 }}>系统管理台</Title>
-      <Text type="secondary">完整备份、恢复与系统运行信息查看。以下操作需要系统管理员权限。</Text>
+      <Text type="secondary">用户管理、完整备份、恢复与系统运行信息查看。以下操作需要系统管理员权限。</Text>
 
       <Card style={{ marginTop: 16 }}>
         <Tabs
           items={[
+            {
+              key: 'users',
+              label: <span><TeamOutlined /> 用户管理</span>,
+              children: <UsersPage />,
+            },
             {
               key: 'info',
               label: <span><InfoCircleOutlined /> 系统信息</span>,
