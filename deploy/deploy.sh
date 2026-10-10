@@ -47,6 +47,12 @@ CURRENT_TAG=""
 
 log "当前运行版本: ${CURRENT_TAG:-<无, 首次部署>}"
 
+# latest 是构建时每次覆盖的移动 tag，回滚到它等于回滚到「最后一次构建」，
+# 而不是「上一个跑稳的版本」。这里提前告警，便于排查时看清回滚落点。
+if [[ "$CURRENT_TAG" == "latest" ]]; then
+  warn "当前运行的是 latest（移动 tag），回滚将落回最近一次构建而非上一个稳定版本"
+fi
+
 # ── 组装目标镜像地址 ───────────────────────────────────────────
 # 优先用 CNDB_IMAGE_OVERRIDE（CI 可显式传完整地址），否则从 .env 的 CNDB_IMAGE 推导。
 #
@@ -77,8 +83,6 @@ else
 fi
 
 TARGET_IMAGE="${BASE_REPO}:${TARGET_TAG}"
-log "目标镜像: ${TARGET_IMAGE}"
-
 log "目标镜像: ${TARGET_IMAGE}"
 
 # ── 部署前数据库备份 ───────────────────────────────────────────
@@ -213,22 +217,28 @@ if [[ -n "${TCR_USERNAME:-}" && -n "${TCR_PASSWORD:-}" ]]; then
 fi
 
 log "拉取镜像 ${TARGET_IMAGE}..."
-# compose pull 对不存在的 tag 仍可能返回 0（实测：app Pulled 却没真正拉到），
-# 所以不能只看它的退出码，必须再确认镜像真的在本地了。
-# 这一步必须在写 .env 之前完成 —— 否则 .env 会被改成拉不到的地址，
-# 站点下次重启就起不来。
-if ! dc pull app 2>&1 | tee /tmp/cndb-pull.log; then
+# 必须用 docker pull 显式拉目标镜像，不能用 `dc pull app`。
+#
+# compose 解析的是 .env 里的 CNDB_IMAGE（= 当前运行版本），而不是本次目标 tag：
+#   线上跑 latest，要升 0.3.4 → dc pull 拉的是 latest（本地已有，秒回 "app Pulled"）
+#   → 紧接着校验 0.3.4 必然不存在 → 每次升级都误判成「镜像不存在」并回滚。
+# 这就是日志里「app Pulled」与「镜像未实际拉取到本地」前后矛盾的原因
+# —— 两者校验的压根不是同一个 tag。
+#
+# 显式 pull 同时保住了「校验通过前不写 .env」的约束：
+# 拉不到就不动线上配置，服务器重启仍能用旧版本起来。
+if ! docker pull "$TARGET_IMAGE" 2>&1 | tee /tmp/cndb-pull.log; then
   warn "拉取失败。常见原因对照："
   warn "  401 Unauthorized          → 无登录态，检查 TCR_USERNAME/TCR_PASSWORD 是否注入"
-  warn "  repository does not exist → 命名空间或仓库名有误"
-  warn "  not found                 → 该 tag 在仓库中不存在，确认构建 job 是否成功推送"
+  warn "  repository does not exist → 命名空间或仓库名有误（BASE_REPO=${BASE_REPO}）"
+  warn "  manifest unknown / not found → 该 tag 在仓库中不存在，确认构建 job 是否成功推送"
+  warn "  denied / 403               → 服务账号无该命名空间权限"
   rollback "镜像拉取失败"
   exit 1
 fi
 
 if ! docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1; then
   warn "镜像未实际拉取到本地：${TARGET_IMAGE}"
-  warn "compose pull 返回成功但镜像不存在（tag 可能不存在），这是 compose 的已知行为。"
   warn "请到 TCR 控制台确认该 tag 已推送。"
   rollback "镜像拉取失败（镜像不存在）"
   exit 1
