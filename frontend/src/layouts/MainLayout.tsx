@@ -6,7 +6,7 @@ import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
-  HomeOutlined, MenuOutlined,
+  HomeOutlined, MenuOutlined, InfoCircleOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi, tableApi } from '@/api'
@@ -17,6 +17,8 @@ import { useResponsive } from '@/hooks/useResponsive'
 const SettingsModal = lazy(() => import('@/pages/settings/SettingsModal'))
 // 帮助中心抽屉 lazy import：点击打开时才加载
 const HelpCenterDrawer = lazy(() => import('@/components/HelpCenterDrawer'))
+// 关于系统弹窗 lazy import：点击打开时才加载
+const AboutModal = lazy(() => import('@/components/AboutModal'))
 // 新手引导：MainLayout 挂载一次，内部自行判定触发时机
 const OnboardingTour = lazy(() => import('@/components/onboarding/OnboardingTour'))
 
@@ -55,6 +57,8 @@ export default function MainLayout() {
   const openSettings = useUiStore(s => s.openSettings)
   const closeSettings = useUiStore(s => s.closeSettings)
   const [helpOpen, setHelpOpen] = useState(false)
+  // 关于系统弹窗开关 —— 所有登录用户可见
+  const [aboutOpen, setAboutOpen] = useState(false)
   const [searchParams] = useSearchParams()
   // 移动端抽屉导航开关（仅 isMobile 时渲染汉堡入口）
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -160,6 +164,8 @@ export default function MainLayout() {
     { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
     { type: 'divider' },
     { key: 'settings', icon: <SettingOutlined />, label: '个人设置', onClick: () => openSettings() },
+    // 关于系统：普通用户与管理员均可见，查看版本等基本信息
+    { key: 'about', icon: <InfoCircleOutlined />, label: '关于系统', onClick: () => setAboutOpen(true) },
     { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: onLogout },
   ]
@@ -354,6 +360,10 @@ export default function MainLayout() {
 
       <Suspense fallback={<ModalFallback />}>
         {helpOpen && <HelpCenterDrawer open onClose={() => setHelpOpen(false)} />}
+      </Suspense>
+
+      <Suspense fallback={<ModalFallback />}>
+        <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
       </Suspense>
 
       <Suspense fallback={<ModalFallback />}>

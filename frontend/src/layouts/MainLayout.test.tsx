@@ -14,12 +14,12 @@ import type { ResponsiveState } from '@/hooks/useResponsive'
 
 // 可控 useResponsive mock：默认桌面端，移动端用例在 beforeEach 中切换
 let responsiveState: ResponsiveState = {
-  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
-  width: 1280, height: 800,
+    deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+    width: 1280, height: 800,
 }
 vi.mock('@/hooks/useResponsive', async () => {
-  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
-  return { ...actual, useResponsive: () => responsiveState }
+    const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+    return { ...actual, useResponsive: () => responsiveState }
 })
 
 /** 管理台路由桩 —— 展示当前 pathname 供断言 */
@@ -174,6 +174,28 @@ describe('MainLayout 顶部导航', () => {
     it('非系统管理员不显示「管理台」入口', () => {
         renderLayout({ ...mockUser, role: 'user' })
         expect(screen.queryByRole('button', { name: /管理台/ })).toBeNull()
+    })
+
+    it('普通用户可打开「关于系统」弹窗查看版本等基本信息', async () => {
+        renderLayout({ ...mockUser, role: 'user', is_superuser: false })
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
+        })
+
+        // 悬停右上角用户区打开下拉菜单，点击「关于系统」
+        fireEvent.mouseEnter(screen.getByText('爱丽丝'))
+        fireEvent.click(await screen.findByText('关于系统'))
+
+        // 弹窗渲染基本信息（msw 返回 app_version 0.3.0）；普通用户可见即为本用例回归点
+        // AboutModal 为 lazy chunk + 首次请求，放宽等待窗口。
+        // 注：jsdom 不触发 transitionend，Modal 进场动画停在 opacity:0，
+        // toBeVisible 会误报——沿用项目惯例断言内容存在于已打开的弹窗内
+        const verEl = await screen.findByText('0.3.0', {}, { timeout: 5000 })
+        expect(verEl.closest('.ant-modal-content')).not.toBeNull()
+        expect(screen.getByText('应用名称')).toBeInTheDocument()
+        expect(screen.getByText('服务器时间')).toBeInTheDocument()
+        expect(screen.queryByText('database_url')).toBeNull()
     })
 })
 

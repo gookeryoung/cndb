@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import Depends, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from cndb.cli.backup import BackupError, create_backup, format_backup_filename
 from cndb.cli.restore import (
@@ -39,10 +40,21 @@ def _require_superuser(current_user: User | None) -> None:
         raise HTTPException(status_code=403, detail="需要系统管理员权限")
 
 
+class SystemAbout(BaseModel):
+    """普通用户可查看的系统基本信息（不含服务器路径等管理敏感字段）."""
+
+    app_name: str
+    app_version: str
+    auth_enabled: bool
+    timezone: str
+    server_time: str
+
+
 def register_system_routes(app: FastAPI) -> None:
     """将系统管理路由挂载到 FastAPI app.
 
-    所有路由统一前缀 ``/api/v1/admin``。
+    管理路由统一前缀 ``/api/v1/admin``（需 superuser）；
+    普通信息路由前缀 ``/api/v1/system``（登录即可，普通用户可访问）。
     """
     from fastapi import APIRouter, Body
 
@@ -66,6 +78,26 @@ def register_system_routes(app: FastAPI) -> None:
             "auth_enabled": settings.AUTH_ENABLED,
             "timezone": "UTC",
         }
+
+    # 普通用户可见的系统基本信息（登录即可，不含服务器路径等敏感字段）
+    system_router = APIRouter(prefix="/api/v1/system", tags=["system"])
+
+    @system_router.get("/about", response_model=SystemAbout)
+    def system_about(current_user: User | None = Depends(get_current_user)) -> SystemAbout:
+        """系统基本信息（应用名/版本/鉴权开关/时区/服务器时间）— 登录即可."""
+        from cndb.core.config import settings
+
+        if current_user is None:
+            raise HTTPException(status_code=401, detail="未登录")
+        return SystemAbout(
+            app_name=settings.APP_NAME,
+            app_version=settings.APP_VERSION,
+            auth_enabled=settings.AUTH_ENABLED,
+            timezone="UTC",
+            server_time=dt.datetime.now(dt.UTC).isoformat(),
+        )
+
+    app.include_router(system_router)
 
     @router.post("/backup")
     def admin_backup(

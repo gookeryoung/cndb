@@ -288,3 +288,45 @@ def test_admin_restore_unexpected_error_maps_to_500(
     r = _upload(client, superuser_headers, archive)
     assert r.status_code == 500
     assert "数据库引擎爆炸" in r.json()["detail"]
+
+
+# ── system/about ──────────────────────────────────────
+
+
+def test_system_about_requires_login(client: TestClient) -> None:
+    """未携带 token 访问 /api/v1/system/about → 401."""
+    assert client.get("/api/v1/system/about").status_code == 401
+
+
+def test_system_about_for_normal_user(client: TestClient, auth_headers: dict[str, str]) -> None:
+    """普通用户（role=user、非 superuser）登录即可查看系统基本信息.
+
+    响应仅含安全字段，不暴露数据库路径等管理敏感信息。
+    """
+    r = client.get("/api/v1/system/about", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["app_name"]
+    assert body["app_version"]
+    assert body["timezone"] == "UTC"
+    assert isinstance(body["auth_enabled"], bool)
+    # ISO 格式时间串
+    assert "T" in body["server_time"]
+    assert "database_url" not in body
+    assert "data_dir" not in body
+    assert "upload_dir" not in body
+
+
+def test_system_about_for_superuser(client: TestClient, superuser_headers: dict[str, str]) -> None:
+    """superuser 同样可访问（同一端点，响应结构一致）."""
+    r = client.get("/api/v1/system/about", headers=superuser_headers)
+    assert r.status_code == 200
+    assert r.json()["app_version"]
+
+
+def test_system_about_local_mode_passthrough(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """LOCAL_MODE 单机模式免登录放行（get_current_user 映射内置本地用户）."""
+    monkeypatch.setattr(settings, "LOCAL_MODE", True)
+    r = client.get("/api/v1/system/about")
+    assert r.status_code == 200, r.text
+    assert r.json()["app_version"]
