@@ -1,15 +1,15 @@
-"""认证路由：注册 / 登录 / 当前用户 / 用户管理.
+"""认证路由：注册 / 登录 / 当前用户.
 
 三员权限设计：
 - 公开注册 /auth/register: 仅允许注册 user (普通用户) 角色
 - 管理员创建 /auth/admin-register: 仅超级管理员可调用，可指定任意角色
-- 列出用户 /auth/users: 仅超级管理员可调用
-- 更新角色 /auth/users/{id}/role: 仅超级管理员可调用
+- 用户管理（列表/编辑/批量/启禁用/操作日志）已迁移至 routers/users.py
+  （/api/v1/accounts/users/*，仅超级管理员写、审计管理员可读日志）
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -240,66 +240,3 @@ def update_profile(
         raise HTTPException(status_code=400, detail="邮箱已被使用") from exc
     db.refresh(current_user)
     return current_user
-
-
-@router.get("/users", response_model=list[UserResponse])
-def list_users(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    role_filter: str | None = Query(default=None, description="按角色筛选"),
-) -> list[User]:
-    """列出所有用户（仅超级管理员）.
-
-    Args:
-        db: 数据库会话
-        current_user: 必须是超级管理员
-        role_filter: 可选角色筛选
-
-    Returns:
-        用户列表
-    """
-    if not current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅超级管理员可查看用户列表",
-        )
-    q = db.query(User)
-    if role_filter is not None:
-        _validate_role(role_filter)
-        q = q.filter(User.role == role_filter)
-    return q.order_by(User.id).all()
-
-
-@router.patch("/users/{user_id}/role", response_model=UserResponse)
-def update_user_role(
-    user_id: int,
-    new_role: str = Query(..., description="新角色: system_admin / security_admin / audit_admin / user"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> User:
-    """更新指定用户的角色（仅超级管理员）.
-
-    Args:
-        user_id: 目标用户 ID
-        new_role: 新角色字符串
-        db: 数据库会话
-        current_user: 必须是超级管理员
-
-    Returns:
-        更新后的 User 对象
-    """
-    if not current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅超级管理员可修改用户角色",
-        )
-
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=404, detail="用户不存在")
-
-    validated = _validate_role(new_role)
-    user.role = validated.value
-    db.commit()
-    db.refresh(user)
-    return user

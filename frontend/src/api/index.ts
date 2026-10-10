@@ -31,7 +31,10 @@ export { governanceApi } from './governance'
 export type { DetectReport, MergeReport, CleanReport, GovernanceReport } from './governance'
 
 export type {
-  ID, UserResponse, AdminRegisterRequest, LoginRequest, RegisterRequest,
+  ID, UserResponse, UserRole, AdminRegisterRequest, LoginRequest, RegisterRequest,
+  UserAdminRecord, UserAdminUpdateRequest, UserListPage, UserListQuery,
+  BatchUserActionRequest, BatchUserActionResponse, BatchUserItemResult,
+  UserAuditLogRecord, UserAuditLogPage, UserAuditLogQuery,
   Workspace, WorkspaceDetail, WorkspaceCreate, WorkspaceUpdate, WorkspaceRole, WorkspaceMember, MemberUserBrief,
   WorkspaceVisibility, WorkspaceExportData,
   TableSummary, TableDetail, TableCreate, TableUpdate, ViewBrief,

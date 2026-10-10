@@ -19,7 +19,8 @@ describe('HelpCenterDrawer', () => {
   it('打开时展示帮助中心标题与默认主题（快速上手）', () => {
     renderDrawer()
     expect(screen.getByText('帮助中心')).toBeInTheDocument()
-    expect(screen.getByText('创建工作区')).toBeInTheDocument()
+    // 标题为编号格式「1. 创建工作区」，用正则匹配避免精确文本失配
+    expect(screen.getByText(/创建工作区/)).toBeInTheDocument()
   })
 
   it('open=false 时不渲染内容', () => {

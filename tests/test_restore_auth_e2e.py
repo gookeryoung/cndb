@@ -48,7 +48,7 @@ TYPICAL_USERS = [
 
 LOGIN_URL = "/api/v1/accounts/auth/login"
 ME_URL = "/api/v1/accounts/auth/me"
-USERS_URL = "/api/v1/accounts/auth/users"
+USERS_URL = "/api/v1/accounts/users"
 
 
 def _make_e2e_client(monkeypatch: pytest.MonkeyPatch, target_db: Path) -> TestClient:

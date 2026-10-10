@@ -33,7 +33,7 @@ from cndb.plugins.accounts.models import User, UserRole
 
 LOGIN_URL = "/api/v1/accounts/auth/login"
 ME_URL = "/api/v1/accounts/auth/me"
-USERS_URL = "/api/v1/accounts/auth/users"
+USERS_URL = "/api/v1/accounts/users"
 
 
 # ── 1. 凭证验证 ──────────────────────────────────────
@@ -228,20 +228,20 @@ class TestPermissionChecks:
             assert user.is_system_admin == (role == UserRole.SYSTEM_ADMIN)
 
     def test_non_admin_cannot_list_users(self, client: TestClient, auth_headers: dict) -> None:
-        """前置：普通用户 testuser（auth_headers）；步骤：GET /auth/users；预期：403."""
+        """前置：普通用户 testuser（auth_headers）；步骤：GET /users；预期：403."""
         r = client.get(USERS_URL, headers=auth_headers)
         assert r.status_code == 403
 
     def test_admin_can_list_users_with_role(self, client: TestClient, db: Session, auth_headers: dict) -> None:
-        """前置：testuser 提升为超管；步骤：GET /auth/users?role_filter=user；
+        """前置：testuser 提升为超管；步骤：GET /users?role=user；
         预期：200 且角色过滤生效（权限配置数据在库中可正确查询）."""
         me = client.get(ME_URL, headers=auth_headers).json()
         row = db.query(User).filter(User.id == me["id"]).one()
         row.is_superuser = True
         db.commit()
-        r = client.get(USERS_URL, headers=auth_headers, params={"role_filter": "user"})
+        r = client.get(USERS_URL, headers=auth_headers, params={"role": "user"})
         assert r.status_code == 200, r.text
-        assert all(u["role"] == "user" for u in r.json())
+        assert all(u["role"] == "user" for u in r.json()["items"])
 
 
 # ── 5. 单机模式兜底用户（恢复场景关联） ──────────────

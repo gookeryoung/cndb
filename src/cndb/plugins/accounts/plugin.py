@@ -14,6 +14,7 @@ from fastapi import APIRouter
 
 from cndb.plugins.accounts.routers.auth import router as auth_router
 from cndb.plugins.accounts.routers.preferences import router as preferences_router
+from cndb.plugins.accounts.routers.users import router as users_router
 from cndb.plugins.base import PluginBase
 
 
@@ -32,6 +33,7 @@ class AccountsPlugin(PluginBase):
 
     @override
     def register_routes(self, router: APIRouter) -> None:
-        """注册 auth + preferences 路由."""
+        """注册 auth + preferences + users 路由."""
         router.include_router(auth_router)
         router.include_router(preferences_router)
+        router.include_router(users_router)
