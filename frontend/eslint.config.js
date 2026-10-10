@@ -89,6 +89,36 @@ export default tseslint.config(
     },
   },
 
+  // ── 体积防线：表页闭包入口不得静态链入「点了才出现」的交互面板 ────────────
+  // 这些 panel（Dialog/Modal/Drawer/Manager/Editor 结尾的组件）只在用户操作后出现，
+  // 一旦被 GridPage.tsx 静态 import，就会被打进 GridPage chunk 随首屏一起下载，
+  // 每次功能迭代线性膨胀 —— 2026-10-10 就是这样把 GridPage 顶到 43KB 超预算的。
+  // 正确写法是 GridPage.tsx 里已有的 const X = lazy(() => import('...')) + Suspense。
+  // 真正的硬性兜底仍是 bundle:budget（见 scripts/bundle-budget.mjs）：本规则拦的是最常犯的那一步，
+  // 间接依赖（A 静态引 B，B 静态引面板）由预算门禁兜住。
+  {
+    files: ['src/pages/grid/GridPage.tsx', 'src/pages/grid/gridViewModals.tsx'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', {
+        patterns: [{
+          group: [
+            '**/*Dialog', '**/*Dialog/index',
+            '**/*Modal', '**/*Modal/index',
+            '**/*Drawer', '**/*Drawer/index',
+            '**/*Manager', '**/*Manager/index',
+            '**/*Editor', '**/*Editor/index',
+          ],
+          message:
+            '按需打开的交互面板不得被表页入口静态引入（会进 GridPage chunk 拖累首屏）。' +
+            "请改为：const X = lazy(() => import('...'))，并在渲染处用 <Suspense> 包裹。" +
+            '类型是编译期信息，`import type` 不受此限制。',
+        }],
+        // 只从面板模块取类型不应被拦（如 import type { FilterRule } from '.../ViewConfigDialog'）
+        allowTypeImports: true,
+      }],
+    },
+  },
+
   // Node.js 脚本（coverage 校验等构建期脚本）—— 提供 Node 全局
   {
     files: ['scripts/**/*.mjs'],
