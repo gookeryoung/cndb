@@ -260,13 +260,14 @@ jobs:
           port: ${{ secrets.SSH_PORT || 22 }}
           username: ${{ secrets.SSH_USERNAME || 'root' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # 注意：不设 strip_components。target 已是 /opt/cndb/deploy，
-          # 多级路径会原样保留，这是该 action 一直以来的行为。
-          source: |
-            deploy/deploy.sh
-            deploy/backup.sh
-            deploy/nginx.conf
-            deploy/bootstrap-server.sh
+          # source 用【逗号分隔】，且路径不带 deploy/ 前缀。
+          # 两个坑叠在一起会导致 "tar: empty archive"：
+          #   1. 该 action 的 source 是逗号分隔，逐行写法（YAML 块）不被支持，
+          #      四个路径会被当成一整个字符串去匹配，结果为空；
+          #   2. target 已是 /opt/cndb/deploy，源路径再带 deploy/ 前缀会多一层。
+          # 路径相对仓库根目录，故此处写 deploy/xxx.sh；
+          # 传 *.sh 而非 *，避免把 .env.prod.example 等模板也覆盖到服务器上。
+          source: "deploy/deploy.sh,deploy/backup.sh,deploy/bootstrap-server.sh,deploy/nginx.conf"
           target: /opt/cndb/deploy
 
       # 首次部署的引导：建目录 / 放 .env 模板。已初始化过的服务器会跳过
