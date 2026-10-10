@@ -60,7 +60,13 @@ function renderPage() {
 }
 
 function setupWorkspace() {
-  server.use(http.get('/api/v1/workspaces/10', () => HttpResponse.json(WORKSPACE)))
+  server.use(
+    http.get('/api/v1/workspaces/10', () => HttpResponse.json(WORKSPACE)),
+    // 行 hover 预取（onRow onMouseEnter → prefetchTable）会请求表详情，
+    // 行操作用例（更多菜单等）必然触发，这里统一兜底避免 MSW unhandled 报错
+    http.get('/api/v1/workspaces/10/tables/:tid', ({ params }) =>
+      HttpResponse.json({ id: Number(params.tid), name: '客户表', description: '' })),
+  )
 }
 
 describe('TablesList 工作区表列表页', () => {

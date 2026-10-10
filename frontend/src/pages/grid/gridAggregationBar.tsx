@@ -1,6 +1,6 @@
 /** 底部选中行聚合条 — 数值列 count/sum/avg 统计与批量操作（从 GridPage 抽出）. */
 
-import { Button, Modal, Space, Tag } from 'antd'
+import { App as AntApp, Button, Space, Tag } from 'antd'
 import { CopyOutlined, DeleteOutlined } from '@ant-design/icons'
 
 interface GridAggregationBarProps {
@@ -16,6 +16,7 @@ interface GridAggregationBarProps {
 export default function GridAggregationBar({
   selectedCount, aggregates, copyLoading, deleteLoading, onCopy, onDelete, onClear,
 }: GridAggregationBarProps) {
+  const { modal } = AntApp.useApp()
   if (selectedCount <= 0) return null
   return (
     <div style={{ padding: '8px 16px', borderTop: '1px solid var(--cn-border)', background: 'var(--cn-bg-container)', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
@@ -29,7 +30,7 @@ export default function GridAggregationBar({
         <Space>
           <Button size="small" icon={<CopyOutlined />} loading={copyLoading} onClick={onCopy}>复制选中</Button>
           <Button size="small" danger icon={<DeleteOutlined />}
-            onClick={() => Modal.confirm({
+            onClick={() => modal.confirm({
               title: `确定删除 ${selectedCount} 行？`,
               onOk: onDelete,
             })}

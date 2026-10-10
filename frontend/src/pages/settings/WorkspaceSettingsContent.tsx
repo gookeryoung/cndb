@@ -13,8 +13,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
-  Table, Empty, message, Popconfirm, Divider, Modal, Card, Space, Avatar, Tooltip,
+  Table, Empty, Popconfirm, Divider, Modal, Card, Space, Avatar, Tooltip,
 } from 'antd'
+import { App as AntApp } from 'antd'
 import {
   SettingOutlined, BarChartOutlined, PlusOutlined,
   UserDeleteOutlined, CrownOutlined, FileTextOutlined, EyeOutlined,
@@ -81,6 +82,7 @@ export default function WorkspaceSettingsContent({
   wid, initialTab = 'basic', onUpdated, onDeleted,
 }: Props) {
   const queryClient = useQueryClient()
+  const { message } = AntApp.useApp()
   const navigate = useNavigate()
   const currentUser = useAuthStore(s => s.user)
   const [form] = Form.useForm()

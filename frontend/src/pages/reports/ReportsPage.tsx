@@ -50,7 +50,7 @@ function EditorLoadingFallback() {
 }
 
 export default function ReportsPage() {
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const { wid } = useParams<{ wid: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -227,7 +227,7 @@ export default function ReportsPage() {
                 {
                   key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true,
                   onClick: () => {
-                    Modal.confirm({
+                    modal.confirm({
                       title: `删除模板「${r.name}」？`,
                       okText: '删除', okType: 'danger', cancelText: '取消',
                       onOk: () => remove.mutate(r.id),
