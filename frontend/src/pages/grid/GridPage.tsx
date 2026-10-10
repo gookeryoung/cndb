@@ -30,10 +30,8 @@ import { arrayMove } from '@dnd-kit/sortable'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { tableApi, recordApi, viewApi, auditApi } from '@/api'
 import type { ID, RowValues, Field, RowResponse, View, ViewCreate } from '@/api'
-import RowDetailDrawer from './layout/RowDetailDrawer'
-import ViewConfigDialog, { type FilterRule, type SortRule } from './view-config/ViewConfigDialog'
+import type { FilterRule, SortRule } from './view-config/ViewConfigDialog'
 import MoveTableForm from './layout/MoveTableForm'
-import TableSettingsModal from '@/pages/settings/TableSettingsModal'
 import { buildColumns, type RowInlineOps, type InlineEditCellProps } from './cells/buildColumns'
 import { useNewRowAutoScroll, type TableScrollTarget } from './cells/useNewRowAutoScroll'
 import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCellValueForEdit } from './cells/GridCell'
@@ -52,6 +50,12 @@ import { useGridData } from './useGridData'
 const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
 const ImportExportDialog = lazy(() => import('@/pages/import-export/ImportExportDialog'))
 const GovernanceDialog = lazy(() => import('@/pages/grid/governance/GovernanceDialog'))
+// 按需加载：以下三类均为「用户点击后才出现」的重型面板（>400 行），静态链入会让
+// GridPage chunk 随每次功能迭代线性膨胀（见 scripts/bundle-budget.mjs 的 GridPage 预算）。
+// 走 lazy 后其代码移出 GridPage，仅在首次打开时下载独立 chunk。
+const ViewConfigDialog = lazy(() => import('./view-config/ViewConfigDialog'))
+const TableSettingsModal = lazy(() => import('@/pages/settings/TableSettingsModal'))
+const RowDetailDrawer = lazy(() => import('./layout/RowDetailDrawer'))
 // 非 grid 视图按 mode 懒加载：默认表格视图不下载看板/甘特/日历等代码
 const KanbanView = lazy(() => import('./views/KanbanView'))
 const CalendarView = lazy(() => import('./views/CalendarView'))
@@ -1109,7 +1113,8 @@ export default function GridPage() {
 
       {/* 抽屉 & 对话框 */}
       {detailOpen && (
-        <RowDetailDrawer
+        <Suspense fallback={null}>
+          <RowDetailDrawer
           open={detailOpen}
           row={detailRow}
           fields={table?.fields || []}
@@ -1122,6 +1127,7 @@ export default function GridPage() {
             setCreateInitialValues(undefined)
           }}
         />
+        </Suspense>
       )}
       <Suspense fallback={<ModalFallback />}>
         {fieldMgrOpen && (
@@ -1166,21 +1172,25 @@ export default function GridPage() {
           />
         )}
       </Suspense>
-      <ViewConfigDialog
-        open={viewConfigOpen}
-        viewType={activeView?.view_type || 'grid'}
-        filters={viewFilters}
-        sortings={viewSortings}
-        viewOptions={viewOptionsDraft}
-        fields={table?.fields || []}
-        onClose={() => setViewConfigOpen(false)}
-        filterLogic={viewFilterLogic}
-        onSaveFilterLogic={(logic) => { setViewFilterLogic(logic); setOffset(0) }}
-        onSaveFilters={(f) => { setViewFilters(f); setOffset(0) }}
-        onSaveSortings={(s) => { setViewSortings(s); setOffset(0) }}
-        onSaveOptions={(o) => { setViewOptionsDraft(o) }}
-        onSaveNow={saveViewNow}
-      />
+      <Suspense fallback={<ModalFallback />}>
+        {viewConfigOpen && (
+          <ViewConfigDialog
+            open
+            viewType={activeView?.view_type || 'grid'}
+            filters={viewFilters}
+            sortings={viewSortings}
+            viewOptions={viewOptionsDraft}
+            fields={table?.fields || []}
+            onClose={() => setViewConfigOpen(false)}
+            filterLogic={viewFilterLogic}
+            onSaveFilterLogic={(logic) => { setViewFilterLogic(logic); setOffset(0) }}
+            onSaveFilters={(f) => { setViewFilters(f); setOffset(0) }}
+            onSaveSortings={(s) => { setViewSortings(s); setOffset(0) }}
+            onSaveOptions={(o) => { setViewOptionsDraft(o) }}
+            onSaveNow={saveViewNow}
+          />
+        )}
+      </Suspense>
 
       {/* 创建 / 编辑 / 导入视图 Modal 组 */}
       <GridViewModals
@@ -1219,18 +1229,22 @@ export default function GridPage() {
       {/* 新增行 & 整行编辑改用行内编辑（见 buildColumns inlineOps / 操作列），不再使用弹窗 */}
 
       {/* 表设置统一 Modal — 新增 */}
-      <TableSettingsModal
-        open={tableSettingsOpen}
-        wid={wid!}
-        tid={tid!}
-        initialTab={tableSettingsTab}
-        onClose={() => { setTableSettingsOpen(false); setTableSettingsTab('basic') }}
-        onUpdated={() => {
-          queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
-          queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-          queryClient.invalidateQueries({ queryKey: ['table-settings', tableKey] })
-        }}
-      />
+      <Suspense fallback={<ModalFallback />}>
+        {tableSettingsOpen && (
+          <TableSettingsModal
+            open
+            wid={wid!}
+            tid={tid!}
+            initialTab={tableSettingsTab}
+            onClose={() => { setTableSettingsOpen(false); setTableSettingsTab('basic') }}
+            onUpdated={() => {
+              queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+              queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+              queryClient.invalidateQueries({ queryKey: ['table-settings', tableKey] })
+            }}
+          />
+        )}
+      </Suspense>
     </div>
   )
 }
