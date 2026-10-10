@@ -14,7 +14,7 @@ GitHub Actions (.github/workflows/deploy-tencent.yml)
       │  ① pnpm build        前端产物 → src/cndb/static
       │  ② uv build          → dist/cndb-0.3.0-py3-none-any.whl（含前端静态）
       │  ③ docker build      deploy/Dockerfile.prod → 装 wheel
-      │  ④ docker push       → <TCR_REGISTRY>/cndb:0.3.0
+      │  ④ docker push       → <TCR_REGISTRY>/<TCR_GROUP>/cndb:0.3.0
       │
       ▼ ⑤ SSH
 腾讯云服务器 /opt/cndb
@@ -39,8 +39,14 @@ GitHub Actions (.github/workflows/deploy-tencent.yml)
 
 1. 控制台 → 容器镜像服务 TCR → 开通**个人版**
 2. 访问凭证 → 获取长期访问凭证，记下**服务器地址 + 用户名 + 密码**
-   - 个人版地址形如 `xxxxxxxx.tencentcloudcr.com`
+   - 个人版地址形如 `ccr.ccs.tencentyun.com`
 3. 新建命名空间（命名空间名即镜像路径的一段）
+
+> **本项目实际使用的仓库**：`ccr.ccs.tencentyun.com/pydev/cndb`
+> 即 `TCR_REGISTRY=ccr.ccs.tencentyun.com`、`TCR_GROUP=pydev`，仓库名固定为 `cndb`。
+>
+> ⚠️ `TCR_REGISTRY` 必须是**纯域名不含命名空间** —— `docker login` 不接受带路径的
+> registry 参数。命名空间必须放在 `TCR_GROUP` 这个独立 Secret 里。
 
 企业版（多实例/高可用/内网拉取）：新建实例 → 命名空间 → 服务账号。
 
@@ -69,6 +75,18 @@ cd /opt/cndb
 
 ### 3. 配置 .env
 
+推荐用自带脚本，一条命令完成（可重复运行，**只补缺失项，不覆盖已有配置**）：
+
+```bash
+cd /opt/cndb
+# deploy/bootstrap-server.sh 由 CI 的 scp 步骤自动同步过来，首次需手工传一次
+bash deploy/bootstrap-server.sh --with-cron   # --with-cron 顺带装每日定时备份
+```
+
+脚本会：建目录 → 生成 `.env`（含随机 `JWT_SECRET`，不回显明文）→ 检查端口/磁盘 → 可选装 cron。
+
+手工方式等价：
+
 ```bash
 cd /opt/cndb
 cp deploy/.env.prod.example .env
@@ -77,7 +95,7 @@ chmod 600 .env
 # 生成 JWT 密钥替换占位符
 sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" .env
 
-# 填 TCR 地址
+# 填 TCR 地址（版本号随意，deploy.sh 会自动覆写）
 vim .env   # 改 CNDB_IMAGE 和 CORS_ORIGINS
 ```
 
@@ -85,13 +103,17 @@ vim .env   # 改 CNDB_IMAGE 和 CORS_ORIGINS
 
 | 变量             | 说明                                                     |
 | -------------- | ------------------------------------------------------ |
-| `CNDB_IMAGE`   | `<tcr域名>/<命名空间>/cndb:v0.3.0`，**版本号随意**，deploy.sh 会自动覆写 |
+| `CNDB_IMAGE`   | `ccr.ccs.tencentyun.com/pydev/cndb:v0.3.0`，**版本号随意**，deploy.sh 会自动覆写 |
 | `JWT_SECRET`   | `openssl rand -hex 32`，CI 会校验是否还是占位符                   |
 | `CORS_ORIGINS` | JSON 数组格式：`["https://cndb.example.com"]`；同域访问填 `[]`    |
 
 > ⚠️ `CORS_ORIGINS` **必须写成 JSON 数组**。应用里它是 `list[str]` 类型，  
 > pydantic-settings 对复杂类型环境变量按 JSON 解析，写成逗号分隔字符串会  
 > 抛 `SettingsError` 让容器启动即崩。
+>
+> 改镜像地址时注意：服务器 `.env` 的 `CNDB_IMAGE` 必须与流水线拼出的地址一致，
+> 不一致会导致部署时拉不到镜像。仓库名改动需同步 3 处：`deploy/.env.prod.example`、
+> 服务器 `.env`、GitHub Secret。
 
 ### 4. 配置 GitHub Secrets
 
@@ -99,7 +121,8 @@ vim .env   # 改 CNDB_IMAGE 和 CORS_ORIGINS
 
 | Secret            | 值                                         |
 | ----------------- | ----------------------------------------- |
-| `TCR_REGISTRY`    | `xxxxxxxx.tencentcloudcr.com`（**不含命名空间**） |
+| `TCR_REGISTRY`    | `ccr.ccs.tencentyun.com`（**纯域名，不含命名空间**） |
+| `TCR_GROUP`       | `pydev`（命名空间，本项目实际使用）                |
 | `TCR_USERNAME`    | `tcr@deploy`（注意 `@`）                      |
 | `TCR_PASSWORD`    | 服务账号密码                                    |
 | `SSH_HOST`        | 服务器公网 IP                                  |
@@ -107,6 +130,10 @@ vim .env   # 改 CNDB_IMAGE 和 CORS_ORIGINS
 | `SSH_USERNAME`    | `root`                                    |
 | `SSH_PRIVATE_KEY` | SSH 私钥全文（推荐，免明文密码）                        |
 | `SERVER_URL`      | 访问地址，用于部署后跳转                              |
+
+> `TCR_REGISTRY` 与 `TCR_GROUP` 必须拆开：`docker login` 只认纯域名，
+> 若把命名空间塞进 registry 会导致登录失败。完整镜像地址由流水线拼成
+> `<TCR_REGISTRY>/<TCR_GROUP>/cndb:<version>`。
 
 生成专用部署密钥（比复用个人密钥安全）：
 
