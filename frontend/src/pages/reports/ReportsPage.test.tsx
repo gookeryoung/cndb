@@ -390,7 +390,7 @@ describe('ReportsPage 编辑与新建保存', () => {
         expect(moreBtns).toHaveLength(2)
         fireEvent.mouseEnter(moreBtns[1])
         fireEvent.click(await screen.findByText('编辑'))
-        await waitFor(() => expect(screen.getByText(/编辑模板「库存月报」/)).toBeInTheDocument())
+        await screen.findByText(/编辑模板「库存月报」/)
         await waitFor(() => expect(cmDocText()).toBe('内容乙'))
     })
 
@@ -469,8 +469,13 @@ describe('ReportsPage 编辑与新建保存', () => {
         const rowCombo = () => screen.getAllByRole('combobox').find(c => c.closest('.report-crossws-row'))!
         // 先点源工作区按钮（不是下拉），设 importWsId → 触发源表 query
         fireEvent.click(screen.getByText('科研工作区'))
-        // 等 React Query 状态更新 + options prop 填充，再 mouseDown 打开下拉
-        await waitFor(() => { fireEvent.mouseDown(rowCombo()) })
+        // 等 React Query 状态更新 + options prop 填充：先取回就绪的 combo，再 mouseDown 打开下拉（副作用不放 waitFor 内）
+        const combo = await waitFor(() => {
+            const c = rowCombo()
+            expect(c).toBeDefined()
+            return c
+        })
+        fireEvent.mouseDown(combo)
         expect(await screen.findByText('科研经费表')).toBeInTheDocument()
         fireEvent.click(screen.getByText('科研经费表'))
         fireEvent.click(screen.getByRole('button', { name: /^引\s*入$/ }))

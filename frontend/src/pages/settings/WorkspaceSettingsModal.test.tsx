@@ -59,7 +59,7 @@ describe('WorkspaceSettingsModal', () => {
       <WorkspaceSettingsModal open wid="10" onClose={onClose} />,
     )
 
-    await waitFor(() => expect(screen.getByText('工作区设置')).toBeInTheDocument())
+    await screen.findByText('工作区设置')
     fireEvent.click(screen.getByRole('button', { name: /^关\s*闭$/ }))
     expect(onClose).toHaveBeenCalledTimes(1)
   })

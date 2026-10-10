@@ -127,13 +127,14 @@ async function openNewDialogAndSelectType(typeLabelZh: string) {
     expect(searchInput).not.toBeNull()
     fireEvent.change(searchInput, { target: { value: typeLabelZh } })
 
-    // 筛选后 options 中至少有一个包含目标中文名
-    await waitFor(() => {
+    // 筛选后 options 中至少有一个包含目标中文名，出现后再点击（点击副作用不放 waitFor 轮询内）
+    const opt = await waitFor(() => {
         const opts = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
             .filter(el => (el.textContent ?? '').includes(typeLabelZh))
         expect(opts.length).toBeGreaterThanOrEqual(1)
-        fireEvent.click(opts[0]!)
+        return opts[0]!
     })
+    fireEvent.click(opt)
 
     // 类型切换后，等待默认值 Form.Item（label 含「默认值」）渲染出来
     await waitFor(() => {
@@ -141,6 +142,17 @@ async function openNewDialogAndSelectType(typeLabelZh: string) {
             .map(l => l.textContent ?? '')
         expect(labels.some(t => t.includes('默认值'))).toBe(true)
     })
+}
+
+/** 在下拉菜单中等待指定文本的选项出现后点击（waitFor 内只查询断言，点击放外层避免轮询副作用） */
+async function clickSelectOption(label: string) {
+    const opt = await waitFor(() => {
+        const opt = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
+            .find(el => el.textContent === label)
+        expect(opt).toBeDefined()
+        return opt!
+    })
+    fireEvent.click(opt)
 }
 
 /** 在 ConfigEditor 里点击"添加选项"按钮并输入 label（第 N 个选项，从 0 开始） */
@@ -448,12 +460,7 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
             // 打开 Select 下拉 → 选一个选项
             const selector = control.querySelector('.ant-select-selector')!
             fireEvent.mouseDown(selector)
-            await waitFor(() => {
-                const option = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
-                    .find(el => el.textContent === '待办')
-                expect(option).toBeDefined()
-                fireEvent.click(option!)
-            })
+            await clickSelectOption('待办')
 
             // 填字段名 → 点确定 → 检查 create payload
             fireEvent.change(screen.getByPlaceholderText('例如：姓名') as HTMLInputElement, {
@@ -518,11 +525,7 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
 
             // 选中"待办"
             fireEvent.mouseDown(control.querySelector('.ant-select-selector')!)
-            await waitFor(() => {
-                const opt = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
-                    .find(el => el.textContent === '待办')
-                fireEvent.click(opt!)
-            })
+            await clickSelectOption('待办')
 
             // 删除 index=0（"待办"）选项
             removeSelectOption(0)
@@ -549,19 +552,13 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
 
             // 打开多选 Select → 依次选"高优"和"低优"
             fireEvent.mouseDown(control.querySelector('.ant-select-selector')!)
-            await waitFor(() => {
-                const allOpts = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
-                // multiselect 打开后会关闭，需要每次重开
-                fireEvent.click(allOpts.find(el => el.textContent === '高优')!)
-            })
+            // multiselect 打开后会关闭，需要每次重开
+            await clickSelectOption('高优')
             await waitFor(() => {
                 expect(control.querySelectorAll('.ant-select-selection-item')).toHaveLength(1)
             })
             fireEvent.mouseDown(control.querySelector('.ant-select-selector')!)
-            await waitFor(() => {
-                const allOpts = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
-                fireEvent.click(allOpts.find(el => el.textContent === '低优')!)
-            })
+            await clickSelectOption('低优')
             await waitFor(() => {
                 expect(control.querySelectorAll('.ant-select-selection-item')).toHaveLength(2)
             })
@@ -590,15 +587,9 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
 
             // 全选
             fireEvent.mouseDown(control.querySelector('.ant-select-selector')!)
-            await waitFor(() => {
-                const allOpts = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
-                fireEvent.click(allOpts.find(el => el.textContent === 'A')!)
-            })
+            await clickSelectOption('A')
             fireEvent.mouseDown(control.querySelector('.ant-select-selector')!)
-            await waitFor(() => {
-                const allOpts = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
-                fireEvent.click(allOpts.find(el => el.textContent === 'B')!)
-            })
+            await clickSelectOption('B')
             await waitFor(() => {
                 expect(control.querySelectorAll('.ant-select-selection-item')).toHaveLength(2)
             })
@@ -877,24 +868,14 @@ describe('FieldManager 从其他表引入字段', () => {
         // 选工作区：打开第一个 Select 下拉 → 点"其他工作区"
         const selectors = document.querySelectorAll('.ant-modal-body .ant-select .ant-select-selector')
         fireEvent.mouseDown(selectors[0]!)
-        await waitFor(() => {
-            const opt = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
-                .find(el => el.textContent === '其他工作区')
-            expect(opt).toBeDefined()
-            fireEvent.click(opt!)
-        })
+        await clickSelectOption('其他工作区')
 
         // 选源表：先打开第二个 Select（源表）下拉，再点"外部表"
         await waitFor(() => {
             expect(document.querySelectorAll('.ant-modal-body .ant-select .ant-select-selector').length).toBeGreaterThanOrEqual(2)
         })
         fireEvent.mouseDown(document.querySelectorAll('.ant-modal-body .ant-select .ant-select-selector')[1]!)
-        await waitFor(() => {
-            const opt = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
-                .find(el => el.textContent === '外部表')
-            expect(opt).toBeDefined()
-            fireEvent.click(opt!)
-        })
+        await clickSelectOption('外部表')
 
         // 等源字段勾选区渲染
         await waitFor(() => {

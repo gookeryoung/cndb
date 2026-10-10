@@ -15,6 +15,7 @@ globs: frontend/**/*.ts, frontend/**/*.tsx, src/**/*.py, frontend/**/*.d.ts
 
 - AntD 组件优先；自定义样式走 CSS 专用类 + 主题变量（`var(--*)`），禁止硬编码颜色，避免与 AntD 样式体系冲突。
 - Vite dev server 用 proxy 代理 `/api` 与静态资源到后端；生产构建产物同步到后端 static 目录同源部署，无需 CORS。
+- 组件测试异步断言硬约束：事件触发后才出现/消失的 UI（AntD message/notification/Modal/Drawer/Select 下拉/DatePicker 面板等 portal 组件、React Query 数据）必须用 `await screen.findBy*` 或 `waitFor(queryBy*)` 断言，禁止同步 `getBy`/`queryBy` 抢跑——同步查询与 portal 异步挂载竞态，本地快机器掩盖、CI 稳定失败；`fireEvent`/`setState` 等副作用禁止放入 `waitFor` 轮询回调。lint 由 `eslint-plugin-testing-library` 规则拦截。
 
 ## FastAPI 后端规则
 

@@ -8,6 +8,7 @@ import tseslint from 'typescript-eslint'
 import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
+import testingLibrary from 'eslint-plugin-testing-library'
 
 export default tseslint.config(
   // 忽略文件（优先级最高）
@@ -106,6 +107,24 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
+
+  // Testing Library 组件测试规则 —— 防"同步 getBy 与异步渲染竞态"（AntD portal 类 UI 异步挂载，
+  // 本地机器快掩盖、CI 稳定失败，见 GridCell.test.tsx 已保存断言案例）
+  {
+    files: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
+    plugins: { 'testing-library': testingLibrary },
+    rules: {
+      // 异步查询（findBy*）必须 await，事件后的出现/消失断言禁止同步 getBy/queryBy 抢跑
+      'testing-library/await-async-queries': 'error',
+      'testing-library/await-async-utils': 'error',
+      // 不允许 await 同步查询（掩盖真实异步时序）
+      'testing-library/no-await-sync-queries': 'error',
+      // waitFor 回调内禁止副作用（setState/firEvent 等），防止轮询放大竞态
+      'testing-library/no-wait-for-side-effects': 'error',
+      // 出现断言优先 findBy 而非 waitFor(getBy)
+      'testing-library/prefer-find-by': 'error',
     },
   },
 )
