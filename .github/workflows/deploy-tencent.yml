@@ -55,7 +55,11 @@ jobs:
   build:
     name: Build & Push Image
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 40 分钟不是「预估耗时」而是「排障上限」：正常应在 10 分钟内完成，
+    # 超时说明镜像源或依赖拉取有问题。给足余量让日志完整输出，
+    # 否则一旦卡住被杀，看到的是超时而拿不到任何有用信息。
+    # 换源后仍超时 → 看 Probe registry sources 那步的输出定位。
+    timeout-minutes: 40
     outputs:
       version: ${{ steps.meta.outputs.version }}
     steps:
@@ -78,6 +82,25 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
           cache-dependency-path: frontend/pnpm-lock.yaml
+
+      # 记录外部源的可达性与耗时。
+      # 构建一旦超时，日志里需要能区分「源慢」和「构建慢」——前者要换源，
+      #后者只能加时间或加缓存。没有这组数字就只能靠猜。
+      - name: Probe registry sources
+        run: |
+          probe() {
+            local name="$1" url="$2" t0 t1
+            t0=$(date +%s%3N)
+            if curl -sI --max-time 20 "$url" -o /dev/null 2>/dev/null; then
+              t1=$(date +%s%3N)
+              echo "  ${name}: OK $((t1 - t0))ms"
+            else
+              echo "  ${name}: FAIL/超时 (>20000ms)"
+            fi
+          }
+          echo "镜像源连通性（CI runner 视角）:"
+          probe "Docker Hub   " "https://registry-1.docker.io/v2/"
+          probe "Debian 官方   " "http://deb.debian.org/debian/dists/bookworm/Release"
 
       # wheel 已内嵌前端产物（见 pyproject force-include），所以前端必须先构建
       - name: Build frontend
@@ -164,6 +187,7 @@ jobs:
 
       - name: Build & push image
         uses: docker/build-push-action@v6
+        timeout-minutes: 25
         with:
           context: .
           file: ${{ env.DOCKERFILE }}

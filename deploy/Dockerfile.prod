@@ -15,11 +15,25 @@
 #
 # 构建（需先 make build 产出 dist/*.whl）：
 #   docker build -f deploy/Dockerfile.prod -t <registry>/cndb:v0.3.0 .
+#
+# 镜像源选择与构建位置强相关，改构建环境时务必同步检查：
+#   - CI（GitHub Actions，境外 runner）：用 Docker Hub 官方源 + Debian 官方源
+#   - 国内服务器本地构建：换回 docker.m.daocloud.io 与 mirrors.aliyun.com
+# 详见下方 FROM 与 apt 段的说明。
 # ═══════════════════════════════════════════════════════════════════
 
-FROM docker.m.daocloud.io/python:3.12-slim
+# 基础镜像用Docker Hub 官方源，不要换国内加速站。
+#
+# 本文件早期写的是 docker.m.daocloud.io/python:3.12-slim，那是为「在国内服务器上
+# 本地构建」选的源（当时服务器 Docker Hub 直连超时）。搬到 GitHub Actions 后，
+# runner 在境外，访问国内镜像站要绕路，基础镜像拉取就可能把 20 分钟预算耗尽 ——
+# 实测首次 CI 构建即因此超时。
+# 结论：构建位置在哪，就用那侧最快的源。CI 在境外 → 官方源；服务器在国内 → 加速站。
+FROM python:3.12-slim
 
-# ── 国内镜像源 ──
+# ── 环境变量 ──
+# pip 仍走阿里云：PyPI 包小、请求碎，官方源在境外带宽紧张时反而更慢，
+# 而阿里云 CDN 覆盖全球。实测这是唯一值得保留的国内源。
 ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
     PIP_TRUSTED_HOST=mirrors.aliyun.com \
     DEBIAN_FRONTEND=noninteractive \
@@ -28,9 +42,9 @@ ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# ── 系统依赖：curl 用于健康检查，字体供 reportlab/PDF 渲染中文 ──
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+# ── 系统依赖：curl 用于健康检查，字体供reportlab/PDF 渲染中文 ──
+# apt 用官方 Debian 源，同上理由：境外 runner 访问国内 apt 源过慢。
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
         fontconfig \
