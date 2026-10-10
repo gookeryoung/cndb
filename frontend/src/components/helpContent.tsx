@@ -6,7 +6,7 @@
  */
 
 import React from 'react'
-import { Steps, Table, Typography } from 'antd'
+import { Table, Typography } from 'antd'
 
 const { Text } = Typography
 
@@ -21,32 +21,33 @@ export interface HelpTopic {
 /* ── 快速上手 ─────────────────────────────────────────────── */
 
 const quickStartContent = (
-    <Steps
-        direction="vertical"
-        current={-1}
-        items={[
-            {
-                title: '创建工作区',
-                description: '工作区是一个独立的空间，用来存放一组相关的数据表。在「工作区」页面点击「新建工作区」，填写名称即可。',
-            },
-            {
-                title: '创建数据表或导入数据',
-                description: '进入工作区后，在「数据表」页面点击「新建表」手动定义字段，或点击「导入数据表」上传 CSV / Excel / JSON 文件，系统会自动推断字段类型。',
-            },
-            {
-                title: '录入与管理数据',
-                description: '打开一张表，点击右上角「新增一行」逐行录入；点击单元格直接编辑，回车保存。也可以用「导入 / 导出」批量更新数据。',
-            },
-            {
-                title: '按需切换视图',
-                description: '同一份数据可以用表格、看板、日历、画廊、甘特图、工作分解六种视图查看。点击视图栏左侧的 + 新建视图，每个视图可单独配置筛选和排序。',
-            },
-            {
-                title: '设置权限并协作',
-                description: '在「工作区设置」的成员管理中邀请成员并分配角色；在每张表的「表设置」中可对单张表做更细粒度的授权。',
-            },
-        ]}
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+            <Text strong>1. 创建工作区</Text>
+            <br />
+            <Text type="secondary">工作区是一个独立的空间，用来存放一组相关的数据表。在「工作区」页面点击「新建工作区」，填写名称即可。</Text>
+        </div>
+        <div>
+            <Text strong>2. 创建数据表或导入数据</Text>
+            <br />
+            <Text type="secondary">进入工作区后，在「数据表」页面点击「新建表」手动定义字段，或点击「导入数据表」上传 CSV / Excel / JSON 文件，系统会自动推断字段类型。</Text>
+        </div>
+        <div>
+            <Text strong>3. 录入与管理数据</Text>
+            <br />
+            <Text type="secondary">打开一张表，点击右上角「新增一行」逐行录入；点击单元格直接编辑，回车保存。也可以用「导入 / 导出」批量更新数据。</Text>
+        </div>
+        <div>
+            <Text strong>4. 按需切换视图</Text>
+            <br />
+            <Text type="secondary">同一份数据可以用表格、看板、日历、画廊、甘特图、工作分解六种视图查看。点击视图栏左侧的 + 新建视图，每个视图可单独配置筛选和排序。</Text>
+        </div>
+        <div>
+            <Text strong>5. 设置权限并协作</Text>
+            <br />
+            <Text type="secondary">在「工作区设置」的成员管理中邀请成员并分配角色；在每张表的「表设置」中可对单张表做更细粒度的授权。</Text>
+        </div>
+    </div>
 )
 
 /* ── 视图类型说明 ─────────────────────────────────────────── */

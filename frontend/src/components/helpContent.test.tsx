@@ -26,10 +26,11 @@ describe('helpContent 帮助内容', () => {
     expect(wrap.textContent?.trim().length).toBeGreaterThan(10)
   })
 
-  it('快速上手渲染 Steps 步骤"创建工作区"', () => {
+  it('快速上手渲染"1. 创建工作区"等五个编号步骤', () => {
     const topic = HELP_TOPICS.find(t => t.key === 'quick-start')!
     renderProviders(<div>{topic.content}</div>)
-    expect(screen.getByText('创建工作区')).toBeInTheDocument()
+    expect(screen.getByText(/创建工作区/)).toBeInTheDocument()
+    expect(screen.getByText(/设置权限并协作/)).toBeInTheDocument()
   })
 
   it('权限主题渲染角色表格，含所有者与查看者行', () => {
