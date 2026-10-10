@@ -4,7 +4,6 @@
  * 本地托管字体（全部 SIL Open Font License — 允许商用、允许分发）
  *   Inter        — 拉丁/UI 无衬线（现代、干净、数字支持 tabular-nums）
  *   Noto Sans SC — 中文覆盖（思源黑体，Google/Adobe 共同开发）
- *   JetBrains Mono — 等宽数字/代码
  *
  * 跨平台显示统一策略：
  *   1. 三字重全覆盖（400/500/600/700），所有 font-weight 命中 web font，
@@ -111,40 +110,6 @@
     U+2CEB0-2EBEF, U+30000-3134F;
 }
 
-/* ── JetBrains Mono（等宽数字/代码，400/500/700） ── */
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/fonts/jetbrains-mono/jetbrains-mono-latin-400-normal.woff2') format('woff2'),
-    url('/fonts/jetbrains-mono/jetbrains-mono-latin-ext-400-normal.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('/fonts/jetbrains-mono/jetbrains-mono-latin-500-normal.woff2') format('woff2'),
-    url('/fonts/jetbrains-mono/jetbrains-mono-latin-ext-500-normal.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url('/fonts/jetbrains-mono/jetbrains-mono-latin-700-normal.woff2') format('woff2'),
-    url('/fonts/jetbrains-mono/jetbrains-mono-latin-ext-700-normal.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
 *,
 *::before,
 *::after {
@@ -171,12 +136,6 @@ body {
 .font-num {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
-}
-
-/* 真正的等宽字体备用（当前表格数字列未启用，保留给代码字段等场景）
- * fallback 精简为 'JetBrains Mono' + monospace，交给浏览器自动选系统等宽字体 */
-.font-mono {
-  font-family: 'JetBrains Mono', monospace;
 }
 
 /* 确保 Ant Design Layout 没有默认边距 */
