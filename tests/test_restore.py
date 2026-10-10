@@ -1099,3 +1099,72 @@ def test_restore_disposes_global_engine(tmp_path: Path, monkeypatch: pytest.Monk
     restore_backup(archive, force=False, database_url=f"sqlite:///{target_db}")
 
     assert disposed == [True]
+
+
+def test_restore_uploads_atomic_copy_failure_preserves_old(tmp_path: Path) -> None:
+    """恢复 uploads 时复制中途失败，旧 uploads 必须保持不动（不能先删后复制）.
+
+    触发场景：磁盘空间不足、权限错误等导致 shutil.copy2 抛异常。
+    旧实现先 rmtree 再 copy，中途失败会永久丢失旧附件；
+    新实现先复制到临时目录，成功后再原子替换，复制失败时旧目录完好。
+    """
+    src_uploads = tmp_path / "backup" / "uploads"
+    src_uploads.mkdir(parents=True)
+    (src_uploads / "a.txt").write_text("hello", encoding="utf-8")
+    (src_uploads / "b.txt").write_text("world", encoding="utf-8")
+    (src_uploads / "1").mkdir()
+    (src_uploads / "1" / "c.txt").write_text("nested", encoding="utf-8")
+
+    target = tmp_path / "uploads"
+    target.mkdir(parents=True)
+    (target / "old.txt").write_text("old", encoding="utf-8")
+    (target / "1").mkdir()
+    (target / "1" / "old2.txt").write_text("old2", encoding="utf-8")
+
+    call_count: dict[str, int] = {"n": 0}
+    _orig_copy = __import__("shutil").copy2
+
+    def _failing_copy(src: Path, dst: Path) -> None:
+        call_count["n"] += 1
+        if call_count["n"] >= 2:  # 第 2 个文件开始失败
+            raise OSError("磁盘空间不足")
+        _orig_copy(src, dst)
+
+    with patch("shutil.copy2", side_effect=_failing_copy), pytest.raises(OSError, match="磁盘空间不足"):
+        _restore_uploads(src_uploads.parent, target, included=True)
+
+    # 旧 uploads 完好无损 —— 关键断言：不是先删了一半
+    assert (target / "old.txt").read_text() == "old"
+    assert (target / "1" / "old2.txt").read_text() == "old2"
+    assert not (target / "a.txt").exists()  # 新文件未出现
+    # 临时目录已清理
+    assert not (tmp_path / "uploads.new").exists()
+    assert not (tmp_path / "uploads.bak").exists()
+
+
+def test_restore_uploads_atomic_rename_failure_rolls_back(tmp_path: Path) -> None:
+    """rename 替换阶段失败（如目标目录被进程占用）时应回滚到旧 uploads."""
+    src_uploads = tmp_path / "backup" / "uploads"
+    src_uploads.mkdir(parents=True)
+    (src_uploads / "a.txt").write_text("hello", encoding="utf-8")
+
+    target = tmp_path / "uploads"
+    target.mkdir(parents=True)
+    (target / "old.txt").write_text("old", encoding="utf-8")
+
+    _orig_rename = Path.rename
+
+    def _failing_rename(self: Path, target_path: Path) -> None:
+        # 第二次 rename（把 .new 改成正式名）时模拟 Windows 文件占用
+        if str(target_path).endswith("uploads") and self.name.endswith(".new"):
+            raise OSError("文件被占用")
+        _orig_rename(self, target_path)
+
+    with patch.object(Path, "rename", _failing_rename), pytest.raises(OSError, match="文件被占用"):
+        _restore_uploads(src_uploads.parent, target, included=True)
+
+    # 旧 uploads 保持不动
+    assert (target / "old.txt").read_text() == "old"
+    # 残留清理
+    assert not (tmp_path / "uploads.bak").exists()
+    assert not (tmp_path / "uploads.new").exists()

@@ -463,8 +463,14 @@ def _migrate_after_restore(database_url: str, backup_schema_version: str) -> Non
 def _restore_uploads(extracted_dir: Path, target_upload_dir: Path, included: bool) -> int:
     """恢复 uploads 目录.
 
+    原子替换策略，避免"先删后复制"中途失败导致旧附件永久丢失：
+    1. 先把备份 uploads 完整复制到目标同级临时目录 ``uploads.new``
+    2. 全部复制成功后，把旧目录 rename 为 ``uploads.bak``
+    3. 把 ``uploads.new`` rename 为正式名
+    4. 删除 ``uploads.bak``
+    任一步骤失败均回滚——旧目录保持不动或被恢复.
+
     - 若备份未包含 uploads → 跳过，返回 0
-    - 若目标已存在 → 先清空再复制（避免残留）
     - 备份目录不存在 → 返回 0
     """
     if not included:
@@ -473,21 +479,55 @@ def _restore_uploads(extracted_dir: Path, target_upload_dir: Path, included: boo
     if not src_uploads.is_dir():
         return 0
 
-    # 清空并重建目标
-    if target_upload_dir.exists():
-        shutil.rmtree(target_upload_dir)
-    target_upload_dir.mkdir(parents=True)
+    # 目标同级临时路径（确保与正式目录在同一文件系统，rename 是原子操作）
+    target_parent = target_upload_dir.parent
+    staging_dir = target_parent / f"{target_upload_dir.name}.new"
+    backup_dir = target_parent / f"{target_upload_dir.name}.bak"
 
-    # 复制（保留子目录结构）
-    count = 0
-    for src_file in src_uploads.rglob("*"):
-        if not src_file.is_file():
-            continue
-        rel = src_file.relative_to(src_uploads)
-        dst = target_upload_dir / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src_file, dst)
-        count += 1
+    # ── 步骤 1：复制到临时目录 ──
+    # 清理残留（上次失败遗留，理论上不应存在）
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    staging_dir.mkdir(parents=True)
+
+    try:
+        count = 0
+        for src_file in src_uploads.rglob("*"):
+            if not src_file.is_file():
+                continue
+            rel = src_file.relative_to(src_uploads)
+            dst = staging_dir / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_file, dst)
+            count += 1
+    except Exception:
+        # 复制中途失败 — 清理临时目录，旧 uploads 保持不变
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
+
+    # ── 步骤 2-4：原子替换 ──
+    try:
+        if target_upload_dir.exists():
+            if backup_dir.exists():
+                shutil.rmtree(backup_dir)
+            target_upload_dir.rename(backup_dir)  # 旧目录 → .bak
+        staging_dir.rename(target_upload_dir)    # .new → 正式名
+    except Exception:
+        # 替换失败 — 把 .bak 恢复为正式名
+        if backup_dir.exists() and not target_upload_dir.exists():
+            try:
+                backup_dir.rename(target_upload_dir)
+            except Exception:  # pragma: no cover - 尽力回滚
+                logger.warning("恢复 uploads 回滚失败，旧目录位于 %s", backup_dir)
+        # 清理残留的 staging
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
+
+    # 成功后删除 .bak
+    if backup_dir.exists():
+        shutil.rmtree(backup_dir, ignore_errors=True)
+
     print(f"[restore] 附件已恢复: {count} 个文件 → {target_upload_dir}")
     return count
 
