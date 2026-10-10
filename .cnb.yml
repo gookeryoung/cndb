@@ -285,8 +285,11 @@ v*.*.*:
             $SSH "${SSH_USERNAME:-root}@${SSH_HOST}" \
               'mkdir -p /opt/cndb/deploy /opt/cndb/backups && echo "目录就绪"'
             $SCP docker-compose.prod.yml "${SSH_USERNAME:-root}@${SSH_HOST}:/opt/cndb/"
-            $SCP deploy/deploy.sh deploy/backup.sh deploy/nginx.conf \
+            $SCP deploy/deploy.sh deploy/backup.sh deploy/nginx.conf deploy/bootstrap-server.sh \
               "${SSH_USERNAME:-root}@${SSH_HOST}:/opt/cndb/deploy/"
+            # scp 不保留执行位，脚本必须显式 +x，否则部署时报 Permission denied
+            $SSH "${SSH_USERNAME:-root}@${SSH_HOST}" \
+              'chmod +x /opt/cndb/deploy/*.sh && echo "--- 服务器上的部署脚本 ---" && ls -l /opt/cndb/deploy/'
 
         # 凭证通过环境变量传入而非写进 .env
         - name: 执行部署

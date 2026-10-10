@@ -96,6 +96,19 @@ CNDB_IMAGE=ccr.ccs.tencentyun.com/pydev/pydev:v0.3.0
 
 ### 3. 服务器初始化（仅首次）
 
+推荐用自带脚本，一条命令完成（可重复运行，只补缺失项）：
+
+```bash
+# 把 bootstrap-server.sh 传到服务器后
+bash bootstrap-server.sh            # 基础初始化
+bash bootstrap-server.sh --with-cron # 顺带装每日定时备份
+```
+
+脚本会：建目录 → 生成 `.env`（含随机 `JWT_SECRET`，不回显明文）→ 检查端口/磁盘 → 可选装 cron。
+**绝不覆盖已存在的 `.env` 配置项**（已实测：重跑零改动）。
+
+手工方式等价：
+
 ```bash
 mkdir -p /opt/cndb/deploy /opt/cndb/backups
 cd /opt/cndb
@@ -120,8 +133,10 @@ cat ~/.ssh/cndb_deploy.pub >> <服务器>/root/.ssh/authorized_keys
 
 | 问题 | 处理 |
 |---|---|
-| 密钥仓库私有导致 imports 拉不到 | 实测私有时 raw URL 返回 404、API 报 `Secret repos do not support token access`。必须设为公开可读 |
+| 密钥仓库私有导致 imports 拉不到 | 实测私有时 raw 返回 404、API 报 `Secret repos do not support token access`。必须设为公开可读 |
+| **imports URL 用错路径** | 官方示例写的 `/-/blob/`，实测**返回 HTML 页面而非文件内容**。只有 `/-/git/raw/<ref>/<path>` 会吐出原始文本。配错会让流水线把 HTML 当 YAML 解析，报错极具误导性 |
 | **漏了 `docker login`** | CNB 内置凭据只覆盖 CNB 自己的制品库。推 TCR 必须显式 login，否则 `buildx --push` 报 `unauthorized: authentication required`。用 `--password-stdin` 而非 `-p`，避免密码进 shell 历史 |
+| **scp 不保留执行位** | GitHub 版靠 `scp-action` + 后续 `chmod` step，迁移后容易丢。已在同步 stage 内直接 `chmod +x *.sh`，否则 `deploy.sh` 报 Permission denied |
 | 镜像仓库名硬编码 | 改为从密钥仓库的 `TCR_REPO` 读（默认 `cndb`），换仓库只改密钥、不动流水线 |
 | `$` 兜底分支块重复定义 | `pull_request` 与 `api_trigger_e2e` 合并到同一个 `$` 下。YAML 同名顶层键后者覆盖前者，分成两块会让 PR 门禁**静默消失** |
 | 镜像构建重复 | 单次 `buildx build` 挂三个 tag（版本 / latest / CNB 制品库），原先为第二个仓库重跑一遍构建层 |
