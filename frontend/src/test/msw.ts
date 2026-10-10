@@ -82,6 +82,16 @@ export const handlers = [
   // 视图
   http.get('/api/v1/workspaces/:wid/tables/:tid/views', () =>
     HttpResponse.json(mockViews)),
+
+  // 系统基本信息（登录即可，普通用户可查看）
+  http.get('/api/v1/system/about', () =>
+    HttpResponse.json({
+      app_name: 'cndb',
+      app_version: '0.3.0',
+      auth_enabled: true,
+      timezone: 'UTC',
+      server_time: '2026-10-10T12:00:00+00:00',
+    })),
 ]
 
 export const server = setupServer(...handlers)

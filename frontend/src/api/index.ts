@@ -25,6 +25,8 @@ export { publicApi } from './public'
 export { reportApi } from './reports'
 export { adminApi } from './admin'
 export type { AdminSystemInfo, BackupManifest } from './admin'
+export { systemApi } from './system'
+export type { SystemAbout } from './system'
 export { governanceApi } from './governance'
 export type { DetectReport, MergeReport, CleanReport, GovernanceReport } from './governance'
 
