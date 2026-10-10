@@ -17,9 +17,10 @@
 #   docker build -f deploy/Dockerfile.prod -t <registry>/cndb:v0.3.0 .
 #
 # 镜像源选择与构建位置强相关，改构建环境时务必同步检查：
-#   - CI（GitHub Actions，境外 runner）：用 Docker Hub 官方源 + Debian 官方源
-#   - 国内服务器本地构建：换回 docker.m.daocloud.io 与 mirrors.aliyun.com
-# 详见下方 FROM 与 apt 段的说明。
+#   - CI（GitHub Actions，境外 runner）：用 Docker Hub 官方源 + Debian 官方源 + PyPI 官方源
+#   - 国内服务器本地构建：可换回 docker.m.daocloud.io与 mirrors.aliyun.com
+# 但 PyPI 源即使是阿里云也不能用 —— 它缺包，会让构建 404（见下方 ENV 段）。
+# 详见下方 FROM、ENV 与 apt 段的说明。
 # ═══════════════════════════════════════════════════════════════════
 
 # 基础镜像用Docker Hub 官方源，不要换国内加速站。
@@ -32,11 +33,15 @@
 FROM python:3.12-slim
 
 # ── 环境变量 ──
-# pip 仍走阿里云：PyPI 包小、请求碎，官方源在境外带宽紧张时反而更慢，
-# 而阿里云 CDN 覆盖全球。实测这是唯一值得保留的国内源。
-ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
-    PIP_TRUSTED_HOST=mirrors.aliyun.com \
-    DEBIAN_FRONTEND=noninteractive \
+# pip 用官方源，不用国内镜像。
+#
+# 曾用阿里云源并在注释里论证「包小请求碎、官方源在境外更慢」——那个判断错了。
+# 阿里云是【滞后镜像】，实测缺失多个较新版本的包 metadata，构建必然失败：
+#   pydantic-2.6.4      → 404（源里只有 2.6.0 / 2.6.1）
+#   cryptography-42.0.8 → 404
+# pip 会解析到满足约束的最新版本，而那个版本恰好是源里没有的，直接 404。
+# 官方源包全，且 PyPI 走 CDN，境外 runner 实测不构成瓶颈。
+ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -55,6 +60,17 @@ RUN apt-get update \
 
 # ── 安装 wheel（--no-cache-dir 减小镜像体积）──
 WORKDIR /app
+
+# cffi 必须先单独装，原因见下。
+#
+# bcrypt 被锁在 3.x（4.x 用 Rust 重写，Win7 上 _bcrypt.pyd 依赖 ProcessPrng
+# 会加载失败），而 bcrypt 3.x 依赖 cffi。pip 解析 "cndb → bcrypt → cffi"
+# 这条链时会做回溯（"looking at multiple versions of cndb"），结果依赖当前
+# 已安装的包集合；cffi 未预装时解析失败，报
+#   No matching distribution found for cffi>=1.1
+# —— 尽管 cffi 本身完全可安装。预装后解析路径确定，bcrypt 正常装上（实测 3.2.2 OK）。
+RUN pip install --no-cache-dir cffi
+
 COPY dist/*.whl ./
 RUN pip install --no-cache-dir ./*.whl \
     && rm ./*.whl
