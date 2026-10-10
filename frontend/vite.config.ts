@@ -28,7 +28,9 @@ function syncStaticPlugin() {
 
       // 2) 清空 static 目录下的旧产物（保留 .gitkeep）
       for (const entry of fs.readdirSync(staticDir)) {
-        if (entry === '.gitkeep') continue
+        // .vite/manifest.json 供 bundle-budget.mjs 做「超限归因」（模块→chunk 映射），
+        // 不参与线上静态资源分发，不同步到后端 static（避免进 wheel）
+        if (entry === '.gitkeep' || entry === '.vite') continue
         const full = path.join(staticDir, entry)
         fs.rmSync(full, { recursive: true, force: true })
       }
@@ -93,6 +95,10 @@ export default defineConfig(({ mode }) => ({
     // 现代浏览器目标：去掉 asyncIterator/Map/Set/Proxy 等老 polyfill
     target: 'es2022',
     chunkSizeWarningLimit: 1500,
+    // 产出 dist/.vite/manifest.json（模块 → chunk 映射）。scripts/bundle-budget.mjs
+    // 在超限失败时据此列出该 chunk 内 Top-N 源文件，把「哪个文件让包变大了」变成可定位信息，
+    // 而不是只报一个数字。不会同步到后端 static（见 syncStaticPlugin 的 .vite 排除）。
+    manifest: true,
     rollupOptions: {
       output: {
         // 不使用 manualChunks —— antd 内部模块间有大量交叉引用，
