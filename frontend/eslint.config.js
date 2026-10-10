@@ -112,9 +112,10 @@ export default tseslint.config(
             '按需打开的交互面板不得被表页入口静态引入（会进 GridPage chunk 拖累首屏）。' +
             "请改为：const X = lazy(() => import('...'))，并在渲染处用 <Suspense> 包裹。" +
             '类型是编译期信息，`import type` 不受此限制。',
+          // 只从面板模块取类型不应被拦（如 import type { FilterRule } from '.../ViewConfigDialog'）；
+          // 该选项必须放在 pattern 对象内部，放在外层 options 会导致 ESLint schema 校验失败
+          allowTypeImports: true,
         }],
-        // 只从面板模块取类型不应被拦（如 import type { FilterRule } from '.../ViewConfigDialog'）
-        allowTypeImports: true,
       }],
     },
   },

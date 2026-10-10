@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, type Plugin } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
 import fs from 'node:fs'
@@ -10,7 +10,7 @@ import path from 'node:path'
 // 构建会先清空目标目录，.gitkeep 被抹掉，后续 hatchling 打包失败。
 // 这里用中间目录 dist 构建，构建完成后再同步到静态目录，同时保留
 // .gitkeep 哨兵文件。
-function syncStaticPlugin() {
+function syncStaticPlugin(): Plugin {
   return {
     name: 'sync-static',
     closeBundle() {
@@ -65,17 +65,17 @@ function syncStaticPlugin() {
 // OutputChunk.modules 自建映射表：dist/.vite/chunk-modules.json
 // { "<chunk 文件名>": [{ id, bytes }] }，id 为模块绝对路径，bytes 为原始字节。
 // 该目录不参与同步到后端 static（见 syncStaticPlugin），不会被打进 wheel。
-function chunkAttributionPlugin() {
+function chunkAttributionPlugin(): Plugin {
   return {
     name: 'chunk-attribution',
     apply: 'build',
     generateBundle(_options, bundle) {
-      const table = {}
+      const table: Record<string, Array<{ id: string; bytes: number }>> = {}
       for (const [fileName, chunk] of Object.entries(bundle)) {
         if (chunk.type !== 'chunk') continue
         table[fileName] = Object.entries(chunk.modules ?? {}).map(([id, info]) => ({
           id,
-          bytes: info.originalLength ?? info.code?.length ?? 0,
+          bytes: info.originalLength ?? 0,
         }))
       }
       const outDir = path.resolve(__dirname, 'dist/.vite')
