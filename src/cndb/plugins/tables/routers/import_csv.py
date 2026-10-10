@@ -17,6 +17,7 @@ from typing import Annotated, Any, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
@@ -90,9 +91,10 @@ async def import_file_analyze(
         raise HTTPException(status_code=400, detail="不支持旧版 .xls 格式，请在 Excel 中另存为 .xlsx")
 
     # 解析一次：列分析（全量，保证 total_rows / 空值率精确）与样本预览共用
-    rows, _cols, actual_fmt = parse_file_to_rows(content, filename=filename)
+    # 全量解析为重 CPU 操作，放线程池避免阻塞事件循环
+    rows, _cols, actual_fmt = await run_in_threadpool(parse_file_to_rows, content, filename=filename)
     try:
-        columns, total_rows, _ = analyze_file_columns(rows=rows, format=actual_fmt)
+        columns, total_rows, _ = await run_in_threadpool(analyze_file_columns, rows=rows, format=actual_fmt)
     except ValueError as exc:
         # CSV 结构守卫（空列名/重复列名/行值溢出）等客户端输入缺陷 → 400
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -159,7 +161,9 @@ async def import_file_create_table(
 
     try:
         engine = db.get_bind()
-        dt, ids, columns = create_table_from_file(
+        # 解析 + DDL + 全量入库为重 CPU/IO 操作，放线程池避免阻塞事件循环
+        dt, ids, columns = await run_in_threadpool(
+            create_table_from_file,
             engine,
             db,
             workspace_id,

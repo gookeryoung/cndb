@@ -38,9 +38,9 @@ INSERT_BATCH = 5000
 def setup_db(db_url: str | None) -> tuple[Any, str]:
     """创建基准数据库：显式传 --db-url 用真实库，否则临时 SQLite."""
     # 确保所有模型注册到 Base.metadata（create_all 建全量 schema 需要外键目标表就绪）
-    import cndb.plugins.accounts.models  # noqa: F401
-    import cndb.plugins.tables.models  # noqa: F401
-    import cndb.plugins.workspaces.models  # noqa: F401
+    import cndb.plugins.accounts.models
+    import cndb.plugins.tables.models
+    import cndb.plugins.workspaces.models  # noqa: F401  -- 副作用导入：注册模型到 Base.metadata
 
     if db_url:
         settings.DATABASE_URL = db_url
