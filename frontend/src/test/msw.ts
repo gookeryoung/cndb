@@ -9,8 +9,9 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import type {
-  Field, FormDefinition, FormListItem, FormMeta, FormRowListResponse,
-  RowListResponse, TableSummary, UserResponse, View, Workspace,
+  ApprovalInstance, Field, FormDefinition, FormListItem, FormMeta,
+  FormRowListResponse, RowListResponse, TableSummary, UserResponse, View, WorkflowDefinition,
+  WorkflowListItem, Workspace,
 } from '@/api'
 
 // ─────────────── 测试 fixtures ───────────────
@@ -116,6 +117,71 @@ export const mockFormRows: FormRowListResponse = {
   form_id: 1,
 }
 
+// 审批流（线性链 start → approval → end）
+export const mockWorkflowList: WorkflowListItem[] = [
+  { id: 5, name: '请假审批', description: '两级审批', order: 0 },
+]
+
+export const mockWorkflowDetail: WorkflowDefinition = {
+  id: 5,
+  workspace_id: 10,
+  name: '请假审批',
+  description: '两级审批',
+  order: 0,
+  nodes: [
+    { id: 51, name: '提交', node_type: 'start', approver_role: '', pos_x: 0, pos_y: 0 },
+    { id: 52, name: '主管审批', node_type: 'approval', approver_role: 'editor', pos_x: 0, pos_y: 0 },
+    { id: 53, name: '经理审批', node_type: 'approval', approver_role: 'admin', pos_x: 0, pos_y: 0 },
+    { id: 54, name: '结束', node_type: 'end', approver_role: '', pos_x: 0, pos_y: 0 },
+  ],
+  edges: [
+    { source: 51, target: 52 },
+    { source: 52, target: 53 },
+    { source: 53, target: 54 },
+  ],
+}
+
+// 审批实例
+export const mockPendingApprovals: ApprovalInstance[] = [
+  {
+    id: 71,
+    workspace_id: 10,
+    workflow_id: 5,
+    workflow_name: '请假审批',
+    form_id: 1,
+    form_name: '客户信息录入',
+    table_id: 100,
+    status: 'pending',
+    current_node_id: 52,
+    current_node_name: '主管审批',
+    current_approver_role: 'editor',
+    submitted_by: 2,
+    submitted_by_name: 'bob',
+    values: { 姓名: '王五', 年龄: 25 },
+    record_id: null,
+  },
+]
+
+export const mockMineApprovals: ApprovalInstance[] = [
+  {
+    id: 71,
+    workspace_id: 10,
+    workflow_id: 5,
+    workflow_name: '请假审批',
+    form_id: 1,
+    form_name: '客户信息录入',
+    table_id: 100,
+    status: 'approved',
+    current_node_id: 54,
+    current_node_name: '结束',
+    current_approver_role: '',
+    submitted_by: 1,
+    submitted_by_name: 'alice',
+    values: { 姓名: '张三', 年龄: 20 },
+    record_id: 9,
+  },
+]
+
 // ─────────────── 默认 handlers ───────────────
 
 export const handlers = [
@@ -155,6 +221,24 @@ export const handlers = [
   http.patch('/api/v1/workspaces/:wid/forms/:fid/rows/:rid', () =>
     HttpResponse.json({ id: 1, 姓名: '张三三' })),
   http.delete('/api/v1/workspaces/:wid/forms/:fid/rows/:rid', () => HttpResponse.json({ ok: true })),
+
+  // 审批流
+  http.get('/api/v1/workspaces/:wid/workflows', () => HttpResponse.json(mockWorkflowList)),
+  http.post('/api/v1/workspaces/:wid/workflows', () =>
+    HttpResponse.json(mockWorkflowDetail, { status: 201 })),
+  http.get('/api/v1/workspaces/:wid/workflows/:wfid', () => HttpResponse.json(mockWorkflowDetail)),
+  http.patch('/api/v1/workspaces/:wid/workflows/:wfid', () => HttpResponse.json(mockWorkflowDetail)),
+  http.delete('/api/v1/workspaces/:wid/workflows/:wfid', () => HttpResponse.json({ ok: true })),
+
+  // 审批实例
+  http.get('/api/v1/workspaces/:wid/approvals', ({ request }) => {
+    const scope = new URL(request.url).searchParams.get('scope')
+    return HttpResponse.json(scope === 'mine' ? mockMineApprovals : mockPendingApprovals)
+  }),
+  http.post('/api/v1/workspaces/:wid/approvals/:aid/approve', () =>
+    HttpResponse.json({ ...mockMineApprovals[0], status: 'approved' })),
+  http.post('/api/v1/workspaces/:wid/approvals/:aid/reject', () =>
+    HttpResponse.json({ ...mockMineApprovals[0], status: 'rejected' })),
 
   // 系统基本信息（登录即可，普通用户可查看）
   http.get('/api/v1/system/about', () =>

@@ -121,6 +121,10 @@ export default function MainLayout() {
       label: '表单',
     },
     {
+      key: 'approvals',
+      label: '审批流',
+    },
+    {
       key: 'reports',
       label: (
         <span>
@@ -137,11 +141,13 @@ export default function MainLayout() {
   // 表单详情页（/w/:wid/forms/:fid）落在「表单」
   const activeWsTab = location.includes('/reports')
     ? 'reports'
-    : location.includes('/forms')
-      ? 'forms'
-      : location.includes('/settings')
-        ? 'settings'
-        : 'tables'
+    : location.includes('/approvals')
+      ? 'approvals'
+      : location.includes('/forms')
+        ? 'forms'
+        : location.includes('/settings')
+          ? 'settings'
+          : 'tables'
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
