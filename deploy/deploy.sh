@@ -138,6 +138,14 @@ set_image_in_env() {
 # ── 健康探测 ───────────────────────────────────────────────────
 # 仅靠「容器 running」判断是不够的：uvicorn 可能因迁移失败在启动
 # 循环中反复退出，docker 状态仍短暂显示 running。必须打真实 HTTP 端点。
+#
+# 探测命令用 python 标准库：生产镜像自 Dockerfile.prod 起不再安装
+# curl（省 ~8MB），dc exec 内只能用 python。
+# 输出 /api/health 响应体（JSON）；端口未就绪/非 2xx 时非零退出。
+health_body() {
+  dc exec -T app python -c "import sys, urllib.request as u; sys.stdout.write(u.urlopen('http://127.0.0.1:8000/api/health', timeout=5).read().decode())"
+}
+
 wait_healthy() {
   local deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
   local cid
@@ -151,7 +159,7 @@ wait_healthy() {
       return 1
     fi
 
-    if dc exec -T app curl -fsS --max-time 5 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+    if health_body >/dev/null 2>&1; then
       return 0
     fi
 
@@ -275,7 +283,7 @@ if ! wait_healthy; then
 fi
 
 # 5. 成功：清理悬空镜像 + 打印版本
-VERSION_JSON="$(dc exec -T app curl -fsS http://127.0.0.1:8000/api/health 2>/dev/null || echo '{}')"
+VERSION_JSON="$(health_body 2>/dev/null || echo '{}')"
 ok "部署成功！版本信息: ${VERSION_JSON}"
 
 # 保留最近 5 个镜像，其余清理，防止磁盘被旧镜像占满
