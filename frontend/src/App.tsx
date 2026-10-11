@@ -18,6 +18,8 @@ const WorkspaceList = lazy(() => import('@/pages/workspace/WorkspaceList'))
 const TablesList = lazy(() => import('@/pages/workspace/TablesList'))
 const GridPage = lazy(() => import('@/pages/grid/GridPage'))
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'))
+const FormsPage = lazy(() => import('@/pages/forms/FormsPage'))
+const FormRunnerPage = lazy(() => import('@/pages/forms/FormRunnerPage'))
 const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
@@ -57,6 +59,12 @@ function AuthenticatedApp() {
           } />
           <Route path="w/:wid/reports" element={
             <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
+          } />
+          <Route path="w/:wid/forms" element={
+            <Suspense fallback={<PageFallback />}><FormsPage /></Suspense>
+          } />
+          <Route path="w/:wid/forms/:formId" element={
+            <Suspense fallback={<PageFallback />}><FormRunnerPage /></Suspense>
           } />
           <Route path="admin" element={
             <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>

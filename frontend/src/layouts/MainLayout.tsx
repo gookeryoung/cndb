@@ -117,6 +117,10 @@ export default function MainLayout() {
       ),
     },
     {
+      key: 'forms',
+      label: '表单',
+    },
+    {
       key: 'reports',
       label: (
         <span>
@@ -129,12 +133,15 @@ export default function MainLayout() {
     },
     { key: 'settings', label: '工作区设置' },
   ]
-  // 激活态由 pathname 驱动：表详情页（/w/:wid/tables/:tid）同样落在「数据资产」
+  // 激活态由 pathname 驱动：表详情页（/w/:wid/tables/:tid）同样落在「数据资产」，
+  // 表单详情页（/w/:wid/forms/:fid）落在「表单」
   const activeWsTab = location.includes('/reports')
     ? 'reports'
-    : location.includes('/settings')
-      ? 'settings'
-      : 'tables'
+    : location.includes('/forms')
+      ? 'forms'
+      : location.includes('/settings')
+        ? 'settings'
+        : 'tables'
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 

@@ -23,6 +23,7 @@ export { viewApi } from './views'
 export { importApi, exportApi, fileApi } from './importExport'
 export { publicApi } from './public'
 export { reportApi } from './reports'
+export { formApi } from './forms'
 export { adminApi } from './admin'
 export type { AdminSystemInfo, BackupManifest } from './admin'
 export { systemApi } from './system'
@@ -47,6 +48,8 @@ export type {
   PublicForm, SharedGrid,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportParameter, ReportRenderRequest, ReportRenderResult, ReportTheme,
+  FormFieldConfig, FormRoleThreshold, FormDefinition, FormListItem, FormCreate, FormUpdate,
+  FormMeta, FormRowListResponse,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
   GovernanceTask, GovernanceTaskKind, GovernanceTaskStatus,
   GovernanceDetectRequest, GovernanceMergeGroup, GovernanceMergeRequest,

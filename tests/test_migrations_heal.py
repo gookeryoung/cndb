@@ -244,6 +244,18 @@ class TestSchemaHeal:
         cols = {c["name"] for c in inspect(legacy_db).get_columns("accounts_user")}
         assert "created_at" in cols
 
+    def test_heal_recreates_dropped_forms_table(self, legacy_db):
+        """forms_formdefinition 整表缺失（升级失败形态）时自愈补建."""
+        import cndb.plugins.forms.models  # noqa: F401 — 确保 metadata 注册
+
+        Base.metadata.create_all(legacy_db)
+        with legacy_db.begin() as conn:
+            conn.execute(text("DROP TABLE forms_formdefinition"))
+
+        mig_mod.ensure_db_migrated()
+
+        assert "forms_formdefinition" in inspect(legacy_db).get_table_names()
+
 
 class TestHealNotNullPythonDefault:
     """NOT NULL 且仅声明 Python 端标量 default 的缺列自愈.

@@ -8,7 +8,10 @@
 
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import type { Field, RowListResponse, TableSummary, UserResponse, View, Workspace } from '@/api'
+import type {
+  Field, FormDefinition, FormListItem, FormMeta, FormRowListResponse,
+  RowListResponse, TableSummary, UserResponse, View, Workspace,
+} from '@/api'
 
 // ─────────────── 测试 fixtures ───────────────
 
@@ -57,6 +60,62 @@ export const mockRecords: RowListResponse = {
   limit: 50,
 }
 
+// 表单
+export const mockFormList: FormListItem[] = [
+  {
+    id: 1,
+    table_id: 100,
+    table_name: '客户表',
+    name: '客户信息录入',
+    description: '客户资料登记',
+    use_role: 'viewer',
+    edit_role: 'editor',
+    delete_role: '',
+    order: 0,
+  },
+]
+
+export const mockFormDetail: FormDefinition = {
+  id: 1,
+  workspace_id: 10,
+  table_id: 100,
+  name: '客户信息录入',
+  description: '客户资料登记',
+  field_config: [{ field_name: '姓名', editable: true, visible: true, required: true }],
+  layout: {},
+  use_role: 'viewer',
+  edit_role: 'editor',
+  delete_role: '',
+  order: 0,
+  trashed: false,
+}
+
+export const mockFormMeta: FormMeta = {
+  id: 1,
+  table_id: 100,
+  table_name: '客户表',
+  name: '客户信息录入',
+  description: '客户资料登记',
+  layout: {},
+  fields: [
+    { field_name: '姓名', editable: true, visible: true, required: true, field_type: 'text' },
+    { field_name: '年龄', editable: true, visible: true, field_type: 'number' },
+  ],
+  invalid_fields: [],
+  can_submit: true,
+  can_edit: true,
+  can_delete: true,
+}
+
+export const mockFormRows: FormRowListResponse = {
+  rows: [
+    { id: 1, 姓名: '张三', 年龄: 20 },
+    { id: 2, 姓名: '李四', 年龄: 30 },
+  ],
+  total: 2,
+  form_id: 1,
+}
+
 // ─────────────── 默认 handlers ───────────────
 
 export const handlers = [
@@ -82,6 +141,20 @@ export const handlers = [
   // 视图
   http.get('/api/v1/workspaces/:wid/tables/:tid/views', () =>
     HttpResponse.json(mockViews)),
+
+  // 表单
+  http.get('/api/v1/workspaces/:wid/forms', () => HttpResponse.json(mockFormList)),
+  http.get('/api/v1/workspaces/:wid/forms/:fid', () => HttpResponse.json(mockFormDetail)),
+  http.get('/api/v1/workspaces/:wid/forms/:fid/meta', () => HttpResponse.json(mockFormMeta)),
+  http.get('/api/v1/workspaces/:wid/forms/:fid/rows', () => HttpResponse.json(mockFormRows)),
+  http.post('/api/v1/workspaces/:wid/forms', () => HttpResponse.json(mockFormDetail, { status: 201 })),
+  http.patch('/api/v1/workspaces/:wid/forms/:fid', () => HttpResponse.json(mockFormDetail)),
+  http.delete('/api/v1/workspaces/:wid/forms/:fid', () => HttpResponse.json({ ok: true })),
+  http.post('/api/v1/workspaces/:wid/forms/:fid/rows', () =>
+    HttpResponse.json({ id: 3, 姓名: '王五' }, { status: 201 })),
+  http.patch('/api/v1/workspaces/:wid/forms/:fid/rows/:rid', () =>
+    HttpResponse.json({ id: 1, 姓名: '张三三' })),
+  http.delete('/api/v1/workspaces/:wid/forms/:fid/rows/:rid', () => HttpResponse.json({ ok: true })),
 
   // 系统基本信息（登录即可，普通用户可查看）
   http.get('/api/v1/system/about', () =>
