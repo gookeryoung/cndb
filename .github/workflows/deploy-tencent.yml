@@ -199,13 +199,13 @@ jobs:
       # deploy.sh 是否具备 SERVER_BUILD 能力（缺失即说明同步的是旧版）。
       - name: Verify sync landed at expected paths
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         with:
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT || 22 }}
           username: ${{ secrets.SSH_USERNAME || 'root' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          env:
-            VERSION: ${{ steps.meta.outputs.version }}
           envs: 'VERSION'
           script: |
             set -e
