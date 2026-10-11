@@ -8,7 +8,7 @@
  * 置顶请求 / 创建弹窗名称校验 / 创建失败错误提示 / 编辑已关闭标记。
  */
 
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
 import { screen, waitFor, fireEvent, render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -235,5 +235,82 @@ describe('WorkspaceList 创建弹窗校验与失败分支', () => {
     expect(await screen.findByText('工作区数量已达上限')).toBeInTheDocument()
     // 失败后弹窗仍打开（可修正后重试）
     expect(screen.getByTestId('create-workspace-modal')).toBeInTheDocument()
+  })
+})
+
+// ─────────────── 移动端适配：工具栏堆叠 + Modal 宽度 ───────────────
+// 回归背景：工具栏搜索框固定 260px 且按钮行不换行，375px 视口下页面横向溢出。
+
+/** 临时覆盖 jsdom 视口宽度（useResponsive 挂载时读取 innerWidth 判定断点） */
+function setViewportWidth(width: number) {
+  Object.defineProperty(window, 'innerWidth', { value: width, configurable: true, writable: true })
+}
+
+/** 移除自有属性覆盖，还原 jsdom 原型上的 innerWidth getter */
+function restoreViewport() {
+  delete (window as unknown as { innerWidth?: number }).innerWidth
+}
+
+/** 获取搜索框外层容器（Input.Search 的 style 落在 group wrapper 上） */
+function getSearchWrapper(): HTMLElement {
+  const input = screen.getByPlaceholderText('搜索工作区名称/标签...')
+  return input.closest('.ant-input-group-wrapper') as HTMLElement
+}
+
+describe('WorkspaceList 移动端适配', () => {
+  afterEach(restoreViewport)
+
+  it('移动端（375px）工具栏纵向堆叠，搜索框占满整行且按钮均分宽度', () => {
+    setViewportWidth(375)
+    renderWorkspaceList()
+
+    // 工具栏改为纵向排列，子项拉伸占满
+    expect(screen.getByTestId('workspace-list-toolbar')).toHaveStyle({ flexDirection: 'column' })
+    expect(screen.getByTestId('workspace-list-toolbar')).toHaveStyle({ alignItems: 'stretch' })
+
+    // 搜索框不再固定 260px，占满整行（消除横向溢出的主因）
+    expect(getSearchWrapper()).toHaveStyle({ width: '100%' })
+
+    // 两个操作按钮均分剩余宽度
+    expect(screen.getByTestId('create-workspace-btn')).toHaveStyle({ flex: '1 1 0%' })
+    expect(screen.getByTestId('import-workspace-btn')).toHaveStyle({ flex: '1 1 0%' })
+  })
+
+  it('移动端创建弹窗宽度收窄为视口宽度减边距，不再固定 520px', async () => {
+    setViewportWidth(375)
+    renderWorkspaceList()
+
+    fireEvent.click(screen.getByTestId('create-workspace-btn'))
+    await screen.findByTestId('create-workspace-modal')
+
+    const modal = document.querySelector('.ant-modal') as HTMLElement
+    expect(modal).not.toBeNull()
+    expect(modal.style.width).toBe('calc(100vw - 32px)')
+  })
+
+  it('移动端导入弹窗宽度收窄为视口宽度减边距，不再固定 560px', async () => {
+    setViewportWidth(375)
+    renderWorkspaceList()
+
+    fireEvent.click(screen.getByTestId('import-workspace-btn'))
+    expect(await screen.findByText('导入工作区', { selector: '.ant-modal-title' })).toBeInTheDocument()
+
+    const modal = document.querySelector('.ant-modal') as HTMLElement
+    expect(modal).not.toBeNull()
+    expect(modal.style.width).toBe('calc(100vw - 32px)')
+  })
+})
+
+describe('WorkspaceList 桌面端布局回归', () => {
+  afterEach(restoreViewport)
+
+  it('桌面端工具栏保持横向排列，搜索框固定 260px，按钮不设置 flex', () => {
+    setViewportWidth(1280)
+    renderWorkspaceList()
+
+    expect(screen.getByTestId('workspace-list-toolbar')).toHaveStyle({ flexDirection: 'row' })
+    expect(getSearchWrapper()).toHaveStyle({ width: '260px' })
+    expect(screen.getByTestId('create-workspace-btn').style.flex).toBe('')
+    expect(screen.getByTestId('import-workspace-btn').style.flex).toBe('')
   })
 })
