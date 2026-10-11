@@ -11,10 +11,14 @@
 #      若只设 DATABASE_URL，附件与备份仍会落在容器内 ~/.cndb，
 #      容器一重建历史附件全部丢失 —— 线上事故高发点。
 #   4. 安装中文字体（reportlab 生成 PDF / Jinja2 报告模板需要 CJK 字形，
-#      缺字体会渲染成方框）
+#      缺字体会渲染成方框）；只装 fonts-wqy-microhei，体积优先
+#   5. HEALTHCHECK 与 compose healthcheck 均用 python 探测（镜像内无 curl）
 #
-# 构建（需先 make build 产出 dist/*.whl）：
+# 构建（需先 make build 产出 dist/*.whl，再导出锁定依赖）：
+#   make build
+#   uv export --frozen --no-hashes --no-dev --no-emit-project -o dist/requirements.lock.txt
 #   docker build -f deploy/Dockerfile.prod -t <registry>/cndb:v0.3.0 .
+# （deploy CI 会自动完成导出步骤，见 .github/workflows/deploy-tencent.yml）
 #
 # 镜像源选择与构建位置强相关，改构建环境时务必同步检查：
 #   - CI（GitHub Actions，境外 runner）：用 Docker Hub 官方源 + Debian 官方源 + PyPI 官方源
@@ -47,33 +51,38 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# ── 系统依赖：curl 用于健康检查，字体供reportlab/PDF 渲染中文 ──
+# ── 系统依赖：仅中文字体（reportlab 生成 PDF 需 CJK 字形）──
 # apt 用官方 Debian 源，同上理由：境外 runner 访问国内 apt 源过慢。
+#
+# 字体只装 fonts-wqy-microhei（约 5MB），不再装 fonts-wqy-zenhei（约 16MB）：
+#   - reports.py 按 fc-match 候选列表动态注册字体，"WenQuanYi Micro Hei"
+#     在候选列表首位，删除 zenhei 后 PDF 渲染自动回退到 microhei；
+#   - microhei（微米黑）覆盖 GB2312/GBK 常用汉字，报告与 PDF 场景够用。
+# 健康检查不再依赖 curl：镜像内 python 足以探测 /api/health，apt 省 ~8MB。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        curl \
         fontconfig \
         fonts-wqy-microhei \
-        fonts-wqy-zenhei \
     && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
 
 # ── 安装 wheel（--no-cache-dir 减小镜像体积）──
 WORKDIR /app
 
-# cffi 必须先单独装，原因见下。
-#
-# bcrypt 被锁在 3.x（4.x 用 Rust 重写，Win7 上 _bcrypt.pyd 依赖 ProcessPrng
-# 会加载失败），而 bcrypt 3.x 依赖 cffi。pip 解析 "cndb → bcrypt → cffi"
-# 这条链时会做回溯（"looking at multiple versions of cndb"），结果依赖当前
-# 已安装的包集合；cffi 未预装时解析失败，报
-#   No matching distribution found for cffi>=1.1
-# —— 尽管 cffi 本身完全可安装。预装后解析路径确定，bcrypt 正常装上（实测 3.2.2 OK）。
-RUN pip install --no-cache-dir cffi
+# 依赖层拆分：先装锁定依赖（requirements.lock.txt，由 uv export 从 uv.lock
+# 生成，deploy CI 自动产出；本地构建执行
+#   uv export --frozen --no-hashes --no-dev --no-emit-project -o dist/requirements.lock.txt
+# ），再装业务 wheel。
+# 收益：版本升级时依赖版本不变，TCR/Buildx 缓存只重建薄薄的 wheel 层
+# （约 2MB），跨境增量拉取不再整层重传 ~180MB 的依赖。
+# 附带收益：cffi/bcrypt 已随锁定清单装齐，pip 安装 wheel 时依赖全部满足、
+# 无需在线解析，原先单独预装 cffi 规避 bcrypt 3.x 回溯失败的做法随之取消。
+COPY dist/requirements.lock.txt ./
+RUN pip install --no-cache-dir -r requirements.lock.txt
 
 COPY dist/*.whl ./
 RUN pip install --no-cache-dir ./*.whl \
-    && rm ./*.whl
+    && rm ./*.whl requirements.lock.txt
 
 # ── 非 root 用户 + 预建数据目录 ──
 # /data 必须在此处 chown：Docker 创建命名卷时会复制镜像内该路径的属主，
@@ -91,9 +100,12 @@ EXPOSE 8000
 
 VOLUME ["/data"]
 
-# 健康检查：探测真实存在的 /api/health（框架级路由，见 src/cndb/app.py）
+# 健康检查：探测真实存在的 /api/health（框架级路由，见 src/cndb/app.py）。
+# 用 Python 标准库替代 curl（apt 层已不再安装 curl，省 ~8MB）：
+# urlopen 对非 2xx 抛 HTTPError、对拒绝连接抛 URLError，均以非零退出，
+# 语义与 curl -f 一致。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
+    CMD ["python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
 
 # uvicorn 启动：单进程足够，前端静态由 FastAPI 直接服务。
 # --proxy-headers 配合 nginx 反代，让 request.client 拿到真实客户端 IP
