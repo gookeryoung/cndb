@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config'
+import type { Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
 import fs from 'node:fs'
@@ -65,7 +66,7 @@ function syncStaticPlugin() {
 // OutputChunk.modules 自建映射表：dist/.vite/chunk-modules.json
 // { "<chunk 文件名>": [{ id, bytes }] }，id 为模块绝对路径，bytes 为原始字节。
 // 该目录不参与同步到后端 static（见 syncStaticPlugin），不会被打进 wheel。
-function chunkAttributionPlugin() {
+function chunkAttributionPlugin(): Plugin {
   return {
     name: 'chunk-attribution',
     apply: 'build',

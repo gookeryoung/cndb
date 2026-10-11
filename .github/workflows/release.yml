@@ -134,10 +134,15 @@ jobs:
             fspack-windows-
             fspack-
 
+      # fspack 默认 mirror=aliyun，阿里云/腾讯云 PyPI 镜像的 PEP 658 `.whl.metadata`
+      # 未同步（index 页面声明支持但文件 404），pip 解析阶段直接失败，不再回退到完整 wheel。
+      # 追加官方 PyPI 作为 extra-index 后 pip 可从 pypi.org 拿到 metadata 完成下载。
+      # runner 在海外，pypi.org 直连反而更快。注意：该参数只有 build 子命令支持，
+      # package 子命令（--no-build）不下载 wheel，无需指定。
       - name: Build with fspack
         env:
           PYTHONIOENCODING: utf-8
-        run: uv run fspack b . --target windows
+        run: uv run fspack b . --target windows --extra-index-url https://pypi.org/simple/
 
       - name: Generate installer
         env:
@@ -225,7 +230,7 @@ jobs:
             fspack-
 
       - name: Build with fspack
-        run: uv run fspack b . --target linux
+        run: uv run fspack b . --target linux --extra-index-url https://pypi.org/simple/
 
       - name: Generate installer
         run: uv run fspack p . --target linux --format all --no-build

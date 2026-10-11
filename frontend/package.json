@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "analyze": "vite build --mode analyze",
     "bundle:budget": "node scripts/bundle-budget.mjs",
+    "bundle:budget:update": "node scripts/bundle-budget.mjs --update",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit --incremental",
     "lint": "eslint . --cache --cache-location .eslintcache",
