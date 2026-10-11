@@ -24,6 +24,8 @@ export { importApi, exportApi, fileApi } from './importExport'
 export { publicApi } from './public'
 export { reportApi } from './reports'
 export { formApi } from './forms'
+export { workflowApi, approvalApi, APPROVAL_STATUS_TEXT } from './workflows'
+export type { ApprovalScope } from './workflows'
 export { adminApi } from './admin'
 export type { AdminSystemInfo, BackupManifest } from './admin'
 export { systemApi } from './system'
@@ -50,6 +52,10 @@ export type {
   ReportParameter, ReportRenderRequest, ReportRenderResult, ReportTheme,
   FormFieldConfig, FormRoleThreshold, FormDefinition, FormListItem, FormCreate, FormUpdate,
   FormMeta, FormRowListResponse,
+  FormWidgetOverride, ApprovalSubmitResponse, FormRowCreateResponse,
+  WorkflowNodeType, WorkflowNodePayload, WorkflowEdgePayload, WorkflowPayload,
+  WorkflowNodeDto, WorkflowEdgeDto, WorkflowDefinition, WorkflowListItem,
+  ApprovalStatus, ApprovalInstance,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
   GovernanceTask, GovernanceTaskKind, GovernanceTaskStatus,
   GovernanceDetectRequest, GovernanceMergeGroup, GovernanceMergeRequest,
@@ -59,3 +65,6 @@ export type {
   ApiConfigRequest, ApiConfigValidateResult, ApiConfigImportResult,
   TableOwnerInfo, TableMember, MemberCreate, MemberUpdate, OwnerTransferPayload,
 } from './types'
+
+// 类型守卫为运行时函数，须以值形式 re-export（export type 会在编译期擦除）
+export { isApprovalSubmitResponse } from './types'

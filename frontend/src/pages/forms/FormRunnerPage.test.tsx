@@ -152,4 +152,93 @@ describe('FormRunnerPage 表单运行器', () => {
 
         expect(await screen.findByText('表单不存在或无权访问')).toBeInTheDocument()
     })
+
+    it('绑定审批流：头部显示提交需审批标记，提交返回审批响应时不落库', async () => {
+        const bodies: unknown[] = []
+        server.use(
+            http.get('/api/v1/workspaces/10/forms/1/meta', () => HttpResponse.json({
+                ...mockFormMeta,
+                approval_workflow_id: 5,
+            })),
+            http.post('/api/v1/workspaces/10/forms/1/rows', async ({ request }) => {
+                bodies.push(await request.json())
+                return HttpResponse.json({
+                    approval: {
+                        id: 71, workflow_id: 5, workflow_name: '请假审批',
+                        status: 'pending', current_approver_role: 'editor',
+                    },
+                })
+            }),
+        )
+        renderPage()
+
+        expect(await screen.findByText('提交需审批')).toBeInTheDocument()
+
+        fireEvent.click(await screen.findByRole('button', { name: /新\s*增\s*数\s*据/ }))
+        const drawer = await screen.findByRole('dialog')
+        fireEvent.change(within(drawer).getByLabelText('姓名'), { target: { value: '王五' } })
+        fireEvent.click(within(drawer).getByRole('button', { name: /提\s*交/ }))
+
+        expect(await screen.findByText('已提交审批（请假审批），等待审批人处理')).toBeInTheDocument()
+        expect(bodies).toHaveLength(1)
+        // 不显示直接落库的成功提示
+        expect(screen.queryByText('提交成功')).not.toBeInTheDocument()
+    })
+
+    it('控件覆盖：text 字段配置 widget=select 后渲染下拉并提交选项值', async () => {
+        const bodies: unknown[] = []
+        server.use(
+            http.get('/api/v1/workspaces/10/forms/1/meta', () => HttpResponse.json({
+                ...mockFormMeta,
+                fields: [
+                    {
+                        field_name: '姓名', editable: true, visible: true, required: true,
+                        field_type: 'text', widget: 'select',
+                        widget_config: { options: [{ value: '甲', label: '甲等' }, { value: '乙', label: '乙等' }] },
+                    },
+                    { field_name: '年龄', editable: true, visible: true, field_type: 'number' },
+                ],
+            })),
+            http.post('/api/v1/workspaces/10/forms/1/rows', async ({ request }) => {
+                bodies.push(await request.json())
+                return HttpResponse.json({ id: 9 }, { status: 201 })
+            }),
+        )
+        renderPage()
+
+        fireEvent.click(await screen.findByRole('button', { name: /新\s*增\s*数\s*据/ }))
+        const drawer = await screen.findByRole('dialog')
+
+        // 姓名 字段渲染为 Select 覆盖控件而非文本输入
+        const select = within(drawer).getByLabelText('姓名')
+        expect(select.getAttribute('class')).toContain('ant-select')
+        fireEvent.mouseDown(select)
+        fireEvent.click(await screen.findByText('甲等'))
+
+        fireEvent.change(within(drawer).getByLabelText('年龄'), { target: { value: '30' } })
+        fireEvent.click(within(drawer).getByRole('button', { name: /提\s*交/ }))
+
+        expect(await screen.findByText('提交成功')).toBeInTheDocument()
+        expect(bodies[0]).toMatchObject({ values: { 姓名: '甲', 年龄: 30 } })
+    })
+
+    it('控件覆盖：number 字段配置 widget=rate 后渲染评分控件', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/forms/1/meta', () => HttpResponse.json({
+                ...mockFormMeta,
+                fields: [
+                    { field_name: '评分', editable: true, visible: true, field_type: 'number', widget: 'rate' },
+                ],
+            })),
+        )
+        renderPage()
+
+        fireEvent.click(await screen.findByRole('button', { name: /新\s*增\s*数\s*据/ }))
+        const drawer = await screen.findByRole('dialog')
+
+        // Rate 渲染为评分控件而非数字输入
+        expect(within(drawer).getByText('评分')).toBeInTheDocument()
+        expect(drawer.querySelector('.ant-rate')).toBeInTheDocument()
+        expect(within(drawer).queryByRole('spinbutton')).not.toBeInTheDocument()
+    })
 })

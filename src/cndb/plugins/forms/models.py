@@ -53,6 +53,12 @@ class FormDefinition(TimestampMixin, Base):
     use_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     edit_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     delete_role: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    # 绑定的工作区审批流（workflows_workflow.id）；None = 提交直接落库（原行为）
+    approval_workflow_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workflows_workflow.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     trashed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     trashed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

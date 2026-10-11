@@ -9,11 +9,12 @@ import { useParams } from 'react-router-dom'
 import {
   Alert, App as AntApp, Button, Drawer, Form, Space, Spin, Table, Tag, Typography,
 } from 'antd'
-import { ArrowLeftOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, AuditOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { formApi } from '@/api'
 import type { FormMeta, RowResponse } from '@/api'
+import { isApprovalSubmitResponse } from '@/api'
 import { FormFieldControl } from './fieldRenderer'
 
 const { Title, Text } = Typography
@@ -74,11 +75,16 @@ export default function FormRunnerPage() {
 
   const createRow = useMutation({
     mutationFn: (values: Record<string, unknown>) => formApi.createRow(wid!, formId!, values),
-    onSuccess: () => {
-      message.success('提交成功')
+    onSuccess: (resp) => {
+      // 绑定审批流：提交进入审批而非直接落库，不刷新行列表
+      if (isApprovalSubmitResponse(resp)) {
+        message.success(`已提交审批（${resp.approval.workflow_name}），等待审批人处理`)
+      } else {
+        message.success('提交成功')
+        invalidateRows()
+      }
       setCreating(false)
       form.resetFields()
-      invalidateRows()
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '提交失败'),
   })
@@ -189,6 +195,9 @@ export default function FormRunnerPage() {
         <Button type="text" icon={<ArrowLeftOutlined />} aria-label="返回表单列表" onClick={() => window.history.back()} />
         <Title level={3} style={{ margin: 0 }}>{meta.name}</Title>
         <Tag color="blue">{meta.table_name}</Tag>
+        {meta.approval_workflow_id && (
+          <Tag color="gold" icon={<AuditOutlined />}>提交需审批</Tag>
+        )}
       </div>
       {meta.description && (
         <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>{meta.description}</Text>
