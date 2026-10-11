@@ -72,6 +72,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Export locked requirements 步骤用 uvx 导出 uv.lock，runner 默认无 uv，
+      # 缺失会直接 127（实测 v0.3.6 构建即因此失败）
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.3.2
+
       # 记录外部源的可达性与耗时。
       # 构建一旦超时，日志里需要能区分「源慢」和「构建慢」——前者要换源，
       #后者只能加时间或加缓存。没有这组数字就只能靠猜。
