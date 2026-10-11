@@ -807,3 +807,100 @@ export interface ApiConfigImportResult {
   errors: Array<{ table_name: string; error: string }>
   stopped_on_error: boolean
 }
+
+// ── 表单定制与权限控制（forms 插件） ────────────────
+
+/** 表单内单个字段的展示与编辑配置（对齐后端 FormFieldConfig） */
+export interface FormFieldConfig {
+  field_name: string
+  label?: string | null
+  /** null = 跟随字段定义 */
+  required?: boolean | null
+  /** false = 编辑态只读（新建时仍可写入默认值） */
+  editable: boolean
+  visible: boolean
+  default_value?: unknown
+  help_text?: string | null
+}
+
+/** 表单权限阈值：'' = 未配置（回退表级判定），否则为工作区角色名 */
+export type FormRoleThreshold = WorkspaceRole | ''
+
+/** 表单定义详情（对齐后端 FormResponse） */
+export interface FormDefinition {
+  id: ID
+  workspace_id: ID
+  table_id: ID
+  name: string
+  description: string
+  field_config: FormFieldConfig[]
+  layout: Record<string, unknown>
+  use_role: FormRoleThreshold
+  edit_role: FormRoleThreshold
+  delete_role: FormRoleThreshold
+  order: number
+  trashed: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+/** 表单列表项（附所属表名） */
+export interface FormListItem {
+  id: ID
+  table_id: ID
+  table_name: string
+  name: string
+  description: string
+  use_role: FormRoleThreshold
+  edit_role: FormRoleThreshold
+  delete_role: FormRoleThreshold
+  order: number
+  updated_at?: string
+}
+
+export interface FormCreate {
+  table_id: ID
+  name: string
+  description?: string
+  field_config?: FormFieldConfig[]
+  layout?: Record<string, unknown>
+  use_role?: FormRoleThreshold
+  edit_role?: FormRoleThreshold
+  delete_role?: FormRoleThreshold
+  order?: number
+}
+
+export interface FormUpdate {
+  name?: string
+  description?: string
+  field_config?: FormFieldConfig[]
+  layout?: Record<string, unknown>
+  use_role?: FormRoleThreshold
+  edit_role?: FormRoleThreshold
+  delete_role?: FormRoleThreshold
+  order?: number
+}
+
+/** 表单运行时元数据（对齐后端 FormMetaResponse） */
+export interface FormMeta {
+  id: ID
+  table_id: ID
+  table_name: string
+  name: string
+  description: string
+  layout: Record<string, unknown>
+  /** 运行时解析后的字段配置（已过滤软删/表级隐藏字段；附带 field_type/config 供控件选择） */
+  fields: Array<FormFieldConfig & { field_type?: FieldType; config?: Record<string, unknown> }>
+  /** 配置引用但已失效的字段名清单 */
+  invalid_fields: string[]
+  can_submit: boolean
+  can_edit: boolean
+  can_delete: boolean
+}
+
+/** 表单行列表响应 */
+export interface FormRowListResponse {
+  rows: RowResponse[]
+  total: number
+  form_id: ID
+}
