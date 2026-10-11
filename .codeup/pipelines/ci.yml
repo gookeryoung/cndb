@@ -36,6 +36,7 @@ cache:
     - /root/.pnpm-store      # pnpm store（setup 步骤中显式指定 store-dir）
     - /root/.cache/frontend  # 前端 lint 增量缓存（eslintcache，容器内跨运行复用）
     - /root/.local/node-v22.14.0  # Node 运行时（命中后跳过镜像下载解压）
+    - /root/.cache/ms-playwright    # Playwright 浏览器（为未来 e2e job 预热）
   cacheMode: remote
 
 name: cndb-ci
