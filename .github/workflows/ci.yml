@@ -5,43 +5,48 @@ on:
     branches: [main, develop]
     # 路径过滤：只对真正影响运行的文件变化触发；docs/examples/deploy/.trae 等改动
     # 不触发全量 CI，节省 runner 资源。手动触发 workflow_dispatch 可绕过此限制。
-    # 用 paths-ignore 比 paths 更不容易漏：默认全量触发，只排除明显无关的。
-    paths-ignore:
-      - 'docs/**'
-      - 'examples/**'
-      - 'deploy/**'
-      - '.trae/**'
-      - '.trae-cn/**'
-      - 'frontend/dist/**'
-      - 'frontend/node_modules/**'
-      - 'frontend/playwright-report/**'
-      - 'frontend/test-results/**'
-      - '.benchmarks/**'
-      - '*.md'
-      - 'LICENSE'
-      - 'CHANGELOG.md'
-      - '.gitattributes'
-      - '.gitignore'
-      - '.dockerignore'
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'frontend/src/**'
+      - 'frontend/tests/**'
+      - 'frontend/scripts/**'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/playwright.config.ts'
+      - 'frontend/tsconfig*.json'
+      - 'frontend/vite.config.ts'
+      - 'pyproject.toml'
+      - 'pyrefly.toml'
+      - 'pytest.ini'
+      - 'ruff.toml'
+      - '.python-version'
+      - '.pre-commit-config.yaml'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main, develop]
-    paths-ignore:
-      - 'docs/**'
-      - 'examples/**'
-      - 'deploy/**'
-      - '.trae/**'
-      - '.trae-cn/**'
-      - 'frontend/dist/**'
-      - 'frontend/node_modules/**'
-      - 'frontend/playwright-report/**'
-      - 'frontend/test-results/**'
-      - '.benchmarks/**'
-      - '*.md'
-      - 'LICENSE'
-      - 'CHANGELOG.md'
-      - '.gitattributes'
-      - '.gitignore'
-      - '.dockerignore'
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'frontend/src/**'
+      - 'frontend/tests/**'
+      - 'frontend/scripts/**'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/playwright.config.ts'
+      - 'frontend/tsconfig*.json'
+      - 'frontend/vite.config.ts'
+      - 'pyproject.toml'
+      - 'pyrefly.toml'
+      - 'pytest.ini'
+      - 'ruff.toml'
+      - '.python-version'
+      - '.pre-commit-config.yaml'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:  # 手动触发可绕过 paths 过滤跑全量
 
 concurrency:
@@ -116,27 +121,16 @@ jobs:
       # 跨境访问该镜像会极慢甚至挂起导致 pnpm install 卡死。
       # lockfile 中无 tarball URL 条目，换官方源不会触发 lockfile resolution 校验失败，
       # 故 CI 用 npm_config_registry 覆盖回官方源。
-      # --prefer-offline：setup-node 的 pnpm store 命中时直接用缓存，省掉 registry 解析 ~10s。
       - name: Install dependencies
         env:
           npm_config_registry: https://registry.npmjs.org/
-        run: cd frontend && pnpm install --frozen-lockfile --prefer-offline
+        run: cd frontend && pnpm install --frozen-lockfile
 
       - name: Typecheck
         run: cd frontend && pnpm typecheck
 
       - name: ESLint
         run: cd frontend && pnpm lint
-
-      # vitest transform cache（.vitest-cache）—— 第二次跑 CI 时源码不变则 transform 秒级。
-      # 键按 package.json + tsconfig + vite.config 哈希，源码变动会自动失效。
-      - name: Cache vitest
-        uses: actions/cache@v4
-        with:
-          path: frontend/.vitest-cache
-          key: vitest-${{ runner.os }}-${{ hashFiles('frontend/package.json','frontend/vite.config.ts','frontend/tsconfig*.json') }}
-          restore-keys: |
-            vitest-${{ runner.os }}-
 
       - name: Frontend tests + coverage
         run: cd frontend && pnpm test:coverage
@@ -215,11 +209,10 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       # 同上：CI 用官方源覆盖 .npmrc 的中科大镜像，避免海外 runner 跨境访问卡死
-      # --prefer-offline：setup-node 的 pnpm store 命中时跳过 registry 解析
       - name: Install dependencies
         env:
           npm_config_registry: https://registry.npmjs.org/
-        run: cd frontend && pnpm install --frozen-lockfile --prefer-offline
+        run: cd frontend && pnpm install --frozen-lockfile
 
       - name: Build frontend (static -> src/cndb/static)
         run: cd frontend && pnpm build
