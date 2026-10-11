@@ -3,18 +3,18 @@
  * 覆盖：导航 Tab 顺序（数据资产 → 表单 → 报表）/ 表单列表渲染 /
  * 表单运行器全链路（新增数据 → 提交 → 行出现 → 删除确认 → 行消失）.
  * 前置：e2e-server 已 seed「某企业销售管理」工作区（wid=1，员工表含
- * 姓名 text required / 职位 select / 薪资 number 等字段）。
+ * 姓名 / 工号 text required / 职位 select / 薪资 number 等字段）。
  */
 
 import { test, expect } from "../fixtures/auth"
-import { getAdminToken, getWorkspaceId, getTableId } from "../helpers/api"
+import { getAdminToken, getWorkspaceId, getTableId, getRowId } from "../helpers/api"
 
 const ANON = ["setup", "chromium-anon"]
 const WID = 1
 
 let formId = 0
 
-/** 通过 API 建表单定义（员工表：姓名 / 职位 / 薪资 三字段，姓名必填）. */
+/** 通过 API 建表单定义（员工表：姓名 / 工号 / 职位 / 薪资，姓名与工号必填）. */
 async function ensureForm(request: any): Promise<number> {
   const token = await getAdminToken(request)
   const headers = { Authorization: `Bearer ${token}` }
@@ -32,6 +32,7 @@ async function ensureForm(request: any): Promise<number> {
       description: "E2E 表单链路验证",
       field_config: [
         { field_name: "姓名", editable: true, visible: true, required: true },
+        { field_name: "工号", editable: true, visible: true, required: true },
         { field_name: "职位", editable: true, visible: true },
         { field_name: "薪资", editable: true, visible: true },
       ],
@@ -72,7 +73,9 @@ test.describe("表单模块", () => {
     await page.goto(`/w/${WID}/forms`)
     await expect(page.locator("h3", { hasText: /^表单/ })).toBeVisible()
     await expect(page.getByText("员工信息登记")).toBeVisible()
-    await expect(page.getByText("员工表")).toBeVisible()
+    // 主内容区表格单元格：页面同时有侧边栏（sider-tables）与列表均含「员工表」，
+    // 裸 getByText 会 strict mode violation，须用 cell role 收敛到列表列
+    await expect(page.getByRole("cell", { name: "员工表" })).toBeVisible()
   })
 
   test("表单运行器全链路：新增数据提交 → 行出现 → 删除确认 → 行消失", async ({ page, request }) => {
@@ -82,15 +85,17 @@ test.describe("表单模块", () => {
     await page.goto(`/w/${WID}/forms/${fid}`)
     // meta 渲染：标题 + 所属表 tag
     await expect(page.locator("h3", { hasText: "员工信息登记" })).toBeVisible()
-    await expect(page.getByText("员工表", { exact: true })).toBeVisible()
+    // 主内容区所属表 tag：侧边栏同名文本并存，裸 getByText 会 strict mode violation
+    await expect(page.getByRole("main").getByText("员工表", { exact: true })).toBeVisible()
 
     // 打开新增 Drawer
     await page.getByRole("button", { name: /新\s*增\s*数\s*据/ }).click()
     const drawer = page.getByRole("dialog")
     await expect(drawer).toBeVisible()
 
-    // 姓名（text）
+    // 姓名 / 工号（text，均必填——员工表 seed 含工号必填，缺省提交会 400）
     await drawer.getByLabel("姓名").fill("E2E测试员工")
+    await drawer.getByLabel("工号").fill("E999")
     // 职位（select）
     await drawer.getByLabel("职位").click()
     await page.locator(".ant-select-item-option-content", { hasText: "工程师" }).click()
@@ -99,8 +104,10 @@ test.describe("表单模块", () => {
     await expect(page.getByText("提交成功")).toBeVisible()
     await expect(page.locator(".ant-table-tbody").getByText("E2E测试员工")).toBeVisible()
 
-    // 删除该行（aria-label 动态包含行 id）
-    await page.locator('button[aria-label^="删除第"]').first().click()
+    // 删除刚创建的行：按 API 行 id 精准定位，避免 first() 误删首行（张三）
+    const tid = await getTableId(request, WID, "员工表")
+    const rowId = await getRowId(request, WID, tid, "姓名", "E2E测试员工")
+    await page.locator(`tr[data-row-key="${rowId}"] button[aria-label^="删除第"]`).click()
     const confirm = page.getByRole("dialog")
     await confirm.getByRole("button", { name: /删\s*除/ }).click()
     await expect(page.getByText("已删除")).toBeVisible()
