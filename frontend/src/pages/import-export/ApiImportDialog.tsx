@@ -317,7 +317,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
             column={3}
             bordered
             style={{ marginBottom: 8 }}
-            labelStyle={{ width: 110, background: 'var(--cn-bg-subtle)', color: 'var(--cn-text-secondary)' }}
+            styles={{ label: { width: 110, background: 'var(--cn-bg-subtle)', color: 'var(--cn-text-secondary)' } }}
           >
             <Descriptions.Item label="命中记录数">
               <Tag color="blue">{analyzeResult.total_rows}</Tag>
