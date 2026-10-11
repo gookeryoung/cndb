@@ -3,8 +3,49 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    # 路径过滤：只对真正影响运行的文件变化触发；docs/examples/deploy/.trae 等改动
+    # 不触发全量 CI，节省 runner 资源。手动触发 workflow_dispatch 可绕过此限制。
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'frontend/src/**'
+      - 'frontend/tests/**'
+      - 'frontend/scripts/**'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/playwright.config.ts'
+      - 'frontend/tsconfig*.json'
+      - 'pyproject.toml'
+      - 'pyrefly.toml'
+      - 'pytest.ini'
+      - 'ruff.toml'
+      - '.python-version'
+      - '.pre-commit-config.yaml'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'frontend/src/**'
+      - 'frontend/tests/**'
+      - 'frontend/scripts/**'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/playwright.config.ts'
+      - 'frontend/tsconfig*.json'
+      - 'pyproject.toml'
+      - 'pyrefly.toml'
+      - 'pytest.ini'
+      - 'ruff.toml'
+      - '.python-version'
+      - '.pre-commit-config.yaml'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:  # 手动触发可绕过 paths 过滤跑全量
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,14 +77,24 @@ jobs:
           path: .ruff_cache
           key: ruff-${{ runner.os }}-${{ hashFiles('pyproject.toml','ruff.toml') }}
 
-      - name: Ruff check
-        run: uv run ruff check src tests --cache-dir .ruff_cache
+      # ruff check + format 合并为单步，format 复用 check 的 cache-dir 减少重复扫描
+      - name: Ruff check + format
+        run: |
+          uv run ruff check --silent src tests --cache-dir .ruff_cache
+          uv run ruff format --check src tests
 
-      - name: Ruff format check
-        run: uv run ruff format --check src tests
+      # pyrefly 默认单线程（本项目 Makefile 用 -j 0 自动并行），CI 同步加上；
+      # 缓存目录 .pyrefly_cache 已在 .gitignore，首次构建会存中间产物，后续命中即秒级返回。
+      - name: Cache pyrefly
+        uses: actions/cache@v4
+        with:
+          path: .pyrefly_cache
+          key: pyrefly-${{ runner.os }}-${{ hashFiles('pyrefly.toml','pyproject.toml','src/**/*.py') }}
+          restore-keys: |
+            pyrefly-${{ runner.os }}-
 
-      - name: Pyrefly check
-        run: uv run pyrefly check
+      - name: Pyrefly check (parallel)
+        run: uv run pyrefly check -j 0
 
   frontend-check:
     name: Frontend Check
@@ -115,8 +166,10 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen --extra test --python ${{ matrix.python-version }}
 
+      # GitHub hosted runner 默认 ubuntu-latest = 2 核 7GB；
+      # -n auto 在 2 核上最多也是 2，但显式 -n 2 消除自动探测开销，语义明确。
       - name: Run tests
-        run: uv run pytest -m "not slow" --cov=cndb --cov-fail-under=95 --cov-report=term-missing -n auto
+        run: uv run pytest -m "not slow" --cov=cndb --cov-fail-under=95 --cov-report=term-missing -n 2
 
   e2e:
     name: E2E (Playwright) shard ${{ matrix.shard }}
