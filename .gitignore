@@ -74,3 +74,4 @@ file:*
 .pytest_cache/
 .mypy_cache/
 coverage.json
+frontend/.vitest-cache/
