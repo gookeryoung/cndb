@@ -20,6 +20,7 @@
 
 ### 变更
 
+- 部署链路改为服务器端构建：CI 不再构建镜像、不再经 COS 中转，改为同步 wheel/锁定依赖/Dockerfile 到服务器后由 `deploy.sh`（SERVER_BUILD=1）本地 `docker build` 并部署；Dockerfile.prod 基础镜像与 pip 源支持 `--build-arg` 换源，手动回滚仍走 TCR pull
 - `get_db` 请求路径异常时显式 rollback，避免半提交状态污染连接池
 - README 修正项目结构树、CLI 命令、e2e 包管理器与特性清单等失实内容
 

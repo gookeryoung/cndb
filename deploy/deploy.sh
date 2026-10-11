@@ -11,14 +11,16 @@
 #   FORCE_ROLLBACK_ON_FAIL=0 ./deploy/deploy.sh v0.3.0   # 失败不回滚（仅调试用）
 #
 # 镜像获取方式（按环境变量自动二选一）：
-#   1. IMAGE_URL（CI 常规路径）：COS 预签名 URL。脚本把 host 替换为
-#      COS 默认域名后下载 —— 与服务器同地域的 CVM 会将其解析为内网地址，
-#      下载免公网流量费；CI 生成的签名不含 Host（SignHost=False），
-#      换域名后签名依然有效。
-#      下载后 docker load 直接载入，无需 docker login。
-#      依赖环境变量：IMAGE_URL、COS_BUCKET（BucketName-APPID）、COS_REGION。
-#   2. 无 IMAGE_URL（手动部署/回滚历史版本）：走 TCR docker pull，
+#   1. SERVER_BUILD=1（CI 常规路径）：在服务器本地构建镜像。
+#      CI 仅同步 dist/*.whl + requirements.lock.txt + Dockerfile.prod
+#      到 /opt/cndb，本脚本在服务器上 docker build 出目标镜像 ——
+#      镜像不过网，省去 CI 构建、COS 中转、跨境传输整条链路。
+#      可选环境变量（国内服务器拉 Docker Hub 超时的换源逃生通道）：
+#        BUILD_BASE_IMAGE       覆盖基础镜像，如 docker.m.daocloud.io/library/python:3.12-slim
+#        BUILD_PIP_INDEX_URL    覆盖 pip 源，如 https://mirrors.cloud.tencent.com/pypi/simple
+#   2. 无 SERVER_BUILD（手动部署/回滚历史版本）：走 TCR docker pull，
 #      需 TCR_USERNAME/TCR_PASSWORD（CI 注入或手工 export）。
+#      镜像仍以 TCR 地址命名（与历史版本同名），保证回滚可命中。
 #
 # 由 GitHub Actions 通过 SSH 调用，也可在服务器上手动执行。
 # ═══════════════════════════════════════════════════════════════════
@@ -219,47 +221,65 @@ rollback() {
   return 1
 }
 
+# ── 服务器本地构建（SERVER_BUILD=1）─────────────────────────────
+# CI 经 SSH 触发：用 Dockerfile.prod 在服务器上构建 dist 产物为目标镜像。
+# 依赖 CI 已同步：dist/cndb-*.whl、dist/requirements.lock.txt、deploy/Dockerfile.prod。
+build_image() {
+  [[ -f "deploy/Dockerfile.prod" ]] \
+    || die "缺少 deploy/Dockerfile.prod（CI 的 scp 步骤应已同步到 /opt/cndb/deploy）"
+
+  # 只保留目标版本的 wheel：CI 每次同步的 wheel 文件名带版本号，
+  # 历史版本残留会让 pip install ./*.whl 同时装两个版本互相冲突
+  find dist -maxdepth 1 -name 'cndb-*.whl' ! -name "cndb-${TARGET_TAG}-*.whl" -delete 2>/dev/null || true
+  ls "dist/cndb-${TARGET_TAG}"-*.whl >/dev/null 2>&1 \
+    || die "缺少 dist/cndb-${TARGET_TAG}-*.whl。CI 会同步构建产物到 /opt/cndb/dist；手动执行请先按 Dockerfile.prod 头部说明准备 dist/"
+
+  # 构建上下文最小化：/opt/cndb 下有 backups（可能数 GB）、.env 等，
+  # 不排除会把备份数据整个发给 docker daemon。只放行 dist 与 Dockerfile。
+  # 注意 dockerignore 语义：父目录被 * 排除后，须先放行父目录再收窄到具体文件。
+  printf '*\n!dist\n!deploy\ndeploy/*\n!deploy/Dockerfile.prod\n' > .dockerignore
+
+  log "服务器本地构建镜像 ${TARGET_IMAGE} ..."
+  # BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL：未设置时 bash 参数展开为空，
+  # docker build 收不到对应 --build-arg，走 Dockerfile 内默认官方源。
+  if ! docker build -f deploy/Dockerfile.prod \
+      ${BUILD_BASE_IMAGE:+--build-arg "BASE_IMAGE=${BUILD_BASE_IMAGE}"} \
+      ${BUILD_PIP_INDEX_URL:+--build-arg "PIP_INDEX_URL=${BUILD_PIP_INDEX_URL}"} \
+      -t "$TARGET_IMAGE" \
+      -t "${BASE_REPO}:latest" \
+      . ; then
+    rollback "服务器构建镜像失败"
+    exit 1
+  fi
+
+  # 冒烟检查（与原 CI 的 Verify wheel inside image 等价）：确认 cndb 可导入、
+  # 前端静态已打进 wheel。前端产物缺失这类问题必须在替换线上容器前拦住，
+  # 否则要到线上打开页面才发现白屏。
+  log "冒烟验证镜像..."
+  if ! docker run --rm --entrypoint python "$TARGET_IMAGE" -c "
+import cndb
+from cndb.core.config import STATIC_DIR
+assert STATIC_DIR.is_dir(), f'前端静态资源缺失: {STATIC_DIR}'
+assets = list((STATIC_DIR / 'assets').glob('*')) if (STATIC_DIR / 'assets').is_dir() else []
+assert assets, '前端 assets 目录为空 —— wheel 可能未内嵌前端产物'
+print('OK cndb', cndb.__version__, '| assets:', len(assets))
+"; then
+    rollback "镜像冒烟验证失败"
+    exit 1
+  fi
+  ok "镜像构建完成: ${TARGET_IMAGE}"
+}
+
 # ── 主流程 ─────────────────────────────────────────────────────
 
 # 1. 预备份
 pre_backup
 
-# 2. 获取镜像：优先 COS 预签名 URL 下载（CI 常规路径），否则 TCR pull。
-#
-# COS 路径：CI 已把镜像 save|gzip 上传 COS 并生成预签名 URL。
-# 把 URL 的 host 统一替换成 COS 默认域名 <bucket>.cos.<region>.myqcloud.com：
-#   - 与服务器同地域时该域名解析为内网 IP，下载免公网流量费；
-#   - CI 生成的预签名 URL 签名不含 Host（SignHost=False，见
-#     deploy-tencent.yml 的 Upload to COS 步骤），
-#     因此加速域名或默认域名生成的 URL 换成内网域名后签名依然有效。
-if [[ -n "${IMAGE_URL:-}" ]]; then
-  [[ -n "${COS_BUCKET:-}" && -n "${COS_REGION:-}" ]] \
-    || die "使用 IMAGE_URL 下载时必须同时提供 COS_BUCKET（BucketName-APPID）与 COS_REGION"
-
-  INNER_URL="$(printf '%s' "$IMAGE_URL" \
-    | sed -E "s|https://[^/]+|https://${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com|")"
-  log "从 COS 下载镜像（同地域走内网）: ${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com"
-
-  # --retry 3：内网偶发抖动；压缩包完整性由 docker load 校验，坏包直接失败
-  if ! curl -fL --retry 3 --retry-delay 5 --connect-timeout 15 \
-        -o /tmp/cndb-image.tar.gz "$INNER_URL"; then
-    warn "COS 下载失败。常见原因对照："
-    warn "  403 SignatureExpired → 预签名 URL 超过 1 小时有效期，重跑 CI 的 Upload 步骤"
-    warn "  404 / NoSuchKey     → 对象不存在，确认 build job 的 Upload to COS 是否成功"
-    warn "  域名不通             → 检查服务器与 COS 桶是否同地域（跨地域走公网且可能被安全组拦截）"
-    rollback "COS 镜像下载失败"
-    exit 1
-  fi
-
-  log "docker load 载入镜像..."
-  # docker load 原生支持 gzip 压缩的 tar，无需解包
-  if ! docker load -i /tmp/cndb-image.tar.gz; then
-    rm -f /tmp/cndb-image.tar.gz
-    rollback "docker load 失败（镜像包损坏？）"
-    exit 1
-  fi
-  # 包已 load 进本地 docker，及时释放临时盘空间（2G 小盘机器尤其重要）
-  rm -f /tmp/cndb-image.tar.gz
+# 2. 获取镜像：
+#    SERVER_BUILD=1 → 服务器本地构建（CI 常规路径，镜像不过网）；
+#    否则           → TCR pull（手动部署/回滚历史版本，需先 docker login）。
+if [[ "${SERVER_BUILD:-0}" == "1" ]]; then
+  build_image
 else
   # TCR 回退路径：手动部署/回滚历史版本。TCR 是腾讯云托管仓库，
   # 私有仓库需先 docker login（凭证由 CI 通过环境变量注入，不落盘）
@@ -294,7 +314,7 @@ fi
 
 if ! docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1; then
   warn "镜像未实际就位于本地：${TARGET_IMAGE}"
-  warn "CI 路径请确认 Upload to COS 步骤成功；TCR 路径请到 TCR 控制台确认该 tag 已推送。"
+  warn "SERVER_BUILD 路径请确认构建步骤成功（docker build 日志）；TCR 路径请到 TCR 控制台确认该 tag 已推送。"
   rollback "镜像获取失败（镜像不存在）"
   exit 1
 fi

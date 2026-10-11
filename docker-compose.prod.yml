@@ -3,7 +3,8 @@
 #
 # 设计要点：
 #   - 单容器（wheel 已含前端静态，FastAPI 直接托管，无需 nginx 容器）
-#   - 镜像由 CI 推送到 TCR，本文件只 pull 不 build
+#   - 镜像在服务器本地构建（deploy.sh SERVER_BUILD=1，CI 经 SSH 触发），
+#     本文件只引用 .env 里的镜像地址，不做构建
 #   - CNDB_DATA_DIR=/data 让库/附件/备份/日志统一落盘，容器重建不丢数据
 #   - restart: unless-stopped 保证开机自启 + 崩溃拉起
 #

@@ -1,45 +1,45 @@
 name: Deploy to Tencent Cloud
 
-# 触发：推送 v*.*.* tag 时自动构建镜像并部署到腾讯云服务器
+# 触发：推送 v*.*.* tag 时自动部署到腾讯云服务器（镜像在服务器端构建）
 #
-# 完整链路（COS 中转，不走 GitHub 直推 TCR）：
+# 完整链路（CI 不构建镜像、不经 COS 中转）：
 #   tag push → release.yml 的 pypi job 构建前端并发布 wheel 到 PyPI
 #            → 本 workflow 从 PyPI 下载对应版本 wheel（不装 Node/pnpm、不构建前端）
-#            → 构建镜像 → docker save | gzip → 上传 COS（全球加速域名，境外上传优化）
-#            → 生成 COS 预签名 URL → SSH 服务器
-#            → 部署脚本（预签名 URL 换成 COS 默认域名下载 → docker load
-#              → 预备份/重建/健康探测/失败回滚）
+#            → uv export 导出锁定依赖清单
+#            → scp wheel + 锁定清单 + Dockerfile.prod + 部署脚本到服务器
+#            → SSH 触发 deploy.sh（SERVER_BUILD=1：服务器端 docker build
+#              → 冒烟验证 → 预备份/重建/健康探测/失败回滚）
 #
-# 为什么不走 GitHub Actions 直推 TCR：跨境 docker push 是逐层 blob 的
-# HTTPS PUT/PATCH，跨境链路丢包率高时连接停滞且无超时，表现为 workflow
-# 卡死直到撞上 40 分钟上限。改走 COS 全球加速域名（accelerate.tencentcos.com，
-# 针对境外→国内上传优化），服务器侧从 COS 内网下载（同地域 CVM 免流量费），
-# 跨境大流量只剩经过专门优化的一段。
+# 为什么改为服务器端构建：
+#   1. 原 CI 构建链路（CI 构建 → docker save|gzip → COS 全球加速上传 →
+#      预签名 URL → 服务器 COS 内网下载 → docker load）环节多，任一环节
+#      抖动整个部署失败；且 COS 存储/流量持续计费，成本不划算。
+#   2. 服务器端构建镜像不过网：wheel（几 MB～几十 MB）经 scp 一次送达；
+#      依赖层走 Docker 缓存，依赖未变时增量构建只重建薄薄的 wheel 层。
+#   3. 镜像仍以 TCR 地址命名（与历史版本同名），手动回滚 docker pull 可命中。
 #
-# wheel 由 release.yml 发布（wheel 已内嵌前端产物，见 pyproject force-include），
-# 镜像构建只消费 dist/*.whl。两个 workflow 同 tag 并行触发，存在 PyPI CDN
-# 同步竞态，下载步骤内置重试。手动触发（workflow_dispatch）回滚旧版本时
-# wheel 早已发布，同样适用。
+# wheel 由 release.yml 发布（wheel 已内嵌前端产物，见 pyproject force-include）。
+# 两个 workflow 同 tag 并行触发，存在 PyPI CDN 同步竞态，下载步骤内置重试。
+# 手动触发（workflow_dispatch）回滚旧版本时 wheel 早已发布，同样适用。
 #
 # 服务器侧失败会自动回滚到上一个版本，不会把线上打挂。
 #
 # 必需的 Repository Secrets（Settings → Secrets and variables → Actions）：
 #   TCR_REGISTRY    TCR 纯域名，**不含命名空间**，如 ccr.ccs.tencentyun.com
-#                   CI 不再向 TCR 推镜像，此值仅用于镜像命名前缀（与历史
-#                   TCR 镜像同名，保证手动回滚 docker pull 可命中旧版本）
+#                   仅用于镜像命名前缀（与历史 TCR 镜像同名，保证手动回滚
+#                   docker pull 可命中旧版本），CI 不再向 TCR 推镜像
 #   TCR_GROUP       命名空间，如 pydev。完整镜像地址 =
 #                   <TCR_REGISTRY>/<TCR_GROUP>/cndb:<version>
 #   TCR_USERNAME    服务账号（仅手动回滚走 TCR pull 时用），形如 tcr@cndb-deploy
 #   TCR_PASSWORD    服务账号密码
-#   COS_SECRET_ID   腾讯云子账号 SecretId，最小权限：仅授予目标 COS 桶的数据读写
-#   COS_SECRET_KEY  对应 SecretKey
-#   COS_BUCKET      桶名，格式 BucketName-APPID，如 cndb-1250000000
-#   COS_REGION      桶地域，如 ap-guangzhou。桶必须与服务器同地域，
-#                   内网域名下载才免公网流量费
 #   SSH_HOST        服务器公网 IP
 #   SSH_PORT        SSH 端口，默认 22
 #   SSH_USERNAME    登录用户，默认 root
 #   SSH_PRIVATE_KEY SSH 私钥（推荐，免去密码明文存储）
+#
+# 可选 Secrets（国内服务器拉 Docker Hub / PyPI 超时的换源逃生通道，留空走默认官方源）：
+#   BUILD_BASE_IMAGE      如 docker.m.daocloud.io/library/python:3.12-slim
+#   BUILD_PIP_INDEX_URL   如 https://mirrors.cloud.tencent.com/pypi/simple
 
 on:
   push:
@@ -60,33 +60,17 @@ concurrency:
   group: deploy-tencent-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  # 生产编排与镜像构建文件
-  COMPOSE_FILE: docker-compose.prod.yml
-  DOCKERFILE: deploy/Dockerfile.prod
-
-  # TCR 凭证与环境变量。
-  # 提到 job 级 env 是为了让 Resolve image step 能用普通 shell 拼镜像地址，
-  # 避免 ${{ secrets.* }} 三处各写一遍（改命名空间时必漏）。
-  TCR_REGISTRY: ${{ secrets.TCR_REGISTRY }}
-  TCR_GROUP: ${{ secrets.TCR_GROUP }}
-
 jobs:
-  # ===== 构建镜像并经 COS 中转 =====
-  build:
-    name: Build Image & Upload to COS
+  # ===== 同步构建产物并触发服务器端构建部署 =====
+  deploy:
+    name: Sync Artifacts & Deploy (server-side build)
     runs-on: ubuntu-latest
-    # 40 分钟不是「预估耗时」而是「排障上限」：正常应在 10 分钟内完成
-    # （镜像构建 ~5 分钟 + COS 全球加速上传 ~3 分钟）。超时说明镜像源、
-    # 依赖拉取或 COS 上传有问题，给足余量让日志完整输出。
-    # 换源后仍超时 → 看 Probe registry sources 那步的输出定位。
-    timeout-minutes: 40
-    outputs:
-      version: ${{ steps.meta.outputs.version }}
-      # 预签名 URL（有效期 1 小时）供 deploy job 经 SSH 传给服务器下载。
-      # URL 的 query 带的是 COS 签名而非密钥本体，泄露面可控；
-      # 服务器端会将其 host 替换为 COS 内网域名后使用。
-      image_url: ${{ steps.cos.outputs.image_url }}
+    # 60 分钟不是「预估耗时」而是「排障上限」：CI 侧只有 wheel 下载与 scp
+    # （几分钟）；大头在服务器端 docker build —— 首次无缓存约 15-30 分钟
+    # （拉基础镜像 + 装依赖），之后走 Docker 层缓存通常 5 分钟内。
+    # 长时间无进展 → 登服务器看 docker build 日志定位（多半是基础镜像拉取超时，
+    # 配置 BUILD_BASE_IMAGE 换源即可）。
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
@@ -94,28 +78,6 @@ jobs:
       # 缺失会直接 127（实测 v0.3.6 构建即因此失败）
       - name: Install uv
         uses: astral-sh/setup-uv@v8.3.2
-
-      # 记录外部源的可达性与耗时。
-      # 构建一旦超时，日志里需要能区分「源慢」和「构建慢」——前者要换源，
-      #后者只能加时间或加缓存。没有这组数字就只能靠猜。
-      # COS 加速域名是最终上传目标：它不通则 COS 中转链路不可行，需提前暴露。
-      - name: Probe registry sources
-        run: |
-          probe() {
-            local name="$1" url="$2" t0 t1
-            t0=$(date +%s%3N)
-            if curl -sI --max-time 20 "$url" -o /dev/null 2>/dev/null; then
-              t1=$(date +%s%3N)
-              echo "  ${name}: OK $((t1 - t0))ms"
-            else
-              echo "  ${name}: FAIL/超时 (>20000ms)"
-            fi
-          }
-          echo "外部源连通性（CI runner 视角）:"
-          probe "Docker Hub   " "https://registry-1.docker.io/v2/"
-          probe "Debian 官方   " "http://deb.debian.org/debian/dists/bookworm/Release"
-          probe "COS 加速域名  " "https://accelerate.tencentcos.com/"
-          probe "PyPI         " "https://pypi.org/simple/"
 
       - name: Resolve version
         id: meta
@@ -159,7 +121,7 @@ jobs:
           ls -la dist/
 
       # 从 uv.lock 导出锁定依赖清单，供 Dockerfile.prod 的依赖缓存层使用：
-      # 依赖版本未变时，Buildx 缓存与 TCR 增量拉取只覆盖薄薄的 wheel 层。
+      # 依赖版本未变时，服务器端增量构建只覆盖薄薄的 wheel 层。
       # uvx 临时环境只装 uv 本体（不进镜像、不装项目依赖），数秒完成。
       # 本地手动构建等价命令：uv export --frozen --no-hashes --no-dev
       #   --no-emit-project -o dist/requirements.lock.txt
@@ -174,196 +136,11 @@ jobs:
             exit 1
           }
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # CI 不再向 TCR 推镜像，但镜像仍以 TCR 地址命名（见 Resolve image ref）：
-      # 与历史 TCR 镜像同名，服务器手动回滚旧版本时 docker pull 仍可命中。
-      #
-      # registry 只填纯域名：个人版完整地址形如 ccr.ccs.tencentyun.com/pydev/cndb，
-      # 若把 /pydev 混进 registry 字段，后续拼出的镜像名不合法。
-      # 故从 TCR_REGISTRY 剥离路径段取主机名 —— 不另设 Secret，
-      # 避免「域名」在两处各填一遍导致不一致。
-      - name: Resolve TCR host
-        id: host
-        env:
-          TCR_REGISTRY: ${{ secrets.TCR_REGISTRY }}
-        run: |
-          # TCR_REGISTRY 允许两种填法，这里统一剥离出主机名：
-          #   ccr.ccs.tencentyun.com          → ccr.ccs.tencentyun.com
-          #   ccr.ccs.tencentyun.com/pydev    → ccr.ccs.tencentyun.com
-          # 后者让用户少填一个 Secret。
-          HOST="${TCR_REGISTRY%%/*}"
-          if [ -z "$HOST" ]; then
-            echo "::error::TCR_REGISTRY 为空。请在 Settings → Secrets and variables → Actions 配置。"
-            exit 1
-          fi
-          if [ "$HOST" != "$TCR_REGISTRY" ]; then
-            echo "TCR_REGISTRY 含路径段，已剥离为: ${HOST}"
-          fi
-          echo "value=${HOST}" >> "$GITHUB_OUTPUT"
-          echo "TCR 主机: ${HOST}"
-
-      # 完整镜像前缀（域名 + 命名空间 + 仓库名）导出供后续复用，
-      # 避免各处各写一遍路径导致改命名空间时漏改。
-      - name: Resolve image ref
-        id: img
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-        run: |
-          # TCR_GROUP 来自 job 级 env；域名用 host 步骤剥离后的纯主机名
-          if [ -z "$TCR_GROUP" ]; then
-            echo "::error::TCR_GROUP 未配置。应在 Settings → Secrets and variables → Actions 添加，"
-            echo "::error::值为镜像地址里的命名空间（如 pydev）。完整地址 = <域名>/<命名空间>/cndb"
-            exit 1
-          fi
-          PREFIX="${{ steps.host.outputs.value }}/${TCR_GROUP}/cndb"
-          echo "ref=${PREFIX}:${VERSION}"   >> "$GITHUB_OUTPUT"
-          echo "latest=${PREFIX}:latest"    >> "$GITHUB_OUTPUT"
-          echo "镜像命名: ${PREFIX}:${VERSION}"
-
-      # 仅构建并加载到 runner 本地 docker（push: false）：
-      # 镜像经 COS 中转送达服务器，不走跨境 docker push。
-      - name: Build image
-        uses: docker/build-push-action@v6
-        timeout-minutes: 30
-        # BUILDKIT_PROGRESS=plain：默认 fancy 模式会折叠逐层进度，
-        # 构建卡住时日志里看不到具体卡在哪一层，plain 保留完整时间线。
-        env:
-          BUILDKIT_PROGRESS: plain
-        with:
-          context: .
-          file: ${{ env.DOCKERFILE }}
-          # 不推远端仓库；load 进本地 docker，供冒烟验证与 docker save
-          push: false
-          load: true
-          # v6 默认生成 provenance attestation（OCI image index 形态），
-          # load 需要单平台镜像；关掉 attestation 同时也减小产物体积
-          provenance: false
-          # 同时打版本 tag 与 latest：版本 tag 供回滚精确定位，
-          # latest 方便手工 docker compose 拉最新
-          tags: |
-            ${{ steps.img.outputs.ref }}
-            ${{ steps.img.outputs.latest }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          # 保留 labels 便于镜像溯源（TCR 企业版镜像扫描场景）
-          labels: |
-            org.opencontainers.image.title=cndb
-            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
-
-      - name: Verify wheel inside image
-        env:
-          IMAGE: ${{ steps.img.outputs.ref }}
-        run: |
-          # 冒烟检查：确认镜像里 cndb 可导入、版本正确、前端静态已打进 wheel。
-          # 前端产物缺失这类问题必须在推镜像前拦住，
-          # 否则要到线上打开页面才发现白屏。
-          # 注意 -i：docker run 默认不接 stdin，缺了它 python - 会读到空输入
-          docker run --rm -i "$IMAGE" python - <<'PY'
-          import cndb
-          from cndb.core.config import STATIC_DIR, settings
-
-          assert STATIC_DIR.is_dir(), f"前端静态资源缺失: {STATIC_DIR}"
-          assets = list(STATIC_DIR.glob("assets/*")) if (STATIC_DIR / "assets").is_dir() else []
-          assert assets, "前端 assets 目录为空 —— 前端构建产物可能未打进 wheel"
-          print("OK  cndb", cndb.__version__, "| assets:", len(assets))
-          PY
-
-      # 镜像导出为 gzip 压缩包供 COS 中转：~200MB 未压缩镜像压到 ~80-100MB。
-      # docker load 原生支持 gzip 压缩的 tar，服务器端无需解包。
-      - name: Export image archive
-        env:
-          IMAGE: ${{ steps.img.outputs.ref }}
-        run: |
-          docker save "$IMAGE" | gzip -6 > /tmp/cndb-image.tar.gz
-          ls -lh /tmp/cndb-image.tar.gz
-          # 体积护栏：异常膨胀（如误打入构建缓存）会拖慢上传，提前暴露
-          SIZE_MB=$(du -m /tmp/cndb-image.tar.gz | cut -f1)
-          if [ "$SIZE_MB" -gt 600 ]; then
-            echo "::error::镜像压缩包 ${SIZE_MB}MB，超过 600MB 合理上限，请检查镜像构成。"
-            exit 1
-          fi
-
-      # 上传 COS 全球加速域名（针对境外→国内优化）并生成预签名 URL。
-      # 服务器端把 URL 的 host 换成 COS 默认域名：同地域 CVM 解析为内网，
-      # 下载免公网流量费；COS 签名不含 Host，换域名后签名依然有效。
-      - name: Upload to COS
-        id: cos
-        env:
-          COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
-          COS_SECRET_KEY: ${{ secrets.COS_SECRET_KEY }}
-          COS_BUCKET: ${{ secrets.COS_BUCKET }}
-          COS_REGION: ${{ secrets.COS_REGION }}
-        run: |
-          python3 -m pip install --quiet coscmd
-          # coscmd 1.9.x 的 -r/--region 与 -e/--endpoint 互斥（argparse 二选一），
-          # 走全球加速域名只能用 -e；且 endpoint 不能带 https:// 前缀 ——
-          # coscmd 按 https://{bucket}.{endpoint}/ 拼接 URL，带 scheme 会拼出坏域名。
-          # COS_BUCKET 必须是 BucketName-APPID 完整格式，coscmd 自动拆出 APPID 再拼回。
-          coscmd config \
-            -a "$COS_SECRET_ID" -s "$COS_SECRET_KEY" \
-            -b "$COS_BUCKET" \
-            -e "accelerate.tencentcos.com"
-          coscmd upload /tmp/cndb-image.tar.gz cndb/cndb-image.tar.gz
-
-          # 预签名 URL 有效期 1 小时，覆盖 deploy job 的 SSH 触发与下载窗口。
-          # 不用 coscmd signurl：其一，有效期是 -t 选项而非位置参数（位置传参
-          # 报 unrecognized arguments）；其二，其签名把 Host 算入（SDK CosConfig
-          # 默认 SignHost=True），服务器把加速域名换成内网域名后签名即失效 403。
-          # 这里直接用 coscmd 自带依赖的 SDK 生成 SignHost=False 的签名 ——
-          # 签名不含 Host，服务器端换内网域名后依然有效。URL host 用默认
-          # 域名（按 Region 拼接），服务器端替换为内网域名后语义不变。
-          URL=$(python3 - <<'PY'
-          import os
-
-          from qcloud_cos import CosConfig, CosS3Client
-
-          conf = CosConfig(
-              Region=os.environ["COS_REGION"],
-              SecretId=os.environ["COS_SECRET_ID"],
-              SecretKey=os.environ["COS_SECRET_KEY"],
-              SignHost=False,
-          )
-          client = CosS3Client(conf)
-          print(client.get_presigned_url(
-              Method="GET",
-              Bucket=os.environ["COS_BUCKET"],
-              Key="cndb/cndb-image.tar.gz",
-              Expired=3600,
-              SignHost=False,
-          ))
-          PY
-          )
-          if [ -z "$URL" ]; then
-            echo "::error::生成 COS 预签名 URL 失败。"
-            exit 1
-          fi
-          {
-            echo "image_url<<COS_URL_EOF"
-            echo "$URL"
-            echo "COS_URL_EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "已上传 COS: cndb/cndb-image.tar.gz（$(du -h /tmp/cndb-image.tar.gz | cut -f1)）"
-          echo "预签名 URL 已生成（有效期 1 小时）"
-
-  # ===== 部署到服务器 =====
-  deploy:
-    name: Deploy to Server
-    needs: [build]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment:
-      name: production
-      # 注意：url 字段不支持 secrets 上下文，引用会导致工作流被判为无效文件
-    steps:
-      - uses: actions/checkout@v5
-
       # 同步部署编排文件到服务器。
-      # 只传 compose + 脚本，不传代码：服务器靠拉镜像获得应用本体，
-      # 唯一必须落地的是部署配置（.env 保留在服务器本地，不被覆盖）。
-      # 分两步传，避免 scp-action 对含目录的多源路径扁平化行为不确定，
+      # 只传 compose + 脚本 + 构建产物，不传代码：服务器端 docker build 只需要
+      # dist 产物与 Dockerfile；唯一必须落地的是部署配置
+      # （.env 保留在服务器本地，不被覆盖）。
+      # 分步传，避免 scp-action 对含目录的多源路径扁平化行为不确定，
       # 也避开隐藏文件（.env.prod.example）被 glob 漏掉的问题。
       - name: Sync compose file
         uses: appleboy/scp-action@v0.1.7
@@ -376,22 +153,31 @@ jobs:
           target: /opt/cndb
 
       # bootstrap-server.sh 一并同步 —— 首次初始化靠它，漏了就得手工上传脚本。
-      - name: Sync deploy scripts
+      # Dockerfile.prod 也在此同步：服务器端 docker build 的构建文件。
+      # source 用【逗号分隔】，且路径相对仓库根目录（该 action 的多行 YAML
+      # 块写法不被支持）；传 *.sh 而非 *，避免把 .env.prod.example 等
+      # 模板也覆盖到服务器上。
+      - name: Sync deploy scripts & Dockerfile
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT || 22 }}
           username: ${{ secrets.SSH_USERNAME || 'root' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # source 用【逗号分隔】，且路径不带 deploy/ 前缀。
-          # 两个坑叠在一起会导致 "tar: empty archive"：
-          #   1. 该 action 的 source 是逗号分隔，逐行写法（YAML 块）不被支持，
-          #      多个路径会被当成一整个字符串去匹配，结果为空；
-          #   2. target 已是 /opt/cndb/deploy，源路径再带 deploy/ 前缀会多一层。
-          # 路径相对仓库根目录，故此处写 deploy/xxx.sh；
-          # 传 *.sh 而非 *，避免把 .env.prod.example 等模板也覆盖到服务器上。
-          source: "deploy/deploy.sh,deploy/backup.sh,deploy/bootstrap-server.sh"
+          source: "deploy/deploy.sh,deploy/backup.sh,deploy/bootstrap-server.sh,deploy/Dockerfile.prod"
           target: /opt/cndb/deploy
+
+      # 构建产物落到 /opt/cndb/dist：deploy.sh 在 SERVER_BUILD=1 下
+      # 以 /opt/cndb 为上下文执行 docker build（COPY dist/... 命中此目录）
+      - name: Sync build artifacts
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          username: ${{ secrets.SSH_USERNAME || 'root' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "dist/*.whl,dist/requirements.lock.txt"
+          target: /opt/cndb/dist
 
       # 首次部署的引导：建目录 / 放 .env 模板。已初始化过的服务器会跳过
       - name: Bootstrap server layout
@@ -423,21 +209,24 @@ jobs:
 
             echo "服务器布局就绪"
 
-      - name: Run deploy script
+      # 服务器端构建 + 部署一条龙（deploy.sh 内置：构建 → 冒烟验证 →
+      # 预备份 → 重建 → 健康探测 → 失败自动回滚）。
+      # command_timeout 必须显式放大：ssh-action 默认 10m，首次构建
+      # （拉基础镜像 + 装依赖）会超；超时表现为 SSH 步骤被杀，容器未替换。
+      - name: Build image on server & deploy
         uses: appleboy/ssh-action@v1.2.2
         env:
-          VERSION: ${{ needs.build.outputs.version }}
+          VERSION: ${{ steps.meta.outputs.version }}
           # 显式传完整仓库前缀（不含 tag），deploy.sh 无需从 .env 反推。
           # 反推在「.env 尚未指向仓库」的首次部署场景会拼出
           # docker.io/library/cndb 这类错误地址，实测导致过 403 Forbidden。
           IMAGE_REPO: ${{ secrets.TCR_REGISTRY }}/${{ secrets.TCR_GROUP }}/cndb
-          # COS 中转下载：预签名 URL 由 build job 生成（有效期 1 小时），
-          # 服务器把 host 换成默认域名后走内网下载。COS_BUCKET 需为
-          # BucketName-APPID 完整格式，拼内网域名用。
-          IMAGE_URL: ${{ needs.build.outputs.image_url }}
-          COS_BUCKET: ${{ secrets.COS_BUCKET }}
-          COS_REGION: ${{ secrets.COS_REGION }}
-          # TCR 凭证仅手动回滚（无 IMAGE_URL 走 docker pull）时使用
+          # 服务器端构建开关：deploy.sh 据此走本地 docker build 而非 TCR pull
+          SERVER_BUILD: "1"
+          # 换源逃生通道（可选 Secrets，留空则走 Dockerfile 默认官方源）
+          BUILD_BASE_IMAGE: ${{ secrets.BUILD_BASE_IMAGE }}
+          BUILD_PIP_INDEX_URL: ${{ secrets.BUILD_PIP_INDEX_URL }}
+          # TCR 凭证仅手动回滚（无 SERVER_BUILD 走 docker pull）时使用
           TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
           TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
         with:
@@ -445,11 +234,12 @@ jobs:
           port: ${{ secrets.SSH_PORT || 22 }}
           username: ${{ secrets.SSH_USERNAME || 'root' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: 'VERSION,IMAGE_REPO,IMAGE_URL,COS_BUCKET,COS_REGION,TCR_USERNAME,TCR_PASSWORD'
+          envs: 'VERSION,IMAGE_REPO,SERVER_BUILD,BUILD_BASE_IMAGE,BUILD_PIP_INDEX_URL,TCR_USERNAME,TCR_PASSWORD'
+          command_timeout: 50m
           script: |
             cd /opt/cndb
             # 凭证透传给 deploy.sh（TCR 回退登录用，不落盘）
-            # VERSION 已由 build job 剥掉 v 前缀（0.3.0），deploy.sh 会再剥一次，
+            # VERSION 已由 workflow 剥掉 v 前缀（0.3.0），deploy.sh 会再剥一次，
             # 传 v0.3.0 或 0.3.0 都能命中实际镜像 tag。
             IMAGE_REPO_OVERRIDE="${IMAGE_REPO}" ./deploy/deploy.sh "${VERSION}"
 
@@ -476,3 +266,5 @@ jobs:
         run: |
           echo "::error::部署失败。若已自动回滚，服务仍运行在上一版本；"
           echo "::error::请登录服务器查看: docker logs --tail 100 cndb"
+          echo "::error::若卡在服务器端 docker build，多为基础镜像拉取超时："
+          echo "::error::配置 Secret BUILD_BASE_IMAGE 换源（如 docker.m.daocloud.io/library/python:3.12-slim）后重跑。"
