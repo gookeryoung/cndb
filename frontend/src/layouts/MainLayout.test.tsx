@@ -246,7 +246,7 @@ describe('MainLayout 移动端适配', () => {
         expect(await screen.findByText('数据表 (1)')).toBeVisible()
 
         // 抽屉内点击「客户表」→ 触发导航并自动收起抽屉
-        // 注：antd Drawer 关闭后内容仍留在 DOM（无 destroyOnClose），
+        // 注：antd Drawer 关闭后内容仍留在 DOM（无 destroyOnHidden），
         // 用 open 状态类消失判定收起，而非文本移除
         fireEvent.click(await screen.findByText('客户表'))
         await waitFor(() => {

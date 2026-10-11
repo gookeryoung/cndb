@@ -348,7 +348,7 @@ export default function UsersPage() {
         okText="保存"
         cancelText="取消"
         confirmLoading={editMutation.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" size="small">
           <Form.Item name="username" label="用户名" rules={[{ required: true, min: 2, max: 150, message: '用户名 2-150 个字符' }]}>
