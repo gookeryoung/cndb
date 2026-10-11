@@ -97,7 +97,22 @@ describe('ThemeProvider', () => {
   it('useTheme 在 Provider 外使用时抛出明确错误', () => {
     // 屏蔽 React 渲染错误日志噪音
     const spy = vi.spyOn(console, 'error').mockImplementation(() => { })
-    expect(() => render(<ThemeProbe />)).toThrow('useTheme must be used inside <ThemeProvider>')
+    // React 18 createRoot 下渲染错误不再同步抛出，而是经 reportError 派发到 window error 事件
+    const messages: string[] = []
+    const onError = (e: ErrorEvent) => {
+      e.preventDefault()
+      messages.push(e.message)
+    }
+    window.addEventListener('error', onError)
+    try {
+      render(<ThemeProbe />)
+    } catch (e) {
+      // 兼容同步抛出路径
+      messages.push((e as Error).message)
+    } finally {
+      window.removeEventListener('error', onError)
+    }
+    expect(messages.some(m => m.includes('useTheme must be used inside <ThemeProvider>'))).toBe(true)
     spy.mockRestore()
   })
 })
