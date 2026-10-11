@@ -1,12 +1,13 @@
 # 腾讯云生产部署指南
 
-面向**轻量应用服务器 / CVM 单机**形态：GitHub Actions 构建镜像 → 经 COS 中转 → SSH 服务器自动部署，失败自动回滚。
+面向**轻量应用服务器 / CVM 单机**形态：GitHub Actions 同步构建产物 → SSH 触发服务器端构建镜像并自动部署，失败自动回滚。
 
-> **为什么镜像不走 GitHub 直推 TCR**：跨境 `docker push` 是逐层 blob 的
-> HTTPS 上传，跨境链路丢包率高时连接停滞且无超时，表现为流水线卡死到
-> 撞上超时上限。现改为 `docker save | gzip` 上传 COS 全球加速域名
-> （针对境外→国内优化），服务器从 COS **内网**下载（同地域免流量费），
-> 跨境大流量只剩经过专门优化的一段。TCR 退为回滚备用源（历史版本仍可 pull）。
+> **为什么镜像改为服务器端构建**：原链路（CI 构建 → `docker save | gzip` →
+> 上传 COS 全球加速 → 预签名 URL → 服务器 COS 内网下载 → `docker load`）
+> 环节多、任一环节抖动即部署失败，且 COS 存储/流量持续计费。现改为 CI 只把
+> wheel + 锁定依赖清单 + Dockerfile 经 scp 送达服务器，`deploy.sh` 在服务器上
+> `docker build` —— 镜像不过网，构建完直接部署。TCR 退为回滚备用源
+> （历史版本仍可 pull）。
 
 ---
 
@@ -16,18 +17,20 @@
 git push tag v0.3.0
       │
       ▼
-GitHub Actions (.github/workflows/deploy-tencent.yml)
+GitHub Actions (.github/workflows/release.yml)
       │  ① pnpm build         前端产物 → src/cndb/static
-      │  ② uv build           → dist/cndb-0.3.0-py3-none-any.whl（含前端静态）
-      │  ③ docker build       deploy/Dockerfile.prod → 装 wheel
-      │  ④ docker save | gzip → 上传 COS 全球加速域名
-      │  ⑤ coscmd signurl     → 生成预签名 URL（有效期 1 小时）
-      │
-      ▼ ⑥ SSH（传预签名 URL）
+      │  ② uv build + publish → dist/cndb-0.3.0-py3-none-any.whl 发布 PyPI
+      ▼
+GitHub Actions (.github/workflows/deploy-tencent.yml)
+      │  ③ pip download       从 PyPI 拉对应版本 wheel（重试等待 CDN 同步）
+      │  ④ uv export          产出 dist/requirements.lock.txt（锁定依赖）
+      │  ⑤ scp                wheel + 锁定清单 + Dockerfile.prod + 部署脚本 → 服务器
+      ▼
 腾讯云服务器 /opt/cndb
-      │  deploy.sh:
-      │    预备份数据库
-      │    → 预签名 URL 换 COS 默认域名（同地域自动走内网）→ 下载 → docker load
+      │  deploy.sh (SERVER_BUILD=1):
+      │    docker build 服务器本地构建镜像（镜像不过网）
+      │    → 冒烟验证（cndb 可导入 + 前端 assets 非空）
+      │    → 预备份数据库
       │    → 更新 .env → up -d --force-recreate
       │    → 轮询 /api/health（180s）
       │    → 失败：自动回滚到上一个 tag
@@ -41,17 +44,17 @@ GitHub Actions (.github/workflows/deploy-tencent.yml)
 
 ## 二、一次性准备
 
-### 1. 开 COS 桶（镜像中转，必选）
+### 1. 开 COS 桶（可选，仅数据备份用）
 
-1. 控制台 → 对象存储 COS → 创建存储桶
-   - **地域必须与服务器相同**（如都在 ap-guangzhou）——同地域 CVM 访问 COS 默认域名自动走内网，下载免公网流量费
-   - 权限选**私有读写**
-2. 控制台 → 存储桶 → 全球加速：开启加速（获得 `accelerate.tencentcos.com` 域名，供境外 CI 上传优化）
-3. 访问管理 CAM → 新建子用户（仅编程访问），授予该桶的数据读写最小权限，记下 `SecretId` / `SecretKey`
-4. 建议配置生命周期规则：对 `cndb/` 前缀对象设 7 天过期自动删除，避免历史镜像包堆积占用存储
+镜像部署已不走 COS。仅当需要把每日备份归档异地上传 COS 时才开（`deploy/backup.sh` 的可选功能，`.env` 里 `COS_ENABLE=true` 启用）：
 
-> 桶名格式 `BucketName-APPID`（如 `cndb-1250000000`），Secrets 里的
-> `COS_BUCKET` 必须填**含 APPID 后缀的完整格式** —— deploy.sh 要用它拼内网域名。
+1. 控制台 → 对象存储 COS → 创建存储桶（地域建议与服务器相同，内网上传免流量费）
+2. 权限选**私有读写**
+3. 访问管理 CAM → 新建子用户（仅编程访问），授予该桶的数据读写最小权限
+4. 建议配置生命周期规则：对备份前缀对象设过期自动删除，避免归档堆积
+
+> 桶名格式 `BucketName-APPID`（如 `cndb-1250000000`）。这组密钥只填在**服务器
+> `.env`**（`backup.sh` 使用），无需再配到 GitHub Secrets。
 
 ### 2. 开 TCR 镜像仓库（可选，仅用于手动回滚）
 
@@ -76,7 +79,7 @@ CI 不再向 TCR 推镜像，但镜像仍以 TCR 地址**命名**（与历史版
 
 ### 3. 准备服务器
 
-轻量应用服务器建议 **2核4G / 60G SSD**（SQLite + 少量并发足够；内存 <2G 跑构建会 OOM）。
+轻量应用服务器建议 **2核4G / 60G SSD**（SQLite + 少量并发足够；镜像改为服务器端构建后，内存 <2G 跑 pip 依赖安装会 OOM，磁盘需容纳基础镜像 + 依赖层 + 数据卷）。
 
 ```bash
 # 安装 Docker（腾讯云镜像通常已预装，先确认）
@@ -85,6 +88,14 @@ docker --version && docker compose version
 # 若未安装
 curl -fsSL https://get.docker.com | sh
 systemctl enable --now docker
+
+# 国内服务器拉 Docker Hub 超时的解法（二选一，推荐 a）：
+# a) 配置 registry mirror（腾讯云 CVM 内网可用，对 docker pull/build 透明加速）
+sudo tee /etc/docker/daemon.json <<'EOF'
+{ "registry-mirrors": ["https://mirror.ccs.tencentyun.com"] }
+EOF
+sudo systemctl restart docker
+# b) 不改 daemon，在 GitHub Secrets 配 BUILD_BASE_IMAGE 换基础镜像源（见下文）
 
 # 建部署目录
 mkdir -p /opt/cndb/deploy /opt/cndb/backups
@@ -141,10 +152,6 @@ vim .env   # 改 CNDB_IMAGE 和 CORS_ORIGINS
 
 | Secret            | 值                                         |
 | ----------------- | ----------------------------------------- |
-| `COS_BUCKET`      | `cndb-1250000000`（**含 APPID 后缀的完整桶名**） |
-| `COS_REGION`      | `ap-guangzhou`（与服务器同地域）              |
-| `COS_SECRET_ID`   | 子用户 SecretId（仅授目标桶读写）             |
-| `COS_SECRET_KEY`  | 对应 SecretKey                             |
 | `TCR_REGISTRY`    | `ccr.ccs.tencentyun.com`（**纯域名，不含命名空间**；仅作镜像命名与手动回滚） |
 | `TCR_GROUP`       | `pydev`（命名空间，本项目实际使用）              |
 | `TCR_USERNAME`    | `tcr@deploy`（注意 `@`；仅手动回滚走 TCR pull 时需要） |
@@ -154,6 +161,11 @@ vim .env   # 改 CNDB_IMAGE 和 CORS_ORIGINS
 | `SSH_USERNAME`    | `root`                                    |
 | `SSH_PRIVATE_KEY` | SSH 私钥全文（推荐，免明文密码）                   |
 | `SERVER_URL`      | 访问地址，用于部署后跳转                          |
+| `BUILD_BASE_IMAGE` | 可选。基础镜像换源，如 `docker.m.daocloud.io/library/python:3.12-slim`（服务器拉 Docker Hub 超时时配） |
+| `BUILD_PIP_INDEX_URL` | 可选。镜像内 pip 换源，如 `https://mirrors.cloud.tencent.com/pypi/simple` |
+
+> 镜像部署已不再需要 `COS_*` 系列 Secrets（原 CI→COS→服务器链路已移除）。
+> 数据备份上传 COS 的密钥只填服务器 `.env`（`backup.sh` 使用）。
 
 > `TCR_REGISTRY` 与 `TCR_GROUP` 必须拆开：镜像名合法性校验按纯域名处理，
 > 命名空间混进 registry 会导致拼出的镜像名不合法。完整镜像地址由流水线拼成
@@ -182,7 +194,8 @@ cd /opt/cndb && ./deploy/deploy.sh v0.3.0
 git tag v0.3.1 && git push origin v0.3.1
 ```
 
-推 tag 即触发：构建 → 推 TCR → 自动部署。约 5-8 分钟。
+推 tag 即触发：CI 同步产物 → 服务器构建镜像 → 自动部署。首次约 15-30 分钟
+（拉基础镜像 + 装依赖，无缓存），之后走 Docker 层缓存通常 5-10 分钟。
 
 GitHub Actions 页面可看实时进度；失败会自动回滚并在日志中标明原因。
 
@@ -300,23 +313,23 @@ curl -v http://127.0.0.1:8000/api/health # 绕过外网定位问题
 | 日志刷 `no such column` | schema 漂移。应用启动时会自愈补列；若持续报错，备份后重建库                         |
 | 附件 404               | 卷挂载异常，`docker volume inspect cndb-data` 确认 Mountpoint 有数据 |
 
-### CI 上传 / 服务器下载 COS 失败
+### 服务器端构建失败
 
 ```bash
-# 服务器上手动验证 COS 内网可达（同地域应秒回）
-curl -sI --max-time 10 https://<COS_BUCKET>.cos.<COS_REGION>.myqcloud.com/ -o /dev/null -w '%{http_code} %{time_total}s\n'
-# 观察部署日志中的下载报错
-docker logs --tail 50 cndb 2>/dev/null; journalctl -u ssh 2>/dev/null | tail -20
+# 服务器上确认基础镜像可拉取（国内直连 Docker Hub 超时的常见根因）
+time docker pull python:3.12-slim
+# 手动复现构建（与 CI 等价，产物已在 /opt/cndb/dist）
+cd /opt/cndb && SERVER_BUILD=1 IMAGE_REPO_OVERRIDE=ccr.ccs.tencentyun.com/pydev/cndb ./deploy/deploy.sh <版本号>
 ```
 
-| 现象                                  | 原因与处理                                                       |
-| ----------------------------------- | ----------------------------------------------------------- |
-| CI `Upload to COS` 403              | 子用户密钥无该桶写权限；`COS_BUCKET` 未带 `-APPID` 后缀                     |
-| CI 上传慢或超时                           | 加速域名未生效：确认桶已开启全球加速；加速域名全球仅部分地域出口，看 Probe 步骤的耗时数字            |
-| 服务器下载 403 `SignatureExpired`        | 预签名 URL 超过 1 小时有效期（多见于手动重跑 deploy job）——重跑整个 workflow 即可     |
-| 服务器下载 404 / NoSuchKey               | build job 上传失败或对象路径不匹配；在 COS 控制台确认 `cndb/cndb-image.tar.gz` 存在 |
-| 服务器下载走公网（流量计费）                      | 服务器与桶不同地域。把桶迁到与服务器同地域，或接受公网流量费（不影响功能）                       |
-| `docker load` 失败 / gzip 报错           | 下载不完整。重新跑一次 deploy（CI 会重新上传并生成新 URL），并检查服务器磁盘剩余空间           |
+| 现象                                        | 原因与处理                                                     |
+| ----------------------------------------- | ----------------------------------------------------------- |
+| 构建卡在 `FROM python:3.12-slim` 拉取       | 服务器 Docker Hub 直连超时。配 registry-mirror（见「准备服务器」）或配 Secret `BUILD_BASE_IMAGE` 换源 |
+| pip 安装 404                               | 换了滞后的 PyPI 镜像（如阿里云源缺新版 metadata）。配 Secret `BUILD_PIP_INDEX_URL` 为腾讯云源，或恢复默认官方源 |
+| `缺少 dist/cndb-*.whl`                     | CI 的 `Sync build artifacts` 步骤未执行/失败，重跑 workflow        |
+| 构建 OOM（进程被 kill 137）                 | 服务器内存 <2G。加 swap 或升配                                   |
+| 磁盘不足                                   | `docker system df` 看占用；`docker image prune -a` 清旧镜像后重跑     |
+| 冒烟验证失败（assets 为空）                  | wheel 未内嵌前端产物 —— 确认 release.yml 的前端构建成功后再重跑        |
 
 ### 版本回滚后仍异常
 
@@ -352,7 +365,7 @@ docker volume ls                                   # 确认无误后再清理卷
 - [ ] `CORS_ORIGINS` 收敛到自己的域名，不填 `*`（`allow_credentials=True` 时浏览器会直接拒绝）
 - [ ] 定时备份已生效，且**实际验证过能恢复**
 - [ ] TCR 命名空间设为私有（若仍保留 TCR 用于回滚）
-- [ ] COS 桶为私有读写；子用户密钥仅授目标桶读写，且已开启 `cndb/` 前缀生命周期清理
+- [ ] COS 桶（若启用了备份上传）为私有读写；子用户密钥仅授目标桶读写，且已配置生命周期清理
 
 > `AUTH_ENABLED=true` 是默认值且**不可关闭**（关闭意味着任何人都能读写全部数据）。  
 > 首次部署后立刻登录并**修改默认账号密码** —— `cndb seed` 注入的 `demo/demo1234`  

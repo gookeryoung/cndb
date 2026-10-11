@@ -38,10 +38,10 @@ uv run cndb serve
 
 ### Docker 部署（生产形态）
 
-镜像由 CI 构建推送到腾讯云 TCR，服务器拉取即部署，打 tag 触发、失败自动回滚。
+打 tag 触发：CI 同步构建产物到服务器，服务器本地构建镜像并部署，失败自动回滚（镜像不经 COS/仓库中转）。
 
 ```bash
-git tag v0.3.1 && git push origin v0.3.1    # 构建 → 推 TCR → 自动部署
+git tag v0.3.1 && git push origin v0.3.1    # 同步产物 → 服务器构建 → 自动部署
 ```
 
 部署链路、服务器准备、TCR 凭证配置、定时备份与 PostgreSQL 迁移：
@@ -53,10 +53,10 @@ git tag v0.3.1 && git push origin v0.3.1    # 构建 → 推 TCR → 自动部�
 |---|---|
 | `docker-compose.prod.yml` | 生产编排（单容器 + 数据卷 + 日志轮转） |
 | `deploy/Dockerfile.prod` | 生产镜像（预授权数据目录 + 健康检查 + 中文字体） |
-| `deploy/deploy.sh` | 服务器端部署（预备份 / 拉镜像 / 健康探测 / 失败回滚） |
+| `deploy/deploy.sh` | 服务器端部署（本地构建 / 预备份 / 健康探测 / 失败回滚） |
 | `deploy/backup.sh` | 定时备份，可选上传 COS |
 | `deploy/.env.prod.example` | 生产环境变量模板 |
-| `.github/workflows/deploy-tencent.yml` | tag 触发的构建与部署流水线 |
+| `.github/workflows/deploy-tencent.yml` | tag 触发的同步产物与部署流水线 |
 
 ### 前端开发
 
