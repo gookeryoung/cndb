@@ -122,6 +122,12 @@ console.error = (...args: unknown[]) => {
   if (text.includes('not wrapped in act') && /node_modules[\\/].*(?:antd|rc-[a-z-]+)/.test(text)) {
     return
   }
+  // 抑制 MSW onUnhandledRequest: 'error' 在 stderr 打印的"未命中 handler"错误——
+  // 该配置已让请求 Promise reject（测试侧用 expect(...).rejects 断言），
+  // stderr 输出纯属噪音，掩盖真正的业务报错线索。
+  if (text.includes('[MSW] Error: intercepted a request without a matching request handler')) {
+    return
+  }
   originalConsoleError(...args)
 }
 
