@@ -83,7 +83,7 @@ interface EditFormValues {
 }
 
 export default function UsersPage() {
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const queryClient = useQueryClient()
   const [form] = Form.useForm<EditFormValues>()
 
@@ -183,7 +183,7 @@ export default function UsersPage() {
         message.info('没有需要保存的变更')
         return
       }
-      Modal.confirm({
+      modal.confirm({
         title: '确认保存对该用户的修改？',
         content: (
           <div style={{ fontSize: 13 }}>
@@ -208,7 +208,7 @@ export default function UsersPage() {
     const title = action === 'activate' ? '确认批量启用所选用户？'
       : action === 'deactivate' ? '确认批量禁用所选用户？'
         : `确认将所选用户角色批量变更为「${roleMeta(role ?? 'user').label}」？`
-    Modal.confirm({
+    modal.confirm({
       title,
       content: '操作将逐项执行并记录到操作日志；不能作用于当前登录用户与最后一个可用超管。',
       okText: '确认执行',
@@ -348,7 +348,7 @@ export default function UsersPage() {
         okText="保存"
         cancelText="取消"
         confirmLoading={editMutation.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" size="small">
           <Form.Item name="username" label="用户名" rules={[{ required: true, min: 2, max: 150, message: '用户名 2-150 个字符' }]}>
