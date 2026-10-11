@@ -298,18 +298,44 @@ jobs:
           COS_REGION: ${{ secrets.COS_REGION }}
         run: |
           python3 -m pip install --quiet coscmd
-          # COS_BUCKET 必须是 BucketName-APPID 完整格式；accelerate.tencentcos.com
-          # 是全球加速域名，上传走境外优化链路
+          # coscmd 1.9.x 的 -r/--region 与 -e/--endpoint 互斥（argparse 二选一），
+          # 走全球加速域名只能用 -e；且 endpoint 不能带 https:// 前缀 ——
+          # coscmd 按 https://{bucket}.{endpoint}/ 拼接 URL，带 scheme 会拼出坏域名。
+          # COS_BUCKET 必须是 BucketName-APPID 完整格式，coscmd 自动拆出 APPID 再拼回。
           coscmd config \
             -a "$COS_SECRET_ID" -s "$COS_SECRET_KEY" \
-            -b "$COS_BUCKET" -r "$COS_REGION" \
-            -e "https://accelerate.tencentcos.com"
+            -b "$COS_BUCKET" \
+            -e "accelerate.tencentcos.com"
           coscmd upload /tmp/cndb-image.tar.gz cndb/cndb-image.tar.gz
 
           # 预签名 URL 有效期 1 小时，覆盖 deploy job 的 SSH 触发与下载窗口。
-          # signurl 输出的域名可能是默认域名或加速域名——服务器端统一按
-          # 默认域名做内网替换，这里不依赖具体形式。
-          URL=$(coscmd signurl cndb/cndb-image.tar.gz 3600)
+          # 不用 coscmd signurl：其一，有效期是 -t 选项而非位置参数（位置传参
+          # 报 unrecognized arguments）；其二，其签名把 Host 算入（SDK CosConfig
+          # 默认 SignHost=True），服务器把加速域名换成内网域名后签名即失效 403。
+          # 这里直接用 coscmd 自带依赖的 SDK 生成 SignHost=False 的签名 ——
+          # 签名不含 Host，服务器端换内网域名后依然有效。URL host 用默认
+          # 域名（按 Region 拼接），服务器端替换为内网域名后语义不变。
+          URL=$(python3 - <<'PY'
+          import os
+
+          from qcloud_cos import CosConfig, CosS3Client
+
+          conf = CosConfig(
+              Region=os.environ["COS_REGION"],
+              SecretId=os.environ["COS_SECRET_ID"],
+              SecretKey=os.environ["COS_SECRET_KEY"],
+              SignHost=False,
+          )
+          client = CosS3Client(conf)
+          print(client.get_presigned_url(
+              Method="GET",
+              Bucket=os.environ["COS_BUCKET"],
+              Key="cndb/cndb-image.tar.gz",
+              Expired=3600,
+              SignHost=False,
+          ))
+          PY
+          )
           if [ -z "$URL" ]; then
             echo "::error::生成 COS 预签名 URL 失败。"
             exit 1

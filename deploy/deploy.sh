@@ -13,7 +13,8 @@
 # 镜像获取方式（按环境变量自动二选一）：
 #   1. IMAGE_URL（CI 常规路径）：COS 预签名 URL。脚本把 host 替换为
 #      COS 默认域名后下载 —— 与服务器同地域的 CVM 会将其解析为内网地址，
-#      下载免公网流量费；COS 签名算法不含 Host，换域名后签名依然有效。
+#      下载免公网流量费；CI 生成的签名不含 Host（SignHost=False），
+#      换域名后签名依然有效。
 #      下载后 docker load 直接载入，无需 docker login。
 #      依赖环境变量：IMAGE_URL、COS_BUCKET（BucketName-APPID）、COS_REGION。
 #   2. 无 IMAGE_URL（手动部署/回滚历史版本）：走 TCR docker pull，
@@ -228,8 +229,9 @@ pre_backup
 # COS 路径：CI 已把镜像 save|gzip 上传 COS 并生成预签名 URL。
 # 把 URL 的 host 统一替换成 COS 默认域名 <bucket>.cos.<region>.myqcloud.com：
 #   - 与服务器同地域时该域名解析为内网 IP，下载免公网流量费；
-#   - COS 预签名算法只覆盖资源路径与签名参数，不含 Host，
-#     因此加速域名生成的 URL 换成默认域名后签名依然有效。
+#   - CI 生成的预签名 URL 签名不含 Host（SignHost=False，见
+#     deploy-tencent.yml 的 Upload to COS 步骤），
+#     因此加速域名或默认域名生成的 URL 换成内网域名后签名依然有效。
 if [[ -n "${IMAGE_URL:-}" ]]; then
   [[ -n "${COS_BUCKET:-}" && -n "${COS_REGION:-}" ]] \
     || die "使用 IMAGE_URL 下载时必须同时提供 COS_BUCKET（BucketName-APPID）与 COS_REGION"
