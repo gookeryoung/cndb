@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useResponsive } from '@/hooks/useResponsive'
 import { workspaceApi } from '@/api'
 import type { Workspace, WorkspaceRole, WorkspaceVisibility } from '@/api'
 import WorkspaceSettingsModal from '@/pages/settings/WorkspaceSettingsModal'
@@ -34,6 +35,7 @@ const ROLE_BADGE_COLOR: Record<WorkspaceRole, string> = {
 
 export default function WorkspaceList() {
   const { message } = AntApp.useApp()
+  const { isMobile } = useResponsive()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)
@@ -96,18 +98,30 @@ export default function WorkspaceList() {
   }, [workspaces, search])
 
   return (
-    <div style={{ padding: 24 }} data-testid="workspace-list">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+    <div style={{ padding: isMobile ? 16 : 24 }} data-testid="workspace-list">
+      {/* 工具栏 —— 移动端纵向堆叠：标题整行、搜索框占满、按钮均分，避免固定宽度导致横向溢出 */}
+      <div
+        data-testid="workspace-list-toolbar"
+        style={{
+          display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between',
+          alignItems: isMobile ? 'stretch' : 'center',
+          marginBottom: 24,
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
         <div>
           <Title level={3} style={{ margin: 0 }}>我的工作区</Title>
           <Text type="secondary">选择或创建一个工作区开始协作</Text>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <Input.Search
             placeholder="搜索工作区名称/标签..."
             allowClear
             prefix={<SearchOutlined />}
-            style={{ width: 260 }}
+            style={{ width: isMobile ? '100%' : 260 }}
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -115,6 +129,7 @@ export default function WorkspaceList() {
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateOpen(true)}
+            style={isMobile ? { flex: 1 } : undefined}
             data-testid="create-workspace-btn"
           >
             新建工作区
@@ -122,6 +137,7 @@ export default function WorkspaceList() {
           <Button
             icon={<UploadOutlined />}
             onClick={() => { importForm.resetFields(); setImportOpen(true) }}
+            style={isMobile ? { flex: 1 } : undefined}
             data-testid="import-workspace-btn"
           >
             导入工作区
@@ -223,7 +239,7 @@ export default function WorkspaceList() {
           confirmLoading={create.isPending}
           okText="创建"
           data-testid="create-workspace-modal"
-          width={520}
+          width={isMobile ? 'calc(100vw - 32px)' : 520}
         >
           <Form
             form={form}
@@ -316,6 +332,7 @@ interface ImportWorkspaceModalProps {
 }
 
 function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: ImportWorkspaceModalProps) {
+  const { isMobile } = useResponsive()
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number } | null>(null)
   const [pendingJson, setPendingJson] = useState<Record<string, unknown> | null>(null)
@@ -388,7 +405,7 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
       okText="开始导入"
       cancelText="取消"
       destroyOnHidden
-      width={560}
+      width={isMobile ? 'calc(100vw - 32px)' : 560}
     >
       <Alert
         type="info"
