@@ -1,6 +1,12 @@
 # 腾讯云生产部署指南
 
-面向**轻量应用服务器 / CVM 单机**形态：GitHub Actions 构建镜像 → 推 TCR → SSH 服务器自动部署，失败自动回滚。
+面向**轻量应用服务器 / CVM 单机**形态：GitHub Actions 构建镜像 → 经 COS 中转 → SSH 服务器自动部署，失败自动回滚。
+
+> **为什么镜像不走 GitHub 直推 TCR**：跨境 `docker push` 是逐层 blob 的
+> HTTPS 上传，跨境链路丢包率高时连接停滞且无超时，表现为流水线卡死到
+> 撞上超时上限。现改为 `docker save | gzip` 上传 COS 全球加速域名
+> （针对境外→国内优化），服务器从 COS **内网**下载（同地域免流量费），
+> 跨境大流量只剩经过专门优化的一段。TCR 退为回滚备用源（历史版本仍可 pull）。
 
 ---
 
@@ -11,15 +17,17 @@ git push tag v0.3.0
       │
       ▼
 GitHub Actions (.github/workflows/deploy-tencent.yml)
-      │  ① pnpm build        前端产物 → src/cndb/static
-      │  ② uv build          → dist/cndb-0.3.0-py3-none-any.whl（含前端静态）
-      │  ③ docker build      deploy/Dockerfile.prod → 装 wheel
-      │  ④ docker push       → <TCR_REGISTRY>/<TCR_GROUP>/cndb:0.3.0
+      │  ① pnpm build         前端产物 → src/cndb/static
+      │  ② uv build           → dist/cndb-0.3.0-py3-none-any.whl（含前端静态）
+      │  ③ docker build       deploy/Dockerfile.prod → 装 wheel
+      │  ④ docker save | gzip → 上传 COS 全球加速域名
+      │  ⑤ coscmd signurl     → 生成预签名 URL（有效期 1 小时）
       │
-      ▼ ⑤ SSH
+      ▼ ⑥ SSH（传预签名 URL）
 腾讯云服务器 /opt/cndb
       │  deploy.sh:
-      │    预备份数据库 → docker login TCR → pull
+      │    预备份数据库
+      │    → 预签名 URL 换 COS 默认域名（同地域自动走内网）→ 下载 → docker load
       │    → 更新 .env → up -d --force-recreate
       │    → 轮询 /api/health（180s）
       │    → 失败：自动回滚到上一个 tag
@@ -33,9 +41,23 @@ GitHub Actions (.github/workflows/deploy-tencent.yml)
 
 ## 二、一次性准备
 
-### 1. 开 TCR 镜像仓库
+### 1. 开 COS 桶（镜像中转，必选）
 
-个人版（免费，适合单人/小团队）：
+1. 控制台 → 对象存储 COS → 创建存储桶
+   - **地域必须与服务器相同**（如都在 ap-guangzhou）——同地域 CVM 访问 COS 默认域名自动走内网，下载免公网流量费
+   - 权限选**私有读写**
+2. 控制台 → 存储桶 → 全球加速：开启加速（获得 `accelerate.tencentcos.com` 域名，供境外 CI 上传优化）
+3. 访问管理 CAM → 新建子用户（仅编程访问），授予该桶的数据读写最小权限，记下 `SecretId` / `SecretKey`
+4. 建议配置生命周期规则：对 `cndb/` 前缀对象设 7 天过期自动删除，避免历史镜像包堆积占用存储
+
+> 桶名格式 `BucketName-APPID`（如 `cndb-1250000000`），Secrets 里的
+> `COS_BUCKET` 必须填**含 APPID 后缀的完整格式** —— deploy.sh 要用它拼内网域名。
+
+### 2. 开 TCR 镜像仓库（可选，仅用于手动回滚）
+
+CI 不再向 TCR 推镜像，但镜像仍以 TCR 地址**命名**（与历史版本同名，保证手动回滚 `docker pull` 可命中旧包）。已开通过的可保持现状；新项目可以不开。
+
+个人版（免费）：
 
 1. 控制台 → 容器镜像服务 TCR → 开通**个人版**
 2. 访问凭证 → 获取长期访问凭证，记下**服务器地址 + 用户名 + 密码**
@@ -48,13 +70,11 @@ GitHub Actions (.github/workflows/deploy-tencent.yml)
 > ⚠️ `TCR_REGISTRY` 必须是**纯域名不含命名空间** —— `docker login` 不接受带路径的
 > registry 参数。命名空间必须放在 `TCR_GROUP` 这个独立 Secret 里。
 
-企业版（多实例/高可用/内网拉取）：新建实例 → 命名空间 → 服务账号。
+> **GitHub Actions 专用服务账号**（仅手动回滚用）：权限只勾目标命名空间的**读写**。
+> 用户名形如 `tcr$deploy`，**必须改成 `tcr@deploy`** —— 腾讯云官方明确说明部分 CI 平台
+> 无法正确处理 `$`，后端默认兼容 `@`。直接用 `tcr$` 会在 pull 时报认证失败。
 
-> **GitHub Actions 专用服务账号**：在 TCR 控制台创建服务账号，权限只勾目标命名空间的 **读写**。  
-> 用户名形如 `tcr$deploy`，**必须改成 `tcr@deploy`** —— 腾讯云官方明确说明部分 CI 平台无法正确处理 `$`，  
-> 后端默认兼容 `@`。直接用 `tcr$` 会在 push 时报认证失败。
-
-### 2. 准备服务器
+### 3. 准备服务器
 
 轻量应用服务器建议 **2核4G / 60G SSD**（SQLite + 少量并发足够；内存 <2G 跑构建会 OOM）。
 
@@ -73,7 +93,7 @@ cd /opt/cndb
 
 安全组放行：`8000`（或你的反代端口）。**不要放行 2375**。
 
-### 3. 配置 .env
+### 4. 配置 .env
 
 推荐用自带脚本，一条命令完成（可重复运行，**只补缺失项，不覆盖已有配置**）：
 
@@ -115,25 +135,29 @@ vim .env   # 改 CNDB_IMAGE 和 CORS_ORIGINS
 > 不一致会导致部署时拉不到镜像。仓库名改动需同步 3 处：`deploy/.env.prod.example`、
 > 服务器 `.env`、GitHub Secret。
 
-### 4. 配置 GitHub Secrets
+### 5. 配置 GitHub Secrets
 
 仓库 → Settings → Secrets and variables → Actions → New repository secret：
 
 | Secret            | 值                                         |
 | ----------------- | ----------------------------------------- |
-| `TCR_REGISTRY`    | `ccr.ccs.tencentyun.com`（**纯域名，不含命名空间**） |
-| `TCR_GROUP`       | `pydev`（命名空间，本项目实际使用）                |
-| `TCR_USERNAME`    | `tcr@deploy`（注意 `@`）                      |
-| `TCR_PASSWORD`    | 服务账号密码                                    |
+| `COS_BUCKET`      | `cndb-1250000000`（**含 APPID 后缀的完整桶名**） |
+| `COS_REGION`      | `ap-guangzhou`（与服务器同地域）              |
+| `COS_SECRET_ID`   | 子用户 SecretId（仅授目标桶读写）             |
+| `COS_SECRET_KEY`  | 对应 SecretKey                             |
+| `TCR_REGISTRY`    | `ccr.ccs.tencentyun.com`（**纯域名，不含命名空间**；仅作镜像命名与手动回滚） |
+| `TCR_GROUP`       | `pydev`（命名空间，本项目实际使用）              |
+| `TCR_USERNAME`    | `tcr@deploy`（注意 `@`；仅手动回滚走 TCR pull 时需要） |
+| `TCR_PASSWORD`    | 服务账号密码                                  |
 | `SSH_HOST`        | 服务器公网 IP                                  |
 | `SSH_PORT`        | `22`（若改过）                                 |
 | `SSH_USERNAME`    | `root`                                    |
-| `SSH_PRIVATE_KEY` | SSH 私钥全文（推荐，免明文密码）                        |
-| `SERVER_URL`      | 访问地址，用于部署后跳转                              |
+| `SSH_PRIVATE_KEY` | SSH 私钥全文（推荐，免明文密码）                   |
+| `SERVER_URL`      | 访问地址，用于部署后跳转                          |
 
-> `TCR_REGISTRY` 与 `TCR_GROUP` 必须拆开：`docker login` 只认纯域名，
-> 若把命名空间塞进 registry 会导致登录失败。完整镜像地址由流水线拼成
-> `<TCR_REGISTRY>/<TCR_GROUP>/cndb:<version>`。
+> `TCR_REGISTRY` 与 `TCR_GROUP` 必须拆开：镜像名合法性校验按纯域名处理，
+> 命名空间混进 registry 会导致拼出的镜像名不合法。完整镜像地址由流水线拼成
+> `<TCR_REGISTRY>/<TCR_GROUP>/cndb:<version>`，与 TCR 历史版本同名。
 
 生成专用部署密钥（比复用个人密钥安全）：
 
@@ -276,6 +300,24 @@ curl -v http://127.0.0.1:8000/api/health # 绕过外网定位问题
 | 日志刷 `no such column` | schema 漂移。应用启动时会自愈补列；若持续报错，备份后重建库                         |
 | 附件 404               | 卷挂载异常，`docker volume inspect cndb-data` 确认 Mountpoint 有数据 |
 
+### CI 上传 / 服务器下载 COS 失败
+
+```bash
+# 服务器上手动验证 COS 内网可达（同地域应秒回）
+curl -sI --max-time 10 https://<COS_BUCKET>.cos.<COS_REGION>.myqcloud.com/ -o /dev/null -w '%{http_code} %{time_total}s\n'
+# 观察部署日志中的下载报错
+docker logs --tail 50 cndb 2>/dev/null; journalctl -u ssh 2>/dev/null | tail -20
+```
+
+| 现象                                  | 原因与处理                                                       |
+| ----------------------------------- | ----------------------------------------------------------- |
+| CI `Upload to COS` 403              | 子用户密钥无该桶写权限；`COS_BUCKET` 未带 `-APPID` 后缀                     |
+| CI 上传慢或超时                           | 加速域名未生效：确认桶已开启全球加速；加速域名全球仅部分地域出口，看 Probe 步骤的耗时数字            |
+| 服务器下载 403 `SignatureExpired`        | 预签名 URL 超过 1 小时有效期（多见于手动重跑 deploy job）——重跑整个 workflow 即可     |
+| 服务器下载 404 / NoSuchKey               | build job 上传失败或对象路径不匹配；在 COS 控制台确认 `cndb/cndb-image.tar.gz` 存在 |
+| 服务器下载走公网（流量计费）                      | 服务器与桶不同地域。把桶迁到与服务器同地域，或接受公网流量费（不影响功能）                       |
+| `docker load` 失败 / gzip 报错           | 下载不完整。重新跑一次 deploy（CI 会重新上传并生成新 URL），并检查服务器磁盘剩余空间           |
+
 ### 版本回滚后仍异常
 
 ```bash
@@ -309,7 +351,8 @@ docker volume ls                                   # 确认无误后再清理卷
 - [ ] 安全组只放行业务端口，SSH 端口限制来源 IP
 - [ ] `CORS_ORIGINS` 收敛到自己的域名，不填 `*`（`allow_credentials=True` 时浏览器会直接拒绝）
 - [ ] 定时备份已生效，且**实际验证过能恢复**
-- [ ] TCR 命名空间设为私有
+- [ ] TCR 命名空间设为私有（若仍保留 TCR 用于回滚）
+- [ ] COS 桶为私有读写；子用户密钥仅授目标桶读写，且已开启 `cndb/` 前缀生命周期清理
 
 > `AUTH_ENABLED=true` 是默认值且**不可关闭**（关闭意味着任何人都能读写全部数据）。  
 > 首次部署后立刻登录并**修改默认账号密码** —— `cndb seed` 注入的 `demo/demo1234`  
