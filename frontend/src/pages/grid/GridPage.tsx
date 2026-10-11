@@ -407,8 +407,11 @@ export default function GridPage() {
     if (!target) target = views[0] || null
 
     // ── 只在目标和当前不同时才切换（初始化不持久化 mode，避免污染 localStorage） ──
+    // 两侧统一 String 化比较：activeViewId 由 loadView 存的是 number（v.id），
+    // 裸比较 `number !== '1'` 恒真，会导致每次 views refetch 都重新 loadView、
+    // 用服务器旧 view_options 覆盖用户未持久化的草稿（重置布局被回灌的根因）
     if (target) {
-      if (activeViewId !== String(target.id)) {
+      if (String(activeViewId) !== String(target.id)) {
         loadView(target, false, false)
       }
     } else if (activeViewId !== null) {
@@ -762,18 +765,22 @@ export default function GridPage() {
 
   /** 持久化当前视图到后端（自动保存 useEffect 唯一真相源：viewFilters / viewSortings 等 state 变化自动触发）.
    *  自动保存默认走静默模式（silent=true），避免频繁操作时弹窗刷屏；
-   *  显式保存入口 saveViewNow 会传 silent=false 弹出成功提示. */
+   *  显式保存入口 saveViewNow 会传 silent=false 弹出成功提示.
+   *  状态一律从 store 即时读取（getState）而非闭包捕获：ViewConfigDialog 保存按钮在
+   *  同一次点击内先 setViewOptionsDraft 再调 saveViewNow，闭包里的 draft 是上一轮渲染的
+   *  旧值，会把旧配置发到后端（新值只能等 500ms 防抖，CI 下与后续操作产生竞态）. */
   const persistCurrentView = useCallback((silent = true) => {
-    if (!activeViewId) return
+    const { activeViewId: vid, viewFilters: fs, viewSortings: ss, viewFilterLogic: logic, viewOptionsDraft: opts } = useGridViewStore.getState()
+    if (!vid) return
     updateView.mutate({
-      vid: activeViewId,
-      filters: viewFilters.length ? viewFilters : null,
-      sortings: viewSortings.length ? viewSortings : null,
-      filter_type: viewFilterLogic,
-      view_options: viewOptionsDraft,
+      vid,
+      filters: fs.length ? fs : null,
+      sortings: ss.length ? ss : null,
+      filter_type: logic,
+      view_options: opts,
       silent,
     })
-  }, [activeViewId, viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, updateView])
+  }, [updateView])
 
   /** 自动持久化视图配置（debounce 500ms，防抖统一收敛到 useDebouncedCallback） */
   const [debouncedPersist, cancelPersist] = useDebouncedCallback(persistCurrentView, 500)
