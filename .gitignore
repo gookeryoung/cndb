@@ -66,6 +66,8 @@ file:*
 
 # 本地协作产物一律不入库
 /.trae/
+/.claude/
+/.workbuddy/
 
 # 工具缓存
 .eslintcache
