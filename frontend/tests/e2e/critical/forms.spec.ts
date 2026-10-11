@@ -73,9 +73,11 @@ test.describe("表单模块", () => {
     await page.goto(`/w/${WID}/forms`)
     await expect(page.locator("h3", { hasText: /^表单/ })).toBeVisible()
     await expect(page.getByText("员工信息登记")).toBeVisible()
-    // 主内容区表格单元格：页面同时有侧边栏（sider-tables）与列表均含「员工表」，
-    // 裸 getByText 会 strict mode violation，须用 cell role 收敛到列表列
-    await expect(page.getByRole("cell", { name: "员工表" })).toBeVisible()
+    // 收敛到「员工信息登记」所在行：列表同时有 seed 的「新员工入职登记」（所属表同为
+    // 员工表，且其描述含「员工表」），裸 cell/文本定位会 strict mode violation
+    const row = page.getByRole("row", { name: /员工信息登记/ })
+    await expect(row).toBeVisible()
+    await expect(row.getByRole("cell", { name: "员工表" })).toBeVisible()
   })
 
   test("表单运行器全链路：新增数据提交 → 行出现 → 删除确认 → 行消失", async ({ page, request }) => {
