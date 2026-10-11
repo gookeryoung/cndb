@@ -279,6 +279,17 @@ pre_backup
 #    SERVER_BUILD=1 → 服务器本地构建（CI 常规路径，镜像不过网）；
 #    否则           → TCR pull（手动部署/回滚历史版本，需先 docker login）。
 if [[ "${SERVER_BUILD:-0}" == "1" ]]; then
+  # 旧版脚本（本函数不存在）会忽略 SERVER_BUILD=1 直接走 TCR pull，
+  # 去拉一个 CI 已不再推送的 tag，报 "not found" 并回滚 —— 症状与
+  # 镜像仓库权限/命名问题几乎一样，极易误判。此处显式拦截：
+  # 收到 SERVER_BUILD=1 却找不到 build_image，说明服务器上的脚本没被更新。
+  if ! declare -f build_image >/dev/null 2>&1; then
+    die "收到 SERVER_BUILD=1 但当前 deploy.sh 不支持服务器端构建（缺少 build_image）。
+     说明服务器上的脚本是旧版本，CI 的 scp 同步未生效。
+     常见原因：scp 多源路径保留了目录层级，文件被传到 deploy/deploy/deploy.sh，
+     而实际执行路径 /opt/cndb/deploy/deploy.sh 仍是旧文件。
+     处置：修正 workflow 的 scp target（应为 /opt/cndb）后重新部署。"
+  fi
   build_image
 else
   # TCR 回退路径：手动部署/回滚历史版本。TCR 是腾讯云托管仓库，
