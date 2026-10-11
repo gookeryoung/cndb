@@ -30,8 +30,14 @@ jobs:
       - name: Check .gitkeep sentinels
         run: uv run python scripts/check_gitkeep.py
 
+      - name: Cache ruff
+        uses: actions/cache@v4
+        with:
+          path: .ruff_cache
+          key: ruff-${{ runner.os }}-${{ hashFiles('pyproject.toml','ruff.toml') }}
+
       - name: Ruff check
-        run: uv run ruff check src tests
+        run: uv run ruff check src tests --cache-dir .ruff_cache
 
       - name: Ruff format check
         run: uv run ruff format --check src tests
@@ -156,7 +162,17 @@ jobs:
       - name: Build frontend (static -> src/cndb/static)
         run: cd frontend && pnpm build
 
+      - name: Cache Playwright browsers
+        id: cache-playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml','frontend/package.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install Playwright Chromium
+        if: steps.cache-playwright.outputs.cache-hit != 'true'
         run: cd frontend && npx playwright install --with-deps chromium
 
       - name: Run E2E (webServer 自动 seed + 起后端 :8000，不含 @perf)
