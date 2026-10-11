@@ -22,6 +22,9 @@ function makeMetric(name: string, value: number, rating: Metric['rating'] = 'goo
 
 beforeEach(() => {
     vi.clearAllMocks()
+    // 统一吞掉 dev 分支的 console.debug，避免污染其他测试的 stdout；
+    // 单独验证 debug 输出的用例会基于同一个 spy 做断言。
+    vi.spyOn(console, 'debug').mockImplementation(() => {})
     const w = window as unknown as { __cndWebVitals?: Metric[]; __cndVitalsEndpoint?: string }
     delete w.__cndWebVitals
     delete w.__cndVitalsEndpoint
@@ -70,7 +73,7 @@ describe('指标缓冲', () => {
     })
 
     it('dev 环境 console.debug 含指标名与评级', () => {
-        const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => { })
+        const debugSpy = vi.spyOn(console, 'debug')
         reportWebVitals()
         callbacks.FCP(makeMetric('FCP', 987.654, 'needs-improvement'))
         expect(debugSpy).toHaveBeenCalledOnce()
