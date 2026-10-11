@@ -28,6 +28,9 @@ beforeEach(() => {
     const w = window as unknown as { __cndWebVitals?: Metric[]; __cndVitalsEndpoint?: string }
     delete w.__cndWebVitals
     delete w.__cndVitalsEndpoint
+    // 压制 pushMetric 在 DEV 环境下的 console.debug 噪音，
+    // 除专门测 debug 输出的用例外，其余测试不应在 stdout 中看到指标打印
+    vi.spyOn(console, 'debug').mockImplementation(() => {})
 })
 
 afterEach(() => {
