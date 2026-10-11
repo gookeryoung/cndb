@@ -35,6 +35,7 @@ def db_engine():
     )
     # 确保所有模型已注册到 Base.metadata
     import cndb.plugins.accounts.models
+    import cndb.plugins.forms.models
     import cndb.plugins.reports.models
     import cndb.plugins.tables.models
     import cndb.plugins.workspaces.models  # noqa: F401
