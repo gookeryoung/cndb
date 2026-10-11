@@ -1063,6 +1063,130 @@ class TestFieldOpsCoverage:
             _fo.clone_fields_between_tables(engine, db, src, dst, field_ids=[src_f.id])
 
 
+def test_clone_multi_field_partial_ddl_failure_cleans_all_metadata_and_ddl(db):
+    """多字段克隆中途 DDL 失败 → 所有 DataField metadata 回滚 + 已加列逆向清理.
+
+    这是修复 field_ops.py 先 commit metadata 后 DDL 的事务缺陷的回归测试.
+    """
+    from unittest.mock import patch
+
+    from cndb.plugins.tables.models import DataField, DataTable
+    from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
+    from cndb.plugins.tables.services.fields import field_ops as _fo
+
+    engine = db.get_bind()
+
+    src = DataTable(workspace_id=1, name="S_partial_fail", owner_id=1)
+    src.ensure_db_name()
+    db.add(src)
+    db.flush()
+    dst = DataTable(workspace_id=1, name="D_partial_fail", owner_id=1)
+    dst.ensure_db_name()
+    db.add(dst)
+    db.flush()
+
+    # 源表建 3 个字段
+    fs = []
+    for i, name in enumerate(["ok1", "ok2", "fail_field"]):
+        f = DataField(table_id=src.id, name=name, field_type="text", order=i)
+        f.ensure_db_name()
+        db.add(f)
+        fs.append(f)
+    db.commit()
+    for f in fs:
+        db.refresh(f)
+
+    ddl_create(engine, dst)
+
+    # 让第 3 个字段的 add_column 抛错 —— 此时前两个的 DDL 已成功
+    real_add_column = _fo._ddl.add_column
+    call_count = [0]
+
+    def _side_effect(eng, tbl, field):
+        call_count[0] += 1
+        if call_count[0] == 3:
+            raise RuntimeError("boom on 3rd field")
+        return real_add_column(eng, tbl, field)
+
+    with (
+        patch("cndb.plugins.tables.services.fields.field_ops._ddl.add_column", side_effect=_side_effect),
+        pytest.raises(RuntimeError, match="boom on 3rd field"),
+    ):
+        _fo.clone_fields_between_tables(engine, db, src, dst, field_ids=[f.id for f in fs])
+
+    # 关键断言：目标表的 DataField metadata 数量不应增加（已全部回滚）
+    db.expire_all()
+    db.refresh(dst)
+    assert len(dst.fields) == 0, f"DataField metadata 残留：{[f.name for f in dst.fields]}"
+
+    # 关键断言：物理表不应有残留列（逆向清理生效）
+    from sqlalchemy import inspect
+
+    insp = inspect(engine)
+    cols = {c["name"] for c in insp.get_columns(dst.db_table_name)}
+    # 只有默认的 id / _trashed / _trashed_at 存在
+    extra_cols = {c for c in cols if c not in ("id", "_trashed", "_trashed_at")}
+    assert not extra_cols, f"物理列残留：{extra_cols}"
+
+
+def test_execute_field_import_multi_ddl_failure_cleans_all(db):
+    """execute_field_import 多字段中途 DDL 失败 → 元数据 + DDL 全清理."""
+    from unittest.mock import patch
+
+    from cndb.plugins.tables.models import DataField, DataTable
+    from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
+    from cndb.plugins.tables.services.fields import field_ops as _fo
+
+    engine = db.get_bind()
+
+    src = DataTable(workspace_id=1, name="S_exec_fail", owner_id=1)
+    src.ensure_db_name()
+    db.add(src)
+    db.flush()
+    dst = DataTable(workspace_id=1, name="D_exec_fail", owner_id=1)
+    dst.ensure_db_name()
+    db.add(dst)
+    db.flush()
+
+    fs = []
+    for i, name in enumerate(["a", "b", "c", "boom_field"]):
+        f = DataField(table_id=src.id, name=name, field_type="text", order=i)
+        f.ensure_db_name()
+        db.add(f)
+        fs.append(f)
+    db.commit()
+    for f in fs:
+        db.refresh(f)
+
+    ddl_create(engine, dst)
+
+    real_add = _fo._ddl.add_column
+    counter = [0]
+
+    def _side(eng, tbl, field):
+        counter[0] += 1
+        if counter[0] == 4:
+            raise RuntimeError("nuclear boom")
+        return real_add(eng, tbl, field)
+
+    with (
+        patch("cndb.plugins.tables.services.fields.field_ops._ddl.add_column", side_effect=_side),
+        pytest.raises(RuntimeError, match="nuclear boom"),
+    ):
+        _fo.execute_field_import(engine, db, dst, fs)
+
+    db.expire_all()
+    db.refresh(dst)
+    assert len(dst.fields) == 0, f"DataField metadata 残留：{[f.name for f in dst.fields]}"
+
+    from sqlalchemy import inspect
+
+    insp = inspect(engine)
+    cols = {c["name"] for c in insp.get_columns(dst.db_table_name)}
+    extra = {c for c in cols if c not in ("id", "_trashed", "_trashed_at")}
+    assert not extra, f"物理列残留：{extra}"
+
+
 # ── 跨工作区权限收紧 ──────────────────────────────────
 
 
