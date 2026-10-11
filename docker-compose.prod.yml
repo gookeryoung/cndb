@@ -62,9 +62,10 @@ services:
         max-file: "5"
 
     # 镜像内已有 HEALTHCHECK，这里做间隔兜底并放宽启动期
-    # （首次启动要跑 alembic 迁移 + create_all，给足时间）
+    # （首次启动要跑 alembic 迁移 + create_all，给足时间）。
+    # 镜像内无 curl，用 python 标准库探测（与 Dockerfile.prod 保持一致）
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
       interval: 30s
       timeout: 5s
       retries: 3
