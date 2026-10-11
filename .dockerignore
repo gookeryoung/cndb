@@ -11,7 +11,7 @@ __pycache__
 *.egg-info
 *.egg
 # 注意：Docker 不支持行尾注释，每条规则必须是纯 pattern。
-# 仅排除 sdist，保留 dist/*.whl 供deploy/Dockerfile.wheel 使用。
+# 仅排除 sdist，保留 dist/*.whl 供 deploy/Dockerfile.prod 使用。
 dist/*.tar.gz
 build
 .eggs
@@ -23,9 +23,9 @@ htmlcov
 .tox
 coverage.xml
 
-# ── 前端（deploy/Dockerfile 会在镜像内重新 pnpm install）──
-# node_modules 约 500MB，排除后构建上下文从~700MB 降到 ~10MB；
-# 不能排除整个 frontend/，镜像构建需要 frontend/ 源码与 pnpm-lock.yaml。
+# ── 前端 ──
+# 生产镜像由 PyPI wheel 安装（前端已内嵌），镜像内不再构建前端；
+# 排除 node_modules 等目录仅为缩小构建上下文体积。
 frontend/node_modules
 frontend/dist
 frontend/coverage

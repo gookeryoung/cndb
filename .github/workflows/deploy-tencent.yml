@@ -276,8 +276,6 @@ jobs:
           source: "docker-compose.prod.yml"
           target: /opt/cndb
 
-      # 数组形式而非逗号分隔字符串：scp-action 对多源路径的扁平化行为
-      # 在不同版本间有差异，逐项列出更可控。
       # bootstrap-server.sh 一并同步 —— 首次初始化靠它，漏了就得手工上传脚本。
       - name: Sync deploy scripts
         uses: appleboy/scp-action@v0.1.7
@@ -289,11 +287,11 @@ jobs:
           # source 用【逗号分隔】，且路径不带 deploy/ 前缀。
           # 两个坑叠在一起会导致 "tar: empty archive"：
           #   1. 该 action 的 source 是逗号分隔，逐行写法（YAML 块）不被支持，
-          #      四个路径会被当成一整个字符串去匹配，结果为空；
+          #      多个路径会被当成一整个字符串去匹配，结果为空；
           #   2. target 已是 /opt/cndb/deploy，源路径再带 deploy/ 前缀会多一层。
           # 路径相对仓库根目录，故此处写 deploy/xxx.sh；
           # 传 *.sh 而非 *，避免把 .env.prod.example 等模板也覆盖到服务器上。
-          source: "deploy/deploy.sh,deploy/backup.sh,deploy/bootstrap-server.sh,deploy/nginx.conf"
+          source: "deploy/deploy.sh,deploy/backup.sh,deploy/bootstrap-server.sh"
           target: /opt/cndb/deploy
 
       # 首次部署的引导：建目录 / 放 .env 模板。已初始化过的服务器会跳过
