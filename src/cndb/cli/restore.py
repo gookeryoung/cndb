@@ -511,7 +511,7 @@ def _restore_uploads(extracted_dir: Path, target_upload_dir: Path, included: boo
             if backup_dir.exists():
                 shutil.rmtree(backup_dir)
             target_upload_dir.rename(backup_dir)  # 旧目录 → .bak
-        staging_dir.rename(target_upload_dir)    # .new → 正式名
+        staging_dir.rename(target_upload_dir)  # .new → 正式名py
     except Exception:
         # 替换失败 — 把 .bak 恢复为正式名
         if backup_dir.exists() and not target_upload_dir.exists():
