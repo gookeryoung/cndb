@@ -85,7 +85,12 @@ function chunkAttributionPlugin(): Plugin {
   }
 }
 
+// ── vitest.config.ts（同时也是 Vite config）──────────────────────────
+// cacheDir：把 Vite transform cache 和 vitest 5 test cache 统一到
+// frontend/.vitest-cache/，CI 上 actions/cache 一条路径覆盖两者。
+// vitest 5 弃用 test.cache.dir，改用 Vite 顶层 cacheDir。
 export default defineConfig(({ mode }) => ({
+  cacheDir: '.vitest-cache',
   plugins: [
     react(),
     // bundle 体积分析：仅 `vite build --mode analyze`（pnpm analyze）时启用，
@@ -148,6 +153,10 @@ export default defineConfig(({ mode }) => ({
     // worker 数实测（24 核）：16 最优（24.7s）；23 因 fork 创建+内存压力回吐收益（27.7s）；
     // 12 与默认持平（2026-09 实测数据）。上限 16，低核 CI 机器按核数降档防过订阅
     maxWorkers: Math.min(16, os.availableParallelism()),
+    // threads pool（vitest 默认）在 jsdom + msw + antd 组合下最稳：
+    // forks 虽然隔离更强但进程创建开销大；vmThreads 沙箱限制过多。
+    // 显式声明 pool 类型让 CI 行为可预测（默认也是 threads，此处冗余但明确）。
+    pool: 'threads',
     coverage: {
       provider: 'v8',
       include: ['src/**'],

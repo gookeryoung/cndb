@@ -119,16 +119,27 @@ jobs:
       # 跨境访问该镜像会极慢甚至挂起导致 pnpm install 卡死。
       # lockfile 中无 tarball URL 条目，换官方源不会触发 lockfile resolution 校验失败，
       # 故 CI 用 npm_config_registry 覆盖回官方源。
+      # --prefer-offline：setup-node 的 pnpm store 命中时直接用缓存，省掉 registry 解析 ~10s。
       - name: Install dependencies
         env:
           npm_config_registry: https://registry.npmjs.org/
-        run: cd frontend && pnpm install --frozen-lockfile
+        run: cd frontend && pnpm install --frozen-lockfile --prefer-offline
 
       - name: Typecheck
         run: cd frontend && pnpm typecheck
 
       - name: ESLint
         run: cd frontend && pnpm lint
+
+      # vitest transform cache（.vitest-cache）—— 第二次跑 CI 时源码不变则 transform 秒级。
+      # 键按 package.json + tsconfig + vite.config 哈希，源码变动会自动失效。
+      - name: Cache vitest
+        uses: actions/cache@v4
+        with:
+          path: frontend/.vitest-cache
+          key: vitest-${{ runner.os }}-${{ hashFiles('frontend/package.json','frontend/vite.config.ts','frontend/tsconfig*.json') }}
+          restore-keys: |
+            vitest-${{ runner.os }}-
 
       - name: Frontend tests + coverage
         run: cd frontend && pnpm test:coverage
@@ -207,10 +218,11 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       # 同上：CI 用官方源覆盖 .npmrc 的中科大镜像，避免海外 runner 跨境访问卡死
+      # --prefer-offline：setup-node 的 pnpm store 命中时跳过 registry 解析
       - name: Install dependencies
         env:
           npm_config_registry: https://registry.npmjs.org/
-        run: cd frontend && pnpm install --frozen-lockfile
+        run: cd frontend && pnpm install --frozen-lockfile --prefer-offline
 
       - name: Build frontend (static -> src/cndb/static)
         run: cd frontend && pnpm build
