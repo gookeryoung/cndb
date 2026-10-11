@@ -85,13 +85,6 @@ function chunkAttributionPlugin(): Plugin {
   }
 }
 
-// ── vitest.config.ts（同时也是 Vite config）──────────────────────────
-// 注意：不要改 Vite 顶层 cacheDir —— Vite deps optimizer 默认缓存到
-// node_modules/.vite/deps，setup-node 的 pnpm store cache 命中后这层直接
-// 复用。强行改 cacheDir 会导致 CI runner 上 transform cache miss，
-// vitest 全量 transform 反而更慢（实测：round1 182s vs round2 303s）。
-// vitest 5 的 test transform cache 独立放在 .vitest-cache/vitest，
-// 不受 Vite 顶层 cacheDir 影响，可通过 CI actions/cache 单独缓存。
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
