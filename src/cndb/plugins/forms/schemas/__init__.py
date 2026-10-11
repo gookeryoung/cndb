@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from cndb.plugins.forms.schemas.models import (
+    ALLOWED_FORM_WIDGETS,
+    FORM_WIDGET_FIELD_TYPES,
     FormCreate,
     FormFieldConfig,
     FormListItemResponse,
@@ -13,6 +15,8 @@ from cndb.plugins.forms.schemas.models import (
 )
 
 __all__ = [
+    "ALLOWED_FORM_WIDGETS",
+    "FORM_WIDGET_FIELD_TYPES",
     "FormCreate",
     "FormFieldConfig",
     "FormListItemResponse",

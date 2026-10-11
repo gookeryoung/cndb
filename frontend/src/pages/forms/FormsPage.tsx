@@ -11,9 +11,9 @@ import {
   Table, Tag, Typography,
 } from 'antd'
 import type { FormInstance } from 'antd'
-import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import { ArrowDownOutlined, ArrowUpOutlined, AuditOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { fieldApi, formApi, tableApi } from '@/api'
+import { fieldApi, formApi, tableApi, workflowApi } from '@/api'
 import type { FormFieldConfig, FormListItem, FormRoleThreshold, ID } from '@/api'
 
 const { Title, Text } = Typography
@@ -26,6 +26,8 @@ interface EditorValues {
   use_role: FormRoleThreshold
   edit_role: FormRoleThreshold
   delete_role: FormRoleThreshold
+  /** 绑定的审批流；null = 直接提交落库 */
+  approval_workflow_id?: ID | null
 }
 
 const ROLE_OPTIONS: Array<{ value: FormRoleThreshold; label: string }> = [
@@ -89,6 +91,14 @@ export default function FormsPage() {
       key: 'description',
       ellipsis: true,
       render: (d: string) => d || <Text type="secondary" italic>—</Text>,
+    },
+    {
+      title: '审批',
+      dataIndex: 'approval_workflow_id',
+      key: 'approval',
+      width: 90,
+      render: (wid: ID | null) =>
+        wid ? <Tag color="gold" icon={<AuditOutlined />}>审批</Tag> : <Text type="secondary">—</Text>,
     },
     {
       title: '权限阈值',
@@ -193,6 +203,13 @@ function FormEditorDrawer({ open, editing, wid, form, onClose }: DrawerProps) {
     enabled: open && !!selectedTableId,
   })
 
+  // 工作区审批流（表单绑定后提交进入审批而非直接落库）
+  const { data: workflows = [] } = useQuery({
+    queryKey: ['workspaces', wid, 'workflows'],
+    queryFn: () => workflowApi.list(wid),
+    enabled: open,
+  })
+
   const create = useMutation({
     mutationFn: (data: Parameters<typeof formApi.create>[1]) => formApi.create(wid, data),
     onSuccess: () => { message.success('表单已创建'); finish() },
@@ -222,6 +239,7 @@ function FormEditorDrawer({ open, editing, wid, form, onClose }: DrawerProps) {
           use_role: detail.use_role,
           edit_role: detail.edit_role,
           delete_role: detail.delete_role,
+          approval_workflow_id: detail.approval_workflow_id ?? null,
         })
         setFieldStates(Object.fromEntries(detail.field_config.map(fc => [fc.field_name, fc])))
         setFieldOrder(detail.field_config.map(fc => fc.field_name))
@@ -393,6 +411,18 @@ function FormEditorDrawer({ open, editing, wid, form, onClose }: DrawerProps) {
         </Form.Item>
         <Form.Item name="delete_role" label="删除权限" tooltip="表单内删除行的最低工作区角色">
           <Select options={ROLE_OPTIONS} />
+        </Form.Item>
+        <Form.Item
+          name="approval_workflow_id"
+          label="提交审批流（可选）"
+          tooltip="绑定后经表单提交的数据进入审批流逐级审批，链尾通过才落库；未绑定时提交直接落库"
+        >
+          <Select
+            allowClear
+            placeholder="不绑定（提交直接落库）"
+            options={workflows.map(wf => ({ value: wf.id, label: wf.name }))}
+            notFoundContent={<Text type="secondary">尚无审批流，可在「审批流」页创建</Text>}
+          />
         </Form.Item>
         <Alert
           type="info" showIcon

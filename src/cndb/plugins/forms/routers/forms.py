@@ -43,6 +43,11 @@ from cndb.plugins.forms.services.permissions import (
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
+from cndb.plugins.workflows.models import Workflow
+from cndb.plugins.workflows.services.approval import (
+    ApprovalConflictError,
+    submit_for_approval,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/{workspace_id}/forms", tags=["forms"])
@@ -51,6 +56,19 @@ router = APIRouter(prefix="/{workspace_id}/forms", tags=["forms"])
 def _form_to_response(form: FormDefinition) -> FormResponse:
     """FormDefinition → FormResponse（datetime 由 Pydantic 序列化）."""
     return FormResponse.model_validate(form)
+
+
+def _validate_workflow_binding(
+    db: Session,
+    workspace_id: int,
+    workflow_id: int | None,
+) -> None:
+    """校验表单绑定的审批流：必须存在于同一工作区（None = 解绑/不启用）."""
+    if workflow_id is None:
+        return
+    wf = db.get(Workflow, workflow_id)
+    if wf is None or wf.workspace_id != workspace_id:
+        raise HTTPException(status_code=400, detail="绑定的审批流不存在或不属于当前工作区")
 
 
 def _validate_or_400(db: Session, table_id: int, field_config: list[dict[str, Any]]) -> None:
@@ -99,6 +117,7 @@ def list_forms(
                 use_role=form.use_role,
                 edit_role=form.edit_role,
                 delete_role=form.delete_role,
+                approval_workflow_id=form.approval_workflow_id,
                 order=form.order,
                 updated_at=form.updated_at,
             )
@@ -131,6 +150,7 @@ def create_form(
     if existing:
         raise HTTPException(status_code=400, detail="同表下表单名已存在")
 
+    _validate_workflow_binding(db, workspace_id, payload.approval_workflow_id)
     field_config = [item.model_dump() for item in payload.field_config]
     _validate_or_400(db, payload.table_id, field_config)
 
@@ -144,6 +164,7 @@ def create_form(
         use_role=payload.use_role,
         edit_role=payload.edit_role,
         delete_role=payload.delete_role,
+        approval_workflow_id=payload.approval_workflow_id,
         order=payload.order,
     )
     db.add(form)
@@ -177,6 +198,8 @@ def update_form(
     form, table = ctx.form, ctx.table
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "approval_workflow_id" in update_data:
+        _validate_workflow_binding(db, workspace_id, update_data["approval_workflow_id"])
     if "field_config" in update_data:
         field_config = [item if isinstance(item, dict) else item.model_dump() for item in update_data["field_config"]]
         _validate_or_400(db, table.id, field_config)
@@ -276,6 +299,7 @@ def get_form_meta(
         can_submit=can_submit,
         can_edit=can_edit,
         can_delete=can_delete,
+        approval_workflow_id=form.approval_workflow_id,
     )
 
 
@@ -294,13 +318,32 @@ def create_form_row(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    """经表单新建行（表级 EDIT_RECORDS + 表单 USE）."""
+    """经表单新建行（表级 EDIT_RECORDS + 表单 USE）；绑定审批流时进入审批而非直接落库."""
     ctx = _load_form_with_table(db, form_id, workspace_id, current_user, TableAction.EDIT_RECORDS)
     form, table = ctx.form, ctx.table
     ensure_form_access(db, form, current_user, FormAction.USE)
 
     values = filter_payload_keys(db, table, current_user, form.field_config or [], payload.values)
     values = apply_form_defaults(form.field_config or [], values)
+
+    # 绑定审批流：值入审批实例快照，不直接落库
+    workflow = db.get(Workflow, form.approval_workflow_id) if form.approval_workflow_id else None
+    if workflow is not None:
+        try:
+            instance = submit_for_approval(db, form, table, workflow, values, current_user)
+        except ApprovalConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        db.commit()
+        return {
+            "approval": {
+                "id": instance.id,
+                "workflow_id": workflow.id,
+                "workflow_name": workflow.name,
+                "status": instance.status,
+                "current_approver_role": instance.current_approver_role,
+            }
+        }
+
     try:
         row = rec.create_row(db.get_bind(), table, values, db=db)
     except ValueError as exc:

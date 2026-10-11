@@ -810,6 +810,9 @@ export interface ApiConfigImportResult {
 
 // ── 表单定制与权限控制（forms 插件） ────────────────
 
+/** 表单级控件覆盖：null/缺省 = 按 field_type 默认映射渲染（与后端 ALLOWED_FORM_WIDGETS 对齐） */
+export type FormWidgetOverride = 'select' | 'radio' | 'rate'
+
 /** 表单内单个字段的展示与编辑配置（对齐后端 FormFieldConfig） */
 export interface FormFieldConfig {
   field_name: string
@@ -821,6 +824,10 @@ export interface FormFieldConfig {
   visible: boolean
   default_value?: unknown
   help_text?: string | null
+  /** 控件覆盖（须与字段类型兼容，后端按矩阵校验） */
+  widget?: FormWidgetOverride | null
+  /** 控件覆盖参数（如 select/radio 的 {"options": [...]}） */
+  widget_config?: Record<string, unknown> | null
 }
 
 /** 表单权限阈值：'' = 未配置（回退表级判定），否则为工作区角色名 */
@@ -838,6 +845,8 @@ export interface FormDefinition {
   use_role: FormRoleThreshold
   edit_role: FormRoleThreshold
   delete_role: FormRoleThreshold
+  /** 绑定的工作区审批流；null/缺省 = 提交直接落库 */
+  approval_workflow_id?: ID | null
   order: number
   trashed: boolean
   created_at?: string
@@ -854,6 +863,7 @@ export interface FormListItem {
   use_role: FormRoleThreshold
   edit_role: FormRoleThreshold
   delete_role: FormRoleThreshold
+  approval_workflow_id?: ID | null
   order: number
   updated_at?: string
 }
@@ -867,6 +877,7 @@ export interface FormCreate {
   use_role?: FormRoleThreshold
   edit_role?: FormRoleThreshold
   delete_role?: FormRoleThreshold
+  approval_workflow_id?: ID | null
   order?: number
 }
 
@@ -878,6 +889,7 @@ export interface FormUpdate {
   use_role?: FormRoleThreshold
   edit_role?: FormRoleThreshold
   delete_role?: FormRoleThreshold
+  approval_workflow_id?: ID | null
   order?: number
 }
 
@@ -896,6 +908,8 @@ export interface FormMeta {
   can_submit: boolean
   can_edit: boolean
   can_delete: boolean
+  /** 表单绑定的审批流；null = 提交直接落库 */
+  approval_workflow_id?: ID | null
 }
 
 /** 表单行列表响应 */
@@ -903,4 +917,112 @@ export interface FormRowListResponse {
   rows: RowResponse[]
   total: number
   form_id: ID
+}
+
+// ── 审批流（workflows 插件） ─────────────────────────
+
+/** 审批流节点类型：线性链 start → approval* → end */
+export type WorkflowNodeType = 'start' | 'approval' | 'end'
+
+/** 保存审批流的节点载荷（key 为客户端临时键，edges 以其引用） */
+export interface WorkflowNodePayload {
+  key: string
+  name: string
+  node_type: WorkflowNodeType
+  approver_role?: string
+}
+
+/** 保存审批流的边载荷 */
+export interface WorkflowEdgePayload {
+  source: string
+  target: string
+}
+
+/** 创建/更新审批流（整图覆盖语义） */
+export interface WorkflowPayload {
+  name: string
+  description?: string
+  order?: number
+  nodes: WorkflowNodePayload[]
+  edges: WorkflowEdgePayload[]
+}
+
+/** 审批流详情节点（后端返回节点 id 与解析后的 config） */
+export interface WorkflowNodeDto {
+  id: ID
+  name: string
+  node_type: WorkflowNodeType
+  approver_role: string
+  pos_x: number
+  pos_y: number
+}
+
+/** 审批流详情边（source/target 为节点 id） */
+export interface WorkflowEdgeDto {
+  source: ID
+  target: ID
+}
+
+/** 审批流详情（含整图） */
+export interface WorkflowDefinition {
+  id: ID
+  workspace_id: ID
+  name: string
+  description: string
+  order: number
+  nodes: WorkflowNodeDto[]
+  edges: WorkflowEdgeDto[]
+  created_at?: string
+  updated_at?: string
+}
+
+/** 审批流列表项 */
+export interface WorkflowListItem {
+  id: ID
+  name: string
+  description: string
+  order: number
+  updated_at?: string
+}
+
+/** 审批实例状态 */
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
+
+/** 审批实例（对齐后端 ApprovalInstanceResponse） */
+export interface ApprovalInstance {
+  id: ID
+  workspace_id: ID
+  workflow_id: ID
+  workflow_name: string
+  form_id: ID
+  form_name: string
+  table_id: ID
+  status: ApprovalStatus
+  current_node_id?: ID | null
+  current_node_name: string
+  current_approver_role: string
+  submitted_by?: ID | null
+  submitted_by_name: string
+  values: Record<string, unknown>
+  record_id?: ID | null
+  created_at?: string
+  updated_at?: string
+}
+
+/** 表单提交（绑定审批流时）响应：不落库，进入审批 */
+export interface ApprovalSubmitResponse {
+  approval: {
+    id: ID
+    workflow_id: ID
+    workflow_name: string
+    status: ApprovalStatus
+    current_approver_role: string
+  }
+}
+
+/** 经表单新建行的响应：直接落库（RowResponse）或进入审批（ApprovalSubmitResponse） */
+export type FormRowCreateResponse = RowResponse | ApprovalSubmitResponse
+
+export function isApprovalSubmitResponse(r: FormRowCreateResponse): r is ApprovalSubmitResponse {
+  return 'approval' in r
 }

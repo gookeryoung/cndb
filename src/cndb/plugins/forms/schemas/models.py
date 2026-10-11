@@ -32,6 +32,37 @@ class FormFieldConfig(BaseModel):
     visible: bool = True
     default_value: Any = None
     help_text: str | None = None
+    # 控件覆盖：None = 按 field_type 默认映射渲染；合法取值见 ALLOWED_FORM_WIDGETS
+    widget: str | None = None
+    # 控件覆盖参数（如 select/radio 的 {"options": [...]}）
+    widget_config: dict[str, Any] | None = None
+
+
+# ── 表单级控件覆盖：唯一真相源（后端校验以此为准，前端下拉须与此对齐）──
+
+# 允许的覆盖控件
+ALLOWED_FORM_WIDGETS: tuple[str, ...] = ("select", "radio", "rate")
+
+# 各覆盖控件兼容的字段类型（含历史别名；与 tables field_types 命名对齐）
+_TEXTUAL = {
+    "text",
+    "longtext",
+    "long_text",
+    "number",
+    "float",
+    "decimal",
+    "percentage",
+    "email",
+    "url",
+    "phone",
+    "date",
+    "datetime",
+}
+FORM_WIDGET_FIELD_TYPES: dict[str, set[str]] = {
+    "select": _TEXTUAL,
+    "radio": _TEXTUAL,
+    "rate": {"number", "float", "decimal", "percentage"},
+}
 
 
 class FormCreate(BaseModel):
@@ -45,6 +76,8 @@ class FormCreate(BaseModel):
     use_role: str = ""
     edit_role: str = ""
     delete_role: str = ""
+    # 绑定的工作区审批流；None = 直接提交（原行为）
+    approval_workflow_id: int | None = None
     order: int = 0
 
     @field_validator("use_role", "edit_role", "delete_role")
@@ -63,6 +96,7 @@ class FormUpdate(BaseModel):
     use_role: str | None = None
     edit_role: str | None = None
     delete_role: str | None = None
+    approval_workflow_id: int | None = None
     order: int | None = None
 
     @field_validator("use_role", "edit_role", "delete_role")
@@ -86,6 +120,7 @@ class FormResponse(BaseModel):
     use_role: str
     edit_role: str
     delete_role: str
+    approval_workflow_id: int | None = None
     order: int
     trashed: bool
     created_at: dt.datetime | None = None
@@ -105,6 +140,7 @@ class FormListItemResponse(BaseModel):
     use_role: str
     edit_role: str
     delete_role: str
+    approval_workflow_id: int | None = None
     order: int
     updated_at: dt.datetime | None = None
 
@@ -131,9 +167,13 @@ class FormMetaResponse(BaseModel):
     can_submit: bool
     can_edit: bool
     can_delete: bool
+    # 绑定的审批流 id；None = 提交直接落库
+    approval_workflow_id: int | None = None
 
 
 __all__ = [
+    "ALLOWED_FORM_WIDGETS",
+    "FORM_WIDGET_FIELD_TYPES",
     "FormCreate",
     "FormFieldConfig",
     "FormListItemResponse",

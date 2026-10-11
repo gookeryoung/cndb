@@ -6,6 +6,7 @@ import type {
   FormDefinition,
   FormListItem,
   FormMeta,
+  FormRowCreateResponse,
   FormRowListResponse,
   FormUpdate,
   RowResponse,
@@ -26,8 +27,9 @@ export const formApi = {
     /** 表单运行时元数据（字段配置 + 失效清单 + 当前用户操作位） */
     meta: (wid: number | string, formId: number | string) =>
         api.get<FormMeta>(`/v1/workspaces/${wid}/forms/${formId}/meta`).then(r => r.data),
+    /** 新建行：绑定审批流时返回 { approval }，否则返回行数据 */
     createRow: (wid: number | string, formId: number | string, values: Record<string, unknown>) =>
-        api.post<RowResponse>(`/v1/workspaces/${wid}/forms/${formId}/rows`, { values }).then(r => r.data),
+        api.post<FormRowCreateResponse>(`/v1/workspaces/${wid}/forms/${formId}/rows`, { values }).then(r => r.data),
     listRows: (wid: number | string, formId: number | string, limit = 50, offset = 0) =>
         api.get<FormRowListResponse>(`/v1/workspaces/${wid}/forms/${formId}/rows`, { params: { limit, offset } }).then(r => r.data),
     updateRow: (wid: number | string, formId: number | string, rowId: number | string, values: Record<string, unknown>) =>
