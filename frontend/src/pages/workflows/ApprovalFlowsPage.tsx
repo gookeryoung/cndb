@@ -5,7 +5,7 @@
  * 实例动作委托 approvalApi（approve/reject），409/403 由全局错误提示呈现。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   Alert, App as AntApp, Button, Drawer, Empty, Form, Input, Select, Space, Table, Tabs, Tag, Typography,
@@ -87,6 +87,28 @@ function buildPayload(name: string, description: string, steps: Step[]): Workflo
 export default function ApprovalFlowsPage() {
   const { wid } = useParams<{ wid: string }>()
 
+  // 数量徽标数据 —— queryKey 与子 Tab（FlowsTab/InboxTab）一致，
+  // react-query 自动去重共享缓存，子 Tab 挂载时不重复请求
+  const { data: flows = [], isSuccess: flowsReady } = useQuery<WorkflowListItem[]>({
+    queryKey: ['workspaces', wid, 'workflows'],
+    queryFn: () => workflowApi.list(wid!),
+  })
+  const { data: pendingItems = [], isSuccess: pendingReady } = useQuery<ApprovalInstance[]>({
+    queryKey: ['workspaces', wid, 'approvals', 'pending_for_me'],
+    queryFn: () => approvalApi.list(wid!, 'pending_for_me'),
+  })
+  const { data: mineItems = [], isSuccess: mineReady } = useQuery<ApprovalInstance[]>({
+    queryKey: ['workspaces', wid, 'approvals', 'mine'],
+    queryFn: () => approvalApi.list(wid!, 'mine'),
+  })
+
+  /** 我提交的：按状态类别计数（待审批=金 / 已通过=绿 / 已驳回=红，沿用 STATUS_COLOR） */
+  const mineStatusCount = useMemo(() => {
+    const c: Record<ApprovalStatus, number> = { pending: 0, approved: 0, rejected: 0 }
+    for (const it of mineItems) c[it.status] += 1
+    return c
+  }, [mineItems])
+
   return (
     <div style={{ padding: 24 }}>
       <Title level={3} style={{ margin: 0, marginBottom: 12 }}>
@@ -98,9 +120,42 @@ export default function ApprovalFlowsPage() {
       <Tabs
         defaultActiveKey="flows"
         items={[
-          { key: 'flows', label: '审批流配置', children: <FlowsTab wid={wid!} /> },
-          { key: 'inbox', label: '待我审批', children: <InboxTab wid={wid!} scope="pending_for_me" /> },
-          { key: 'mine', label: '我提交的', children: <InboxTab wid={wid!} scope="mine" /> },
+          {
+            key: 'flows',
+            label: (
+              <span>
+                审批流配置
+                {flowsReady && <span className="cn-ws-tab-count">{flows.length}</span>}
+              </span>
+            ),
+            children: <FlowsTab wid={wid!} />,
+          },
+          {
+            key: 'inbox',
+            label: (
+              <span>
+                待我审批
+                {pendingReady && (pendingItems.length > 0
+                  ? <Tag color="gold" className="cn-ws-tab-count-tag">{pendingItems.length}</Tag>
+                  : <span className="cn-ws-tab-count">0</span>)}
+              </span>
+            ),
+            children: <InboxTab wid={wid!} scope="pending_for_me" />,
+          },
+          {
+            key: 'mine',
+            label: (
+              <span>
+                我提交的
+                {mineReady && (Object.keys(APPROVAL_STATUS_TEXT) as ApprovalStatus[]).map(s => (
+                  <Tag key={s} color={STATUS_COLOR[s]} className="cn-ws-tab-count-tag">
+                    {APPROVAL_STATUS_TEXT[s]} {mineStatusCount[s]}
+                  </Tag>
+                ))}
+              </span>
+            ),
+            children: <InboxTab wid={wid!} scope="mine" />,
+          },
         ]}
       />
     </div>

@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { Routes, Route } from 'react-router-dom'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import ApprovalFlowsPage from './ApprovalFlowsPage'
 import { renderProviders } from '@/test/render-providers'
 import { server, mockWorkflowDetail, mockPendingApprovals } from '@/test/msw'
@@ -99,7 +99,7 @@ describe('ApprovalFlowsPage 审批流页', () => {
         renderPage()
 
         // 默认 Tab 为审批流配置，切换到待我审批
-        fireEvent.click(screen.getByRole('tab', { name: '待我审批' }))
+        fireEvent.click(screen.getByRole('tab', { name: /待我审批/ }))
         expect(await screen.findByText('姓名: 王五；年龄: 25')).toBeInTheDocument()
         expect(screen.getByText('bob')).toBeInTheDocument()
         expect(screen.getByText('主管审批')).toBeInTheDocument()
@@ -119,7 +119,7 @@ describe('ApprovalFlowsPage 审批流页', () => {
         )
         renderPage()
 
-        fireEvent.click(screen.getByRole('tab', { name: '待我审批' }))
+        fireEvent.click(screen.getByRole('tab', { name: /待我审批/ }))
         fireEvent.click(await screen.findByRole('button', { name: '驳回 客户信息录入' }))
 
         const confirmModal = await screen.findByRole('dialog')
@@ -133,10 +133,40 @@ describe('ApprovalFlowsPage 审批流页', () => {
     it('我提交的：展示已通过状态与落库行号', async () => {
         renderPage()
 
-        fireEvent.click(screen.getByRole('tab', { name: '我提交的' }))
+        fireEvent.click(screen.getByRole('tab', { name: /我提交的/ }))
         expect(await screen.findByText('已通过')).toBeInTheDocument()
         expect(screen.getByText('#9')).toBeInTheDocument()
         // 我提交的 Tab 不显示操作按钮
         expect(screen.queryByRole('button', { name: /批准/ })).not.toBeInTheDocument()
+    })
+
+    it('Tab 显示数量信息：审批流配置（灰）/ 待我审批（金）/ 我提交的按状态配色（金/绿/红）', async () => {
+        renderPage()
+
+        // 审批流配置 tab：审批流总数（msw 返回 1 条），无类别徽标
+        const flowsTab = await screen.findByRole('tab', { name: /审批流配置/ })
+        await waitFor(() => {
+            expect(flowsTab).toHaveTextContent('1')
+            expect(flowsTab.querySelector('.ant-tag')).toBeNull()
+        })
+
+        // 待我审批 tab：待审数量以金色徽标展示（mock 1 条待审）
+        const inboxTab = screen.getByRole('tab', { name: /待我审批/ })
+        await waitFor(() => {
+            expect(inboxTab.querySelector('.ant-tag')).toHaveClass('ant-tag-gold')
+        })
+
+        // 我提交的 tab：按状态类别配色计数（mock 1 条已通过，其余为 0 也展示）
+        const mineTab = screen.getByRole('tab', { name: /我提交的/ })
+        await waitFor(() => {
+            expect(mineTab).toHaveTextContent('待审批 0')
+            expect(mineTab).toHaveTextContent('已通过 1')
+            expect(mineTab).toHaveTextContent('已驳回 0')
+        })
+        const mineTags = mineTab.querySelectorAll('.ant-tag')
+        expect(mineTags).toHaveLength(3)
+        expect(mineTags[0]).toHaveClass('ant-tag-gold')
+        expect(mineTags[1]).toHaveClass('ant-tag-green')
+        expect(mineTags[2]).toHaveClass('ant-tag-red')
     })
 })

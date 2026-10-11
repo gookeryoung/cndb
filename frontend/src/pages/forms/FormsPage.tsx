@@ -66,6 +66,9 @@ export default function FormsPage() {
     onError: (err) => message.error(err instanceof Error ? err.message : '删除表单失败'),
   })
 
+  /** 类别数量：绑定审批流 vs 直接落库（蓝/金两色区分，与列表「审批」列同色系） */
+  const approvalCount = forms.filter(f => f.approval_workflow_id != null).length
+
   const confirmDelete = (f: FormListItem) => {
     modal.confirm({
       title: `删除表单「${f.name}」？`,
@@ -137,7 +140,15 @@ export default function FormsPage() {
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>表单</Title>
+        <Space align="center" size={12}>
+          <Title level={3} style={{ margin: 0 }}>表单</Title>
+          {!isLoading && (
+            <>
+              <Tag color="blue" data-testid="form-count-direct">直接落库 {forms.length - approvalCount}</Tag>
+              <Tag color="gold" data-testid="form-count-approval">走审批 {approvalCount}</Tag>
+            </>
+          )}
+        </Space>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建表单</Button>
       </div>
       <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>

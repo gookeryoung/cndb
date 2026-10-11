@@ -11,7 +11,7 @@ import { Routes, Route } from 'react-router-dom'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import FormsPage from './FormsPage'
 import { renderProviders } from '@/test/render-providers'
-import { server } from '@/test/msw'
+import { mockFormList, server } from '@/test/msw'
 
 function renderPage() {
     return renderProviders(
@@ -43,6 +43,24 @@ describe('FormsPage 表单管理页', () => {
         expect(screen.getByText('使用:viewer')).toBeInTheDocument()
         expect(screen.getByText('编辑:editor')).toBeInTheDocument()
         expect(screen.getByText('删除:表级')).toBeInTheDocument()
+    })
+
+    it('页头按类别显示数量：直接落库（蓝）/ 走审批（金）颜色区分', async () => {
+        // 覆盖表单列表：2 个表单，其中 1 个绑定审批流
+        server.use(
+            http.get('/api/v1/workspaces/10/forms', () => HttpResponse.json([
+                mockFormList[0],
+                { ...mockFormList[0], id: 2, name: '请假申请', approval_workflow_id: 5 },
+            ])),
+        )
+        renderPage()
+
+        const directTag = await screen.findByTestId('form-count-direct')
+        expect(directTag).toHaveTextContent('直接落库 1')
+        expect(directTag).toHaveClass('ant-tag-blue')
+        const approvalTag = screen.getByTestId('form-count-approval')
+        expect(approvalTag).toHaveTextContent('走审批 1')
+        expect(approvalTag).toHaveClass('ant-tag-gold')
     })
 
     it('空列表显示空态提示与新建入口', async () => {
