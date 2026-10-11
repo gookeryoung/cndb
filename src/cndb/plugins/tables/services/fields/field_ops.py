@@ -240,30 +240,39 @@ def execute_field_import(
         logger.info("[field_ops] 没有可克隆的字段，跳过")
         return []
 
-    # 分配物理列名 + 持久化 metadata
+    # 阶段一：全部 DDL 先成功，再 ORM commit —— 避免孤儿 DataField（importer._auto_add_fields 同款事务策略）
+    from cndb.plugins.tables.services.core.ddl import drop_column
+
     for f in plan:
         f.ensure_db_name()
-        db.add(f)
-    db.commit()
-    # 重新加载拿到 db_column_name 等完整属性
-    for f in plan:
-        db.refresh(f)
 
-    # 批量物理加列
-    created: list[DataField] = []
+    ddl_ok: list[DataField] = []  # 记录 DDL 成功的字段，失败时逆向清理
     try:
         for f in plan:
             _ddl.add_column(engine, dst_table, f)
             if f.is_unique:
                 _ddl.add_unique_constraint(engine, dst_table, f)
-            created.append(f)
+            ddl_ok.append(f)
     except Exception:
-        db.rollback()
-        # 已成功加列的需要回滚 DDL —— 简单起见这里直接抛错让上层决定
+        # 逆向清理已成功的 DDL 列
+        for f in reversed(ddl_ok):
+            import contextlib as _cl
+
+            with _cl.suppress(Exception):
+                if f.is_unique:
+                    _ddl.drop_unique_constraint(engine, dst_table, f)
+                drop_column(engine, dst_table, f)
         raise
 
-    logger.info("[field_ops] 从源表克隆 %d 个字段到 %s", len(created), dst_table.name)
-    return created
+    # 全部 DDL 成功 → 持久化 DataField 元数据
+    for f in plan:
+        db.add(f)
+    db.commit()
+    for f in plan:
+        db.refresh(f)
+
+    logger.info("[field_ops] 从源表克隆 %d 个字段到 %s", len(plan), dst_table.name)
+    return list(plan)
 
 
 # ── 便捷入口 ─────────────────────────────────────────
@@ -307,24 +316,35 @@ def clone_fields_between_tables(
     if not plan:
         return [], skipped
 
+    # 阶段一：全部 DDL 先成功，再 ORM commit —— 避免孤儿 DataField
+    from cndb.plugins.tables.services.core.ddl import drop_column
+
     for f in plan:
         f.ensure_db_name()
-        db.add(f)
-    db.commit()
-    for f in plan:
-        db.refresh(f)
 
+    ddl_ok: list[DataField] = []
     try:
-        created: list[DataField] = []
         for f in plan:
             _ddl.add_column(engine, dst_table, f)
             if f.is_unique:
                 _ddl.add_unique_constraint(engine, dst_table, f)
-            created.append(f)
+            ddl_ok.append(f)
     except Exception:
-        db.rollback()
+        for f in reversed(ddl_ok):
+            import contextlib as _cl
+
+            with _cl.suppress(Exception):
+                if f.is_unique:
+                    _ddl.drop_unique_constraint(engine, dst_table, f)
+                drop_column(engine, dst_table, f)
         raise
-    return created, skipped
+
+    for f in plan:
+        db.add(f)
+    db.commit()
+    for f in plan:
+        db.refresh(f)
+    return list(plan), skipped
 
 
 def generate_column_name() -> str:
@@ -389,7 +409,7 @@ def import_fields_as_lookup(
     if not eligible:
         return [], skipped
 
-    # 2. 复用或创建指向源表的 link 字段
+    # 2. 复用或创建指向源表的 link 字段（DDL → commit，避免孤儿 metadata）
     link_field = next(
         (
             f
@@ -407,16 +427,22 @@ def import_fields_as_lookup(
             order=max((f.order for f in dst_table.fields if not f.trashed), default=-1) + 1,
         )
         link_field.ensure_db_name()
+        # 先 DDL 创建关联表（失败则 link metadata 不残留，因为还没 commit）
+        try:
+            _ddl.create_link_table(engine, link_field)
+        except Exception:
+            logger.error("[field_ops] 创建 link 关联物理表失败: %s", link_field.name, exc_info=True)
+            raise
         db.add(link_field)
         db.commit()
         db.refresh(link_field)
-        _ddl.create_link_table(engine, link_field)
         created.append(link_field)
         logger.info("[field_ops] 自动创建关联字段 %r → 表 %s", link_field.name, src_table.name)
 
-    # 3. 每个源字段创建一个 lookup 字段
+    # 3. 每个源字段创建一个 lookup 字段（批量 add + 单次 commit，lookup 不落物理列）
     next_order = max((f.order for f in dst_table.fields if not f.trashed), default=-1) + 1
     existing_names = {f.name for f in dst_table.fields if not f.trashed}
+    lookups_to_add: list[DataField] = []
     for src in eligible:
         if src.name in existing_names:
             skipped.append(f"{src.name} — 目标表已存在同名字段，跳过")
@@ -435,10 +461,20 @@ def import_fields_as_lookup(
         )
         next_order += 1
         lookup_field.ensure_db_name()
-        db.add(lookup_field)
-        db.commit()
-        db.refresh(lookup_field)
-        created.append(lookup_field)
+        lookups_to_add.append(lookup_field)
+
+    if lookups_to_add:
+        try:
+            for lf in lookups_to_add:
+                db.add(lf)
+            db.commit()
+            for lf in lookups_to_add:
+                db.refresh(lf)
+            created.extend(lookups_to_add)
+        except Exception:
+            # lookup 无物理列，rollback 有效
+            db.rollback()
+            raise
 
     lookup_count = sum(1 for f in created if f.field_type == "lookup")
     logger.info(
