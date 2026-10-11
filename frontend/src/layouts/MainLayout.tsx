@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useCallback } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer } from 'antd'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer, Tag } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
 import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
@@ -9,7 +9,7 @@ import {
   HomeOutlined, MenuOutlined, InfoCircleOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { workspaceApi, tableApi } from '@/api'
+import { approvalApi, formApi, tableApi, workflowApi, workspaceApi } from '@/api'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 
@@ -95,6 +95,30 @@ export default function MainLayout() {
     enabled: !!wid,
   })
 
+  // 「表单」「审批流」tab 数量徽标数据 —— queryKey 与 FormsPage/ApprovalFlowsPage
+  // 一致，react-query 自动去重，进入对应页面时命中共享缓存不重复请求。
+  const { data: forms = [], isSuccess: formsReady } = useQuery({
+    queryKey: ['forms', wid],
+    queryFn: () => formApi.list(wid!),
+    enabled: !!wid,
+  })
+
+  const { data: wsWorkflows = [], isSuccess: flowsReady } = useQuery({
+    queryKey: ['workspaces', wid, 'workflows'],
+    queryFn: () => workflowApi.list(wid!),
+    enabled: !!wid,
+  })
+
+  // 待我审批实例：审批流 tab 上金色「待审」徽标的来源（需关注类别）
+  const { data: pendingApprovals = [], isSuccess: pendingReady } = useQuery({
+    queryKey: ['workspaces', wid, 'approvals', 'pending_for_me'],
+    queryFn: () => approvalApi.list(wid!, 'pending_for_me'),
+    enabled: !!wid,
+  })
+
+  /** 绑定审批流的表单数（金色类别徽标：与表单列表「审批」列同色系） */
+  const approvalBoundForms = forms.filter(f => f.approval_workflow_id != null).length
+
   // 后端已按 DataTable.order（用户拖拽顺序）返回，这里直接使用即可。
   const orderedTables = tables
 
@@ -102,9 +126,11 @@ export default function MainLayout() {
 
   /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），覆盖数据表、报表与设置入口.
    *
-   * 「数据资产」「报表」label 内嵌数量徽标：仅数据就绪后渲染（0 也显示），
-   * 未就绪/字段缺失时不渲染占位，避免加载瞬间误导（class cn-ws-tab-count，
-   * 样式走 var(--cn-*) 主题变量）；「工作区设置」无徽标。
+   * 各 label 内嵌数量徽标：仅数据就绪后渲染（0 也显示），未就绪时不渲染占位，
+   * 避免加载瞬间误导（class cn-ws-tab-count，样式走 var(--cn-*) 主题变量）。
+   * 含类别的徽标用 antd Tag 预设色做颜色区分（class cn-ws-tab-count-tag）：
+   * 「表单」金色 = 绑定审批流的表单数；「审批流」金色 = 待我审批数；
+   * 「工作区设置」无徽标。
    */
   const wsTabItems: TabsProps['items'] = [
     {
@@ -118,11 +144,27 @@ export default function MainLayout() {
     },
     {
       key: 'forms',
-      label: '表单',
+      label: (
+        <span>
+          表单
+          {formsReady && <span className="cn-ws-tab-count">{forms.length}</span>}
+          {formsReady && approvalBoundForms > 0 && (
+            <Tag color="gold" className="cn-ws-tab-count-tag">{approvalBoundForms} 走审批</Tag>
+          )}
+        </span>
+      ),
     },
     {
       key: 'approvals',
-      label: '审批流',
+      label: (
+        <span>
+          审批流
+          {flowsReady && <span className="cn-ws-tab-count">{wsWorkflows.length}</span>}
+          {pendingReady && pendingApprovals.length > 0 && (
+            <Tag color="gold" className="cn-ws-tab-count-tag">{pendingApprovals.length} 待审</Tag>
+          )}
+        </span>
+      ),
     },
     {
       key: 'reports',

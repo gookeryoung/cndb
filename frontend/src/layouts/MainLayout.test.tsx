@@ -5,10 +5,11 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
 import { renderProviders } from '@/test/render-providers'
-import { mockUser } from '@/test/msw'
+import { mockFormList, mockUser, server } from '@/test/msw'
 import type { UserResponse } from '@/api'
 import type { ResponsiveState } from '@/hooks/useResponsive'
 
@@ -122,6 +123,19 @@ describe('MainLayout 顶部导航', () => {
         await waitFor(() => {
             expect(screen.getByRole('tab', { name: /报表/ })).toHaveTextContent('0')
         })
+        // 表单 tab：总数徽标（mock 1 个表单，未绑审批流 → 无金色类别徽标）
+        await waitFor(() => {
+            const formsTab = screen.getByRole('tab', { name: /表单/ })
+            expect(formsTab).toHaveTextContent('1')
+            expect(formsTab.querySelector('.ant-tag')).toBeNull()
+        })
+        // 审批流 tab：审批流总数（1）+ 待我审批金色类别徽标（mock 1 条待审）
+        await waitFor(() => {
+            const flowsTab = screen.getByRole('tab', { name: /审批流/ })
+            expect(flowsTab).toHaveTextContent('1')
+            expect(flowsTab).toHaveTextContent('1 待审')
+            expect(flowsTab.querySelector('.ant-tag')).toHaveClass('ant-tag-gold')
+        })
         expect(screen.getByRole('tab', { name: /数据资产/ }).closest('.ant-tabs-tab'))
             .toHaveClass('ant-tabs-tab-active')
 
@@ -137,6 +151,24 @@ describe('MainLayout 顶部导航', () => {
         fireEvent.click(screen.getByRole('tab', { name: /报表/ }))
         await waitFor(() => {
             expect(screen.getByTestId('reports-page-stub')).toHaveTextContent('/w/10/reports')
+        })
+    })
+
+    it('表单 tab 显示绑定审批流的金色类别徽标（N 走审批）', async () => {
+        // 覆盖表单列表：2 个表单，其中 1 个绑定审批流
+        server.use(
+            http.get('/api/v1/workspaces/10/forms', () => HttpResponse.json([
+                mockFormList[0],
+                { ...mockFormList[0], id: 2, name: '请假申请', approval_workflow_id: 5 },
+            ])),
+        )
+        renderLayout(mockUser)
+
+        const formsTab = await screen.findByRole('tab', { name: /表单/ })
+        await waitFor(() => {
+            expect(formsTab).toHaveTextContent('2')
+            expect(formsTab).toHaveTextContent('1 走审批')
+            expect(formsTab.querySelector('.ant-tag')).toHaveClass('ant-tag-gold')
         })
     })
 
