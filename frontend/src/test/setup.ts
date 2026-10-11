@@ -119,7 +119,14 @@ if (typeof Blob !== 'undefined' && !Blob.prototype.stream) {
 const originalConsoleError = console.error.bind(console)
 console.error = (...args: unknown[]) => {
   const text = args.map((a) => (typeof a === 'string' ? a : String(a))).join('\n')
+  // 抑制 antd / rc-* 在 requestAnimationFrame 中更新状态产生的 act 警告
   if (text.includes('not wrapped in act') && /node_modules[\\/].*(?:antd|rc-[a-z-]+)/.test(text)) {
+    return
+  }
+  // 抑制 rc-trigger 在 jsdom 中 Modal + Popconfirm 组合场景下的 shadow root 警告：
+  // 两者都 Portal 到 body，真实浏览器中 getRootNode() 相同；jsdom 对多 Portal
+  // 根元素的 getRootNode 实现与浏览器有差异，触发条件性误报，不影响功能。
+  if (text.includes('trigger element and popup element should in same shadow root')) {
     return
   }
   originalConsoleError(...args)
