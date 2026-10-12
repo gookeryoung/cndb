@@ -12,7 +12,7 @@ import {
 import {
   PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined,
   UploadOutlined, ApiOutlined, TeamOutlined, UserOutlined,
-  LoginOutlined, MoreOutlined, HolderOutlined,
+  LoginOutlined, MoreOutlined, HolderOutlined, DatabaseOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -392,6 +392,7 @@ export default function TablesList() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <Title level={3} style={{ margin: 0 }}>
+            <DatabaseOutlined style={{ marginRight: 8 }} />
             {workspace?.name ? `${workspace.name} · 数据资产` : '数据资产目录'}
           </Title>
           <Text type="secondary">

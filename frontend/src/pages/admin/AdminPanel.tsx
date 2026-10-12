@@ -415,7 +415,7 @@ export default function AdminPanel() {
 
   return (
     <div style={{ padding: 24, maxWidth: 960 }} data-testid="admin-panel">
-      <Title level={3} style={{ marginBottom: 4 }}>系统管理台</Title>
+      <Title level={3} style={{ marginBottom: 4 }}><SafetyOutlined style={{ marginRight: 8 }} />系统管理台</Title>
       <Text type="secondary">用户管理、完整备份、恢复与系统运行信息查看。以下操作需要系统管理员权限。</Text>
 
       <Card style={{ marginTop: 16 }}>

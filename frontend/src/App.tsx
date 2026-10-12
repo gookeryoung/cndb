@@ -20,7 +20,7 @@ const GridPage = lazy(() => import('@/pages/grid/GridPage'))
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'))
 const FormsPage = lazy(() => import('@/pages/forms/FormsPage'))
 const FormRunnerPage = lazy(() => import('@/pages/forms/FormRunnerPage'))
-const ApprovalFlowsPage = lazy(() => import('@/pages/workflows/ApprovalFlowsPage'))
+const ApprovalCenterPage = lazy(() => import('@/pages/workflows/ApprovalCenterPage'))
 const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
@@ -68,7 +68,7 @@ function AuthenticatedApp() {
             <Suspense fallback={<PageFallback />}><FormRunnerPage /></Suspense>
           } />
           <Route path="w/:wid/approvals" element={
-            <Suspense fallback={<PageFallback />}><ApprovalFlowsPage /></Suspense>
+            <Suspense fallback={<PageFallback />}><ApprovalCenterPage /></Suspense>
           } />
           <Route path="admin" element={
             <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>
