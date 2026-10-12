@@ -38,6 +38,8 @@ interface RenderDrawerProps {
     initialValues?: RowValues
     onCreated?: () => void
     onClose?: () => void
+    readOnly?: boolean
+    approvalMode?: boolean
 }
 
 function renderDrawer(props: RenderDrawerProps = {}) {
@@ -51,6 +53,8 @@ function renderDrawer(props: RenderDrawerProps = {}) {
             onClose={props.onClose ?? (() => { })}
             initialValues={props.initialValues}
             onCreated={props.onCreated}
+            readOnly={props.readOnly}
+            approvalMode={props.approvalMode}
         />,
     )
 }
@@ -137,6 +141,43 @@ describe('RowDetailDrawer 行详情抽屉', () => {
         await waitFor(() => expect(patchBody.values).toBeDefined())
         const values = (patchBody as { values: Record<string, unknown> }).values
         expect(values.部门).toEqual([7, 8])
+    })
+})
+
+// ─────────────── 编辑审批模式（approvalMode / readOnly）───────────────
+
+describe('RowDetailDrawer 编辑审批模式', () => {
+    it('approvalMode 时提交按钮文案为「提交审批」', () => {
+        setup()
+        renderDrawer({ approvalMode: true })
+
+        expect(screen.getByRole('button', { name: /提\s*交\s*审\s*批$/ })).toBeInTheDocument()
+    })
+
+    it('approvalMode 保存返回变更单载荷（202）：提示「已提交审批」而非「已保存」', async () => {
+        setup()
+        server.use(http.patch('/api/v1/workspaces/10/tables/20/records/5', () =>
+            HttpResponse.json({
+                approval: {
+                    id: 7, workflow_id: 1, workflow_name: 'w', status: 'pending',
+                    current_approver_role: 'admin', op: 'update', row_id: 5,
+                },
+            }, { status: 202 })))
+        renderDrawer({ approvalMode: true })
+
+        const nameInput = screen.getByDisplayValue('张三')
+        fireEvent.change(nameInput, { target: { value: '李四' } })
+        fireEvent.click(screen.getByRole('button', { name: /提\s*交\s*审\s*批$/ }))
+
+        expect(await screen.findByText('已提交审批，通过后生效')).toBeInTheDocument()
+        expect(screen.queryByText('已保存')).not.toBeInTheDocument()
+    })
+
+    it('readOnly（在途变更行）时提交按钮禁用', () => {
+        setup()
+        renderDrawer({ readOnly: true })
+
+        expect(screen.getByTestId('drawer-submit-btn')).toBeDisabled()
     })
 })
 

@@ -163,6 +163,32 @@ describe('GridCell 传统编辑流', () => {
     expect(screen.queryByDisplayValue('A-001')).not.toBeInTheDocument()
     expect(screen.getByText('A-001')).toBeInTheDocument()
   })
+
+  // ─────────────── 在途变更单锁定（locked）───────────────
+
+  it('locked 行展示原值且双击不进入编辑态', () => {
+    const field = makeField({ id: 1, name: '姓名', field_type: 'text' })
+    renderProviders(<GridCell value="张三" field={field} rowId={1} onSave={vi.fn()} locked />)
+
+    expect(screen.getByTestId('cell-locked')).toBeInTheDocument()
+    fireEvent.doubleClick(screen.getByText('张三'))
+    expect(screen.queryByDisplayValue('张三')).not.toBeInTheDocument()
+  })
+
+  it('保存响应为变更单载荷（202）时提示「已提交审批」', async () => {
+    const field = makeField({ id: 1, name: '姓名', field_type: 'text' })
+    // 编辑审批开启：onSave 返回 ApprovalSubmitResponse 形状（含 approval 字段）
+    const onSave = vi.fn().mockResolvedValue({
+      approval: { id: 7, workflow_id: 1, workflow_name: 'w', status: 'pending', current_approver_role: 'admin', op: 'update', row_id: 1 },
+    })
+    renderProviders(<GridCell value="张三" field={field} rowId={1} onSave={onSave} />)
+
+    fireEvent.doubleClick(screen.getByText('张三'))
+    fireEvent.keyDown(screen.getByDisplayValue('张三'), { key: 'Enter' })
+
+    expect(await screen.findByText('已提交审批，通过后生效')).toBeInTheDocument()
+    expect(screen.queryByText('已保存')).not.toBeInTheDocument()
+  })
 })
 
 // ─────────────── 受控编辑（行级编辑复用）───────────────

@@ -5,7 +5,7 @@
  * 1. 查询 hooks（useTable/useTableViews/useTableRecords/
  *    useRowAudit/useRowReferences）成功路径与 enabled 守卫
  * 2. useTableRecords 过滤参数序列化到请求 URL
- * 3. useUpdateRowOptimistic：乐观写 cache 成功 / 失败回滚
+ * 3. useUpdateRowOptimistic：乐观写 cache 成功 / 失败回滚 / 202 审批响应回滚
  * 4. useDeleteRowsOptimistic：乐观删除成功
  *
  * 注：mutation 用例用独立 QueryClient 手工 seed cache；
@@ -194,6 +194,35 @@ describe('useUpdateRowOptimistic', () => {
     result.current.mutate({ rowId: 1, fieldName: '姓名', value: '被改掉' })
 
     await waitFor(() => expect(result.current.isError).toBe(true))
+    const cached = qc.getQueryData<RowListResponse>(key)
+    expect(cached?.items[0]).toMatchObject({ id: 1, 姓名: '张三' })
+  })
+
+  it('202 审批响应：乐观写入回滚为原值（网格保持已落库数据）', async () => {
+    // 编辑审批开启：PATCH 返回 202 变更单载荷，值未落库
+    server.use(
+      http.get('/api/v1/workspaces/10/tables/100/records', async () => {
+        await delay('infinite')
+        return HttpResponse.json(mockRecords)
+      }),
+      http.patch('/api/v1/workspaces/10/tables/100/records/1', () =>
+        HttpResponse.json({
+          approval: {
+            id: 7, workflow_id: 1, workflow_name: '两级审批', status: 'pending',
+            current_approver_role: 'admin', op: 'update', row_id: 1,
+          },
+        }, { status: 202 })),
+    )
+    const { qc, Wrapper } = makeMutationWrapper()
+    const key = seedRecords(qc, [{ id: 1, 姓名: '张三' }])
+
+    const { result } = renderHook(() => useUpdateRowOptimistic('10', '100'), { wrapper: Wrapper })
+    result.current.mutate({ rowId: 1, fieldName: '姓名', value: '待审批新值' })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    // mutation 数据为变更单载荷（调用方据此区分提示文案）
+    expect(result.current.data).toMatchObject({ approval: { op: 'update', row_id: 1 } })
+    // 乐观写入被回滚：cache 仍为已落库原值
     const cached = qc.getQueryData<RowListResponse>(key)
     expect(cached?.items[0]).toMatchObject({ id: 1, 姓名: '张三' })
   })
