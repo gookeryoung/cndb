@@ -16,7 +16,7 @@ import { Tag, App as AntApp } from 'antd'
 import type { ViewMode } from './views/viewModes'
 
 /** 可拖拽视图 Tab 标签 —— 供 Segmented.options.label 使用，配合 DndContext + SortableContext. */
-function DndViewTab({ view, active, onClick }: { view: View; active: boolean; onClick: () => void }) {
+function DndViewTab({ view, active, draggable, onClick }: { view: View; active: boolean; draggable: boolean; onClick: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: String(view.id),
   })
@@ -35,12 +35,17 @@ function DndViewTab({ view, active, onClick }: { view: View; active: boolean; on
       }}
       data-testid={`view-tab-${view.id}`}
       {...attributes}
-      {...listeners}
+      {...(draggable ? listeners : undefined)}
       onClick={(e) => { e.stopPropagation(); onClick() }}
     >
-      <HolderOutlined style={{ fontSize: 10, color: '#bfbfbf' }} />
+      {/* 拖拽把手：仅视图管理权限（EDIT_VIEWS）启用；个人视图本人可拖自己的排序? 否 —— 排序是表级公共属性，个人视图不开放 */}
+      <HolderOutlined
+        style={{ fontSize: 10, color: '#bfbfbf', cursor: draggable ? 'grab' : 'default', opacity: draggable ? 1 : 0.35 }}
+      />
       <span>{view.name}</span>
       {view.is_default && <Tag color="blue" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
+      {/* 个人视图标识（紫色）—— 与公共视图区分：仅创建者可见可改，不影响他人 */}
+      {view.owner_id != null && <Tag color="purple" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>我的</Tag>}
     </span>
   )
 }
@@ -60,6 +65,8 @@ interface GridViewBarProps {
   onSelectView: (v: View | null) => void
   onModeChange: (m: ViewMode) => void
   onDragEnd: (event: DragEndEvent) => void
+  /** 是否有视图管理权限（EDIT_VIEWS）：控制拖拽把手与公共视图的编辑/删除 */
+  canManageViews: boolean
   onCreate: () => void
   onEdit: () => void
   onDelete: () => void
@@ -80,8 +87,8 @@ function computeScrollState(el: HTMLElement | null): { canLeft: boolean; canRigh
 
 export default function GridViewBar({
   wid, tid, views, activeViewId, mode, modeButtons, showModeSwitch,
-  hasFilters, hasSorts, searchQuery, onSearchChange, onSelectView, onModeChange, onDragEnd,
-  onCreate, onEdit, onDelete, onImport,
+  hasFilters, hasSorts, searchQuery, onSearchChange, onSelectView, onModeChange,
+  onDragEnd, canManageViews, onCreate, onEdit, onDelete, onImport,
   onOpenViewConfig, onOpenTableSettings,
 }: GridViewBarProps) {
   const { message, modal } = AntApp.useApp()
@@ -171,6 +178,7 @@ export default function GridViewBar({
       <DndViewTab
         view={v}
         active={activeViewId != null && String(v.id) === String(activeViewId)}
+        draggable={canManageViews}
         onClick={() => onSelectView(v)}
       />
     ),
@@ -242,7 +250,8 @@ export default function GridViewBar({
           <Button size="small" type="text" icon={<PlusOutlined />} onClick={onCreate} />
         </Tooltip>
         <Tooltip title="编辑当前视图">
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={onEdit} disabled={!activeView} />
+          {/* 编辑按钮：公共视图需 EDIT_VIEWS；个人视图本人可改（筛选/排序） */}
+        <Button size="small" type="text" icon={<EditOutlined />} onClick={onEdit} disabled={!activeView || (!canManageViews && activeView?.owner_id == null)} />
         </Tooltip>
         <Dropdown
           trigger={['click']}
