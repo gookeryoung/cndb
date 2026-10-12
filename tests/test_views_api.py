@@ -1435,7 +1435,7 @@ class TestPersonalViewClassification:
         assert r.status_code == 201
 
         # viewer1 建个人视图
-        viewer1 = _make_workspace_viewer(db, ws, "pv_viewer_b2a")
+        _make_workspace_viewer(db, ws, "pv_viewer_b2a")
         viewer1_h = _login(client, "pv_viewer_b2a")
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
@@ -1455,7 +1455,7 @@ class TestPersonalViewClassification:
         assert "viewer1的筛选" in names
 
         # viewer2 看不到 viewer1 的个人视图
-        viewer2 = _make_workspace_viewer(db, ws, "pv_viewer_b2b")
+        _make_workspace_viewer(db, ws, "pv_viewer_b2b")
         viewer2_h = _login(client, "pv_viewer_b2b")
         r = client.get(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
@@ -1468,7 +1468,7 @@ class TestPersonalViewClassification:
 
     def test_viewer_can_update_own_personal_view(self, client, db, ws, table):
         """仅 READ 用户可更新本人个人视图（筛选/排序保存不再 403）."""
-        viewer = _make_workspace_viewer(db, ws, "pv_viewer_b3")
+        _make_workspace_viewer(db, ws, "pv_viewer_b3")
         viewer_h = _login(client, "pv_viewer_b3")
 
         r = client.post(
@@ -1489,7 +1489,7 @@ class TestPersonalViewClassification:
 
     def test_other_personal_view_invisible_on_update(self, client, db, ws, table, auth_owner):
         """他人个人视图对 PATCH 不可见（404，不暴露存在性）."""
-        viewer1 = _make_workspace_viewer(db, ws, "pv_viewer_b3a")
+        _make_workspace_viewer(db, ws, "pv_viewer_b3a")
         viewer1_h = _login(client, "pv_viewer_b3a")
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
@@ -1498,7 +1498,7 @@ class TestPersonalViewClassification:
         )
         vid = r.json()["id"]
 
-        viewer2 = _make_workspace_viewer(db, ws, "pv_viewer_b3b")
+        _make_workspace_viewer(db, ws, "pv_viewer_b3b")
         viewer2_h = _login(client, "pv_viewer_b3b")
         r = client.patch(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
@@ -1516,7 +1516,7 @@ class TestPersonalViewClassification:
         )
         vid = r.json()["id"]
 
-        viewer = _make_workspace_viewer(db, ws, "pv_viewer_b3c")
+        _make_workspace_viewer(db, ws, "pv_viewer_b3c")
         viewer_h = _login(client, "pv_viewer_b3c")
         r = client.patch(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
@@ -1527,7 +1527,7 @@ class TestPersonalViewClassification:
 
     def test_viewer_can_delete_own_personal_view(self, client, db, ws, table):
         """仅 READ 用户可删除本人个人视图."""
-        viewer = _make_workspace_viewer(db, ws, "pv_viewer_b4")
+        _make_workspace_viewer(db, ws, "pv_viewer_b4")
         viewer_h = _login(client, "pv_viewer_b4")
 
         r = client.post(
@@ -1545,7 +1545,7 @@ class TestPersonalViewClassification:
 
     def test_other_personal_view_invisible_on_delete(self, client, db, ws, table):
         """他人个人视图对 DELETE 不可见（404）."""
-        viewer1 = _make_workspace_viewer(db, ws, "pv_viewer_b4a")
+        _make_workspace_viewer(db, ws, "pv_viewer_b4a")
         viewer1_h = _login(client, "pv_viewer_b4a")
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
@@ -1554,7 +1554,7 @@ class TestPersonalViewClassification:
         )
         vid = r.json()["id"]
 
-        viewer2 = _make_workspace_viewer(db, ws, "pv_viewer_b4b")
+        _make_workspace_viewer(db, ws, "pv_viewer_b4b")
         viewer2_h = _login(client, "pv_viewer_b4b")
         r = client.delete(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
@@ -1571,7 +1571,7 @@ class TestPersonalViewClassification:
         )
         vid = r.json()["id"]
 
-        viewer = _make_workspace_viewer(db, ws, "pv_viewer_b4c")
+        _make_workspace_viewer(db, ws, "pv_viewer_b4c")
         viewer_h = _login(client, "pv_viewer_b4c")
         r = client.delete(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
@@ -1581,7 +1581,7 @@ class TestPersonalViewClassification:
 
     def test_other_personal_view_invisible_on_get(self, client, db, ws, table):
         """他人个人视图对单查 GET 不可见（404）."""
-        viewer1 = _make_workspace_viewer(db, ws, "pv_viewer_b5a")
+        _make_workspace_viewer(db, ws, "pv_viewer_b5a")
         viewer1_h = _login(client, "pv_viewer_b5a")
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
@@ -1590,7 +1590,7 @@ class TestPersonalViewClassification:
         )
         vid = r.json()["id"]
 
-        viewer2 = _make_workspace_viewer(db, ws, "pv_viewer_b5b")
+        _make_workspace_viewer(db, ws, "pv_viewer_b5b")
         viewer2_h = _login(client, "pv_viewer_b5b")
         r = client.get(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
@@ -1607,7 +1607,7 @@ class TestPersonalViewClassification:
 
     def test_export_excludes_others_personal_views(self, client, db, ws, table, auth_owner):
         """视图导出不包含他人个人视图."""
-        viewer = _make_workspace_viewer(db, ws, "pv_viewer_b5c")
+        _make_workspace_viewer(db, ws, "pv_viewer_b5c")
         viewer_h = _login(client, "pv_viewer_b5c")
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",

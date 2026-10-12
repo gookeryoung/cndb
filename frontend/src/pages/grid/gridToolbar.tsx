@@ -2,7 +2,7 @@
 
 import { Button, Space, Typography, Tooltip, Dropdown } from 'antd'
 import {
-  PlusOutlined, DeleteOutlined, ReloadOutlined,
+  PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined,
   MoreOutlined, ArrowLeftOutlined, CopyOutlined, ImportOutlined,
   SwapOutlined, MenuOutlined, ColumnWidthOutlined, ClearOutlined,
 } from '@ant-design/icons'
@@ -24,6 +24,12 @@ interface GridToolbarProps {
   /** 新增行按钮是否禁用（编辑中或无编辑权限） */
   addRowDisabled: boolean
   onAddRow: () => void
+  /** 当前用户对该表的权限徽标文案（如「可编辑」「只读」）；缺省不显示 */
+  permissionLabel?: string
+  /** 编辑选中的行（仅恰好选中一行时可用）；缺省不显示按钮 */
+  onEditRow?: () => void
+  /** 编辑行按钮是否禁用（未选中或多选） */
+  editRowDisabled?: boolean
   canEditSchema: boolean
   /** 是否可执行数据治理（MANAGE_DATA） */
   canManageData: boolean
@@ -40,6 +46,7 @@ interface GridToolbarProps {
 
 export default function GridToolbar({
   wid, tid, tableKey, tableName, recordCount, mode, addRowDisabled, onAddRow,
+  permissionLabel, onEditRow, editRowDisabled,
   canEditSchema, canManageData, onOpenTableSettings, onOpenImportExport, onOpenGovernance,
   activeViewName, activeViewId, onCopyTable, onMove, onResetColumnLayout,
 }: GridToolbarProps) {
@@ -57,6 +64,18 @@ export default function GridToolbar({
       {recordCount != null && recordCount > 0 && (
         <span className="cn-record-pill">{recordCount} 条记录</span>
       )}
+      {/* 当前用户对该表的权限徽标 —— 明确告知只读/可编辑，避免误操作 */}
+      {permissionLabel && (
+        <Tooltip title={`当前用户对该表的权限：${permissionLabel}`}>
+          <span
+            className="cn-record-pill"
+            data-testid="table-permission-pill"
+            style={permissionLabel === '只读' ? { color: 'var(--cn-text-tertiary, #8c8c8c)' } : undefined}
+          >
+            {permissionLabel}
+          </span>
+        </Tooltip>
+      )}
       <div style={{ flex: 1 }} />
       {/* 右侧主操作区 */}
       <Space size={6}>
@@ -71,6 +90,19 @@ export default function GridToolbar({
               disabled={addRowDisabled}
             >
               新增行
+            </Button>
+          </Tooltip>
+        )}
+        {mode === 'grid' && onEditRow && (
+          <Tooltip title={editRowDisabled ? '编辑行：请先在表格中选中一行' : '编辑行：打开选中行的详情抽屉'}>
+            <Button
+              size="middle"
+              icon={<EditOutlined />}
+              data-testid="edit-row-btn"
+              onClick={onEditRow}
+              disabled={editRowDisabled}
+            >
+              编辑行
             </Button>
           </Tooltip>
         )}

@@ -440,6 +440,8 @@ export default function GridPage() {
   const hasAction = (a: string) => userActions.includes(a)
   const canEditSchema = hasAction('edit_schema')
   const canEditRecords = hasAction('edit_records')
+  /** 视图管理（EDIT_VIEWS）：公共视图的创建/改名/删除/拖拽排序 */
+  const canEditViews = hasAction('edit_views')
   const canManageData = hasAction('manage_data')
 
   /** 新增行激活后自动滚动聚焦 —— tail 跳页时以行数变化为重同步信号，数据到达后二次校准. */
@@ -979,6 +981,13 @@ export default function GridPage() {
         mode={mode}
         addRowDisabled={!canEditRecords || newRowActive || editingRowId != null}
         onAddRow={startNewRow}
+        permissionLabel={canEditRecords ? '可编辑' : '只读'}
+        onEditRow={() => {
+          if (selectedRowKeys.length !== 1) return
+          const row = (rowList.items || []).find(r => String(r.id) === String(selectedRowKeys[0]))
+          if (row) openDetailWithPrefetch(row)
+        }}
+        editRowDisabled={selectedRowKeys.length !== 1}
         canEditSchema={canEditSchema}
         canManageData={canManageData}
         onOpenTableSettings={() => setTableSettingsOpen(true)}
@@ -1007,6 +1016,7 @@ export default function GridPage() {
         onSelectView={(v) => loadView(v)}
         onModeChange={handleModeChange}
         onDragEnd={handleViewDragEnd}
+        canManageViews={canEditViews}
         onCreate={() => setCreateViewOpen(true)}
         onEdit={() => setEditViewOpen(true)}
         onDelete={() => activeViewId != null && removeView.mutate(String(activeViewId))}
@@ -1127,6 +1137,7 @@ export default function GridPage() {
           fields={table?.fields || []}
           wid={wid}
           tid={tid}
+          readOnly={!canEditRecords}
           initialValues={createInitialValues}
           onClose={() => {
             setDetailOpen(false)
