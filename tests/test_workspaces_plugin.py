@@ -156,11 +156,11 @@ class TestWorkspaceAPI:
         # 把 admin 加进去
         r2 = client.post(
             f"/api/v1/workspaces/{ws_id}/members",
-            json={"username": "admin", "role": "admin"},
+            json={"username": "admin", "role": "editor"},
             headers=_headers(token_o),
         )
         assert r2.status_code == 201
-        # admin 尝试删除 → 403
+        # editor 尝试删除 → 403
         token_a = _login_token(client, "admin", "passw0rd")
         r3 = client.delete(f"/api/v1/workspaces/{ws_id}", headers=_headers(token_a))
         assert r3.status_code == 403
@@ -175,25 +175,25 @@ class TestMemberAPI:
         assert r.status_code == 201
         return r.json()["id"]
 
-    def test_add_member_as_viewer_by_admin(self, client, owner_user, member_user, admin_user):
+    def test_add_member_editor_denied(self, client, owner_user, member_user, admin_user):
+        """成员管理仅 OWNER：editor 添加成员 → 403."""
         token_o = _login_token(client, "owner", "passw0rd")
         ws_id = self._create_ws(client, token_o)
-        # 添加 admin
+        # 添加 editor
         r = client.post(
             f"/api/v1/workspaces/{ws_id}/members",
-            json={"username": "admin", "role": "admin"},
+            json={"username": "admin", "role": "editor"},
             headers=_headers(token_o),
         )
         assert r.status_code == 201
-        # admin 添加 member 为 viewer
+        # editor 添加 member → 403
         token_a = _login_token(client, "admin", "passw0rd")
         r2 = client.post(
             f"/api/v1/workspaces/{ws_id}/members",
             json={"username": "member", "role": "viewer"},
             headers=_headers(token_a),
         )
-        assert r2.status_code == 201
-        assert r2.json()["role"] == "viewer"
+        assert r2.status_code == 403
 
     def test_add_member_reject_owner_role(self, client, owner_user, member_user):
         token_o = _login_token(client, "owner", "passw0rd")
@@ -275,17 +275,17 @@ class TestMemberAPI:
         # owner 降级自己 → 400（最后一个 owner）
         r = client.patch(
             f"/api/v1/workspaces/{ws_id}/members/{owner_member['id']}",
-            json={"role": "admin"},
+            json={"role": "editor"},
             headers=_headers(token_o),
         )
         assert r.status_code in (400, 422)
-        # 添加第二个 owner
+        # 添加第二个成员
         client.post(
             f"/api/v1/workspaces/{ws_id}/members",
-            json={"username": "admin", "role": "admin"},
+            json={"username": "admin", "role": "editor"},
             headers=_headers(token_o),
         )
-        # 先把 admin 升到 owner
+        # 先把 editor 升到 owner
         admin_member = client.get(
             f"/api/v1/workspaces/{ws_id}/members",
             headers=_headers(token_o),
@@ -299,11 +299,11 @@ class TestMemberAPI:
         # 现在可以安全降级第一个 owner
         r3 = client.patch(
             f"/api/v1/workspaces/{ws_id}/members/{owner_member['id']}",
-            json={"role": "admin"},
+            json={"role": "editor"},
             headers=_headers(token_o),
         )
         assert r3.status_code == 200
-        assert r3.json()["role"] == "admin"
+        assert r3.json()["role"] == "editor"
 
     def test_remove_member_last_owner_protected(self, client, owner_user, admin_user):
         token_o = _login_token(client, "owner", "passw0rd")
@@ -325,7 +325,7 @@ class TestMemberAPI:
         # admin 加进去
         client.post(
             f"/api/v1/workspaces/{ws_id}/members",
-            json={"username": "admin", "role": "admin"},
+            json={"username": "admin", "role": "editor"},
             headers=_headers(token_o),
         )
         owner_member = client.get(
@@ -336,7 +336,7 @@ class TestMemberAPI:
         token_a = _login_token(client, "admin", "passw0rd")
         r = client.patch(
             f"/api/v1/workspaces/{ws_id}/members/{owner_member['id']}",
-            json={"role": "admin"},
+            json={"role": "editor"},
             headers=_headers(token_a),
         )
         assert r.status_code == 403
@@ -836,7 +836,7 @@ class TestWorkspaceExportImport:
         viewer_token = _login_token(client, "member", "passw0rd")
         r2 = client.patch(
             f"/api/v1/workspaces/{ws_id}/members/{member_mid}",
-            json={"role": "admin"},
+            json={"role": "editor"},
             headers=_headers(viewer_token),
         )
         assert r2.status_code == 403
@@ -862,7 +862,7 @@ class TestWorkspaceExportImport:
         token = _login_token(client, "owner", "passw0rd")
         ws_id = self._create_ws(client, token)
         client.post(
-            f"/api/v1/workspaces/{ws_id}/members", json={"username": "admin", "role": "admin"}, headers=_headers(token)
+            f"/api/v1/workspaces/{ws_id}/members", json={"username": "admin", "role": "editor"}, headers=_headers(token)
         )
         # 获取 owner member id
         r = client.get(f"/api/v1/workspaces/{ws_id}/members", headers=_headers(token))
@@ -878,10 +878,10 @@ class TestWorkspaceExportImport:
         """有 2 个 owner 时可以删除其中一个（覆盖 owner_count > 1 分支）."""
         token_o = _login_token(client, "owner", "passw0rd")
         ws_id = self._create_ws(client, token_o)
-        # 把 admin_user 加入并升级为 owner
+        # 把 admin 加入为 editor
         client.post(
             f"/api/v1/workspaces/{ws_id}/members",
-            json={"username": "admin", "role": "admin"},
+            json={"username": "admin", "role": "editor"},
             headers=_headers(token_o),
         )
         r = client.get(f"/api/v1/workspaces/{ws_id}/members", headers=_headers(token_o))
@@ -1274,13 +1274,13 @@ class TestWorkspaceOwnerTransfer:
         return next(m["user"]["id"] for m in r.json() if m["user"]["username"] == username)
 
     def test_owner_can_transfer_to_member(self, client, owner_user, admin_user):
-        """OWNER 可将所有权转让给工作区成员，自身降级为 ADMIN."""
+        """OWNER 可将所有权转让给工作区成员，自身降级为 EDITOR."""
         token_o = _login_token(client, "owner", "passw0rd")
         ws_id = self._create_ws(client, token_o)
         # 把 admin 加为成员
         client.post(
             f"/api/v1/workspaces/{ws_id}/members",
-            json={"username": "admin", "role": "admin"},
+            json={"username": "admin", "role": "editor"},
             headers=_headers(token_o),
         )
         target_uid = self._member_user_id(client, ws_id, token_o, "admin")
@@ -1293,19 +1293,19 @@ class TestWorkspaceOwnerTransfer:
         assert r.status_code == 200
         assert r.json()["role"] == "owner"
         assert r.json()["user"]["username"] == "admin"
-        # 验证原 owner 已降级为 admin
+        # 验证原 owner 已降级为 editor
         members = client.get(f"/api/v1/workspaces/{ws_id}/members", headers=_headers(token_o)).json()
         roles = {m["user"]["username"]: m["role"] for m in members}
         assert roles["admin"] == "owner"
-        assert roles["owner"] == "admin"
+        assert roles["owner"] == "editor"
 
     def test_non_owner_cannot_transfer(self, client, owner_user, admin_user, member_user):
-        """非 OWNER（如 admin/viewer）转让所有权返回 403."""
+        """非 OWNER（如 editor/viewer）转让所有权返回 403."""
         token_o = _login_token(client, "owner", "passw0rd")
         ws_id = self._create_ws(client, token_o)
         client.post(
             f"/api/v1/workspaces/{ws_id}/members",
-            json={"username": "admin", "role": "admin"},
+            json={"username": "admin", "role": "editor"},
             headers=_headers(token_o),
         )
         client.post(

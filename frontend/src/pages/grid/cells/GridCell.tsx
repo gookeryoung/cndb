@@ -6,7 +6,7 @@ import { SaveOutlined, CloseOutlined, InboxOutlined, DeleteOutlined, LockOutline
 import dayjs, { Dayjs } from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
 import type { AttachmentFile, Field, RowResponse } from '@/api'
-import { recordApi, fileApi, fieldApi, isApprovalSubmitResponse } from '@/api'
+import { recordApi, fileApi, fieldApi, isChangeRequestResponse } from '@/api'
 import { getTagColorName, resolveTagColor } from '@/utils/tagColors'
 import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 import { pickLinkLabelFieldName, buildLinkRowLabel } from './fieldValueFormat'
@@ -32,7 +32,7 @@ interface Props {
   showActionButtons?: boolean
   /** 受控模式下的只读字段标记 —— 自动填充锁定开启时，预填字段不允许修改 */
   readOnly?: boolean
-  /** 在途变更单锁定：该行有待审批的变更（pending），展示原值且双击不进入编辑 */
+  /** 在途修改申请锁定：该行有待处理的修改申请（pending），展示原值且双击不进入编辑 */
   locked?: boolean
 }
 
@@ -94,8 +94,8 @@ function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: contr
       const finalize = finalizeValueFromEdit(draft, field)
       const res = await effectiveOnSave(field.name, finalize)
       setEditing(false)
-      // 编辑审批开启时后端返回 202 变更单载荷：值未落库，待审批通过后生效
-      message.success(isApprovalSubmitResponse(res) ? '已提交审批，通过后生效' : '已保存')
+      // 查看者/关闭直编时后端返回 202 修改申请载荷：值未落库，申请处理后生效
+      message.success(isChangeRequestResponse(res) ? '已提交修改申请，处理后生效' : '已保存')
     } catch (err) {
       message.error(err instanceof Error ? err.message : '保存失败')
     } finally {
@@ -113,10 +113,10 @@ function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: contr
     return <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
   }
 
-  // 在途变更单锁定（AC-6）：待审行展示原值，双击不进入编辑
+  // 在途修改申请锁定：待处理行展示原值，双击不进入编辑
   if (locked) {
     return (
-      <Tooltip title="该行有变更单待审批，通过后可继续编辑">
+      <Tooltip title="该行有在途修改申请，处理后可继续编辑">
         <div style={{ padding: '2px 4px', minHeight: 22 }} data-testid="cell-locked">
           <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
         </div>

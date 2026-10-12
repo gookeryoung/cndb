@@ -157,7 +157,7 @@ def get_optional_user(
 ) -> object | None:
     """可选认证：有令牌则解析，无令牌或无效也不报错（返回 None）.
 
-    适用于公开表单/共享视图等"登录更好、匿名也行"的场景.
+    适用于公开共享视图等"登录更好、匿名也行"的场景.
     """
     try:
         return get_current_user(request, db)

@@ -109,7 +109,7 @@ export interface RowInlineOps {
   onSave: (recordId: ID) => void
   /** 取消该行编辑 / 放弃新增 */
   onCancel: (recordId: ID) => void
-  /** 该行是否存在在途变更单（待审锁定：三入口只读，操作列显示「审批中」）；缺省视为无在途变更 */
+  /** 该行是否存在在途修改申请（待处理锁定：三入口只读，操作列显示「在途申请」）；缺省视为无在途申请 */
   isPendingRow?: (record: RowResponse) => boolean
 }
 
@@ -273,11 +273,11 @@ export function buildColumns(
             </Space>
           )
         }
-        // 在途变更单：行锁定，显示待审标识不可操作（新增行无 row_id 不受影响）
+        // 在途修改申请：行锁定，显示在途标识不可操作（新增行无 row_id 不受影响）
         if (inlineOps.isPendingRow?.(record)) {
           return (
-            <Tooltip title="该行有变更单待审批，通过后可继续编辑">
-              <Tag color="gold" data-testid="row-pending-tag">审批中</Tag>
+            <Tooltip title="该行有在途修改申请，处理后可继续编辑">
+              <Tag color="gold" data-testid="row-pending-tag">在途申请</Tag>
             </Tooltip>
           )
         }

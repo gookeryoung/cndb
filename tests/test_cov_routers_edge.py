@@ -290,8 +290,8 @@ class TestTablesRouterEdge:
         # ws2 由 peer 创建（peer 是 ws2 的 owner，而表 owner 不是 ws2 成员）
         r_ws2 = client.post("/api/v1/workspaces", json={"name": "EdgeWS2"}, headers=auth_peer)
         ws2 = r_ws2.json()["id"]
-        # 操作人 peer 在源工作区是 admin（可改表结构）
-        _add_ws_member(client, auth_owner, ws_id, "edge_peer", "admin")
+        # 操作人 peer 在源工作区是 editor（可改表结构）
+        _add_ws_member(client, auth_owner, ws_id, "edge_peer", "editor")
         r = client.post(
             f"/api/v1/workspaces/{ws_id}/tables/{dt.id}/move",
             params={"target_workspace_id": ws2},

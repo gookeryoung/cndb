@@ -3,8 +3,8 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTableRecords } from '@/api/hooks'
-import { approvalApi } from '@/api'
-import type { ApprovalInstance } from '@/api'
+import { changeRequestsApi } from '@/api'
+import type { ChangeRequest } from '@/api'
 
 interface UseGridDataParams {
   wid: string | undefined
@@ -52,26 +52,28 @@ export function useGridData({ wid, tid, mode, limit, offset, viewFilters, viewSo
 }
 
 /**
- * 在途变更单查询（编辑审批开关开启时启用）。
+ * 在途修改申请查询（默认启用）。
  *
- * 合并「待我审批」与「我提交的」两个维度、客户端过滤 pending 变更单
- * （op 非空且带目标行），返回 rowId → instance 的 Map 供行级锁定与待审标识；
- * 单次批量查询 + 变更后 invalidate，不做逐行请求。
+ * 拉取全部 open 修改申请并对每条取详情收集 items 涉及的 row_id，
+ * 返回 rowId → 申请 的 Map 供行级锁定与在途标识；
+ * 提交/合并/关闭申请后 invalidate，不做逐行请求。
  */
 export function usePendingChanges(wid: string | undefined, tid: string | undefined, enabled = true) {
   const tableKey = `${wid}/${tid}`
-  return useQuery<Map<string, ApprovalInstance>>({
-    queryKey: ['approval-pending', tableKey],
+  return useQuery<Map<string, ChangeRequest>>({
+    queryKey: ['pending-changes', tableKey],
     queryFn: async () => {
-      const [forMe, mine] = await Promise.all([
-        approvalApi.list(wid!, 'pending_for_me', undefined, tid),
-        approvalApi.list(wid!, 'mine', undefined, tid),
-      ])
-      const map = new Map<string, ApprovalInstance>()
-      for (const it of [...forMe, ...mine]) {
-        if (it.status !== 'pending' || !it.op || it.row_id == null) continue
-        const key = String(it.row_id)
-        if (!map.has(key)) map.set(key, it)
+      const list = await changeRequestsApi.list(wid!, tid!, 'open')
+      const details = await Promise.all(
+        list.items.map(cr => changeRequestsApi.get(wid!, tid!, cr.id)),
+      )
+      const map = new Map<string, ChangeRequest>()
+      for (const detail of details) {
+        for (const item of detail.items) {
+          if (item.row_id == null) continue
+          const key = String(item.row_id)
+          if (!map.has(key)) map.set(key, detail)
+        }
       }
       return map
     },

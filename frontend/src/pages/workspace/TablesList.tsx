@@ -1,4 +1,4 @@
-/** 工作区表列表页 — 数据资产目录视图.
+/** 工作区表列表页 — 数据表目录视图.
  *
  * 支持创建/重命名/复制/删除 + CSV 自动建表 + API 自动建表 + 拖拽排序.
  * 展示 Owner / MyAccess / MemberCount 三个权限元信息列, 并提供按访问级别筛选.
@@ -393,7 +393,7 @@ export default function TablesList() {
         <div>
           <Title level={3} style={{ margin: 0 }}>
             <DatabaseOutlined style={{ marginRight: 8 }} />
-            {workspace?.name ? `${workspace.name} · 数据资产` : '数据资产目录'}
+            {workspace?.name ? `${workspace.name} · 数据表` : '数据表目录'}
           </Title>
           <Text type="secondary">
             {workspace?.description || '管理当前工作区的所有数据表'}

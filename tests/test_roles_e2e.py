@@ -409,13 +409,13 @@ class TestAccessControlWithCustomRole:
     def test_builtin_write_role_keeps_legacy_behavior(
         self, db, auth_sysadmin, ws_with_owner, table_for_role, normal_user
     ):
-        """内置 write 角色：EDIT_SCHEMA 仍为 False（与旧逻辑一致）."""
+        """内置 write 角色：EDIT_RECORDS/EDIT_SCHEMA 均允许（EDITOR 为 EDIT_SCHEMA 默认角色）."""
         from cndb.plugins.tables.services.core.access import TableAction, check_action
 
         # normal_user 已是工作区 EDITOR，用 write 成员也应允许 EDIT_RECORDS
         assert check_action(db, table_for_role, normal_user, TableAction.EDIT_RECORDS) is True
-        # EDIT_SCHEMA 需要 ADMIN 或 owner，EDITOR 默认不行
-        assert check_action(db, table_for_role, normal_user, TableAction.EDIT_SCHEMA) is False
+        # EDIT_SCHEMA 默认角色已从 ADMIN 下调为 EDITOR
+        assert check_action(db, table_for_role, normal_user, TableAction.EDIT_SCHEMA) is True
 
     def test_role_no_permissions_nonexistent_code_falls_through(self, db, ws_with_owner, table_for_role, another_user):
         """TableMember.role 指向不存在的 Role.code 时，回落到工作区角色默认判定."""

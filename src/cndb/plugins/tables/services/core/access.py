@@ -1,6 +1,6 @@
 """表级访问控制：拥有者 + 工作区角色 + 表成员 + TablePermission.
 
-策略优先级：表拥有者 > 工作区 ADMIN/OWNER > 表成员授权 > TablePermission 角色阈值 > 工作区角色默认.
+策略优先级：表拥有者 > 工作区 OWNER > 表成员授权 > TablePermission 角色阈值 > 工作区角色默认.
 """
 
 from __future__ import annotations
@@ -41,8 +41,8 @@ _ACTION_DEFAULT_ROLE: dict[TableAction, WorkspaceRole] = {
     TableAction.READ: WorkspaceRole.VIEWER,
     TableAction.EDIT_RECORDS: WorkspaceRole.EDITOR,
     TableAction.EDIT_VIEWS: WorkspaceRole.EDITOR,
-    TableAction.EDIT_SCHEMA: WorkspaceRole.ADMIN,
-    TableAction.MANAGE_DATA: WorkspaceRole.ADMIN,
+    TableAction.EDIT_SCHEMA: WorkspaceRole.EDITOR,
+    TableAction.MANAGE_DATA: WorkspaceRole.EDITOR,
 }
 
 
@@ -86,7 +86,7 @@ def check_action(
 
     优先级：
       1. 表拥有者（owner_id == user.id）→ 拥有全部动作，包括 EDIT_SCHEMA
-      2. 工作区 ADMIN/OWNER 级角色 → 拥有全部动作
+      2. 工作区 OWNER → 拥有全部动作
       3. 表成员授权（TableMember）→ read/write 两级，见 _READ_MEMBER_ACTIONS / _WRITE_MEMBER_ACTIONS
       4. TablePermission 角色阈值（仅当用户未通过成员授权时生效）
       5. 工作区角色默认
@@ -95,12 +95,12 @@ def check_action(
     if table.owner_id is not None and table.owner_id == user.id:
         return True
 
-    # ── 2. 工作区 ADMIN / OWNER ──
+    # ── 2. 工作区 OWNER ──
     user_role = member_role or _get_member_role(db, table, user)
     if user_role is None:
         # 工作区成员都不是，只有 owner 可能放行；owner 检查已通过
         return False
-    if user_role in (WorkspaceRole.ADMIN, WorkspaceRole.OWNER):
+    if user_role == WorkspaceRole.OWNER:
         return True
 
     # ── 3. 表成员授权 ──

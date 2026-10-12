@@ -18,10 +18,11 @@ const WorkspaceList = lazy(() => import('@/pages/workspace/WorkspaceList'))
 const TablesList = lazy(() => import('@/pages/workspace/TablesList'))
 const GridPage = lazy(() => import('@/pages/grid/GridPage'))
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'))
-const FormsPage = lazy(() => import('@/pages/forms/FormsPage'))
-const FormRunnerPage = lazy(() => import('@/pages/forms/FormRunnerPage'))
-const ApprovalCenterPage = lazy(() => import('@/pages/workflows/ApprovalCenterPage'))
-const PublicFormPage = lazy(() => import('@/pages/public/PublicFormPage'))
+const IssuesPage = lazy(() => import('@/pages/issues/IssuesPage'))
+const IssueDetailPage = lazy(() => import('@/pages/issues/IssueDetailPage'))
+const ChangeRequestsPage = lazy(() => import('@/pages/changeRequests/ChangeRequestsPage'))
+const ChangeRequestDetailPage = lazy(() => import('@/pages/changeRequests/ChangeRequestDetailPage'))
+const TableSettingsPage = lazy(() => import('@/pages/settings/TableSettingsPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
@@ -58,17 +59,23 @@ function AuthenticatedApp() {
           <Route path="w/:wid/tables/:tid" element={
             <Suspense fallback={<PageFallback />}><GridPage /></Suspense>
           } />
+          <Route path="w/:wid/tables/:tid/change-requests" element={
+            <Suspense fallback={<PageFallback />}><ChangeRequestsPage /></Suspense>
+          } />
+          <Route path="w/:wid/tables/:tid/change-requests/:requestId" element={
+            <Suspense fallback={<PageFallback />}><ChangeRequestDetailPage /></Suspense>
+          } />
+          <Route path="w/:wid/tables/:tid/issues" element={
+            <Suspense fallback={<PageFallback />}><IssuesPage /></Suspense>
+          } />
+          <Route path="w/:wid/tables/:tid/issues/:issueId" element={
+            <Suspense fallback={<PageFallback />}><IssueDetailPage /></Suspense>
+          } />
+          <Route path="w/:wid/tables/:tid/settings" element={
+            <Suspense fallback={<PageFallback />}><TableSettingsPage /></Suspense>
+          } />
           <Route path="w/:wid/reports" element={
             <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
-          } />
-          <Route path="w/:wid/forms" element={
-            <Suspense fallback={<PageFallback />}><FormsPage /></Suspense>
-          } />
-          <Route path="w/:wid/forms/:formId" element={
-            <Suspense fallback={<PageFallback />}><FormRunnerPage /></Suspense>
-          } />
-          <Route path="w/:wid/approvals" element={
-            <Suspense fallback={<PageFallback />}><ApprovalCenterPage /></Suspense>
           } />
           <Route path="admin" element={
             <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>
@@ -77,9 +84,6 @@ function AuthenticatedApp() {
 
         <Route path="/public" element={<PublicLayout />}>
           <Route index element={<div style={{ padding: 24 }}>公开路由</div>} />
-          <Route path="form/:slug" element={
-            <Suspense fallback={<PageFallback />}><PublicFormPage /></Suspense>
-          } />
           <Route path="share/:slug" element={
             <Suspense fallback={<PageFallback />}><PublicSharePage /></Suspense>
           } />

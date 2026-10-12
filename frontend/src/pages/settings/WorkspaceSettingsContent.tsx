@@ -13,16 +13,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
-  Table, Empty, Popconfirm, Divider, Modal, Card, Space, Avatar, Tooltip,
+  Table, Popconfirm, Divider, Modal, Card, Space, Avatar, Tooltip,
 } from 'antd'
 import { App as AntApp } from 'antd'
 import {
   SettingOutlined, BarChartOutlined, PlusOutlined,
-  UserDeleteOutlined, CrownOutlined, FileTextOutlined, EyeOutlined,
+  UserDeleteOutlined, FileTextOutlined, EyeOutlined,
   ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
-  AuditOutlined,
 } from '@ant-design/icons'
-import ApprovalFlowsSettings from '@/pages/settings/ApprovalFlowsSettings'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { workspaceApi } from '@/api'
@@ -35,7 +33,7 @@ import HelpTip from '@/components/HelpTip'
 
 interface Props {
   wid: string
-  initialTab?: 'basic' | 'permissions' | 'workflows' | 'stats'
+  initialTab?: 'basic' | 'permissions' | 'stats'
   /** 设置保存后通知工作区列表刷新 */
   onUpdated?: () => void
   /** 删除工作区成功后回调（Modal 模式下用于关闭弹窗，回到工作区列表视图） */
@@ -44,7 +42,6 @@ interface Props {
 
 const ROLE_LABEL: Record<WorkspaceRole, string> = {
   owner: '所有者',
-  admin: '管理员',
   editor: '编辑者',
   viewer: '查看者',
 }
@@ -52,32 +49,20 @@ const ROLE_LABEL: Record<WorkspaceRole, string> = {
 const VISIBILITY_LABEL: Record<WorkspaceVisibility, string> = {
   public: '公开（任何人可读）',
   member: '成员可见（仅工作区成员可访问）',
-  private: '私有（仅所有者和管理员可见）',
+  private: '私有（仅所有者可见）',
 }
 
-/** 角色一句话说明（成员表格角色 Select 下拉展示，与帮助中心「权限角色」主题对齐） */
+/** 角色一句话说明（成员角色 Select 下拉展示，与帮助中心「权限角色」主题对齐） */
 const ROLE_HINTS: Record<WorkspaceRole, string> = {
   owner: '全部权限，可转让与删除工作区',
-  admin: '管理成员与工作区设置，不可转让所有权',
   editor: '可查看并编辑数据，不可管理成员与设置',
   viewer: '仅可查看工作区内容与数据',
 }
 
-/** 角色等级 — 数值越大权限越高 */
-const ROLE_RANK: Record<WorkspaceRole, number> = { owner: 3, admin: 2, editor: 1, viewer: 0 }
-
-/** 当前用户可分配给其他人的角色选项（不含比自己高的） */
+/** 当前用户可分配给其他人的角色选项（仅 owner 可管理，可分配 editor/viewer） */
 function getAssignableRoles(currentRole: WorkspaceRole | null): Array<{ value: WorkspaceRole; label: string }> {
-  if (!currentRole) return []
-  const myRank = ROLE_RANK[currentRole]
-  return (Object.keys(ROLE_LABEL) as WorkspaceRole[])
-    .filter(r => ROLE_RANK[r] <= myRank && !(currentRole === 'admin' && r === 'owner'))
-    .map(r => ({ value: r, label: ROLE_LABEL[r] }))
-}
-
-/** 成员排序：owner → admin → editor → viewer */
-function sortMembersByRole(members: WorkspaceMember[]): WorkspaceMember[] {
-  return [...members].sort((a, b) => ROLE_RANK[b.role] - ROLE_RANK[a.role])
+  if (currentRole !== 'owner') return []
+  return (['editor', 'viewer'] as WorkspaceRole[]).map(r => ({ value: r, label: ROLE_LABEL[r] }))
 }
 
 export default function WorkspaceSettingsContent({
@@ -117,7 +102,7 @@ export default function WorkspaceSettingsContent({
       const res = await workspaceApi.memberCandidates(wid, candidatesSearch)
       return res.results
     },
-    enabled: !!wid && !!detail?.current_user_role && ROLE_RANK[detail.current_user_role] >= ROLE_RANK.admin,
+    enabled: !!wid && detail?.current_user_role === 'owner',
     gcTime: 0,
   })
 
@@ -142,14 +127,12 @@ export default function WorkspaceSettingsContent({
 
   // 当前用户角色
   const myRole = detail?.current_user_role ?? null
-  const myRoleRank = myRole ? ROLE_RANK[myRole] : -1
 
-  // 权限判断
-  const canEditBasic = myRoleRank >= ROLE_RANK.admin
-  const canManageMembers = myRoleRank >= ROLE_RANK.admin
+  // 权限判断 —— 三级角色：管理操作收敛为 owner
+  const canEditBasic = myRole === 'owner'
+  const canManageMembers = myRole === 'owner'
   const canDeleteWorkspace = myRole === 'owner'
   const assignableRoles = useMemo(() => getAssignableRoles(myRole), [myRole])
-  const sortedMembers = useMemo(() => sortMembersByRole(members), [members])
 
   const currentMemberId = members.find(
     m => m.user?.username === currentUser?.username,
@@ -325,132 +308,116 @@ export default function WorkspaceSettingsContent({
           />
           <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>
             {detail?.allow_edit ?? true
-              ? '已开启：编辑者及以上角色可以修改数据'
-              : '已关闭：仅所有者和管理员可以修改数据，其他成员只能查看'}
+              ? '已开启：编辑者可以修改数据'
+              : '已关闭：仅所有者可以修改数据，其他成员只能查看'}
           </span>
         </div>
       </Card>
 
-      {/* 成员列表 Card — 头部含添加成员按钮 */}
-      <Card
-        size="small"
-        title={<Space><UserOutlined /> 工作区成员（{members.length}）</Space>}
-        style={{ marginBottom: 12 }}
-        extra={
-          canManageMembers ? (
-            <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => {
-              setAddMemberUsername(null)
-              setAddMemberRole('editor')
-              setCandidatesSearch('')
-              setAddMemberOpen(true)
-            }}>添加成员</Button>
-          ) : null
-        }
-      >
-        {!canManageMembers && (
-          <div style={{ marginBottom: 12, padding: 10, ...warningBoxStyle, color: '#92400e', fontSize: 13 }}>
-            仅管理员及以上角色可管理成员与权限
-          </div>
-        )}
+      {!canManageMembers && (
+        <div style={{ marginBottom: 12, padding: 10, ...warningBoxStyle, color: '#92400e', fontSize: 13 }}>
+          仅所有者可管理成员与权限
+        </div>
+      )}
 
-        {/* 成员列表 */}
-        <Table
-          rowKey="id"
-          size="small"
-          loading={membersLoading}
-          dataSource={sortedMembers}
-          locale={{
-            emptyText: (
-              <div style={{ padding: '24px 0' }}>
-                <Empty description="还没有成员，邀请同事一起协作吧" />
-                {canManageMembers && (
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<PlusOutlined />}
-                    style={{ marginTop: 12 }}
-                    onClick={() => {
-                      setAddMemberUsername(null)
-                      setAddMemberRole('editor')
-                      setCandidatesSearch('')
-                      setAddMemberOpen(true)
-                    }}
-                  >添加成员</Button>
-                )}
+      {/* ── 编辑者区 / 查看者区（三区布局） ── */}
+      {(['editor', 'viewer'] as const).map(zoneRole => {
+        const list = members.filter(m => m.role === zoneRole)
+        return (
+          <Card
+            key={zoneRole}
+            size="small"
+            title={<Space><UserOutlined /> {ROLE_LABEL[zoneRole]}（{list.length}）</Space>}
+            style={{ marginBottom: 12 }}
+            extra={
+              canManageMembers ? (
+                <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => {
+                  setAddMemberUsername(null)
+                  setAddMemberRole(zoneRole)
+                  setCandidatesSearch('')
+                  setAddMemberOpen(true)
+                }}>添加成员</Button>
+              ) : null
+            }
+          >
+            {list.length === 0 ? (
+              <div style={{ color: 'var(--cn-text-muted)', fontSize: 13, padding: '6px 0' }}>
+                暂无{ROLE_LABEL[zoneRole]}
               </div>
-            ),
-          }}
-          pagination={false}
-          columns={[
-            {
-              title: '用户',
-              render: (_, m) => {
-                const u = m.user
-                const isMe = currentMemberId === m.id
-                return (
-                  <div>
-                    <div style={{ fontWeight: 500 }}>
-                      {u.username}
-                      {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 13 }}>({u.nickname})</span>}
-                      {isMe && <Tag color="blue" style={{ marginLeft: 8 }}>我</Tag>}
-                    </div>
-                    {u.email && <div style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>{u.email}</div>}
-                  </div>
-                )
-              },
-            },
-            {
-              title: '角色', width: 180,
-              render: (_, m) => {
-                const isOwner = m.role === 'owner'
-                if (isOwner) {
-                  return <Tag color="gold" icon={<CrownOutlined />}>{ROLE_LABEL[m.role]}</Tag>
-                }
-                if (!canManageMembers) {
-                  return <Tag>{ROLE_LABEL[m.role]}</Tag>
-                }
-                return (
-                  <Select
-                    value={m.role}
-                    onChange={(v: string) => changeRole.mutate({ memberId: m.id, role: v })}
-                    size="small"
-                    style={{ width: 140 }}
-                    disabled={myRoleRank < ROLE_RANK.admin || (m.role === 'owner' && myRole !== 'owner')}
-                    options={assignableRoles}
-                    optionRender={(option) => (
-                      <div>
-                        <div>{option.label}</div>
-                        <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', lineHeight: 1.5 }}>
-                          {ROLE_HINTS[option.value as WorkspaceRole]}
+            ) : (
+              <Table
+                rowKey="id"
+                size="small"
+                loading={membersLoading}
+                dataSource={list}
+                pagination={false}
+                columns={[
+                  {
+                    title: '用户',
+                    render: (_, m) => {
+                      const u = m.user
+                      const isMe = currentMemberId === m.id
+                      return (
+                        <div>
+                          <div style={{ fontWeight: 500 }}>
+                            {u.username}
+                            {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 13 }}>({u.nickname})</span>}
+                            {isMe && <Tag color="blue" style={{ marginLeft: 8 }}>我</Tag>}
+                          </div>
+                          {u.email && <div style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>{u.email}</div>}
                         </div>
-                      </div>
-                    )}
-                  />
-                )
-              },
-            },
-            {
-              title: '操作', width: 80,
-              render: (_, m) => {
-                if (m.role === 'owner') return null
-                if (!canManageMembers) return null
-                if (myRole === 'admin' && m.role === 'admin') return null
-                return (
-                  <Popconfirm
-                    title={`移除「${m.user.username}」？`}
-                    description="该成员将从工作区中移出"
-                    onConfirm={() => kick.mutate(m.id)}
-                  >
-                    <Tooltip title="移除成员：收回其在本工作区的访问权限">
-                      <Button size="small" type="text" danger icon={<UserDeleteOutlined />} />
-                    </Tooltip>
-                  </Popconfirm>
-                )
-              },
-            },
-          ]}
-        />
-      </Card>
+                      )
+                    },
+                  },
+                  {
+                    title: '角色', width: 150,
+                    render: (_, m) => {
+                      if (!canManageMembers) {
+                        return <Tag>{ROLE_LABEL[zoneRole]}</Tag>
+                      }
+                      return (
+                        <Select
+                          value={zoneRole}
+                          onChange={(v: string) => changeRole.mutate({ memberId: m.id, role: v })}
+                          size="small"
+                          style={{ width: 120 }}
+                          disabled={!canManageMembers}
+                          options={assignableRoles}
+                          optionRender={(option) => (
+                            <div>
+                              <div>{option.label}</div>
+                              <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', lineHeight: 1.5 }}>
+                                {ROLE_HINTS[option.value as WorkspaceRole]}
+                              </div>
+                            </div>
+                          )}
+                        />
+                      )
+                    },
+                  },
+                  {
+                    title: '操作', width: 80,
+                    render: (_, m) => {
+                      if (!canManageMembers) return null
+                      return (
+                        <Popconfirm
+                          title={`移除「${m.user.username}」？`}
+                          description="该成员将从工作区中移出"
+                          onConfirm={() => kick.mutate(m.id)}
+                        >
+                          <Tooltip title="移除成员：收回其在本工作区的访问权限">
+                            <Button size="small" type="text" danger icon={<UserDeleteOutlined />} />
+                          </Tooltip>
+                        </Popconfirm>
+                      )
+                    },
+                  },
+                ]}
+              />
+            )}
+          </Card>
+        )
+      })}
 
       {/* ── 添加成员 Modal ── */}
       <Modal
@@ -501,11 +468,7 @@ export default function WorkspaceSettingsContent({
             options={assignableRoles.filter(r => r.value !== 'owner')}
           />
           <div style={{ marginTop: 6, fontSize: 12, color: 'var(--cn-text-muted)' }}>
-            {ROLE_LABEL[addMemberRole as WorkspaceRole]} — {
-              addMemberRole === 'admin' ? '管理成员与工作区设置，不可转让所有权'
-                : addMemberRole === 'editor' ? '可查看并编辑数据，不可管理成员与设置'
-                  : '仅可查看工作区内容与数据'
-            }
+            {ROLE_LABEL[addMemberRole as WorkspaceRole]} — {ROLE_HINTS[addMemberRole as WorkspaceRole]}
           </div>
         </div>
       </Modal>
@@ -526,7 +489,7 @@ export default function WorkspaceSettingsContent({
         destroyOnHidden
       >
         <div style={{ marginBottom: 8, color: 'var(--cn-text-secondary)', fontSize: 13 }}>
-          将工作区所有权转让给下列成员。转让后您将失去所有者特权，回落到管理员角色。
+          将工作区所有权转让给下列成员。转让后您将失去所有者特权，回落到编辑者角色。
         </div>
         <Select
           showSearch
@@ -574,7 +537,7 @@ export default function WorkspaceSettingsContent({
           </Form.Item>
           <Form.Item
             name="visibility"
-            label={<>公开性<HelpTip title="修改后立即生效：公开=任何人可读；成员可见=仅工作区成员可访问；私有=仅所有者和管理员可见" /></>}
+            label={<>公开性<HelpTip title="修改后立即生效：公开=任何人可读；成员可见=仅工作区成员可访问；私有=仅所有者可见" /></>}
           >
             <Select
               options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({ value: v, label: l }))}
@@ -597,14 +560,6 @@ export default function WorkspaceSettingsContent({
       label: <span><SafetyOutlined /> 权限</span>,
       children: membersTabChildren,
     },
-    // 审批流配置：低频管理功能，仅 admin 及以上可见（与成员管理同门控）
-    ...(canManageMembers
-      ? [{
-          key: 'workflows',
-          label: <span><AuditOutlined /> 审批流</span>,
-          children: <ApprovalFlowsSettings wid={wid} />,
-        }]
-      : []),
     {
       key: 'stats',
       label: <span><BarChartOutlined /> 统计信息</span>,
@@ -635,7 +590,7 @@ export default function WorkspaceSettingsContent({
           <Descriptions title="角色信息" size="small" bordered column={2} style={{ marginBottom: 16 }}>
             <Descriptions.Item label="您的角色">
               {myRole
-                ? <Tag color={myRole === 'owner' ? 'gold' : myRole === 'admin' ? 'geekblue' : 'default'}>{ROLE_LABEL[myRole]}</Tag>
+                ? <Tag color={myRole === 'owner' ? 'gold' : 'default'}>{ROLE_LABEL[myRole]}</Tag>
                 : <Tag>非成员</Tag>}
             </Descriptions.Item>
             {detail?.owner && (

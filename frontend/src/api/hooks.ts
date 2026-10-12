@@ -6,7 +6,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { App as AntApp } from 'antd'
-import { tableApi, recordApi, viewApi, auditApi, isApprovalSubmitResponse } from './index'
+import { tableApi, recordApi, viewApi, auditApi, isChangeRequestResponse } from './index'
 import type {
   TableDetail, View, RowListResponse,
   AuditLog, Reference,
@@ -142,12 +142,12 @@ export function useUpdateRowOptimistic(wid: string, tid: string) {
       return { previousRecordsQueries }
     },
     onSuccess: (data, _args, context) => {
-      // 202 变更单（编辑审批开启）：未落库 —— 回滚乐观写入让网格保持原值，并刷新在途锁定状态
-      if (isApprovalSubmitResponse(data)) {
+      // 202 修改申请（查看者/关闭直编）：未落库 —— 回滚乐观写入让网格保持原值，并刷新在途申请状态
+      if (isChangeRequestResponse(data)) {
         context?.previousRecordsQueries.forEach(([queryKey, prev]) => {
           if (prev) queryClient.setQueryData(queryKey, prev)
         })
-        queryClient.invalidateQueries({ queryKey: ['approval-pending', tableKey] })
+        queryClient.invalidateQueries({ queryKey: ['pending-changes', tableKey] })
       }
     },
     onError: (err, _args, context) => {

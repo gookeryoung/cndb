@@ -40,14 +40,14 @@ export function buildSteps(): TourStep[] {
       element: TOUR_SELECTORS.workspaceSwitch,
       popover: {
         title: '切换工作区',
-        description: '点击左上角的下拉框可以切换或进入工作区。内容区顶部的「数据资产」「报表」「工作区设置」分页导航都作用于这里选中的工作区。',
+        description: '点击左上角的下拉框可以切换或进入工作区。内容区顶部的「数据表」「报表」「工作区设置」分页导航都作用于这里选中的工作区。',
       },
     },
     {
       element: TOUR_SELECTORS.siderTables,
       popover: {
         title: '数据表导航',
-        description: '左侧列出当前工作区的所有数据表，点击即可切换。若这里还是空的，请先到工作区的「数据资产」页面创建或导入一张表。',
+        description: '左侧列出当前工作区的所有数据表，点击即可切换。若这里还是空的，请先到工作区的「数据表」页面创建或导入一张表。',
       },
     },
     {

@@ -25,8 +25,8 @@ class TestManageDataAction:
     def test_permission_field_mapping(self) -> None:
         assert _ACTION_PERMISSION_FIELD[TableAction.MANAGE_DATA] == "manage_data_role"
 
-    def test_default_role_is_admin(self) -> None:
-        assert _ACTION_DEFAULT_ROLE[TableAction.MANAGE_DATA] == WorkspaceRole.ADMIN
+    def test_default_role_is_editor(self) -> None:
+        assert _ACTION_DEFAULT_ROLE[TableAction.MANAGE_DATA] == WorkspaceRole.EDITOR
 
     def test_workspace_action_keys_contains_manage_data(self) -> None:
         assert "MANAGE_DATA" in ACTION_KEYS
@@ -116,7 +116,7 @@ class TestCheckActionManageData:
 
     @pytest.fixture
     def ws_users(self, db):
-        """工作区 + owner/admin/editor/viewer 四个成员."""
+        """工作区 + owner/editor/viewer 三个成员."""
         from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
 
         owner = User(username="mx_owner", nickname="MxOwner")
@@ -130,7 +130,6 @@ class TestCheckActionManageData:
             owner: WorkspaceRole.OWNER,
         }
         for uname, role in [
-            ("mx_admin", WorkspaceRole.ADMIN),
             ("mx_editor", WorkspaceRole.EDITOR),
             ("mx_viewer", WorkspaceRole.VIEWER),
         ]:
@@ -161,7 +160,7 @@ class TestCheckActionManageData:
         return next(u for u, r in ws_users["users"].items() if r == role)
 
     def test_default_threshold_matrix(self, db, ws_users, table) -> None:
-        """默认阈值 ADMIN：viewer/editor 拒绝，admin/owner 放行."""
+        """默认阈值 EDITOR：viewer 拒绝，editor/owner 放行."""
         from cndb.plugins.tables.services.core.access import check_action
         from cndb.plugins.workspaces.models import WorkspaceRole
 
@@ -170,11 +169,7 @@ class TestCheckActionManageData:
             is False
         )
         assert (
-            check_action(db, table, self._user_by_role(ws_users, WorkspaceRole.EDITOR), TableAction.MANAGE_DATA)
-            is False
-        )
-        assert (
-            check_action(db, table, self._user_by_role(ws_users, WorkspaceRole.ADMIN), TableAction.MANAGE_DATA) is True
+            check_action(db, table, self._user_by_role(ws_users, WorkspaceRole.EDITOR), TableAction.MANAGE_DATA) is True
         )
         assert (
             check_action(db, table, self._user_by_role(ws_users, WorkspaceRole.OWNER), TableAction.MANAGE_DATA) is True
@@ -211,7 +206,7 @@ class TestCheckActionManageData:
             check_action(db, table, self._user_by_role(ws_users, WorkspaceRole.VIEWER), TableAction.MANAGE_DATA) is True
         )
 
-        # 提到 owner：editor/viewer 被拒；工作区 ADMIN 走优先级 2 无条件放行，不受阈值约束
+        # 提到 owner：editor/viewer 被拒；工作区 OWNER 走优先级 2 无条件放行，不受阈值约束
         perm.manage_data_role = "owner"
         db.commit()
         assert (
@@ -219,7 +214,7 @@ class TestCheckActionManageData:
             is False
         )
         assert (
-            check_action(db, table, self._user_by_role(ws_users, WorkspaceRole.ADMIN), TableAction.MANAGE_DATA) is True
+            check_action(db, table, self._user_by_role(ws_users, WorkspaceRole.OWNER), TableAction.MANAGE_DATA) is True
         )
 
     def test_custom_role_member(self, db, ws_users, table) -> None:

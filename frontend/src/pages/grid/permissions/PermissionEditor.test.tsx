@@ -1,8 +1,8 @@
 /**
- * PermissionEditor 组件测试 —— 表权限编辑器.
+ * PermissionEditor 组件测试 —— 表权限编辑器（三区布局）.
  *
- * 覆盖：Owner 卡片 / 成员表渲染 / 隐藏字段受控勾选 / 非管理者无管理入口 /
- * 切换角色 PATCH / Popconfirm 移除 DELETE / 添加成员 POST 与后端错误提示。
+ * 覆盖：Owner 卡片 / 编辑者区-查看者区成员分区渲染 / 隐藏字段受控勾选 / 非管理者无管理入口 /
+ * 切换角色 PATCH / Popconfirm 移除 DELETE / 分区添加成员 POST 与后端错误提示。
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -83,20 +83,24 @@ describe('PermissionEditor 表权限编辑器', () => {
     expect(screen.getByText(/（就是您）/)).toBeInTheDocument()
     expect(screen.getByText(/拥有者对该表负全责/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /转让所有权/ })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /添加成员/ })).toBeEnabled()
+    expect(screen.getAllByRole('button', { name: /添加成员/ }).length).toBe(2)
   })
 
-  it('展示态：成员表渲染成员行与授权 Tag', async () => {
+  it('展示态：三区布局 —— 编辑者/查看者分区卡片按授权级别展示成员', async () => {
     setupHandlers()
     renderEditor()
 
     const bobCell = await screen.findByText('bob')
     expect(screen.getByText('carol')).toBeInTheDocument()
-    // antd Space 会把「表成员（2）」拆成多个节点，改从卡片标题整体断言
-    const memberCard = bobCell.closest('.ant-card')!
-    expect(memberCard.querySelector('.ant-card-head-title')!.textContent).toContain('表成员（2）')
+    // bob（read）在查看者区，carol（write）在编辑者区；标题计数各 1
+    const viewerCard = bobCell.closest('.ant-card')!
+    expect(viewerCard.querySelector('.ant-card-head-title')!.textContent).toContain('查看者（1）')
+    const editorCard = screen.getByText('carol').closest('.ant-card')!
+    expect(editorCard.querySelector('.ant-card-head-title')!.textContent).toContain('编辑者（1）')
     expect(screen.getByText('read · 只读')).toBeInTheDocument()
     expect(screen.getByText('write · 可编辑')).toBeInTheDocument()
+    // 两个分区各有一个「添加成员」入口
+    expect(screen.getAllByRole('button', { name: /添加成员/ }).length).toBe(2)
   })
 
   it('展示态：隐藏字段 Checkbox 过滤 hidden 字段', async () => {
@@ -150,8 +154,8 @@ describe('PermissionEditor 表权限编辑器', () => {
 
     expect(await screen.findByText('bob')).toBeInTheDocument()
     await waitCanManage()
-    // 第一个 Select 为 bob 行的角色选择器
-    openSelect(document.querySelectorAll('.ant-select .ant-select-selector')[0])
+    // 分区渲染顺序：编辑者区（carol）在前、查看者区（bob）在后，第二个 Select 为 bob 行
+    openSelect(document.querySelectorAll('.ant-select .ant-select-selector')[1])
     // 选项 label 是 Tag（文本隔一层，option-content 无直接文本节点），在下拉容器内点选
     const dropdown = await waitFor(() => {
       const el = document.querySelector('.ant-select-dropdown')
@@ -166,16 +170,17 @@ describe('PermissionEditor 表权限编辑器', () => {
   it('交互态：Popconfirm 确认后发起 DELETE 移除成员', async () => {
     setupHandlers()
     const delSpy = vi.fn()
-    server.use(http.delete(`/api/v1/workspaces/${WID}/tables/${TID}/members/2`, () => {
+    // 编辑者区（carol，user_id=3）渲染在前，第一个移除按钮属于 carol
+    server.use(http.delete(`/api/v1/workspaces/${WID}/tables/${TID}/members/3`, () => {
       delSpy()
       return HttpResponse.json({})
     }))
     renderEditor()
 
-    expect(await screen.findByText('bob')).toBeInTheDocument()
+    expect(await screen.findByText('carol')).toBeInTheDocument()
     await waitCanManage()
-    // bob 行的移除按钮（第一行）
-    fireEvent.click(screen.getAllByRole('button', { name: /移\s*除/ })[0])
+    // 编辑者区 carol 行的移除按钮（第一个）
+    fireEvent.click(screen.getAllByRole('button', { name: /移\s*除/ })[0]!)
 
     // 等待 Popconfirm 气泡出现后点击确认按钮
     await screen.findByText(/该用户将失去本表显式授予的成员权限/)
@@ -185,16 +190,18 @@ describe('PermissionEditor 表权限编辑器', () => {
     await waitFor(() => expect(delSpy).toHaveBeenCalledTimes(1))
   })
 
-  it('交互态：添加成员候选排除已有成员与 owner，提交 POST', async () => {
+  it('交互态：从编辑者区添加成员候选排除已有成员与 owner，提交 POST（默认 write）', async () => {
     setupHandlers()
     const addSpy = vi.fn()
     server.use(http.post(`/api/v1/workspaces/${WID}/tables/${TID}/members`, async ({ request }) => {
       addSpy(await request.json())
-      return HttpResponse.json({ user_id: 4, username: 'dave', role: 'read' })
+      return HttpResponse.json({ user_id: 4, username: 'dave', role: 'write' })
     }))
     renderEditor()
 
-    fireEvent.click(await screen.findByRole('button', { name: /添加成员/ }))
+    // 编辑者区（write 分区渲染在前）的「添加成员」按钮，弹窗预选 write
+    const addBtns = await screen.findAllByRole('button', { name: /添加成员/ })
+    fireEvent.click(addBtns[0]!)
     const modal = (await screen.findByText('添加表成员')).closest('.ant-modal') as HTMLElement
 
     // 模态框内第一个 Select 为用户选择器
@@ -203,7 +210,7 @@ describe('PermissionEditor 表权限编辑器', () => {
     fireEvent.click(await screen.findByText('dave (老D)', { selector: '.ant-select-item-option-content' }))
     fireEvent.click(within(modal).getByRole('button', { name: /添\s*加/ }))
 
-    await waitFor(() => expect(addSpy).toHaveBeenCalledWith({ user_id: 4, role: 'read' }))
+    await waitFor(() => expect(addSpy).toHaveBeenCalledWith({ user_id: 4, role: 'write' }))
   })
 
   it('异常态：添加成员后端报错时展示 detail 错误信息', async () => {
@@ -212,7 +219,8 @@ describe('PermissionEditor 表权限编辑器', () => {
       HttpResponse.json({ detail: '用户不存在' }, { status: 400 })))
     renderEditor()
 
-    fireEvent.click(await screen.findByRole('button', { name: /添加成员/ }))
+    const addBtns = await screen.findAllByRole('button', { name: /添加成员/ })
+    fireEvent.click(addBtns[0]!)
     const modal = (await screen.findByText('添加表成员')).closest('.ant-modal') as HTMLElement
     openSelect(modal.querySelectorAll('.ant-select .ant-select-selector')[0])
     fireEvent.click(await screen.findByText('dave (老D)', { selector: '.ant-select-item-option-content' }))

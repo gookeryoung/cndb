@@ -67,7 +67,7 @@ def mb_ws(db, owner_user, admin_user, editor_user, viewer_user):
     db.add(ws)
     db.flush()
     db.add(WorkspaceMember(workspace_id=ws.id, user_id=owner_user.id, role=WorkspaceRole.OWNER))
-    db.add(WorkspaceMember(workspace_id=ws.id, user_id=admin_user.id, role=WorkspaceRole.ADMIN))
+    db.add(WorkspaceMember(workspace_id=ws.id, user_id=admin_user.id, role=WorkspaceRole.EDITOR))
     db.add(WorkspaceMember(workspace_id=ws.id, user_id=editor_user.id, role=WorkspaceRole.EDITOR))
     db.add(WorkspaceMember(workspace_id=ws.id, user_id=viewer_user.id, role=WorkspaceRole.VIEWER))
     db.commit()
@@ -179,13 +179,14 @@ class TestAddMember:
         assert len(logs) >= 1
         assert logs[-1].action == "add_member"
 
-    def test_add_admin_can_add(self, client, db, mb_ws, mb_table, editor_user, auth_for):
+    def test_add_editor_denied(self, client, db, mb_ws, mb_table, editor_user, viewer_user, auth_for):
+        """三级角色后工作区 editor 非表所有者，不可添加表成员."""
         r = client.post(
             f"/api/v1/workspaces/{mb_ws.id}/tables/{mb_table.id}/members",
-            json={"user_id": editor_user.id, "role": "read"},
+            json={"user_id": viewer_user.id, "role": "read"},
             headers=auth_for("mb_admin"),
         )
-        assert r.status_code == 201
+        assert r.status_code == 403
 
     def test_add_invalid_role(self, client, mb_ws, mb_table, editor_user, auth_for):
         r = client.post(

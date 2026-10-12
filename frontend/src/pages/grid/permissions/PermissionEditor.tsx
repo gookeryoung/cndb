@@ -1,7 +1,10 @@
-/** 表权限编辑器 — 嵌入在 Modal 内.
+/** 表权限编辑器 — 三区布局（所有者 / 编辑者 / 查看者）.
  *
- * 上半部分：Owner Card + Members Table（新增成员 / 切换 read-write / 移除成员 / 转让所有权）
- * 下半部分：原有 TablePermission 编辑 UI（隐藏字段 — 保留, 未改动）
+ * 所有者区：Owner Card（表 owner + 转让所有权）
+ * 编辑者区：write 成员列表 + 添加成员（默认 write）
+ * 查看者区：read 成员列表 + 添加成员（默认 read）
+ * 成员可在区间移动（行内 Select 切 read/write，复用 update）；移除/转让逻辑不变。
+ * 下半部分：隐藏字段编辑 UI（保留，未改动）。
  */
 
 import { useState, useMemo } from 'react'
@@ -26,7 +29,7 @@ interface PermissionEditorProps {
   tid: number | string
   /** 表拥有者（从 TableDetail.owner 获取） */
   owner?: TableOwnerInfo | null
-  /** 受控：当前勾选为隐藏的字段名集合（状态由父组件 TableSettingsModal 持有） */
+  /** 受控：当前勾选为隐藏的字段名集合（状态由父组件 TableSettingsPage 持有） */
   hiddenNames: string[]
   /** 受控回调：勾选变化时通知父组件 */
   onHiddenNamesChange: (names: string[]) => void
@@ -35,7 +38,7 @@ interface PermissionEditorProps {
 // ───────────────────────── 隐藏字段 + 备注（原逻辑保留） ─────────────────────────
 
 /** 把后端 hidden_fields（dict: 角色名 → 隐藏字段列表）展平成一个 Set.
- *  后端 schema: hidden_fields: dict[str, Any] = { "admin": ["name"], "editor": [...] }
+ *  后端 schema: hidden_fields: dict[str, Any] = { "editor": ["name"], "viewer": [...] }
  *  历史遗留：早期设计为数组，后端改为按角色分桶后前端没跟进，需要兼容两种形态.
  */
 export function buildHiddenSet(hidden: unknown): Set<string> {
@@ -61,6 +64,8 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
   const queryClient = useQueryClient()
   const [transferOpen, setTransferOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  /** 添加成员弹窗预选授权级别（由打开入口所在分区决定） */
+  const [addRole, setAddRole] = useState<'read' | 'write'>('read')
 
   // ── 表成员列表 ──
   const { data: members = [], isLoading: membersLoading } = useQuery<TableMember[]>({
@@ -85,8 +90,8 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
   const currentUserRole: WorkspaceRole | null | undefined = workspace?.current_user_role
 
   const isOwner = !!owner && !!user && String(owner.id) === String(user.id)
-  const isWsAdminOrAbove = currentUserRole === 'owner' || currentUserRole === 'admin'
-  const canManageMembers = isOwner || isWsAdminOrAbove
+  // 管理门控：表 owner 或工作区 owner（三级角色，admin 已迁移为 editor）
+  const canManageMembers = isOwner || currentUserRole === 'owner'
 
   // ── 成员操作 ──
   const addMember = useMutation({
@@ -216,7 +221,7 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
               转让所有权
             </Button>
           ) : (
-            <Tooltip title="仅当前拥有者或工作区管理员可转让">
+            <Tooltip title="仅表拥有者或工作区所有者可转让">
               <Button size="small" icon={<SwapOutlined />} disabled>转让所有权</Button>
             </Tooltip>
           )
@@ -239,29 +244,44 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
         )}
       </Card>
 
-      {/* ─────────────── Members Table ─────────────── */}
-      <Card
-        size="small"
-        title={<Space><UserOutlined /> 表成员（{members.length}）</Space>}
-        style={{ marginBottom: 16 }}
-        extra={
-          canManageMembers ? (
-            <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
-              添加成员
-            </Button>
-          ) : null
-        }
-      >
-        <Table
-          size="small"
-          loading={membersLoading}
-          rowKey="user_id"
-          columns={memberColumns}
-          dataSource={members}
-          pagination={false}
-          locale={{ emptyText: <span style={{ color: 'var(--cn-text-muted)' }}>暂无显式成员</span> }}
-        />
-      </Card>
+      {/* ─────────────── 编辑者区 / 查看者区（三区布局） ─────────────── */}
+      {([
+        { zoneRole: 'write', label: '编辑者' },
+        { zoneRole: 'read', label: '查看者' },
+      ] as const).map(({ zoneRole, label }) => {
+        const list = members.filter(m => m.role === zoneRole)
+        return (
+          <Card
+            key={zoneRole}
+            size="small"
+            title={<Space><UserOutlined /> {label}（{list.length}）</Space>}
+            style={{ marginBottom: 16 }}
+            extra={
+              canManageMembers ? (
+                <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => {
+                  setAddRole(zoneRole)
+                  setAddOpen(true)
+                }}>
+                  添加成员
+                </Button>
+              ) : null
+            }
+          >
+            {list.length === 0 ? (
+              <div style={{ color: 'var(--cn-text-muted)', fontSize: 13, padding: '6px 0' }}>暂无{label}</div>
+            ) : (
+              <Table
+                size="small"
+                loading={membersLoading}
+                rowKey="user_id"
+                columns={memberColumns}
+                dataSource={list}
+                pagination={false}
+              />
+            )}
+          </Card>
+        )
+      })}
 
       {/* ─────────────── 隐藏字段（受控 Checkbox.Group，状态由父组件持有） ─────────────── */}
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, marginTop: 4 }}>
@@ -312,6 +332,7 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
         onClose={() => setAddOpen(false)}
         candidates={candidateUsers}
         loading={addMember.isPending}
+        defaultRole={addRole}
         onSubmit={(userId, role) => addMember.mutate({ user_id: userId, role })}
       />
     </div>
@@ -361,16 +382,20 @@ function TransferOwnerModal({
 }
 
 function AddMemberModal({
-  open, onClose, candidates, loading, onSubmit,
+  open, onClose, candidates, loading, defaultRole, onSubmit,
 }: {
   open: boolean
   onClose: () => void
   candidates: Array<{ value: string; label: string }>
   loading: boolean
+  /** 预选授权级别（由打开入口所在分区决定） */
+  defaultRole: 'read' | 'write'
   onSubmit: (userId: number, role: 'read' | 'write') => void
 }) {
   const [userId, setUserId] = useState<string | null>(null)
-  const [role, setRole] = useState<'read' | 'write'>('read')
+  const [role, setRole] = useState<'read' | 'write'>(defaultRole)
+  // open 变化时同步预选角色（每次打开弹窗重置为入口分区对应级别）
+  if (open && role !== defaultRole) setRole(defaultRole)
   return (
     <Modal
       title="添加表成员"

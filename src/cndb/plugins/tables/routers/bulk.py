@@ -10,18 +10,19 @@ from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, UploadFile, status
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.change_requests import services as cr_services
 from cndb.plugins.tables.models import DataView, ImportTask
 from cndb.plugins.tables.schemas import BulkDeleteRequest
 from cndb.plugins.tables.services import transfer
 from cndb.plugins.tables.services.core import records as rec
-from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
+from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
 from cndb.plugins.tables.services.importing.import_tasks import create_import_task, run_task_in_background
 from cndb.plugins.workspaces.models import Workspace
 
@@ -128,15 +129,30 @@ def bulk_create_records(
 # ── 批量删行 ───────────────────────────────────────────
 
 
-@router.post("/records/bulk-delete", status_code=status.HTTP_200_OK)
+@router.post("/records/bulk-delete", status_code=status.HTTP_200_OK, response_model=None)
 def bulk_delete_records(
     workspace_id: int,
     table_id: int,
     payload: BulkDeleteRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict[str, int]:
-    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+) -> dict[str, Any] | JSONResponse:
+    """批量删行：可直编者直接删除；否则生成含多个 delete item 的修改申请（202）."""
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+
+    if not cr_services.can_write_directly(db, dt, current_user):
+        cr = cr_services.create_batch_delete_request(db, dt, current_user, payload.row_ids)
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content={
+                "change_request": cr_services.serialize_request(cr),
+                "created_items": len(cr.items),
+            },
+        )
+
+    if not check_action(db, dt, current_user, TableAction.EDIT_RECORDS):
+        raise HTTPException(status_code=403, detail="表级权限不足")
+
     deleted = rec.bulk_delete(db.get_bind(), dt, payload.row_ids, db=db)
     return {"deleted": deleted}
 

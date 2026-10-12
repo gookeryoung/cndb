@@ -5,11 +5,10 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
-import { http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
 import { renderProviders } from '@/test/render-providers'
-import { mockFormList, mockUser, server } from '@/test/msw'
+import { mockUser } from '@/test/msw'
 import type { UserResponse } from '@/api'
 import type { ResponsiveState } from '@/hooks/useResponsive'
 
@@ -109,34 +108,21 @@ describe('MainLayout 顶部导航', () => {
         expect(adminBtn.compareDocumentPosition(userName) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
-    it('Content 分页导航：默认激活「数据资产」，点击 tab 正确导航且激活态随路由变化', async () => {
+    it('Content 分页导航：默认激活「数据表」，点击 tab 正确导航且激活态随路由变化', async () => {
         renderLayout(mockUser)
 
-        // 初始在表列表页，「数据资产」激活
+        // 初始在表列表页，「数据表」激活
         await waitFor(() => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
-        // tab 数量徽标：数据资产显示表数量（msw 返回 1 张表）；报表显示 report_count（mock 0 也显示）
+        // tab 数量徽标：数据表显示表数量（msw 返回 1 张表）；报表显示 report_count（mock 0 也显示）
         await waitFor(() => {
-            expect(screen.getByRole('tab', { name: /数据资产/ })).toHaveTextContent('1')
+            expect(screen.getByRole('tab', { name: /数据表/ })).toHaveTextContent('1')
         })
         await waitFor(() => {
             expect(screen.getByRole('tab', { name: /报表/ })).toHaveTextContent('0')
         })
-        // 表单 tab：总数徽标（mock 1 个表单，未绑审批流 → 无金色类别徽标）
-        await waitFor(() => {
-            const formsTab = screen.getByRole('tab', { name: /表单/ })
-            expect(formsTab).toHaveTextContent('1')
-            expect(formsTab.querySelector('.ant-tag')).toBeNull()
-        })
-        // 审批中心 tab：仅待我审批金色类别徽标（mock 1 条待审）；配置入口已移入工作区设置
-        await waitFor(() => {
-            const centerTab = screen.getByRole('tab', { name: /审批中心/ })
-            expect(centerTab).toHaveTextContent('1 待审')
-            expect(centerTab).not.toHaveTextContent('审批流')
-            expect(centerTab.querySelector('.ant-tag')).toHaveClass('ant-tag-gold')
-        })
-        expect(screen.getByRole('tab', { name: /数据资产/ }).closest('.ant-tabs-tab'))
+        expect(screen.getByRole('tab', { name: /数据表/ }).closest('.ant-tabs-tab'))
             .toHaveClass('ant-tabs-tab-active')
 
         // 点击「工作区设置」tab → /w/10/settings
@@ -154,36 +140,18 @@ describe('MainLayout 顶部导航', () => {
         })
     })
 
-    it('分页导航五项均带图标，直观区分入口类型', async () => {
+    it('分页导航三项均带图标，直观区分入口类型', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
-        // antd 图标 aria-label 会拼进 accessible name（如 'database数据资产'），故用子串正则匹配
-        const tabNames = ['数据资产', '表单', '审批中心', '报表', '工作区设置']
+        // antd 图标 aria-label 会拼进 accessible name（如 'database数据表'），故用子串正则匹配
+        const tabNames = ['数据表', '报表', '工作区设置']
         for (const name of tabNames) {
             const tab = screen.getByRole('tab', { name: new RegExp(name) })
             expect(tab.querySelector('.anticon')).not.toBeNull()
         }
-    })
-
-    it('表单 tab 显示绑定审批流的金色类别徽标（N 走审批）', async () => {
-        // 覆盖表单列表：2 个表单，其中 1 个绑定审批流
-        server.use(
-            http.get('/api/v1/workspaces/10/forms', () => HttpResponse.json([
-                mockFormList[0],
-                { ...mockFormList[0], id: 2, name: '请假申请', approval_workflow_id: 5 },
-            ])),
-        )
-        renderLayout(mockUser)
-
-        const formsTab = await screen.findByRole('tab', { name: /表单/ })
-        await waitFor(() => {
-            expect(formsTab).toHaveTextContent('2')
-            expect(formsTab).toHaveTextContent('1 走审批')
-            expect(formsTab.querySelector('.ant-tag')).toHaveClass('ant-tag-gold')
-        })
     })
 
     it('右上角无昵称时回退显示账号名', async () => {
@@ -212,7 +180,7 @@ describe('MainLayout 顶部导航', () => {
         })
 
         // 分页导航依赖 wid 渲染；无工作区上下文时整体不渲染，侧边栏由「请先从顶部选择一个工作区」提示引导
-        expect(screen.queryByRole('tab', { name: /数据资产/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: /报表/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: /工作区设置/ })).toBeNull()
     })
@@ -288,8 +256,8 @@ describe('MainLayout 移动端适配', () => {
         renderLayout(mockUser)
 
         fireEvent.click(screen.getByTestId('mobile-nav-btn'))
-        // 抽屉打开：出现共享的表导航内容（msw 默认返回 1 张表，分组标题与 tab「数据资产」对齐）
-        expect(await screen.findByText('数据资产 (1)')).toBeVisible()
+        // 抽屉打开：出现共享的表导航内容（msw 默认返回 1 张表，分组标题为「数据表 (N)」）
+        expect(await screen.findByText('数据表 (1)')).toBeVisible()
 
         // 抽屉内点击「客户表」→ 触发导航并自动收起抽屉
         // 注：antd Drawer 关闭后内容仍留在 DOM（无 destroyOnHidden），

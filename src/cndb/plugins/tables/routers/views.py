@@ -508,7 +508,6 @@ def create_view_share(
     return {
         "slug": dv.public_slug,
         "share_url": f"/api/v1/public/share/{dv.public_slug}",
-        "form_url": f"/api/v1/public/forms/{dv.public_slug}" if dv.view_type == "form" else None,
         "is_public": dv.is_public,
     }
 

@@ -5,8 +5,8 @@
  *   删除工作区成功后，应自动 navigate('/w', { replace: true }) 回到工作区列表。
  *
  * 追加覆盖：Tab 切换与统计渲染 / 保存设置成功-失败-校验拦截 /
- * 成员管理（添加成员 / 修改角色 / 移除成员）/ 编辑权限开关 /
- * viewer 只读权限分支 / admin 权限边界。
+ * 成员管理（三区布局 / 添加成员 / 修改角色 / 移除成员）/ 编辑权限开关 /
+ * viewer 只读权限分支 / editor 只读边界（管理操作收敛为 owner）。
  */
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
@@ -131,7 +131,7 @@ const MEMBERS = [
 ]
 
 /** 按角色渲染设置内容（detail.current_user_role 决定权限分支） */
-function renderContent(role: 'owner' | 'admin' | 'viewer' = 'owner') {
+function renderContent(role: 'owner' | 'editor' | 'viewer' = 'owner') {
   server.use(
     http.get('/api/v1/workspaces/10', () =>
       HttpResponse.json({
@@ -266,7 +266,21 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     expect(patched).toMatchObject({ allow_edit: false })
   })
 
-  it('添加成员：搜索选择候选用户后发起 POST 并提示已添加成员', async () => {
+  it('三区布局：编辑者/查看者分区卡片按角色展示成员', async () => {
+    renderContent('owner')
+    await waitDetailLoaded()
+
+    fireEvent.click(screen.getByText('权限'))
+
+    // carol（editor）在编辑者区，owner（alice）仅在所有者区卡片、不在分区成员表
+    const carolCell = await screen.findByText('carol')
+    const editorCard = carolCell.closest('.ant-card')!
+    expect(editorCard.querySelector('.ant-card-head-title')!.textContent).toContain('编辑者（1）')
+    expect(editorCard.textContent).not.toContain('alice')
+    expect(screen.getByText('暂无查看者')).toBeInTheDocument()
+  })
+
+  it('添加成员：从编辑者区打开弹窗，搜索选择候选用户后发起 POST 并提示已添加成员', async () => {
     let postBody: Record<string, unknown> | undefined
     server.use(
       http.post('/api/v1/workspaces/10/members', async ({ request }) => {
@@ -278,7 +292,9 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     await waitDetailLoaded()
 
     fireEvent.click(screen.getByText('权限'))
-    fireEvent.click(await screen.findByRole('button', { name: /添\s*加\s*成\s*员/ }))
+    // 编辑者区与查看者区各有一个「添加成员」按钮，取第一个（编辑者区，默认角色 editor）
+    const addBtns = await screen.findAllByRole('button', { name: /添\s*加\s*成\s*员/ })
+    fireEvent.click(addBtns[0]!)
 
     // 添加成员弹窗打开（标题断言，避免与"添加成员"入口按钮重名）
     await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('添加成员'))
@@ -299,12 +315,12 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     expect(postBody).toMatchObject({ username: 'eve', role: 'editor' })
   })
 
-  it('修改成员角色：下拉选择管理员后发起 PATCH 并提示角色已更新', async () => {
+  it('修改成员角色：下拉选择查看者后发起 PATCH 并提示角色已更新', async () => {
     let patched: Record<string, unknown> | undefined
     server.use(
       http.patch('/api/v1/workspaces/10/members/3', async ({ request }) => {
         patched = (await request.json()) as Record<string, unknown>
-        return HttpResponse.json({ id: 3, role: 'admin' })
+        return HttpResponse.json({ id: 3, role: 'viewer' })
       }),
     )
     renderContent('owner')
@@ -312,13 +328,13 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
 
     fireEvent.click(screen.getByText('权限'))
 
-    // carol（editor）的角色 Select —— owner 可管理；未开弹窗时它是唯一可访问的 combobox。
-    // optionRender 把角色名渲染在内层 div（直接文本节点），点击后冒泡到选项节点完成选中
+    // 编辑者区 carol 的角色 Select —— owner 可管理；未开弹窗时它是唯一可访问的 combobox。
+    // optionRender 把角色名包在内层 div（直接文本节点），需用 selector 下钻到该节点
     fireEvent.mouseDown(await screen.findByRole('combobox'))
-    fireEvent.click(await screen.findByText('管理员'))
+    fireEvent.click(await screen.findByText('查看者', { selector: '.ant-select-item-option-content div' }))
 
     expect(await screen.findByText('角色已更新')).toBeInTheDocument()
-    expect(patched).toMatchObject({ role: 'admin' })
+    expect(patched).toMatchObject({ role: 'viewer' })
   })
 
   it('移除成员：Popconfirm 确认后发起 DELETE 并提示已移除成员', async () => {
@@ -361,10 +377,12 @@ describe('WorkspaceSettingsContent 权限分支', () => {
 
     // 权限 Tab：提示无权管理、无添加成员按钮、角色为纯 Tag 展示
     fireEvent.click(screen.getByText('权限'))
-    expect(await screen.findByText('仅管理员及以上角色可管理成员与权限')).toBeInTheDocument()
+    expect(await screen.findByText('仅所有者可管理成员与权限')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /添\s*加\s*成\s*员/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
-    expect(screen.getByText('编辑者')).toBeInTheDocument()
+    const carolCell = await screen.findByText('carol')
+    const editorCard = carolCell.closest('.ant-card')!
+    expect(editorCard.querySelector('.ant-card-head-title')!.textContent).toContain('编辑者（1）')
 
     // 编辑权限开关禁用
     expect(screen.getByRole('switch')).toBeDisabled()
@@ -375,19 +393,21 @@ describe('WorkspaceSettingsContent 权限分支', () => {
     expect(screen.queryByText('危险操作')).not.toBeInTheDocument()
   })
 
-  it('admin：可保存设置与管理成员，但无删除工作区权限', async () => {
-    renderContent('admin')
+  it('editor：只读（管理操作收敛为 owner），无保存/添加成员/危险操作入口', async () => {
+    renderContent('editor')
     await waitDetailLoaded()
 
-    // 基本设置：admin 可编辑 → 有保存按钮
-    expect(screen.getByRole('button', { name: '保存设置' })).toBeInTheDocument()
+    // 基本设置：editor 不可编辑 → 无保存按钮
+    expect(screen.queryByRole('button', { name: '保存设置' })).not.toBeInTheDocument()
 
-    // 权限 Tab：可添加成员，但 owner 卡片无"转让所有权"（仅 owner 可见）
+    // 权限 Tab：无添加成员入口，角色 Tag 展示；owner 卡片无"转让所有权"
     fireEvent.click(screen.getByText('权限'))
-    expect(await screen.findByRole('button', { name: /添\s*加\s*成\s*员/ })).toBeInTheDocument()
+    await screen.findByText('仅所有者可管理成员与权限')
+    expect(screen.queryByRole('button', { name: /添\s*加\s*成\s*员/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /转\s*让\s*所\s*有\s*权/ })).not.toBeInTheDocument()
 
-    // 统计 Tab：admin 不可见危险操作区
+    // 统计 Tab：editor 不可见危险操作区
     fireEvent.click(screen.getByText('统计信息'))
     await waitFor(() => expect(screen.getByText('角色信息')).toBeVisible())
     expect(screen.queryByText('危险操作')).not.toBeInTheDocument()

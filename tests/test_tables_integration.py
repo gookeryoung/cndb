@@ -650,10 +650,10 @@ class TestTableDetailEnhancement:
         r = client.get(f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}", headers=auth_editor)
         assert r.status_code == 200
         actions_e = set(r.json()["current_user_actions"])
-        # editor 应该能编辑记录、视图；但不能编辑 schema
+        # editor 应该能编辑记录、视图和 schema（EDIT_SCHEMA 默认角色为 EDITOR）
         assert "edit_records" in actions_e
         assert "edit_views" in actions_e
-        assert "edit_schema" not in actions_e  # schema 需 admin+
+        assert "edit_schema" in actions_e
 
         # viewer 登录
         r_login = client.post(

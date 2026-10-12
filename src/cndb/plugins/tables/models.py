@@ -62,6 +62,8 @@ class ViewType(enum.StrEnum):
     GRID = "grid"
     KANBAN = "kanban"
     CALENDAR = "calendar"
+    # form 为历史存量类型（公开表单功能已移除），仅为兼容既有行保留；
+    # 已无前端渲染入口，禁止新视图使用
     FORM = "form"
 
 
@@ -95,12 +97,6 @@ class DataTable(TimestampMixin, Base):
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     trashed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     trashed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # 表级「编辑需审批」开关：绑定的审批流 id；NULL = 关闭（直编直存），
-    # 非 NULL = 网格/表单写操作统一提交变更单进审批。对齐 FormDefinition.approval_workflow_id 先例。
-    edit_approval_workflow_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workflows_workflow.id", ondelete="SET NULL"),
-        nullable=True,
-    )
 
     # 关系
     workspace: Mapped[Workspace] = relationship("Workspace")
