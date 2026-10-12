@@ -1372,3 +1372,255 @@ class TestViewRowsHiddenFieldsFix:
         for group_rows in r.json()["columns"].values():
             for row in group_rows:
                 assert "薪资" not in row, "看板端点 hidden_fields 未生效"
+
+
+def _make_workspace_viewer(db, ws, username: str):
+    """创建一个仅 VIEWER 角色的工作区成员并返回 (user, auth_headers)."""
+    from cndb.plugins.accounts.models import User
+    from cndb.plugins.workspaces.models import WorkspaceMember
+
+    u = User(username=username, email=f"{username}@example.com")
+    u.set_password("pw")
+    u.role = "user"
+    db.add(u)
+    db.flush()
+    db.add(WorkspaceMember(workspace_id=ws.id, user_id=u.id, role=WorkspaceRole.VIEWER))
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+def _login(client, username: str) -> dict[str, str]:
+    r = client.post("/api/v1/accounts/auth/login", json={"login": username, "password": "pw"})
+    assert r.status_code == 200
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+class TestPersonalViewClassification:
+    """个人视图归类：有 EDIT_VIEWS → 公共（owner_id=None）；仅 READ → 个人（owner_id=创建者）."""
+
+    def test_owner_created_view_is_public(self, client, ws, table, auth_owner):
+        """表拥有者创建视图 → 公共视图（owner_id 为空）."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "公共视图", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        assert r.status_code == 201
+        assert r.json()["owner_id"] is None, "有 EDIT_VIEWS 权限者创建的视图应为公共视图"
+
+    def test_viewer_created_view_is_personal(self, client, db, ws, table):
+        """仅 READ 用户创建视图 → 个人视图（owner_id=创建者）."""
+        viewer = _make_workspace_viewer(db, ws, "pv_viewer1")
+        viewer_h = _login(client, "pv_viewer1")
+
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "我的筛选", "view_type": "grid"},
+            headers=viewer_h,
+        )
+        assert r.status_code == 201
+        assert r.json()["owner_id"] == viewer.id, "仅 READ 用户创建的视图应归属个人"
+
+    def test_list_views_hides_others_personal_views(self, client, db, ws, table, auth_owner):
+        """个人视图仅创建者可见：他人列表只含公共视图 + 本人视图."""
+        owner_h = auth_owner
+
+        # 表拥有者（EDIT_VIEWS）建公共视图
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "公共视图B2", "view_type": "grid"},
+            headers=owner_h,
+        )
+        assert r.status_code == 201
+
+        # viewer1 建个人视图
+        viewer1 = _make_workspace_viewer(db, ws, "pv_viewer_b2a")
+        viewer1_h = _login(client, "pv_viewer_b2a")
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "viewer1的筛选", "view_type": "grid"},
+            headers=viewer1_h,
+        )
+        assert r.status_code == 201
+
+        # viewer1 看得到：公共 + 自己的
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            headers=viewer1_h,
+        )
+        assert r.status_code == 200
+        names = {v["name"] for v in r.json()}
+        assert "公共视图B2" in names
+        assert "viewer1的筛选" in names
+
+        # viewer2 看不到 viewer1 的个人视图
+        viewer2 = _make_workspace_viewer(db, ws, "pv_viewer_b2b")
+        viewer2_h = _login(client, "pv_viewer_b2b")
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            headers=viewer2_h,
+        )
+        assert r.status_code == 200
+        names2 = {v["name"] for v in r.json()}
+        assert "公共视图B2" in names2
+        assert "viewer1的筛选" not in names2, "他人的个人视图不应出现在列表中"
+
+    def test_viewer_can_update_own_personal_view(self, client, db, ws, table):
+        """仅 READ 用户可更新本人个人视图（筛选/排序保存不再 403）."""
+        viewer = _make_workspace_viewer(db, ws, "pv_viewer_b3")
+        viewer_h = _login(client, "pv_viewer_b3")
+
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "我的排序B3", "view_type": "grid"},
+            headers=viewer_h,
+        )
+        assert r.status_code == 201
+        vid = r.json()["id"]
+
+        r = client.patch(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            json={"sortings": [{"field_name": "姓名", "direction": "asc"}]},
+            headers=viewer_h,
+        )
+        assert r.status_code == 200, "个人视图本人应可保存筛选/排序"
+        assert r.json()["sortings"] == [{"field_name": "姓名", "direction": "asc"}]
+
+    def test_other_personal_view_invisible_on_update(self, client, db, ws, table, auth_owner):
+        """他人个人视图对 PATCH 不可见（404，不暴露存在性）."""
+        viewer1 = _make_workspace_viewer(db, ws, "pv_viewer_b3a")
+        viewer1_h = _login(client, "pv_viewer_b3a")
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "viewer1私有B3", "view_type": "grid"},
+            headers=viewer1_h,
+        )
+        vid = r.json()["id"]
+
+        viewer2 = _make_workspace_viewer(db, ws, "pv_viewer_b3b")
+        viewer2_h = _login(client, "pv_viewer_b3b")
+        r = client.patch(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            json={"name": "篡改"},
+            headers=viewer2_h,
+        )
+        assert r.status_code == 404, "他人个人视图应视为不存在"
+
+    def test_viewer_cannot_update_public_view(self, client, db, ws, table, auth_owner):
+        """公共视图仍需 EDIT_VIEWS：仅 READ 用户 PATCH 公共视图 → 403."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "公共视图B3", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = r.json()["id"]
+
+        viewer = _make_workspace_viewer(db, ws, "pv_viewer_b3c")
+        viewer_h = _login(client, "pv_viewer_b3c")
+        r = client.patch(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            json={"name": "越权改名"},
+            headers=viewer_h,
+        )
+        assert r.status_code == 403
+
+    def test_viewer_can_delete_own_personal_view(self, client, db, ws, table):
+        """仅 READ 用户可删除本人个人视图."""
+        viewer = _make_workspace_viewer(db, ws, "pv_viewer_b4")
+        viewer_h = _login(client, "pv_viewer_b4")
+
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "我的临时视图B4", "view_type": "grid"},
+            headers=viewer_h,
+        )
+        vid = r.json()["id"]
+
+        r = client.delete(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            headers=viewer_h,
+        )
+        assert r.status_code == 204, "个人视图本人应可删除"
+
+    def test_other_personal_view_invisible_on_delete(self, client, db, ws, table):
+        """他人个人视图对 DELETE 不可见（404）."""
+        viewer1 = _make_workspace_viewer(db, ws, "pv_viewer_b4a")
+        viewer1_h = _login(client, "pv_viewer_b4a")
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "viewer1私有B4", "view_type": "grid"},
+            headers=viewer1_h,
+        )
+        vid = r.json()["id"]
+
+        viewer2 = _make_workspace_viewer(db, ws, "pv_viewer_b4b")
+        viewer2_h = _login(client, "pv_viewer_b4b")
+        r = client.delete(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            headers=viewer2_h,
+        )
+        assert r.status_code == 404
+
+    def test_viewer_cannot_delete_public_view(self, client, db, ws, table, auth_owner):
+        """公共视图仍需 EDIT_VIEWS：仅 READ 用户 DELETE 公共视图 → 403."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "公共视图B4", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        vid = r.json()["id"]
+
+        viewer = _make_workspace_viewer(db, ws, "pv_viewer_b4c")
+        viewer_h = _login(client, "pv_viewer_b4c")
+        r = client.delete(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            headers=viewer_h,
+        )
+        assert r.status_code == 403
+
+    def test_other_personal_view_invisible_on_get(self, client, db, ws, table):
+        """他人个人视图对单查 GET 不可见（404）."""
+        viewer1 = _make_workspace_viewer(db, ws, "pv_viewer_b5a")
+        viewer1_h = _login(client, "pv_viewer_b5a")
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "viewer1私有B5", "view_type": "grid"},
+            headers=viewer1_h,
+        )
+        vid = r.json()["id"]
+
+        viewer2 = _make_workspace_viewer(db, ws, "pv_viewer_b5b")
+        viewer2_h = _login(client, "pv_viewer_b5b")
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            headers=viewer2_h,
+        )
+        assert r.status_code == 404
+
+        # 本人仍可见
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}",
+            headers=viewer1_h,
+        )
+        assert r.status_code == 200
+
+    def test_export_excludes_others_personal_views(self, client, db, ws, table, auth_owner):
+        """视图导出不包含他人个人视图."""
+        viewer = _make_workspace_viewer(db, ws, "pv_viewer_b5c")
+        viewer_h = _login(client, "pv_viewer_b5c")
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "viewer私有导出B5", "view_type": "grid"},
+            headers=viewer_h,
+        )
+        assert r.status_code == 201
+
+        # 拥有者导出全部视图：不含他人个人视图
+        r = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/export",
+            headers=auth_owner,
+        )
+        assert r.status_code == 200
+        names = {v["name"] for v in r.json()}
+        assert "viewer私有导出B5" not in names, "导出不应包含他人个人视图"
