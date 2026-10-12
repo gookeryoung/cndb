@@ -138,6 +138,44 @@ body {
   font-feature-settings: 'tnum' 1;
 }
 
+/* ─────────────── 全局细节打磨：滚动条 / 文本选区 ───────────────
+ * 统一细滚动条（ Firefox thin + WebKit 自绘），主题变量驱动；
+ * 组件级自定义滚动条（.cn-segmented 等）的选择器优先级更高，不受影响。 */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--cn-border) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--cn-border);
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--cn-text-muted);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 文本选区：品牌色柔和底，深浅主题自动适配 */
+::selection {
+  background: color-mix(in srgb, var(--cn-brand-color) 26%, transparent);
+}
+
 /* 确保 Ant Design Layout 没有默认边距 */
 .ant-layout {
   margin: 0 !important;
@@ -1924,6 +1962,79 @@ body.theme-dark [style*="color:'#94a3b8'"] {
       opacity: 0;
       transform: translate(calc(var(--kb-cx) * 0.4), calc(var(--kb-cy) * 0.4));
     }
+  }
+}
+
+/* ─────────────── 认证页视觉（AuthLayout / Login / Register） ───────────────
+ * 氛围背景：页面底色 + 品牌色双径向光晕 + 低透明度细网格纹理。
+ * 全部颜色由 var(--cn-*) + color-mix 派生，10 套主题（含深色）自动适配。 */
+
+.auth-shell {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(1100px 620px at 85% -10%,
+      color-mix(in srgb, var(--cn-brand-color) 16%, transparent), transparent 62%),
+    radial-gradient(900px 540px at -10% 110%,
+      color-mix(in srgb, var(--cn-brand-color) 12%, transparent), transparent 58%),
+    var(--cn-bg-page);
+}
+
+/* 细网格纹理：极低透明度，仅提供质感；中心清晰边缘淡出 */
+.auth-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--cn-text-primary) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--cn-text-primary) 5%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  -webkit-mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
+  mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
+  pointer-events: none;
+}
+
+/* 认证卡片：品牌色柔和投影 + 入场上浮动画 */
+.auth-card {
+  border-radius: 12px;
+  box-shadow:
+    0 16px 48px color-mix(in srgb, var(--cn-text-primary) 12%, transparent),
+    0 2px 8px color-mix(in srgb, var(--cn-text-primary) 6%, transparent);
+  animation: cn-rise-in 0.32s ease-out both;
+}
+
+/* 品牌标识座：品牌色渐变圆角方块（认证页大号 / 顶栏小号复用） */
+.cn-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--cn-brand-color) 88%, #ffffff),
+    color-mix(in srgb, var(--cn-brand-color) 72%, #000000));
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--cn-brand-color) 32%, transparent);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+@keyframes cn-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 尊重系统减少动态偏好：入场上浮退化为纯淡入 */
+@media (prefers-reduced-motion: reduce) {
+  .auth-card {
+    animation: cn-page-enter 0.2s ease-out both;
   }
 }
 

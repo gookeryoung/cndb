@@ -72,8 +72,15 @@ export default function RegisterPage() {
   }
 
   return (
-    <Card>
+    <Card className="auth-card">
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <div
+          className="cn-brand-mark"
+          style={{ width: 44, height: 44, fontSize: 22, margin: '0 auto 12px' }}
+          aria-hidden
+        >
+          c
+        </div>
         <Title level={3} style={{ marginBottom: 4 }}>创建账号</Title>
         <Text type="secondary">加入 cndb，开始构建你的数据工作区</Text>
       </div>
