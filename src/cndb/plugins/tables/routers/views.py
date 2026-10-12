@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.models import DataField, DataView
+from cndb.plugins.tables.models import DataField, DataTable, DataView
 from cndb.plugins.tables.schemas import ViewCreate, ViewResponse, ViewUpdate
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
 
@@ -80,7 +80,6 @@ def _get_visible_view(db: Session, dt: DataTable, current_user: User, table_id: 
 
 def _create_view_obj(
     db: Session,
-    user: User,
     table_id: int,
     payload: ViewCreate,
     owner_id: int | None,
@@ -129,7 +128,7 @@ def create_view(
 
     # 权限归类：有 EDIT_VIEWS → 公共视图（owner_id=None）；仅 READ → 个人视图（归属创建者）
     is_public = check_action(db, dt, current_user, TableAction.EDIT_VIEWS)
-    dv = _create_view_obj(db, current_user, table_id, payload, owner_id=None if is_public else current_user.id)
+    dv = _create_view_obj(db, table_id, payload, owner_id=None if is_public else current_user.id)
     db.add(dv)
     db.commit()
     db.refresh(dv)
@@ -166,7 +165,7 @@ def import_views(
         if not ok:
             skipped.append(f"跳过 {vc.name}: {err}")
             continue
-        dv = _create_view_obj(db, current_user, table_id, vc, owner_id=owner_id)
+        dv = _create_view_obj(db, table_id, vc, owner_id=owner_id)
         db.add(dv)
         created.append(dv)
         existing_names.add(vc.name)
@@ -218,7 +217,11 @@ def export_views(
     """
     get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    q = db.query(DataView).filter(DataView.table_id == table_id)
+    q = db.query(DataView).filter(
+        DataView.table_id == table_id,
+        # 可见性：与 list_views 一致 —— 公共视图 + 本人个人视图
+        (DataView.owner_id.is_(None)) | (DataView.owner_id == current_user.id),
+    )
     if ids:
         q = q.filter(DataView.id.in_(ids))
     views = q.order_by(DataView.order, DataView.id).all()
@@ -251,11 +254,8 @@ def get_view(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataView:
-    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
-    if dv is None:
-        raise HTTPException(status_code=404, detail="视图不存在")
-    return dv
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    return _get_visible_view(db, dt, current_user, table_id, view_id)
 
 
 @router.patch("/{view_id}", response_model=ViewResponse)
@@ -268,15 +268,7 @@ def update_view(
     db: Annotated[Session, Depends(get_db)],
 ) -> DataView:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
-    if dv is None:
-        raise HTTPException(status_code=404, detail="视图不存在")
-
-    # 视图级判定：他人个人视图不可见（404）；公共视图需 EDIT_VIEWS；本人个人视图放行
-    if dv.owner_id is not None and dv.owner_id != current_user.id:
-        raise HTTPException(status_code=404, detail="视图不存在")
-    if dv.owner_id is None and not check_action(db, dt, current_user, TableAction.EDIT_VIEWS):
-        raise HTTPException(status_code=403, detail="表级权限不足")
+    dv = _get_visible_view(db, dt, current_user, table_id, view_id)
 
     # 如果标记为 default，先把同表其他视图的 default 清掉
     if payload.is_default:
@@ -299,15 +291,7 @@ def delete_view(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
-    if dv is None:
-        raise HTTPException(status_code=404, detail="视图不存在")
-
-    # 视图级判定（与 update_view 一致）：他人个人视图不可见；公共视图需 EDIT_VIEWS；本人个人视图放行
-    if dv.owner_id is not None and dv.owner_id != current_user.id:
-        raise HTTPException(status_code=404, detail="视图不存在")
-    if dv.owner_id is None and not check_action(db, dt, current_user, TableAction.EDIT_VIEWS):
-        raise HTTPException(status_code=403, detail="表级权限不足")
+    dv = _get_visible_view(db, dt, current_user, table_id, view_id)
 
     was_default = dv.is_default
     db.delete(dv)
