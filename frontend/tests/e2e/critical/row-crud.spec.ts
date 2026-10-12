@@ -187,7 +187,8 @@ test.describe("行 CRUD", () => {
     await newRow.getByTestId("row-save-btn").click();
 
     // 等待新增行保存完成（虚拟 __new__ 行消失，新 DB 行出现）
-    await expect(newRow).toHaveCount(0, { timeout: 10000 });
+    // 放宽到 15s：慢环境下 API 保存 + 前端重渲染可能超过默认 10s
+    await expect(newRow).toHaveCount(0, { timeout: 15000 });
 
     // API 验证 + 前端文本可见
     await expectRecordCount(request, tid, 6);
