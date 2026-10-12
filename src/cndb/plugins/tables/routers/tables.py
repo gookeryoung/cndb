@@ -89,7 +89,14 @@ def _fill_table_stats(
     if member_count_map is not None:
         base.member_count = member_count_map.get(table.id, 0)
     else:
-        base.member_count = db.query(func.count(TableMember.id)).filter(TableMember.table_id == table.id).scalar() or 0
+        # inner join 用户表：剔除用户已删除的孤儿成员行
+        base.member_count = (
+            db.query(func.count(TableMember.id))
+            .join(User, User.id == TableMember.user_id)
+            .filter(TableMember.table_id == table.id)
+            .scalar()
+            or 0
+        )
 
     # my_access
     if current_user is not None:
@@ -206,8 +213,10 @@ def list_tables(
 
     member_count_map: dict[int, int] = {}
     if table_ids:
+        # inner join 用户表：剔除用户已删除的孤儿成员行，计数与实际成员一致
         rows = (
             db.query(TableMember.table_id, func.count(TableMember.id))
+            .join(User, User.id == TableMember.user_id)
             .filter(TableMember.table_id.in_(table_ids))
             .group_by(TableMember.table_id)
             .all()

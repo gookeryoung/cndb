@@ -182,6 +182,7 @@ def _get_session():
     from sqlalchemy.orm import sessionmaker
 
     from cndb.core.config import settings
+    from cndb.core.database import register_sqlite_pragmas
 
     _connect_args: dict[str, object] = {}
     if "sqlite" in settings.DATABASE_URL:
@@ -192,6 +193,9 @@ def _get_session():
         connect_args=_connect_args,
         echo=settings.DEBUG,
     )
+    # 开启 foreign_keys 等 pragma：保证 ondelete=CASCADE/SET NULL 真正生效，
+    # 否则删除用户后 WorkspaceMember/TableMember 行残留为孤儿，成员计数虚高。
+    register_sqlite_pragmas(engine)
 
     insp = inspect(engine)
     if not insp.has_table("accounts_user"):
@@ -396,6 +400,17 @@ def cmd_delete(args: argparse.Namespace) -> dict[str, Any]:
                 deleted_workspace_ids.append(ws.id)
                 db.delete(ws)
 
+        # 显式清理成员关系行：不依赖 foreign_keys pragma（兼容历史库 /
+        # FK 未开启的会话），避免孤儿成员行导致工作区成员计数虚高
+        from cndb.plugins.tables.models import TableMember
+
+        ws_member_rows = (
+            db.query(WorkspaceMember).filter(WorkspaceMember.user_id == user.id).delete(synchronize_session=False)
+        )
+        table_member_rows = (
+            db.query(TableMember).filter(TableMember.user_id == user.id).delete(synchronize_session=False)
+        )
+
         db.delete(user)
         db.commit()
 
@@ -404,6 +419,8 @@ def cmd_delete(args: argparse.Namespace) -> dict[str, Any]:
             "deleted_username": user.username,
             "deleted_workspace_count": len(deleted_workspace_ids),
             "deleted_workspace_ids": deleted_workspace_ids,
+            "deleted_workspace_member_rows": int(ws_member_rows),
+            "deleted_table_member_rows": int(table_member_rows),
         }
     finally:
         db.close()
