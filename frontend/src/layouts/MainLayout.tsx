@@ -6,7 +6,7 @@ import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
-  HomeOutlined, MenuOutlined, InfoCircleOutlined,
+  MenuOutlined, InfoCircleOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { approvalApi, formApi, tableApi, workflowApi, workspaceApi } from '@/api'
@@ -313,10 +313,21 @@ export default function MainLayout() {
           />
         )}
         <Tooltip title="主页">
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 18, color: 'var(--cn-brand-color)', marginRight: 8, cursor: 'pointer' }}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginRight: 8, cursor: 'pointer' }}
             data-testid="home-logo"
             onClick={() => navigate('/w')}>
-            <HomeOutlined style={{ fontSize: 14 }} /> {!isMobile && 'cndb'}
+            <span
+              className="cn-brand-mark"
+              style={{ width: 26, height: 26, fontSize: 14, borderRadius: 7 }}
+              aria-hidden
+            >
+              c
+            </span>
+            {!isMobile && (
+              <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--cn-text-primary)', letterSpacing: '-0.2px' }}>
+                cndb
+              </span>
+            )}
           </div>
         </Tooltip>
 
