@@ -72,7 +72,7 @@ jobs:
     # 配置 BUILD_BASE_IMAGE 换源即可）。
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Export locked requirements 步骤用 uvx 导出 uv.lock，runner 默认无 uv，
       # 缺失会直接 127（实测 v0.3.6 构建即因此失败）
