@@ -155,28 +155,36 @@ function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: contr
   }
 
   if (!editing) {
+    // 双击进入编辑态时阻断冒泡：行级 onDoubleClick（打开行详情 Drawer）不再同时触发；
+    // 无保存回调（只读场景）时不挂双击事件，让冒泡到行以打开 Drawer
+    const editable = !!effectiveOnSave
     return (
       <div
-        onDoubleClick={handleStartEdit}
-        style={{ padding: '2px 4px', cursor: effectiveOnSave ? 'pointer' : 'default', minHeight: 22 }}
-        title={effectiveOnSave ? '双击编辑' : undefined}
+        onDoubleClick={editable
+          ? (e) => { e.stopPropagation(); handleStartEdit() }
+          : undefined}
+        style={{ padding: '2px 4px', cursor: editable ? 'pointer' : 'default', minHeight: 22 }}
+        title={editable ? '双击编辑' : undefined}
       >
         <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
       </div>
     )
   }
 
+  // 编辑态同样阻断双击冒泡：编辑中再双击控件不应弹出行详情 Drawer
   return (
-    <EditCell
-      field={field}
-      draft={isEditing ? draft : value}
-      onChange={setDraft}
-      inputRef={inputRef}
-      onSave={handleSave}
-      onCancel={handleCancel}
-      saving={saving}
-      wid={wid}
-    />
+    <div onDoubleClick={(e) => e.stopPropagation()}>
+      <EditCell
+        field={field}
+        draft={isEditing ? draft : value}
+        onChange={setDraft}
+        inputRef={inputRef}
+        onSave={handleSave}
+        onCancel={handleCancel}
+        saving={saving}
+        wid={wid}
+      />
+    </div>
   )
 }
 
