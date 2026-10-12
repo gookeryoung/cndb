@@ -65,9 +65,11 @@ file:*
 ?cache=*
 
 # 本地协作产物一律不入库
-/.trae/
-/.claude/
-/.workbuddy/
+.trae/*
+!.trae/rules/
+!.trae/skills/
+.claude/
+.workbuddy/
 
 # 工具缓存
 .eslintcache
