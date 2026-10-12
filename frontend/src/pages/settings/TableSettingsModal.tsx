@@ -11,7 +11,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Modal, Tabs, Form, Input, Button, Tag, Popconfirm, App as AntApp, Space, Empty, Tooltip, Select,
+  Modal, Tabs, Form, Input, Button, Tag, Popconfirm, App as AntApp, Space, Empty, Tooltip, Select, Switch,
 } from 'antd'
 import {
   InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
@@ -26,8 +26,8 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { tableApi, permissionApi, viewApi } from '@/api'
-import type { TableDetail, TableUpdate, ViewCreate, View } from '@/api'
+import { tableApi, permissionApi, viewApi, workflowApi } from '@/api'
+import type { TableDetail, TableUpdate, ViewCreate, View, WorkflowListItem } from '@/api'
 import PermissionEditor, { buildHiddenSet } from '@/pages/grid/permissions/PermissionEditor'
 // 静态引入：gridViewModals 同为静态引入，混用 lazy 会让动态分包失效并产生构建告警
 import CreateEditViewForm from '@/pages/grid/view-config/CreateEditViewForm'
@@ -161,6 +161,9 @@ export default function TableSettingsModal({
   const [hiddenNames, setHiddenNames] = useState<string[]>([])
   /** 数据治理（MANAGE_DATA）最低角色阈值；空串 = 使用默认 ADMIN */
   const [manageDataRole, setManageDataRole] = useState<string>('')
+  /** 编辑审批开关 + 绑定审批流（受控 state，随基本信息一起保存） */
+  const [approvalOn, setApprovalOn] = useState(false)
+  const [approvalWorkflowId, setApprovalWorkflowId] = useState<number | string | undefined>(undefined)
 
   // 基本信息表单值监听（脏检查用）
   const nameValue = Form.useWatch('name', form)
@@ -187,6 +190,13 @@ export default function TableSettingsModal({
     queryKey: ['table-perm', wid, tid],
     queryFn: () => permissionApi.get(wid, tid),
     enabled: false,
+  })
+
+  // 工作区审批流列表（编辑审批开关的下拉数据源）
+  const { data: workflows = [] } = useQuery<WorkflowListItem[]>({
+    queryKey: ['workflows', wid],
+    queryFn: () => workflowApi.list(wid),
+    enabled: isActive,
   })
 
   // 基本信息更新
@@ -305,6 +315,8 @@ export default function TableSettingsModal({
   useEffect(() => {
     if (isActive && table) {
       form.setFieldsValue({ name: table.name, description: table.description })
+      setApprovalOn(table.edit_approval_workflow_id != null)
+      setApprovalWorkflowId(table.edit_approval_workflow_id ?? undefined)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, table?.id])
@@ -319,7 +331,9 @@ export default function TableSettingsModal({
   // 基本信息脏检查：与当前表数据比对，无变化时禁用保存按钮
   const basicDirty = !!table && (
     (nameValue ?? '') !== (table.name ?? '') ||
-    (descriptionValue ?? '') !== (table.description ?? '')
+    (descriptionValue ?? '') !== (table.description ?? '') ||
+    approvalOn !== (table.edit_approval_workflow_id != null) ||
+    (approvalOn && String(approvalWorkflowId ?? '') !== String(table.edit_approval_workflow_id ?? ''))
   )
 
   const tabs = (
@@ -363,7 +377,18 @@ export default function TableSettingsModal({
                 form={form}
                 layout="vertical"
                 initialValues={{ name: table?.name ?? '', description: table?.description ?? '' }}
-                onFinish={(v) => updateTable.mutate(v)}
+                onFinish={(v) => {
+                  // 开启审批必须选择审批流
+                  if (approvalOn && approvalWorkflowId == null) {
+                    message.error('开启编辑审批前请选择审批流')
+                    return
+                  }
+                  updateTable.mutate({
+                    ...v,
+                    // Select 回调值为 ID（number|string），表字段为整型，此处统一收敛
+                    edit_approval_workflow_id: approvalOn ? Number(approvalWorkflowId) : null,
+                  })
+                }}
               >
                 <Form.Item
                   name="name"
@@ -376,6 +401,38 @@ export default function TableSettingsModal({
                 <Form.Item name="description" label="描述（可选）" style={{ marginBottom: 12 }}>
                   <Input.TextArea rows={3} maxLength={500} showCount disabled={!canEditBasic} />
                 </Form.Item>
+
+                {/* 编辑需审批：开启后网格/表单写操作统一提交变更单 */}
+                <div style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid var(--cn-border)', borderRadius: 6 }}>
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <Space>
+                      <Switch
+                        checked={approvalOn}
+                        onChange={setApprovalOn}
+                        disabled={!canEditBasic}
+                        data-testid="edit-approval-switch"
+                      />
+                      <span style={{ fontSize: 13 }}>编辑需审批</span>
+                    </Space>
+                    <span style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+                      开启后，本表新增行、编辑与删除（含表单编辑）统一提交变更单，审批通过后才落库生效
+                    </span>
+                    {approvalOn && (
+                      <Space size={4}>
+                        <span style={{ fontSize: 13 }}>审批流：</span>
+                        <Select
+                          style={{ width: 240 }}
+                          placeholder="选择审批流"
+                          value={approvalWorkflowId}
+                          onChange={setApprovalWorkflowId}
+                          disabled={!canEditBasic}
+                          data-testid="edit-approval-workflow"
+                          options={workflows.map(w => ({ value: w.id, label: w.name }))}
+                        />
+                      </Space>
+                    )}
+                  </Space>
+                </div>
 
                 <Space>
                   <Button

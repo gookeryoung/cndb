@@ -93,15 +93,19 @@ class ApprovalActionCreate(BaseModel):
 
 
 class ApprovalInstanceResponse(BaseModel):
-    """审批实例响应（含上下文名称与快照值，供待审批列表/详情展示）."""
+    """审批实例响应（表单提交 / 网格变更单双载荷，供待审批列表与行锁定展示）."""
 
     id: int
     workspace_id: int
     workflow_id: int
     workflow_name: str = ""
-    form_id: int
+    form_id: int | None = None
     form_name: str = ""
     table_id: int
+    # 变更单操作类型；NULL 表示传统表单提交语义
+    op: str | None = None
+    # update/delete 变更单的目标行 id
+    row_id: int | None = None
     status: str
     current_node_id: int | None = None
     current_node_name: str = ""

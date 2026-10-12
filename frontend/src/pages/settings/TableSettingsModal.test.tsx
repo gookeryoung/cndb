@@ -14,8 +14,8 @@ import { Routes, Route, useLocation } from 'react-router-dom'
 import TableSettingsModal from './TableSettingsModal'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
-import { permissionApi, viewApi } from '@/api'
-import type { View } from '@/api'
+import { permissionApi, viewApi, tableApi, workflowApi } from '@/api'
+import type { View, TableDetail } from '@/api'
 
 const WID = '10'
 const TID = '20'
@@ -183,6 +183,91 @@ describe('TableSettingsModal 视图列表（拖拽 + 默认）', () => {
     await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1))
     expect(updateSpy.mock.calls[0]![2]).toBe(2)
     expect(updateSpy.mock.calls[0]![3]).toEqual({ is_default: true })
+  })
+})
+
+// ─────────────── 编辑审批设置 ───────────────
+
+describe('TableSettingsModal 编辑审批设置', () => {
+  beforeEach(() => {
+    setupTableHandlers()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const AUTH = { initialAuth: { user: { id: 1, username: 'alice', email: null, role: 'system_admin' as const, is_active: true }, token: 'fake' } }
+
+  it('开关默认关闭；开启并选择审批流后保存 payload 携带 edit_approval_workflow_id', async () => {
+    vi.spyOn(workflowApi, 'list').mockResolvedValue([
+      { id: 3, name: '两级审批', description: '', order: 0 },
+    ])
+    const updateSpy = vi.spyOn(tableApi, 'update').mockResolvedValue({ ...tableFixture } as unknown as TableDetail)
+
+    renderProviders(
+      <TableSettingsModal open wid={WID} tid={TID} onClose={() => { }} />,
+      AUTH,
+    )
+
+    // 等表单回填；默认关闭：无审批流下拉
+    await screen.findByDisplayValue('任务表', {}, { timeout: 5000 })
+    expect(screen.queryByTestId('edit-approval-workflow')).toBeNull()
+
+    // 打开开关 → 出现审批流下拉
+    fireEvent.click(screen.getByTestId('edit-approval-switch'))
+    expect(screen.getByTestId('edit-approval-workflow')).toBeInTheDocument()
+
+    // 选择审批流 → 保存启用 → 提交携带 workflow id
+    fireEvent.mouseDown(screen.getByTestId('edit-approval-workflow').querySelector('.ant-select-selector')!)
+    fireEvent.click(await screen.findByText('两级审批'))
+    const saveBtn = screen.getByRole('button', { name: /保\s*存/ })
+    await waitFor(() => expect(saveBtn).toBeEnabled())
+    fireEvent.click(saveBtn)
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1))
+    expect(updateSpy.mock.calls[0]![2]).toMatchObject({ edit_approval_workflow_id: 3 })
+  })
+
+  it('开启但未选审批流：保存被拦截提示且不发起请求', async () => {
+    vi.spyOn(workflowApi, 'list').mockResolvedValue([])
+    const updateSpy = vi.spyOn(tableApi, 'update').mockResolvedValue({ ...tableFixture } as unknown as TableDetail)
+
+    renderProviders(
+      <TableSettingsModal open wid={WID} tid={TID} onClose={() => { }} />,
+      AUTH,
+    )
+
+    await screen.findByDisplayValue('任务表', {}, { timeout: 5000 })
+    fireEvent.click(screen.getByTestId('edit-approval-switch'))
+
+    // 开关变化即脏（保存可用），但提交校验拦截
+    const saveBtn = screen.getByRole('button', { name: /保\s*存/ })
+    await waitFor(() => expect(saveBtn).toBeEnabled())
+    fireEvent.click(saveBtn)
+
+    expect(await screen.findByText('开启编辑审批前请选择审批流')).toBeInTheDocument()
+    expect(updateSpy).not.toHaveBeenCalled()
+  })
+
+  it('表已绑定审批流时开关开启、下拉回显且保存禁用（脏检查回归）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/tables/:tid', () =>
+        HttpResponse.json({ ...tableFixture, edit_approval_workflow_id: 3 })),
+    )
+    vi.spyOn(workflowApi, 'list').mockResolvedValue([
+      { id: 3, name: '两级审批', description: '', order: 0 },
+    ])
+
+    renderProviders(
+      <TableSettingsModal open wid={WID} tid={TID} onClose={() => { }} />,
+      AUTH,
+    )
+
+    await screen.findByDisplayValue('任务表', {}, { timeout: 5000 })
+    const sw = await screen.findByTestId('edit-approval-switch')
+    await waitFor(() => expect(sw).toHaveClass('ant-switch-checked'))
+    expect(screen.getByRole('button', { name: /保\s*存/ })).toBeDisabled()
   })
 })
 

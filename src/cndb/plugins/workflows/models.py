@@ -28,6 +28,12 @@ NODE_TYPE_START = "start"
 NODE_TYPE_APPROVAL = "approval"
 NODE_TYPE_END = "end"
 
+# 变更单操作类型（op 为 NULL 表示传统表单提交语义，落库等价 create）
+CHANGE_OP_CREATE = "create"
+CHANGE_OP_UPDATE = "update"
+CHANGE_OP_DELETE = "delete"
+CHANGE_OPS = (CHANGE_OP_CREATE, CHANGE_OP_UPDATE, CHANGE_OP_DELETE)
+
 
 class Workflow(TimestampMixin, Base):
     """工作区级审批流定义（名称与元信息，节点/边见 WorkflowNode/WorkflowEdge）."""
@@ -120,12 +126,16 @@ class WorkflowEdge(TimestampMixin, Base):
 
 
 class ApprovalInstance(TimestampMixin, Base):
-    """审批实例：表单提交产生的待审批数据快照.
+    """审批实例：表单提交或网格变更单产生的待审批数据快照.
 
-    values 为提交值快照（未落库）；审批全部通过后以快照调
-    records.create_row 落库并回写 record_id。current_approver_role 为
-    冗余列（与当前节点的 approver_role 同步），用于"待我审批"查询避免
-    跨表 JSON 过滤。
+    双载荷形态：
+    - 表单提交：form_id 非空、op 为 NULL，values 为提交值快照，
+      审批全部通过后以快照调 records.create_row 落库并回写 record_id；
+    - 变更单（表级「编辑需审批」开启后由网格/表单编辑提交）：
+      form_id 为 NULL、op ∈ create/update/delete，row_id 为
+      update/delete 的目标行 id；通过后按 op 落库。
+    current_approver_role 为冗余列（与当前节点的 approver_role 同步），
+    用于"待我审批"查询避免跨表 JSON 过滤。
     """
 
     __tablename__ = "workflows_approvalinstance"
@@ -141,9 +151,9 @@ class ApprovalInstance(TimestampMixin, Base):
         nullable=False,
         index=True,
     )
-    form_id: Mapped[int] = mapped_column(
+    form_id: Mapped[int | None] = mapped_column(
         ForeignKey("forms_formdefinition.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     table_id: Mapped[int] = mapped_column(
@@ -151,6 +161,10 @@ class ApprovalInstance(TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+    # 变更单操作类型；NULL 表示传统表单提交语义
+    op: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # update/delete 变更单的目标行 id；create/表单提交为 NULL
+    row_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # 终态通过后回写落库行 id；pending/rejected 阶段为 NULL
     record_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
@@ -197,6 +211,10 @@ __all__ = [
     "APPROVAL_STATUS_APPROVED",
     "APPROVAL_STATUS_PENDING",
     "APPROVAL_STATUS_REJECTED",
+    "CHANGE_OPS",
+    "CHANGE_OP_CREATE",
+    "CHANGE_OP_DELETE",
+    "CHANGE_OP_UPDATE",
     "NODE_TYPE_APPROVAL",
     "NODE_TYPE_END",
     "NODE_TYPE_START",

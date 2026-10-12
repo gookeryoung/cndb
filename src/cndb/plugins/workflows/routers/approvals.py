@@ -51,11 +51,12 @@ def list_approvals(
     db: Annotated[Session, Depends(get_db)],
     scope: Literal["pending_for_me", "mine"] = Query(default="pending_for_me"),
     form_id: int | None = Query(default=None),
+    table_id: int | None = Query(default=None),
 ) -> list[ApprovalInstanceResponse]:
-    """查询审批实例：scope=pending_for_me 待我审批 / mine 我提交的."""
+    """查询审批实例：scope=pending_for_me 待我审批 / mine 我提交的；table_id 过滤（网格行锁定数据源）."""
     ws = _get_workspace_or_404(db, workspace_id)
     _require_member(db, ws, current_user)
-    items = list_instances(db, workspace_id, scope, current_user, form_id=form_id)
+    items = list_instances(db, workspace_id, scope, current_user, form_id=form_id, table_id=table_id)
     return [ApprovalInstanceResponse(**decorate_instance(db, it)) for it in items]
 
 

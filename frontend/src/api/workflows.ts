@@ -26,10 +26,14 @@ export const workflowApi = {
 }
 
 export const approvalApi = {
-    /** 审批实例列表：scope=pending_for_me 待我审批 / mine 我提交的 */
-    list: (wid: number | string, scope: ApprovalScope, formId?: number | string) =>
+    /** 审批实例列表：scope=pending_for_me 待我审批 / mine 我提交的；table_id 按表过滤（网格行锁定数据源） */
+    list: (wid: number | string, scope: ApprovalScope, formId?: number | string, tableId?: number | string) =>
         api.get<ApprovalInstance[]>(`/v1/workspaces/${wid}/approvals`, {
-            params: { scope, ...(formId !== undefined ? { form_id: formId } : {}) },
+            params: {
+                scope,
+                ...(formId !== undefined ? { form_id: formId } : {}),
+                ...(tableId !== undefined ? { table_id: tableId } : {}),
+            },
         }).then(r => r.data),
     approve: (wid: number | string, instanceId: number | string, comment = '') =>
         api.post<ApprovalInstance>(`/v1/workspaces/${wid}/approvals/${instanceId}/approve`, { comment }).then(r => r.data),
