@@ -7,9 +7,10 @@ import {
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
   MenuOutlined, InfoCircleOutlined,
+  DatabaseOutlined, FormOutlined, AuditOutlined, BarChartOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { approvalApi, formApi, tableApi, workflowApi, workspaceApi } from '@/api'
+import { approvalApi, formApi, tableApi, workspaceApi } from '@/api'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 
@@ -95,21 +96,15 @@ export default function MainLayout() {
     enabled: !!wid,
   })
 
-  // 「表单」「审批流」tab 数量徽标数据 —— queryKey 与 FormsPage/ApprovalFlowsPage
-  // 一致，react-query 自动去重，进入对应页面时命中共享缓存不重复请求。
+  // 「表单」tab 数量徽标数据 —— queryKey 与 FormsPage 一致，
+  // react-query 自动去重，进入对应页面时命中共享缓存不重复请求。
   const { data: forms = [], isSuccess: formsReady } = useQuery({
     queryKey: ['forms', wid],
     queryFn: () => formApi.list(wid!),
     enabled: !!wid,
   })
 
-  const { data: wsWorkflows = [], isSuccess: flowsReady } = useQuery({
-    queryKey: ['workspaces', wid, 'workflows'],
-    queryFn: () => workflowApi.list(wid!),
-    enabled: !!wid,
-  })
-
-  // 待我审批实例：审批流 tab 上金色「待审」徽标的来源（需关注类别）
+  // 待我审批实例：「审批中心」tab 上金色「待审」徽标的来源（需关注类别）
   const { data: pendingApprovals = [], isSuccess: pendingReady } = useQuery({
     queryKey: ['workspaces', wid, 'approvals', 'pending_for_me'],
     queryFn: () => approvalApi.list(wid!, 'pending_for_me'),
@@ -126,10 +121,10 @@ export default function MainLayout() {
 
   /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），覆盖数据表、报表与设置入口.
    *
-   * 各 label 内嵌数量徽标：仅数据就绪后渲染（0 也显示），未就绪时不渲染占位，
+   * 各项带图标与数量徽标：仅数据就绪后渲染徽标（0 也显示），未就绪时不渲染占位，
    * 避免加载瞬间误导（class cn-ws-tab-count，样式走 var(--cn-*) 主题变量）。
    * 含类别的徽标用 antd Tag 预设色做颜色区分（class cn-ws-tab-count-tag）：
-   * 「表单」金色 = 绑定审批流的表单数；「审批流」金色 = 待我审批数；
+   * 「表单」金色 = 绑定审批流的表单数；「审批中心」金色 = 待我审批数；
    * 「工作区设置」无徽标。
    */
   const wsTabItems: TabsProps['items'] = [
@@ -137,7 +132,7 @@ export default function MainLayout() {
       key: 'tables',
       label: (
         <span>
-          数据资产
+          <DatabaseOutlined /> 数据资产
           {tablesReady && <span className="cn-ws-tab-count">{tables.length}</span>}
         </span>
       ),
@@ -146,7 +141,7 @@ export default function MainLayout() {
       key: 'forms',
       label: (
         <span>
-          表单
+          <FormOutlined /> 表单
           {formsReady && <span className="cn-ws-tab-count">{forms.length}</span>}
           {formsReady && approvalBoundForms > 0 && (
             <Tag color="gold" className="cn-ws-tab-count-tag">{approvalBoundForms} 走审批</Tag>
@@ -158,8 +153,7 @@ export default function MainLayout() {
       key: 'approvals',
       label: (
         <span>
-          审批流
-          {flowsReady && <span className="cn-ws-tab-count">{wsWorkflows.length}</span>}
+          <AuditOutlined /> 审批中心
           {pendingReady && pendingApprovals.length > 0 && (
             <Tag color="gold" className="cn-ws-tab-count-tag">{pendingApprovals.length} 待审</Tag>
           )}
@@ -170,14 +164,14 @@ export default function MainLayout() {
       key: 'reports',
       label: (
         <span>
-          报表
+          <BarChartOutlined /> 报表
           {currentWs && currentWs.report_count !== undefined && (
             <span className="cn-ws-tab-count">{currentWs.report_count}</span>
           )}
         </span>
       ),
     },
-    { key: 'settings', label: '工作区设置' },
+    { key: 'settings', label: <span><SettingOutlined /> 工作区设置</span> },
   ]
   // 激活态由 pathname 驱动：表详情页（/w/:wid/tables/:tid）同样落在「数据资产」，
   // 表单详情页（/w/:wid/forms/:fid）落在「表单」
@@ -267,7 +261,7 @@ export default function MainLayout() {
           <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
         </div>
         <div style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
-          数据表 ({orderedTables.length})
+          数据资产 ({orderedTables.length})
         </div>
         {tables.length === 0 ? (
           collapsed ? (

@@ -129,22 +129,22 @@ describe('MainLayout 顶部导航', () => {
             expect(formsTab).toHaveTextContent('1')
             expect(formsTab.querySelector('.ant-tag')).toBeNull()
         })
-        // 审批流 tab：审批流总数（1）+ 待我审批金色类别徽标（mock 1 条待审）
+        // 审批中心 tab：仅待我审批金色类别徽标（mock 1 条待审）；配置入口已移入工作区设置
         await waitFor(() => {
-            const flowsTab = screen.getByRole('tab', { name: /审批流/ })
-            expect(flowsTab).toHaveTextContent('1')
-            expect(flowsTab).toHaveTextContent('1 待审')
-            expect(flowsTab.querySelector('.ant-tag')).toHaveClass('ant-tag-gold')
+            const centerTab = screen.getByRole('tab', { name: /审批中心/ })
+            expect(centerTab).toHaveTextContent('1 待审')
+            expect(centerTab).not.toHaveTextContent('审批流')
+            expect(centerTab.querySelector('.ant-tag')).toHaveClass('ant-tag-gold')
         })
         expect(screen.getByRole('tab', { name: /数据资产/ }).closest('.ant-tabs-tab'))
             .toHaveClass('ant-tabs-tab-active')
 
         // 点击「工作区设置」tab → /w/10/settings
-        fireEvent.click(screen.getByRole('tab', { name: '工作区设置' }))
+        fireEvent.click(screen.getByRole('tab', { name: /工作区设置/ }))
         await waitFor(() => {
             expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
         })
-        expect(screen.getByRole('tab', { name: '工作区设置' }).closest('.ant-tabs-tab'))
+        expect(screen.getByRole('tab', { name: /工作区设置/ }).closest('.ant-tabs-tab'))
             .toHaveClass('ant-tabs-tab-active')
 
         // 点击「报表」tab → /w/10/reports
@@ -152,6 +152,20 @@ describe('MainLayout 顶部导航', () => {
         await waitFor(() => {
             expect(screen.getByTestId('reports-page-stub')).toHaveTextContent('/w/10/reports')
         })
+    })
+
+    it('分页导航五项均带图标，直观区分入口类型', async () => {
+        renderLayout(mockUser)
+
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
+        // antd 图标 aria-label 会拼进 accessible name（如 'database数据资产'），故用子串正则匹配
+        const tabNames = ['数据资产', '表单', '审批中心', '报表', '工作区设置']
+        for (const name of tabNames) {
+            const tab = screen.getByRole('tab', { name: new RegExp(name) })
+            expect(tab.querySelector('.anticon')).not.toBeNull()
+        }
     })
 
     it('表单 tab 显示绑定审批流的金色类别徽标（N 走审批）', async () => {
@@ -200,7 +214,7 @@ describe('MainLayout 顶部导航', () => {
         // 分页导航依赖 wid 渲染；无工作区上下文时整体不渲染，侧边栏由「请先从顶部选择一个工作区」提示引导
         expect(screen.queryByRole('tab', { name: /数据资产/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: /报表/ })).toBeNull()
-        expect(screen.queryByRole('tab', { name: '工作区设置' })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /工作区设置/ })).toBeNull()
     })
 
     it('非系统管理员不显示「管理台」入口', () => {
@@ -274,8 +288,8 @@ describe('MainLayout 移动端适配', () => {
         renderLayout(mockUser)
 
         fireEvent.click(screen.getByTestId('mobile-nav-btn'))
-        // 抽屉打开：出现共享的表导航内容（msw 默认返回 1 张表）
-        expect(await screen.findByText('数据表 (1)')).toBeVisible()
+        // 抽屉打开：出现共享的表导航内容（msw 默认返回 1 张表，分组标题与 tab「数据资产」对齐）
+        expect(await screen.findByText('数据资产 (1)')).toBeVisible()
 
         // 抽屉内点击「客户表」→ 触发导航并自动收起抽屉
         // 注：antd Drawer 关闭后内容仍留在 DOM（无 destroyOnHidden），

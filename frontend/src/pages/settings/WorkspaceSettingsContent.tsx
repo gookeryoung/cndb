@@ -20,7 +20,9 @@ import {
   SettingOutlined, BarChartOutlined, PlusOutlined,
   UserDeleteOutlined, CrownOutlined, FileTextOutlined, EyeOutlined,
   ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
+  AuditOutlined,
 } from '@ant-design/icons'
+import ApprovalFlowsSettings from '@/pages/settings/ApprovalFlowsSettings'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { workspaceApi } from '@/api'
@@ -33,7 +35,7 @@ import HelpTip from '@/components/HelpTip'
 
 interface Props {
   wid: string
-  initialTab?: 'basic' | 'permissions' | 'stats'
+  initialTab?: 'basic' | 'permissions' | 'workflows' | 'stats'
   /** 设置保存后通知工作区列表刷新 */
   onUpdated?: () => void
   /** 删除工作区成功后回调（Modal 模式下用于关闭弹窗，回到工作区列表视图） */
@@ -595,6 +597,14 @@ export default function WorkspaceSettingsContent({
       label: <span><SafetyOutlined /> 权限</span>,
       children: membersTabChildren,
     },
+    // 审批流配置：低频管理功能，仅 admin 及以上可见（与成员管理同门控）
+    ...(canManageMembers
+      ? [{
+          key: 'workflows',
+          label: <span><AuditOutlined /> 审批流</span>,
+          children: <ApprovalFlowsSettings wid={wid} />,
+        }]
+      : []),
     {
       key: 'stats',
       label: <span><BarChartOutlined /> 统计信息</span>,

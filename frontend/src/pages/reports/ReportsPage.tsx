@@ -5,7 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntApp, Select, Dropdown, Empty, Tooltip, Segmented, Tabs, Badge, Spin } from 'antd'
 import type { FormInstance } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined, BarChartOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { reportApi, tableApi, fieldApi, recordApi, workspaceApi } from '@/api'
 import type { ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter, ReportTheme, TableSummary, Field, Workspace } from '@/api'
@@ -254,7 +254,7 @@ export default function ReportsPage() {
             <Tooltip title="返回工作区数据表">
               <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)} />
             </Tooltip>
-            <Title level={3} style={{ margin: 0 }}>报表模板</Title>
+            <Title level={3} style={{ margin: 0 }}><BarChartOutlined style={{ marginRight: 8 }} />报表模板</Title>
           </Space>
           <Text type="secondary">基于 Jinja2 的轻量级报告模板，支持字段拖拽 + 实时预览 + Word/PDF/Excel 输出</Text>
         </div>

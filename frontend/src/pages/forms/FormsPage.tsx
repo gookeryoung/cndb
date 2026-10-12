@@ -11,7 +11,7 @@ import {
   Table, Tag, Typography,
 } from 'antd'
 import type { FormInstance } from 'antd'
-import { ArrowDownOutlined, ArrowUpOutlined, AuditOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import { ArrowDownOutlined, ArrowUpOutlined, AuditOutlined, DeleteOutlined, EditOutlined, PlusOutlined, FormOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { fieldApi, formApi, tableApi, workflowApi } from '@/api'
 import type { FormFieldConfig, FormListItem, FormRoleThreshold, ID } from '@/api'
@@ -141,7 +141,7 @@ export default function FormsPage() {
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <Space align="center" size={12}>
-          <Title level={3} style={{ margin: 0 }}>表单</Title>
+          <Title level={3} style={{ margin: 0 }}><FormOutlined style={{ marginRight: 8 }} />表单</Title>
           {!isLoading && (
             <>
               <Tag color="blue" data-testid="form-count-direct">直接落库 {forms.length - approvalCount}</Tag>
@@ -432,7 +432,7 @@ function FormEditorDrawer({ open, editing, wid, form, onClose }: DrawerProps) {
             allowClear
             placeholder="不绑定（提交直接落库）"
             options={workflows.map(wf => ({ value: wf.id, label: wf.name }))}
-            notFoundContent={<Text type="secondary">尚无审批流，可在「审批流」页创建</Text>}
+            notFoundContent={<Text type="secondary">尚无审批流，可在工作区设置的「审批流」中创建</Text>}
           />
         </Form.Item>
         <Alert

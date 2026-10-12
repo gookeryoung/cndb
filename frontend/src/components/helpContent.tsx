@@ -30,7 +30,7 @@ const quickStartContent = (
         <div>
             <Text strong>2. 创建数据表或导入数据</Text>
             <br />
-            <Text type="secondary">进入工作区后，在「数据表」页面点击「新建表」手动定义字段，或点击「导入数据表」上传 CSV / Excel / JSON 文件，系统会自动推断字段类型。</Text>
+            <Text type="secondary">进入工作区后，在「数据资产」页面点击「新建表」手动定义字段，或点击「导入数据表」上传 CSV / Excel / JSON 文件，系统会自动推断字段类型。</Text>
         </div>
         <div>
             <Text strong>3. 录入与管理数据</Text>

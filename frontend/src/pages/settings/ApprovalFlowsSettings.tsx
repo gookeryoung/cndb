@@ -1,28 +1,26 @@
-/** 审批流页 — 审批流定义配置（线性链）+ 待我审批 / 我提交的实例列表.
+/** 工作区设置 - 审批流配置 Tab — 审批流定义（线性链）的新建 / 编辑 / 删除.
  *
- * 审批流形态为线性链 start → approval* → end：本页用「审批节点步骤列表」
+ * 由原 ApprovalFlowsPage 拆出并迁入工作区设置（低频管理功能）。
+ * 审批流形态为线性链 start → approval* → end：用「审批节点步骤列表」
  * 抽象编辑（增删/上下移/命名/角色阈值），保存时自动生成 start/end 与链式 edges。
- * 实例动作委托 approvalApi（approve/reject），409/403 由全局错误提示呈现。
+ * 仅 admin/owner 可见该 Tab（由 WorkspaceSettingsContent 门控）。
  */
 
-import { useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Drawer, Empty, Form, Input, Select, Space, Table, Tabs, Tag, Typography,
+  Alert, App as AntApp, Button, Drawer, Empty, Form, Input, Select, Space, Table, Tag, Typography,
 } from 'antd'
 import type { FormInstance } from 'antd'
 import {
-  ArrowDownOutlined, ArrowUpOutlined, AuditOutlined, DeleteOutlined, PlusOutlined,
+  ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  APPROVAL_STATUS_TEXT, approvalApi, workflowApi,
-} from '@/api'
+import { workflowApi } from '@/api'
 import type {
-  ApprovalInstance, ApprovalStatus, WorkflowDefinition, WorkflowListItem, WorkflowPayload,
+  WorkflowDefinition, WorkflowListItem, WorkflowPayload,
 } from '@/api'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 const ROLE_OPTIONS = [
   { value: 'viewer', label: 'viewer 及以上' },
@@ -30,12 +28,6 @@ const ROLE_OPTIONS = [
   { value: 'admin', label: 'admin 及以上' },
   { value: 'owner', label: 'owner（工作区所有者）' },
 ]
-
-const STATUS_COLOR: Record<ApprovalStatus, string> = {
-  pending: 'gold',
-  approved: 'green',
-  rejected: 'red',
-}
 
 interface EditorValues {
   name: string
@@ -84,87 +76,8 @@ function buildPayload(name: string, description: string, steps: Step[]): Workflo
   return { name, description, nodes, edges }
 }
 
-export default function ApprovalFlowsPage() {
-  const { wid } = useParams<{ wid: string }>()
-
-  // 数量徽标数据 —— queryKey 与子 Tab（FlowsTab/InboxTab）一致，
-  // react-query 自动去重共享缓存，子 Tab 挂载时不重复请求
-  const { data: flows = [], isSuccess: flowsReady } = useQuery<WorkflowListItem[]>({
-    queryKey: ['workspaces', wid, 'workflows'],
-    queryFn: () => workflowApi.list(wid!),
-  })
-  const { data: pendingItems = [], isSuccess: pendingReady } = useQuery<ApprovalInstance[]>({
-    queryKey: ['workspaces', wid, 'approvals', 'pending_for_me'],
-    queryFn: () => approvalApi.list(wid!, 'pending_for_me'),
-  })
-  const { data: mineItems = [], isSuccess: mineReady } = useQuery<ApprovalInstance[]>({
-    queryKey: ['workspaces', wid, 'approvals', 'mine'],
-    queryFn: () => approvalApi.list(wid!, 'mine'),
-  })
-
-  /** 我提交的：按状态类别计数（待审批=金 / 已通过=绿 / 已驳回=红，沿用 STATUS_COLOR） */
-  const mineStatusCount = useMemo(() => {
-    const c: Record<ApprovalStatus, number> = { pending: 0, approved: 0, rejected: 0 }
-    for (const it of mineItems) c[it.status] += 1
-    return c
-  }, [mineItems])
-
-  return (
-    <div style={{ padding: 24 }}>
-      <Title level={3} style={{ margin: 0, marginBottom: 12 }}>
-        <AuditOutlined style={{ marginRight: 8 }} />审批流
-      </Title>
-      <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-        配置工作区多步审批流（线性链），并在表单中绑定；经表单提交的数据按链逐级审批，链尾通过才写入数据表。
-      </Text>
-      <Tabs
-        defaultActiveKey="flows"
-        items={[
-          {
-            key: 'flows',
-            label: (
-              <span>
-                审批流配置
-                {flowsReady && <span className="cn-ws-tab-count">{flows.length}</span>}
-              </span>
-            ),
-            children: <FlowsTab wid={wid!} />,
-          },
-          {
-            key: 'inbox',
-            label: (
-              <span>
-                待我审批
-                {pendingReady && (pendingItems.length > 0
-                  ? <Tag color="gold" className="cn-ws-tab-count-tag">{pendingItems.length}</Tag>
-                  : <span className="cn-ws-tab-count">0</span>)}
-              </span>
-            ),
-            children: <InboxTab wid={wid!} scope="pending_for_me" />,
-          },
-          {
-            key: 'mine',
-            label: (
-              <span>
-                我提交的
-                {mineReady && (Object.keys(APPROVAL_STATUS_TEXT) as ApprovalStatus[]).map(s => (
-                  <Tag key={s} color={STATUS_COLOR[s]} className="cn-ws-tab-count-tag">
-                    {APPROVAL_STATUS_TEXT[s]} {mineStatusCount[s]}
-                  </Tag>
-                ))}
-              </span>
-            ),
-            children: <InboxTab wid={wid!} scope="mine" />,
-          },
-        ]}
-      />
-    </div>
-  )
-}
-
-// ─────────────── 审批流配置 Tab ───────────────
-
-function FlowsTab({ wid }: { wid: string }) {
+/** 审批流配置内容：嵌入工作区设置 Tab 渲染，wid 由父级传入 */
+export default function ApprovalFlowsSettings({ wid }: { wid: string }) {
   const { message, modal } = AntApp.useApp()
   const queryClient = useQueryClient()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -235,6 +148,9 @@ function FlowsTab({ wid }: { wid: string }) {
 
   return (
     <div>
+      <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+        配置工作区多步审批流（线性链），并在表单中绑定；经表单提交的数据按链逐级审批，链尾通过才写入数据表。提交与审批记录见顶部「审批中心」。
+      </Text>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
         <Button
           type="primary" icon={<PlusOutlined />}
@@ -279,8 +195,6 @@ function ChainSummary({ wid, item }: { wid: string; item: WorkflowListItem }) {
     </Space>
   )
 }
-
-// ─────────────── 审批流编辑 Drawer ───────────────
 
 interface FlowDrawerProps {
   open: boolean
@@ -423,108 +337,5 @@ function FlowEditorDrawer({ open, wid, editingId, form, onClose }: FlowDrawerPro
         />
       </Form>
     </Drawer>
-  )
-}
-
-// ─────────────── 审批实例 Tab（待我审批 / 我提交的） ───────────────
-
-function InboxTab({ wid, scope }: { wid: string; scope: 'pending_for_me' | 'mine' }) {
-  const { message, modal } = AntApp.useApp()
-  const queryClient = useQueryClient()
-
-  const { data: items = [], isLoading } = useQuery<ApprovalInstance[]>({
-    queryKey: ['workspaces', wid, 'approvals', scope],
-    queryFn: () => approvalApi.list(wid, scope),
-  })
-
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'approvals'] })
-  }
-
-  const act = useMutation({
-    mutationFn: ({ id, action }: { id: number | string; action: 'approve' | 'reject' }) =>
-      action === 'approve' ? approvalApi.approve(wid, id) : approvalApi.reject(wid, id),
-    onSuccess: (inst) => {
-      message.success(inst.status === 'approved' ? '已通过，数据已落库' : inst.status === 'rejected' ? '已驳回' : '已审批')
-      invalidate()
-    },
-    onError: (err) => message.error(err instanceof Error ? err.message : '审批操作失败'),
-  })
-
-  const onAction = (inst: ApprovalInstance, action: 'approve' | 'reject') => {
-    if (action === 'approve') {
-      act.mutate({ id: inst.id, action })
-      return
-    }
-    modal.confirm({
-      title: '驳回这条提交？',
-      content: '驳回后实例终止，数据不会写入数据表。',
-      okText: '驳回', okType: 'danger', cancelText: '取消',
-      onOk: () => act.mutate({ id: inst.id, action }),
-    })
-  }
-
-  const columns = [
-    { title: '审批流', dataIndex: 'workflow_name', key: 'workflow_name', width: 140 },
-    { title: '来源表单', dataIndex: 'form_name', key: 'form_name', width: 140 },
-    ...(scope === 'mine'
-      ? []
-      : [{ title: '提交人', dataIndex: 'submitted_by_name', key: 'submitted_by_name', width: 100 }]),
-    {
-      title: '提交数据',
-      dataIndex: 'values',
-      key: 'values',
-      ellipsis: true,
-      render: (v: Record<string, unknown>) => (
-        <Text style={{ fontFamily: 'monospace', fontSize: 12 }}>
-          {Object.entries(v).map(([k, val]) => `${k}: ${String(val)}`).join('；') || '—'}
-        </Text>
-      ),
-    },
-    {
-      title: '当前节点',
-      key: 'current',
-      width: 140,
-      render: (_: unknown, r: ApprovalInstance) =>
-        r.status === 'pending'
-          ? <Tag color="gold">{r.current_node_name || r.current_approver_role || '待审批'}</Tag>
-          : <Tag color={STATUS_COLOR[r.status]}>{APPROVAL_STATUS_TEXT[r.status]}</Tag>,
-    },
-    ...(scope === 'pending_for_me'
-      ? [{
-          title: '操作',
-          key: 'actions',
-          width: 150,
-          render: (_: unknown, r: ApprovalInstance) => (
-            <Space size="small">
-              <Button
-                size="small" type="primary"
-                aria-label={`批准 ${r.form_name}`}
-                loading={act.isPending && act.variables?.id === r.id}
-                onClick={() => onAction(r, 'approve')}
-              >通过</Button>
-              <Button size="small" danger aria-label={`驳回 ${r.form_name}`} onClick={() => onAction(r, 'reject')}>驳回</Button>
-            </Space>
-          ),
-        }]
-      : [{
-          title: '落库行',
-          dataIndex: 'record_id',
-          key: 'record_id',
-          width: 90,
-          render: (rid: number | null) => (rid ? <Tag color="green">#{rid}</Tag> : <Text type="secondary">—</Text>),
-        }]),
-  ]
-
-  return (
-    <Table
-      rowKey="id"
-      size="middle"
-      loading={isLoading}
-      columns={columns}
-      dataSource={items}
-      pagination={false}
-      locale={{ emptyText: <Empty description={scope === 'pending_for_me' ? '暂无待你审批的提交' : '你还没有提交过审批'} /> }}
-    />
   )
 }
