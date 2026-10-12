@@ -189,7 +189,7 @@ export default function GridTableSection({
   )
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+    <div className="cn-grid-card" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <Table
         ref={tableRef as any}
         rowKey="id" className={`cn-table cn-table-${settings.density}`} size={densityToSize(settings.density)} loading={isLoading} columns={sortableColumns}

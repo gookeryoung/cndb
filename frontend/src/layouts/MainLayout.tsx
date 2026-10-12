@@ -259,7 +259,7 @@ export default function MainLayout() {
       )
     }
     return (
-      <div data-testid="sider-tables">
+      <div data-testid="sider-tables" className="cn-table-nav">
         <div style={{
           padding: '12px 16px', borderBottom: '1px solid var(--cn-border)',
           display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
@@ -298,9 +298,9 @@ export default function MainLayout() {
 
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
-      <Header style={{
-        background: 'var(--cn-bg-container)', padding: '0 16px', height: 52, lineHeight: '52px', flexShrink: 0,
-        display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--cn-border)',
+      <Header className="cn-app-header" style={{
+        padding: '0 16px', height: 52, lineHeight: '52px', flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: 12,
       }}>
         {/* 移动端汉堡入口：替代常驻 Sider，点击打开抽屉导航 */}
         {isMobile && (
@@ -384,7 +384,7 @@ export default function MainLayout() {
         <Layout style={{ flex: 1, minHeight: 0 }}>
           {/* 工作区级分页导航 —— 位于 Content 之外，跨页切换不重挂载；无工作区上下文时不渲染 */}
           {wid && (
-            <div style={{
+            <div className="cn-ws-tabs" style={{
               background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', flexShrink: 0,
             }}>
               <Tabs

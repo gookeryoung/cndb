@@ -1,6 +1,6 @@
 /** Grid 顶部工具栏 — 返回/标题/统计徽标/主操作区（从 GridPage 抽出）. */
 
-import { Button, Space, Tag, Typography, Tooltip, Dropdown } from 'antd'
+import { Button, Space, Typography, Tooltip, Dropdown } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined,
   MoreOutlined, ArrowLeftOutlined, CopyOutlined, ImportOutlined,
@@ -50,12 +50,12 @@ export default function GridToolbar({
   const { isMobile } = useResponsive()
 
   return (
-    <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-container)', display: 'flex', gap: 8, alignItems: 'center' }}>
+    <div className="cn-grid-toolbar" style={{ padding: '8px 16px', borderBottom: '1px solid var(--cn-border)', display: 'flex', gap: 8, alignItems: 'center' }}>
       <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)}>{!isMobile && '返回'}</Button>
       <Text strong ellipsis style={{ fontSize: 16, maxWidth: isMobile ? '36vw' : undefined }}>{tableName || '...'}</Text>
       {/* 统计小徽标（来自后端增强字段） */}
       {recordCount != null && recordCount > 0 && (
-        <Tag color="blue" style={{ marginLeft: 0 }}>{recordCount} 条记录</Tag>
+        <span className="cn-record-pill">{recordCount} 条记录</span>
       )}
       <div style={{ flex: 1 }} />
       {/* 右侧主操作区 */}

@@ -432,7 +432,6 @@ export default function TablesList() {
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateOpen(true)}
-            style={{ backgroundColor: '#3b82f6', borderColor: '#3b82f6' }}
           >
             新建表
           </Button>
@@ -458,42 +457,44 @@ export default function TablesList() {
         </Space>
       </div>
 
-      {/* Table 列表 —— 支持拖拽排序 */}
+      {/* Table 列表 —— 支持拖拽排序；卡片化容器与 Grid 工作台同构 */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext
           items={filteredTables.map(t => String(t.id))}
           strategy={verticalListSortingStrategy}
         >
-          <Table
-            size="middle"
-            loading={isLoading}
-            rowKey="id"
-            columns={visibleColumns}
-            dataSource={filteredTables}
-            pagination={false}
-            scroll={{ x: 'max-content' }}
-            components={{ body: { row: DraggableRow } }}
-            onRow={(record) => ({
-              onClick: () => navigate(`/w/${wid}/tables/${record.id}`),
-              onMouseEnter: () => prefetchTable(record.id),
-              'data-testid': `table-row-${record.id}`,
-            })}
-            locale={{
-              emptyText: (
-                <Empty
-                  description={
-                    <span>
-                      {filter !== 'all' ? '当前筛选条件下没有表' : (
-                        <>
-                          还没有表 —— 点击右侧 <Text strong>&quot;新建表&quot;</Text> 或 <Text strong>&quot;导入数据表&quot;</Text> 开始
-                        </>
-                      )}
-                    </span>
-                  }
-                />
-              ),
-            }}
-          />
+          <div className="cn-grid-card">
+            <Table
+              size="middle"
+              loading={isLoading}
+              rowKey="id"
+              columns={visibleColumns}
+              dataSource={filteredTables}
+              pagination={false}
+              scroll={{ x: 'max-content' }}
+              components={{ body: { row: DraggableRow } }}
+              onRow={(record) => ({
+                onClick: () => navigate(`/w/${wid}/tables/${record.id}`),
+                onMouseEnter: () => prefetchTable(record.id),
+                'data-testid': `table-row-${record.id}`,
+              })}
+              locale={{
+                emptyText: (
+                  <Empty
+                    description={
+                      <span>
+                        {filter !== 'all' ? '当前筛选条件下没有表' : (
+                          <>
+                            还没有表 —— 点击右侧 <Text strong>&quot;新建表&quot;</Text> 或 <Text strong>&quot;导入数据表&quot;</Text> 开始
+                          </>
+                        )}
+                      </span>
+                    }
+                  />
+                ),
+              }}
+            />
+          </div>
         </SortableContext>
       </DndContext>
 
