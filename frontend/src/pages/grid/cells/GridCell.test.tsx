@@ -112,6 +112,50 @@ describe('GridCell 传统编辑流', () => {
     expect(screen.getByDisplayValue('张三')).toBeInTheDocument()
   })
 
+  it('双击可编辑单元格阻断冒泡，行级 onDoubleClick（Drawer）不触发', () => {
+    const field = makeField({ id: 1, name: '姓名', field_type: 'text' })
+    const onRowDoubleClick = vi.fn()
+    renderProviders(
+      <div onDoubleClick={onRowDoubleClick}>
+        <GridCell value="张三" field={field} rowId={1} onSave={vi.fn()} />
+      </div>,
+    )
+
+    fireEvent.doubleClick(screen.getByText('张三'))
+    // 单元格进入编辑态
+    expect(screen.getByDisplayValue('张三')).toBeInTheDocument()
+    // 行级处理器未触发（Drawer 不弹出）
+    expect(onRowDoubleClick).not.toHaveBeenCalled()
+  })
+
+  it('无保存回调（只读）时双击冒泡到行级，仍可打开行详情 Drawer', () => {
+    const field = makeField({ id: 1, name: '姓名', field_type: 'text' })
+    const onRowDoubleClick = vi.fn()
+    renderProviders(
+      <div onDoubleClick={onRowDoubleClick}>
+        <GridCell value="张三" field={field} rowId={1} />
+      </div>,
+    )
+
+    fireEvent.doubleClick(screen.getByText('张三'))
+    expect(onRowDoubleClick).toHaveBeenCalledTimes(1)
+    expect(screen.queryByDisplayValue('张三')).not.toBeInTheDocument()
+  })
+
+  it('编辑态中再双击控件阻断冒泡，Drawer 不弹出', () => {
+    const field = makeField({ id: 1, name: '姓名', field_type: 'text' })
+    const onRowDoubleClick = vi.fn()
+    renderProviders(
+      <div onDoubleClick={onRowDoubleClick}>
+        <GridCell value="张三" field={field} rowId={1} onSave={vi.fn()} />
+      </div>,
+    )
+
+    fireEvent.doubleClick(screen.getByText('张三'))
+    fireEvent.doubleClick(screen.getByDisplayValue('张三'))
+    expect(onRowDoubleClick).not.toHaveBeenCalled()
+  })
+
   it('Enter 提交：onSave 收到字段名与草稿值，成功后退出编辑态', async () => {
     const field = makeField({ id: 1, name: '姓名', field_type: 'text' })
     const onSave = vi.fn().mockResolvedValue(undefined)
