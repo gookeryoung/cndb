@@ -171,6 +171,8 @@ export interface TableSummary {
   member_count?: number
   /** 当前用户在该表的访问级别（owner > write > read > none） */
   my_access?: 'owner' | 'write' | 'read' | 'none'
+  /** 编辑审批开关：绑定的审批流 id（null=关闭，网格/表单编辑免审批直存） */
+  edit_approval_workflow_id?: number | null
 }
 
 /** 表拥有者简要信息 */
@@ -231,6 +233,8 @@ export interface TableDetail {
   workspace?: WorkspaceBrief | null
   /** 后端增强 —— 是否在回收站（软删） */
   trashed?: boolean
+  /** 编辑审批开关：绑定的审批流 id（null=关闭，网格/表单编辑免审批直存） */
+  edit_approval_workflow_id?: number | null
 }
 export interface TableCreate {
   name: string
@@ -241,7 +245,12 @@ export interface TableCreate {
   import_field_names?: string[]
   import_all_fields?: boolean
 }
-export interface TableUpdate { name?: string; description?: string }
+export interface TableUpdate {
+  name?: string
+  description?: string
+  /** 编辑审批开关：审批流 id（开启）/ null（关闭）；非空时后端校验审批流存在 */
+  edit_approval_workflow_id?: number | null
+}
 
 // ── 字段从其他表引入 ──
 
@@ -996,7 +1005,8 @@ export interface ApprovalInstance {
   workspace_id: ID
   workflow_id: ID
   workflow_name: string
-  form_id: ID
+  /** 变更单（网格提交）无表单来源，form_id 为 null */
+  form_id?: ID | null
   form_name: string
   table_id: ID
   status: ApprovalStatus
@@ -1006,12 +1016,16 @@ export interface ApprovalInstance {
   submitted_by?: ID | null
   submitted_by_name: string
   values: Record<string, unknown>
+  /** 变更单操作类型（create/update/delete）；null=传统表单提交语义 */
+  op?: string | null
+  /** update/delete 变更单的目标行 id */
+  row_id?: ID | null
   record_id?: ID | null
   created_at?: string
   updated_at?: string
 }
 
-/** 表单提交（绑定审批流时）响应：不落库，进入审批 */
+/** 表单提交 / 网格变更单提交的审批响应：不落库，进入审批（后端 202 载荷） */
 export interface ApprovalSubmitResponse {
   approval: {
     id: ID
@@ -1019,12 +1033,15 @@ export interface ApprovalSubmitResponse {
     workflow_name: string
     status: ApprovalStatus
     current_approver_role: string
+    /** 变更单（网格提交）附加：操作类型与目标行 */
+    op?: string
+    row_id?: ID | null
   }
 }
 
 /** 经表单新建行的响应：直接落库（RowResponse）或进入审批（ApprovalSubmitResponse） */
 export type FormRowCreateResponse = RowResponse | ApprovalSubmitResponse
 
-export function isApprovalSubmitResponse(r: FormRowCreateResponse): r is ApprovalSubmitResponse {
-  return 'approval' in r
+export function isApprovalSubmitResponse(r: FormRowCreateResponse | unknown): r is ApprovalSubmitResponse {
+  return typeof r === 'object' && r !== null && 'approval' in r
 }

@@ -355,6 +355,14 @@ def update_table(
 ) -> DataTable:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     update_data = payload.model_dump(exclude_unset=True)
+    # 「编辑需审批」开启时校验绑定的审批流存在且属于本工作区（防开关指向悬空流）
+    workflow_id = update_data.get("edit_approval_workflow_id")
+    if workflow_id is not None:
+        from cndb.plugins.workflows.models import Workflow
+
+        bound = db.get(Workflow, workflow_id)
+        if bound is None or bound.workspace_id != workspace_id:
+            raise HTTPException(status_code=400, detail="绑定的审批流不存在")
     for key, value in update_data.items():
         setattr(dt, key, value)
     db.commit()

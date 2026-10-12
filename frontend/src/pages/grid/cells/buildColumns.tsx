@@ -1,6 +1,6 @@
 /** Grid 列构建函数 — 根据 fields 和 view 状态生成 AntD Table ColumnsType. */
 
-import { Space, Tooltip } from 'antd'
+import { Space, Tooltip, Tag } from 'antd'
 import { Button } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { FilterOutlined, SortAscendingOutlined, SortDescendingOutlined, SaveOutlined, CloseOutlined, EditOutlined, LinkOutlined, KeyOutlined, BulbOutlined } from '@ant-design/icons'
@@ -109,6 +109,8 @@ export interface RowInlineOps {
   onSave: (recordId: ID) => void
   /** 取消该行编辑 / 放弃新增 */
   onCancel: (recordId: ID) => void
+  /** 该行是否存在在途变更单（待审锁定：三入口只读，操作列显示「审批中」）；缺省视为无在途变更 */
+  isPendingRow?: (record: RowResponse) => boolean
 }
 
 /** 视图级列宽覆盖读取：非法值（非有限数）返回 undefined 走估算宽度 */
@@ -245,13 +247,14 @@ export function buildColumns(
               rowId={record.id}
               wid={wid}
               onCellSave={onCellSave}
+              locked={inlineOps?.isPendingRow?.(record) ?? false}
             />
           )
         },
       }
     })
 
-  // 行内编辑能力存在时追加操作列（编辑 / 保存 / 取消）
+  // 行内编辑能力存在时追加操作列（编辑 / 保存 / 取消 / 待审锁定）
   if (inlineOps) {
     cols.push({
       key: '__row_ops__',
@@ -268,6 +271,14 @@ export function buildColumns(
                 <Button size="small" icon={<CloseOutlined />} data-testid="row-cancel-btn" onClick={() => inlineOps.onCancel(record.id)} />
               </Tooltip>
             </Space>
+          )
+        }
+        // 在途变更单：行锁定，显示待审标识不可操作（新增行无 row_id 不受影响）
+        if (inlineOps.isPendingRow?.(record)) {
+          return (
+            <Tooltip title="该行有变更单待审批，通过后可继续编辑">
+              <Tag color="gold" data-testid="row-pending-tag">审批中</Tag>
+            </Tooltip>
           )
         }
         return (

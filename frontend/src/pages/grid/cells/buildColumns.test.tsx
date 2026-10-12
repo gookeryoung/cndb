@@ -164,6 +164,33 @@ describe('buildColumns 列构建', () => {
     expect(screen.getAllByTestId('row-edit-btn')).toHaveLength(1)
   })
 
+  describe('在途变更行（isPendingRow 待审锁定）', () => {
+    it('待审行显示「审批中」标识且不提供编辑按钮，普通行不受影响', () => {
+      const onEdit = vi.fn()
+      const inlineOps: RowInlineOps = {
+        getInlineEdit: () => null,
+        onEdit, onSave: vi.fn(), onCancel: vi.fn(),
+        isPendingRow: (record) => record.id === 1,
+      }
+      renderGrid(FIELDS, { inlineOps })
+
+      // 行 1 待审：审批中 Tag；行 2 正常：编辑按钮
+      expect(screen.getAllByTestId('row-pending-tag')).toHaveLength(1)
+      expect(screen.getAllByTestId('row-edit-btn')).toHaveLength(1)
+      expect(screen.getByText('审批中')).toBeInTheDocument()
+    })
+
+    it('不提供 isPendingRow 时行为与原先一致（回归保证）', () => {
+      const inlineOps: RowInlineOps = {
+        getInlineEdit: () => null,
+        onEdit: vi.fn(), onSave: vi.fn(), onCancel: vi.fn(),
+      }
+      renderGrid(FIELDS, { inlineOps })
+      expect(screen.queryByTestId('row-pending-tag')).toBeNull()
+      expect(screen.getAllByTestId('row-edit-btn')).toHaveLength(2)
+    })
+  })
+
   describe('表头状态标识（必填/唯一/关联/引用）', () => {
     it('必填字段表头显示红星号', () => {
       const requiredFields: Field[] = [makeField({ id: 1, name: '必填字段', field_type: 'text', required: true })]

@@ -28,7 +28,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
 import { arrayMove } from '@dnd-kit/sortable'
 import type { DragEndEvent } from '@dnd-kit/core'
-import { tableApi, recordApi, viewApi, auditApi } from '@/api'
+import { tableApi, recordApi, viewApi, auditApi, isApprovalSubmitResponse } from '@/api'
 import type { ID, RowValues, Field, RowResponse, View, ViewCreate } from '@/api'
 import type { FilterRule, SortRule } from './view-config/ViewConfigDialog'
 import MoveTableForm from './layout/MoveTableForm'
@@ -44,7 +44,7 @@ import GridViewBar from './gridViewBar'
 import GridTableSection, { NEW_ROW_KEY } from './gridTableSection'
 import GridAggregationBar from './gridAggregationBar'
 import GridViewModals from './gridViewModals'
-import { useGridData } from './useGridData'
+import { useGridData, usePendingChanges } from './useGridData'
 
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
@@ -287,6 +287,14 @@ export default function GridPage() {
   }, [])
 
   const { data: table, isLoading } = useTable(wid!, tid!)
+  /** 表级编辑审批开关：绑定审批流即开启，网格/表单编辑统一提交变更单 */
+  const editApprovalOn = table?.edit_approval_workflow_id != null
+  /** 在途变更单（rowId → instance）：待审行三入口只读（单元格双击 / 操作列 / Drawer） */
+  const { data: pendingChanges } = usePendingChanges(wid, tid, editApprovalOn)
+  const isPendingRowId = useCallback((rowId: ID | null | undefined) => {
+    if (rowId == null) return false
+    return pendingChanges?.has(String(rowId)) ?? false
+  }, [pendingChanges])
   const { data: views = [] } = useTableViews(wid!, tid!)
   /** 把后端存储的 filters（dict 或 list）归一化成 list 形式 */
   function normalizeFilters(raw: unknown): FilterRule[] {
@@ -460,19 +468,47 @@ export default function GridPage() {
   const { mutate: mutateDeleteRows } = deleteRows
   const { mutate: mutateUpdateRow } = updateRow
 
+  /** 单行删除（编辑审批开启时的删除入口）：202=提交 delete 变更单，null=直删已生效 */
+  const removeRow = useMutation({
+    mutationFn: (rid: number | string) => recordApi.remove(wid!, tid!, rid),
+    onSuccess: (data) => {
+      if (data) {
+        message.success('删除已提交审批，通过后生效')
+        queryClient.invalidateQueries({ queryKey: ['approval-pending', tableKey] })
+      } else {
+        message.success('已删除')
+        queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+        queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+      }
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除失败'),
+  })
+  const { mutate: mutateRemoveRow } = removeRow
+
   /** 看板等视图删除单张卡片 */
   // 依赖 mutate（React Query 保证稳定）而非 mutation 结果对象 —— 结果对象每渲染都是
   // 新引用，会导致回调每渲染重建、看板卡片 memo 全部失效并全量重渲染
   const handleDeleteCard = useCallback((r: RowResponse) => {
+    if (editApprovalOn) {
+      mutateRemoveRow(r.id as number | string)
+      return
+    }
     mutateDeleteRows([r.id as number | string], {
       onSuccess: () => message.success('已删除'),
     })
-  }, [mutateDeleteRows, message])
+  }, [mutateDeleteRows, mutateRemoveRow, editApprovalOn, message])
 
   /** 看板卡片勾选/取消完成 —— 直接把 done_field 目标值写回该行 */
   const handleToggleDone = useCallback((r: RowResponse, values: RowValues) => {
-    mutateUpdateRow({ rowId: r.id as number | string, values })
-  }, [mutateUpdateRow])
+    // 在途变更行锁定：审批通过前不产生新的写请求（后端防叠加守卫会 409）
+    if (isPendingRowId(r.id)) {
+      message.warning('该行有变更单待审批，通过后可继续编辑')
+      return
+    }
+    mutateUpdateRow({ rowId: r.id as number | string, values }, {
+      onSuccess: (data) => { if (isApprovalSubmitResponse(data)) message.success('变更已提交审批，通过后生效') },
+    })
+  }, [mutateUpdateRow, isPendingRowId, message])
   const copyRow = useMutation({
     mutationFn: async (ids: Array<number | string>) => {
       const copies: Array<Record<string, unknown>> = []
@@ -497,8 +533,14 @@ export default function GridPage() {
   // ── 行内新增（底部空白行）Mutation ──
   const createRow = useMutation({
     mutationFn: (values: RowValues) => recordApi.create(wid!, tid!, { values }),
-    onSuccess: () => {
-      message.success('已新增 1 行')
+    onSuccess: (data) => {
+      if (isApprovalSubmitResponse(data)) {
+        // 编辑审批开启：提交 create 变更单，行在审批通过后才出现
+        message.success('已提交审批，通过后新增生效')
+        queryClient.invalidateQueries({ queryKey: ['approval-pending', tableKey] })
+      } else {
+        message.success('已新增 1 行')
+      }
       setNewRowActive(false)
       setNewRowLockedFields(new Set())
       setRowDrafts(prev => { const next = { ...prev }; delete next[NEW_ROW_KEY]; return next })
@@ -597,8 +639,12 @@ export default function GridPage() {
     setRowDrafts(prev => ({ ...prev, [NEW_ROW_KEY]: draftFor(null) }))
   }
 
-  /** 进入某存量行的整行编辑态 */
+  /** 进入某存量行的整行编辑态（在途变更行拦截：审批通过前不进入编辑） */
   const startEditRow = (recordId: ID) => {
+    if (isPendingRowId(recordId)) {
+      message.warning('该行有变更单待审批，通过后可继续编辑')
+      return
+    }
     setNewRowActive(false)
     const rec = rowList.items.find(r => String(r.id) === String(recordId)) ?? null
     setEditingRowId(recordId)
@@ -646,10 +692,12 @@ export default function GridPage() {
       createRow.mutate(values)
     } else {
       updateRow.mutate({ rowId: recordId, values }, {
-        onSuccess: () => {
+        onSuccess: (data) => {
           setEditingRowId(null)
           clearDraft(rowKeyOf(recordId))
-          message.success('已保存')
+          // 202=审批模式：乐观回滚由 hook 完成，这里仅区分提示文案
+          if (isApprovalSubmitResponse(data)) message.success('变更已提交审批，通过后生效')
+          else message.success('已保存')
         },
       })
     }
@@ -677,7 +725,10 @@ export default function GridPage() {
   // 草稿打字时 render 闭包可能读到旧 rowDrafts），高频更新也不重建整表列定义。
   const inlineOpsRef = useRef<RowInlineOps | null>(null)
   inlineOpsRef.current = canEditRecords
-    ? { getInlineEdit, onEdit: startEditRow, onSave: saveInline, onCancel: cancelInline }
+    ? {
+        getInlineEdit, onEdit: startEditRow, onSave: saveInline, onCancel: cancelInline,
+        isPendingRow: (record) => isPendingRowId(record.id),
+      }
     : null
 
   const inlineOps = useMemo<RowInlineOps | undefined>(() => canEditRecords ? {
@@ -685,6 +736,7 @@ export default function GridPage() {
     onEdit: (recordId) => { inlineOpsRef.current?.onEdit(recordId) },
     onSave: (recordId) => { inlineOpsRef.current?.onSave(recordId) },
     onCancel: (recordId) => { inlineOpsRef.current?.onCancel(recordId) },
+    isPendingRow: (record) => inlineOpsRef.current?.isPendingRow?.(record) ?? false,
   } : undefined, [canEditRecords])
 
   const createView = useMutation({
@@ -1137,7 +1189,8 @@ export default function GridPage() {
           fields={table?.fields || []}
           wid={wid}
           tid={tid}
-          readOnly={!canEditRecords}
+          readOnly={!canEditRecords || isPendingRowId(detailRow?.id)}
+          approvalMode={editApprovalOn}
           initialValues={createInitialValues}
           onClose={() => {
             setDetailOpen(false)

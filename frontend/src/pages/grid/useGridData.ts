@@ -1,7 +1,10 @@
 /** Grid 数据装配 hook — 派生生效筛选/排序/分页参数并拉取行数据（从 GridPage 抽出）. */
 
 import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useTableRecords } from '@/api/hooks'
+import { approvalApi } from '@/api'
+import type { ApprovalInstance } from '@/api'
 
 interface UseGridDataParams {
   wid: string | undefined
@@ -46,4 +49,33 @@ export function useGridData({ wid, tid, mode, limit, offset, viewFilters, viewSo
   )
 
   return { effectiveFilters, sortsParam, effectiveLimit, effectiveOffset, rowList, isFetching }
+}
+
+/**
+ * 在途变更单查询（编辑审批开关开启时启用）。
+ *
+ * 合并「待我审批」与「我提交的」两个维度、客户端过滤 pending 变更单
+ * （op 非空且带目标行），返回 rowId → instance 的 Map 供行级锁定与待审标识；
+ * 单次批量查询 + 变更后 invalidate，不做逐行请求。
+ */
+export function usePendingChanges(wid: string | undefined, tid: string | undefined, enabled = true) {
+  const tableKey = `${wid}/${tid}`
+  return useQuery<Map<string, ApprovalInstance>>({
+    queryKey: ['approval-pending', tableKey],
+    queryFn: async () => {
+      const [forMe, mine] = await Promise.all([
+        approvalApi.list(wid!, 'pending_for_me', undefined, tid),
+        approvalApi.list(wid!, 'mine', undefined, tid),
+      ])
+      const map = new Map<string, ApprovalInstance>()
+      for (const it of [...forMe, ...mine]) {
+        if (it.status !== 'pending' || !it.op || it.row_id == null) continue
+        const key = String(it.row_id)
+        if (!map.has(key)) map.set(key, it)
+      }
+      return map
+    },
+    enabled: enabled && !!wid && !!tid,
+    staleTime: 10_000,
+  })
 }

@@ -13,7 +13,7 @@ import datetime as dt
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -43,11 +43,12 @@ from cndb.plugins.forms.services.permissions import (
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
-from cndb.plugins.workflows.models import Workflow
+from cndb.plugins.workflows.models import CHANGE_OP_UPDATE, Workflow
 from cndb.plugins.workflows.services.approval import (
     ApprovalConflictError,
     submit_for_approval,
 )
+from cndb.plugins.workflows.services.change_dispatch import dispatch_edit_approval
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/{workspace_id}/forms", tags=["forms"])
@@ -395,8 +396,13 @@ def update_form_row(
     payload: FormValuesUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    response: Response,
 ) -> dict[str, object]:
-    """经表单编辑行（表级 EDIT_RECORDS + 表单 EDIT；只读字段被剔除）."""
+    """经表单编辑行（表级 EDIT_RECORDS + 表单 EDIT；只读字段被剔除）.
+
+    表级「编辑需审批」开关开启时与网格编辑同语义：提交 update 变更单
+    （202），审批通过才落库（AC-8）；开关关闭行为与现状一致（AC-9）。
+    """
     ctx = _load_form_with_table(db, form_id, workspace_id, current_user, TableAction.EDIT_RECORDS)
     form, table = ctx.form, ctx.table
     ensure_form_access(db, form, current_user, FormAction.EDIT)
@@ -408,6 +414,15 @@ def update_form_row(
     if form.field_config:
         editable_names = {str(item.get("field_name")) for item in editable_config if item.get("visible", True)}
         values = {k: v for k, v in values.items() if k in editable_names}
+
+    # 表级编辑审批开关：开启时提交 update 变更单（202），原值不变
+    approval = dispatch_edit_approval(
+        db, table, current_user, op=CHANGE_OP_UPDATE, row_id=record_id, values=dict(values)
+    )
+    if approval is not None:
+        response.status_code = status.HTTP_202_ACCEPTED
+        return approval
+
     try:
         row = rec.update_row(db.get_bind(), table, record_id, values, db=db)
     except ValueError as exc:
