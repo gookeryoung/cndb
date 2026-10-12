@@ -429,33 +429,67 @@ def suggest_mapping(
     src_norm_map = {f.name: _normalize_name(f.name) for f in src_fields}
     dst_norm_map = {f.name: _normalize_name(f.name) for f in dst_fields}
 
-    # 预计算每个 src ↔ dst 的得分 (score, src_name, dst_name, reason)
-    scored: list[tuple[float, str, str, str]] = []
-    for sf in src_fields:
-        for df in dst_fields:
-            name_score, reason = _name_similarity(src_norm_map[sf.name], dst_norm_map[df.name])
-            type_bonus = _type_compat(sf.field_type, df.field_type)
-            pair = _pair_score(sf, df, name_score, reason, type_bonus)
-            if pair is None:
-                continue  # link 语义不兼容的配对不进入候选
-            final, final_reason = pair
-            scored.append((final, sf.name, df.name, final_reason))
+    # ── 阶段一：精确匹配（O(N+M)，覆盖批量字段 col_0..col_N 等典型场景）───────
+    # 先把归一化后完全同名的 src/dst 直接分配出去，避免它们进入 O(N×M) 的
+    # 模糊匹配循环（SequenceMatcher 开销约 35μs/pair，在 500×500 规模下
+    # 单精确匹配场景也需 250k 次调用 = 8.7s 纯无谓开销）。
+    dst_norm_buckets: dict[str, list[DataField]] = {}
+    for df in dst_fields:
+        dst_norm_buckets.setdefault(dst_norm_map[df.name], []).append(df)
 
-    # 贪心分配：按 score 降序，每个 src 先到先得一个 dst
-    def _score_tuple_key(r: tuple[float, str, str, str]) -> float:
-        return r[0]
-
-    scored_sorted = sorted(scored, key=_score_tuple_key, reverse=True)
     assigned_dst: set[str] = set()
     best_for_src: dict[str, tuple[float, str, str]] = {}  # src → (score, dst, reason)
+    remaining_src: list[DataField] = []
 
-    for score, src, dst, reason in scored_sorted:
-        if src in best_for_src:
-            continue  # 该 src 已拿到更高分的候选
-        if dst in assigned_dst:
+    for sf in src_fields:
+        candidates = dst_norm_buckets.get(src_norm_map[sf.name])
+        if candidates is None:
+            remaining_src.append(sf)
             continue
-        assigned_dst.add(dst)
-        best_for_src[src] = (score, dst, reason)
+        matched = False
+        for df in candidates:
+            if df.name in assigned_dst:
+                continue
+            type_bonus = _type_compat(sf.field_type, df.field_type)
+            pair = _pair_score(sf, df, 1.0, "同名精确匹配", type_bonus)
+            if pair is not None:
+                assigned_dst.add(df.name)
+                final, reason = pair
+                best_for_src[sf.name] = (final, df.name, reason)
+                matched = True
+                break
+        if not matched:
+            remaining_src.append(sf)
+
+    if not remaining_src:
+        # 所有 src 都精确匹配完成，跳过模糊匹配
+        pass
+    else:
+        # ── 阶段二：剩余子集走模糊匹配（O(R×D)，R ≪ N）───────────────────────
+        remaining_dst = [df for df in dst_fields if df.name not in assigned_dst]
+        if remaining_dst:
+            scored: list[tuple[float, str, str, str]] = []
+            for sf in remaining_src:
+                for df in remaining_dst:
+                    name_score, reason = _name_similarity(
+                        src_norm_map[sf.name], dst_norm_map[df.name]
+                    )
+                    type_bonus = _type_compat(sf.field_type, df.field_type)
+                    pair = _pair_score(sf, df, name_score, reason, type_bonus)
+                    if pair is None:
+                        continue  # link 语义不兼容的配对不进入候选
+                    final, final_reason = pair
+                    scored.append((final, sf.name, df.name, final_reason))
+
+            # 贪心分配：按 score 降序，每个 src 先到先得一个 dst
+            scored.sort(key=lambda r: r[0], reverse=True)
+            for score, src, dst, reason in scored:
+                if src in best_for_src:
+                    continue  # 该 src 已拿到更高分的候选
+                if dst in assigned_dst:
+                    continue
+                assigned_dst.add(dst)
+                best_for_src[src] = (score, dst, reason)
 
     results: list[dict[str, Any]] = []
     for sf in src_fields:
