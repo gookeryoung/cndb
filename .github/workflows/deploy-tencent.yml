@@ -155,7 +155,7 @@ jobs:
       # 由 source 的层级决定最终落点。单源文件（docker-compose.prod.yml 无目录前缀）
       # 同理落在 /opt/cndb 根下，故此前一直是对的 —— 只有带目录前缀的多源会错位。
       - name: Sync compose file
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT || 22 }}
@@ -170,7 +170,7 @@ jobs:
       # 块写法不被支持）；传 *.sh 而非 *，避免把 .env.prod.example 等
       # 模板也覆盖到服务器上。target 见上方说明：固定 /opt/cndb。
       - name: Sync deploy scripts & Dockerfile
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT || 22 }}
@@ -182,7 +182,7 @@ jobs:
       # 构建产物落到 /opt/cndb/dist：deploy.sh 在 SERVER_BUILD=1 下
       # 以 /opt/cndb 为上下文执行 docker build（COPY dist/... 命中此目录）
       - name: Sync build artifacts
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT || 22 }}
