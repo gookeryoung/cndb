@@ -52,6 +52,40 @@ def _remove_seed_sqlite_pragmas(engine: Any, handler: Any) -> None:
         event.remove(engine, "connect", handler)
 
 
+def _drop_all_tables_sqlite(engine: Any) -> None:
+    """SQLite 全量清库：按 sqlite_master 逐表 DROP，含 ORM metadata 外的残留表.
+
+    背景（线上 bug）：Base.metadata.drop_all 只删 ORM 注册表，历史遗留表
+    （迁移建过、模型已下线的 wechat_accounts，旧版本残留表）不在 metadata 内
+    而存活。在全局 PRAGMA foreign_keys=ON 下，DROP TABLE 会先对被删表做隐式
+    DELETE，级联传播到带"指向已删表外键"的残留表时，SQLite 解析悬空外键报
+    "no such table: main.xxx"（如 DROP TABLE accounts_user 时炸）。
+
+    做法：临时关闭 foreign_keys（外键关闭后 DROP 不再做隐式 DELETE 级联与
+    悬空外键解析，SQLite 官方推荐做法），再按 sqlite_master 全量 DROP ——
+    顺带清掉动态物理表 table_*/link_* 与孤儿表，符合 seed"清空重建"语义。
+    注意 PRAGMA foreign_keys 在事务内是空操作，故必须用 AUTOCOMMIT 连接
+    （engine.begin() 里设置无效）；结束前恢复 ON，避免归还连接池后污染
+    后续复用该连接的请求。
+
+    Args:
+        engine: 目标 SQLAlchemy 引擎（须为 SQLite 方言）.
+    """
+    from sqlalchemy import text
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        try:
+            rows = conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            ).fetchall()
+            for (name,) in rows:
+                quoted = name.replace('"', '""')
+                conn.execute(text(f'DROP TABLE IF EXISTS "{quoted}"'))
+        finally:
+            conn.execute(text("PRAGMA foreign_keys=ON"))
+
+
 def _get_datasets_dir() -> Path | None:
     """定位 datasets 目录（包内优先，fallback 仓库根，均找不到则返回 None 优雅降级）.
 
@@ -1893,7 +1927,12 @@ def seed(_args: argparse.Namespace) -> None:
     plugin_registry.discover_and_load()
 
     seed_pragma_handler = _set_seed_sqlite_pragmas(engine)
-    Base.metadata.drop_all(engine)
+    if engine.dialect.name == "sqlite":
+        # SQLite 全量清库（含 metadata 外的残留表/孤儿表），避免
+        # drop_all 在外键级联下因悬空外键报 no such table（见函数 docstring）
+        _drop_all_tables_sqlite(engine)
+    else:
+        Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     # 补写 alembic_version（seed 自行建表绕过了迁移），避免 serve 启动时
     # ensure_db_migrated 误判为"半迁移库"而重放建表迁移报 table already exists
