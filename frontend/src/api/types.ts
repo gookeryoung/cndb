@@ -373,6 +373,8 @@ export interface View {
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
   /** 是否默认视图（对齐后端 ViewResponse.is_default） */
   is_default: boolean; created_at?: string
+  /** 视图归属：null=公共视图（有编辑视图权限者创建）；非空=个人视图（仅创建者可见可改） */
+  owner_id?: number | null
   /** 排序权重（后端 DataView.order） */
   order?: number
 }

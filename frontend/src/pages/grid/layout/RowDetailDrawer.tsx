@@ -45,11 +45,13 @@ interface Props {
   onClose: () => void
   /** 新建行模式下的预填值（例如看板某列的分组字段） */
   initialValues?: RowValues
+  /** 只读模式：无编辑权限时打开详情，字段禁用、保存按钮禁用（双击不再进入可编辑状态） */
+  readOnly?: boolean
   /** 创建成功后回调 */
   onCreated?: () => void
 }
 
-export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, initialValues, onCreated }: Props) {
+export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, initialValues, onCreated, readOnly }: Props) {
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   const [form] = Form.useForm()
@@ -144,6 +146,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
           icon={isCreate ? <PlusOutlined /> : <SaveOutlined />}
           onClick={handleSubmit}
           loading={isCreate ? createRow.isPending : updateRow.isPending}
+          disabled={readOnly}
         >{isCreate ? '创建' : '保存'}</Button>
       }
     >
@@ -168,7 +171,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
               name={f.name}
               style={{ marginBottom: 12 }}
             >
-              <FieldEditor field={f} wid={wid} disabled={locked} />
+              <FieldEditor field={f} wid={wid} disabled={locked || !!readOnly} />
             </Form.Item>
           )
         })}
