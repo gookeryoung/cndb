@@ -4,7 +4,7 @@ _src_path: https://gitee.com/gooker_young/coopie.git
 author_email: gooker_young@qq.com
 author_name: gookeryoung
 coverage_fail_under: 95
-description: Template for python web apps.
+description: 通用数据管理平台
 license: MIT
 max_python_version: '3.12'
 min_python_version: '3.12'
