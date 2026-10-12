@@ -26,11 +26,11 @@ const VISIBILITY_META: Record<WorkspaceVisibility, { icon: React.ReactNode; colo
 }
 
 const ROLE_LABEL: Record<WorkspaceRole, string> = {
-  owner: '所有者', admin: '管理员', editor: '编辑者', viewer: '查看者',
+  owner: '所有者', editor: '编辑者', viewer: '查看者',
 }
 
 const ROLE_BADGE_COLOR: Record<WorkspaceRole, string> = {
-  owner: 'gold', admin: 'geekblue', editor: 'cyan', viewer: 'default',
+  owner: 'gold', editor: 'cyan', viewer: 'default',
 }
 
 export default function WorkspaceList() {

@@ -57,7 +57,7 @@ def _fill_table_stats(
     member_count_map: dict[int, int] | None = None,
     my_member_map: dict[int, TableMember] | None = None,
 ) -> TableResponse:
-    """为单张表填充统计 + 数据资产目录字段."""
+    """为单张表填充统计 + 数据表目录字段."""
     field_count = (
         db.query(func.count(DataField.id))
         .filter(DataField.table_id == table.id, DataField.trashed == False)  # noqa: E712
@@ -78,7 +78,7 @@ def _fill_table_stats(
     base.record_count = int(record_count) if record_count is not None else None
     base.view_count = int(view_count)
 
-    # 数据资产目录字段（list_tables 会批量预查，单表 get_table 时回退懒查）
+    # 数据表目录字段（list_tables 会批量预查，单表 get_table 时回退懒查）
     if owner_map is not None:
         owner = owner_map.get(table.owner_id) if table.owner_id else None
     else:
@@ -119,7 +119,7 @@ def create_table(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DataTable:
-    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.ADMIN)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
     dt = DataTable(
         workspace_id=workspace_id,
         owner_id=current_user.id,
@@ -253,7 +253,7 @@ def reorder_tables(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[DataTable]:
     """批量调整表顺序（按传入顺序赋值 order 字段）."""
-    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.ADMIN)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
 
     tables = (
         db.query(DataTable)
@@ -355,14 +355,6 @@ def update_table(
 ) -> DataTable:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     update_data = payload.model_dump(exclude_unset=True)
-    # 「编辑需审批」开启时校验绑定的审批流存在且属于本工作区（防开关指向悬空流）
-    workflow_id = update_data.get("edit_approval_workflow_id")
-    if workflow_id is not None:
-        from cndb.plugins.workflows.models import Workflow
-
-        bound = db.get(Workflow, workflow_id)
-        if bound is None or bound.workspace_id != workspace_id:
-            raise HTTPException(status_code=400, detail="绑定的审批流不存在")
     for key, value in update_data.items():
         setattr(dt, key, value)
     db.commit()

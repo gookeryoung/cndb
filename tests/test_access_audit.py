@@ -173,18 +173,18 @@ class TestCheckAction:
         assert check_action(db, tbl, user, TableAction.EDIT_SCHEMA, member_role=WorkspaceRole.VIEWER) is False
 
     def test_permission_override(self, db, client, auth_headers):
-        """表级覆盖 — EDIT_SCHEMA 需 admin."""
+        """表级覆盖 — EDIT_SCHEMA 需 owner."""
         ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_ovr"})
         wid = ws.json()["id"]
         client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t_ovr"})
         tbl = db.query(DataTable).filter_by(workspace_id=wid).first()
         tbl.owner_id = None
         db.commit()
-        perm = TablePermission(table_id=tbl.id, edit_schema_role="admin")
+        perm = TablePermission(table_id=tbl.id, edit_schema_role="owner")
         db.add(perm)
         db.commit()
         user = db.query(User).first()
-        # EDITOR 走 TablePermission 阈值，edit_schema_role=admin 要求更高 → False
+        # EDITOR 走 TablePermission 阈值，edit_schema_role=owner 要求更高 → False
         assert check_action(db, tbl, user, TableAction.EDIT_SCHEMA, member_role=WorkspaceRole.EDITOR) is False
 
     def test_permission_invalid_role(self, db, client, auth_headers):

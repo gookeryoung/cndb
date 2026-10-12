@@ -289,11 +289,33 @@ class TestTablesRecordsMore:
         )
         assert r.status_code == 404
 
-    def test_editor_cannot_delete_table(self, client, auth_editor_cov, ws_cov, table_cov):
+    def test_editor_can_delete_table(self, client, auth_editor_cov, ws_cov, table_cov):
+        """EDITOR 为 EDIT_SCHEMA 默认角色，可删表."""
         dt, _ = table_cov
         r = client.delete(
             f"/api/v1/workspaces/{ws_cov.id}/tables/{dt.id}",
             headers=auth_editor_cov,
+        )
+        assert r.status_code == 204
+
+    def test_viewer_cannot_delete_table(self, client, db, ws_cov, table_cov):
+        """viewer 删表 → 403."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.workspaces.models import WorkspaceMember
+
+        u = User(username="sprint_viewer", nickname="Viewer")
+        u.set_password("passw0rd")
+        db.add(u)
+        db.flush()
+        db.add(WorkspaceMember(workspace_id=ws_cov.id, user_id=u.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+        r_login = client.post("/api/v1/accounts/auth/login", json={"login": "sprint_viewer", "password": "passw0rd"})
+        assert r_login.status_code == 200
+        auth_viewer = {"Authorization": f"Bearer {r_login.json()['access_token']}"}
+        dt, _ = table_cov
+        r = client.delete(
+            f"/api/v1/workspaces/{ws_cov.id}/tables/{dt.id}",
+            headers=auth_viewer,
         )
         assert r.status_code == 403
 

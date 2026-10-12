@@ -194,18 +194,26 @@ class TestGovernanceCleanAPI:
 
 
 class TestGovernancePermissions:
-    """MANAGE_DATA 默认 ADMIN：EDITOR 403."""
+    """MANAGE_DATA 默认 EDITOR：EDITOR 200，VIEWER 403."""
 
-    def test_editor_forbidden(self, client, ws, dup_table, auth_editor) -> None:
+    def test_editor_allowed(self, client, ws, dup_table, auth_editor) -> None:
         r = client.post(
             GOV.format(ws=ws.id, tb=dup_table.id) + "/detect",
             json={"match_fields": ["姓名"]},
             headers=auth_editor,
         )
+        assert r.status_code in (200, 201)
+
+    def test_viewer_forbidden(self, client, ws, dup_table, auth_viewer) -> None:
+        r = client.post(
+            GOV.format(ws=ws.id, tb=dup_table.id) + "/detect",
+            json={"match_fields": ["姓名"]},
+            headers=auth_viewer,
+        )
         assert r.status_code == 403
 
-    def test_task_access_requires_manage_data(self, client, ws, dup_table, owner, auth_editor) -> None:
-        # owner 创建任务后，editor 无权查看任务
+    def test_task_access_requires_manage_data(self, client, ws, dup_table, owner, auth_viewer) -> None:
+        # owner 创建任务后，viewer 无权查看任务
         r = client.post(
             GOV.format(ws=ws.id, tb=dup_table.id) + "/detect",
             json={"match_fields": ["姓名"]},
@@ -214,9 +222,28 @@ class TestGovernancePermissions:
         assert r.status_code in (200, 201)
         rid = client.get(
             GOV.format(ws=ws.id, tb=dup_table.id) + f"/tasks/{r.json()['id']}",
-            headers=auth_editor,
+            headers=auth_viewer,
         )
         assert rid.status_code == 403
+
+
+@pytest.fixture
+def viewer(db, ws):
+    u = User(username="gov_api_viewer", nickname="GovApiViewer")
+    u.set_password("passw0rd")
+    db.add(u)
+    db.flush()
+    db.add(WorkspaceMember(workspace_id=ws.id, user_id=u.id, role=WorkspaceRole.VIEWER))
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+@pytest.fixture
+def auth_viewer(client, viewer):
+    r = client.post("/api/v1/accounts/auth/login", json={"login": viewer.username, "password": "passw0rd"})
+    assert r.status_code == 200
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
 def owner_tokens(client, owner) -> str:

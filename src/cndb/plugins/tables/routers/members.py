@@ -26,7 +26,7 @@ def _require_table_admin(
     current_user: User,
     db: Session,
 ) -> None:
-    """校验当前用户是否为表所有者或工作区 ADMIN/OWNER.
+    """校验当前用户是否为表所有者或工作区 OWNER.
 
     失败时抛 403.
     """
@@ -42,8 +42,8 @@ def _require_table_admin(
     )
     if wm is None:
         raise HTTPException(status_code=403, detail="非工作区成员，无法操作表成员")
-    if wm.role not in (WorkspaceRole.ADMIN, WorkspaceRole.OWNER):
-        raise HTTPException(status_code=403, detail="仅表所有者或工作区 ADMIN/OWNER 可执行此操作")
+    if wm.role != WorkspaceRole.OWNER:
+        raise HTTPException(status_code=403, detail="仅表所有者或工作区所有者可执行此操作")
 
 
 def _assert_workspace_member(workspace_id: int, user_id: int, db: Session) -> None:
@@ -261,7 +261,7 @@ def transfer_owner(
     """转让表所有权."""
     table = get_table_or_404(table_id, workspace_id, db)
 
-    # 调用方必须是当前 owner 或工作区 ADMIN/OWNER
+    # 调用方必须是当前 owner 或工作区 OWNER
     is_owner = table.owner_id is not None and table.owner_id == current_user.id
     ws = (
         db.query(WorkspaceMember)
@@ -272,8 +272,8 @@ def transfer_owner(
         .first()
     )
     ws_role = ws.role if ws else None
-    if not is_owner and ws_role not in (WorkspaceRole.ADMIN, WorkspaceRole.OWNER):
-        raise HTTPException(status_code=403, detail="仅表所有者或工作区 ADMIN/OWNER 可转让所有权")
+    if not is_owner and ws_role != WorkspaceRole.OWNER:
+        raise HTTPException(status_code=403, detail="仅表所有者或工作区所有者可转让所有权")
 
     # 目标必须是工作区成员
     _assert_workspace_member(workspace_id, payload.user_id, db)

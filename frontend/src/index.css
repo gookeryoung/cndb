@@ -419,8 +419,8 @@ body.theme-oled {
   color: var(--cn-text-secondary);
 }
 
-/* tab 内类别徽标（antd Tag 预设色：金色=走审批/待审、蓝=直接落库、
- * 绿=已通过、红=已驳回）。复合选择器抬高优先级覆盖 antd Tag 默认
+/* tab 内类别徽标（antd Tag 预设色：金色=在途修改申请、蓝=直接落库、
+ * 绿=已合并、红=已关闭）。复合选择器抬高优先级覆盖 antd Tag 默认
  * 右外边距，避免 tab 尾部多余留白。 */
 .cn-ws-tab-count-tag.ant-tag {
   margin-inline-end: 0;

@@ -1,16 +1,17 @@
 import React, { Suspense, lazy, useState, useCallback } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer, Tag } from 'antd'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
 import {
   LogoutOutlined, AppstoreOutlined, TableOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
   MenuOutlined, InfoCircleOutlined,
-  DatabaseOutlined, FormOutlined, AuditOutlined, BarChartOutlined,
+  DatabaseOutlined, BarChartOutlined,
+  ArrowLeftOutlined, PullRequestOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { approvalApi, formApi, tableApi, workspaceApi } from '@/api'
+import { tableApi, workspaceApi } from '@/api'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 
@@ -96,24 +97,6 @@ export default function MainLayout() {
     enabled: !!wid,
   })
 
-  // 「表单」tab 数量徽标数据 —— queryKey 与 FormsPage 一致，
-  // react-query 自动去重，进入对应页面时命中共享缓存不重复请求。
-  const { data: forms = [], isSuccess: formsReady } = useQuery({
-    queryKey: ['forms', wid],
-    queryFn: () => formApi.list(wid!),
-    enabled: !!wid,
-  })
-
-  // 待我审批实例：「审批中心」tab 上金色「待审」徽标的来源（需关注类别）
-  const { data: pendingApprovals = [], isSuccess: pendingReady } = useQuery({
-    queryKey: ['workspaces', wid, 'approvals', 'pending_for_me'],
-    queryFn: () => approvalApi.list(wid!, 'pending_for_me'),
-    enabled: !!wid,
-  })
-
-  /** 绑定审批流的表单数（金色类别徽标：与表单列表「审批」列同色系） */
-  const approvalBoundForms = forms.filter(f => f.approval_workflow_id != null).length
-
   // 后端已按 DataTable.order（用户拖拽顺序）返回，这里直接使用即可。
   const orderedTables = tables
 
@@ -121,10 +104,8 @@ export default function MainLayout() {
 
   /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），覆盖数据表、报表与设置入口.
    *
-   * 各项带图标与数量徽标：仅数据就绪后渲染徽标（0 也显示），未就绪时不渲染占位，
+   * 各项带数量徽标：仅数据就绪后渲染徽标（0 也显示），未就绪时不渲染占位，
    * 避免加载瞬间误导（class cn-ws-tab-count，样式走 var(--cn-*) 主题变量）。
-   * 含类别的徽标用 antd Tag 预设色做颜色区分（class cn-ws-tab-count-tag）：
-   * 「表单」金色 = 绑定审批流的表单数；「审批中心」金色 = 待我审批数；
    * 「工作区设置」无徽标。
    */
   const wsTabItems: TabsProps['items'] = [
@@ -132,31 +113,8 @@ export default function MainLayout() {
       key: 'tables',
       label: (
         <span>
-          <DatabaseOutlined /> 数据资产
+          <DatabaseOutlined /> 数据表
           {tablesReady && <span className="cn-ws-tab-count">{tables.length}</span>}
-        </span>
-      ),
-    },
-    {
-      key: 'forms',
-      label: (
-        <span>
-          <FormOutlined /> 表单
-          {formsReady && <span className="cn-ws-tab-count">{forms.length}</span>}
-          {formsReady && approvalBoundForms > 0 && (
-            <Tag color="gold" className="cn-ws-tab-count-tag">{approvalBoundForms} 走审批</Tag>
-          )}
-        </span>
-      ),
-    },
-    {
-      key: 'approvals',
-      label: (
-        <span>
-          <AuditOutlined /> 审批中心
-          {pendingReady && pendingApprovals.length > 0 && (
-            <Tag color="gold" className="cn-ws-tab-count-tag">{pendingApprovals.length} 待审</Tag>
-          )}
         </span>
       ),
     },
@@ -173,17 +131,33 @@ export default function MainLayout() {
     },
     { key: 'settings', label: <span><SettingOutlined /> 工作区设置</span> },
   ]
-  // 激活态由 pathname 驱动：表详情页（/w/:wid/tables/:tid）同样落在「数据资产」，
-  // 表单详情页（/w/:wid/forms/:fid）落在「表单」
-  const activeWsTab = location.includes('/reports')
-    ? 'reports'
-    : location.includes('/approvals')
-      ? 'approvals'
-      : location.includes('/forms')
-        ? 'forms'
-        : location.includes('/settings')
-          ? 'settings'
-          : 'tables'
+  // ── 表级二级导航（GitHub repo tabs 风格）──
+  // 当 URL 处于某张表的上下文（网格页 /w/:wid/tables/:tid 及其子页）时，
+  // 在工作区 Tabs 行下方渲染：当前表名（返回网格）+ 修改申请/问题清单/数据表设置。
+  const inTableContext = !!wid && !!tid && location.startsWith(`/w/${wid}/tables/${tid}`)
+  const currentTable = orderedTables.find(t => String(t.id) === String(tid))
+  const activeTableTab = location.includes('/change-requests')
+    ? 'change-requests'
+    : location.includes('/issues')
+      ? 'issues'
+      : location.includes('/settings')
+        ? 'settings'
+        : ''
+  const tableTabItems: TabsProps['items'] = [
+    { key: 'change-requests', label: <span><PullRequestOutlined /> 修改申请</span> },
+    { key: 'issues', label: <span><ExclamationCircleOutlined /> 问题清单</span> },
+    { key: 'settings', label: <span><SettingOutlined /> 数据表设置</span> },
+  ]
+
+  // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」（子页高亮由表级导航负责），
+  // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
+  const activeWsTab = inTableContext
+    ? 'tables'
+    : location.includes('/reports')
+      ? 'reports'
+      : location.includes('/settings')
+        ? 'settings'
+        : 'tables'
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
@@ -261,7 +235,7 @@ export default function MainLayout() {
           <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
         </div>
         <div style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
-          数据资产 ({orderedTables.length})
+          数据表 ({orderedTables.length})
         </div>
         {tables.length === 0 ? (
           collapsed ? (
@@ -387,6 +361,28 @@ export default function MainLayout() {
                 tabBarStyle={{ margin: 0, padding: '0 16px' }}
                 onChange={(key) => navigate(`/w/${wid}/${key}`)}
               />
+              {/* 表级二级导航：网格页与表级子页（修改申请/问题清单/数据表设置）共享，
+                  左侧为当前表名（点击返回网格），tab 高亮由 URL 驱动 */}
+              {inTableContext && (
+                <div style={{ display: 'flex', alignItems: 'center', background: 'var(--cn-bg-page)' }}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<ArrowLeftOutlined />}
+                    data-testid="table-subnav-back"
+                    style={{ marginLeft: 16, flexShrink: 0 }}
+                    onClick={() => navigate(`/w/${wid}/tables/${tid}`)}
+                  >
+                    {currentTable?.name || '返回表格'}
+                  </Button>
+                  <Tabs
+                    activeKey={activeTableTab}
+                    items={tableTabItems}
+                    tabBarStyle={{ margin: 0, flex: 1 }}
+                    onChange={(key) => navigate(`/w/${wid}/tables/${tid}/${key}`)}
+                  />
+                </div>
+              )}
             </div>
           )}
           <Content

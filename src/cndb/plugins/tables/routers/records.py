@@ -12,6 +12,12 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.change_requests import services as cr_services
+from cndb.plugins.change_requests.models import (
+    CHANGE_OP_CREATE,
+    CHANGE_OP_DELETE,
+    CHANGE_OP_UPDATE,
+)
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.schemas import (
     RecordCreate,
@@ -19,7 +25,7 @@ from cndb.plugins.tables.schemas import (
     RecordListResponse,
     RecordUpdate,
 )
-from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
+from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
 from cndb.plugins.tables.services.core.records import (
     create_row,
     delete_row,
@@ -29,11 +35,43 @@ from cndb.plugins.tables.services.core.records import (
     trash_row,
     update_row,
 )
-from cndb.plugins.workflows.models import CHANGE_OP_CREATE, CHANGE_OP_DELETE, CHANGE_OP_UPDATE
-from cndb.plugins.workflows.services.change_dispatch import dispatch_edit_approval
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/records", tags=["records"])
+
+
+def _dispatch_or_403(
+    db: Session,
+    dt: DataTable,
+    user: User,
+) -> bool:
+    """双轨分派判定（设计 3.3 节）：可直编则校验表级 EDIT_RECORDS 权限并返回 True.
+
+    直编条件：工作区角色 owner 恒直编；editor 需 allow_edit 开启；viewer 一律走修改申请。
+    直编但表级权限受限时仍按原语义抛 403。
+    """
+    if not cr_services.can_write_directly(db, dt, user):
+        return False
+    if not check_action(db, dt, user, TableAction.EDIT_RECORDS):
+        raise HTTPException(status_code=403, detail="表级权限不足")
+    return True
+
+
+def _cr_response(
+    db: Session,
+    dt: DataTable,
+    user: User,
+    *,
+    op: str,
+    row_id: int | None,
+    values: dict[str, Any],
+) -> JSONResponse:
+    """走修改申请轨道：自动生成申请并返回 202 载荷."""
+    cr = cr_services.create_dispatch_request(db, dt, user, op, row_id, values)
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={"change_request": cr_services.serialize_request(cr)},
+    )
 
 
 def _list_response(
@@ -73,24 +111,18 @@ def _list_response(
     return RecordListResponse(rows=rows, total=total, limit=limit, offset=offset)
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=None)
 def create_record(
     workspace_id: int,
     table_id: int,
     payload: RecordCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-    response: Response,
-) -> dict[str, object]:
-    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+) -> dict[str, object] | JSONResponse:
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    # 编辑审批开关：开启时提交 create 变更单（202），不直接落库
-    approval = dispatch_edit_approval(
-        db, dt, current_user, op=CHANGE_OP_CREATE, row_id=None, values=dict(payload.values)
-    )
-    if approval is not None:
-        response.status_code = status.HTTP_202_ACCEPTED
-        return approval
+    if not _dispatch_or_403(db, dt, current_user):
+        return _cr_response(db, dt, current_user, op=CHANGE_OP_CREATE, row_id=None, values=payload.values)
 
     try:
         row = create_row(db.get_bind(), dt, payload.values, db=db)
@@ -190,7 +222,7 @@ def get_record(
     return row
 
 
-@router.patch("/{record_id}")
+@router.patch("/{record_id}", response_model=None)
 def update_record(
     workspace_id: int,
     table_id: int,
@@ -198,17 +230,11 @@ def update_record(
     payload: RecordUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-    response: Response,
-) -> dict[str, object]:
-    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+) -> dict[str, object] | JSONResponse:
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    # 编辑审批开关：开启时提交 update 变更单（202），原值不变
-    approval = dispatch_edit_approval(
-        db, dt, current_user, op=CHANGE_OP_UPDATE, row_id=record_id, values=dict(payload.values)
-    )
-    if approval is not None:
-        response.status_code = status.HTTP_202_ACCEPTED
-        return approval
+    if not _dispatch_or_403(db, dt, current_user):
+        return _cr_response(db, dt, current_user, op=CHANGE_OP_UPDATE, row_id=record_id, values=payload.values)
 
     try:
         row = update_row(db.get_bind(), dt, record_id, payload.values, db=db)
@@ -229,13 +255,10 @@ def delete_record(
     db: Annotated[Session, Depends(get_db)],
     soft: bool = Query(default=True, description="软删除 vs 硬删除"),
 ) -> Response:
-    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    # 编辑审批开关：开启时提交 delete 变更单（202），审批通过后软删进回收站；
-    # 开关开启期间不提供绕过审批的硬删通道
-    approval = dispatch_edit_approval(db, dt, current_user, op=CHANGE_OP_DELETE, row_id=record_id, values={})
-    if approval is not None:
-        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=approval)
+    if not _dispatch_or_403(db, dt, current_user):
+        return _cr_response(db, dt, current_user, op=CHANGE_OP_DELETE, row_id=record_id, values={})
 
     if soft:
         ok = trash_row(db.get_bind(), dt, record_id, db=db)

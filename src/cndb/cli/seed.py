@@ -7,8 +7,6 @@
    关联（link）+ 引用（lookup）示例字段，用于演示字段设置能力
 4. 硬编码业务表 — 部门表 + 员工表 + 报告模板 + 工作流，绑定到 datasets 创建的
    "某企业销售管理"工作区，与 CSV 数据共同构成完整销售场景
-5. 表单与审批流 — 见 cli/seed_forms.py：为各业务工作区注入典型表单、审批流与
-   各进度审批实例（待首审/待复审/已通过/已驳回），并补 4 个业务演示用户
 """
 
 from __future__ import annotations
@@ -1590,7 +1588,7 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
             "\n"
             "混合数值合计：{{ stats(records, '混合数值').sum | round(2) }}\n"
             "\n"
-            "从完整率分布看，结构化字段（邮箱/手机号）完整率普遍高于自由文本字段，符合录入习惯特征；空值集中的字段建议在表单层面区分必填与选填，减少无意义空值。\n"
+            "从完整率分布看，结构化字段（邮箱/手机号）完整率普遍高于自由文本字段，符合录入习惯特征；空值集中的字段建议在字段定义层面区分必填与选填，减少无意义空值。\n"
             "\n"
             "## 二、附加表完整性检查（数字格式大全）\n"
             "\n"
@@ -1627,7 +1625,7 @@ REPORT_TEMPLATE_SPECS: list[dict[str, Any]] = [
             "## 结论与建议\n"
             "\n"
             "1. 完整率治理：对完整率低于 100% 的字段建立补录清单，明确责任人与时限，避免长期积累。\n"
-            "2. 录入规范：在表单与导入模板中区分必填与选填字段，并对邮箱、手机号等结构化字段开启格式校验。\n"
+            "2. 录入规范：在录入与导入模板中区分必填与选填字段，并对邮箱、手机号等结构化字段开启格式校验。\n"
             "3. 巡检机制：将本报告纳入数据治理例行巡检，按周生成并跟踪完整率变化趋势。\n"
             "\n"
             "---PAGE---\n"
@@ -2029,18 +2027,13 @@ def seed(_args: argparse.Namespace) -> None:
         # 4b) 示例报告生成：渲染"科研项目季度汇报"落盘到数据集目录
         _generate_sample_reports(db, tables_map, owner, datasets_dir)
 
-        # 4c) 表单与审批流演示种子：业务演示用户 + 典型表单 + 审批流 + 各进度审批实例
-        from cndb.cli.seed_forms import seed_forms_and_workflows
-
-        fw_counts = seed_forms_and_workflows(db, ws_map, tables_map)
-
         # 5) 为"某企业销售管理"工作区添加其他演示成员，使表权限设置能看到可添加的候选成员
         from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
 
         sales_ws = ws_map.get("某企业销售管理")
         if sales_ws is not None:
             extra_members = [
-                (sec_admin, WorkspaceRole.ADMIN, "安全管理员"),
+                (sec_admin, WorkspaceRole.EDITOR, "安全管理员"),
                 (audit_admin, WorkspaceRole.EDITOR, "审计管理员"),
                 (demo, WorkspaceRole.VIEWER, "演示用户"),
             ]
@@ -2052,14 +2045,12 @@ def seed(_args: argparse.Namespace) -> None:
         total = csv_count + extra
         print(
             f"[seed] 完成！共 {total} 张数据表、{view_count} 个视图、"
-            f"{fw_counts['forms']} 个表单、{fw_counts['workflows']} 条审批流、"
-            f"{fw_counts['instances']} 条审批实例、9 个演示账号（三员 + 普通用户 + 4 业务用户）。"
+            f"5 个演示账号（三员 + 普通用户）。"
             "\n登录账号："
             "\n  系统管理员: admin / admin1234"
             "\n  安全管理员: sec_admin / sec1234"
             "\n  审计管理员: audit_admin / audit1234"
             "\n  普通用户:   demo / demo1234"
-            "\n  业务用户:   liuyang/chenjing/zhouwei/xiaomei / <用户名>1234（表单审批演示）"
         )
     finally:
         db.close()

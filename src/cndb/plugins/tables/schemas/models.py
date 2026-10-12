@@ -34,8 +34,6 @@ class TableUpdate(BaseModel):
     description: str | None = None
     order: int | None = None
     trashed: bool | None = None
-    # 表级「编辑需审批」开关：绑定的审批流 id；NULL = 关闭
-    edit_approval_workflow_id: int | None = None
 
 
 class TableOwnerBrief(BaseModel):
@@ -56,8 +54,6 @@ class TableResponse(BaseModel):
     order: int
     trashed: bool
     trashed_at: datetime | None = None
-    # 表级「编辑需审批」开关（NULL = 关闭）
-    edit_approval_workflow_id: int | None = None
     created_at: datetime
     updated_at: datetime
     # 可选统计字段 —— list_tables / get_table 按需填充
@@ -66,7 +62,7 @@ class TableResponse(BaseModel):
     view_count: int | None = None
     # 表级拥有者（DataTable.owner_id 关联的用户；owner_id 为空时为 None）
     owner: TableOwnerBrief | None = None
-    # 数据资产目录相关 —— 由 list_tables 聚合填充
+    # 数据表目录相关 —— 由 list_tables 聚合填充
     member_count: int | None = None
     my_access: str | None = None  # "owner" | "write" | "read" | "none"
 

@@ -30,7 +30,7 @@ const quickStartContent = (
         <div>
             <Text strong>2. 创建数据表或导入数据</Text>
             <br />
-            <Text type="secondary">进入工作区后，在「数据资产」页面点击「新建表」手动定义字段，或点击「导入数据表」上传 CSV / Excel / JSON 文件，系统会自动推断字段类型。</Text>
+            <Text type="secondary">进入工作区后，在「数据表」页面点击「新建表」手动定义字段，或点击「导入数据表」上传 CSV / Excel / JSON 文件，系统会自动推断字段类型。</Text>
         </div>
         <div>
             <Text strong>3. 录入与管理数据</Text>
@@ -126,16 +126,15 @@ const roleColumns = [
 ]
 
 const roleData = [
-    { key: 'owner', role: '所有者', ws: '全部权限，可删除工作区、转让所有权', tbl: '全部权限' },
-    { key: 'admin', role: '管理员', ws: '管理成员（添加/移除）、编辑设置', tbl: '可编辑表结构与数据' },
+    { key: 'owner', role: '所有者', ws: '全部权限，可删除工作区、转让所有权、管理成员', tbl: '全部权限' },
     { key: 'editor', role: '编辑者', ws: '编辑数据、创建视图', tbl: '可录入与编辑数据' },
-    { key: 'viewer', role: '查看者', ws: '只读查看', tbl: '只读查看' },
+    { key: 'viewer', role: '查看者', ws: '只读查看（编辑自动生成修改申请）', tbl: '只读查看' },
 ]
 
 const roleContent = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div>
-            <Text strong>角色从高到低：所有者 &gt; 管理员 &gt; 编辑者 &gt; 查看者</Text>
+            <Text strong>角色从高到低：所有者 &gt; 编辑者 &gt; 查看者</Text>
             <br />
             <Text type="secondary">成员角色在工作区设置的「成员管理」中分配；单张表可在「表设置 → 权限」中对成员/角色做显式授权，未显式授权时遵循工作区角色。</Text>
         </div>
@@ -203,14 +202,14 @@ const faqContent = (
             <Text type="secondary">删除行不会立即从数据库物理移除：数据仍然保留，只是默认不再显示。如需恢复请联系工作区管理员通过接口恢复，删除前请谨慎确认。</Text>
         </div>
         <div>
-            <Text strong>如何让别人填写数据？</Text>
+            <Text strong>如何让别人查看数据？</Text>
             <br />
-            <Text type="secondary">公开表单功能可将表暴露为匿名可填写的表单页面（/public/form/链接）；公开分享则提供只读的数据查看页（/public/share/链接）。链接无效或过期时页面会给出提示。</Text>
+            <Text type="secondary">公开分享可将视图暴露为匿名可访问的只读数据页（/public/share/链接）。链接无效或过期时页面会给出提示；如需收集他人反馈，可让其登录后在问题清单中提交。</Text>
         </div>
         <div>
             <Text strong>为什么有些按钮是灰色的？</Text>
             <br />
-            <Text type="secondary">内容区顶部的「数据资产」「报表」「工作区设置」分页导航需要先在左上角选择工作区；部分操作需要更高权限（如删除工作区仅所有者可用）。将鼠标悬停在按钮上可查看说明。</Text>
+            <Text type="secondary">内容区顶部的「数据表」「报表」「工作区设置」分页导航需要先在左上角选择工作区；部分操作需要更高权限（如删除工作区仅所有者可用）。将鼠标悬停在按钮上可查看说明。</Text>
         </div>
         <div>
             <Text strong>数据存在哪里？</Text>

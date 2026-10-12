@@ -39,7 +39,6 @@ interface RenderDrawerProps {
     onCreated?: () => void
     onClose?: () => void
     readOnly?: boolean
-    approvalMode?: boolean
 }
 
 function renderDrawer(props: RenderDrawerProps = {}) {
@@ -54,7 +53,6 @@ function renderDrawer(props: RenderDrawerProps = {}) {
             initialValues={props.initialValues}
             onCreated={props.onCreated}
             readOnly={props.readOnly}
-            approvalMode={props.approvalMode}
         />,
     )
 }
@@ -144,36 +142,29 @@ describe('RowDetailDrawer 行详情抽屉', () => {
     })
 })
 
-// ─────────────── 编辑审批模式（approvalMode / readOnly）───────────────
+// ─────────────── 修改申请响应（202）与只读模式 ───────────────
 
-describe('RowDetailDrawer 编辑审批模式', () => {
-    it('approvalMode 时提交按钮文案为「提交审批」', () => {
-        setup()
-        renderDrawer({ approvalMode: true })
-
-        expect(screen.getByRole('button', { name: /提\s*交\s*审\s*批$/ })).toBeInTheDocument()
-    })
-
-    it('approvalMode 保存返回变更单载荷（202）：提示「已提交审批」而非「已保存」', async () => {
+describe('RowDetailDrawer 修改申请响应与只读模式', () => {
+    it('保存返回修改申请载荷（202）：提示「已提交修改申请」而非「已保存」', async () => {
         setup()
         server.use(http.patch('/api/v1/workspaces/10/tables/20/records/5', () =>
             HttpResponse.json({
-                approval: {
-                    id: 7, workflow_id: 1, workflow_name: 'w', status: 'pending',
-                    current_approver_role: 'admin', op: 'update', row_id: 5,
+                change_request: {
+                    id: 7, workspace_id: 10, table_id: 20, op: 'update', row_id: 5,
+                    status: 'open', changes: {},
                 },
             }, { status: 202 })))
-        renderDrawer({ approvalMode: true })
+        renderDrawer()
 
         const nameInput = screen.getByDisplayValue('张三')
         fireEvent.change(nameInput, { target: { value: '李四' } })
-        fireEvent.click(screen.getByRole('button', { name: /提\s*交\s*审\s*批$/ }))
+        fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
 
-        expect(await screen.findByText('已提交审批，通过后生效')).toBeInTheDocument()
+        expect(await screen.findByText('已提交修改申请，处理后生效')).toBeInTheDocument()
         expect(screen.queryByText('已保存')).not.toBeInTheDocument()
     })
 
-    it('readOnly（在途变更行）时提交按钮禁用', () => {
+    it('readOnly（在途修改申请行）时提交按钮禁用', () => {
         setup()
         renderDrawer({ readOnly: true })
 

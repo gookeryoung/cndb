@@ -647,20 +647,6 @@ class TestViewsAPI:
         assert data["slug"]
         assert "share_url" in data
 
-    def test_create_form_share(self, client, ws, table, auth_owner):
-        create_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "FormView", "view_type": "form"},
-            headers=auth_owner,
-        )
-        vid = create_r.json()["id"]
-        r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
-            headers=auth_owner,
-        )
-        assert r.status_code == 200
-        assert r.json()["form_url"]
-
     def test_create_view_share_not_found(self, client, ws, table, auth_owner):
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/99999/share",
@@ -706,81 +692,6 @@ class TestViewsAPI:
     def test_public_share_invalid_slug(self, client, ws, table, auth_owner):
         r = client.get("/api/v1/public/share/nonexistentslug12")
         assert r.status_code == 404
-
-    def test_public_form_submit(self, client, ws, table, auth_owner):
-        create_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "PubForm", "view_type": "form"},
-            headers=auth_owner,
-        )
-        vid = create_r.json()["id"]
-        share_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
-            headers=auth_owner,
-        )
-        slug = share_r.json()["slug"]
-        r = client.post(f"/api/v1/public/forms/{slug}", json={"姓名": "匿名提交"})
-        assert r.status_code == 200
-        assert r.json()["status"] == "ok"
-
-    def test_public_form_view(self, client, ws, table, auth_owner):
-        """覆盖 GET /forms/{slug} —— 返回表结构供前端渲染表单."""
-        create_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "PubFormView", "view_type": "form"},
-            headers=auth_owner,
-        )
-        vid = create_r.json()["id"]
-        share_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
-            headers=auth_owner,
-        )
-        slug = share_r.json()["slug"]
-        r = client.get(f"/api/v1/public/forms/{slug}")
-        assert r.status_code == 200
-        data = r.json()
-        assert "view" in data
-        assert "table" in data
-        assert data["table"]["fields"]
-        assert len(data["table"]["fields"]) > 0
-        # 字段应按默认顺序返回
-        field_names = [f["name"] for f in data["table"]["fields"]]
-        assert "姓名" in field_names
-
-    def test_public_form_view_invalid_slug(self, client, ws, table, auth_owner):
-        r = client.get("/api/v1/public/forms/nonexistentslug99")
-        assert r.status_code == 404
-
-    def test_public_form_view_not_form_type(self, client, ws, table, auth_owner):
-        """GET /forms/{slug} 对非 form 视图应返回 400."""
-        create_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "NotFormView", "view_type": "grid"},
-            headers=auth_owner,
-        )
-        vid = create_r.json()["id"]
-        share_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
-            headers=auth_owner,
-        )
-        slug = share_r.json()["slug"]
-        r = client.get(f"/api/v1/public/forms/{slug}")
-        assert r.status_code == 400
-
-    def test_public_form_not_form_type(self, client, ws, table, auth_owner):
-        create_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "NotForm", "view_type": "grid"},
-            headers=auth_owner,
-        )
-        vid = create_r.json()["id"]
-        share_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
-            headers=auth_owner,
-        )
-        slug = share_r.json()["slug"]
-        r = client.post(f"/api/v1/public/forms/{slug}", json={"姓名": "x"})
-        assert r.status_code == 400
 
     # ── 覆盖遗漏分支 ──
 

@@ -32,7 +32,7 @@ def list_audit_logs(
     limit: int = Query(default=100, ge=1, le=1000),
 ) -> list[AuditLog]:
     """列出表的审计日志，可按 action 或 row_id 过滤."""
-    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.ADMIN)
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
     get_table_or_404(table_id, workspace_id, db)
     q = db.query(AuditLog).filter(AuditLog.table_id == table_id)
     if action:

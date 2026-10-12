@@ -5,7 +5,7 @@ import { Drawer, Form, Input, Button, Typography, Timeline, Tag, App as AntApp, 
 import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined, LockOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { recordApi, fileApi, fieldApi, isApprovalSubmitResponse } from '@/api'
+import { recordApi, fileApi, fieldApi, isChangeRequestResponse } from '@/api'
 import { useRowAudit, useRowReferences, useUpdateRowOptimistic } from '@/api/hooks'
 import type { RowResponse, Field, AttachmentFile, RowValues } from '@/api'
 import { extractSelectOptions, defaultValueForNewRow } from '../cells/fieldOps'
@@ -45,15 +45,13 @@ interface Props {
   onClose: () => void
   /** 新建行模式下的预填值（例如看板某列的分组字段） */
   initialValues?: RowValues
-  /** 只读模式：无编辑权限或行存在在途变更单时打开详情，字段禁用、保存按钮禁用 */
+  /** 只读模式：无编辑权限或行存在在途修改申请时打开详情，字段禁用、保存按钮禁用 */
   readOnly?: boolean
-  /** 编辑审批模式：表级开关开启，保存动作提交变更单（按钮文案「提交审批」） */
-  approvalMode?: boolean
   /** 创建成功后回调 */
   onCreated?: () => void
 }
 
-export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, initialValues, onCreated, readOnly, approvalMode }: Props) {
+export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, initialValues, onCreated, readOnly }: Props) {
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   const [form] = Form.useForm()
@@ -83,10 +81,10 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
   const createRow = useMutation({
     mutationFn: (values: RowValues) => recordApi.create(wid, tid, { values }),
     onSuccess: (data) => {
-      if (isApprovalSubmitResponse(data)) {
-        // 编辑审批开启：行未落库，提交 create 变更单，通过后出现
-        message.success('已提交审批，通过后生效')
-        queryClient.invalidateQueries({ queryKey: ['approval-pending', `${wid}/${tid}`] })
+      if (isChangeRequestResponse(data)) {
+        // 查看者/关闭直编：行未落库，提交 create 修改申请，处理通过后出现
+        message.success('已提交修改申请，处理后生效')
+        queryClient.invalidateQueries({ queryKey: ['pending-changes', `${wid}/${tid}`] })
       } else {
         message.success('已新增 1 行')
       }
@@ -136,7 +134,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
     } else if (row) {
       updateRow.mutate(
         { rowId: row.id, values },
-        { onSuccess: (data) => message.success(isApprovalSubmitResponse(data) ? '已提交审批，通过后生效' : '已保存') },
+        { onSuccess: (data) => message.success(isChangeRequestResponse(data) ? '已提交修改申请，处理后生效' : '已保存') },
       )
     }
   }
@@ -155,7 +153,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
           loading={isCreate ? createRow.isPending : updateRow.isPending}
           disabled={readOnly}
           data-testid="drawer-submit-btn"
-        >{approvalMode ? '提交审批' : isCreate ? '创建' : '保存'}</Button>
+        >{isCreate ? '创建' : '保存'}</Button>
       }
     >
       {/* 字段值编辑 */}

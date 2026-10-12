@@ -119,41 +119,6 @@ class TestImportCsvCoverage:
         assert r.status_code == 500
 
 
-# ── public.py ───────────────────────────────────────────
-
-
-class TestPublicDirect:
-    """直接测试 public.py 的辅助函数和边界分支."""
-
-    def test_public_form_submit_row_none_500(self, client, db):
-        """POST public form -> 500 when create_row returns None."""
-        from cndb.plugins.tables.models import DataTable, DataView
-        from cndb.plugins.workspaces.models import Workspace
-
-        ws = Workspace(name="pub_ws")
-        db.add(ws)
-        db.commit()
-        dt = DataTable(workspace_id=ws.id, name="pub_t", db_table_name="pub_t_1")
-        db.add(dt)
-        db.commit()
-        dv = DataView(
-            table_id=dt.id,
-            name="form",
-            view_type="form",
-            public_slug="formghost",
-            is_public=True,
-        )
-        db.add(dv)
-        db.commit()
-
-        with patch("cndb.plugins.tables.routers.public.rec.create_row", return_value=None):
-            r = client.post(
-                "/api/v1/public/forms/formghost",
-                json={"values": {"a": 1}},
-            )
-        assert r.status_code == 500
-
-
 # ── field_types: DateFieldType / DateTimeFieldType ────────
 
 

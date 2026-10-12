@@ -28,7 +28,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
 import { arrayMove } from '@dnd-kit/sortable'
 import type { DragEndEvent } from '@dnd-kit/core'
-import { tableApi, recordApi, viewApi, auditApi, isApprovalSubmitResponse } from '@/api'
+import { tableApi, recordApi, viewApi, auditApi, isChangeRequestResponse } from '@/api'
 import type { ID, RowValues, Field, RowResponse, View, ViewCreate } from '@/api'
 import type { FilterRule, SortRule } from './view-config/ViewConfigDialog'
 import MoveTableForm from './layout/MoveTableForm'
@@ -54,7 +54,6 @@ const GovernanceDialog = lazy(() => import('@/pages/grid/governance/GovernanceDi
 // GridPage chunk 随每次功能迭代线性膨胀（见 scripts/bundle-budget.mjs 的 GridPage 预算）。
 // 走 lazy 后其代码移出 GridPage，仅在首次打开时下载独立 chunk。
 const ViewConfigDialog = lazy(() => import('./view-config/ViewConfigDialog'))
-const TableSettingsModal = lazy(() => import('@/pages/settings/TableSettingsModal'))
 const RowDetailDrawer = lazy(() => import('./layout/RowDetailDrawer'))
 // 非 grid 视图按 mode 懒加载：默认表格视图不下载看板/甘特/日历等代码
 const KanbanView = lazy(() => import('./views/KanbanView'))
@@ -232,8 +231,6 @@ export default function GridPage() {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importFileContent, setImportFileContent] = useState('')
   const [moveOpen, setMoveOpen] = useState(false)
-  const [tableSettingsOpen, setTableSettingsOpen] = useState(false)
-  const [tableSettingsTab, setTableSettingsTab] = useState<'basic' | 'fields' | 'views' | 'permissions'>('basic')
   const tableKey = `${wid}/${tid}`
 
   // ── 行内编辑（新增行 / 整行编辑）状态 ──
@@ -287,10 +284,8 @@ export default function GridPage() {
   }, [])
 
   const { data: table, isLoading } = useTable(wid!, tid!)
-  /** 表级编辑审批开关：绑定审批流即开启，网格/表单编辑统一提交变更单 */
-  const editApprovalOn = table?.edit_approval_workflow_id != null
-  /** 在途变更单（rowId → instance）：待审行三入口只读（单元格双击 / 操作列 / Drawer） */
-  const { data: pendingChanges } = usePendingChanges(wid, tid, editApprovalOn)
+  /** 在途修改申请（rowId → 申请）：在途行三入口只读（单元格双击 / 操作列 / Drawer） */
+  const { data: pendingChanges } = usePendingChanges(wid, tid)
   const isPendingRowId = useCallback((rowId: ID | null | undefined) => {
     if (rowId == null) return false
     return pendingChanges?.has(String(rowId)) ?? false
@@ -468,45 +463,24 @@ export default function GridPage() {
   const { mutate: mutateDeleteRows } = deleteRows
   const { mutate: mutateUpdateRow } = updateRow
 
-  /** 单行删除（编辑审批开启时的删除入口）：202=提交 delete 变更单，null=直删已生效 */
-  const removeRow = useMutation({
-    mutationFn: (rid: number | string) => recordApi.remove(wid!, tid!, rid),
-    onSuccess: (data) => {
-      if (data) {
-        message.success('删除已提交审批，通过后生效')
-        queryClient.invalidateQueries({ queryKey: ['approval-pending', tableKey] })
-      } else {
-        message.success('已删除')
-        queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-        queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
-      }
-    },
-    onError: (err) => message.error(err instanceof Error ? err.message : '删除失败'),
-  })
-  const { mutate: mutateRemoveRow } = removeRow
-
   /** 看板等视图删除单张卡片 */
   // 依赖 mutate（React Query 保证稳定）而非 mutation 结果对象 —— 结果对象每渲染都是
   // 新引用，会导致回调每渲染重建、看板卡片 memo 全部失效并全量重渲染
   const handleDeleteCard = useCallback((r: RowResponse) => {
-    if (editApprovalOn) {
-      mutateRemoveRow(r.id as number | string)
-      return
-    }
     mutateDeleteRows([r.id as number | string], {
       onSuccess: () => message.success('已删除'),
     })
-  }, [mutateDeleteRows, mutateRemoveRow, editApprovalOn, message])
+  }, [mutateDeleteRows, message])
 
   /** 看板卡片勾选/取消完成 —— 直接把 done_field 目标值写回该行 */
   const handleToggleDone = useCallback((r: RowResponse, values: RowValues) => {
-    // 在途变更行锁定：审批通过前不产生新的写请求（后端防叠加守卫会 409）
+    // 在途申请行锁定：申请处理前不产生新的写请求（后端冲突守卫会 409）
     if (isPendingRowId(r.id)) {
-      message.warning('该行有变更单待审批，通过后可继续编辑')
+      message.warning('该行有在途修改申请，处理后可继续编辑')
       return
     }
     mutateUpdateRow({ rowId: r.id as number | string, values }, {
-      onSuccess: (data) => { if (isApprovalSubmitResponse(data)) message.success('变更已提交审批，通过后生效') },
+      onSuccess: (data) => { if (isChangeRequestResponse(data)) message.success('已提交修改申请，处理后生效') },
     })
   }, [mutateUpdateRow, isPendingRowId, message])
   const copyRow = useMutation({
@@ -534,10 +508,10 @@ export default function GridPage() {
   const createRow = useMutation({
     mutationFn: (values: RowValues) => recordApi.create(wid!, tid!, { values }),
     onSuccess: (data) => {
-      if (isApprovalSubmitResponse(data)) {
-        // 编辑审批开启：提交 create 变更单，行在审批通过后才出现
-        message.success('已提交审批，通过后新增生效')
-        queryClient.invalidateQueries({ queryKey: ['approval-pending', tableKey] })
+      if (isChangeRequestResponse(data)) {
+        // 查看者/关闭直编：行未落库，提交 create 修改申请，处理通过后出现
+        message.success('已提交修改申请，处理后新增生效')
+        queryClient.invalidateQueries({ queryKey: ['pending-changes', tableKey] })
       } else {
         message.success('已新增 1 行')
       }
@@ -639,10 +613,10 @@ export default function GridPage() {
     setRowDrafts(prev => ({ ...prev, [NEW_ROW_KEY]: draftFor(null) }))
   }
 
-  /** 进入某存量行的整行编辑态（在途变更行拦截：审批通过前不进入编辑） */
+  /** 进入某存量行的整行编辑态（在途申请行拦截：申请处理前不进入编辑） */
   const startEditRow = (recordId: ID) => {
     if (isPendingRowId(recordId)) {
-      message.warning('该行有变更单待审批，通过后可继续编辑')
+      message.warning('该行有在途修改申请，处理后可继续编辑')
       return
     }
     setNewRowActive(false)
@@ -695,8 +669,8 @@ export default function GridPage() {
         onSuccess: (data) => {
           setEditingRowId(null)
           clearDraft(rowKeyOf(recordId))
-          // 202=审批模式：乐观回滚由 hook 完成，这里仅区分提示文案
-          if (isApprovalSubmitResponse(data)) message.success('变更已提交审批，通过后生效')
+          // 202=修改申请：乐观回滚由 hook 完成，这里仅区分提示文案
+          if (isChangeRequestResponse(data)) message.success('已提交修改申请，处理后生效')
           else message.success('已保存')
         },
       })
@@ -1042,7 +1016,7 @@ export default function GridPage() {
         editRowDisabled={selectedRowKeys.length !== 1}
         canEditSchema={canEditSchema}
         canManageData={canManageData}
-        onOpenTableSettings={() => setTableSettingsOpen(true)}
+        onOpenTableSettings={() => navigate(`/w/${wid}/tables/${tid}/settings`)}
         onOpenImportExport={() => setImportExportOpen(true)}
         onOpenGovernance={() => setGovernanceOpen(true)}
         activeViewName={activeView?.name}
@@ -1190,7 +1164,6 @@ export default function GridPage() {
           wid={wid}
           tid={tid}
           readOnly={!canEditRecords || isPendingRowId(detailRow?.id)}
-          approvalMode={editApprovalOn}
           initialValues={createInitialValues}
           onClose={() => {
             setDetailOpen(false)
@@ -1298,24 +1271,6 @@ export default function GridPage() {
       </Modal>
 
       {/* 新增行 & 整行编辑改用行内编辑（见 buildColumns inlineOps / 操作列），不再使用弹窗 */}
-
-      {/* 表设置统一 Modal — 新增 */}
-      <Suspense fallback={<ModalFallback />}>
-        {tableSettingsOpen && (
-          <TableSettingsModal
-            open
-            wid={wid!}
-            tid={tid!}
-            initialTab={tableSettingsTab}
-            onClose={() => { setTableSettingsOpen(false); setTableSettingsTab('basic') }}
-            onUpdated={() => {
-              queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
-              queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-              queryClient.invalidateQueries({ queryKey: ['table-settings', tableKey] })
-            }}
-          />
-        )}
-      </Suspense>
     </div>
   )
 }

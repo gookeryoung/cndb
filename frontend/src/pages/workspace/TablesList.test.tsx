@@ -35,7 +35,7 @@ function LocationProbe() {
 }
 
 const WORKSPACE = {
-  id: 10, name: '研发部工作区', description: '团队数据资产', visibility: 'member', tags: [],
+  id: 10, name: '研发部工作区', description: '团队数据表', visibility: 'member', tags: [],
   allow_edit: true, created_by_id: 1, created_at: '', updated_at: '',
   owner: { id: 1, username: 'alice', nickname: null },
   table_count: 1, member_count: 1, view_count: 0, total_rows: 0,
@@ -87,7 +87,7 @@ describe('TablesList 工作区表列表页', () => {
     setupWorkspace()
     renderPage()
 
-    expect(await screen.findByText('研发部工作区 · 数据资产')).toBeInTheDocument()
+    expect(await screen.findByText('研发部工作区 · 数据表')).toBeInTheDocument()
     expect(await screen.findByText('客户表')).toBeInTheDocument()
     expect(screen.getByText('共 1 / 1 张表')).toBeInTheDocument()
   })

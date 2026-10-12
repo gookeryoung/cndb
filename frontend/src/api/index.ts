@@ -23,9 +23,8 @@ export { viewApi } from './views'
 export { importApi, exportApi, fileApi } from './importExport'
 export { publicApi } from './public'
 export { reportApi } from './reports'
-export { formApi } from './forms'
-export { workflowApi, approvalApi, APPROVAL_STATUS_TEXT } from './workflows'
-export type { ApprovalScope } from './workflows'
+export { issuesApi } from './issues'
+export { changeRequestsApi } from './changeRequests'
 export { adminApi } from './admin'
 export type { AdminSystemInfo, BackupManifest } from './admin'
 export { systemApi } from './system'
@@ -47,15 +46,13 @@ export type {
   AuditLog, Reference,
   CsvAnalyzeResult, CsvImportResult,
   FileAnalyzeResult, FileImportResult,
-  PublicForm, SharedGrid,
+  SharedGrid,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportParameter, ReportRenderRequest, ReportRenderResult, ReportTheme,
-  FormFieldConfig, FormRoleThreshold, FormDefinition, FormListItem, FormCreate, FormUpdate,
-  FormMeta, FormRowListResponse,
-  FormWidgetOverride, ApprovalSubmitResponse, FormRowCreateResponse,
-  WorkflowNodeType, WorkflowNodePayload, WorkflowEdgePayload, WorkflowPayload,
-  WorkflowNodeDto, WorkflowEdgeDto, WorkflowDefinition, WorkflowListItem,
-  ApprovalStatus, ApprovalInstance,
+  Issue, IssueStatus, IssueCategory, IssueListItem, IssuePage, IssueComment, IssueEvent, IssueDetail, IssueCreatePayload,
+  ChangeOp, CRStatus, ChangeRequest, ChangeItemDetail, ChangeActionItem, ChangeRequestDetail,
+  ChangeRequestPage, CRCreatePayload, CRMergePayload,
+  ChangeRequestDispatchResponse, ChangeRequestBatchResponse,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
   GovernanceTask, GovernanceTaskKind, GovernanceTaskStatus,
   GovernanceDetectRequest, GovernanceMergeGroup, GovernanceMergeRequest,
@@ -67,4 +64,4 @@ export type {
 } from './types'
 
 // 类型守卫为运行时函数，须以值形式 re-export（export type 会在编译期擦除）
-export { isApprovalSubmitResponse } from './types'
+export { isChangeRequestResponse } from './types'

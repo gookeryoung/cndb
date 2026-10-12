@@ -50,9 +50,9 @@ def _require_member(workspace: Workspace, user: User, db: Session) -> None:
         raise HTTPException(status_code=404, detail="工作区不存在")  # pragma: no cover - 由 _get_workspace_or_404 前置
 
 
-def _require_admin(workspace: Workspace, user: User, db: Session) -> None:
-    if not has_role(user, workspace, WorkspaceRole.ADMIN, db):
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+def _require_owner(workspace: Workspace, user: User, db: Session) -> None:
+    if not has_role(user, workspace, WorkspaceRole.OWNER, db):
+        raise HTTPException(status_code=403, detail="需要所有者权限")
 
 
 # ── 工作区 CRUD ──────────────────────────────────────
@@ -249,9 +249,9 @@ def update_workspace(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> Workspace:
-    """更新工作区（需 ADMIN+ 角色）."""
+    """更新工作区（仅 OWNER）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    _require_admin(ws, current_user, db)
+    _require_owner(ws, current_user, db)
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(ws, key, value)
@@ -308,9 +308,9 @@ def add_member(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> WorkspaceMember:
-    """添加成员（需 ADMIN+，不允许添加为 OWNER）."""
+    """添加成员（仅 OWNER，不允许添加为 OWNER）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    _require_admin(ws, current_user, db)
+    _require_owner(ws, current_user, db)
     if payload.role == WorkspaceRole.OWNER:
         raise HTTPException(status_code=400, detail="不能直接添加所有者")
     user = db.query(User).filter(User.username == payload.username, User.is_active.is_(True)).first()
@@ -339,9 +339,9 @@ def list_member_candidates(
     db: Annotated[Session, Depends(get_db)],
     search: str = Query("", description="按用户名/昵称模糊过滤"),
 ) -> dict[str, list[MemberUserBrief]]:
-    """可添加为成员的候选用户列表（ADMIN+ 可见，排除已是成员的用户）."""
+    """可添加为成员的候选用户列表（OWNER 可见，排除已是成员的用户）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    _require_admin(ws, current_user, db)
+    _require_owner(ws, current_user, db)
     member_ids = [
         mid for (mid,) in db.query(WorkspaceMember.user_id).filter(WorkspaceMember.workspace_id == workspace_id).all()
     ]
@@ -361,11 +361,11 @@ def update_member_role(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> WorkspaceMember:
-    """修改成员角色（需 ADMIN+；保护最后一个 OWNER 不可降级；OWNER 操作 OWNER 需 OWNER 自己）."""
+    """修改成员角色（仅 OWNER；保护最后一个 OWNER 不可降级）."""
     ws = _get_workspace_or_404(workspace_id, db)
     requester_role = get_member_role(current_user, ws, db)
-    if requester_role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+    if requester_role != WorkspaceRole.OWNER:
+        raise HTTPException(status_code=403, detail="需要所有者权限")
     member = (
         db.query(WorkspaceMember)
         .filter(
@@ -376,8 +376,6 @@ def update_member_role(
     )
     if member is None:
         raise HTTPException(status_code=404, detail="成员不存在")  # pragma: no cover
-    if member.role == WorkspaceRole.OWNER and requester_role != WorkspaceRole.OWNER:
-        raise HTTPException(status_code=403, detail="仅所有者可操作所有者")
     # 保护：最后一个 OWNER 不可降级
     if member.role == WorkspaceRole.OWNER and payload.role != WorkspaceRole.OWNER:
         owner_count = (
@@ -404,11 +402,11 @@ def remove_member(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
-    """移除成员（需 ADMIN+；保护最后一个 OWNER 不可移除）."""
+    """移除成员（仅 OWNER；保护最后一个 OWNER 不可移除）."""
     ws = _get_workspace_or_404(workspace_id, db)
     requester_role = get_member_role(current_user, ws, db)
-    if requester_role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+    if requester_role != WorkspaceRole.OWNER:
+        raise HTTPException(status_code=403, detail="需要所有者权限")
     member = (
         db.query(WorkspaceMember)
         .filter(
@@ -419,8 +417,6 @@ def remove_member(
     )
     if member is None:
         raise HTTPException(status_code=404, detail="成员不存在")  # pragma: no cover
-    if member.role == WorkspaceRole.OWNER and requester_role != WorkspaceRole.OWNER:
-        raise HTTPException(status_code=403, detail="仅所有者可操作所有者")
     if member.role == WorkspaceRole.OWNER:
         owner_count = (
             db.query(WorkspaceMember)
@@ -468,7 +464,7 @@ def transfer_owner(
     if target_member.role == WorkspaceRole.OWNER:
         return target_member
 
-    # 把当前 OWNER 降级为 ADMIN
+    # 把当前 OWNER 降级为编辑者
     current_owner = (
         db.query(WorkspaceMember)
         .filter(
@@ -478,7 +474,7 @@ def transfer_owner(
         .first()
     )
     if current_owner is not None:
-        current_owner.role = WorkspaceRole.ADMIN
+        current_owner.role = WorkspaceRole.EDITOR
 
     # 把目标提升为 OWNER
     target_member.role = WorkspaceRole.OWNER
@@ -1025,8 +1021,10 @@ def import_workspace(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> WorkspaceImportResponse:
-    """从 JSON 数据导入表结构、视图和数据行到指定工作区（ADMIN+）."""
-    _require_admin(_get_workspace_or_404(workspace_id, db), current_user, db)
+    """从 JSON 数据导入表结构、视图和数据行到指定工作区（EDITOR+）."""
+    ws = _get_workspace_or_404(workspace_id, db)
+    if not has_role(current_user, ws, WorkspaceRole.EDITOR, db):
+        raise HTTPException(status_code=403, detail="需要编辑者权限")
     data = payload.json_data
     if not isinstance(data, dict) or "tables" not in data:
         raise HTTPException(status_code=400, detail="无效的导入数据格式")

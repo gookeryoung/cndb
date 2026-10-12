@@ -244,17 +244,17 @@ class TestSchemaHeal:
         cols = {c["name"] for c in inspect(legacy_db).get_columns("accounts_user")}
         assert "created_at" in cols
 
-    def test_heal_recreates_dropped_forms_table(self, legacy_db):
-        """forms_formdefinition 整表缺失（升级失败形态）时自愈补建."""
-        import cndb.plugins.forms.models  # noqa: F401 — 确保 metadata 注册
+    def test_heal_recreates_dropped_change_requests_table(self, legacy_db):
+        """change_requests_changerequest 整表缺失（升级失败形态）时自愈补建."""
+        import cndb.plugins.change_requests.models  # noqa: F401 — 确保 metadata 注册
 
         Base.metadata.create_all(legacy_db)
         with legacy_db.begin() as conn:
-            conn.execute(text("DROP TABLE forms_formdefinition"))
+            conn.execute(text("DROP TABLE change_requests_changerequest"))
 
         mig_mod.ensure_db_migrated()
 
-        assert "forms_formdefinition" in inspect(legacy_db).get_table_names()
+        assert "change_requests_changerequest" in inspect(legacy_db).get_table_names()
 
 
 class TestHealNotNullPythonDefault:

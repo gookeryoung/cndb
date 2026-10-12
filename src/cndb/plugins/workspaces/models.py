@@ -42,10 +42,9 @@ BUILTIN_ROLE_CODES: tuple[str, ...] = ("read", "write", "admin")
 
 
 class WorkspaceRole(enum.StrEnum):
-    """工作区成员角色，权限从高到低：owner > admin > editor > viewer."""
+    """工作区成员角色，权限从高到低：owner > editor > viewer."""
 
     OWNER = "owner"
-    ADMIN = "admin"
     EDITOR = "editor"
     VIEWER = "viewer"
 
@@ -57,14 +56,13 @@ class WorkspaceVisibility(enum.StrEnum):
     PUBLIC = "public"
     # 成员可见：仅工作区成员可访问
     MEMBER = "member"
-    # 私有：仅 OWNER/ADMIN 可见，其他成员被排除
+    # 私有：仅 OWNER 可见，其他成员被排除
     PRIVATE = "private"
 
 
 # 角色等级映射：数值越大权限越高
 ROLE_RANK: dict[WorkspaceRole, int] = {
-    WorkspaceRole.OWNER: 3,
-    WorkspaceRole.ADMIN: 2,
+    WorkspaceRole.OWNER: 2,
     WorkspaceRole.EDITOR: 1,
     WorkspaceRole.VIEWER: 0,
 }

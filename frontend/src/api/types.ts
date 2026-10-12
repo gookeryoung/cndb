@@ -127,7 +127,8 @@ export interface WorkspaceUpdate {
   name?: string; description?: string; default_role?: string
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
 }
-export type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer'
+/** 工作区角色 —— 三级（owner/editor/viewer），admin 已在 P1 迁移为 editor */
+export type WorkspaceRole = 'owner' | 'editor' | 'viewer'
 
 /** 成员中的用户简要信息（对齐后端 MemberUserBrief） */
 export interface MemberUserBrief {
@@ -171,8 +172,6 @@ export interface TableSummary {
   member_count?: number
   /** 当前用户在该表的访问级别（owner > write > read > none） */
   my_access?: 'owner' | 'write' | 'read' | 'none'
-  /** 编辑审批开关：绑定的审批流 id（null=关闭，网格/表单编辑免审批直存） */
-  edit_approval_workflow_id?: number | null
 }
 
 /** 表拥有者简要信息 */
@@ -233,8 +232,6 @@ export interface TableDetail {
   workspace?: WorkspaceBrief | null
   /** 后端增强 —— 是否在回收站（软删） */
   trashed?: boolean
-  /** 编辑审批开关：绑定的审批流 id（null=关闭，网格/表单编辑免审批直存） */
-  edit_approval_workflow_id?: number | null
 }
 export interface TableCreate {
   name: string
@@ -248,8 +245,6 @@ export interface TableCreate {
 export interface TableUpdate {
   name?: string
   description?: string
-  /** 编辑审批开关：审批流 id（开启）/ null（关闭）；非空时后端校验审批流存在 */
-  edit_approval_workflow_id?: number | null
 }
 
 // ── 字段从其他表引入 ──
@@ -463,10 +458,6 @@ export interface FileImportResult {
   columns?: Array<{ name: string; field_type: string }>
 }
 
-export interface PublicForm {
-  slug: string; title: string; description?: string
-  fields: Field[]; created_at?: string
-}
 export interface SharedGrid {
   slug: string; title: string; table: TableDetail
   rows: RowResponse[]; total: number
@@ -650,7 +641,7 @@ export interface TablePermission {
   edit_schema_role?: string
   /** 数据治理（合并/清洗）最低角色阈值；空串表示使用默认 ADMIN */
   manage_data_role?: string
-  /** 按角色分桶的隐藏字段: { "admin": ["field_name", ...], "editor": [...] } */
+  /** 按角色分桶的隐藏字段: { "editor": ["field_name", ...], "viewer": [...] } */
   hidden_fields?: Record<string, string[]> | null
   row_filters?: Record<string, unknown> | null
 }
@@ -819,229 +810,141 @@ export interface ApiConfigImportResult {
   stopped_on_error: boolean
 }
 
-// ── 表单定制与权限控制（forms 插件） ────────────────
+// ── 问题清单（issues 插件） ─────────────────────────
 
-/** 表单级控件覆盖：null/缺省 = 按 field_type 默认映射渲染（与后端 ALLOWED_FORM_WIDGETS 对齐） */
-export type FormWidgetOverride = 'select' | 'radio' | 'rate'
+export type IssueStatus = 'open' | 'closed'
 
-/** 表单内单个字段的展示与编辑配置（对齐后端 FormFieldConfig） */
-export interface FormFieldConfig {
-  field_name: string
-  label?: string | null
-  /** null = 跟随字段定义 */
-  required?: boolean | null
-  /** false = 编辑态只读（新建时仍可写入默认值） */
-  editable: boolean
-  visible: boolean
-  default_value?: unknown
-  help_text?: string | null
-  /** 控件覆盖（须与字段类型兼容，后端按矩阵校验） */
-  widget?: FormWidgetOverride | null
-  /** 控件覆盖参数（如 select/radio 的 {"options": [...]}） */
-  widget_config?: Record<string, unknown> | null
-}
+export type IssueCategory = 'data_error' | 'suggestion' | 'question' | 'other'
 
-/** 表单权限阈值：'' = 未配置（回退表级判定），否则为工作区角色名 */
-export type FormRoleThreshold = WorkspaceRole | ''
-
-/** 表单定义详情（对齐后端 FormResponse） */
-export interface FormDefinition {
+/** 问题详情/创建响应（对齐后端 get_issue_detail） */
+export interface Issue {
   id: ID
   workspace_id: ID
   table_id: ID
-  name: string
+  title: string
   description: string
-  field_config: FormFieldConfig[]
-  layout: Record<string, unknown>
-  use_role: FormRoleThreshold
-  edit_role: FormRoleThreshold
-  delete_role: FormRoleThreshold
-  /** 绑定的工作区审批流；null/缺省 = 提交直接落库 */
-  approval_workflow_id?: ID | null
-  order: number
-  trashed: boolean
+  category: IssueCategory
+  status: IssueStatus
+  created_by_id: ID | null
   created_at?: string
   updated_at?: string
 }
 
-/** 表单列表项（附所属表名） */
-export interface FormListItem {
+/** 问题列表项（附评论数） */
+export interface IssueListItem extends Issue {
+  comment_count: number
+}
+
+export interface IssuePage { items: IssueListItem[]; total: number }
+
+export interface IssueComment {
   id: ID
-  table_id: ID
-  table_name: string
-  name: string
-  description: string
-  use_role: FormRoleThreshold
-  edit_role: FormRoleThreshold
-  delete_role: FormRoleThreshold
-  approval_workflow_id?: ID | null
-  order: number
-  updated_at?: string
+  issue_id: ID
+  content: string
+  created_by_id: ID | null
+  created_at?: string
 }
 
-export interface FormCreate {
-  table_id: ID
-  name: string
-  description?: string
-  field_config?: FormFieldConfig[]
-  layout?: Record<string, unknown>
-  use_role?: FormRoleThreshold
-  edit_role?: FormRoleThreshold
-  delete_role?: FormRoleThreshold
-  approval_workflow_id?: ID | null
-  order?: number
-}
-
-export interface FormUpdate {
-  name?: string
-  description?: string
-  field_config?: FormFieldConfig[]
-  layout?: Record<string, unknown>
-  use_role?: FormRoleThreshold
-  edit_role?: FormRoleThreshold
-  delete_role?: FormRoleThreshold
-  approval_workflow_id?: ID | null
-  order?: number
-}
-
-/** 表单运行时元数据（对齐后端 FormMetaResponse） */
-export interface FormMeta {
+/** 问题状态流水事件（谁在何时关闭/重开） */
+export interface IssueEvent {
   id: ID
-  table_id: ID
-  table_name: string
-  name: string
-  description: string
-  layout: Record<string, unknown>
-  /** 运行时解析后的字段配置（已过滤软删/表级隐藏字段；附带 field_type/config 供控件选择） */
-  fields: Array<FormFieldConfig & { field_type?: FieldType; config?: Record<string, unknown> }>
-  /** 配置引用但已失效的字段名清单 */
-  invalid_fields: string[]
-  can_submit: boolean
-  can_edit: boolean
-  can_delete: boolean
-  /** 表单绑定的审批流；null = 提交直接落库 */
-  approval_workflow_id?: ID | null
+  issue_id: ID
+  action: 'created' | 'closed' | 'reopened'
+  actor_id: ID | null
+  created_at?: string
 }
 
-/** 表单行列表响应 */
-export interface FormRowListResponse {
-  rows: RowResponse[]
-  total: number
-  form_id: ID
+/** 问题详情（本体 + 评论 + 事件流） */
+export interface IssueDetail extends Issue {
+  comments: IssueComment[]
+  events: IssueEvent[]
 }
 
-// ── 审批流（workflows 插件） ─────────────────────────
-
-/** 审批流节点类型：线性链 start → approval* → end */
-export type WorkflowNodeType = 'start' | 'approval' | 'end'
-
-/** 保存审批流的节点载荷（key 为客户端临时键，edges 以其引用） */
-export interface WorkflowNodePayload {
-  key: string
-  name: string
-  node_type: WorkflowNodeType
-  approver_role?: string
-}
-
-/** 保存审批流的边载荷 */
-export interface WorkflowEdgePayload {
-  source: string
-  target: string
-}
-
-/** 创建/更新审批流（整图覆盖语义） */
-export interface WorkflowPayload {
-  name: string
+export interface IssueCreatePayload {
+  title: string
   description?: string
-  order?: number
-  nodes: WorkflowNodePayload[]
-  edges: WorkflowEdgePayload[]
+  category?: IssueCategory
 }
 
-/** 审批流详情节点（后端返回节点 id 与解析后的 config） */
-export interface WorkflowNodeDto {
-  id: ID
-  name: string
-  node_type: WorkflowNodeType
-  approver_role: string
-  pos_x: number
-  pos_y: number
-}
+// ── 修改申请（change_requests 插件） ────────────────
 
-/** 审批流详情边（source/target 为节点 id） */
-export interface WorkflowEdgeDto {
-  source: ID
-  target: ID
-}
+export type ChangeOp = 'create' | 'update' | 'delete'
 
-/** 审批流详情（含整图） */
-export interface WorkflowDefinition {
+export type CRStatus = 'open' | 'merged' | 'closed'
+
+/** 修改申请（对齐后端 serialize_request） */
+export interface ChangeRequest {
   id: ID
   workspace_id: ID
-  name: string
+  table_id: ID
+  title: string
   description: string
-  order: number
-  nodes: WorkflowNodeDto[]
-  edges: WorkflowEdgeDto[]
+  status: CRStatus
+  /** 基准过期标记：其他申请合并了相同行后置 true，需 update-base 刷新 */
+  stale: boolean
+  submitted_by_id: ID | null
+  reviewed_by_id: ID | null
+  reviewed_at?: string | null
+  review_comment?: string | null
   created_at?: string
   updated_at?: string
+  /** 与其他 open 申请共享的行数（去重，仅列表响应附带） */
+  conflicts_count?: number
 }
 
-/** 审批流列表项 */
-export interface WorkflowListItem {
+/** 申请内单条变更项（详情响应含字段级 diff 与冲突标记） */
+export interface ChangeItemDetail {
   id: ID
-  name: string
-  description: string
-  order: number
-  updated_at?: string
-}
-
-/** 审批实例状态 */
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
-
-/** 审批实例（对齐后端 ApprovalInstanceResponse） */
-export interface ApprovalInstance {
-  id: ID
-  workspace_id: ID
-  workflow_id: ID
-  workflow_name: string
-  /** 变更单（网格提交）无表单来源，form_id 为 null */
-  form_id?: ID | null
-  form_name: string
-  table_id: ID
-  status: ApprovalStatus
-  current_node_id?: ID | null
-  current_node_name: string
-  current_approver_role: string
-  submitted_by?: ID | null
-  submitted_by_name: string
+  op: ChangeOp
+  row_id: ID | null
+  /** 提交时目标行涉及字段的原值快照（冲突检测基准） */
+  base_values: Record<string, unknown>
+  /** 新值增量 */
   values: Record<string, unknown>
-  /** 变更单操作类型（create/update/delete）；null=传统表单提交语义 */
-  op?: string | null
-  /** update/delete 变更单的目标行 id */
-  row_id?: ID | null
-  record_id?: ID | null
+  /** 当前行实时值（delete 项为整行快照） */
+  current_values: Record<string, unknown>
+  /** 发生基准漂移的字段名清单 */
+  field_conflicts: string[]
+}
+
+/** 申请动作流水（评论与处理动作统一记录） */
+export interface ChangeActionItem {
+  id: ID
+  action: 'comment' | 'merge' | 'close' | 'reopen' | 'update_base'
+  comment: string | null
+  acted_by_id: ID | null
   created_at?: string
-  updated_at?: string
 }
 
-/** 表单提交 / 网格变更单提交的审批响应：不落库，进入审批（后端 202 载荷） */
-export interface ApprovalSubmitResponse {
-  approval: {
-    id: ID
-    workflow_id: ID
-    workflow_name: string
-    status: ApprovalStatus
-    current_approver_role: string
-    /** 变更单（网格提交）附加：操作类型与目标行 */
-    op?: string
-    row_id?: ID | null
-  }
+export interface ChangeRequestDetail extends ChangeRequest {
+  items: ChangeItemDetail[]
+  actions: ChangeActionItem[]
 }
 
-/** 经表单新建行的响应：直接落库（RowResponse）或进入审批（ApprovalSubmitResponse） */
-export type FormRowCreateResponse = RowResponse | ApprovalSubmitResponse
+export interface ChangeRequestPage { items: ChangeRequest[]; total: number }
 
-export function isApprovalSubmitResponse(r: FormRowCreateResponse | unknown): r is ApprovalSubmitResponse {
-  return typeof r === 'object' && r !== null && 'approval' in r
+export interface CRCreatePayload {
+  title?: string
+  description?: string
+  items: Array<{ op: ChangeOp; row_id?: ID; values?: Record<string, unknown> }>
+}
+
+export interface CRMergePayload {
+  items: Array<{ item_id: ID; action: 'apply' | 'skip' }>
+  comment?: string
+}
+
+/** 写路径双轨分派的 202 响应：未落库，转为修改申请（单 item） */
+export interface ChangeRequestDispatchResponse {
+  change_request: ChangeRequest
+}
+
+/** 经表单/批量删除提交的多 item 申请响应（后端 202 载荷） */
+export interface ChangeRequestBatchResponse extends ChangeRequestDispatchResponse {
+  created_items?: unknown[]
+}
+
+/** 判定写响应是否为 202 修改申请载荷（而非直存 RowResponse） */
+export function isChangeRequestResponse(r: RowResponse | ChangeRequestBatchResponse | unknown): r is ChangeRequestBatchResponse {
+  return typeof r === 'object' && r !== null && 'change_request' in r
 }
