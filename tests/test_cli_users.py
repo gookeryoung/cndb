@@ -155,6 +155,52 @@ class TestCmdDelete:
         assert result["deleted_username"] == "plain"
         assert result["deleted_workspace_count"] == 0
 
+    def test_delete_user_cleans_member_rows(self, cli_db):
+        """删除非 OWNER 用户：工作区成员/表成员行被显式清理，不残留孤儿行."""
+        from cndb.cli.users import _get_session, cmd_create, cmd_delete
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.tables.models import DataTable, TableMember
+        from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
+
+        cmd_create(
+            _ns(username="ws_owner", password="pw1234", email=None, nickname=None, role="user", is_superuser=False)
+        )
+        cmd_create(
+            _ns(username="plain_member", password="pw1234", email=None, nickname=None, role="user", is_superuser=False)
+        )
+
+        db = _get_session()
+        try:
+            owner = db.query(User).filter(User.username == "ws_owner").first()
+            member = db.query(User).filter(User.username == "plain_member").first()
+            ws = Workspace(name="ws_member_cleanup")
+            db.add(ws)
+            db.flush()
+            dt = DataTable(workspace_id=ws.id, owner_id=owner.id, name="成员清理表")
+            dt.ensure_db_name()
+            db.add(dt)
+            db.flush()
+            db.add(WorkspaceMember(workspace_id=ws.id, user_id=owner.id, role=WorkspaceRole.OWNER))
+            db.add(WorkspaceMember(workspace_id=ws.id, user_id=member.id, role=WorkspaceRole.VIEWER))
+            db.add(TableMember(table_id=dt.id, user_id=member.id, role="read"))
+            db.commit()
+            owner_id, ws_id, member_id, table_id = owner.id, ws.id, member.id, dt.id
+        finally:
+            db.close()
+
+        result = cmd_delete(_ns(target="plain_member", cascade=False, yes=False, check_only=False))
+        assert result["deleted_workspace_member_rows"] == 1
+
+        db = _get_session()
+        try:
+            rows = db.query(WorkspaceMember).filter(WorkspaceMember.workspace_id == ws_id).all()
+            assert len(rows) == 1 and rows[0].user_id == owner_id
+            assert db.query(WorkspaceMember).filter(WorkspaceMember.user_id == member_id).count() == 0
+            assert db.query(TableMember).filter(TableMember.user_id == member_id).count() == 0
+            assert db.query(TableMember).filter(TableMember.table_id == table_id).count() == 0
+        finally:
+            db.close()
+
     def test_delete_owned_workspace_without_cascade_rejects(self, cli_db):
         from cndb.cli.users import _get_session, cmd_create, cmd_delete
 

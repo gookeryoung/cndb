@@ -1,6 +1,7 @@
 """workspaces 插件集成测试."""
 
 import pytest
+from sqlalchemy import text
 
 from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
@@ -1346,3 +1347,71 @@ class TestWorkspaceOwnerTransfer:
         )
         assert r.status_code == 200
         assert r.json()["role"] == "owner"
+
+
+# ── 成员数量一致性（删除用户后计数与实际不符的回归防护） ──
+
+
+class TestMemberCountConsistency:
+    def test_delete_user_cascades_workspace_member(self, db, owner_user, member_user):
+        """外键约束开启时删除用户：成员行级联清理，不留孤儿行."""
+        ws = Workspace(name="级联清理WS", created_by_id=owner_user.id)
+        db.add(ws)
+        db.flush()
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=owner_user.id, role=WorkspaceRole.OWNER))
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=member_user.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+
+        was_fk_on = bool(db.execute(text("PRAGMA foreign_keys")).scalar())
+        db.execute(text("PRAGMA foreign_keys=ON"))
+        try:
+            db.delete(member_user)
+            db.commit()
+        finally:
+            # pragma 为连接级且测试库是共享单连接，必须还原避免影响后续测试
+            db.execute(text(f"PRAGMA foreign_keys={'ON' if was_fk_on else 'OFF'}"))
+
+        rows = db.query(WorkspaceMember).filter(WorkspaceMember.workspace_id == ws.id).all()
+        assert len(rows) == 1, f"删除用户后成员行应只剩 owner 一行，实际 {len(rows)} 行"
+        assert rows[0].user_id == owner_user.id
+
+    def test_member_count_excludes_orphan_rows(self, client, db, owner_user, member_user):
+        """历史脏数据（用户已删除但成员行残留）不计入 member_count，且与成员列表一致."""
+        token = _login_token(client, "owner", "passw0rd")
+        h = _headers(token)
+        ws_id = client.post("/api/v1/workspaces", json={"name": "脏数据WS"}, headers=h).json()["id"]
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/members",
+            json={"username": "member", "role": "viewer"},
+            headers=h,
+        )
+        assert r.status_code == 201
+
+        # 模拟历史库孤儿行：临时关闭 FK 后直插指向不存在用户的成员行
+        was_fk_on = bool(db.execute(text("PRAGMA foreign_keys")).scalar())
+        db.execute(text("PRAGMA foreign_keys=OFF"))
+        db.execute(
+            text(
+                "INSERT INTO workspaces_workspacemember (workspace_id, user_id, role, pinned) "
+                "VALUES (:wid, 999999, 'viewer', 0)"
+            ),
+            {"wid": ws_id},
+        )
+        db.commit()
+
+        try:
+            detail = client.get(f"/api/v1/workspaces/{ws_id}", headers=h)
+            assert detail.status_code == 200
+            assert detail.json()["member_count"] == 2, "孤儿成员行不应计入成员数量"
+
+            members = client.get(f"/api/v1/workspaces/{ws_id}/members", headers=h)
+            assert members.status_code == 200
+            items = members.json()
+            assert len(items) == 2, "成员列表不应包含孤儿成员行"
+            assert all(m["user"]["id"] != 999999 for m in items)
+
+            ws_list = client.get("/api/v1/workspaces", headers=h)
+            counts = {w["id"]: w["member_count"] for w in ws_list.json()}
+            assert counts[ws_id] == 2, "列表统计口径应与详情/成员列表一致"
+        finally:
+            db.execute(text(f"PRAGMA foreign_keys={'ON' if was_fk_on else 'OFF'}"))
