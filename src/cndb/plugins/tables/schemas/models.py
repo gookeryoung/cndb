@@ -34,6 +34,8 @@ class TableUpdate(BaseModel):
     description: str | None = None
     order: int | None = None
     trashed: bool | None = None
+    # 表级「编辑需审批」开关：绑定的审批流 id；NULL = 关闭
+    edit_approval_workflow_id: int | None = None
 
 
 class TableOwnerBrief(BaseModel):
@@ -54,6 +56,8 @@ class TableResponse(BaseModel):
     order: int
     trashed: bool
     trashed_at: datetime | None = None
+    # 表级「编辑需审批」开关（NULL = 关闭）
+    edit_approval_workflow_id: int | None = None
     created_at: datetime
     updated_at: datetime
     # 可选统计字段 —— list_tables / get_table 按需填充

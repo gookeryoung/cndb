@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -28,6 +29,8 @@ from cndb.plugins.tables.services.core.records import (
     trash_row,
     update_row,
 )
+from cndb.plugins.workflows.models import CHANGE_OP_CREATE, CHANGE_OP_DELETE, CHANGE_OP_UPDATE
+from cndb.plugins.workflows.services.change_dispatch import dispatch_edit_approval
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/records", tags=["records"])
@@ -77,8 +80,17 @@ def create_record(
     payload: RecordCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    response: Response,
 ) -> dict[str, object]:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+
+    # 编辑审批开关：开启时提交 create 变更单（202），不直接落库
+    approval = dispatch_edit_approval(
+        db, dt, current_user, op=CHANGE_OP_CREATE, row_id=None, values=dict(payload.values)
+    )
+    if approval is not None:
+        response.status_code = status.HTTP_202_ACCEPTED
+        return approval
 
     try:
         row = create_row(db.get_bind(), dt, payload.values, db=db)
@@ -186,8 +198,17 @@ def update_record(
     payload: RecordUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    response: Response,
 ) -> dict[str, object]:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+
+    # 编辑审批开关：开启时提交 update 变更单（202），原值不变
+    approval = dispatch_edit_approval(
+        db, dt, current_user, op=CHANGE_OP_UPDATE, row_id=record_id, values=dict(payload.values)
+    )
+    if approval is not None:
+        response.status_code = status.HTTP_202_ACCEPTED
+        return approval
 
     try:
         row = update_row(db.get_bind(), dt, record_id, payload.values, db=db)
@@ -207,8 +228,14 @@ def delete_record(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     soft: bool = Query(default=True, description="软删除 vs 硬删除"),
-) -> None:
+) -> Response:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+
+    # 编辑审批开关：开启时提交 delete 变更单（202），审批通过后软删进回收站；
+    # 开关开启期间不提供绕过审批的硬删通道
+    approval = dispatch_edit_approval(db, dt, current_user, op=CHANGE_OP_DELETE, row_id=record_id, values={})
+    if approval is not None:
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=approval)
 
     if soft:
         ok = trash_row(db.get_bind(), dt, record_id, db=db)
@@ -217,6 +244,7 @@ def delete_record(
 
     if not ok:
         raise HTTPException(status_code=404, detail="行不存在")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{record_id}/restore", status_code=status.HTTP_200_OK)

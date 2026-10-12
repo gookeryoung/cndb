@@ -6,7 +6,7 @@ import { SaveOutlined, CloseOutlined, InboxOutlined, DeleteOutlined, LockOutline
 import dayjs, { Dayjs } from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
 import type { AttachmentFile, Field, RowResponse } from '@/api'
-import { recordApi, fileApi, fieldApi } from '@/api'
+import { recordApi, fileApi, fieldApi, isApprovalSubmitResponse } from '@/api'
 import { getTagColorName, resolveTagColor } from '@/utils/tagColors'
 import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 import { pickLinkLabelFieldName, buildLinkRowLabel } from './fieldValueFormat'
@@ -32,6 +32,8 @@ interface Props {
   showActionButtons?: boolean
   /** 受控模式下的只读字段标记 —— 自动填充锁定开启时，预填字段不允许修改 */
   readOnly?: boolean
+  /** 在途变更单锁定：该行有待审批的变更（pending），展示原值且双击不进入编辑 */
+  locked?: boolean
 }
 
 /**
@@ -39,7 +41,7 @@ interface Props {
  * - 传统模式（无 editing prop）：双击切到编辑态，回车/失焦通过 onSave 保存单个字段。
  * - 受控模式（editing 为布尔值）：由父级把控编辑态与草稿值，value 即当前草稿。
  */
-function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: controlledEditing, onDraftChange, onDraftCommit, onDraftCancel, showActionButtons, readOnly }: Props) {
+function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: controlledEditing, onDraftChange, onDraftCommit, onDraftCancel, showActionButtons, readOnly, locked }: Props) {
   const { message } = AntApp.useApp()
   // 稳定引用版回调：父级传 onCellSave 时在内部组合 rowId，避免每次渲染新建闭包破坏 memo
   const effectiveOnSave = useMemo(
@@ -90,9 +92,10 @@ function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: contr
     setSaving(true)
     try {
       const finalize = finalizeValueFromEdit(draft, field)
-      await effectiveOnSave(field.name, finalize)
+      const res = await effectiveOnSave(field.name, finalize)
       setEditing(false)
-      message.success('已保存')
+      // 编辑审批开启时后端返回 202 变更单载荷：值未落库，待审批通过后生效
+      message.success(isApprovalSubmitResponse(res) ? '已提交审批，通过后生效' : '已保存')
     } catch (err) {
       message.error(err instanceof Error ? err.message : '保存失败')
     } finally {
@@ -108,6 +111,17 @@ function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: contr
   // 只读字段直接展示
   if (isReadonlyField(field)) {
     return <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
+  }
+
+  // 在途变更单锁定（AC-6）：待审行展示原值，双击不进入编辑
+  if (locked) {
+    return (
+      <Tooltip title="该行有变更单待审批，通过后可继续编辑">
+        <div style={{ padding: '2px 4px', minHeight: 22 }} data-testid="cell-locked">
+          <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
+        </div>
+      </Tooltip>
+    )
   }
 
   // 受控模式：编辑态与草稿值由父级决定
