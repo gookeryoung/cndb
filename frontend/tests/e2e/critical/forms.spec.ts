@@ -54,12 +54,14 @@ test.describe("表单模块", () => {
 
     const tabs = page.getByRole("tablist").first().getByRole("tab")
     await expect(tabs.filter({ hasText: "数据资产" })).toBeVisible()
-    await expect(tabs.filter({ hasText: /^表单/ })).toBeVisible()
+    // 表单 tab 文本含徽标（如"表单2 1 走审批"），用子串匹配而非 ^ 锚点，
+    // 避免 tab 标签内图标/空白导致的行首不匹配
+    await expect(tabs.filter({ hasText: "表单" })).toBeVisible()
     await expect(tabs.filter({ hasText: /报表/ })).toBeVisible()
 
     const names = (await tabs.allTextContents()).map((t) => t.trim())
     const idxAssets = names.findIndex((n) => n.includes("数据资产"))
-    const idxForms = names.findIndex((n) => n.startsWith("表单"))
+    const idxForms = names.findIndex((n) => n.includes("表单"))
     const idxReports = names.findIndex((n) => n.includes("报表"))
     expect(idxAssets).toBeLessThan(idxForms)
     expect(idxForms).toBeLessThan(idxReports)
@@ -71,7 +73,9 @@ test.describe("表单模块", () => {
     expect(formId).toBeGreaterThan(0)
 
     await page.goto(`/w/${WID}/forms`)
-    await expect(page.locator("h3", { hasText: /^表单/ })).toBeVisible()
+    // FormsPage 为 lazy chunk，goto 返回时可能仍在 Suspense fallback，
+    // 等待 h3 渲染（放宽到 15s 覆盖慢环境下的 chunk 下载 + 解析）
+    await expect(page.locator("h3", { hasText: "表单" })).toBeVisible({ timeout: 15000 })
     await expect(page.getByText("员工信息登记")).toBeVisible()
     // 收敛到「员工信息登记」所在行：列表同时有 seed 的「新员工入职登记」（所属表同为
     // 员工表，且其描述含「员工表」），裸 cell/文本定位会 strict mode violation
@@ -85,8 +89,8 @@ test.describe("表单模块", () => {
     const fid = await ensureForm(request)
 
     await page.goto(`/w/${WID}/forms/${fid}`)
-    // meta 渲染：标题 + 所属表 tag
-    await expect(page.locator("h3", { hasText: "员工信息登记" })).toBeVisible()
+    // FormRunnerPage 为 lazy chunk，放宽 h3 等待超时
+    await expect(page.locator("h3", { hasText: "员工信息登记" })).toBeVisible({ timeout: 15000 })
     // 主内容区所属表 tag：侧边栏同名文本并存，裸 getByText 会 strict mode violation
     await expect(page.getByRole("main").getByText("员工表", { exact: true })).toBeVisible()
 

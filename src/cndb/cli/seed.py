@@ -331,9 +331,14 @@ def _seed_datasets(db: Any, engine: Any, user: Any) -> tuple[int, dict[str, Any]
                 print(f"[seed-CSV] 建表失败: {ws_display}/{table_name}: {exc}")
 
         # ── XLSX 建表（数据治理/质量样例多以 xlsx 组织） ──
+        # 跳过"示例报告"类 xlsx：这类文件是报表导出样例（如电商销售月报-示例报告.xlsx），
+        # 不是数据表，导入后会污染表列表并破坏 e2e 对表数量的稳定假设。
 
         xlsx_files = sorted(folder.glob("*.xlsx"))
         for xlsx_path in xlsx_files:
+            if "示例报告" in xlsx_path.stem:
+                print(f"[seed-XLSX] 跳过示例报告文件: {xlsx_path.name}")
+                continue
             table_name = xlsx_path.stem
             dt, _ids = _seed_xlsx_table(engine, db, ws.id, table_name, xlsx_path, owner_id=user.id)
             if dt is not None:
