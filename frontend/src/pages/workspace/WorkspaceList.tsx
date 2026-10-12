@@ -1,7 +1,7 @@
 /** 工作区列表页 — 卡片式布局，支持创建/设置/导入/导出/置顶/成员管理/搜索. */
 
 import { useMemo, useState } from 'react'
-import { Card, Row, Col, Typography, Button, Modal, Form, Input, Select, Switch, Tag, Empty, App as AntApp, Upload, Alert, Progress } from 'antd'
+import { Card, Row, Col, Typography, Button, Modal, Form, Input, Select, Switch, Tag, Empty, App as AntApp, Upload, Alert, Progress, Skeleton } from 'antd'
 import {
   PlusOutlined, PushpinOutlined, TeamOutlined, TableOutlined,
   DownloadOutlined, SettingOutlined, SearchOutlined,
@@ -146,12 +146,27 @@ export default function WorkspaceList() {
       </div>
 
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: 48 }}>加载中...</div>
+        /* 骨架屏占位 —— sr-only 文本保留给屏幕阅读器与既有测试断言 */
+        <div data-testid="workspace-list-skeleton" role="status">
+          <span style={{
+            position: 'absolute', width: 1, height: 1, overflow: 'hidden',
+            clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap',
+          }}>加载中...</span>
+          <Row gutter={[16, 16]}>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Col xs={24} sm={12} md={8} lg={6} key={i}>
+                <Card styles={{ body: { padding: 16 } }}>
+                  <Skeleton active title={false} paragraph={{ rows: 3 }} />
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </div>
       ) : filteredWorkspaces.length === 0 ? (
         <Empty description={search ? `没有匹配「${search}」的工作区` : '还没有工作区，创建一个吧！'} />
       ) : (
         <Row gutter={[16, 16]}>
-          {filteredWorkspaces.map(w => {
+          {filteredWorkspaces.map((w, i) => {
             const vis = VISIBILITY_META[(w.visibility ?? 'member') as WorkspaceVisibility]
               ?? VISIBILITY_META.member
             const role = w.current_user_role ?? null
@@ -159,6 +174,8 @@ export default function WorkspaceList() {
               <Col xs={24} sm={12} md={8} lg={6} key={w.id}>
                 <Card
                   hoverable
+                  className="cn-ws-card"
+                  style={{ animationDelay: `${Math.min(i, 7) * 40}ms` }}
                   data-testid={`workspace-card-${w.id}`}
                   styles={{ body: { padding: 16 } }}
                   actions={[

@@ -208,6 +208,8 @@ body.theme-modern {
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
   --cn-bg-success-subtle: #f6ffed;
+  /* 投影色 RGB 三元组：浅色主题冷灰投影，供 rgb(var()/alpha) 派生 */
+  --cn-shadow-color: 15 23 42;
 }
 
 body.theme-midnight,
@@ -230,6 +232,8 @@ body.theme-dark {
   --cn-bg-danger-subtle: #3b1313;
   --cn-bg-warning-subtle: #3b2e12;
   --cn-bg-success-subtle: #122b13;
+  /* 深色主题用纯黑投影：浅色投影会在深底上产生错误发光 */
+  --cn-shadow-color: 0 0 0;
 }
 
 body.theme-github-light {
@@ -424,6 +428,171 @@ body.theme-oled {
   padding-inline: 6px;
   font-size: 12px;
   line-height: 18px;
+}
+
+/* ─────────────── 应用外壳视觉（MainLayout） ───────────────
+ * 顶栏 / 表导航 / 工作区 Tabs 的质感升级；
+ * 全部颜色由 var(--cn-*) + color-mix 派生，10 套主题（含深色）自动适配。 */
+
+/* 顶栏：容器底色上叠品牌色微渐变 + 柔和投影，替代纯平面单边框。
+ * 复合选择器抬升优先级，压过 antd Layout Header 运行时注入的单类规则。 */
+.ant-layout-header.cn-app-header {
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--cn-bg-container) 97%, var(--cn-brand-color) 3%),
+      var(--cn-bg-container));
+  border-bottom: 1px solid var(--cn-border);
+  box-shadow:
+    0 1px 2px rgb(var(--cn-shadow-color) / 0.04),
+    0 2px 10px rgb(var(--cn-shadow-color) / 0.03);
+}
+
+/* 表导航（桌面 Sider 与移动端抽屉共用 cn-table-nav）：
+ * 菜单项过渡 + 激活项左侧品牌色圆角指示条 */
+.cn-table-nav .ant-menu-item {
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.cn-table-nav .ant-menu-item-selected {
+  position: relative;
+}
+
+.cn-table-nav .ant-menu-item-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 0 3px 3px 0;
+  background: var(--cn-brand-color);
+}
+
+/* 工作区分页 Tabs：品牌色圆角墨条 + 悬停过渡 */
+.cn-ws-tabs .ant-tabs-ink-bar {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--cn-brand-color);
+}
+
+.cn-ws-tabs .ant-tabs-tab {
+  transition: color 0.18s ease;
+  padding-top: 10px;
+  padding-bottom: 9px;
+}
+
+.cn-ws-tabs .ant-tabs-tab:hover .ant-tabs-tab-btn {
+  color: var(--cn-brand-color);
+}
+
+/* 全局主按钮：品牌色柔和投影，强化主操作层级（危险主按钮不套用） */
+button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous) {
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--cn-brand-color) 32%, transparent);
+}
+
+button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--cn-brand-color) 24%, transparent);
+}
+
+/* 尊重系统减少动态偏好：外壳微过渡关闭 */
+@media (prefers-reduced-motion: reduce) {
+
+  .cn-table-nav .ant-menu-item,
+  .cn-ws-tabs .ant-tabs-tab {
+    transition: none;
+  }
+}
+
+/* ─────────────── Grid 工作台视觉（GridPage） ───────────────
+ * 工具栏渐变头部 / 记录数中性胶囊 / 表格卡片化 / 聚合条品牌浸染。 */
+
+/* 工具栏：延续顶栏的品牌色微渐变，与视图栏叠成工作台头部 */
+.cn-grid-toolbar {
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--cn-bg-container) 97%, var(--cn-brand-color) 3%),
+      var(--cn-bg-container));
+}
+
+/* 记录数徽标：中性胶囊替代高饱和蓝 Tag，数字等宽对齐不跳动 */
+.cn-record-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  color: var(--cn-text-secondary);
+  background: var(--cn-bg-subtle);
+  border: 1px solid var(--cn-border);
+  white-space: nowrap;
+}
+
+/* 表格卡片：圆角描边容器 + 柔和投影，让数据面从页面底色上浮 */
+.cn-grid-card {
+  border: 1px solid var(--cn-border);
+  border-radius: 10px;
+  background: var(--cn-bg-container);
+  box-shadow:
+    0 1px 2px rgb(var(--cn-shadow-color) / 0.04),
+    0 4px 16px rgb(var(--cn-shadow-color) / 0.04);
+  overflow: hidden;
+}
+
+/* 聚合条：品牌色浸染的选中上下文条 + 入场上浮 */
+.cn-agg-bar {
+  background: linear-gradient(90deg,
+      color-mix(in srgb, var(--cn-brand-color) 7%, var(--cn-bg-container)),
+      var(--cn-bg-container));
+  border-top: 1px solid color-mix(in srgb, var(--cn-brand-color) 26%, var(--cn-border));
+  animation: cn-rise-in 0.22s ease-out both;
+}
+
+/* 聚合条选中计数：品牌色填充胶囊 */
+.cn-agg-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--cn-brand-color);
+  background: color-mix(in srgb, var(--cn-brand-color) 12%, transparent);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cn-agg-bar {
+    animation: cn-page-enter 0.18s ease-out both;
+  }
+}
+
+/* ─────────────── 列表卡片视觉（WorkspaceList / TablesList） ─────────────── */
+
+/* 工作区卡片：入场交错上浮（delay 由内联 style 注入，首屏 8 张内级联）；
+ * hover 上浮 + 品牌色描边 + 加深投影，复合选择器压过 antd hoverable 默认 */
+.ant-card.cn-ws-card {
+  animation: cn-rise-in 0.3s ease-out both;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.ant-card.cn-ws-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--cn-brand-color) 36%, var(--cn-border));
+  box-shadow: 0 8px 24px rgb(var(--cn-shadow-color) / 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .ant-card.cn-ws-card {
+    animation: cn-page-enter 0.15s ease-out both;
+    transition: none;
+  }
+
+  .ant-card.cn-ws-card:hover {
+    transform: none;
+  }
 }
 
 /* 非虚拟模式兜底：标准 tr > td */
@@ -968,6 +1137,21 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 /* 表格表头垂直居中修复 */
 .cn-table .ant-table-thead>tr>th {
   vertical-align: middle;
+}
+
+/* 数据行 hover 底色渐变过渡（含虚拟滚动 holder 内的 cell），
+ * 让大面积数据区的交互反馈更顺滑 */
+.cn-table .ant-table-tbody>tr>td,
+.cn-table .ant-table-tbody-virtual-holder .ant-table-cell {
+  transition: background-color 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .cn-table .ant-table-tbody>tr>td,
+  .cn-table .ant-table-tbody-virtual-holder .ant-table-cell {
+    transition: none;
+  }
 }
 
 /* 勾选列宽度由 rowSelection.columnWidth 统一控制，不再用 CSS 硬编码
@@ -1994,13 +2178,30 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   pointer-events: none;
 }
 
-/* 认证卡片：品牌色柔和投影 + 入场上浮动画 */
+/* 认证卡片：品牌色柔和投影 + 入场上浮动画 + 品牌色顶部饰线 */
 .auth-card {
+  position: relative;
   border-radius: 12px;
   box-shadow:
     0 16px 48px color-mix(in srgb, var(--cn-text-primary) 12%, transparent),
     0 2px 8px color-mix(in srgb, var(--cn-text-primary) 6%, transparent);
   animation: cn-rise-in 0.32s ease-out both;
+}
+
+/* 顶部品牌饰线：两端淡出的渐变发丝线，形成品牌签名感 */
+.auth-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 24px;
+  right: 24px;
+  height: 3px;
+  border-radius: 0 0 999px 999px;
+  background: linear-gradient(90deg,
+      transparent,
+      color-mix(in srgb, var(--cn-brand-color) 85%, transparent),
+      transparent);
+  pointer-events: none;
 }
 
 /* 品牌标识座：品牌色渐变圆角方块（认证页大号 / 顶栏小号复用） */
