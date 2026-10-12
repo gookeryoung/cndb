@@ -88,11 +88,13 @@ def list_workspaces(
             .all()
         )
     }
-    # 成员数统计
+    # 成员数统计（inner join 用户表：历史脏数据中用户已删除的孤儿成员行不计入，
+    # 保证计数与成员列表一致）
     member_counts: dict[int, int] = {
         row[0]: row[1]
         for row in (
             db.query(WorkspaceMember.workspace_id, func.count(WorkspaceMember.id))
+            .join(User, User.id == WorkspaceMember.user_id)
             .filter(WorkspaceMember.workspace_id.in_(ws_ids))
             .group_by(WorkspaceMember.workspace_id)
             .all()
@@ -176,6 +178,7 @@ def get_workspace(
     )
     member_count = (
         db.query(WorkspaceMember)
+        .join(User, User.id == WorkspaceMember.user_id)
         .filter(
             WorkspaceMember.workspace_id == workspace_id,
         )
@@ -284,8 +287,10 @@ def list_members(
     """列出当前工作区全部成员（需是成员）."""
     ws = _get_workspace_or_404(workspace_id, db)
     _require_member(ws, current_user, db)
+    # inner join 用户表：剔除用户已删除的孤儿成员行，与 member_count 口径一致
     return (
         db.query(WorkspaceMember)
+        .join(User, User.id == WorkspaceMember.user_id)
         .options(selectinload(WorkspaceMember.user))
         .filter(WorkspaceMember.workspace_id == workspace_id)
         .all()
