@@ -130,9 +130,12 @@ describe('FieldConfigPanel 默认值分区', () => {
 
 describe('FieldConfigPanel config 默认值补齐', () => {
     it('isEdit=false 且 config 为空：整数默认仅 min/max；小数含 decimals 2', async () => {
-        renderProviders(<Host fieldType="number" />)
+        // 用例内连续两次渲染必须先卸载前一个 Host，
+        // 否则「类型专属配置」标题在 document 中重复，findByText 直接抛 multiple elements
+        const first = renderProviders(<Host fieldType="number" />)
         await screen.findByText(/类型专属配置/)
         expect(formRef.current!.getFieldValue(['config', 'decimals'])).toBeUndefined()
+        first.unmount()
 
         renderProviders(<Host fieldType="float" />)
         await screen.findByText(/类型专属配置/)
