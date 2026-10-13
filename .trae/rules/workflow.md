@@ -46,9 +46,12 @@ description: "开发流程"
 - 未实现的设计项须在文件内以 `[ ]` 勾选标记，实现完成后改为 `[x]`，全部完成后清理文件仅保留当前生效设计。
 - 设计决策与既有约定（memory / 其他 SKILL）冲突时，优先按既有约定整合；无法自决时按「暂停条件」询问用户，并在设计文件中标注"待用户复核"。
 
-## make check 全局门禁
+## 分层验证门禁
 
-`make check`（lint/typecheck/cov）以下时机**必须**本地通过：每轮实现完成后、收尾复核时、每次 `git commit` 前。收尾总结须注明"已本地通过 `make check`"。
+- **每轮实现完成后（最低验证要求）**：`make check-fast`（gitkeep + lint + typecheck + frontend 全套，不含覆盖率）+ **定向测试**——本轮改动的后端文件配套测试用 `uv run pytest tests/test_<对应模块>.py -q` 定向运行，前端改动用 `pnpm vitest run <对应测试文件>` 定向运行，必须全部通过；改动涉及跨模块公共路径时改跑 `make test` 全量（不含 cov）。
+- **每次 `git commit` 前**：`make check` 全量（含覆盖率门槛）必须通过，无例外；失败定位根因修复后重跑，不放宽断言。
+- **收尾复核时**：`make check` 全量必须通过，收尾总结须注明"已本地通过 `make check`"。
+- 定向测试失败定位根因修复，禁止因定向通过而跳过 commit 前的全量门禁。
 
 ## 暂停条件
 
