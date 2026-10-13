@@ -118,6 +118,8 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value "C:\Program Files\mingw-w64\mingw64\bin"
 
       - name: Sync dependencies
+        env:
+          UV_DEFAULT_INDEX: https://pypi.org/simple
         run: uv sync --frozen
 
       # fspack 的 download_wheels 用 `pip download` 拉 wheel，但 uv 管理的 venv 默认不含 pip，
@@ -213,6 +215,8 @@ jobs:
           sudo apt-get install -y gcc dpkg-dev
 
       - name: Sync dependencies
+        env:
+          UV_DEFAULT_INDEX: https://pypi.org/simple
         run: uv sync --frozen
 
       # fspack 的 download_wheels 用 `pip download` 拉 wheel，但 uv 管理的 venv 默认不含 pip，
