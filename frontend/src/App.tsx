@@ -5,6 +5,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { App as AntApp } from 'antd'
 import { useAuthStore } from '@/store'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import AuthLayout from '@/layouts/AuthLayout'
 import PublicLayout from '@/layouts/PublicLayout'
 import { onAuthExpired } from '@/api/client'
@@ -45,8 +46,9 @@ function PageFallback() {
 
 function AuthenticatedApp() {
   return (
-    <Suspense fallback={<PageFallback />}>
-      <Routes>
+    <ErrorBoundary>
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
         <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
         <Route path="/register" element={<AuthLayout><RegisterPage /></AuthLayout>} />
 
@@ -98,8 +100,9 @@ function AuthenticatedApp() {
         </Route>
 
         <Route path="*" element={<Navigate to="/w" replace />} />
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   )
 }
 
