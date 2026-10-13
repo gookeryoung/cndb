@@ -132,12 +132,14 @@ def register_system_routes(app: FastAPI) -> None:
                 include_uploads=include_uploads,
                 fmt="archive",
             )
+            # 读取后立即清理临时目录
+            data = archive_path.read_bytes()
         except BackupError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        # 读取后立即清理临时目录
-        data = archive_path.read_bytes()
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"备份文件读取失败: {exc}") from exc
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
         # 下载文件名统一带软件版本与数据库格式版本（与 CLI 默认名同一格式契约）
         filename = format_backup_filename()

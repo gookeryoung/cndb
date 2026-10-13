@@ -499,69 +499,79 @@ def create_backup(
     # 临时目录：拼装 manifest / data / uploads 后一次性打包
     temp_root = Path(tempfile.mkdtemp(prefix="cndb-backup-"))
     try:
-        db_dir = temp_root / "data"
-        db_dir.mkdir()
+        try:
+            db_dir = temp_root / "data"
+            db_dir.mkdir()
 
-        manifest = BackupManifest(
-            app_version=cndb.__version__,
-            created_at=dt.datetime.now(dt.UTC).isoformat(),
-            database=DatabaseInfo(db_type="sqlite" if is_sqlite else "other", backup_mode=resolved_mode),
-        )
+            manifest = BackupManifest(
+                app_version=cndb.__version__,
+                created_at=dt.datetime.now(dt.UTC).isoformat(),
+                database=DatabaseInfo(db_type="sqlite" if is_sqlite else "other", backup_mode=resolved_mode),
+            )
 
-        print(f"[backup] 模式: {resolved_mode}，数据库: {db_url}")
+            print(f"[backup] 模式: {resolved_mode}，数据库: {db_url}")
 
-        # 1) 备份数据库
-        if resolved_mode == "native":
-            db_path = _resolve_sqlite_path(db_url)
-            if not db_path.is_file():
-                raise BackupError(f"SQLite 数据库文件不存在: {db_path}")
-            db_file, row_counts, schema_version = _backup_sqlite_native(db_path, db_dir)
-            manifest.database.path = db_file
-            manifest.database.tables = sorted(row_counts.keys())
-            manifest.database.row_counts = row_counts
-            manifest.database.schema_version = schema_version
-            # 内嵌兜底导出：从一致性快照（而非源库）生成 dump.json，
-            # 保证与 .db 产物数据一致；旧版程序可按交集导入降级恢复
-            if include_fallback:
-                _backup_sqlalchemy(f"sqlite:///{db_dir / 'cndb.db'}", db_dir)
-                manifest.database.fallback_mode = "sqlalchemy"
-        else:
-            db_file, row_counts, tables, schema_version = _backup_sqlalchemy(db_url, db_dir)
-            manifest.database.path = db_file
-            manifest.database.tables = tables
-            manifest.database.row_counts = row_counts
-            manifest.database.schema_version = schema_version
-
-        total_rows = sum(row_counts.values())
-        print(f"[backup] 数据库备份完成: {len(row_counts)} 张表, 共 {total_rows} 行")
-
-        # 2) 收集 uploads
-        if include_uploads:
-            print(f"[backup] 收集附件目录: {up_dir}")
-            manifest.uploads = _collect_uploads(up_dir, temp_root)
-            if manifest.uploads.included:
-                size_kb = manifest.uploads.total_size / 1024
-                print(f"[backup] 附件: {manifest.uploads.file_count} 个文件, {size_kb:.1f} KB")
+            # 1) 备份数据库
+            if resolved_mode == "native":
+                db_path = _resolve_sqlite_path(db_url)
+                if not db_path.is_file():
+                    raise BackupError(f"SQLite 数据库文件不存在: {db_path}")
+                db_file, row_counts, schema_version = _backup_sqlite_native(db_path, db_dir)
+                manifest.database.path = db_file
+                manifest.database.tables = sorted(row_counts.keys())
+                manifest.database.row_counts = row_counts
+                manifest.database.schema_version = schema_version
+                # 内嵌兜底导出：从一致性快照（而非源库）生成 dump.json，
+                # 保证与 .db 产物数据一致；旧版程序可按交集导入降级恢复
+                if include_fallback:
+                    _backup_sqlalchemy(f"sqlite:///{db_dir / 'cndb.db'}", db_dir)
+                    manifest.database.fallback_mode = "sqlalchemy"
             else:
-                print("[backup] uploads 目录为空或不存在，跳过附件备份")
+                db_file, row_counts, tables, schema_version = _backup_sqlalchemy(db_url, db_dir)
+                manifest.database.path = db_file
+                manifest.database.tables = tables
+                manifest.database.row_counts = row_counts
+                manifest.database.schema_version = schema_version
 
-        # 3) 写入 manifest
-        manifest_path = temp_root / "manifest.json"
-        manifest_path.write_text(json.dumps(asdict(manifest), ensure_ascii=False, indent=2), encoding="utf-8")
+            total_rows = sum(row_counts.values())
+            print(f"[backup] 数据库备份完成: {len(row_counts)} 张表, 共 {total_rows} 行")
 
-        # 4) 输出（归档 / 目录）
-        if resolved_fmt == "archive":
-            print(f"[backup] 打包归档 → {output}")
-            _make_tar_archive(temp_root, output)
-            size_mb = output.stat().st_size / 1024 / 1024
-            print(f"[backup] 完成！归档大小: {size_mb:.2f} MB")
-        else:
-            print(f"[backup] 复制到目录 → {output}")
-            _copy_to_directory(temp_root, output)
-            size_mb = _total_size(output) / 1024 / 1024
-            print(f"[backup] 完成！目录大小: {size_mb:.2f} MB")
-        return output
+            # 2) 收集 uploads
+            if include_uploads:
+                print(f"[backup] 收集附件目录: {up_dir}")
+                manifest.uploads = _collect_uploads(up_dir, temp_root)
+                if manifest.uploads.included:
+                    size_kb = manifest.uploads.total_size / 1024
+                    print(f"[backup] 附件: {manifest.uploads.file_count} 个文件, {size_kb:.1f} KB")
+                else:
+                    print("[backup] uploads 目录为空或不存在，跳过附件备份")
 
+            # 3) 写入 manifest
+            manifest_path = temp_root / "manifest.json"
+            manifest_path.write_text(json.dumps(asdict(manifest), ensure_ascii=False, indent=2), encoding="utf-8")
+
+            # 4) 输出（归档 / 目录）
+            if resolved_fmt == "archive":
+                print(f"[backup] 打包归档 → {output}")
+                _make_tar_archive(temp_root, output)
+                size_mb = output.stat().st_size / 1024 / 1024
+                print(f"[backup] 完成！归档大小: {size_mb:.2f} MB")
+            else:
+                print(f"[backup] 复制到目录 → {output}")
+                _copy_to_directory(temp_root, output)
+                size_mb = _total_size(output) / 1024 / 1024
+                print(f"[backup] 完成！目录大小: {size_mb:.2f} MB")
+            return output
+
+        except BackupError:
+            raise
+        except Exception as exc:
+            # 兜底：把底层异常（sqlite3/IO/tarfile/权限等）统一包装成 BackupError，
+            # 让调用方（CLI / API）只需捕获一种异常类型即可优雅降级
+            import traceback
+
+            traceback.print_exc()
+            raise BackupError(f"备份失败：{type(exc).__name__}: {exc}") from exc
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
 
