@@ -26,6 +26,7 @@ const TPL: ReportTemplateSummary = {
     parameters: [{ name: '月份', type: 'string', required: true }],
     extra_table_ids: [],
     theme: 'minimal',
+    view_id: null,
 }
 
 function renderPage() {
@@ -259,15 +260,16 @@ describe('ReportsPage 渲染下载', () => {
             http.get('/api/v1/workspaces/10/tables', () =>
                 HttpResponse.json([{ id: 101, name: '订单表', record_count: 0, field_count: 0, view_count: 0 }]),
             ),
+            http.get('/api/v1/workspaces/10/tables/100/views', () => HttpResponse.json([])),
         )
         useRenderHandler(3, bodies)
         renderPage()
 
         fireEvent.click(await screen.findByRole('button', { name: /渲\s*染\s*下\s*载/ }))
         await screen.findByText('渲染模板：含参数模板')
-        // 打开额外引用表下拉（弹窗内第一个 combobox 即额外引用表选择器）并选择「订单表」
+        // 打开额外引用表下拉（弹窗内 combobox 顺序：取数视图 → 额外引用表，取第 2 个）并选择「订单表」
         const combos = screen.getAllByRole('combobox')
-        fireEvent.mouseDown(combos[0])
+        fireEvent.mouseDown(combos[1])
         fireEvent.click(await screen.findByText('订单表'))
         fireEvent.click(screen.getByRole('button', { name: '生成报告' }))
 

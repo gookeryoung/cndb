@@ -57,6 +57,12 @@ class ReportTemplate(TimestampMixin, Base):
         nullable=True,
         index=True,
     )
+    # 可选绑定主表视图：渲染时按视图 filters/sortings 取数（视图删除 SET NULL 回退全表）
+    view_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tables_dataview.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     # 额外引用表 id 列表（可跨工作区，渲染时注入 records_by_table；迁移 b3c4d5e6f7a8 已建列）
     # server_default 与迁移对齐：schema 自愈（core/migrations.py）对存量库补列时
     # NOT NULL 列必须带 DEFAULT 才能安全 ADD COLUMN

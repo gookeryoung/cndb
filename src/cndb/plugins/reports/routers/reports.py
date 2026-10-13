@@ -308,6 +308,32 @@ def _resolve_extra_tables(db: Session, extra_table_ids: list[int]) -> list[int]:
     return resolved
 
 
+def _resolve_view(db: Session, table_id: int | None, view_id: int, user: User) -> Any:
+    """校验视图可绑定性：存在、归属指定主表、对当前用户可见；返回 DataView.
+
+    Args:
+        db: 数据库会话
+        table_id: 模板绑定的主表 ID（None 时视为未绑定主表，直接 400）
+        view_id: 目标视图 ID
+        user: 当前用户
+
+    Raises:
+        HTTPException(400): 未绑定主表、视图不存在或视图不属于该主表
+        HTTPException(403): 他人个人视图不可见
+    """
+    from cndb.plugins.tables.models import DataView
+
+    if table_id is None:
+        raise HTTPException(status_code=400, detail="绑定视图前须先关联数据表")
+    dv = db.get(DataView, view_id)
+    if dv is None or dv.table_id != table_id:
+        raise HTTPException(status_code=400, detail=f"视图不存在或不属于该数据表 view_id={view_id}")
+    # 可见性与视图路由一致：公共视图 + 本人个人视图；他人个人视图不可见
+    if dv.owner_id is not None and dv.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="无权访问该视图")
+    return dv
+
+
 @router.post("", response_model=TemplateResponse, status_code=201)
 def create_template(
     payload: TemplateCreate,
@@ -324,12 +350,15 @@ def create_template(
     # 额外引用表也需要 READ 权限（防止借模板越权读跨工作区表数据）
     for etid in extra_ids:
         _authorize_table_for_template(db, etid, current_user, TableAction.READ)
+    if payload.view_id is not None:
+        _resolve_view(db, payload.table_id, payload.view_id, current_user)
     try:
         _jinja_env.from_string(payload.template_content)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"模板语法错误: {exc}") from exc
     tpl = ReportTemplate(
         table_id=payload.table_id,
+        view_id=payload.view_id,
         workspace_id=workspace_id,
         name=payload.name,
         description=payload.description,
@@ -395,6 +424,10 @@ def update_template(
         for etid in extra_ids:
             _authorize_table_for_template(db, etid, current_user, TableAction.READ)
         ud["extra_table_ids"] = extra_ids
+    # 修改 view_id 时：视图必须归属于生效主表（本次请求传入的新主表优先，否则沿用模板现主表）且对用户可见
+    if "view_id" in ud and ud["view_id"] is not None:
+        effective_table_id = ud.get("table_id") if ud.get("table_id") is not None else tpl.table_id
+        _resolve_view(db, effective_table_id, ud["view_id"], current_user)
     if "template_content" in ud:
         try:
             _jinja_env.from_string(ud["template_content"])
@@ -456,10 +489,17 @@ def _flatten_for_report(records: list[dict[str, Any]], table: Any) -> None:
                 row[name] = ", ".join(str(v) for v in raw if v is not None)
 
 
-def _load_table_records(db: Session, table_id: int, user: User) -> tuple[Any, list[dict[str, Any]]]:
-    """加载指定表的元数据和全部行数据（带 READ 权限校验 + 字段隐藏）.
+def _load_table_records(
+    db: Session,
+    table_id: int,
+    user: User,
+    view: Any | None = None,
+) -> tuple[Any, list[dict[str, Any]]]:
+    """加载指定表的元数据和行数据（带 READ 权限校验 + 字段隐藏）.
 
     list_rows 默认 limit=100，报表必须拿到完整数据，这里按页循环取全量。
+    view 非 None 时按该视图的 filters/filter_type/sortings 取数（动态报表数据源）；
+    view 为 None 时取全表数据（保持旧行为）。
     返回 (DataTable, records_list)，records 是扁平 dict 列表，link/lookup 字段已展开为可读字符串。
     """
     from cndb.plugins.tables.models import DataTable
@@ -475,7 +515,18 @@ def _load_table_records(db: Session, table_id: int, user: User) -> tuple[Any, li
     offset = 0
     records: list[dict[str, Any]] = []
     while True:
-        rows, total = list_rows(db.bind, table, include_trashed=False, offset=offset, limit=page_size, db=db, user=user)
+        rows, total = list_rows(
+            db.bind,
+            table,
+            include_trashed=False,
+            filters=(view.filters or None) if view is not None else None,
+            filter_logic=view.filter_type if view is not None else "AND",
+            sorts=(view.sortings or None) if view is not None else None,
+            offset=offset,
+            limit=page_size,
+            db=db,
+            user=user,
+        )
         records.extend(r.get("data", r) for r in rows)
         offset += len(rows)
         if not rows or offset >= total:
@@ -1383,8 +1434,14 @@ def render_report(
                 detail=f"参数 {p['name']} 取值无效，可选值：{'/'.join(opts)}",
             )
 
-    # 加载主表（带 READ 权限校验 + 字段隐藏）
-    table, records = _load_table_records(db, payload.table_id, _current_user)
+    # 解析有效视图：请求临时指定优先，其次模板持久化绑定；视图校验失败 400/403
+    effective_view_id = payload.view_id if payload.view_id is not None else tpl.view_id
+    view = (
+        _resolve_view(db, payload.table_id, effective_view_id, _current_user) if effective_view_id is not None else None
+    )
+
+    # 加载主表（带 READ 权限校验 + 字段隐藏；绑定视图时按视图 filters/sortings 取数）
+    table, records = _load_table_records(db, payload.table_id, _current_user, view=view)
 
     # 加载 extra 表（如有，同样带权限校验）
     # 合并模板持久化的 extra_table_ids（模板自包含，请求可不重复传）与请求临时指定的，去重保序
@@ -1405,6 +1462,7 @@ def render_report(
     ctx: dict[str, Any] = {
         "records": records,
         "table_name": table.name,
+        "view_name": view.name if view is not None else None,
         "params": payload.params,
         "records_by_table": records_by_table,
         "generated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),

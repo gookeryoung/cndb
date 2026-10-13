@@ -1606,3 +1606,164 @@ def test_cross_user_extra_table_ids_require_read_permission(client, auth_headers
         },
     )
     assert resp.status_code == 403, f"extra_table_ids 越权应 403 但 {resp.status_code}: {resp.text}"
+
+
+# ── 报表关联视图数据 ─────────────────────────────────
+
+
+def _mk_table_with_records_and_view(client, headers, ws_name: str):
+    """辅助：建工作区 + 表（类别/金额）+ 3 条记录 + 1 个过滤视图（类别=A），返回 (wid, tid, view_id)."""
+    ws = client.post("/api/v1/workspaces", headers=headers, json={"name": ws_name})
+    wid = ws.json()["id"]
+    tid = _mk_table_with_fields(client, headers, wid, "视图源表", [("类别", "text"), ("金额", "number")])
+    rows = [("A", 1), ("B", 2), ("A", 3)]
+    for cat, amt in rows:
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+            headers=headers,
+            json={"values": {"类别": cat, "金额": amt}},
+        )
+        assert r.status_code == 201, r.text
+    v = client.post(
+        f"/api/v1/workspaces/{wid}/tables/{tid}/views",
+        headers=headers,
+        json={
+            "name": "仅A类",
+            "view_type": "grid",
+            "filters": [{"field_name": "类别", "op": "=", "value": "A"}],
+            "sortings": [{"field_name": "金额", "direction": "asc"}],
+        },
+    )
+    assert v.status_code == 201, v.text
+    return wid, tid, v.json()["id"]
+
+
+class TestReportViewBinding:
+    """报表模板绑定视图：持久化、校验、渲染按视图取数."""
+
+    def test_create_template_with_view_persists(self, client, auth_headers):
+        """创建模板绑定 view_id 应持久化并在列表/详情回显."""
+        _wid, tid, vid = _mk_table_with_records_and_view(client, auth_headers, "ws-rv-a")
+        resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "视图模板",
+                "table_id": tid,
+                "view_id": vid,
+                "output_format": "docx",
+                "template_content": "x",
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["view_id"] == vid
+        got = client.get(f"/api/v1/reports/{resp.json()['id']}", headers=auth_headers)
+        assert got.json()["view_id"] == vid
+        listing = client.get("/api/v1/reports", headers=auth_headers)
+        assert all("view_id" in it for it in listing.json())
+
+    def test_update_template_view_roundtrip(self, client, auth_headers):
+        """更新 view_id 应持久化，置 None 应解除绑定."""
+        _wid, tid, vid = _mk_table_with_records_and_view(client, auth_headers, "ws-rv-b")
+        tpl_id = _mk_tpl_id(client, auth_headers, "视图更新", "x", table_id=tid)
+        resp = client.put(f"/api/v1/reports/{tpl_id}", headers=auth_headers, json={"view_id": vid})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["view_id"] == vid
+        resp = client.put(f"/api/v1/reports/{tpl_id}", headers=auth_headers, json={"view_id": None})
+        assert resp.status_code == 200
+        assert resp.json()["view_id"] is None
+
+    def test_create_view_without_table_400(self, client, auth_headers):
+        """未关联主表时绑定视图应 400."""
+        _wid, _tid, vid = _mk_table_with_records_and_view(client, auth_headers, "ws-rv-c")
+        resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={"name": "无主表视图", "view_id": vid, "output_format": "docx", "template_content": "x"},
+        )
+        assert resp.status_code == 400
+        assert "关联数据表" in resp.json()["detail"]
+
+    def test_create_view_of_other_table_400(self, client, auth_headers):
+        """绑定不属于主表的视图应 400."""
+        _wid1, _tid1, vid = _mk_table_with_records_and_view(client, auth_headers, "ws-rv-d1")
+        _wid2, tid2, _ = _mk_table_with_records_and_view(client, auth_headers, "ws-rv-d2")
+        resp = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "跨表视图",
+                "table_id": tid2,
+                "view_id": vid,
+                "output_format": "docx",
+                "template_content": "x",
+            },
+        )
+        assert resp.status_code == 400
+        assert "不属于该数据表" in resp.json()["detail"]
+
+    def test_render_with_bound_view_filters_records(self, client, auth_headers, db):
+        """绑定视图后渲染应按视图 filters/sortings 取数，并注入 view_name."""
+        _wid, tid, vid = _mk_table_with_records_and_view(client, auth_headers, "ws-rv-render")
+        tpl = client.post(
+            "/api/v1/reports",
+            headers=auth_headers,
+            json={
+                "name": "动态报表",
+                "table_id": tid,
+                "view_id": vid,
+                "output_format": "docx",
+                "template_content": "视图={{ view_name }} 行数={{ records|length }} 首行金额={{ records[0].金额 }}",
+            },
+        ).json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert resp.status_code == 200, resp.text
+        text = _extract_docx_text(resp.content)
+        assert "视图=仅A类" in text, text
+        assert "行数=2" in text, text  # 全表 3 行，视图过滤后仅 A 类 2 行
+        assert "首行金额=1" in text, text  # 按视图排序 asc，首行为金额 1
+
+    def test_render_view_id_override(self, client, auth_headers, db):
+        """请求临时指定 view_id 应覆盖模板绑定（或为未绑定模板临时提供视图）."""
+        _wid, tid, vid = _mk_table_with_records_and_view(client, auth_headers, "ws-rv-ovr")
+        tpl = _mk_tpl_id(client, auth_headers, "覆盖渲染", "行数={{ records|length }}", table_id=tid)
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}, "view_id": vid},
+        )
+        assert resp.status_code == 200, resp.text
+        assert "行数=2" in _extract_docx_text(resp.content)
+        # 不带 view_id 渲染仍是全表
+        resp2 = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}},
+        )
+        assert "行数=3" in _extract_docx_text(resp2.content)
+
+    def test_render_other_user_personal_view_403(self, client, auth_headers, db):
+        """渲染时指定他人个人视图应 403（可见性校验与视图路由一致）."""
+        _wid, tid, _vid = _mk_table_with_records_and_view(client, auth_headers, "ws-rv-perm")
+        tpl = _mk_tpl_id(client, auth_headers, "权限探针", "x", table_id=tid)
+        # 用户 B 在同表创建个人视图（B 仅 READ 权限 → 归属创建者）
+        _mk_user(client, db, "rv_viewer")
+        _add_ws_member(client, auth_headers, _wid, "rv_viewer", "viewer")
+        headers_b = _login(client, "rv_viewer")
+        v = client.post(
+            f"/api/v1/workspaces/{_wid}/tables/{tid}/views",
+            headers=headers_b,
+            json={"name": "B的个人视图", "view_type": "grid"},
+        )
+        assert v.status_code == 201, v.text
+        personal_vid = v.json()["id"]
+        resp = client.post(
+            f"/api/v1/reports/{tpl}/render",
+            headers=auth_headers,
+            json={"table_id": tid, "params": {}, "view_id": personal_vid},
+        )
+        assert resp.status_code == 403, resp.text

@@ -7,8 +7,8 @@ import { Table, Button, Space, Tag, Modal, Form, Input, Typography, App as AntAp
 import type { FormInstance } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, ArrowLeftOutlined, MoreOutlined, FileTextOutlined, BarChartOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { reportApi, tableApi, fieldApi, recordApi, workspaceApi } from '@/api'
-import type { ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter, ReportTheme, TableSummary, Field, Workspace } from '@/api'
+import { reportApi, tableApi, fieldApi, recordApi, workspaceApi, viewApi } from '@/api'
+import type { ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate, ReportParameter, ReportTheme, TableSummary, Field, Workspace, View } from '@/api'
 import type { TemplateEditorHandle } from '@/components/report-editor'
 
 // 编辑器三组件懒加载：共享同一动态 import 落同一 chunk，首屏不加载 CodeMirror
@@ -121,10 +121,13 @@ export default function ReportsPage() {
   })
 
   const renderReport = useMutation({
-    mutationFn: async (arg: { tpl: ReportTemplateSummary; params: Record<string, unknown>; extraTableIds?: number[] }) => {
-      const { tpl, params, extraTableIds = [] } = arg
+    mutationFn: async (arg: { tpl: ReportTemplateSummary; params: Record<string, unknown>; extraTableIds?: number[]; viewId?: number | null }) => {
+      const { tpl, params, extraTableIds = [], viewId } = arg
       if (!wid) throw new Error('缺少 workspace')
       const body: Record<string, unknown> = { table_id: tpl.table_id ?? 0, params }
+      if (viewId != null) {
+        body.view_id = viewId
+      }
       if (extraTableIds.length > 0) {
         body.extra_table_ids = extraTableIds
       }
@@ -297,11 +300,12 @@ export default function ReportsPage() {
         open={renderParamsOpen}
         target={renderTarget}
         tables={tables}
+        wid={wid}
         onClose={() => { setRenderParamsOpen(false); setRenderTarget(null) }}
-        onSubmit={(params, extraTableIds) => {
+        onSubmit={(params, extraTableIds, viewId) => {
           if (!renderTarget) return
           renderReport.mutate(
-            { tpl: renderTarget, params, extraTableIds },
+            { tpl: renderTarget, params, extraTableIds, viewId },
             { onSuccess: () => { setRenderParamsOpen(false); setRenderTarget(null) } },
           )
         }}
@@ -335,6 +339,7 @@ const FIELD_TAB_MAP: Record<string, EditorTabKey> = {
   output_format: 'basic',
   theme: 'basic',
   table_id: 'basic',
+  view_id: 'basic',
   extra_table_ids: 'basic',
   description: 'basic',
   parameters: 'basic',
@@ -410,6 +415,13 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     enabled: !!selectedTableId,
   })
 
+  // 关联表的视图列表（报表可选绑定视图，渲染时按视图过滤/排序取数）
+  const { data: tableViews = [] } = useQuery<View[]>({
+    queryKey: ['workspaces', primaryTableWsId, 'tables', selectedTableId, 'views'],
+    queryFn: () => viewApi.list(primaryTableWsId, selectedTableId!),
+    enabled: open && !!selectedTableId,
+  })
+
   // 额外表归属工作区是否全部解析（跨工作区表需等扫描补全后才能按正确工作区请求）
   const extrasResolved = extraTableIds.every(tid =>
     tables.some(t => t.id === tid) || !!crossTableInfo[tid])
@@ -472,6 +484,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
         output_format: editing.output_format ?? 'docx',
         template_content: editing.template_content,
         table_id: editing.table_id,
+        view_id: editing.view_id ?? null,
         parameters: (editing.parameters as ReportParameter[]).map(p => ({
           ...p,
           // options 数组转逗号分隔文本，供编辑器 Input 展示
@@ -488,6 +501,7 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
         output_format: 'docx',
         template_content: initialContent,
         table_id: null,
+        view_id: null,
         parameters: [],
         theme: 'minimal',
         extra_table_ids: [],
@@ -525,9 +539,10 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     return () => window.removeEventListener('report-editor-insert', handler)
   }, [])
 
-  // 关联表变更时更新 selectedTableId（同时从 extra 表中排除它）
+  // 关联表变更时更新 selectedTableId（同时从 extra 表中排除它；视图归属主表，一并重置）
   const handleTableChange = (value: number | null) => {
     setSelectedTableId(value)
+    form.setFieldValue('view_id', null)
     if (value !== null) {
       setExtraTableIds(prev => prev.filter(id => id !== value))
     }
@@ -585,6 +600,8 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
       theme: v.theme ?? 'minimal',
       template_content: templateValue,
       extra_table_ids: extraTableIds,
+      // 视图绑定随模板持久化；清空时落 null（取全表数据）
+      view_id: v.view_id ?? null,
       // optionsText（逗号分隔字符串）→ options（字符串数组），与后端 ParameterDef 对齐
       parameters: (v.parameters ?? []).map(p => ({
         ...p,
@@ -668,6 +685,12 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
     return tableOptions.filter(o => o.value !== selectedTableId)
   }, [tableOptions, selectedTableId])
 
+  // 关联视图下拉选项（视图归属主表；主表未选时为空）
+  const viewSelectOptions = useMemo(
+    () => tableViews.map(v => ({ value: Number(v.id), label: v.name })),
+    [tableViews],
+  )
+
   return (
     <Modal
       title={editing ? `编辑模板「${editing.name}」` : '新建模板'}
@@ -716,6 +739,15 @@ function TemplateEditor({ open, editing, tables, workspaceId, form, initialConte
                         allowClear
                         placeholder="选填（建议关联）"
                         onChange={handleTableChange}
+                      />
+                    </Form.Item>
+                    <Form.Item name="view_id" label="关联视图" style={{ width: 180, marginBottom: 8 }} tooltip="绑定后按该视图的过滤/排序取数，视图调整即报表调整；不绑定则取全部数据">
+                      <Select
+                        options={viewSelectOptions}
+                        allowClear
+                        virtual={false}
+                        disabled={selectedTableId === null}
+                        placeholder="全部数据（默认）"
                       />
                     </Form.Item>
                     <Form.Item name="extra_table_ids" label="额外引用表" style={{ flex: '1 1 220px', marginBottom: 8 }} tooltip="模板中可通过 records_by_table['表名'] 引用这些表的数据">
@@ -887,14 +919,18 @@ interface RenderParamsModalProps {
   open: boolean
   target: ReportTemplateSummary | null
   tables: TableSummary[]
+  /** 当前工作区 ID，用于加载主表的视图列表（临时覆盖渲染取数视图） */
+  wid: string | undefined
   onClose: () => void
-  onSubmit: (params: Record<string, unknown>, extraTableIds?: number[]) => void
+  onSubmit: (params: Record<string, unknown>, extraTableIds?: number[], viewId?: number | null) => void
   submitting: boolean
 }
 
-function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting }: RenderParamsModalProps) {
+function RenderParamsModal({ open, target, tables, wid, onClose, onSubmit, submitting }: RenderParamsModalProps) {
   const [form] = Form.useForm<Record<string, unknown>>()
   const [extraTableIds, setExtraTableIds] = useState<number[]>([])
+  // 渲染视图覆盖：初始为模板绑定视图，清除/未改即回退模板默认，改选其他视图则临时覆盖
+  const [viewId, setViewId] = useState<number | null>(null)
 
   useEffect(() => {
     if (open && target) {
@@ -903,8 +939,16 @@ function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting
       form.setFieldsValue(initial as any)
       // 默认带入模板已保存的额外引用表（含跨工作区表）
       setExtraTableIds(target.extra_table_ids ?? [])
+      setViewId(target.view_id ?? null)
     }
   }, [open, target, form])
+
+  // 主表视图列表（临时覆盖渲染取数视图用）
+  const { data: tableViews = [] } = useQuery<View[]>({
+    queryKey: ['workspaces', wid, 'tables', target?.table_id, 'views'],
+    queryFn: () => viewApi.list(wid!, target!.table_id!),
+    enabled: open && !!wid && !!target?.table_id,
+  })
 
   const tableNameMap = useMemo(() => new Map(tables.map(t => [t.id, t.name])), [tables])
 
@@ -922,14 +966,14 @@ function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting
     <Modal
       title={target ? `渲染模板：${target.name}` : '渲染参数'}
       open={open}
-      onCancel={() => { form.resetFields(); setExtraTableIds([]); onClose() }}
+      onCancel={() => { form.resetFields(); setExtraTableIds([]); setViewId(null); onClose() }}
       confirmLoading={submitting}
       okText="生成报告"
       cancelText="取消"
       onOk={async () => {
         try {
           const values = await form.validateFields()
-          onSubmit(values as Record<string, unknown>, extraTableIds.length > 0 ? extraTableIds : undefined)
+          onSubmit(values as Record<string, unknown>, extraTableIds.length > 0 ? extraTableIds : undefined, viewId)
         } catch { /* 用户取消校验 */ }
       }}
     >
@@ -941,6 +985,19 @@ function RenderParamsModal({ open, target, tables, onClose, onSubmit, submitting
         <Typography.Text type="danger" style={{ display: 'block', marginBottom: 16 }}>
           模板未关联数据表，无法渲染
         </Typography.Text>
+      )}
+
+      {/* 渲染视图覆盖：初始为模板绑定视图，清除即回退模板默认，改选则临时覆盖本次取数 */}
+      {target?.table_id && (
+        <Form.Item label="取数视图" tooltip="本次渲染按所选视图的过滤/排序取数；清除则使用模板绑定的视图（未绑定时取全部数据）" style={{ marginBottom: 12 }}>
+          <Select<number | null>
+            options={tableViews.map(v => ({ value: v.id as number, label: v.name }))}
+            placeholder="使用模板绑定的视图"
+            value={viewId}
+            onChange={val => setViewId(val ?? null)}
+            allowClear
+          />
+        </Form.Item>
       )}
 
       {/* 额外引用表选择 */}
