@@ -150,7 +150,7 @@ export default function ReportsPage() {
 
   const openCreate = () => {
     setEditing(null)
-    setInitialContent('Hello {{ table_name }}!\n共 {{ records | length }} 条记录\n\n{% for row in records %}- {{ row.name }}{% endfor %}')
+    setInitialContent('# {{ table_name }} 报告\n共 {{ records | length }} 条记录\n\n{% for row in records %}- {{ row.name }}\n{% endfor %}')
     // Form 值统一在 TemplateEditor useEffect([open]) 内设置，避免与 destroyOnHidden + preserve=false 时序冲突
     setEditorOpen(true)
   }

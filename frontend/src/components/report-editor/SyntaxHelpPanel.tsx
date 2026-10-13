@@ -104,11 +104,11 @@ export const SYNTAX_SECTIONS: SyntaxSection[] = [
     key: 'builtins',
     label: '内置变量',
     examples: [
-      { title: '全部行数据', code: 'records', description: 'list[dict]，模板最核心的数据源' },
-      { title: '表名', code: 'table_name', description: 'str，模板关联的数据表名称' },
-      { title: '用户参数', code: 'params', description: 'dict，运行时用户输入的动态参数' },
-      { title: '额外表数据', code: 'records_by_table', description: 'dict[str, list[dict]]，跨表引用容器' },
-      { title: '生成日期', code: 'generated_at', description: 'str，报告生成时间（YYYY-MM-DD HH:mm）' },
+      { title: '全部行数据', code: '{{ records }}', description: 'list[dict]，模板最核心的数据源；遍历时请用 for row in records' },
+      { title: '表名', code: '{{ table_name }}', description: 'str，模板关联的数据表名称' },
+      { title: '用户参数', code: '{{ params }}', description: 'dict，运行时用户输入的动态参数；取单个参数用 params.xxx' },
+      { title: '额外表数据', code: '{{ records_by_table }}', description: 'dict[str, list[dict]]，跨表引用容器；取某表用 records_by_table["表名"]' },
+      { title: '生成日期', code: '{{ generated_at }}', description: 'str，报告生成时间（YYYY-MM-DD HH:mm）' },
     ],
   },
 ]
