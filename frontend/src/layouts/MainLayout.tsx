@@ -364,7 +364,8 @@ export default function MainLayout() {
 
         <Layout style={{ flex: 1, minHeight: 0 }}>
           {/* 工作区级分页导航 —— 位于 Content 之外，跨页切换不重挂载；无工作区上下文时不渲染。
-              表上下文时紧随其后以竖线分割出表级页签段：表名回网格 + 子页页签切换（GitHub 风格） */}
+              表上下文时紧随其后以竖线分割出表级页签段：表名（品牌色表图标标识）回网格 +
+              子页胶囊页签切换；激活形状分层（工作区=墨条 / 表级=胶囊）以区分导航层级 */}
           {wid && (
             <div className="cn-ws-tabs" style={{
               background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', flexShrink: 0,
@@ -387,6 +388,8 @@ export default function MainLayout() {
                     style={{ paddingInline: 8 }}
                     onClick={() => navigate(`/w/${wid}/tables/${tid}`)}
                   >
+                    {/* 品牌色表图标：与工作区段区分的「数据表级」视觉标识（样式见 cn-table-crumb-table） */}
+                    <TableOutlined />
                     <span className="cn-table-crumb-name">{currentTable?.name || '数据表'}</span>
                   </Button>
                   {/* 表级子页页签 —— 激活态与选中项由 pathname 驱动，替代旧的 ▾ 下拉切换 */}
