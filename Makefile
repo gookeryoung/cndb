@@ -20,7 +20,13 @@ help: ## 显示帮助信息
 sync: ## 安装开发依赖
 	uv sync --extra dev
 
-frontend-sync fs: ## 安装前端依赖（pnpm install，惰性：node_modules 已存在则跳过）
+frontend-sync fs: ## 安装前端依赖（pnpm install，惰性跳过；pnpm 不可用时先升级 corepack 自愈）
+	@(cd frontend && pnpm --version >/dev/null 2>&1) || { \
+		echo '[frontend] pnpm 不可用：node 自带 corepack 过旧，与 packageManager 声明的 pnpm 12 不兼容（bin/pnpm.cjs 缺失），升级 corepack 自愈...'; \
+		npm install -g corepack@latest; \
+		rm -rf "$${COREPACK_HOME:-$$HOME/.cache/node/corepack}/v1/pnpm"; \
+		(cd frontend && corepack install); \
+	}
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import os,subprocess;\
 print('[frontend] node_modules exist, skip pnpm install') if os.path.isdir('frontend/node_modules') else (\
 print('[frontend] node_modules not exist, start pnpm install...'),\
