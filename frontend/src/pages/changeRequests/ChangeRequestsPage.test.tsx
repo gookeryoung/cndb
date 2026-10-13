@@ -57,7 +57,7 @@ describe('ChangeRequestsPage 修改申请列表', () => {
     renderPage()
 
     expect(await screen.findByText('调整客户分级')).toBeInTheDocument()
-    // open 视图不显示状态 Tag（全部开放），merged 项不出现
+    // open 视图不显示状态 Tag（全部待审核），merged 项不出现
     expect(screen.queryByText('清理重复行')).toBeNull()
     expect(screen.getByText('基准已过期')).toBeInTheDocument()
     expect(screen.getByText('与 3 行在途申请冲突')).toBeInTheDocument()

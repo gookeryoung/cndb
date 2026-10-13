@@ -1,4 +1,4 @@
-/** 修改申请列表页 — scope 筛选（开放/全部/我的）+ 状态/stale/冲突标记 + 写模式权限标注.
+/** 修改申请列表页 — scope 筛选（待审核/全部/我的）+ 状态/stale/冲突标记 + 写模式权限标注.
  *
  * 数据源 changeRequestsApi.list（scope 查询参数，服务端过滤）；
  * 后端 scope 语义：open=在途、all=全部（含 merged/closed，列表页补状态 Tag）、mine=我提交的。
@@ -24,13 +24,13 @@ const { Text } = Typography
 type Scope = 'open' | 'all' | 'mine'
 
 const SCOPE_OPTIONS: Array<{ label: string; value: Scope }> = [
-  { label: '开放', value: 'open' },
+  { label: '待审核', value: 'open' },
   { label: '全部', value: 'all' },
   { label: '我的', value: 'mine' },
 ]
 
 const STATUS_META: Record<ChangeRequest['status'], { label: string; color: string }> = {
-  open: { label: '开放', color: 'green' },
+  open: { label: '待审核', color: 'green' },
   merged: { label: '已合并', color: 'purple' },
   closed: { label: '已关闭', color: 'default' },
 }

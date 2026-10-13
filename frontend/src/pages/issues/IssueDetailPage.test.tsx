@@ -62,7 +62,7 @@ describe('IssueDetailPage 问题详情', () => {
 
     expect(await screen.findByText(/日期列出现 1970 值/)).toBeInTheDocument()
     expect(screen.getByText('导入 CSV 后日期错位')).toBeInTheDocument()
-    expect(screen.getByText('开放')).toBeInTheDocument()
+    expect(screen.getByText('待处理')).toBeInTheDocument()
     expect(screen.getByText('数据异常')).toBeInTheDocument()
     // 评论与事件流使用成员名映射（nickname / username）
     expect(screen.getByText('爱丽丝')).toBeInTheDocument()

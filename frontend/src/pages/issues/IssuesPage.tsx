@@ -28,7 +28,7 @@ export const ISSUE_CATEGORY_META: Record<IssueCategory, { label: string; color: 
 type StatusFilter = 'open' | 'closed' | 'all'
 
 const STATUS_FILTER_OPTIONS: Array<{ label: string; value: StatusFilter }> = [
-  { label: '开放', value: 'open' },
+  { label: '待处理', value: 'open' },
   { label: '已关闭', value: 'closed' },
   { label: '全部', value: 'all' },
 ]
