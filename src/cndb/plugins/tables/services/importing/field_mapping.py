@@ -471,9 +471,7 @@ def suggest_mapping(
             scored: list[tuple[float, str, str, str]] = []
             for sf in remaining_src:
                 for df in remaining_dst:
-                    name_score, reason = _name_similarity(
-                        src_norm_map[sf.name], dst_norm_map[df.name]
-                    )
+                    name_score, reason = _name_similarity(src_norm_map[sf.name], dst_norm_map[df.name])
                     type_bonus = _type_compat(sf.field_type, df.field_type)
                     pair = _pair_score(sf, df, name_score, reason, type_bonus)
                     if pair is None:
