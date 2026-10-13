@@ -35,7 +35,13 @@ function listHandler(captured: { scope?: string } = {}, writeMode: TableWriteMod
   return http.get('/api/v1/workspaces/10/tables/20/change-requests', ({ request }) => {
     captured.scope = new URL(request.url).searchParams.get('scope') ?? undefined
     const scope = captured.scope ?? 'open'
-    const items = scope === 'all' ? CRS : scope === 'mine' ? CRS.filter(c => c.submitted_by_id === 1) : CRS.filter(c => c.status === 'open')
+    const items = scope === 'all'
+      ? CRS
+      : scope === 'mine'
+        ? CRS.filter(c => c.submitted_by_id === 1)
+        : scope === 'merged'
+          ? CRS.filter(c => c.status === 'merged')
+          : CRS.filter(c => c.status === 'open')
     return HttpResponse.json({ items, total: items.length, write_mode: writeMode })
   })
 }
@@ -60,7 +66,7 @@ describe('ChangeRequestsPage 修改申请列表', () => {
     // open 视图不显示状态 Tag（全部待审核），merged 项不出现
     expect(screen.queryByText('清理重复行')).toBeNull()
     expect(screen.getByText('基准已过期')).toBeInTheDocument()
-    expect(screen.getByText('与 3 行编辑中状态冲突')).toBeInTheDocument()
+    expect(screen.getByText('与 3 行待审批申请冲突')).toBeInTheDocument()
     expect(captured.scope).toBe('open')
   })
 
@@ -80,6 +86,20 @@ describe('ChangeRequestsPage 修改申请列表', () => {
     await waitFor(() => expect(captured.scope).toBe('mine'))
     expect(await screen.findByText('清理重复行')).toBeInTheDocument()
     expect(screen.queryByText('调整客户分级')).toBeNull()
+  })
+
+  it('切换「已合并」时按 merged 状态过滤并带状态 Tag', async () => {
+    const captured: { scope?: string } = {}
+    server.use(listHandler(captured))
+    renderPage()
+
+    await screen.findByText('调整客户分级')
+    fireEvent.click(screen.getByText('已合并'))
+    await waitFor(() => expect(captured.scope).toBe('merged'))
+    expect(await screen.findByText('清理重复行')).toBeInTheDocument()
+    expect(screen.queryByText('调整客户分级')).toBeNull()
+    // 「已合并」同时出现在筛选 Segmented 与状态 Tag，取全部匹配
+    expect(screen.getAllByText('已合并').length).toBeGreaterThanOrEqual(1)
   })
 
   it('点击列表项导航到详情页', async () => {

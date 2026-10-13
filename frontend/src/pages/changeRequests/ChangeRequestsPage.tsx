@@ -1,7 +1,7 @@
-/** 修改申请列表页 — scope 筛选（待审核/全部/我的）+ 状态/stale/冲突标记 + 写模式权限标注.
+/** 修改申请列表页 — scope 筛选（待审核/已合并/全部/我的）+ 状态/stale/冲突标记 + 写模式权限标注.
  *
  * 数据源 changeRequestsApi.list（scope 查询参数，服务端过滤）；
- * 后端 scope 语义：open=在途、all=全部（含 merged/closed，列表页补状态 Tag）、mine=我提交的。
+ * 后端 scope 语义：open=在途、merged=已合并、all=全部（含 merged/closed，列表页补状态 Tag）、mine=我提交的。
  * 响应附带 write_mode（direct/change_request/denied，与写路径双轨分派同源）：
  * 列表头部展示权限标注，新建按钮提示按模式适配，避免直编用户被"自动生成申请"文案误导。
  * queryKey 约定：['change-requests', wid, tid, scope]。
@@ -21,10 +21,11 @@ import { memberDisplayName, useMemberNameMap } from '@/hooks/useMemberNames'
 
 const { Text } = Typography
 
-type Scope = 'open' | 'all' | 'mine'
+type Scope = 'open' | 'merged' | 'all' | 'mine'
 
 const SCOPE_OPTIONS: Array<{ label: string; value: Scope }> = [
   { label: '待审核', value: 'open' },
+  { label: '已合并', value: 'merged' },
   { label: '全部', value: 'all' },
   { label: '我的', value: 'mine' },
 ]
@@ -135,7 +136,7 @@ export default function ChangeRequestsPage() {
                       <Text strong>{item.title}</Text>
                       {item.stale && <Tag color="warning" style={{ marginInlineEnd: 0 }}>基准已过期</Tag>}
                       {(item.conflicts_count ?? 0) > 0 && (
-                        <Tag color="orange" style={{ marginInlineEnd: 0 }}>与 {item.conflicts_count} 行编辑中状态冲突</Tag>
+                        <Tag color="orange" style={{ marginInlineEnd: 0 }}>与 {item.conflicts_count} 行待审批申请冲突</Tag>
                       )}
                     </Space>
                   }

@@ -213,6 +213,25 @@ class TestListAndDetail:
         mine = client.get(url, params={"scope": "mine"}, headers=auth_editor).json()
         assert {i["id"] for i in mine["items"]} == {r2["id"], r3["id"]}  # 编辑者提交的申请
 
+    def test_list_scope_merged(self, client, ws, table, auth_owner, auth_editor) -> None:
+        dt, ids = table
+        url = CR.format(ws=ws.id, tb=dt.id)
+        r1 = client.post(
+            url, json={"items": [{"op": "update", "row_id": ids[0], "values": {"数量": 5}}]}, headers=auth_editor
+        ).json()
+        client.post(
+            url, json={"items": [{"op": "update", "row_id": ids[1], "values": {"数量": 6}}]}, headers=auth_editor
+        )
+        client.post(
+            f"{url}/{r1['id']}/merge",
+            json={"items": [{"item_id": r1["items"][0]["id"], "action": "apply"}]},
+            headers=auth_owner,
+        )
+
+        merged = client.get(url, params={"scope": "merged"}, headers=auth_owner).json()
+        assert {i["id"] for i in merged["items"]} == {r1["id"]}
+        assert merged["items"][0]["status"] == "merged"
+
     def test_detail_field_conflicts_after_drift(self, client, ws, table, auth_owner, auth_editor, auth_viewer) -> None:
         dt, ids = table
         url = CR.format(ws=ws.id, tb=dt.id)
@@ -252,6 +271,10 @@ class TestMerge:
         assert r.status_code == 200
         assert r.json()["applied"] == 1
         assert r.json()["request"]["status"] == "merged"
+        # 合并响应须为完整详情（含 items/actions）：前端以响应覆盖详情缓存，
+        # 缺 items 会致详情页 undefined.length 崩溃
+        assert r.json()["request"]["items"][0]["values"] == {"数量": 10}
+        assert [a["action"] for a in r.json()["request"]["actions"]] == ["merge"]
         assert _row(db, dt, ids[0])["数量"] == 10
 
     def test_merge_skip_leaves_row(self, client, ws, table, db, auth_owner, auth_editor) -> None:
