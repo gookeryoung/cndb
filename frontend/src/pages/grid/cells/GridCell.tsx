@@ -32,7 +32,7 @@ interface Props {
   showActionButtons?: boolean
   /** 受控模式下的只读字段标记 —— 自动填充锁定开启时，预填字段不允许修改 */
   readOnly?: boolean
-  /** 在途修改申请锁定：该行有待处理的修改申请（pending），展示原值且双击不进入编辑 */
+  /** 编辑中锁定：该行处于编辑中状态，展示原值且双击不进入编辑 */
   locked?: boolean
 }
 
@@ -113,10 +113,10 @@ function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: contr
     return <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
   }
 
-  // 在途修改申请锁定：待处理行展示原值，双击不进入编辑
+  // 编辑中锁定：待处理行展示原值，双击不进入编辑
   if (locked) {
     return (
-      <Tooltip title="该行有在途修改申请，处理后可继续编辑">
+      <Tooltip title="该行正在编辑中，处理后可继续操作">
         <div style={{ padding: '2px 4px', minHeight: 22 }} data-testid="cell-locked">
           <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
         </div>

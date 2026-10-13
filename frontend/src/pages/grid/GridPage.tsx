@@ -284,7 +284,7 @@ export default function GridPage() {
   }, [])
 
   const { data: table, isLoading } = useTable(wid!, tid!)
-  /** 在途修改申请（rowId → 申请）：在途行三入口只读（单元格双击 / 操作列 / Drawer） */
+  /** 编辑中状态（rowId → 申请）：锁定行三入口只读（单元格双击 / 操作列 / Drawer） */
   const { data: pendingChanges } = usePendingChanges(wid, tid)
   const isPendingRowId = useCallback((rowId: ID | null | undefined) => {
     if (rowId == null) return false
@@ -474,9 +474,9 @@ export default function GridPage() {
 
   /** 看板卡片勾选/取消完成 —— 直接把 done_field 目标值写回该行 */
   const handleToggleDone = useCallback((r: RowResponse, values: RowValues) => {
-    // 在途申请行锁定：申请处理前不产生新的写请求（后端冲突守卫会 409）
+    // 编辑中行锁定：申请处理前不产生新的写请求（后端冲突守卫会 409）
     if (isPendingRowId(r.id)) {
-      message.warning('该行有在途修改申请，处理后可继续编辑')
+      message.warning('该行正在编辑中，处理后可继续操作')
       return
     }
     mutateUpdateRow({ rowId: r.id as number | string, values }, {
@@ -613,10 +613,10 @@ export default function GridPage() {
     setRowDrafts(prev => ({ ...prev, [NEW_ROW_KEY]: draftFor(null) }))
   }
 
-  /** 进入某存量行的整行编辑态（在途申请行拦截：申请处理前不进入编辑） */
+  /** 进入某存量行的整行编辑态（编辑中行拦截：处理前不进入编辑） */
   const startEditRow = (recordId: ID) => {
     if (isPendingRowId(recordId)) {
-      message.warning('该行有在途修改申请，处理后可继续编辑')
+      message.warning('该行正在编辑中，处理后可继续操作')
       return
     }
     setNewRowActive(false)
