@@ -165,7 +165,7 @@ export default function WorkspaceList() {
       ) : filteredWorkspaces.length === 0 ? (
         <Empty description={search ? `没有匹配「${search}」的工作区` : '还没有工作区，创建一个吧！'} />
       ) : (
-        <Row gutter={[16, 16]}>
+        <Row gutter={isMobile ? [12, 12] : [16, 16]}>
           {filteredWorkspaces.map((w, i) => {
             const vis = VISIBILITY_META[(w.visibility ?? 'member') as WorkspaceVisibility]
               ?? VISIBILITY_META.member
@@ -177,7 +177,7 @@ export default function WorkspaceList() {
                   className="cn-ws-card"
                   style={{ animationDelay: `${Math.min(i, 7) * 40}ms` }}
                   data-testid={`workspace-card-${w.id}`}
-                  styles={{ body: { padding: 16 } }}
+                  styles={{ body: { padding: isMobile ? 12 : 16 } }}
                   actions={[
                     <span
                       key="pin"
@@ -204,7 +204,7 @@ export default function WorkspaceList() {
                   }}
                 >
                   {/* 头部：标签 + 公开性 + 角色 */}
-                  <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ marginBottom: isMobile ? 4 : 8, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: '70%' }}>
                       {w.pinned && <Tag color="gold" style={{ marginRight: 4 }}>📌 置顶</Tag>}
                       {(w.tags ?? []).slice(0, 2).map(t => (
@@ -222,23 +222,26 @@ export default function WorkspaceList() {
                   </div>
 
                   {/* 标题 */}
-                  <Text strong style={{ fontSize: 16, display: 'block', marginBottom: 4 }}>{w.name}</Text>
+                  <Text strong style={{ fontSize: 16, display: 'block', marginBottom: 2 }}>{w.name}</Text>
 
                   {/* 描述 */}
-                  <Text type="secondary" ellipsis style={{ display: 'block', height: 40, fontSize: 13 }}>
+                  <Text type="secondary" ellipsis style={{ display: 'block', height: isMobile ? 32 : 36, fontSize: 13, lineHeight: '16px' }}>
                     {w.description || '暂无描述'}
                   </Text>
 
-                  {/* 统计 + 允许编辑 */}
-                  <div style={{ marginTop: 12, display: 'flex', gap: 16, color: '#6b7280', fontSize: 12 }}>
+                  {/* 统计 + 编辑状态（始终占位，保证卡片高度一致） */}
+                  <div style={{ marginTop: isMobile ? 8 : 10, display: 'flex', gap: 16, color: '#6b7280', fontSize: 12, alignItems: 'center' }}>
                     <span><TableOutlined /> {w.table_count ?? 0} 表</span>
                     <span><TeamOutlined /> {w.member_count ?? 1} 成员</span>
+                    <span
+                      style={{
+                        marginLeft: 'auto',
+                        color: '#f59e0b',
+                        opacity: w.allow_edit !== undefined && !w.allow_edit ? 1 : 0,
+                        transition: 'opacity 0.15s',
+                      }}
+                    ><LockOutlined /> 已关闭</span>
                   </div>
-                  {w.allow_edit !== undefined && !w.allow_edit && (
-                    <div style={{ marginTop: 4, fontSize: 12, color: '#f59e0b' }}>
-                      <LockOutlined /> 编辑已关闭
-                    </div>
-                  )}
                 </Card>
               </Col>
             )
