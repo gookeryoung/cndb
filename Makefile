@@ -12,7 +12,7 @@ CPUS := $(shell nproc 2>/dev/null || echo 4)
 endif
 PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 
-.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-test frontend-check frontend-build build b clean c test cov lint typecheck check-fast check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
+.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-test frontend-coverage frontend-static frontend-check frontend-build build b clean c test cov lint typecheck check-fast check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -40,10 +40,15 @@ frontend-lint fl: | frontend-sync ## 前端 ESLint 检查
 frontend-typecheck ft: | frontend-sync ## 前端 TypeScript 类型检查
 	cd frontend && pnpm typecheck
 
-frontend-test ftest: | frontend-sync ## 前端单测/组件测试 + 覆盖率双门槛校验
+frontend-static fst: frontend-typecheck frontend-lint ## 前端静态检查（tsc + eslint）
+
+frontend-test ftest: | frontend-sync ## 前端快速回归（vitest run，无覆盖率）
+	cd frontend && pnpm test
+
+frontend-coverage fcov: | frontend-sync ## 前端测试 + 覆盖率双门槛校验
 	cd frontend && pnpm test:coverage
 
-frontend-check fc: frontend-typecheck frontend-lint frontend-test ## 前端门禁（typecheck + lint + test:coverage）
+frontend-check fc: frontend-static frontend-coverage ## 前端门禁（静态检查 + 覆盖率测试）
 
 frontend-build fb: | frontend-sync ## 构建前端（Vite，产物输出到 src/cndb/static/）
 	cd frontend && pnpm build
@@ -71,18 +76,20 @@ e2e: frontend-build ## 前端 E2E 测试（Playwright；webServer 自动起隔�
 gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败）
 	uv run python scripts/check_gitkeep.py
 
-lint: frontend-typecheck frontend-lint ## 代码风格检查 (ruff, 与 CI 对齐仅扫 src + tests)
+lint: ## 后端代码风格检查 (ruff check + format，与 CI 对齐仅扫 src + tests)
 	uv run ruff check src tests --cache-dir .ruff_cache
 	uv run ruff format --check src tests
 
 typecheck: ## 类型检查 (pyrefly)
 	uv run pyrefly check -j 0
 
-check-fast: gitkeep-check lint typecheck frontend-check ## 轻量门禁（不含覆盖率，适合日常快速验证）
+check-fast: gitkeep-check lint typecheck frontend-static ## 轻量静态门禁（不含任何测试，适合实现阶段快速反馈）
 
-# cov（pytest）是最长尾，最先启动，与 4 项门禁并行执行
-check: ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-check + cov，cov 与门禁并行)
-	@$(MAKE) -j5 cov gitkeep-check lint typecheck frontend-check
+# 全量门禁：cov 与其余项并行执行。前端测试仅以 coverage 模式跑一次（frontend-coverage
+# 已含 vitest run），避免 check-fast/check 双跑全量套件。门禁组成以此 Makefile 为准，
+# 规则文件只约定执行时点。
+check: ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-static + frontend-coverage + cov)
+	@$(MAKE) -j4 cov frontend-coverage gitkeep-check lint typecheck frontend-static
 
 BUMP_PART := $(filter-out bump,$(MAKECMDGOALS))
 

@@ -52,9 +52,13 @@ description: "开发流程"
 
 ## 分层验证门禁
 
-- **每轮实现完成后（最低验证要求）**：`make check-fast`（gitkeep + lint + typecheck + frontend 全套，不含覆盖率）+ **定向测试**——定向测试按命名映射选取：后端 `src/cndb/<模块>.py` 对应 `tests/test_<模块>.py`，前端组件 `src/<路径>/<X>.tsx` 对应同目录 `<X>.test.tsx`；映射无对应文件时按最邻近测试目录定向，不确定时直接跑 `make test` 全量（不含 cov），不靠猜测。必须全部通过；改动涉及跨模块公共路径时改跑 `make test` 全量（不含 cov）。
-- **每次 `git commit` 前**：`make check` 全量（含覆盖率门槛）必须通过，无例外；失败定位根因修复后重跑，不放宽断言。同一轮迭代中「验证」已通过的全量 `make check` 结果可直接作为 commit 门禁，无须重复执行；commit 前若代码再改动则重跑。
+门禁组成以 Makefile 定义为准，本节只约定执行时点与档位：
+
+- **每轮实现完成后（最低验证要求）**：`make check-fast`（纯静态轻量门禁：gitkeep + 后端 ruff/pyrefly + 前端 tsc/eslint，不含任何测试）+ **定向测试**——定向测试按命名映射选取：后端 `src/cndb/<模块>.py` 对应 `tests/test_<模块>.py`，前端组件 `src/<路径>/<X>.tsx` 对应同目录 `<X>.test.tsx`；映射无对应文件时按最邻近测试目录定向，不确定时改跑 `make test`（后端）或 `make frontend-test`（前端，无覆盖率快速回归）全量，不靠猜测。必须全部通过；改动涉及跨模块公共路径时改跑全量。
+- **每次 `git commit` 前**：`make check` 全量（含 cov 95% 门槛 + 前端覆盖率双门槛，前端测试仅以 coverage 模式跑一次）必须通过，无例外；失败定位根因修复后重跑，不放宽断言。同一轮迭代中「验证」已通过的全量 `make check` 结果可直接作为 commit 门禁，无须重复执行；commit 前若代码再改动则重跑。
+- **条件性门禁**：改动涉及前端构建产物（依赖变更、vite/TS 配置、入口或大组件）时，commit 前加跑 `pnpm bundle:budget`（chunk 体积门禁，与 CI 对齐）。
 - **收尾复核时**：`make check` 全量必须通过，收尾总结须注明"已本地通过 `make check`"；若最后一次全量门禁之后无任何代码改动，沿用该次结果。
+- **e2e 豁免**：`make e2e` 定位为发布/部署前验证，不进入迭代门禁。
 - 定向测试失败定位根因修复，禁止因定向通过而跳过 commit 前的全量门禁。
 
 ## 暂停条件
