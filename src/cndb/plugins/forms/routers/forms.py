@@ -201,11 +201,7 @@ def submit_form(
         raise HTTPException(status_code=400, detail=f"必填字段缺失: {missing}")
 
     # 只取表单配置中 visible=true 的字段值
-    visible_names = {
-        fc["field_name"]
-        for fc in form.field_config
-        if isinstance(fc, dict) and fc.get("visible", True)
-    }
+    visible_names = {fc["field_name"] for fc in form.field_config if isinstance(fc, dict) and fc.get("visible", True)}
     filtered_values = {k: v for k, v in payload.values.items() if k in visible_names and k in field_names}
 
     try:

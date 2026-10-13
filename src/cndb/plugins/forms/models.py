@@ -29,22 +29,32 @@ class FormDefinition(TimestampMixin, Base):
     __table_args__ = {"extend_existing": True}
 
     workspace_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        Integer,
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     table_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("tables_datatable.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        Integer,
+        ForeignKey("tables_datatable.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # 字段配置列表：[field_name, editable, visible, required]
     field_config: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON, nullable=False, default=list, server_default="[]",
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
     )
     # 布局配置（预留，默认空对象）
     layout: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, default=dict, server_default="{}",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
     )
     # 三权限阈值：空字符串=无限制
     use_role: Mapped[str] = mapped_column(String(16), nullable=False, default="", server_default="")
