@@ -18,6 +18,7 @@ copyright = "2026, gookeryoung"
 
 try:
     from cndb import __version__  # type: ignore[import-not-found]
+
     release = __version__
     version = __version__
 except ImportError:
