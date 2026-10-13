@@ -217,7 +217,7 @@ describe('useUpdateRowOptimistic', () => {
     const key = seedRecords(qc, [{ id: 1, 姓名: '张三' }])
 
     const { result } = renderHook(() => useUpdateRowOptimistic('10', '100'), { wrapper: Wrapper })
-    result.current.mutate({ rowId: 1, fieldName: '姓名', value: '在途申请新值' })
+    result.current.mutate({ rowId: 1, fieldName: '姓名', value: '编辑中新值' })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     // mutation 数据为修改申请载荷（调用方据此区分提示文案）
