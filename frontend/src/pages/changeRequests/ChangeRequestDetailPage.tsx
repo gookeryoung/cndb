@@ -33,7 +33,7 @@ const OP_META: Record<ChangeOp, { label: string; color: string }> = {
 }
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
-  open: { label: '开放', color: 'green' },
+  open: { label: '待审核', color: 'green' },
   merged: { label: '已合并', color: 'purple' },
   closed: { label: '已关闭', color: 'default' },
 }

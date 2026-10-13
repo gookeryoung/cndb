@@ -74,7 +74,7 @@ describe('ChangeRequestDetailPage 修改申请详情', () => {
     renderPage()
 
     expect(await screen.findByText(/调整客户分级/)).toBeInTheDocument()
-    expect(screen.getByText('开放')).toBeInTheDocument()
+    expect(screen.getByText('待审核')).toBeInTheDocument()
     expect(screen.getByText(/bob\s*提交于|提交于/)).toBeInTheDocument()
     // update 项 diff：基准值 → 申请值
     expect(screen.getByText('A')).toBeInTheDocument()

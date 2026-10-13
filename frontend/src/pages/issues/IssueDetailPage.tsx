@@ -127,7 +127,7 @@ export default function IssueDetailPage() {
         {issue.title}
       </Title>
       <Space size={8} wrap style={{ marginBottom: 16 }}>
-        <Tag color={issue.status === 'open' ? 'green' : 'default'}>{issue.status === 'open' ? '开放' : '已关闭'}</Tag>
+        <Tag color={issue.status === 'open' ? 'green' : 'default'}>{issue.status === 'open' ? '待处理' : '已关闭'}</Tag>
         <Tag color={catMeta.color}>{catMeta.label}</Tag>
         {canManage && (issue.status === 'open' ? (
           <Button size="small" icon={<CheckOutlined />} loading={close.isPending} onClick={() => close.mutate()}>
