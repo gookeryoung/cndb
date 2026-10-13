@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { Form } from 'antd'
-import { fireEvent, screen } from '@testing-library/react'
+import { cleanup, fireEvent, screen } from '@testing-library/react'
 import type { FieldType } from '@/api'
 import { renderProviders } from '@/test/render-providers'
 import FieldConfigPanel from './FieldConfigPanel'
@@ -133,6 +133,8 @@ describe('FieldConfigPanel config 默认值补齐', () => {
         renderProviders(<Host fieldType="number" />)
         await screen.findByText(/类型专属配置/)
         expect(formRef.current!.getFieldValue(['config', 'decimals'])).toBeUndefined()
+        // 同一用例内二次渲染前先卸载前一实例，避免双实例并存导致查询失败
+        cleanup()
 
         renderProviders(<Host fieldType="float" />)
         await screen.findByText(/类型专属配置/)
