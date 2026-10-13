@@ -20,7 +20,7 @@ help: ## 显示帮助信息
 sync: ## 安装开发依赖 + 强制重装 git pre-commit 钩子 (prek)
 	uv sync --extra dev
 	@uv run prek install --force >/dev/null 2>&1 || true
-	@echo '[sync] pre-commit hook (prek) 已就绪'
+	@echo '[sync] pre-commit hook (prek) is ready'
 
 frontend-sync fs: ## 安装前端依赖（pnpm install，惰性跳过；pnpm 不可用时先升级 corepack 自愈）
 	@(cd frontend && pnpm --version >/dev/null 2>&1) || { \
