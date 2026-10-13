@@ -1878,9 +1878,7 @@ def _seed_views(
         print("[seed-视图] 未发现任何 views.json，跳过视图注入")
         return 0
 
-    personal_owner_id = (
-        personal_owner_user.id if personal_owner_user is not None else user.id
-    )
+    personal_owner_id = personal_owner_user.id if personal_owner_user is not None else user.id
 
     created = 0
     for ws_name, tables in ws_configs.items():
