@@ -104,9 +104,9 @@ def _list_response(
         # 业务语义错误（未知操作符、非法字段等）— 客户端可修正
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        # SQLAlchemy / 数据库等运行时错误 — 记录日志后统一返回 500
+        # SQLAlchemy / 数据库等运行时错误 — 记录日志，避免把内部结构泄漏给客户端
         logger.exception("list_rows 运行时异常")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="服务内部错误") from exc
 
     return RecordListResponse(rows=rows, total=total, limit=limit, offset=offset)
 
@@ -129,7 +129,8 @@ def create_record(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.exception("create_row 运行时异常")
+        raise HTTPException(status_code=500, detail="服务内部错误") from exc
 
     if row is None:
         raise HTTPException(status_code=500, detail="创建失败")

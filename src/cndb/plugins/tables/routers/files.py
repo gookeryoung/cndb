@@ -84,6 +84,12 @@ _ALLOWED_EXTENSIONS: frozenset[str] = frozenset(
     }
 )
 
+# inline 预览时强制改为 attachment（防存储型 XSS：html/svg/xml 可内嵌脚本，
+# 浏览器 inline 渲染时会在同源上下文中执行）
+_SCRIPTABLE_EXTENSIONS: frozenset[str] = frozenset(
+    {".html", ".htm", ".svg", ".xml", ".xhtml", ".xht"}
+)
+
 
 def _workspace_dir(workspace_id: int) -> PathLib:
     """返回工作区专属上传目录（自动创建）."""
@@ -174,7 +180,8 @@ def download_file(
 ) -> FileResponse:
     """下载/预览附件.
 
-    - ``inline=true``：浏览器尝试在标签页内预览（图片、PDF 等）
+    - ``inline=true``：浏览器尝试在标签页内预览（图片、PDF 等）；
+      对 html/svg/xml 等可脚本化扩展名，为防存储型 XSS 强制改为 attachment 下载。
     - ``inline=false``：强制下载
     """
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
@@ -185,13 +192,23 @@ def download_file(
 
     mime, _ = mimetypes.guess_type(file_key)
     media_type = mime or "application/octet-stream"
-    disposition = "inline" if inline else "attachment"
+
+    # 防存储型 XSS：可脚本化扩展名一律走 attachment，
+    # 即使调用方指定 inline=true 也不内联渲染
+    ext = PathLib(file_key).suffix.lower()
+    use_inline = inline and ext not in _SCRIPTABLE_EXTENSIONS
+    disposition = "inline" if use_inline else "attachment"
+
+    headers = {"Content-Disposition": disposition}
+    if not use_inline:
+        # 双重保险：nosniff 阻止浏览器基于内容嗅探推断 mime
+        headers["X-Content-Type-Options"] = "nosniff"
 
     return FileResponse(
         path=str(target),
         media_type=media_type,
-        filename=file_key.split("_", 1)[-1],  # uuid_basename → basename
-        headers={"Content-Disposition": disposition},
+        filename=PathLib(file_key).name,  # 直接用 file_key 作为下载名（格式是 uuid.ext）
+        headers=headers,
     )
 
 
