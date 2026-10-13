@@ -3,11 +3,12 @@ import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate 
 import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
 import {
-  LogoutOutlined, AppstoreOutlined, TableOutlined,
+  LogoutOutlined, TableOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
   MenuOutlined, InfoCircleOutlined,
-  DatabaseOutlined, BarChartOutlined,
+  DatabaseOutlined, BarChartOutlined, FormOutlined,
+  FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -129,7 +130,7 @@ export default function MainLayout() {
       key: 'forms',
       label: (
         <span>
-          <DatabaseOutlined /> 表单
+          <FormOutlined /> 表单
         </span>
       ),
     },
@@ -190,7 +191,7 @@ export default function MainLayout() {
     { type: 'group', label: '工作区' },
     ...workspaces.map(w => ({
       key: `ws-${w.id}`,
-      icon: <AppstoreOutlined />,
+      icon: <FolderOutlined />,
       label: (w.pinned ? '📌 ' : '') + w.name,
       onClick: () => navigate(`/w/${w.id}/tables`),
     })),
@@ -314,7 +315,7 @@ export default function MainLayout() {
 
         {/* 工作区下拉 —— 移动端仅显示图标，节省横向空间 */}
         <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
-          <Button type="text" icon={<AppstoreOutlined />} data-testid="ws-switch-btn">
+          <Button type="text" icon={<FolderOpenOutlined />} data-testid="ws-switch-btn">
             {!isMobile && (currentWs?.name || '工作区')}
           </Button>
         </Dropdown>
