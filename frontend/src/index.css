@@ -486,9 +486,11 @@ body.theme-oled {
 }
 
 /* ─────────────── 表级页签（融合导航行，GitHub 风格） ───────────────
- * 竖线分割工作区 Tabs 与表级段；表名可点回网格；子页以页签切换，
- * 激活页签底部品牌色墨条与工作区 Tabs 墨条对齐同一行底线。
- * 颜色全部走 var(--cn-*)，随主题自适应。 */
+ * 竖线分割工作区 Tabs 与表级段（左右留白 12px 强化分组边界）；
+ * 表名前缀品牌色 TableOutlined 作为「数据表级」段标识，可点回网格；
+ * 子页以胶囊页签切换：激活态为悬浮胶囊底（12% 品牌浸染），
+ * 与工作区 Tabs 的贴底墨条形成形状对照，扫视即可区分导航层级。
+ * 颜色全部走 var(--cn-*) + color-mix，随主题自适应。 */
 .cn-table-crumb {
   display: flex;
   align-items: center;
@@ -501,7 +503,7 @@ body.theme-oled {
 .cn-table-crumb-divider {
   width: 1px;
   height: 22px;
-  margin: 0 4px;
+  margin: 0 12px;
   background: var(--cn-border);
   flex-shrink: 0;
 }
@@ -514,6 +516,12 @@ body.theme-oled {
   white-space: nowrap;
   vertical-align: bottom;
   font-weight: 600;
+}
+
+/* 表名前缀图标：品牌色作为「数据表级」导航段的视觉标识 */
+.cn-table-crumb-table .anticon {
+  color: var(--cn-brand-color);
+  font-size: 14px;
 }
 
 .cn-table-tabs {
@@ -529,34 +537,34 @@ body.theme-oled {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  margin: 7px 2px;
   padding: 0 12px;
   border: none;
+  border-radius: 6px;
   background: none;
   cursor: pointer;
   color: var(--cn-text-secondary);
-  font-size: 14px;
+  font-size: 13px;
   white-space: nowrap;
-  transition: color 0.18s ease;
+  transition: color 0.18s ease, background-color 0.18s ease;
+}
+
+/* 子页图标半级缩小，与 13px 文字共同暗示从属层级 */
+.cn-table-tab .anticon {
+  font-size: 12px;
 }
 
 .cn-table-tab:hover {
   color: var(--cn-brand-color);
+  background: color-mix(in srgb, var(--cn-brand-color) 6%, var(--cn-bg-container));
 }
 
+/* 激活态：悬浮胶囊底，与工作区 Tabs 的贴底墨条区分层级；
+ * 文字色加深品牌混合，保障浅色主题下胶囊底上的 AA 对比度 */
 .cn-table-tab-active {
-  color: var(--cn-brand-color);
+  color: color-mix(in srgb, var(--cn-brand-color) 78%, var(--cn-text-primary));
   font-weight: 500;
-}
-
-.cn-table-tab-active::after {
-  content: '';
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 0;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--cn-brand-color);
+  background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
 }
 
 /* 全局主按钮：品牌色柔和投影，强化主操作层级（危险主按钮不套用） */
