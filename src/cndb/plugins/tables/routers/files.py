@@ -86,9 +86,7 @@ _ALLOWED_EXTENSIONS: frozenset[str] = frozenset(
 
 # inline 预览时强制改为 attachment（防存储型 XSS：html/svg/xml 可内嵌脚本，
 # 浏览器 inline 渲染时会在同源上下文中执行）
-_SCRIPTABLE_EXTENSIONS: frozenset[str] = frozenset(
-    {".html", ".htm", ".svg", ".xml", ".xhtml", ".xht"}
-)
+_SCRIPTABLE_EXTENSIONS: frozenset[str] = frozenset({".html", ".htm", ".svg", ".xml", ".xhtml", ".xht"})
 
 
 def _workspace_dir(workspace_id: int) -> PathLib:
