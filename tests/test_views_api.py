@@ -1537,7 +1537,6 @@ class TestPersonalViewClassification:
         assert "viewer私有导出B5" not in names, "导出不应包含他人个人视图"
 
 
-
 # ── 全局 / 个人视图混合场景（演示数据典型组合） ──
 
 
@@ -1558,9 +1557,7 @@ class TestMixedScopeViews:
         global1 = DataView(
             table_id=table.id, owner_id=None, name="全部记录（全局）", view_type="grid", is_default=True, order=0
         )
-        global2 = DataView(
-            table_id=table.id, owner_id=None, name="高优任务（全局）", view_type="grid", order=1
-        )
+        global2 = DataView(table_id=table.id, owner_id=None, name="高优任务（全局）", view_type="grid", order=1)
         db.add_all([global1, global2])
 
         # 2) viewer_A 建 1 个 personal（owner_id=viewer_A.id）
