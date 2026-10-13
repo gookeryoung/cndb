@@ -109,7 +109,7 @@ export default function MainLayout() {
 
   const currentWs = workspaces.find(w => String(w.id) === wid)
 
-  /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），覆盖数据表、报表与设置入口.
+  /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），覆盖数据表、表单、报表与设置入口.
    *
    * 各项带数量徽标：仅数据就绪后渲染徽标（0 也显示），未就绪时不渲染占位，
    * 避免加载瞬间误导（class cn-ws-tab-count，样式走 var(--cn-*) 主题变量）。
@@ -122,6 +122,14 @@ export default function MainLayout() {
         <span>
           <DatabaseOutlined /> 数据表
           {tablesReady && <span className="cn-ws-tab-count">{tables.length}</span>}
+        </span>
+      ),
+    },
+    {
+      key: 'forms',
+      label: (
+        <span>
+          <DatabaseOutlined /> 表单
         </span>
       ),
     },
@@ -161,11 +169,13 @@ export default function MainLayout() {
   // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
   const activeWsTab = inTableContext
     ? 'tables'
-    : location.includes('/reports')
-      ? 'reports'
-      : location.includes('/settings')
-        ? 'settings'
-        : 'tables'
+    : location.includes('/forms')
+      ? 'forms'
+      : location.includes('/reports')
+        ? 'reports'
+        : location.includes('/settings')
+          ? 'settings'
+          : 'tables'
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 

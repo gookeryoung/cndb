@@ -26,6 +26,8 @@ const TableSettingsPage = lazy(() => import('@/pages/settings/TableSettingsPage'
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
+const FormsPage = lazy(() => import('@/pages/forms/FormsPage'))
+const FormRunnerPage = lazy(() => import('@/pages/forms/FormRunnerPage'))
 
 /** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
 function PageFallback() {
@@ -76,6 +78,12 @@ function AuthenticatedApp() {
           } />
           <Route path="w/:wid/reports" element={
             <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
+          } />
+          <Route path="w/:wid/forms" element={
+            <Suspense fallback={<PageFallback />}><FormsPage /></Suspense>
+          } />
+          <Route path="w/:wid/forms/:fid" element={
+            <Suspense fallback={<PageFallback />}><FormRunnerPage /></Suspense>
           } />
           <Route path="admin" element={
             <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>
