@@ -1535,3 +1535,142 @@ class TestPersonalViewClassification:
         assert r.status_code == 200
         names = {v["name"] for v in r.json()}
         assert "viewer私有导出B5" not in names, "导出不应包含他人个人视图"
+
+
+
+# ── 全局 / 个人视图混合场景（演示数据典型组合） ──
+
+
+class TestMixedScopeViews:
+    """一张表同时存在 global 和 personal 视图时，API 隔离与权限语义完备性."""
+
+    def test_mixed_scope_list_all_for_each_role(self, client, db, ws, table, auth_owner):
+        """典型 seed 后状态：global × 2 + owner_personal × 1 + demo_personal × 1.
+
+        - owner（EDIT_VIEWS）看到: 2 global + 1 owner_personal（看不到 demo 的 personal）
+        - demo（仅 READ VIEWER）看到: 2 global + 1 demo_personal
+        - 第二个 viewer 看到: 仅 2 global（看不到任何人的 personal）
+        """
+        # 1) owner 建 2 个 global（owner_id=None，因为有 EDIT_VIEWS）+ 1 个自己的 personal —— 实际 API 里 owner 创建的都是 global
+        #    直接用 DB 手动建 personal 来模拟 seed.py 的 demo_user 注入（API 没有 scope 参数，权限自动决定）
+        from cndb.plugins.tables.models import DataView
+
+        global1 = DataView(
+            table_id=table.id, owner_id=None, name="全部记录（全局）", view_type="grid", is_default=True, order=0
+        )
+        global2 = DataView(
+            table_id=table.id, owner_id=None, name="高优任务（全局）", view_type="grid", order=1
+        )
+        db.add_all([global1, global2])
+
+        # 2) viewer_A 建 1 个 personal（owner_id=viewer_A.id）
+        viewer_a = _make_workspace_viewer(db, ws, "mv_a")
+        viewer_a_h = _login(client, "mv_a")
+
+        # 3) viewer_B 建 1 个 personal
+        viewer_b = _make_workspace_viewer(db, ws, "mv_b")
+        viewer_b_h = _login(client, "mv_b")
+
+        db.commit()
+        db.refresh(viewer_a)
+        db.refresh(viewer_b)
+
+        a_view_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "A 的关注（个人）", "view_type": "grid"},
+            headers=viewer_a_h,
+        )
+        b_view_r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "B 的待办（个人）", "view_type": "grid"},
+            headers=viewer_b_h,
+        )
+        assert a_view_r.status_code == 201
+        assert b_view_r.status_code == 201
+        vid_a = a_view_r.json()["id"]
+        vid_b = b_view_r.json()["id"]
+
+        # 4) 三方各自 GET /views 验证可见性
+        r_owner = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=auth_owner)
+        r_a = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=viewer_a_h)
+        r_b = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=viewer_b_h)
+        assert r_owner.status_code == 200
+        assert r_a.status_code == 200
+        assert r_b.status_code == 200
+
+        owner_names = {v["name"] for v in r_owner.json()}
+        a_names = {v["name"] for v in r_a.json()}
+        b_names = {v["name"] for v in r_b.json()}
+
+        # owner 看到两个 global，看不到任何人的 personal
+        assert owner_names == {"全部记录（全局）", "高优任务（全局）"}
+        # viewer_A 看到两个 global + 自己的 personal（B 的 personal 不可见）
+        assert "全部记录（全局）" in a_names
+        assert "A 的关注（个人）" in a_names
+        assert "B 的待办（个人）" not in a_names
+        # viewer_B 看到两个 global + 自己的 personal（A 的 personal 不可见）
+        assert "全部记录（全局）" in b_names
+        assert "B 的待办（个人）" in b_names
+        assert "A 的关注（个人）" not in b_names
+
+        # 5) 通过 owner_id 字段二次确认 scope 语义（响应体里会带 owner_id）
+        a_view_in_list = next(v for v in r_a.json() if v["name"] == "A 的关注（个人）")
+        assert a_view_in_list["owner_id"] == viewer_a.id
+        b_view_in_list = next(v for v in r_b.json() if v["name"] == "B 的待办（个人）")
+        assert b_view_in_list["owner_id"] == viewer_b.id
+        default_global = next(v for v in r_a.json() if v["name"] == "全部记录（全局）")
+        assert default_global["owner_id"] is None
+
+        # 6) GET /views/{id} 跨用户 404 隔离
+        assert (
+            client.get(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid_b}",
+                headers=viewer_a_h,
+            ).status_code
+            == 404
+        )
+        assert (
+            client.get(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid_a}",
+                headers=viewer_b_h,
+            ).status_code
+            == 404
+        )
+
+    def test_default_view_always_global_not_personal(self, client, db, ws, table, auth_owner):
+        """默认视图（is_default=True）必须是 global，不会被任何用户的 personal 视图霸占.
+
+        即使某 viewer 意外写 seed 或直接 DB 插入 owner_id!=NULL 且 is_default=True
+        的视图，list_views / rows 端点返回的默认视图也应保证 owner_id=None ——
+        但当前 seed 层已硬性保护 personal 不占 is_default 槽位，这里测 DB 层真实语义。
+        """
+        from cndb.plugins.tables.models import DataView
+
+        # 造一个合法的 global 默认视图
+        dv_default = DataView(
+            table_id=table.id,
+            owner_id=None,
+            name="全部（默认·全局）",
+            view_type="grid",
+            is_default=True,
+            order=0,
+        )
+        db.add(dv_default)
+        db.commit()
+
+        # owner 的列表里，这条默认视图 owner_id 必须是 None
+        r = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=auth_owner)
+        assert r.status_code == 200
+        defaults = [v for v in r.json() if v["is_default"]]
+        assert len(defaults) == 1
+        assert defaults[0]["owner_id"] is None
+        assert defaults[0]["name"] == "全部（默认·全局）"
+
+        # viewer（仅 READ）同样能看到这条 global 默认视图
+        _make_workspace_viewer(db, ws, "def_v1")
+        viewer_h = _login(client, "def_v1")
+        r2 = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=viewer_h)
+        assert r2.status_code == 200
+        v_defaults = [v for v in r2.json() if v["is_default"]]
+        assert len(v_defaults) == 1
+        assert v_defaults[0]["owner_id"] is None

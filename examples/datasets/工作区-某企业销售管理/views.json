@@ -767,6 +767,31 @@
         "show_stats_panel": true
       },
       "order": 6
+    },
+    {
+      "name": "我的待办（个人）",
+      "scope": "personal",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "负责人",
+          "op": "=",
+          "value": "demo"
+        },
+        {
+          "field_name": "完成日期",
+          "op": "=",
+          "value": ""
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "截止日期",
+          "direction": "asc"
+        }
+      ],
+      "order": 7
     }
   ],
   "营销活动": [

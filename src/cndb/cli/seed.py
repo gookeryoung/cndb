@@ -1849,8 +1849,24 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
     return True
 
 
-def _seed_views(db: Any, user: Any, tables_map: dict[str, dict[str, Any]], datasets_dir: Path | None) -> int:
-    """按各工作区文件夹下的 views.json 为每张表创建典型视图."""
+def _seed_views(
+    db: Any,
+    user: Any,
+    tables_map: dict[str, dict[str, Any]],
+    datasets_dir: Path | None,
+    *,
+    personal_owner_user: Any | None = None,
+) -> int:
+    """按各工作区文件夹下的 views.json 为每张表创建典型视图.
+
+    views.json 视图条目新增可选字段 ``scope``：
+
+    - ``"global"``（默认）→ 公共视图，``owner_id=None``，所有工作区成员可见。
+    - ``"personal"`` → 个人视图，``owner_id=personal_owner_user.id``（未传则回退为调用者 ``user.id``）；
+      仅该用户可见可改，用于演示"个人视图隔离"。
+
+    新增的演示用 personal 视图不会占用表的"默认视图"槽位——默认视图始终为 global。
+    """
     from cndb.plugins.tables.models import DataView
 
     if datasets_dir is None:
@@ -1861,6 +1877,10 @@ def _seed_views(db: Any, user: Any, tables_map: dict[str, dict[str, Any]], datas
     if not ws_configs:
         print("[seed-视图] 未发现任何 views.json，跳过视图注入")
         return 0
+
+    personal_owner_id = (
+        personal_owner_user.id if personal_owner_user is not None else user.id
+    )
 
     created = 0
     for ws_name, tables in ws_configs.items():
@@ -1880,9 +1900,26 @@ def _seed_views(db: Any, user: Any, tables_map: dict[str, dict[str, Any]], datas
                 try:
                     if not _validate_view_fields(vc, valid_fields, ws_name, table_name):
                         continue
+
+                    # scope 决定 owner_id：global → None（公共）；personal → 指定用户 id
+                    scope = vc.get("scope", "global")
+                    if scope == "global":
+                        owner_id: int | None = None
+                    elif scope == "personal":
+                        owner_id = personal_owner_id
+                    else:
+                        print(
+                            f"[seed-视图] 非法 scope={scope!r}（仅接受 global/personal），"
+                            f"默认当作 global: {ws_name}/{table_name} / {vc.get('name')}"
+                        )
+                        owner_id = None
+
+                    # 个人视图不能占用 is_default（默认视图必须为全局，让所有成员进入时都看得到）
+                    is_default = bool(vc.get("is_default", False)) and owner_id is None
+
                     dv_payload = {
                         "table_id": dt.id,
-                        "owner_id": user.id,
+                        "owner_id": owner_id,
                         "name": vc["name"],
                         "view_type": vc.get("view_type", "grid"),
                         "filter_type": vc.get("filter_type", "AND"),
@@ -1891,7 +1928,7 @@ def _seed_views(db: Any, user: Any, tables_map: dict[str, dict[str, Any]], datas
                         "field_options": vc.get("field_options", {}),
                         "field_order": vc.get("field_order", []),
                         "view_options": vc.get("view_options", {}),
-                        "is_default": vc.get("is_default", False),
+                        "is_default": is_default,
                         "order": vc.get("order", idx),
                     }
                     # 同名视图已存在则用配置更新（自动生成的「全部」默认视图需要被丰富化）
@@ -1917,6 +1954,77 @@ def _seed_views(db: Any, user: Any, tables_map: dict[str, dict[str, Any]], datas
 
     db.commit()
     return created
+
+
+def _seed_demo_personal_views(db: Any, demo_user: Any, tables_map: dict[str, dict[str, Any]]) -> None:
+    """为演示用户硬编码追加典型 personal 视图.
+
+    views.json 里的 scope=personal 条目已能覆盖配置化注入，但本函数保证
+    「日常待办」表一定同时存在 global + personal 两类视图（即使 views.json
+    没有写 personal 条目），让前端演示进入时就能看到两类视图的真实效果。
+
+    规则：幂等，同名（owner 维度）即跳过。
+    """
+    from cndb.plugins.tables.models import DataView
+
+    personal_specs: list[tuple[str, str, dict[str, Any]]] = [
+        # (工作区名, 表名, 视图 payload 精简版 —— owner_id 由调用者注入)
+        (
+            "某企业销售管理",
+            "日常待办",
+            {
+                "name": "我的待办（个人）",
+                "view_type": "grid",
+                "filter_type": "AND",
+                "filters": [
+                    {"field_name": "负责人", "op": "=", "value": demo_user.nickname or demo_user.username},
+                    {"field_name": "完成日期", "op": "=", "value": ""},
+                ],
+                "sortings": [{"field_name": "截止日期", "direction": "asc"}],
+                "order": 90,
+            },
+        ),
+    ]
+
+    for ws_name, table_name, payload in personal_specs:
+        ws_tables = tables_map.get(ws_name)
+        if not ws_tables:
+            continue
+        dt = ws_tables.get(table_name)
+        if dt is None:
+            continue
+        # 幂等：(table_id, owner_id, name) 命中即跳过
+        existing = (
+            db.query(DataView)
+            .filter(
+                DataView.table_id == dt.id,
+                DataView.owner_id == demo_user.id,
+                DataView.name == payload["name"],
+            )
+            .first()
+        )
+        if existing is not None:
+            print(f"[seed-demo-personal] 已存在，跳过: {ws_name}/{table_name} → {payload['name']}")
+            continue
+        dv = DataView(
+            table_id=dt.id,
+            owner_id=demo_user.id,
+            name=payload["name"],
+            view_type=payload.get("view_type", "grid"),
+            filter_type=payload.get("filter_type", "AND"),
+            filters=payload.get("filters", []),
+            sortings=payload.get("sortings", []),
+            field_options={},
+            field_order=[],
+            view_options={},
+            is_default=False,
+            order=payload.get("order", 0),
+        )
+        db.add(dv)
+        db.flush()
+        print(f"[seed-demo-personal] {ws_name}/{table_name} → {dv.name} (owner=demo)")
+
+    db.commit()
 
 
 def _seed_permission_demo(db: Any, engine: Any, owner: Any) -> None:
@@ -2210,7 +2318,13 @@ def seed(_args: argparse.Namespace) -> None:
         _apply_field_settings(db, engine, tables_map, datasets_dir)
 
         # 3) 视图种子（依赖所有表已就绪，扫描每个工作区文件夹下的 views.json）
-        view_count = _seed_views(db, owner, tables_map, datasets_dir)
+        #    同时把 demo 用户作为 personal_owner_user，views.json 里声明 scope=personal 的
+        #    条目会归属 demo（演示普通用户的个人视图隔离）
+        view_count = _seed_views(db, owner, tables_map, datasets_dir, personal_owner_user=demo)
+
+        # 3b) demo 用户硬编码个人视图：在"某企业销售管理/日常待办"上建 1 个
+        #     演示视图"我的待办"，让前端进入时同时看到 global + personal 两类视图
+        _seed_demo_personal_views(db, demo, tables_map)
 
         # 4) 报告模板种子（幂等：按工作区+模板名查重，已存在跳过）
         _seed_report_templates(db, tables_map)
