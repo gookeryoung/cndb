@@ -52,10 +52,10 @@ export function useGridData({ wid, tid, mode, limit, offset, viewFilters, viewSo
 }
 
 /**
- * 在途修改申请查询（默认启用）。
+ * 编辑中状态查询（默认启用）。
  *
  * 拉取全部 open 修改申请并对每条取详情收集 items 涉及的 row_id，
- * 返回 rowId → 申请 的 Map 供行级锁定与在途标识；
+ * 返回 rowId → 申请 的 Map 供行级锁定与编辑中标识；
  * 提交/合并/关闭申请后 invalidate，不做逐行请求。
  */
 export function usePendingChanges(wid: string | undefined, tid: string | undefined, enabled = true) {

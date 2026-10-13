@@ -9,4 +9,4 @@
 | 双轨制写入 | owner/editor（且工作区 allow_edit 开启）编辑直编直存；viewer 或 allow_edit 关闭时编辑自动生成修改申请（后端返回 202 + change_request 载荷） | 分派逻辑在 records 写路径 `dispatch_change_request`；批量删除生成含多个 delete item 的单条申请 |
 | 三区布局 | 工作区与数据表权限页的成员展示形态：所有者区（含转让入口）/ 编辑者区 / 查看者区，各自独立卡片与添加成员入口 | 门控收敛为 owner（工作区设置与成员管理仅 owner 可操作）；角色三级 owner/editor/viewer |
 | 三入口 | 网格编辑的三个入口：单元格双击速编、行双击 Drawer 全行编辑、操作列整行编辑按钮 | viewer 在三入口保存均转修改申请，提示「已提交修改申请 #N，处理后生效」 |
-| 在途标识 | 操作列中的行级修改申请状态位 | 派生自 change_requests 开放查询（status=open），按 row_id 聚合；merge 落库后同行其余 open 申请标记 stale，提交人可 update-base 刷新基准 |
+| 编辑中标识 | 操作列中的行级修改申请状态位 | 派生自 change_requests 开放查询（status=open），按 row_id 聚合；merge 落库后同行其余 open 申请标记 stale，提交人可 update-base 刷新基准 |

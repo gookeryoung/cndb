@@ -60,7 +60,7 @@ describe('ChangeRequestsPage 修改申请列表', () => {
     // open 视图不显示状态 Tag（全部开放），merged 项不出现
     expect(screen.queryByText('清理重复行')).toBeNull()
     expect(screen.getByText('基准已过期')).toBeInTheDocument()
-    expect(screen.getByText('与 3 行在途申请冲突')).toBeInTheDocument()
+    expect(screen.getByText('与 3 行编辑中状态冲突')).toBeInTheDocument()
     expect(captured.scope).toBe('open')
   })
 

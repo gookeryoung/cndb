@@ -45,7 +45,7 @@ interface Props {
   onClose: () => void
   /** 新建行模式下的预填值（例如看板某列的分组字段） */
   initialValues?: RowValues
-  /** 只读模式：无编辑权限或行存在在途修改申请时打开详情，字段禁用、保存按钮禁用 */
+  /** 只读模式：无编辑权限或行处于编辑中时打开详情，字段禁用、保存按钮禁用 */
   readOnly?: boolean
   /** 创建成功后回调 */
   onCreated?: () => void

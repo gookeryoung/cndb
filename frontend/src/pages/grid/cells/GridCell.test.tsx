@@ -208,7 +208,7 @@ describe('GridCell 传统编辑流', () => {
     expect(screen.getByText('A-001')).toBeInTheDocument()
   })
 
-  // ─────────────── 在途修改申请锁定（locked）───────────────
+  // ─────────────── 编辑中锁定（locked）───────────────
 
   it('locked 行展示原值且双击不进入编辑态', () => {
     const field = makeField({ id: 1, name: '姓名', field_type: 'text' })
