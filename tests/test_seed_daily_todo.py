@@ -115,6 +115,15 @@ VIEWS_JSON = {
             "filters": [{"field_name": "状态", "op": "=", "value": "进行中"}],
             "order": 5,
         },
+        {
+            "name": "我的个人视图（个人）",
+            "scope": "personal",
+            "view_type": "grid",
+            "filter_type": "AND",
+            "filters": [{"field_name": "状态", "op": "=", "value": "待办"}],
+            "sortings": [{"field_name": "截止日期", "direction": "asc"}],
+            "order": 6,
+        },
     ],
     "产品开发": [
         {"name": "全部", "view_type": "grid", "is_default": True, "order": 0},
@@ -138,7 +147,11 @@ def _build_datasets_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def sales_todo_seed(db, db_engine, tmp_path):
-    """端到端 fixture：创建 Workspace + User，跑 seed 完整流程到「视图注入」返回 tables_map."""
+    """端到端 fixture：创建 Workspace + owner + demo_user，跑 seed 完整流程到「视图注入」返回 tables_map.
+
+    views.json 里既有 global（默认）又有 scope=personal 视图；personal 视图归属 demo_user，
+    用于验证"个人视图隔离"。
+    """
     from cndb.cli.seed import (
         _apply_field_settings,
         _seed_datasets,
@@ -147,11 +160,17 @@ def sales_todo_seed(db, db_engine, tmp_path):
     )
     from cndb.plugins.accounts.models import User
 
-    user = User(username="todo_seed", email="todo@example.com", nickname="日常待办测试")
-    user.set_password("pass1234")
-    db.add(user)
+    owner = User(username="todo_seed", email="todo@example.com", nickname="日常待办测试")
+    owner.set_password("pass1234")
+    db.add(owner)
+
+    demo_user = User(username="demo_viewer", email="demo_v@example.com", nickname="演示用户")
+    demo_user.set_password("pass1234")
+    db.add(demo_user)
+
     db.commit()
-    db.refresh(user)
+    db.refresh(owner)
+    db.refresh(demo_user)
 
     datasets_dir = _build_datasets_dir(tmp_path)
 
@@ -163,26 +182,38 @@ def sales_todo_seed(db, db_engine, tmp_path):
 
     try:
         # 1. CSV 建表（含日常待办 + 产品开发）
-        _, ws_map, tables_map = _seed_datasets(db, db_engine, user)
+        _, ws_map, tables_map = _seed_datasets(db, db_engine, owner)
         assert "销售测试" in ws_map
         assert "销售测试" in tables_map
         ws = ws_map["销售测试"]
+        # 把 demo_user 也加入工作区作为 VIEWER —— 这样 demo 可以通过 API 登录并看到 global + 自己的 personal
+        from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
+
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=demo_user.id, role=WorkspaceRole.VIEWER))
+        db.commit()
         # 硬编码建部门表/员工表（日常待办要 link 员工表）
-        extra_n, extra_tables = _seed_sales_tables(db, db_engine, ws, owner_id=user.id)
+        extra_n, extra_tables = _seed_sales_tables(db, db_engine, ws, owner_id=owner.id)
         assert extra_n == 2  # 部门表 + 员工表
         tables_map["销售测试"].update(extra_tables)
 
         # 2. 字段设置（link_lookups）
         _apply_field_settings(db, db_engine, tables_map, datasets_dir)
 
-        # 3. 视图注入
-        view_count = _seed_views(db, user, tables_map, datasets_dir)
+        # 3. 视图注入 —— 把 demo_user 作为 personal_owner_user，
+        #    这样 scope=global 的视图 owner_id=None；scope=personal 的归属 demo_user
+        view_count = _seed_views(
+            db,
+            owner,
+            tables_map,
+            datasets_dir,
+            personal_owner_user=demo_user,
+        )
 
         db.commit()
         db.refresh(tables_map["销售测试"]["日常待办"])
         db.refresh(tables_map["销售测试"]["产品开发"])
         db.refresh(tables_map["销售测试"]["员工表"])
-        yield tables_map["销售测试"], view_count
+        yield tables_map["销售测试"], view_count, owner, demo_user
     finally:
         seed_mod._get_datasets_dir = original
 
@@ -192,7 +223,7 @@ def sales_todo_seed(db, db_engine, tmp_path):
 
 def test_daily_todo_csv_seeded(sales_todo_seed):
     """日常待办 CSV 正确建表：10 列 × 10 行."""
-    tables, _ = sales_todo_seed
+    tables, _, _, _ = sales_todo_seed
     todo_tbl = tables["日常待办"]
     assert todo_tbl is not None
     todo_fields = {f.name: f for f in todo_tbl.fields if not f.trashed}
@@ -214,7 +245,7 @@ def test_daily_todo_csv_seeded(sales_todo_seed):
 
 def test_daily_todo_settings_required_unique(sales_todo_seed, db):
     """fields.json settings 段正确应用：待办编号 required+unique、待办标题 required."""
-    tables, _ = sales_todo_seed
+    tables, _, _, _ = sales_todo_seed
     todo_tbl = tables["日常待办"]
     fields = {f.name: f for f in todo_tbl.fields if not f.trashed}
     assert fields["待办编号"].required is True
@@ -225,7 +256,7 @@ def test_daily_todo_settings_required_unique(sales_todo_seed, db):
 
 def test_daily_todo_link_to_product_dev(sales_todo_seed):
     """日常待办 → 产品开发 link + 3 个 lookup."""
-    tables, _ = sales_todo_seed
+    tables, _, _, _ = sales_todo_seed
     todo_tbl = tables["日常待办"]
     product_tbl = tables["产品开发"]
 
@@ -247,7 +278,7 @@ def test_daily_todo_link_to_product_dev(sales_todo_seed):
 
 def test_daily_todo_link_to_employee(sales_todo_seed):
     """日常待办 → 员工表 link + lookup."""
-    tables, _ = sales_todo_seed
+    tables, _, _, _ = sales_todo_seed
     todo_tbl = tables["日常待办"]
     emp_tbl = tables["员工表"]
 
@@ -268,15 +299,16 @@ def test_daily_todo_link_to_employee(sales_todo_seed):
 
 
 def test_daily_todo_view_seeded(sales_todo_seed, db):
-    """日常待办 6 个视图全部注入成功（grid / kanban / calendar）."""
+    """日常待办 6 个 global 视图 + 1 个 personal 视图全部注入成功（grid / kanban / calendar）."""
     from cndb.plugins.tables.models import DataView
 
-    tables, _ = sales_todo_seed
+    tables, _, _, _ = sales_todo_seed
     todo_tbl = tables["日常待办"]
 
     views = db.query(DataView).filter(DataView.table_id == todo_tbl.id).all()
     view_by_name = {v.name: v for v in views}
-    assert len(view_by_name) == 6, f"期望 6 个视图，实际 {len(view_by_name)}: {list(view_by_name.keys())}"
+    # 6 global（含默认视图"全部"）+ 1 scope=personal
+    assert len(view_by_name) == 7, f"期望 7 个视图，实际 {len(view_by_name)}: {list(view_by_name.keys())}"
 
     # grid / kanban / calendar 三类都有
     assert view_by_name["全部"].view_type == "grid"
@@ -295,9 +327,42 @@ def test_daily_todo_view_seeded(sales_todo_seed, db):
     assert cal.view_options["group_field"] == "状态"
 
 
+def test_daily_todo_view_scope_owner_id_semantics(sales_todo_seed, db):
+    """scope 语义集成：global → owner_id=None；personal → 归属 personal_owner_user.id.
+
+    同时验证：default 视图"全部"一定是 global（owner_id=None），不会被 personal 条目占用。
+    """
+    from cndb.plugins.tables.models import DataView
+
+    tables, _, owner, demo_user = sales_todo_seed
+    todo_tbl = tables["日常待办"]
+
+    views = db.query(DataView).filter(DataView.table_id == todo_tbl.id).all()
+    view_by_name = {v.name: v for v in views}
+
+    personal_view = view_by_name["我的个人视图（个人）"]
+    global_views = [v for v in view_by_name.values() if v.name != personal_view.name]
+
+    # 1) personal 视图归属 demo_user
+    assert personal_view.owner_id == demo_user.id
+    # 2) 所有 global 视图 owner_id 都是 None
+    for v in global_views:
+        assert v.owner_id is None, f"global 视图 {v.name} 不应有 owner_id，但实际 {v.owner_id}"
+    # 3) 默认视图"全部"必须是 global
+    default_view = view_by_name["全部"]
+    assert default_view.is_default is True
+    assert default_view.owner_id is None
+    # 4) personal 视图绝不会被当作默认视图
+    assert personal_view.is_default is False
+    # 5) owner 和 demo_user 都是 DB 里真实存在的 user（供后续 API 隔离测试登录使用）
+    assert owner.id is not None
+    assert demo_user.id is not None
+    assert owner.id != demo_user.id
+
+
 def test_daily_todo_link_lookup_total_fields(sales_todo_seed):
     """日常待办表字段总数 = 10 基础 + 2 link + 3 产品开发 lookup + 2 员工表 lookup = 17."""
-    tables, _ = sales_todo_seed
+    tables, _, _, _ = sales_todo_seed
     todo_tbl = tables["日常待办"]
     fields = [f for f in todo_tbl.fields if not f.trashed]
     # 10 基础 + 2 link + 3 lookup(产品开发) + 2 lookup(员工表) = 17
@@ -338,7 +403,7 @@ def test_daily_todo_settings_loading_from_real_datasets():
 
 
 def test_daily_todo_views_config_from_real_datasets():
-    """真实 datasets 解析：某企业销售管理 views.json 包含日常待办 6 个视图."""
+    """真实 datasets 解析：某企业销售管理 views.json 包含日常待办 7 个 global + 1 个 personal."""
     from cndb.cli.seed import _get_datasets_dir, _get_workspace_view_configs
 
     datasets_dir = _get_datasets_dir()
@@ -350,10 +415,25 @@ def test_daily_todo_views_config_from_real_datasets():
     assert sm_tables is not None
     todo_views = sm_tables.get("日常待办")
     assert todo_views is not None, "views.json 应包含日常待办表"
-    assert len(todo_views) == 7, f"期望 7 个日常待办视图，实际 {len(todo_views)}"
+    # 7 个 global（未显式 scope，默认 global）+ 1 个 scope=personal
+    assert len(todo_views) == 8, f"期望 8 个日常待办视图，实际 {len(todo_views)}"
 
     names = {v["name"] for v in todo_views}
-    assert {"全部", "待办看板", "高优先级任务", "按员工看板", "待办日历", "进行中任务", "状态任务数"} == names
+    assert {
+        "全部",
+        "待办看板",
+        "高优先级任务",
+        "按员工看板",
+        "待办日历",
+        "进行中任务",
+        "状态任务数",
+        "我的待办（个人）",
+    } == names
+
+    # personal 条目显式声明 scope，过滤条件指向演示用户
+    personal = next(v for v in todo_views if v["name"] == "我的待办（个人）")
+    assert personal.get("scope") == "personal"
+    assert personal["filters"][0]["field_name"] == "负责人"
 
 
 def test_daily_todo_csv_has_10_rows(tmp_path):
@@ -399,7 +479,7 @@ def test_daily_todo_match_backfill(sales_todo_seed, db, db_engine):
 
     from cndb.plugins.tables.services.core.links import load_links
 
-    tables, _ = sales_todo_seed
+    tables, _, _, _ = sales_todo_seed
     todo_tbl = tables["日常待办"]
     todo_fields = {f.name: f for f in todo_tbl.fields if not f.trashed}
     product_tbl = tables["产品开发"]
