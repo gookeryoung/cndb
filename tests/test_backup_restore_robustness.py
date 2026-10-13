@@ -419,7 +419,9 @@ class TestExtremeScenarios:
         blocker.write_text("not a dir", encoding="utf-8")
         bad_url = f"sqlite:///{blocker / 'db.db'}"
 
-        with pytest.raises(SQLAlchemyError):
+        from cndb.cli.backup import BackupError
+
+        with pytest.raises(BackupError, match="备份失败"):
             create_backup(
                 output=tmp_path / "out.tar.gz",
                 mode="sqlalchemy",
@@ -467,8 +469,9 @@ class TestExtremeScenarios:
 
     def test_backup_disk_full_aborts_without_output(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """前置：打包阶段磁盘写满（模拟 ENOSPC）；步骤：create_backup；
-        预期：OSError 传播且不产出残缺归档."""
+        预期：BackupError 传播，不产出残缺归档."""
         from cndb.cli import backup as backup_mod
+        from cndb.cli.backup import BackupError
 
         def _enospc(*args: object, **kwargs: object) -> None:
             raise OSError(28, "No space left on device")
@@ -476,16 +479,18 @@ class TestExtremeScenarios:
         monkeypatch.setattr(backup_mod.tarfile, "open", _enospc)
         src = _setup_sqlite(tmp_path / "src.db")
         output = tmp_path / "out.tar.gz"
-        with pytest.raises(OSError, match="No space left"):
+        with pytest.raises(BackupError, match=r"备份失败.*No space left"):
             create_backup(output=output, mode="native", database_url=f"sqlite:///{src}")
         assert not output.exists()
 
     def test_backup_corrupt_source_db(self, tmp_path: Path) -> None:
         """前置：源 .db 文件内容损坏（非 SQLite 格式字节）；步骤：native 备份；
-        预期：sqlite3.DatabaseError 传播，不静默产出无效备份."""
+        预期：BackupError 传播，不静默产出无效备份."""
+        from cndb.cli.backup import BackupError
+
         src = tmp_path / "corrupt.db"
         src.write_bytes(b"this is not a sqlite database at all......")
-        with pytest.raises(sqlite3.DatabaseError):
+        with pytest.raises(BackupError, match="备份失败"):
             create_backup(output=tmp_path / "out.tar.gz", mode="native", database_url=f"sqlite:///{src}")
 
     def _make_archive_with_corrupt_db(self, tmp_path: Path) -> Path:
