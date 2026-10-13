@@ -28,6 +28,8 @@ class TemplateCreate(BaseModel):
     output_format: str = "docx"
     template_content: str
     table_id: int | None = None
+    # 可选绑定主表视图：渲染时按视图 filters/sortings 取数；未绑定时取全表数据
+    view_id: int | None = None
     # 归属工作区：显式优先（不存在 404）；未传且 table_id 存在时由表反推；皆无落 NULL
     workspace_id: int | None = None
     parameters: list[ParameterDef] = Field(default_factory=list)
@@ -45,6 +47,7 @@ class TemplateUpdate(BaseModel):
     output_format: str | None = None
     template_content: str | None = None
     table_id: int | None = None
+    view_id: int | None = None
     parameters: list[ParameterDef] | None = None
     extra_table_ids: list[int] | None = None
     theme: str | None = None
@@ -57,6 +60,7 @@ class TemplateResponse(BaseModel):
 
     id: int
     table_id: int | None = None
+    view_id: int | None = None
     workspace_id: int | None = None
     name: str
     description: str
@@ -76,6 +80,7 @@ class TemplateListResponse(BaseModel):
 
     id: int
     table_id: int | None = None
+    view_id: int | None = None
     workspace_id: int | None = None
     name: str
     description: str
@@ -92,6 +97,8 @@ class RenderRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     # 可选：过滤行（空=全部）
     row_ids: list[int] | None = None
+    # 可选：临时覆盖模板绑定的视图（按视图 filters/sortings 取数）；未传用模板持久化的 view_id
+    view_id: int | None = None
     # 可选：临时追加的额外引用表 ID 列表，渲染时与模板持久化的 extra_table_ids 合并去重后注入 records_by_table
     extra_table_ids: list[int] = Field(default_factory=list)
 

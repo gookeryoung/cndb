@@ -481,6 +481,8 @@ export type ReportTheme = 'business' | 'minimal' | 'modern' | 'engineering' | 'a
 export interface ReportTemplateSummary {
   id: ID
   table_id: number | null
+  /** 可选绑定的主表视图 ID：渲染时按视图 filters/sortings 取数；null=取全表数据 */
+  view_id: number | null
   /** 归属工作区（显式优先，其次由 table 反推；皆无为 null——不归属任何工作区） */
   workspace_id: number | null
   name: string
@@ -506,6 +508,8 @@ export interface ReportTemplateCreate {
   output_format?: string
   template_content: string
   table_id?: number | null
+  /** 可选绑定的主表视图 ID：渲染时按视图 filters/sortings 取数 */
+  view_id?: number | null
   /** 归属工作区：显式优先（不存在 404）；未传且 table_id 存在时由表反推；皆无落 null */
   workspace_id?: number | null
   parameters?: ReportParameter[]
@@ -519,6 +523,7 @@ export interface ReportTemplateUpdate {
   output_format?: string
   template_content?: string
   table_id?: number | null
+  view_id?: number | null
   parameters?: ReportParameter[]
   extra_table_ids?: number[]
   theme?: ReportTheme
@@ -528,6 +533,8 @@ export interface ReportRenderRequest {
   table_id: number
   params?: Record<string, unknown>
   row_ids?: Array<number | null> | null
+  /** 可选：临时覆盖模板绑定的视图（按视图 filters/sortings 取数） */
+  view_id?: number | null
   /** 可选：额外引用的数据表 ID 列表 */
   extra_table_ids?: number[]
 }
