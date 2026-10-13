@@ -33,6 +33,24 @@ function TablesStub() {
     return <div data-testid="tables-page-stub">表列表</div>
 }
 
+/** 网格页路由桩 —— 展示当前 pathname 供断言 */
+function GridPageStub() {
+    const loc = useLocation()
+    return <div data-testid="grid-page-stub">{loc.pathname}</div>
+}
+
+/** 表级子页路由桩 —— 修改申请页，展示 pathname 供断言 */
+function ChangeRequestsStub() {
+    const loc = useLocation()
+    return <div data-testid="cr-page-stub">{loc.pathname}</div>
+}
+
+/** 表级子页路由桩 —— 数据表设置页，展示 pathname 供断言 */
+function TableSettingsStub() {
+    const loc = useLocation()
+    return <div data-testid="table-settings-stub">{loc.pathname}</div>
+}
+
 /** 报表路由桩 —— 展示当前 pathname 供断言 */
 function ReportsStub() {
     const loc = useLocation()
@@ -53,7 +71,9 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/tables" element={<TablesStub />} />
                 {/* 表详情路由桩：点击侧边栏表项会导航到 /w/:wid/tables/:tid，
                     缺少该路由时 react-router 会报 "No routes matched location" */}
-                <Route path="w/:wid/tables/:tid" element={<TablesStub />} />
+                <Route path="w/:wid/tables/:tid" element={<GridPageStub />} />
+                <Route path="w/:wid/tables/:tid/change-requests" element={<ChangeRequestsStub />} />
+                <Route path="w/:wid/tables/:tid/settings" element={<TableSettingsStub />} />
                 <Route path="w/:wid/reports" element={<ReportsStub />} />
                 <Route path="w/:wid/settings" element={<SettingsStub />} />
                 <Route path="admin" element={<AdminStub />} />
@@ -210,6 +230,66 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.getByText('应用名称')).toBeInTheDocument()
         expect(screen.getByText('服务器时间')).toBeInTheDocument()
         expect(screen.queryByText('database_url')).toBeNull()
+    })
+})
+
+describe('MainLayout 表级面包屑（融合导航行）', () => {
+    it('表上下文渲染面包屑：表名 + 下拉入口，旧二级导航行不再存在', async () => {
+        renderLayout(mockUser, '/w/10/tables/100')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('table-crumb')).toBeVisible()
+        })
+        // 表名来自 msw 的 mockTable（id=100 客户表）；表列表异步加载，等待其渲染完成
+        await waitFor(() => {
+            expect(screen.getByTestId('table-crumb-table')).toHaveTextContent('客户表')
+        })
+        // 旧表级二级导航行已移除
+        expect(screen.queryByTestId('table-subnav-back')).toBeNull()
+        // 网格页（非子页）无当前位置段
+        expect(screen.queryByTestId('table-crumb-current')).toBeNull()
+    })
+
+    it('下拉可切换表级子页：点击「数据表设置」导航到 /w/10/tables/100/settings', async () => {
+        renderLayout(mockUser, '/w/10/tables/100')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('table-crumb')).toBeVisible()
+        })
+        fireEvent.click(screen.getByTestId('table-crumb-menu'))
+        // antd 图标 aria-label 会拼进 accessible name，故用子串正则匹配
+        fireEvent.click(await screen.findByRole('menuitem', { name: /数据表设置/ }))
+        await waitFor(() => {
+            expect(screen.getByTestId('table-settings-stub')).toHaveTextContent('/w/10/tables/100/settings')
+        })
+    })
+
+    it('子页上下文内联展示当前位置，菜单项带选中态，点击表名返回网格', async () => {
+        renderLayout(mockUser, '/w/10/tables/100/change-requests')
+
+        // 面包屑当前位置：表名 › 修改申请
+        await waitFor(() => {
+            expect(screen.getByTestId('table-crumb-current')).toHaveTextContent('修改申请')
+        })
+        // 下拉中当前子页带选中态（antd Dropdown 菜单项选中类为 ant-dropdown-menu-item-selected）
+        fireEvent.click(screen.getByTestId('table-crumb-menu'))
+        const crItem = await screen.findByRole('menuitem', { name: /修改申请/ })
+        expect(crItem).toHaveClass('ant-dropdown-menu-item-selected')
+
+        // 点击表名返回网格
+        fireEvent.click(screen.getByTestId('table-crumb-table'))
+        await waitFor(() => {
+            expect(screen.getByTestId('grid-page-stub')).toHaveTextContent('/w/10/tables/100')
+        })
+    })
+
+    it('非表上下文（表列表页）不渲染面包屑', async () => {
+        renderLayout(mockUser, '/w/10/tables')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
+        expect(screen.queryByTestId('table-crumb')).toBeNull()
     })
 })
 

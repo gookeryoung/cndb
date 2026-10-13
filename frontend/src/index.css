@@ -485,6 +485,34 @@ body.theme-oled {
   color: var(--cn-brand-color);
 }
 
+/* ─────────────── 表级面包屑（融合导航行右段） ───────────────
+ * 表名可点回网格；当前子页以「› 子页名」内联展示；子页入口收进 ▾ 下拉。
+ * 颜色全部走 var(--cn-*)，随主题自适应。 */
+.cn-table-crumb-name {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-weight: 600;
+}
+
+.cn-table-crumb-sep {
+  color: var(--cn-text-secondary);
+  font-size: 12px;
+  user-select: none;
+}
+
+.cn-table-crumb-current {
+  color: var(--cn-text-secondary);
+  font-size: 13px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 全局主按钮：品牌色柔和投影，强化主操作层级（危险主按钮不套用） */
 button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous) {
   box-shadow: 0 2px 6px color-mix(in srgb, var(--cn-brand-color) 32%, transparent);

@@ -8,7 +8,7 @@ import {
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
   MenuOutlined, InfoCircleOutlined,
   DatabaseOutlined, BarChartOutlined,
-  ArrowLeftOutlined, PullRequestOutlined,
+  DownOutlined, PullRequestOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
@@ -27,6 +27,13 @@ const OnboardingTour = lazy(() => import('@/components/onboarding/OnboardingTour
 function ModalFallback() {
   return null
 }
+
+/** 表级子页定义 —— 融合导航行面包屑的下拉菜单与当前位置展示共用；顺序即菜单顺序. */
+const TABLE_SUBPAGES = [
+  { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined /> },
+  { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined /> },
+  { key: 'settings', label: '数据表设置', icon: <SettingOutlined /> },
+] as const
 
 /** 内容区骨架 —— 懒加载页面在 Content 内挂起时的占位，避免整页高度跳动 */
 function ContentFallback() {
@@ -131,9 +138,9 @@ export default function MainLayout() {
     },
     { key: 'settings', label: <span><SettingOutlined /> 工作区设置</span> },
   ]
-  // ── 表级二级导航（GitHub repo tabs 风格）──
+  // ── 表级面包屑（融合导航行右段）──
   // 当 URL 处于某张表的上下文（网格页 /w/:wid/tables/:tid 及其子页）时，
-  // 在工作区 Tabs 行下方渲染：当前表名（返回网格）+ 修改申请/问题清单/数据表设置。
+  // 在工作区 Tabs 行右侧渲染：表名（点击返回网格）+ 当前子页位置 + 子页入口下拉。
   const inTableContext = !!wid && !!tid && location.startsWith(`/w/${wid}/tables/${tid}`)
   const currentTable = orderedTables.find(t => String(t.id) === String(tid))
   const activeTableTab = location.includes('/change-requests')
@@ -143,11 +150,12 @@ export default function MainLayout() {
       : location.includes('/settings')
         ? 'settings'
         : ''
-  const tableTabItems: TabsProps['items'] = [
-    { key: 'change-requests', label: <span><PullRequestOutlined /> 修改申请</span> },
-    { key: 'issues', label: <span><ExclamationCircleOutlined /> 问题清单</span> },
-    { key: 'settings', label: <span><SettingOutlined /> 数据表设置</span> },
-  ]
+  const activeSubpage = TABLE_SUBPAGES.find(p => p.key === activeTableTab)
+  const tableSubpageMenu: MenuProps['items'] = TABLE_SUBPAGES.map(p => ({
+    key: p.key,
+    icon: p.icon,
+    label: p.label,
+  }))
 
   // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」（子页高亮由表级导航负责），
   // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
@@ -350,37 +358,59 @@ export default function MainLayout() {
         )}
 
         <Layout style={{ flex: 1, minHeight: 0 }}>
-          {/* 工作区级分页导航 —— 位于 Content 之外，跨页切换不重挂载；无工作区上下文时不渲染 */}
+          {/* 工作区级分页导航 —— 位于 Content 之外，跨页切换不重挂载；无工作区上下文时不渲染。
+              表上下文时右段融合表级面包屑：表名回网格 + 当前子页位置 + 子页入口下拉 */}
           {wid && (
             <div className="cn-ws-tabs" style={{
               background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', flexShrink: 0,
+              display: 'flex', alignItems: 'center',
             }}>
               <Tabs
                 activeKey={activeWsTab}
                 items={wsTabItems}
+                style={{ flex: '1 1 auto', minWidth: 0 }}
                 tabBarStyle={{ margin: 0, padding: '0 16px' }}
                 onChange={(key) => navigate(`/w/${wid}/${key}`)}
               />
-              {/* 表级二级导航：网格页与表级子页（修改申请/问题清单/数据表设置）共享，
-                  左侧为当前表名（点击返回网格），tab 高亮由 URL 驱动 */}
               {inTableContext && (
-                <div style={{ display: 'flex', alignItems: 'center', background: 'var(--cn-bg-page)' }}>
+                <div
+                  className="cn-table-crumb"
+                  data-testid="table-crumb"
+                  style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, padding: '0 16px 0 4px' }}
+                >
                   <Button
                     type="text"
                     size="small"
-                    icon={<ArrowLeftOutlined />}
-                    data-testid="table-subnav-back"
-                    style={{ marginLeft: 16, flexShrink: 0 }}
+                    data-testid="table-crumb-table"
+                    style={{ paddingInline: 8 }}
                     onClick={() => navigate(`/w/${wid}/tables/${tid}`)}
                   >
-                    {currentTable?.name || '返回表格'}
+                    <span className="cn-table-crumb-name">{currentTable?.name || '数据表'}</span>
                   </Button>
-                  <Tabs
-                    activeKey={activeTableTab}
-                    items={tableTabItems}
-                    tabBarStyle={{ margin: 0, flex: 1 }}
-                    onChange={(key) => navigate(`/w/${wid}/tables/${tid}/${key}`)}
-                  />
+                  {activeSubpage && (
+                    <>
+                      <span className="cn-table-crumb-sep" aria-hidden>›</span>
+                      <span className="cn-table-crumb-current" data-testid="table-crumb-current">
+                        {activeSubpage.label}
+                      </span>
+                    </>
+                  )}
+                  <Dropdown
+                    trigger={['click']}
+                    menu={{
+                      items: tableSubpageMenu,
+                      selectedKeys: activeSubpage ? [activeSubpage.key] : [],
+                      onClick: ({ key }) => navigate(`/w/${wid}/tables/${tid}/${key}`),
+                    }}
+                  >
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<DownOutlined />}
+                      data-testid="table-crumb-menu"
+                      aria-label="表级页面切换"
+                    />
+                  </Dropdown>
                 </div>
               )}
             </div>
