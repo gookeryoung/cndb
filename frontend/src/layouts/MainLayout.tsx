@@ -8,7 +8,7 @@ import {
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
   MenuOutlined, InfoCircleOutlined,
   DatabaseOutlined, BarChartOutlined,
-  DownOutlined, PullRequestOutlined,
+  PullRequestOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
@@ -138,9 +138,9 @@ export default function MainLayout() {
     },
     { key: 'settings', label: <span><SettingOutlined /> 工作区设置</span> },
   ]
-  // ── 表级面包屑（融合导航行右段）──
+  // ── 表级页签（融合导航行，紧随工作区分页之后）──
   // 当 URL 处于某张表的上下文（网格页 /w/:wid/tables/:tid 及其子页）时，
-  // 在工作区 Tabs 行右侧渲染：表名（点击返回网格）+ 当前子页位置 + 子页入口下拉。
+  // 在工作区 Tabs 右侧以竖线分割后渲染：表名（点击返回网格）+ 子页页签（GitHub 风格页签切换）。
   const inTableContext = !!wid && !!tid && location.startsWith(`/w/${wid}/tables/${tid}`)
   const currentTable = orderedTables.find(t => String(t.id) === String(tid))
   const activeTableTab = location.includes('/change-requests')
@@ -151,11 +151,6 @@ export default function MainLayout() {
         ? 'settings'
         : ''
   const activeSubpage = TABLE_SUBPAGES.find(p => p.key === activeTableTab)
-  const tableSubpageMenu: MenuProps['items'] = TABLE_SUBPAGES.map(p => ({
-    key: p.key,
-    icon: p.icon,
-    label: p.label,
-  }))
 
   // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」（子页高亮由表级导航负责），
   // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
@@ -359,25 +354,22 @@ export default function MainLayout() {
 
         <Layout style={{ flex: 1, minHeight: 0 }}>
           {/* 工作区级分页导航 —— 位于 Content 之外，跨页切换不重挂载；无工作区上下文时不渲染。
-              表上下文时右段融合表级面包屑：表名回网格 + 当前子页位置 + 子页入口下拉 */}
+              表上下文时紧随其后以竖线分割出表级页签段：表名回网格 + 子页页签切换（GitHub 风格） */}
           {wid && (
             <div className="cn-ws-tabs" style={{
               background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', flexShrink: 0,
-              display: 'flex', alignItems: 'center',
+              display: 'flex', alignItems: 'stretch', overflowX: 'auto',
             }}>
               <Tabs
                 activeKey={activeWsTab}
                 items={wsTabItems}
-                style={{ flex: '1 1 auto', minWidth: 0 }}
+                style={{ flex: '0 1 auto', minWidth: 0 }}
                 tabBarStyle={{ margin: 0, padding: '0 16px' }}
                 onChange={(key) => navigate(`/w/${wid}/${key}`)}
               />
               {inTableContext && (
-                <div
-                  className="cn-table-crumb"
-                  data-testid="table-crumb"
-                  style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, padding: '0 16px 0 4px' }}
-                >
+                <div className="cn-table-crumb" data-testid="table-crumb">
+                  <span className="cn-table-crumb-divider" aria-hidden />
                   <Button
                     type="text"
                     size="small"
@@ -387,30 +379,26 @@ export default function MainLayout() {
                   >
                     <span className="cn-table-crumb-name">{currentTable?.name || '数据表'}</span>
                   </Button>
-                  {activeSubpage && (
-                    <>
-                      <span className="cn-table-crumb-sep" aria-hidden>›</span>
-                      <span className="cn-table-crumb-current" data-testid="table-crumb-current">
-                        {activeSubpage.label}
-                      </span>
-                    </>
-                  )}
-                  <Dropdown
-                    trigger={['click']}
-                    menu={{
-                      items: tableSubpageMenu,
-                      selectedKeys: activeSubpage ? [activeSubpage.key] : [],
-                      onClick: ({ key }) => navigate(`/w/${wid}/tables/${tid}/${key}`),
-                    }}
-                  >
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<DownOutlined />}
-                      data-testid="table-crumb-menu"
-                      aria-label="表级页面切换"
-                    />
-                  </Dropdown>
+                  {/* 表级子页页签 —— 激活态与选中项由 pathname 驱动，替代旧的 ▾ 下拉切换 */}
+                  <nav className="cn-table-tabs" aria-label="表级页面切换">
+                    {TABLE_SUBPAGES.map(p => {
+                      const active = activeSubpage?.key === p.key
+                      return (
+                        <button
+                          key={p.key}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          data-testid={`table-tab-${p.key}`}
+                          className={active ? 'cn-table-tab cn-table-tab-active' : 'cn-table-tab'}
+                          onClick={() => navigate(`/w/${wid}/tables/${tid}/${p.key}`)}
+                        >
+                          {p.icon}
+                          {p.label}
+                        </button>
+                      )
+                    })}
+                  </nav>
                 </div>
               )}
             </div>
