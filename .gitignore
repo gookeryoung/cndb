@@ -26,6 +26,10 @@ coverage.xml
 .idea/
 *_profile.html
 
+# 本地协作产物（需求记录 / 迭代记录 / 设计文件）
+/.trae/
+/.trae-cn/
+
 # 环境变量与凭证（勿提交）
 .env
 .env.*
