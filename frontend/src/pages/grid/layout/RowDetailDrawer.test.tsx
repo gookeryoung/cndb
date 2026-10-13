@@ -164,7 +164,7 @@ describe('RowDetailDrawer 修改申请响应与只读模式', () => {
         expect(screen.queryByText('已保存')).not.toBeInTheDocument()
     })
 
-    it('readOnly（在途修改申请行）时提交按钮禁用', () => {
+    it('readOnly（编辑中行）时提交按钮禁用', () => {
         setup()
         renderDrawer({ readOnly: true })
 

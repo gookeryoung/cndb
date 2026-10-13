@@ -142,7 +142,7 @@ export function useUpdateRowOptimistic(wid: string, tid: string) {
       return { previousRecordsQueries }
     },
     onSuccess: (data, _args, context) => {
-      // 202 修改申请（查看者/关闭直编）：未落库 —— 回滚乐观写入让网格保持原值，并刷新在途申请状态
+      // 202 修改申请（查看者/关闭直编）：未落库 —— 回滚乐观写入让网格保持原值，并刷新编辑中状态
       if (isChangeRequestResponse(data)) {
         context?.previousRecordsQueries.forEach(([queryKey, prev]) => {
           if (prev) queryClient.setQueryData(queryKey, prev)

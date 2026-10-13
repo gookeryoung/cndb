@@ -135,7 +135,7 @@ export default function ChangeRequestsPage() {
                       <Text strong>{item.title}</Text>
                       {item.stale && <Tag color="warning" style={{ marginInlineEnd: 0 }}>基准已过期</Tag>}
                       {(item.conflicts_count ?? 0) > 0 && (
-                        <Tag color="orange" style={{ marginInlineEnd: 0 }}>与 {item.conflicts_count} 行在途申请冲突</Tag>
+                        <Tag color="orange" style={{ marginInlineEnd: 0 }}>与 {item.conflicts_count} 行编辑中状态冲突</Tag>
                       )}
                     </Space>
                   }
