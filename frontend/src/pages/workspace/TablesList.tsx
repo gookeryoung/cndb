@@ -399,7 +399,7 @@ export default function TablesList() {
             {workspace?.description || '管理当前工作区的所有数据表'}
           </Text>
         </div>
-        <Space>
+        <Space wrap>
           <Upload
             accept=".csv,.tsv,.json,.xlsx"
             showUploadList={false}
@@ -439,23 +439,33 @@ export default function TablesList() {
         </Space>
       </div>
 
-      {/* Filter Segmented —— 移动端换行避免挤压 */}
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-        <Space>
-          <Segmented<AccessFilter>
-            value={filter}
-            onChange={(v) => setFilter(v as AccessFilter)}
-            options={[
-              { label: '全部', value: 'all' },
-              { label: '我拥有的', value: 'owner' },
-              { label: '我可编辑的', value: 'write' },
-              { label: '我可读的', value: 'read' },
-            ]}
-          />
-          <Text type="secondary" style={{ marginLeft: 8 }}>
-            共 {filteredTables.length} / {tables.length} 张表
-          </Text>
-        </Space>
+      {/* Filter Segmented —— 移动端纵向堆叠：筛选器整行、计数文本独立一行不折行 */}
+      <div style={{
+        marginBottom: 12,
+        display: 'flex',
+        flexDirection: isMobile ? 'column' : 'row',
+        justifyContent: 'space-between',
+        alignItems: isMobile ? 'stretch' : 'center',
+        flexWrap: 'wrap',
+        gap: 8,
+      }}>
+        <Segmented<AccessFilter>
+          block={isMobile}
+          value={filter}
+          onChange={(v) => setFilter(v as AccessFilter)}
+          options={[
+            { label: '全部', value: 'all' },
+            { label: '我拥有的', value: 'owner' },
+            { label: '我可编辑的', value: 'write' },
+            { label: '我可读的', value: 'read' },
+          ]}
+        />
+        <Text
+          type="secondary"
+          style={{ whiteSpace: 'nowrap', marginLeft: isMobile ? 0 : 8, alignSelf: isMobile ? 'flex-start' : undefined }}
+        >
+          共 {filteredTables.length} / {tables.length} 张表
+        </Text>
       </div>
 
       {/* Table 列表 —— 支持拖拽排序；卡片化容器与 Grid 工作台同构 */}
