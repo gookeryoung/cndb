@@ -164,8 +164,8 @@ describe('buildColumns 列构建', () => {
     expect(screen.getAllByTestId('row-edit-btn')).toHaveLength(1)
   })
 
-  describe('编辑中行（isPendingRow 锁定）', () => {
-    it('编辑中行显示「编辑中」标识且不提供编辑按钮，普通行不受影响', () => {
+  describe('修改审批中行（isPendingRow 锁定）', () => {
+    it('审批中行显示「修改审批中」标识且不提供编辑按钮，普通行不受影响', () => {
       const onEdit = vi.fn()
       const inlineOps: RowInlineOps = {
         getInlineEdit: () => null,
@@ -174,10 +174,10 @@ describe('buildColumns 列构建', () => {
       }
       renderGrid(FIELDS, { inlineOps })
 
-      // 行 1 锁定：编辑中 Tag；行 2 正常：编辑按钮
+      // 行 1 锁定：修改审批中 Tag；行 2 正常：编辑按钮
       expect(screen.getAllByTestId('row-pending-tag')).toHaveLength(1)
       expect(screen.getAllByTestId('row-edit-btn')).toHaveLength(1)
-      expect(screen.getByText('编辑中')).toBeInTheDocument()
+      expect(screen.getByText('修改审批中')).toBeInTheDocument()
     })
 
     it('不提供 isPendingRow 时行为与原先一致（回归保证）', () => {

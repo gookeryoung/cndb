@@ -4,8 +4,8 @@ import api from './client'
 import type { ChangeRequestDetail, ChangeRequestPage, CRMergePayload, CRCreatePayload } from './types'
 
 export const changeRequestsApi = {
-  /** 列表：scope=open/all/mine，列表项附 conflicts_count */
-  list: (wid: number | string, tid: number | string, scope: 'open' | 'all' | 'mine' = 'open') =>
+  /** 列表：scope=open/all/mine/merged，列表项附 conflicts_count */
+  list: (wid: number | string, tid: number | string, scope: 'open' | 'all' | 'mine' | 'merged' = 'open') =>
     api.get<ChangeRequestPage>(`/v1/workspaces/${wid}/tables/${tid}/change-requests`, { params: { scope } }).then(r => r.data),
   /** 详情 = 本体 + items（字段级 diff）+ actions 流水 */
   get: (wid: number | string, tid: number | string, requestId: number | string) =>
