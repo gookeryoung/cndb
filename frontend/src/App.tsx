@@ -29,6 +29,8 @@ const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSett
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 const FormsPage = lazy(() => import('@/pages/forms/FormsPage'))
 const FormRunnerPage = lazy(() => import('@/pages/forms/FormRunnerPage'))
+const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage'))
+const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
 
 /** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
 function PageFallback() {
@@ -86,6 +88,12 @@ function AuthenticatedApp() {
           } />
           <Route path="w/:wid/forms/:fid" element={
             <Suspense fallback={<PageFallback />}><FormRunnerPage /></Suspense>
+          } />
+          <Route path="w/:wid/documents" element={
+            <Suspense fallback={<PageFallback />}><DocumentsPage /></Suspense>
+          } />
+          <Route path="w/:wid/documents/:docId" element={
+            <Suspense fallback={<PageFallback />}><DocumentEditorPage /></Suspense>
           } />
           <Route path="admin" element={
             <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>

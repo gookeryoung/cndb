@@ -36,6 +36,7 @@ def db_engine():
     # 确保所有模型已注册到 Base.metadata
     import cndb.plugins.accounts.models
     import cndb.plugins.change_requests.models
+    import cndb.plugins.documents.models
     import cndb.plugins.issues.models
     import cndb.plugins.reports.models
     import cndb.plugins.tables.models
