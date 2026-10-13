@@ -104,7 +104,10 @@ web-static-dirs = ["src/cndb/static"]
 # gui = Windows 上用 pythonw 无控制台；Linux/macOS 用 python + DISPLAY
 
 [dependency-groups]
-dev = ["cndb[dev]"]
+dev = [
+    "cndb[dev]",
+    "prek>=0.5.5",
+]
 
 [tool.coverage.run]
 omit = ["src/cndb/cli/main.py", "src/cndb/cli/seed.py", "src/cndb/gui/**", "src/cndb/plugins/tables/routers/files.py"]

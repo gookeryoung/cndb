@@ -17,8 +17,10 @@ PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
 
-sync: ## 安装开发依赖
+sync: ## 安装开发依赖 + 强制重装 git pre-commit 钩子 (prek)
 	uv sync --extra dev
+	@uv run prek install --force >/dev/null 2>&1 || true
+	@echo '[sync] pre-commit hook (prek) 已就绪'
 
 frontend-sync fs: ## 安装前端依赖（pnpm install，惰性：node_modules 已存在则跳过）
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import os,subprocess;\
@@ -106,4 +108,3 @@ pack-cache-clean: ## 清理 fspack 缓存（wheels + nuitka）
 
 push: ## 推送代码到所有远程仓库
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import subprocess as sp; [print(f'\u63a8\u9001 {r}...',flush=True) or (sp.run(['git','push',r],check=True) and sp.run(['git','push',r,'--tags'],check=True)) for r in sp.check_output(['git','remote'],text=True).split()]"
-
