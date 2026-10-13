@@ -15,12 +15,13 @@ def _options_strings_to_dicts(options: list[str]) -> list[dict[str, Any]]:
 
 
 def _infer_decimals_config(field_type: str, sample_values: list[Any]) -> dict[str, Any]:
-    """按样本推断 float/number 字段的 decimals 配置.
+    """按样本推断 float 字段的 decimals 配置.
 
     根因：NumberFieldConfig.decimals 默认 0，float 字段不设置时
     ``round(5.5, 0) == 6``，导入的小数会被静默取整丢失精度.
+    整数类型（number）物理列为 Integer，天然无小数位，无需推断 decimals.
     """
-    if field_type not in ("float", "number"):
+    if field_type != "float":
         return {}
     max_dec = 0
     for s in sample_values[:50]:

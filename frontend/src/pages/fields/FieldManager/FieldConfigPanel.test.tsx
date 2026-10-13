@@ -65,8 +65,14 @@ describe('FieldConfigPanel 分区卡片渲染', () => {
         expect(title?.textContent).toContain('整数')
     })
 
-    it('类型专属分区包含分区输入（number：最小值/最大值/小数位数）', () => {
+    it('整数类型专属分区仅包含最小值/最大值；小数类型额外包含小数位数', () => {
         renderProviders(<Host fieldType="number" />)
+        expect(screen.getAllByPlaceholderText('不限').length).toBe(2)
+        expect(screen.queryByText('小数位数')).not.toBeInTheDocument()
+    })
+
+    it('小数类型专属分区包含最小值/最大值/小数位数', () => {
+        renderProviders(<Host fieldType="float" />)
         expect(screen.getAllByPlaceholderText('不限').length).toBe(2)
         expect(screen.getByText('小数位数')).toBeInTheDocument()
     })
@@ -123,10 +129,14 @@ describe('FieldConfigPanel 默认值分区', () => {
 })
 
 describe('FieldConfigPanel config 默认值补齐', () => {
-    it('isEdit=false 且 config 为空：按类型补齐默认 config（number → decimals 0）', async () => {
+    it('isEdit=false 且 config 为空：整数默认仅 min/max；小数含 decimals 2', async () => {
         renderProviders(<Host fieldType="number" />)
         await screen.findByText(/类型专属配置/)
-        expect(formRef.current!.getFieldValue(['config', 'decimals'])).toBe(0)
+        expect(formRef.current!.getFieldValue(['config', 'decimals'])).toBeUndefined()
+
+        renderProviders(<Host fieldType="float" />)
+        await screen.findByText(/类型专属配置/)
+        expect(formRef.current!.getFieldValue(['config', 'decimals'])).toBe(2)
     })
 
     it('isEdit=true：已存 config 不被默认值覆盖', async () => {

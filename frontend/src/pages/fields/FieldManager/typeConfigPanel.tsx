@@ -48,8 +48,9 @@ export function normalizeOptionsFromConfig(raw: unknown): Array<{ key: string; l
 export function defaultConfigForType(fieldType: FieldType): Record<string, unknown> {
   switch (fieldType) {
     case 'number':
+      return { min: undefined, max: undefined }
     case 'float':
-      return { min: undefined, max: undefined, decimals: fieldType === 'float' ? 2 : 0 }
+      return { min: undefined, max: undefined, decimals: 2 }
     case 'percentage':
       return { decimals: 0 }
     case 'date':
@@ -142,10 +143,10 @@ export function ConfigEditor({ fieldType, form, tables, isEdit = false, editTarg
               <InputNumber style={{ width: '100%' }} placeholder="不限" />
             </Form.Item>
           </Col>
-          {fieldType !== 'percentage' && (
+          {fieldType === 'float' && (
             <Col span={8}>
-              <Form.Item {...configField('decimals')} label="小数位数" extra="整数固定 0" style={{ marginBottom: 8 }}>
-                <InputNumber min={0} max={10} style={{ width: '100%' }} placeholder="0" />
+              <Form.Item {...configField('decimals')} label="小数位数" style={{ marginBottom: 8 }}>
+                <InputNumber min={0} max={10} style={{ width: '100%' }} placeholder="自动推断" />
               </Form.Item>
             </Col>
           )}
