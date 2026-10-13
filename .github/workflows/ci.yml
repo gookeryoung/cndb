@@ -67,7 +67,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      # pyproject 固定腾讯 PyPI 镜像（国内本地开发用），GitHub runner 在海外访问该镜像会超时。
+      # CI 用 UV_DEFAULT_INDEX 覆盖回官方源，lock 中 registry 来源按当前默认索引下载。
       - name: Sync dependencies
+        env:
+          UV_DEFAULT_INDEX: https://pypi.org/simple
         run: uv sync --frozen --extra lint
 
       - name: Check .gitkeep sentinels
@@ -166,6 +170,8 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Sync dependencies
+        env:
+          UV_DEFAULT_INDEX: https://pypi.org/simple
         run: uv sync --frozen --extra test --python ${{ matrix.python-version }}
 
       # GitHub hosted runner 默认 ubuntu-latest = 2 核 7GB；
@@ -194,6 +200,8 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Sync backend deps
+        env:
+          UV_DEFAULT_INDEX: https://pypi.org/simple
         run: uv sync --frozen --extra dev
 
       - name: Install pnpm
