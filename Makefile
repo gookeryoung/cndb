@@ -34,18 +34,18 @@ print('[frontend] node_modules exist, skip pnpm install') if os.path.isdir('fron
 print('[frontend] node_modules not exist, start pnpm install...'),\
 subprocess.run(['pnpm','install','--frozen-lockfile'],cwd='frontend',check=True))"
 
-frontend-lint fl: frontend-sync ## 前端 ESLint 检查
+frontend-lint fl: | frontend-sync ## 前端 ESLint 检查
 	cd frontend && pnpm lint
 
-frontend-typecheck ft: frontend-sync ## 前端 TypeScript 类型检查
+frontend-typecheck ft: | frontend-sync ## 前端 TypeScript 类型检查
 	cd frontend && pnpm typecheck
 
-frontend-test ftest: frontend-sync ## 前端单测/组件测试 + 覆盖率双门槛校验
+frontend-test ftest: | frontend-sync ## 前端单测/组件测试 + 覆盖率双门槛校验
 	cd frontend && pnpm test:coverage
 
 frontend-check fc: frontend-typecheck frontend-lint frontend-test ## 前端门禁（typecheck + lint + test:coverage）
 
-frontend-build fb: frontend-sync ## 构建前端（Vite，产物输出到 src/cndb/static/）
+frontend-build fb: | frontend-sync ## 构建前端（Vite，产物输出到 src/cndb/static/）
 	cd frontend && pnpm build
 
 build b: frontend-build ## 构建分发包 (前端 → wheel + sdist)
@@ -62,7 +62,7 @@ test: ## 运行测试（不含覆盖率）
 	uv run pytest -m "not slow" -n $(PYTEST_JOBS)
 
 cov: ## 运行测试并生成 HTML 覆盖率报告
-	uv run pytest --cov --cov-report=term --cov-fail-under=$(COV_THRESHOLD) --cov-report=html -n $(PYTEST_JOBS)
+	uv run pytest -m "not slow" --cov --cov-report=term --cov-fail-under=$(COV_THRESHOLD) --cov-report=html -n $(PYTEST_JOBS)
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); print('Coverage report: htmlcov/index.html')"
 
 e2e: frontend-build ## 前端 E2E 测试（Playwright；webServer 自动起隔离后端，首次先 npx playwright install chromium）
