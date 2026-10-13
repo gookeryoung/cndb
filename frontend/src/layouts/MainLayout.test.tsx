@@ -233,8 +233,8 @@ describe('MainLayout 顶部导航', () => {
     })
 })
 
-describe('MainLayout 表级面包屑（融合导航行）', () => {
-    it('表上下文渲染面包屑：表名 + 下拉入口，旧二级导航行不再存在', async () => {
+describe('MainLayout 表级页签（融合导航行）', () => {
+    it('表上下文渲染页签区：表名 + 子页页签，替代旧下拉框', async () => {
         renderLayout(mockUser, '/w/10/tables/100')
 
         await waitFor(() => {
@@ -244,37 +244,38 @@ describe('MainLayout 表级面包屑（融合导航行）', () => {
         await waitFor(() => {
             expect(screen.getByTestId('table-crumb-table')).toHaveTextContent('客户表')
         })
+        // 三个子页页签已渲染（GitHub 风格页签切换）
+        expect(screen.getByTestId('table-tab-change-requests')).toBeVisible()
+        expect(screen.getByTestId('table-tab-issues')).toBeVisible()
+        expect(screen.getByTestId('table-tab-settings')).toBeVisible()
+        // 旧下拉入口与「› 当前位置」文本已移除
+        expect(screen.queryByTestId('table-crumb-menu')).toBeNull()
+        expect(screen.queryByTestId('table-crumb-current')).toBeNull()
         // 旧表级二级导航行已移除
         expect(screen.queryByTestId('table-subnav-back')).toBeNull()
-        // 网格页（非子页）无当前位置段
-        expect(screen.queryByTestId('table-crumb-current')).toBeNull()
     })
 
-    it('下拉可切换表级子页：点击「数据表设置」导航到 /w/10/tables/100/settings', async () => {
+    it('点击子页页签切换页面：点击「数据表设置」导航到 /w/10/tables/100/settings', async () => {
         renderLayout(mockUser, '/w/10/tables/100')
 
         await waitFor(() => {
             expect(screen.getByTestId('table-crumb')).toBeVisible()
         })
-        fireEvent.click(screen.getByTestId('table-crumb-menu'))
-        // antd 图标 aria-label 会拼进 accessible name，故用子串正则匹配
-        fireEvent.click(await screen.findByRole('menuitem', { name: /数据表设置/ }))
+        fireEvent.click(screen.getByTestId('table-tab-settings'))
         await waitFor(() => {
             expect(screen.getByTestId('table-settings-stub')).toHaveTextContent('/w/10/tables/100/settings')
         })
     })
 
-    it('子页上下文内联展示当前位置，菜单项带选中态，点击表名返回网格', async () => {
+    it('子页上下文对应页签带选中态，点击表名返回网格', async () => {
         renderLayout(mockUser, '/w/10/tables/100/change-requests')
 
-        // 面包屑当前位置：表名 › 修改申请
+        // 当前子页页签选中，其余未选中（选中态由 pathname 驱动）
         await waitFor(() => {
-            expect(screen.getByTestId('table-crumb-current')).toHaveTextContent('修改申请')
+            expect(screen.getByTestId('table-tab-change-requests')).toBeVisible()
         })
-        // 下拉中当前子页带选中态（antd Dropdown 菜单项选中类为 ant-dropdown-menu-item-selected）
-        fireEvent.click(screen.getByTestId('table-crumb-menu'))
-        const crItem = await screen.findByRole('menuitem', { name: /修改申请/ })
-        expect(crItem).toHaveClass('ant-dropdown-menu-item-selected')
+        expect(screen.getByTestId('table-tab-change-requests')).toHaveAttribute('aria-selected', 'true')
+        expect(screen.getByTestId('table-tab-settings')).toHaveAttribute('aria-selected', 'false')
 
         // 点击表名返回网格
         fireEvent.click(screen.getByTestId('table-crumb-table'))
@@ -283,7 +284,7 @@ describe('MainLayout 表级面包屑（融合导航行）', () => {
         })
     })
 
-    it('非表上下文（表列表页）不渲染面包屑', async () => {
+    it('非表上下文（表列表页）不渲染页签区', async () => {
         renderLayout(mockUser, '/w/10/tables')
 
         await waitFor(() => {

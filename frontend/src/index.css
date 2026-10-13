@@ -485,9 +485,27 @@ body.theme-oled {
   color: var(--cn-brand-color);
 }
 
-/* ─────────────── 表级面包屑（融合导航行右段） ───────────────
- * 表名可点回网格；当前子页以「› 子页名」内联展示；子页入口收进 ▾ 下拉。
+/* ─────────────── 表级页签（融合导航行，GitHub 风格） ───────────────
+ * 竖线分割工作区 Tabs 与表级段；表名可点回网格；子页以页签切换，
+ * 激活页签底部品牌色墨条与工作区 Tabs 墨条对齐同一行底线。
  * 颜色全部走 var(--cn-*)，随主题自适应。 */
+.cn-table-crumb {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 0 16px 0 4px;
+}
+
+.cn-table-crumb-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--cn-border);
+  flex-shrink: 0;
+}
+
 .cn-table-crumb-name {
   display: inline-block;
   max-width: 160px;
@@ -498,19 +516,47 @@ body.theme-oled {
   font-weight: 600;
 }
 
-.cn-table-crumb-sep {
-  color: var(--cn-text-secondary);
-  font-size: 12px;
-  user-select: none;
+.cn-table-tabs {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  min-width: 0;
 }
 
-.cn-table-crumb-current {
+.cn-table-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
   color: var(--cn-text-secondary);
-  font-size: 13px;
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 14px;
   white-space: nowrap;
+  transition: color 0.18s ease;
+}
+
+.cn-table-tab:hover {
+  color: var(--cn-brand-color);
+}
+
+.cn-table-tab-active {
+  color: var(--cn-brand-color);
+  font-weight: 500;
+}
+
+.cn-table-tab-active::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--cn-brand-color);
 }
 
 /* 全局主按钮：品牌色柔和投影，强化主操作层级（危险主按钮不套用） */
@@ -526,7 +572,8 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 @media (prefers-reduced-motion: reduce) {
 
   .cn-table-nav .ant-menu-item,
-  .cn-ws-tabs .ant-tabs-tab {
+  .cn-ws-tabs .ant-tabs-tab,
+  .cn-table-tab {
     transition: none;
   }
 }
