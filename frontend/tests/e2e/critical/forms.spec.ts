@@ -1,6 +1,6 @@
 /** 表单模块 E2E（critical）.
  *
- * 覆盖：导航 Tab 顺序（数据资产 → 表单 → 报表）/ 表单列表渲染 /
+ * 覆盖：导航 Tab 顺序（数据表 → 表单 → 报表）/ 表单列表渲染 /
  * 表单运行器全链路（新增数据 → 提交 → 行出现 → 删除确认 → 行消失）.
  * 前置：e2e-server 已 seed「某企业销售管理」工作区（wid=1，员工表含
  * 姓名 / 工号 text required / 职位 select / 薪资 number 等字段）。
@@ -47,20 +47,20 @@ async function ensureForm(request: any): Promise<number> {
 }
 
 test.describe("表单模块", () => {
-  test("导航 Tab 顺序为 数据资产 → 表单 → 报表", async ({ page }) => {
+  test("导航 Tab 顺序为 数据表 → 表单 → 报表", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await page.goto(`/w/${WID}/tables`)
     await page.waitForURL(/\/tables$/)
 
     const tabs = page.getByRole("tablist").first().getByRole("tab")
-    await expect(tabs.filter({ hasText: "数据资产" })).toBeVisible()
+    await expect(tabs.filter({ hasText: "数据表" })).toBeVisible()
     // 表单 tab 文本含徽标（如"表单2 1 走审批"），用子串匹配而非 ^ 锚点，
     // 避免 tab 标签内图标/空白导致的行首不匹配
     await expect(tabs.filter({ hasText: "表单" })).toBeVisible()
     await expect(tabs.filter({ hasText: /报表/ })).toBeVisible()
 
     const names = (await tabs.allTextContents()).map((t) => t.trim())
-    const idxAssets = names.findIndex((n) => n.includes("数据资产"))
+    const idxAssets = names.findIndex((n) => n.includes("数据表"))
     const idxForms = names.findIndex((n) => n.includes("表单"))
     const idxReports = names.findIndex((n) => n.includes("报表"))
     expect(idxAssets).toBeLessThan(idxForms)
