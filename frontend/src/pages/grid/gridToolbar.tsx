@@ -1,9 +1,12 @@
-/** Grid 顶部工具栏 — 返回/标题/统计徽标/主操作区（从 GridPage 抽出）. */
+/** Grid 顶部工具栏 — 标题/统计徽标/主操作区（从 GridPage 抽出）.
+ *
+ * 注：返回导航由 MainLayout 融合导航行的面包屑（数据表 tab / 表名）承担，
+ * 工具栏不再重复渲染返回按钮。 */
 
 import { Button, Space, Typography, Tooltip, Dropdown } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined,
-  MoreOutlined, ArrowLeftOutlined, CopyOutlined, ImportOutlined,
+  MoreOutlined, CopyOutlined, ImportOutlined,
   SwapOutlined, MenuOutlined, ColumnWidthOutlined, ClearOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
@@ -58,7 +61,6 @@ export default function GridToolbar({
 
   return (
     <div className="cn-grid-toolbar" style={{ padding: '8px 16px', borderBottom: '1px solid var(--cn-border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-      <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}`)}>{!isMobile && '返回'}</Button>
       <Text strong ellipsis style={{ fontSize: 16, maxWidth: isMobile ? '36vw' : undefined }}>{tableName || '...'}</Text>
       {/* 统计小徽标（来自后端增强字段） */}
       {recordCount != null && recordCount > 0 && (

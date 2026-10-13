@@ -35,8 +35,8 @@ test.describe("Grid 表格", () => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await gotoGrid(page);
 
-    // 工具栏
-    await expect(page.getByRole("button", { name: /返回/ })).toBeVisible();
+    // 融合导航行（表级面包屑）+ 工具栏；返回导航由面包屑承担，工具栏不再有返回按钮
+    await expect(page.getByTestId("table-crumb")).toBeVisible();
     await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible();
 
     // Antd Table
