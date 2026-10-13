@@ -1,0 +1,7 @@
+"""documents 插件服务包."""
+
+from __future__ import annotations
+
+from . import content, edit_lock, parse, search
+
+__all__ = ["content", "edit_lock", "parse", "search"]
