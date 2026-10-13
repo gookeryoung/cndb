@@ -198,7 +198,7 @@ jobs:
       # 这里校验三件事：文件在不在、是不是本次要部署的 wheel、
       # deploy.sh 是否具备 SERVER_BUILD 能力（缺失即说明同步的是旧版）。
       - name: Verify sync landed at expected paths
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           VERSION: ${{ steps.meta.outputs.version }}
         with:
@@ -241,7 +241,7 @@ jobs:
 
       # 首次部署的引导：建目录 / 放 .env 模板。已初始化过的服务器会跳过
       - name: Bootstrap server layout
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT || 22 }}
@@ -274,7 +274,7 @@ jobs:
       # command_timeout 必须显式放大：ssh-action 默认 10m，首次构建
       # （拉基础镜像 + 装依赖）会超；超时表现为 SSH 步骤被杀，容器未替换。
       - name: Build image on server & deploy
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           # 显式传完整仓库前缀（不含 tag），deploy.sh 无需从 .env 反推。
@@ -304,7 +304,7 @@ jobs:
             IMAGE_REPO_OVERRIDE="${IMAGE_REPO}" ./deploy/deploy.sh "${VERSION}"
 
       - name: Verify deployment
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT || 22 }}
