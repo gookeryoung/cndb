@@ -6,7 +6,7 @@ import {
   PlusOutlined, PushpinOutlined, TeamOutlined, TableOutlined,
   DownloadOutlined, SettingOutlined, SearchOutlined,
   GlobalOutlined, LockOutlined, SafetyCertificateOutlined,
-  UploadOutlined, InboxOutlined, FileTextOutlined, AppstoreOutlined,
+  UploadOutlined, InboxOutlined, FileTextOutlined, FolderOpenOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -113,7 +113,7 @@ export default function WorkspaceList() {
         }}
       >
         <div>
-          <Title level={3} style={{ margin: 0 }}><AppstoreOutlined style={{ marginRight: 8 }} />我的工作区</Title>
+          <Title level={3} style={{ margin: 0 }}><FolderOpenOutlined style={{ marginRight: 8 }} />我的工作区</Title>
           <Text type="secondary">选择或创建一个工作区开始协作</Text>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -240,7 +240,7 @@ export default function WorkspaceList() {
                         opacity: w.allow_edit !== undefined && !w.allow_edit ? 1 : 0,
                         transition: 'opacity 0.15s',
                       }}
-                    ><LockOutlined /> 已关闭</span>
+                    ><LockOutlined /> 编辑已关闭</span>
                   </div>
                 </Card>
               </Col>
