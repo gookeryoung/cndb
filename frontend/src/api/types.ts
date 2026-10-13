@@ -921,7 +921,11 @@ export interface ChangeRequestDetail extends ChangeRequest {
   actions: ChangeActionItem[]
 }
 
-export interface ChangeRequestPage { items: ChangeRequest[]; total: number }
+export interface ChangeRequestPage { items: ChangeRequest[]; total: number; write_mode?: TableWriteMode }
+
+/** 当前用户对表的写模式（与后端双轨写分派同源）：
+ *  direct=原地修改直存；change_request=写路径自动生成修改申请；denied=表级编辑受限（403） */
+export type TableWriteMode = 'direct' | 'change_request' | 'denied'
 
 export interface CRCreatePayload {
   title?: string

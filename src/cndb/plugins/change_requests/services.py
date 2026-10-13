@@ -42,6 +42,11 @@ from cndb.plugins.workspaces.permissions import get_member_role
 
 # ── 双轨写入分派（records.py / bulk.py 调用） ──────────
 
+# 写模式三态：与写路径双轨分派（records._dispatch_or_403）语义一一对应
+WRITE_MODE_DIRECT = "direct"  # 原地修改直存
+WRITE_MODE_CHANGE_REQUEST = "change_request"  # 写路径自动转为修改申请（202）
+WRITE_MODE_DENIED = "denied"  # 有直编资格但表级 EDIT_RECORDS 受限（写操作 403）
+
 
 def can_write_directly(db: Session, table: DataTable, user: User) -> bool:
     """判定是否直编直存：owner 恒直编；editor 需工作区 allow_edit 开启；viewer 一律走修改申请."""
@@ -54,6 +59,23 @@ def can_write_directly(db: Session, table: DataTable, user: User) -> bool:
     if role == WorkspaceRole.OWNER:
         return True
     return role == WorkspaceRole.EDITOR and bool(ws.allow_edit)
+
+
+def resolve_write_mode(db: Session, table: DataTable, user: User) -> str:
+    """判定当前用户对该表的写模式，供前端权限标注与提示适配.
+
+    与写路径双轨分派（records._dispatch_or_403）同源，避免标注与实际行为脱节：
+    - direct：可直编且表级 EDIT_RECORDS 通过 → 编辑直接落库，不会生成修改申请；
+    - change_request：无直编资格（viewer / 工作区关闭直编的 editor）→ 写路径自动生成申请；
+    - denied：有直编资格但表级 EDIT_RECORDS 受限 → 写操作将返回 403。
+    """
+    from cndb.plugins.tables.services.core.access import TableAction, check_action
+
+    if not can_write_directly(db, table, user):
+        return WRITE_MODE_CHANGE_REQUEST
+    if check_action(db, table, user, TableAction.EDIT_RECORDS):
+        return WRITE_MODE_DIRECT
+    return WRITE_MODE_DENIED
 
 
 def create_dispatch_request(
@@ -503,6 +525,9 @@ def _iso(value: Any) -> str | None:
 
 
 __all__ = [
+    "WRITE_MODE_CHANGE_REQUEST",
+    "WRITE_MODE_DENIED",
+    "WRITE_MODE_DIRECT",
     "add_comment",
     "can_write_directly",
     "close_request",
@@ -515,6 +540,7 @@ __all__ = [
     "merge_request",
     "reopen_request",
     "require_reviewer_role",
+    "resolve_write_mode",
     "serialize_request",
     "update_base",
 ]

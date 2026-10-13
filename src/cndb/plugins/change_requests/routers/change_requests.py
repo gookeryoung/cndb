@@ -73,10 +73,14 @@ def list_requests(
     db: Annotated[Session, Depends(get_db)],
     scope: str = Query(default="open", pattern="^(open|all|mine)$"),
 ) -> dict[str, Any]:
-    """申请列表，附 conflicts_count."""
+    """申请列表，附 conflicts_count 与当前用户写模式 write_mode（direct/change_request/denied）."""
     table = _table_for_read(workspace_id, table_id, current_user, db)
     items = services.list_requests(db, table.id, scope=scope, user=current_user)
-    return {"items": items, "total": len(items)}
+    return {
+        "items": items,
+        "total": len(items),
+        "write_mode": services.resolve_write_mode(db, table, current_user),
+    }
 
 
 @router.get("/{request_id}")

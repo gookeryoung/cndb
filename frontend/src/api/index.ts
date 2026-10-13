@@ -51,7 +51,7 @@ export type {
   ReportParameter, ReportRenderRequest, ReportRenderResult, ReportTheme,
   Issue, IssueStatus, IssueCategory, IssueListItem, IssuePage, IssueComment, IssueEvent, IssueDetail, IssueCreatePayload,
   ChangeOp, CRStatus, ChangeRequest, ChangeItemDetail, ChangeActionItem, ChangeRequestDetail,
-  ChangeRequestPage, CRCreatePayload, CRMergePayload,
+  ChangeRequestPage, CRCreatePayload, CRMergePayload, TableWriteMode,
   ChangeRequestDispatchResponse, ChangeRequestBatchResponse,
   ImportTaskStatus, ImportTaskInfo, TablePermission,
   GovernanceTask, GovernanceTaskKind, GovernanceTaskStatus,

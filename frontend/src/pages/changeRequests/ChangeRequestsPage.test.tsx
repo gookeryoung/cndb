@@ -1,5 +1,6 @@
 /**
- * ChangeRequestsPage 修改申请列表测试 —— scope 筛选 / 状态与冲突/stale 标记 / 点击导航。
+ * ChangeRequestsPage 修改申请列表测试 —— scope 筛选 / 状态与冲突/stale 标记 / 点击导航 /
+ * 写模式权限标注（direct/change_request/denied）与新建按钮提示适配。
  *
  * 注：message.info 属 AntD portal，断言用 await findBy*。
  */
@@ -11,7 +12,7 @@ import { Routes, Route } from 'react-router-dom'
 import ChangeRequestsPage from './ChangeRequestsPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockUser, server } from '@/test/msw'
-import type { ChangeRequest } from '@/api'
+import type { ChangeRequest, TableWriteMode } from '@/api'
 
 const CRS: ChangeRequest[] = [
   {
@@ -30,12 +31,12 @@ const CRS: ChangeRequest[] = [
 
 const AUTH = { initialAuth: { user: mockUser, token: 'fake' } }
 
-function listHandler(captured: { scope?: string } = {}) {
+function listHandler(captured: { scope?: string } = {}, writeMode: TableWriteMode = 'change_request') {
   return http.get('/api/v1/workspaces/10/tables/20/change-requests', ({ request }) => {
     captured.scope = new URL(request.url).searchParams.get('scope') ?? undefined
     const scope = captured.scope ?? 'open'
     const items = scope === 'all' ? CRS : scope === 'mine' ? CRS.filter(c => c.submitted_by_id === 1) : CRS.filter(c => c.status === 'open')
-    return HttpResponse.json({ items, total: items.length })
+    return HttpResponse.json({ items, total: items.length, write_mode: writeMode })
   })
 }
 
@@ -91,12 +92,49 @@ describe('ChangeRequestsPage 修改申请列表', () => {
     })
   })
 
-  it('新建按钮提示走网格编辑双轨路径', async () => {
-    server.use(listHandler())
+  it('申请模式下新建按钮提示走网格编辑双轨路径', async () => {
+    server.use(listHandler({}, 'change_request'))
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: /新\s*建\s*修\s*改\s*申\s*请/ }))
-    // 引导文案（message.info portal）
+    // 申请模式引导文案（message.info portal）
     expect(await screen.findByText('请直接在表格中编辑数据，系统会自动生成修改申请')).toBeInTheDocument()
+  })
+
+  it('申请模式头部显示申请模式标注', async () => {
+    server.use(listHandler({}, 'change_request'))
+    renderPage()
+
+    expect(await screen.findByText('调整客户分级')).toBeInTheDocument()
+    expect(screen.getByText('申请模式')).toBeInTheDocument()
+    expect(screen.getByText('在表格中编辑数据会自动生成修改申请，经审批合并后生效。')).toBeInTheDocument()
+  })
+
+  it('直编模式：头部显示直编标注，新建按钮提示编辑直接生效', async () => {
+    server.use(listHandler({}, 'direct'))
+    renderPage()
+
+    expect(await screen.findByText('直编模式')).toBeInTheDocument()
+    expect(
+      screen.getByText('当前账号可直接在表格中修改数据：编辑立即生效，不会自动生成修改申请。'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /新\s*建\s*修\s*改\s*申\s*请/ }))
+    expect(
+      await screen.findByText('当前账号具备直接修改权限：在表格中编辑会直接生效，不会自动生成修改申请。'),
+    ).toBeInTheDocument()
+    // 旧文案不再出现，避免直编用户被误导
+    expect(screen.queryByText('请直接在表格中编辑数据，系统会自动生成修改申请')).toBeNull()
+  })
+
+  it('只读模式：头部显示只读标注，新建按钮提示无编辑权限', async () => {
+    server.use(listHandler({}, 'denied'))
+    renderPage()
+
+    expect(await screen.findByText('只读')).toBeInTheDocument()
+    expect(screen.getByText('当前账号对该表无编辑权限，写操作将被拒绝。')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /新\s*建\s*修\s*改\s*申\s*请/ }))
+    expect(await screen.findByText('当前账号对该表只读，无法提交数据变更。')).toBeInTheDocument()
   })
 })
