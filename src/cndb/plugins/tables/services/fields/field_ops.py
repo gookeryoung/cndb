@@ -102,6 +102,36 @@ def validate_field_import_conflicts(dst_table: DataTable, src_fields: list[DataF
         raise ValueError(f"目标表已存在同名字段: {conflicts}")
 
 
+def rename_trashed_field_aside(db: Session, field: DataField) -> str:
+    """为软删除字段生成让位名：原名追加「（已删）」后缀，冲突时递增序号.
+
+    背景：DataField 有 uniq_table_field_name（table_id, name）唯一约束，
+    软删除记录仍占用约束位 —— 删除字段后新建同名字段会触发
+    IntegrityError。让位改名后原名字即可复用，调用方负责赋值与 commit。
+
+    两条调用路径：
+    - delete_field：软删除时同步让位，原名字立即可复用；
+    - create_field：存量软删除字段占用目标名字时的兜底让位（修复历史数据）。
+
+    Args:
+        db: SQLAlchemy Session（用于查询表内已有字段名）.
+        field: 待让位的软删除字段（须已持久化有 id，自身名字不参与判重）.
+
+    Returns:
+        分配的不冲突新名字.
+    """
+    taken = {
+        f.name for f in db.query(DataField).filter(DataField.table_id == field.table_id, DataField.id != field.id).all()
+    }
+    base = f"{field.name}（已删）"
+    candidate = base
+    idx = 2
+    while candidate in taken:
+        candidate = f"{base} {idx}"
+        idx += 1
+    return candidate
+
+
 def validate_link_targets_exist(src_fields: list[DataField], db: Session) -> None:
     """校验 link 字段引用的 target_table_id 在数据库中仍存在.
 
@@ -915,6 +945,7 @@ __all__ = [
     "generate_column_name",
     "import_fields_as_lookup",
     "plan_field_import",
+    "rename_trashed_field_aside",
     "resolve_source_fields",
     "sync_select_data_on_options_change",
     "sync_select_options_from_table",

@@ -34,6 +34,7 @@ from cndb.plugins.tables.services.core.links import (
 from cndb.plugins.tables.services.fields.field_ops import (
     clone_fields_between_tables,
     import_fields_as_lookup,
+    rename_trashed_field_aside,
     resolve_source_fields,
     sync_select_data_on_options_change,
 )
@@ -88,10 +89,33 @@ def create_field(
     if ft is None:
         raise HTTPException(status_code=400, detail=f"未知字段类型: {payload.field_type}")
 
-    # 校验同表名字唯一
-    existing = db.query(DataField).filter(DataField.table_id == table_id, DataField.name == payload.name).first()
+    # 校验同表名字唯一（软删除字段不占名字，见下方让位兜底）
+    existing = (
+        db.query(DataField)
+        .filter(
+            DataField.table_id == table_id,
+            DataField.name == payload.name,
+            DataField.trashed == False,  # noqa: E712
+        )
+        .first()
+    )
     if existing:
         raise HTTPException(status_code=400, detail="字段名已存在")
+
+    # 存量兜底：历史软删除字段仍占用同名唯一约束时改名让位，释放名字供复用
+    trashed_dups = (
+        db.query(DataField)
+        .filter(
+            DataField.table_id == table_id,
+            DataField.name == payload.name,
+            DataField.trashed == True,  # noqa: E712
+        )
+        .all()
+    )
+    if trashed_dups:
+        for dup in trashed_dups:
+            dup.name = rename_trashed_field_aside(db, dup)
+        db.commit()
 
     # 用字段类型专属 schema 校验并归一化 config
     config = _validate_field_config(payload.field_type, payload.config or {}, db)
@@ -344,8 +368,11 @@ def delete_field(
     if df is None:
         raise HTTPException(status_code=404, detail="字段不存在")
 
-    # 软删除 metadata
+    # 软删除 metadata + 改名让位：释放 uniq_table_field_name 约束位，
+    # 同名字段可立即重建（回收站字段不可恢复，改名不影响任何功能）
     df.trashed = True
+    original_name = df.name
+    df.name = rename_trashed_field_aside(db, df)
     db.commit()
 
     # 引用该字段的 lookup 字段标记失效
@@ -353,11 +380,12 @@ def delete_field(
 
     mark_dependent_lookups_broken(db, df.id)
 
-    # 物理删列（失败则回滚 metadata）
+    # 物理删列（失败则回滚 metadata，含让位名）
     try:
         drop_column(db.get_bind(), dt, df)
     except Exception as exc:
         df.trashed = False
+        df.name = original_name
         db.commit()
         raise HTTPException(status_code=500, detail=f"物理删列失败: {exc}") from exc
 
