@@ -2,7 +2,7 @@
 
 端点：
 - POST /{workspace_id}/tables/{table_id}/change-requests                  — 创建申请（所有成员）
-- GET  /{workspace_id}/tables/{table_id}/change-requests                  — 列表（scope=open/all/mine）
+- GET  /{workspace_id}/tables/{table_id}/change-requests                  — 列表（scope=open/all/mine/merged）
 - GET  /{workspace_id}/tables/{table_id}/change-requests/{request_id}     — 详情（items diff + 动作流水）
 - POST /{workspace_id}/tables/{table_id}/change-requests/{request_id}/merge      — 逐项决策合并（owner/editor）
 - POST /{workspace_id}/tables/{table_id}/change-requests/{request_id}/close      — 关闭（owner/editor 或提交人）
@@ -71,7 +71,7 @@ def list_requests(
     table_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-    scope: str = Query(default="open", pattern="^(open|all|mine)$"),
+    scope: str = Query(default="open", pattern="^(open|all|mine|merged)$"),
 ) -> dict[str, Any]:
     """申请列表，附 conflicts_count 与当前用户写模式 write_mode（direct/change_request/denied）."""
     table = _table_for_read(workspace_id, table_id, current_user, db)
@@ -133,7 +133,8 @@ def _transition(
         cr = services.reopen_request(db, cr, current_user)
     else:  # update-base
         cr = services.update_base(db, cr, table, current_user)
-    return services.serialize_request(cr)
+    # 返回完整详情（含 items/actions），与详情页缓存契约一致（缺 items 会致前端渲染崩溃）
+    return services.get_request_detail(db, cr, table)
 
 
 @router.post("/{request_id}/close")

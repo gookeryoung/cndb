@@ -474,9 +474,9 @@ export default function GridPage() {
 
   /** 看板卡片勾选/取消完成 —— 直接把 done_field 目标值写回该行 */
   const handleToggleDone = useCallback((r: RowResponse, values: RowValues) => {
-    // 编辑中行锁定：申请处理前不产生新的写请求（后端冲突守卫会 409）
+    // 修改审批中行锁定：申请处理前不产生新的写请求（后端冲突守卫会 409）
     if (isPendingRowId(r.id)) {
-      message.warning('该行正在编辑中，处理后可继续操作')
+      message.warning('该行有修改申请待审批，审批完成后可继续操作')
       return
     }
     mutateUpdateRow({ rowId: r.id as number | string, values }, {
@@ -613,10 +613,10 @@ export default function GridPage() {
     setRowDrafts(prev => ({ ...prev, [NEW_ROW_KEY]: draftFor(null) }))
   }
 
-  /** 进入某存量行的整行编辑态（编辑中行拦截：处理前不进入编辑） */
+  /** 进入某存量行的整行编辑态（修改审批中行拦截：处理前不进入编辑） */
   const startEditRow = (recordId: ID) => {
     if (isPendingRowId(recordId)) {
-      message.warning('该行正在编辑中，处理后可继续操作')
+      message.warning('该行有修改申请待审批，审批完成后可继续操作')
       return
     }
     setNewRowActive(false)

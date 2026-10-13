@@ -113,10 +113,10 @@ function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: contr
     return <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
   }
 
-  // 编辑中锁定：待处理行展示原值，双击不进入编辑
+  // 修改审批中锁定：待处理行展示原值，双击不进入编辑
   if (locked) {
     return (
-      <Tooltip title="该行正在编辑中，处理后可继续操作">
+      <Tooltip title="该行有修改申请待审批，审批完成后可继续操作">
         <div style={{ padding: '2px 4px', minHeight: 22 }} data-testid="cell-locked">
           <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
         </div>

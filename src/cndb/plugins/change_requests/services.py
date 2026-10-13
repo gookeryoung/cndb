@@ -174,10 +174,12 @@ def create_request(
 
 
 def list_requests(db: Session, table_id: int, *, scope: str, user: User) -> list[dict[str, Any]]:
-    """申请列表（scope=open/all/mine），每项附 conflicts_count（与其他 open 申请共享的行数）."""
+    """申请列表（scope=open/all/mine/merged），每项附 conflicts_count（与其他 open 申请共享的行数）."""
     q = db.query(ChangeRequest).filter(ChangeRequest.table_id == table_id)
     if scope == "open":
         q = q.filter(ChangeRequest.status == CR_STATUS_OPEN)
+    elif scope == "merged":
+        q = q.filter(ChangeRequest.status == CR_STATUS_MERGED)
     elif scope == "mine":
         q = q.filter(ChangeRequest.submitted_by_id == user.id)
     requests = q.order_by(ChangeRequest.id.desc()).all()
@@ -328,7 +330,9 @@ def merge_request(
     _mark_others_stale(db, cr, applied_row_ids)
     db.commit()
     db.refresh(cr)
-    return {"applied": applied, "skipped": skipped, "request": serialize_request(cr)}
+    # 返回完整详情（含 items/actions）：前端以响应覆盖详情缓存，
+    # 只回本体缺 items 会导致详情页渲染 undefined.length 崩溃
+    return {"applied": applied, "skipped": skipped, "request": get_request_detail(db, cr, table)}
 
 
 def close_request(db: Session, cr: ChangeRequest, user: User, role: WorkspaceRole | None) -> ChangeRequest:

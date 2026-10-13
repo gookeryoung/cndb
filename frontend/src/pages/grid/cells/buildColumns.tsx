@@ -273,11 +273,11 @@ export function buildColumns(
             </Space>
           )
         }
-        // 编辑中锁定：显示标识不可操作（新增行无 row_id 不受影响）
+        // 修改审批中锁定：显示标识不可操作（新增行无 row_id 不受影响）
         if (inlineOps.isPendingRow?.(record)) {
           return (
-            <Tooltip title="该行正在编辑中，处理后可继续操作">
-              <Tag color="gold" data-testid="row-pending-tag">编辑中</Tag>
+            <Tooltip title="该行有修改申请待审批，审批完成后可继续操作">
+              <Tag color="gold" data-testid="row-pending-tag">修改审批中</Tag>
             </Tooltip>
           )
         }
