@@ -160,4 +160,23 @@ describe('CalendarView 日历视图', () => {
     expect(screen.getByText(/共 1 个事件/)).toBeInTheDocument()
     expect(screen.queryByText('坏行')).not.toBeInTheDocument()
   })
+
+  it('已完成事件按看板样式渲染：绿底 + 绿色左边框 + 置灰删除线 + 标题后绿色对勾', () => {
+    // select 字段作为完成标志：类型='评审' 视为已完成
+    const view = makeView({ done_field: '类型', done_value: '评审' })
+    renderCalendar({ view })
+
+    const doneEl = screen.getByText('发布评审')
+    expect(doneEl.style.textDecoration).toContain('line-through')
+    expect(doneEl.style.color).toBe('var(--cn-text-muted)')
+    expect(doneEl.style.background).toContain('var(--cn-bg-success-subtle)')
+    expect(doneEl.style.borderLeft).toContain('rgb(82, 196, 26)') // #52c41a
+    // 标题后紧跟绿色对勾图标
+    const checkIcon = doneEl.querySelector('.anticon-check-circle') || doneEl.querySelector('.anticon-check-circle-filled')
+    expect(checkIcon).not.toBeNull()
+
+    // 未完成事件保持普通样式
+    const normalEl = screen.getByText('周会')
+    expect(normalEl.style.textDecoration).not.toContain('line-through')
+  })
 })
