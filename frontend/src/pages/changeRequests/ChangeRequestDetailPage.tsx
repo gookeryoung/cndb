@@ -10,11 +10,12 @@
 
 import { useState } from 'react'
 import {
-  App as AntApp, Button, Card, Empty, Input, Segmented, Space, Spin, Tag, Tooltip, Typography,
+  App as AntApp, Button, Card, Empty, Input, Segmented, Space, Spin, Tag, Typography,
 } from 'antd'
 import { ArrowLeftOutlined, CheckOutlined, RedoOutlined, SyncOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
+import { FieldDiffTable } from '@/components/DiffView'
 import { formatDateTime } from '@/utils/datetime'
 import { changeRequestsApi, workspaceApi } from '@/api'
 import type { ChangeActionItem, ChangeItemDetail, ChangeOp, WorkspaceRole } from '@/api'
@@ -43,18 +44,6 @@ const ACTION_TEXT: Record<ChangeActionItem['action'], string> = {
   close: '关闭了申请',
   reopen: '重开了申请',
   update_base: '刷新了基准快照',
-}
-
-/** 任意 JSON 值的紧凑展示（diff 单元格用） */
-function formatValue(v: unknown): string {
-  if (v === null || v === undefined) return '空'
-  if (typeof v === 'object') return JSON.stringify(v)
-  return String(v)
-}
-
-/** update 项的 diff 字段清单：基准与新值的键并集 */
-function diffFields(item: ChangeItemDetail): string[] {
-  return Array.from(new Set([...Object.keys(item.base_values), ...Object.keys(item.values)]))
 }
 
 export default function ChangeRequestDetailPage() {
@@ -169,36 +158,6 @@ export default function ChangeRequestDetailPage() {
   const canMergeNow = canReview && cr.status === 'open'
   const showUpdateBase = isSubmitter && cr.status === 'open' && cr.stale
 
-  /** 单个变更项的字段 diff 渲染 */
-  const renderItemDiff = (item: ChangeItemDetail) => {
-    if (item.op === 'create') {
-      return Object.entries(item.values).map(([field, v]) => (
-        <div key={field}><Text strong>{field}</Text>：<Text>{formatValue(v)}</Text></div>
-      ))
-    }
-    if (item.op === 'delete') {
-      return Object.entries(item.base_values).map(([field, v]) => (
-        <div key={field}><Text strong>{field}</Text>：<Text>{formatValue(v)}</Text> <Text delete type="secondary">（整行删除）</Text></div>
-      ))
-    }
-    return diffFields(item).map((field) => {
-      const conflicted = item.field_conflicts.includes(field)
-      return (
-        <div key={field}>
-          <Text strong>{field}</Text>：
-          <Text delete type="secondary">{formatValue(item.base_values[field])}</Text>
-          {' → '}
-          <Text strong>{formatValue(item.values[field])}</Text>
-          {conflicted && (
-            <Tooltip title={`当前行该字段已变为：${formatValue(item.current_values[field])}，合并将覆盖为申请值`}>
-              <Tag color="red" style={{ marginLeft: 8, marginInlineEnd: 0 }}>基准已漂移</Tag>
-            </Tooltip>
-          )}
-        </div>
-      )
-    })
-  }
-
   return (
     <div style={{ padding: '16px 24px', maxWidth: 860, margin: '0 auto' }}>
       <Button
@@ -261,7 +220,7 @@ export default function ChangeRequestDetailPage() {
               />
             )}
           </Space>
-          <div style={{ fontSize: 13 }}>{renderItemDiff(item)}</div>
+          <FieldDiffTable item={item} />
         </Card>
       ))}
 

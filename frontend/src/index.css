@@ -2348,3 +2348,286 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     padding: 0 8px !important;
   }
 }
+
+/* ─────────────── 差异对比（文档版本 diff / 数据表变更字段 diff） ───────────────
+ * 配色统一走 color-mix + var(--cn-*)：不新增主题 token，全部主题（浅色/深色/
+ * github/mono/…）自动适配。红 − / 绿 + 与导入预览 ImportDiffTable 保持一致。 */
+
+.cn-diff {
+  border: 1px solid var(--cn-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--cn-bg-container);
+}
+
+.cn-diff-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--cn-border-soft);
+  background: var(--cn-bg-muted);
+}
+
+.cn-diff-labels {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--cn-text-secondary);
+}
+
+.cn-diff-label {
+  padding: 0 8px;
+  border: 1px solid var(--cn-border-soft);
+  border-radius: 999px;
+  background: var(--cn-bg-container);
+  font-family: var(--cn-mono, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-diff-arrow {
+  color: var(--cn-text-muted);
+}
+
+.cn-diff-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-diff-stat {
+  padding: 0 8px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.cn-diff-stat--add {
+  color: #16a34a;
+  background: color-mix(in srgb, #22c55e 14%, var(--cn-bg-container));
+}
+
+.cn-diff-stat--del {
+  color: #dc2626;
+  background: color-mix(in srgb, #ef4444 14%, var(--cn-bg-container));
+}
+
+.cn-diff-body {
+  max-height: 460px;
+  overflow: auto;
+  font-family: var(--cn-mono, monospace);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.cn-diff-empty {
+  padding: 20px 12px;
+}
+
+.cn-diff-line {
+  display: flex;
+  align-items: flex-start;
+  min-height: 20px;
+}
+
+.cn-diff-no {
+  flex: 0 0 42px;
+  padding: 0 8px;
+  text-align: right;
+  color: var(--cn-text-muted);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-diff-sign {
+  flex: 0 0 16px;
+  text-align: center;
+  color: var(--cn-text-muted);
+  user-select: none;
+}
+
+.cn-diff-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cn-diff-line--add {
+  background: color-mix(in srgb, #22c55e 12%, var(--cn-bg-container));
+}
+
+.cn-diff-line--add .cn-diff-sign {
+  color: #16a34a;
+}
+
+.cn-diff-line--del {
+  background: color-mix(in srgb, #ef4444 12%, var(--cn-bg-container));
+}
+
+.cn-diff-line--del .cn-diff-sign {
+  color: #dc2626;
+}
+
+.cn-diff-line--hunk {
+  background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
+}
+
+.cn-diff-line--hunk .cn-diff-text {
+  padding: 2px 12px;
+  color: var(--cn-text-secondary);
+}
+
+.cn-diff-line--meta .cn-diff-text {
+  padding: 0 12px;
+  color: var(--cn-text-muted);
+  font-style: italic;
+}
+
+/* 行内变化片段：琥珀色底，配合行级红绿底色指到具体字符 */
+.cn-diff-inline {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: color-mix(in srgb, #f59e0b 42%, transparent);
+  color: inherit;
+}
+
+/* 并排模式：左右等宽单元格，缺失侧留浅色占位以保持行对齐 */
+.cn-diff-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.cn-diff-cell {
+  display: flex;
+  flex: 1 1 50%;
+  align-items: flex-start;
+  min-width: 0;
+  border-right: 1px solid var(--cn-border-soft);
+}
+
+.cn-diff-cell:last-child {
+  border-right: none;
+}
+
+.cn-diff-cell--add {
+  background: color-mix(in srgb, #22c55e 12%, var(--cn-bg-container));
+}
+
+.cn-diff-cell--del {
+  background: color-mix(in srgb, #ef4444 12%, var(--cn-bg-container));
+}
+
+.cn-diff-cell--empty {
+  background: var(--cn-bg-subtle);
+}
+
+/* ── 数据表变更项字段 diff 表格 ── */
+
+.cn-fielddiff-wrap {
+  border: 1px solid var(--cn-border-soft);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cn-fielddiff-note {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--cn-border-soft);
+  background: color-mix(in srgb, #ef4444 8%, var(--cn-bg-container));
+  font-size: 12px;
+}
+
+.cn-fielddiff {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cn-fielddiff th {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--cn-border-soft);
+  background: var(--cn-bg-muted);
+  color: var(--cn-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.cn-fielddiff td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--cn-border-soft);
+  vertical-align: top;
+}
+
+.cn-fielddiff tr:last-child td {
+  border-bottom: none;
+}
+
+.cn-fielddiff-col-field {
+  width: 34%;
+  white-space: nowrap;
+}
+
+.cn-fielddiff-field {
+  color: var(--cn-text-primary);
+  font-weight: 500;
+}
+
+.cn-fielddiff-conflict {
+  margin-inline-start: 6px;
+  margin-inline-end: 0;
+}
+
+.cn-fielddiff-before,
+.cn-fielddiff-after,
+.cn-fielddiff-current {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-family: var(--cn-mono, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cn-fielddiff-before {
+  color: #dc2626;
+  background: color-mix(in srgb, #ef4444 12%, var(--cn-bg-container));
+}
+
+.cn-fielddiff-after {
+  color: #16a34a;
+  background: color-mix(in srgb, #22c55e 12%, var(--cn-bg-container));
+}
+
+.cn-fielddiff-current {
+  color: #b45309;
+  background: color-mix(in srgb, #f59e0b 16%, var(--cn-bg-container));
+}
+
+.cn-fielddiff-empty {
+  color: var(--cn-text-muted);
+  background: none;
+  font-style: italic;
+}
+
+.cn-fielddiff-strike {
+  text-decoration: line-through;
+}
+
+.cn-fielddiff-sign-add {
+  margin-right: 4px;
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.cn-fielddiff-sign-del {
+  margin-right: 4px;
+  color: #dc2626;
+  font-weight: 600;
+}

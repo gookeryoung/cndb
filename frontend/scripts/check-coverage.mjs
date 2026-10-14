@@ -48,6 +48,8 @@ const CORE_FILES = [
   // 通用
   'src/utils/tagColors.ts',
   'src/hooks/useResponsive.ts',
+  // 差异对比（文档版本 diff / 数据表变更字段 diff）
+  'src/components/DiffView/diffModel.ts',
   // 数据层
   'src/api/client.ts',
   'src/store/auth.ts',
