@@ -15,8 +15,9 @@
 - 覆盖率口径：Makefile `cov` 与 CI 统一为 `--cov=cndb`（此前本地裸 `--cov` 虚高到 97.9%）
 - 超大文件拆分：`cli/seed.py`、`reports/routers/reports.py`、`api/types.ts`、
   `ImportPanel.tsx`、`ReportsPage.tsx`、`GridCell.tsx`、`GanttView.tsx`、
-  `DocumentsPage.tsx`、`CalendarView.tsx`、`workspaces/routers/workspaces.py`、
-  `tables/services/fields/field_ops.py`（详见 CHANGELOG「未发布」）
+  `DocumentsPage.tsx`、`CalendarView.tsx`、`KanbanView.tsx`、`workspaces/routers/workspaces.py`、
+  `tables/services/fields/field_ops.py`、`tables/routers/bulk.py`、
+  `FileImportPreview.tsx`（部分，见下）（详见 CHANGELOG「未发布」）
 - 前端死导出清理：`LoginResponse`、`WorkspaceTrashResponse`、`getTagColor`、
   `ANTD_COLOR_NAMES`、`loadTableSettings`/`saveTableSettings`（后者与 zustand persist
   共用同一个 localStorage key `cndb_table_settings`，双写隐患已消除）
@@ -32,7 +33,7 @@
 
 | 文件 | 行数 | 建议拆分 |
 |---|---|---|
-| `src/cndb/gui/main_window.py` | 1041 | 按 Tab 拆 `gui/tabs/{serve,backup,info}.py`；**`main` 必须留在 `main_window.py`**（`pyproject` 的 `cndbw` entry point 指向它）。coverage 已 omit `gui/**`，无覆盖率风险，也没有 gui 测试 |
+| `src/cndb/gui/main_window.py` | 1041 | 按 Tab 拆 `gui/tabs/{serve,backup,info}.py`；**`main` 必须留在 `main_window.py`**（`pyproject` 的 `cndbw` entry point 指向它）。coverage 已 omit `gui/**`，无覆盖率风险，也没有 gui 测试（缺少回归网，拆分后务必手工冒烟 `cndbw info`） |
 | `src/cndb/plugins/tables/services/core/records.py` | 957 | 拆 `core/{row_values,row_crud,row_bulk}.py`；**本项循环导入风险最高**（与 `query.py`/`ddl.py` 互依，现靠函数内延迟 import 规避，拆分须保留） |
 | `src/cndb/plugins/tables/services/importing/importer.py` | 906 | `Importer` 类单类 776 行 / 19 方法，可按方法族拆 mixin |
 | `src/cndb/plugins/documents/services/content.py` | 905 | 拆 `content/{crud,trash,links,tags,fts,serialize}.py`；FTS/软删子树/标签计数高耦合，成本较高 |
@@ -46,9 +47,8 @@
 | 文件 | 行数 | 建议拆分 |
 |---|---|---|
 | `src/pages/grid/GridPage.tsx` | 1276 | 外置 `gridFallbacks.tsx`、`modeSwitch.ts`、`useGridPageRows.ts`、`useGridPageModals.ts`；主组件 1140 行主要是状态与回调，抽 hook 有一定回归风险 |
+| `src/pages/import-export/FileImportPreview.tsx` | 609 | 纯转换层与样式 hook 已抽出（见 CHANGELOG）。剩余三个内联渲染闭包：`renderFieldsList` 210-320、`renderSelectedFieldEditor` 323-365、`renderDataPreview` 368-461；依赖已确认为各 3-4 个组件级变量，抽成组件时需为 props 重建类型注解（勿用 any） |
 | `src/pages/documents/DocumentEditorPage.tsx` | 802 | 拆 `DiffView` / `TagEditor` / `useDocumentEditor` / `VersionTimeline` / `OutlinePanel` |
-| `src/pages/grid/views/KanbanView.tsx` | 789 | 拆 `kanban/{KanbanCard,KanbanColumn,kanbanDensity,KanbanBadges}` |
-| `src/pages/import-export/FileImportPreview.tsx` | 774 | 拆 `importPreviewConvert.ts`（纯转换）+ 字段列表 / 字段编辑 / 数据预览三块；可参照 `ImportPanel` 与 `DocumentsPage` 的接缝做法（后者把抽屉的查询/状态一并搬走效果最好） |
 | `src/theme/theme.ts` | 695 | 10 套 antd ThemeConfig 预设抽 `theme/presets/*.ts`，theme.ts 只留 registry 与读写 |
 | `src/pages/grid/view-config/viewOptionSchema.ts` | 562 | 按视图拆 `options/{kanban,calendar,gantt,wbs,matrix,chart}.ts`；**测试要求保留 7 个具名导出** |
 | `src/pages/grid/views/WbsView.tsx` | 588 | 树构建与渲染行两分 |
