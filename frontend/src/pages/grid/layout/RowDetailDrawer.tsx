@@ -415,6 +415,56 @@ function FieldEditor({
         </div>
       )
     }
+    case 'image': {
+      // 图片字段：仅收图片上传，缩略图展示（点击预览大图）
+      const images: AttachmentFile[] = Array.isArray(value)
+        ? (value as AttachmentFile[])
+        : (() => { try { return JSON.parse(String(value || '[]')) } catch { return [] } })()
+      const upload = async (file: File) => {
+        const meta = await fileApi.upload(wid, file)
+        onChange([...images, meta])
+        return meta
+      }
+      const allowedMimes = (field.config?.allowed_mime_types as string[] | undefined)?.filter(m => m)
+      return (
+        <div>
+          <Upload.Dragger
+            multiple={Boolean(field.config?.multiple ?? true)}
+            showUploadList={false}
+            accept={allowedMimes?.length ? allowedMimes.join(',') : 'image/*'}
+            beforeUpload={f => { upload(f); return false }}
+            style={{ padding: '4px 8px', marginBottom: 8 }}
+            disabled={disabled}
+          >
+            <div style={{ fontSize: 12, color: '#94a3b8', margin: '2px 0' }}>
+              <InboxOutlined /> 点击或拖拽上传图片
+            </div>
+          </Upload.Dragger>
+          {images.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              <Image.PreviewGroup>
+                {images.map((f, i) => (
+                  <div key={f.file_key || `${f.filename}-${i}`} style={{ position: 'relative', width: 56, height: 56 }}>
+                    <Image width={56} height={56} src={fileApi.getUrl(wid, f.file_key, true)}
+                      alt={f.filename} style={{ objectFit: 'cover', borderRadius: 4 }} />
+                    {!disabled && (
+                      <Tooltip title="删除该图片">
+                        <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                          style={{ position: 'absolute', top: -4, right: -4, background: 'var(--cn-bg-container)', padding: 0 }}
+                          onClick={() => {
+                            fileApi.remove(wid, f.file_key).catch(() => { })
+                            onChange(images.filter((_, j) => j !== i))
+                          }} />
+                      </Tooltip>
+                    )}
+                  </div>
+                ))}
+              </Image.PreviewGroup>
+            </div>
+          )}
+        </div>
+      )
+    }
     default:
       return <Input value={value as string} onChange={e => onChange(e.target.value)} placeholder="请输入..." disabled={disabled} />
   }

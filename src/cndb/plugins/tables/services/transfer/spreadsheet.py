@@ -203,11 +203,16 @@ def parse_file_to_rows(
     format: str | None = None,
     *,
     filename: str | None = None,
+    image_saver: Any = None,
 ) -> tuple[list[dict[str, Any]], list[str], str]:
     """把任意支持的文件内容转为 (行列表, 文件列名, 实际使用的 format).
 
     支持：csv / tsv / delimited / json / xlsx / xls（拒绝）.
     format 未指定时：优先用 filename 推断，退化到内容特征推断.
+
+    Args:
+        image_saver: WPS 单元格图片解析器（img → 元数据 dict | None）；
+            None 时用 ephemeral（不落盘，仅保证类型推断与样本可用）。
 
     Returns:
         (rows, file_columns, actual_format)
@@ -228,7 +233,7 @@ def parse_file_to_rows(
     if actual_fmt == "xlsx":
         # openpyxl 只吃 bytes
         raw = content if isinstance(content, bytes) else content.encode("utf-8")
-        rows, cols = _parse_xlsx_bytes(raw)
+        rows, cols = _parse_xlsx_bytes(raw, image_saver=image_saver)
         return rows, cols, "xlsx"
 
     if actual_fmt == "json":
@@ -287,10 +292,23 @@ def _parse_json_text(text: str) -> tuple[list[dict[str, Any]], list[str]]:
     return [r for r in data if isinstance(r, dict)], file_columns
 
 
-def _parse_xlsx_bytes(xlsx_bytes: bytes) -> tuple[list[dict[str, Any]], list[str]]:
-    """解析 XLSX 字节串（表头空列名/重复列名/行溢出明确报错）."""
+def _parse_xlsx_bytes(
+    xlsx_bytes: bytes,
+    *,
+    image_saver: Any = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """解析 XLSX 字节串（表头空列名/重复列名/行溢出明确报错）.
+
+    WPS 单元格图片：单元格值为 ``=DISPLIMG("ID_xxx",1)`` 公式时，按
+    ``xl/cellimages.xml`` 映射取出图片，经 image_saver（默认 ephemeral，
+    不落盘）解析为 ``[图片元数据 dict]``；解析失败置 None。
+    """
     from openpyxl import load_workbook
     from openpyxl.worksheet.worksheet import Worksheet
+
+    from cndb.plugins.tables.services.transfer.wps_images import make_displimg_resolver, match_displimg_formula
+
+    resolve_image = make_displimg_resolver(xlsx_bytes, image_saver)
 
     wb = load_workbook(io.BytesIO(xlsx_bytes))
     ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
@@ -308,6 +326,10 @@ def _parse_xlsx_bytes(xlsx_bytes: bytes) -> tuple[list[dict[str, Any]], list[str
         for i, key in enumerate(file_columns):
             v = r[i] if i < len(r) else None
             if isinstance(v, str):
+                displimg_id = match_displimg_formula(v)
+                if displimg_id is not None:
+                    row_dict[key] = resolve_image(displimg_id)
+                    continue
                 stripped = v.strip()
                 row_dict[key] = None if stripped == "" else stripped
             else:

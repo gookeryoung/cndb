@@ -7,6 +7,7 @@
 - exporting: 行导出序列化与公式注入防护
 - table_create: 列分析与建表导入编排
 - api_ingest: API 摄取编排
+- wps_images: WPS 嵌入单元格图片解析（DISPLIMG 公式 / cellimages 映射 / 落盘）
 
 link 字段约定：
 - 导出：行响应中 link 值为 [{"id", "value"}] 摘要列表，序列化为分号分隔的目标行 id 串；
@@ -54,6 +55,7 @@ from cndb.plugins.tables.services.transfer.normalize import (
     _is_integer,
     _is_select_candidate,
     _is_valid_date,
+    _looks_like_image_metadata_list,
     _normalize_numeric,
     _pick_inferred_type,
     _promote_to_longtext_if_chunky,
@@ -100,12 +102,21 @@ from cndb.plugins.tables.services.transfer.table_create import (
     import_rows_from_json,
     import_rows_from_xlsx,
 )
+from cndb.plugins.tables.services.transfer.wps_images import (
+    WpsCellImage,
+    ephemeral_image_saver,
+    make_displimg_resolver,
+    make_workspace_image_saver,
+    match_displimg_formula,
+    parse_wps_cell_images,
+)
 
 __all__ = [
     "_CN_DATE_RE",
     "_GENERIC_DATE_RE",
     "_ISO_DATETIME_RE",
     "_ISO_DATE_RE",
+    "WpsCellImage",
     "_analyze_dict_rows_as_csv",
     "_apply_column_overrides",
     "_check_cn_date",
@@ -135,6 +146,7 @@ __all__ = [
     "_is_integer",
     "_is_select_candidate",
     "_is_valid_date",
+    "_looks_like_image_metadata_list",
     "_normalize_numeric",
     "_options_strings_to_dicts",
     "_parse_delimited_text",
@@ -162,6 +174,7 @@ __all__ = [
     "create_table_from_file",
     "create_table_from_json_data",
     "decode_bytes_auto",
+    "ephemeral_image_saver",
     "export_rows_to_csv",
     "export_rows_to_json",
     "export_rows_to_xlsx",
@@ -171,7 +184,11 @@ __all__ = [
     "import_rows_from_xlsx",
     "infer_column_type",
     "ingest_from_api",
+    "make_displimg_resolver",
+    "make_workspace_image_saver",
+    "match_displimg_formula",
     "parse_file_to_rows",
+    "parse_wps_cell_images",
     "promote_inferred_column_type",
     "sniff_csv_delimiter",
 ]

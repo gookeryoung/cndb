@@ -19,6 +19,7 @@ export const TYPE_CATEGORIES = {
   select: ['select', 'multiselect'],
   link: ['link'],
   attachment: ['attachment'],
+  image: ['image'],
 }
 
 /** 把后端 SelectOption 格式归一化为前端编辑用的 { key, label, value, color }.
@@ -64,6 +65,8 @@ export function defaultConfigForType(fieldType: FieldType): Record<string, unkno
       return { target_table_id: undefined, multiple: true }
     case 'attachment':
       return { max_size_mb: 10, allowed_mime_types: [], multiple: true }
+    case 'image':
+      return { max_size_mb: 10, allowed_mime_types: [], multiple: true }
     default:
       return {}
   }
@@ -88,6 +91,7 @@ const HAS_CONFIG_TYPES = new Set<string>([
   ...TYPE_CATEGORIES.select,
   ...TYPE_CATEGORIES.link,
   ...TYPE_CATEGORIES.attachment,
+  ...TYPE_CATEGORIES.image,
 ])
 
 /** 字段类型对应的 config 编辑器 */
@@ -218,6 +222,27 @@ export function ConfigEditor({ fieldType, form, tables, isEdit = false, editTarg
           </Col>
           <Col span={6}>
             <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多文件" style={{ marginBottom: 8 }}>
+              <Checkbox />
+            </Form.Item>
+          </Col>
+        </Row>
+      )}
+
+      {/* ── 图片 image ── */}
+      {TYPE_CATEGORIES.image.includes(fieldType) && (
+        <Row gutter={12}>
+          <Col span={8}>
+            <Form.Item {...configField('max_size_mb')} label="单图最大 (MB)" style={{ marginBottom: 8 }}>
+              <InputNumber min={0} max={1024} style={{ width: '100%' }} placeholder="10" />
+            </Form.Item>
+          </Col>
+          <Col span={10}>
+            <Form.Item {...configField('allowed_mime_types')} label="允许的 MIME 类型（逗号分隔，空=全部图片）" style={{ marginBottom: 8 }}>
+              <Input placeholder="例如 image/png,image/jpeg" />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多图" style={{ marginBottom: 8 }}>
               <Checkbox />
             </Form.Item>
           </Col>
