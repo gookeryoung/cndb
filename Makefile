@@ -4,6 +4,10 @@
 PACKAGE := cndb
 COV_THRESHOLD := 95
 
+# dev 目标绑定地址/端口，可在命令行覆盖：make dev DEV_HOST=127.0.0.1 DEV_PORT=8000
+DEV_HOST ?= 0.0.0.0
+DEV_PORT ?= 8772
+
 # min(cpu*2, 8)：≥4 核跑满 8 worker，低核数机器保守降档
 ifeq ($(OS),Windows_NT)
 CPUS := $(NUMBER_OF_PROCESSORS)
@@ -12,7 +16,7 @@ CPUS := $(shell nproc 2>/dev/null || echo 4)
 endif
 PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 
-.PHONY: help sync frontend-sync fs frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast gitkeep-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
+.PHONY: help sync dev seed frontend-sync fs frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast gitkeep-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -33,6 +37,12 @@ frontend-sync fs: ## 安装前端依赖（pnpm install，惰性跳过；pnpm 不
 print('[frontend] node_modules exist, skip pnpm install') if os.path.isdir('frontend/node_modules') else (\
 print('[frontend] node_modules not exist, start pnpm install...'),\
 subprocess.run(['pnpm','install','--frozen-lockfile'],cwd='frontend',check=True))"
+
+dev: | frontend-sync ## 开发模式：同时启动前后端（后端 uvicorn + 前端 Vite，Ctrl+C 一起停）
+	uv run cndb dev --host $(DEV_HOST) --port $(DEV_PORT)
+
+seed: ## 注入演示数据（幂等：重建工作区/表/视图/文档并创建演示账号）
+	uv run cndb seed
 
 frontend-lint fl: | frontend-sync ## 前端 ESLint 检查
 	cd frontend && pnpm lint
