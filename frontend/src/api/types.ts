@@ -300,7 +300,7 @@ export interface FieldImportResponse {
 export type FieldType =
   | 'text' | 'longtext' | 'number' | 'float' | 'boolean'
   | 'date' | 'datetime' | 'timestamp' | 'select' | 'multiselect'
-  | 'email' | 'url' | 'phone' | 'link' | 'lookup' | 'attachment' | 'percentage'
+  | 'email' | 'url' | 'phone' | 'link' | 'lookup' | 'attachment' | 'percentage' | 'image'
   // 历史别名（后端自动归一化）
   | 'long_text' | 'decimal' | 'multi_select' | 'json'
   | 'formula' | 'auto_id' | 'created_time' | 'updated_time'

@@ -19,7 +19,7 @@ export interface FieldTypeMeta {
     color: string
 }
 
-/** 16 个主字段类型 + 历史别名/系统类型的元数据表 */
+/** 17 个主字段类型 + 历史别名/系统类型的元数据表 */
 export const FIELD_TYPE_META: Record<string, FieldTypeMeta> = {
     // ── 主类型（与 api/types.ts FieldType 联合对应）──
     text: { label: '单行文本', category: '基础', color: 'blue' },
@@ -39,6 +39,7 @@ export const FIELD_TYPE_META: Record<string, FieldTypeMeta> = {
     link: { label: '关联', category: '关联', color: 'magenta' },
     lookup: { label: '引用', category: '关联', color: 'magenta' },
     attachment: { label: '附件', category: '高级', color: 'volcano' },
+    image: { label: '图片', category: '高级', color: 'pink' },
     // ── 历史别名（后端自动归一化，展示兜底）──
     long_text: { label: '多行文本', category: '基础', color: 'cyan' },
     decimal: { label: '小数', category: '数字', color: 'green' },
@@ -63,11 +64,11 @@ export function getFieldTypeColor(type: string): string {
     return FIELD_TYPE_META[type]?.color ?? 'default'
 }
 
-/** 新建/编辑字段下拉的完整类型选项（16 主类型，含类别） */
+/** 新建/编辑字段下拉的完整类型选项（17 主类型，含类别） */
 export const FIELD_TYPE_OPTIONS: Array<{ value: FieldType; label: string; category: string }> = [
     'text', 'longtext', 'boolean', 'number', 'float', 'percentage', 'date',
     'datetime', 'timestamp', 'select', 'multiselect', 'email', 'url', 'phone',
-    'link', 'attachment',
+    'link', 'attachment', 'image',
 ].map((value) => {
     const meta = FIELD_TYPE_META[value]!
     return { value: value as FieldType, label: meta.label, category: meta.category }
@@ -79,8 +80,10 @@ export const FIELD_TYPE_OPTIONS: Array<{ value: FieldType; label: string; catego
  * 不适合从原始数据推断的类型.
  * 包含 longtext/timestamp —— 后端推断层可产出这两种类型，
  * 下拉必须能显示其中文标签且允许用户手动切换回其它类型.
+ * 包含 image —— WPS 带图片单元格 xlsx 的导入推断层可产出该类型.
  */
 export const PREVIEW_FIELD_TYPE_VALUES: readonly string[] = [
     'text', 'longtext', 'number', 'float', 'boolean', 'date', 'datetime',
     'timestamp', 'select', 'multiselect', 'email', 'url', 'phone', 'percentage',
+    'image',
 ]

@@ -7,7 +7,7 @@
 - date: 日期 / 日期时间（自动填充）/ Unix 时间戳
 - select: 单选 / 多选（含智能配色）
 - relation: 关联字段
-- files: 附件字段
+- files: 附件字段 / 图片字段
 - registry: 别名归一化 / 注册中心 / 默认注册表
 """
 
@@ -20,7 +20,14 @@ from cndb.plugins.tables.field_types.date import (
     DateTimeFieldType,
     TimestampFieldType,
 )
-from cndb.plugins.tables.field_types.files import AttachmentFieldConfig, AttachmentFieldType
+from cndb.plugins.tables.field_types.files import (
+    IMAGE_EXTENSIONS,
+    AttachmentFieldConfig,
+    AttachmentFieldType,
+    ImageFieldConfig,
+    ImageFieldType,
+    is_image_meta,
+)
 from cndb.plugins.tables.field_types.lookup import LOOKUP_FIELD_TYPE, LookupFieldConfig, LookupFieldType
 from cndb.plugins.tables.field_types.number import (
     BooleanFieldType,
@@ -58,6 +65,7 @@ from cndb.plugins.tables.field_types.text import (
 )
 
 __all__ = [
+    "IMAGE_EXTENSIONS",
     "LOOKUP_FIELD_TYPE",
     "MULTI_SELECT_SPLIT_RE",
     "_FIELD_TYPE_ALIASES",
@@ -73,6 +81,8 @@ __all__ = [
     "FieldTypeConfig",
     "FieldTypeRegistry",
     "FloatFieldType",
+    "ImageFieldConfig",
+    "ImageFieldType",
     "JsonFieldType",
     "LinkFieldConfig",
     "LinkFieldType",
@@ -95,6 +105,7 @@ __all__ = [
     "UrlFieldType",
     "build_default_registry",
     "default_registry",
+    "is_image_meta",
     "normalize_field_type",
     "split_multi_select_string",
 ]

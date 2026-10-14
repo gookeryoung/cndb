@@ -352,9 +352,19 @@ def import_rows_from_xlsx(
     xlsx_bytes: bytes,
     db: Any = None,
 ) -> list[int]:
-    """从 XLSX 字节导入行数据，返回新行 id 列表."""
+    """从 XLSX 字节导入行数据，返回新行 id 列表.
+
+    WPS 单元格图片经 DISPLIMG 公式识别后落盘到本工作区上传目录，
+    单元格值为图片元数据列表（image / attachment 字段可直接消费）。
+    """
     from openpyxl import load_workbook
     from openpyxl.worksheet.worksheet import Worksheet
+
+    from cndb.plugins.tables.services.transfer.wps_images import (
+        make_displimg_resolver,
+        make_workspace_image_saver,
+        match_displimg_formula,
+    )
 
     buf = io.BytesIO(xlsx_bytes)
     wb = load_workbook(buf)
@@ -364,19 +374,19 @@ def import_rows_from_xlsx(
         return []
     header = [str(c) if c is not None else "" for c in rows[0]]
     _validate_xlsx_header(header)
-    # 长数字保护：对每个单元格值做精度保护转换
+    # 长数字保护 + WPS 图片单元格解析（落盘到本工作区）
+    resolve_image = make_displimg_resolver(xlsx_bytes, make_workspace_image_saver(table.workspace_id))
     data = []
     for sheet_row, row in enumerate(rows[1:], start=2):
         if not any(c is not None for c in row):
             continue
         # 行溢出明确报错（zip 静默截断会丢数据）；短行按缺列补 None 空值语义
         _check_xlsx_row_overflow(row, sheet_row, len(header))
-        data.append(
-            _parse_link_import_value(
-                table,
-                {k: _coerce_long_numeric_to_text(v) for k, v in zip(header, row, strict=False)},
-            )
-        )
+        row_vals: dict[str, Any] = {}
+        for k, v in zip(header, row, strict=False):
+            displimg_id = match_displimg_formula(v) if isinstance(v, str) else None
+            row_vals[k] = resolve_image(displimg_id) if displimg_id else _coerce_long_numeric_to_text(v)
+        data.append(_parse_link_import_value(table, row_vals))
     _prefill_before_bulk(db, table, data)
     ids = rec.bulk_create(engine, table, data, db=db)
     _sync_after_bulk(db, table)
@@ -553,8 +563,18 @@ def create_table_from_file(
 
     建表与导入包在同一 try/except 中，若数据导入失败则自动清理已创建的
     DataTable / DataField 元数据及物理表，避免残留空壳。
+
+    WPS 带图片单元格的 xlsx：DISPLIMG 公式单元格解析为图片元数据列表并
+    落盘到本工作区上传目录（列类型推断为 image）。
     """
-    rows, _file_cols, actual_fmt = parse_file_to_rows(content, format, filename=filename)
+    from cndb.plugins.tables.services.transfer.wps_images import make_workspace_image_saver
+
+    rows, _file_cols, actual_fmt = parse_file_to_rows(
+        content,
+        format,
+        filename=filename,
+        image_saver=make_workspace_image_saver(workspace_id),
+    )
     columns = analyze_json_columns(rows) if actual_fmt in ("json", "xlsx") else _analyze_dict_rows_as_csv(rows)
     if not columns:
         raise ValueError("文件没有有效列")

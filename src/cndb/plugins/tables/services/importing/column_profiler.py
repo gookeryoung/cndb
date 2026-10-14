@@ -16,6 +16,7 @@ from typing import Any
 from cndb.plugins.tables.services.transfer import (
     _classify_date_like,
     _infer_single_value,
+    _looks_like_image_metadata_list,
     _pick_inferred_type,
     promote_inferred_column_type,
 )
@@ -214,7 +215,9 @@ def _profile_single_column(
             numeric_values.append(float(raw))
         elif isinstance(raw, (list, dict)):
             non_null_values.append(raw)
-            type_counts["json"] = type_counts.get("json", 0) + 1
+            # WPS 单元格图片解析产物归 image，其余 list/dict 归 json
+            t = "image" if _looks_like_image_metadata_list(raw) else "json"
+            type_counts[t] = type_counts.get(t, 0) + 1
         else:
             non_null_values.append(raw)
             # date/datetime 对象（xlsx 日期单元格）按推断层同款规则分类，
