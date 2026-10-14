@@ -2631,3 +2631,44 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: #dc2626;
   font-weight: 600;
 }
+
+/* ── 文档修改申请抽屉（待审列表 + 内容 DIFF） ── */
+
+.cn-dcr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cn-dcr-card {
+  padding: 10px 12px;
+  border: 1px solid var(--cn-border);
+  border-radius: 10px;
+  background: var(--cn-bg-container);
+}
+
+.cn-dcr-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cn-dcr-meta {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-dcr-desc {
+  margin-top: 4px;
+  color: var(--cn-text-secondary);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.cn-dcr-actions {
+  margin-top: 8px;
+}
+
+.cn-dcr-diff {
+  margin-top: 10px;
+}

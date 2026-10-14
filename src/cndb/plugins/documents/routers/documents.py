@@ -13,7 +13,7 @@
 - POST   /{doc_id}/links/repair      断链修复（改指现存文档，editor+）
 - GET    /{doc_id}/content           详情 + 最新内容
 - GET    /{doc_id}/export            导出 Markdown / Word / PDF 文件（成员）
-- PUT    /{doc_id}/content           更新内容（乐观锁，editor+）
+- PUT    /{doc_id}/content           保存内容（双轨制：直编落库 / 转修改申请 202）
 - PATCH  /{doc_id}                   更新元数据（标题/状态/移动/标签，editor+）
 - DELETE /{doc_id}                   软删除（editor+，进回收站）
 - POST   /{doc_id}/restore           从回收站恢复（editor+）
@@ -34,14 +34,14 @@ import re
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
-from cndb.core.errors import BadRequestError, ConflictError, NotFoundError
+from cndb.core.errors import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
 from cndb.plugins.documents.models import Document, DocumentVersion, Tag
@@ -308,10 +308,36 @@ def update_document_content(
     workspace_id: int,
     doc_id: int,
     payload: ContentUpdate,
+    response: Response,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    """更新内容（乐观锁：base_updated_at 失配返回 409）。"""
+    """保存文档内容（双轨制）.
+
+    - owner / 开启直编的 editor：直接落库为新版本（乐观锁：base_updated_at 失配返回 409）；
+    - viewer / 关闭直编的 editor：转为文档修改申请，返回 202 + 申请载荷（正文不落库）；
+    - 非工作区成员：403。
+    """
+    mode = services.change_requests.resolve_write_mode(db, workspace_id, current_user)
+    if mode == services.change_requests.WRITE_MODE_DENIED:
+        raise PermissionDeniedError("非工作区成员")
+
+    if mode == services.change_requests.WRITE_MODE_CHANGE_REQUEST:
+        cr = services.change_requests.create_request(
+            db,
+            workspace_id,
+            doc_id,
+            current_user,
+            content=payload.content,
+            change_summary=payload.change_summary,
+            base_version_number=payload.base_version_number,
+        )
+        response.status_code = 202
+        return {
+            "change_request": services.change_requests.serialize_request(db, cr, with_diff=True),
+            "message": f"已提交修改申请 #{cr.id}，审核通过后生效",
+        }
+
     doc = services.content.update_content(
         db,
         workspace_id,

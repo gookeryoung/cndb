@@ -151,6 +151,12 @@ export const handlers = [
 
   // 工作区
   http.get('/api/v1/workspaces', () => HttpResponse.json([mockWorkspace])),
+  // 工作区详情（文档编辑器 / 修改申请页读取当前用户角色）
+  http.get('/api/v1/workspaces/:wid', ({ params }) =>
+    HttpResponse.json({ ...mockWorkspace, id: Number(params.wid), current_user_role: 'owner' })),
+  // 文档修改申请列表（默认空；单用例 server.use 覆盖）
+  http.get('/api/v1/workspaces/:wid/document-change-requests', () =>
+    HttpResponse.json({ items: [], total: 0 })),
 
   // 附件（useFileObjectUrl 经 axios 取 blob；1x1 PNG 字节即可）
   http.get('/api/v1/workspaces/:wid/files/:fileKey', () =>
