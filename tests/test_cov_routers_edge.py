@@ -564,7 +564,7 @@ class TestBulkRouterEdge:
         本用例只关心参数解析分支.
         """
         monkeypatch.setattr(
-            "cndb.plugins.tables.routers.bulk.run_task_in_background",
+            "cndb.plugins.tables.routers.bulk_import.run_task_in_background",
             lambda *args, **kwargs: None,
         )
         dt, _ = src_table
@@ -600,7 +600,7 @@ class TestBulkRouterEdge:
         置空后台执行，避免空内容任务被后台线程清理影响断言.
         """
         monkeypatch.setattr(
-            "cndb.plugins.tables.routers.bulk.run_task_in_background",
+            "cndb.plugins.tables.routers.bulk_import.run_task_in_background",
             lambda *args, **kwargs: None,
         )
         dt, _ = src_table
