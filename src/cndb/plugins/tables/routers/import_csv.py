@@ -92,7 +92,11 @@ async def import_file_analyze(
 
     # 解析一次：列分析（全量，保证 total_rows / 空值率精确）与样本预览共用
     # 全量解析为重 CPU 操作，放线程池避免阻塞事件循环
-    rows, _cols, actual_fmt = await run_in_threadpool(parse_file_to_rows, content, filename=filename)
+    try:
+        rows, _cols, actual_fmt = await run_in_threadpool(parse_file_to_rows, content, filename=filename)
+    except ValueError as exc:
+        # 文件结构守卫（XLSX 空列名/重复列名、JSON 非数组、无法识别格式等）→ 400
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         columns, total_rows, _ = await run_in_threadpool(analyze_file_columns, rows=rows, format=actual_fmt)
     except ValueError as exc:
