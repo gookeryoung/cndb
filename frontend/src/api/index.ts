@@ -23,7 +23,6 @@ export { viewApi } from './views'
 export { importApi, exportApi, fileApi } from './importExport'
 export { publicApi } from './public'
 export { reportApi } from './reports'
-export { formApi } from './forms'
 export { issuesApi } from './issues'
 export { changeRequestsApi } from './changeRequests'
 export { adminApi } from './admin'
@@ -50,8 +49,6 @@ export type {
   SharedGrid,
   ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
   ReportParameter, ReportRenderRequest, ReportRenderResult, ReportTheme,
-  FormFieldConfig, FormDefinition, FormDefinitionSummary, FormDefinitionCreate, FormDefinitionUpdate,
-  FormSubmitRequest, FormSubmitResponse,
   Issue, IssueStatus, IssueCategory, IssueListItem, IssuePage, IssueComment, IssueEvent, IssueDetail, IssueCreatePayload,
   ChangeOp, CRStatus, ChangeRequest, ChangeItemDetail, ChangeActionItem, ChangeRequestDetail,
   ChangeRequestPage, CRCreatePayload, CRMergePayload, TableWriteMode,
