@@ -138,7 +138,7 @@ class TestAddMissingModelColumns:
         assert flags.get("ix_tables_dataview_public_slug") == 1
 
     def test_upgrade_skips_missing_tables(self, tmp_path: Path) -> None:
-        """目标表整体不存在（legacy 库仅 reports_template）→ 迁移跳过不失败.
+        """目标表整体不存在（legacy 库无业务表）→ 迁移跳过不失败.
 
         该场景由启动期 create_all 按完整 ORM 元数据兜底建表，本迁移只负责
         存量表的缺列（test_migrations_heal.py 验证自愈层兜住同场景）。

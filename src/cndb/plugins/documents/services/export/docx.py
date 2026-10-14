@@ -1,4 +1,4 @@
-"""DOCX 渲染器：Markdown 风格标题/加粗/代码/表格 + 主题风格。"""
+"""DOCX 导出器：Markdown 风格标题/加粗/代码/表格 → Word 文档。"""
 
 from __future__ import annotations
 
@@ -7,30 +7,31 @@ import logging
 import re
 from typing import Any, cast
 
-from cndb.plugins.reports.models import ThemeStyle
-from cndb.plugins.reports.renderers.markdown import (
+from cndb.plugins.documents.services.export.markdown_style import (
     _MD_BOLD_RE,
     _MD_HEADING_RE,
     _MD_TABLE_SEP_RE,
 )
-from cndb.plugins.reports.themes import get_theme_preset
+from cndb.plugins.documents.services.export.theme import DEFAULT_THEME
 
 logger = logging.getLogger(__name__)
 
 
-def _render_docx(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle.MINIMAL.value) -> bytes:
-    """DOCX 渲染：支持 Markdown 风格标题 + 加粗 + 代码 + 表格，并按主题风格应用文字与格式.
+def _render_docx(markdown_text: str, title: str = "") -> bytes:
+    """把文档 Markdown 正文渲染为 .docx 字节流.
 
-    ctx 保留签名一致性，未来可用于渲染 data table 等结构化元素.
+    支持标题 / 加粗 / 行内代码 / GFM 表格 / ``---PAGE---`` 换页，
+    并按默认导出预设应用字体、字号与表头配色。
     """
     from docx import Document
     from docx.oxml.ns import qn
     from docx.shared import Pt, RGBColor
     from docx.styles.style import ParagraphStyle as DocxParagraphStyle
 
-    preset = get_theme_preset(theme)
-    _ = ctx  # 预留：未来可用于生成 data table 等结构化元素
+    preset = DEFAULT_THEME
     doc = Document()
+    if title:
+        doc.core_properties.title = title
 
     # 全局正文样式（Normal）应用主题正文字体/字号，含中文东亚字体映射
     normal = cast(DocxParagraphStyle, doc.styles["Normal"])
@@ -98,7 +99,7 @@ def _render_docx(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyl
         in_table = False
         table_buffer = []
 
-    for raw_line in rendered_text.split("\n"):
+    for raw_line in markdown_text.split("\n"):
         line = raw_line.rstrip()
 
         if _is_table_row(line):
@@ -162,3 +163,6 @@ def _add_rich_runs(paragraph: Any, text: str, body_font: str = "Calibri", code_f
             elif bp:
                 run = paragraph.add_run(bp)
                 run.font.name = body_font
+
+
+__all__ = ["_add_rich_runs", "_render_docx"]

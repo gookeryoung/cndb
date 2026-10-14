@@ -1,5 +1,6 @@
-"""各渲染器共用的 Markdown 风格行内/块级正则。
+"""导出器共用的 Markdown 风格行内/块级正则。
 
+文档正文本身就是 Markdown，Word/PDF 导出器按这些正则做轻量解析；
 GFM 表格分隔行参考 https://github.github.com/gfm/#tables-extension- 。"""
 
 from __future__ import annotations

@@ -14,7 +14,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import cndb.plugins.accounts.models
-import cndb.plugins.reports.models
 import cndb.plugins.tables.models
 import cndb.plugins.workspaces.models  # noqa: F401
 from cndb.models.base import Base

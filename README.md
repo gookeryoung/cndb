@@ -8,7 +8,7 @@
 
 ## 特性
 
-- **插件化架构**：accounts / workspaces / tables / documents / reports / issues / change_requests，可独立部署
+- **插件化架构**：accounts / workspaces / tables / documents / issues / change_requests，可独立部署
 - **动态数据表**：SQLAlchemy Core 运行时建表 / 改字段，运行中即可扩 schema
 - **17 种字段类型**：text / longtext / email / url / phone / json / number / float / percentage / boolean / date / datetime / timestamp / select / multiselect / link（跨表关联）/ attachment
 - **7 种视图**：表格（Grid）/ 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表，视图级筛选、排序、字段显隐与配置持久化
@@ -105,8 +105,7 @@ src/cndb/
 │   ├── accounts/     # 用户注册 / 登录 / JWT
 │   ├── workspaces/   # 工作区 + 成员 + 角色
 │   ├── tables/       # 动态表 / 字段 / 记录 / DDL / 查询 / 视图
-│   ├── documents/    # 文档树 / 版本 / 标签 / 分享 / 全文检索
-│   ├── reports/      # 报告模板 (Jinja2 sandbox)
+│   ├── documents/    # 文档树 / 版本 / 标签 / 分享 / 全文检索 / Word·PDF·Markdown 导出
 │   ├── issues/       # 数据表级问题反馈 + 评论/状态流水
 │   └── change_requests/ # 表级变更申请（双轨制写入的载体）
 ├── app.py            # FastAPI 应用装配 + SPA 静态托管
@@ -145,7 +144,7 @@ src/cndb/
 | 视图 | `/api/v1/workspaces/{wid}/tables/{tid}/views` | 保存筛选条件命名视图 |
 | 权限 | `/api/v1/workspaces/{wid}/tables/{tid}/permissions` | 表级权限 |
 | 分享 | `/api/v1/tables/{tid}/share` | 匿名公开分享 |
-| 报告 | `/api/v1/reports` | 模板 CRUD + 渲染 |
+| 文档导出 | `/api/v1/workspaces/{wid}/documents/{doc_id}/export` | Markdown / Word / PDF 文件下载 |
 | 健康 | `/health` | 服务存活 |
 
 完整文档：启动后访问 `http://localhost:8000/docs`（FastAPI 自动生成）

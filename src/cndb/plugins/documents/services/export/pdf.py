@@ -1,21 +1,20 @@
-"""PDF 渲染器：reportlab Platypus 框架 + 自动分页 + 页眉页脚，按主题应用字号与颜色。"""
+"""PDF 导出器：reportlab Platypus 框架 + 自动分页 + 页眉页脚。"""
 
 from __future__ import annotations
 
 import io
 from typing import Any
 
-from cndb.plugins.reports.models import ThemeStyle
-from cndb.plugins.reports.renderers.markdown import _MD_BOLD_RE, _MD_CODE_RE, _MD_HEADING_RE
-from cndb.plugins.reports.renderers.pdf_fonts import _ensure_pdf_font
-from cndb.plugins.reports.themes import ThemePreset, get_theme_preset
+from cndb.plugins.documents.services.export.markdown_style import _MD_BOLD_RE, _MD_CODE_RE, _MD_HEADING_RE
+from cndb.plugins.documents.services.export.pdf_fonts import _ensure_pdf_font
+from cndb.plugins.documents.services.export.theme import DEFAULT_THEME, ExportTheme
 
 
-def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle.MINIMAL.value) -> bytes:
-    """PDF 渲染：Platypus 框架 + 自动分页 + 页眉页脚，按主题应用字号与颜色.
+def _render_pdf(markdown_text: str, title: str = "") -> bytes:
+    """把文档 Markdown 正文渲染为 .pdf 字节流.
 
-    中文字符依赖 _ensure_pdf_font 注册的系统 CJK 字体；注册失败时回退 Helvetica
-    （此时中文可能乱码但不崩溃）。主题预设只取字号/颜色，不改字体名.
+    Platypus 框架 + 自动分页 + 页眉页脚；中文字符依赖 ``_ensure_pdf_font``
+    注册的系统 CJK 字体，注册失败时回退 Helvetica（此时中文可能乱码但不崩溃）。
     """
     from reportlab.lib.colors import HexColor
     from reportlab.lib.pagesizes import A4
@@ -28,9 +27,9 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle
     )
 
     cjk_font = _ensure_pdf_font() or "Helvetica"
-    preset = get_theme_preset(theme)
+    preset = DEFAULT_THEME
     buf = io.BytesIO()
-    title = ctx.get("table_name", "Report")
+    title = title or "Document"
 
     styles = getSampleStyleSheet()
     body_style = ParagraphStyle(
@@ -59,7 +58,7 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle
     table_buffer: list[list[str]] = []
     in_table = False
 
-    for raw_line in rendered_text.split("\n"):
+    for raw_line in markdown_text.split("\n"):
         line = raw_line.rstrip()
 
         # 表格行：以 | 分隔
@@ -110,7 +109,7 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle
         canvas.setFont(cjk_font, 8)
         # 页眉
         canvas.drawString(50, A4[1] - 30, str(title))
-        canvas.drawRightString(A4[0] - 50, A4[1] - 30, cndb_report_header())
+        canvas.drawRightString(A4[0] - 50, A4[1] - 30, _export_timestamp())
         # 页脚
         canvas.drawCentredString(A4[0] / 2, 30, f"第 {doc.page} 页")
         canvas.restoreState()
@@ -129,8 +128,8 @@ def _render_pdf(rendered_text: str, ctx: dict[str, Any], theme: str = ThemeStyle
     return buf.getvalue()
 
 
-def cndb_report_header() -> str:
-    """PDF 页眉右侧固定文本."""
+def _export_timestamp() -> str:
+    """PDF 页眉右侧固定文本（导出时刻）."""
     import datetime as dt
 
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -149,8 +148,8 @@ def _pdf_markdown_to_rml(text: str, cjk_font: str = "Helvetica") -> str:
     return escaped
 
 
-def _pdf_table_style_cmds(preset: ThemePreset, cjk_font: str = "Helvetica") -> list[tuple[Any, ...]]:
-    """按主题预设构造 PDF 表格样式命令列表（表头底色/文字色 + 斑马纹 + 网格 + 中文字体）."""
+def _pdf_table_style_cmds(preset: ExportTheme, cjk_font: str = "Helvetica") -> list[tuple[Any, ...]]:
+    """按预设构造 PDF 表格样式命令列表（表头底色/文字色 + 斑马纹 + 网格 + 中文字体）."""
     from reportlab.lib import colors
 
     return [
@@ -166,8 +165,8 @@ def _pdf_table_style_cmds(preset: ThemePreset, cjk_font: str = "Helvetica") -> l
     ]
 
 
-def _make_pdf_table(rows: list[list[str]], preset: ThemePreset | None = None, cjk_font: str = "Helvetica") -> Any:
-    """构造 reportlab Table（带主题表头样式 + 中文字体 + 跨页重复）."""
+def _make_pdf_table(rows: list[list[str]], preset: ExportTheme | None = None, cjk_font: str = "Helvetica") -> Any:
+    """构造 reportlab Table（带表头样式 + 中文字体 + 跨页重复）."""
     from reportlab.platypus import Table, TableStyle
 
     if not rows:
@@ -176,5 +175,15 @@ def _make_pdf_table(rows: list[list[str]], preset: ThemePreset | None = None, cj
     max_cols = max(len(r) for r in rows)
     norm_rows = [r + [""] * (max_cols - len(r)) for r in rows]
     table = Table(norm_rows, repeatRows=1, hAlign="LEFT")
-    table.setStyle(TableStyle(_pdf_table_style_cmds(preset or get_theme_preset("minimal"), cjk_font)))
+    table.setStyle(TableStyle(_pdf_table_style_cmds(preset or DEFAULT_THEME, cjk_font)))
     return table
+
+
+__all__ = [
+    "_export_timestamp",
+    "_make_pdf_table",
+    "_pdf_escape",
+    "_pdf_markdown_to_rml",
+    "_pdf_table_style_cmds",
+    "_render_pdf",
+]

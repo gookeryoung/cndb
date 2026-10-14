@@ -12,3 +12,4 @@
 | 编辑中标识 | 操作列中的行级修改申请状态位 | 派生自 change_requests 开放查询（status=open），按 row_id 聚合；merge 落库后同行其余 open 申请标记 stale，提交人可 update-base 刷新基准 |
 | 文档种子 | `examples/datasets/<工作区>/documents/` 目录树：子目录 → 文档文件夹节点、`*.md` → Markdown 文档；文件头 `---` 元数据块声明 status/tags/author/summary，seed 入库前剥离 | 反面示例工作区（工作区-低质量数据）不提供 documents/，即不生成典型文档 |
 | 数据表动态引用 | 文档正文中独占段落的占位符 `{{table:表名\|view=视图名\|limit=N}}`，前端渲染为实时数据表 | seed 阶段把符号表名/视图名解析为该工作区真实数字 ID（前端 `tableRef.ts` 只接受数字 ID） |
+| 文档导出 | `GET /{wid}/documents/{doc_id}/export?format=md\|docx\|pdf`：把文档最新版本正文渲染为 Markdown / Word / PDF 文件下载 | 工作区成员即可导出；文件夹与非法格式返回 400；渲染器在 `documents/services/export/`（原 reports 插件的 docx/pdf 渲染器迁入，去掉主题与模板变量，改用默认视觉预设） |

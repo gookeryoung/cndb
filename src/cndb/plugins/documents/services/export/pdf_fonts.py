@@ -214,7 +214,7 @@ def _cjk_font_candidates() -> list[tuple[str, str, int | None]]:
     # ── 策略 4：项目内字体资源 ──
     # 前端 fonts/noto-sans-sc/ 目录含 woff2，reportlab 需要 ttf/otf，
     # 这里也把目录加入扫描；若将来补充 ttf 版本可自动命中
-    _project_root = Path(__file__).resolve().parents[5]  # .../src/cndb/plugins/reports/routers → /workspace
+    _project_root = Path(__file__).resolve().parents[6]  # .../src/cndb/plugins/documents/services/export → /workspace
     for _sub in ("frontend/public/fonts", "src/cndb/fonts"):
         _res_dir = _project_root / _sub
         if not _res_dir.is_dir():

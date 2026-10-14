@@ -48,7 +48,6 @@ const CORE_FILES = [
   // 通用
   'src/utils/tagColors.ts',
   'src/hooks/useResponsive.ts',
-  'src/components/report-editor/jinja2Highlight.ts',
   // 数据层
   'src/api/client.ts',
   'src/store/auth.ts',

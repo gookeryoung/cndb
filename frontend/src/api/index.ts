@@ -12,7 +12,6 @@
  * - /api/v1/workspaces/{wid}/tables/{tid}/export|import|import/async  → 导入导出
  * - /api/v1/workspaces/{wid}/import-csv/*             → CSV 自动建表
  * - /api/v1/public/*               → 公开分享（全局挂载）
- * - reports 插件单独挂载（见 reports plugin route_prefix）
  */
 
 export { authApi } from './auth'
@@ -22,7 +21,6 @@ export { recordApi } from './records'
 export { viewApi } from './views'
 export { importApi, exportApi, fileApi } from './importExport'
 export { publicApi } from './public'
-export { reportApi } from './reports'
 export { issuesApi } from './issues'
 export { changeRequestsApi } from './changeRequests'
 export { adminApi } from './admin'

@@ -30,6 +30,10 @@ BACKUP_DIR = Path(__file__).resolve().parents[1] / "examples" / "backups"
 
 _ARCHIVES = sorted(BACKUP_DIR.glob("cndb-backup-*.tar.gz"))
 
+# 已被迁移删除的表：历史备份 manifest 仍记录其行数，但恢复到当前 head 时
+# 该表按迁移链被丢弃（reports_template 于 c2d3e4f5a6b7 删除），
+# 因此行数一致性校验只覆盖当前 schema 仍存在的表。
+_DROPPED_TABLES = {"reports_template"}
 pytestmark = pytest.mark.skipif(not _ARCHIVES, reason="examples/backups 下无历史备份归档")
 
 
@@ -60,9 +64,16 @@ def test_inspect_legacy_backup(legacy_archive: Path) -> None:
 
 
 def test_restore_legacy_backup_migrates_to_head(legacy_archive: Path, tmp_path: Path) -> None:
-    """恢复历史备份：schema 自动迁移到当前 head，且各表行数与 manifest 一致."""
+    """恢复历史备份：schema 自动迁移到当前 head，且各表行数与 manifest 一致.
+
+    迁移中显式删除的表（见 ``_DROPPED_TABLES``）不参与行数比对；
+    对带 schema_version 的备份还要求该表确已删除，避免"漏删"被静默放过。
+    无 schema_version 的 0.1.x 备份走 stamp + create_all 兜底、不重放迁移，
+    已删除的历史表可能以孤儿表形式残留（无代码引用，不影响使用）。
+    """
     manifest = inspect_backup(legacy_archive).manifest
     row_counts = manifest["database"]["row_counts"]
+    has_schema_version = bool(manifest["database"].get("schema_version"))
 
     target_db = tmp_path / "restored.db"
     restore_backup(
@@ -76,7 +87,12 @@ def test_restore_legacy_backup_migrates_to_head(legacy_archive: Path, tmp_path: 
     try:
         version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
         assert version == _alembic_head(), "恢复后 schema 应回到当前迁移链 head"
+        existing = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         for table, count in row_counts.items():
+            if table in _DROPPED_TABLES:
+                if has_schema_version:
+                    assert table not in existing, f"表 {table} 应已被迁移删除"
+                continue
             actual = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]  # nosec B608 - 表名来自 manifest 枚举
             assert actual == count, f"表 {table}: 恢复后 {actual} 行 != manifest 记录 {count} 行"
     finally:
@@ -90,8 +106,7 @@ def test_seed_after_restore_regenerates_demo_data(
 
     seed() 通过 cndb.core.database 的模块级 engine/SessionLocal 取库，
     测试中 monkeypatch 指向恢复出的临时库；settings.DATABASE_URL 同步
-    指向（stamp_head 无参调用走 settings）。示例报告落盘属仓库目录副作用，
-    与数据库兼容性无关，测试中跳过。
+    指向（stamp_head 无参调用走 settings）。
     """
     import cndb.core.database as database_mod
     from cndb.cli.seed import seed as seed_command
@@ -117,8 +132,6 @@ def test_seed_after_restore_regenerates_demo_data(
     monkeypatch.setattr(database_mod, "engine", seed_engine)
     monkeypatch.setattr(database_mod, "SessionLocal", seed_session_factory)
     monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{target_db}")
-    # 示例报告落盘属仓库目录副作用，与本测试目标无关，跳过
-    monkeypatch.setattr("cndb.cli.seed.samples._generate_sample_reports", lambda *args, **kwargs: None)
 
     try:
         seed_command(argparse.Namespace())

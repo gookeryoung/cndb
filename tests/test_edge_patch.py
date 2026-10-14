@@ -1,4 +1,4 @@
-"""零散缺口补全 — accounts / reports / workspaces / smart_color 等."""
+"""零散缺口补全 — accounts / workspaces / smart_color 等."""
 
 from __future__ import annotations
 
@@ -67,93 +67,6 @@ class TestAccountsPreferencesEdge:
         db.commit()
         r = client.get("/api/v1/accounts/preferences", headers=auth_headers)
         assert r.status_code == 200
-
-
-# ── reports 零散 ──────────────────────────────────────
-
-
-class TestReportsEdge:
-    def test_create_template_bad_jinja(self, client, auth_headers):
-        r = client.post(
-            "/api/v1/reports",
-            json={
-                "name": "坏模板",
-                "output_format": "docx",
-                "template_content": "{% if %} 语法错误",
-            },
-            headers=auth_headers,
-        )
-        assert r.status_code == 400
-        assert "模板语法" in r.json()["detail"]
-
-    def test_create_template_bad_format(self, client, auth_headers):
-        r = client.post(
-            "/api/v1/reports",
-            json={
-                "name": "坏格式",
-                "output_format": "xyz",
-                "template_content": "hello",
-            },
-            headers=auth_headers,
-        )
-        assert r.status_code == 400
-
-    def test_update_template_not_found(self, client, auth_headers):
-        r = client.put(
-            "/api/v1/reports/99999",
-            json={"name": "newname", "template_content": "x"},
-            headers=auth_headers,
-        )
-        assert r.status_code == 404
-
-    def test_delete_template_not_found(self, client, auth_headers):
-        r = client.delete("/api/v1/reports/99999", headers=auth_headers)
-        assert r.status_code == 404
-
-    def test_update_template_bad_jinja(self, client, auth_headers):
-        r = client.post(
-            "/api/v1/reports",
-            json={"name": "T1", "output_format": "docx", "template_content": "hello"},
-            headers=auth_headers,
-        )
-        assert r.status_code == 201
-        tid = r.json()["id"]
-        r = client.put(
-            f"/api/v1/reports/{tid}",
-            json={"template_content": "{% if %} bad"},
-            headers=auth_headers,
-        )
-        assert r.status_code == 400
-
-    def test_update_template_bad_format(self, client, auth_headers):
-        r = client.post(
-            "/api/v1/reports",
-            json={"name": "T2", "output_format": "docx", "template_content": "hi"},
-            headers=auth_headers,
-        )
-        assert r.status_code == 201
-        tid = r.json()["id"]
-        r = client.put(
-            f"/api/v1/reports/{tid}",
-            json={"output_format": "nope", "template_content": "hi"},
-            headers=auth_headers,
-        )
-        assert r.status_code == 400
-
-    def test_update_template_bad_table_ref(self, client, auth_headers):
-        r = client.post(
-            "/api/v1/reports",
-            json={"name": "T3", "output_format": "docx", "template_content": "hi"},
-            headers=auth_headers,
-        )
-        assert r.status_code == 201
-        tid = r.json()["id"]
-        r = client.put(
-            f"/api/v1/reports/{tid}",
-            json={"table_id": 99999, "template_content": "hi"},
-            headers=auth_headers,
-        )
-        assert r.status_code == 404
 
 
 # ── smart_color 零散 ───────────────────────────────────

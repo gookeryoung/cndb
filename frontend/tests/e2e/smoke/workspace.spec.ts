@@ -16,8 +16,8 @@ test.describe("工作区 + 表列表", () => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await gotoWorkspace(page);
 
-    // MainLayout 重构后：报表 / 工作区设置从 Header 按钮迁移为 Content 上方的 Tabs 导航
-    await expect(page.getByRole("tab", { name: /报表/ })).toBeVisible();
+    // MainLayout 重构后：文档 / 工作区设置从 Header 按钮迁移为 Content 上方的 Tabs 导航
+    await expect(page.getByRole("tab", { name: /文档/ })).toBeVisible();
     await expect(page.getByRole("tab", { name: /工作区设置/ })).toBeVisible();
 
     // 表列表页 — TablesList（用 :has-text 避免匹配到空状态 placeholder row）

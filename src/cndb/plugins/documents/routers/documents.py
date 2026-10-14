@@ -12,6 +12,7 @@
 - GET    /{doc_id}/links             出链解析（[[标题]] 命中与断链）
 - POST   /{doc_id}/links/repair      断链修复（改指现存文档，editor+）
 - GET    /{doc_id}/content           详情 + 最新内容
+- GET    /{doc_id}/export            导出 Markdown / Word / PDF 文件（成员）
 - PUT    /{doc_id}/content           更新内容（乐观锁，editor+）
 - PATCH  /{doc_id}                   更新元数据（标题/状态/移动/标签，editor+）
 - DELETE /{doc_id}                   软删除（editor+，进回收站）
@@ -28,15 +29,19 @@
 
 from __future__ import annotations
 
+import io
+import re
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
-from cndb.core.errors import ConflictError, NotFoundError
+from cndb.core.errors import BadRequestError, ConflictError, NotFoundError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
 from cndb.plugins.documents.models import Document, DocumentVersion, Tag
@@ -321,6 +326,49 @@ def update_document_content(
     data["content"] = payload.content
     data["version_number"] = v.version_number if v else 0
     return data
+
+
+@router.get("/{doc_id}/export")
+def export_document(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    fmt: Annotated[str, Query(alias="format")] = "md",
+) -> StreamingResponse:
+    """导出文档正文为 Markdown / Word(.docx) / PDF 文件.
+
+    ``format`` 取 ``md`` / ``docx`` / ``pdf``（兼容 ``markdown`` / ``word`` 别名）；
+    工作区成员即可导出（与文档读取权限一致），文件夹不可导出。
+    """
+    _require_member(db, workspace_id, current_user)
+    normalized = services.export.normalize_format(fmt)
+    if normalized is None:
+        raise BadRequestError(f"不支持的导出格式: {fmt}，可选 {'/'.join(services.export.SUPPORTED_FORMATS)}")
+    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    if doc.is_folder:
+        raise BadRequestError("文件夹不支持导出")
+
+    version = services.content.latest_version(db, doc.id)
+    content = services.content.load_content(version, doc) if version else ""
+    file_bytes = services.export.render_export(content, normalized, doc.title)
+
+    filename = _export_filename(doc.title, services.export.FORMAT_EXTENSIONS[normalized])
+    quoted = quote(filename)
+    return StreamingResponse(
+        io.BytesIO(file_bytes),
+        media_type=services.export.FORMAT_CONTENT_TYPES[normalized],
+        headers={
+            # ASCII fallback + RFC 5987 filename*（标题含中文时保证文件名正确）
+            "Content-Disposition": f"attachment; filename=\"document.{normalized}\"; filename*=UTF-8''{quoted}"
+        },
+    )
+
+
+def _export_filename(title: str, ext: str) -> str:
+    """构造导出文件名：``{标题}.{ext}``，剔除文件系统非法字符."""
+    safe = re.sub(r'[\\/:*?"<>|]', "_", title).strip() or "document"
+    return f"{safe}.{ext}"
 
 
 @router.patch("/{doc_id}")

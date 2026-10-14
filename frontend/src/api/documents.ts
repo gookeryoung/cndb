@@ -128,6 +128,9 @@ export interface PurgeResult {
   detached: number
 }
 
+/** 文档导出格式：Markdown / Word / PDF */
+export type DocumentExportFormat = 'md' | 'docx' | 'pdf'
+
 // ── API ──
 
 const base = (wid: number | string) => `/v1/workspaces/${wid}/documents`
@@ -154,6 +157,12 @@ export const documentsApi = {
     data: { content: string; change_summary?: string; base_updated_at?: string | null },
   ) =>
     api.put<DocumentDetail>(`${base(wid)}/${docId}/content`, data).then(r => r.data),
+
+  // 导出：Markdown / Word / PDF 文件字节流（文件名由调用方拼装）
+  exportFile: (wid: number | string, docId: number | string, format: DocumentExportFormat) =>
+    api
+      .get<Blob>(`${base(wid)}/${docId}/export`, { params: { format }, responseType: 'blob' })
+      .then(r => r.data),
 
   updateMeta: (wid: number | string, docId: number | string, data: Record<string, unknown>) =>
     api.patch<DocumentItem>(`${base(wid)}/${docId}`, data).then(r => r.data),

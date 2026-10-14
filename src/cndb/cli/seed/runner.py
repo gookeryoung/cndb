@@ -12,7 +12,6 @@ from cndb.cli.seed import (
     fields,
     paths,
     permission_demo,
-    samples,
     sqlite,
     templates,
     views,
@@ -135,12 +134,6 @@ def seed(_args: argparse.Namespace) -> None:
         # 3b) demo 用户硬编码个人视图：在"某企业销售管理/日常待办"上建 1 个
         #     演示视图"我的待办"，让前端进入时同时看到 global + personal 两类视图
         views._seed_demo_personal_views(db, demo, tables_map)
-
-        # 4) 报告模板种子（幂等：按工作区+模板名查重，已存在跳过）
-        templates._seed_report_templates(db, tables_map)
-
-        # 4b) 示例报告生成：渲染"科研项目季度汇报"落盘到数据集目录
-        samples._generate_sample_reports(db, tables_map, owner, datasets_dir)
 
         # 5) 为"某企业销售管理"工作区添加其他演示成员，使表权限设置能看到可添加的候选成员
         from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole

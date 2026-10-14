@@ -1,7 +1,7 @@
 /** MainLayout Header 导航 E2E.
  *
- * 覆盖：工作区级 Tab 顺序（数据表 → 文档 → 报表 → 工作区设置）、
- * Header 导航按钮可达性 — 报表、工作区设置.
+ * 覆盖：工作区级 Tab 顺序（数据表 → 文档 → 工作区设置）、
+ * Header 导航按钮可达性 — 文档、工作区设置.
  * 以及表列表 owner 列展示 + 筛选器.
  */
 
@@ -19,7 +19,7 @@ test.describe("MainLayout Header 导航按钮", () => {
 
   // 原 forms.spec.ts 的「导航 Tab 顺序」用例随表单功能移除而失效，此处按当前
   // 工作区级 Tab 集重写：顺序即 wsTabItems 的声明顺序，回归导航被误调序的问题。
-  test("工作区 Tab 顺序为 数据表 → 文档 → 报表 → 工作区设置", async ({ page }) => {
+  test("工作区 Tab 顺序为 数据表 → 文档 → 工作区设置", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
@@ -34,34 +34,31 @@ test.describe("MainLayout Header 导航按钮", () => {
     // Tab 标签内含数量徽标（如「数据表 8」），故用子串匹配而非全等
     const idxAssets = names.findIndex((n) => n.includes("数据表"))
     const idxDocs = names.findIndex((n) => n.includes("文档"))
-    const idxReports = names.findIndex((n) => n.includes("报表"))
     const idxSettings = names.findIndex((n) => n.includes("工作区设置"))
 
     expect(idxAssets).toBeGreaterThanOrEqual(0)
     expect(idxDocs).toBeGreaterThanOrEqual(0)
-    expect(idxReports).toBeGreaterThanOrEqual(0)
     expect(idxSettings).toBeGreaterThanOrEqual(0)
     expect(idxAssets).toBeLessThan(idxDocs)
-    expect(idxDocs).toBeLessThan(idxReports)
-    expect(idxReports).toBeLessThan(idxSettings)
+    expect(idxDocs).toBeLessThan(idxSettings)
   })
 
-  test("Content 分页导航可见 报表 / 工作区设置 Tab", async ({ page }) => {
+  test("Content 分页导航可见 文档 / 工作区设置 Tab", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
-    // MainLayout 重构后，报表 / 工作区设置从 Header 按钮迁移为 Content 上方的 Tabs
-    await expect(page.getByRole("tab", { name: /报表/ })).toBeVisible()
+    // MainLayout 重构后，文档 / 工作区设置从 Header 按钮迁移为 Content 上方的 Tabs
+    await expect(page.getByRole("tab", { name: /文档/ })).toBeVisible()
     await expect(page.getByRole("tab", { name: /工作区设置/ })).toBeVisible()
   })
 
-  test("报表 Tab → /w/:wid/reports", async ({ page }) => {
+  test("文档 Tab → /w/:wid/documents", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
-    await page.getByRole("tab", { name: /报表/ }).click()
-    await page.waitForURL(/\/reports$/)
-    await expect(page.locator("h3", { hasText: /报表模板/ })).toBeVisible({ timeout: 5000 })
+    await page.getByRole("tab", { name: /文档/ }).click()
+    await page.waitForURL(/\/documents$/)
+    await expect(page.getByTestId("documents-layout")).toBeVisible({ timeout: 5000 })
   })
 })
 

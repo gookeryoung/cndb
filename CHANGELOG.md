@@ -18,8 +18,12 @@
 - 文档断链修复 `POST /{wid}/documents/{doc_id}/links/repair`：把正文 `[[旧标题]]` 改指为指定现存文档（生成新版本可回溯；全部条目未命中返回 409）
 - 文档前端：文档页新增回收站抽屉（软删除列表 / 恢复 / 彻底删除），编辑器新增出链抽屉（已解析与断链分栏，按目标文档修复断链）
 - CLI 新增 `cndb docs gc`：文档外存孤儿文件体检与物理回收（默认 dry-run，`--apply` 实际删除，`--json` 输出报告；软删除文档的外存内容视为有效引用不回收）
+- 文档导出：`GET /{wid}/documents/{doc_id}/export?format=md|docx|pdf` 把文档最新正文导出为 Markdown / Word / PDF 文件（工作区成员可用；文件夹与非法格式返回 400），编辑器顶栏新增「导出」下拉入口；DOCX/PDF 渲染器迁至 `documents/services/export/`，PDF 保留中文字体自动发现与页眉页脚
 
 ### 移除
+
+- reports 插件（报表模板 + Jinja2 渲染）：模型 / 路由 / 渲染器 / 前端页面与编辑器 / seed 示例模板整体移除，`reports_template` 表由新增迁移 `c2d3e4f5a6b7` 删除（历史迁移保留，downgrade 可重建空表）；工作区列表 `report_count` 字段与前端报表页签同步下线
+- 依赖 `jinja2` 移除（仅报表模板使用）
 
 - wechat_auth 插件（微信小程序登录）：路由/模型/客户端/配置项/依赖 `requests` 及配套测试整体移除；历史迁移保留，存量库中的 wechat_accounts 孤儿表不影响升级
 - 前端死代码：未使用的 `userApi` 封装、`USER_ROLE_LABEL` 常量与 hooks barrel 重导出（ruff/knip/eslint 证据驱动）

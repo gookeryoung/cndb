@@ -279,3 +279,57 @@ describe('DocumentEditorPage 双向链接跳转', () => {
         expect(screen.getByTestId('editor-location')).toHaveTextContent('/w/10/documents/2')
     })
 })
+
+describe('DocumentEditorPage 文档导出', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+    })
+
+    it('导出 Word：请求 export 端点并触发浏览器下载', async () => {
+        const createSpy = vi.fn(() => 'blob:mock-doc')
+        const revokeSpy = vi.fn()
+        Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createSpy })
+        Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeSpy })
+
+        let requestedUrl = ''
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/export', ({ request }) => {
+                requestedUrl = request.url
+                return new HttpResponse(new Blob(['PK']), { status: 200 })
+            }),
+        )
+
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-export-btn'))
+        fireEvent.click(await screen.findByText('导出 Word (.docx)'))
+
+        await waitFor(() => {
+            expect(requestedUrl).toContain('/documents/2/export')
+            expect(requestedUrl).toContain('format=docx')
+        })
+        await waitFor(() => expect(createSpy).toHaveBeenCalled())
+        expect(revokeSpy).toHaveBeenCalled()
+    })
+
+    it('导出 Markdown：请求 format=md', async () => {
+        let requestedUrl = ''
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/export', ({ request }) => {
+                requestedUrl = request.url
+                return new HttpResponse('# 需求说明', { status: 200 })
+            }),
+        )
+
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-export-btn'))
+        fireEvent.click(await screen.findByText('导出 Markdown (.md)'))
+
+        await waitFor(() => {
+            expect(requestedUrl).toContain('format=md')
+        })
+    })
+})

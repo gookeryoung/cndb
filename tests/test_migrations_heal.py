@@ -1,18 +1,15 @@
 """迁移 schema 自愈回归测试.
 
-复现线上问题：旧库 reports_template 由 create_all 兜底建表（当时模型 schema
-尚无 extra_table_ids/theme/workspace_id），alembic_version 被 stamp 到当时的
-head（d8e9f0a1b2c3），版本标记越过了加列迁移（b3c4d5e6f7a8/d4e5f6a7b8c9/
-e5f6a7b8c9d0）。新版启动 upgrade head 对已越过区间的迁移永不重放，创建模板时
-INSERT 报 "table reports_template has no column named extra_table_ids"。
+复现线上问题形态：旧库 documents_tag 由 create_all 兜底建表（当时模型 schema
+尚无 color/description/doc_count），alembic_version 被 stamp 到当时的 head
+（e5f6a7b8c9d0），版本标记越过了后续加列迁移。新版启动 upgrade head 对已越过
+区间的迁移永不重放，业务写入会报 "table documents_tag has no column named ..."。
 
 修复契约（core/migrations.py）：ensure_db_migrated 任一路径（fresh / upgrade
 成功 / 兜底）结束后执行 schema 自愈，对照 ORM 元数据纯增量补建缺列与缺索引。
 """
 
 from __future__ import annotations
-
-import json
 
 import pytest
 import sqlalchemy as sa
@@ -32,19 +29,19 @@ from sqlalchemy.orm import Session
 
 # 注册全部插件模型，保证 Base.metadata 与生产一致（自愈遍历的比对基准）
 import cndb.plugins.accounts.models
-import cndb.plugins.reports.models
+import cndb.plugins.documents.models
 import cndb.plugins.tables.models
 import cndb.plugins.workspaces.models  # noqa: F401
 from cndb.core import database as db_mod
 from cndb.core import migrations as mig_mod
 from cndb.core.config import settings
 from cndb.models.base import Base
-from cndb.plugins.reports.models import ReportTemplate
+from cndb.plugins.documents.models import Tag
 
 HEAD = "e5f6a7b8c9d0"
 
 
-# 旧 schema 的 reports_template 列工厂（截至 d8e9f0a1b2c3 时代的模型，仅基础列）；
+# 旧 schema 的 documents_tag 列工厂（仅基础列，缺 color/description/doc_count）；
 # 每次调用构造新 Column 实例，避免跨测试复用同一对象绑定到不同 Table
 def _legacy_cols(include_name: bool = True) -> list[sa.Column]:
     cols = [
@@ -61,20 +58,16 @@ def _legacy_cols(include_name: bool = True) -> list[sa.Column]:
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
             nullable=False,
         ),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("description", sa.Text(), nullable=False, server_default=""),
-        sa.Column("output_format", sa.String(16), nullable=False, server_default="docx"),
-        sa.Column("template_content", sa.Text(), nullable=False),
-        sa.Column("parameters", sa.JSON(), nullable=False),
-        sa.Column("table_id", sa.Integer(), nullable=True),
+        sa.Column("workspace_id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(100), nullable=False),
     ]
     return [c for c in cols if include_name or c.name != "name"]
 
 
-def _create_legacy_template_table(engine, *, include_name: bool = True) -> None:
-    """按旧 schema 建 reports_template（include_name=False 模拟缺不可补列）."""
+def _create_legacy_tag_table(engine, *, include_name: bool = True) -> None:
+    """按旧 schema 建 documents_tag（include_name=False 模拟缺不可补列）."""
     metadata = sa.MetaData()
-    sa.Table("reports_template", metadata, *_legacy_cols(include_name))
+    sa.Table("documents_tag", metadata, *_legacy_cols(include_name))
     metadata.create_all(engine)
 
 
@@ -97,28 +90,30 @@ def _make_legacy_db(tmp_path, monkeypatch, *, revision: str = HEAD, include_name
     url = f"sqlite:///{(tmp_path / 'heal.db').as_posix()}"
     monkeypatch.setattr(settings, "DATABASE_URL", url)
     engine = create_engine(url)
-    _create_legacy_template_table(engine, include_name=include_name)
+    _create_legacy_tag_table(engine, include_name=include_name)
     with engine.begin() as conn:
         if include_name:
-            conn.execute(
-                text("INSERT INTO reports_template (name, template_content, parameters) VALUES ('旧模板', 'tpl', '[]')")
-            )
+            conn.execute(text("INSERT INTO documents_tag (workspace_id, name) VALUES (1, '旧标签')"))
         else:
-            # 缺 name 列（不可安全补建的 NOT NULL 列）时仅插非空列
-            conn.execute(text("INSERT INTO reports_template (template_content, parameters) VALUES ('tpl', '[]')"))
+            # 缺 name 列（不可安全补建的 NOT NULL 列）时仅插可空/已有列
+            conn.execute(text("INSERT INTO documents_tag (workspace_id) VALUES (1)"))
     _stamp_version(engine, revision)
     monkeypatch.setattr(db_mod, "engine", engine)
     monkeypatch.setattr(mig_mod, "_db_is_fresh", lambda: False)
     return engine
 
 
-def _template_cols(engine) -> set[str]:
-    return {c["name"] for c in inspect(engine).get_columns("reports_template")}
+def _tag_cols(engine) -> set[str]:
+    return {c["name"] for c in inspect(engine).get_columns("documents_tag")}
+
+
+def _tag_indexes(engine) -> set[str]:
+    return {i["name"] for i in inspect(engine).get_indexes("documents_tag")}
 
 
 @pytest.fixture
 def legacy_db(tmp_path, monkeypatch):
-    """版本已 stamp 到 head 但表缺三列的库（线上故障形态）."""
+    """版本已 stamp 到 head 但表缺列的库（线上故障形态）."""
     engine = _make_legacy_db(tmp_path, monkeypatch)
     yield engine
     engine.dispose()
@@ -126,53 +121,50 @@ def legacy_db(tmp_path, monkeypatch):
 
 class TestSchemaHeal:
     def test_heals_missing_columns_and_indexes(self, legacy_db):
-        """版本越过加列迁移 → 自愈补齐 extra_table_ids/theme/workspace_id 与索引."""
-        assert "extra_table_ids" not in _template_cols(legacy_db)
+        """版本越过加列迁移 → 自愈补齐 color/description/doc_count 与索引."""
+        assert "color" not in _tag_cols(legacy_db)
 
         mig_mod.ensure_db_migrated()
 
-        cols = _template_cols(legacy_db)
-        assert {"extra_table_ids", "theme", "workspace_id"} <= cols
-        idx_names = {i["name"] for i in inspect(legacy_db).get_indexes("reports_template")}
-        assert "ix_reports_template_workspace_id" in idx_names
+        cols = _tag_cols(legacy_db)
+        assert {"color", "description", "doc_count"} <= cols
+        assert "ix_documents_tag_workspace_id" in _tag_indexes(legacy_db)
 
-        # 存量数据保留，新列取迁移约定的默认值
+        # 存量数据保留，新列取 ORM 约定的默认值
         with legacy_db.connect() as conn:
-            row = conn.execute(
-                text("SELECT name, extra_table_ids, theme, workspace_id FROM reports_template")
-            ).fetchone()
-        assert row[0] == "旧模板"
-        assert json.loads(row[1]) == []
-        assert row[2] == "minimal"
-        assert row[3] is None
+            row = conn.execute(text("SELECT name, color, description, doc_count FROM documents_tag")).fetchone()
+        assert row[0] == "旧标签"
+        assert row[1] == "#1890FF"
+        assert row[2] == ""
+        assert row[3] == 0
 
-    def test_create_template_after_heal(self, legacy_db):
-        """自愈后通过 ORM 创建模板成功（复现用户报错操作不再触发 no column）."""
+    def test_create_tag_after_heal(self, legacy_db):
+        """自愈后通过 ORM 创建标签成功（复现用户报错操作不再触发 no column）."""
         mig_mod.ensure_db_migrated()
 
         with Session(legacy_db) as session:
-            tpl = ReportTemplate(name="T1", template_content="hello", parameters=[])
-            session.add(tpl)
+            tag = Tag(workspace_id=1, name="T1")
+            session.add(tag)
             session.commit()
-            assert tpl.id is not None
-            assert tpl.extra_table_ids == []
-            assert tpl.theme == "minimal"
+            assert tag.id is not None
+            assert tag.color == "#1890FF"
+            assert tag.doc_count == 0
 
     def test_heal_is_idempotent(self, legacy_db):
         """自愈幂等：重复启动不重复补建、不改数据."""
         mig_mod.ensure_db_migrated()
-        cols_before = _template_cols(legacy_db)
+        cols_before = _tag_cols(legacy_db)
         with legacy_db.connect() as conn:
             rows_before = conn.execute(
-                text("SELECT id, name, extra_table_ids, theme, workspace_id FROM reports_template")
+                text("SELECT id, name, color, description, doc_count FROM documents_tag")
             ).fetchall()
 
         mig_mod.ensure_db_migrated()
 
-        assert _template_cols(legacy_db) == cols_before
+        assert _tag_cols(legacy_db) == cols_before
         with legacy_db.connect() as conn:
             rows_after = conn.execute(
-                text("SELECT id, name, extra_table_ids, theme, workspace_id FROM reports_template")
+                text("SELECT id, name, color, description, doc_count FROM documents_tag")
             ).fetchall()
         assert rows_before == rows_after
 
@@ -180,7 +172,7 @@ class TestSchemaHeal:
         """upgrade 失败走兜底 create_all + stamp 后，自愈仍补齐已存在表的缺列.
 
         create_all 只建缺失的表、不修已存在的表 —— 兜底路径历史上正是靠
-        stamp 掩盖了 reports_template 的缺列，自愈层必须兜住这条路。
+        stamp 掩盖了 documents_tag 的缺列，自愈层必须兜住这条路。
         """
         engine = _make_legacy_db(tmp_path, monkeypatch)
         monkeypatch.setattr(
@@ -191,8 +183,8 @@ class TestSchemaHeal:
         try:
             mig_mod.ensure_db_migrated()
 
-            cols = _template_cols(engine)
-            assert {"extra_table_ids", "theme", "workspace_id"} <= cols
+            cols = _tag_cols(engine)
+            assert {"color", "description", "doc_count"} <= cols
         finally:
             engine.dispose()
 
@@ -202,10 +194,9 @@ class TestSchemaHeal:
         try:
             mig_mod.ensure_db_migrated()
 
-            cols = _template_cols(engine)
-            assert {"extra_table_ids", "theme", "workspace_id"} <= cols
-            idx_names = {i["name"] for i in inspect(engine).get_indexes("reports_template")}
-            assert "ix_reports_template_workspace_id" in idx_names
+            cols = _tag_cols(engine)
+            assert {"color", "description", "doc_count"} <= cols
+            assert "ix_documents_tag_workspace_id" in _tag_indexes(engine)
 
             from alembic.script import ScriptDirectory
 
@@ -222,16 +213,16 @@ class TestSchemaHeal:
         try:
             mig_mod.ensure_db_migrated()  # 不抛异常
 
-            cols = _template_cols(engine)
+            cols = _tag_cols(engine)
             assert "name" not in cols  # 无法安全补建，跳过
-            assert "extra_table_ids" in cols  # 其余列照常补齐
+            assert "color" in cols  # 其余列照常补齐
         finally:
             engine.dispose()
 
     def test_heal_covers_all_metadata_tables(self, legacy_db):
-        """自愈以 Base.metadata 全表为基准（非仅 reports_template）.
+        """自愈以 Base.metadata 全表为基准（非仅 documents_tag）.
 
-        先 create_all 补齐其余业务表（reports_template 保持旧 schema），
+        先 create_all 补齐其余业务表（documents_tag 保持旧 schema），
         再摘掉 accounts_user 的 created_at（TimestampMixin 列，无 FK 且带
         server_default），验证同样被补回。
         """
@@ -361,17 +352,16 @@ class TestHealSchemaDriftFunction:
         try:
             Base.metadata.create_all(engine)
             with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE reports_template DROP COLUMN extra_table_ids"))
-                conn.execute(text("DROP INDEX ix_reports_template_workspace_id"))
+                conn.execute(text("ALTER TABLE documents_tag DROP COLUMN color"))
+                conn.execute(text("DROP INDEX ix_documents_tag_workspace_id"))
 
             healed = mig_mod.heal_schema_drift(url)
 
-            assert "reports_template.extra_table_ids" in healed
-            assert "ix_reports_template_workspace_id" in healed
-            cols = {c["name"] for c in inspect(engine).get_columns("reports_template")}
-            assert "extra_table_ids" in cols
-            idx_names = {i["name"] for i in inspect(engine).get_indexes("reports_template")}
-            assert "ix_reports_template_workspace_id" in idx_names
+            assert "documents_tag.color" in healed
+            assert "ix_documents_tag_workspace_id" in healed
+            cols = {c["name"] for c in inspect(engine).get_columns("documents_tag")}
+            assert "color" in cols
+            assert "ix_documents_tag_workspace_id" in _tag_indexes(engine)
         finally:
             engine.dispose()
 
@@ -444,9 +434,9 @@ class TestRenderAddColumnDdl:
 
     def test_not_null_with_server_default_compiles(self):
         """NOT NULL + server_default → 直接编译含 DEFAULT."""
-        ddl = self._ddl(Column("theme", String(16), nullable=False, server_default="minimal"))
+        ddl = self._ddl(Column("color", String(16), nullable=False, server_default="#1890FF"))
         assert ddl is not None
-        assert "NOT NULL" in ddl and "DEFAULT 'minimal'" in ddl
+        assert "NOT NULL" in ddl and "DEFAULT '#1890FF'" in ddl
 
     def test_not_null_with_python_default_compiles_with_default(self):
         """NOT NULL 仅 Python 标量 default → 影子列编译出 DEFAULT 子句."""
@@ -480,16 +470,16 @@ class TestHealFailureIsolation:
         try:
             Base.metadata.create_all(engine)
             with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE reports_template DROP COLUMN extra_table_ids"))
-                conn.execute(text("ALTER TABLE reports_template DROP COLUMN theme"))
+                conn.execute(text("ALTER TABLE documents_tag DROP COLUMN color"))
+                conn.execute(text("ALTER TABLE documents_tag DROP COLUMN description"))
             # SQLite 会把裸词解析为合法列名，需带未闭合括号构造真非法 DDL
             monkeypatch.setattr(mig_mod, "_render_add_column_ddl", lambda col, dialect: "BOGUS ((")
 
             healed = mig_mod.heal_schema_drift(url)  # 不抛异常
 
             assert healed == []
-            cols = {c["name"] for c in inspect(engine).get_columns("reports_template")}
-            assert "extra_table_ids" not in cols  # 补建失败，列仍缺失但可诊断
+            cols = {c["name"] for c in inspect(engine).get_columns("documents_tag")}
+            assert "color" not in cols  # 补建失败，列仍缺失但可诊断
         finally:
             engine.dispose()
 
@@ -509,10 +499,10 @@ class TestHealFailureIsolation:
         try:
             Base.metadata.create_all(engine)
             with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE reports_template DROP COLUMN theme"))
+                conn.execute(text("ALTER TABLE documents_tag DROP COLUMN color"))
         finally:
             engine.dispose()
 
         healed = mig_mod.heal_schema_drift()
 
-        assert "reports_template.theme" in healed
+        assert "documents_tag.color" in healed
