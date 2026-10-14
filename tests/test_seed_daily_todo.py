@@ -175,10 +175,10 @@ def sales_todo_seed(db, db_engine, tmp_path):
     datasets_dir = _build_datasets_dir(tmp_path)
 
     # patch _get_datasets_dir 返回我们的临时目录
-    import cndb.cli.seed as seed_mod
+    from cndb.cli.seed import paths as seed_paths
 
-    original = seed_mod._get_datasets_dir
-    seed_mod._get_datasets_dir = lambda: datasets_dir
+    original = seed_paths._get_datasets_dir
+    seed_paths._get_datasets_dir = lambda: datasets_dir
 
     try:
         # 1. CSV 建表（含日常待办 + 产品开发）
@@ -215,7 +215,7 @@ def sales_todo_seed(db, db_engine, tmp_path):
         db.refresh(tables_map["销售测试"]["员工表"])
         yield tables_map["销售测试"], view_count, owner, demo_user
     finally:
-        seed_mod._get_datasets_dir = original
+        seed_paths._get_datasets_dir = original
 
 
 # ── 端到端测试 ──────────────────────────────────────────────

@@ -157,10 +157,10 @@ def project_todo_seed(db, db_engine, tmp_path):
 
     datasets_dir = _build_datasets_dir(tmp_path)
 
-    import cndb.cli.seed as seed_mod
+    from cndb.cli.seed import paths as seed_paths
 
-    original = seed_mod._get_datasets_dir
-    seed_mod._get_datasets_dir = lambda: datasets_dir
+    original = seed_paths._get_datasets_dir
+    seed_paths._get_datasets_dir = lambda: datasets_dir
     try:
         _, ws_map, tables_map = _seed_datasets(db, db_engine, user)
         # datasets 目录下 workspace 名是「项目管理」（剥掉「工作区-」前缀）
@@ -174,7 +174,7 @@ def project_todo_seed(db, db_engine, tmp_path):
         db.refresh(tables_map["项目管理"]["待办事项"])
         yield tables_map["项目管理"], user
     finally:
-        seed_mod._get_datasets_dir = original
+        seed_paths._get_datasets_dir = original
 
 
 # ── 1. CSV 结构校验 ──────────────────────────────────────

@@ -118,7 +118,7 @@ def test_seed_after_restore_regenerates_demo_data(
     monkeypatch.setattr(database_mod, "SessionLocal", seed_session_factory)
     monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{target_db}")
     # 示例报告落盘属仓库目录副作用，与本测试目标无关，跳过
-    monkeypatch.setattr("cndb.cli.seed._generate_sample_reports", lambda *args, **kwargs: None)
+    monkeypatch.setattr("cndb.cli.seed.samples._generate_sample_reports", lambda *args, **kwargs: None)
 
     try:
         seed_command(argparse.Namespace())

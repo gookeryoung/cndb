@@ -109,4 +109,4 @@ dev = [
 ]
 
 [tool.coverage.run]
-omit = ["src/cndb/cli/main.py", "src/cndb/cli/seed.py", "src/cndb/gui/**", "src/cndb/plugins/tables/routers/files.py"]
+omit = ["src/cndb/cli/main.py", "src/cndb/cli/seed/**", "src/cndb/gui/**", "src/cndb/plugins/tables/routers/files.py"]

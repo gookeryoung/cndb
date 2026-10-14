@@ -100,7 +100,7 @@ def legacy_db_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(db_module, "engine", engine)
     monkeypatch.setattr(db_module, "SessionLocal", test_session)
     monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
-    monkeypatch.setattr("cndb.cli.seed._get_datasets_dir", lambda: datasets_dir)
+    monkeypatch.setattr("cndb.cli.seed.paths._get_datasets_dir", lambda: datasets_dir)
 
     yield db_path
     engine.dispose()
