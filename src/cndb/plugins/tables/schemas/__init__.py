@@ -13,6 +13,8 @@ from cndb.plugins.tables.schemas.governance import (
 from cndb.plugins.tables.schemas.models import (
     BulkDeleteRequest,
     FieldCreate,
+    FieldDetectOptionsRequest,
+    FieldDetectOptionsResponse,
     FieldImportRequest,
     FieldImportResponse,
     FieldResponse,
@@ -47,6 +49,8 @@ __all__ = [
     "CleanRequest",
     "DetectRequest",
     "FieldCreate",
+    "FieldDetectOptionsRequest",
+    "FieldDetectOptionsResponse",
     "FieldImportRequest",
     "FieldImportResponse",
     "FieldResponse",

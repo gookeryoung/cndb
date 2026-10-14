@@ -297,6 +297,19 @@ export interface FieldImportResponse {
   suggestions?: FieldImportSuggestion[] | null
 }
 
+/** 字段改为单选/多选时的「识别选项」请求体 */
+export interface FieldDetectOptionsRequest {
+  /** 目标类型：select=整值识别；multiselect=按 delimiter 拆分 */
+  target_type: 'select' | 'multiselect'
+  /** multiselect 识别分隔符，默认半角逗号；select 忽略 */
+  delimiter?: string
+}
+
+/** 识别结果：按首现顺序排列的唯一值列表（不持久化，用户确认后随 config 保存） */
+export interface FieldDetectOptionsResponse {
+  options: string[]
+}
+
 export type FieldType =
   | 'text' | 'longtext' | 'number' | 'float' | 'boolean'
   | 'date' | 'datetime' | 'timestamp' | 'select' | 'multiselect'

@@ -134,6 +134,23 @@ class FieldUpdate(BaseModel):
     trashed: bool | None = None
 
 
+class FieldDetectOptionsRequest(BaseModel):
+    """字段改为单选/多选时的「识别选项」请求体.
+
+    target_type 决定识别语义（select 整值识别 / multiselect 按分隔符拆分）；
+    delimiter 仅 multiselect 生效，默认半角逗号。
+    """
+
+    target_type: str
+    delimiter: str = ","
+
+
+class FieldDetectOptionsResponse(BaseModel):
+    """识别结果：按首现顺序排列的唯一值列表（不持久化，由前端确认后保存）."""
+
+    options: list[str] = Field(default_factory=list)
+
+
 # ── 字段从其他表引入 schemas ─────────────────────────
 
 
