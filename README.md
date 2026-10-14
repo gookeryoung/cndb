@@ -154,9 +154,13 @@ src/cndb/
 
 ```bash
 make sync          # 安装依赖
+make seed          # 注入演示数据（幂等）
+make dev           # 开发模式：同时启动后端 8772 + 前端 5173（Ctrl+C 一起停）
 make check         # 全套门禁：lint + typecheck + cov
 make push          # 推送全部 remote
 ```
+
+`make dev` 支持覆盖绑定地址与后端端口：`make dev DEV_HOST=127.0.0.1 DEV_PORT=8000`。
 
 性能基准（10k 行导入 + 查询）：
 
