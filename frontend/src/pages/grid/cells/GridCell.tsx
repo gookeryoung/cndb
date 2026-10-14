@@ -300,6 +300,30 @@ function DisplayCell({ value, field, rowId, wid }: { value: unknown; field: Fiel
         </div>
       )
     }
+    case 'image': {
+      // 值可能是 JSON 字符串或已经解析好的数组（WPS 图片单元格导入产物）
+      let images: AttachmentFile[] = []
+      try {
+        images = Array.isArray(value) ? (value as AttachmentFile[]) : JSON.parse(String(value || '[]'))
+      } catch { images = [] }
+      if (!images.length) return <span style={{ color: '#cbd5e1' }}>—</span>
+      return (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          <Image.PreviewGroup>
+            {images.map(f => (
+              <Image
+                key={f.file_key || f.filename}
+                width={48}
+                height={48}
+                src={wid ? fileApi.getUrl(wid, f.file_key, true) : undefined}
+                alt={f.filename}
+                style={{ objectFit: 'cover', borderRadius: 4 }}
+              />
+            ))}
+          </Image.PreviewGroup>
+        </div>
+      )
+    }
     case 'long_text':
     case 'longtext': {
       const s = String(value)
@@ -619,6 +643,68 @@ function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, 
         </div>
       )
     }
+    case 'image': {
+      // 图片字段：上传仅收图片，展示为缩略图（点击可预览大图）
+      const images: AttachmentFile[] = Array.isArray(draft)
+        ? (draft as AttachmentFile[])
+        : (() => {
+          try { return JSON.parse(String(draft || '[]')) } catch { return [] }
+        })()
+
+      const upload = async (file: File): Promise<AttachmentFile> => {
+        if (!wid) throw new Error('缺少 wid')
+        const meta = await fileApi.upload(wid, file)
+        onChange([...images, meta])
+        return meta
+      }
+      const removeAt = (idx: number) => {
+        const removed = images[idx]
+        if (wid && removed?.file_key) {
+          fileApi.remove(wid, removed.file_key).catch(() => { /* 行值更新后再清理会有竞争，静默 */ })
+        }
+        onChange(images.filter((_, i) => i !== idx))
+      }
+
+      const allowedMimes = (field.config?.allowed_mime_types as string[] | undefined)?.filter(m => m)
+      return (
+        <div style={{ ...wrap, flexDirection: 'column', alignItems: 'stretch' }}>
+          <Upload.Dragger
+            multiple={Boolean(field.config?.multiple ?? true)}
+            showUploadList={false}
+            accept={allowedMimes?.length ? allowedMimes.join(',') : 'image/*'}
+            beforeUpload={f => { upload(f); return false }}
+            style={{ padding: '4px 8px', marginBottom: 4 }}
+          >
+            <div style={{ fontSize: 12, color: '#94a3b8', margin: '2px 0' }}>
+              <InboxOutlined /> 点击或拖拽上传图片
+            </div>
+          </Upload.Dragger>
+          {images.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              <Image.PreviewGroup>
+                {images.map((f, i) => (
+                  <span key={f.file_key || `${f.filename}-${i}`} style={{ position: 'relative' }}>
+                    <Image
+                      width={48}
+                      height={48}
+                      src={wid ? fileApi.getUrl(wid, f.file_key, true) : undefined}
+                      alt={f.filename}
+                      style={{ objectFit: 'cover', borderRadius: 4 }}
+                    />
+                    <Tooltip title="删除该图片">
+                      <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                        onClick={() => removeAt(i)}
+                        style={{ position: 'absolute', top: -6, right: -6, padding: 0, background: 'var(--cn-bg-container)' }} />
+                    </Tooltip>
+                  </span>
+                ))}
+              </Image.PreviewGroup>
+            </div>
+          )}
+          {actions}
+        </div>
+      )
+    }
     default: {
       return (
         <div style={wrap}>
@@ -645,14 +731,14 @@ function normalizeValueForEdit(value: unknown, field: Field): unknown {
     if (['number', 'decimal', 'float', 'percentage', 'timestamp'].includes(field.field_type)) return null
     if (['multi_select', 'multiselect'].includes(field.field_type)) return []
     if (field.field_type === 'link') return []  // link 从 [{id, value}] 转为空数组，由 ExtractLinkIds 在 EditCell 内部处理
-    if (field.field_type === 'attachment') return []
+    if (field.field_type === 'attachment' || field.field_type === 'image') return []
     return ''
   }
   if (field.field_type === 'link') {
     // API 返回 [{id, value}]，编辑器消费纯 id 数组
     return extractLinkIds(value)
   }
-  if (field.field_type === 'attachment') {
+  if (field.field_type === 'attachment' || field.field_type === 'image') {
     // 后端存 JSON 字符串，前端编辑器消费 AttachmentFile[]
     if (Array.isArray(value)) return value
     try { return JSON.parse(String(value || '[]')) } catch { return [] }

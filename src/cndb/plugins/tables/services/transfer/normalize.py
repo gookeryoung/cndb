@@ -11,7 +11,7 @@ import re
 from datetime import date, datetime
 from typing import Any
 
-from cndb.plugins.tables.field_types import MULTI_SELECT_SPLIT_RE
+from cndb.plugins.tables.field_types import MULTI_SELECT_SPLIT_RE, is_image_meta
 
 # ── 列类型推断正则 ──────────────────────────────────────
 
@@ -710,11 +710,23 @@ def _format_date_like_sample(value: Any) -> str | None:
     return value.isoformat(sep=" ")
 
 
+def _looks_like_image_metadata_list(value: Any) -> bool:
+    """判断值是否为图片元数据列表（WPS 单元格图片解析产物 / 附件同构值）.
+
+    非空 ``list[dict]`` 且每项均为图片元数据（mime_type 以 image/ 开头
+    或 filename 为图片扩展名）→ True。普通 JSON 数组 / 标量列表不受影响。
+    """
+    if not isinstance(value, list) or not value:
+        return False
+    return all(isinstance(item, dict) and is_image_meta(item) for item in value)
+
+
 def _python_type_to_field_type(value: Any) -> str:
     """把 Python 对象直接映射到字段类型（JSON 推断的第一捷径）.
 
     日期类对象（xlsx 单元格经 openpyxl 读出的 datetime/date）映射到
-    date/datetime 字段类型，见 _classify_date_like。
+    date/datetime 字段类型，见 _classify_date_like；
+    图片元数据列表（WPS 单元格图片解析产物）映射到 image。
     """
     if value is None:
         return "empty"
@@ -736,6 +748,8 @@ def _python_type_to_field_type(value: Any) -> str:
         if not value.strip():
             return "empty"
         return _infer_single_value(value)
+    if _looks_like_image_metadata_list(value):
+        return "image"
     if isinstance(value, (list, dict)):
         return "json"
     date_like = _classify_date_like(value)

@@ -5,7 +5,7 @@ import {
 } from './fieldTypeMeta'
 
 describe('fieldTypeMeta 字段类型元数据', () => {
-  it('16 个主类型的标签/类别/颜色符合统一标准', () => {
+  it('17 个主类型的标签/类别/颜色符合统一标准', () => {
     const expected: Record<string, [string, string, string]> = {
       text: ['单行文本', '基础', 'blue'],
       longtext: ['多行文本', '基础', 'cyan'],
@@ -24,6 +24,7 @@ describe('fieldTypeMeta 字段类型元数据', () => {
       link: ['关联', '关联', 'magenta'],
       lookup: ['引用', '关联', 'magenta'],
       attachment: ['附件', '高级', 'volcano'],
+      image: ['图片', '高级', 'pink'],
     }
     for (const [type, [label, category, color]] of Object.entries(expected)) {
       expect(FIELD_TYPE_META[type], type).toEqual({ label, category, color })
@@ -50,10 +51,11 @@ describe('fieldTypeMeta 字段类型元数据', () => {
     }
   })
 
-  it('FIELD_TYPE_OPTIONS 恰含 16 个主类型且不含别名/系统类型', () => {
-    expect(FIELD_TYPE_OPTIONS).toHaveLength(16)
+  it('FIELD_TYPE_OPTIONS 恰含 17 个主类型且不含别名/系统类型', () => {
+    expect(FIELD_TYPE_OPTIONS).toHaveLength(17)
     const values = FIELD_TYPE_OPTIONS.map(o => o.value)
     expect(values).toContain('text')
+    expect(values).toContain('image')
     expect(values).not.toContain('long_text')
     expect(values).not.toContain('formula')
     // 每项都带类别
@@ -63,16 +65,19 @@ describe('fieldTypeMeta 字段类型元数据', () => {
     }
   })
 
-  it('PREVIEW_FIELD_TYPE_VALUES 恰为导入预览可切换的 14 项子集', () => {
+  it('PREVIEW_FIELD_TYPE_VALUES 恰为导入预览可切换的 15 项子集', () => {
     expect(PREVIEW_FIELD_TYPE_VALUES).toEqual([
       'text', 'longtext', 'number', 'float', 'boolean', 'date', 'datetime',
       'timestamp', 'select', 'multiselect', 'email', 'url', 'phone', 'percentage',
+      'image',
     ])
     expect(PREVIEW_FIELD_TYPE_VALUES).not.toContain('link')
     expect(PREVIEW_FIELD_TYPE_VALUES).not.toContain('attachment')
     // 后端推断层可产出 timestamp/longtext —— 预览下拉必须能展示与切换这两种类型
     expect(PREVIEW_FIELD_TYPE_VALUES).toContain('timestamp')
     expect(PREVIEW_FIELD_TYPE_VALUES).toContain('longtext')
+    // WPS 带图片单元格 xlsx 导入可推断出 image —— 预览下拉须能展示与切换
+    expect(PREVIEW_FIELD_TYPE_VALUES).toContain('image')
     // 子集内每项在元数据表中均可查
     for (const v of PREVIEW_FIELD_TYPE_VALUES) {
       expect(FIELD_TYPE_META[v]).toBeDefined()

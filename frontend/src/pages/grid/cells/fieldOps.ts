@@ -161,6 +161,10 @@ const FIELD_OPS_BY_TYPE: Record<string, FieldOp[]> = {
     { op: 'is_empty', label: '无附件', needValue: true },
     { op: 'is_not_empty', label: '有附件', needValue: true },
   ],
+  image: [
+    { op: 'is_empty', label: '无图片', needValue: true },
+    { op: 'is_not_empty', label: '有图片', needValue: true },
+  ],
   link: [
     { op: 'is_empty', label: '未关联', needValue: true },
     { op: 'is_not_empty', label: '已关联', needValue: true },

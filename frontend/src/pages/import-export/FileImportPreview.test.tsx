@@ -180,3 +180,54 @@ describe('FileImportPreview 推断提示展示（timestamp/longtext）', () => {
     expect(screen.getByText('oops')).toBeInTheDocument()
   })
 })
+
+describe('FileImportPreview 图片列预览（WPS 带图片单元格 xlsx）', () => {
+  /** 后端 analyze 对 WPS 图片列返回 image 类型，sample_rows 值为图片元数据数组 */
+  const wpsResult: FileAnalyzeResult = {
+    filename: '商品.xlsx',
+    format: 'xlsx',
+    total_rows: 2,
+    columns: [
+      { name: '名称', field_type: 'text', sample_values: ['商品A'], null_ratio: 0 },
+      { name: '图片', field_type: 'image', sample_values: ['[图片] image1.png'], null_ratio: 0 },
+    ],
+    sample_rows: [
+      {
+        名称: '商品A',
+        图片: [{ file_key: '', filename: 'image1.png', size: 95, mime_type: 'image/png' }],
+      },
+      {
+        名称: '商品B',
+        图片: [{ file_key: '', filename: 'image2.png', size: 95, mime_type: 'image/png' }],
+      },
+    ],
+  }
+
+  function setupWps() {
+    renderProviders(
+      <FileImportPreview
+        open
+        wid={10}
+        file={new File(['x'], '商品.xlsx')}
+        analyzeResult={wpsResult}
+        onClose={() => { }}
+      />,
+    )
+  }
+
+  it('image 列在下拉/表头显示中文标签「图片」', () => {
+    setupWps()
+
+    expect(screen.getAllByText('图片').length).toBeGreaterThan(0)
+  })
+
+  it('图片元数据数组渲染为「[图片] 文件名」友好文本，无失败警示', () => {
+    setupWps()
+
+    expect(screen.getAllByText('[图片] image1.png').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('[图片] image2.png').length).toBeGreaterThan(0)
+    // 字段卡片无转换失败红色计数 Tag
+    const failTags = document.querySelectorAll('.ant-tag-red')
+    expect(failTags.length).toBe(0)
+  })
+})

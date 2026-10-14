@@ -92,9 +92,31 @@ const TS_EPOCH_MIN_SEC = 1e9
 const TS_EPOCH_MAX_SEC = 4102444800
 const TS_EPOCH_MAX_MS = 4102444800000
 
+/** 图片元数据列表值（WPS 图片单元格解析产物）→ 友好展示文本；非该形态返回 null */
+function imageListText(raw: unknown): string | null {
+  let items: unknown[] | null = null
+  if (Array.isArray(raw)) items = raw
+  else if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) items = parsed
+    } catch { /* 非 JSON 数组串，忽略 */ }
+  }
+  if (!items || items.length === 0) return null
+  const names = items
+    .map(it => (it && typeof it === 'object' ? String((it as Record<string, unknown>).filename ?? '') : String(it)))
+    .filter(Boolean)
+  if (names.length === 0) return null
+  return `[图片] ${names.join(', ')}`
+}
+
 /** 判断原始值能否转为目标类型 —— 返回转换后的字符串或 null（失败） */
 function tryConvert(raw: unknown, targetType: string): CellTransform {
-  const rawText = raw == null ? '' : String(raw)
+  const rawText = raw == null
+    ? ''
+    : targetType === 'image'
+      ? (imageListText(raw) ?? String(raw))
+      : String(raw)
   const stripped = rawText.trim()
   if (!stripped) return { rawText, convertedText: '', failed: false }
 
@@ -161,6 +183,9 @@ function tryConvert(raw: unknown, targetType: string): CellTransform {
     case 'url':
       return { rawText, convertedText: stripped, failed: false }
     case 'phone':
+      return { rawText, convertedText: stripped, failed: false }
+    case 'image':
+      // WPS 图片单元格解析产物：rawText 已是「[图片] 文件名」友好文本
       return { rawText, convertedText: stripped, failed: false }
     default:
       return { rawText, convertedText: stripped, failed: false }
