@@ -10,6 +10,7 @@ import { App as AntApp, Button, Dropdown, Empty, Input, Modal, Tree, TreeSelect 
 import type { DataNode } from 'antd/es/tree'
 import {
   ApartmentOutlined,
+  CalendarOutlined,
   DeleteOutlined,
   FileAddOutlined,
   FileTextOutlined,
@@ -248,6 +249,17 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
     onError: () => message.error('删除失败'),
   })
 
+  // 每日笔记（幂等）：后端当日复用同一篇，返回后进入编辑
+  const dailyNoteMut = useMutation({
+    mutationFn: () => documentsApi.dailyNote(workspaceId),
+    onSuccess: doc => {
+      invalidate()
+      navigate(`/w/${workspaceId}/documents/${doc.id}`)
+      onNavigate?.()
+    },
+    onError: () => message.error('打开今日笔记失败'),
+  })
+
   // 拖拽整理：逐项 PATCH（移动 parent_id + 同级排序 sort_order），完成后整树刷新
   const dropMut = useMutation({
     mutationFn: async (ops: DropOp[]) => {
@@ -402,7 +414,7 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
 
   return (
     <div data-testid="document-tree" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* 工具栏：新建 + 过滤 */}
+      {/* 工具栏：新建 + 每日笔记 + 过滤 */}
       <div style={{ padding: '8px 8px 4px', display: 'flex', gap: 4 }}>
         <Button
           size="small"
@@ -426,6 +438,15 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
           }}
         >
           文件夹
+        </Button>
+        <Button
+          size="small"
+          icon={<CalendarOutlined />}
+          data-testid="doc-tree-daily-note"
+          loading={dailyNoteMut.isPending}
+          onClick={() => dailyNoteMut.mutate()}
+        >
+          今日笔记
         </Button>
         <Button
           size="small"

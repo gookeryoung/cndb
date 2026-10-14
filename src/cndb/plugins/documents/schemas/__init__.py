@@ -111,6 +111,12 @@ class RollbackRequest(BaseModel):
     target_version: int
 
 
+class DailyNoteRequest(BaseModel):
+    """每日笔记：date 缺省为服务器当天。"""
+
+    date: dt.date | None = None
+
+
 # ── 标签 ──
 
 
@@ -203,6 +209,7 @@ class ShareAccessRequest(BaseModel):
 
 __all__ = [
     "ContentUpdate",
+    "DailyNoteRequest",
     "DiffResponse",
     "DocumentCreate",
     "DocumentDetail",

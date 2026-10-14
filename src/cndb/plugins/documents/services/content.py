@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import gzip
 import logging
 from pathlib import Path
@@ -335,6 +336,70 @@ def _delete_descendants(db: Session, folder: Document) -> None:
             _delete_descendants(db, child)
         else:
             _sync_fts_delete(db, child.id)
+
+
+# ── 每日笔记 / 反向链接 ──
+
+DAILY_NOTE_TITLE_FMT = "%Y-%m-%d"
+
+
+def get_or_create_daily_note(
+    db: Session, workspace_id: int, user: User, *, day: dt.date | None = None
+) -> tuple[Document, bool]:
+    """幂等获取/创建每日笔记：标题约定为日期字符串 ``YYYY-MM-DD``.
+
+    当日笔记已存在（未删除的非文件夹文档）时直接返回（created=False），
+    否则按模板创建新文档（created=True，需 editor+ 权限）。
+    """
+    date = day or dt.date.today()
+    title = date.strftime(DAILY_NOTE_TITLE_FMT)
+    existing = (
+        db.execute(
+            select(Document)
+            .where(
+                Document.workspace_id == workspace_id,
+                Document.is_deleted == False,  # noqa: E712
+                Document.is_folder == False,  # noqa: E712
+                Document.title == title,
+            )
+            .order_by(Document.created_at.desc(), Document.id.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if existing is not None:
+        return existing, False
+    require_editor(db, workspace_id, user)
+    doc = create_document(db, workspace_id, user, title=title, content=f"# {title}\n\n")
+    return doc, True
+
+
+def find_backlinks(db: Session, workspace_id: int, title: str) -> list[Document]:
+    """反向链接扫描：返回工作区内正文含 ``[[title]]`` 的未删除文档列表.
+
+    扫描源为非文件夹文档（文件夹无正文）；目标标题可为文件夹（被提及即计入）；
+    含自引用（文档引用自身标题时也出现在结果中）。
+    """
+    docs = (
+        db.execute(
+            select(Document).where(
+                Document.workspace_id == workspace_id,
+                Document.is_deleted == False,  # noqa: E712
+                Document.is_folder == False,  # noqa: E712
+            )
+        )
+        .scalars()
+        .all()
+    )
+    target = f"[[{title}]]"
+    hits: list[Document] = []
+    for d in docs:
+        v = latest_version(db, d.id)
+        if v is None:
+            continue
+        if target in load_content(v, d):
+            hits.append(d)
+    return hits
 
 
 # ── 标签辅助 ──

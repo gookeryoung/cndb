@@ -1,7 +1,8 @@
-/** Markdown 预览组件 — react-markdown + GFM + 代码块样式 + 数据表动态引用渲染.
-
-标题元素渲染锚点 id（与大纲面板解析同算法），支持大纲点击定位。
-*/
+/** Markdown 预览组件 — react-markdown + GFM + 代码块样式 + 数据表动态引用渲染 +
+ * 双向链接（[[文档标题]]）渲染为可点击跳转.
+ *
+ * 标题元素渲染锚点 id（与大纲面板解析同算法），支持大纲点击定位。
+ */
 
 import { memo, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -9,6 +10,7 @@ import remarkGfm from 'remark-gfm'
 import TableEmbed from './TableEmbed'
 import { splitTableRefs } from './tableRef'
 import { headingAnchor } from './outline'
+import { parseWikilinkHref, transformWikilinks } from './wikilink'
 
 /** React 子节点提取纯文本（生成标题锚点用） */
 function childrenToText(children: React.ReactNode): string {
@@ -130,19 +132,45 @@ const mdComponents = {
   ),
 } as const
 
-/** Markdown 片段渲染 */
-function Md({ text }: { text: string }) {
+/** Markdown 片段渲染（双链 [[标题]] 预转换为链接，a 组件拦截前缀回调跳转） */
+function Md({ text, onWikilink }: { text: string; onWikilink?: (title: string) => void }) {
+  const components = useMemo(
+    () => ({
+      ...mdComponents,
+      a: ({ href, children, ...rest }: React.ComponentProps<'a'>) => {
+        const title = href != null ? parseWikilinkHref(href) : null
+        if (title === null) return <a href={href} {...rest}>{children}</a>
+        return (
+          <a
+            href={href}
+            data-testid="doc-wikilink"
+            style={{ color: 'var(--cn-primary, #1890ff)', cursor: 'pointer' }}
+            onClick={e => {
+              e.preventDefault()
+              onWikilink?.(title)
+            }}
+            {...rest}
+          >
+            {children}
+          </a>
+        )
+      },
+    }),
+    [onWikilink],
+  )
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-      {text}
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {transformWikilinks(text)}
     </ReactMarkdown>
   )
 }
 
-function MarkdownPreviewBase({ content, workspaceId }: {
+function MarkdownPreviewBase({ content, workspaceId, onWikilink }: {
   content: string
   /** 工作区 ID：提供后启用 `{{table:…}}` 数据表动态引用渲染 */
   workspaceId?: number
+  /** 双向链接点击回调：入参为 [[文档标题]] 中的标题 */
+  onWikilink?: (title: string) => void
 }) {
   const segments = useMemo(
     () => (workspaceId !== undefined ? splitTableRefs(content) : null),
@@ -154,7 +182,7 @@ function MarkdownPreviewBase({ content, workspaceId }: {
   if (!hasTableRef) {
     return (
       <div className="doc-md-preview" style={{ lineHeight: 1.75, wordBreak: 'break-word' }}>
-        <Md text={content} />
+        <Md text={content} onWikilink={onWikilink} />
       </div>
     )
   }
@@ -163,7 +191,7 @@ function MarkdownPreviewBase({ content, workspaceId }: {
     <div className="doc-md-preview" style={{ lineHeight: 1.75, wordBreak: 'break-word' }}>
       {segments!.map((seg, i) =>
         seg.type === 'md' ? (
-          <Md key={i} text={seg.text} />
+          <Md key={i} text={seg.text} onWikilink={onWikilink} />
         ) : (
           <TableEmbed key={i} workspaceId={workspaceId!} tableRef={seg.ref} />
         ),

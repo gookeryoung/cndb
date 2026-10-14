@@ -457,6 +457,97 @@ class TestShare:
         assert r.status_code == 404
 
 
+# ── 每日笔记 / 反向链接 ──
+
+
+class TestDailyNote:
+    def test_daily_note_idempotent(self, client, doc_api, auth_headers):
+        """幂等：指定日期首次创建，再次调用复用同一篇。"""
+        r1 = client.post(f"{doc_api}/daily-note", json={"date": "2026-10-14"}, headers=auth_headers)
+        assert r1.status_code == 200, r1.text
+        d1 = r1.json()
+        assert d1["created"] is True
+        assert d1["title"] == "2026-10-14"
+        assert d1["version_count"] == 1  # 模板内容创建 v1
+
+        r2 = client.post(f"{doc_api}/daily-note", json={"date": "2026-10-14"}, headers=auth_headers)
+        assert r2.status_code == 200
+        d2 = r2.json()
+        assert d2["created"] is False
+        assert d2["id"] == d1["id"]
+
+    def test_daily_note_default_today(self, client, doc_api, auth_headers):
+        """无请求体/空对象时按服务器当天创建。"""
+        import datetime as dt
+
+        r = client.post(f"{doc_api}/daily-note", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["title"] == dt.date.today().strftime("%Y-%m-%d")
+
+        r2 = client.post(f"{doc_api}/daily-note", json={}, headers=auth_headers)
+        assert r2.json()["created"] is False  # 与上一次同一篇
+
+    def test_daily_note_reuses_titled_doc(self, client, doc_api, auth_headers):
+        """当日已存在同名普通文档时直接复用（不新建）。"""
+        existing = _create_doc(client, doc_api, auth_headers, title="2026-10-15", content="已有内容")
+        r = client.post(f"{doc_api}/daily-note", json={"date": "2026-10-15"}, headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["created"] is False
+        assert r.json()["id"] == existing["id"]
+
+    def test_daily_note_invalid_date_rejected(self, client, doc_api, auth_headers):
+        """非法日期格式 422。"""
+        r = client.post(f"{doc_api}/daily-note", json={"date": "2026/10/14"}, headers=auth_headers)
+        assert r.status_code == 422
+
+
+class TestBacklinks:
+    def test_backlinks_scan(self, client, doc_api, auth_headers):
+        """引用了目标文档（[[标题]]）的文档出现在反链列表，未引用的不出现。"""
+        target = _create_doc(client, doc_api, auth_headers, title="目标文档", content="# 目标\n\n正文。\n")
+        referrer = _create_doc(client, doc_api, auth_headers, title="引用文档", content="参见 [[目标文档]] 节。\n")
+        other = _create_doc(client, doc_api, auth_headers, title="无关文档", content="没有链接。\n")
+
+        r = client.get(f"{doc_api}/{target['id']}/backlinks", headers=auth_headers)
+        assert r.status_code == 200
+        ids = [it["id"] for it in r.json()["items"]]
+        assert referrer["id"] in ids
+        assert other["id"] not in ids
+        assert target["id"] not in ids  # 目标自身正文无自引用
+
+    def test_backlinks_self_reference_included(self, client, doc_api, auth_headers):
+        """自引用计入反链（文档正文含自身标题链接）。"""
+        doc = _create_doc(client, doc_api, auth_headers, title="自引文档", content="引用 [[自引文档]] 自己。\n")
+        r = client.get(f"{doc_api}/{doc['id']}/backlinks", headers=auth_headers)
+        ids = [it["id"] for it in r.json()["items"]]
+        assert doc["id"] in ids
+
+    def test_backlinks_follows_content_update(self, client, doc_api, auth_headers):
+        """反链扫描基于最新版本：内容更新后新增/消失同步。"""
+        target = _create_doc(client, doc_api, auth_headers, title="链接目标", content="x")
+        referrer = _create_doc(client, doc_api, auth_headers, content="先无链接")
+        r = client.get(f"{doc_api}/{target['id']}/backlinks", headers=auth_headers)
+        assert r.json()["total"] == 0
+
+        doc_full = _get_content(client, doc_api, auth_headers, referrer["id"])
+        client.put(
+            f"{doc_api}/{referrer['id']}/content",
+            json={"content": "现在有 [[链接目标]] 了", "base_updated_at": doc_full["updated_at"]},
+            headers=auth_headers,
+        )
+        r = client.get(f"{doc_api}/{target['id']}/backlinks", headers=auth_headers)
+        assert r.json()["total"] == 1
+        assert r.json()["items"][0]["id"] == referrer["id"]
+
+    def test_backlinks_folder_as_target(self, client, doc_api, auth_headers):
+        """文件夹可作为被提及目标：正文含 [[文件夹标题]] 的文档计入其反链。"""
+        folder = _create_doc(client, doc_api, auth_headers, title="目录名", is_folder=True, content="")
+        _create_doc(client, doc_api, auth_headers, content="链接 [[目录名]] 的文档")
+        r = client.get(f"{doc_api}/{folder['id']}/backlinks", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["total"] == 1
+
+
 # ── 解析服务单元测试 ──
 
 
@@ -508,6 +599,18 @@ class TestParseService:
         diff, added, removed = unified_diff("a\nb\nc\n", "a\nx\nc\n")
         assert added == 1 and removed == 1
         assert "-b" in diff and "+x" in diff
+
+    def test_wikilinks_extract(self):
+        from cndb.plugins.documents.services.parse import extract_wikilinks
+
+        content = "参见 [[目标文档]] 与 [[另一个]]，重复出现 [[目标文档]]。\n\n```\n[[代码块内]]\n```\n"
+        assert extract_wikilinks(content) == ["目标文档", "另一个"]
+
+    def test_wikilinks_empty(self):
+        from cndb.plugins.documents.services.parse import extract_wikilinks
+
+        assert extract_wikilinks("无链接普通文本 [[ ]] 空标题不计") == []
+        assert extract_wikilinks("") == []
 
 
 # ── 编辑锁单元测试 ──

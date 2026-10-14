@@ -20,6 +20,7 @@ _FRONT_MATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 _IMG_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _EMphasis_RE = re.compile(r"(\*\*|__|\*|_|`|~~)")
+_WIKILINK_RE = re.compile(r"\[\[([^\[\]]+)\]\]")
 
 
 def parse_front_matter(content: str) -> tuple[dict[str, str], str]:
@@ -105,6 +106,28 @@ def generate_slug(title: str, doc_id: int | None = None) -> str:
     return f"{text or 'doc'}-{digest}"
 
 
+def extract_wikilinks(content: str) -> list[str]:
+    """提取双向链接 ``[[文档标题]]`` 引用的标题列表（保持出现顺序，去重）.
+
+    代码围栏内的 ``[[...]]`` 视为字面文本，不参与解析。
+    """
+    titles: list[str] = []
+    seen: set[str] = set()
+    in_fence = False
+    for line in content.splitlines():
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for m in _WIKILINK_RE.finditer(line):
+            title = m.group(1).strip()
+            if title and title not in seen:
+                seen.add(title)
+                titles.append(title)
+    return titles
+
+
 def content_hash(content: str) -> str:
     """内容 SHA256（用于版本去重判断）."""
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
@@ -132,6 +155,7 @@ __all__ = [
     "extract_author",
     "extract_summary",
     "extract_toc",
+    "extract_wikilinks",
     "generate_slug",
     "parse_front_matter",
     "unified_diff",

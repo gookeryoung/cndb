@@ -4,8 +4,8 @@
  * 无效表 ID 显示占位提示 / 标题锚点 id（大纲定位用）。
  */
 
-import { describe, expect, it, beforeEach } from 'vitest'
-import { screen } from '@testing-library/react'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { screen, fireEvent } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/msw'
 import { renderProviders } from '@/test/render-providers'
@@ -74,5 +74,37 @@ describe('MarkdownPreview 数据表动态引用', () => {
     expect(screen.getByRole('heading', { name: '安装指南' })).toHaveAttribute('id', 'doc-h-安装指南')
     expect(screen.getByRole('heading', { name: '子节 A' })).toHaveAttribute('id', 'doc-h-子节-a')
     expect(screen.getByRole('heading', { name: '深层' })).toHaveAttribute('id', 'doc-h-深层')
+  })
+})
+
+describe('MarkdownPreview 双向链接', () => {
+  beforeEach(() => {
+    server.resetHandlers()
+  })
+
+  it('[[标题]] 渲染为双链元素，点击触发 onWikilink 回调', () => {
+    const onWikilink = vi.fn()
+    renderProviders(
+      <MarkdownPreview content={'参考 [[会议纪要]] 的结论。'} onWikilink={onWikilink} />,
+    )
+    const link = screen.getByTestId('doc-wikilink')
+    expect(link).toHaveTextContent('会议纪要')
+    expect(link).toHaveAttribute('href', `#wikilink:${encodeURIComponent('会议纪要')}`)
+    fireEvent.click(link)
+    expect(onWikilink).toHaveBeenCalledWith('会议纪要')
+  })
+
+  it('代码围栏内的 [[…]] 不转换，普通链接不走双链回调', () => {
+    const onWikilink = vi.fn()
+    renderProviders(
+      <MarkdownPreview
+        content={'```md\n[[围栏内]]\n```\n\n[外部链接](https://example.com)'}
+        onWikilink={onWikilink}
+      />,
+    )
+    expect(screen.getByText(/\[\[围栏内\]\]/)).toBeInTheDocument()
+    expect(screen.queryByTestId('doc-wikilink')).toBeNull()
+    const normal = screen.getByRole('link', { name: '外部链接' })
+    expect(normal).toHaveAttribute('href', 'https://example.com')
   })
 })
