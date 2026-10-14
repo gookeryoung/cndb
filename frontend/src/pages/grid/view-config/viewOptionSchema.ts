@@ -134,6 +134,10 @@ export const CALENDAR_OPTIONS: ViewOptionSchema[] = [
       { value: 'week', label: '周视图（7 天横向）' },
     ],
   },
+  {
+    key: 'done_field', label: '完成标志', group: '日历配置', tooltip: '选择字段并指定判定条件，满足条件的事件以完成状态显示（标题删除线 + 绿色对勾、绿色左边框）。文本/日期等字段可选「不为空」作为完成条件，无需填匹配值',
+    kind: 'done_flag', fieldTypes: ['boolean', 'select', 'multiselect', 'text', 'longtext', 'date', 'datetime'],
+  },
 ]
 
 /** Gantt 甘特图视图的专属配置字段（共 9 项） */
