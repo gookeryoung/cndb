@@ -32,36 +32,9 @@ export type { SystemAbout } from './system'
 export { governanceApi } from './governance'
 export type { DetectReport, MergeReport, CleanReport, GovernanceReport } from './governance'
 
-export type {
-  ID, UserResponse, UserRole, AdminRegisterRequest, LoginRequest, RegisterRequest,
-  UserAdminRecord, UserAdminUpdateRequest, UserListPage, UserListQuery,
-  BatchUserActionRequest, BatchUserActionResponse, BatchUserItemResult,
-  UserAuditLogRecord, UserAuditLogPage, UserAuditLogQuery,
-  Workspace, WorkspaceDetail, WorkspaceCreate, WorkspaceUpdate, WorkspaceRole, WorkspaceMember, MemberUserBrief,
-  WorkspaceVisibility, WorkspaceExportData,
-  TableSummary, TableDetail, TableCreate, TableUpdate, ViewBrief,
-  FieldImportRequest, FieldImportResponse, FieldImportSuggestion, FieldImportGapAnalysis, FieldType, Field, FieldCreate, FieldUpdate,
-  RowValues, RowResponse, RowDetail, RowCreate, RowUpdate, RowListResponse, RecordListParams,
-  View, ViewDetail, ViewCreate, ViewUpdate,
-  AuditLog, Reference,
-  CsvAnalyzeResult, CsvImportResult,
-  FileAnalyzeResult, FileImportResult,
-  SharedGrid,
-  ReportTemplate, ReportTemplateSummary, ReportTemplateCreate, ReportTemplateUpdate,
-  ReportParameter, ReportRenderRequest, ReportRenderResult, ReportTheme,
-  Issue, IssueStatus, IssueCategory, IssueListItem, IssuePage, IssueComment, IssueEvent, IssueDetail, IssueCreatePayload,
-  ChangeOp, CRStatus, ChangeRequest, ChangeItemDetail, ChangeActionItem, ChangeRequestDetail,
-  ChangeRequestPage, CRCreatePayload, CRMergePayload, TableWriteMode,
-  ChangeRequestDispatchResponse, ChangeRequestBatchResponse,
-  ImportTaskStatus, ImportTaskInfo, TablePermission,
-  GovernanceTask, GovernanceTaskKind, GovernanceTaskStatus,
-  GovernanceDetectRequest, GovernanceMergeGroup, GovernanceMergeRequest,
-  GovernanceCleanAction, GovernanceCleanRequest, Survivorship,
-  AttachmentFile,
-  ApiFetchRequest, ApiAnalyzeColumn, ApiAnalyzeResult, ApiImportResult, ApiAppendResult,
-  ApiConfigRequest, ApiConfigValidateResult, ApiConfigImportResult,
-  TableOwnerInfo, TableMember, MemberCreate, MemberUpdate, OwnerTransferPayload,
-} from './types'
+// 领域类型统一从 types/ 聚合转发（types/index.ts 按资源域拆分并 re-export）；
+// 原先是逐个具名列出的 90 个类型清单，新增类型时容易漏改。
+export type * from './types'
 
-// 类型守卫为运行时函数，须以值形式 re-export（export type 会在编译期擦除）
+// 类型守卫为运行时函数，须以值形式 re-export（export type * 会在编译期擦除）
 export { isChangeRequestResponse } from './types'

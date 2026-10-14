@@ -1,0 +1,55 @@
+/** 工作区、成员与工作区导出载荷. */
+
+import type { ID, WorkspaceVisibility } from './common'
+
+export interface Workspace {
+  id: ID; name: string; description?: string; default_role?: string
+  pinned?: boolean; created_at?: string; updated_at?: string
+  visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
+  current_user_role?: WorkspaceRole | null
+  /** 归属报表数量 —— GET /v1/workspaces 列表聚合字段（与 table_count 同事务） */
+  report_count?: number
+}
+export interface WorkspaceDetail extends Workspace {
+  member_count?: number; table_count?: number
+  view_count?: number; total_rows?: number
+  owner?: { id: ID; username: string; nickname?: string } | null
+  current_user_role?: WorkspaceRole | null
+}
+export interface WorkspaceCreate {
+  name: string; description?: string; default_role?: string
+  visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
+}
+export interface WorkspaceUpdate {
+  name?: string; description?: string; default_role?: string
+  visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
+}
+/** 工作区角色 —— 三级（owner/editor/viewer），admin 已在 P1 迁移为 editor */
+export type WorkspaceRole = 'owner' | 'editor' | 'viewer'
+
+/** 成员中的用户简要信息（对齐后端 MemberUserBrief） */
+export interface MemberUserBrief {
+  id: ID; username: string; nickname?: string; email?: string | null
+}
+
+/** 工作区成员（对齐后端 WorkspaceMemberResponse） */
+export interface WorkspaceMember {
+  id: ID; workspace_id: ID; user_id: ID
+  role: WorkspaceRole; pinned?: boolean; created_at?: string
+  user: MemberUserBrief
+}
+
+/** 工作区级整体导出数据结构 */
+export interface WorkspaceExportData {
+  version: string
+  exported_at: string
+  workspace: {
+    name: string; description: string; visibility: WorkspaceVisibility; tags: string[]; allow_edit: boolean
+  }
+  tables: Array<{
+    name: string; description: string
+    fields: Array<Record<string, unknown>>
+    views: Array<Record<string, unknown>>
+    rows: Array<Record<string, unknown>>
+  }>
+}
