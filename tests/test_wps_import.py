@@ -114,6 +114,14 @@ class TestMatchDisplimgFormula:
         assert match_displimg_formula('_xlfn.DISPLIMG("ID_3",1)') == "ID_3"
         assert match_displimg_formula('=_xlfn.DISPLIMG("ID_3",1)') == "ID_3"
 
+    def test_dispimg_wps_actual_spelling(self):
+        """WPS 实际写入的函数名是 DISPIMG（无 L），必须识别而非当文本."""
+        assert match_displimg_formula('DISPIMG("ID_5",1)') == "ID_5"
+        assert match_displimg_formula('=DISPIMG("ID_5",1)') == "ID_5"
+        assert match_displimg_formula('_xlfn.DISPIMG("ID_D6CD113170634F02ACC95A1D27012B34",1)') == (
+            "ID_D6CD113170634F02ACC95A1D27012B34"
+        )
+
     def test_case_insensitive_and_spaces(self):
         assert match_displimg_formula('=displimg( "ID_4" , 1 )') == "ID_4"
 
@@ -192,6 +200,18 @@ class TestParseXlsxBytesWithWpsImages:
         assert val[0]["mime_type"] == "image/png"
         assert val[0]["size"] == len(_PNG_1PX)
         assert val[0]["file_key"] == ""  # ephemeral 不落盘
+
+    def test_wps_actual_dispimg_spelling_resolved(self):
+        """WPS 实际写入的 _xlfn.DISPIMG 公式全链路解析为图片元数据，而非文本."""
+        raw = _build_wps_xlsx(
+            ["名称", "图片"],
+            [["a", '_xlfn.DISPIMG("ID_D6CD113170634F02ACC95A1D27012B34",1)']],
+            {"ID_D6CD113170634F02ACC95A1D27012B34": ("image1.png", _PNG_1PX)},
+        )
+        rows, _ = _parse_xlsx_bytes(raw)
+        val = rows[0]["图片"]
+        assert isinstance(val, list)
+        assert val[0]["filename"] == "image1.png"
 
     def test_unknown_displimg_id_becomes_none(self):
         raw = _build_wps_xlsx(
