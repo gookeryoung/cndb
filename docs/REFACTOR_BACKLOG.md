@@ -28,7 +28,8 @@
 
 ## 一、超大文件拆分：剩余候选
 
-以下为仍超过 500 行的源码文件，按收益排序：
+以下为仍超过 500 行的源码文件中**优先处理的候选**（按收益排序）；全量 >500 行清单见
+本节末尾的「其余 >500 行文件」。
 
 ### 后端
 
@@ -49,6 +50,47 @@
 | `src/theme/theme.ts` | 695 | 10 套 antd ThemeConfig 预设抽 `theme/presets/*.ts`，theme.ts 只留 registry 与读写 |
 | `src/pages/grid/view-config/viewOptionSchema.ts` | 562 | 按视图拆 `options/{kanban,calendar,gantt,wbs,matrix,chart}.ts`；**测试要求保留 7 个具名导出** |
 | `src/pages/grid/views/WbsView.tsx` | 588 | 树构建与渲染行两分 |
+
+### 其余 >500 行文件（完整清单）
+
+以上为优先候选。全仓共 39 个 >500 行的源码文件，其余 29 个如下 ——
+多数是本次拆分后落在 500–660 行、且已单一职责的文件，暂不作为优先候选；
+其余按「收益 / 风险」判断后再动。
+
+**后端（17）**：
+
+- `src/cndb/cli/seed/samples.py` 695
+- `src/cndb/plugins/documents/routers/documents.py` 666
+- `src/cndb/plugins/tables/services/importing/api_fetch.py` 628
+- `src/cndb/plugins/tables/services/transfer/table_create.py` 613
+- `src/cndb/cli/backup.py` 601
+- `src/cndb/plugins/tables/routers/fields.py` 590
+- `src/cndb/plugins/tables/routers/tables.py` 582
+- `src/cndb/plugins/tables/services/importing/field_mapping.py` 573
+- `src/cndb/gui/checks.py` 560
+- `src/cndb/plugins/change_requests/services.py` 550
+- `src/cndb/plugins/tables/services/core/lookups.py` 541
+- `src/cndb/plugins/tables/routers/views.py` 539
+- `src/cndb/plugins/workspaces/routers/workspaces.py` 509
+- `src/cndb/plugins/tables/services/fields/select_options.py` 508
+- `src/cndb/plugins/tables/services/core/ddl.py` 505
+- `src/cndb/plugins/tables/routers/bulk_import.py` 504
+- `src/cndb/plugins/tables/services/fields/field_import.py` 502
+
+**前端（12）**：
+
+- `src/pages/settings/WorkspaceSettingsContent.tsx` 679
+- `src/pages/fields/FieldManager/index.tsx` 678
+- `src/pages/grid/views/GanttView.tsx` 655
+- `src/pages/reports/TemplateEditorModal.tsx` 630
+- `src/pages/workspace/TablesList.tsx` 617
+- `src/pages/import-export/ImportExportDialog/ImportPanel.tsx` 615
+- `src/pages/documents/DocumentTree.tsx` 607
+- `src/pages/grid/views/ChartView.tsx` 587
+- `src/pages/settings/TableSettingsPage.tsx` 586
+- `src/pages/documents/DocumentsPage.tsx` 553
+- `src/pages/fields/FieldManager/typeConfigPanel.tsx` 544
+- `src/pages/grid/view-config/ViewConfigDialog.tsx` 523
 
 > 拆分通用的两条约束（多次拆分已验证）：
 > 1. **monkeypatch / mock 目标必须指向 canonical 模块**。把实现移出后，若测试仍 patch 原模块的同名属性，patch 会静默失效（seed 的 `_get_datasets_dir`、reports 的 `_run_command` / `_cjk_font_candidates` 都踩过）。
