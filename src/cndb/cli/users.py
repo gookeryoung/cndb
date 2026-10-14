@@ -26,7 +26,7 @@ from cndb.models.base import Base
 
 # ── ORM 模型（必须先 import 确保 Base.metadata 完整）─
 from cndb.plugins.accounts.models import User, UserRole
-from cndb.plugins.tables.services.transfer import _coerce_long_numeric_to_text
+from cndb.plugins.tables.services.transfer import _coerce_long_numeric_to_text, decode_bytes_auto
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
 
 # 列头宽松别名映射（不区分大小写 + 前后空格）
@@ -101,21 +101,12 @@ def _open_tabfile(path: Path) -> list[dict[str, Any]]:
 
 
 def _read_csv(path: Path) -> list[dict[str, Any]]:
-    """读 CSV，utf-8 优先，失败回退 gbk（兼容 Windows Excel 保存的中文）."""
-    raw = path.read_bytes()
+    """读 CSV：编码探测复用 transfer.decode_bytes_auto（utf-8/gb18030/big5 + chardet 兜底）.
 
-    text: str | None = None
-    last_err: Exception | None = None
-    for enc in ("utf-8", "utf-8-sig", "gbk"):
-        try:
-            text = raw.decode(enc)
-            break
-        except UnicodeDecodeError as e:
-            last_err = e
-
-    if text is None:
-        raise RuntimeError(f"无法用 utf-8/gbk 解码文件 {path}: {last_err}")
-
+    原先手写 utf-8 → utf-8-sig → gbk 三级回退，与导入链路的编码探测实现重复，
+    且无法处理 big5 / utf-16 等来源；统一到单一实现避免漂移。
+    """
+    text, _enc, _conf = decode_bytes_auto(path.read_bytes())
     lines = text.splitlines()
     if not lines:
         return []

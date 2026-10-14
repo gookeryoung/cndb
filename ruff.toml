@@ -1,3 +1,5 @@
+# 排除 isort/UP 等规则不适用的目录：examples 是数据样例，
+# alembic 按 gitignore 语义匹配任意层级的迁移目录（含 src/cndb/alembic）
 extend-exclude = ["examples", "alembic"]
 line-length    = 120
 target-version = "py312"

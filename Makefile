@@ -12,7 +12,7 @@ CPUS := $(shell nproc 2>/dev/null || echo 4)
 endif
 PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 
-.PHONY: help sync frontend-build frontend-sync frontend-lint frontend-typecheck frontend-test frontend-coverage frontend-static frontend-check frontend-build build b clean c test cov lint typecheck check-fast check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
+.PHONY: help sync frontend-sync fs frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast gitkeep-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)

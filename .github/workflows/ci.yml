@@ -5,7 +5,8 @@ on:
     branches: [main, develop]
     # 路径过滤：只对真正影响运行的文件变化触发；docs/examples/deploy/.trae 等改动
     # 不触发全量 CI，节省 runner 资源。手动触发 workflow_dispatch 可绕过此限制。
-    paths:
+    # 锚点 &ci_paths 供 pull_request 复用，避免两份列表漂移。
+    paths: &ci_paths
       - 'src/**'
       - 'tests/**'
       - 'scripts/**'
@@ -27,26 +28,7 @@ on:
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main, develop]
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'scripts/**'
-      - 'frontend/src/**'
-      - 'frontend/tests/**'
-      - 'frontend/scripts/**'
-      - 'frontend/package.json'
-      - 'frontend/pnpm-lock.yaml'
-      - 'frontend/playwright.config.ts'
-      - 'frontend/tsconfig*.json'
-      - 'frontend/vite.config.ts'
-      - 'pyproject.toml'
-      - 'pyrefly.toml'
-      - 'pytest.ini'
-      - 'ruff.toml'
-      - '.python-version'
-      - '.pre-commit-config.yaml'
-      - 'Makefile'
-      - '.github/workflows/ci.yml'
+    paths: *ci_paths
   workflow_dispatch:  # 手动触发可绕过 paths 过滤跑全量
 
 concurrency:
