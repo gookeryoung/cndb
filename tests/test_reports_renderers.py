@@ -949,11 +949,11 @@ class TestCjkFontDiscovery:
     @pytest.fixture(autouse=True)
     def _reset_font_cache(self):
         """每个子测试前后清空 _pdf_font_state 缓存，保证独立."""
-        from cndb.plugins.reports.routers import reports
+        from cndb.plugins.reports.renderers import pdf_fonts
 
-        reports._pdf_font_state[0] = None
+        pdf_fonts._pdf_font_state[0] = None
         yield
-        reports._pdf_font_state[0] = None
+        pdf_fonts._pdf_font_state[0] = None
 
     def test_is_cjk_family_true_positives(self):
         """_is_cjk_family 对常见 CJK 家族名返回 True."""
@@ -1041,23 +1041,23 @@ class TestCjkFontDiscovery:
         """字体注册后 _pdf_font_state 缓存命中，第二次调用不再重复 fc-match / 目录扫描."""
         from unittest import mock
 
-        from cndb.plugins.reports.routers import reports
+        from cndb.plugins.reports.renderers import pdf_fonts
 
-        reports._pdf_font_state[0] = None
-        original_run = reports._run_command
+        pdf_fonts._pdf_font_state[0] = None
+        original_run = pdf_fonts._run_command
         call_count = {"n": 0}
 
         def _wrapped(cmd: list[str], timeout: float = 3.0) -> tuple[int, str]:
             call_count["n"] += 1
             return original_run(cmd, timeout)
 
-        with mock.patch.object(reports, "_run_command", side_effect=_wrapped):
+        with mock.patch.object(pdf_fonts, "_run_command", side_effect=_wrapped):
             # 重置缓存
-            reports._pdf_font_state[0] = None
-            _first = reports._ensure_pdf_font()
+            pdf_fonts._pdf_font_state[0] = None
+            _first = pdf_fonts._ensure_pdf_font()
             first_count = call_count["n"]
             # 第二次应直接命中缓存，不再调 _run_command
-            _second = reports._ensure_pdf_font()
+            _second = pdf_fonts._ensure_pdf_font()
             second_count = call_count["n"]
             assert first_count > 0, "首次注册应触发 fontconfig / 目录扫描"
             assert second_count == first_count, "第二次应完全命中缓存，不再跑扫描"
@@ -1086,24 +1086,25 @@ class TestPdfChineseNoToFallback:
 
     @pytest.fixture(autouse=True)
     def _reset_font_cache(self):
-        from cndb.plugins.reports.routers import reports
+        from cndb.plugins.reports.renderers import pdf_fonts
 
-        reports._pdf_font_state[0] = None
+        pdf_fonts._pdf_font_state[0] = None
         yield
-        reports._pdf_font_state[0] = None
+        pdf_fonts._pdf_font_state[0] = None
 
     def test_render_pdf_without_cjk_font_gracefully_falls_back(self) -> None:
         """_ensure_pdf_font 找不到任何 TrueType CJK 字体时返回 None，_render_pdf 用 Helvetica 回退不崩溃."""
         from unittest import mock
 
-        import cndb.plugins.reports.routers.reports as R
+        from cndb.plugins.reports.renderers import pdf_fonts
+        from cndb.plugins.reports.renderers.pdf import _render_pdf
 
         # 模拟 _cjk_font_candidates 返回空（所有候选 .is_file 都 False）
-        with mock.patch.object(R, "_cjk_font_candidates", return_value=[]):
-            font = R._ensure_pdf_font()
+        with mock.patch.object(pdf_fonts, "_cjk_font_candidates", return_value=[]):
+            font = pdf_fonts._ensure_pdf_font()
             assert font is None, "无 TrueType CJK 字体时应返回 None"
             # 仍能渲染 PDF（Helvetica 回退）
-            data = R._render_pdf("# 员工月报\n这是中文", {}, "minimal")
+            data = _render_pdf("# 员工月报\n这是中文", {}, "minimal")
             assert data.startswith(b"%PDF")
             # 此时无嵌入 FontFile2（Helvetica 是内置 Type1）
             assert b"/FontFile2" not in data
