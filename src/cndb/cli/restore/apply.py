@@ -1,36 +1,11 @@
-"""数据恢复模块.
+"""恢复落库：SQLite 原生替换、SQLAlchemy 交集导入、附件恢复与恢复后迁移.
 
-从 ``cndb backup`` 生成的 ``.tar.gz`` 归档中恢复完整数据，包括：
-1. SQLite 数据库文件（native 模式下直接覆盖；sqlalchemy 模式下清空重建并导入）
-2. uploads 目录下的所有附件文件（清理后重建）
-
-恢复流程::
-
-    1. 校验 tar 归档完整性（列出成员 + 确认 manifest.json 存在）
-    2. 检查 manifest 版本兼容性（集合协商，见 SUPPORTED_MANIFEST_VERSIONS）
-    3. 确认目标数据库可恢复（检测冲突 —— 有数据且未加 --force 时拒绝）
-    4. 解压到临时目录
-    5. 恢复数据库（根据 backup_mode 分支）
-       - native：恢复旧 schema 备份后自动执行 alembic upgrade head 迁移；
-         备份库无 alembic_version 记录（0.1.x 旧版备份）时改走
-         stamp head + create_all + schema 自愈对齐
-       - sqlalchemy：重建当前 schema 导入数据后补写 alembic 版本标记
-    6. 恢复 uploads 目录（若备份包含）
-    7. 校验并清理临时目录
-
-关键特性：
-- native 恢复使用 SQLite backup API 页级覆盖，目标文件被占用（服务运行中）也可安全恢复
-- 数据库恢复后自动执行 alembic 迁移与 schema 自愈，与当前程序模型对齐
-- 支持 dry-run 预览备份内容而不实际恢复
-- 旧版本备份在新版本程序上恢复时自动迁移 schema（向前兼容）
-- 新版本备份在旧 schema 上以 sqlalchemy 模式降级恢复时，显式输出数据裁剪报告（跳过表/丢弃列）
-- uploads 恢复时先清空目标目录，避免残留文件
+``restore_backup`` 是外部入口；``restore_command`` 是 CLI 子命令入口。
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import datetime as dt
 import json
 import logging
@@ -39,201 +14,19 @@ import sqlite3
 import sys
 import tarfile
 import tempfile
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urlparse
+
+from cndb.cli.restore.inspect import (
+    _check_target_safe,
+    _detect_backup_format,
+    _is_sqlite_url,
+    _resolve_sqlite_path,
+    inspect_backup,
+)
+from cndb.cli.restore.types import RestoreError, RestoreLossReport
 
 logger = logging.getLogger(__name__)
-
-__all__ = [
-    "RestoreError",
-    "RestoreLossReport",
-    "classify_table_groups",
-    "inspect_backup",
-    "restore_backup",
-]
-
-# 当前支持恢复的 manifest 协议版本集合（向前兼容框架：新版本格式演进时在此追加）
-SUPPORTED_MANIFEST_VERSIONS = {"1"}
-
-# 用户表物理表名前缀：table_（数据表）/ trash_（行回收站影子表）/ link_（关联字段关联表）。
-# 其余为程序固定 ORM 表与迁移版本表（alembic_version），见 plugins/tables/models.py。
-_USER_TABLE_PREFIXES = ("table_", "trash_", "link_")
-
-
-def classify_table_groups(tables: list[str]) -> dict[str, list[str]]:
-    """按「系统表 / 用户表」对物理表名分类.
-
-    用户表指用户在应用内创建的动态数据表及其影子表、关联表，物理表名带
-    ``table_`` / ``trash_`` / ``link_`` 前缀（见 ``plugins/tables/models.py``）；
-    系统表指程序固定的 ORM 表与迁移版本表（如 ``accounts_user``、
-    ``workspaces_workspace``、``alembic_version``）.
-
-    Args:
-        tables: 物理表名列表（来自 manifest 的 ``database.tables``）.
-
-    Returns:
-        ``{"system": [...], "user": [...]}``，两键恒存在；组内保持入参顺序.
-    """
-    system: list[str] = []
-    user: list[str] = []
-    for name in tables:
-        (user if name.startswith(_USER_TABLE_PREFIXES) else system).append(name)
-    return {"system": system, "user": user}
-
-
-class RestoreError(RuntimeError):
-    """恢复过程中的业务错误基类."""
-
-
-@dataclass
-class RestoreLossReport:
-    """sqlalchemy 降级恢复的数据裁剪报告.
-
-    交集导入时，备份中本地不存在的表被整体跳过、本地不存在的列被丢弃；
-    本报告显式呈现这些数据丢失面，避免静默丢数据。
-    """
-
-    skipped_tables: list[str] = field(default_factory=list)
-    dropped_columns: dict[str, list[str]] = field(default_factory=dict)
-
-    @property
-    def has_loss(self) -> bool:
-        """是否存在数据丢失."""
-        return bool(self.skipped_tables or self.dropped_columns)
-
-    def summary(self) -> str:
-        """生成人类可读的丢失报告."""
-        parts: list[str] = []
-        if self.skipped_tables:
-            parts.append(f"跳过未知表 {len(self.skipped_tables)} 个: {', '.join(self.skipped_tables)}")
-        for table_name, cols in self.dropped_columns.items():
-            parts.append(f"表 {table_name} 丢弃列 {len(cols)} 个: {', '.join(cols)}")
-        return "\n".join(parts)
-
-
-@dataclass
-class BackupInspection:
-    """备份归档检查结果（dry-run 输出）."""
-
-    manifest: dict[str, Any]
-    archive_size: int
-    temp_extract_path: Path | None = None
-
-    @property
-    def summary(self) -> str:
-        """生成人类可读的摘要."""
-        db = self.manifest.get("database", {})
-        up = self.manifest.get("uploads", {})
-        schema_version = db.get("schema_version", "")
-        parts: list[str] = [
-            f"应用版本: {self.manifest.get('app_version', '?')}",
-            f"备份时间: {self.manifest.get('created_at', '?')}",
-            f"数据库类型: {db.get('db_type', '?')} ({db.get('backup_mode', '?')})",
-            f"Schema 版本: {schema_version or '未知（旧版备份）'}",
-            f"数据表数: {len(db.get('tables', []))}",
-            f"总行数: {sum(db.get('row_counts', {}).values())}",
-        ]
-        if db.get("backup_mode", "") == "native" and schema_version:
-            parts.append("提示: 备份 schema 旧于当前程序时，恢复时将自动迁移至当前 schema")
-            if not _schema_revision_known(schema_version):
-                parts.append(
-                    "提示: 备份 schema 新于当前程序，native 恢复将失败；"
-                    "可改用 sqlalchemy 模式降级恢复（丢弃新版本字段数据）"
-                )
-        fallback = db.get("fallback_mode", "")
-        if fallback:
-            parts.append(f"内嵌兜底导出: 有（fallback_mode={fallback}，可用 sqlalchemy 模式降级恢复）")
-        else:
-            parts.append("内嵌兜底导出: 无")
-        if up.get("included"):
-            parts.append(f"附件: {up.get('file_count', 0)} 个文件, {up.get('total_size', 0)} 字节")
-        else:
-            parts.append("附件: 未包含")
-        parts.append(f"归档大小: {self.archive_size / 1024 / 1024:.2f} MB")
-        return "\n".join(f"  {p}" for p in parts)
-
-
-def _is_sqlite_url(database_url: str) -> bool:
-    """判断 DATABASE_URL 是否为 SQLite."""
-    parsed = urlparse(database_url)
-    return parsed.scheme.startswith("sqlite")
-
-
-def _resolve_sqlite_path(database_url: str) -> Path:
-    """从 SQLite DATABASE_URL 解析出实际文件路径."""
-    parsed = urlparse(database_url)
-    path_str = parsed.path
-    if path_str.startswith("/"):
-        path_str = path_str[1:]
-    return Path(path_str).resolve()
-
-
-def _schema_revision_known(revision: str) -> bool:
-    """判断 revision 是否存在于当前程序的迁移链上.
-
-    用于检测备份 schema 是否领先于当前程序（备份 revision 不在本地链上
-    即意味着备份由更新版本程序生成）。空串（旧版备份无版本记录）返回 False.
-    """
-    import alembic.script
-    from alembic.util.exc import CommandError
-
-    from cndb.core.migrations import _build_config
-
-    if not revision:
-        return False
-    cfg = _build_config("sqlite:///:memory:")
-    try:
-        return alembic.script.ScriptDirectory.from_config(cfg).get_revision(revision) is not None
-    except CommandError:
-        # alembic 对未知 revision 抛 CommandError（"Can't locate revision"）
-        return False
-
-
-def _ensure_manifest_compatible(manifest: dict[str, Any]) -> None:
-    """检查 manifest 版本兼容性.
-
-    版本不在 SUPPORTED_MANIFEST_VERSIONS 集合内时视为不兼容，
-    错误信息列出当前支持的全部版本，便于用户判断是否需升级程序。
-    """
-    version = manifest.get("version", "?")
-    if version not in SUPPORTED_MANIFEST_VERSIONS:
-        supported = ", ".join(sorted(SUPPORTED_MANIFEST_VERSIONS))
-        raise RestoreError(f"不支持的备份版本: {version}（当前支持: {supported}）。请升级程序后再恢复。")
-
-
-def _check_target_safe(database_url: str, force: bool) -> None:
-    """检查目标数据库是否安全可覆盖.
-
-    - SQLite：若 db 文件存在且有数据，未加 --force 时拒绝
-    - 其它 DB：直接信任用户（已有数据本身需要 --force 明示）
-    """
-    if not _is_sqlite_url(database_url):
-        return
-
-    db_path = _resolve_sqlite_path(database_url)
-    if not db_path.is_file():
-        return  # 文件不存在 = 安全
-
-    # 简单检查表是否非空
-    conn = sqlite3.connect(str(db_path))
-    try:
-        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-        tables = [r[0] for r in cursor.fetchall()]
-        if not tables:
-            return  # 空库 = 安全
-        # 有表 → 统计总行数
-        total = 0
-        for t in tables:
-            with contextlib.suppress(sqlite3.Error):
-                total += conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]  # nosec B608 - 表名来自 sqlite_master 枚举
-        if total > 0 and not force:
-            raise RestoreError(
-                f"目标数据库已有 {len(tables)} 张表、{total} 行数据。若确认要覆盖，请使用 --force 参数。"
-            )
-    finally:
-        conn.close()
 
 
 def _dispose_global_engine() -> None:
@@ -530,62 +323,6 @@ def _restore_uploads(extracted_dir: Path, target_upload_dir: Path, included: boo
 
     print(f"[restore] 附件已恢复: {count} 个文件 → {target_upload_dir}")
     return count
-
-
-def _detect_backup_format(path: Path) -> str:
-    """判断备份源是 ``archive``（.tar.gz）还是 ``directory``（文件夹）."""
-    if path.is_dir():
-        return "directory"
-    name = path.name.lower()
-    if name.endswith(".tar.gz") or name.endswith(".tgz"):
-        return "archive"
-    # 不是目录也不是已知后缀 → 尝试当归档打开，失败再报错
-    return "archive"
-
-
-def inspect_backup(archive_path: Path) -> BackupInspection:
-    """检查备份源（归档或目录）完整性并返回元信息（dry-run 核心）.
-
-    不修改任何文件系统状态，仅验证 tar 可打开、manifest 可读。
-    自动根据路径类型识别归档或目录模式。
-    """
-    archive_path = Path(archive_path).resolve()
-    fmt = _detect_backup_format(archive_path)
-
-    if fmt == "directory":
-        manifest_path = archive_path / "manifest.json"
-        if not manifest_path.is_file():
-            raise RestoreError(f"目录备份缺少 manifest.json: {archive_path}")
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise RestoreError(f"manifest.json 不是合法 JSON: {exc}") from exc
-        archive_size = sum(f.stat().st_size for f in archive_path.rglob("*") if f.is_file())
-        _ensure_manifest_compatible(manifest)
-        return BackupInspection(manifest=manifest, archive_size=archive_size)
-
-    # archive 模式
-    if not archive_path.is_file():
-        raise RestoreError(f"备份归档不存在: {archive_path}")
-
-    try:
-        with tarfile.open(archive_path, "r:gz") as tar:
-            names = tar.getnames()
-            if "backup/manifest.json" not in names:
-                raise RestoreError("归档缺少 manifest.json，非合法备份归档")
-            manifest_member = tar.getmember("backup/manifest.json")
-            manifest_file = tar.extractfile(manifest_member)
-            if manifest_file is None:
-                raise RestoreError("归档 manifest.json 无法读取")
-            manifest = json.loads(manifest_file.read().decode("utf-8"))
-    except (tarfile.TarError, OSError, EOFError) as exc:
-        # EOFError：gzip 流被截断（如磁盘写满中断下载）时由 zlib 抛出
-        raise RestoreError(f"归档损坏或无法打开: {exc}") from exc
-    except json.JSONDecodeError as exc:
-        raise RestoreError(f"manifest.json 不是合法 JSON: {exc}") from exc
-
-    _ensure_manifest_compatible(manifest)
-    return BackupInspection(manifest=manifest, archive_size=archive_path.stat().st_size)
 
 
 def restore_backup(
