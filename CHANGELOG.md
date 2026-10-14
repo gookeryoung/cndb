@@ -58,6 +58,7 @@
   - 前端 `WorkspaceSettingsContent.tsx` 679 → 525 行 + `settings/{workspaceRoles,MemberZones,AddMemberModal,TransferOwnerModal}`
   - 前端 `TemplateEditorModal.tsx` 630 → 474 行 + `reports/useTemplateEditorData.ts`（7 个 query + 跨工作区扫描 effect + 9 个派生 memo 抽成 hook，JSX 原样保留）
   - 前端 `FileImportPreview.tsx` 609 → 357 行 + `FieldsList` / `SelectedFieldEditor` / `DataPreviewTable` 三个渲染闭包组件 + 共享的 `importPreviewTypes` / `importPreviewOptions`
+  - 前端 `ViewConfigDialog.tsx` 523 → 214 行 + `viewTabItems.tsx`（四个 Tab 构造器）+ `ViewOptionItem.tsx`
 - 重复实现收敛：
   - 后端 CSV 编码探测统一走 `transfer.decode_bytes_auto`（`cli/users._read_csv` 与 `import_tasks._parse_to_rows` 不再各写一套；后者原为硬编码 utf-8，GBK CSV 会 UnicodeDecodeError）
   - 前端新增 `utils/paletteColor`（GanttView 与 CalendarView 逐字相同的色板 + hash，WbsView 同一公式）、`utils/datetime`（issues/changeRequests 4 页各自的 formatTime）、`utils/formatSize`（文档页与管理面板）
