@@ -17,6 +17,7 @@
   `ImportPanel.tsx`、`ReportsPage.tsx`、`GridCell.tsx`、`GanttView.tsx`、
   `DocumentsPage.tsx`、`CalendarView.tsx`、`KanbanView.tsx`、`workspaces/routers/workspaces.py`、
   `tables/services/fields/field_ops.py`、`tables/routers/bulk.py`、
+  `tables/services/transfer/normalize.py`、`cli/users.py`、`cli/restore.py`、
   `FileImportPreview.tsx`（部分，见下）（详见 CHANGELOG「未发布」）
 - 前端死导出清理：`LoginResponse`、`WorkspaceTrashResponse`、`getTagColor`、
   `ANTD_COLOR_NAMES`、`loadTableSettings`/`saveTableSettings`（后者与 zustand persist
@@ -37,10 +38,6 @@
 | `src/cndb/plugins/tables/services/core/records.py` | 957 | 拆 `core/{row_values,row_crud,row_bulk}.py`；**本项循环导入风险最高**（与 `query.py`/`ddl.py` 互依，现靠函数内延迟 import 规避，拆分须保留） |
 | `src/cndb/plugins/tables/services/importing/importer.py` | 906 | `Importer` 类单类 776 行 / 19 方法，可按方法族拆 mixin |
 | `src/cndb/plugins/documents/services/content.py` | 905 | 拆 `content/{crud,trash,links,tags,fts,serialize}.py`；FTS/软删子树/标签计数高耦合，成本较高 |
-| `src/cndb/plugins/tables/services/transfer/normalize.py` | 758 | 32 个纯函数，可按 `{checks,date,numeric,promote}` 拆；`transfer/__init__.py` 已有 ~40 项 re-export，须保持同名 |
-| `src/cndb/plugins/tables/routers/bulk.py` | 752 | 拆 `bulk/{records,export,import}.py` |
-| `src/cndb/cli/users.py` | 748 | 拆 `io.py`（CSV/XLSX 读取）+ `commands.py` + `printing.py`；`test_cli_users.py` 直接 import，需 re-export |
-| `src/cndb/cli/restore.py` | 727 | 拆 `restore/{inspect,sqlite,json,uploads,migrate}.py`；5 个测试文件直接 import，需 re-export |
 
 ### 前端
 
