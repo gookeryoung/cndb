@@ -66,8 +66,8 @@ pts=['build','dist','wheels','*.egg-info','htmlcov','.coverage','.coverage.*','c
 test: ## 运行测试（不含覆盖率）
 	uv run pytest -m "not slow" -n $(PYTEST_JOBS)
 
-cov: ## 运行测试并生成 HTML 覆盖率报告
-	uv run pytest -m "not slow" --cov --cov-report=term --cov-fail-under=$(COV_THRESHOLD) --cov-report=html -n $(PYTEST_JOBS)
+cov: ## 运行测试并生成 HTML 覆盖率报告（与 CI 同口径：只统计 $(PACKAGE) 包）
+	uv run pytest -m "not slow" --cov=$(PACKAGE) --cov-report=term --cov-fail-under=$(COV_THRESHOLD) --cov-report=html -n $(PYTEST_JOBS)
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); print('Coverage report: htmlcov/index.html')"
 
 e2e: frontend-build ## 前端 E2E 测试（Playwright；webServer 自动起隔离后端，首次先 npx playwright install chromium）
