@@ -52,6 +52,8 @@
   - 后端 `tables/services/transfer/normalize.py` 758 行 → `normalize/` 包（values 单值推断 / promote 列级提升 / coerce 精度与类型映射 + 转发全部 60 个符号）
   - 后端 `cli/users.py` 739 行 → `cli/users/` 包（io / db / commands / printing）；`users_command` 与 `register_users_subparser` 必须留在包 `__init__`，否则 10 处 `monkeypatch.setattr("cndb.cli.users.<cmd>")` 会静默失效
   - 后端 `cli/restore.py` 727 行 → `cli/restore/` 包（types / inspect / apply）
+  - 前端 `theme.ts` 695 → 108 行 + `theme/meta.ts`、`theme/fonts.ts`、`theme/presets/{light,dark,common}.ts`；`THEMES` 仍写显式字面量以保证键序与 `THEME_MODES` 一致
+  - 前端 `DocumentEditorPage.tsx` 802 → 640 行 + `DiffView` / `TagEditor` / `OutlineDrawer` / `BacklinksDrawer`
 - 重复实现收敛：
   - 后端 CSV 编码探测统一走 `transfer.decode_bytes_auto`（`cli/users._read_csv` 与 `import_tasks._parse_to_rows` 不再各写一套；后者原为硬编码 utf-8，GBK CSV 会 UnicodeDecodeError）
   - 前端新增 `utils/paletteColor`（GanttView 与 CalendarView 逐字相同的色板 + hash，WbsView 同一公式）、`utils/datetime`（issues/changeRequests 4 页各自的 formatTime）、`utils/formatSize`（文档页与管理面板）

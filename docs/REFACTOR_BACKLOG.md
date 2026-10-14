@@ -46,16 +46,14 @@
 |---|---|---|
 | `src/pages/grid/GridPage.tsx` | 1276 | 外置 `gridFallbacks.tsx`、`modeSwitch.ts`、`useGridPageRows.ts`、`useGridPageModals.ts`；主组件 1140 行主要是状态与回调，抽 hook 有一定回归风险 |
 | `src/pages/import-export/FileImportPreview.tsx` | 609 | 纯转换层与样式 hook 已抽出（见 CHANGELOG）。剩余三个内联渲染闭包：`renderFieldsList` 210-320、`renderSelectedFieldEditor` 323-365、`renderDataPreview` 368-461；依赖已确认为各 3-4 个组件级变量，抽成组件时需为 props 重建类型注解（勿用 any） |
-| `src/pages/documents/DocumentEditorPage.tsx` | 802 | 拆 `DiffView` / `TagEditor` / `useDocumentEditor` / `VersionTimeline` / `OutlinePanel` |
-| `src/theme/theme.ts` | 695 | 10 套 antd ThemeConfig 预设抽 `theme/presets/*.ts`，theme.ts 只留 registry 与读写 |
+| `src/pages/documents/DocumentEditorPage.tsx` | 640 | 已摘出 DiffView / TagEditor / OutlineDrawer / BacklinksDrawer（见 CHANGELOG）。剩余 4 个面板依赖 query 对象，需先把 `linkTargetsQuery` / `linksQuery` / `repairMut` / `versionsQuery` / `diffQuery` / `rollbackMut` / `tagsQuery` / `setDocTagsMut` / `tablesQuery` 解包成 props 再抽（`出链 445-538` / `版本 541-592` / `标签 595-602` / `插入数据表 605-638`） |
 | `src/pages/grid/view-config/viewOptionSchema.ts` | 562 | 按视图拆 `options/{kanban,calendar,gantt,wbs,matrix,chart}.ts`；**测试要求保留 7 个具名导出** |
 | `src/pages/grid/views/WbsView.tsx` | 588 | 树构建与渲染行两分 |
 
 ### 其余 >500 行文件（完整清单）
 
-以上为优先候选。全仓共 39 个 >500 行的源码文件，其余 29 个如下 ——
-多数是本次拆分后落在 500–660 行、且已单一职责的文件，暂不作为优先候选；
-其余按「收益 / 风险」判断后再动。
+以上为优先候选。全仓共 38 个 >500 行的源码文件，其余 29 个如下 ——
+多数是拆分后落在 500–660 行、且已单一职责的文件，暂不作为优先候选。
 
 **后端（17）**：
 
