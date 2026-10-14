@@ -194,17 +194,17 @@ def document_seed(db, db_engine, tmp_path):
 
     datasets_dir = _build_datasets_dir(tmp_path)
 
-    import cndb.cli.seed as seed_mod
+    from cndb.cli.seed import paths as seed_paths
 
-    original = seed_mod._get_datasets_dir
-    seed_mod._get_datasets_dir = lambda: datasets_dir
+    original = seed_paths._get_datasets_dir
+    seed_paths._get_datasets_dir = lambda: datasets_dir
     try:
         _, ws_map, tables_map = _seed_datasets(db, db_engine, user)
         _seed_views(db, user, tables_map, datasets_dir)
         _seed_documents(db, user, ws_map, tables_map, datasets_dir)
         yield tables_map, ws_map, user, datasets_dir
     finally:
-        seed_mod._get_datasets_dir = original
+        seed_paths._get_datasets_dir = original
 
 
 def test_seed_documents_creates_tree(document_seed, db):
