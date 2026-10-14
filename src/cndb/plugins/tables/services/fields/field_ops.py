@@ -735,6 +735,77 @@ def sync_select_options_from_table(db: Session, table: DataTable) -> list[DataFi
     return changed
 
 
+def detect_options_from_field_data(
+    db: Session,
+    table: DataTable,
+    field: DataField,
+    *,
+    target_type: str,
+    delimiter: str = ",",
+) -> list[str]:
+    """扫描字段物理列存量数据，收集可作为 select/multiselect 选项的唯一值.
+
+    字段类型修改为单选/多选时的「识别选项」入口：不做持久化，只返回识别结果，
+    由前端把结果填入选项编辑器、用户确认后随 config 一并保存。
+    识别发生在类型保存切换**之前**，物理列存的仍是旧类型数据，
+    因此按调用方传入的目标类型（而非字段存量类型）决定拆分语义。
+
+    Args:
+        db: SQLAlchemy Session（用于反射物理表读取数据）.
+        table: 字段所属数据表元数据.
+        field: 待切换类型的字段（须有物理列；link/lookup 无物理列时抛错）.
+        target_type: 目标字段类型，仅接受 "select" / "multiselect".
+        delimiter: multiselect 识别分隔符，默认逗号；select 忽略该参数.
+
+    Returns:
+        按首现顺序排列的唯一值列表（已 strip、去空）.
+
+    Raises:
+        ValueError: target_type 不是 select/multiselect，或 multiselect 分隔符为空.
+        RuntimeError: 物理表不存在或字段物理列缺失.
+    """
+    if target_type not in ("select", "multiselect"):
+        raise ValueError(f"目标类型 {target_type!r} 不是单选/多选，无法识别选项")
+    if target_type == "multiselect" and not delimiter:
+        raise ValueError("多选识别分隔符不能为空")
+
+    from sqlalchemy import select as _sa_select
+
+    from cndb.plugins.tables.services.core.ddl import get_reflected_table
+
+    engine: Any = db.get_bind()
+    try:
+        sa_table = get_reflected_table(engine, table.db_table_name)
+    except RuntimeError as exc:
+        raise RuntimeError(f"物理表 {table.db_table_name} 不存在，无法识别选项") from exc
+    col = sa_table.c.get(field.db_column_name)
+    if col is None:
+        raise RuntimeError(f"物理表 {table.db_table_name} 缺少列 {field.db_column_name}，无法识别选项")
+
+    query = _sa_select(col).distinct().where(col.isnot(None)).where(col != "")
+    raw_values = [row[0] for row in db.execute(query).all()]
+
+    collected: list[str] = []
+    seen: set[str] = set()
+    for rv in raw_values:
+        if rv is None:
+            continue
+        if target_type == "multiselect":
+            # 按用户指定的分隔符拆分（支持多字符分隔符），与识别预览语义一致
+            parts = str(rv).split(delimiter)
+            for p in parts:
+                s = p.strip()
+                if s and s not in seen:
+                    seen.add(s)
+                    collected.append(s)
+        else:
+            s = str(rv).strip()
+            if s and s not in seen:
+                seen.add(s)
+                collected.append(s)
+    return collected
+
+
 # ── 选项变更 → 存量数据同步 ──────────────────────────
 
 
@@ -940,6 +1011,7 @@ def sync_select_data_on_options_change(
 
 __all__ = [
     "clone_fields_between_tables",
+    "detect_options_from_field_data",
     "diff_select_options",
     "execute_field_import",
     "generate_column_name",
