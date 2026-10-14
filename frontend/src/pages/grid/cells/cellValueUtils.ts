@@ -12,7 +12,7 @@ import dayjs, { Dayjs } from 'dayjs'
 /** 只读字段（系统自动维护 / 无物理列实时解析）不能 inline 编辑 */
 export function isReadonlyField(field: Field): boolean {
   const readonly = new Set(['auto_id', 'created_time', 'updated_time', 'created_by', 'updated_by', 'formula', 'lookup'])
-  return readonly.has(field.field_type) || Boolean(field.is_primary && field.field_type === 'auto_id')
+  return readonly.has(field.field_type)
 }
 
 /** 进入编辑态前：把后端值转换成编辑器能吃的 JS 值 */
