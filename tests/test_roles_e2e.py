@@ -67,16 +67,6 @@ def auth_normal(client, normal_user):
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
-@pytest.fixture
-def auth_another(client, another_user):
-    r = client.post(
-        "/api/v1/accounts/auth/login",
-        json={"login": another_user.username, "password": "passw0rd"},
-    )
-    assert r.status_code == 200, r.text
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
-
-
 # ── 工作区 + 表 fixtures ──────────────────────────────
 
 

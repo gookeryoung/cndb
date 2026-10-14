@@ -40,16 +40,6 @@ def auth_owner(client, owner_user):
 
 
 @pytest.fixture
-def auth_member(client, member_user):
-    r = client.post(
-        "/api/v1/accounts/auth/login",
-        json={"login": member_user.username, "password": "passw0rd"},
-    )
-    assert r.status_code == 200
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
-
-
-@pytest.fixture
 def workspace(db, owner_user, member_user):
     from cndb.plugins.workspaces.models import WorkspaceMember
 
