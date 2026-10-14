@@ -2,5 +2,5 @@
 
 export { useTableSettingsStore } from './tableSettings'
 export { useAuthStore } from './auth'
-export { useGridViewStore, type ViewMode } from './gridView'
+export { useGridViewStore } from './gridView'
 export { useUiStore, type SettingsTab } from './ui'

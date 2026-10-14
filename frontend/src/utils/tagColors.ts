@@ -11,20 +11,6 @@
  * inverse/status 变体仅在语义规则明确命中时使用.
  */
 
-/** Ant Design v5 完整预设色名清单（基础 + inverse + status） */
-const ANTD_COLOR_NAMES: readonly string[] = [
-  // —— 13 种基础预设（主推色系）——
-  'blue', 'purple', 'cyan', 'green', 'magenta', 'pink', 'red',
-  'orange', 'yellow', 'volcano', 'geekblue', 'lime', 'gold',
-  // —— 13 种 inverse 变体（仅语义命中时使用）——
-  'blue-inverse', 'purple-inverse', 'cyan-inverse', 'green-inverse',
-  'magenta-inverse', 'pink-inverse', 'red-inverse',
-  'orange-inverse', 'yellow-inverse', 'volcano-inverse',
-  'geekblue-inverse', 'lime-inverse', 'gold-inverse',
-  // —— 5 种 status 预设（仅语义命中时使用）——
-  'success', 'processing', 'error', 'default', 'warning',
-]
-
 /** 主推色系（13 种基础预设，不含 inverse/status）—— 分级配色的根基 */
 const PRIMARY_COLORS: readonly string[] = [
   'blue', 'green', 'orange', 'purple', 'red',
@@ -199,11 +185,6 @@ export function getTagColorName(value: string | number): string {
   return PRIMARY_COLORS[idx]!
 }
 
-/** 兼容旧 API — 同 getTagColorName */
-export function getTagColor(value: string | number): string {
-  return getTagColorName(value)
-}
-
 /** 从选项配置中查找值对应的已存颜色；找不到则 fallback 语义推荐 → 分级调色板.
  *
  * 三路径取色：
@@ -307,6 +288,3 @@ export function __resetTagColorCache(): void {
   valueIndexCache.clear()
   semanticCache.clear()
 }
-
-/** 导出 antd 预设色名清单供外部校验 */
-export { ANTD_COLOR_NAMES }

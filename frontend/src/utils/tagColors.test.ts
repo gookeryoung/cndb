@@ -2,8 +2,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   __resetTagColorCache,
-  ANTD_COLOR_NAMES,
-  getTagColor,
   getTagColorName,
   resolveTagColor,
   suggestColorForLabel,
@@ -36,10 +34,6 @@ describe('getTagColorName hash 稳定性', () => {
   it('不同值可能得到不同颜色（hash 有区分度）', () => {
     const colors = new Set(['x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8'].map(getTagColorName))
     expect(colors.size).toBeGreaterThan(1)
-  })
-
-  it('getTagColor 与 getTagColorName 等价（旧 API 兼容）', () => {
-    expect(getTagColor('v')).toBe(getTagColorName('v'))
   })
 })
 
@@ -241,17 +235,5 @@ describe('__resetTagColorCache 缓存重置', () => {
     const before = getTagColorName('稳定值')
     __resetTagColorCache()
     expect(getTagColorName('稳定值')).toBe(before)
-  })
-})
-
-describe('ANTD_COLOR_NAMES 导出完整性', () => {
-  it('共 31 项（13 基础 + 13 inverse + 5 status）', () => {
-    expect(ANTD_COLOR_NAMES).toHaveLength(31)
-  })
-
-  it('包含全部 status 色与 inverse 变体', () => {
-    for (const c of ['success', 'processing', 'error', 'default', 'warning', 'blue-inverse', 'gold-inverse']) {
-      expect(ANTD_COLOR_NAMES).toContain(c)
-    }
   })
 })

@@ -17,13 +17,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
 import { changeRequestsApi, workspaceApi } from '@/api'
-import type { ChangeActionItem, ChangeItemDetail, ChangeOp } from '@/api'
+import type { ChangeActionItem, ChangeItemDetail, ChangeOp, WorkspaceRole } from '@/api'
 import { memberDisplayName, useMemberNameMap } from '@/hooks/useMemberNames'
 import { useAuthStore } from '@/store'
 
 const { Text, Title, Paragraph } = Typography
 
-type WorkspaceRole = 'owner' | 'editor' | 'viewer'
 type Decision = 'apply' | 'skip'
 
 const OP_META: Record<ChangeOp, { label: string; color: string }> = {
