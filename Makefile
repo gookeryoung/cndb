@@ -58,7 +58,7 @@ build b: frontend-build ## 构建分发包 (前端 → wheel + sdist)
 
 clean c: ## 清理构建产物与缓存
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import shutil,pathlib,glob;\
-pts=['build','dist','wheels','*.egg-info','htmlcov','.coverage','.coverage.*','coverage.xml','docs/_build','.tox','.ruff_cache','.pyrefly_cache','.mypy_cache'];\
+pts=['build','dist','wheels','*.egg-info','htmlcov','.coverage','.coverage.*','coverage.xml','.ruff_cache','.pyrefly_cache','.mypy_cache'];\
 [shutil.rmtree(m,ignore_errors=True) if pathlib.Path(m).is_dir() else pathlib.Path(m).unlink(missing_ok=True) for p in pts for m in glob.glob(p)];\
 [shutil.rmtree(d,ignore_errors=True) for base in ('src','tests') for d in pathlib.Path(base).rglob('__pycache__')];\
 [f.unlink(missing_ok=True) for base in ('src','tests') for f in pathlib.Path(base).rglob('*') if f.suffix in ('.pyc','.pyo')]"

@@ -14,7 +14,6 @@ wheels/
 .coverage.*
 htmlcov/
 coverage.xml
-.tox/
 
 # 工具缓存
 .ruff_cache/
@@ -74,6 +73,5 @@ file:*
 # 工具缓存
 .eslintcache
 .pytest_cache/
-.mypy_cache/
 coverage.json
 frontend/.vitest-cache/
