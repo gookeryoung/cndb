@@ -40,4 +40,3 @@ export const authApi = {
     listUserAuditLogs: (userId: number | string, params: Omit<UserAuditLogQuery, 'target_user_id' | 'actor_id' | 'action'> = {}) =>
         api.get<UserAuditLogPage>(`/v1/accounts/users/${userId}/audit-logs`, { params }).then(r => r.data),
 }
-
