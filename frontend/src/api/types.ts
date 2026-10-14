@@ -103,7 +103,6 @@ export interface ProfileUpdateRequest { nickname?: string; email?: string }
 export interface RegisterRequest { username: string; email?: string | null; password: string; nickname?: string }
 /** 管理员创建用户请求体 —— role 必填（三员 + user 任意）. */
 export interface AdminRegisterRequest extends Omit<RegisterRequest, 'password'> { password: string; role: UserRole }
-export interface LoginResponse { access_token: string; token_type: string }
 
 export interface Workspace {
   id: ID; name: string; description?: string; default_role?: string
@@ -442,11 +441,6 @@ export interface TrashedRow {
   /** 软删时间（后端可能返回 _trashed_at 或 deleted_at） */
   _trashed_at?: string
   [fieldName: string]: unknown
-}
-export interface WorkspaceTrashResponse {
-  tables: TableSummary[]; fields: Field[]; trashed_rows: TrashedRow[]
-  /** 各表的软删行计数 */
-  row_counts?: Array<{ table_id: ID; table_name: string; trashed_rows: number }>
 }
 
 export interface CsvAnalyzeResult { columns: string[]; total_rows: number }
@@ -972,5 +966,3 @@ export interface ChangeRequestBatchResponse extends ChangeRequestDispatchRespons
 export function isChangeRequestResponse(r: RowResponse | ChangeRequestBatchResponse | unknown): r is ChangeRequestBatchResponse {
   return typeof r === 'object' && r !== null && 'change_request' in r
 }
-
-

@@ -14,14 +14,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
 import { issuesApi, workspaceApi } from '@/api'
-import type { IssueComment, IssueEvent } from '@/api'
+import type { IssueComment, IssueEvent, WorkspaceRole } from '@/api'
 import { memberDisplayName, useMemberNameMap } from '@/hooks/useMemberNames'
 import { useAuthStore } from '@/store'
 import { ISSUE_CATEGORY_META } from './IssuesPage'
 
 const { Text, Title, Paragraph } = Typography
-
-type WorkspaceRole = 'owner' | 'editor' | 'viewer'
 
 const EVENT_TEXT: Record<IssueEvent['action'], string> = {
   created: '创建了问题',
