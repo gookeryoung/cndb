@@ -70,6 +70,26 @@ def _local_tag(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def _local_name(tag: str) -> str:
+    """去命名空间前缀并小写 —— WPS 私有部件的元素名大小写并不稳定.
+
+    WPS 导出的 ``xl/cellimages.xml`` 实际使用 ``<etc:cellImages>`` /
+    ``<etc:cellImage>``（驼峰），而部分实现/第三方导出器写作全小写
+    ``cellimages`` / ``cellimage``。XML 元素名大小写敏感，因此匹配前
+    必须统一小写，否则真实 WPS 文件的图片映射会被整体漏掉。
+    """
+    return _local_tag(tag).lower()
+
+
+def _find_part(names: list[str], target: str) -> str | None:
+    """在 zip 成员名中大小写不敏感地查找部件路径（命中返回原始名）."""
+    lowered = target.lower()
+    for name in names:
+        if name.lower() == lowered:
+            return name
+    return None
+
+
 def _iter_descendants(root: Any) -> Any:
     """遍历 root 全部后代元素（含 root 自身）."""
     yield root
@@ -104,17 +124,22 @@ def parse_wps_cell_images(xlsx_bytes: bytes) -> dict[str, WpsCellImage]:
         return {}
 
     with zf:
-        if "xl/cellimages.xml" not in zf.namelist():
+        names = zf.namelist()
+        cellimages_part = _find_part(names, "xl/cellimages.xml")
+        if cellimages_part is None:
             return {}
+        rels_part = _find_part(names, "xl/_rels/cellimages.xml.rels")
 
         import xml.etree.ElementTree as ET
 
         # 1) rId → media 路径
         rels_map: dict[str, str] = {}
         try:
-            rels_root = ET.fromstring(zf.read("xl/_rels/cellimages.xml.rels"))
+            if rels_part is None:
+                raise KeyError("xl/_rels/cellimages.xml.rels")
+            rels_root = ET.fromstring(zf.read(rels_part))
             for el in _iter_descendants(rels_root):
-                if _local_tag(el.tag) != "Relationship":
+                if _local_name(el.tag) != "relationship":
                     continue
                 rid = el.get("Id")
                 target = el.get("Target") or ""
@@ -127,20 +152,20 @@ def parse_wps_cell_images(xlsx_bytes: bytes) -> dict[str, WpsCellImage]:
         # 2) cellimage 项：cNvPr@name（= DISPLIMG ID）→ blip@embed（= rId）
         id_to_rid: dict[str, str] = {}
         try:
-            ci_root = ET.fromstring(zf.read("xl/cellimages.xml"))
+            ci_root = ET.fromstring(zf.read(cellimages_part))
             for el in _iter_descendants(ci_root):
-                if _local_tag(el.tag) != "cellimage":
+                if _local_name(el.tag) != "cellimage":
                     continue
                 name = None
                 embed = None
                 for sub in el.iter():
-                    tag = _local_tag(sub.tag)
-                    if tag == "cNvPr" and name is None:
+                    tag = _local_name(sub.tag)
+                    if tag == "cnvpr" and name is None:
                         name = sub.get("name")
                     elif tag == "blip" and embed is None:
                         # r:embed 属性带命名空间，按 local 名匹配
                         for attr_key, attr_val in sub.attrib.items():
-                            if _local_tag(attr_key) == "embed":
+                            if _local_tag(attr_key).lower() == "embed":
                                 embed = attr_val
                                 break
                 if name and embed:

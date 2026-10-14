@@ -7,22 +7,16 @@ import {
   Button,
   Drawer,
   Input,
-  InputNumber,
-  Modal,
   Popconfirm,
-  Select,
   Space,
   Splitter,
-  Tabs,
   Tag,
-  Timeline,
   Typography,
   message,
 } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import {
   BranchesOutlined,
-  CheckOutlined,
   HistoryOutlined,
   LinkOutlined,
   MenuOutlined,
@@ -47,8 +41,10 @@ const { TextArea } = Input
 
 
 import BacklinksDrawer from './BacklinksDrawer'
-import DiffView from './DiffView'
+import InsertTableModal from './InsertTableModal'
+import LinksDrawer from './LinksDrawer'
 import OutlineDrawer from './OutlineDrawer'
+import VersionsDrawer from './VersionsDrawer'
 import TagEditor from './TagEditor'
 
 export default function DocumentEditorPage() {
@@ -441,154 +437,39 @@ export default function DocumentEditorPage() {
       />
 
       {/* 出链抽屉：正文 [[标题]] 命中与断链，可为断链选择目标文档并修复 */}
-      <Drawer
-        title="文档链接"
-        width={460}
+      <LinksDrawer
         open={linksOpen}
         onClose={() => {
           setLinksOpen(false)
           setRepairTargets({})
         }}
-        data-testid="doc-links-drawer"
-      >
-        {linksQuery.isLoading ? (
-          <Text type="secondary">加载中…</Text>
-        ) : (linksQuery.data?.items ?? []).length === 0 ? (
-          <Text type="secondary">正文中没有 [[标题]] 形式的链接</Text>
-        ) : (
-          <>
-            {(linksQuery.data?.broken ?? 0) > 0 && (
-              <Alert
-                type="warning"
-                showIcon
-                style={{ marginBottom: 12 }}
-                message={`${linksQuery.data?.broken} 条断链`}
-                description="选择目标文档后点击「修复断链」，正文将改写为新标题并生成新版本。"
-              />
-            )}
-            {(linksQuery.data?.items ?? []).map((item: OutgoingLinkItem) => (
-              <div
-                key={item.title}
-                data-testid={`doc-link-${item.title}`}
-                style={{
-                  padding: '8px 12px',
-                  marginBottom: 8,
-                  border: '1px solid var(--cn-border, #e8e8e8)',
-                  borderRadius: 8,
-                }}
-              >
-                <Space size={6} wrap>
-                  <Text strong>{`[[${item.title}]]`}</Text>
-                  {item.exists ? <Tag color="green">已解析</Tag> : <Tag color="red">断链</Tag>}
-                </Space>
-                {item.exists && item.document_id != null ? (
-                  <div style={{ marginTop: 6 }}>
-                    <Button
-                      size="small"
-                      type="link"
-                      data-testid={`doc-link-open-${item.title}`}
-                      onClick={() => {
-                        setLinksOpen(false)
-                        navigate(`/w/${workspaceId}/documents/${item.document_id}`)
-                      }}
-                    >
-                      打开目标文档
-                    </Button>
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 6 }}>
-                    <Select
-                      size="small"
-                      style={{ width: 240 }}
-                      placeholder="选择要指向的文档"
-                      value={repairTargets[item.title]}
-                      onChange={(value: number) =>
-                        setRepairTargets(prev => ({ ...prev, [item.title]: value }))
-                      }
-                      options={(linkTargetsQuery.data ?? []).map(d => ({
-                        value: d.id,
-                        label: d.is_folder ? `📁 ${d.title}` : d.title,
-                      }))}
-                      showSearch
-                      optionFilterProp="label"
-                      data-testid={`doc-link-target-${item.title}`}
-                    />
-                  </div>
-                )}
-              </div>
-            ))}
-            <Space style={{ marginTop: 8 }}>
-              <Button
-                type="primary"
-                icon={<CheckOutlined />}
-                data-testid="doc-link-repair"
-                loading={repairMut.isPending}
-                disabled={Object.keys(repairTargets).length === 0}
-                onClick={() => repairMut.mutate()}
-              >
-                修复断链
-              </Button>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                已选 {Object.keys(repairTargets).length} 条
-              </Text>
-            </Space>
-          </>
-        )}
-      </Drawer>
+        loading={linksQuery.isLoading}
+        links={linksQuery.data?.items ?? []}
+        brokenCount={linksQuery.data?.broken ?? 0}
+        targets={linkTargetsQuery.data ?? []}
+        repairTargets={repairTargets}
+        onTargetChange={(title, targetId) => setRepairTargets(prev => ({ ...prev, [title]: targetId }))}
+        onRepair={() => repairMut.mutate()}
+        repairing={repairMut.isPending}
+        onOpenDoc={docId => {
+          setLinksOpen(false)
+          navigate(`/w/${workspaceId}/documents/${docId}`)
+        }}
+      />
 
       {/* 版本抽屉 */}
-      <Drawer
-        title="版本历史"
-        width={520}
+      <VersionsDrawer
         open={versionsOpen}
         onClose={() => {
           setVersionsOpen(false)
           setDiffPair(null)
         }}
-      >
-        <Tabs
-          items={[
-            {
-              key: 'list',
-              label: '时间线',
-              children:
-                versionsQuery.isLoading ? (
-                  <div>加载中…</div>
-                ) : versionTimeline.length <= 1 ? (
-                  <Text type="secondary">暂无历史版本（首次保存后自动创建）</Text>
-                ) : (
-                  <Timeline items={versionTimeline} />
-                ),
-            },
-            {
-              key: 'diff',
-              label: '差异对比',
-              children: diffPair ? (
-                diffQuery.isLoading ? (
-                  <div>计算差异中…</div>
-                ) : (
-                  <>
-                    <Space style={{ marginBottom: 12 }}>
-                      <Text strong>
-                        v{diffPair.base} → v{diffPair.head}
-                      </Text>
-                      {diffQuery.data && (
-                        <>
-                          <Tag color="green">+{diffQuery.data.added}</Tag>
-                          <Tag color="red">-{diffQuery.data.removed}</Tag>
-                        </>
-                      )}
-                    </Space>
-                    <DiffView diff={diffQuery.data?.diff ?? ''} />
-                  </>
-                )
-              ) : (
-                <Text type="secondary">在时间线中点击「与上一版对比」查看差异</Text>
-              ),
-            },
-          ]}
-        />
-      </Drawer>
+        loading={versionsQuery.isLoading}
+        timeline={versionTimeline}
+        diffPair={diffPair}
+        diffLoading={diffQuery.isLoading}
+        diff={diffQuery.data}
+      />
 
       {/* 标签抽屉 */}
       <Drawer title="文档标签" width={420} open={tagsOpen} onClose={() => setTagsOpen(false)}>
@@ -601,40 +482,17 @@ export default function DocumentEditorPage() {
       </Drawer>
 
       {/* 插入数据表引用弹窗 */}
-      <Modal
-        title="插入数据表引用"
+      <InsertTableModal
         open={insertOpen}
         onOk={insertTableRef}
-        okButtonProps={{ disabled: insertTableId === null }}
-        okText="插入"
-        cancelText="取消"
         onCancel={() => setInsertOpen(false)}
-        destroyOnHidden
-      >
-        <Space direction="vertical" style={{ width: '100%' }} size={12}>
-          <Select
-            style={{ width: '100%' }}
-            placeholder="选择要引用的数据表"
-            value={insertTableId}
-            onChange={v => setInsertTableId(v)}
-            options={(tablesQuery.data ?? []).map(t => ({ value: t.id, label: t.name }))}
-            loading={tablesQuery.isLoading}
-            showSearch
-            optionFilterProp="label"
-          />
-          <InputNumber
-            style={{ width: '100%' }}
-            min={1}
-            max={50}
-            placeholder="每页行数（默认 20，上限 50）"
-            value={insertLimit}
-            onChange={v => setInsertLimit(v)}
-          />
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            以只读表格形式在文档中动态引用所选数据表，数据随表内容实时更新。
-          </Text>
-        </Space>
-      </Modal>
+        tableId={insertTableId}
+        onTableIdChange={v => setInsertTableId(v)}
+        limit={insertLimit}
+        onLimitChange={v => setInsertLimit(v)}
+        tables={tablesQuery.data ?? []}
+        tablesLoading={tablesQuery.isLoading}
+      />
     </div>
   )
 }
