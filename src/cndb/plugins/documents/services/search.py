@@ -43,6 +43,17 @@ def ensure_fts_schema(db: Session) -> None:
     _fts_state["ready"] = True
 
 
+def reset_fts_schema_cache() -> None:
+    """重置进程内 FTS 建表缓存（seed 全量重建删表后调用）.
+
+    ``cndb seed`` 会 drop 全部表（含 documents_fts 虚拟表），长驻进程内
+    缓存的 ready 标记会误判虚拟表仍存在，导致后续文档写入报
+    ``no such table: documents_fts``。seed 重建 schema 后调用本函数，
+    让下一次写入重新执行幂等建表。
+    """
+    _fts_state["ready"] = False
+
+
 def escape_query(query: str) -> str:
     """将用户输入转为安全的 FTS5 MATCH 表达式.
 
@@ -236,4 +247,4 @@ def rebuild_fts_index(db: Session) -> int:
     return count
 
 
-__all__ = ["ensure_fts_schema", "escape_query", "rebuild_fts_index", "search_documents"]
+__all__ = ["ensure_fts_schema", "escape_query", "rebuild_fts_index", "reset_fts_schema_cache", "search_documents"]

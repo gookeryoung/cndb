@@ -12,6 +12,7 @@
 - **动态数据表**：SQLAlchemy Core 运行时建表 / 改字段，运行中即可扩 schema
 - **17 种字段类型**：text / longtext / email / url / phone / json / number / float / percentage / boolean / date / datetime / timestamp / select / multiselect / link（跨表关联）/ attachment
 - **7 种视图**：表格（Grid）/ 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表，视图级筛选、排序、字段显隐与配置持久化
+- **文档管理**：工作区 Markdown 文档树、双向链接 `[[标题]]`、数据表动态引用 `{{table:表名}}`、版本历史与全文检索
 - **行级协作**：编辑评论 / 审计日志 / 回收站 / 公开分享
 - **link 字段关系图**：`GET /workspaces/{id}/tables/graph` 返回所有表间依赖
 - **异步导入**：CSV / JSON / XLSX / API 抓取异步导入 + 进度轮询
@@ -26,7 +27,7 @@
 # 克隆 + 依赖
 uv sync --extra dev
 
-# 建表 + 注入演示数据（幂等）
+# 建表 + 注入演示数据（含典型数据表 / 视图 / 文档，幂等）
 uv run cndb seed
 
 # 启动服务（默认绑定 0.0.0.0，http://localhost:8000）
@@ -104,6 +105,7 @@ src/cndb/
 │   ├── accounts/     # 用户注册 / 登录 / JWT
 │   ├── workspaces/   # 工作区 + 成员 + 角色
 │   ├── tables/       # 动态表 / 字段 / 记录 / DDL / 查询 / 视图
+│   ├── documents/    # 文档树 / 版本 / 标签 / 分享 / 全文检索
 │   └── reports/      # 报告模板 (Jinja2 sandbox)
 ├── app.py            # FastAPI 应用装配 + SPA 静态托管
 └── static/           # 前端构建产物（pnpm build 输出，同源托管）
