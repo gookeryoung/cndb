@@ -28,10 +28,11 @@ describe('getOptionSchema 四种视图 + 未知类型', () => {
     )
   })
 
-  it('calendar 返回 4 项，start_field 必填', () => {
+  it('calendar 返回 5 项，start_field 必填', () => {
     const schema = getOptionSchema('calendar')
-    expect(schema).toHaveLength(4)
+    expect(schema).toHaveLength(5)
     expect(schema.find((o) => o.key === 'start_field')?.required).toBe(true)
+    expect(schema.find((o) => o.key === 'done_field')?.kind).toBe('done_flag')
   })
 
   it('gantt 返回 9 项，start/end date 必填', () => {

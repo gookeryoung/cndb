@@ -251,7 +251,9 @@ describe('CreateEditViewForm 分区与折叠布局', () => {
 
     openSelect(0)
     await pickOption('日历 (Calendar)')
-    expect(screen.queryByText('完成标志')).not.toBeInTheDocument()
+    // 日历视图没有「完成状态」分区（其完成标志配置归入「日历配置」分区，默认展开）
+    expect(screen.queryByRole('button', { name: /完成状态/ })).not.toBeInTheDocument()
+    expect(screen.getByText('完成标志')).toBeInTheDocument()
 
     openSelect(0)
     await pickOption('看板 (Kanban)')
