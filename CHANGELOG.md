@@ -49,6 +49,9 @@
   - 前端 `KanbanView.tsx` 789 → 132 行 + `kanban/{KanbanCard,KanbanColumn,kanbanDensity,kanbanVisuals}`
   - 前端 `FileImportPreview.tsx` 774 → 609 行 + `importPreviewConvert.ts`（4 个纯转换函数）与 `useTableFlexFillStyle.ts`
   - 后端 `tables/routers/bulk.py` 752 → 35 行（聚合）+ `bulk_crud.py` / `bulk_export.py` / `bulk_import.py`；前缀与 tags 留在聚合 router 上，11 条路径逐条不变
+  - 后端 `tables/services/transfer/normalize.py` 758 行 → `normalize/` 包（values 单值推断 / promote 列级提升 / coerce 精度与类型映射 + 转发全部 60 个符号）
+  - 后端 `cli/users.py` 739 行 → `cli/users/` 包（io / db / commands / printing）；`users_command` 与 `register_users_subparser` 必须留在包 `__init__`，否则 10 处 `monkeypatch.setattr("cndb.cli.users.<cmd>")` 会静默失效
+  - 后端 `cli/restore.py` 727 行 → `cli/restore/` 包（types / inspect / apply）
 - 重复实现收敛：
   - 后端 CSV 编码探测统一走 `transfer.decode_bytes_auto`（`cli/users._read_csv` 与 `import_tasks._parse_to_rows` 不再各写一套；后者原为硬编码 utf-8，GBK CSV 会 UnicodeDecodeError）
   - 前端新增 `utils/paletteColor`（GanttView 与 CalendarView 逐字相同的色板 + hash，WbsView 同一公式）、`utils/datetime`（issues/changeRequests 4 页各自的 formatTime）、`utils/formatSize`（文档页与管理面板）
