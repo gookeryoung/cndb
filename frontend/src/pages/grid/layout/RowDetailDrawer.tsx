@@ -11,6 +11,7 @@ import type { RowResponse, Field, AttachmentFile, RowValues } from '@/api'
 import { extractSelectOptions, defaultValueForNewRow } from '../cells/fieldOps'
 import { pickLinkLabelFieldName, buildLinkRowLabel } from '../cells/fieldValueFormat'
 import { useTableSettingsStore } from '@/store'
+import { AuthedFileLink, AuthedImage } from '@/components/AuthedFile'
 
 const { Title, Text } = Typography
 
@@ -380,8 +381,8 @@ function FieldEditor({
                 if (isImg) {
                   return (
                     <div key={f.file_key} style={{ position: 'relative', width: 56, height: 56 }}>
-                      <Image width={56} height={56} src={fileApi.getUrl(wid, f.file_key, true)}
-                        style={{ objectFit: 'cover', borderRadius: 4 }} />
+                      <AuthedImage wid={wid} fileKey={f.file_key} width={56} height={56}
+                        alt={f.filename} style={{ objectFit: 'cover', borderRadius: 4 }} />
                       {!disabled && (
                         <Tooltip title="删除该附件">
                           <Button type="text" size="small" danger icon={<DeleteOutlined />}
@@ -397,7 +398,7 @@ function FieldEditor({
                 }
                 return (
                   <span key={f.file_key} style={{ fontSize: 12, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 4 }}>
-                    📎 <a href={fileApi.getUrl(wid, f.file_key)} target="_blank" rel="noreferrer">{f.filename}</a>
+                    📎 <AuthedFileLink wid={wid} fileKey={f.file_key} filename={f.filename} />
                     {!disabled && (
                       <Tooltip title="删除该附件">
                         <Button type="text" size="small" danger icon={<DeleteOutlined />}
@@ -445,7 +446,7 @@ function FieldEditor({
               <Image.PreviewGroup>
                 {images.map((f, i) => (
                   <div key={f.file_key || `${f.filename}-${i}`} style={{ position: 'relative', width: 56, height: 56 }}>
-                    <Image width={56} height={56} src={fileApi.getUrl(wid, f.file_key, true)}
+                    <AuthedImage wid={wid} fileKey={f.file_key} width={56} height={56}
                       alt={f.filename} style={{ objectFit: 'cover', borderRadius: 4 }} />
                     {!disabled && (
                       <Tooltip title="删除该图片">

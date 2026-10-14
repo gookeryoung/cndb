@@ -6,6 +6,7 @@ import { SaveOutlined, CloseOutlined, InboxOutlined, DeleteOutlined } from '@ant
 import { useQuery } from '@tanstack/react-query'
 import type { AttachmentFile, Field, RowResponse } from '@/api'
 import { recordApi, fileApi, fieldApi } from '@/api'
+import { AuthedImage } from '@/components/AuthedFile'
 import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 import { pickLinkLabelFieldName, buildLinkRowLabel } from './fieldValueFormat'
 import dayjs from 'dayjs'
@@ -359,10 +360,11 @@ export function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, s
               <Image.PreviewGroup>
                 {images.map((f, i) => (
                   <span key={f.file_key || `${f.filename}-${i}`} style={{ position: 'relative' }}>
-                    <Image
+                    <AuthedImage
+                      wid={wid}
+                      fileKey={f.file_key}
                       width={48}
                       height={48}
-                      src={wid ? fileApi.getUrl(wid, f.file_key, true) : undefined}
                       alt={f.filename}
                       style={{ objectFit: 'cover', borderRadius: 4 }}
                     />

@@ -10,10 +10,13 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import dayjs from 'dayjs'
 import GridCell from './GridCell'
 import { renderProviders } from '@/test/render-providers'
+import { server } from '@/test/msw'
 import { makeField } from '@/test/fixtures'
+import { resetFileObjectUrls } from '@/hooks/useFileObjectUrl'
 
 // ─────────────── 展示态：按字段类型分派渲染 ───────────────
 
@@ -100,26 +103,38 @@ describe('GridCell 展示态', () => {
     expect(screen.getByText('张三')).toBeInTheDocument()
   })
 
-  it('image JSON 字符串渲染为缩略图（src 指向工作区附件 URL）', () => {
+  it('image JSON 字符串渲染为缩略图（经鉴权 blob 拉取，非直连 URL）', async () => {
+    resetFileObjectUrls()
     const field = makeField({ id: 1, name: '照片', field_type: 'image' })
+    const requested: string[] = []
+    server.use(
+      http.get('/api/v1/workspaces/:wid/files/:fileKey', ({ params }) => {
+        requested.push(String(params.fileKey))
+        return new HttpResponse(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { 'Content-Type': 'image/png' },
+        })
+      }),
+    )
     const value = JSON.stringify([
       { file_key: 'abc123.png', filename: 'image1.png', mime_type: 'image/png' },
       { file_key: 'def456.png', filename: 'image2.png', mime_type: 'image/png' },
     ])
     renderProviders(<GridCell value={value} field={field} rowId={1} wid={10} />)
-    // antd Image 含预览副本，按 src 断言（不依赖内部渲染结构）
-    const srcs = screen.getAllByRole('img').map(el => el.getAttribute('src'))
-    expect(srcs).toContain('/api/v1/workspaces/10/files/abc123.png?inline=true')
-    expect(srcs).toContain('/api/v1/workspaces/10/files/def456.png?inline=true')
+    // 附件端点经 axios 取 blob（带 Authorization 头），不是 <img> 直连
+    await waitFor(() => expect(requested).toEqual(expect.arrayContaining(['abc123.png', 'def456.png'])))
+    const srcs = screen.getAllByRole('img').map(el => el.getAttribute('src') ?? '')
+    // antd Image 可能额外渲染预览副本；断言至少 2 个缩略图指向 blob URL
+    expect(srcs.filter(s => s.startsWith('blob:')).length).toBeGreaterThanOrEqual(2)
   })
 
-  it('image 已解析数组同样渲染缩略图；空值渲染占位符 —', () => {
+  it('image 已解析数组同样渲染缩略图；空值渲染占位符 —', async () => {
     const field = makeField({ id: 1, name: '照片', field_type: 'image' })
     const { rerender } = renderProviders(
       <GridCell value={[{ file_key: 'k.png', filename: 'a.png', mime_type: 'image/png' }]} field={field} rowId={1} wid={3} />,
     )
-    const srcs = screen.getAllByRole('img').map(el => el.getAttribute('src'))
-    expect(srcs).toContain('/api/v1/workspaces/3/files/k.png?inline=true')
+    const imgs = await screen.findAllByRole('img')
+    expect(imgs.some(el => el.getAttribute('src')?.startsWith('blob:'))).toBe(true)
 
     rerender(<GridCell value={null} field={field} rowId={1} wid={3} />)
     expect(screen.getByText('—')).toBeInTheDocument()

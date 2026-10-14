@@ -13,6 +13,12 @@ import type {
 } from '@/api'
 import type { DocumentItem } from '@/api/documents'
 
+// 1x1 透明 PNG —— 附件端点默认响应体（内容不断言，只需是合法二进制）
+const _PNG_1PX = Uint8Array.from(
+  atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='),
+  (c) => c.charCodeAt(0),
+)
+
 // ─────────────── 测试 fixtures ───────────────
 
 export const mockUser: UserResponse = {
@@ -146,6 +152,11 @@ export const handlers = [
 
   // 工作区
   http.get('/api/v1/workspaces', () => HttpResponse.json([mockWorkspace])),
+
+  // 附件（useFileObjectUrl 经 axios 取 blob；1x1 PNG 字节即可）
+  http.get('/api/v1/workspaces/:wid/files/:fileKey', () =>
+    new HttpResponse(_PNG_1PX, { status: 200, headers: { 'Content-Type': 'image/png' } })),
+  http.delete('/api/v1/workspaces/:wid/files/:fileKey', () => new HttpResponse(null, { status: 204 })),
 
   // 表
   http.get('/api/v1/workspaces/:wid/tables', () => HttpResponse.json([mockTable])),
