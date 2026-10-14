@@ -300,6 +300,32 @@ def test_reset_fts_schema_cache_drops_ready_flag():
     assert search._fts_state["ready"] is False
 
 
+def test_ensure_fts_schema_cache_is_per_database():
+    """FTS 建表缓存按数据库区分：同进程换库写入时必须真的建表.
+
+    回归：进程级单一 ready 标记会让第二个库误判 ``documents_fts`` 已存在，
+    文档写入报 ``no such table: documents_fts``（CI 上 seed 文档用例即因此失败）。
+    """
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import sessionmaker
+
+    from cndb.plugins.documents.services import search
+
+    search.reset_fts_schema_cache()
+    engines = [create_engine("sqlite://"), create_engine("sqlite://")]
+    sessions = [sessionmaker(bind=engine)() for engine in engines]
+    try:
+        assert engines[0] is not engines[1]
+        for session in sessions:
+            search.ensure_fts_schema(session)
+            assert session.execute(text("SELECT count(*) FROM documents_fts")).scalar_one() == 0
+    finally:
+        for session in sessions:
+            session.close()
+        for engine in engines:
+            engine.dispose()
+
+
 # ── 3. 真实 datasets 完整性 ────────────────────────────────
 
 # 反面示例工作区：按需求不生成典型文档
