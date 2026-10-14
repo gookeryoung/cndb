@@ -106,27 +106,34 @@
 - **e2e 与单测重叠**：`frontend/tests/e2e/critical/navigation.spec.ts:22-65`（Tab 顺序/可见性/路由）与 `MainLayout.test.tsx:138-208` 覆盖同一行为，且单测更强（还断言激活态）。e2e 独有价值的是「seed 数据下的表行数=8」等用例。可删 navigation 的 3 个重叠用例；e2e 目前 `continue-on-error: true`，删除零风险但也零收益。
 - **前端测试样板未收敛**：26 个测试文件各自 `import { http, HttpResponse } from 'msw'` + `server.use(...)`；4 个文件（`api/hooks.test.tsx`、`api/hooks.placeholder.test.tsx`、`WorkspaceList.test.tsx`、`WorkspaceSettingsContent.test.tsx`）自建 Provider 栈而不用 `src/test/render-providers.tsx`。
 
-## 四、待确认项（需产品决策，非技术问题）
+## 四、已决策并执行：删除 `is_primary` 与 6 个伪系统字段类型
 
-**`Field.is_primary` 与 6 个"系统字段类型"在前端被使用，但后端从不产生 —— 证据已完备，需决策。**
+**结论（2026-10-14，用户确认「无存量库使用」）**：这些分支全部是恒假分支，已删除
+（提交 `eaf2de0`，19 文件 +51/-100）。
 
-- 后端权威字段类型清单共 19 种（`tables/field_types/registry.py:91-112`）：
+证据链（决策时的完整依据）：
+
+- 后端权威字段类型清单共 19 种（`tables/field_types/registry.py`）：
   text / longtext / number / float / boolean / date / datetime / select / multiselect /
   email / url / phone / percentage / timestamp / link / lookup / attachment / image / json。
   **没有** `auto_id`、`formula`、`created_time`、`updated_time`、`created_by`、`updated_by`。
-- `FieldResponse`（`tables/schemas/models.py:196-212`）**没有** `is_primary` 字段；
-  `grep -r is_primary src/cndb` 命中 0。
-- 前端 `FieldType` 联合类型自己标注这些名字是「历史别名（后端自动归一化）」
-  （`api/types/tables.ts:163-166`）。
-- 影响面：`FieldList` 的 PK 徽标与"非主键"分支、字段引入源字段过滤、`viewOptionSchema`
-  的 `is_primary` 伪类型匹配、`fieldValueFormat` 的标题字段优先选取、Calendar/Matrix/Wbs
-  的标题回退——**全部走的是各自的 fallback 路径**（功能正常，但主路径永不命中）。
-- 两种可能：(a) 老版本数据库里仍存有这些类型的 `tables_datafield.field_type` 行，
-  字段是刻意为遗留数据保留的；(b) 纯历史残留。
-- **建议**：确认无存量库使用后，删除前端这些分支（约 8 处 + 6 个类型名）；
-  若确需"主键/系统列"能力，应由后端补 `is_primary` 或系统字段类型，而不是继续让前端空判。
-- 本次只清理了其中**可证明冗余**的一处：`isReadonlyField` 的
-  `|| Boolean(field.is_primary && field.field_type === 'auto_id')` 被前一项完全覆盖。
+- `FieldResponse`（`tables/schemas/models.py`）**没有** `is_primary` 字段；
+  `grep -r is_primary src/cndb` 命中 0，6 个伪类型作为字段类型同样 0 命中。
+- 关键前提：`registry.normalize_field_type` 对**未知类型原样放行**，所以这些分支只可能
+  来自存量库的 `tables_datafield.field_type` 行 —— 用户确认无此依赖后即可安全删除。
+
+删除范围：`FieldType` 联合类型中的 6 个类型名、`Field.is_primary`、`fieldTypeMeta` 的
+6 条系统类型兜底、`cellValueUtils` 的只读集合（现只剩 `lookup`）、`fieldValueFormat` 的
+标题字段优先、`viewOptionSchema` 的伪类型匹配与 **`includePrimary` 选项**（其唯一作用
+就是回退到 is_primary 字段）、`FieldList`/`FieldManager` 的 PK 徽标与相关禁用逻辑、
+`calendarUtils`/`MatrixView` 的标题回退。测试同步删 3 个前提已消失的用例、改写 2 个、
+清理 10 个文件的 mock。
+
+**保留**：`long_text` / `decimal` / `multi_select`（后端 `_FIELD_TYPE_ALIASES` 的真实别名）
+与 `json`（registry 真实类型）；`created_by` / `updated_by` 作为**记录元数据**的用法
+（`RowResponse` 字段与剥离元数据的解构）逐处核对后原样保留。
+
+> 若将来确需"主键/系统列"能力，应由后端补 `is_primary` 或系统字段类型，而不是让前端空判。
 
 ## 五、配置与门禁的剩余项
 

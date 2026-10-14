@@ -31,6 +31,7 @@
 - 前端第二套设置持久化：`theme/tableSettings.loadTableSettings` / `saveTableSettings` —— 与 `store/tableSettings` 的 zustand persist **共用同一个 localStorage key `cndb_table_settings`**，存在互相覆盖隐患；持久化职责收敛到 store，本模块只留类型/默认值/`densityToSize`
 - 重复类型定义：`ViewMode`（`store/gridView.ts` 的副本）与 `WorkspaceRole`（issues/changeRequests 详情页各一份副本）
 - 死条件：`GridCell` 的 `isReadonlyField` 中 `|| Boolean(field.is_primary && field.field_type === 'auto_id')` 被前一项 `readonly.has(field.field_type)` 完全覆盖（auto_id 本就在该集合内）
+- 前端 `Field.is_primary` 与 6 个伪系统字段类型（`auto_id` / `formula` / `created_time` / `updated_time` / `created_by` / `updated_by`）的**全部恒假分支**（19 文件 +51/-100）。经确认无存量库使用后删除：后端 registry 的 19 种类型里没有这 6 个，`FieldResponse` 无 `is_primary`，且 `normalize_field_type` 对未知类型原样放行 —— 这些分支只可能来自存量库。一并删除只为其服务的 `includePrimary` schema 选项。**保留** `long_text`/`decimal`/`multi_select`（后端真实别名）与 `json`（真实类型），以及 `created_by`/`updated_by` 作为记录元数据的用法
 
 ### 变更
 
