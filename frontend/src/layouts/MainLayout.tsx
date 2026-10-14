@@ -7,7 +7,7 @@ import {
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
   SettingOutlined, SafetyOutlined, QuestionCircleOutlined,
   MenuOutlined, InfoCircleOutlined,
-  DatabaseOutlined, BarChartOutlined, FormOutlined,
+  DatabaseOutlined, BarChartOutlined,
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, FileTextOutlined,
 } from '@ant-design/icons'
@@ -136,14 +136,6 @@ export default function MainLayout() {
       ),
     },
     {
-      key: 'forms',
-      label: (
-        <span>
-          <FormOutlined /> 表单
-        </span>
-      ),
-    },
-    {
       key: 'documents',
       label: (
         <span>
@@ -183,15 +175,13 @@ export default function MainLayout() {
   // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
   const activeWsTab = inTableContext
     ? 'tables'
-    : location.includes('/forms')
-      ? 'forms'
-      : location.includes('/documents')
-        ? 'documents'
-        : location.includes('/reports')
-          ? 'reports'
-          : location.includes('/settings')
-            ? 'settings'
-            : 'tables'
+    : location.includes('/documents')
+      ? 'documents'
+      : location.includes('/reports')
+        ? 'reports'
+        : location.includes('/settings')
+          ? 'settings'
+          : 'tables'
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
