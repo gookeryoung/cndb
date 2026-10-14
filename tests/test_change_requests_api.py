@@ -247,6 +247,27 @@ class TestListAndDetail:
         assert item["field_conflicts"] == ["数量"]
         assert item["current_values"]["数量"] == 4
 
+    def test_detail_update_missing_row_current_values_empty_dict(
+        self, client, ws, table, db, auth_owner, auth_viewer
+    ) -> None:
+        """UPDATE 申请引用的行被软删除后，详情接口仍返回 dict 契约（空 dict + row_missing=True），
+        前端 FieldDiffTable 不会因 null 索引而崩溃。"""
+        dt, ids = table
+        url = CR.format(ws=ws.id, tb=dt.id)
+        cr = client.post(
+            url,
+            json={"items": [{"op": "update", "row_id": ids[1], "values": {"数量": 99}}]},
+            headers=auth_viewer,
+        ).json()
+        # 审批者把行删了
+        rec.trash_row(db.get_bind(), dt, ids[1], db=db)
+        detail = client.get(f"{url}/{cr['id']}", headers=auth_owner).json()
+        item = detail["items"][0]
+        assert item["row_missing"] is True
+        assert isinstance(item["current_values"], dict)
+        assert item["current_values"] == {}
+        assert item["field_conflicts"] == []
+
 
 class TestMerge:
     def _create(
