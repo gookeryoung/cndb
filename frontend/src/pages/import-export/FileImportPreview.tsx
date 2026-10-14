@@ -18,36 +18,11 @@
  */
 
 import { useCallback, useMemo, useState } from 'react'
-import { Modal, Input, Table, Select, Tag, Progress, Button, Empty, Tooltip, Popover, App as AntApp } from 'antd'
-import type { TableProps } from 'antd'
-import { FileTextOutlined, SwapOutlined, WarningOutlined, PlusOutlined, ExclamationCircleOutlined, CheckOutlined, InfoCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
+import { Modal, Input, Tag, Button, Popover, App as AntApp } from 'antd'
+import { CheckOutlined, FileTextOutlined, InfoCircleOutlined, PlusOutlined, WarningOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { FileAnalyzeResult, FileImportResult } from '@/api'
-import { PREVIEW_FIELD_TYPE_VALUES, FIELD_TYPE_META, getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 
-/** antd Table 在 flex 容器中自适应高度所需的全局样式（仅注入一次）. */
-/** 类型下拉选项：由共享字段类型元数据生成（纯中文标签，value 保持后端英文类型不变） */
-const PREVIEW_TYPE_OPTIONS = PREVIEW_FIELD_TYPE_VALUES.map(v => ({
-  value: v,
-  label: FIELD_TYPE_META[v]?.label ?? v,
-}))
-
-/** 列分析项（后端 analyze 返回） */
-interface AnalyzeColumn {
-  name: string
-  field_type: string
-  sample_values?: string[]
-  null_ratio?: number
-  options?: string[]
-}
-
-/** 用户编辑的覆盖项 —— 与后端 column_overrides 同结构 */
-interface ColumnOverride {
-  field_type: string
-  options?: string[]
-}
-
-/** 单个单元格转换结果 */
 
 interface Props {
   open: boolean
@@ -62,8 +37,16 @@ interface Props {
 /** timestamp 候选值域常量 —— 与后端 TimestampFieldType/transfer 推断层双向锁定：
  * 秒级 [1e9, 4102444800]，毫秒级 (4102444800, 4102444800000]（预览时 //1000 归一为秒显示） */
 
+import { getFieldTypeColor } from '@/utils/fieldTypeMeta'
+
 import { collectUniqueValues, tryConvert } from './importPreviewConvert'
+import { PREVIEW_TYPE_OPTIONS } from './importPreviewOptions'
 import { useTableFlexFillStyle } from './useTableFlexFillStyle'
+
+import DataPreviewTable from './DataPreviewTable'
+import FieldsList from './FieldsList'
+import SelectedFieldEditor from './SelectedFieldEditor'
+import type { AnalyzeColumn, ColumnOverride } from './importPreviewTypes'
 
 export default function FileImportPreview({ open, wid, file, analyzeResult, onClose, onSuccess }: Props) {
   const { message } = AntApp.useApp()
@@ -206,259 +189,6 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
     }
   }
 
-  // ── 左侧：字段列表 ──
-  const renderFieldsList = () => (
-    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 6 }}>
-      {effectiveColumns.map(col => {
-        const failCnt = columnFailCounts[col.name] ?? 0
-        const baseCol = analyzeResult?.columns.find(c => c.name === col.name)
-        const isAutoType = !overrides[col.name]
-        const isDate = col.field_type === 'date' || col.field_type === 'datetime'
-        const isTimestamp = col.field_type === 'timestamp'
-        const isLongtext = col.field_type === 'longtext'
-        const isSelect = col.field_type === 'select' || col.field_type === 'multiselect'
-        const hasError = failCnt > 0
-        // 卡片背景：选中 > 有异常 > 无异常（绿色）
-        let cardBg = 'var(--cn-bg-muted)'
-        let cardBorder = 'var(--cn-border-soft)'
-        if (selectedField === col.name) {
-          cardBg = 'color-mix(in srgb, #3b82f6 10%, var(--cn-bg-container))'
-          cardBorder = 'color-mix(in srgb, #3b82f6 45%, transparent)'
-        } else if (hasError) {
-          cardBg = 'color-mix(in srgb, #ef4444 10%, var(--cn-bg-container))'
-          cardBorder = 'color-mix(in srgb, #ef4444 40%, transparent)'
-        } else {
-          cardBg = 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))'
-          cardBorder = 'color-mix(in srgb, #22c55e 40%, transparent)'
-        }
-        return (
-          <div
-            key={col.name}
-            onClick={() => setSelectedField(col.name)}
-            style={{
-              padding: 8,
-              marginBottom: 6,
-              background: cardBg,
-              border: `1px solid ${cardBorder}`,
-              borderRadius: 5,
-              cursor: 'pointer',
-            }}
-          >
-            {/* 字段名 + 类型选择 + 置信度 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <div style={{ fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {col.name}
-                {!isAutoType && <Tag color="purple" style={{ marginLeft: 4 }}>已调</Tag>}
-              </div>
-              {isSelect && <Tag color={getFieldTypeColor('select')}>单选</Tag>}
-              {isDate && <Tag color={getFieldTypeColor('date')}>日期</Tag>}
-              {hasError ? (
-                <Tooltip title={`有 ${failCnt} 行无法转换为此类型`}>
-                  <Tag color="red" icon={<WarningOutlined />}>{failCnt}</Tag>
-                </Tooltip>
-              ) : (
-                <Tooltip title="无转换异常">
-                  <Tag color="success" icon={<CheckOutlined />} style={{ margin: 0 }} />
-                </Tooltip>
-              )}
-            </div>
-
-            {/* 类型选择下拉 */}
-            <Select
-              size="small"
-              value={col.field_type}
-              onChange={(v) => changeFieldType(col.name, v)}
-              options={PREVIEW_TYPE_OPTIONS}
-              style={{ width: '100%', marginBottom: 4 }}
-            />
-
-            {/* 空值率进度条 */}
-            {baseCol?.null_ratio != null && baseCol.null_ratio > 0 && (
-              <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span>空值</span>
-                <Progress
-                  size="small"
-                  percent={Math.round(baseCol.null_ratio * 100)}
-                  strokeColor={baseCol.null_ratio > 0.5 ? '#ef4444' : baseCol.null_ratio > 0.2 ? '#f59e0b' : '#22c55e'}
-                  style={{ flex: 1 }}
-                />
-              </div>
-            )}
-
-            {/* 类型识别提示（date/timestamp/longtext/select 特别提示） */}
-            {isSelect && (
-              <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 2 }}>
-                <SwapOutlined /> 低基数 → select（{col.options?.length ?? 0}）
-              </div>
-            )}
-            {isDate && (
-              <div style={{ fontSize: 11, color: '#22c55e', marginBottom: 2 }}>
-                <FileTextOutlined /> 识别为日期
-              </div>
-            )}
-            {isTimestamp && (
-              <div style={{ fontSize: 11, color: '#22c55e', marginBottom: 2 }}>
-                <ClockCircleOutlined /> 识别为时间戳（秒/毫秒自动归一）
-              </div>
-            )}
-            {isLongtext && (
-              <div style={{ fontSize: 11, color: '#06b6d4', marginBottom: 2 }}>
-                <FileTextOutlined /> 识别为长文本
-              </div>
-            )}
-
-            {/* 样本值 */}
-            <div style={{ fontSize: 11, color: 'var(--cn-text-muted)' }}>
-              样本: {(col.sample_values ?? []).slice(0, 3).map((v, i) => (
-                <Tag key={i} style={{ marginBottom: 1, background: 'var(--cn-bg-muted)' }}>{v}</Tag>
-              ))}
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-
-  // ── 左侧：选中字段的 select options 编辑区 ──
-  const renderSelectedFieldEditor = () => {
-    if (!selectedField) return null
-    const col = effectiveColumns.find(c => c.name === selectedField)
-    if (!col) return null
-
-    const isSelect = col.field_type === 'select' || col.field_type === 'multiselect'
-    if (!isSelect) return null
-
-    const options = overrides[col.name]?.options ?? col.options ?? []
-
-    return (
-      <div style={{ marginTop: 8, padding: 12, background: 'var(--cn-bg-warning-subtle)', border: '1px solid color-mix(in srgb, #f59e0b 45%, transparent)', borderRadius: 6 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'color-mix(in srgb, #f59e0b 70%, var(--cn-text-primary))', marginBottom: 8 }}>
-          <SwapOutlined /> 编辑 {col.name} 的选项（{options.length} 个）
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-          {options.map((opt, i) => (
-            <Tag
-              key={i}
-              closable
-              style={{ padding: '2px 8px', fontSize: 12 }}
-              onClose={() => updateOptions(col.name, options.filter((_, idx) => idx !== i))}
-            >
-              {opt}
-            </Tag>
-          ))}
-          <Button
-            size="small"
-            type="dashed"
-            icon={<PlusOutlined />}
-            onClick={() => {
-              const v = window.prompt('输入新选项值')
-              if (v && v.trim() && !options.includes(v.trim())) {
-                updateOptions(col.name, [...options, v.trim()])
-              }
-            }}
-          >
-            添加
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  // ── 右侧：带实时转换的数据预览表 ──
-  const renderDataPreview = () => {
-    if (!analyzeResult) return <Empty description="请先上传文件" />
-    const cols = effectiveColumns
-    if (cols.length === 0) return <Empty description="没有有效列" />
-
-    const columns = cols.map(col => {
-      const failCnt = columnFailCounts[col.name] ?? 0
-      return {
-        title: (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-            <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.name}</span>
-            <Tag color={getFieldTypeColor(col.field_type)} style={{ margin: 0 }}>{getFieldTypeLabel(col.field_type)}</Tag>
-            {failCnt > 0 && (
-              <Tooltip title={`有 ${failCnt} 行无法转换`}>
-                <ExclamationCircleOutlined style={{ color: '#ef4444' }} />
-              </Tooltip>
-            )}
-          </div>
-        ),
-        dataIndex: col.name,
-        width: 160,
-        render: (_v: unknown, row: Record<string, unknown>) => {
-          const raw = row[col.name]
-          const t = tryConvert(raw, col.field_type)
-          if (t.rawText === '' || t.convertedText === '') {
-            return <span style={{ color: 'var(--cn-text-disabled)', fontStyle: 'italic' }}>(空)</span>
-          }
-          if (t.failed) {
-            return (
-              <Tooltip title={`原始值 "${t.rawText}" 无法转为 ${col.field_type}`}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ color: '#ef4444', textDecoration: 'line-through' }}>{t.rawText}</span>
-                  <WarningOutlined style={{ color: '#ef4444', fontSize: 12 }} />
-                </span>
-              </Tooltip>
-            )
-          }
-          // 转换成功且与原始不同才显示"→"对比
-          if (t.convertedText !== t.rawText) {
-            return (
-              <span>
-                <span style={{ color: 'var(--cn-text-muted)', textDecoration: 'line-through', fontSize: 11 }}>{t.rawText}</span>
-                <span style={{ color: '#22c55e', marginLeft: 4, fontWeight: 500 }}>→ {t.convertedText}</span>
-              </span>
-            )
-          }
-          return <span>{t.rawText}</span>
-        },
-      }
-    })
-
-    const failedRows = sampleRows.filter(row =>
-      cols.some(col => tryConvert(row[col.name], col.field_type).failed)
-    )
-
-    const errorFieldCount = cols.filter(c => (columnFailCounts[c.name] ?? 0) > 0).length
-    const okFieldCount = cols.length - errorFieldCount
-
-    // 统计卡片公共样式
-    const statBox = (bg: string, numColor = 'var(--cn-text-primary)', icon: any = null, num: any = 0, label = '') => (
-      <div style={{ padding: '4px 6px', background: bg, borderRadius: 4, textAlign: 'center' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: numColor, lineHeight: 1.2 }}>
-          {icon}{num}
-        </div>
-        <div style={{ fontSize: 10, color: 'var(--cn-text-muted)', marginTop: 1 }}>{label}</div>
-      </div>
-    )
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        {/* 汇总栏：6 项统计（固定高度，不随表滚动） */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexShrink: 0 }}>
-          {statBox('var(--cn-bg-muted)', 'var(--cn-text-primary)', null, analyzeResult.total_rows, '总行数')}
-          {statBox('var(--cn-bg-muted)', 'var(--cn-text-primary)', null, cols.length, '字段数')}
-          {statBox('var(--cn-bg-muted)', 'var(--cn-text-primary)', null, sampleRows.length, '预览行')}
-          {statBox(okFieldCount > 0 ? 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))' : 'var(--cn-bg-muted)', okFieldCount > 0 ? '#22c55e' : 'var(--cn-text-primary)', <CheckOutlined style={{ marginRight: 1 }} />, okFieldCount, '正常')}
-          {statBox(errorFieldCount > 0 ? 'color-mix(in srgb, #ef4444 10%, var(--cn-bg-container))' : 'var(--cn-bg-muted)', errorFieldCount > 0 ? '#ef4444' : 'var(--cn-text-primary)', <WarningOutlined style={{ marginRight: 1 }} />, errorFieldCount, '异常')}
-          {statBox(failedRows.length > 0 ? 'color-mix(in srgb, #ef4444 10%, var(--cn-bg-container))' : 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))', failedRows.length > 0 ? '#ef4444' : '#22c55e', null, failedRows.length, '异常行')}
-        </div>
-
-        {/* Table 容器 —— 用 flex 撑满剩余空间，通过注入样式让 antd 内层 body 滚动 */}
-        <div className="import-preview-table-wrapper">
-          <Table
-            size="small"
-            dataSource={(sampleRows as any[]).map((r, i) => ({ ...r, __key: `r-${i}` }))}
-            rowKey="__key"
-            columns={columns as TableProps['columns']}
-            scroll={{ x: cols.length * 160 }}
-            pagination={{ pageSize: 20, size: 'small' }}
-          />
-        </div>
-      </div>
-    )
-  }
 
   const overriddenCount = Object.keys(overrides).length
   const hasSelectFields = effectiveColumns.some(c => c.field_type === 'select' || c.field_type === 'multiselect')
@@ -533,10 +263,23 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
             字段与类型（{effectiveColumns.length}）
           </div>
           {/* 字段列表（滚动） */}
-          {renderFieldsList()}
+          <FieldsList
+        analyzeResult={analyzeResult}
+        effectiveColumns={effectiveColumns}
+        overrides={overrides}
+        columnFailCounts={columnFailCounts}
+        selectedField={selectedField}
+        setSelectedField={setSelectedField}
+        changeFieldType={changeFieldType}
+      />
           {/* 选中字段的 select 选项编辑区（贴底，flex-shrink 防被挤掉） */}
           <div style={{ flexShrink: 0 }}>
-            {renderSelectedFieldEditor()}
+            <SelectedFieldEditor
+        effectiveColumns={effectiveColumns}
+        overrides={overrides}
+        selectedField={selectedField}
+        updateOptions={updateOptions}
+      />
           </div>
         </div>
 
@@ -601,7 +344,12 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
           </div>
 
           {/* 数据预览（内部 flex:1 撑满） */}
-          {renderDataPreview()}
+          <DataPreviewTable
+        analyzeResult={analyzeResult}
+        effectiveColumns={effectiveColumns}
+        columnFailCounts={columnFailCounts}
+        sampleRows={sampleRows}
+      />
         </div>
       </div>
     </Modal>
