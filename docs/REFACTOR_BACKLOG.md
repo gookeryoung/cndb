@@ -51,7 +51,7 @@
 
 ### 其余 >500 行文件（完整清单）
 
-以上为优先候选。全仓共 37 个 >500 行的源码文件，其余 29 个如下 ——
+以上为优先候选。全仓共 36 个 >500 行的源码文件，其余 28 个如下 ——
 多数是拆分后落在 500–660 行、且已单一职责的文件，暂不作为优先候选。
 
 **后端（17）**：
@@ -74,11 +74,10 @@
 - `src/cndb/plugins/tables/routers/bulk_import.py` 504
 - `src/cndb/plugins/tables/services/fields/field_import.py` 502
 
-**前端（12）**：
+**前端（11）**：
 
 - `src/pages/fields/FieldManager/index.tsx` 678
 - `src/pages/grid/views/GanttView.tsx` 655
-- `src/pages/reports/TemplateEditorModal.tsx` 630
 - `src/pages/workspace/TablesList.tsx` 617
 - `src/pages/import-export/ImportExportDialog/ImportPanel.tsx` 615
 - `src/pages/documents/DocumentTree.tsx` 607
