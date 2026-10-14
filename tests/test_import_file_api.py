@@ -158,6 +158,42 @@ class TestImportFileAnalyzeApi:
         assert type_map["价格"] in ("float", "number")
         assert type_map["库存"] == "number"
 
+    def test_analyze_xlsx_empty_header_returns_400(self, client, ws_auth):
+        """XLSX 表头含空列名 → 400 + 明确提示，而非 500 内部错误."""
+        ws_id, auth = ws_auth
+        xlsx_bytes = _build_xlsx_bytes(headers=["名称", "", "备注"], rows=[["a", "b", "c"]])
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file/analyze",
+            files={
+                "file": (
+                    "bad_header.xlsx",
+                    xlsx_bytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            headers=auth,
+        )
+        assert r.status_code == 400
+        assert "空列名" in r.json()["detail"]
+
+    def test_analyze_xlsx_duplicate_header_returns_400(self, client, ws_auth):
+        """XLSX 表头重复列名 → 400 + 明确提示."""
+        ws_id, auth = ws_auth
+        xlsx_bytes = _build_xlsx_bytes(headers=["名称", "价格", "价格"], rows=[["a", 1, 2]])
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file/analyze",
+            files={
+                "file": (
+                    "dup_header.xlsx",
+                    xlsx_bytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            headers=auth,
+        )
+        assert r.status_code == 400
+        assert "重复列名" in r.json()["detail"]
+
     def test_analyze_semicolon_csv(self, client, ws_auth):
         """分号分隔的 CSV（欧洲格式）."""
         ws_id, auth = ws_auth
