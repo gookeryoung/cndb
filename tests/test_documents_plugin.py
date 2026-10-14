@@ -633,3 +633,88 @@ class TestEditLockRegistry:
         # 释放后其他人可获取
         edit_lock_registry.acquire(1, user_id=2, username="bob")
         edit_lock_registry._locks.clear()
+
+
+# ── 文档导出（Markdown / Word / PDF）──
+
+
+class TestDocumentExport:
+    def test_export_markdown_returns_source(self, client, doc_api, auth_headers):
+        content = "# 标题\n\n正文 **粗体**。\n"
+        doc = _create_doc(client, doc_api, auth_headers, title="导出用例", content=content)
+
+        r = client.get(f"{doc_api}/{doc['id']}/export", params={"format": "md"}, headers=auth_headers)
+
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"].startswith("text/markdown")
+        assert r.content.decode("utf-8") == content
+        # 中文标题走 RFC 5987 filename*，附件头同时含 ASCII fallback
+        assert "filename*=UTF-8''" in r.headers["content-disposition"]
+
+    def test_export_markdown_alias(self, client, doc_api, auth_headers):
+        doc = _create_doc(client, doc_api, auth_headers)
+        r = client.get(f"{doc_api}/{doc['id']}/export", params={"format": "markdown"}, headers=auth_headers)
+        assert r.status_code == 200
+        assert r.content.decode("utf-8").startswith("# 标题")
+
+    def test_export_docx(self, client, doc_api, auth_headers):
+        doc = _create_doc(
+            client,
+            doc_api,
+            auth_headers,
+            content="# 报表\n\n| 部门 | 人数 |\n| --- | --- |\n| 研发 | 3 |\n",
+        )
+
+        r = client.get(f"{doc_api}/{doc['id']}/export", params={"format": "docx"}, headers=auth_headers)
+
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"].startswith(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        # docx 是 zip 容器，魔数为 PK\x03\x04
+        assert r.content[:4] == b"PK\x03\x04"
+
+    def test_export_pdf(self, client, doc_api, auth_headers):
+        doc = _create_doc(client, doc_api, auth_headers, content="# 月度报告\n\n正文内容。\n")
+
+        r = client.get(f"{doc_api}/{doc['id']}/export", params={"format": "pdf"}, headers=auth_headers)
+
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"].startswith("application/pdf")
+        assert r.content[:4] == b"%PDF"
+
+    def test_export_unsupported_format(self, client, doc_api, auth_headers):
+        doc = _create_doc(client, doc_api, auth_headers)
+        r = client.get(f"{doc_api}/{doc['id']}/export", params={"format": "xyz"}, headers=auth_headers)
+        assert r.status_code == 400
+        assert "不支持的导出格式" in r.json()["detail"]
+
+    def test_export_folder_rejected(self, client, doc_api, auth_headers):
+        folder = _create_doc(client, doc_api, auth_headers, title="目录", content="", is_folder=True)
+        r = client.get(f"{doc_api}/{folder['id']}/export", params={"format": "md"}, headers=auth_headers)
+        assert r.status_code == 400
+        assert "文件夹" in r.json()["detail"]
+
+    def test_export_missing_document(self, client, doc_api, auth_headers):
+        r = client.get(f"{doc_api}/999999/export", params={"format": "md"}, headers=auth_headers)
+        assert r.status_code == 404
+
+    def test_export_requires_membership(self, client, doc_api, auth_headers):
+        doc = _create_doc(client, doc_api, auth_headers)
+        # 匿名（无认证头）非工作区成员 → 403
+        r = client.get(f"{doc_api}/{doc['id']}/export", params={"format": "md"})
+        assert r.status_code == 403
+
+    def test_export_uses_latest_version(self, client, doc_api, auth_headers):
+        doc = _create_doc(client, doc_api, auth_headers, content="v1 内容\n")
+        full = _get_content(client, doc_api, auth_headers, doc["id"])
+        r = client.put(
+            f"{doc_api}/{doc['id']}/content",
+            json={"content": "v2 内容\n", "base_updated_at": full["updated_at"]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+
+        out = client.get(f"{doc_api}/{doc['id']}/export", params={"format": "md"}, headers=auth_headers)
+
+        assert out.content.decode("utf-8") == "v2 内容\n"

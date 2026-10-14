@@ -51,12 +51,6 @@ function TableSettingsStub() {
     return <div data-testid="table-settings-stub">{loc.pathname}</div>
 }
 
-/** 报表路由桩 —— 展示当前 pathname 供断言 */
-function ReportsStub() {
-    const loc = useLocation()
-    return <div data-testid="reports-page-stub">{loc.pathname}</div>
-}
-
 /** 文档路由桩 —— 展示当前 pathname 供断言 */
 function DocumentsStub() {
     const loc = useLocation()
@@ -81,7 +75,6 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/tables/:tid/change-requests" element={<ChangeRequestsStub />} />
                 <Route path="w/:wid/tables/:tid/settings" element={<TableSettingsStub />} />
                 <Route path="w/:wid/documents" element={<DocumentsStub />} />
-                <Route path="w/:wid/reports" element={<ReportsStub />} />
                 <Route path="w/:wid/settings" element={<SettingsStub />} />
                 <Route path="admin" element={<AdminStub />} />
             </Route>
@@ -122,8 +115,7 @@ describe('MainLayout 顶部导航', () => {
             expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
         })
 
-        // 「报表」「工作区设置」是工作区级功能，已移入 Content 分页导航，顶部不再保留
-        expect(screen.queryByRole('button', { name: /报表/ })).toBeNull()
+        // 「工作区设置」是工作区级功能，已移入 Content 分页导航，顶部不再保留
         expect(screen.queryByTestId('workspace-settings-nav')).toBeNull()
 
         const adminBtn = screen.getByRole('button', { name: /管理台/ })
@@ -142,12 +134,9 @@ describe('MainLayout 顶部导航', () => {
         await waitFor(() => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
-        // tab 数量徽标：数据表显示表数量（msw 返回 1 张表）；报表显示 report_count（mock 0 也显示）
+        // tab 数量徽标：数据表显示表数量（msw 返回 1 张表），文档显示文档数
         await waitFor(() => {
             expect(screen.getByRole('tab', { name: /数据表/ })).toHaveTextContent('1')
-        })
-        await waitFor(() => {
-            expect(screen.getByRole('tab', { name: /报表/ })).toHaveTextContent('0')
         })
         expect(screen.getByRole('tab', { name: /数据表/ }).closest('.ant-tabs-tab'))
             .toHaveClass('ant-tabs-tab-active')
@@ -159,15 +148,9 @@ describe('MainLayout 顶部导航', () => {
         })
         expect(screen.getByRole('tab', { name: /工作区设置/ }).closest('.ant-tabs-tab'))
             .toHaveClass('ant-tabs-tab-active')
-
-        // 点击「报表」tab → /w/10/reports
-        fireEvent.click(screen.getByRole('tab', { name: /报表/ }))
-        await waitFor(() => {
-            expect(screen.getByTestId('reports-page-stub')).toHaveTextContent('/w/10/reports')
-        })
     })
 
-    it('分页导航含「文档」页签：位于「报表」之前、带文档数徽标，点击导航到文档模块', async () => {
+    it('分页导航含「文档」页签：位于「工作区设置」之前、带文档数徽标，点击导航到文档模块', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
@@ -175,9 +158,9 @@ describe('MainLayout 顶部导航', () => {
         })
 
         const docsTab = screen.getByRole('tab', { name: /文档/ })
-        const reportsTab = screen.getByRole('tab', { name: /报表/ })
-        // 文档页签位于报表之前（DOM 顺序约束）
-        expect(docsTab.compareDocumentPosition(reportsTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        const settingsTab = screen.getByRole('tab', { name: /工作区设置/ })
+        // 文档页签位于工作区设置之前（DOM 顺序约束）
+        expect(docsTab.compareDocumentPosition(settingsTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
         // 徽标显示文档数（msw 返回 3 个文档）
         await waitFor(() => {
@@ -200,7 +183,7 @@ describe('MainLayout 顶部导航', () => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
         // antd 图标 aria-label 会拼进 accessible name（如 'database数据表'），故用子串正则匹配
-        const tabNames = ['数据表', '文档', '报表', '工作区设置']
+        const tabNames = ['数据表', '文档', '工作区设置']
         for (const name of tabNames) {
             const tab = screen.getByRole('tab', { name: new RegExp(name) })
             expect(tab.querySelector('.anticon')).not.toBeNull()
@@ -234,7 +217,7 @@ describe('MainLayout 顶部导航', () => {
 
         // 分页导航依赖 wid 渲染；无工作区上下文时整体不渲染，侧边栏由「请先从顶部选择一个工作区」提示引导
         expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull()
-        expect(screen.queryByRole('tab', { name: /报表/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /文档/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: /工作区设置/ })).toBeNull()
     })
 

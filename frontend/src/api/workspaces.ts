@@ -9,7 +9,7 @@ import type {
 export const workspaceApi = {
   list: () =>
     api
-      .get<Array<Workspace & { pinned?: boolean; table_count?: number; member_count?: number; report_count?: number }>>('/v1/workspaces')
+      .get<Array<Workspace & { pinned?: boolean; table_count?: number; member_count?: number }>>('/v1/workspaces')
       .then(r => r.data),
   create: (data: WorkspaceCreate) =>
     api.post<Workspace>('/v1/workspaces', data).then(r => r.data),

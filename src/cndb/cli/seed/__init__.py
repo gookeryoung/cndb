@@ -59,25 +59,16 @@ from cndb.cli.seed.fields import (
 from cndb.cli.seed.paths import _get_datasets_dir, _get_workspace_view_configs, _workspace_display_name
 from cndb.cli.seed.permission_demo import _seed_permission_demo
 from cndb.cli.seed.runner import seed
-from cndb.cli.seed.samples import REPORT_TEMPLATE_SPECS, _generate_sample_reports
 from cndb.cli.seed.sqlite import (
     _drop_all_tables_sqlite,
     _remove_seed_sqlite_pragmas,
     _set_seed_sqlite_pragmas,
 )
-from cndb.cli.seed.templates import (
-    EMPLOYEE_ROSTER_PARAMETER,
-    EMPLOYEE_ROSTER_TEMPLATE,
-    _seed_report_templates,
-    _seed_sales_tables,
-)
+from cndb.cli.seed.templates import _seed_sales_tables
 from cndb.cli.seed.views import _seed_demo_personal_views, _seed_views, _validate_view_fields
 
 __all__ = [
-    "EMPLOYEE_ROSTER_PARAMETER",
-    "EMPLOYEE_ROSTER_TEMPLATE",
     "FIELD_IMPORT_RULES",
-    "REPORT_TEMPLATE_SPECS",
     "_DOC_FRONT_MATTER_RE",
     "_DOC_ORDER_PREFIX_RE",
     "_DOC_STATUSES",
@@ -93,7 +84,6 @@ __all__ = [
     "_document_tag_color",
     "_document_title_from_name",
     "_drop_all_tables_sqlite",
-    "_generate_sample_reports",
     "_get_datasets_dir",
     "_get_sa_table_by_name",
     "_get_workspace_document_dirs",
@@ -107,7 +97,6 @@ __all__ = [
     "_seed_demo_personal_views",
     "_seed_documents",
     "_seed_permission_demo",
-    "_seed_report_templates",
     "_seed_sales_tables",
     "_seed_views",
     "_seed_xlsx_table",

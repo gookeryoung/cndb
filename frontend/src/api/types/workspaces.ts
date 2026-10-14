@@ -7,8 +7,6 @@ export interface Workspace {
   pinned?: boolean; created_at?: string; updated_at?: string
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
   current_user_role?: WorkspaceRole | null
-  /** 归属报表数量 —— GET /v1/workspaces 列表聚合字段（与 table_count 同事务） */
-  report_count?: number
 }
 export interface WorkspaceDetail extends Workspace {
   member_count?: number; table_count?: number

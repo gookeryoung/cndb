@@ -18,7 +18,6 @@ const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'))
 const WorkspaceList = lazy(() => import('@/pages/workspace/WorkspaceList'))
 const TablesList = lazy(() => import('@/pages/workspace/TablesList'))
 const GridPage = lazy(() => import('@/pages/grid/GridPage'))
-const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'))
 const IssuesPage = lazy(() => import('@/pages/issues/IssuesPage'))
 const IssueDetailPage = lazy(() => import('@/pages/issues/IssueDetailPage'))
 const ChangeRequestsPage = lazy(() => import('@/pages/changeRequests/ChangeRequestsPage'))
@@ -78,9 +77,6 @@ function AuthenticatedApp() {
           } />
           <Route path="w/:wid/tables/:tid/settings" element={
             <Suspense fallback={<PageFallback />}><TableSettingsPage /></Suspense>
-          } />
-          <Route path="w/:wid/reports" element={
-            <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
           } />
           <Route path="w/:wid/documents" element={
             <Suspense fallback={<PageFallback />}><DocumentsLayout /></Suspense>

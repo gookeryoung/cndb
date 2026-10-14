@@ -34,7 +34,6 @@ export const mockWorkspace: Workspace = {
   id: 10,
   name: '测试工作区',
   description: 'MSW 默认工作区',
-  report_count: 0,
 }
 
 export const mockTable: TableSummary = {

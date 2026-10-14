@@ -13,8 +13,8 @@
   硬编码 utf-8 缺陷）；前端抽出 `utils/{paletteColor,datetime,formatSize}`
 - 测试收敛：删除 12 个与主测试重复的补覆盖率用例、2 个零引用 fixture、1 个空壳测试
 - 覆盖率口径：Makefile `cov` 与 CI 统一为 `--cov=cndb`（此前本地裸 `--cov` 虚高到 97.9%）
-- 超大文件拆分：`cli/seed.py`、`reports/routers/reports.py`、`api/types.ts`、
-  `ImportPanel.tsx`、`ReportsPage.tsx`、`GridCell.tsx`、`GanttView.tsx`、
+- 超大文件拆分：`cli/seed.py`、`api/types.ts`、
+  `ImportPanel.tsx`、`GridCell.tsx`、`GanttView.tsx`、
   `DocumentsPage.tsx`、`CalendarView.tsx`、`KanbanView.tsx`、`workspaces/routers/workspaces.py`、
   `tables/services/fields/field_ops.py`、`tables/routers/bulk.py`、
   `tables/services/transfer/normalize.py`、`cli/users.py`、`cli/restore.py`、

@@ -6,6 +6,7 @@ import {
   Alert,
   Button,
   Drawer,
+  Dropdown,
   Input,
   Popconfirm,
   Space,
@@ -17,6 +18,10 @@ import {
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import {
   BranchesOutlined,
+  DownloadOutlined,
+  FileMarkdownOutlined,
+  FilePdfOutlined,
+  FileWordOutlined,
   HistoryOutlined,
   LinkOutlined,
   MenuOutlined,
@@ -31,6 +36,7 @@ import { documentsApi } from '@/api/documents'
 import { tableApi } from '@/api'
 import type {
   DocumentDetail,
+  DocumentExportFormat,
   DocumentItem,
   OutgoingLinkItem,
   VersionItem,
@@ -114,6 +120,24 @@ export default function DocumentEditorPage() {
         '保存失败'
       setSaveError(detail)
     },
+  })
+
+  // 导出文档：Markdown / Word / PDF（浏览器直接下载）
+  const exportMut = useMutation({
+    mutationFn: (format: DocumentExportFormat) => documentsApi.exportFile(workspaceId, id, format),
+    onSuccess: (blob: Blob, format: DocumentExportFormat) => {
+      const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${docQuery.data?.title || 'document'}_${ts}.${format}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      message.success('已导出')
+    },
+    onError: () => message.error('导出失败'),
   })
 
   const tagsQuery = useQuery({
@@ -350,6 +374,21 @@ export default function DocumentEditorPage() {
           <Button icon={<HistoryOutlined />} onClick={() => setVersionsOpen(true)}>
             版本{doc.version_count > 0 ? ` (${doc.version_count})` : ''}
           </Button>
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                { key: 'docx', icon: <FileWordOutlined />, label: '导出 Word (.docx)' },
+                { key: 'pdf', icon: <FilePdfOutlined />, label: '导出 PDF (.pdf)' },
+                { key: 'md', icon: <FileMarkdownOutlined />, label: '导出 Markdown (.md)' },
+              ],
+              onClick: ({ key }) => exportMut.mutate(key as DocumentExportFormat),
+            }}
+          >
+            <Button icon={<DownloadOutlined />} loading={exportMut.isPending} data-testid="doc-export-btn">
+              导出
+            </Button>
+          </Dropdown>
           <Button
             type="primary"
             icon={<SaveOutlined />}

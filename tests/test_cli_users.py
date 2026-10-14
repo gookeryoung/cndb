@@ -27,7 +27,6 @@ def cli_db(tmp_path: Path, monkeypatch) -> Path:
 
     # import 所有插件模型确保 Base.metadata 完整
     import cndb.plugins.accounts.models
-    import cndb.plugins.reports.models
     import cndb.plugins.tables.models
     import cndb.plugins.workspaces.models  # noqa: F401
 
