@@ -99,7 +99,13 @@ class TestSeedBackupRoundtrip:
         assert emp_fields["部门"]["field_type"] == "link"
         assert emp_fields["部门"]["config"]["multiple"] is False
         assert emp_fields["负责人"]["field_type"] == "lookup"
-        assert set(emp_fields["负责人"]["config"]) == {"source_table_id", "source_field_id", "via_link_field_id"}
+        assert set(emp_fields["负责人"]["config"]) == {
+            "source_table_id",
+            "source_field_id",
+            "via_link_field_id",
+            "source_field_type",
+        }
+        assert emp_fields["负责人"]["config"]["source_field_type"] == "text"
         assert emp_fields["职位"]["config"] == {"options": ["总监", "经理", "工程师", "专员", "会计", "出纳"]}
         assert emp_fields["是否在职"]["config"] == {"options": ["是", "否"]}
         assert emp_fields["手机号"]["field_type"] == "phone"
@@ -153,6 +159,8 @@ class TestSeedBackupRoundtrip:
         assert dst_emp_fields["负责人"]["config"]["source_table_id"] == new_dept_tbl_id
         assert dst_emp_fields["负责人"]["config"]["source_field_id"] == new_dept_fields["负责人"]
         assert dst_emp_fields["负责人"]["config"]["via_link_field_id"] == dst_emp_fields["部门"]["id"]
+        # 恢复后缓存类型按重映射到的源字段回填
+        assert dst_emp_fields["负责人"]["config"]["source_field_type"] == "text"
 
         # v4：跨表引用保真 —— 恢复后 link 关联保留、lookup 实时解析正确
         restored_tables = db.query(DataTable).filter(DataTable.workspace_id == restored["id"]).all()

@@ -1,6 +1,7 @@
 /** MainLayout Header 导航 E2E.
  *
- * 覆盖：Header 导航按钮可达性 — 报表、工作区设置.
+ * 覆盖：工作区级 Tab 顺序（数据表 → 文档 → 报表 → 工作区设置）、
+ * Header 导航按钮可达性 — 报表、工作区设置.
  * 以及表列表 owner 列展示 + 筛选器.
  */
 
@@ -15,6 +16,35 @@ test.describe("MainLayout Header 导航按钮", () => {
     await page.goto(`/w/${WID}/tables`)
     await page.waitForURL(/\/tables$/)
   }
+
+  // 原 forms.spec.ts 的「导航 Tab 顺序」用例随表单功能移除而失效，此处按当前
+  // 工作区级 Tab 集重写：顺序即 wsTabItems 的声明顺序，回归导航被误调序的问题。
+  test("工作区 Tab 顺序为 数据表 → 文档 → 报表 → 工作区设置", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+    await start(page)
+
+    // 收敛到工作区级 Tabs 的 tablist：表级页签（role=tab）在表上下文下才会出现，
+    // 但 /w/:wid/tables（表列表）无 tid，故此处 first() 即工作区级 Tabs
+    const tabs = page.getByRole("tablist").first().getByRole("tab")
+    // allTextContents() 不做自动等待，须先等 Tabs 挂载完成再读文本，否则会读到空标签集
+    await expect(tabs.filter({ hasText: "数据表" })).toBeVisible()
+    await expect(tabs.filter({ hasText: "工作区设置" })).toBeVisible()
+
+    const names = (await tabs.allTextContents()).map((t) => t.trim())
+    // Tab 标签内含数量徽标（如「数据表 8」），故用子串匹配而非全等
+    const idxAssets = names.findIndex((n) => n.includes("数据表"))
+    const idxDocs = names.findIndex((n) => n.includes("文档"))
+    const idxReports = names.findIndex((n) => n.includes("报表"))
+    const idxSettings = names.findIndex((n) => n.includes("工作区设置"))
+
+    expect(idxAssets).toBeGreaterThanOrEqual(0)
+    expect(idxDocs).toBeGreaterThanOrEqual(0)
+    expect(idxReports).toBeGreaterThanOrEqual(0)
+    expect(idxSettings).toBeGreaterThanOrEqual(0)
+    expect(idxAssets).toBeLessThan(idxDocs)
+    expect(idxDocs).toBeLessThan(idxReports)
+    expect(idxReports).toBeLessThan(idxSettings)
+  })
 
   test("Content 分页导航可见 报表 / 工作区设置 Tab", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")

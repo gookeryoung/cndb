@@ -154,6 +154,14 @@ function SortableFieldRow({ field, onEdit, onRemove, isReordering }: SortableFie
     id: String(field.id),
   })
 
+  // 引用（lookup）字段展示后端同步到的源字段类型：源字段 文本→单选 后这里随之变为「引用 · 单选」
+  const lookupSourceType = field.field_type === 'lookup' && typeof field.config?.source_field_type === 'string'
+    ? field.config.source_field_type as string
+    : ''
+  const typeLabel = lookupSourceType
+    ? `${getFieldTypeLabel(field.field_type)} · ${getFieldTypeLabel(lookupSourceType)}`
+    : getFieldTypeLabel(field.field_type)
+
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -181,8 +189,12 @@ function SortableFieldRow({ field, onEdit, onRemove, isReordering }: SortableFie
       )}
       <span className="fm-row-tags">
         {field.is_primary && <Tag color="gold" style={{ marginInlineEnd: 0 }}>PK</Tag>}
-        <Tag color={getFieldTypeColor(field.field_type)} style={{ marginInlineEnd: 0 }} title={field.field_type}>
-          {getFieldTypeLabel(field.field_type)}
+        <Tag
+          color={getFieldTypeColor(field.field_type)}
+          style={{ marginInlineEnd: 0 }}
+          title={lookupSourceType ? `引用字段 · 源字段类型：${getFieldTypeLabel(lookupSourceType)}` : field.field_type}
+        >
+          {typeLabel}
         </Tag>
         {field.hidden && <Tag style={{ marginInlineEnd: 0 }}>隐藏</Tag>}
       </span>

@@ -5,8 +5,10 @@
 读取源表某字段（config.source_field_id）的值。
 
 存储模型：值实时查询、只读、不落物理列（has_physical_column = False），
-源表更新零同步成本。config.broken=True 表示源字段已失效（被删/改类型），
-读取时回退 None。
+源表更新零同步成本。config.source_field_type 缓存源字段当前类型，供前端按
+源类型渲染 / 筛选；源字段类型变更时由后端同步刷新，无需重新引入字段。
+config.broken=True 表示源字段已失效（被删除，或改成 link/lookup 等无物理列
+类型导致值不可读），读取时回退 None。
 """
 
 from __future__ import annotations
@@ -29,7 +31,11 @@ class LookupFieldConfig(FieldTypeConfig):
     source_field_id: int = Field(..., description="读取值的源字段 ID")
     via_link_field_id: int = Field(..., description="本表中指向源表的 link 字段 ID（外键角色）")
     display_field_id: int | None = Field(default=None, description="可选：源行展示字段（仅 UI 用）")
-    broken: bool = Field(default=False, description="源字段已失效（被删除/改类型），读取回退 None")
+    source_field_type: str = Field(
+        default="",
+        description="缓存源字段当前类型（源字段类型变更时同步刷新，前端据此按源类型渲染/筛选）",
+    )
+    broken: bool = Field(default=False, description="源字段已失效（被删除/不可读类型），读取回退 None")
 
 
 class LookupFieldType(FieldType):

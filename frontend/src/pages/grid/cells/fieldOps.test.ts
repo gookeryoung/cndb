@@ -2,9 +2,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   DONE_FLAG_OPS,
+  effectiveFieldType,
   extractSelectOptions,
   FIELD_TYPE_ALIASES,
   getOpsForField,
+  lookupSourceFieldType,
   matchValueCondition,
 } from './fieldOps'
 
@@ -223,5 +225,34 @@ describe('matchValueCondition 按字段类型 × 操作符判定行值', () => {
 
   it('未知操作符保守返回 false', () => {
     expect(matchValueCondition('x', 'contains', 'x', { field_type: 'text' } as never)).toBe(false)
+  })
+})
+
+describe('lookupSourceFieldType / effectiveFieldType 引用字段跟随源类型', () => {
+  it('非 lookup 字段：源类型为 null，有效类型为自身', () => {
+    const field = { field_type: 'select', config: { source_field_type: 'number' } }
+    expect(lookupSourceFieldType(field as never)).toBeNull()
+    expect(effectiveFieldType(field as never)).toBe('select')
+  })
+
+  it('lookup 且缓存源类型：有效类型为源类型', () => {
+    const field = {
+      field_type: 'lookup',
+      config: { source_field_id: 7, source_field_type: 'select' },
+    }
+    expect(lookupSourceFieldType(field as never)).toBe('select')
+    expect(effectiveFieldType(field as never)).toBe('select')
+  })
+
+  it('lookup 未缓存源类型（历史数据）：回退自身类型', () => {
+    const field = { field_type: 'lookup', config: { source_field_id: 7 } }
+    expect(lookupSourceFieldType(field as never)).toBeNull()
+    expect(effectiveFieldType(field as never)).toBe('lookup')
+    expect(getOpsForField(effectiveFieldType(field as never))).toEqual(getOpsForField('text'))
+  })
+
+  it('缓存空字符串同样视为未同步', () => {
+    const field = { field_type: 'lookup', config: { source_field_type: '' } }
+    expect(lookupSourceFieldType(field as never)).toBeNull()
   })
 })

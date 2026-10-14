@@ -868,6 +868,7 @@ def _seed_sales_tables(db: Any, engine: Any, ws: Any, owner_id: int | None = Non
             "source_table_id": dept_tbl.id,
             "source_field_id": dept_head_field.id,
             "via_link_field_id": emp_fields["部门"].id,
+            "source_field_type": dept_head_field.field_type,
         },
         order=len(field_specs),
         required=False,

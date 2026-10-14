@@ -189,6 +189,25 @@ export function getOpsForField(fieldType: string): FieldOp[] {
   return FIELD_OPS_BY_TYPE[resolved] || FIELD_OPS_BY_TYPE.text
 }
 
+/** 引用（lookup）字段缓存的源字段类型；非引用字段或未缓存时返回 null.
+ *
+ * 后端在源字段类型变更时同步刷新 config.source_field_type，前端据此让引用
+ * 字段按源类型展示与筛选（源字段 文本→单选 后引用字段即按单选处理）。
+ */
+export function lookupSourceFieldType(field: Pick<Field, 'field_type' | 'config'>): string | null {
+  if ((FIELD_TYPE_ALIASES[field.field_type] ?? field.field_type) !== 'lookup') return null
+  const cached = field.config?.source_field_type
+  return typeof cached === 'string' && cached ? cached : null
+}
+
+/** 字段的有效类型：引用字段跟随缓存的源字段类型，其余字段返回自身类型.
+ *
+ * 未缓存源类型（历史数据 / 源字段缺失）时回退 lookup 自身，交由 getOpsForField 兜底。
+ */
+export function effectiveFieldType(field: Pick<Field, 'field_type' | 'config'>): string {
+  return lookupSourceFieldType(field) ?? field.field_type
+}
+
 // ── 客户端行级判定（完成标志等共用） ──────────────────────
 
 /** 完成标志允许的操作符子集 —— 必须逐项存在于 FIELD_OPS_BY_TYPE 的类型组中（op 名称与筛选契约对齐） */
