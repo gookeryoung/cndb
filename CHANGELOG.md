@@ -23,9 +23,24 @@
 
 - wechat_auth 插件（微信小程序登录）：路由/模型/客户端/配置项/依赖 `requests` 及配套测试整体移除；历史迁移保留，存量库中的 wechat_accounts 孤儿表不影响升级
 - 前端死代码：未使用的 `userApi` 封装、`USER_ROLE_LABEL` 常量与 hooks barrel 重导出（ruff/knip/eslint 证据驱动）
+- 死配置：Sphinx 文档骨架（`docs/*.rst`、`docs/conf.py`、`docs/_static/`）、`.readthedocs.yaml`、`tox.ini`（0.1.12 已声明删除但文件残留；tox 引用的 `docs` extra 早已不存在）；`.gitignore` 中失效的 `.tox/` 与重复的 `.mypy_cache/`
+- 空目录：`src/cndb/plugins/{forms,workflows}`（源码已随表单/审批流插件移除，仅剩 `__pycache__`）
+- 前端未使用生产依赖：zod、@tanstack/react-table、react-hotkeys-hook、zundo、immer（全仓库零引用）
+- 与主测试重复的补覆盖率用例 12 个、零引用 fixture 2 个、只有 `pass` 的空壳测试 1 个（test_coverage_patch / test_cov_routers_records / test_edge_patch / test_cov_quick / test_tables_coverage / test_roles_e2e）
 
 ### 变更
 
+- 拆分超大文件（全部保持既有导入路径与导出面，行为不变）：
+  - `cli/seed.py` 2703 行 → `cli/seed/` 包 11 个模块（sqlite/paths/datasets/fields/documents/views/templates/samples/permission_demo/runner），`__init__` re-export 历史符号
+  - `plugins/reports/routers/reports.py` 1510 行 → 路由 495 行 + `renderers/{context,docx,pdf,pdf_fonts,xlsx,html,markdown}` + `services/stats` + `jinja`
+  - 前端 `ReportsPage.tsx` 1047 → 267 行 + `TemplateEditorModal`/`RenderParamsModal`/`reportsConstants`
+  - 前端 `GridCell.tsx` 839 → 188 行 + `EditCell`/`DisplayCell`/`cellValueUtils`（保留 4 个历史具名导出）
+  - 前端 `GanttView.tsx` 1301 → 655 行 + `views/gantt/` 六个模块
+- 重复实现收敛：
+  - 后端 CSV 编码探测统一走 `transfer.decode_bytes_auto`（`cli/users._read_csv` 与 `import_tasks._parse_to_rows` 不再各写一套；后者原为硬编码 utf-8，GBK CSV 会 UnicodeDecodeError）
+  - 前端新增 `utils/paletteColor`（GanttView 与 CalendarView 逐字相同的色板 + hash，WbsView 同一公式）、`utils/datetime`（issues/changeRequests 4 页各自的 formatTime）、`utils/formatSize`（文档页与管理面板）
+- 覆盖率口径统一：Makefile `cov` 由裸 `--cov`（把 tests/ 自身计入分母，本地虚高到 97.9%）改为 `--cov=$(PACKAGE)`，与 CI 同口径（真实 95.4%），本地绿灯不再与 CI 脱节
+- 配置一致性：`pyproject` 固定 `ruff==0.16.8`（与 `.pre-commit-config.yaml` 的 rev 真正对齐，注释不再失实）；`ci.yml` 用 YAML 锚点消除 push/pull_request 两份逐项相同的 paths；`Makefile .PHONY` 补齐 `gitkeep-check` 与全部短别名并去重
 - 部署链路改为服务器端构建：CI 不再构建镜像、不再经 COS 中转，改为同步 wheel/锁定依赖/Dockerfile 到服务器后由 `deploy.sh`（SERVER_BUILD=1）本地 `docker build` 并部署；Dockerfile.prod 基础镜像与 pip 源支持 `--build-arg` 换源，手动回滚仍走 TCR pull
 - `get_db` 请求路径异常时显式 rollback，避免半提交状态污染连接池
 - 文档列表 / 文档树改为批量序列化：版本数与标签各用一次聚合查询，大文档树不再逐节点 N+1
