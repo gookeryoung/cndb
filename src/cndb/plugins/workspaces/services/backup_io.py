@@ -1,0 +1,327 @@
+"""工作区整体导入的服务层实现.
+
+- ``_coerce_row_value_types``：按反射列类型归一备份 JSON 中的字符串值
+- ``_import_backup_into_workspace``：把备份载荷落库为新工作区（表 / 字段 / 行 / 视图）
+
+从 routers/workspaces.py 抽出（后者 270 行、与 HTTP 层无关，供两个导入端点复用）。
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+from cndb.plugins.accounts.models import User
+from cndb.plugins.workspaces.schemas import WorkspaceImportResponse
+
+logger = logging.getLogger(__name__)
+
+# ── 工作区整体导入导出 ──────────────────────────────
+
+
+def _coerce_row_value_types(sa_table: Any, row_values: list[dict[str, Any]]) -> None:
+    """按反射列类型归一备份 JSON 中的字符串值（就地修改）.
+
+    备份 JSON 导出时 date/datetime 被序列化为 ISO 字符串，而 SQLAlchemy 的
+    Date/DateTime 列不接受字符串输入（SQLite 下抛 TypeError 导致整表行
+    导入失败），插入前需反序列化还原。
+    """
+    import datetime
+
+    from sqlalchemy import Date, DateTime
+
+    date_cols = {name: col for name, col in sa_table.columns.items() if isinstance(col.type, (Date, DateTime))}
+    if not date_cols:
+        return
+    for values in row_values:
+        for name, col in date_cols.items():
+            v = values.get(name)
+            if v is None or not isinstance(v, str):
+                continue
+            try:
+                if isinstance(col.type, DateTime):
+                    if "T" not in v and " " not in v:
+                        v = f"{v}T00:00:00"
+                    values[name] = datetime.datetime.fromisoformat(v)
+                else:
+                    values[name] = datetime.date.fromisoformat(v[:10])
+            except ValueError:
+                pass  # 非法格式保留原值，交由数据库报出真实错误
+
+
+def _import_backup_into_workspace(
+    workspace_id: int,
+    json_data: dict[str, Any],
+    current_user: User,
+    db: Session,
+) -> WorkspaceImportResponse:
+    """把备份 JSON 中的表/行/视图导入到指定工作区（内部 helper，不做权限校验）."""
+    import logging
+
+    from cndb.plugins.tables.models import DataField, DataTable, DataView, ensure_default_view
+    from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
+
+    # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
+    version = json_data.get("version", "1")
+    if version not in ("1", "2", "3", "4"):
+        raise HTTPException(
+            status_code=400, detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4）。请升级程序后再导入。"
+        )
+
+    imported_tables = 0
+    imported_rows = 0
+    imported_views = 0
+    errors: list[str] = []
+
+    # v4 跨表引用重映射的收集器（v1-v3 备份无 id 信息，保持原样跳过重映射）：
+    # - table_id_map / field_id_map：备份内旧表/字段 id → 新工作区的表/字段 id
+    # - pending_field_refs：含跨表 id 的字段（link/lookup），待全部表创建后统一重写 config
+    # - row_id_maps：表 id → {行索引 → 新物理行 id}，用于回填 link 关联行
+    # - pending_link_rows：待回填的 link 关联行 (字段, 所属表, 行索引对)
+    table_id_map: dict[int, int] = {}
+    field_id_map: dict[int, int] = {}
+    pending_field_refs: list[tuple[DataField, dict[str, Any]]] = []
+    row_id_maps: dict[int, dict[int, int]] = {}
+    pending_link_rows: list[tuple[DataField, DataTable, list[list[int]]]] = []
+
+    # 循环前先提交任何待处理事务，确保连接以干净状态进入逐表循环。
+    # 原因：SQLite 的隐式事务（由 flush() 开启）会持有 RESERVED 锁，
+    # 阻止任何连接（包括 engine 新创建的）执行需要 EXCLUSIVE 锁的 DDL。
+    # 参考：tables.py 正常建表流程也是先 commit 再 ddl_create。
+    if db.in_transaction():
+        db.commit()
+
+    try:
+        for tbl_data in json_data.get("tables", []):
+            table_name = tbl_data.get("name", "").strip()
+            if not table_name:
+                continue
+            # 同名表跳过
+            existing = (
+                db.query(DataTable)
+                .filter(
+                    DataTable.workspace_id == workspace_id,
+                    DataTable.name == table_name,
+                    DataTable.trashed_at.is_(None),
+                )
+                .first()
+            )
+            if existing:
+                continue
+
+            table = DataTable(
+                workspace_id=workspace_id,
+                owner_id=current_user.id,
+                name=table_name,
+                description=tbl_data.get("description", ""),
+            )
+            table.ensure_db_name()
+            db.add(table)
+            db.flush()
+            # v4：备份内旧表 id → 新表 id（同名跳过的表不进映射，引用它的字段保持原 config）
+            old_table_id = tbl_data.get("id")
+            if isinstance(old_table_id, int):
+                table_id_map[old_table_id] = table.id
+
+            # 创建 DataField
+            fields_data = tbl_data.get("fields", [])
+            fields_order = []
+            for fd in fields_data:
+                field = DataField(
+                    table_id=table.id,
+                    name=fd.get("name", ""),
+                    field_type=fd.get("field_type", "text"),
+                    config=fd.get("config", {}) or {},
+                    required=fd.get("required", False),
+                    is_unique=fd.get("is_unique", False),
+                    default_value=fd.get("default_value"),
+                    hidden=fd.get("hidden", False),
+                    order=fd.get("order", 0),
+                )
+                field.ensure_db_name()
+                db.add(field)
+                fields_order.append(field)
+                if fd.get("field_type") in ("link", "lookup"):
+                    pending_field_refs.append((field, fd))
+
+            db.flush()
+            # v4：flush 拿到字段 id 后记录 旧字段 id → 新字段 id；跨表字段延后统一重写 config
+            for fd, field in zip(fields_data, fields_order, strict=False):
+                old_field_id = fd.get("id")
+                if isinstance(old_field_id, int):
+                    field_id_map[old_field_id] = field.id
+
+            # ★ 关键：在执行 DDL 前先提交 flush 出的 DataTable / DataField 元数据。
+            # SQLite flush() 隐式开启的事务会持有 RESERVED 锁，
+            # 必须释放才能让 DDL 获取 EXCLUSIVE 锁（CREATE TABLE 需要）。
+            # —— 逐表 commit 而非循环外统一 commit，使导入具备部分成功能力：
+            # 单表失败不影响已成功表；整体失败时上层（create_workspace_from_backup）
+            # 会回滚整个工作区级联清理。
+            db.commit()
+
+            # DDL 创建物理表（create_table 自动从 table.fields 拿字段）
+            try:
+                ddl_create(db.get_bind(), table)
+            except Exception as exc:
+                db.rollback()
+                raise HTTPException(status_code=400, detail=f"创建表 {table_name} 失败: {exc}") from exc
+
+            # 自动生成默认视图「全部」（若导入的 views 里已存在同名则跳过，
+            # 避免与 uniq_table_view_name 约束冲突）
+            views_data = tbl_data.get("views", [])
+            if not any(vd.get("name") == "全部" for vd in views_data):
+                ensure_default_view(db, table, owner_id=current_user.id, commit=False)
+
+            # 插入数据行（用 raw INSERT 避免依赖 transfer.py 的复杂逻辑）
+            rows_data = tbl_data.get("rows", [])
+            if rows_data and not fields_order:
+                msg = f"表 {table_name} 无字段定义，{len(rows_data)} 行数据无法导入，已跳过"
+                errors.append(msg)
+                logging.getLogger(__name__).warning("%s", msg)
+            elif rows_data and fields_order:
+                try:
+                    from sqlalchemy import MetaData, insert, select
+                    from sqlalchemy import Table as SATable
+
+                    metadata = MetaData()
+                    sa_table = SATable(table.db_table_name, metadata, autoload_with=db.bind)
+                    row_values = []
+                    row_orig_idx: list[int] = []
+                    for idx, raw in enumerate(rows_data):
+                        values = {}
+                        for f in fields_order:
+                            # link 等字段无主表物理列（值存关联表），跳过避免整表 INSERT 失败
+                            if f.db_column_name not in sa_table.columns:
+                                continue
+                            # v3+ 行键为业务字段名；回退物理列名以兼容旧版 v1/v2 备份
+                            if f.name in raw:
+                                values[f.db_column_name] = raw[f.name]
+                            elif f.db_column_name in raw:
+                                values[f.db_column_name] = raw[f.db_column_name]
+                        if values:
+                            row_values.append(values)
+                            row_orig_idx.append(idx)
+                    if row_values:
+                        _coerce_row_value_types(sa_table, row_values)
+                        db.execute(insert(sa_table), row_values)
+                        imported_rows += len(row_values)
+                        # v4：记录 行索引 → 新物理行 id（自增 id 单调递增，按 id 排序即插入序），
+                        # 供 link 关联行回填定位
+                        if isinstance(old_table_id, int):
+                            new_ids = [r[0] for r in db.execute(select(sa_table.c.id).order_by(sa_table.c.id)).all()]
+                            row_id_maps[table.id] = dict(zip(row_orig_idx, new_ids, strict=False))
+                    if len(row_values) < len(rows_data):
+                        # 行键无法匹配（如旧版备份的随机物理列名）时不许静默丢数据
+                        dropped = len(rows_data) - len(row_values)
+                        msg = (
+                            f"表 {table_name} 有 {dropped}/{len(rows_data)} 行数据"
+                            "无法匹配到字段（旧版备份的物理列名不可映射），已跳过"
+                        )
+                        errors.append(msg)
+                        logging.getLogger(__name__).warning("%s", msg)
+                except Exception as exc:
+                    msg = f"表 {table_name} 数据行导入失败，已跳过 {len(rows_data)} 行: {exc}"
+                    errors.append(msg)
+                    logging.getLogger(__name__).warning("%s", msg)
+
+            # 创建视图（is_default 兼容 v1 旧键名 default）
+            for vd in views_data:
+                view = DataView(
+                    table_id=table.id,
+                    name=vd.get("name", ""),
+                    view_type=vd.get("view_type", "grid"),
+                    filter_type=vd.get("filter_type", "AND"),
+                    filters=vd.get("filters", []) or [],
+                    sortings=vd.get("sortings", []) or [],
+                    field_options=vd.get("field_options", {}) or {},
+                    view_options=vd.get("view_options", {}) or {},
+                    field_order=vd.get("field_order"),
+                    is_default=vd.get("is_default", vd.get("default", False)),
+                )
+                db.add(view)
+                imported_views += 1
+
+            # v4：收集 link 关联行（行索引对），待全部表建完后统一回填
+            for ld in tbl_data.get("links", []):
+                pairs = ld.get("pairs", [])
+                link_field = next((f for f in fields_order if f.name == ld.get("field")), None)
+                if link_field and link_field.field_type == "link" and pairs:
+                    pending_link_rows.append((link_field, table, pairs))
+
+            # 每个表的视图/行数据独立提交，避免再次持锁影响后续 DDL
+            db.commit()
+            imported_tables += 1
+
+        # ── v4 第二阶段：跨表引用重映射 + link 关联行回填 ──
+        for field, fd in pending_field_refs:
+            cfg = dict(field.config or {})
+            changed = False
+            if fd.get("field_type") == "link":
+                old = cfg.get("target_table_id")
+                if isinstance(old, int) and old in table_id_map:
+                    cfg["target_table_id"] = table_id_map[old]
+                    changed = True
+            else:  # lookup: source_table_id / source_field_id / via_link_field_id
+                for key in ("source_table_id", "source_field_id", "via_link_field_id"):
+                    old = cfg.get(key)
+                    mapping = table_id_map if key == "source_table_id" else field_id_map
+                    if isinstance(old, int) and old in mapping:
+                        cfg[key] = mapping[old]
+                        changed = True
+                # 恢复后按重映射到的源字段回填缓存类型（旧备份无该键，或源类型已变）
+                new_src_id = cfg.get("source_field_id")
+                new_src = db.get(DataField, new_src_id) if isinstance(new_src_id, int) else None
+                if new_src is not None and cfg.get("source_field_type") != new_src.field_type:
+                    cfg["source_field_type"] = new_src.field_type
+                    changed = True
+            if changed:
+                field.config = cfg
+                db.add(field)
+        if pending_field_refs:
+            db.commit()
+
+        for link_field, table, pairs in pending_link_rows:
+            try:
+                # config 已在上一阶段重映射，target_table_id 即新工作区表 id
+                target_table_id = (link_field.config or {}).get("target_table_id")
+                row_map = row_id_maps.get(table.id, {})
+                target_map = row_id_maps.get(target_table_id) if isinstance(target_table_id, int) else None
+                target_map = target_map or {}
+                link_values = [
+                    {"row_id": row_map[ri], "target_row_id": target_map[ti]}
+                    for ri, ti in pairs
+                    if ri in row_map and ti in target_map
+                ]
+                if not link_values:
+                    continue
+                from sqlalchemy import MetaData
+                from sqlalchemy import Table as SATable
+                from sqlalchemy import insert as sa_insert
+
+                lt = SATable(link_field.link_table_name, MetaData(), autoload_with=db.bind)
+                db.execute(sa_insert(lt), link_values)
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                msg = f"表 {table.name} 字段 {link_field.name} 的关联数据回填失败: {exc}"
+                errors.append(msg)
+                logging.getLogger(__name__).warning("%s", msg)
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"导入失败: {exc}") from exc
+
+    return WorkspaceImportResponse(
+        imported_tables=imported_tables,
+        imported_rows=imported_rows,
+        imported_views=imported_views,
+        errors=errors,
+    )
+
+
+__all__ = ["_coerce_row_value_types", "_import_backup_into_workspace"]
