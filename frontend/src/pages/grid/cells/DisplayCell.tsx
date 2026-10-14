@@ -2,7 +2,7 @@
 
 import { Tag, Tooltip, Typography, Image } from 'antd'
 import type { AttachmentFile, Field } from '@/api'
-import { fileApi } from '@/api'
+import { AuthedFileLink, AuthedImage } from '@/components/AuthedFile'
 import { getTagColorName, resolveTagColor } from '@/utils/tagColors'
 import dayjs from 'dayjs'
 
@@ -97,18 +97,15 @@ export function DisplayCell({ value, field, rowId, wid }: { value: unknown; fiel
             const isImg = (f.mime_type || f.filename).match(/image\/|\.(png|jpe?g|gif|webp|svg)$/i)
             if (isImg && wid) {
               return (
-                <Image key={f.file_key} width={48} height={48}
-                  src={fileApi.getUrl(wid, f.file_key, true)}
-                  alt={f.filename} style={{ objectFit: 'cover', borderRadius: 4 }} />
+                <AuthedImage key={f.file_key} wid={wid} fileKey={f.file_key}
+                  width={48} height={48} alt={f.filename} style={{ objectFit: 'cover', borderRadius: 4 }} />
               )
             }
             return (
-              <Typography.Link key={f.file_key}
-                href={wid ? fileApi.getUrl(wid, f.file_key) : undefined}
-                target="_blank" rel="noreferrer"
+              <AuthedFileLink key={f.file_key} wid={wid} fileKey={f.file_key} filename={f.filename}
                 style={{ fontSize: 12 }}>
                 📎 {f.filename}
-              </Typography.Link>
+              </AuthedFileLink>
             )
           })}
         </div>
@@ -125,11 +122,12 @@ export function DisplayCell({ value, field, rowId, wid }: { value: unknown; fiel
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           <Image.PreviewGroup>
             {images.map(f => (
-              <Image
+              <AuthedImage
                 key={f.file_key || f.filename}
+                wid={wid}
+                fileKey={f.file_key}
                 width={48}
                 height={48}
-                src={wid ? fileApi.getUrl(wid, f.file_key, true) : undefined}
                 alt={f.filename}
                 style={{ objectFit: 'cover', borderRadius: 4 }}
               />

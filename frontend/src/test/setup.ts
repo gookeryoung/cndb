@@ -62,6 +62,15 @@ if (typeof window !== 'undefined') {
       toJSON: () => ({}),
     }) as DOMRect
   }
+  // jsdom 未实现 URL.createObjectURL/revokeObjectURL（useFileObjectUrl 把鉴权 blob
+  // 转成 object URL 后交给 <img>；测试只需拿到可断言的假 URL）
+  if (!URL.createObjectURL) {
+    let seq = 0
+    URL.createObjectURL = () => `blob:mock-${++seq}`
+  }
+  if (!URL.revokeObjectURL) {
+    URL.revokeObjectURL = () => { /* noop */ }
+  }
   // jsdom 未实现 IntersectionObserver（antd 虚拟滚动 + KanbanColumn 懒挂载用到）
   // polyfill：observe 后立即触发 isIntersecting=true 的回调（测试环境所有元素"都可见"）
   if (!window.IntersectionObserver) {
