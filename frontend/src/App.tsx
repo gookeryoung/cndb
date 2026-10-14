@@ -29,6 +29,7 @@ const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSett
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 const FormsPage = lazy(() => import('@/pages/forms/FormsPage'))
 const FormRunnerPage = lazy(() => import('@/pages/forms/FormRunnerPage'))
+const DocumentsLayout = lazy(() => import('@/pages/documents/DocumentsLayout'))
 const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage'))
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
 
@@ -90,11 +91,15 @@ function AuthenticatedApp() {
             <Suspense fallback={<PageFallback />}><FormRunnerPage /></Suspense>
           } />
           <Route path="w/:wid/documents" element={
-            <Suspense fallback={<PageFallback />}><DocumentsPage /></Suspense>
-          } />
-          <Route path="w/:wid/documents/:docId" element={
-            <Suspense fallback={<PageFallback />}><DocumentEditorPage /></Suspense>
-          } />
+            <Suspense fallback={<PageFallback />}><DocumentsLayout /></Suspense>
+          }>
+            <Route index element={
+              <Suspense fallback={<PageFallback />}><DocumentsPage /></Suspense>
+            } />
+            <Route path=":docId" element={
+              <Suspense fallback={<PageFallback />}><DocumentEditorPage /></Suspense>
+            } />
+          </Route>
           <Route path="admin" element={
             <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>
           } />
