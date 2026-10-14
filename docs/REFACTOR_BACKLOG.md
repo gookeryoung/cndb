@@ -13,8 +13,10 @@
   硬编码 utf-8 缺陷）；前端抽出 `utils/{paletteColor,datetime,formatSize}`
 - 测试收敛：删除 12 个与主测试重复的补覆盖率用例、2 个零引用 fixture、1 个空壳测试
 - 覆盖率口径：Makefile `cov` 与 CI 统一为 `--cov=cndb`（此前本地裸 `--cov` 虚高到 97.9%）
-- 超大文件拆分：`cli/seed.py`、`reports/routers/reports.py`、前端 `ReportsPage.tsx`、
-  `GridCell.tsx`、`GanttView.tsx`、`api/types.ts`、`ImportPanel.tsx`
+- 超大文件拆分：`cli/seed.py`、`reports/routers/reports.py`、`api/types.ts`、
+  `ImportPanel.tsx`、`ReportsPage.tsx`、`GridCell.tsx`、`GanttView.tsx`、
+  `DocumentsPage.tsx`、`CalendarView.tsx`、`workspaces/routers/workspaces.py`、
+  `tables/services/fields/field_ops.py`（详见 CHANGELOG「未发布」）
 - 前端死导出清理：`LoginResponse`、`WorkspaceTrashResponse`、`getTagColor`、
   `ANTD_COLOR_NAMES`、`loadTableSettings`/`saveTableSettings`（后者与 zustand persist
   共用同一个 localStorage key `cndb_table_settings`，双写隐患已消除）
@@ -30,9 +32,7 @@
 
 | 文件 | 行数 | 建议拆分 |
 |---|---|---|
-| `src/cndb/plugins/workspaces/routers/workspaces.py` | 1041 | 拆 `routers/members.py`（成员/转让/pin）+ `services/backup_io.py`（备份导入导出，`_import_backup_into_workspace` 单函数 270 行）；`/workspaces` 测试 1206 处但全走 HTTP，改动对测试透明 |
 | `src/cndb/gui/main_window.py` | 1041 | 按 Tab 拆 `gui/tabs/{serve,backup,info}.py`；**`main` 必须留在 `main_window.py`**（`pyproject` 的 `cndbw` entry point 指向它）。coverage 已 omit `gui/**`，无覆盖率风险，也没有 gui 测试 |
-| `src/cndb/plugins/tables/services/fields/field_ops.py` | 1027 | 拆 `fields/field_import.py` + `fields/select_options.py`；需保持 `field_ops` 包级 re-export（seed 以 `field_ops as _fo` 使用） |
 | `src/cndb/plugins/tables/services/core/records.py` | 957 | 拆 `core/{row_values,row_crud,row_bulk}.py`；**本项循环导入风险最高**（与 `query.py`/`ddl.py` 互依，现靠函数内延迟 import 规避，拆分须保留） |
 | `src/cndb/plugins/tables/services/importing/importer.py` | 906 | `Importer` 类单类 776 行 / 19 方法，可按方法族拆 mixin |
 | `src/cndb/plugins/documents/services/content.py` | 905 | 拆 `content/{crud,trash,links,tags,fts,serialize}.py`；FTS/软删子树/标签计数高耦合，成本较高 |
@@ -46,11 +46,9 @@
 | 文件 | 行数 | 建议拆分 |
 |---|---|---|
 | `src/pages/grid/GridPage.tsx` | 1276 | 外置 `gridFallbacks.tsx`、`modeSwitch.ts`、`useGridPageRows.ts`、`useGridPageModals.ts`；主组件 1140 行主要是状态与回调，抽 hook 有一定回归风险 |
-| `src/pages/documents/DocumentsPage.tsx` | 792 | 拆 `documents/seriesStats.ts`（纯统计）+ `documentsFormat.ts` + 系列栅格 / 列表 / 回收站三面板。**测试要求保留 `buildSeriesStats` 具名导出** |
 | `src/pages/documents/DocumentEditorPage.tsx` | 802 | 拆 `DiffView` / `TagEditor` / `useDocumentEditor` / `VersionTimeline` / `OutlinePanel` |
 | `src/pages/grid/views/KanbanView.tsx` | 789 | 拆 `kanban/{KanbanCard,KanbanColumn,kanbanDensity,KanbanBadges}` |
-| `src/pages/import-export/FileImportPreview.tsx` | 774 | 拆 `importPreviewConvert.ts`（纯转换）+ 字段列表 / 字段编辑 / 数据预览三块；可参照本次 `ImportPanel` 的接缝做法 |
-| `src/pages/grid/views/CalendarView.tsx` | 782 | 拆 `calendar/{YearView,MonthView,WeekView,calendarEventUtils}` |
+| `src/pages/import-export/FileImportPreview.tsx` | 774 | 拆 `importPreviewConvert.ts`（纯转换）+ 字段列表 / 字段编辑 / 数据预览三块；可参照 `ImportPanel` 与 `DocumentsPage` 的接缝做法（后者把抽屉的查询/状态一并搬走效果最好） |
 | `src/theme/theme.ts` | 695 | 10 套 antd ThemeConfig 预设抽 `theme/presets/*.ts`，theme.ts 只留 registry 与读写 |
 | `src/pages/grid/view-config/viewOptionSchema.ts` | 562 | 按视图拆 `options/{kanban,calendar,gantt,wbs,matrix,chart}.ts`；**测试要求保留 7 个具名导出** |
 | `src/pages/grid/views/WbsView.tsx` | 588 | 树构建与渲染行两分 |
@@ -75,12 +73,27 @@
 - **e2e 与单测重叠**：`frontend/tests/e2e/critical/navigation.spec.ts:22-65`（Tab 顺序/可见性/路由）与 `MainLayout.test.tsx:138-208` 覆盖同一行为，且单测更强（还断言激活态）。e2e 独有价值的是「seed 数据下的表行数=8」等用例。可删 navigation 的 3 个重叠用例；e2e 目前 `continue-on-error: true`，删除零风险但也零收益。
 - **前端测试样板未收敛**：26 个测试文件各自 `import { http, HttpResponse } from 'msw'` + `server.use(...)`；4 个文件（`api/hooks.test.tsx`、`api/hooks.placeholder.test.tsx`、`WorkspaceList.test.tsx`、`WorkspaceSettingsContent.test.tsx`）自建 Provider 栈而不用 `src/test/render-providers.tsx`。
 
-## 四、待确认项
+## 四、待确认项（需产品决策，非技术问题）
 
-- **`Field.is_primary`**：`api/types.ts` 声明了该字段，但 `src/cndb` 全库 0 命中，而前端 8 处
-  （`FieldList.tsx:191/205`、`FieldManager/index.tsx:283/518-520`、`fieldValueFormat.ts:20`、`GridCell.tsx:724`、
-  `viewOptionSchema.ts:431/544/557`、`CalendarView.tsx:146`、`MatrixView.tsx:94`）用它判定主键/标题回退 ——
-  若后端从不返回该字段，这些分支恒为假。需与后端确认后决定「后端补字段」还是「前端删分支」。
+**`Field.is_primary` 与 6 个"系统字段类型"在前端被使用，但后端从不产生 —— 证据已完备，需决策。**
+
+- 后端权威字段类型清单共 19 种（`tables/field_types/registry.py:91-112`）：
+  text / longtext / number / float / boolean / date / datetime / select / multiselect /
+  email / url / phone / percentage / timestamp / link / lookup / attachment / image / json。
+  **没有** `auto_id`、`formula`、`created_time`、`updated_time`、`created_by`、`updated_by`。
+- `FieldResponse`（`tables/schemas/models.py:196-212`）**没有** `is_primary` 字段；
+  `grep -r is_primary src/cndb` 命中 0。
+- 前端 `FieldType` 联合类型自己标注这些名字是「历史别名（后端自动归一化）」
+  （`api/types/tables.ts:163-166`）。
+- 影响面：`FieldList` 的 PK 徽标与"非主键"分支、字段引入源字段过滤、`viewOptionSchema`
+  的 `is_primary` 伪类型匹配、`fieldValueFormat` 的标题字段优先选取、Calendar/Matrix/Wbs
+  的标题回退——**全部走的是各自的 fallback 路径**（功能正常，但主路径永不命中）。
+- 两种可能：(a) 老版本数据库里仍存有这些类型的 `tables_datafield.field_type` 行，
+  字段是刻意为遗留数据保留的；(b) 纯历史残留。
+- **建议**：确认无存量库使用后，删除前端这些分支（约 8 处 + 6 个类型名）；
+  若确需"主键/系统列"能力，应由后端补 `is_primary` 或系统字段类型，而不是继续让前端空判。
+- 本次只清理了其中**可证明冗余**的一处：`isReadonlyField` 的
+  `|| Boolean(field.is_primary && field.field_type === 'auto_id')` 被前一项完全覆盖。
 
 ## 五、配置与门禁的剩余项
 

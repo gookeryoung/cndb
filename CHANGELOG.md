@@ -30,6 +30,7 @@
 - 前端死导出：`LoginResponse`、`WorkspaceTrashResponse`、`getTagColor`（自称兼容旧 API，生产已全用 `getTagColorName`）、`ANTD_COLOR_NAMES`（仅被自身测试断言长度/内容）
 - 前端第二套设置持久化：`theme/tableSettings.loadTableSettings` / `saveTableSettings` —— 与 `store/tableSettings` 的 zustand persist **共用同一个 localStorage key `cndb_table_settings`**，存在互相覆盖隐患；持久化职责收敛到 store，本模块只留类型/默认值/`densityToSize`
 - 重复类型定义：`ViewMode`（`store/gridView.ts` 的副本）与 `WorkspaceRole`（issues/changeRequests 详情页各一份副本）
+- 死条件：`GridCell` 的 `isReadonlyField` 中 `|| Boolean(field.is_primary && field.field_type === 'auto_id')` 被前一项 `readonly.has(field.field_type)` 完全覆盖（auto_id 本就在该集合内）
 
 ### 变更
 
@@ -41,6 +42,10 @@
   - 前端 `GanttView.tsx` 1301 → 655 行 + `views/gantt/` 六个模块
   - 前端 `api/types.ts` 968 行 / 120 个导出 → `api/types/` 12 个按资源域拆分的模块 + `index.ts` 聚合；`api/index.ts` 原先手写列举的 90 个类型名改为 `export type * from './types'`
   - 前端 `ImportPanel.tsx` 958 → 615 行 + `ImportQualityPanel` / `ImportDiffTable` / `MiniStat`
+  - 前端 `DocumentsPage.tsx` 792 → 553 行 + `SearchDrawer` / `TrashDrawer`（两者改为自持查询与状态，页面不再摊平 5 处 state 与 3 个 query/mutation）+ `seriesStats` / `documentDisplay`
+  - 前端 `CalendarView.tsx` 770 → 205 行 + `calendar/{YearView,MonthView,WeekView,calendarUtils,calendarTypes}`
+  - 后端 `workspaces/routers/workspaces.py` 1041 → 505 行 + `routers/member_routes.py`（成员/转让子路由）+ `services/backup_io.py`（备份落库）+ `routers/deps.py`（共享受保护依赖）
+  - 后端 `tables/services/fields/field_ops.py` 1027 → 53 行 + `field_import.py`(502) / `select_options.py`(508)；field_ops 保留为兼容外观，使 7 处 `monkeypatch.setattr(field_ops, ...)` 继续生效
 - 重复实现收敛：
   - 后端 CSV 编码探测统一走 `transfer.decode_bytes_auto`（`cli/users._read_csv` 与 `import_tasks._parse_to_rows` 不再各写一套；后者原为硬编码 utf-8，GBK CSV 会 UnicodeDecodeError）
   - 前端新增 `utils/paletteColor`（GanttView 与 CalendarView 逐字相同的色板 + hash，WbsView 同一公式）、`utils/datetime`（issues/changeRequests 4 页各自的 formatTime）、`utils/formatSize`（文档页与管理面板）
