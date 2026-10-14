@@ -54,6 +54,8 @@
   - 后端 `cli/restore.py` 727 行 → `cli/restore/` 包（types / inspect / apply）
   - 前端 `theme.ts` 695 → 108 行 + `theme/meta.ts`、`theme/fonts.ts`、`theme/presets/{light,dark,common}.ts`；`THEMES` 仍写显式字面量以保证键序与 `THEME_MODES` 一致
   - 前端 `DocumentEditorPage.tsx` 802 → 640 行 + `DiffView` / `TagEditor` / `OutlineDrawer` / `BacklinksDrawer`
+  - 前端 `DocumentEditorPage.tsx` 640 → 498 行 + `LinksDrawer` / `VersionsDrawer` / `InsertTableModal`（query 结果解包为 props）
+  - 前端 `WorkspaceSettingsContent.tsx` 679 → 525 行 + `settings/{workspaceRoles,MemberZones,AddMemberModal,TransferOwnerModal}`
 - 重复实现收敛：
   - 后端 CSV 编码探测统一走 `transfer.decode_bytes_auto`（`cli/users._read_csv` 与 `import_tasks._parse_to_rows` 不再各写一套；后者原为硬编码 utf-8，GBK CSV 会 UnicodeDecodeError）
   - 前端新增 `utils/paletteColor`（GanttView 与 CalendarView 逐字相同的色板 + hash，WbsView 同一公式）、`utils/datetime`（issues/changeRequests 4 页各自的 formatTime）、`utils/formatSize`（文档页与管理面板）
