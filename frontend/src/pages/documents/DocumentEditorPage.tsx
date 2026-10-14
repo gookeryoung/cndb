@@ -25,6 +25,7 @@ import {
   HistoryOutlined,
   LinkOutlined,
   MenuOutlined,
+  PullRequestOutlined,
   SaveOutlined,
   TableOutlined,
   TagsOutlined,
@@ -32,9 +33,11 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import { parseOutline } from '@/components/Document/outline'
-import { documentsApi } from '@/api/documents'
-import { tableApi } from '@/api'
+import { documentsApi, isChangeRequestDispatch } from '@/api/documents'
+import { tableApi, workspaceApi } from '@/api'
+import type { WorkspaceRole } from '@/api'
 import type {
+  DocumentChangeRequestDispatch,
   DocumentDetail,
   DocumentExportFormat,
   DocumentItem,
@@ -47,6 +50,7 @@ const { TextArea } = Input
 
 
 import BacklinksDrawer from './BacklinksDrawer'
+import DocumentChangeRequestsDrawer from './DocumentChangeRequestsDrawer'
 import InsertTableModal from './InsertTableModal'
 import LinksDrawer from './LinksDrawer'
 import OutlineDrawer from './OutlineDrawer'
@@ -70,6 +74,9 @@ export default function DocumentEditorPage() {
   // 断链修复：旧标题 → 选中的目标文档 ID
   const [repairTargets, setRepairTargets] = useState<Record<string, number>>({})
   const [diffPair, setDiffPair] = useState<{ base: number; head: number } | null>(null)
+  const [crOpen, setCrOpen] = useState(false)
+  /** 保存被转为修改申请时的提示（正文未落库，等待审核） */
+  const [pendingNotice, setPendingNotice] = useState<string | null>(null)
   const baseTsRef = useRef<string | null>(null)
   const dirtyRef = useRef(false)
   const taRef = useRef<TextAreaRef>(null)
@@ -78,6 +85,22 @@ export default function DocumentEditorPage() {
   const [insertOpen, setInsertOpen] = useState(false)
   const [insertTableId, setInsertTableId] = useState<number | null>(null)
   const [insertLimit, setInsertLimit] = useState<number | null>(null)
+
+  // 当前用户在工作区的角色：决定修改申请抽屉里的审核入口
+  const { data: wsDetail } = useQuery({
+    queryKey: ['workspace-detail', workspaceId],
+    queryFn: () => workspaceApi.get(workspaceId),
+    enabled: Number.isFinite(workspaceId),
+  })
+  const myRole = (wsDetail?.current_user_role ?? null) as WorkspaceRole | null
+
+  // 该文档的修改申请（与抽屉共享缓存）：工具栏徽标显示待审核条数
+  const { data: crList } = useQuery({
+    queryKey: ['document-change-requests', workspaceId, id, 'all'],
+    queryFn: () => documentsApi.changeRequests(workspaceId, { document_id: id, scope: 'all' }),
+    enabled: Number.isFinite(workspaceId) && Number.isFinite(id),
+  })
+  const pendingCrCount = (crList?.items ?? []).filter(cr => cr.status === 'open').length
 
   const tablesQuery = useQuery({
     queryKey: ['tables', workspaceId, 'embed-options'],
@@ -106,12 +129,22 @@ export default function DocumentEditorPage() {
       documentsApi.updateContent(workspaceId, id, {
         content: text,
         base_updated_at: baseTsRef.current,
+        base_version_number: docQuery.data?.version_number ?? null,
       }),
-    onSuccess: (doc: DocumentDetail) => {
-      baseTsRef.current = doc.updated_at
+    onSuccess: (result: DocumentDetail | DocumentChangeRequestDispatch) => {
+      // 双轨制：无直编资格时保存转为修改申请，正文未落库
+      if (isChangeRequestDispatch(result)) {
+        dirtyRef.current = false
+        setSaveError(null)
+        setPendingNotice(result.message)
+        void qc.invalidateQueries({ queryKey: ['document-change-requests', workspaceId, id] })
+        return
+      }
+      baseTsRef.current = result.updated_at
       dirtyRef.current = false
       setSaveError(null)
-      message.success(`已保存 v${doc.version_number ?? '?'}`)
+      setPendingNotice(null)
+      message.success(`已保存 v${result.version_number ?? '?'}`)
       void qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
     },
     onError: (err: unknown) => {
@@ -334,7 +367,7 @@ export default function DocumentEditorPage() {
     return <Alert type="error" message="文档不存在或加载失败" style={{ margin: 24 }} showIcon />
   }
 
-  const editable = true // viewer 的写请求会被后端 403，前端保持入口简洁
+  const editable = true // viewer 保存转修改申请（202），无需在前端隐藏编辑入口
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -370,6 +403,13 @@ export default function DocumentEditorPage() {
           </Button>
           <Button icon={<TagsOutlined />} onClick={() => setTagsOpen(true)}>
             标签{doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}
+          </Button>
+          <Button
+            icon={<PullRequestOutlined />}
+            data-testid="doc-cr-open"
+            onClick={() => setCrOpen(true)}
+          >
+            修改申请{pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}
           </Button>
           <Button icon={<HistoryOutlined />} onClick={() => setVersionsOpen(true)}>
             版本{doc.version_count > 0 ? ` (${doc.version_count})` : ''}
@@ -409,6 +449,19 @@ export default function DocumentEditorPage() {
           description="文档可能已被他人修改。复制当前编辑内容后刷新页面，再粘贴保存。"
           closable
           onClose={() => setSaveError(null)}
+          style={{ margin: '8px 24px 0' }}
+        />
+      )}
+
+      {pendingNotice && (
+        <Alert
+          type="info"
+          showIcon
+          data-testid="doc-cr-notice"
+          message={pendingNotice}
+          description="正文尚未落库；可打开「修改申请」查看内容差异，由编辑者及以上角色通过后生效。"
+          closable
+          onClose={() => setPendingNotice(null)}
           style={{ margin: '8px 24px 0' }}
         />
       )}
@@ -519,6 +572,15 @@ export default function DocumentEditorPage() {
           onChange={ids => setDocTagsMut.mutate(ids)}
         />
       </Drawer>
+
+      {/* 修改申请抽屉：待审列表 + 内容 DIFF + 通过/驳回/删除草稿 */}
+      <DocumentChangeRequestsDrawer
+        open={crOpen}
+        onClose={() => setCrOpen(false)}
+        workspaceId={workspaceId}
+        documentId={id}
+        role={myRole}
+      />
 
       {/* 插入数据表引用弹窗 */}
       <InsertTableModal

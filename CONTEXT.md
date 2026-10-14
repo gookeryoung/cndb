@@ -13,3 +13,5 @@
 | 文档种子 | `examples/datasets/<工作区>/documents/` 目录树：子目录 → 文档文件夹节点、`*.md` → Markdown 文档；文件头 `---` 元数据块声明 status/tags/author/summary，seed 入库前剥离 | 反面示例工作区（工作区-低质量数据）不提供 documents/，即不生成典型文档 |
 | 数据表动态引用 | 文档正文中独占段落的占位符 `{{table:表名\|view=视图名\|limit=N}}`，前端渲染为实时数据表 | seed 阶段把符号表名/视图名解析为该工作区真实数字 ID（前端 `tableRef.ts` 只接受数字 ID） |
 | 文档导出 | `GET /{wid}/documents/{doc_id}/export?format=md\|docx\|pdf`：把文档最新版本正文渲染为 Markdown / Word / PDF 文件下载 | 工作区成员即可导出；文件夹与非法格式返回 400；渲染器在 `documents/services/export/`（原 reports 插件的 docx/pdf 渲染器迁入，去掉主题与模板变量，改用默认视觉预设） |
+| 文档修改申请（DocumentChangeRequest） | 文档级待审载体：viewer（或关闭直编的 editor）保存正文时自动生成（后端 202 + change_request 载荷），只存 `proposed_content` 待审全文、不写 `document_versions`；owner/editor 通过后落库为新版本，提交人可删除草稿 | 记录 `base_version_number` 作为内容基准，文档版本前进后其余 open 申请置 stale（需 `update-base` 刷新）；同文档可并存多个 open 申请，先合并者生效 |
+| 文档双轨制写入 | 与数据表同源分派：owner 恒直编；editor 需工作区 `allow_edit` 开启；viewer 一律转修改申请（202） | 分派在 `documents/services/change_requests.resolve_write_mode`，保存端点 `PUT /{wid}/documents/{doc_id}/content`；文件夹不参与（409） |

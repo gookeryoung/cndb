@@ -131,9 +131,49 @@ export interface PurgeResult {
 /** 文档导出格式：Markdown / Word / PDF */
 export type DocumentExportFormat = 'md' | 'docx' | 'pdf'
 
+/** 文档修改申请（双轨制写入的待审载体） */
+export interface DocumentChangeRequestItem {
+  id: number
+  workspace_id: number
+  document_id: number
+  document_title?: string
+  document_deleted?: boolean
+  title: string
+  description: string
+  change_summary: string
+  status: 'open' | 'merged' | 'closed'
+  /** 基准过期：提交后文档又前进了版本，需刷新基准才能通过 */
+  stale: boolean
+  base_version_number: number
+  current_version_number: number
+  proposed_size: number
+  submitted_by_id: number | null
+  reviewed_by_id: number | null
+  reviewed_at: string | null
+  review_comment: string
+  created_at: string | null
+  updated_at: string | null
+  /** 详情接口附带：基准版本 → 待审正文的 unified diff */
+  diff?: { diff: string; added: number; removed: number; base_size: number; proposed_size: number; base_version_number: number }
+  /** 详情接口附带：待审正文全文 */
+  proposed_content?: string
+}
+
+/** 保存转入修改申请时的 202 载荷 */
+export interface DocumentChangeRequestDispatch {
+  change_request: DocumentChangeRequestItem
+  message: string
+}
+
+/** 判定保存响应是否为「转修改申请」载荷（区别于直编返回的文档详情） */
+export function isChangeRequestDispatch(data: unknown): data is DocumentChangeRequestDispatch {
+  return !!data && typeof data === 'object' && 'change_request' in (data as Record<string, unknown>)
+}
+
 // ── API ──
 
 const base = (wid: number | string) => `/v1/workspaces/${wid}/documents`
+const crBase = (wid: number | string) => `/v1/workspaces/${wid}/document-change-requests`
 
 export const documentsApi = {
   list: (wid: number | string, params?: Record<string, unknown>) =>
@@ -154,9 +194,48 @@ export const documentsApi = {
   updateContent: (
     wid: number | string,
     docId: number | string,
-    data: { content: string; change_summary?: string; base_updated_at?: string | null },
+    data: {
+      content: string
+      change_summary?: string
+      base_updated_at?: string | null
+      /** 无直编资格时作为申请的内容基准版本号 */
+      base_version_number?: number | null
+    },
   ) =>
-    api.put<DocumentDetail>(`${base(wid)}/${docId}/content`, data).then(r => r.data),
+    api
+      .put<DocumentDetail | DocumentChangeRequestDispatch>(`${base(wid)}/${docId}/content`, data)
+      .then(r => r.data),
+
+  // 文档修改申请（双轨制写入的待审载体）
+  changeRequests: (wid: number | string, params?: { document_id?: number; scope?: string }) =>
+    api
+      .get<{ items: DocumentChangeRequestItem[]; total: number }>(crBase(wid), { params })
+      .then(r => r.data),
+
+  changeRequest: (wid: number | string, requestId: number | string) =>
+    api.get<DocumentChangeRequestItem>(`${crBase(wid)}/${requestId}`).then(r => r.data),
+
+  mergeChangeRequest: (wid: number | string, requestId: number | string, reviewComment?: string) =>
+    api
+      .post<{ request: DocumentChangeRequestItem; version_number: number }>(`${crBase(wid)}/${requestId}/merge`, {
+        review_comment: reviewComment ?? '',
+      })
+      .then(r => r.data),
+
+  closeChangeRequest: (wid: number | string, requestId: number | string, reviewComment?: string) =>
+    api
+      .post<DocumentChangeRequestItem>(`${crBase(wid)}/${requestId}/close`, {
+        review_comment: reviewComment ?? '',
+      })
+      .then(r => r.data),
+
+  updateChangeRequestBase: (wid: number | string, requestId: number | string) =>
+    api
+      .post<DocumentChangeRequestItem>(`${crBase(wid)}/${requestId}/update-base`, {})
+      .then(r => r.data),
+
+  deleteChangeRequest: (wid: number | string, requestId: number | string) =>
+    api.delete(`${crBase(wid)}/${requestId}`).then(r => r.data),
 
   // 导出：Markdown / Word / PDF 文件字节流（文件名由调用方拼装）
   exportFile: (wid: number | string, docId: number | string, format: DocumentExportFormat) =>

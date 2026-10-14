@@ -19,6 +19,9 @@
 - 文档前端：文档页新增回收站抽屉（软删除列表 / 恢复 / 彻底删除），编辑器新增出链抽屉（已解析与断链分栏，按目标文档修复断链）
 - CLI 新增 `cndb docs gc`：文档外存孤儿文件体检与物理回收（默认 dry-run，`--apply` 实际删除，`--json` 输出报告；软删除文档的外存内容视为有效引用不回收）
 - 文档导出：`GET /{wid}/documents/{doc_id}/export?format=md|docx|pdf` 把文档最新正文导出为 Markdown / Word / PDF 文件（工作区成员可用；文件夹与非法格式返回 400），编辑器顶栏新增「导出」下拉入口；DOCX/PDF 渲染器迁至 `documents/services/export/`，PDF 保留中文字体自动发现与页眉页脚
+- 文档修改申请（双轨制写入）：viewer（或关闭直编的 editor）保存正文不再 403，而是由 `PUT /{wid}/documents/{doc_id}/content` 返回 202 + 申请载荷，待审正文只存 `documents_changerequest.proposed_content` 不写版本表；新增 `/{wid}/document-change-requests` 的列表 / 详情（含基准→待审正文 DIFF）/ merge（落库为新版本）/ close / update-base / 删除草稿端点，申请记录 `base_version_number` 基准，文档版本前进后其余 open 申请自动置 stale
+- 文档彻底删除时一并清理该文档的待审修改申请，避免孤儿数据
+- 差异对比可视化：新增 `components/DiffView`（unified diff 解析 / 增删配对 / token 级行内高亮 / 并排模型 + 纯函数单测），文档版本对比支持统一·并排双视图与增减统计，数据表变更项改为「字段 / 修改前 / 修改后（基准漂移时含当前值）」表格；样式全部由 `color-mix + var(--cn-*)` 组合，各主题自动适配
 
 ### 移除
 

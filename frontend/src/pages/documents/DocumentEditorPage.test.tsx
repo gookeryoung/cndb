@@ -333,3 +333,43 @@ describe('DocumentEditorPage 文档导出', () => {
         })
     })
 })
+
+describe('DocumentEditorPage 修改申请（双轨制保存）', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+    })
+
+    it('无直编资格时保存转为修改申请：提示已提交而非已保存', async () => {
+        const putBodies: Record<string, unknown>[] = []
+        server.use(
+            http.put('/api/v1/workspaces/:wid/documents/:docId/content', async ({ request }) => {
+                putBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json(
+                    {
+                        change_request: { id: 7, status: 'open', document_id: 2, title: '修改文档《需求说明》' },
+                        message: '已提交修改申请 #7，审核通过后生效',
+                    },
+                    { status: 202 },
+                )
+            }),
+        )
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+
+        expect(await screen.findByTestId('doc-cr-notice')).toHaveTextContent('已提交修改申请 #7')
+        expect(screen.queryByText(/已保存 v/)).toBeNull()
+        // 提交时携带内容基准版本号，供后端判定基准漂移
+        expect(putBodies[0]?.base_version_number).toBe(1)
+    })
+
+    it('「修改申请」入口打开抽屉并展示空态', async () => {
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-cr-open'))
+
+        expect(await screen.findByText(/暂无修改申请/)).toBeInTheDocument()
+    })
+})

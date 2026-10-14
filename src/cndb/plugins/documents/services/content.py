@@ -32,6 +32,7 @@ from cndb.plugins.documents.models import (
     EXTERNAL_MIN_SIZE,
     INLINE_MAX_SIZE,
     Document,
+    DocumentChangeRequest,
     DocumentPermission,
     DocumentShare,
     DocumentTag,
@@ -357,7 +358,16 @@ def update_content(
             code="doc_version_conflict",
         ) from exc
     db.refresh(doc)
+    # 新版本落地：同文档其它待审修改申请的内容基准即过期
+    _mark_open_change_requests_stale(db, doc.id)
     return doc
+
+
+def _mark_open_change_requests_stale(db: Session, document_id: int) -> None:
+    """把同文档待审修改申请标记为基准过期（延迟导入避免与 change_requests 循环依赖）."""
+    from cndb.plugins.documents.services.change_requests import mark_open_requests_stale
+
+    mark_open_requests_stale(db, document_id)
 
 
 def rollback_version(db: Session, workspace_id: int, doc_id: int, user: User, target_version: int) -> Document:
@@ -555,6 +565,8 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
     db.execute(delete(DocumentTag).where(DocumentTag.document_id.in_(ids)))
     db.execute(delete(DocumentPermission).where(DocumentPermission.document_id.in_(ids)))
     db.execute(delete(DocumentShare).where(DocumentShare.document_id.in_(ids)))
+    # 待审修改申请随文档一并销毁，避免留下指向已清空文档的孤儿申请
+    db.execute(delete(DocumentChangeRequest).where(DocumentChangeRequest.document_id.in_(ids)))
     for target in targets:
         _sync_fts_delete(db, target.id)
     db.execute(delete(Document).where(Document.id.in_(ids)))

@@ -39,6 +39,8 @@ class ContentUpdate(BaseModel):
     change_summary: str = Field(default="", max_length=500)
     # 乐观锁版本戳：客户端上次读取/保存时拿到的 updated_at ISO 字符串
     base_updated_at: str | None = None
+    # 无直编资格时转修改申请所用的内容基准版本号（缺省取服务端当前最新版本）
+    base_version_number: int | None = Field(default=None, ge=0)
 
 
 class DocumentOut(BaseModel):
@@ -223,10 +225,40 @@ class ShareAccessRequest(BaseModel):
     password: str | None = None
 
 
+# ── 文档修改申请（双轨制写入的待审载体） ──
+
+
+class DocumentChangeRequestCreate(BaseModel):
+    """手动发起文档修改申请（自动分派路径不经此 DTO）."""
+
+    document_id: int
+    content: str
+    title: str = Field(default="", max_length=255)
+    description: str = Field(default="", max_length=2000)
+    change_summary: str = Field(default="", max_length=500)
+    # 提交者编辑所基于的版本号；缺省取服务端当前最新版本
+    base_version_number: int | None = Field(default=None, ge=0)
+
+
+class DocumentChangeRequestReview(BaseModel):
+    """通过 / 驳回修改申请时的审核意见（可省略请求体）."""
+
+    review_comment: str = Field(default="", max_length=2000)
+
+
+class DocumentChangeRequestUpdateBase(BaseModel):
+    """刷新基准：以指定版本（缺省取当前最新）作为新的对比基准."""
+
+    base_version_number: int | None = Field(default=None, ge=0)
+
+
 __all__ = [
     "ContentUpdate",
     "DailyNoteRequest",
     "DiffResponse",
+    "DocumentChangeRequestCreate",
+    "DocumentChangeRequestReview",
+    "DocumentChangeRequestUpdateBase",
     "DocumentCreate",
     "DocumentDetail",
     "DocumentOut",

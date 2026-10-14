@@ -14,7 +14,7 @@ class DocumentsPlugin(PluginBase):
 
     name = "documents"
     version = "0.1.0"
-    description = "文档管理：Markdown 文档上传导入、全文检索、版本控制、标签分类与分享"
+    description = "文档管理：Markdown 文档上传导入、全文检索、版本控制、标签分类、分享与修改申请"
     icon = "FileTextOutlined"
     route_prefix = "workspaces"
 
@@ -27,12 +27,14 @@ class DocumentsPlugin(PluginBase):
     def register_routes(self, router: APIRouter) -> None:
         """挂载 documents 路由."""
         from cndb.plugins.documents.routers import router as documents_router
+        from cndb.plugins.documents.routers.change_requests import router as change_requests_router
         from cndb.plugins.documents.routers.share import share_router
         from cndb.plugins.documents.routers.tags import router as tags_router
 
         router.include_router(documents_router)
         router.include_router(share_router)
         router.include_router(tags_router)
+        router.include_router(change_requests_router)
 
     @override
     def register_navigation(self) -> list[NavItem]:

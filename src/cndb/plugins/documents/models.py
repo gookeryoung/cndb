@@ -215,6 +215,59 @@ class DocumentShare(TimestampMixin, Base):
     )
 
 
+# ── 文档修改申请（双轨制写入：viewer / 关闭直编的 editor 保存时生成） ──
+
+DCR_STATUS_OPEN = "open"
+DCR_STATUS_MERGED = "merged"
+DCR_STATUS_CLOSED = "closed"
+DCR_STATUSES = (DCR_STATUS_OPEN, DCR_STATUS_MERGED, DCR_STATUS_CLOSED)
+
+
+class DocumentChangeRequest(TimestampMixin, Base):
+    """文档修改申请：对单篇文档正文的待审改动，通过后才生成新的文档版本.
+
+    - ``base_version_number``：提交者编辑时所基于的版本号（0 = 空文档），
+      merge 与 stale 判定均以它为基准；
+    - ``proposed_content``：待审正文全文，未生效、不占用 document_versions；
+    - 同一文档可并存多个 open 申请，版本前进一步后其余 open 申请置 ``stale``。
+    """
+
+    __tablename__ = "documents_changerequest"
+    __table_args__ = (
+        Index("ix_documents_changerequest_doc_status", "document_id", "status"),
+        {"extend_existing": True},
+    )
+
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents_document.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 待审正文全文 + 字节数（列表页展示规模，无需回读正文）
+    proposed_content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    proposed_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    change_summary: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    # 提交时的内容基准版本号（0 = 空文档）
+    base_version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=DCR_STATUS_OPEN, index=True)
+    # 基准过期标记：提交后文档又前进了版本，合并前需刷新基准
+    stale: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    submitted_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    reviewed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"DocumentChangeRequest(id={self.id}, document_id={self.document_id}, status={self.status!r})"
+
+
 __all__ = [
     "CHANGE_TYPES",
     "CHANGE_TYPE_IMPORT",
@@ -222,6 +275,10 @@ __all__ = [
     "CHANGE_TYPE_ROLLBACK",
     "CONTENT_TYPE_FOLDER",
     "CONTENT_TYPE_MARKDOWN",
+    "DCR_STATUSES",
+    "DCR_STATUS_CLOSED",
+    "DCR_STATUS_MERGED",
+    "DCR_STATUS_OPEN",
     "DOC_STATUSES",
     "DOC_STATUS_ARCHIVED",
     "DOC_STATUS_DRAFT",
@@ -231,6 +288,7 @@ __all__ = [
     "SHARE_PERM_EDITOR",
     "SHARE_PERM_VIEWER",
     "Document",
+    "DocumentChangeRequest",
     "DocumentPermission",
     "DocumentShare",
     "DocumentTag",
