@@ -34,7 +34,10 @@ _FTS5_SYNTAX_HINTS = (
     "parse error",
 )
 
-_fts_state = {"ready": False}
+# FTS 建表缓存按"数据库连接目标"区分：同一进程可能先后操作多个库（`cndb seed`
+# 的文件库、测试的内存库、备份恢复的临时库）。若只用一个进程级布尔标记，第二个库
+# 会误判 `documents_fts` 已存在，写入时报 ``no such table: documents_fts``。
+_fts_state: dict[str, Any] = {"ready": False, "bind": None}
 
 _FTS_CREATE_SQL = """
 CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
@@ -45,16 +48,22 @@ CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
 
 
 def ensure_fts_schema(db: Session) -> None:
-    """幂等创建 FTS5 虚拟表（进程内只执行一次）.
+    """幂等创建 FTS5 虚拟表（同一数据库内只执行一次）.
 
     生产路径由 alembic 迁移创建；本函数兜底 create_all 场景
     （全新数据库首次启动时 alembic 只 create_all ORM 表，不含虚拟表）。
+
+    缓存按数据库连接目标（engine / connection 所属 engine）区分，避免同进程操作
+    多个库时，后一个库误判前一个库建好的表也存在。
     """
-    if _fts_state["ready"]:
+    bind = db.get_bind()
+    engine = getattr(bind, "engine", bind)
+    if _fts_state["ready"] and _fts_state["bind"] is engine:
         return
     db.execute(text(_FTS_CREATE_SQL))
     db.commit()
     _fts_state["ready"] = True
+    _fts_state["bind"] = engine
 
 
 def reset_fts_schema_cache() -> None:
@@ -66,6 +75,7 @@ def reset_fts_schema_cache() -> None:
     让下一次写入重新执行幂等建表。
     """
     _fts_state["ready"] = False
+    _fts_state["bind"] = None
 
 
 def escape_query(query: str) -> str:
