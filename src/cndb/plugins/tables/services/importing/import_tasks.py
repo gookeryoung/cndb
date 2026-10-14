@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import logging
 import threading
@@ -142,8 +143,10 @@ def _parse_to_rows(
     if fmt == "csv":
         import csv as _csv
 
-        buf = raw if isinstance(raw, str) else raw.decode("utf-8")
-        reader = _csv.DictReader(__import__("io").StringIO(buf))
+        # 字节输入走统一编码探测（与 importer._parse_csv / transfer 同源），
+        # 不再硬编码 utf-8 —— GBK 等中文 CSV 之前会直接 UnicodeDecodeError
+        buf = raw if isinstance(raw, str) else transfer.decode_bytes_auto(raw)[0]
+        reader = _csv.DictReader(io.StringIO(buf))
         file_columns = list(reader.fieldnames or [])
         rows: list[dict[str, Any]] = []
         for row in reader:
@@ -151,7 +154,7 @@ def _parse_to_rows(
         # CSV 导入场景下 link 值是分号分隔串，这里不做预解析，交给 RowValidator._parse_link_value
         return rows, file_columns, len(rows)
     if fmt == "json":
-        data = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
+        data = json.loads(raw if isinstance(raw, str) else transfer.decode_bytes_auto(raw)[0])
         if not isinstance(data, list):
             raise ValueError("JSON 必须是对象数组")
         file_columns: list[str] = []
