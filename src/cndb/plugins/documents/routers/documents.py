@@ -296,10 +296,23 @@ def update_document_meta(
     if payload.parent_id is not None and payload.parent_id != doc.parent_id:
         if payload.parent_id == doc.id:
             raise ConflictError("不能将文档移动到自身")
-        parent = services.content.get_document_or_404(db, workspace_id, payload.parent_id)
-        if not parent.is_folder:
-            raise ConflictError("父节点必须是文件夹")
-        doc.parent_id = payload.parent_id
+        if payload.parent_id == 0:
+            # 0 = 移动到根目录（None 语义为"不更新"，无法表达移回根）
+            doc.parent_id = None
+        else:
+            parent = services.content.get_document_or_404(db, workspace_id, payload.parent_id)
+            if not parent.is_folder:
+                raise ConflictError("父节点必须是文件夹")
+            # 环检测：目标父节点的祖先链不得包含自身（否则形成孤儿环）；
+            # visited 集合防御历史脏数据已含环时的死循环
+            ancestor = parent
+            visited: set[int] = set()
+            while ancestor is not None and ancestor.id not in visited:
+                if ancestor.id == doc.id:
+                    raise ConflictError("不能将文档移动到其子孙节点下")
+                visited.add(ancestor.id)
+                ancestor = db.get(Document, ancestor.parent_id) if ancestor.parent_id is not None else None
+            doc.parent_id = payload.parent_id
     if payload.tag_ids is not None:
         services.content._apply_tags(db, doc, payload.tag_ids, current_user)
 

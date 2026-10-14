@@ -1,0 +1,120 @@
+/**
+ * 文档编辑器测试 —— 数据表动态引用闭环 + 大纲面板：
+ * 编辑器插入引用辅助（选表弹窗 → 光标位置插入占位符）/ 预览侧动态渲染 /
+ * 大纲抽屉实时解析标题并点击定位预览锚点。
+ */
+
+import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { Routes, Route } from 'react-router-dom'
+import { http, HttpResponse } from 'msw'
+import DocumentEditorPage from './DocumentEditorPage'
+import { renderProviders } from '@/test/render-providers'
+import { mockDocuments, mockUser, server } from '@/test/msw'
+
+function renderEditor(route = '/w/10/documents/2') {
+    return renderProviders(
+        <Routes>
+            <Route path="/w/:wid/documents/:docId" element={<DocumentEditorPage />} />
+        </Routes>,
+        { route, initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+}
+
+describe('DocumentEditorPage 数据表动态引用', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+    })
+
+    it('插入辅助：选表弹窗 → 插入占位符到光标处，预览侧动态渲染', async () => {
+        renderEditor()
+
+        // 初始内容加载（msw content：# 需求说明）
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        // 打开插入弹窗
+        fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
+        expect(await screen.findByText('选择要引用的数据表')).toBeInTheDocument()
+
+        // 选择「客户表」（下拉选项）：等表列表 query 就绪后打开下拉
+        const combo = await screen.findByRole('combobox')
+        fireEvent.mouseDown(combo)
+        fireEvent.click(await screen.findByText('客户表'))
+
+        // 确认插入（「插入」按钮）
+        fireEvent.click(screen.getByRole('button', { name: /^插\s*入$/ }))
+
+        // 编辑区出现占位符且独占段落（前后为行首/文首与空行/文末）
+        await waitFor(() => {
+            const ta = document.querySelector<HTMLTextAreaElement>('textarea')
+            expect(ta?.value).toMatch(/(^|\n\n)\{\{table:100\}\}(\n\n|$)/)
+        })
+
+        // 预览侧动态渲染数据表（行数据出现即视为渲染成功；表名与 Select 选项重名不唯一）
+        expect(await screen.findByText('张三')).toBeInTheDocument()
+        expect(screen.getByText('李四')).toBeInTheDocument()
+    })
+
+    it('未选择表时插入按钮禁用', async () => {
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
+        const okBtn = await screen.findByRole('button', { name: /^插\s*入$/ })
+        expect(okBtn).toBeDisabled()
+    })
+})
+
+describe('DocumentEditorPage 大纲面板', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+        // 多级标题文档：大纲与预览锚点的数据源
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    content: '# 需求说明\n\n## 背景\n\n正文。\n\n## 目标\n\n### 细分\n',
+                    version_number: 1,
+                })),
+        )
+    })
+
+    it('大纲抽屉：实时解析标题层级，点击定位预览锚点', async () => {
+        // jsdom 无 scrollIntoView，mock 捕获调用
+        const scrollIntoView = vi.fn()
+        Element.prototype.scrollIntoView = scrollIntoView as unknown as typeof Element.prototype.scrollIntoView
+        renderEditor()
+
+        // 顶栏大纲按钮显示条目数（4 个标题）
+        expect(await screen.findByRole('button', { name: /大纲\s*\(4\)/ })).toBeInTheDocument()
+
+        // 打开抽屉：层级条目齐备
+        fireEvent.click(screen.getByRole('button', { name: /大纲/ }))
+        expect(await screen.findByTestId('doc-outline-item-0')).toHaveTextContent('需求说明')
+        expect(screen.getByTestId('doc-outline-item-1')).toHaveTextContent('背景')
+        expect(screen.getByTestId('doc-outline-item-3')).toHaveTextContent('细分')
+
+        // 预览侧锚点已渲染（同 id 算法）
+        expect(document.getElementById('doc-h-目标')).toBeInTheDocument()
+
+        // 点击「目标」：滚动定位到对应锚点
+        fireEvent.click(screen.getByTestId('doc-outline-item-2'))
+        await waitFor(() => {
+            expect(scrollIntoView).toHaveBeenCalled()
+        })
+    })
+
+    it('编辑输入实时更新大纲（未保存也生效）', async () => {
+        renderEditor()
+        expect(await screen.findByRole('button', { name: /大纲\s*\(4\)/ })).toBeInTheDocument()
+
+        const ta = document.querySelector<HTMLTextAreaElement>('textarea')!
+        fireEvent.change(ta, { target: { value: '# 新标题\n\n正文' } })
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /大纲\s*\(1\)/ })).toBeInTheDocument()
+        })
+
+        fireEvent.click(screen.getByRole('button', { name: /大纲/ }))
+        expect(await screen.findByTestId('doc-outline-item-0')).toHaveTextContent('新标题')
+    })
+})

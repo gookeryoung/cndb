@@ -111,6 +111,29 @@ class TestDocumentCRUD:
         assert r.json()["title"] == "新标题"
         assert r.json()["status"] == "published"
 
+    def test_patch_move_to_root(self, client, doc_api, auth_headers):
+        """parent_id=0 为移回根目录约定（None 语义为不更新）."""
+        folder = _create_doc(client, doc_api, auth_headers, title="目录", is_folder=True)
+        doc = _create_doc(client, doc_api, auth_headers, parent_id=folder["id"])
+        r = client.patch(f"{doc_api}/{doc['id']}", json={"parent_id": 0}, headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["parent_id"] is None
+
+    def test_patch_move_into_descendant_rejected(self, client, doc_api, auth_headers):
+        """移动到自身子孙节点下必须 409（防环）."""
+        folder = _create_doc(client, doc_api, auth_headers, title="目录", is_folder=True)
+        sub = _create_doc(client, doc_api, auth_headers, title="子目录", is_folder=True, parent_id=folder["id"])
+        r = client.patch(f"{doc_api}/{folder['id']}", json={"parent_id": sub["id"]}, headers=auth_headers)
+        assert r.status_code == 409
+        assert "子孙" in r.json()["detail"]
+
+    def test_patch_move_to_non_folder_rejected(self, client, doc_api, auth_headers):
+        """父节点必须是文件夹：移动到文档下 409."""
+        target = _create_doc(client, doc_api, auth_headers, title="普通文档")
+        doc = _create_doc(client, doc_api, auth_headers)
+        r = client.patch(f"{doc_api}/{doc['id']}", json={"parent_id": target["id"]}, headers=auth_headers)
+        assert r.status_code == 409
+
     def test_soft_delete(self, client, doc_api, auth_headers):
         doc = _create_doc(client, doc_api, auth_headers)
         r = client.delete(f"{doc_api}/{doc['id']}", headers=auth_headers)

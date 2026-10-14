@@ -57,6 +57,12 @@ function ReportsStub() {
     return <div data-testid="reports-page-stub">{loc.pathname}</div>
 }
 
+/** 文档路由桩 —— 展示当前 pathname 供断言 */
+function DocumentsStub() {
+    const loc = useLocation()
+    return <div data-testid="documents-page-stub">{loc.pathname}</div>
+}
+
 /** 工作区设置路由桩 —— 展示当前 pathname 供断言 */
 function SettingsStub() {
     const loc = useLocation()
@@ -74,6 +80,7 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/tables/:tid" element={<GridPageStub />} />
                 <Route path="w/:wid/tables/:tid/change-requests" element={<ChangeRequestsStub />} />
                 <Route path="w/:wid/tables/:tid/settings" element={<TableSettingsStub />} />
+                <Route path="w/:wid/documents" element={<DocumentsStub />} />
                 <Route path="w/:wid/reports" element={<ReportsStub />} />
                 <Route path="w/:wid/settings" element={<SettingsStub />} />
                 <Route path="admin" element={<AdminStub />} />
@@ -160,14 +167,40 @@ describe('MainLayout 顶部导航', () => {
         })
     })
 
-    it('分页导航三项均带图标，直观区分入口类型', async () => {
+    it('分页导航含「文档」页签：位于「报表」之前、带文档数徽标，点击导航到文档模块', async () => {
+        renderLayout(mockUser)
+
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
+
+        const docsTab = screen.getByRole('tab', { name: /文档/ })
+        const reportsTab = screen.getByRole('tab', { name: /报表/ })
+        // 文档页签位于报表之前（DOM 顺序约束）
+        expect(docsTab.compareDocumentPosition(reportsTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+        // 徽标显示文档数（msw 返回 3 个文档）
+        await waitFor(() => {
+            expect(docsTab).toHaveTextContent('3')
+        })
+
+        // 点击导航到 /w/10/documents 且激活态随路由切换
+        fireEvent.click(docsTab)
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
+        })
+        expect(screen.getByRole('tab', { name: /文档/ }).closest('.ant-tabs-tab'))
+            .toHaveClass('ant-tabs-tab-active')
+    })
+
+    it('分页导航各项均带图标，直观区分入口类型', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
         // antd 图标 aria-label 会拼进 accessible name（如 'database数据表'），故用子串正则匹配
-        const tabNames = ['数据表', '报表', '工作区设置']
+        const tabNames = ['数据表', '文档', '报表', '工作区设置']
         for (const name of tabNames) {
             const tab = screen.getByRole('tab', { name: new RegExp(name) })
             expect(tab.querySelector('.anticon')).not.toBeNull()

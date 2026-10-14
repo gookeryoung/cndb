@@ -9,10 +9,11 @@ import {
   MenuOutlined, InfoCircleOutlined,
   DatabaseOutlined, BarChartOutlined, FormOutlined,
   FolderOutlined, FolderOpenOutlined,
-  PullRequestOutlined,
+  PullRequestOutlined, FileTextOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
+import { documentsApi } from '@/api/documents'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 
@@ -105,6 +106,14 @@ export default function MainLayout() {
     enabled: !!wid,
   })
 
+  // 文档数徽标：limit=1 仅取 total 计数，避免拉全量
+  const { data: docCount, isSuccess: docsReady } = useQuery({
+    queryKey: ['documents', wid, 'count'],
+    queryFn: () => documentsApi.list(Number(wid), { limit: 1 }),
+    enabled: !!wid,
+    staleTime: 60_000,
+  })
+
   // 后端已按 DataTable.order（用户拖拽顺序）返回，这里直接使用即可。
   const orderedTables = tables
 
@@ -131,6 +140,15 @@ export default function MainLayout() {
       label: (
         <span>
           <FormOutlined /> 表单
+        </span>
+      ),
+    },
+    {
+      key: 'documents',
+      label: (
+        <span>
+          <FileTextOutlined /> 文档
+          {docsReady && docCount && <span className="cn-ws-tab-count">{docCount.total}</span>}
         </span>
       ),
     },
@@ -167,11 +185,13 @@ export default function MainLayout() {
     ? 'tables'
     : location.includes('/forms')
       ? 'forms'
-      : location.includes('/reports')
-        ? 'reports'
-        : location.includes('/settings')
-          ? 'settings'
-          : 'tables'
+      : location.includes('/documents')
+        ? 'documents'
+        : location.includes('/reports')
+          ? 'reports'
+          : location.includes('/settings')
+            ? 'settings'
+            : 'tables'
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 

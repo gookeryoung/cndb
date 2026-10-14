@@ -1,14 +1,17 @@
 /** 文档编辑页 — 分屏编辑/预览 + 版本历史 + 标签 + 乐观锁保存. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import {
   Alert,
   Button,
   Drawer,
   Divider,
   Input,
+  InputNumber,
+  Modal,
   Popconfirm,
+  Select,
   Space,
   Splitter,
   Tabs,
@@ -17,16 +20,20 @@ import {
   Typography,
   message,
 } from 'antd'
+import type { TextAreaRef } from 'antd/es/input/TextArea'
 import {
-  ArrowLeftOutlined,
   CheckOutlined,
   HistoryOutlined,
+  MenuOutlined,
   SaveOutlined,
+  TableOutlined,
   TagsOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
+import { parseOutline } from '@/components/Document/outline'
 import { documentsApi } from '@/api/documents'
+import { tableApi } from '@/api'
 import type { DocumentDetail, TagItem, VersionItem } from '@/api/documents'
 
 const { Text, Title } = Typography
@@ -67,7 +74,6 @@ function DiffView({ diff }: { diff: string }) {
 
 export default function DocumentEditorPage() {
   const { wid, docId } = useParams<{ wid: string; docId: string }>()
-  const navigate = useNavigate()
   const qc = useQueryClient()
   const workspaceId = Number(wid)
   const id = Number(docId)
@@ -76,9 +82,22 @@ export default function DocumentEditorPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
+  const [outlineOpen, setOutlineOpen] = useState(false)
   const [diffPair, setDiffPair] = useState<{ base: number; head: number } | null>(null)
   const baseTsRef = useRef<string | null>(null)
   const dirtyRef = useRef(false)
+  const taRef = useRef<TextAreaRef>(null)
+
+  // 插入数据表引用辅助
+  const [insertOpen, setInsertOpen] = useState(false)
+  const [insertTableId, setInsertTableId] = useState<number | null>(null)
+  const [insertLimit, setInsertLimit] = useState<number | null>(null)
+
+  const tablesQuery = useQuery({
+    queryKey: ['tables', workspaceId, 'embed-options'],
+    queryFn: () => tableApi.list(workspaceId),
+    enabled: insertOpen,
+  })
 
   const docQuery = useQuery({
     queryKey: ['documents', workspaceId, id, 'content'],
@@ -159,6 +178,24 @@ export default function DocumentEditorPage() {
     saveMut.mutate(content)
   }, [content, saveMut])
 
+  // 在光标位置插入数据表引用占位符（前后自动补空行保证独占段落）
+  const insertTableRef = () => {
+    if (insertTableId === null) return
+    const snippet = `{{table:${insertTableId}${insertLimit ? `|limit=${insertLimit}` : ''}}}`
+    const el = taRef.current?.resizableTextArea?.textArea
+    const pos = el?.selectionStart ?? content.length
+    const end = el?.selectionEnd ?? pos
+    const before = content.slice(0, pos)
+    const after = content.slice(end)
+    const prefix = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : ''
+    const suffix = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : ''
+    setContent(`${before}${prefix}${snippet}${suffix}${after}`)
+    dirtyRef.current = true
+    setInsertOpen(false)
+    setInsertTableId(null)
+    setInsertLimit(null)
+  }
+
   // Ctrl/Cmd+S 保存
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -170,6 +207,13 @@ export default function DocumentEditorPage() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [handleSave])
+
+  // 大纲：从当前内容实时解析（不依赖保存后的 toc_json），点击定位预览区锚点
+  const outline = useMemo(() => parseOutline(content), [content])
+
+  const scrollToAnchor = useCallback((anchor: string) => {
+    document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
 
   const versionTimeline = useMemo(() => {
     const items: VersionItem[] = versionsQuery.data?.items ?? []
@@ -232,14 +276,17 @@ export default function DocumentEditorPage() {
         }}
       >
         <Space wrap>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${workspaceId}/documents`)}>
-            返回列表
-          </Button>
           <Title level={4} style={{ margin: 0 }}>{doc.title}</Title>
           <Tag>{doc.status === 'published' ? '已发布' : doc.status === 'archived' ? '归档' : '草稿'}</Tag>
           {dirtyRef.current && <Text type="warning" style={{ fontSize: 12 }}>未保存</Text>}
         </Space>
         <Space wrap>
+          <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>
+            大纲{outline.length > 0 ? ` (${outline.length})` : ''}
+          </Button>
+          <Button icon={<TableOutlined />} onClick={() => setInsertOpen(true)}>
+            插入表格引用
+          </Button>
           <Button icon={<TagsOutlined />} onClick={() => setTagsOpen(true)}>
             标签{doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}
           </Button>
@@ -284,6 +331,7 @@ export default function DocumentEditorPage() {
         <Splitter style={{ height: '100%' }}>
           <Splitter.Panel defaultSize="50%" min="20%" max="80%">
             <TextArea
+              ref={taRef}
               value={content}
               onChange={e => {
                 setContent(e.target.value)
@@ -304,11 +352,42 @@ export default function DocumentEditorPage() {
           </Splitter.Panel>
           <Splitter.Panel min="20%" max="80%">
             <div style={{ height: '100%', overflow: 'auto', padding: '20px 24px' }}>
-              <MarkdownPreview content={content} />
+              <MarkdownPreview content={content} workspaceId={workspaceId} />
             </div>
           </Splitter.Panel>
         </Splitter>
       </div>
+
+      {/* 大纲抽屉：实时标题层级，点击滚动定位预览区锚点 */}
+      <Drawer title="大纲" width={320} open={outlineOpen} onClose={() => setOutlineOpen(false)}>
+        {outline.length === 0 ? (
+          <Text type="secondary">暂无标题（用 # 起首行添加，编辑时实时更新）</Text>
+        ) : (
+          outline.map((o, i) => (
+            <div
+              key={`${o.anchor}-${i}`}
+              data-testid={`doc-outline-item-${i}`}
+              style={{
+                paddingLeft: (o.level - 1) * 12,
+                paddingRight: 8,
+                paddingTop: 4,
+                paddingBottom: 4,
+                fontSize: o.level <= 2 ? 13 : 12,
+                fontWeight: o.level === 1 ? 600 : 400,
+                color: o.level <= 2 ? 'var(--cn-text, inherit)' : 'var(--cn-text-secondary, #666)',
+                cursor: 'pointer',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                borderRadius: 4,
+              }}
+              onClick={() => scrollToAnchor(o.anchor)}
+            >
+              {o.text}
+            </div>
+          ))
+        )}
+      </Drawer>
 
       {/* 版本抽屉 */}
       <Drawer
@@ -373,6 +452,42 @@ export default function DocumentEditorPage() {
           onChange={ids => setDocTagsMut.mutate(ids)}
         />
       </Drawer>
+
+      {/* 插入数据表引用弹窗 */}
+      <Modal
+        title="插入数据表引用"
+        open={insertOpen}
+        onOk={insertTableRef}
+        okButtonProps={{ disabled: insertTableId === null }}
+        okText="插入"
+        cancelText="取消"
+        onCancel={() => setInsertOpen(false)}
+        destroyOnHidden
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size={12}>
+          <Select
+            style={{ width: '100%' }}
+            placeholder="选择要引用的数据表"
+            value={insertTableId}
+            onChange={v => setInsertTableId(v)}
+            options={(tablesQuery.data ?? []).map(t => ({ value: t.id, label: t.name }))}
+            loading={tablesQuery.isLoading}
+            showSearch
+            optionFilterProp="label"
+          />
+          <InputNumber
+            style={{ width: '100%' }}
+            min={1}
+            max={50}
+            placeholder="每页行数（默认 20，上限 50）"
+            value={insertLimit}
+            onChange={v => setInsertLimit(v)}
+          />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            以只读表格形式在文档中动态引用所选数据表，数据随表内容实时更新。
+          </Text>
+        </Space>
+      </Modal>
     </div>
   )
 }

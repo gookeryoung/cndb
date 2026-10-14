@@ -11,6 +11,7 @@ import { setupServer } from 'msw/node'
 import type {
   Field, RowListResponse, TableSummary, UserResponse, View, Workspace,
 } from '@/api'
+import type { DocumentItem } from '@/api/documents'
 
 // ─────────────── 测试 fixtures ───────────────
 
@@ -59,6 +60,82 @@ export const mockRecords: RowListResponse = {
   limit: 50,
 }
 
+/** 表详情 fixture：TableEmbed / 编辑器选表弹窗使用 */
+export const mockTableDetail = {
+  id: 100,
+  workspace_id: 10,
+  name: '客户表',
+  fields: [mockField],
+  views: mockViews.map(v => ({ id: v.id, name: v.name, view_type: v.view_type, is_default: v.is_default })),
+}
+
+/** 文档树 fixture：文件夹「产品文档」下挂「需求说明」与子文件夹「会议纪要」 */
+export const mockDocuments: DocumentItem[] = [
+  {
+    id: 1,
+    workspace_id: 10,
+    parent_id: null,
+    title: '产品文档',
+    slug: null,
+    content_type: 'folder',
+    author: '',
+    summary: '',
+    toc_json: [],
+    status: 'draft',
+    is_folder: true,
+    sort_order: 0,
+    content_size: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-02T00:00:00Z',
+    created_by_id: 1,
+    updated_by_id: 1,
+    tag_ids: [],
+    version_count: 0,
+  },
+  {
+    id: 2,
+    workspace_id: 10,
+    parent_id: 1,
+    title: '需求说明',
+    slug: null,
+    content_type: 'markdown',
+    author: '',
+    summary: '',
+    toc_json: [],
+    status: 'draft',
+    is_folder: false,
+    sort_order: 0,
+    content_size: 128,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-02T00:00:00Z',
+    created_by_id: 1,
+    updated_by_id: 1,
+    tag_ids: [],
+    version_count: 1,
+  },
+  {
+    id: 3,
+    workspace_id: 10,
+    parent_id: 1,
+    title: '会议纪要',
+    slug: null,
+    content_type: 'folder',
+    author: '',
+    summary: '',
+    toc_json: [],
+    status: 'draft',
+    is_folder: true,
+    sort_order: 1,
+    content_size: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-02T00:00:00Z',
+    created_by_id: 1,
+    updated_by_id: 1,
+    tag_ids: [],
+    version_count: 0,
+  },
+]
+
 // ─────────────── 默认 handlers ───────────────
 
 export const handlers = [
@@ -72,6 +149,8 @@ export const handlers = [
 
   // 表
   http.get('/api/v1/workspaces/:wid/tables', () => HttpResponse.json([mockTable])),
+  http.get('/api/v1/workspaces/:wid/tables/:tid', () =>
+    HttpResponse.json(mockTableDetail)),
 
   // 字段
   http.get('/api/v1/workspaces/:wid/tables/:tid/fields', () =>
@@ -81,9 +160,78 @@ export const handlers = [
   http.get('/api/v1/workspaces/:wid/tables/:tid/records', () =>
     HttpResponse.json(mockRecords)),
 
+  // 视图行（TableEmbed 带 view 参数的引用）
+  http.get('/api/v1/workspaces/:wid/tables/:tid/views/:vid/rows', () =>
+    HttpResponse.json({
+      rows: mockRecords.items,
+      total: mockRecords.total,
+      view_id: Number(200),
+    })),
+
   // 视图
   http.get('/api/v1/workspaces/:wid/tables/:tid/views', () =>
     HttpResponse.json(mockViews)),
+
+  // 文档（MainLayout 徽标 + 文档树 / 列表）：list 按 parent_id 过滤（后端语义：传入才过滤层级）
+  http.get('/api/v1/workspaces/:wid/documents', ({ request }) => {
+    const parentParam = new URL(request.url).searchParams.get('parent_id')
+    const items = parentParam != null && parentParam !== ''
+      ? mockDocuments.filter(d => String(d.parent_id) === parentParam)
+      : mockDocuments
+    return HttpResponse.json({ items, total: items.length })
+  }),
+  http.get('/api/v1/workspaces/:wid/documents/tree', () =>
+    HttpResponse.json({ items: mockDocuments })),
+  // 全文搜索（FTS5 高亮：title_hit/summary_hit 带 <mark> 标记）
+  http.get('/api/v1/workspaces/:wid/documents/search', ({ request }) => {
+    const q = (new URL(request.url).searchParams.get('q') ?? '').trim()
+    if (!q) return HttpResponse.json({ items: [], total: 0, query: q })
+    const kw = q.toLowerCase()
+    const hit = (text: string) => text.toLowerCase().includes(kw)
+    const items = mockDocuments
+      .filter(d => hit(d.title) || hit(d.summary))
+      .map(d => ({
+        id: d.id,
+        title: d.title,
+        title_hit: hit(d.title) ? `<mark>${d.title}</mark>` : d.title,
+        summary_hit: hit(d.summary)
+          ? `…<mark>${d.summary}</mark>…`
+          : (d.summary || '（正文无高亮片段）'),
+        workspace_id: d.workspace_id,
+        status: d.status,
+        updated_at: d.updated_at,
+        rank: 0.0,
+      }))
+    return HttpResponse.json({ items, total: items.length, query: q })
+  }),
+  http.post('/api/v1/workspaces/:wid/documents', async ({ request }) => {
+    const body = await request.json() as {
+      title?: string
+      is_folder?: boolean
+      parent_id?: number | null
+    }
+    return HttpResponse.json(
+      {
+        ...mockDocuments[0],
+        id: 99,
+        title: body.title ?? '未命名',
+        is_folder: !!body.is_folder,
+        parent_id: body.parent_id ?? null,
+      },
+      { status: 201 },
+    )
+  }),
+  http.patch('/api/v1/workspaces/:wid/documents/:docId', () =>
+    HttpResponse.json(mockDocuments[0])),
+  http.delete('/api/v1/workspaces/:wid/documents/:docId', () =>
+    HttpResponse.json({ id: 1, deleted: true })),
+  // 文档内容（编辑器 / TableEmbed 场景）
+  http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+    HttpResponse.json({
+      ...mockDocuments[1],
+      content: '# 需求说明\n\n正文段落。\n',
+      version_number: 1,
+    })),
 
   // 系统基本信息（登录即可，普通用户可查看）
   http.get('/api/v1/system/about', () =>
