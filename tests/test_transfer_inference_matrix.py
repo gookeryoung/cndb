@@ -7,7 +7,7 @@
 - 端到端建表导入验收：85% → 0.85、中文日期落库、"是" → True、科学计数法值保真、
   负百分比/超 100% 的 %-后缀值落库、multiselect 列表列识别与 options 预填充。
 
-对应计划文档 .trae/documents/import-conversion-recognition-enhancement.md 的缺陷 B1-B7
+对应导入转换识别增强的缺陷 B1-B7
 及其遗留事项（负百分比、multiselect 识别含 JSON/XLSX 路径）。
 """
 

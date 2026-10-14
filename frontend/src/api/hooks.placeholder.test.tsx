@@ -1,5 +1,5 @@
 /**
- * useTableRecords placeholderData 行为回归 —— 切表加载态设计（.trae/designs/table-switch-loading.md）.
+ * useTableRecords placeholderData 行为回归 —— 切表加载态设计.
  *
  * 语义：
  * 1. 同表参数变化（翻页 offset）→ 新请求挂起期间保留上一份数据（isPlaceholderData），
