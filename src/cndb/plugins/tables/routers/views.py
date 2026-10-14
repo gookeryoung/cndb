@@ -6,6 +6,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -91,6 +92,12 @@ def _create_view_obj(
     """
     if payload.is_default:
         db.query(DataView).filter(DataView.table_id == table_id).update({"is_default": False})
+    # 未显式指定顺序时追加到末尾（现有最大 order + 1），避免新视图排在最前
+    if payload.order is None:
+        max_order = db.query(func.max(DataView.order)).filter(DataView.table_id == table_id).scalar()
+        order = (max_order or 0) + 1
+    else:
+        order = payload.order
     return DataView(
         table_id=table_id,
         owner_id=owner_id,
@@ -103,7 +110,7 @@ def _create_view_obj(
         field_order=payload.field_order,
         view_options=payload.view_options,
         is_default=payload.is_default,
-        order=payload.order,
+        order=order,
     )
 
 

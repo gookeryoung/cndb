@@ -71,6 +71,20 @@ class TestViewsAPI:
         assert data["view_type"] == "grid"
         assert data["is_default"] is True
 
+    def test_create_view_appends_last_without_order(self, client, ws, table, auth_owner):
+        """未显式指定 order 时，新视图应追加到现有视图末尾而非最前."""
+        url = f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views"
+        r1 = client.post(url, json={"name": "视图一", "view_type": "grid"}, headers=auth_owner)
+        assert r1.status_code == 201
+        r2 = client.post(url, json={"name": "视图二", "view_type": "grid"}, headers=auth_owner)
+        assert r2.status_code == 201
+
+        r = client.get(url, headers=auth_owner)
+        assert r.status_code == 200
+        names = [v["name"] for v in r.json()]
+        assert names == ["视图一", "视图二"]
+        assert r.json()[1]["order"] == 2
+
     def test_create_matrix_view_ok(self, client, ws, table, auth_owner):
         """矩阵视图：row_field/column_field 引用存在字段时应创建成功."""
         r = client.post(
