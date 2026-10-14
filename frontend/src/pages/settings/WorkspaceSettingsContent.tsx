@@ -13,12 +13,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
-  Table, Popconfirm, Divider, Modal, Card, Space, Avatar, Tooltip,
+  Popconfirm, Divider, Card, Space, Avatar,
 } from 'antd'
 import { App as AntApp } from 'antd'
 import {
-  SettingOutlined, BarChartOutlined, PlusOutlined,
-  UserDeleteOutlined, FileTextOutlined, EyeOutlined,
+  SettingOutlined, BarChartOutlined,
+  FileTextOutlined, EyeOutlined,
   ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -30,6 +30,10 @@ import type {
 } from '@/api'
 import { useAuthStore } from '@/store'
 import HelpTip from '@/components/HelpTip'
+import AddMemberModal from './AddMemberModal'
+import MemberZones from './MemberZones'
+import TransferOwnerModal from './TransferOwnerModal'
+import { ROLE_LABEL, VISIBILITY_LABEL, getAssignableRoles } from './workspaceRoles'
 
 interface Props {
   wid: string
@@ -40,30 +44,6 @@ interface Props {
   onDeleted?: () => void
 }
 
-const ROLE_LABEL: Record<WorkspaceRole, string> = {
-  owner: '所有者',
-  editor: '编辑者',
-  viewer: '查看者',
-}
-
-const VISIBILITY_LABEL: Record<WorkspaceVisibility, string> = {
-  public: '公开（任何人可读）',
-  member: '成员可见（仅工作区成员可访问）',
-  private: '私有（仅所有者可见）',
-}
-
-/** 角色一句话说明（成员角色 Select 下拉展示，与帮助中心「权限角色」主题对齐） */
-const ROLE_HINTS: Record<WorkspaceRole, string> = {
-  owner: '全部权限，可转让与删除工作区',
-  editor: '可查看并编辑数据，不可管理成员与设置',
-  viewer: '仅可查看工作区内容与数据',
-}
-
-/** 当前用户可分配给其他人的角色选项（仅 owner 可管理，可分配 editor/viewer） */
-function getAssignableRoles(currentRole: WorkspaceRole | null): Array<{ value: WorkspaceRole; label: string }> {
-  if (currentRole !== 'owner') return []
-  return (['editor', 'viewer'] as WorkspaceRole[]).map(r => ({ value: r, label: ROLE_LABEL[r] }))
-}
 
 export default function WorkspaceSettingsContent({
   wid, initialTab = 'basic', onUpdated, onDeleted,
@@ -321,193 +301,59 @@ export default function WorkspaceSettingsContent({
       )}
 
       {/* ── 编辑者区 / 查看者区（三区布局） ── */}
-      {(['editor', 'viewer'] as const).map(zoneRole => {
-        const list = members.filter(m => m.role === zoneRole)
-        return (
-          <Card
-            key={zoneRole}
-            size="small"
-            title={<Space><UserOutlined /> {ROLE_LABEL[zoneRole]}（{list.length}）</Space>}
-            style={{ marginBottom: 12 }}
-            extra={
-              canManageMembers ? (
-                <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => {
-                  setAddMemberUsername(null)
-                  setAddMemberRole(zoneRole)
-                  setCandidatesSearch('')
-                  setAddMemberOpen(true)
-                }}>添加成员</Button>
-              ) : null
-            }
-          >
-            {list.length === 0 ? (
-              <div style={{ color: 'var(--cn-text-muted)', fontSize: 13, padding: '6px 0' }}>
-                暂无{ROLE_LABEL[zoneRole]}
-              </div>
-            ) : (
-              <Table
-                rowKey="id"
-                size="small"
-                loading={membersLoading}
-                dataSource={list}
-                pagination={false}
-                columns={[
-                  {
-                    title: '用户',
-                    render: (_, m) => {
-                      const u = m.user
-                      const isMe = currentMemberId === m.id
-                      return (
-                        <div>
-                          <div style={{ fontWeight: 500 }}>
-                            {u.username}
-                            {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 13 }}>({u.nickname})</span>}
-                            {isMe && <Tag color="blue" style={{ marginLeft: 8 }}>我</Tag>}
-                          </div>
-                          {u.email && <div style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>{u.email}</div>}
-                        </div>
-                      )
-                    },
-                  },
-                  {
-                    title: '角色', width: 150,
-                    render: (_, m) => {
-                      if (!canManageMembers) {
-                        return <Tag>{ROLE_LABEL[zoneRole]}</Tag>
-                      }
-                      return (
-                        <Select
-                          value={zoneRole}
-                          onChange={(v: string) => changeRole.mutate({ memberId: m.id, role: v })}
-                          size="small"
-                          style={{ width: 120 }}
-                          disabled={!canManageMembers}
-                          options={assignableRoles}
-                          optionRender={(option) => (
-                            <div>
-                              <div>{option.label}</div>
-                              <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', lineHeight: 1.5 }}>
-                                {ROLE_HINTS[option.value as WorkspaceRole]}
-                              </div>
-                            </div>
-                          )}
-                        />
-                      )
-                    },
-                  },
-                  {
-                    title: '操作', width: 80,
-                    render: (_, m) => {
-                      if (!canManageMembers) return null
-                      return (
-                        <Popconfirm
-                          title={`移除「${m.user.username}」？`}
-                          description="该成员将从工作区中移出"
-                          onConfirm={() => kick.mutate(m.id)}
-                        >
-                          <Tooltip title="移除成员：收回其在本工作区的访问权限">
-                            <Button size="small" type="text" danger icon={<UserDeleteOutlined />} />
-                          </Tooltip>
-                        </Popconfirm>
-                      )
-                    },
-                  },
-                ]}
-              />
-            )}
-          </Card>
-        )
-      })}
+      <MemberZones
+        members={members}
+        membersLoading={membersLoading}
+        canManageMembers={canManageMembers}
+        currentMemberId={currentMemberId}
+        assignableRoles={assignableRoles}
+        onRoleChange={(memberId, role) => changeRole.mutate({ memberId, role })}
+        onKick={memberId => kick.mutate(memberId)}
+        onAddMember={role => {
+          setAddMemberUsername(null)
+          setAddMemberRole(role)
+          setCandidatesSearch('')
+          setAddMemberOpen(true)
+        }}
+      />
 
       {/* ── 添加成员 Modal ── */}
-      <Modal
-        title="添加成员"
+      <AddMemberModal
         open={addMemberOpen}
         onCancel={() => setAddMemberOpen(false)}
-        onOk={() => {
+        onSubmit={() => {
           if (addMemberUsername) addMember.mutate({ username: addMemberUsername, role: addMemberRole })
         }}
-        okText="添加"
-        confirmLoading={addMember.isPending}
-        okButtonProps={{ disabled: !addMemberUsername }}
-        destroyOnHidden
-      >
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>选择用户（系统内已注册且未加入本工作区）</div>
-          <Select
-            showSearch
-            filterOption={false}
-            onSearch={setCandidatesSearch}
-            placeholder="输入关键字搜索用户名或昵称..."
-            style={{ width: '100%' }}
-            value={addMemberUsername ?? undefined}
-            onChange={(v: string) => setAddMemberUsername(v)}
-            options={candidatesData.map(u => ({
-              value: u.username,
-              label: (
-                <span>
-                  <strong>{u.username}</strong>
-                  {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8 }}>({u.nickname})</span>}
-                </span>
-              ),
-            }))}
-            notFoundContent={
-              candidatesSearch
-                ? (candidatesLoading ? '搜索中...' : '未找到匹配用户')
-                : '请先输入关键字搜索用户'
-            }
-            loading={candidatesLoading}
-          />
-        </div>
-        <div>
-          <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>配置权限角色</div>
-          <Select
-            style={{ width: '100%' }}
-            value={addMemberRole}
-            onChange={(v: WorkspaceRole) => setAddMemberRole(v)}
-            options={assignableRoles.filter(r => r.value !== 'owner')}
-          />
-          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--cn-text-muted)' }}>
-            {ROLE_LABEL[addMemberRole as WorkspaceRole]} — {ROLE_HINTS[addMemberRole as WorkspaceRole]}
-          </div>
-        </div>
-      </Modal>
+        username={addMemberUsername}
+        onUsernameChange={setAddMemberUsername}
+        role={addMemberRole}
+        onRoleChange={setAddMemberRole}
+        candidates={candidatesData}
+        candidatesLoading={candidatesLoading}
+        candidatesSearch={candidatesSearch}
+        onSearch={setCandidatesSearch}
+        assignableRoles={assignableRoles}
+        submitting={addMember.isPending}
+      />
 
       {/* ── 转让所有权 Modal ── */}
-      <Modal
-        title="转让工作区所有权"
+      <TransferOwnerModal
         open={transferOpen}
         onCancel={() => setTransferOpen(false)}
         onOk={() => {
           const selected = members.find(m => m.role !== 'owner' && String(m.user.id) === String(transferTargetId))
           if (selected) transferOwner.mutate(Number(selected.user.id))
         }}
-        okText="确认转让"
-        okType="danger"
-        confirmLoading={transferOwner.isPending}
-        okButtonProps={{ disabled: !transferTargetId }}
-        destroyOnHidden
-      >
-        <div style={{ marginBottom: 8, color: 'var(--cn-text-secondary)', fontSize: 13 }}>
-          将工作区所有权转让给下列成员。转让后您将失去所有者特权，回落到编辑者角色。
-        </div>
-        <Select
-          showSearch
-          placeholder="选择接收者"
-          style={{ width: '100%' }}
-          value={transferTargetId}
-          onChange={setTransferTargetId}
-          options={members
-            .filter(m => m.role !== 'owner')
-            .map(m => ({
-              value: String(m.user.id),
-              label: `${m.user.username}${m.user.nickname ? ` (${m.user.nickname})` : ''}`,
-            }))}
-          filterOption={(input, option) =>
-            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-          }
-        />
-      </Modal>
+        options={members
+          .filter(m => m.role !== 'owner')
+          .map(m => ({
+            value: String(m.user.id),
+            label: `${m.user.username}${m.user.nickname ? ` (${m.user.nickname})` : ''}`,
+          }))}
+        value={transferTargetId}
+        onChange={setTransferTargetId}
+        confirming={transferOwner.isPending}
+      />
     </div>
   )
 
