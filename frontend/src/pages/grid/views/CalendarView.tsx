@@ -6,7 +6,9 @@
  * - group_field:    分组/颜色字段（select，可选，不同值渲染不同侧边色条）
  * - calendar_mode:  默认打开的日历层级 'year' | 'month' | 'week'（默认 'month'）
  * - show_weekend:   是否高亮周末（默认 true）
+ * - done_field:     完成标志字段（可选，配合 done_op/done_value；语义与看板一致）
  *
+ * 已完成事件渲染约定（与看板一致）：标题删除线 + 标题后绿色对勾、绿色左边框 + 主题绿底。
  * 注：日历视图只支持单点日期事件，不渲染跨天持续标识。进度跟踪请使用其他视图。
  */
 
@@ -17,12 +19,14 @@ import {
   RightOutlined,
   CalendarOutlined,
   ReloadOutlined,
+  CheckCircleFilled,
 } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
 import { formatFieldDisplayValue, getLinkFirstLabel, getMultiSelectFirstLabel } from '../cells/fieldValueFormat'
 import { parseDate, fmtDate } from '../cells/dateUtils'
 import { resolveOpts, CALENDAR_OPTIONS } from '../view-config/viewOptionSchema'
+import { resolveDoneCtx, isDoneRow, type DoneCtx } from './kanbanBoard'
 
 // ── 类型定义 ──────────────────────────────────────────
 
@@ -42,6 +46,8 @@ interface CalendarEvent {
   title: string
   groupValue?: string
   color?: string
+  /** 是否匹配完成标志（与看板 done_field 语义一致） */
+  isDone?: boolean
 }
 
 // ── 工具函数（日期已抽到 ../cells/dateUtils.ts） ───────────────
@@ -94,11 +100,12 @@ function groupColor(value: string): string {
 
 // ── 事件构建 ──────────────────────────────────────────
 
-/** 将原始 rows 转成 CalendarEvent 列表 */
+/** 将原始 rows 转成 CalendarEvent 列表（doneCtx 用于完成标志判定，与看板一致） */
 function buildEvents(
   rows: RowResponse[],
   fields: Field[],
   opts: Record<string, unknown>,
+  doneCtx: DoneCtx | null,
 ): CalendarEvent[] {
   const startField = opts.start_field as string | undefined
   const titleField = opts.title_field as string | undefined
@@ -149,7 +156,7 @@ function buildEvents(
       if (groupValue) color = groupColor(groupValue)
     }
 
-    events.push({ row, date, title, groupValue, color })
+    events.push({ row, date, title, groupValue, color, isDone: isDoneRow(row, doneCtx) })
   }
   return events
 }
@@ -195,8 +202,26 @@ function groupEventsByDay(events: CalendarEvent[], filterDays?: Date[]): Map<str
   return map
 }
 
-/** 构造事件 badge 的统一 style 对象（MonthView / WeekView 共用） */
+/** 构造事件 badge 的统一 style 对象（MonthView / WeekView 共用）.
+ *  已完成事件与看板一致：绿色左边框 + 主题绿底 + 文字删除线置灰。
+ */
 function eventBadgeStyle(event: CalendarEvent, ds: DensityStyle, lineHeight = 1.3): React.CSSProperties {
+  if (event.isDone) {
+    return {
+      fontSize: ds.eventFontSize,
+      padding: ds.eventPadding,
+      borderRadius: ds.eventRadius,
+      background: 'var(--cn-bg-success-subtle)',
+      color: 'var(--cn-text-muted)',
+      cursor: 'pointer',
+      borderLeft: '3px solid #52c41a',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      lineHeight,
+      textDecoration: 'line-through',
+    }
+  }
   return {
     fontSize: ds.eventFontSize,
     padding: ds.eventPadding,
@@ -461,6 +486,7 @@ function MonthView({
                     title={ev.title}
                   >
                     {ev.title}
+                    {ev.isDone && <CheckCircleFilled style={{ color: '#52c41a', marginLeft: 4, fontSize: ds.eventFontSize }} />}
                   </div>
                 ))}
               </div>
@@ -556,6 +582,7 @@ function WeekView({
                       title={ev.title}
                     >
                       {ev.title}
+                      {ev.isDone && <CheckCircleFilled style={{ color: '#52c41a', marginLeft: 4, fontSize: ds.eventFontSize }} />}
                       {ev.groupValue && (
                         <Tag color={ev.color} style={{ marginLeft: 4, fontSize: ds.eventFontSize - 2, padding: '0 4px' }}>
                           {ev.groupValue}
@@ -596,8 +623,9 @@ export default function CalendarView({ rows, fields, view, density, onRowClick }
   const year = focusDate.getFullYear()
   const month = focusDate.getMonth()
 
-  // 构建事件列表
-  const events = useMemo(() => buildEvents(rows, fields, opts), [rows, fields, opts])
+  // 构建事件列表（完成标志判定与看板共用 resolveDoneCtx/isDoneRow）
+  const doneCtx = useMemo(() => resolveDoneCtx(opts, fields), [opts, fields])
+  const events = useMemo(() => buildEvents(rows, fields, opts, doneCtx), [rows, fields, opts, doneCtx])
 
   // events 首次非空时，若当前 focusDate 所在月无事件，自动跳到第一个有事件的日期
   // 仅在首次有效渲染时触发一次，用户手动翻月后不再自动修正
