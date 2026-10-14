@@ -56,12 +56,14 @@ function buildRows(item: ChangeItemDetail): FieldRow[] {
       conflict: false,
     }))
   }
+  const cv = item.current_values ?? {}
+  const conflicts = item.field_conflicts ?? []
   return diffFields(item).map((field) => ({
     field,
     before: formatValue(item.base_values[field]),
     after: formatValue(item.values[field]),
-    current: formatValue(item.current_values[field]),
-    conflict: item.field_conflicts.includes(field),
+    current: formatValue(cv[field]),
+    conflict: conflicts.includes(field),
   }))
 }
 

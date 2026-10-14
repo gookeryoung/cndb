@@ -202,12 +202,18 @@ def get_request_detail(db: Session, cr: ChangeRequest, table: DataTable) -> dict
     for item in db.query(ChangeItem).filter(ChangeItem.request_id == cr.id).order_by(ChangeItem.id.asc()).all():
         current: dict[str, Any] | None = None
         field_conflicts: list[str] = []
+        row_missing = False
         if item.row_id is not None:
             current = rec.get_row(engine, table, item.row_id, db=db)
+            if current is None:
+                row_missing = True
         if item.op == CHANGE_OP_UPDATE and current is not None:
             for f, base in (item.base_values or {}).items():
                 if f in current and current[f] != base:
                     field_conflicts.append(f)
+        # 后端契约：current_values 始终返回 dict（类型定义 Record<string, unknown>），
+        # 行已被删除或无权限查看时降级为空 dict，前端可据此展示「基准行已失效」。
+        safe_current: dict[str, Any] = current if current is not None else {}
         items_out.append(
             {
                 "id": item.id,
@@ -215,8 +221,9 @@ def get_request_detail(db: Session, cr: ChangeRequest, table: DataTable) -> dict
                 "row_id": item.row_id,
                 "base_values": item.base_values,
                 "values": item.values,
-                "current_values": current,
+                "current_values": safe_current,
                 "field_conflicts": field_conflicts,
+                "row_missing": row_missing,
             }
         )
     actions = (
