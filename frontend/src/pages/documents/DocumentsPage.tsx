@@ -42,14 +42,9 @@ import { useResponsive } from '@/hooks/useResponsive'
 import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
 import type { DocTreeNode } from './DocumentTree'
 import { parseHitHighlight } from '@/components/Document/outline'
+import { formatSize } from '@/utils/formatSize'
 
 const { Text } = Typography
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
 
 function formatTime(iso: string): string {
   try {

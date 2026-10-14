@@ -28,6 +28,7 @@ import { Segmented, Button, Tooltip, Empty } from 'antd'
 import { LeftOutlined, RightOutlined, ReloadOutlined, CalendarOutlined, HomeOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons'
 import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
+import { groupColor } from '@/utils/paletteColor'
 import { resolveOpts, GANTT_OPTIONS, resolveAutoField, findOptionSchema } from '../view-config/viewOptionSchema'
 import { formatFieldDisplayValue, getLinkFirstLabel, getMultiSelectFirstLabel, getSelectLabel } from '../cells/fieldValueFormat'
 import { parseDate, fmtDate } from '../cells/dateUtils'
@@ -47,19 +48,6 @@ interface GanttViewProps {
   onRowClick?: (r: RowResponse) => void
   /** PDF 导出模式：绕过纵向虚拟化全量渲染行，并放开表头裁剪使整个时间轴进入快照 */
   pdfExporting?: boolean
-}
-
-// ── 预设色板（复用 CalendarView 风格） ────────────────
-
-const GROUP_PALETTE = [
-  '#1677ff', '#f5222d', '#fa8c16', '#52c41a', '#722ed1',
-  '#eb2f96', '#13c2c2', '#faad14', '#2f54eb', '#a0d911',
-]
-
-function groupColor(value: string): string {
-  let h = 0
-  for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) & 0x7fffffff
-  return GROUP_PALETTE[h % GROUP_PALETTE.length]
 }
 
 // ── 密度样式 ──────────────────────────────────────────

@@ -13,14 +13,9 @@ import { adminApi } from '@/api'
 import { useAuthStore } from '@/store'
 import type { BackupManifest } from '@/api'
 import UsersPage from './UsersPage'
+import { formatSize } from '@/utils/formatSize'
 
 const { Text, Title } = Typography
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
-}
 
 export default function AdminPanel() {
   const { message, modal } = AntApp.useApp()
@@ -284,7 +279,7 @@ export default function AdminPanel() {
                 </Descriptions.Item>
                 <Descriptions.Item label="附件" span={2}>
                   {manifest.uploads.included
-                    ? `${manifest.uploads.file_count} 个文件，共 ${formatSize(manifest.uploads.total_size)}`
+                    ? `${manifest.uploads.file_count} 个文件，共 ${formatSize(manifest.uploads.total_size, 2)}`
                     : <Tag>未包含</Tag>}
                 </Descriptions.Item>
               </Descriptions>
