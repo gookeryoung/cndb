@@ -197,6 +197,18 @@ describe('DocumentTree 组件', () => {
         })
     })
 
+    it('今日笔记：POST daily-note 后跳转到该文档编辑页', async () => {
+        renderTree()
+        await screen.findByTestId('doc-tree-folder-1')
+
+        fireEvent.click(screen.getByTestId('doc-tree-daily-note'))
+
+        // msw 返回今日笔记 id=77 → 导航进入编辑（幂等入口：当日重复点击进入同一篇）
+        await waitFor(() => {
+            expect(screen.getByTestId('doc-editor-stub')).toHaveTextContent('/w/10/documents/77')
+        })
+    })
+
     it('右键文档节点：重命名提交 PATCH title', async () => {
         const bodies: unknown[] = []
         server.use(

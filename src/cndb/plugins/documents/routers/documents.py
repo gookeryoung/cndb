@@ -4,7 +4,10 @@
 - POST   ""                          创建文档/文件夹（editor+）
 - GET    ""                          列表（成员，支持 parent/status/tag 筛选）
 - GET    /tree                       树形列表（含子节点计数）
+- GET    /search                     FTS5 全文检索（工作区成员）
+- POST   /daily-note                 每日笔记（幂等：当日复用同一篇）
 - GET    /{doc_id}                   详情（不含内容）
+- GET    /{doc_id}/backlinks         反向链接列表（谁引用了本文档）
 - GET    /{doc_id}/content           详情 + 最新内容
 - PUT    /{doc_id}/content           更新内容（乐观锁，editor+）
 - PATCH  /{doc_id}                   更新元数据（标题/状态/移动/标签，editor+）
@@ -34,6 +37,7 @@ from cndb.plugins.documents import services
 from cndb.plugins.documents.models import Document, DocumentVersion, Tag
 from cndb.plugins.documents.schemas import (
     ContentUpdate,
+    DailyNoteRequest,
     DocumentCreate,
     DocumentUpdate,
     RollbackRequest,
@@ -210,6 +214,24 @@ def search(
         offset=offset,
     )
     return {"items": items, "total": total, "query": q}
+
+
+@router.post("/daily-note")
+def create_daily_note(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    payload: DailyNoteRequest | None = None,
+) -> dict[str, Any]:
+    """每日笔记（幂等）：当日笔记已存在直接返回，否则按模板创建（editor+）。
+
+    注意：必须定义在 /{doc_id} 之前，否则 "daily-note" 会被解析为 doc_id。
+    """
+    _require_member(db, workspace_id, current_user)
+    doc, created = services.content.get_or_create_daily_note(
+        db, workspace_id, current_user, day=payload.date if payload else None
+    )
+    return {**services.content.serialize_document(db, doc), "created": created}
 
 
 @router.get("/{doc_id}")
@@ -456,6 +478,35 @@ def rollback(
     """回滚到指定版本（创建 rollback 类型新版本）。"""
     doc = services.content.rollback_version(db, workspace_id, doc_id, current_user, payload.target_version)
     return services.content.serialize_document(db, doc)
+
+
+# ── 反向链接 ──
+
+
+@router.get("/{doc_id}/backlinks")
+def get_backlinks(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """反向链接：工作区内正文含 ``[[本文档标题]]`` 的文档列表（含自引用）。"""
+    _require_member(db, workspace_id, current_user)
+    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    hits = services.content.find_backlinks(db, workspace_id, doc.title)
+    return {
+        "items": [
+            {
+                "id": d.id,
+                "title": d.title,
+                "summary": d.summary,
+                "status": d.status,
+                "updated_at": d.updated_at,
+            }
+            for d in hits
+        ],
+        "total": len(hits),
+    }
 
 
 # ── 编辑锁 ──

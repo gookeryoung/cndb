@@ -6,7 +6,7 @@
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
 import DocumentEditorPage from './DocumentEditorPage'
 import { renderProviders } from '@/test/render-providers'
@@ -16,6 +16,30 @@ function renderEditor(route = '/w/10/documents/2') {
     return renderProviders(
         <Routes>
             <Route path="/w/:wid/documents/:docId" element={<DocumentEditorPage />} />
+        </Routes>,
+        { route, initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+}
+
+/** 位置探针：展示当前 pathname 供跳转断言 */
+function LocationProbe() {
+    const loc = useLocation()
+    return <div data-testid="editor-location">{loc.pathname}</div>
+}
+
+/** 带位置探针的编辑器渲染：跳转类用例（双链 / 反链）断言 URL 变化 */
+function renderEditorWithProbe(route = '/w/10/documents/2') {
+    return renderProviders(
+        <Routes>
+            <Route
+                path="/w/:wid/documents/:docId"
+                element={
+                    <>
+                        <DocumentEditorPage />
+                        <LocationProbe />
+                    </>
+                }
+            />
         </Routes>,
         { route, initialAuth: { user: mockUser, token: 'fake-token' } },
     )
@@ -116,5 +140,75 @@ describe('DocumentEditorPage 大纲面板', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /大纲/ }))
         expect(await screen.findByTestId('doc-outline-item-0')).toHaveTextContent('新标题')
+    })
+})
+
+describe('DocumentEditorPage 反向链接', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+    })
+
+    it('反链抽屉：列出引用了本文档的文档，点击跳转', async () => {
+        renderEditorWithProbe()
+        // 页面加载完成（保存按钮出现）
+        expect(await screen.findByRole('button', { name: /保存/ })).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: /反链/ }))
+        // msw 反链 fixture：会议纪要引用了需求说明
+        expect(await screen.findByTestId('doc-backlink-3')).toHaveTextContent('会议纪要')
+
+        fireEvent.click(screen.getByTestId('doc-backlink-3'))
+        await waitFor(() => {
+            expect(screen.getByTestId('editor-location')).toHaveTextContent('/w/10/documents/3')
+        })
+    })
+})
+
+describe('DocumentEditorPage 双向链接跳转', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+        // 正文含双链；文档树中存在标题匹配的非文件夹文档 id=5
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    content: '参见 [[客户需求]] 文档。\n',
+                    version_number: 1,
+                })),
+            http.get('/api/v1/workspaces/:wid/documents/tree', () =>
+                HttpResponse.json({
+                    items: [
+                        ...mockDocuments,
+                        { ...mockDocuments[1], id: 5, title: '客户需求', parent_id: null, sort_order: 2 },
+                    ],
+                })),
+        )
+    })
+
+    it('点击预览中的 [[标题]]：按标题定位文档树并跳转', async () => {
+        renderEditorWithProbe()
+
+        const link = await screen.findByTestId('doc-wikilink')
+        expect(link).toHaveTextContent('客户需求')
+
+        fireEvent.click(link)
+        await waitFor(() => {
+            expect(screen.getByTestId('editor-location')).toHaveTextContent('/w/10/documents/5')
+        })
+    })
+
+    it('双链目标不存在：提示未找到且不跳转', async () => {
+        // 树中不含「客户需求」标题的文档
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/tree', () =>
+                HttpResponse.json({ items: mockDocuments })),
+        )
+        renderEditorWithProbe()
+
+        fireEvent.click(await screen.findByTestId('doc-wikilink'))
+        await waitFor(() => {
+            expect(screen.getByText(/未找到文档/)).toBeInTheDocument()
+        })
+        expect(screen.getByTestId('editor-location')).toHaveTextContent('/w/10/documents/2')
     })
 })

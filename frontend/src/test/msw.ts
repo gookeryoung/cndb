@@ -221,6 +221,30 @@ export const handlers = [
       { status: 201 },
     )
   }),
+  // 每日笔记（幂等：固定返回今日笔记文档）
+  http.post('/api/v1/workspaces/:wid/documents/daily-note', () =>
+    HttpResponse.json({
+      ...mockDocuments[1],
+      id: 77,
+      title: '2026-10-14',
+      is_folder: false,
+      parent_id: null,
+      created: true,
+    })),
+  // 反向链接（谁引用了本文档标题）
+  http.get('/api/v1/workspaces/:wid/documents/:docId/backlinks', () =>
+    HttpResponse.json({
+      items: [
+        {
+          id: 3,
+          title: '会议纪要',
+          summary: '本周会议提到了需求说明的边界',
+          status: 'draft',
+          updated_at: '2026-01-02T00:00:00Z',
+        },
+      ],
+      total: 1,
+    })),
   http.patch('/api/v1/workspaces/:wid/documents/:docId', () =>
     HttpResponse.json(mockDocuments[0])),
   http.delete('/api/v1/workspaces/:wid/documents/:docId', () =>

@@ -1,7 +1,7 @@
 /** 文档编辑页 — 分屏编辑/预览 + 版本历史 + 标签 + 乐观锁保存. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   Alert,
   Button,
@@ -24,6 +24,7 @@ import type { TextAreaRef } from 'antd/es/input/TextArea'
 import {
   CheckOutlined,
   HistoryOutlined,
+  LinkOutlined,
   MenuOutlined,
   SaveOutlined,
   TableOutlined,
@@ -34,7 +35,7 @@ import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi } from '@/api/documents'
 import { tableApi } from '@/api'
-import type { DocumentDetail, TagItem, VersionItem } from '@/api/documents'
+import type { BacklinkItem, DocumentDetail, DocumentItem, TagItem, VersionItem } from '@/api/documents'
 
 const { Text, Title } = Typography
 const { TextArea } = Input
@@ -74,6 +75,7 @@ function DiffView({ diff }: { diff: string }) {
 
 export default function DocumentEditorPage() {
   const { wid, docId } = useParams<{ wid: string; docId: string }>()
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const workspaceId = Number(wid)
   const id = Number(docId)
@@ -83,6 +85,7 @@ export default function DocumentEditorPage() {
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
+  const [backlinksOpen, setBacklinksOpen] = useState(false)
   const [diffPair, setDiffPair] = useState<{ base: number; head: number } | null>(null)
   const baseTsRef = useRef<string | null>(null)
   const dirtyRef = useRef(false)
@@ -140,6 +143,13 @@ export default function DocumentEditorPage() {
     queryKey: ['documents', workspaceId, 'tags'],
     queryFn: () => documentsApi.tags(workspaceId),
     enabled: tagsOpen,
+  })
+
+  // 反向链接：谁在正文中引用了 [[本文档标题]]（打开抽屉时拉取）
+  const backlinksQuery = useQuery({
+    queryKey: ['documents', workspaceId, id, 'backlinks'],
+    queryFn: () => documentsApi.backlinks(workspaceId, id),
+    enabled: backlinksOpen && Number.isFinite(workspaceId) && Number.isFinite(id),
   })
 
   const versionsQuery = useQuery({
@@ -215,6 +225,34 @@ export default function DocumentEditorPage() {
     document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
+  // 双向链接跳转：按标题在工作区文档树中定位目标文档（无缓存时现场拉取树）
+  const handleWikilink = useCallback(
+    (title: string) => {
+      const key = ['documents', workspaceId, 'tree'] as const
+      const cached = qc.getQueryData<DocumentItem[]>([...key])
+      const resolve = (tree: DocumentItem[]) => {
+        const hit = tree.find(d => !d.is_folder && d.title === title)
+        if (hit) {
+          navigate(`/w/${workspaceId}/documents/${hit.id}`)
+        } else {
+          message.warning(`未找到文档「${title}」`)
+        }
+      }
+      if (cached) {
+        resolve(cached)
+      } else {
+        void qc
+          .fetchQuery({
+            queryKey: key,
+            queryFn: () => documentsApi.tree(workspaceId),
+          })
+          .then(resolve)
+          .catch(() => message.error('文档树加载失败'))
+      }
+    },
+    [qc, workspaceId, navigate],
+  )
+
   const versionTimeline = useMemo(() => {
     const items: VersionItem[] = versionsQuery.data?.items ?? []
     return items.map((v, idx) => ({
@@ -284,6 +322,9 @@ export default function DocumentEditorPage() {
           <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>
             大纲{outline.length > 0 ? ` (${outline.length})` : ''}
           </Button>
+          <Button icon={<LinkOutlined />} onClick={() => setBacklinksOpen(true)}>
+            反链
+          </Button>
           <Button icon={<TableOutlined />} onClick={() => setInsertOpen(true)}>
             插入表格引用
           </Button>
@@ -352,7 +393,7 @@ export default function DocumentEditorPage() {
           </Splitter.Panel>
           <Splitter.Panel min="20%" max="80%">
             <div style={{ height: '100%', overflow: 'auto', padding: '20px 24px' }}>
-              <MarkdownPreview content={content} workspaceId={workspaceId} />
+              <MarkdownPreview content={content} workspaceId={workspaceId} onWikilink={handleWikilink} />
             </div>
           </Splitter.Panel>
         </Splitter>
@@ -384,6 +425,47 @@ export default function DocumentEditorPage() {
               onClick={() => scrollToAnchor(o.anchor)}
             >
               {o.text}
+            </div>
+          ))
+        )}
+      </Drawer>
+
+      {/* 反链抽屉：引用了 [[本文档标题]] 的文档列表，点击跳转 */}
+      <Drawer title="反向链接" width={420} open={backlinksOpen} onClose={() => setBacklinksOpen(false)}>
+        {backlinksQuery.isLoading ? (
+          <Text type="secondary">加载中…</Text>
+        ) : (backlinksQuery.data ?? []).length === 0 ? (
+          <Text type="secondary">暂无反向链接（其他文档正文中出现 [[{doc.title}]] 即会出现在这里）</Text>
+        ) : (
+          (backlinksQuery.data ?? []).map((b: BacklinkItem) => (
+            <div
+              key={b.id}
+              data-testid={`doc-backlink-${b.id}`}
+              style={{
+                padding: '8px 12px',
+                marginBottom: 8,
+                border: '1px solid var(--cn-border, #e8e8e8)',
+                borderRadius: 8,
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                setBacklinksOpen(false)
+                navigate(`/w/${workspaceId}/documents/${b.id}`)
+              }}
+            >
+              <Text strong>{b.title}</Text>
+              {b.summary && (
+                <div>
+                  <Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+                    {b.summary}
+                  </Text>
+                </div>
+              )}
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {new Date(b.updated_at).toLocaleString('zh-CN', { hour12: false })}
+                </Text>
+              </div>
             </div>
           ))
         )}
