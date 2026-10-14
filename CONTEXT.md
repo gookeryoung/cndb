@@ -10,3 +10,5 @@
 | 三区布局 | 工作区与数据表权限页的成员展示形态：所有者区（含转让入口）/ 编辑者区 / 查看者区，各自独立卡片与添加成员入口 | 门控收敛为 owner（工作区设置与成员管理仅 owner 可操作）；角色三级 owner/editor/viewer |
 | 三入口 | 网格编辑的三个入口：单元格双击速编、行双击 Drawer 全行编辑、操作列整行编辑按钮 | viewer 在三入口保存均转修改申请，提示「已提交修改申请 #N，处理后生效」 |
 | 编辑中标识 | 操作列中的行级修改申请状态位 | 派生自 change_requests 开放查询（status=open），按 row_id 聚合；merge 落库后同行其余 open 申请标记 stale，提交人可 update-base 刷新基准 |
+| 文档种子 | `examples/datasets/<工作区>/documents/` 目录树：子目录 → 文档文件夹节点、`*.md` → Markdown 文档；文件头 `---` 元数据块声明 status/tags/author/summary，seed 入库前剥离 | 反面示例工作区（工作区-低质量数据）不提供 documents/，即不生成典型文档 |
+| 数据表动态引用 | 文档正文中独占段落的占位符 `{{table:表名\|view=视图名\|limit=N}}`，前端渲染为实时数据表 | seed 阶段把符号表名/视图名解析为该工作区真实数字 ID（前端 `tableRef.ts` 只接受数字 ID） |
