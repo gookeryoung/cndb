@@ -96,6 +96,38 @@ export interface BacklinkItem {
   updated_at: string
 }
 
+/** 回收站条目：文档元数据 + 删除信息 */
+export interface TrashItem extends DocumentItem {
+  deleted_at: string | null
+  deleted_by_id: number | null
+}
+
+/** 出链项：正文 [[标题]] 指向的文档或断链 */
+export interface OutgoingLinkItem {
+  title: string
+  document_id: number | null
+  exists: boolean
+  broken: boolean
+}
+
+/** 断链修复结果 */
+export interface LinkRepairResult {
+  document_id: number
+  version_number: number
+  repaired: { title: string; new_title: string; document_id: number; count: number }[]
+  replaced: number
+  document: DocumentItem
+}
+
+/** 彻底删除结果 */
+export interface PurgeResult {
+  id: number
+  purged: boolean
+  purged_count: number
+  files_removed: number
+  detached: number
+}
+
 // ── API ──
 
 const base = (wid: number | string) => `/v1/workspaces/${wid}/documents`
@@ -183,6 +215,33 @@ export const documentsApi = {
     api
       .get<{ items: BacklinkItem[]; total: number }>(`${base(wid)}/${docId}/backlinks`)
       .then(r => r.data.items),
+
+  // 出链解析：正文 [[标题]] 的命中 / 断链清单
+  links: (wid: number | string, docId: number | string) =>
+    api
+      .get<{ items: OutgoingLinkItem[]; total: number; broken: number }>(`${base(wid)}/${docId}/links`)
+      .then(r => r.data),
+
+  // 断链修复：把正文 [[旧标题]] 改指为现存文档（生成新版本）
+  repairLinks: (
+    wid: number | string,
+    docId: number | string,
+    repairs: { title: string; target_document_id: number }[],
+  ) => api.post<LinkRepairResult>(`${base(wid)}/${docId}/links/repair`, { repairs }).then(r => r.data),
+
+  // 回收站：软删除列表 / 恢复 / 彻底删除
+  trash: (wid: number | string, params?: Record<string, unknown>) =>
+    api.get<{ items: TrashItem[]; total: number }>(`${base(wid)}/trash`, { params }).then(r => r.data),
+
+  restore: (wid: number | string, docId: number | string) =>
+    api
+      .post<DocumentItem & { restored_count: number; reparented_to_root: boolean }>(
+        `${base(wid)}/${docId}/restore`,
+      )
+      .then(r => r.data),
+
+  purge: (wid: number | string, docId: number | string) =>
+    api.delete<PurgeResult>(`${base(wid)}/${docId}/purge`).then(r => r.data),
 
   // 分享
   shares: (wid: number | string, docId: number | string) =>

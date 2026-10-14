@@ -182,6 +182,45 @@ export const handlers = [
   }),
   http.get('/api/v1/workspaces/:wid/documents/tree', () =>
     HttpResponse.json({ items: mockDocuments })),
+  // 回收站：软删除列表（含删除时间）
+  http.get('/api/v1/workspaces/:wid/documents/trash', () =>
+    HttpResponse.json({
+      items: [{ ...mockDocuments[1], deleted_at: '2026-02-01T10:00:00Z', deleted_by_id: 1 }],
+      total: 1,
+    })),
+  // 出链解析：一条已解析 + 一条断链
+  http.get('/api/v1/workspaces/:wid/documents/:docId/links', () =>
+    HttpResponse.json({
+      items: [
+        { title: '需求说明', document_id: 2, exists: true, broken: false },
+        { title: '不存在的文档', document_id: null, exists: false, broken: true },
+      ],
+      total: 2,
+      broken: 1,
+    })),
+  // 断链修复：返回新版本信息
+  http.post('/api/v1/workspaces/:wid/documents/:docId/links/repair', async ({ request }) => {
+    const body = await request.json() as { repairs?: { title: string; target_document_id: number }[] }
+    const repairs = body.repairs ?? []
+    const target = mockDocuments.find(d => d.id === repairs[0]?.target_document_id) ?? mockDocuments[1]
+    return HttpResponse.json({
+      document_id: 2,
+      version_number: 2,
+      repaired: repairs.map(r => ({
+        title: r.title,
+        new_title: target.title,
+        document_id: target.id,
+        count: 1,
+      })),
+      replaced: repairs.length,
+      document: mockDocuments[1],
+    })
+  }),
+  // 回收站：恢复 / 彻底删除
+  http.post('/api/v1/workspaces/:wid/documents/:docId/restore', () =>
+    HttpResponse.json({ ...mockDocuments[1], restored_count: 1, reparented_to_root: false })),
+  http.delete('/api/v1/workspaces/:wid/documents/:docId/purge', () =>
+    HttpResponse.json({ id: 2, purged: true, purged_count: 1, files_removed: 0, detached: 0 })),
   // 全文搜索（FTS5 高亮：title_hit/summary_hit 带 <mark> 标记）
   http.get('/api/v1/workspaces/:wid/documents/search', ({ request }) => {
     const q = (new URL(request.url).searchParams.get('q') ?? '').trim()

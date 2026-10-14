@@ -5,9 +5,10 @@
  */
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
+import { message } from 'antd'
 import DocumentEditorPage from './DocumentEditorPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockUser, server } from '@/test/msw'
@@ -160,6 +161,72 @@ describe('DocumentEditorPage 反向链接', () => {
         fireEvent.click(screen.getByTestId('doc-backlink-3'))
         await waitFor(() => {
             expect(screen.getByTestId('editor-location')).toHaveTextContent('/w/10/documents/3')
+        })
+    })
+})
+
+describe('DocumentEditorPage 出链与断链修复', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+    })
+
+    it('出链抽屉：区分已解析与断链，可跳转目标文档', async () => {
+        renderEditorWithProbe()
+        expect(await screen.findByRole('button', { name: /保存/ })).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-links-open'))
+        expect(await screen.findByTestId('doc-link-需求说明')).toHaveTextContent('已解析')
+        expect(screen.getByTestId('doc-link-不存在的文档')).toHaveTextContent('断链')
+        expect(screen.getByText('1 条断链')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-link-open-需求说明'))
+        await waitFor(() => {
+            expect(screen.getByTestId('editor-location')).toHaveTextContent('/w/10/documents/2')
+        })
+    })
+
+    it('选择目标文档后修复断链：提交 repairs 并提示修复结果', async () => {
+        // stub 静态 message：断言调用即可，同时避免污染全局 setup 清理掉的 message 容器
+        const successSpy = vi
+            .spyOn(message, 'success')
+            .mockImplementation((() => {}) as unknown as typeof message.success)
+        const bodies: unknown[] = []
+        server.use(
+            http.post('/api/v1/workspaces/:wid/documents/:docId/links/repair', async ({ request }) => {
+                bodies.push(await request.json())
+                return HttpResponse.json({
+                    document_id: 2,
+                    version_number: 2,
+                    repaired: [{ title: '不存在的文档', new_title: '会议纪要', document_id: 3, count: 1 }],
+                    replaced: 1,
+                    document: mockDocuments[1],
+                })
+            }),
+        )
+        renderEditor()
+        await screen.findByRole('button', { name: /保存/ })
+
+        fireEvent.click(screen.getByTestId('doc-links-open'))
+        const repairBtn = await screen.findByTestId('doc-link-repair')
+        expect(repairBtn).toBeDisabled()
+
+        fireEvent.mouseDown(
+            within(screen.getByTestId('doc-link-target-不存在的文档')).getByRole('combobox'),
+        )
+        fireEvent.click(await screen.findByText(/会议纪要/))
+
+        await waitFor(() => {
+            expect(screen.getByTestId('doc-link-repair')).toBeEnabled()
+        })
+        fireEvent.click(screen.getByTestId('doc-link-repair'))
+
+        await waitFor(() => {
+            expect(bodies).toEqual([
+                { repairs: [{ title: '不存在的文档', target_document_id: 3 }] },
+            ])
+        })
+        await waitFor(() => {
+            expect(successSpy).toHaveBeenCalledWith(expect.stringContaining('已修复 1 处链接'))
         })
     })
 })

@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
 import DocumentsPage, { buildSeriesStats } from './DocumentsPage'
@@ -178,5 +178,71 @@ describe('DocumentsPage 系列详情视图', () => {
     await waitFor(() => {
       expect(screen.getByTestId('doc-series-grid')).toBeInTheDocument()
     })
+  })
+})
+
+describe('DocumentsPage 回收站', () => {
+  function renderPage() {
+    return renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+  }
+
+  it('打开回收站抽屉：列出租户内软删除文档并可恢复', async () => {
+    const restored: string[] = []
+    server.use(
+      http.post('/api/v1/workspaces/:wid/documents/:docId/restore', ({ params }) => {
+        restored.push(String(params.docId))
+        return HttpResponse.json({ ...mockDocuments[1], restored_count: 1, reparented_to_root: false })
+      }),
+    )
+    renderPage()
+    await screen.findByTestId('doc-series-card-1')
+
+    fireEvent.click(screen.getByTestId('doc-trash-open'))
+    const item = await screen.findByTestId('doc-trash-item-2')
+    expect(item).toHaveTextContent('需求说明')
+    expect(item).toHaveTextContent('删除于')
+
+    fireEvent.click(screen.getByTestId('doc-trash-restore-2'))
+    await waitFor(() => {
+      expect(restored).toEqual(['2'])
+    })
+  })
+
+  it('彻底删除：Popconfirm 确认后调用 purge', async () => {
+    const purged: string[] = []
+    server.use(
+      http.delete('/api/v1/workspaces/:wid/documents/:docId/purge', ({ params }) => {
+        purged.push(String(params.docId))
+        return HttpResponse.json({ id: 2, purged: true, purged_count: 1, files_removed: 0, detached: 0 })
+      }),
+    )
+    renderPage()
+    await screen.findByTestId('doc-series-card-1')
+
+    fireEvent.click(screen.getByTestId('doc-trash-open'))
+    fireEvent.click(await screen.findByTestId('doc-trash-purge-2'))
+    const pop = await screen.findByRole('tooltip')
+    fireEvent.click(within(pop).getByRole('button', { name: '彻底删除' }))
+
+    await waitFor(() => {
+      expect(purged).toEqual(['2'])
+    })
+  })
+
+  it('回收站为空时展示空态', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/trash', () =>
+        HttpResponse.json({ items: [], total: 0 })),
+    )
+    renderPage()
+    await screen.findByTestId('doc-series-card-1')
+
+    fireEvent.click(screen.getByTestId('doc-trash-open'))
+    expect(await screen.findByText('回收站为空')).toBeInTheDocument()
   })
 })

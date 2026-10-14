@@ -355,6 +355,11 @@ def main() -> None:
 
     register_service_subparser(sub)
 
+    # docs 子命令组（文档数据运维：外存孤儿文件体检与回收）
+    from cndb.cli.docs import register_docs_subparser
+
+    register_docs_subparser(sub)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -388,6 +393,10 @@ def main() -> None:
         from cndb.cli.service import service_command
 
         service_command(args)
+    elif args.command == "docs":
+        from cndb.cli.docs import docs_command
+
+        docs_command(args)
     else:
         parser.print_help()  # pragma: no cover - argparse 默认分支
         sys.exit(1)

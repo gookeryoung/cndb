@@ -13,12 +13,26 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError
 
-# FTS5 保留的特殊 token（用户输入中的裸字符需要转义处理）
-_FTS5_SYNTAX_HINT = {"AND", "OR", "NOT", "NEAR"}
+# FTS5 中作为运算符的裸词：仅在两侧确有词条时才保留为布尔语法（否则按字面词处理，
+# 避免 "AND" / "a AND" / "NOT" 之类输入直接触发 fts5: syntax error → 500）
+_FTS5_BOOLEAN = {"AND", "OR", "NOT"}
+
+# 未被引号包裹时会被 FTS5 当作语法字符的裸字符：丢弃并断开当前词条
+_FTS5_SYNTAX_CHARS = set("(){}[]:^~")
+
+# sqlite FTS5 语法错误特征（用于把 500 收敛为 400；"no such table" 等结构问题不在此列）
+_FTS5_SYNTAX_HINTS = (
+    "fts5: syntax error",
+    "malformed match",
+    "unterminated string",
+    "unknown special query",
+    "parse error",
+)
 
 _fts_state = {"ready": False}
 
@@ -58,45 +72,96 @@ def escape_query(query: str) -> str:
     """将用户输入转为安全的 FTS5 MATCH 表达式.
 
     规则：
-    - 保留用户有意使用的 "..."（短语）、*（前缀）
-    - AND/OR/NOT/NEAR 大写保留为布尔语法
-    - 其它裸引号转义；空词条拆分为 AND 隐式组合
+    - 保留用户有意使用的 ``"..."``（短语）与 ``*``（前缀）；未闭合引号按短语收尾
+    - ``AND`` / ``OR`` / ``NOT`` 仅在其前后确有词条且不与相邻运算符相连时保留为
+      布尔语法，否则按字面词检索（例如单独输入 ``AND`` 等价于搜索 "AND"）
+    - 其它裸词统一加引号，杜绝语法字符注入
+    - 去掉纯符号词条后无剩余时抛 BadRequestError（400），不落库查询
     """
     query = query.strip()
     if not query:
         raise BadRequestError("搜索关键词不能为空")
 
-    tokens: list[str] = []
-    buf = ""
-    in_phrase = False
-    for ch in query:
-        if ch == '"':
-            buf += ch
-            if in_phrase and buf.strip('"'):
-                tokens.append(buf)
-                buf = ""
-            in_phrase = not in_phrase
-            continue
-        if not in_phrase and ch == " " and buf:
-            tokens.append(buf)
-            buf = ""
-            continue
-        if not in_phrase and ch in "():^{}":
-            continue  # 丢弃特殊字符（保留 * 前缀语法）
-        buf += ch
-    if buf:
-        tokens.append(buf)
-
-    parts: list[str] = []
-    for tok in tokens:
-        bare = tok.strip('"')
-        if bare in _FTS5_SYNTAX_HINT or tok.endswith("*") or tok.startswith('"'):
-            parts.append(tok)
-        else:
-            parts.append(f'"{bare}"')  # 普通词加引号防语法注入
+    parts = _render_fts_tokens(_tokenize_fts_query(query))
     if not parts:
         raise BadRequestError("搜索关键词无效")
     return " ".join(parts)
+
+
+def _tokenize_fts_query(query: str) -> list[tuple[bool, str]]:
+    """切分查询串为 ``(是否短语, 文本)`` 词条.
+
+    - 引号成对时内部为短语；未闭合的引号把剩余内容整体当作短语收尾；
+    - 短语外遇到空白或 FTS5 语法字符即断开当前词条（语法字符本身丢弃）。
+    """
+    tokens: list[tuple[bool, str]] = []
+    buf = ""
+    in_phrase = False
+
+    def _flush(phrase: bool) -> None:
+        nonlocal buf
+        text = buf.strip()
+        if text:
+            tokens.append((phrase, text))
+        buf = ""
+
+    for ch in query:
+        if ch == '"':
+            _flush(in_phrase)
+            in_phrase = not in_phrase
+            continue
+        if not in_phrase and (ch.isspace() or ch in _FTS5_SYNTAX_CHARS):
+            _flush(False)
+            continue
+        buf += ch
+    _flush(in_phrase)
+    return tokens
+
+
+def _render_fts_tokens(tokens: list[tuple[bool, str]]) -> list[str]:
+    """把词条渲染为 FTS5 表达式片段列表（空列表表示无有效词条）.
+
+    候选分两类：``op``（裸布尔运算符，仅两侧均有词条时保留语法）与 ``lit``
+    （已加引号的字面词/短语/前缀）。字面词条必须加引号，否则其中的 ``-``、``:``
+    等字符会被 FTS5 解析成列过滤等语法（例如 ``purge-token-unique``）。
+    """
+    candidates: list[tuple[str, str]] = []  # (kind, text)
+    for is_phrase, raw in tokens:
+        if is_phrase:
+            candidates.append(("lit", _quote_phrase(raw)))
+            continue
+        if raw.endswith("*"):
+            stem = raw.rstrip("*").strip()
+            if stem and _has_word_char(stem):
+                candidates.append(("lit", f"{_quote_phrase(stem)}*"))
+            continue
+        if not _has_word_char(raw):
+            continue  # 纯符号词条（如 "*"、"---"），丢弃
+        candidates.append(("op", raw) if raw in _FTS5_BOOLEAN else ("lit", _quote_phrase(raw)))
+
+    parts: list[str] = []
+    prev_operator = False
+    for index, (kind, chunk) in enumerate(candidates):
+        if kind == "op" and 0 < index < len(candidates) - 1 and not prev_operator:
+            parts.append(chunk)  # 两侧均有词条的布尔运算符
+            prev_operator = True
+        elif kind == "op":
+            parts.append(_quote_phrase(chunk))  # 位置不合法的运算符按字面词处理
+            prev_operator = False
+        else:
+            parts.append(chunk)
+            prev_operator = False
+    return parts
+
+
+def _quote_phrase(text: str) -> str:
+    """把任意文本包成 FTS5 短语（内部双引号按 FTS5 规则重复转义）."""
+    return '"' + text.replace('"', '""') + '"'
+
+
+def _has_word_char(text: str) -> bool:
+    """判断词条是否含有可被分词的有效字符（纯符号词条无检索意义）."""
+    return any(ch.isalnum() or ch == "_" for ch in text)
 
 
 def search_documents(
@@ -132,33 +197,40 @@ def search_documents(
 
     where_clause = " AND ".join(where_parts)
 
-    total = int(
-        db.execute(
-            text(
-                f"SELECT count(*) FROM documents_fts "
-                f"JOIN documents_document d ON documents_fts.rowid = d.id "
-                f"WHERE {where_clause}"
-            ),
-            params,
-        ).scalar_one()
-    )
+    try:
+        total = int(
+            db.execute(
+                text(
+                    f"SELECT count(*) FROM documents_fts "
+                    f"JOIN documents_document d ON documents_fts.rowid = d.id "
+                    f"WHERE {where_clause}"
+                ),
+                params,
+            ).scalar_one()
+        )
 
-    rows = db.execute(
-        text(
-            f"""
-            SELECT d.id, d.title, d.workspace_id, d.status, d.updated_at,
-                   highlight(documents_fts, 1, '<mark>', '</mark>') AS content_hit,
-                   highlight(documents_fts, 2, '<mark>', '</mark>') AS summary_hit,
-                   bm25(documents_fts) AS rank
-            FROM documents_fts
-            JOIN documents_document d ON documents_fts.rowid = d.id
-            WHERE {where_clause}
-            ORDER BY rank
-            LIMIT :limit OFFSET :offset
-            """
-        ),
-        {**params, "limit": limit, "offset": offset},
-    ).all()
+        rows = db.execute(
+            text(
+                f"""
+                SELECT d.id, d.title, d.workspace_id, d.status, d.updated_at,
+                       highlight(documents_fts, 1, '<mark>', '</mark>') AS content_hit,
+                       highlight(documents_fts, 2, '<mark>', '</mark>') AS summary_hit,
+                       bm25(documents_fts) AS rank
+                FROM documents_fts
+                JOIN documents_document d ON documents_fts.rowid = d.id
+                WHERE {where_clause}
+                ORDER BY rank
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {**params, "limit": limit, "offset": offset},
+        ).all()
+    except OperationalError as exc:
+        # 兜底：解析层已尽量消除非法输入，仍被 sqlite 判为语法错误时收敛为 400，
+        # 不让检索入口把用户输入问题暴露成 500（结构类错误如缺表仍向上抛）。
+        if any(hint in str(exc).lower() for hint in _FTS5_SYNTAX_HINTS):
+            raise BadRequestError("搜索表达式无效，请调整关键词或改用引号包裹短语") from exc
+        raise
 
     items = []
     for row in rows:

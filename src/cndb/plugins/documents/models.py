@@ -85,6 +85,13 @@ class Document(TimestampMixin, Base):
     is_folder: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    # 回收站元数据：删除时间与操作人（历史数据为 NULL，仅表示"删除时刻未知"）。
+    # 文件夹级联删除时整棵子树写入同一个 deleted_at，恢复时据此精确还原同批次子项，
+    # 不连带复活"先被单独删除"的节点。
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
+    )
 
     # 大文件外存路径（NULL = 内容内联在 document_versions）
     content_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
