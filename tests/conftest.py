@@ -91,7 +91,7 @@ def _sync_import_tasks(monkeypatch_session: pytest.MonkeyPatch):
     "Could not refresh instance"（CI 慢机放大窗口，xdist 下偶发失败）。
     同步执行消除线程并发，任务流程与状态机语义不变。
     """
-    import cndb.plugins.tables.routers.bulk as bulk_router
+    import cndb.plugins.tables.routers.bulk_import as bulk_import_router
     from cndb.plugins.tables.services.importing import import_tasks
 
     def _run_sync(
@@ -112,7 +112,7 @@ def _sync_import_tasks(monkeypatch_session: pytest.MonkeyPatch):
         finally:
             session.close()
 
-    monkeypatch_session.setattr(bulk_router, "run_task_in_background", _run_sync)
+    monkeypatch_session.setattr(bulk_import_router, "run_task_in_background", _run_sync)
 
 
 @pytest.fixture(scope="session", autouse=True)
