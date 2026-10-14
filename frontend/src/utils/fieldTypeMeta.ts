@@ -5,7 +5,7 @@
  * 显示同一中文标签与同一颜色.
  *
  * 配色为 antd 预设色名（直接传给 <Tag color={...}>），同类别同色系、
- * 异类别可区分；历史别名与系统类型统一走 default 兜底色.
+ * 异类别可区分；历史别名统一走 default 兜底色.
  */
 
 import type { FieldType } from '@/api/types'
@@ -19,7 +19,7 @@ export interface FieldTypeMeta {
     color: string
 }
 
-/** 17 个主字段类型 + 历史别名/系统类型的元数据表 */
+/** 后端 registry 的字段类型 + 前端历史别名的元数据表 */
 export const FIELD_TYPE_META: Record<string, FieldTypeMeta> = {
     // ── 主类型（与 api/types.ts FieldType 联合对应）──
     text: { label: '单行文本', category: '基础', color: 'blue' },
@@ -45,13 +45,6 @@ export const FIELD_TYPE_META: Record<string, FieldTypeMeta> = {
     decimal: { label: '小数', category: '数字', color: 'green' },
     multi_select: { label: '多选', category: '选择', color: 'gold' },
     json: { label: 'JSON', category: '高级', color: 'default' },
-    // ── 系统类型（展示兜底）──
-    formula: { label: '公式', category: '系统', color: 'default' },
-    auto_id: { label: '自动编号', category: '系统', color: 'default' },
-    created_time: { label: '创建时间', category: '系统', color: 'default' },
-    updated_time: { label: '更新时间', category: '系统', color: 'default' },
-    created_by: { label: '创建人', category: '系统', color: 'default' },
-    updated_by: { label: '更新人', category: '系统', color: 'default' },
 }
 
 /** 取字段类型的中文标签；未知类型返回原始值（与既有 `?? type` 兜底语义一致） */
@@ -76,7 +69,7 @@ export const FIELD_TYPE_OPTIONS: Array<{ value: FieldType; label: string; catego
 
 /** 导入数据预览中允许切换的字段类型子集.
  *
- * 沿用原 FileImportPreview 的过滤语义：排除 link/attachment/formula 等
+ * 沿用原 FileImportPreview 的过滤语义：排除 link/attachment/lookup 等
  * 不适合从原始数据推断的类型.
  * 包含 longtext/timestamp —— 后端推断层可产出这两种类型，
  * 下拉必须能显示其中文标签且允许用户手动切换回其它类型.

@@ -33,8 +33,6 @@ export interface ViewOptionSchema {
   /** 允许的后端 field_type 原始名 + 历史别名集合（FieldType.name 或别名都可匹配）.
    *  数组顺序即自动推断时的优先级（先排先试）。 */
   fieldTypes?: string[]
-  /** 自动推断时是否同时把主键字段作为候选（title_field / group_field 等常见） */
-  includePrimary?: boolean
   /** 自动推断失败后的字面量 fallback 值（如 'id'） */
   literalFallback?: string
   /** 枚举值（kind='enum_select'/'direction'/'number_enum' 时必填） */
@@ -55,7 +53,7 @@ export const KANBAN_OPTIONS: ViewOptionSchema[] = [
   },
   {
     key: 'title_field', label: '卡片标题字段', group: '分组与标题', tooltip: '留空使用主键字段',
-    kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], literalFallback: 'id',
   },
   {
     key: 'progress_field', label: '进度百分比字段', group: '字段映射', tooltip: '0-100 的数值字段，显示进度条',
@@ -119,7 +117,7 @@ export const CALENDAR_OPTIONS: ViewOptionSchema[] = [
   },
   {
     key: 'title_field', label: '事件标题字段', group: '日历配置', tooltip: '日历格中显示的事件文字；留空则自动选第一个文本字段',
-    kind: 'field_select', fieldTypes: ['text', 'longtext', 'is_primary'],
+    kind: 'field_select', fieldTypes: ['text', 'longtext'],
   },
   {
     key: 'group_field', label: '分组/颜色字段', group: '日历配置', tooltip: 'Select 字段，不同值渲染不同颜色侧边条',
@@ -156,7 +154,7 @@ export const GANTT_OPTIONS: ViewOptionSchema[] = [
   },
   {
     key: 'title_field', label: '任务名称字段', group: '显示字段', tooltip: '甘特条左侧显示的任务名称；留空自动选第一个文本字段',
-    kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], literalFallback: 'id',
   },
   {
     key: 'group_field', label: '分组/着色字段', group: '显示字段', tooltip: 'Select 字段，不同分组渲染不同颜色的甘特条',
@@ -190,11 +188,11 @@ export const GANTT_OPTIONS: ViewOptionSchema[] = [
 export const WBS_OPTIONS: ViewOptionSchema[] = [
   {
     key: 'parent_field', label: '父任务字段', group: '结构字段', tooltip: '哪个字段存储父任务关联（link 指向同表自身，或文本/数字存父 ID）',
-    kind: 'field_select', fieldTypes: ['link', 'text', 'number', 'decimal', 'is_primary'], required: true,
+    kind: 'field_select', fieldTypes: ['link', 'text', 'number', 'decimal'], required: true,
   },
   {
     key: 'title_field', label: '任务名称字段', group: '结构字段', tooltip: '树节点显示的主标题；留空自动选第一个文本字段',
-    kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], literalFallback: 'id',
   },
   {
     key: 'progress_field', label: '进度百分比字段', group: '显示字段', tooltip: '0-100 的数值字段；父节点自动按子节点平均计算',
@@ -250,7 +248,7 @@ export const MATRIX_OPTIONS: ViewOptionSchema[] = [
   },
   {
     key: 'title_field', label: '卡片标题字段', group: '显示', tooltip: '单元格卡片显示的文字；留空取主键字段',
-    kind: 'field_select', fieldTypes: ['text', 'longtext'], includePrimary: true, literalFallback: 'id',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], literalFallback: 'id',
   },
 ]
 
@@ -428,7 +426,6 @@ export function _fieldMatchesSchema(field: Field, fieldTypes: string[] | undefin
   if (fieldTypes.includes('__all__')) return !field.hidden
   const ft = field.field_type
   const alias = FIELD_TYPE_ALIASES[ft] ?? ft
-  if (field.is_primary && fieldTypes.includes('is_primary')) return true
   return fieldTypes.includes(ft) || fieldTypes.includes(alias)
 }
 
@@ -530,8 +527,7 @@ export function findOptionSchema(viewType: string, key: string): ViewOptionSchem
 /** 按 schema 的 fieldTypes 优先级推断默认字段名.
  *
  * 按 fieldTypes 数组顺序依次尝试每个 type，取第一个匹配的字段；
- * 若 includePrimary 为 true 且没匹配到，再用主键字段；
- * 还没匹配到就返回 literalFallback（如 'id'）或 undefined。
+ * 都没匹配到就返回 literalFallback（如 'id'）或 undefined。
  */
 export function resolveAutoField(
   fields: Field[],
@@ -541,7 +537,6 @@ export function resolveAutoField(
 
   const matchType = (type: string): Field | undefined => {
     if (type === '__all__') return fields.find(f => !f.hidden)
-    if (type === 'is_primary') return fields.find(f => f.is_primary)
     const alias = FIELD_TYPE_ALIASES[type] ?? type
     return fields.find(f => f.field_type === type || f.field_type === alias)
   }
@@ -551,11 +546,6 @@ export function resolveAutoField(
       const f = matchType(ft)
       if (f) return f.name
     }
-  }
-
-  if (schema.includePrimary) {
-    const primary = fields.find(f => f.is_primary)
-    if (primary) return primary.name
   }
 
   return schema.literalFallback as string | undefined

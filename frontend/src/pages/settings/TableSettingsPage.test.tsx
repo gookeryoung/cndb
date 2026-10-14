@@ -27,7 +27,7 @@ const tableFixture = {
   id: 20, workspace_id: 10, name: '任务表', description: '原始描述',
   db_table_name: 't_20',
   fields: [
-    { id: 1, name: '标题', field_type: 'text', is_primary: true, order: 0 },
+    { id: 1, name: '标题', field_type: 'text', order: 0 },
     { id: 2, name: '密级', field_type: 'select', order: 1 },
     { id: 3, name: '备注', field_type: 'longtext', order: 2 },
   ],

@@ -81,17 +81,13 @@ export function buildEvents(
     const date = parseDate(row[startField])
     if (!date) continue
 
-    // 标题：优先 title_field，否则第一个 text 字段，否则主键
+    // 标题：优先 title_field，否则第一个 text 字段，否则 #id
     let title = String(row.id)
     if (titleField) {
       title = fmtTitle(titleField, row[titleField], String(row.id))
     } else {
       const textFld = fields.find((f) => f.field_type === 'text')
       if (textFld) title = fmtTitle(textFld.name, row[textFld.name], String(row.id))
-      else {
-        const primaryFld = fields.find((f) => f.is_primary)
-        if (primaryFld) title = fmtTitle(primaryFld.name, row[primaryFld.name], String(row.id))
-      }
     }
 
     // 分组/颜色

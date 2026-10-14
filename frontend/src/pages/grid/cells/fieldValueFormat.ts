@@ -12,13 +12,12 @@ import type { Field, RowResponse } from '@/api'
 
 /** 从目标表字段列表中挑出适合做"行标签"的字段名（link 下拉选项展示用）.
  *
- * 优先级：is_primary 的 text 字段 → 第一个 text 字段 → null（调用方回退 #id）。
+ * 取第一个 text 字段；没有则返回 null（调用方回退 #id）。
  * longtext 内容往往过长，不参与选择。
  */
 export function pickLinkLabelFieldName(fields: Field[]): string | null {
   const textFields = fields.filter((f) => f.field_type === 'text' && !f.trashed)
-  const primary = textFields.find((f) => f.is_primary)
-  return (primary ?? textFields[0])?.name ?? null
+  return textFields[0]?.name ?? null
 }
 
 /** 用目标表行数据构造 link 下拉选项的可读标签.

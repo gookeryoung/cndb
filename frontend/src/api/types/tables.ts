@@ -160,10 +160,8 @@ export type FieldType =
   | 'text' | 'longtext' | 'number' | 'float' | 'boolean'
   | 'date' | 'datetime' | 'timestamp' | 'select' | 'multiselect'
   | 'email' | 'url' | 'phone' | 'link' | 'lookup' | 'attachment' | 'percentage' | 'image'
-  // 历史别名（后端自动归一化）
+  // 历史别名（后端 _FIELD_TYPE_ALIASES 自动归一化，见 field_types/registry.py）
   | 'long_text' | 'decimal' | 'multi_select' | 'json'
-  | 'formula' | 'auto_id' | 'created_time' | 'updated_time'
-  | 'created_by' | 'updated_by'
 
 export interface Field {
   id: ID; name: string; field_type: FieldType; db_column_name?: string
@@ -174,7 +172,7 @@ export interface Field {
   default_value?: unknown
   /** 是否在视图中隐藏（后端 FieldUpdate 支持，前端 Field 保留字段） */
   hidden?: boolean
-  description?: string; is_primary?: boolean; created_at?: string
+  description?: string; created_at?: string
   /** 所属表 ID（回收站字段列表等场景使用） */
   table_id?: ID
   /** 所属表名称（回收站字段列表等场景使用） */

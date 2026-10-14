@@ -12,7 +12,7 @@ import FieldList from './FieldList'
 import { renderProviders } from '@/test/render-providers'
 
 const FIELDS = [
-    { id: 1, name: '标题', field_type: 'text', order: 0, is_primary: true },
+    { id: 1, name: '标题', field_type: 'text', order: 0 },
     { id: 2, name: '状态', field_type: 'text', order: 1 },
 ] as any
 
@@ -53,10 +53,6 @@ describe('FieldList 删除字段确认', () => {
         expect(onRemove).not.toHaveBeenCalled()
     })
 
-    it('主键字段不渲染删除按钮', () => {
-        renderFieldList()
-        expect(screen.queryByRole('button', { name: '删除字段 标题' })).toBeNull()
-    })
 })
 
 // ─────────────── 引用字段跟随源字段类型 ───────────────
