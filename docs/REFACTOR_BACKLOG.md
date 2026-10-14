@@ -45,13 +45,13 @@
 | 文件 | 行数 | 建议拆分 |
 |---|---|---|
 | `src/pages/grid/GridPage.tsx` | 1276 | 外置 `gridFallbacks.tsx`、`modeSwitch.ts`、`useGridPageRows.ts`、`useGridPageModals.ts`；主组件 1140 行主要是状态与回调，抽 hook 有一定回归风险 |
-| `src/pages/import-export/FileImportPreview.tsx` | 609 | 纯转换层与样式 hook 已抽出（见 CHANGELOG）。剩余三个内联渲染闭包：`renderFieldsList` 210-320、`renderSelectedFieldEditor` 323-365、`renderDataPreview` 368-461；依赖已确认为各 3-4 个组件级变量，抽成组件时需为 props 重建类型注解（勿用 any） |
+| `src/pages/grid/view-config/ViewConfigDialog.tsx` | 523 | 先量自由变量再定：测试 42 个用例（覆盖较厚）。筛选规则编辑器与排序规则编辑器是两处独立接缝 |
 | `src/pages/grid/view-config/viewOptionSchema.ts` | 562 | 按视图拆 `options/{kanban,calendar,gantt,wbs,matrix,chart}.ts`；**测试要求保留 7 个具名导出** |
 | `src/pages/grid/views/WbsView.tsx` | 588 | 树构建与渲染行两分 |
 
 ### 其余 >500 行文件（完整清单）
 
-以上为优先候选。全仓共 36 个 >500 行的源码文件，其余 28 个如下 ——
+以上为优先候选。全仓共 35 个 >500 行的源码文件，其余 27 个如下 ——
 多数是拆分后落在 500–660 行、且已单一职责的文件，暂不作为优先候选。
 
 **后端（17）**：
@@ -74,7 +74,7 @@
 - `src/cndb/plugins/tables/routers/bulk_import.py` 504
 - `src/cndb/plugins/tables/services/fields/field_import.py` 502
 
-**前端（11）**：
+**前端（10）**：
 
 - `src/pages/fields/FieldManager/index.tsx` 678
 - `src/pages/grid/views/GanttView.tsx` 655
@@ -86,7 +86,6 @@
 - `src/pages/documents/DocumentsPage.tsx` 553
 - `src/pages/fields/FieldManager/typeConfigPanel.tsx` 544
 - `src/pages/settings/WorkspaceSettingsContent.tsx` 525
-- `src/pages/grid/view-config/ViewConfigDialog.tsx` 523
 
 > 拆分通用的两条约束（多次拆分已验证）：
 > 1. **monkeypatch / mock 目标必须指向 canonical 模块**。把实现移出后，若测试仍 patch 原模块的同名属性，patch 会静默失效（seed 的 `_get_datasets_dir`、reports 的 `_run_command` / `_cjk_font_candidates` 都踩过）。
