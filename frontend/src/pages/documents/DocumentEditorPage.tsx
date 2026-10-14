@@ -22,6 +22,7 @@ import {
 } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import {
+  BranchesOutlined,
   CheckOutlined,
   HistoryOutlined,
   LinkOutlined,
@@ -35,7 +36,14 @@ import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi } from '@/api/documents'
 import { tableApi } from '@/api'
-import type { BacklinkItem, DocumentDetail, DocumentItem, TagItem, VersionItem } from '@/api/documents'
+import type {
+  BacklinkItem,
+  DocumentDetail,
+  DocumentItem,
+  OutgoingLinkItem,
+  TagItem,
+  VersionItem,
+} from '@/api/documents'
 
 const { Text, Title } = Typography
 const { TextArea } = Input
@@ -86,6 +94,9 @@ export default function DocumentEditorPage() {
   const [tagsOpen, setTagsOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [backlinksOpen, setBacklinksOpen] = useState(false)
+  const [linksOpen, setLinksOpen] = useState(false)
+  // 断链修复：旧标题 → 选中的目标文档 ID
+  const [repairTargets, setRepairTargets] = useState<Record<string, number>>({})
   const [diffPair, setDiffPair] = useState<{ base: number; head: number } | null>(null)
   const baseTsRef = useRef<string | null>(null)
   const dirtyRef = useRef(false)
@@ -150,6 +161,42 @@ export default function DocumentEditorPage() {
     queryKey: ['documents', workspaceId, id, 'backlinks'],
     queryFn: () => documentsApi.backlinks(workspaceId, id),
     enabled: backlinksOpen && Number.isFinite(workspaceId) && Number.isFinite(id),
+  })
+
+  // 出链：正文 [[标题]] 的命中与断链（打开抽屉时拉取）
+  const linksQuery = useQuery({
+    queryKey: ['documents', workspaceId, id, 'links'],
+    queryFn: () => documentsApi.links(workspaceId, id),
+    enabled: linksOpen && Number.isFinite(workspaceId) && Number.isFinite(id),
+  })
+
+  // 断链修复目标候选：工作区文档树（与文档页共享同一缓存 key）
+  const linkTargetsQuery = useQuery({
+    queryKey: ['documents', workspaceId, 'tree'],
+    queryFn: () => documentsApi.tree(workspaceId),
+    enabled: linksOpen && Number.isFinite(workspaceId),
+  })
+
+  const repairMut = useMutation({
+    mutationFn: () => {
+      const repairs = (linksQuery.data?.items ?? [])
+        .filter((item: OutgoingLinkItem) => item.broken && repairTargets[item.title] != null)
+        .map((item: OutgoingLinkItem) => ({
+          title: item.title,
+          target_document_id: repairTargets[item.title],
+        }))
+      return documentsApi.repairLinks(workspaceId, id, repairs)
+    },
+    onSuccess: result => {
+      message.success(`已修复 ${result.replaced} 处链接，生成 v${result.version_number}`)
+      setRepairTargets({})
+      void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id] })
+    },
+    onError: (err: unknown) => {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '链接修复失败'
+      message.error(detail)
+    },
   })
 
   const versionsQuery = useQuery({
@@ -325,6 +372,9 @@ export default function DocumentEditorPage() {
           <Button icon={<LinkOutlined />} onClick={() => setBacklinksOpen(true)}>
             反链
           </Button>
+          <Button icon={<BranchesOutlined />} data-testid="doc-links-open" onClick={() => setLinksOpen(true)}>
+            链接
+          </Button>
           <Button icon={<TableOutlined />} onClick={() => setInsertOpen(true)}>
             插入表格引用
           </Button>
@@ -468,6 +518,102 @@ export default function DocumentEditorPage() {
               </div>
             </div>
           ))
+        )}
+      </Drawer>
+
+      {/* 出链抽屉：正文 [[标题]] 命中与断链，可为断链选择目标文档并修复 */}
+      <Drawer
+        title="文档链接"
+        width={460}
+        open={linksOpen}
+        onClose={() => {
+          setLinksOpen(false)
+          setRepairTargets({})
+        }}
+        data-testid="doc-links-drawer"
+      >
+        {linksQuery.isLoading ? (
+          <Text type="secondary">加载中…</Text>
+        ) : (linksQuery.data?.items ?? []).length === 0 ? (
+          <Text type="secondary">正文中没有 [[标题]] 形式的链接</Text>
+        ) : (
+          <>
+            {(linksQuery.data?.broken ?? 0) > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 12 }}
+                message={`${linksQuery.data?.broken} 条断链`}
+                description="选择目标文档后点击「修复断链」，正文将改写为新标题并生成新版本。"
+              />
+            )}
+            {(linksQuery.data?.items ?? []).map((item: OutgoingLinkItem) => (
+              <div
+                key={item.title}
+                data-testid={`doc-link-${item.title}`}
+                style={{
+                  padding: '8px 12px',
+                  marginBottom: 8,
+                  border: '1px solid var(--cn-border, #e8e8e8)',
+                  borderRadius: 8,
+                }}
+              >
+                <Space size={6} wrap>
+                  <Text strong>{`[[${item.title}]]`}</Text>
+                  {item.exists ? <Tag color="green">已解析</Tag> : <Tag color="red">断链</Tag>}
+                </Space>
+                {item.exists && item.document_id != null ? (
+                  <div style={{ marginTop: 6 }}>
+                    <Button
+                      size="small"
+                      type="link"
+                      data-testid={`doc-link-open-${item.title}`}
+                      onClick={() => {
+                        setLinksOpen(false)
+                        navigate(`/w/${workspaceId}/documents/${item.document_id}`)
+                      }}
+                    >
+                      打开目标文档
+                    </Button>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 6 }}>
+                    <Select
+                      size="small"
+                      style={{ width: 240 }}
+                      placeholder="选择要指向的文档"
+                      value={repairTargets[item.title]}
+                      onChange={(value: number) =>
+                        setRepairTargets(prev => ({ ...prev, [item.title]: value }))
+                      }
+                      options={(linkTargetsQuery.data ?? []).map(d => ({
+                        value: d.id,
+                        label: d.is_folder ? `📁 ${d.title}` : d.title,
+                      }))}
+                      showSearch
+                      optionFilterProp="label"
+                      data-testid={`doc-link-target-${item.title}`}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+            <Space style={{ marginTop: 8 }}>
+              <Button
+                type="primary"
+                icon={<CheckOutlined />}
+                data-testid="doc-link-repair"
+                loading={repairMut.isPending}
+                disabled={Object.keys(repairTargets).length === 0}
+                onClick={() => repairMut.mutate()}
+              >
+                修复断链
+              </Button>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                已选 {Object.keys(repairTargets).length} 条
+              </Text>
+            </Space>
+          </>
         )}
       </Drawer>
 

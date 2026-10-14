@@ -147,6 +147,22 @@ class TagIdsRequest(BaseModel):
     tag_ids: list[int] = Field(default_factory=list)
 
 
+# ── 链接修复 ──
+
+
+class LinkRepairItem(BaseModel):
+    """单条断链修复：把正文中的 ``[[title]]`` 改指为 ``target_document_id``."""
+
+    title: str = Field(min_length=1, max_length=500)
+    target_document_id: int
+
+
+class LinkRepairRequest(BaseModel):
+    """断链修复请求（一次可修多条；全部未命中时返回 409）."""
+
+    repairs: list[LinkRepairItem] = Field(min_length=1, max_length=100)
+
+
 # ── 搜索 ──
 
 
@@ -215,6 +231,8 @@ __all__ = [
     "DocumentDetail",
     "DocumentOut",
     "DocumentUpdate",
+    "LinkRepairItem",
+    "LinkRepairRequest",
     "PermissionEntry",
     "PermissionUpdateRequest",
     "RollbackRequest",

@@ -6,12 +6,17 @@
 - GET    /tree                       树形列表（含子节点计数）
 - GET    /search                     FTS5 全文检索（工作区成员）
 - POST   /daily-note                 每日笔记（幂等：当日复用同一篇）
+- GET    /trash                      回收站列表（按删除时间倒序）
 - GET    /{doc_id}                   详情（不含内容）
 - GET    /{doc_id}/backlinks         反向链接列表（谁引用了本文档）
+- GET    /{doc_id}/links             出链解析（[[标题]] 命中与断链）
+- POST   /{doc_id}/links/repair      断链修复（改指现存文档，editor+）
 - GET    /{doc_id}/content           详情 + 最新内容
 - PUT    /{doc_id}/content           更新内容（乐观锁，editor+）
 - PATCH  /{doc_id}                   更新元数据（标题/状态/移动/标签，editor+）
-- DELETE /{doc_id}                   软删除（editor+）
+- DELETE /{doc_id}                   软删除（editor+，进回收站）
+- POST   /{doc_id}/restore           从回收站恢复（editor+）
+- DELETE /{doc_id}/purge             彻底删除（editor+，不可恢复）
 - GET    /{doc_id}/versions          版本列表
 - GET    /{doc_id}/versions/{num}    版本详情（含内容）
 - GET    /{doc_id}/diff              版本差异
@@ -40,6 +45,7 @@ from cndb.plugins.documents.schemas import (
     DailyNoteRequest,
     DocumentCreate,
     DocumentUpdate,
+    LinkRepairRequest,
     RollbackRequest,
     TagIdsRequest,
 )
@@ -131,7 +137,7 @@ def list_documents(
     stmt = select(Document).where(*filters).order_by(*order_col).limit(limit).offset(offset)
     docs = db.execute(stmt).scalars().all()
     return {
-        "items": [services.content.serialize_document(db, d) for d in docs],
+        "items": services.content.serialize_documents(db, list(docs)),
         "total": total,
     }
 
@@ -153,7 +159,7 @@ def document_tree(
         .scalars()
         .all()
     )
-    return {"items": [services.content.serialize_document(db, d) for d in docs]}
+    return {"items": services.content.serialize_documents(db, list(docs))}
 
 
 @router.get("/tags")
@@ -232,6 +238,27 @@ def create_daily_note(
         db, workspace_id, current_user, day=payload.date if payload else None
     )
     return {**services.content.serialize_document(db, doc), "created": created}
+
+
+@router.get("/trash")
+def list_trash(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """回收站列表（成员可见，按删除时间倒序）。
+
+    注意：必须定义在 /{doc_id} 之前，否则 "trash" 会被解析为 doc_id。
+    """
+    _require_member(db, workspace_id, current_user)
+    docs, total = services.content.list_deleted_documents(db, workspace_id, limit=limit, offset=offset)
+    items = services.content.serialize_documents(db, list(docs))
+    for item, doc in zip(items, docs, strict=True):
+        item["deleted_at"] = doc.deleted_at
+        item["deleted_by_id"] = doc.deleted_by_id
+    return {"items": items, "total": total}
 
 
 @router.get("/{doc_id}")
@@ -354,6 +381,33 @@ def delete_document(
     """软删除（文件夹递归删除子节点）。"""
     doc = services.content.soft_delete_document(db, workspace_id, doc_id, current_user)
     return {"id": doc.id, "deleted": True}
+
+
+@router.post("/{doc_id}/restore")
+def restore_document(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """从回收站恢复（editor+）：文件夹连同同一删除批次的子项一起恢复。"""
+    doc, restored_count, reparented = services.content.restore_document(db, workspace_id, doc_id, current_user)
+    data = services.content.serialize_document(db, doc)
+    data["restored_count"] = restored_count
+    data["reparented_to_root"] = reparented
+    return data
+
+
+@router.delete("/{doc_id}/purge")
+def purge_document(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """彻底删除回收站文档（editor+，不可恢复；一并清理版本与外存内容）。"""
+    stats = services.content.purge_document(db, workspace_id, doc_id, current_user)
+    return {"id": doc_id, "purged": True, **stats}
 
 
 # ── 版本 ──
@@ -507,6 +561,36 @@ def get_backlinks(
         ],
         "total": len(hits),
     }
+
+
+@router.get("/{doc_id}/links")
+def get_outgoing_links(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """出链解析：正文 ``[[标题]]`` 指向的文档与断链清单（工作区成员）。"""
+    _require_member(db, workspace_id, current_user)
+    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    items = services.content.resolve_outgoing_links(db, workspace_id, doc)
+    return {
+        "items": items,
+        "total": len(items),
+        "broken": sum(1 for item in items if item["broken"]),
+    }
+
+
+@router.post("/{doc_id}/links/repair")
+def repair_links(
+    workspace_id: int,
+    doc_id: int,
+    payload: LinkRepairRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """修复断链（editor+）：把正文中 ``[[旧标题]]`` 改指为现存文档，生成新版本。"""
+    return services.content.repair_wikilinks(db, workspace_id, doc_id, current_user, payload.repairs)
 
 
 # ── 编辑锁 ──
