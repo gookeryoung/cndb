@@ -113,7 +113,8 @@ def _file_path(workspace_id: int, file_key: str) -> PathLib:
     path = _workspace_dir(workspace_id) / file_key
     resolved = path.resolve()
     work_dir = _workspace_dir(workspace_id).resolve()
-    if not str(resolved).startswith(str(work_dir) + "/") and resolved != work_dir:
+    # 用 Path.is_relative_to 做前缀校验：字符串拼接 "/" 在 Windows 反斜杠路径下会误判为越界
+    if resolved != work_dir and not resolved.is_relative_to(work_dir):
         raise HTTPException(status_code=400, detail="非法的文件标识符")
     return path
 
