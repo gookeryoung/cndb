@@ -27,8 +27,6 @@ const TableSettingsPage = lazy(() => import('@/pages/settings/TableSettingsPage'
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
-const FormsPage = lazy(() => import('@/pages/forms/FormsPage'))
-const FormRunnerPage = lazy(() => import('@/pages/forms/FormRunnerPage'))
 const DocumentsLayout = lazy(() => import('@/pages/documents/DocumentsLayout'))
 const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage'))
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
@@ -83,12 +81,6 @@ function AuthenticatedApp() {
           } />
           <Route path="w/:wid/reports" element={
             <Suspense fallback={<PageFallback />}><ReportsPage /></Suspense>
-          } />
-          <Route path="w/:wid/forms" element={
-            <Suspense fallback={<PageFallback />}><FormsPage /></Suspense>
-          } />
-          <Route path="w/:wid/forms/:fid" element={
-            <Suspense fallback={<PageFallback />}><FormRunnerPage /></Suspense>
           } />
           <Route path="w/:wid/documents" element={
             <Suspense fallback={<PageFallback />}><DocumentsLayout /></Suspense>
