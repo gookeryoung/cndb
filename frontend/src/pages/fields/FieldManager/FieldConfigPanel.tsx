@@ -99,8 +99,8 @@ export default function FieldConfigPanel({ fieldType, form, wid, tid, tables, is
 
 // ─────────────── 动态默认值输入组件 ───────────────
 
-/** 哪些字段类型不支持默认值（link 需指定具体关联行，attachment 是二进制） */
-const NO_DEFAULT_VALUE_TYPES = new Set<FieldType>(['link', 'attachment', 'timestamp'])
+/** 哪些字段类型不支持默认值（link 需指定具体关联行，attachment/image 是二进制） */
+const NO_DEFAULT_VALUE_TYPES = new Set<FieldType>(['link', 'attachment', 'image', 'timestamp'])
 
 /** 把 config.options（后端格式：[{label,value,color}] 或字符串数组）转成 antd Select options */
 function buildSelectOptions(raw: unknown): Array<{ label: string; value: string }> {

@@ -99,6 +99,33 @@ describe('GridCell 展示态', () => {
     renderProviders(<GridCell value="张三" field={field} rowId={1} />)
     expect(screen.getByText('张三')).toBeInTheDocument()
   })
+
+  it('image JSON 字符串渲染为缩略图（src 指向工作区附件 URL）', () => {
+    const field = makeField({ id: 1, name: '照片', field_type: 'image' })
+    const value = JSON.stringify([
+      { file_key: 'abc123.png', filename: 'image1.png', mime_type: 'image/png' },
+      { file_key: 'def456.png', filename: 'image2.png', mime_type: 'image/png' },
+    ])
+    renderProviders(<GridCell value={value} field={field} rowId={1} wid={10} />)
+    // antd Image 含预览副本，按 src 断言（不依赖内部渲染结构）
+    const srcs = screen.getAllByRole('img').map(el => el.getAttribute('src'))
+    expect(srcs).toContain('/api/v1/workspaces/10/files/abc123.png?inline=true')
+    expect(srcs).toContain('/api/v1/workspaces/10/files/def456.png?inline=true')
+  })
+
+  it('image 已解析数组同样渲染缩略图；空值渲染占位符 —', () => {
+    const field = makeField({ id: 1, name: '照片', field_type: 'image' })
+    const { rerender } = renderProviders(
+      <GridCell value={[{ file_key: 'k.png', filename: 'a.png', mime_type: 'image/png' }]} field={field} rowId={1} wid={3} />,
+    )
+    const srcs = screen.getAllByRole('img').map(el => el.getAttribute('src'))
+    expect(srcs).toContain('/api/v1/workspaces/3/files/k.png?inline=true')
+
+    rerender(<GridCell value={null} field={field} rowId={1} wid={3} />)
+    expect(screen.getByText('—')).toBeInTheDocument()
+    rerender(<GridCell value="[]" field={field} rowId={1} wid={3} />)
+    expect(screen.getByText('—')).toBeInTheDocument()
+  })
 })
 
 // ─────────────── 传统编辑：双击进入编辑态 ───────────────
@@ -263,6 +290,23 @@ describe('GridCell 受控编辑', () => {
     fireEvent.keyDown(screen.getByDisplayValue('hello'), { key: 'Enter' })
     // text 字段 finalize 原样透传
     expect(onDraftCommit).toHaveBeenCalledWith('姓名', 'hello')
+  })
+
+  it('image 字段编辑态渲染图片上传区，空值草稿归一为空数组', () => {
+    const field = makeField({ id: 1, name: '照片', field_type: 'image' })
+    const onDraftChange = vi.fn()
+    renderProviders(
+      <GridCell
+        value={null} field={field} rowId={1} wid={5} editing
+        onDraftChange={onDraftChange} onDraftCommit={vi.fn()}
+      />,
+    )
+
+    // 图片专属上传提示文案
+    expect(screen.getByText('点击或拖拽上传图片')).toBeInTheDocument()
+    // 上传 accept 默认仅收图片
+    const dragger = document.querySelector('.ant-upload-wrapper')
+    expect(dragger).toBeInTheDocument()
   })
 
   it('Escape 触发 onDraftCancel', () => {

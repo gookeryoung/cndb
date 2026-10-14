@@ -754,7 +754,7 @@ class Importer:
         if format == "json":
             return self._parse_json(content)
         if format == "xlsx":
-            return self._parse_xlsx(content)
+            return self._parse_xlsx_with_images(content)
         raise ValueError(f"不支持的格式: {format}")
 
     @staticmethod
@@ -816,6 +816,30 @@ class Importer:
             _check_xlsx_row_overflow(r, sheet_row, len(file_columns))
             # 长数字保护：对每个单元格值做精度保护转换
             rows.append({k: _coerce_long_numeric_to_text(v) for k, v in zip(file_columns, r, strict=False)})
+        return rows, file_columns
+
+    def _parse_xlsx_with_images(self, content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
+        """解析 XLSX 并把 WPS 单元格图片落盘到目标表所属工作区.
+
+        Importer 的 execute(analysis=...) 复用 analyze 阶段解析出的行值，
+        因此图片必须在解析阶段（analyze）就落盘拿到真实 file_key。
+        """
+        from cndb.plugins.tables.services.transfer.wps_images import (
+            make_displimg_resolver,
+            make_workspace_image_saver,
+            match_displimg_formula,
+        )
+
+        raw = content if isinstance(content, bytes) else content.encode()
+        resolve_image = make_displimg_resolver(raw, make_workspace_image_saver(self.table.workspace_id))
+        rows, file_columns = self._parse_xlsx(raw)
+        if not rows:
+            return rows, file_columns
+        for row in rows:
+            for key, val in list(row.items()):
+                displimg_id = match_displimg_formula(val)
+                if displimg_id is not None:
+                    row[key] = resolve_image(displimg_id)
         return rows, file_columns
 
     @staticmethod
