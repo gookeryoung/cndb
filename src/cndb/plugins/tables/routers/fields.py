@@ -12,7 +12,15 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, default_registry, normalize_field_type
 from cndb.plugins.tables.models import DataField, DataTable
-from cndb.plugins.tables.schemas import FieldCreate, FieldImportRequest, FieldImportResponse, FieldResponse, FieldUpdate
+from cndb.plugins.tables.schemas import (
+    FieldCreate,
+    FieldDetectOptionsRequest,
+    FieldDetectOptionsResponse,
+    FieldImportRequest,
+    FieldImportResponse,
+    FieldResponse,
+    FieldUpdate,
+)
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
 from cndb.plugins.tables.services.core.ddl import (
     _column_needs_rebuild,
@@ -33,6 +41,7 @@ from cndb.plugins.tables.services.core.links import (
 )
 from cndb.plugins.tables.services.fields.field_ops import (
     clone_fields_between_tables,
+    detect_options_from_field_data,
     import_fields_as_lookup,
     rename_trashed_field_aside,
     resolve_source_fields,
@@ -353,6 +362,36 @@ def reorder_fields(
 
     db.commit()
     return db.query(DataField).filter(DataField.table_id == table_id).order_by(DataField.order, DataField.id).all()
+
+
+@router.post("/{field_id}/detect-options", response_model=FieldDetectOptionsResponse)
+def detect_field_options(
+    workspace_id: int,
+    table_id: int,
+    field_id: int,
+    payload: FieldDetectOptionsRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> FieldDetectOptionsResponse:
+    """扫描字段物理列存量数据，识别可作为单选/多选选项的唯一值（只读，不持久化）.
+
+    用于编辑字段把类型改为 select/multiselect 时：物理列存的仍是旧类型数据，
+    按请求的 target_type 识别（multiselect 按用户指定 delimiter 拆分，默认逗号），
+    结果由前端填入选项编辑器、用户确认后随 config 一并保存。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
+    df = db.query(DataField).filter(DataField.id == field_id, DataField.table_id == table_id).first()
+    if df is None:
+        raise HTTPException(status_code=404, detail="字段不存在")
+
+    target_type = normalize_field_type(payload.target_type)
+    try:
+        options = detect_options_from_field_data(db, dt, df, target_type=target_type, delimiter=payload.delimiter)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return FieldDetectOptionsResponse(options=options)
 
 
 @router.delete("/{field_id}", status_code=status.HTTP_204_NO_CONTENT)
