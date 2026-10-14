@@ -1,8 +1,8 @@
 # prek / pre-commit 配置
 # See https://pre-commit.com for more information
 repos:
-  # 本地钩子：保护关键 .gitkeep 文件（缺失会导致 hatchling force-include /
-  # Sphinx html_static_path 在 CI 上直接 FileNotFoundError）
+  # 本地钩子：保护关键 .gitkeep 文件（缺失会导致 hatchling force-include
+  # 在 CI 上直接 FileNotFoundError）
   - repo: local
     hooks:
       - id: gitkeep-check

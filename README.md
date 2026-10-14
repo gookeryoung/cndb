@@ -8,7 +8,7 @@
 
 ## 特性
 
-- **插件化架构**：accounts / workspaces / tables / reports / health，可独立部署
+- **插件化架构**：accounts / workspaces / tables / documents / reports / issues / change_requests，可独立部署
 - **动态数据表**：SQLAlchemy Core 运行时建表 / 改字段，运行中即可扩 schema
 - **17 种字段类型**：text / longtext / email / url / phone / json / number / float / percentage / boolean / date / datetime / timestamp / select / multiselect / link（跨表关联）/ attachment
 - **7 种视图**：表格（Grid）/ 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表，视图级筛选、排序、字段显隐与配置持久化
@@ -17,7 +17,7 @@
 - **link 字段关系图**：`GET /workspaces/{id}/tables/graph` 返回所有表间依赖
 - **异步导入**：CSV / JSON / XLSX / API 抓取异步导入 + 进度轮询
 - **Jinja2 报告模板**：沙箱环境，绑定表的模板直接出 Word / PDF / Excel / HTML
-- **权限体系**：viewer / editor / admin / owner 四级，表级 + 工作区级双重校验
+- **权限体系**：工作区三级角色 owner / editor / viewer，叠加全局角色（system_admin / security_admin / audit_admin / 超级管理员），表级 + 工作区级双重校验
 - **备份恢复**：`cndb backup` / `cndb restore` 全库归档（.tar.gz），跨机器迁移
 - **桌面 GUI**：`cndbw` 启动 Tkinter 管理面板（启动服务 / 备份恢复 / Windows 后台服务管理）
 
@@ -106,7 +106,9 @@ src/cndb/
 │   ├── workspaces/   # 工作区 + 成员 + 角色
 │   ├── tables/       # 动态表 / 字段 / 记录 / DDL / 查询 / 视图
 │   ├── documents/    # 文档树 / 版本 / 标签 / 分享 / 全文检索
-│   └── reports/      # 报告模板 (Jinja2 sandbox)
+│   ├── reports/      # 报告模板 (Jinja2 sandbox)
+│   ├── issues/       # 数据表级问题反馈 + 评论/状态流水
+│   └── change_requests/ # 表级变更申请（双轨制写入的载体）
 ├── app.py            # FastAPI 应用装配 + SPA 静态托管
 └── static/           # 前端构建产物（pnpm build 输出，同源托管）
 ```
