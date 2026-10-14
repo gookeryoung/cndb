@@ -5,8 +5,9 @@
  */
 import { useEffect, useState } from 'react'
 import { Form, Row, Col, Input, InputNumber, Checkbox, Radio, Select, Tag, Tooltip, Button, App as AntApp, ColorPicker } from 'antd'
-import { PlusOutlined, DeleteOutlined, TagOutlined, BgColorsOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, TagOutlined, BgColorsOutlined, ThunderboltOutlined, SettingOutlined, ScanOutlined } from '@ant-design/icons'
 import type { FieldType, TableSummary } from '@/api'
+import { fieldApi } from '@/api/tables'
 import { resolveTagColor, suggestColorsForLabels } from '@/utils/tagColors'
 import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 
@@ -95,7 +96,7 @@ const HAS_CONFIG_TYPES = new Set<string>([
 ])
 
 /** 字段类型对应的 config 编辑器 */
-export function ConfigEditor({ fieldType, form, tables, isEdit = false, editTargetId = null }: ConfigEditorProps) {
+export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false, editTargetId = null }: ConfigEditorProps) {
   // 关键：<Form.Item name="config" hidden /> 注册后，Form.useWatch('config', form)
   // 才能真正订阅 config 变化。此前未注册 Form.Item 导致 useWatch 永远返回 undefined，
   // ConfigEditor 不会因 form.setFieldValue 触发重渲染，SelectOptionsEditor 收到的 config
@@ -183,7 +184,15 @@ export function ConfigEditor({ fieldType, form, tables, isEdit = false, editTarg
       {/* key 绑定 fieldType + editTargetId：同类型不同字段切换时也强制重挂载，
           避免 SelectOptionsEditor 的 useState 停留在上一个字段的 options. */}
       {TYPE_CATEGORIES.select.includes(fieldType) && (
-        <SelectOptionsEditor key={`${fieldType}-${editTargetId ?? 'new'}`} form={form} />
+        <SelectOptionsEditor
+          key={`${fieldType}-${editTargetId ?? 'new'}`}
+          form={form}
+          fieldType={fieldType}
+          wid={wid}
+          tid={tid}
+          isEdit={isEdit}
+          editTargetId={editTargetId}
+        />
       )}
 
       {/* ── 关联 link ── */}
@@ -267,8 +276,20 @@ function isPresetColor(color: string): boolean {
   return PRESET_NAMES.has(color)
 }
 
-function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0] }) {
+/** 选项编辑器 props：编辑态（isEdit + editTargetId）下额外提供「识别选项」入口 */
+interface SelectOptionsEditorProps {
+  form: ReturnType<typeof Form.useForm>[0]
+  fieldType: FieldType
+  wid: string
+  tid: string
+  isEdit?: boolean
+  editTargetId?: number | string | null
+}
+
+function SelectOptionsEditor({ form, fieldType, wid, tid, isEdit = false, editTargetId = null }: SelectOptionsEditorProps) {
   const { message } = AntApp.useApp()
+  const [detecting, setDetecting] = useState(false)
+  const [delimiter, setDelimiter] = useState(',')
   // options 的唯一真相源：首次挂载时从 form store 读一次，之后完全由本地 state 驱动。
   // 关键边界：openDialog 用 setTimeout(0) 延迟 setFieldsValue({ config })，
   // ConfigEditor/SelectOptionsEditor 先挂载 → useState lazy init 先跑（此时 Form store
@@ -315,6 +336,50 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
     const next = [...options, { key: String(Date.now()), label: '', value: '', color: preColor }]
     setOptions(next)
     syncToForm(next)
+  }
+
+  /** 识别存量数据为选项：扫描字段物理列唯一值，合并进选项列表.
+   *
+   * 仅编辑态可用（识别基于已存在的物理列数据）：后端只读返回唯一值，
+   * 前端保留已有选项、追加新值并按列表感知规则智能配色，
+   * 用户确认后随 config 一并保存。multiselect 按分隔符拆分单元格值。
+   */
+  async function handleDetect() {
+    if (editTargetId == null) return
+    const sep = delimiter.trim()
+    if (fieldType === 'multiselect' && !sep) {
+      message.warning('请先设置识别分隔符')
+      return
+    }
+    setDetecting(true)
+    try {
+      const r = await fieldApi.detectOptions(wid, tid, editTargetId, {
+        target_type: fieldType === 'multiselect' ? 'multiselect' : 'select',
+        delimiter: sep || ',',
+      })
+      if (r.options.length === 0) {
+        message.info('该字段没有可识别的内容')
+        return
+      }
+      // 合并：已有选项保留不动（label 命中即视为已存在），新值追加
+      const existingLabels = new Set(options.map(o => o.label.trim()).filter(Boolean))
+      const freshLabels = r.options.filter(v => !existingLabels.has(v))
+      // 列表感知配色：对「已有 + 新增」整体计算，新值避开已有选项已占用的颜色
+      const colors = suggestColorsForLabels([...options.map(o => o.label.trim()).filter(Boolean), ...freshLabels])
+      const offset = colors.length - freshLabels.length
+      const fresh = freshLabels.map((label, i) => ({ key: `${Date.now()}-${i}`, label, value: label, color: colors[offset + i] ?? 'blue' }))
+      const next = [...options, ...fresh]
+      setOptions(next)
+      syncToForm(next)
+      message.success(freshLabels.length > 0
+        ? `识别到 ${r.options.length} 个值，新增 ${freshLabels.length} 个选项`
+        : `识别到 ${r.options.length} 个值，均已存在于选项中`)
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+      message.error(detail || '识别失败')
+    } finally {
+      setDetecting(false)
+    }
   }
 
   function removeOption(key: string) {
@@ -393,6 +458,31 @@ function SelectOptionsEditor({ form }: { form: ReturnType<typeof Form.useForm>[0
           </Button>
         </div>
       </div>
+      {/* ── 识别区：编辑已有字段改为单选/多选时，从存量数据识别选项 ── */}
+      {isEdit && editTargetId != null && (
+        <div className="fm-option-detect" style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {fieldType === 'multiselect' && (
+            <Tooltip title="识别时按此分隔符拆分单元格内容，支持多字符分隔符">
+              <Input
+                size="small"
+                style={{ width: 120 }}
+                value={delimiter}
+                onChange={(e) => setDelimiter(e.target.value)}
+                placeholder="分隔符，默认 ,"
+                allowClear
+              />
+            </Tooltip>
+          )}
+          <Button size="small" type="dashed" icon={<ScanOutlined />} loading={detecting} onClick={handleDetect}>
+            识别
+          </Button>
+          <span style={{ color: 'var(--cn-text-secondary)', fontSize: 12 }}>
+            {fieldType === 'multiselect'
+              ? '按分隔符拆分该字段已有内容，识别出选项（保留已有选项）'
+              : '把该字段已有内容识别为选项（保留已有选项）'}
+          </span>
+        </div>
+      )}
       {options.length === 0 ? (
         <div className="fm-option-empty">
           暂无选项，点击上方按钮添加

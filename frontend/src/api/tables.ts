@@ -4,6 +4,7 @@ import api from './client'
 import type {
     TableCreate, TableUpdate, TableSummary, TableDetail,
     FieldCreate, FieldUpdate, FieldImportRequest, FieldImportResponse, Field,
+    FieldDetectOptionsRequest, FieldDetectOptionsResponse,
     AuditLog, Reference,
     TablePermission,
     TableMember, MemberCreate, MemberUpdate, OwnerTransferPayload,
@@ -54,6 +55,9 @@ export const fieldApi = {
     /** 批量调整字段顺序（按传入顺序赋值 order 字段） */
     reorder: (wid: number | string, tid: number | string, fieldIds: Array<number | string>) =>
         api.post<Field[]>(`/v1/workspaces/${wid}/tables/${tid}/fields/reorder`, { field_ids: fieldIds }).then(r => r.data),
+    /** 识别字段存量数据可作为单选/多选选项的唯一值（只读，不持久化） */
+    detectOptions: (wid: number | string, tid: number | string, fid: number | string, data: FieldDetectOptionsRequest) =>
+        api.post<FieldDetectOptionsResponse>(`/v1/workspaces/${wid}/tables/${tid}/fields/${fid}/detect-options`, data).then(r => r.data),
 }
 
 export const auditApi = {
