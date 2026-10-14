@@ -58,3 +58,32 @@ describe('FieldList 删除字段确认', () => {
         expect(screen.queryByRole('button', { name: '删除字段 标题' })).toBeNull()
     })
 })
+
+// ─────────────── 引用字段跟随源字段类型 ───────────────
+
+function renderLookupList(config: Record<string, unknown>) {
+    const fields = [{ id: 1, name: '状态', field_type: 'lookup', order: 0, config }] as any
+    renderProviders(
+        <FieldList
+            fields={fields}
+            isReordering={false}
+            onEdit={() => { }}
+            onRemove={vi.fn()}
+            onReorder={() => { }}
+            onOpenImport={() => { }}
+            onCreate={() => { }}
+        />,
+    )
+}
+
+describe('FieldList 引用字段源类型展示', () => {
+    it('缓存源类型为 select 时展示「引用 · 单选」', () => {
+        renderLookupList({ source_field_id: 9, source_field_type: 'select' })
+        expect(screen.getByText('引用 · 单选')).toBeInTheDocument()
+    })
+
+    it('未缓存源类型（历史数据）时回退展示「引用」', () => {
+        renderLookupList({ source_field_id: 9 })
+        expect(screen.getByText('引用')).toBeInTheDocument()
+    })
+})

@@ -166,4 +166,46 @@ describe('ColumnFilterDropdown 列级筛选面板', () => {
     clickButton(/确\s*定/)
     expect(onApply).toHaveBeenCalledWith(expect.any(String), true)
   })
+
+  it('引用字段缓存源类型为单选：操作符按单选切换，值输入回退文本', () => {
+    const field = makeField({
+      id: 1, name: '状态', field_type: 'lookup',
+      config: { source_field_id: 9, source_field_type: 'select' },
+    })
+    const onApply = vi.fn()
+    renderProviders(
+      <ColumnFilterDropdown field={field} onApply={onApply} onReset={vi.fn()} />,
+    )
+
+    // select 默认操作符为 '='，不再是 text 的 '包含'
+    expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('等于')
+    fireEvent.change(screen.getByPlaceholderText('输入选项值'), { target: { value: '进行中' } })
+    clickButton(/确\s*定/)
+    expect(onApply).toHaveBeenCalledWith('=', '进行中')
+  })
+
+  it('引用字段缓存源类型为数字：值控件为数字输入框', () => {
+    const field = makeField({
+      id: 1, name: '金额', field_type: 'lookup',
+      config: { source_field_id: 9, source_field_type: 'number' },
+    })
+    renderProviders(
+      <ColumnFilterDropdown field={field} onApply={vi.fn()} onReset={vi.fn()} />,
+    )
+
+    expect(screen.getByPlaceholderText('输入数值')).toBeInTheDocument()
+  })
+
+  it('引用字段未缓存源类型：回退既有 text 操作符行为', () => {
+    const field = makeField({
+      id: 1, name: '旧引用', field_type: 'lookup',
+      config: { source_field_id: 9 },
+    })
+    renderProviders(
+      <ColumnFilterDropdown field={field} onApply={vi.fn()} onReset={vi.fn()} />,
+    )
+
+    expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('包含')
+    expect(screen.getByPlaceholderText('输入值')).toBeInTheDocument()
+  })
 })

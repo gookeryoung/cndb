@@ -760,6 +760,12 @@ def _import_backup_into_workspace(
                     if isinstance(old, int) and old in mapping:
                         cfg[key] = mapping[old]
                         changed = True
+                # 恢复后按重映射到的源字段回填缓存类型（旧备份无该键，或源类型已变）
+                new_src_id = cfg.get("source_field_id")
+                new_src = db.get(DataField, new_src_id) if isinstance(new_src_id, int) else None
+                if new_src is not None and cfg.get("source_field_type") != new_src.field_type:
+                    cfg["source_field_type"] = new_src.field_type
+                    changed = True
             if changed:
                 field.config = cfg
                 db.add(field)

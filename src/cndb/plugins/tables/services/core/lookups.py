@@ -38,21 +38,26 @@ def lookup_fields(table: DataTable) -> list[DataField]:
     return [f for f in table.active_fields() if is_lookup_field(f)]
 
 
-def mark_dependent_lookups_broken(db: Session, source_field_id: int) -> int:
-    """把引用了某源字段的全部 lookup 字段标记为 broken（源字段被删/改类型时调用）.
-
-    Returns:
-        被标记的 lookup 字段数量.
-    """
+def _dependent_lookups(db: Session, source_field_id: int) -> list[DataField]:
+    """返回全库引用了 source_field_id 的未回收 lookup 字段（跨表）."""
     candidates = (
         db.query(DataField)
         .filter(DataField.field_type == LOOKUP_FIELD_TYPE, DataField.trashed == False)  # noqa: E712
         .all()
     )
+    return [f for f in candidates if (f.config or {}).get("source_field_id") == source_field_id]
+
+
+def mark_dependent_lookups_broken(db: Session, source_field_id: int) -> int:
+    """把引用了某源字段的全部 lookup 字段标记为 broken（源字段被删除时调用）.
+
+    Returns:
+        被标记的 lookup 字段数量.
+    """
     marked = 0
-    for f in candidates:
+    for f in _dependent_lookups(db, source_field_id):
         config = f.config or {}
-        if config.get("source_field_id") != source_field_id or config.get("broken"):
+        if config.get("broken"):
             continue
         new_config = dict(config)
         new_config["broken"] = True
@@ -62,6 +67,51 @@ def mark_dependent_lookups_broken(db: Session, source_field_id: int) -> int:
         db.commit()
         logger.info("[lookups] 源字段 %d 失效，已标记 %d 个 lookup 字段为 broken", source_field_id, marked)
     return marked
+
+
+def sync_dependent_lookups_on_source_type_change(db: Session, source_field: DataField) -> int:
+    """源字段类型变更后，同步所有引用它的 lookup 字段（跨表）.
+
+    语义（与"引用字段跟随源字段类型"约定对齐）：
+    - 新类型占用物理列（text/select/number 等）→ 值仍可读：刷新
+      ``config.source_field_type`` 并清除 ``config.broken``（类型来回切换后自愈）；
+    - 新类型无物理列（link/lookup）→ 值不可读：刷新类型并标记 ``broken``，
+      读取回退 None，不抛错；
+    - 仅刷新 ``source_field_id`` 匹配的 lookup，且仅写入确有变化的字段。
+
+    Args:
+        db: SQLAlchemy Session（本函数内 commit）.
+        source_field: 已持久化的源字段（其 ``field_type`` 为最新类型）.
+
+    Returns:
+        实际发生 config 变更的 lookup 字段数量.
+    """
+    from cndb.plugins.tables.field_types import default_registry
+
+    ft = default_registry.get(source_field.field_type)
+    readable = ft is not None and ft.has_physical_column
+    synced = 0
+    for f in _dependent_lookups(db, source_field.id):
+        config = f.config or {}
+        desired_type = source_field.field_type
+        desired_broken = not readable
+        if config.get("source_field_type") == desired_type and bool(config.get("broken")) == desired_broken:
+            continue
+        new_config = dict(config)
+        new_config["source_field_type"] = desired_type
+        new_config["broken"] = desired_broken
+        f.config = new_config
+        synced += 1
+    if synced:
+        db.commit()
+        logger.info(
+            "[lookups] 源字段 %d 类型改为 %s，已同步 %d 个 lookup 字段（broken=%s）",
+            source_field.id,
+            source_field.field_type,
+            synced,
+            not readable,
+        )
+    return synced
 
 
 def attach_lookup_values(
@@ -487,4 +537,5 @@ __all__ = [
     "match_row_filters",
     "sort_rows_in_memory",
     "split_lookup_filters",
+    "sync_dependent_lookups_on_source_type_change",
 ]

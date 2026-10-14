@@ -486,6 +486,7 @@ def import_fields_as_lookup(
                 "source_table_id": src_table.id,
                 "source_field_id": src.id,
                 "via_link_field_id": link_field.id,
+                "source_field_type": src.field_type,
             },
             order=next_order,
         )

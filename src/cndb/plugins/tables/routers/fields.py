@@ -55,7 +55,9 @@ router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fie
 def _validate_field_config(field_type: str, payload_config: dict[str, Any], db: Session) -> dict[str, Any]:
     """用字段类型对应的 config_schema 校验并归一化 config.
 
-    link 字段额外校验 target_table_id 存在性。未知/缺失 config_schema 的类型走直通。
+    link 字段额外校验 target_table_id 存在性；lookup 字段从源字段派生
+    ``source_field_type``（引用字段跟随源字段类型的缓存）。未知/缺失
+    config_schema 的类型走直通。
     """
     ft = default_registry.get(field_type)
     if ft is None:
@@ -75,6 +77,14 @@ def _validate_field_config(field_type: str, payload_config: dict[str, Any], db: 
         target = db.get(DataTable, cfg.target_table_id)
         if target is None or target.trashed:
             raise HTTPException(status_code=400, detail=f"关联目标表不存在: {cfg.target_table_id}")
+
+    # lookup 字段：从源字段派生并缓存 source_field_type，保证引用字段跟随源字段类型。
+    # 源字段不存在时留空（读取侧既有容错回退 None），不额外拒绝历史/跨库配置。
+    if field_type == "lookup":
+        source_field_id = (payload_config or {}).get("source_field_id")
+        source = db.get(DataField, source_field_id) if isinstance(source_field_id, int) else None
+        if source is not None:
+            cfg.source_field_type = source.field_type  # type: ignore[attr-defined]
 
     # 归一化输出（去掉基类 FieldTypeConfig 的通用字段）
     exclude = set()
@@ -315,11 +325,12 @@ def update_field(
             _revert_metadata()
             raise HTTPException(status_code=500, detail=f"字段类型切换物理结构变更失败: {exc}") from exc
 
-    # 源字段类型变更 → 引用它的 lookup 字段标记失效
+    # 源字段类型变更 → 同步引用它的 lookup 字段（跨表）：类型跟随源字段；
+    # 新类型无物理列（link/lookup）时才标记 broken，读取回退 None
     if old_field_type != df.field_type:
-        from cndb.plugins.tables.services.core.lookups import mark_dependent_lookups_broken
+        from cndb.plugins.tables.services.core.lookups import sync_dependent_lookups_on_source_type_change
 
-        mark_dependent_lookups_broken(db, df.id)
+        sync_dependent_lookups_on_source_type_change(db, df)
 
     # 2. is_unique 切换
     if old_is_unique != df.is_unique:

@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { Button, Select, Input } from 'antd'
-import { getOpsForField, FIELD_TYPE_ALIASES, extractSelectOptions, type FieldOp } from '../cells/fieldOps'
+import {
+  getOpsForField,
+  effectiveFieldType,
+  FIELD_TYPE_ALIASES,
+  extractSelectOptions,
+  type FieldOp,
+} from '../cells/fieldOps'
 import type { Field } from '@/api'
 
 interface ColumnFilterDropdownProps {
@@ -19,27 +25,36 @@ export default function ColumnFilterDropdown({
   onApply,
   onReset,
 }: ColumnFilterDropdownProps) {
-  const allOps = getOpsForField(field.field_type)
-  const defaultOp = allOps[0]?.op || '='
+  // 引用（lookup）字段按后端同步的源字段类型筛选：源字段 文本→单选 后操作符随之切换
+  const effectiveType = effectiveFieldType(field)
+  const _numericTypes = new Set(['number', 'float', 'decimal', 'percentage', 'timestamp'])
+  const _resolveFt = (ft: string) => FIELD_TYPE_ALIASES[ft] ?? ft
+  const resolvedType = _resolveFt(effectiveType)
+  const isSelect = resolvedType === 'select' || resolvedType === 'multiselect'
+  const options = isSelect
+    ? extractSelectOptions(field.config).map(o => ({ value: o.value, label: o.label }))
+    : []
+  // 引用字段只同步了源类型、拿不到源字段选项：去掉依赖选项集合的 in 操作符，
+  // 值输入回退为文本，避免渲染一个没有选项的空下拉
+  const hasOptions = options.length > 0
+  const allOps = getOpsForField(effectiveType)
+  const visibleOps = isSelect && !hasOptions ? allOps.filter(o => o.op !== 'in') : allOps
+  const defaultOp = visibleOps[0]?.op || '='
   const [op, setOp] = useState<string>(currentFilter?.op || defaultOp)
   const [value, setValue] = useState<unknown>(currentFilter?.value ?? '')
 
   // 当 field 变化（切换到不同列）时重置
   useEffect(() => {
-    const newOps = getOpsForField(field.field_type)
-    setOp(currentFilter?.op || newOps[0]?.op || '=')
+    const newOps = getOpsForField(effectiveFieldType(field))
+    const nextOps = field.field_type === 'lookup' && !extractSelectOptions(field.config).length
+      ? newOps.filter(o => o.op !== 'in')
+      : newOps
+    setOp(currentFilter?.op || nextOps[0]?.op || '=')
     setValue(currentFilter?.value ?? '')
   }, [field.name]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const currentOp: FieldOp | undefined = allOps.find(o => o.op === op)
+  const currentOp: FieldOp | undefined = visibleOps.find(o => o.op === op)
   const noValue = !!currentOp?.needValue
-
-  const _numericTypes = new Set(['number', 'float', 'decimal', 'percentage', 'timestamp'])
-  const _resolveFt = (ft: string) => FIELD_TYPE_ALIASES[ft] ?? ft
-  const isSelect = _resolveFt(field.field_type) === 'select' || _resolveFt(field.field_type) === 'multiselect'
-  const options = isSelect
-    ? extractSelectOptions(field.config).map(o => ({ value: o.value, label: o.label }))
-    : []
 
   return (
     <div style={{ padding: 12, width: 280 }}>
@@ -51,13 +66,13 @@ export default function ColumnFilterDropdown({
           value={op}
           onChange={(v) => { setOp(v); setValue('') }}
           style={{ width: '100%' }}
-          options={allOps.map(o => ({ value: o.op, label: o.label }))}
+          options={visibleOps.map(o => ({ value: o.op, label: o.label }))}
           size="small"
         />
       </div>
       {!noValue && (
         <div style={{ marginBottom: 12 }}>
-          {isSelect ? (
+          {isSelect && hasOptions ? (
             <Select
               mode={op === 'in' ? 'multiple' : undefined}
               value={value as string | string[] | undefined}
@@ -69,7 +84,7 @@ export default function ColumnFilterDropdown({
               allowClear
               showSearch
             />
-          ) : _numericTypes.has(_resolveFt(field.field_type)) ? (
+          ) : _numericTypes.has(resolvedType) ? (
             <Input
               type="number"
               value={value as string | number}
@@ -77,7 +92,7 @@ export default function ColumnFilterDropdown({
               size="small"
               placeholder="输入数值"
             />
-          ) : field.field_type === 'boolean' ? (
+          ) : resolvedType === 'boolean' ? (
             <Select
               value={value as boolean | undefined}
               onChange={(v) => setValue(v)}
@@ -92,7 +107,7 @@ export default function ColumnFilterDropdown({
               value={value as string}
               onChange={e => setValue(e.target.value)}
               size="small"
-              placeholder="输入值"
+              placeholder={isSelect ? '输入选项值' : '输入值'}
             />
           )}
         </div>

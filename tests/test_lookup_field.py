@@ -52,6 +52,8 @@ def test_lookup_config_required_fields() -> None:
     cfg = LookupFieldConfig(source_table_id=1, source_field_id=2, via_link_field_id=3)
     assert cfg.source_table_id == 1
     assert cfg.display_field_id is None
+    assert cfg.source_field_type == ""
+    assert cfg.broken is False
     with pytest.raises(ValidationError):
         LookupFieldConfig(source_table_id=1)  # type: ignore[call-arg]
 
@@ -117,6 +119,9 @@ class TestFieldImportLinkMode:
         assert lookup_f["config"]["source_table_id"] == src_tid
         assert lookup_f["config"]["source_field_id"] == src_field["id"]
         assert lookup_f["config"]["via_link_field_id"] == link_f["id"]
+        # 引入时缓存源字段类型，供前端按源类型渲染 / 筛选
+        assert lookup_f["config"]["source_field_type"] == "text"
+        assert lookup_f["config"].get("broken", False) is False
 
     def test_import_link_mode_reuses_existing_link_field(self, client, auth_headers, _lookup_env):
         """第二次 link 引入应复用已有 link 字段，只新增 lookup 字段."""
@@ -168,6 +173,71 @@ class TestFieldImportLinkMode:
         assert r.status_code == 201, r.text
         fields = _get_fields(client, auth_headers, wid, dst_tid)
         assert [f["field_type"] for f in fields] == ["text"]
+
+
+# ── B2b: 手工创建 lookup 时派生源字段类型 ──────────────
+
+
+class TestLookupCreateDerivesSourceType:
+    def test_create_lookup_caches_source_field_type(self, client, auth_headers, _lookup_env):
+        """POST /fields 创建 lookup：后端从源字段派生并缓存 source_field_type."""
+        wid, src_tid, dst_tid, _src_field = _lookup_env
+        select_f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            src_tid,
+            "src_status",
+            "select",
+            config={"options": [{"label": "进行中", "value": "进行中"}]},
+        )
+        link_f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            dst_tid,
+            "关联源表",
+            "link",
+            config={"target_table_id": src_tid, "multiple": False},
+        )
+        lookup_f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            dst_tid,
+            "src_status",
+            "lookup",
+            config={
+                "source_table_id": src_tid,
+                "source_field_id": select_f["id"],
+                "via_link_field_id": link_f["id"],
+            },
+        )
+        assert lookup_f["config"]["source_field_type"] == "select"
+        assert lookup_f["config"]["broken"] is False
+
+    def test_create_lookup_with_missing_source_keeps_empty_type(self, client, auth_headers, _lookup_env):
+        """源字段 id 解析不到时留空（不阻断创建），读取侧沿用既有容错回退 None."""
+        wid, _src_tid, dst_tid, _src_field = _lookup_env
+        link_f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            dst_tid,
+            "关联源表",
+            "link",
+            config={"target_table_id": _src_tid, "multiple": False},
+        )
+        lookup_f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            dst_tid,
+            "ghost",
+            "lookup",
+            config={"source_table_id": _src_tid, "source_field_id": 999999, "via_link_field_id": link_f["id"]},
+        )
+        assert lookup_f["config"]["source_field_type"] == ""
 
 
 # ── B3: 行读取时 lookup 值解析 ───────────────────────
@@ -508,7 +578,7 @@ class TestLookupNestedFilter:
         assert body["total"] == 0
 
 
-# ── B4: 源字段失效 → lookup broken ───────────────────
+# ── B4: 源字段类型同步 / 源字段失效 → lookup broken ────
 
 
 def _setup_lookup(client, auth_headers, _lookup_env):
@@ -548,6 +618,8 @@ class TestLookupBrokenSource:
         dst_fields = _get_fields(client, auth_headers, wid, dst_tid)
         lookup_f = next(f for f in dst_fields if f["field_type"] == "lookup")
         assert lookup_f["config"]["broken"] is True
+        # 删除不等于类型变更：缓存类型保持删除前快照
+        assert lookup_f["config"]["source_field_type"] == "text"
 
         listing = client.post(
             f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
@@ -557,18 +629,82 @@ class TestLookupBrokenSource:
         assert listing.status_code == 200
         assert listing.json()["rows"][0]["src_title"] is None
 
-    def test_change_source_field_type_marks_broken(self, client, auth_headers, _lookup_env):
-        """源字段改类型后：lookup config.broken=True."""
+    def test_change_source_type_to_select_syncs_lookup(self, client, auth_headers, _lookup_env):
+        """源字段 text→select：引用字段同步缓存类型为 select，且不再标记失效."""
         wid, src_tid, dst_tid, src_field = _setup_lookup(client, auth_headers, _lookup_env)
         r = client.patch(
             f"/api/v1/workspaces/{wid}/tables/{src_tid}/fields/{src_field['id']}",
             headers=auth_headers,
-            json={"field_type": "number"},
+            json={"field_type": "select"},
         )
         assert r.status_code == 200, r.text
-        dst_fields = _get_fields(client, auth_headers, wid, dst_tid)
-        lookup_f = next(f for f in dst_fields if f["field_type"] == "lookup")
+
+        lookup_f = next(f for f in _get_fields(client, auth_headers, wid, dst_tid) if f["field_type"] == "lookup")
+        assert lookup_f["config"]["source_field_type"] == "select"
+        assert lookup_f["config"].get("broken", False) is False
+
+    def test_change_source_type_keeps_lookup_resolving(self, client, auth_headers, _lookup_env):
+        """源字段 text→select 后引用值仍实时解析（不被类型变更打断）."""
+        wid, src_tid, dst_tid, src_field = _setup_lookup(client, auth_headers, _lookup_env)
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{src_tid}/fields/{src_field['id']}",
+            headers=auth_headers,
+            json={"field_type": "select", "config": {"options": [{"label": "v1", "value": "v1"}]}},
+        )
+        assert r.status_code == 200, r.text
+
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={"filters": [], "sorts": [], "limit": 10, "offset": 0},
+        )
+        assert listing.status_code == 200
+        assert listing.json()["rows"][0]["src_title"] == ["v1"]
+
+    def test_change_source_type_to_link_marks_broken(self, client, auth_headers, _lookup_env):
+        """源字段改为 link（无物理列）：引用字段标记失效，读取回退 None."""
+        wid, src_tid, dst_tid, src_field = _setup_lookup(client, auth_headers, _lookup_env)
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{src_tid}/fields/{src_field['id']}",
+            headers=auth_headers,
+            json={"field_type": "link", "config": {"target_table_id": dst_tid, "multiple": False}},
+        )
+        assert r.status_code == 200, r.text
+
+        lookup_f = next(f for f in _get_fields(client, auth_headers, wid, dst_tid) if f["field_type"] == "lookup")
+        assert lookup_f["config"]["source_field_type"] == "link"
         assert lookup_f["config"]["broken"] is True
+
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={"filters": [], "sorts": [], "limit": 10, "offset": 0},
+        )
+        assert listing.status_code == 200
+        assert listing.json()["rows"][0]["src_title"] is None
+
+    def test_source_type_switch_back_self_heals_broken(self, client, auth_headers, _lookup_env):
+        """源字段 link→text：引用字段清除失效标记并回填类型（无需重新引入）."""
+        wid, src_tid, dst_tid, src_field = _setup_lookup(client, auth_headers, _lookup_env)
+        base = f"/api/v1/workspaces/{wid}/tables/{src_tid}/fields/{src_field['id']}"
+        assert (
+            client.patch(
+                base, headers=auth_headers, json={"field_type": "link", "config": {"target_table_id": dst_tid}}
+            ).status_code
+            == 200
+        )
+        assert (
+            next(f for f in _get_fields(client, auth_headers, wid, dst_tid) if f["field_type"] == "lookup")["config"][
+                "broken"
+            ]
+            is True
+        )
+
+        r = client.patch(base, headers=auth_headers, json={"field_type": "text"})
+        assert r.status_code == 200, r.text
+        lookup_f = next(f for f in _get_fields(client, auth_headers, wid, dst_tid) if f["field_type"] == "lookup")
+        assert lookup_f["config"]["source_field_type"] == "text"
+        assert lookup_f["config"].get("broken", False) is False
 
 
 # ── B5: preview_only + link 模式组合 ─────────────────
