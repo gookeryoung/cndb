@@ -1,13 +1,13 @@
 /** 版本抽屉：时间线与差异对比两个 Tab（从 DocumentEditorPage 抽出）.
  *
  * 页面侧把 query 结果解包为 props（timeline / diff / loading 标记），
- * 抽屉不依赖 React Query。
+ * 抽屉不依赖 React Query。差异对比交给 DiffView 组件（统一 / 并排 + 行内高亮）。
  */
 
-import { Drawer, Space, Tabs, Tag, Timeline, Typography } from 'antd'
+import { Drawer, Tabs, Timeline, Typography } from 'antd'
 import type { TimelineProps } from 'antd'
 
-import DiffView from './DiffView'
+import { DocumentDiffView } from '@/components/DiffView'
 
 const { Text } = Typography
 
@@ -30,7 +30,7 @@ export default function VersionsDrawer({
   diff: { added: number; removed: number; diff: string } | undefined
 }) {
   return (
-    <Drawer title="版本历史" width={520} open={open} onClose={onClose}>
+    <Drawer title="版本历史" width={920} open={open} onClose={onClose}>
       <Tabs
         items={[
           {
@@ -51,20 +51,11 @@ export default function VersionsDrawer({
               diffLoading ? (
                 <div>计算差异中…</div>
               ) : (
-                <>
-                  <Space style={{ marginBottom: 12 }}>
-                    <Text strong>
-                      v{diffPair.base} → v{diffPair.head}
-                    </Text>
-                    {diff && (
-                      <>
-                        <Tag color="green">+{diff.added}</Tag>
-                        <Tag color="red">-{diff.removed}</Tag>
-                      </>
-                    )}
-                  </Space>
-                  <DiffView diff={diff?.diff ?? ''} />
-                </>
+                <DocumentDiffView
+                  diff={diff?.diff ?? ''}
+                  baseLabel={`v${diffPair.base}`}
+                  headLabel={`v${diffPair.head}`}
+                />
               )
             ) : (
               <Text type="secondary">在时间线中点击「与上一版对比」查看差异</Text>
