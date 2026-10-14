@@ -853,7 +853,7 @@ describe('FieldManager 从其他表引入字段', () => {
     const SOURCE_FIELDS = [
         { id: 101, name: '名称', field_type: 'text', order: 0 },
         { id: 102, name: '金额', field_type: 'number', order: 1 },
-        { id: 103, name: '主键列', field_type: 'text', order: 2, is_primary: true },
+        { id: 103, name: '主键列', field_type: 'text', order: 2 },
     ] as any
 
     /** 打开引入对话框并选中"其他工作区"→"外部表"，等源字段渲染完成 */
@@ -907,7 +907,7 @@ describe('FieldManager 从其他表引入字段', () => {
         expect(screen.getByText('金额')).toBeInTheDocument()
     })
 
-    it('AC-4: 过滤后全选只作用于可见项，主键字段不可选', async () => {
+    it('AC-4: 过滤后全选只作用于可见项', async () => {
         await openImportDialogWithSource()
 
         // 过滤"名称" → 可见项只剩 名称
@@ -923,11 +923,11 @@ describe('FieldManager 从其他表引入字段', () => {
             expect(screen.getByText(/已选 1\/3/)).toBeInTheDocument()
         })
 
-        // 清空过滤 → 全选补齐剩余（金额），主键仍不可选
+        // 清空过滤 → 全选补齐剩余字段（3 个源字段全部可选）
         fireEvent.change(screen.getByPlaceholderText('按字段名过滤'), { target: { value: '' } })
         fireEvent.click(screen.getByRole('button', { name: /全\s*选/ }))
         await waitFor(() => {
-            expect(screen.getByText(/已选 2\/3/)).toBeInTheDocument()
+            expect(screen.getByText(/已选 3\/3/)).toBeInTheDocument()
         })
     })
 

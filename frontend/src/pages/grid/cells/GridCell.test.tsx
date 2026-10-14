@@ -241,8 +241,8 @@ describe('GridCell 传统编辑流', () => {
     expect(screen.getByDisplayValue('张三')).toBeInTheDocument()
   })
 
-  it('只读字段（auto_id）双击不进入编辑态', () => {
-    const field = makeField({ id: 1, name: '编号', field_type: 'auto_id' })
+  it('只读字段（lookup 无物理列）双击不进入编辑态', () => {
+    const field = makeField({ id: 1, name: '引用', field_type: 'lookup' })
     renderProviders(<GridCell value="A-001" field={field} rowId={1} onSave={vi.fn()} />)
 
     fireEvent.doubleClick(screen.getByText('A-001'))

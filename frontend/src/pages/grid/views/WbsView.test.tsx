@@ -15,7 +15,7 @@ import { makeField } from '@/test/fixtures'
 import type { Field, RowResponse, View } from '@/api'
 
 const FIELDS: Field[] = [
-    makeField({ id: 1, name: '名称', field_type: 'text', is_primary: true }),
+    makeField({ id: 1, name: '名称', field_type: 'text' }),
     makeField({ id: 2, name: '父任务', field_type: 'text' }),
     makeField({ id: 3, name: '进度', field_type: 'number' }),
     makeField({ id: 4, name: '状态', field_type: 'select', config: { options: ['进行中', '已完成'] } }),

@@ -14,7 +14,7 @@ import { makeField } from '@/test/fixtures'
 import type { Field, RowResponse, View } from '@/api'
 
 const FIELDS: Field[] = [
-  makeField({ id: 1, name: '名称', field_type: 'text', is_primary: true }),
+  makeField({ id: 1, name: '名称', field_type: 'text' }),
   makeField({ id: 2, name: '截止', field_type: 'date' }),
   makeField({ id: 3, name: '类型', field_type: 'select', config: { options: ['会议', '评审'] } }),
 ]

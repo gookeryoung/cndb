@@ -62,7 +62,6 @@ describe('getOptionSchema 四种视图 + 未知类型', () => {
 describe('_fieldMatchesSchema 字段类型匹配', () => {
   const textField = makeField({ id: 1, name: 't', field_type: 'text' })
   const longTextField = makeField({ id: 2, name: 'lt', field_type: 'long_text' })
-  const primaryField = makeField({ id: 3, name: 'id', field_type: 'text', is_primary: true })
   const hiddenField = makeField({ id: 4, name: 'h', field_type: 'text', hidden: true })
 
   it('fieldTypes 未定义时全匹配', () => {
@@ -81,11 +80,6 @@ describe('_fieldMatchesSchema 字段类型匹配', () => {
     expect(_fieldMatchesSchema(makeField({ id: 5, name: 'lt2', field_type: 'longtext' }), ['longtext'])).toBe(true)
     // schema 列历史别名 long_text 而字段是规范名 → 不匹配（schema 应使用规范名）
     expect(_fieldMatchesSchema(makeField({ id: 6, name: 'lt3', field_type: 'longtext' }), ['long_text'])).toBe(false)
-  })
-
-  it('is_primary 作为特殊类型匹配主键字段', () => {
-    expect(_fieldMatchesSchema(primaryField, ['is_primary'])).toBe(true)
-    expect(_fieldMatchesSchema(textField, ['is_primary'])).toBe(false)
   })
 
   it('不匹配的类型返回 false', () => {
@@ -146,7 +140,7 @@ describe('resolveAutoField 自动推断', () => {
   const fields = [
     makeField({ id: 1, name: 'status', field_type: 'select' }),
     makeField({ id: 2, name: 'title', field_type: 'text' }),
-    makeField({ id: 3, name: 'id', field_type: 'number', is_primary: true }),
+    makeField({ id: 3, name: 'id', field_type: 'number' }),
     makeField({ id: 4, name: 'desc', field_type: 'long_text' }),
   ]
 
@@ -157,12 +151,7 @@ describe('resolveAutoField 自动推断', () => {
     expect(resolveAutoField(fields, findOptionSchema('kanban', 'group_field'))).toBe('status')
   })
 
-  it('按类型找不到时 includePrimary 回退主键字段', () => {
-    const onlyPrimary = [makeField({ id: 3, name: 'id', field_type: 'number', is_primary: true })]
-    expect(resolveAutoField(onlyPrimary, findOptionSchema('kanban', 'title_field'))).toBe('id')
-  })
-
-  it('includePrimary 也没有时回退 literalFallback', () => {
+  it('无匹配类型时回退 literalFallback', () => {
     expect(resolveAutoField([], findOptionSchema('kanban', 'title_field'))).toBe('id')
   })
 
@@ -170,7 +159,7 @@ describe('resolveAutoField 自动推断', () => {
     expect(resolveAutoField(fields, undefined)).toBeUndefined()
   })
 
-  it('schema 无 fieldTypes/includePrimary/literalFallback 时返回 undefined', () => {
+  it('schema 无 fieldTypes/literalFallback 时返回 undefined', () => {
     const bareSchema = { key: 'x', label: 'x', kind: 'field_select' as const }
     expect(resolveAutoField(fields, bareSchema)).toBeUndefined()
   })

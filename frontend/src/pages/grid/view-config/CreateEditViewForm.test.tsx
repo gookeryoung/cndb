@@ -15,7 +15,7 @@ const fields = [
   makeField({ id: 1, name: '标题', field_type: 'text' }),
   makeField({ id: 2, name: '状态', field_type: 'select' }),
   makeField({ id: 3, name: '截止', field_type: 'date' }),
-  makeField({ id: 4, name: '编号', field_type: 'text', is_primary: true }),
+  makeField({ id: 4, name: '编号', field_type: 'text' }),
 ]
 
 /** 打开第 idx 个 antd Select（0 = 视图类型选择器） */

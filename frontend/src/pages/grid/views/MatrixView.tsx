@@ -91,10 +91,8 @@ function MatrixCellCard({
   onClick?: (r: RowResponse) => void
 }) {
   const fieldDef = titleField ? fields.find((f) => f.name === titleField) : undefined
-  const primaryField = fields.find((f) => f.is_primary)
   const text =
     (fieldDef && formatFieldDisplayValue(fieldDef, row[titleField!])) ||
-    (primaryField && formatFieldDisplayValue(primaryField, row[primaryField.name])) ||
     String(row.id ?? '')
   return (
     <Tooltip title={text} mouseEnterDelay={0.4}>

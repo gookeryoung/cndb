@@ -278,9 +278,9 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     return sourceFieldsWithConflict.filter(sf => sf.name.toLowerCase().includes(kw))
   }, [sourceFieldsWithConflict, fieldFilter])
 
-  /** 全选 / 反选当前过滤后的字段（主键字段不可选，自动排除） */
+  /** 全选 / 反选当前过滤后的字段 */
   function toggleSelectAll(mode: 'all' | 'invert') {
-    const selectable = filteredSourceFields.filter(sf => !sf.is_primary).map(sf => sf.id)
+    const selectable = filteredSourceFields.map(sf => sf.id)
     if (mode === 'all') {
       setImportSelectedIds(prev => Array.from(new Set([...prev, ...selectable])))
     } else {
@@ -515,9 +515,8 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                     const hint = linkTargetHint(sf)
                     return (
                       <div key={sf.id} style={{ padding: '4px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Checkbox value={sf.id} disabled={sf.is_primary}>
-                          <span style={{ fontWeight: sf.is_primary ? 500 : 400 }}>{sf.name}</span>
-                          {sf.is_primary && <Tag color="gold" style={{ marginLeft: 4 }}>PK</Tag>}
+                        <Checkbox value={sf.id}>
+                          <span>{sf.name}</span>
                           <Tag color={getFieldTypeColor(sf.field_type)} style={{ marginLeft: 4 }}>{getFieldTypeLabel(sf.field_type)}</Tag>
                           {sf.conflict && (
                             <Tag color="orange" style={{ marginLeft: 4 }}>重名</Tag>

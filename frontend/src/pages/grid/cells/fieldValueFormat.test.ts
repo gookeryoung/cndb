@@ -55,15 +55,15 @@ describe('getLinkFirstLabel', () => {
 })
 
 describe('pickLinkLabelFieldName（link 下拉标签字段选择）', () => {
-  it('优先取 is_primary 的 text 字段', () => {
+  it('多个 text 字段时取数组中的第一个（不按 order 排序）', () => {
     const fields = [
+      makeField({ id: 2, name: '标题', field_type: 'text', order: 1 }),
       makeField({ id: 1, name: '备注', field_type: 'text', order: 0 }),
-      makeField({ id: 2, name: '标题', field_type: 'text', is_primary: true, order: 1 }),
     ]
     expect(pickLinkLabelFieldName(fields)).toBe('标题')
   })
 
-  it('无主字段时取第一个 text 字段', () => {
+  it('跳过非 text 字段，取第一个 text 字段', () => {
     const fields = [
       makeField({ id: 1, name: '数量', field_type: 'number', order: 0 }),
       makeField({ id: 2, name: '名称', field_type: 'text', order: 1 }),

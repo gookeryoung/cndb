@@ -36,8 +36,6 @@ describe('fieldTypeMeta 字段类型元数据', () => {
     expect(getFieldTypeLabel('decimal')).toBe('小数')
     expect(getFieldTypeLabel('multi_select')).toBe('多选')
     expect(getFieldTypeLabel('json')).toBe('JSON')
-    expect(getFieldTypeLabel('formula')).toBe('公式')
-    expect(getFieldTypeLabel('created_time')).toBe('创建时间')
   })
 
   it('未知类型：标签返回原始值、颜色返回 default', () => {
@@ -51,13 +49,12 @@ describe('fieldTypeMeta 字段类型元数据', () => {
     }
   })
 
-  it('FIELD_TYPE_OPTIONS 恰含 17 个主类型且不含别名/系统类型', () => {
+  it('FIELD_TYPE_OPTIONS 恰含 17 个主类型且不含别名', () => {
     expect(FIELD_TYPE_OPTIONS).toHaveLength(17)
     const values = FIELD_TYPE_OPTIONS.map(o => o.value)
     expect(values).toContain('text')
     expect(values).toContain('image')
     expect(values).not.toContain('long_text')
-    expect(values).not.toContain('formula')
     // 每项都带类别
     for (const o of FIELD_TYPE_OPTIONS) {
       expect(o.category).toBeTruthy()
