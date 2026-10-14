@@ -9,14 +9,16 @@
  *
  * 从 ImportExportDialog 拆出：导入全流程状态与渲染内聚于此，外层 Modal 由容器负责.
  */
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Progress, App as AntApp, Space, Select, Alert, Empty, Upload, Table, Tabs, Tag, Collapse, Radio, Descriptions, Tooltip, Checkbox } from 'antd'
-import { InboxOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined, ReloadOutlined, SwapOutlined, PlusCircleOutlined, EditOutlined } from '@ant-design/icons'
+import { InboxOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { ImportTaskInfo, Field } from '@/api'
 import HelpTip from '@/components/HelpTip'
-import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
-import { ACCEPTED_EXT, changedCountOf, collectDiffColumnKeys, diffChipStyle, fmtValue, type Phase } from './importPreview'
+import { ACCEPTED_EXT, type Phase } from './importPreview'
+import MiniStat from './MiniStat'
+import ImportDiffTable from './ImportDiffTable'
+import ImportQualityPanel from './ImportQualityPanel'
 
 const { Dragger } = Upload
 
@@ -358,330 +360,8 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
     }
 
     // ── 渲染：数据质量面板 ──
-    const renderQualityPanel = (report: any) => {
-        const profiles = (report.column_profiles || []) as any[]
-        const summary = report.data_quality_summary as any
-        const suggestions = (report.cleaning_suggestions || []) as any[]
-        if (profiles.length === 0) return <Empty description="暂无数据质量信息" />
-
-        return (
-            <div>
-                {/* 整体 summary 卡片 */}
-                {summary && (
-                    <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-                        <MiniStat label="总行数" value={summary.total_rows} color="#3b82f6" />
-                        <MiniStat label="总列数" value={summary.total_columns} color="#8b5cf6" />
-                        {summary.duplicate_rows > 0 && <MiniStat label="重复行" value={summary.duplicate_rows} color="#f59e0b" />}
-                        {summary.empty_columns?.length > 0 && <MiniStat label="全空列" value={summary.empty_columns.length} color="#ef4444" />}
-                        {summary.high_null_columns?.length > 0 && <MiniStat label="高空值列" value={summary.high_null_columns.length} color="#ec4899" />}
-                    </div>
-                )}
-
-                {/* 清洗建议（如果有） */}
-                {suggestions.length > 0 && (
-                    <div style={{ marginBottom: 16, padding: 12, background: 'var(--cn-bg-subtle)', borderRadius: 8, border: '1px solid var(--cn-border-soft)' }}>
-                        <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>
-                            <SettingOutlined /> 清洗建议（勾选后将在确认导入时执行）
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {suggestions.map((s: any, i: number) => {
-                                const isChecked = selectedCleaningActions.some((a: any) => a.id === s.id)
-                                return (
-                                    <label key={s.id || i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                                        <Checkbox
-                                            checked={isChecked}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setSelectedCleaningActions((prev) => [...prev, s])
-                                                } else {
-                                                    setSelectedCleaningActions((prev) => prev.filter((a: any) => a.id !== s.id))
-                                                }
-                                            }}
-                                        >
-                                            {s.action}{s.column ? ` (${s.column})` : ''} — {s.reason}（影响 {s.affected_count} 行）
-                                        </Checkbox>
-                                    </label>
-                                )
-                            })}
-                        </div>
-                    </div>
-                )}
-
-                {/* 每列可展开卡片 */}
-                <Collapse
-                    size="small"
-                    defaultActiveKey={profiles.slice(0, 1).map(p => p.name)}
-                    items={profiles.map(p => ({
-                        key: p.name,
-                        label: (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontWeight: 500 }}>{p.name}</span>
-                                <Tag color="blue">{getFieldTypeLabel(p.inferred_type)}</Tag>
-                                <Tag color={p.confidence >= 0.9 ? 'green' : p.confidence >= 0.7 ? 'orange' : 'red'} style={{ margin: 0 }}>
-                                    自动识别 {Math.round(p.confidence * 100)}%
-                                </Tag>
-                            </div>
-                        ),
-                        children: (
-                            <div style={{ fontSize: 13 }}>
-                                <div style={{ display: 'flex', gap: 24, marginBottom: 10 }}>
-                                    <span>唯一值 <b>{p.unique_count}</b></span>
-                                    <span>空值 <b>{p.null_count}</b></span>
-                                    {p.fallback_type && <span style={{ color: '#ef4444' }}>部分值无法识别，建议改用：{getFieldTypeLabel(p.fallback_type)}</span>}
-                                </div>
-                                {/* 空值率进度条 */}
-                                <div style={{ marginBottom: 10 }}>
-                                    <span style={{ color: 'var(--cn-text-muted)', marginRight: 8 }}>空值率</span>
-                                    <Progress
-                                        size="small"
-                                        percent={Math.round(p.null_ratio * 100)}
-                                        strokeColor={p.null_ratio > 0.5 ? '#ef4444' : p.null_ratio > 0.2 ? '#f59e0b' : '#22c55e'}
-                                    />
-                                </div>
-                                {/* 数值列 min/max/mean */}
-                                {p.min !== undefined && (
-                                    <div style={{ marginBottom: 10, color: 'var(--cn-text-secondary)' }}>
-                                        最小 <b>{p.min}</b> / 最大 <b>{p.max}</b> / 均值 <b>{p.mean?.toFixed(2)}</b>
-                                    </div>
-                                )}
-                                {/* 类型冲突 */}
-                                {p.type_conflicts?.length > 0 && (
-                                    <div style={{ marginBottom: 10 }}>
-                                        <div style={{ color: '#ef4444', marginBottom: 4 }}>⚠ 类型冲突（{p.type_conflicts.length} 条）</div>
-                                        {p.type_conflicts.slice(0, 5).map((c: any, i: number) => (
-                                            <div key={i} style={{ color: 'var(--cn-text-muted)' }}>
-                                                行 {c.row_number}: <code style={{ background: 'var(--cn-bg-muted)', padding: '1px 4px', borderRadius: 3 }}>{String(c.value).slice(0, 40)}</code>
-                                                被识别为 <Tag>{c.conflicting_type}</Tag>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                {/* 异常值 */}
-                                {p.outliers?.length > 0 && (
-                                    <div style={{ marginBottom: 10 }}>
-                                        <div style={{ color: '#f59e0b', marginBottom: 4 }}>⚠ 异常值（{p.outliers.length} 个）</div>
-                                        <div style={{ color: 'var(--cn-text-muted)' }}>
-                                            {p.outliers.slice(0, 5).map((o: any, i: number) => (
-                                                <Tag key={i} color="orange" style={{ marginBottom: 2 }}>{String(o.value)}</Tag>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                                {/* 分布直方图（数值列） */}
-                                {p.distribution_bins?.length > 0 && (
-                                    <div style={{ marginBottom: 10 }}>
-                                        <div style={{ color: 'var(--cn-text-secondary)', marginBottom: 4 }}>数值分布</div>
-                                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 50 }}>
-                                            {p.distribution_bins.map((b: any, i: number) => {
-                                                const maxC = Math.max(...p.distribution_bins.map((x: any) => x.count))
-                                                const h = Math.max(4, (b.count / maxC) * 46)
-                                                return (
-                                                    <Tooltip key={i} title={`${b.bin_label}: ${b.count}`}>
-                                                        <div style={{
-                                                            width: `${100 / p.distribution_bins.length}%`,
-                                                            background: '#3b82f6',
-                                                            height: h,
-                                                            borderRadius: 2,
-                                                            minWidth: 3,
-                                                        }} />
-                                                    </Tooltip>
-                                                )
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-                                {/* 离散列 Top N */}
-                                {p.value_counts?.length > 0 && (
-                                    <div style={{ marginBottom: 10 }}>
-                                        <div style={{ color: 'var(--cn-text-secondary)', marginBottom: 4 }}>Top {Math.min(5, p.value_counts.length)} 取值</div>
-                                        {p.value_counts.slice(0, 5).map((v: any, i: number) => (
-                                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--cn-text-muted)' }}>
-                                                <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{String(v.value)}</span>
-                                                <span>{v.count}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                {/* 样本值 */}
-                                {p.sample_values?.length > 0 && (
-                                    <div style={{ color: 'var(--cn-text-muted)' }}>
-                                        样本: {p.sample_values.map((v: string, i: number) => (
-                                            <Tag key={i} style={{ marginBottom: 2 }}>{String(v).slice(0, 30)}</Tag>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        ),
-                    }))}
-                />
-            </div>
-        )
-    }
 
     // ── 渲染：Diff 表格（更新行红/绿 chip 字段对比 + 变更汇总列；空态区分提示） ──
-    const renderDiffTable = (
-        preview: any[] | undefined,
-        mode: 'new' | 'update',
-        report?: any,
-    ) => {
-        const isNew = mode === 'new'
-        const rowBg = isNew
-            ? 'color-mix(in srgb, #22c55e 8%, var(--cn-bg-container))'   // 新增绿
-            : 'color-mix(in srgb, #3b82f6 8%, var(--cn-bg-container))'   // 更新蓝
-        const rowBorder = isNew ? '#22c55e' : '#3b82f6'       // 左侧竖条颜色
-        const badgeColor = isNew ? 'green' : 'blue'
-        const BadgeIcon = isNew ? PlusCircleOutlined : EditOutlined
-
-        // ── 空态区分：update 模式按"未选参考列 / 无匹配行"分别提示 ──
-        if (!preview || preview.length === 0) {
-            if (!isNew) {
-                return matchKeys.length === 0 ? (
-                    <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description={
-                            <span style={{ color: 'var(--cn-text-muted)', fontSize: 13 }}>
-                                未选择参考列，所有行将作为<b>新增</b>导入
-                                <br />
-                                <span style={{ fontSize: 12 }}>选择参考列并执行更新数据比对分析后，此处将显示新旧字段对比</span>
-                            </span>
-                        }
-                    />
-                ) : (
-                    <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description={
-                            <span style={{ color: 'var(--cn-text-muted)', fontSize: 13 }}>
-                                没有需要更新的行
-                                <br />
-                                <span style={{ fontSize: 12 }}>按参考列「{matchKeys.join('、')}」未匹配到已有数据</span>
-                            </span>
-                        }
-                    />
-                )
-            }
-            return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无新增行" />
-        }
-
-        const { kvKeys, diffKeys, allFieldNames } = collectDiffColumnKeys(preview, mode)
-
-        /** 字段级 diff 单元格：GitHub diff 风格 —— 旧值红底删除线（−）、新值绿底（+） */
-        const renderDiffCell = (diff: any) => {
-            const oldText = fmtValue(diff.old)
-            const newText = fmtValue(diff.new)
-            const chipBase: CSSProperties = diffChipStyle()
-            return (
-                <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
-                    <span style={{ ...chipBase, background: 'color-mix(in srgb, #ef4444 12%, var(--cn-bg-container))', color: '#ef4444', textDecoration: 'line-through' }}>
-                        − {oldText || '(空)'}
-                    </span>
-                    <span style={{ ...chipBase, background: 'color-mix(in srgb, #22c55e 12%, var(--cn-bg-container))', color: '#22c55e', fontWeight: 500 }}>
-                        + {newText || '(清空)'}
-                    </span>
-                </div>
-            )
-        }
-
-        const columns: any[] = [
-            {
-                title: <BadgeIcon style={{ color: isNew ? '#16a34a' : '#2563eb', marginRight: 4 }} />,
-                dataIndex: '_tag',
-                width: 70,
-                fixed: 'left',
-                render: () => (
-                    <Tag color={badgeColor} style={{ margin: 0 }}>
-                        {isNew ? '新增' : '更新'}
-                    </Tag>
-                ),
-            },
-            { title: '文件行号', dataIndex: 'row_number', width: 90, fixed: 'left' },
-        ]
-
-        if (!isNew) {
-            columns.push({
-                title: '命中行',
-                dataIndex: 'existing_row_id',
-                width: 90,
-                fixed: 'left',
-                render: (v: number) => <Tag color="blue">#{v}</Tag>,
-            })
-            // 变更汇总列：变更字段数 + 字段名（最多 2 个，多余折叠为 +N）
-            columns.push({
-                title: '变更',
-                dataIndex: '_changes',
-                width: 170,
-                fixed: 'left',
-                render: (_: unknown, row: any) => {
-                    const n = changedCountOf(row)
-                    if (n === 0) {
-                        return <Tag style={{ margin: 0, color: 'var(--cn-text-muted)', background: 'var(--cn-bg-muted)', borderColor: 'var(--cn-border-soft)' }}>无变化</Tag>
-                    }
-                    const names: string[] = Object.keys(row.field_diffs)
-                    return (
-                        <span>
-                            <Tag color="blue" style={{ margin: '0 4px 2px 0' }}>{n} 处</Tag>
-                            {names.slice(0, 2).map(nm => (
-                                <Tag key={nm} color="default" style={{ margin: '0 4px 2px 0' }}>{nm}</Tag>
-                            ))}
-                            {names.length > 2 && <Tag style={{ margin: 0 }}>+{names.length - 2}</Tag>}
-                        </span>
-                    )
-                },
-            })
-        }
-
-        // 每个字段列：update 模式仅展示参考列与变化字段（聚焦变更）；变化字段渲染 diff chip
-        allFieldNames.forEach(fname => {
-            const isKeyCol = kvKeys.includes(fname)
-            const isDiffCol = diffKeys.includes(fname)
-            columns.push({
-                title: isKeyCol ? <span style={{ color: '#7c3aed' }}>🔑 {fname}</span> : fname,
-                dataIndex: ['field_sample', fname],
-                ellipsis: !isDiffCol,
-                render: (_: unknown, row: any) => {
-                    const previewVal = row.field_sample?.[fname]
-                    const diff = row.field_diffs?.[fname]
-                    // 变化字段：红/绿 chip 对比
-                    if (diff) {
-                        return renderDiffCell(diff)
-                    }
-                    // 参考列：高亮标记
-                    if (isKeyCol) {
-                        const kv = row.match_key_values?.[fname]
-                        return <Tag color="purple">{fmtValue(kv ?? previewVal)}</Tag>
-                    }
-                    return previewVal != null ? fmtValue(previewVal) : '-'
-                },
-            })
-        })
-
-        return (
-            <>
-                {/* 命中但全部无字段变化 → 区分提示 */}
-                {!isNew && report && report.update_changed_count === 0 && (
-                    <Alert
-                        type="info"
-                        showIcon
-                        style={{ marginBottom: 8 }}
-                        message={`已匹配 ${report.update_count} 行已有数据，但字段值均与现有数据一致，无需更新`}
-                    />
-                )}
-                <Table
-                    size="small"
-                    pagination={{ pageSize: 20 }}
-                    scroll={{ x: 700, y: 360 }}
-                    dataSource={preview.map((r, i) => ({ ...r, __key: `${mode}-${i}` }))}
-                    rowKey="__key"
-                    columns={columns}
-                    rowClassName={() => 'diff-row'}
-                    style={{ '--diff-row-bg': rowBg, '--diff-row-border': rowBorder } as any}
-                />
-                {preview.length >= 200 && (
-                    <div style={{ color: 'var(--cn-text-muted)', fontSize: 12, marginTop: 4 }}>仅预览前 200 行，完整数据将全部导入</div>
-                )}
-            </>
-        )
-    }
-
     // ── 渲染：预览面板（V3 四卡片 + Diff 控制 + Diff 表格） ──
     const renderPreview = () => {
         if (!task || phase !== 'preview') return null
@@ -825,14 +505,14 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                             key: 'new',
                             label: `待新增 (${newCount})`,
                             disabled: newCount === 0,
-                            children: renderDiffTable(report.new_preview, 'new', report),
+                            children: <ImportDiffTable preview={report.new_preview} mode="new" report={report} matchKeys={matchKeys} />,
                         },
                         {
                             key: 'update',
                             label: updateChangedCount < updateCount
                                 ? `更新 (${updateChangedCount}/${updateCount})`
                                 : `更新 (${updateCount})`,
-                            children: renderDiffTable(report.update_preview, 'update', report),
+                            children: <ImportDiffTable preview={report.update_preview} mode="update" report={report} matchKeys={matchKeys} />,
                         },
                         {
                             key: 'errors',
@@ -874,7 +554,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         ...((report as any).column_profiles?.length > 0 ? [{
                             key: 'quality',
                             label: `数据质量 (${(report as any).column_profiles.length})`,
-                            children: renderQualityPanel(report),
+                            children: <ImportQualityPanel report={report} selectedCleaningActions={selectedCleaningActions} setSelectedCleaningActions={setSelectedCleaningActions} />,
                         }] : []),
                     ]}
                 />
@@ -930,29 +610,6 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     </Space>
                 </div>
             )}
-        </div>
-    )
-}
-
-// ─────────────── 迷你统计卡片 ───────────────
-
-/** 迷你统计卡片 —— 进度面板与数据质量面板共用 */
-function MiniStat({ label, value, color, compact }: { label: string; value: number | string; color: string; compact?: boolean }) {
-    return compact ? (
-        <div style={{
-            padding: '6px 12px', background: color + '12', borderRadius: 6,
-            borderLeft: `3px solid ${color}`, minWidth: 72, textAlign: 'center',
-        }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
-            <div style={{ fontSize: 11, color: 'var(--cn-text-muted)' }}>{label}</div>
-        </div>
-    ) : (
-        <div style={{
-            padding: '8px 14px', background: color + '10', borderRadius: 6,
-            borderLeft: `3px solid ${color}`, minWidth: 90,
-        }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
-            <div style={{ fontSize: 11, color: 'var(--cn-text-muted)' }}>{label}</div>
         </div>
     )
 }
