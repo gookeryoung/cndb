@@ -6,7 +6,6 @@ import {
   Alert,
   Button,
   Drawer,
-  Divider,
   Input,
   InputNumber,
   Modal,
@@ -37,49 +36,20 @@ import { parseOutline } from '@/components/Document/outline'
 import { documentsApi } from '@/api/documents'
 import { tableApi } from '@/api'
 import type {
-  BacklinkItem,
   DocumentDetail,
   DocumentItem,
   OutgoingLinkItem,
-  TagItem,
   VersionItem,
 } from '@/api/documents'
 
 const { Text, Title } = Typography
 const { TextArea } = Input
 
-/** 简易 unified diff 渲染（行级着色） */
-function DiffView({ diff }: { diff: string }) {
-  const lines = useMemo(() => diff.split('\n'), [diff])
-  return (
-    <pre
-      style={{
-        fontSize: 12,
-        lineHeight: 1.6,
-        fontFamily: 'var(--cn-mono, monospace)',
-        overflow: 'auto',
-        maxHeight: 480,
-        padding: 12,
-        background: 'var(--cn-bg-secondary, #f6f6f6)',
-        borderRadius: 8,
-      }}
-    >
-      {lines.map((line, i) => {
-        const color = line.startsWith('+') && !line.startsWith('+++')
-          ? '#2e7d32'
-          : line.startsWith('-') && !line.startsWith('---')
-            ? '#c62828'
-            : undefined
-        const bg = color ? (line.startsWith('+') ? '#e8f5e9' : '#ffebee') : undefined
-        return (
-          <div key={i} style={{ color, background: bg, whiteSpace: 'pre-wrap' }}>
-            {line || ' '}
-          </div>
-        )
-      })}
-    </pre>
-  )
-}
+
+import BacklinksDrawer from './BacklinksDrawer'
+import DiffView from './DiffView'
+import OutlineDrawer from './OutlineDrawer'
+import TagEditor from './TagEditor'
 
 export default function DocumentEditorPage() {
   const { wid, docId } = useParams<{ wid: string; docId: string }>()
@@ -450,76 +420,25 @@ export default function DocumentEditorPage() {
       </div>
 
       {/* 大纲抽屉：实时标题层级，点击滚动定位预览区锚点 */}
-      <Drawer title="大纲" width={320} open={outlineOpen} onClose={() => setOutlineOpen(false)}>
-        {outline.length === 0 ? (
-          <Text type="secondary">暂无标题（用 # 起首行添加，编辑时实时更新）</Text>
-        ) : (
-          outline.map((o, i) => (
-            <div
-              key={`${o.anchor}-${i}`}
-              data-testid={`doc-outline-item-${i}`}
-              style={{
-                paddingLeft: (o.level - 1) * 12,
-                paddingRight: 8,
-                paddingTop: 4,
-                paddingBottom: 4,
-                fontSize: o.level <= 2 ? 13 : 12,
-                fontWeight: o.level === 1 ? 600 : 400,
-                color: o.level <= 2 ? 'var(--cn-text, inherit)' : 'var(--cn-text-secondary, #666)',
-                cursor: 'pointer',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                borderRadius: 4,
-              }}
-              onClick={() => scrollToAnchor(o.anchor)}
-            >
-              {o.text}
-            </div>
-          ))
-        )}
-      </Drawer>
+      <OutlineDrawer
+        open={outlineOpen}
+        onClose={() => setOutlineOpen(false)}
+        outline={outline}
+        onAnchorClick={scrollToAnchor}
+      />
 
       {/* 反链抽屉：引用了 [[本文档标题]] 的文档列表，点击跳转 */}
-      <Drawer title="反向链接" width={420} open={backlinksOpen} onClose={() => setBacklinksOpen(false)}>
-        {backlinksQuery.isLoading ? (
-          <Text type="secondary">加载中…</Text>
-        ) : (backlinksQuery.data ?? []).length === 0 ? (
-          <Text type="secondary">暂无反向链接（其他文档正文中出现 [[{doc.title}]] 即会出现在这里）</Text>
-        ) : (
-          (backlinksQuery.data ?? []).map((b: BacklinkItem) => (
-            <div
-              key={b.id}
-              data-testid={`doc-backlink-${b.id}`}
-              style={{
-                padding: '8px 12px',
-                marginBottom: 8,
-                border: '1px solid var(--cn-border, #e8e8e8)',
-                borderRadius: 8,
-                cursor: 'pointer',
-              }}
-              onClick={() => {
-                setBacklinksOpen(false)
-                navigate(`/w/${workspaceId}/documents/${b.id}`)
-              }}
-            >
-              <Text strong>{b.title}</Text>
-              {b.summary && (
-                <div>
-                  <Text type="secondary" style={{ fontSize: 12 }} ellipsis>
-                    {b.summary}
-                  </Text>
-                </div>
-              )}
-              <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {new Date(b.updated_at).toLocaleString('zh-CN', { hour12: false })}
-                </Text>
-              </div>
-            </div>
-          ))
-        )}
-      </Drawer>
+      <BacklinksDrawer
+        open={backlinksOpen}
+        onClose={() => setBacklinksOpen(false)}
+        items={backlinksQuery.data ?? []}
+        loading={backlinksQuery.isLoading}
+        docTitle={doc.title}
+        onOpenDoc={docId => {
+          setBacklinksOpen(false)
+          navigate(`/w/${workspaceId}/documents/${docId}`)
+        }}
+      />
 
       {/* 出链抽屉：正文 [[标题]] 命中与断链，可为断链选择目标文档并修复 */}
       <Drawer
@@ -716,87 +635,6 @@ export default function DocumentEditorPage() {
           </Text>
         </Space>
       </Modal>
-    </div>
-  )
-}
-
-/** 标签选择器 + 新建 */
-function TagEditor({
-  workspaceId,
-  allTags,
-  selectedIds,
-  onChange,
-}: {
-  workspaceId: number
-  allTags: TagItem[]
-  selectedIds: number[]
-  onChange: (ids: number[]) => void
-}) {
-  const qc = useQueryClient()
-  const [newName, setNewName] = useState('')
-
-  const createMut = useMutation({
-    mutationFn: () => documentsApi.createTag(workspaceId, { name: newName.trim() }),
-    onSuccess: tag => {
-      setNewName('')
-      void qc.invalidateQueries({ queryKey: ['documents', workspaceId, 'tags'] })
-      onChange([...selectedIds, tag.id])
-    },
-    onError: () => message.error('创建标签失败（可能重名）'),
-  })
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <Input
-          placeholder="新标签名称"
-          value={newName}
-          onChange={e => setNewName(e.target.value)}
-          onPressEnter={() => newName.trim() && createMut.mutate()}
-        />
-        <Button type="primary" disabled={!newName.trim()} loading={createMut.isPending} onClick={() => createMut.mutate()}>
-          添加
-        </Button>
-      </div>
-      <Divider style={{ margin: '8px 0' }} />
-      {allTags.length === 0 ? (
-        <Text type="secondary">暂无标签，先创建一个</Text>
-      ) : (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {allTags.map(tag => {
-            const checked = selectedIds.includes(tag.id)
-            return (
-              <Tag.CheckableTag
-                key={tag.id}
-                checked={checked}
-                onChange={checkedNow => {
-                  onChange(
-                    checkedNow ? [...selectedIds, tag.id] : selectedIds.filter(x => x !== tag.id),
-                  )
-                }}
-                style={{ fontSize: 13, padding: '4px 12px', borderColor: tag.color }}
-              >
-                {tag.name} ({tag.doc_count})
-              </Tag.CheckableTag>
-            )
-          })}
-        </div>
-      )}
-      {selectedIds.length > 0 && (
-        <>
-          <Divider style={{ margin: '16px 0 8px' }} />
-          <Button
-            type="primary"
-            icon={<CheckOutlined />}
-            onClick={() => {
-              onChange(selectedIds)
-              message.success('标签已保存')
-            }}
-          >
-            完成
-          </Button>
-        </>
-      )}
     </div>
   )
 }
