@@ -38,17 +38,34 @@ _PNG_1PX = base64.b64decode(
 
 # WPS 扩展命名空间
 _NS_ETC = "http://www.wps.cn/officeDocument/2017/etcustomchars"
+# 真实 WPS 导出使用的命名空间（与 _NS_ETC 不同，元素名也是驼峰）
+_NS_ETC_REAL = "http://www.wps.cn/officeDocument/2017/etCustomData"
 _NS_XDR = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
 _NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 _NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 
-def _inject_wps_parts(xlsx_bytes: bytes, images: dict[str, tuple[str, bytes]]) -> bytes:
+def _inject_wps_parts(
+    xlsx_bytes: bytes,
+    images: dict[str, tuple[str, bytes]],
+    *,
+    real_wps_casing: bool = False,
+) -> bytes:
     """向 xlsx zip 注入 WPS 单元格图片扩展部件.
 
     Args:
         images: ``{displimg_id: (media 文件名, 图片二进制)}``.
+        real_wps_casing: True 时按真实 WPS 导出格式写入 ``<etc:cellImages>`` /
+            ``<etc:cellImage>``（驼峰 + etCustomData 命名空间）；False 保留历史
+            构造器使用的全小写 ``cellimages`` / ``cellimage`` 变体。
+
+    真实 WPS 文件用驼峰元素名，而 XML 元素名大小写敏感：解析必须两者都支持，
+    否则真实文件会被整体漏掉（见 TestRealWpsCasing）。
     """
+    root_tag = "etc:cellImages" if real_wps_casing else "etc:cellimages"
+    item_tag = "etc:cellImage" if real_wps_casing else "etc:cellimage"
+    ns_etc = _NS_ETC_REAL if real_wps_casing else _NS_ETC
+
     pics: list[str] = []
     rels: list[str] = []
     for i, (did, (fname, _data)) in enumerate(images.items(), start=1):
@@ -59,13 +76,13 @@ def _inject_wps_parts(xlsx_bytes: bytes, images: dict[str, tuple[str, bytes]]) -
             f'Target="media/{fname}"/>'
         )
         pics.append(
-            f'<etc:cellimage><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="{i}" name="{did}"/></xdr:nvPicPr>'
-            f'<xdr:blipFill><a:blip r:embed="{rid}"/></xdr:blipFill></xdr:pic></etc:cellimage>'
+            f'<{item_tag}><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="{i}" name="{did}"/></xdr:nvPicPr>'
+            f'<xdr:blipFill><a:blip r:embed="{rid}"/></xdr:blipFill></xdr:pic></{item_tag}>'
         )
     cellimages_xml = (
-        f'<etc:cellimages xmlns:etc="{_NS_ETC}" xmlns:xdr="{_NS_XDR}" xmlns:a="{_NS_A}" xmlns:r="{_NS_R}">'
+        f'<{root_tag} xmlns:etc="{ns_etc}" xmlns:xdr="{_NS_XDR}" xmlns:a="{_NS_A}" xmlns:r="{_NS_R}">'
         + "".join(pics)
-        + "</etc:cellimages>"
+        + f"</{root_tag}>"
     )
     rels_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -88,6 +105,8 @@ def _build_wps_xlsx(
     headers: list[str],
     rows: list[list[Any]],
     images: dict[str, tuple[str, bytes]],
+    *,
+    real_wps_casing: bool = False,
 ) -> bytes:
     """构造带 WPS 单元格图片的合成 xlsx（图片单元格写 DISPLIMG 公式）."""
     wb = Workbook()
@@ -97,7 +116,7 @@ def _build_wps_xlsx(
         ws.append(row)
     buf = io.BytesIO()
     wb.save(buf)
-    return _inject_wps_parts(buf.getvalue(), images)
+    return _inject_wps_parts(buf.getvalue(), images, real_wps_casing=real_wps_casing)
 
 
 # ── 公式识别 ─────────────────────────────────────
@@ -179,6 +198,78 @@ class TestParseWpsCellImages:
                 if item.filename != "xl/_rels/cellimages.xml.rels":
                     dst.writestr(item, src.read(item.filename))
         assert parse_wps_cell_images(out.getvalue()) == {}
+
+
+# ── 真实 WPS 导出格式（驼峰元素名 / etCustomData 命名空间） ──
+
+
+class TestRealWpsCasing:
+    """真实 WPS「插入单元格图片」导出的格式回归.
+
+    真实文件写 ``<etc:cellImages>`` / ``<etc:cellImage>``（驼峰）而不是全小写；
+    XML 元素名大小写敏感，历史实现按 ``cellimage`` 精确匹配，导致真实 WPS 文件的
+    cellimages 映射整体解析为空、图片列全部置空。以下用例锁定该回归。
+    """
+
+    def test_camel_case_cellimage_elements_extracted(self):
+        raw = _build_wps_xlsx(
+            ["名称", "图1", "图2"],
+            [
+                ["a", '=DISPIMG("ID_A",1)', '=DISPIMG("ID_B",1)'],
+                ["b", '=DISPIMG("ID_C",1)', None],
+            ],
+            {
+                "ID_A": ("image1.png", _PNG_1PX),
+                "ID_B": ("image2.png", _PNG_1PX),
+                "ID_C": ("image3.png", _PNG_1PX),
+            },
+            real_wps_casing=True,
+        )
+        images = parse_wps_cell_images(raw)
+        assert set(images) == {"ID_A", "ID_B", "ID_C"}
+        assert images["ID_A"].data == _PNG_1PX
+
+    def test_camel_case_full_pipeline_infers_image(self):
+        raw = _build_wps_xlsx(
+            ["名称", "图1"],
+            [["a", '=_xlfn.DISPIMG("ID_A",1)']],
+            {"ID_A": ("image1.png", _PNG_1PX)},
+            real_wps_casing=True,
+        )
+        rows, cols = _parse_xlsx_bytes(raw)
+        assert cols == ["名称", "图1"]
+        val = rows[0]["图1"]
+        assert isinstance(val, list) and val[0]["mime_type"] == "image/png"
+        type_map = {c["name"]: c["field_type"] for c in analyze_json_columns(rows)}
+        assert type_map["图1"] == "image"
+
+    def test_part_path_lookup_is_case_insensitive(self):
+        """部件路径大小写变体（CellImages.xml）同样可解析."""
+        raw = _build_wps_xlsx(
+            ["名称", "图1"],
+            [["a", '=DISPIMG("ID_A",1)']],
+            {"ID_A": ("image1.png", _PNG_1PX)},
+            real_wps_casing=True,
+        )
+        out = io.BytesIO()
+        renames = {
+            "xl/cellimages.xml": "xl/CellImages.xml",
+            "xl/_rels/cellimages.xml.rels": "xl/_rels/CellImages.xml.rels",
+        }
+        with zipfile.ZipFile(io.BytesIO(raw)) as src, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+            for item in src.infolist():
+                dst.writestr(renames.get(item.filename, item.filename), src.read(item.filename))
+        assert set(parse_wps_cell_images(out.getvalue())) == {"ID_A"}
+
+    def test_lowercase_variant_still_supported(self):
+        """历史/第三方导出器的全小写元素名仍受支持（向后兼容）."""
+        raw = _build_wps_xlsx(
+            ["名称", "图1"],
+            [["a", '=DISPIMG("ID_A",1)']],
+            {"ID_A": ("image1.png", _PNG_1PX)},
+            real_wps_casing=False,
+        )
+        assert set(parse_wps_cell_images(raw)) == {"ID_A"}
 
 
 # ── 解析为行值 ────────────────────────────────────
@@ -367,6 +458,45 @@ class TestWpsImportFileApi:
             saved = settings.UPLOAD_DIR / str(ws_id) / file_key
             assert saved.is_file(), f"图片应落盘到 {saved}"
             assert saved.read_bytes() == _PNG_1PX
+
+    def test_real_wps_casing_analyze_and_import(self, client, ws_auth, db):
+        """真实 WPS 导出格式（驼峰 cellImage）走 HTTP 全链路：分析出 image 并落库落盘."""
+        ws_id, auth = ws_auth
+        raw = _build_wps_xlsx(
+            ["名称", "图1"],
+            [["a", '=DISPIMG("ID_A",1)'], ["b", '=DISPIMG("ID_B",1)']],
+            {"ID_A": ("image1.png", _PNG_1PX), "ID_B": ("image2.png", _PNG_1PX)},
+            real_wps_casing=True,
+        )
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file/analyze",
+            files={"file": ("问题记录.xlsx", raw, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        type_map = {c["name"]: c["field_type"] for c in r.json()["columns"]}
+        assert type_map["图1"] == "image", "真实 WPS 驼峰格式的图片列必须推断为 image"
+
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file",
+            files={"file": ("问题记录.xlsx", raw, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            data={"table_name": "WPS真实格式表"},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        dt = db.get(DataTable, r.json()["table_id"])
+        assert dt is not None
+        assert {f.name: f.field_type for f in dt.active_fields()}["图1"] == "image"
+
+        from cndb.plugins.tables.services.core import records as rec
+
+        rows, _total = rec.list_rows(db.get_bind(), dt, limit=10)
+        assert len(rows) == 2
+        for row in rows:
+            val = json.loads(row["图1"])
+            assert val[0]["mime_type"] == "image/png"
+            saved = settings.UPLOAD_DIR / str(ws_id) / val[0]["file_key"]
+            assert saved.is_file(), f"图片应落盘到 {saved}"
 
     def test_attachment_field_accepts_wps_images(self, client, ws_auth, db):
         """导入到已有 attachment 字段：图片元数据同构，附件字段可直接消费."""
