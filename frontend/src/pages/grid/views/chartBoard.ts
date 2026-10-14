@@ -1,6 +1,6 @@
 /** 图表视图纯逻辑层 — 聚合/分箱/统计与 UI 解耦，可独立单测.
  *
- * 职责（设计契约见 .trae/designs/chart-view.md）：
+ * 职责：
  * - buildChartData：行集合按 chart_type 变换为 ECharts 可消费的数据结构
  *   （维度聚合 / 多系列 / 日期分桶复用 matrixBoard，散点取双数值列，直方图分箱，箱线图五数概括）
  * - histogramBins：三种分箱策略（square-root / Sturges / Freedman-Diaconis，IQR=0 回退 Sturges）

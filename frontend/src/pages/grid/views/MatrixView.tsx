@@ -12,7 +12,7 @@
  *   网格区域独立滚动，行头/列头在滚动时保持可见。
  * - 单元格高度随内容自适应（无硬上限），行轨道高度由该行最高单元格决定。
  *
- * view_options 契约见 .trae/designs/matrix-view.md：
+ * view_options 契约：
  * - row_field（必填）/ column_field（必填）/ date_granularity（默认 month）/ title_field（可选）
  */
 

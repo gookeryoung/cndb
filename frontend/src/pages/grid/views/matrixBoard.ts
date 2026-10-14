@@ -5,7 +5,7 @@
  * - axisKeyForRow：单行在某轴上的分组 key（select/link/multi_select 取标签，date 分桶，text 原样）
  * - buildMatrixGrid：行集合 → 行 key 序 × 列 key 序 × 单元格行列表
  *
- * 设计约定（见 .trae/designs/matrix-view.md）：
+ * 设计约定：
  * - 空值/解析失败统一归「未分组」，且「未分组」桶恒排在各轴末尾
  * - 日期桶 key 采用字典序==时序的格式（YYYY / YYYY-Qn / YYYY-MM / 周起始日 / YYYY-MM-DD），
  *   因此桶排序直接字符串比较即可

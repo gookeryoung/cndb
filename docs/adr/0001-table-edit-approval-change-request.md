@@ -1,7 +1,12 @@
 # ADR 0001: 数据表写操作采用表级变更单审批模式
 
-Status: Accepted
+Status: Superseded
 Date: 2026-10-12
+
+> 状态说明（2026-10-14 复核）：本 ADR 描述的「扩展 ApprovalInstance 承载变更单」方案已被取代。
+> 2026-10-13 的提交 `d8ce450` 移除了表单 / 审批流插件，改为 `plugins/change_requests`
+> 表级变更申请（op + 行增量 + 基准快照、字段级漂移检测，见 CONTEXT.md「修改申请」）；
+> `ApprovalInstance` 现已不存在于源码，仅历史迁移注释中还有残留。保留本 ADR 仅为记录决策演进。
 
 ## Context
 
