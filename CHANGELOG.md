@@ -46,6 +46,9 @@
   - 前端 `CalendarView.tsx` 770 → 205 行 + `calendar/{YearView,MonthView,WeekView,calendarUtils,calendarTypes}`
   - 后端 `workspaces/routers/workspaces.py` 1041 → 505 行 + `routers/member_routes.py`（成员/转让子路由）+ `services/backup_io.py`（备份落库）+ `routers/deps.py`（共享受保护依赖）
   - 后端 `tables/services/fields/field_ops.py` 1027 → 53 行 + `field_import.py`(502) / `select_options.py`(508)；field_ops 保留为兼容外观，使 7 处 `monkeypatch.setattr(field_ops, ...)` 继续生效
+  - 前端 `KanbanView.tsx` 789 → 132 行 + `kanban/{KanbanCard,KanbanColumn,kanbanDensity,kanbanVisuals}`
+  - 前端 `FileImportPreview.tsx` 774 → 609 行 + `importPreviewConvert.ts`（4 个纯转换函数）与 `useTableFlexFillStyle.ts`
+  - 后端 `tables/routers/bulk.py` 752 → 35 行（聚合）+ `bulk_crud.py` / `bulk_export.py` / `bulk_import.py`；前缀与 tags 留在聚合 router 上，11 条路径逐条不变
 - 重复实现收敛：
   - 后端 CSV 编码探测统一走 `transfer.decode_bytes_auto`（`cli/users._read_csv` 与 `import_tasks._parse_to_rows` 不再各写一套；后者原为硬编码 utf-8，GBK CSV 会 UnicodeDecodeError）
   - 前端新增 `utils/paletteColor`（GanttView 与 CalendarView 逐字相同的色板 + hash，WbsView 同一公式）、`utils/datetime`（issues/changeRequests 4 页各自的 formatTime）、`utils/formatSize`（文档页与管理面板）
