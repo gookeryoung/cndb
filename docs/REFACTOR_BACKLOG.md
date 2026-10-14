@@ -45,13 +45,12 @@
 | 文件 | 行数 | 建议拆分 |
 |---|---|---|
 | `src/pages/grid/GridPage.tsx` | 1276 | 外置 `gridFallbacks.tsx`、`modeSwitch.ts`、`useGridPageRows.ts`、`useGridPageModals.ts`；主组件 1140 行主要是状态与回调，抽 hook 有一定回归风险 |
-| `src/pages/grid/view-config/ViewConfigDialog.tsx` | 523 | 先量自由变量再定：测试 42 个用例（覆盖较厚）。筛选规则编辑器与排序规则编辑器是两处独立接缝 |
 | `src/pages/grid/view-config/viewOptionSchema.ts` | 562 | 按视图拆 `options/{kanban,calendar,gantt,wbs,matrix,chart}.ts`；**测试要求保留 7 个具名导出** |
 | `src/pages/grid/views/WbsView.tsx` | 588 | 树构建与渲染行两分 |
 
 ### 其余 >500 行文件（完整清单）
 
-以上为优先候选。全仓共 35 个 >500 行的源码文件，其余 27 个如下 ——
+以上为优先候选。全仓共 34 个 >500 行的源码文件，其余 27 个如下 ——
 多数是拆分后落在 500–660 行、且已单一职责的文件，暂不作为优先候选。
 
 **后端（17）**：
