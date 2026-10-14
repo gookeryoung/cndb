@@ -1,12 +1,29 @@
 # 冗余梳理与精简：已执行项与待办清单
 
-> 生成时间：2026-10-14。本文件记录一轮「证据驱动」的冗余梳理与精简：
+> 生成时间：2026-10-14（持续更新）。本文件记录「证据驱动」的冗余梳理与精简：
 > 已完成的改动见 CHANGELOG「未发布」，下面只列**已分析清楚但尚未执行**的项，
 > 每条都附可复现证据与风险判断，便于后续按优先级推进。
 
+## 已完成（本轮）
+
+- 死代码 / 死配置：Sphinx 文档骨架、`.readthedocs.yaml`、`tox.ini`、
+  `plugins/{forms,workflows}` 空目录、`.gitignore` 的 `.tox/` 与重复 `.mypy_cache/`
+- 未使用依赖：前端 zod / @tanstack/react-table / react-hotkeys-hook / zundo / immer
+- 重复实现：后端 CSV 编码探测统一到 `decode_bytes_auto`（并修掉 import_tasks 的
+  硬编码 utf-8 缺陷）；前端抽出 `utils/{paletteColor,datetime,formatSize}`
+- 测试收敛：删除 12 个与主测试重复的补覆盖率用例、2 个零引用 fixture、1 个空壳测试
+- 覆盖率口径：Makefile `cov` 与 CI 统一为 `--cov=cndb`（此前本地裸 `--cov` 虚高到 97.9%）
+- 超大文件拆分：`cli/seed.py`、`reports/routers/reports.py`、前端 `ReportsPage.tsx`、
+  `GridCell.tsx`、`GanttView.tsx`、`api/types.ts`、`ImportPanel.tsx`
+- 前端死导出清理：`LoginResponse`、`WorkspaceTrashResponse`、`getTagColor`、
+  `ANTD_COLOR_NAMES`、`loadTableSettings`/`saveTableSettings`（后者与 zustand persist
+  共用同一个 localStorage key `cndb_table_settings`，双写隐患已消除）
+- 重复类型收敛：`ViewMode`（store 副本删除）、`WorkspaceRole`（页面内副本删除）
+- 配置一致性：`ruff==0.16.8` 精确固定、`ci.yml` 用 YAML 锚点去重 paths、
+  `Makefile .PHONY` 补齐、`pytest.ini` 补 `--dist` 生效条件说明
+
 ## 一、超大文件拆分：剩余候选
 
-已完成的拆分（seed.py / reports.py / ReportsPage / GridCell / GanttView）见 CHANGELOG。
 以下为仍超过 500 行的源码文件，按收益排序：
 
 ### 后端
@@ -29,18 +46,16 @@
 | 文件 | 行数 | 建议拆分 |
 |---|---|---|
 | `src/pages/grid/GridPage.tsx` | 1276 | 外置 `gridFallbacks.tsx`、`modeSwitch.ts`、`useGridPageRows.ts`、`useGridPageModals.ts`；主组件 1140 行主要是状态与回调，抽 hook 有一定回归风险 |
-| `src/pages/import-export/ImportExportDialog/ImportPanel.tsx` | 958 | 拆 `importSteps.ts`（状态机）+ `ImportFieldMapping` / `ImportTaskProgress` / `ImportResultSummary` |
-| `src/api/types.ts` | 976 | 按域拆 `types/{admin,workspace,tables,views,import,reports}.ts` + `types/index.ts` barrel；唯一深路径引用是 `ImportPanel.test.tsx:20` |
-| `src/pages/documents/DocumentsPage.tsx` | 797 | 拆 `documents/seriesStats.ts`（纯统计）+ `documentsFormat.ts` + 系列栅格 / 列表 / 回收站三面板。**测试要求保留 `buildSeriesStats` 具名导出** |
+| `src/pages/documents/DocumentsPage.tsx` | 792 | 拆 `documents/seriesStats.ts`（纯统计）+ `documentsFormat.ts` + 系列栅格 / 列表 / 回收站三面板。**测试要求保留 `buildSeriesStats` 具名导出** |
 | `src/pages/documents/DocumentEditorPage.tsx` | 802 | 拆 `DiffView` / `TagEditor` / `useDocumentEditor` / `VersionTimeline` / `OutlinePanel` |
 | `src/pages/grid/views/KanbanView.tsx` | 789 | 拆 `kanban/{KanbanCard,KanbanColumn,kanbanDensity,KanbanBadges}` |
-| `src/pages/import-export/FileImportPreview.tsx` | 774 | 拆 `importPreviewConvert.ts`（纯转换）+ 字段列表 / 字段编辑 / 数据预览三块 |
+| `src/pages/import-export/FileImportPreview.tsx` | 774 | 拆 `importPreviewConvert.ts`（纯转换）+ 字段列表 / 字段编辑 / 数据预览三块；可参照本次 `ImportPanel` 的接缝做法 |
 | `src/pages/grid/views/CalendarView.tsx` | 782 | 拆 `calendar/{YearView,MonthView,WeekView,calendarEventUtils}` |
 | `src/theme/theme.ts` | 695 | 10 套 antd ThemeConfig 预设抽 `theme/presets/*.ts`，theme.ts 只留 registry 与读写 |
 | `src/pages/grid/view-config/viewOptionSchema.ts` | 562 | 按视图拆 `options/{kanban,calendar,gantt,wbs,matrix,chart}.ts`；**测试要求保留 7 个具名导出** |
 | `src/pages/grid/views/WbsView.tsx` | 588 | 树构建与渲染行两分 |
 
-> 拆分通用的两条约束（前几次拆分已验证）：
+> 拆分通用的两条约束（多次拆分已验证）：
 > 1. **monkeypatch / mock 目标必须指向 canonical 模块**。把实现移出后，若测试仍 patch 原模块的同名属性，patch 会静默失效（seed 的 `_get_datasets_dir`、reports 的 `_run_command` / `_cjk_font_candidates` 都踩过）。
 > 2. 测试使用的具名导出要在原文件 `export { ... } from '...'` 或 `__all__` 里保留（GridCell 4 个、DocumentsPage 的 `buildSeriesStats`、DocumentTree 4 个、viewOptionSchema 7 个、FieldManager 2 个、ViewConfigDialog 的 `FilterRule`/`SortRule`）。
 
@@ -60,35 +75,20 @@
 - **e2e 与单测重叠**：`frontend/tests/e2e/critical/navigation.spec.ts:22-65`（Tab 顺序/可见性/路由）与 `MainLayout.test.tsx:138-208` 覆盖同一行为，且单测更强（还断言激活态）。e2e 独有价值的是「seed 数据下的表行数=8」等用例。可删 navigation 的 3 个重叠用例；e2e 目前 `continue-on-error: true`，删除零风险但也零收益。
 - **前端测试样板未收敛**：26 个测试文件各自 `import { http, HttpResponse } from 'msw'` + `server.use(...)`；4 个文件（`api/hooks.test.tsx`、`api/hooks.placeholder.test.tsx`、`WorkspaceList.test.tsx`、`WorkspaceSettingsContent.test.tsx`）自建 Provider 栈而不用 `src/test/render-providers.tsx`。
 
-## 四、前端死导出与重复类型
+## 四、待确认项
 
-**完全零引用的导出**（建议删）：
-
-| 符号 | 位置 | 备注 |
-|---|---|---|
-| `LoginResponse` | `api/types.ts:106` | 后端对应物叫 `TokenResponse`，前端从未使用 |
-| `WorkspaceTrashResponse` | `api/types.ts:446` | 全仓库仅定义处命中 |
-| `getTagColor` | `utils/tagColors.ts:203` | 注释自称「兼容旧 API」，生产已全用 `getTagColorName` |
-| `loadTableSettings` / `saveTableSettings` | `theme/tableSettings.ts:33/45` | **与 `store/tableSettings.ts:30` 的 zustand persist 共用同一个 localStorage key `cndb_table_settings`** → 存在双写冲突，是最该清理的一项 |
-| `ANTD_COLOR_NAMES` | `utils/tagColors.ts:312` | 仅测试引用 |
-
-**重复类型定义**：
-
-- `ViewMode`：`pages/grid/views/viewModes.ts:11` 与 `store/gridView.ts:12` 逐字相同 → store 应改为 import。
-- `WorkspaceRole`：`api/types.ts:131`、`ChangeRequestDetailPage.tsx:26`、`IssueDetailPage.tsx:24` 三处同义 → 收敛到 `api/types.ts`。
-
-**待确认（高置信）**：`Field.is_primary`（`api/types.ts:331`）在 `src/cndb` 全库 0 命中，但前端 8 处
-（`FieldList.tsx:191/205`、`FieldManager/index.tsx:283/518-520`、`fieldValueFormat.ts:20`、`GridCell.tsx:724`、
-`viewOptionSchema.ts:431/544/557`、`CalendarView.tsx:146`、`MatrixView.tsx:94`）用它判定主键/标题回退 ——
-若后端从不返回该字段，这些分支恒为假。需与后端确认后决定「后端补字段」还是「前端删分支」。
+- **`Field.is_primary`**：`api/types.ts` 声明了该字段，但 `src/cndb` 全库 0 命中，而前端 8 处
+  （`FieldList.tsx:191/205`、`FieldManager/index.tsx:283/518-520`、`fieldValueFormat.ts:20`、`GridCell.tsx:724`、
+  `viewOptionSchema.ts:431/544/557`、`CalendarView.tsx:146`、`MatrixView.tsx:94`）用它判定主键/标题回退 ——
+  若后端从不返回该字段，这些分支恒为假。需与后端确认后决定「后端补字段」还是「前端删分支」。
 
 ## 五、配置与门禁的剩余项
 
 - **coverage omit 盲区**：`pyproject [tool.coverage.run].omit` 排除了 `cli/main.py`、`cli/seed/**`、`gui/**`、
-  `tables/routers/files.py`。其中 seed 包与 gui 共约 3000 行不参与 95% 门禁。当前 `--cov=cndb` 实测 95.44%
-  （阈值 95%，余量仅 0.44pp），如需提高可信度可先把 `gui/checks.py` 纳入统计。
+  `tables/routers/files.py`。其中 seed 包与 gui 共约 3000 行不参与 95% 门禁。当前 `--cov=cndb` 实测 95.46%
+  （阈值 95%，余量约 0.46pp），如需提高可信度可先把 `gui/checks.py` 纳入统计。
 - **`frontend/scripts/bundle-budget.json`**：三条基线的 `commit` 字段全为 `""`，与其 `_readme` 宣称的
-  可追溯性不符；`assetPattern` 依赖 Rollup 自动 chunk 命名，拆包后可能失配（本次拆分后仍匹配）。
+  可追溯性不符；`assetPattern` 依赖 Rollup 自动 chunk 命名，拆包后可能失配（历次拆分后仍匹配）。
 - **e2e 不在 tsconfig 项目内**：`tsconfig.app.json` 只 include `src`，`tsconfig.node.json` 只 include
   `vite.config.ts` → `pnpm typecheck` 不覆盖 `frontend/tests/e2e/**` 与 `playwright.config.ts`。
 - **`pytest.ini` 的 `--dist worksteal`**：仅在调用方传 `-n` 时生效（Makefile / CI 都传，裸 `pytest` 串行）；
