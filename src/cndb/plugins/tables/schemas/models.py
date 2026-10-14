@@ -244,7 +244,8 @@ class ViewCreate(BaseModel):
     field_order: list[str] = Field(default_factory=list)
     view_options: dict[str, Any] = Field(default_factory=dict)
     is_default: bool = False
-    order: int = 0
+    # None 表示未指定顺序，创建时由后端追加到现有视图末尾
+    order: int | None = None
 
 
 class ViewUpdate(BaseModel):
