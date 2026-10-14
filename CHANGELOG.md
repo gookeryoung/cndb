@@ -27,6 +27,9 @@
 - 空目录：`src/cndb/plugins/{forms,workflows}`（源码已随表单/审批流插件移除，仅剩 `__pycache__`）
 - 前端未使用生产依赖：zod、@tanstack/react-table、react-hotkeys-hook、zundo、immer（全仓库零引用）
 - 与主测试重复的补覆盖率用例 12 个、零引用 fixture 2 个、只有 `pass` 的空壳测试 1 个（test_coverage_patch / test_cov_routers_records / test_edge_patch / test_cov_quick / test_tables_coverage / test_roles_e2e）
+- 前端死导出：`LoginResponse`、`WorkspaceTrashResponse`、`getTagColor`（自称兼容旧 API，生产已全用 `getTagColorName`）、`ANTD_COLOR_NAMES`（仅被自身测试断言长度/内容）
+- 前端第二套设置持久化：`theme/tableSettings.loadTableSettings` / `saveTableSettings` —— 与 `store/tableSettings` 的 zustand persist **共用同一个 localStorage key `cndb_table_settings`**，存在互相覆盖隐患；持久化职责收敛到 store，本模块只留类型/默认值/`densityToSize`
+- 重复类型定义：`ViewMode`（`store/gridView.ts` 的副本）与 `WorkspaceRole`（issues/changeRequests 详情页各一份副本）
 
 ### 变更
 
@@ -36,6 +39,8 @@
   - 前端 `ReportsPage.tsx` 1047 → 267 行 + `TemplateEditorModal`/`RenderParamsModal`/`reportsConstants`
   - 前端 `GridCell.tsx` 839 → 188 行 + `EditCell`/`DisplayCell`/`cellValueUtils`（保留 4 个历史具名导出）
   - 前端 `GanttView.tsx` 1301 → 655 行 + `views/gantt/` 六个模块
+  - 前端 `api/types.ts` 968 行 / 120 个导出 → `api/types/` 12 个按资源域拆分的模块 + `index.ts` 聚合；`api/index.ts` 原先手写列举的 90 个类型名改为 `export type * from './types'`
+  - 前端 `ImportPanel.tsx` 958 → 615 行 + `ImportQualityPanel` / `ImportDiffTable` / `MiniStat`
 - 重复实现收敛：
   - 后端 CSV 编码探测统一走 `transfer.decode_bytes_auto`（`cli/users._read_csv` 与 `import_tasks._parse_to_rows` 不再各写一套；后者原为硬编码 utf-8，GBK CSV 会 UnicodeDecodeError）
   - 前端新增 `utils/paletteColor`（GanttView 与 CalendarView 逐字相同的色板 + hash，WbsView 同一公式）、`utils/datetime`（issues/changeRequests 4 页各自的 formatTime）、`utils/formatSize`（文档页与管理面板）
