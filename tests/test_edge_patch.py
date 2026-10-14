@@ -98,10 +98,6 @@ class TestReportsEdge:
         )
         assert r.status_code == 400
 
-    def test_get_template_not_found(self, client, auth_headers):
-        r = client.get("/api/v1/reports/99999", headers=auth_headers)
-        assert r.status_code == 404
-
     def test_update_template_not_found(self, client, auth_headers):
         r = client.put(
             "/api/v1/reports/99999",

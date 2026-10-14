@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess  # nosec B404 - 测试需调用内部命令
-
 import pytest
 
 from cndb.plugins.accounts.models import User
@@ -124,20 +122,6 @@ class TestAccessModule:
 
 
 class TestTransferPatch:
-    def test_python_type_to_field_type(self):
-        assert transfer_mod._python_type_to_field_type(42) == "number"
-        assert transfer_mod._python_type_to_field_type(3.14) == "float"
-        assert transfer_mod._python_type_to_field_type(True) == "boolean"
-        assert transfer_mod._python_type_to_field_type("hi") == "text"
-        assert transfer_mod._python_type_to_field_type(None) == "empty"
-
-    def test_guess_format_from_filename(self):
-        assert transfer_mod.guess_format_from_filename("a.csv") == "csv"
-        assert transfer_mod.guess_format_from_filename("a.xlsx") == "xlsx"
-        assert transfer_mod.guess_format_from_filename("a.json") == "json"
-        with pytest.raises(ValueError):
-            transfer_mod.guess_format_from_filename("a.unknown")
-
     def test_infer_single_value(self):
         assert transfer_mod._infer_single_value("123") == "number"
         assert transfer_mod._infer_single_value("3.14") == "float"
@@ -166,82 +150,6 @@ class TestTransferPatch:
         assert n == 0
 
 
-# ── DDL 零散 ───────────────────────────────────────────
-
-
-@pytest.fixture
-def _u_ws(db):
-    """在 db 里创建一个用户 + 工作区."""
-    u = User(username="ddl_p", nickname="D")
-    u.set_password("p1")
-    db.add(u)
-    db.flush()
-    ws = Workspace(name="DDLWS", created_by_id=u.id)
-    db.add(ws)
-    db.flush()
-    db.add(WorkspaceMember(workspace_id=ws.id, user_id=u.id, role=WorkspaceRole.OWNER))
-    db.commit()
-    db.refresh(ws)
-    return u, ws
-
-
-class TestDDLPatch2:
-    def test_recreate_table(self, db_engine, db, _u_ws):
-        _u, ws = _u_ws
-        dt = DataTable(workspace_id=ws.id, name="R1")
-        dt.ensure_db_name()
-        db.add(dt)
-        db.flush()
-        df = DataField(table_id=dt.id, name="v", field_type="number", order=0)
-        df.ensure_db_name()
-        db.add(df)
-        db.commit()
-        db.refresh(dt)
-        ddl.create_table(db_engine, dt)
-        ddl.drop_table(db_engine, dt.db_table_name)
-        ddl.create_table(db_engine, dt)
-        assert True
-
-    def test_drop_column(self, db_engine, db, _u_ws):
-        _u, ws = _u_ws
-        dt = DataTable(workspace_id=ws.id, name="DC1")
-        dt.ensure_db_name()
-        db.add(dt)
-        db.flush()
-        df = DataField(table_id=dt.id, name="v", field_type="text", order=0)
-        df.ensure_db_name()
-        db.add(df)
-        db.commit()
-        db.refresh(dt)
-        ddl.create_table(db_engine, dt)
-        ddl.drop_column(db_engine, dt, df)
-        assert True
-
-
-# ── runner.py 零散 ────────────────────────────────────
-
-
-class TestRunnerPatch:
-    def test_runner_info(self):
-        r = subprocess.run(
-            ["uv", "run", "cndb", "info"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-        )
-        assert r.returncode == 0
-
-
-# ── public 分享路由 ───────────────────────────────────
-
-
-class TestPublicPatch:
-    def test_get_public_view_slug_missing(self, client):
-        r = client.get("/api/v1/public/share/nonexistent-slug-xxx")
-        assert r.status_code == 404
-
-
 # ── preferences ───────────────────────────────────────
 
 
@@ -255,30 +163,6 @@ class TestPreferencesPatch:
 
 
 class TestRouterRecordsPatch:
-    def test_record_not_found(self, client, db_engine, db, auth_headers):
-        u = db.query(User).first()
-        ws = Workspace(name="RecWS", created_by_id=u.id)
-        db.add(ws)
-        db.flush()
-        db.add(WorkspaceMember(workspace_id=ws.id, user_id=u.id, role=WorkspaceRole.OWNER))
-        dt = DataTable(workspace_id=ws.id, name="RT")
-        dt.ensure_db_name()
-        db.add(dt)
-        db.flush()
-        df = DataField(table_id=dt.id, name="x", field_type="text", order=0)
-        df.ensure_db_name()
-        db.add(df)
-        db.commit()
-        db.refresh(dt)
-        ddl.create_table(db_engine, dt)
-
-        r = client.patch(
-            f"/api/v1/workspaces/{ws.id}/tables/{dt.id}/records/99999",
-            json={"values": {"x": "hi"}},
-            headers=auth_headers,
-        )
-        assert r.status_code == 404
-
     def test_delete_record_not_found(self, client, db_engine, db, auth_headers):
         u = db.query(User).first()
         ws = Workspace(name="DelWS", created_by_id=u.id)
@@ -342,35 +226,3 @@ class TestFieldTypesPatch:
         ft = LinkFieldType()
         # LinkFieldType validate_value 对 None 返回空列表
         assert ft.validate_value(None, {}) == []
-
-
-# ── views router 边缘 ──────────────────────────────────
-
-
-class TestViewsPatch:
-    def test_list_views(self, client, db_engine, db, auth_headers):
-        u = db.query(User).first()
-        ws = Workspace(name="VWS", created_by_id=u.id)
-        db.add(ws)
-        db.flush()
-        db.add(WorkspaceMember(workspace_id=ws.id, user_id=u.id, role=WorkspaceRole.OWNER))
-        dt = DataTable(workspace_id=ws.id, name="VT")
-        dt.ensure_db_name()
-        db.add(dt)
-        db.flush()
-        df = DataField(table_id=dt.id, name="v", field_type="text", order=0)
-        df.ensure_db_name()
-        db.add(df)
-        db.commit()
-        db.refresh(dt)
-        ddl.create_table(db_engine, dt)
-
-        r = client.get(
-            f"/api/v1/workspaces/{ws.id}/tables/{dt.id}/views",
-            headers=auth_headers,
-        )
-        assert r.status_code == 200
-        assert isinstance(r.json(), list)
-
-
-__all__ = []

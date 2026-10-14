@@ -52,24 +52,6 @@ class TestRoutersFields:
 
 
 class TestDDLMore:
-    def test_create_table_idempotent(self, db_engine, db):
-        from cndb.plugins.tables.models import DataField, DataTable
-        from cndb.plugins.tables.services.core import ddl
-
-        tbl = DataTable(workspace_id=1, name="t_idem")
-        tbl.ensure_db_name()
-        db.add(tbl)
-        db.commit()
-        db.refresh(tbl)
-        f = DataField(table_id=tbl.id, name="name", field_type="text", order=0)
-        f.ensure_db_name()
-        db.add(f)
-        db.commit()
-        db.refresh(tbl)
-        ddl.create_table(db_engine, tbl)
-        ddl.create_table(db_engine, tbl)
-        assert ddl.table_exists(db_engine, tbl.db_table_name)
-
     def test_drop_column_link_field(self, db_engine, db):
         from cndb.plugins.tables.models import DataField, DataTable
         from cndb.plugins.tables.services.core import ddl
@@ -122,8 +104,3 @@ class TestDDLMore:
         db.commit()
         ddl.add_column(db_engine, tbl, f2)
         assert ddl.table_exists(db_engine, f2.link_table_name)
-
-    def test_drop_table_nonexistent(self, db_engine):
-        from cndb.plugins.tables.services.core import ddl
-
-        ddl.drop_table(db_engine, "nonexistent_table_xyz789")

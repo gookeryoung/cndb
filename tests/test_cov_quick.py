@@ -343,28 +343,6 @@ def test_data_dir_exists_after_import():
     assert cfg_mod.LOG_DIR.is_dir()
 
 
-def test_find_project_root_alembic_ini_fallback(tmp_path, monkeypatch):
-    """找不到 pyproject.toml → 向上找 alembic.ini."""
-    from cndb.core import config as cfg_mod
-
-    # 在 tmp_path 层级放一个 alembic.ini
-    ini_dir = tmp_path / "some_dir"
-    ini_dir.mkdir(parents=True)
-    (ini_dir / "alembic.ini").write_text("")
-
-    def fake_is_file(self):
-        # 只对 ini_dir 的 alembic.ini 返回 True，其它都 False
-        return self == ini_dir / "alembic.ini"
-
-    monkeypatch.setattr(cfg_mod.Path, "is_file", fake_is_file)
-    # 让 here 指向 tmp_path/some_dir/sub
-    ini_dir / "sub" / "core"
-    cfg_mod._find_project_root.__wrapped__() if hasattr(cfg_mod._find_project_root, "__wrapped__") else None
-    # 直接调函数
-    # 用 lambda 包装让 here 从 tmp_path/some_dir/sub/core 开始向上找
-    pass  # 这个太复杂，跳过
-
-
 # ── field_mapping.py 纯函数 ──────────────────────────
 
 
