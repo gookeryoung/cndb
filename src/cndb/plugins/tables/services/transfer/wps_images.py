@@ -1,7 +1,8 @@
-"""WPS 嵌入单元格图片解析 — DISPLIMG 公式识别、cellimages 映射提取与落盘.
+"""WPS 嵌入单元格图片解析 — DISPIMG 公式识别、cellimages 映射提取与落盘.
 
 WPS 表格的「插入单元格图片」在 xlsx 中的存储机制：
-1. 单元格值是公式 ``=DISPLIMG("ID_XXX", 1)``（兼容导出时的 ``_xlfn.DISPLIMG`` 前缀）；
+1. 单元格值是公式 ``=DISPIMG("ID_XXX", 1)``（兼容导出时的 ``_xlfn.`` 前缀
+   与历史实现的 ``DISPLIMG`` 拼写变体）；
 2. ``xl/cellimages.xml``（WPS 私有扩展）定义 ID → 图片关系（经 rId 指向 media 文件）；
 3. ``xl/_rels/cellimages.xml.rels`` 把 rId 映射到 ``xl/media/`` 下的图片二进制。
 
@@ -31,12 +32,13 @@ logger = logging.getLogger(__name__)
 # 与 files 路由上传端点一致的单文件上限（50 MB）
 _MAX_WPS_IMAGE_BYTES = 50 * 1024 * 1024
 
-# WPS 单元格图片公式：=DISPLIMG("ID_XXX", 1)
+# WPS 单元格图片公式：=DISPIMG("ID_XXX", 1)
 # - 前导 '=' 可省（openpyxl 读 <f> 元素时不含 '='）；
 # - 兼容 Excel 兼容导出的 _xlfn. 前缀与大小写变体；
+# - 函数名兼容 DISPIMG（WPS 实际写入的拼写）与 DISPLIMG（历史变体）；
 # - 第二参数为任意整数（固定为 1，宽松匹配）。
 _DISPLIMG_RE = re.compile(
-    r"""^\s*=?\s*(?:_xlfn\.)?DISPLIMG\(\s*["']([^"']+)["']\s*,\s*-?\d+\s*\)\s*$""",
+    r"""^\s*=?\s*(?:_xlfn\.)?DISPL?IMG\(\s*["']([^"']+)["']\s*,\s*-?\d+\s*\)\s*$""",
     re.IGNORECASE,
 )
 
@@ -55,8 +57,9 @@ def match_displimg_formula(value: Any) -> str | None:
     """匹配 WPS 单元格图片公式值，返回其中的图片 ID；非该公式返回 None."""
     if not isinstance(value, str):
         return None
-    # 快速预筛：绝大多数单元格不含 DISPLIMG，子串检查比正则便宜一个量级
-    if "DISPLIMG" not in value.upper():
+    # 快速预筛：绝大多数单元格不含 DISPIMG/DISPLIMG，子串检查比正则便宜一个量级
+    upper = value.upper()
+    if "DISPIMG" not in upper and "DISPLIMG" not in upper:
         return None
     m = _DISPLIMG_RE.match(value)
     return m.group(1) if m else None
