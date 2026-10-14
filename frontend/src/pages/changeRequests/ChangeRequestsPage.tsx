@@ -14,7 +14,7 @@ import {
 import { PlusOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import dayjs from 'dayjs'
+import { formatDateTime } from '@/utils/datetime'
 import { changeRequestsApi } from '@/api'
 import type { ChangeRequest, TableWriteMode } from '@/api'
 import { memberDisplayName, useMemberNameMap } from '@/hooks/useMemberNames'
@@ -64,10 +64,6 @@ function newRequestHint(writeMode: TableWriteMode): string {
     return '当前账号对该表只读，无法提交数据变更。'
   }
   return '请直接在表格中编辑数据，系统会自动生成修改申请'
-}
-
-function formatTime(value?: string): string {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : ''
 }
 
 export default function ChangeRequestsPage() {
@@ -142,7 +138,7 @@ export default function ChangeRequestsPage() {
                   }
                   description={
                     <Text type="secondary">
-                      #{item.id} · {memberDisplayName(nameById, item.submitted_by_id, '未知')} 提交于 {formatTime(item.created_at)}
+                      #{item.id} · {memberDisplayName(nameById, item.submitted_by_id, '未知')} 提交于 {formatDateTime(item.created_at)}
                     </Text>
                   }
                 />

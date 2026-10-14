@@ -11,7 +11,7 @@ import {
 import { MessageOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import dayjs from 'dayjs'
+import { formatDateTime } from '@/utils/datetime'
 import { issuesApi } from '@/api'
 import type { IssueCategory, IssueListItem } from '@/api'
 
@@ -32,10 +32,6 @@ const STATUS_FILTER_OPTIONS: Array<{ label: string; value: StatusFilter }> = [
   { label: '已关闭', value: 'closed' },
   { label: '全部', value: 'all' },
 ]
-
-function formatTime(value?: string): string {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : ''
-}
 
 export default function IssuesPage() {
   const { wid = '', tid = '' } = useParams<{ wid: string; tid: string }>()
@@ -108,7 +104,7 @@ export default function IssuesPage() {
                       <Text strong>{item.title}</Text>
                     </Space>
                   }
-                  description={<Text type="secondary">#{item.id} · 创建于 {formatTime(item.created_at)}</Text>}
+                  description={<Text type="secondary">#{item.id} · 创建于 {formatDateTime(item.created_at)}</Text>}
                 />
               </List.Item>
             )}

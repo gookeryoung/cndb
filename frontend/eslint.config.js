@@ -11,8 +11,18 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import testingLibrary from 'eslint-plugin-testing-library'
 
 export default tseslint.config(
-  // 忽略文件（优先级最高）
-  { ignores: ['dist', 'node_modules', 'coverage', 'playwright-report', '.local-ms-playwright', '.playwright-browsers'] },
+  // 忽略文件（优先级最高）：构建产物与 Playwright 运行产物（后者含 report 的 .js 资源）
+  {
+    ignores: [
+      'dist',
+      'node_modules',
+      'coverage',
+      'test-results',
+      'playwright-report',
+      '.local-ms-playwright',
+      '.playwright-browsers',
+    ],
+  },
 
   // JavaScript 推荐规则
   js.configs.recommended,

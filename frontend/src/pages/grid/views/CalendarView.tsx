@@ -27,6 +27,7 @@ import { formatFieldDisplayValue, getLinkFirstLabel, getMultiSelectFirstLabel } 
 import { parseDate, fmtDate } from '../cells/dateUtils'
 import { resolveOpts, CALENDAR_OPTIONS } from '../view-config/viewOptionSchema'
 import { resolveDoneCtx, isDoneRow, type DoneCtx } from './kanbanBoard'
+import { groupColor } from '@/utils/paletteColor'
 
 // ── 类型定义 ──────────────────────────────────────────
 
@@ -83,19 +84,6 @@ function getEventDates(events: CalendarEvent[]): Set<string> {
     set.add(fmtDate(ev.date))
   }
   return set
-}
-
-/** 预设色板（给 group_field 自动配色） */
-const GROUP_PALETTE = [
-  '#1677ff', '#f5222d', '#fa8c16', '#52c41a', '#722ed1',
-  '#eb2f96', '#13c2c2', '#faad14', '#2f54eb', '#a0d911',
-]
-
-/** 给分组值分配稳定颜色（基于字符串 hash） */
-function groupColor(value: string): string {
-  let h = 0
-  for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) & 0x7fffffff
-  return GROUP_PALETTE[h % GROUP_PALETTE.length]
 }
 
 // ── 事件构建 ──────────────────────────────────────────

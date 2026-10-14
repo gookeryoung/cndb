@@ -15,7 +15,7 @@ import {
 import { ArrowLeftOutlined, CheckOutlined, RedoOutlined, SyncOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import dayjs from 'dayjs'
+import { formatDateTime } from '@/utils/datetime'
 import { changeRequestsApi, workspaceApi } from '@/api'
 import type { ChangeActionItem, ChangeItemDetail, ChangeOp } from '@/api'
 import { memberDisplayName, useMemberNameMap } from '@/hooks/useMemberNames'
@@ -44,10 +44,6 @@ const ACTION_TEXT: Record<ChangeActionItem['action'], string> = {
   close: '关闭了申请',
   reopen: '重开了申请',
   update_base: '刷新了基准快照',
-}
-
-function formatTime(value?: string): string {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : ''
 }
 
 /** 任意 JSON 值的紧凑展示（diff 单元格用） */
@@ -223,7 +219,7 @@ export default function ChangeRequestDetailPage() {
         <Tag color={STATUS_META[cr.status]?.color ?? 'default'}>{STATUS_META[cr.status]?.label ?? cr.status}</Tag>
         {cr.stale && <Tag color="warning">基准已过期</Tag>}
         <Text type="secondary">
-          {memberDisplayName(nameById, cr.submitted_by_id, '未知')} 提交于 {formatTime(cr.created_at)}
+          {memberDisplayName(nameById, cr.submitted_by_id, '未知')} 提交于 {formatDateTime(cr.created_at)}
         </Text>
       </Space>
       {cr.description && <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap' }}>{cr.description}</Paragraph>}
@@ -319,7 +315,7 @@ export default function ChangeRequestDetailPage() {
               <Text strong>{memberDisplayName(nameById, a.acted_by_id)}</Text>
               {' '}{ACTION_TEXT[a.action] ?? a.action}
               {a.comment && <>：<Text>{a.comment}</Text></>}
-              {' '}· {formatTime(a.created_at)}
+              {' '}· {formatDateTime(a.created_at)}
             </Text>
           </div>
         ))}

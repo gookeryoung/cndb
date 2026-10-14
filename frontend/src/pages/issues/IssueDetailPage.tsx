@@ -12,7 +12,7 @@ import {
 import { ArrowLeftOutlined, CheckOutlined, RedoOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import dayjs from 'dayjs'
+import { formatDateTime } from '@/utils/datetime'
 import { issuesApi, workspaceApi } from '@/api'
 import type { IssueComment, IssueEvent } from '@/api'
 import { memberDisplayName, useMemberNameMap } from '@/hooks/useMemberNames'
@@ -27,10 +27,6 @@ const EVENT_TEXT: Record<IssueEvent['action'], string> = {
   created: '创建了问题',
   closed: '关闭了问题',
   reopened: '重开了问题',
-}
-
-function formatTime(value?: string): string {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : ''
 }
 
 export default function IssueDetailPage() {
@@ -153,7 +149,7 @@ export default function IssueDetailPage() {
         : issue.comments.map((c: IssueComment) => (
           <Card key={c.id} size="small" style={{ marginBottom: 8 }}>
             <Text strong>{memberDisplayName(nameById, c.created_by_id, '已注销用户')}</Text>
-            <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>{formatTime(c.created_at)}</Text>
+            <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>{formatDateTime(c.created_at)}</Text>
             <Paragraph style={{ marginBottom: 0, marginTop: 4, whiteSpace: 'pre-wrap' }}>{c.content}</Paragraph>
           </Card>
         ))}
@@ -184,7 +180,7 @@ export default function IssueDetailPage() {
           <div key={e.id} style={{ padding: '4px 0' }}>
             <Text type="secondary">
               <Text strong>{memberDisplayName(nameById, e.actor_id)}</Text>
-              {' '}{EVENT_TEXT[e.action] ?? e.action} · {formatTime(e.created_at)}
+              {' '}{EVENT_TEXT[e.action] ?? e.action} · {formatDateTime(e.created_at)}
             </Text>
           </div>
         ))}

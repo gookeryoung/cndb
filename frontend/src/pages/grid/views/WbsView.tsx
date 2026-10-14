@@ -19,6 +19,7 @@ import type { RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, WBS_OPTIONS, resolveAutoField, findOptionSchema } from '../view-config/viewOptionSchema'
 import { formatFieldDisplayValue, getSelectLabel } from '../cells/fieldValueFormat'
+import { pickPaletteColor } from '@/utils/paletteColor'
 
 // ── 类型定义 ──────────────────────────────────────────
 
@@ -238,9 +239,7 @@ const STATUS_PALETTE = [
 
 function statusColor(value: string | undefined): string {
   if (!value) return 'default'
-  let h = 0
-  for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) & 0x7fffffff
-  return STATUS_PALETTE[h % STATUS_PALETTE.length]
+  return pickPaletteColor(value, STATUS_PALETTE)
 }
 
 // ── 主组件 ────────────────────────────────────────────
