@@ -9,6 +9,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
 import { message } from 'antd'
+import { documentsApi } from '@/api/documents'
 import DocumentEditorPage from './DocumentEditorPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockUser, server } from '@/test/msw'
@@ -924,4 +925,21 @@ describe('草稿发布控件', () => {
       expect(successSpy).toHaveBeenCalledWith('已发布：工作区成员现在可以看到这份文档'),
     )
   })
+})
+
+describe('协作者入口（桌面端）', () => {
+    it('桌面工具栏可打开协作者弹窗并拉取名单', async () => {
+        const listSpy = vi.spyOn(documentsApi, 'listPermissions').mockResolvedValue([])
+        renderEditor()
+
+        // 等正文加载完成（编辑器用原生 textarea）
+        await waitFor(() => {
+            const ta = document.querySelector<HTMLTextAreaElement>('textarea')
+            expect(ta?.value.length ?? 0).toBeGreaterThan(0)
+        })
+
+        fireEvent.click(screen.getByTestId('doc-collaborators-open'))
+        expect(await screen.findByTestId('doc-collaborators-modal')).toBeInTheDocument()
+        await waitFor(() => expect(listSpy).toHaveBeenCalledWith(10, 2))
+    })
 })

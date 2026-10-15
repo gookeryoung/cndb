@@ -801,6 +801,15 @@ export default function DocumentEditorPage() {
           <Button icon={<TagsOutlined />} onClick={() => setTagsOpen(true)}>
             标签{doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}
           </Button>
+          {/* 协作者：未发布文档默认仅创建者与工作区所有者可见，这里显式开放给指定同事。
+              非管理者打开为只读名单（知情即协作），因此对所有成员可见。 */}
+          <Button
+            icon={<TeamOutlined />}
+            data-testid="doc-collaborators-open"
+            onClick={() => setCollaboratorsOpen(true)}
+          >
+            协作者
+          </Button>
           <Button
             icon={<PullRequestOutlined />}
             data-testid="doc-cr-open"
