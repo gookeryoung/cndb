@@ -309,6 +309,17 @@ def toggle_pin(
     return PinToggleResponse(pinned=member.pinned)
 
 
+def _row_scope_where(db: Any, tbl: Any, sa_table: Any) -> Any | None:
+    """编译该表的行级过滤条件（无配置返回 None）."""
+    from cndb.plugins.tables.services.core.access import get_row_scope, row_filter_conjunction
+    from cndb.plugins.tables.services.core.query import compile_filters
+
+    scope = get_row_scope(db, tbl)
+    if not scope:
+        return None
+    return compile_filters(tbl, sa_table, scope, row_filter_conjunction(db, tbl))
+
+
 @router.get("/{workspace_id}/export")
 def export_workspace(
     workspace_id: int,
@@ -323,7 +334,10 @@ def export_workspace(
     from cndb.plugins.tables.models import DataField, DataTable, DataView
 
     ws = _get_workspace_or_404(workspace_id, db)
-    _require_member(ws, current_user, db)
+    # 全量导出是备份/恢复的一侧，与 import_workspace 对称要求 EDITOR+：
+    # 此前仅校验成员身份，任何 viewer 都能把所有表（含受限表）连数据行一起导出。
+    if not has_role(current_user, ws, WorkspaceRole.EDITOR, db):
+        raise HTTPException(status_code=403, detail="需要编辑者及以上权限才能导出工作区")
 
     # 工作区元信息
     workspace_meta = {
@@ -344,6 +358,12 @@ def export_workspace(
         )
         .all()
     )
+
+    # 表级可见性：只导出当前用户**能读**的表（read_role 高于自身角色的表不得导出）
+    from cndb.plugins.tables.services.core.access import TableAction, preload_table_access
+
+    preload = preload_table_access(db, tables, current_user)
+    tables = [tbl for tbl in tables if preload.check(db, tbl, current_user, TableAction.READ)]
 
     metadata = MetaData()
     # v4：每表的 行 id → 行索引 映射与字段 id，供关联数据跨表重映射
@@ -384,6 +404,10 @@ def export_workspace(
             query = select(sa_table)
             if "trashed_at" in sa_table.columns:
                 query = query.where(sa_table.c.trashed_at.is_(None))
+            # 行级权限（TablePermission.row_filters）：导出与读取接口保持一致口径
+            row_scope = _row_scope_where(db, tbl, sa_table)
+            if row_scope is not None:
+                query = query.where(row_scope)
             if "id" in sa_table.columns:
                 query = query.order_by(sa_table.c.id)
             result = db.execute(query).mappings().all()
