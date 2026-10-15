@@ -33,7 +33,7 @@ license         = "MIT"
 name            = "cndb"
 readme          = "README.md"
 requires-python = ">=3.12"
-version         = "0.3.12"
+version         = "0.3.13"
 
 [project.scripts]
 cndb  = "cndb.cli.main:main"
