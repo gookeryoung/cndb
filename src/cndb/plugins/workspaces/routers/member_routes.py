@@ -25,6 +25,19 @@ from cndb.plugins.workspaces.schemas import (
     WorkspaceOwnerTransferRequest,
 )
 
+
+def invalidate_workspace_list_cache() -> int:
+    """失效工作区列表缓存（成员变更后调用）.
+
+    刻意在这里**直接**用缓存模块而不是从 routers/workspaces.py 导入：
+    后者会与本模块形成循环导入（workspaces 导入 member_router），
+    导致工作区插件整体加载失败、路由全部 404。
+    """
+    from cndb.core.cache import cache_key, list_cache
+
+    return list_cache.clear(cache_key("ws-list"))
+
+
 router = APIRouter()
 
 # ── 成员管理 ──────────────────────────────────────────
@@ -182,6 +195,7 @@ def remove_member(
             raise HTTPException(status_code=400, detail="工作区至少保留一名所有者")
     db.delete(member)
     db.commit()
+    invalidate_workspace_list_cache()
 
 
 # ── 转让所有权 ────────────────────────────────────────
