@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any
@@ -15,6 +16,8 @@ from sqlalchemy.orm import Session
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataTable, TableMember, TablePermission
 from cndb.plugins.workspaces.models import ROLE_RANK, Role, Workspace, WorkspaceRole
+
+logger = logging.getLogger(__name__)
 
 
 class TableAction(StrEnum):
@@ -114,14 +117,24 @@ def check_action(
             return action in allowed
 
     # ── 4. TablePermission 阈值 ──
-    perm = db.get(TablePermission, table.id)
+    # 按 table_id 查（主键是自增 id，用 db.get(..., table.id) 会取到别的表 → 权限错位）
+    perm = db.query(TablePermission).filter(TablePermission.table_id == table.id).first()
     if perm is not None:
         field_name = _ACTION_PERMISSION_FIELD[action]
         required_role_str = getattr(perm, field_name, "")
         if required_role_str:
             try:
-                required = WorkspaceRole(required_role_str)
+                # 角色值统一小写（WorkspaceRole 的 value 是 owner/editor/viewer）。
+                # 大小写不归一的话，"OWNER" 会解析失败 → 静默返回 False，
+                # 表现为"权限配置了但所有人（含管理员）都被拒"这种难以排查的现象。
+                required = WorkspaceRole(str(required_role_str).strip().lower())
             except ValueError:
+                logger.warning(
+                    "表 %s 的 %s 配置了无效角色 %r（已按拒绝处理），应为 owner/editor/viewer",
+                    table.id,
+                    field_name,
+                    required_role_str,
+                )
                 return False
             return ROLE_RANK[user_role] >= ROLE_RANK[required]
 
@@ -193,7 +206,8 @@ def get_row_scope(db: Session, table: DataTable) -> list[dict[str, Any]]:
 
     返回 TablePermission.row_filters 中的条件列表，由上层 query 编译.
     """
-    perm = db.get(TablePermission, table.id)
+    # 按 table_id 查（主键是自增 id，用 db.get(..., table.id) 会取到别的表 → 权限错位）
+    perm = db.query(TablePermission).filter(TablePermission.table_id == table.id).first()
     if perm is None or not perm.row_filters:
         return []
     return list(perm.row_filters)
@@ -201,7 +215,8 @@ def get_row_scope(db: Session, table: DataTable) -> list[dict[str, Any]]:
 
 def row_filter_conjunction(db: Session, table: DataTable) -> str:
     """行级过滤条件的连接方式：AND（默认）或 OR."""
-    perm = db.get(TablePermission, table.id)
+    # 按 table_id 查（主键是自增 id，用 db.get(..., table.id) 会取到别的表 → 权限错位）
+    perm = db.query(TablePermission).filter(TablePermission.table_id == table.id).first()
     if perm is None:
         return "AND"
     conj = perm.row_filter_type.upper()
@@ -214,13 +229,15 @@ def get_hidden_field_names(db: Session, table: DataTable, user: User) -> set[str
     hidden_fields dict 键 = 角色名，值 = 隐藏字段列表.
     当前用户角色对应的列表即为隐藏字段.
     """
-    perm = db.get(TablePermission, table.id)
+    # 按 table_id 查（主键是自增 id，用 db.get(..., table.id) 会取到别的表 → 权限错位）
+    perm = db.query(TablePermission).filter(TablePermission.table_id == table.id).first()
     if perm is None or not perm.hidden_fields:
         return set()
     user_role = _get_member_role(db, table, user)
     if user_role is None:
         return set()
-    hidden = perm.hidden_fields.get(user_role.value, [])
+    # 键兼容大小写：历史配置里出现过 "VIEWER"（枚举名）与 "viewer"（枚举值）两种写法
+    hidden = perm.hidden_fields.get(user_role.value) or perm.hidden_fields.get(user_role.name) or []
     return set(hidden)
 
 

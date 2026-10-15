@@ -107,6 +107,9 @@
 - README 修正项目结构树、CLI 命令、e2e 包管理器与特性清单等失实内容
 
 ### 修复
+- **可见性与权限收口**：文档 `status` 首次参与读取过滤 —— 草稿/归档仅创建者与工作区所有者可见，已发布对全部成员可见；列表/目录树/搜索/详情/版本/差异/导出/反链/回收站/文档问题清单全部收口，不可见按 404 处理（不泄露存在性）；分享仅限已发布文档，取消发布后公开链接立即失效；编辑器新增「发布 / 转为草稿」入口
+- 修复**表级权限按表隔离**缺陷：`access.py` 曾用 `db.get(TablePermission, table.id)`（按主键查）取权限行，实际读到其它表的规则 → 读阈值/隐藏字段/行级过滤错位；改为按 `table_id` 查，并让角色字符串大小写兼容（避免 `"OWNER"` 被静默当作拒绝）
+- 数据表**列表按 `TableAction.READ` 过滤**（此前详情拦、列表不拦，泄露受限表名称/成员数），权限与成员变更时失效列表缓存
 - 修复 CI 偶发失败：`DocumentEditorPage` 三个标题用例在文本域渲染后立即改标题，文档内容尚未加载时操作作用在空内容上（CI 上偶发 `expected false to be true`），改为先等待内容加载
 - CI 警告清理：runner 固定 `ubuntu-24.04`（`ubuntu-latest` 将于 2026-10-19 迁移到 Ubuntu 26）；为每个 job 的 `setup-uv` 配置独立 `cache-suffix`，消除并行 job 抢占同一缓存键的「Unable to reserve cache」告警
 - 前端警告清理：TreeSelect 根节点 `key`/`value` 不一致（antd TreeNode 告警）改为由 value 派生；Markdown 中仅含图片的段落改用 `<div>` 承载，消除 `<div>` 嵌套 `<p>` 的非法 DOM 结构；测试控制台过滤应用级待迁移的 antd 静态 `message` 上下文告警

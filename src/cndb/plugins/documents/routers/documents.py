@@ -158,6 +158,8 @@ def list_documents(
     filters: list[ColumnElement[bool]] = [
         Document.workspace_id == workspace_id,
         Document.is_deleted == False,  # noqa: E712
+        # 可见性：草稿/归档仅创建者与工作区所有者可见（不暴露他人未发布内容）
+        services.visibility.visible_condition(db, workspace_id, current_user),
     ]
     if parent_id is not None:
         filters.append(Document.parent_id == parent_id)
@@ -216,7 +218,7 @@ def _document_tree_uncached(
     workspace_id: int,
     current_user: User,
 ) -> dict[str, Any]:
-    docs = (
+    all_docs = list(
         db.execute(
             select(Document)
             .where(Document.workspace_id == workspace_id, Document.is_deleted == False)  # noqa: E712
@@ -225,8 +227,13 @@ def _document_tree_uncached(
         .scalars()
         .all()
     )
+    # 可见性：隐藏他人草稿；同时保留可见节点的祖先文件夹，避免目录树出现孤儿节点
+    visible = services.visibility.filter_visible_documents(db, workspace_id, all_docs, current_user)
+    visible_ids = {d.id for d in visible}
+    visible_ids |= services.visibility.visible_ancestor_ids(all_docs, visible)
+    ordered_docs = [d for d in all_docs if d.id in visible_ids]
     pinned_ids = services.content.pinned_document_ids(db, workspace_id, current_user.id)
-    ordered = services.content.sort_pinned_first(list(docs), pinned_ids)
+    ordered = services.content.sort_pinned_first(ordered_docs, pinned_ids)
     return {"items": services.content.serialize_documents(db, ordered, pinned_ids=pinned_ids)}
 
 
@@ -246,6 +253,21 @@ def list_tags(
         .scalars()
         .all()
     )
+    # 标签计数按"当前用户可见文档"重算：Tag.doc_count 是全量计数，
+    # 直接返回会泄露"只被他人草稿引用的标签"及其数量。
+    from cndb.plugins.documents.models import DocumentTag
+
+    counts_rows = db.execute(
+        select(DocumentTag.tag_id, func.count())
+        .join(Document, Document.id == DocumentTag.document_id)
+        .where(
+            Document.workspace_id == workspace_id,
+            Document.is_deleted == False,  # noqa: E712
+            services.visibility.visible_condition(db, workspace_id, current_user),
+        )
+        .group_by(DocumentTag.tag_id)
+    ).all()
+    visible_counts = {int(tid): int(cnt) for tid, cnt in counts_rows}
     return {
         "items": [
             {
@@ -254,9 +276,10 @@ def list_tags(
                 "name": t.name,
                 "color": t.color,
                 "description": t.description,
-                "doc_count": t.doc_count,
+                "doc_count": visible_counts.get(t.id, 0),
             }
             for t in tags
+            if visible_counts.get(t.id, 0) > 0
         ]
     }
 
@@ -286,6 +309,9 @@ def search(
         status=status,
         limit=limit,
         offset=offset,
+        # 可见性：全文检索不得命中他人草稿/未发布内容
+        viewer_id=current_user.id,
+        is_admin=services.visibility.is_document_admin(db, workspace_id, current_user),
     )
     return {"items": items, "total": total, "query": q}
 
@@ -321,7 +347,14 @@ def list_trash(
     注意：必须定义在 /{doc_id} 之前，否则 "trash" 会被解析为 doc_id。
     """
     _require_member(db, workspace_id, current_user)
-    docs, total = services.content.list_deleted_documents(db, workspace_id, limit=limit, offset=offset)
+    docs, total = services.content.list_deleted_documents(
+        db,
+        workspace_id,
+        limit=limit,
+        offset=offset,
+        viewer=current_user,
+        is_admin=services.visibility.is_document_admin(db, workspace_id, current_user),
+    )
     items = services.content.serialize_documents(db, list(docs))
     for item, doc in zip(items, docs, strict=True):
         item["deleted_at"] = doc.deleted_at
@@ -338,7 +371,7 @@ def get_document(
 ) -> dict[str, Any]:
     """文档详情（不含正文）。"""
     _require_member(db, workspace_id, current_user)
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     pinned_ids = services.content.pinned_document_ids(db, workspace_id, current_user.id)
     return services.content.serialize_document(db, doc, pinned=doc.id in pinned_ids)
 
@@ -352,7 +385,7 @@ def pin_document(
 ) -> dict[str, Any]:
     """置顶文档（个人）：仅影响当前用户的树/列表顺序."""
     _require_member(db, workspace_id, current_user)
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     pinned = services.content.set_document_pin(db, doc, current_user.id, True)
     return {"document_id": doc.id, "pinned": pinned}
 
@@ -366,7 +399,7 @@ def unpin_document(
 ) -> None:
     """取消置顶（幂等）."""
     _require_member(db, workspace_id, current_user)
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     services.content.set_document_pin(db, doc, current_user.id, False)
 
 
@@ -379,7 +412,7 @@ def get_document_content(
 ) -> dict[str, Any]:
     """文档详情 + 最新版本正文。"""
     _require_member(db, workspace_id, current_user)
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     pinned_ids = services.content.pinned_document_ids(db, workspace_id, current_user.id)
     data = services.content.serialize_document(db, doc, pinned=doc.id in pinned_ids)
     if doc.is_folder:
@@ -434,13 +467,13 @@ def update_document_content(
     content_to_save = payload.content
     merged = False
     # 保存前的正文：既用于段落级合并，也用于保存后把段落锁按内容重排（防止位置漂移）
-    is_folder = doc_is_folder(db, workspace_id, doc_id)
+    is_folder = doc_is_folder(db, workspace_id, doc_id, current_user)
     pre_save_text = (
         ""
         if is_folder
         else services.content.load_content(
             services.content.latest_version(db, doc_id),
-            services.content.get_document_or_404(db, workspace_id, doc_id),
+            services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user),
         )
     )
     content_to_save = payload.content
@@ -495,9 +528,10 @@ def update_document_content(
     return data
 
 
-def doc_is_folder(db: Session, workspace_id: int, doc_id: int) -> bool:
-    """该文档是否文件夹（文件夹没有正文，不做合并）."""
-    return bool(services.content.get_document_or_404(db, workspace_id, doc_id).is_folder)
+def doc_is_folder(db: Session, workspace_id: int, doc_id: int, user: User) -> bool:
+    """该文档是否文件夹（文件夹没有正文，不做合并）；不可见文档按 404 处理."""
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, user)
+    return bool(doc.is_folder)
 
 
 @router.post("/{doc_id}/paragraph-locks")
@@ -513,7 +547,7 @@ def acquire_paragraph_locks(
     被他人持有时返回 409（code=paragraph_locked，带持锁人信息）。
     """
     _require_member(db, workspace_id, current_user)
-    services.content.get_document_or_404(db, workspace_id, doc_id)
+    services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     locks = services.paragraph_lock.paragraph_lock_registry.acquire_many(
         doc_id, payload.keys, current_user.id, getattr(current_user, "username", f"user{current_user.id}")
     )
@@ -531,7 +565,7 @@ def list_paragraph_locks(
 ) -> dict[str, Any]:
     """列出该文档当前的段落锁（谁在编辑第几段）."""
     _require_member(db, workspace_id, current_user)
-    services.content.get_document_or_404(db, workspace_id, doc_id)
+    services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     locks = services.paragraph_lock.paragraph_lock_registry.locks_for_document(doc_id)
     return {"locks": [lock.as_dict() for lock in locks]}
 
@@ -546,7 +580,7 @@ def release_paragraph_locks(
 ) -> dict[str, Any]:
     """释放段落锁：带 keys 释放指定段落，不带则释放自己在本文档的全部段落锁."""
     _require_member(db, workspace_id, current_user)
-    services.content.get_document_or_404(db, workspace_id, doc_id)
+    services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     registry = services.paragraph_lock.paragraph_lock_registry
     if payload is not None and payload.keys:
         released = registry.release_many(doc_id, payload.keys, current_user.id)
@@ -574,7 +608,7 @@ def export_document(
     normalized = services.export.normalize_format(fmt)
     if normalized is None:
         raise BadRequestError(f"不支持的导出格式: {fmt}，可选 {'/'.join(services.export.SUPPORTED_FORMATS)}")
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     if doc.is_folder:
         raise BadRequestError("文件夹不支持导出")
 
@@ -681,7 +715,7 @@ def update_document_meta(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """更新元数据（标题/状态/移动/排序/标签）。"""
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     services.content.require_editor(db, workspace_id, current_user)
 
     if payload.title is not None:
@@ -760,7 +794,7 @@ def list_versions(
 ) -> dict[str, Any]:
     """版本列表（倒序）。"""
     _require_member(db, workspace_id, current_user)
-    services.content.get_document_or_404(db, workspace_id, doc_id)
+    services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     stmt = (
         select(DocumentVersion)
         .where(DocumentVersion.document_id == doc_id)
@@ -799,7 +833,7 @@ def get_version(
 ) -> dict[str, Any]:
     """版本详情（含正文）。"""
     _require_member(db, workspace_id, current_user)
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     v = db.execute(
         select(DocumentVersion).where(
             DocumentVersion.document_id == doc_id,
@@ -833,7 +867,7 @@ def diff_versions(
 ) -> dict[str, Any]:
     """两版本 unified diff 对比。"""
     _require_member(db, workspace_id, current_user)
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
 
     def _load(num: int) -> str:
         v = db.execute(
@@ -882,8 +916,14 @@ def get_backlinks(
 ) -> dict[str, Any]:
     """反向链接：工作区内正文含 ``[[本文档标题]]`` 的文档列表（含自引用）。"""
     _require_member(db, workspace_id, current_user)
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
-    hits = services.content.find_backlinks(db, workspace_id, doc.title)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    hits = services.content.find_backlinks(
+        db,
+        workspace_id,
+        doc.title,
+        viewer=current_user,
+        is_admin=services.visibility.is_document_admin(db, workspace_id, current_user),
+    )
     return {
         "items": [
             {
@@ -908,7 +948,7 @@ def get_outgoing_links(
 ) -> dict[str, Any]:
     """出链解析：正文 ``[[标题]]`` 指向的文档与断链清单（工作区成员）。"""
     _require_member(db, workspace_id, current_user)
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     items = services.content.resolve_outgoing_links(db, workspace_id, doc)
     return {
         "items": items,
@@ -941,7 +981,7 @@ def acquire_lock(
 ) -> dict[str, Any]:
     """获取编辑锁（进入编辑器时调用）。"""
     _require_member(db, workspace_id, current_user)
-    services.content.get_document_or_404(db, workspace_id, doc_id)
+    services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     info = services.edit_lock.edit_lock_registry.acquire(
         doc_id, current_user.id, getattr(current_user, "username", f"user{current_user.id}")
     )
@@ -963,7 +1003,7 @@ def release_lock(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """释放编辑锁（保存/关闭编辑器时调用）。"""
-    services.content.get_document_or_404(db, workspace_id, doc_id)
+    services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     services.edit_lock.edit_lock_registry.release(doc_id, current_user.id)
     notify_document_lock(workspace_id, doc_id, locked=False, user_id=current_user.id)
     return {"locked": False}
@@ -978,7 +1018,7 @@ def lock_status(
 ) -> dict[str, Any]:
     """查询编辑锁状态。"""
     _require_member(db, workspace_id, current_user)
-    services.content.get_document_or_404(db, workspace_id, doc_id)
+    services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     info = services.edit_lock.edit_lock_registry.status(doc_id)
     return {
         "locked": info is not None,
@@ -1000,7 +1040,7 @@ def set_document_tags(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """设置文档标签（全量替换）。"""
-    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     services.content.require_editor(db, workspace_id, current_user)
     services.content._apply_tags(db, doc, payload.tag_ids, current_user)
     db.commit()

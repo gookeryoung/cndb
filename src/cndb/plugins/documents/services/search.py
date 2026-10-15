@@ -25,6 +25,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError
+from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED
 
 # FTS5 中作为运算符的裸词：仅在两侧确有词条时才保留为布尔语法（否则按字面词处理，
 # 避免 "AND" / "a AND" / "NOT" 之类输入直接触发 fts5: syntax error → 500）
@@ -191,6 +192,8 @@ def search_documents(
     status: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    viewer_id: int | None = None,
+    is_admin: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     """执行 FTS5 搜索.
 
@@ -212,6 +215,11 @@ def search_documents(
         placeholders = ",".join(f":t{i}" for i in range(len(tag_ids)))
         where_parts.append(f"d.id IN (SELECT document_id FROM documents_documenttag WHERE tag_id IN ({placeholders}))")
         params.update({f"t{i}": tid for i, tid in enumerate(tag_ids)})
+    # 可见性：非管理员只搜"已发布"或"自己创建"的文档，避免草稿/未发布内容被搜到
+    if not is_admin and viewer_id is not None:
+        where_parts.append("(d.status = :public_status OR d.created_by_id = :viewer_id)")
+        params["public_status"] = DOC_STATUS_PUBLISHED
+        params["viewer_id"] = viewer_id
 
     where_clause = " AND ".join(where_parts)
     # 兜底通道只关心筛选条件（workspace / status / tag）：剔除 MATCH 与重复的 is_deleted

@@ -507,13 +507,24 @@ def _mark_deleted_subtree(
 
 
 def list_deleted_documents(
-    db: Session, workspace_id: int, *, limit: int = 50, offset: int = 0
+    db: Session,
+    workspace_id: int,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+    viewer: Any = None,
+    is_admin: bool = False,
 ) -> tuple[list[Document], int]:
     """回收站列表（按删除时间倒序；迁移前删除的 deleted_at 为空排最后）."""
     filters = [
         Document.workspace_id == workspace_id,
         Document.is_deleted == True,  # noqa: E712
     ]
+    # 可见性：他人草稿/未发布内容的删除记录同样不外泄
+    if viewer is not None and not is_admin:
+        from cndb.plugins.documents.services.visibility import visible_condition
+
+        filters.append(visible_condition(db, workspace_id, viewer, is_admin=False))
     total = int(db.execute(select(func.count()).select_from(Document).where(*filters)).scalar_one())
     docs = (
         db.execute(
@@ -695,7 +706,14 @@ def get_or_create_daily_note(
     return doc, True
 
 
-def find_backlinks(db: Session, workspace_id: int, title: str) -> list[Document]:
+def find_backlinks(
+    db: Session,
+    workspace_id: int,
+    title: str,
+    *,
+    viewer: Any = None,
+    is_admin: bool = False,
+) -> list[Document]:
     """反向链接扫描：返回工作区内正文含 ``[[title]]`` 的未删除文档列表.
 
     扫描源为非文件夹文档（文件夹无正文）；目标标题可为文件夹（被提及即计入）；
@@ -704,6 +722,12 @@ def find_backlinks(db: Session, workspace_id: int, title: str) -> list[Document]
     单次查询取各文档最新版本（``MAX(version_number)`` 分组子查询），
     避免历史上"逐文档查最新版本"的 N+1。
     """
+    visibility_filters: list[Any] = []
+    if viewer is not None and not is_admin:
+        from cndb.plugins.documents.services.visibility import visible_condition
+
+        visibility_filters.append(visible_condition(db, workspace_id, viewer, is_admin=False))
+
     latest = (
         select(
             DocumentVersion.document_id.label("document_id"),
@@ -724,6 +748,7 @@ def find_backlinks(db: Session, workspace_id: int, title: str) -> list[Document]
             Document.workspace_id == workspace_id,
             Document.is_deleted == False,  # noqa: E712
             Document.is_folder == False,  # noqa: E712
+            *visibility_filters,
         )
         .order_by(Document.sort_order, Document.id)
     ).all()

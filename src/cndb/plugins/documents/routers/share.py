@@ -18,10 +18,10 @@ from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
-from cndb.core.errors import NotFoundError
+from cndb.core.errors import ConflictError, NotFoundError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
-from cndb.plugins.documents.models import DocumentShare
+from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, DocumentShare
 from cndb.plugins.documents.schemas import ShareCreate
 
 share_router = APIRouter(prefix="/{workspace_id}/documents", tags=["documents"])
@@ -35,9 +35,15 @@ def create_share(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    """创建分享链接（editor+）。"""
-    services.content.get_document_or_404(db, workspace_id, doc_id)
+    """创建分享链接（editor+）。
+
+    仅**已发布**文档可分享：草稿/未发布内容一旦生成公开链接，等于把未发布版本放给外部，
+    且后续取消发布也不会收回（线上线下都遇到过）。取消/下线后既有链接随即失效（见 public 路由）。
+    """
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     services.content.require_editor(db, workspace_id, current_user)
+    if doc.status != DOC_STATUS_PUBLISHED:
+        raise ConflictError("仅已发布文档可创建分享链接；请先发布该文档")
 
     password_hash = None
     if payload.password:
@@ -65,7 +71,7 @@ def list_shares(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """文档的分享列表（editor+）。"""
-    services.content.get_document_or_404(db, workspace_id, doc_id)
+    services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
     services.content.require_editor(db, workspace_id, current_user)
     shares = (
         db.execute(

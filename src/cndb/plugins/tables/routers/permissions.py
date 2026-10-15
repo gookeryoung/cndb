@@ -27,6 +27,17 @@ def _get_or_create_permission(db: Session, table_id: int) -> TablePermission:
     return tp
 
 
+def _invalidate_table_list_cache(workspace_id: int) -> None:
+    """权限/成员变更后失效表列表缓存.
+
+    表列表按 TableAction.READ 过滤，缓存按用户隔离；但权限变更必须让**所有用户**的
+    列表缓存失效，否则收紧权限后别人仍能从缓存里看到旧列表（5s TTL 兜底但不该依赖它）。
+    """
+    from cndb.core.cache import cache_key, list_cache
+
+    list_cache.clear(cache_key("tables", workspace_id))
+
+
 @router.get("", response_model=PermissionResponse)
 def get_permission(
     workspace_id: int,
@@ -58,6 +69,7 @@ def upsert_permission(
     tp.row_filters = payload.row_filters
     tp.row_filter_type = payload.row_filter_type
     db.commit()
+    _invalidate_table_list_cache(workspace_id)
     db.refresh(tp)
     return tp
 
@@ -77,5 +89,6 @@ def patch_permission(
     for key, value in update_data.items():
         setattr(tp, key, value)
     db.commit()
+    _invalidate_table_list_cache(workspace_id)
     db.refresh(tp)
     return tp

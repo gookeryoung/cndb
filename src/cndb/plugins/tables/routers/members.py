@@ -108,6 +108,17 @@ def _member_out(db: Session, user_id: int, role: str) -> dict[str, Any]:
 # ── 成员列表 ─────────────────────────────────────────
 
 
+def _invalidate_table_list_cache(workspace_id: int) -> None:
+    """权限/成员变更后失效表列表缓存.
+
+    表列表按 TableAction.READ 过滤，缓存按用户隔离；但权限变更必须让**所有用户**的
+    列表缓存失效，否则收紧权限后别人仍能从缓存里看到旧列表（5s TTL 兜底但不该依赖它）。
+    """
+    from cndb.core.cache import cache_key, list_cache
+
+    list_cache.clear(cache_key("tables", workspace_id))
+
+
 @router.get("/members", response_model=list[MemberOut])
 def list_members(
     workspace_id: int,
@@ -175,6 +186,7 @@ def add_member(
         {"user_id": payload.user_id, "role": payload.role},
     )
     db.commit()
+    _invalidate_table_list_cache(workspace_id)
     db.refresh(tm)
 
     return _member_out(db, tm.user_id, tm.role)
@@ -212,6 +224,7 @@ def update_member(
         {"user_id": user_id, "old_role": old_role, "new_role": payload.role},
     )
     db.commit()
+    _invalidate_table_list_cache(workspace_id)
     db.refresh(tm)
 
     return _member_out(db, tm.user_id, tm.role)
@@ -245,6 +258,7 @@ def remove_member(
     )
     db.delete(tm)
     db.commit()
+    _invalidate_table_list_cache(workspace_id)
 
 
 # ── 转让所有权 ───────────────────────────────────────
@@ -305,6 +319,7 @@ def transfer_owner(
         {"old_owner_id": old_owner_id, "new_owner_id": payload.user_id},
     )
     db.commit()
+    _invalidate_table_list_cache(workspace_id)
     db.refresh(table)
 
     owner_id = cast(int, table.owner_id)  # 上方已转移所有者，必非空
