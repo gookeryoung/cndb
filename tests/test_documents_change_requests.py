@@ -76,7 +76,13 @@ def outsider(db) -> User:
 def _create_doc(
     client: TestClient, ws_id: int, owner_auth: dict[str, str], *, title="文档", content=BASE_CONTENT
 ) -> dict:
-    r = client.post(DOCS.format(ws=ws_id), json={"title": title, "content": content}, headers=owner_auth)
+    # 已发布：这些用例覆盖"editor 保存他人文档 → 直改/转变更请求"的协作语义；
+    # 草稿对他人不可见（见 tests/test_document_visibility.py），故此处建为发布态。
+    r = client.post(
+        DOCS.format(ws=ws_id),
+        json={"title": title, "content": content, "status": "published"},
+        headers=owner_auth,
+    )
     assert r.status_code == 201, r.text
     return r.json()
 

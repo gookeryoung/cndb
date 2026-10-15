@@ -23,12 +23,19 @@ from cndb.plugins.documents.models import (
     DocumentIssueComment,
     DocumentIssueEvent,
 )
-from cndb.plugins.documents.services import content as content_service
+from cndb.plugins.documents.services import visibility
 from cndb.plugins.issues.models import ISSUE_CATEGORIES, ISSUE_STATUS_CLOSED, ISSUE_STATUS_OPEN
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 from cndb.plugins.workspaces.permissions import get_member_role
 
 STATUS_FILTERS = ("open", "closed", "all")
+
+
+def _visible_document_or_404(db: Session, workspace_id: int, document_id: int, user: User) -> Document:
+    """取文档并校验可见性（草稿/未发布版对非创建者与所有者不可见）."""
+    from cndb.plugins.documents.services import visibility
+
+    return visibility.get_visible_document_or_404(db, workspace_id, document_id, user)
 
 
 def require_member(db: Session, workspace_id: int, user: User) -> WorkspaceRole:
@@ -61,7 +68,8 @@ def create_issue(
     require_member(db, workspace_id, user)
     if category not in ISSUE_CATEGORIES:
         raise BadRequestError(f"非法的问题类别: {category}")
-    doc = content_service.get_document_or_404(db, workspace_id, document_id)
+    # 可见性：不能在看不见的文档（他人草稿/未发布版）上提交问题
+    doc = _visible_document_or_404(db, workspace_id, document_id, user)
 
     issue = DocumentIssue(
         workspace_id=workspace_id,
@@ -102,9 +110,21 @@ def list_issues(
 
     stmt = select(DocumentIssue).where(DocumentIssue.workspace_id == workspace_id)
     if document_id is not None:
+        # 指定文档时先校验该文档可见（否则等于变相探测他人草稿）
+        _visible_document_or_404(db, workspace_id, document_id, user)
         stmt = stmt.where(DocumentIssue.document_id == document_id)
     if status in (ISSUE_STATUS_OPEN, ISSUE_STATUS_CLOSED):
         stmt = stmt.where(DocumentIssue.status == status)
+    # 可见性：只返回"文档对当前用户可见"的问题
+    stmt = stmt.where(
+        DocumentIssue.document_id.in_(
+            select(Document.id).where(
+                Document.workspace_id == workspace_id,
+                Document.is_deleted == False,  # noqa: E712
+                visibility.visible_condition(db, workspace_id, user),
+            )
+        )
+    )
     issues = list(db.scalars(stmt.order_by(DocumentIssue.id.desc())).all())
 
     counts: dict[int, int] = {}
@@ -127,11 +147,17 @@ def list_issues(
     ]
 
 
-def get_issue_or_404(db: Session, workspace_id: int, issue_id: int) -> DocumentIssue:
-    """按 id 取问题并校验工作区归属（不匹配一律 404）."""
+def get_issue_or_404(db: Session, workspace_id: int, issue_id: int, user: User | None = None) -> DocumentIssue:
+    """按 id 取问题并校验工作区归属与文档可见性（不匹配一律 404）.
+
+    ``user`` 非空时同时校验问题所属文档对该用户可见，避免通过问题详情
+    探测/读取他人草稿上的讨论。
+    """
     issue = db.get(DocumentIssue, issue_id)
     if issue is None or issue.workspace_id != workspace_id:
         raise NotFoundError("问题不存在")
+    if user is not None:
+        _visible_document_or_404(db, workspace_id, issue.document_id, user)
     return issue
 
 

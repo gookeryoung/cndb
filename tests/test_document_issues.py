@@ -75,7 +75,9 @@ def outsider(db) -> User:
 @pytest.fixture
 def doc(client, ws, owner) -> dict:
     auth = _login(client, owner.username)
-    r = client.post(DOCS.format(ws=ws.id), json={"title": "需求说明", "content": "# 标题\n"}, headers=auth)
+    r = client.post(
+        DOCS.format(ws=ws.id), json={"title": "需求说明", "content": "# 标题\n", "status": "published"}, headers=auth
+    )
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -157,8 +159,9 @@ class TestCreateAndList:
 
         by_doc = client.get(DI.format(ws=ws.id), params={"document_id": doc["id"]}, headers=auth).json()
         assert by_doc["total"] == 1
-        other_doc = client.get(DI.format(ws=ws.id), params={"document_id": 999999}, headers=auth).json()
-        assert other_doc["total"] == 0
+        # 过滤不存在的文档 → 404（与"不可见文档"同语义：不区分"不存在"与"看不到"）
+        other_doc = client.get(DI.format(ws=ws.id), params={"document_id": 999999}, headers=auth)
+        assert other_doc.status_code == 404
 
         assert client.get(DI.format(ws=ws.id), params={"status": "bogus"}, headers=auth).status_code == 400
 

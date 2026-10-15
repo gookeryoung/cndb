@@ -215,7 +215,9 @@ def _clean_registry():
 
 class TestParagraphLockEndpoints:
     def test_acquire_list_release(self, client, doc_api, auth_headers):
-        doc = client.post(doc_api, json={"title": "段落锁", "content": DOC_TPL}, headers=auth_headers).json()
+        doc = client.post(
+            doc_api, json={"title": "段落锁", "content": DOC_TPL, "status": "published"}, headers=auth_headers
+        ).json()
 
         r = client.post(f"{doc_api}/{doc['id']}/paragraph-locks", json={"keys": ["p2"]}, headers=auth_headers)
         assert r.status_code == 200, r.text
@@ -231,7 +233,9 @@ class TestParagraphLockEndpoints:
         assert client.get(f"{doc_api}/{doc['id']}/paragraph-locks", headers=auth_headers).json()["locks"] == []
 
     def test_conflict_returns_409_with_holder(self, client, doc_api, auth_headers, second_headers):
-        doc = client.post(doc_api, json={"title": "竞争", "content": DOC_TPL}, headers=auth_headers).json()
+        doc = client.post(
+            doc_api, json={"title": "竞争", "content": DOC_TPL, "status": "published"}, headers=auth_headers
+        ).json()
         assert (
             client.post(
                 f"{doc_api}/{doc['id']}/paragraph-locks", json={"keys": ["p1"]}, headers=auth_headers
@@ -258,7 +262,9 @@ class TestParagraphLockEndpoints:
         conn.loop = None
         # 广播只入队，不依赖事件循环
         realtime_hub.register(conn)
-        doc = client.post(doc_api, json={"title": "广播", "content": DOC_TPL}, headers=auth_headers).json()
+        doc = client.post(
+            doc_api, json={"title": "广播", "content": DOC_TPL, "status": "published"}, headers=auth_headers
+        ).json()
 
         client.post(f"{doc_api}/{doc['id']}/paragraph-locks", json={"keys": ["p2", "p3"]}, headers=auth_headers)
         msgs = []
@@ -272,7 +278,9 @@ class TestParagraphLockEndpoints:
 
 class TestMergedSave:
     def test_two_users_edit_different_paragraphs_both_persist(self, client, doc_api, auth_headers, second_headers):
-        doc = client.post(doc_api, json={"title": "并发", "content": DOC_TPL}, headers=auth_headers).json()
+        doc = client.post(
+            doc_api, json={"title": "并发", "content": DOC_TPL, "status": "published"}, headers=auth_headers
+        ).json()
         base = DOC_TPL
 
         # 两个用户各自拿到不同段落锁
@@ -315,7 +323,9 @@ class TestMergedSave:
         assert "第三段（B改）" in text
 
     def test_same_paragraph_save_conflicts(self, client, doc_api, auth_headers, second_headers):
-        doc = client.post(doc_api, json={"title": "同段", "content": DOC_TPL}, headers=auth_headers).json()
+        doc = client.post(
+            doc_api, json={"title": "同段", "content": DOC_TPL, "status": "published"}, headers=auth_headers
+        ).json()
         base = DOC_TPL
 
         # A 与 B 都锁住第 2 段（B 先释放以模拟"B 抢不到但仍尝试保存"）
@@ -347,7 +357,9 @@ class TestMergedSave:
 
     def test_without_base_content_keeps_optimistic_lock(self, client, doc_api, auth_headers, second_headers):
         """不传 base_content 时仍是原有乐观锁语义（409 conflict）."""
-        doc = client.post(doc_api, json={"title": "旧语义", "content": DOC_TPL}, headers=auth_headers).json()
+        doc = client.post(
+            doc_api, json={"title": "旧语义", "content": DOC_TPL, "status": "published"}, headers=auth_headers
+        ).json()
         # 用明确过期的版本戳，避免"同一秒内 updated_at 未变"造成的假通过
         r = client.put(
             f"{doc_api}/{doc['id']}/content",
@@ -358,7 +370,9 @@ class TestMergedSave:
         assert r.json()["code"] == "conflict"
 
     def test_no_change_returns_current(self, client, doc_api, auth_headers):
-        doc = client.post(doc_api, json={"title": "无改动", "content": DOC_TPL}, headers=auth_headers).json()
+        doc = client.post(
+            doc_api, json={"title": "无改动", "content": DOC_TPL, "status": "published"}, headers=auth_headers
+        ).json()
         r = client.put(
             f"{doc_api}/{doc['id']}/content",
             json={"content": DOC_TPL, "base_content": DOC_TPL},
@@ -430,7 +444,9 @@ class TestRemapOnSave:
     ):
         """B 在第 1 段后插入新段落并保存 → A 对原第 2 段的锁应移动到第 3 段."""
         base = "# 标题\n\n第一段\n\n第二段\n\n第三段\n"
-        doc = client.post(doc_api, json={"title": "重映射", "content": base}, headers=auth_headers).json()
+        doc = client.post(
+            doc_api, json={"title": "重映射", "content": base, "status": "published"}, headers=auth_headers
+        ).json()
 
         # A 锁住第 2 段（"第一段"）
         assert (
@@ -457,7 +473,9 @@ class TestRemapOnSave:
 
     def test_rewritten_paragraph_releases_lock(self, client, doc_api, auth_headers, second_headers):
         base = "# 标题\n\n第一段\n\n第二段\n"
-        doc = client.post(doc_api, json={"title": "释放", "content": base}, headers=auth_headers).json()
+        doc = client.post(
+            doc_api, json={"title": "释放", "content": base, "status": "published"}, headers=auth_headers
+        ).json()
         client.post(f"{doc_api}/{doc['id']}/paragraph-locks", json={"keys": ["p2"]}, headers=auth_headers)
 
         # 改写第 2 段（A 自己的锁）→ 保存后该锁释放

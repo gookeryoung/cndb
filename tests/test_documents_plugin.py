@@ -406,7 +406,7 @@ class TestEditLock:
 
 class TestShare:
     def test_share_lifecycle(self, client, doc_api, auth_headers):
-        doc = _create_doc(client, doc_api, auth_headers, content="分享内容 secret-share-body")
+        doc = _create_doc(client, doc_api, auth_headers, content="分享内容 secret-share-body", status="published")
         # 创建分享
         r = client.post(f"{doc_api}/{doc['id']}/share", json={"permission": "viewer"}, headers=auth_headers)
         assert r.status_code == 201, r.text
@@ -431,7 +431,7 @@ class TestShare:
         assert r.status_code == 404
 
     def test_share_with_password(self, client, doc_api, auth_headers):
-        doc = _create_doc(client, doc_api, auth_headers, content="密码保护内容")
+        doc = _create_doc(client, doc_api, auth_headers, content="密码保护内容", status="published")
         r = client.post(
             f"{doc_api}/{doc['id']}/share",
             json={"permission": "viewer", "password": "abc123"},

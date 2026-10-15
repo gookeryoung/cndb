@@ -71,7 +71,7 @@ def get_issue(
 ) -> dict[str, Any]:
     """问题详情（含评论与状态事件）."""
     services.issues.require_member(db, workspace_id, current_user)
-    issue = services.issues.get_issue_or_404(db, workspace_id, issue_id)
+    issue = services.issues.get_issue_or_404(db, workspace_id, issue_id, current_user)
     return services.issues.get_issue_detail(db, issue)
 
 
@@ -85,14 +85,14 @@ def add_comment(
 ) -> dict[str, Any]:
     """添加评论."""
     services.issues.require_member(db, workspace_id, current_user)
-    issue = services.issues.get_issue_or_404(db, workspace_id, issue_id)
+    issue = services.issues.get_issue_or_404(db, workspace_id, issue_id, current_user)
     return services.issues.add_comment(db, issue, current_user, payload.content)
 
 
 def _transition(workspace_id: int, issue_id: int, current_user: User, db: Session, *, action: str) -> dict[str, Any]:
     """关闭/重开公共流程：权限校验（owner/editor 或创建者）+ 状态流转."""
     role = services.issues.require_member(db, workspace_id, current_user)
-    issue = services.issues.get_issue_or_404(db, workspace_id, issue_id)
+    issue = services.issues.get_issue_or_404(db, workspace_id, issue_id, current_user)
     if not services.issues.can_manage_issue(issue, current_user, role):
         raise PermissionDeniedError("仅 owner/editor 或创建者可操作")
     if action == "close":

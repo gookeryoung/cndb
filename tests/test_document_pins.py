@@ -65,8 +65,12 @@ def outsider(db) -> User:
     return _make_user(db, "pin_outsider")
 
 
-def _create_doc(client: TestClient, ws: Workspace, auth: dict[str, str], title: str) -> dict:
-    r = client.post(DOCS.format(ws=ws.id), json={"title": title, "content": f"# {title}\n"}, headers=auth)
+def _create_doc(client: TestClient, ws: Workspace, auth: dict[str, str], title: str, *, status: str = "draft") -> dict:
+    r = client.post(
+        DOCS.format(ws=ws.id),
+        json={"title": title, "content": f"# {title}\n", "status": status},
+        headers=auth,
+    )
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -150,8 +154,9 @@ class TestOrdering:
 
     def test_pin_is_per_user(self, client, ws, owner, viewer):
         auth_owner = _login(client, owner.username)
-        doc_a = _create_doc(client, ws, auth_owner, "主人甲的文档")
-        _create_doc(client, ws, auth_owner, "主人乙的文档")
+        # 已发布：用例比较"置顶是个人偏好"，需要两位成员看到同一批文档
+        doc_a = _create_doc(client, ws, auth_owner, "主人甲的文档", status="published")
+        _create_doc(client, ws, auth_owner, "主人乙的文档", status="published")
         client.post(f"{DOCS.format(ws=ws.id)}/{doc_a['id']}/pin", headers=auth_owner)
 
         # viewer 未置顶任何文档：树顺序按 sort_order，pinned 全为 False

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, NotFoundError, PermissionDeniedError
 from cndb.plugins.documents import services
-from cndb.plugins.documents.models import DocumentShare
+from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, DocumentShare
 from cndb.plugins.documents.schemas import ShareAccessRequest
 
 public_router = APIRouter(prefix="/api/v1/documents/share", tags=["documents"])
@@ -54,6 +54,9 @@ def access_shared_document(
         raise PermissionDeniedError("此分享需要密码访问", code="share_password_required")
 
     doc = services.content.get_document_or_404(db, _doc_workspace(db, share), share.document_id)
+    # 未发布（草稿/归档）文档的分享链接一律视为失效：避免"分享后取消发布"仍能访问未发布内容
+    if doc.status != DOC_STATUS_PUBLISHED:
+        raise NotFoundError("分享链接已失效")
     db.execute(update(DocumentShare).where(DocumentShare.id == share.id).values(view_count=share.view_count + 1))
     db.commit()
 
@@ -82,6 +85,9 @@ def access_shared_with_password(
         raise PermissionDeniedError("密码错误")
 
     doc = services.content.get_document_or_404(db, _doc_workspace(db, share), share.document_id)
+    # 与无密码入口一致：未发布内容不得通过分享链接访问
+    if doc.status != DOC_STATUS_PUBLISHED:
+        raise NotFoundError("分享链接已失效")
     db.execute(update(DocumentShare).where(DocumentShare.id == share.id).values(view_count=share.view_count + 1))
     db.commit()
 

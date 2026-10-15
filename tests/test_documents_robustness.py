@@ -260,7 +260,9 @@ class TestPurge:
         assert r.status_code == 409
 
     def test_purge_cleans_rows_versions_share_tags_and_fts(self, client, workspace_id, doc_api, auth_headers, db):
-        doc = _create_doc(client, doc_api, auth_headers, title="彻底删除", content="purge-token-unique")
+        doc = _create_doc(
+            client, doc_api, auth_headers, title="彻底删除", content="purge-token-unique", status="published"
+        )
         share = client.post(f"{doc_api}/{doc['id']}/share", json={"permission": "viewer"}, headers=auth_headers).json()
         tag = client.post(TAG_API.format(wid=workspace_id), json={"name": "purge-tag"}, headers=auth_headers).json()
         client.post(f"{doc_api}/{doc['id']}/tags", json={"tag_ids": [tag["id"]]}, headers=auth_headers)

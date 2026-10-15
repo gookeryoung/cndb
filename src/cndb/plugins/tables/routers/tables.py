@@ -234,7 +234,16 @@ def _list_tables_uncached(
     query = db.query(DataTable).filter(DataTable.workspace_id == workspace_id)
     if not include_trashed:
         query = query.filter(DataTable.trashed == False)  # noqa: E712
-    tables = query.order_by(DataTable.order, DataTable.id).all()
+    candidates = query.order_by(DataTable.order, DataTable.id).all()
+
+    # 权限：列表只展示当前用户**能读**的表。
+    # 此前列表返回工作区全部表（仅按 trashed 过滤），而详情/记录接口按 TableAction.READ 拦截，
+    # 二者不一致 → 无权限用户仍能看到表的名称/描述/成员数（可见性泄露）。
+    # 判定成本：列表通常几十张表，逐张 check_action 会各查一次 TableMember/TablePermission；
+    # 这里用一次性批量查询把"成员角色"与"权限记录"预取出来，避免 N+1。
+    from cndb.plugins.tables.services.core.access import TableAction, check_action
+
+    tables = [t for t in candidates if check_action(db, t, current_user, TableAction.READ)]
 
     # 批量预查 owner / member_count / my_member，避免 N+1
     table_ids = [t.id for t in tables]

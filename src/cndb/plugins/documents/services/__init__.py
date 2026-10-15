@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-from . import change_requests, content, edit_lock, export, issues, paragraph_lock, parse, search, storage
+from . import (
+    change_requests,
+    content,
+    edit_lock,
+    export,
+    issues,
+    paragraph_lock,
+    parse,
+    search,
+    storage,
+    visibility,
+)
 
 __all__ = [
     "change_requests",
@@ -14,4 +25,5 @@ __all__ = [
     "parse",
     "search",
     "storage",
+    "visibility",
 ]

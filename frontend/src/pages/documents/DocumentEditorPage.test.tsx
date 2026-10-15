@@ -897,3 +897,31 @@ describe('段落锁提示与跳转', () => {
     expect(before.split('\n\n').filter((part) => part.trim()).length).toBe(2)
   })
 })
+
+describe('草稿发布控件', () => {
+  it('草稿显示「发布」按钮，点击后 PATCH status=published 并提示', async () => {
+    const bodies: unknown[] = []
+    server.use(
+      http.patch('/api/v1/workspaces/:wid/documents/:docId', async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json({ ...mockDocuments[0], status: 'published' })
+      }),
+    )
+
+    const successSpy = vi.spyOn(message, 'success').mockImplementation((() => {}) as never)
+
+    renderEditor()
+    const toggle = await screen.findByTestId('doc-publish-toggle')
+    // 草稿态：按钮文案为「发布」，标签提示仅自己可见
+    expect(toggle).toHaveTextContent(/发\s*布/)
+    expect(await screen.findByText('草稿（仅自己可见）')).toBeInTheDocument()
+
+    fireEvent.click(toggle)
+
+    await waitFor(() => expect(bodies.length).toBe(1))
+    expect(bodies[0]).toMatchObject({ status: 'published' })
+    await waitFor(() =>
+      expect(successSpy).toHaveBeenCalledWith('已发布：工作区成员现在可以看到这份文档'),
+    )
+  })
+})
