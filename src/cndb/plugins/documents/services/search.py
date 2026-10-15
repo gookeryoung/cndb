@@ -1,11 +1,19 @@
-"""FTS5 全文检索服务.
+"""FTS5 全文检索服务 + 中文子串兜底.
 
-基于 SQLite FTS5 虚拟表（documents_fts），支持：
-- 关键词搜索（unicode61 分词）
-- 前缀匹配（``abc*``）
-- 精确短语（``"exact phrase"``）
-- 布尔组合（AND / OR / NOT）
-- 内置 highlight() 高亮与 rank 相关性排序
+检索策略（两段式）：
+1. **FTS5 MATCH**：分词 / 短语 / 前缀 / 布尔查询，bm25 排序 + highlight（西文与整词精确命中）；
+2. **子串兜底（LIKE）**：仅当 FTS 命中为 0 时启用。原因：FTS5 的 ``unicode61`` 把连续中文当作
+   单个 token（``销售管理总览``），用户输入「销售」「管理」这类常用词片段时命中为 0——中文
+   用户期望的是**子串语义**。兜底通道对 title / summary / content 做大小写不敏感的子串匹配，
+   多词之间取 AND，标题命中优先排序。
+
+兜底只在 FTS 无结果时运行，因此**只增不减**（不会改变既有命中），代价是关键词特别生僻时多一次
+扫描；当前数据规模（单库 MB 级、文档数十至数千）下可忽略，若将来文档量级上万，可改为
+FTS5 ``trigram`` 影子表或分词列（见设计记录）。
+
+
+底层仍是 SQLite FTS5 虚拟表（documents_fts），支持关键词（unicode61 分词）、前缀（``abc*``）、
+精确短语（``"exact phrase"``）、布尔组合（AND / OR / NOT），以及 highlight() 高亮 + rank 排序。
 """
 
 from __future__ import annotations
@@ -206,6 +214,8 @@ def search_documents(
         params.update({f"t{i}": tid for i, tid in enumerate(tag_ids)})
 
     where_clause = " AND ".join(where_parts)
+    # 兜底通道只关心筛选条件（workspace / status / tag）：剔除 MATCH 与重复的 is_deleted
+    extra_filters = where_parts[2:]
 
     try:
         total = int(
@@ -242,6 +252,19 @@ def search_documents(
             raise BadRequestError("搜索表达式无效，请调整关键词或改用引号包裹短语") from exc
         raise
 
+    if total == 0:
+        # FTS 无命中：中文关键词片段（unicode61 整词分词）会走到这里，改用子串检索
+        # 注意沿用同一批筛选参数（wid / status / t0..tN），只去掉 MATCH 用的 :q
+        fallback_params = {key: value for key, value in params.items() if key != "q"}
+        return _search_by_substring(
+            db,
+            query,
+            extra_filters,
+            fallback_params,
+            limit=limit,
+            offset=offset,
+        )
+
     items = []
     for row in rows:
         content_hit = row.content_hit or ""
@@ -257,6 +280,130 @@ def search_documents(
                 "status": row.status,
                 "updated_at": row.updated_at,
                 "rank": float(row.rank) if row.rank is not None else 0.0,
+            }
+        )
+    return items, total
+
+
+_LIKE_ESCAPE = "\\"
+
+
+def _split_substring_terms(query: str) -> list[str]:
+    """把查询拆成子串检索用的关键词列表.
+
+    去掉 FTS5 语法字符与布尔运算符（它们在 LIKE 语境下无意义），按空白切分；
+    结果为空时由调用方视为「无有效关键词」。
+    """
+    cleaned = query
+    for ch in _FTS5_SYNTAX_CHARS:
+        cleaned = cleaned.replace(ch, " ")
+    terms = [part.strip().strip('"') for part in cleaned.split()]
+    return [term for term in terms if term and term.upper() not in _FTS5_BOOLEAN]
+
+
+def _escape_like(term: str) -> str:
+    """转义 LIKE 通配符，避免用户输入的 % / _ 变成通配（配合 ESCAPE '\\' 使用）."""
+    return (
+        term.replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2).replace("%", _LIKE_ESCAPE + "%").replace("_", _LIKE_ESCAPE + "_")
+    )
+
+
+def _mark(term: str, text: str) -> str:
+    """在文本中把关键词片段包成 <mark>（大小写不敏感，逐词进行）."""
+    if not text:
+        return ""
+    result = text
+    lowered = result.lower()
+    for token in _split_substring_terms(term):
+        needle = token.lower()
+        start = 0
+        while needle:
+            idx = lowered.find(needle, start)
+            if idx == -1:
+                break
+            result = result[:idx] + "<mark>" + result[idx : idx + len(token)] + "</mark>" + result[idx + len(token) :]
+            lowered = result.lower()
+            start = idx + len("<mark>") + len(token) + len("</mark>")
+    return result
+
+
+def _search_by_substring(
+    db: Session,
+    query: str,
+    where_extra: list[str],
+    params: dict[str, Any],
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """子串兜底检索：title / summary / content 做 LIKE 匹配，多词 AND.
+
+    排序：标题命中 > 摘要命中 > 其余，再按更新时间倒序（FTS 的 bm25 无法直接用于 LIKE 通道）。
+    """
+    terms = _split_substring_terms(query)
+    if not terms:
+        return [], 0
+
+    term_clauses: list[str] = []
+    for i, term in enumerate(terms):
+        key = f"s{i}"
+        params[key] = f"%{_escape_like(term)}%"
+        # 三个字段任一包含该词即算命中（ESCAPE 处理用户输入里的 % / _）
+        term_clauses.append(
+            f"(d.title LIKE :{key} ESCAPE '{_LIKE_ESCAPE}' "
+            f"OR f.summary LIKE :{key} ESCAPE '{_LIKE_ESCAPE}' "
+            f"OR f.content LIKE :{key} ESCAPE '{_LIKE_ESCAPE}')"
+        )
+
+    first_key = "s0"
+    title_hit_sql = f"CASE WHEN d.title LIKE :{first_key} ESCAPE '{_LIKE_ESCAPE}' THEN 1 ELSE 0 END"
+    summary_hit_sql = f"CASE WHEN f.summary LIKE :{first_key} ESCAPE '{_LIKE_ESCAPE}' THEN 1 ELSE 0 END"
+
+    where_clause = " AND ".join(["d.is_deleted = 0", *term_clauses, *where_extra])
+
+    total = int(
+        db.execute(
+            text(
+                f"SELECT count(*) FROM documents_fts f JOIN documents_document d ON f.rowid = d.id WHERE {where_clause}"
+            ),
+            params,
+        ).scalar_one()
+    )
+
+    rows = db.execute(
+        text(
+            f"""
+            SELECT d.id, d.title, d.workspace_id, d.status, d.updated_at,
+                   f.summary AS summary_raw, f.content AS content_raw,
+                   {title_hit_sql} AS title_hit_rank,
+                   {summary_hit_sql} AS summary_hit_rank
+            FROM documents_fts f
+            JOIN documents_document d ON f.rowid = d.id
+            WHERE {where_clause}
+            ORDER BY title_hit_rank DESC, summary_hit_rank DESC, d.updated_at DESC, d.id DESC
+            LIMIT :limit OFFSET :offset
+            """
+        ),
+        {**params, "limit": limit, "offset": offset},
+    ).all()
+
+    items = []
+    for row in rows:
+        content = row.content_raw or ""
+        summary = row.summary_raw or ""
+        idx = content.lower().find(terms[0].lower())
+        snippet = content[max(0, idx - 30) : idx + 90] if idx >= 0 else ""
+        items.append(
+            {
+                "id": row.id,
+                "title": row.title,
+                "title_hit": _mark(query, row.title),
+                "summary_hit": _mark(query, summary) if summary else _mark(query, snippet),
+                "workspace_id": row.workspace_id,
+                "status": row.status,
+                "updated_at": row.updated_at,
+                # 兜底通道无 bm25：用「标题命中 / 摘要命中」映射为负分值，保持「越小越靠前」的既有语义
+                "rank": float(-int(row.title_hit_rank) * 2 - int(row.summary_hit_rank)),
             }
         )
     return items, total
