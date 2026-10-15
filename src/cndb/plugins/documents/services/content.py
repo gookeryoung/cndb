@@ -617,6 +617,12 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
     - 一并清理版本 / 标签关联 / 分享 / 权限 / FTS 索引与外存内容目录。
     """
     doc = get_document_any_state_or_404(db, workspace_id, doc_id)
+    # 先判可见性再判角色：彻底删除不可逆，「看不见的草稿」不允许被销毁。
+    # 已发布文档在回收站中仍按文档策略对全员可见，故不受影响。
+    from cndb.plugins.documents.services import visibility
+
+    if not visibility.can_view_document(db, doc, user):
+        raise NotFoundError("文档不存在")
     require_editor(db, workspace_id, user)
     if not doc.is_deleted:
         raise ConflictError("文档尚未删除，请先移入回收站再彻底删除", code="doc_not_deleted")
