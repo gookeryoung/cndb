@@ -16,6 +16,7 @@ import { importApi } from '@/api'
 import type { ImportTaskInfo, Field } from '@/api'
 import HelpTip from '@/components/HelpTip'
 import { ACCEPTED_EXT, type Phase } from './importPreview'
+import { scrollActiveTabIntoViewNextFrame } from '@/layouts/tabScroll'
 import MiniStat from './MiniStat'
 import ImportDiffTable from './ImportDiffTable'
 import ImportQualityPanel from './ImportQualityPanel'
@@ -49,6 +50,16 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
 
     // V3: 数据质量面板 —— 用户勾选的清洗建议列表（完整 suggestion 对象）
     const [selectedCleaningActions, setSelectedCleaningActions] = useState<any[]>([])
+    /** 预览页签条容器：窄屏 4 个页签（含计数）超出 390px，切换/报告更新后把激活页签滚入可视区 */
+    const previewTabsRef = useRef<HTMLDivElement>(null)
+    const scrollPreviewTabs = useCallback(() => {
+        const wrap = previewTabsRef.current?.querySelector('.ant-tabs-nav-wrap') as HTMLElement | null
+        scrollActiveTabIntoViewNextFrame(wrap)
+    }, [])
+    const previewReportForTabs = (task as (ImportTaskInfo & { validation_report?: any }) | null)?.validation_report
+    useEffect(() => {
+        scrollPreviewTabs()
+    }, [previewReportForTabs, matchKeys, scrollPreviewTabs])
 
     const pollTimer = useRef<number | null>(null)
 
@@ -496,10 +507,13 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     />
                 )}
 
-                {/* 主预览 Tab：new/update 分 Tab；update Tab 常驻，空态区分"未选参考列 / 无匹配行" */}
+                {/* 主预览 Tab：new/update 分 Tab；update Tab 常驻，空态区分"未选参考列 / 无匹配行"。
+                    窄屏 4 个页签（含计数）超出 390px，切换 / 报告更新后把激活页签滚入可视区 */}
+                <div ref={previewTabsRef}>
                 <Tabs
                     size="small"
                     defaultActiveKey={hasUpsert ? 'new' : 'errors'}
+                    onChange={scrollPreviewTabs}
                     items={[
                         {
                             key: 'new',
@@ -558,6 +572,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         }] : []),
                     ]}
                 />
+                </div>
 
                 {/* 操作按钮 */}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>

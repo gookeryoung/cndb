@@ -5,12 +5,23 @@
  * 切换角色 PATCH / Popconfirm 移除 DELETE / 分区添加成员 POST 与后端错误提示。
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import PermissionEditor from './PermissionEditor'
 import { renderProviders } from '@/test/render-providers'
 import { server, mockUser } from '@/test/msw'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，窄屏用例在其内部切换
+let responsiveState: ResponsiveState = {
+  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+  width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+  return { ...actual, useResponsive: () => responsiveState }
+})
 import { makeField } from '@/test/fixtures'
 import type { Field, TableMember, TableOwnerInfo, WorkspaceMember, WorkspaceRole } from '@/api'
 
@@ -228,5 +239,42 @@ describe('PermissionEditor 表权限编辑器', () => {
 
     // axios 拦截器把 detail 提取为 Error.message，经 antd message 展示
     expect(await screen.findByText('用户不存在')).toBeInTheDocument()
+  })
+})
+
+describe('PermissionEditor 窄屏适配', () => {
+  afterEach(() => {
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+  })
+
+  it('窄屏成员表保留列宽并横向滚动，隐藏字段单列排布', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    setupHandlers()
+    renderEditor()
+
+    await screen.findByText('bob')
+    const content = document.querySelector('.ant-table-content') as HTMLElement
+    const table = content.querySelector('table') as HTMLElement
+    expect(content.style.overflowX).toBe('auto')
+    expect(table.style.width).toBe('max-content')
+
+    // 隐藏字段网格：窄屏单列（三列在 390px 下每列约 110px 会把字段名截断）
+    const grid = document.querySelector('.ant-checkbox-group > div') as HTMLElement
+    expect(grid.style.gridTemplateColumns).toBe('1fr')
+  })
+
+  it('桌面端隐藏字段网格保持三列', async () => {
+    setupHandlers()
+    renderEditor()
+
+    await screen.findByText('bob')
+    const grid = document.querySelector('.ant-checkbox-group > div') as HTMLElement
+    expect(grid.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))')
   })
 })
