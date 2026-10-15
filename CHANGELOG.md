@@ -107,6 +107,8 @@
 - README 修正项目结构树、CLI 命令、e2e 包管理器与特性清单等失实内容
 
 ### 修复
+- 新增**数据表 + 问题清单多用户端到端验收**（`frontend/tests/e2e/critical/tables-permissions.spec.ts`）：表级读取门槛从默认提到 owner 后，普通成员的表列表不再含该表、表详情 403、**挂在表上的问题清单与其单条详情也一并 403**（避免「表看不到但问题清单还能翻到」的跨入口泄露）；管理员列表返回 `read_role=owner` / `is_restricted=true` 且 UI 显示「受限」标签；门槛恢复后同事重新可见
+- E2E 多账号能力收敛到共享 helper（`tests/e2e/helpers/api.ts`：`sessionAs` / `apiCall` / `sharedWorkspaceId`），两份多用户 spec 复用同一实现，避免各写一份易漏改
 - 文档**主列表**在状态标签后补充可见性提示：未发布且未授权显示「仅自己可见」（悬浮说明「未发布：仅你与工作区所有者可见」），已授权协作者显示「共享 N 人」（悬浮说明授权人数）；已发布文档不显示（成员均可见）。至此目录树、主列表、编辑器三处口径一致
 - **E2E 收为真正门禁**：去掉 `continue-on-error: true` —— 此前 E2E 失败不会阻断 pipeline，曾掩盖一次真实回归（新增用例助手丢失导致四个 shard 全挂而 run 仍显示成功）。稳定性依据：连续 6 次 CI 中 5 次四 shard 全绿、唯一失败为真实缺陷；抖动由 retries=2 兜底
 - Playwright worker 数固定为 4：实测 12 worker 有 11 个用例 30s 超时失败、8 worker 有 8 个失败、4 worker 时 35 passed / 0 failed 且总耗时更短（25.3s vs 51s）—— 超时代价高于并行收益
