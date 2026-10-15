@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any, cast
 
+from cndb.plugins.documents.services.export.images import IMAGE_LINE_RE, ImageResolver
 from cndb.plugins.documents.services.export.markdown_style import (
     _MD_BOLD_RE,
     _MD_HEADING_RE,
@@ -17,7 +18,9 @@ from cndb.plugins.documents.services.export.theme import DEFAULT_THEME
 logger = logging.getLogger(__name__)
 
 
-def _render_docx(markdown_text: str, title: str = "") -> bytes:
+def _render_docx(markdown_text: str, title: str = "", images: ImageResolver | None = None) -> bytes:
+    # images：站内图片解析器；``![alt](file:<key>)`` 独占一行时嵌入真实图片，
+    # 解析失败写占位文字，避免导出物静默丢图
     """把文档 Markdown 正文渲染为 .docx 字节流.
 
     支持标题 / 加粗 / 行内代码 / GFM 表格 / ``---PAGE---`` 换页，
@@ -127,6 +130,21 @@ def _render_docx(markdown_text: str, title: str = "") -> bytes:
             doc.add_page_break()
             continue
 
+        # 站内图片：独占一行时嵌入真实图片
+        img_match = IMAGE_LINE_RE.match(line)
+        if img_match:
+            alt = img_match.group("alt") or "图片"
+            resolved = images(img_match.group("key")) if images is not None else None
+            if resolved is None:
+                doc.add_paragraph(f"[图片缺失：{alt}]")
+            else:
+                data, _name = resolved
+                try:
+                    doc.add_picture(io.BytesIO(data), width=_docx_image_width(doc))
+                except Exception:
+                    doc.add_paragraph(f"[图片无法嵌入：{alt}]")
+            continue
+
         # 普通段落，处理粗体和代码
         p = doc.add_paragraph()
         _add_rich_runs(p, line, preset.body_font, preset.code_font)
@@ -139,6 +157,20 @@ def _render_docx(markdown_text: str, title: str = "") -> bytes:
     doc.save(buf)
     buf.seek(0)
     return buf.getvalue()
+
+
+def _docx_image_width(doc: Any) -> Any:
+    """图片最大宽度 = 正文可用宽度（页宽减左右页边距）；取不到时回退 14cm."""
+    from docx.shared import Cm
+
+    try:
+        section = doc.sections[0]
+        usable = section.page_width - section.left_margin - section.right_margin
+        if usable and usable > 0:
+            return usable
+    except (IndexError, AttributeError):  # pragma: no cover - 极端文档结构
+        pass
+    return Cm(14)
 
 
 def _add_rich_runs(paragraph: Any, text: str, body_font: str = "Calibri", code_font: str = "Courier New") -> None:
@@ -165,4 +197,4 @@ def _add_rich_runs(paragraph: Any, text: str, body_font: str = "Calibri", code_f
                 run.font.name = body_font
 
 
-__all__ = ["_add_rich_runs", "_render_docx"]
+__all__ = ["_add_rich_runs", "_docx_image_width", "_render_docx"]

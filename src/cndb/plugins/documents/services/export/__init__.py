@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from cndb.plugins.documents.services.export.docx import _render_docx
+from cndb.plugins.documents.services.export.images import ImageResolver, make_image_resolver
 from cndb.plugins.documents.services.export.pdf import _render_pdf
 
 FORMAT_MARKDOWN = "md"
@@ -25,9 +26,10 @@ _FORMAT_ALIASES: dict[str, str] = {
 }
 
 
-def _render_markdown(markdown_text: str, title: str = "") -> bytes:
+def _render_markdown(markdown_text: str, title: str = "", images: ImageResolver | None = None) -> bytes:
+    # 单文件 markdown 无法内嵌二进制：保留 ``file:<file_key>`` 应用内引用不改写
     """Markdown 导出：正文原样落盘为 UTF-8 字节流."""
-    _ = title
+    _ = (title, images)
     return markdown_text.encode("utf-8")
 
 
@@ -58,7 +60,7 @@ def normalize_format(fmt: str) -> str | None:
     return _FORMAT_ALIASES.get((fmt or "").strip().lower())
 
 
-def render_export(markdown_text: str, fmt: str, title: str = "") -> bytes:
+def render_export(markdown_text: str, fmt: str, title: str = "", images: ImageResolver | None = None) -> bytes:
     """按格式渲染文档正文.
 
     Args:
@@ -69,7 +71,7 @@ def render_export(markdown_text: str, fmt: str, title: str = "") -> bytes:
     Raises:
         KeyError: 传入未注册的格式名。
     """
-    return _EXPORTERS[fmt](markdown_text, title)
+    return _EXPORTERS[fmt](markdown_text, title, images)
 
 
 __all__ = [
@@ -79,6 +81,8 @@ __all__ = [
     "FORMAT_MARKDOWN",
     "FORMAT_PDF",
     "SUPPORTED_FORMATS",
+    "ImageResolver",
+    "make_image_resolver",
     "normalize_format",
     "render_export",
 ]

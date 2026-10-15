@@ -40,6 +40,7 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
+from cndb.core.config import settings
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
 from cndb.plugins.accounts.models import User
@@ -410,7 +411,10 @@ def export_document(
 
     version = services.content.latest_version(db, doc.id)
     content = services.content.load_content(version, doc) if version else ""
-    file_bytes = services.export.render_export(content, normalized, doc.title)
+    # 站内图片（``![alt](file:<key>)``）在 Word / PDF 导出中嵌入真实文件；
+    # 解析器限定在该工作区上传目录内，非法 / 缺失的引用降级为占位文字
+    images = services.export.make_image_resolver(settings.UPLOAD_DIR, workspace_id)
+    file_bytes = services.export.render_export(content, normalized, doc.title, images=images)
 
     filename = _export_filename(doc.title, services.export.FORMAT_EXTENSIONS[normalized])
     quoted = quote(filename)

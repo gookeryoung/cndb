@@ -53,6 +53,7 @@
 - 前端 `Field.is_primary` 与 6 个伪系统字段类型（`auto_id` / `formula` / `created_time` / `updated_time` / `created_by` / `updated_by`）的**全部恒假分支**（19 文件 +51/-100）。经确认无存量库使用后删除：后端 registry 的 19 种类型里没有这 6 个，`FieldResponse` 无 `is_primary`，且 `normalize_field_type` 对未知类型原样放行 —— 这些分支只可能来自存量库。一并删除只为其服务的 `includePrimary` schema 选项。**保留** `long_text`/`decimal`/`multi_select`（后端真实别名）与 `json`（真实类型），以及 `created_by`/`updated_by` 作为记录元数据的用法
 
 ### 变更
+- 文档导出 Word / PDF 时**嵌入站内图片**：`![alt](file:<file_key>)` 会被替换为真实图片（按正文可用宽度等比缩放），引用缺失或图片格式不支持时降级为「[图片缺失/无法嵌入：alt]」占位，不再静默丢图；Markdown 导出保留应用内引用（单文件无法内嵌二进制）
 
 - 拆分超大文件（全部保持既有导入路径与导出面，行为不变）：
   - `cli/seed.py` 2703 行 → `cli/seed/` 包 11 个模块（sqlite/paths/datasets/fields/documents/views/templates/samples/permission_demo/runner），`__init__` re-export 历史符号
