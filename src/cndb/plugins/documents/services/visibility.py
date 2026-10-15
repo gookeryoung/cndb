@@ -140,7 +140,8 @@ def get_visible_document_or_404(
     """取文档并校验可见性；不可见按 404 处理（不泄露存在性）.
 
     Args:
-        include_deleted: 回收站场景传 True（仍受可见性约束）。
+        include_deleted: **仅取已删除的文档**（回收站场景传 True，仍受可见性约束）；
+            普通读取留 False。注意它是等值过滤而非"包含已删除"，两者含义不同。
     """
     conditions = [Document.id == doc_id, Document.workspace_id == workspace_id]
     conditions.append(Document.is_deleted.is_(include_deleted))

@@ -82,7 +82,7 @@ def get_change_request(
 ) -> dict[str, Any]:
     """修改申请详情：含内容 DIFF（基准版本 → 待审正文）与待审正文全文."""
     services.change_requests.require_member(db, workspace_id, current_user)
-    cr = services.change_requests.get_request_or_404(db, workspace_id, request_id)
+    cr = services.change_requests.get_request_or_404(db, workspace_id, request_id, current_user)
     return services.change_requests.serialize_request(db, cr, with_diff=True, with_content=True)
 
 
