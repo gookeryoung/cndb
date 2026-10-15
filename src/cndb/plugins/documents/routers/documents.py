@@ -43,6 +43,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.config import settings
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
+from cndb.core.realtime import notify_document_lock
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
 from cndb.plugins.documents.models import Document, DocumentVersion, Tag
@@ -777,6 +778,13 @@ def acquire_lock(
     info = services.edit_lock.edit_lock_registry.acquire(
         doc_id, current_user.id, getattr(current_user, "username", f"user{current_user.id}")
     )
+    notify_document_lock(
+        workspace_id,
+        doc_id,
+        locked=True,
+        user_id=current_user.id,
+        username=getattr(current_user, "username", None),
+    )
     return {"locked": True, "elapsed_seconds": info.elapsed_seconds}
 
 
@@ -790,6 +798,7 @@ def release_lock(
     """释放编辑锁（保存/关闭编辑器时调用）。"""
     services.content.get_document_or_404(db, workspace_id, doc_id)
     services.edit_lock.edit_lock_registry.release(doc_id, current_user.id)
+    notify_document_lock(workspace_id, doc_id, locked=False, user_id=current_user.id)
     return {"locked": False}
 
 

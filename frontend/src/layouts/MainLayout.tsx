@@ -13,6 +13,8 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
+import { useRealtime } from '@/realtime/useRealtime'
+import { RealtimeStatusTag } from '@/realtime/RealtimeIndicators'
 import { documentsApi } from '@/api/documents'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -70,6 +72,8 @@ export default function MainLayout() {
   const { isMobile } = useResponsive()
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
+  // 实时协作：进入工作区即建立 WebSocket（在线状态 + 事件推送 → 缓存失效）
+  const { status: realtimeStatus } = useRealtime(wid)
   const settingsOpen = useUiStore(s => s.settingsOpen)
   const settingsTab = useUiStore(s => s.settingsTab)
   const openSettings = useUiStore(s => s.openSettings)
@@ -346,6 +350,8 @@ export default function MainLayout() {
         </Dropdown>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+          {/* 实时协作连接状态 —— 桌面端展示，移动端省略以省空间 */}
+          {!isMobile && <RealtimeStatusTag status={realtimeStatus} />}
           {/* 帮助中心入口 —— 所有登录用户可见 */}
           <Tooltip title="帮助中心与新手引导">
             <Button

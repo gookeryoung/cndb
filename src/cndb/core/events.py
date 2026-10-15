@@ -146,6 +146,10 @@ def record_event(
         db.add(event)
         if commit:
             db.commit()
+        # 同步推送给该工作区的在线成员（best-effort，绝不因广播失败影响业务）
+        from cndb.core.realtime import notify_event
+
+        notify_event(event)
         return event
     except Exception:
         logger.warning("写入统一事件失败 action=%s", action, exc_info=True)

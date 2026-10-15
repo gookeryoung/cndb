@@ -48,6 +48,9 @@ import { buildTableSkeleton, insertLink, wrapSelection } from '@/components/Docu
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi, isChangeRequestDispatch } from '@/api/documents'
 import { fileApi, tableApi, workspaceApi } from '@/api'
+import { useAuthStore } from '@/store'
+import { useDocumentEditing, useDocumentViewers, useRealtime } from '@/realtime/useRealtime'
+import { DocumentViewers } from '@/realtime/RealtimeIndicators'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
 import type {
@@ -117,6 +120,18 @@ export default function DocumentEditorPage() {
     enabled: Number.isFinite(workspaceId),
   })
   const myRole = (wsDetail?.current_user_role ?? null) as WorkspaceRole | null
+  // 实时协作：上报"我在看/编辑哪份文档"，并展示同一文档的在线成员
+  const currentUser = useAuthStore((s) => s.user)
+  const { updatePresence } = useRealtime(wid)
+  const viewers = useDocumentViewers(Number.isFinite(id) ? id : null)
+  const remoteEditing = useDocumentEditing(Number.isFinite(id) ? id : null)
+  // 实时在线状态：进入文档页上报"查看中"，切到编辑页签上报"编辑中"，离开清空
+  const presenceMode: 'viewing' | 'editing' = !isMobile && mobilePane === 'preview' ? 'viewing' : 'editing'
+  useEffect(() => {
+    if (!Number.isFinite(id)) return
+    updatePresence(id, presenceMode)
+    return () => updatePresence(null, null)
+  }, [id, presenceMode, updatePresence])
 
   // 该文档的修改申请（与抽屉共享缓存）：工具栏徽标显示待审核条数
   const { data: crList } = useQuery({
@@ -788,6 +803,18 @@ export default function DocumentEditorPage() {
       )}
 
       {/* 分屏编辑/预览 —— 窄屏改为「编辑 / 预览」页签切换，桌面保持左右分屏 */}
+      {/* 实时在线成员：同一文档有其他人在看/编辑时展示（编辑者在前） */}
+      {viewers.length > 0 && (
+        <div style={{ margin: '8px 24px 0' }} data-testid="doc-presence-bar">
+          <DocumentViewers members={viewers} currentUserId={currentUser?.id} />
+          {remoteEditing && remoteEditing.user_id !== currentUser?.id && (
+            <span style={{ marginLeft: 8, color: '#d46b08', fontSize: 12 }}>
+              {remoteEditing.username ?? '他人'} 已获取编辑锁，你的保存可能产生版本冲突
+            </span>
+          )}
+        </div>
+      )}
+
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {isMobile ? (
           <>

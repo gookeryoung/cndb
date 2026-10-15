@@ -134,6 +134,7 @@ def _run_create_all_and_stamp(cfg: alembic.config.Config) -> None:
     适用于首次启动、或 upgrade 因缺少 alembic_version 表失败的场景。
     create_all 只建新表，不影响已存在的表。
     """
+    import cndb.core.events  # noqa: F401  （core_event 随 create_all 建表）
     from cndb.core.database import engine
 
     logger.warning("alembic upgrade head 失败，退化到 create_all + stamp head 兜底")
