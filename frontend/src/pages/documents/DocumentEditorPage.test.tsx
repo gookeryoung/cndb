@@ -705,4 +705,99 @@ describe('DocumentEditorPage 插入图片', () => {
         expect(ta.value).toBe(before)
         expect(screen.queryByText('未保存')).toBeNull()
     })
+
+describe('DocumentEditorPage 粘贴图片与状态栏', () => {
+    /** 构造带图片文件的剪贴板事件（jsdom 无 ClipboardEvent 构造器，手工拼 payload） */
+    function pasteImage(ta: HTMLTextAreaElement, files: File[], plain = '') {
+        const items = files.map(f => ({
+            kind: 'file',
+            type: f.type,
+            getAsFile: () => f,
+        }))
+        // jsdom 的 ClipboardEvent.clipboardData 为只读，手工构造事件后挂载 payload
+        const event = new Event('paste', { bubbles: true, cancelable: true })
+        Object.defineProperty(event, 'clipboardData', {
+            value: {
+                items,
+                getData: () => plain,
+                types: files.length > 0 ? ['Files'] : ['text/plain'],
+            },
+        })
+        fireEvent(ta, event)
+    }
+
+    it('粘贴图片：直接上传并插入站内引用', async () => {
+        const hits: string[] = []
+        server.use(
+            http.post('/api/v1/workspaces/10/files', ({ request }) => {
+                hits.push(request.url)
+                return HttpResponse.json(
+                    { file_key: 'paste-1.png', filename: 'pasted.png', size: 4, mime_type: 'image/png' },
+                    { status: 201 },
+                )
+            }),
+        )
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        ta.setSelectionRange(ta.value.length, ta.value.length)
+
+        const file = new File([new Uint8Array([137, 80, 78, 71])], 'pasted.png', { type: 'image/png' })
+        pasteImage(ta, [file])
+
+        await waitFor(() => expect(hits).toHaveLength(1))
+        await waitFor(() => expect(ta.value).toContain('![pasted.png](file:paste-1.png)'))
+    })
+
+    it('粘贴纯文本：不上传、不拦截默认行为', async () => {
+        let hits = 0
+        server.use(
+            http.post('/api/v1/workspaces/10/files', () => {
+                hits += 1
+                return HttpResponse.json({ file_key: 'x.png', filename: 'x.png' }, { status: 201 })
+            }),
+        )
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+
+        pasteImage(ta, [], '普通文本')
+
+        await new Promise(r => setTimeout(r, 200))
+        expect(hits).toBe(0)
+    })
+
+    it('一次粘贴多张图片：按顺序上传并插入多条引用', async () => {
+        const keys = ['a1.png', 'b2.png']
+        let seq = 0
+        server.use(
+            http.post('/api/v1/workspaces/10/files', () => {
+                const key = keys[Math.min(seq, keys.length - 1)]
+                seq += 1
+                return HttpResponse.json({ file_key: key, filename: key, size: 4, mime_type: 'image/png' }, { status: 201 })
+            }),
+        )
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        ta.setSelectionRange(ta.value.length, ta.value.length)
+
+        const f1 = new File([new Uint8Array([1])], 'a.png', { type: 'image/png' })
+        const f2 = new File([new Uint8Array([2])], 'b.png', { type: 'image/png' })
+        pasteImage(ta, [f1, f2])
+
+        await waitFor(() => expect(ta.value).toContain('![a.png](file:a1.png)'))
+        await waitFor(() => expect(ta.value).toContain('![b.png](file:b2.png)'))
+        // 两条引用都在（函数式插入不会互相覆盖）
+        expect(ta.value.indexOf('![a.png]')).toBeLessThan(ta.value.indexOf('![b.png]'))
+    })
+
+    it('状态栏实时展示字数 / 行数', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const stats = await screen.findByTestId('doc-stats')
+        // 初始正文 '# 需求说明\n\n正文段落。\n'
+        expect(stats.textContent).toMatch(/\d+ 字 · \d+ 行/)
+
+        fireEvent.change(ta, { target: { value: '第一行\n第二行' } })
+        await waitFor(() => expect(screen.getByTestId('doc-stats')).toHaveTextContent('7 字 · 2 行'))
+    })
+})
 })
