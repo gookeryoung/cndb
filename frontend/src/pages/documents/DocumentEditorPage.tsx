@@ -38,6 +38,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import FindReplaceBar from '@/components/Document/FindReplaceBar'
 import { ancestorChain } from './DocumentTree'
+import { pushRecentDoc } from './recentDocs'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import MarkdownToolbar, { type MarkdownAction } from '@/components/Document/MarkdownToolbar'
 import { findMatches, nextMatchIndex, replaceAllMatches, replaceMatch } from '@/components/Document/documentSearch'
@@ -299,6 +300,12 @@ export default function DocumentEditorPage() {
       })),
     ]
   }, [treeQuery.data, id, navigate, wid])
+
+  // 记录「最近打开」：文档加载完成后写入本地历史（个人浏览偏好，按工作区分键）
+  useEffect(() => {
+    if (!doc || doc.is_folder) return
+    pushRecentDoc(workspaceId, { id: doc.id, title: doc.title })
+  }, [doc, workspaceId])
 
   /** 正文统计（字数 / 行数 / 预计阅读时长） */
   const stats = useMemo(() => documentStats(content), [content])

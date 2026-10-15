@@ -2951,3 +2951,12 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   border-radius: 8px;
   background: color-mix(in srgb, var(--cn-bg-container) 92%, var(--cn-brand-color) 8%);
 }
+
+/* ─────────────── 文档「最近打开」条 ─────────────── */
+.cn-doc-recent {
+  margin-bottom: 12px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--cn-bg-subtle);
+  overflow-x: auto;
+}

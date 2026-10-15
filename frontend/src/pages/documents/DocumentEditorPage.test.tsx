@@ -800,4 +800,18 @@ describe('DocumentEditorPage 粘贴图片与状态栏', () => {
         await waitFor(() => expect(screen.getByTestId('doc-stats')).toHaveTextContent('7 字 · 2 行'))
     })
 })
+
+describe('DocumentEditorPage 最近打开记录', () => {
+    it('打开文档后写入本地最近打开历史', async () => {
+        window.localStorage.removeItem('cndb_recent_docs_v1:10')
+        renderEditor()
+        await screen.findByPlaceholderText('输入 Markdown 内容…')
+
+        await waitFor(() => {
+            const raw = window.localStorage.getItem('cndb_recent_docs_v1:10')
+            expect(raw).toBeTruthy()
+            expect(JSON.parse(raw as string)[0]).toMatchObject({ id: 2, title: '需求说明' })
+        })
+    })
+})
 })
