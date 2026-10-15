@@ -53,10 +53,57 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """JWT 登录令牌响应."""
+    """登录 / 刷新令牌响应.
+
+    ``refresh_token`` 为**不透明随机串**（服务端只存哈希，可吊销）；access token 为无状态 JWT，
+    因此 ``refresh_token`` 是会话延续与注销能力的载体。
+    """
 
     access_token: str = Field(description="JWT 访问令牌")
     token_type: str = Field(default="bearer", description="令牌类型")
+    refresh_token: str | None = Field(default=None, description="刷新令牌（不透明随机串）")
+    expires_in: int | None = Field(default=None, description="访问令牌有效期（秒）")
+
+
+class RefreshRequest(BaseModel):
+    """刷新令牌请求体."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    refresh_token: str = Field(min_length=8, max_length=512, description="刷新令牌")
+
+
+class LogoutRequest(BaseModel):
+    """登出请求体.
+
+    - 传 ``refresh_token``：吊销该会话（access token 过期后也能登出）；
+    - ``all=true``：吊销当前用户**全部**会话（需要携带有效 access token 认证）。
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    refresh_token: str | None = Field(default=None, max_length=512, description="要吊销的刷新令牌")
+    all: bool = Field(default=False, description="是否吊销全部会话")
+
+
+class PasswordChangeRequest(BaseModel):
+    """修改自己的密码（需校验当前密码）."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    current_password: str = Field(min_length=1, max_length=128, description="当前密码")
+    new_password: str = Field(min_length=6, max_length=128, description="新密码（至少 6 位）")
+
+
+class SessionOut(BaseModel):
+    """会话（刷新令牌）公开信息."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: object = Field(description="创建时间")
+    expires_at: object = Field(description="过期时间")
+    revoked_reason: str | None = Field(default=None, description="吊销原因（有效会话为 null）")
 
 
 class AuthModeResponse(BaseModel):

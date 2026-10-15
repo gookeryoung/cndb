@@ -153,6 +153,13 @@ class Settings(BaseSettings):
         "http://localhost:8000",
     ]
 
+    # 会话 / 授权生命周期：
+    # - JWT_REFRESH_EXPIRE_DAYS：刷新令牌有效期（天）
+    # - LOGIN_MAX_FAILURES / LOGIN_WINDOW_SECONDS：登录失败限流（进程内滑窗，单机足够）
+    JWT_REFRESH_EXPIRE_DAYS: int = 30
+    LOGIN_MAX_FAILURES: int = 5
+    LOGIN_WINDOW_SECONDS: int = 300
+
     # 观测（core/observability.py）：
     # - ACCESS_LOG_ENABLED：是否记录每请求访问日志（慢请求无论开关都会记录）
     # - SLOW_REQUEST_MS：超过该耗时的请求按 WARNING 记录并标注 slow=true

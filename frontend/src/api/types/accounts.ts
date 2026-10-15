@@ -94,6 +94,20 @@ export interface UserListQuery {
 }
 
 export interface LoginRequest { login: string; password: string }
+/** 登录 / 刷新令牌响应 —— refresh_token 为不透明随机串（服务端只存哈希，可吊销）. */
+export interface TokenResponse {
+  access_token: string
+  token_type: string
+  refresh_token?: string | null
+  expires_in?: number | null
+}
+/** 会话（刷新令牌）公开信息 —— 对应后端 SessionOut. */
+export interface SessionInfo {
+  id: number
+  created_at: string
+  expires_at: string
+  revoked_reason?: string | null
+}
 /** 当前用户自助更新个人资料请求体 —— 仅提交的字段会被更新，邮箱传空串表示清空. */
 export interface ProfileUpdateRequest { nickname?: string; email?: string }
 /** 公开注册请求体 —— 已收窄为仅普通用户，不接受 role 参数. */

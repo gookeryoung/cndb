@@ -7,7 +7,9 @@ bcrypt / python-jose 已在 pyproject.toml 主依赖中；运行时探测是为�
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -74,7 +76,12 @@ def verify_password(plain: str, hashed: str) -> bool:
 # ── JWT 令牌 ──────────────────────────────────────────────
 
 
-def create_access_token(subject: str | int, extra: dict[str, Any] | None = None) -> str:
+def create_access_token(
+    subject: str | int,
+    extra: dict[str, Any] | None = None,
+    *,
+    token_version: int = 0,
+) -> str:
     """签发 JWT 访问令牌.
 
     Args:
@@ -92,6 +99,9 @@ def create_access_token(subject: str | int, extra: dict[str, Any] | None = None)
         "sub": str(subject),
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)).timestamp()),
+        # typ 区分 access/refresh 语义；tv 为用户令牌代次（改密/强制下线即失效）
+        "typ": "access",
+        "tv": int(token_version),
     }
     if extra:
         payload.update(extra)
@@ -113,9 +123,24 @@ def decode_access_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
 
 
+def create_refresh_token() -> str:
+    """生成不透明刷新令牌（随机串，非 JWT）.
+
+    刷新令牌不需要自包含：服务端存哈希即可校验并吊销，随机串也避免载荷被解读。
+    """
+    return secrets.token_urlsafe(32)
+
+
+def hash_token(token: str) -> str:
+    """令牌哈希（SHA-256 hex）—— 库中只存哈希，泄库不等于可直接使用."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 __all__ = [
     "create_access_token",
+    "create_refresh_token",
     "decode_access_token",
     "hash_password",
+    "hash_token",
     "verify_password",
 ]

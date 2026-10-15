@@ -142,7 +142,12 @@ async def _cndb_error_handler(request: Request, exc: CndbError) -> Response:
         exc.detail,
         exc.context,
     )
-    return JSONResponse(status_code=exc.status_code, content=exc.to_payload())
+    headers: dict[str, str] = {}
+    # 限流响应带 Retry-After，客户端可据此退避重试
+    retry_after = getattr(exc, "retry_after", None)
+    if retry_after is not None:
+        headers["Retry-After"] = str(int(retry_after))
+    return JSONResponse(status_code=exc.status_code, content=exc.to_payload(), headers=headers or None)
 
 
 @app.exception_handler(Exception)

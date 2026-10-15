@@ -7,7 +7,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authApi } from '@/api'
-import { clearToken, getToken, setToken as persistToken } from '@/api/client'
+import {
+  clearToken,
+  getRefreshToken,
+  getToken,
+  onTokenRefreshed,
+  setRefreshToken,
+  setToken as persistToken,
+} from '@/api/client'
 import type { LoginRequest, RegisterRequest, UserResponse } from '@/api'
 
 interface AuthState {
@@ -53,6 +60,7 @@ export const useAuthStore = create<AuthState>()(
       login: async (payload) => {
         const res = await authApi.login(payload)
         persistToken(res.access_token)
+        if (res.refresh_token) setRefreshToken(res.refresh_token)
         const me = await authApi.me()
         set({ token: res.access_token, user: me, expired: false })
       },
@@ -62,11 +70,17 @@ export const useAuthStore = create<AuthState>()(
         // 注册成功后自动登录
         const res = await authApi.login({ login: payload.username, password: payload.password })
         persistToken(res.access_token)
+        if (res.refresh_token) setRefreshToken(res.refresh_token)
         set({ token: res.access_token, user: u, expired: false })
         return u
       },
 
       logout: () => {
+        // 服务端吊销刷新令牌（尽力而为：离线/已过期时本地登出仍然生效）
+        const refreshToken = getRefreshToken()
+        if (refreshToken) {
+          void authApi.logout(refreshToken).catch(() => { /* 忽略：本地登出为准 */ })
+        }
         clearToken()
         set({ token: null, user: null, expired: false })
       },
@@ -88,3 +102,8 @@ export const useAuthStore = create<AuthState>()(
     },
   ),
 )
+
+// 访问令牌被 axios 自动刷新后，同步到 store（persist 与请求层保持一致）
+onTokenRefreshed((token) => {
+  useAuthStore.setState({ token })
+})

@@ -7,10 +7,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, ForeignKey, String
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cndb.models.base import Base, TimestampMixin
@@ -64,6 +65,9 @@ class User(TimestampMixin, Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 令牌代次：改密 / 管理员强制下线时 +1，使已签发的 access token 立即失效
+    # （JWT 本身无状态，靠 tv claim 与当前值比对实现吊销）
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # 三员角色字段
     role: Mapped[str] = mapped_column(String(32), nullable=False, default=_default_role, index=True)
     preferences: Mapped[dict[str, Any]] = mapped_column(
@@ -114,6 +118,33 @@ class User(TimestampMixin, Base):
         from cndb.core.security import verify_password
 
         return verify_password(plain, self.hashed_password)
+
+
+class RefreshToken(TimestampMixin, Base):
+    """刷新令牌（会话）记录 —— 服务端可吊销.
+
+    设计要点：
+    - **只存哈希**：库中保存 token 的 SHA-256，泄库不等于可直接使用；
+    - **一次性轮换**：每次 /refresh 作废旧 token 并写入 ``replaced_by``，形成链；
+      若已被轮换的 token 再次被使用，视为泄露 → 吊销该用户全部会话（见 sessions 服务）；
+    - 撤销 ``revoked_at`` 非空即失效；``expires_at`` 到期同样失效；
+    - 单机 SQLite 下即可承担会话表职责，无需 Redis。
+    """
+
+    __tablename__ = "accounts_refreshtoken"
+    __table_args__ = {"extend_existing": True}
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("accounts_user.id", ondelete="CASCADE"), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 被哪一枚新令牌取代（轮换链）；null 表示尚未轮换
+    replaced_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"RefreshToken(id={self.id}, user_id={self.user_id}, revoked={self.revoked_at is not None})"
 
 
 class UserAuditLog(TimestampMixin, Base):

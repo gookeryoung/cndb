@@ -1,7 +1,14 @@
 /** api/client 单元测试 —— token 存取、拦截器注入、detail 归一化、401 事件派发 */
 import { AxiosError, type AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import api, { clearToken, getToken, onAuthExpired, setToken } from './client'
+import api, {
+  clearToken,
+  getToken,
+  getRefreshToken,
+  onAuthExpired,
+  setRefreshToken,
+  setToken,
+} from './client'
 
 const TOKEN_KEY = 'cndb_access_token'
 
@@ -215,5 +222,114 @@ describe('响应拦截器 401 事件派发', () => {
     } finally {
       off()
     }
+  })
+})
+
+// ── 自动刷新：401 → 刷新一次 → 重放原请求 ──────────────
+
+/** 安装「首次 401、刷新后成功」的 adapter.
+ *
+ * 状态机：非刷新端点第一次调用返回 401；/auth/refresh 返回新令牌；
+ * 携带新 Authorization 的重放请求返回 200。
+ */
+function installRefreshAdapter(opts: { refreshStatus?: number; newAccess?: string } = {}) {
+  const calls: string[] = []
+  const refreshStatus = opts.refreshStatus ?? 200
+  const newAccess = opts.newAccess ?? 'fresh-access'
+  api.defaults.adapter = async (config) => {
+    const url = String(config.url ?? '')
+    calls.push(url)
+    const ok = (data: unknown) =>
+      ({ data, status: 200, statusText: 'OK', headers: {}, config }) as never
+    const fail = (status: number, data: unknown) => {
+      const response = { data, status, statusText: 'Error', headers: {}, config }
+      throw new AxiosError('failed', AxiosError.ERR_BAD_REQUEST, config, null, response as never)
+    }
+
+    if (url.includes('/v1/accounts/auth/refresh')) {
+      if (refreshStatus !== 200) return fail(refreshStatus, { detail: '刷新令牌无效' })
+      return ok({ access_token: newAccess, refresh_token: 'rotated-refresh' })
+    }
+    const auth = headerAt(config.headers, 'Authorization')
+    if (auth === `Bearer ${newAccess}`) return ok({ ok: true })
+    return fail(401, { detail: '未认证' })
+  }
+  return calls
+}
+
+describe('401 自动刷新令牌', () => {
+  beforeEach(() => {
+    clearToken()
+    setRefreshToken('rt-1')
+  })
+  afterEach(() => {
+    delete api.defaults.adapter
+    clearToken()
+  })
+
+  it('刷新成功后重放原请求，且不派发过期事件', async () => {
+    const calls = installRefreshAdapter()
+    const expired = vi.fn()
+    const off = onAuthExpired(expired)
+    try {
+      const res = await api.get('/v1/workspaces')
+      expect(res.data).toEqual({ ok: true })
+      expect(calls).toEqual(['/v1/workspaces', '/v1/accounts/auth/refresh', '/v1/workspaces'])
+      // 新令牌已落盘，刷新令牌被轮换
+      expect(getToken()).toBe('fresh-access')
+      expect(getRefreshToken()).toBe('rotated-refresh')
+      expect(expired).not.toHaveBeenCalled()
+    } finally {
+      off()
+    }
+  })
+
+  it('并发 401 只触发一次刷新', async () => {
+    const calls = installRefreshAdapter()
+    await Promise.all([api.get('/v1/a'), api.get('/v1/b'), api.get('/v1/c')])
+    expect(calls.filter((u) => u.includes('/auth/refresh'))).toHaveLength(1)
+    expect(calls).toHaveLength(7) // 3 次原始 + 1 次刷新 + 3 次重放
+  })
+
+  it('刷新失败则清除令牌并派发过期事件', async () => {
+    vi.useFakeTimers()
+    installRefreshAdapter({ refreshStatus: 401 })
+    const expired = vi.fn()
+    const off = onAuthExpired(expired)
+    try {
+      await expect(api.get('/v1/workspaces')).rejects.toBeTruthy()
+      expect(getToken()).toBeNull()
+      expect(getRefreshToken()).toBeNull()
+      vi.runAllTimers()
+      expect(expired).toHaveBeenCalledTimes(1)
+    } finally {
+      off()
+      vi.useRealTimers()
+    }
+  })
+
+  it('无刷新令牌时不尝试刷新（沿用原有登出行为）', async () => {
+    clearToken()
+    setToken('stale-access')
+    const calls = installRefreshAdapter()
+    vi.useFakeTimers()
+    const expired = vi.fn()
+    const off = onAuthExpired(expired)
+    try {
+      await expect(api.get('/v1/workspaces')).rejects.toBeTruthy()
+      expect(calls).toEqual(['/v1/workspaces'])
+      // 用异步版本刷新微任务队列，确保防抖定时器已就位
+      await vi.runAllTimersAsync()
+      expect(expired).toHaveBeenCalledTimes(1)
+    } finally {
+      off()
+      vi.useRealTimers()
+    }
+  })
+
+  it('刷新端点自身 401 不递归刷新', async () => {
+    const calls = installRefreshAdapter({ refreshStatus: 401 })
+    await expect(api.post('/v1/accounts/auth/refresh', { refresh_token: 'rt-1' })).rejects.toBeTruthy()
+    expect(calls).toEqual(['/v1/accounts/auth/refresh'])
   })
 })
