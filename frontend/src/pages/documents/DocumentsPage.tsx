@@ -69,11 +69,16 @@ export default function DocumentsPage() {
   const parentParam = searchParams.get('parent')
   const parentId = parentParam !== null && parentParam !== '' ? Number(parentParam) : null
   const orderParam = searchParams.get('order') as DocumentOrder | null
+  // 标签筛选同样写入 URL（?tag=），与 parent / order 一致：可分享、可刷新
+  const tagParam = searchParams.get('tag')
+  const tagFilter = tagParam !== null && tagParam !== '' && !Number.isNaN(Number(tagParam))
+    ? Number(tagParam)
+    : undefined
   const orderBy: DocumentOrder = DOCUMENT_ORDER_OPTIONS.some(o => o.value === orderParam)
     ? (orderParam as DocumentOrder)
     : 'sort'
 
-  const updateParams = useCallback((patch: { parent?: number | null; order?: DocumentOrder }) => {
+  const updateParams = useCallback((patch: { parent?: number | null; order?: DocumentOrder; tag?: number | null }) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
       if (patch.parent !== undefined) {
@@ -83,6 +88,10 @@ export default function DocumentsPage() {
       if (patch.order !== undefined) {
         if (patch.order === 'sort') next.delete('order')
         else next.set('order', patch.order)
+      }
+      if (patch.tag !== undefined) {
+        if (patch.tag === null) next.delete('tag')
+        else next.set('tag', String(patch.tag))
       }
       return next
     }, { replace: true })
@@ -134,16 +143,23 @@ export default function DocumentsPage() {
   )
 
   const docsQuery = useQuery({
-    queryKey: ['documents', workspaceId, 'list', parentId, statusFilter, orderBy],
+    queryKey: ['documents', workspaceId, 'list', parentId, statusFilter, orderBy, tagFilter],
     queryFn: () =>
       documentsApi.list(workspaceId, {
         parent_id: parentId ?? undefined,
         status: statusFilter,
+        tag_id: tagFilter,
         order: orderBy,
         limit: 200,
       }),
     // 子级列表走 list 端点；顶层散文档由全量树派生（list 不传 parent_id 会返回全部层级）
     enabled: Number.isFinite(workspaceId) && parentId !== null,
+  })
+
+  const tagsQuery = useQuery({
+    queryKey: ['documents', workspaceId, 'tags'],
+    queryFn: () => documentsApi.tags(workspaceId),
+    enabled: Number.isFinite(workspaceId),
   })
 
   const invalidate = useCallback(() => {
@@ -285,11 +301,12 @@ export default function DocumentsPage() {
           d.parent_id == null &&
           !d.is_folder &&
           (!titleKeyword.trim() || d.title.toLowerCase().includes(titleKeyword.trim().toLowerCase())) &&
-          (!statusFilter || d.status === statusFilter),
+          (!statusFilter || d.status === statusFilter) &&
+          (tagFilter === undefined || d.tag_ids.includes(tagFilter)),
       )
     // 置顶优先 + 所选口径（与后端 order 参数同口径，保证顶层派生列表也一致）
     return sortDocuments(raw, orderBy)
-  }, [filtered, parentId, treeQuery.data, titleKeyword, statusFilter, orderBy])
+  }, [filtered, parentId, treeQuery.data, titleKeyword, statusFilter, tagFilter, orderBy])
 
   /** 当前层级**可见**的可选项（根层为系列卡片 + 散文档，子层为列表项）：全选与已选统计只用它 */
   const selectableIds = useMemo(
@@ -398,6 +415,15 @@ export default function DocumentsPage() {
           />
           <Select
             allowClear
+            placeholder="标签"
+            style={{ width: 140 }}
+            value={tagFilter}
+            data-testid="doc-tag-filter"
+            onChange={(v?: number) => updateParams({ tag: v ?? null })}
+            options={(tagsQuery.data ?? []).map(tag => ({ value: tag.id, label: tag.name }))}
+          />
+          <Select
+            allowClear
             placeholder="状态"
             style={{ width: 110 }}
             value={statusFilter}
@@ -487,8 +513,9 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      {/* 顶层：系列卡片网格（顶层文件夹即系列） */}
-      {parentId === null && seriesList.length > 0 && (
+      {/* 顶层：系列卡片网格（顶层文件夹即系列）；按标签筛选时隐藏——文件夹本身没有标签，
+          与后端 list 端点按 tag_id 过滤后不含文件夹的口径保持一致 */}
+      {parentId === null && tagFilter === undefined && seriesList.length > 0 && (
         <Row gutter={isMobile ? [12, 12] : [16, 16]} data-testid="doc-series-grid" style={{ marginBottom: 8 }}>
           {seriesList.map(s => (
             <Col xs={24} sm={12} md={8} key={s.folder.id}>
