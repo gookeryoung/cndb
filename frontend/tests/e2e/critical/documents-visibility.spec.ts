@@ -13,12 +13,42 @@
  * - 不依赖其它用例执行顺序：自建草稿 + 运行时解析两个账号共同可见的工作区。
  */
 
-import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type Locator, type Page } from "@playwright/test";
 
 const API = "/api/v1";
 
 // 该用例含双账号多步 UI 断言，比普通用例重：单独放宽超时
 test.describe.configure({ timeout: 90_000 });
+
+/** 打开文档页并等待目录树数据返回后再断言（避免与树请求竞态导致偶发失败） */
+async function expectVisibilityMarker(
+  page: Page,
+  workspaceId: number,
+  documentId: number,
+  label: string,
+  { reload = false }: { reload?: boolean } = {},
+): Promise<void> {
+  const treeResponse = page.waitForResponse(
+    r => r.url().includes(`/workspaces/${workspaceId}/documents/tree`) && r.status() === 200,
+    { timeout: 20_000 },
+  );
+  if (reload) {
+    await page.reload();
+  } else {
+    await page.goto(`/w/${workspaceId}/documents`);
+  }
+  await treeResponse;
+
+  const marker: Locator = page.getByTestId(`doc-visibility-${documentId}`);
+  // 树的根节点直接渲染；若节点在折叠的文件夹内则先展开一次再断言
+  if (!(await marker.isVisible().catch(() => false))) {
+    const node = page.getByTestId(`doc-tree-doc-${documentId}`);
+    if (await node.count()) {
+      await node.click();
+    }
+  }
+  await expect(marker).toHaveAttribute("aria-label", label, { timeout: 20_000 });
+}
 
 interface Session {
   page: Page;
@@ -110,12 +140,7 @@ test.describe("文档可见性与授权（多用户）", () => {
       expect(denied.status, "同事不应能读到他人草稿").toBe(404);
 
       // 4) 创建者 UI：树上显示「仅自己可见」标记
-      await admin.page.goto(`/w/${wid}/documents`);
-      await expect(admin.page.getByTestId(`doc-visibility-${doc.id}`)).toHaveAttribute(
-        "aria-label",
-        "仅自己可见",
-        { timeout: 20_000 },
-      );
+      await expectVisibilityMarker(admin.page, wid as number, doc.id, "仅自己可见");
 
       // 5) 授权给同事（viewer：只读）
       const grant = await call(
@@ -138,12 +163,7 @@ test.describe("文档可见性与授权（多用户）", () => {
       expect(detail.status).toBe(200);
 
       // 7) 创建者 UI：标记变为「已共享给协作者」
-      await admin.page.reload();
-      await expect(admin.page.getByTestId(`doc-visibility-${doc.id}`)).toHaveAttribute(
-        "aria-label",
-        "已共享给协作者",
-        { timeout: 20_000 },
-      );
+      await expectVisibilityMarker(admin.page, wid as number, doc.id, "已共享给协作者", { reload: true });
 
       // 8) 撤销后立即收回
       const revoke = await call(
