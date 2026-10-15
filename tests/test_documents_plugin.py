@@ -151,7 +151,7 @@ class TestDocumentCRUD:
     def test_unauthorized_access(self, client, doc_api, auth_headers):
         """未登录（无认证头）访问被拒 —— 项目语义：匿名用户 → 403 非成员。"""
         r = client.get(doc_api)
-        assert r.status_code == 403
+        assert r.status_code == 401
 
 
 # ── 内容更新 + 乐观锁 ──
@@ -703,7 +703,7 @@ class TestDocumentExport:
         doc = _create_doc(client, doc_api, auth_headers)
         # 匿名（无认证头）非工作区成员 → 403
         r = client.get(f"{doc_api}/{doc['id']}/export", params={"format": "md"})
-        assert r.status_code == 403
+        assert r.status_code == 401
 
     def test_export_uses_latest_version(self, client, doc_api, auth_headers):
         doc = _create_doc(client, doc_api, auth_headers, content="v1 内容\n")

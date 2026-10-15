@@ -101,6 +101,7 @@
 - README 修正项目结构树、CLI 命令、e2e 包管理器与特性清单等失实内容
 
 ### 修复
+- 修复**未认证请求返回 500**：`get_current_user` 在 AUTH_ENABLED=True 时，「缺少认证头 / 认证头格式非法 / 令牌为空」原先返回 None，端点解引用 `current_user.id` 便抛 `AttributeError` → 现在统一返回 **401**（带 `WWW-Authenticate: Bearer`），前端既有的 401 登出逻辑可正常生效；`AUTH_ENABLED=False` 仍返回 None，匿名可用路由继续使用 `get_optional_user`
 - 修复**中文全文检索命中为 0**：FTS5 的 `unicode61` 分词把连续中文当作单个 token，搜索「销售」「管理」「文档」这类常用词片段此前无结果 → 现在 FTS 无命中时自动追加**子串兜底通道**（title/summary/content 的大小写不敏感 LIKE，多词 AND、标题命中优先），只增不减、不改变既有命中；`_` 等 LIKE 通配符按字面转义
 
 - 源字段类型变更后其他表引用它的 lookup 字段未同步类型：改为同步刷新 `config.source_field_type` 并在新类型占用物理列时清除 `broken`（源字段被删除或改为 link/lookup 时才失效），字段管理列表展示「引用 · 源类型」

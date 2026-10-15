@@ -93,25 +93,35 @@ class TestDepsAuthBranches:
         finally:
             settings.AUTH_ENABLED = old
 
-    def test_bearer_missing_returns_none(self, db):
+    def test_bearer_missing_raises_401(self, db):
+        """认证头格式非法（非 Bearer）→ 401（原先返回 None，端点会 500）."""
         from unittest.mock import MagicMock
+
+        import pytest
+        from fastapi import HTTPException
 
         from cndb.api.deps import get_current_user
 
         req = MagicMock()
         req.headers = {"Authorization": "Basic xxx"}
-        result = get_current_user(req, db)
-        assert result is None
+        with pytest.raises(HTTPException) as exc:
+            get_current_user(req, db)
+        assert exc.value.status_code == 401
 
-    def test_bearer_empty_token_returns_none(self, db):
+    def test_bearer_empty_token_raises_401(self, db):
+        """空令牌 → 401（原先返回 None，端点会 500）."""
         from unittest.mock import MagicMock
+
+        import pytest
+        from fastapi import HTTPException
 
         from cndb.api.deps import get_current_user
 
         req = MagicMock()
         req.headers = {"Authorization": "Bearer "}
-        result = get_current_user(req, db)
-        assert result is None
+        with pytest.raises(HTTPException) as exc:
+            get_current_user(req, db)
+        assert exc.value.status_code == 401
 
     def test_get_optional_user_handles_401(self, db):
         from unittest.mock import MagicMock
