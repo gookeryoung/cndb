@@ -41,6 +41,13 @@ export interface DocumentItem {
   version_count: number
   /** 当前用户的个人置顶（非文档属性，按用户返回） */
   pinned: boolean
+  /**
+   * 可见性提示（后端计算）：workspace = 已发布（成员均可见）；
+   * shared = 未发布但已授权协作者；private = 仅自己与工作区所有者
+   */
+  visibility?: 'workspace' | 'shared' | 'private'
+  /** 已授权协作者人数（visibility=shared 时有意义） */
+  collaborator_count?: number
 }
 
 export interface DocumentDetail extends DocumentItem {

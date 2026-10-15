@@ -323,3 +323,40 @@ class TestTableListVisibility:
             403,
             404,
         )
+
+
+class TestVisibilityHint:
+    """序列化里的 visibility / collaborator_count：供前端提示"这份文档还有谁看不到"."""
+
+    def test_draft_is_private_for_creator(self, client, ws, owner):
+        auth = _login(client, owner.username)
+        doc = _create_doc(client, ws, auth, title="私有草稿提示", status="draft")
+        item = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}", headers=auth).json()
+        assert item["visibility"] == "private"
+        assert item["collaborator_count"] == 0
+
+    def test_published_is_workspace_visible(self, client, ws, owner):
+        auth = _login(client, owner.username)
+        doc = _create_doc(client, ws, auth, title="已发布提示", status="published")
+        item = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}", headers=auth).json()
+        assert item["visibility"] == "workspace"
+
+    def test_draft_with_collaborator_becomes_shared(self, client, ws, owner, viewer):
+        auth = _login(client, owner.username)
+        doc = _create_doc(client, ws, auth, title="共享草稿提示", status="draft")
+        r = client.post(
+            f"{DOCS.format(ws=ws.id)}/{doc['id']}/permissions",
+            json={"user_id": viewer.id, "role": "viewer"},
+            headers=auth,
+        )
+        assert r.status_code == 201, r.text
+
+        item = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}", headers=auth).json()
+        assert item["visibility"] == "shared"
+        assert item["collaborator_count"] == 1
+
+        # 列表接口同样带上提示（批量序列化路径）
+        items = client.get(DOCS.format(ws=ws.id), headers=auth).json()["items"]
+        row = next(i for i in items if i["id"] == doc["id"])
+        assert row["visibility"] == "shared"
+        assert row["collaborator_count"] == 1
