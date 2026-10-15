@@ -7,7 +7,7 @@
 import { useMemo, useState, type Key } from 'react'
 import {
   Table, Button, Input, Select, Space, Tag, Modal, Form, Switch,
-  App as AntApp, Typography, Drawer, Alert, Popconfirm,
+  App as AntApp, Typography, Drawer, Alert, Popconfirm, Checkbox, Empty, Pagination, Spin,
 } from 'antd'
 import { EditOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -326,24 +326,81 @@ export default function UsersPage() {
         />
       )}
 
-      <Table<UserAdminRecord>
-        rowKey="id"
-        size="small"
-        loading={listQuery.isLoading}
-        dataSource={listQuery.data?.items ?? []}
-        columns={columns}
-        // 窄屏列宽不压缩（否则「昵称」「邮箱」会逐字换行/被裁切），改为表格横向滚动
-        scroll={{ x: 'max-content' }}
-        rowSelection={{ selectedRowKeys: selectedIds, onChange: setSelectedIds }}
-        pagination={{
-          current: page,
-          pageSize,
-          total: listQuery.data?.total ?? 0,
-          showSizeChanger: false,
-          showTotal: (t) => `共 ${t} 个用户`,
-          onChange: (p) => setPage(p),
-        }}
-      />
+      {isMobile ? (
+        /* 窄屏卡片列表：8 列表格需左右滑动才能看到角色/状态/操作，卡片一屏一实体、操作直接可见 */
+        <Spin spinning={listQuery.isLoading}>
+          {(listQuery.data?.items ?? []).length === 0 ? (
+            <Empty description="暂无用户" style={{ padding: 32 }} data-testid="users-mobile-empty" />
+          ) : (
+            <div className="cn-user-cards" data-testid="users-mobile-list">
+              {(listQuery.data?.items ?? []).map(u => (
+                <div key={u.id} className="cn-user-card" data-testid={`user-card-${u.id}`}>
+                  {/* 身份信息独占整行（窄屏不与标签争宽度，邮箱/昵称不再被截断） */}
+                  <div className="cn-user-card-main">
+                    <Checkbox
+                      checked={selectedIds.some(id => String(id) === String(u.id))}
+                      onChange={e => setSelectedIds(prev =>
+                        e.target.checked
+                          ? [...prev, u.id]
+                          : prev.filter(id => String(id) !== String(u.id)))}
+                      aria-label={`选择用户 ${u.username}`}
+                    />
+                    <div className="cn-user-card-identity">
+                      <div className="cn-user-card-name" title={u.username}>
+                        {u.username}
+                        {u.nickname && <span className="cn-user-card-nickname">（{u.nickname}）</span>}
+                      </div>
+                      <div className="cn-user-card-meta" title={u.email ?? undefined}>{u.email ?? '未填邮箱'}</div>
+                      {u.phone && <div className="cn-user-card-meta">{u.phone}</div>}
+                    </div>
+                    {u.is_active
+                      ? <Tag color="green" style={{ marginInlineEnd: 0 }}>启用</Tag>
+                      : <Tag color="default" style={{ marginInlineEnd: 0 }}>禁用</Tag>}
+                  </div>
+                  <div className="cn-user-card-actions">
+                    <Space size={4} wrap>
+                      <Tag color={roleMeta(u.role).color} style={{ marginInlineEnd: 0 }}>{roleMeta(u.role).label}</Tag>
+                      {u.is_superuser && <Tag color="purple" style={{ marginInlineEnd: 0 }}>超管</Tag>}
+                    </Space>
+                    <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                      <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEdit(u)}>编辑</Button>
+                      <Button size="small" type="link" onClick={() => setLogTarget(u)}>日志</Button>
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <Pagination
+            style={{ marginTop: 12, textAlign: 'center' }}
+            current={page}
+            pageSize={pageSize}
+            total={listQuery.data?.total ?? 0}
+            showSizeChanger={false}
+            showTotal={t => `共 ${t} 个用户`}
+            onChange={p => setPage(p)}
+          />
+        </Spin>
+      ) : (
+        <Table<UserAdminRecord>
+          rowKey="id"
+          size="small"
+          loading={listQuery.isLoading}
+          dataSource={listQuery.data?.items ?? []}
+          columns={columns}
+          // 窄屏列宽不压缩（否则「昵称」「邮箱」会逐字换行/被裁切），改为表格横向滚动
+          scroll={{ x: 'max-content' }}
+          rowSelection={{ selectedRowKeys: selectedIds, onChange: setSelectedIds }}
+          pagination={{
+            current: page,
+            pageSize,
+            total: listQuery.data?.total ?? 0,
+            showSizeChanger: false,
+            showTotal: (t) => `共 ${t} 个用户`,
+            onChange: (p) => setPage(p),
+          }}
+        />
+      )}
 
       {/* 编辑弹窗（保存前二次确认在 handleEditSubmit 内） */}
       <Modal
