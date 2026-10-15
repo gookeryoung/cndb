@@ -43,7 +43,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.config import settings
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
-from cndb.core.realtime import notify_document_lock
+from cndb.core.realtime import notify_document_lock, notify_paragraph_locks
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
 from cndb.plugins.documents.models import Document, DocumentVersion, Tag
@@ -54,6 +54,7 @@ from cndb.plugins.documents.schemas import (
     DocumentCreate,
     DocumentUpdate,
     LinkRepairRequest,
+    ParagraphLockRequest,
     RollbackRequest,
     TagIdsRequest,
 )
@@ -374,20 +375,109 @@ def update_document_content(
             "message": f"已提交修改申请 #{cr.id}，审核通过后生效",
         }
 
+    # 段落级并发编辑：客户端回传了 base_content 时做三方合并（不同段落可并发，同段落冲突）
+    content_to_save = payload.content
+    merged = False
+    if payload.base_content is not None and not doc_is_folder(db, workspace_id, doc_id):
+        latest_text = services.content.load_content(
+            services.content.latest_version(db, doc_id),
+            services.content.get_document_or_404(db, workspace_id, doc_id),
+        )
+        outcome = services.paragraph_lock.merge_incoming(payload.base_content, latest_text, payload.content)
+        if not outcome.merged:
+            holders = services.paragraph_lock.paragraph_lock_registry.conflicts_for_indices(
+                doc_id, outcome.conflicts, getattr(current_user, "id", 0)
+            )
+            detail = "、".join(
+                f"第 {services.paragraph_lock.key_to_index(lock.key)} 段（{lock.username} 正在编辑）"
+                for lock in holders
+            ) or "、".join(f"第 {i} 段" for i in sorted(outcome.conflicts))
+            raise ConflictError(
+                f"以下段落已被他人修改，请复制你的改动后刷新：{detail}",
+                code="paragraph_conflict",
+                context={"conflict_keys": outcome.conflict_keys},
+            )
+        content_to_save = outcome.text
+        merged = outcome.merged and bool(outcome.incoming_changes)
+
     doc = services.content.update_content(
         db,
         workspace_id,
         doc_id,
         current_user,
-        content=payload.content,
+        content=content_to_save,
         change_summary=payload.change_summary,
-        base_updated_at=payload.base_updated_at,
+        base_updated_at=(None if merged else payload.base_updated_at),
     )
     data = services.content.serialize_document(db, doc)
     v = services.content.latest_version(db, doc.id)
-    data["content"] = payload.content
+    data["content"] = content_to_save
     data["version_number"] = v.version_number if v else 0
+    if merged:
+        data["merged"] = True
     return data
+
+
+def doc_is_folder(db: Session, workspace_id: int, doc_id: int) -> bool:
+    """该文档是否文件夹（文件夹没有正文，不做合并）."""
+    return bool(services.content.get_document_or_404(db, workspace_id, doc_id).is_folder)
+
+
+@router.post("/{doc_id}/paragraph-locks")
+def acquire_paragraph_locks(
+    workspace_id: int,
+    doc_id: int,
+    payload: ParagraphLockRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """获取段落编辑锁（同段互斥；不同段可并发）.
+
+    被他人持有时返回 409（code=paragraph_locked，带持锁人信息）。
+    """
+    _require_member(db, workspace_id, current_user)
+    services.content.get_document_or_404(db, workspace_id, doc_id)
+    locks = services.paragraph_lock.paragraph_lock_registry.acquire_many(
+        doc_id, payload.keys, current_user.id, getattr(current_user, "username", f"user{current_user.id}")
+    )
+    all_locks = services.paragraph_lock.paragraph_lock_registry.locks_for_document(doc_id)
+    notify_paragraph_locks(workspace_id, doc_id, [lock.as_dict() for lock in all_locks])
+    return {"locks": [lock.as_dict() for lock in locks], "document_locks": [lock.as_dict() for lock in all_locks]}
+
+
+@router.get("/{doc_id}/paragraph-locks")
+def list_paragraph_locks(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """列出该文档当前的段落锁（谁在编辑第几段）."""
+    _require_member(db, workspace_id, current_user)
+    services.content.get_document_or_404(db, workspace_id, doc_id)
+    locks = services.paragraph_lock.paragraph_lock_registry.locks_for_document(doc_id)
+    return {"locks": [lock.as_dict() for lock in locks]}
+
+
+@router.delete("/{doc_id}/paragraph-locks")
+def release_paragraph_locks(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    payload: ParagraphLockRequest | None = None,
+) -> dict[str, Any]:
+    """释放段落锁：带 keys 释放指定段落，不带则释放自己在本文档的全部段落锁."""
+    _require_member(db, workspace_id, current_user)
+    services.content.get_document_or_404(db, workspace_id, doc_id)
+    registry = services.paragraph_lock.paragraph_lock_registry
+    if payload is not None and payload.keys:
+        released = registry.release_many(doc_id, payload.keys, current_user.id)
+    else:
+        released = registry.release_all_for_user(doc_id, current_user.id)
+    all_locks = registry.locks_for_document(doc_id)
+    notify_paragraph_locks(workspace_id, doc_id, [lock.as_dict() for lock in all_locks])
+    return {"released": released, "document_locks": [lock.as_dict() for lock in all_locks]}
 
 
 @router.get("/{doc_id}/export")

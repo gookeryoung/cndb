@@ -4,6 +4,7 @@
  */
 
 import { create } from 'zustand'
+import type { ParagraphLockItem } from '@/api/documents'
 import type { PresenceMember, RealtimeStatus } from './realtimeClient'
 
 interface RealtimeState {
@@ -12,9 +13,12 @@ interface RealtimeState {
   members: PresenceMember[]
   /** 正在编辑某文档的成员（doc.lock 事件驱动，按文档 id 索引） */
   editingDocument: Record<number, { user_id: number | null; username: string | null } | undefined>
+  /** 段落锁快照（para.lock 事件驱动，按文档 id 索引） */
+  paragraphLocks: Record<number, ParagraphLockItem[] | undefined>
   setStatus: (status: RealtimeStatus) => void
   setMembers: (members: PresenceMember[]) => void
   setDocumentEditing: (documentId: number, info: { user_id: number | null; username: string | null } | null) => void
+  setParagraphLocks: (documentId: number, locks: ParagraphLockItem[]) => void
   reset: () => void
 }
 
@@ -22,6 +26,7 @@ export const useRealtimeStore = create<RealtimeState>((set) => ({
   status: 'idle',
   members: [],
   editingDocument: {},
+  paragraphLocks: {},
 
   setStatus: (status) => set({ status }),
   setMembers: (members) => set({ members }),
@@ -32,7 +37,9 @@ export const useRealtimeStore = create<RealtimeState>((set) => ({
       else delete next[documentId]
       return { editingDocument: next }
     }),
-  reset: () => set({ status: 'idle', members: [], editingDocument: {} }),
+  setParagraphLocks: (documentId, locks) =>
+    set((state) => ({ paragraphLocks: { ...state.paragraphLocks, [documentId]: locks } })),
+  reset: () => set({ status: 'idle', members: [], editingDocument: {}, paragraphLocks: {} }),
 }))
 
 /** 某文档当前的查看/编辑者（编辑者在前） */

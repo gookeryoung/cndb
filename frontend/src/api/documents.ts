@@ -4,6 +4,15 @@ import api from './client'
 
 // ── 类型 ──
 
+/** 段落锁信息（后端 ParagraphLockInfo.as_dict） */
+export interface ParagraphLockItem {
+  document_id: number
+  key: string
+  user_id: number
+  username: string
+  elapsed_seconds: number
+}
+
 export interface TocItem {
   level: number
   text: string
@@ -226,6 +235,8 @@ export const documentsApi = {
       content: string
       change_summary?: string
       base_updated_at?: string | null
+      /** 开始编辑时的正文快照：服务端据此做段落级三方合并（不同段落可并发，同段落冲突） */
+      base_content?: string
       /** 无直编资格时作为申请的内容基准版本号 */
       base_version_number?: number | null
     },
@@ -340,6 +351,20 @@ export const documentsApi = {
     api.post<DocumentItem>(`${base(wid)}/${docId}/rollback`, { target_version: targetVersion }).then(r => r.data),
 
   // 编辑锁
+  /** 段落锁列表（谁在编辑第几段） */
+  listParagraphLocks: (wid: number | string, docId: number | string) =>
+    api.get<{ locks: ParagraphLockItem[] }>(`${base(wid)}/${docId}/paragraph-locks`).then(r => r.data.locks),
+  /** 获取段落锁（同段互斥；被他人持有时 409，前端提示具体持锁人） */
+  acquireParagraphLocks: (wid: number | string, docId: number | string, keys: string[]) =>
+    api.post<{ locks: ParagraphLockItem[]; document_locks: ParagraphLockItem[] }>(
+      `${base(wid)}/${docId}/paragraph-locks`, { keys },
+    ).then(r => r.data),
+  /** 释放段落锁（不传 keys 则释放自己在本文档的全部段落锁） */
+  releaseParagraphLocks: (wid: number | string, docId: number | string, keys?: string[]) =>
+    api.delete<{ released: number; document_locks: ParagraphLockItem[] }>(
+      `${base(wid)}/${docId}/paragraph-locks`,
+      keys ? { data: { keys } } : undefined,
+    ).then(r => r.data),
   acquireLock: (wid: number | string, docId: number | string) =>
     api.post(`${base(wid)}/${docId}/lock`).then(r => r.data),
   releaseLock: (wid: number | string, docId: number | string) =>

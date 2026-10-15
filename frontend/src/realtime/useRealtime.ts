@@ -36,7 +36,7 @@ export function useRealtime(workspaceId: string | number | undefined): UseRealti
     const client = new RealtimeClient()
     clientRef.current = client
 
-    const { setStatus, setMembers, setDocumentEditing } = useRealtimeStore.getState()
+    const { setStatus, setMembers, setDocumentEditing, setParagraphLocks } = useRealtimeStore.getState()
 
     const handleMessage = (message: RealtimeMessage) => {
       const payload = message.payload ?? {}
@@ -58,6 +58,14 @@ export function useRealtime(workspaceId: string | number | undefined): UseRealti
               ? { user_id: (payload.user_id as number | null) ?? null, username: (payload.username as string | null) ?? null }
               : null,
           )
+          break
+        }
+        case 'para.lock': {
+          const documentId = Number(payload.document_id)
+          const locks = payload.locks
+          if (Number.isFinite(documentId) && Array.isArray(locks)) {
+            setParagraphLocks(documentId, locks as never)
+          }
           break
         }
         case 'event.created': {
@@ -102,6 +110,11 @@ export function useRealtime(workspaceId: string | number | undefined): UseRealti
 export function useDocumentViewers(documentId: number | null | undefined): PresenceMember[] {
   const members = useRealtimeStore((s) => s.members)
   return useMemo(() => (documentId ? documentViewers(members, documentId) : []), [members, documentId])
+}
+
+/** 某文档的段落锁快照（来自 para.lock 事件） */
+export function useParagraphLockSnapshot(documentId: number | null | undefined) {
+  return useRealtimeStore((s) => (documentId ? s.paragraphLocks[documentId] : undefined))
 }
 
 /** 某文档当前是否被他人编辑（来自 doc.lock 事件） */

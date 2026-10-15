@@ -39,6 +39,7 @@ MSG_PRESENCE_LEAVE = "presence.leave"
 MSG_PRESENCE_UPDATE = "presence.update"
 MSG_EVENT_CREATED = "event.created"
 MSG_DOC_LOCK = "doc.lock"
+MSG_PARA_LOCK = "para.lock"
 MSG_PING = "ping"
 MSG_PONG = "pong"
 MSG_ERROR = "error"
@@ -260,6 +261,20 @@ def notify_event(event: Any) -> int:
         return 0
 
 
+def notify_paragraph_locks(
+    workspace_id: int | None,
+    document_id: int,
+    locks: list[dict[str, object]],
+) -> int:
+    """广播某文档的段落锁快照（谁在编辑第几段）."""
+    try:
+        message = make_message(MSG_PARA_LOCK, {"document_id": document_id, "locks": locks})
+        return realtime_hub.broadcast_workspace(workspace_id, message)
+    except Exception:
+        logger.debug("实时广播段落锁失败", exc_info=True)
+        return 0
+
+
 def notify_document_lock(
     workspace_id: int | None,
     document_id: int,
@@ -296,6 +311,7 @@ __all__ = [
     "MSG_DOC_LOCK",
     "MSG_ERROR",
     "MSG_EVENT_CREATED",
+    "MSG_PARA_LOCK",
     "MSG_PING",
     "MSG_PONG",
     "MSG_PRESENCE_JOIN",
@@ -308,6 +324,7 @@ __all__ = [
     "make_message",
     "notify_document_lock",
     "notify_event",
+    "notify_paragraph_locks",
     "now_iso",
     "realtime_hub",
     "workspace_room",
