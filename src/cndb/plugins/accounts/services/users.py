@@ -16,6 +16,7 @@ from sqlalchemy import func as sa_func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from cndb.core.events import TARGET_USER, record_event, summarize_user_action
 from cndb.plugins.accounts.models import User, UserAuditLog, UserRole
 from cndb.plugins.accounts.schemas.users import (
     BatchUserActionRequest,
@@ -86,6 +87,16 @@ def record_audit(
             )
         )
         db.commit()
+        # 同步进统一事件流（域内查询仍走 accounts_userauditlog）
+        record_event(
+            db,
+            f"user.{action}",
+            summary=summarize_user_action(action),
+            target_type=TARGET_USER,
+            target_id=target_user_id,
+            actor_id=actor_id,
+            detail=detail,
+        )
     except SQLAlchemyError:
         db.rollback()
         logger.warning("写入用户操作日志失败: action=%s actor=%s target=%s", action, actor_id, target_user_id)

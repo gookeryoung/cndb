@@ -77,4 +77,54 @@ export const adminApi = {
       { headers: { 'Content-Type': 'multipart/form-data' } },
     ).then(r => r.data)
   },
+
+  // ── 统一事件流（/api/v1/admin/events，超管或审计管理员可读） ──
+  /** 统一事件流分页查询 */
+  listEvents: (params: CoreEventQuery = {}) =>
+    api.get<CoreEventPage>('/v1/admin/events', { params }).then(r => r.data),
+  /** 出现过的动作与计数（供筛选下拉） */
+  listEventActions: () =>
+    api.get<{ items: CoreEventActionStat[] }>('/v1/admin/events/actions').then(r => r.data.items),
+}
+
+// ── 统一事件流（/api/v1/admin/events，超管或审计管理员可读） ──
+
+export interface CoreEventItem {
+  id: number
+  created_at: string
+  action: string
+  workspace_id: number | null
+  actor_id: number | null
+  actor_name: string | null
+  target_type: string
+  target_id: string | null
+  summary: string
+  detail: Record<string, unknown>
+  request_id: string | null
+}
+
+export interface CoreEventPage {
+  items: CoreEventItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface CoreEventActionStat {
+  action: string
+  count: number
+}
+
+export interface CoreEventQuery {
+  action?: string
+  actor_id?: number
+  target_type?: string
+  target_id?: string
+  workspace_id?: number
+  request_id?: string
+  keyword?: string
+  since?: string
+  until?: string
+  page?: number
+  page_size?: number
 }
