@@ -50,6 +50,14 @@ class FieldType:
     def validate_value(self, value: Any, _config: dict[str, Any]) -> Any:
         if value is None:
             return None
+        if isinstance(value, (list, dict)):
+            # 标量列不能绑定 list/dict：SQLite 会抛
+            # "Error binding parameter: type 'list' is not supported"。
+            # 这里统一序列化为 JSON 字符串（信息不丢、导入不中断）；
+            # 需要结构化存储时应把字段建成 json / image / attachment 类型。
+            import json
+
+            return json.dumps(value, ensure_ascii=False, default=str)
         return value
 
     def parse_query_value(self, value: Any, _config: dict[str, Any]) -> Any:

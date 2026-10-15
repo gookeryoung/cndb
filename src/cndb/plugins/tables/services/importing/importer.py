@@ -95,6 +95,31 @@ class ImportExecuteResult:
 # ── Importer ──────────────────────────────────────
 
 
+def _looks_like_image_metadata(value: Any) -> bool:
+    """判断是否为导入解析出的图片元数据（image / attachment 字段的值形态）."""
+    items = value if isinstance(value, list) else [value]
+    for item in items:
+        if isinstance(item, dict) and ("file_key" in item or ("filename" in item and "size" in item)):
+            return True
+    return False
+
+
+def _infer_column_type_with_non_scalar(scalar_type: str, samples: list[Any]) -> str:
+    """在文本推断结果之上修正"非标量值"的列类型.
+
+    - 图片元数据（WPS DISPIMG 解析结果）→ ``image``：该类型不占物理列、值存关联表，
+      与手工建的图片字段行为一致；
+    - 其它 list/dict → ``json``（序列化落 Text 列）。
+
+    两者都不能落到 text：text 物理列无法绑定 list（SQLite 直接报错）。
+    """
+    if not samples:
+        return scalar_type
+    if any(_looks_like_image_metadata(s) for s in samples):
+        return "image"
+    return "json"
+
+
 class Importer:
     """统一导入流水线（V2 支持 upsert + 未知列自动新增）.
 
@@ -650,18 +675,25 @@ class Importer:
         if not skipped_columns:
             return []
         column_samples: dict[str, list[str]] = {c: [] for c in skipped_columns}
+        # 非标量样本（图片元数据 list / 嵌套 dict）：这类值不能按文本推断，
+        # 否则会建出 text 物理列、写入时绑 list 直接报
+        # "Error binding parameter N: type 'list' is not supported"（线上"已有表更新"即此故障）。
+        non_scalar_samples: dict[str, list[Any]] = {c: [] for c in skipped_columns}
         for row in rows:
             for col in skipped_columns:
                 val = row.get(col)
                 if val is None:
                     continue
+                if isinstance(val, (list, dict)) and len(non_scalar_samples[col]) < 50:
+                    non_scalar_samples[col].append(val)
                 s = str(val).strip()
                 if s and len(column_samples[col]) < 50:
                     column_samples[col].append(s)
 
         plan: list[dict[str, Any]] = []
         for col in skipped_columns:
-            field_type, options = DiffReporter.infer_new_column_type(column_samples[col])
+            scalar_type, options = DiffReporter.infer_new_column_type(column_samples[col])
+            field_type = _infer_column_type_with_non_scalar(scalar_type, non_scalar_samples[col])
             entry: dict[str, Any] = {
                 "name": col,
                 "field_type": field_type,
