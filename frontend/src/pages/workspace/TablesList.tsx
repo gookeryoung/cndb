@@ -194,6 +194,61 @@ export default function TablesList() {
     reorderTables.mutate(reorderedIds)
   }
 
+  /** 表行操作菜单（表格操作列与窄屏卡片共用一套入口） */
+  const buildTableMenu = (record: TableSummary) => [
+    {
+      key: 'rename',
+      icon: <EditOutlined />,
+      label: '重命名/编辑',
+      onClick: (e?: { domEvent?: { stopPropagation?: () => void } }) => {
+        e?.domEvent?.stopPropagation?.()
+        setEditOpen(record)
+        editForm.setFieldsValue({ name: record.name, description: record.description })
+      },
+    },
+    {
+      key: 'copy',
+      icon: <CopyOutlined />,
+      label: '复制表',
+      children: [
+        {
+          key: 'copy-structure',
+          label: '仅复制表结构',
+          onClick: (e?: { domEvent?: { stopPropagation?: () => void } }) => {
+            e?.domEvent?.stopPropagation?.()
+            copy.mutate({ tid: record.id, mode: 'structure' })
+          },
+        },
+        {
+          key: 'copy-all',
+          label: '复制表结构 + 全部数据',
+          onClick: (e?: { domEvent?: { stopPropagation?: () => void } }) => {
+            e?.domEvent?.stopPropagation?.()
+            copy.mutate({ tid: record.id, mode: 'all' })
+          },
+        },
+      ],
+    },
+    { type: 'divider' as const },
+    {
+      key: 'delete',
+      icon: <DeleteOutlined />,
+      label: '删除表',
+      danger: true,
+      onClick: (e?: { domEvent?: { stopPropagation?: () => void } }) => {
+        e?.domEvent?.stopPropagation?.()
+        modal.confirm({
+          title: `删除表「${record.name}」？`,
+          content: '表内所有记录和字段将被永久移除。',
+          okText: '删除',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => remove.mutate(record.id),
+        })
+      },
+    },
+  ]
+
   const columns = [
     {
       title: '',
@@ -318,53 +373,7 @@ export default function TablesList() {
               data-testid={`open-table-${record.id}`}
             />
           </Tooltip>
-          <Dropdown
-            menu={{
-              items: [
-                {
-                  key: 'rename',
-                  icon: <EditOutlined />,
-                  label: '重命名/编辑',
-                  onClick: (e) => { e?.domEvent?.stopPropagation?.(); setEditOpen(record); editForm.setFieldsValue({ name: record.name, description: record.description }) },
-                },
-                {
-                  key: 'copy',
-                  icon: <CopyOutlined />,
-                  label: '复制表',
-                  children: [
-                    {
-                      key: 'copy-structure',
-                      label: '仅复制表结构',
-                      onClick: (e) => { e?.domEvent?.stopPropagation?.(); copy.mutate({ tid: record.id, mode: 'structure' }) },
-                    },
-                    {
-                      key: 'copy-all',
-                      label: '复制表结构 + 全部数据',
-                      onClick: (e) => { e?.domEvent?.stopPropagation?.(); copy.mutate({ tid: record.id, mode: 'all' }) },
-                    },
-                  ],
-                },
-                { type: 'divider' },
-                {
-                  key: 'delete',
-                  icon: <DeleteOutlined />,
-                  label: '删除表',
-                  danger: true,
-                  onClick: (e) => {
-                    e?.domEvent?.stopPropagation?.();
-                    modal.confirm({
-                      title: `删除表「${record.name}」？`,
-                      content: '表内所有记录和字段将被永久移除。',
-                      okText: '删除',
-                      okType: 'danger',
-                      cancelText: '取消',
-                      onOk: () => remove.mutate(record.id),
-                    })
-                  },
-                },
-              ],
-            }}
-          >
+          <Dropdown menu={{ items: buildTableMenu(record) }}>
             <Tooltip title="更多操作：重命名、复制表、删除表">
               <Button
                 type="text"
@@ -475,6 +484,53 @@ export default function TablesList() {
           items={filteredTables.map(t => String(t.id))}
           strategy={verticalListSortingStrategy}
         >
+          {isMobile ? (
+            /* 窄屏卡片列表：一屏一表，表名/描述/记录·字段·成员/更新时间/操作同卡片可见；
+               拖拽排序仅在桌面端提供（触摸端拖拽手势不可靠） */
+            <div className="cn-table-list-cards" data-testid="tables-mobile-list">
+              {filteredTables.length === 0 ? (
+                <Empty
+                  description={filter !== 'all' ? '当前筛选条件下没有表' : '还没有表 —— 点击「新建表」或「导入数据表」开始'}
+                  style={{ padding: 32 }}
+                />
+              ) : filteredTables.map(record => {
+                const access = ACCESS_TAG[record.my_access ?? 'none'] ?? ACCESS_TAG.none
+                return (
+                  <div
+                    key={record.id}
+                    className="cn-table-list-card"
+                    data-testid={`table-card-${record.id}`}
+                    onClick={() => navigate(`/w/${wid}/tables/${record.id}`)}
+                    onMouseEnter={() => prefetchTable(record.id)}
+                  >
+                    <div className="cn-table-list-card-head">
+                      <TableOutlined style={{ color: '#3b82f6' }} />
+                      <span className="cn-table-list-card-name">{record.name}</span>
+                      <Tag color={access.color} style={{ marginInlineEnd: 0 }}>{access.label}</Tag>
+                    </div>
+                    {record.description && <div className="cn-table-list-card-desc">{record.description}</div>}
+                    <div className="cn-table-list-card-meta">
+                      <span>{record.record_count ?? 0} 条记录 · {record.field_count ?? 0} 字段 · {record.member_count ?? 0} 成员</span>
+                      {record.updated_at && <span>更新于 {new Date(record.updated_at).toLocaleDateString()}</span>}
+                    </div>
+                    <div className="cn-table-list-card-actions">
+                      <Button size="small" type="link" icon={<LoginOutlined />} data-testid={`open-table-${record.id}`}>打开</Button>
+                      {/* 触摸设备没有 hover，卡片内菜单用 click 触发 */}
+                      <Dropdown trigger={['click']} menu={{ items: buildTableMenu(record) }}>
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<MoreOutlined />}
+                          onClick={(e) => e.stopPropagation()}
+                          data-testid={`more-table-${record.id}`}
+                        />
+                      </Dropdown>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
           <div className="cn-grid-card">
             <Table
               size="middle"
@@ -507,6 +563,7 @@ export default function TablesList() {
               }}
             />
           </div>
+          )}
         </SortableContext>
       </DndContext>
 

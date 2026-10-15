@@ -387,31 +387,94 @@ describe('TablesList 移动端适配', () => {
     }
   })
 
-  it('移动端仅渲染核心 4 列，隐藏拖拽/描述/拥有者/成员数/字段/更新时间列', async () => {
+  it('移动端改为卡片列表：不再渲染表格，表名/记录/访问标签/操作齐全', async () => {
     setupWorkspace()
     renderPage()
 
-    // 核心列保留（scroll.x 下表头可能重复渲染，用 findAllByText 断言存在即可）
-    expect((await screen.findAllByText('表名')).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('我的访问').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('记录').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('操作').length).toBeGreaterThan(0)
-
-    // 次要列裁剪
-    expect(screen.queryByText('描述')).toBeNull()
-    expect(screen.queryByText('拥有者')).toBeNull()
-    expect(screen.queryByText('成员数')).toBeNull()
-    expect(screen.queryAllByText('字段').length).toBe(0)
-    expect(screen.queryByText('更新时间')).toBeNull()
+    expect(await screen.findByTestId('tables-mobile-list')).toBeInTheDocument()
+    expect(document.querySelector('.ant-table')).toBeNull()
+    // 默认 mockTable（客户表）以卡片形式渲染
+    const cards = await screen.findAllByTestId(/^table-card-/)
+    expect(cards.length).toBeGreaterThan(0)
+    expect(cards[0]).toHaveTextContent('客户表')
+    expect(cards[0]).toHaveTextContent('条记录')
   })
 
-  it('移动端表格启用横向滚动兜底（scroll.x）', async () => {
+  it('桌面端保留表格与横向滚动兜底（scroll.x）；窄屏则无表格', async () => {
     setupWorkspace()
-    renderPage()
-
-    // AntD scroll.x 生效时 table 内容区出现 ant-table-content 横向滚动容器
+    // 桌面端
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+    const { unmount } = renderPage()
     expect(await screen.findByText('客户表')).toBeInTheDocument()
-    const content = document.querySelector('.ant-table-content')
-    expect(content).not.toBeNull()
+    expect(document.querySelector('.ant-table-content')).not.toBeNull()
+    unmount()
+
+    // 窄屏：卡片列表，无表格
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 375, height: 667,
+    }
+    renderPage()
+    await screen.findByTestId('tables-mobile-list')
+    expect(document.querySelector('.ant-table')).toBeNull()
   })
+
+describe('TablesList 窄屏卡片列表', () => {
+  beforeEach(() => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+  })
+
+  it('窄屏渲染卡片列表：表名 / 描述 / 记录·字段·成员 / 访问标签 / 操作', async () => {
+    setupWorkspace()
+    server.use(http.get('/api/v1/workspaces/10/tables', () => HttpResponse.json(TWO_TABLES)))
+    renderPage()
+
+    const card = await screen.findByTestId('table-card-100')
+    expect(document.querySelector('.ant-table')).toBeNull()
+    expect(card).toHaveTextContent('我方表')
+    expect(card).toHaveTextContent('1 条记录 · 2 字段')
+    expect(card).toHaveTextContent('owner')
+    expect(card).toHaveTextContent('打开')
+    expect(screen.getByTestId('table-card-101')).toHaveTextContent('只读表')
+  })
+
+  it('窄屏点击卡片进入该表；卡片内操作菜单与表格一致', async () => {
+    setupWorkspace()
+    server.use(http.get('/api/v1/workspaces/10/tables', () => HttpResponse.json(TWO_TABLES)))
+    renderPage()
+
+    const card = await screen.findByTestId('table-card-100')
+
+    // 先验卡片内操作菜单（点击卡片会离开本页，故顺序在导航断言之前）
+    fireEvent.click(screen.getByTestId('more-table-100'))
+    for (const label of ['重命名/编辑', '复制表', '删除表']) {
+      expect(await screen.findByText(label)).toBeInTheDocument()
+    }
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+
+    // 再验证点击卡片进入该表
+    fireEvent.click(card)
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/tables/100'))
+  })
+
+  it('桌面端仍为表格，不渲染卡片列表', async () => {
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+    setupWorkspace()
+    server.use(http.get('/api/v1/workspaces/10/tables', () => HttpResponse.json(TWO_TABLES)))
+    renderPage()
+
+    expect(await screen.findByText('我方表')).toBeInTheDocument()
+    expect(screen.queryByTestId('tables-mobile-list')).toBeNull()
+    expect(document.querySelector('.ant-table')).toBeTruthy()
+  })
+})
 })
