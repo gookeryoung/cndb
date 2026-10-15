@@ -342,7 +342,8 @@ class TestPurge:
         # 查看者可读回收站
         assert client.get(f"{doc_api}/trash", headers=viewer_headers).status_code == 200
         assert client.post(f"{doc_api}/{doc['id']}/restore", headers=viewer_headers).status_code == 403
-        assert client.delete(f"{doc_api}/{doc['id']}/purge", headers=viewer_headers).status_code == 403
+        # 彻底删除不可逆：先判可见性 → 看不见的（他人草稿）返回 404（不泄露存在性）
+        assert client.delete(f"{doc_api}/{doc['id']}/purge", headers=viewer_headers).status_code == 404
 
 
 # ── 数据一致性 / 性能 ──
