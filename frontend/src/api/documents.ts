@@ -212,6 +212,17 @@ const base = (wid: number | string) => `/v1/workspaces/${wid}/documents`
 const crBase = (wid: number | string) => `/v1/workspaces/${wid}/document-change-requests`
 const diBase = (wid: number | string) => `/v1/workspaces/${wid}/document-issues`
 
+/** 文档级授权角色：viewer 只读；editor 可直编未发布内容 */
+export type DocumentPermissionRole = 'viewer' | 'editor'
+
+export interface DocumentPermissionItem {
+  document_id: number
+  user_id: number
+  role: DocumentPermissionRole
+  username?: string | null
+  nickname?: string | null
+}
+
 export const documentsApi = {
   list: (wid: number | string, params?: Record<string, unknown>) =>
     api.get<{ items: DocumentItem[]; total: number }>(base(wid), { params }).then(r => r.data),
@@ -319,6 +330,22 @@ export const documentsApi = {
 
   updateMeta: (wid: number | string, docId: number | string, data: Record<string, unknown>) =>
     api.patch<DocumentItem>(`${base(wid)}/${docId}`, data).then(r => r.data),
+
+  // 文档协作者（文档级权限）：把未发布草稿开放给指定同事
+  listPermissions: (wid: number | string, docId: number | string) =>
+    api
+      .get<{ items: DocumentPermissionItem[] }>(`${base(wid)}/${docId}/permissions`)
+      .then(r => r.data.items),
+
+  grantPermission: (
+    wid: number | string,
+    docId: number | string,
+    data: { user_id: number; role: DocumentPermissionRole },
+  ) =>
+    api.post<DocumentPermissionItem>(`${base(wid)}/${docId}/permissions`, data).then(r => r.data),
+
+  revokePermission: (wid: number | string, docId: number | string, userId: number) =>
+    api.delete(`${base(wid)}/${docId}/permissions/${userId}`),
 
   /** 批量移动 / 删除：逐项校验，失败项在 skipped 中返回（不中断整批） */
   batch: (

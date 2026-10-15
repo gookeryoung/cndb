@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 
 from cndb.core.errors import NotFoundError
 from cndb.plugins.accounts.models import User
-from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, Document
+from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, Document, DocumentPermission
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
 
 # 全员可见的状态（其余状态仅创建者/管理员可见）
@@ -73,6 +73,8 @@ def visible_condition(
     return or_(
         Document.status.in_(PUBLIC_STATUSES),
         Document.created_by_id == user.id,
+        # 文档级授权（协作者白名单）：被显式授权者可读未发布草稿
+        Document.id.in_(select(DocumentPermission.document_id).where(DocumentPermission.user_id == user.id)),
     )
 
 
@@ -83,6 +85,11 @@ def can_view_document(db: Session, doc: Document, user: User | None, *, is_admin
     if doc.status in PUBLIC_STATUSES:
         return True
     if doc.created_by_id == user.id:
+        return True
+    # 文档级授权：被邀请的协作者可读（含草稿）
+    from cndb.plugins.documents.services import document_permissions
+
+    if document_permissions.role_for(db, doc.id, user.id) is not None:
         return True
     admin = is_document_admin(db, doc.workspace_id, user) if is_admin is None else is_admin
     return admin

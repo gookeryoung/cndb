@@ -5,6 +5,7 @@ from __future__ import annotations
 from . import (
     change_requests,
     content,
+    document_permissions,
     edit_lock,
     export,
     issues,
@@ -18,6 +19,7 @@ from . import (
 __all__ = [
     "change_requests",
     "content",
+    "document_permissions",
     "edit_lock",
     "export",
     "issues",
