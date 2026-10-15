@@ -51,6 +51,7 @@ import { fileApi, tableApi, workspaceApi } from '@/api'
 import { useAuthStore } from '@/store'
 import { useDocumentEditing, useDocumentViewers, useParagraphLockSnapshot, useRealtime } from '@/realtime/useRealtime'
 import { useParagraphLocks } from './useParagraphLocks'
+import { offsetOfParagraph } from './paragraphLocks'
 import { DocumentViewers } from '@/realtime/RealtimeIndicators'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
@@ -128,6 +129,20 @@ export default function DocumentEditorPage() {
   const { updatePresence } = useRealtime(wid)
   const viewers = useDocumentViewers(Number.isFinite(id) ? id : null)
   const remoteEditing = useDocumentEditing(Number.isFinite(id) ? id : null)
+  /** 跳转到指定段落（把光标移到该段起点并滚动到可见） */
+  const jumpToParagraph = (index: number) => {
+    const offset = offsetOfParagraph(content, index)
+    if (offset === null) return
+    const inner =
+      (taRef.current as unknown as { resizableTextArea?: { textArea?: HTMLTextAreaElement } })?.resizableTextArea
+        ?.textArea ?? document.querySelector('textarea')
+    if (!inner) return
+    inner.focus()
+    inner.setSelectionRange(offset, offset)
+    // 粗定位：按行高估算滚动位置（文本框无段落 API）
+    const line = content.slice(0, offset).split('\n').length
+    inner.scrollTop = Math.max(0, (line - 3) * 24)
+  }
   // 段落级并发编辑：同段互斥、不同段可并发（锁随光标移动获取/释放）
   const realtimeParaLocks = useParagraphLockSnapshot(Number.isFinite(id) ? id : null)
   const paraLocks = useParagraphLocks({
@@ -837,11 +852,20 @@ export default function DocumentEditorPage() {
               : '以下段落正被他人编辑（其余段落你可自由修改）'
           }
           description={
-            paraLocks.othersLocks.length > 0
-              ? paraLocks.othersLocks
-                  .map((lock) => `第 ${lock.key.slice(1)} 段 — ${lock.username}`)
-                  .join('；')
-              : undefined
+            paraLocks.othersLocks.length > 0 ? (
+              <Space size={4} wrap>
+                {paraLocks.othersLocks.map((lock) => (
+                  <Button
+                    key={lock.key}
+                    size="small"
+                    data-testid={`para-jump-${lock.key}`}
+                    onClick={() => jumpToParagraph(Number(lock.key.slice(1)))}
+                  >
+                    跳转到第 {lock.key.slice(1)} 段（{lock.username} 编辑中）
+                  </Button>
+                ))}
+              </Space>
+            ) : undefined
           }
         />
       )}

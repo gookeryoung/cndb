@@ -150,12 +150,38 @@ def record_event(
         from cndb.core.realtime import notify_event
 
         notify_event(event)
+        invalidate_for_event(event.action, event.workspace_id)
         return event
     except Exception:
         logger.warning("写入统一事件失败 action=%s", action, exc_info=True)
         with suppress(Exception):
             db.rollback()
         return None
+
+
+def invalidate_for_event(action: str, workspace_id: int | None) -> int:
+    """按事件动作失效对应的只读缓存（读写一致性；best-effort）.
+
+    把失效挂在**事件写入**这一处，而不是逐个写端点手工清理：
+    记录变更（``record.*``）等写路径都已在各自 choke point 写入统一事件，
+    缓存的失效点因此天然集中、不易漏。
+    """
+    if workspace_id is None or not action:
+        return 0
+    try:
+        from cndb.core.cache import cache_key, list_cache
+
+        cleared = 0
+        if action.startswith("record."):
+            cleared += list_cache.clear(cache_key("records", workspace_id))
+        if action.startswith(("table.", "record.")):
+            cleared += list_cache.clear(cache_key("tables", workspace_id))
+        if action.startswith("document."):
+            cleared += list_cache.clear(cache_key("doc-tree", workspace_id))
+        return cleared
+    except Exception:
+        logger.debug("事件驱动缓存失效失败 action=%s", action, exc_info=True)
+        return 0
 
 
 def summarize_user_action(action: str) -> str:
@@ -252,6 +278,7 @@ __all__ = [
     "TARGET_USER",
     "CoreEvent",
     "distinct_actions",
+    "invalidate_for_event",
     "query_events",
     "record_event",
     "summarize_user_action",
