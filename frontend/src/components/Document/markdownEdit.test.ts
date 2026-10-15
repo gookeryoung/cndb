@@ -3,7 +3,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildTableSkeleton,
   insertLink,
+  setHeadingLevel,
   toggleHeading,
   toggleLinePrefix,
   toggleOrderedList,
@@ -149,4 +151,42 @@ describe('insertLink', () => {
     expect(r.value).toBe('[标题](https://example.com)')
     expect(r.value.slice(r.selectionStart, r.selectionEnd)).toBe('https://example.com')
   })
+
+describe('setHeadingLevel', () => {
+  it('设为指定级别（H1/H3）', () => {
+    expect(setHeadingLevel('标题', 0, 2, 1).value).toBe('# 标题')
+    expect(setHeadingLevel('## 标题', 0, 7, 3).value).toBe('### 标题')
+  })
+
+  it('level=0 取消标题变回普通段落', () => {
+    expect(setHeadingLevel('#### 深层标题', 0, 9, 0).value).toBe('深层标题')
+  })
+
+  it('多行统一设置，选中整块', () => {
+    const r = setHeadingLevel('a\nb', 0, 3, 2)
+    expect(r.value).toBe('## a\n## b')
+    expect(r.value.slice(r.selectionStart, r.selectionEnd)).toBe('## a\n## b')
+  })
+})
+
+describe('buildTableSkeleton', () => {
+  it('生成表头 + 分隔行 + 指定行数', () => {
+    const table = buildTableSkeleton(3, 2)
+    const lines = table.split('\n')
+    expect(lines).toHaveLength(4)
+    expect(lines[0]).toBe('| 列 1 | 列 2 | 列 3 |')
+    expect(lines[1]).toBe('| --- | --- | --- |')
+    expect(lines[2]).toBe('| \u00a0\u00a0 | \u00a0\u00a0 | \u00a0\u00a0 |')
+  })
+
+  it('列数/行数越界被夹取（最少 1 列、0 行合法）', () => {
+    expect(buildTableSkeleton(0, -1).split('\n')).toHaveLength(2)
+    expect(buildTableSkeleton(99, 3).split('\n')[0].split('|').filter(Boolean)).toHaveLength(10)
+  })
+
+  it('仅表头也能被 GFM 解析为表格（含分隔行）', () => {
+    const lines = buildTableSkeleton(2, 0).split('\n')
+    expect(lines).toEqual(['| 列 1 | 列 2 |', '| --- | --- |'])
+  })
+})
 })

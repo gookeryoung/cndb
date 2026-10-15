@@ -128,6 +128,40 @@ export function toggleHeading(value: string, start: number, end: number, level: 
   }
 }
 
+/** 标题级别：设为指定级别；`level = 0` 表示取消标题（变回普通段落） */
+export function setHeadingLevel(
+  value: string,
+  start: number,
+  end: number,
+  level: number,
+): MarkdownEditResult {
+  const [s, e] = normalizeRange(value, start, end)
+  const [lineStart, lineEnd] = expandToLines(value, s, e)
+  const block = value.slice(lineStart, lineEnd)
+  const headingRe = /^(#{1,6})\s+/
+  const prefix = level > 0 ? `${'#'.repeat(Math.max(1, Math.min(6, level)))} ` : ''
+  const lines = block.split('\n')
+  const next = lines.map(line => prefix + line.replace(headingRe, '')).join('\n')
+  return {
+    value: value.slice(0, lineStart) + next + value.slice(lineEnd),
+    selectionStart: lineStart,
+    selectionEnd: lineStart + next.length,
+  }
+}
+
+/** Markdown 表格骨架：表头 + 分隔行 + N 行空单元格（列数与行数由调用方给出） */
+export function buildTableSkeleton(cols: number, rows: number): string {
+  const safeCols = Math.max(1, Math.min(10, Math.floor(cols) || 1))
+  const safeRows = Math.max(0, Math.min(20, Math.floor(rows) || 0))
+  const header = `| ${Array.from({ length: safeCols }, (_, i) => `列 ${i + 1}`).join(' | ')} |`
+  const divider = `| ${Array.from({ length: safeCols }, () => '---').join(' | ')} |`
+  const body = Array.from(
+    { length: safeRows },
+    () => `| ${Array.from({ length: safeCols }, () => '\u00a0\u00a0').join(' | ')} |`,
+  )
+  return [header, divider, ...body].join('\n')
+}
+
 /** 代码块：所选内容包裹在围栏中（独占行）；无选中时插入空代码块并把光标置于其中 */
 export function wrapCodeBlock(
   value: string,
