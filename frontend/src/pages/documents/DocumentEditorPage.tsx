@@ -9,6 +9,7 @@ import {
   Dropdown,
   Input,
   Popconfirm,
+  Segmented,
   Space,
   Splitter,
   Tag,
@@ -72,6 +73,8 @@ export default function DocumentEditorPage() {
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
+  /** 窄屏（<768px）编辑/预览二选一：左右分栏在 390px 屏上每侧仅约 190px，正文换行严重 */
+  const [mobilePane, setMobilePane] = useState<'edit' | 'preview'>('edit')
   const [backlinksOpen, setBacklinksOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
   // 断链修复：旧标题 → 选中的目标文档 ID
@@ -295,7 +298,11 @@ export default function DocumentEditorPage() {
   const outline = useMemo(() => parseOutline(content), [content])
 
   const scrollToAnchor = useCallback((anchor: string) => {
-    document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // 窄屏预览在独立面板：先切过去，等面板渲染后再滚动定位
+    setMobilePane('preview')
+    requestAnimationFrame(() => {
+      document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
   }, [])
 
   // 双向链接跳转：按标题在工作区文档树中定位目标文档（无缓存时现场拉取树）
@@ -522,36 +529,80 @@ export default function DocumentEditorPage() {
         />
       )}
 
-      {/* 分屏编辑/预览 */}
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <Splitter style={{ height: '100%' }}>
-          <Splitter.Panel defaultSize="50%" min="20%" max="80%">
-            <TextArea
-              ref={taRef}
-              value={content}
-              onChange={e => {
-                setContent(e.target.value)
-                dirtyRef.current = true
-              }}
-              placeholder="输入 Markdown 内容…"
-              style={{
-                height: '100%',
-                resize: 'none',
-                border: 'none',
-                boxShadow: 'none',
-                fontFamily: 'var(--cn-mono, monospace)',
-                fontSize: 14,
-                lineHeight: 1.7,
-                padding: 20,
-              }}
-            />
-          </Splitter.Panel>
-          <Splitter.Panel min="20%" max="80%">
-            <div style={{ height: '100%', overflow: 'auto', padding: '20px 24px' }}>
-              <MarkdownPreview content={content} workspaceId={workspaceId} onWikilink={handleWikilink} />
+      {/* 分屏编辑/预览 —— 窄屏改为「编辑 / 预览」页签切换，桌面保持左右分屏 */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {isMobile ? (
+          <>
+            <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--cn-border)', flexShrink: 0 }}>
+              <Segmented
+                block
+                value={mobilePane}
+                data-testid="doc-mobile-pane-switch"
+                onChange={v => setMobilePane(v as 'edit' | 'preview')}
+                options={[
+                  { label: '编辑', value: 'edit' },
+                  { label: '预览', value: 'preview' },
+                ]}
+              />
             </div>
-          </Splitter.Panel>
-        </Splitter>
+            {mobilePane === 'edit' ? (
+              <TextArea
+                ref={taRef}
+                value={content}
+                onChange={e => {
+                  setContent(e.target.value)
+                  dirtyRef.current = true
+                }}
+                placeholder="输入 Markdown 内容…"
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  resize: 'none',
+                  border: 'none',
+                  boxShadow: 'none',
+                  borderRadius: 0,
+                  fontFamily: 'var(--cn-mono, monospace)',
+                  fontSize: 14,
+                  lineHeight: 1.7,
+                  padding: 16,
+                }}
+              />
+            ) : (
+              <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '16px' }}>
+                <MarkdownPreview content={content} workspaceId={workspaceId} onWikilink={handleWikilink} />
+              </div>
+            )}
+          </>
+        ) : (
+          <Splitter style={{ height: '100%' }}>
+            <Splitter.Panel defaultSize="50%" min="20%" max="80%">
+              <TextArea
+                ref={taRef}
+                value={content}
+                onChange={e => {
+                  setContent(e.target.value)
+                  dirtyRef.current = true
+                }}
+                placeholder="输入 Markdown 内容…"
+                style={{
+                  height: '100%',
+                  resize: 'none',
+                  border: 'none',
+                  boxShadow: 'none',
+                  fontFamily: 'var(--cn-mono, monospace)',
+                  fontSize: 14,
+                  lineHeight: 1.7,
+                  padding: 20,
+                }}
+              />
+            </Splitter.Panel>
+            <Splitter.Panel min="20%" max="80%">
+              <div style={{ height: '100%', overflow: 'auto', padding: '20px 24px' }}>
+                <MarkdownPreview content={content} workspaceId={workspaceId} onWikilink={handleWikilink} />
+              </div>
+            </Splitter.Panel>
+          </Splitter>
+        )}
       </div>
 
       {/* 大纲抽屉：实时标题层级，点击滚动定位预览区锚点 */}
