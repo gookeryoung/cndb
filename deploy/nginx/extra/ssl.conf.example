@@ -1,0 +1,55 @@
+# ═══════════════════════════════════════════════════════════════════
+# 可选：HTTPS（TLS）示例配置
+#
+# 用法（HTTPS 不是必须的，仅在需要时启用）：
+#   1) 把证书放进宿主机 ./certs/（compose 已挂载为 /etc/nginx/certs）
+#        ./certs/fullchain.pem
+#        ./certs/privkey.pem
+#   2) 复制本文件去掉 .example 后缀（改名 ssl.conf），放在 deploy/nginx/extra/ 下：
+#        cp deploy/nginx/extra/ssl.conf.example deploy/nginx/extra/ssl.conf
+#      并替换 YOUR_DOMAIN 为真实域名
+#   3) docker compose --profile proxy up -d nginx   # 或跑一次 deploy.sh
+#
+# 证书获取（二选一）：
+#   a) certbot（HTTP-01，走 default.conf 里已备好的 /.well-known/acme-challenge/）：
+#        certbot certonly --webroot -w ./certbot-www -d YOUR_DOMAIN
+#      然后把 fullchain.pem / privkey.pem 拷到 ./certs/
+#   b) 云厂商签发的证书：直接下载后放入 ./certs/（文件同名即可）
+#
+# 说明：本文件由 templates/default.conf.template 末尾的 `include /etc/nginx/extra/*.conf;`
+# 加载，因此 HTTP(80) 与 HTTPS(443) 两个 server 块**共用**同一份反代片段，WS 规则不会漏配。
+# ═══════════════════════════════════════════════════════════════════
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name YOUR_DOMAIN;
+
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # 反代规则（含 WebSocket）——与 HTTP server 块共用同一份片段
+    include /etc/nginx/snippets/cndb-proxy.conf;
+}
+
+# HTTP → HTTPS 跳转（启用 HTTPS 后建议打开；注意 ACME 校验路径仍需留在 default.conf 的 80 端口）
+server {
+    listen 80;
+    listen [::]:80;
+    server_name YOUR_DOMAIN;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}

@@ -46,8 +46,21 @@ command -v docker >/dev/null || die "未找到 docker，请先在服务器安装
 docker compose version >/dev/null 2>&1 || die "未找到 docker compose v2 插件"
 [[ -f "$ENV_FILE" ]] || die "缺少 $ENV_FILE，请先 cp deploy/.env.prod.example .env 并填写"
 
-# compose 统一入口
-dc() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
+# ── 反向代理开关（可选）────────────────────────────────────────
+# .env 里 CNDB_ENABLE_PROXY=1 时启用 nginx 容器（统一入口 + WebSocket 升级）。
+# 不启用时行为与从前完全一致（单容器，直接暴露 CNDB_BIND）。
+ENABLE_PROXY="$(grep -E '^CNDB_ENABLE_PROXY=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | xargs || true)"
+ENABLE_PROXY="${ENABLE_PROXY:-0}"
+BIND_VALUE="$(grep -E '^CNDB_BIND=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | xargs || true)"
+
+# compose 统一入口（启用代理时带上 profile，否则 nginx 容器不会被创建/启动）
+dc() {
+  if [[ "$ENABLE_PROXY" == "1" ]]; then
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" --profile proxy "$@"
+  else
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  fi
+}
 
 TARGET_TAG="${1:-}"
 [[ -n "$TARGET_TAG" ]] || die "用法: $0 <version-tag>   例: $0 0.3.0  或  v0.3.0"
@@ -56,6 +69,22 @@ TARGET_TAG="${1:-}"
 CURRENT_IMAGE="$(docker inspect cndb --format '{{.Config.Image}}' 2>/dev/null || echo "")"
 CURRENT_TAG=""
 [[ -n "$CURRENT_IMAGE" ]] && CURRENT_TAG="${CURRENT_IMAGE##*:}"
+
+if [[ "$ENABLE_PROXY" == "1" ]]; then
+  log "反向代理：已启用（CNDB_ENABLE_PROXY=1）"
+  # 直连应用端口会绕过代理，也会让客户端 IP 可伪造（登录限流被绕过）→ 强制提醒
+  case "${BIND_VALUE:-}" in
+    "0.0.0.0:8000"|"")
+      warn "CNDB_BIND=${BIND_VALUE:-<未设置>} 会让应用端口对公网直连（绕过代理、可伪造 IP）"
+      warn "建议在 .env 中改为 CNDB_BIND=127.0.0.1:8000 后重新部署"
+      ;;
+    *) log "应用端口绑定: ${BIND_VALUE}（仅本机 / 指定地址，符合反代形态）" ;;
+  esac
+  [[ -f deploy/nginx/templates/default.conf.template ]] \
+    || die "缺少 deploy/nginx 配置（CI 会同步；手动部署请一并上传 deploy/nginx 目录）"
+else
+  log "反向代理：未启用（如需要，把 .env 的 CNDB_ENABLE_PROXY 改为 1）"
+fi
 
 log "当前运行版本: ${CURRENT_TAG:-<无, 首次部署>}"
 
@@ -341,6 +370,15 @@ if ! dc up -d --force-recreate app; then
   exit 1
 fi
 
+# 启用代理时把 nginx 一并拉起/更新（配置改动也在此生效）
+if [[ "$ENABLE_PROXY" == "1" ]]; then
+  log "启动/更新 nginx 反代..."
+  if ! dc up -d nginx; then
+    rollback "nginx 反代启动失败"
+    exit 1
+  fi
+fi
+
 # 确认跑起来的确实是目标镜像。
 # compose pull 偶发返回成功但实际用的是别的镜像（tag 缺失时可能复用旧层），
 # 到健康检查才暴露，排查成本高；这里提前挡住。
@@ -360,6 +398,77 @@ if ! wait_healthy; then
   exit 1
 fi
 
+# 4.5 反代与实时通道冒烟验证（启用代理时）
+# 校验两件事：① 通过代理能访问应用；② **WebSocket 升级真的通**（Upgrade 头没被吞掉）。
+# 第 ② 点是纯 HTTP 检查发现不了的：代理不放行 Upgrade 时页面照常打开，只是实时通道一直"重连中"。
+if [[ "$ENABLE_PROXY" == "1" ]]; then
+  log "验证反向代理与 WebSocket 升级（经容器 nginx）..."
+  HTTP_BIND="${CNDB_HTTP_BIND:-80}"
+  PROXY_STATUS="$(docker exec cndb-nginx wget -q -O /dev/null -S "http://127.0.0.1/api/health" 2>&1 | grep -o 'HTTP/[0-9.]* [0-9]*' | head -1 || true)"
+  if [[ -z "$PROXY_STATUS" ]]; then
+    warn "代理内 /api/health 探测无响应，请检查 nginx 日志：dc logs nginx"
+  else
+    log "代理内 /api/health → ${PROXY_STATUS}"
+  fi
+
+  # 用应用自身的密钥在容器内签发一个令牌，再经代理建立 WS 连接，期待首帧 presence.sync。
+  # 这样无需任何生产口令，且真实验证了「代理 → 应用」的升级链路。
+  WS_RESULT="$(dc exec -T app python - <<'PYEOF' 2>/dev/null || echo WS_ERROR
+import asyncio, json, sys, urllib.request
+
+try:
+    from cndb.core.database import SessionLocal
+    from cndb.core.security import create_access_token
+    from cndb.plugins.accounts.models import User
+
+    db = SessionLocal()
+    user = db.query(User).order_by(User.id).first()
+    db.close()
+    if user is None:
+        print("WS_SKIP 无用户（尚未初始化）")
+        sys.exit(0)
+
+    token = create_access_token(subject=user.id, token_version=getattr(user, "token_version", 0))
+    req = urllib.request.Request(
+        "http://nginx/api/v1/workspaces", headers={"Authorization": f"Bearer {token}"}
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        workspaces = json.load(resp)
+    if not workspaces:
+        print("WS_SKIP 无工作区（先建一个再验证实时通道）")
+        sys.exit(0)
+    wid = workspaces[0]["id"]
+
+    import websockets
+
+    async def main() -> None:
+        uri = f"ws://nginx/api/v1/ws?workspace_id={wid}&token={token}"
+        async with websockets.connect(uri, open_timeout=10) as ws:
+            first = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+        print("WS_OK " + str(first.get("type")))
+
+    asyncio.run(main())
+except Exception as exc:  # noqa: BLE001 - 冒烟失败只需结论
+    print("WS_ERROR " + type(exc).__name__ + ": " + str(exc)[:200])
+PYEOF
+)"
+
+  case "$WS_RESULT" in
+    WS_OK*)
+      ok "WebSocket 升级验证通过：${WS_RESULT}"
+      ;;
+    WS_SKIP*)
+      warn "跳过 WebSocket 验证：${WS_RESULT#WS_SKIP }"
+      ;;
+    *)
+      warn "WebSocket 升级验证失败：${WS_RESULT}"
+      warn "请检查：① 代理是否放行 Upgrade/Connection（deploy/nginx/snippets/cndb-proxy.conf）"
+      warn "        ② nginx 日志：docker compose --env-file .env -f ${COMPOSE_FILE} --profile proxy logs --tail 50 nginx"
+      warn "（HTTP 功能不受影响，但实时协作不可用；部署继续，未回滚）"
+      ;;
+  esac
+fi
+
 # 5. 成功：清理悬空镜像 + 打印版本
 VERSION_JSON="$(health_body 2>/dev/null || echo '{}')"
 ok "部署成功！版本信息: ${VERSION_JSON}"
@@ -372,4 +481,8 @@ docker images --filter "reference=${BASE_REPO}:*" --format '{{.CreatedAt}} {{.ID
   | awk '{print $3}' \
   | xargs -r docker rmi -f >/dev/null 2>&1 || true
 
-ok "完成。访问地址由 .env 中 CNDB_BIND 决定（默认 http://<服务器IP>:8000）"
+if [[ "$ENABLE_PROXY" == "1" ]]; then
+  ok "完成。访问地址：http://<服务器IP>:${CNDB_HTTP_BIND:-80}（经容器 nginx 反代；配好证书后可用 HTTPS）"
+else
+  ok "完成。访问地址由 .env 中 CNDB_BIND 决定（默认 http://<服务器IP>:8000）"
+fi

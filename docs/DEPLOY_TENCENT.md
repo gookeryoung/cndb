@@ -130,6 +130,45 @@ sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" .env
 vim .env   # 改 CNDB_IMAGE 和 CORS_ORIGINS
 ```
 
+### 4.1 反向代理（可选，含实时协作 WebSocket）
+
+默认部署是**单容器**（FastAPI 直接托管前端）。需要域名 / HTTPS / 统一入口时，启用内置 nginx 反代容器：
+
+```bash
+cd /opt/cndb
+vim .env
+#   CNDB_ENABLE_PROXY=1
+#   CNDB_BIND=127.0.0.1:8000      # 关键：应用端口不再对公网直连（否则可绕过代理、伪造客户端 IP）
+#   CNDB_SERVER_NAME=cndb.example.com   # 未绑域名用下划线 _
+#   CNDB_HTTP_BIND=80
+./deploy/deploy.sh v0.3.12       # 脚本自动带 --profile proxy，并在末尾做 WebSocket 冒烟验证
+```
+
+安全组只需放行 `80`（与可选的 `443`），**不再需要放行 8000**。
+
+**为什么必须走这套配置**：实时协作（在线状态、文档事件推送、段落锁）走 `WebSocket /api/v1/ws`。
+反向代理若不放行 `Upgrade`/`Connection` 头，握手会失败 —— 页面照常打开、HTTP 功能全正常，
+**只有实时通道一直显示"重连中…"**，非常容易被当成前端 bug。本仓库的配置已经处理好：
+`deploy/nginx/snippets/cndb-proxy.conf` 里对 `/api/v1/ws` 单独设置了
+`proxy_http_version 1.1` + `Upgrade`/`Connection` + `proxy_read_timeout 3600s`（远大于服务端 25s 心跳），
+并且该 location 的访问日志**只记路径不记 query**（访问令牌在 query 里）。
+
+`deploy.sh` 在启用代理时会自动做两项验证：
+
+1. 经代理容器请求 `/api/health`；
+2. 用应用自身的密钥在容器内签发一个临时令牌，**经代理建立真实 WebSocket 连接**，期待首帧 `presence.sync`。
+
+第 2 项能确认"Upgrade 真的通了"；失败时不会回滚部署，但会打印排查指引（HTTP 功能不受影响）。
+
+**HTTPS**：把证书放到宿主机 `./certs/`（`fullchain.pem` / `privkey.pem`），
+再把 `deploy/nginx/extra/ssl.conf.example` 复制为 `ssl.conf` 并替换域名即可（HTTP 与 HTTPS 共用同一份反代片段，WS 规则不会漏配）。
+
+**反代启用后的两点注意**
+
+- `CORS_ORIGINS` 要填代理对外的地址（如 `["https://cndb.example.com"]`）；
+- 代理用真实对端地址**覆盖** `X-Forwarded-For`（而不是追加），避免客户端伪造 IP 绕过登录失败限流；
+  应用侧 `--proxy-headers` 直接读到可信值。
+
 必填项：
 
 | 变量             | 说明                                                     |
@@ -188,6 +227,8 @@ cd /opt/cndb && ./deploy/deploy.sh v0.3.0
 ---
 
 ## 三、日常发布
+
+> 启用反向代理后，发布流程不变：`deploy.sh` 会用 `--profile proxy` 一起更新应用与 nginx，并在部署末尾验证 WebSocket 升级。
 
 ```bash
 # 版本号在 pyproject.toml 与 CHANGELOG.md 同步更新后

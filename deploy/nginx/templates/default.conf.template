@@ -1,0 +1,40 @@
+# ═══════════════════════════════════════════════════════════════════
+# cndb HTTP 反代（容器 nginx 的模板，官方镜像启动时用 envsubst 展开）
+#
+# 落点：/etc/nginx/templates/default.conf.template → /etc/nginx/conf.d/default.conf
+# 可用变量（在 .env 中配置，见 deploy/.env.prod.example）：
+#   CNDB_SERVER_NAME   server_name，未绑域名时用下划线
+#   CNDB_APP_UPSTREAM  应用地址，compose 内为 app:8000
+#   CNDB_MAX_BODY_SIZE 上传体积上限，如 512m
+#
+# 注意：官方镜像的 envsubst 只替换**环境里存在的**变量，
+# 因此 nginx 自身的 $host / $uri / $request_time 等不会被误替换。
+# ═══════════════════════════════════════════════════════════════════
+
+# 上游（keepalive 减少上游握手开销）
+upstream cndb_app {
+    server ${CNDB_APP_UPSTREAM};
+    keepalive 32;
+}
+
+# WebSocket location 专用日志格式：只记 $uri（不含 query —— 访问令牌在 query 里）
+log_format cndb_ws '$remote_addr - $status "$request_method $uri" $request_time';
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${CNDB_SERVER_NAME};
+
+    # certbot webroot（配 HTTPS 时用：certbot certonly --webroot -w /var/www/certbot）
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+    }
+
+    # 反代规则（含 WebSocket）——HTTP / HTTPS 共用同一份片段
+    include /etc/nginx/snippets/cndb-proxy.conf;
+}
+
+# 可选扩展（HTTPS server 块等）：把 *.conf 放进 deploy/nginx/extra/ 即可生效；
+# 目录为空时该通配 include 不会报错。示例见 extra/ssl.conf.example。
+include /etc/nginx/extra/*.conf;
