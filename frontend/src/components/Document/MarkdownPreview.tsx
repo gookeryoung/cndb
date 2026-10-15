@@ -22,6 +22,25 @@ function childrenToText(children: React.ReactNode): string {
 }
 
 /** Markdown 渲染组件配置（代码块/引用/原生表格样式），整体与分片渲染共用 */
+/** react-markdown 传入的 hast 节点（只用到 children/tagName 结构） */
+type MarkdownNode = {
+  type?: string
+  tagName?: string
+  children?: MarkdownNode[]
+}
+
+/** 段落是否只包含图片（用于避免 div 嵌在 p 内的非法嵌套） */
+function isImageOnlyParagraph(node?: MarkdownNode): boolean {
+  const children = (node?.children ?? []).filter(
+    (c) => !(c.type === 'text' && !(c as { value?: string }).value?.trim()),
+  )
+  if (children.length !== 1) return false
+  const only = children[0]
+  if (only.tagName === 'img') return true
+  // 形如 [![alt](file:x)](url)：链接里包一张图片
+  return only.tagName === 'a' && (only.children ?? []).some((c) => c.tagName === 'img')
+}
+
 const mdComponents = {
   h1: ({ children, ...rest }: React.ComponentProps<'h1'>) => (
     <h1
@@ -151,6 +170,16 @@ function Md({
       img: ({ src, alt }: React.ComponentProps<'img'>) => (
         <DocumentImage workspaceId={workspaceId} src={src} alt={alt} />
       ),
+      // 仅含图片的段落用 div 承载：antd Image 的根元素是 div，
+      // 放在 Markdown 的 <p> 里会产生非法嵌套（React 报
+      // "validateDOMNesting(...): <div> cannot appear as a descendant of <p>"，
+      // 浏览器还会把 <p> 提前闭合，导致图片脱离段落排版）。
+      p: ({ children, node }: React.ComponentProps<'p'> & { node?: MarkdownNode }) => {
+        const onlyImage = isImageOnlyParagraph(node)
+        return onlyImage
+          ? <div style={{ margin: '0.6em 0' }}>{children}</div>
+          : <p>{children}</p>
+      },
       a: ({ href, children, ...rest }: React.ComponentProps<'a'>) => {
         const title = href != null ? parseWikilinkHref(href) : null
         if (title === null) return <a href={href} {...rest}>{children}</a>

@@ -27,7 +27,7 @@ jobs:
   # ===== PyPI 发布 =====
   pypi:
     name: Build & Publish PyPI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: pypi
     timeout-minutes: 15
     steps:
@@ -36,6 +36,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.3.0
         with:
+          cache-suffix: release
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
@@ -85,6 +86,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.3.0
         with:
+          # 与 pypi job 分别缓存，避免同一 key 抢占（Failed to save: Unable to reserve cache）
+          cache-suffix: release-build
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
@@ -180,7 +183,7 @@ jobs:
   # ===== Linux 原生打包（fspack）=====
   pack-linux:
     name: Pack (Linux native)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
@@ -188,6 +191,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.3.0
         with:
+          cache-suffix: release-publish
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
@@ -269,7 +273,7 @@ jobs:
   release:
     name: Upload to GitHub Release
     needs: [pypi, pack-windows, pack-linux]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: always() && !cancelled()
     steps:
       - name: Download all artifacts

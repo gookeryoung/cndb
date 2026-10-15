@@ -108,3 +108,36 @@ describe('MarkdownPreview 双向链接', () => {
     expect(normal).toHaveAttribute('href', 'https://example.com')
   })
 })
+
+describe('Markdown 图片段落嵌套', () => {
+  beforeEach(() => {
+    server.resetHandlers()
+    // 站内图片走鉴权取 blob，这里给出一个 1x1 PNG 的最小响应
+    server.use(
+      http.get('/api/v1/workspaces/:wid/files/:key', () =>
+        HttpResponse.arrayBuffer(
+          Uint8Array.from([
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+          ]).buffer,
+          { headers: { 'Content-Type': 'image/png' } },
+        ),
+      ),
+    )
+  })
+
+  it('仅含图片的段落渲染为 div（避免 <div> 嵌在 <p> 内的非法嵌套）', () => {
+    const { container } = renderProviders(
+      <MarkdownPreview content={'![图](file:abc.png)'} workspaceId={WID} />,
+    )
+    const root = container.querySelector('.doc-md-preview')
+    // 关键结构断言：图片段落不能渲染成 <p>（antd Image 根元素是 div，会非法嵌套）
+    expect(root?.querySelector('p')).toBeNull()
+  })
+
+  it('文本段落仍然渲染为 p', () => {
+    const { container } = renderProviders(
+      <MarkdownPreview content={'普通段落文本'} workspaceId={WID} />,
+    )
+    expect(container.querySelector('.doc-md-preview p')).not.toBeNull()
+  })
+})

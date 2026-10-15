@@ -107,6 +107,10 @@
 - README 修正项目结构树、CLI 命令、e2e 包管理器与特性清单等失实内容
 
 ### 修复
+- 修复 CI 偶发失败：`DocumentEditorPage` 三个标题用例在文本域渲染后立即改标题，文档内容尚未加载时操作作用在空内容上（CI 上偶发 `expected false to be true`），改为先等待内容加载
+- CI 警告清理：runner 固定 `ubuntu-24.04`（`ubuntu-latest` 将于 2026-10-19 迁移到 Ubuntu 26）；为每个 job 的 `setup-uv` 配置独立 `cache-suffix`，消除并行 job 抢占同一缓存键的「Unable to reserve cache」告警
+- 前端警告清理：TreeSelect 根节点 `key`/`value` 不一致（antd TreeNode 告警）改为由 value 派生；Markdown 中仅含图片的段落改用 `<div>` 承载，消除 `<div>` 嵌套 `<p>` 的非法 DOM 结构；测试控制台过滤应用级待迁移的 antd 静态 `message` 上下文告警
+- 测试警告清理：`workspaces_workspacemember` 批量删除改用 `synchronize_session="fetch"`，消除 SQLAlchemy「DELETE expected to delete N row(s); 0 were matched」告警；类作用域 fixture 改为 `@classmethod`，消除 pytest 的类作用域实例方法弃用告警
 - 修复**已有数据表更新失败**（新建表导入正常）：`add_text_field` 自动新增列时，类型推断对非标量值做了 `str()`，WPS 图片元数据（list）被推断成 `text`，写入时 SQLite 抛 `Error binding parameter: type 'list' is not supported`。现在自动新增列会把图片元数据识别为 `image`、其它 list/dict 识别为 `json`；同时标量字段类型遇到 list/dict 兜底序列化为 JSON 字符串，使目标列已存在且为 text 时也不会中断导入
 - 导入**确认执行**阶段补齐可观测性：① 子步骤进度（解析 15% / 校验 25% / 准备写入 45% / 写入 60% / 同步字段选项 85%）与逐步 INFO 日志，卡住时可直接看出停在哪一步，不再是笼统的一个 5%；② 进程**关闭时**把仍在执行的任务标记为中断（「服务重启导致任务中断，请重试」），部署重建容器不再留下无声停在 5% 的任务行
 - 导入任务**不再出现「卡住且无报错」**：① 应用启动时回收上一进程遗留的「进行中」任务（进程重启/容器重建会直接把后台线程带走，任务行会永远停在 5%）→ 标记失败并说明原因；② 查询任务详情时按「无进展时长」兜底判定为中断（阈值=单阶段超时，默认 600s）并返回 `stalled_seconds`；③ 前端轮询**连续 3 次失败**不再静默忽略，而是明确提示「无法获取导入任务状态，请刷新后重试」，无进展超 180s 时提前给出警告；④ analyze/execute 阶段补充 INFO 心跳日志（文件名/字节数/进度），便于服务端定位

@@ -193,11 +193,14 @@ def cmd_delete(args: argparse.Namespace) -> dict[str, Any]:
         # FK 未开启的会话），避免孤儿成员行导致工作区成员计数虚高
         from cndb.plugins.tables.models import TableMember
 
+        # synchronize_session="fetch"：让会话同步移除这些行。
+        # 用 False 会留下过期状态，随后 db.delete(user)/db.delete(ws) 的级联再删一次，
+        # 触发 SAWarning: DELETE ... expected to delete N row(s); 0 were matched。
         ws_member_rows = (
-            db.query(WorkspaceMember).filter(WorkspaceMember.user_id == user.id).delete(synchronize_session=False)
+            db.query(WorkspaceMember).filter(WorkspaceMember.user_id == user.id).delete(synchronize_session="fetch")
         )
         table_member_rows = (
-            db.query(TableMember).filter(TableMember.user_id == user.id).delete(synchronize_session=False)
+            db.query(TableMember).filter(TableMember.user_id == user.id).delete(synchronize_session="fetch")
         )
 
         db.delete(user)

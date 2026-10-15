@@ -387,7 +387,8 @@ class TestSeedViewsIntegrity:
     )
 
     @pytest.fixture(scope="class")
-    def ws_configs(self) -> tuple:
+    @classmethod
+    def ws_configs(cls) -> tuple:
         from cndb.cli.seed import _get_datasets_dir
 
         datasets_dir = _get_datasets_dir()

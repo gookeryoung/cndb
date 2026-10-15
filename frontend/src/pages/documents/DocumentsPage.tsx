@@ -347,7 +347,7 @@ export default function DocumentsPage() {
       disabled: excluded.has(node.id),
       children: node.children.filter(c => c.is_folder).map(toOption),
     })
-    return [{ key: 'root', value: 0, title: '（根目录）', children: roots.filter(n => n.is_folder).map(toOption) }]
+    return [{ value: 0, title: '（根目录）', children: roots.filter(n => n.is_folder).map(toOption) }]
   }, [batchMoveOpen, selectedIds, treeQuery.data])
 
   // 系列移动目标下拉：根目录 + 全部文件夹（排除自身及子孙，防环）
@@ -363,7 +363,7 @@ export default function DocumentsPage() {
     })
     const roots = buildDocTree(treeQuery.data ?? [])
     return [
-      { key: 'root', value: 0, title: '（根目录）', children: roots.filter(n => n.is_folder).map(toOption) },
+      { value: 0, title: '（根目录）', children: roots.filter(n => n.is_folder).map(toOption) },
     ]
   }, [moveOpen, currentFolderNode, treeQuery.data])
 

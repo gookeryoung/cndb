@@ -64,7 +64,7 @@ jobs:
   # ===== 同步构建产物并触发服务器端构建部署 =====
   deploy:
     name: Sync Artifacts & Deploy (server-side build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # 60 分钟不是「预估耗时」而是「排障上限」：CI 侧只有 wheel 下载与 scp
     # （几分钟）；大头在服务器端 docker build —— 首次无缓存约 15-30 分钟
     # （拉基础镜像 + 装依赖），之后走 Docker 层缓存通常 5 分钟内。
@@ -157,6 +157,7 @@ jobs:
       - name: Sync compose file
         uses: appleboy/scp-action@v1.0.0
         with:
+          cache-suffix: deploy
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT || 22 }}
           username: ${{ secrets.SSH_USERNAME || 'root' }}
