@@ -70,6 +70,15 @@ test.describe("文档可见性与授权（多用户）", () => {
             // 1) 两个账号共同可见的工作区（seed：admin 是 OWNER，perm_viewer 是 VIEWER）
             const workspaceId = await sharedWorkspaceId(admin, viewer);
 
+            // 1.5) 同事在工作区成员名单里的显示名（前端下拉用的就是它：nickname || username）
+            const members = await apiCall(admin.api, admin.token, "get", `/workspaces/${workspaceId}/members`);
+            expect(members.status).toBe(200);
+            const memberRow = (
+                members.body as Array<{ user_id: number; user?: { username?: string; nickname?: string } }>
+            ).find(m => Number(m.user_id) === viewer.userId);
+            expect(memberRow, "工作区成员名单里应有 perm_viewer").toBeTruthy();
+            const viewerLabel = memberRow?.user?.nickname || memberRow?.user?.username || "perm_viewer";
+
             // 2) admin 建一份草稿
             const title = `E2E 草稿可见性 ${Date.now()}`;
             const created = await apiCall(admin.api, admin.token, "post", `/workspaces/${workspaceId}/documents`, {
@@ -104,15 +113,18 @@ test.describe("文档可见性与授权（多用户）", () => {
             // 4) 创建者 UI：树上显示「仅自己可见」标记
             await expectVisibilityMarker(admin.page, workspaceId, doc.id, "仅自己可见");
 
-            // 5) 授权给同事（viewer：只读）
-            const grant = await apiCall(
-                admin.api,
-                admin.token,
-                "post",
-                `/workspaces/${workspaceId}/documents/${doc.id}/permissions`,
-                { user_id: viewer.userId, role: "viewer" },
-            );
-            expect(grant.status, JSON.stringify(grant.body)).toBe(201);
+            // 5) 通过**真实 UI**授权：桌面工具栏「协作者」→ 选成员 → 添加
+            await admin.page.goto(`/w/${workspaceId}/documents/${doc.id}`);
+            await admin.page.getByTestId("doc-collaborators-open").click();
+            // 断言弹窗**内部**元素可见：antd Modal 的 data-testid 落在 .ant-modal-root 包裹层上，
+            // 该层常被判为不可见（无自身布局），用内部控件判断更准确
+            await expect(admin.page.getByTestId("doc-collaborator-select")).toBeVisible({ timeout: 15_000 });
+
+            await admin.page.getByTestId("doc-collaborator-select").click();
+            await admin.page.getByTitle(viewerLabel).click();
+            await admin.page.getByRole("button", { name: /添\s*加/ }).click();
+            // 名单里出现该成员 = 授权成功的 UI 证据
+            await expect(admin.page.getByTestId(`doc-collaborator-${viewer.userId}`)).toBeVisible({ timeout: 15_000 });
 
             // 6) 同事现在可见（树 + 详情），且提示为 shared
             const viewerTreeAfter = await apiCall(
@@ -132,14 +144,11 @@ test.describe("文档可见性与授权（多用户）", () => {
             // 7) 创建者 UI：标记变为「已共享给协作者」
             await expectVisibilityMarker(admin.page, workspaceId, doc.id, "已共享给协作者", { reload: true });
 
-            // 8) 撤销后立即收回
-            const revoke = await apiCall(
-                admin.api,
-                admin.token,
-                "delete",
-                `/workspaces/${workspaceId}/documents/${doc.id}/permissions/${viewer.userId}`,
-            );
-            expect(revoke.status).toBe(204);
+            // 8) 通过**真实 UI**撤销：重开弹窗 → 移除
+            await admin.page.getByTestId("doc-collaborators-open").click();
+            await expect(admin.page.getByTestId(`doc-collaborator-${viewer.userId}`)).toBeVisible({ timeout: 15_000 });
+            await admin.page.getByTestId(`doc-collaborator-revoke-${viewer.userId}`).click();
+            await expect(admin.page.getByTestId(`doc-collaborator-${viewer.userId}`)).toHaveCount(0, { timeout: 15_000 });
 
             const viewerTreeRevoked = await apiCall(
                 viewer.api,
