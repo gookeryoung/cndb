@@ -281,6 +281,27 @@ DI_ACTION_CLOSED = "closed"
 DI_ACTION_REOPENED = "reopened"
 
 
+class DocumentPin(TimestampMixin, Base):
+    """文档置顶（个人）：每个用户维护自己的置顶集合，互不影响.
+
+    设计取舍：与「工作区置顶」一致做成**按用户**（`WorkspaceMember.pinned` 亦是个人偏好），
+    避免某个成员置顶后影响整工作区的树顺序。
+    """
+
+    __tablename__ = "documents_pin"
+    __table_args__ = (
+        UniqueConstraint("document_id", "user_id", name="uq_documents_pin_doc_user"),
+        {"extend_existing": True},
+    )
+
+    # id / created_at / updated_at 由 TimestampMixin 提供
+    # （重复声明 id 会触发 pyrefly missing-override-decorator）
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents_document.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("accounts_user.id", ondelete="CASCADE"), nullable=False, index=True)
+
+
 class DocumentIssue(TimestampMixin, Base):
     """文档问题：文档上的反馈条目（数据错误/建议/疑问等）."""
 
@@ -373,6 +394,7 @@ __all__ = [
     "DocumentIssueComment",
     "DocumentIssueEvent",
     "DocumentPermission",
+    "DocumentPin",
     "DocumentShare",
     "DocumentTag",
     "DocumentVersion",

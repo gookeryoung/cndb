@@ -132,6 +132,8 @@ def list_documents(
         filters.append(Document.id.in_(select(DocumentTag.document_id).where(DocumentTag.tag_id == tag_id)))
 
     total = int(db.execute(select(func.count()).select_from(Document).where(*filters)).scalar_one())
+    # 个人置顶优先：置顶项排在当前排序之前（两组内部保持所选排序）
+    pinned_ids = services.content.pinned_document_ids(db, workspace_id, current_user.id)
 
     order_col = {
         "sort": (Document.sort_order, Document.id),
@@ -140,9 +142,9 @@ def list_documents(
         "title": (Document.title,),
     }[order]
     stmt = select(Document).where(*filters).order_by(*order_col).limit(limit).offset(offset)
-    docs = db.execute(stmt).scalars().all()
+    docs = services.content.sort_pinned_first(list(db.execute(stmt).scalars().all()), pinned_ids)
     return {
-        "items": services.content.serialize_documents(db, list(docs)),
+        "items": services.content.serialize_documents(db, docs, pinned_ids=pinned_ids),
         "total": total,
     }
 
@@ -164,7 +166,9 @@ def document_tree(
         .scalars()
         .all()
     )
-    return {"items": services.content.serialize_documents(db, list(docs))}
+    pinned_ids = services.content.pinned_document_ids(db, workspace_id, current_user.id)
+    ordered = services.content.sort_pinned_first(list(docs), pinned_ids)
+    return {"items": services.content.serialize_documents(db, ordered, pinned_ids=pinned_ids)}
 
 
 @router.get("/tags")
@@ -276,7 +280,35 @@ def get_document(
     """文档详情（不含正文）。"""
     _require_member(db, workspace_id, current_user)
     doc = services.content.get_document_or_404(db, workspace_id, doc_id)
-    return services.content.serialize_document(db, doc)
+    pinned_ids = services.content.pinned_document_ids(db, workspace_id, current_user.id)
+    return services.content.serialize_document(db, doc, pinned=doc.id in pinned_ids)
+
+
+@router.post("/{doc_id}/pin")
+def pin_document(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """置顶文档（个人）：仅影响当前用户的树/列表顺序."""
+    _require_member(db, workspace_id, current_user)
+    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    pinned = services.content.set_document_pin(db, doc, current_user.id, True)
+    return {"document_id": doc.id, "pinned": pinned}
+
+
+@router.delete("/{doc_id}/pin", status_code=204)
+def unpin_document(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    """取消置顶（幂等）."""
+    _require_member(db, workspace_id, current_user)
+    doc = services.content.get_document_or_404(db, workspace_id, doc_id)
+    services.content.set_document_pin(db, doc, current_user.id, False)
 
 
 @router.get("/{doc_id}/content")
@@ -289,7 +321,8 @@ def get_document_content(
     """文档详情 + 最新版本正文。"""
     _require_member(db, workspace_id, current_user)
     doc = services.content.get_document_or_404(db, workspace_id, doc_id)
-    data = services.content.serialize_document(db, doc)
+    pinned_ids = services.content.pinned_document_ids(db, workspace_id, current_user.id)
+    data = services.content.serialize_document(db, doc, pinned=doc.id in pinned_ids)
     if doc.is_folder:
         data["content"] = ""
     else:

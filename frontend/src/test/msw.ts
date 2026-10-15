@@ -96,6 +96,7 @@ export const mockDocuments: DocumentItem[] = [
     updated_by_id: 1,
     tag_ids: [],
     version_count: 0,
+    pinned: false,
   },
   {
     id: 2,
@@ -117,6 +118,7 @@ export const mockDocuments: DocumentItem[] = [
     updated_by_id: 1,
     tag_ids: [],
     version_count: 1,
+    pinned: false,
   },
   {
     id: 3,
@@ -138,6 +140,7 @@ export const mockDocuments: DocumentItem[] = [
     updated_by_id: 1,
     tag_ids: [],
     version_count: 0,
+    pinned: false,
   },
 ]
 

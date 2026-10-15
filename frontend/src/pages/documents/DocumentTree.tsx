@@ -16,6 +16,8 @@ import {
   FileTextOutlined,
   FolderAddOutlined,
   FolderOutlined,
+  MoreOutlined,
+  PushpinFilled,
   PushpinOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
@@ -250,6 +252,26 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
   })
 
   // 每日笔记（幂等）：后端当日复用同一篇，返回后进入编辑
+  /** 置顶 / 取消置顶（个人偏好）：成功后整树刷新，置顶项由后端排到最前 */
+  const pinMut = useMutation({
+    mutationFn: (id: number) => documentsApi.pinDocument(workspaceId, id),
+    onSuccess: () => {
+      message.success('已置顶')
+      invalidate()
+    },
+    onError: () => message.error('置顶失败'),
+  })
+
+  const unpinMut = useMutation({
+    mutationFn: (id: number) => documentsApi.unpinDocument(workspaceId, id),
+    onSuccess: () => {
+      message.success('已取消置顶')
+      invalidate()
+    },
+    onError: () => message.error('取消置顶失败'),
+  })
+
+
   const dailyNoteMut = useMutation({
     mutationFn: () => documentsApi.dailyNote(workspaceId),
     onSuccess: doc => {
@@ -277,13 +299,44 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
     onError: () => message.error('移动失败'),
   })
 
-  /** 树节点渲染：图标 + 标题 + 状态色点（文件夹带子项计数） */
+  /** 打开节点操作菜单（右键与「更多」按钮共用；位置取自触发元素） */
+  const openNodeMenu = useCallback((node: DocTreeNode, x: number, y: number) => {
+    setMenu({ open: true, x, y, node })
+  }, [])
+
+  /** 节点「更多」按钮：桌面悬停显现、触摸端常显；右键菜单在触摸设备不可达，必须有可点入口 */
+  const moreButton = useCallback((node: DocTreeNode) => (
+    <Button
+      type="text"
+      size="small"
+      className="cn-doc-tree-more"
+      icon={<MoreOutlined />}
+      aria-label={`更多操作：${node.title}`}
+      data-testid={`doc-tree-more-${node.id}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        openNodeMenu(node, rect.left, rect.bottom)
+      }}
+    />
+  ), [openNodeMenu])
+
+  /** 树节点渲染：图标 + 标题 + 状态色点 + 置顶标记 + 「更多」按钮（触摸端可达） */
   const titleRender = useCallback((node: DocTreeNode) => {
+    const pinMark = node.pinned ? (
+      <PushpinFilled
+        aria-label="已置顶"
+        data-testid={`doc-tree-pinned-${node.id}`}
+        style={{ marginLeft: 6, fontSize: 11, color: 'var(--cn-brand-color)' }}
+      />
+    ) : null
     if (node.is_folder) {
       return (
         <span data-testid={`doc-tree-folder-${node.id}`}>
           <FolderOutlined style={{ marginRight: 6, color: 'var(--cn-warning, #faad14)' }} />
           {node.title}
+          {pinMark}
+          {moreButton(node)}
         </span>
       )
     }
@@ -291,6 +344,8 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
       <span data-testid={`doc-tree-doc-${node.id}`}>
         <FileTextOutlined style={{ marginRight: 6, color: 'var(--cn-primary, #1890ff)' }} />
         {node.title}
+        {pinMark}
+        {moreButton(node)}
         <span
           aria-label="doc-status-dot"
           style={{
@@ -304,7 +359,7 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
         />
       </span>
     )
-  }, [])
+  }, [moreButton])
 
   const treeNodes: DataNode[] = useMemo(() => {
     const toData = (node: DocTreeNode): DataNode => ({
@@ -374,6 +429,18 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
       },
     },
     { type: 'divider' as const },
+    {
+      key: menu.node?.pinned ? 'unpin' : 'pin',
+      label: menu.node?.pinned ? '取消置顶' : '置顶',
+      icon: menu.node?.pinned ? <PushpinFilled /> : <PushpinOutlined rotate={90} />,
+      onClick: () => {
+        if (menu.node) {
+          const mutation = menu.node.pinned ? unpinMut : pinMut
+          mutation.mutate(menu.node.id)
+        }
+        setMenu({ open: false, x: 0, y: 0, node: null })
+      },
+    },
     {
       key: 'rename',
       label: '重命名',
