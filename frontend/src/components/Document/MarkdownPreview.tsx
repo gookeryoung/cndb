@@ -5,7 +5,9 @@
  */
 
 import { memo, useMemo } from 'react'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
+import DocumentImage from './DocumentImage'
+import { FILE_REF_PREFIX } from './imageRef'
 import remarkGfm from 'remark-gfm'
 import TableEmbed from './TableEmbed'
 import { splitTableRefs } from './tableRef'
@@ -133,10 +135,22 @@ const mdComponents = {
 } as const
 
 /** Markdown 片段渲染（双链 [[标题]] 预转换为链接，a 组件拦截前缀回调跳转） */
-function Md({ text, onWikilink }: { text: string; onWikilink?: (title: string) => void }) {
+function Md({
+  text,
+  workspaceId,
+  onWikilink,
+}: {
+  text: string
+  workspaceId?: number | string
+  onWikilink?: (title: string) => void
+}) {
   const components = useMemo(
     () => ({
       ...mdComponents,
+      // 站内图片 `![alt](file:<key>)` 需带鉴权取 blob；外部 URL 原样渲染
+      img: ({ src, alt }: React.ComponentProps<'img'>) => (
+        <DocumentImage workspaceId={workspaceId} src={src} alt={alt} />
+      ),
       a: ({ href, children, ...rest }: React.ComponentProps<'a'>) => {
         const title = href != null ? parseWikilinkHref(href) : null
         if (title === null) return <a href={href} {...rest}>{children}</a>
@@ -156,10 +170,16 @@ function Md({ text, onWikilink }: { text: string; onWikilink?: (title: string) =
         )
       },
     }),
-    [onWikilink],
+    [onWikilink, workspaceId],
   )
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={components}
+      // react-markdown 默认只放行 http/https/mailto 等协议，会剥离自定义的 `file:`；
+      // 站内图片引用必须原样保留，交给 DocumentImage 用带鉴权的请求取 blob
+      urlTransform={url => (url.startsWith(FILE_REF_PREFIX) ? url : defaultUrlTransform(url))}
+    >
       {transformWikilinks(text)}
     </ReactMarkdown>
   )
@@ -182,7 +202,7 @@ function MarkdownPreviewBase({ content, workspaceId, onWikilink }: {
   if (!hasTableRef) {
     return (
       <div className="doc-md-preview" style={{ lineHeight: 1.75, wordBreak: 'break-word' }}>
-        <Md text={content} onWikilink={onWikilink} />
+        <Md text={content} workspaceId={workspaceId} onWikilink={onWikilink} />
       </div>
     )
   }
@@ -191,7 +211,7 @@ function MarkdownPreviewBase({ content, workspaceId, onWikilink }: {
     <div className="doc-md-preview" style={{ lineHeight: 1.75, wordBreak: 'break-word' }}>
       {segments!.map((seg, i) =>
         seg.type === 'md' ? (
-          <Md key={i} text={seg.text} onWikilink={onWikilink} />
+          <Md key={i} text={seg.text} workspaceId={workspaceId} onWikilink={onWikilink} />
         ) : (
           <TableEmbed key={i} workspaceId={workspaceId!} tableRef={seg.ref} />
         ),

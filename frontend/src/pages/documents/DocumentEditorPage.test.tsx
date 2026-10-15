@@ -613,6 +613,7 @@ describe('DocumentEditorPage 查找与替换', () => {
         fireEvent.click(screen.getByTestId('doc-find-case'))
         await waitFor(() => expect(screen.getByTestId('doc-find-count')).toHaveTextContent('1/1'))
     })
+})
 
 describe('DocumentEditorPage 路径面包屑', () => {
     function renderWithListProbe(route = '/w/10/documents/2') {
@@ -652,4 +653,56 @@ describe('DocumentEditorPage 路径面包屑', () => {
         })
     })
 })
+
+describe('DocumentEditorPage 插入图片', () => {
+    it('选择图片后上传到工作区文件存储，并在光标处插入站内引用', async () => {
+        const hits: string[] = []
+        server.use(
+            http.post('/api/v1/workspaces/10/files', ({ request }) => {
+                hits.push(request.url)
+                return HttpResponse.json(
+                    { file_key: 'abc123.png', filename: 'arch.png', size: 4, mime_type: 'image/png' },
+                    { status: 201 },
+                )
+            }),
+        )
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        // 光标放到正文末尾
+        ta.setSelectionRange(ta.value.length, ta.value.length)
+
+        const input = screen.getByTestId('doc-image-input') as HTMLInputElement
+        const file = new File([new Uint8Array([137, 80, 78, 71])], 'arch.png', { type: 'image/png' })
+        // jsdom 中 input.files 只读：注入后触发 change（与真实选择文件同一条链路）
+        Object.defineProperty(input, 'files', { value: [file], configurable: true })
+        fireEvent.change(input)
+
+        await waitFor(() => expect(hits).toHaveLength(1))
+        await waitFor(() => expect(ta.value).toContain('![arch.png](file:abc123.png)'))
+        // 插入后标记为未保存
+        expect(screen.getByText('未保存')).toBeInTheDocument()
+    })
+
+    it('上传失败时不改动正文（请求已发起但不插入引用）', async () => {
+        const hits: string[] = []
+        server.use(
+            http.post('/api/v1/workspaces/10/files', ({ request }) => {
+                hits.push(request.url)
+                return new HttpResponse(null, { status: 500 })
+            }),
+        )
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const before = ta.value
+
+        const input = screen.getByTestId('doc-image-input') as HTMLInputElement
+        const file = new File([new Uint8Array([137, 80, 78, 71])], 'x.png', { type: 'image/png' })
+        Object.defineProperty(input, 'files', { value: [file], configurable: true })
+        fireEvent.change(input)
+
+        await waitFor(() => expect(hits).toHaveLength(1))
+        // 失败路径不得改动正文、不得出现未保存标记
+        expect(ta.value).toBe(before)
+        expect(screen.queryByText('未保存')).toBeNull()
+    })
 })
