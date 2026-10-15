@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path as PathLib
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.config import settings
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.files import services as files_service
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole
 
@@ -125,15 +126,28 @@ async def upload_file(
     file: Annotated[UploadFile, File(...)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    table_id: Annotated[int | None, Form()] = None,
+    row_id: Annotated[int | None, Form()] = None,
+    document_id: Annotated[int | None, Form()] = None,
 ) -> dict[str, object]:
     """上传一个附件文件，返回元数据.
+
+    可选 ``table_id`` / ``row_id`` / ``document_id``：登记文件归属，
+    使下载与删除按宿主对象（表/行/文档）的权限校验。
+
 
     返回结构可直接作为 ``AttachmentFieldType`` 的单项值::
 
         {"file_key": "...", "filename": "...", "size": 123, "mime_type": "...", "created_at": "..."}
     """
-    # 鉴权：登录即可上传（实际行级权限由 row update 时再校验）
+    # 鉴权：至少是工作区成员；带归属时进一步校验对宿主对象的写权限
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    if table_id is not None:
+        files_service.assert_can_attach_table(db, table_id=table_id, workspace_id=workspace_id, user=current_user)
+    if document_id is not None:
+        files_service.assert_can_attach_document(
+            db, document_id=document_id, workspace_id=workspace_id, user=current_user
+        )
 
     safe_name = _safe_filename(file.filename or "unnamed")
     suffix = PathLib(safe_name).suffix.lower()
@@ -157,6 +171,17 @@ async def upload_file(
     file_key = f"{uuid.uuid4().hex}{ext}"
     target = _file_path(workspace_id, file_key)
     target.write_bytes(content)
+
+    # 记录归属：下载/删除将按宿主对象（表/行/文档）的权限校验
+    files_service.record_owner(
+        db,
+        file_key=file_key,
+        workspace_id=workspace_id,
+        table_id=table_id,
+        row_id=row_id,
+        document_id=document_id,
+        uploaded_by_id=current_user.id if current_user else None,
+    )
 
     mime = file.content_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
 
@@ -184,6 +209,8 @@ def download_file(
     - ``inline=false``：强制下载
     """
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    # 按归属校验：受限表 / 未发布文档 / 被行过滤挡掉的行上的附件不可读
+    files_service.assert_can_access(db, workspace_id=workspace_id, file_key=file_key, user=current_user)
 
     target = _file_path(workspace_id, file_key)
     if not target.is_file():
@@ -220,8 +247,11 @@ def delete_file(
 ) -> None:
     """删除附件（只删物理文件；业务层通常在更新行值时同步清理）."""
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
+    # 删除同样按归属校验（与下载一致）
+    files_service.assert_can_access(db, workspace_id=workspace_id, file_key=file_key, user=current_user)
 
     target = _file_path(workspace_id, file_key)
     if target.is_file():
         target.unlink()
+    files_service.forget_owner(db, file_key)
     # 文件不存在也静默通过（幂等删除）

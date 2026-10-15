@@ -176,10 +176,23 @@ export const exportApi = {
 }
 
 export const fileApi = {
-  /** 上传单个附件文件 */
-  upload: (wid: number | string, file: File) => {
+  /**
+   * 上传单个附件文件.
+   *
+   * ctx 携带归属上下文（表 + 行 / 文档）：后端据此登记文件归属，
+   * 下载与删除时按宿主对象的权限校验（受限表、未发布文档、被行过滤挡掉的行）。
+   * 不传则保持"工作区级文件"语义（成员 + 不可猜键）。
+   */
+  upload: (
+    wid: number | string,
+    file: File,
+    ctx?: { tableId?: number | string; rowId?: number | string; documentId?: number | string },
+  ) => {
     const fd = new FormData()
     fd.append('file', file)
+    if (ctx?.tableId != null) fd.append('table_id', String(ctx.tableId))
+    if (ctx?.rowId != null) fd.append('row_id', String(ctx.rowId))
+    if (ctx?.documentId != null) fd.append('document_id', String(ctx.documentId))
     return api.post<AttachmentFile>(`/v1/workspaces/${wid}/files`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)

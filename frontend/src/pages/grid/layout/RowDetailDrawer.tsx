@@ -178,7 +178,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
               name={f.name}
               style={{ marginBottom: 12 }}
             >
-              <FieldEditor field={f} wid={wid} disabled={locked || !!readOnly} />
+              <FieldEditor field={f} wid={wid} tableId={tid} rowId={row?.id} disabled={locked || !!readOnly} />
             </Form.Item>
           )
         })}
@@ -233,12 +233,17 @@ function FieldEditor({
   onChange = () => { },
   wid,
   disabled,
+  tableId,
+  rowId,
 }: {
   field: Field
   value?: unknown
   onChange?: (v: unknown) => void
   wid: string
   disabled?: boolean
+  /** 附件上传登记归属用（表 + 行） */
+  tableId?: string | number
+  rowId?: string | number
 }) {
   const ft = field.field_type
 
@@ -356,7 +361,7 @@ function FieldEditor({
         ? (value as AttachmentFile[])
         : (() => { try { return JSON.parse(String(value || '[]')) } catch { return [] } })()
       const upload = async (file: File) => {
-        const meta = await fileApi.upload(wid, file)
+        const meta = await fileApi.upload(wid, file, { tableId, rowId })
         onChange([...files, meta])
         return meta
       }
@@ -422,7 +427,7 @@ function FieldEditor({
         ? (value as AttachmentFile[])
         : (() => { try { return JSON.parse(String(value || '[]')) } catch { return [] } })()
       const upload = async (file: File) => {
-        const meta = await fileApi.upload(wid, file)
+        const meta = await fileApi.upload(wid, file, { tableId, rowId })
         onChange([...images, meta])
         return meta
       }

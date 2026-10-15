@@ -90,6 +90,8 @@ export interface ColumnOptions {
   rowIndexBase?: number
   /** 总行数：用于按最大行号位数自适应列宽 */
   rowIndexTotal?: number
+  /** 当前表 id：附件上传登记归属用（透传到 GridCell → EditCell） */
+  tableId?: number | string
   /** 草稿行（新增行）的 id：该行序号显示为「—」，避免与已保存行混淆 */
   newRowKey?: string
 }
@@ -247,6 +249,7 @@ export function buildColumns(
                 field={f}
                 rowId={record.id}
                 wid={wid}
+                tableId={options?.tableId}
                 editing={inline.editing}
                 onDraftChange={(val) => inline.onFieldChange(f.name, val)}
                 onDraftCommit={inline.onFieldCommit}
@@ -262,6 +265,7 @@ export function buildColumns(
               field={f}
               rowId={record.id}
               wid={wid}
+              tableId={options?.tableId}
               onCellSave={onCellSave}
               locked={inlineOps?.isPendingRow?.(record) ?? false}
             />

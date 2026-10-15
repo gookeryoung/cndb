@@ -27,6 +27,8 @@ interface Props {
   field: Field
   rowId: number | string
   wid?: number | string
+  /** 当前表 id：附件上传登记归属用 */
+  tableId?: number | string
   /** 传统按单元格编辑：双击进入编辑态，回车/失焦调用该回调保存单个字段 */
   onSave?: (fieldName: string, value: unknown) => Promise<unknown>
   /** 稳定引用版行级保存回调（onSave 的替代）：GridCell 内部组合 rowId 调用，供 memo 生效 */
@@ -52,7 +54,7 @@ interface Props {
  * - 传统模式（无 editing prop）：双击切到编辑态，回车/失焦通过 onSave 保存单个字段。
  * - 受控模式（editing 为布尔值）：由父级把控编辑态与草稿值，value 即当前草稿。
  */
-function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: controlledEditing, onDraftChange, onDraftCommit, onDraftCancel, showActionButtons, readOnly, locked }: Props) {
+function GridCell({ value, field, rowId, wid, tableId, onSave, onCellSave, editing: controlledEditing, onDraftChange, onDraftCommit, onDraftCancel, showActionButtons, readOnly, locked }: Props) {
   const { message } = AntApp.useApp()
   // 稳定引用版回调：父级传 onCellSave 时在内部组合 rowId，避免每次渲染新建闭包破坏 memo
   const effectiveOnSave = useMemo(
@@ -151,6 +153,7 @@ function GridCell({ value, field, rowId, wid, onSave, onCellSave, editing: contr
     // 草稿值即 value（父级传入的当前值）；回车提交走 onDraftCommit（行级保存统一由父级处理）
     return (
       <EditCell
+        tableId={tableId}
         field={field}
         draft={value}
         onChange={onDraftChange ?? (() => { })}
