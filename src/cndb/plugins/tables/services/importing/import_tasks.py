@@ -122,6 +122,9 @@ def analyze_import_task(db_session: Session, task_id: int) -> None:
         return
     task.progress = 5
     db_session.commit()
+    logger.info(
+        "[ImportTask %s] analyze 开始（文件 %s，%d 字节）", task_id, task.filename, len(task.file_content or "")
+    )
 
     try:
         table = db_session.get(DataTable, task.table_id)
@@ -252,6 +255,13 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
         return
     task.progress = 5
     db_session.commit()
+    logger.info(
+        "[ImportTask %s] execute 开始（文件 %s，%d 字节，进度 %s%%)",
+        task_id,
+        task.filename,
+        len(task.file_content or ""),
+        task.progress,
+    )
 
     try:
         table = db_session.get(DataTable, task.table_id)
@@ -478,6 +488,74 @@ def reanalyze_import_task(
             db_session.commit()
 
 
+# 任务处于"进行中"的状态集合（进程重启会把这些留在原地）
+_IN_FLIGHT_STATUSES = ("pending_validation", "running")
+# 失速判定阈值（秒）：进行中任务超过该时长没有任何更新即判定为中断
+STALL_THRESHOLD_SECONDS = 180
+
+
+def _stall_message(task: ImportTask, elapsed: float) -> str:
+    return (
+        f"导入任务已 {elapsed:.0f} 秒没有进展（停留在「{task.status}」/ {task.progress}%），"
+        "判定为中断。常见原因：服务在任务执行期间重启或容器被重建（部署/内存不足），"
+        "导致后台线程被直接终止。请重新上传文件重试；若反复出现，请缩小文件或联系管理员查看服务日志。"
+    )
+
+
+def reclaim_interrupted_tasks(db_session: Session, *, stall_threshold: int = STALL_THRESHOLD_SECONDS) -> int:
+    """回收"进行中但已无推进"的导入任务 → failed（返回处理条数）.
+
+    为什么需要：任务跑在**进程内后台线程**里，容器重建/进程崩溃会把它直接带走，
+    任务行永远停在"运行中 5%"。前端只依据 status 展示，于是表现为
+    "进度卡 5% 且无任何报错" —— 用户无法知道该怎么办。
+
+    两处调用：
+    - 应用启动时（``reclaim_on_startup``）：上一进程遗留的任务必然已成为孤儿；
+    - 查询任务详情时（``get_import_task``）：进程仍活着但线程异常终止的情况。
+    """
+    from datetime import UTC, datetime, timedelta
+
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=stall_threshold)
+    stale = (
+        db_session.query(ImportTask)
+        .filter(ImportTask.status.in_(_IN_FLIGHT_STATUSES))
+        .filter((ImportTask.updated_at.is_(None)) | (ImportTask.updated_at < cutoff))
+        .all()
+    )
+    for task in stale:
+        updated = task.updated_at or task.created_at
+        elapsed = (datetime.now(UTC).replace(tzinfo=None) - updated).total_seconds() if updated else 0.0
+        task.error_message = _stall_message(task, elapsed)
+        task.progress = 100
+        task.status = "failed"
+        logger.warning(
+            "[ImportTask %s] 回收中断任务（状态=%s 进度=%s 停滞 %.0fs）",
+            task.id,
+            task.status,
+            task.progress,
+            elapsed,
+        )
+    if stale:
+        db_session.commit()
+    return len(stale)
+
+
+def reclaim_on_startup() -> int:
+    """应用启动时回收上一进程遗留的进行中任务（best-effort，绝不阻塞启动）."""
+    try:
+        from cndb.core.database import SessionLocal
+
+        session = SessionLocal()
+        try:
+            # 上一进程已消失：这些任务不可能再有人推进，按"已中断"直接判定
+            return reclaim_interrupted_tasks(session, stall_threshold=0)
+        finally:
+            session.close()
+    except Exception:
+        logger.warning("启动时回收导入任务失败（忽略，不影响启动）", exc_info=True)
+        return 0
+
+
 def run_task_in_background(
     db_session_factory: Any,
     task_id: int,
@@ -516,5 +594,7 @@ __all__ = [
     "execute_import_task",
     "join_background_threads",
     "reanalyze_import_task",
+    "reclaim_interrupted_tasks",
+    "reclaim_on_startup",
     "run_task_in_background",
 ]

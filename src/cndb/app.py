@@ -61,6 +61,17 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             f"  原始错误：{exc}"
         ) from exc
 
+    # 回收上一进程遗留的"进行中"导入任务（进程重启会把后台线程带走，
+    # 任务行会永远停在"运行中 5%"，前端因此表现为"卡住且无报错"）
+    try:
+        from cndb.plugins.tables.services.importing.import_tasks import reclaim_on_startup
+
+        reclaimed = reclaim_on_startup()
+        if reclaimed:
+            logger.warning("启动时回收了 %d 个中断的导入任务（已标记失败并说明原因）", reclaimed)
+    except Exception:
+        logger.warning("启动时回收导入任务失败（忽略）", exc_info=True)
+
     yield
 
 
