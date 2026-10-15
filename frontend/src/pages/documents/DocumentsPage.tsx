@@ -25,6 +25,8 @@ import {
 } from 'antd'
 import type { DataNode } from 'antd/es/tree'
 import {
+  LockOutlined,
+  TeamOutlined,
   ClockCircleOutlined,
   ApartmentOutlined,
   ArrowLeftOutlined,
@@ -686,6 +688,32 @@ export default function DocumentsPage() {
                     <Text strong>{doc.title}</Text>
                     {doc.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${doc.id}`}>置顶</Tag>}
                     <Tag color={STATUS_COLORS[doc.status]}>{STATUS_LABELS[doc.status]}</Tag>
+                    {/* 可见性提示：未发布的文档同事看不到，明确告知以免误以为文档丢失 */}
+                    {doc.visibility === 'private' && (
+                      <Tooltip title="未发布：仅你与工作区所有者可见">
+                        <Tag
+                          icon={<LockOutlined />}
+                          data-testid={`doc-list-visibility-${doc.id}`}
+                          aria-label="仅自己可见"
+                          style={{ fontSize: 11, lineHeight: '18px' }}
+                        >
+                          仅自己可见
+                        </Tag>
+                      </Tooltip>
+                    )}
+                    {doc.visibility === 'shared' && (
+                      <Tooltip title={`未发布：已授权 ${doc.collaborator_count ?? 0} 位协作者可见`}>
+                        <Tag
+                          icon={<TeamOutlined />}
+                          color="blue"
+                          data-testid={`doc-list-visibility-${doc.id}`}
+                          aria-label="已共享给协作者"
+                          style={{ fontSize: 11, lineHeight: '18px' }}
+                        >
+                          共享 {doc.collaborator_count ?? 0} 人
+                        </Tag>
+                      </Tooltip>
+                    )}
                     {doc.tag_ids.length > 0 && (
                       <Text type="secondary" style={{ fontSize: 12 }}>
                         {doc.tag_ids.length} 个标签
