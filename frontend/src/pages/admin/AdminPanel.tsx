@@ -13,6 +13,7 @@ import { adminApi } from '@/api'
 import { useAuthStore } from '@/store'
 import type { BackupManifest } from '@/api'
 import UsersPage from './UsersPage'
+import { useResponsive } from '@/hooks/useResponsive'
 import { formatSize } from '@/utils/formatSize'
 
 const { Text, Title } = Typography
@@ -21,6 +22,8 @@ export default function AdminPanel() {
   const { message, modal } = AntApp.useApp()
   const user = useAuthStore(s => s.user)
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
+  // 窄屏：Descriptions 两列会把标签挤成竖排文字（「应用名称」一字一行），改单列 + 标签在上
+  const { isMobile } = useResponsive()
 
   // ── 所有 Hook 必须在任何条件 return 之前声明 ──
   // ── 系统信息 ──
@@ -256,7 +259,12 @@ export default function AdminPanel() {
                   style={{ marginBottom: 12 }}
                 />
               )}
-              <Descriptions column={2} size="small" bordered>
+              <Descriptions
+                column={isMobile ? 1 : 2}
+                layout={isMobile ? 'vertical' : 'horizontal'}
+                size="small"
+                bordered
+              >
                 <Descriptions.Item label="备份版本">{manifest.version}</Descriptions.Item>
                 <Descriptions.Item label="应用版本">{manifest.app_version}</Descriptions.Item>
                 <Descriptions.Item label="创建时间">
@@ -277,7 +285,7 @@ export default function AdminPanel() {
                 <Descriptions.Item label="总行数">
                   {Object.values(manifest.database.row_counts).reduce((a, b) => a + b, 0).toLocaleString()}
                 </Descriptions.Item>
-                <Descriptions.Item label="附件" span={2}>
+                <Descriptions.Item label="附件" span={isMobile ? 1 : 2}>
                   {manifest.uploads.included
                     ? `${manifest.uploads.file_count} 个文件，共 ${formatSize(manifest.uploads.total_size, 2)}`
                     : <Tag>未包含</Tag>}
@@ -386,16 +394,21 @@ export default function AdminPanel() {
     <div style={{ padding: '8px 0' }}>
       <Card size="small" title={<span><InfoCircleOutlined /> 系统运行信息</span>} loading={infoLoading}>
         {info && (
-          <Descriptions column={2} size="small" bordered>
+          <Descriptions
+            column={isMobile ? 1 : 2}
+            layout={isMobile ? 'vertical' : 'horizontal'}
+            size="small"
+            bordered
+          >
             <Descriptions.Item label="应用名称">{info.app_name}</Descriptions.Item>
             <Descriptions.Item label="版本">{info.app_version}</Descriptions.Item>
-            <Descriptions.Item label="数据库" span={2}>
+            <Descriptions.Item label="数据库" span={isMobile ? 1 : 2}>
               <code>{info.database_url}</code>
             </Descriptions.Item>
-            <Descriptions.Item label="数据目录" span={2}>
+            <Descriptions.Item label="数据目录" span={isMobile ? 1 : 2}>
               <code>{info.data_dir}</code>
             </Descriptions.Item>
-            <Descriptions.Item label="附件目录" span={2}>
+            <Descriptions.Item label="附件目录" span={isMobile ? 1 : 2}>
               <code>{info.upload_dir}</code>
             </Descriptions.Item>
             <Descriptions.Item label="认证">

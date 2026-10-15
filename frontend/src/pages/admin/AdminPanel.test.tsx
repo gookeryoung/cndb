@@ -12,6 +12,17 @@ import * as apiModule from '@/api'
 import { renderProviders } from '@/test/render-providers'
 import { server, mockUser } from '@/test/msw'
 import type { BackupManifest } from '@/api'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，窄屏用例在其内部切换
+let responsiveState: ResponsiveState = {
+  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+  width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+  return { ...actual, useResponsive: () => responsiveState }
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -185,5 +196,42 @@ describe('AdminPanel 系统管理台', () => {
     expect(
       screen.getByText('跳过未知表 1 个: future_table', { selector: '.ant-modal-body div' }),
     ).toBeInTheDocument()
+  })
+})
+
+describe('AdminPanel 系统信息窄屏布局', () => {
+  afterEach(() => {
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+  })
+
+  it('窄屏系统信息改为单列竖排（标签在上），桌面端保持两列', async () => {
+    server.use(http.get('/api/v1/admin/info', () => HttpResponse.json(INFO)))
+
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    const { unmount } = renderPanel()
+    await activateTab(/系\s*统\s*信\s*息/)
+    await screen.findByText('应用名称')
+
+    const mobileRow = document.querySelector('.ant-descriptions-row') as HTMLElement
+    expect(mobileRow.querySelectorAll('.ant-descriptions-item-label')).toHaveLength(1)
+    expect(document.querySelector('.ant-descriptions')).toHaveClass('ant-descriptions-bordered')
+    unmount()
+
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+    renderPanel()
+    await activateTab(/系\s*统\s*信\s*息/)
+    await screen.findByText('应用名称')
+
+    const desktopRow = document.querySelector('.ant-descriptions-row') as HTMLElement
+    expect(desktopRow.querySelectorAll('.ant-descriptions-item-label')).toHaveLength(2)
   })
 })
