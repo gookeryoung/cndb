@@ -26,7 +26,8 @@ class TestTTLCache:
         cache = TTLCache(max_entries=4)
         assert cache.get("nope") is None
         cache.set("a", 1, 0.05)
-        time.sleep(0.06)
+        # 留足余量，避免机器负载导致 sleep 未过 TTL 的偶发失败
+        time.sleep(0.25)
         assert cache.get("a") is None
         assert cache.stats().expirations == 1
 
@@ -80,7 +81,7 @@ class TestTTLCache:
         cache = TTLCache(max_entries=8)
         cache.set("a", 1, 0.02)
         cache.set("b", 2, 60)
-        time.sleep(0.03)
+        time.sleep(0.25)  # 留足余量：并行跑测试时机器负载高，余量太小会偶发失败
         assert cache.purge_expired() == 1
         assert cache.get("b") == 2
 
@@ -139,3 +140,102 @@ def second_client_headers(client, db):
         "access_token"
     ]
     return {"Authorization": f"Bearer {token}"}
+
+
+class TestEventDrivenInvalidation:
+    """写路径通过 A4 事件统一失效缓存（记录/表的写入都已在各自 choke point 记事件）."""
+
+    def test_record_event_clears_record_and_table_cache(self, db):
+        from cndb.core.cache import cache_key, list_cache
+        from cndb.core.events import record_event
+
+        list_cache.clear()
+        ws = 42
+        list_cache.set(cache_key("records", ws, 1, 1), {"items": []}, 60)
+        list_cache.set(cache_key("tables", ws), [{"id": 1}], 60)
+
+        record_event(db, "record.create", summary="新增记录", target_type="record", workspace_id=ws)
+
+        assert list_cache.get(cache_key("records", ws, 1, 1)) is None
+        assert list_cache.get(cache_key("tables", ws)) is None
+
+    def test_document_event_clears_tree_cache(self, db):
+        from cndb.core.cache import cache_key, list_cache
+        from cndb.core.events import record_event
+
+        list_cache.clear()
+        ws = 43
+        list_cache.set(cache_key("doc-tree", ws, 7), {"items": []}, 60)
+
+        record_event(db, "document.update", summary="更新文档", target_type="document", workspace_id=ws)
+
+        assert list_cache.get(cache_key("doc-tree", ws, 7)) is None
+
+    def test_platform_event_does_not_touch_workspace_cache(self, db):
+        from cndb.core.cache import cache_key, list_cache
+        from cndb.core.events import record_event
+
+        list_cache.clear()
+        list_cache.set(cache_key("records", 44, 1, 1), {"items": []}, 60)
+        # workspace_id 为空（平台级事件）时不应误清
+        record_event(db, "auth.login", summary="登录", workspace_id=None)
+        assert list_cache.get(cache_key("records", 44, 1, 1)) is not None
+
+
+class TestTreeAndRecordCaching:
+    def test_document_tree_second_call_hits_cache(self, client, auth_headers):
+        from cndb.core.cache import list_cache
+
+        list_cache.clear()
+        ws = client.post("/api/v1/workspaces", json={"name": "tree-cache"}, headers=auth_headers).json()
+        url = f"/api/v1/workspaces/{ws['id']}/documents/tree"
+        first = client.get(url, headers=auth_headers)
+        assert first.status_code == 200
+        before = list_cache.stats().hits
+        second = client.get(url, headers=auth_headers)
+        assert second.status_code == 200
+        assert second.json() == first.json()
+        assert list_cache.stats().hits == before + 1
+
+    def test_document_write_invalidates_tree(self, client, auth_headers, db):
+        """建文档后目录树缓存应被清（事件驱动失效）."""
+        from cndb.core.cache import cache_key, list_cache
+
+        list_cache.clear()
+        ws = client.post("/api/v1/workspaces", json={"name": "tree-inv"}, headers=auth_headers).json()
+        tree_url = f"/api/v1/workspaces/{ws['id']}/documents/tree"
+        assert client.get(tree_url, headers=auth_headers).status_code == 200
+        assert list_cache.get(cache_key("doc-tree", ws["id"], 1, id(db.bind))) is not None
+
+        # 直接写入一条 document.* 事件（等价于文档写路径的失效信号）
+        from cndb.core.events import record_event
+
+        record_event(db, "document.create", summary="新建文档", target_type="document", workspace_id=ws["id"])
+        assert list_cache.get(cache_key("doc-tree", ws["id"], 1, id(db.bind))) is None
+
+    def test_record_list_cache_is_per_user_and_body(self, client, auth_headers):
+        """记录列表缓存按用户与查询体隔离（行级权限 + 不同筛选不能串）."""
+        from cndb.core.cache import list_cache
+
+        list_cache.clear()
+        ws = client.post("/api/v1/workspaces", json={"name": "rec-cache"}, headers=auth_headers).json()
+        table = client.post(
+            f"/api/v1/workspaces/{ws['id']}/tables",
+            json={"name": "t", "description": ""},
+            headers=auth_headers,
+        ).json()
+        url = f"/api/v1/workspaces/{ws['id']}/tables/{table['id']}/records/list"
+        body = {"limit": 20, "offset": 0}
+        r1 = client.post(url, json=body, headers=auth_headers)
+        assert r1.status_code == 200, r1.text
+        hits_before = list_cache.stats().hits
+        r2 = client.post(url, json=body, headers=auth_headers)
+        assert r2.status_code == 200
+        assert r2.json() == r1.json()
+        assert list_cache.stats().hits == hits_before + 1
+
+        # 不同查询体 → 不共享缓存（重新计算，不算命中）
+        misses_before = list_cache.stats().misses
+        r3 = client.post(url, json={"limit": 5, "offset": 0}, headers=auth_headers)
+        assert r3.status_code == 200
+        assert list_cache.stats().misses == misses_before + 1

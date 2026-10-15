@@ -34,7 +34,7 @@ import re
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
@@ -60,7 +60,42 @@ from cndb.plugins.documents.schemas import (
 )
 from cndb.plugins.workspaces.permissions import get_member_role
 
-router = APIRouter(prefix="/{workspace_id}/documents", tags=["documents"])
+# 文档树缓存 TTL（秒）
+DOC_TREE_TTL_SECONDS = 10.0
+
+
+def invalidate_document_tree_cache(workspace_id: int) -> int:
+    """失效某工作区的文档树缓存."""
+    from cndb.core.cache import cache_key, list_cache
+
+    return list_cache.clear(cache_key("doc-tree", workspace_id))
+
+
+def invalidate_tree_on_write(request: Request) -> None:
+    """文档路由的**写请求**先失效该工作区的文档树缓存.
+
+    文档写路径分散在 routers 与 services（多处 commit），逐个埋点容易漏；
+    这里按"方法即意图"统一处理：非 GET/HEAD/OPTIONS 请求进入文档路由时先清缓存，
+    随后的写与后续读取都能拿到最新树形数据（TTL 10s 仅作兜底）。
+    取舍：清缓存发生在写入提交之前，理论上存在"并发读把旧数据写回缓存"的窄窗口
+    （毫秒级 + 10s TTL 上限），对文档树这类展示型数据可接受。
+    """
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    wid = request.path_params.get("workspace_id")
+    if wid is None:
+        return
+    try:
+        invalidate_document_tree_cache(int(wid))
+    except (TypeError, ValueError):  # pragma: no cover - 路径参数异常时忽略
+        return
+
+
+router = APIRouter(
+    prefix="/{workspace_id}/documents",
+    tags=["documents"],
+    dependencies=[Depends(invalidate_tree_on_write)],
+)
 
 
 def _require_member(db: Session, workspace_id: int, user: User) -> None:
@@ -159,8 +194,28 @@ def document_tree(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    """全量文档树（工作区成员，含文件夹层级）。"""
+    """全量文档树（工作区成员，含文件夹层级）.
+
+    进程内短 TTL 缓存（10s，按用户隔离：置顶是个人偏好）；文档写路径提交后主动失效，TTL 兜底。
+    """
     _require_member(db, workspace_id, current_user)
+
+    from cndb.core.cache import cache_key, list_cache
+
+    ck = cache_key("doc-tree", workspace_id, current_user.id, id(db.bind))
+    cached = list_cache.get(ck)
+    if cached is not None:
+        return cached
+    data = _document_tree_uncached(db, workspace_id, current_user)
+    list_cache.set(ck, data, DOC_TREE_TTL_SECONDS)
+    return data
+
+
+def _document_tree_uncached(
+    db: Session,
+    workspace_id: int,
+    current_user: User,
+) -> dict[str, Any]:
     docs = (
         db.execute(
             select(Document)
@@ -378,11 +433,20 @@ def update_document_content(
     # 段落级并发编辑：客户端回传了 base_content 时做三方合并（不同段落可并发，同段落冲突）
     content_to_save = payload.content
     merged = False
-    if payload.base_content is not None and not doc_is_folder(db, workspace_id, doc_id):
-        latest_text = services.content.load_content(
+    # 保存前的正文：既用于段落级合并，也用于保存后把段落锁按内容重排（防止位置漂移）
+    is_folder = doc_is_folder(db, workspace_id, doc_id)
+    pre_save_text = (
+        ""
+        if is_folder
+        else services.content.load_content(
             services.content.latest_version(db, doc_id),
             services.content.get_document_or_404(db, workspace_id, doc_id),
         )
+    )
+    content_to_save = payload.content
+    merged = False
+    if payload.base_content is not None and not is_folder:
+        latest_text = pre_save_text
         outcome = services.paragraph_lock.merge_incoming(payload.base_content, latest_text, payload.content)
         if not outcome.merged:
             holders = services.paragraph_lock.paragraph_lock_registry.conflicts_for_indices(
@@ -409,6 +473,19 @@ def update_document_content(
         change_summary=payload.change_summary,
         base_updated_at=(None if merged else payload.base_updated_at),
     )
+
+    # 段落位置可能因插入/删除而变化：把已存在的段落锁按内容重排到新位置（锁跟着段落走）
+    if not is_folder and pre_save_text != content_to_save:
+        remap = services.paragraph_lock.paragraph_lock_registry.remap(
+            doc_id, services.paragraph_lock.remap_positions(pre_save_text, content_to_save)
+        )
+        if remap["moved"] or remap["released"]:
+            notify_paragraph_locks(
+                workspace_id,
+                doc_id,
+                [lock.as_dict() for lock in services.paragraph_lock.paragraph_lock_registry.locks_for_document(doc_id)],
+            )
+
     data = services.content.serialize_document(db, doc)
     v = services.content.latest_version(db, doc.id)
     data["content"] = content_to_save

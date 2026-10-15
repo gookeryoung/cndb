@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Annotated, Any
 
@@ -37,6 +38,10 @@ from cndb.plugins.tables.services.core.records import (
 )
 
 logger = logging.getLogger(__name__)
+# 记录列表缓存 TTL（秒）：短 TTL + 事件驱动失效（record.* 事件提交后清该工作区记录缓存）
+RECORD_LIST_TTL_SECONDS = 5.0
+
+
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/records", tags=["records"])
 
 
@@ -195,7 +200,17 @@ def list_records(
 ) -> RecordListResponse:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    return _list_response(
+    # 记录列表是表格页最热的读路径：按（工作区/表/用户/查询体）缓存 5s。
+    # 必须带 user_id —— 行级权限（tables_tablepermission）是按人过滤的，不能跨用户复用。
+    # 失效：记录写入会写入 record.* 统一事件，事件钩子统一清该工作区的记录缓存。
+    from cndb.core.cache import cache_key, list_cache
+
+    body_sig = hashlib.sha256(payload.model_dump_json().encode("utf-8")).hexdigest()[:16]
+    ck = cache_key("records", workspace_id, table_id, current_user.id, include_trashed, body_sig, id(db.bind))
+    cached = list_cache.get(ck)
+    if cached is not None:
+        return cached
+    result = _list_response(
         db,
         dt,
         current_user,
@@ -206,6 +221,8 @@ def list_records(
         offset=payload.offset,
         include_trashed=include_trashed,
     )
+    list_cache.set(ck, result, RECORD_LIST_TTL_SECONDS)
+    return result
 
 
 @router.get("/{record_id}")

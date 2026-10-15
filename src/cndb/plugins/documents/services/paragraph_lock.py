@@ -141,6 +141,32 @@ def merge_incoming(base: str, latest: str, incoming: str) -> MergeOutcome:
     )
 
 
+def remap_positions(old_text: str, new_text: str) -> dict[int, int | None]:
+    """把「旧段落位置」映射到「新段落位置」（内容相同者按出现顺序一一配对）.
+
+    解决的问题：段落键是**位置键**，一旦有人在中间插入/删除段落，其余人的锁位置就会漂移
+    （锁住的其实是另一段）。保存时按内容配对重排锁位置，即可让锁"跟着段落走"：
+
+    - 内容未变的段落 → 映射到它的新位置；
+    - 被改写或删除的段落 → 映射为 ``None``（其锁释放：该段落的编辑已经落地）。
+
+    相同内容的重复段落按出现顺序配对（deque 逐个消费），保证稳定且可预期。
+    """
+    from collections import deque
+
+    old_parts = split_paragraphs(old_text)
+    new_parts = split_paragraphs(new_text)
+    buckets: dict[str, deque[int]] = {}
+    for idx, part in enumerate(new_parts):
+        buckets.setdefault(part, deque()).append(idx + 1)
+
+    mapping: dict[int, int | None] = {}
+    for idx, part in enumerate(old_parts):
+        bucket = buckets.get(part)
+        mapping[idx + 1] = bucket.popleft() if bucket else None
+    return mapping
+
+
 @dataclass
 class ParagraphLockInfo:
     """段落锁信息."""
@@ -271,6 +297,46 @@ class ParagraphLockRegistry:
         keys = [f"p{i}" for i in sorted(indices)]
         return self.held_by_others(document_id, keys, user_id)
 
+    def remap(self, document_id: int, mapping: dict[int, int | None]) -> dict[str, object]:
+        """按「旧位置 → 新位置」重排该文档的段落锁.
+
+        - 映射到新位置：把锁移到该位置（``p3 → p4``），锁的持有者与时间保持不变；
+        - 映射为 ``None``：段落已被改写/删除 → 释放该锁；
+        - 目标位置已被他人占用：保留原锁不动（保守策略，避免悄悄抢锁），并计入 ``kept``。
+
+        Returns:
+            ``{"moved": n, "released": n, "kept": n, "mapping": {...}}``（便于日志与测试）
+        """
+        moved = released = kept = 0
+        details: dict[str, str] = {}
+        with self._lock:
+            self._prune_locked()
+            items = [(k, v) for k, v in self._locks.items() if k[0] == document_id]
+            for (doc_id, old_key), info in items:
+                old_index = key_to_index(old_key)
+                if old_index is None:
+                    continue
+                target_index = mapping.get(old_index)
+                if target_index is None:
+                    del self._locks[(doc_id, old_key)]
+                    released += 1
+                    details[old_key] = "released"
+                    continue
+                new_key = f"p{target_index}"
+                if new_key == old_key:
+                    continue
+                occupied = self._locks.get((doc_id, new_key))
+                if occupied is not None and occupied.user_id != info.user_id:
+                    kept += 1
+                    details[old_key] = f"kept(occupied by {occupied.username})"
+                    continue
+                del self._locks[(doc_id, old_key)]
+                info.key = new_key
+                self._locks[(doc_id, new_key)] = info
+                moved += 1
+                details[old_key] = new_key
+        return {"moved": moved, "released": released, "kept": kept, "mapping": details}
+
     def clear_expired(self) -> int:
         with self._lock:
             return self._prune_locked()
@@ -294,5 +360,6 @@ __all__ = [
     "merge_incoming",
     "paragraph_keys",
     "paragraph_lock_registry",
+    "remap_positions",
     "split_paragraphs",
 ]

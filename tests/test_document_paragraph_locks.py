@@ -22,6 +22,7 @@ from cndb.plugins.documents.services.paragraph_lock import (
     key_to_index,
     merge_incoming,
     paragraph_keys,
+    remap_positions,
     split_paragraphs,
 )
 
@@ -365,3 +366,109 @@ class TestMergedSave:
         )
         assert r.status_code == 200
         assert r.json()["version_number"] >= 1
+
+
+class TestRemapPositions:
+    """段落锁位置重映射：锁跟着段落走（中间插入/删除不再漂移）."""
+
+    def test_insert_above_shifts_lock_target(self):
+        old = "# T\n\nA\n\nB\n\nC"
+        new = "# T\n\n新段落\n\nA\n\nB\n\nC"
+        mapping = remap_positions(old, new)
+        assert mapping == {1: 1, 2: 3, 3: 4, 4: 5}
+
+    def test_edited_paragraph_maps_to_none(self):
+        old = "# T\n\nA\n\nB"
+        new = "# T\n\nA（改过）\n\nB"
+        mapping = remap_positions(old, new)
+        assert mapping[2] is None  # 被改写的段落：其锁释放
+        assert mapping[3] == 3
+
+    def test_deleted_paragraph_maps_to_none(self):
+        old = "# T\n\nA\n\nB"
+        new = "# T\n\nB"
+        mapping = remap_positions(old, new)
+        assert mapping[2] is None
+        assert mapping[3] == 2
+
+    def test_duplicate_paragraphs_pair_in_order(self):
+        old = "A\n\nA\n\nB"
+        new = "A\n\nA\n\nA\n\nB"
+        mapping = remap_positions(old, new)
+        assert mapping[1] == 1 and mapping[2] == 2 and mapping[3] == 4
+
+
+class TestRegistryRemap:
+    def test_lock_moves_with_paragraph(self):
+        registry = ParagraphLockRegistry()
+        registry.acquire_many(1, ["p3"], user_id=7, username="alice")
+        out = registry.remap(1, {1: 1, 2: 3, 3: 4, 4: 5})
+        assert out["moved"] == 1
+        locks = registry.locks_for_document(1)
+        assert [(lock.key, lock.username) for lock in locks] == [("p4", "alice")]
+
+    def test_lock_released_when_paragraph_rewritten(self):
+        registry = ParagraphLockRegistry()
+        registry.acquire_many(1, ["p2"], user_id=7, username="alice")
+        out = registry.remap(1, {1: 1, 2: None})
+        assert out["released"] == 1
+        assert registry.locks_for_document(1) == []
+
+    def test_keeps_lock_when_target_occupied_by_other(self):
+        registry = ParagraphLockRegistry()
+        registry.acquire_many(1, ["p2"], user_id=7, username="alice")
+        registry.acquire_many(1, ["p3"], user_id=8, username="bob")
+        out = registry.remap(1, {2: 3, 3: 3})
+        assert out["kept"] == 1
+        keys = {(lock.key, lock.username) for lock in registry.locks_for_document(1)}
+        assert keys == {("p2", "alice"), ("p3", "bob")}
+
+
+class TestRemapOnSave:
+    def test_insert_paragraph_keeps_other_users_lock_on_same_paragraph(
+        self, client, doc_api, auth_headers, second_headers
+    ):
+        """B 在第 1 段后插入新段落并保存 → A 对原第 2 段的锁应移动到第 3 段."""
+        base = "# 标题\n\n第一段\n\n第二段\n\n第三段\n"
+        doc = client.post(doc_api, json={"title": "重映射", "content": base}, headers=auth_headers).json()
+
+        # A 锁住第 2 段（"第一段"）
+        assert (
+            client.post(
+                f"{doc_api}/{doc['id']}/paragraph-locks", json={"keys": ["p2"]}, headers=auth_headers
+            ).status_code
+            == 200
+        )
+
+        # B 在标题后插入一段并保存（内容变化 → 位置平移）
+        after = "# 标题\n\n插入段\n\n第一段\n\n第二段\n\n第三段\n"
+        r = client.put(
+            f"{doc_api}/{doc['id']}/content",
+            json={"content": after, "base_content": base},
+            headers=second_headers,
+        )
+        assert r.status_code == 200, r.text
+
+        locks = client.get(f"{doc_api}/{doc['id']}/paragraph-locks", headers=auth_headers).json()["locks"]
+        mine = [lock for lock in locks if lock["username"] == "testuser"]
+        assert mine, locks
+        # 锁跟着"第一段"走到了第 3 段
+        assert mine[0]["key"] == "p3"
+
+    def test_rewritten_paragraph_releases_lock(self, client, doc_api, auth_headers, second_headers):
+        base = "# 标题\n\n第一段\n\n第二段\n"
+        doc = client.post(doc_api, json={"title": "释放", "content": base}, headers=auth_headers).json()
+        client.post(f"{doc_api}/{doc['id']}/paragraph-locks", json={"keys": ["p2"]}, headers=auth_headers)
+
+        # 改写第 2 段（A 自己的锁）→ 保存后该锁释放
+        rewritten = "# 标题\n\n第一段（改写）\n\n第二段\n"
+        assert (
+            client.put(
+                f"{doc_api}/{doc['id']}/content",
+                json={"content": rewritten, "base_content": base},
+                headers=auth_headers,
+            ).status_code
+            == 200
+        )
+        locks = client.get(f"{doc_api}/{doc['id']}/paragraph-locks", headers=auth_headers).json()["locks"]
+        assert [lock["key"] for lock in locks if lock["username"] == "testuser"] == []

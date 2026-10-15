@@ -53,6 +53,22 @@ def _session_factory(db_engine):
     return sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
 
 
+@pytest.fixture(autouse=True)
+def _clear_process_caches():
+    """每个用例前清空进程内缓存.
+
+    测试共用同一个内存库，workspace/table 等 id 会在不同用例间重复，
+    而缓存键正是基于这些 id —— 不清会跨用例串数据（曾导致 filter/sort 用例偶发失败）。
+    """
+    from cndb.core.cache import list_cache, meta_cache
+
+    list_cache.clear()
+    meta_cache.clear()
+    yield
+    list_cache.clear()
+    meta_cache.clear()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _skip_lifespan_migrations(monkeypatch_session):
     """测试中 TestClient 每次启动都触发 lifespan 的 alembic 迁移（~0.6s/次），
