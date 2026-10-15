@@ -245,4 +245,85 @@ describe('DocumentsPage 回收站', () => {
     fireEvent.click(screen.getByTestId('doc-trash-open'))
     expect(await screen.findByText('回收站为空')).toBeInTheDocument()
   })
+
+describe('DocumentsPage 排序与 URL 状态', () => {
+    function renderPage(route = '/w/10/documents') {
+        return renderProviders(
+            <Routes>
+                <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+            </Routes>,
+            { route, initialAuth: { user: mockUser, token: 'fake-token' } },
+        )
+    }
+
+    it('排序切换写入 URL，并在文件夹列表请求中带上 order 参数', async () => {
+        const orders: string[] = []
+        server.use(
+            http.get('/api/v1/workspaces/10/documents', ({ request }) => {
+                const url = new URL(request.url)
+                orders.push(url.searchParams.get('order') ?? 'sort')
+                return HttpResponse.json({ items: [], total: 0 })
+            }),
+        )
+        // 根层不请求 list（由全量树派生），故进入文件夹后再验证
+        renderPage('/w/10/documents?parent=1')
+        await screen.findByTestId('doc-order-select')
+        await screen.findByRole('button', { name: /上一级/ })
+        await waitFor(() => expect(orders.length).toBeGreaterThan(0))
+        expect(orders[orders.length - 1]).toBe('sort')
+
+        const openSelect = () => {
+            const selector = screen.getByTestId('doc-order-select').querySelector('.ant-select-selector') as HTMLElement
+            fireEvent.mouseDown(selector)
+        }
+        openSelect()
+        fireEvent.click(await screen.findByText('最近更新'))
+        await waitFor(() => expect(orders[orders.length - 1]).toBe('updated'))
+
+        // 再切回「手动顺序」时 URL 不保留 order 参数（保持链接干净）
+        openSelect()
+        fireEvent.click(await screen.findByText('手动顺序'))
+        await waitFor(() => expect(orders[orders.length - 1]).toBe('sort'))
+    })
+
+    it('?parent= 深链：直接进入该文件夹（顶栏出现「上一级」）', async () => {
+        renderPage('/w/10/documents?parent=1')
+
+        expect(await screen.findByRole('button', { name: /上一级/ })).toBeInTheDocument()
+        // 文件夹标题出现在面包屑中（产品文档；页面标题与卡片也会出现该文本，故用 findAllByText）
+        expect((await screen.findAllByText('产品文档')).length).toBeGreaterThan(0)
+    })
+})
+
+describe('DocumentsPage 系列卡片排序', () => {
+    it('切到「最近更新」后，系列卡片按系列最新更新时间倒序排列', async () => {
+        // 两个根文件夹：A 更新较新、B 较旧；手动顺序相反（B 在前）
+        const tree = [
+            { ...mockDocuments[0], id: 1, title: '旧系列', sort_order: 0 },
+            { ...mockDocuments[2], id: 2, parent_id: 1, title: '旧系列的文档', updated_at: '2026-01-01T00:00:00Z' },
+            { ...mockDocuments[0], id: 3, title: '新系列', sort_order: 1 },
+            { ...mockDocuments[2], id: 4, parent_id: 3, title: '新系列的文档', updated_at: '2026-09-01T00:00:00Z' },
+        ]
+        server.use(http.get('/api/v1/workspaces/10/documents/tree', () => HttpResponse.json({ items: tree })))
+        renderProviders(
+            <Routes>
+                <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+            </Routes>,
+            { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
+        )
+
+        const titles = () => Array.from(document.querySelectorAll('[data-testid^="doc-series-card-"]'))
+            .map(el => el.getAttribute('data-testid'))
+
+        // 默认手动顺序：旧系列(1) 在前
+        await screen.findByTestId('doc-series-card-1')
+        expect(titles()[0]).toBe('doc-series-card-1')
+
+        const selector = screen.getByTestId('doc-order-select').querySelector('.ant-select-selector') as HTMLElement
+        fireEvent.mouseDown(selector)
+        fireEvent.click(await screen.findByText('最近更新'))
+
+        await waitFor(() => expect(titles()[0]).toBe('doc-series-card-3'))
+    })
+})
 })
