@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useCallback } from 'react'
+import React, { Suspense, lazy, useState, useCallback, useEffect, useRef } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
 import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
@@ -16,6 +16,7 @@ import { tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
+import { scrollActiveTabIntoViewNextFrame } from './tabScroll'
 
 // Modal 组件 lazy import：点击打开时才加载
 const SettingsModal = lazy(() => import('@/pages/settings/SettingsModal'))
@@ -76,6 +77,8 @@ export default function MainLayout() {
   const [helpOpen, setHelpOpen] = useState(false)
   // 关于系统弹窗开关 —— 所有登录用户可见
   const [aboutOpen, setAboutOpen] = useState(false)
+  /** 顶部导航横滑容器（工作区页签 + 二级页签）—— 窄屏下把激活项滚入可视区 */
+  const wsTabsRef = useRef<HTMLDivElement>(null)
   const [searchParams] = useSearchParams()
   // 移动端抽屉导航开关（仅 isMobile 时渲染汉堡入口）
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -186,6 +189,14 @@ export default function MainLayout() {
       : location.includes('/settings')
         ? 'settings'
         : 'tables'
+
+  // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
+  // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，
+  // 否则首帧按较窄内容滚动会被 clamp 在中间位置，激活项仍露出一截。
+  useEffect(
+    () => scrollActiveTabIntoViewNextFrame(wsTabsRef.current),
+    [location, wid, isMobile, tablesReady, tables.length, docsReady, docCount?.total],
+  )
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
@@ -382,14 +393,16 @@ export default function MainLayout() {
               表上下文时紧随其后以竖线分割出表级页签段：表名（品牌色表图标标识）回网格 +
               子页胶囊页签切换；激活形状分层（工作区=墨条 / 表级=胶囊）以区分导航层级 */}
           {wid && (
-            <div className="cn-ws-tabs" style={{
+            <div className="cn-ws-tabs" ref={wsTabsRef} style={{
               background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', flexShrink: 0,
               display: 'flex', alignItems: 'stretch', overflowX: 'auto',
             }}>
               <Tabs
                 activeKey={activeWsTab}
                 items={wsTabItems}
-                style={{ flex: '0 1 auto', minWidth: 0 }}
+                // 窄屏：工作区页签保持内容宽度，由整行横滑承载（否则二级页签 448px 会把
+                // 工作区页签挤成 0 宽而被裁掉，手机上看不到也切不了数据表/文档/设置）
+                style={{ flex: isMobile ? '0 0 auto' : '0 1 auto', minWidth: 0 }}
                 tabBarStyle={{ margin: 0, padding: '0 16px' }}
                 onChange={(key) => navigate(`/w/${wid}/${key}`)}
               />

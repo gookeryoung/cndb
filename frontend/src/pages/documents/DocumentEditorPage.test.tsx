@@ -4,7 +4,7 @@
  * 大纲抽屉实时解析标题并点击定位预览锚点。
  */
 
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
@@ -12,6 +12,17 @@ import { message } from 'antd'
 import DocumentEditorPage from './DocumentEditorPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockUser, server } from '@/test/msw'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，窄屏用例在其内部切换
+let responsiveState: ResponsiveState = {
+    deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+    width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+    const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+    return { ...actual, useResponsive: () => responsiveState }
+})
 
 function renderEditor(route = '/w/10/documents/2') {
     return renderProviders(
@@ -371,5 +382,75 @@ describe('DocumentEditorPage 修改申请（双轨制保存）', () => {
         fireEvent.click(screen.getByTestId('doc-cr-open'))
 
         expect(await screen.findByText(/暂无修改申请/)).toBeInTheDocument()
+    })
+})
+
+describe('DocumentEditorPage 窄屏工具栏', () => {
+    beforeEach(() => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 390, height: 844,
+        }
+        // 文档详情/正文沿用 msw.ts 默认 handler（其 fixture 字段完整）
+    })
+
+    afterEach(() => {
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
+    })
+
+    it('只保留大纲 / 更多 / 保存，其余入口收进更多菜单并可触发', async () => {
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        // 窄屏：桌面常显的次级入口不直接渲染
+        expect(screen.queryByTestId('doc-cr-open')).toBeNull()
+        expect(screen.queryByTestId('doc-links-open')).toBeNull()
+        expect(screen.queryByTestId('doc-export-btn')).toBeNull()
+        expect(screen.getByText(/大\s*纲/)).toBeInTheDocument()
+        expect(screen.getByTestId('doc-save-btn')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-more-actions')).toBeInTheDocument()
+
+        // 更多菜单承载次级入口（含导出子菜单）
+        fireEvent.click(screen.getByTestId('doc-more-actions'))
+        for (const label of ['反向链接', '文档链接', '插入表格引用', '标签', '修改申请', '版本', '导出']) {
+            // 标签/修改申请/版本可能带数量后缀，用前缀正则匹配
+            expect(await screen.findByText(new RegExp(`^${label}`))).toBeInTheDocument()
+        }
+    })
+
+    it('更多菜单里的「文档链接」打开链接抽屉', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/2/links', () =>
+                HttpResponse.json({
+                    items: [{ title: '销售运营手册', document_id: 3, exists: true, broken: false }],
+                    total: 1,
+                    broken: 0,
+                })),
+        )
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-more-actions'))
+        fireEvent.click(await screen.findByText('文档链接'))
+
+        await waitFor(() => expect(screen.getAllByText('文档链接').length).toBeGreaterThan(0))
+        expect(await screen.findByText('已解析')).toBeInTheDocument()
+    })
+
+    it('桌面端保持全部按钮常显，不渲染更多入口', async () => {
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        expect(screen.getByTestId('doc-links-open')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-cr-open')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-export-btn')).toBeInTheDocument()
+        expect(screen.queryByTestId('doc-more-actions')).toBeNull()
     })
 })

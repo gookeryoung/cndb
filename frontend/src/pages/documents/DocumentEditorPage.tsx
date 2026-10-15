@@ -25,6 +25,7 @@ import {
   HistoryOutlined,
   LinkOutlined,
   MenuOutlined,
+  MoreOutlined,
   PullRequestOutlined,
   SaveOutlined,
   TableOutlined,
@@ -35,6 +36,7 @@ import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi, isChangeRequestDispatch } from '@/api/documents'
 import { tableApi, workspaceApi } from '@/api'
+import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
 import type {
   DocumentChangeRequestDispatch,
@@ -59,6 +61,7 @@ import TagEditor from './TagEditor'
 
 export default function DocumentEditorPage() {
   const { wid, docId } = useParams<{ wid: string; docId: string }>()
+  const { isMobile } = useResponsive()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const workspaceId = Number(wid)
@@ -369,6 +372,29 @@ export default function DocumentEditorPage() {
 
   const editable = true // viewer 保存转修改申请（202），无需在前端隐藏编辑入口
 
+  /** 窄屏：次级入口（反向链接 / 文档链接 / 插入表格引用 / 标签 / 修改申请 / 版本 / 导出）
+   *  收进「更多」，只保留「大纲」（导航）与「保存」（主操作），
+   *  避免 9 个按钮在 390px 屏上折成三行挤掉正文。 */
+  const docMoreItems = [
+    { key: 'backlinks', icon: <LinkOutlined />, label: '反向链接', onClick: () => setBacklinksOpen(true) },
+    { key: 'links', icon: <BranchesOutlined />, label: '文档链接', onClick: () => setLinksOpen(true) },
+    { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
+    { key: 'tags', icon: <TagsOutlined />, label: `标签${(doc.tag_ids?.length ?? 0) > 0 ? ` (${doc.tag_ids?.length})` : ''}`, onClick: () => setTagsOpen(true) },
+    { key: 'change-requests', icon: <PullRequestOutlined />, label: `修改申请${pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}`, onClick: () => setCrOpen(true) },
+    { key: 'versions', icon: <HistoryOutlined />, label: `版本${(doc.version_count ?? 0) > 0 ? ` (${doc.version_count})` : ''}`, onClick: () => setVersionsOpen(true) },
+    { type: 'divider' as const },
+    {
+      key: 'export',
+      icon: <DownloadOutlined />,
+      label: '导出',
+      children: [
+        { key: 'docx', icon: <FileWordOutlined />, label: '导出 Word (.docx)', onClick: () => exportMut.mutate('docx') },
+        { key: 'pdf', icon: <FilePdfOutlined />, label: '导出 PDF (.pdf)', onClick: () => exportMut.mutate('pdf') },
+        { key: 'md', icon: <FileMarkdownOutlined />, label: '导出 Markdown (.md)', onClick: () => exportMut.mutate('md') },
+      ],
+    },
+  ]
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 顶栏 */}
@@ -388,6 +414,26 @@ export default function DocumentEditorPage() {
           <Tag>{doc.status === 'published' ? '已发布' : doc.status === 'archived' ? '归档' : '草稿'}</Tag>
           {dirtyRef.current && <Text type="warning" style={{ fontSize: 12 }}>未保存</Text>}
         </Space>
+        {isMobile ? (
+          <Space size={8}>
+            <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>
+              大纲{outline.length > 0 ? ` (${outline.length})` : ''}
+            </Button>
+            <Dropdown trigger={['click']} menu={{ items: docMoreItems }}>
+              <Button icon={<MoreOutlined />} data-testid="doc-more-actions">更多</Button>
+            </Dropdown>
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              loading={saveMut.isPending}
+              disabled={!editable}
+              data-testid="doc-save-btn"
+              onClick={handleSave}
+            >
+              保存
+            </Button>
+          </Space>
+        ) : (
         <Space wrap>
           <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>
             大纲{outline.length > 0 ? ` (${outline.length})` : ''}
@@ -439,6 +485,7 @@ export default function DocumentEditorPage() {
             保存 (Ctrl+S)
           </Button>
         </Space>
+        )}
       </div>
 
       {saveError && (
