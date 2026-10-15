@@ -9,9 +9,11 @@ export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
   retries: process.env.CI ? 2 : 0,
-  // 本地 8 worker（多核机器）；CI 收敛到 4：GitHub 托管 runner 通常 4 vCPU，
-  // 8 个 worker 争抢会造成大量用例超时（表现为 flaky，需重试才通过）
-  workers: process.env.CI ? 4 : 8,
+  // worker 数固定 4：CI runner 通常 4 vCPU；本机（24 核但常与其它进程共享）实测
+  // 12 worker（Playwright 默认 CPU/2）全量 E2E 会有 11 个用例 30s 超时失败，
+  // 8 worker 有 8 个失败，4 worker 时 35 passed / 0 failed 且总耗时更短。
+  // E2E 已收为门禁：稳定性优先于并行度。
+  workers: 4,
   reporter: [
     ["list"],
     ["./tests/e2e/reporters/slow-test.ts"],

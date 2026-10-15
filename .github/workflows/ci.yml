@@ -167,8 +167,10 @@ jobs:
     name: E2E (Playwright) shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    # 观察期：先 continue-on-error 收集稳定性数据，稳定后收紧为门禁并扩全量 + --shard
-    continue-on-error: true
+    # 观察期结束：E2E 已收为**门禁**（continue-on-error 曾让 E2E 失败不阻断 pipeline，
+    # 2026-10 观测到一次真实回归——新增用例的助手丢失导致四个 shard 全挂，但 run 仍显示成功）。
+    # 稳定性依据：连续 6 次 CI 中 5 次四个 shard 全绿，唯一一次失败是真实缺陷而非抖动；
+    # 抖动由 CI retries=2 与 workers=4 兜底（见 frontend/playwright.config.ts）。
     strategy:
       fail-fast: false
       matrix:
