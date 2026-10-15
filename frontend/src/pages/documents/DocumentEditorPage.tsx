@@ -187,7 +187,9 @@ export default function DocumentEditorPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${docQuery.data?.title || 'document'}_${ts}.${format}`
+      // Markdown 正文含站内图片时后端返回 zip（<标题>.md + assets/），文件名随实际类型调整
+      const ext = blob.type === 'application/zip' ? 'zip' : format
+      a.download = `${docQuery.data?.title || 'document'}_${ts}.${ext}`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)

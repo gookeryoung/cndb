@@ -6,10 +6,15 @@
 
 from __future__ import annotations
 
+import io
 from typing import Any
 
 from cndb.plugins.documents.services.export.docx import _render_docx
-from cndb.plugins.documents.services.export.images import ImageResolver, make_image_resolver
+from cndb.plugins.documents.services.export.images import (
+    ImageResolver,
+    make_image_resolver,
+    rewrite_markdown_images,
+)
 from cndb.plugins.documents.services.export.pdf import _render_pdf
 
 FORMAT_MARKDOWN = "md"
@@ -60,6 +65,33 @@ def normalize_format(fmt: str) -> str | None:
     return _FORMAT_ALIASES.get((fmt or "").strip().lower())
 
 
+def render_markdown_archive(
+    markdown_text: str,
+    title: str,
+    images: ImageResolver | None,
+    archive_name: str,
+) -> bytes | None:
+    """Markdown + 站内图片打包为 zip（``<archive_name>.md`` + ``assets/<file_key>``）.
+
+    返回 None 表示正文里没有任何**可解析**的站内图片，调用方应回退为普通 .md 响应
+    （避免为不带图的文档凭空产生 zip，保持既有单文件行为）。
+    """
+    _ = title
+    rewritten, assets = rewrite_markdown_images(markdown_text, images)
+    if not assets:
+        return None
+
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(f"{archive_name}.md", rewritten.encode("utf-8"))
+        for rel, data in sorted(assets.items()):
+            zf.writestr(rel, data)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 def render_export(markdown_text: str, fmt: str, title: str = "", images: ImageResolver | None = None) -> bytes:
     """按格式渲染文档正文.
 
@@ -85,4 +117,5 @@ __all__ = [
     "make_image_resolver",
     "normalize_format",
     "render_export",
+    "render_markdown_archive",
 ]

@@ -21,7 +21,7 @@ FILE_REF_PREFIX = "file:"
 IMAGE_LINE_RE = re.compile(r"^\s*!\[(?P<alt>[^\]]*)\]\(file:(?P<key>[^)\s]+)\)\s*$")
 
 # 行内出现的图片引用（用于提取需要解析的 file_key）
-INLINE_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(file:(?P<key>[^)\s]+)\)")
+INLINE_IMAGE_RE = re.compile(r"!\[(?P<alt>[^\]]*)\]\(file:(?P<key>[^)\s]+)\)")
 
 # 解析结果：file_key → (图片字节, 原始文件名) ；返回 None 表示找不到或不合法
 ImageResolver = Callable[[str], "tuple[bytes, str] | None"]
@@ -59,6 +59,36 @@ def make_image_resolver(upload_dir: Path, workspace_id: int) -> ImageResolver:
             return None
 
     return _resolve
+
+
+def rewrite_markdown_images(markdown_text: str, resolver: ImageResolver | None) -> tuple[str, dict[str, bytes]]:
+    """把正文里的 ``![alt](file:<key>)`` 改写为 ``![alt](assets/<key>)``，并收集资源字节.
+
+    返回 ``(改写后的 markdown, {相对路径: 字节})``：
+    - 解析不到（文件已删除 / 无权访问）的引用**原样保留**，避免导出时静默丢信息；
+    - 相同 key 重复引用只收集一份资源。
+    """
+    assets: dict[str, bytes] = {}
+    if resolver is None:
+        return markdown_text, assets
+
+    key_to_rel: dict[str, str] = {}
+
+    def _replace(match: re.Match[str]) -> str:
+        alt = match.group("alt")
+        key = match.group("key")
+        if key in key_to_rel:
+            return f"![{alt}]({key_to_rel[key]})"
+        resolved = resolver(key)
+        if resolved is None:
+            return match.group(0)
+        data, _name = resolved
+        rel = f"assets/{key}"
+        key_to_rel[key] = rel
+        assets[rel] = data
+        return f"![{alt}]({rel})"
+
+    return INLINE_IMAGE_RE.sub(_replace, markdown_text or ""), assets
 
 
 def referenced_file_keys(markdown_text: str) -> list[str]:
