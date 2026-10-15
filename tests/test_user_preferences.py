@@ -227,10 +227,18 @@ class TestPreferencesAPI:
             headers=ha,
         )
 
-        # B 查询同表偏好应是 null（B 无此偏好）
+        # A 自己读回偏好（可读表 → 200）
+        r_a = client.get(
+            f"/api/v1/accounts/preferences/tables/{dt_a.id}/active-view",
+            headers=ha,
+        )
+        assert r_a.status_code == 200
+        assert r_a.json()["active_view_id"] == dv_a.id
+
+        # B 读不到 A 的表 → 403（此前返回 200 + null，只靠"无偏好"实现隔离；
+        # 现按 TableAction.READ 判定，连"该表存在"这一点也不回显）
         r = client.get(
             f"/api/v1/accounts/preferences/tables/{dt_a.id}/active-view",
             headers=hb,
         )
-        assert r.status_code == 200
-        assert r.json()["active_view_id"] is None
+        assert r.status_code == 403

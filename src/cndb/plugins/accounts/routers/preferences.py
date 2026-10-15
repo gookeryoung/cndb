@@ -68,6 +68,16 @@ def _ensure_preferences(user: User) -> None:
         flag_modified(user, "preferences")
 
 
+def _readable_table_or_404(db: Session, table_id: int, user: Any) -> DataTable:
+    """取表并校验可读（不可见按 403 处理，与数据表接口一致）."""
+    from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
+
+    table = db.query(DataTable).filter(DataTable.id == table_id).first()
+    if table is None:
+        raise HTTPException(status_code=404, detail="表不存在")
+    return get_table_or_404(table_id, table.workspace_id, db, user=user, action=TableAction.READ)
+
+
 # ── 路由 ──
 
 
@@ -90,10 +100,9 @@ def get_table_active_view(
 ) -> dict[str, Any]:
     """查询指定表当前用户的激活视图偏好."""
     user = _ensure_authenticated(current_user)
-    # 表必须存在
-    table = db.query(DataTable).filter(DataTable.id == table_id).first()
-    if table is None:
-        raise HTTPException(status_code=404, detail="表不存在")
+    # 表必须存在**且当前用户可读**：只校验存在性会形成存在性提示（低危），
+    # 且会把"看不见的表"的偏好回显给调用者；统一按 TableAction.READ 判定。
+    _readable_table_or_404(db, table_id, user)  # 不可读/不存在 → 403/404
 
     _ensure_preferences(user)
     active_view_id: int | None = None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -49,6 +50,23 @@ _ACTION_LABEL: dict[TableAction, str] = {
 }
 
 
+def _batch_record_counts(db: Session, tables: list[DataTable]) -> dict[int, int | None]:
+    """一次 UNION ALL 取回多张动态表的行数（超过 100 张表则跳过，避免超长 SQL）."""
+    targets = [t for t in tables if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", t.db_table_name or "")]
+    if not targets or len(targets) > 100:  # pragma: no cover - 超大工作区退化到逐表
+        return {}
+    parts: list[str] = []
+    params: dict[str, int] = {}
+    for idx, tbl in enumerate(targets):
+        parts.append(f"SELECT :t{idx} AS tid, COUNT(*) AS cnt FROM {tbl.db_table_name}")  # nosec B608 - 表名白名单校验
+        params[f"t{idx}"] = tbl.id
+    try:
+        rows = db.execute(text(" UNION ALL ".join(parts)), params).all()
+    except Exception:
+        return {}
+    return {int(tid): int(cnt) for tid, cnt in rows}
+
+
 def _fill_table_stats(
     db: Session,
     table: DataTable,
@@ -58,22 +76,38 @@ def _fill_table_stats(
     my_member_map: dict[int, TableMember] | None = None,
     read_role: str = "",
     can_read: bool = True,
+    field_count_map: dict[int, int] | None = None,
+    view_count_map: dict[int, int] | None = None,
+    record_count_map: dict[int, int | None] | None = None,
 ) -> TableResponse:
-    """为单张表填充统计 + 数据表目录字段."""
-    field_count = (
-        db.query(func.count(DataField.id))
-        .filter(DataField.table_id == table.id, DataField.trashed == False)  # noqa: E712
-        .scalar()
-        or 0
-    )
-    view_count = db.query(func.count(DataView.id)).filter(DataView.table_id == table.id).scalar() or 0
-    # 物理表 COUNT —— 表结构异常时用 None
+    """为单张表填充统计 + 数据表目录字段.
+
+    列表场景传入 ``*_count_map`` 时直接取预取结果（避免每表 3 次查询）；
+    详情等单表场景留空则回退到逐表查询。
+    """
+    if field_count_map is not None:
+        field_count = field_count_map.get(table.id, 0)
+    else:
+        field_count = (
+            db.query(func.count(DataField.id))
+            .filter(DataField.table_id == table.id, DataField.trashed == False)  # noqa: E712
+            .scalar()
+            or 0
+        )
+    if view_count_map is not None:
+        view_count = view_count_map.get(table.id, 0)
+    else:
+        view_count = db.query(func.count(DataView.id)).filter(DataView.table_id == table.id).scalar() or 0
+
     record_count: int | None = None
-    try:
-        result = db.execute(text(f"SELECT COUNT(*) FROM {table.db_table_name}"))  # nosec B608 - 表名来自内部元数据
-        record_count = result.scalar() or 0
-    except Exception:
-        record_count = None
+    if record_count_map is not None:
+        record_count = record_count_map.get(table.id)
+    else:
+        try:
+            result = db.execute(text(f"SELECT COUNT(*) FROM {table.db_table_name}"))  # nosec B608 - 表名来自内部元数据
+            record_count = result.scalar() or 0
+        except Exception:
+            record_count = None
 
     base = TableResponse.model_validate(table, from_attributes=True)
     base.field_count = int(field_count)
@@ -298,6 +332,26 @@ def _list_tables_uncached(
         for m in my_members:
             my_member_map[m.table_id] = m
 
+    # 统计字段批量预取（此前每表各查 field_count / view_count / record_count → 3N 次查询）
+    field_count_map: dict[int, int] = {}
+    view_count_map: dict[int, int] = {}
+    if table_ids:
+        for tid, cnt in (
+            db.query(DataField.table_id, func.count(DataField.id))
+            .filter(DataField.table_id.in_(table_ids), DataField.trashed == False)  # noqa: E712
+            .group_by(DataField.table_id)
+            .all()
+        ):
+            field_count_map[int(tid)] = int(cnt)
+        for tid, cnt in (
+            db.query(DataView.table_id, func.count(DataView.id))
+            .filter(DataView.table_id.in_(table_ids))
+            .group_by(DataView.table_id)
+            .all()
+        ):
+            view_count_map[int(tid)] = int(cnt)
+    record_count_map = _batch_record_counts(db, tables)
+
     return [
         _fill_table_stats(
             db,
@@ -308,6 +362,9 @@ def _list_tables_uncached(
             my_member_map=my_member_map,
             read_role=preload.read_role(t.id),
             can_read=True,  # 列表已按 READ 过滤，留下的一定可读
+            field_count_map=field_count_map,
+            view_count_map=view_count_map,
+            record_count_map=record_count_map,
         )
         for t in tables
     ]
