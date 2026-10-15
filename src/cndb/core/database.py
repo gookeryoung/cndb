@@ -75,8 +75,10 @@ def register_sqlite_pragmas(target_engine: Any) -> None:
 
 register_sqlite_pragmas(engine)
 
-# 慢查询阈值（秒）：超过则记 warning 日志，便于单机排障
-SLOW_QUERY_SECONDS = 0.5
+# 慢查询阈值（秒）：超过则记 warning 日志，便于单机排障。
+# 默认取 settings.SLOW_QUERY_MS（500ms，可用 CNDB_SLOW_QUERY_MS 覆盖）；
+# 保留模块常量名便于测试与调用方 monkeypatch。
+SLOW_QUERY_SECONDS = max(0.0, settings.SLOW_QUERY_MS / 1000)
 
 
 @event.listens_for(engine, "before_cursor_execute")
@@ -97,9 +99,15 @@ def _after_cursor_execute(
         return
     elapsed = time.perf_counter() - start
     if elapsed >= SLOW_QUERY_SECONDS:
+        # request_id 来自观测中间件（非请求上下文时为空）：便于把慢 SQL 与具体请求对上
+        from cndb.core.observability import get_request_id
+
+        request_id = get_request_id()
+        suffix = f" request_id={request_id}" if request_id else ""
         logger.warning(
-            "慢查询 %.3fs: %s",
+            "慢查询 %.3fs%s: %s",
             elapsed,
+            suffix,
             " ".join(statement.split())[:200],
         )
 

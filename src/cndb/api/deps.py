@@ -21,20 +21,21 @@ if TYPE_CHECKING:
 
 from cndb.core.config import settings
 from cndb.core.database import get_db
+from cndb.core.observability import get_request_id as current_request_id
+from cndb.core.observability import set_actor_ids
 from cndb.core.security import decode_access_token
 
 logger = logging.getLogger(__name__)
 
 
 def get_request_id(x_request_id: str | None = Header(default=None)) -> str:
-    """生成或透传请求 ID（链路追踪用）.
+    """请求关联 id：优先观测中间件生成/透传的值，其次请求头，最后自行生成.
 
-    若上游调用方已传入 X-Request-Id，则直接透传；否则生成一个新的 UUID.
-    下游服务可通过依赖注入在任意位置拿到同一个 request_id.
+    与访问日志、慢 SQL 日志使用同一个值，便于按 id 串联一次请求的全部痕迹；
+    在请求上下文之外（如后台任务直接调用）保留「无值则生成 UUID hex」的既有契约。
     """
-    if x_request_id:
-        return x_request_id
-    return uuid.uuid4().hex
+    from_middleware = current_request_id()
+    return from_middleware or x_request_id or uuid.uuid4().hex
 
 
 # ── 认证依赖 ──────────────────────────────────────────
@@ -122,7 +123,13 @@ def get_current_user(
 
     if settings.LOCAL_MODE:
         # 单机模式：免登录，直接映射内置本地用户
-        return _get_local_user(db)
+        local_user = _get_local_user(db)
+        set_actor_ids(
+            request.state,
+            user_id=getattr(local_user, "id", None),
+            username=getattr(local_user, "username", None),
+        )
+        return local_user
 
     if not settings.AUTH_ENABLED:
         return None
@@ -148,6 +155,11 @@ def get_current_user(
             detail="无效或过期的令牌",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    set_actor_ids(
+        request.state,
+        user_id=getattr(user, "id", None),
+        username=getattr(user, "username", None),
+    )
     return user
 
 
