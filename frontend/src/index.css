@@ -2942,3 +2942,12 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-variant-numeric: tabular-nums;
   border-top: 1px solid var(--cn-border);
 }
+
+/* ─────────────── 文档列表批量操作栏 ─────────────── */
+.cn-doc-batch-bar {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--cn-brand-color) 35%, var(--cn-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--cn-bg-container) 92%, var(--cn-brand-color) 8%);
+}

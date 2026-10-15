@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
+  Checkbox,
   Alert,
   Breadcrumb,
   Button,
@@ -85,7 +86,10 @@ export default function DocumentsPage() {
     }, { replace: true })
   }, [setSearchParams])
 
-  const setParentId = useCallback((id: number | null) => updateParams({ parent: id }), [updateParams])
+  const setParentId = useCallback((id: number | null) => {
+    setSelectedIds([])  // 进入下一层级时清空多选，避免跨层级误操作
+    updateParams({ parent: id })
+  }, [updateParams])
 
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [titleKeyword, setTitleKeyword] = useState('')
@@ -102,6 +106,10 @@ export default function DocumentsPage() {
   const [searchOpen, setSearchOpen] = useState(false)
   // 回收站抽屉
   const [trashOpen, setTrashOpen] = useState(false)
+  // 批量操作：当前层级多选 + 批量移动弹窗
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [batchMoveOpen, setBatchMoveOpen] = useState(false)
+  const [batchMoveTarget, setBatchMoveTarget] = useState<number>(0)
 
   // 全量树：顶层系列统计 + 面包屑祖先链 + 系列详情共用（React Query 按 key 共享缓存）
   const treeQuery = useQuery({
@@ -201,6 +209,29 @@ export default function DocumentsPage() {
     onError: () => message.error('移动失败'),
   })
 
+  /** 批量移动 / 删除（后端逐项校验，skipped 为被跳过项明细） */
+  const batchMut = useMutation({
+    mutationFn: (payload: { action: 'move' | 'delete'; ids: number[]; parent_id?: number | null }) =>
+      documentsApi.batch(workspaceId, payload),
+    onSuccess: res => {
+      const actionLabel = res.action === 'move' ? '移动' : '删除'
+      const skipped = res.skipped.length
+      if (skipped > 0) {
+        message.warning(`已${actionLabel} ${res.updated} 项，跳过 ${skipped} 项（${res.skipped[0].reason}）`)
+      } else {
+        message.success(`已${actionLabel} ${res.updated} 项`)
+      }
+      setSelectedIds([])
+      setBatchMoveOpen(false)
+      invalidate()
+    },
+    onError: () => message.error('批量操作失败'),
+  })
+
+  const toggleSelected = (docId: number) => {
+    setSelectedIds(prev => (prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]))
+  }
+
   const seriesList = useMemo(() => {
     const all = buildSeriesStats(treeQuery.data ?? [])
     const kw = titleKeyword.trim().toLowerCase()
@@ -256,10 +287,39 @@ export default function DocumentsPage() {
     return sortDocuments(raw, orderBy)
   }, [filtered, parentId, treeQuery.data, titleKeyword, statusFilter, orderBy])
 
+  /** 当前层级**可见**的可选项（根层为系列卡片 + 散文档，子层为列表项）：全选与已选统计只用它 */
+  const selectableIds = useMemo(
+    () =>
+      parentId === null
+        ? [...seriesList.map(s => s.folder.id), ...listItems.map(d => d.id)]
+        : listItems.map(d => d.id),
+    [parentId, seriesList, listItems],
+  )
+  const allSelected = selectableIds.length > 0 && selectedIds.length === selectableIds.length
+
   const openCreate = (type: 'doc' | 'folder') => {
     setCreateType(type)
     setCreateOpen(true)
   }
+
+  /** 批量移动目标下拉：根目录 + 全部文件夹，排除所选节点及其子孙（防环） */
+  const batchMoveTreeData = useMemo(() => {
+    if (!batchMoveOpen) return []
+    const roots = buildDocTree(treeQuery.data ?? [])
+    const excluded = new Set<number>()
+    for (const id of selectedIds) {
+      const node = findNodeById(roots, id)
+      if (node) for (const cid of descendantIds(node)) excluded.add(cid)
+    }
+    const toOption = (node: DocTreeNode): DataNode & { value: number } => ({
+      key: node.id,
+      value: node.id,
+      title: node.title,
+      disabled: excluded.has(node.id),
+      children: node.children.filter(c => c.is_folder).map(toOption),
+    })
+    return [{ key: 'root', value: 0, title: '（根目录）', children: roots.filter(n => n.is_folder).map(toOption) }]
+  }, [batchMoveOpen, selectedIds, treeQuery.data])
 
   // 系列移动目标下拉：根目录 + 全部文件夹（排除自身及子孙，防环）
   const seriesMoveTreeData = useMemo(() => {
@@ -341,6 +401,48 @@ export default function DocumentsPage() {
         </Space>
       </div>
 
+      {/* 批量操作栏：选中任意项后出现 */}
+      {selectedIds.length > 0 && (
+        <div className="cn-doc-batch-bar" data-testid="doc-batch-bar">
+          <Space size={12} wrap>
+            <Checkbox
+              checked={allSelected}
+              indeterminate={selectedIds.length > 0 && !allSelected}
+              data-testid="doc-batch-select-all"
+              onChange={e => setSelectedIds(e.target.checked ? selectableIds : [])}
+            >
+              全选
+            </Checkbox>
+            <Text type="secondary">已选 {selectedIds.length} 项</Text>
+            <Button
+              icon={<ApartmentOutlined />}
+              data-testid="doc-batch-move"
+              onClick={() => {
+                setBatchMoveTarget(parentId ?? 0)
+                setBatchMoveOpen(true)
+              }}
+            >
+              移动到…
+            </Button>
+            <Popconfirm
+              title={`删除选中的 ${selectedIds.length} 项？`}
+              description="文件夹将连同其中所有文档一起移入回收站。"
+              okText="删除"
+              okType="danger"
+              cancelText="取消"
+              onConfirm={() => batchMut.mutate({ action: 'delete', ids: selectedIds })}
+            >
+              <Button danger icon={<DeleteOutlined />} data-testid="doc-batch-delete" loading={batchMut.isPending}>
+                批量删除
+              </Button>
+            </Popconfirm>
+            <Button type="text" data-testid="doc-batch-clear" onClick={() => setSelectedIds([])}>
+              取消选择
+            </Button>
+          </Space>
+        </div>
+      )}
+
       {/* 顶层：系列卡片网格（顶层文件夹即系列） */}
       {parentId === null && seriesList.length > 0 && (
         <Row gutter={isMobile ? [12, 12] : [16, 16]} data-testid="doc-series-grid" style={{ marginBottom: 8 }}>
@@ -354,6 +456,15 @@ export default function DocumentsPage() {
                 onClick={() => setParentId(s.folder.id)}
               >
                 <Space size={8} style={{ marginBottom: 8 }}>
+                  {/* 外层 span 阻止冒泡：点击勾选框不会触发卡片跳转，同时保留 Checkbox 自身交互 */}
+                  <span onClick={e => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.includes(s.folder.id)}
+                      data-testid={`doc-select-${s.folder.id}`}
+                      aria-label={`选择 ${s.folder.title}`}
+                      onChange={() => toggleSelected(s.folder.id)}
+                    />
+                  </span>
                   <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)' }} />
                   <Text strong style={{ fontSize: 15 }}>{s.folder.title}</Text>
                 </Space>
@@ -482,11 +593,21 @@ export default function DocumentsPage() {
             >
               <List.Item.Meta
                 avatar={
-                  doc.is_folder ? (
-                    <FolderOutlined style={{ fontSize: 22, color: '#faad14' }} />
-                  ) : (
-                    <FileTextOutlined style={{ fontSize: 22, color: '#1890ff' }} />
-                  )
+                  <Space size={4}>
+                    <span onClick={e => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedIds.includes(doc.id)}
+                        data-testid={`doc-select-${doc.id}`}
+                        aria-label={`选择 ${doc.title}`}
+                        onChange={() => toggleSelected(doc.id)}
+                      />
+                    </span>
+                    {doc.is_folder ? (
+                      <FolderOutlined style={{ fontSize: 22, color: '#faad14' }} />
+                    ) : (
+                      <FileTextOutlined style={{ fontSize: 22, color: '#1890ff' }} />
+                    )}
+                  </Space>
                 }
                 title={
                   <Space size={8}>
@@ -567,6 +688,27 @@ export default function DocumentsPage() {
           onPressEnter={() => renameValue.trim() && renameMut.mutate()}
           autoFocus
           data-testid="doc-series-rename-input"
+        />
+      </Modal>
+
+      {/* 批量移动弹窗：目标文件夹排除所选节点及其子孙（防环由后端二次校验） */}
+      <Modal
+        title={`移动选中的 ${selectedIds.length} 项到…`}
+        open={batchMoveOpen}
+        onCancel={() => setBatchMoveOpen(false)}
+        onOk={() => batchMut.mutate({ action: 'move', ids: selectedIds, parent_id: batchMoveTarget })}
+        confirmLoading={batchMut.isPending}
+        okText="移动"
+        cancelText="取消"
+        destroyOnHidden
+      >
+        <TreeSelect
+          style={{ width: '100%' }}
+          value={batchMoveTarget}
+          onChange={(v: number) => setBatchMoveTarget(v)}
+          treeData={batchMoveTreeData}
+          treeDefaultExpandAll
+          data-testid="doc-batch-move-target"
         />
       </Modal>
 

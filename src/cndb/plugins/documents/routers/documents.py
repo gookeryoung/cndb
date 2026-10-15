@@ -49,6 +49,7 @@ from cndb.plugins.documents.models import Document, DocumentVersion, Tag
 from cndb.plugins.documents.schemas import (
     ContentUpdate,
     DailyNoteRequest,
+    DocumentBatchRequest,
     DocumentCreate,
     DocumentUpdate,
     LinkRepairRequest,
@@ -434,6 +435,60 @@ def _export_filename(title: str, ext: str) -> str:
     return f"{safe}.{ext}"
 
 
+@router.post("/batch")
+def batch_documents(
+    workspace_id: int,
+    payload: DocumentBatchRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """批量移动 / 删除文档与文件夹.
+
+    - ``action=move``：把 ``ids`` 移动到 ``parent_id``（``0`` / ``None`` = 根目录）；
+    - ``action=delete``：软删除（文件夹连同子孙进入回收站）。
+
+    逐项校验：不存在 / 已删除 / 目标非法 / 防环等失败项**不中断**整批，
+    统一放进 ``skipped`` 返回，便于前端提示「成功 N 项，跳过 M 项」。
+    """
+    _require_member(db, workspace_id, current_user)
+    services.content.require_editor(db, workspace_id, current_user)
+
+    ids = list(dict.fromkeys(payload.ids))  # 去重并保持顺序
+    skipped: list[dict[str, Any]] = []
+
+    def _load_ok(doc_id: int) -> Document | None:
+        doc = db.get(Document, doc_id)
+        if doc is None or doc.workspace_id != workspace_id or doc.is_deleted:
+            skipped.append({"id": doc_id, "reason": "文档不存在或已在回收站"})
+            return None
+        return doc
+
+    if payload.action == "move":
+        target = 0 if payload.parent_id is None else payload.parent_id
+        moved: list[Document] = []
+        for doc_id in ids:
+            doc = _load_ok(doc_id)
+            if doc is None:
+                continue
+            reason = services.content.move_target_reason(db, workspace_id, doc, target)
+            if reason:
+                skipped.append({"id": doc_id, "reason": reason})
+                continue
+            doc.parent_id = None if target == 0 else target
+            doc.updated_by_id = current_user.id
+            moved.append(doc)
+        db.commit()
+        return {"action": "move", "updated": len(moved), "skipped": skipped}
+
+    docs: list[Document] = []
+    for doc_id in ids:
+        doc = _load_ok(doc_id)
+        if doc is not None:
+            docs.append(doc)
+    updated = services.content.soft_delete_documents(db, workspace_id, docs, current_user)
+    return {"action": "delete", "updated": updated, "skipped": skipped}
+
+
 @router.patch("/{doc_id}")
 def update_document_meta(
     workspace_id: int,
@@ -454,25 +509,12 @@ def update_document_meta(
     if payload.sort_order is not None:
         doc.sort_order = payload.sort_order
     if payload.parent_id is not None and payload.parent_id != doc.parent_id:
-        if payload.parent_id == doc.id:
-            raise ConflictError("不能将文档移动到自身")
-        if payload.parent_id == 0:
-            # 0 = 移动到根目录（None 语义为"不更新"，无法表达移回根）
-            doc.parent_id = None
-        else:
-            parent = services.content.get_document_or_404(db, workspace_id, payload.parent_id)
-            if not parent.is_folder:
-                raise ConflictError("父节点必须是文件夹")
-            # 环检测：目标父节点的祖先链不得包含自身（否则形成孤儿环）；
-            # visited 集合防御历史脏数据已含环时的死循环
-            ancestor = parent
-            visited: set[int] = set()
-            while ancestor is not None and ancestor.id not in visited:
-                if ancestor.id == doc.id:
-                    raise ConflictError("不能将文档移动到其子孙节点下")
-                visited.add(ancestor.id)
-                ancestor = db.get(Document, ancestor.parent_id) if ancestor.parent_id is not None else None
-            doc.parent_id = payload.parent_id
+        # 校验复用批量移动的同一实现（services.content.move_target_reason）
+        reason = services.content.move_target_reason(db, workspace_id, doc, payload.parent_id)
+        if reason:
+            raise ConflictError(reason)
+        # 0 = 移动到根目录（None 语义为"不修改"，无法表达"改回根"）
+        doc.parent_id = None if payload.parent_id == 0 else payload.parent_id
     if payload.tag_ids is not None:
         services.content._apply_tags(db, doc, payload.tag_ids, current_user)
 
