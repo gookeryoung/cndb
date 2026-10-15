@@ -2677,3 +2677,34 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-dcr-doc {
   font-size: 12px;
 }
+
+/* ─────────────── 帮助中心 · 移动端主题导航（横向可滚动胶囊） ─────────────── */
+.cn-help-topics {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--cn-border);
+  -webkit-overflow-scrolling: touch;
+}
+
+.cn-help-topic {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+  color: var(--cn-text-secondary);
+  background: var(--cn-bg-subtle);
+  border: 1px solid var(--cn-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.cn-help-topic-active {
+  color: var(--cn-primary, #1677ff);
+  border-color: color-mix(in srgb, var(--cn-primary, #1677ff) 45%, transparent);
+  background: color-mix(in srgb, var(--cn-primary, #1677ff) 10%, transparent);
+  font-weight: 600;
+}

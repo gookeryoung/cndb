@@ -1,11 +1,22 @@
 /** HelpCenterDrawer 测试：打开渲染、主题切换、重放按钮触发信号. */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import HelpCenterDrawer from './HelpCenterDrawer'
 import { useOnboardingStore } from '@/store/onboarding'
 import { renderProviders } from '@/test/render-providers'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，移动端用例在其内部切换
+let responsiveState: ResponsiveState = {
+  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+  width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+  return { ...actual, useResponsive: () => responsiveState }
+})
 
 function renderDrawer(open = true) {
   return renderProviders(<HelpCenterDrawer open={open} onClose={() => { }} />)
@@ -47,5 +58,40 @@ describe('HelpCenterDrawer', () => {
     await userEvent.click(screen.getByTestId('replay-tour-btn'))
     expect(useOnboardingStore.getState().tourRequested).toBe(true)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('HelpCenterDrawer 移动端主题导航', () => {
+  beforeEach(() => {
+    useOnboardingStore.setState({ tourDone: false, tourRequested: false })
+  })
+
+  afterEach(() => {
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+  })
+
+  it('窄屏下改为顶部横向胶囊导航（无左侧竖排菜单），点击可切换主题', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    renderDrawer()
+
+    expect(document.querySelector('.ant-menu-inline')).toBeNull()
+    expect(document.querySelectorAll('.cn-help-topic')).toHaveLength(6)
+    expect(document.querySelector('.cn-help-topic-active')).toHaveTextContent('快速上手')
+
+    await userEvent.click(screen.getByText('常见问题'))
+    expect(await screen.findByText('筛选和排序会保存吗？')).toBeInTheDocument()
+    expect(document.querySelector('.cn-help-topic-active')).toHaveTextContent('常见问题')
+  })
+
+  it('桌面端保持左侧竖排菜单，不渲染胶囊导航', () => {
+    renderDrawer()
+    expect(document.querySelector('.ant-menu-inline')).toBeTruthy()
+    expect(document.querySelectorAll('.cn-help-topic')).toHaveLength(0)
   })
 })
