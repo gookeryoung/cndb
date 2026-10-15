@@ -105,6 +105,15 @@ def _authenticate_jwt(token: str, db: Session) -> User | None:
     return db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
 
 
+def _unauthorized(detail: str = "未认证或登录已过期") -> HTTPException:
+    """统一的 401（带 WWW-Authenticate），供未认证 / 令牌非法等路径复用."""
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 def get_current_user(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -115,10 +124,14 @@ def get_current_user(
     持有的旧 token），所有请求统一归属内置本地用户——这是单机定位的
     明确语义，非缺陷。
 
-    返回：
-        单机模式返回内置本地用户；否则认证成功返回 User 对象，
-        AUTH_ENABLED=False 或无认证头时返回 None；
-        AUTH_ENABLED=True 但认证失败时抛 401.
+    返回 / 抛出：
+        - LOCAL_MODE：返回内置本地用户（忽略 Authorization 头）；
+        - AUTH_ENABLED=True：认证成功返回 User；**未带认证头 / 头格式非法 / 令牌为空 /
+          令牌无效或过期一律抛 401**（此前前三种情况返回 None，端点解引用会变成 500）；
+        - AUTH_ENABLED=False：返回 None（该模式下不做认证，需要用户的端点应自行决定语义，
+          或改用 get_optional_user 显式接收匿名）。
+
+    注意：需要"登录更好、匿名也行"的路由应使用 :func:`get_optional_user`，它会吞掉 401 返回 None。
     """
 
     if settings.LOCAL_MODE:
@@ -136,25 +149,21 @@ def get_current_user(
 
     auth_header = request.headers.get("Authorization") or request.headers.get("authorization")
     if not auth_header:
-        return None
+        raise _unauthorized("缺少认证信息，请先登录")
 
     # 格式: "Bearer <token>"
     parts = auth_header.split(" ", 1)
     if len(parts) != 2 or parts[0].lower() != "bearer":
-        return None
+        raise _unauthorized("认证头格式非法，应为 Bearer <token>")
 
     token = parts[1].strip()
     if not token:
-        return None
+        raise _unauthorized("令牌为空，请重新登录")
 
     user: User | None = _authenticate_jwt(token, db)
 
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效或过期的令牌",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _unauthorized("无效或过期的令牌")
     set_actor_ids(
         request.state,
         user_id=getattr(user, "id", None),
