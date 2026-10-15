@@ -567,6 +567,24 @@ body.theme-oled {
   background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
 }
 
+/* ─────────────── 窄屏导航层级（工作区页签 vs 二级页签） ───────────────
+ * 窄屏下两级页签同处一条横滑行，横滑后竖线分割可能移出视口，层级感丢失；
+ * 给二级段（表级 / 文档级）一层浅色底 + 圆角，形成「嵌套在行内的分段控件」观感，
+ * 与工作区页签的贴底墨条区分层级；桌面端不加底色，保持原有 GitHub 风格分割。 */
+@media (max-width: 767.98px) {
+  .cn-table-crumb {
+    background: var(--cn-bg-subtle);
+    border-radius: 10px;
+    margin: 4px 10px 4px 2px;
+    padding: 0 6px;
+  }
+
+  /* 底色本身已表达分组边界，窄屏去掉竖线避免与圆角底边打架 */
+  .cn-table-crumb-divider {
+    display: none;
+  }
+}
+
 /* 全局主按钮：品牌色柔和投影，强化主操作层级（危险主按钮不套用） */
 button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous) {
   box-shadow: 0 2px 6px color-mix(in srgb, var(--cn-brand-color) 32%, transparent);
