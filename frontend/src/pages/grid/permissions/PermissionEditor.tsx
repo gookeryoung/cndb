@@ -22,6 +22,7 @@ import type {
   Field, TableOwnerInfo, TableMember, WorkspaceRole,
 } from '@/api'
 import { useAuthStore } from '@/store'
+import { useResponsive } from '@/hooks/useResponsive'
 
 interface PermissionEditorProps {
   fields: Field[]
@@ -150,9 +151,13 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
   }, [wsMembers, members, owner])
 
   // ── 成员表列 ──
+  // 窄屏：隐藏字段三列在 390px 下每列仅约 110px，字段名会被截断
+  const { isMobile } = useResponsive()
+
   const memberColumns = [
     {
       title: '用户',
+      width: 220,
       dataIndex: 'username',
       key: 'username',
       render: (name: string) => (
@@ -277,6 +282,8 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
                 columns={memberColumns}
                 dataSource={list}
                 pagination={false}
+                // 窄屏不压缩列宽（用户名 / 角色 / 操作三列），改为容器横向滚动
+                scroll={{ x: 'max-content' }}
               />
             )}
           </Card>
@@ -295,7 +302,11 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
           onChange={(vals) => onHiddenNamesChange(vals as string[])}
           style={{ width: '100%' }}
         >
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px 16px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))',
+            gap: '6px 16px',
+          }}>
             {fields.filter(f => !f.hidden).map(f => (
               <Checkbox key={String(f.id)} value={f.name} style={{ marginInlineStart: 0 }}>
                 <span
