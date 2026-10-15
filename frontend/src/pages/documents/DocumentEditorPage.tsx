@@ -30,6 +30,7 @@ import {
   MoreOutlined,
   PictureOutlined,
   PullRequestOutlined,
+  TeamOutlined,
   SaveOutlined,
   SearchOutlined,
   TableOutlined,
@@ -69,6 +70,7 @@ const { TextArea } = Input
 
 
 import BacklinksDrawer from './BacklinksDrawer'
+import DocumentCollaboratorsModal from './DocumentCollaboratorsModal'
 import DocumentChangeRequestsDrawer from './DocumentChangeRequestsDrawer'
 import InsertTableModal from './InsertTableModal'
 import LinksDrawer from './LinksDrawer'
@@ -88,6 +90,7 @@ export default function DocumentEditorPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
+  const [collaboratorsOpen, setCollaboratorsOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
   /** 窄屏（<768px）编辑/预览二选一：左右分栏在 390px 屏上每侧仅约 190px，正文换行严重 */
   const [mobilePane, setMobilePane] = useState<'edit' | 'preview'>('edit')
@@ -695,6 +698,7 @@ export default function DocumentEditorPage() {
     { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
     { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
     { key: 'tags', icon: <TagsOutlined />, label: `标签${(doc.tag_ids?.length ?? 0) > 0 ? ` (${doc.tag_ids?.length})` : ''}`, onClick: () => setTagsOpen(true) },
+    { key: 'collaborators', icon: <TeamOutlined />, label: '协作者', onClick: () => setCollaboratorsOpen(true) },
     { key: 'change-requests', icon: <PullRequestOutlined />, label: `修改申请${pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}`, onClick: () => setCrOpen(true) },
     { key: 'versions', icon: <HistoryOutlined />, label: `版本${(doc.version_count ?? 0) > 0 ? ` (${doc.version_count})` : ''}`, onClick: () => setVersionsOpen(true) },
     { type: 'divider' as const },
@@ -1112,6 +1116,15 @@ export default function DocumentEditorPage() {
       />
 
       {/* 标签抽屉 */}
+      <DocumentCollaboratorsModal
+        open={collaboratorsOpen}
+        onClose={() => setCollaboratorsOpen(false)}
+        workspaceId={workspaceId}
+        documentId={id}
+        canManage={doc.created_by_id != null && Number(doc.created_by_id) === Number(currentUser?.id)}
+        createdById={doc.created_by_id == null ? null : Number(doc.created_by_id)}
+        currentUserId={currentUser?.id == null ? null : Number(currentUser.id)}
+      />
       <Drawer title="文档标签" width={420} open={tagsOpen} onClose={() => setTagsOpen(false)}>
         <TagEditor
           workspaceId={workspaceId}

@@ -54,6 +54,13 @@ class ContentUpdate(BaseModel):
     base_content: str | None = Field(default=None, description="客户端开始编辑时的正文快照")
 
 
+class DocumentPermissionGrant(BaseModel):
+    """文档协作者授权（viewer 只读 / editor 可直编未发布内容）."""
+
+    user_id: int = Field(gt=0)
+    role: str = Field(default="viewer", pattern="^(viewer|editor)$")
+
+
 class ParagraphLockRequest(BaseModel):
     """段落锁批量操作请求体（keys 为位置键 p1 / p2 …）."""
 

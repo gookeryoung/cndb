@@ -52,6 +52,7 @@ from cndb.plugins.documents.schemas import (
     DailyNoteRequest,
     DocumentBatchRequest,
     DocumentCreate,
+    DocumentPermissionGrant,
     DocumentUpdate,
     LinkRepairRequest,
     ParagraphLockRequest,
@@ -403,6 +404,56 @@ def unpin_document(
     services.content.set_document_pin(db, doc, current_user.id, False)
 
 
+@router.get("/{doc_id}/permissions")
+def list_document_permissions(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """文档协作者名单（能看见该文档的成员均可读，便于协作时互相知悉）."""
+    _require_member(db, workspace_id, current_user)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    return {"items": services.document_permissions.list_permissions(db, doc)}
+
+
+@router.post("/{doc_id}/permissions", status_code=201)
+def grant_document_permission(
+    workspace_id: int,
+    doc_id: int,
+    payload: DocumentPermissionGrant,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """授予协作者权限（仅文档创建者 / 工作区 OWNER / 超管）.
+
+    - viewer：可读该文档（含草稿/归档），写入仍按工作区策略（viewer → 修改申请）
+    - editor：可读 + 可**直接编辑**该文档内容，仅对未发布文档生效
+    """
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    data = services.document_permissions.upsert_permission(
+        db, doc, operator=current_user, target_user_id=payload.user_id, role=payload.role
+    )
+    # 目录树/列表缓存按用户隔离：授权后对方应立即能看到这份草稿
+    invalidate_document_tree_cache(workspace_id)
+    return data
+
+
+@router.delete("/{doc_id}/permissions/{user_id}", status_code=204)
+def revoke_document_permission(
+    workspace_id: int,
+    doc_id: int,
+    user_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """撤销协作者权限（仅文档创建者 / 工作区 OWNER / 超管）."""
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    services.document_permissions.remove_permission(db, doc, operator=current_user, target_user_id=user_id)
+    invalidate_document_tree_cache(workspace_id)
+    return Response(status_code=204)
+
+
 @router.get("/{doc_id}/content")
 def get_document_content(
     workspace_id: int,
@@ -446,6 +497,14 @@ def update_document_content(
     mode = services.change_requests.resolve_write_mode(db, workspace_id, current_user)
     if mode == services.change_requests.WRITE_MODE_DENIED:
         raise PermissionDeniedError("非工作区成员")
+
+    # 文档级授权：被创建者/所有者授予 editor 的协作者，可**直接编辑**该文档。
+    # 仅对未发布文档生效（is_editor_granted 内部判断），已发布内容仍遵循
+    # 工作区 allow_edit / 修改申请流程，避免绕过审核。
+    if mode == services.change_requests.WRITE_MODE_CHANGE_REQUEST and services.document_permissions.is_editor_granted(
+        db, doc_id, current_user.id
+    ):
+        mode = services.change_requests.WRITE_MODE_DIRECT
 
     if mode == services.change_requests.WRITE_MODE_CHANGE_REQUEST:
         cr = services.change_requests.create_request(
