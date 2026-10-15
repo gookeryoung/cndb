@@ -309,11 +309,17 @@ def toggle_pin(
     return PinToggleResponse(pinned=member.pinned)
 
 
-def _row_scope_where(db: Any, tbl: Any, sa_table: Any) -> Any | None:
-    """编译该表的行级过滤条件（无配置返回 None）."""
-    from cndb.plugins.tables.services.core.access import get_row_scope, row_filter_conjunction
+def _row_scope_where(db: Any, tbl: Any, sa_table: Any, user: Any = None) -> Any | None:
+    """编译该表的行级过滤条件（无配置或调用者豁免时返回 None）."""
+    from cndb.plugins.tables.services.core.access import (
+        get_row_scope,
+        row_filter_conjunction,
+        row_filters_bypass,
+    )
     from cndb.plugins.tables.services.core.query import compile_filters
 
+    if user is not None and row_filters_bypass(db, tbl, user):
+        return None
     scope = get_row_scope(db, tbl)
     if not scope:
         return None
@@ -405,7 +411,7 @@ def export_workspace(
             if "trashed_at" in sa_table.columns:
                 query = query.where(sa_table.c.trashed_at.is_(None))
             # 行级权限（TablePermission.row_filters）：导出与读取接口保持一致口径
-            row_scope = _row_scope_where(db, tbl, sa_table)
+            row_scope = _row_scope_where(db, tbl, sa_table, current_user)
             if row_scope is not None:
                 query = query.where(row_scope)
             if "id" in sa_table.columns:

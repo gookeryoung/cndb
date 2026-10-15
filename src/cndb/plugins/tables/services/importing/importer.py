@@ -145,10 +145,13 @@ class Importer:
         field_mapping: dict[str, str | None] | None = None,
         gap_filling: GapFilling = "empty",
         fill_values: dict[str, Any] | None = None,
+        user: Any = None,
     ) -> None:
         self.engine = engine
         self.db = db
         self.table = table
+        # 触发导入的用户（用于行级过滤统一口径：所有者/超管豁免）；后台任务无用户则 None
+        self.user = user
         self.field_mapping = field_mapping
         self.gap_filling = gap_filling
         self.fill_values = fill_values
@@ -379,7 +382,7 @@ class Importer:
             valid_new_vals: list[dict[str, Any]] = []
             if update_list:
                 valid_update = [item for item in update_list if id(item["values"]) in to_import_ids]
-                updated_count = rec.bulk_update_rows(self.engine, self.table, valid_update, db=self.db)
+                updated_count = rec.bulk_update_rows(self.engine, self.table, valid_update, db=self.db, user=self.user)
             if new_list:
                 valid_new_vals = [v for v in new_list if id(v) in to_import_ids]
             # skip_errors=False 场景下，error 行也进 to_import 但 upsert 里没匹配到 → 一并创建

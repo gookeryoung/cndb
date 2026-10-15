@@ -142,10 +142,10 @@ class TestAuditHonoursRowAndFieldPolicy:
         assert "KEEP" in raw
         assert "DROP" not in raw, "行级过滤未在审计日志中生效"
 
-        # 所有者同样受行级过滤限制（与记录读取一致：row_filters 无角色维度）
+        # 所有者豁免行过滤（口径统一）：审计同样能看到越界行的条目
         owner_status, owner_body = _audit(client, env, tid, env.owner.username)
         assert owner_status == 200
-        assert "DROP" not in str(owner_body)
+        assert "DROP" in str(owner_body)
 
     def test_hidden_fields_are_stripped_from_audit_detail(self, client, db):
         env = Env(db)

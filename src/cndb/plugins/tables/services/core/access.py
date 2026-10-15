@@ -344,6 +344,25 @@ def _get_member_role(db: Session, table: DataTable, user: User) -> WorkspaceRole
     return _gmr(user, ws, db)
 
 
+def row_filters_bypass(db: Session, table: DataTable, user: User | None) -> bool:
+    """表所有者 / 工作区 OWNER / 超管不受 `TablePermission.row_filters` 限制.
+
+    **口径统一**：`check_action` 的优先级链（表拥有者 → 工作区 OWNER → 表成员授权 →
+    角色阈值 → 工作区默认）以及 `hidden_fields`（按角色键，未给 owner 键则不隐藏）都体现
+    "所有者拥有全部权限"，而 `row_filters` 原先没有角色维度、对所有人（含 OWNER）生效。
+    这里统一为：所有者/超管豁免行过滤，其余成员仍受行级规则约束。
+
+    ``user is None``（内部/后台调用）保持"过滤仍然生效"，避免改变既有内部行为。
+    """
+    if user is None:
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    if table.owner_id is not None and table.owner_id == user.id:
+        return True
+    return _get_member_role(db, table, user) == WorkspaceRole.OWNER
+
+
 __all__ = [
     "TableAccessPreload",
     "TableAction",
@@ -356,4 +375,5 @@ __all__ = [
     "get_table_or_404",
     "preload_table_access",
     "row_filter_conjunction",
+    "row_filters_bypass",
 ]

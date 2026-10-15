@@ -314,14 +314,14 @@ def merge_request(
                 if row_id is None or rec.get_row(engine, table, row_id, db=db) is None:
                     skipped += 1
                     continue
-                rec.update_row(engine, table, row_id, item.values, db=db)
+                rec.update_row(engine, table, row_id, item.values, db=db, user=user)
                 applied += 1
                 applied_row_ids.add(row_id)
             else:  # delete
                 if row_id is None or rec.get_row(engine, table, row_id, db=db) is None:
                     skipped += 1  # 行已不存在，自动失效
                     continue
-                rec.trash_row(engine, table, row_id, db=db)
+                rec.trash_row(engine, table, row_id, db=db, user=user)
                 applied += 1
                 applied_row_ids.add(row_id)
     except ValueError as exc:

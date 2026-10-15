@@ -136,26 +136,26 @@ class TestRowLevelPermissionsEndToEnd:
         # 隐藏字段对 viewer 不可见
         assert "secret_note" not in rows[0] or rows[0].get("secret_note") in (None, "")
 
-    def test_row_filters_apply_to_everyone_but_field_hiding_is_role_based(self, client, db):
-        """如实锁定当前语义（两处口径不同，属已知不一致，见下方说明）.
+    def test_row_filters_filter_members_but_owner_bypasses(self, client, db):
+        """口径统一后的语义（见 services/core/access.py: row_filters_bypass）.
 
-        - ``row_filters`` **没有角色维度**：对所有人生效（含工作区 OWNER），
-          因此所有者在该表里也只看到命中条件的行。这比"所有人都能看到"更严格，
-          不构成越权泄露，但与"OWNER 拥有全部权限"的其它判定（check_action / hidden_fields）
-          口径不一致；要改成"所有者豁免"需要把调用者一路传到行条件编译器（9 处调用点），
-          属于独立改动，记为后续项。
-        - ``hidden_fields`` 按角色键配置：owner 角色未配置 → 所有者不受隐藏影响。
+        - `row_filters` 对**普通成员**生效（这里是 workspace VIEWER）；
+        - 表所有者 / 工作区 OWNER / 超管与 `check_action`、`hidden_fields` 的口径一致 —— **豁免**行过滤；
+        - `hidden_fields` 仍是按角色键配置：这里只给 viewer 配了隐藏，owner 不受影响。
         """
         env, _open_table, restricted = _setup_two_tables(client, db)
 
-        rows = _list_rows(client, env, restricted["id"], env.owner.username)
-        assert [r["status"] for r in rows] == ["public"], rows
-        # 字段隐藏按角色：owner 未被配置 → 仍能看到 secret_note
-        # （行过滤命中 status=public，故这里应是该行的机密备注字段本身可见）
-        assert rows[0].get("secret_note") == "B-公开"
+        # 普通成员：只看到命中行过滤的那一行
+        viewer_rows = _list_rows(client, env, restricted["id"], env.viewer.username)
+        assert [r["status"] for r in viewer_rows] == ["public"], viewer_rows
+
+        # 工作区 OWNER（本用例中也是表所有者）：豁免行过滤，看到全部行与全部字段
+        owner_rows = _list_rows(client, env, restricted["id"], env.owner.username)
+        assert sorted(r["status"] for r in owner_rows) == ["public", "secret"], owner_rows
+        assert any(r.get("secret_note") == "B-机密" for r in owner_rows)
 
     def test_row_filter_does_not_leak_to_other_table_after_update(self, client, db):
-        """先查无权限行表（可能进缓存/反射），再改另一表权限，前者仍不受影响."""
+        """先查无权限行的表（可能进缓存/反射），再改另一表权限，前者仍不受影响."""
         env, open_table, restricted = _setup_two_tables(client, db)
         assert len(_list_rows(client, env, open_table["id"], env.viewer.username)) == 2
 

@@ -478,7 +478,7 @@ def download_failed_rows(
     from cndb.plugins.tables.services.importing.importer import Importer
 
     engine = db.get_bind()
-    importer = Importer(engine, db, dt)
+    importer = Importer(engine, db, dt, user=current_user)
     # 用空的 content 不行，但我们有 task.file_content —— 只需要重新 analyze
     import base64 as _b64
 
