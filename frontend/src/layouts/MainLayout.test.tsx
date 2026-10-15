@@ -367,6 +367,37 @@ describe('MainLayout 文档区二级导航', () => {
     })
 })
 
+describe('MainLayout 顶部页签行布局', () => {
+    it('窄屏工作区页签保持内容宽度（不被二级页签挤成 0 宽），由整行横滑承载', async () => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 390, height: 844,
+        }
+        renderLayout(mockUser, '/w/10/tables/100/settings')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('table-crumb')).toBeVisible()
+        })
+        const tabs = document.querySelector('.cn-ws-tabs .ant-tabs') as HTMLElement
+        expect(tabs.style.flex).toBe('0 0 auto')
+
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
+    })
+
+    it('桌面端工作区页签保持可收缩（0 1 auto）', async () => {
+        renderLayout(mockUser, '/w/10/tables/100/settings')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('table-crumb')).toBeVisible()
+        })
+        const tabs = document.querySelector('.cn-ws-tabs .ant-tabs') as HTMLElement
+        expect(tabs.style.flex).toBe('0 1 auto')
+    })
+})
+
 describe('MainLayout 侧边栏工作区上下文', () => {
     it('进入工作区（有 wid）时渲染数据表导航，不渲染未选择提示', async () => {
         renderLayout(mockUser)
