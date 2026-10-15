@@ -440,3 +440,72 @@ describe('DocumentTree 个人置顶', () => {
     })
 })
 })
+
+describe('可见性提示', () => {
+    it('未发布且未授权的文档显示「仅自己可见」并说明原因', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tree', () =>
+                HttpResponse.json({
+                    items: mockDocuments.map(d =>
+                        d.id === 2
+                            ? { ...d, status: 'draft' as const, visibility: 'private' as const, collaborator_count: 0 }
+                            : d,
+                    ),
+                }),
+            ),
+        )
+        renderTree()
+        await screen.findByTestId('doc-tree-folder-1')
+        fireEvent.click(screen.getByTestId('doc-tree-folder-1'))
+        await waitFor(() => expect(screen.getByTestId('doc-tree-doc-2')).toBeVisible())
+
+        const mark = screen.getByTestId('doc-visibility-2')
+        expect(mark).toHaveAttribute('aria-label', '仅自己可见')
+        fireEvent.mouseEnter(mark)
+        // 提示文案要说明"同事看不到"，避免误以为文档丢了
+        expect(await screen.findByText(/仅你与工作区所有者可见/)).toBeInTheDocument()
+    })
+
+    it('已授权协作者的草稿显示共享标记（含人数）', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tree', () =>
+                HttpResponse.json({
+                    items: mockDocuments.map(d =>
+                        d.id === 2
+                            ? { ...d, status: 'draft' as const, visibility: 'shared' as const, collaborator_count: 2 }
+                            : d,
+                    ),
+                }),
+            ),
+        )
+        renderTree()
+        await screen.findByTestId('doc-tree-folder-1')
+        fireEvent.click(screen.getByTestId('doc-tree-folder-1'))
+        await waitFor(() => expect(screen.getByTestId('doc-tree-doc-2')).toBeVisible())
+
+        const mark = screen.getByTestId('doc-visibility-2')
+        expect(mark).toHaveAttribute('aria-label', '已共享给协作者')
+        fireEvent.mouseEnter(mark)
+        expect(await screen.findByText(/已授权 2 位协作者可见/)).toBeInTheDocument()
+        // 未共享的兄弟节点不应出现标记
+        expect(screen.queryByTestId('doc-visibility-3')).toBeNull()
+    })
+
+    it('已发布文档不显示可见性标记（成员均可见，无需提示）', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tree', () =>
+                HttpResponse.json({
+                    items: mockDocuments.map(d =>
+                        d.id === 2 ? { ...d, status: 'published' as const, visibility: 'workspace' as const } : d,
+                    ),
+                }),
+            ),
+        )
+        renderTree()
+        await screen.findByTestId('doc-tree-folder-1')
+        fireEvent.click(screen.getByTestId('doc-tree-folder-1'))
+        await waitFor(() => expect(screen.getByTestId('doc-tree-doc-2')).toBeVisible())
+
+        expect(screen.queryByTestId('doc-visibility-2')).toBeNull()
+    })
+})

@@ -6,9 +6,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { App as AntApp, Button, Dropdown, Empty, Input, Modal, Tree, TreeSelect } from 'antd'
+import {
+  Tooltip, App as AntApp, Button, Dropdown, Empty, Input, Modal, Tree, TreeSelect } from 'antd'
 import type { DataNode } from 'antd/es/tree'
 import {
+  LockOutlined,
+  TeamOutlined,
   ApartmentOutlined,
   CalendarOutlined,
   DeleteOutlined,
@@ -357,6 +360,25 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
             background: STATUS_DOT_COLOR[node.status] ?? STATUS_DOT_COLOR.draft,
           }}
         />
+        {/* 可见性提示：未发布的文档同事看不到，明确告知以免误以为"文档丢了" */}
+        {node.visibility === 'private' && (
+          <Tooltip title="未发布：仅你与工作区所有者可见">
+            <LockOutlined
+              aria-label="仅自己可见"
+              data-testid={`doc-visibility-${node.id}`}
+              style={{ marginLeft: 6, fontSize: 11, color: 'var(--cn-text-secondary, #8c8c8c)' }}
+            />
+          </Tooltip>
+        )}
+        {node.visibility === 'shared' && (
+          <Tooltip title={`未发布：已授权 ${node.collaborator_count ?? 0} 位协作者可见`}>
+            <TeamOutlined
+              aria-label="已共享给协作者"
+              data-testid={`doc-visibility-${node.id}`}
+              style={{ marginLeft: 6, fontSize: 11, color: 'var(--cn-primary, #1890ff)' }}
+            />
+          </Tooltip>
+        )}
       </span>
     )
   }, [moreButton])

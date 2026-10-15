@@ -29,6 +29,7 @@ from cndb.plugins.documents.models import (
     CHANGE_TYPE_MANUAL,
     CHANGE_TYPE_ROLLBACK,
     CONTENT_TYPE_FOLDER,
+    DOC_STATUS_PUBLISHED,
     EXTERNAL_MIN_SIZE,
     INLINE_MAX_SIZE,
     Document,
@@ -941,7 +942,14 @@ def serialize_document(db: Session, doc: Document, *, pinned: bool = False) -> d
         row.tag_id for row in db.execute(select(DocumentTag.tag_id).where(DocumentTag.document_id == doc.id)).all()
     ]
     total = 0 if doc.is_folder else version_count(db, doc.id)
-    return _serialize_document(doc, version_total=total, tag_ids=tag_ids, pinned=pinned)
+    counts = _collaborator_counts(db, [doc.id])
+    return _serialize_document(
+        doc,
+        version_total=total,
+        tag_ids=tag_ids,
+        pinned=pinned,
+        collaborator_count=counts.get(doc.id, 0),
+    )
 
 
 def pinned_document_ids(db: Session, workspace_id: int, user_id: int) -> set[int]:
@@ -1003,19 +1011,45 @@ def serialize_documents(
     ).all():
         tag_ids[doc_id].append(tag_id)
     pinned = pinned_ids or set()
+    collab_counts = _collaborator_counts(db, ids)
     return [
         _serialize_document(
             doc,
             version_total=0 if doc.is_folder else int(counts.get(doc.id, 0)),
             tag_ids=tag_ids.get(doc.id, []),
             pinned=doc.id in pinned,
+            collaborator_count=collab_counts.get(doc.id, 0),
         )
         for doc in docs
     ]
 
 
+def _collaborator_counts(db: Session, doc_ids: list[int]) -> dict[int, int]:
+    """按文档统计协作授权人数（一次分组查询，避免逐个文档查询）."""
+    if not doc_ids:
+        return {}
+    rows = db.execute(
+        select(DocumentPermission.document_id, func.count())
+        .where(DocumentPermission.document_id.in_(doc_ids))
+        .group_by(DocumentPermission.document_id)
+    ).all()
+    return {int(doc_id): int(cnt) for doc_id, cnt in rows}
+
+
+def _document_visibility(doc: Document, collaborator_count: int) -> str:
+    """可见性标签：workspace（已发布）/ shared（已授权协作者）/ private（仅自己与所有者）."""
+    if doc.status == DOC_STATUS_PUBLISHED:
+        return "workspace"
+    return "shared" if collaborator_count > 0 else "private"
+
+
 def _serialize_document(
-    doc: Document, *, version_total: int, tag_ids: list[int], pinned: bool = False
+    doc: Document,
+    *,
+    version_total: int,
+    tag_ids: list[int],
+    pinned: bool = False,
+    collaborator_count: int = 0,
 ) -> dict[str, Any]:
     """文档 → 响应字典主体（版本数/标签由调用方提供，避免逐条查询）."""
     return {
@@ -1039,4 +1073,7 @@ def _serialize_document(
         "tag_ids": tag_ids,
         "version_count": version_total,
         "pinned": pinned,
+        # 可见性提示：前端据此展示"仅自己可见 / 共享给 N 人 / 已发布"
+        "visibility": _document_visibility(doc, collaborator_count),
+        "collaborator_count": collaborator_count,
     }
