@@ -34,6 +34,8 @@ import {
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
+import MarkdownToolbar, { type MarkdownAction } from '@/components/Document/MarkdownToolbar'
+import { insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi, isChangeRequestDispatch } from '@/api/documents'
 import { tableApi, workspaceApi } from '@/api'
@@ -263,6 +265,40 @@ export default function DocumentEditorPage() {
   const handleSave = useCallback(() => {
     saveMut.mutate(content)
   }, [content, saveMut])
+
+  /** 应用一次 Markdown 语法操作：以 textarea 当前选区为准，写回后恢复焦点与光标 */
+  const applyMarkdownAction = useCallback((action: MarkdownAction) => {
+    const node = taRef.current?.resizableTextArea?.textArea
+    const start = node?.selectionStart ?? content.length
+    const end = node?.selectionEnd ?? start
+    const result = action(content, start, end)
+    if (result.value === content) return
+    setContent(result.value)
+    dirtyRef.current = true
+    // 受控组件重渲染后再恢复选区（否则光标会跳到末尾）
+    requestAnimationFrame(() => {
+      const next = taRef.current?.resizableTextArea?.textArea
+      if (!next) return
+      next.focus()
+      next.setSelectionRange(result.selectionStart, result.selectionEnd)
+    })
+  }, [content])
+
+  /** 编辑区快捷键：Ctrl/Cmd+B 加粗、Ctrl/Cmd+I 斜体、Ctrl/Cmd+K 链接（Ctrl+S 由全局处理） */
+  const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+    const key = e.key.toLowerCase()
+    if (key === 'b') {
+      e.preventDefault()
+      applyMarkdownAction((v, s, en) => wrapSelection(v, s, en, '**'))
+    } else if (key === 'i') {
+      e.preventDefault()
+      applyMarkdownAction((v, s, en) => wrapSelection(v, s, en, '*'))
+    } else if (key === 'k') {
+      e.preventDefault()
+      applyMarkdownAction((v, s, en) => insertLink(v, s, en))
+    }
+  }, [applyMarkdownAction])
 
   // 在光标位置插入数据表引用占位符（前后自动补空行保证独占段落）
   const insertTableRef = () => {
@@ -546,27 +582,31 @@ export default function DocumentEditorPage() {
               />
             </div>
             {mobilePane === 'edit' ? (
-              <TextArea
-                ref={taRef}
-                value={content}
-                onChange={e => {
-                  setContent(e.target.value)
-                  dirtyRef.current = true
-                }}
-                placeholder="输入 Markdown 内容…"
-                style={{
-                  flex: 1,
-                  minHeight: 0,
-                  resize: 'none',
-                  border: 'none',
-                  boxShadow: 'none',
-                  borderRadius: 0,
-                  fontFamily: 'var(--cn-mono, monospace)',
-                  fontSize: 14,
-                  lineHeight: 1.7,
-                  padding: 16,
-                }}
-              />
+              <>
+                <MarkdownToolbar onAction={applyMarkdownAction} />
+                <TextArea
+                  ref={taRef}
+                  value={content}
+                  onChange={e => {
+                    setContent(e.target.value)
+                    dirtyRef.current = true
+                  }}
+                  onKeyDown={handleEditorKeyDown}
+                  placeholder="输入 Markdown 内容…"
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    resize: 'none',
+                    border: 'none',
+                    boxShadow: 'none',
+                    borderRadius: 0,
+                    fontFamily: 'var(--cn-mono, monospace)',
+                    fontSize: 14,
+                    lineHeight: 1.7,
+                    padding: 16,
+                  }}
+                />
+              </>
             ) : (
               <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '16px' }}>
                 <MarkdownPreview content={content} workspaceId={workspaceId} onWikilink={handleWikilink} />
@@ -576,6 +616,8 @@ export default function DocumentEditorPage() {
         ) : (
           <Splitter style={{ height: '100%' }}>
             <Splitter.Panel defaultSize="50%" min="20%" max="80%">
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <MarkdownToolbar onAction={applyMarkdownAction} />
               <TextArea
                 ref={taRef}
                 value={content}
@@ -583,9 +625,11 @@ export default function DocumentEditorPage() {
                   setContent(e.target.value)
                   dirtyRef.current = true
                 }}
+                onKeyDown={handleEditorKeyDown}
                 placeholder="输入 Markdown 内容…"
                 style={{
-                  height: '100%',
+                  flex: 1,
+                  minHeight: 0,
                   resize: 'none',
                   border: 'none',
                   boxShadow: 'none',
@@ -595,6 +639,7 @@ export default function DocumentEditorPage() {
                   padding: 20,
                 }}
               />
+              </div>
             </Splitter.Panel>
             <Splitter.Panel min="20%" max="80%">
               <div style={{ height: '100%', overflow: 'auto', padding: '20px 24px' }}>

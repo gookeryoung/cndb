@@ -497,4 +497,52 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
         expect(screen.getByTestId('doc-export-btn')).toBeInTheDocument()
         expect(screen.queryByTestId('doc-more-actions')).toBeNull()
     })
+
+describe('DocumentEditorPage Markdown 快捷工具', () => {
+    it('点击工具栏「加粗」把选中文本包裹为 **…** 并保留选区', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const original = ta.value
+        ta.setSelectionRange(0, 2)
+
+        fireEvent.click(screen.getByTestId('md-toolbar-bold'))
+
+        await waitFor(() => expect(ta.value.startsWith(`**${original.slice(0, 2)}**`)).toBe(true))
+        // 光标恢复到文字上（不是跳到末尾）
+        await waitFor(() => {
+            expect(ta.selectionStart).toBe(2)
+            expect(ta.selectionEnd).toBe(4)
+        })
+    })
+
+    it('Ctrl+B / Ctrl+I / Ctrl+K 快捷键生效', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+
+        ta.setSelectionRange(0, 1)
+        fireEvent.keyDown(ta, { key: 'b', ctrlKey: true })
+        await waitFor(() => expect(ta.value.startsWith('**')).toBe(true))
+
+        const afterBold = ta.value
+        ta.setSelectionRange(0, 0)
+        fireEvent.keyDown(ta, { key: 'i', ctrlKey: true })
+        await waitFor(() => expect(ta.value).not.toBe(afterBold))
+
+        ta.setSelectionRange(0, 3)
+        fireEvent.keyDown(ta, { key: 'k', ctrlKey: true })
+        await waitFor(() => expect(ta.value).toContain('](https://)'))
+    })
+
+    it('列表 / 引用 / 代码块按钮作用于整行', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        ta.setSelectionRange(0, 0)
+
+        fireEvent.click(screen.getByTestId('md-toolbar-ul'))
+        await waitFor(() => expect(ta.value.startsWith('- ')).toBe(true))
+
+        fireEvent.click(screen.getByTestId('md-toolbar-codeblock'))
+        await waitFor(() => expect(ta.value).toContain('```'))
+    })
+})
 })

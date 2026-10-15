@@ -2859,3 +2859,24 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-row-index-new {
   opacity: 0.55;
 }
+
+/* ─────────────── 文档编辑器 · Markdown 快捷工具栏 ───────────────
+ * 图标按钮一行排布；窄屏可横滑，不挤压正文宽度 */
+.cn-md-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--cn-border);
+  background: var(--cn-bg-container);
+  overflow-x: auto;
+}
+
+.cn-md-toolbar .ant-btn {
+  color: var(--cn-text-secondary);
+}
+
+.cn-md-toolbar .ant-btn:hover {
+  color: var(--cn-brand-color);
+}
