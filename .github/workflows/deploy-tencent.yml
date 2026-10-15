@@ -176,7 +176,9 @@ jobs:
           port: ${{ secrets.SSH_PORT || 22 }}
           username: ${{ secrets.SSH_USERNAME || 'root' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "deploy/deploy.sh,deploy/backup.sh,deploy/bootstrap-server.sh,deploy/Dockerfile.prod"
+          # deploy/nginx 必须一并同步：反向代理的模板/片段/可选扩展都在里面，
+          # 漏传会导致 --profile proxy 起不来（容器挂载到空目录）。
+          source: "deploy/deploy.sh,deploy/backup.sh,deploy/bootstrap-server.sh,deploy/Dockerfile.prod,deploy/nginx"
           target: /opt/cndb
 
       # 构建产物落到 /opt/cndb/dist：deploy.sh 在 SERVER_BUILD=1 下

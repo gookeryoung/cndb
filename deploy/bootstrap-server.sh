@@ -65,6 +65,17 @@ NEW_ENV=0
 set_env CNDB_IMAGE  "${REGISTRY}/${GROUP}/${REPO}:v0.3.0" "$ENV_FILE"
 set_env CNDB_BIND   "$BIND"                    "$ENV_FILE"
 set_env CNDB_VOLUME "$VOLUME"                  "$ENV_FILE"
+
+# 反向代理（可选）：默认不启用，保持单容器形态。
+# 需要域名/HTTPS/统一入口时改为 1，并把 CNDB_BIND 设为 127.0.0.1:8000，
+# 再跑一次 deploy.sh（脚本会自动带 --profile proxy 并做 WebSocket 升级冒烟验证）。
+set_env CNDB_ENABLE_PROXY "0"    "$ENV_FILE"
+set_env CNDB_HTTP_BIND    "80"   "$ENV_FILE"
+set_env CNDB_HTTPS_BIND   "443"  "$ENV_FILE"
+set_env CNDB_SERVER_NAME  "_"    "$ENV_FILE"
+set_env CNDB_MAX_BODY_SIZE "512m" "$ENV_FILE"
+set_env CNDB_NGINX_IMAGE  "nginx:1.27-alpine" "$ENV_FILE"
+set_env CNDB_APP_UPSTREAM "app:8000" "$ENV_FILE"
 set_env DEBUG       "false"                    "$ENV_FILE"
 set_env AUTH_ENABLED "true"                    "$ENV_FILE"
 
