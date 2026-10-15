@@ -49,7 +49,8 @@ import { parseOutline } from '@/components/Document/outline'
 import { documentsApi, isChangeRequestDispatch } from '@/api/documents'
 import { fileApi, tableApi, workspaceApi } from '@/api'
 import { useAuthStore } from '@/store'
-import { useDocumentEditing, useDocumentViewers, useRealtime } from '@/realtime/useRealtime'
+import { useDocumentEditing, useDocumentViewers, useParagraphLockSnapshot, useRealtime } from '@/realtime/useRealtime'
+import { useParagraphLocks } from './useParagraphLocks'
 import { DocumentViewers } from '@/realtime/RealtimeIndicators'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
@@ -105,6 +106,8 @@ export default function DocumentEditorPage() {
   /** 当前定位到的匹配下标（-1 = 尚未定位） */
   const [matchIndex, setMatchIndex] = useState(-1)
   const baseTsRef = useRef<string | null>(null)
+  /** 已同步正文快照：保存时回传，服务端据此做段落级三方合并（不同段落可并发，同段落冲突） */
+  const baseContentRef = useRef<string>('')
   const dirtyRef = useRef(false)
   const taRef = useRef<TextAreaRef>(null)
 
@@ -125,6 +128,16 @@ export default function DocumentEditorPage() {
   const { updatePresence } = useRealtime(wid)
   const viewers = useDocumentViewers(Number.isFinite(id) ? id : null)
   const remoteEditing = useDocumentEditing(Number.isFinite(id) ? id : null)
+  // 段落级并发编辑：同段互斥、不同段可并发（锁随光标移动获取/释放）
+  const realtimeParaLocks = useParagraphLockSnapshot(Number.isFinite(id) ? id : null)
+  const paraLocks = useParagraphLocks({
+    workspaceId,
+    docId: id,
+    content,
+    currentUserId: currentUser?.id,
+    realtimeLocks: realtimeParaLocks,
+    enabled: Number.isFinite(id) && !!currentUser,
+  })
   // 实时在线状态：进入文档页上报"查看中"，切到编辑页签上报"编辑中"，离开清空
   const presenceMode: 'viewing' | 'editing' = !isMobile && mobilePane === 'preview' ? 'viewing' : 'editing'
   useEffect(() => {
@@ -159,6 +172,7 @@ export default function DocumentEditorPage() {
     if (doc) {
       setContent(doc.content)
       baseTsRef.current = doc.updated_at
+      baseContentRef.current = doc.content
       dirtyRef.current = false
     }
   }, [docQuery.data])
@@ -168,6 +182,8 @@ export default function DocumentEditorPage() {
       documentsApi.updateContent(workspaceId, id, {
         content: text,
         base_updated_at: baseTsRef.current,
+        // 段落级三方合并依据：服务端对比 base/latest/incoming，不同段落可合并、同段落冲突
+        base_content: baseContentRef.current || undefined,
         base_version_number: docQuery.data?.version_number ?? null,
       }),
     onSuccess: (result: DocumentDetail | DocumentChangeRequestDispatch) => {
@@ -180,10 +196,15 @@ export default function DocumentEditorPage() {
         return
       }
       baseTsRef.current = result.updated_at
+      // 服务端可能返回合并后的正文（含他人段落改动），以它作为新基准
+      baseContentRef.current = result.content ?? content
+      if (result.content && result.content !== content) setContent(result.content)
       dirtyRef.current = false
       setSaveError(null)
       setPendingNotice(null)
-      message.success(`已保存 v${result.version_number ?? '?'}`)
+      message.success(
+        (result as { merged?: boolean }).merged ? '已保存（自动合并了他人的段落改动）' : `已保存 v${result.version_number ?? '?'}`,
+      )
       void qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
     },
     onError: (err: unknown) => {
@@ -803,6 +824,28 @@ export default function DocumentEditorPage() {
       )}
 
       {/* 分屏编辑/预览 —— 窄屏改为「编辑 / 预览」页签切换，桌面保持左右分屏 */}
+      {/* 段落锁：他人正在编辑的段落（同段互斥、不同段可并发） */}
+      {(paraLocks.othersLocks.length > 0 || paraLocks.blockedBy) && (
+        <Alert
+          type={paraLocks.blockedBy ? 'warning' : 'info'}
+          showIcon
+          data-testid="doc-paragraph-locks"
+          style={{ margin: '8px 24px 0' }}
+          message={
+            paraLocks.blockedBy
+              ? `第 ${paraLocks.blockedBy.key.slice(1)} 段正由 ${paraLocks.blockedBy.username} 编辑，请改其他段落`
+              : '以下段落正被他人编辑（其余段落你可自由修改）'
+          }
+          description={
+            paraLocks.othersLocks.length > 0
+              ? paraLocks.othersLocks
+                  .map((lock) => `第 ${lock.key.slice(1)} 段 — ${lock.username}`)
+                  .join('；')
+              : undefined
+          }
+        />
+      )}
+
       {/* 实时在线成员：同一文档有其他人在看/编辑时展示（编辑者在前） */}
       {viewers.length > 0 && (
         <div style={{ margin: '8px 24px 0' }} data-testid="doc-presence-bar">
@@ -862,6 +905,8 @@ export default function DocumentEditorPage() {
                   }}
                   onKeyDown={handleEditorKeyDown}
                   onPaste={handleEditorPaste}
+                  onSelect={e => paraLocks.onCaret((e.target as HTMLTextAreaElement).selectionStart)}
+                  onClick={e => paraLocks.onCaret((e.target as HTMLTextAreaElement).selectionStart)}
                   placeholder="输入 Markdown 内容…"
                   style={{
                     flex: 1,
@@ -918,6 +963,8 @@ export default function DocumentEditorPage() {
                 }}
                 onKeyDown={handleEditorKeyDown}
                 onPaste={handleEditorPaste}
+                onSelect={e => paraLocks.onCaret((e.target as HTMLTextAreaElement).selectionStart)}
+                onClick={e => paraLocks.onCaret((e.target as HTMLTextAreaElement).selectionStart)}
                 placeholder="输入 Markdown 内容…"
                 style={{
                   flex: 1,
