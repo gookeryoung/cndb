@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from . import change_requests, content, edit_lock, export, parse, search, storage
+from . import change_requests, content, edit_lock, export, issues, parse, search, storage
 
-__all__ = ["change_requests", "content", "edit_lock", "export", "parse", "search", "storage"]
+__all__ = ["change_requests", "content", "edit_lock", "export", "issues", "parse", "search", "storage"]

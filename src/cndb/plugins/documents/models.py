@@ -28,6 +28,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cndb.models.base import Base, TimestampMixin
+from cndb.plugins.issues.models import (
+    ISSUE_CATEGORY_OTHER,
+    ISSUE_STATUS_OPEN,
+)
 
 # ── 常量 ──
 
@@ -268,6 +272,79 @@ class DocumentChangeRequest(TimestampMixin, Base):
         return f"DocumentChangeRequest(id={self.id}, document_id={self.document_id}, status={self.status!r})"
 
 
+# ── 文档问题清单（文档级 Issue：数据表问题清单的文档对应物） ──
+# 类别 / 状态取值复用 issues 插件的常量，保证两类问题清单的前端标签一致；
+# 载体独立：问题挂在文档上，随文档级联删除。
+
+DI_ACTION_CREATED = "created"
+DI_ACTION_CLOSED = "closed"
+DI_ACTION_REOPENED = "reopened"
+
+
+class DocumentIssue(TimestampMixin, Base):
+    """文档问题：文档上的反馈条目（数据错误/建议/疑问等）."""
+
+    __tablename__ = "documents_issue"
+    __table_args__ = (
+        Index("ix_documents_issue_ws_status", "workspace_id", "status"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents_document.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    category: Mapped[str] = mapped_column(String(32), nullable=False, default=ISSUE_CATEGORY_OTHER)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=ISSUE_STATUS_OPEN, index=True)
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    comments: Mapped[list[DocumentIssueComment]] = relationship(back_populates="issue", cascade="all, delete-orphan")
+    events: Mapped[list[DocumentIssueEvent]] = relationship(back_populates="issue", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"DocumentIssue(id={self.id}, document_id={self.document_id}, status={self.status!r})"
+
+
+class DocumentIssueComment(TimestampMixin, Base):
+    """文档问题评论."""
+
+    __tablename__ = "documents_issuecomment"
+    __table_args__ = {"extend_existing": True}
+
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("documents_issue.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
+    )
+
+    issue: Mapped[DocumentIssue] = relationship(back_populates="comments")
+
+
+class DocumentIssueEvent(Base):
+    """文档问题状态事件流水：记录谁在何时创建/关闭/重开问题."""
+
+    __tablename__ = "documents_issueevent"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("documents_issue.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    issue: Mapped[DocumentIssue] = relationship(back_populates="events")
+
+
 __all__ = [
     "CHANGE_TYPES",
     "CHANGE_TYPE_IMPORT",
@@ -279,6 +356,9 @@ __all__ = [
     "DCR_STATUS_CLOSED",
     "DCR_STATUS_MERGED",
     "DCR_STATUS_OPEN",
+    "DI_ACTION_CLOSED",
+    "DI_ACTION_CREATED",
+    "DI_ACTION_REOPENED",
     "DOC_STATUSES",
     "DOC_STATUS_ARCHIVED",
     "DOC_STATUS_DRAFT",
@@ -289,6 +369,9 @@ __all__ = [
     "SHARE_PERM_VIEWER",
     "Document",
     "DocumentChangeRequest",
+    "DocumentIssue",
+    "DocumentIssueComment",
+    "DocumentIssueEvent",
     "DocumentPermission",
     "DocumentShare",
     "DocumentTag",

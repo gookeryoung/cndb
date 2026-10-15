@@ -33,6 +33,9 @@ from cndb.plugins.documents.models import (
     INLINE_MAX_SIZE,
     Document,
     DocumentChangeRequest,
+    DocumentIssue,
+    DocumentIssueComment,
+    DocumentIssueEvent,
     DocumentPermission,
     DocumentShare,
     DocumentTag,
@@ -567,6 +570,11 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
     db.execute(delete(DocumentShare).where(DocumentShare.document_id.in_(ids)))
     # 待审修改申请随文档一并销毁，避免留下指向已清空文档的孤儿申请
     db.execute(delete(DocumentChangeRequest).where(DocumentChangeRequest.document_id.in_(ids)))
+    # 文档问题清单及其评论 / 事件流水同样随文档销毁（不依赖 SQLite 外键级联是否开启）
+    issue_ids = select(DocumentIssue.id).where(DocumentIssue.document_id.in_(ids))
+    db.execute(delete(DocumentIssueComment).where(DocumentIssueComment.issue_id.in_(issue_ids)))
+    db.execute(delete(DocumentIssueEvent).where(DocumentIssueEvent.issue_id.in_(issue_ids)))
+    db.execute(delete(DocumentIssue).where(DocumentIssue.document_id.in_(ids)))
     for target in targets:
         _sync_fts_delete(db, target.id)
     db.execute(delete(Document).where(Document.id.in_(ids)))

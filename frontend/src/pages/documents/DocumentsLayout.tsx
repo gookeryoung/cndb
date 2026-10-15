@@ -1,7 +1,8 @@
 /** 文档模块布局 — 桌面端「左树 + 右内容」双栏，移动端树收入抽屉（思源笔记式）.
 
-路由结构：/w/:wid/documents（总览列表）与 /w/:wid/documents/:docId（编辑器）
-共用本布局，右栏经 <Outlet /> 渲染，跨页切换时树保持挂载不重拉。
+路由结构：/w/:wid/documents（总览列表）、/w/:wid/documents/change-requests（修改申请）、
+/w/:wid/documents/issues（问题清单）与 /w/:wid/documents/:docId（编辑器）共用本布局，
+右栏经 <Outlet /> 渲染，跨页切换时树保持挂载不重拉。
 */
 
 import { useState } from 'react'
