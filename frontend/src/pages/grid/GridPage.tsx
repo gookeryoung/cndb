@@ -111,17 +111,19 @@ const MODE_STORAGE_KEY = 'cndb_current_mode'
 /** 右侧模式按钮配置 —— 顺序即显示顺序；仅当数据表存在对应 view_type 的视图时才渲染. */
 interface ModeBtn {
   mode: ViewMode
+  /** 移动端下拉菜单的短标签（桌面端用 tooltip 说明） */
+  label: string
   tooltip: string
   icon: React.ReactNode
 }
 const MODE_BUTTONS: readonly ModeBtn[] = [
-  { mode: 'grid', tooltip: '表格 (Grid)：行列结构，适合录入与批量管理', icon: <ColumnHeightOutlined /> },
-  { mode: 'kanban', tooltip: '看板 (Kanban)：按选择字段分组拖拽流转，适合任务跟踪', icon: <AppstoreOutlined /> },
-  { mode: 'calendar', tooltip: '日历 (Calendar)：按日期字段排布在月历上', icon: <CalendarOutlined /> },
-  { mode: 'gantt', tooltip: '甘特图 (Gantt)：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
-  { mode: 'wbs', tooltip: '工作分解 (WBS)：树状层级组织任务', icon: <PartitionOutlined /> },
-  { mode: 'matrix', tooltip: '矩阵 (Matrix)：行列分类交叉，数据按类别填入单元格', icon: <TableOutlined /> },
-  { mode: 'chart', tooltip: '图表 (Chart)：柱状/折线/饼图/散点/直方图/箱线图与统计分析', icon: <BarChartOutlined /> },
+  { mode: 'grid', label: '表格', tooltip: '表格 (Grid)：行列结构，适合录入与批量管理', icon: <ColumnHeightOutlined /> },
+  { mode: 'kanban', label: '看板', tooltip: '看板 (Kanban)：按选择字段分组拖拽流转，适合任务跟踪', icon: <AppstoreOutlined /> },
+  { mode: 'calendar', label: '日历', tooltip: '日历 (Calendar)：按日期字段排布在月历上', icon: <CalendarOutlined /> },
+  { mode: 'gantt', label: '甘特图', tooltip: '甘特图 (Gantt)：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
+  { mode: 'wbs', label: 'WBS', tooltip: '工作分解 (WBS)：树状层级组织任务', icon: <PartitionOutlined /> },
+  { mode: 'matrix', label: '矩阵', tooltip: '矩阵 (Matrix)：行列分类交叉，数据按类别填入单元格', icon: <TableOutlined /> },
+  { mode: 'chart', label: '图表', tooltip: '图表 (Chart)：柱状/折线/饼图/散点/直方图/箱线图与统计分析', icon: <BarChartOutlined /> },
 ]
 
 /** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */
