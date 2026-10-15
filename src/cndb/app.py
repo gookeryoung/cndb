@@ -32,6 +32,7 @@ from cndb.core.events_api import register_event_routes
 from cndb.core.migrations import ensure_db_migrated
 from cndb.core.observability import RequestObservabilityMiddleware, configure_logging
 from cndb.core.plugin_registry import plugin_registry
+from cndb.core.realtime_api import register_realtime_routes
 from cndb.core.system_api import register_system_routes
 from cndb.plugins.documents.routers.public import router as documents_public_router
 from cndb.plugins.tables.routers.public import router as public_router
@@ -86,6 +87,8 @@ app.include_router(documents_public_router)
 register_system_routes(app)
 # 统一事件流（/api/v1/admin/events，超管或审计管理员可读）
 register_event_routes(app)
+# 实时协作通道（/api/v1/ws：在线状态 + 事件推送）
+register_realtime_routes(app)
 
 
 app.add_middleware(
