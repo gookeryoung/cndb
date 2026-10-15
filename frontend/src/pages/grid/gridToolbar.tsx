@@ -61,9 +61,10 @@ export default function GridToolbar({
 
   return (
     <div className="cn-grid-toolbar" style={{ padding: '8px 16px', borderBottom: '1px solid var(--cn-border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-      <Text strong ellipsis style={{ fontSize: 16, maxWidth: isMobile ? '36vw' : undefined }}>{tableName || '...'}</Text>
-      {/* 统计小徽标（来自后端增强字段） */}
-      {recordCount != null && recordCount > 0 && (
+      <Text strong ellipsis style={{ fontSize: 16, maxWidth: isMobile ? '44vw' : undefined }}>{tableName || '...'}</Text>
+      {/* 统计小徽标（来自后端增强字段）—— 窄屏隐藏：底部「共 N 条」已给出记录数，
+          省下的宽度留给标题与主操作（否则标题会被压成「产…」） */}
+      {recordCount != null && recordCount > 0 && !isMobile && (
         <span className="cn-record-pill">{recordCount} 条记录</span>
       )}
       {/* 当前用户对该表的权限徽标 —— 明确告知只读/可编辑，避免误操作 */}
@@ -95,7 +96,7 @@ export default function GridToolbar({
             </Button>
           </Tooltip>
         )}
-        {mode === 'grid' && onEditRow && (
+        {!isMobile && mode === 'grid' && onEditRow && (
           <Tooltip title={editRowDisabled ? '编辑行：请先在表格中选中一行' : '编辑行：打开选中行的详情抽屉'}>
             <Button
               size="middle"
@@ -108,30 +109,48 @@ export default function GridToolbar({
             </Button>
           </Tooltip>
         )}
-        <Tooltip title="表设置：管理字段结构、视图列表与权限授权">
-          <Button
-            data-testid="table-settings-btn"
-            icon={<MenuOutlined />}
-            onClick={onOpenTableSettings}
-          >
-            {!isMobile && '表设置'}
-          </Button>
-        </Tooltip>
-        <Tooltip title="导入 / 导出：批量新增或更新数据、导出 CSV / Excel / JSON">
-          <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={onOpenImportExport}>{!isMobile && '更新/导出'}</Button>
-        </Tooltip>
-        <Tooltip title="数据治理：重复检测、合并与清洗">
-          <Button
-            icon={<ClearOutlined />}
-            data-testid="governance-btn"
-            disabled={!canManageData}
-            onClick={onOpenGovernance}
-          >
-            {!isMobile && '数据治理'}
-          </Button>
-        </Tooltip>
-        <Dropdown menu={{
+        {/* 桌面端：表设置 / 更新导出 / 数据治理常显；窄屏收进「更多」菜单，避免挤占标题 */}
+        {!isMobile && (
+          <>
+            <Tooltip title="表设置：管理字段结构、视图列表与权限授权">
+              <Button
+                data-testid="table-settings-btn"
+                icon={<MenuOutlined />}
+                onClick={onOpenTableSettings}
+              >
+                表设置
+              </Button>
+            </Tooltip>
+            <Tooltip title="导入 / 导出：批量新增或更新数据、导出 CSV / Excel / JSON">
+              <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={onOpenImportExport}>更新/导出</Button>
+            </Tooltip>
+            <Tooltip title="数据治理：重复检测、合并与清洗">
+              <Button
+                icon={<ClearOutlined />}
+                data-testid="governance-btn"
+                disabled={!canManageData}
+                onClick={onOpenGovernance}
+              >
+                数据治理
+              </Button>
+            </Tooltip>
+          </>
+        )}
+        {/* 点击展开：窄屏下该菜单承载编辑行 / 表设置 / 更新导出 / 数据治理等主操作，
+            触摸设备没有 hover，必须用 click 触发 */}
+        <Dropdown trigger={['click']} menu={{
           items: [
+            // 窄屏：把常显按钮的能力前置到菜单顶部
+            ...(isMobile ? [
+              ...(mode === 'grid' && onEditRow ? [{
+                key: 'edit-row', icon: <EditOutlined />, label: '编辑行',
+                disabled: editRowDisabled, onClick: onEditRow,
+              }] : []),
+              { key: 'table-settings', icon: <MenuOutlined />, label: '表设置', onClick: onOpenTableSettings },
+              { key: 'import-export', icon: <ImportOutlined />, label: '更新 / 导出', onClick: onOpenImportExport },
+              { key: 'governance', icon: <ClearOutlined />, label: '数据治理', disabled: !canManageData, onClick: onOpenGovernance },
+              { type: 'divider' as const },
+            ] : []),
             { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
             { key: 'reset-layout', icon: <ColumnWidthOutlined />, label: '重置列宽与列序', disabled: !onResetColumnLayout, onClick: onResetColumnLayout },
             { type: 'divider' },
@@ -167,7 +186,7 @@ export default function GridToolbar({
               }),
             },
           ]
-        }}><Tooltip title="更多操作：刷新、复制表、移动工作区、删除表"><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></Tooltip></Dropdown>
+        }}><Tooltip title="更多操作：编辑行、表设置、更新导出、数据治理、刷新、复制表、移动工作区、删除表"><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></Tooltip></Dropdown>
       </Space>
     </div>
   )

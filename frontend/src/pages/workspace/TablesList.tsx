@@ -454,10 +454,11 @@ export default function TablesList() {
           value={filter}
           onChange={(v) => setFilter(v as AccessFilter)}
           options={[
+            // 窄屏 block 分段控件每项只有约 90px，长文案会被截断成「我可编…」
             { label: '全部', value: 'all' },
-            { label: '我拥有的', value: 'owner' },
-            { label: '我可编辑的', value: 'write' },
-            { label: '我可读的', value: 'read' },
+            { label: isMobile ? '我拥有' : '我拥有的', value: 'owner' },
+            { label: isMobile ? '可编辑' : '我可编辑的', value: 'write' },
+            { label: isMobile ? '可读' : '我可读的', value: 'read' },
           ]}
         />
         <Text
