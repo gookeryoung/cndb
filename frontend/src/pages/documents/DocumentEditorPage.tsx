@@ -41,6 +41,7 @@ import { ancestorChain } from './DocumentTree'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import MarkdownToolbar, { type MarkdownAction } from '@/components/Document/MarkdownToolbar'
 import { findMatches, nextMatchIndex, replaceAllMatches, replaceMatch } from '@/components/Document/documentSearch'
+import { documentStats, formatStatsLabel } from '@/components/Document/documentStats'
 import { buildImageSnippet, isImageFile } from '@/components/Document/imageRef'
 import { insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
@@ -299,6 +300,9 @@ export default function DocumentEditorPage() {
     ]
   }, [treeQuery.data, id, navigate, wid])
 
+  /** 正文统计（字数 / 行数 / 预计阅读时长） */
+  const stats = useMemo(() => documentStats(content), [content])
+
   /** 全部匹配（随正文 / 查询 / 大小写开关实时重算） */
   const findMatchesList = useMemo(
     () => findMatches(content, findQuery, { caseSensitive: findCaseSensitive }),
@@ -424,18 +428,25 @@ export default function DocumentEditorPage() {
     }
   }, [applyMarkdownAction, findOpen, closeFind, openFind])
 
-  /** 在光标处插入独占段落的片段（前后自动补空行）；图片 / 数据表引用共用 */
+  /** 在光标处插入独占段落的片段（前后自动补空行）；图片 / 数据表引用共用.
+   *
+   * 用函数式更新：连续插入（如一次粘贴多张图片）时各自基于最新正文计算，不会互相覆盖。
+   */
   const insertSnippetAtCursor = useCallback((snippet: string) => {
     const el = taRef.current?.resizableTextArea?.textArea
-    const pos = el?.selectionStart ?? content.length
+    const pos = el?.selectionStart ?? null
     const end = el?.selectionEnd ?? pos
-    const before = content.slice(0, pos)
-    const after = content.slice(end)
-    const prefix = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : ''
-    const suffix = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : ''
-    setContent(`${before}${prefix}${snippet}${suffix}${after}`)
+    setContent(prev => {
+      const start = pos ?? prev.length
+      const stop = end ?? start
+      const before = prev.slice(0, start)
+      const after = prev.slice(stop)
+      const prefix = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : ''
+      const suffix = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : ''
+      return `${before}${prefix}${snippet}${suffix}${after}`
+    })
     dirtyRef.current = true
-  }, [content])
+  }, [])
 
   // 在光标位置插入数据表引用占位符（前后自动补空行保证独占段落）
   const insertTableRef = () => {
@@ -458,6 +469,17 @@ export default function DocumentEditorPage() {
     onError: () => message.error('图片上传失败'),
   })
 
+  /** 串行上传队列：多次选择 / 一次粘贴多张时，按顺序插入正文且互不覆盖 */
+  const uploadQueueRef = useRef<Promise<void>>(Promise.resolve())
+
+  const enqueueImageUpload = useCallback((file: File) => {
+    uploadQueueRef.current = uploadQueueRef.current
+      .then(() => imageMut.mutateAsync(file).then(() => undefined))
+      .catch(() => {
+        // onError 已统一提示，这里只保证队列不中断
+      })
+  }, [imageMut])
+
   const handleImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     // 复位 input：允许连续选择同一文件
@@ -467,8 +489,25 @@ export default function DocumentEditorPage() {
       message.error('仅支持图片文件（png / jpg / gif / webp / svg 等）')
       return
     }
-    imageMut.mutate(file)
+    enqueueImageUpload(file)
   }
+
+  /** 编辑器内粘贴：剪贴板含图片时直接上传并插入引用，普通文本粘贴不受影响 */
+  const handleEditorPaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    const files: File[] = []
+    for (const item of Array.from(items)) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) files.push(file)
+      }
+    }
+    if (files.length === 0) return
+    // 阻止默认：否则会把图片当文件粘贴，浏览器可能插入文件名文本
+    e.preventDefault()
+    for (const file of files) enqueueImageUpload(file)
+  }, [enqueueImageUpload])
 
   // Ctrl/Cmd+S 保存
   useEffect(() => {
@@ -783,6 +822,7 @@ export default function DocumentEditorPage() {
                     dirtyRef.current = true
                   }}
                   onKeyDown={handleEditorKeyDown}
+                  onPaste={handleEditorPaste}
                   placeholder="输入 Markdown 内容…"
                   style={{
                     flex: 1,
@@ -797,6 +837,7 @@ export default function DocumentEditorPage() {
                     padding: 16,
                   }}
                 />
+                <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
               </>
             ) : (
               <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '16px' }}>
@@ -834,6 +875,7 @@ export default function DocumentEditorPage() {
                   dirtyRef.current = true
                 }}
                 onKeyDown={handleEditorKeyDown}
+                onPaste={handleEditorPaste}
                 placeholder="输入 Markdown 内容…"
                 style={{
                   flex: 1,
@@ -847,6 +889,7 @@ export default function DocumentEditorPage() {
                   padding: 20,
                 }}
               />
+              <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
               </div>
             </Splitter.Panel>
             <Splitter.Panel min="20%" max="80%">
