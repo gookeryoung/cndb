@@ -7,12 +7,23 @@
  * 操作风格（新增行位置）写入 store / 恢复默认。
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import SettingsModal from './SettingsModal'
 import { renderProviders } from '@/test/render-providers'
 import { useTableSettingsStore, useAuthStore } from '@/store'
 import { DEFAULT_TABLE_SETTINGS } from '@/theme/tableSettings'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，移动端用例在其内部切换
+let responsiveState: ResponsiveState = {
+  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+  width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+  return { ...actual, useResponsive: () => responsiveState }
+})
 
 // mock authApi，避免真实网络请求
 vi.mock('@/api', async (importOriginal) => {
@@ -211,5 +222,41 @@ describe('SettingsModal 个人设置', () => {
     expect(JSON.parse(localStorage.getItem('cndb_font') ?? '{}')).toEqual({ scale: 'standard', bold: true })
     expect(screen.getByText('标准')).toBeInTheDocument()
     expect(screen.queryByText('特大')).not.toBeInTheDocument()
+  })
+})
+
+describe('SettingsModal 移动端适配', () => {
+  afterEach(() => {
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+  })
+
+  it('窄屏下用户资料三字段纵向堆叠，桌面端保持同行', () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    const { unmount } = renderProviders(<SettingsModal open onClose={() => { }} />)
+
+    expect((screen.getByTestId('profile-fields') as HTMLElement).style.flexDirection).toBe('column')
+    unmount()
+
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+    renderProviders(<SettingsModal open onClose={() => { }} />)
+    expect((screen.getByTestId('profile-fields') as HTMLElement).style.flexDirection).toBe('row')
+  })
+
+  it('表格页签「间距 / 每页行数」一行允许换行，避免下拉被压缩', () => {
+    renderProviders(<SettingsModal open onClose={() => { }} initialTab="table" />)
+
+    const row = screen.getByTestId('table-display-row') as HTMLElement
+    expect(row.style.flexWrap).toBe('wrap')
+    expect(screen.getByTestId('density-select')).toBeInTheDocument()
+    expect(screen.getByTestId('page-size-select')).toBeInTheDocument()
   })
 })

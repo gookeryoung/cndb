@@ -10,6 +10,7 @@ import {
 } from '@/theme/theme'
 import { useTableSettingsStore, useAuthStore, type SettingsTab } from '@/store'
 import { authApi } from '@/api'
+import { useResponsive } from '@/hooks/useResponsive'
 import type { Density, NewRowPosition } from '@/theme/tableSettings'
 
 interface Props {
@@ -91,6 +92,7 @@ function ThemeCard({ mode, selected, onSelect }: {
 
 /** 用户资料分页内容 — 用户名只读，昵称/邮箱自助更新 */
 function ProfilePanel() {
+  const { isMobile } = useResponsive()
   const { message } = App.useApp()
   const user = useAuthStore(s => s.user)
   const refresh = useAuthStore(s => s.refresh)
@@ -131,8 +133,12 @@ function ProfilePanel() {
       >
         {/* 用户名/昵称/邮箱同行紧凑排布；用户名只读。
             说明文字统一用 Text secondary 12px（与主题/表格页签提示一致），
-            不用 Form.Item extra（其默认色为 colorTextDescription，比其他提示浅） */}
-        <div style={{ display: 'flex', gap: 12 }}>
+            不用 Form.Item extra（其默认色为 colorTextDescription，比其他提示浅）。
+            移动端改为纵向堆叠：三列并排在 390px 宽度下每格仅约 110px，昵称/邮箱会被截断 */}
+        <div
+          data-testid="profile-fields"
+          style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 12 }}
+        >
           <div style={{ flex: 1, minWidth: 0 }}>
             <Form.Item name="username" label="用户名" style={{ marginBottom: 0 }}>
               <Input disabled />
@@ -286,7 +292,11 @@ function TablePanel() {
         </Text>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
+      {/* 间距 + 每页行数：窄屏放不下时换行，避免两个下拉被压缩 */}
+      <div
+        data-testid="table-display-row"
+        style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}
+      >
         <Text style={{ fontSize: 13 }}>间距</Text>
         <Select
           data-testid="density-select"
