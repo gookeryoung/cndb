@@ -19,6 +19,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useResponsive } from '@/hooks/useResponsive'
 import {
   DndContext, type DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors,
 } from '@dnd-kit/core'
@@ -129,6 +130,7 @@ function SortableViewRow({
 export default function TableSettingsPage() {
   const { wid = '', tid = '' } = useParams<{ wid: string; tid: string }>()
   const { message } = AntApp.useApp()
+  const { isMobile } = useResponsive()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -303,7 +305,8 @@ export default function TableSettingsPage() {
 
   const tabs = (
     <Tabs
-      tabPosition="left"
+      // 移动端竖排页签会挤占本就有限的内容宽度，改为顶部横排（可横向滚动）
+      tabPosition={isMobile ? 'top' : 'left'}
       className="table-settings-tabs"
       activeKey={activeTab}
       onChange={handleTabChange}

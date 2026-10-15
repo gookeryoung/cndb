@@ -12,6 +12,7 @@ import {
 import { EditOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '@/api'
+import { useResponsive } from '@/hooks/useResponsive'
 import type {
   UserAdminRecord, UserRole, UserAuditLogRecord, BatchUserActionRequest, UserAdminUpdateRequest,
 } from '@/api'
@@ -218,6 +219,9 @@ export default function UsersPage() {
     })
   }
 
+  // 移动端：筛选控件整行排布，避免固定宽度在选择器里被挤压
+  const { isMobile } = useResponsive()
+
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '用户名', dataIndex: 'username', width: 140 },
@@ -260,13 +264,13 @@ export default function UsersPage() {
         <Input.Search
           placeholder="搜索用户名/邮箱/昵称"
           allowClear
-          style={{ width: 220 }}
+          style={{ width: isMobile ? '100%' : 220 }}
           onSearch={(v) => { setKeyword(v); setPage(1) }}
         />
         <Select
           placeholder="角色筛选"
           allowClear
-          style={{ width: 140 }}
+          style={{ width: isMobile ? '100%' : 140 }}
           options={roleOptions}
           value={roleFilter}
           onChange={(v) => { setRoleFilter(v); setPage(1) }}
@@ -274,7 +278,7 @@ export default function UsersPage() {
         <Select
           placeholder="状态筛选"
           allowClear
-          style={{ width: 120 }}
+          style={{ width: isMobile ? '100%' : 120 }}
           options={[
             { value: 'true', label: '启用' },
             { value: 'false', label: '禁用' },
@@ -328,6 +332,8 @@ export default function UsersPage() {
         loading={listQuery.isLoading}
         dataSource={listQuery.data?.items ?? []}
         columns={columns}
+        // 窄屏列宽不压缩（否则「昵称」「邮箱」会逐字换行/被裁切），改为表格横向滚动
+        scroll={{ x: 'max-content' }}
         rowSelection={{ selectedRowKeys: selectedIds, onChange: setSelectedIds }}
         pagination={{
           current: page,

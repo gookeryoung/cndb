@@ -10,9 +10,24 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import UsersPage from './UsersPage'
 import { renderProviders } from '@/test/render-providers'
 import { server, mockUser } from '@/test/msw'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，移动端用例在其内部切换
+let responsiveState: ResponsiveState = {
+  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+  width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+  return { ...actual, useResponsive: () => responsiveState }
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
+  responsiveState = {
+    deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+    width: 1280, height: 800,
+  }
 })
 
 const USERS = {
@@ -136,5 +151,42 @@ describe('UsersPage 用户管理', () => {
     expect(await screen.findByText(/操作日志：bob/)).toBeInTheDocument()
     expect(await screen.findByText('角色变更')).toBeInTheDocument()
     expect(screen.getByText(/user.*→.*security_admin/)).toBeInTheDocument()
+  })
+})
+
+describe('UsersPage 移动端适配', () => {
+  it('窄屏下筛选控件整行排布，表格保留列宽并横向滚动', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    server.use(http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)))
+    renderPage()
+
+    expect(await screen.findByText('admin_su')).toBeInTheDocument()
+
+    // 筛选控件整行（避免固定宽度在手机上与相邻控件互相挤压）
+    const searchInput = screen.getByPlaceholderText('搜索用户名/邮箱/昵称')
+    expect((searchInput.closest('.ant-input-group-wrapper') as HTMLElement).style.width).toBe('100%')
+
+    // 表格：内容容器横向滚动 + 表格按内容宽度展开（列宽不再被压成逐字换行）
+    const content = document.querySelector('.ant-table-content') as HTMLElement
+    const table = content.querySelector('table') as HTMLElement
+    expect(content.style.overflowX).toBe('auto')
+    expect(table.style.width).toBe('max-content')
+    const colWidths = [...document.querySelectorAll('.ant-table colgroup col')].map(
+      c => (c as HTMLElement).style.width,
+    )
+    expect(colWidths).toContain('120px') // 昵称列
+    expect(colWidths).toContain('180px') // 邮箱列
+  })
+
+  it('桌面端筛选控件保持既有固定宽度', async () => {
+    server.use(http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)))
+    renderPage()
+
+    await screen.findByText('admin_su')
+    const searchInput = screen.getByPlaceholderText('搜索用户名/邮箱/昵称')
+    expect((searchInput.closest('.ant-input-group-wrapper') as HTMLElement).style.width).toBe('220px')
   })
 })
