@@ -10,9 +10,10 @@
  *     路由守卫重定向到 login。
  */
 
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
 
 const TOKEN_KEY = 'cndb_access_token'
+const REFRESH_KEY = 'cndb_refresh_token'
 
 export function getToken(): string | null {
   try { return localStorage.getItem(TOKEN_KEY) } catch { return null }
@@ -20,8 +21,73 @@ export function getToken(): string | null {
 export function setToken(token: string) {
   try { localStorage.setItem(TOKEN_KEY, token) } catch { /* noop */ }
 }
+export function getRefreshToken(): string | null {
+  try { return localStorage.getItem(REFRESH_KEY) } catch { return null }
+}
+export function setRefreshToken(token: string) {
+  try { localStorage.setItem(REFRESH_KEY, token) } catch { /* noop */ }
+}
+/** 清除访问令牌与刷新令牌（登出 / 会话失效统一入口） */
 export function clearToken() {
-  try { localStorage.removeItem(TOKEN_KEY) } catch { /* noop */ }
+  try {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(REFRESH_KEY)
+  } catch { /* noop */ }
+}
+
+// ── 访问令牌自动刷新（401 → 刷新一次 → 重放原请求） ─────────────
+
+/** 刷新成功后通知订阅者（auth store 据此同步持久化的 token） */
+type TokenRefreshedCallback = (token: string) => void
+const _refreshedListeners = new Set<TokenRefreshedCallback>()
+
+export function onTokenRefreshed(cb: TokenRefreshedCallback): () => void {
+  _refreshedListeners.add(cb)
+  return () => { _refreshedListeners.delete(cb) }
+}
+
+function _emitTokenRefreshed(token: string) {
+  for (const cb of [..._refreshedListeners]) {
+    try { cb(token) } catch { /* 订阅者异常不影响请求链路 */ }
+  }
+}
+
+/** 这些端点自身返回 401 时不再尝试刷新（避免递归与误报） */
+const AUTH_ENDPOINTS = [
+  '/v1/accounts/auth/refresh',
+  '/v1/accounts/auth/login',
+  '/v1/accounts/auth/logout',
+  '/v1/accounts/auth/register',
+]
+
+/** 并发 401 只触发一次刷新（共享同一个 Promise） */
+let _refreshInFlight: Promise<string | null> | null = null
+
+async function _refreshAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken()
+  if (!refreshToken) return null
+  if (!_refreshInFlight) {
+    _refreshInFlight = (async () => {
+      try {
+        // 走同一个 api 实例：刷新端点若 401 会被识别为 auth 端点，不会递归刷新
+        const res = await api.post<{ access_token?: string; refresh_token?: string }>(
+          '/v1/accounts/auth/refresh',
+          { refresh_token: refreshToken },
+        )
+        const access = res.data?.access_token
+        if (!access) return null
+        setToken(access)
+        if (res.data?.refresh_token) setRefreshToken(res.data.refresh_token)
+        _emitTokenRefreshed(access)
+        return access
+      } catch {
+        return null
+      } finally {
+        _refreshInFlight = null
+      }
+    })()
+  }
+  return _refreshInFlight
 }
 
 const api = axios.create({
@@ -103,6 +169,22 @@ api.interceptors.response.use(
     }
 
     if (err.response?.status === 401) {
+      const url = String(err?.config?.url ?? '')
+      const isAuthEndpoint = AUTH_ENDPOINTS.some((p) => url.includes(p))
+      const alreadyRetried = Boolean((err?.config as { __retried?: boolean } | undefined)?.__retried)
+
+      if (!isAuthEndpoint && !alreadyRetried) {
+        // 尝试用刷新令牌换新访问令牌，成功则重放原请求（仅一次）
+        const fresh = await _refreshAccessToken()
+        if (fresh) {
+          const config = err.config as InternalAxiosRequestConfig & { __retried?: boolean }
+          config.__retried = true
+          config.headers = config.headers ?? {}
+          ;(config.headers as Record<string, string>).Authorization = `Bearer ${fresh}`
+          return api.request(config)
+        }
+      }
+
       clearToken()
       // 防抖发出事件 —— 应用层订阅后负责更新 store + 友好提示 + 路由跳转
       _emitAuthExpired()

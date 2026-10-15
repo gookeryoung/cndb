@@ -4,6 +4,7 @@ import api from './client'
 import type {
     AdminRegisterRequest, LoginRequest, RegisterRequest,
     ProfileUpdateRequest,
+    SessionInfo, TokenResponse,
     UserResponse,
     UserAdminRecord, UserAdminUpdateRequest, UserListPage, UserListQuery,
     BatchUserActionRequest, BatchUserActionResponse,
@@ -14,9 +15,27 @@ export const authApi = {
     register: (data: RegisterRequest) =>
         api.post<UserResponse>('/v1/accounts/auth/register', data).then(r => r.data),
     login: (data: LoginRequest) =>
-        api.post<{ access_token: string; token_type: string }>('/v1/accounts/auth/login', data).then(r => r.data),
+        api.post<TokenResponse>('/v1/accounts/auth/login', data).then(r => r.data),
     me: () =>
         api.get<UserResponse>('/v1/accounts/auth/me').then(r => r.data),
+    /** 用刷新令牌换取新令牌对（一次性轮换，旧刷新令牌立即失效） */
+    refresh: (refreshToken: string) =>
+        api.post<TokenResponse>('/v1/accounts/auth/refresh', { refresh_token: refreshToken }).then(r => r.data),
+    /** 登出：吊销单枚刷新令牌；all=true 时吊销全部会话（需已登录） */
+    logout: (refreshToken?: string | null, all = false) =>
+        api.post<{ revoked: number; scope?: string }>('/v1/accounts/auth/logout', {
+            ...(refreshToken ? { refresh_token: refreshToken } : {}),
+            ...(all ? { all: true } : {}),
+        }).then(r => r.data),
+    /** 修改自己的密码（成功后全部设备需重新登录） */
+    changePassword: (data: { current_password: string; new_password: string }) =>
+        api.post<{ ok: boolean; revoked_sessions: number }>('/v1/accounts/auth/password', data).then(r => r.data),
+    /** 当前用户的有效会话列表 */
+    listSessions: () =>
+        api.get<SessionInfo[]>('/v1/accounts/auth/sessions').then(r => r.data),
+    /** 下线指定会话（仅限本人） */
+    revokeSession: (sessionId: number) =>
+        api.delete<{ ok: boolean }>(`/v1/accounts/auth/sessions/${sessionId}`).then(r => r.data),
     /** 当前用户自助更新个人资料（昵称/邮箱） */
     updateProfile: (data: ProfileUpdateRequest) =>
         api.patch<UserResponse>('/v1/accounts/auth/me', data).then(r => r.data),

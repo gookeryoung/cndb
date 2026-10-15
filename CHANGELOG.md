@@ -5,6 +5,7 @@
 ## [未发布]
 
 ### 新增
+- 新增**会话/授权生命周期**：登录同时返回访问令牌与刷新令牌（不透明随机串，库中只存 SHA-256）；`POST /auth/refresh` 一次性轮换（旧令牌复用视为泄露，吊销全部会话）、`POST /auth/logout`（单枚 / `all=true` 全部下线）、`POST /auth/password` 自助改密、`GET|DELETE /auth/sessions` 会话列表与按会话下线；`accounts_user.token_version` 让改密与强制下线后既有访问令牌**立即失效**；登录失败限流（账号 5 次 / 来源 IP 20 次 / 5 分钟）返回 429 + `Retry-After`；前端 401 自动刷新一次并重放原请求（并发去重），登出会调用服务端吊销接口；新增迁移 `a3f1c9d2e7b4`（`accounts_refreshtoken` + `token_version`）与配置项 `JWT_REFRESH_EXPIRE_DAYS` / `LOGIN_MAX_FAILURES` / `LOGIN_WINDOW_SECONDS`
 - 新增**请求级可观测性**：每个响应回写 `X-Request-ID`（客户端可传、缺省生成），访问日志输出 `method/path/status/duration_ms/request_id/user_id`（超过 `SLOW_REQUEST_MS` 升 WARNING 并标 `slow=true`，健康检查与静态资源降为 DEBUG），既有慢查询日志也带上同一 `request_id` 便于串联；新增 `ACCESS_LOG_ENABLED` / `SLOW_REQUEST_MS` / `SLOW_QUERY_MS` 三个可配置项
 - 文档总览新增**按标签筛选**：下拉选择标签（写入 URL `?tag=`，可分享/刷新保持），文件夹层级过滤在前后端同口径；按标签筛选时隐藏系列卡片（文件夹无标签）
 - 文档编辑器工具栏补两处编辑能力：**Markdown 表格骨架**下拉（2×2 / 3×3 / 4×4 一键插入，带空单元格占位）与**标题层级**下拉（一级/二级/三级/四级标题、正文=取消标题），此前标题按钮只能固定切 H2

@@ -92,10 +92,30 @@ class ConflictError(CndbError):
     code = "conflict"
 
 
+class UnauthorizedError(CndbError):
+    """未认证 / 令牌无效、过期、被吊销（HTTP 401）。"""
+
+    status_code = 401
+    code = "unauthorized"
+
+
+class TooManyRequestsError(CndbError):
+    """触发限流（HTTP 429）；可携带 Retry-After 秒数."""
+
+    status_code = 429
+    code = "too_many_requests"
+
+    def __init__(self, detail: str, *, retry_after: int = 60, context: dict[str, object] | None = None) -> None:
+        super().__init__(detail, context=context)
+        self.retry_after = retry_after
+
+
 __all__ = [
     "BadRequestError",
     "CndbError",
     "ConflictError",
     "NotFoundError",
     "PermissionDeniedError",
+    "TooManyRequestsError",
+    "UnauthorizedError",
 ]

@@ -102,7 +102,14 @@ def _authenticate_jwt(token: str, db: Session) -> User | None:
         # 避免 ValueError 穿透到 FastAPI 变成 500
         logger.warning("JWT sub claim 不是合法整数: %r", sub)
         return None
-    return db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
+    user: User | None = db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
+    if user is None:
+        return None
+    # 令牌代次校验：改密 / 管理员强制下线后 token_version +1，既有 access token 立即失效
+    if int(payload.get("tv", 0) or 0) != int(getattr(user, "token_version", 0) or 0):
+        logger.info("令牌代次已失效（user_id=%s），要求重新登录", user_id)
+        return None
+    return user
 
 
 def _unauthorized(detail: str = "未认证或登录已过期") -> HTTPException:

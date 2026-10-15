@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from './auth'
 import { authApi } from '@/api'
-import { clearToken, getToken, setToken } from '@/api/client'
+import { clearToken, getRefreshToken, getToken, setRefreshToken, setToken } from '@/api/client'
 
 // mock 掉 @/api 的 authApi，避免真实网络
 vi.mock('@/api', () => ({
@@ -10,6 +10,7 @@ vi.mock('@/api', () => ({
     login: vi.fn(),
     register: vi.fn(),
     me: vi.fn(),
+    logout: vi.fn(),
   },
 }))
 
@@ -20,6 +21,7 @@ const fakeUserResponse = { ...fakeUser, is_superuser: false, is_active: true, cr
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockedAuthApi.logout.mockResolvedValue({ revoked: 1 } as never)
   clearToken()
   useAuthStore.setState({ user: null, token: null, loading: false })
 })
@@ -172,5 +174,52 @@ describe('expired 标志生命周期', () => {
     await useAuthStore.getState().refresh()
 
     expect(useAuthStore.getState().expired).toBe(true)
+  })
+})
+
+describe('刷新令牌持久化与登出', () => {
+  it('login 同时保存访问令牌与刷新令牌', async () => {
+    mockedAuthApi.login.mockResolvedValueOnce({
+      access_token: 'acc-1',
+      refresh_token: 'rt-1',
+      token_type: 'bearer',
+      expires_in: 3600,
+    } as never)
+    mockedAuthApi.me.mockResolvedValueOnce(fakeUserResponse as never)
+
+    await useAuthStore.getState().login({ login: 'alice', password: 'pw' })
+
+    expect(getToken()).toBe('acc-1')
+    expect(getRefreshToken()).toBe('rt-1')
+  })
+
+  it('logout 调用服务端吊销刷新令牌，并清除本地两枚令牌', async () => {
+    setToken('acc-2')
+    setRefreshToken('rt-2')
+    useAuthStore.setState({ token: 'acc-2', user: fakeUserResponse as never })
+
+    useAuthStore.getState().logout()
+
+    expect(mockedAuthApi.logout).toHaveBeenCalledWith('rt-2')
+    expect(getToken()).toBeNull()
+    expect(getRefreshToken()).toBeNull()
+    expect(useAuthStore.getState().token).toBeNull()
+  })
+
+  it('服务端登出失败不影响本地登出', async () => {
+    mockedAuthApi.logout.mockRejectedValueOnce(new Error('network down'))
+    setToken('acc-3')
+    setRefreshToken('rt-3')
+
+    useAuthStore.getState().logout()
+
+    expect(getToken()).toBeNull()
+    expect(getRefreshToken()).toBeNull()
+  })
+
+  it('无刷新令牌时不调用服务端登出接口', () => {
+    setToken('acc-4')
+    useAuthStore.getState().logout()
+    expect(mockedAuthApi.logout).not.toHaveBeenCalled()
   })
 })
