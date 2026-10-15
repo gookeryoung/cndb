@@ -543,7 +543,7 @@ export default function DocumentEditorPage() {
   const imageInputRef = useRef<HTMLInputElement>(null)
 
   const imageMut = useMutation({
-    mutationFn: (file: File) => fileApi.upload(workspaceId, file),
+    mutationFn: (file: File) => fileApi.upload(workspaceId, file, { documentId: id }),
     onSuccess: (res, file) => {
       insertSnippetAtCursor(buildImageSnippet(file.name, res.file_key))
       message.success('图片已插入（保存后生效）')

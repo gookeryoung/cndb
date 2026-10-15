@@ -970,11 +970,13 @@ export default function GridPage() {
       pinFirstColumn: isMobile,
       // 表格视图自动在最左侧补「序号」列：按当前分页 offset 续号，宽度随总行数位数自适应
       showRowIndex: true,
+      // 附件上传归属：把表 id 透传到单元格，使下载按表/行权限校验
+      tableId: tid,
       rowIndexBase: offset,
       rowIndexTotal: rowList.total ?? 0,
       newRowKey: NEW_ROW_KEY,
     },
-  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder, hiddenFieldIds, isMobile, offset, rowList.total])
+  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder, hiddenFieldIds, isMobile, offset, rowList.total, tid])
 
   // 选中行聚合：过滤与计算收敛到同一个 useMemo。
   // 旧实现的 numericFields / selectedRows 每次渲染都是新数组，使本 memo 依赖恒变、缓存完全失效。

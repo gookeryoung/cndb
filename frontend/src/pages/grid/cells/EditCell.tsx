@@ -23,13 +23,17 @@ interface EditCellProps {
   onCancel: () => void
   saving: boolean
   wid?: number | string
+  /** 当前表 id（附件上传时用于登记归属，使下载按表/行权限校验） */
+  tableId?: number | string
+  /** 当前行 id（同上） */
+  rowId?: number | string
   /** 是否渲染单元格自带的"保存/取消"按钮，行级编辑时由行操作列承载，置 false */
   showActions?: boolean
   /** 是否允许控件内部自动聚焦（行级新增/整行编辑时由父级统一聚焦，置 false） */
   enableAutoFocus?: boolean
 }
 
-export function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, wid, showActions = true, enableAutoFocus = true }: EditCellProps) {
+export function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, saving, wid, tableId, rowId, showActions = true, enableAutoFocus = true }: EditCellProps) {
   const ft = field.field_type
   const wrap: React.CSSProperties = {
     display: 'flex', gap: 4, alignItems: 'center', padding: '2px 0',
@@ -275,7 +279,7 @@ export function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, s
 
       const upload = async (file: File): Promise<AttachmentFile> => {
         if (!wid) throw new Error('缺少 wid')
-        const meta = await fileApi.upload(wid, file)
+        const meta = await fileApi.upload(wid, file, { tableId, rowId })
         onChange([...files, meta])
         return meta
       }
