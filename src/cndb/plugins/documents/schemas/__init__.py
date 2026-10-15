@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,6 +30,15 @@ class DocumentUpdate(BaseModel):
     status: str | None = Field(default=None, pattern="^(draft|published|archived)$")
     sort_order: int | None = None
     tag_ids: list[int] | None = None  # None=不变；[] = 清空
+
+
+class DocumentBatchRequest(BaseModel):
+    """文档批量操作（移动 / 删除）."""
+
+    action: Literal["move", "delete"]
+    ids: list[int] = Field(min_length=1, max_length=200)
+    # move 专用：目标父节点（0 或 None = 根目录）
+    parent_id: int | None = None
 
 
 class ContentUpdate(BaseModel):

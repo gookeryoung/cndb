@@ -3,9 +3,10 @@
  * 纯函数聚合（buildSeriesStats）+ 顶层卡片网格渲染与导航 + 系列级操作（重命名/移动/删除）。
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
+import { message } from 'antd'
 import { http, HttpResponse } from 'msw'
 import DocumentsPage, { buildSeriesStats } from './DocumentsPage'
 import { renderProviders } from '@/test/render-providers'
@@ -326,4 +327,91 @@ describe('DocumentsPage 系列卡片排序', () => {
         await waitFor(() => expect(titles()[0]).toBe('doc-series-card-3'))
     })
 })
+})
+
+
+
+describe('DocumentsPage 批量操作', () => {
+    function renderPage(route = '/w/10/documents?parent=1') {
+        return renderProviders(
+            <Routes>
+                <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+            </Routes>,
+            { route, initialAuth: { user: mockUser, token: 'fake-token' } },
+        )
+    }
+
+    it('勾选后出现批量栏；全选与取消选择可用', async () => {
+        renderPage()
+        // 文件夹内有两个子项（说明文档 + 需求文件夹）
+        await screen.findByTestId('doc-select-2')
+
+        expect(screen.queryByTestId('doc-batch-bar')).toBeNull()
+
+        fireEvent.click(screen.getByTestId('doc-select-2'))
+        expect(await screen.findByTestId('doc-batch-bar')).toHaveTextContent('已选 1 项')
+
+        const total = screen.getAllByTestId(/^doc-select-/).length
+        fireEvent.click(screen.getByTestId('doc-batch-select-all'))
+        await waitFor(() => expect(screen.getByTestId('doc-batch-bar')).toHaveTextContent(`已选 ${total} 项`))
+
+        fireEvent.click(screen.getByTestId('doc-batch-clear'))
+        await waitFor(() => expect(screen.queryByTestId('doc-batch-bar')).toBeNull())
+    })
+
+    it('批量删除：确认后提交 action=delete 与所选 ids，并提示结果', async () => {
+        const successSpy = vi.spyOn(message, 'success')
+        const bodies: unknown[] = []
+        server.use(
+            http.post('/api/v1/workspaces/10/documents/batch', async ({ request }) => {
+                bodies.push(await request.json())
+                return HttpResponse.json({ action: 'delete', updated: 1, skipped: [] })
+            }),
+        )
+        renderPage()
+        await screen.findByTestId('doc-select-2')
+
+        fireEvent.click(screen.getByTestId('doc-select-2'))
+        fireEvent.click(await screen.findByTestId('doc-batch-delete'))
+        // Popconfirm 确认
+        // Popconfirm 确认（antd 两字按钮文本渲染为「删 除」）
+        fireEvent.click(await screen.findByRole('button', { name: /^删\s*除$/ }))
+
+        await waitFor(() => expect(bodies).toHaveLength(1))
+        expect(bodies[0]).toMatchObject({ action: 'delete', ids: [2] })
+        expect(successSpy).toHaveBeenCalledWith('已删除 1 项')
+        await waitFor(() => expect(screen.queryByTestId('doc-batch-bar')).toBeNull())
+        successSpy.mockRestore()
+    })
+
+    it('批量移动：提交 action=move 与目标 parent_id；被跳过项提示原因', async () => {
+        const warnSpy = vi.spyOn(message, 'warning')
+        const bodies: unknown[] = []
+        server.use(
+            http.post('/api/v1/workspaces/10/documents/batch', async ({ request }) => {
+                bodies.push(await request.json())
+                return HttpResponse.json({
+                    action: 'move',
+                    updated: 1,
+                    skipped: [{ id: 3, reason: '不能将文档移动到自身子孙节点下' }],
+                })
+            }),
+        )
+        renderPage()
+        await screen.findByTestId('doc-select-2')
+
+        fireEvent.click(screen.getByTestId('doc-select-2'))
+        fireEvent.click(await screen.findByTestId('doc-batch-move'))
+        // Modal 确认（antd 两字按钮文本渲染为「移 动」）
+        fireEvent.click(await screen.findByRole('button', { name: /^移\s*动$/ }))
+
+        await waitFor(() => expect(bodies).toHaveLength(1))
+        // 默认目标是当前层级（?parent=1）
+        expect(bodies[0]).toMatchObject({ action: 'move', ids: [2], parent_id: 1 })
+        // 跳过项以 warning 提示（用 spy 断言文案，避免依赖 antd 静态 message 的挂载时序）
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('跳过 1 项'))
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('子孙'))
+        await waitFor(() => expect(screen.queryByTestId('doc-batch-bar')).toBeNull())
+        warnSpy.mockRestore()
+    })
 })

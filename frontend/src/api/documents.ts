@@ -309,6 +309,16 @@ export const documentsApi = {
   updateMeta: (wid: number | string, docId: number | string, data: Record<string, unknown>) =>
     api.patch<DocumentItem>(`${base(wid)}/${docId}`, data).then(r => r.data),
 
+  /** 批量移动 / 删除：逐项校验，失败项在 skipped 中返回（不中断整批） */
+  batch: (
+    wid: number | string,
+    payload: { action: 'move' | 'delete'; ids: number[]; parent_id?: number | null },
+  ) =>
+    api.post<{ action: string; updated: number; skipped: { id: number; reason: string }[] }>(
+      `${base(wid)}/batch`,
+      payload,
+    ).then(r => r.data),
+
   remove: (wid: number | string, docId: number | string) =>
     api.delete<{ id: number; deleted: boolean }>(`${base(wid)}/${docId}`).then(r => r.data),
 

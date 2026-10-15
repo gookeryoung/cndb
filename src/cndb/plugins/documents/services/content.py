@@ -400,6 +400,54 @@ def rollback_version(db: Session, workspace_id: int, doc_id: int, user: User, ta
     )  # type: ignore[return-value]
 
 
+def move_target_reason(db: Session, workspace_id: int, doc: Document, parent_id: int | None) -> str | None:
+    """判断能否把 doc 移动到 parent_id 下；不可移动时返回原因（None = 可以）.
+
+    约定 ``0`` 与 ``None`` 均表示根目录。批量移动需要**逐项**报告失败原因而不是整体中断，
+    故与 PATCH 端点共用同一个校验函数。
+    """
+    if parent_id in (None, 0):
+        return None
+    if parent_id == doc.id:
+        return "不能将文档移动到自身"
+    parent = db.execute(
+        select(Document).where(
+            Document.id == parent_id,
+            Document.workspace_id == workspace_id,
+            Document.is_deleted == False,  # noqa: E712
+        )
+    ).scalar_one_or_none()
+    if parent is None:
+        return "目标文件夹不存在"
+    if not parent.is_folder:
+        return "父节点必须是文件夹"
+    # 环检测：目标节点的祖先链中若出现自身，则移动后会形成孤岛
+    ancestor: Document | None = parent
+    visited: set[int] = set()
+    while ancestor is not None and ancestor.id not in visited:
+        if ancestor.id == doc.id:
+            return "不能将文档移动到自身子孙节点下"
+        visited.add(ancestor.id)
+        ancestor = db.get(Document, ancestor.parent_id) if ancestor.parent_id is not None else None
+    return None
+
+
+def soft_delete_documents(db: Session, workspace_id: int, docs: list[Document], user: User) -> int:
+    """批量软删除（同一删除时间戳，最后统一刷新标签计数）；返回处理的根节点数."""
+    require_editor(db, workspace_id, user)
+    deleted_at = dt.datetime.now(dt.UTC)
+    count = 0
+    for doc in docs:
+        if doc.is_deleted:
+            continue
+        _mark_deleted_subtree(db, doc, user, deleted_at)
+        count += 1
+    if count:
+        _refresh_tag_counts(db, workspace_id)
+    db.commit()
+    return count
+
+
 def soft_delete_document(db: Session, workspace_id: int, doc_id: int, user: User) -> Document:
     """软删除文档（文件夹级联整棵子树，同一删除批次；刷新标签计数）."""
     doc = get_document_or_404(db, workspace_id, doc_id)
