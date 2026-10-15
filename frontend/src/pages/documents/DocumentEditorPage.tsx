@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Alert,
+  Breadcrumb,
   Button,
   Drawer,
   Dropdown,
@@ -35,6 +36,7 @@ import {
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import FindReplaceBar from '@/components/Document/FindReplaceBar'
+import { ancestorChain } from './DocumentTree'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import MarkdownToolbar, { type MarkdownAction } from '@/components/Document/MarkdownToolbar'
 import { findMatches, nextMatchIndex, replaceAllMatches, replaceMatch } from '@/components/Document/documentSearch'
@@ -275,6 +277,25 @@ export default function DocumentEditorPage() {
   const handleSave = useCallback(() => {
     saveMut.mutate(content)
   }, [content, saveMut])
+
+  /** 当前文档所在路径（祖先链，去掉自身）：复用与文档树相同的 React Query 缓存 key */
+  const treeQuery = useQuery({
+    queryKey: ['documents', workspaceId, 'tree'],
+    queryFn: () => documentsApi.tree(workspaceId),
+    enabled: Number.isFinite(workspaceId),
+  })
+
+  const pathItems = useMemo(() => {
+    const chain = ancestorChain(treeQuery.data ?? [], id)
+    const segments = chain.slice(0, -1)
+    return [
+      { key: 'root', title: <a onClick={() => navigate(`/w/${wid}/documents`)}>文档</a> },
+      ...segments.map(node => ({
+        key: String(node.id),
+        title: <a onClick={() => navigate(`/w/${wid}/documents?parent=${node.id}`)}>{node.title}</a>,
+      })),
+    ]
+  }, [treeQuery.data, id, navigate, wid])
 
   /** 全部匹配（随正文 / 查询 / 大小写开关实时重算） */
   const findMatchesList = useMemo(
@@ -554,11 +575,20 @@ export default function DocumentEditorPage() {
           gap: 12,
         }}
       >
-        <Space wrap>
+        <div style={{ minWidth: 0 }}>
+          {pathItems.length > 1 && (
+            <Breadcrumb
+              data-testid="doc-path-crumb"
+              style={{ fontSize: 12, marginBottom: 2 }}
+              items={pathItems}
+            />
+          )}
+          <Space wrap>
           <Title level={4} style={{ margin: 0 }}>{doc.title}</Title>
           <Tag>{doc.status === 'published' ? '已发布' : doc.status === 'archived' ? '归档' : '草稿'}</Tag>
           {dirtyRef.current && <Text type="warning" style={{ fontSize: 12 }}>未保存</Text>}
-        </Space>
+          </Space>
+        </div>
         {isMobile ? (
           <Space size={8}>
             <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>

@@ -1,7 +1,7 @@
 /** 文档管理页 — 顶层系列卡片总览 + 文件夹列表 / 树 / 搜索入口. */
 
 import { useCallback, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Breadcrumb,
@@ -35,6 +35,7 @@ import {
   SearchOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { DOCUMENT_ORDER_OPTIONS, sortDocuments, type DocumentOrder } from './documentSort'
 import { documentsApi } from '@/api/documents'
 import type { DocumentItem } from '@/api/documents'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -56,11 +57,36 @@ export type { SeriesSummary } from './seriesStats'
 export default function DocumentsPage() {
   const { wid } = useParams<{ wid: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const qc = useQueryClient()
   const workspaceId = Number(wid)
   const { isMobile } = useResponsive()
 
-  const [parentId, setParentId] = useState<number | null>(null)
+  // 当前文件夹与排序口径写入 URL（?parent=&order=）：支持从编辑器面包屑深链、刷新与分享
+  const parentParam = searchParams.get('parent')
+  const parentId = parentParam !== null && parentParam !== '' ? Number(parentParam) : null
+  const orderParam = searchParams.get('order') as DocumentOrder | null
+  const orderBy: DocumentOrder = DOCUMENT_ORDER_OPTIONS.some(o => o.value === orderParam)
+    ? (orderParam as DocumentOrder)
+    : 'sort'
+
+  const updateParams = useCallback((patch: { parent?: number | null; order?: DocumentOrder }) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (patch.parent !== undefined) {
+        if (patch.parent === null) next.delete('parent')
+        else next.set('parent', String(patch.parent))
+      }
+      if (patch.order !== undefined) {
+        if (patch.order === 'sort') next.delete('order')
+        else next.set('order', patch.order)
+      }
+      return next
+    }, { replace: true })
+  }, [setSearchParams])
+
+  const setParentId = useCallback((id: number | null) => updateParams({ parent: id }), [updateParams])
+
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [titleKeyword, setTitleKeyword] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -96,11 +122,12 @@ export default function DocumentsPage() {
   )
 
   const docsQuery = useQuery({
-    queryKey: ['documents', workspaceId, 'list', parentId, statusFilter],
+    queryKey: ['documents', workspaceId, 'list', parentId, statusFilter, orderBy],
     queryFn: () =>
       documentsApi.list(workspaceId, {
         parent_id: parentId ?? undefined,
         status: statusFilter,
+        order: orderBy,
         limit: 200,
       }),
     // 子级列表走 list 端点；顶层散文档由全量树派生（list 不传 parent_id 会返回全部层级）
@@ -177,9 +204,20 @@ export default function DocumentsPage() {
   const seriesList = useMemo(() => {
     const all = buildSeriesStats(treeQuery.data ?? [])
     const kw = titleKeyword.trim().toLowerCase()
-    if (!kw) return all
-    return all.filter(s => s.folder.title.toLowerCase().includes(kw))
-  }, [treeQuery.data, titleKeyword])
+    const hit = kw ? all.filter(s => s.folder.title.toLowerCase().includes(kw)) : all
+    // 根层主体是系列卡片，同样按所选口径排序（最新更新时间取整个系列的聚合值）
+    return sortDocuments(
+      hit.map(s => ({
+        ...s,
+        title: s.folder.title,
+        sort_order: s.folder.sort_order,
+        created_at: s.folder.created_at,
+        updated_at: s.latestUpdate ?? s.folder.updated_at,
+        pinned: s.folder.pinned,
+      })),
+      orderBy,
+    )
+  }, [treeQuery.data, titleKeyword, orderBy])
 
   const breadcrumbItems = useMemo(() => {
     const map = new Map<number, DocumentItem>()
@@ -205,17 +243,18 @@ export default function DocumentsPage() {
   // 列表数据：顶层散文档由全量树派生（根级非文件夹项，前端应用标题/状态过滤）；
   // 子级列全部子项（list 端点按 parent_id 过滤）
   const listItems = useMemo(() => {
-    if (parentId !== null) return filtered
-    const kw = titleKeyword.trim().toLowerCase()
-    return (treeQuery.data ?? [])
-      .filter(
+    const raw = parentId !== null
+      ? filtered
+      : (treeQuery.data ?? []).filter(
         d =>
           d.parent_id == null &&
           !d.is_folder &&
-          (!kw || d.title.toLowerCase().includes(kw)) &&
+          (!titleKeyword.trim() || d.title.toLowerCase().includes(titleKeyword.trim().toLowerCase())) &&
           (!statusFilter || d.status === statusFilter),
       )
-  }, [filtered, parentId, treeQuery.data, titleKeyword, statusFilter])
+    // 置顶优先 + 所选口径（与后端 order 参数同口径，保证顶层派生列表也一致）
+    return sortDocuments(raw, orderBy)
+  }, [filtered, parentId, treeQuery.data, titleKeyword, statusFilter, orderBy])
 
   const openCreate = (type: 'doc' | 'folder') => {
     setCreateType(type)
@@ -278,6 +317,13 @@ export default function DocumentsPage() {
           <Button icon={<DeleteOutlined />} data-testid="doc-trash-open" onClick={() => setTrashOpen(true)}>
             回收站
           </Button>
+          <Select
+            style={{ width: 120 }}
+            value={orderBy}
+            data-testid="doc-order-select"
+            onChange={(v: DocumentOrder) => updateParams({ order: v })}
+            options={DOCUMENT_ORDER_OPTIONS}
+          />
           <Select
             allowClear
             placeholder="状态"

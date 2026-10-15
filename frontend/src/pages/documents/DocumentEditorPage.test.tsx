@@ -613,4 +613,43 @@ describe('DocumentEditorPage 查找与替换', () => {
         fireEvent.click(screen.getByTestId('doc-find-case'))
         await waitFor(() => expect(screen.getByTestId('doc-find-count')).toHaveTextContent('1/1'))
     })
+
+describe('DocumentEditorPage 路径面包屑', () => {
+    function renderWithListProbe(route = '/w/10/documents/2') {
+        function Probe() {
+            const loc = useLocation()
+            return <div data-testid="list-location">{loc.pathname + loc.search}</div>
+        }
+        return renderProviders(
+            <Routes>
+                <Route path="/w/:wid/documents" element={<Probe />} />
+                <Route path="/w/:wid/documents/:docId" element={<DocumentEditorPage />} />
+            </Routes>,
+            { route, initialAuth: { user: mockUser, token: 'fake-token' } },
+        )
+    }
+
+    it('展示祖先路径（文档 / 文件夹），点击文件夹跳到该文件夹列表', async () => {
+        renderWithListProbe()
+
+        const crumb = await screen.findByTestId('doc-path-crumb')
+        expect(crumb).toHaveTextContent('文档')
+        expect(crumb).toHaveTextContent('产品文档')
+
+        fireEvent.click(within(crumb).getByText('产品文档'))
+        await waitFor(() => expect(screen.getByTestId('list-location')).toHaveTextContent('/w/10/documents?parent=1'))
+    })
+
+    it('点击「文档」回到总览（不带 parent 参数）', async () => {
+        renderWithListProbe()
+
+        const crumb = await screen.findByTestId('doc-path-crumb')
+        fireEvent.click(within(crumb).getByText('文档'))
+        await waitFor(() => {
+            const loc = screen.getByTestId('list-location')
+            expect(loc).toHaveTextContent('/w/10/documents')
+            expect(loc.textContent).not.toContain('parent=')
+        })
+    })
+})
 })
