@@ -965,9 +965,16 @@ export default function GridPage() {
     _onFilterReset,
     _onCellSave,
     inlineOps,
-    // 窄屏固定首列：网格需要横向滚动，固定首列才能在滚动中保持行标识
-    { columnWidths, fieldOrder, hiddenFieldIds, pinFirstColumn: isMobile },
-  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder, hiddenFieldIds, isMobile])
+    {
+      columnWidths, fieldOrder, hiddenFieldIds,
+      pinFirstColumn: isMobile,
+      // 表格视图自动在最左侧补「序号」列：按当前分页 offset 续号，宽度随总行数位数自适应
+      showRowIndex: true,
+      rowIndexBase: offset,
+      rowIndexTotal: rowList.total ?? 0,
+      newRowKey: NEW_ROW_KEY,
+    },
+  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder, hiddenFieldIds, isMobile, offset, rowList.total])
 
   // 选中行聚合：过滤与计算收敛到同一个 useMemo。
   // 旧实现的 numericFields / selectedRows 每次渲染都是新数组，使本 memo 依赖恒变、缓存完全失效。
