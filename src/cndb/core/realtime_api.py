@@ -18,14 +18,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import authenticate_jwt, local_user_for
 from cndb.core.config import settings
-from cndb.core.database import SessionLocal
+from cndb.core.database import get_db
 from cndb.core.realtime import (
     CLIENT_PING,
     CLIENT_PONG,
@@ -120,13 +120,18 @@ async def realtime_ws(
     websocket: WebSocket,
     workspace_id: int = Query(..., description="工作区 id"),
     token: str | None = Query(default=None, description="访问令牌（浏览器 WS 无法设置请求头）"),
+    db: Annotated[Session, Depends(get_db)] = None,  # type: ignore[assignment]
 ) -> None:
-    """工作区实时通道：在线状态 + 事件推送."""
-    db = SessionLocal()
+    """工作区实时通道：在线状态 + 事件推送.
+
+    ``db`` 走 ``Depends(get_db)`` 而不是自建 ``SessionLocal()``：
+    后者会**绕过**测试与部署侧对 get_db 的覆写（曾经导致本地通过、CI 上
+    ``no such table: accounts_user``），依赖注入才是与其他端点一致的取会话方式。
+    """
     try:
         try:
             # 注意：这里刻意**不**放进线程池（run_in_threadpool）。实测教训：
-            # 400 线程池并发建连会同时争抢 DB 连接池（pool_size=5 + max_overflow=10），
+            # 40 线程池并发建连会同时争抢 DB 连接池（pool_size=5 + max_overflow=10），
             # 超出部分等待 pool_timeout=30s → 300 连接只成功 71 条、耗时 210s。
             # 串行执行时每条连接约 2.4ms（含 JWT + 成员查询），300 条 0.73s 完成，
             # 客户端侧的抖动退避（realtimeClient 的 0.7~1.3 倍）已能打散重连风暴。
@@ -143,8 +148,6 @@ async def realtime_ws(
         with suppress(Exception):
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="服务器内部错误")
         return
-    finally:
-        db.close()
 
     await websocket.accept()
 
