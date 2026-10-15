@@ -20,7 +20,13 @@ const API = "/api/v1";
 // 该用例含双账号多步 UI 断言，比普通用例重：单独放宽超时
 test.describe.configure({ timeout: 90_000 });
 
-/** 打开文档页并等待目录树数据返回后再断言（避免与树请求竞态导致偶发失败） */
+/**
+ * 打开文档页 → 等目录树响应 → 断言可见性标记.
+ *
+ * 用 `expect.toPass` 做**有界重试**：CI 上 8 个 worker 争抢 CPU 时，
+ * 重载 + 树请求 + 渲染偶尔超过单次等待窗口；整体重试比放大单次超时更稳，
+ * 也保留了"数据确实到了才断言"的语义（先等 tree 200 响应）。
+ */
 async function expectVisibilityMarker(
   page: Page,
   workspaceId: number,
@@ -28,78 +34,28 @@ async function expectVisibilityMarker(
   label: string,
   { reload = false }: { reload?: boolean } = {},
 ): Promise<void> {
-  const treeResponse = page.waitForResponse(
-    r => r.url().includes(`/workspaces/${workspaceId}/documents/tree`) && r.status() === 200,
-    { timeout: 20_000 },
-  );
-  if (reload) {
-    await page.reload();
-  } else {
-    await page.goto(`/w/${workspaceId}/documents`);
-  }
-  await treeResponse;
-
   const marker: Locator = page.getByTestId(`doc-visibility-${documentId}`);
-  // 树的根节点直接渲染；若节点在折叠的文件夹内则先展开一次再断言
-  if (!(await marker.isVisible().catch(() => false))) {
-    const node = page.getByTestId(`doc-tree-doc-${documentId}`);
-    if (await node.count()) {
-      await node.click();
-    }
-  }
-  await expect(marker).toHaveAttribute("aria-label", label, { timeout: 20_000 });
-}
-
-interface Session {
-  page: Page;
-  api: APIRequestContext;
-  token: string;
-  userId: number;
-  close: () => Promise<void>;
-}
-
-async function call(
-  client: APIRequestContext,
-  token: string,
-  method: "get" | "post" | "delete",
-  url: string,
-  data?: unknown,
-): Promise<{ status: number; body: unknown }> {
-  const res = await client[method](`${API}${url}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    data,
-  });
-  let body: unknown = null;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
-  }
-  return { status: res.status(), body };
-}
-
-/** 用指定账号建立会话：登录拿 token → 注入 localStorage（前端据此带鉴权）。 */
-async function sessionAs(browser: Browser, username: string, password: string): Promise<Session> {
-  const ctx = await browser.newContext();
-  const page = await ctx.newPage();
-  const login = await page.request.post(`${API}/accounts/auth/login`, {
-    data: { login: username, password },
-  });
-  expect(login.ok(), `登录失败：${username}`).toBeTruthy();
-  const { access_token: token } = (await login.json()) as { access_token: string };
-
-  await page.addInitScript((t: string) => {
-    window.localStorage.setItem("cndb_access_token", t);
-    // onboarding 只引导新用户，测试里跳过，避免遮罩挡住断言
-    window.localStorage.setItem(
-      "cndb_onboarding_done_v1",
-      JSON.stringify({ state: { tourDone: true }, version: 0 }),
+  await expect(async () => {
+    const treeResponse = page.waitForResponse(
+      r => r.url().includes(`/workspaces/${workspaceId}/documents/tree`) && r.status() === 200,
+      { timeout: 15_000 },
     );
-  }, token);
+    if (reload) {
+      await page.reload();
+    } else {
+      await page.goto(`/w/${workspaceId}/documents`);
+    }
+    await treeResponse;
 
-  const me = await call(page.request, token, "get", "/accounts/auth/me");
-  expect(me.status, `读取当前用户失败：${username}`).toBe(200);
-  return { page, api: page.request, token, userId: (me.body as { id: number }).id, close: () => ctx.close() };
+    // 根节点直接渲染；若节点在折叠文件夹内则先展开
+    if (!(await marker.isVisible().catch(() => false))) {
+      const node = page.getByTestId(`doc-tree-doc-${documentId}`);
+      if (await node.count()) {
+        await node.click();
+      }
+    }
+    await expect(marker).toHaveAttribute("aria-label", label, { timeout: 8_000 });
+  }).toPass({ timeout: 60_000 });
 }
 
 test.describe("文档可见性与授权（多用户）", () => {

@@ -9,7 +9,9 @@ export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
   retries: process.env.CI ? 2 : 0,
-  workers: 8,
+  // 本地 8 worker（多核机器）；CI 收敛到 4：GitHub 托管 runner 通常 4 vCPU，
+  // 8 个 worker 争抢会造成大量用例超时（表现为 flaky，需重试才通过）
+  workers: process.env.CI ? 4 : 8,
   reporter: [
     ["list"],
     ["./tests/e2e/reporters/slow-test.ts"],
