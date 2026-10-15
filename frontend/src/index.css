@@ -1272,10 +1272,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   padding: 8px 2px 8px 12px;
 }
 
-/* 基本信息统计条 */
+/* 基本信息统计条 —— 允许换行：窄屏（手机）下 4 个统计项自动折成多行，避免日期被裁切 */
 .ts-stats {
   display: flex;
-  gap: 32px;
+  flex-wrap: wrap;
+  gap: 12px 32px;
   padding: 10px 14px;
   margin-bottom: 8px;
   border: 1px solid var(--cn-border);

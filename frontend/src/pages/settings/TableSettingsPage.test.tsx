@@ -18,6 +18,17 @@ import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
 import { permissionApi, viewApi } from '@/api'
 import type { View } from '@/api'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端（竖排页签），移动端用例在其内部切换
+let responsiveState: ResponsiveState = {
+  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+  width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+  return { ...actual, useResponsive: () => responsiveState }
+})
 
 const WID = '10'
 const TID = '20'
@@ -270,5 +281,40 @@ describe('TableSettingsPage 删除表后导航', () => {
     expect(await screen.findByText('表不存在')).toBeInTheDocument()
     // 路由保持在表设置页
     expect(screen.getByTestId('location')).toHaveTextContent(`/w/${WID}/tables/${TID}/settings`)
+  })
+})
+
+describe('TableSettingsPage 移动端适配', () => {
+  beforeEach(() => {
+    setupTableHandlers()
+  })
+
+  afterEach(() => {
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+  })
+
+  it('窄屏下页签由左侧竖排改为顶部横排，统计条四项齐全', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    renderPage()
+
+    await screen.findByDisplayValue('任务表', {}, { timeout: 5000 })
+    const tabs = document.querySelector('.table-settings-tabs') as HTMLElement
+    expect(tabs.className).toContain('ant-tabs-top')
+    expect(tabs.className).not.toContain('ant-tabs-left')
+    // 统计条四项（字段 / 记录 / 视图 / 创建日期）都渲染，靠 CSS 换行不再被裁切
+    expect(document.querySelectorAll('.ts-stats .ts-stat')).toHaveLength(4)
+  })
+
+  it('桌面端保持左侧竖排页签', async () => {
+    renderPage()
+
+    await screen.findByDisplayValue('任务表', {}, { timeout: 5000 })
+    expect((document.querySelector('.table-settings-tabs') as HTMLElement).className).toContain('ant-tabs-left')
   })
 })

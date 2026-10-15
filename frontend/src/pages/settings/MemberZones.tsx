@@ -59,9 +59,11 @@ export default function MemberZones({
                 loading={membersLoading}
                 dataSource={list}
                 pagination={false}
+                scroll={{ x: 'max-content' }}
                 columns={[
                   {
                     title: '用户',
+                    width: 220,
                     render: (_, m) => {
                       const u = m.user
                       const isMe = currentMemberId === m.id
