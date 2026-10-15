@@ -56,7 +56,7 @@ def list_audit_logs(
     from sqlalchemy import MetaData, Table, or_, select
 
     sa_table = Table(table.db_table_name, MetaData(), autoload_with=db.bind)
-    row_scope = _row_scope_condition(db, table, sa_table)
+    row_scope = _row_scope_condition(db, table, sa_table, current_user)
     if row_scope is not None:
         visible_row_ids = select(sa_table.c.id).where(row_scope)
         q = q.filter(or_(AuditLog.target_id.is_(None), AuditLog.target_id.in_(visible_row_ids)))
@@ -86,11 +86,17 @@ def list_audit_logs(
     return result
 
 
-def _row_scope_condition(db: Session, table: Any, sa_table: Any) -> Any | None:
-    """编译表的行级过滤条件（无配置返回 None），与记录读取接口同一套逻辑."""
-    from cndb.plugins.tables.services.core.access import get_row_scope, row_filter_conjunction
+def _row_scope_condition(db: Session, table: Any, sa_table: Any, user: Any = None) -> Any | None:
+    """编译表的行级过滤条件（无配置或调用者豁免时返回 None），与记录读取接口同一套逻辑."""
+    from cndb.plugins.tables.services.core.access import (
+        get_row_scope,
+        row_filter_conjunction,
+        row_filters_bypass,
+    )
     from cndb.plugins.tables.services.core.query import compile_filters
 
+    if user is not None and row_filters_bypass(db, table, user):
+        return None
     scope = get_row_scope(db, table)
     if not scope:
         return None

@@ -96,7 +96,7 @@ def bulk_delete_records(
     if not check_action(db, dt, current_user, TableAction.EDIT_RECORDS):
         raise HTTPException(status_code=403, detail="表级权限不足")
 
-    deleted = rec.bulk_delete(db.get_bind(), dt, payload.row_ids, db=db)
+    deleted = rec.bulk_delete(db.get_bind(), dt, payload.row_ids, db=db, user=current_user)
     return {"deleted": deleted}
 
 
@@ -130,7 +130,7 @@ def bulk_update_records(
 
     updated: int
     try:
-        updated = rec.bulk_update(db.get_bind(), dt, row_ids, values, db=db)
+        updated = rec.bulk_update(db.get_bind(), dt, row_ids, values, db=db, user=current_user)
     except ValueError as exc:
         # link 目标预校验失败（如关联行不存在）——返回 400 而非 500
         raise HTTPException(status_code=400, detail=str(exc)) from exc

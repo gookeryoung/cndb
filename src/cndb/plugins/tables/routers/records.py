@@ -255,7 +255,7 @@ def update_record(
         return _cr_response(db, dt, current_user, op=CHANGE_OP_UPDATE, row_id=record_id, values=payload.values)
 
     try:
-        row = update_row(db.get_bind(), dt, record_id, payload.values, db=db)
+        row = update_row(db.get_bind(), dt, record_id, payload.values, db=db, user=current_user)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -279,9 +279,9 @@ def delete_record(
         return _cr_response(db, dt, current_user, op=CHANGE_OP_DELETE, row_id=record_id, values={})
 
     if soft:
-        ok = trash_row(db.get_bind(), dt, record_id, db=db)
+        ok = trash_row(db.get_bind(), dt, record_id, db=db, user=current_user)
     else:
-        ok = delete_row(db.get_bind(), dt, record_id, db=db)
+        ok = delete_row(db.get_bind(), dt, record_id, db=db, user=current_user)
 
     if not ok:
         raise HTTPException(status_code=404, detail="行不存在")
@@ -297,7 +297,7 @@ def restore_record(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
-    ok = restore_row(db.get_bind(), dt, record_id, db=db)
+    ok = restore_row(db.get_bind(), dt, record_id, db=db, user=current_user)
     if not ok:
         raise HTTPException(status_code=404, detail="行不存在或未在回收站中")
     row = get_row(db.get_bind(), dt, record_id, db=db, user=current_user)

@@ -284,7 +284,7 @@ def get_row(
 ) -> dict[str, Any] | None:
     """按主键读取单行，返回 dict；不存在返回 None（含软删除过滤 + 行级权限 + 字段隐藏）."""
     sa_table = _get_sa_table(engine, table)
-    row_scope = _build_row_scope_where(table, sa_table, db)
+    row_scope = _build_row_scope_where(table, sa_table, db, user)
     where = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
     if row_scope is not None:
         where.append(row_scope)
@@ -305,16 +305,23 @@ def get_row(
     return result
 
 
-def _build_row_scope_where(table: DataTable, sa_table: Any, db: Any) -> Any | None:
+def _build_row_scope_where(table: DataTable, sa_table: Any, db: Any, user: Any = None) -> Any | None:
     """从 TablePermission.row_filters 编译行级权限 WHERE 条件.
 
     仅在 db 可用且 row_filters 非空时生效。返回的条件会与 trashed 条件 AND 组合。
+    传入 ``user`` 时按统一口径处理：表所有者/工作区 OWNER/超管豁免（见 row_filters_bypass）。
     """
     if db is None:
         return None
-    from cndb.plugins.tables.services.core.access import get_row_scope, row_filter_conjunction
+    from cndb.plugins.tables.services.core.access import (
+        get_row_scope,
+        row_filter_conjunction,
+        row_filters_bypass,
+    )
     from cndb.plugins.tables.services.core.query import compile_filters
 
+    if user is not None and row_filters_bypass(db, table, user):
+        return None
     scope = get_row_scope(db, table)
     if not scope:
         return None
@@ -381,7 +388,7 @@ def list_rows(
         base_where.append(sa_table.c._trashed.is_(False))
 
     # 行级权限（TablePermission.row_filters）
-    row_scope = _build_row_scope_where(table, sa_table, db)
+    row_scope = _build_row_scope_where(table, sa_table, db, user)
     if row_scope is not None:
         base_where.append(row_scope)
 
@@ -459,6 +466,8 @@ def update_row(
     row_id: int,
     values: dict[str, Any],
     db: Any = None,
+    *,
+    user: Any = None,
 ) -> dict[str, Any] | None:
     """更新一行，返回更新后的完整数据；行不存在或已软删除或被行级权限拦截时返回 None.
 
@@ -479,7 +488,7 @@ def update_row(
     # link 必填/唯一约束校验（排除本行自身，更新为同一集合不视为冲突）
     validate_link_write(engine, link_values, exclude_row_ids=(row_id,))
 
-    row_scope = _build_row_scope_where(table, sa_table, db)
+    row_scope = _build_row_scope_where(table, sa_table, db, user)
     base_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
     if row_scope is not None:
         base_where.append(row_scope)
@@ -509,13 +518,13 @@ def update_row(
 # ── DELETE ───────────────────────────────────────────
 
 
-def delete_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bool:
+def delete_row(engine: Any, table: DataTable, row_id: int, db: Any = None, *, user: Any = None) -> bool:
     """硬删除单行（同步清理关联记录），返回是否成功.
 
     行级权限拦截时返回 False（不会删除被 row_filters 过滤的行）.
     """
     sa_table = _get_sa_table(engine, table)
-    row_scope = _build_row_scope_where(table, sa_table, db)
+    row_scope = _build_row_scope_where(table, sa_table, db, user)
     base_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
     if row_scope is not None:
         base_where.append(row_scope)
@@ -534,10 +543,10 @@ def delete_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bo
 # ── 软删除 / 恢复 ────────────────────────────────────
 
 
-def trash_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bool:
+def trash_row(engine: Any, table: DataTable, row_id: int, db: Any = None, *, user: Any = None) -> bool:
     """软删除（标记 _trashed=True）."""
     sa_table = _get_sa_table(engine, table)
-    row_scope = _build_row_scope_where(table, sa_table, db)
+    row_scope = _build_row_scope_where(table, sa_table, db, user)
     base_where: list[Any] = [sa_table.c.id == row_id]
     if row_scope is not None:
         base_where.append(row_scope)
@@ -559,10 +568,10 @@ def trash_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> boo
     return ok
 
 
-def restore_row(engine: Any, table: DataTable, row_id: int, db: Any = None) -> bool:
+def restore_row(engine: Any, table: DataTable, row_id: int, db: Any = None, *, user: Any = None) -> bool:
     """从回收站恢复."""
     sa_table = _get_sa_table(engine, table)
-    row_scope = _build_row_scope_where(table, sa_table, db)
+    row_scope = _build_row_scope_where(table, sa_table, db, user)
     base_where: list[Any] = [sa_table.c.id == row_id]
     if row_scope is not None:
         base_where.append(row_scope)
@@ -667,6 +676,8 @@ def bulk_update(
     row_ids: list[int],
     values: dict[str, Any],
     db: Any = None,
+    *,
+    user: Any = None,
 ) -> int:
     """批量更新，返回影响行数；link 字段对每行写入相同关联集合.
 
@@ -684,7 +695,7 @@ def bulk_update(
             if ids:
                 ensure_link_targets_exist(engine, field, ids, db)
 
-    row_scope = _build_row_scope_where(table, sa_table, db)
+    row_scope = _build_row_scope_where(table, sa_table, db, user)
     count = 0
     with engine.connect() as conn:
         valid_where: list[Any] = [sa_table.c.id.in_(row_ids), sa_table.c._trashed.is_(False)]
@@ -718,7 +729,7 @@ def bulk_update(
     return count
 
 
-def bulk_delete(engine: Any, table: DataTable, row_ids: list[int], db: Any = None) -> int:
+def bulk_delete(engine: Any, table: DataTable, row_ids: list[int], db: Any = None, *, user: Any = None) -> int:
     """批量硬删除（同步清理关联记录），返回影响行数.
 
     被 row_filters 过滤的行不会被删除，也不会被清理关联或记 audit.
@@ -726,7 +737,7 @@ def bulk_delete(engine: Any, table: DataTable, row_ids: list[int], db: Any = Non
     sa_table = _get_sa_table(engine, table)
     if not row_ids:
         return 0
-    row_scope = _build_row_scope_where(table, sa_table, db)
+    row_scope = _build_row_scope_where(table, sa_table, db, user)
 
     # 先查哪些行真正符合删除条件（同时受 row_filters 约束），避免误删 links / 误记 audit
     check_where: list[Any] = [sa_table.c.id.in_(row_ids), sa_table.c._trashed.is_(False)]
@@ -871,6 +882,8 @@ def bulk_update_rows(
     table: DataTable,
     updates: list[dict[str, Any]],
     db: Any = None,
+    *,
+    user: Any = None,
 ) -> int:
     """批量单行更新 — 每条 row_id 对应独立 values（upsert 分流时用）.
 
@@ -881,7 +894,7 @@ def bulk_update_rows(
         return 0
 
     sa_table = _get_sa_table(engine, table)
-    row_scope = _build_row_scope_where(table, sa_table, db)
+    row_scope = _build_row_scope_where(table, sa_table, db, user)
     total = 0
 
     # 总事务前预校验所有待更新行的 link 目标存在 + 必填/唯一约束，避免部分行已提交但 link 失败
