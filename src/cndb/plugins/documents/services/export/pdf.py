@@ -5,12 +5,39 @@ from __future__ import annotations
 import io
 from typing import Any
 
+from cndb.plugins.documents.services.export.images import IMAGE_LINE_RE, ImageResolver
 from cndb.plugins.documents.services.export.markdown_style import _MD_BOLD_RE, _MD_CODE_RE, _MD_HEADING_RE
 from cndb.plugins.documents.services.export.pdf_fonts import _ensure_pdf_font
 from cndb.plugins.documents.services.export.theme import DEFAULT_THEME, ExportTheme
 
+# 图片最大宽度 = A4 宽（595.27pt）减左右各 50pt 页边距
+_PDF_MAX_IMAGE_WIDTH = 595.27 - 100
 
-def _render_pdf(markdown_text: str, title: str = "") -> bytes:
+
+def _make_pdf_image(resolved: tuple[bytes, str] | None) -> Any:
+    """把解析出的图片字节装成 Platypus Image，并等比缩放到正文宽度内.
+
+    返回 None 表示无法嵌入（未解析到文件 / 格式不被 reportlab 支持）。
+    """
+    if resolved is None:
+        return None
+    from reportlab.lib.utils import ImageReader
+    from reportlab.platypus import Image as PdfImage
+
+    data, _name = resolved
+    try:
+        reader = ImageReader(io.BytesIO(data))
+        width, height = reader.getSize()
+        if not width or not height:  # pragma: no cover - 异常图片元数据
+            return None
+        scale = min(1.0, _PDF_MAX_IMAGE_WIDTH / width)
+        return PdfImage(io.BytesIO(data), width=width * scale, height=height * scale)
+    except Exception:
+        return None
+
+
+def _render_pdf(markdown_text: str, title: str = "", images: ImageResolver | None = None) -> bytes:
+    # images：站内图片解析器；``![alt](file:<key>)`` 独占一行时嵌入真实图片
     """把文档 Markdown 正文渲染为 .pdf 字节流.
 
     Platypus 框架 + 自动分页 + 页眉页脚；中文字符依赖 ``_ensure_pdf_font``
@@ -94,6 +121,19 @@ def _render_pdf(markdown_text: str, title: str = "") -> bytes:
         # 换页标记
         if line.strip() == "---PAGE---":
             story.append(PageBreak())
+            continue
+
+        # 站内图片：独占一行时嵌入真实图片（等比缩放到正文宽度内）
+        img_match = IMAGE_LINE_RE.match(line)
+        if img_match:
+            alt = img_match.group("alt") or "图片"
+            resolved = images(img_match.group("key")) if images is not None else None
+            figure = _make_pdf_image(resolved)
+            if figure is None:
+                story.append(Paragraph(_pdf_escape(f"[图片缺失：{alt}]"), body_style))
+            else:
+                story.append(figure)
+                story.append(Spacer(1, 6))
             continue
 
         # 普通段落（处理粗体）
