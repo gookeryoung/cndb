@@ -67,6 +67,8 @@ class DocumentOut(BaseModel):
     updated_by_id: int | None
     tag_ids: list[int] = Field(default_factory=list)
     version_count: int = 0
+    # 当前用户个人置顶（个人偏好，非文档属性）
+    pinned: bool = False
 
 
 class DocumentDetail(DocumentOut):

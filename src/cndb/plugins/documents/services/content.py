@@ -37,6 +37,7 @@ from cndb.plugins.documents.models import (
     DocumentIssueComment,
     DocumentIssueEvent,
     DocumentPermission,
+    DocumentPin,
     DocumentShare,
     DocumentTag,
     DocumentVersion,
@@ -570,6 +571,8 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
     db.execute(delete(DocumentShare).where(DocumentShare.document_id.in_(ids)))
     # 待审修改申请随文档一并销毁，避免留下指向已清空文档的孤儿申请
     db.execute(delete(DocumentChangeRequest).where(DocumentChangeRequest.document_id.in_(ids)))
+    # 个人置顶随文档销毁，避免留下指向已清空文档的孤儿行
+    db.execute(delete(DocumentPin).where(DocumentPin.document_id.in_(ids)))
     # 文档问题清单及其评论 / 事件流水同样随文档销毁（不依赖 SQLite 外键级联是否开启）
     issue_ids = select(DocumentIssue.id).where(DocumentIssue.document_id.in_(ids))
     db.execute(delete(DocumentIssueComment).where(DocumentIssueComment.issue_id.in_(issue_ids)))
@@ -859,16 +862,52 @@ def _normalize_ts(ts: str) -> str:
     return ts[:19]
 
 
-def serialize_document(db: Session, doc: Document) -> dict[str, Any]:
+def serialize_document(db: Session, doc: Document, *, pinned: bool = False) -> dict[str, Any]:
     """单文档 → 响应字典（详情/写操作回包用）。"""
     tag_ids = [
         row.tag_id for row in db.execute(select(DocumentTag.tag_id).where(DocumentTag.document_id == doc.id)).all()
     ]
     total = 0 if doc.is_folder else version_count(db, doc.id)
-    return _serialize_document(doc, version_total=total, tag_ids=tag_ids)
+    return _serialize_document(doc, version_total=total, tag_ids=tag_ids, pinned=pinned)
 
 
-def serialize_documents(db: Session, docs: list[Document]) -> list[dict[str, Any]]:
+def pinned_document_ids(db: Session, workspace_id: int, user_id: int) -> set[int]:
+    """当前用户在该工作区的置顶文档 id 集合（个人偏好，一次查询）."""
+    rows = db.execute(
+        select(DocumentPin.document_id)
+        .join(Document, Document.id == DocumentPin.document_id)
+        .where(Document.workspace_id == workspace_id, DocumentPin.user_id == user_id)
+    ).all()
+    return {int(row[0]) for row in rows}
+
+
+def sort_pinned_first(docs: list[Document], pinned_ids: set[int]) -> list[Document]:
+    """置顶文档排在前面；两组内部保持原有顺序（`sorted` 稳定）."""
+    if not pinned_ids:
+        return docs
+    return sorted(docs, key=lambda d: 0 if d.id in pinned_ids else 1)
+
+
+def set_document_pin(db: Session, doc: Document, user_id: int, pinned: bool) -> bool:
+    """设置 / 取消文档置顶（幂等），返回最终状态.
+
+    个人语义：只影响该用户自己的置顶集合，不改变其他成员看到的顺序。
+    """
+    existing = db.execute(
+        select(DocumentPin).where(DocumentPin.document_id == doc.id, DocumentPin.user_id == user_id)
+    ).scalar_one_or_none()
+    if pinned and existing is None:
+        db.add(DocumentPin(document_id=doc.id, user_id=user_id))
+        db.commit()
+    elif not pinned and existing is not None:
+        db.delete(existing)
+        db.commit()
+    return pinned
+
+
+def serialize_documents(
+    db: Session, docs: list[Document], *, pinned_ids: set[int] | None = None
+) -> list[dict[str, Any]]:
     """批量文档 → 响应字典（列表/树用）.
 
     用 2 条聚合查询替代逐文档的 ``version_count`` + ``tag_ids`` 查询，
@@ -890,17 +929,21 @@ def serialize_documents(db: Session, docs: list[Document]) -> list[dict[str, Any
         select(DocumentTag.document_id, DocumentTag.tag_id).where(DocumentTag.document_id.in_(ids))
     ).all():
         tag_ids[doc_id].append(tag_id)
+    pinned = pinned_ids or set()
     return [
         _serialize_document(
             doc,
             version_total=0 if doc.is_folder else int(counts.get(doc.id, 0)),
             tag_ids=tag_ids.get(doc.id, []),
+            pinned=doc.id in pinned,
         )
         for doc in docs
     ]
 
 
-def _serialize_document(doc: Document, *, version_total: int, tag_ids: list[int]) -> dict[str, Any]:
+def _serialize_document(
+    doc: Document, *, version_total: int, tag_ids: list[int], pinned: bool = False
+) -> dict[str, Any]:
     """文档 → 响应字典主体（版本数/标签由调用方提供，避免逐条查询）."""
     return {
         "id": doc.id,
@@ -922,4 +965,5 @@ def _serialize_document(doc: Document, *, version_total: int, tag_ids: list[int]
         "updated_by_id": doc.updated_by_id,
         "tag_ids": tag_ids,
         "version_count": version_total,
+        "pinned": pinned,
     }

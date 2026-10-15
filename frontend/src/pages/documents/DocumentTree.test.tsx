@@ -378,4 +378,65 @@ describe('DocumentTree 拖拽整理', () => {
             ])
         })
     })
+
+describe('DocumentTree 个人置顶', () => {
+    it('置顶节点展示置顶标记；未置顶节点不展示', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tree', () =>
+                HttpResponse.json({
+                    items: mockDocuments.map(d => ({ ...d, pinned: d.id === 2 })),
+                })),
+        )
+        renderTree()
+
+        await screen.findByTestId('doc-tree-folder-1')
+        fireEvent.click(screen.getByTestId('doc-tree-folder-1'))
+        await waitFor(() => expect(screen.getByTestId('doc-tree-doc-2')).toBeVisible())
+
+        expect(screen.getByTestId('doc-tree-pinned-2')).toBeInTheDocument()
+        expect(screen.queryByTestId('doc-tree-pinned-3')).toBeNull()
+    })
+
+    it('节点「更多」按钮（触摸可达）打开菜单，可置顶并调用 API', async () => {
+        let pinCalls = 0
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tree', () =>
+                HttpResponse.json({ items: mockDocuments.map(d => ({ ...d, pinned: false })) })),
+            http.post('/api/v1/workspaces/10/documents/2/pin', () => {
+                pinCalls += 1
+                return HttpResponse.json({ document_id: 2, pinned: true })
+            }),
+        )
+        renderTree()
+        await screen.findByTestId('doc-tree-folder-1')
+        fireEvent.click(screen.getByTestId('doc-tree-folder-1'))
+        await waitFor(() => expect(screen.getByTestId('doc-tree-doc-2')).toBeVisible())
+
+        fireEvent.click(screen.getByTestId('doc-tree-more-2'))
+        fireEvent.click(await screen.findByText('置顶'))
+
+        await waitFor(() => expect(pinCalls).toBe(1))
+    })
+
+    it('已置顶节点的菜单项为「取消置顶」并调用 DELETE', async () => {
+        let unpinCalls = 0
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tree', () =>
+                HttpResponse.json({ items: mockDocuments.map(d => ({ ...d, pinned: d.id === 2 })) })),
+            http.delete('/api/v1/workspaces/10/documents/2/pin', () => {
+                unpinCalls += 1
+                return new HttpResponse(null, { status: 204 })
+            }),
+        )
+        renderTree()
+        await screen.findByTestId('doc-tree-folder-1')
+        fireEvent.click(screen.getByTestId('doc-tree-folder-1'))
+        await waitFor(() => expect(screen.getByTestId('doc-tree-doc-2')).toBeVisible())
+
+        fireEvent.click(screen.getByTestId('doc-tree-more-2'))
+        fireEvent.click(await screen.findByText('取消置顶'))
+
+        await waitFor(() => expect(unpinCalls).toBe(1))
+    })
+})
 })

@@ -30,6 +30,8 @@ export interface DocumentItem {
   updated_by_id: number | null
   tag_ids: number[]
   version_count: number
+  /** 当前用户的个人置顶（非文档属性，按用户返回） */
+  pinned: boolean
 }
 
 export interface DocumentDetail extends DocumentItem {
@@ -296,6 +298,13 @@ export const documentsApi = {
     api
       .get<Blob>(`${base(wid)}/${docId}/export`, { params: { format }, responseType: 'blob' })
       .then(r => r.data),
+
+  // 个人置顶（仅影响当前用户的树/列表顺序）
+  pinDocument: (wid: number | string, docId: number | string) =>
+    api.post<{ document_id: number; pinned: boolean }>(`${base(wid)}/${docId}/pin`).then(r => r.data),
+
+  unpinDocument: (wid: number | string, docId: number | string) =>
+    api.delete(`${base(wid)}/${docId}/pin`).then(r => r.data),
 
   updateMeta: (wid: number | string, docId: number | string, data: Record<string, unknown>) =>
     api.patch<DocumentItem>(`${base(wid)}/${docId}`, data).then(r => r.data),
