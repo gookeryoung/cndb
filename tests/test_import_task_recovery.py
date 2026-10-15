@@ -144,3 +144,70 @@ class TestStallDetectionOnRead:
         assert body["status"] == "running"
         assert body["progress"] == 5
         assert body["stalled_seconds"] < STALL_THRESHOLD_SECONDS
+
+
+class TestExecuteSubStepProgress:
+    """执行阶段必须给出子步骤进度：卡住时能看出卡在解析/校验/写入/选项同步哪一步.
+
+    旧实现 execute 只在开始时写一次 progress=5，之后直到结束才有变化 —— 任何子步骤卡住，
+    用户看到的都是"5% 无报错"，既无法判断还要不要等，也无法定位。
+    """
+
+    def test_progress_cb_writes_task_progress(self, client, auth_headers, db, table_id, monkeypatch):
+        from cndb.plugins.tables.models import ImportTask
+        from cndb.plugins.tables.services.importing import import_tasks
+        from cndb.plugins.tables.services.importing.importer import Importer
+
+        task = _make_task(db, table_id, status="pending_confirm", progress=95, validation_report="{}")
+        captured: dict[str, int] = {}
+
+        def fake_execute(self, *args, **kwargs):
+            cb = kwargs.get("progress_cb")
+            assert cb is not None, "execute 必须收到 progress_cb（否则执行阶段无法显示子步骤）"
+            cb(45, "准备写入")
+            # 回调内部会 commit，这里换一个查询视图确认真的落库了
+            db.expire_all()
+            captured["progress_in_db"] = int(db.get(ImportTask, task.id).progress)
+
+            class _Result:
+                imported_ids: list[int] = []
+                report: dict = {}
+
+            return _Result()
+
+        monkeypatch.setattr(Importer, "execute", fake_execute, raising=True)
+
+        import_tasks.execute_import_task(db, task.id)
+        db.refresh(task)
+
+        assert captured.get("progress_in_db") == 45, "子步骤进度应写进任务行"
+        assert task.status == "done"
+        assert task.progress == 100
+
+    def test_slow_sub_step_is_visible(self, client, auth_headers, db, table_id, monkeypatch):
+        """子步骤耗时（模拟卡住）时，任务行停在对应百分比而不是笼统的 5%."""
+        import time as _time
+
+        from cndb.plugins.tables.models import ImportTask
+        from cndb.plugins.tables.services.importing import import_tasks
+        from cndb.plugins.tables.services.importing.importer import Importer
+
+        task = _make_task(db, table_id, status="pending_confirm", progress=95, validation_report="{}")
+        observed: list[int] = []
+
+        def fake_execute(self, *args, **kwargs):
+            kwargs["progress_cb"](60, "写入数据")
+            db.expire_all()
+            observed.append(int(db.get(ImportTask, task.id).progress))
+            _time.sleep(0.05)
+
+            class _Result:
+                imported_ids: list[int] = []
+                report: dict = {}
+
+            return _Result()
+
+        monkeypatch.setattr(Importer, "execute", fake_execute, raising=True)
+        import_tasks.execute_import_task(db, task.id)
+
+        assert observed == [60]

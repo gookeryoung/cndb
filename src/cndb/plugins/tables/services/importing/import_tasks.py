@@ -277,6 +277,14 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
             from cndb.plugins.tables.services.importing.importer import Importer
 
             importer = Importer(engine, db_session, table)
+
+            def _on_progress(percent: int, stage: str) -> None:
+                # 子步骤进度落库：卡住时能直接看出卡在解析/校验/写入/选项同步哪一步，
+                # 而不是永远只有一个 5%。
+                task.progress = percent
+                db_session.commit()
+                logger.info("[ImportTask %s] 执行子步骤 %d%%：%s", task_id, percent, stage)
+
             result = run_with_stage_timeout(
                 lambda: importer.execute(
                     raw,
@@ -285,6 +293,7 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
                     unknown_cols_strategy=task.unknown_cols_strategy or "drop",
                     dropped_columns=list(task.dropped_columns) if task.dropped_columns else None,
                     cleaning_actions=list(task.cleaning_actions) if task.cleaning_actions else None,
+                    progress_cb=_on_progress,
                 ),
                 stage="执行",
             )
