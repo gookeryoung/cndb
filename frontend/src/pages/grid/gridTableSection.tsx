@@ -27,6 +27,8 @@ export interface GridDisplaySettings {
 interface GridTableSectionProps {
   tableRef: React.RefObject<TableScrollTarget | null>
   columns: TableProps<RowResponse>['columns']
+  /** 窄屏表格模式：固定选择列与首个数据列，并关闭虚拟滚动改用原生滚动（触摸可滑） */
+  mobileLayout?: boolean
   settings: GridDisplaySettings
   isLoading: boolean
   rows: RowResponse[]
@@ -65,7 +67,7 @@ export default function GridTableSection({
   newRowActive, newRowPosition, canEditRecords,
   selectedRowKeys, onSelectionChange, onAddRow, onRowDoubleClick, onSort,
   onColumnResize, onColumnOrderMove, onColumnResetWidth,
-  gridAreaSize, offset, limit, onPageChange, prefetchNext, pdfExporting,
+  gridAreaSize, offset, limit, onPageChange, prefetchNext, pdfExporting, mobileLayout,
 }: GridTableSectionProps) {
   // resize 拖拽中的实时预览宽度（key 为列 key）；拖拽结束清空、宽度交由视图持久化
   const [previewWidths, setPreviewWidths] = useState<Record<string, number>>({})
@@ -214,10 +216,12 @@ export default function GridTableSection({
         })()}
         style={{ flex: 1, minHeight: 0 }}
         rowClassName={(record) => (isNewRow(record.id) ? 'cn-table-row-new' : '')}
-        rowSelection={{ selectedRowKeys, onChange: onSelectionChange, columnWidth: 40 }}
+        rowSelection={{ selectedRowKeys, onChange: onSelectionChange, columnWidth: 40, fixed: mobileLayout }}
         pagination={false}
         scroll={pdfExporting ? { x: scrollX } : { x: scrollX, y: Math.max(gridAreaSize.height - 140, 200) }}
-        virtual={!pdfExporting}
+        // 窄屏关闭虚拟滚动：rc-virtual-list 的横向滚动靠自绘细滚动条驱动（overflow 为 hidden），
+        // 触摸设备既不能原生横滑、也几乎点不中滚动条；改用原生滚动容器后可正常触摸横滑
+        virtual={!pdfExporting && !mobileLayout}
         onChange={(_pag, _fil, _sorter, extra) => {
           // 排序已由 onHeaderCell 受控三态循环处理（见 sortableColumns），
           // 这里忽略 sort 动作；仅防分页/筛选变化触发无效处理

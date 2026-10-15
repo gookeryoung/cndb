@@ -76,6 +76,8 @@ export interface ColumnOptions {
   onColumnResize?: (fieldId: string, width: number) => void
   /** 拖拽列 A 落到列 B 时回调；目标为操作列时由 GridTableSection 屏蔽 */
   onColumnOrderMove?: (fieldId: string, targetFieldId: string) => void
+  /** 窄屏网格横向滚动时固定首个数据列，保证滚动中仍能识别当前行 */
+  pinFirstColumn?: boolean
 }
 
 /** 按视图级 field_order 重排字段顺序.
@@ -286,6 +288,11 @@ export function buildColumns(
         )
       },
     })
+  }
+
+  // 窄屏：固定首个数据列，横向滚动时不丢行标识（列宽与 scrollX 计算不受影响）
+  if (options?.pinFirstColumn && cols.length > 0) {
+    cols[0] = { ...cols[0], fixed: 'left' }
   }
 
   return cols

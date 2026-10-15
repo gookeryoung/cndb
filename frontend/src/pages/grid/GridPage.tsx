@@ -39,6 +39,7 @@ import { defaultValueForNewRow } from './cells/fieldOps'
 import { type ViewMode, VALID_MODES, deriveModeSwitch } from './views/viewModes'
 import { useTableSettingsStore, useGridViewStore, useUiStore } from '@/store'
 import { useElementSize, useDebouncedCallback } from '@/hooks'
+import { useResponsive } from '@/hooks/useResponsive'
 import GridToolbar from './gridToolbar'
 import GridViewBar from './gridViewBar'
 import GridTableSection, { NEW_ROW_KEY } from './gridTableSection'
@@ -150,6 +151,8 @@ export default function GridPage() {
   // —— 视图状态从 GridViewStore 订阅 ——
   const mode = useGridViewStore(s => s.mode)
   const setMode = useGridViewStore(s => s.setMode)
+  // 窄屏：网格需要横向滚动，固定首列（含选择列）才能在滚动中保持行标识
+  const { isMobile } = useResponsive()
   const activeViewId = useGridViewStore(s => s.activeViewId)
   const setActiveViewId = useGridViewStore(s => s.setActiveViewId)
   const viewFilters = useGridViewStore(s => s.viewFilters)
@@ -962,8 +965,9 @@ export default function GridPage() {
     _onFilterReset,
     _onCellSave,
     inlineOps,
-    { columnWidths, fieldOrder, hiddenFieldIds },
-  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder, hiddenFieldIds])
+    // 窄屏固定首列：网格需要横向滚动，固定首列才能在滚动中保持行标识
+    { columnWidths, fieldOrder, hiddenFieldIds, pinFirstColumn: isMobile },
+  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder, hiddenFieldIds, isMobile])
 
   // 选中行聚合：过滤与计算收敛到同一个 useMemo。
   // 旧实现的 numericFields / selectedRows 每次渲染都是新数组，使本 memo 依赖恒变、缓存完全失效。
@@ -1062,6 +1066,7 @@ export default function GridPage() {
           <GridTableSection
             tableRef={tableRef}
             columns={columns}
+            mobileLayout={isMobile}
             settings={{ density }}
             isLoading={rowsFetching}
             pdfExporting={pdfExporting}

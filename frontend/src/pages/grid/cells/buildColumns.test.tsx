@@ -231,4 +231,37 @@ describe('buildColumns 列构建', () => {
       expect(screen.queryByTestId('header-flag-引用')).toBeNull()
     })
   })
+
+describe('buildColumns 窄屏固定首列', () => {
+  it('pinFirstColumn 时首个数据列 fixed=left，其余列不受影响', () => {
+    const cols = buildColumns(
+      FIELDS, 10, [], [], () => { }, () => { }, undefined, undefined,
+      { pinFirstColumn: true },
+    )
+    expect(cols[0]?.fixed).toBe('left')
+    expect(cols[1]?.fixed).toBeUndefined()
+  })
+
+  it('默认（桌面）不加 fixed，避免无谓的粘性列层叠', () => {
+    const cols = buildColumns(FIELDS, 10, [], [], () => { }, () => { }, undefined, undefined, {})
+    expect(cols[0]?.fixed).toBeUndefined()
+  })
+
+  it('pinFirstColumn 与行内编辑操作列共存时，仅首个数据列固定', () => {
+    const inlineOps = {
+      getInlineEdit: () => null,
+      onSave: async () => { },
+      onCancel: () => { },
+      onEdit: () => { },
+      isPendingRow: () => false,
+    } as unknown as RowInlineOps
+    const cols = buildColumns(
+      FIELDS, 10, [], [], () => { }, () => { }, undefined, inlineOps,
+      { pinFirstColumn: true },
+    )
+    expect(cols[0]?.fixed).toBe('left')
+    expect(cols[cols.length - 1]?.key).toBe('__row_ops__')
+    expect(cols[cols.length - 1]?.fixed).toBeUndefined()
+  })
+})
 })
