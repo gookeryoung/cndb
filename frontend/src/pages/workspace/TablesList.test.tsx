@@ -478,3 +478,38 @@ describe('TablesList 窄屏卡片列表', () => {
   })
 })
 })
+
+describe('表列表受限标记', () => {
+    it('对普通成员受限的表显示「受限」，开放表不显示', async () => {
+        const base = {
+            workspace_id: 10,
+            db_table_name: 't_x',
+            order: 0,
+            trashed: false,
+            trashed_at: null,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+            field_count: 1,
+            record_count: 0,
+            view_count: 1,
+            member_count: 1,
+            owner: { id: 1, username: 'owner' },
+            my_access: 'read' as const,
+        }
+        server.use(
+            http.get('/api/v1/workspaces/10/tables', () =>
+                HttpResponse.json([
+                    { ...base, id: 41, name: '开放表', read_role: '', is_restricted: false },
+                    { ...base, id: 42, name: '受限表', read_role: 'owner', is_restricted: true },
+                ])),
+        )
+
+        renderPage()
+
+        expect(await screen.findByTestId('table-restricted-42')).toBeInTheDocument()
+        expect(screen.queryByTestId('table-restricted-41')).toBeNull()
+        // 悬浮说明"为什么别人找不到这张表"
+        fireEvent.mouseEnter(screen.getByTestId('table-restricted-42'))
+        expect(await screen.findByText(/读取门槛：所有者及以上；普通成员不可见/)).toBeInTheDocument()
+    })
+})
