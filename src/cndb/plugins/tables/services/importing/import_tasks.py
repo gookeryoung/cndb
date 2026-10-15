@@ -15,7 +15,8 @@ import io
 import json
 import logging
 import threading
-from typing import Any, cast
+from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -58,6 +59,39 @@ def _transition_status(task: ImportTask, new_status: str) -> None:
     task.status = new_status
 
 
+def run_with_stage_timeout[T](fn: Callable[[], T], *, stage: str, timeout_seconds: int | None = None) -> T:
+    """在独立线程中执行某阶段，超时抛 ``TimeoutError``（把静默卡死变成明确失败）.
+
+    为什么需要：历史上 WPS 导出的 XLSX 会被解析层拖住（已在解析层修复），
+    但**任何**解析/校验异常都可能表现为"进度停在 5%、无报错" —— 用户无法区分
+    "还在跑"与"已经死了"。这里给出上界：超过 ``IMPORT_TASK_TIMEOUT_SECONDS`` 即失败并说明原因。
+
+    - 超时后线程仍在后台运行（Python 无法强杀线程），但任务已判定失败；
+      该线程后续若再改状态会被 ``_transition_status`` 的合法迁移校验挡住。
+    - 因此这里 ``shutdown(wait=False)``，不阻塞调用方。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FutureTimeoutError
+
+    if timeout_seconds is None:
+        from cndb.core.config import settings
+
+        timeout_seconds = int(settings.IMPORT_TASK_TIMEOUT_SECONDS)
+
+    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"import-{stage}")
+    future = pool.submit(fn)
+    try:
+        return future.result(timeout=timeout_seconds)
+    except FutureTimeoutError as exc:
+        raise TimeoutError(
+            f"导入{stage}阶段超过 {timeout_seconds} 秒仍未完成，已判定失败。"
+            "常见原因是文件范围异常（如 WPS/Excel 写入的整列样式）或图片过多；"
+            "请用 WPS/Excel 打开后「另存为」一份干净副本，或只保留所需行列后重试。"
+        ) from exc
+    finally:
+        pool.shutdown(wait=False)
+
+
 def _decode_content(task: ImportTask) -> bytes | str:
     """根据 ImportTask.format 解码 file_content."""
     if task.format == "xlsx":
@@ -98,11 +132,14 @@ def analyze_import_task(db_session: Session, task_id: int) -> None:
         engine = db_session.get_bind()
 
         imp = Importer(engine, db_session, table)
-        analysis = imp.analyze(
-            raw,
-            task.format,
-            match_keys=list(task.match_keys) if task.match_keys else None,
-            unknown_cols_strategy=task.unknown_cols_strategy or "drop",
+        analysis = run_with_stage_timeout(
+            lambda: imp.analyze(
+                raw,
+                task.format,
+                match_keys=list(task.match_keys) if task.match_keys else None,
+                unknown_cols_strategy=task.unknown_cols_strategy or "drop",
+            ),
+            stage="校验",
         )
 
         task.total_rows = len(analysis.results)
@@ -167,22 +204,27 @@ def _parse_to_rows(
                         file_columns.append(k)
         return [r for r in data if isinstance(r, dict)], file_columns, len(data)
     if fmt == "xlsx":
-        from openpyxl import load_workbook
-        from openpyxl.worksheet.worksheet import Worksheet
+        from cndb.plugins.tables.services.transfer.xlsx_rows import read_xlsx_rows
 
-        buf = __import__("io").BytesIO(raw if isinstance(raw, bytes) else raw.encode())
-        wb = load_workbook(buf)
-        ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
-        all_rows = list(ws.iter_rows(values_only=True))
-        if not all_rows:
+        # 有界流式读取（同 importer）：WPS 文件常声明百万行仅样式范围，全量物化会卡死
+        rows: list[dict[str, Any]] = []
+        file_columns: list[str] = []
+        has_rows = False
+        for _sheet_row, r in read_xlsx_rows(raw):
+            has_rows = True
+            if not file_columns:
+                file_columns = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(r)]
+                continue
+            # 与旧实现（openpyxl 补齐到最大列宽）一致：更宽的行补 col_{i} 列名
+            if len(r) > len(file_columns):
+                file_columns = [
+                    *file_columns,
+                    *[f"col_{i}" for i in range(len(file_columns), len(r))],
+                ]
+            # 长数字保护：对每个单元格值做精度保护转换
+            rows.append({k: transfer._coerce_long_numeric_to_text(v) for k, v in zip(file_columns, r, strict=False)})
+        if not has_rows:
             return [], [], 0
-        file_columns = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(all_rows[0])]
-        # 长数字保护：对每个单元格值做精度保护转换
-        rows = [
-            {k: transfer._coerce_long_numeric_to_text(v) for k, v in zip(file_columns, r, strict=False)}
-            for r in all_rows[1:]
-            if any(c is not None for c in r)
-        ]
         return rows, file_columns, len(rows)
     raise ValueError(f"不支持的格式: {fmt}")
 
@@ -225,13 +267,16 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
             from cndb.plugins.tables.services.importing.importer import Importer
 
             importer = Importer(engine, db_session, table)
-            result = importer.execute(
-                raw,
-                task.format,
-                match_keys=list(task.match_keys) if task.match_keys else None,
-                unknown_cols_strategy=task.unknown_cols_strategy or "drop",
-                dropped_columns=list(task.dropped_columns) if task.dropped_columns else None,
-                cleaning_actions=list(task.cleaning_actions) if task.cleaning_actions else None,
+            result = run_with_stage_timeout(
+                lambda: importer.execute(
+                    raw,
+                    task.format,
+                    match_keys=list(task.match_keys) if task.match_keys else None,
+                    unknown_cols_strategy=task.unknown_cols_strategy or "drop",
+                    dropped_columns=list(task.dropped_columns) if task.dropped_columns else None,
+                    cleaning_actions=list(task.cleaning_actions) if task.cleaning_actions else None,
+                ),
+                stage="执行",
             )
             task.imported_rows = len(result.imported_ids)
             task.result_ids = result.imported_ids

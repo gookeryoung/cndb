@@ -795,24 +795,27 @@ class Importer:
 
     @staticmethod
     def _parse_xlsx(content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
-        from openpyxl import load_workbook
-        from openpyxl.worksheet.worksheet import Worksheet
-
         from cndb.plugins.tables.services.transfer import _check_xlsx_row_overflow, _validate_xlsx_header
+        from cndb.plugins.tables.services.transfer.xlsx_rows import read_xlsx_rows
 
         raw = content if isinstance(content, bytes) else content.encode()
-        wb = load_workbook(io.BytesIO(raw))
-        ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
-        all_rows = list(ws.iter_rows(values_only=True))
-        if not all_rows:
-            return [], []
-        file_columns = [str(c) if c is not None else "" for c in all_rows[0]]
-        # 表头空列名/重复列名与行溢出明确报错（与 transfer XLSX 守卫同语义）
-        _validate_xlsx_header(file_columns)
+        # 有界流式读取：WPS 导出的文件常声明到 1048576 行（仅样式），
+        # 旧写法 list(iter_rows()) 会把百万空行物化 → 进度卡 5% 且无报错（甚至 OOM）。
+        stream = read_xlsx_rows(raw)
+        header_row: tuple[Any, ...] | None = None
+        file_columns: list[str] = []
         rows: list[dict[str, Any]] = []
-        for sheet_row, r in enumerate(all_rows[1:], start=2):
-            if not any(c is not None for c in r):
+        for sheet_row, r in stream:
+            if header_row is None:
+                header_row = r
+                file_columns = [str(c) if c is not None else "" for c in r]
+                # 表头空列名/重复列名明确报错（与 transfer XLSX 守卫同语义）
+                _validate_xlsx_header(file_columns)
                 continue
+            # 与旧实现一致：更宽的数据行会让表头出现"缺失列" → 空列名守卫报错
+            if len(r) > len(file_columns):
+                file_columns = [*file_columns, *([""] * (len(r) - len(file_columns)))]
+                _validate_xlsx_header(file_columns)
             _check_xlsx_row_overflow(r, sheet_row, len(file_columns))
             # 长数字保护：对每个单元格值做精度保护转换
             rows.append({k: _coerce_long_numeric_to_text(v) for k, v in zip(file_columns, r, strict=False)})

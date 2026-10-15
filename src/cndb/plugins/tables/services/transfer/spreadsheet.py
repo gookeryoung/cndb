@@ -7,7 +7,7 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any
 
 from cndb.plugins.tables.services.transfer.normalize import _coerce_long_numeric_to_text
 
@@ -303,24 +303,25 @@ def _parse_xlsx_bytes(
     ``xl/cellimages.xml`` 映射取出图片，经 image_saver（默认 ephemeral，
     不落盘）解析为 ``[图片元数据 dict]``；解析失败置 None。
     """
-    from openpyxl import load_workbook
-    from openpyxl.worksheet.worksheet import Worksheet
-
     from cndb.plugins.tables.services.transfer.wps_images import make_displimg_resolver, match_displimg_formula
+    from cndb.plugins.tables.services.transfer.xlsx_rows import read_xlsx_rows
 
     resolve_image = make_displimg_resolver(xlsx_bytes, image_saver)
 
-    wb = load_workbook(io.BytesIO(xlsx_bytes))
-    ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
-    all_rows = list(ws.iter_rows(values_only=True))
-    if not all_rows:
-        return [], []
-    file_columns = [str(c) if c is not None else "" for c in all_rows[0]]
-    _validate_xlsx_header(file_columns)
+    # 有界流式读取：WPS 导出文件常声明到 1048576 行（仅样式），全量物化会卡死（历史线上问题）
+    file_columns: list[str] = []
     rows: list[dict[str, Any]] = []
-    for sheet_row, r in enumerate(all_rows[1:], start=2):
-        if not any(c is not None for c in r):
+    has_rows = False
+    for sheet_row, r in read_xlsx_rows(xlsx_bytes):
+        has_rows = True
+        if not file_columns:
+            file_columns = [str(c) if c is not None else "" for c in r]
+            _validate_xlsx_header(file_columns)
             continue
+        # 与旧实现（openpyxl 补齐到最大列宽）一致：更宽的行 → 表头出现空列名并报错
+        if len(r) > len(file_columns):
+            file_columns = [*file_columns, *([""] * (len(r) - len(file_columns)))]
+            _validate_xlsx_header(file_columns)
         _check_xlsx_row_overflow(r, sheet_row, len(file_columns))
         row_dict: dict[str, Any] = {}
         for i, key in enumerate(file_columns):
@@ -336,4 +337,6 @@ def _parse_xlsx_bytes(
                 # 长数字保护：避免 Excel 数值精度经 JSON/JS 链路进一步丢失
                 row_dict[key] = _coerce_long_numeric_to_text(v)
         rows.append(row_dict)
+    if not has_rows:
+        return [], []
     return rows, file_columns
