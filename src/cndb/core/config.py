@@ -153,6 +153,14 @@ class Settings(BaseSettings):
         "http://localhost:8000",
     ]
 
+    # 观测（core/observability.py）：
+    # - ACCESS_LOG_ENABLED：是否记录每请求访问日志（慢请求无论开关都会记录）
+    # - SLOW_REQUEST_MS：超过该耗时的请求按 WARNING 记录并标注 slow=true
+    # - SLOW_QUERY_MS：超过该耗时的 SQL 按 WARNING 记录（只记语句，不记参数）
+    ACCESS_LOG_ENABLED: bool = True
+    SLOW_REQUEST_MS: int = 500
+    SLOW_QUERY_MS: int = 200
+
     # API 前缀
     API_V1_PREFIX: str = "/api/v1"
 

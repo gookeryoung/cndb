@@ -29,6 +29,7 @@ from fastapi_offline import FastAPIOffline
 from cndb.core.config import settings
 from cndb.core.errors import CndbError
 from cndb.core.migrations import ensure_db_migrated
+from cndb.core.observability import RequestObservabilityMiddleware, configure_logging
 from cndb.core.plugin_registry import plugin_registry
 from cndb.core.system_api import register_system_routes
 from cndb.plugins.documents.routers.public import router as documents_public_router
@@ -251,3 +252,14 @@ if _SPA_READY:  # pragma: no cover - 需要前端构建产物
                 headers={"Cache-Control": "no-cache, must-revalidate"},
             )
         return response
+
+
+# 请求观测中间件：最后注册 = 最外层，统计包含 CORS / GZip 在内的端到端耗时
+# 日志级别/处理器：项目原先无 logging 配置，INFO 级访问日志不会输出（详见 observability 文档）
+configure_logging()
+
+app.add_middleware(
+    RequestObservabilityMiddleware,
+    slow_ms=settings.SLOW_REQUEST_MS,
+    access_log=settings.ACCESS_LOG_ENABLED,
+)
