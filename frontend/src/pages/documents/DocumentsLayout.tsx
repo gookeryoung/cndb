@@ -34,8 +34,8 @@ export default function DocumentsLayout() {
         </aside>
       )}
 
-      {/* 右栏内容 */}
-      <div style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+      {/* 右栏内容 —— 窄屏底部留出悬浮「文档树」按钮的高度，避免末行被按钮遮挡 */}
+      <div style={{ flex: 1, minWidth: 0, overflow: 'auto', paddingBottom: isMobile ? 72 : 0 }}>
         <Outlet />
       </div>
 

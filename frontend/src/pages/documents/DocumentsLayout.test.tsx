@@ -82,4 +82,15 @@ describe('DocumentsLayout 移动端', () => {
             expect(document.querySelector('.ant-drawer-open')).toBeNull()
         })
     })
+
+    it('窄屏内容区底部留出 72px，避免悬浮「文档树」按钮遮挡末行', () => {
+        renderLayout()
+
+        const content = screen.getByTestId('doc-content-stub').parentElement as HTMLElement
+        expect(content.style.paddingBottom).toBe('72px')
+        const fab = screen.getByTestId('doc-tree-fab')
+        expect(fab).toBeVisible()
+        // 按钮为 fixed 定位，靠内容区底部内边距避让
+        expect(getComputedStyle(fab).position).toBe('fixed')
+    })
 })
