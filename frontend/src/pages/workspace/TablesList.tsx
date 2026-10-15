@@ -27,6 +27,13 @@ import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 
 const ApiImportDialog = lazy(() => import('@/pages/import-export/ApiImportDialog'))
+
+/** 表级读取门槛的角色文案（用于「受限」提示） */
+const READ_ROLE_LABEL: Record<string, string> = {
+  viewer: '普通成员',
+  editor: '编辑者',
+  owner: '所有者',
+}
 const FileImportPreview = lazy(() => import('@/pages/import-export/FileImportPreview'))
 
 const { Title, Text } = Typography
@@ -265,10 +272,26 @@ export default function TablesList() {
       dataIndex: 'name',
       key: 'name',
       render: (name: string, record: TableSummary) => (
-        <a onClick={() => navigate(`/w/${wid}/tables/${record.id}`)} style={{ fontWeight: 500 }}>
-          <TableOutlined style={{ marginRight: 8, color: '#3b82f6' }} />
-          {name}
-        </a>
+        <span>
+          <a onClick={() => navigate(`/w/${wid}/tables/${record.id}`)} style={{ fontWeight: 500 }}>
+            <TableOutlined style={{ marginRight: 8, color: '#3b82f6' }} />
+            {name}
+          </a>
+          {/* 受限提示：普通成员看不到这张表；能让管理员知道"为什么别人说找不到" */}
+          {record.is_restricted && (
+            <Tooltip
+              title={`读取门槛：${READ_ROLE_LABEL[record.read_role ?? ''] ?? record.read_role ?? '自定义'}及以上；普通成员不可见`}
+            >
+              <Tag
+                color="orange"
+                data-testid={`table-restricted-${record.id}`}
+                style={{ marginLeft: 8, fontSize: 11, lineHeight: '16px' }}
+              >
+                受限
+              </Tag>
+            </Tooltip>
+          )}
+        </span>
       ),
     },
     {

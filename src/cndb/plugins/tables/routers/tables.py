@@ -56,6 +56,8 @@ def _fill_table_stats(
     owner_map: dict[int, User] | None = None,
     member_count_map: dict[int, int] | None = None,
     my_member_map: dict[int, TableMember] | None = None,
+    read_role: str = "",
+    can_read: bool = True,
 ) -> TableResponse:
     """为单张表填充统计 + 数据表目录字段."""
     field_count = (
@@ -98,18 +100,39 @@ def _fill_table_stats(
             or 0
         )
 
-    # my_access
+    # 表级读取门槛 + 是否对普通成员受限（供前端提示「普通成员不可读」）
+    base.read_role = read_role or ""
+    base.is_restricted = _read_role_restricts_viewers(base.read_role)
+
+    # my_access：反映**有效**权限。此前非 owner 且无 TableMember 记录时恒为 "none"，
+    # 与「工作区角色默认可读」的实际行为不符，前端会误显示为无权限。
     if current_user is not None:
         if table.owner_id == current_user.id:
             base.my_access = "owner"
         elif my_member_map is not None and table.id in my_member_map:
             base.my_access = my_member_map[table.id].role  # "read" | "write"
+        elif can_read:
+            base.my_access = "read"
         else:
             base.my_access = "none"
     else:
         base.my_access = None
 
     return base
+
+
+def _read_role_restricts_viewers(read_role: str) -> bool:
+    """读取门槛高于 viewer 时普通成员读不到该表 → 对能看到该表的用户标注「受限」."""
+    from cndb.plugins.workspaces.models import ROLE_RANK, WorkspaceRole
+
+    value = (read_role or "").strip().lower()
+    if not value:
+        return False
+    try:
+        required = WorkspaceRole(value)
+    except ValueError:
+        return True  # 非法配置实际表现为拒绝，按「受限」提示
+    return ROLE_RANK[required] > ROLE_RANK[WorkspaceRole.VIEWER]
 
 
 @router.post("", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
@@ -239,11 +262,12 @@ def _list_tables_uncached(
     # 权限：列表只展示当前用户**能读**的表。
     # 此前列表返回工作区全部表（仅按 trashed 过滤），而详情/记录接口按 TableAction.READ 拦截，
     # 二者不一致 → 无权限用户仍能看到表的名称/描述/成员数（可见性泄露）。
-    # 判定成本：列表通常几十张表，逐张 check_action 会各查一次 TableMember/TablePermission；
-    # 这里用一次性批量查询把"成员角色"与"权限记录"预取出来，避免 N+1。
-    from cndb.plugins.tables.services.core.access import TableAction, check_action
+    # 判定成本：逐张 check_action 会各产生 ~3 次查询（工作区角色 + TableMember + TablePermission）；
+    # 这里一次性预取（查询数封顶 3 次）后做纯计算判定，语义与 check_action 完全一致。
+    from cndb.plugins.tables.services.core.access import TableAction, preload_table_access
 
-    tables = [t for t in candidates if check_action(db, t, current_user, TableAction.READ)]
+    preload = preload_table_access(db, candidates, current_user)
+    tables = [t for t in candidates if preload.check(db, t, current_user, TableAction.READ)]
 
     # 批量预查 owner / member_count / my_member，避免 N+1
     table_ids = [t.id for t in tables]
@@ -282,6 +306,8 @@ def _list_tables_uncached(
             owner_map=owner_map,
             member_count_map=member_count_map,
             my_member_map=my_member_map,
+            read_role=preload.read_role(t.id),
+            can_read=True,  # 列表已按 READ 过滤，留下的一定可读
         )
         for t in tables
     ]

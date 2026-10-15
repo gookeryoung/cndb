@@ -65,6 +65,10 @@ class TableResponse(BaseModel):
     # 数据表目录相关 —— 由 list_tables 聚合填充
     member_count: int | None = None
     my_access: str | None = None  # "owner" | "write" | "read" | "none"
+    # 表级读取门槛（owner/editor/viewer；空串表示未配置，按工作区角色默认）
+    read_role: str = ""
+    # 是否对普通成员（viewer）受限：read_role 高于 viewer 时为 True（供管理员看「受限」标记）
+    is_restricted: bool = False
 
 
 class ViewBrief(BaseModel):

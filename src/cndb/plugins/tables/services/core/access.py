@@ -78,12 +78,78 @@ def _resolve_member_role_permissions(
     return allowed
 
 
+_MISSING: Any = object()
+
+
+class TableAccessPreload:
+    """批量判定用的预取上下文（避免逐表查 TableMember / TablePermission）.
+
+    列表接口有几十张表，逐张 ``check_action`` 会各产生 ~3 次查询；
+    这里一次性把「当前用户的表成员记录」「各表权限行」取回来，
+    再对每张表做**纯计算**判定，语义与 ``check_action`` 完全一致。
+    """
+
+    def __init__(
+        self,
+        *,
+        member_role: WorkspaceRole | None,
+        members: dict[int, Any],
+        perms: dict[int, Any],
+    ) -> None:
+        self.member_role = member_role
+        self.members = members
+        self.perms = perms
+
+    def check(self, db: Session, table: DataTable, user: User, action: TableAction) -> bool:
+        return check_action(
+            db,
+            table,
+            user,
+            action,
+            self.member_role,
+            member=self.members.get(table.id, None),
+            perm=self.perms.get(table.id, None),
+        )
+
+    def read_role(self, table_id: int) -> str:
+        """该表配置的读取门槛（"" 表示未配置，走默认）。"""
+        perm = self.perms.get(table_id)
+        return str(getattr(perm, "read_role", "") or "") if perm is not None else ""
+
+
+def preload_table_access(db: Session, tables: Sequence[DataTable], user: User) -> TableAccessPreload:
+    """一次查询取回批量判定所需的成员/权限数据."""
+    ids = [t.id for t in tables]
+    member_role: WorkspaceRole | None = None
+    members: dict[int, Any] = {}
+    perms: dict[int, Any] = {}
+    if not ids:
+        return TableAccessPreload(member_role=None, members=members, perms=perms)
+
+    from cndb.plugins.workspaces.models import Workspace
+    from cndb.plugins.workspaces.permissions import get_member_role
+
+    workspace_id = tables[0].workspace_id
+    ws = db.get(Workspace, workspace_id)
+    if ws is not None:
+        member_role = get_member_role(user, ws, db)
+
+    for m in db.query(TableMember).filter(TableMember.table_id.in_(ids), TableMember.user_id == user.id).all():
+        members[int(m.table_id)] = m
+    for perm in db.query(TablePermission).filter(TablePermission.table_id.in_(ids)).all():
+        perms[int(perm.table_id)] = perm
+    return TableAccessPreload(member_role=member_role, members=members, perms=perms)
+
+
 def check_action(
     db: Session,
     table: DataTable,
     user: User,
     action: TableAction,
     member_role: WorkspaceRole | None = None,
+    *,
+    member: Any = _MISSING,
+    perm: Any = _MISSING,
 ) -> bool:
     """判定用户是否可以在该表上执行某动作.
 
@@ -107,7 +173,8 @@ def check_action(
         return True
 
     # ── 3. 表成员授权 ──
-    member = db.query(TableMember).filter(TableMember.table_id == table.id, TableMember.user_id == user.id).first()
+    if member is _MISSING:
+        member = db.query(TableMember).filter(TableMember.table_id == table.id, TableMember.user_id == user.id).first()
     if member is not None:
         allowed = _resolve_member_role_permissions(db, member)
         if allowed is None:
@@ -118,7 +185,8 @@ def check_action(
 
     # ── 4. TablePermission 阈值 ──
     # 按 table_id 查（主键是自增 id，用 db.get(..., table.id) 会取到别的表 → 权限错位）
-    perm = db.query(TablePermission).filter(TablePermission.table_id == table.id).first()
+    if perm is _MISSING:
+        perm = db.query(TablePermission).filter(TablePermission.table_id == table.id).first()
     if perm is not None:
         field_name = _ACTION_PERMISSION_FIELD[action]
         required_role_str = getattr(perm, field_name, "")
@@ -277,6 +345,7 @@ def _get_member_role(db: Session, table: DataTable, user: User) -> WorkspaceRole
 
 
 __all__ = [
+    "TableAccessPreload",
     "TableAction",
     "apply_field_hiding",
     "apply_field_hiding_rows",
@@ -285,5 +354,6 @@ __all__ = [
     "get_hidden_field_names",
     "get_row_scope",
     "get_table_or_404",
+    "preload_table_access",
     "row_filter_conjunction",
 ]

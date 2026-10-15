@@ -18,6 +18,10 @@ export interface TableSummary {
   member_count?: number
   /** 当前用户在该表的访问级别（owner > write > read > none） */
   my_access?: 'owner' | 'write' | 'read' | 'none'
+  /** 表级读取门槛（owner/editor/viewer；空串表示未配置、按工作区角色默认） */
+  read_role?: string
+  /** 是否对普通成员（viewer）受限：read_role 高于 viewer 时为 true */
+  is_restricted?: boolean
 }
 
 /** 表拥有者简要信息 */
