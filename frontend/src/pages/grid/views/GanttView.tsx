@@ -32,6 +32,7 @@ import { fmtDate } from '../cells/dateUtils'
 import type { TimeScale } from './ganttTimeline'
 import { ZOOM_LEVELS, autoAdjustLevel, buildDualTimeline, computeTimeRange, daysBetween, selectZoomLevelForScale } from './ganttTimeline'
 import { densityStyle } from './gantt/ganttDensity'
+import { useResponsive } from '@/hooks/useResponsive'
 import { buildGanttTasks } from './gantt/ganttTasks'
 import { GanttFlatItem, GanttGroup } from './gantt/ganttTypes'
 import { RightBoundaryLine, TodayLine } from './gantt/ganttBars'
@@ -64,7 +65,12 @@ export default function GanttView({
     [view?.view_options],
   )
 
-  const ds = densityStyle(density)
+  const { isMobile } = useResponsive()
+  // 窄屏：左列从 250px 收窄到 140px，把宽度让给真正的时间轴（否则时间轴只剩 ~90px 不可用）
+  const ds = useMemo(() => {
+    const base = densityStyle(density)
+    return isMobile ? { ...base, leftColWidth: Math.min(base.leftColWidth, 140) } : base
+  }, [density, isMobile])
   const defaultScale = (opts.time_scale as TimeScale) || 'month'
   const [scale, setScale] = useState<TimeScale>(defaultScale)
   const [zoomLevel, setZoomLevel] = useState<number | null>(null)
@@ -284,13 +290,15 @@ export default function GanttView({
           padding: '8px 12px',
           display: 'flex',
           alignItems: 'center',
-          gap: 12,
+          // 窄屏一行放不下（标题 + 粒度 + 缩放 + 统计约 570px），换行避免被压成竖排文字
+          flexWrap: isMobile ? 'wrap' : 'nowrap',
+          gap: isMobile ? 8 : 12,
           borderBottom: '1px solid var(--cn-border)',
           background: 'var(--cn-bg-container)',
           flexShrink: 0,
         }}
       >
-        <div style={{ fontWeight: 600, fontSize: ds.headerFontSize + 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ fontWeight: 600, fontSize: ds.headerFontSize + 2, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, whiteSpace: 'nowrap' }}>
           <CalendarOutlined style={{ color: 'var(--cn-brand-color)' }} />
           甘特图视图
         </div>
@@ -351,7 +359,7 @@ export default function GanttView({
           />
         </div>
 
-        <div style={{ marginLeft: 'auto', fontSize: ds.headerFontSize, color: 'var(--cn-text-muted)' }}>
+        <div style={{ marginLeft: 'auto', fontSize: ds.headerFontSize, color: 'var(--cn-text-muted)', whiteSpace: 'nowrap' }}>
           共 {tasks.length} 个任务 · {groupedTasks.length} 个分组
         </div>
       </div>

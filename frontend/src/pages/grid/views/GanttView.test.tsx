@@ -12,6 +12,17 @@ import GanttView from './GanttView'
 import { renderProviders } from '@/test/render-providers'
 import { makeField } from '@/test/fixtures'
 import type { Field, RowResponse, View } from '@/api'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，窄屏用例在其内部切换
+let responsiveState: ResponsiveState = {
+    deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+    width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+    const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+    return { ...actual, useResponsive: () => responsiveState }
+})
 
 const FIELDS: Field[] = [
     makeField({ id: 1, name: '名称', field_type: 'text' }),
@@ -362,5 +373,64 @@ describe('GanttView 甘特图视图', () => {
         currentLabels.forEach(lbl => {
             expect(lbl).toHaveStyle({ position: 'absolute' })
         })
+    })
+})
+
+describe('GanttView 窄屏适配', () => {
+    beforeEach(() => {
+        vi.stubGlobal(
+            'ResizeObserver',
+            class {
+                constructor(private readonly cb: ResizeObserverCallback) { }
+                observe = (el: Element) => {
+                    this.cb(
+                        [
+                            { target: el, borderBoxSize: [{ inlineSize: 390, blockSize: 600 }] },
+                        ] as unknown as ResizeObserverEntry[],
+                        this as unknown as ResizeObserver,
+                    )
+                }
+                unobserve = () => { }
+                disconnect = () => { }
+            },
+        )
+    })
+
+    afterEach(() => {
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
+    })
+
+    it('窄屏下工具栏换行且标题/统计不换行成竖排，左列收窄到 140px', () => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 390, height: 844,
+        }
+        const { container } = renderGantt()
+
+        // 工具栏（第一个 flex 行）允许换行
+        const toolbar = container.querySelector('[data-testid="gantt-view"] > div') as HTMLElement
+        expect(toolbar.style.flexWrap).toBe('wrap')
+        // 标题与统计各自 nowrap，不再被压成一字一行
+        expect(container.textContent).toContain('甘特图视图')
+        const stats = Array.from(toolbar.querySelectorAll('div')).find(el => (el.textContent ?? '').startsWith('共 '))
+        expect(stats).toBeTruthy()
+        expect((stats as HTMLElement).style.whiteSpace).toBe('nowrap')
+        // 左列收窄：把宽度让给时间轴
+        const leftColumn = container.querySelector('[data-testid="gantt-left-column"]') as HTMLElement | null
+            ?? Array.from(container.querySelectorAll('div')).find(el => el.style.width === '140px') as HTMLElement | undefined
+        expect(leftColumn).toBeTruthy()
+        expect((leftColumn as HTMLElement).style.width).toBe('140px')
+    })
+
+    it('桌面端工具栏不换行、左列保持 250px', () => {
+        const { container } = renderGantt()
+
+        const toolbar = container.querySelector('[data-testid="gantt-view"] > div') as HTMLElement
+        expect(toolbar.style.flexWrap).toBe('nowrap')
+        const leftColumn = Array.from(container.querySelectorAll('div')).find(el => el.style.width === '250px')
+        expect(leftColumn).toBeTruthy()
     })
 })
