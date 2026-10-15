@@ -94,10 +94,35 @@ def resolve_write_mode(db: Session, workspace_id: int, user: User) -> str:
 # ── 查询 ──────────────────────────────────────────────
 
 
-def get_request_or_404(db: Session, workspace_id: int, request_id: int) -> DocumentChangeRequest:
+from cndb.plugins.documents.services import visibility as visibility_service  # noqa: E402
+
+
+def _visible_document_or_404(db: Session, workspace_id: int, doc_id: int, user: User | None, **kwargs: Any) -> Any:
+    """按文档可见性取文档（不可见 → 404，不泄露存在性）.
+
+    修改申请携带**待审正文**与 DIFF，读取凭据必须与文档本身一致：
+    看不见草稿的人不应仅凭"是工作区成员"就读到它的修改申请。
+    """
+    from cndb.plugins.documents.services import visibility
+
+    return visibility.get_visible_document_or_404(db, workspace_id, doc_id, user, **kwargs)
+
+
+def get_request_or_404(
+    db: Session,
+    workspace_id: int,
+    request_id: int,
+    user: User | None = None,
+) -> DocumentChangeRequest:
     cr = db.get(DocumentChangeRequest, request_id)
     if cr is None or cr.workspace_id != workspace_id:
         raise NotFoundError("修改申请不存在")
+    if user is not None:
+        # 注意用"任意状态"取文档：文档可能已在回收站，此时仍应允许可见者读到申请
+        # （merge/close 会给出"请先恢复文档"的业务提示），不可见者一律 404。
+        doc = content_service.get_document_any_state_or_404(db, workspace_id, cr.document_id)
+        if not visibility_service.can_view_document(db, doc, user):
+            raise NotFoundError("修改申请不存在")
     return cr
 
 
@@ -184,9 +209,19 @@ def list_requests(
     if scope not in SCOPES:
         raise BadRequestError(f"不支持的 scope: {scope}，可选 {'/'.join(SCOPES)}")
 
+    from cndb.plugins.documents.services import visibility
+
     stmt = select(DocumentChangeRequest).where(DocumentChangeRequest.workspace_id == workspace_id)
     if document_id is not None:
+        # 指定文档：仍受可见性约束 —— 不可见与不存在的文档一样返回空列表
+        # （不抛 404，保持列表接口「0 条匹配」的既有语义，同时不泄露他人草稿的存在）
         stmt = stmt.where(DocumentChangeRequest.document_id == document_id)
+    # 只列出「我能看见的文档」的申请（指定 document_id 时同样生效）
+    stmt = stmt.where(
+        DocumentChangeRequest.document_id.in_(
+            select(Document.id).where(visibility.visible_condition(db, workspace_id, user))
+        )
+    )
     if scope == "mine":
         stmt = stmt.where(DocumentChangeRequest.submitted_by_id == user.id)
     elif scope in (DCR_STATUS_OPEN, DCR_STATUS_MERGED, DCR_STATUS_CLOSED):
@@ -218,7 +253,7 @@ def create_request(
         base_version_number: 提交者编辑所基于的版本号；缺省取服务端当前最新版本。
     """
     _require_member(db, workspace_id, user)
-    doc = content_service.get_document_or_404(db, workspace_id, doc_id)
+    doc = _visible_document_or_404(db, workspace_id, doc_id, user)
     if doc.is_folder:
         raise ConflictError("文件夹没有内容")
 
@@ -260,11 +295,14 @@ def merge_request(
         ConflictError: 申请非 open；文档已删除；基准已过期（需先刷新基准）。
     """
     _require_reviewer(db, workspace_id, user)
-    cr = get_request_or_404(db, workspace_id, request_id)
+    cr = get_request_or_404(db, workspace_id, request_id, user)
     if cr.status != DCR_STATUS_OPEN:
         raise ConflictError("仅待审核的修改申请可通过")
 
     doc = content_service.get_document_any_state_or_404(db, workspace_id, cr.document_id)
+    if not visibility_service.can_view_document(db, doc, user):
+        # 看不见该文档（含"他人草稿"）→ 与文档接口一致返回 404
+        raise NotFoundError("文档不存在")
     if doc.is_deleted:
         raise ConflictError("文档已在回收站中，请先恢复文档再处理申请")
     if doc.is_folder:
@@ -311,7 +349,7 @@ def close_request(
 ) -> DocumentChangeRequest:
     """驳回 / 关闭申请（owner/editor 或提交人本人）."""
     role = _require_member(db, workspace_id, user)
-    cr = get_request_or_404(db, workspace_id, request_id)
+    cr = get_request_or_404(db, workspace_id, request_id, user)
     if cr.status != DCR_STATUS_OPEN:
         raise ConflictError("仅待审核的修改申请可关闭")
     is_submitter = cr.submitted_by_id is not None and cr.submitted_by_id == user.id
@@ -333,7 +371,7 @@ def delete_request(db: Session, workspace_id: int, request_id: int, user: User) 
     仅提交人本人或工作区所有者可删除；已合并 / 已关闭的申请保留作为处理留痕。
     """
     role = _require_member(db, workspace_id, user)
-    cr = get_request_or_404(db, workspace_id, request_id)
+    cr = get_request_or_404(db, workspace_id, request_id, user)
     is_submitter = cr.submitted_by_id is not None and cr.submitted_by_id == user.id
     if not is_submitter and role != WorkspaceRole.OWNER:
         raise PermissionDeniedError("仅提交人本人或工作区所有者可删除该草稿")
@@ -353,7 +391,7 @@ def update_base(
 ) -> DocumentChangeRequest:
     """刷新基准：以指定版本（缺省当前最新）为新基准，清除 stale（仅提交人本人）."""
     _require_member(db, workspace_id, user)
-    cr = get_request_or_404(db, workspace_id, request_id)
+    cr = get_request_or_404(db, workspace_id, request_id, user)
     if cr.status != DCR_STATUS_OPEN:
         raise ConflictError("仅待审核的修改申请可刷新基准")
     if cr.submitted_by_id is None or cr.submitted_by_id != user.id:

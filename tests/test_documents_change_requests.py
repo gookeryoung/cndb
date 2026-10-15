@@ -177,8 +177,10 @@ class TestSaveDispatch:
         )
         folder = r.json()
 
+        # owner 能看到该（草稿）文件夹 → 409「文件夹没有正文」
         assert _save(client, ws.id, folder["id"], auth_owner, "x").status_code == 409
-        assert _save(client, ws.id, folder["id"], auth_viewer, "x").status_code == 409
+        # viewer 看不到他人草稿文件夹 → 404（可见性收口后，先于"文件夹没有正文"判定）
+        assert _save(client, ws.id, folder["id"], auth_viewer, "x").status_code == 404
 
 
 # ── 列表与详情 ────────────────────────────────────────
