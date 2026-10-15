@@ -62,6 +62,28 @@ def register_system_routes(app: FastAPI) -> None:
 
     router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
+    @router.get("/cache/stats")
+    def cache_stats(current_user: User | None = Depends(get_current_user)) -> dict[str, Any]:
+        """缓存统计（命中率/条目数）——进程内缓存运维用，仅超级管理员."""
+        _require_superuser(current_user)
+        from cndb.core.cache import list_cache, meta_cache
+
+        return {
+            "list": list_cache.stats().as_dict(),
+            "meta": meta_cache.stats().as_dict(),
+        }
+
+    @router.post("/cache/clear")
+    def cache_clear(
+        current_user: User | None = Depends(get_current_user),
+        prefix: str | None = None,
+    ) -> dict[str, Any]:
+        """清除进程内缓存（可按前缀）——仅超级管理员，用于排障/压测 A-B."""
+        _require_superuser(current_user)
+        from cndb.core.cache import invalidate_all
+
+        return {"cleared": invalidate_all(prefix), "prefix": prefix}
+
     @router.get("/info")
     def admin_info(current_user: User | None = Depends(get_current_user)) -> dict[str, Any]:
         """系统信息（版本/数据库/数据目录）— 登录即可."""

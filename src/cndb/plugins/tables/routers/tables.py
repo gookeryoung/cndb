@@ -129,6 +129,8 @@ def create_table(
     dt.ensure_db_name()
     db.add(dt)
     db.commit()
+    # 写成功后失效数据表列表缓存（读-写一致性）
+    _invalidate_table_list_cache(workspace_id)
     db.refresh(dt)
 
     # 执行物理建表
@@ -190,6 +192,18 @@ def _import_fields_on_create(
         raise
 
 
+# 数据表列表缓存（进程内短 TTL）：该接口要预取 owner / member_count / my_member 三组聚合，
+# 是表格页最热的读路径。单机部署下进程内缓存即可，无需 Redis。
+TABLE_LIST_TTL_SECONDS = 5.0
+
+
+def _invalidate_table_list_cache(workspace_id: int) -> int:
+    """失效某工作区的数据表列表缓存（建表/改名/删除/回收站变更后调用）."""
+    from cndb.core.cache import cache_key, list_cache
+
+    return list_cache.clear(cache_key("tables", workspace_id))
+
+
 @router.get("", response_model=list[TableResponse])
 def list_tables(
     workspace_id: int,
@@ -198,6 +212,25 @@ def list_tables(
     include_trashed: bool = False,
 ) -> list[TableResponse]:
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+
+    from cndb.core.cache import cache_key, list_cache
+
+    ck = cache_key("tables", workspace_id, current_user.id, include_trashed, id(db.bind))
+    cached = list_cache.get(ck)
+    if cached is not None:
+        return cached
+    data = _list_tables_uncached(db, workspace_id, current_user, include_trashed=include_trashed)
+    list_cache.set(ck, data, TABLE_LIST_TTL_SECONDS)
+    return data
+
+
+def _list_tables_uncached(
+    db: Session,
+    workspace_id: int,
+    current_user: User,
+    *,
+    include_trashed: bool,
+) -> list[TableResponse]:
     query = db.query(DataTable).filter(DataTable.workspace_id == workspace_id)
     if not include_trashed:
         query = query.filter(DataTable.trashed == False)  # noqa: E712
@@ -270,6 +303,8 @@ def reorder_tables(
             table_map[tid].order = idx
 
     db.commit()
+    # 写成功后失效数据表列表缓存（读-写一致性）
+    _invalidate_table_list_cache(workspace_id)
     return (
         db.query(DataTable).filter(DataTable.workspace_id == workspace_id).order_by(DataTable.order, DataTable.id).all()
     )
@@ -358,6 +393,8 @@ def update_table(
     for key, value in update_data.items():
         setattr(dt, key, value)
     db.commit()
+    # 写成功后失效数据表列表缓存（读-写一致性）
+    _invalidate_table_list_cache(workspace_id)
     db.refresh(dt)
     return dt
 
@@ -372,6 +409,8 @@ def delete_table(
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     dt.trashed = True
     db.commit()
+    # 写成功后失效数据表列表缓存（读-写一致性）
+    _invalidate_table_list_cache(workspace_id)
 
 
 # ── 表复制 ─────────────────────────────────────────────
@@ -431,6 +470,8 @@ def copy_table(
     dst.ensure_db_name()
     db.add(dst)
     db.commit()
+    # 写成功后失效数据表列表缓存（读-写一致性）
+    _invalidate_table_list_cache(workspace_id)
     db.refresh(dst)
     ddl_create(db.get_bind(), dst)
 
@@ -541,6 +582,8 @@ def move_table(
             dt.owner_id = None
 
     db.commit()
+    # 写成功后失效数据表列表缓存（读-写一致性）
+    _invalidate_table_list_cache(workspace_id)
     db.refresh(dt)
     return dt
 

@@ -33,6 +33,23 @@ from cndb.plugins.workspaces.services.backup_io import (
     _import_backup_into_workspace,
 )
 
+# 工作区列表缓存（进程内，短 TTL；写路径主动失效）
+WORKSPACE_LIST_TTL_SECONDS = 10.0
+
+
+def _list_cache() -> Any:
+    from cndb.core.cache import list_cache
+
+    return list_cache
+
+
+def invalidate_workspace_list_cache() -> int:
+    """失效所有用户的工作区列表缓存（成员/工作区变更后调用）."""
+    from cndb.core.cache import cache_key, list_cache
+
+    return list_cache.clear(cache_key("ws-list"))
+
+
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 # 成员管理 / 所有权转让拆到 routers/member_routes.py（同一前缀下挂载）
 router.include_router(member_router)
@@ -45,7 +62,28 @@ def list_workspaces(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[WorkspaceWithPinnedResponse]:
-    """列出当前用户所属的工作区，钉住的置顶，附带 table_count / member_count."""
+    """列出当前用户所属的工作区，钉住的置顶，附带 table_count / member_count.
+
+    进程内短 TTL 缓存（10s，按用户隔离）：该接口每次都要做 3 次聚合统计，
+    是首页最热的读路径；写路径（新建/改名/成员变更）会主动失效，
+    短 TTL 只是兜底 —— 单机部署下进程内缓存无需 Redis 即可生效。
+    """
+    from cndb.core.cache import cache_key
+
+    cache = _list_cache()
+    ck = cache_key("ws-list", current_user.id, id(db.bind))
+    cached = cache.get(ck)
+    if cached is not None:
+        return cached
+    data = _list_workspaces_uncached(db, current_user)
+    cache.set(ck, data, WORKSPACE_LIST_TTL_SECONDS)
+    return data
+
+
+def _list_workspaces_uncached(
+    db: Session,
+    current_user: User,
+) -> list[WorkspaceWithPinnedResponse]:
     from sqlalchemy import case, func, select
 
     from cndb.plugins.tables.models import DataTable
@@ -115,6 +153,7 @@ def create_workspace(
     member = WorkspaceMember(workspace_id=ws.id, user_id=current_user.id, role=WorkspaceRole.OWNER)
     db.add(member)
     db.commit()
+    invalidate_workspace_list_cache()
     db.refresh(ws)
     return ws
 
@@ -224,6 +263,7 @@ def update_workspace(
     for key, value in update_data.items():
         setattr(ws, key, value)
     db.commit()
+    invalidate_workspace_list_cache()
     db.refresh(ws)
     return ws
 
@@ -241,6 +281,7 @@ def delete_workspace(
         raise HTTPException(status_code=403, detail="仅所有者可删除工作区")
     db.delete(ws)
     db.commit()
+    invalidate_workspace_list_cache()
 
 
 # ── pin 切换 ──────────────────────────────────────────
@@ -263,6 +304,7 @@ def toggle_pin(
         raise HTTPException(status_code=404, detail="工作区不存在")  # pragma: no cover - 由 _get_workspace_or_404 前置
     member.pinned = not member.pinned
     db.commit()
+    invalidate_workspace_list_cache()
     db.refresh(member)
     return PinToggleResponse(pinned=member.pinned)
 

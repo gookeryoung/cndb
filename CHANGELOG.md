@@ -5,6 +5,8 @@
 ## [未发布]
 
 ### 新增
+- 新增**按段落编辑锁 + 段落级三方合并**：文档可以多人同时编辑**不同段落**（同段互斥）——`POST|GET|DELETE /documents/{id}/paragraph-locks` 按位置键（p1/p2…）加锁并实时广播 `para.lock`；保存时回传 `base_content`，服务端做段落级三方合并：互不重叠自动合并（含他人改动），同一段被两人修改则 409 明确指出第几段；不传 `base_content` 时保持原有乐观锁语义
+- 新增**进程内缓存**（不依赖 Redis）：TTL + LRU + 统计 + 前缀失效（`core/cache.py`，并预留 Redis 后端接入点），接入工作区列表与数据表列表两个热点读接口 + 写路径主动失效，新增运维端点 `GET /api/v1/admin/cache/stats`、`POST /api/v1/admin/cache/clear`；实测同会话 A/B：数据表列表 p50 **16.1ms → 3.4ms（提速 79%）**、工作区列表 4.8ms → 2.2ms
 - 新增**实时协作通道**：`GET /api/v1/ws?workspace_id=&token=`（浏览器 WS 无法设置请求头，令牌走查询参数）提供工作区级实时通道 —— 连接即同步**在线状态**（谁在看/谁在编辑，多标签页聚合）、`presence.update` 上报当前文档、心跳 ping/pong（静默超时自动清理半开连接）；A4 统一事件**实时推送**（`event.created`）并按动作自动失效前端缓存（列表/详情无需手动刷新）、编辑锁变化实时推送（`doc.lock`）；文档编辑页展示同文档在线成员与「他人已获取编辑锁」提示，顶栏显示连接状态；断线指数退避重连、回到前台立即重连
 - 新增**统一事件/审计流**：跨插件的 `core_event` 表（actor/action/target/summary/detail/request_id）与 `GET /api/v1/admin/events`（超管或审计管理员可读，支持动作/操作人/目标/工作区/request_id/关键词/时间筛选与分页）、`GET /api/v1/admin/events/actions`（动作统计）；认证动作（登录成功/失败、登出、改密、会话下线、**刷新令牌复用检测**）、用户管理操作、表记录变更均已接入；事件自动携带 `request_id`，可与访问日志/慢查询日志串联；系统管理台新增「事件流」标签页（筛选写入 URL，可分享/刷新保持）；迁移 `b4d2e7a9c1f3`
 - 新增**会话/授权生命周期**：登录同时返回访问令牌与刷新令牌（不透明随机串，库中只存 SHA-256）；`POST /auth/refresh` 一次性轮换（旧令牌复用视为泄露，吊销全部会话）、`POST /auth/logout`（单枚 / `all=true` 全部下线）、`POST /auth/password` 自助改密、`GET|DELETE /auth/sessions` 会话列表与按会话下线；`accounts_user.token_version` 让改密与强制下线后既有访问令牌**立即失效**；登录失败限流（账号 5 次 / 来源 IP 20 次 / 5 分钟）返回 429 + `Retry-After`；前端 401 自动刷新一次并重放原请求（并发去重），登出会调用服务端吊销接口；新增迁移 `a3f1c9d2e7b4`（`accounts_refreshtoken` + `token_version`）与配置项 `JWT_REFRESH_EXPIRE_DAYS` / `LOGIN_MAX_FAILURES` / `LOGIN_WINDOW_SECONDS`
