@@ -414,4 +414,51 @@ describe('DocumentsPage 批量操作', () => {
         await waitFor(() => expect(screen.queryByTestId('doc-batch-bar')).toBeNull())
         warnSpy.mockRestore()
     })
+
+describe('DocumentsPage 最近打开与置顶标识', () => {
+    function renderPage(route = '/w/10/documents') {
+        return renderProviders(
+            <Routes>
+                <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+            </Routes>,
+            { route, initialAuth: { user: mockUser, token: 'fake-token' } },
+        )
+    }
+
+    it('无历史时不渲染最近打开条', async () => {
+        renderPage()
+        await screen.findByTestId('doc-series-card-1')
+        expect(screen.queryByTestId('doc-recent')).toBeNull()
+    })
+
+    it('有历史时展示最近打开并可点击进入；清除后隐藏', async () => {
+        window.localStorage.setItem(
+            'cndb_recent_docs_v1:10',
+            JSON.stringify([{ id: 2, title: '说明文档', at: 2000 }, { id: 999, title: '已删除文档', at: 1000 }]),
+        )
+        renderPage()
+
+        const strip = await screen.findByTestId('doc-recent')
+        expect(strip).toHaveTextContent('最近打开')
+        // 已删除（不在树中）的条目被过滤，避免死链
+        expect(screen.getByTestId('doc-recent-2')).toBeInTheDocument()
+        expect(screen.queryByTestId('doc-recent-999')).toBeNull()
+
+        fireEvent.click(screen.getByTestId('doc-recent-clear'))
+        await waitFor(() => expect(screen.queryByTestId('doc-recent')).toBeNull())
+        expect(window.localStorage.getItem('cndb_recent_docs_v1:10')).toBeNull()
+    })
+
+    it('置顶文档展示「置顶」标识', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tree', () => HttpResponse.json({
+                items: mockDocuments.map(d => ({ ...d, pinned: d.id === 1 })),
+            })),
+        )
+        renderPage()
+
+        await screen.findByTestId('doc-series-card-1')
+        expect(screen.getByTestId('doc-pinned-tag-1')).toHaveTextContent('置顶')
+    })
+})
 })

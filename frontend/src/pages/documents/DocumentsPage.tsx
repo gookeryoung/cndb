@@ -25,6 +25,7 @@ import {
 } from 'antd'
 import type { DataNode } from 'antd/es/tree'
 import {
+  ClockCircleOutlined,
   ApartmentOutlined,
   ArrowLeftOutlined,
   DeleteOutlined,
@@ -37,6 +38,7 @@ import {
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { DOCUMENT_ORDER_OPTIONS, sortDocuments, type DocumentOrder } from './documentSort'
+import { clearRecentDocs, loadRecentDocs } from './recentDocs'
 import { documentsApi } from '@/api/documents'
 import type { DocumentItem } from '@/api/documents'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -106,6 +108,8 @@ export default function DocumentsPage() {
   const [searchOpen, setSearchOpen] = useState(false)
   // 回收站抽屉
   const [trashOpen, setTrashOpen] = useState(false)
+  // 最近打开：读取本地历史（清空后用 version 触发重渲染）
+  const [recentVersion, setRecentVersion] = useState(0)
   // 批量操作：当前层级多选 + 批量移动弹窗
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [batchMoveOpen, setBatchMoveOpen] = useState(false)
@@ -302,6 +306,14 @@ export default function DocumentsPage() {
     setCreateOpen(true)
   }
 
+  /** 最近打开（过滤掉已删除/不可见的文档，避免死链） */
+  const recentDocs = useMemo(() => {
+    const visible = new Set((treeQuery.data ?? []).map(d => d.id))
+    return loadRecentDocs(workspaceId).filter(it => visible.has(it.id))
+    // recentVersion：清空历史后强制重算（localStorage 不是响应式数据源）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeQuery.data, workspaceId, recentVersion])
+
   /** 批量移动目标下拉：根目录 + 全部文件夹，排除所选节点及其子孙（防环） */
   const batchMoveTreeData = useMemo(() => {
     if (!batchMoveOpen) return []
@@ -401,6 +413,38 @@ export default function DocumentsPage() {
         </Space>
       </div>
 
+      {/* 最近打开：本地历史，仅在根层展示；点标题直接进编辑器 */}
+      {parentId === null && recentDocs.length > 0 && (
+        <div className="cn-doc-recent" data-testid="doc-recent">
+          <Space size={4} wrap>
+            <ClockCircleOutlined style={{ color: 'var(--cn-text-muted)' }} />
+            <Text type="secondary" style={{ fontSize: 12 }}>最近打开</Text>
+            {recentDocs.map(it => (
+              <Button
+                key={it.id}
+                type="text"
+                size="small"
+                data-testid={`doc-recent-${it.id}`}
+                onClick={() => navigate(`/w/${workspaceId}/documents/${it.id}`)}
+              >
+                {it.title}
+              </Button>
+            ))}
+            <Button
+              type="text"
+              size="small"
+              data-testid="doc-recent-clear"
+              onClick={() => {
+                clearRecentDocs(workspaceId)
+                setRecentVersion(v => v + 1)
+              }}
+            >
+              清除
+            </Button>
+          </Space>
+        </div>
+      )}
+
       {/* 批量操作栏：选中任意项后出现 */}
       {selectedIds.length > 0 && (
         <div className="cn-doc-batch-bar" data-testid="doc-batch-bar">
@@ -467,6 +511,7 @@ export default function DocumentsPage() {
                   </span>
                   <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)' }} />
                   <Text strong style={{ fontSize: 15 }}>{s.folder.title}</Text>
+                  {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
                 </Space>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--cn-text-secondary, #666)' }}>
                   <span>{s.docCount} 篇文档</span>
@@ -612,6 +657,7 @@ export default function DocumentsPage() {
                 title={
                   <Space size={8}>
                     <Text strong>{doc.title}</Text>
+                    {doc.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${doc.id}`}>置顶</Tag>}
                     <Tag color={STATUS_COLORS[doc.status]}>{STATUS_LABELS[doc.status]}</Tag>
                     {doc.tag_ids.length > 0 && (
                       <Text type="secondary" style={{ fontSize: 12 }}>
