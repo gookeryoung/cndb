@@ -64,6 +64,12 @@ export function estimateColumnWidth(field: Pick<Field, 'name' | 'field_type'>): 
   return base + Math.min(overflow * 14, 60)
 }
 
+/** 序号列宽度 —— 按最大行号位数自适应（1 位 52px → 4 位 64px，上限 88px） */
+export function rowIndexWidth(maxRowNumber: number): number {
+  const digits = String(Math.max(1, maxRowNumber)).length
+  return Math.min(88, Math.max(52, 28 + digits * 9))
+}
+
 /** 视图级列序与列宽覆盖 */
 export interface ColumnOptions {
   /** key 为字段 id 字符串的视图级宽度覆盖 */
@@ -78,6 +84,14 @@ export interface ColumnOptions {
   onColumnOrderMove?: (fieldId: string, targetFieldId: string) => void
   /** 窄屏网格横向滚动时固定首个数据列，保证滚动中仍能识别当前行 */
   pinFirstColumn?: boolean
+  /** 是否在最左展示「序号」列（非字段列，不参与排序 / 筛选 / 列宽拖拽） */
+  showRowIndex?: boolean
+  /** 序号起始基准（当前分页 offset）：第 index 行显示 base + index + 1 */
+  rowIndexBase?: number
+  /** 总行数：用于按最大行号位数自适应列宽 */
+  rowIndexTotal?: number
+  /** 草稿行（新增行）的 id：该行序号显示为「—」，避免与已保存行混淆 */
+  newRowKey?: string
 }
 
 /** 按视图级 field_order 重排字段顺序.
@@ -290,7 +304,27 @@ export function buildColumns(
     })
   }
 
-  // 窄屏：固定首个数据列，横向滚动时不丢行标识（列宽与 scrollX 计算不受影响）
+  // 序号列：置于选择列之后、字段列之前；宽度随最大行号位数自适应
+  if (options?.showRowIndex) {
+    const base = options.rowIndexBase ?? 0
+    const total = options.rowIndexTotal ?? 0
+    const newRowKey = options.newRowKey
+    cols.unshift({
+      key: '__row_index__',
+      title: '序号',
+      width: rowIndexWidth(base + total),
+      align: 'center',
+      // 非字段列：不提供排序 / 筛选 / 拖宽入口（render 的 index 为当前页内序号）
+      render: (_v: unknown, record: RowResponse, index: number) => (
+        newRowKey !== undefined && String(record.id) === newRowKey
+          ? <span className="cn-row-index cn-row-index-new">—</span>
+          : <span className="cn-row-index">{base + index + 1}</span>
+      ),
+    })
+  }
+
+  // 窄屏：只固定首列（有「序号」列时即序号列，否则为首个字段列），横向滚动时保持行标识；
+  // 不额外固定首个字段列——其宽度通常 150~240px，再固定会让可横滑窗口只剩几十像素
   if (options?.pinFirstColumn && cols.length > 0) {
     cols[0] = { ...cols[0], fixed: 'left' }
   }

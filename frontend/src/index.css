@@ -2847,3 +2847,15 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-table-list-card-actions > :first-child {
   margin-right: auto;
 }
+
+/* ─────────────── 网格「序号」列 ───────────────
+ * 非字段列：弱化配色 + 等宽数字，避免与业务字段争视觉权重 */
+.cn-row-index {
+  color: var(--cn-text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.cn-row-index-new {
+  opacity: 0.55;
+}

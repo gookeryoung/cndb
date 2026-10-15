@@ -8,7 +8,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { Table } from 'antd'
-import { buildColumns, type RowInlineOps } from './buildColumns'
+import { buildColumns, rowIndexWidth, type RowInlineOps } from './buildColumns'
 import { renderProviders } from '@/test/render-providers'
 import { makeField } from '@/test/fixtures'
 import type { Field, RowResponse } from '@/api'
@@ -262,6 +262,63 @@ describe('buildColumns 窄屏固定首列', () => {
     expect(cols[0]?.fixed).toBe('left')
     expect(cols[cols.length - 1]?.key).toBe('__row_ops__')
     expect(cols[cols.length - 1]?.fixed).toBeUndefined()
+  })
+})
+
+describe('buildColumns 序号列', () => {
+  it('showRowIndex 时首列为「序号」，按分页 offset 续号', () => {
+    const cols = buildColumns(
+      FIELDS, 10, [], [], () => { }, () => { }, undefined, undefined,
+      { showRowIndex: true, rowIndexBase: 0, rowIndexTotal: 2 },
+    )
+    const indexCol = cols[0] as any
+    expect(indexCol.key).toBe('__row_index__')
+    expect(indexCol.title).toBe('序号')
+    expect(indexCol.align).toBe('center')
+
+    // 第一页：1、2
+    expect(indexCol.render(null, ROWS[0], 0).props.children).toBe(1)
+    expect(indexCol.render(null, ROWS[1], 1).props.children).toBe(2)
+
+    // 第二页（offset=2）：3、4
+    const page2 = buildColumns(
+      FIELDS, 10, [], [], () => { }, () => { }, undefined, undefined,
+      { showRowIndex: true, rowIndexBase: 2, rowIndexTotal: 4 },
+    ) as any
+    expect(page2[0].render(null, ROWS[0], 0).props.children).toBe(3)
+    expect(page2[0].render(null, ROWS[1], 1).props.children).toBe(4)
+  })
+
+  it('新增行（草稿）序号显示为「—」，不参与编号', () => {
+    const cols = buildColumns(
+      FIELDS, 10, [], [], () => { }, () => { }, undefined, undefined,
+      { showRowIndex: true, rowIndexBase: 0, rowIndexTotal: 2, newRowKey: '__new__' },
+    ) as any
+    const draft = cols[0].render(null, { id: '__new__' }, 0)
+    expect(draft.props.children).toBe('—')
+    expect(draft.props.className).toContain('cn-row-index-new')
+  })
+
+  it('列宽随最大行号位数自适应：1 位 52px / 3 位 55px / 5 位 73px', () => {
+    expect(rowIndexWidth(5)).toBe(52)
+    expect(rowIndexWidth(150)).toBe(55)
+    expect(rowIndexWidth(12345)).toBe(73)
+    // 上限保护
+    expect(rowIndexWidth(123456789012)).toBeLessThanOrEqual(88)
+  })
+
+  it('默认不展示序号列（保持既有表格形态）', () => {
+    const cols = buildColumns(FIELDS, 10, [], [], () => { }, () => { }, undefined, undefined, {})
+    expect(cols.some(c => c.key === '__row_index__')).toBe(false)
+  })
+
+  it('窄屏固定首列时仅序号列固定（保留充足横滑窗口）', () => {
+    const cols = buildColumns(
+      FIELDS, 10, [], [], () => { }, () => { }, undefined, undefined,
+      { showRowIndex: true, rowIndexBase: 0, rowIndexTotal: 2, pinFirstColumn: true },
+    )
+    expect(cols[0]?.fixed).toBe('left')       // 序号（行标识）
+    expect(cols[1]?.fixed).toBeUndefined()    // 首个字段列不固定
   })
 })
 })
