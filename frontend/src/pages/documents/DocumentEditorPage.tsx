@@ -44,7 +44,7 @@ import MarkdownToolbar, { type MarkdownAction } from '@/components/Document/Mark
 import { findMatches, nextMatchIndex, replaceAllMatches, replaceMatch } from '@/components/Document/documentSearch'
 import { documentStats, formatStatsLabel } from '@/components/Document/documentStats'
 import { buildImageSnippet, isImageFile } from '@/components/Document/imageRef'
-import { insertLink, wrapSelection } from '@/components/Document/markdownEdit'
+import { buildTableSkeleton, insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi, isChangeRequestDispatch } from '@/api/documents'
 import { fileApi, tableApi, workspaceApi } from '@/api'
@@ -820,7 +820,10 @@ export default function DocumentEditorPage() {
                     onClose={closeFind}
                   />
                 )}
-                <MarkdownToolbar onAction={applyMarkdownAction} />
+                <MarkdownToolbar
+                  onAction={applyMarkdownAction}
+                  onInsertTable={(cols, rows) => insertSnippetAtCursor(buildTableSkeleton(cols, rows))}
+                />
                 <TextArea
                   ref={taRef}
                   value={content}
@@ -873,7 +876,10 @@ export default function DocumentEditorPage() {
                   onClose={closeFind}
                 />
               )}
-              <MarkdownToolbar onAction={applyMarkdownAction} />
+              <MarkdownToolbar
+                onAction={applyMarkdownAction}
+                onInsertTable={(cols, rows) => insertSnippetAtCursor(buildTableSkeleton(cols, rows))}
+              />
               <TextArea
                 ref={taRef}
                 value={content}

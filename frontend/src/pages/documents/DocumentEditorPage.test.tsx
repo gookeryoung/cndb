@@ -814,4 +814,44 @@ describe('DocumentEditorPage 最近打开记录', () => {
         })
     })
 })
+
+describe('DocumentEditorPage 表格骨架与标题层级', () => {
+    it('工具栏表格下拉：按预设插入 Markdown 表格骨架到光标处', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        ta.setSelectionRange(ta.value.length, ta.value.length)
+
+        fireEvent.click(screen.getByTestId('md-toolbar-table'))
+        fireEvent.click(await screen.findByText('2 列 × 2 行'))
+
+        await waitFor(() => expect(ta.value).toContain('| 列 1 | 列 2 |'))
+        expect(ta.value).toContain('| --- | --- |')
+        expect(ta.value.split('\n').filter(l => l.startsWith('| \u00a0')).length).toBe(2)
+        // 插入后标记未保存
+        expect(screen.getByText('未保存')).toBeInTheDocument()
+    })
+
+    it('工具栏标题下拉：所选行变为三级标题', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        // 光标放在第一行（# 需求说明）
+        ta.setSelectionRange(0, 0)
+
+        fireEvent.click(screen.getByTestId('md-toolbar-heading'))
+        fireEvent.click(await screen.findByText('三级标题'))
+
+        await waitFor(() => expect(ta.value.startsWith('### 需求说明')).toBe(true))
+    })
+
+    it('工具栏标题下拉「正文」：取消已有标题', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        ta.setSelectionRange(0, 0)
+
+        fireEvent.click(screen.getByTestId('md-toolbar-heading'))
+        fireEvent.click(await screen.findByText('正文'))
+
+        await waitFor(() => expect(ta.value.startsWith('需求说明')).toBe(true))
+    })
+})
 })
