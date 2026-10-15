@@ -546,3 +546,71 @@ describe('DocumentEditorPage Markdown 快捷工具', () => {
     })
 })
 })
+
+describe('DocumentEditorPage 查找与替换', () => {
+    // mock 正文为 '# 需求说明\n\n正文段落。\n'
+    it('Ctrl+F 打开查找条并实时统计匹配数', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+
+        expect(screen.queryByTestId('doc-find-bar')).toBeNull()
+        fireEvent.keyDown(ta, { key: 'f', ctrlKey: true })
+
+        expect(await screen.findByTestId('doc-find-bar')).toBeInTheDocument()
+        fireEvent.change(screen.getByTestId('doc-find-input'), { target: { value: '正文' } })
+        await waitFor(() => expect(screen.getByTestId('doc-find-count')).toHaveTextContent('1/1'))
+
+        fireEvent.change(screen.getByTestId('doc-find-input'), { target: { value: '不存在的词' } })
+        await waitFor(() => expect(screen.getByTestId('doc-find-count')).toHaveTextContent('无结果'))
+    })
+
+    it('「下一个」定位匹配：textarea 选区落到匹配文字上', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        fireEvent.keyDown(ta, { key: 'f', ctrlKey: true })
+        await screen.findByTestId('doc-find-bar')
+        fireEvent.change(screen.getByTestId('doc-find-input'), { target: { value: '正文' } })
+
+        fireEvent.click(screen.getByTestId('doc-find-next'))
+        await waitFor(() => {
+            expect(ta.value.slice(ta.selectionStart, ta.selectionEnd)).toBe('正文')
+        })
+    })
+
+    it('全部替换改写正文并提示处数，Esc 关闭查找条', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        fireEvent.keyDown(ta, { key: 'f', ctrlKey: true })
+        await screen.findByTestId('doc-find-bar')
+        fireEvent.change(screen.getByTestId('doc-find-input'), { target: { value: '段落' } })
+        fireEvent.change(screen.getByTestId('doc-find-replacement'), { target: { value: '内容' } })
+
+        const before = ta.value
+        expect(before).toContain('段落')
+        fireEvent.click(screen.getByTestId('doc-find-replace-all'))
+
+        await waitFor(() => expect(ta.value).not.toBe(before))
+        expect(ta.value).toContain('正文内容')
+        expect(ta.value).not.toContain('段落')
+        // 正文被改动 → 出现未保存提示
+        expect(screen.getByText('未保存')).toBeInTheDocument()
+
+        fireEvent.keyDown(ta, { key: 'Escape' })
+        await waitFor(() => expect(screen.queryByTestId('doc-find-bar')).toBeNull())
+    })
+
+    it('「查找」按钮打开查找条；区分大小写开关影响匹配数', async () => {
+        renderEditor()
+        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+
+        fireEvent.click(screen.getByTestId('doc-find-open'))
+        await screen.findByTestId('doc-find-bar')
+        // 写入混合大小写文本，便于验证大小写开关
+        fireEvent.change(ta, { target: { value: 'Alpha alpha ALPHA' } })
+        fireEvent.change(screen.getByTestId('doc-find-input'), { target: { value: 'alpha' } })
+        await waitFor(() => expect(screen.getByTestId('doc-find-count')).toHaveTextContent('1/3'))
+
+        fireEvent.click(screen.getByTestId('doc-find-case'))
+        await waitFor(() => expect(screen.getByTestId('doc-find-count')).toHaveTextContent('1/1'))
+    })
+})
