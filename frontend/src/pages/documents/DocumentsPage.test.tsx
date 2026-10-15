@@ -462,3 +462,58 @@ describe('DocumentsPage 最近打开与置顶标识', () => {
     })
 })
 })
+
+describe('DocumentsPage 标签筛选', () => {
+    function renderPage(route = '/w/10/documents') {
+        return renderProviders(
+            <Routes>
+                <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+            </Routes>,
+            { route, initialAuth: { user: mockUser, token: 'fake-token' } },
+        )
+    }
+
+    it('?tag= 深链：list 请求携带 tag_id，下拉回显所选标签', async () => {
+        const tagIds: (string | null)[] = []
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tags', () =>
+                HttpResponse.json({ items: [{ id: 7, name: '季度', doc_count: 2, color: null }] })),
+            http.get('/api/v1/workspaces/10/documents', ({ request }) => {
+                tagIds.push(new URL(request.url).searchParams.get('tag_id'))
+                return HttpResponse.json({ items: [], total: 0 })
+            }),
+        )
+        renderPage('/w/10/documents?parent=1&tag=7')
+
+        await waitFor(() => expect(tagIds).toContain('7'))
+        // 下拉回显标签名（不等候 portal 展开，只断言选中值）
+        await waitFor(() => expect(screen.getByTestId('doc-tag-filter')).toHaveTextContent('季度'))
+    })
+
+    it('根层按 ?tag= 过滤派生的散文档列表', async () => {
+        const looseDocs = [
+            { ...mockDocuments[1], id: 101, parent_id: null, is_folder: false, title: '带标签文档', tag_ids: [7] },
+            { ...mockDocuments[1], id: 102, parent_id: null, is_folder: false, title: '无标签文档', tag_ids: [] },
+        ]
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tags', () =>
+                HttpResponse.json({ items: [{ id: 7, name: '季度', doc_count: 1, color: null }] })),
+            http.get('/api/v1/workspaces/10/documents/tree', () => HttpResponse.json({ items: looseDocs })),
+        )
+        renderPage('/w/10/documents?tag=7')
+
+        expect(await screen.findByText('带标签文档')).toBeInTheDocument()
+        await waitFor(() => expect(screen.queryByText('无标签文档')).toBeNull())
+        // 文件夹本身没有标签 → 按标签筛选时不展示系列卡片（与后端口径一致）
+        expect(screen.queryByTestId('doc-series-grid')).toBeNull()
+    })
+
+    it('不带 tag 参数时展示全部（下拉仍渲染）', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tags', () =>
+                HttpResponse.json({ items: [{ id: 7, name: '季度', doc_count: 0, color: null }] })),
+        )
+        renderPage()
+        expect(await screen.findByTestId('doc-tag-filter')).toBeInTheDocument()
+    })
+})
