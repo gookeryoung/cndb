@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import UsersPage from './UsersPage'
 import { renderProviders } from '@/test/render-providers'
 import { server, mockUser } from '@/test/msw'
@@ -169,7 +169,21 @@ describe('UsersPage 移动端适配', () => {
     const searchInput = screen.getByPlaceholderText('搜索用户名/邮箱/昵称')
     expect((searchInput.closest('.ant-input-group-wrapper') as HTMLElement).style.width).toBe('100%')
 
-    // 表格：内容容器横向滚动 + 表格按内容宽度展开（列宽不再被压成逐字换行）
+    // 窄屏不再渲染宽表格：改为卡片列表（一屏一实体，无需左右滑动看角色/操作）
+    expect(document.querySelector('.ant-table')).toBeNull()
+    expect(screen.getByTestId('users-mobile-list')).toBeInTheDocument()
+    expect(screen.getByTestId('user-card-1')).toHaveTextContent('admin_su')
+  })
+
+  it('桌面端筛选控件保持既有固定宽度', async () => {
+    server.use(http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)))
+    renderPage()
+
+    await screen.findByText('admin_su')
+    const searchInput = screen.getByPlaceholderText('搜索用户名/邮箱/昵称')
+    expect((searchInput.closest('.ant-input-group-wrapper') as HTMLElement).style.width).toBe('220px')
+
+    // 桌面端仍是表格：内容容器横向滚动 + 表格按内容宽度展开（列宽不被压成逐字换行，滚动兜底）
     const content = document.querySelector('.ant-table-content') as HTMLElement
     const table = content.querySelector('table') as HTMLElement
     expect(content.style.overflowX).toBe('auto')
@@ -181,12 +195,62 @@ describe('UsersPage 移动端适配', () => {
     expect(colWidths).toContain('180px') // 邮箱列
   })
 
-  it('桌面端筛选控件保持既有固定宽度', async () => {
+  it('窄屏改为卡片列表：一屏一实体，角色/状态/操作直接可见', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
     server.use(http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)))
     renderPage()
 
-    await screen.findByText('admin_su')
-    const searchInput = screen.getByPlaceholderText('搜索用户名/邮箱/昵称')
-    expect((searchInput.closest('.ant-input-group-wrapper') as HTMLElement).style.width).toBe('220px')
+    expect(await screen.findByTestId('users-mobile-list')).toBeInTheDocument()
+    // 不再渲染宽表格
+    expect(document.querySelector('.ant-table')).toBeNull()
+    const card = screen.getByTestId('user-card-1')
+    expect(card).toHaveTextContent('admin_su')
+    expect(card).toHaveTextContent('su@x.com')
+    expect(card).toHaveTextContent('系统管理员')
+    expect(card).toHaveTextContent('超管')
+    expect(card).toHaveTextContent('启用')
+    expect(within(card).getByText('编辑')).toBeInTheDocument()
+    expect(within(card).getByText('日志')).toBeInTheDocument()
+    // 分页信息保留
+    expect(screen.getByText('共 2 个用户')).toBeInTheDocument()
+  })
+
+  it('窄屏卡片勾选可参与批量操作', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    server.use(http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)))
+    renderPage()
+
+    await screen.findByTestId('users-mobile-list')
+    fireEvent.click(screen.getByLabelText('选择用户 bob'))
+
+    expect(await screen.findByText(/已选择 1 个用户/)).toBeInTheDocument()
+  })
+
+  it('窄屏卡片「编辑」打开编辑弹窗', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    server.use(http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)))
+    renderPage()
+
+    fireEvent.click(within(await screen.findByTestId('user-card-1')).getByText('编辑'))
+
+    expect(await screen.findByText('编辑用户：admin_su')).toBeInTheDocument()
+  })
+
+  it('桌面端仍为表格，不渲染卡片列表', async () => {
+    server.use(http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)))
+    renderPage()
+
+    expect(await screen.findByText('admin_su')).toBeInTheDocument()
+    expect(screen.queryByTestId('users-mobile-list')).toBeNull()
+    expect(document.querySelector('.ant-table')).toBeTruthy()
   })
 })

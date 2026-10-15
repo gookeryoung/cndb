@@ -2708,3 +2708,60 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   background: color-mix(in srgb, var(--cn-primary, #1677ff) 10%, transparent);
   font-weight: 600;
 }
+
+/* ─────────────── 管理台用户管理 · 窄屏卡片列表 ─────────────── */
+.cn-user-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cn-user-card {
+  border: 1px solid var(--cn-border);
+  border-radius: 10px;
+  background: var(--cn-bg-container);
+  padding: 10px 12px;
+}
+
+.cn-user-card-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.cn-user-card-identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.cn-user-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--cn-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-user-card-meta {
+  font-size: 12px;
+  color: var(--cn-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-user-card-nickname {
+  font-weight: 400;
+  color: var(--cn-text-muted);
+  font-size: 12px;
+}
+
+.cn-user-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  border-top: 1px dashed var(--cn-border);
+  padding-top: 4px;
+}
