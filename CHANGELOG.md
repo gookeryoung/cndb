@@ -107,6 +107,8 @@
 - README 修正项目结构树、CLI 命令、e2e 包管理器与特性清单等失实内容
 
 ### 修复
+- **附件跟随宿主权限**（安全）：新增 `files_fileowner` 记录上传文件归属（表 + 行 / 文档 / 仅工作区），下载与删除不再只看「工作区成员 + 不可猜键」：受限表（`read_role` 高于普通成员）的附件、未发布文档的图片、以及被 `row_filters` 挡掉的行的附件，对无权者一律 403/404；上传时校验对宿主的写权限（表 → `EDIT_RECORDS`，文档 → 可见且可直接写）。历史文件无归属记录，保持原工作区级语义（不做回填）
+- 前端上传携带归属上下文：表格附件单元格 / 行详情抽屉传 `table_id` + `row_id`，文档图片上传传 `document_id`；新增 API 层用例校验表单字段
 - **行级过滤口径统一**：`TablePermission.row_filters` 原无角色维度、对所有人（含表所有者与工作区 OWNER）生效，与 `check_action` 优先级链、`hidden_fields` 按角色键的口径不一致（表现为「所有者看不到自己表里的部分行」）。现统一为：**表所有者 / 工作区 OWNER / 超管豁免行过滤**，普通成员仍受约束；记录读取、写入、审计、工作区导出四处口径一致；`user=None` 的内部/后台调用保持不变
 - **preferences 激活视图校验表可读性**：`GET/PUT /accounts/preferences/tables/{id}/active-view` 原先只校验「表存在」，任何登录用户都能回显任意表 id 的偏好（存在性提示）。现要求 `TableAction.READ`，不可读返回 403
 - **表列表统计字段去 N+1**：`field_count` / `view_count` 改分组查询、`record_count` 改一次 UNION ALL（表名白名单校验，>100 张表退化逐表），列表查询数不再随表数增长（6 张表 ≤14 次，此前约 3N+base）
