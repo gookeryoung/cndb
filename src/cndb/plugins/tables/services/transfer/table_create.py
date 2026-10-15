@@ -6,7 +6,7 @@ import csv
 import io
 import json
 import logging
-from typing import Any, cast
+from typing import Any
 
 from cndb.plugins.tables.models import DataField, DataTable, ensure_default_view
 from cndb.plugins.tables.services.core import records as rec
@@ -357,8 +357,6 @@ def import_rows_from_xlsx(
     WPS 单元格图片经 DISPLIMG 公式识别后落盘到本工作区上传目录，
     单元格值为图片元数据列表（image / attachment 字段可直接消费）。
     """
-    from openpyxl import load_workbook
-    from openpyxl.worksheet.worksheet import Worksheet
 
     from cndb.plugins.tables.services.transfer.wps_images import (
         make_displimg_resolver,
@@ -366,20 +364,26 @@ def import_rows_from_xlsx(
         match_displimg_formula,
     )
 
-    buf = io.BytesIO(xlsx_bytes)
-    wb = load_workbook(buf)
-    ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
-        return []
-    header = [str(c) if c is not None else "" for c in rows[0]]
-    _validate_xlsx_header(header)
+    # 有界流式读取：WPS 导出的文件常声明到 1048576 行（仅样式），全量物化会卡死
+    from cndb.plugins.tables.services.transfer.xlsx_rows import read_xlsx_rows
+
+    stream = read_xlsx_rows(xlsx_bytes)
+    header: list[str] = []
     # 长数字保护 + WPS 图片单元格解析（落盘到本工作区）
     resolve_image = make_displimg_resolver(xlsx_bytes, make_workspace_image_saver(table.workspace_id))
     data = []
-    for sheet_row, row in enumerate(rows[1:], start=2):
-        if not any(c is not None for c in row):
+    has_rows = False
+    for sheet_row, row in stream:
+        has_rows = True
+        if not header:
+            header = [str(c) if c is not None else "" for c in row]
+            _validate_xlsx_header(header)
             continue
+        # 与旧实现（openpyxl 非只读会把每行补齐到最大列宽）保持一致：
+        # 更宽的数据行会让表头出现"缺失列"，由空列名守卫给出可读错误。
+        if len(row) > len(header):
+            header = [*header, *([""] * (len(row) - len(header)))]
+            _validate_xlsx_header(header)
         # 行溢出明确报错（zip 静默截断会丢数据）；短行按缺列补 None 空值语义
         _check_xlsx_row_overflow(row, sheet_row, len(header))
         row_vals: dict[str, Any] = {}
@@ -387,6 +391,9 @@ def import_rows_from_xlsx(
             displimg_id = match_displimg_formula(v) if isinstance(v, str) else None
             row_vals[k] = resolve_image(displimg_id) if displimg_id else _coerce_long_numeric_to_text(v)
         data.append(_parse_link_import_value(table, row_vals))
+    if not has_rows:
+        # 空表（WPS/Excel 新建未填内容的文件）：无表头也无数据，直接返回
+        return []
     _prefill_before_bulk(db, table, data)
     ids = rec.bulk_create(engine, table, data, db=db)
     _sync_after_bulk(db, table)

@@ -160,6 +160,10 @@ class Settings(BaseSettings):
     LOGIN_MAX_FAILURES: int = 5
     LOGIN_WINDOW_SECONDS: int = 300
 
+    # 导入任务单阶段超时（秒）：解析/校验/执行任一阶段超时即判失败并给出可读原因，
+    # 避免"进度卡在 5% 且无报错"（历史上 WPS 导出文件的虚假行范围会触发）
+    IMPORT_TASK_TIMEOUT_SECONDS: int = 600
+
     # 观测（core/observability.py）：
     # - ACCESS_LOG_ENABLED：是否记录每请求访问日志（慢请求无论开关都会记录）
     # - SLOW_REQUEST_MS：超过该耗时的请求按 WARNING 记录并标注 slow=true
