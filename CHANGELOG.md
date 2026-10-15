@@ -22,6 +22,8 @@
 - 文档修改申请（双轨制写入）：viewer（或关闭直编的 editor）保存正文不再 403，而是由 `PUT /{wid}/documents/{doc_id}/content` 返回 202 + 申请载荷，待审正文只存 `documents_changerequest.proposed_content` 不写版本表；新增 `/{wid}/document-change-requests` 的列表 / 详情（含基准→待审正文 DIFF）/ merge（落库为新版本）/ close / update-base / 删除草稿端点，申请记录 `base_version_number` 基准，文档版本前进后其余 open 申请自动置 stale
 - 文档彻底删除时一并清理该文档的待审修改申请，避免孤儿数据
 - 差异对比可视化：新增 `components/DiffView`（unified diff 解析 / 增删配对 / token 级行内高亮 / 并排模型 + 纯函数单测），文档版本对比支持统一·并排双视图与增减统计，数据表变更项改为「字段 / 修改前 / 修改后（基准漂移时含当前值）」表格；样式全部由 `color-mix + var(--cn-*)` 组合，各主题自动适配
+- 文档区二级导航：进入 `/w/:wid/documents*` 时在工作区 Tabs 右侧以竖线分割渲染「文档」根入口 + 二级页签（修改申请 / 问题清单），形式与表级页签一致；新增 `/w/:wid/documents/change-requests`（工作区级文档修改申请清单，支持状态筛选与内容 DIFF 审核）与 `/w/:wid/documents/issues`（文档问题清单）两个页面
+- 文档问题清单：新增 `documents_issue` / `documents_issuecomment` / `documents_issueevent` 三张表（迁移 `e4f5a6b7c8d9`）与 `/{wid}/document-issues` 端点（列表 / 提交 / 详情 / 评论 / 关闭 / 重开），类别与状态取值同数据表问题清单；文档彻底删除时问题、评论与事件流水一并清理
 
 ### 移除
 

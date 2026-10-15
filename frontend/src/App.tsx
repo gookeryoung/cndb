@@ -28,6 +28,8 @@ const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSett
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 const DocumentsLayout = lazy(() => import('@/pages/documents/DocumentsLayout'))
 const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage'))
+const DocumentsChangeRequestsPage = lazy(() => import('@/pages/documents/DocumentsChangeRequestsPage'))
+const DocumentsIssuesPage = lazy(() => import('@/pages/documents/DocumentsIssuesPage'))
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
 
 /** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
@@ -83,6 +85,13 @@ function AuthenticatedApp() {
           }>
             <Route index element={
               <Suspense fallback={<PageFallback />}><DocumentsPage /></Suspense>
+            } />
+            {/* 文档区二级页（静态段优先于 :docId，不会被编辑器路由吞掉） */}
+            <Route path="change-requests" element={
+              <Suspense fallback={<PageFallback />}><DocumentsChangeRequestsPage /></Suspense>
+            } />
+            <Route path="issues" element={
+              <Suspense fallback={<PageFallback />}><DocumentsIssuesPage /></Suspense>
             } />
             <Route path=":docId" element={
               <Suspense fallback={<PageFallback />}><DocumentEditorPage /></Suspense>

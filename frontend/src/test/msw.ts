@@ -157,6 +157,9 @@ export const handlers = [
   // 文档修改申请列表（默认空；单用例 server.use 覆盖）
   http.get('/api/v1/workspaces/:wid/document-change-requests', () =>
     HttpResponse.json({ items: [], total: 0 })),
+  // 文档问题清单列表（默认空；单用例 server.use 覆盖）
+  http.get('/api/v1/workspaces/:wid/document-issues', () =>
+    HttpResponse.json({ items: [], total: 0 })),
 
   // 附件（useFileObjectUrl 经 axios 取 blob；1x1 PNG 字节即可）
   http.get('/api/v1/workspaces/:wid/files/:fileKey', () =>

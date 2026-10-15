@@ -252,6 +252,28 @@ class DocumentChangeRequestUpdateBase(BaseModel):
     base_version_number: int | None = Field(default=None, ge=0)
 
 
+# ── 文档问题清单（文档级 Issue） ──
+
+
+class DocumentIssueCreate(BaseModel):
+    """提交文档问题（类别合法性由服务层统一校验，与数据表问题清单一致）."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    document_id: int
+    title: str = Field(min_length=1, max_length=255)
+    description: str = Field(default="", max_length=2000)
+    category: str = "other"
+
+
+class DocumentIssueCommentCreate(BaseModel):
+    """文档问题评论."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    content: str = Field(min_length=1, max_length=2000)
+
+
 __all__ = [
     "ContentUpdate",
     "DailyNoteRequest",
@@ -261,6 +283,8 @@ __all__ = [
     "DocumentChangeRequestUpdateBase",
     "DocumentCreate",
     "DocumentDetail",
+    "DocumentIssueCommentCreate",
+    "DocumentIssueCreate",
     "DocumentOut",
     "DocumentUpdate",
     "LinkRepairItem",

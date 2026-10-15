@@ -2672,3 +2672,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-dcr-diff {
   margin-top: 10px;
 }
+
+.cn-dcr-doc {
+  font-size: 12px;
+}

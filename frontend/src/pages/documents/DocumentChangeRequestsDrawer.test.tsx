@@ -69,7 +69,7 @@ describe('DocumentChangeRequestsDrawer', () => {
     expect(await screen.findByText('修改文档《需求说明》')).toBeInTheDocument()
     expect(screen.getByText('待审核')).toBeInTheDocument()
     expect(screen.getByText('补充交付范围')).toBeInTheDocument()
-    expect(screen.getByText(/v1 → v1/)).toBeInTheDocument()
+    expect(screen.getByText(/基准 v1 · 当前 v1/)).toBeInTheDocument()
     expect(screen.queryByText('基准已过期')).toBeNull()
   })
 

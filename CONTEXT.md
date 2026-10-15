@@ -15,3 +15,5 @@
 | 文档导出 | `GET /{wid}/documents/{doc_id}/export?format=md\|docx\|pdf`：把文档最新版本正文渲染为 Markdown / Word / PDF 文件下载 | 工作区成员即可导出；文件夹与非法格式返回 400；渲染器在 `documents/services/export/`（原 reports 插件的 docx/pdf 渲染器迁入，去掉主题与模板变量，改用默认视觉预设） |
 | 文档修改申请（DocumentChangeRequest） | 文档级待审载体：viewer（或关闭直编的 editor）保存正文时自动生成（后端 202 + change_request 载荷），只存 `proposed_content` 待审全文、不写 `document_versions`；owner/editor 通过后落库为新版本，提交人可删除草稿 | 记录 `base_version_number` 作为内容基准，文档版本前进后其余 open 申请置 stale（需 `update-base` 刷新）；同文档可并存多个 open 申请，先合并者生效 |
 | 文档双轨制写入 | 与数据表同源分派：owner 恒直编；editor 需工作区 `allow_edit` 开启；viewer 一律转修改申请（202） | 分派在 `documents/services/change_requests.resolve_write_mode`，保存端点 `PUT /{wid}/documents/{doc_id}/content`；文件夹不参与（409） |
+| 文档区二级导航 | 进入 `/w/:wid/documents*` 时在工作区 Tabs 右侧以竖线分割渲染「文档」根入口 + 二级页签（修改申请 / 问题清单），形式与表级页签（`cn-table-crumb` / `cn-table-tab`）一致 | 页签路由 `/w/:wid/documents/change-requests`、`/w/:wid/documents/issues`；静态段优先于 `:docId`，编辑器页显示根入口但无子页激活 |
+| 文档问题清单（DocumentIssue） | 文档级反馈条目：所有成员可提交（标题 + 描述 + 类别）与评论，owner/editor 或创建者可关闭/重开；随文档级联清理 | 表 `documents_issue` / `documents_issuecomment` / `documents_issueevent`，端点 `/{wid}/document-issues`；类别/状态取值与数据表问题清单一致 |

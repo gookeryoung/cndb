@@ -75,6 +75,9 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/tables/:tid/change-requests" element={<ChangeRequestsStub />} />
                 <Route path="w/:wid/tables/:tid/settings" element={<TableSettingsStub />} />
                 <Route path="w/:wid/documents" element={<DocumentsStub />} />
+                <Route path="w/:wid/documents/:docId" element={<DocumentsStub />} />
+                <Route path="w/:wid/documents/change-requests" element={<DocumentsStub />} />
+                <Route path="w/:wid/documents/issues" element={<DocumentsStub />} />
                 <Route path="w/:wid/settings" element={<SettingsStub />} />
                 <Route path="admin" element={<AdminStub />} />
             </Route>
@@ -307,6 +310,60 @@ describe('MainLayout 表级页签（融合导航行）', () => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
         expect(screen.queryByTestId('table-crumb')).toBeNull()
+    })
+})
+
+describe('MainLayout 文档区二级导航', () => {
+    it('进入文档页显示二级导航：文档根入口 + 修改申请 / 问题清单页签', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        })
+        expect(screen.getByTestId('documents-crumb-root')).toBeVisible()
+        expect(screen.getByTestId('document-tab-change-requests')).toBeVisible()
+        expect(screen.getByTestId('document-tab-issues')).toBeVisible()
+        // 未进入表上下文时表级页签不渲染，且文档二级页签默认均未激活
+        expect(screen.queryByTestId('table-crumb')).toBeNull()
+        expect(screen.getByTestId('document-tab-change-requests')).toHaveAttribute('aria-selected', 'false')
+    })
+
+    it('点击「修改申请」页签导航到子页并激活', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        })
+        fireEvent.click(screen.getByTestId('document-tab-change-requests'))
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents/change-requests')
+        })
+        expect(screen.getByTestId('document-tab-change-requests')).toHaveAttribute('aria-selected', 'true')
+        expect(screen.getByTestId('document-tab-issues')).toHaveAttribute('aria-selected', 'false')
+    })
+
+    it('文档编辑器页仍显示二级导航（无子页激活），点击根入口返回文档总览', async () => {
+        renderLayout(mockUser, '/w/10/documents/2')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        })
+        expect(screen.getByTestId('document-tab-change-requests')).toHaveAttribute('aria-selected', 'false')
+
+        fireEvent.click(screen.getByTestId('documents-crumb-root'))
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
+        })
+    })
+
+    it('非文档上下文不渲染文档二级导航', async () => {
+        renderLayout(mockUser, '/w/10/tables')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
+        expect(screen.queryByTestId('documents-crumb')).toBeNull()
     })
 })
 

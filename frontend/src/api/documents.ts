@@ -170,10 +170,36 @@ export function isChangeRequestDispatch(data: unknown): data is DocumentChangeRe
   return !!data && typeof data === 'object' && 'change_request' in (data as Record<string, unknown>)
 }
 
+/** 文档问题类别（取值与数据表问题清单一致） */
+export type DocumentIssueCategory = 'data_error' | 'suggestion' | 'question' | 'other'
+
+/** 文档问题清单条目 */
+export interface DocumentIssueItem {
+  id: number
+  workspace_id: number
+  document_id: number
+  document_title?: string | null
+  title: string
+  description: string
+  category: DocumentIssueCategory
+  status: 'open' | 'closed'
+  created_by_id: number | null
+  comment_count: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+/** 文档问题详情：本体 + 评论 + 状态事件 */
+export interface DocumentIssueDetail extends DocumentIssueItem {
+  comments: Array<{ id: number; content: string; created_by_id: number | null; created_at: string | null }>
+  events: Array<{ id: number; action: string; actor_id: number | null; created_at: string | null }>
+}
+
 // ── API ──
 
 const base = (wid: number | string) => `/v1/workspaces/${wid}/documents`
 const crBase = (wid: number | string) => `/v1/workspaces/${wid}/document-change-requests`
+const diBase = (wid: number | string) => `/v1/workspaces/${wid}/document-issues`
 
 export const documentsApi = {
   list: (wid: number | string, params?: Record<string, unknown>) =>
@@ -236,6 +262,34 @@ export const documentsApi = {
 
   deleteChangeRequest: (wid: number | string, requestId: number | string) =>
     api.delete(`${crBase(wid)}/${requestId}`).then(r => r.data),
+
+  // 文档问题清单（文档级 Issue，与数据表问题清单同构）
+  issues: (wid: number | string, params?: { document_id?: number; status?: string }) =>
+    api
+      .get<{ items: DocumentIssueItem[]; total: number }>(diBase(wid), { params })
+      .then(r => r.data),
+
+  issue: (wid: number | string, issueId: number | string) =>
+    api.get<DocumentIssueDetail>(`${diBase(wid)}/${issueId}`).then(r => r.data),
+
+  createIssue: (
+    wid: number | string,
+    data: { document_id: number; title: string; description?: string; category?: DocumentIssueCategory },
+  ) => api.post<DocumentIssueDetail>(diBase(wid), data).then(r => r.data),
+
+  addIssueComment: (wid: number | string, issueId: number | string, content: string) =>
+    api
+      .post<{ id: number; content: string; created_by_id: number | null; created_at: string | null }>(
+        `${diBase(wid)}/${issueId}/comments`,
+        { content },
+      )
+      .then(r => r.data),
+
+  closeIssue: (wid: number | string, issueId: number | string) =>
+    api.post<DocumentIssueDetail>(`${diBase(wid)}/${issueId}/close`).then(r => r.data),
+
+  reopenIssue: (wid: number | string, issueId: number | string) =>
+    api.post<DocumentIssueDetail>(`${diBase(wid)}/${issueId}/reopen`).then(r => r.data),
 
   // 导出：Markdown / Word / PDF 文件字节流（文件名由调用方拼装）
   exportFile: (wid: number | string, docId: number | string, format: DocumentExportFormat) =>

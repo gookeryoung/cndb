@@ -37,6 +37,12 @@ const TABLE_SUBPAGES = [
   { key: 'settings', label: '数据表设置', icon: <SettingOutlined /> },
 ] as const
 
+/** 文档区二级页定义 —— 与表级子页同形，但作用域是工作区下的全部文档（无「文档设置」）. */
+const DOCUMENT_SUBPAGES = [
+  { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined /> },
+  { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined /> },
+] as const
+
 /** 内容区骨架 —— 懒加载页面在 Content 内挂起时的占位，避免整页高度跳动 */
 function ContentFallback() {
   return (
@@ -159,6 +165,17 @@ export default function MainLayout() {
         ? 'settings'
         : ''
   const activeSubpage = TABLE_SUBPAGES.find(p => p.key === activeTableTab)
+
+  // ── 文档区二级页签（与表级同形：竖线分割 + 胶囊页签）──
+  // 进入 /w/:wid/documents 及其子页时，在工作区 Tabs 右侧渲染「文档」根入口 + 子页页签。
+  // 注意：/w/:wid/documents/:docId 也在该前缀下（编辑器页），此时无子页激活，仅展示根入口。
+  const inDocumentsContext = !!wid && location.startsWith(`/w/${wid}/documents`)
+  const activeDocumentTab = location.includes('/change-requests')
+    ? 'change-requests'
+    : location.includes('/issues')
+      ? 'issues'
+      : ''
+  const activeDocumentSubpage = DOCUMENT_SUBPAGES.find(p => p.key === activeDocumentTab)
 
   // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」（子页高亮由表级导航负责），
   // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
@@ -403,6 +420,41 @@ export default function MainLayout() {
                           data-testid={`table-tab-${p.key}`}
                           className={active ? 'cn-table-tab cn-table-tab-active' : 'cn-table-tab'}
                           onClick={() => navigate(`/w/${wid}/tables/${tid}/${p.key}`)}
+                        >
+                          {p.icon}
+                          {p.label}
+                        </button>
+                      )
+                    })}
+                  </nav>
+                </div>
+              )}
+              {inDocumentsContext && (
+                <div className="cn-table-crumb" data-testid="documents-crumb">
+                  <span className="cn-table-crumb-divider" aria-hidden />
+                  <Button
+                    type="text"
+                    size="small"
+                    data-testid="documents-crumb-root"
+                    style={{ paddingInline: 8 }}
+                    onClick={() => navigate(`/w/${wid}/documents`)}
+                  >
+                    <FileTextOutlined />
+                    <span className="cn-table-crumb-name">文档</span>
+                  </Button>
+                  {/* 文档区子页页签 —— 形式与表级页签一致，作用域为工作区下全部文档 */}
+                  <nav className="cn-table-tabs" aria-label="文档页面切换">
+                    {DOCUMENT_SUBPAGES.map(p => {
+                      const active = activeDocumentSubpage?.key === p.key
+                      return (
+                        <button
+                          key={p.key}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          data-testid={`document-tab-${p.key}`}
+                          className={active ? 'cn-table-tab cn-table-tab-active' : 'cn-table-tab'}
+                          onClick={() => navigate(`/w/${wid}/documents/${p.key}`)}
                         >
                           {p.icon}
                           {p.label}
