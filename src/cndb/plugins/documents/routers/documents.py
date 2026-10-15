@@ -417,11 +417,26 @@ def export_document(
     images = services.export.make_image_resolver(settings.UPLOAD_DIR, workspace_id)
     file_bytes = services.export.render_export(content, normalized, doc.title, images=images)
 
-    filename = _export_filename(doc.title, services.export.FORMAT_EXTENSIONS[normalized])
+    # Markdown 带站内图片时打包为 zip（<标题>.md + assets/<file_key>），否则维持单文件 .md
+    media_type = services.export.FORMAT_CONTENT_TYPES[normalized]
+    extension = services.export.FORMAT_EXTENSIONS[normalized]
+    if normalized == services.export.FORMAT_MARKDOWN:
+        archive = services.export.render_markdown_archive(
+            content,
+            doc.title,
+            images,
+            _export_filename(doc.title, "").rstrip("."),
+        )
+        if archive is not None:
+            file_bytes = archive
+            media_type = "application/zip"
+            extension = "zip"
+
+    filename = _export_filename(doc.title, extension)
     quoted = quote(filename)
     return StreamingResponse(
         io.BytesIO(file_bytes),
-        media_type=services.export.FORMAT_CONTENT_TYPES[normalized],
+        media_type=media_type,
         headers={
             # ASCII fallback + RFC 5987 filename*（标题含中文时保证文件名正确）
             "Content-Disposition": f"attachment; filename=\"document.{normalized}\"; filename*=UTF-8''{quoted}"

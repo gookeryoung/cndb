@@ -223,3 +223,84 @@ class TestExportEndpointEmbedsImage:
         assert r.status_code == 200, r.text
         assert r.content.startswith(b"%PDF")
         assert b"/Subtype /Image" in r.content or b"/Subtype/Image" in r.content
+
+
+class TestMarkdownArchive:
+    def test_rewrite_collects_assets_and_keeps_unresolved_refs(self, image_resolver):
+        from cndb.plugins.documents.services.export.images import rewrite_markdown_images
+
+        md = "图片：\n\n![示意图](file:abc123.png)\n\n![缺失](file:missing.png)\n\n![重复](file:abc123.png)\n"
+        rewritten, assets = rewrite_markdown_images(md, image_resolver)
+
+        assert "![示意图](assets/abc123.png)" in rewritten
+        assert "![重复](assets/abc123.png)" in rewritten
+        # 解析不到的引用原样保留（不静默丢信息）
+        assert "![缺失](file:missing.png)" in rewritten
+        assert list(assets) == ["assets/abc123.png"]
+        assert assets["assets/abc123.png"] == PNG_1PX
+
+    def test_archive_contains_markdown_and_assets(self, image_resolver):
+        from cndb.plugins.documents.services.export import render_markdown_archive
+
+        data = render_markdown_archive(TEXT_WITH_IMAGE, "标题", image_resolver, "标题")
+        assert data is not None
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            names = zf.namelist()
+            assert "标题.md" in names
+            assert "assets/abc123.png" in names
+            assert zf.read("assets/abc123.png") == PNG_1PX
+            inner = zf.read("标题.md").decode("utf-8")
+        assert "![示意图](assets/abc123.png)" in inner
+        assert "file:" not in inner
+
+    def test_no_resolvable_images_returns_none(self):
+        from cndb.plugins.documents.services.export import render_markdown_archive
+
+        assert render_markdown_archive("# 纯文字\n", "标题", lambda _k: None, "标题") is None
+        assert render_markdown_archive("![x](file:missing.png)", "标题", lambda _k: None, "标题") is None
+        assert render_markdown_archive("![x](https://e.com/a.png)", "标题", lambda _k: None, "标题") is None
+
+
+class TestMarkdownExportEndpoint:
+    def _make_doc_with_image(self, client, ws, owner, db):
+        auth = _login(client, owner.username)
+        up = client.post(
+            f"/api/v1/workspaces/{ws.id}/files",
+            files={"file": ("图表.png", PNG_1PX, "image/png")},
+            headers=auth,
+        )
+        assert up.status_code == 201, up.text
+        file_key = up.json()["file_key"]
+
+        from cndb.plugins.documents.services import content as content_service
+
+        doc = content_service.create_document(
+            db, ws.id, owner, title="带图 Markdown", content=f"# 带图\n\n![图表](file:{file_key})\n"
+        )
+        return auth, doc, file_key
+
+    def test_markdown_with_images_returns_zip(self, client, ws, owner, db):
+        auth, doc, file_key = self._make_doc_with_image(client, ws, owner, db)
+
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc.id}/export", params={"format": "md"}, headers=auth)
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"].startswith("application/zip")
+        assert ".zip" in r.headers["content-disposition"]
+
+        with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+            names = zf.namelist()
+            assert f"assets/{file_key}" in names
+            md_name = next(n for n in names if n.endswith(".md"))
+            inner = zf.read(md_name).decode("utf-8")
+        assert f"![图表](assets/{file_key})" in inner
+
+    def test_markdown_without_images_stays_plain(self, client, ws, owner, db):
+        auth = _login(client, owner.username)
+        from cndb.plugins.documents.services import content as content_service
+
+        doc = content_service.create_document(db, ws.id, owner, title="纯文字", content="# 纯文字\n")
+
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc.id}/export", params={"format": "md"}, headers=auth)
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"].startswith("text/markdown")
+        assert r.content.decode("utf-8") == "# 纯文字\n"
