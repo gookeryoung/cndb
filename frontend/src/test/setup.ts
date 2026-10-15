@@ -119,6 +119,50 @@ if (typeof Blob !== 'undefined' && !Blob.prototype.stream) {
   }
 }
 
+// ── WebSocket 替身：测试环境不建立真实实时通道 ─────────────────────────
+// MainLayout / DocumentEditorPage 挂载时会经 useRealtime 打开工作区通道
+// （ws://<jsdom host>/api/v1/ws?workspace_id=N）。jsdom 下没有 ws 服务端，
+// 而 MSW 的 onUnhandledRequest: 'error' 会把「没有 ws handler 的连接」判为
+// 未处理帧：打印 [MSW] Error 并给客户端派发 error 事件 —— 客户端随即按指数
+// 退避重连，日志被逐用例刷屏（实测 1520 例共 62 条）。
+// 这里替换为惰性替身：不发起任何网络 IO，也不触发 open/close/error，
+// 因此既不产生 MSW 噪音，也不产生重连定时器。
+// 实时协议本身（连接/心跳/重连/presence 分发）由 src/realtime/*.test.tsx 用
+// FakeWebSocket 与模块 mock 单独覆盖，与此替身无关。
+class InertWebSocket {
+  static readonly CONNECTING = 0
+  static readonly OPEN = 1
+  static readonly CLOSING = 2
+  static readonly CLOSED = 3
+
+  readonly url: string
+  readyState = InertWebSocket.CONNECTING
+  onopen: ((event: Event) => void) | null = null
+  onmessage: ((event: MessageEvent) => void) | null = null
+  onclose: ((event: CloseEvent) => void) | null = null
+  onerror: ((event: Event) => void) | null = null
+
+  constructor(url: string | URL) {
+    this.url = String(url)
+  }
+
+  send(): void { /* noop：连接从未建立 */ }
+  close(): void { this.readyState = InertWebSocket.CLOSED }
+  addEventListener(): void { /* noop */ }
+  removeEventListener(): void { /* noop */ }
+  dispatchEvent(): boolean { return true }
+}
+
+/** 必须在 server.listen() 之后调用：MSW 在 listen 时经 patchesRegistry 接管
+ *  并重新定义 globalThis.WebSocket（其中 WebSocketInterceptor 覆盖全局）。 */
+function installInertWebSocket(): void {
+  Object.defineProperty(globalThis, 'WebSocket', {
+    value: InertWebSocket,
+    writable: true,
+    configurable: true,
+  })
+}
+
 // ── 抑制已知的无害 console.error 噪音（antd act 警告）──────────────────
 // antd ThemeProvider 渲染的 <AntApp> 挂载 rc-notification holder 及 rc-motion，
 // 会在 requestAnimationFrame 中更新状态，发生在 RTL act 作用域之外，产生
@@ -184,6 +228,8 @@ if (typeof window !== 'undefined') {
 beforeAll(() => {
   // MSW 网络层拦截：漏配端点直接报错，防止测试悄悄打到真实网络
   server.listen({ onUnhandledRequest: 'error' })
+  // 顺序不可换：MSW 在 listen 时才接管 globalThis.WebSocket
+  installInertWebSocket()
 })
 
 // 每个用例后自动清理：DOM 卸载 + 本地存储清空 + MSW handlers 还原

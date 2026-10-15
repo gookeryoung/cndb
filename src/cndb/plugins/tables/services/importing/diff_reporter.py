@@ -210,6 +210,8 @@ class DiffReporter:
             "select",
             "multiselect",
             "json",
+            "image",
+            "attachment",
         }
         if final_type not in _ALLOWED:
             final_type = "text"
