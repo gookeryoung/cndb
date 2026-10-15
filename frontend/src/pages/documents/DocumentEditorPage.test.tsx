@@ -440,6 +440,50 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
         expect(await screen.findByText('已解析')).toBeInTheDocument()
     })
 
+    it('窄屏用「编辑 / 预览」页签切换面板，不再左右分栏', async () => {
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        // 窄屏：页签切换 + 单面板（无 Splitter）
+        const sw = screen.getByTestId('doc-mobile-pane-switch')
+        expect(sw).toBeInTheDocument()
+        expect(document.querySelector('.ant-splitter')).toBeNull()
+        // 默认编辑面板
+        expect(document.querySelector('textarea')).toBeInTheDocument()
+        expect(document.querySelector('.doc-md-preview')).toBeNull()
+
+        fireEvent.click(screen.getByText('预览'))
+        await waitFor(() => expect(document.querySelector('.doc-md-preview')).toBeInTheDocument())
+        expect(document.querySelector('textarea')).toBeNull()
+
+        fireEvent.click(screen.getByText('编辑'))
+        await waitFor(() => expect(document.querySelector('textarea')).toBeInTheDocument())
+    })
+
+    it('桌面端保持左右分栏，不渲染窄屏页签', async () => {
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        expect(screen.queryByTestId('doc-mobile-pane-switch')).toBeNull()
+        expect(document.querySelector('.ant-splitter')).toBeTruthy()
+        expect(document.querySelector('textarea')).toBeInTheDocument()
+    })
+
+    it('大纲点击锚点时窄屏先切到预览面板', async () => {
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        // 打开大纲抽屉并点击一个标题
+        fireEvent.click(screen.getByText(/大\s*纲/))
+        fireEvent.click(await screen.findByText('需求说明', { selector: '.ant-drawer *' }))
+
+        await waitFor(() => expect(document.querySelector('.doc-md-preview')).toBeInTheDocument())
+    })
+
     it('桌面端保持全部按钮常显，不渲染更多入口', async () => {
         responsiveState = {
             deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
