@@ -13,6 +13,7 @@ import { adminApi } from '@/api'
 import { useAuthStore } from '@/store'
 import type { BackupManifest } from '@/api'
 import UsersPage from './UsersPage'
+import EventsPage from './EventsPage'
 import { useResponsive } from '@/hooks/useResponsive'
 import { formatSize } from '@/utils/formatSize'
 
@@ -433,6 +434,11 @@ export default function AdminPanel() {
               key: 'users',
               label: <span><TeamOutlined /> 用户管理</span>,
               children: <UsersPage />,
+            },
+            {
+              key: 'events',
+              label: <span><FileZipOutlined /> 事件流</span>,
+              children: <EventsPage />,
             },
             {
               key: 'info',

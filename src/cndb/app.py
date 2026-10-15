@@ -28,6 +28,7 @@ from fastapi_offline import FastAPIOffline
 
 from cndb.core.config import settings
 from cndb.core.errors import CndbError
+from cndb.core.events_api import register_event_routes
 from cndb.core.migrations import ensure_db_migrated
 from cndb.core.observability import RequestObservabilityMiddleware, configure_logging
 from cndb.core.plugin_registry import plugin_registry
@@ -83,6 +84,8 @@ app.include_router(documents_public_router)
 
 # 系统管理级路由（backup/restore/info）— 需 superuser 权限
 register_system_routes(app)
+# 统一事件流（/api/v1/admin/events，超管或审计管理员可读）
+register_event_routes(app)
 
 
 app.add_middleware(

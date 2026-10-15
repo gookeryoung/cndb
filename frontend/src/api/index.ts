@@ -24,7 +24,14 @@ export { publicApi } from './public'
 export { issuesApi } from './issues'
 export { changeRequestsApi } from './changeRequests'
 export { adminApi } from './admin'
-export type { AdminSystemInfo, BackupManifest } from './admin'
+export type {
+  AdminSystemInfo,
+  BackupManifest,
+  CoreEventActionStat,
+  CoreEventItem,
+  CoreEventPage,
+  CoreEventQuery,
+} from './admin'
 export { systemApi } from './system'
 export type { SystemAbout } from './system'
 export { governanceApi } from './governance'

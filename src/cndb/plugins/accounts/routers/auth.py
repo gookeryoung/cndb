@@ -19,6 +19,17 @@ from cndb.api.deps import get_current_user
 from cndb.core.config import settings
 from cndb.core.database import get_db
 from cndb.core.errors import TooManyRequestsError, UnauthorizedError
+from cndb.core.events import (
+    ACTION_AUTH_LOGIN,
+    ACTION_AUTH_LOGIN_FAILED,
+    ACTION_AUTH_LOGOUT,
+    ACTION_AUTH_PASSWORD_CHANGED,
+    ACTION_AUTH_SESSION_REVOKED,
+    ACTION_AUTH_TOKEN_REUSE,
+    TARGET_SESSION,
+    TARGET_USER,
+    record_event,
+)
 from cndb.core.ratelimit import LoginRateLimiter
 from cndb.core.security import hash_password, verify_password
 from cndb.plugins.accounts.models import User, UserRole
@@ -213,12 +224,31 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     user = db.query(User).filter((User.username == payload.login) | (User.email == payload.login)).first()
     if user is None or not user.is_active or not user.check_password(payload.password):
         limiter.record_failure(payload.login, ip)
+        record_event(
+            db,
+            ACTION_AUTH_LOGIN_FAILED,
+            summary=f"登录失败：{payload.login}",
+            target_type=TARGET_USER,
+            actor_id=getattr(user, "id", None),
+            actor_name=getattr(user, "username", payload.login),
+            detail={"login": payload.login, "ip": ip, "reason": "credentials"},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名/邮箱或密码错误",
         )
 
     limiter.reset(payload.login, ip)
+    record_event(
+        db,
+        ACTION_AUTH_LOGIN,
+        summary=f"登录成功：{user.username}",
+        target_type=TARGET_USER,
+        target_id=user.id,
+        actor_id=user.id,
+        actor_name=user.username,
+        detail={"ip": ip, "user_agent": request.headers.get("user-agent")},
+    )
     pair = session_service.issue_pair(
         db,
         user,
@@ -234,11 +264,23 @@ def refresh(payload: RefreshRequest, request: Request, db: Session = Depends(get
     旧刷新令牌立即失效；若**已轮换**的令牌再次被使用，视为泄露，吊销该用户全部会话后返回 401。
     """
     _reject_in_local_mode("刷新令牌")
-    _user, pair = session_service.rotate(
-        db,
-        payload.refresh_token,
-        user_agent=request.headers.get("user-agent"),
-    )
+    try:
+        _user, pair = session_service.rotate(
+            db,
+            payload.refresh_token,
+            user_agent=request.headers.get("user-agent"),
+        )
+    except UnauthorizedError as exc:
+        # 复用检测已吊销全部会话，额外落一条安全事件供审计
+        if "重复使用" in str(getattr(exc, "detail", "")):
+            record_event(
+                db,
+                ACTION_AUTH_TOKEN_REUSE,
+                summary="检测到刷新令牌被重复使用，已吊销全部会话",
+                target_type=TARGET_SESSION,
+                detail={"ip": request.client.host if request.client else None},
+            )
+        raise
     return TokenResponse(**pair.as_dict())
 
 
@@ -261,12 +303,29 @@ def logout(
         if current_user is None:
             raise UnauthorizedError("需要登录后才能下线全部会话")
         revoked = session_service.revoke_all(db, current_user.id, reason="logout_all")
+        record_event(
+            db,
+            ACTION_AUTH_LOGOUT,
+            summary=f"下线全部会话（{revoked} 个）",
+            target_type=TARGET_SESSION,
+            actor_id=current_user.id,
+            actor_name=current_user.username,
+            detail={"revoked": revoked},
+        )
         return {"revoked": revoked, "scope": "all"}
 
     if not body.refresh_token:
         raise HTTPException(status_code=400, detail="请提供刷新令牌，或使用 all=true 下线全部会话")
 
-    return {"revoked": 1 if session_service.revoke_token(db, body.refresh_token) else 0, "scope": "single"}
+    revoked = session_service.revoke_token(db, body.refresh_token)
+    record_event(
+        db,
+        ACTION_AUTH_LOGOUT,
+        summary="登出（吊销刷新令牌）" if revoked else "登出（令牌已失效）",
+        target_type=TARGET_SESSION,
+        detail={"revoked": int(revoked)},
+    )
+    return {"revoked": 1 if revoked else 0, "scope": "single"}
 
 
 @router.post("/password")
@@ -291,6 +350,16 @@ def change_password(
     current_user.token_version = int(current_user.token_version or 0) + 1
     db.commit()
     revoked = session_service.revoke_all(db, current_user.id, reason="password_changed")
+    record_event(
+        db,
+        ACTION_AUTH_PASSWORD_CHANGED,
+        summary=f"修改密码：{current_user.username}",
+        target_type=TARGET_USER,
+        target_id=current_user.id,
+        actor_id=current_user.id,
+        actor_name=current_user.username,
+        detail={"revoked_sessions": revoked},
+    )
     return {"ok": True, "revoked_sessions": revoked}
 
 
@@ -316,6 +385,15 @@ def revoke_session(
         raise UnauthorizedError("未认证")
     if not session_service.revoke_session(db, current_user.id, session_id):
         raise HTTPException(status_code=404, detail="会话不存在或已失效")
+    record_event(
+        db,
+        ACTION_AUTH_SESSION_REVOKED,
+        summary=f"下线会话 #{session_id}",
+        target_type=TARGET_SESSION,
+        target_id=session_id,
+        actor_id=current_user.id,
+        actor_name=current_user.username,
+    )
     return {"ok": True}
 
 

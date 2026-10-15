@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from cndb.core.events import TARGET_RECORD, record_event
 from cndb.plugins.tables.models import AuditLog, DataTable
 
 ACTION_CREATE = "create"
@@ -39,6 +40,17 @@ def log_action(
         )
         db.add(entry)
         db.commit()
+        # 同步进统一事件流（域内查询仍走 tables_auditlog）
+        record_event(
+            db,
+            f"record.{action}",
+            summary=f"{action} 记录（表 {table.id}）",
+            target_type=TARGET_RECORD,
+            target_id=target_id,
+            workspace_id=getattr(table, "workspace_id", None),
+            actor_id=actor_id,
+            detail=detail or {},
+        )
     except Exception:
         db.rollback()
 
