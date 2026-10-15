@@ -29,12 +29,15 @@ import {
   MoreOutlined,
   PullRequestOutlined,
   SaveOutlined,
+  SearchOutlined,
   TableOutlined,
   TagsOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import FindReplaceBar from '@/components/Document/FindReplaceBar'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import MarkdownToolbar, { type MarkdownAction } from '@/components/Document/MarkdownToolbar'
+import { findMatches, nextMatchIndex, replaceAllMatches, replaceMatch } from '@/components/Document/documentSearch'
 import { insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi, isChangeRequestDispatch } from '@/api/documents'
@@ -85,6 +88,13 @@ export default function DocumentEditorPage() {
   const [crOpen, setCrOpen] = useState(false)
   /** 保存被转为修改申请时的提示（正文未落库，等待审核） */
   const [pendingNotice, setPendingNotice] = useState<string | null>(null)
+  // 查找 / 替换（Ctrl+F / Ctrl+H 打开，Esc 关闭）
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [replaceText, setReplaceText] = useState('')
+  const [findCaseSensitive, setFindCaseSensitive] = useState(false)
+  /** 当前定位到的匹配下标（-1 = 尚未定位） */
+  const [matchIndex, setMatchIndex] = useState(-1)
   const baseTsRef = useRef<string | null>(null)
   const dirtyRef = useRef(false)
   const taRef = useRef<TextAreaRef>(null)
@@ -266,6 +276,85 @@ export default function DocumentEditorPage() {
     saveMut.mutate(content)
   }, [content, saveMut])
 
+  /** 全部匹配（随正文 / 查询 / 大小写开关实时重算） */
+  const findMatchesList = useMemo(
+    () => findMatches(content, findQuery, { caseSensitive: findCaseSensitive }),
+    [content, findQuery, findCaseSensitive],
+  )
+
+  /** 选中并滚动到指定区间（textarea 聚焦后设置选区会自动将其卷入可视区） */
+  const focusRange = useCallback((start: number, end: number) => {
+    requestAnimationFrame(() => {
+      const node = taRef.current?.resizableTextArea?.textArea
+      if (!node) return
+      node.focus()
+      node.setSelectionRange(start, end)
+    })
+  }, [])
+
+  /** 定位到第 index 个匹配 */
+  const selectMatch = useCallback((index: number) => {
+    const m = findMatchesList[index]
+    if (!m) return
+    setMatchIndex(index)
+    focusRange(m.start, m.end)
+  }, [findMatchesList, focusRange])
+
+  /** 打开查找条；若编辑器中有选中文本（且不含换行）则作为查询词 */
+  const openFind = useCallback(() => {
+    const node = taRef.current?.resizableTextArea?.textArea
+    const selected = node && node.selectionEnd > node.selectionStart
+      ? content.slice(node.selectionStart, node.selectionEnd)
+      : ''
+    if (selected && !selected.includes('\n') && selected.length <= 200) setFindQuery(selected)
+    setFindOpen(true)
+  }, [content])
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false)
+    setMatchIndex(-1)
+    requestAnimationFrame(() => taRef.current?.resizableTextArea?.textArea?.focus())
+  }, [])
+
+  /** 上一个 / 下一个匹配（从当前光标位置起算，越界环绕） */
+  const stepMatch = useCallback((direction: 1 | -1) => {
+    if (findMatchesList.length === 0) return
+    const node = taRef.current?.resizableTextArea?.textArea
+    const caret = node?.selectionEnd ?? 0
+    const idx = nextMatchIndex(findMatchesList, caret, direction)
+    if (idx >= 0) selectMatch(idx)
+  }, [findMatchesList, selectMatch])
+
+  /** 替换当前匹配，并自动跳到下一处（与常见编辑器行为一致） */
+  const handleReplaceOne = useCallback(() => {
+    const node = taRef.current?.resizableTextArea?.textArea
+    const caret = node?.selectionEnd ?? 0
+    const idx = matchIndex >= 0 && findMatchesList[matchIndex] ? matchIndex : nextMatchIndex(findMatchesList, caret, 1)
+    const target = findMatchesList[idx]
+    if (!target) return
+    const replaced = replaceMatch(content, target, replaceText)
+    setContent(replaced.value)
+    dirtyRef.current = true
+    const after = findMatches(content, findQuery, { caseSensitive: findCaseSensitive })
+    const nextIdx = nextMatchIndex(after, replaced.caret, 1)
+    const nextMatch = after[nextIdx]
+    setMatchIndex(nextIdx)
+    focusRange(nextMatch?.start ?? replaced.caret, nextMatch?.end ?? replaced.caret)
+  }, [content, matchIndex, findMatchesList, replaceText, findQuery, findCaseSensitive, focusRange])
+
+  /** 全部替换（字面量替换，空结果不做改动） */
+  const handleReplaceAll = useCallback(() => {
+    const result = replaceAllMatches(content, findQuery, replaceText, { caseSensitive: findCaseSensitive })
+    if (result.count === 0) {
+      message.info('没有可替换的内容')
+      return
+    }
+    setContent(result.value)
+    dirtyRef.current = true
+    setMatchIndex(-1)
+    message.success(`已替换 ${result.count} 处`)
+  }, [content, findQuery, replaceText, findCaseSensitive])
+
   /** 应用一次 Markdown 语法操作：以 textarea 当前选区为准，写回后恢复焦点与光标 */
   const applyMarkdownAction = useCallback((action: MarkdownAction) => {
     const node = taRef.current?.resizableTextArea?.textArea
@@ -286,9 +375,21 @@ export default function DocumentEditorPage() {
 
   /** 编辑区快捷键：Ctrl/Cmd+B 加粗、Ctrl/Cmd+I 斜体、Ctrl/Cmd+K 链接（Ctrl+S 由全局处理） */
   const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape' && findOpen) {
+      e.preventDefault()
+      closeFind()
+      return
+    }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return
     const key = e.key.toLowerCase()
-    if (key === 'b') {
+    if (key === 'f') {
+      // 接管浏览器查找：打开文档内查找替换
+      e.preventDefault()
+      openFind()
+    } else if (key === 'h') {
+      e.preventDefault()
+      openFind()
+    } else if (key === 'b') {
       e.preventDefault()
       applyMarkdownAction((v, s, en) => wrapSelection(v, s, en, '**'))
     } else if (key === 'i') {
@@ -298,7 +399,7 @@ export default function DocumentEditorPage() {
       e.preventDefault()
       applyMarkdownAction((v, s, en) => insertLink(v, s, en))
     }
-  }, [applyMarkdownAction])
+  }, [applyMarkdownAction, findOpen, closeFind, openFind])
 
   // 在光标位置插入数据表引用占位符（前后自动补空行保证独占段落）
   const insertTableRef = () => {
@@ -419,6 +520,7 @@ export default function DocumentEditorPage() {
    *  收进「更多」，只保留「大纲」（导航）与「保存」（主操作），
    *  避免 9 个按钮在 390px 屏上折成三行挤掉正文。 */
   const docMoreItems = [
+    { key: 'find', icon: <SearchOutlined />, label: '查找替换', onClick: openFind },
     { key: 'backlinks', icon: <LinkOutlined />, label: '反向链接', onClick: () => setBacklinksOpen(true) },
     { key: 'links', icon: <BranchesOutlined />, label: '文档链接', onClick: () => setLinksOpen(true) },
     { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
@@ -480,6 +582,9 @@ export default function DocumentEditorPage() {
         <Space wrap>
           <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>
             大纲{outline.length > 0 ? ` (${outline.length})` : ''}
+          </Button>
+          <Button icon={<SearchOutlined />} data-testid="doc-find-open" onClick={openFind}>
+            查找
           </Button>
           <Button icon={<LinkOutlined />} onClick={() => setBacklinksOpen(true)}>
             反链
@@ -583,6 +688,23 @@ export default function DocumentEditorPage() {
             </div>
             {mobilePane === 'edit' ? (
               <>
+                {findOpen && (
+                  <FindReplaceBar
+                    query={findQuery}
+                    replacement={replaceText}
+                    matches={findMatchesList}
+                    currentIndex={matchIndex < findMatchesList.length ? matchIndex : -1}
+                    caseSensitive={findCaseSensitive}
+                    onQueryChange={q => { setFindQuery(q); setMatchIndex(-1) }}
+                    onReplacementChange={setReplaceText}
+                    onPrev={() => stepMatch(-1)}
+                    onNext={() => stepMatch(1)}
+                    onReplace={handleReplaceOne}
+                    onReplaceAll={handleReplaceAll}
+                    onToggleCase={() => { setFindCaseSensitive(v => !v); setMatchIndex(-1) }}
+                    onClose={closeFind}
+                  />
+                )}
                 <MarkdownToolbar onAction={applyMarkdownAction} />
                 <TextArea
                   ref={taRef}
@@ -617,6 +739,23 @@ export default function DocumentEditorPage() {
           <Splitter style={{ height: '100%' }}>
             <Splitter.Panel defaultSize="50%" min="20%" max="80%">
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              {findOpen && (
+                <FindReplaceBar
+                  query={findQuery}
+                  replacement={replaceText}
+                  matches={findMatchesList}
+                  currentIndex={matchIndex < findMatchesList.length ? matchIndex : -1}
+                  caseSensitive={findCaseSensitive}
+                  onQueryChange={q => { setFindQuery(q); setMatchIndex(-1) }}
+                  onReplacementChange={setReplaceText}
+                  onPrev={() => stepMatch(-1)}
+                  onNext={() => stepMatch(1)}
+                  onReplace={handleReplaceOne}
+                  onReplaceAll={handleReplaceAll}
+                  onToggleCase={() => { setFindCaseSensitive(v => !v); setMatchIndex(-1) }}
+                  onClose={closeFind}
+                />
+              )}
               <MarkdownToolbar onAction={applyMarkdownAction} />
               <TextArea
                 ref={taRef}

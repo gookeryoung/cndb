@@ -2902,3 +2902,13 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     opacity: 0.6;
   }
 }
+
+/* ─────────────── 文档查找 / 替换条 ───────────────
+ * 与 Markdown 工具栏同层，窄屏可横滑；不挤压正文高度 */
+.cn-find-bar {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--cn-border);
+  background: color-mix(in srgb, var(--cn-bg-container) 94%, var(--cn-brand-color) 6%);
+  overflow-x: auto;
+}
