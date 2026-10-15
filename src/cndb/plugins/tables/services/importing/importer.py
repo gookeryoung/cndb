@@ -24,6 +24,7 @@ import datetime as _dt
 import io
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -232,13 +233,30 @@ class Importer:
         unknown_cols_strategy: str = "drop",
         dropped_columns: list[str] | None = None,
         cleaning_actions: list[dict[str, Any]] | None = None,
+        progress_cb: Callable[[int, str], None] | None = None,
     ) -> ImportExecuteResult:
         """完整流水线：解析 → （可选）清洗 → 校验 → 报告 → upsert → 落库.
 
         三种入口优先级：analysis > content+format > rows.
         cleaning_actions 若非空，会在 RowValidator 之前应用到原始 rows 上，
         清洗结果写入 report.cleaning_applied.
+
+        ``progress_cb(percent, stage)``：子步骤进度回调（写任务进度 + 日志）。
+        没有它时执行阶段只能显示一个 5%，任何子步骤卡住都看不出卡在哪里
+        —— 线上"卡 5% 且无报错"难排查正是这么来的。
         """
+
+        def _report(percent: int, stage: str) -> None:
+            if progress_cb is None:
+                return
+            try:
+                progress_cb(percent, stage)
+            except Exception:
+                logger.debug("进度回调失败", exc_info=True)
+
+        _report(15, "解析文件")
+
+        _report(25, "校验数据")
         if analysis is not None:
             # 若需清洗，必须回退到原始 rows 重新跑 analyze
             if cleaning_actions:
@@ -297,6 +315,7 @@ class Importer:
             if effective:
                 self._auto_add_fields(effective)
 
+        _report(45, "准备写入")
         # ── 过滤要落库的行 ────────────────────────
         to_import: list[dict[str, Any]] = []
         failed: list[ValidationResult] = []
@@ -318,6 +337,7 @@ class Importer:
             return ImportExecuteResult(imported_ids=[], report=report, failed_results=failed)
 
         # ── V2: upsert 分流 ───────────────────────
+        _report(60, "写入数据")
         new_ids: list[int] = []
         updated_count = 0
 
@@ -354,6 +374,7 @@ class Importer:
         report["actually_imported"] = len(new_ids) + updated_count
 
         # 导入完成后自动补全 select/multiselect options（覆盖新旧字段 + 存量数据）
+        _report(85, "同步字段选项")
         try:
             from cndb.plugins.tables.services.fields.field_ops import sync_select_options_from_table
 

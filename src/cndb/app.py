@@ -74,6 +74,23 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     yield
 
+    # 关闭阶段：把仍在"进行中"的导入任务标记为中断。
+    # 部署/重启会重建容器并杀掉进程内后台线程；任务行若不管就永远停在"运行中 5%"，
+    # 前端只按 status 展示 → 用户看到"卡住且无报错"。进程退出前给出明确结论。
+    try:
+        from cndb.core.database import SessionLocal
+        from cndb.plugins.tables.services.importing.import_tasks import reclaim_interrupted_tasks
+
+        session = SessionLocal()
+        try:
+            aborted = reclaim_interrupted_tasks(session, stall_threshold=0)
+            if aborted:
+                logger.warning("关闭时标记 %d 个被中断的导入任务为失败（服务重启）", aborted)
+        finally:
+            session.close()
+    except Exception:
+        logger.warning("关闭时回收导入任务失败（忽略）", exc_info=True)
+
 
 app = FastAPIOffline(
     title=settings.APP_NAME,
