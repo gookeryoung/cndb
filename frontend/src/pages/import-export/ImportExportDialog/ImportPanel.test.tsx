@@ -173,3 +173,18 @@ describe('ImportPanel 导入面板', () => {
     expect(getTaskSpy).not.toHaveBeenCalled()
   })
 })
+
+    it('轮询连续失败：提示错误并进入失败态（不再无声停在"分析中"）', async () => {
+        // 线上现象复刻：部署重启/网络中断时轮询全部失败，旧实现 catch{} 静默忽略，
+        // 界面永远停在 5% 且无报错。现在连续 3 次失败必须给出明确提示。
+        vi.spyOn(importApi, 'previewAnalyze').mockResolvedValue(makeTask())
+        vi.spyOn(importApi, 'getTask').mockRejectedValue(new Error('Network Error'))
+        setup()
+
+        chooseFile(csvFile)
+
+        expect(
+            await screen.findByText(/无法获取导入任务状态/, {}, { timeout: 8000 }),
+        ).toBeInTheDocument()
+        expect(await screen.findByRole('button', { name: '导入另一份' })).toBeInTheDocument()
+    })

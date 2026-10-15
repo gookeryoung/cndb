@@ -163,6 +163,20 @@ def get_import_task(
     if task.table_id != dt.id:
         raise HTTPException(status_code=404, detail="任务不属于此表")
 
+    # 失速检测：任务跑在进程内线程里，线程异常终止/进程重启会让它永远停在
+    # "运行中 5%"。前端只按 status 展示 → 表现为"卡住且无报错"。
+    # 这里在查询时兜底判定为 failed，把原因交给用户。
+    if task.status in ("pending_validation", "running"):
+        from cndb.core.config import settings
+        from cndb.plugins.tables.services.importing.import_tasks import (
+            reclaim_interrupted_tasks,
+        )
+
+        # 阈值取「单阶段超时」（默认 600s）：阶段内部有看门狗，超过它必然是进程/线程已死；
+        # 用更小的值会把耗时较长的大文件导入误判为中断。
+        if reclaim_interrupted_tasks(db, stall_threshold=int(settings.IMPORT_TASK_TIMEOUT_SECONDS)):
+            db.refresh(task)
+
     result: dict[str, Any] = {
         "task_id": task.id,
         "status": task.status,
@@ -175,6 +189,12 @@ def get_import_task(
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
     }
+    # 无进展时长（秒）：前端据此提示"任务可能已中断"，而不是无声等待
+    if task.updated_at or task.created_at:
+        from datetime import UTC, datetime
+
+        anchor = task.updated_at or task.created_at
+        result["stalled_seconds"] = max(0.0, (datetime.now(UTC).replace(tzinfo=None) - anchor).total_seconds())
     # 完成时返回导入的行 ID 列表
     if task.status == "done":
         result["result_ids"] = task.result_ids

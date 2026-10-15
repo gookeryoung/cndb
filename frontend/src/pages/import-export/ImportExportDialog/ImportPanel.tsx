@@ -62,6 +62,8 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
     }, [previewReportForTabs, matchKeys, scrollPreviewTabs])
 
     const pollTimer = useRef<number | null>(null)
+    // 连续轮询失败次数：网络/服务中断（如部署重启）时不再静默，超阈值给出明确提示
+    const pollFailures = useRef(0)
 
     // 关闭时清理
     useEffect(() => {
@@ -86,7 +88,16 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         pollTimer.current = window.setInterval(async () => {
             try {
                 const info = await importApi.getTask(wid, tid, task.task_id)
+                pollFailures.current = 0
                 setTask(info)
+                // 无进展提示：服务端会回收中断任务（进程重启等），但若仍长时间无进展，主动告知用户
+                const stalled = (info as ImportTaskInfo & { stalled_seconds?: number }).stalled_seconds ?? 0
+                if (stalled > 180 && (info.status === 'running' || info.status === 'pending_validation')) {
+                    message.warning(
+                        `导入任务已 ${Math.round(stalled)} 秒没有进展，可能已中断。请关闭后重新上传文件重试。`,
+                        6,
+                    )
+                }
                 if (info.status === 'pending_confirm') {
                     setPolling(false)
                     setDiffing(false)
@@ -105,8 +116,16 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     setPhase('failed')
                     message.error(`导入失败：${info.error_message ?? '未知错误'}`)
                 }
-            } catch {
-                // 忽略轮询错误，下次继续
+            } catch (err: unknown) {
+                // 轮询失败必须让用户看见：部署重启/网络中断时，旧实现静默忽略，
+                // 界面就永远停在"5%/分析中"，用户以为卡死却没有任何提示。
+                pollFailures.current += 1
+                if (pollFailures.current >= 3) {
+                    setPolling(false)
+                    const detail = err instanceof Error ? err.message : '网络错误'
+                    message.error(`无法获取导入任务状态（连续 ${pollFailures.current} 次失败：${detail}）。请刷新页面后重新上传。`, 8)
+                    setPhase('failed')
+                }
             }
         }, 800)
         return () => {
