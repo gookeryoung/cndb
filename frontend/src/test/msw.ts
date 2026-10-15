@@ -165,6 +165,8 @@ export const handlers = [
     HttpResponse.json({ items: [], total: 0 })),
 
   // 附件（useFileObjectUrl 经 axios 取 blob；1x1 PNG 字节即可）
+  http.post('/api/v1/workspaces/:wid/files', () =>
+    HttpResponse.json({ file_key: 'mock-upload.png', filename: 'mock-upload.png', size: 4, mime_type: 'image/png' }, { status: 201 })),
   http.get('/api/v1/workspaces/:wid/files/:fileKey', () =>
     new HttpResponse(_PNG_1PX, { status: 200, headers: { 'Content-Type': 'image/png' } })),
   http.delete('/api/v1/workspaces/:wid/files/:fileKey', () => new HttpResponse(null, { status: 204 })),

@@ -2912,3 +2912,22 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   background: color-mix(in srgb, var(--cn-bg-container) 94%, var(--cn-brand-color) 6%);
   overflow-x: auto;
 }
+
+/* ─────────────── 文档内图片 ───────────────
+ * 站内图片经鉴权取 blob 后渲染；占位避免取图期间布局跳动 */
+.cn-doc-image {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.cn-doc-image-placeholder {
+  display: inline-block;
+  width: 100%;
+  height: 120px;
+  border-radius: 8px;
+  background: var(--cn-bg-subtle);
+}
+
+.cn-doc-image-missing {
+  font-size: 12px;
+}

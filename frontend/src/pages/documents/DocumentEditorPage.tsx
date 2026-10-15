@@ -28,6 +28,7 @@ import {
   LinkOutlined,
   MenuOutlined,
   MoreOutlined,
+  PictureOutlined,
   PullRequestOutlined,
   SaveOutlined,
   SearchOutlined,
@@ -40,10 +41,11 @@ import { ancestorChain } from './DocumentTree'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import MarkdownToolbar, { type MarkdownAction } from '@/components/Document/MarkdownToolbar'
 import { findMatches, nextMatchIndex, replaceAllMatches, replaceMatch } from '@/components/Document/documentSearch'
+import { buildImageSnippet, isImageFile } from '@/components/Document/imageRef'
 import { insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi, isChangeRequestDispatch } from '@/api/documents'
-import { tableApi, workspaceApi } from '@/api'
+import { fileApi, tableApi, workspaceApi } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
 import type {
@@ -422,10 +424,8 @@ export default function DocumentEditorPage() {
     }
   }, [applyMarkdownAction, findOpen, closeFind, openFind])
 
-  // 在光标位置插入数据表引用占位符（前后自动补空行保证独占段落）
-  const insertTableRef = () => {
-    if (insertTableId === null) return
-    const snippet = `{{table:${insertTableId}${insertLimit ? `|limit=${insertLimit}` : ''}}}`
+  /** 在光标处插入独占段落的片段（前后自动补空行）；图片 / 数据表引用共用 */
+  const insertSnippetAtCursor = useCallback((snippet: string) => {
     const el = taRef.current?.resizableTextArea?.textArea
     const pos = el?.selectionStart ?? content.length
     const end = el?.selectionEnd ?? pos
@@ -435,9 +435,39 @@ export default function DocumentEditorPage() {
     const suffix = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : ''
     setContent(`${before}${prefix}${snippet}${suffix}${after}`)
     dirtyRef.current = true
+  }, [content])
+
+  // 在光标位置插入数据表引用占位符（前后自动补空行保证独占段落）
+  const insertTableRef = () => {
+    if (insertTableId === null) return
+    insertSnippetAtCursor(`{{table:${insertTableId}${insertLimit ? `|limit=${insertLimit}` : ''}}}`)
     setInsertOpen(false)
     setInsertTableId(null)
     setInsertLimit(null)
+  }
+
+  // ── 插入图片：上传到工作区文件存储，正文写入站内引用 `![alt](file:<key>)` ──
+  const imageInputRef = useRef<HTMLInputElement>(null)
+
+  const imageMut = useMutation({
+    mutationFn: (file: File) => fileApi.upload(workspaceId, file),
+    onSuccess: (res, file) => {
+      insertSnippetAtCursor(buildImageSnippet(file.name, res.file_key))
+      message.success('图片已插入（保存后生效）')
+    },
+    onError: () => message.error('图片上传失败'),
+  })
+
+  const handleImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    // 复位 input：允许连续选择同一文件
+    e.target.value = ''
+    if (!file) return
+    if (!isImageFile(file)) {
+      message.error('仅支持图片文件（png / jpg / gif / webp / svg 等）')
+      return
+    }
+    imageMut.mutate(file)
   }
 
   // Ctrl/Cmd+S 保存
@@ -544,6 +574,7 @@ export default function DocumentEditorPage() {
     { key: 'find', icon: <SearchOutlined />, label: '查找替换', onClick: openFind },
     { key: 'backlinks', icon: <LinkOutlined />, label: '反向链接', onClick: () => setBacklinksOpen(true) },
     { key: 'links', icon: <BranchesOutlined />, label: '文档链接', onClick: () => setLinksOpen(true) },
+    { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
     { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
     { key: 'tags', icon: <TagsOutlined />, label: `标签${(doc.tag_ids?.length ?? 0) > 0 ? ` (${doc.tag_ids?.length})` : ''}`, onClick: () => setTagsOpen(true) },
     { key: 'change-requests', icon: <PullRequestOutlined />, label: `修改申请${pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}`, onClick: () => setCrOpen(true) },
@@ -612,6 +643,14 @@ export default function DocumentEditorPage() {
         <Space wrap>
           <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>
             大纲{outline.length > 0 ? ` (${outline.length})` : ''}
+          </Button>
+          <Button
+            icon={<PictureOutlined />}
+            loading={imageMut.isPending}
+            data-testid="doc-image-insert"
+            onClick={() => imageInputRef.current?.click()}
+          >
+            图片
           </Button>
           <Button icon={<SearchOutlined />} data-testid="doc-find-open" onClick={openFind}>
             查找
@@ -818,6 +857,16 @@ export default function DocumentEditorPage() {
           </Splitter>
         )}
       </div>
+
+      {/* 插入图片用的隐藏文件选择器（工具栏按钮 / 窄屏更多菜单共用） */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        data-testid="doc-image-input"
+        onChange={handleImagePick}
+      />
 
       {/* 大纲抽屉：实时标题层级，点击滚动定位预览区锚点 */}
       <OutlineDrawer
