@@ -188,6 +188,14 @@ console.error = (...args: unknown[]) => {
   if (text.includes('[MSW] Error: intercepted a request without a matching request handler')) {
     return
   }
+  // 过滤 antd 静态 message 的上下文警告：
+  // 仓库里仍有若干页面使用 `message.xxx()`（静态调用），antd 会提示
+  // "[antd: message] Static function can not consume context like dynamic theme."
+  // 这是**应用级**待迁移项（应改用 App.useApp() 的 message），一次 CI 会刷出上百行；
+  // 在测试输出里屏蔽，避免淹没真正的失败信息。迁移完成即可删除本过滤。
+  if (text.includes('[antd: message] Static function can not consume context')) {
+    return
+  }
   originalConsoleError(...args)
 }
 

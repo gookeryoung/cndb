@@ -392,7 +392,7 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
       children: node.children.filter(c => c.is_folder).map(toOption),
     })
     return [
-      { key: 'root', value: 0, title: '（根目录）', children: treeData.filter(n => n.is_folder).map(toOption) },
+      { value: 0, title: '（根目录）', children: treeData.filter(n => n.is_folder).map(toOption) },
     ]
   }, [dialog, treeData])
 

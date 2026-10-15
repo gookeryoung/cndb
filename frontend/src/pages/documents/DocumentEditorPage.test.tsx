@@ -524,6 +524,9 @@ describe('DocumentEditorPage Markdown 快捷工具', () => {
         await waitFor(() => expect(ta.value.startsWith('**')).toBe(true))
 
         const afterBold = ta.value
+        // 文本域先于文档内容渲染：先等内容加载完再改标题，
+        // 否则标题操作作用在空内容上（CI 上曾因此偶发 "expected false to be true"）
+        await waitFor(() => expect(ta.value.length).toBeGreaterThan(0))
         ta.setSelectionRange(0, 0)
         fireEvent.keyDown(ta, { key: 'i', ctrlKey: true })
         await waitFor(() => expect(ta.value).not.toBe(afterBold))
@@ -536,6 +539,9 @@ describe('DocumentEditorPage Markdown 快捷工具', () => {
     it('列表 / 引用 / 代码块按钮作用于整行', async () => {
         renderEditor()
         const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        // 文本域先于文档内容渲染：先等内容加载完再改标题，
+        // 否则标题操作作用在空内容上（CI 上曾因此偶发 "expected false to be true"）
+        await waitFor(() => expect(ta.value.length).toBeGreaterThan(0))
         ta.setSelectionRange(0, 0)
 
         fireEvent.click(screen.getByTestId('md-toolbar-ul'))
@@ -835,6 +841,9 @@ describe('DocumentEditorPage 表格骨架与标题层级', () => {
         renderEditor()
         const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
         // 光标放在第一行（# 需求说明）
+        // 文本域先于文档内容渲染：先等内容加载完再改标题，
+        // 否则标题操作作用在空内容上（CI 上曾因此偶发 "expected false to be true"）
+        await waitFor(() => expect(ta.value.length).toBeGreaterThan(0))
         ta.setSelectionRange(0, 0)
 
         fireEvent.click(screen.getByTestId('md-toolbar-heading'))
@@ -846,6 +855,9 @@ describe('DocumentEditorPage 表格骨架与标题层级', () => {
     it('工具栏标题下拉「正文」：取消已有标题', async () => {
         renderEditor()
         const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        // 文本域先于文档内容渲染：先等内容加载完再改标题，
+        // 否则标题操作作用在空内容上（CI 上曾因此偶发 "expected false to be true"）
+        await waitFor(() => expect(ta.value.length).toBeGreaterThan(0))
         ta.setSelectionRange(0, 0)
 
         fireEvent.click(screen.getByTestId('md-toolbar-heading'))
