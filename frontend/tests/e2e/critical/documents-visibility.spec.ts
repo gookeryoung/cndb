@@ -141,6 +141,21 @@ test.describe("文档可见性与授权（多用户）", () => {
             const detail = await apiCall(viewer.api, viewer.token, "get", `/workspaces/${workspaceId}/documents/${doc.id}`);
             expect(detail.status).toBe(200);
 
+            // 6.5) 被授权者收到「协作者邀请」通知（前端铃铛未读角标的数据来源）
+            const notifs = await apiCall(viewer.api, viewer.token, "get", "/accounts/notifications");
+            expect(notifs.status).toBe(200);
+            const notifBody = notifs.body as {
+                items: Array<{ type: string; document_id: number; document_title: string; read: boolean }>;
+                unread_count: number;
+            };
+            const invite = notifBody.items.find(
+                n => n.document_id === doc.id && n.type === "document.collaborator_added",
+            );
+            expect(invite, "被授权者应收到协作者邀请通知").toBeTruthy();
+            expect(invite?.document_title).toBe(title);
+            expect(invite?.read).toBe(false);
+            expect(notifBody.unread_count).toBeGreaterThanOrEqual(1);
+
             // 7) 创建者 UI：标记变为「已共享给协作者」
             await expectVisibilityMarker(admin.page, workspaceId, doc.id, "已共享给协作者", { reload: true });
 
