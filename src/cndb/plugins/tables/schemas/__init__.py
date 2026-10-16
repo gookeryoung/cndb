@@ -40,6 +40,7 @@ from cndb.plugins.tables.schemas.models import (
     ViewCreate,
     ViewResponse,
     ViewUpdate,
+    ViewVisibilityUpdate,
     WorkspaceBrief,
 )
 
@@ -79,5 +80,6 @@ __all__ = [
     "ViewCreate",
     "ViewResponse",
     "ViewUpdate",
+    "ViewVisibilityUpdate",
     "WorkspaceBrief",
 ]

@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from cndb.plugins.tables.models import ViewVisibility
+
 # ── DataTable schemas ─────────────────────────────────
 
 
@@ -79,6 +81,8 @@ class ViewBrief(BaseModel):
     name: str
     view_type: str
     is_default: bool
+    # 可见性档位：前端据此展示「私有/指定成员/表内可见」三态标签（P3）
+    visibility: ViewVisibility
 
 
 class WorkspaceBrief(BaseModel):
@@ -265,6 +269,9 @@ class ViewCreate(BaseModel):
     field_order: list[str] = Field(default_factory=list)
     view_options: dict[str, Any] = Field(default_factory=dict)
     is_default: bool = False
+    # 可见性档位（ADR 0003）：新建默认 private（仅创建者可见），
+    # table = 继承表权限、shared = 指定成员
+    visibility: ViewVisibility = ViewVisibility.PRIVATE
     # None 表示未指定顺序，创建时由后端追加到现有视图末尾
     order: int | None = None
 
@@ -282,6 +289,15 @@ class ViewUpdate(BaseModel):
     order: int | None = None
 
 
+class ViewVisibilityUpdate(BaseModel):
+    """可见性变更请求体（``POST /views/{id}/visibility``）.
+
+    ``members`` 在 P3 与授权名单端点一起落地；本期只承载档位切换。
+    """
+
+    visibility: ViewVisibility
+
+
 class ViewResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -297,6 +313,7 @@ class ViewResponse(BaseModel):
     view_options: dict[str, Any]
     is_default: bool
     order: int
+    visibility: ViewVisibility
     created_at: datetime
     updated_at: datetime
 

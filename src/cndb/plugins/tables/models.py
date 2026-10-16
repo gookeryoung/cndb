@@ -74,6 +74,46 @@ class FilterType(enum.StrEnum):
     OR = "OR"
 
 
+class ViewVisibility(enum.StrEnum):
+    """视图可见性档位（ADR 0003 决策 D1/D2）.
+
+    - ``TABLE``   继承表权限（表内公开）：读 = 表 ``READ``，改 = 表 ``EDIT_VIEWS``
+    - ``SHARED``  指定成员：仅 ``tables_dataviewpermission`` 名单内可见
+    - ``PRIVATE`` 仅创建者可见（**新建默认**，对非创建者含管理员一律 404）
+
+    约束：视图授权永不放行表外的人，也不提升改权 —— 生效权 = min(视图授权, 表权限)。
+    """
+
+    TABLE = "table"
+    SHARED = "shared"
+    PRIVATE = "private"
+
+
+class ViewGrantSubject(enum.StrEnum):
+    """视图授权主体类型."""
+
+    USER = "user"  # subject_id = user.id
+    ROLE = "role"  # subject_id = Role.code / 工作区角色值（owner/editor/viewer）/ 表成员内置 read|write
+
+
+class ViewGrantRole(enum.StrEnum):
+    """视图授权角色（无 owner —— 创建者天然全权）."""
+
+    VIEWER = "viewer"
+    EDITOR = "editor"
+
+
+def scope_key_for(visibility: str, owner_id: int | None) -> int:
+    """视图命名空间：``private`` 落创建者空间，其余（``table``/``shared``）落共享空间.
+
+    共享命名空间（0）= 会出现在表的公共视图栏里，因此 ``shared`` 与 ``table`` 同空间，
+    同名冲突直接 400；``private`` 只在创建者自己的命名空间内唯一（修 ADR 0003 缺陷 #7）。
+    """
+    if visibility == ViewVisibility.PRIVATE:
+        return int(owner_id) if owner_id is not None else 0
+    return 0
+
+
 # ── DataTable ──
 
 
@@ -178,11 +218,18 @@ class DataField(TimestampMixin, Base):
 
 
 class DataView(TimestampMixin, Base):
-    """数据表视图：保存筛选/排序/字段显隐等展示规则."""
+    """数据表视图：保存筛选/排序/字段显隐等展示规则.
+
+    可见性由 ``visibility`` 独立表达（不再借用 ``owner_id IS NULL`` 编码公共），
+    ``owner_id`` 恒为**创建者**语义（I4：授权不转移归属）。
+    唯一键按命名空间划分：``scope_key=0`` 为共享命名空间（``table`` 档），
+    ``scope_key=user_id`` 为创建者私有命名空间 —— 私有视图只在本人命名空间内唯一，
+    两个用户可各建同名「我的待办」而互不冲突。
+    """
 
     __tablename__ = "tables_dataview"
     __table_args__ = (
-        UniqueConstraint("table_id", "name", name="uniq_table_view_name"),
+        UniqueConstraint("table_id", "scope_key", "name", name="uniq_table_view_scope_name"),
         {"extend_existing": True},
     )
 
@@ -191,8 +238,9 @@ class DataView(TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+    # 创建者。SET NULL（而非 CASCADE）：创建者删号后视图作为「孤儿」保留（ADR 0003 §7-2 D3）
     owner_id: Mapped[int | None] = mapped_column(
-        ForeignKey("accounts_user.id", ondelete="CASCADE"),
+        ForeignKey("accounts_user.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -206,16 +254,102 @@ class DataView(TimestampMixin, Base):
     view_options: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 可见性档位：新建默认 private（I2：主动开放才扩大范围）
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default=ViewVisibility.PRIVATE, index=True)
+    # 命名空间：0 = 共享（table 档）；创建者 user_id = 私有（private/shared 档）
+    scope_key: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # 关系
     table: Mapped[DataTable] = relationship(back_populates="views")
     owner: Mapped[User | None] = relationship("User")
+    grants: Mapped[list[DataViewPermission]] = relationship(
+        back_populates="view", cascade="all, delete-orphan", passive_deletes=True
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"DataView(id={self.id}, name={self.name!r}, type={self.view_type!r})"
 
 
+# ── DataViewPermission ──
+
+
+class DataViewPermission(TimestampMixin, Base):
+    """视图级授权名单（仅 ``visibility=shared`` 时参与判定，ADR 0003 §2）.
+
+    与 ``documents_permission`` 同构的**白名单**模式：表权限是硬天花板，
+    名单只决定「表内谁还能看到」，不构成放行表外主体或提升改权的旁路。
+
+    - ``subject_type='user'`` → ``subject_id`` 为用户 id 字符串
+    - ``subject_type='role'`` → ``subject_id`` 为角色 code（工作区角色值 / ``Role.code``
+      / 表成员内置 ``read``/``write``）
+
+    切回 ``private``/``table`` 档时数据保留但失效（便于来回切换不丢名单）。
+    """
+
+    __tablename__ = "tables_dataviewpermission"
+    __table_args__ = (
+        UniqueConstraint("view_id", "subject_type", "subject_id", name="uniq_view_grant_subject"),
+        {"extend_existing": True},
+    )
+
+    view_id: Mapped[int] = mapped_column(
+        ForeignKey("tables_dataview.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    subject_type: Mapped[str] = mapped_column(String(8), nullable=False, default=ViewGrantSubject.USER)
+    subject_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default=ViewGrantRole.VIEWER)
+    # 审计入口：谁授的权（授权人删号后置空，不影响授权本身）
+    granted_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # 关系
+    view: Mapped[DataView] = relationship(back_populates="grants")
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"DataViewPermission(view_id={self.view_id}, {self.subject_type}:{self.subject_id}={self.role})"
+
+
 # ── 默认视图辅助 ──
+
+
+#: 默认视图名（每张表的「全部」视图，恒为 ``table`` 档，保证新成员进表不空白）
+DEFAULT_VIEW_NAME = "全部"
+
+
+def _normalize_default_view(db: Any, view: DataView) -> bool:
+    """把已存在的「全部」视图修正为 ``table`` 档 + 默认位.
+
+    Returns:
+        是否发生了改动（调用方据此决定是否 commit）.
+    """
+    changed = False
+    if view.visibility != ViewVisibility.TABLE or view.scope_key != 0:
+        # 共享命名空间若已有同名视图，说明名字被占用 → 不强行抢占唯一键位，
+        # 也不把默认位留在非 table 档（默认位是表级标记，见 ADR 0003 §2）
+        collision = (
+            db.query(DataView)
+            .filter(
+                DataView.table_id == view.table_id,
+                DataView.scope_key == 0,
+                DataView.name == view.name,
+                DataView.id != view.id,
+            )
+            .first()
+        )
+        if collision is not None:
+            return changed
+        view.visibility = ViewVisibility.TABLE
+        view.scope_key = 0
+        changed = True
+    if not view.is_default:
+        db.query(DataView).filter(DataView.table_id == view.table_id).update(
+            {"is_default": False}, synchronize_session=False
+        )
+        view.is_default = True
+        view.order = view.order or 0
+        changed = True
+    return changed
 
 
 def ensure_default_view(
@@ -224,27 +358,29 @@ def ensure_default_view(
     owner_id: int | None = None,
     commit: bool = True,
 ) -> DataView | None:
-    """确保表存在一个默认视图「全部」（grid 类型，is_default=True, order=0）.
+    """确保表存在一个默认视图「全部」（grid 类型，is_default=True, order=0, ``table`` 档）.
 
-    同名视图已存在时跳过（不覆盖业务自定义的「全部」视图配置）；
-    存在但非默认时补齐 is_default=True 并把同表其它视图的默认标志清掉.
+    同名视图已存在时跳过创建，但会把它修正为 ``table`` 档 + 默认位（不覆盖业务自定义的
+    「全部」视图配置）；存在但非默认时补齐 is_default=True 并把同表其它视图的默认标志清掉.
+
+    ``visibility='table'`` + ``scope_key=0`` 是 D1 的硬约束：每张表至少保留一个表内可见
+    视图，否则其他成员进表看到空白（ADR 0003 §5）.
 
     db 需为 SQLAlchemy ``Session``，此处用 ``Any`` 以避免 models 层反向依赖.
 
     Returns:
         新建的 DataView；或 None（已存在同名，无需新建）.
     """
-    existing = db.query(DataView).filter(DataView.table_id == table.id, DataView.name == "全部").first()
+    existing = (
+        db.query(DataView)
+        .filter(DataView.table_id == table.id, DataView.name == DEFAULT_VIEW_NAME)
+        .order_by(DataView.id)
+        .first()
+    )
     if existing is not None:
-        if not existing.is_default:
-            db.query(DataView).filter(DataView.table_id == table.id).update(
-                {"is_default": False}, synchronize_session=False
-            )
-            existing.is_default = True
-            existing.order = existing.order or 0
-            if commit:
-                db.commit()
-                db.refresh(existing)
+        if _normalize_default_view(db, existing) and commit:
+            db.commit()
+            db.refresh(existing)
         return None
 
     # 首次创建：清掉同表可能残留的其它默认标记（应该没有，但保险）
@@ -252,7 +388,7 @@ def ensure_default_view(
     dv = DataView(
         table_id=table.id,
         owner_id=owner_id or table.owner_id,
-        name="全部",
+        name=DEFAULT_VIEW_NAME,
         view_type=ViewType.GRID,
         filter_type=FilterType.AND,
         filters=[],
@@ -262,6 +398,8 @@ def ensure_default_view(
         view_options={},
         is_default=True,
         order=0,
+        visibility=ViewVisibility.TABLE,
+        scope_key=0,
     )
     db.add(dv)
     if commit:

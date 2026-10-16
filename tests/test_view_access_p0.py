@@ -86,17 +86,22 @@ def _views_url(ws, table) -> str:
     return f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views"
 
 
-def _create_public_view(client, ws, table, headers, name: str, **extra) -> int:
-    r = client.post(_views_url(ws, table), json={"name": name, "view_type": "grid", **extra}, headers=headers)
+def _create_table_view(client, ws, table, headers, name: str, **extra) -> int:
+    """建一个 ``table`` 档视图（表内所有人可见）—— 需调用者具表 ``EDIT_VIEWS``（D4）."""
+    r = client.post(
+        _views_url(ws, table), json={"name": name, "view_type": "grid", "visibility": "table", **extra}, headers=headers
+    )
     assert r.status_code == 201, r.text
     return r.json()["id"]
 
 
 def _create_personal_view(client, ws, table, headers, name: str, **extra) -> int:
+    """建一个默认（``private``）视图 —— 仅创建者可见（D1/I2）."""
     r = client.post(_views_url(ws, table), json={"name": name, "view_type": "grid", **extra}, headers=headers)
     assert r.status_code == 201, r.text
     body = r.json()
-    assert body["owner_id"] is not None, "仅 READ 用户创建的视图应为个人视图"
+    assert body["owner_id"] is not None, "新建视图应归属创建者（owner_id 不再编码可见性）"
+    assert body["visibility"] == "private", "新建视图默认可见性应为 private（D1）"
     return body["id"]
 
 
@@ -199,8 +204,8 @@ class TestReorderIsolation:
         a_h = _login(client, "p0_ra2")
         personal_id = _create_personal_view(client, ws, table, a_h, "A的私有顺序保护")
 
-        pub1 = _create_public_view(client, ws, table, auth_owner, "公共1")
-        pub2 = _create_public_view(client, ws, table, auth_owner, "公共2")
+        pub1 = _create_table_view(client, ws, table, auth_owner, "公共1")
+        pub2 = _create_table_view(client, ws, table, auth_owner, "公共2")
 
         before = db.get(DataView, personal_id).order
 
@@ -228,8 +233,8 @@ class TestTableDetailIsolation:
         a_h = _login(client, "p0_da")
         personal_id = _create_personal_view(client, ws, table, a_h, "A的私有摘要")
 
-        pub1 = _create_public_view(client, ws, table, auth_owner, "公共摘要1")
-        pub2 = _create_public_view(client, ws, table, auth_owner, "公共摘要2")
+        pub1 = _create_table_view(client, ws, table, auth_owner, "公共摘要1")
+        pub2 = _create_table_view(client, ws, table, auth_owner, "公共摘要2")
 
         # owner（EDIT_VIEWS）：只看得到两条公共视图
         r = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}", headers=auth_owner)
@@ -258,7 +263,7 @@ class TestTableDetailIsolation:
 
 class TestPublicViewReadConsistency:
     def test_read_only_user_can_get_public_view(self, client, db, ws, table, auth_owner):
-        vid = _create_public_view(client, ws, table, auth_owner, "公共口径")
+        vid = _create_table_view(client, ws, table, auth_owner, "公共口径")
         _make_member(db, ws, "p0_ca")
         v_h = _login(client, "p0_ca")
 
@@ -269,7 +274,7 @@ class TestPublicViewReadConsistency:
         assert r.status_code == 200, "列表可见的公共视图，详情不应 403（缺陷 ④）"
 
     def test_read_only_user_cannot_write_public_view(self, client, db, ws, table, auth_owner):
-        vid = _create_public_view(client, ws, table, auth_owner, "公共只读")
+        vid = _create_table_view(client, ws, table, auth_owner, "公共只读")
         _make_member(db, ws, "p0_cb")
         v_h = _login(client, "p0_cb")
 
@@ -312,7 +317,7 @@ class TestDefaultFlagGuard:
         assert created[0]["is_default"] is False, "个人视图不应持有 is_default"
 
     def test_owner_can_still_patch_public_view_default(self, client, ws, table, auth_owner):
-        vid = _create_public_view(client, ws, table, auth_owner, "公共可设默认")
+        vid = _create_table_view(client, ws, table, auth_owner, "公共可设默认")
         r = client.patch(f"{_views_url(ws, table)}/{vid}", json={"is_default": True}, headers=auth_owner)
         assert r.status_code == 200
         assert r.json()["is_default"] is True
@@ -346,7 +351,7 @@ class TestExportAndPreferenceIsolation:
         assert r.status_code == 404
 
     def test_export_with_public_view_ok(self, client, db, ws, table, auth_owner):
-        vid = _create_public_view(client, ws, table, auth_owner, "公共导出")
+        vid = _create_table_view(client, ws, table, auth_owner, "公共导出")
         _make_member(db, ws, "p0_ec")
         v_h = _login(client, "p0_ec")
         r = client.get(
@@ -370,7 +375,7 @@ class TestExportAndPreferenceIsolation:
         assert r.status_code == 400
 
         # 设为自己可见的公共视图 → 正常
-        pub = _create_public_view(client, ws, table, auth_owner, "公共偏好")
+        pub = _create_table_view(client, ws, table, auth_owner, "公共偏好")
         r = client.put(
             f"/api/v1/accounts/preferences/tables/{table.id}/active-view",
             json={"active_view_id": pub},

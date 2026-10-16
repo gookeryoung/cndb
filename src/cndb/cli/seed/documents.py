@@ -158,7 +158,7 @@ def _seed_documents(
     Returns:
         (创建的文档数, 创建的文件夹数).
     """
-    from cndb.plugins.tables.models import DataView
+    from cndb.plugins.tables.models import DataView, ViewVisibility
 
     if datasets_dir is None:
         print("[seed-文档] examples/datasets 目录不存在，跳过文档注入")
@@ -185,7 +185,10 @@ def _seed_documents(
         if table_ids:
             rows = (
                 db.query(DataView)
-                .filter(DataView.table_id.in_(list(table_ids.values())), DataView.owner_id.is_(None))
+                .filter(
+                    DataView.table_id.in_(list(table_ids.values())),
+                    DataView.visibility == ViewVisibility.TABLE,
+                )
                 .all()
             )
             view_ids = {(id_to_table_name[row.table_id], row.name): row.id for row in rows}

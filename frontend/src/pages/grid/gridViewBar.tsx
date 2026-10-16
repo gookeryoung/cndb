@@ -51,8 +51,12 @@ function DndViewTab({ view, active, draggable, onClick }: { view: View; active: 
       />
       <span>{view.name}</span>
       {view.is_default && <Tag color="blue" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
-      {/* 个人视图标识（紫色）—— 与公共视图区分：仅创建者可见可改，不影响他人 */}
-      {view.owner_id != null && <Tag color="purple" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>我的</Tag>}
+      {/* 档位标识：table 档对全表可见，不加标识；private = 仅本人可见；shared = 本人 + 指定成员。
+          ****不能再用 `owner_id != null` 判个人视图**** —— 新模型下 table 档视图也带 owner（创建者），
+          那样会给每个自建视图都打上「我的」。`visibility` 缺失（老响应 / mock）时回落到旧判据。 */}
+      {view.visibility === 'private' && <Tag color="purple" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>我的</Tag>}
+      {view.visibility === 'shared' && <Tag color="cyan" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>指定成员</Tag>}
+      {view.visibility === undefined && view.owner_id != null && <Tag color="purple" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>我的</Tag>}
     </span>
   )
 }
@@ -233,8 +237,16 @@ export default function GridViewBar({
     }
   }, [wid, tid, message])
 
-  /** 公共视图需 EDIT_VIEWS；个人视图本人可改（筛选/排序） */
-  const editDisabled = !activeView || (!canManageViews && activeView?.owner_id == null)
+  /** 视图编辑入口的可用性（与后端 `VIEW_EDIT` 同口径）：
+   *  `table` 档对全表可见 → 改它要 `EDIT_VIEWS`；`private`/`shared` 档 → 本人（后端还要求持表 READ）。
+   *  ****判据是 `visibility`，不是 `owner_id`**** —— 新模型下 table 档视图也带 owner（创建者），
+   *  用它当"个人视图"的代理会让 viewer 对他人 table 档视图拿到编辑入口（点下去 403）。
+   *  `visibility` 缺失（老响应 / mock）时回落到旧判据：无 owner = 公共视图 = 需要 EDIT_VIEWS。 */
+  const activeVisibility = activeView?.visibility
+  const activeIsTableTier = activeVisibility === undefined
+    ? activeView?.owner_id == null
+    : activeVisibility === 'table'
+  const editDisabled = !activeView || (!canManageViews && activeIsTableTier)
   const currentModeBtn = modeButtons.find(b => b.mode === mode)
 
   const desktopMoreItems: MenuProps['items'] = [

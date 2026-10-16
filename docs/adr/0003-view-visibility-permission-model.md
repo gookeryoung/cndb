@@ -246,7 +246,7 @@ CREATE UNIQUE INDEX uniq_table_view_scope_name ON tables_dataview(table_id, scop
 |---|---|---|
 | **P0 安全修复**（✅ 2026-10-16 已落地） | 修 #1 #2 #3 #4 #5：补 `VIEW_READ` 校验、`reorder` 只返可见、`PATCH/DELETE` 他人视图一律 404、表详情过滤、统一 404/403 口径。**不依赖新模型** | 低 |
 | **P1 移除匿名分享**（D5，✅ 2026-10-16 已落地） | 删表/视图两层分享入口 + 前端公开页 + 相关测试/文档；迁移 `a4b5c6d7e8f9` 删除 `is_public`/`public_slug` 两列与唯一索引。顺带消解缺陷 #8 | 低（**破坏性**：`/public/share/{slug}` 与前端 `/s/:slug` 旧链接全部失效，需在发版说明标注） |
-| **P2 模型与迁移** | `visibility`（默认 `private`）/ `scope_key` / `tables_dataviewpermission` + 迁移 Step 1–5（含 D3 的 FK 改 SET NULL）+ `is_default` 收紧 + 每表至少一个 `table` 档 + `resolve_view_action` 统一替换 | 中（迁移 / 唯一约束 / FK 重建） |
+| **P2 模型与迁移**（✅ 2026-10-16 已落地） | `visibility`（默认 `private`）/ `scope_key` / `tables_dataviewpermission` + 迁移 Step 1–5（含 D3 的 FK 改 SET NULL）+ `is_default` 收紧 + 每表至少一个 `table` 档 + `resolve_view_action` 统一替换 | 中（迁移 / 唯一约束 / FK 重建） |
 | **P3 开放功能** | `visibility` / `members` / `shareable-members` 端点 + 前端权限 Drawer（三档单选 + 成员选择器 + viewer/editor）+ 视图标签三态 + CLI `views prune-orphans`（D3 出口） | 中 |
 
 ### P0 落地记录（2026-10-16）
@@ -286,6 +286,31 @@ CREATE UNIQUE INDEX uniq_table_view_scope_name ON tables_dataview(table_id, scop
 **对外分发的缺口填补**：登录态深链承接——链接携带 `view_id`，访问时校验表 `READ` + 视图 `VIEW_READ`，仍在表权限天花板内。P3 做 `shared` 档后，可直接用"指定成员可见"的视图链接替代原先的匿名链接。
 
 **范围边界（未动，需你确认是否收敛）**：`plugins/documents/routers/public.py`（文档公开分享 `/api/v1/documents/share/{token}`）本次未动。它同样是"绕过表/工作区权限的匿名读取面"，与本次口径不一致——但文档不属于"数据表范围"，且不在 ADR 0003 的视图权限域内，建议另开决策同批收敛。
+
+### P2 落地记录（2026-10-16）
+
+把可见性从"二元（`owner_id IS NULL`）"升为**三档显式列**，并一次性修正缺陷 #6（默认视图落成 owner 私有）与 #7（私有视图同名互相冲突）。**本期内不开放写入面**：`shared` 档的授权端点与前端 Drawer 归 P3，P2 只落模型、判定与迁移。
+
+| 文件 | 改动 |
+|---|---|
+| `plugins/tables/models.py` | `ViewVisibility`（`TABLE`/`SHARED`/`PRIVATE`）、`ViewGrantSubject`、`ViewGrantRole` 枚举 + `scope_key_for(visibility, owner_id)`；`DataView` 增 `visibility`（默认 `private`）/`scope_key`；唯一键 `uniq_table_view_name` → `uniq_table_view_scope_name`（`table_id, scope_key, name`）；`owner_id` 外键 `CASCADE` → `SET NULL`（D3）；新增 `DataViewPermission`（`tables_dataviewpermission`，唯一键 `uniq_view_grant_subject`）；`DEFAULT_VIEW_NAME = "全部"`；`ensure_default_view` 落 `visibility=TABLE, scope_key=0` 并**就地修正**已存在的「全部」视图档位 |
+| `services/core/view_access.py` | 重写为三档判定：`role_codes_for_workspace` / `is_table_admin` / `is_view_visible(view, user_id, granted_view_ids)` / `grants_for_user` / `grant_role_for_view` / `view_visibility_filter(db, table, user)` / `require_can_publish_to_table` / `table_view_count` / `assert_can_change_visibility`；`visible_view_filter(user_id, role_codes)` 变**纯函数**（只返回列表达式，禁止在批处理里调它去查库） |
+| `routers/views.py` | `create_view` 按 §5 定档校验（默认 `private`；`table` 档需 `EDIT_VIEWS`）；`import_views` 无 `EDIT_VIEWS` 强制降为 `private`、`is_default` 仅 `table` 档；`list_views`/`export_views`/`reorder` 换 `view_visibility_filter`；新增 `_scoped_name_conflict`（按 `(table_id, scope_key)` 判重）；新增 `POST /{view_id}/visibility`（`assert_can_change_visibility`，含 D1 守卫）；`delete_view` 的默认位转移候选限定 `table` 档 |
+| `routers/tables.py` | `_fill_table_stats` 的 `view_count` 与批量路径改用 `visible_view_filter(current_user.id, [preload.member_role.value])` —— **复用 `TableAccessPreload` 已预取的角色**，避免 N+1；表详情 `views` 用 `grants_for_user` 一次性预取后 `is_view_visible(...)` 判定 |
+| `schemas/models.py` | `ViewCreate.visibility`（默认 `PRIVATE`）、新增 `ViewVisibilityUpdate`、`ViewResponse`/`ViewBrief` 增 `visibility` |
+| `accounts/routers/preferences.py` | `active-view` 改用 `_readable_table_or_404` 复用表对象，两处过滤换 `view_visibility_filter` |
+| `cli/seed/views.py`、`cli/seed/documents.py` | 种子数据支持显式 `visibility`；`global → TABLE`、`personal → PRIVATE`；默认视图查询由 `owner_id IS NULL` 改为 `visibility == TABLE` |
+| `workspaces/routers/workspaces.py`、`services/backup_io.py` | 备份导出增 `owner_id`/`visibility`/`scope_key`；导入按新键还原，**旧版备份兼容**（无 `visibility` 键时按旧语义推断：owner 空 → `TABLE`，否则 `PRIVATE`） |
+| `alembic/versions/b5c6d7e8f9a0_add_dataview_visibility.py` | **新增**（见下） |
+| `tests/test_view_access_p0.py`、`tests/test_views_api.py`、`tests/test_migration_missing_model_columns.py` | 改写 + 新增（见 §测试清单） |
+
+**迁移 Step 1–5 的幂等与形状守卫**：`tables_dataview` 在 create_all 时代可能以各种半成品形状存在（历史存根只含 `id`/`name`）。迁移对每一步分别加守卫——列/索引按名缺失才建；存量映射 UPDATE 要求 `owner_id` + `is_default` 齐备；唯一键与外键重建要求 `table_id` + `owner_id` + `name` + `scope_key` 齐备。**形状不完整时与"表不存在"同等对待**（只补列与索引，留 create_all 兜底），否则会在存根表上执行 `UPDATE ... SET scope_key = owner_id` 而报 `no such column`（该缺陷由 `TestDropDataviewPublicShare::test_upgrade_is_idempotent` 的存根夹具暴露，已加专属回归用例钉住）。
+
+**SQLite 重建表细节**：唯一约束与外键都无法就地修改，Step 3+4 合并成一次 `batch_alter_table(recreate="always")`；SQLite 不保存外键名，故需传 `naming_convention` 让反射出的无名 FK 得到 `fk_tables_dataview_owner_id_accounts_user` 这样的可解析名称，才能按名 `drop_constraint`。
+
+**零行为变化承诺**：映射后 `owner_id IS NULL OR is_default = 1` → `table`/`scope 0`，其余有 owner 的 → `private`/`scope=owner_id`。存量"公共视图"全部落 `table` 档，可见范围与升级前一致；唯一的语义变化是「全部」默认视图不再落成 owner 私有（修 #6）。
+
+**本机验证补充**：除单测外，已对一条构造的真实链路端到端跑通——`全部 → table/0`、`我的待办 → private/7`、`A的私有视角 → private/7`；`ix_tables_dataview_visibility` 建成；`fk_list` 显示 `SET NULL`；删用户后 `owner_id` 置 NULL（D3）；重复 upgrade 幂等；downgrade 还原列/表/约束。
 
 ## 测试清单（新增/改写）
 

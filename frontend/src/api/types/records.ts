@@ -32,6 +32,13 @@ export interface RecordListParams {
   filter_logic?: 'AND' | 'OR'
 }
 
+/** 视图可见性档位（对齐后端 ViewVisibility，ADR 0003）
+ *  - `table`：表内可见（继承表权限），存量视图与「全部」默认视图的档位
+ *  - `shared`：仅创建者 + 指定成员可见
+ *  - `private`：仅创建者可见（新建默认）
+ *  视图权限永不超过表权限（表权限是硬天花板）。
+ */
+export type ViewVisibility = 'table' | 'shared' | 'private'
 export interface View {
   id: ID; name: string; view_type: string
   filters?: Record<string, unknown> | Array<{ field_name: string; op: string; value?: unknown }> | null
@@ -40,9 +47,11 @@ export interface View {
   /** 多条件组合方式（后端字段名 filter_type） */
   filter_type?: 'AND' | 'OR'
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
-  /** 是否默认视图（对齐后端 ViewResponse.is_default） */
+  /** 是否默认视图（对齐后端 ViewResponse.is_default）—— 仅 `table` 档视图可持有 */
   is_default: boolean; created_at?: string
-  /** 视图归属：null=公共视图（有编辑视图权限者创建）；非空=个人视图（仅创建者可见可改） */
+  /** 可见性档位（对齐后端 ViewResponse.visibility） */
+  visibility?: ViewVisibility
+  /** 视图创建者：null=创建者已注销的孤儿视图（对所有人不可见，ADR 0003 决策 D3） */
   owner_id?: number | null
   /** 排序权重（后端 DataView.order） */
   order?: number
@@ -54,8 +63,10 @@ export interface ViewCreate {
   sortings?: Record<string, unknown> | Array<{ field_name: string; direction: 'asc' | 'desc' }> | null
   filter_type?: 'AND' | 'OR'
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
-  /** 是否设为默认视图（对齐后端 ViewCreate.is_default） */
+  /** 是否设为默认视图（对齐后端 ViewCreate.is_default）—— 会清掉同表其它默认视图 */
   is_default?: boolean
+  /** 可见性档位；省略时为 `private`（仅本人可见）；`table` 档需表 EDIT_VIEWS */
+  visibility?: ViewVisibility
 }
 export interface ViewUpdate {
   name?: string; view_type?: string

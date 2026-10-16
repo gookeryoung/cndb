@@ -313,6 +313,8 @@ class TestBulkAPI:
         dv = DataView(
             table_id=table.id,
             owner_id=None,
+            visibility="table",
+            scope_key=0,
             name="只看年长",
             view_type="grid",
             filter_type="AND",
@@ -344,6 +346,8 @@ class TestBulkAPI:
         dv = DataView(
             table_id=table.id,
             owner_id=None,
+            visibility="table",
+            scope_key=0,
             name="按年龄降序",
             view_type="grid",
             filter_type="AND",
@@ -398,6 +402,8 @@ class TestBulkAPI:
         dv2 = DataView(
             table_id=other_table.id,
             owner_id=None,
+            visibility="table",
+            scope_key=0,
             name="其他表的视图",
             view_type="grid",
             filters=[],
@@ -430,6 +436,8 @@ class TestBulkAPI:
         dv = DataView(
             table_id=table.id,
             owner_id=None,
+            visibility="table",
+            scope_key=0,
             name="OR筛选: 年龄>40 或 年龄<10",
             view_type="grid",
             filter_type="OR",
@@ -467,6 +475,8 @@ class TestBulkAPI:
         dv = DataView(
             table_id=table.id,
             owner_id=None,
+            visibility="table",
+            scope_key=0,
             name="年长XLSX",
             view_type="grid",
             filter_type="AND",
@@ -514,6 +524,8 @@ class TestBulkAPI:
         dv = DataView(
             table_id=table.id,
             owner_id=None,
+            visibility="table",
+            scope_key=0,
             name="空筛选视图",
             view_type="grid",
             filter_type="AND",
@@ -576,6 +588,8 @@ class TestBulkAPI:
         dv = DataView(
             table_id=table.id,
             owner_id=None,
+            visibility="table",
+            scope_key=0,
             name="查找已软删的张三",
             view_type="grid",
             filter_type="AND",

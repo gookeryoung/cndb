@@ -599,7 +599,16 @@ class TestWorkspaceExportImport:
         f1.ensure_db_name()
         db.add(f1)
         db.flush()
-        db.add(DataView(table_id=dt.id, name="默认视图", view_type="grid", is_default=True))
+        db.add(
+            DataView(
+                table_id=dt.id,
+                name="默认视图",
+                view_type="grid",
+                is_default=True,
+                visibility="table",
+                scope_key=0,
+            )
+        )
         db.commit()
         r = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=_headers(token))
         assert r.status_code == 200
@@ -685,6 +694,8 @@ class TestWorkspaceExportImport:
                     name="全部",
                     view_type="grid",
                     is_default=True,
+                    visibility="table",
+                    scope_key=0,
                     field_options={"姓名": {"width": 120}},
                     view_options={"row_height": "tall"},
                     field_order=["姓名", "年龄", "职级", "备注"],
@@ -694,6 +705,8 @@ class TestWorkspaceExportImport:
                     name="重点行",
                     view_type="grid",
                     is_default=False,
+                    visibility="table",
+                    scope_key=0,
                     filter_type="AND",
                     filters=[{"field_name": "年龄", "op": ">", "value": 30}],
                     sortings=[{"field_name": "年龄", "direction": "desc"}],
