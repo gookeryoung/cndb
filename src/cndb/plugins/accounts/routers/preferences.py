@@ -14,6 +14,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataTable, DataView
+from cndb.plugins.tables.services.core.view_access import visible_view_filter
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +111,12 @@ def get_table_active_view(
     # 统一用 str key 查
     raw_val = raw.get(str(table_id))
     if raw_val is not None:
-        # 验证视图仍存在
-        view = db.query(DataView).filter(DataView.id == int(raw_val), DataView.table_id == table_id).first()
+        # 验证视图仍存在**且当前用户可见**（他人个人视图不得回显，见 ADR 0003 缺陷 ③）
+        view = (
+            db.query(DataView)
+            .filter(DataView.id == int(raw_val), DataView.table_id == table_id, visible_view_filter(user.id))
+            .first()
+        )
         if view is not None:
             active_view_id = int(raw_val)
         else:
@@ -140,13 +145,14 @@ def set_table_active_view(
     if table is None:
         raise HTTPException(status_code=404, detail="表不存在")
 
-    # 如果指定了 active_view_id，验证它确实属于这张表
+    # 如果指定了 active_view_id，验证它确实属于这张表**且当前用户可见**
     if payload.active_view_id is not None:
         view = (
             db.query(DataView)
             .filter(
                 DataView.id == payload.active_view_id,
                 DataView.table_id == table_id,
+                visible_view_filter(user.id),
             )
             .first()
         )

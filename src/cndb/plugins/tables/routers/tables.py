@@ -31,6 +31,7 @@ from cndb.plugins.tables.services.core.access import (
     get_table_or_404,
 )
 from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
+from cndb.plugins.tables.services.core.view_access import is_view_visible, visible_view_filter
 from cndb.plugins.workspaces.models import (
     Workspace,
     WorkspaceMember,
@@ -96,6 +97,14 @@ def _fill_table_stats(
         )
     if view_count_map is not None:
         view_count = view_count_map.get(table.id, 0)
+    elif current_user is not None:
+        # 只统计当前用户**可见**的视图：否则计数会暴露他人个人视图的存在（与缺陷 ③ 同源）
+        view_count = (
+            db.query(func.count(DataView.id))
+            .filter(DataView.table_id == table.id, visible_view_filter(current_user.id))
+            .scalar()
+            or 0
+        )
     else:
         view_count = db.query(func.count(DataView.id)).filter(DataView.table_id == table.id).scalar() or 0
 
@@ -345,7 +354,7 @@ def _list_tables_uncached(
             field_count_map[int(tid)] = int(cnt)
         for tid, cnt in (
             db.query(DataView.table_id, func.count(DataView.id))
-            .filter(DataView.table_id.in_(table_ids))
+            .filter(DataView.table_id.in_(table_ids), visible_view_filter(current_user.id))
             .group_by(DataView.table_id)
             .all()
         ):
@@ -420,11 +429,14 @@ def get_table(
 
     active_fields = sorted([f for f in dt.fields if not f.trashed], key=_field_sort_key)
 
-    # 3) 视图精简摘要
+    # 3) 视图精简摘要（只返回当前用户可见的视图，他人个人视图不可见 —— 缺陷 ③）
     def _view_sort_key(v: DataView) -> tuple[int, int]:
         return (v.order, v.id)
 
-    views = sorted(dt.views, key=_view_sort_key)
+    views = sorted(
+        [v for v in dt.views if is_view_visible(v, current_user.id)],
+        key=_view_sort_key,
+    )
     view_briefs = [ViewBrief.model_validate(v, from_attributes=True) for v in views]
 
     # 4) 工作区 + 当前用户角色 + owner（复用 check_workspace_permission 已查过的 ws）
