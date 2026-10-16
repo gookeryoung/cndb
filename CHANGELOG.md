@@ -107,6 +107,7 @@
 - README 修正项目结构树、CLI 命令、e2e 包管理器与特性清单等失实内容
 
 ### 修复
+- **修复数据表导入「确认后卡在 25% 且无报错」**：导入的"自动新增字段"（`unknown_cols_strategy=add_text_field`）只按**未删除字段**判重，而 `tables_datafield` 的 `(table_id, name)` 唯一约束**不区分软删除** —— 表里存在同名软删除字段（删过同名列）时，INSERT 直接撞约束抛 `IntegrityError`，整个 execute 阶段失败；更糟的是此刻 Session 已进入 `PendingRollback` 状态，旧的失败处理在 `except` 里直接 `commit` 又抛 `PendingRollbackError`，第二个异常逃逸出后台线程，任务行永远停在 `running` + 「执行子步骤 25%」，前端表现为"进度卡住、无从判断该等还是该重试"（线上实测：更新已有数据表时导入 WPS 生成的 XLSX）。两根因分别修复：新增字段前先给同名软删除字段**让位改名**（复用 `rename_trashed_field_aside`，与手工建字段同一策略，改名先 `flush` 再 INSERT）；`analyze / execute / reanalyze` 三处失败路径统一走 `_mark_task_failed()` —— **先 `rollback()` 再写 `failed`**，并把 ORM/DB 异常压成一句可读原因（完整堆栈留在服务日志），失败一定能落库并展示给用户
 - **协作者通知**：新增 `accounts_notification` 与用户级 API（`GET /accounts/notifications` 列表 + 未读数、`POST /{id}/read`、`POST /read-all`）；文档授权（`POST /documents/{id}/permissions`）时向被授权者写入「X 邀请你协作《文档》（可编辑/只读）」—— 此前授权是静默的，被授权者只能自己翻目录树才会发现。顶栏新增**通知铃铛**（未读角标 + 下拉列表，点击条目即标记已读并跳转到该文档，支持「全部已读」）；通知写入为尽力而为，失败不影响授权本身；撤销授权不产生噪音通知
 - **附件跟随宿主权限**（安全）：新增 `files_fileowner` 记录上传文件归属（表 + 行 / 文档 / 仅工作区），下载与删除不再只看「工作区成员 + 不可猜键」：受限表（`read_role` 高于普通成员）的附件、未发布文档的图片、以及被 `row_filters` 挡掉的行的附件，对无权者一律 403/404；上传时校验对宿主的写权限（表 → `EDIT_RECORDS`，文档 → 可见且可直接写）。历史文件无归属记录，保持原工作区级语义（不做回填）
 - 前端上传携带归属上下文：表格附件单元格 / 行详情抽屉传 `table_id` + `row_id`，文档图片上传传 `document_id`；新增 API 层用例校验表单字段

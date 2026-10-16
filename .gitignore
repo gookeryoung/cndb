@@ -76,3 +76,4 @@ file:*
 coverage.json
 frontend/.vitest-cache/
 .pytmp
+frontend/.vitest
