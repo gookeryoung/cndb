@@ -436,6 +436,18 @@ def grant_document_permission(
     )
     # 目录树/列表缓存按用户隔离：授权后对方应立即能看到这份草稿
     invalidate_document_tree_cache(workspace_id)
+    # 通知被授权者（best-effort：通知失败不影响授权本身）
+    from cndb.plugins.accounts.services import notifications as notification_service
+
+    notification_service.notify_document_collaborator_added(
+        db,
+        actor=current_user,
+        target_user_id=payload.user_id,
+        document_id=doc.id,
+        workspace_id=workspace_id,
+        document_title=doc.title,
+        role=payload.role,
+    )
     return data
 
 

@@ -170,4 +170,42 @@ class UserAuditLog(TimestampMixin, Base):
         return f"UserAuditLog(id={self.id}, action={self.action!r}, actor_id={self.actor_id}, target={self.target_user_id})"
 
 
-__all__ = ["User", "UserAuditLog", "UserRole"]
+# 通知类型（字符串常量，避免枚举迁移成本）
+NOTIFICATION_DOCUMENT_COLLABORATOR_ADDED = "document.collaborator_added"
+
+
+class Notification(TimestampMixin, Base):
+    """站内通知（当前：文档协作授权）.
+
+    动机：文档级授权（协作者）目前是"静默"的 —— 被授权者只有自己去翻目录树才会发现
+    多了一份文档。通知让协作动作可见：「张三 邀请你协作《X》（可编辑）」。
+
+    设计取舍：
+    - 归属 accounts（用户级，与 preferences / audit 同域），不新增插件；
+    - ``payload`` 保存渲染快照（文档标题等）：被授权者当时确实有权看到该标题，
+      撤销后保留历史通知（与消息通知的常规语义一致）；
+    - 读取接口只返回**接收者本人**的通知，未读数单独返回供前端角标使用。
+    """
+
+    __tablename__ = "accounts_notification"
+    __table_args__ = {"extend_existing": True}
+
+    recipient_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True)
+    workspace_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents_document.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"Notification(id={self.id}, type={self.type!r}, recipient={self.recipient_id})"
+
+
+__all__ = ["Notification", "User", "UserAuditLog", "UserRole"]

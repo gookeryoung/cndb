@@ -43,3 +43,5 @@ export type * from './types'
 
 // 类型守卫为运行时函数，须以值形式 re-export（export type * 会在编译期擦除）
 export { isChangeRequestResponse } from './types'
+export { notificationsApi } from './notifications'
+export type { NotificationItem, NotificationListResult } from './notifications'
