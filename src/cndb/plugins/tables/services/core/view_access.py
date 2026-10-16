@@ -38,7 +38,7 @@ from cndb.plugins.tables.models import (
     ViewGrantSubject,
     ViewVisibility,
 )
-from cndb.plugins.tables.services.core.access import TableAction, check_action
+from cndb.plugins.tables.services.core.access import TableAccessPreload, TableAction, check_action
 from cndb.plugins.workspaces.models import WorkspaceRole
 
 
@@ -112,9 +112,11 @@ def visible_view_filter(user_id: int, role_codes: Collection[str] = ()) -> Colum
 
     与 :func:`is_view_visible` 语义必须保持一致（后者用于已加载对象的 Python 侧过滤）:
 
+    - **创建者**对自己的视图恒可见（I4）—— 必须显式列出：``shared`` 档的创建者不在
+      自己的授权名单里，只按"名单命中"判定会让创建者看不到自己刚共享出去的视图
     - ``table``   档恒可见（调用方已保证表 ``READ``）
     - ``shared``  档需命中名单（``subject_type='user'`` 且 id 相符，或 ``role`` 型命中角色 code）
-    - ``private`` 档仅创建者
+    - ``private`` 档仅创建者（由第一条覆盖；孤儿视图 ``owner_id IS NULL`` 对所有人不可见）
     """
     grant_exists = exists().where(
         DataViewPermission.view_id == DataView.id,
@@ -130,9 +132,9 @@ def visible_view_filter(user_id: int, role_codes: Collection[str] = ()) -> Colum
         ),
     )
     return or_(
+        DataView.owner_id == user_id,
         DataView.visibility == ViewVisibility.TABLE,
         and_(DataView.visibility == ViewVisibility.SHARED, grant_exists),
-        and_(DataView.visibility == ViewVisibility.PRIVATE, DataView.owner_id == user_id),
     )
 
 
@@ -150,11 +152,14 @@ def is_view_visible(view: DataView, user_id: int, granted_view_ids: Collection[i
 
     ``granted_view_ids`` 为当前用户被显式授权（``shared`` 档名单内）的视图 id 集合，
     由 :func:`grants_for_user` 批量预取 —— 缺省空集合即"未授权任何 shared 视图".
+    语义与 :func:`visible_view_filter` 一致：**创建者优先**，其后才是档位与名单。
     """
+    if view.owner_id is not None and view.owner_id == user_id:
+        return True
     if view.visibility == ViewVisibility.TABLE:
         return True
     if view.visibility == ViewVisibility.PRIVATE:
-        return view.owner_id == user_id
+        return False  # 非创建者的 private（含孤儿）一律不可见（D2）
     return view.id in granted_view_ids
 
 
@@ -333,20 +338,326 @@ def assert_can_change_visibility(
         raise HTTPException(status_code=400, detail=LAST_TABLE_VIEW_DETAIL)
 
 
+# ── 共享名单（``shared`` 档，ADR 0003 §4 / §6） ─────────
+
+
+def assert_grantee_in_table_scope(
+    db: Session,
+    table: DataTable,
+    operator: User,
+    target_user: User | None,
+    role: str,
+) -> None:
+    """校验授权对象是否落在「数据表范围内」（ADR 0003 §4，逐条校验、任一不过即 422）.
+
+    这是"最大可放宽至数据表范围内"的落地：共享只能给**本工作区成员**，且对方必须
+    对该表有 ``READ``；想把编辑权给出去，对方还必须先有该表 ``EDIT_VIEWS`` ——
+    即生效权 = min(视图授权, 表权限)，名单本身永不构成提权旁路（I1 / I7）。
+    """
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if int(target_user.id) == int(operator.id):
+        raise HTTPException(status_code=400, detail="无需给自己授权（创建者天然可见）")
+    if not _is_workspace_member(db, table.workspace_id, int(target_user.id)):
+        raise HTTPException(status_code=422, detail="只能共享给本工作区成员")
+    if not check_action(db, table, target_user, TableAction.READ):
+        raise HTTPException(status_code=422, detail="该成员无此表查看权限，无法共享视图")
+    if str(role) == ViewGrantRole.EDITOR and not check_action(db, table, target_user, TableAction.EDIT_VIEWS):
+        raise HTTPException(status_code=422, detail="该成员无此表视图编辑权限")
+
+
+def _is_workspace_member(db: Session, workspace_id: int, user_id: int) -> bool:
+    from cndb.plugins.workspaces.models import WorkspaceMember
+
+    return (
+        db.query(WorkspaceMember)
+        .filter(WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user_id)
+        .first()
+        is not None
+    )
+
+
+def _access_preloads_for_users(
+    db: Session,
+    table: DataTable,
+    user_ids: Sequence[int],
+) -> dict[int, TableAccessPreload]:
+    """为一批用户各建一份**预取好**的表权限上下文（3 次查询，与人数无关）.
+
+    用于共享名单 / 可授权成员列表：需要逐人判定表 ``READ`` / ``EDIT_VIEWS``，
+    但绝不能逐人 ``check_action``（每人 ~3 次查询 → N+1）。
+    """
+    from cndb.plugins.tables.models import TableMember, TablePermission
+    from cndb.plugins.workspaces.models import WorkspaceMember
+
+    ids = [int(i) for i in user_ids]
+    if not ids:
+        return {}
+    roles: dict[int, Any] = {
+        int(uid): role
+        for uid, role in db.query(WorkspaceMember.user_id, WorkspaceMember.role)
+        .filter(WorkspaceMember.workspace_id == table.workspace_id, WorkspaceMember.user_id.in_(ids))
+        .all()
+    }
+    members: dict[int, Any] = {
+        int(m.user_id): m
+        for m in db.query(TableMember).filter(TableMember.table_id == table.id, TableMember.user_id.in_(ids)).all()
+    }
+    perm = db.query(TablePermission).filter(TablePermission.table_id == table.id).first()
+    perms = {int(table.id): perm} if perm is not None else {}
+    out: dict[int, TableAccessPreload] = {}
+    for uid in ids:
+        member = members.get(uid)
+        out[uid] = TableAccessPreload(
+            member_role=roles.get(uid),
+            members={int(table.id): member} if member is not None else {},
+            perms=perms,
+        )
+    return out
+
+
+def _load_users(db: Session, user_ids: Sequence[int]) -> dict[int, User]:
+    ids = [int(i) for i in user_ids]
+    if not ids:
+        return {}
+    return {int(u.id): u for u in db.query(User).filter(User.id.in_(ids)).all()}
+
+
+def _parse_user_id(subject_id: str) -> int | None:
+    try:
+        return int(subject_id)
+    except (TypeError, ValueError):
+        return None
+
+
+def grantee_counts(db: Session, view_ids: Sequence[int]) -> dict[int, int]:
+    """批量取每个视图的授权人数 → ``{view_id: n}``（列表页展示「已共享 N 人」）."""
+    ids = [int(i) for i in view_ids]
+    if not ids:
+        return {}
+    rows = (
+        db.query(DataViewPermission.view_id, func.count(DataViewPermission.id))
+        .filter(DataViewPermission.view_id.in_(ids))
+        .group_by(DataViewPermission.view_id)
+        .all()
+    )
+    return {int(r[0]): int(r[1]) for r in rows}
+
+
+def list_view_grants(db: Session, table: DataTable, view: DataView) -> list[dict[str, Any]]:
+    """该视图的**成员型**授权名单（含用户信息与当前是否仍有效）.
+
+    ``role`` 型授权（按工作区角色批量放行）数据模型已支持、判定层已生效，但本期
+    不开放写入端点，故此处只列 ``subject_type='user'`` 的条目。
+    """
+    rows = (
+        db.query(DataViewPermission)
+        .filter(
+            DataViewPermission.view_id == view.id,
+            DataViewPermission.subject_type == ViewGrantSubject.USER,
+        )
+        .all()
+    )
+    parsed: list[tuple[DataViewPermission, int]] = []
+    for g in rows:
+        uid = _parse_user_id(str(g.subject_id))
+        if uid is not None:
+            parsed.append((g, uid))
+    if not parsed:
+        return []
+    users = _load_users(db, [uid for _, uid in parsed])
+    preloads = _access_preloads_for_users(db, table, list(users))
+    out: list[dict[str, Any]] = []
+    for g, uid in parsed:
+        user = users.get(uid)
+        available = (
+            user is not None
+            and uid in preloads
+            and preloads[uid].check(db, table, user, TableAction.READ)
+            and (str(g.role) != ViewGrantRole.EDITOR or preloads[uid].check(db, table, user, TableAction.EDIT_VIEWS))
+        )
+        out.append(
+            {
+                "user_id": uid,
+                "username": user.username if user is not None else "",
+                "nickname": (user.nickname or "") if user is not None else "",
+                "role": str(g.role),
+                # editor 授权在对方失去表 EDIT_VIEWS 后自动降级为"不可改"（实时求值）
+                "available": bool(available),
+            }
+        )
+    # editor 优先，再按用户名，最后按 id（稳定排序，便于前端 diff）
+    out.sort(key=lambda r: (r["role"] != ViewGrantRole.EDITOR, r["username"], r["user_id"]))
+    return out
+
+
+def set_view_grant(
+    db: Session,
+    table: DataTable,
+    view: DataView,
+    operator: User,
+    target_user: User,
+    role: str,
+) -> DataViewPermission:
+    """新增 / 更新一条成员授权（不含 commit）.
+
+    调用方须已确认 ``VIEW_MANAGE`` 且视图当前为 ``shared`` 档。
+    """
+    if str(role) not in tuple(ViewGrantRole):
+        raise HTTPException(status_code=422, detail="授权角色只能是 viewer 或 editor")
+    assert_grantee_in_table_scope(db, table, operator, target_user, role)
+
+    row = (
+        db.query(DataViewPermission)
+        .filter(
+            DataViewPermission.view_id == view.id,
+            DataViewPermission.subject_type == ViewGrantSubject.USER,
+            DataViewPermission.subject_id == str(target_user.id),
+        )
+        .first()
+    )
+    if row is None:
+        row = DataViewPermission(
+            view_id=int(view.id),
+            subject_type=ViewGrantSubject.USER,
+            subject_id=str(int(target_user.id)),
+            role=str(role),
+            granted_by_id=int(operator.id),
+        )
+        db.add(row)
+    else:
+        row.role = str(role)
+        row.granted_by_id = int(operator.id)
+    return row
+
+
+def revoke_view_grant(db: Session, view: DataView, target_user_id: int) -> bool:
+    """收回一条成员授权；返回是否确有删除（不含 commit）."""
+    row = (
+        db.query(DataViewPermission)
+        .filter(
+            DataViewPermission.view_id == view.id,
+            DataViewPermission.subject_type == ViewGrantSubject.USER,
+            DataViewPermission.subject_id == str(int(target_user_id)),
+        )
+        .first()
+    )
+    if row is None:
+        return False
+    db.delete(row)
+    return True
+
+
+def replace_view_grants(
+    db: Session,
+    table: DataTable,
+    view: DataView,
+    operator: User,
+    members: Sequence[Any],
+) -> None:
+    """全量替换共享名单（``POST /views/{id}/visibility`` 的 ``members`` 语义）.
+
+    ``members`` 为 ``ViewMemberInput`` 序列（``user_id`` / ``role``）。**先逐条校验再
+    落库**：任何一条不合法（非本工作区成员 / 无表 ``READ`` / editor 无表 ``EDIT_VIEWS``）
+    即 422，不做部分写入。未出现在名单里的既有授权会被收回 —— 这是"全量替换"的定义。
+    """
+    wanted: dict[int, str] = {}
+    for item in members:
+        uid = int(item.user_id if hasattr(item, "user_id") else item[0])
+        role = str(item.role if hasattr(item, "role") else item[1])
+        wanted[uid] = role
+
+    users = _load_users(db, list(wanted))
+    for uid, role in wanted.items():
+        assert_grantee_in_table_scope(db, table, operator, users.get(uid), role)
+
+    # 收回不在新名单里的
+    for g in (
+        db.query(DataViewPermission)
+        .filter(
+            DataViewPermission.view_id == view.id,
+            DataViewPermission.subject_type == ViewGrantSubject.USER,
+        )
+        .all()
+    ):
+        uid = _parse_user_id(str(g.subject_id))
+        if uid is None or uid not in wanted:
+            db.delete(g)
+
+    for uid, role in wanted.items():
+        set_view_grant(db, table, view, operator, users[uid], role)
+
+
+def shareable_members(
+    db: Session,
+    table: DataTable,
+    operator: User,
+    view: DataView | None = None,
+) -> list[dict[str, Any]]:
+    """可被授权者的精简列表（成员选择器数据源，ADR 0003 §4）.
+
+    = 本工作区成员 ∧ 对该表有 ``READ``，排除操作者本人与视图创建者（二者本就全权）。
+    只暴露"谁可以被授权"（id / 昵称 / 是否有表 ``EDIT_VIEWS``），不暴露任何视图，
+    因此与 D2「私有视图对一切非创建者不可见」不冲突。
+    """
+    from cndb.plugins.workspaces.models import WorkspaceMember
+
+    rows = (
+        db.query(WorkspaceMember.user_id, User)
+        .join(User, User.id == WorkspaceMember.user_id)
+        .filter(WorkspaceMember.workspace_id == table.workspace_id, User.is_active.is_(True))
+        .all()
+    )
+    users: dict[int, User] = {int(uid): u for uid, u in rows}
+    # 表 owner 若不在工作区成员表里（历史数据），仍应可选 —— 他天然拥有全部表权限
+    if table.owner_id is not None and int(table.owner_id) not in users:
+        users.update(_load_users(db, [int(table.owner_id)]))
+
+    preloads = _access_preloads_for_users(db, table, list(users))
+    excluded = {int(operator.id)}
+    if view is not None and view.owner_id is not None:
+        excluded.add(int(view.owner_id))
+
+    out: list[dict[str, Any]] = []
+    for uid, user in users.items():
+        if uid in excluded:
+            continue
+        preload = preloads.get(uid)
+        if preload is None or not preload.check(db, table, user, TableAction.READ):
+            continue
+        out.append(
+            {
+                "user_id": uid,
+                "username": user.username,
+                "nickname": user.nickname or "",
+                "can_edit_views": preload.check(db, table, user, TableAction.EDIT_VIEWS),
+            }
+        )
+    out.sort(key=lambda r: (r["username"], r["user_id"]))
+    return out
+
+
 __all__ = [
     "FORBIDDEN_DETAIL",
     "LAST_TABLE_VIEW_DETAIL",
     "NOT_FOUND_DETAIL",
     "ViewAction",
     "assert_can_change_visibility",
+    "assert_grantee_in_table_scope",
     "get_view_or_404",
     "grant_role_for_view",
+    "grantee_counts",
     "grants_for_user",
     "is_table_admin",
     "is_view_visible",
+    "list_view_grants",
+    "replace_view_grants",
     "require_can_publish_to_table",
     "resolve_view_action",
+    "revoke_view_grant",
     "role_codes_for_workspace",
+    "set_view_grant",
+    "shareable_members",
     "table_view_count",
     "view_visibility_filter",
     "visible_view_filter",

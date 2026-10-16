@@ -129,6 +129,7 @@ src/cndb/
 | `cndb users` | 用户管理（create / delete / list / import） |
 | `cndb service` | Windows 开机自启后台服务（enable / disable / status / stop / run） |
 | `cndb docs` | 文档数据运维：`gc` 外存孤儿文件体检与回收（默认 dry-run，`--apply` 删除，`--json` 输出） |
+| `cndb views` | 视图运维：`prune-orphans` 孤儿视图体检与回收（默认 dry-run，`--apply` 删除，`--workspace` 必填、`--table` 可选） |
 | `cndbw` | 启动 Tkinter 桌面管理面板 |
 
 ## API 概览
@@ -142,7 +143,7 @@ src/cndb/
 | 记录 | `/api/v1/workspaces/{wid}/tables/{tid}/records` | CRUD + filter + sort |
 | 批量 | `/api/v1/workspaces/{wid}/tables/{tid}/bulk` | batch upsert / delete |
 | 导入 | `/api/v1/workspaces/{wid}/tables/{tid}/import` | 同步 / 异步 CSV·JSON·XLSX |
-| 视图 | `/api/v1/workspaces/{wid}/tables/{tid}/views` | 保存筛选条件命名视图 |
+| 视图 | `/api/v1/workspaces/{wid}/tables/{tid}/views` | 保存筛选条件命名视图 + 可见性三档（`table`/`shared`/`private`）与共享名单 |
 | 权限 | `/api/v1/workspaces/{wid}/tables/{tid}/permissions` | 表级权限 |
 | 文档导出 | `/api/v1/workspaces/{wid}/documents/{doc_id}/export` | Markdown / Word / PDF 文件下载 |
 | 健康 | `/health` | 服务存活 |

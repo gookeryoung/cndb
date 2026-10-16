@@ -11,7 +11,7 @@ import type { MenuProps } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, FilterOutlined, MoreOutlined,
   SearchOutlined, SettingOutlined, EditOutlined, ImportOutlined, ExportOutlined,
-  HolderOutlined, LeftOutlined, RightOutlined, DownOutlined,
+  HolderOutlined, LeftOutlined, RightOutlined, DownOutlined, SafetyOutlined,
 } from '@ant-design/icons'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -21,6 +21,7 @@ import type { View } from '@/api'
 import { Tag, App as AntApp } from 'antd'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { ViewMode } from './views/viewModes'
+import ViewPermissionDrawer from './ViewPermissionDrawer'
 
 /** 可拖拽视图 Tab 标签 —— 供 Segmented.options.label 使用，配合 DndContext + SortableContext. */
 function DndViewTab({ view, active, draggable, onClick }: { view: View; active: boolean; draggable: boolean; onClick: () => void }) {
@@ -76,7 +77,8 @@ interface GridViewBarProps {
   onSelectView: (v: View | null) => void
   onModeChange: (m: ViewMode) => void
   onDragEnd: (event: DragEndEvent) => void
-  /** 是否有视图管理权限（EDIT_VIEWS）：控制拖拽把手与公共视图的编辑/删除 */
+  /** 是否有视图管理权限（EDIT_VIEWS）：控制拖拽把手与 table 档视图的编辑/删除，
+   *  同时决定「表内所有人可见」档可否单选（ADR 0003 决策 D4） */
   canManageViews: boolean
   onCreate: () => void
   onEdit: () => void
@@ -85,6 +87,8 @@ interface GridViewBarProps {
   onOpenViewConfig: () => void
   /** 打开「个人设置 → 表格」页签（显示模式与操作风格全局快捷入口） */
   onOpenTableSettings: () => void
+  /** 视图档位/共享名单变更后回调（父级据此失效 `table-views` 缓存） */
+  onViewsChanged?: () => void
 }
 
 /** 根据可滚动容器的 scrollLeft / scrollWidth / clientWidth 计算左右两端是否可继续滚动. */
@@ -100,10 +104,11 @@ export default function GridViewBar({
   wid, tid, views, activeViewId, mode, modeButtons, showModeSwitch,
   hasFilters, hasSorts, searchQuery, onSearchChange, onSelectView, onModeChange,
   onDragEnd, canManageViews, onCreate, onEdit, onDelete, onImport,
-  onOpenViewConfig, onOpenTableSettings,
+  onOpenViewConfig, onOpenTableSettings, onViewsChanged,
 }: GridViewBarProps) {
   const { message, modal } = AntApp.useApp()
   const { isMobile } = useResponsive()
+  const [permOpen, setPermOpen] = useState(false)
   const viewDragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
 
@@ -247,9 +252,15 @@ export default function GridViewBar({
     ? activeView?.owner_id == null
     : activeVisibility === 'table'
   const editDisabled = !activeView || (!canManageViews && activeIsTableTier)
+  /** 能否打开权限 Drawer：优先用后端下发的 `can_manage`（三档判定唯一口径）；
+   *  缺失（老响应 / mock）时回落旧判据 —— table 档需 EDIT_VIEWS，其余档本人即可。 */
+  const canManageActive = activeView != null
+    && (activeView.can_manage !== undefined ? activeView.can_manage : !activeIsTableTier || canManageViews)
   const currentModeBtn = modeButtons.find(b => b.mode === mode)
 
   const desktopMoreItems: MenuProps['items'] = [
+    { key: 'permission', icon: <SafetyOutlined />, label: '视图权限', disabled: !canManageActive, onClick: () => setPermOpen(true) },
+    { type: 'divider' },
     { key: 'delete', icon: <DeleteOutlined />, danger: true, label: '删除当前视图', disabled: !activeView, onClick: confirmDeleteView },
     { type: 'divider' },
     { key: 'import', icon: <ImportOutlined />, label: '导入视图', onClick: onImport },
@@ -260,6 +271,7 @@ export default function GridViewBar({
   const mobileMoreItems: MenuProps['items'] = [
     { key: 'create', icon: <PlusOutlined />, label: '新建视图', onClick: onCreate },
     { key: 'edit', icon: <EditOutlined />, label: '编辑当前视图', disabled: editDisabled, onClick: onEdit },
+    { key: 'permission', icon: <SafetyOutlined />, label: '视图权限', disabled: !canManageActive, onClick: () => setPermOpen(true) },
     { key: 'delete', icon: <DeleteOutlined />, danger: true, label: '删除当前视图', disabled: !activeView, onClick: confirmDeleteView },
     { type: 'divider' },
     { key: 'import', icon: <ImportOutlined />, label: '导入视图', onClick: onImport },
@@ -452,6 +464,18 @@ export default function GridViewBar({
           {searchInput}
         </div>
       )}
+
+      {/* 视图权限 Drawer —— 三档可见性 + 共享名单（ADR 0003 P3）。
+          `canManageViews` 即表 EDIT_VIEWS，用于门控「表内所有人可见」档（D4）。 */}
+      <ViewPermissionDrawer
+        open={permOpen}
+        onClose={() => setPermOpen(false)}
+        wid={wid}
+        tid={tid}
+        view={activeView ?? null}
+        canPublishToTable={canManageViews}
+        onUpdated={() => onViewsChanged?.()}
+      />
     </div>
   )
 }

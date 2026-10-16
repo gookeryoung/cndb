@@ -55,8 +55,37 @@ export interface View {
   owner_id?: number | null
   /** 排序权重（后端 DataView.order） */
   order?: number
+  /** 当前用户能否改该视图配置（后端按三档 + 表 EDIT_VIEWS 判定，见 ADR 0003 I7）。
+   *  **前端不要自己用 visibility + owner_id 推断** —— 口径只有后端一处。 */
+  can_edit?: boolean
+  /** 当前用户能否改可见性 / 名单 / 删除 / 设默认（后端 VIEW_MANAGE） */
+  can_manage?: boolean
+  /** 共享名单人数（仅 `shared` 档有意义） */
+  grantee_count?: number
 }
 export type ViewDetail = View
+
+/** 共享名单条目（开档时随 visibility 一起提交，全量替换） */
+export interface ViewMemberInput { user_id: number; role: ViewMemberRole }
+/** 授权角色：viewer=只能看；editor=在自身表 EDIT_VIEWS 范围内可改配置 */
+export type ViewMemberRole = 'viewer' | 'editor'
+export interface ViewMember {
+  user_id: number; username: string; nickname: string; role: ViewMemberRole
+  /** 授权当前是否有效（目标账号存在且仍有表 READ/EDIT_VIEWS）；
+   *  false = 已失效的残留授权（实时求值，可安全收回） */
+  available: boolean
+}
+/** 可被授权者（共享选择器数据源） */
+export interface ShareableMember {
+  user_id: number; username: string; nickname: string
+  /** 该成员是否有该表 EDIT_VIEWS —— false 时禁用 editor 选项（选了后端也会 422） */
+  can_edit_views: boolean
+}
+export interface ViewVisibilityUpdate {
+  visibility: ViewVisibility
+  /** 仅目标档位为 `shared` 时接受；全量替换名单。省略表示不动既有名单 */
+  members?: ViewMemberInput[]
+}
 export interface ViewCreate {
   name: string; view_type?: string
   filters?: Record<string, unknown> | Array<{ field_name: string; op: string; value?: unknown }> | null

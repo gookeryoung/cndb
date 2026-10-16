@@ -183,4 +183,39 @@ describe('GridViewBar 移动端', () => {
     const ownEdit = (await screen.findByText('编辑当前视图')).closest('li')
     expect(ownEdit).not.toHaveClass('ant-dropdown-menu-item-disabled')
   })
+
+  it('视图标签三态：private=我的 / shared=指定成员 / table 不带标签', () => {
+    const triViews: View[] = [
+      { id: 11, name: '公开视角', view_type: 'grid', is_default: false, owner_id: 9, visibility: 'table' },
+      { id: 12, name: '共享视角', view_type: 'grid', is_default: false, owner_id: 9, visibility: 'shared', grantee_count: 3 },
+      { id: 13, name: '私有视角', view_type: 'grid', is_default: false, owner_id: 9, visibility: 'private' },
+    ]
+    renderBar({ views: triViews, activeViewId: 11 })
+
+    const table = screen.getByTestId('view-tab-11')
+    expect(table).not.toHaveTextContent('我的')
+    expect(table).not.toHaveTextContent('指定成员')
+    // table 档视图同样带 owner_id（创建者），因此**不能**用 owner_id != null 判「我的」
+    expect(screen.getByTestId('view-tab-12')).toHaveTextContent('指定成员')
+    expect(screen.getByTestId('view-tab-13')).toHaveTextContent('我的')
+  })
+
+  it('「更多 → 视图权限」按后端下发的 can_manage 门控（不自行用 visibility/owner_id 推断）', async () => {
+    // 后端明确 can_manage=false（例如只读用户看他人表内可见视图）→ 置灰
+    const deniedViews: View[] = [
+      { id: 1, name: '全部记录', view_type: 'grid', is_default: true, owner_id: 9, visibility: 'table', can_manage: false },
+    ]
+    const { unmount } = renderBar({ views: deniedViews, activeViewId: 1, canManageViews: false })
+    fireEvent.click(screen.getByTestId('view-more-btn'))
+    expect((await screen.findByText('视图权限')).closest('li')).toHaveClass('ant-dropdown-menu-item-disabled')
+    unmount()
+
+    // can_manage=true 时可点
+    const ownViews: View[] = [
+      { id: 3, name: '我的待办', view_type: 'grid', is_default: false, owner_id: 9, visibility: 'private', can_manage: true },
+    ]
+    renderBar({ views: ownViews, activeViewId: 3, canManageViews: false })
+    fireEvent.click(screen.getByTestId('view-more-btn'))
+    expect((await screen.findByText('视图权限')).closest('li')).not.toHaveClass('ant-dropdown-menu-item-disabled')
+  })
 })
