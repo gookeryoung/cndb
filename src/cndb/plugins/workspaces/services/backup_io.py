@@ -61,7 +61,14 @@ def _import_backup_into_workspace(
     """把备份 JSON 中的表/行/视图导入到指定工作区（内部 helper，不做权限校验）."""
     import logging
 
-    from cndb.plugins.tables.models import DataField, DataTable, DataView, ensure_default_view
+    from cndb.plugins.tables.models import (
+        DataField,
+        DataTable,
+        DataView,
+        ViewVisibility,
+        ensure_default_view,
+        scope_key_for,
+    )
     from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
@@ -229,8 +236,25 @@ def _import_backup_into_workspace(
 
             # 创建视图（is_default 兼容 v1 旧键名 default）
             for vd in views_data:
+                imported_owner_id = vd.get("owner_id")
+                raw_scope = vd.get("scope_key")
+                if str(vd.get("visibility") or "") in tuple(ViewVisibility):
+                    # 新版备份：**原样还原**档位与命名空间，保证导出 / 导入往返无损
+                    # （含 D3 孤儿视图这类"私有档 + 无 owner"的退化态，不做修正）
+                    imported_visibility = ViewVisibility(str(vd["visibility"]))
+                    imported_scope_key = (
+                        int(raw_scope)
+                        if raw_scope is not None
+                        else scope_key_for(imported_visibility, imported_owner_id)
+                    )
+                else:
+                    # 旧版备份无 visibility 键：按旧二元语义推断 —— 无 owner = 表内公开视图。
+                    # 不可默认成 private：owner_id 为空会变成"孤儿私有视图"（对所有人不可见，ADR 0003 §7-2）
+                    imported_visibility = ViewVisibility.TABLE if imported_owner_id is None else ViewVisibility.PRIVATE
+                    imported_scope_key = scope_key_for(imported_visibility, imported_owner_id)
                 view = DataView(
                     table_id=table.id,
+                    owner_id=imported_owner_id,
                     name=vd.get("name", ""),
                     view_type=vd.get("view_type", "grid"),
                     filter_type=vd.get("filter_type", "AND"),
@@ -239,7 +263,10 @@ def _import_backup_into_workspace(
                     field_options=vd.get("field_options", {}) or {},
                     view_options=vd.get("view_options", {}) or {},
                     field_order=vd.get("field_order"),
-                    is_default=vd.get("is_default", vd.get("default", False)),
+                    is_default=bool(vd.get("is_default", vd.get("default", False)))
+                    and imported_visibility == ViewVisibility.TABLE,
+                    visibility=imported_visibility,
+                    scope_key=imported_scope_key,
                 )
                 db.add(view)
                 imported_views += 1

@@ -11,14 +11,16 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.models import DataField, DataView
-from cndb.plugins.tables.schemas import ViewCreate, ViewResponse, ViewUpdate
+from cndb.plugins.tables.models import DataField, DataView, ViewVisibility, scope_key_for
+from cndb.plugins.tables.schemas import ViewCreate, ViewResponse, ViewUpdate, ViewVisibilityUpdate
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
 from cndb.plugins.tables.services.core.view_access import (
     ViewAction,
+    assert_can_change_visibility,
     get_view_or_404,
+    require_can_publish_to_table,
     resolve_view_action,
-    visible_view_filter,
+    view_visibility_filter,
 )
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/views", tags=["views"])
@@ -72,16 +74,28 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
     return True, None
 
 
+def _scoped_name_conflict(db: Session, table_id: int, scope_key: int, name: str) -> bool:
+    """同名视图是否已存在于**同一命名空间**（ADR 0003 缺陷 #7 的修复点）."""
+    return (
+        db.query(DataView)
+        .filter(DataView.table_id == table_id, DataView.scope_key == scope_key, DataView.name == name)
+        .first()
+        is not None
+    )
+
+
 def _create_view_obj(
     db: Session,
     table_id: int,
     payload: ViewCreate,
-    owner_id: int | None,
+    owner_id: int,
 ) -> DataView:
     """创建单个 DataView 对象（不含 commit）.
 
-    owner_id=None 表示公共视图（有 EDIT_VIEWS 权限者创建）；
-    owner_id=创建者 id 表示个人视图（仅创建者可见可改）.
+    ``owner_id`` 恒为创建者（I4：授权不转移归属）；可见性由 ``payload.visibility``
+    决定（新建默认 ``private``），命名空间由 :func:`scope_key_for` 推导。
+    档位合法性（``table`` 档需表 ``EDIT_VIEWS``、``is_default`` 仅限 ``table`` 档）
+    由调用方在创建前校验。
     """
     if payload.is_default:
         db.query(DataView).filter(DataView.table_id == table_id).update({"is_default": False})
@@ -104,6 +118,8 @@ def _create_view_obj(
         view_options=payload.view_options,
         is_default=payload.is_default,
         order=order,
+        visibility=payload.visibility,
+        scope_key=scope_key_for(payload.visibility, owner_id),
     )
 
 
@@ -117,22 +133,25 @@ def create_view(
 ) -> DataView:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    # 同表视图名唯一
-    existing = db.query(DataView).filter(DataView.table_id == table_id, DataView.name == payload.name).first()
-    if existing:
+    # 定档校验：table 档（表内所有人可见）需表 EDIT_VIEWS（D4）；
+    # shared/private 档只需本人是创建者（由 VIEW_MANAGE 语义保证，创建时天然满足）
+    visibility = payload.visibility
+    require_can_publish_to_table(db, dt, current_user, visibility)
+    # is_default 是**表级**标记（会清掉同表其它默认视图）：只有 table 档视图才代表
+    # "全表成员的落地页"，private/shared 视图持有它会抢占他人视角（ADR 0003 §2）
+    if payload.is_default and visibility != ViewVisibility.TABLE:
+        raise HTTPException(status_code=400, detail="仅表内可见视图可设为默认视图")
+
+    # 同表视图名唯一 —— 按命名空间判定（私有视图只在本人空间内唯一，修缺陷 #7）
+    scope_key = scope_key_for(visibility, current_user.id)
+    if _scoped_name_conflict(db, table_id, scope_key, payload.name):
         raise HTTPException(status_code=400, detail="视图名已存在")
 
     ok, err = _validate_view_fields(payload, table_id, db)
     if not ok:
         raise HTTPException(status_code=400, detail=f"视图字段校验失败: {err}")
 
-    # 权限归类：有 EDIT_VIEWS → 公共视图（owner_id=None）；仅 READ → 个人视图（归属创建者）
-    is_public = check_action(db, dt, current_user, TableAction.EDIT_VIEWS)
-    # is_default 是**表级**标记（会清掉同表其它默认视图）：个人视图对全表不可见，
-    # 若允许其持有默认位，等价于仅 READ 用户即可"抢走"全表落地页（ADR 0003 §2）
-    if payload.is_default and not is_public:
-        raise HTTPException(status_code=400, detail="仅具备视图编辑权限者可设置默认视图")
-    dv = _create_view_obj(db, table_id, payload, owner_id=None if is_public else current_user.id)
+    dv = _create_view_obj(db, table_id, payload, owner_id=current_user.id)
     db.add(dv)
     db.commit()
     db.refresh(dv)
@@ -153,29 +172,37 @@ def import_views(
     """
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    existing_names = {r[0] for r in db.query(DataView.name).filter(DataView.table_id == table_id).all()}
+    # 已占用的命名空间键（scope_key, name）—— 私有视图只与本人空间的同名冲突（缺陷 #7）
+    existing_keys = {
+        (int(r[0]), str(r[1]))
+        for r in db.query(DataView.scope_key, DataView.name).filter(DataView.table_id == table_id).all()
+    }
     created: list[DataView] = []
     skipped: list[str] = []
 
-    # 权限归类：与 create_view 一致 —— 有 EDIT_VIEWS 导入为公共视图，否则个人视图
-    is_public = check_action(db, dt, current_user, TableAction.EDIT_VIEWS)
-    owner_id: int | None = None if is_public else current_user.id
+    # 导入者无 EDIT_VIEWS → 只能落 private 档（与 create_view 的 D4 门槛一致）
+    can_edit_views = check_action(db, dt, current_user, TableAction.EDIT_VIEWS)
 
     for vc in payload:
-        if vc.name in existing_names:
+        visibility = vc.visibility
+        if visibility == ViewVisibility.TABLE and not can_edit_views:
+            visibility = ViewVisibility.PRIVATE
+        # is_default 是表级标记，仅 table 档视图可持有（个人视图会抢占全表落地页）
+        is_default = vc.is_default and visibility == ViewVisibility.TABLE
+        if visibility != vc.visibility or is_default != vc.is_default:
+            vc = vc.model_copy(update={"visibility": visibility, "is_default": is_default})
+        scope_key = scope_key_for(visibility, current_user.id)
+        if (scope_key, vc.name) in existing_keys:
             skipped.append(f"已存在: {vc.name}")
             continue
         ok, err = _validate_view_fields(vc, table_id, db)
         if not ok:
             skipped.append(f"跳过 {vc.name}: {err}")
             continue
-        if not is_public and vc.is_default:
-            # 导入者无 EDIT_VIEWS → 只能落个人视图，个人视图不可占表级默认位（同 create_view）
-            vc = vc.model_copy(update={"is_default": False})
-        dv = _create_view_obj(db, table_id, vc, owner_id=owner_id)
+        dv = _create_view_obj(db, table_id, vc, owner_id=current_user.id)
         db.add(dv)
         created.append(dv)
-        existing_names.add(vc.name)
+        existing_keys.add((scope_key, vc.name))
 
     db.commit()
     for dv in created:
@@ -196,11 +223,11 @@ def list_views(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[DataView]:
-    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    # 可见性统一由 view_access 判定：公共视图（owner_id IS NULL）+ 本人个人视图
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    # 可见性统一由 view_access 判定：table 档全表可见 + shared 档名单内 + private 档仅本人
     return (
         db.query(DataView)
-        .filter(DataView.table_id == table_id, visible_view_filter(current_user.id))
+        .filter(DataView.table_id == table_id, view_visibility_filter(db, dt, current_user))
         .order_by(DataView.order, DataView.id)
         .all()
     )
@@ -219,12 +246,12 @@ def export_views(
     - 不传 ids → 导出该表全部视图
     - 传 ids → 仅导出指定视图（不存在的 id 自动跳过）
     """
-    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     q = db.query(DataView).filter(
         DataView.table_id == table_id,
-        # 可见性：与 list_views 一致 —— 公共视图 + 本人个人视图
-        visible_view_filter(current_user.id),
+        # 可见性：与 list_views 一致 —— table 档 + shared 名单内 + 本人 private
+        view_visibility_filter(db, dt, current_user),
     )
     if ids:
         q = q.filter(DataView.id.in_(ids))
@@ -241,6 +268,7 @@ def export_views(
         "field_order",
         "view_options",
         "is_default",
+        "visibility",
         "order",
     }
     for v in views:
@@ -276,10 +304,10 @@ def update_view(
     # 改配置需 VIEW_EDIT：本人个人视图放行；公共视图需表 EDIT_VIEWS（I7）
     dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_EDIT)
 
-    # is_default 是**表级**标记（会清掉同表其它默认视图）：个人视图对全表不可见，
-    # 允许其持有默认位等价于仅 READ 用户即可"抢走"全表落地页（ADR 0003 §2）
-    if payload.is_default and dv.owner_id is not None:
-        raise HTTPException(status_code=400, detail="仅具备视图编辑权限者可设置默认视图")
+    # is_default 是**表级**标记（会清掉同表其它默认视图）：只有 table 档视图代表
+    # "全表成员的落地页"，private/shared 档持有它会让其他成员进表看到空白（ADR 0003 §2）
+    if payload.is_default and dv.visibility != ViewVisibility.TABLE:
+        raise HTTPException(status_code=400, detail="仅表内可见视图可设为默认视图")
 
     # 如果标记为 default，先把同表其他视图的 default 清掉
     if payload.is_default:
@@ -288,6 +316,43 @@ def update_view(
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(dv, key, value)
+    db.commit()
+    db.refresh(dv)
+    return dv
+
+
+@router.post("/{view_id}/visibility", response_model=ViewResponse)
+def set_view_visibility(
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    payload: ViewVisibilityUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DataView:
+    """切换视图可见性档位（ADR 0003 §6，P2 承载档位切换；名单读写属 P3）.
+
+    - 需 ``VIEW_MANAGE``：创建者本人，或非私有档下的表内管理视角
+    - 开放为 ``table`` 档（表内所有人可见）额外需表 ``EDIT_VIEWS``（决策 D4）
+    - **每张表至少保留一个 ``table`` 档视图**：把最后一个转出 → 400（决策 D1）
+    - 同名冲突按**目标档位**的命名空间判定（private 与共享空间互不干扰）
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
+
+    new_visibility = payload.visibility
+    require_can_publish_to_table(db, dt, current_user, new_visibility)
+    assert_can_change_visibility(db, dt, dv, new_visibility)
+
+    new_scope = scope_key_for(new_visibility, dv.owner_id)
+    if new_scope != dv.scope_key and _scoped_name_conflict(db, table_id, new_scope, dv.name):
+        raise HTTPException(status_code=400, detail="目标可见范围内的同名视图已存在")
+
+    if new_visibility != ViewVisibility.TABLE and dv.is_default:
+        # 表级默认位只属于 table 档视图：转出时先摘掉，避免"默认视图他人看不见"
+        dv.is_default = False
+    dv.visibility = new_visibility
+    dv.scope_key = new_scope
     db.commit()
     db.refresh(dv)
     return dv
@@ -310,10 +375,10 @@ def delete_view(
     db.flush()
     if was_default:
         # 删除的是默认视图 → 把默认标记转移给同表剩余视图（按 order/id 取第一个），避免出现"无默认视图".
-        # 候选必须是公共视图：个人视图对全表不可见，让它持有 is_default 会让其他成员进表看到空白（缺陷 ⑥）.
+        # 候选必须是 table 档视图：private/shared 档对全表不可见，让它持有 is_default 会让其他成员进表看到空白（缺陷 ⑥）.
         next_default = (
             db.query(DataView)
-            .filter(DataView.table_id == table_id, DataView.owner_id.is_(None))
+            .filter(DataView.table_id == table_id, DataView.visibility == ViewVisibility.TABLE)
             .order_by(DataView.order, DataView.id)
             .first()
         )
@@ -361,7 +426,7 @@ def reorder_views(
     db.commit()
     return (
         db.query(DataView)
-        .filter(DataView.table_id == table_id, visible_view_filter(current_user.id))
+        .filter(DataView.table_id == table_id, view_visibility_filter(db, dt, current_user))
         .order_by(DataView.order, DataView.id)
         .all()
     )

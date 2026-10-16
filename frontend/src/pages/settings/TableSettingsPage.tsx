@@ -68,6 +68,8 @@ function SortableViewRow({
     id: String(view.id),
   })
   const meta = VIEW_MODE_META[view.view_type]
+  // 缺省视为 table 档：老接口响应 / 测试 mock 不带 visibility 时保持原有入口可见
+  const isTableTierView = (view.visibility ?? 'table') === 'table'
   return (
     <div
       ref={setNodeRef}
@@ -94,14 +96,17 @@ function SortableViewRow({
       <Tag style={{ marginInlineEnd: 0 }}>{meta?.label ?? view.view_type}</Tag>
       {view.is_default && <Tag color="blue" style={{ marginInlineEnd: 0 }}>默认</Tag>}
       <span className="ts-view-actions">
+        {/* is_default 是**表级**标记：只有表内可见（table 档）视图才代表全表落地页。
+            私有/指定成员档视图持有它会让其他成员进表看到空白，后端会 400，故此处不给入口。 */}
         {canEdit && !view.is_default && (
-          <Tooltip title="设为默认视图">
+          <Tooltip title={isTableTierView ? '设为默认视图' : '仅「表内可见」的视图可设为默认'}>
             <Button
               size="small"
               type="text"
               icon={<StarOutlined />}
               aria-label={`设为默认视图 ${view.name}`}
               loading={settingDefault}
+              disabled={!isTableTierView}
               onClick={onSetDefault}
             />
           </Tooltip>

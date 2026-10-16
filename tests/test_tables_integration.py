@@ -526,7 +526,7 @@ class TestTableDetailEnhancement:
         )
         client.post(
             f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}/views",
-            json={"name": "默认", "view_type": "grid", "is_default": True},
+            json={"name": "默认", "view_type": "grid", "is_default": True, "visibility": "table"},
             headers=auth_owner,
         )
 
@@ -558,7 +558,7 @@ class TestTableDetailEnhancement:
         )
         client.post(
             f"/api/v1/workspaces/{workspace.id}/tables/{dt.id}/views",
-            json={"name": "默认", "view_type": "grid", "is_default": True},
+            json={"name": "默认", "view_type": "grid", "is_default": True, "visibility": "table"},
             headers=auth_owner,
         )
 

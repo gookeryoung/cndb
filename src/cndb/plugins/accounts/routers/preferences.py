@@ -14,7 +14,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataTable, DataView
-from cndb.plugins.tables.services.core.view_access import visible_view_filter
+from cndb.plugins.tables.services.core.view_access import view_visibility_filter
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def get_table_active_view(
     user = _ensure_authenticated(current_user)
     # 表必须存在**且当前用户可读**：只校验存在性会形成存在性提示（低危），
     # 且会把"看不见的表"的偏好回显给调用者；统一按 TableAction.READ 判定。
-    _readable_table_or_404(db, table_id, user)  # 不可读/不存在 → 403/404
+    table = _readable_table_or_404(db, table_id, user)  # 不可读/不存在 → 403/404
 
     _ensure_preferences(user)
     active_view_id: int | None = None
@@ -111,10 +111,10 @@ def get_table_active_view(
     # 统一用 str key 查
     raw_val = raw.get(str(table_id))
     if raw_val is not None:
-        # 验证视图仍存在**且当前用户可见**（他人个人视图不得回显，见 ADR 0003 缺陷 ③）
+        # 验证视图仍存在**且当前用户可见**（他人私有视图不得回显，见 ADR 0003 缺陷 ③）
         view = (
             db.query(DataView)
-            .filter(DataView.id == int(raw_val), DataView.table_id == table_id, visible_view_filter(user.id))
+            .filter(DataView.id == int(raw_val), DataView.table_id == table_id, view_visibility_filter(db, table, user))
             .first()
         )
         if view is not None:
@@ -152,7 +152,7 @@ def set_table_active_view(
             .filter(
                 DataView.id == payload.active_view_id,
                 DataView.table_id == table_id,
-                visible_view_filter(user.id),
+                view_visibility_filter(db, table, user),
             )
             .first()
         )

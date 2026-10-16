@@ -97,7 +97,7 @@ def _seed_views(
 
     新增的演示用 personal 视图不会占用表的"默认视图"槽位——默认视图始终为 global。
     """
-    from cndb.plugins.tables.models import DataView
+    from cndb.plugins.tables.models import DataView, ViewVisibility, scope_key_for
 
     if datasets_dir is None:
         print("[seed-视图] examples/datasets 目录不存在，跳过视图注入")
@@ -129,25 +129,36 @@ def _seed_views(
                     if not _validate_view_fields(vc, valid_fields, ws_name, table_name):
                         continue
 
-                    # scope 决定 owner_id：global → None（公共）；personal → 指定用户 id
+                    # scope 决定归属与可见性档位：
+                    #   global   → table 档（继承表权限，表内所有人可见）
+                    #   personal → private 档（仅创建者可见）
+                    # 显式写好 visibility 时以配置为准（值域同 ADR 0003 §1）
                     scope = vc.get("scope", "global")
                     if scope == "global":
                         owner_id: int | None = None
+                        visibility = ViewVisibility.TABLE
                     elif scope == "personal":
                         owner_id = personal_owner_id
+                        visibility = ViewVisibility.PRIVATE
                     else:
                         print(
                             f"[seed-视图] 非法 scope={scope!r}（仅接受 global/personal），"
                             f"默认当作 global: {ws_name}/{table_name} / {vc.get('name')}"
                         )
                         owner_id = None
+                        visibility = ViewVisibility.TABLE
+                    raw_visibility = str(vc.get("visibility") or "")
+                    if raw_visibility in tuple(ViewVisibility):
+                        visibility = ViewVisibility(raw_visibility)
 
-                    # 个人视图不能占用 is_default（默认视图必须为全局，让所有成员进入时都看得到）
-                    is_default = bool(vc.get("is_default", False)) and owner_id is None
+                    # 默认视图必须为 table 档（让所有成员进入时都看得到）
+                    is_default = bool(vc.get("is_default", False)) and visibility == ViewVisibility.TABLE
 
                     dv_payload = {
                         "table_id": dt.id,
                         "owner_id": owner_id,
+                        "visibility": visibility,
+                        "scope_key": scope_key_for(visibility, owner_id),
                         "name": vc["name"],
                         "view_type": vc.get("view_type", "grid"),
                         "filter_type": vc.get("filter_type", "AND"),
@@ -160,8 +171,15 @@ def _seed_views(
                         "order": vc.get("order", idx),
                     }
                     # 同名视图已存在则用配置更新（自动生成的「全部」默认视图需要被丰富化）
+                    # 同名判定按命名空间（scope_key）：私有视图不与表内共享视图抢名
                     existing = (
-                        db.query(DataView).filter(DataView.table_id == dt.id, DataView.name == vc["name"]).first()
+                        db.query(DataView)
+                        .filter(
+                            DataView.table_id == dt.id,
+                            DataView.scope_key == dv_payload["scope_key"],
+                            DataView.name == vc["name"],
+                        )
+                        .first()
                     )
                     if existing is not None:
                         for key, value in dv_payload.items():
@@ -193,7 +211,7 @@ def _seed_demo_personal_views(db: Any, demo_user: Any, tables_map: dict[str, dic
 
     规则：幂等，同名（owner 维度）即跳过。
     """
-    from cndb.plugins.tables.models import DataView
+    from cndb.plugins.tables.models import DataView, ViewVisibility
 
     personal_specs: list[tuple[str, str, dict[str, Any]]] = [
         # (工作区名, 表名, 视图 payload 精简版 —— owner_id 由调用者注入)
@@ -237,6 +255,8 @@ def _seed_demo_personal_views(db: Any, demo_user: Any, tables_map: dict[str, dic
         dv = DataView(
             table_id=dt.id,
             owner_id=demo_user.id,
+            visibility=ViewVisibility.PRIVATE,
+            scope_key=demo_user.id,
             name=payload["name"],
             view_type=payload.get("view_type", "grid"),
             filter_type=payload.get("filter_type", "AND"),

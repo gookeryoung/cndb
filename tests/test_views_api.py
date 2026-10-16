@@ -62,7 +62,7 @@ class TestViewsAPI:
     def test_create_view(self, client, ws, table, auth_owner):
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "默认表格", "view_type": "grid", "is_default": True},
+            json={"name": "默认表格", "view_type": "grid", "is_default": True, "visibility": "table"},
             headers=auth_owner,
         )
         assert r.status_code == 201
@@ -70,6 +70,7 @@ class TestViewsAPI:
         assert data["name"] == "默认表格"
         assert data["view_type"] == "grid"
         assert data["is_default"] is True
+        assert data["visibility"] == "table"
 
     def test_create_view_appends_last_without_order(self, client, ws, table, auth_owner):
         """未显式指定 order 时，新视图应追加到现有视图末尾而非最前."""
@@ -350,7 +351,7 @@ class TestViewsAPI:
     def test_update_view(self, client, ws, table, auth_owner):
         create_r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "OldName", "view_type": "grid"},
+            json={"name": "OldName", "view_type": "grid", "visibility": "table"},
             headers=auth_owner,
         )
         vid = create_r.json()["id"]
@@ -414,12 +415,12 @@ class TestViewsAPI:
     def test_create_view_set_default_replaces_others(self, client, ws, table, auth_owner):
         client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "V1", "is_default": True},
+            json={"name": "V1", "is_default": True, "visibility": "table"},
             headers=auth_owner,
         )
         client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "V2", "is_default": True},
+            json={"name": "V2", "is_default": True, "visibility": "table"},
             headers=auth_owner,
         )
         r = client.get(
@@ -435,12 +436,12 @@ class TestViewsAPI:
         """删除默认视图后，默认标记自动转移给同表剩余视图（按 order/id 第一个）."""
         keep_id = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "Keep", "view_type": "grid", "order": 0},
+            json={"name": "Keep", "view_type": "grid", "order": 0, "visibility": "table"},
             headers=auth_owner,
         ).json()["id"]
         default_id = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "DefaultOne", "view_type": "grid", "order": 1, "is_default": True},
+            json={"name": "DefaultOne", "view_type": "grid", "order": 1, "is_default": True, "visibility": "table"},
             headers=auth_owner,
         ).json()["id"]
 
@@ -462,7 +463,7 @@ class TestViewsAPI:
         """删除非默认视图不影响既有的默认标记."""
         default_id = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "KeepDefault", "is_default": True},
+            json={"name": "KeepDefault", "is_default": True, "visibility": "table"},
             headers=auth_owner,
         ).json()["id"]
         other_id = client.post(
@@ -489,7 +490,7 @@ class TestViewsAPI:
         """删除唯一的默认视图后无剩余视图，接口正常返回且不报错."""
         vid = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "OnlyDefault", "is_default": True},
+            json={"name": "OnlyDefault", "is_default": True, "visibility": "table"},
             headers=auth_owner,
         ).json()["id"]
 
@@ -683,7 +684,7 @@ class TestViewsAPI:
         """update_view 不传 is_default 时条件为 False，跳过清 default 分支."""
         create_r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "VNoDefault", "view_type": "grid", "is_default": True},
+            json={"name": "VNoDefault", "view_type": "grid", "is_default": True, "visibility": "table"},
             headers=auth_owner,
         )
         vid = create_r.json()["id"]
@@ -1050,6 +1051,7 @@ class TestViewExport:
                 "filter_type": "AND",
                 "view_options": {"group_field": "姓名", "ungrouped_label": "未分配"},
                 "is_default": True,
+                "visibility": "table",
                 "order": 0,
             },
             headers=auth_owner,
@@ -1068,6 +1070,8 @@ class TestViewExport:
         assert export_r.status_code == 200
         payload = export_r.json()
         assert len(payload) == 2
+        # 导出需带上可见性档位，否则回导会把 table 档视图降级成 private
+        assert {v["visibility"] for v in payload} == {"table", "private"}
 
         # 删掉全部
         list_r = client.get(
@@ -1104,7 +1108,7 @@ class TestUpdateViewPermissionFix:
     """修复：update_view 原只校验 READ 权限（应为 EDIT_VIEWS），VIEWER 可 PATCH 修改视图."""
 
     def test_viewer_cannot_update_view(self, client, db, ws, table, auth_owner):
-        """VIEWER 用户 PATCH 视图应返回 403."""
+        """VIEWER 用户 PATCH 表内可见视图应返回 403（可见但无权执行该动作）."""
         from cndb.plugins.accounts.models import User
         from cndb.plugins.workspaces.models import WorkspaceMember
 
@@ -1123,10 +1127,10 @@ class TestUpdateViewPermissionFix:
         )
         viewer_h = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-        # 先建一个视图
+        # 先建一个表内可见（table 档）视图 —— viewer 看不到他人 private 视图（会得 404 而非 403）
         vr = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "v_perm_test", "view_type": "grid"},
+            json={"name": "v_perm_test", "view_type": "grid", "visibility": "table"},
             headers=auth_owner,
         )
         vid = vr.json()["id"]
@@ -1159,10 +1163,10 @@ class TestViewRowsHiddenFieldsFix:
         table_ddl.add_column(db.get_bind(), table, secret)
         db.commit()
 
-        # 创建视图
+        # 创建视图（table 档：table 权限是硬天花板，VIEWER 仍可读但拿不到敏感字段）
         vr = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "grid_view", "view_type": "grid"},
+            json={"name": "grid_view", "view_type": "grid", "visibility": "table"},
             headers=auth_owner,
         )
         vid = vr.json()["id"]
@@ -1224,6 +1228,7 @@ class TestViewRowsHiddenFieldsFix:
                 "name": "kb_view",
                 "view_type": "kanban",
                 "view_options": {"group_field": "姓名"},
+                "visibility": "table",
             },
             headers=auth_owner,
         )
@@ -1283,21 +1288,110 @@ def _login(client, username: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
-class TestPersonalViewClassification:
-    """个人视图归类：有 EDIT_VIEWS → 公共（owner_id=None）；仅 READ → 个人（owner_id=创建者）."""
+class TestViewTierClassification:
+    """三档可见性归类（ADR 0003 D1/D2/D4）.
 
-    def test_owner_created_view_is_public(self, client, ws, table, auth_owner):
-        """表拥有者创建视图 → 公共视图（owner_id 为空）."""
+    新建视图**一律默认** ``private``（仅创建者可见，与创建者权限高低无关）；
+    只有显式声明 ``visibility="table"`` 才落"表内所有人可见"档，且该档需表 ``EDIT_VIEWS``。
+    ``owner_id`` 永远只代表创建者，不再编码可见性。
+    """
+
+    def test_created_view_defaults_to_private(self, client, ws, table, auth_owner):
+        """表拥有者新建视图默认也是 private（D1/I2：新建默认本人可见）."""
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "公共视图", "view_type": "grid"},
+            json={"name": "默认私有", "view_type": "grid"},
             headers=auth_owner,
         )
         assert r.status_code == 201
-        assert r.json()["owner_id"] is None, "有 EDIT_VIEWS 权限者创建的视图应为公共视图"
+        body = r.json()
+        assert body["owner_id"] is not None, "owner_id 只表示创建者，不再编码可见性"
+        assert body["visibility"] == "private"
+
+    def test_explicit_table_tier_readable_by_others_not_writable(self, client, db, ws, table, auth_owner):
+        """显式 visibility=table → 表内所有人可读（表 READ 天花板），但仍不可改（I7）."""
+        _make_workspace_viewer(db, ws, "tier_v1")
+        viewer_h = _login(client, "tier_v1")
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "表内可见", "view_type": "grid", "visibility": "table"},
+            headers=auth_owner,
+        )
+        assert r.status_code == 201
+        vid = r.json()["id"]
+
+        names = {
+            v["name"]
+            for v in client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=viewer_h).json()
+        }
+        assert "表内可见" in names
+        assert (
+            client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}", headers=viewer_h).status_code == 200
+        )
+        assert (
+            client.patch(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}", json={"name": "越权"}, headers=viewer_h
+            ).status_code
+            == 403
+        )
+
+    def test_viewer_cannot_create_table_tier(self, client, db, ws, table):
+        """无表 EDIT_VIEWS 者开放 table 档 → 403（D4：防批量污染他人视图栏）."""
+        _make_workspace_viewer(db, ws, "tier_v2")
+        viewer_h = _login(client, "tier_v2")
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "越权公开", "view_type": "grid", "visibility": "table"},
+            headers=viewer_h,
+        )
+        assert r.status_code == 403
+
+    def test_private_names_are_namespaced(self, client, db, ws, table, auth_owner):
+        """私有视图只在本人命名空间内唯一（修缺陷 #7）.
+
+        两个用户各建「我的待办」均成功；同一用户重名才 400。
+        另：私有视图可与表内共享视图同名（命名空间不同）。
+        """
+        client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "共享视角", "view_type": "grid", "visibility": "table"},
+            headers=auth_owner,
+        )
+        _make_workspace_viewer(db, ws, "tier_v3a")
+        _make_workspace_viewer(db, ws, "tier_v3b")
+        a_h = _login(client, "tier_v3a")
+        b_h = _login(client, "tier_v3b")
+
+        for headers in (a_h, b_h):
+            r = client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+                json={"name": "我的待办", "view_type": "grid"},
+                headers=headers,
+            )
+            assert r.status_code == 201, r.text
+
+        # 同一用户重复同名 → 400
+        assert (
+            client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+                json={"name": "我的待办", "view_type": "grid"},
+                headers=a_h,
+            ).status_code
+            == 400
+        )
+
+        # 私有视图与表内共享视图同名互不冲突
+        assert (
+            client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+                json={"name": "共享视角", "view_type": "grid"},
+                headers=a_h,
+            ).status_code
+            == 201
+        )
 
     def test_viewer_created_view_is_personal(self, client, db, ws, table):
-        """仅 READ 用户创建视图 → 个人视图（owner_id=创建者）."""
+        """仅 READ 用户创建视图 → private 档（owner_id=创建者）."""
         viewer = _make_workspace_viewer(db, ws, "pv_viewer1")
         viewer_h = _login(client, "pv_viewer1")
 
@@ -1307,16 +1401,17 @@ class TestPersonalViewClassification:
             headers=viewer_h,
         )
         assert r.status_code == 201
-        assert r.json()["owner_id"] == viewer.id, "仅 READ 用户创建的视图应归属个人"
+        assert r.json()["owner_id"] == viewer.id
+        assert r.json()["visibility"] == "private"
 
     def test_list_views_hides_others_personal_views(self, client, db, ws, table, auth_owner):
-        """个人视图仅创建者可见：他人列表只含公共视图 + 本人视图."""
+        """private 档仅创建者可见：他人列表只含 table 档 + 本人视图."""
         owner_h = auth_owner
 
-        # 表拥有者（EDIT_VIEWS）建公共视图
+        # 表拥有者（EDIT_VIEWS）显式建 table 档视图
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "公共视图B2", "view_type": "grid"},
+            json={"name": "公共视图B2", "view_type": "grid", "visibility": "table"},
             headers=owner_h,
         )
         assert r.status_code == 201
@@ -1395,10 +1490,10 @@ class TestPersonalViewClassification:
         assert r.status_code == 404, "他人个人视图应视为不存在"
 
     def test_viewer_cannot_update_public_view(self, client, db, ws, table, auth_owner):
-        """公共视图仍需 EDIT_VIEWS：仅 READ 用户 PATCH 公共视图 → 403."""
+        """table 档视图仍需 EDIT_VIEWS：仅 READ 用户 PATCH → 403."""
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "公共视图B3", "view_type": "grid"},
+            json={"name": "公共视图B3", "view_type": "grid", "visibility": "table"},
             headers=auth_owner,
         )
         vid = r.json()["id"]
@@ -1450,10 +1545,10 @@ class TestPersonalViewClassification:
         assert r.status_code == 404
 
     def test_viewer_cannot_delete_public_view(self, client, db, ws, table, auth_owner):
-        """公共视图仍需 EDIT_VIEWS：仅 READ 用户 DELETE 公共视图 → 403."""
+        """table 档视图仍需 EDIT_VIEWS：仅 READ 用户 DELETE → 403."""
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "公共视图B4", "view_type": "grid"},
+            json={"name": "公共视图B4", "view_type": "grid", "visibility": "table"},
             headers=auth_owner,
         )
         vid = r.json()["id"]
@@ -1517,30 +1612,45 @@ class TestPersonalViewClassification:
 
 
 class TestMixedScopeViews:
-    """一张表同时存在 global 和 personal 视图时，API 隔离与权限语义完备性."""
+    """一张表同时存在 table 档与 private 档视图时，API 隔离与权限语义完备性."""
 
     def test_mixed_scope_list_all_for_each_role(self, client, db, ws, table, auth_owner):
-        """典型 seed 后状态：global × 2 + owner_personal × 1 + demo_personal × 1.
+        """典型 seed 后状态：table × 2 + viewerA_private × 1 + viewerB_private × 1.
 
-        - owner（EDIT_VIEWS）看到: 2 global + 1 owner_personal（看不到 demo 的 personal）
-        - demo（仅 READ VIEWER）看到: 2 global + 1 demo_personal
-        - 第二个 viewer 看到: 仅 2 global（看不到任何人的 personal）
+        - owner（管理视角）：2 table，看不到任何人的 private（D2）
+        - viewer_A：2 table + 自己 1 条 private
+        - viewer_B：2 table + 自己 1 条 private
         """
-        # 1) owner 建 2 个 global（owner_id=None，因为有 EDIT_VIEWS）+ 1 个自己的 personal —— 实际 API 里 owner 创建的都是 global
-        #    直接用 DB 手动建 personal 来模拟 seed.py 的 demo_user 注入（API 没有 scope 参数，权限自动决定）
         from cndb.plugins.tables.models import DataView
 
-        global1 = DataView(
-            table_id=table.id, owner_id=None, name="全部记录（全局）", view_type="grid", is_default=True, order=0
+        # 1) 两个 table 档视图（表内所有人可见）
+        db.add_all(
+            [
+                DataView(
+                    table_id=table.id,
+                    owner_id=None,
+                    name="全部记录（全局）",
+                    view_type="grid",
+                    is_default=True,
+                    order=0,
+                    visibility="table",
+                    scope_key=0,
+                ),
+                DataView(
+                    table_id=table.id,
+                    owner_id=None,
+                    name="高优任务（全局）",
+                    view_type="grid",
+                    order=1,
+                    visibility="table",
+                    scope_key=0,
+                ),
+            ]
         )
-        global2 = DataView(table_id=table.id, owner_id=None, name="高优任务（全局）", view_type="grid", order=1)
-        db.add_all([global1, global2])
 
-        # 2) viewer_A 建 1 个 personal（owner_id=viewer_A.id）
+        # 2) 两个 viewer 各建 1 条 private（新建默认档）
         viewer_a = _make_workspace_viewer(db, ws, "mv_a")
         viewer_a_h = _login(client, "mv_a")
-
-        # 3) viewer_B 建 1 个 personal
         viewer_b = _make_workspace_viewer(db, ws, "mv_b")
         viewer_b_h = _login(client, "mv_b")
 
@@ -1563,7 +1673,7 @@ class TestMixedScopeViews:
         vid_a = a_view_r.json()["id"]
         vid_b = b_view_r.json()["id"]
 
-        # 4) 三方各自 GET /views 验证可见性
+        # 3) 三方各自 GET /views 验证可见性
         r_owner = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=auth_owner)
         r_a = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=viewer_a_h)
         r_b = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=viewer_b_h)
@@ -1575,26 +1685,28 @@ class TestMixedScopeViews:
         a_names = {v["name"] for v in r_a.json()}
         b_names = {v["name"] for v in r_b.json()}
 
-        # owner 看到两个 global，看不到任何人的 personal
+        # owner 看到两个 table 档，看不到任何人的 private（含自己的？owner 无 private 视图）
         assert owner_names == {"全部记录（全局）", "高优任务（全局）"}
-        # viewer_A 看到两个 global + 自己的 personal（B 的 personal 不可见）
+        # viewer_A 看到两个 table + 自己的 private（B 的 private 不可见）
         assert "全部记录（全局）" in a_names
         assert "A 的关注（个人）" in a_names
         assert "B 的待办（个人）" not in a_names
-        # viewer_B 看到两个 global + 自己的 personal（A 的 personal 不可见）
+        # viewer_B 看到两个 table + 自己的 private（A 的 private 不可见）
         assert "全部记录（全局）" in b_names
         assert "B 的待办（个人）" in b_names
         assert "A 的关注（个人）" not in b_names
 
-        # 5) 通过 owner_id 字段二次确认 scope 语义（响应体里会带 owner_id）
+        # 4) 响应体字段二次确认档位语义
         a_view_in_list = next(v for v in r_a.json() if v["name"] == "A 的关注（个人）")
         assert a_view_in_list["owner_id"] == viewer_a.id
+        assert a_view_in_list["visibility"] == "private"
         b_view_in_list = next(v for v in r_b.json() if v["name"] == "B 的待办（个人）")
         assert b_view_in_list["owner_id"] == viewer_b.id
         default_global = next(v for v in r_a.json() if v["name"] == "全部记录（全局）")
         assert default_global["owner_id"] is None
+        assert default_global["visibility"] == "table"
 
-        # 6) GET /views/{id} 跨用户 404 隔离
+        # 5) GET /views/{id} 跨用户 404 隔离
         assert (
             client.get(
                 f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid_b}",
@@ -1610,25 +1722,26 @@ class TestMixedScopeViews:
             == 404
         )
 
-    def test_default_view_always_global_not_personal(self, client, db, ws, table, auth_owner):
-        """默认视图（is_default=True）必须是 global，不会被任何用户的 personal 视图霸占.
+    def test_default_flag_only_in_table_tier(self, client, db, ws, table, auth_owner):
+        """``is_default`` 是表级标记，只允许 table 档视图持有（ADR 0003 §2）.
 
-        即使某 viewer 意外写 seed 或直接 DB 插入 owner_id!=NULL 且 is_default=True
-        的视图，list_views / rows 端点返回的默认视图也应保证 owner_id=None ——
-        但当前 seed 层已硬性保护 personal 不占 is_default 槽位，这里测 DB 层真实语义。
+        - table 档默认视图对 owner 与普通 viewer 都可见，且是列表里唯一的 default
+        - 私有视图创建/更新时试图占默认位 → 400（仅 READ 用户抢不走全表落地页）
         """
         from cndb.plugins.tables.models import DataView
 
-        # 造一个合法的 global 默认视图
-        dv_default = DataView(
-            table_id=table.id,
-            owner_id=None,
-            name="全部（默认·全局）",
-            view_type="grid",
-            is_default=True,
-            order=0,
+        db.add(
+            DataView(
+                table_id=table.id,
+                owner_id=None,
+                name="全部（默认·全局）",
+                view_type="grid",
+                is_default=True,
+                order=0,
+                visibility="table",
+                scope_key=0,
+            )
         )
-        db.add(dv_default)
         db.commit()
 
         # owner 的列表里，这条默认视图 owner_id 必须是 None
@@ -1637,9 +1750,10 @@ class TestMixedScopeViews:
         defaults = [v for v in r.json() if v["is_default"]]
         assert len(defaults) == 1
         assert defaults[0]["owner_id"] is None
+        assert defaults[0]["visibility"] == "table"
         assert defaults[0]["name"] == "全部（默认·全局）"
 
-        # viewer（仅 READ）同样能看到这条 global 默认视图
+        # viewer（仅 READ）同样能看到这条 table 档默认视图
         _make_workspace_viewer(db, ws, "def_v1")
         viewer_h = _login(client, "def_v1")
         r2 = client.get(f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views", headers=viewer_h)
@@ -1647,3 +1761,26 @@ class TestMixedScopeViews:
         v_defaults = [v for v in r2.json() if v["is_default"]]
         assert len(v_defaults) == 1
         assert v_defaults[0]["owner_id"] is None
+
+        # 私有档不得占默认位
+        assert (
+            client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+                json={"name": "抢默认位", "view_type": "grid", "is_default": True},
+                headers=viewer_h,
+            ).status_code
+            == 400
+        )
+        own = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "我的私有", "view_type": "grid"},
+            headers=viewer_h,
+        ).json()["id"]
+        assert (
+            client.patch(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{own}",
+                json={"is_default": True},
+                headers=viewer_h,
+            ).status_code
+            == 400
+        )

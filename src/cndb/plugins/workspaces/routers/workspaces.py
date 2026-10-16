@@ -436,6 +436,10 @@ def export_workspace(
                 "view_options": getattr(v, "view_options", None),
                 "field_order": getattr(v, "field_order", None),
                 "is_default": v.is_default,
+                # ADR 0003：可见性档位与命名空间（新增键，旧版备份无此键时按旧语义还原）
+                "owner_id": v.owner_id,
+                "visibility": v.visibility,
+                "scope_key": v.scope_key,
             }
             for v in views
         ]
