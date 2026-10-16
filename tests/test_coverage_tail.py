@@ -14,7 +14,6 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.field_types import build_default_registry, default_registry
 from cndb.plugins.tables.models import DataField, DataTable
-from cndb.plugins.tables.routers.public import _get_public_view, _make_field_sort_key
 from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.tables.services.core.links import _get_link_sa_table, _get_sa_table_by_name, _row_summaries
 from cndb.plugins.tables.services.core.query import (
@@ -435,40 +434,6 @@ def test_row_summaries_validate_exception_sets_none(db_engine):
     ):
         summaries = _row_summaries(db_engine, source_table, [field1], [1])
         assert summaries[1] == "#1"
-
-
-# ── public router ──
-
-
-def test_get_public_view_table_gone_404(db):
-    """视图存在但 DataTable 被删 → 404 (L25)."""
-    from cndb.plugins.tables.models import DataView
-
-    dt = DataTable(name="t", db_table_name="t_nonexist_anyway", workspace_id=1)
-    db.add(dt)
-    db.flush()
-    dv = DataView(table_id=dt.id, name="v", view_type="grid", is_public=True, public_slug="s1")
-    db.add(dv)
-    db.flush()
-    db.delete(dt)
-    db.commit()
-
-    with pytest.raises(HTTPException) as excinfo:
-        _get_public_view(db, "s1")
-    assert excinfo.value.status_code == 404
-
-
-def test_make_field_sort_key_with_field_order():
-    """field_order 非空 → key_by_name (L34-39)."""
-    key_fn = _make_field_sort_key(["b", "a", "c"])
-    fa = MagicMock()
-    fa.name = "a"
-    fb = MagicMock()
-    fb.name = "b"
-    assert key_fn(fb) < key_fn(fa)
-    fz = MagicMock()
-    fz.name = "z"
-    assert key_fn(fz) == 9999
 
 
 # ── roles ──

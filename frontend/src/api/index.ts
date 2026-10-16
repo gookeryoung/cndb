@@ -11,7 +11,6 @@
  * - /api/v1/workspaces/{wid}/tables/{tid}/audit       → 审计
  * - /api/v1/workspaces/{wid}/tables/{tid}/export|import|import/async  → 导入导出
  * - /api/v1/workspaces/{wid}/import-csv/*             → CSV 自动建表
- * - /api/v1/public/*               → 公开分享（全局挂载）
  */
 
 export { authApi } from './auth'
@@ -20,7 +19,6 @@ export { tableApi, fieldApi, auditApi, permissionApi, tableMembersApi } from './
 export { recordApi } from './records'
 export { viewApi } from './views'
 export { importApi, exportApi, fileApi } from './importExport'
-export { publicApi } from './public'
 export { issuesApi } from './issues'
 export { changeRequestsApi } from './changeRequests'
 export { adminApi } from './admin'

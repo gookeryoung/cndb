@@ -207,10 +207,6 @@ class DataView(TimestampMixin, Base):
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    # 公开分享（P4）
-    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    public_slug: Mapped[str | None] = mapped_column(String(12), unique=True, nullable=True, index=True)
-
     # 关系
     table: Mapped[DataTable] = relationship(back_populates="views")
     owner: Mapped[User | None] = relationship("User")

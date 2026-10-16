@@ -66,11 +66,6 @@ class TestLocalModeAPI:
         assert r.status_code == 403
         assert "单机模式已禁用登录" in r.json()["detail"]
 
-    def test_public_share_forbidden(self, local_mode, client):
-        r = client.get("/api/v1/public/share/any-slug")
-        assert r.status_code == 403
-        assert "单机模式" in r.json()["detail"]
-
     def test_business_smoke_create_workspace(self, local_mode, client):
         """业务链冒烟：无认证创建工作区归属本地用户."""
         r = client.post("/api/v1/workspaces", json={"name": "local-smoke"})

@@ -1,8 +1,6 @@
-/** 文件分析 / 导入结果与公开分享. */
+/** 文件分析 / 导入结果. */
 
 import type { ID } from './common'
-import type { RowResponse } from './records'
-import type { TableDetail } from './tables'
 
 export interface FileAnalyzeResult {
   columns: Array<{ name: string; field_type: string; sample_values?: string[]; null_ratio?: number; options?: string[] }>
@@ -20,11 +18,6 @@ export interface FileImportResult {
   field_count: number
   format?: string
   columns?: Array<{ name: string; field_type: string }>
-}
-
-export interface SharedGrid {
-  slug: string; title: string; table: TableDetail
-  rows: RowResponse[]; total: number
 }
 
 /** 报告模板参数定义 */

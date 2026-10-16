@@ -642,71 +642,6 @@ class TestViewsAPI:
         )
         assert r.status_code == 404
 
-    # ── P4 公开分享测试 ──
-
-    def test_create_view_share(self, client, ws, table, auth_owner):
-        create_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "ShareView", "view_type": "grid"},
-            headers=auth_owner,
-        )
-        vid = create_r.json()["id"]
-        r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
-            headers=auth_owner,
-        )
-        assert r.status_code == 200
-        data = r.json()
-        assert data["is_public"] is True
-        assert data["slug"]
-        assert "share_url" in data
-
-    def test_create_view_share_not_found(self, client, ws, table, auth_owner):
-        r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/99999/share",
-            headers=auth_owner,
-        )
-        assert r.status_code == 404
-
-    def test_revoke_view_share(self, client, ws, table, auth_owner):
-        create_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "ShareRevoke", "view_type": "grid"},
-            headers=auth_owner,
-        )
-        vid = create_r.json()["id"]
-        client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
-            headers=auth_owner,
-        )
-        r = client.delete(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
-            headers=auth_owner,
-        )
-        assert r.status_code == 200
-        assert r.json()["is_public"] is False
-
-    def test_public_share_view(self, client, ws, table, auth_owner):
-        create_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={"name": "PubShare", "view_type": "grid"},
-            headers=auth_owner,
-        )
-        vid = create_r.json()["id"]
-        share_r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
-            headers=auth_owner,
-        )
-        slug = share_r.json()["slug"]
-        r = client.get(f"/api/v1/public/share/{slug}")
-        assert r.status_code == 200
-        assert "rows" in r.json()
-        assert "total" in r.json()
-
-    def test_public_share_invalid_slug(self, client, ws, table, auth_owner):
-        r = client.get("/api/v1/public/share/nonexistentslug12")
-        assert r.status_code == 404
-
     # ── 覆盖遗漏分支 ──
 
     def test_update_view_without_is_default(self, client, ws, table, auth_owner):
@@ -769,14 +704,6 @@ class TestViewsAPI:
         cols = r.json()["columns"]
         assert "进行中" in cols
         assert "未分组" in cols
-
-    def test_revoke_view_share_not_found(self, client, ws, table, auth_owner):
-        """revoke 不存在的 view 应返回 404（覆盖 line 298）."""
-        r = client.delete(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/99999/share",
-            headers=auth_owner,
-        )
-        assert r.status_code == 404
 
 
 class TestKanbanEnhanced:
@@ -1025,7 +952,7 @@ class TestViewExport:
         assert len(data) == 3
 
         # 应只保留 ViewCreate 字段，无 id/table_id/owner_id/时间戳
-        forbidden = {"id", "table_id", "owner_id", "created_at", "updated_at", "is_public", "public_slug"}
+        forbidden = {"id", "table_id", "owner_id", "created_at", "updated_at"}
         for v in data:
             assert forbidden.isdisjoint(v.keys()), f"导出含非法字段: {forbidden & v.keys()}"
             assert "name" in v

@@ -14,7 +14,6 @@ from cndb.plugins.tables.routers.import_csv import compat_router as import_csv_r
 from cndb.plugins.tables.routers.import_csv import router as import_file_router
 from cndb.plugins.tables.routers.members import router as members_router
 from cndb.plugins.tables.routers.permissions import router as permissions_router
-from cndb.plugins.tables.routers.public import router as public_router  # noqa: F401 — 全局公开路由，由 app.py 直接挂载
 from cndb.plugins.tables.routers.records import router as records_router
 from cndb.plugins.tables.routers.tables import router as tables_router
 from cndb.plugins.tables.routers.views import router as views_router

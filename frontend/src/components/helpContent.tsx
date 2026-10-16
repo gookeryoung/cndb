@@ -204,7 +204,7 @@ const faqContent = (
         <div>
             <Text strong>如何让别人查看数据？</Text>
             <br />
-            <Text type="secondary">公开分享可将视图暴露为匿名可访问的只读数据页（/public/share/链接）。链接无效或过期时页面会给出提示；如需收集他人反馈，可让其登录后在问题清单中提交。</Text>
+            <Text type="secondary">把对方加入工作区并授予数据表的查看权限即可（工作区 → 成员 → 邀请）。对方登录后只能看到自己被授权范围内的数据；如需收集他人反馈，可让其登录后在问题清单中提交。</Text>
         </div>
         <div>
             <Text strong>为什么有些按钮是灰色的？</Text>
