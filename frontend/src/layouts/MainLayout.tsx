@@ -13,6 +13,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
+import NotificationBell from '@/components/NotificationBell'
 import { useRealtime } from '@/realtime/useRealtime'
 import { RealtimeStatusTag } from '@/realtime/RealtimeIndicators'
 import { documentsApi } from '@/api/documents'
@@ -352,6 +353,8 @@ export default function MainLayout() {
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
           {/* 实时协作连接状态 —— 桌面端展示，移动端省略以省空间 */}
           {!isMobile && <RealtimeStatusTag status={realtimeStatus} />}
+          {/* 通知铃铛：谁把我加进了协作者（未读角标 + 列表） */}
+          <NotificationBell />
           {/* 帮助中心入口 —— 所有登录用户可见 */}
           <Tooltip title="帮助中心与新手引导">
             <Button

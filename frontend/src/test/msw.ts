@@ -201,6 +201,12 @@ export const handlers = [
   http.get('/api/v1/workspaces/:wid/tables/:tid/views', () =>
     HttpResponse.json(mockViews)),
 
+  // 站内通知：默认无通知（铃铛在 MainLayout 中常驻，必须给默认处理）
+  http.get('/api/v1/accounts/notifications', () =>
+    HttpResponse.json({ items: [], unread_count: 0 })),
+  http.post('/api/v1/accounts/notifications/read-all', () => HttpResponse.json({ updated: 0 })),
+  http.post('/api/v1/accounts/notifications/:id/read', () => new HttpResponse(null, { status: 204 })),
+
   // 文档（MainLayout 徽标 + 文档树 / 列表）：list 按 parent_id 过滤（后端语义：传入才过滤层级）
   http.get('/api/v1/workspaces/:wid/documents', ({ request }) => {
     const parentParam = new URL(request.url).searchParams.get('parent_id')
