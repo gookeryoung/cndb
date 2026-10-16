@@ -1064,6 +1064,7 @@ export default function GridPage() {
         onImport={() => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) }}
         onOpenViewConfig={() => setViewConfigOpen(true)}
         onOpenTableSettings={() => openSettings('table')}
+        onViewsChanged={() => queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })}
       />
 
       {/* 主内容 — flex:1 占满剩余空间，overflow:hidden 交给内部 Table 的虚拟滚动.

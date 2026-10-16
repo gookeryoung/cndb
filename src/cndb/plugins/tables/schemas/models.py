@@ -289,13 +289,55 @@ class ViewUpdate(BaseModel):
     order: int | None = None
 
 
+class ViewMemberInput(BaseModel):
+    """共享名单条目（开档时一次性提交，见 ``ViewVisibilityUpdate.members``）."""
+
+    user_id: int
+    role: Literal["viewer", "editor"] = "viewer"
+
+
+class ViewMemberGrant(BaseModel):
+    """单成员授权 / 改权请求体（``PUT /views/{id}/members/{user_id}``）."""
+
+    role: Literal["viewer", "editor"] = "viewer"
+
+
+class ViewMemberOut(BaseModel):
+    """共享名单响应条目."""
+
+    model_config = ConfigDict(from_attributes=True)
+    user_id: int
+    username: str = ""
+    nickname: str = ""
+    role: str  # viewer | editor
+    # 授权当前是否有效（目标账号存在、且仍有该表 READ）。False = 已失效的残留授权，
+    # 生效权实时求值，因此无需回填清理，但前端应提示并允许一键收回。
+    available: bool = True
+
+
+class ShareableMemberOut(BaseModel):
+    """可被授权者（共享选择器数据源，``GET /views/{id}/shareable-members``）."""
+
+    model_config = ConfigDict(from_attributes=True)
+    user_id: int
+    username: str = ""
+    nickname: str = ""
+    # 该成员是否有该表 EDIT_VIEWS —— False 时前端禁用 editor 选项（选了后端也会 422）
+    can_edit_views: bool = False
+
+
 class ViewVisibilityUpdate(BaseModel):
     """可见性变更请求体（``POST /views/{id}/visibility``）.
 
-    ``members`` 在 P3 与授权名单端点一起落地；本期只承载档位切换。
+    一次完成「开档 + 授权」：
+
+    - ``visibility`` 目标档位；切到 ``table`` 档额外需表 ``EDIT_VIEWS``（D4）
+    - ``members`` 仅当目标档位为 ``shared`` 时可携带，**全量替换**共享名单；
+      缺省 ``None`` 表示不动既有名单（切回 ``shared`` 时保留上次的授权）
     """
 
     visibility: ViewVisibility
+    members: list[ViewMemberInput] | None = None
 
 
 class ViewResponse(BaseModel):
@@ -316,6 +358,12 @@ class ViewResponse(BaseModel):
     visibility: ViewVisibility
     created_at: datetime
     updated_at: datetime
+    # 当前用户对该视图的能力（由路由按三档判定填充，避免前端各写一套推断）。
+    # 缺省 True 只对「刚创建/刚更新」的单视图响应成立；列表与详情一律显式覆盖。
+    can_edit: bool = True
+    can_manage: bool = True
+    # 共享名单人数（仅 shared 档有意义）—— 列表页据此展示「已共享 N 人」
+    grantee_count: int = 0
 
 
 TableDetailResponse.model_rebuild()
@@ -413,6 +461,7 @@ __all__ = [
     "RecordListRequest",
     "RecordListResponse",
     "RecordUpdate",
+    "ShareableMemberOut",
     "TableCreate",
     "TableDetailResponse",
     "TableOwnerBrief",
@@ -420,7 +469,11 @@ __all__ = [
     "TableUpdate",
     "ViewBrief",
     "ViewCreate",
+    "ViewMemberGrant",
+    "ViewMemberInput",
+    "ViewMemberOut",
     "ViewResponse",
     "ViewUpdate",
+    "ViewVisibilityUpdate",
     "WorkspaceBrief",
 ]

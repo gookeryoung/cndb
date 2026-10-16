@@ -147,7 +147,7 @@ def assert_grantee_in_table_scope(db, table, operator, target_user, role) -> Non
 
 生效权 = **min(视图授权, 表权限)**，且是**实时求值**：被授权者若随后被降级（表内 editor → viewer），视图授权自动失效，无需回填清理。
 
-**授权者与选择器**：`shared` 档只要求操作者是**创建者**（D4：仅 `table` 档才需 `EDIT_VIEWS`）。但 `GET /{wid}/tables/{tid}/members` 需 `_require_table_admin`（`members.py:24`），普通 viewer 拿不到成员列表 → 必须新增 `GET /views/{id}/shareable-members`：需 `VIEW_MANAGE`，返回「本工作区成员 ∧ 对该表有 `READ`」的精简列表（id / 昵称 / 有效角色）。只暴露"谁可以被授权"，不暴露任何视图，与 D2 不冲突。
+**授权者与选择器**：`shared` 档只要求操作者是**创建者**（D4：仅 `table` 档才需 `EDIT_VIEWS`）。成员选择器不能复用 `GET /{wid}/tables/{tid}/members` —— 该端点（`members.py:122`）实际只要求工作区 `VIEWER`（不是先前记的 `_require_table_admin`），且数据源是 `TableMember` **授权表**：未显式配置表成员的队伍里它是**空列表**，用它做选择器等于选不到人；返回的 `role` 也是 `read`/`write` 这类表角色，而非"能否编辑视图"。因此新增 `GET /views/{id}/shareable-members`：需 `VIEW_MANAGE`，返回「本工作区成员 ∧ 对该表有 `READ`」的精简列表（id / 昵称 / 是否有表 `EDIT_VIEWS`，并排除操作者与视图创建者）。只暴露"谁可以被授权"，不暴露任何视图，与 D2 不冲突。
 
 ### 5. 创建规则
 
@@ -247,7 +247,7 @@ CREATE UNIQUE INDEX uniq_table_view_scope_name ON tables_dataview(table_id, scop
 | **P0 安全修复**（✅ 2026-10-16 已落地） | 修 #1 #2 #3 #4 #5：补 `VIEW_READ` 校验、`reorder` 只返可见、`PATCH/DELETE` 他人视图一律 404、表详情过滤、统一 404/403 口径。**不依赖新模型** | 低 |
 | **P1 移除匿名分享**（D5，✅ 2026-10-16 已落地） | 删表/视图两层分享入口 + 前端公开页 + 相关测试/文档；迁移 `a4b5c6d7e8f9` 删除 `is_public`/`public_slug` 两列与唯一索引。顺带消解缺陷 #8 | 低（**破坏性**：`/public/share/{slug}` 与前端 `/s/:slug` 旧链接全部失效，需在发版说明标注） |
 | **P2 模型与迁移**（✅ 2026-10-16 已落地） | `visibility`（默认 `private`）/ `scope_key` / `tables_dataviewpermission` + 迁移 Step 1–5（含 D3 的 FK 改 SET NULL）+ `is_default` 收紧 + 每表至少一个 `table` 档 + `resolve_view_action` 统一替换 | 中（迁移 / 唯一约束 / FK 重建） |
-| **P3 开放功能** | `visibility` / `members` / `shareable-members` 端点 + 前端权限 Drawer（三档单选 + 成员选择器 + viewer/editor）+ 视图标签三态 + CLI `views prune-orphans`（D3 出口） | 中 |
+| **P3 开放功能**（✅ 2026-10-16 已落地） | `visibility` / `members` / `shareable-members` 端点 + 前端权限 Drawer（三档单选 + 成员选择器 + viewer/editor）+ 视图标签三态 + CLI `views prune-orphans`（D3 出口） | 中 |
 
 ### P0 落地记录（2026-10-16）
 
@@ -311,6 +311,28 @@ CREATE UNIQUE INDEX uniq_table_view_scope_name ON tables_dataview(table_id, scop
 **零行为变化承诺**：映射后 `owner_id IS NULL OR is_default = 1` → `table`/`scope 0`，其余有 owner 的 → `private`/`scope=owner_id`。存量"公共视图"全部落 `table` 档，可见范围与升级前一致；唯一的语义变化是「全部」默认视图不再落成 owner 私有（修 #6）。
 
 **本机验证补充**：除单测外，已对一条构造的真实链路端到端跑通——`全部 → table/0`、`我的待办 → private/7`、`A的私有视角 → private/7`；`ix_tables_dataview_visibility` 建成；`fk_list` 显示 `SET NULL`；删用户后 `owner_id` 置 NULL（D3）；重复 upgrade 幂等；downgrade 还原列/表/约束。
+
+### P3 落地记录（2026-10-16）
+
+补齐 `shared` 档的**写入面与消费面**：端点、CLI 清理出口、前端权限 Drawer。
+
+| 层 | 文件 | 改动 |
+|---|---|---|
+| 判定/服务 | `services/core/view_access.py` | 新增 `assert_grantee_in_table_scope`（§4 逐条校验）、`grantee_counts`、`list_view_grants`、`set_view_grant`、`revoke_view_grant`、`replace_view_grants`、`shareable_members`、`_access_preloads_for_users`（3 次查询判 N 人，杜绝 N+1） |
+| 路由 | `routers/views.py` | 新增 `GET/PUT/DELETE /{view_id}/members[/{user_id}]`、`GET /{view_id}/shareable-members`；`POST /{view_id}/visibility` 支持 `members`（全量替换 + 逐条校验，任一不过即 422 且不部分写入）；`list/get/create/update/reorder/visibility` 统一经 `_view_payloads` 附加 `can_edit` / `can_manage` / `grantee_count`；可见性变更与授权/收回写 `AuditLog`（`view_visibility` / `view_grant` / `view_revoke`） |
+| schema | `schemas/models.py` | 新增 `ViewMemberInput` / `ViewMemberGrant` / `ViewMemberOut` / `ShareableMemberOut`；`ViewVisibilityUpdate.members`；`ViewResponse` 增三个能力位 |
+| CLI | `cli/views.py`（新增）、`cli/main.py` | `cndb views prune-orphans --workspace X [--table T] [--apply] [--json]`：默认 **dry-run**，输出归属表 / 名称 / 归属（已注销 / 已离开工作区）/ 创建时间 / 最后修改时间 |
+| 前端 | `api/views.ts`、`api/types/records.ts` | `setVisibility` / `listMembers` / `setMember` / `removeMember` / `shareableMembers` / `share`；`View` 增 `can_edit` / `can_manage` / `grantee_count`，新增 `ViewMember` / `ShareableMember` / `ViewMemberInput` |
+| 前端 | `pages/grid/ViewPermissionDrawer.tsx`（新增）、`gridViewBar.tsx`、`GridPage.tsx` | 三档单选 + 成员选择器（viewer/editor）+ 名单行（改权/收回/失效标注）；「更多 → 视图权限」入口按**后端下发的 `can_manage`** 门控；`canManageViews`（表 `EDIT_VIEWS`）门控「表内所有人可见」档（D4）；变更后回传 `onViewsChanged` 失效 `table-views` 缓存 |
+
+**顺带修掉一个 P2 遗留缺陷（SQL 侧漏了「创建者」）**：`visible_view_filter` 原先只覆盖 `table` 档 / `shared` 档名单命中 / `private` 档本人，**漏了"创建者对自己视图恒可见"** —— 于是把视图开放为 `shared` 后，创建者自己（不在自己的授权名单里）反而从列表里消失，`is_view_visible` 同样。已统一为「**创建者优先** → `table` 档 → `shared` 名单 → `private` 仅创建者」。该缺陷由 `TestCapabilityFlags::test_list_exposes_can_edit_can_manage_and_count` 暴露。
+
+**两处与本文档原记录不符、以代码为准的修正**：
+
+1. §4 原记「`GET /{wid}/tables/{tid}/members` 需 `_require_table_admin`，普通 viewer 拿不到成员列表」——实际 `list_members`（`members.py:122`）只要工作区 `VIEWER`；真正的理由是它的**数据源**是 `TableMember` 表（多数队伍为空）且返回表角色，不适合作共享选择器（详见 §4 修订段）。
+2. `role` 型授权（`subject_type='role'`）：模型与判定层已支持（`role_codes_for_workspace` 按工作区角色值匹配），但 **P3 不提供写入端点**，`GET /members` 也只列 `user` 型条目 —— 避免引入一个没有 UI 的权限面。若要开放"共享给工作区内所有编辑者"，需另开决策（涉及角色变更时的授权扩散语义）。
+
+**范围边界（仍未动）**：`plugins/documents/routers/public.py`（文档公开分享）与本轮无关，口径待另开决策收敛。
 
 ## 测试清单（新增/改写）
 

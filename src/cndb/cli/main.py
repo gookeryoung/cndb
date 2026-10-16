@@ -6,6 +6,8 @@
 - build              构建前后端（需源码目录）
 - info               打印版本/配置/运行环境
 - service            Windows 开机自启后台服务管理（enable/disable/status/stop/run）
+- docs               文档数据运维（gc：外存孤儿文件体检与回收）
+- views              视图运维（prune-orphans：孤儿视图体检与回收）
 
 实现策略：argparse 标准库（避免引入 typer/click），子命令通过函数分发。
 """
@@ -360,6 +362,11 @@ def main() -> None:
 
     register_docs_subparser(sub)
 
+    # views 子命令组（视图运维：孤儿视图体检与回收 —— ADR 0003 D3 的唯一清理出口）
+    from cndb.cli.views import register_views_subparser
+
+    register_views_subparser(sub)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -397,6 +404,10 @@ def main() -> None:
         from cndb.cli.docs import docs_command
 
         docs_command(args)
+    elif args.command == "views":
+        from cndb.cli.views import views_command
+
+        views_command(args)
     else:
         parser.print_help()  # pragma: no cover - argparse 默认分支
         sys.exit(1)

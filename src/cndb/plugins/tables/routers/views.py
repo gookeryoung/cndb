@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
@@ -11,19 +11,39 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.models import DataField, DataView, ViewVisibility, scope_key_for
-from cndb.plugins.tables.schemas import ViewCreate, ViewResponse, ViewUpdate, ViewVisibilityUpdate
+from cndb.plugins.tables.models import AuditLog, DataField, DataTable, DataView, ViewVisibility, scope_key_for
+from cndb.plugins.tables.schemas import (
+    ShareableMemberOut,
+    ViewCreate,
+    ViewMemberGrant,
+    ViewMemberOut,
+    ViewResponse,
+    ViewUpdate,
+    ViewVisibilityUpdate,
+)
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
 from cndb.plugins.tables.services.core.view_access import (
     ViewAction,
     assert_can_change_visibility,
     get_view_or_404,
+    grantee_counts,
+    grants_for_user,
+    is_table_admin,
+    list_view_grants,
+    replace_view_grants,
     require_can_publish_to_table,
     resolve_view_action,
+    revoke_view_grant,
+    role_codes_for_workspace,
+    set_view_grant,
+    shareable_members,
     view_visibility_filter,
 )
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/views", tags=["views"])
+
+#: 非 ``shared`` 档视图不允许改共享名单（名单在其它档位是惰性的，改它没有意义）
+_SHARED_ONLY_DETAIL = "仅「指定成员」档视图可设置共享名单"
 
 
 def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[bool, str | None]:
@@ -82,6 +102,65 @@ def _scoped_name_conflict(db: Session, table_id: int, scope_key: int, name: str)
         .first()
         is not None
     )
+
+
+def _write_view_audit(
+    db: Session,
+    table_id: int,
+    action: str,
+    actor_id: int,
+    detail: dict[str, Any],
+) -> None:
+    """视图权限类变更写一条审计（与 ``members.py`` 同款，随主事务一起提交）.
+
+    审计动作词：``view_visibility`` / ``view_grant`` / ``view_revoke``。
+    """
+    db.add(AuditLog(table_id=table_id, action=action, actor_id=actor_id, detail=detail))
+
+
+def _view_payloads(
+    db: Session,
+    table: DataTable,
+    user: User,
+    views: list[DataView],
+) -> list[dict[str, Any]]:
+    """把 ``DataView`` 列表序列化为带**能力位**的响应体（I5：能力判定只此一处）.
+
+    批量场景下所有依赖都一次性预取（工作区角色 / 是否管理视角 / 本人授权名单 /
+    授权人数），因此查询次数与视图数量无关 —— 不再由前端用 ``visibility`` +
+    ``owner_id`` 各自推断"能不能改/能不能管理"，避免前后端口径漂移。
+    """
+    view_ids = [int(v.id) for v in views]
+    codes = role_codes_for_workspace(db, table.workspace_id, user)
+    admin = is_table_admin(db, table, user)
+    granted = grants_for_user(db, view_ids, user.id, codes)
+    counts = grantee_counts(db, view_ids)
+
+    out: list[dict[str, Any]] = []
+    for v in views:
+        data = ViewResponse.model_validate(v).model_dump()
+        grant_role = granted.get(int(v.id))
+        data["can_edit"] = resolve_view_action(
+            db, table, v, user, ViewAction.VIEW_EDIT, grant_role=grant_role, is_admin=admin
+        )
+        data["can_manage"] = resolve_view_action(
+            db, table, v, user, ViewAction.VIEW_MANAGE, grant_role=grant_role, is_admin=admin
+        )
+        data["grantee_count"] = counts.get(int(v.id), 0)
+        out.append(data)
+    return out
+
+
+def _require_shared(view: DataView) -> None:
+    if view.visibility != ViewVisibility.SHARED:
+        raise HTTPException(status_code=400, detail=_SHARED_ONLY_DETAIL)
+
+
+def _resolve_target_user(db: Session, user_id: int) -> User:
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return target
 
 
 def _create_view_obj(
@@ -155,7 +234,7 @@ def create_view(
     db.add(dv)
     db.commit()
     db.refresh(dv)
-    return dv
+    return _view_payloads(db, dt, current_user, [dv])[0]
 
 
 @router.post("/import", response_model=list[ViewResponse])
@@ -222,15 +301,16 @@ def list_views(
     table_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> list[DataView]:
+) -> list[dict[str, Any]]:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     # 可见性统一由 view_access 判定：table 档全表可见 + shared 档名单内 + private 档仅本人
-    return (
+    views = (
         db.query(DataView)
         .filter(DataView.table_id == table_id, view_visibility_filter(db, dt, current_user))
         .order_by(DataView.order, DataView.id)
         .all()
     )
+    return _view_payloads(db, dt, current_user, list(views))
 
 
 @router.get("/export", response_model=list[ViewCreate])
@@ -285,10 +365,11 @@ def get_view(
     view_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> DataView:
+) -> dict[str, Any]:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    # 公共视图仅需表 READ 即可查看（此前误要求 EDIT_VIEWS，导致"列表可见但点开 403"）
-    return get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_READ)
+    # table/shared 档仅需表 READ 即可查看（此前误要求 EDIT_VIEWS，导致"列表可见但点开 403"）
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_READ)
+    return _view_payloads(db, dt, current_user, [dv])[0]
 
 
 @router.patch("/{view_id}", response_model=ViewResponse)
@@ -299,9 +380,9 @@ def update_view(
     payload: ViewUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> DataView:
+) -> dict[str, Any]:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    # 改配置需 VIEW_EDIT：本人个人视图放行；公共视图需表 EDIT_VIEWS（I7）
+    # 改配置需 VIEW_EDIT：本人视图放行；table 档需表 EDIT_VIEWS（I7）
     dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_EDIT)
 
     # is_default 是**表级**标记（会清掉同表其它默认视图）：只有 table 档视图代表
@@ -318,7 +399,7 @@ def update_view(
         setattr(dv, key, value)
     db.commit()
     db.refresh(dv)
-    return dv
+    return _view_payloads(db, dt, current_user, [dv])[0]
 
 
 @router.post("/{view_id}/visibility", response_model=ViewResponse)
@@ -329,18 +410,22 @@ def set_view_visibility(
     payload: ViewVisibilityUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> DataView:
-    """切换视图可见性档位（ADR 0003 §6，P2 承载档位切换；名单读写属 P3）.
+) -> dict[str, Any]:
+    """切换视图可见性档位，可一并设置共享名单（ADR 0003 §6）.
 
     - 需 ``VIEW_MANAGE``：创建者本人，或非私有档下的表内管理视角
     - 开放为 ``table`` 档（表内所有人可见）额外需表 ``EDIT_VIEWS``（决策 D4）
     - **每张表至少保留一个 ``table`` 档视图**：把最后一个转出 → 400（决策 D1）
     - 同名冲突按**目标档位**的命名空间判定（private 与共享空间互不干扰）
+    - ``members`` 仅在目标档位为 ``shared`` 时接受，**全量替换**共享名单；缺省不动名单
     """
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
 
     new_visibility = payload.visibility
+    if payload.members is not None and new_visibility != ViewVisibility.SHARED:
+        raise HTTPException(status_code=400, detail=_SHARED_ONLY_DETAIL)
+
     require_can_publish_to_table(db, dt, current_user, new_visibility)
     assert_can_change_visibility(db, dt, dv, new_visibility)
 
@@ -348,14 +433,138 @@ def set_view_visibility(
     if new_scope != dv.scope_key and _scoped_name_conflict(db, table_id, new_scope, dv.name):
         raise HTTPException(status_code=400, detail="目标可见范围内的同名视图已存在")
 
+    # 名单先校验后落库（replace_view_grants 内部逐条 assert，任一不过即 422 且不写库）
+    if payload.members is not None:
+        replace_view_grants(db, dt, dv, current_user, payload.members)
+
+    previous = dv.visibility
     if new_visibility != ViewVisibility.TABLE and dv.is_default:
         # 表级默认位只属于 table 档视图：转出时先摘掉，避免"默认视图他人看不见"
         dv.is_default = False
     dv.visibility = new_visibility
     dv.scope_key = new_scope
+    if previous != new_visibility:
+        _write_view_audit(
+            db,
+            table_id,
+            "view_visibility",
+            current_user.id,
+            {
+                "view_id": int(dv.id),
+                "name": dv.name,
+                "from": str(previous),
+                "to": str(new_visibility),
+                "members": len(payload.members) if payload.members is not None else None,
+            },
+        )
     db.commit()
     db.refresh(dv)
-    return dv
+    return _view_payloads(db, dt, current_user, [dv])[0]
+
+
+# ── 共享名单（``shared`` 档）────────────────────────────
+
+
+@router.get("/{view_id}/members", response_model=list[ViewMemberOut])
+def list_view_members(
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[dict[str, Any]]:
+    """列出该视图的共享名单（需 ``VIEW_MANAGE``）.
+
+    只有名单可以被查看，不返回任何行数据；不在名单里的成员看不到名单本身，
+    与 D2「私有档对非创建者一律 404」不冲突（本端点自身仍先过 ``VIEW_MANAGE``）。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
+    return list_view_grants(db, dt, dv)
+
+
+@router.put("/{view_id}/members/{user_id}", response_model=ViewMemberOut)
+def set_view_member(
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    user_id: int,
+    payload: ViewMemberGrant,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """新增 / 修改名单内某成员的授权角色（``viewer`` / ``editor``）.
+
+    仅 ``shared`` 档视图可改名单 —— 其余档位名单是惰性的（保留但失效），改它没有意义。
+    授权对象必须落在**数据表范围内**（本工作区成员 ∧ 该表 ``READ``；``editor`` 还需
+    该表 ``EDIT_VIEWS``），否则 422（ADR 0003 §4）。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
+    _require_shared(dv)
+
+    target = _resolve_target_user(db, user_id)
+    set_view_grant(db, dt, dv, current_user, target, payload.role)
+    _write_view_audit(
+        db,
+        table_id,
+        "view_grant",
+        current_user.id,
+        {"view_id": int(dv.id), "name": dv.name, "user_id": int(target.id), "role": str(payload.role)},
+    )
+    db.commit()
+    row = next((r for r in list_view_grants(db, dt, dv) if int(r["user_id"]) == int(target.id)), None)
+    if row is None:  # pragma: no cover - 刚写入即存在，仅防御
+        raise HTTPException(status_code=500, detail="授权写入后未读取到名单条目")
+    return row
+
+
+@router.delete("/{view_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_view_member(
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    user_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    """从共享名单收回某成员的授权（需 ``VIEW_MANAGE``，仅 ``shared`` 档）.
+
+    收回后若该成员已不再拥有任何授权，视图对其即刻恢复"不存在"（404），无需回填清理。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
+    _require_shared(dv)
+
+    if not revoke_view_grant(db, dv, user_id):
+        raise HTTPException(status_code=404, detail="该成员不在共享名单中")
+    _write_view_audit(
+        db,
+        table_id,
+        "view_revoke",
+        current_user.id,
+        {"view_id": int(dv.id), "name": dv.name, "user_id": int(user_id)},
+    )
+    db.commit()
+
+
+@router.get("/{view_id}/shareable-members", response_model=list[ShareableMemberOut])
+def list_shareable_members(
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[dict[str, Any]]:
+    """可被授权者列表（共享选择器数据源，需 ``VIEW_MANAGE``）.
+
+    缺陷补丁：``GET /{wid}/tables/{tid}/members`` 需 ``_require_table_admin``，普通
+    viewer 拿不到成员列表 → 共享选择器做不出来。本端点只返回"谁可以被授权"
+    （本工作区成员 ∧ 该表 ``READ``，含是否可给 ``editor``），不暴露任何视图。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
+    return shareable_members(db, dt, current_user, dv)
 
 
 @router.delete("/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -394,12 +603,12 @@ def reorder_views(
     view_ids: list[int],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> list[DataView]:
+) -> list[dict[str, Any]]:
     """批量调整视图顺序（按传入顺序赋值 order 字段）.
 
-    只重排**当前用户可改**的视图子集：他人的个人视图（本就不可见）与仅可读的公共视图
-    一律跳过；响应也只返回当前用户**可见**的视图。修复：原实现返回该表**全部**视图，
-    等于借重排接口枚举他人个人视图的完整配置（缺陷 ②）。
+    只重排**当前用户可改**的视图子集：他人视图（本就不可见）与仅可读的 ``table`` 档
+    视图一律跳过；响应也只返回当前用户**可见**的视图。修复：原实现返回该表**全部**
+    视图，等于借重排接口枚举他人视图的完整配置（缺陷 ②）。
     """
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
 
@@ -419,17 +628,18 @@ def reorder_views(
         if view is None:
             continue  # 不存在的 id / 不属于本表 → 跳过（保持既有容错语义）
         if not resolve_view_action(db, dt, view, current_user, ViewAction.VIEW_EDIT):
-            continue  # 他人个人视图 / 仅可读 → 不参与重排，也不出现在响应里
+            continue  # 他人视图 / 仅可读 → 不参与重排，也不出现在响应里
         view.order = idx
         idx += 1
 
     db.commit()
-    return (
+    visible = (
         db.query(DataView)
         .filter(DataView.table_id == table_id, view_visibility_filter(db, dt, current_user))
         .order_by(DataView.order, DataView.id)
         .all()
     )
+    return _view_payloads(db, dt, current_user, list(visible))
 
 
 # ── 视图驱动的行查询 ──────────────────────────────────
