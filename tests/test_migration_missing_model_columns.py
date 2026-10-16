@@ -1,12 +1,20 @@
-"""迁移 f7a8b9c0d1e2（add_missing_model_columns）回归测试.
+"""迁移回归测试 —— f7a8b9c0d1e2（add_missing_model_columns）+ a4b5c6d7e8f9（drop_dataview_public_share）.
 
 背景：accounts_user.role / tables_dataview.is_public / tables_dataview.public_slug /
 tables_tablepermission.manage_data_role 四列历史上只加在 ORM 模型上，迁移链从未
 覆盖。旧库（典型：恢复 0.2.0 native 备份后 upgrade head）永远缺列，业务查询
-报 "no such column"（表现为恢复后所有数据表内容无法显示）。
+报 "no such column"（表现为恢复后所有数据表内容无法显示）→ 由 f7a8b9c0d1e2
+一次性补齐。
 
-本迁移的关键约束：
-- 幂等加列（部分旧库经 create_all 时代建表已含其中部分列）
+随后 is_public / public_slug 承载的「视图匿名公开分享」按 ADR 0003 决策 D5
+整体移除，由 a4b5c6d7e8f9 在同一链上删除这两列与唯一索引。因此本文件同时钉住
+两端语义：
+
+- 历史迁移仍会加列（历史迁移不可改写，升级链要能从头重放）
+- head 处这两列不存在（ORM 元数据也不再声明，schema 自愈层不会把它们加回来）
+
+关键约束：
+- 幂等加列/删列（旧库可能经 create_all 时代建表，列的存在性不一致）
 - 目标表整体不存在时跳过（由启动 create_all 兜底建表）
 """
 
@@ -20,6 +28,9 @@ from alembic.script import ScriptDirectory
 from cndb.core.migrations import _build_config, upgrade_to_head
 
 PRE_REVISION = "e5f6a7b8c9d0"  # f7a8b9c0d1e2 之前的 head（0.2.0 时代 schema）
+ADD_COLUMNS_REVISION = "f7a8b9c0d1e2"  # 历史加列迁移：补齐四列
+DROP_SHARE_REVISION = "a4b5c6d7e8f9"  # 删列迁移：移除视图匿名公开分享两列
+DROP_SHARE_DOWN = "e6a7b8c9d0e1"  # 删列迁移的 down_revision
 
 
 def _upgrade_to(engine_target: str, revision: str) -> None:
@@ -27,6 +38,13 @@ def _upgrade_to(engine_target: str, revision: str) -> None:
     from alembic import command
 
     command.upgrade(cfg, revision)
+
+
+def _downgrade_to(engine_target: str, revision: str) -> None:
+    cfg = _build_config(engine_target)
+    from alembic import command
+
+    command.downgrade(cfg, revision)
 
 
 def _current_head() -> str:
@@ -52,8 +70,15 @@ def _index_flags(db_path: Path, table: str) -> dict[str, int]:
 
 
 class TestAddMissingModelColumns:
+    """历史迁移 f7a8b9c0d1e2：补齐 ORM 有而迁移链缺失的四列."""
+
     def test_old_schema_db_upgrade_adds_all_columns(self, tmp_path: Path) -> None:
-        """0.2.0 时代库（stamp 在 e5f6a7b8c9d0）upgrade head 后四列全部补齐."""
+        """0.2.0 时代库（stamp 在 e5f6a7b8c9d0）升到 f7a8b9c0d1e2 时四列全部补齐.
+
+        注意目标 revision 显式停在历史迁移上：head 处 is_public / public_slug
+        会被 a4b5c6d7e8f9 删除（见 TestDropDataviewPublicShare），此处只验证
+        历史迁移本身的加列语义不被回改。
+        """
         db_path = tmp_path / "old.db"
         url = f"sqlite:///{db_path.as_posix()}"
         _upgrade_to(url, PRE_REVISION)
@@ -64,17 +89,11 @@ class TestAddMissingModelColumns:
         ):
             assert col not in _columns(db_path, table)
 
-        upgrade_to_head(url)
+        _upgrade_to(url, ADD_COLUMNS_REVISION)
 
         assert "role" in _columns(db_path, "accounts_user")
         assert {"is_public", "public_slug"} <= _columns(db_path, "tables_dataview")
         assert "manage_data_role" in _columns(db_path, "tables_tablepermission")
-        conn = sqlite3.connect(str(db_path))
-        try:
-            version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-        finally:
-            conn.close()
-        assert version == _current_head()
 
     def test_upgrade_is_idempotent_when_columns_preexist(self, tmp_path: Path) -> None:
         """create_all 时代旧库已含部分列 → upgrade head 不报 duplicate column."""
@@ -94,12 +113,13 @@ class TestAddMissingModelColumns:
 
         upgrade_to_head(url)  # 不抛 duplicate column 即通过
 
-        assert "public_slug" in _columns(db_path, "tables_dataview")
+        assert "role" in _columns(db_path, "accounts_user")
+        assert "manage_data_role" in _columns(db_path, "tables_tablepermission")
         # 幂等：重复 upgrade 仍成功
         upgrade_to_head(url)
 
     def test_upgrade_creates_unique_index_when_column_preexists(self, tmp_path: Path) -> None:
-        """列已存在但唯一索引缺失 → upgrade head 补建 public_slug 唯一索引.
+        """列已存在但唯一索引缺失 → 升到 f7a8b9c0d1e2 补建 public_slug 唯一索引.
 
         create_all 时代升级库可能带列无索引（索引历史遗漏），迁移按索引名
         幂等判断，与加列逻辑独立生效；PRAGMA unique 标志为 1。
@@ -114,28 +134,10 @@ class TestAddMissingModelColumns:
         finally:
             conn.close()
 
-        upgrade_to_head(url)
+        _upgrade_to(url, ADD_COLUMNS_REVISION)
 
         flags = _index_flags(db_path, "tables_dataview")
         assert flags["ix_tables_dataview_public_slug"] == 1  # unique=1
-        # 幂等：重复 upgrade 不因索引已存在而失败
-        upgrade_to_head(url)
-
-    def test_upgrade_unique_index_enforced(self, tmp_path: Path) -> None:
-        """迁移新建索引为 UNIQUE 属性（重复 slug 由 SQLite 拒绝）.
-
-        覆盖默认升级路径（列与索引均不存在）：升级后索引 unique 标志必须
-        为 1——保证 public_slug 分享标识全局唯一语义；重复值约束由
-        SQLite 引擎按该标志强制执行。
-        """
-        db_path = tmp_path / "uniq.db"
-        url = f"sqlite:///{db_path.as_posix()}"
-        _upgrade_to(url, PRE_REVISION)
-
-        upgrade_to_head(url)
-
-        flags = _index_flags(db_path, "tables_dataview")
-        assert flags.get("ix_tables_dataview_public_slug") == 1
 
     def test_upgrade_skips_missing_tables(self, tmp_path: Path) -> None:
         """目标表整体不存在（legacy 库无业务表）→ 迁移跳过不失败.
@@ -188,19 +190,18 @@ class TestAddMissingModelColumns:
         assert row == ("legacy", "user")
 
     def test_downgrade_removes_columns(self, tmp_path: Path) -> None:
-        """downgrade 移除本迁移新增的列与索引（幂等，缺列时跳过）."""
+        """downgrade 回 PRE_REVISION：四列全部消失（幂等，缺列时跳过）."""
         db_path = tmp_path / "down.db"
         url = f"sqlite:///{db_path.as_posix()}"
         _upgrade_to(url, PRE_REVISION)
         upgrade_to_head(url)
-        cfg = _build_config(url)
-        from alembic import command
 
-        command.downgrade(cfg, PRE_REVISION)
+        _downgrade_to(url, PRE_REVISION)
 
         assert "role" not in _columns(db_path, "accounts_user")
         assert "manage_data_role" not in _columns(db_path, "tables_tablepermission")
         assert "is_public" not in _columns(db_path, "tables_dataview")
+        assert "public_slug" not in _columns(db_path, "tables_dataview")
 
     def test_downgrade_idempotent(self, tmp_path: Path) -> None:
         """已降级的库重复 downgrade 不报错（缺列跳过）."""
@@ -208,10 +209,96 @@ class TestAddMissingModelColumns:
         url = f"sqlite:///{db_path.as_posix()}"
         _upgrade_to(url, PRE_REVISION)
         upgrade_to_head(url)
-        cfg = _build_config(url)
-        from alembic import command
 
-        command.downgrade(cfg, PRE_REVISION)
-        command.downgrade(cfg, PRE_REVISION)  # 第二次：列已不存在，跳过
+        _downgrade_to(url, PRE_REVISION)
+        _downgrade_to(url, PRE_REVISION)  # 第二次：列已不存在，跳过
 
         assert "role" not in _columns(db_path, "accounts_user")
+
+
+class TestDropDataviewPublicShare:
+    """删列迁移 a4b5c6d7e8f9：移除视图匿名公开分享所需的列与索引."""
+
+    def test_head_drops_columns_and_index(self, tmp_path: Path) -> None:
+        """0.2.0 时代库一路升到 head → 分享两列与唯一索引均不存在，其余列保留."""
+        db_path = tmp_path / "head.db"
+        url = f"sqlite:///{db_path.as_posix()}"
+        _upgrade_to(url, PRE_REVISION)
+
+        upgrade_to_head(url)
+
+        assert "is_public" not in _columns(db_path, "tables_dataview")
+        assert "public_slug" not in _columns(db_path, "tables_dataview")
+        assert "ix_tables_dataview_public_slug" not in _index_flags(db_path, "tables_dataview")
+        # 同批补列不受影响
+        assert "role" in _columns(db_path, "accounts_user")
+        assert "manage_data_role" in _columns(db_path, "tables_tablepermission")
+        conn = sqlite3.connect(str(db_path))
+        try:
+            version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        finally:
+            conn.close()
+        assert version == _current_head() == DROP_SHARE_REVISION
+
+    def test_upgrade_is_idempotent(self, tmp_path: Path) -> None:
+        """列本就不存在的库 → 删列跳过，重复 upgrade head 不报错.
+
+        构造：手工建一个只有 a4b5 之上所需最小结构、且 tables_dataview 不含
+        is_public/public_slug 的库（模拟 create_all 时代从未有过这两列），
+        stamp 在 DROP_SHARE_DOWN 后 upgrade。
+        """
+        db_path = tmp_path / "idem.db"
+        url = f"sqlite:///{db_path.as_posix()}"
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+            conn.execute("INSERT INTO alembic_version VALUES (?)", (DROP_SHARE_DOWN,))
+            conn.execute("CREATE TABLE tables_dataview (id INTEGER PRIMARY KEY, name VARCHAR(255))")
+            conn.commit()
+        finally:
+            conn.close()
+
+        upgrade_to_head(url)  # 两列都不存在 → 全部跳过
+        upgrade_to_head(url)  # 重复 upgrade 仍成功
+
+        assert "is_public" not in _columns(db_path, "tables_dataview")
+        assert "public_slug" not in _columns(db_path, "tables_dataview")
+
+    def test_downgrade_restores_columns_and_index(self, tmp_path: Path) -> None:
+        """downgrade 一步：恢复两列与 public_slug 唯一索引，再 upgrade 可重放."""
+        db_path = tmp_path / "restore.db"
+        url = f"sqlite:///{db_path.as_posix()}"
+        _upgrade_to(url, PRE_REVISION)
+        upgrade_to_head(url)
+
+        _downgrade_to(url, DROP_SHARE_DOWN)
+
+        assert {"is_public", "public_slug"} <= _columns(db_path, "tables_dataview")
+        assert _index_flags(db_path, "tables_dataview")["ix_tables_dataview_public_slug"] == 1
+
+        # 幂等 + 可重放：再次 downgrade 跳过（列已存在），再 upgrade 删列成功
+        _downgrade_to(url, DROP_SHARE_DOWN)
+        upgrade_to_head(url)
+        assert "is_public" not in _columns(db_path, "tables_dataview")
+
+    def test_missing_table_is_skipped(self, tmp_path: Path) -> None:
+        """无业务表的 legacy 库：升级/降级本迁移均跳过，不抛 no such table."""
+        db_path = tmp_path / "legacy_share.db"
+        url = f"sqlite:///{db_path.as_posix()}"
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+            conn.execute("INSERT INTO alembic_version VALUES (?)", (DROP_SHARE_DOWN,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        upgrade_to_head(url)  # 表不存在 → 跳过
+        _downgrade_to(url, DROP_SHARE_DOWN)  # 表不存在 → 跳过
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        finally:
+            conn.close()
+        assert version == DROP_SHARE_DOWN

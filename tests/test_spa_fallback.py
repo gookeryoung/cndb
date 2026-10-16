@@ -36,7 +36,7 @@ class TestShouldSpaFallback:
     def test_html_accept_fallback(self) -> None:
         """普通页面路由 + Accept 含 text/html → 应该回退."""
         assert should_spa_fallback("/w/1/tables", "text/html") is True
-        assert should_spa_fallback("/public/share/abc", "text/html,application/xhtml+xml") is True
+        assert should_spa_fallback("/login", "text/html,application/xhtml+xml") is True
         assert should_spa_fallback("/", "text/html") is True
 
     def test_non_html_accept_no_fallback(self) -> None:

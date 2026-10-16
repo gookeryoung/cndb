@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -512,52 +511,3 @@ def get_view_calendar(
         user=current_user,
     )
     return {"rows": rows, "total": total, "start_field": start_field}
-
-
-# ── 公开分享（P4） ───────────────────────────────────
-
-
-@router.post("/{view_id}/share")
-def create_view_share(
-    workspace_id: int,
-    table_id: int,
-    view_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-) -> dict[str, object]:
-    """为视图生成公开分享 slug.
-
-    注：本能力将在 P1（ADR 0003 决策 D5）整体移除。当前保留期间先补最小护栏 ——
-    分享属视图管理动作（``VIEW_MANAGE``），他人个人视图一律 404，避免把别人的私有视图
-    公开到匿名链接上。
-    """
-    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
-    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
-
-    dv.is_public = True
-    dv.public_slug = uuid.uuid4().hex[:12]
-    db.commit()
-    db.refresh(dv)
-    return {
-        "slug": dv.public_slug,
-        "share_url": f"/api/v1/public/share/{dv.public_slug}",
-        "is_public": dv.is_public,
-    }
-
-
-@router.delete("/{view_id}/share")
-def revoke_view_share(
-    workspace_id: int,
-    table_id: int,
-    view_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-) -> dict[str, object]:
-    """撤销视图公开分享（P1 将整体移除，见 create_view_share 注释）."""
-    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
-    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
-
-    dv.is_public = False
-    dv.public_slug = None
-    db.commit()
-    return {"ok": True, "is_public": dv.is_public}

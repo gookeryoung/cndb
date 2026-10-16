@@ -221,8 +221,7 @@ UPDATE tables_dataview SET visibility='private', scope_key=owner_id
 DROP INDEX uniq_table_view_name;
 CREATE UNIQUE INDEX uniq_table_view_scope_name ON tables_dataview(table_id, scope_key, name);
 -- Step 4 D3：owner_id 外键 CASCADE → SET NULL（SQLite 需 batch_alter_table 重建表）
--- Step 5 D5：清空匿名分享数据（列保留一版，下一版再删）
-UPDATE tables_dataview SET is_public = 0, public_slug = NULL;
+-- Step 5 D5：已于 P1（a4b5c6d7e8f9）提前执行，本迁移不再重复
 ```
 
 配套代码修正：`ensure_default_view` 落 `visibility='table'`（修 #6）；`tables.py:197` 不再把 `owner_id` 当作可见性来源；每表至少一个 `table` 档的兜底校验（D1）。
@@ -246,7 +245,7 @@ UPDATE tables_dataview SET is_public = 0, public_slug = NULL;
 | 期 | 内容 | 风险 |
 |---|---|---|
 | **P0 安全修复**（✅ 2026-10-16 已落地） | 修 #1 #2 #3 #4 #5：补 `VIEW_READ` 校验、`reorder` 只返可见、`PATCH/DELETE` 他人视图一律 404、表详情过滤、统一 404/403 口径。**不依赖新模型** | 低 |
-| **P1 移除匿名分享**（D5，可独立发布） | 删表/视图两层分享入口 + 前端公开页 + 相关测试/文档；迁移清 `is_public`/`public_slug` 数据。顺带消解缺陷 #8 | 低（**破坏性**：`/s/{slug}` 旧链接全部失效，需在发版说明标注） |
+| **P1 移除匿名分享**（D5，✅ 2026-10-16 已落地） | 删表/视图两层分享入口 + 前端公开页 + 相关测试/文档；迁移 `a4b5c6d7e8f9` 删除 `is_public`/`public_slug` 两列与唯一索引。顺带消解缺陷 #8 | 低（**破坏性**：`/public/share/{slug}` 与前端 `/s/:slug` 旧链接全部失效，需在发版说明标注） |
 | **P2 模型与迁移** | `visibility`（默认 `private`）/ `scope_key` / `tables_dataviewpermission` + 迁移 Step 1–5（含 D3 的 FK 改 SET NULL）+ `is_default` 收紧 + 每表至少一个 `table` 档 + `resolve_view_action` 统一替换 | 中（迁移 / 唯一约束 / FK 重建） |
 | **P3 开放功能** | `visibility` / `members` / `shareable-members` 端点 + 前端权限 Drawer（三档单选 + 成员选择器 + viewer/editor）+ 视图标签三态 + CLI `views prune-orphans`（D3 出口） | 中 |
 
@@ -263,7 +262,30 @@ UPDATE tables_dataview SET is_public = 0, public_slug = NULL;
 | `accounts/routers/preferences.py` | `active-view` 的 GET/PUT 都要求视图对当前用户可见 |
 | `tests/test_view_access_p0.py` | **新增** 26 条回归（含表 owner / 超管对他人个人视图全动作 404 的反向断言） |
 
-**P0 未覆盖（留待后续）**：缺陷 #6（`ensure_default_view` 与 `tables.py` 建表时把默认视图落成 owner 私有 —— 会在 P2 随 `visibility` 列一并修正）、#7（私有视图同名冲突，需换唯一键）、#8（匿名分享忽略 `hidden_fields`，随 P1 整体移除）；工作区级 `view_count` 统计仍为全量（低危，仅暴露数量）。
+**P0 未覆盖（留待后续）**：缺陷 #6（`ensure_default_view` 与 `tables.py` 建表时把默认视图落成 owner 私有 —— 会在 P2 随 `visibility` 列一并修正）、#7（私有视图同名冲突，需换唯一键）、#8（匿名分享忽略 `hidden_fields` —— 已随 P1 整体移除而消失）；工作区级 `view_count` 统计仍为全量（低危，仅暴露数量）。
+
+### P1 落地记录（2026-10-16）
+
+整体移除"表范围之外"的匿名读取通道。移除后**不存在任何绕过表权限的数据读取路径**——"最大可放宽至数据表范围内"成为可验证的闭环。
+
+| 层 | 对象 | 处理 |
+|---|---|---|
+| 路由 | `plugins/tables/routers/public.py` | **删除整文件**（`GET /api/v1/public/share/{slug}`） |
+| 路由注册 | `app.py`（import + `include_router`）、`tables/routers/__init__.py` | 移除 tables 公开路由挂载；**documents 公开路由保持不动**（见下） |
+| 视图路由 | `routers/views.py` | 删 `POST/DELETE /{view_id}/share` 两处 + `uuid` 导入 |
+| 模型 | `plugins/tables/models.py` | 删 `is_public` / `public_slug` 两列 |
+| 迁移 | `alembic/versions/a4b5c6d7e8f9_drop_dataview_public_share.py` | **新增**：先删索引再删列（SQLite 不允许 DROP 带索引的列）；幂等 + 表缺失跳过 + downgrade 可还原结构与索引（slug 值不可还原） |
+| 前端 | `pages/public/PublicSharePage.tsx` + `.test.tsx`、`api/public.ts`、`layouts/PublicLayout.tsx` + `.test.tsx` | **删除**（`/public` 整条路由随之消失） |
+| 前端接线 | `App.tsx`（路由 + lazy import）、`api/index.ts`（re-export + 挂载说明）、`api/types/files.ts`（`SharedGrid`） | 移除 |
+| 前端文案 | `components/helpContent.tsx` | "如何让别人查看数据"改为**加成员 + 授权**（登录态）的口径 |
+| 测试 | `test_local_mode`（单机 403 用例）、`test_views_api`（5 例分享用例 + 1 例 404 覆盖）、`test_coverage_tail`（public router 两例）、`test_spa_fallback`（路径样例）、`test_migration_missing_model_columns`（改写为"历史迁移加列 / head 删列"两端语义） | 改写 |
+| 文档 | `README.md`（特性清单、API 表）| 更新 |
+
+**迁移链约定**：历史迁移 `f7a8b9c0d1e2` 仍会加这两列（历史迁移不可改写，升级链要能从任意旧版本重放），由新的 head 迁移 `a4b5c6d7e8f9` 负责删除。二者方向相反但语义一致：终态不含这两列。`heal_schema_drift` 只做增量补列，ORM 元数据已不再声明它们，因此不会被自愈层加回来。
+
+**对外分发的缺口填补**：登录态深链承接——链接携带 `view_id`，访问时校验表 `READ` + 视图 `VIEW_READ`，仍在表权限天花板内。P3 做 `shared` 档后，可直接用"指定成员可见"的视图链接替代原先的匿名链接。
+
+**范围边界（未动，需你确认是否收敛）**：`plugins/documents/routers/public.py`（文档公开分享 `/api/v1/documents/share/{token}`）本次未动。它同样是"绕过表/工作区权限的匿名读取面"，与本次口径不一致——但文档不属于"数据表范围"，且不在 ADR 0003 的视图权限域内，建议另开决策同批收敛。
 
 ## 测试清单（新增/改写）
 

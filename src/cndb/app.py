@@ -35,7 +35,6 @@ from cndb.core.plugin_registry import plugin_registry
 from cndb.core.realtime_api import register_realtime_routes
 from cndb.core.system_api import register_system_routes
 from cndb.plugins.documents.routers.public import router as documents_public_router
-from cndb.plugins.tables.routers.public import router as public_router
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +103,6 @@ app = FastAPIOffline(
 if settings.PLUGINS_AUTO_DISCOVER:  # pragma: no cover - 配置开关
     plugin_registry.discover_and_load()
 plugin_registry.mount_routes(app)
-
-# tables 插件全局公开路由
-app.include_router(public_router)
 
 # documents 插件公开路由（分享链接匿名访问）
 app.include_router(documents_public_router)

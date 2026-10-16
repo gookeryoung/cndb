@@ -51,6 +51,7 @@
 
 ### 移除
 
+- **数据表视图「匿名公开分享」整体移除**（**破坏性**，ADR 0003 决策 D5）：视图可见性的口径是「最大放宽至数据表范围内」，而匿名公开分享本质是**表范围之外**的读取通道 —— 拿到链接的人无需登录、不受表权限约束、也不走字段隐藏。它与本次建立的「分档可见性 + 表权限硬上限」模型互斥（飞书开启高级权限后原「链接分享」会整体失效，即同一取舍）。移除范围：`GET /api/v1/public/share/{slug}`、`POST /views/{id}/share`、`DELETE /views/{id}/share` 三个端点与整份 `routers/public.py`；`tables_dataview.is_public` / `public_slug` 两列与唯一索引（迁移 `a4b5c6d7e8f9`，SQLite 下先删索引再删列，downgrade 可还原结构但 slug 值不可还原）；前端 `/public` 整条路由及 `PublicSharePage` / `publicApi` / `PublicLayout`。**旧公开链接与旧书签全部失效**。移除后产品边界收敛为：**不存在任何绕过表权限的数据读取路径**；对外分发改由登录态深链承接（链接携带 `view_id`，访问校验表 `READ` + 视图 `VIEW_READ`），P3 之后可用「指定成员可见」视图替代。文档公开分享（`/api/v1/documents/share/{token}`）本次未动，口径已不一致，建议另开决策同批收敛
 - reports 插件（报表模板 + Jinja2 渲染）：模型 / 路由 / 渲染器 / 前端页面与编辑器 / seed 示例模板整体移除，`reports_template` 表由新增迁移 `c2d3e4f5a6b7` 删除（历史迁移保留，downgrade 可重建空表）；工作区列表 `report_count` 字段与前端报表页签同步下线
 - 依赖 `jinja2` 移除（仅报表模板使用）
 
@@ -116,7 +117,8 @@
   - **公共视图「列表可见却点开 403」口径统一**：详情原要求 `EDIT_VIEWS`，与列表（仅 READ 可见）矛盾。现公共视图**读**由表 `READ` 决定、**改/删**仍需表 `EDIT_VIEWS`（不变量 I7：放宽可见性不提升可改性）
   - **个人视图不得持有 `is_default`**：`is_default` 是表级标记（写入时会清掉同表其它默认视图），而仅 READ 的用户可以建个人视图 —— 此前其 `is_default=True` 会把**全表**落地视图置空（其他成员进表看到无默认视图）。现创建/更新/导入三条路径统一守卫（更新返回 400，导入静默降级）
   - **激活视图偏好同步收口**：`PUT /accounts/preferences/tables/{id}/active-view` 之前只校验「视图属于该表」，现要求该视图对当前用户可见
-  - 设计文档：`docs/adr/0003-view-visibility-permission-model.md`（可见性三档模型 + 开放范围上限，后续 P1 移除匿名分享、P2 落 `visibility` 列）
+  - 设计文档：`docs/adr/0003-view-visibility-permission-model.md`（可见性三档模型 + 开放范围上限，P1 移除匿名分享已于同日落地、P2 落 `visibility` 列）
+- **匿名分享绕过字段隐藏**（安全，已随上条移除一并消失）：`GET /api/v1/public/share/{slug}` 以 `user=None` 调用 `list_rows`，而 `hidden_fields` 按角色键取值 —— 匿名访问没有角色，被隐藏的字段对拿到链接的人**完全可见**；视图匿名读取也不写审计。该端点整体移除后此缺陷不再存在
 - **修复数据表导入「确认后卡在 25% 且无报错」**：导入的"自动新增字段"（`unknown_cols_strategy=add_text_field`）只按**未删除字段**判重，而 `tables_datafield` 的 `(table_id, name)` 唯一约束**不区分软删除** —— 表里存在同名软删除字段（删过同名列）时，INSERT 直接撞约束抛 `IntegrityError`，整个 execute 阶段失败；更糟的是此刻 Session 已进入 `PendingRollback` 状态，旧的失败处理在 `except` 里直接 `commit` 又抛 `PendingRollbackError`，第二个异常逃逸出后台线程，任务行永远停在 `running` + 「执行子步骤 25%」，前端表现为"进度卡住、无从判断该等还是该重试"（线上实测：更新已有数据表时导入 WPS 生成的 XLSX）。两根因分别修复：新增字段前先给同名软删除字段**让位改名**（复用 `rename_trashed_field_aside`，与手工建字段同一策略，改名先 `flush` 再 INSERT）；`analyze / execute / reanalyze` 三处失败路径统一走 `_mark_task_failed()` —— **先 `rollback()` 再写 `failed`**，并把 ORM/DB 异常压成一句可读原因（完整堆栈留在服务日志），失败一定能落库并展示给用户
 - **协作者通知**：新增 `accounts_notification` 与用户级 API（`GET /accounts/notifications` 列表 + 未读数、`POST /{id}/read`、`POST /read-all`）；文档授权（`POST /documents/{id}/permissions`）时向被授权者写入「X 邀请你协作《文档》（可编辑/只读）」—— 此前授权是静默的，被授权者只能自己翻目录树才会发现。顶栏新增**通知铃铛**（未读角标 + 下拉列表，点击条目即标记已读并跳转到该文档，支持「全部已读」）；通知写入为尽力而为，失败不影响授权本身；撤销授权不产生噪音通知
 - **附件跟随宿主权限**（安全）：新增 `files_fileowner` 记录上传文件归属（表 + 行 / 文档 / 仅工作区），下载与删除不再只看「工作区成员 + 不可猜键」：受限表（`read_role` 高于普通成员）的附件、未发布文档的图片、以及被 `row_filters` 挡掉的行的附件，对无权者一律 403/404；上传时校验对宿主的写权限（表 → `EDIT_RECORDS`，文档 → 可见且可直接写）。历史文件无归属记录，保持原工作区级语义（不做回填）

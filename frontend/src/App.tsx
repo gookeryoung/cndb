@@ -7,7 +7,6 @@ import { useAuthStore } from '@/store'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import AuthLayout from '@/layouts/AuthLayout'
-import PublicLayout from '@/layouts/PublicLayout'
 import { onAuthExpired } from '@/api/client'
 
 // 全部页面级组件 lazy load：主框架与登录页各自独立成 chunk，
@@ -23,7 +22,6 @@ const IssueDetailPage = lazy(() => import('@/pages/issues/IssueDetailPage'))
 const ChangeRequestsPage = lazy(() => import('@/pages/changeRequests/ChangeRequestsPage'))
 const ChangeRequestDetailPage = lazy(() => import('@/pages/changeRequests/ChangeRequestDetailPage'))
 const TableSettingsPage = lazy(() => import('@/pages/settings/TableSettingsPage'))
-const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 const DocumentsLayout = lazy(() => import('@/pages/documents/DocumentsLayout'))
@@ -99,13 +97,6 @@ function AuthenticatedApp() {
           </Route>
           <Route path="admin" element={
             <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>
-          } />
-        </Route>
-
-        <Route path="/public" element={<PublicLayout />}>
-          <Route index element={<div style={{ padding: 24 }}>公开路由</div>} />
-          <Route path="share/:slug" element={
-            <Suspense fallback={<PageFallback />}><PublicSharePage /></Suspense>
           } />
         </Route>
 
