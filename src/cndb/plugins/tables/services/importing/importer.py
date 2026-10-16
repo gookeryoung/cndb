@@ -714,11 +714,36 @@ class Importer:
 
         事务策略：先持久化 DataField（拿到 db_column_name），再 DDL 加列.
         DDL 失败 → 回滚已 add 的 DataField；同名已存在则跳过（幂等）.
+
+        软删除字段的坑：``(table_id, name)`` 唯一约束**不区分 trashed**，软删除记录
+        仍占着名字。只按"未删除字段"判重会直接 INSERT 撞约束抛 IntegrityError，
+        整个导入在 execute 阶段失败（线上表现为"确认后进度卡住"）。
+        因此这里先给同名软删除字段让位改名，原名字即可复用
+        （与 ``routers/fields.py`` 的 create_field 兜底同一策略）。
         """
         if not planned_columns:
             return
 
         existing_names = {f.name for f in self.table.fields if not f.trashed}
+
+        # ── 第零阶段：软删除同名字段先让位（必须早于同名字段的 INSERT 落盘） ──
+        from cndb.plugins.tables.services.fields.field_import import rename_trashed_field_aside
+
+        trashed_by_name = {f.name: f for f in self.table.fields if f.trashed}
+        renamed = False
+        for plan in planned_columns:
+            name = str(plan.get("name") or "")
+            if not name or name in existing_names:
+                continue
+            dup = trashed_by_name.pop(name, None)
+            if dup is None:
+                continue
+            dup.name = rename_trashed_field_aside(self.db, dup)
+            renamed = True
+        if renamed:
+            # 改名先落盘：同事务内若先 INSERT 同名字段仍会撞唯一约束
+            self.db.flush()
+
         fields_to_create: list[DataField] = []
 
         # ── 第一阶段：构造所有 DataField 对象（ORM add 但不 commit） ──

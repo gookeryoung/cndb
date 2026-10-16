@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import json
 import logging
@@ -99,6 +100,69 @@ def _decode_content(task: ImportTask) -> bytes | str:
     return task.file_content
 
 
+# ── 失败落库 ──────────────────────────────────────
+
+
+def _readable_error(exc: Exception) -> str:
+    """把异常压成一句给用户看的原因（完整堆栈留在服务日志里）.
+
+    ORM/DB 异常的 ``str()`` 会带整段 SQL 与绑定参数，直接塞进前端提示既读不懂
+    也可能泄露表结构，因此对常见冲突做翻译。
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    if isinstance(exc, IntegrityError):
+        text = str(getattr(exc, "orig", exc))
+        if "tables_datafield" in text:
+            return (
+                "字段写入冲突：表中已存在同名字段（含已删除但占用名字的字段），导入已中止。"
+                "请在表格设置里清理重名字段后重试。"
+            )
+        return "数据写入冲突（唯一约束），导入已中止。请检查是否有重复字段或重复行。"
+
+    import re
+
+    from sqlalchemy.exc import SQLAlchemyError
+
+    if isinstance(exc, SQLAlchemyError):
+        # 去掉 SQLAlchemy 拼接的 "[SQL: ...]" / "[parameters: ...]" 尾巴
+        return re.split(r"\s*\[SQL:|\(Background on this error", str(exc))[0].strip() or exc.__class__.__name__
+    return str(exc)
+
+
+def _mark_task_failed(db_session: Session, task_id: int, exc: Exception) -> None:
+    """把任务落库为 failed（唯一入口）.
+
+    必须**先 rollback 再写**：异常若发生在 flush/commit 中途（如唯一约束冲突），
+    Session 进入 PendingRollback 状态，此时任何 commit 都会再抛
+    ``PendingRollbackError``。旧实现在 ``except`` 里直接 commit，第二个异常逃逸出
+    后台线程 → 任务行永远停在 ``running``/"执行子步骤 25%"，
+    前端表现就是"进度卡住、无任何报错"。所以这里先回滚，再单独提交失败状态。
+    """
+    with contextlib.suppress(Exception):
+        db_session.rollback()
+
+    task = db_session.get(ImportTask, task_id)
+    if task is None:  # pragma: no cover - 任务被并发删除
+        logger.warning("ImportTask %s 不存在，无法落库失败状态", task_id)
+        return
+
+    task.error_message = _readable_error(exc)
+    task.progress = 100
+    try:
+        _transition_status(task, "failed")
+    except ValueError:  # pragma: no cover - 状态已不可迁移，兜底直写
+        task.status = "failed"
+
+    try:
+        db_session.commit()
+    except Exception:
+        # 落库失败也必须让调用方知道，但不允许再抛出异常拖垮后台线程
+        logger.exception("ImportTask %s 失败状态落库失败", task_id)
+        with contextlib.suppress(Exception):
+            db_session.rollback()
+
+
 # ── Analyze 阶段 ──────────────────────────────────
 
 
@@ -163,14 +227,7 @@ def analyze_import_task(db_session: Session, task_id: int) -> None:
         )
     except Exception as exc:
         logger.exception("ImportTask %s analyze 失败: %s", task_id, exc)
-        task.error_message = str(exc)
-        task.progress = 100
-        try:
-            _transition_status(task, "failed")
-            db_session.commit()
-        except ValueError:
-            task.status = "failed"
-            db_session.commit()
+        _mark_task_failed(db_session, task_id, exc)
 
 
 def _parse_to_rows(
@@ -345,14 +402,7 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
 
     except Exception as exc:
         logger.exception("ImportTask %s 失败: %s", task_id, exc)
-        task.error_message = str(exc)
-        task.progress = 100
-        try:
-            _transition_status(task, "failed")
-            db_session.commit()
-        except ValueError:
-            task.status = "failed"
-            db_session.commit()
+        _mark_task_failed(db_session, task_id, exc)
 
 
 def _estimate_total_rows(raw: bytes | str, fmt: str) -> int:
@@ -487,14 +537,7 @@ def reanalyze_import_task(
         )
     except Exception as exc:
         logger.exception("ImportTask %s reanalyze 失败: %s", task_id, exc)
-        task.error_message = str(exc)
-        task.progress = 100
-        try:
-            _transition_status(task, "failed")
-            db_session.commit()
-        except ValueError:
-            task.status = "failed"
-            db_session.commit()
+        _mark_task_failed(db_session, task_id, exc)
 
 
 # 任务处于"进行中"的状态集合（进程重启会把这些留在原地）
