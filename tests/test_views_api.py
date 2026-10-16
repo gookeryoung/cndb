@@ -642,6 +642,41 @@ class TestViewsAPI:
         )
         assert r.status_code == 404
 
+    # ── 匿名公开分享已整体移除（ADR 0003 决策 D5）──
+
+    def test_public_share_routes_are_gone(self, client, ws, table, auth_owner):
+        """匿名读取路由与视图分享端点都必须不存在 —— 防止被重新引入.
+
+        断言的是「路由不存在」（404 且非 403 / 非 200），而不是权限拒绝：
+        只要任一端点重新出现，本用例即失败。这是「不存在任何绕过表权限的
+        读取路径」这一产品边界的机器可验证形式。
+        """
+        created = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={"name": "NoShareAnymore", "view_type": "grid"},
+            headers=auth_owner,
+        )
+        assert created.status_code == 201
+        vid = created.json()["id"]
+
+        # 匿名入口：整份 routers/public.py 已删除
+        assert client.get("/api/v1/public/share/any-slug").status_code == 404
+        # 视图两级分享端点：POST 建分享 / DELETE 撤分享
+        assert (
+            client.post(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+                headers=auth_owner,
+            ).status_code
+            == 404
+        )
+        assert (
+            client.delete(
+                f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views/{vid}/share",
+                headers=auth_owner,
+            ).status_code
+            == 404
+        )
+
     # ── 覆盖遗漏分支 ──
 
     def test_update_view_without_is_default(self, client, ws, table, auth_owner):
