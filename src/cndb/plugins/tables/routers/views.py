@@ -12,9 +12,15 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.models import DataField, DataTable, DataView
+from cndb.plugins.tables.models import DataField, DataView
 from cndb.plugins.tables.schemas import ViewCreate, ViewResponse, ViewUpdate
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
+from cndb.plugins.tables.services.core.view_access import (
+    ViewAction,
+    get_view_or_404,
+    resolve_view_action,
+    visible_view_filter,
+)
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/views", tags=["views"])
 
@@ -65,18 +71,6 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
                 if opt_val and opt_val not in valid_fields:
                     return False, f"view_options.charts[{i}].{opt_key}='{opt_val}' 不存在"
     return True, None
-
-
-def _get_visible_view(db: Session, dt: DataTable, current_user: User, table_id: int, view_id: int) -> DataView:
-    """按可见性规则取视图：他人个人视图 404；公共视图需 EDIT_VIEWS；本人个人视图放行."""
-    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
-    if dv is None:
-        raise HTTPException(status_code=404, detail="视图不存在")
-    if dv.owner_id is not None and dv.owner_id != current_user.id:
-        raise HTTPException(status_code=404, detail="视图不存在")
-    if dv.owner_id is None and not check_action(db, dt, current_user, TableAction.EDIT_VIEWS):
-        raise HTTPException(status_code=403, detail="表级权限不足")
-    return dv
 
 
 def _create_view_obj(
@@ -135,6 +129,10 @@ def create_view(
 
     # 权限归类：有 EDIT_VIEWS → 公共视图（owner_id=None）；仅 READ → 个人视图（归属创建者）
     is_public = check_action(db, dt, current_user, TableAction.EDIT_VIEWS)
+    # is_default 是**表级**标记（会清掉同表其它默认视图）：个人视图对全表不可见，
+    # 若允许其持有默认位，等价于仅 READ 用户即可"抢走"全表落地页（ADR 0003 §2）
+    if payload.is_default and not is_public:
+        raise HTTPException(status_code=400, detail="仅具备视图编辑权限者可设置默认视图")
     dv = _create_view_obj(db, table_id, payload, owner_id=None if is_public else current_user.id)
     db.add(dv)
     db.commit()
@@ -172,6 +170,9 @@ def import_views(
         if not ok:
             skipped.append(f"跳过 {vc.name}: {err}")
             continue
+        if not is_public and vc.is_default:
+            # 导入者无 EDIT_VIEWS → 只能落个人视图，个人视图不可占表级默认位（同 create_view）
+            vc = vc.model_copy(update={"is_default": False})
         dv = _create_view_obj(db, table_id, vc, owner_id=owner_id)
         db.add(dv)
         created.append(dv)
@@ -197,13 +198,10 @@ def list_views(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[DataView]:
     get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    # 可见性：公共视图（owner_id IS NULL）+ 本人个人视图；他人的个人视图不可见
+    # 可见性统一由 view_access 判定：公共视图（owner_id IS NULL）+ 本人个人视图
     return (
         db.query(DataView)
-        .filter(
-            DataView.table_id == table_id,
-            (DataView.owner_id.is_(None)) | (DataView.owner_id == current_user.id),
-        )
+        .filter(DataView.table_id == table_id, visible_view_filter(current_user.id))
         .order_by(DataView.order, DataView.id)
         .all()
     )
@@ -227,7 +225,7 @@ def export_views(
     q = db.query(DataView).filter(
         DataView.table_id == table_id,
         # 可见性：与 list_views 一致 —— 公共视图 + 本人个人视图
-        (DataView.owner_id.is_(None)) | (DataView.owner_id == current_user.id),
+        visible_view_filter(current_user.id),
     )
     if ids:
         q = q.filter(DataView.id.in_(ids))
@@ -262,7 +260,8 @@ def get_view(
     db: Annotated[Session, Depends(get_db)],
 ) -> DataView:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    return _get_visible_view(db, dt, current_user, table_id, view_id)
+    # 公共视图仅需表 READ 即可查看（此前误要求 EDIT_VIEWS，导致"列表可见但点开 403"）
+    return get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_READ)
 
 
 @router.patch("/{view_id}", response_model=ViewResponse)
@@ -275,7 +274,13 @@ def update_view(
     db: Annotated[Session, Depends(get_db)],
 ) -> DataView:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    dv = _get_visible_view(db, dt, current_user, table_id, view_id)
+    # 改配置需 VIEW_EDIT：本人个人视图放行；公共视图需表 EDIT_VIEWS（I7）
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_EDIT)
+
+    # is_default 是**表级**标记（会清掉同表其它默认视图）：个人视图对全表不可见，
+    # 允许其持有默认位等价于仅 READ 用户即可"抢走"全表落地页（ADR 0003 §2）
+    if payload.is_default and dv.owner_id is not None:
+        raise HTTPException(status_code=400, detail="仅具备视图编辑权限者可设置默认视图")
 
     # 如果标记为 default，先把同表其他视图的 default 清掉
     if payload.is_default:
@@ -298,15 +303,20 @@ def delete_view(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    dv = _get_visible_view(db, dt, current_user, table_id, view_id)
+    # 删除需 VIEW_MANAGE：本人个人视图放行；公共视图需表 EDIT_VIEWS（I7）
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
 
     was_default = dv.is_default
     db.delete(dv)
     db.flush()
     if was_default:
-        # 删除的是默认视图 → 把默认标记转移给同表剩余视图（按 order/id 取第一个），避免出现"无默认视图"
+        # 删除的是默认视图 → 把默认标记转移给同表剩余视图（按 order/id 取第一个），避免出现"无默认视图".
+        # 候选必须是公共视图：个人视图对全表不可见，让它持有 is_default 会让其他成员进表看到空白（缺陷 ⑥）.
         next_default = (
-            db.query(DataView).filter(DataView.table_id == table_id).order_by(DataView.order, DataView.id).first()
+            db.query(DataView)
+            .filter(DataView.table_id == table_id, DataView.owner_id.is_(None))
+            .order_by(DataView.order, DataView.id)
+            .first()
         )
         if next_default is not None:
             next_default.is_default = True
@@ -321,10 +331,15 @@ def reorder_views(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[DataView]:
-    """批量调整视图顺序（按传入顺序赋值 order 字段）."""
-    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
+    """批量调整视图顺序（按传入顺序赋值 order 字段）.
 
-    views = (
+    只重排**当前用户可改**的视图子集：他人的个人视图（本就不可见）与仅可读的公共视图
+    一律跳过；响应也只返回当前用户**可见**的视图。修复：原实现返回该表**全部**视图，
+    等于借重排接口枚举他人个人视图的完整配置（缺陷 ②）。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
+
+    requested = (
         db.query(DataView)
         .filter(
             DataView.table_id == table_id,
@@ -332,14 +347,25 @@ def reorder_views(
         )
         .all()
     )
+    view_map = {v.id: v for v in requested}
 
-    view_map = {v.id: v for v in views}
-    for idx, vid in enumerate(view_ids):
-        if vid in view_map:
-            view_map[vid].order = idx
+    idx = 0
+    for vid in view_ids:
+        view = view_map.get(vid)
+        if view is None:
+            continue  # 不存在的 id / 不属于本表 → 跳过（保持既有容错语义）
+        if not resolve_view_action(db, dt, view, current_user, ViewAction.VIEW_EDIT):
+            continue  # 他人个人视图 / 仅可读 → 不参与重排，也不出现在响应里
+        view.order = idx
+        idx += 1
 
     db.commit()
-    return db.query(DataView).filter(DataView.table_id == table_id).order_by(DataView.order, DataView.id).all()
+    return (
+        db.query(DataView)
+        .filter(DataView.table_id == table_id, visible_view_filter(current_user.id))
+        .order_by(DataView.order, DataView.id)
+        .all()
+    )
 
 
 # ── 视图驱动的行查询 ──────────────────────────────────
@@ -359,9 +385,8 @@ def get_view_rows(
     from cndb.plugins.tables.services.core import records as rec
 
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
-    if dv is None:
-        raise HTTPException(status_code=404, detail="视图不存在")
+    # 补 VIEW_READ 校验：此前只校验表 READ，凭他人个人视图 id 即可按其筛选规则取数（缺陷 ①）
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_READ)
 
     rows, total = rec.list_rows(
         db.get_bind(),
@@ -398,9 +423,8 @@ def get_view_kanban(
     from cndb.plugins.tables.services.core import records as rec
 
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
-    if dv is None:
-        raise HTTPException(status_code=404, detail="视图不存在")
+    # 补 VIEW_READ 校验（缺陷 ①）
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_READ)
 
     opts = dv.view_options or {}
     group_field = opts.get("group_field")
@@ -461,9 +485,8 @@ def get_view_calendar(
     from cndb.plugins.tables.services.core import records as rec
 
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
-    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
-    if dv is None:
-        raise HTTPException(status_code=404, detail="视图不存在")
+    # 补 VIEW_READ 校验（缺陷 ①）
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_READ)
 
     start_field = dv.view_options.get("start_field") if dv.view_options else None
     if not start_field:
@@ -502,11 +525,14 @@ def create_view_share(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    """为视图生成公开分享 slug."""
-    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
-    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
-    if dv is None:
-        raise HTTPException(status_code=404, detail="视图不存在")
+    """为视图生成公开分享 slug.
+
+    注：本能力将在 P1（ADR 0003 决策 D5）整体移除。当前保留期间先补最小护栏 ——
+    分享属视图管理动作（``VIEW_MANAGE``），他人个人视图一律 404，避免把别人的私有视图
+    公开到匿名链接上。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
 
     dv.is_public = True
     dv.public_slug = uuid.uuid4().hex[:12]
@@ -527,11 +553,9 @@ def revoke_view_share(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, object]:
-    """撤销视图公开分享."""
-    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
-    dv = db.query(DataView).filter(DataView.id == view_id, DataView.table_id == table_id).first()
-    if dv is None:
-        raise HTTPException(status_code=404, detail="视图不存在")
+    """撤销视图公开分享（P1 将整体移除，见 create_view_share 注释）."""
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_VIEWS)
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_MANAGE)
 
     dv.is_public = False
     dv.public_slug = None

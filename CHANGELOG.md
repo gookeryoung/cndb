@@ -107,6 +107,16 @@
 - README 修正项目结构树、CLI 命令、e2e 包管理器与特性清单等失实内容
 
 ### 修复
+- **数据表视图可见性整体收口**（安全，ADR 0003 的 P0）：视图的「可见性」此前散落在各接口自行判断、且多个入口**完全没判**，任何人只要拿到视图 id 即可越权读取或写入他人视图。现把判定收敛为单一入口 `services/core/view_access.py`（`resolve_view_action` / `get_view_or_404` / `visible_view_filter`），所有视图接口共用。逐项修复：
+  - **视图驱动查询补可见性校验**：`GET /views/{id}/rows|kanban|calendar` 原先只校验「表 READ + 视图归属」，凭**他人个人视图的 id** 即可套用其筛选/排序规则取数、并从结果差集反推其筛选条件。现补 `VIEW_READ`，不可见一律 **404**
+  - **数据表导出补视图可见性校验**：`GET /tables/{id}/export?view_id=` 原先只比对 `table_id`，同样可借用他人视图的筛选规则导出数据，且**视图名会出现在下载文件名里**（连名字一起泄露）。现同样按 `VIEW_READ` 收口
+  - **表详情不再返回他人个人视图**：`GET /tables/{id}` 的 `views` 原先直接取 `dt.views` 全量，现按可见性过滤；`view_count` 同步改为「当前用户可见的视图数」，避免用计数泄露他人私有视图的存在
+  - **`reorder` 不再泄露/篡改他人视图**：`POST /views/reorder` 原先要求 `EDIT_VIEWS` 却返回该表**全部**视图，且会按传入 id 改写任何视图的 `order`（含他人个人视图）。现只重排**当前用户可改**的子集、响应只含**可见**视图
+  - **个人视图对非创建者一律 404**（含表 owner / 工作区 OWNER / 超管）：`GET` / `PATCH` / `DELETE` 他人个人视图此前对 `EDIT_VIEWS` 持有者**完全放行**（列表里看不到、但可以按 id 直接改删）。现个人视图判定**先于**任何管理豁免，越权改删返回 404 且不暴露存在性（新增 `tests/test_view_access_p0.py` 覆盖，含超管反向断言）
+  - **公共视图「列表可见却点开 403」口径统一**：详情原要求 `EDIT_VIEWS`，与列表（仅 READ 可见）矛盾。现公共视图**读**由表 `READ` 决定、**改/删**仍需表 `EDIT_VIEWS`（不变量 I7：放宽可见性不提升可改性）
+  - **个人视图不得持有 `is_default`**：`is_default` 是表级标记（写入时会清掉同表其它默认视图），而仅 READ 的用户可以建个人视图 —— 此前其 `is_default=True` 会把**全表**落地视图置空（其他成员进表看到无默认视图）。现创建/更新/导入三条路径统一守卫（更新返回 400，导入静默降级）
+  - **激活视图偏好同步收口**：`PUT /accounts/preferences/tables/{id}/active-view` 之前只校验「视图属于该表」，现要求该视图对当前用户可见
+  - 设计文档：`docs/adr/0003-view-visibility-permission-model.md`（可见性三档模型 + 开放范围上限，后续 P1 移除匿名分享、P2 落 `visibility` 列）
 - **修复数据表导入「确认后卡在 25% 且无报错」**：导入的"自动新增字段"（`unknown_cols_strategy=add_text_field`）只按**未删除字段**判重，而 `tables_datafield` 的 `(table_id, name)` 唯一约束**不区分软删除** —— 表里存在同名软删除字段（删过同名列）时，INSERT 直接撞约束抛 `IntegrityError`，整个 execute 阶段失败；更糟的是此刻 Session 已进入 `PendingRollback` 状态，旧的失败处理在 `except` 里直接 `commit` 又抛 `PendingRollbackError`，第二个异常逃逸出后台线程，任务行永远停在 `running` + 「执行子步骤 25%」，前端表现为"进度卡住、无从判断该等还是该重试"（线上实测：更新已有数据表时导入 WPS 生成的 XLSX）。两根因分别修复：新增字段前先给同名软删除字段**让位改名**（复用 `rename_trashed_field_aside`，与手工建字段同一策略，改名先 `flush` 再 INSERT）；`analyze / execute / reanalyze` 三处失败路径统一走 `_mark_task_failed()` —— **先 `rollback()` 再写 `failed`**，并把 ORM/DB 异常压成一句可读原因（完整堆栈留在服务日志），失败一定能落库并展示给用户
 - **协作者通知**：新增 `accounts_notification` 与用户级 API（`GET /accounts/notifications` 列表 + 未读数、`POST /{id}/read`、`POST /read-all`）；文档授权（`POST /documents/{id}/permissions`）时向被授权者写入「X 邀请你协作《文档》（可编辑/只读）」—— 此前授权是静默的，被授权者只能自己翻目录树才会发现。顶栏新增**通知铃铛**（未读角标 + 下拉列表，点击条目即标记已读并跳转到该文档，支持「全部已读」）；通知写入为尽力而为，失败不影响授权本身；撤销授权不产生噪音通知
 - **附件跟随宿主权限**（安全）：新增 `files_fileowner` 记录上传文件归属（表 + 行 / 文档 / 仅工作区），下载与删除不再只看「工作区成员 + 不可猜键」：受限表（`read_role` 高于普通成员）的附件、未发布文档的图片、以及被 `row_filters` 挡掉的行的附件，对无权者一律 403/404；上传时校验对宿主的写权限（表 → `EDIT_RECORDS`，文档 → 可见且可直接写）。历史文件无归属记录，保持原工作区级语义（不做回填）

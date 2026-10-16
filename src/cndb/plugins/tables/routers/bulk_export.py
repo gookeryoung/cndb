@@ -15,10 +15,10 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.models import DataView
 from cndb.plugins.tables.services import transfer
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
+from cndb.plugins.tables.services.core.view_access import ViewAction, get_view_or_404
 from cndb.plugins.workspaces.models import Workspace
 
 logger = logging.getLogger(__name__)
@@ -87,9 +87,9 @@ def export_table(
     view_name: str | None = None
 
     if view_id is not None:
-        dv = db.get(DataView, view_id)
-        if dv is None or dv.table_id != table.id:
-            raise HTTPException(status_code=404, detail="视图不存在或不属于当前表")
+        # 视图可见性校验：他人个人视图一律 404 —— 原实现只比对 table_id，
+        # 凭 id 即可套用他人视图的筛选规则导出数据，视图名还会出现在下载文件名里（缺陷 ① 同类）
+        dv = get_view_or_404(db, table, current_user, view_id, ViewAction.VIEW_READ)
         filters = dv.filters or None
         sorts = dv.sortings or None
         filter_logic = dv.filter_type or "AND"
