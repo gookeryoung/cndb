@@ -332,7 +332,7 @@ def _eval(node: Node, ctx: _Context, *, vector: bool = False) -> float | list[fl
         func, args = node[1], node[2]
         if func in _AGG_FUNCS:
             column = _eval(args[0], ctx, vector=True)
-            values = column if isinstance(column, list) else []
+            values: list[float] = column if isinstance(column, list) else []
             if func == "count":
                 return float(len(values))
             if not values:
