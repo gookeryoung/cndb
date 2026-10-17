@@ -179,4 +179,78 @@ describe('ImageFieldEditor 上传入口', () => {
     expect(uploadSpy).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
   })
+
+  it('超过字段 max_size_mb 的图片在上传前被拒绝', async () => {
+    const uploadSpy = vi.fn(() => HttpResponse.json({ file_key: 'x.png' }, { status: 201 }))
+    server.use(http.post('/api/v1/workspaces/:wid/files', uploadSpy))
+    const onChange = vi.fn()
+    const field = makeField({
+      id: 6,
+      name: '照片',
+      field_type: 'image',
+      config: { max_size_mb: 1 },
+    })
+    renderEditor({ field, onChange })
+
+    const big = new File([new Uint8Array(2 * 1024 * 1024)], 'big.png', { type: 'image/png' })
+    fireEvent.change(screen.getByTestId('image-field-input'), { target: { files: [big] } })
+
+    expect(await screen.findByText(/超过单张 1MB 限制/)).toBeInTheDocument()
+    expect(uploadSpy).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('单图字段选择新图是替换而非追加（旧图不进入字段值）', async () => {
+    const onChange = vi.fn()
+    const field = makeField({
+      id: 7,
+      name: '证件照',
+      field_type: 'image',
+      config: { multiple: false },
+    })
+    renderEditor({
+      field,
+      value: [{ file_key: 'old.png', filename: 'old.png', mime_type: 'image/png' }],
+      onChange,
+    })
+
+    // 已有图时按钮变为「替换」
+    expect(screen.getByTestId('image-field-pick')).toHaveAttribute('title', '替换图片')
+
+    fireEvent.change(screen.getByTestId('image-field-input'), {
+      target: { files: [new File([new Uint8Array([1, 2, 3])], 'new.png', { type: 'image/png' })] },
+    })
+
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ file_key: 'mock-upload.png' }),
+    ]))
+    const lastValue = onChange.mock.calls.at(-1)?.[0] as unknown[]
+    expect(lastValue).toHaveLength(1)
+  })
+
+  it('上传失败的瓦片支持原地重试，成功后写回字段值', async () => {
+    let attempt = 0
+    server.use(http.post('/api/v1/workspaces/:wid/files', () => {
+      attempt += 1
+      if (attempt === 1) return HttpResponse.json({ detail: '上传失败' }, { status: 500 })
+      return HttpResponse.json(
+        { file_key: 'retry-ok.png', filename: 'a.png', size: 3, mime_type: 'image/png' },
+        { status: 201 },
+      )
+    }))
+    const onChange = vi.fn()
+    renderEditor({ onChange })
+
+    fireEvent.change(screen.getByTestId('image-field-input'), {
+      target: { files: [new File([new Uint8Array([1])], 'a.png', { type: 'image/png' })] },
+    })
+
+    expect(await screen.findByText('上传失败')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /重试/ }))
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ file_key: 'retry-ok.png' }),
+    ]))
+    expect(attempt).toBe(2)
+  })
 })
