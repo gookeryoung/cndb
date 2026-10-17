@@ -57,30 +57,11 @@ FORBIDDEN_DETAIL = "视图权限不足"
 #: 违反 D1 硬约束（每表至少一个 table 档视图）的响应文案
 LAST_TABLE_VIEW_DETAIL = "每张表需至少保留一个表内可见视图"
 
-#: 授权角色强弱（同名 subject 多行时取最大）
-_GRANT_RANK: dict[str, int] = {ViewGrantRole.VIEWER: 1, ViewGrantRole.EDITOR: 2}
-
 #: 标记"未预取"的哨兵（与"预取结果为 None"区分）
 _UNSET: Any = object()
 
 
-# ── 角色与管理视角 ────────────────────────────────────
-
-
-def role_codes_for_workspace(db: Session, workspace_id: int, user: User) -> list[str]:
-    """当前用户在指定工作区的角色 code（供 ``subject_type='role'`` 的授权匹配）.
-
-    ``shared`` 档的 role 型授权按**工作区角色值**匹配（``owner``/``editor``/``viewer``）——
-    与表级 ``TableMember.role`` 的自定义 code 无关，保证批量路径（表列表）只需一次查询。
-    """
-    from cndb.plugins.workspaces.models import Workspace
-    from cndb.plugins.workspaces.permissions import get_member_role
-
-    ws = db.get(Workspace, workspace_id)
-    if ws is None:
-        return []
-    role = get_member_role(user, ws, db)
-    return [role.value] if role is not None else []
+# ── 管理视角 ──────────────────────────────────────────
 
 
 def is_table_admin(db: Session, table: DataTable, user: User) -> bool:
@@ -107,7 +88,7 @@ def _workspace_role_value(db: Session, workspace_id: int, user: User) -> str | N
 # ── 可见性查询条件（列表/导出/重排/统计等查询场景） ────
 
 
-def visible_view_filter(user_id: int, role_codes: Collection[str] = ()) -> ColumnElement[bool]:
+def visible_view_filter(user_id: int) -> ColumnElement[bool]:
     """可见性 SQL 条件（纯函数，无 DB 访问）.
 
     与 :func:`is_view_visible` 语义必须保持一致（后者用于已加载对象的 Python 侧过滤）:
@@ -115,36 +96,19 @@ def visible_view_filter(user_id: int, role_codes: Collection[str] = ()) -> Colum
     - **创建者**对自己的视图恒可见（I4）—— 必须显式列出：``shared`` 档的创建者不在
       自己的授权名单里，只按"名单命中"判定会让创建者看不到自己刚共享出去的视图
     - ``table``   档恒可见（调用方已保证表 ``READ``）
-    - ``shared``  档需命中名单（``subject_type='user'`` 且 id 相符，或 ``role`` 型命中角色 code）
+    - ``shared``  档需命中名单（``subject_type='user'`` 且 id 相符）
     - ``private`` 档仅创建者（由第一条覆盖；孤儿视图 ``owner_id IS NULL`` 对所有人不可见）
     """
-    grant_exists = exists().where(
+    user_grant_exists = exists().where(
         DataViewPermission.view_id == DataView.id,
-        or_(
-            and_(
-                DataViewPermission.subject_type == ViewGrantSubject.USER,
-                DataViewPermission.subject_id == str(user_id),
-            ),
-            and_(
-                DataViewPermission.subject_type == ViewGrantSubject.ROLE,
-                DataViewPermission.subject_id.in_(list(role_codes)),
-            ),
-        ),
+        DataViewPermission.subject_type == ViewGrantSubject.USER,
+        DataViewPermission.subject_id == str(user_id),
     )
     return or_(
         DataView.owner_id == user_id,
         DataView.visibility == ViewVisibility.TABLE,
-        and_(DataView.visibility == ViewVisibility.SHARED, grant_exists),
+        and_(DataView.visibility == ViewVisibility.SHARED, user_grant_exists),
     )
-
-
-def view_visibility_filter(db: Session, table: DataTable, user: User) -> ColumnElement[bool]:
-    """按 (表, 用户) 求可见性条件 —— 单表场景的便捷入口.
-
-    批量场景（表列表）请复用已预取的工作区角色，直接调用 :func:`visible_view_filter`，
-    避免为每个表重复解析角色（N+1）。
-    """
-    return visible_view_filter(user.id, role_codes_for_workspace(db, table.workspace_id, user))
 
 
 def is_view_visible(view: DataView, user_id: int, granted_view_ids: Collection[int] = ()) -> bool:
@@ -166,49 +130,30 @@ def is_view_visible(view: DataView, user_id: int, granted_view_ids: Collection[i
 # ── 授权名单读取 ──────────────────────────────────────
 
 
-def grants_for_user(
-    db: Session,
-    view_ids: Sequence[int],
-    user_id: int,
-    role_codes: Collection[str] = (),
-) -> dict[int, str]:
+def grants_for_user(db: Session, view_ids: Sequence[int], user_id: int) -> dict[int, str]:
     """批量取「该用户在哪些视图上有授权、角色是什么」→ ``{view_id: 'viewer'|'editor'}``.
 
-    同名主体多行时取最强角色。一次查询，供列表/详情/重排等批量场景复用。
+    一次查询，供列表/详情/重排等批量场景复用。唯一键 ``(view_id, subject_type, subject_id)``
+    保证每个视图至多命中一条记录，因此无需再比较角色强弱。
     """
     ids = list(view_ids)
     if not ids:
         return {}
-    conds = [
-        and_(
+    rows = (
+        db.query(DataViewPermission)
+        .filter(
+            DataViewPermission.view_id.in_(ids),
             DataViewPermission.subject_type == ViewGrantSubject.USER,
             DataViewPermission.subject_id == str(user_id),
         )
-    ]
-    if role_codes:
-        conds.append(
-            and_(
-                DataViewPermission.subject_type == ViewGrantSubject.ROLE,
-                DataViewPermission.subject_id.in_(list(role_codes)),
-            )
-        )
-    out: dict[int, str] = {}
-    rows = db.query(DataViewPermission).filter(DataViewPermission.view_id.in_(ids), or_(*conds)).all()
-    for g in rows:
-        cur = out.get(int(g.view_id))
-        if cur is None or _GRANT_RANK.get(str(g.role), 0) > _GRANT_RANK.get(cur, 0):
-            out[int(g.view_id)] = str(g.role)
-    return out
+        .all()
+    )
+    return {int(g.view_id): str(g.role) for g in rows}
 
 
-def grant_role_for_view(
-    db: Session,
-    view_id: int,
-    user_id: int,
-    role_codes: Collection[str] = (),
-) -> str | None:
+def grant_role_for_view(db: Session, view_id: int, user_id: int) -> str | None:
     """单视图的授权角色（``None`` = 名单内没有此人）."""
-    return grants_for_user(db, [view_id], user_id, role_codes).get(view_id)
+    return grants_for_user(db, [view_id], user_id).get(view_id)
 
 
 # ── 单一判定入口 ──────────────────────────────────────
@@ -255,8 +200,7 @@ def resolve_view_action(
         return True
     # 5) 指定共享
     if view.visibility == ViewVisibility.SHARED:
-        codes = role_codes_for_workspace(db, table.workspace_id, user)
-        grant = grant_role_for_view(db, int(view.id), user.id, codes) if grant_role is _UNSET else grant_role
+        grant = grant_role_for_view(db, int(view.id), user.id) if grant_role is _UNSET else grant_role
         if action == ViewAction.VIEW_READ:
             return grant is not None
         if action in (ViewAction.VIEW_EDIT, ViewAction.VIEW_MANAGE):
@@ -445,10 +389,10 @@ def grantee_counts(db: Session, view_ids: Sequence[int]) -> dict[int, int]:
 
 
 def list_view_grants(db: Session, table: DataTable, view: DataView) -> list[dict[str, Any]]:
-    """该视图的**成员型**授权名单（含用户信息与当前是否仍有效）.
+    """该视图的授权名单（含用户信息与当前是否仍有效）.
 
-    ``role`` 型授权（按工作区角色批量放行）数据模型已支持、判定层已生效，但本期
-    不开放写入端点，故此处只列 ``subject_type='user'`` 的条目。
+    名单主体只有**成员**一种（``subject_type='user'``）—— 按工作区角色共享的
+    ``role`` 型授权已于 ADR 0003 D6 移除（从未有写入端点，生产数据零依赖）。
     """
     rows = (
         db.query(DataViewPermission)
@@ -655,10 +599,8 @@ __all__ = [
     "require_can_publish_to_table",
     "resolve_view_action",
     "revoke_view_grant",
-    "role_codes_for_workspace",
     "set_view_grant",
     "shareable_members",
     "table_view_count",
-    "view_visibility_filter",
     "visible_view_filter",
 ]

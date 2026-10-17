@@ -34,8 +34,6 @@ from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
 from cndb.plugins.tables.services.core.view_access import (
     grants_for_user,
     is_view_visible,
-    role_codes_for_workspace,
-    view_visibility_filter,
     visible_view_filter,
 )
 from cndb.plugins.workspaces.models import (
@@ -107,7 +105,7 @@ def _fill_table_stats(
         # 只统计当前用户**可见**的视图：否则计数会暴露他人私有视图的存在（与缺陷 ③ 同源）
         view_count = (
             db.query(func.count(DataView.id))
-            .filter(DataView.table_id == table.id, view_visibility_filter(db, table, current_user))
+            .filter(DataView.table_id == table.id, visible_view_filter(current_user.id))
             .scalar()
             or 0
         )
@@ -358,10 +356,8 @@ def _list_tables_uncached(
             .all()
         ):
             field_count_map[int(tid)] = int(cnt)
-        # 可见性条件按工作区一次性求值：角色 code 复用已预取的工作区角色（不额外查库），
-        # 且整批只建一个 SQL 条件，避免逐表判定
-        role_codes = [preload.member_role.value] if preload.member_role is not None else []
-        vis_filter = visible_view_filter(current_user.id, role_codes)
+        # 整批只建一个 SQL 条件（纯函数、无 DB 访问），避免逐表判定
+        vis_filter = visible_view_filter(current_user.id)
         for tid, cnt in (
             db.query(DataView.table_id, func.count(DataView.id))
             .filter(DataView.table_id.in_(table_ids), vis_filter)
@@ -443,8 +439,7 @@ def get_table(
     def _view_sort_key(v: DataView) -> tuple[int, int]:
         return (v.order, v.id)
 
-    role_codes = role_codes_for_workspace(db, workspace_id, current_user)
-    granted_view_ids = grants_for_user(db, [v.id for v in dt.views], current_user.id, role_codes)
+    granted_view_ids = grants_for_user(db, [v.id for v in dt.views], current_user.id)
     views = sorted(
         [v for v in dt.views if is_view_visible(v, current_user.id, granted_view_ids)],
         key=_view_sort_key,

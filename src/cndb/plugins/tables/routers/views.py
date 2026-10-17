@@ -34,10 +34,9 @@ from cndb.plugins.tables.services.core.view_access import (
     require_can_publish_to_table,
     resolve_view_action,
     revoke_view_grant,
-    role_codes_for_workspace,
     set_view_grant,
     shareable_members,
-    view_visibility_filter,
+    visible_view_filter,
 )
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/views", tags=["views"])
@@ -131,9 +130,8 @@ def _view_payloads(
     ``owner_id`` 各自推断"能不能改/能不能管理"，避免前后端口径漂移。
     """
     view_ids = [int(v.id) for v in views]
-    codes = role_codes_for_workspace(db, table.workspace_id, user)
     admin = is_table_admin(db, table, user)
-    granted = grants_for_user(db, view_ids, user.id, codes)
+    granted = grants_for_user(db, view_ids, user.id)
     counts = grantee_counts(db, view_ids)
 
     out: list[dict[str, Any]] = []
@@ -306,7 +304,7 @@ def list_views(
     # 可见性统一由 view_access 判定：table 档全表可见 + shared 档名单内 + private 档仅本人
     views = (
         db.query(DataView)
-        .filter(DataView.table_id == table_id, view_visibility_filter(db, dt, current_user))
+        .filter(DataView.table_id == table_id, visible_view_filter(current_user.id))
         .order_by(DataView.order, DataView.id)
         .all()
     )
@@ -326,12 +324,13 @@ def export_views(
     - 不传 ids → 导出该表全部视图
     - 传 ids → 仅导出指定视图（不存在的 id 自动跳过）
     """
-    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    # 表级入口校验（不可读/不存在 → 403/404）；可见性条件只需 user_id，用不到表对象
+    get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     q = db.query(DataView).filter(
         DataView.table_id == table_id,
         # 可见性：与 list_views 一致 —— table 档 + shared 名单内 + 本人 private
-        view_visibility_filter(db, dt, current_user),
+        visible_view_filter(current_user.id),
     )
     if ids:
         q = q.filter(DataView.id.in_(ids))
@@ -635,7 +634,7 @@ def reorder_views(
     db.commit()
     visible = (
         db.query(DataView)
-        .filter(DataView.table_id == table_id, view_visibility_filter(db, dt, current_user))
+        .filter(DataView.table_id == table_id, visible_view_filter(current_user.id))
         .order_by(DataView.order, DataView.id)
         .all()
     )
