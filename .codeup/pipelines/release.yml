@@ -8,10 +8,9 @@
 #   pack_linux  →  前端构建 → fspack b + p → 产物上传 CodeUp 制品库
 #   upload      →  收集 PyPI wheel 与 Linux fspack 产物 → 汇总上传
 #
-# ⚠️ 本流水线**不包含 Windows fspack 打包**。
-# Windows 原生 NSIS + mingw-w64 编译依赖宿主机原生工具链，CodeUp public/cn-beijing 为
-# K8s 容器环境，不支持 VM labels=windows,amd64，故 Windows 打包继续由 GitHub Actions
-# 的 release.yml（windows-latest runner）承担。若需迁移，请先创建私有构建集群。
+# ⚠️ 本流水线不含 Windows fspack 打包：其 NSIS + mingw-w64 依赖宿主机原生工具链，而
+# CodeUp public/cn-beijing 为 K8s 容器环境，故 Windows 打包仍由 GitHub Actions 的
+# release.yml（windows-latest）承担。
 #
 # 需要用户在 CodeUp 流水线配置界面手动配置的全局变量（env）：
 #   UV_PUBLISH_TOKEN = <PyPI API Token>   ← 推荐，uv 原生支持，自动走 __token__ 用户名
@@ -80,8 +79,7 @@ stages:
                 uv build
 
                 # ── 发布到 PyPI（走全局变量注入的 token）──
-                # CodeUp 不支持 GitHub OIDC，改用经典 API token 方式。
-                # 用户名固定 __token__，密码为 token 值。
+                # CodeUp 不支持 GitHub OIDC，改用经典 API token（用户名固定 __token__）。
                 uv publish
 
       # ── Linux fspack 原生打包 ───────────────────────────────────
@@ -108,8 +106,8 @@ stages:
                 dnf install -y nodejs
                 npm install -g pnpm@12.4.2
                 echo "[setup] install gcc + dpkg (fspack deb target) ..."
-                # alinux3 为 RHEL 系，dpkg 不在默认源；用 dnf 装 gcc 足够编译 Nuitka，
-                # deb 打包由 fspack 内置逻辑处理（需要 dpkg-deb，这里尽量尝试）。
+                # alinux3 为 RHEL 系，dpkg 不在默认源；dnf 装 gcc 足够编译 Nuitka，
+                # deb 打包由 fspack 内置逻辑处理。
                 dnf install -y gcc
           pack:
             name: fspack build + package + 冒烟

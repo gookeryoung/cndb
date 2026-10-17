@@ -51,7 +51,6 @@ log "目录就绪：$APP_DIR"
 # 所以逻辑是「缺哪个补哪个」，不是「用模板重新生成」。
 set_env() {
   local key="$1" val="$2" file="$3"
-  # 用 | 而非 / 作分隔符：值里含 /（如镜像地址、URL）会破坏 sed
   if grep -qE "^${key}=" "$file" 2>/dev/null; then
     return 0
   fi
@@ -75,7 +74,7 @@ set_env CNDB_HTTPS_BIND   "443"  "$ENV_FILE"
 set_env CNDB_SERVER_NAME  "_"    "$ENV_FILE"
 set_env CNDB_MAX_BODY_SIZE "512m" "$ENV_FILE"
 set_env CNDB_NGINX_IMAGE  "nginx:1.27-alpine" "$ENV_FILE"
-set_env CNDB_APP_UPSTREAM "app:8000" "$ENV_FILE"
+set_env CNDB_APP_UPSTREAM "cndb:8000" "$ENV_FILE"
 set_env DEBUG       "false"                    "$ENV_FILE"
 set_env AUTH_ENABLED "true"                    "$ENV_FILE"
 
@@ -85,17 +84,15 @@ if grep -qE '^JWT_SECRET=CHANGE_ME' "$ENV_FILE" 2>/dev/null || ! grep -qE '^JWT_
   ok "JWT_SECRET 已生成（不回显明文）"
 fi
 
-# CORS_ORIGINS 必须是 JSON 数组字符串 —— Settings 里声明为 list[str]，
-# pydantic-settings 对复杂类型一律按 JSON 解析，写成逗号分隔会抛
-# SettingsError，表现为容器启动即崩且日志难定位
+# CORS_ORIGINS 必须是 JSON 数组字符串：Settings 里声明为 list[str]，
+# pydantic-settings 对复杂类型一律按 JSON 解析，写成逗号分隔会抛 SettingsError
+# （表现为容器启动即崩且日志难定位）。
 if ! grep -qE '^CORS_ORIGINS=' "$ENV_FILE" 2>/dev/null; then
   set_env CORS_ORIGINS '["http://localhost:8000"]' "$ENV_FILE"
 fi
 
 # 数据库地址：只设 CNDB_DATA_DIR 就够，此处显式写出便于后续切 PostgreSQL。
-# 注意变量名是 DATABASE_URL 或 CNDATABASE_URL（代码做了别名兼容），
-# 历史上曾统一写成 CNDATABASE_URL 而代码只读 DATABASE_URL，
-# 导致容器静默连回 SQLite —— 现在两者都支持。
+# 变量名 DATABASE_URL 与 CNDATABASE_URL 均被代码兼容。
 if ! grep -qE '^(CN)?DATABASE_URL=' "$ENV_FILE" 2>/dev/null; then
   set_env CNDATABASE_URL "sqlite:////data/data/cndb.db" "$ENV_FILE"
 fi
@@ -104,9 +101,8 @@ chmod 600 "$ENV_FILE"
 [[ $NEW_ENV -eq 1 ]] && ok "已创建 $ENV_FILE"
 
 # ── 3. 端口占用检查 ───────────────────────────────────────────
-# ss 在精简镜像里可能没装，缺失时降级为静默跳过（只提示，不阻断）。
-# 端口占用不阻断部署：首次部署前常是遗留旧容器在跑，
-# 强制中断反而让用户不知如何处理。
+# ss/netstat 缺失时降级为只提示。端口占用不阻断部署：首次部署前常是遗留旧容器
+# 在跑，强制中断反而让用户不知如何处理。
 PORT="${BIND##*:}"
 PORT_CHECKED=0
 if command -v ss >/dev/null 2>&1; then

@@ -1,62 +1,28 @@
 name: Deploy to Tencent Cloud
 
-# 触发：推送 v*.*.* tag 时部署到腾讯云服务器（镜像仍在服务器端构建）
+# 触发：push v*.*.* tag（或 workflow_dispatch 指定版本）部署到腾讯云服务器，镜像在服务器端构建。
 #
-# 完整链路：
-#   tag push → release.yml 的 pypi job 构建前端并发布 wheel 到 PyPI
-#            → 本 workflow 解析该版本的 wheel 地址（不下载到 runner）
-#            → uv export 导出依赖锁定清单
-#            → 把「部署配置」打成载荷：docker-compose.prod.yml + deploy/ + 锁定清单
-#            → TAT 下发一条命令：解包配置 → 服务器自行下载 wheel → deploy.sh
-#              （SERVER_BUILD=1：本地 docker build → 冒烟验证 → 预备份 → 重建 →
-#                健康探测 → 失败自动回滚）→ 复查容器与健康端点
+# 链路：release.yml 的 pypi job 构建前端并发布 wheel → 本 workflow 解析 wheel 地址与
+# sha256（不下载）→ uv export 导出锁定依赖 → 把部署配置（compose + deploy/ + 锁定清单）
+# 打成 tar.gz + base64 内联进 TAT 命令下发 → 服务器自行下载 wheel → deploy.sh
+# （本地构建 → 冒烟 → 预备份 → 重建 → 健康探测 → 失败自动回滚）→ 复查容器与健康端点。
 #
-# 为什么用 TAT 下发，而不是 SSH 直连
-# ────────────────────────────────────────────────────────────────
-# GitHub 托管 runner 的出口 IP 在美国。此前用 appleboy/ssh-action 直连 22 端口
-# （7 处：3 次 scp + 4 次 ssh，全部以 root 登录），每次部署都会在腾讯云主机安全
-# 留下「异地登录」高危告警，部署越频繁告警越密集。
+# 用 TAT（自动化助手）下发而非 SSH 直连：GitHub runner 出口 IP 在海外且不固定，SSH 登录
+# 会在腾讯云主机安全留下「异地登录」告警；TAT 为下发模型，实例 agent 主动拉取，全程无
+# 入站连接，22 端口可对公网关闭。wheel 为 MB 级、超出 TAT 64 KiB 上限，改由服务器自行
+# 下载（优先腾讯云内网 PyPI 镜像，失败回退官方源，下载后校验 sha256）。
 #
-# 把 runner IP 加白也不行：GitHub 只提供一个会变动的 CIDR 池
-# （api.github.com/meta 的 actions 字段，几十条且随时调整），固定不住；
-# 而告警一旦被习惯性忽略，真正的入侵就没人看了。
+# 必需 Secrets：
+#   TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY  子账号密钥（勿用主账号）。最小权限：
+#       { "effect": "allow", "action": ["tat:RunCommand", "tat:DescribeInvocationTasks"],
+#         "resource": ["*"] }
+#   CNDB_INSTANCE_ID   Lighthouse 实例 ID，如 lhins-8k8ahx8m
+#   CNDB_REGION        实例地域，如 ap-shanghai
+#   TCR_REGISTRY / TCR_GROUP   （可选）TCR 域名与命名空间，仅作镜像命名/回滚识别，须成对提供
+#   TCR_USERNAME / TCR_PASSWORD （可选）仅手动回滚（docker pull）时使用
+#   BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL （可选）国内构建拉 Docker Hub/PyPI 超时的换源通道
 #
-# TAT（自动化助手）是「下发」模型：命令进云端队列，实例上的 agent 主动拉取执行。
-# 全程没有入站连接，因此不产生登录审计，22 端口可以直接对公网关闭。
-#
-# 文件怎么到服务器
-# ────────────────────────────────────────────────────────────────
-# 原 scp 三连改成两条腿：
-#   · 配置类小文件（compose / 部署脚本 / Dockerfile / nginx / 锁定清单，约 24 KB）
-#     打成 tar.gz + base64 内联进 TAT 命令，一次下发即落地 —— 不需要对象存储中转。
-#   · wheel 是 MB 级，塞进去会顶爆 TAT 的 64 KiB 上限，改由服务器自己下载：
-#     优先腾讯云内网 PyPI 镜像（免跨境、不占 4 Mbps 公网带宽），失败回退官方源，
-#     下载后校验 sha256（CI 从 PyPI 元数据取）。
-# scripts/build_tat_command.py 会预检 Content 大小，超限直接失败并提示怎么拆。
-#
-# 服务器侧失败会自动回滚到上一个版本，不会把线上打挂。
-#
-# 必需的 Repository Secrets（Settings → Secrets and variables → Actions）
-# ────────────────────────────────────────────────────────────────
-#   TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY
-#       子账号 API 密钥。**不要用主账号密钥**。最小权限策略：
-#         { "version": "2.0", "statement": [{
-#             "effect": "allow", "action": ["tat:RunCommand", "tat:DescribeInvocationTasks"],
-#             "resource": ["*"] }] }
-#   CNDB_INSTANCE_ID    Lighthouse 实例 ID，如 lhins-8k8ahx8m
-#   CNDB_REGION         实例所在地域，如 ap-shanghai
-#   TCR_REGISTRY        （可选）TCR 纯域名，仅用于镜像命名前缀；缺省时用内置默认
-#   TCR_GROUP           （可选）命名空间，如 pydev。必须与 REGISTRY 成对提供，
-#                       否则自动回退默认前缀。镜像地址 = <REGISTRY>/<GROUP>/cndb:<version>
-#   TCR_USERNAME / TCR_PASSWORD
-#                       仅手动回滚（无 SERVER_BUILD 走 docker pull）时使用
-#
-# 可选 Secrets（国内服务器拉 Docker Hub / PyPI 超时的换源逃生通道）：
-#   BUILD_BASE_IMAGE      如 docker.m.daocloud.io/library/python:3.12-slim
-#   BUILD_PIP_INDEX_URL   如 https://mirrors.cloud.tencent.com/pypi/simple
-#
-# 已废弃、可删除：SSH_HOST / SSH_PORT / SSH_USERNAME / SSH_PRIVATE_KEY
-#   （改 TAT 后不再有任何 SSH 登录；留着只会让后来人以为还在用）
+# 已废弃、可删除：SSH_HOST / SSH_PORT / SSH_USERNAME / SSH_PRIVATE_KEY（改 TAT 后不再有 SSH 登录）
 
 on:
   push:
@@ -82,14 +48,12 @@ jobs:
   deploy:
     name: Deploy via TAT (server-side build)
     runs-on: ubuntu-24.04
-    # 70 分钟是排障上限而非预估耗时：首次无缓存构建 15-30 分钟，
-    # 之后走 Docker 层缓存通常 5 分钟内。
+    # 70 分钟为排障上限；首次无缓存构建 15-30 分钟，走 Docker 层缓存通常 5 分钟内。
     timeout-minutes: 70
     steps:
       - uses: actions/checkout@v7
 
-      # Export locked requirements 步骤用 uvx 导出 uv.lock，runner 默认无 uv，
-      # 缺失会直接 127（实测 v0.3.6 构建即因此失败）
+      # 此步用 uvx 导出 uv.lock；runner 默认无 uv，缺失会直接 127。
       - name: Install uv
         uses: astral-sh/setup-uv@v10.3.0
 
@@ -101,15 +65,13 @@ jobs:
           if [ -z "$VERSION" ]; then
             VERSION="${GITHUB_REF_NAME}"
           fi
-          # 去掉 tag 的 v 前缀：镜像 tag 与 dist 里的 wheel 版本保持一致，
-          # 避免出现 v0.3.0 与 0.3.0 两套版本号导致排查困难
+          # 去掉 tag 的 v 前缀，保持镜像 tag 与 wheel 版本一致。
           VERSION="${VERSION#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "构建版本: ${VERSION}"
 
-      # 只解析 wheel 的地址与校验和，不下载 —— 真正的下载在服务器上做
-      # （服务器优先走腾讯云内网镜像）。两个 workflow 同 tag 并行触发，
-      # PyPI 元数据可能有几秒到几分钟的同步延迟，用重试等待。
+      # 只解析 wheel 地址与 sha256（真正下载在服务器做）。同 tag 的 release.yml 并行触发，
+      # PyPI 元数据有几秒到几分钟延迟，故重试等待。
       - name: Resolve wheel source on PyPI
         id: wheel
         env:
@@ -162,10 +124,8 @@ jobs:
           print(f"镜像源: {mirror or '<无，将只用官方源>'}")
           PY
 
-      # 从 uv.lock 导出锁定依赖清单，供 Dockerfile.prod 的依赖缓存层使用：
-      # 依赖版本未变时，服务器端增量构建只覆盖薄薄的 wheel 层。
-      # 本地等价命令：uv export --frozen --no-hashes --no-dev --no-emit-project
-      #   -o dist/requirements.lock.txt
+      # 导出锁定依赖供 Dockerfile.prod 缓存层使用（依赖未变时增量构建只重建 wheel 层）。等价命令：
+      #   uv export --frozen --no-hashes --no-dev --no-emit-project -o dist/requirements.lock.txt
       - name: Export locked requirements
         run: |
           mkdir -p dist
@@ -178,20 +138,14 @@ jobs:
             exit 1
           }
 
-      # 把部署配置打成载荷并拼出下发命令。
-      # 载荷只含配置，不含 wheel —— 后者由服务器自己下载，见 workflow 头部说明。
-      # 这里也顺手替代了旧的「同步落点校验」：解包路径由 tar 决定，
-      # 不再有 scp 多源把文件落到 deploy/deploy/ 的隐患（v0.3.8 事故根因）。
+      # 把部署配置打成载荷并拼出下发命令（载荷只含配置，wheel 由服务器自己下载）。
+      # 解包路径由 tar 决定，避免旧的 scp 多源把文件落到 deploy/deploy/ 的隐患。
       - name: Build TAT command
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-          # 完整仓库前缀（不含 tag）：deploy.sh 不再从 .env 反推，
-          # 反推在「.env 尚未指向仓库」的首次部署场景会拼出
-          # docker.io/library/cndb 这类错误地址，实测导致过 403 Forbidden。
-          # TCR_REGISTRY/TCR_GROUP 为**可选** Secret：TCR 已退为回滚备用源、
-          # CI 不再推送镜像，缺省时回退到沿用多年的仓库前缀（与服务器
-          # .env 及 deploy.sh 回滚目标一致，仅作本地镜像命名/回滚识别）。
-          # 两个 Secret 只填其一也会拼出畸形地址，故必须成对存在才使用。
+          # 完整仓库前缀（不含 tag）：deploy.sh 不再从 .env 反推（首次部署场景会拼出
+          # docker.io/library/cndb 类错误地址）。TCR_REGISTRY/TCR_GROUP 为可选 Secret，
+          # 须成对存在才使用，否则回退默认前缀（仅作本地镜像命名/回滚识别）。
           IMAGE_REPO: ${{ (secrets.TCR_REGISTRY != '' && secrets.TCR_GROUP != '') && format('{0}/{1}/cndb', secrets.TCR_REGISTRY, secrets.TCR_GROUP) || 'ccr.ccs.tencentyun.com/pydev/cndb' }}
           WHEEL_URL: ${{ steps.wheel.outputs.url }}
           WHEEL_MIRROR_URL: ${{ steps.wheel.outputs.mirror }}
@@ -206,8 +160,7 @@ jobs:
           ls -la /tmp/cndb-deploy-config.tgz
           python3 scripts/build_tat_command.py
 
-      # 下发并等待执行结束。deploy.sh 的日志会随命令输出回传，
-      # 失败时这里能直接看到是哪一步挂的（回滚信息也在里面）。
+      # 下发并等待；deploy.sh 日志随命令输出回传，失败时可直接看到卡在哪一步。
       - name: Deploy via TAT
         env:
           TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}

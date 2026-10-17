@@ -3,9 +3,7 @@ name: CI
 on:
   push:
     branches: [main, develop]
-    # 路径过滤：只对真正影响运行的文件变化触发；docs/examples/deploy/.trae 等改动
-    # 不触发全量 CI，节省 runner 资源。手动触发 workflow_dispatch 可绕过此限制。
-    # 锚点 &ci_paths 供 pull_request 复用，避免两份列表漂移。
+    # 路径过滤：仅对影响运行的文件变化触发全量 CI；&ci_paths 锚点供 pull_request 复用，避免两份列表漂移。
     paths: &ci_paths
       - 'src/**'
       - 'tests/**'
@@ -50,8 +48,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      # pyproject 固定腾讯 PyPI 镜像（国内本地开发用），GitHub runner 在海外访问该镜像会超时。
-      # CI 用 UV_DEFAULT_INDEX 覆盖回官方源，lock 中 registry 来源按当前默认索引下载。
+      # pyproject 固定腾讯 PyPI 镜像（供国内开发），海外 runner 访问会超时；
+      # CI 用 UV_DEFAULT_INDEX 覆盖回官方源。
       - name: Sync dependencies
         env:
           UV_DEFAULT_INDEX: https://pypi.org/simple
@@ -72,8 +70,8 @@ jobs:
           uv run ruff check --silent src tests --cache-dir .ruff_cache
           uv run ruff format --check src tests
 
-      # pyrefly 默认单线程（本项目 Makefile 用 -j 0 自动并行），CI 同步加上；
-      # 缓存目录 .pyrefly_cache 已在 .gitignore，首次构建会存中间产物，后续命中即秒级返回。
+      # pyrefly 默认单线程（Makefile 用 -j 0 并行），CI 同步加上；
+      # .pyrefly_cache 已在 .gitignore，命中缓存即秒级返回。
       - name: Cache pyrefly
         uses: actions/cache@v6
         with:
@@ -104,9 +102,8 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      # .npmrc 固定走中科大镜像（国内本地开发用），但 GitHub runner 在海外，
-      # 跨境访问该镜像会极慢甚至挂起导致 pnpm install 卡死。
-      # lockfile 中无 tarball URL 条目，换官方源不会触发 lockfile resolution 校验失败，
+      # .npmrc 固定 npmmirror 镜像（供国内开发），海外 runner 跨境访问会卡死。
+      # lockfile 仅含 integrity、无 tarball URL，换官方源不会触发 resolution 校验失败，
       # 故 CI 用 npm_config_registry 覆盖回官方源。
       - name: Install dependencies
         env:
@@ -158,8 +155,7 @@ jobs:
           UV_DEFAULT_INDEX: https://pypi.org/simple
         run: uv sync --frozen --extra test --python ${{ matrix.python-version }}
 
-      # GitHub hosted runner 默认 ubuntu-latest = 2 核 7GB；
-      # -n auto 在 2 核上最多也是 2，但显式 -n 2 消除自动探测开销，语义明确。
+      # 2 核 runner：显式 -n 2（-n auto 结果相同，显式更明确）。
       - name: Run tests
         run: uv run pytest -m "not slow" --cov=cndb --cov-fail-under=95 --cov-report=term-missing -n 2
 
@@ -167,9 +163,7 @@ jobs:
     name: E2E (Playwright) shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    # 观察期结束：E2E 已收为**门禁**（continue-on-error 曾让 E2E 失败不阻断 pipeline，
-    # 2026-10 观测到一次真实回归——新增用例的助手丢失导致四个 shard 全挂，但 run 仍显示成功）。
-    # 稳定性依据：连续 6 次 CI 中 5 次四个 shard 全绿，唯一一次失败是真实缺陷而非抖动；
+    # E2E 已是硬门禁（曾因 continue-on-error 漏放真实回归）；
     # 抖动由 CI retries=2 与 workers=4 兜底（见 frontend/playwright.config.ts）。
     strategy:
       fail-fast: false
@@ -184,8 +178,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-          # 4 个分片并行：各自独立缓存键，避免同一 key 抢占导致
-          # "Failed to save: Unable to reserve cache ... another job may be creating this cache"
+          # 4 个分片各自独立缓存键，避免同 key 抢占（Failed to reserve cache）
           cache-suffix: e2e-shard-${{ matrix.shard }}
 
       - name: Sync backend deps
@@ -205,7 +198,7 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      # 同上：CI 用官方源覆盖 .npmrc 的中科大镜像，避免海外 runner 跨境访问卡死
+      # 同上：CI 用官方源覆盖 .npmrc 的 npmmirror 镜像，避免海外 runner 跨境卡死
       - name: Install dependencies
         env:
           npm_config_registry: https://registry.npmjs.org/
@@ -227,10 +220,8 @@ jobs:
         if: steps.cache-playwright.outputs.cache-hit != 'true'
         run: cd frontend && npx playwright install --with-deps chromium
 
-      # 注意：参数必须直接跟在脚本名后（`pnpm e2e --shard=...`），不能写成 `pnpm e2e -- --shard=...`。
-      # 后者在 bash 下 pnpm 会把分隔符 `--` 原样传给 playwright（`playwright test -- --shard=...`），
-      # 之后的 `--shard` 与 `--grep-invert` 全被当作位置参数忽略 —— 四个 shard 实际各跑全量 52 条
-      # （含 @perf），分片与排除静默失效（2026-10-17 run 39012828781 由日志 `Running 52 tests` 发现）。
+      # 参数须直接跟在脚本名后（`pnpm e2e --shard=...`）；写成 `-- --shard` 会被 pnpm 原样透传给
+      # playwright，--shard/--grep-invert 被当位置参数忽略，分片与排除静默失效。
       - name: Run E2E (webServer 自动 seed + 起后端 :8000，不含 @perf)
         env:
           CI: "true"

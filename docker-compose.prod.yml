@@ -2,22 +2,22 @@
 # cndb 生产部署编排 — 腾讯云轻量应用服务器 / CVM 单机形态
 #
 # 设计要点：
-#   - 默认单容器（wheel 已含前端静态，FastAPI 直接托管，无需 nginx）；
-#     需要域名 / HTTPS / 统一入口时，用 `--profile proxy` 追加 nginx 反代容器
-#   - 镜像在服务器本地构建（deploy.sh SERVER_BUILD=1，CI 经 SSH 触发），
-#     本文件只引用 .env 里的镜像地址，不做构建
+#   - 默认单容器（wheel 已含前端静态，FastAPI 直接托管，无需 nginx）；需要域名/HTTPS/
+#     统一入口时用 `--profile proxy` 追加 nginx 反代容器
+#   - 镜像在服务器本地构建（deploy.sh SERVER_BUILD=1，CI 经 TAT 下发触发）；本文件只
+#     引用 .env 里的镜像地址，不做构建
 #   - CNDB_DATA_DIR=/data 让库/附件/备份/日志统一落盘，容器重建不丢数据
 #   - restart: unless-stopped 保证开机自启 + 崩溃拉起
 #
 # 首次上线：
-#   cp deploy/.env.prod.example .env   && vim .env   # 填 TCR 地址/域名/密钥
-#   ./deploy/deploy.sh v0.3.0                          # 或等 CI 自动部署
+#   cp deploy/.env.prod.example .env && vim .env   # 填 TCR 地址/域名/密钥
+#   ./deploy/deploy.sh v0.3.0                        # 或等 CI 自动部署
 #
 # 启用 nginx 反代（含实时协作 WebSocket）：
-#   .env 里设 CNDB_ENABLE_PROXY=1 与 CNDB_BIND=127.0.0.1:8000
-#   然后 ./deploy/deploy.sh <version>   # 脚本自动带上 --profile proxy 并做 WS 冒烟验证
+#   .env 里设 CNDB_ENABLE_PROXY=1 与 CNDB_BIND=127.0.0.1:8000，再跑 ./deploy/deploy.sh <version>
+#   （脚本自动带 --profile proxy 并做 WS 冒烟验证）
 #
-# 手动查看日志：
+# 查看日志：
 #   docker compose --env-file .env -f docker-compose.prod.yml logs -f app
 #   docker compose --env-file .env -f docker-compose.prod.yml --profile proxy logs -f nginx
 # ═══════════════════════════════════════════════════════════════════
@@ -29,48 +29,39 @@ services:
     container_name: cndb
     restart: unless-stopped
 
-    # 唯一的数据卷：数据库、用户附件、备份归档、日志全部在内。
-    # 换版本/重建容器不影响此卷 —— 这是数据不丢的根本保证。
+    # 唯一数据卷：数据库/附件/备份/日志全在内，换版本/重建容器不影响此卷。
     volumes:
       - cndb-data:/data
 
     environment:
-      # 数据根目录（见 deploy/Dockerfile.prod 注释：必须整体覆盖，
-      # 仅设 DATABASE_URL 会导致附件仍落在容器内 ~/.cndb，重建即丢）
+      # 数据根目录：必须整体覆盖（仅设 DATABASE_URL 会让附件落在容器内 ~/.cndb，重建即丢）
       - CNDB_DATA_DIR=/data
-      # 默认即 sqlite:////data/data/cndb.db（由 CNDB_DATA_DIR 派生），
-      # 此处显式写出便于后续平滑切换 PostgreSQL：
+      # 默认即 sqlite:////data/data/cndb.db（由 CNDB_DATA_DIR 派生），显式写出便于切 PostgreSQL：
       # 改成 postgresql+psycopg://user:pass@host:5432/cndb 即可，无需改代码
       - CNDATABASE_URL=sqlite:////data/data/cndb.db
 
       # ── 生产必须覆盖的项 ──
-      # JWT 签名密钥：默认值是公开的 dev secret，生产必须改成随机长串
-      # 生成：openssl rand -hex 32
+      # JWT 签名密钥（默认值是公开的 dev secret）：生成 openssl rand -hex 32
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET 未设置，请在 .env 中配置}
       - DEBUG=${DEBUG:-false}
       - AUTH_ENABLED=${AUTH_ENABLED:-true}
-      # 跨域白名单。
-      # 注意必须写成 JSON 数组字符串：Settings 里 CORS_ORIGINS 声明为
-      # list[str]，pydantic-settings 对复杂类型的环境变量一律按 JSON 解析，
-      # 写成 "https://a.com,https://b.com" 会在启动时抛 SettingsError，
-      # 表现为容器启动即崩且日志难以定位。
+      # 跨域白名单。必须写成 JSON 数组字符串：CORS_ORIGINS 声明为 list[str]，
+      # pydantic-settings 对复杂类型一律按 JSON 解析，写成逗号分隔会在启动时抛 SettingsError。
       - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:8000"]}
 
-    # 端口只在宿主机绑定，公网暴露与否由安全组 + 是否挂反代决定。
-    # 若前面有 nginx / CLB，建议改成 "127.0.0.1:8000:8000" 只对内网开放。
+    # 端口只在宿主机绑定；前面有 nginx / CLB 时建议改 "127.0.0.1:8000:8000" 只对内网开放。
     ports:
       - "${CNDB_BIND:-0.0.0.0:8000}:8000"
 
-    # 日志轮转：不配的话 json-file 会无限增长把磁盘写满（线上常见事故）
+    # 日志轮转：不配的话 json-file 会无限增长把磁盘写满
     logging:
       driver: json-file
       options:
         max-size: "20m"
         max-file: "5"
 
-    # 镜像内已有 HEALTHCHECK，这里做间隔兜底并放宽启动期
-    # （首次启动要跑 alembic 迁移 + create_all，给足时间）。
-    # 镜像内无 curl，用 python 标准库探测（与 Dockerfile.prod 保持一致）
+    # 镜像内已有 HEALTHCHECK，这里做间隔兜底并放宽启动期（首次要跑迁移 + create_all）。
+    # 镜像内无 curl，用 python 标准库探测（与 Dockerfile.prod 一致）
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
       interval: 30s
@@ -84,7 +75,7 @@ services:
 
   # ── 反向代理（可选，docker compose --profile proxy 启用）──────────────
   # 提供统一入口 + 域名/HTTPS + **WebSocket 升级**（实时协作必需）。
-  # 不启用该 profile 时行为与从前完全一致（单容器、直接暴露 CNDB_BIND）。
+  # 不启用该 profile 时行为不变（单容器、直接暴露 CNDB_BIND）。
   nginx:
     # 内网拉不到 Docker Hub 时可换成镜像源地址（如 TCR 上的副本）
     image: ${CNDB_NGINX_IMAGE:-nginx:1.27-alpine}
@@ -114,7 +105,7 @@ services:
       - ./certbot-www:/var/www/certbot
 
     ports:
-      # 对外只开放代理端口；应用端口应改为 127.0.0.1:8000:8000（见 .env 注释）
+      # 对外只开代理端口；应用端口应改为 127.0.0.1:8000:8000（见 .env 注释）
       - "${CNDB_HTTP_BIND:-80}:80"
       - "${CNDB_HTTPS_BIND:-443}:443"
 

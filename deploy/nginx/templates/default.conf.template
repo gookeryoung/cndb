@@ -5,12 +5,11 @@
 # 可用变量（在 .env 中配置，见 deploy/.env.prod.example）：
 #   CNDB_SERVER_NAME   server_name，未绑域名时用下划线
 #   CNDB_APP_UPSTREAM  应用地址，默认 cndb:8000（**容器名，不要用服务名 app**）
-#
-# ⚠️ 为什么不用 app:8000：Docker DNS 里服务名是「项目内唯一」，不是全局唯一。
-#    同机其他 compose 项目（如 StockMaster）服务名也叫 app 时，接入同一网络后
-#    app 会解析成多个 IP（round-robin），nginx 有一半概率打到隔壁项目 → 间歇 502。
-#    容器名（container_name: cndb）全局唯一，是这里唯一安全的选择。
 #   CNDB_MAX_BODY_SIZE 上传体积上限，如 512m
+#
+# ⚠️ 不用 app:8000：Docker DNS 里服务名只在单个 compose 项目内唯一。若同机其他
+#    项目也有服务名 app 并接入同一网络，app 会解析成多个 IP，nginx 会间歇打到
+#    隔壁项目 → 502。容器名（container_name: cndb）全局唯一，是这里唯一安全的选择。
 #
 # 注意：官方镜像的 envsubst 只替换**环境里存在的**变量，
 # 因此 nginx 自身的 $host / $uri / $request_time 等不会被误替换。

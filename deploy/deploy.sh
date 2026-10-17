@@ -12,9 +12,8 @@
 #
 # 镜像获取方式（按环境变量自动二选一）：
 #   1. SERVER_BUILD=1（CI 常规路径）：在服务器本地构建镜像。
-#      CI 仅同步 dist/*.whl + requirements.lock.txt + Dockerfile.prod
-#      到 /opt/cndb，本脚本在服务器上 docker build 出目标镜像 ——
-#      镜像不过网，省去 CI 构建、COS 中转、跨境传输整条链路。
+#      CI 仅同步 dist/*.whl + requirements.lock.txt + Dockerfile.prod 到 /opt/cndb，
+#      本脚本在服务器上 docker build 出目标镜像 —— 镜像不过网，省去整条中转链路。
 #      可选环境变量（国内服务器拉 Docker Hub 超时的换源逃生通道）：
 #        BUILD_BASE_IMAGE       覆盖基础镜像，如 docker.m.daocloud.io/library/python:3.12-slim
 #        BUILD_PIP_INDEX_URL    覆盖 pip 源，如 https://mirrors.cloud.tencent.com/pypi/simple
@@ -22,7 +21,7 @@
 #      需 TCR_USERNAME/TCR_PASSWORD（CI 注入或手工 export）。
 #      镜像仍以 TCR 地址命名（与历史版本同名），保证回滚可命中。
 #
-# 由 GitHub Actions 通过 SSH 调用，也可在服务器上手动执行。
+# 由 CI 经 TAT 下发触发，也可在服务器上手动执行。
 # ═══════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
@@ -97,15 +96,11 @@ fi
 # ── 组装目标镜像地址 ───────────────────────────────────────────
 # 优先用 IMAGE_REPO_OVERRIDE（CI 显式传完整仓库前缀），否则从 .env 的 CNDB_IMAGE 推导。
 #
-# 两个历史坑，都曾导致线上拉不到镜像：
-#
-#   1. tag 前缀不一致：CI 打镜像时用 VERSION="${VERSION#v}" 剥掉了 v，
-#      仓库里实际是 0.3.0；而 git tag 是 v0.3.0。旧脚本直接用参数拼 tag，
-#      于是去拉 xxx:v0.3.0 —— 该 tag 不存在，部署必然失败。
-#      现在统一剥掉开头的 v，两种传参都能命中。
-#   2. 无仓库前缀：服务器首次部署前 .env 可能是 cndb:0.3.0（本地构建遗留），
-#      推导出的 BASE_REPO=cndb 会被 Docker 解析成 docker.io/library/cndb。
-#      现在显式校验必须含域名，否则直接报错退出，不让错误地址进入后续步骤。
+# 两处必须的规范化（否则会导致线上拉不到镜像）：
+#   1. 统一剥掉 tag 开头的 v：CI 打镜像时用 VERSION="${VERSION#v}" 剥了 v，
+#      仓库里是 0.3.0 而 git tag 是 v0.3.0，不剥则拼出的 tag 不存在。
+#   2. 校验仓库地址必须含域名（含 "/"）：否则 cndb:0.3.0 会被 Docker 解析成
+#      docker.io/library/cndb，这里直接报错退出，不让错误地址进入后续步骤。
 TARGET_TAG="${TARGET_TAG#v}"
 
 if [[ -n "${IMAGE_REPO_OVERRIDE:-}" ]]; then
@@ -127,10 +122,9 @@ TARGET_IMAGE="${BASE_REPO}:${TARGET_TAG}"
 log "目标镜像: ${TARGET_IMAGE}"
 
 # ── 部署前数据库备份 ───────────────────────────────────────────
-# 必须在线备份而非直接 cp .db 文件：SQLite 写入进行中直接复制可能得到
-# 撕裂的快照。这里用项目自带的 cndb backup（走 SQLite native 备份 API，安全）。
-# 备份写在容器内 /data/backups（即数据卷），天然随卷持久化，
-# 部署/重建容器都不会丢。
+# 用项目自带的 cndb backup（走 SQLite native 备份 API），而非直接 cp .db 文件
+# —— 后者在写入进行中可能得到撕裂的快照。备份写在容器内 /data/backups（即数据卷），
+# 随卷持久化，部署/重建容器都不会丢。
 pre_backup() {
   local stamp ts_file="/data/data/cndb.db"
   stamp="$(date +%Y%m%d-%H%M%S)"
@@ -158,9 +152,8 @@ pre_backup() {
 }
 
 # 原子更新 .env 中的镜像地址。
-# 不能用 sed -i：它会遗留 .env.bak（每次部署覆盖同一个备份文件，
-# 反而丢失了真正的历史版本），且非原子写入中断会损坏配置。
-# 这里读全文 → 替换/追加 → 写临时文件 → mv 覆盖（mv 同分区是原子的）。
+# 不用 sed -i：它会遗留 .env.bak（每次覆盖同一备份文件反而丢掉历史版本），
+# 且非原子写入中断会损坏配置。这里读全文 → 替换/追加 → 写临时文件 → mv 覆盖。
 set_image_in_env() {
   local image="$1"
   local tmp
@@ -177,12 +170,9 @@ set_image_in_env() {
 }
 
 # ── 健康探测 ───────────────────────────────────────────────────
-# 仅靠「容器 running」判断是不够的：uvicorn 可能因迁移失败在启动
-# 循环中反复退出，docker 状态仍短暂显示 running。必须打真实 HTTP 端点。
-#
-# 探测命令用 python 标准库：生产镜像自 Dockerfile.prod 起不再安装
-# curl（省 ~8MB），dc exec 内只能用 python。
-# 输出 /api/health 响应体（JSON）；端口未就绪/非 2xx 时非零退出。
+# 仅靠「容器 running」不够：uvicorn 可能因迁移失败在启动循环中反复退出，
+# docker 状态仍短暂显示 running，必须打真实 HTTP 端点。
+# 探测命令用 python 标准库：生产镜像不装 curl，dc exec 内只能用 python。
 health_body() {
   dc exec -T app python -c "import sys, urllib.request as u; sys.stdout.write(u.urlopen('http://127.0.0.1:8000/api/health', timeout=5).read().decode())"
 }
@@ -228,9 +218,8 @@ rollback() {
   # 关键：回滚的是**镜像版本**，不是容器配置。compose 文件若未变，
   # 仅需把 .env 的镜像地址改回去再 up -d，卷不受影响。
   #
-  # 仓库地址必须取自**运行中的镜像**而非 BASE_REPO：若本次用了
-  # CNDB_IMAGE_OVERRIDE 而它与 .env 里的仓库不同，用 BASE_REPO 回滚会把
-  # .env 改成一个从未成功运行过的地址，故障时反而雪上加霜。
+  # 仓库地址取自**运行中的镜像**而非 BASE_REPO：若本次用了覆盖的仓库地址，
+  # 用 BASE_REPO 回滚会把 .env 改成从未成功运行过的地址，故障时雪上加霜。
   ROLLBACK_REPO="${CURRENT_IMAGE%:*}"
   if [[ -z "$ROLLBACK_REPO" || "$ROLLBACK_REPO" == "$CURRENT_IMAGE" ]]; then
     # CURRENT_IMAGE 没有 tag 段（理论上不该发生），退回 BASE_REPO
@@ -251,14 +240,14 @@ rollback() {
 }
 
 # ── 服务器本地构建（SERVER_BUILD=1）─────────────────────────────
-# CI 经 SSH 触发：用 Dockerfile.prod 在服务器上构建 dist 产物为目标镜像。
+# CI 经 TAT 下发触发：用 Dockerfile.prod 在服务器上构建 dist 产物为目标镜像。
 # 依赖 CI 已同步：dist/cndb-*.whl、dist/requirements.lock.txt、deploy/Dockerfile.prod。
 build_image() {
   [[ -f "deploy/Dockerfile.prod" ]] \
-    || die "缺少 deploy/Dockerfile.prod（CI 的 scp 步骤应已同步到 /opt/cndb/deploy）"
+    || die "缺少 deploy/Dockerfile.prod（CI 的同步步骤应已放到 /opt/cndb/deploy）"
 
-  # 只保留目标版本的 wheel：CI 每次同步的 wheel 文件名带版本号，
-  # 历史版本残留会让 pip install ./*.whl 同时装两个版本互相冲突
+  # 只保留目标版本的 wheel：同步的 wheel 文件名带版本号，历史版本残留会让
+  # pip install ./*.whl 同时装两个版本互相冲突
   find dist -maxdepth 1 -name 'cndb-*.whl' ! -name "cndb-${TARGET_TAG}-*.whl" -delete 2>/dev/null || true
   ls "dist/cndb-${TARGET_TAG}"-*.whl >/dev/null 2>&1 \
     || die "缺少 dist/cndb-${TARGET_TAG}-*.whl。CI 会同步构建产物到 /opt/cndb/dist；手动执行请先按 Dockerfile.prod 头部说明准备 dist/"
@@ -281,9 +270,8 @@ build_image() {
     exit 1
   fi
 
-  # 冒烟检查（与原 CI 的 Verify wheel inside image 等价）：确认 cndb 可导入、
-  # 前端静态已打进 wheel。前端产物缺失这类问题必须在替换线上容器前拦住，
-  # 否则要到线上打开页面才发现白屏。
+  # 冒烟检查：确认 cndb 可导入、前端静态已打进 wheel。前端产物缺失这类问题
+  # 必须在替换线上容器前拦住，否则要到线上打开页面才发现白屏。
   log "冒烟验证镜像..."
   if ! docker run --rm --entrypoint python "$TARGET_IMAGE" -c "
 import cndb
@@ -308,16 +296,14 @@ pre_backup
 #    SERVER_BUILD=1 → 服务器本地构建（CI 常规路径，镜像不过网）；
 #    否则           → TCR pull（手动部署/回滚历史版本，需先 docker login）。
 if [[ "${SERVER_BUILD:-0}" == "1" ]]; then
-  # 旧版脚本（本函数不存在）会忽略 SERVER_BUILD=1 直接走 TCR pull，
-  # 去拉一个 CI 已不再推送的 tag，报 "not found" 并回滚 —— 症状与
-  # 镜像仓库权限/命名问题几乎一样，极易误判。此处显式拦截：
-  # 收到 SERVER_BUILD=1 却找不到 build_image，说明服务器上的脚本没被更新。
+  # 显式拦截：收到 SERVER_BUILD=1 却找不到 build_image，说明服务器上的脚本是
+  # 旧版本（CI 同步未生效），避免被误导成镜像仓库权限/命名问题。
   if ! declare -f build_image >/dev/null 2>&1; then
     die "收到 SERVER_BUILD=1 但当前 deploy.sh 不支持服务器端构建（缺少 build_image）。
-     说明服务器上的脚本是旧版本，CI 的 scp 同步未生效。
-     常见原因：scp 多源路径保留了目录层级，文件被传到 deploy/deploy/deploy.sh，
+     说明服务器上的脚本是旧版本，CI 的文件同步未生效。
+     常见原因：同步路径保留了目录层级，脚本被放到 deploy/deploy/deploy.sh，
      而实际执行路径 /opt/cndb/deploy/deploy.sh 仍是旧文件。
-     处置：修正 workflow 的 scp target（应为 /opt/cndb）后重新部署。"
+     处置：修正同步目标目录（应为 /opt/cndb）后重新部署。"
   fi
   build_image
 else
@@ -331,16 +317,10 @@ else
   fi
 
   log "拉取镜像 ${TARGET_IMAGE}..."
-  # 必须用 docker pull 显式拉目标镜像，不能用 `dc pull app`。
-  #
-  # compose 解析的是 .env 里的 CNDB_IMAGE（= 当前运行版本），而不是本次目标 tag：
-  #   线上跑 latest，要升 0.3.4 → dc pull 拉的是 latest（本地已有，秒回 "app Pulled"）
-  #   → 紧接着校验 0.3.4 必然不存在 → 每次升级都误判成「镜像不存在」并回滚。
-  # 这就是日志里「app Pulled」与「镜像未实际拉取到本地」前后矛盾的原因
-  # —— 两者校验的压根不是同一个 tag。
-  #
-  # 显式 pull 同时保住了「校验通过前不写 .env」的约束：
-  # 拉不到就不动线上配置，服务器重启仍能用旧版本起来。
+  # 必须用 docker pull 显式拉目标 tag，不能用 `dc pull app`：compose 解析的是
+  # .env 里的 CNDB_IMAGE（当前运行版本），而非本次目标 tag，会导致校验的
+  # 根本不是同一个 tag（拉到了 latest 却校验 0.3.4 → 误判镜像不存在并回滚）。
+  # 显式 pull 同时保住「校验通过前不写 .env」的约束：拉不到就不动线上配置。
   if ! docker pull "$TARGET_IMAGE" 2>&1 | tee /tmp/cndb-pull.log; then
     warn "拉取失败。常见原因对照："
     warn "  401 Unauthorized          → 无登录态，检查 TCR_USERNAME/TCR_PASSWORD 是否注入"
@@ -378,10 +358,8 @@ if [[ "$ENABLE_PROXY" == "1" ]]; then
     exit 1
   fi
   # 必须 reload：上一步 app 容器已被 --force-recreate 重建，容器 IP 可能变化。
-  # nginx 的 upstream 里写的是容器名，**静态解析只发生在启动/reload 时**，
-  # 不 reload 就会继续拿旧 IP → 部署完接口 502（实测踩过：日志里
-  # "connect() failed ... upstream: http://172.18.0.x:8000" 指的就是已销毁的旧容器）。
-  # reload 是热加载，不断连接，可安全重复执行。
+  # nginx 的 upstream 里写的是容器名，静态解析只发生在启动/reload 时，
+  # 不 reload 就会继续拿旧 IP → 部署完接口 502。reload 是热加载，可安全重复执行。
   if ! docker exec cndb-nginx nginx -s reload >/dev/null 2>&1; then
     warn "nginx reload 失败，尝试完整重建容器..."
     dc up -d --force-recreate nginx || true
@@ -389,9 +367,8 @@ if [[ "$ENABLE_PROXY" == "1" ]]; then
   fi
 fi
 
-# 确认跑起来的确实是目标镜像。
-# compose pull 偶发返回成功但实际用的是别的镜像（tag 缺失时可能复用旧层），
-# 到健康检查才暴露，排查成本高；这里提前挡住。
+# 确认跑起来的确实是目标镜像：compose pull 偶发返回成功但实际用的是别的镜像，
+# 到健康检查才暴露、排查成本高，这里提前挡住。
 RUNNING_IMAGE="$(docker inspect cndb --format '{{.Config.Image}}' 2>/dev/null || echo "")"
 if [[ "$RUNNING_IMAGE" != "$TARGET_IMAGE" ]]; then
   warn "运行镜像与目标不一致：期望 ${TARGET_IMAGE}，实际 ${RUNNING_IMAGE:-<读取失败>}"
@@ -414,9 +391,8 @@ fi
 if [[ "$ENABLE_PROXY" == "1" ]]; then
   log "验证反向代理与 WebSocket 升级（经容器 nginx）..."
   HTTP_BIND="${CNDB_HTTP_BIND:-80}"
-  # 经代理探测健康端点。**非 2xx 视为失败**——这条曾经只打 warn 就继续，
-  # 结果 502 被当成成功（应用健康但用户打不开站点），隐蔽且致命。
-  # 重试是为了给 nginx reload 后的 worker 切换留窗口（实测 1-2 秒）。
+  # 经代理探测健康端点。**非 2xx 视为失败**（502 曾被当成成功，隐蔽且致命）。
+  # 重试是为了给 nginx reload 后的 worker 切换留窗口。
   PROXY_STATUS=""
   for attempt in 1 2 3 4 5 6; do
     PROXY_STATUS="$(docker exec cndb-nginx wget -q -O /dev/null -S "http://127.0.0.1/api/health" 2>&1 | grep -o 'HTTP/[0-9.]* [0-9]*' | head -1 || true)"

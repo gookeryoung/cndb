@@ -1,8 +1,7 @@
 # prek / pre-commit 配置
 # See https://pre-commit.com for more information
 repos:
-  # 本地钩子：保护关键 .gitkeep 文件（缺失会导致 hatchling force-include
-  # 在 CI 上直接 FileNotFoundError）
+  # 本地钩子：保护关键 .gitkeep（缺失会使 hatchling force-include 在 CI 上 FileNotFoundError）
   - repo: local
     hooks:
       - id: gitkeep-check
@@ -13,13 +12,11 @@ repos:
         always_run: true
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff 版本 - 必须与 pyproject.toml [project.optional-dependencies].lint 的 ruff== 一致
+    # 版本须与 pyproject.toml [project.optional-dependencies].lint 的 ruff== 一致
     rev: v0.16.8
     hooks:
-      # 运行 linter
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
-      # 运行格式化
       - id: ruff-format
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

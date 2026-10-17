@@ -34,7 +34,6 @@ if ! docker inspect cndb --format '{{.State.Running}}' 2>/dev/null | grep -q tru
 fi
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
-# 容器内路径（卷内）：/data/backups 已在卷上，备份产物天然持久化
 IN_CONTAINER="/data/backups/cndb-${STAMP}.tar.gz"
 
 log "开始备份 → ${IN_CONTAINER}"
