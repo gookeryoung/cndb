@@ -1,45 +1,61 @@
 name: Deploy to Tencent Cloud
 
-# 触发：推送 v*.*.* tag 时自动部署到腾讯云服务器（镜像在服务器端构建）
+# 触发：推送 v*.*.* tag 时部署到腾讯云服务器（镜像仍在服务器端构建）
 #
-# 完整链路（CI 不构建镜像、不经 COS 中转）：
+# 完整链路：
 #   tag push → release.yml 的 pypi job 构建前端并发布 wheel 到 PyPI
-#            → 本 workflow 从 PyPI 下载对应版本 wheel（不装 Node/pnpm、不构建前端）
-#            → uv export 导出锁定依赖清单
-#            → scp wheel + 锁定清单 + Dockerfile.prod + 部署脚本到服务器
-#            → SSH 触发 deploy.sh（SERVER_BUILD=1：服务器端 docker build
-#              → 冒烟验证 → 预备份/重建/健康探测/失败回滚）
+#            → 本 workflow 解析该版本的 wheel 地址（不下载到 runner）
+#            → uv export 导出依赖锁定清单
+#            → 把「部署配置」打成载荷：docker-compose.prod.yml + deploy/ + 锁定清单
+#            → TAT 下发一条命令：解包配置 → 服务器自行下载 wheel → deploy.sh
+#              （SERVER_BUILD=1：本地 docker build → 冒烟验证 → 预备份 → 重建 →
+#                健康探测 → 失败自动回滚）→ 复查容器与健康端点
 #
-# 为什么改为服务器端构建：
-#   1. 原 CI 构建链路（CI 构建 → docker save|gzip → COS 全球加速上传 →
-#      预签名 URL → 服务器 COS 内网下载 → docker load）环节多，任一环节
-#      抖动整个部署失败；且 COS 存储/流量持续计费，成本不划算。
-#   2. 服务器端构建镜像不过网：wheel（几 MB～几十 MB）经 scp 一次送达；
-#      依赖层走 Docker 缓存，依赖未变时增量构建只重建薄薄的 wheel 层。
-#   3. 镜像仍以 TCR 地址命名（与历史版本同名），手动回滚 docker pull 可命中。
+# 为什么用 TAT 下发，而不是 SSH 直连
+# ────────────────────────────────────────────────────────────────
+# GitHub 托管 runner 的出口 IP 在美国。此前用 appleboy/ssh-action 直连 22 端口
+# （7 处：3 次 scp + 4 次 ssh，全部以 root 登录），每次部署都会在腾讯云主机安全
+# 留下「异地登录」高危告警，部署越频繁告警越密集。
 #
-# wheel 由 release.yml 发布（wheel 已内嵌前端产物，见 pyproject force-include）。
-# 两个 workflow 同 tag 并行触发，存在 PyPI CDN 同步竞态，下载步骤内置重试。
-# 手动触发（workflow_dispatch）回滚旧版本时 wheel 早已发布，同样适用。
+# 把 runner IP 加白也不行：GitHub 只提供一个会变动的 CIDR 池
+# （api.github.com/meta 的 actions 字段，几十条且随时调整），固定不住；
+# 而告警一旦被习惯性忽略，真正的入侵就没人看了。
+#
+# TAT（自动化助手）是「下发」模型：命令进云端队列，实例上的 agent 主动拉取执行。
+# 全程没有入站连接，因此不产生登录审计，22 端口可以直接对公网关闭。
+#
+# 文件怎么到服务器
+# ────────────────────────────────────────────────────────────────
+# 原 scp 三连改成两条腿：
+#   · 配置类小文件（compose / 部署脚本 / Dockerfile / nginx / 锁定清单，约 24 KB）
+#     打成 tar.gz + base64 内联进 TAT 命令，一次下发即落地 —— 不需要对象存储中转。
+#   · wheel 是 MB 级，塞进去会顶爆 TAT 的 64 KiB 上限，改由服务器自己下载：
+#     优先腾讯云内网 PyPI 镜像（免跨境、不占 4 Mbps 公网带宽），失败回退官方源，
+#     下载后校验 sha256（CI 从 PyPI 元数据取）。
+# scripts/build_tat_command.py 会预检 Content 大小，超限直接失败并提示怎么拆。
 #
 # 服务器侧失败会自动回滚到上一个版本，不会把线上打挂。
 #
-# 必需的 Repository Secrets（Settings → Secrets and variables → Actions）：
-#   TCR_REGISTRY    TCR 纯域名，**不含命名空间**，如 ccr.ccs.tencentyun.com
-#                   仅用于镜像命名前缀（与历史 TCR 镜像同名，保证手动回滚
-#                   docker pull 可命中旧版本），CI 不再向 TCR 推镜像
-#   TCR_GROUP       命名空间，如 pydev。完整镜像地址 =
-#                   <TCR_REGISTRY>/<TCR_GROUP>/cndb:<version>
-#   TCR_USERNAME    服务账号（仅手动回滚走 TCR pull 时用），形如 tcr@cndb-deploy
-#   TCR_PASSWORD    服务账号密码
-#   SSH_HOST        服务器公网 IP
-#   SSH_PORT        SSH 端口，默认 22
-#   SSH_USERNAME    登录用户，默认 root
-#   SSH_PRIVATE_KEY SSH 私钥（推荐，免去密码明文存储）
+# 必需的 Repository Secrets（Settings → Secrets and variables → Actions）
+# ────────────────────────────────────────────────────────────────
+#   TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY
+#       子账号 API 密钥。**不要用主账号密钥**。最小权限策略：
+#         { "version": "2.0", "statement": [{
+#             "effect": "allow", "action": ["tat:RunCommand", "tat:DescribeInvocationTasks"],
+#             "resource": ["*"] }] }
+#   CNDB_INSTANCE_ID    Lighthouse 实例 ID，如 lhins-8k8ahx8m
+#   CNDB_REGION         实例所在地域，如 ap-shanghai
+#   TCR_REGISTRY        TCR 纯域名（不含命名空间），仅用于镜像命名前缀
+#   TCR_GROUP           命名空间，如 pydev。镜像地址 = <REGISTRY>/<GROUP>/cndb:<version>
+#   TCR_USERNAME / TCR_PASSWORD
+#                       仅手动回滚（无 SERVER_BUILD 走 docker pull）时使用
 #
-# 可选 Secrets（国内服务器拉 Docker Hub / PyPI 超时的换源逃生通道，留空走默认官方源）：
+# 可选 Secrets（国内服务器拉 Docker Hub / PyPI 超时的换源逃生通道）：
 #   BUILD_BASE_IMAGE      如 docker.m.daocloud.io/library/python:3.12-slim
 #   BUILD_PIP_INDEX_URL   如 https://mirrors.cloud.tencent.com/pypi/simple
+#
+# 已废弃、可删除：SSH_HOST / SSH_PORT / SSH_USERNAME / SSH_PRIVATE_KEY
+#   （改 TAT 后不再有任何 SSH 登录；留着只会让后来人以为还在用）
 
 on:
   push:
@@ -61,16 +77,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ===== 同步构建产物并触发服务器端构建部署 =====
+  # ===== 打包部署配置并通过 TAT 触发服务器端构建部署 =====
   deploy:
-    name: Sync Artifacts & Deploy (server-side build)
+    name: Deploy via TAT (server-side build)
     runs-on: ubuntu-24.04
-    # 60 分钟不是「预估耗时」而是「排障上限」：CI 侧只有 wheel 下载与 scp
-    # （几分钟）；大头在服务器端 docker build —— 首次无缓存约 15-30 分钟
-    # （拉基础镜像 + 装依赖），之后走 Docker 层缓存通常 5 分钟内。
-    # 长时间无进展 → 登服务器看 docker build 日志定位（多半是基础镜像拉取超时，
-    # 配置 BUILD_BASE_IMAGE 换源即可）。
-    timeout-minutes: 60
+    # 70 分钟是排障上限而非预估耗时：首次无缓存构建 15-30 分钟，
+    # 之后走 Docker 层缓存通常 5 分钟内。
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v7
 
@@ -93,40 +106,68 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "构建版本: ${VERSION}"
 
-      # wheel 由 release.yml 的 pypi job 发布（内嵌前端产物，见 pyproject
-      # force-include），本 workflow 不再装 Node/pnpm、不再本地构建。
-      # 两个 workflow 同 tag 并行触发，PyPI CDN 可能有几秒到几分钟的同步延迟，
-      # 用重试循环等待；--no-deps 只拉业务 wheel（sdist 为 .tar.gz，Dockerfile
-      # 的 COPY dist/*.whl 不会命中），依赖由镜像内 pip install 安装。
-      - name: Download wheel from PyPI
+      # 只解析 wheel 的地址与校验和，不下载 —— 真正的下载在服务器上做
+      # （服务器优先走腾讯云内网镜像）。两个 workflow 同 tag 并行触发，
+      # PyPI 元数据可能有几秒到几分钟的同步延迟，用重试等待。
+      - name: Resolve wheel source on PyPI
+        id: wheel
         env:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          mkdir -p dist
-          ok=""
-          for i in 1 2 3 4 5 6; do
-            if python3 -m pip download "cndb==${VERSION}" --no-deps -d dist/; then
-              ok="yes"
-              break
-            fi
-            echo "第 ${i}/6 次未命中 cndb==${VERSION}，PyPI CDN 可能尚未同步，30s 后重试..."
-            sleep 30
-          done
-          if [ -z "$ok" ]; then
-            echo "::error::PyPI 上未找到 cndb==${VERSION}（等待约 3 分钟仍未同步）。"
-            echo "::error::请确认 release.yml 的 pypi job 已成功发布该版本。"
-            exit 1
-          fi
-          echo "--- dist 内容 ---"
-          ls -la dist/
+          python3 - <<'PY'
+          import json, os, sys, time, urllib.error, urllib.request
+
+          pkg = "cndb"
+          version = os.environ["VERSION"]
+          endpoint = f"https://pypi.org/pypi/{pkg}/{version}/json"
+
+          data = None
+          last_err = "未知"
+          for attempt in range(1, 7):
+              try:
+                  with urllib.request.urlopen(endpoint, timeout=30) as resp:
+                      data = json.load(resp)
+                  break
+              except urllib.error.HTTPError as exc:
+                  last_err = f"HTTP {exc.code}"
+              except Exception as exc:  # noqa: BLE001 - 网络抖动一律重试
+                  last_err = repr(exc)
+              print(f"第 {attempt}/6 次未取到 {pkg}=={version}（{last_err}），30s 后重试…")
+              time.sleep(30)
+
+          if data is None:
+              sys.exit(f"PyPI 元数据取不到 {pkg}=={version}：{last_err}。请确认 release.yml 的 pypi job 成功。")
+
+          wheels = [u for u in data.get("urls", []) if u["filename"].endswith(".whl")]
+          if not wheels:
+              sys.exit(f"{pkg}=={version} 没有 wheel 产物（sdist 无法用于镜像构建）")
+
+          whl = wheels[0]
+          url = whl["url"]
+          # files.pythonhosted.org/packages/xx/yy/... 的路径在腾讯云镜像上保持一致
+          suffix = ""
+          if "/packages/" in url:
+              suffix = url.split("/packages/", 1)[1].split("#", 1)[0].split("?", 1)[0]
+          mirror = f"https://mirrors.cloud.tencent.com/pypi/packages/{suffix}" if suffix else ""
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"url={url}\n")
+              fh.write(f"filename={whl['filename']}\n")
+              fh.write(f"sha256={whl['digests']['sha256']}\n")
+              fh.write(f"mirror={mirror}\n")
+
+          print(f"wheel: {whl['filename']}")
+          print(f"官方源: {url}")
+          print(f"镜像源: {mirror or '<无，将只用官方源>'}")
+          PY
 
       # 从 uv.lock 导出锁定依赖清单，供 Dockerfile.prod 的依赖缓存层使用：
       # 依赖版本未变时，服务器端增量构建只覆盖薄薄的 wheel 层。
-      # uvx 临时环境只装 uv 本体（不进镜像、不装项目依赖），数秒完成。
-      # 本地手动构建等价命令：uv export --frozen --no-hashes --no-dev
-      #   --no-emit-project -o dist/requirements.lock.txt
+      # 本地等价命令：uv export --frozen --no-hashes --no-dev --no-emit-project
+      #   -o dist/requirements.lock.txt
       - name: Export locked requirements
         run: |
+          mkdir -p dist
           uvx uv export --frozen --no-hashes --no-dev --no-emit-project \
             -o dist/requirements.lock.txt
           echo "--- requirements.lock.txt 概要 ---"
@@ -136,198 +177,51 @@ jobs:
             exit 1
           }
 
-      # 同步部署编排文件到服务器。
-      # 只传 compose + 脚本 + 构建产物，不传代码：服务器端 docker build 只需要
-      # dist 产物与 Dockerfile；唯一必须落地的是部署配置
-      # （.env 保留在服务器本地，不被覆盖）。
-      #
-      # ⚠️ target 必须是仓库根 /opt/cndb，不能写 /opt/cndb/deploy 或 /opt/cndb/dist。
-      #
-      # scp-action 对**多源**路径走 rsync --relative，会保留 source 里的目录层级。
-      # 于是 source="deploy/deploy.sh" + target="/opt/cndb/deploy" 的实际落点是
-      #   /opt/cndb/deploy/deploy/deploy.sh   ← 多了一级，脚本从未被真正更新
-      # 而 deploy.sh 实际执行路径是 /opt/cndb/deploy/deploy.sh（旧版一直在原地不动）。
-      # 后果极其隐蔽：scp 步骤显示成功，旧脚本却按 TCR pull 路径运行，
-      # 去拉一个 CI 已不再推送的 tag，报 "not found" 并回滚。
-      # （2026-10-12 v0.3.8 部署失败即此因，服务器上 deploy/deploy/ 与 dist/dist/ 为证。）
-      #
-      # 正确写法：source 保留仓库相对路径（含目录名），target 一律指向 /opt/cndb，
-      # 由 source 的层级决定最终落点。单源文件（docker-compose.prod.yml 无目录前缀）
-      # 同理落在 /opt/cndb 根下，故此前一直是对的 —— 只有带目录前缀的多源会错位。
-      - name: Sync compose file
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          cache-suffix: deploy
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          username: ${{ secrets.SSH_USERNAME || 'root' }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "docker-compose.prod.yml"
-          target: /opt/cndb
-
-      # bootstrap-server.sh 一并同步 —— 首次初始化靠它，漏了就得手工上传脚本。
-      # Dockerfile.prod 也在此同步：服务器端 docker build 的构建文件。
-      # source 用【逗号分隔】，且路径相对仓库根目录（该 action 的多行 YAML
-      # 块写法不被支持）；传 *.sh 而非 *，避免把 .env.prod.example 等
-      # 模板也覆盖到服务器上。target 见上方说明：固定 /opt/cndb。
-      - name: Sync deploy scripts & Dockerfile
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          username: ${{ secrets.SSH_USERNAME || 'root' }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # deploy/nginx 必须一并同步：反向代理的模板/片段/可选扩展都在里面，
-          # 漏传会导致 --profile proxy 起不来（容器挂载到空目录）。
-          source: "deploy/deploy.sh,deploy/backup.sh,deploy/bootstrap-server.sh,deploy/Dockerfile.prod,deploy/nginx"
-          target: /opt/cndb
-
-      # 构建产物落到 /opt/cndb/dist：deploy.sh 在 SERVER_BUILD=1 下
-      # 以 /opt/cndb 为上下文执行 docker build（COPY dist/... 命中此目录）
-      - name: Sync build artifacts
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          username: ${{ secrets.SSH_USERNAME || 'root' }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "dist/*.whl,dist/requirements.lock.txt"
-          target: /opt/cndb
-
-      # ── 同步落点校验（关键防线）────────────────────────────────
-      # 上一版事故的教训：scp 步骤全绿，但文件落在 deploy/deploy/、dist/dist/，
-      # deploy.sh 实际执行路径仍是旧版，部署用旧逻辑跑完整流程才在拉镜像时失败。
-      # scp 本身**不会**因为落点错误而失败，所以必须在部署前显式断言落点。
-      # 这里校验三件事：文件在不在、是不是本次要部署的 wheel、
-      # deploy.sh 是否具备 SERVER_BUILD 能力（缺失即说明同步的是旧版）。
-      - name: Verify sync landed at expected paths
-        uses: appleboy/ssh-action@v1.2.5
+      # 把部署配置打成载荷并拼出下发命令。
+      # 载荷只含配置，不含 wheel —— 后者由服务器自己下载，见 workflow 头部说明。
+      # 这里也顺手替代了旧的「同步落点校验」：解包路径由 tar 决定，
+      # 不再有 scp 多源把文件落到 deploy/deploy/ 的隐患（v0.3.8 事故根因）。
+      - name: Build TAT command
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          username: ${{ secrets.SSH_USERNAME || 'root' }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: 'VERSION'
-          script: |
-            set -e
-            cd /opt/cndb
-
-            # 1) 文件必须落在「无嵌套目录」的真实执行路径上
-            for f in docker-compose.prod.yml deploy/deploy.sh deploy/Dockerfile.prod \
-                     dist/requirements.lock.txt; do
-              if [ ! -f "$f" ]; then
-                echo "::error::同步落点错误：$f 不存在。"
-                echo "::error::scp 多源会保留 source 的目录层级，target 必须为 /opt/cndb。"
-                echo "::error::请检查是否误将文件传到了 deploy/deploy/ 或 dist/dist/。"
-                exit 1
-              fi
-            done
-
-            # 2) wheel 必须存在且版本与本次部署一致（dist 目录可能有历史残留）
-            ls dist/cndb-"${VERSION#v}"-*.whl >/dev/null 2>&1 || {
-              echo "::error::dist/ 下没有 cndb-${VERSION#v}-*.whl，无法进行服务器端构建。"
-              exit 1
-            }
-
-            # 3) deploy.sh 必须是支持 SERVER_BUILD 的新版本。
-            #    旧版脚本会静默走 TCR pull 路径，去拉 CI 已不再推送的 tag，
-            #    表现为 "not found" + 自动回滚 —— 根因在同步，不在镜像仓库。
-            if ! grep -q 'SERVER_BUILD' deploy/deploy.sh; then
-              echo "::error::deploy/deploy.sh 是旧版本（不支持 SERVER_BUILD），同步未生效。"
-              exit 1
-            fi
-
-            echo "同步校验通过："
-            ls -la deploy/deploy.sh deploy/Dockerfile.prod dist/
-
-      # 首次部署的引导：建目录 / 放 .env 模板。已初始化过的服务器会跳过
-      - name: Bootstrap server layout
-        uses: appleboy/ssh-action@v1.2.5
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          username: ${{ secrets.SSH_USERNAME || 'root' }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -e
-            mkdir -p /opt/cndb/deploy /opt/cndb/backups
-            chmod +x /opt/cndb/deploy/*.sh 2>/dev/null || true
-
-            # .env 只在缺失时创建，绝不覆盖已有配置
-            # （覆盖会丢掉 JWT_SECRET 与域名配置，是最危险的操作）
-            if [ ! -f /opt/cndb/.env ]; then
-              echo "::error::/opt/cndb/.env 不存在。首次部署请在服务器上执行："
-              echo "::error::  cd /opt/cndb && bash deploy/bootstrap-server.sh"
-              echo "::error::该脚本会自动建目录、生成 .env 与随机 JWT_SECRET。"
-              exit 1
-            fi
-
-            # 校验 JWT_SECRET 不是模板占位值 —— 带着占位符上线等于无认证
-            if grep -q 'CHANGE_ME' /opt/cndb/.env; then
-              echo "::error::JWT_SECRET 仍是占位值。生成: openssl rand -hex 32"
-              exit 1
-            fi
-
-            echo "服务器布局就绪"
-
-      # 服务器端构建 + 部署一条龙（deploy.sh 内置：构建 → 冒烟验证 →
-      # 预备份 → 重建 → 健康探测 → 失败自动回滚）。
-      # command_timeout 必须显式放大：ssh-action 默认 10m，首次构建
-      # （拉基础镜像 + 装依赖）会超；超时表现为 SSH 步骤被杀，容器未替换。
-      - name: Build image on server & deploy
-        uses: appleboy/ssh-action@v1.2.5
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-          # 显式传完整仓库前缀（不含 tag），deploy.sh 无需从 .env 反推。
+          # 完整仓库前缀（不含 tag）：deploy.sh 不再从 .env 反推，
           # 反推在「.env 尚未指向仓库」的首次部署场景会拼出
           # docker.io/library/cndb 这类错误地址，实测导致过 403 Forbidden。
           IMAGE_REPO: ${{ secrets.TCR_REGISTRY }}/${{ secrets.TCR_GROUP }}/cndb
-          # 服务器端构建开关：deploy.sh 据此走本地 docker build 而非 TCR pull
-          SERVER_BUILD: "1"
-          # 换源逃生通道（可选 Secrets，留空则走 Dockerfile 默认官方源）
+          WHEEL_URL: ${{ steps.wheel.outputs.url }}
+          WHEEL_MIRROR_URL: ${{ steps.wheel.outputs.mirror }}
+          WHEEL_NAME: ${{ steps.wheel.outputs.filename }}
+          WHEEL_SHA256: ${{ steps.wheel.outputs.sha256 }}
           BUILD_BASE_IMAGE: ${{ secrets.BUILD_BASE_IMAGE }}
           BUILD_PIP_INDEX_URL: ${{ secrets.BUILD_PIP_INDEX_URL }}
-          # TCR 凭证仅手动回滚（无 SERVER_BUILD 走 docker pull）时使用
-          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
-          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          username: ${{ secrets.SSH_USERNAME || 'root' }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: 'VERSION,IMAGE_REPO,SERVER_BUILD,BUILD_BASE_IMAGE,BUILD_PIP_INDEX_URL,TCR_USERNAME,TCR_PASSWORD'
-          command_timeout: 50m
-          script: |
-            cd /opt/cndb
-            # 凭证透传给 deploy.sh（TCR 回退登录用，不落盘）
-            # VERSION 已由 workflow 剥掉 v 前缀（0.3.0），deploy.sh 会再剥一次，
-            # 传 v0.3.0 或 0.3.0 都能命中实际镜像 tag。
-            IMAGE_REPO_OVERRIDE="${IMAGE_REPO}" ./deploy/deploy.sh "${VERSION}"
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/cndb-deploy-config.tgz \
+            docker-compose.prod.yml deploy dist/requirements.lock.txt
+          ls -la /tmp/cndb-deploy-config.tgz
+          python3 scripts/build_tat_command.py
 
-      - name: Verify deployment
-        uses: appleboy/ssh-action@v1.2.5
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          username: ${{ secrets.SSH_USERNAME || 'root' }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # 部署脚本已做健康探测；这里做二次确认，确保外部视角也通
-          script: |
-            set -e
-            echo "--- 容器状态 ---"
-            docker ps --filter name=cndb --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
-            echo "--- 健康端点 ---"
-            curl -fsS http://127.0.0.1:8000/api/health
-            echo ""
-            echo "--- 数据卷 ---"
-            docker volume inspect ${CNDB_VOLUME:-cndb-data} --format '{{.Name}} {{.Mountpoint}}'
+      # 下发并等待执行结束。deploy.sh 的日志会随命令输出回传，
+      # 失败时这里能直接看到是哪一步挂的（回滚信息也在里面）。
+      - name: Deploy via TAT
+        env:
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+        run: |
+          python3 scripts/deploy_via_tat.py \
+            --region "${{ secrets.CNDB_REGION }}" \
+            --instance-id "${{ secrets.CNDB_INSTANCE_ID }}" \
+            --command-file /tmp/cndb-deploy-cmd.sh \
+            --timeout 3600 \
+            --max-wait 3300 \
+            --poll-interval 15
 
       - name: Notify failure
         if: failure()
         run: |
-          echo "::error::部署失败。若已自动回滚，服务仍运行在上一版本；"
-          echo "::error::请登录服务器查看: docker logs --tail 100 cndb"
+          echo "::error::部署失败。若 deploy.sh 已自动回滚，服务仍运行在上一版本。"
+          echo "::error::TAT 回传的输出有长度上限，完整日志需上机查看："
+          echo "::error::  docker logs --tail 100 cndb"
           echo "::error::若卡在服务器端 docker build，多为基础镜像拉取超时："
           echo "::error::配置 Secret BUILD_BASE_IMAGE 换源（如 docker.m.daocloud.io/library/python:3.12-slim）后重跑。"
+          echo "::error::若报『命令内容超过 64 KiB』，说明配置载荷过大，见 scripts/build_tat_command.py 的提示。"

@@ -1,13 +1,18 @@
 # 腾讯云生产部署指南
 
-面向**轻量应用服务器 / CVM 单机**形态：GitHub Actions 同步构建产物 → SSH 触发服务器端构建镜像并自动部署，失败自动回滚。
+面向**轻量应用服务器 / CVM 单机**形态：GitHub Actions 把部署配置与 wheel 地址经 TAT 下发 → 服务器端构建镜像并自动部署，失败自动回滚。
 
-> **为什么镜像改为服务器端构建**：原链路（CI 构建 → `docker save | gzip` →
+> **为什么镜像在服务器端构建**：原链路（CI 构建 → `docker save | gzip` →
 > 上传 COS 全球加速 → 预签名 URL → 服务器 COS 内网下载 → `docker load`）
-> 环节多、任一环节抖动即部署失败，且 COS 存储/流量持续计费。现改为 CI 只把
-> wheel + 锁定依赖清单 + Dockerfile 经 scp 送达服务器，`deploy.sh` 在服务器上
+> 环节多、任一环节抖动即部署失败，且 COS 存储/流量持续计费。现改为配置文件
+> 内联进 TAT 命令、wheel 由服务器自己从 PyPI 取，`deploy.sh` 在服务器上
 > `docker build` —— 镜像不过网，构建完直接部署。TCR 退为回滚备用源
 > （历史版本仍可 pull）。
+>
+> **为什么不走 SSH**：GitHub 托管 runner 的出口 IP 在美国，用 SSH 直连
+> 22 端口会让腾讯云主机安全持续报「异地登录 root」高危告警；把 runner IP
+> 加白也不可行（GitHub 的 CIDR 池是变动的）。改用 TAT（自动化助手）下发后
+> 全程没有入站连接，不产生登录审计，22 端口可以对公网关掉。详见第三节。
 
 ---
 
@@ -22,11 +27,15 @@ GitHub Actions (.github/workflows/release.yml)
       │  ② uv build + publish → dist/cndb-0.3.0-py3-none-any.whl 发布 PyPI
       ▼
 GitHub Actions (.github/workflows/deploy-tencent.yml)
-      │  ③ pip download       从 PyPI 拉对应版本 wheel（重试等待 CDN 同步）
+      │  ③ 解析 wheel 地址    只取 URL 与 sha256，不下载（重试等待 PyPI 元数据同步）
       │  ④ uv export          产出 dist/requirements.lock.txt（锁定依赖）
-      │  ⑤ scp                wheel + 锁定清单 + Dockerfile.prod + 部署脚本 → 服务器
+      │  ⑤ 打包载荷           compose + deploy/ + 锁定清单 → tar.gz → base64
+      ▼
+腾讯云 TAT（自动化助手）
+      │  ⑥ RunCommand 下发    命令进云端队列，实例 agent 主动拉取执行（无入站连接）
       ▼
 腾讯云服务器 /opt/cndb
+      │  ⑦ 解包配置 → curl 下载 wheel（优先内网 PyPI 镜像）→ sha256 校验
       │  deploy.sh (SERVER_BUILD=1):
       │    docker build 服务器本地构建镜像（镜像不过网）
       │    → 冒烟验证（cndb 可导入 + 前端 assets 非空）
@@ -42,6 +51,15 @@ GitHub Actions (.github/workflows/deploy-tencent.yml)
 ```
 
 **数据持久化**：唯一数据卷 `cndb-data` 挂在 `/data`，数据库、用户附件、备份归档全在里面。换版本只换镜像，卷不动。
+
+**TAT 的两个硬限制**（`scripts/build_tat_command.py` 已做预检）：
+
+| 限制 | 值 | 现在的做法 |
+|---|---|---|
+| 单条命令 Content | 64 KiB（base64 后） | 配置载荷约 24 KB → Content 约 45 KB，余量 20 KB；超限直接失败并提示拆命令 |
+| 单个任务超时 | 最长 86400s | CI 传 3600s，本地最多等 3300s（job 上限 70 分钟） |
+
+**服务器需要具备**：`docker` + `curl`（下载 wheel 用）。命令开头会显式检查 `curl`，缺失直接报错退出。
 
 ---
 
@@ -119,9 +137,12 @@ cd /opt/cndb
 
 ```bash
 cd /opt/cndb
-# deploy/bootstrap-server.sh 由 CI 的 scp 步骤自动同步过来，首次需手工传一次
+# 全新机器首次初始化：此时 /opt/cndb 下还没有脚本，
+# 先把仓库里的 deploy/ 传上去（scp 一次即可，或用控制台「自动化助手」发送命令落盘）
 bash deploy/bootstrap-server.sh --with-cron   # --with-cron 顺带装每日定时备份
 ```
+
+> 之后每次 CI 部署都会把 `deploy/` 随载荷重新落一遍，不需要再手工同步。
 
 脚本会：建目录 → 生成 `.env`（含随机 `JWT_SECRET`，不回显明文）→ 检查端口/磁盘 → 可选装 cron。
 
@@ -281,6 +302,44 @@ docker run --rm --network cndb_default \
 > 📌 `deploy/nginx/extra/ssl.conf` 与 `certs/` 属于**服务器本地文件**：CI 只同步
 > `deploy/nginx/templates`、`snippets` 和 `extra/ssl.conf.example`，不会覆盖你生成的
 > `ssl.conf`，也不会动 `certs/`。换服务器时需手工重做本节两步。
+>
+> 同理 **`deploy/nginx/extra/*.conf` 里任何自建片段都是服务器本地文件**（CI 只覆盖它自己带的那几个文件名），
+> 换服务器时需一并手工补齐。
+
+#### 4.1.3 同机并存其他应用（以 StockMaster 为例）
+
+本机 80/443 被 cndb 的 nginx 容器独占，同机其他服务要对外提供 HTTPS 只能**借道**这个 nginx：
+
+1. 被借道的服务**不要**把端口映射到 `0.0.0.0`。改为只绑回环，并接入 cndb 的网络：
+
+   ```yaml
+   # 其他应用的 compose
+   services:
+     app:
+       ports: ["127.0.0.1:8770:8770"]   # 只绑回环，公网不可达
+       networks: [default, cndb_net]
+   networks:
+     cndb_net:
+       external: true
+       name: cndb_default                # cndb 的 compose 项目网络
+   ```
+
+2. 在 `deploy/nginx/extra/` 下新增一个**只含 server 块**的片段，上游写**容器名**，
+   并用 `resolver` + 变量形式回源（这样对端容器没起来时 nginx 仍能启动，不会连带 cndb 一起挂）：
+
+   ```nginx
+   location / {
+       resolver 127.0.0.11 valid=10s ipv6=off;
+       set $backend stockmaster:8770;
+       proxy_pass http://$backend;
+   }
+   ```
+
+3. 防火墙**不要**放行该应用端口；对外只留 `80`/`443`。
+
+> 早期做法是把应用端口发布到 `0.0.0.0`、再从容器经 `172.18.0.1`（docker 网桥网关）回连宿主。
+> 那样端口一直挂在公网上（靠防火墙兜底），且网段一变就断。现已统一改为「只绑回环 + 容器名回源」。
+
 
 > **`CNDB_SERVER_NAME` 该填什么**：`ssl.conf` 的 `80` 跳转块里也写了 `server_name <域名>`，
 > 而 `templates/default.conf.template` 的 `80` server 用的是 `CNDB_SERVER_NAME`。
@@ -333,17 +392,20 @@ certbot renew --dry-run
 
 | Secret            | 值                                         |
 | ----------------- | ----------------------------------------- |
+| `TENCENTCLOUD_SECRET_ID` | 子账号 API 密钥 ID（**不要用主账号密钥**，权限见下） |
+| `TENCENTCLOUD_SECRET_KEY` | 子账号 API 密钥 Key |
+| `CNDB_INSTANCE_ID` | Lighthouse 实例 ID，如 `lhins-8k8ahx8m`（控制台实例详情可见） |
+| `CNDB_REGION`     | 实例所在地域，如 `ap-shanghai`（**必须与实例实际地域一致**，否则 RunCommand 报实例不存在） |
 | `TCR_REGISTRY`    | `ccr.ccs.tencentyun.com`（**纯域名，不含命名空间**；仅作镜像命名与手动回滚） |
 | `TCR_GROUP`       | `pydev`（命名空间，本项目实际使用）              |
 | `TCR_USERNAME`    | `tcr@deploy`（注意 `@`；仅手动回滚走 TCR pull 时需要） |
 | `TCR_PASSWORD`    | 服务账号密码                                  |
-| `SSH_HOST`        | 服务器公网 IP                                  |
-| `SSH_PORT`        | `22`（若改过）                                 |
-| `SSH_USERNAME`    | `root`                                    |
-| `SSH_PRIVATE_KEY` | SSH 私钥全文（推荐，免明文密码）                   |
 | `SERVER_URL`      | 访问地址，用于部署后跳转                          |
 | `BUILD_BASE_IMAGE` | 可选。基础镜像换源，如 `docker.m.daocloud.io/library/python:3.12-slim`（服务器拉 Docker Hub 超时时配） |
 | `BUILD_PIP_INDEX_URL` | 可选。镜像内 pip 换源，如 `https://mirrors.cloud.tencent.com/pypi/simple` |
+
+> **`SSH_HOST` / `SSH_PORT` / `SSH_USERNAME` / `SSH_PRIVATE_KEY` 已不再使用**，可以删掉。
+> 改 TAT 下发后流水线没有任何 SSH 登录，服务器也不需要为部署保留公网 22 端口。
 
 > 镜像部署已不再需要 `COS_*` 系列 Secrets（原 CI→COS→服务器链路已移除）。
 > 数据备份上传 COS 的密钥只填服务器 `.env`（`backup.sh` 使用）。
@@ -352,19 +414,33 @@ certbot renew --dry-run
 > 命名空间混进 registry 会导致拼出的镜像名不合法。完整镜像地址由流水线拼成
 > `<TCR_REGISTRY>/<TCR_GROUP>/cndb:<version>`，与 TCR 历史版本同名。
 
-生成专用部署密钥（比复用个人密钥安全）：
+**子账号最小权限**（访问管理 → 用户 → 新建子用户 → 编程访问 → 自定义策略）：
 
-```bash
-ssh-keygen -t ed25519 -C "cndb-deploy" -f ~/.ssh/cndb_deploy -N ""
-cat ~/.ssh/cndb_deploy          # 贴到 SSH_PRIVATE_KEY
-cat ~/.ssh/cndb_deploy.pub      # 追加到服务器 ~/.ssh/authorized_keys
+```json
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": ["tat:RunCommand", "tat:DescribeInvocationTasks"],
+      "resource": ["*"]
+    }
+  ]
+}
 ```
 
-首次手动部署一次：
+只给这两条：`RunCommand` 下发命令、`DescribeInvocationTasks` 轮询结果。
+不要给它 CVM/Lighthouse 的启停或删改权限 —— 部署只需要"在既有实例上跑一条命令"。
+
+首次手动部署一次（在服务器上执行，不经过 CI）：
 
 ```bash
-cd /opt/cndb && ./deploy/deploy.sh v0.3.0
+cd /opt/cndb && ./deploy/deploy.sh 0.3.0
 ```
+
+**怎么确认自动化助手在线**：控制台 → 自动化助手 → 执行命令 → 选择实例，
+能正常选到该实例即可（未装 agent 或 agent 掉线的实例会显示为不可用）。
+若不可用，在实例上安装 agent 后重试，或改用控制台「发送命令」验证一次。
 
 ---
 
@@ -377,10 +453,11 @@ cd /opt/cndb && ./deploy/deploy.sh v0.3.0
 git tag v0.3.1 && git push origin v0.3.1
 ```
 
-推 tag 即触发：CI 同步产物 → 服务器构建镜像 → 自动部署。首次约 15-30 分钟
-（拉基础镜像 + 装依赖，无缓存），之后走 Docker 层缓存通常 5-10 分钟。
+推 tag 即触发：CI 打包配置载荷 → TAT 下发 → 服务器拉 wheel 并构建镜像 → 自动部署。
+首次约 15-30 分钟（拉基础镜像 + 装依赖，无缓存），之后走 Docker 层缓存通常 5-10 分钟。
 
-GitHub Actions 页面可看实时进度；失败会自动回滚并在日志中标明原因。
+GitHub Actions 页面可看实时进度（TAT 会把 `deploy.sh` 的日志回传到 job 日志里）；
+失败会自动回滚并在日志中标明原因。
 
 **手动重跑**（不改代码重新部署）：
 
@@ -515,6 +592,17 @@ ss -lntp | grep -E ':(80|443) '           # 端口是否被别的进程占着
 | `certbot renew --dry-run` 失败 | webroot 没指到 `/opt/cndb/certbot-www`，或 80 端口未对 Let's Encrypt 开放（见 4.1.2） |
 | 上了 HTTPS 后 HTTP 不再跳转 | `CNDB_SERVER_NAME` 填了域名，与 `ssl.conf` 的 80 跳转块撞名。改成 `_`（见 4.1.2 的说明） |
 
+### 部署命令下发失败（TAT）
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| `FailedOperation.AgentNotInstalled` / agent offline | 实例没装自动化助手 agent 或已掉线。控制台「自动化助手」里确认该实例可用 |
+| `InvalidParameterValue.InstanceIdNotFound` | `CNDB_INSTANCE_ID` 写错，或 `CNDB_REGION` 与实例实际地域不一致 |
+| `AuthFailure` / `UnauthorizedOperation` | 子账号密钥错误，或策略缺 `tat:RunCommand` / `tat:DescribeInvocationTasks` |
+| `命令内容超过 64 KiB` | 配置载荷过大。`scripts/build_tat_command.py` 会打印实际字节数；先看 `deploy/` 是否混入了 build 产物或备份文件 |
+| 任务长时间 `RUNNING`，CI 等到 3300s | 服务器正在 `docker build`（首次无缓存 15-30 分钟属正常）。**CI 停止轮询不会中断实例上的任务**，任务仍会跑完 |
+| 实例输出被截断（日志里有 `Dropped` 字节数） | TAT 回传有长度上限。完整日志上机看：`docker logs --tail 200 cndb` |
+
 ### 服务器端构建失败
 
 ```bash
@@ -528,7 +616,7 @@ cd /opt/cndb && SERVER_BUILD=1 IMAGE_REPO_OVERRIDE=ccr.ccs.tencentyun.com/pydev/
 | ----------------------------------------- | ----------------------------------------------------------- |
 | 构建卡在 `FROM python:3.12-slim` 拉取       | 服务器 Docker Hub 直连超时。配 registry-mirror（见「准备服务器」）或配 Secret `BUILD_BASE_IMAGE` 换源 |
 | pip 安装 404                               | 换了滞后的 PyPI 镜像（如阿里云源缺新版 metadata）。配 Secret `BUILD_PIP_INDEX_URL` 为腾讯云源，或恢复默认官方源 |
-| `缺少 dist/cndb-*.whl`                     | CI 的 `Sync build artifacts` 步骤未执行/失败，重跑 workflow        |
+| `缺少 dist/cndb-*.whl`                     | wheel 没下载下来。看 TAT 日志里「下载 wheel」那几行：镜像与官方源都失败通常是网络或版本未发布 |
 | 构建 OOM（进程被 kill 137）                 | 服务器内存 <2G。加 swap 或升配                                   |
 | 磁盘不足                                   | `docker system df` 看占用；`docker image prune -a` 清旧镜像后重跑     |
 | 冒烟验证失败（assets 为空）                  | wheel 未内嵌前端产物 —— 确认 release.yml 的前端构建成功后再重跑        |
@@ -563,12 +651,14 @@ docker volume ls                                   # 确认无误后再清理卷
 - [ ] `JWT_SECRET` 已替换为 `openssl rand -hex 32` 的随机值（CI 会校验占位符）
 - [ ] `.env` 权限 `600`，且**不在 git 追踪中**（`.gitignore` 已含 `.env`）
 - [ ] `DEBUG=false`
-- [ ] 安全组只放行业务端口（反代模式为 `80`/`443`），SSH 端口限制来源 IP
+- [ ] 安全组只放行业务端口（反代模式为 `80`/`443`）；**部署已走 TAT，`22` 可以整条删掉**，只在需要人工维护时临时开、用完关
 - [ ] 反代模式下应用端口**不对公网暴露**：`.env` 的 `CNDB_BIND` 为 `127.0.0.1:8000`，且安全组未放行 8000
 - [ ] `CORS_ORIGINS` 收敛到自己的域名，不填 `*`（`allow_credentials=True` 时浏览器会直接拒绝）
 - [ ] 定时备份已生效，且**实际验证过能恢复**
 - [ ] TCR 命名空间设为私有（若仍保留 TCR 用于回滚）
 - [ ] COS 桶（若启用了备份上传）为私有读写；子用户密钥仅授目标桶读写，且已配置生命周期清理
+- [ ] CI 用的腾讯云子账号**只授 `tat:RunCommand` / `tat:DescribeInvocationTasks`**，不授实例启停与删除
+- [ ] 主机安全的「异地登录」告警恢复为可信信号：确认近 30 天没有来自非本人 IP 的登录记录（改 TAT 后不应再产生告警）
 
 > `AUTH_ENABLED=true` 是默认值且**不可关闭**（关闭意味着任何人都能读写全部数据）。  
 > 首次部署后立刻登录并**修改默认账号密码** —— `cndb seed` 注入的 `demo/demo1234`  
