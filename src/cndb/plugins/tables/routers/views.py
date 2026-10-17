@@ -207,7 +207,7 @@ def create_view(
     payload: ViewCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> DataView:
+) -> dict[str, Any]:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     # 定档校验：table 档（表内所有人可见）需表 EDIT_VIEWS（D4）；
