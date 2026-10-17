@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Dropdown, Input, Segmented, Space, Tooltip } from 'antd'
+import { Button, Input, Segmented, Space, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, FilterOutlined, MoreOutlined,
@@ -20,6 +20,7 @@ import { viewApi } from '@/api'
 import type { View } from '@/api'
 import { Tag, App as AntApp } from 'antd'
 import { useResponsive } from '@/hooks/useResponsive'
+import TooltipDropdown from '@/components/TooltipDropdown'
 import type { ViewMode } from './views/viewModes'
 import ViewPermissionDrawer from './ViewPermissionDrawer'
 
@@ -282,8 +283,8 @@ export default function GridViewBar({
   ]
 
   const modeDropdown = showModeSwitch && (
-    <Dropdown
-      trigger={['click']}
+    <TooltipDropdown
+      title="切换视图模式：表格 / 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表"
       menu={{
         selectedKeys: [mode],
         items: modeButtons.map(b => ({
@@ -294,16 +295,14 @@ export default function GridViewBar({
         })),
       }}
     >
-      <Tooltip title="切换视图模式：表格 / 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表">
-        <Button
-          size="middle"
-          type="text"
-          data-testid="view-mode-dropdown"
-          aria-label="切换视图模式"
-          icon={<>{currentModeBtn?.icon}{<DownOutlined style={{ fontSize: 10 }} />}</>}
-        />
-      </Tooltip>
-    </Dropdown>
+      <Button
+        size="middle"
+        type="text"
+        data-testid="view-mode-dropdown"
+        aria-label="切换视图模式"
+        icon={<>{currentModeBtn?.icon}{<DownOutlined style={{ fontSize: 10 }} />}</>}
+      />
+    </TooltipDropdown>
   )
 
   const filterButton = (
@@ -396,17 +395,15 @@ export default function GridViewBar({
           <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, paddingRight: 6 }}>
             {modeDropdown}
             {filterButton}
-            <Dropdown trigger={['click']} menu={{ items: mobileMoreItems }}>
-              <Tooltip title="更多视图操作：新建 / 编辑 / 删除 / 导入 / 导出 / 搜索 / 表格设置">
-                <Button
-                  size="middle"
-                  type="text"
-                  icon={<MoreOutlined />}
-                  data-testid="view-more-btn"
-                  aria-label="更多视图操作"
-                />
-              </Tooltip>
-            </Dropdown>
+            <TooltipDropdown title="更多视图操作：新建 / 编辑 / 删除 / 导入 / 导出 / 搜索 / 表格设置" menu={{ items: mobileMoreItems }}>
+              <Button
+                size="middle"
+                type="text"
+                icon={<MoreOutlined />}
+                data-testid="view-more-btn"
+                aria-label="更多视图操作"
+              />
+            </TooltipDropdown>
           </div>
         ) : (
           /* 右侧紧凑按钮组 —— flex-shrink:0 保证不被 Segmented 挤压 */
@@ -419,11 +416,9 @@ export default function GridViewBar({
               {/* 编辑按钮：公共视图需 EDIT_VIEWS；个人视图本人可改（筛选/排序） */}
               <Button size="small" type="text" icon={<EditOutlined />} onClick={onEdit} disabled={editDisabled} />
             </Tooltip>
-            <Dropdown trigger={['click']} menu={{ items: desktopMoreItems }}>
-              <Tooltip title="视图更多操作">
-                <Button size="small" type="text" icon={<MoreOutlined />} />
-              </Tooltip>
-            </Dropdown>
+            <TooltipDropdown title="视图更多操作" menu={{ items: desktopMoreItems }}>
+              <Button size="small" type="text" icon={<MoreOutlined />} />
+            </TooltipDropdown>
 
             <div style={{ width: 1, height: 14, background: 'var(--cn-border)', margin: '0 3px' }} />
 

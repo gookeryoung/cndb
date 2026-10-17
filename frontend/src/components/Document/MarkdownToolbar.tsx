@@ -5,7 +5,7 @@
  */
 
 import type { ReactNode } from 'react'
-import { Button, Dropdown, Tooltip } from 'antd'
+import { Button, Tooltip } from 'antd'
 import {
   BoldOutlined,
   BlockOutlined,
@@ -28,6 +28,8 @@ import {
   wrapSelection,
   type MarkdownEditResult,
 } from './markdownEdit'
+
+import TooltipDropdown from '@/components/TooltipDropdown'
 
 /** 一次 Markdown 操作：输入文本与选区，输出新文本与新选区 */
 export type MarkdownAction = (value: string, start: number, end: number) => MarkdownEditResult
@@ -91,9 +93,9 @@ export default function MarkdownToolbar({ onAction, onInsertTable, disabled }: M
       {MARKDOWN_TOOLBAR_ITEMS.map(item => {
         if (item.key === 'heading') {
           return (
-            <Dropdown
+            <TooltipDropdown
               key={item.key}
-              trigger={['click']}
+              title={item.title}
               menu={{
                 items: MARKDOWN_HEADING_LEVELS.map(lv => ({
                   key: lv.key,
@@ -102,22 +104,20 @@ export default function MarkdownToolbar({ onAction, onInsertTable, disabled }: M
                 })),
               }}
             >
-              <Tooltip title={item.title}>
-                <Button
-                  {...triggerProps}
-                  icon={item.icon}
-                  aria-label={item.title}
-                  data-testid={`md-toolbar-${item.key}`}
-                />
-              </Tooltip>
-            </Dropdown>
+              <Button
+                {...triggerProps}
+                icon={item.icon}
+                aria-label={item.title}
+                data-testid={`md-toolbar-${item.key}`}
+              />
+            </TooltipDropdown>
           )
         }
         if (item.key === 'table') {
           return (
-            <Dropdown
+            <TooltipDropdown
               key={item.key}
-              trigger={['click']}
+              title={item.title}
               menu={{
                 items: MARKDOWN_TABLE_PRESETS.map(p => ({
                   key: p.key,
@@ -126,15 +126,13 @@ export default function MarkdownToolbar({ onAction, onInsertTable, disabled }: M
                 })),
               }}
             >
-              <Tooltip title={item.title}>
-                <Button
-                  {...triggerProps}
-                  icon={item.icon}
-                  aria-label={item.title}
-                  data-testid={`md-toolbar-${item.key}`}
-                />
-              </Tooltip>
-            </Dropdown>
+              <Button
+                {...triggerProps}
+                icon={item.icon}
+                aria-label={item.title}
+                data-testid={`md-toolbar-${item.key}`}
+              />
+            </TooltipDropdown>
           )
         }
         return (

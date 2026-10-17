@@ -3,7 +3,7 @@
  * 注：返回导航由 MainLayout 融合导航行的面包屑（数据表 tab / 表名）承担，
  * 工具栏不再重复渲染返回按钮。 */
 
-import { Button, Space, Typography, Tooltip, Dropdown } from 'antd'
+import { Button, Space, Typography, Tooltip } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined,
   MoreOutlined, CopyOutlined, ImportOutlined,
@@ -14,6 +14,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { tableApi } from '@/api'
 import { App as AntApp } from 'antd'
 import { useResponsive } from '@/hooks/useResponsive'
+import TooltipDropdown from '@/components/TooltipDropdown'
 
 const { Text } = Typography
 
@@ -138,7 +139,7 @@ export default function GridToolbar({
         )}
         {/* 点击展开：窄屏下该菜单承载编辑行 / 表设置 / 更新导出 / 数据治理等主操作，
             触摸设备没有 hover，必须用 click 触发 */}
-        <Dropdown trigger={['click']} menu={{
+        <TooltipDropdown menu={{
           items: [
             // 窄屏：把常显按钮的能力前置到菜单顶部
             ...(isMobile ? [
@@ -186,7 +187,7 @@ export default function GridToolbar({
               }),
             },
           ]
-        }}><Tooltip title="更多操作：编辑行、表设置、更新导出、数据治理、刷新、复制表、移动工作区、删除表"><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></Tooltip></Dropdown>
+        }} title="更多操作：编辑行、表设置、更新导出、数据治理、刷新、复制表、移动工作区、删除表"><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></TooltipDropdown>
       </Space>
     </div>
   )

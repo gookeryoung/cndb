@@ -123,6 +123,8 @@
 - **依赖钉版只对 Windows 生效**：所有仅为 Win7/8 兼容而存在的依赖上限（`fastapi<0.126`、`pydantic<2.7`、`pydantic-settings<2.3`、`bcrypt<6`、`cryptography<51`）统一挂 `sys_platform == 'win32'` 标记，Linux / macOS 只保留版本下限，可自由升级
 
 ### 修复
+- **CI E2E 门禁偶发超时**：`grid-more-menu` 等「触发器 + 说明 Tooltip」组合在视口顶部会把 Tooltip 翻转到按钮**下方**，正好盖住刚展开的下拉菜单；Tooltip 浮层默认可交互（指针移入保持展开），菜单项被遮挡且点击被拦截——`critical/view-field-visibility` 的「重置列宽与列序」用例因此 30s 超时（run 39012828781，shard 2/3 同时失败）。新增 `components/TooltipDropdown.tsx` 统一该组合（菜单展开期间强制关闭 Tooltip，收起后恢复悬浮），替换 Grid 工具栏 / 视图栏（模式切换 + 移动端/桌面端「更多」）/ Markdown 工具栏的 6 处写法
+- **CI 分片静默失效**：workflow 里 `pnpm e2e -- --shard=N/4 --grep-invert=...` 在 bash 下会把 `--` 原样传给 playwright，其后的 `--shard` 与 `--grep-invert` 全被当作位置参数忽略——四个 shard 实际各跑全量 52 条（含 `@perf`），分片与排除都未生效（由日志 `Running 52 tests` 发现）。命令改为 `pnpm e2e --shard=N/4 --grep-invert=...`（参数直接跟在脚本名后），并删掉已无引用的 `E2E_SHARD_INDEX` 环境变量
 - **视图导出 PDF 放大后发糊**：旧实现把内容等比压进 A4 宽度（1390px 看板压到 785pt，字号只剩 75%，用户必须放大、一放大就虚）。现改为按「屏幕实际大小」1:1 排版（`1 CSS px = 0.75pt`），页面尺寸随内容长大（不低于 A4）；位图按 300 DPI（`computeRenderScale`，受像素预算约束）渲染并以 JPEG 0.95 写入 —— PNG 在 jsPDF 4 下会退化成未压缩流（实测同一页 1.4MB → 33MB）
 - **数据表视图可见性整体收口**（安全，ADR 0003 的 P0）：视图的「可见性」此前散落在各接口自行判断、且多个入口**完全没判**，任何人只要拿到视图 id 即可越权读取或写入他人视图。现把判定收敛为单一入口 `services/core/view_access.py`（`resolve_view_action` / `get_view_or_404` / `visible_view_filter`），所有视图接口共用。逐项修复：
   - **视图驱动查询补可见性校验**：`GET /views/{id}/rows|kanban|calendar` 原先只校验「表 READ + 视图归属」，凭**他人个人视图的 id** 即可套用其筛选/排序规则取数、并从结果差集反推其筛选条件。现补 `VIEW_READ`，不可见一律 **404**
