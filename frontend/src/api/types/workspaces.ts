@@ -49,5 +49,15 @@ export interface WorkspaceExportData {
     fields: Array<Record<string, unknown>>
     views: Array<Record<string, unknown>>
     rows: Array<Record<string, unknown>>
+    /** 表级权限配置（缺失/为 null 表示该表未配置权限） */
+    permission?: Record<string, unknown> | null
+  }>
+  /** 工作区级文档标签 */
+  document_tags?: Array<{ id?: number; name: string; color?: string; description?: string }>
+  /** 文档树（文件夹层级 + 仅最新正文） */
+  documents?: Array<{
+    id?: number; parent_id?: number | null; title: string
+    content_type?: string; status?: string; is_folder?: boolean
+    sort_order?: number; content: string; tag_ids?: number[]
   }>
 }
