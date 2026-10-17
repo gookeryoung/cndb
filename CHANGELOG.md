@@ -123,6 +123,7 @@
 - **依赖钉版只对 Windows 生效**：所有仅为 Win7/8 兼容而存在的依赖上限（`fastapi<0.126`、`pydantic<2.7`、`pydantic-settings<2.3`、`bcrypt<6`、`cryptography<51`）统一挂 `sys_platform == 'win32'` 标记，Linux / macOS 只保留版本下限，可自由升级
 
 ### 修复
+- **CI 云服务部署失败**：`deploy/bootstrap-server.sh` 的 JWT 占位符替换失效 —— `set_env` 语义是「只补不覆盖」，遇到 `.env` 中已存在的 `JWT_SECRET=` 行会直接返回，`CHANGE_ME` 占位值原样残留；随后 `scripts/build_tat_command.py` 的守卫（`grep -q 'CHANGE_ME' .env`）非零退出，TAT 命令失败、整条部署中止。新增原子覆盖式写入 `set_env_force`（读全文 → 替换 → 临时文件 → `mv`，不遗留 `.env.bak`、不写坏配置）并用于该分支；顺带修正日志 ANSI 颜色码未闭合（`\033[0s` → `\033[0m`）与 `deploy/backup.sh` 中未定义的 `warn()`
 - **CI E2E 门禁偶发超时**：`grid-more-menu` 等「触发器 + 说明 Tooltip」组合在视口顶部会把 Tooltip 翻转到按钮**下方**，正好盖住刚展开的下拉菜单；Tooltip 浮层默认可交互（指针移入保持展开），菜单项被遮挡且点击被拦截——`critical/view-field-visibility` 的「重置列宽与列序」用例因此 30s 超时（run 39012828781，shard 2/3 同时失败）。新增 `components/TooltipDropdown.tsx` 统一该组合（菜单展开期间强制关闭 Tooltip，收起后恢复悬浮），替换 Grid 工具栏 / 视图栏（模式切换 + 移动端/桌面端「更多」）/ Markdown 工具栏的 6 处写法
 - **CI 分片静默失效**：workflow 里 `pnpm e2e -- --shard=N/4 --grep-invert=...` 在 bash 下会把 `--` 原样传给 playwright，其后的 `--shard` 与 `--grep-invert` 全被当作位置参数忽略——四个 shard 实际各跑全量 52 条（含 `@perf`），分片与排除都未生效（由日志 `Running 52 tests` 发现）。命令改为 `pnpm e2e --shard=N/4 --grep-invert=...`（参数直接跟在脚本名后），并删掉已无引用的 `E2E_SHARD_INDEX` 环境变量
 - **视图导出 PDF 放大后发糊**：旧实现把内容等比压进 A4 宽度（1390px 看板压到 785pt，字号只剩 75%，用户必须放大、一放大就虚）。现改为按「屏幕实际大小」1:1 排版（`1 CSS px = 0.75pt`），页面尺寸随内容长大（不低于 A4）；位图按 300 DPI（`computeRenderScale`，受像素预算约束）渲染并以 JPEG 0.95 写入 —— PNG 在 jsPDF 4 下会退化成未压缩流（实测同一页 1.4MB → 33MB）
