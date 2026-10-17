@@ -29,10 +29,10 @@ ENV_FILE="$APP_DIR/.env"
 WITH_CRON=0
 [[ "${1:-}" == "--with-cron" ]] && WITH_CRON=1
 
-log()  { printf '\033[0;36m[%s]\033[0s %s\n' "$(date +%H:%M:%S)" "$*"; }
-ok()   { printf '\033[0;32m[%s]\033[0s %s\n' "$(date +%H:%M:%S)" "$*"; }
-warn() { printf '\033[0;33m[%s]\033[0s %s\n' "$(date +%H:%M:%S)" "$*"; }
-die()  { printf '\033[0;31m[%s]\033[0s %s\n' "$(date +%H:%M:%S)" "$*" >&2; exit 1; }
+log()  { printf '\033[0;36m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
+ok()   { printf '\033[0;32m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
+warn() { printf '\033[0;33m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
+die()  { printf '\033[0;31m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*" >&2; exit 1; }
 
 # ── 0. 前置检查 ────────────────────────────────────────────────
 # 在写任何文件之前全部检查完：避免检查失败却已改了一半配置
@@ -58,6 +58,22 @@ set_env() {
   log "补写 ${key}"
 }
 
+# 覆盖式写入：与 set_env 的「只补不覆盖」相反，用于必须替换的项（如 JWT 占位符）。
+# 注：set_env 遇到已存在的键会直接返回，无法改写占位符，故这里单独实现。
+# 原子写：读全文 → 替换/追加 → 临时文件 → mv，避免 sed -i 遗留 .env.bak 或写坏配置。
+set_env_force() {
+  local key="$1" val="$2" file="$3" tmp
+  tmp="$(mktemp "${file}.XXXXXX")"
+  if grep -qE "^${key}=" "$file" 2>/dev/null; then
+    sed -E "s|^${key}=.*|${key}=${val}|" "$file" > "$tmp"
+  else
+    cp "$file" "$tmp"
+    printf '%s=%s\n' "$key" "$val" >> "$tmp"
+  fi
+  chmod 600 "$tmp"
+  mv "$tmp" "$file"
+}
+
 NEW_ENV=0
 [[ -f "$ENV_FILE" ]] || { touch "$ENV_FILE"; chmod 600 "$ENV_FILE"; NEW_ENV=1; warn "未找到 $ENV_FILE，新建"; }
 
@@ -78,9 +94,9 @@ set_env CNDB_APP_UPSTREAM "cndb:8000" "$ENV_FILE"
 set_env DEBUG       "false"                    "$ENV_FILE"
 set_env AUTH_ENABLED "true"                    "$ENV_FILE"
 
-# JWT_SECRET：占位符也当作「未配置」重新生成
+# JWT_SECRET：占位符也当作「未配置」重新生成（必须覆盖，故用 set_env_force）
 if grep -qE '^JWT_SECRET=CHANGE_ME' "$ENV_FILE" 2>/dev/null || ! grep -qE '^JWT_SECRET=' "$ENV_FILE"; then
-  set_env JWT_SECRET "$(openssl rand -hex 32)" "$ENV_FILE"
+  set_env_force JWT_SECRET "$(openssl rand -hex 32)" "$ENV_FILE"
   ok "JWT_SECRET 已生成（不回显明文）"
 fi
 

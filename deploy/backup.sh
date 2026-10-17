@@ -21,6 +21,7 @@ KEEP_DAYS="${KEEP_DAYS:-14}"          # 本地保留天数
 COMPOSE_FILE="docker-compose.prod.yml"
 
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
+warn() { printf '[%s] WARN: %s\n' "$(date '+%F %T')" "$*" >&2; }
 die() { printf '[%s] ERROR: %s\n' "$(date '+%F %T')" "$*" >&2; exit 1; }
 
 dc() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
