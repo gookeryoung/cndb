@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 
 from cndb.cli.seed import (
+    analytics,
     datasets,
     documents,
     fields,
@@ -135,6 +136,10 @@ def seed(_args: argparse.Namespace) -> None:
         #     演示视图"我的待办"，让前端进入时同时看到 global + personal 两类视图
         views._seed_demo_personal_views(db, demo, tables_map)
 
+        # 3d) 分析模板种子（依赖工作区 + 表已就绪：公式引用真实字段名；
+        #     analytics.json 见 examples/datasets/<工作区>/）
+        analytics_count = analytics._seed_analytics(db, owner, ws_map, tables_map, datasets_dir)
+
         # 5) 为"某企业销售管理"工作区添加其他演示成员，使表权限设置能看到可添加的候选成员
         from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
 
@@ -157,6 +162,7 @@ def seed(_args: argparse.Namespace) -> None:
         print(
             f"[seed] 完成！共 {total} 张数据表、{view_count} 个视图、"
             f"{doc_count} 篇示例文档（{folder_count} 个文档文件夹）、"
+            f"{analytics_count} 个分析模板、"
             f"5 个演示账号（三员 + 普通用户）。"
             "\n登录账号："
             "\n  系统管理员: admin / admin1234"

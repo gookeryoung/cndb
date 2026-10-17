@@ -1,0 +1,49 @@
+{
+  "_comment": "分析模板种子：键为数据表名（= CSV 文件名），值为该表的预置分析模板，公式字段名须与表字段一致。",
+  "产品批次": [
+    {
+      "name": "批次合格率分布",
+      "description": "自定义公式 pass_rate=合格数/实际产量×100，直方图查看 36 个批次的合格率集中区与离群批次。",
+      "config": {
+        "formulas": [
+          {
+            "key": "pass_rate",
+            "label": "合格率(%)",
+            "expr": "round([合格数] / [实际产量] * 100, 2)"
+          }
+        ],
+        "chart": {
+          "type": "histogram",
+          "x": "pass_rate",
+          "y": null,
+          "series": null,
+          "title": "批次合格率分布"
+        },
+        "fields": ["批次号", "产品类别", "生产线", "实际产量", "合格数"],
+        "limit": 1000
+      }
+    },
+    {
+      "name": "各产品类别销售额分布",
+      "description": "自定义公式 unit_amount=销售额/实际产量（单件销售额），箱线图比较四条产品线的销售额离散程度。",
+      "config": {
+        "formulas": [
+          {
+            "key": "unit_amount",
+            "label": "单件销售额(元)",
+            "expr": "round([销售额] / [实际产量], 2)"
+          }
+        ],
+        "chart": {
+          "type": "boxplot",
+          "x": "产品类别",
+          "y": "销售额",
+          "series": null,
+          "title": "各产品类别销售额分布"
+        },
+        "fields": ["批次号", "产品类别", "生产线", "实际产量", "销售额"],
+        "limit": 1000
+      }
+    }
+  ]
+}
