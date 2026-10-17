@@ -227,11 +227,14 @@ jobs:
         if: steps.cache-playwright.outputs.cache-hit != 'true'
         run: cd frontend && npx playwright install --with-deps chromium
 
+      # 注意：参数必须直接跟在脚本名后（`pnpm e2e --shard=...`），不能写成 `pnpm e2e -- --shard=...`。
+      # 后者在 bash 下 pnpm 会把分隔符 `--` 原样传给 playwright（`playwright test -- --shard=...`），
+      # 之后的 `--shard` 与 `--grep-invert` 全被当作位置参数忽略 —— 四个 shard 实际各跑全量 52 条
+      # （含 @perf），分片与排除静默失效（2026-10-17 run 39012828781 由日志 `Running 52 tests` 发现）。
       - name: Run E2E (webServer 自动 seed + 起后端 :8000，不含 @perf)
         env:
           CI: "true"
-          E2E_SHARD_INDEX: ${{ matrix.shard }}
-        run: cd frontend && pnpm e2e -- --shard=${{ matrix.shard }}/4 --grep-invert="tag:@perf"
+        run: cd frontend && pnpm e2e --shard=${{ matrix.shard }}/4 --grep-invert="tag:@perf"
 
       # @perf 用例必须串行独占：并行 worker 抢 CPU 时 LCP 读数反映争抢而非页面性能
       - name: Run perf 冒烟（shard 1 内串行独占，观察期）
