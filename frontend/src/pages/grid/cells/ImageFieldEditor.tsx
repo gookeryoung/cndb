@@ -1,12 +1,18 @@
-/** 图片字段编辑器 —— 点击 / 拖拽 / 剪贴板粘贴三种上传入口，缩略图展示 + 删除.
+/** 图片字段编辑器 —— 选择文件 / 拖拽 / 剪贴板粘贴三种上传入口，缩略图展示 + 删除.
  *
  * 表格内联编辑（EditCell）与行详情抽屉（RowDetailDrawer）共用，保证两条写入
  * 路径（新增 / 更新）的上传、校验、粘贴行为一致。
+ *
+ * 交互口径（点击 ≠ 上传）：
+ * 1. 点击字段任意位置只**聚焦**粘贴区，让用户可以直接 Ctrl+V 粘贴截图，不再
+ *    一按就弹系统文件选择框（弹窗挡在前面时必须先取消才能粘贴）；
+ * 2. 打开文件选择框只走显式的「选择图片」按钮，避免误触；
+ * 3. 整块区域仍可拖拽文件进入，行为与原来一致。
  */
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, type ChangeEvent, type MouseEvent } from 'react'
 import { App as AntApp, Button, Image, Tooltip, Upload } from 'antd'
-import { DeleteOutlined, InboxOutlined } from '@ant-design/icons'
+import { DeleteOutlined, UploadOutlined } from '@ant-design/icons'
 import type { AttachmentFile, Field } from '@/api'
 import { fileApi } from '@/api'
 import { AuthedImage } from '@/components/AuthedFile'
@@ -70,6 +76,7 @@ export function ImageFieldEditor({
 
   const allowedMimes = ((field.config?.allowed_mime_types as string[] | undefined) ?? []).filter(m => m)
   const multipleAllowed = Boolean(field.config?.multiple ?? true)
+  const accept = allowedMimes.length ? allowedMimes.join(',') : 'image/*'
 
   const appendFiles = useCallback(async (files: File[]) => {
     if (!wid || files.length === 0) return
@@ -102,6 +109,26 @@ export function ImageFieldEditor({
   // 只读态不注册，避免抢走文档级粘贴事件
   const bindPasteZone = useImagePaste(handlePaste, !disabled)
 
+  // 隐藏的原生 file input：只由「选择图片」按钮触发（Dragger 已关闭点击弹窗）
+  const pickerRef = useRef<HTMLInputElement>(null)
+
+  const handlePick = (e: ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? [])
+    // 清空 value：否则再次选择同一个文件不会触发 change
+    e.target.value = ''
+    void appendFiles(picked)
+  }
+
+  /** 点击字段空白处只聚焦：聚焦即成为 Ctrl+V 的粘贴目标，不打开系统文件选择框。
+   *  子控件（按钮 / 隐藏 input / 图片预览）的点击不抢焦点，保留键盘操作与预览行为。 */
+  const focusZone = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    if (disabled) return
+    const target = e.target as HTMLElement | null
+    if (target?.closest('button, input, a, .ant-image')) return
+    const el = e.currentTarget
+    if (document.activeElement !== el) el.focus({ preventScroll: true })
+  }, [disabled])
+
   const removeAt = (idx: number) => {
     const removed = images[idx]
     if (wid && removed?.file_key) {
@@ -117,21 +144,64 @@ export function ImageFieldEditor({
     <div
       ref={bindPasteZone}
       tabIndex={disabled ? undefined : 0}
-      style={{ outline: 'none', width: '100%' }}
+      role="group"
+      className="cn-image-field"
+      data-testid="image-field"
+      aria-label={disabled ? undefined : '图片字段：点击聚焦后可按 Ctrl+V 粘贴图片'}
+      onClick={focusZone}
     >
-      <Upload.Dragger
-        multiple={multipleAllowed}
-        showUploadList={false}
-        accept={allowedMimes.length ? allowedMimes.join(',') : 'image/*'}
-        beforeUpload={f => { void appendFiles([f]); return false }}
-        style={{ padding: '4px 8px', marginBottom: 8 }}
-        disabled={disabled}
-      >
-        <div style={{ fontSize: 12, color: '#94a3b8', margin: '2px 0' }}>
-          <InboxOutlined /> 点击或拖拽上传图片
-          {!disabled && <span style={{ marginLeft: 4 }}>（支持 Ctrl+V 粘贴）</span>}
-        </div>
-      </Upload.Dragger>
+      {!disabled && (
+        <>
+          <Upload.Dragger
+            // 关键：点击不再弹系统文件框，点击只用于聚焦粘贴区
+            openFileDialogOnClick={false}
+            // 内部有显式按钮，Dragger 自身不再当可聚焦按钮（否则多一个按 Enter 无反应的 tab 停靠点）
+            hasControlInside
+            multiple={multipleAllowed}
+            showUploadList={false}
+            accept={accept}
+            beforeUpload={f => { void appendFiles([f]); return false }}
+            style={{ padding: '4px 8px', marginBottom: 8 }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexWrap: 'wrap',
+                gap: 6,
+                fontSize: 12,
+                color: '#94a3b8',
+                margin: '2px 0',
+              }}
+            >
+              <Button
+                size="small"
+                icon={<UploadOutlined />}
+                data-testid="image-field-pick"
+                onClick={() => pickerRef.current?.click()}
+              >
+                选择图片
+              </Button>
+              <span>或拖拽到此；点击本区域后 Ctrl+V 粘贴</span>
+            </div>
+          </Upload.Dragger>
+          <input
+            ref={pickerRef}
+            type="file"
+            hidden
+            multiple={multipleAllowed}
+            accept={accept}
+            tabIndex={-1}
+            data-testid="image-field-input"
+            onChange={handlePick}
+          />
+        </>
+      )}
+      {disabled && images.length === 0 && (
+        // 只读且无图：与展示态一致给占位，避免字段区一片空白
+        <span style={{ color: '#cbd5e1' }}>—</span>
+      )}
       {images.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           <Image.PreviewGroup>
