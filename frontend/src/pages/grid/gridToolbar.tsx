@@ -60,8 +60,8 @@ export default function GridToolbar({
   const { isMobile } = useResponsive()
 
   return (
-    <div className="cn-grid-toolbar" style={{ padding: '8px 16px', borderBottom: '1px solid var(--cn-border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-      <Text strong ellipsis style={{ fontSize: 16, maxWidth: isMobile ? '44vw' : undefined }}>{tableName || '...'}</Text>
+    <div className="cn-grid-toolbar" style={{ padding: '6px 12px', borderBottom: '1px solid var(--cn-border)', display: 'flex', gap: 6, alignItems: 'center' }}>
+      <Text strong ellipsis style={{ fontSize: 15, maxWidth: isMobile ? '44vw' : undefined }}>{tableName || '...'}</Text>
       {/* 统计小徽标（来自后端增强字段）—— 窄屏隐藏：底部「共 N 条」已给出记录数，
           省下的宽度留给标题与主操作（否则标题会被压成「产…」） */}
       {recordCount != null && recordCount > 0 && !isMobile && (
@@ -81,7 +81,7 @@ export default function GridToolbar({
       )}
       <div style={{ flex: 1 }} />
       {/* 右侧主操作区 */}
-      <Space size={6}>
+      <Space size={4}>
         {mode === 'grid' && (
           <Tooltip title={addRowDisabled ? '请先完成当前编辑' : '新增一行：在表格末尾添加空记录，逐格填写后回车保存'}>
             <Button
