@@ -354,7 +354,7 @@ interface ImportWorkspaceModalProps {
 function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: ImportWorkspaceModalProps) {
   const { isMobile } = useResponsive()
   const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number } | null>(null)
+  const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number; documents: number } | null>(null)
   const [pendingJson, setPendingJson] = useState<Record<string, unknown> | null>(null)
 
   const reset = () => {
@@ -405,6 +405,7 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
         tables: result.imported_tables,
         rows: result.imported_rows,
         views: result.imported_views,
+        documents: result.imported_documents ?? 0,
       })
       // 延迟一下让用户看到成功信息，然后跳转
       setTimeout(() => onSuccess(result.workspace), 800)
@@ -473,7 +474,7 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
         }}>
           <FileTextOutlined style={{ color: '#22c55e', fontSize: 20 }} />
           <span style={{ marginLeft: 8, color: '#15803d' }}>
-            导入完成：{importResult.tables} 表 / {importResult.rows} 行 / {importResult.views} 视图
+            导入完成：{importResult.tables} 表 / {importResult.rows} 行 / {importResult.views} 视图{importResult.documents ? ` / ${importResult.documents} 文档` : ''}
           </span>
         </div>
       )}

@@ -30,7 +30,8 @@ export default function WorkspaceBackupDialog({ open, wid, workspaceName, onClos
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      message.success(`已备份 ${data.tables.length} 张表`)
+      const docCount = data.documents?.length ?? 0
+      message.success(`已备份 ${data.tables.length} 张表${docCount ? ` · ${docCount} 篇文档` : ''}`)
     } catch (err) {
       message.error(err instanceof Error ? err.message : '备份失败')
     } finally {
@@ -52,7 +53,7 @@ export default function WorkspaceBackupDialog({ open, wid, workspaceName, onClos
           type="info"
           showIcon
           message={`将备份整个工作区「${workspaceName || ''}」的完整数据`}
-          description="包含所有数据表结构、字段配置、数据行和视图配置，导出为 JSON 文件。可在工作区列表页通过「导入工作区」恢复。"
+          description="包含所有数据表结构、字段配置、数据行、视图配置、表权限配置，以及文档（含标签与最新正文）。导出为 JSON 文件，可在工作区列表页通过「导入工作区」恢复。"
           style={{ marginBottom: 16 }}
         />
         <Space style={{ width: '100%', justifyContent: 'center' }}>

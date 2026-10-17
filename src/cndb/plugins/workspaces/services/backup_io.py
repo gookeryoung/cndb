@@ -65,6 +65,7 @@ def _import_backup_into_workspace(
         DataField,
         DataTable,
         DataView,
+        TablePermission,
         ViewVisibility,
         ensure_default_view,
         scope_key_for,
@@ -81,6 +82,7 @@ def _import_backup_into_workspace(
     imported_tables = 0
     imported_rows = 0
     imported_views = 0
+    imported_documents = 0
     errors: list[str] = []
 
     # v4 跨表引用重映射的收集器（v1-v3 备份无 id 信息，保持原样跳过重映射）：
@@ -278,6 +280,23 @@ def _import_backup_into_workspace(
                 if link_field and link_field.field_type == "link" and pairs:
                     pending_link_rows.append((link_field, table, pairs))
 
+            # 表级权限配置还原（hidden_fields/row_filters 按字段名表达，字段名已随表保真）
+            perm_data = tbl_data.get("permission")
+            if isinstance(perm_data, dict):
+                db.add(
+                    TablePermission(
+                        table_id=table.id,
+                        read_role=perm_data.get("read_role", "") or "",
+                        edit_records_role=perm_data.get("edit_records_role", "") or "",
+                        edit_views_role=perm_data.get("edit_views_role", "") or "",
+                        edit_schema_role=perm_data.get("edit_schema_role", "") or "",
+                        manage_data_role=perm_data.get("manage_data_role", "") or "",
+                        hidden_fields=perm_data.get("hidden_fields", {}) or {},
+                        row_filters=perm_data.get("row_filters", []) or [],
+                        row_filter_type=perm_data.get("row_filter_type", "AND") or "AND",
+                    )
+                )
+
             # 每个表的视图/行数据独立提交，避免再次持锁影响后续 DDL
             db.commit()
             imported_tables += 1
@@ -336,6 +355,11 @@ def _import_backup_into_workspace(
                 msg = f"表 {table.name} 字段 {link_field.name} 的关联数据回填失败: {exc}"
                 errors.append(msg)
                 logging.getLogger(__name__).warning("%s", msg)
+
+        # ── 文档标签 + 文档树还原（仅最新正文，不含历史版本） ──
+        doc_imported, doc_errors = _import_documents(workspace_id, json_data, current_user, db)
+        imported_documents += doc_imported
+        errors.extend(doc_errors)
     except HTTPException:
         db.rollback()
         raise
@@ -347,8 +371,103 @@ def _import_backup_into_workspace(
         imported_tables=imported_tables,
         imported_rows=imported_rows,
         imported_views=imported_views,
+        imported_documents=imported_documents,
         errors=errors,
     )
+
+
+def _import_documents(
+    workspace_id: int,
+    json_data: dict[str, Any],
+    current_user: User,
+    db: Session,
+) -> tuple[int, list[str]]:
+    """还原备份中的文档标签与文档树（仅最新正文），返回 (成功文档数, 错误明细).
+
+    - 标签按 ``(workspace_id, name)`` 幂等创建，备份内旧标签 id 映射到新 id；
+    - 文档经 ``create_document`` 落库：自动生成 slug、解析元数据、按分级存储策略
+      存正文并同步 FTS；
+    - 父子层级分两遍还原：先建全部节点（``parent_id=None``），再按
+      ``旧 parent_id → 新文档 id`` 回填，避免"子先于父"的排序问题。
+    """
+    from cndb.plugins.documents.models import Document, Tag
+    from cndb.plugins.documents.services.content import create_document
+
+    errors: list[str] = []
+
+    # 1) 标签：按名称幂等，记录 旧标签 id → 新标签 id
+    tag_id_map: dict[int, int] = {}
+    tag_pairs: list[tuple[int, Tag]] = []
+    for td in json_data.get("document_tags", []) or []:
+        name = (td.get("name") or "").strip()
+        if not name:
+            continue
+        tag = db.query(Tag).filter(Tag.workspace_id == workspace_id, Tag.name == name).first()
+        if tag is None:
+            tag = Tag(
+                workspace_id=workspace_id,
+                name=name,
+                color=td.get("color") or "#1890FF",
+                description=td.get("description", "") or "",
+            )
+            db.add(tag)
+        old_tag_id = td.get("id")
+        if isinstance(old_tag_id, int):
+            tag_pairs.append((old_tag_id, tag))
+    db.flush()
+    for old_tag_id, tag in tag_pairs:
+        tag_id_map[old_tag_id] = tag.id
+
+    # 2) 文档：第一遍建节点（暂不挂父节点）
+    docs_data = json_data.get("documents", []) or []
+    doc_id_map: dict[int, int] = {}
+    imported = 0
+    for dd in docs_data:
+        title = (dd.get("title") or "").strip()
+        try:
+            mapped_tags = [tag_id_map[t] for t in (dd.get("tag_ids") or []) if t in tag_id_map]
+            doc = create_document(
+                db,
+                workspace_id,
+                current_user,
+                title=title,
+                content="" if dd.get("is_folder") else (dd.get("content") or ""),
+                is_folder=bool(dd.get("is_folder", False)),
+                parent_id=None,
+                status=dd.get("status") or "draft",
+                tag_ids=mapped_tags or None,
+                sort_order=int(dd.get("sort_order") or 0),
+            )
+            old_doc_id = dd.get("id")
+            if isinstance(old_doc_id, int):
+                doc_id_map[old_doc_id] = doc.id
+            imported += 1
+        except Exception as exc:
+            db.rollback()
+            msg = f"文档 {title or '(无标题)'} 导入失败: {exc}"
+            errors.append(msg)
+            logging.getLogger(__name__).warning("%s", msg)
+
+    # 3) 文档：第二遍还原父子层级（父子均成功导入时才建立链接）
+    changed = False
+    for dd in docs_data:
+        old_doc_id = dd.get("id")
+        old_parent_id = dd.get("parent_id")
+        if not isinstance(old_doc_id, int) or old_doc_id not in doc_id_map or old_parent_id is None:
+            continue
+        new_doc_id = doc_id_map[old_doc_id]
+        new_parent_id = doc_id_map.get(old_parent_id)
+        if new_parent_id is None or new_parent_id == new_doc_id:
+            continue
+        doc = db.get(Document, new_doc_id)
+        if doc is not None and doc.parent_id != new_parent_id:
+            doc.parent_id = new_parent_id
+            db.add(doc)
+            changed = True
+    if changed:
+        db.commit()
+
+    return imported, errors
 
 
 __all__ = ["_coerce_row_value_types", "_import_backup_into_workspace"]
