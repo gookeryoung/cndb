@@ -20,6 +20,9 @@
 
 from __future__ import annotations
 
+import os
+import sys
+
 __all__ = [
     "AppItem",
     "NavItem",
@@ -33,6 +36,19 @@ __all__ = [
 
 # 版本号：与 pyproject.toml 保持同步（由 bump-my-version 自动维护）
 __version__ = "0.4.1"
+
+# ── 运行环境校验 ────────────────────────────────────────────────
+# 支持矩阵：3.12 ~ 3.14；其中 Windows 仅 3.12（Win7/8 兼容钉版依赖只在该版本验证）。
+# PEP 621 的 requires-python 无法表达平台差异，故在此运行时兜底。
+# 需要强行试跑时设 CNDB_SKIP_PY_VERSION_CHECK=1。
+if sys.platform == "win32" and sys.version_info[:2] != (3, 12):
+    if os.environ.get("CNDB_SKIP_PY_VERSION_CHECK") != "1":
+        raise RuntimeError(
+            f"cndb 在 Windows 上仅支持 Python 3.12，当前为 "
+            f"{sys.version_info.major}.{sys.version_info.minor}。"
+            "其他平台请使用 3.12 ~ 3.14；如确需试跑，设置 "
+            "CNDB_SKIP_PY_VERSION_CHECK=1。"
+        )
 
 # 惰性导出映射：公开符号 → 其所属子模块。
 # 仅在访问 ``cndb.<符号>`` 时触发子模块加载，避免冷启动串起整个后端依赖图。

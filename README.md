@@ -2,9 +2,11 @@
 
 > 通用数据管理平台。
 
-[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org)
+[![Python](https://img.shields.io/badge/python-3.12%E2%80%933.14-blue.svg)](https://www.python.org)
 [![Coverage](https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen.svg)](#开发)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#许可证)
+
+> **Python 支持矩阵**：3.12 ~ 3.14。其中 Windows 仅 3.12（Win7/8 兼容的依赖钉版只在该版本验证）；Linux / macOS 无平台钉版。
 
 ## 特性
 
