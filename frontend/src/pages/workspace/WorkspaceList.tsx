@@ -98,7 +98,7 @@ export default function WorkspaceList() {
   }, [workspaces, search])
 
   return (
-    <div style={{ padding: isMobile ? 16 : 24 }} data-testid="workspace-list">
+    <div style={{ padding: isMobile ? 12 : 16 }} data-testid="workspace-list">
       {/* 工具栏 —— 移动端纵向堆叠：标题整行、搜索框占满、按钮均分，避免固定宽度导致横向溢出 */}
       <div
         data-testid="workspace-list-toolbar"
@@ -107,7 +107,7 @@ export default function WorkspaceList() {
           flexDirection: isMobile ? 'column' : 'row',
           justifyContent: 'space-between',
           alignItems: isMobile ? 'stretch' : 'center',
-          marginBottom: 24,
+          marginBottom: 16,
           flexWrap: 'wrap',
           gap: 12,
         }}

@@ -374,7 +374,7 @@ export default function DocumentsPage() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 16 }}>
       {/* 工具栏 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <Space wrap>
