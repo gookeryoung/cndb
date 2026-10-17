@@ -253,4 +253,29 @@ describe('ImageFieldEditor 上传入口', () => {
     ]))
     expect(attempt).toBe(2)
   })
+
+  it('行详情大图模式支持逐图替换：新图占据原位置，其余顺序不变', async () => {
+    resetFileObjectUrls()
+    const onChange = vi.fn()
+    const field = makeField({ id: 8, name: '照片', field_type: 'image' })
+    renderEditor({
+      field,
+      thumbSize: 56,
+      value: [
+        { file_key: 'a.png', filename: 'a.png', mime_type: 'image/png' },
+        { file_key: 'b.png', filename: 'b.png', mime_type: 'image/png' },
+      ],
+      onChange,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '替换 a.png' }))
+    fireEvent.change(screen.getByTestId('image-field-input'), {
+      target: { files: [new File([new Uint8Array([1])], 'new.png', { type: 'image/png' })] },
+    })
+
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ file_key: 'mock-upload.png' }),
+      expect.objectContaining({ file_key: 'b.png' }),
+    ]))
+  })
 })

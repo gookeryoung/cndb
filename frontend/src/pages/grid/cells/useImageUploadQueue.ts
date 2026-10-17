@@ -27,6 +27,8 @@ export type ImageQueueItem =
       error?: string
       /** 单图字段替换：成功后 old 图由 onReplaced 回调清理 */
       replace?: boolean
+      /** 指定替换某一张（comfortable 模式的逐图替换），值为被替换项的 key */
+      replaceKey?: string
     }
 
 interface Options {
@@ -107,7 +109,7 @@ export function useImageUploadQueue({
   const ctxRef = useRef({ wid, tableId, rowId })
   ctxRef.current = { wid, tableId, rowId }
 
-  const queueRef = useRef<Array<{ key: string; file: File; replace?: boolean }>>([])
+  const queueRef = useRef<Array<{ key: string; file: File; replace?: boolean; replaceKey?: string }>>([])
   const activeRef = useRef(0)
   const controllersRef = useRef(new Map<string, AbortController>())
   const seqRef = useRef(0)
@@ -159,7 +161,11 @@ export function useImageUploadQueue({
     onChangeRef.current(metasOf(next))
   }
 
-  function finishTask(key: string, replace: boolean | undefined, meta: AttachmentFile) {
+  function finishTask(
+    key: string,
+    options: { replace?: boolean; replaceKey?: string },
+    meta: AttachmentFile,
+  ) {
     const before = itemsRef.current.find(item => item.key === key)
     if (!before || before.status === 'meta') {
       // 任务已被用户删除 / 取消：丢弃结果
@@ -169,7 +175,19 @@ export function useImageUploadQueue({
 
     let next: ImageQueueItem[]
     let replaced: AttachmentFile[] = []
-    if (replace) {
+    if (options.replaceKey) {
+      // 逐图替换：新图占据旧图位置，上传占位项从末尾移除
+      const target = itemsRef.current.find(item => item.key === options.replaceKey)
+      if (target && target.status === 'meta') {
+        replaced = [target.meta]
+        next = itemsRef.current
+          .filter(item => item.key !== key)
+          .map(item => (item.key === options.replaceKey ? { key: options.replaceKey, status: 'meta', meta } : item))
+      } else {
+        // 目标已不存在：退化为追加，避免上传结果丢失
+        next = itemsRef.current.map(item => (item.key === key ? { key, status: 'meta', meta } : item))
+      }
+    } else if (options.replace) {
       replaced = metasOf(itemsRef.current)
       next = [{ key, status: 'meta', meta }]
     } else {
@@ -201,7 +219,7 @@ export function useImageUploadQueue({
     }
   }
 
-  async function runTask(task: { key: string; file: File; replace?: boolean }) {
+  async function runTask(task: { key: string; file: File; replace?: boolean; replaceKey?: string }) {
     const { wid: workspaceId, tableId: tid, rowId: rid } = ctxRef.current
     if (!workspaceId) return
     const controller = new AbortController()
@@ -221,7 +239,7 @@ export function useImageUploadQueue({
         },
       )
       controllersRef.current.delete(task.key)
-      finishTask(task.key, task.replace, meta)
+      finishTask(task.key, { replace: task.replace, replaceKey: task.replaceKey }, meta)
     } catch (err) {
       controllersRef.current.delete(task.key)
       // 主动取消：取消逻辑已经把 item 移除了，不再落错误态
@@ -230,8 +248,9 @@ export function useImageUploadQueue({
     }
   }
 
-  /** 加入上传队列；`replace` 用于单图字段替换（成功后只保留新图） */
-  function addFiles(files: File[], options?: { replace?: boolean }) {
+  /** 加入上传队列；`replace` 用于单图字段替换（成功后只保留新图），
+   *  `replaceKey` 用于逐图替换（新图占据指定旧图的位置） */
+  function addFiles(files: File[], options?: { replace?: boolean; replaceKey?: string }) {
     if (!wid || files.length === 0) return
     const next = [...itemsRef.current]
     for (const file of files) {
@@ -244,8 +263,9 @@ export function useImageUploadQueue({
         previewUrl: createPreviewUrl(file),
         progress: 0,
         replace: options?.replace,
+        replaceKey: options?.replaceKey,
       })
-      queueRef.current.push({ key, file, replace: options?.replace })
+      queueRef.current.push({ key, file, replace: options?.replace, replaceKey: options?.replaceKey })
     }
     itemsRef.current = next
     setItems(next)
@@ -257,8 +277,21 @@ export function useImageUploadQueue({
     const item = itemsRef.current.find(it => it.key === key)
     if (!item || item.status === 'meta' || item.status === 'queued' || item.status === 'uploading') return
     patchItem(key, { status: 'queued', progress: 0, error: undefined })
-    queueRef.current.push({ key, file: item.file, replace: item.replace })
+    queueRef.current.push({ key, file: item.file, replace: item.replace, replaceKey: item.replaceKey })
     pump()
+  }
+
+  /** 拖拽排序：把 activeKey 移动到 overKey 的位置（仅 meta 项参与） */
+  function reorder(activeKey: string, overKey: string) {
+    const current = itemsRef.current
+    const from = current.findIndex(item => item.key === activeKey)
+    const to = current.findIndex(item => item.key === overKey)
+    if (from < 0 || to < 0 || from === to) return
+    if (current[from].status !== 'meta' || current[to].status !== 'meta') return
+    const next = [...current]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    commit(next)
   }
 
   /** 删除 / 取消一项（上传中的会 abort） */
@@ -287,5 +320,5 @@ export function useImageUploadQueue({
     }
   }, [])
 
-  return { items, busy, addFiles, retry, remove }
+  return { items, busy, addFiles, retry, remove, reorder }
 }
