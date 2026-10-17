@@ -334,10 +334,9 @@ describe('GridCell 受控编辑', () => {
 
     // 选文件走显式按钮（点击字段不再弹文件框），并保留粘贴入口
     expect(screen.getByTestId('image-field-pick')).toBeInTheDocument()
+    expect(screen.getByText(/或拖拽到此/)).toBeInTheDocument()
     expect(screen.getByText(/Ctrl\+V 粘贴/)).toBeInTheDocument()
     // 上传 accept 默认仅收图片
-    const dragger = document.querySelector('.ant-upload-wrapper')
-    expect(dragger).toBeInTheDocument()
     expect(screen.getByTestId('image-field-input')).toHaveAttribute('accept', 'image/*')
   })
 

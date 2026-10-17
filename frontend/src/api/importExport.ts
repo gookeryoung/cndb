@@ -187,6 +187,12 @@ export const fileApi = {
     wid: number | string,
     file: File,
     ctx?: { tableId?: number | string; rowId?: number | string; documentId?: number | string },
+    options?: {
+      /** 上传进度（0-100）；用于图片字段的瓦片进度环 */
+      onProgress?: (percent: number) => void
+      /** 取消上传（组件卸载 / 用户点取消时 abort） */
+      signal?: AbortSignal
+    },
   ) => {
     const fd = new FormData()
     fd.append('file', file)
@@ -195,6 +201,12 @@ export const fileApi = {
     if (ctx?.documentId != null) fd.append('document_id', String(ctx.documentId))
     return api.post<AttachmentFile>(`/v1/workspaces/${wid}/files`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      signal: options?.signal,
+      onUploadProgress: event => {
+        if (!options?.onProgress) return
+        const total = event.total ?? 0
+        options.onProgress(total > 0 ? Math.round((event.loaded / total) * 100) : 0)
+      },
     }).then(r => r.data)
   },
   /** 生成附件下载/预览 URL（后端路径 + 查询参数） */

@@ -118,21 +118,29 @@ export function DisplayCell({ value, field, rowId, wid }: { value: unknown; fiel
         images = Array.isArray(value) ? (value as AttachmentFile[]) : JSON.parse(String(value || '[]'))
       } catch { images = [] }
       if (!images.length) return <span style={{ color: '#cbd5e1' }}>—</span>
+      // 紧凑展示：最多 3 张，多余的收成 +N 角标（全部图片在行详情 / 预览里看）
+      const visible = images.slice(0, 3)
+      const extra = images.length - visible.length
       return (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
           <Image.PreviewGroup>
-            {images.map(f => (
+            {visible.map(f => (
               <AuthedImage
                 key={f.file_key || f.filename}
                 wid={wid}
                 fileKey={f.file_key}
-                width={48}
-                height={48}
+                width={32}
+                height={32}
                 alt={f.filename}
                 style={{ objectFit: 'cover', borderRadius: 4 }}
               />
             ))}
           </Image.PreviewGroup>
+          {extra > 0 && (
+            <Tooltip title={`共 ${images.length} 张图片，打开行详情查看全部`}>
+              <span className="cn-image-count">+{extra}</span>
+            </Tooltip>
+          )}
         </div>
       )
     }
