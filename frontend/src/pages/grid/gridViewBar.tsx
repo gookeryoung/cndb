@@ -341,7 +341,7 @@ export default function GridViewBar({
         display: 'flex',
         alignItems: 'center',
         gap: 4,
-        minHeight: isMobile ? 44 : 36,
+        minHeight: isMobile ? 40 : 32,
       }}>
         {/* Segmented —— flex:1 占满弹性空间，min-width:0 允许在窄屏下被压缩从而触发内部滚动 */}
         <div
@@ -351,7 +351,7 @@ export default function GridViewBar({
             canScrollLeft ? 'is-scroll-left' : '',
             canScrollRight ? 'is-scroll-right' : '',
           ].filter(Boolean).join(' ')}
-          style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', padding: '4px 0 4px 16px' }}
+          style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', padding: '2px 0 2px 12px' }}
         >
           <DndContext sensors={viewDragSensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
             <SortableContext items={views.map(v => String(v.id))} strategy={horizontalListSortingStrategy}>
@@ -425,7 +425,7 @@ export default function GridViewBar({
               </Tooltip>
             </Dropdown>
 
-            <div style={{ width: 1, height: 16, background: 'var(--cn-border)', margin: '0 4px' }} />
+            <div style={{ width: 1, height: 14, background: 'var(--cn-border)', margin: '0 3px' }} />
 
             {/* 视图模式切换 —— 仅渲染数据表实际拥有的视图类型；仅 grid 一种时隐藏 */}
             {showModeSwitch && (
@@ -460,7 +460,7 @@ export default function GridViewBar({
 
       {/* 移动端搜索行 —— 由「更多 → 搜索当前视图」展开；搜索词非空时常显 */}
       {showMobileSearch && (
-        <div style={{ padding: '0 8px 8px' }} data-testid="view-search-row">
+        <div style={{ padding: '0 8px 6px' }} data-testid="view-search-row">
           {searchInput}
         </div>
       )}

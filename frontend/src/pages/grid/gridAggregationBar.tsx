@@ -19,7 +19,7 @@ export default function GridAggregationBar({
   const { modal } = AntApp.useApp()
   if (selectedCount <= 0) return null
   return (
-    <div className="cn-agg-bar" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+    <div className="cn-agg-bar" style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
       <span className="cn-agg-count">已选 {selectedCount} 行</span>
       <Space size="middle">
         {Object.entries(aggregates).map(([name, a]) => (
