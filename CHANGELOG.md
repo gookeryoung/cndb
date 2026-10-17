@@ -5,6 +5,7 @@
 ## [未发布]
 
 ### 新增
+- 数据表**图片字段支持剪贴板粘贴上传**（新增行 / 更新行 / 行详情抽屉三处同口径）：编辑态聚焦图片区或直接截图后 `Ctrl/Cmd+V` 即可上传并追加，一次粘贴多张按顺序串行上传不会互相覆盖；剪贴板同时带**非空文本**时按粘贴文本处理，不劫持 Excel / Word / 网页复制的内容；粘贴同样受字段级 `allowed_mime_types` 与 `multiple` 配置约束，只读态（`readOnly` 行详情 / 无编辑权限）不注册粘贴入口。图片字段编辑区抽为共用组件 `pages/grid/cells/ImageFieldEditor.tsx`，内联编辑与抽屉不再各写一份，并顺带修正内联图片上传未登记 `table_id`/`row_id` 归属（下载不再绕过表/行权限校验）
 - 生产部署支持**内置反向代理（含实时协作 WebSocket）**：`docker-compose.prod.yml` 新增 `nginx` 服务（`--profile proxy` 可选启用），配置位于 `deploy/nginx/`（模板 + HTTP/HTTPS 共用片段，对 `/api/v1/ws` 单独放行 `Upgrade`/`Connection` 并设 3600s 读超时、访问日志不记 query 以免令牌落盘）；`deploy/deploy.sh` 支持 `CNDB_ENABLE_PROXY=1`（自动带 profile）并在部署末尾用**真实 WebSocket 握手**验证升级链路；`deploy/bootstrap-server.sh`、`.env.prod.example`、`docs/DEPLOY_TENCENT.md` 同步更新
 - 新增**按段落编辑锁 + 段落级三方合并**：文档可以多人同时编辑**不同段落**（同段互斥）——`POST|GET|DELETE /documents/{id}/paragraph-locks` 按位置键（p1/p2…）加锁并实时广播 `para.lock`；保存时回传 `base_content`，服务端做段落级三方合并：互不重叠自动合并（含他人改动），同一段被两人修改则 409 明确指出第几段；不传 `base_content` 时保持原有乐观锁语义
 - 新增**进程内缓存**（不依赖 Redis）：TTL + LRU + 统计 + 前缀失效（`core/cache.py`，并预留 Redis 后端接入点），接入工作区列表与数据表列表两个热点读接口 + 写路径主动失效，新增运维端点 `GET /api/v1/admin/cache/stats`、`POST /api/v1/admin/cache/clear`；实测同会话 A/B：数据表列表 p50 **16.1ms → 3.4ms（提速 79%）**、工作区列表 4.8ms → 2.2ms

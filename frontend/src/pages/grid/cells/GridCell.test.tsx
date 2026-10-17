@@ -18,6 +18,21 @@ import { server } from '@/test/msw'
 import { makeField } from '@/test/fixtures'
 import { resetFileObjectUrls } from '@/hooks/useFileObjectUrl'
 
+/** 派发一次 paste 事件（jsdom 的 ClipboardEvent 只读，手工挂 clipboardData 替身） */
+function firePasteEvent(file: File | null, text = '') {
+  const items = file ? [{ kind: 'file', type: file.type, getAsFile: () => file }] : []
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      items,
+      files: file ? [file] : [],
+      types: file ? ['Files'] : ['text/plain'],
+      getData: () => text,
+    },
+  })
+  fireEvent(document.body, event)
+}
+
 // ─────────────── 展示态：按字段类型分派渲染 ───────────────
 
 describe('GridCell 展示态', () => {
@@ -317,11 +332,50 @@ describe('GridCell 受控编辑', () => {
       />,
     )
 
-    // 图片专属上传提示文案
-    expect(screen.getByText('点击或拖拽上传图片')).toBeInTheDocument()
+    // 图片专属上传提示文案（含粘贴提示）
+    expect(screen.getByText(/点击或拖拽上传图片/)).toBeInTheDocument()
+    expect(screen.getByText(/Ctrl\+V 粘贴/)).toBeInTheDocument()
     // 上传 accept 默认仅收图片
     const dragger = document.querySelector('.ant-upload-wrapper')
     expect(dragger).toBeInTheDocument()
+  })
+
+  it('image 字段编辑态粘贴剪贴板图片：上传并追加到草稿', async () => {
+    resetFileObjectUrls()
+    const field = makeField({ id: 1, name: '照片', field_type: 'image' })
+    const onDraftChange = vi.fn()
+    renderProviders(
+      <GridCell
+        value={null} field={field} rowId={1} wid={5} editing
+        onDraftChange={onDraftChange} onDraftCommit={vi.fn()}
+      />,
+    )
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'screenshot.png', { type: 'image/png' })
+    firePasteEvent(file)
+
+    // MSW 默认上传响应 mock-upload.png → 追加进草稿
+    await waitFor(() => expect(onDraftChange).toHaveBeenCalledWith([
+      expect.objectContaining({ file_key: 'mock-upload.png', mime_type: 'image/png' }),
+    ]))
+  })
+
+  it('image 字段编辑态粘贴带文字的剪贴板：不劫持文本粘贴', async () => {
+    const field = makeField({ id: 1, name: '照片', field_type: 'image' })
+    const onDraftChange = vi.fn()
+    renderProviders(
+      <GridCell
+        value={null} field={field} rowId={1} wid={5} editing
+        onDraftChange={onDraftChange} onDraftCommit={vi.fn()}
+      />,
+    )
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'screenshot.png', { type: 'image/png' })
+    firePasteEvent(file, '单元格文字')
+
+    // 给异步上传留出时间窗，确认没有被触发
+    await new Promise(r => setTimeout(r, 50))
+    expect(onDraftChange).not.toHaveBeenCalled()
   })
 
   it('Escape 触发 onDraftCancel', () => {

@@ -284,3 +284,78 @@ describe('RowDetailDrawer lookup 只读字段', () => {
         expect(values).not.toHaveProperty('负责人')
     })
 })
+
+// ─────────────── 图片字段粘贴上传（新增 / 更新共用）───────────────
+
+describe('RowDetailDrawer 图片字段粘贴', () => {
+    const IMAGE_FIELDS: Field[] = [makeField({ id: 1, name: '姓名', field_type: 'text' }), makeField({ id: 2, name: '照片', field_type: 'image' })]
+    const ROW_WITH_IMAGE: RowResponse = { id: 5, 姓名: '张三', 照片: [] }
+
+    /** jsdom 的 ClipboardEvent 只读，手工挂 clipboardData 替身 */
+    function firePasteEvent(file: File) {
+        const event = new Event('paste', { bubbles: true, cancelable: true })
+        Object.defineProperty(event, 'clipboardData', {
+            value: {
+                items: [{ kind: 'file', type: file.type, getAsFile: () => file }],
+                files: [file],
+                types: ['Files'],
+                getData: () => '',
+            },
+        })
+        fireEvent(document.body, event)
+    }
+
+    it('粘贴剪贴板图片：上传后写入表单，保存时随 PATCH 提交', async () => {
+        setup()
+        let patchBody: Record<string, unknown> = {}
+        server.use(http.patch('/api/v1/workspaces/10/tables/20/records/5', async ({ request }) => {
+            patchBody = await request.clone().json() as Record<string, unknown>
+            return HttpResponse.json({ id: 5 })
+        }))
+        renderProviders(
+            <RowDetailDrawer
+                open
+                row={ROW_WITH_IMAGE}
+                fields={IMAGE_FIELDS}
+                wid="10"
+                tid="20"
+                onClose={() => { }}
+            />,
+        )
+
+        expect(screen.getByText(/Ctrl\+V 粘贴/)).toBeInTheDocument()
+
+        firePasteEvent(new File([new Uint8Array([1, 2, 3])], 'screenshot.png', { type: 'image/png' }))
+        // 上传完成 → 缩略图出现（MSW 默认返回 mock-upload.png）
+        await waitFor(() => expect(document.querySelector('.ant-image-img')).toBeInTheDocument())
+
+        fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
+        await waitFor(() => expect(patchBody.values).toBeDefined())
+        const values = (patchBody as { values: Record<string, unknown> }).values
+        expect((values.照片 as Array<{ file_key: string }>)[0].file_key).toBe('mock-upload.png')
+    })
+
+    it('只读模式下不渲染粘贴提示，粘贴不触发上传', async () => {
+        setup()
+        const uploadSpy = vi.fn(() => HttpResponse.json({
+            file_key: 'x.png', filename: 'x.png', size: 3, mime_type: 'image/png',
+        }, { status: 201 }))
+        server.use(http.post('/api/v1/workspaces/:wid/files', uploadSpy))
+        renderProviders(
+            <RowDetailDrawer
+                open
+                readOnly
+                row={ROW_WITH_IMAGE}
+                fields={IMAGE_FIELDS}
+                wid="10"
+                tid="20"
+                onClose={() => { }}
+            />,
+        )
+
+        expect(screen.queryByText(/Ctrl\+V 粘贴/)).not.toBeInTheDocument()
+        firePasteEvent(new File([new Uint8Array([1, 2, 3])], 'screenshot.png', { type: 'image/png' }))
+        await new Promise(r => setTimeout(r, 50))
+        expect(uploadSpy).not.toHaveBeenCalled()
+    })
+})
