@@ -13,15 +13,18 @@
  * - 上传前按字段配置校验 MIME 与 max_size_mb，不再让后端 413/415 才暴露。
  */
 
-import { useCallback, useRef, useState, type ChangeEvent, type DragEvent, type MouseEvent } from 'react'
+import { useCallback, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type MouseEvent } from 'react'
 import { App as AntApp, Image, Tooltip } from 'antd'
 import { DeleteOutlined, PlusOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons'
+import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { AttachmentFile, Field } from '@/api'
 import { fileApi } from '@/api'
 import { AuthedImage } from '@/components/AuthedFile'
 import { useImagePaste } from '@/hooks/useImagePaste'
 import { formatSize } from '@/utils/formatSize'
-import { useImageUploadQueue } from './useImageUploadQueue'
+import { useImageUploadQueue, type ImageQueueItem } from './useImageUploadQueue'
 
 interface Props {
   /** 工作区 id（上传 / 删除 / 预览都需要） */
@@ -47,6 +50,92 @@ function mimeAllowed(file: File, allowed: string[]): boolean {
   if (allowed.includes(type)) return true
   const major = type.split('/')[0]
   return Boolean(major) && allowed.includes(`${major}/*`)
+}
+
+/** 已上传图片的瓦片：comfortable 模式支持逐图替换 + 拖拽排序 */
+function MetaTile({
+  itemKey,
+  meta,
+  wid,
+  thumbSize,
+  disabled,
+  comfortable,
+  sortable,
+  onRemove,
+  onReplace,
+}: {
+  itemKey: string
+  meta: AttachmentFile
+  wid?: number | string
+  thumbSize: number
+  disabled?: boolean
+  comfortable: boolean
+  sortable: boolean
+  onRemove: (key: string) => void
+  onReplace: (key: string) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: itemKey,
+    disabled: !sortable,
+  })
+  const style: CSSProperties = {
+    width: thumbSize,
+    height: thumbSize,
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.55 : undefined,
+    zIndex: isDragging ? 2 : undefined,
+  }
+  const metaTitle = `${meta.filename}${meta.size ? ` · ${formatSize(meta.size)}` : ''}`
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`cn-image-field__tile${isDragging ? ' is-dragging-tile' : ''}`}
+      {...attributes}
+      {...listeners}
+    >
+      <Tooltip title={metaTitle}>
+        <AuthedImage
+          wid={wid}
+          fileKey={meta.file_key}
+          width={thumbSize}
+          height={thumbSize}
+          alt={meta.filename}
+          style={{ objectFit: 'cover', width: '100%', height: '100%' }}
+        />
+      </Tooltip>
+      {!disabled && (
+        <div className="cn-image-field__ops">
+          {comfortable && (
+            <Tooltip title="替换该图片">
+              <button
+                type="button"
+                className="cn-image-field__op"
+                aria-label={`替换 ${meta.filename}`}
+                onPointerDown={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); onReplace(itemKey) }}
+              >
+                <SwapOutlined />
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip title="删除该图片">
+            <button
+              type="button"
+              className="cn-image-field__op is-danger"
+              aria-label="删除该图片"
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); onRemove(itemKey) }}
+            >
+              <DeleteOutlined />
+            </button>
+          </Tooltip>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function ImageFieldEditor({
@@ -78,13 +167,19 @@ export function ImageFieldEditor({
   const queue = useImageUploadQueue({ wid, tableId, rowId, value, onChange, onReplaced: handleReplaced })
   const { items } = queue
 
-  const hasMeta = items.some(item => item.status === 'meta')
+  const metaItems = items.filter((item): item is Extract<ImageQueueItem, { status: 'meta' }> => item.status === 'meta')
+  const hasMeta = metaItems.length > 0
   const uploading = items.some(item => item.status === 'queued' || item.status === 'uploading')
   const comfortable = thumbSize >= 48
+  // 拖拽排序只在「行详情大图模式 + 多图 + 空闲」时开启：小瓦片拖拽体验差且易误触
+  const sortable = comfortable && multipleAllowed && !disabled && !queue.busy && metaItems.length > 1
 
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
   const pickerRef = useRef<HTMLInputElement>(null)
+  /** 逐图替换的目标 key：由「替换」按钮设置，下次选文件时消费 */
+  const replaceKeyRef = useRef<string | null>(null)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   /** 上传前校验：MIME 白名单 + 字段级 max_size_mb + 单/多图约束 */
   const validateFiles = useCallback((files: File[]): File[] => {
@@ -107,21 +202,41 @@ export function ImageFieldEditor({
     return multipleAllowed ? accepted : accepted.slice(0, 1)
   }, [allowedMimes, maxSizeBytes, maxSizeMb, message, multipleAllowed])
 
-  const addFiles = useCallback((files: File[]) => {
+  const enqueueFiles = useCallback((files: File[], replaceKey?: string | null) => {
     const accepted = validateFiles(files)
     if (accepted.length === 0) return
+    if (replaceKey) {
+      // 逐图替换：只取第一张，成功后再清理被替换的那张
+      queue.addFiles([accepted[0]], { replaceKey })
+      if (accepted.length > 1) message.info('替换只使用第一张图片')
+      return
+    }
     // 单图字段已有图：走替换（新图成功后才删旧图）
     queue.addFiles(accepted, { replace: !multipleAllowed && hasMeta })
-  }, [queue, validateFiles, multipleAllowed, hasMeta])
+  }, [queue, validateFiles, multipleAllowed, hasMeta, message])
+
+  /** 打开文件选择框；传入 key 表示替换指定图片（而不是追加） */
+  const openPicker = (replaceKey?: string) => {
+    replaceKeyRef.current = replaceKey ?? null
+    pickerRef.current?.click()
+  }
 
   // 只读态不注册，避免抢走文档级粘贴事件
-  const bindPasteZone = useImagePaste(files => addFiles(files), !disabled)
+  const bindPasteZone = useImagePaste(files => enqueueFiles(files), !disabled)
 
   const handlePick = (e: ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(e.target.files ?? [])
+    const replaceKey = replaceKeyRef.current
+    replaceKeyRef.current = null
     // 清空 value：否则再次选择同一个文件不会触发 change
     e.target.value = ''
-    addFiles(picked)
+    enqueueFiles(picked, replaceKey)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    queue.reorder(String(active.id), String(over.id))
   }
 
   /** 点击字段空白处只聚焦：聚焦即成为 Ctrl+V 的粘贴目标，不打开系统文件选择框。
@@ -157,7 +272,7 @@ export function ImageFieldEditor({
     dragDepth.current = 0
     setDragging(false)
     const files = Array.from(e.dataTransfer?.files ?? [])
-    if (files.length > 0) addFiles(files)
+    if (files.length > 0) enqueueFiles(files)
   }
 
   const removeItem = (key: string) => {
@@ -194,65 +309,59 @@ export function ImageFieldEditor({
       {items.length > 0 && (
         <div className="cn-image-field__tiles">
           <Image.PreviewGroup>
-            {items.map(item => item.status === 'meta' ? (
-              <div key={item.key} className="cn-image-field__tile" style={tileStyle}>
-                <AuthedImage
-                  wid={wid}
-                  fileKey={item.meta.file_key}
-                  width={thumbSize}
-                  height={thumbSize}
-                  alt={item.meta.filename}
-                  style={{ objectFit: 'cover', width: '100%', height: '100%' }}
-                />
-                {!disabled && (
-                  <Tooltip title="删除该图片">
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={metaItems.map(item => item.key)} strategy={rectSortingStrategy}>
+                {items.map(item => item.status === 'meta' ? (
+                  <MetaTile
+                    key={item.key}
+                    itemKey={item.key}
+                    meta={item.meta}
+                    wid={wid}
+                    thumbSize={thumbSize}
+                    disabled={disabled}
+                    comfortable={comfortable}
+                    sortable={sortable}
+                    onRemove={removeItem}
+                    onReplace={key => openPicker(key)}
+                  />
+                ) : (
+                  <div key={item.key} className={`cn-image-field__tile is-${item.status}`} style={tileStyle}>
+                    {item.previewUrl ? (
+                      <img src={item.previewUrl} alt="" className="cn-image-field__preview" />
+                    ) : (
+                      <span className="cn-image-field__preview cn-image-field__preview--empty" />
+                    )}
+                    {item.status === 'error' ? (
+                      <div className="cn-image-field__err">
+                        <span>上传失败</span>
+                        <button
+                          type="button"
+                          className="cn-image-field__retry"
+                          onClick={e => { e.stopPropagation(); queue.retry(item.key) }}
+                        >
+                          <ReloadOutlined /> 重试
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="cn-image-field__mask">
+                        <span className="cn-image-field__spinner" aria-hidden />
+                        <span className="cn-image-field__pct">
+                          {item.status === 'queued' ? '等待' : `${item.progress}%`}
+                        </span>
+                      </div>
+                    )}
                     <button
                       type="button"
                       className="cn-image-field__del"
-                      aria-label="删除该图片"
-                      onClick={e => { e.stopPropagation(); removeItem(item.key) }}
+                      aria-label="取消上传"
+                      onClick={e => { e.stopPropagation(); queue.remove(item.key) }}
                     >
                       <DeleteOutlined />
                     </button>
-                  </Tooltip>
-                )}
-              </div>
-            ) : (
-              <div key={item.key} className={`cn-image-field__tile is-${item.status}`} style={tileStyle}>
-                {item.previewUrl ? (
-                  <img src={item.previewUrl} alt="" className="cn-image-field__preview" />
-                ) : (
-                  <span className="cn-image-field__preview cn-image-field__preview--empty" />
-                )}
-                {item.status === 'error' ? (
-                  <div className="cn-image-field__err">
-                    <span>上传失败</span>
-                    <button
-                      type="button"
-                      className="cn-image-field__retry"
-                      onClick={e => { e.stopPropagation(); queue.retry(item.key) }}
-                    >
-                      <ReloadOutlined /> 重试
-                    </button>
                   </div>
-                ) : (
-                  <div className="cn-image-field__mask">
-                    <span className="cn-image-field__spinner" aria-hidden />
-                    <span className="cn-image-field__pct">
-                      {item.status === 'queued' ? '等待' : `${item.progress}%`}
-                    </span>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className="cn-image-field__del"
-                  aria-label="取消上传"
-                  onClick={e => { e.stopPropagation(); queue.remove(item.key) }}
-                >
-                  <DeleteOutlined />
-                </button>
-              </div>
-            ))}
+                ))}
+              </SortableContext>
+            </DndContext>
           </Image.PreviewGroup>
         </div>
       )}
@@ -267,7 +376,7 @@ export function ImageFieldEditor({
             title={addLabel}
             aria-label={addLabel}
             disabled={!multipleAllowed && uploading}
-            onClick={() => pickerRef.current?.click()}
+            onClick={() => openPicker()}
           >
             {!multipleAllowed && hasMeta ? <SwapOutlined /> : <PlusOutlined />}
             {comfortable && <span className="cn-image-field__add-text">{multipleAllowed ? '添加' : hasMeta ? '替换' : '选择'}</span>}
@@ -276,6 +385,9 @@ export function ImageFieldEditor({
             <div className="cn-image-field__hint">
               点击 + 选择图片，或拖拽到此；聚焦后按 Ctrl+V 粘贴
             </div>
+          )}
+          {comfortable && sortable && (
+            <div className="cn-image-field__hint">拖动缩略图可调整顺序</div>
           )}
         </div>
       )}
