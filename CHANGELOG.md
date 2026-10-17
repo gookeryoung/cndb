@@ -116,8 +116,11 @@
 - 文档列表 / 文档树改为批量序列化：版本数与标签各用一次聚合查询，大文档树不再逐节点 N+1
 - 反向链接扫描改为单条 SQL 取各文档最新版本，替换逐文档查询
 - README 修正项目结构树、CLI 命令、e2e 包管理器与特性清单等失实内容
+- **Python 支持矩阵放宽为 3.12 ~ 3.14**：`requires-python` 改为 `>=3.12,<3.15`；其中 **Windows 仍只支持 3.12**（Win7/8 兼容钉版依赖只在该版本验证），`requires-python` 无法表达平台差异，改由 `cndb` 包导入时校验兜底（可用 `CNDB_SKIP_PY_VERSION_CHECK=1` 绕过）
+- **依赖钉版只对 Windows 生效**：所有仅为 Win7/8 兼容而存在的依赖上限（`fastapi<0.126`、`pydantic<2.7`、`pydantic-settings<2.3`、`bcrypt<6`、`cryptography<51`）统一挂 `sys_platform == 'win32'` 标记，Linux / macOS 只保留版本下限，可自由升级
 
 ### 修复
+- **视图导出 PDF 放大后发糊**：旧实现把内容等比压进 A4 宽度（1390px 看板压到 785pt，字号只剩 75%，用户必须放大、一放大就虚）。现改为按「屏幕实际大小」1:1 排版（`1 CSS px = 0.75pt`），页面尺寸随内容长大（不低于 A4）；位图按 300 DPI（`computeRenderScale`，受像素预算约束）渲染并以 JPEG 0.95 写入 —— PNG 在 jsPDF 4 下会退化成未压缩流（实测同一页 1.4MB → 33MB）
 - **数据表视图可见性整体收口**（安全，ADR 0003 的 P0）：视图的「可见性」此前散落在各接口自行判断、且多个入口**完全没判**，任何人只要拿到视图 id 即可越权读取或写入他人视图。现把判定收敛为单一入口 `services/core/view_access.py`（`resolve_view_action` / `get_view_or_404` / `visible_view_filter`），所有视图接口共用。逐项修复：
   - **视图驱动查询补可见性校验**：`GET /views/{id}/rows|kanban|calendar` 原先只校验「表 READ + 视图归属」，凭**他人个人视图的 id** 即可套用其筛选/排序规则取数、并从结果差集反推其筛选条件。现补 `VIEW_READ`，不可见一律 **404**
   - **数据表导出补视图可见性校验**：`GET /tables/{id}/export?view_id=` 原先只比对 `table_id`，同样可借用他人视图的筛选规则导出数据，且**视图名会出现在下载文件名里**（连名字一起泄露）。现同样按 `VIEW_READ` 收口
