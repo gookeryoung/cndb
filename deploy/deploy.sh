@@ -377,6 +377,16 @@ if [[ "$ENABLE_PROXY" == "1" ]]; then
     rollback "nginx 反代启动失败"
     exit 1
   fi
+  # 必须 reload：上一步 app 容器已被 --force-recreate 重建，容器 IP 可能变化。
+  # nginx 的 upstream 里写的是容器名，**静态解析只发生在启动/reload 时**，
+  # 不 reload 就会继续拿旧 IP → 部署完接口 502（实测踩过：日志里
+  # "connect() failed ... upstream: http://172.18.0.x:8000" 指的就是已销毁的旧容器）。
+  # reload 是热加载，不断连接，可安全重复执行。
+  if ! docker exec cndb-nginx nginx -s reload >/dev/null 2>&1; then
+    warn "nginx reload 失败，尝试完整重建容器..."
+    dc up -d --force-recreate nginx || true
+    sleep 2
+  fi
 fi
 
 # 确认跑起来的确实是目标镜像。
@@ -404,12 +414,33 @@ fi
 if [[ "$ENABLE_PROXY" == "1" ]]; then
   log "验证反向代理与 WebSocket 升级（经容器 nginx）..."
   HTTP_BIND="${CNDB_HTTP_BIND:-80}"
-  PROXY_STATUS="$(docker exec cndb-nginx wget -q -O /dev/null -S "http://127.0.0.1/api/health" 2>&1 | grep -o 'HTTP/[0-9.]* [0-9]*' | head -1 || true)"
+  # 经代理探测健康端点。**非 2xx 视为失败**——这条曾经只打 warn 就继续，
+  # 结果 502 被当成成功（应用健康但用户打不开站点），隐蔽且致命。
+  # 重试是为了给 nginx reload 后的 worker 切换留窗口（实测 1-2 秒）。
+  PROXY_STATUS=""
+  for attempt in 1 2 3 4 5 6; do
+    PROXY_STATUS="$(docker exec cndb-nginx wget -q -O /dev/null -S "http://127.0.0.1/api/health" 2>&1 | grep -o 'HTTP/[0-9.]* [0-9]*' | head -1 || true)"
+    case "$PROXY_STATUS" in
+      *" 200"|*" 204"|*" 301"|*" 302") break ;;
+    esac
+    [[ "$attempt" -lt 6 ]] && sleep 2
+  done
   if [[ -z "$PROXY_STATUS" ]]; then
     warn "代理内 /api/health 探测无响应，请检查 nginx 日志：dc logs nginx"
-  else
-    log "代理内 /api/health → ${PROXY_STATUS}"
+    die "反向代理不可用（应用本身已部署成功，仅代理层故障）"
   fi
+  case "$PROXY_STATUS" in
+    *" 200"|*" 204"|*" 301"|*" 302")
+      log "代理内 /api/health → ${PROXY_STATUS}" ;;
+    *)
+      warn "代理内 /api/health → ${PROXY_STATUS}（非 2xx：应用健康但反代不通）"
+      warn "重点排查两项："
+      warn "  ① .env 的 CNDB_APP_UPSTREAM 是否用了服务名 app —— 同机其他 compose 项目"
+      warn "     服务名也叫 app 时会与它 round-robin 撞车，必须改容器名 cndb:8000"
+      warn "  ② nginx 是否 reload（本脚本已自动 reload；手工起容器需自行 reload）"
+      warn "应用容器健康、数据无碍，**不要急着重跑部署**，先按上面两项修 nginx"
+      die "反向代理不可用" ;;
+  esac
 
   # 用应用自身的密钥在容器内签发一个令牌，再经代理建立 WS 连接，期待首帧 presence.sync。
   # 这样无需任何生产口令，且真实验证了「代理 → 应用」的升级链路。
