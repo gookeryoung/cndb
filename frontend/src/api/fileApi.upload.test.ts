@@ -47,5 +47,18 @@ describe('fileApi.upload 归属上下文', () => {
         expect(fd.get('table_id')).toBeNull()
         expect(fd.get('row_id')).toBeNull()
         expect(fd.get('document_id')).toBeNull()
+        expect(fd.get('field_id')).toBeNull()
+    })
+
+    it('携带字段 id 时写入 field_id（供后端执行字段级大小/MIME 校验）', async () => {
+        const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { file_key: 'k.png' } } as never)
+        const file = new File(['x'], 'a.png', { type: 'image/png' })
+
+        await fileApi.upload(10, file, { tableId: 7, rowId: 42, fieldId: 9 })
+
+        const fd = post.mock.calls[0][1] as FormData
+        expect(fd.get('table_id')).toBe('7')
+        expect(fd.get('row_id')).toBe('42')
+        expect(fd.get('field_id')).toBe('9')
     })
 })

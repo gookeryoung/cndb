@@ -125,3 +125,31 @@ class TestImageFieldTypeMeta:
         assert cfg.max_size_mb == 10
         assert cfg.multiple is True
         assert cfg.allowed_mime_types == []
+        assert cfg.max_count == 0
+
+
+class TestImageMaxCount:
+    """max_count：0 = 不限制；超出时值校验直接拒绝."""
+
+    @staticmethod
+    def _items(n: int) -> list[dict]:
+        return [{"file_key": f"k{i}.png", "filename": f"k{i}.png", "mime_type": "image/png"} for i in range(n)]
+
+    def test_config_default_unlimited(self):
+        from cndb.plugins.tables.field_types import ImageFieldConfig
+
+        assert ImageFieldConfig().max_count == 0
+
+    def test_list_over_limit_rejected(self, img: ImageFieldType):
+        with pytest.raises(ValueError, match="最多 2 张"):
+            img.validate_value(self._items(3), {"max_count": 2})
+
+    def test_list_at_limit_accepted(self, img: ImageFieldType):
+        assert img.validate_value(self._items(2), {"max_count": 2}) is not None
+
+    def test_json_string_over_limit_rejected(self, img: ImageFieldType):
+        with pytest.raises(ValueError, match="最多 2 张"):
+            img.validate_value(json.dumps(self._items(3)), {"max_count": 2})
+
+    def test_zero_means_unlimited(self, img: ImageFieldType):
+        assert img.validate_value(self._items(5), {"max_count": 0}) is not None

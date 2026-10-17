@@ -1,6 +1,6 @@
 /** 单元格展示态 —— 按字段类型渲染只读外观. */
 
-import { Tag, Tooltip, Typography, Image } from 'antd'
+import { Tag, Tooltip, Typography } from 'antd'
 import type { AttachmentFile, Field } from '@/api'
 import { AuthedFileLink, AuthedImage } from '@/components/AuthedFile'
 import { getTagColorName, resolveTagColor } from '@/utils/tagColors'
@@ -123,19 +123,18 @@ export function DisplayCell({ value, field, rowId, wid }: { value: unknown; fiel
       const extra = images.length - visible.length
       return (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-          <Image.PreviewGroup>
-            {visible.map(f => (
-              <AuthedImage
-                key={f.file_key || f.filename}
-                wid={wid}
-                fileKey={f.file_key}
-                width={32}
-                height={32}
-                alt={f.filename}
-                style={{ objectFit: 'cover', borderRadius: 4 }}
-              />
-            ))}
-          </Image.PreviewGroup>
+          {visible.map(f => (
+            <AuthedImage
+              key={f.file_key || f.filename}
+              wid={wid}
+              fileKey={f.file_key}
+              width={32}
+              height={32}
+              alt={f.filename}
+              thumb={96}
+              style={{ objectFit: 'cover', borderRadius: 4 }}
+            />
+          ))}
           {extra > 0 && (
             <Tooltip title={`共 ${images.length} 张图片，打开行详情查看全部`}>
               <span className="cn-image-count">+{extra}</span>

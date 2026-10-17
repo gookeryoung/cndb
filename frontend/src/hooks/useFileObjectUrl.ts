@@ -21,20 +21,23 @@ export type FileId = number | string | undefined | null
 const _urlCache = new Map<string, string>()
 const _inflight = new Map<string, Promise<string>>()
 
-function _cacheKey(wid: number | string, fileKey: string, inline: boolean): string {
-  return `${wid}:${fileKey}:${inline ? 'i' : 'd'}`
+function _cacheKey(wid: number | string, fileKey: string, inline: boolean, thumb: number): string {
+  return `${wid}:${fileKey}:${inline ? 'i' : 'd'}:t${thumb}`
 }
 
-function _load(wid: number | string, fileKey: string, inline: boolean): Promise<string> {
-  const key = _cacheKey(wid, fileKey, inline)
+function _load(wid: number | string, fileKey: string, inline: boolean, thumb: number): Promise<string> {
+  const key = _cacheKey(wid, fileKey, inline, thumb)
   const cached = _urlCache.get(key)
   if (cached) return Promise.resolve(cached)
   const running = _inflight.get(key)
   if (running) return running
 
+  const params: Record<string, unknown> = {}
+  if (inline) params.inline = true
+  if (thumb) params.thumb = thumb
   const pending = api
     .get(`/v1/workspaces/${wid}/files/${encodeURIComponent(fileKey)}`, {
-      params: inline ? { inline: true } : undefined,
+      params: Object.keys(params).length > 0 ? params : undefined,
       responseType: 'blob',
     })
     .then((res) => {
@@ -49,14 +52,20 @@ function _load(wid: number | string, fileKey: string, inline: boolean): Promise<
   return pending
 }
 
-/** 取附件的 object URL；未就绪/失败时 `url` 为 undefined. */
+/** 取附件的 object URL；未就绪/失败时 `url` 为 undefined.
+ *
+ * ``options.thumb``：请求服务端缩略图（最长边 N，32-1024），用于列表/瓦片；
+ * ``options.enabled=false``：暂不请求（预览打开时再懒加载原图）。
+ */
 export function useFileObjectUrl(
   wid: FileId,
   fileKey: string | undefined | null,
   inline = true,
+  options?: { thumb?: number; enabled?: boolean },
 ): { url: string | undefined; error: boolean } {
-  const enabled = wid !== undefined && wid !== null && !!fileKey
-  const key = enabled ? _cacheKey(wid as number | string, fileKey as string, inline) : ''
+  const thumb = options?.thumb ?? 0
+  const enabled = options?.enabled !== false && wid !== undefined && wid !== null && !!fileKey
+  const key = enabled ? _cacheKey(wid as number | string, fileKey as string, inline, thumb) : ''
 
   const [url, setUrl] = useState<string | undefined>(() => (key ? _urlCache.get(key) : undefined))
   const [error, setError] = useState(false)
@@ -75,7 +84,7 @@ export function useFileObjectUrl(
     }
     let alive = true
     setError(false)
-    _load(wid, fileKey, inline).then(
+    _load(wid, fileKey, inline, thumb).then(
       (objectUrl) => {
         if (alive) setUrl(objectUrl)
       },
@@ -86,7 +95,7 @@ export function useFileObjectUrl(
     return () => {
       alive = false
     }
-  }, [key, wid, fileKey, inline])
+  }, [key, wid, fileKey, inline, thumb])
 
   return { url, error }
 }

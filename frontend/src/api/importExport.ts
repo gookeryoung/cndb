@@ -186,7 +186,13 @@ export const fileApi = {
   upload: (
     wid: number | string,
     file: File,
-    ctx?: { tableId?: number | string; rowId?: number | string; documentId?: number | string },
+    ctx?: {
+      tableId?: number | string
+      rowId?: number | string
+      documentId?: number | string
+      /** 归属字段 id：后端据此执行字段级大小 / MIME 校验（图片/附件字段） */
+      fieldId?: number | string
+    },
     options?: {
       /** 上传进度（0-100）；用于图片字段的瓦片进度环 */
       onProgress?: (percent: number) => void
@@ -199,6 +205,7 @@ export const fileApi = {
     if (ctx?.tableId != null) fd.append('table_id', String(ctx.tableId))
     if (ctx?.rowId != null) fd.append('row_id', String(ctx.rowId))
     if (ctx?.documentId != null) fd.append('document_id', String(ctx.documentId))
+    if (ctx?.fieldId != null) fd.append('field_id', String(ctx.fieldId))
     return api.post<AttachmentFile>(`/v1/workspaces/${wid}/files`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
       signal: options?.signal,

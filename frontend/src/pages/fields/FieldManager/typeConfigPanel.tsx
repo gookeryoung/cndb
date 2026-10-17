@@ -65,9 +65,9 @@ export function defaultConfigForType(fieldType: FieldType): Record<string, unkno
     case 'link':
       return { target_table_id: undefined, multiple: true }
     case 'attachment':
-      return { max_size_mb: 10, allowed_mime_types: [], multiple: true }
+      return { max_size_mb: 10, allowed_mime_types: [], multiple: true, max_count: 0 }
     case 'image':
-      return { max_size_mb: 10, allowed_mime_types: [], multiple: true }
+      return { max_size_mb: 10, allowed_mime_types: [], multiple: true, max_count: 0 }
     default:
       return {}
   }
@@ -218,6 +218,7 @@ export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false
 
       {/* ── 附件 attachment ── */}
       {TYPE_CATEGORIES.attachment.includes(fieldType) && (
+        <>
         <Row gutter={12}>
           <Col span={8}>
             <Form.Item {...configField('max_size_mb')} label="单文件最大 (MB)" style={{ marginBottom: 8 }}>
@@ -235,10 +236,19 @@ export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false
             </Form.Item>
           </Col>
         </Row>
+        <Row gutter={12}>
+          <Col span={8}>
+            <Form.Item {...configField('max_count')} label="最多文件数（0=不限）" style={{ marginBottom: 8 }}>
+              <InputNumber min={0} max={1000} style={{ width: '100%' }} placeholder="0" />
+            </Form.Item>
+          </Col>
+        </Row>
+        </>
       )}
 
       {/* ── 图片 image ── */}
       {TYPE_CATEGORIES.image.includes(fieldType) && (
+        <>
         <Row gutter={12}>
           <Col span={8}>
             <Form.Item {...configField('max_size_mb')} label="单图最大 (MB)" style={{ marginBottom: 8 }}>
@@ -256,6 +266,14 @@ export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false
             </Form.Item>
           </Col>
         </Row>
+        <Row gutter={12}>
+          <Col span={8}>
+            <Form.Item {...configField('max_count')} label="最多图片数（0=不限）" style={{ marginBottom: 8 }}>
+              <InputNumber min={0} max={1000} style={{ width: '100%' }} placeholder="0" />
+            </Form.Item>
+          </Col>
+        </Row>
+        </>
       )}
     </div>
   )

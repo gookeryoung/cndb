@@ -89,6 +89,15 @@ _ALLOWED_EXTENSIONS: frozenset[str] = frozenset(
 # 浏览器 inline 渲染时会在同源上下文中执行）
 _SCRIPTABLE_EXTENSIONS: frozenset[str] = frozenset({".html", ".htm", ".svg", ".xml", ".xhtml", ".xht"})
 
+# 可生成缩略图的图片扩展名（svg 无法用 Pillow 栅格化，走原图）
+_THUMBNAILABLE_EXTENSIONS: frozenset[str] = frozenset(
+    {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".tiff"}
+)
+
+# 缩略图缓存目录名（放在 UPLOAD_DIR 下的独立子目录，避免和业务文件混在一起；
+# file_key 是不可变 uuid，缓存永不失效，删除附件时一并清理）
+_THUMB_DIR_NAME = ".thumbs"
+
 
 def _workspace_dir(workspace_id: int) -> PathLib:
     """返回工作区专属上传目录（自动创建）."""
@@ -120,6 +129,107 @@ def _file_path(workspace_id: int, file_key: str) -> PathLib:
     return path
 
 
+def _thumb_cache_path(workspace_id: int, file_key: str, size: int) -> PathLib:
+    """缩略图缓存路径：``{UPLOAD_DIR}/.thumbs/{workspace_id}/{file_key}.w{size}.webp``."""
+    d = settings.UPLOAD_DIR / _THUMB_DIR_NAME / str(workspace_id)
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{file_key}.w{size}.webp"
+
+
+def _clear_thumb_cache(workspace_id: int, file_key: str) -> None:
+    """删除某文件的全部缩略图缓存（附件被删除时调用；失败静默）."""
+    d = settings.UPLOAD_DIR / _THUMB_DIR_NAME / str(workspace_id)
+    if not d.is_dir():
+        return
+    for cached in d.glob(f"{file_key}.w*.webp"):
+        cached.unlink(missing_ok=True)
+
+
+def _generate_thumbnail(source: PathLib, target: PathLib, size: int) -> bool:
+    """生成 WebP 缩略图；成功返回 True。Pillow 缺失/解码失败时返回 False（调用方回退原图）."""
+    try:
+        from PIL import Image, ImageOps  # 运行期才依赖 Pillow（reportlab 已间接安装）
+    except ImportError:  # pragma: no cover - 依赖缺失属部署异常
+        return False
+
+    tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with Image.open(source) as image:
+            image = ImageOps.exif_transpose(image)
+            image.thumbnail((size, size))
+            # 统一到 RGBA 再存 WebP：保留透明通道，避免 PNG logo 变黑底
+            if image.mode not in {"RGB", "RGBA"}:
+                image = image.convert("RGBA")
+            image.save(tmp, format="WEBP", quality=82, method=4)
+        tmp.replace(target)
+        return True
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        target.unlink(missing_ok=True)
+        return False
+
+
+def _validate_against_field(
+    db: Session,
+    *,
+    field_id: int,
+    table_id: int | None,
+    filename: str,
+    mime: str,
+    size: int,
+) -> None:
+    """按字段配置校验上传（大小 / MIME / 图片类型）.
+
+    上传接口本身拿不到字段，前端在 ``field_id`` 里带上归属字段；后端据此把
+    「字段级配置」真正落到上传入口，避免只有前端提示、接口可绕过。
+    """
+    from cndb.plugins.tables.field_types import AttachmentFieldConfig, ImageFieldConfig
+    from cndb.plugins.tables.field_types.files import is_image_meta
+    from cndb.plugins.tables.models import DataField
+
+    if table_id is None:
+        raise HTTPException(status_code=400, detail="field_id 需要与 table_id 一起使用")
+
+    field = (
+        db.query(DataField)
+        .filter(
+            DataField.id == field_id,
+            DataField.table_id == table_id,
+            DataField.trashed.is_(False),
+        )
+        .first()
+    )
+    if field is None:
+        raise HTTPException(status_code=404, detail="字段不存在或已删除")
+
+    if field.field_type == "image" and not is_image_meta({"mime_type": mime, "filename": filename}):
+        raise HTTPException(status_code=415, detail=f"字段「{field.name}」只允许上传图片")
+
+    config_cls = {"image": ImageFieldConfig, "attachment": AttachmentFieldConfig}.get(field.field_type)
+    if config_cls is None:
+        return
+    try:
+        config = config_cls.model_validate(field.config or {})
+    except Exception:
+        config = config_cls()
+
+    if config.max_size_mb and size > config.max_size_mb * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"文件超过字段「{field.name}」限制（{config.max_size_mb} MB）",
+        )
+
+    if config.allowed_mime_types:
+        actual = mime.lower()
+        allowed = [item.lower() for item in config.allowed_mime_types]
+        major = actual.split("/")[0] if "/" in actual else ""
+        if actual not in allowed and (not major or f"{major}/*" not in allowed):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=f"文件类型 {mime} 不在字段「{field.name}」允许范围内",
+            )
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def upload_file(
     workspace_id: Annotated[int, Path(...)],
@@ -129,6 +239,7 @@ async def upload_file(
     table_id: Annotated[int | None, Form()] = None,
     row_id: Annotated[int | None, Form()] = None,
     document_id: Annotated[int | None, Form()] = None,
+    field_id: Annotated[int | None, Form()] = None,
 ) -> dict[str, object]:
     """上传一个附件文件，返回元数据.
 
@@ -166,6 +277,20 @@ async def upload_file(
             detail=f"文件过大（{size} > {_MAX_UPLOAD_BYTES}）",
         )
 
+    mime = file.content_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+
+    # 字段级校验：前端把归属字段 id 一并带上，后端据此校验大小 / MIME / 图片类型，
+    # 避免「只有前端提示、直接调接口可绕过字段配置」
+    if field_id is not None:
+        _validate_against_field(
+            db,
+            field_id=field_id,
+            table_id=table_id,
+            filename=safe_name,
+            mime=mime,
+            size=size,
+        )
+
     # 生成稳定 file_key: uuid.ext（保留原始扩展名方便识别）
     ext = suffix or ""
     file_key = f"{uuid.uuid4().hex}{ext}"
@@ -183,8 +308,6 @@ async def upload_file(
         uploaded_by_id=current_user.id if current_user else None,
     )
 
-    mime = file.content_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
-
     return {
         "file_key": file_key,
         "filename": safe_name,
@@ -201,12 +324,15 @@ def download_file(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     inline: Annotated[bool, Query()] = False,
+    thumb: Annotated[int | None, Query(ge=32, le=1024)] = None,
 ) -> FileResponse:
     """下载/预览附件.
 
     - ``inline=true``：浏览器尝试在标签页内预览（图片、PDF 等）；
       对 html/svg/xml 等可脚本化扩展名，为防存储型 XSS 强制改为 attachment 下载。
     - ``inline=false``：强制下载
+    - ``thumb=N``：图片按最长边 N（32-1024）返回 WebP 缩略图（磁盘缓存）；
+      非图片 / 解码失败时静默回退原图，不影响下载语义。
     """
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
     # 按归属校验：受限表 / 未发布文档 / 被行过滤挡掉的行上的附件不可读
@@ -215,6 +341,25 @@ def download_file(
     target = _file_path(workspace_id, file_key)
     if not target.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="附件不存在或已被清理")
+
+    # 缩略图：仅对可栅格化图片生效；生成/读取失败时回退原图
+    if thumb is not None:
+        ext_for_thumb = PathLib(file_key).suffix.lower()
+        if ext_for_thumb in _THUMBNAILABLE_EXTENSIONS:
+            cache_file = _thumb_cache_path(workspace_id, file_key, thumb)
+            if not cache_file.is_file() and not _generate_thumbnail(target, cache_file, thumb):
+                cache_file = None
+            if cache_file is not None and cache_file.is_file():
+                return FileResponse(
+                    path=str(cache_file),
+                    media_type="image/webp",
+                    filename=PathLib(file_key).name,
+                    headers={
+                        "Content-Disposition": "inline",
+                        "Cache-Control": "private, max-age=86400",
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                )
 
     mime, _ = mimetypes.guess_type(file_key)
     media_type = mime or "application/octet-stream"
@@ -253,5 +398,6 @@ def delete_file(
     target = _file_path(workspace_id, file_key)
     if target.is_file():
         target.unlink()
+    _clear_thumb_cache(workspace_id, file_key)
     files_service.forget_owner(db, file_key)
     # 文件不存在也静默通过（幂等删除）

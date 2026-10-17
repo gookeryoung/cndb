@@ -5,7 +5,7 @@
  * 先用 axios 拉 blob，再把 object URL 交给图片/链接。
  */
 
-import type { CSSProperties, ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { Image } from 'antd'
 import type { ImageProps } from 'antd'
 import { useFileObjectUrl, type FileId } from '@/hooks/useFileObjectUrl'
@@ -17,9 +17,15 @@ export function AuthedImage({
   width = 48,
   height = 48,
   style,
+  thumb,
   ...rest
-}: ImageProps & { wid?: FileId; fileKey: string }) {
-  const { url } = useFileObjectUrl(wid, fileKey, true)
+}: ImageProps & { wid?: FileId; fileKey: string; thumb?: number }) {
+  // 缩略图用于展示；原图只在预览要打开 / 鼠标悬停时才懒加载，避免为 32px 预览拉原图
+  const [previewVisible, setPreviewVisible] = useState(false)
+  const [preferFull, setPreferFull] = useState(!thumb)
+  const { url: thumbUrl } = useFileObjectUrl(wid, fileKey, true, { thumb, enabled: !!thumb })
+  const { url: fullUrl } = useFileObjectUrl(wid, fileKey, true, { enabled: preferFull })
+  const url = thumb ? (thumbUrl ?? fullUrl) : fullUrl
 
   // 加载中/失败：渲染同尺寸占位块，避免浏览器「图裂」图标
   if (!url) {
@@ -30,7 +36,25 @@ export function AuthedImage({
       />
     )
   }
-  return <Image src={url} alt={alt} width={width} height={height} style={style} {...rest} />
+  return (
+    <Image
+      src={url}
+      alt={alt}
+      width={width}
+      height={height}
+      style={style}
+      onMouseEnter={thumb ? () => setPreferFull(true) : undefined}
+      preview={thumb ? {
+        src: fullUrl,
+        visible: previewVisible,
+        onVisibleChange: visible => {
+          setPreviewVisible(visible)
+          if (visible) setPreferFull(true)
+        },
+      } : undefined}
+      {...rest}
+    />
+  )
 }
 
 export function AuthedFileLink({

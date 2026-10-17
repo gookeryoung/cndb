@@ -164,12 +164,24 @@ export function ImageFieldEditor({
     }
   }, [wid])
 
-  const queue = useImageUploadQueue({ wid, tableId, rowId, value, onChange, onReplaced: handleReplaced })
+  const queue = useImageUploadQueue({
+    wid,
+    tableId,
+    rowId,
+    fieldId: field.id,
+    value,
+    onChange,
+    onReplaced: handleReplaced,
+  })
   const { items } = queue
 
   const metaItems = items.filter((item): item is Extract<ImageQueueItem, { status: 'meta' }> => item.status === 'meta')
   const hasMeta = metaItems.length > 0
   const uploading = items.some(item => item.status === 'queued' || item.status === 'uploading')
+  // 数量上限（0 = 不限制）；失败项不占名额，等待重试
+  const maxCount = Math.max(0, Number(field.config?.max_count ?? 0) || 0)
+  const countInUse = items.filter(item => item.status !== 'error').length
+  const maxReached = maxCount > 0 && countInUse >= maxCount
   const comfortable = thumbSize >= 48
   // 拖拽排序只在「行详情大图模式 + 多图 + 空闲」时开启：小瓦片拖拽体验差且易误触
   const sortable = comfortable && multipleAllowed && !disabled && !queue.busy && metaItems.length > 1
@@ -199,8 +211,19 @@ export function ImageFieldEditor({
     if (!multipleAllowed && accepted.length > 1) {
       message.info('单图字段只保留第一张图片')
     }
-    return multipleAllowed ? accepted : accepted.slice(0, 1)
-  }, [allowedMimes, maxSizeBytes, maxSizeMb, message, multipleAllowed])
+    const bounded = multipleAllowed ? accepted : accepted.slice(0, 1)
+    if (maxCount <= 0) return bounded
+    const remaining = Math.max(0, maxCount - countInUse)
+    if (remaining === 0) {
+      message.error(`最多 ${maxCount} 张图片，请先删除后再添加`)
+      return []
+    }
+    if (bounded.length > remaining) {
+      message.info(`最多 ${maxCount} 张图片，已保留前 ${remaining} 张`)
+      return bounded.slice(0, remaining)
+    }
+    return bounded
+  }, [allowedMimes, maxSizeBytes, maxSizeMb, message, multipleAllowed, maxCount, countInUse])
 
   const enqueueFiles = useCallback((files: File[], replaceKey?: string | null) => {
     const accepted = validateFiles(files)
@@ -375,7 +398,7 @@ export function ImageFieldEditor({
             data-testid="image-field-pick"
             title={addLabel}
             aria-label={addLabel}
-            disabled={!multipleAllowed && uploading}
+            disabled={(!multipleAllowed && uploading) || maxReached}
             onClick={() => openPicker()}
           >
             {!multipleAllowed && hasMeta ? <SwapOutlined /> : <PlusOutlined />}
@@ -388,6 +411,9 @@ export function ImageFieldEditor({
           )}
           {comfortable && sortable && (
             <div className="cn-image-field__hint">拖动缩略图可调整顺序</div>
+          )}
+          {maxCount > 0 && hasMeta && (
+            <div className="cn-image-field__hint">{metaItems.length} / {maxCount}</div>
           )}
         </div>
       )}
