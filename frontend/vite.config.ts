@@ -59,6 +59,40 @@ function syncStaticPlugin(): Plugin {
   }
 }
 
+// ── 容器 CPU 配额感知的 worker 上限 ──────────────────────────────────
+// os.availableParallelism() 只反映宿主 CPU 数，不感知容器 cgroup 配额；云端
+// （CodeUp / TRAE 云端容器）常见「宿主几十核、配额 2~4 核」→ 按宿主核数开
+// 16 个 worker 会严重超订，上下文切换与内存压力反而更慢。这里读 cgroup
+// v2/v1 的 CPU 配额求真实可用核数，非 Linux / 无 cgroup 时回退宿主核数。
+function effectiveCpus(): number {
+  const host = os.availableParallelism()
+  let quota = Number.POSITIVE_INFINITY
+  try {
+    const v2 = fs.readFileSync('/sys/fs/cgroup/cpu.max', 'utf8').trim().split(/\s+/)
+    if (v2[0] === 'max') {
+      // 未设上限，再探 cgroup v1（部分集群 v2 挂了但 v1 仍有值）
+      const q = Number(fs.readFileSync('/sys/fs/cgroup/cpu/cpu.cfs_quota_us', 'utf8').trim())
+      const p = Number(fs.readFileSync('/sys/fs/cgroup/cpu/cpu.cfs_period_us', 'utf8').trim())
+      if (q > 0 && p > 0) quota = q / p
+    } else {
+      quota = Number(v2[0]) / Number(v2[1] ?? 100_000)
+    }
+  } catch {
+    // 非 Linux 或无 cgroup：忽略，保持宿主核数
+  }
+  const byQuota = Number.isFinite(quota) ? Math.floor(quota) : host
+  return Math.max(1, Math.min(host, byQuota))
+}
+
+// worker 数：VITEST_MAX_WORKERS 显式覆盖优先（云端流水线按实例档位注入）；
+// 否则取「配额核数」与 16 的较小值——本机 24 核实测 16 最优（23 因 fork
+// 创建 + 内存压力回吐收益），上限 16 同时防低核机器超订。
+function resolveMaxWorkers(): number {
+  const override = Number(process.env.VITEST_MAX_WORKERS)
+  if (Number.isFinite(override) && override > 0) return Math.floor(override)
+  return Math.min(16, effectiveCpus())
+}
+
 // ── chunk 模块级体积归属表 ───────────────────────────────────────────
 // scripts/bundle-budget.mjs 超限时需要回答「是哪个源文件让包变大了」。
 // Vite 自带的 build.manifest 只有 chunk 粒度（不含模块），故用 Rollup 的
@@ -145,9 +179,9 @@ export default defineConfig(({ mode }) => ({
     testTimeout: 10_000,
     // 单元/组件测试遵循就近放置约定：src 下的 *.test.ts(x)
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    // worker 数实测（24 核）：16 最优（24.7s）；23 因 fork 创建+内存压力回吐收益（27.7s）；
-    // 12 与默认持平（2026-09 实测数据）。上限 16，低核 CI 机器按核数降档防过订阅
-    maxWorkers: Math.min(16, os.availableParallelism()),
+    // worker 数按「容器真实 CPU 配额」求值（见上方 effectiveCpus），可用
+    // VITEST_MAX_WORKERS 覆盖。避免云端容器把宿主核数当核数用导致超订。
+    maxWorkers: resolveMaxWorkers(),
     coverage: {
       provider: 'v8',
       include: ['src/**'],
@@ -159,9 +193,11 @@ export default defineConfig(({ mode }) => ({
         'src/**/*.d.ts',
         'src/vite-env.d.ts',
       ],
-      // CI 下只输出 text + json-summary（check-coverage.mjs 依赖 json-summary），
-      // 省去 html 报告生成开销；本地保留 html 便于浏览
-      reporter: process.env.CI ? ['text', 'json-summary'] : ['text', 'json-summary', 'html'],
+      // 恒定只出 text + json-summary：前者供终端阅读，后者是 check-coverage.mjs 的输入。
+      // html 报告会在 frontend/coverage 下写数百个文件，耗时纯属浪费（本地沙箱还会因
+      // 「批量删除 > 50 文件」被 safe-delete shim 拦下），故默认关闭；需要浏览时用
+      // `pnpm test:coverage:html`（make fcov-html）经 CLI 追加 html reporter。
+      reporter: ['text', 'json-summary'],
       reportsDirectory: 'coverage',
     },
   },
