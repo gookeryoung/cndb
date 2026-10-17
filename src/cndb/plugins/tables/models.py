@@ -90,10 +90,14 @@ class ViewVisibility(enum.StrEnum):
 
 
 class ViewGrantSubject(enum.StrEnum):
-    """视图授权主体类型."""
+    """视图授权主体类型（**当前只有成员一种**）.
+
+    按工作区角色共享的 ``role`` 型授权曾在模型与判定层预留，因从未有任何写入端点、
+    生产数据零依赖，已于 ADR 0003 D6 移除。``subject_type`` 列保留（值恒为 ``user``），
+    以免为抹掉一个无害列而做 SQLite 重建表的破坏性迁移。
+    """
 
     USER = "user"  # subject_id = user.id
-    ROLE = "role"  # subject_id = Role.code / 工作区角色值（owner/editor/viewer）/ 表成员内置 read|write
 
 
 class ViewGrantRole(enum.StrEnum):
@@ -279,9 +283,7 @@ class DataViewPermission(TimestampMixin, Base):
     与 ``documents_permission`` 同构的**白名单**模式：表权限是硬天花板，
     名单只决定「表内谁还能看到」，不构成放行表外主体或提升改权的旁路。
 
-    - ``subject_type='user'`` → ``subject_id`` 为用户 id 字符串
-    - ``subject_type='role'`` → ``subject_id`` 为角色 code（工作区角色值 / ``Role.code``
-      / 表成员内置 ``read``/``write``）
+    - ``subject_type`` 恒为 ``user`` → ``subject_id`` 为用户 id 字符串（D6 后仅此一种主体）
 
     切回 ``private``/``table`` 档时数据保留但失效（便于来回切换不丢名单）。
     """

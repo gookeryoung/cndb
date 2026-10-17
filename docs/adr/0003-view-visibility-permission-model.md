@@ -78,7 +78,7 @@ scope_key: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0=
 | 列 | 类型 | 说明 |
 |---|---|---|
 | `view_id` | FK `tables_dataview` ON DELETE CASCADE | |
-| `subject_type` | varchar(8) | `user`（`subject_id`=user.id）/ `role`（=Role.code 或内置 read/write） |
+| `subject_type` | varchar(8) | 恒为 `user`（`subject_id`=user.id）。按工作区角色批量放行的 `role` 型（`=Role.code` 或内置 `read`/`write`）曾预留，**已按 D6 移除** |
 | `subject_id` | varchar(64) | |
 | `role` | varchar(16) | `viewer` / `editor`（**无 owner**：所有者天然全权） |
 | `granted_by_id` | FK `accounts_user` ON DELETE SET NULL | 审计入口 |
@@ -107,7 +107,7 @@ def resolve_view_action(db, view, user, action) -> bool:
         return True
     # 4. 指定共享：看名单
     if view.visibility == ViewVisibility.SHARED:
-        grant = view_grant_for(db, view.id, user)  # 直接 user 授权 + role 授权取最大
+        grant = view_grant_for(db, view.id, user)  # 名单内该用户的授权（D6 后主体只有 user）
         if action == ViewAction.VIEW_READ:
             return grant is not None
         if action in (ViewAction.VIEW_EDIT, ViewAction.VIEW_MANAGE):
@@ -237,6 +237,7 @@ CREATE UNIQUE INDEX uniq_table_view_scope_name ON tables_dataview(table_id, scop
 | D3 | 创建者离开（移出工作区 / 删账号）后私有视图 | **保留孤儿视图**：不删除、不转交，归属置空，对所有人不可见；提供 CLI 清理出口 | 数据零损失，创建者重新加入即恢复；避免"人走视图删"的不可逆操作 | ① 转交表 owner（Airtable 有先例，但与 D2 冲突：管理员看不到就别转交，否则是隐式越权）；② 级联删除（有损） |
 | D4 | 开放为 `table` 档的门槛 | **需表 `EDIT_VIEWS`**；`shared` 档仅需创建者本人 | 飞书：视图可见性是独立权限位，且"指定视图可见"与"可增删改视图"互斥；Airtable：Editor+ 才能建协同视图 | 仅需创建者（等价于给全表成员 Views 栏写入权）；需表 owner/工作区 OWNER（会阻断成员间正常共享） |
 | D5 | 匿名公开分享链接 | **彻底移除**（表与视图两层入口一并删） | 飞书：开高级权限后原"链接分享"全部失效 —— 细粒度权限与公开链接互斥；与"最大放宽至数据表范围内"直接冲突 | ① 默认关闭 + 补字段隐藏（保留能力但仍留匿名面）；② 保留现状（隐藏字段泄露） |
+| D6 | `role` 型授权（按工作区角色批量放行） | **移除**（判定分支 + `role_codes` 基础设施一并删；`subject_type` 列保留，值恒为 `user`） | 模型与判定层虽已预留，但**从未有任何写入端点**（`set_view_grant` / `revoke_view_grant` / `replace_view_grants` 恒写 `subject_type='user'`），CLI 与前端亦无入口 ⇒ 生产数据零依赖，移除无数据风险。而它现在**净价值为负**：分支永不命中，却让每个 `GET /views` 多跑 1 条角色 SQL，且与 `is_table_admin` 重复解析同一角色；文档还要额外解释"存在但不开放" | ① 保留并放开写入面（P3 曾预设此路，但需先定角色范围与「授权扩散」语义，且必须配 UI 才不至于再造一个"没有 UI 的权限面"）；② 保留代码只改措辞（仍付查询开销）。将来若确需"共享给工作区内所有编辑者"，**另开决策重做**——届时可基于真实需求选形态（批量选人 / 独立档位），而非沿用这条为"万一"而留的路径 |
 
 > D2 + D3 的组合后果已在 §7-2 展开：管理员不可见 ⇄ 孤儿不可管理，必须配 CLI 清理出口，且 `owner_id` 外键**必须**改为 `ON DELETE SET NULL`（否则 D3 的"保留"无法实现）。这是本次唯一接受"需要运维手段兜底"的取舍。
 
@@ -248,6 +249,7 @@ CREATE UNIQUE INDEX uniq_table_view_scope_name ON tables_dataview(table_id, scop
 | **P1 移除匿名分享**（D5，✅ 2026-10-16 已落地） | 删表/视图两层分享入口 + 前端公开页 + 相关测试/文档；迁移 `a4b5c6d7e8f9` 删除 `is_public`/`public_slug` 两列与唯一索引。顺带消解缺陷 #8 | 低（**破坏性**：`/public/share/{slug}` 与前端 `/s/:slug` 旧链接全部失效，需在发版说明标注） |
 | **P2 模型与迁移**（✅ 2026-10-16 已落地） | `visibility`（默认 `private`）/ `scope_key` / `tables_dataviewpermission` + 迁移 Step 1–5（含 D3 的 FK 改 SET NULL）+ `is_default` 收紧 + 每表至少一个 `table` 档 + `resolve_view_action` 统一替换 | 中（迁移 / 唯一约束 / FK 重建） |
 | **P3 开放功能**（✅ 2026-10-16 已落地） | `visibility` / `members` / `shareable-members` 端点 + 前端权限 Drawer（三档单选 + 成员选择器 + viewer/editor）+ 视图标签三态 + CLI `views prune-orphans`（D3 出口） | 中 |
+| **D6 清理**（✅ 2026-10-17 已落地） | 移除 P3 遗留的 `role` 型授权（判定分支 + `role_codes` 基础设施），共享名单主体收敛为 `user` 一种 | 低 |
 
 ### P0 落地记录（2026-10-16）
 
@@ -330,9 +332,24 @@ CREATE UNIQUE INDEX uniq_table_view_scope_name ON tables_dataview(table_id, scop
 **两处与本文档原记录不符、以代码为准的修正**：
 
 1. §4 原记「`GET /{wid}/tables/{tid}/members` 需 `_require_table_admin`，普通 viewer 拿不到成员列表」——实际 `list_members`（`members.py:122`）只要工作区 `VIEWER`；真正的理由是它的**数据源**是 `TableMember` 表（多数队伍为空）且返回表角色，不适合作共享选择器（详见 §4 修订段）。
-2. `role` 型授权（`subject_type='role'`）：模型与判定层已支持（`role_codes_for_workspace` 按工作区角色值匹配），但 **P3 不提供写入端点**，`GET /members` 也只列 `user` 型条目 —— 避免引入一个没有 UI 的权限面。若要开放"共享给工作区内所有编辑者"，需另开决策（涉及角色变更时的授权扩散语义）。
+2. `role` 型授权（`subject_type='role'`）：模型与判定层已支持（`role_codes_for_workspace` 按工作区角色值匹配），但 **P3 不提供写入端点**，`GET /members` 也只列 `user` 型条目 —— 避免引入一个没有 UI 的权限面。若要开放"共享给工作区内所有编辑者"，需另开决策（涉及角色变更时的授权扩散语义）。**该项已由 D6 决定整体移除，见下节。**
 
 **范围边界（仍未动）**：`plugins/documents/routers/public.py`（文档公开分享）与本轮无关，口径待另开决策收敛。
+
+### D6 落地记录：移除 role 型授权（2026-10-17）
+
+P3 曾把「按工作区角色共享」记为**待开放**（上文遗留项 2）。复核其成本收益时前提翻转了：**它从未上线** —— 既然从没有写入端点，就不存在"将来低成本打开"这回事，打开反而要先补一整套端点 + UI 才不至于再造一个"没有 UI 的权限面"。于是改为移除（D6）。
+
+| 层 | 文件 | 改动 |
+|---|---|---|
+| 判定/服务 | `services/core/view_access.py` | 删 `role_codes_for_workspace`；`visible_view_filter(user_id)` 去掉 `role_codes` 参数与 role 分支（名单条件只剩 `subject_type='user'`）；`grants_for_user` / `grant_role_for_view` 去掉 `role_codes`；`resolve_view_action` 不再按角色匹配；删 `_GRANT_RANK`（唯一键 `(view_id, subject_type, subject_id)` 已保证每视图至多一条名单记录，无需再比强弱）；删 `view_visibility_filter`（退化为纯 wrapper，调用方直接调 `visible_view_filter(<user>.id)`） |
+| 模型 | `plugins/tables/models.py` | `ViewGrantSubject` 只留 `USER`；`DataViewPermission` 注释同步 |
+| 调用点 | `routers/views.py`、`routers/tables.py`、`accounts/routers/preferences.py` | 6 处换 `visible_view_filter(<user>.id)`；`_view_payloads` 不再解析工作区角色 |
+| **未动** | `tables_dataviewpermission.subject_type` 列 | **保留**（值恒为 `user`）。删列要在 SQLite 上重建表（`batch_alter_table`），收益仅抹掉一个无害列；留着还给将来重开留了余地 |
+
+**顺带的性能收益**：`_view_payloads`（每次 `GET /views` 都走）原先为 role 型授权单独调一次 `role_codes_for_workspace`，而紧随其后的 `is_table_admin` 又调一次 `get_member_role` —— 后者每次发一条真实 SQL（`workspaces/permissions.py:get_member_role` 无缓存），即**同一条角色查询在一个请求里跑了两遍**。移除后每个视图列表请求少 1 条 SQL。
+
+**历史记录保留**：P2 / P3 落地记录中出现的 `role_codes_for_workspace`、`visible_view_filter(user_id, role_codes)`、`view_visibility_filter(db, table, user)` 等符号是**当时的真实实现**，作为历史快照保留不改写 —— 本节即它们的终态说明。
 
 ## 测试清单（新增/改写）
 
@@ -344,6 +361,7 @@ CREATE UNIQUE INDEX uniq_table_view_scope_name ON tables_dataview(table_id, scop
 **D3 孤儿**：删账号后视图仍在且 `owner_id IS NULL`；孤儿对超管同样 404；`prune-orphans --dry-run` 只列不删；创建者重新加入工作区后视图恢复可见。
 **D5 移除**：`GET /api/v1/public/share/{slug}` → 404（路由不存在）；`POST /views/{id}/share` → 404；`PublicSharePage` 相关前端用例删除而非跳过。
 降级层：视图 `filters` 引用用户被隐藏字段 → 返回 `degraded_filters` 且不泄露值。
+**D6 移除（回归范围）**：共享名单主体只有 `user` 一种（`ViewGrantSubject` 无 `ROLE` 成员）；`tests/` 下不含 `role_codes` / `ViewGrantSubject.ROLE` 的引用，各视图用例行为与移除前一致。
 
 ## Consequences
 
