@@ -45,8 +45,9 @@ name: Deploy to Tencent Cloud
 #             "resource": ["*"] }] }
 #   CNDB_INSTANCE_ID    Lighthouse 实例 ID，如 lhins-8k8ahx8m
 #   CNDB_REGION         实例所在地域，如 ap-shanghai
-#   TCR_REGISTRY        TCR 纯域名（不含命名空间），仅用于镜像命名前缀
-#   TCR_GROUP           命名空间，如 pydev。镜像地址 = <REGISTRY>/<GROUP>/cndb:<version>
+#   TCR_REGISTRY        （可选）TCR 纯域名，仅用于镜像命名前缀；缺省时用内置默认
+#   TCR_GROUP           （可选）命名空间，如 pydev。必须与 REGISTRY 成对提供，
+#                       否则自动回退默认前缀。镜像地址 = <REGISTRY>/<GROUP>/cndb:<version>
 #   TCR_USERNAME / TCR_PASSWORD
 #                       仅手动回滚（无 SERVER_BUILD 走 docker pull）时使用
 #
@@ -187,7 +188,11 @@ jobs:
           # 完整仓库前缀（不含 tag）：deploy.sh 不再从 .env 反推，
           # 反推在「.env 尚未指向仓库」的首次部署场景会拼出
           # docker.io/library/cndb 这类错误地址，实测导致过 403 Forbidden。
-          IMAGE_REPO: ${{ secrets.TCR_REGISTRY }}/${{ secrets.TCR_GROUP }}/cndb
+          # TCR_REGISTRY/TCR_GROUP 为**可选** Secret：TCR 已退为回滚备用源、
+          # CI 不再推送镜像，缺省时回退到沿用多年的仓库前缀（与服务器
+          # .env 及 deploy.sh 回滚目标一致，仅作本地镜像命名/回滚识别）。
+          # 两个 Secret 只填其一也会拼出畸形地址，故必须成对存在才使用。
+          IMAGE_REPO: ${{ (secrets.TCR_REGISTRY != '' && secrets.TCR_GROUP != '') && format('{0}/{1}/cndb', secrets.TCR_REGISTRY, secrets.TCR_GROUP) || 'ccr.ccs.tencentyun.com/pydev/cndb' }}
           WHEEL_URL: ${{ steps.wheel.outputs.url }}
           WHEEL_MIRROR_URL: ${{ steps.wheel.outputs.mirror }}
           WHEEL_NAME: ${{ steps.wheel.outputs.filename }}
