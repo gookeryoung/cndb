@@ -16,7 +16,7 @@ CPUS := $(shell nproc 2>/dev/null || echo 4)
 endif
 PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 
-.PHONY: help sync dev seed frontend-sync fs frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast gitkeep-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
+.PHONY: help sync dev seed frontend-sync fs frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-coverage-html fcov-html frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast gitkeep-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -55,8 +55,11 @@ frontend-static fst: frontend-typecheck frontend-lint ## 前端静态检查（ts
 frontend-test ftest: | frontend-sync ## 前端快速回归（vitest run，无覆盖率）
 	cd frontend && pnpm test
 
-frontend-coverage fcov: | frontend-sync ## 前端测试 + 覆盖率双门槛校验
+frontend-coverage fcov: | frontend-sync ## 前端测试 + 覆盖率双门槛校验（默认只出 text + json-summary，省时）
 	cd frontend && pnpm test:coverage
+
+frontend-coverage-html fcov-html: | frontend-sync ## 同上，额外生成 html 报告（浏览用，frontend/coverage/index.html）
+	cd frontend && pnpm test:coverage:html
 
 frontend-check fc: frontend-static frontend-coverage ## 前端门禁（静态检查 + 覆盖率测试）
 

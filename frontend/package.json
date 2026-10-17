@@ -22,7 +22,8 @@
     "e2e:headed": "playwright test --headed",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage && node scripts/check-coverage.mjs"
+    "test:coverage": "vitest run --coverage && node scripts/check-coverage.mjs",
+    "test:coverage:html": "vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=html && node scripts/check-coverage.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",

@@ -2,10 +2,17 @@
 # 等价迁移自 .github/workflows/ci.yml，工具链版本与 GitHub Actions 对齐。
 #
 # 触发：push main/develop 分支、push tag
-# 并行 3 个 job（阶段内默认并行，无 needs）：
+# 并行 4 个 job（阶段内默认并行，无 needs）：
 #   lint-typecheck  →  gitkeep + ruff + pyrefly（Python 静态门禁）
-#   frontend-check  →  eslint（缓存目录）+ vitest coverage + vite build（含 tsc -b）+ bundle budget
+#   frontend-static →  eslint + vite build（含 tsc -b）+ bundle budget（前端静态链）
+#   frontend-test   →  vitest coverage（前端覆盖率，唯一长尾，独占大实例）
 #   test            →  pytest --cov（95% 门槛，Python 3.12）
+#
+# 前端拆分依据：单 job 串行时前端总时长 ≈ install+eslint+test+build+budget ≈ 320s，
+# 其中 vitest coverage 独占 ~288s；把静态链拆成并行 job 后，前端关键路径只由
+# coverage 决定（省掉 eslint/build/budget 的串行叠加，且两条各自并行装依赖）。
+# 若后续要再压 coverage，需 4 分片 + blob 合并，但云效普通 Command job 无法拉取
+# ArtifactUpload 产物（仅 VMDeploy 等组件可消费），故本期不做分片。
 #
 # 运行环境：CodeUp 公共 K8s 集群 public/cn-beijing + alinux3:latest 容器
 #
@@ -90,12 +97,13 @@ stages:
                 uv run ruff format --check src tests
                 uv run pyrefly check
 
-      # ── 前端门禁 ─────────────────────────────────────────────────
-      frontend_check:
-        name: Frontend Check
+      # ── 前端静态链（独立 job，与覆盖率测试并行）────────────────────
+      frontend_static:
+        name: Frontend Static
         runsOn:
           group: public/cn-beijing
           container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/alinux3:latest
+          # 静态链只跑 eslint + build + bundle budget，2 核足够
           instanceType: MEDIUM_2C4G
         timeoutMinutes: 20
         steps:
@@ -124,7 +132,7 @@ stages:
                 node --version
                 pnpm --version
           check:
-            name: 运行前端门禁
+            name: 运行前端静态门禁
             step: Command
             with:
               run: |
@@ -135,11 +143,55 @@ stages:
                 pnpm install --frozen-lockfile --prefer-offline
                 # eslint 直调以把增量缓存定位到远端缓存目录（工作区内缓存每次容器都是冷的）
                 ./node_modules/.bin/eslint . --cache --cache-location /root/.cache/frontend/eslintcache
-                # 不单独跑 typecheck：pnpm build 内含 tsc -b，等价覆盖
-                # CI=1 使 vitest 只输出 text + json-summary 覆盖率报告（见 vite.config.ts）
-                CI=1 pnpm test:coverage
+                # build 内含 tsc -b，等价覆盖类型检查；bundle budget 依赖 build 产出的
+                # dist/.vite/chunk-modules.json，故与 build 同 job 串行
                 pnpm build
                 pnpm bundle:budget
+
+      # ── 前端覆盖率测试（唯一长尾，独占 4 核实例）────────────────────
+      frontend_test:
+        name: Frontend Test (coverage)
+        runsOn:
+          group: public/cn-beijing
+          container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/alinux3:latest
+          # 覆盖率测试是 CPU 密集型长尾：123 个文件 × jsdom 环境，核数直接决定时长，
+          # 从 2 核提到 4 核 ≈ 减半。VITEST_MAX_WORKERS 见 vite.config.ts 的
+          # 配额感知逻辑（容器配额 4 → 4 worker，不会被宿主核数误导而超订）。
+          instanceType: LARGE_4C8G
+        timeoutMinutes: 20
+        steps:
+          setup:
+            name: 安装 Node/pnpm
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                NODE_VERSION=22.14.0
+                NODE_DIR=/root/.local/node-v$NODE_VERSION
+                mkdir -p /root/.local
+                if [ ! -x "$NODE_DIR/bin/node" ]; then
+                  echo "[setup] download Node v$NODE_VERSION ..."
+                  curl -fsSL "https://npmmirror.com/mirrors/node/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz" | tar -xJ -C /root/.local
+                  mv /root/.local/node-v$NODE_VERSION-linux-x64 "$NODE_DIR"
+                fi
+                export PATH="$NODE_DIR/bin:$PATH"
+                npm config set registry https://registry.npmmirror.com
+                npm install -g pnpm@12.4.2
+                pnpm config set store-dir /root/.pnpm-store
+                node --version
+                pnpm --version
+          check:
+            name: 运行前端覆盖率门禁
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                export PATH="/root/.local/node-v22.14.0/bin:$PATH"
+                cd frontend
+                pnpm install --frozen-lockfile --prefer-offline
+                # 覆盖率只需 text + json-summary（vite.config.ts 已恒定如此，html 为 opt-in），
+                # 省去写数百个 html 文件的耗时；CI=1 保留以对齐既有口径
+                CI=1 VITEST_MAX_WORKERS=4 pnpm test:coverage
 
       # ── Python 单测 + 覆盖率 ─────────────────────────────────────
       test:
@@ -168,5 +220,7 @@ stages:
                 set -euo pipefail
                 export PATH="$HOME/.local/bin:$PATH"
                 uv sync --frozen --extra test --python 3.12
+                # 实例为 4 核，显式 -n 4（原 -n auto 按 os.cpu_count() 取核，
+                # 容器里可能读到宿主核数导致超订反而更慢）
                 uv run pytest -m "not slow" --cov=cndb --cov-fail-under=95 \
-                  --cov-report=term-missing -n auto
+                  --cov-report=term-missing -n 4
