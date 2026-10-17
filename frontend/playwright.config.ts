@@ -9,20 +9,16 @@ export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
   retries: process.env.CI ? 2 : 0,
-  // worker 数固定 4：CI runner 通常 4 vCPU；本机（24 核但常与其它进程共享）实测
-  // 12 worker（Playwright 默认 CPU/2）全量 E2E 会有 11 个用例 30s 超时失败，
-  // 8 worker 有 8 个失败，4 worker 时 35 passed / 0 failed 且总耗时更短。
-  // E2E 已收为门禁：稳定性优先于并行度。
+  // worker 固定 4：CI runner 通常 4 vCPU；本机高并发下超时失败明显，4 worker 最稳。
+  // E2E 已为门禁，稳定性优先于并行度。
   workers: 4,
   reporter: [
     ["list"],
     ["./tests/e2e/reporters/slow-test.ts"],
   ],
 
-  // 一键起后端：数据目录隔离(.e2e-data) + seed 演示数据 + 启动 :8000。
-  // reuseExistingServer 关闭：绝不复用来源不明的 8000 端口服务（可能是用户
-  // 自己的后端，指向真实数据目录），保证每次运行都在隔离数据上全量重建。
-  // 跨平台 Python 脚本（替代 bash/PowerShell，避免 shell 差异）。
+  // 一键起后端：.e2e-data 隔离 + seed + 起 :8000。reuseExistingServer 关闭，绝不复用
+  // 来源不明的 8000 服务，保证每次在隔离数据上全量重建。跨平台 Python 脚本（避免 shell 差异）。
   webServer: {
     command: "uv run python scripts/e2e-server.py",
     url: "http://127.0.0.1:8000/",

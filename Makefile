@@ -8,7 +8,7 @@ COV_THRESHOLD := 95
 DEV_HOST ?= 0.0.0.0
 DEV_PORT ?= 8772
 
-# min(cpu*2, 8)：≥4 核跑满 8 worker，低核数机器保守降档
+# CPU 档位映射：≤1 核→2 worker，2-3 核→4，其余→8（约 min(cpu*2, 8)）
 ifeq ($(OS),Windows_NT)
 CPUS := $(NUMBER_OF_PROCESSORS)
 else
@@ -98,9 +98,7 @@ typecheck: ## 类型检查 (pyrefly)
 
 check-fast: gitkeep-check lint typecheck frontend-static ## 轻量静态门禁（不含任何测试，适合实现阶段快速反馈）
 
-# 全量门禁：cov 与其余项并行执行。前端测试仅以 coverage 模式跑一次（frontend-coverage
-# 已含 vitest run），避免 check-fast/check 双跑全量套件。门禁组成以此 Makefile 为准，
-# 规则文件只约定执行时点。
+# 全量门禁：cov 与其余项并行；前端仅以 coverage 模式跑一次，避免 check-fast/check 双跑全量套件。
 check: ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-static + frontend-coverage + cov)
 	@$(MAKE) -j4 cov frontend-coverage gitkeep-check lint typecheck frontend-static
 

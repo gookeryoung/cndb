@@ -109,10 +109,8 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
-      # windows-2025 镜像移除了 NSIS；mingw-w64 提供 x86_64-w64-mingw32-gcc 前缀的交叉编译器。
-      # 注意：windows-latest 默认 shell 是 pwsh，PowerShell 访问环境变量必须用 $env: 前缀，
-      # 直接写 $GITHUB_PATH 会被当作 PowerShell 变量（值为 $null），PATH 不会写入文件，
-      # 导致后续步骤找不到 makensis。Add-Content 在 pwsh 7 下默认 utf8NoBOM 编码安全。
+      # windows-2025 移除了 NSIS，故用 choco 安装；pwsh 下写 $GITHUB_PATH 必须加 $env:
+      # 前缀，否则被当作 PowerShell 变量（$null），PATH 不写入、后续找不到 makensis。
       - name: Install NSIS & mingw-w64
         shell: pwsh
         run: |
@@ -125,8 +123,7 @@ jobs:
           UV_DEFAULT_INDEX: https://pypi.org/simple
         run: uv sync --frozen
 
-      # fspack 的 download_wheels 用 `pip download` 拉 wheel，但 uv 管理的 venv 默认不含 pip，
-      # 且 CI runner 上 PATH 中可能没有带 pip 的系统 python，故显式安装 pip 到 venv。
+      # fspack 的 download_wheels 依赖 pip，而 uv venv 默认不含 pip，故显式安装到 venv。
       - name: Install pip
         run: uv pip install pip
 
@@ -139,11 +136,8 @@ jobs:
             fspack-windows-
             fspack-
 
-      # fspack 默认 mirror=aliyun，阿里云/腾讯云 PyPI 镜像的 PEP 658 `.whl.metadata`
-      # 未同步（index 页面声明支持但文件 404），pip 解析阶段直接失败，不再回退到完整 wheel。
-      # 追加官方 PyPI 作为 extra-index 后 pip 可从 pypi.org 拿到 metadata 完成下载。
-      # runner 在海外，pypi.org 直连反而更快。注意：该参数只有 build 子命令支持，
-      # package 子命令（--no-build）不下载 wheel，无需指定。
+      # 国内镜像未同步 PEP 658 `.whl.metadata`（声明支持但文件 404）会让 pip 解析直接失败，
+      # 故追加官方 PyPI 为 extra-index。该参数仅 build 子命令支持，package(--no-build) 无需指定。
       - name: Build with fspack
         env:
           PYTHONIOENCODING: utf-8
@@ -223,8 +217,7 @@ jobs:
           UV_DEFAULT_INDEX: https://pypi.org/simple
         run: uv sync --frozen
 
-      # fspack 的 download_wheels 用 `pip download` 拉 wheel，但 uv 管理的 venv 默认不含 pip，
-      # 且 CI runner 上 PATH 中可能没有带 pip 的系统 python，故显式安装 pip 到 venv。
+      # fspack 的 download_wheels 依赖 pip，而 uv venv 默认不含 pip，故显式安装到 venv。
       - name: Install pip
         run: uv pip install pip
 
@@ -298,10 +291,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
-        # 幂等：release 已存在则上传产物（--clobber 覆盖同名 asset），不存在则创建。
-        # 处理重打 tag 触发 release.yml 时上一次 run 已创建 release 的冲突场景。
-        # release job 无 actions/checkout（无 .git 目录），gh 无法从 git remote 推断
-        # owner/repo，必须用 GH_REPO 环境变量显式指定仓库。
+        # 幂等：release 已存在则上传产物（--clobber 覆盖同名 asset），不存在则创建，
+        # 以支持重打 tag 触发时上一次 run 已创建 release 的场景。release job 无 checkout，
+        # gh 无法从 git remote 推断仓库，必须用 GH_REPO 显式指定。
         run: |
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
             echo "Release $TAG_NAME 已存在，上传产物（覆盖同名 asset）..."

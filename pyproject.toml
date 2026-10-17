@@ -10,9 +10,8 @@ classifiers = [
 ]
 
 # ── 平台相关钉版约定 ─────────────────────────────────────────────
-# 下面所有「上限」都只是为了 Windows（Win7/8）兼容性而存在，因此统一挂
-# `sys_platform == 'win32'` 标记；非 Windows 平台只保留下限、不设上限。
-# 同名依赖出现两次是合法的（PEP 508 标记互斥），解析器各取所需。
+# 下列版本「上限」仅为 Windows(Win7/8) 兼容而设，统一挂 sys_platform=='win32'；
+# 非 Windows 只保留下限。同名依赖重复合法（PEP 508 标记互斥），解析器各取所需。
 dependencies = [
     # 0.126+ 要求 pydantic>=2.7，与 Windows 上 pydantic<2.7 冲突
     "fastapi>=0.115.0,<0.126.0; sys_platform == 'win32'",
@@ -21,14 +20,14 @@ dependencies = [
     # 与 pydantic <2.7 对齐（Win7 兼容）
     "pydantic-settings>=2.2.0,<2.3.0; sys_platform == 'win32'",
     "pydantic-settings>=2.2.0; sys_platform != 'win32'",
-    # 2.7+ 带出 pydantic-core>=2.17，引入 Win8+ kernel32.GetSystemTimePreciseAsFileTime
+    # 2.7+ 拉入 pydantic-core>=2.17，依赖 Win8+ 的 kernel32 API
     "pydantic>=2.6.0,<2.7.0; sys_platform == 'win32'",
     "pydantic>=2.6.0; sys_platform != 'win32'",
     "sqlalchemy>=2.0.0",
     "psycopg[binary]>=3.1.0",
     "uvicorn[standard]>=0.34.0",
     "alembic>=1.14.0",
-    # bcrypt 4.x 用 Rust 重写，Rust 1.75+ 停止 Win7 支持，_bcrypt.pyd 在 Win7 上因 ProcessPrng 缺失无法加载；3.x 是 CFFI 实现，Win7 兼容
+    # bcrypt 4.x 为 Rust 重写，Win7 缺少 ProcessPrng 无法加载；3.x 为 CFFI 实现
     "bcrypt>=3.2.2,<6.0.0; sys_platform == 'win32'",
     "bcrypt>=3.2.2; sys_platform != 'win32'",
     # 42.0.6 带 Win10+ DLL 依赖，Win7 不可用；42.0.4+ 已修 CVE-2024-26130
@@ -47,8 +46,7 @@ description     = "cndb - metadata-driven collaborative database platform (FastA
 license         = "MIT"
 name            = "cndb"
 readme          = "README.md"
-# Windows 实为 3.12（钉版依赖仅在该版本验证）；requires-python 无法表达平台差异，
-# 由 src/cndb/__init__.py 的运行时校验兜底。
+# Windows 实为 3.12（钉版依赖仅在该版本验证）；平台差异由 __init__.py 运行时校验兜底。
 requires-python = ">=3.12,<3.15"
 version         = "0.4.5"
 
@@ -58,8 +56,7 @@ cndbw = "cndb.gui.main_window:main"
 
 [project.optional-dependencies]
 dev  = ["cndb[lint,test]", "fspack>=0.6.11"]
-# ruff 固定精确版本：本地 `uv run ruff` 必须与 .pre-commit-config.yaml 的 rev 一致，
-# 否则同一提交在本地 hook 与 CI 会得到不同的 lint 结果。
+# ruff 固定精确版本，须与 .pre-commit-config.yaml 的 rev 一致，否则本地 hook 与 CI 结果不一致。
 lint = ["pyrefly>=1.1.1", "ruff==0.16.8"]
 # httpx：starlette TestClient 运行所需（源码仅使用 httpx2）
 test = [

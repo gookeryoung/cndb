@@ -21,10 +21,9 @@ ignore = [
     "RUF012",  # mutable class attributes (intentional for config)
     "RUF030",  # FastAPI path params 必须保留 Annotated[type, Path(...)] 即使只有一个注解
     "SIM108",  # use ternary operator
-    # UP045 建议 Optional[X] -> X | None（PEP 604）；runner.py CLI 用 argparse + 函数分发，
-    # 命令函数注解经 typing.get_type_hints() 求值，保留 Optional[X] 更稳妥。
-    "UP045", # FastAPI Depends 在默认参数里是标准模式，B008 误报
-    "B008",
+    # UP045：runner.py CLI 用 argparse + typing.get_type_hints() 求值注解，保留 Optional[X] 更稳妥
+    "UP045",
+    "B008", # FastAPI Depends 在默认参数里是标准模式，B008 误报
 ]
 select = [
     "ARG", # flake8-unused-arguments

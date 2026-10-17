@@ -40,7 +40,6 @@ export default tseslint.config(
       ...react.configs['jsx-runtime'].rules,
       // 组件 props 不需要显式声明
       'react/prop-types': 'off',
-      // 允许使用 target="_blank"（内部统一由 antd/Popconfirm 封装）
       'react/no-unknown-property': 'off',
     },
   },
@@ -99,13 +98,10 @@ export default tseslint.config(
     },
   },
 
-  // ── 体积防线：表页闭包入口不得静态链入「点了才出现」的交互面板 ────────────
-  // 这些 panel（Dialog/Modal/Drawer/Manager/Editor 结尾的组件）只在用户操作后出现，
-  // 一旦被 GridPage.tsx 静态 import，就会被打进 GridPage chunk 随首屏一起下载，
-  // 每次功能迭代线性膨胀 —— 2026-10-10 就是这样把 GridPage 顶到 43KB 超预算的。
-  // 正确写法是 GridPage.tsx 里已有的 const X = lazy(() => import('...')) + Suspense。
-  // 真正的硬性兜底仍是 bundle:budget（见 scripts/bundle-budget.mjs）：本规则拦的是最常犯的那一步，
-  // 间接依赖（A 静态引 B，B 静态引面板）由预算门禁兜住。
+  // ── 体积防线：表页入口不得静态链入「点击后才出现」的交互面板 ────────────
+  // Dialog/Modal/Drawer/Manager/Editor 类 panel 一旦被 GridPage.tsx 静态 import，会进
+  // GridPage chunk 随首屏下载并随迭代膨胀。正确写法是 lazy(() => import(...)) + Suspense；
+  // 间接依赖（A 静态引 B、B 静态引面板）由 bundle:budget 兜底。
   {
     files: ['src/pages/grid/GridPage.tsx', 'src/pages/grid/gridViewModals.tsx'],
     rules: {
@@ -122,8 +118,8 @@ export default tseslint.config(
             '按需打开的交互面板不得被表页入口静态引入（会进 GridPage chunk 拖累首屏）。' +
             "请改为：const X = lazy(() => import('...'))，并在渲染处用 <Suspense> 包裹。" +
             '类型是编译期信息，`import type` 不受此限制。',
-          // 只从面板模块取类型不应被拦（如 import type { FilterRule } from '.../ViewConfigDialog'）；
-          // 该选项必须放在 pattern 对象内部，放在外层 options 会导致 ESLint schema 校验失败
+          // 只取类型不应被拦（import type 不受此限制）；allowTypeImports 必须放在
+          // pattern 内，放到外层 options 会导致 ESLint schema 校验失败
           allowTypeImports: true,
         }],
       }],
@@ -151,8 +147,7 @@ export default tseslint.config(
     },
   },
 
-  // Testing Library 组件测试规则 —— 防"同步 getBy 与异步渲染竞态"（AntD portal 类 UI 异步挂载，
-  // 本地机器快掩盖、CI 稳定失败，见 GridCell.test.tsx 已保存断言案例）
+  // Testing Library 规则 —— 防「同步 getBy 与异步渲染竞态」（AntD portal 异步挂载，本地快掩盖、CI 稳定失败）
   {
     files: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
     plugins: { 'testing-library': testingLibrary },

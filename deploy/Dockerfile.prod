@@ -1,72 +1,43 @@
 # ═══════════════════════════════════════════════════════════════════
 # cndb 生产镜像（腾讯云 TCR 版）
 #
-# 与早期 wheel 部署镜像的差异（均为生产必需的修复）：
-#   1. 预建 /data 并授权给非 root 用户 —— 命名卷首次挂载时会继承镜像内
-#      目录的属主，否则 cndb 用户无法在卷上建 SQLite 库（Permission denied）
-#   2. 内置 HEALTHCHECK，探测真实存在的 /api/health
-#      （旧 compose 探测 /health，该端点并不存在，会导致容器永远 unhealthy）
-#   3. 显式声明 CNDB_DATA_DIR=/data，使 DATA_DIR / DATABASE_DIR /
-#      UPLOAD_DIR / BACKUP_DIR 全部落在同一挂载点。
-#      若只设 DATABASE_URL，附件与备份仍会落在容器内 ~/.cndb，
-#      容器一重建历史附件全部丢失 —— 线上事故高发点。
-#   4. 安装中文字体（reportlab 生成 PDF / Jinja2 报告模板需要 CJK 字形，
-#      缺字体会渲染成方框）；只装 fonts-wqy-microhei，体积优先
-#   5. HEALTHCHECK 与 compose healthcheck 均用 python 探测（镜像内无 curl）
+# 生产必需的几处设计：
+#   1. 预建 /data 并授权给非 root 用户 —— 命名卷首次挂载会继承镜像内该目录
+#      属主，否则 cndb 用户无法在卷上建 SQLite 库（Permission denied）。
+#   2. 显式声明 CNDB_DATA_DIR=/data，使数据/附件/备份/日志全部落在同一挂载点。
+#      若只设 DATABASE_URL，附件与备份会落在容器内 ~/.cndb，容器重建即丢失。
+#   3. 内置 HEALTHCHECK，探测真实存在的 /api/health（镜像内无 curl，用 python）。
+#   4. 安装中文字体（reportlab 生成 PDF / Jinja2 模板需要 CJK 字形，缺则渲染成方框）。
 #
 # 构建（服务器端，deploy CI 自动完成；手动构建需先准备产物）：
 #   make build
 #   uv export --frozen --no-hashes --no-dev --no-emit-project -o dist/requirements.lock.txt
 #   docker build -f deploy/Dockerfile.prod -t <registry>/cndb:v0.3.0 .
-# （deploy.sh 在 SERVER_BUILD=1 下会自动完成构建与冒烟验证，
-#   CI 经 SSH 同步 dist/ 与本文件到服务器后触发，见 .github/workflows/deploy-tencent.yml）
+# deploy.sh 在 SERVER_BUILD=1 下会自动完成构建与冒烟验证，CI 经 TAT 下发同步
+# dist/ 与本文件到服务器后触发，见 .github/workflows/deploy-tencent.yml。
 #
-# 镜像源选择与构建位置强相关（现构建发生在国内服务器），改构建环境时务必同步检查：
-#   - 默认官方源（Docker Hub / PyPI）。国内服务器拉 Docker Hub 常超时，两种解法任选：
-#     a) 服务器 /etc/docker/daemon.json 配 registry-mirrors（如
-#        https://mirror.ccs.tencentyun.com，仅腾讯云内网可用），docker pull 透明加速；
-#     b) 构建时换源（deploy.sh 读取 BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL 透传）：
-#        --build-arg BASE_IMAGE=docker.m.daocloud.io/library/python:3.12-slim
-#   - pip 换源注意：阿里云源是滞后镜像，实测缺失多个较新版本的包 metadata
-#     （pydantic/cryptography 曾 404）；推荐腾讯云源
-#     https://mirrors.cloud.tencent.com/pypi/simple（同步全、CVM 内网免流）。
-#     详见下方 FROM 与 pip 段的 ARG 说明。
+# 镜像源默认为官方源（Docker Hub / PyPI）；国内服务器直连超时时，可经
+# BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL 换源（deploy.sh 透传，见下方 ARG 说明），
+# 或在服务器 /etc/docker/daemon.json 配 registry-mirrors 透明加速。
 # ═══════════════════════════════════════════════════════════════════
 
 # 基础镜像默认 Docker Hub 官方源，可用 BUILD_BASE_IMAGE 经 --build-arg 覆盖。
-#
-# 本文件早期写的是 docker.m.daocloud.io/python:3.12-slim，那是为「在国内服务器上
-# 本地构建」选的源（当时服务器 Docker Hub 直连超时）。搬到 GitHub Actions 后改为
-# 官方源（CI runner 在境外，访问国内镜像站要绕路，实测首次 CI 构建即因此超时）。
-# 现构建位置回到国内服务器，默认仍保留官方源（若服务器已配 registry-mirror，
-# 拉取同样透明加速），国内直连超时的服务器用 BUILD_BASE_IMAGE 换源即可。
 ARG BASE_IMAGE=python:3.12-slim
 FROM ${BASE_IMAGE}
 
 # ── 环境变量 ──
 # pip 源默认官方 PyPI，可用 BUILD_PIP_INDEX_URL 经 --build-arg 覆盖。
-#
-# 曾用阿里云源并在注释里论证「包小请求碎、官方源在境外更慢」——那个判断错了。
-# 阿里云是【滞后镜像】，实测缺失多个较新版本的包 metadata，构建必然失败：
-#   pydantic-2.6.4      → 404（源里只有 2.6.0 / 2.6.1）
-#   cryptography-42.0.8 → 404
-# pip 会解析到满足约束的最新版本，而那个版本恰好是源里没有的，直接 404。
-# 官方源包全，且 PyPI 走 CDN；国内服务器构建如需加速，
-# 推荐腾讯云源（同步全、CVM 内网免流），不要用阿里云源。
+# 国内服务器如需加速，推荐腾讯云源（同步全、CVM 内网免流）；避免阿里云源
+# （滞后镜像，常缺失较新版本包的 metadata 导致 404）。
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# ── 系统依赖：仅中文字体（reportlab 生成 PDF 需 CJK 字形）──
-# apt 用官方 Debian 源，同上理由：境外 runner 访问国内 apt 源过慢。
-#
-# 字体只装 fonts-wqy-microhei（约 5MB），不再装 fonts-wqy-zenhei（约 16MB）：
-#   - documents/services/export/pdf_fonts.py 按 fc-match 候选列表动态注册字体，
-#     "WenQuanYi Micro Hei" 在候选列表首位，删除 zenhei 后 PDF 渲染自动回退到 microhei；
-#   - microhei（微米黑）覆盖 GB2312/GBK 常用汉字，文档导出 Word/PDF 场景够用。
-# 健康检查不再依赖 curl：镜像内 python 足以探测 /api/health，apt 省 ~8MB。
+# ── 系统依赖：仅中文字体 ──
+# 字体只装 fonts-wqy-microhei（约 5MB）：pdf_fonts.py 按 fc-match 候选列表
+# 动态注册，microhei 覆盖 GB2312/GBK 常用汉字，导出 Word/PDF 场景够用。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         fontconfig \
@@ -77,14 +48,10 @@ RUN apt-get update \
 # ── 安装 wheel（--no-cache-dir 减小镜像体积）──
 WORKDIR /app
 
-# 依赖层拆分：先装锁定依赖（requirements.lock.txt，由 uv export 从 uv.lock
-# 生成，deploy CI 自动产出；本地构建执行
-#   uv export --frozen --no-hashes --no-dev --no-emit-project -o dist/requirements.lock.txt
-# ），再装业务 wheel。
-# 收益：版本升级时依赖版本不变，Docker 层缓存只重建薄薄的 wheel 层
-# （约 2MB），增量构建不再整层重装 ~180MB 的依赖。
-# 附带收益：cffi/bcrypt 已随锁定清单装齐，pip 安装 wheel 时依赖全部满足、
-# 无需在线解析，原先单独预装 cffi 规避 bcrypt 3.x 回溯失败的做法随之取消。
+# 依赖层拆分：先装锁定依赖（requirements.lock.txt，由 uv export 从 uv.lock 生成，
+# deploy CI 自动产出；本地构建见 make build），再装业务 wheel。
+# 收益：版本升级时依赖版本不变，Docker 层缓存只重建薄薄的 wheel 层，
+# 无需整层重装依赖。
 # PIP_INDEX_URL：默认官方源，服务器构建可经 --build-arg 换腾讯云镜像（见头部说明）。
 ARG PIP_INDEX_URL=https://pypi.org/simple
 COPY dist/requirements.lock.txt ./

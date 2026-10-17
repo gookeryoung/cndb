@@ -5,17 +5,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-// ── 前端构建产物同步到 src/cndb/static（保留 .gitkeep）────────────────
-// Vite 直接把 outDir 指向 src/cndb/static 且 emptyOutDir=true 时，
-// 构建会先清空目标目录，.gitkeep 被抹掉，后续 hatchling 打包失败。
-// 这里用中间目录 dist 构建，构建完成后再同步到静态目录，同时保留
-// .gitkeep 哨兵文件。
+// ── 构建产物同步到 src/cndb/static（保留 .gitkeep 哨兵）────────────────
+// 直接用 outDir=static 且 emptyOutDir 会抹掉 .gitkeep 导致 hatchling 打包失败，
+// 故先构建到中间目录 dist，完成后再同步过去。
 function syncStaticPlugin(): Plugin {
   return {
     name: 'sync-static',
     closeBundle() {
-      // vitest 会复用本配置的插件链，closeBundle 在测试结束时也会触发，
-      // 这里跳过，避免运行测试时误同步构建产物
+      // vitest 复用插件链，测试结束也会触发 closeBundle，故跳过以免误同步
       if (process.env.VITEST) return
       const repoRoot = path.resolve(__dirname, '..')
       const distDir = path.resolve(__dirname, 'dist')
@@ -60,10 +57,8 @@ function syncStaticPlugin(): Plugin {
 }
 
 // ── 容器 CPU 配额感知的 worker 上限 ──────────────────────────────────
-// os.availableParallelism() 只反映宿主 CPU 数，不感知容器 cgroup 配额；云端
-// （CodeUp / TRAE 云端容器）常见「宿主几十核、配额 2~4 核」→ 按宿主核数开
-// 16 个 worker 会严重超订，上下文切换与内存压力反而更慢。这里读 cgroup
-// v2/v1 的 CPU 配额求真实可用核数，非 Linux / 无 cgroup 时回退宿主核数。
+// os.availableParallelism() 只反映宿主核数，而云端容器常见「宿主几十核、配额 2~4 核」，
+// 按宿主核数开会严重超订。这里读 cgroup v2/v1 的 CPU 配额求真实核数，无配额时回退宿主核数。
 function effectiveCpus(): number {
   const host = os.availableParallelism()
   let quota = Number.POSITIVE_INFINITY
@@ -84,9 +79,8 @@ function effectiveCpus(): number {
   return Math.max(1, Math.min(host, byQuota))
 }
 
-// worker 数：VITEST_MAX_WORKERS 显式覆盖优先（云端流水线按实例档位注入）；
-// 否则取「配额核数」与 16 的较小值——本机 24 核实测 16 最优（23 因 fork
-// 创建 + 内存压力回吐收益），上限 16 同时防低核机器超订。
+// worker 数：VITEST_MAX_WORKERS 优先（云端按实例档位注入），否则取 min(16, 配额核数)——
+// 16 为本机 24 核实测最优值，上限同时防低核机器超订。
 function resolveMaxWorkers(): number {
   const override = Number(process.env.VITEST_MAX_WORKERS)
   if (Number.isFinite(override) && override > 0) return Math.floor(override)
@@ -94,11 +88,9 @@ function resolveMaxWorkers(): number {
 }
 
 // ── chunk 模块级体积归属表 ───────────────────────────────────────────
-// scripts/bundle-budget.mjs 超限时需要回答「是哪个源文件让包变大了」。
-// Vite 自带的 build.manifest 只有 chunk 粒度（不含模块），故用 Rollup 的
-// OutputChunk.modules 自建映射表：dist/.vite/chunk-modules.json
-// { "<chunk 文件名>": [{ id, bytes }] }，id 为模块绝对路径，bytes 为原始字节。
-// 该目录不参与同步到后端 static（见 syncStaticPlugin），不会被打进 wheel。
+// bundle-budget.mjs 超限时需归因「哪个源文件导致变大」；Vite 的 build.manifest 只到
+// chunk 粒度，故用 Rollup OutputChunk.modules 自建 dist/.vite/chunk-modules.json
+// （{ "<chunk>": [{ id, bytes }] }）。该目录不同步到后端 static，不会进 wheel。
 function chunkAttributionPlugin(): Plugin {
   return {
     name: 'chunk-attribution',
@@ -122,8 +114,7 @@ function chunkAttributionPlugin(): Plugin {
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
-    // bundle 体积分析：仅 `vite build --mode analyze`（pnpm analyze）时启用，
-    // 报告输出到 frontend/stats.html（dist 外，避免被 syncStaticPlugin 同步到后端 static）
+    // 体积分析：仅 pnpm analyze（--mode analyze）启用，报告写 frontend/stats.html（dist 外，不进后端 static）
     ...(mode === 'analyze'
       ? [visualizer({
         filename: path.resolve(__dirname, 'stats.html'),
@@ -158,9 +149,8 @@ export default defineConfig(({ mode }) => ({
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {
-        // 不使用 manualChunks —— antd 内部模块间有大量交叉引用，
-        // 手动拆分无论怎么划分都会产生循环依赖，触发 ES module
-        // 暂时性死区导致运行时 TypeError。交给 Rollup 自行分析依赖图。
+        // 不用 manualChunks：antd 模块间交叉引用多，手动拆分会产生循环依赖，
+        // 触发 ES module 暂时性死区 TypeError，交给 Rollup 自行分析依赖图。
       },
     },
   },
@@ -170,17 +160,14 @@ export default defineConfig(({ mode }) => ({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    // 每个用例结束后自动 restore 所有 spyOn mock，防止异常分支的 mock 泄漏到后续用例
+    // 用例结束后自动 restore spyOn mock，防止 mock 泄漏到后续用例
     restoreMocks: true,
-    // 全量并发（16 workers）下 jsdom + antd 渲染负载高，部分含
-    // mutation→message→navigate 长链路的用例会超过默认 5s（2026-09 实测
-    // 861 例中 8 例偶发超时，单文件运行均在 1s 内）。放宽到 10s 只影响
-    // 超时阈值，不改变断言语义。
+    // 高并发下 jsdom + antd 渲染负载高，长链路用例偶发超过默认 5s；放宽到 10s
+    // 仅改超时阈值，不改变断言语义。
     testTimeout: 10_000,
     // 单元/组件测试遵循就近放置约定：src 下的 *.test.ts(x)
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    // worker 数按「容器真实 CPU 配额」求值（见上方 effectiveCpus），可用
-    // VITEST_MAX_WORKERS 覆盖。避免云端容器把宿主核数当核数用导致超订。
+    // worker 数按容器真实 CPU 配额求值（见 effectiveCpus），可用 VITEST_MAX_WORKERS 覆盖。
     maxWorkers: resolveMaxWorkers(),
     coverage: {
       provider: 'v8',
@@ -193,10 +180,8 @@ export default defineConfig(({ mode }) => ({
         'src/**/*.d.ts',
         'src/vite-env.d.ts',
       ],
-      // 恒定只出 text + json-summary：前者供终端阅读，后者是 check-coverage.mjs 的输入。
-      // html 报告会在 frontend/coverage 下写数百个文件，耗时纯属浪费（本地沙箱还会因
-      // 「批量删除 > 50 文件」被 safe-delete shim 拦下），故默认关闭；需要浏览时用
-      // `pnpm test:coverage:html`（make fcov-html）经 CLI 追加 html reporter。
+      // 恒定只出 text + json-summary（后者供 check-coverage.mjs）；html 会写数百文件，
+      // 默认关闭，需要浏览时用 pnpm test:coverage:html（make fcov-html）。
       reporter: ['text', 'json-summary'],
       reportsDirectory: 'coverage',
     },
