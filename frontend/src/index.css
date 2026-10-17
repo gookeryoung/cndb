@@ -2972,3 +2972,21 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   background: var(--cn-bg-subtle);
   overflow-x: auto;
 }
+
+/* ─────────────── 图片字段编辑器 ───────────────
+ * 点击字段只聚焦（成为 Ctrl+V 粘贴目标），不再直接弹系统文件选择框；
+ * 聚焦后描一圈细边，提示「当前粘贴目标」。拖拽入口不加手型，避免暗示点击上传。 */
+.cn-image-field {
+  width: 100%;
+  border-radius: 6px;
+  outline: none;
+  transition: box-shadow 0.15s ease;
+}
+
+.cn-image-field:focus-within {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cn-brand-color) 35%, transparent);
+}
+
+.cn-image-field .ant-upload-drag {
+  cursor: default;
+}
