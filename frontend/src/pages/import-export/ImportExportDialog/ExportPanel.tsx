@@ -127,7 +127,7 @@ export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, 
       {selectedFormat === 'pdf' ? (
         <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'var(--cn-bg-subtle)', borderRadius: 6, marginBottom: 8 }}>
           <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)' }}>
-            导出当前视图可见内容画面（不含顶部栏），PDF 为视觉快照，不受视图筛选影响
+            导出当前视图可见内容画面（不含顶部栏），按屏幕实际大小输出：内容较宽时 PDF 纸张会相应变宽，字号不会缩小
           </span>
         </div>
       ) : viewId != null && (

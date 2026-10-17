@@ -1,51 +1,41 @@
 /**
  * exportPdf 模块测试 —— 视图内容导出 PDF.
  *
- * 覆盖：computePageSlices 分页纯函数（整除 / 有余数 / 单页 / 非法输入）；
- * pickOrientation 纸张方向自适应；expandScrollContainers 滚动容器展开与恢复；
+ * 覆盖：pickOrientation 方向判定；computePageSize 页面自适应（宽内容扩页 / 窄内容保持 A4 /
+ * 超上限钳制）；computeRenderScale 目标 DPI 反算与像素预算压制；
+ * expandScrollContainers 滚动容器展开与恢复；measureContentBounds 包围盒测量；
  * exportViewToPdf 编排（html2canvas / jsPDF 均为 mock，jsdom 无真实 canvas）：
- * 纵横向自适应、多页时 addPage 调用次数与 addImage 次数一致、save 收到文件名、
- * 展开状态在渲染期生效并在渲染后还原。
+ * 1:1 排版尺寸、窄内容居中、超单页上限才分页、JPEG 质量与平滑参数、
+ * save 收到文件名、展开状态在渲染期生效并在渲染后还原。
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { computePageSlices, expandScrollContainers, exportViewToPdf, measureContentBounds, pickOrientation } from './exportPdf'
+import {
+  A4_PAGE_PT,
+  CSS_DPI,
+  MAX_PAGE_PT,
+  MAX_RENDER_SCALE,
+  MIN_RENDER_SCALE,
+  PAGE_MARGIN_PT,
+  PDF_IMAGE_QUALITY,
+  PX_TO_PT,
+  TARGET_RENDER_DPI,
+  computePageSize,
+  computeRenderScale,
+  expandScrollContainers,
+  exportViewToPdf,
+  measureContentBounds,
+  pickOrientation,
+} from './exportPdf'
 
 /** hoisted mock：jsdom 无真实 canvas 渲染，html2canvas / jsPDF 均替换为桩 */
 const html2canvasMock = vi.hoisted(() => vi.fn())
 const jsPDFMock = vi.hoisted(() => vi.fn())
+/** 记录 pageCanvas.toDataURL 的实参，用于断言编码格式与 JPEG 质量 */
+const toDataURLMock = vi.hoisted(() => vi.fn(() => 'data:image/jpeg;base64,fake'))
 
 vi.mock('html2canvas-pro', () => ({ default: html2canvasMock }))
 vi.mock('jspdf', () => ({ jsPDF: jsPDFMock }))
-
-describe('computePageSlices 分页切片', () => {
-  it('内容高度不足一页时输出单页切片', () => {
-    expect(computePageSlices(500, 785)).toEqual([{ y: 0, height: 500 }])
-  })
-
-  it('恰好整除时均分为多页且不产生空尾页', () => {
-    expect(computePageSlices(1600, 800)).toEqual([
-      { y: 0, height: 800 },
-      { y: 800, height: 800 },
-    ])
-  })
-
-  it('有余数时末页为剩余高度', () => {
-    expect(computePageSlices(2000, 785.19)).toEqual([
-      { y: 0, height: 785.19 },
-      { y: expect.closeTo(785.19, 6), height: expect.closeTo(785.19, 6) },
-      { y: expect.closeTo(1570.38, 6), height: expect.closeTo(429.62, 6) },
-    ])
-  })
-
-  it('非法输入（非有限数 / 非正数）返回空数组', () => {
-    expect(computePageSlices(0, 785)).toEqual([])
-    expect(computePageSlices(-1, 785)).toEqual([])
-    expect(computePageSlices(100, 0)).toEqual([])
-    expect(computePageSlices(NaN, 785)).toEqual([])
-    expect(computePageSlices(Infinity, 785)).toEqual([])
-  })
-})
 
 describe('pickOrientation 纸张方向自适应', () => {
   it('内容宽 > 高用横版（landscape）', () => {
@@ -55,6 +45,63 @@ describe('pickOrientation 纸张方向自适应', () => {
   it('内容高 >= 宽用竖版（portrait）', () => {
     expect(pickOrientation(800, 2000)).toBe('portrait')
     expect(pickOrientation(1000, 1000)).toBe('portrait')
+  })
+})
+
+describe('computePageSize 页面尺寸自适应', () => {
+  it('宽内容按 1:1 撑大页面，而不是把内容压进 A4 宽度', () => {
+    // 1390x900 CSS px 的看板 → 1042.5x675pt
+    const size = computePageSize(1390 * PX_TO_PT, 900 * PX_TO_PT)
+    expect(size.width).toBeCloseTo(1390 * PX_TO_PT + PAGE_MARGIN_PT * 2, 6)
+    expect(size.height).toBeCloseTo(900 * PX_TO_PT + PAGE_MARGIN_PT * 2, 6)
+    // 页面内容区恰好等于内容物理尺寸 → 1:1 落纸，无缩放
+    expect(size.width - PAGE_MARGIN_PT * 2).toBeCloseTo(1390 * PX_TO_PT, 6)
+  })
+
+  it('窄内容仍用 A4 基准（不会缩成小纸），横版取长边为宽', () => {
+    expect(computePageSize(600 * PX_TO_PT, 400 * PX_TO_PT)).toEqual({
+      width: A4_PAGE_PT.height,
+      height: A4_PAGE_PT.width,
+    })
+  })
+
+  it('高内容用竖版基准，超出时按内容加高', () => {
+    const size = computePageSize(600 * PX_TO_PT, 1200 * PX_TO_PT)
+    expect(size.width).toBe(A4_PAGE_PT.width)
+    expect(size.height).toBeCloseTo(1200 * PX_TO_PT + PAGE_MARGIN_PT * 2, 6)
+  })
+
+  it('超出 PDF 单页上限时钳到 MAX_PAGE_PT（由调用方改多页平铺）', () => {
+    const size = computePageSize(40_000, 40_000)
+    expect(size.width).toBe(MAX_PAGE_PT)
+    expect(size.height).toBe(MAX_PAGE_PT)
+  })
+})
+
+describe('computeRenderScale 渲染分辨率反算', () => {
+  it('1:1 排版下恒按目标 DPI 取 300/96 ≈ 3.125，与内容尺寸无关', () => {
+    const expected = TARGET_RENDER_DPI / CSS_DPI
+    expect(computeRenderScale(1390, 900)).toBeCloseTo(expected, 6)
+    expect(computeRenderScale(600, 400)).toBeCloseTo(expected, 6)
+    // 旧实现固定 scale:2 → 仅 192~255 DPI
+    expect(computeRenderScale(1390, 900)).toBeGreaterThan(2)
+  })
+
+  it('超大内容受像素预算压制，但不低于 MIN_RENDER_SCALE 之外的兜底 1', () => {
+    expect(computeRenderScale(4000, 3000)).toBeGreaterThan(1)
+    expect(computeRenderScale(4000, 3000)).toBeLessThan(MIN_RENDER_SCALE)
+    expect(computeRenderScale(12_000, 9000)).toBe(1)
+  })
+
+  it('缩放系数不超过 MAX_RENDER_SCALE', () => {
+    expect(computeRenderScale(100, 100)).toBeLessThanOrEqual(MAX_RENDER_SCALE)
+  })
+
+  it('非法尺寸回退到 MIN_RENDER_SCALE', () => {
+    expect(computeRenderScale(0, 900)).toBe(MIN_RENDER_SCALE)
+    expect(computeRenderScale(1390, 0)).toBe(MIN_RENDER_SCALE)
+    expect(computeRenderScale(NaN, 900)).toBe(MIN_RENDER_SCALE)
+    expect(computeRenderScale(Infinity, 900)).toBe(MIN_RENDER_SCALE)
   })
 })
 
@@ -120,34 +167,36 @@ describe('measureContentBounds 包围盒测量', () => {
 })
 
 describe('exportViewToPdf 编排（库已 mock）', () => {
-  /** 模拟源 canvas：宽 1077.16px（pxPerPt=2），高 4000px → 竖版，缩放后内容高 2000pt → 3 页 */
-  const fakeCanvas = { width: 1077.16, height: 4000 }
-  /** 模拟横版内容：宽 4000px，高 1077.16px → 横版单页 */
-  const wideCanvas = { width: 4000, height: 1077.16 }
+  /** 宽看板内容：2780x1800px @scale2 → 1042.5x675pt（正好 A4 装不下 → 扩页单页） */
+  const boardCanvas = { width: 2780, height: 1800 }
+  /** 窄内容：800x600px @scale2 → 300x225pt（A4 装得下 → 居中） */
+  const narrowCanvas = { width: 800, height: 600 }
+  /** 超高内容：height 使内容高达 15000pt > MAX_PAGE_PT → 被迫分页 */
+  const hugeCanvas = { width: 2780, height: 40_000 }
 
-  /** 构造 jsPDF 实例桩：页面尺寸按构造参数 orientation 返回（A4 两向） */
-  const makePdfInstance = () => ({
+  /** 构造 jsPDF 实例桩：页尺寸取自构造参数 format（与真实 jsPDF 的自定义页面一致） */
+  const makePdfInstance = (format: [number, number]) => ({
     internal: {
       pageSize: {
-        getWidth: () => (orientationUsed === 'landscape' ? 841.89 : 595.28),
-        getHeight: () => (orientationUsed === 'landscape' ? 595.28 : 841.89),
+        getWidth: () => format[0],
+        getHeight: () => format[1],
       },
     },
     addPage: vi.fn(),
     addImage: vi.fn(),
     save: vi.fn(),
   })
-  let orientationUsed: string
+  let jsPDFOptions: { format: [number, number]; orientation: string; unit: string } | undefined
   let pdfInstance: ReturnType<typeof makePdfInstance>
 
   beforeEach(() => {
     vi.clearAllMocks()
-    orientationUsed = 'portrait'
-    pdfInstance = makePdfInstance()
-    html2canvasMock.mockResolvedValue(fakeCanvas)
+    pdfInstance = makePdfInstance([A4_PAGE_PT.width, A4_PAGE_PT.height])
+    html2canvasMock.mockResolvedValue(boardCanvas)
     // 普通函数实现：需支持 new jsPDF(...) 调用（箭头函数不可构造）
-    jsPDFMock.mockImplementation(function (opts?: { orientation?: string }) {
-      orientationUsed = opts?.orientation ?? 'portrait'
+    jsPDFMock.mockImplementation(function (opts: { format: [number, number]; orientation: string; unit: string }) {
+      jsPDFOptions = opts
+      pdfInstance = makePdfInstance(opts.format)
       return pdfInstance
     })
     // jsdom 无 canvas 实现：拦截 createElement('canvas') 返回带 stub 2d 上下文的伪 canvas
@@ -158,7 +207,7 @@ describe('exportViewToPdf 编排（库已 mock）', () => {
           width: 0,
           height: 0,
           getContext: () => ({ fillRect: vi.fn(), drawImage: vi.fn() }),
-          toDataURL: () => 'data:image/jpeg;base64,fake',
+          toDataURL: toDataURLMock,
         } as unknown as HTMLCanvasElement
       }
       return realCreateElement(tag)
@@ -169,32 +218,59 @@ describe('exportViewToPdf 编排（库已 mock）', () => {
     vi.restoreAllMocks()
   })
 
-  it('超高内容竖版分页：addPage 比页数少 1，addImage 与 save 各按页数/一次调用', async () => {
+  it('宽看板按 1:1 出图：页面撑到内容大小、单页、图像尺寸等于内容物理尺寸', async () => {
     const target = document.createElement('div')
     await exportViewToPdf(target, 'view-测试-20260101_120000.pdf')
 
-    expect(jsPDFMock).toHaveBeenCalledWith(expect.objectContaining({ orientation: 'portrait' }))
-    // 内容高 2000pt，每页内容区 841.89 - 2*28.35 = 785.19pt → 3 页
-    expect(pdfInstance.addPage).toHaveBeenCalledTimes(2)
-    expect(pdfInstance.addImage).toHaveBeenCalledTimes(3)
-    // 每页宽度均为内容区宽度 595.28 - 56.7 = 538.58pt
-    for (const call of pdfInstance.addImage.mock.calls) {
-      expect(call[4]).toBeCloseTo(538.58, 2)
-    }
+    const contentWidthPt = 2780 / MIN_RENDER_SCALE * PX_TO_PT
+    const contentHeightPt = 1800 / MIN_RENDER_SCALE * PX_TO_PT
+    // jsPDF 必须用横版自定义页（宽 > 高时传 portrait 会被 jsPDF 交换宽高）
+    expect(jsPDFOptions?.orientation).toBe('landscape')
+    expect(jsPDFOptions?.format[0]).toBeCloseTo(contentWidthPt + PAGE_MARGIN_PT * 2, 6)
+    expect(jsPDFOptions?.format[1]).toBeCloseTo(contentHeightPt + PAGE_MARGIN_PT * 2, 6)
+
+    expect(pdfInstance.addPage).not.toHaveBeenCalled()
+    expect(pdfInstance.addImage).toHaveBeenCalledTimes(1)
+    const [, , x, y, w, h] = pdfInstance.addImage.mock.calls[0]
+    expect(x).toBeCloseTo(PAGE_MARGIN_PT, 6)
+    expect(y).toBeCloseTo(PAGE_MARGIN_PT, 6)
+    // 内容不再被压缩：落纸宽度 = 内容物理宽度（旧实现会被压到 785.19pt）
+    expect(w).toBeCloseTo(contentWidthPt, 6)
+    expect(h).toBeCloseTo(contentHeightPt, 6)
     expect(pdfInstance.save).toHaveBeenCalledWith('view-测试-20260101_120000.pdf')
   })
 
-  it('宽内容自动用横版：jsPDF 收到 landscape，内容区宽度放大到 785.19pt 且单页', async () => {
-    html2canvasMock.mockResolvedValue(wideCanvas)
+  it('窄内容保持 A4 横版并在页内居中，不做放大', async () => {
+    html2canvasMock.mockResolvedValue(narrowCanvas)
     const target = document.createElement('div')
-    await exportViewToPdf(target, 'view-宽看板.pdf')
+    await exportViewToPdf(target, 'view-窄.pdf')
 
-    expect(jsPDFMock).toHaveBeenCalledWith(expect.objectContaining({ orientation: 'landscape' }))
-    // 横版内容区宽 841.89 - 56.7 = 785.19pt；pxPerPt = 4000/785.19 ≈ 5.094，
-    // 缩放后内容高 1077.16/pxPerPt ≈ 211.4pt，不足一页 → 单页
-    expect(pdfInstance.addPage).not.toHaveBeenCalled()
+    expect(jsPDFOptions?.orientation).toBe('landscape')
+    expect(jsPDFOptions?.format).toEqual([A4_PAGE_PT.height, A4_PAGE_PT.width])
+
+    const [, , x, y, w, h] = pdfInstance.addImage.mock.calls[0]
+    const contentWidthPt = 800 / MIN_RENDER_SCALE * PX_TO_PT
+    const contentHeightPt = 600 / MIN_RENDER_SCALE * PX_TO_PT
+    expect(w).toBeCloseTo(contentWidthPt, 6)
+    expect(h).toBeCloseTo(contentHeightPt, 6)
+    expect(x).toBeCloseTo(PAGE_MARGIN_PT + (A4_PAGE_PT.height - PAGE_MARGIN_PT * 2 - contentWidthPt) / 2, 6)
+    expect(y).toBeCloseTo(PAGE_MARGIN_PT + (A4_PAGE_PT.width - PAGE_MARGIN_PT * 2 - contentHeightPt) / 2, 6)
     expect(pdfInstance.addImage).toHaveBeenCalledTimes(1)
-    expect(pdfInstance.addImage.mock.calls[0][4]).toBeCloseTo(785.19, 2)
+  })
+
+  it('内容超过单页上限才分页：addPage 比页数少 1，末页只占剩余高度', async () => {
+    html2canvasMock.mockResolvedValue(hugeCanvas)
+    const target = document.createElement('div')
+    await exportViewToPdf(target, 'view-超高.pdf')
+
+    const contentHeightPt = 40_000 / MIN_RENDER_SCALE * PX_TO_PT // 15000pt
+    const availHeightPt = MAX_PAGE_PT - PAGE_MARGIN_PT * 2
+    expect(jsPDFOptions?.format[1]).toBe(MAX_PAGE_PT)
+
+    expect(pdfInstance.addPage).toHaveBeenCalledTimes(1)
+    expect(pdfInstance.addImage).toHaveBeenCalledTimes(2)
+    expect(pdfInstance.addImage.mock.calls[0][5]).toBeCloseTo(availHeightPt, 6)
+    expect(pdfInstance.addImage.mock.calls[1][5]).toBeCloseTo(contentHeightPt - availHeightPt, 6)
   })
 
   it('渲染期滚动容器处于展开状态，渲染完成后还原', async () => {
@@ -205,12 +281,26 @@ describe('exportViewToPdf 编排（库已 mock）', () => {
     // 在 html2canvas 调用时断言展开状态已生效
     html2canvasMock.mockImplementation(async () => {
       expect(scroller.style.overflowY).toBe('visible')
-      return fakeCanvas
+      return boardCanvas
     })
 
     await exportViewToPdf(target, 'a.pdf')
     // 渲染完成后立即还原，不阻塞后续 PDF 切片
     expect(scroller.style.overflowY).toBe('auto')
+  })
+
+  it('按目标 DPI 反算 scale 并开启高平滑；页面位图用高质 JPEG 写入', async () => {
+    // jsdom 的 getBoundingClientRect 恒为 0 → 包围盒非法，回退到 MIN_RENDER_SCALE
+    const target = document.createElement('div')
+    await exportViewToPdf(target, 'a.pdf')
+
+    expect(html2canvasMock).toHaveBeenCalledWith(
+      target,
+      expect.objectContaining({ scale: MIN_RENDER_SCALE, imageSmoothingQuality: 'high' }),
+    )
+    expect(toDataURLMock).toHaveBeenCalledWith('image/jpeg', PDF_IMAGE_QUALITY)
+    // 单页只编码一次
+    expect(toDataURLMock).toHaveBeenCalledTimes(1)
   })
 
   it('渲染失败时向上抛出原始错误且还原展开状态', async () => {
