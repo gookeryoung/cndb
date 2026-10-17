@@ -17,7 +17,7 @@ TAT 的 Content 上限是 64 KiB（且 Content 本身还要对命令再做一次
 环境变量
 --------
 VERSION, IMAGE_REPO, WHEEL_URL, WHEEL_NAME, WHEEL_SHA256   必需
-WHEEL_MIRROR_URL, BUILD_BASE_IMAGE, BUILD_PIP_INDEX_URL     可选
+WHEEL_MIRROR_URLS, BUILD_BASE_IMAGE, BUILD_PIP_INDEX_URL    可选
 PAYLOAD_PATH   默认 /tmp/cndb-deploy-config.tgz
 OUTPUT_PATH    默认 /tmp/cndb-deploy-cmd.sh
 
@@ -56,7 +56,11 @@ def build_command(payload_b64: str) -> str:
     wheel_url = require("WHEEL_URL")
     wheel_name = require("WHEEL_NAME")
     wheel_sha256 = require("WHEEL_SHA256")
-    mirror_url = env("WHEEL_MIRROR_URL")
+    mirror_urls = env("WHEEL_MIRROR_URLS").split()
+    # 镜像地址直接拼进 shell，先做一次白名单校验，避免空格/引号/命令替换字符
+    for url in mirror_urls:
+        if not url.startswith("https://") or any(ch.isspace() or ch in "'\"$`\\" for ch in url):
+            raise SystemExit(f"[build] 非法的 PyPI 镜像地址：{url!r}")
     build_base_image = env("BUILD_BASE_IMAGE")
     build_pip_index_url = env("BUILD_PIP_INDEX_URL")
 
@@ -91,31 +95,46 @@ def build_command(payload_b64: str) -> str:
         "fi",
         "",
         "# ── 3. 取 wheel（原 scp 同步构建产物）──────────────────────────",
-        "# 优先腾讯云内网镜像（实测内网 10MB/s 量级），失败回退 PyPI 官方源。",
-        "# 注意：官方源 files.pythonhosted.org 实测仅 ~14KB/s（跨境限速），3MB 需 200s+，",
-        "# 故 max-time 放到 900s，避免正常的慢速下载被误杀；同时必须有上限，",
-        "# 否则源端 hang 住会让整个部署无限挂起。",
+        "# 发布刚完成时国内镜像往往还没同步到新版本，旧逻辑只有「腾讯镜像 → 官方源」",
+        "# 两跳，镜像一滞后就落到 files.pythonhosted.org（实测跨境仅 ~14KB/s，3MB 要",
+        "# 200s+）。这里改为「多个国内镜像快速失败 → 官方源长超时兜底」，任一源落盘",
+        "# 后都必须过 sha256 校验，校验不过继续换源。",
         "mkdir -p dist",
         "WHEEL_OK=0",
-        f"for src in '{mirror_url}' '{wheel_url}'; do",
-        '  [ -n "$src" ] || continue',
+        "try_wheel() {",
+        '  src="$1" max_time="$2" retry_opts="$3"',
         '  echo "[deploy] 下载 wheel: $src"',
-        "  if curl -fsSL --connect-timeout 15 --max-time 900 --retry 2 --retry-delay 3 \\",
+        "  # shellcheck disable=SC2086  # retry_opts 需要按空格拆成多个参数",
+        '  if curl -fsSL --connect-timeout 15 --max-time "$max_time" $retry_opts \\',
         f"      -o 'dist/{wheel_name}' \"$src\"; then",
         "    # 落盘后立刻校验：镜像可能返回不完整/陈旧文件，",
         "    # 校验失败要切下一个源，而不是直接判死整个部署。",
         f"    if echo '{wheel_sha256}  dist/{wheel_name}' | sha256sum -c - >/dev/null 2>&1; then",
         "      WHEEL_OK=1",
         '      echo "[deploy] wheel 校验通过"',
-        "      break",
+        "      return 0",
         "    fi",
         '    echo "[deploy] 该源文件校验失败，尝试下一个" >&2',
         "  else",
         '    echo "[deploy] 该源不可用，尝试下一个" >&2',
         "  fi",
+        "  return 1",
+        "}",
+        "",
+    ]
+    # 没有可用镜像时生成空串占位，让循环体里的 [ -n "$src" ] 兜住
+    mirror_list = " ".join(f"'{url}'" for url in mirror_urls) or "''"
+    lines += [
+        f"for src in {mirror_list}; do",
+        '  [ -n "$src" ] || continue',
+        "  try_wheel \"$src\" 90 '' && break",
         "done",
         'if [ "$WHEEL_OK" != "1" ]; then',
-        f'  echo "[deploy] 错误：dist/{wheel_name} 下载或校验失败（镜像与官方源均不可用）" >&2',
+        '  echo "[deploy] 国内镜像均未命中，回退 PyPI 官方源（跨境可能较慢）..." >&2',
+        f"  try_wheel '{wheel_url}' 900 '--retry 2 --retry-delay 3' || true",
+        "fi",
+        'if [ "$WHEEL_OK" != "1" ]; then',
+        f'  echo "[deploy] 错误：dist/{wheel_name} 下载或校验失败（国内镜像与官方源均不可用）" >&2',
         "  exit 1",
         "fi",
         f"echo '{wheel_sha256}  dist/{wheel_name}' | sha256sum -c -",

@@ -1,5 +1,11 @@
 # ═══════════════════════════════════════════════════════════════════
-# cndb 生产镜像（腾讯云 TCR 版）
+# cndb 生产镜像（腾讯云 TCR 版）—— 应用层
+#
+# 依赖基础镜像由 deploy/Dockerfile.base 构建（系统字体 + 锁定依赖），本文件只做：
+#   FROM <cndb-base:deps-<hash>>
+#   → 装业务 wheel（MB 级）
+#   → 建非 root 用户 / 预建 /data
+# 常态发布只重建这两层，服务器构建通常 20-40s；依赖变化时才重建基础镜像。
 #
 # 生产必需的几处设计：
 #   1. 预建 /data 并授权给非 root 用户 —— 命名卷首次挂载会继承镜像内该目录
@@ -7,59 +13,30 @@
 #   2. 显式声明 CNDB_DATA_DIR=/data，使数据/附件/备份/日志全部落在同一挂载点。
 #      若只设 DATABASE_URL，附件与备份会落在容器内 ~/.cndb，容器重建即丢失。
 #   3. 内置 HEALTHCHECK，探测真实存在的 /api/health（镜像内无 curl，用 python）。
-#   4. 安装中文字体（reportlab 生成 PDF / Jinja2 模板需要 CJK 字形，缺则渲染成方框）。
+#   4. 中文字体已在基础镜像里装好（reportlab 生成 PDF / Jinja2 模板需要 CJK 字形）。
 #
-# 构建（服务器端，deploy CI 自动完成；手动构建需先准备产物）：
-#   make build
-#   uv export --frozen --no-hashes --no-dev --no-emit-project -o dist/requirements.lock.txt
-#   docker build -f deploy/Dockerfile.prod -t <registry>/cndb:v0.3.0 .
-# deploy.sh 在 SERVER_BUILD=1 下会自动完成构建与冒烟验证，CI 经 TAT 下发同步
-# dist/ 与本文件到服务器后触发，见 .github/workflows/deploy-tencent.yml。
+# 构建（服务器端，deploy.sh 自动完成；手动构建需先准备基础镜像与 dist 产物）：
+#   docker build -f deploy/Dockerfile.prod \
+#     --build-arg BASE_IMAGE=<registry>/cndb-base:deps-<hash> \
+#     -t <registry>/cndb:v0.3.0 .
+# deploy.sh 在 SERVER_BUILD=1 下会自动复算指纹、复用/构建基础镜像，再构建本镜像。
 #
-# 镜像源默认为官方源（Docker Hub / PyPI）；国内服务器直连超时时，可经
-# BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL 换源（deploy.sh 透传，见下方 ARG 说明），
-# 或在服务器 /etc/docker/daemon.json 配 registry-mirrors 透明加速。
+# 基础镜像默认 Docker Hub 官方源，可用 BUILD_BASE_IMAGE 经 --build-arg 覆盖（见 Dockerfile.base）。
 # ═══════════════════════════════════════════════════════════════════
 
-# 基础镜像默认 Docker Hub 官方源，可用 BUILD_BASE_IMAGE 经 --build-arg 覆盖。
-ARG BASE_IMAGE=python:3.12-slim
+# BASE_IMAGE 必须由 deploy.sh 传入（指向已构建/已缓存的 cndb-base 镜像）
+ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
-# ── 环境变量 ──
-# pip 源默认官方 PyPI，可用 BUILD_PIP_INDEX_URL 经 --build-arg 覆盖。
-# 国内服务器如需加速，推荐腾讯云源（同步全、CVM 内网免流）；避免阿里云源
-# （滞后镜像，常缺失较新版本包的 metadata 导致 404）。
-ENV DEBIAN_FRONTEND=noninteractive \
-    LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-# ── 系统依赖：仅中文字体 ──
-# 字体只装 fonts-wqy-microhei（约 5MB）：pdf_fonts.py 按 fc-match 候选列表
-# 动态注册，microhei 覆盖 GB2312/GBK 常用汉字，导出 Word/PDF 场景够用。
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        fontconfig \
-        fonts-wqy-microhei \
-    && fc-cache -fv \
-    && rm -rf /var/lib/apt/lists/*
-
-# ── 安装 wheel（--no-cache-dir 减小镜像体积）──
 WORKDIR /app
 
-# 依赖层拆分：先装锁定依赖（requirements.lock.txt，由 uv export 从 uv.lock 生成，
-# deploy CI 自动产出；本地构建见 make build），再装业务 wheel。
-# 收益：版本升级时依赖版本不变，Docker 层缓存只重建薄薄的 wheel 层，
-# 无需整层重装依赖。
-# PIP_INDEX_URL：默认官方源，服务器构建可经 --build-arg 换腾讯云镜像（见头部说明）。
-ARG PIP_INDEX_URL=https://pypi.org/simple
-COPY dist/requirements.lock.txt ./
-RUN pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" -r requirements.lock.txt
-
+# ── 安装 wheel（依赖已在基础镜像里）──
+# --no-index：禁止联网解析依赖。依赖若缺失会立刻失败，而不是构建到一半去 PyPI 慢拉，
+# 也能保证「基础镜像内容」与「锁定清单」不一致时不会被静默放过。
+# 顺手删掉基础镜像带过来的 requirements.lock.txt，不留在最终镜像里。
 COPY dist/*.whl ./
-RUN pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" ./*.whl \
-    && rm ./*.whl requirements.lock.txt
+RUN pip install --no-cache-dir --no-index ./*.whl \
+    && rm -f ./*.whl requirements.lock.txt
 
 # ── 非 root 用户 + 预建数据目录 ──
 # /data 必须在此处 chown：Docker 创建命名卷时会复制镜像内该路径的属主，

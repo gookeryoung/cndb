@@ -55,12 +55,13 @@ git tag v0.3.1 && git push origin v0.3.1    # 同步产物 → 服务器构建 �
 | 文件 | 作用 |
 |---|---|
 | `docker-compose.prod.yml` | 生产编排（单容器 / 可选 nginx 反代 + 数据卷 + 日志轮转） |
-| `deploy/Dockerfile.prod` | 生产镜像（预授权数据目录 + 健康检查 + 中文字体） |
-| `deploy/deploy.sh` | 服务器端部署（本地构建 / 预备份 / 健康探测 / 失败回滚） |
+| `deploy/Dockerfile.base` | 依赖基础镜像（系统字体 + 锁定依赖，按指纹复用） |
+| `deploy/Dockerfile.prod` | 应用镜像（基于依赖基础镜像，只装 wheel） |
+| `deploy/deploy.sh` | 服务器端部署（依赖镜像复用/构建 / 预备份 / 健康探测 / 失败回滚） |
 | `deploy/backup.sh` | 定时备份，可选上传 COS |
 | `deploy/.env.prod.example` | 生产环境变量模板 |
 | `deploy/nginx/` | 内置反向代理配置（模板 + HTTP/HTTPS 共用片段 + 可选扩展） |
-| `.github/workflows/deploy-tencent.yml` | tag 触发的同步产物与部署流水线 |
+| `.github/workflows/deploy-tencent.yml` | 部署流水线（由 Release 在 pypi 成功后调用，也可手动触发） |
 
 ### 前端开发
 

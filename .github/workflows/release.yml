@@ -6,8 +6,10 @@ name: Release
 #   - pypi        : 前端构建 → uv build → uv publish（OIDC）→ 上传 sdist/wheel artifact
 #   - pack-windows: windows-latest 原生打包（NSIS + mingw-w64）
 #   - pack-linux   : ubuntu-latest  原生打包（gcc + dpkg-dev）
+# 另有 deploy-tencent job：pypi 成功后调用部署 workflow（workflow_call），
+# 保证「wheel 已发布」才下发部署，省掉部署侧等待 PyPI 元数据的分钟级轮询。
 #
-# release job 依赖以上三个 job，收集构建产物（exe/deb/tar.gz/zip）+
+# release job 依赖以上三个打包 job，收集构建产物（exe/deb/tar.gz/zip）+
 # PyPI 产物（whl/sdist），统一上传到 GitHub Release。
 # 任一前置 job 失败时 release 仍尝试发布已成功产物，但最终标记 workflow 失败。
 
@@ -65,7 +67,9 @@ jobs:
         run: uv build
 
       - name: Publish to PyPI (OIDC)
-        run: uv publish
+        # --check-url：同版本文件已存在时跳过上传。本仓库 CodeUp / GitHub 两条
+        # release 流水线都会发布同一 tag，后到的一边不再因 400 duplicate 失败。
+        run: uv publish --check-url https://pypi.org/simple/
 
       - name: Upload sdist & wheel artifacts
         uses: actions/upload-artifact@v7
@@ -74,6 +78,24 @@ jobs:
           path: dist/*
           retention-days: 7
           if-no-files-found: error
+
+  # ===== 生产部署（pypi 成功后）=====
+  # 调用独立的部署 workflow（workflow_call），而不是让 deploy 自己监听 tag：
+  #  · pypi 成功 = wheel 已在 PyPI，部署侧不必再轮询等元数据（最坏省 3 分钟）；
+  #  · pack-windows / pack-linux 与本 job 无关，不会拖慢发布上机。
+  #
+  # if: always() 是刻意的：本仓库同时向 CodeUp 与 GitHub 推 tag，两边都会发 PyPI，
+  # 后到的一边可能因「文件已存在」失败。此时 wheel 其实已在 PyPI 上（先到的那条
+  # 流水线发的），部署仍应继续 —— deploy job 自己会解析 PyPI 元数据，取不到才报错。
+  deploy-tencent:
+    name: Deploy to Tencent Cloud
+    needs: pypi
+    if: always() && !cancelled()
+    uses: ./.github/workflows/deploy-tencent.yml
+    # 显式传 tag，不依赖被调用 workflow 里的 GITHUB_REF_NAME（上下文语义更直白）
+    with:
+      version: ${{ github.ref_name }}
+    secrets: inherit
 
   # ===== Windows 原生打包（fspack）=====
   pack-windows:

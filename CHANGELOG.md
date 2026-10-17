@@ -116,6 +116,7 @@
 - 覆盖率口径统一：Makefile `cov` 由裸 `--cov`（把 tests/ 自身计入分母，本地虚高到 97.9%）改为 `--cov=$(PACKAGE)`，与 CI 同口径（真实 95.4%），本地绿灯不再与 CI 脱节
 - 配置一致性：`pyproject` 固定 `ruff==0.16.8`（与 `.pre-commit-config.yaml` 的 rev 真正对齐，注释不再失实）；`ci.yml` 用 YAML 锚点消除 push/pull_request 两份逐项相同的 paths；`Makefile .PHONY` 补齐 `gitkeep-check` 与全部短别名并去重
 - 部署链路改为服务器端构建：CI 不再构建镜像、不再经 COS 中转，改为同步 wheel/锁定依赖/Dockerfile 到服务器后由 `deploy.sh`（SERVER_BUILD=1）本地 `docker build` 并部署；Dockerfile.prod 基础镜像与 pip 源支持 `--build-arg` 换源，手动回滚仍走 TCR pull
+- **发布到云服务器的耗时优化**：① 部署不再作为独立 workflow 与 Release 并行抢跑，改由 `release.yml` 在 `pypi` job 成功后以 `workflow_call` 调用，省掉「重试等 PyPI 元数据同步」的 0-3 分钟；② wheel 下载从「腾讯镜像 → 官方源」两跳改为「腾讯 / 阿里 / 清华镜像快速失败 → 官方源长超时兜底」，避免镜像同步延迟时直接掉到跨境约 14KB/s 的官方源；③ 镜像拆成 `deploy/Dockerfile.base`（系统字体 + 锁定依赖，按 `requirements.lock.txt` + `Dockerfile.base` 内容指纹打 tag `cndb-base:deps-<hash>`）+ `deploy/Dockerfile.prod`（只装 wheel），依赖未变时服务器只重建 20-40s 的薄层，Docker 层缓存被清也不会再触发 5-15 分钟冷启动；`deploy.sh` 自动复用/构建基础镜像并分别清理应用镜像（保留 5 个）与基础镜像（保留 3 个），TAT 轮询间隔 15s→5s；`uv publish` 增加 `--check-url`（同版本已存在则跳过），并让 deploy job 在 pypi job 失败时仍尝试 —— 本仓库 CodeUp / GitHub 两条 release 流水线都会发 PyPI，后到的一方不再因 duplicate 阻断部署
 - `get_db` 请求路径异常时显式 rollback，避免半提交状态污染连接池
 - 文档列表 / 文档树改为批量序列化：版本数与标签各用一次聚合查询，大文档树不再逐节点 N+1
 - 反向链接扫描改为单条 SQL 取各文档最新版本，替换逐文档查询

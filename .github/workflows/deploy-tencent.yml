@@ -1,16 +1,23 @@
 name: Deploy to Tencent Cloud
 
-# 触发：push v*.*.* tag（或 workflow_dispatch 指定版本）部署到腾讯云服务器，镜像在服务器端构建。
+# 触发：由 release.yml 的 pypi job 成功后以 reusable workflow 调用
+# （workflow_call），或手动 workflow_dispatch 指定版本重跑/回滚。镜像在服务器端构建。
 #
-# 链路：release.yml 的 pypi job 构建前端并发布 wheel → 本 workflow 解析 wheel 地址与
-# sha256（不下载）→ uv export 导出锁定依赖 → 把部署配置（compose + deploy/ + 锁定清单）
-# 打成 tar.gz + base64 内联进 TAT 命令下发 → 服务器自行下载 wheel → deploy.sh
-# （本地构建 → 冒烟 → 预备份 → 重建 → 健康探测 → 失败自动回滚）→ 复查容器与健康端点。
+# 为什么不再自己监听 tag push：发布与部署以前是两条并行 workflow，deploy 必须靠
+# 轮询 PyPI 元数据来「等」release 发布完（30s × 6 次，最坏 3 分钟）。改成被
+# release.yml 调用后，pypi job 成功即代表 wheel 已在 PyPI，部署直接进入下发阶段，
+# 这段等待归零；release 失败时 deploy 也不会再抢跑。
+#
+# 链路：release.yml 的 pypi job 构建前端并发布 wheel → 本 workflow 解析 wheel 地址、
+# 国内镜像地址与 sha256（不下载）→ uv export 导出锁定依赖 → 把部署配置（compose +
+# deploy/ + 锁定清单）打成 tar.gz + base64 内联进 TAT 命令下发 → 服务器自行下载 wheel
+# → deploy.sh（复用/构建依赖基础镜像 → 只重建 wheel 薄层 → 冒烟 → 预备份 → 重建 →
+# 健康探测 → 失败自动回滚）→ 复查容器与健康端点。
 #
 # 用 TAT（自动化助手）下发而非 SSH 直连：GitHub runner 出口 IP 在海外且不固定，SSH 登录
 # 会在腾讯云主机安全留下「异地登录」告警；TAT 为下发模型，实例 agent 主动拉取，全程无
 # 入站连接，22 端口可对公网关闭。wheel 为 MB 级、超出 TAT 64 KiB 上限，改由服务器自行
-# 下载（优先腾讯云内网 PyPI 镜像，失败回退官方源，下载后校验 sha256）。
+# 下载（按「多个国内 PyPI 镜像 → 官方源」顺序尝试，下载后校验 sha256）。
 #
 # 必需 Secrets：
 #   TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY  子账号密钥（勿用主账号）。最小权限：
@@ -20,27 +27,35 @@ name: Deploy to Tencent Cloud
 #   CNDB_REGION        实例地域，如 ap-shanghai
 #   TCR_REGISTRY / TCR_GROUP   （可选）TCR 域名与命名空间，仅作镜像命名/回滚识别，须成对提供
 #   TCR_USERNAME / TCR_PASSWORD （可选）仅手动回滚（docker pull）时使用
-#   BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL （可选）国内构建拉 Docker Hub/PyPI 超时的换源通道
+#   BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL （可选）国内构建拉 Docker Hub/PyPI 超时的换源通道；
+#       BUILD_PIP_INDEX_URL 不配时，依赖基础镜像构建默认走腾讯云 PyPI 内网镜像
 #
 # 已废弃、可删除：SSH_HOST / SSH_PORT / SSH_USERNAME / SSH_PRIVATE_KEY（改 TAT 后不再有 SSH 登录）
 
 on:
-  push:
-    tags: ['v*.*.*']
+  # 由 release.yml 在 pypi 成功后调用，保证 wheel 已发布、不再需要等元数据同步
+  workflow_call:
+    inputs:
+      version:
+        description: '可选：要部署的版本 tag；省略时使用调用方的 tag'
+        required: false
+        type: string
+        default: ''
   # 手动触发：可重跑部署或回滚到指定 tag（输入已存在的版本号即可）
   workflow_dispatch:
     inputs:
       version:
-        description: '要部署的版本 tag（如 v0.3.0）。留空则重跑最近一次成功部署'
-        required: false
+        description: '要部署的版本 tag（如 v0.3.0）'
+        required: true
         type: string
 
 permissions:
   contents: read
 
-# 同一分支/仓库只允许一个部署在跑：并发部署会导致镜像与 .env 相互覆盖
+# 单机生产只允许一个部署在跑（跨 tag 也串行）：并发部署会导致镜像与 .env 相互覆盖。
+# 注意这里用固定 group 而不是 ${{ github.ref }}：否则前后两个 tag 同时发布时会并行改同一台机器。
 concurrency:
-  group: deploy-tencent-${{ github.ref }}
+  group: deploy-tencent-prod
   cancel-in-progress: false
 
 jobs:
@@ -48,19 +63,19 @@ jobs:
   deploy:
     name: Deploy via TAT (server-side build)
     runs-on: ubuntu-24.04
-    # 70 分钟为排障上限；首次无缓存构建 15-30 分钟，走 Docker 层缓存通常 5 分钟内。
+    # 70 分钟为排障上限；依赖未变化时服务器构建约 20-40s，依赖变化时多一次 1-3 分钟的基础镜像构建。
     timeout-minutes: 70
     steps:
       - uses: actions/checkout@v7
 
-      # 此步用 uvx 导出 uv.lock；runner 默认无 uv，缺失会直接 127。
+      # 安装 uv：后面的 uv export 直接用（不再经 uvx 额外下载一份）
       - name: Install uv
         uses: astral-sh/setup-uv@v10.3.0
 
       - name: Resolve version
         id: meta
         run: |
-          # 手动触发时用输入的版本，否则用 tag 名
+          # 手动触发时用输入的版本，否则用调用方（tag push）的 ref 名
           VERSION="${{ inputs.version }}"
           if [ -z "$VERSION" ]; then
             VERSION="${GITHUB_REF_NAME}"
@@ -70,8 +85,9 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "构建版本: ${VERSION}"
 
-      # 只解析 wheel 地址与 sha256（真正下载在服务器做）。同 tag 的 release.yml 并行触发，
-      # PyPI 元数据有几秒到几分钟延迟，故重试等待。
+      # 只解析 wheel 地址、国内镜像地址与 sha256（真正下载在服务器做）。
+      # 本 workflow 由 pypi job 成功后调用，PyPI 元数据此时已可读；保留少量重试只为
+      # 兜住 CDN 传播抖动，不再需要「等发布」那种分钟级轮询。
       - name: Resolve wheel source on PyPI
         id: wheel
         env:
@@ -86,7 +102,7 @@ jobs:
 
           data = None
           last_err = "未知"
-          for attempt in range(1, 7):
+          for attempt in range(1, 5):
               try:
                   with urllib.request.urlopen(endpoint, timeout=30) as resp:
                       data = json.load(resp)
@@ -95,8 +111,8 @@ jobs:
                   last_err = f"HTTP {exc.code}"
               except Exception as exc:  # noqa: BLE001 - 网络抖动一律重试
                   last_err = repr(exc)
-              print(f"第 {attempt}/6 次未取到 {pkg}=={version}（{last_err}），30s 后重试…")
-              time.sleep(30)
+              print(f"第 {attempt}/4 次未取到 {pkg}=={version}（{last_err}），15s 后重试…")
+              time.sleep(15)
 
           if data is None:
               sys.exit(f"PyPI 元数据取不到 {pkg}=={version}：{last_err}。请确认 release.yml 的 pypi job 成功。")
@@ -107,29 +123,40 @@ jobs:
 
           whl = wheels[0]
           url = whl["url"]
-          # files.pythonhosted.org/packages/xx/yy/... 的路径在腾讯云镜像上保持一致
+          # files.pythonhosted.org/packages/xx/yy/... 的路径在国内镜像上保持一致，
+          # 因此可以直接把同一段路径拼到各镜像前缀后（镜像未同步时会快速 404）。
           suffix = ""
           if "/packages/" in url:
               suffix = url.split("/packages/", 1)[1].split("#", 1)[0].split("?", 1)[0]
-          mirror = f"https://mirrors.cloud.tencent.com/pypi/packages/{suffix}" if suffix else ""
+          mirror_bases = [
+              "https://mirrors.cloud.tencent.com/pypi",
+              "https://mirrors.aliyun.com/pypi",
+              "https://pypi.tuna.tsinghua.edu.cn",
+          ]
+          mirrors = [f"{base}/packages/{suffix}" for base in mirror_bases] if suffix else []
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"url={url}\n")
               fh.write(f"filename={whl['filename']}\n")
               fh.write(f"sha256={whl['digests']['sha256']}\n")
-              fh.write(f"mirror={mirror}\n")
+              fh.write(f"mirrors={' '.join(mirrors)}\n")
 
           print(f"wheel: {whl['filename']}")
           print(f"官方源: {url}")
-          print(f"镜像源: {mirror or '<无，将只用官方源>'}")
+          for mirror in mirrors:
+              print(f"镜像源: {mirror}")
+          if not mirrors:
+              print("镜像源: <无（URL 不符合 /packages/ 布局），将只用官方源>")
           PY
 
-      # 导出锁定依赖供 Dockerfile.prod 缓存层使用（依赖未变时增量构建只重建 wheel 层）。等价命令：
+      # 导出锁定依赖供 Dockerfile.base 构建缓存层使用（依赖未变时复用已构建的基础镜像）。
+      # 上一步 setup-uv 已把 uv 放进 PATH，直接调用即可（不必再用 uvx 额外下载一份 uv）。
+      # 等价命令：
       #   uv export --frozen --no-hashes --no-dev --no-emit-project -o dist/requirements.lock.txt
       - name: Export locked requirements
         run: |
           mkdir -p dist
-          uvx uv export --frozen --no-hashes --no-dev --no-emit-project \
+          uv export --frozen --no-hashes --no-dev --no-emit-project \
             -o dist/requirements.lock.txt
           echo "--- requirements.lock.txt 概要 ---"
           grep -cE '^[a-zA-Z0-9]' dist/requirements.lock.txt | xargs echo "锁定依赖数:"
@@ -148,7 +175,7 @@ jobs:
           # 须成对存在才使用，否则回退默认前缀（仅作本地镜像命名/回滚识别）。
           IMAGE_REPO: ${{ (secrets.TCR_REGISTRY != '' && secrets.TCR_GROUP != '') && format('{0}/{1}/cndb', secrets.TCR_REGISTRY, secrets.TCR_GROUP) || 'ccr.ccs.tencentyun.com/pydev/cndb' }}
           WHEEL_URL: ${{ steps.wheel.outputs.url }}
-          WHEEL_MIRROR_URL: ${{ steps.wheel.outputs.mirror }}
+          WHEEL_MIRROR_URLS: ${{ steps.wheel.outputs.mirrors }}
           WHEEL_NAME: ${{ steps.wheel.outputs.filename }}
           WHEEL_SHA256: ${{ steps.wheel.outputs.sha256 }}
           BUILD_BASE_IMAGE: ${{ secrets.BUILD_BASE_IMAGE }}
@@ -172,7 +199,7 @@ jobs:
             --command-file /tmp/cndb-deploy-cmd.sh \
             --timeout 3600 \
             --max-wait 3300 \
-            --poll-interval 15
+            --poll-interval 5
 
       - name: Notify failure
         if: failure()
@@ -180,6 +207,6 @@ jobs:
           echo "::error::部署失败。若 deploy.sh 已自动回滚，服务仍运行在上一版本。"
           echo "::error::TAT 回传的输出有长度上限，完整日志需上机查看："
           echo "::error::  docker logs --tail 100 cndb"
-          echo "::error::若卡在服务器端 docker build，多为基础镜像拉取超时："
-          echo "::error::配置 Secret BUILD_BASE_IMAGE 换源（如 docker.m.daocloud.io/library/python:3.12-slim）后重跑。"
+          echo "::error::若卡在依赖基础镜像构建（首次或 uv.lock 变化后），多为拉基础镜像/pip 下载超时："
+          echo "::error::配置 Secret BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL 换源后重跑。"
           echo "::error::若报『命令内容超过 64 KiB』，说明配置载荷过大，见 scripts/build_tat_command.py 的提示。"
