@@ -3,22 +3,37 @@ authors = [{ name = "gookeryoung", email = "gooker_young@qq.com" }]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Framework :: FastAPI",
 ]
 
+# ── 平台相关钉版约定 ─────────────────────────────────────────────
+# 下面所有「上限」都只是为了 Windows（Win7/8）兼容性而存在，因此统一挂
+# `sys_platform == 'win32'` 标记；非 Windows 平台只保留下限、不设上限。
+# 同名依赖出现两次是合法的（PEP 508 标记互斥），解析器各取所需。
 dependencies = [
-    "fastapi>=0.115.0,<0.144.0",       # 0.126+ 要求 pydantic>=2.7，与 pydantic<2.7（Win7 兼容）冲突
+    # 0.126+ 要求 pydantic>=2.7，与 Windows 上 pydantic<2.7 冲突
+    "fastapi>=0.115.0,<0.126.0; sys_platform == 'win32'",
+    "fastapi>=0.115.0; sys_platform != 'win32'",
     "fastapi-offline>=1.7.0",
-    "pydantic-settings>=2.2.0,<2.3.0", # 与 pydantic <2.7 对齐（Win7 兼容）
-    "pydantic>=2.6.0,<2.7.0",          # 2.7+ 带出 pydantic-core>=2.17，引入 Win8+ kernel32.GetSystemTimePreciseAsFileTime
+    # 与 pydantic <2.7 对齐（Win7 兼容）
+    "pydantic-settings>=2.2.0,<2.3.0; sys_platform == 'win32'",
+    "pydantic-settings>=2.2.0; sys_platform != 'win32'",
+    # 2.7+ 带出 pydantic-core>=2.17，引入 Win8+ kernel32.GetSystemTimePreciseAsFileTime
+    "pydantic>=2.6.0,<2.7.0; sys_platform == 'win32'",
+    "pydantic>=2.6.0; sys_platform != 'win32'",
     "sqlalchemy>=2.0.0",
     "psycopg[binary]>=3.1.0",
     "uvicorn[standard]>=0.34.0",
     "alembic>=1.14.0",
-    "bcrypt>=3.2.2,<6.0.0",            # bcrypt 4.x 用 Rust 重写，Rust 1.75+ 停止 Win7 支持，_bcrypt.pyd 在 Win7 上因 ProcessPrng 缺失无法加载；3.x 是 CFFI 实现，Win7 兼容
-    #"cryptography>=41.0.0,<42.0.0", # cryptography 42+ 引入 Rust _rust 模块，Win7 上加载失败；41.x 仍为纯 C/OpenSSL，Win7 兼容
-    "cryptography>=42.0.4,<51.0.0",     # 42.0.6 带 Win10+ DLL 依赖，Win7 不可用；42.0.4+ 已修 CVE-2024-26130
+    # bcrypt 4.x 用 Rust 重写，Rust 1.75+ 停止 Win7 支持，_bcrypt.pyd 在 Win7 上因 ProcessPrng 缺失无法加载；3.x 是 CFFI 实现，Win7 兼容
+    "bcrypt>=3.2.2,<6.0.0; sys_platform == 'win32'",
+    "bcrypt>=3.2.2; sys_platform != 'win32'",
+    # 42.0.6 带 Win10+ DLL 依赖，Win7 不可用；42.0.4+ 已修 CVE-2024-26130
+    "cryptography>=42.0.4,<51.0.0; sys_platform == 'win32'",
+    "cryptography>=42.0.4; sys_platform != 'win32'",
     "python-jose[cryptography]>=3.3.0",
     "python-multipart>=0.0.9",
     "httpx2>=1.0.0",
@@ -32,7 +47,9 @@ description     = "cndb - metadata-driven collaborative database platform (FastA
 license         = "MIT"
 name            = "cndb"
 readme          = "README.md"
-requires-python = ">=3.12"
+# Windows 实为 3.12（钉版依赖仅在该版本验证）；requires-python 无法表达平台差异，
+# 由 src/cndb/__init__.py 的运行时校验兜底。
+requires-python = ">=3.12,<3.15"
 version         = "0.4.1"
 
 [project.scripts]
