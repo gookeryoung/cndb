@@ -1,11 +1,16 @@
 /** 数据分析 API — /api/v1/workspaces/{wid}/analytics/*
  *
- * - templates/*：分析模板 CRUD（模板存后端，含公式与图表配置，跨设备可用）
+ * - templates/*：分析模板 CRUD（模板存后端，含公式 / 图表 / 分组汇总配置，跨设备可用）
  * - validate：公式语法与字段引用校验（编辑器实时反馈）
- * - compute：按公式计算派生指标列 + 描述统计
+ * - compute：按公式计算派生指标列 + 描述统计 + 可选分组汇总
  */
 
 import api from './client'
+
+/** 聚合方式（图表维度聚合 / 分组汇总共用） */
+export type AnalyticsAgg = 'sum' | 'avg' | 'count' | 'min' | 'max'
+
+export type AnalyticsSortOrder = 'asc' | 'desc'
 
 /** 单条自定义计算模板公式 */
 export interface AnalyticsFormula {
@@ -28,13 +33,36 @@ export interface AnalyticsChart {
   /** 可选第二维度（多系列） */
   series?: string | null
   title?: string
+  /** 维度聚合方式（bar / line / pie 生效；其它类型忽略） */
+  aggregation?: AnalyticsAgg
+}
+
+/** 分组汇总的一个指标 */
+export interface AnalyticsSummaryMetric {
+  /** 字段名或公式 key */
+  field: string
+  agg: AnalyticsAgg
+  /** 展示名（空则自动生成「聚合方式(来源)」） */
+  label?: string
+}
+
+/** 分组汇总配置 */
+export interface AnalyticsSummary {
+  /** 分组字段（null = 全局合计） */
+  group_by?: string | null
+  metrics: AnalyticsSummaryMetric[]
+  /** 排序指标：指标 key（如 sum(销售额)）或来源字段 / 公式 key */
+  sort_by?: string | null
+  sort_order?: AnalyticsSortOrder
+  /** 仅保留前 N 组（null = 全部） */
+  top_n?: number | null
 }
 
 /** 模板配置 */
 export interface AnalyticsTemplateConfig {
   formulas: AnalyticsFormula[]
-  group_by?: string | null
   chart?: AnalyticsChart | null
+  summary?: AnalyticsSummary | null
   /** 参与分析的原始字段；空 = 全部可见字段 */
   fields?: string[]
   limit?: number
@@ -88,12 +116,32 @@ export interface AnalyticsColumnStat {
   missing: number
   mean?: number | null
   stdev?: number | null
+  variance?: number | null
   min?: number | null
+  max?: number | null
+  range?: number | null
   q1?: number | null
   median?: number | null
   q3?: number | null
-  max?: number | null
   sum?: number | null
+}
+
+/** 分组汇总的一列指标元信息 */
+export interface AnalyticsSummaryColumn {
+  key: string
+  label: string
+  agg: string
+  source: string
+}
+
+/** 分组汇总结果 */
+export interface AnalyticsSummaryResult {
+  group_by: string | null
+  group_label: string
+  columns: AnalyticsSummaryColumn[]
+  rows: Array<Record<string, unknown> & { group: string }>
+  group_count: number
+  truncated: boolean
 }
 
 export interface AnalyticsComputeResponse {
@@ -103,6 +151,8 @@ export interface AnalyticsComputeResponse {
   truncated: boolean
   table_fields: string[]
   columns: AnalyticsColumnStat[]
+  /** 分组汇总（未配置时为 null） */
+  summary?: AnalyticsSummaryResult | null
 }
 
 export interface AnalyticsComputeRequest {
@@ -110,6 +160,7 @@ export interface AnalyticsComputeRequest {
   formulas: AnalyticsFormula[]
   fields?: string[]
   limit?: number
+  summary?: AnalyticsSummary | null
 }
 
 export const analyticsApi = {

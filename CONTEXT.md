@@ -17,3 +17,4 @@
 | 文档双轨制写入 | 与数据表同源分派：owner 恒直编；editor 需工作区 `allow_edit` 开启；viewer 一律转修改申请（202） | 分派在 `documents/services/change_requests.resolve_write_mode`，保存端点 `PUT /{wid}/documents/{doc_id}/content`；文件夹不参与（409） |
 | 文档区二级导航 | 进入 `/w/:wid/documents*` 时在工作区 Tabs 右侧以竖线分割渲染「文档」根入口 + 二级页签（修改申请 / 问题清单），形式与表级页签（`cn-table-crumb` / `cn-table-tab`）一致 | 页签路由 `/w/:wid/documents/change-requests`、`/w/:wid/documents/issues`；静态段优先于 `:docId`，编辑器页显示根入口但无子页激活 |
 | 文档问题清单（DocumentIssue） | 文档级反馈条目：所有成员可提交（标题 + 描述 + 类别）与评论，owner/editor 或创建者可关闭/重开；随文档级联清理 | 表 `documents_issue` / `documents_issuecomment` / `documents_issueevent`，端点 `/{wid}/document-issues`；类别/状态取值与数据表问题清单一致 |
+| 数据分析（Analytics） | 工作区级分析模块：分析模板（公式 + 图表 + 分组汇总配置，存后端）→ 受限公式引擎逐行派生指标 → 分组汇总（维度 × 聚合，可排序 Top N）与 ChartCard 可视化 | 页面 `/w/:wid/analytics`，支持 `?template=<id>` 深链；统计/数据/汇总可导出 CSV，图表可导出 PNG |

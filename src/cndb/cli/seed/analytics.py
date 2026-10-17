@@ -68,6 +68,33 @@ def _validate_template(tpl: dict[str, Any], valid_fields: set[str], ws_name: str
                 f"图表 {opt_key}='{opt_val}' 既不是字段也不是公式键"
             )
             return False
+
+    valid_aggs = ("sum", "avg", "count", "min", "max")
+    if chart.get("aggregation") not in (None, *valid_aggs):
+        print(f"[seed-分析] 跳过: {ws_name}/{table_name} 模板'{name}' 图表聚合方式非法: {chart.get('aggregation')!r}")
+        return False
+
+    # 分组汇总：分组字段 / 指标来源 / 排序指标均须存在（与模板保存校验同口径）
+    summary = config.get("summary") or {}
+    group_by = summary.get("group_by")
+    if group_by and group_by not in valid_fields:
+        print(f"[seed-分析] 跳过: {ws_name}/{table_name} 模板'{name}' 分组字段不存在: {group_by!r}")
+        return False
+    metric_keys: set[str] = set()
+    for metric in summary.get("metrics", []):
+        field = metric.get("field", "")
+        agg = metric.get("agg", "sum")
+        if agg not in valid_aggs:
+            print(f"[seed-分析] 跳过: {ws_name}/{table_name} 模板'{name}' 汇总聚合方式非法: {agg!r}")
+            return False
+        if field not in valid_fields and field not in keys:
+            print(f"[seed-分析] 跳过: {ws_name}/{table_name} 模板'{name}' 汇总指标不存在: {field!r}")
+            return False
+        metric_keys.add(f"{agg}({field})")
+    sort_by = summary.get("sort_by")
+    if sort_by and sort_by not in metric_keys and sort_by not in valid_fields and sort_by not in keys:
+        print(f"[seed-分析] 跳过: {ws_name}/{table_name} 模板'{name}' 汇总排序指标不存在: {sort_by!r}")
+        return False
     return True
 
 

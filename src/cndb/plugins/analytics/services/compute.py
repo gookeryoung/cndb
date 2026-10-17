@@ -1,23 +1,39 @@
-"""求值与统计：按公式计算派生列 + 描述统计.
+"""求值与统计：按公式计算派生列 + 描述统计 + 可选分组汇总.
 
 取数口径：
 - 走 tables 插件的 ``list_rows``（复用行级权限 / 字段隐藏 / 软删除过滤），
   一次扫描最多 ``MAX_SCAN_ROWS`` 行；
-- 描述统计基于**全部扫描到的行**，返回的行数据受请求 ``limit`` 限制。
+- 描述统计与分组汇总基于**全部扫描到的行**，返回的行数据受请求 ``limit`` /
+  ``top_n`` 限制。
 """
 
 from __future__ import annotations
 
-from statistics import fmean, stdev
+from statistics import fmean, stdev, variance
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cndb.plugins.analytics.services.formula import _to_number, evaluate_column
+from cndb.plugins.analytics.services.formula import FormulaError, _to_number, evaluate_column
 from cndb.plugins.tables.models import DataTable
 
 # 单次扫描行数上限（保护内存；超出时响应 truncated=True）
 MAX_SCAN_ROWS = 20000
+
+# 聚合方式 → 中文标签（前端列标题与统计标签共用口径）
+AGG_LABELS: dict[str, str] = {
+    "sum": "求和",
+    "avg": "平均",
+    "count": "计数",
+    "min": "最小",
+    "max": "最大",
+}
+AGG_ORDER: tuple[str, ...] = tuple(AGG_LABELS)
+
+# 分组值缺失时的统一展示标签
+EMPTY_GROUP_LABEL = "（空）"
+# 不分组时唯一分组的展示标签
+TOTAL_GROUP_LABEL = "全部"
 
 
 def _quantile(sorted_values: list[float], p: float) -> float | None:
@@ -51,11 +67,13 @@ def _stat_block(key: str, label: str, kind: str, values: list[float | None]) -> 
         {
             "mean": fmean(nums),
             "stdev": stdev(nums) if len(nums) >= 2 else None,
+            "variance": variance(nums) if len(nums) >= 2 else None,
             "min": ordered[0],
+            "max": ordered[-1],
+            "range": ordered[-1] - ordered[0],
             "q1": _quantile(ordered, 0.25),
             "median": _quantile(ordered, 0.5),
             "q3": _quantile(ordered, 0.75),
-            "max": ordered[-1],
             "sum": sum(nums),
         }
     )
@@ -92,6 +110,163 @@ def scan_rows(
     return rows, int(total or 0), truncated
 
 
+# ── 分组汇总 ──────────────────────────────────────────
+
+
+def metric_key(agg: str, field: str) -> str:
+    """分组汇总指标列的唯一键（前后端 / 模板校验共用同一口径）."""
+    return f"{agg}({field})"
+
+
+def metric_label(agg: str, field: str, label: str = "") -> str:
+    """指标列展示名：优先自定义 label，否则「聚合方式(来源)」."""
+    return label or f"{AGG_LABELS.get(agg, agg)}({field})"
+
+
+def _is_blank(value: Any) -> bool:
+    """分组 / 计数用的空值判定：None 与纯空白字符串视为空."""
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _aggregate(values: list[Any], agg: str) -> float | None:
+    """对一组原始值做聚合：count 计非空值个数，其余按数值口径（非数值剔除）."""
+    if agg == "count":
+        return float(sum(1 for value in values if not _is_blank(value)))
+    nums: list[float] = []
+    for value in values:
+        number = _to_number(value)
+        if number is not None:
+            nums.append(number)
+    if not nums:
+        return None
+    if agg == "sum":
+        return sum(nums)
+    if agg == "avg":
+        return fmean(nums)
+    if agg == "min":
+        return min(nums)
+    if agg == "max":
+        return max(nums)
+    raise FormulaError(f"不支持的聚合方式: {agg}")
+
+
+def _group_label(value: Any) -> str:
+    """分组值 → 展示标签（空值统一为「（空）」）."""
+    if _is_blank(value):
+        return EMPTY_GROUP_LABEL
+    return str(value).strip()
+
+
+def _metric_defs(summary: Any) -> list[dict[str, str]]:
+    """把配置里的指标展开为列定义（重复「函数+字段」时追加序号保证键唯一）."""
+    defs: list[dict[str, str]] = []
+    used: set[str] = set()
+    for idx, metric in enumerate(summary.metrics):
+        key = metric_key(metric.agg, metric.field)
+        if key in used:
+            key = f"{key}#{idx + 1}"
+        used.add(key)
+        defs.append(
+            {
+                "key": key,
+                "label": metric_label(metric.agg, metric.field, metric.label),
+                "agg": metric.agg,
+                "source": metric.field,
+            }
+        )
+    return defs
+
+
+def compute_summary(
+    rows: list[dict[str, Any]],
+    computed: dict[str, list[float | None]],
+    summary: Any,
+    field_names: list[str],
+) -> dict[str, Any]:
+    """按配置做分组汇总（基于全量扫描行），返回可直接序列化的结果 dict.
+
+    Args:
+        rows: 扫描到的原始行（含 id）.
+        computed: 公式键 → 逐行派生值.
+        summary: ``SummarySpec``（或等价对象），含 group_by / metrics / sort / top_n.
+        field_names: 可见字段名（与统计 / 图表同一口径）.
+
+    Raises:
+        FormulaError: 指标为空 / 引用了不存在的字段或公式键.
+    """
+    defs = _metric_defs(summary)
+    if not defs:
+        raise FormulaError("分组汇总至少需要一个指标")
+    for item in defs:
+        if item["agg"] not in AGG_ORDER:
+            raise FormulaError(f"不支持的聚合方式: {item['agg']}")
+
+    formula_keys = set(computed)
+    group_by = summary.group_by
+
+    if group_by is not None and group_by not in field_names:
+        raise FormulaError(f"分组字段不存在: {group_by}")
+    for item in defs:
+        source = item["source"]
+        if source not in field_names and source not in formula_keys:
+            raise FormulaError(f"汇总指标引用了不存在的字段或公式: {source}")
+
+    buckets: dict[str, dict[str, list[Any]]] = {}
+    order: list[str] = []
+    for idx, row in enumerate(rows):
+        label = TOTAL_GROUP_LABEL if group_by is None else _group_label(row.get(group_by))
+        bucket = buckets.get(label)
+        if bucket is None:
+            bucket = {item["key"]: [] for item in defs}
+            buckets[label] = bucket
+            order.append(label)
+        for item in defs:
+            source = item["source"]
+            bucket[item["key"]].append(computed[source][idx] if source in formula_keys else row.get(source))
+
+    out_rows: list[dict[str, Any]] = []
+    for label in order:
+        bucket = buckets[label]
+        record: dict[str, Any] = {"group": label}
+        for item in defs:
+            record[item["key"]] = _aggregate(bucket[item["key"]], item["agg"])
+        out_rows.append(record)
+
+    group_count = len(out_rows)
+
+    # 排序：sort_by 支持指标 key，也支持来源字段/公式（取首个匹配指标）
+    sort_by = getattr(summary, "sort_by", None)
+    if sort_by:
+        sort_key = (
+            sort_by
+            if sort_by in {item["key"] for item in defs}
+            else next(
+                (item["key"] for item in defs if item["source"] == sort_by),
+                None,
+            )
+        )
+        if sort_key:
+            desc = getattr(summary, "sort_order", "desc") == "desc"
+            present = [row for row in out_rows if row.get(sort_key) is not None]
+            absent = [row for row in out_rows if row.get(sort_key) is None]
+            present.sort(key=lambda row: row[sort_key], reverse=desc)
+            out_rows = present + absent
+
+    top_n = getattr(summary, "top_n", None)
+    truncated = bool(top_n and group_count > top_n)
+    if top_n:
+        out_rows = out_rows[:top_n]
+
+    return {
+        "group_by": group_by,
+        "group_label": group_by or TOTAL_GROUP_LABEL,
+        "columns": defs,
+        "rows": out_rows,
+        "group_count": group_count,
+        "truncated": truncated,
+    }
+
+
 def compute(
     db: Session,
     table: DataTable,
@@ -100,13 +275,15 @@ def compute(
     formulas: list[dict[str, str]],
     fields: list[str] | None = None,
     limit: int = 1000,
+    summary: Any | None = None,
 ) -> dict[str, Any]:
-    """按公式计算派生列并返回行数据 + 描述统计.
+    """按公式计算派生列并返回行数据 + 描述统计 + 可选分组汇总.
 
     Args:
         formulas: [{"key","label","expr"}]，expr 已通过校验（此处仍会解析，非法即抛 FormulaError）.
         fields: 需要返回的原始字段；空 = 全部可见字段.
         limit: 返回行数上限（统计仍基于全量扫描）.
+        summary: 分组汇总配置（None = 不汇总）.
     """
     rows, total, truncated = scan_rows(db, table, user)
     field_names = _allowed_field_names(table, rows)
@@ -135,13 +312,25 @@ def compute(
     for spec in formulas:
         columns.append(_stat_block(spec["key"], spec.get("label", ""), "formula", computed[spec["key"]]))
 
+    summary_result = compute_summary(rows, computed, summary, field_names) if summary is not None else None
+
     return {
         "rows": out_rows,
         "total": total,
         "truncated": truncated,
         "table_fields": field_names,
         "columns": columns,
+        "summary": summary_result,
     }
 
 
-__all__ = ["MAX_SCAN_ROWS", "compute", "scan_rows"]
+__all__ = [
+    "AGG_LABELS",
+    "AGG_ORDER",
+    "MAX_SCAN_ROWS",
+    "compute",
+    "compute_summary",
+    "metric_key",
+    "metric_label",
+    "scan_rows",
+]
