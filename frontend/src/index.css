@@ -3229,3 +3229,25 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-secondary);
   font-size: 11px;
 }
+
+/* ── 网格内图片字段浮层编辑器（双击单元格打开）── */
+.cn-image-cell-editor {
+  padding: 2px 4px;
+  min-height: 22px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cn-brand-color) 30%, transparent);
+  cursor: pointer;
+}
+
+.cn-image-cell-popover {
+  width: 360px;
+}
+
+.cn-image-cell-popover__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--cn-border);
+}

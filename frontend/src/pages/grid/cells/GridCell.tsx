@@ -12,6 +12,7 @@ import type { Field } from '@/api'
 import { isChangeRequestResponse } from '@/api'
 import { EditCell } from './EditCell'
 import { DisplayCell } from './DisplayCell'
+import { ImageCellEditor } from './ImageCellEditor'
 import { finalizeValueFromEdit, isReadonlyField, normalizeValueForEdit } from './cellValueUtils'
 
 // 历史导出面：GridPage 行内新增/整行编辑直接复用这些归一化工具
@@ -182,6 +183,23 @@ function GridCell({ value, field, rowId, wid, tableId, onSave, onCellSave, editi
       >
         <DisplayCell value={value} field={field} rowId={rowId} wid={wid} />
       </div>
+    )
+  }
+
+  // 图片字段：传统双击编辑改为锚定浮层（不撑高行；浮层内可拖拽排序 / 逐图替换）
+  if (!controlled && editing && field.field_type === 'image') {
+    return (
+      <ImageCellEditor
+        wid={wid}
+        tableId={tableId}
+        rowId={rowId}
+        field={field}
+        value={draft}
+        onChange={setDraft}
+        onCommit={handleSave}
+        onCancel={handleCancel}
+        saving={saving}
+      />
     )
   }
 

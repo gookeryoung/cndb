@@ -290,6 +290,43 @@ describe('GridCell 传统编辑流', () => {
     expect(await screen.findByText('已提交修改申请，处理后生效')).toBeInTheDocument()
     expect(screen.queryByText('已保存')).not.toBeInTheDocument()
   })
+
+  // ─────────────── 图片字段：双击以浮层打开 ───────────────
+
+  it('图片字段双击打开浮层编辑器，上传后点「完成」保存草稿值', async () => {
+    resetFileObjectUrls()
+    const field = makeField({ id: 2, name: '照片', field_type: 'image' })
+    const onSave = vi.fn().mockResolvedValue({})
+    renderProviders(<GridCell value={null} field={field} rowId={1} wid={5} tableId={3} onSave={onSave} />)
+
+    fireEvent.doubleClick(screen.getByText('—'))
+    expect(await screen.findByTestId('image-cell-popover')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByTestId('image-field-input'), {
+      target: { files: [new File([new Uint8Array([1, 2, 3])], 'a.png', { type: 'image/png' })] },
+    })
+    // 等上传完成（预览图出现）后再提交，避免保存空草稿
+    await waitFor(() => expect(document.querySelector('.ant-image-img')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /完\s*成/ }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith('照片', [
+      expect.objectContaining({ file_key: 'mock-upload.png' }),
+    ]))
+  })
+
+  it('图片字段浮层取消关闭，不触发保存', async () => {
+    resetFileObjectUrls()
+    const field = makeField({ id: 2, name: '照片', field_type: 'image' })
+    const onSave = vi.fn()
+    renderProviders(<GridCell value={null} field={field} rowId={1} onSave={onSave} />)
+
+    fireEvent.doubleClick(screen.getByText('—'))
+    expect(await screen.findByTestId('image-cell-popover')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
+    await waitFor(() => expect(screen.queryByTestId('image-cell-popover')).not.toBeInTheDocument())
+    expect(onSave).not.toHaveBeenCalled()
+  })
 })
 
 // ─────────────── 受控编辑（行级编辑复用）───────────────
