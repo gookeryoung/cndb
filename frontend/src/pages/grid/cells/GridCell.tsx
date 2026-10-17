@@ -189,6 +189,8 @@ function GridCell({ value, field, rowId, wid, tableId, onSave, onCellSave, editi
   return (
     <div onDoubleClick={(e) => e.stopPropagation()}>
       <EditCell
+        tableId={tableId}
+        rowId={rowId}
         field={field}
         draft={isEditing ? draft : value}
         onChange={setDraft}

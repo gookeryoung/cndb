@@ -1,14 +1,14 @@
 /** 单元格编辑态 —— 按字段类型渲染对应编辑器 + 保存/取消操作. */
 
 import React from 'react'
-import { Tooltip, Input, InputNumber, Select, Checkbox, DatePicker, Button, Popover, Upload, Image } from 'antd'
+import { Tooltip, Input, InputNumber, Select, Checkbox, DatePicker, Button, Popover, Upload } from 'antd'
 import { SaveOutlined, CloseOutlined, InboxOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { AttachmentFile, Field, RowResponse } from '@/api'
 import { recordApi, fileApi, fieldApi } from '@/api'
-import { AuthedImage } from '@/components/AuthedFile'
 import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 import { pickLinkLabelFieldName, buildLinkRowLabel } from './fieldValueFormat'
+import { ImageFieldEditor } from './ImageFieldEditor'
 import dayjs from 'dayjs'
 import { extractLinkIds } from './cellValueUtils'
 
@@ -324,64 +324,17 @@ export function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, s
       )
     }
     case 'image': {
-      // 图片字段：上传仅收图片，展示为缩略图（点击可预览大图）
-      const images: AttachmentFile[] = Array.isArray(draft)
-        ? (draft as AttachmentFile[])
-        : (() => {
-          try { return JSON.parse(String(draft || '[]')) } catch { return [] }
-        })()
-
-      const upload = async (file: File): Promise<AttachmentFile> => {
-        if (!wid) throw new Error('缺少 wid')
-        const meta = await fileApi.upload(wid, file)
-        onChange([...images, meta])
-        return meta
-      }
-      const removeAt = (idx: number) => {
-        const removed = images[idx]
-        if (wid && removed?.file_key) {
-          fileApi.remove(wid, removed.file_key).catch(() => { /* 行值更新后再清理会有竞争，静默 */ })
-        }
-        onChange(images.filter((_, i) => i !== idx))
-      }
-
-      const allowedMimes = (field.config?.allowed_mime_types as string[] | undefined)?.filter(m => m)
+      // 图片字段：点击 / 拖拽 / 剪贴板粘贴均收图片，缩略图展示（点击可预览大图）
       return (
         <div style={{ ...wrap, flexDirection: 'column', alignItems: 'stretch' }}>
-          <Upload.Dragger
-            multiple={Boolean(field.config?.multiple ?? true)}
-            showUploadList={false}
-            accept={allowedMimes?.length ? allowedMimes.join(',') : 'image/*'}
-            beforeUpload={f => { upload(f); return false }}
-            style={{ padding: '4px 8px', marginBottom: 4 }}
-          >
-            <div style={{ fontSize: 12, color: '#94a3b8', margin: '2px 0' }}>
-              <InboxOutlined /> 点击或拖拽上传图片
-            </div>
-          </Upload.Dragger>
-          {images.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              <Image.PreviewGroup>
-                {images.map((f, i) => (
-                  <span key={f.file_key || `${f.filename}-${i}`} style={{ position: 'relative' }}>
-                    <AuthedImage
-                      wid={wid}
-                      fileKey={f.file_key}
-                      width={48}
-                      height={48}
-                      alt={f.filename}
-                      style={{ objectFit: 'cover', borderRadius: 4 }}
-                    />
-                    <Tooltip title="删除该图片">
-                      <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                        onClick={() => removeAt(i)}
-                        style={{ position: 'absolute', top: -6, right: -6, padding: 0, background: 'var(--cn-bg-container)' }} />
-                    </Tooltip>
-                  </span>
-                ))}
-              </Image.PreviewGroup>
-            </div>
-          )}
+          <ImageFieldEditor
+            wid={wid}
+            tableId={tableId}
+            rowId={rowId}
+            field={field}
+            value={draft}
+            onChange={v => onChange(v)}
+          />
           {actions}
         </div>
       )
