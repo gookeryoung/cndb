@@ -104,6 +104,7 @@ def compute(
             formulas=formulas,
             fields=payload.fields,
             limit=payload.limit,
+            summary=payload.summary,
         )
     except FormulaError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

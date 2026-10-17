@@ -313,6 +313,129 @@ class TestComputeEndpoint:
         )
         assert r.status_code == 200
 
+    # ── 描述统计新增口径（方差 / 极差）──
+
+    def test_stats_include_variance_and_range(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        r = client.post(
+            COMPUTE.format(ws=ws.id),
+            json={"table_id": table.id, "formulas": [PASS_RATE]},
+            headers=auth_owner,
+        )
+        stat = next(c for c in r.json()["columns"] if c["key"] == "产量")
+        assert stat["range"] == 150.0
+        # 产量 100/200/150/50：样本方差 = 12500 / 3
+        assert stat["variance"] == pytest.approx(12500 / 3)
+
+    # ── 分组汇总 ──
+
+    def test_summary_grouped_sorted_top_n(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        summary = {
+            "group_by": "批次号",
+            "metrics": [
+                {"field": "产量", "agg": "sum", "label": "总产量"},
+                {"field": "合格数", "agg": "avg"},
+                {"field": "pass_rate", "agg": "max"},
+            ],
+            "sort_by": "sum(产量)",
+            "sort_order": "desc",
+            "top_n": 2,
+        }
+        r = client.post(
+            COMPUTE.format(ws=ws.id),
+            json={"table_id": table.id, "formulas": [PASS_RATE], "summary": summary},
+            headers=auth_owner,
+        )
+        assert r.status_code == 200, r.text
+        result = r.json()["summary"]
+        assert result["group_by"] == "批次号"
+        assert result["group_label"] == "批次号"
+        # 列 key / 展示名口径
+        assert [c["key"] for c in result["columns"]] == ["sum(产量)", "avg(合格数)", "max(pass_rate)"]
+        assert result["columns"][0]["label"] == "总产量"
+        assert result["columns"][1]["label"] == "平均(合格数)"
+        # 4 组按总产量降序取 Top 2
+        assert result["group_count"] == 4
+        assert result["truncated"] is True
+        assert [row["group"] for row in result["rows"]] == ["B-002", "B-003"]
+        assert result["rows"][0]["sum(产量)"] == 200.0
+        assert result["rows"][0]["avg(合格数)"] == 178.0
+        assert result["rows"][0]["max(pass_rate)"] == 89.0
+
+    def test_summary_global_totals_when_group_by_omitted(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        summary = {"metrics": [{"field": "产量", "agg": "sum"}, {"field": "批次号", "agg": "count"}]}
+        r = client.post(
+            COMPUTE.format(ws=ws.id),
+            json={"table_id": table.id, "formulas": [], "summary": summary},
+            headers=auth_owner,
+        )
+        result = r.json()["summary"]
+        assert result["group_by"] is None
+        assert result["group_label"] == "全部"
+        assert len(result["rows"]) == 1
+        assert result["rows"][0]["group"] == "全部"
+        assert result["rows"][0]["sum(产量)"] == 500.0
+        assert result["rows"][0]["count(批次号)"] == 4.0
+
+    def test_summary_sort_asc_and_empty_groups_last(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        summary = {
+            "group_by": "批次号",
+            "metrics": [{"field": "产量", "agg": "sum"}],
+            "sort_by": "sum(产量)",
+            "sort_order": "asc",
+        }
+        r = client.post(
+            COMPUTE.format(ws=ws.id),
+            json={"table_id": table.id, "summary": summary},
+            headers=auth_owner,
+        )
+        rows = r.json()["summary"]["rows"]
+        assert [row["group"] for row in rows] == ["B-004", "B-001", "B-003", "B-002"]
+        assert r.json()["summary"]["truncated"] is False
+
+    def test_summary_rejects_unknown_group(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        r = client.post(
+            COMPUTE.format(ws=ws.id),
+            json={
+                "table_id": table.id,
+                "summary": {"group_by": "不存在", "metrics": [{"field": "产量", "agg": "sum"}]},
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "分组字段" in r.json()["detail"]
+
+    def test_summary_rejects_unknown_metric_source(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        r = client.post(
+            COMPUTE.format(ws=ws.id),
+            json={"table_id": table.id, "summary": {"metrics": [{"field": "不存在", "agg": "sum"}]}},
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "不存在" in r.json()["detail"]
+
+    def test_summary_rejects_bad_aggregation(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        r = client.post(
+            COMPUTE.format(ws=ws.id),
+            json={"table_id": table.id, "summary": {"metrics": [{"field": "产量", "agg": "median"}]}},
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "聚合方式" in r.json()["detail"]
+
 
 class TestTemplateCrud:
     def test_create_and_list(self, client: TestClient, ws: Workspace, table: DataTable, auth_owner) -> None:
@@ -446,3 +569,105 @@ class TestTemplateCrud:
             headers=auth_owner,
         )
         assert r.status_code == 404
+
+    # ── 图表聚合方式 / 分组汇总配置持久化 ──
+
+    def test_create_with_summary_and_chart_aggregation(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        payload = {
+            "name": "分组汇总模板",
+            "table_id": table.id,
+            "config": {
+                "formulas": [PASS_RATE],
+                "chart": {"type": "bar", "x": "批次号", "y": "pass_rate", "aggregation": "avg"},
+                "summary": {
+                    "group_by": "批次号",
+                    "metrics": [{"field": "pass_rate", "agg": "avg", "label": "平均合格率"}],
+                    "sort_by": "avg(pass_rate)",
+                    "sort_order": "desc",
+                    "top_n": 3,
+                },
+            },
+        }
+        r = client.post(TEMPLATES.format(ws=ws.id), json=payload, headers=auth_owner)
+        assert r.status_code == 201, r.text
+        cfg = r.json()["config"]
+        assert cfg["chart"]["aggregation"] == "avg"
+        assert cfg["summary"]["group_by"] == "批次号"
+        assert cfg["summary"]["metrics"][0]["label"] == "平均合格率"
+        assert cfg["summary"]["sort_by"] == "avg(pass_rate)"
+        assert cfg["summary"]["top_n"] == 3
+
+        # 详情读回仍保留扩展配置（跨设备复用）
+        detail = client.get(TEMPLATES.format(ws=ws.id) + f"/{r.json()['id']}", headers=auth_owner).json()
+        assert detail["config"]["summary"]["metrics"][0]["agg"] == "avg"
+
+    def test_create_rejects_unknown_summary_group(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        r = client.post(
+            TEMPLATES.format(ws=ws.id),
+            json={
+                "name": "分组字段错",
+                "table_id": table.id,
+                "config": {
+                    "formulas": [PASS_RATE],
+                    "summary": {"group_by": "不存在", "metrics": [{"field": "产量", "agg": "sum"}]},
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "分组字段" in r.json()["detail"]
+
+    def test_create_rejects_unknown_summary_metric(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        r = client.post(
+            TEMPLATES.format(ws=ws.id),
+            json={
+                "name": "指标错",
+                "table_id": table.id,
+                "config": {
+                    "formulas": [PASS_RATE],
+                    "summary": {"metrics": [{"field": "不存在", "agg": "sum"}]},
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "汇总指标" in r.json()["detail"]
+
+    def test_create_rejects_bad_chart_aggregation(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        r = client.post(
+            TEMPLATES.format(ws=ws.id),
+            json={
+                "name": "聚合方式错",
+                "table_id": table.id,
+                "config": {
+                    "formulas": [PASS_RATE],
+                    "chart": {"type": "bar", "x": "批次号", "y": "pass_rate", "aggregation": "median"},
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "聚合方式" in r.json()["detail"]
+
+    def test_create_rejects_summary_without_metrics(
+        self, client: TestClient, ws: Workspace, table: DataTable, auth_owner
+    ) -> None:
+        r = client.post(
+            TEMPLATES.format(ws=ws.id),
+            json={
+                "name": "空汇总",
+                "table_id": table.id,
+                "config": {"formulas": [PASS_RATE], "summary": {"group_by": "批次号", "metrics": []}},
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "至少需要一个指标" in r.json()["detail"]

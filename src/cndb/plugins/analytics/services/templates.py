@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from cndb.plugins.accounts.models import User
 from cndb.plugins.analytics.models import AnalyticsTemplate
 from cndb.plugins.analytics.schemas import TemplateConfig
+from cndb.plugins.analytics.services.compute import AGG_ORDER, metric_key
 from cndb.plugins.analytics.services.formula import FormulaError, parse, referenced_fields
 from cndb.plugins.tables.models import DataTable
 
@@ -68,11 +69,44 @@ def normalize_config(
                     status_code=400,
                     detail=f"图表引用了不存在的字段: {', '.join(unknown)}",
                 )
+        if config.chart.aggregation not in AGG_ORDER:
+            raise HTTPException(
+                status_code=400,
+                detail=f"图表聚合方式非法: {config.chart.aggregation}（可选 {', '.join(AGG_ORDER)}）",
+            )
         chart = config.chart.model_dump()
+
+    summary: dict[str, Any] | None = None
+    if config.summary is not None:
+        spec = config.summary
+        if not spec.metrics:
+            raise HTTPException(status_code=400, detail="分组汇总至少需要一个指标")
+        bad_aggs = sorted({m.agg for m in spec.metrics if m.agg not in AGG_ORDER})
+        if bad_aggs:
+            raise HTTPException(
+                status_code=400,
+                detail=f"分组汇总聚合方式非法: {', '.join(bad_aggs)}（可选 {', '.join(AGG_ORDER)}）",
+            )
+        if spec.sort_order not in ("asc", "desc"):
+            raise HTTPException(status_code=400, detail=f"分组汇总排序方向非法: {spec.sort_order}")
+        allowed = set(field_names or []) | keys
+        if field_names is not None and spec.group_by and spec.group_by not in field_names:
+            raise HTTPException(status_code=400, detail=f"分组字段不存在: {spec.group_by}")
+        unknown = sorted({m.field for m in spec.metrics if field_names is not None and m.field not in allowed})
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"分组汇总指标引用了不存在的字段或公式: {', '.join(unknown)}",
+            )
+        metric_keys = {metric_key(m.agg, m.field) for m in spec.metrics}
+        if spec.sort_by and spec.sort_by not in metric_keys and spec.sort_by not in allowed:
+            raise HTTPException(status_code=400, detail=f"分组汇总排序指标不存在: {spec.sort_by}")
+        summary = spec.model_dump()
 
     return {
         "formulas": formulas,
         "chart": chart,
+        "summary": summary,
         "fields": list(config.fields),
         "limit": config.limit,
     }

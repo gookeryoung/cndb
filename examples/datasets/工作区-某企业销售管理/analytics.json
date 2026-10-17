@@ -1,9 +1,9 @@
 {
-  "_comment": "分析模板种子：键为数据表名（= CSV 文件名），值为该表的预置分析模板，公式字段名须与表字段一致。",
+  "_comment": "分析模板种子：键为数据表名（= CSV 文件名），值为该表的预置分析模板，公式字段名须与表字段一致。config 支持 formulas / chart（含 aggregation 聚合方式）/ summary（分组汇总：group_by + metrics + sort_by + top_n）。",
   "产品批次": [
     {
       "name": "批次合格率分布",
-      "description": "自定义公式 pass_rate=合格数/实际产量×100，直方图查看 36 个批次的合格率集中区与离群批次。",
+      "description": "自定义公式 pass_rate=合格数/实际产量×100，直方图查看 36 个批次的合格率集中区与离群批次；分组汇总按产品类别比较平均合格率（含 Top N 排序）。",
       "config": {
         "formulas": [
           {
@@ -17,7 +17,26 @@
           "x": "pass_rate",
           "y": null,
           "series": null,
-          "title": "批次合格率分布"
+          "title": "批次合格率分布",
+          "aggregation": "sum"
+        },
+        "summary": {
+          "group_by": "产品类别",
+          "metrics": [
+            {
+              "field": "pass_rate",
+              "agg": "avg",
+              "label": "平均合格率(%)"
+            },
+            {
+              "field": "批次号",
+              "agg": "count",
+              "label": "批次数"
+            }
+          ],
+          "sort_by": "avg(pass_rate)",
+          "sort_order": "desc",
+          "top_n": 10
         },
         "fields": ["批次号", "产品类别", "生产线", "实际产量", "合格数"],
         "limit": 1000
@@ -25,7 +44,7 @@
     },
     {
       "name": "各产品类别销售额分布",
-      "description": "自定义公式 unit_amount=销售额/实际产量（单件销售额），箱线图比较四条产品线的销售额离散程度。",
+      "description": "自定义公式 unit_amount=销售额/实际产量（单件销售额），箱线图比较四条产品线的销售额离散程度；分组汇总按产品类别给出销售额合计与平均单件销售额。",
       "config": {
         "formulas": [
           {
@@ -39,7 +58,26 @@
           "x": "产品类别",
           "y": "销售额",
           "series": null,
-          "title": "各产品类别销售额分布"
+          "title": "各产品类别销售额分布",
+          "aggregation": "sum"
+        },
+        "summary": {
+          "group_by": "产品类别",
+          "metrics": [
+            {
+              "field": "销售额",
+              "agg": "sum",
+              "label": "销售额合计"
+            },
+            {
+              "field": "unit_amount",
+              "agg": "avg",
+              "label": "平均单件销售额(元)"
+            }
+          ],
+          "sort_by": "sum(销售额)",
+          "sort_order": "desc",
+          "top_n": 10
         },
         "fields": ["批次号", "产品类别", "生产线", "实际产量", "销售额"],
         "limit": 1000
