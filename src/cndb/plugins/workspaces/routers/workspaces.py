@@ -332,12 +332,14 @@ def export_workspace(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    """导出整个工作区为 JSON：工作区元信息 + 所有表结构 + 数据行 + 视图配置."""
+    """导出整个工作区为 JSON：工作区元信息 + 所有表结构 + 数据行 + 视图配置 + 表权限 + 文档（含标签）."""
     import datetime as dt
 
     from sqlalchemy import MetaData, select
 
-    from cndb.plugins.tables.models import DataField, DataTable, DataView
+    from cndb.plugins.documents.models import Document, DocumentTag, Tag
+    from cndb.plugins.documents.services.content import latest_version, load_content
+    from cndb.plugins.tables.models import DataField, DataTable, DataView, TablePermission
 
     ws = _get_workspace_or_404(workspace_id, db)
     # 全量导出是备份/恢复的一侧，与 import_workspace 对称要求 EDITOR+：
@@ -444,6 +446,23 @@ def export_workspace(
             for v in views
         ]
 
+        # 表级权限配置（备份/恢复配置的一侧）：随表导出，导入端按新表 id 还原
+        perm = db.query(TablePermission).filter(TablePermission.table_id == tbl.id).first()
+        permission_data = (
+            {
+                "read_role": perm.read_role,
+                "edit_records_role": perm.edit_records_role,
+                "edit_views_role": perm.edit_views_role,
+                "edit_schema_role": perm.edit_schema_role,
+                "manage_data_role": perm.manage_data_role,
+                "hidden_fields": perm.hidden_fields,
+                "row_filters": perm.row_filters,
+                "row_filter_type": perm.row_filter_type,
+            }
+            if perm is not None
+            else None
+        )
+
         tables_data.append(
             {
                 "id": tbl.id,
@@ -453,6 +472,7 @@ def export_workspace(
                 "views": views_data,
                 "rows": rows_data,
                 "links": [],
+                "permission": permission_data,
             }
         )
 
@@ -487,11 +507,49 @@ def export_workspace(
                 links_data.append({"field": f["name"], "pairs": idx_pairs})
         tbl_data["links"] = links_data
 
+    # 文档备份：工作区级标签 + 文档树（文件夹层级 + 最新正文，不含历史版本）。
+    # 软删除（回收站）中的文档不导出；外存/压缩的内联内容统一解出为明文正文，
+    # 导入端按分级存储策略重新落盘。
+    tags = db.query(Tag).filter(Tag.workspace_id == workspace_id).order_by(Tag.id).all()
+    document_tags_data = [{"id": t.id, "name": t.name, "color": t.color, "description": t.description} for t in tags]
+
+    docs = (
+        db.query(Document)
+        .filter(Document.workspace_id == workspace_id, Document.is_deleted.is_(False))
+        .order_by(Document.id)
+        .all()
+    )
+    tag_links: dict[int, list[int]] = {}
+    doc_ids = [d.id for d in docs]
+    if doc_ids:
+        for doc_id, tag_id in (
+            db.query(DocumentTag.document_id, DocumentTag.tag_id).filter(DocumentTag.document_id.in_(doc_ids)).all()
+        ):
+            tag_links.setdefault(int(doc_id), []).append(int(tag_id))
+
+    documents_data: list[dict[str, Any]] = []
+    for d in docs:
+        documents_data.append(
+            {
+                "id": d.id,
+                "parent_id": d.parent_id,
+                "title": d.title,
+                "content_type": d.content_type,
+                "status": d.status,
+                "is_folder": d.is_folder,
+                "sort_order": d.sort_order,
+                "content": "" if d.is_folder else load_content(latest_version(db, d.id), d),
+                "tag_ids": tag_links.get(d.id, []),
+            }
+        )
+
     return {
         "version": "4",
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
         "workspace": workspace_meta,
         "tables": tables_data,
+        "document_tags": document_tags_data,
+        "documents": documents_data,
     }
 
 
@@ -546,6 +604,7 @@ def create_workspace_from_backup(
         imported_tables=import_result.imported_tables,
         imported_rows=import_result.imported_rows,
         imported_views=import_result.imported_views,
+        imported_documents=import_result.imported_documents,
         errors=import_result.errors,
     )
 
