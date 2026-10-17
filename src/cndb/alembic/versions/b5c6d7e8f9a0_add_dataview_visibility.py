@@ -88,7 +88,13 @@ def _index_names(table: str) -> set[str]:
     insp = _inspector()
     if table not in set(insp.get_table_names()):
         return set()
-    return {i["name"] for i in insp.get_indexes(table)}
+    # 匿名索引的 name 可能是 None，调用方只关心具名索引
+    names: set[str] = set()
+    for index in insp.get_indexes(table):
+        name = index["name"]
+        if name:
+            names.add(name)
+    return names
 
 
 def _unique_names(table: str) -> set[str]:

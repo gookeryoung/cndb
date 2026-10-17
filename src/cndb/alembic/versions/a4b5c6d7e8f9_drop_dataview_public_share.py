@@ -63,7 +63,13 @@ def _existing_indexes() -> set[str]:
     insp = _inspector()
     if _TABLE not in set(insp.get_table_names()):
         return set()
-    return {i["name"] for i in insp.get_indexes(_TABLE)}
+    # 匿名索引的 name 可能是 None（SQLite 自动索引），调用方只关心具名索引
+    names: set[str] = set()
+    for index in insp.get_indexes(_TABLE):
+        name = index["name"]
+        if name:
+            names.add(name)
+    return names
 
 
 def _drop_column_if_exists(column: str) -> None:
