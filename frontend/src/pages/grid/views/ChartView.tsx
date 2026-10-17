@@ -384,7 +384,7 @@ function chartKeyFieldLabel(cfg: ChartConfig): string {
   return cfg.dimension_field || '未配置'
 }
 
-interface ChartCardProps {
+export interface ChartCardProps {
   cfg: ChartConfig
   rows: RowResponse[]
   fields: Field[]
@@ -398,9 +398,10 @@ interface ChartCardProps {
 /** 单个图表卡片：ECharts 实例生命周期 + 描述统计面板 + 必填缺失空态.
  *
  * 只渲染图表容器与统计面板内容；卡片外壳（边框/标题/网格布局）由调用方负责，
- * 因此单图（扁平 view_options）与多图（charts[]）共用同一渲染逻辑。
+ * 因此单图（扁平 view_options）与多图（charts[]）共用同一渲染逻辑；
+ * 数据分析模块的图表预览亦直接复用本组件（注入合成 fields 即可）。
  */
-function ChartCard({ cfg, rows, fields, total, onRowClick, emptyConfigTestId = 'chart-empty-config' }: ChartCardProps) {
+export function ChartCard({ cfg, rows, fields, total, onRowClick, emptyConfigTestId = 'chart-empty-config' }: ChartCardProps) {
   // 订阅主题：主题切换触发重渲染 → 重新读 CSS 变量重建 option（ThemeProvider 主题 state 驱动联动）
   const { mode: themeMode } = useTheme()
 

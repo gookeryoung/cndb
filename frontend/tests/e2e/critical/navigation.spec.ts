@@ -19,7 +19,7 @@ test.describe("MainLayout Header 导航按钮", () => {
 
   // 原 forms.spec.ts 的「导航 Tab 顺序」用例随表单功能移除而失效，此处按当前
   // 工作区级 Tab 集重写：顺序即 wsTabItems 的声明顺序，回归导航被误调序的问题。
-  test("工作区 Tab 顺序为 数据表 → 文档 → 工作区设置", async ({ page }) => {
+  test("工作区 Tab 顺序为 数据表 → 文档 → 数据分析 → 工作区设置", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
@@ -34,21 +34,25 @@ test.describe("MainLayout Header 导航按钮", () => {
     // Tab 标签内含数量徽标（如「数据表 8」），故用子串匹配而非全等
     const idxAssets = names.findIndex((n) => n.includes("数据表"))
     const idxDocs = names.findIndex((n) => n.includes("文档"))
+    const idxAnalytics = names.findIndex((n) => n.includes("数据分析"))
     const idxSettings = names.findIndex((n) => n.includes("工作区设置"))
 
     expect(idxAssets).toBeGreaterThanOrEqual(0)
     expect(idxDocs).toBeGreaterThanOrEqual(0)
+    expect(idxAnalytics).toBeGreaterThanOrEqual(0)
     expect(idxSettings).toBeGreaterThanOrEqual(0)
     expect(idxAssets).toBeLessThan(idxDocs)
-    expect(idxDocs).toBeLessThan(idxSettings)
+    expect(idxDocs).toBeLessThan(idxAnalytics)
+    expect(idxAnalytics).toBeLessThan(idxSettings)
   })
 
-  test("Content 分页导航可见 文档 / 工作区设置 Tab", async ({ page }) => {
+  test("Content 分页导航可见 文档 / 数据分析 / 工作区设置 Tab", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
     // MainLayout 重构后，文档 / 工作区设置从 Header 按钮迁移为 Content 上方的 Tabs
     await expect(page.getByRole("tab", { name: /文档/ })).toBeVisible()
+    await expect(page.getByRole("tab", { name: /数据分析/ })).toBeVisible()
     await expect(page.getByRole("tab", { name: /工作区设置/ })).toBeVisible()
   })
 
@@ -60,14 +64,25 @@ test.describe("MainLayout Header 导航按钮", () => {
     await page.waitForURL(/\/documents$/)
     await expect(page.getByTestId("documents-layout")).toBeVisible({ timeout: 5000 })
   })
+
+  test("数据分析 Tab → /w/:wid/analytics（独立于文档的模块）", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+    await start(page)
+
+    await page.getByRole("tab", { name: /数据分析/ }).click()
+    await page.waitForURL(/\/analytics$/)
+    await expect(page.getByTestId("analytics-page")).toBeVisible({ timeout: 5000 })
+    // 页签激活态落在「数据分析」，与文档模块互不影响
+    await expect(page.getByRole("tab", { name: /数据分析/ })).toHaveAttribute("aria-selected", "true")
+  })
 })
 
 test.describe("表列表 owner 列 + 访问级筛选器", () => {
   const start = async (page: any) => {
     await page.goto(`/w/${WID}/tables`)
     await page.waitForURL(/\/tables$/)
-    // 等待表列表渲染
-    await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(8, { timeout: 10000 })
+    // 等待表列表渲染（含新增的「产品批次」表，共 9 张）
+    await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(9, { timeout: 10000 })
   }
 
   test("访问级筛选器：「我拥有的」可筛选出全部表（admin 是所有 seed 表的 owner）", async ({ page }) => {
@@ -79,7 +94,7 @@ test.describe("表列表 owner 列 + 访问级筛选器", () => {
     await seg.click()
     await expect(seg).toHaveClass(/ant-segmented-item-selected/)
 
-    // seed 所有 8 张表的 owner 都是 admin（当前用户），筛选后仍应显示 8 张
-    await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(8, { timeout: 5000 })
+    // seed 所有 9 张表的 owner 都是 admin（当前用户），筛选后仍应显示 9 张
+    await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(9, { timeout: 5000 })
   })
 })

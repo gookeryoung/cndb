@@ -9,7 +9,7 @@ import {
   MenuOutlined, InfoCircleOutlined,
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
-  PullRequestOutlined, FileTextOutlined,
+  PullRequestOutlined, FileTextOutlined, BarChartOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
@@ -158,6 +158,14 @@ export default function MainLayout() {
         </span>
       ),
     },
+    {
+      key: 'analytics',
+      label: (
+        <span>
+          <BarChartOutlined /> 数据分析
+        </span>
+      ),
+    },
     { key: 'settings', label: <span><SettingOutlined /> 工作区设置</span> },
   ]
   // ── 表级页签（融合导航行，紧随工作区分页之后）──
@@ -191,9 +199,11 @@ export default function MainLayout() {
     ? 'tables'
     : location.includes('/documents')
       ? 'documents'
-      : location.includes('/settings')
-        ? 'settings'
-        : 'tables'
+      : location.includes('/analytics')
+        ? 'analytics'
+        : location.includes('/settings')
+          ? 'settings'
+          : 'tables'
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，

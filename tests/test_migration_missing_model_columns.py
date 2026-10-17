@@ -31,7 +31,8 @@ PRE_REVISION = "e5f6a7b8c9d0"  # f7a8b9c0d1e2 之前的 head（0.2.0 时代 sche
 ADD_COLUMNS_REVISION = "f7a8b9c0d1e2"  # 历史加列迁移：补齐四列
 DROP_SHARE_REVISION = "a4b5c6d7e8f9"  # 删列迁移：移除视图匿名公开分享两列
 DROP_SHARE_DOWN = "e6a7b8c9d0e1"  # 删列迁移的 down_revision
-VISIBILITY_REVISION = "b5c6d7e8f9a0"  # 视图可见性三档迁移（当前 head）
+VISIBILITY_REVISION = "b5c6d7e8f9a0"  # 视图可见性三档迁移
+HEAD_REVISION = "a7c1e3b5d9f2"  # analytics 插件迁移（当前 head）
 
 
 def _upgrade_to(engine_target: str, revision: str) -> None:
@@ -239,7 +240,7 @@ class TestDropDataviewPublicShare:
             version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
         finally:
             conn.close()
-        assert version == _current_head() == VISIBILITY_REVISION
+        assert version == _current_head() == HEAD_REVISION
 
     def test_upgrade_is_idempotent(self, tmp_path: Path) -> None:
         """列本就不存在的库 → 删列跳过，重复 upgrade head 不报错.
@@ -433,7 +434,7 @@ class TestAddDataviewVisibility:
             ddl = conn.execute("SELECT sql FROM sqlite_master WHERE name='tables_dataview'").fetchone()[0]
         finally:
             conn.close()
-        assert version == VISIBILITY_REVISION
+        assert version == HEAD_REVISION
         assert "uniq_table_view_scope_name" not in ddl  # 未在存根上造引用缺列的约束
 
         _downgrade_to(url, DROP_SHARE_REVISION)  # 同样跳过约束重建
@@ -475,7 +476,7 @@ class TestAddDataviewVisibility:
             ).fetchone()[0]
         finally:
             conn.close()
-        assert version == VISIBILITY_REVISION
+        assert version == HEAD_REVISION
         assert grant == 0
 
     def test_downgrade_restores_binary_model(self, tmp_path: Path) -> None:

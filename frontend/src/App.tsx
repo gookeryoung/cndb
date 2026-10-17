@@ -29,6 +29,7 @@ const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage'))
 const DocumentsChangeRequestsPage = lazy(() => import('@/pages/documents/DocumentsChangeRequestsPage'))
 const DocumentsIssuesPage = lazy(() => import('@/pages/documents/DocumentsIssuesPage'))
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
+const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage'))
 
 /** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
 function PageFallback() {
@@ -57,6 +58,9 @@ function AuthenticatedApp() {
           <Route path="w" element={<WorkspaceList />} />
           <Route path="w/:wid" element={<Navigate to="tables" replace />} />
           <Route path="w/:wid/tables" element={<TablesList />} />
+          <Route path="w/:wid/analytics" element={
+            <Suspense fallback={<PageFallback />}><AnalyticsPage /></Suspense>
+          } />
           <Route path="w/:wid/settings" element={
             <Suspense fallback={<PageFallback />}><WorkspaceSettingsPage /></Suspense>
           } />
