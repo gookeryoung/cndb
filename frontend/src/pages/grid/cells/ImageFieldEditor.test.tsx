@@ -278,4 +278,28 @@ describe('ImageFieldEditor 上传入口', () => {
       expect.objectContaining({ file_key: 'b.png' }),
     ]))
   })
+
+  it('达到字段 max_count 后禁用添加入口，并拦截继续上传', async () => {
+    const uploadSpy = vi.fn(() => HttpResponse.json({ file_key: 'x.png' }, { status: 201 }))
+    server.use(http.post('/api/v1/workspaces/:wid/files', uploadSpy))
+    const onChange = vi.fn()
+    const field = makeField({ id: 9, name: '照片', field_type: 'image', config: { max_count: 2 } })
+    renderEditor({
+      field,
+      value: [
+        { file_key: 'a.png', filename: 'a.png', mime_type: 'image/png' },
+        { file_key: 'b.png', filename: 'b.png', mime_type: 'image/png' },
+      ],
+      onChange,
+    })
+
+    expect(screen.getByTestId('image-field-pick')).toBeDisabled()
+    fireEvent.change(screen.getByTestId('image-field-input'), {
+      target: { files: [new File([new Uint8Array([1])], 'c.png', { type: 'image/png' })] },
+    })
+
+    expect(await screen.findByText(/最多 2 张图片/)).toBeInTheDocument()
+    expect(uploadSpy).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
 })

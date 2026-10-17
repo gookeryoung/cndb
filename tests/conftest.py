@@ -39,6 +39,7 @@ def db_engine():
     import cndb.plugins.analytics.models
     import cndb.plugins.change_requests.models
     import cndb.plugins.documents.models
+    import cndb.plugins.files.models
     import cndb.plugins.issues.models
     import cndb.plugins.tables.models
     import cndb.plugins.workspaces.models  # noqa: F401

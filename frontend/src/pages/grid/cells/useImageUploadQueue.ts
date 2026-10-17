@@ -35,6 +35,8 @@ interface Options {
   wid?: number | string
   tableId?: number | string
   rowId?: number | string
+  /** 归属字段 id：后端据此执行字段级大小 / MIME 校验 */
+  fieldId?: number | string
   /** 外部字段值（数组 / JSON 字符串 / null） */
   value: unknown
   onChange: (images: AttachmentFile[]) => void
@@ -93,6 +95,7 @@ export function useImageUploadQueue({
   wid,
   tableId,
   rowId,
+  fieldId,
   value,
   onChange,
   onReplaced,
@@ -106,8 +109,8 @@ export function useImageUploadQueue({
   onChangeRef.current = onChange
   const onReplacedRef = useRef(onReplaced)
   onReplacedRef.current = onReplaced
-  const ctxRef = useRef({ wid, tableId, rowId })
-  ctxRef.current = { wid, tableId, rowId }
+  const ctxRef = useRef({ wid, tableId, rowId, fieldId })
+  ctxRef.current = { wid, tableId, rowId, fieldId }
 
   const queueRef = useRef<Array<{ key: string; file: File; replace?: boolean; replaceKey?: string }>>([])
   const activeRef = useRef(0)
@@ -220,7 +223,7 @@ export function useImageUploadQueue({
   }
 
   async function runTask(task: { key: string; file: File; replace?: boolean; replaceKey?: string }) {
-    const { wid: workspaceId, tableId: tid, rowId: rid } = ctxRef.current
+    const { wid: workspaceId, tableId: tid, rowId: rid, fieldId: fid } = ctxRef.current
     if (!workspaceId) return
     const controller = new AbortController()
     controllersRef.current.set(task.key, controller)
@@ -229,7 +232,7 @@ export function useImageUploadQueue({
       const meta = await fileApi.upload(
         workspaceId,
         task.file,
-        { tableId: tid, rowId: rid },
+        { tableId: tid, rowId: rid, fieldId: fid },
         {
           signal: controller.signal,
           onProgress: percent => {

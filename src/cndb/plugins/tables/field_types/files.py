@@ -33,11 +33,28 @@ class AttachmentFieldConfig(FieldTypeConfig):
         max_size_mb: 单个附件最大 MB 数，0 表示由后端全局限制.
         allowed_mime_types: 允许的 MIME 类型白名单；空列表表示不限制.
         multiple: 是否允许多文件.
+        max_count: 单元格最多文件数；0 表示不限制.
     """
 
     max_size_mb: int = Field(default=10, ge=0, le=1024)
     allowed_mime_types: list[str] = Field(default_factory=list)
     multiple: bool = True
+    max_count: int = Field(default=0, ge=0, le=1000)
+
+
+def _configured_max_count(config: dict[str, Any]) -> int:
+    """从字段配置里取 max_count（历史/脏数据按 0 = 不限制处理）."""
+    try:
+        return max(0, int((config or {}).get("max_count") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _check_count(items: list[Any], config: dict[str, Any], *, label: str, unit: str) -> None:
+    """校验单元格内文件数量不超过字段配置的 max_count."""
+    max_count = _configured_max_count(config)
+    if max_count and len(items) > max_count:
+        raise ValueError(f"{label}数量超过字段限制（最多 {max_count} {unit}）")
 
 
 class AttachmentFieldType(FieldType):
@@ -84,9 +101,11 @@ class AttachmentFieldType(FieldType):
                     raise ValueError()
             except (json.JSONDecodeError, ValueError) as exc:
                 raise ValueError(f"附件值不是合法的 JSON 数组: {value!r}") from exc
+            _check_count(parsed, _config, label="附件", unit="个")
             return value
         if not isinstance(value, list):
             raise ValueError(f"attachment 字段必须是附件元数据列表，收到 {type(value)!r}")
+        _check_count(value, _config, label="附件", unit="个")
 
         result: list[dict[str, Any]] = []
         for i, item in enumerate(value):
@@ -152,12 +171,14 @@ class ImageFieldType(FieldType):
                     raise ValueError()
             except (json.JSONDecodeError, ValueError) as exc:
                 raise ValueError(f"图片值不是合法的 JSON 数组: {value!r}") from exc
+            _check_count(parsed, _config, label="图片", unit="张")
             for i, item in enumerate(parsed):
                 if not isinstance(item, dict) or not is_image_meta(item):
                     raise ValueError(f"图片列表第 {i} 项不是图片元数据（需 image/* MIME 或图片扩展名）")
             return value
         if not isinstance(value, list):
             raise ValueError(f"image 字段必须是图片元数据列表，收到 {type(value)!r}")
+        _check_count(value, _config, label="图片", unit="张")
 
         result: list[dict[str, Any]] = []
         for i, item in enumerate(value):
