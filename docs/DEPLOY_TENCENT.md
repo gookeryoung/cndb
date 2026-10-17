@@ -5,7 +5,7 @@
 > **为什么镜像在服务器端构建**：原链路（CI 构建 → `docker save | gzip` →
 > 上传 COS 全球加速 → 预签名 URL → 服务器 COS 内网下载 → `docker load`）
 > 环节多、任一环节抖动即部署失败，且 COS 存储/流量持续计费。现改为配置文件
-> 内联进 TAT 命令、wheel 由服务器自己从 PyPI 取，`deploy.sh` 在服务器上
+> 内联进 TAT 命令、wheel 由服务器自己从 PyPI / 国内镜像取，`deploy.sh` 在服务器上
 > `docker build` —— 镜像不过网，构建完直接部署。TCR 退为回滚备用源
 > （历史版本仍可 pull）。
 >
@@ -13,6 +13,13 @@
 > 22 端口会让腾讯云主机安全持续报「异地登录 root」高危告警；把 runner IP
 > 加白也不可行（GitHub 的 CIDR 池是变动的）。改用 TAT（自动化助手）下发后
 > 全程没有入站连接，不产生登录审计，22 端口可以对公网关掉。详见第三节。
+>
+> **发布提速（0.4.7+）**：① 部署不再与 Release 并行抢跑，改由 `release.yml`
+> 在 pypi job 成功后调用（省掉等 PyPI 元数据的最多 3 分钟）；② wheel 下载从
+> 「腾讯镜像 → 官方源」扩展为「腾讯 / 阿里 / 清华镜像 → 官方源」，镜像同步延迟
+> 不再直接掉到跨境约 14KB/s 的官方源；③ 镜像拆成「依赖基础镜像 + 应用层」两段，
+> 依赖未变时服务器只重建 20-40s 的 wheel 薄层，Docker 层缓存被清也不会再触发
+> 5-15 分钟冷启动。常态上机段约 1-2 分钟（详见第三节）。
 
 ---
 
@@ -25,9 +32,10 @@ git push tag v0.3.0
 GitHub Actions (.github/workflows/release.yml)
       │  ① pnpm build         前端产物 → src/cndb/static
       │  ② uv build + publish → dist/cndb-0.3.0-py3-none-any.whl 发布 PyPI
+      │  └─ pypi job 成功后调用 deploy-tencent.yml（workflow_call）
       ▼
-GitHub Actions (.github/workflows/deploy-tencent.yml)
-      │  ③ 解析 wheel 地址    只取 URL 与 sha256，不下载（重试等待 PyPI 元数据同步）
+GitHub Actions (deploy-tencent.yml，被 Release 调用)
+      │  ③ 解析 wheel 地址    取官方 URL、国内镜像 URL 与 sha256（不下载）
       │  ④ uv export          产出 dist/requirements.lock.txt（锁定依赖）
       │  ⑤ 打包载荷           compose + deploy/ + 锁定清单 → tar.gz → base64
       ▼
@@ -35,9 +43,10 @@ GitHub Actions (.github/workflows/deploy-tencent.yml)
       │  ⑥ RunCommand 下发    命令进云端队列，实例 agent 主动拉取执行（无入站连接）
       ▼
 腾讯云服务器 /opt/cndb
-      │  ⑦ 解包配置 → curl 下载 wheel（优先内网 PyPI 镜像）→ sha256 校验
+      │  ⑦ 解包配置 → curl 下载 wheel（腾讯/阿里/清华镜像轮询，最后官方源）→ sha256 校验
       │  deploy.sh (SERVER_BUILD=1):
-      │    docker build 服务器本地构建镜像（镜像不过网）
+      │    依赖基础镜像（系统字体 + 锁定依赖；按指纹复用，uv.lock 变化才重建）
+      │    → 应用镜像（只装 wheel，常态 20-40s）
       │    → 冒烟验证（cndb 可导入 + 前端 assets 非空）
       │    → 预备份数据库
       │    → 更新 .env → up -d --force-recreate
@@ -56,7 +65,7 @@ GitHub Actions (.github/workflows/deploy-tencent.yml)
 
 | 限制 | 值 | 现在的做法 |
 |---|---|---|
-| 单条命令 Content | 64 KiB（base64 后） | 配置载荷约 24 KB → Content 约 45 KB，余量 20 KB；超限直接失败并提示拆命令 |
+| 单条命令 Content | 64 KiB（base64 后） | 配置载荷约 24 KB → Content 约 49 KB，余量 15 KB；超限直接失败并提示拆命令 |
 | 单个任务超时 | 最长 86400s | CI 传 3600s，本地最多等 3300s（job 上限 70 分钟） |
 
 **服务器需要具备**：`docker` + `curl`（下载 wheel 用）。命令开头会显式检查 `curl`，缺失直接报错退出。
@@ -100,7 +109,7 @@ CI 不再向 TCR 推镜像，但镜像仍以 TCR 地址**命名**（与历史版
 
 ### 3. 准备服务器
 
-轻量应用服务器建议 **2核4G / 60G SSD**（SQLite + 少量并发足够；镜像改为服务器端构建后，内存 <2G 跑 pip 依赖安装会 OOM，磁盘需容纳基础镜像 + 依赖层 + 数据卷）。
+轻量应用服务器建议 **2核4G / 60G SSD**（SQLite + 少量并发足够；依赖基础镜像构建时，内存 <2G 跑 pip 依赖安装会 OOM，磁盘需容纳基础镜像 + 应用层 + 依赖缓存 + 数据卷）。
 
 ```bash
 # 安装 Docker（腾讯云镜像通常已预装，先确认）
@@ -402,7 +411,7 @@ certbot renew --dry-run
 | `TCR_PASSWORD`    | 服务账号密码                                  |
 | `SERVER_URL`      | 访问地址，用于部署后跳转                          |
 | `BUILD_BASE_IMAGE` | 可选。基础镜像换源，如 `docker.m.daocloud.io/library/python:3.12-slim`（服务器拉 Docker Hub 超时时配） |
-| `BUILD_PIP_INDEX_URL` | 可选。镜像内 pip 换源，如 `https://mirrors.cloud.tencent.com/pypi/simple` |
+| `BUILD_PIP_INDEX_URL` | 可选。构建依赖基础镜像时的 pip 源。**不配默认走 `https://mirrors.cloud.tencent.com/pypi/simple`**（腾讯云内网源），失败会自动回退官方源 |
 
 > **`SSH_HOST` / `SSH_PORT` / `SSH_USERNAME` / `SSH_PRIVATE_KEY` 已不再使用**，可以删掉。
 > 改 TAT 下发后流水线没有任何 SSH 登录，服务器也不需要为部署保留公网 22 端口。
@@ -453,17 +462,31 @@ cd /opt/cndb && ./deploy/deploy.sh 0.3.0
 git tag v0.3.1 && git push origin v0.3.1
 ```
 
-推 tag 即触发：CI 打包配置载荷 → TAT 下发 → 服务器拉 wheel 并构建镜像 → 自动部署。
-首次约 15-30 分钟（拉基础镜像 + 装依赖，无缓存），之后走 Docker 层缓存通常 5-10 分钟。
+推 tag 即触发 Release；`pypi` job 成功后自动调用部署 workflow（不再需要另起一条并行流水线抢跑）。
+CI 打包配置载荷 → TAT 下发 → 服务器拉 wheel 并构建镜像 → 自动部署。
+
+耗时预期：
+
+- **常态发布**：上机段约 1-2 分钟（复用依赖基础镜像，只重建 wheel 薄层 + 健康探测），整体约 3-5 分钟；
+- **首次部署 / `uv.lock` 变化**：多一次依赖基础镜像构建（约 1-3 分钟，只发生一次，后续版本继续复用）；
+- 如果 TAT 日志里看到「重新构建依赖基础镜像」每次都在跑，说明依赖指纹没有稳定命中，
+  检查 `dist/requirements.lock.txt` 是否被上游改成了非确定性内容（如带时间戳）。
 
 GitHub Actions 页面可看实时进度（TAT 会把 `deploy.sh` 的日志回传到 job 日志里）；
 失败会自动回滚并在日志中标明原因。
 
+> 本仓库同时向 CodeUp 与 GitHub 推 tag，两条 release 流水线都会发布同一版本：
+> `uv publish --check-url` 让后到的一方跳过重复上传；GitHub 的 deploy job 即使
+> 发现 pypi job 因重复发布而失败，也会继续从 PyPI 解析已发布的 wheel 完成部署。
+
 **手动重跑**（不改代码重新部署）：
 
 ```
-Actions → Deploy to Tencent Cloud → Run workflow → 填入目标版本（如 v0.3.0）
+Actions → 左侧选择 "Deploy to Tencent Cloud" → Run workflow → 填入目标版本（必填，如 v0.3.0）
 ```
+
+> 部署已改为由 Release 调用，正常发版只需要关注 `Release` 这一条流水线；
+> `Deploy to Tencent Cloud` 仍保留手动入口，用于重跑或回滚到指定版本。
 
 **手动回滚**：
 
@@ -600,7 +623,7 @@ ss -lntp | grep -E ':(80|443) '           # 端口是否被别的进程占着
 | `InvalidParameterValue.InstanceIdNotFound` | `CNDB_INSTANCE_ID` 写错，或 `CNDB_REGION` 与实例实际地域不一致 |
 | `AuthFailure` / `UnauthorizedOperation` | 子账号密钥错误，或策略缺 `tat:RunCommand` / `tat:DescribeInvocationTasks` |
 | `命令内容超过 64 KiB` | 配置载荷过大。`scripts/build_tat_command.py` 会打印实际字节数；先看 `deploy/` 是否混入了 build 产物或备份文件 |
-| 任务长时间 `RUNNING`，CI 等到 3300s | 服务器正在 `docker build`（首次无缓存 15-30 分钟属正常）。**CI 停止轮询不会中断实例上的任务**，任务仍会跑完 |
+| 任务长时间 `RUNNING`，CI 等到 3300s | 服务器正在构建依赖基础镜像（首次或 `uv.lock` 变化，约 1-3 分钟）或正在下载 wheel。**CI 停止轮询不会中断实例上的任务**，任务仍会跑完；超过 10 分钟再上机看 `docker ps` / `docker images` |
 | 实例输出被截断（日志里有 `Dropped` 字节数） | TAT 回传有长度上限。完整日志上机看：`docker logs --tail 200 cndb` |
 
 ### 服务器端构建失败
@@ -608,17 +631,20 @@ ss -lntp | grep -E ':(80|443) '           # 端口是否被别的进程占着
 ```bash
 # 服务器上确认基础镜像可拉取（国内直连 Docker Hub 超时的常见根因）
 time docker pull python:3.12-slim
+# 看依赖基础镜像是否已就位（tag 形如 <仓库>-base:deps-<12位指纹>）
+docker images --filter "reference=*cndb-base*"
 # 手动复现构建（与 CI 等价，产物已在 /opt/cndb/dist）
 cd /opt/cndb && SERVER_BUILD=1 IMAGE_REPO_OVERRIDE=ccr.ccs.tencentyun.com/pydev/cndb ./deploy/deploy.sh <版本号>
 ```
 
 | 现象                                        | 原因与处理                                                     |
 | ----------------------------------------- | ----------------------------------------------------------- |
-| 构建卡在 `FROM python:3.12-slim` 拉取       | 服务器 Docker Hub 直连超时。配 registry-mirror（见「准备服务器」）或配 Secret `BUILD_BASE_IMAGE` 换源 |
-| pip 安装 404                               | 换了滞后的 PyPI 镜像（如阿里云源缺新版 metadata）。配 Secret `BUILD_PIP_INDEX_URL` 为腾讯云源，或恢复默认官方源 |
-| `缺少 dist/cndb-*.whl`                     | wheel 没下载下来。看 TAT 日志里「下载 wheel」那几行：镜像与官方源都失败通常是网络或版本未发布 |
+| 构建卡在 `FROM python:3.12-slim` 拉取（依赖基础镜像构建阶段） | 服务器 Docker Hub 直连超时。配 registry-mirror（见「准备服务器」）或配 Secret `BUILD_BASE_IMAGE` 换源 |
+| 依赖基础镜像 pip 安装 404 / 超时              | 镜像源滞后或缺包。默认走腾讯云源，失败自动回退官方源；也可配 Secret `BUILD_PIP_INDEX_URL` 强制指定（避免阿里云等滞后源） |
+| 应用镜像构建报依赖缺失 / `--no-index` 失败     | 基础镜像与锁定清单不一致（极少见）。删掉对应 `cndb-base:deps-*` 镜像后重跑，会重新构建基础镜像 |
+| `缺少 dist/cndb-*.whl`                     | wheel 没下载下来。看 TAT 日志里「下载 wheel」那几行：国内镜像与官方源都失败通常是网络或版本未发布 |
 | 构建 OOM（进程被 kill 137）                 | 服务器内存 <2G。加 swap 或升配                                   |
-| 磁盘不足                                   | `docker system df` 看占用；`docker image prune -a` 清旧镜像后重跑     |
+| 磁盘不足                                   | `docker system df` 看占用；deploy.sh 已保留最近 5 个应用镜像 / 3 个基础镜像，必要时 `docker image prune -a` |
 | 冒烟验证失败（assets 为空）                  | wheel 未内嵌前端产物 —— 确认 release.yml 的前端构建成功后再重跑        |
 
 ### 版本回滚后仍异常
@@ -635,7 +661,7 @@ docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate
 
 ```bash
 docker system df                                   # 查看占用分布
-docker image prune -a                              # 清理悬空镜像（deploy.sh 已自动保留最近 5 个）
+docker image prune -a                              # 清理悬空镜像（deploy.sh 已自动保留最近 5 个应用镜像 / 3 个依赖基础镜像）
 docker volume ls                                   # 确认无误后再清理卷——卷里有你的数据
 ```
 

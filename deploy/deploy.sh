@@ -12,11 +12,13 @@
 #
 # 镜像获取方式（按环境变量自动二选一）：
 #   1. SERVER_BUILD=1（CI 常规路径）：在服务器本地构建镜像。
-#      CI 仅同步 dist/*.whl + requirements.lock.txt + Dockerfile.prod 到 /opt/cndb，
-#      本脚本在服务器上 docker build 出目标镜像 —— 镜像不过网，省去整条中转链路。
+#      CI 仅同步 dist/*.whl + requirements.lock.txt + Dockerfile 到 /opt/cndb，
+#      本脚本按「依赖基础镜像（字体 + 锁定依赖）→ 应用层（wheel）」两段构建：
+#      依赖未变时复用 cndb-base:deps-<hash>，只重建 20-40s 的 wheel 薄层；
+#      uv.lock 变化时才多花一次 1-3 分钟重建基础镜像。
 #      可选环境变量（国内服务器拉 Docker Hub 超时的换源逃生通道）：
 #        BUILD_BASE_IMAGE       覆盖基础镜像，如 docker.m.daocloud.io/library/python:3.12-slim
-#        BUILD_PIP_INDEX_URL    覆盖 pip 源，如 https://mirrors.cloud.tencent.com/pypi/simple
+#        BUILD_PIP_INDEX_URL    覆盖 pip 源，不设时基础镜像构建默认腾讯云 PyPI 内网镜像
 #   2. 无 SERVER_BUILD（手动部署/回滚历史版本）：走 TCR docker pull，
 #      需 TCR_USERNAME/TCR_PASSWORD（CI 注入或手工 export）。
 #      镜像仍以 TCR 地址命名（与历史版本同名），保证回滚可命中。
@@ -120,6 +122,9 @@ fi
 
 TARGET_IMAGE="${BASE_REPO}:${TARGET_TAG}"
 log "目标镜像: ${TARGET_IMAGE}"
+
+# 依赖基础镜像仓库：与应用镜像同前缀，tag 用依赖指纹（见 build_image 的 ensure_base_image）
+BASE_IMAGE_REPO="${BASE_IMAGE_REPO:-${BASE_REPO}-base}"
 
 # ── 部署前数据库备份 ───────────────────────────────────────────
 # 用项目自带的 cndb backup（走 SQLite native 备份 API），而非直接 cp .db 文件
@@ -239,12 +244,59 @@ rollback() {
   return 1
 }
 
-# ── 服务器本地构建（SERVER_BUILD=1）─────────────────────────────
-# CI 经 TAT 下发触发：用 Dockerfile.prod 在服务器上构建 dist 产物为目标镜像。
-# 依赖 CI 已同步：dist/cndb-*.whl、dist/requirements.lock.txt、deploy/Dockerfile.prod。
+# ── 依赖基础镜像（系统字体 + 锁定依赖）─────────────────────────
+# 把「apt 装字体 + pip 装锁定依赖」这段慢且基本不变的工作固化成一个镜像，
+# 按 requirements.lock.txt 与 Dockerfile.base 的内容指纹打 tag：
+#   · 发布时依赖未变 → 直接复用，只重建 wheel 薄层（20-40s）
+#   · uv.lock 或 Dockerfile.base 变化 → 多一次 1-3 分钟的基础镜像构建
+# 这样即使 Docker 层缓存被清理，也不会再出现 5-15 分钟的冷启动。
+BASE_TAG=""
+
+deps_fingerprint() {
+  [[ -f dist/requirements.lock.txt && -f deploy/Dockerfile.base ]] || return 1
+  sha256sum dist/requirements.lock.txt deploy/Dockerfile.base | sha256sum | cut -c1-12
+}
+
+ensure_base_image() {
+  local fingerprint pip_index
+  fingerprint="$(deps_fingerprint)" \
+    || die "无法计算依赖指纹：缺少 dist/requirements.lock.txt 或 deploy/Dockerfile.base"
+  BASE_TAG="${BASE_IMAGE_REPO}:deps-${fingerprint}"
+
+  if docker image inspect "$BASE_TAG" >/dev/null 2>&1; then
+    ok "复用依赖基础镜像: ${BASE_TAG}"
+    return 0
+  fi
+
+  # 换了机器 / 清过本地镜像时先尝试从镜像仓库拉；不存在会快速失败，不阻塞
+  log "本地无依赖基础镜像，尝试拉取: ${BASE_TAG}"
+  if docker pull "$BASE_TAG" >/dev/null 2>&1; then
+    ok "拉取到依赖基础镜像: ${BASE_TAG}"
+    return 0
+  fi
+
+  log "构建依赖基础镜像（仅依赖变化时发生一次，约 1-3 分钟）..."
+  # 服务器在腾讯云内网，默认走腾讯云 PyPI 镜像；失败再用官方源兜底（可能较慢）
+  pip_index="${BUILD_PIP_INDEX_URL:-https://mirrors.cloud.tencent.com/pypi/simple}"
+  if ! docker build -f deploy/Dockerfile.base \
+      ${BUILD_BASE_IMAGE:+--build-arg "BASE_IMAGE=${BUILD_BASE_IMAGE}"} \
+      --build-arg "PIP_INDEX_URL=${pip_index}" \
+      -t "$BASE_TAG" . ; then
+    warn "依赖基础镜像构建失败（pip 源: ${pip_index}），改用官方 PyPI 重试..."
+    docker build -f deploy/Dockerfile.base \
+      ${BUILD_BASE_IMAGE:+--build-arg "BASE_IMAGE=${BUILD_BASE_IMAGE}"} \
+      --build-arg "PIP_INDEX_URL=https://pypi.org/simple" \
+      -t "$BASE_TAG" . || die "依赖基础镜像构建失败"
+  fi
+  ok "依赖基础镜像就绪: ${BASE_TAG}"
+}
+
+# ── 服务器本地构建应用镜像（SERVER_BUILD=1）─────────────────────
+# CI 经 TAT 下发触发：在依赖基础镜像上只装 wheel，再冒烟验证。
+# 依赖 CI 已同步：dist/cndb-*.whl、dist/requirements.lock.txt、deploy/Dockerfile*。
 build_image() {
-  [[ -f "deploy/Dockerfile.prod" ]] \
-    || die "缺少 deploy/Dockerfile.prod（CI 的同步步骤应已放到 /opt/cndb/deploy）"
+  [[ -f "deploy/Dockerfile.prod" && -f "deploy/Dockerfile.base" ]] \
+    || die "缺少 deploy/Dockerfile.prod 或 Dockerfile.base（CI 的同步步骤应已放到 /opt/cndb/deploy）"
 
   # 只保留目标版本的 wheel：同步的 wheel 文件名带版本号，历史版本残留会让
   # pip install ./*.whl 同时装两个版本互相冲突
@@ -255,14 +307,13 @@ build_image() {
   # 构建上下文最小化：/opt/cndb 下有 backups（可能数 GB）、.env 等，
   # 不排除会把备份数据整个发给 docker daemon。只放行 dist 与 Dockerfile。
   # 注意 dockerignore 语义：父目录被 * 排除后，须先放行父目录再收窄到具体文件。
-  printf '*\n!dist\n!deploy\ndeploy/*\n!deploy/Dockerfile.prod\n' > .dockerignore
+  printf '*\n!dist\n!deploy\ndeploy/*\n!deploy/Dockerfile.prod\n!deploy/Dockerfile.base\n' > .dockerignore
 
-  log "服务器本地构建镜像 ${TARGET_IMAGE} ..."
-  # BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL：未设置时 bash 参数展开为空，
-  # docker build 收不到对应 --build-arg，走 Dockerfile 内默认官方源。
+  ensure_base_image
+
+  log "构建应用镜像（仅 wheel 层）${TARGET_IMAGE} ..."
   if ! docker build -f deploy/Dockerfile.prod \
-      ${BUILD_BASE_IMAGE:+--build-arg "BASE_IMAGE=${BUILD_BASE_IMAGE}"} \
-      ${BUILD_PIP_INDEX_URL:+--build-arg "PIP_INDEX_URL=${BUILD_PIP_INDEX_URL}"} \
+      --build-arg "BASE_IMAGE=${BASE_TAG}" \
       -t "$TARGET_IMAGE" \
       -t "${BASE_REPO}:latest" \
       . ; then
@@ -485,6 +536,14 @@ ok "部署成功！版本信息: ${VERSION_JSON}"
 log "清理悬空镜像（保留最近 5 个）..."
 docker images --filter "reference=${BASE_REPO}:*" --format '{{.CreatedAt}} {{.ID}} {{.Repository}}:{{.Tag}}' \
   | sort -r | tail -n +6 \
+  | awk '{print $3}' \
+  | xargs -r docker rmi -f >/dev/null 2>&1 || true
+
+# 依赖基础镜像单独清理（仓库名是 <应用仓库>-base，不会被上面的规则命中）。
+# 保留最近 3 个指纹；被应用镜像引用的层不会真正删除，磁盘占用仍可控。
+log "清理旧依赖基础镜像（保留最近 3 个）..."
+docker images --filter "reference=${BASE_IMAGE_REPO}:*" --format '{{.CreatedAt}} {{.ID}} {{.Repository}}:{{.Tag}}' \
+  | sort -r | tail -n +4 \
   | awk '{print $3}' \
   | xargs -r docker rmi -f >/dev/null 2>&1 || true
 

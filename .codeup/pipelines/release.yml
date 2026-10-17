@@ -80,7 +80,9 @@ stages:
 
                 # ── 发布到 PyPI（走全局变量注入的 token）──
                 # CodeUp 不支持 GitHub OIDC，改用经典 API token（用户名固定 __token__）。
-                uv publish
+                # --check-url：同版本文件已存在时跳过上传。GitHub / CodeUp 两条 release
+                # 流水线都会发布同一 tag，后到的一边不再因 400 duplicate 失败。
+                uv publish --check-url https://pypi.org/simple/
 
       # ── Linux fspack 原生打包 ───────────────────────────────────
       pack_linux:
