@@ -91,13 +91,13 @@ export function TableSkeleton({ columnCount }: { columnCount?: number }) {
         background: 'var(--cn-bg-container)', border: '1px solid var(--cn-border)', borderRadius: 8, overflow: 'hidden',
       }}
     >
-      <div style={{ display: 'flex', gap: 16, padding: '10px 16px', borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-page)' }}>
+      <div style={{ display: 'flex', gap: 16, padding: '8px 12px', borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-page)' }}>
         {Array.from({ length: cols }).map((_, i) => (
           <div key={i} style={{ height: 14, borderRadius: 4, background: 'var(--cn-border)', width: `${8 + ((i * 5) % 10)}%` }} />
         ))}
       </div>
       {Array.from({ length: 10 }).map((_, i) => (
-        <div key={i} style={{ display: 'flex', gap: 16, padding: '12px 16px', borderBottom: '1px solid var(--cn-border)' }}>
+        <div key={i} style={{ display: 'flex', gap: 16, padding: '9px 12px', borderBottom: '1px solid var(--cn-border)' }}>
           {Array.from({ length: cols }).map((_, j) => (
             <div key={j} style={{ height: 12, borderRadius: 4, background: 'var(--cn-border)', opacity: 0.6, width: `${10 + ((i * 7 + j * 11) % 14)}%` }} />
           ))}
@@ -1069,7 +1069,7 @@ export default function GridPage() {
 
       {/* 主内容 — flex:1 占满剩余空间，overflow:hidden 交给内部 Table 的虚拟滚动.
           key={tableKey}：切表整块重挂载，清空列宽预览等内部局部状态；cn-page-enter 提供切换淡入 */}
-      <div key={tableKey} ref={gridAreaRef} className="cn-page-enter" style={{ flex: 1, minHeight: 0, padding: '12px 16px', background: 'var(--cn-bg-page)', display: 'flex', flexDirection: 'column' }}>
+      <div key={tableKey} ref={gridAreaRef} className="cn-page-enter" style={{ flex: 1, minHeight: 0, padding: '8px 12px', background: 'var(--cn-bg-page)', display: 'flex', flexDirection: 'column' }}>
         {isLoading ? (
           <TableSkeleton columnCount={lastVisibleFieldsCountRef.current} />
         ) : mode === 'grid' ? (

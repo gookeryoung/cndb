@@ -447,9 +447,14 @@ body.theme-oled {
 }
 
 /* 表导航（桌面 Sider 与移动端抽屉共用 cn-table-nav）：
- * 菜单项过渡 + 激活项左侧品牌色圆角指示条 */
+ * 菜单项过渡 + 激活项左侧品牌色圆角指示条；
+ * 紧凑化：行高由 antd 默认 40px 收到 34px，纵向间距同步收紧，
+ * 让侧栏在同等高度内多承载约 2 条表项 */
 .cn-table-nav .ant-menu-item {
   transition: background-color 0.18s ease, color 0.18s ease;
+  height: 34px;
+  line-height: 34px;
+  margin-block: 2px;
 }
 
 .cn-table-nav .ant-menu-item-selected {
@@ -475,10 +480,16 @@ body.theme-oled {
   background: var(--cn-brand-color);
 }
 
+/* 紧凑化：页签间距由 antd 默认 32px 收到 14px，纵向 padding 收到 6/5px，
+ * 让工作区导航行整体高度压到 ~34px，把纵向空间还给内容区 */
 .cn-ws-tabs .ant-tabs-tab {
   transition: color 0.18s ease;
-  padding-top: 10px;
-  padding-bottom: 9px;
+  padding-top: 6px;
+  padding-bottom: 5px;
+}
+
+.cn-ws-tabs .ant-tabs-tab+.ant-tabs-tab {
+  margin-left: 14px;
 }
 
 .cn-ws-tabs .ant-tabs-tab:hover .ant-tabs-tab-btn {
@@ -497,13 +508,13 @@ body.theme-oled {
   align-self: stretch;
   flex-shrink: 0;
   min-width: 0;
-  padding: 0 16px 0 4px;
+  padding: 0 10px 0 2px;
 }
 
 .cn-table-crumb-divider {
   width: 1px;
-  height: 22px;
-  margin: 0 12px;
+  height: 18px;
+  margin: 0 8px;
   background: var(--cn-border);
   flex-shrink: 0;
 }
@@ -536,9 +547,9 @@ body.theme-oled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  margin: 7px 2px;
-  padding: 0 12px;
+  gap: 5px;
+  margin: 5px 2px;
+  padding: 0 10px;
   border: none;
   border-radius: 6px;
   background: none;
@@ -1613,32 +1624,33 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 /* 紧凑模式：最小 padding，适合快速浏览 */
 .cn-table.cn-table-compact .ant-table-thead>tr>th {
-  padding: 4px 8px !important;
+  padding: 3px 6px !important;
 }
 
 .cn-table.cn-table-compact .ant-table-tbody>tr>td,
 .cn-table.cn-table-compact .ant-table-tbody-virtual-holder .ant-table-cell {
-  padding: 4px 8px !important;
+  padding: 3px 6px !important;
 }
 
-/* 适中模式（antd middle 默认 padding 已合理，微调统一） */
+/* 适中模式（默认档）：在 antd middle 基础上进一步压低纵向 padding，
+ * 与参考实现（td py-1.5 / 6px）对齐，兼顾可读性与信息密度 */
 .cn-table.cn-table-comfortable .ant-table-thead>tr>th {
-  padding: 8px 12px !important;
+  padding: 6px 10px !important;
 }
 
 .cn-table.cn-table-comfortable .ant-table-tbody>tr>td,
 .cn-table.cn-table-comfortable .ant-table-tbody-virtual-holder .ant-table-cell {
-  padding: 8px 12px !important;
+  padding: 6px 10px !important;
 }
 
 /* 宽松模式：大 padding，适合长文本 */
 .cn-table.cn-table-spacious .ant-table-thead>tr>th {
-  padding: 12px 16px !important;
+  padding: 10px 14px !important;
 }
 
 .cn-table.cn-table-spacious .ant-table-tbody>tr>td,
 .cn-table.cn-table-spacious .ant-table-tbody-virtual-holder .ant-table-cell {
-  padding: 14px 16px !important;
+  padding: 12px 14px !important;
 }
 
 /* ─────────────── 视图切换栏 Segmented 紧凑化 + 滚动优化 ───────────────
@@ -1675,7 +1687,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   content: '';
   position: absolute;
   top: 0;
-  left: 16px;
+  left: 12px;
   /* 与 wrap 左侧 padding 对齐 */
   bottom: 0;
   width: 32px;
@@ -1723,7 +1735,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-seg-scroll-btn-left {
-  left: 16px;
+  left: 12px;
   /* 与 wrap 左侧 padding 对齐 */
 }
 
@@ -1772,13 +1784,13 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 /* Segmented 项紧凑化：减小高度和内边距 */
 .cn-segmented .ant-segmented-item {
-  padding: 0 10px;
-  line-height: 26px;
-  min-height: 28px;
+  padding: 0 8px;
+  line-height: 24px;
+  min-height: 26px;
 }
 
 .cn-segmented .ant-segmented-item-label {
-  padding: 0 4px;
+  padding: 0 2px;
   font-size: 13px;
   white-space: nowrap;
 }

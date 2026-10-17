@@ -50,7 +50,7 @@ const DOCUMENT_SUBPAGES = [
 /** 内容区骨架 —— 懒加载页面在 Content 内挂起时的占位，避免整页高度跳动 */
 function ContentFallback() {
   return (
-    <div style={{ padding: 24 }} aria-label="页面加载中">
+    <div style={{ padding: 16 }} aria-label="页面加载中">
       <div style={{ height: 28, width: 220, borderRadius: 6, background: 'var(--cn-border)', marginBottom: 16 }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {Array.from({ length: 6 }).map((_, i) => (
@@ -273,12 +273,12 @@ export default function MainLayout() {
     return (
       <div data-testid="sider-tables" className="cn-table-nav">
         <div style={{
-          padding: '12px 16px', borderBottom: '1px solid var(--cn-border)',
+          padding: '8px 12px', borderBottom: '1px solid var(--cn-border)',
           display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
         }}>
           <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
         </div>
-        <div style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
+        <div style={{ padding: '6px 12px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
           数据表 ({orderedTables.length})
         </div>
         {tables.length === 0 ? (
@@ -311,8 +311,8 @@ export default function MainLayout() {
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       <Header className="cn-app-header" style={{
-        padding: '0 16px', height: 52, lineHeight: '52px', flexShrink: 0,
-        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '0 12px', height: 44, lineHeight: '44px', flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: 8,
       }}>
         {/* 移动端汉堡入口：替代常驻 Sider，点击打开抽屉导航 */}
         {isMobile && (
@@ -325,18 +325,18 @@ export default function MainLayout() {
           />
         )}
         <Tooltip title="主页">
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginRight: 8, cursor: 'pointer' }}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 4, cursor: 'pointer' }}
             data-testid="home-logo"
             onClick={() => navigate('/w')}>
             <span
               className="cn-brand-mark"
-              style={{ width: 26, height: 26, fontSize: 14, borderRadius: 7 }}
+              style={{ width: 24, height: 24, fontSize: 13, borderRadius: 6 }}
               aria-hidden
             >
               c
             </span>
             {!isMobile && (
-              <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--cn-text-primary)', letterSpacing: '-0.2px' }}>
+              <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--cn-text-primary)', letterSpacing: '-0.2px' }}>
                 cndb
               </span>
             )}
@@ -412,7 +412,7 @@ export default function MainLayout() {
                 // 窄屏：工作区页签保持内容宽度，由整行横滑承载（否则二级页签 448px 会把
                 // 工作区页签挤成 0 宽而被裁掉，手机上看不到也切不了数据表/文档/设置）
                 style={{ flex: isMobile ? '0 0 auto' : '0 1 auto', minWidth: 0 }}
-                tabBarStyle={{ margin: 0, padding: '0 16px' }}
+                tabBarStyle={{ margin: 0, padding: '0 12px' }}
                 onChange={(key) => navigate(`/w/${wid}/${key}`)}
               />
               {inTableContext && (

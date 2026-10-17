@@ -419,9 +419,9 @@ export default function TablesList() {
     : columns
 
   return (
-    <div style={{ padding: isMobile ? 12 : 24 }}>
+    <div style={{ padding: isMobile ? 12 : 16 }}>
       {/* Header —— 移动端标题与按钮区自动换行 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <Title level={3} style={{ margin: 0 }}>
             <DatabaseOutlined style={{ marginRight: 8 }} />
