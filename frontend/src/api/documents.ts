@@ -144,6 +144,79 @@ export interface PurgeResult {
 /** 文档导出格式：Markdown / Word / PDF */
 export type DocumentExportFormat = 'md' | 'docx' | 'pdf'
 
+// ── Obsidian 文档库（vault）导入 / 导出 ──
+
+/** 导入冲突策略：跳过同名 / 自动改名（追加「 (2)」）/ 覆盖生成新版本 */
+export type VaultConflictPolicy = 'skip' | 'rename' | 'overwrite'
+
+export interface VaultPreviewItem {
+  /** 库内相对路径，如「笔记/设计稿.md」 */
+  path: string
+  title: string
+  folder: string
+  size: number
+  tags: string[]
+  status: 'new' | 'conflict'
+  existing_document_id: number | null
+}
+
+export interface VaultFolderItem {
+  path: string
+  title: string
+  status: 'new'
+}
+
+export interface VaultWarning {
+  code: string
+  message: string
+  count?: number
+  samples?: string[]
+}
+
+/** analyze 结果：只读预览，不写库 */
+export interface VaultAnalyzeResult {
+  filename: string
+  /** zip 内的顶层目录（Obsidian 压缩包通常带一层库名目录） */
+  root_dir: string
+  total_notes: number
+  total_folders: number
+  total_attachments: number
+  total_attachment_bytes: number
+  total_bytes: number
+  ignored_files: number
+  conflicts: number
+  tags: string[]
+  warnings: VaultWarning[]
+  skipped: { path: string; reason: string }[]
+  preview_truncated: boolean
+  folders: VaultFolderItem[]
+  items: VaultPreviewItem[]
+}
+
+/** import 结果：落库后的统计 */
+export interface VaultImportResult {
+  created: number
+  updated: number
+  skipped: number
+  total: number
+  folders_created: number
+  attachments: number
+  attachment_bytes: number
+  tags_created: string[]
+  documents: { id: number; title: string; path: string }[]
+  skipped_notes: { path: string; title: string; reason: string }[]
+  warnings: VaultWarning[]
+}
+
+export interface VaultImportOptions {
+  /** 导入到哪个文件夹（空 = 根目录） */
+  parentId?: number | null
+  conflict?: VaultConflictPolicy
+  importAttachments?: boolean
+  importTags?: boolean
+  status?: 'draft' | 'published' | 'archived'
+}
+
 /** 文档修改申请（双轨制写入的待审载体） */
 export interface DocumentChangeRequestItem {
   id: number
@@ -462,4 +535,40 @@ export const documentsApi = {
   ) => api.post<ShareItem>(`${base(wid)}/${docId}/share`, data).then(r => r.data),
   revokeShare: (wid: number | string, docId: number | string, shareId: number) =>
     api.delete(`${base(wid)}/${docId}/share/${shareId}`).then(r => r.data),
+
+  // ── Obsidian 文档库导入 / 导出 ──
+  // 注意：实例默认头是 application/json，multipart 必须显式声明 multipart/form-data，
+  // 请求拦截器会删掉它再由浏览器补 boundary（否则后端解析不了表单 → 422）。
+
+  /** 上传 zip 解析预览（只读，不落库）：条目数 / 冲突 / 标签 / 告警 */
+  vaultAnalyze: (wid: number | string, file: File, parentId?: number | null) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (parentId != null) form.append('parent_id', String(parentId))
+    return api
+      .post<VaultAnalyzeResult>(`${base(wid)}/import/analyze`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(r => r.data)
+  },
+
+  /** 按确认后的策略把库导入为文档树 */
+  vaultImport: (wid: number | string, file: File, options: VaultImportOptions = {}) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (options.parentId != null) form.append('parent_id', String(options.parentId))
+    form.append('conflict', options.conflict ?? 'rename')
+    form.append('import_attachments', String(options.importAttachments ?? true))
+    form.append('import_tags', String(options.importTags ?? true))
+    form.append('status', options.status ?? 'draft')
+    return api
+      .post<VaultImportResult>(`${base(wid)}/import`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(r => r.data)
+  },
+
+  /** 导出当前工作区文档树为 Obsidian 库（zip blob） */
+  vaultExport: (wid: number | string) =>
+    api.get<Blob>(`${base(wid)}/export/vault`, { responseType: 'blob' }).then(r => r.data),
 }
