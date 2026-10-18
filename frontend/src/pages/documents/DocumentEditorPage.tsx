@@ -53,7 +53,7 @@ import { useAuthStore } from '@/store'
 import { useDocumentEditing, useDocumentViewers, useParagraphLockSnapshot, useRealtime } from '@/realtime/useRealtime'
 import { useParagraphLocks } from './useParagraphLocks'
 import { offsetOfParagraph } from './paragraphLocks'
-import { DocumentViewers } from '@/realtime/RealtimeIndicators'
+import { CollaborationStatusTag, DocumentViewers } from '@/realtime/RealtimeIndicators'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
 import type {
@@ -129,7 +129,7 @@ export default function DocumentEditorPage() {
   const myRole = (wsDetail?.current_user_role ?? null) as WorkspaceRole | null
   // 实时协作：上报"我在看/编辑哪份文档"，并展示同一文档的在线成员
   const currentUser = useAuthStore((s) => s.user)
-  const { updatePresence } = useRealtime(wid)
+  const { updatePresence, status: collabStatus } = useRealtime(wid)
   const viewers = useDocumentViewers(Number.isFinite(id) ? id : null)
   const remoteEditing = useDocumentEditing(Number.isFinite(id) ? id : null)
   /** 跳转到指定段落（把光标移到该段起点并滚动到可见） */
@@ -752,6 +752,10 @@ export default function DocumentEditorPage() {
             </Button>
           )}
           {dirtyRef.current && <Text type="warning" style={{ fontSize: 12 }}>未保存</Text>}
+          {/* 协作编辑状态：由全局顶栏下放到文档页，语义改为协作态（在线/接入中/重连中/已断开） */}
+          <span data-testid="doc-collab-status">
+            <CollaborationStatusTag status={collabStatus} />
+          </span>
           </Space>
         </div>
         {isMobile ? (

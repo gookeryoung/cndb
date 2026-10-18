@@ -1,18 +1,19 @@
-/** 实时协作 UI 组件：连接状态指示 + 文档在线成员.
+/** 实时协作 UI 组件：协作编辑状态标识 + 文档在线成员.
  */
 
 import { Badge, Space, Tag, Tooltip, Typography } from 'antd'
-import { TeamOutlined, WifiOutlined } from '@ant-design/icons'
+import { DisconnectOutlined, SyncOutlined, TeamOutlined } from '@ant-design/icons'
 import type { PresenceMember, RealtimeStatus } from './realtimeClient'
 
 const { Text } = Typography
 
+/** 协作状态文案（面向「协作编辑」语义，不再暴露"连接"这类底层实现词） */
 const STATUS_TEXT: Record<RealtimeStatus, string> = {
-  idle: '未连接',
-  connecting: '连接中…',
-  open: '实时已连接',
-  reconnecting: '重连中…',
-  closed: '已断开',
+  idle: '协作待接入',
+  connecting: '协作接入中',
+  open: '协作在线',
+  reconnecting: '协作重连中',
+  closed: '协作已断开',
 }
 
 const STATUS_COLOR: Record<RealtimeStatus, string> = {
@@ -23,17 +24,33 @@ const STATUS_COLOR: Record<RealtimeStatus, string> = {
   closed: 'default',
 }
 
-/** 顶栏连接状态（挂在 MainLayout 头部） */
-export function RealtimeStatusTag({ status }: { status: RealtimeStatus }) {
+const STATUS_HINT: Record<RealtimeStatus, string> = {
+  idle: '尚未开始实时协作',
+  connecting: '正在接入协作通道，稍候即可看到同文档的在线成员',
+  open: '实时协作已在线：可看到同一文档的其他查看/编辑者，编辑锁与段落锁即时生效',
+  reconnecting: '协作通道暂时中断，正在自动重连；此期间的改动仍会本地保留',
+  closed: '协作通道已断开，暂时看不到其他协作者；可刷新页面恢复',
+}
+
+function StatusIcon({ status }: { status: RealtimeStatus }) {
+  if (status === 'connecting' || status === 'reconnecting') return <SyncOutlined spin />
+  if (status === 'closed') return <DisconnectOutlined />
+  return <TeamOutlined />
+}
+
+/** 协作编辑状态标识（文档页顶栏；`idle` 不渲染以免空状态噪声） */
+export function CollaborationStatusTag({ status }: { status: RealtimeStatus }) {
+  if (status === 'idle') return null
   return (
-    <Tooltip title={STATUS_TEXT[status]}>
+    <Tooltip title={STATUS_HINT[status]}>
       <Tag
-        data-testid="realtime-status"
+        data-testid="collab-status"
+        data-status={status}
         color={STATUS_COLOR[status]}
-        icon={<WifiOutlined />}
+        icon={<StatusIcon status={status} />}
         style={{ marginInlineEnd: 0 }}
       >
-        {status === 'open' ? '实时' : STATUS_TEXT[status]}
+        {STATUS_TEXT[status]}
       </Tag>
     </Tooltip>
   )

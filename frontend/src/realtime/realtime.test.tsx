@@ -6,7 +6,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import RealtimeClient, { buildWsUrl } from './realtimeClient'
 import { isRefreshableAction, queryKeysForAction } from './eventBridge'
-import { DocumentViewers, RealtimeStatusTag, realtimeStatusText } from './RealtimeIndicators'
+import { CollaborationStatusTag, DocumentViewers, realtimeStatusText } from './RealtimeIndicators'
 import type { PresenceMember } from './realtimeClient'
 
 // ── WebSocket 替身 ──────────────────────────────────────
@@ -173,10 +173,15 @@ describe('实时 UI 组件', () => {
     ...over,
   })
 
-  it('连接状态标签按状态渲染文案', () => {
-    render(<RealtimeStatusTag status="open" />)
-    expect(screen.getByTestId('realtime-status')).toHaveTextContent('实时')
-    expect(realtimeStatusText('reconnecting')).toBe('重连中…')
+  it('协作状态标识按状态渲染文案', () => {
+    render(<CollaborationStatusTag status="open" />)
+    expect(screen.getByTestId('collab-status')).toHaveTextContent('协作在线')
+    expect(realtimeStatusText('reconnecting')).toBe('协作重连中')
+  })
+
+  it('未接入时不渲染协作状态标识', () => {
+    const { container } = render(<CollaborationStatusTag status="idle" />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('在线成员展示用户名、编辑中标记与"我"的标识', () => {

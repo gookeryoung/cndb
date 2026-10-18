@@ -424,8 +424,11 @@ describe('ChartView 多图（view_options.charts）', () => {
 
     expect(screen.getByTestId('chart-empty-config-1')).toBeInTheDocument()
     expect(screen.getByText(/图表视图需配置X 数值字段/)).toBeInTheDocument()
-    // 仅卡 0 init 图表
-    expect(screen.getAllByTestId('chart-container')).toHaveLength(1)
+    // 两卡容器都常驻（空态为覆盖层），仅卡 0 真正 init 图表
+    const containers = screen.getAllByTestId('chart-container')
+    expect(containers).toHaveLength(2)
+    expect(containers[0]).toHaveAttribute('data-chart-ready', 'true')
+    expect(containers[1]).toHaveAttribute('data-chart-ready', 'false')
     expect(echartsMock.init).toHaveBeenCalledTimes(1)
   })
 })
