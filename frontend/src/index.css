@@ -707,6 +707,32 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   }
 }
 
+/* 数据表列表（TablesList）：行高收紧。
+ * AntD size="small" 的单元格上下 padding 是 8px，行内又有 Tag / Avatar（20~24px），
+ * 实测行高 48px 左右；压到 6px 后一屏能多出约两行。表头同步压缩并弱化字号。 */
+.cn-table-list .ant-table-tbody > tr > td,
+.cn-table-list .ant-table-thead > tr > th {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.cn-table-list .ant-table-thead > tr > th {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 行内元素统一 20px 行高：内容高度不再由最胖的子元素决定，行高稳定 */
+.cn-table-list .ant-table-tbody > tr > td {
+  line-height: 20px;
+}
+
+/* 单元格内的 Tag / 徽标在紧凑行里去掉多余上下边距 */
+.cn-table-list .ant-table-tbody > tr > td .ant-tag {
+  margin-inline-end: 0;
+  line-height: 18px;
+  padding-inline: 6px;
+}
+
 /* 非虚拟模式兜底：标准 tr > td */
 .ant-table-tbody>tr.cn-table-row-new>td {
   background-color: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container)) !important;
