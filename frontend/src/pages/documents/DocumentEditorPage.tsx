@@ -9,7 +9,6 @@ import {
   Drawer,
   Dropdown,
   Input,
-  Popconfirm,
   Segmented,
   Space,
   Splitter,
@@ -62,7 +61,6 @@ import type {
   DocumentExportFormat,
   DocumentItem,
   OutgoingLinkItem,
-  VersionItem,
 } from '@/api/documents'
 
 const { Text, Title } = Typography
@@ -338,7 +336,11 @@ export default function DocumentEditorPage() {
     onSuccess: (_doc, target) => {
       message.success(`已回滚到 v${target}`)
       setVersionsOpen(false)
+      setDiffPair(null)
       void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id, 'content'] })
+      // 回滚会追加新版本，版本列表与差异缓存都失效
+      void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id, 'versions'] })
+      void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id, 'diff'] })
     },
     onError: () => message.error('回滚失败'),
   })
@@ -642,44 +644,8 @@ export default function DocumentEditorPage() {
     [qc, workspaceId, navigate],
   )
 
-  const versionTimeline = useMemo(() => {
-    const items: VersionItem[] = versionsQuery.data?.items ?? []
-    return items.map((v, idx) => ({
-      color: idx === 0 ? 'green' : 'gray',
-      children: (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-          <div>
-            <Space size={8}>
-              <Text strong>v{v.version_number}</Text>
-              {v.change_type === 'rollback' && <Tag color="orange">回滚</Tag>}
-              {v.change_type === 'auto_import' && <Tag color="blue">导入</Tag>}
-            </Space>
-            <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {new Date(v.created_at).toLocaleString('zh-CN', { hour12: false })}
-                {v.change_summary ? ` · ${v.change_summary}` : ''}
-              </Text>
-            </div>
-          </div>
-          <Space size={4}>
-            {idx > 0 && (
-              <Button
-                size="small"
-                onClick={() => setDiffPair({ base: items[idx].version_number, head: items[idx - 1].version_number })}
-              >
-                与上一版对比
-              </Button>
-            )}
-            {idx > 0 && (
-              <Popconfirm title={`回滚到 v${v.version_number}？将创建新版本。`} onConfirm={() => rollbackMut.mutate(v.version_number)}>
-                <Button size="small">回滚到此版</Button>
-              </Popconfirm>
-            )}
-          </Space>
-        </div>
-      ),
-    }))
-  }, [versionsQuery.data, rollbackMut])
+  /** 版本列表（后端倒序：最新在前）+ 总数；差异对比在抽屉内原地展开，不需要额外拼装时间线节点 */
+  const versions = versionsQuery.data?.items ?? []
 
   if (docQuery.isLoading) return <div style={{ padding: 24 }}>加载中…</div>
   if (docQuery.isError || !doc) {
@@ -1122,10 +1088,15 @@ export default function DocumentEditorPage() {
           setDiffPair(null)
         }}
         loading={versionsQuery.isLoading}
-        timeline={versionTimeline}
+        versions={versions}
+        total={versionsQuery.data?.total}
         diffPair={diffPair}
+        onToggleDiff={setDiffPair}
         diffLoading={diffQuery.isLoading}
         diff={diffQuery.data}
+        diffError={diffQuery.isError}
+        onRollback={(target) => rollbackMut.mutate(target)}
+        rollingBack={rollbackMut.isPending ? rollbackMut.variables ?? null : null}
       />
 
       {/* 标签抽屉 */}

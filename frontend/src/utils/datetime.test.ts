@@ -24,3 +24,40 @@ describe('formatDateTime', () => {
     expect(formatDateTime('')).toBe('')
   })
 })
+
+describe('formatRelativeTime', () => {
+  // 基准时间用本地 ISO 串并显式注入 now，不依赖运行时时区
+  const now = new Date('2026-10-18T12:00:00')
+  const at = (s: string) => new Date(s).valueOf()
+
+  it('一分钟内为「刚刚」', () => {
+    expect(formatRelativeTime('2026-10-18T11:59:30', now)).toBe('刚刚')
+    expect(formatRelativeTime('2026-10-18T12:00:00', now)).toBe('刚刚')
+  })
+
+  it('分钟 / 小时 / 天按整数向下取整', () => {
+    expect(formatRelativeTime('2026-10-18T11:55:00', now)).toBe('5 分钟前')
+    expect(formatRelativeTime('2026-10-18T09:00:00', now)).toBe('3 小时前')
+    expect(formatRelativeTime('2026-10-16T12:00:00', now)).toBe('2 天前')
+  })
+
+  it('未来时间用「后」结尾', () => {
+    expect(formatRelativeTime('2026-10-18T12:05:00', new Date(at('2026-10-18T12:00:00')))).toBe('5 分钟后')
+    expect(formatRelativeTime('2026-10-18T12:00:10', now)).toBe('即将')
+  })
+
+  it('超过 30 天回落到日期，避免超大数字', () => {
+    expect(formatRelativeTime('2026-08-01T12:00:00', now)).toBe('2026-08-01')
+  })
+
+  it('空值与非法值渲染为空串', () => {
+    expect(formatRelativeTime(undefined, now)).toBe('')
+    expect(formatRelativeTime(null, now)).toBe('')
+    expect(formatRelativeTime('', now)).toBe('')
+    expect(formatRelativeTime('not-a-date', now)).toBe('')
+  })
+
+  it('不传 now 时以当前时间为基准（刚写入的版本为「刚刚」）', () => {
+    expect(formatRelativeTime(new Date().toISOString())).toBe('刚刚')
+  })
+})
