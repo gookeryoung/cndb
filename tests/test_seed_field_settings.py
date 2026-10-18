@@ -73,9 +73,16 @@ def test_load_field_settings_from_real_datasets():
     # 唯一示例字段存在且同时声明 required + unique
     topic_cfg = cfg["settings"]["科研项目"]["课题编号"]
     assert topic_cfg == {"required": True, "unique": True}
-    # 关联引入规则引用真实表名，且声明 match（行关联回填）
+    # 关联引入规则覆盖全部克隆表，引用真实表名，且声明 match（行关联回填）
+    assert {rule["table"] for rule in cfg["link_lookups"]} == {
+        "课题负责人",
+        "项目进展",
+        "科研经费",
+        "科研任务分解",
+        "科研待办事项",
+        "科研资源排期",
+    }
     for rule in cfg["link_lookups"]:
-        assert rule["table"] in {"课题负责人", "项目进展", "科研经费"}
         assert rule["source_table"] == "科研项目"
         assert rule.get("multiple") is False
         assert rule.get("match") == {"local": "课题编号", "source": "课题编号"}

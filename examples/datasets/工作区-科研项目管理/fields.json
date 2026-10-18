@@ -13,6 +13,17 @@
     },
     "科研经费": {
       "经费编号": {"required": true, "unique": true}
+    },
+    "科研任务分解": {
+      "任务ID": {"required": true, "unique": true},
+      "任务名称": {"required": true}
+    },
+    "科研待办事项": {
+      "编号": {"required": true, "unique": true},
+      "事项": {"required": true}
+    },
+    "科研资源排期": {
+      "排期编号": {"required": true, "unique": true}
     }
   },
   "link_lookups": [
@@ -38,6 +49,30 @@
       "link_name": "关联课题",
       "multiple": false,
       "fields": ["项目名称", "承担单位", "立项年份"],
+      "match": {"local": "课题编号", "source": "课题编号"}
+    },
+    {
+      "table": "科研任务分解",
+      "source_table": "科研项目",
+      "link_name": "关联课题",
+      "multiple": false,
+      "fields": ["项目名称", "项目类别", "项目状态"],
+      "match": {"local": "课题编号", "source": "课题编号"}
+    },
+    {
+      "table": "科研待办事项",
+      "source_table": "科研项目",
+      "link_name": "关联课题",
+      "multiple": false,
+      "fields": ["项目名称", "项目状态"],
+      "match": {"local": "课题编号", "source": "课题编号"}
+    },
+    {
+      "table": "科研资源排期",
+      "source_table": "科研项目",
+      "link_name": "关联课题",
+      "multiple": false,
+      "fields": ["项目名称", "承担单位", "项目类别"],
       "match": {"local": "课题编号", "source": "课题编号"}
     }
   ],

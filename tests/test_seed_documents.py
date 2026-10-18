@@ -444,8 +444,8 @@ class TestRealDatasetDocuments:
             counts[ws_name] = len(docs)
             assert len(docs) >= 5, f"{ws_name} 仅 {len(docs)} 篇典型文档"
         # 反面示例工作区（低质量数据）不提供 documents/；当前带文档的示例工作区为
-        # 某企业销售管理 / 科研项目管理 / 项目管理 三个，阈值随之收敛为 3。
-        assert len(counts) >= 3
+        # 某企业销售管理 / 科研项目管理 两个，阈值随之收敛为 2。
+        assert len(counts) >= 2
 
     def test_document_metadata_and_structure_valid(self, datasets_dir: Path):
         """节点元数据合法、标题同层唯一、正文非空且无残留元数据头."""
