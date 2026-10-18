@@ -52,7 +52,7 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
     expect(buttons).toHaveLength(4)
   })
 
-  it('WBS任务分解（grid+kanban+calendar+gantt+wbs+chart）→ 6 个按钮', () => {
+  it('科研任务分解（grid+kanban+calendar+gantt+wbs+chart）→ 6 个按钮', () => {
     const { buttons, visible } = deriveModeSwitch(
       view('grid', 'kanban', 'calendar', 'gantt', 'wbs', 'chart'), ALL_BUTTONS,
     )

@@ -162,5 +162,129 @@
         "limit": 1000
       }
     }
+  ],
+  "科研任务分解": [
+    {
+      "name": "任务进度与工期",
+      "description": "按负责人汇总任务条数、平均进度与计划工期，识别任务负载集中的骨干；箱线图比较不同负责人的进度离散程度，用于周例会讲评。",
+      "config": {
+        "formulas": [],
+        "chart": {
+          "type": "boxplot",
+          "x": "负责人",
+          "y": "进度百分比",
+          "series": null,
+          "title": "各负责人任务进度分布",
+          "aggregation": "sum"
+        },
+        "summary": {
+          "group_by": "负责人",
+          "metrics": [
+            {
+              "field": "任务ID",
+              "agg": "count",
+              "label": "任务条数"
+            },
+            {
+              "field": "进度百分比",
+              "agg": "avg",
+              "label": "平均进度(%)"
+            },
+            {
+              "field": "工期_天",
+              "agg": "sum",
+              "label": "计划工期合计(天)"
+            }
+          ],
+          "sort_by": "sum(工期_天)",
+          "sort_order": "desc",
+          "top_n": 10
+        },
+        "fields": ["任务ID", "任务名称", "课题编号", "负责人", "任务状态", "进度百分比", "工期_天"],
+        "limit": 1000
+      }
+    },
+    {
+      "name": "课题任务工期分布",
+      "description": "按课题汇总任务条数与计划工期，柱状图对比各课题的任务分解规模，用于检查立项分解是否均衡、是否存在单课题任务过重。",
+      "config": {
+        "formulas": [],
+        "chart": {
+          "type": "bar",
+          "x": "课题编号",
+          "y": "工期_天",
+          "series": null,
+          "title": "各课题任务工期合计",
+          "aggregation": "sum"
+        },
+        "summary": {
+          "group_by": "课题编号",
+          "metrics": [
+            {
+              "field": "任务ID",
+              "agg": "count",
+              "label": "任务条数"
+            },
+            {
+              "field": "工期_天",
+              "agg": "sum",
+              "label": "工期合计(天)"
+            },
+            {
+              "field": "进度百分比",
+              "agg": "avg",
+              "label": "平均进度(%)"
+            }
+          ],
+          "sort_by": "sum(工期_天)",
+          "sort_order": "desc",
+          "top_n": 10
+        },
+        "fields": ["任务ID", "任务名称", "课题编号", "进度百分比", "工期_天"],
+        "limit": 1000
+      }
+    }
+  ],
+  "科研资源排期": [
+    {
+      "name": "团队投入结构",
+      "description": "按团队汇总排期条数、投入人天与单次平均投入，柱状图对比各团队产能占用；用于月度排期评审与冲突协调。",
+      "config": {
+        "formulas": [],
+        "chart": {
+          "type": "bar",
+          "x": "团队",
+          "y": "投入人天",
+          "series": null,
+          "title": "各团队投入人天",
+          "aggregation": "sum"
+        },
+        "summary": {
+          "group_by": "团队",
+          "metrics": [
+            {
+              "field": "排期编号",
+              "agg": "count",
+              "label": "排期条数"
+            },
+            {
+              "field": "投入人天",
+              "agg": "sum",
+              "label": "投入人天合计"
+            },
+            {
+              "field": "投入人天",
+              "agg": "avg",
+              "label": "单次平均投入"
+            }
+          ],
+          "sort_by": "sum(投入人天)",
+          "sort_order": "desc",
+          "top_n": 10
+        },
+        "fields": ["排期编号", "团队", "任务名称", "排期日期", "投入人天", "状态"],
+        "limit": 1000
+      }
+    }
   ]
 }

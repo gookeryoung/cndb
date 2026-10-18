@@ -604,5 +604,369 @@
       ],
       "order": 7
     }
+  ],
+  "科研任务分解": [
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "任务ID",
+          "direction": "asc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "WBS 工作分解结构",
+      "view_type": "wbs",
+      "sortings": [
+        {
+          "field_name": "任务ID",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "parent_field": "父任务ID",
+        "title_field": "任务名称",
+        "progress_field": "进度百分比",
+        "status_field": "任务状态",
+        "assignee_field": "负责人",
+        "start_date_field": "开始日期",
+        "end_date_field": "结束日期",
+        "show_numbering": true,
+        "expand_all": false
+      },
+      "order": 1
+    },
+    {
+      "name": "WBS 进行中任务",
+      "view_type": "wbs",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "任务状态",
+          "op": "=",
+          "value": "进行中"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "任务ID",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "parent_field": "父任务ID",
+        "title_field": "任务名称",
+        "progress_field": "进度百分比",
+        "status_field": "任务状态",
+        "assignee_field": "负责人",
+        "show_numbering": true,
+        "expand_all": true
+      },
+      "order": 2
+    },
+    {
+      "name": "WBS 已交付任务",
+      "view_type": "wbs",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "任务状态",
+          "op": "=",
+          "value": "已完成"
+        }
+      ],
+      "view_options": {
+        "parent_field": "父任务ID",
+        "title_field": "任务名称",
+        "progress_field": "进度百分比",
+        "assignee_field": "负责人",
+        "show_numbering": true,
+        "expand_all": true
+      },
+      "order": 3
+    },
+    {
+      "name": "任务时间轴",
+      "view_type": "gantt",
+      "sortings": [
+        {
+          "field_name": "开始日期",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "start_date_field": "开始日期",
+        "end_date_field": "结束日期",
+        "title_field": "任务名称",
+        "group_field": "父任务ID",
+        "progress_field": "进度百分比",
+        "assignee_field": "负责人",
+        "time_scale": "month",
+        "show_today_line": true
+      },
+      "order": 4
+    },
+    {
+      "name": "按任务状态看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "任务状态",
+        "title_field": "任务名称",
+        "progress_field": "进度百分比",
+        "due_date_field": "结束日期",
+        "assignee_field": "负责人",
+        "card_sort_field": "进度百分比",
+        "card_sort_direction": "asc",
+        "pin_urgent": true
+      },
+      "order": 5
+    },
+    {
+      "name": "按优先级看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "优先级",
+        "title_field": "任务名称",
+        "progress_field": "进度百分比",
+        "due_date_field": "结束日期",
+        "assignee_field": "负责人",
+        "card_sort_field": "结束日期",
+        "card_sort_direction": "asc"
+      },
+      "order": 6
+    },
+    {
+      "name": "任务日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "开始日期",
+        "title_field": "任务名称",
+        "group_field": "任务状态"
+      },
+      "order": 7
+    },
+    {
+      "name": "课题任务矩阵",
+      "view_type": "matrix",
+      "sortings": [
+        {
+          "field_name": "开始日期",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "row_field": "课题编号",
+        "column_field": "开始日期",
+        "date_granularity": "month",
+        "title_field": "任务名称"
+      },
+      "order": 8
+    },
+    {
+      "name": "任务执行概览",
+      "view_type": "chart",
+      "view_options": {
+        "charts": [
+          {
+            "chart_type": "bar",
+            "dimension_field": "任务状态",
+            "measure_field": "任务ID",
+            "aggregation": "count",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "pie",
+            "dimension_field": "负责人",
+            "measure_field": "任务ID",
+            "aggregation": "count",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "histogram",
+            "measure_field": "工期_天",
+            "bin_policy": "auto",
+            "show_stats_panel": true
+          }
+        ]
+      },
+      "order": 9
+    }
+  ],
+  "科研待办事项": [
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "要求节点",
+          "direction": "asc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "按责任人看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "责任人",
+        "title_field": "事项",
+        "due_date_field": "要求节点",
+        "card_sort_field": "要求节点",
+        "card_sort_direction": "asc",
+        "ungrouped_label": "未分派"
+      },
+      "order": 1
+    },
+    {
+      "name": "按类别看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "类别",
+        "title_field": "事项",
+        "due_date_field": "要求节点",
+        "assignee_field": "责任人",
+        "card_sort_field": "要求节点",
+        "card_sort_direction": "asc"
+      },
+      "order": 2
+    },
+    {
+      "name": "事项日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "要求节点",
+        "title_field": "事项",
+        "group_field": "类别"
+      },
+      "order": 3
+    },
+    {
+      "name": "待分派事项",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "责任人",
+          "op": "=",
+          "value": ""
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "要求节点",
+          "direction": "asc"
+        }
+      ],
+      "order": 4
+    },
+    {
+      "name": "未完成事项",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "完成日期",
+          "op": "=",
+          "value": ""
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "要求节点",
+          "direction": "asc"
+        }
+      ],
+      "order": 5
+    },
+    {
+      "name": "类别占比",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "pie",
+        "dimension_field": "类别",
+        "measure_field": "编号",
+        "aggregation": "count",
+        "show_stats_panel": true
+      },
+      "order": 6
+    }
+  ],
+  "科研资源排期": [
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "排期日期",
+          "direction": "asc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "资源排期矩阵",
+      "view_type": "matrix",
+      "sortings": [
+        {
+          "field_name": "排期日期",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "row_field": "团队",
+        "column_field": "排期日期",
+        "date_granularity": "week",
+        "title_field": "任务名称"
+      },
+      "order": 1
+    },
+    {
+      "name": "团队月度投入矩阵",
+      "view_type": "matrix",
+      "view_options": {
+        "row_field": "团队",
+        "column_field": "排期日期",
+        "date_granularity": "month",
+        "title_field": "任务名称"
+      },
+      "order": 2
+    },
+    {
+      "name": "资源投入概览",
+      "view_type": "chart",
+      "view_options": {
+        "charts": [
+          {
+            "chart_type": "bar",
+            "dimension_field": "团队",
+            "measure_field": "投入人天",
+            "aggregation": "sum",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "line",
+            "dimension_field": "排期日期",
+            "date_granularity": "month",
+            "measure_field": "投入人天",
+            "aggregation": "sum",
+            "group_field": "团队",
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "boxplot",
+            "dimension_field": "团队",
+            "measure_field": "投入人天",
+            "show_stats_panel": true
+          }
+        ]
+      },
+      "order": 3
+    }
   ]
 }
