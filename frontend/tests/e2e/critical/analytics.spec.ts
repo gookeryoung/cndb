@@ -168,4 +168,27 @@ test.describe("数据分析模块", () => {
     expect(created, "另存为的副本应出现在模板列表").toBeTruthy()
     expect(created?.config.summary).toBeTruthy()
   })
+
+  test("智能推荐：选表后展示字段推荐，可应用推荐图表与分析列表", async ({ page }) => {
+    await gotoAnalytics(page)
+    await pickSelectOption(page, "analytics-table-select", "产品批次")
+
+    // 推荐接口基于真实表字段画像返回，面板应展示维度 / 指标与典型示例入口
+    const panel = page.getByTestId("analytics-recommend")
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId("analytics-recommend-group-dimension")).toBeVisible()
+    await expect(page.getByTestId("analytics-recommend-group-metric")).toBeVisible()
+    await expect(page.getByTestId("analytics-recommend-examples")).toBeEnabled()
+
+    // 一键应用推荐图表：图表配置被回填并提示
+    await page.getByTestId("analytics-recommend-chart").click()
+    await expect(page.getByText("已应用推荐图表")).toBeVisible()
+    await expect(page.getByTestId("analytics-chart-title")).not.toHaveValue("")
+
+    // 分析列表 Drawer 可打开并列出 seed 模板
+    await page.getByTestId("analytics-manager-btn").click()
+    await expect(page.getByTestId("analytics-manager")).toBeVisible()
+    await expect(page.getByText("批次合格率分布")).toBeVisible()
+    await expect(page.getByTestId("analytics-manager-new")).toBeVisible()
+  })
 })

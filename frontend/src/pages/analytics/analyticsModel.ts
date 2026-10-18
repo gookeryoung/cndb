@@ -8,6 +8,8 @@ import type {
   AnalyticsAgg,
   AnalyticsChart,
   AnalyticsFormula,
+  AnalyticsRecommendationExample,
+  AnalyticsRecommendationRole,
   AnalyticsSummary,
   AnalyticsSummaryMetric,
   AnalyticsTemplate,
@@ -57,6 +59,44 @@ export const EMPTY_SUMMARY: AnalyticsSummary = {
   sort_order: 'desc',
   top_n: null,
 }
+
+/** 智能推荐字段角色 → 中文标签（未知角色原样返回） */
+const RECOMMENDATION_ROLE_LABELS: Record<AnalyticsRecommendationRole, string> = {
+  metric: '指标',
+  dimension: '维度',
+  time: '时间',
+  identifier: '标识',
+  ignored: '忽略',
+}
+
+export function formatRecommendationRole(role: string): string {
+  return RECOMMENDATION_ROLE_LABELS[role as AnalyticsRecommendationRole] ?? role
+}
+
+/** 智能推荐字段角色 → antd Tag 颜色 */
+export function recommendationRoleColor(role: string): string {
+  switch (role) {
+    case 'metric':
+      return 'green'
+    case 'dimension':
+      return 'blue'
+    case 'time':
+      return 'purple'
+    case 'identifier':
+      return 'orange'
+    case 'ignored':
+      return 'default'
+    default:
+      return 'default'
+  }
+}
+
+/** 智能推荐字段分组顺序（仅这三类参与图表/汇总联动） */
+export const RECOMMENDATION_CHIP_ROLES: AnalyticsRecommendationRole[] = [
+  'dimension',
+  'time',
+  'metric',
+]
 
 /** 公式键 → 汇总指标键（与后端 compute.metric_key 同一口径） */
 export function metricKey(agg: string, field: string): string {
@@ -146,6 +186,43 @@ export function buildTemplateConfig(input: {
   }
 }
 
+/**
+ * 追加推荐公式：
+ * - 忽略空键名 / 空表达式与重复 key（与当前公式、推荐列表内部都去重）；
+ * - 当前只有一条空公式时用推荐内容替换（避免留下一条空行）；
+ * - 无任何可追加内容时原样返回入参（引用相等，便于调用方判断是否变化）。
+ */
+export function mergeFormulas(
+  current: AnalyticsFormula[],
+  recommended: AnalyticsFormula[],
+): AnalyticsFormula[] {
+  const replaceBlank = current.length === 1 && !current[0]?.expr.trim()
+  const base = replaceBlank ? [] : current
+  const seen = new Set(base.map(f => f.key.trim()).filter(Boolean))
+  const additions: AnalyticsFormula[] = []
+  for (const formula of recommended) {
+    const key = (formula?.key ?? '').trim()
+    const expr = (formula?.expr ?? '').trim()
+    if (!key || !expr || seen.has(key)) continue
+    seen.add(key)
+    additions.push({ key, label: (formula.label ?? '').trim(), expr })
+  }
+  if (additions.length === 0) return current
+  return [...base, ...additions]
+}
+
+/** 典型示例配置归一化：formulas / chart / summary 统一走 normalize*，避免脏数据进编辑态 */
+export function applyExampleConfig(example: Pick<
+  AnalyticsRecommendationExample,
+  'formulas' | 'chart' | 'summary'
+>): { formulas: AnalyticsFormula[]; chart: AnalyticsChart; summary: AnalyticsSummary } {
+  return {
+    formulas: normalizeFormulas(example.formulas),
+    chart: normalizeChart(example.chart),
+    summary: normalizeSummary(example.summary),
+  }
+}
+
 /** 图表配置 → ChartCard 的 ChartConfig（按图表类型分派字段语义） */
 export function toChartConfig(chart: AnalyticsChart): ChartConfig {
   const x = chart.x ?? undefined
@@ -179,6 +256,16 @@ export function templateOptions(
   templates: AnalyticsTemplate[],
 ): Array<{ value: number; label: string }> {
   return templates.map(t => ({ value: t.id, label: t.name }))
+}
+
+/** 模板数据源表展示名（未指定 / 表已删除时给出可读文案） */
+export function templateTableName(
+  tables: Array<{ id: number | string; name: string }>,
+  tableId: number | string | null | undefined,
+): string {
+  if (tableId == null) return '未指定数据表'
+  const table = tables.find(t => Number(t.id) === Number(tableId))
+  return table?.name || `表 #${tableId}`
 }
 
 /** 编辑态快照：用于「未保存修改」判定（字段顺序稳定） */

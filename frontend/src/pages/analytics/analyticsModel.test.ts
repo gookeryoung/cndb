@@ -4,13 +4,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AGG_OPTIONS,
   AGG_VALUES,
+  DEFAULT_CHART,
+  applyExampleConfig,
   chartUsesAggregation,
   collectFormulaErrors,
   buildTemplateConfig,
   downloadTextFile,
   formatNumber,
+  formatRecommendationRole,
   insertAtCursor,
   isDirty,
+  mergeFormulas,
   metricKey,
   metricLabel,
   newFormula,
@@ -18,10 +22,12 @@ import {
   normalizeChart,
   normalizeFormulas,
   normalizeSummary,
+  recommendationRoleColor,
   safeFileName,
   summarySortOptions,
   templateOptions,
   templateSnapshot,
+  templateTableName,
   toChartConfig,
   toCsv,
   triggerDownload,
@@ -151,6 +157,73 @@ describe('指标与选项', () => {
       { value: 1, label: '模板A' },
       { value: 2, label: '模板B' },
     ])
+  })
+})
+
+describe('智能推荐辅助', () => {
+  it('mergeFormulas：单条空公式替换、重复 key / 空表达式跳过、无变化返回原引用', () => {
+    const blank = [newFormula(0)]
+    expect(mergeFormulas(blank, [
+      { key: 'pass_rate', label: '合格率', expr: '[合格数] / [产量]' },
+    ])).toEqual([{ key: 'pass_rate', label: '合格率', expr: '[合格数] / [产量]' }])
+
+    const existing = [{ key: 'a', label: '', expr: '[x]' }]
+    expect(mergeFormulas(existing, [
+      { key: ' a ', label: '', expr: '1' },
+      { key: 'b', label: 'B', expr: '2' },
+      { key: 'c', label: '', expr: '   ' },
+      { key: '', label: '', expr: '3' },
+    ])).toEqual([...existing, { key: 'b', label: 'B', expr: '2' }])
+
+    // 无任何可追加内容 → 原引用（调用方可据此判断是否提示）
+    expect(mergeFormulas(existing, [{ key: 'a', expr: '1' }])).toBe(existing)
+    expect(mergeFormulas(blank, [])).toBe(blank)
+  })
+
+  it('applyExampleConfig：formulas / chart / summary 统一经 normalize* 归一化', () => {
+    const config = applyExampleConfig({
+      formulas: [{ key: 'p', label: '', expr: '[a] / [b]' }, null as never],
+      chart: { type: 'line', x: '产品', y: 'p', aggregation: 'median' as never },
+      summary: {
+        group_by: '产品',
+        metrics: [{ field: 'p', agg: 'avg' }, { field: '', agg: 'sum' }],
+        sort_by: 'nope',
+      },
+    })
+    expect(config.formulas).toEqual([{ key: 'p', label: '', expr: '[a] / [b]' }])
+    expect(config.chart).toMatchObject({ type: 'line', x: '产品', y: 'p', aggregation: 'sum' })
+    expect(config.summary.metrics).toEqual([{ field: 'p', agg: 'avg', label: '' }])
+    expect(config.summary.sort_by).toBeNull()
+
+    const fallback = applyExampleConfig({ formulas: [], chart: null, summary: null })
+    expect(fallback.formulas).toEqual([newFormula(0)])
+    expect(fallback.chart).toEqual(DEFAULT_CHART)
+    expect(fallback.summary).toMatchObject({ group_by: null, metrics: [], top_n: null })
+  })
+
+  it('templateTableName：命中 / 未命中 / 未指定数据表', () => {
+    const tables: Array<{ id: number | string; name: string }> = [
+      { id: 1, name: '产品批次' },
+      { id: 2, name: '其他表' },
+    ]
+    expect(templateTableName(tables, 1)).toBe('产品批次')
+    expect(templateTableName(tables, '2')).toBe('其他表')
+    expect(templateTableName(tables, 9)).toBe('表 #9')
+    expect(templateTableName(tables, null)).toBe('未指定数据表')
+  })
+
+  it('formatRecommendationRole / recommendationRoleColor：角色文案与配色', () => {
+    expect(formatRecommendationRole('metric')).toBe('指标')
+    expect(formatRecommendationRole('dimension')).toBe('维度')
+    expect(formatRecommendationRole('time')).toBe('时间')
+    expect(formatRecommendationRole('identifier')).toBe('标识')
+    expect(formatRecommendationRole('ignored')).toBe('忽略')
+    expect(formatRecommendationRole('unknown')).toBe('unknown')
+
+    expect(recommendationRoleColor('metric')).toBe('green')
+    expect(recommendationRoleColor('dimension')).toBe('blue')
+    expect(recommendationRoleColor('time')).toBe('purple')
+    expect(recommendationRoleColor('other')).toBe('default')
   })
 })
 

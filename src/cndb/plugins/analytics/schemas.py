@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -179,20 +179,98 @@ class ComputeResponse(BaseModel):
     summary: SummaryResult | None = None
 
 
+# ── 智能推荐 ──────────────────────────────────────────
+
+# 字段在分析中的角色白名单（前端按此分组展示）
+FieldRole = Literal["metric", "dimension", "time", "identifier", "ignored"]
+
+
+class FieldRecommendation(BaseModel):
+    """单个字段的画像与角色推荐."""
+
+    name: str
+    field_type: str
+    role: FieldRole
+    reason: str = ""
+    cardinality: int | None = Field(default=None, description="去重非空值数量（抽样）")
+    completeness: float | None = Field(default=None, description="非空值占比（0~1，抽样）")
+    sample_values: list[str] = Field(default_factory=list, description="示例值（最多 3 个）")
+
+
+class FormulaRecommendation(FormulaSpec):
+    """推荐公式：在公式定义上补充推荐理由."""
+
+    reason: str = ""
+
+
+class ChartRecommendation(BaseModel):
+    """推荐图表 + 推荐理由."""
+
+    chart: ChartSpec
+    reason: str = ""
+
+
+class SummaryRecommendation(BaseModel):
+    """推荐分组汇总 + 推荐理由."""
+
+    summary: SummarySpec
+    reason: str = ""
+
+
+class RecommendExample(BaseModel):
+    """典型分析示例：可直接落成模板配置."""
+
+    id: str = Field(min_length=1, max_length=64, description="示例标识（category_compare 等）")
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=500)
+    formulas: list[FormulaSpec] = Field(default_factory=list)
+    chart: ChartSpec | None = None
+    summary: SummarySpec | None = None
+    reason: str = ""
+
+
+class RecommendationsResponse(BaseModel):
+    """字段画像与智能推荐响应."""
+
+    table_id: int
+    row_count: int = 0
+    sampled_rows: int = 0
+    truncated: bool = False
+    fields: list[FieldRecommendation] = Field(default_factory=list)
+    formulas: list[FormulaRecommendation] = Field(default_factory=list)
+    chart: ChartRecommendation | None = None
+    summary: SummaryRecommendation | None = None
+    examples: list[RecommendExample] = Field(default_factory=list)
+
+
+class TemplateDuplicateRequest(BaseModel):
+    """复制分析模板请求：name 为空 = 自动命名「原名 副本」."""
+
+    name: str | None = Field(default=None, max_length=200)
+
+
 __all__ = [
     "AGG_KINDS",
+    "ChartRecommendation",
     "ChartSpec",
     "ColumnStat",
     "ComputeRequest",
     "ComputeResponse",
+    "FieldRecommendation",
+    "FieldRole",
     "FormulaCheck",
+    "FormulaRecommendation",
     "FormulaSpec",
+    "RecommendExample",
+    "RecommendationsResponse",
     "SummaryColumn",
     "SummaryMetric",
+    "SummaryRecommendation",
     "SummaryResult",
     "SummarySpec",
     "TemplateConfig",
     "TemplateCreate",
+    "TemplateDuplicateRequest",
     "TemplateResponse",
     "TemplateUpdate",
     "ValidateRequest",
