@@ -10,6 +10,8 @@ import type { ThemeConfig } from 'antd'
 
 import { THEME_MODES } from './meta'
 import type { ThemeMode } from './meta'
+import { RADIUS, radiusFamily } from './tokens'
+import { baseTokens, compactComponents } from './presets/common'
 import {
   modernTheme,
   githubLightTheme,
@@ -92,17 +94,49 @@ const SEGMENTED_ON_PRIMARY: Record<ThemeMode, string> = {
   oled: '#0a0a0a',
 }
 
+type ThemeComponents = NonNullable<ThemeConfig['components']>
+
+/** 逐组件合并 token：`overrides` 中显式声明的键覆盖基础值，未声明的继承基础值。
+ *  必须逐组件深合并——整体浅合并会让「主题里只写了 Table 配色」把 Table 的尺寸 token 全丢掉。 */
+function mergeComponents(base: ThemeComponents, overrides?: ThemeComponents): ThemeComponents {
+  const out: Record<string, Record<string, unknown>> = {}
+  for (const [name, tokens] of Object.entries(base)) {
+    out[name] = { ...(tokens as unknown as Record<string, unknown>) }
+  }
+  for (const [name, tokens] of Object.entries(overrides ?? {})) {
+    out[name] = { ...(out[name] ?? {}), ...(tokens as unknown as Record<string, unknown>) }
+  }
+  return out as ThemeComponents
+}
+
 export function getThemeConfig(mode: ThemeMode): ThemeConfig {
   const config = THEMES[mode]
   return {
     ...config,
-    components: {
-      ...config.components,
-      // Segmented 激活滑块填充主题色 + 反色文字，强化激活项与未激活项的对比
-      Segmented: {
-        itemSelectedBg: config.token?.colorPrimary ?? '#1677ff',
-        itemSelectedColor: SEGMENTED_ON_PRIMARY[mode],
+    // 顺序：全局标尺 → 主题配色，主题显式声明的键优先
+    token: { ...baseTokens, ...config.token },
+    components: mergeComponents(
+      {
+        ...compactComponents,
+        // Segmented 激活滑块填充主题色 + 反色文字，强化激活项与未激活项的对比
+        Segmented: {
+          itemSelectedBg: config.token?.colorPrimary ?? '#1677ff',
+          itemSelectedColor: SEGMENTED_ON_PRIMARY[mode],
+        },
       },
-    },
+      config.components,
+    ),
+  }
+}
+
+/** 主题圆角以 CSS 变量下发，供 index.css 里手写的卡片/浮层复用。
+ *  否则 10 套主题的 antd 组件圆角在变、CSS 里的卡片永远 8/10px 写死，同一页面出现两种圆角语言。 */
+export function themeCssVars(mode: ThemeMode): Record<string, string> {
+  const base = THEMES[mode].token?.borderRadius ?? RADIUS.base
+  const { sm, lg } = radiusFamily(base)
+  return {
+    '--cn-radius-base': `${base}px`,
+    '--cn-radius-sm': `${sm}px`,
+    '--cn-radius-lg': `${lg}px`,
   }
 }

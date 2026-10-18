@@ -57,7 +57,7 @@ export const githubDarkTheme: ThemeConfig = {
       headerBg: '#0d1117',
       siderBg: '#0d1117',
       bodyBg: '#010409',
-      headerHeight: 52,
+      headerHeight: 44,
     },
   },
 }
@@ -115,7 +115,7 @@ export const midnightTheme: ThemeConfig = {
       headerBg: '#15121f',
       siderBg: '#15121f',
       bodyBg: '#100d1a',
-      headerHeight: 52,
+      headerHeight: 44,
     },
   },
 }
@@ -173,7 +173,7 @@ export const oledTheme: ThemeConfig = {
       headerBg: '#000000',
       siderBg: '#000000',
       bodyBg: '#000000',
-      headerHeight: 52,
+      headerHeight: 44,
     },
   },
 }

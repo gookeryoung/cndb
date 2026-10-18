@@ -182,6 +182,55 @@ describe('DocumentTree 组件', () => {
         })
     })
 
+    it('排序菜单：切换「名称 A → Z」后同级重排，并写入本地偏好', async () => {
+        // 三个根级文档，后端按 sort_order 返回（zeta → Alpha → mid）
+        const roots: DocumentItem[] = ['zeta', 'Alpha', 'mid'].map((title, i) => ({
+            ...mockDocuments[1],
+            id: 20 + i,
+            parent_id: null,
+            title,
+            sort_order: i,
+        }))
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/tree', () =>
+                HttpResponse.json({ items: roots })),
+        )
+        renderTree()
+        await screen.findByTestId('doc-tree-doc-20')
+
+        const order = () => screen.getAllByTestId(/^doc-tree-doc-\d+$/).map(el => el.textContent)
+        // 默认「手动排序」：保持后端顺序
+        expect(order()).toEqual(['zeta', 'Alpha', 'mid'])
+
+        fireEvent.click(screen.getByTestId('doc-tree-sort'))
+        fireEvent.click(await screen.findByText('名称 A → Z'))
+
+        await waitFor(() => expect(order()).toEqual(['Alpha', 'mid', 'zeta']))
+        expect(localStorage.getItem('cn-doc-tree-sort')).toBe('name-asc')
+    })
+
+    it('排序偏好从本地读取：进入页面即按上次排序渲染', async () => {
+        localStorage.setItem('cn-doc-tree-sort', 'name-desc')
+        const roots: DocumentItem[] = ['Alpha', 'zeta'].map((title, i) => ({
+            ...mockDocuments[1],
+            id: 30 + i,
+            parent_id: null,
+            title,
+            sort_order: i,
+        }))
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/tree', () =>
+                HttpResponse.json({ items: roots })),
+        )
+        renderTree()
+        await screen.findByTestId('doc-tree-doc-30')
+
+        await waitFor(() => {
+            expect(screen.getAllByTestId(/^doc-tree-doc-\d+$/).map(el => el.textContent))
+                .toEqual(['zeta', 'Alpha'])
+        })
+    })
+
     it('新建文档：工具栏入口 → 输入标题 → 创建成功并跳转编辑页', async () => {
         renderTree()
         await screen.findByTestId('doc-tree-folder-1')
@@ -331,6 +380,36 @@ describe('DocumentTree 拖拽整理', () => {
     /** 取树节点标题对应的可拖拽 selector 元素 */
     const wrapperOf = (testid: string) =>
         screen.getByTestId(testid).closest('.ant-tree-node-content-wrapper') as HTMLElement
+
+    it('按名称排序时拖拽仍可改父级：只提交 parent_id（同级换位被忽略）', async () => {
+        localStorage.setItem('cn-doc-tree-sort', 'name-asc')
+        const patches: Array<{ id: string; body: unknown }> = []
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/tree', () =>
+                HttpResponse.json({ items: dragDocs })),
+            http.patch('/api/v1/workspaces/:wid/documents/:docId', async ({ params, request }) => {
+                patches.push({ id: String(params.docId), body: await request.json() })
+                return HttpResponse.json(dragDocs[3])
+            }),
+        )
+        renderTree()
+
+        fireEvent.click(await screen.findByTestId('doc-tree-folder-1'))
+        await waitFor(() => {
+            expect(screen.getByTestId('doc-tree-folder-3')).toBeVisible()
+        })
+
+        fireEvent.dragStart(wrapperOf('doc-tree-doc-4'))
+        fireEvent.dragEnter(wrapperOf('doc-tree-folder-3'))
+        fireEvent.dragOver(wrapperOf('doc-tree-folder-3'))
+        fireEvent.drop(wrapperOf('doc-tree-folder-3'))
+        fireEvent.dragEnd(wrapperOf('doc-tree-doc-4'))
+
+        // 排序档下 sort_order 无意义 → 只保留 parent_id 变更
+        await waitFor(() => {
+            expect(patches).toEqual([{ id: '4', body: { parent_id: 3 } }])
+        })
+    })
 
     it('拖 doc2 到子文件夹 B 之后：提交移动与排序两次 PATCH', async () => {
         const patches: Array<{ id: string; body: unknown }> = []
@@ -495,5 +574,65 @@ describe('可见性提示', () => {
         await waitFor(() => expect(screen.getByTestId('doc-tree-doc-2')).toBeVisible())
 
         expect(screen.queryByTestId('doc-visibility-2')).toBeNull()
+    })
+})
+
+describe('状态图标', () => {
+    /** 取状态图标的 antd 图标名（anticon-xxx），用于断言不同状态图标不同 */
+    const iconName = (id: number) => {
+        const icon = screen.getByTestId(`doc-status-${id}`)
+        const cls = Array.from(icon.classList).find(c => c.startsWith('anticon-'))
+        return cls ?? ''
+    }
+
+    it('草稿与已发布使用不同图标，颜色分别沿用灰 / 绿', async () => {
+        // 根级追加一篇已发布文档（id 3 是文件夹，无状态图标）
+        const publishedDoc: DocumentItem = {
+            ...mockDocuments[1],
+            id: 4,
+            parent_id: null,
+            title: '已发布文档',
+            status: 'published',
+            sort_order: 1,
+        }
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tree', () =>
+                HttpResponse.json({
+                    items: mockDocuments.map(d => (d.id === 2 ? { ...d, status: 'draft' as const } : d)).concat(publishedDoc),
+                }),
+            ),
+        )
+        renderTree()
+        await screen.findByTestId('doc-tree-folder-1')
+        fireEvent.click(screen.getByTestId('doc-tree-folder-1'))
+        await waitFor(() => expect(screen.getByTestId('doc-tree-doc-2')).toBeVisible())
+
+        // 图标不同（草稿是笔、已发布是对勾）
+        expect(iconName(2)).not.toBe(iconName(4))
+        expect(iconName(2)).toContain('edit')
+        expect(iconName(4)).toContain('check-circle')
+
+        // 无障碍标签带状态文案
+        expect(screen.getByTestId('doc-status-2')).toHaveAttribute('aria-label', '文档状态：草稿')
+        expect(screen.getByTestId('doc-status-4')).toHaveAttribute('aria-label', '文档状态：已发布')
+    })
+
+    it('归档状态使用独立图标（橙色）', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/tree', () =>
+                HttpResponse.json({
+                    items: mockDocuments.map(d =>
+                        d.id === 2 ? { ...d, status: 'archived' as const } : d,
+                    ),
+                }),
+            ),
+        )
+        renderTree()
+        await screen.findByTestId('doc-tree-folder-1')
+        fireEvent.click(screen.getByTestId('doc-tree-folder-1'))
+        await waitFor(() => expect(screen.getByTestId('doc-tree-doc-2')).toBeVisible())
+
+        expect(iconName(2)).toContain('inbox')
+        expect(screen.getByTestId('doc-status-2')).toHaveAttribute('aria-label', '文档状态：归档')
     })
 })

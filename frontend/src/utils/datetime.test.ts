@@ -1,7 +1,7 @@
 import dayjs from 'dayjs'
 import { describe, expect, it } from 'vitest'
 
-import { formatDateTime } from './datetime'
+import { formatDateTime, formatRelativeTime } from './datetime'
 
 describe('formatDateTime', () => {
   it('按 YYYY-MM-DD HH:mm 渲染（截断秒）', () => {

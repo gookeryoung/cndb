@@ -19,7 +19,7 @@ export const modernTheme: ThemeConfig = {
       headerBg: '#ffffff',
       siderBg: '#fafafa',
       bodyBg: '#f5f7fa',
-      headerHeight: 52,
+      headerHeight: 44,
     },
   },
 }
@@ -59,7 +59,7 @@ export const githubLightTheme: ThemeConfig = {
       headerBg: '#ffffff',
       siderBg: '#f6f8fa',
       bodyBg: '#ffffff',
-      headerHeight: 52,
+      headerHeight: 44,
     },
   },
 }
@@ -102,7 +102,7 @@ export const minimalTheme: ThemeConfig = {
       headerBg: '#ffffff',
       siderBg: '#fafafa',
       bodyBg: '#fafafa',
-      headerHeight: 52,
+      headerHeight: 44,
     },
   },
 }
@@ -145,7 +145,7 @@ export const oceanTheme: ThemeConfig = {
       headerBg: '#ffffff',
       siderBg: '#eef7f9',
       bodyBg: '#f0f8fa',
-      headerHeight: 52,
+      headerHeight: 44,
     },
   },
 }
@@ -188,7 +188,7 @@ export const forestTheme: ThemeConfig = {
       headerBg: '#ffffff',
       siderBg: '#eef6ef',
       bodyBg: '#f2f7f3',
-      headerHeight: 52,
+      headerHeight: 44,
     },
   },
 }
@@ -237,7 +237,7 @@ export const sepiaTheme: ThemeConfig = {
       headerBg: '#fbf6ea',
       siderBg: '#f3ecd9',
       bodyBg: '#efe7d2',
-      headerHeight: 52,
+      headerHeight: 44,
     },
   },
 }
@@ -280,7 +280,7 @@ export const sakuraTheme: ThemeConfig = {
       headerBg: '#ffffff',
       siderBg: '#fceff6',
       bodyBg: '#fdf5f9',
-      headerHeight: 52,
+      headerHeight: 44,
     },
   },
 }
