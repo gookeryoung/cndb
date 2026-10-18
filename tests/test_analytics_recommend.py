@@ -376,6 +376,136 @@ class TestRoleRules:
         assert recommend_service.classify_role(name, field_type, cardinality, sampled_rows) == expected
 
 
+def _profile(name: str, role: str, field_type: str = "text") -> dict[str, object]:
+    """构造推荐纯函数所需的字段画像（只含函数读取的键）."""
+    return {"name": name, "role": role, "field_type": field_type}
+
+
+class TestPureFunctionBranches:
+    """图表 / 汇总 / 典型示例 / 字段画像的兜底分支（纯函数，不依赖 DB）."""
+
+    def test_chart_time_plus_metric_prefers_line(self) -> None:
+        result = recommend_service.recommend_chart(
+            [_profile("生产日期", "time", "date"), _profile("销售额", "metric", "number")]
+        )
+        assert result is not None
+        assert result["chart"]["type"] == "line"
+        assert result["chart"]["x"] == "生产日期"
+        assert result["chart"]["y"] == "销售额"
+        assert "趋势" in result["reason"]
+
+    def test_chart_two_metrics_prefers_scatter(self) -> None:
+        result = recommend_service.recommend_chart(
+            [_profile("销售额", "metric", "number"), _profile("数量", "metric", "number")]
+        )
+        assert result is not None
+        assert result["chart"]["type"] == "scatter"
+        assert result["chart"]["x"] == "销售额"
+        assert result["chart"]["y"] == "数量"
+
+    def test_chart_single_metric_prefers_histogram(self) -> None:
+        result = recommend_service.recommend_chart([_profile("销售额", "metric", "number")])
+        assert result is not None
+        assert result["chart"]["type"] == "histogram"
+
+    def test_chart_dimension_only_counts(self) -> None:
+        result = recommend_service.recommend_chart([_profile("产品分类", "dimension", "select")])
+        assert result is not None
+        assert result["chart"]["type"] == "bar"
+        assert result["chart"]["aggregation"] == "count"
+
+    def test_chart_identifier_only_falls_back_to_count(self) -> None:
+        result = recommend_service.recommend_chart([_profile("订单编号", "identifier")])
+        assert result is not None
+        assert result["chart"]["y"] == "订单编号"
+        assert result["chart"]["aggregation"] == "count"
+
+    def test_chart_percentage_metric_uses_avg(self) -> None:
+        result = recommend_service.recommend_chart(
+            [_profile("产品分类", "dimension", "select"), _profile("利润率", "metric", "percentage")]
+        )
+        assert result is not None
+        assert result["chart"]["aggregation"] == "avg"
+
+    def test_chart_empty_profiles_returns_none(self) -> None:
+        assert recommend_service.recommend_chart([]) is None
+
+    def test_summary_time_field_used_as_group(self) -> None:
+        result = recommend_service.recommend_summary(
+            [_profile("生产日期", "time", "date"), _profile("销售额", "metric", "number")]
+        )
+        assert result is not None
+        assert result["summary"]["group_by"] == "生产日期"
+
+    def test_summary_metric_only_uses_global_aggregate(self) -> None:
+        result = recommend_service.recommend_summary([_profile("利润率", "metric", "percentage")])
+        assert result is not None
+        assert result["summary"]["group_by"] is None
+        assert result["summary"]["top_n"] is None
+        assert result["summary"]["sort_by"] is None
+        assert result["summary"]["metrics"] == [{"field": "利润率", "agg": "avg", "label": ""}]
+
+    def test_summary_without_group_or_metric_returns_none(self) -> None:
+        assert recommend_service.recommend_summary([_profile("订单编号", "identifier")]) is None
+
+    def test_examples_overview_without_group_or_metric(self) -> None:
+        examples = recommend_service.build_examples([_profile("订单编号", "identifier")])
+        assert [example["id"] for example in examples] == ["overview"]
+        assert examples[0]["summary"]["group_by"] is None
+        assert examples[0]["chart"] is None
+
+    def test_examples_empty_profiles(self) -> None:
+        examples = recommend_service.build_examples([])
+        assert len(examples) == 1
+        assert examples[0]["formulas"] == []
+        assert examples[0]["summary"] is None
+
+    def test_formulas_single_metric_skips_ratio(self) -> None:
+        formulas = recommend_service.recommend_formulas([_profile("销售额", "metric", "number")])
+        assert [item["expr"] for item in formulas] == ["sum([销售额])", "round([销售额]/sum([销售额])*100,2)"]
+
+    def test_formulas_ratio_falls_back_to_first_two_metrics(self) -> None:
+        formulas = recommend_service.recommend_formulas(
+            [_profile("甲指标", "metric", "number"), _profile("乙指标", "metric", "number")]
+        )
+        assert "round([甲指标]/[乙指标],2)" in [item["expr"] for item in formulas]
+
+    def test_formulas_deduplicate_identical_expressions(self) -> None:
+        profiles = [_profile("销售额", "metric", "number"), _profile("销售额", "metric", "number")]
+        exprs = [item["expr"] for item in recommend_service.recommend_formulas(profiles)]
+        assert len(exprs) == len(set(exprs))
+
+    def test_profile_fields_handles_containers_and_duplicates(self) -> None:
+        fields = [
+            DataField(name="标签", field_type="json"),
+            DataField(name="销售额", field_type="number"),
+            DataField(name="是否启用", field_type="boolean"),
+        ]
+        rows: list[dict[str, object]] = [
+            {"标签": [], "销售额": None, "是否启用": True},
+            {"标签": {"a": 1}, "销售额": 10, "是否启用": False},
+            {"标签": "x", "销售额": 10, "是否启用": True},
+            {"标签": "y", "销售额": 20, "是否启用": False},
+        ]
+        profiles = {item["name"]: item for item in recommend_service.profile_fields(fields, rows)}
+
+        assert profiles["标签"]["role"] == "ignored"
+        assert "不参与常规统计分析" in profiles["标签"]["reason"]
+        assert profiles["标签"]["sample_values"] == ['{"a": 1}', "x", "y"]
+        assert profiles["销售额"]["sample_values"] == ["10", "20"]
+        assert profiles["销售额"]["completeness"] == 0.75
+        assert profiles["是否启用"]["sample_values"] == ["是", "否"]
+
+    def test_profile_fields_high_cardinality_identifier_reason(self) -> None:
+        rows = [{"备注": f"值{index}"} for index in range(51)]
+        profiles = recommend_service.profile_fields([DataField(name="备注", field_type="text")], rows)
+        assert profiles[0]["role"] == "identifier"
+        assert "唯一值较多" in profiles[0]["reason"]
+
+    def test_unknown_field_type_falls_back_to_dimension(self) -> None:
+        assert recommend_service.classify_role("自定义", "custom_type", 3, 4) == "dimension"
+
+
 # ── 模板复制 ──────────────────────────────────────────
 
 

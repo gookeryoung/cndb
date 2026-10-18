@@ -353,6 +353,36 @@ class TestWikilinkFidelity:
         assert "[[正确目标]]" in body
         assert "旧标题" not in body
 
+    def test_markdown_links_embeds_and_self_anchor(self, client, ws, auth):
+        data = _build_zip(
+            {
+                "目标.md": "# 目标\n",
+                "来源.md": (
+                    "---\ntitle: 来源\n---\n\n"
+                    "见 [说明](笔记/目标.md)、[外链](https://example.com)、"
+                    "[非 Markdown](附件.bin)、[缺失](缺.md)。\n\n"
+                    "![[目标]]\n\n"
+                    "[[#本文锚点]]\n\n"
+                    "[[附件.png]]\n\n"
+                    "[[不存在目录/没有]]\n"
+                ),
+                "附件.png": PNG_BYTES,
+            }
+        )
+        assert _post_zip(client, IMPORT.format(ws=ws.id), data, auth).status_code == 200
+        titles = {item["title"]: item for item in _tree(client, ws.id, auth)}
+        body = _content(client, ws.id, titles["来源"]["id"], auth)
+
+        # Markdown 指向库内笔记 → 归一化为双链；外链 / 非 Markdown / 缺失目标原样保留
+        assert "见 [[目标]]" in body
+        assert "[外链](https://example.com)" in body
+        assert "[非 Markdown](附件.bin)" in body
+        assert "[缺失](缺.md)" in body
+        # 嵌入笔记退化为双链；本文锚点退化为纯文本；附件引用转站内图片；未命中路径只剥前缀
+        assert "本文锚点" in body and "[[#本文锚点]]" not in body
+        assert re.search(r"!\[附件\.png\]\(file:[^)]+\)", body)
+        assert "[[没有]]" in body
+
 
 CANVAS_JSON = """{
   "nodes": [
