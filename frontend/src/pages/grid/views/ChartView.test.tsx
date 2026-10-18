@@ -407,6 +407,19 @@ describe('ChartView 多图（view_options.charts）', () => {
     expect(screen.getAllByTestId('chart-stats-scope')).toHaveLength(2)
   })
 
+  it('多图网格行高按内容计算（底部描述统计卡不得压到下一行卡片上）', () => {
+    renderChart({ view: MULTI_VIEW, total: 5 })
+
+    // 卡片结构：grid 容器 > 卡片 > 卡片头；容器必须是卡片头的祖父
+    const grid = screen.getByTestId('chart-card-title-0').parentElement?.parentElement as HTMLElement
+    expect(grid.style.display).toBe('grid')
+    // auto 行在「高度受限的 grid 容器」里会被图表 flex 项（flex:1 1 0%）的低估 min-content 拖成
+    // 卡片 minHeight（420px），320px 图表 + 描述统计卡就溢出卡边、与下一行重叠 → 必须按内容算行高
+    expect(grid.style.gridAutoRows).toBe('min-content')
+    // 不做拉伸：卡片高度始终等于自身内容高度
+    expect(grid.style.alignItems).toBe('start')
+  })
+
   it('多图某卡必填缺失 → 对应索引空态，另一卡正常渲染', () => {
     renderChart({
       view: makeView({

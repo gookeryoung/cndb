@@ -576,11 +576,20 @@ export default function ChartView({ rows, fields, view, total, onRowClick }: Cha
   }
 
   // 多图（charts[]）：dashboard 式自适应网格同屏展示，每卡独立实例/统计面板/点击语义
+  //
+  // 网格布局三条约束（缺一行高度就会算出 420px 的固定值，底部统计卡压到下一行卡片上）：
+  // - `minmax(min(100%, 420px), 1fr)`：容器窄于 420px 时不横向溢出（纯 420px 下限会撑破容器）
+  // - `gridAutoRows: 'min-content'`：行高按卡片内容算。默认 auto 行在“高度受限的 grid 容器”里
+  //   会被 flex 子项（图表 `flex:1 1 0%`）的 min-content 低估，实测行高恒等于卡片的 minHeight，
+  //   卡片内 320px 图表 + 描述统计卡就溢出卡边、与下一行重叠
+  // - `alignItems: 'start'`：不让卡片被拉伸到行高，卡片高度始终 = 自身内容高度
   return (
     <div
       style={{
         flex: 1, minHeight: 0, overflow: 'auto', display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', gap: 12, alignContent: 'start',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(min(420px, 100%), 1fr))',
+        gridAutoRows: 'min-content', alignItems: 'start',
+        gap: 12, alignContent: 'start',
       }}
     >
       {list.map((cfg, i) => (
