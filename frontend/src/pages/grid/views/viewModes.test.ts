@@ -70,7 +70,7 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
     expect(buttons.some((b) => b.mode === 'matrix')).toBe(false)
   })
 
-  it('气温天气（grid+kanban+calendar+matrix+chart）→ 含 matrix 按钮（seed 2026-10 补充）', () => {
+  it('科研经费（grid+kanban+calendar+matrix+chart）→ 含 matrix 按钮（seed 2026-10 补充）', () => {
     const { buttons, visible } = deriveModeSwitch(
       view('grid', 'kanban', 'calendar', 'matrix', 'chart'), ALL_BUTTONS,
     )
