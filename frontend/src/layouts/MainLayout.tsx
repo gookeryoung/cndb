@@ -247,6 +247,13 @@ export default function MainLayout() {
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: onLogout },
   ]
 
+  /**
+   * 管理台上下文（/admin）：该路径没有工作区语义，侧边栏的数据表导航在这里
+   * 只剩「请先选择工作区」的空占位。此时不渲染 Sider，改由管理台页内的分区
+   * 导航栏承担导航，内容区拿到整幅宽度（页头/分区栏/内容列三者的左边界因此对齐）。
+   */
+  const inAdminConsole = location.startsWith('/admin')
+
   if (!wid) {
     if (wsLoading) {
       return <div className="cn-state">加载中…</div>
@@ -391,8 +398,9 @@ export default function MainLayout() {
       </Header>
 
       <Layout style={{ flex: 1, minHeight: 0 }}>
-        {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变 */}
-        {!isMobile && (
+        {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变。
+            管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担 */}
+        {!isMobile && !inAdminConsole && (
           <Sider
             collapsible collapsed={collapsed} onCollapse={setCollapsed}
             width={240} collapsedWidth={60}

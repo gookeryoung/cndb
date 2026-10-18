@@ -2959,6 +2959,373 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   margin-right: auto;
 }
 
+/* ─────────────── 系统管理台（AdminPanel）布局与视觉 ───────────────
+ * 布局：桌面端「分区导航栏 + 内容列」两栏（200px + 自适应），窄屏折叠成横向胶囊行。
+ * 口径：/admin 不渲染工作区 Sider（见 MainLayout），导航栏由管理台自带，
+ * 选中态沿用 `.cn-table-nav` 的品牌色指示条语言，页头与内容列共用同一条左边界。
+ * 颜色 / 间距 / 字号 / 圆角全部取自 var(--cn-*) 标尺。 */
+
+.cn-admin {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cn-space-lg);
+  padding: var(--cn-space-xl);
+}
+
+/* 分区导航栏：与数据表侧栏同宽，滚动内容区里吸顶 */
+.cn-admin-rail {
+  position: sticky;
+  top: var(--cn-space-xl);
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-md);
+  padding: var(--cn-space-md);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container);
+  box-shadow:
+    0 1px 2px rgb(var(--cn-shadow-color) / 0.04),
+    0 4px 16px rgb(var(--cn-shadow-color) / 0.03);
+}
+
+.cn-admin-rail-title {
+  padding: var(--cn-space-xs) var(--cn-space-md);
+  font-size: var(--cn-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--cn-text-muted);
+}
+
+.cn-admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+}
+
+.cn-admin-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  width: 100%;
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border: none;
+  border-radius: var(--cn-radius-base);
+  background: transparent;
+  color: var(--cn-text-secondary);
+  font-family: inherit;
+  font-size: var(--cn-text-sm);
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.cn-admin-nav-item:hover {
+  color: var(--cn-text-primary);
+  background: var(--cn-bg-subtle);
+}
+
+.cn-admin-nav-icon .anticon {
+  font-size: var(--cn-text-md);
+}
+
+.cn-admin-nav-item-active,
+.cn-admin-nav-item-active:hover {
+  color: color-mix(in srgb, var(--cn-brand-color) 82%, var(--cn-text-primary));
+  background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
+  font-weight: 600;
+}
+
+/* 选中项左侧品牌色指示条：与 .cn-table-nav 侧栏选中态同一语言 */
+.cn-admin-nav-item-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 0 var(--cn-radius-sm) var(--cn-radius-sm) 0;
+  background: var(--cn-brand-color);
+}
+
+.cn-admin-rail-foot {
+  margin-top: var(--cn-space-xs);
+  padding: var(--cn-space-md) var(--cn-space-md) 0;
+  border-top: 1px solid var(--cn-border);
+  font-size: var(--cn-text-xs);
+  line-height: 1.6;
+  color: var(--cn-text-muted);
+}
+
+/* 内容列：页头 → 分区内容，纵向 12px 节奏 */
+.cn-admin-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-lg);
+}
+
+.cn-admin-header {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--cn-space-md);
+}
+
+.cn-admin-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--cn-radius-lg);
+  background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
+  color: var(--cn-brand-color);
+  font-size: var(--cn-text-md);
+}
+
+.cn-admin-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+}
+
+.cn-admin-eyebrow {
+  font-size: var(--cn-text-xs);
+  line-height: 1.4;
+  color: var(--cn-text-muted);
+}
+
+.cn-admin-title {
+  margin: 0;
+  font-size: var(--cn-text-xl);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--cn-text-primary);
+}
+
+.cn-admin-desc {
+  margin: 0;
+  font-size: var(--cn-text-xs);
+  line-height: 1.5;
+  color: var(--cn-text-secondary);
+}
+
+.cn-admin-header-extra {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  flex-shrink: 0;
+}
+
+/* 窄屏分区导航：横向可滑胶囊行（替代 200px 侧栏） */
+.cn-admin-pills {
+  display: flex;
+  gap: var(--cn-space-xs);
+  overflow-x: auto;
+  padding-bottom: var(--cn-space-xs);
+  border-bottom: 1px solid var(--cn-border);
+}
+
+.cn-admin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  flex-shrink: 0;
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-pill);
+  background: var(--cn-bg-container);
+  color: var(--cn-text-secondary);
+  font-family: inherit;
+  font-size: var(--cn-text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.cn-admin-pill-active {
+  border-color: color-mix(in srgb, var(--cn-brand-color) 40%, var(--cn-border));
+  background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
+  color: color-mix(in srgb, var(--cn-brand-color) 82%, var(--cn-text-primary));
+  font-weight: 600;
+}
+
+/* 分区内容：卡片 / 提示条 / 操作区之间统一的纵向节奏 */
+.cn-admin-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-lg);
+  min-width: 0;
+}
+
+/* 工具栏：左检索筛选、右计数与刷新；窄屏整行堆叠 */
+.cn-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-md);
+}
+
+.cn-toolbar-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+}
+
+/* 批量操作条：品牌色淡底 + 描边，替代通用 info Alert（与表格同一视觉家族） */
+.cn-selection-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-md);
+  padding: var(--cn-space-md) var(--cn-space-lg);
+  border: 1px solid color-mix(in srgb, var(--cn-brand-color) 30%, var(--cn-border));
+  border-radius: var(--cn-radius-lg);
+  background: color-mix(in srgb, var(--cn-brand-color) 6%, var(--cn-bg-container));
+  animation: cn-rise-in 0.22s ease-out both;
+}
+
+.cn-selection-count {
+  font-size: var(--cn-text-sm);
+  font-weight: 600;
+  color: var(--cn-text-primary);
+}
+
+/* 表单行：标签定宽、控件左对齐，多行之间 12px —— 备份/恢复表单共用 */
+.cn-field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-md) var(--cn-space-lg);
+}
+
+.cn-field-label {
+  flex: 0 0 auto;
+  min-width: 76px;
+  font-size: var(--cn-text-sm);
+  color: var(--cn-text-secondary);
+}
+
+.cn-field-spaced {
+  margin-top: var(--cn-space-lg);
+}
+
+.cn-actionbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-md) var(--cn-space-lg);
+}
+
+.cn-admin-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+  font-size: var(--cn-text-xs);
+}
+
+/* 说明条：卡片化但弱于告警，用于 CLI 用法、事件流口径等长说明 */
+.cn-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cn-space-md);
+  padding: var(--cn-space-md) var(--cn-space-lg);
+  border: 1px solid var(--cn-border-soft);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-subtle);
+  font-size: var(--cn-text-xs);
+  line-height: 1.6;
+  color: var(--cn-text-secondary);
+}
+
+.cn-hint .anticon {
+  margin-top: var(--cn-space-hairline);
+  color: var(--cn-text-muted);
+}
+
+.cn-hint .ant-typography code {
+  margin-inline: var(--cn-space-xs);
+}
+
+/* 备份包表清单：系统表 / 用户表分组，标签换行排列 */
+.cn-manifest-tables {
+  margin-top: var(--cn-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-md);
+}
+
+.cn-manifest-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-lg);
+}
+
+.cn-manifest-tags {
+  margin-top: var(--cn-space-xs);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cn-space-xs);
+}
+
+/* 危险操作区：与普通操作区用描边隔开，颜色走 antd danger token */
+.cn-danger-zone {
+  margin-top: var(--cn-space-lg);
+  padding-top: var(--cn-space-lg);
+  border-top: 1px dashed var(--cn-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--cn-space-md);
+}
+
+.cn-danger-zone-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+  min-width: 0;
+}
+
+@media (max-width: 767.98px) {
+  .cn-admin {
+    flex-direction: column;
+    padding: var(--cn-space-lg);
+  }
+
+  .cn-admin-title {
+    font-size: var(--cn-text-lg);
+  }
+
+  .cn-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cn-toolbar-end {
+    margin-left: 0;
+    justify-content: space-between;
+  }
+
+  .cn-field {
+    align-items: flex-start;
+  }
+
+  .cn-field-label {
+    min-width: 0;
+  }
+}
+
+
 /* ─────────────── 网格「序号」列 ───────────────
  * 非字段列：弱化配色 + 等宽数字，避免与业务字段争视觉权重 */
 .cn-row-index {
@@ -3470,13 +3837,13 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   position: relative;
   display: flex;
   justify-content: center;
-  padding-top: 18px;
+  padding-top: var(--cn-space-xl);
 }
 
 .cn-vh-rail::after {
   content: '';
   position: absolute;
-  top: 27px;
+  top: 25px;
   bottom: -18px;
   left: 50%;
   width: 2px;
@@ -3653,7 +4020,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767.98px) {
   .cn-vh {
     padding: var(--cn-space-xl) var(--cn-space-lg) var(--cn-space-3xl);
   }
