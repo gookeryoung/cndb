@@ -14,7 +14,7 @@
 - **动态数据表**：SQLAlchemy Core 运行时建表 / 改字段，运行中即可扩 schema
 - **17 种字段类型**：text / longtext / email / url / phone / json / number / float / percentage / boolean / date / datetime / timestamp / select / multiselect / link（跨表关联）/ attachment
 - **7 种视图**：表格（Grid）/ 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表，视图级筛选、排序、字段显隐与配置持久化
-- **文档管理**：工作区 Markdown 文档树、双向链接 `[[标题]]`、数据表动态引用 `{{table:表名}}`、版本历史与全文检索、回收站与恢复、断链检测与修复
+- **文档管理**：工作区 Markdown 文档树、双向链接 `[[标题]]`、数据表动态引用 `{{table:表名}}`、版本历史与全文检索、回收站与恢复、断链检测与修复、**Obsidian 文档库导入 / 导出**（目录层级 + front-matter 标签 + 附件互转）
 - **行级协作**：编辑评论 / 审计日志 / 回收站
 - **link 字段关系图**：`GET /workspaces/{id}/tables/graph` 返回所有表间依赖
 - **异步导入**：CSV / JSON / XLSX / API 抓取异步导入 + 进度轮询
@@ -149,6 +149,7 @@ src/cndb/
 | 视图 | `/api/v1/workspaces/{wid}/tables/{tid}/views` | 保存筛选条件命名视图 + 可见性三档（`table`/`shared`/`private`）与共享名单 |
 | 权限 | `/api/v1/workspaces/{wid}/tables/{tid}/permissions` | 表级权限 |
 | 文档导出 | `/api/v1/workspaces/{wid}/documents/{doc_id}/export` | Markdown / Word / PDF 文件下载 |
+| Obsidian 库 | `/api/v1/workspaces/{wid}/documents/import[/analyze]`、`/documents/export/vault` | 库 zip 导入（预览 → 落库）/ 整库导出 |
 | 健康 | `/health` | 服务存活 |
 
 完整文档：启动后访问 `http://localhost:8000/docs`（FastAPI 自动生成）

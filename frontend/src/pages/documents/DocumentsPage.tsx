@@ -32,10 +32,12 @@ import {
   ArrowLeftOutlined,
   DeleteOutlined,
   EditOutlined,
+  ExportOutlined,
   FileAddOutlined,
   FileTextOutlined,
   FolderAddOutlined,
   FolderOutlined,
+  ImportOutlined,
   SearchOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -49,6 +51,7 @@ import { buildSeriesStats, seriesStatsOf } from './seriesStats'
 import { formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
 import SearchDrawer from './SearchDrawer'
 import TrashDrawer from './TrashDrawer'
+import ObsidianImportModal from './ObsidianImportModal'
 import type { DocTreeNode } from './DocumentTree'
 import { formatSize } from '@/utils/formatSize'
 
@@ -119,6 +122,8 @@ export default function DocumentsPage() {
   const [searchOpen, setSearchOpen] = useState(false)
   // 回收站抽屉
   const [trashOpen, setTrashOpen] = useState(false)
+  // Obsidian 文档库导入弹窗
+  const [vaultImportOpen, setVaultImportOpen] = useState(false)
   // 最近打开：读取本地历史（清空后用 version 触发重渲染）
   const [recentVersion, setRecentVersion] = useState(0)
   // 批量操作：当前层级多选 + 批量移动弹窗
@@ -199,6 +204,24 @@ export default function DocumentsPage() {
       invalidate()
     },
     onError: () => message.error('删除失败'),
+  })
+
+  // Obsidian 库导出（整库 zip：目录结构 + front-matter + 附件）
+  const vaultExportMut = useMutation({
+    mutationFn: () => documentsApi.vaultExport(workspaceId),
+    onSuccess: (blob: Blob) => {
+      const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `obsidian-vault-${ts}.zip`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      message.success('已导出 Obsidian 库')
+    },
+    onError: (err: unknown) => message.error(err instanceof Error ? err.message : '导出失败'),
   })
 
   // 系列重命名（PATCH title）
@@ -437,6 +460,25 @@ export default function DocumentsPage() {
             ]}
           />
           <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
+          <Tooltip title="导入 Obsidian 库（.zip）：保留目录结构、front-matter 标签与附件">
+            <Button
+              icon={<ImportOutlined />}
+              data-testid="doc-vault-import"
+              onClick={() => setVaultImportOpen(true)}
+            >
+              导入
+            </Button>
+          </Tooltip>
+          <Tooltip title="把当前工作区文档树导出为 Obsidian 库（.zip）">
+            <Button
+              icon={<ExportOutlined />}
+              data-testid="doc-vault-export"
+              loading={vaultExportMut.isPending}
+              onClick={() => vaultExportMut.mutate()}
+            >
+              导出
+            </Button>
+          </Tooltip>
           <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建文档</Button>
         </Space>
       </div>
@@ -837,6 +879,15 @@ export default function DocumentsPage() {
       <SearchDrawer open={searchOpen} onClose={() => setSearchOpen(false)} wid={workspaceId} />
 
       <TrashDrawer open={trashOpen} onClose={() => setTrashOpen(false)} wid={workspaceId} />
+
+      {/* Obsidian 库导入：默认落在当前文件夹，导入完成后刷新树与列表 */}
+      <ObsidianImportModal
+        open={vaultImportOpen}
+        onClose={() => setVaultImportOpen(false)}
+        workspaceId={workspaceId}
+        parentId={parentId}
+        parentLabel={currentFolderNode?.title}
+      />
     </div>
   )
 }
