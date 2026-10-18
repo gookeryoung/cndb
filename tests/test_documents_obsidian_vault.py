@@ -192,11 +192,11 @@ class TestImport:
         assert titles["笔记"]["is_folder"] is True
         assert titles["设计稿"]["parent_id"] == titles["笔记"]["id"]
 
-        # front-matter 标题生效，正文里的双链被规范化，附件改为站内引用
+        # front-matter 标题生效；双链只剥路径前缀，锚点与别名原样保留；附件改为站内引用
         body = _content(client, ws.id, titles["索引页"]["id"], auth)
-        assert "[[设计稿]]" in body
-        assert "[[不存在笔记]]" in body
+        assert "[[设计稿#架构|设计]]" in body
         assert "[[笔记/设计稿#架构|设计]]" not in body
+        assert "[[不存在笔记]]" in body
         assert "[[图.png]]" not in body
 
         keys = re.findall(r"!\[[^\]]*\]\(file:([^)\s]+)\)", body)
@@ -287,6 +287,153 @@ class TestImport:
     def test_bad_conflict_policy(self, client, ws, auth):
         r = _post_zip(client, IMPORT.format(ws=ws.id), _vault_zip(), auth, conflict="replace")
         assert r.status_code == 400
+
+
+class TestWikilinkFidelity:
+    """双链锚点与别名在导入、反链、出链、断链修复四处都不丢."""
+
+    def test_import_keeps_anchor_and_alias(self, client, ws, auth):
+        data = _build_zip(
+            {
+                "目标.md": "# 目标\n\n## 章节\n\n正文\n",
+                "来源.md": "---\ntitle: 来源\n---\n\n见 [[笔记/目标.md#章节|别名文本]] 与 [[目标#章节]]。\n",
+            }
+        )
+        assert _post_zip(client, IMPORT.format(ws=ws.id), data, auth).status_code == 200
+        titles = {item["title"]: item for item in _tree(client, ws.id, auth)}
+        body = _content(client, ws.id, titles["来源"]["id"], auth)
+        assert "[[目标#章节|别名文本]]" in body
+        assert "[[目标#章节]]" in body
+        assert "笔记/目标" not in body
+
+    def test_backlinks_match_links_with_anchor_and_alias(self, client, ws, auth):
+        target = client.post(DOCS.format(ws=ws.id), json={"title": "目标", "content": "# 目标\n"}, headers=auth).json()
+        source = client.post(
+            DOCS.format(ws=ws.id),
+            json={"title": "来源", "content": "见 [[目标#章节|别名]]\n"},
+            headers=auth,
+        ).json()
+
+        backlinks = client.get(f"{DOCS.format(ws=ws.id)}/{target['id']}/backlinks", headers=auth).json()["items"]
+        assert [item["id"] for item in backlinks] == [source["id"]]
+
+    def test_outgoing_links_expose_anchor_alias_raw(self, client, ws, auth):
+        client.post(DOCS.format(ws=ws.id), json={"title": "目标", "content": "# 目标\n"}, headers=auth).json()
+        source = client.post(
+            DOCS.format(ws=ws.id),
+            json={"title": "来源", "content": "见 [[目标#章节|别名]]\n"},
+            headers=auth,
+        ).json()
+
+        payload = client.get(f"{DOCS.format(ws=ws.id)}/{source['id']}/links", headers=auth).json()
+        item = payload["items"][0]
+        assert item["title"] == "目标"
+        assert item["anchor"] == "章节"
+        assert item["alias"] == "别名"
+        assert item["raw"] == "[[目标#章节|别名]]"
+        assert item["exists"] is True
+
+    def test_repair_link_preserves_anchor_and_alias(self, client, ws, auth):
+        target = client.post(DOCS.format(ws=ws.id), json={"title": "正确目标", "content": "# T\n"}, headers=auth).json()
+        source = client.post(
+            DOCS.format(ws=ws.id),
+            json={"title": "来源", "content": "见 [[旧标题#章节|别名]] 以及 [[旧标题]]\n"},
+            headers=auth,
+        ).json()
+
+        r = client.post(
+            f"{DOCS.format(ws=ws.id)}/{source['id']}/links/repair",
+            json={"repairs": [{"title": "旧标题", "target_document_id": target["id"]}]},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["replaced"] == 2
+        body = _content(client, ws.id, source["id"], auth)
+        assert "[[正确目标#章节|别名]]" in body
+        assert "[[正确目标]]" in body
+        assert "旧标题" not in body
+
+
+CANVAS_JSON = """{
+  "nodes": [
+    {"id": "n1", "type": "text", "text": "架构要点 [[设计稿]]"},
+    {"id": "n2", "type": "file", "file": "笔记/设计稿.md", "subpath": "#架构"},
+    {"id": "n3", "type": "link", "url": "https://example.com/doc"},
+    {"id": "n4", "type": "group", "label": "第一期"}
+  ],
+  "edges": [
+    {"id": "e1", "fromNode": "n1", "toNode": "n2", "label": "细化"}
+  ]
+}
+"""
+
+BASE_YAML = """filters:
+  and:
+    - file.hasTag("项目")
+"""
+
+
+class TestConvertedFiles:
+    """`.canvas` / `.base` 转成文档导入，原始内容以代码块保留."""
+
+    def _zip(self) -> bytes:
+        return _build_zip(
+            {
+                "设计稿.md": "# 设计稿\n",
+                "策划.canvas": CANVAS_JSON,
+                "视图.base": BASE_YAML,
+                "未知.bin": b"\x00\x01",
+            }
+        )
+
+    def test_analyze_reports_conversions(self, client, ws, auth):
+        r = _post_zip(client, ANALYZE.format(ws=ws.id), self._zip(), auth)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["total_markdown"] == 1
+        assert data["total_converted"] == 2
+        assert data["total_notes"] == 3
+        kinds = {item["path"]: item["kind"] for item in data["items"]}
+        assert kinds["策划.canvas"] == "canvas"
+        assert kinds["视图.base"] == "base"
+        assert kinds["设计稿.md"] == "markdown"
+        codes = {warning["code"] for warning in data["warnings"]}
+        assert "converted_files" in codes
+        assert "unsupported_files" in codes
+        assert "未导入" not in " ".join(warning["message"] for warning in data["warnings"])
+
+    def test_import_canvas_as_document(self, client, ws, auth):
+        r = _post_zip(client, IMPORT.format(ws=ws.id), self._zip(), auth)
+        assert r.status_code == 200, r.text
+        stats = r.json()
+        assert stats["converted"] == 2
+        assert stats["created"] == 3
+
+        titles = {item["title"]: item for item in _tree(client, ws.id, auth)}
+        assert {"设计稿", "策划", "视图"} <= set(titles)
+
+        canvas = _content(client, ws.id, titles["策划"]["id"], auth)
+        assert "Obsidian Canvas「策划.canvas」" in canvas
+        assert "文本卡片 1" in canvas
+        assert "架构要点 [[设计稿]]" in canvas
+        # 文件卡片 → 双链（锚点保留），连线带标签，原始 JSON 完整保留
+        assert "[[设计稿#架构]]" in canvas
+        assert "卡片 1 → 卡片 2（细化）" in canvas
+        assert "## 原始 JSON" in canvas
+        assert '"fromNode": "n1"' in canvas
+        assert "https://example.com/doc" in canvas
+
+        base = _content(client, ws.id, titles["视图"]["id"], auth)
+        assert "~~~yaml" in base
+        assert 'file.hasTag("项目")' in base
+
+    def test_canvas_broken_json_falls_back_to_raw(self, client, ws, auth):
+        data = _build_zip({"坏画布.canvas": "{not json"})
+        assert _post_zip(client, IMPORT.format(ws=ws.id), data, auth).status_code == 200
+        titles = {item["title"]: item for item in _tree(client, ws.id, auth)}
+        body = _content(client, ws.id, titles["坏画布"]["id"], auth)
+        assert "JSON 解析失败" in body
+        assert "{not json" in body
 
 
 class TestExport:

@@ -726,20 +726,44 @@ def find_backlinks(
         )
         .order_by(Document.sort_order, Document.id)
     ).all()
-    target = f"[[{title}]]"
-    return [doc for doc, version in rows if target in load_content(version, doc)]
+    # 反链按「目标标题」匹配：[[标题]] / [[标题#锚点]] / [[标题|别名]] 都算引用
+    return [
+        doc
+        for doc, version in rows
+        if any(link["target"] == title for link in parse.iter_wikilinks(load_content(version, doc)))
+    ]
 
 
 def resolve_outgoing_links(db: Session, workspace_id: int, doc: Document) -> list[dict[str, Any]]:
-    """解析文档正文出链 ``[[标题]]``：返回标题、命中文档 ID 与是否存在（断链）.
+    """解析文档正文出链 ``[[标题#锚点|别名]]``：返回标题、命中文档 ID 与是否存在（断链）.
 
-    代码围栏内的 ``[[...]]`` 不计入（见 ``parse.extract_wikilinks``）；
+    代码围栏内的 ``[[...]]`` 不计入（见 ``parse.iter_wikilinks``）；
     同名文档取最早创建的一个；引用的目标可为文件夹。
+
+    同一目标标题的多种写法（带锚点/别名）合并为一行，``raw`` 取首次出现的原文，
+    便于前端原样展示；``anchor`` / ``alias`` 供修复与提示使用。
     """
     version = latest_version(db, doc.id)
-    titles = parse.extract_wikilinks(load_content(version, doc))
-    if not titles:
+    links = parse.iter_wikilinks(load_content(version, doc))
+    if not links:
         return []
+
+    merged: list[dict[str, str]] = []
+    seen: dict[str, dict[str, str]] = {}
+    for link in links:
+        target = link["target"]
+        if not target:
+            continue
+        if target in seen:
+            # 同一目标补全锚点/别名信息（首个出现的写法优先展示）
+            known = seen[target]
+            known["anchor"] = known["anchor"] or link["anchor"]
+            known["alias"] = known["alias"] or link["alias"]
+            continue
+        seen[target] = link
+        merged.append(link)
+
+    titles = [link["target"] for link in merged]
     rows = db.execute(
         select(Document.id, Document.title)
         .where(
@@ -752,7 +776,18 @@ def resolve_outgoing_links(db: Session, workspace_id: int, doc: Document) -> lis
     index: dict[str, int] = {}
     for doc_id, title in rows:
         index.setdefault(title, doc_id)
-    return [{"title": t, "document_id": index.get(t), "exists": t in index, "broken": t not in index} for t in titles]
+    return [
+        {
+            "title": link["target"],
+            "document_id": index.get(link["target"]),
+            "exists": link["target"] in index,
+            "broken": link["target"] not in index,
+            "anchor": link["anchor"],
+            "alias": link["alias"],
+            "raw": parse.format_wikilink(link["target"], anchor=link["anchor"], alias=link["alias"]),
+        }
+        for link in merged
+    ]
 
 
 def repair_wikilinks(
@@ -765,12 +800,13 @@ def repair_wikilinks(
     """把正文中的断链 ``[[旧标题]]`` 改指为现存文档（创建新版本，可回溯）.
 
     Args:
-        repairs: 元素含 ``title``（正文中原样出现的旧标题）与 ``target_document_id``
-            （同一工作区内未删除的目标文档；可为文件夹）。
+        repairs: 元素含 ``title``（正文中原样出现的旧标题，锚点/别名写法同样命中）
+            与 ``target_document_id``（同一工作区内未删除的目标文档；可为文件夹）。
 
     语义：
     - 目标必须属于同一工作区且未删除，否则 404；
     - 旧标题在正文中不存在、或目标标题与旧标题相同 → 该条跳过；
+    - 改写保留原有锚点与别名（``[[旧#锚点|别名]]`` → ``[[新#锚点|别名]]``）；
     - 全部条目都未产生替换时抛 409，避免写入无意义的新版本；
     - 链接修复走 ``update_content``，因此同样保留完整版本历史。
     """
@@ -785,12 +821,11 @@ def repair_wikilinks(
     for item in repairs:
         title = str(item.title)
         target = get_document_or_404(db, workspace_id, item.target_document_id)
-        old = f"[[{title}]]"
-        new = f"[[{target.title}]]"
-        count = content.count(old)
-        if count == 0 or old == new:
+        if title == target.title:
             continue
-        content = content.replace(old, new)
+        content, count = parse.rewrite_wikilink_target(content, title, target.title)
+        if count == 0:
+            continue
         replaced += count
         applied.append({"title": title, "new_title": target.title, "document_id": target.id, "count": count})
 

@@ -17,6 +17,8 @@ const ANALYSIS: VaultAnalyzeResult = {
   filename: 'vault.zip',
   root_dir: 'MyVault',
   total_notes: 3,
+  total_markdown: 2,
+  total_converted: 1,
   total_folders: 1,
   total_attachments: 2,
   total_attachment_bytes: 2048,
@@ -36,9 +38,29 @@ const ANALYSIS: VaultAnalyzeResult = {
       size: 1024,
       tags: ['项目'],
       status: 'conflict',
+      kind: 'markdown',
       existing_document_id: 9,
     },
-    { path: '索引.md', title: '索引', folder: '', size: 512, tags: [], status: 'new', existing_document_id: null },
+    {
+      path: '索引.md',
+      title: '索引',
+      folder: '',
+      size: 512,
+      tags: [],
+      status: 'new',
+      kind: 'markdown',
+      existing_document_id: null,
+    },
+    {
+      path: '策划.canvas',
+      title: '策划',
+      folder: '',
+      size: 256,
+      tags: [],
+      status: 'new',
+      kind: 'canvas',
+      existing_document_id: null,
+    },
   ],
 }
 
@@ -48,6 +70,7 @@ const RESULT: VaultImportResult = {
   skipped: 0,
   total: 3,
   folders_created: 1,
+  converted: 1,
   attachments: 2,
   attachment_bytes: 2048,
   tags_created: ['项目', '研究'],
@@ -80,8 +103,9 @@ describe('Obsidian 库导入弹窗', () => {
     await upload()
 
     const summary = await screen.findByTestId('vault-import-summary')
-    expect(summary).toHaveTextContent('3 篇')
-    expect(summary).toHaveTextContent('1 篇')  // 同名冲突
+    expect(summary).toHaveTextContent('2 篇') // 原生 markdown
+    expect(summary).toHaveTextContent('1 个') // 转换文件（.canvas）
+    expect(summary).toHaveTextContent('1 篇') // 同名冲突
     expect(screen.getByTestId('vault-import-conflict')).toBeInTheDocument()
     expect(screen.getByTestId('vault-import-preview')).toHaveTextContent('笔记/设计稿.md')
     expect(screen.getByText('2 处双链统一为 [[标题]]')).toBeInTheDocument()

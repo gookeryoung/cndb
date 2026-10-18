@@ -66,7 +66,7 @@ export default function LinksDrawer({
               }}
             >
               <Space size={6} wrap>
-                <Text strong>{`[[${item.title}]]`}</Text>
+                <Text strong>{item.raw ?? `[[${item.title}]]`}</Text>
                 {item.exists ? <Tag color="green">已解析</Tag> : <Tag color="red">断链</Tag>}
               </Space>
               {item.exists && item.document_id != null ? (

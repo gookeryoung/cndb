@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import json
 import re
 import unicodedata
 import uuid
@@ -51,7 +52,7 @@ from cndb.plugins.documents.models import (
     Tag,
 )
 from cndb.plugins.documents.services import content as content_service
-from cndb.plugins.documents.services import visibility
+from cndb.plugins.documents.services import parse, visibility
 from cndb.plugins.documents.services.export.images import INLINE_IMAGE_RE, resolve_upload_path
 from cndb.plugins.files.models import FileOwner
 
@@ -123,6 +124,9 @@ ATTACHMENT_EXTENSIONS = frozenset(
         ".rtf",
     }
 )
+
+#: Obsidian 专属结构文件：转成 Markdown 文档导入（原始内容以代码块保留）
+CONVERTIBLE_EXTENSIONS = (".canvas", ".base")
 
 CONFLICT_SKIP = "skip"
 CONFLICT_RENAME = "rename"
@@ -254,6 +258,10 @@ class VaultArchive:
             if Path(p).suffix.lower() not in MARKDOWN_SUFFIXES and Path(p).suffix.lower() in ATTACHMENT_EXTENSIONS
         ]
 
+    def convertible_paths(self) -> list[str]:
+        """Obsidian 专属结构文件（.canvas / .base），转成文档后导入."""
+        return [p for p in self.paths if Path(p).suffix.lower() in CONVERTIBLE_EXTENSIONS]
+
 
 def _decode_markdown(data: bytes) -> str:
     for encoding in ("utf-8-sig", "utf-8", "gb18030"):
@@ -360,7 +368,7 @@ def _safe_filename(raw: str, *, fallback: str = "未命名") -> str:
 
 @dataclass
 class VaultNote:
-    """一篇库内 markdown 笔记."""
+    """一篇库内笔记（markdown，或由 .canvas / .base 转换而来的文档）."""
 
     path: str
     folder: tuple[str, ...]
@@ -368,6 +376,8 @@ class VaultNote:
     body: str
     tags: list[str] = field(default_factory=list)
     size: int = 0
+    #: 来源类型：markdown / canvas / base
+    kind: str = "markdown"
 
 
 @dataclass
@@ -450,7 +460,108 @@ def _parse_notes(archive: VaultArchive) -> list[VaultNote]:
         if not note.tags:
             note.tags = [name for name in (_normalize_tag_name(t) for t in _as_list(meta.get("tag"))) if name]
         notes.append(note)
+
+    # Obsidian 专属结构文件（.canvas / .base）→ Markdown 文档（原文以代码块保留，无损）
+    for path in archive.convertible_paths():
+        data = archive.read(path)
+        if len(data) > MAX_MARKDOWN_BYTES:
+            archive.skipped.append({"path": path, "reason": f"文件超过 {MAX_MARKDOWN_BYTES // MB}MB"})
+            continue
+        suffix = Path(path).suffix.lower()
+        parts = path.split("/")
+        body = _canvas_to_markdown(data, path) if suffix == ".canvas" else _base_to_markdown(data, path)
+        notes.append(
+            VaultNote(
+                path=path,
+                folder=tuple(parts[:-1]),
+                title=_clean_title(Path(path).stem),
+                body=body,
+                size=len(data),
+                kind=suffix.lstrip("."),
+            )
+        )
     return notes
+
+
+def _canvas_to_markdown(data: bytes, path: str) -> str:
+    """Obsidian Canvas（JSON）→ Markdown：卡片 / 连线 / 文件引用 + 原始 JSON.
+
+    文本卡片正文原样保留（其中的双链随后统一走 ``rewrite_note_body`` 规范化）；
+    文件卡片输出 ``[[库内路径]]``（图片等附件用嵌入），让同一套解析器处理。
+    """
+    raw = _decode_markdown(data)
+    title = Path(path).name
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError):
+        return f"> 由 Obsidian Canvas「{title}」转换导入，JSON 解析失败，仅保留原文。\n\n~~~text\n{raw.strip()}\n~~~\n"
+    if not isinstance(payload, dict):
+        return f"> 由 Obsidian Canvas「{title}」转换导入，结构无法识别，仅保留原文。\n\n~~~json\n{raw.strip()}\n~~~\n"
+
+    nodes = payload.get("nodes") if isinstance(payload.get("nodes"), list) else []
+    edges = payload.get("edges") if isinstance(payload.get("edges"), list) else []
+    lines = [
+        f"> 由 Obsidian Canvas「{title}」转换导入：{len(nodes)} 个卡片、{len(edges)} 条连线。"
+        "原始 JSON 见文末（保留无损，可据此还原）。",
+        "",
+    ]
+
+    order: dict[Any, int] = {}
+    if nodes:
+        lines.append("## 卡片")
+        lines.append("")
+    for index, node in enumerate(nodes, 1):
+        if not isinstance(node, dict):
+            continue
+        order[node.get("id")] = index
+        node_type = str(node.get("type") or "")
+        if node_type == "text":
+            text = str(node.get("text") or "").strip()
+            lines.extend([f"### 文本卡片 {index}", "", text or "_（空卡片）_", ""])
+        elif node_type == "file":
+            file_path = str(node.get("file") or "").strip()
+            subpath = str(node.get("subpath") or "").strip().lstrip("#")
+            if not file_path:
+                continue
+            target = f"{file_path}#{subpath}" if subpath else file_path
+            if Path(file_path).suffix.lower() in ATTACHMENT_EXTENSIONS:
+                lines.extend([f"![[{target}]]", ""])
+            else:
+                lines.extend([f"[[{target}]]", ""])
+        elif node_type == "link":
+            url = str(node.get("url") or "").strip()
+            if url:
+                lines.extend([f"- <{url}>", ""])
+        elif node_type == "group":
+            label = str(node.get("label") or "").strip()
+            lines.extend([f"### 分组：{label or f'分组 {index}'}", ""])
+
+    if edges:
+        lines.extend(["## 连线", ""])
+        for edge in edges:
+            if not isinstance(edge, dict):
+                continue
+            start = order.get(edge.get("fromNode"), "?")
+            end = order.get(edge.get("toNode"), "?")
+            label = str(edge.get("label") or "").strip()
+            suffix = f"（{label}）" if label else ""
+            lines.append(f"- 卡片 {start} → 卡片 {end}{suffix}")
+        lines.append("")
+
+    pretty = json.dumps(payload, ensure_ascii=False, indent=2)
+    lines.extend(["## 原始 JSON", "", "~~~json", pretty, "~~~", ""])
+    return "\n".join(lines)
+
+
+def _base_to_markdown(data: bytes, path: str) -> str:
+    """Obsidian Base（YAML 视图配置）→ Markdown：原文放进 yaml 代码块，无损保留."""
+    raw = _decode_markdown(data).strip()
+    title = Path(path).name
+    return (
+        f"> 由 Obsidian Base「{title}」转换导入：Base 是 Obsidian 的数据库视图配置，"
+        "站内暂不支持还原为交互视图，此处保留原始 YAML 以便查阅与再导出。\n\n"
+        f"~~~yaml\n{raw}\n~~~\n"
+    )
 
 
 # ── 正文改写（双链 / 附件） ──
@@ -471,21 +582,19 @@ def rewrite_note_body(
     note: VaultNote,
     index: _VaultIndex,
     *,
-    store_attachment: Callable[[str], str | None] | None,
+    store_attachment: Callable[[str], str | None],
 ) -> RewriteResult:
     """把库内语法改写为站内语法.
 
-    - ``![[附件]]`` / ``![[附件|300]]`` → ``![](file:<key>)``（需 ``store_attachment``）
-    - ``![[笔记]]`` → ``[[笔记标题]]``
-    - ``[[目标#锚点|别名]]`` → ``[[标题]]``（锚点/别名无法表达，计入 normalized）
+    - ``![[附件]]`` / ``![[附件|300]]`` → ``![](file:<key>)``（``store_attachment`` 返回 None 表示不导入）
+    - ``![[笔记]]`` / ``![[笔记#锚点]]`` → ``[[笔记标题]]``（嵌入无法表达，降级为普通双链）
+    - ``[[目标#锚点|别名]]`` → ``[[标题#锚点|别名]]``：**只剥掉路径前缀与 .md 后缀**，
+      锚点与别名原样保留（站内双链按标题匹配目标，锚点/别名仅用于展示）
     - ``![](attachments/x.png)`` → 站内引用；``[文字](Note.md)`` → ``[[标题]]``
     """
     result = RewriteResult(body=note.body)
 
     def _store(target: str) -> str | None:
-        if store_attachment is None:
-            result.missing_attachments += 1
-            return None
         key = store_attachment(target)
         if key is None:
             result.missing_attachments += 1
@@ -496,13 +605,14 @@ def rewrite_note_body(
 
     def _embed(match: re.Match[str]) -> str:
         raw = match.group(1).strip()
-        target = raw.split("|", 1)[0].strip()
+        parts = parse.parse_wikilink(raw)
+        target, anchor = parts["target"], parts["anchor"]
         if not target:
             return match.group(0)
         note_path = index.resolve_note(target, note.folder)
         if note_path is not None:
             result.normalized_links += 1
-            return f"[[{index.title_of(note_path)}]]"
+            return parse.format_wikilink(index.title_of(note_path), anchor=anchor)
         attachment = index.resolve_attachment(target, note.folder)
         if attachment is not None:
             key = _store(attachment)
@@ -512,32 +622,32 @@ def rewrite_note_body(
         return match.group(0)
 
     def _wikilink(match: re.Match[str]) -> str:
-        raw = match.group(1)
-        target = raw.split("|", 1)[0]
-        anchor = ""
-        if "#" in target:
-            target, _, anchor = target.partition("#")
-        target = target.strip()
+        parts = parse.parse_wikilink(match.group(1))
+        target, anchor, alias = parts["target"], parts["anchor"], parts["alias"]
         if not target:
-            # [[#本文锚点]]：站内无双链锚点表达，退化为纯文本
+            # [[#本文锚点]]：站内无本文锚点表达，退化为纯文本
             result.normalized_links += 1
-            return anchor or raw
+            return anchor or match.group(0)
+
         note_path = index.resolve_note(target, note.folder)
         if note_path is not None:
-            if "|" in raw or anchor:
+            title = index.title_of(note_path)
+            if title != target:
                 result.normalized_links += 1
-            return f"[[{index.title_of(note_path)}]]"
+            return parse.format_wikilink(title, anchor=anchor, alias=alias)
+
         attachment = index.resolve_attachment(target, note.folder)
         if attachment is not None:
             key = _store(attachment)
             if key is not None:
                 return f"![{_safe_filename(Path(attachment).name)}](file:{key})"
-        if anchor or "|" in raw:
+
+        # 未命中：保留锚点/别名，只剥掉库内路径前缀（站内按标题解析，路径无意义）
+        cleaned = _strip_note_path(target)
+        result.unresolved.append(parse.format_wikilink(cleaned, anchor=anchor, alias=alias))
+        if cleaned != target:
             result.normalized_links += 1
-            result.unresolved.append(f"[[{target}]]")
-            return f"[[{target}]]"
-        result.unresolved.append(match.group(0))
-        return match.group(0)
+        return parse.format_wikilink(cleaned, anchor=anchor, alias=alias)
 
     def _md_image(match: re.Match[str]) -> str:
         alt, url = match.group(1), match.group(2).strip()
@@ -579,6 +689,14 @@ def _unquote(text: str) -> str:
         return unquote(text)
     except Exception:  # pragma: no cover - 非法百分号编码
         return text
+
+
+def _strip_note_path(target: str) -> str:
+    """库内链接目标 → 站内标题：去掉目录前缀与 ``.md`` 后缀（锚点/别名由调用方另存）."""
+    text = target.replace("\\", "/").strip().lstrip("/")
+    if text.lower().endswith(MARKDOWN_SUFFIXES):
+        text = text.rsplit(".", 1)[0]
+    return text.rsplit("/", 1)[-1] or text
 
 
 # ── 冲突检测 ──
@@ -691,6 +809,7 @@ def analyze_vault(
                     "size": note.size,
                     "tags": note.tags[:20],
                     "status": status,
+                    "kind": note.kind,
                     "existing_document_id": existing.id if existing else None,
                 }
             )
@@ -698,11 +817,14 @@ def analyze_vault(
     referenced = sorted({target for note in notes for target in _referenced_attachments(note, index)})
     tag_names = sorted({tag for note in notes for tag in note.tags})
     warnings = _analyze_warnings(notes, archive)
+    converted = [note for note in notes if note.kind != "markdown"]
 
     return {
         "filename": archive.filename,
         "root_dir": archive.root_dir,
         "total_notes": len(notes),
+        "total_markdown": len(notes) - len(converted),
+        "total_converted": len(converted),
         "total_folders": len(folders),
         "total_attachments": len(referenced),
         "total_attachment_bytes": sum(archive.size_of(path) for path in referenced),
@@ -740,34 +862,53 @@ def _referenced_attachments(note: VaultNote, index: _VaultIndex) -> list[str]:
 
 def _analyze_warnings(notes: list[VaultNote], archive: VaultArchive) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
-    alias_links = sum(
-        1
-        for note in notes
-        for match in _WIKILINK_RE.finditer(note.body)
-        if "|" in match.group(1) or "#" in match.group(1)
+    # 只有「路径前缀 / .md 后缀」会被剥掉；锚点与别名原样保留
+    path_links = sum(
+        1 for note in notes for link in _iter_links(note.body) if _strip_note_path(link["target"]) != link["target"]
     )
-    if alias_links:
+    if path_links:
         warnings.append(
             {
                 "code": "wikilink_normalized",
-                "message": f"{alias_links} 处双链带路径/锚点/别名，导入后统一为 [[标题]]（锚点与别名文本会丢失）",
-                "count": alias_links,
+                "message": f"{path_links} 处双链带路径前缀或 .md 后缀，导入后按标题解析（锚点与别名保留）",
+                "count": path_links,
             }
         )
-    other_files = len(
-        [
-            path
-            for path in archive.paths
-            if Path(path).suffix.lower() not in MARKDOWN_SUFFIXES
-            and Path(path).suffix.lower() not in ATTACHMENT_EXTENSIONS
-        ]
-    )
-    if other_files:
+    self_anchors = sum(1 for note in notes for link in _iter_links(note.body) if not link["target"])
+    if self_anchors:
+        warnings.append(
+            {
+                "code": "anchor_only_links",
+                "message": f"{self_anchors} 处本文内锚点链接（[[#标题]]）站内无法表达，已转为纯文本",
+                "count": self_anchors,
+            }
+        )
+    converted = [note for note in notes if note.kind != "markdown"]
+    if converted:
+        kinds = sorted({note.kind for note in converted})
+        warnings.append(
+            {
+                "code": "converted_files",
+                "message": f"{len(converted)} 个 .{'/.'.join(kinds)} 文件将转换为文档导入（卡片/连线转为正文，原始内容以代码块保留）",
+                "count": len(converted),
+            }
+        )
+
+    unsupported = [
+        path
+        for path in archive.paths
+        if Path(path).suffix.lower() not in MARKDOWN_SUFFIXES
+        and Path(path).suffix.lower() not in ATTACHMENT_EXTENSIONS
+        and Path(path).suffix.lower() not in CONVERTIBLE_EXTENSIONS
+    ]
+    if unsupported:
+        samples = "、".join(unsupported[:5]) + ("…" if len(unsupported) > 5 else "")
         warnings.append(
             {
                 "code": "unsupported_files",
-                "message": f"{other_files} 个非文档/非附件文件（如 .canvas / .base）未导入",
-                "count": other_files,
+                "message": f"{len(unsupported)} 个文件类型不支持导入（{samples}）",
+                "count": len(unsupported),
+                "samples": unsupported[:10],
             }
         )
     if archive.skipped:
@@ -779,6 +920,11 @@ def _analyze_warnings(notes: list[VaultNote], archive: VaultArchive) -> list[dic
             }
         )
     return warnings
+
+
+def _iter_links(body: str) -> list[dict[str, str]]:
+    """正文中的双链（跳过代码围栏），复用 ``parse.iter_wikilinks``."""
+    return parse.iter_wikilinks(body)
 
 
 # ── 导入 ──
@@ -941,9 +1087,11 @@ def import_vault(
         "attachment_bytes": 0,
         "tags_created": [],
         "documents": [],
+        "converted": 0,
         "skipped_notes": [],
         "warnings": [],
     }
+    converted_created = 0
     tag_ids: list[int] = []
     tags = _TagRegistry(db, workspace_id, create=create_tags)
     total_normalized = 0
@@ -1023,15 +1171,19 @@ def import_vault(
             store.bind_owner(doc.id, key)
         store.flush()
 
+        if note.kind != "markdown":
+            converted_created += 1
         if len(stats["documents"]) < RESULT_DOCS_LIMIT:
             stats["documents"].append(
                 {
                     "id": doc.id,
                     "title": doc.title,
-                    "path": "/".join((*note.folder, f"{note.title}.md")),
+                    "path": note.path,
+                    "kind": note.kind,
                 }
             )
 
+    stats["converted"] = converted_created
     stats["folders_created"] = created_folders
     stats["attachments"] = store.written
     stats["attachment_bytes"] = store.bytes_written
@@ -1041,7 +1193,7 @@ def import_vault(
         stats["warnings"].append(
             {
                 "code": "wikilink_normalized",
-                "message": f"{total_normalized} 处双链统一为 [[标题]]（原有锚点/别名/路径前缀已丢弃）",
+                "message": f"{total_normalized} 处双链按标题对齐（锚点与别名保留，仅剥离路径前缀 / .md 后缀）",
                 "count": total_normalized,
             }
         )

@@ -120,8 +120,17 @@ export default function ObsidianImportModal({ open, onClose, workspaceId, parent
         title: '标题',
         dataIndex: 'title',
         key: 'title',
-        width: 180,
+        width: 200,
         ellipsis: true,
+        render: (value: string, item: VaultPreviewItem) =>
+          item.kind && item.kind !== 'markdown' ? (
+            <Space size={4}>
+              <AntTag color="blue">{item.kind === 'canvas' ? 'Canvas' : 'Base'}</AntTag>
+              <span>{value}</span>
+            </Space>
+          ) : (
+            value
+          ),
       },
       {
         title: '标签',
@@ -199,7 +208,7 @@ export default function ObsidianImportModal({ open, onClose, workspaceId, parent
             type="success"
             showIcon
             message={`已导入到${targetText}`}
-            description={`新增 ${result.created} 篇 · 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 篇 · 新建文件夹 ${result.folders_created} 个 · 附件 ${result.attachments} 个`}
+            description={`新增 ${result.created} 篇（其中转换文件 ${result.converted} 个）· 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 篇 · 新建文件夹 ${result.folders_created} 个 · 附件 ${result.attachments} 个`}
           />
           {result.tags_created.length > 0 && (
             <Typography.Text type="secondary">
@@ -261,7 +270,12 @@ export default function ObsidianImportModal({ open, onClose, workspaceId, parent
                 bordered
                 data-testid="vault-import-summary"
                 items={[
-                  { key: 'notes', label: '笔记', children: `${analysis.total_notes} 篇` },
+                  { key: 'notes', label: '笔记', children: `${analysis.total_markdown} 篇` },
+                  {
+                    key: 'converted',
+                    label: '转换文件',
+                    children: `${analysis.total_converted} 个`,
+                  },
                   { key: 'folders', label: '新建文件夹', children: `${analysis.total_folders} 个` },
                   { key: 'conflicts', label: '同名冲突', children: `${analysis.conflicts} 篇` },
                   {
@@ -272,7 +286,9 @@ export default function ObsidianImportModal({ open, onClose, workspaceId, parent
                   {
                     key: 'tags',
                     label: '标签',
-                    children: analysis.tags.length ? analysis.tags.slice(0, 5).join('、') + (analysis.tags.length > 5 ? '…' : '') : '—',
+                    children: analysis.tags.length
+                      ? analysis.tags.slice(0, 5).join('、') + (analysis.tags.length > 5 ? '…' : '')
+                      : '—',
                   },
                   {
                     key: 'ignored',

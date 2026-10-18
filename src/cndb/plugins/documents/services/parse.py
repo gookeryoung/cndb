@@ -22,6 +22,9 @@ _LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _EMphasis_RE = re.compile(r"(\*\*|__|\*|_|`|~~)")
 _WIKILINK_RE = re.compile(r"\[\[([^\[\]]+)\]\]")
 
+#: 单篇正文最多解析的双链条数（防极端正文拖慢出链/反链）
+_MAX_WIKILINKS = 2000
+
 
 def parse_front_matter(content: str) -> tuple[dict[str, str], str]:
     """解析 YAML front-matter，返回 (元数据字典, 去除 front-matter 后的正文).
@@ -106,12 +109,39 @@ def generate_slug(title: str, doc_id: int | None = None) -> str:
     return f"{text or 'doc'}-{digest}"
 
 
-def extract_wikilinks(content: str) -> list[str]:
-    """提取双向链接 ``[[文档标题]]`` 引用的标题列表（保持出现顺序，去重）.
+def parse_wikilink(inner: str) -> dict[str, str]:
+    """解析双链内层文本 ``目标#锚点|别名``，返回 ``{target, anchor, alias, raw}``.
+
+    三种成分都可缺省：``[[目标]]`` / ``[[目标#锚点]]`` / ``[[目标|别名]]`` /
+    ``[[目标#锚点|别名]]``。``target`` 为空表示本文内锚点（``[[#标题]]``）。
+    """
+    text = (inner or "").strip()
+    body, sep, alias = text.partition("|")
+    target, hash_sep, anchor = body.partition("#")
+    return {
+        "target": target.strip(),
+        "anchor": anchor.strip() if hash_sep else "",
+        "alias": alias.strip() if sep else "",
+        "raw": f"[[{text}]]",
+    }
+
+
+def format_wikilink(target: str, *, anchor: str = "", alias: str = "") -> str:
+    """把三段成分拼回双链原文（锚点/别名按需保留）."""
+    inner = target
+    if anchor:
+        inner += f"#{anchor}"
+    if alias:
+        inner += f"|{alias}"
+    return f"[[{inner}]]"
+
+
+def iter_wikilinks(content: str) -> list[dict[str, str]]:
+    """逐条提取双链（保持出现顺序，按原文去重；数量有上限防极端正文）.
 
     代码围栏内的 ``[[...]]`` 视为字面文本，不参与解析。
     """
-    titles: list[str] = []
+    links: list[dict[str, str]] = []
     seen: set[str] = set()
     in_fence = False
     for line in content.splitlines():
@@ -121,11 +151,63 @@ def extract_wikilinks(content: str) -> list[str]:
         if in_fence:
             continue
         for m in _WIKILINK_RE.finditer(line):
-            title = m.group(1).strip()
-            if title and title not in seen:
-                seen.add(title)
-                titles.append(title)
+            parsed = parse_wikilink(m.group(1))
+            if not parsed["raw"] or parsed["raw"] in seen or not (parsed["target"] or parsed["anchor"]):
+                continue
+            seen.add(parsed["raw"])
+            links.append(parsed)
+            if len(links) >= _MAX_WIKILINKS:
+                return links
+    return links
+
+
+def extract_wikilinks(content: str) -> list[str]:
+    """提取双向链接的目标标题列表（保持出现顺序，去重）.
+
+    ``[[目标#锚点|别名]]`` 只取 ``目标``；``[[#本文锚点]]``（目标为空）不计入。
+    代码围栏内的 ``[[...]]`` 视为字面文本，不参与解析。
+    """
+    titles: list[str] = []
+    seen: set[str] = set()
+    for link in iter_wikilinks(content):
+        target = link["target"]
+        if target and target not in seen:
+            seen.add(target)
+            titles.append(target)
     return titles
+
+
+def rewrite_wikilink_target(content: str, old: str, new: str) -> tuple[str, int]:
+    """把正文中所有目标为 ``old`` 的双链改指 ``new``，保留原有锚点与别名.
+
+    Returns:
+        (新正文, 替换处数)。代码围栏内的内容不改动。
+    """
+    if not old or old == new:
+        return content, 0
+    replaced = 0
+    in_fence = False
+    lines = content.splitlines(keepends=True)
+    out: list[str] = []
+    for line in lines:
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if in_fence:
+            out.append(line)
+            continue
+
+        def _sub(match: re.Match[str]) -> str:
+            nonlocal replaced
+            parsed = parse_wikilink(match.group(1))
+            if parsed["target"] != old:
+                return match.group(0)
+            replaced += 1
+            return format_wikilink(new, anchor=parsed["anchor"], alias=parsed["alias"])
+
+        out.append(_WIKILINK_RE.sub(_sub, line))
+    return "".join(out), replaced
 
 
 def content_hash(content: str) -> str:
@@ -156,7 +238,11 @@ __all__ = [
     "extract_summary",
     "extract_toc",
     "extract_wikilinks",
+    "format_wikilink",
     "generate_slug",
+    "iter_wikilinks",
     "parse_front_matter",
+    "parse_wikilink",
+    "rewrite_wikilink_target",
     "unified_diff",
 ]
