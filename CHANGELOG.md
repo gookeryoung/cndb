@@ -5,6 +5,7 @@
 ## [未发布]
 
 ### 新增
+- **数据分析智能增强**：新增**字段智能推荐**（选表后按字段类型 + 抽样画像标注 metric/dimension/time/identifier/ignored 角色，给出基数、非空率、理由，并推荐公式 / 图表 / 分组汇总），新增**典型示例**（分类对比 / 数值分布 / 占比构成 / 时间趋势 / 比率分析 / 数据概览，按当前表字段动态生成、一键应用），新增**分析列表** Drawer（集中打开 / 复制 / 删除 / 新建多个分析，复制走后端 `POST /analytics/templates/{id}/duplicate`，默认「原名 副本」并自动递增重名）；后端新增 `GET /analytics/recommendations`，推荐结果确定性可单测、复用行级权限与字段隐藏
 - **数据分析模块完善**：分析模板支持「另存为副本 / 重命名 / 未保存修改确认 / `?template=<id>` 深链刷新保持 / 源表已删除提示」；图表新增维度聚合方式（sum/avg/count/min/max，随模板持久化）；新增**分组汇总**（分组字段 × 指标聚合，可排序 + Top N，基于全量扫描行，结果可导出 CSV）；描述统计补充方差 / 极差 / 非空率；派生数据预览支持分页与列排序，统计 / 派生数据 / 分组汇总均可一键导出 CSV（Excel BOM），图表可导出 PNG；公式编辑器支持字段与函数快捷插入、示例片段、Ctrl/Cmd+Enter 运行与本地重复键名提示；后端 analytics 插件同步扩展 schema 与校验，seed 预置模板补充聚合方式与分组汇总示例
 - 数据表**图片字段支持剪贴板粘贴上传**（新增行 / 更新行 / 行详情抽屉三处同口径）：编辑态聚焦图片区或直接截图后 `Ctrl/Cmd+V` 即可上传并追加，一次粘贴多张按顺序串行上传不会互相覆盖；剪贴板同时带**非空文本**时按粘贴文本处理，不劫持 Excel / Word / 网页复制的内容；粘贴同样受字段级 `allowed_mime_types` 与 `multiple` 配置约束，只读态（`readOnly` 行详情 / 无编辑权限）不注册粘贴入口。图片字段编辑区抽为共用组件 `pages/grid/cells/ImageFieldEditor.tsx`，内联编辑与抽屉不再各写一份，并顺带修正内联图片上传未登记 `table_id`/`row_id` 归属（下载不再绕过表/行权限校验）
 - 生产部署支持**内置反向代理（含实时协作 WebSocket）**：`docker-compose.prod.yml` 新增 `nginx` 服务（`--profile proxy` 可选启用），配置位于 `deploy/nginx/`（模板 + HTTP/HTTPS 共用片段，对 `/api/v1/ws` 单独放行 `Upgrade`/`Connection` 并设 3600s 读超时、访问日志不记 query 以免令牌落盘）；`deploy/deploy.sh` 支持 `CNDB_ENABLE_PROXY=1`（自动带 profile）并在部署末尾用**真实 WebSocket 握手**验证升级链路；`deploy/bootstrap-server.sh`、`.env.prod.example`、`docs/DEPLOY_TENCENT.md` 同步更新

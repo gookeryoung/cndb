@@ -163,6 +163,74 @@ export interface AnalyticsComputeRequest {
   summary?: AnalyticsSummary | null
 }
 
+/** 智能推荐：字段角色 */
+export type AnalyticsRecommendationRole = 'metric' | 'dimension' | 'time' | 'identifier' | 'ignored'
+
+/** 智能推荐：字段画像 */
+export interface AnalyticsRecommendationField {
+  name: string
+  field_type: string
+  role: AnalyticsRecommendationRole
+  /** 角色判定理由（前端 Tooltip 展示） */
+  reason: string
+  /** 去重后基数（可空） */
+  cardinality?: number | null
+  /** 非空率 0~1（可空） */
+  completeness?: number | null
+  /** 示例值（抽样，最多 3 个） */
+  sample_values?: string[] | null
+}
+
+/** 智能推荐：公式 */
+export interface AnalyticsRecommendationFormula {
+  key: string
+  label: string
+  expr: string
+  /** 推荐理由 */
+  reason: string
+}
+
+/** 智能推荐：图表 + 理由 */
+export interface AnalyticsRecommendationChart {
+  chart: AnalyticsChart
+  reason: string
+}
+
+/** 智能推荐：分组汇总 + 理由 */
+export interface AnalyticsRecommendationSummary {
+  summary: AnalyticsSummary
+  reason: string
+}
+
+/** 智能推荐：典型示例（一键应用整套配置） */
+export interface AnalyticsRecommendationExample {
+  id: string
+  name: string
+  description: string
+  formulas: AnalyticsFormula[]
+  chart?: AnalyticsChart | null
+  summary?: AnalyticsSummary | null
+  reason: string
+}
+
+/** 智能推荐响应 */
+export interface AnalyticsRecommendations {
+  table_id: number
+  row_count: number
+  sampled_rows: number
+  truncated: boolean
+  fields: AnalyticsRecommendationField[]
+  formulas: AnalyticsRecommendationFormula[]
+  chart: AnalyticsRecommendationChart | null
+  summary: AnalyticsRecommendationSummary | null
+  examples: AnalyticsRecommendationExample[]
+}
+
+/** 复制模板请求体（空 = 默认「原名 副本」） */
+export interface AnalyticsTemplateDuplicate {
+  name?: string
+}
+
 export const analyticsApi = {
   listTemplates: (wid: number | string) =>
     api.get<AnalyticsTemplate[]>(`/v1/workspaces/${wid}/analytics/templates`).then(r => r.data),
@@ -172,6 +240,22 @@ export const analyticsApi = {
     api.put<AnalyticsTemplate>(`/v1/workspaces/${wid}/analytics/templates/${id}`, data).then(r => r.data),
   removeTemplate: (wid: number | string, id: number | string) =>
     api.delete(`/v1/workspaces/${wid}/analytics/templates/${id}`).then(() => null),
+  /** 复制模板（默认「原名 副本」，重名自动递增） */
+  duplicateTemplate: (
+    wid: number | string,
+    id: number | string,
+    data?: AnalyticsTemplateDuplicate,
+  ) =>
+    api
+      .post<AnalyticsTemplate>(`/v1/workspaces/${wid}/analytics/templates/${id}/duplicate`, data ?? {})
+      .then(r => r.data),
+  /** 智能推荐：字段角色 / 公式 / 图表 / 汇总 / 典型示例 */
+  recommend: (wid: number | string, tableId: number | string) =>
+    api
+      .get<AnalyticsRecommendations>(`/v1/workspaces/${wid}/analytics/recommendations`, {
+        params: { table_id: tableId },
+      })
+      .then(r => r.data),
   validate: (wid: number | string, tableId: number | null, formulas: AnalyticsFormula[]) =>
     api.post<AnalyticsValidateResponse>(`/v1/workspaces/${wid}/analytics/validate`, {
       table_id: tableId, formulas,

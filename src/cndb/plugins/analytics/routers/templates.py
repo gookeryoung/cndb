@@ -5,6 +5,7 @@
 - POST   ""                 新建模板（editor+）
 - GET    "/{template_id}"   模板详情（成员即可）
 - PUT    "/{template_id}"   更新模板（editor+）
+- POST   "/{template_id}/duplicate"  复制模板（editor+）
 - DELETE "/{template_id}"   删除模板（editor+）
 """
 
@@ -20,7 +21,12 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.analytics import services
 from cndb.plugins.analytics.models import AnalyticsTemplate
-from cndb.plugins.analytics.schemas import TemplateCreate, TemplateResponse, TemplateUpdate
+from cndb.plugins.analytics.schemas import (
+    TemplateCreate,
+    TemplateDuplicateRequest,
+    TemplateResponse,
+    TemplateUpdate,
+)
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole
 
@@ -99,6 +105,25 @@ def update_template(
         description=payload.description,
         table_id=payload.table_id,
         config=payload.config,
+    )
+
+
+@router.post("/{template_id}/duplicate", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED)
+def duplicate_template(
+    workspace_id: int,
+    template_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    payload: TemplateDuplicateRequest | None = None,
+) -> AnalyticsTemplate:
+    """复制模板（不传 name 时自动命名「原名 副本」，重名自动追加序号）."""
+    _require(db, workspace_id, current_user, WorkspaceRole.EDITOR)
+    tpl = services.templates.get_template(db, workspace_id, template_id)
+    return services.templates.duplicate_template(
+        db,
+        current_user,
+        tpl,
+        name=payload.name if payload is not None else None,
     )
 
 

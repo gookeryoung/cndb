@@ -102,20 +102,73 @@ const COMPUTE_RESPONSE = {
   },
 }
 
+/** 智能推荐 fixture（公式含一条与模板重复的 pass_rate，用于验证去重） */
+const RECOMMENDATIONS = {
+  table_id: TID,
+  row_count: 2,
+  sampled_rows: 2,
+  truncated: false,
+  fields: [
+    { name: '产品', field_type: 'text', role: 'dimension', reason: '低基数文本列，适合分组', cardinality: 2, completeness: 1 },
+    { name: '产量', field_type: 'number', role: 'metric', reason: '数值列，适合求和/平均' },
+    { name: '合格数', field_type: 'number', role: 'metric', reason: '数值列' },
+  ],
+  formulas: [
+    { key: 'pass_rate', label: '合格率', expr: 'round([合格数] / [产量] * 100, 2)', reason: '两数值列比值' },
+    { key: 'yield_total', label: '产量合计', expr: 'sum([产量])', reason: '整列求和' },
+  ],
+  chart: {
+    chart: { type: 'line', x: '产品', y: 'yield_total', aggregation: 'avg', title: '推荐趋势图' },
+    reason: '维度 + 指标组合适合折线图',
+  },
+  summary: {
+    summary: {
+      group_by: '产品',
+      metrics: [{ field: 'yield_total', agg: 'sum', label: '总产量' }],
+      sort_by: null,
+      sort_order: 'desc',
+      top_n: 3,
+    },
+    reason: '按产品分组看产量',
+  },
+  examples: [
+    {
+      id: 'trend',
+      name: '产量趋势',
+      description: '按产品看产量趋势',
+      formulas: [{ key: 'yield_total', label: '产量合计', expr: 'sum([产量])' }],
+      chart: { type: 'line', x: '产品', y: 'yield_total', aggregation: 'sum', title: '示例趋势' },
+      summary: null,
+      reason: '典型产能分析场景',
+    },
+  ],
+}
+
 let computeBodies: Array<Record<string, unknown>> = []
 let createBodies: Array<Record<string, unknown>> = []
 let updateBodies: Array<Record<string, unknown>> = []
+let duplicateBodies: Array<Record<string, unknown>> = []
+let deleteIds: number[] = []
+/** 后端内存态模板列表：复制 / 删除后刷新能读到新状态 */
+let templateList: AnalyticsTemplate[] = []
 
 function setupHandlers() {
   computeBodies = []
   createBodies = []
   updateBodies = []
+  duplicateBodies = []
+  deleteIds = []
+  templateList = [TPL_MAIN, TPL_OTHER, TPL_BROKEN]
   server.use(
     http.get('/api/v1/workspaces/1/tables', () =>
       HttpResponse.json([{ id: TID, name: '产品批次' }, { id: 21, name: '其他表' }])),
     http.get('/api/v1/workspaces/1/tables/20', () => HttpResponse.json(TABLE_DETAIL)),
     http.get('/api/v1/workspaces/1/analytics/templates', () =>
-      HttpResponse.json([TPL_MAIN, TPL_OTHER, TPL_BROKEN])),
+      HttpResponse.json(templateList)),
+    http.get('/api/v1/workspaces/1/analytics/recommendations', ({ request }) => {
+      const tableId = Number(new URL(request.url).searchParams.get('table_id'))
+      return HttpResponse.json({ ...RECOMMENDATIONS, table_id: tableId })
+    }),
     http.post('/api/v1/workspaces/1/analytics/validate', async ({ request }) => {
       const body = (await request.json()) as { formulas: Array<{ key: string; expr: string }> }
       return HttpResponse.json({
@@ -137,6 +190,20 @@ function setupHandlers() {
       const body = (await request.json()) as Record<string, unknown>
       updateBodies.push(body)
       return HttpResponse.json({ ...TPL_MAIN, id: Number(params.id), name: body.name ?? TPL_MAIN.name, description: body.description ?? '' })
+    }),
+    http.post('/api/v1/workspaces/1/analytics/templates/:id/duplicate', async ({ request, params }) => {
+      const body = (await request.json().catch(() => ({}))) as { name?: string }
+      duplicateBodies.push(body)
+      const source = templateList.find(t => t.id === Number(params.id)) ?? TPL_MAIN
+      const copy: AnalyticsTemplate = { ...source, id: 100, name: body.name?.trim() || `${source.name} 副本` }
+      templateList = [copy, ...templateList]
+      return HttpResponse.json(copy, { status: 201 })
+    }),
+    http.delete('/api/v1/workspaces/1/analytics/templates/:id', ({ params }) => {
+      const id = Number(params.id)
+      deleteIds.push(id)
+      templateList = templateList.filter(t => t.id !== id)
+      return new HttpResponse(null, { status: 204 })
     }),
   )
 }
@@ -303,5 +370,92 @@ describe('AnalyticsPage', () => {
     fireEvent.click(screen.getByTestId('analytics-export-stats'))
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('描述统计已导出 CSV')).toBeInTheDocument()
+  })
+
+  it('智能推荐：应用图表 / 汇总 / 追加公式（跳过重复 key）/ 典型示例', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    // 选表后请求推荐
+    await screen.findByTestId('analytics-recommend-dimension-产品')
+
+    // 应用推荐图表 → 图表配置回填并标记未保存
+    fireEvent.click(screen.getByTestId('analytics-recommend-chart'))
+    expect(screen.getByTestId('analytics-chart-title')).toHaveValue('推荐趋势图')
+    expect(await screen.findByText('已应用推荐图表')).toBeInTheDocument()
+    expect(await screen.findByTestId('analytics-dirty')).toBeInTheDocument()
+
+    // 应用推荐汇总 → 指标与 Top N 回填
+    fireEvent.click(screen.getByTestId('analytics-recommend-summary'))
+    await waitFor(() => expect(screen.getByTestId('analytics-summary-metric-label-0')).toHaveValue('总产量'))
+    expect(screen.getByTestId('analytics-summary-topn')).toHaveValue('3')
+    expect(await screen.findByText('已应用推荐分组汇总')).toBeInTheDocument()
+
+    // 追加推荐公式：pass_rate 与现有公式重复 → 只追加 yield_total
+    fireEvent.click(screen.getByTestId('analytics-recommend-formulas'))
+    await waitFor(() => expect(screen.getByTestId('analytics-formula-expr-1')).toHaveValue('sum([产量])'))
+    expect(screen.getByTestId('analytics-formula-expr-0')).toHaveValue(MAIN_FORMULA.expr)
+    expect(await screen.findByText('已追加 1 条推荐公式')).toBeInTheDocument()
+
+    // 应用典型示例 → 公式 / 图表 / 汇总整体替换
+    fireEvent.click(screen.getByTestId('analytics-recommend-examples'))
+    const example = await screen.findByTestId('analytics-recommend-example-trend')
+    expect(example).toHaveTextContent('产量趋势')
+    fireEvent.click(example)
+
+    await waitFor(() => expect(screen.getByTestId('analytics-chart-title')).toHaveValue('示例趋势'))
+    expect(screen.getByTestId('analytics-formula-expr-0')).toHaveValue('sum([产量])')
+    expect(screen.queryByTestId('analytics-formula-expr-1')).not.toBeInTheDocument()
+    expect(await screen.findByText('已应用典型示例「产量趋势」')).toBeInTheDocument()
+  })
+
+  it('分析列表：新建分析清空当前配置并移除 ?template 深链', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    await screen.findByTestId('analytics-recommend')
+
+    fireEvent.click(screen.getByTestId('analytics-manager-btn'))
+    await screen.findByTestId('analytics-manager')
+    fireEvent.click(screen.getByTestId('analytics-manager-new'))
+
+    await waitFor(() => expect(screen.queryByTestId('analytics-template-meta')).not.toBeInTheDocument())
+    expect(screen.getByTestId('analytics-formula-expr-0')).toHaveValue('')
+    expect(screen.getByTestId('analytics-chart-title')).toHaveValue('')
+    // 数据源清空后推荐区块隐藏 / 未保存标记消失
+    expect(screen.queryByTestId('analytics-recommend')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('analytics-dirty')).not.toBeInTheDocument()
+  })
+
+  it('分析列表：复制模板后刷新列表并打开副本', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+
+    fireEvent.click(screen.getByTestId('analytics-manager-btn'))
+    await screen.findByTestId('analytics-manager')
+    fireEvent.click(screen.getByTestId('analytics-manager-duplicate-7'))
+
+    await waitFor(() => expect(duplicateBodies).toHaveLength(1))
+    await waitFor(() => expect(screen.getByTestId('analytics-template-meta')).toHaveTextContent('批次合格率分布 副本'))
+    expect(await screen.findByText('已复制为「批次合格率分布 副本」')).toBeInTheDocument()
+
+    // 刷新后的模板列表包含副本
+    fireEvent.click(screen.getByTestId('analytics-manager-btn'))
+    expect(await screen.findByTestId('analytics-manager-item-100')).toHaveTextContent('批次合格率分布 副本')
+  })
+
+  it('分析列表：删除需确认，确认后移除模板', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+
+    fireEvent.click(screen.getByTestId('analytics-manager-btn'))
+    await screen.findByTestId('analytics-manager-item-8')
+    fireEvent.click(screen.getByTestId('analytics-manager-delete-8'))
+
+    const titles = await screen.findAllByText('删除分析「其他模板」？')
+    const confirm = titles[0].closest('.ant-modal') as HTMLElement
+    fireEvent.click(within(confirm).getByRole('button', { name: /删\s*除/ }))
+
+    await waitFor(() => expect(deleteIds).toEqual([8]))
+    expect(await screen.findByText('模板已删除')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('analytics-manager-item-8')).not.toBeInTheDocument())
   })
 })

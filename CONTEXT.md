@@ -18,3 +18,6 @@
 | 文档区二级导航 | 进入 `/w/:wid/documents*` 时在工作区 Tabs 右侧以竖线分割渲染「文档」根入口 + 二级页签（修改申请 / 问题清单），形式与表级页签（`cn-table-crumb` / `cn-table-tab`）一致 | 页签路由 `/w/:wid/documents/change-requests`、`/w/:wid/documents/issues`；静态段优先于 `:docId`，编辑器页显示根入口但无子页激活 |
 | 文档问题清单（DocumentIssue） | 文档级反馈条目：所有成员可提交（标题 + 描述 + 类别）与评论，owner/editor 或创建者可关闭/重开；随文档级联清理 | 表 `documents_issue` / `documents_issuecomment` / `documents_issueevent`，端点 `/{wid}/document-issues`；类别/状态取值与数据表问题清单一致 |
 | 数据分析（Analytics） | 工作区级分析模块：分析模板（公式 + 图表 + 分组汇总配置，存后端）→ 受限公式引擎逐行派生指标 → 分组汇总（维度 × 聚合，可排序 Top N）与 ChartCard 可视化 | 页面 `/w/:wid/analytics`，支持 `?template=<id>` 深链；统计/数据/汇总可导出 CSV，图表可导出 PNG |
+| 字段智能推荐（Analytics Recommendation） | 选表后按字段类型与抽样画像给出角色（metric/dimension/time/identifier/ignored）、基数、非空率、推荐公式/图表/分组汇总与典型示例 | 端点 `GET /{wid}/analytics/recommendations?table_id=`；只读成员即可用，取数复用行级权限与字段隐藏；结果确定性、一次抽样 1000 行 |
+| 典型示例（Recommend Example） | 基于当前表字段动态生成的整套分析配置（分类对比 / 数值分布 / 占比构成 / 时间趋势 / 比率分析 / 数据概览），一键应用到编辑态 | 随推荐接口返回；每个示例的公式、图表、汇总均可直接通过模板配置校验并落库 |
+| 分析列表（Analytics Manager） | 已保存分析的集中管理入口：列表展示、打开、复制（服务端默认「原名 副本」并重名递增）、删除、新建 | Drawer 入口在页面顶栏；复制端点 `POST /{wid}/analytics/templates/{id}/duplicate`，与保存/另存为共用未保存修改确认 |

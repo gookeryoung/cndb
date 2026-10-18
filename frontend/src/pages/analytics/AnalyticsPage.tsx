@@ -22,30 +22,36 @@ import {
 } from 'antd'
 import {
   DeleteOutlined, SaveOutlined, BarChartOutlined, PlayCircleOutlined, CopyOutlined, EditOutlined,
+  UnorderedListOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi } from '@/api'
 import type { Field } from '@/api'
 import { analyticsApi } from '@/api/analytics'
 import type {
-  AnalyticsChart, AnalyticsComputeResponse, AnalyticsFormula, AnalyticsSummary, AnalyticsTemplate,
-  AnalyticsTemplateCreate, AnalyticsTemplateUpdate,
+  AnalyticsChart, AnalyticsComputeResponse, AnalyticsFormula, AnalyticsRecommendationExample,
+  AnalyticsSummary, AnalyticsTemplate, AnalyticsTemplateCreate, AnalyticsTemplateUpdate,
 } from '@/api/analytics'
 import { FormulaPanel } from './FormulaPanel'
 import { ChartPanel } from './ChartPanel'
 import { SummaryPanel } from './SummaryPanel'
 import { AnalyticsResultView } from './AnalyticsResultView'
+import { RecommendationPanel } from './RecommendationPanel'
+import { AnalyticsManagerDrawer } from './AnalyticsManagerDrawer'
 import {
   DEFAULT_CHART,
   EMPTY_SUMMARY,
+  applyExampleConfig,
   buildTemplateConfig,
   collectFormulaErrors,
   isDirty,
+  mergeFormulas,
   newFormula,
   normalizeChart,
   normalizeFormulas,
   normalizeSummary,
   templateSnapshot,
+  templateTableName,
 } from './analyticsModel'
 
 const { Text, Title } = Typography
@@ -86,6 +92,8 @@ export default function AnalyticsPage() {
   const [formName, setFormName] = useState('')
   const [formDesc, setFormDesc] = useState('')
   const [tableMissing, setTableMissing] = useState(false)
+  /** 分析列表 Drawer 开关 */
+  const [managerOpen, setManagerOpen] = useState(false)
   /** 已处理的 ?template= 参数：模板列表刷新/保存过渡期间不重复载入 */
   const handledParamRef = useRef<string | null>(null)
 
@@ -106,6 +114,19 @@ export default function AnalyticsPage() {
     queryKey: ['analytics-templates', wid],
     queryFn: () => analyticsApi.listTemplates(wid!),
     enabled: !!wid,
+  })
+
+  /** 智能推荐：选表后请求；失败静默降级（不弹全局错误），不影响手动配置 */
+  const {
+    data: recommendations = null,
+    isLoading: recommendLoading,
+    isError: recommendError,
+  } = useQuery({
+    queryKey: ['analytics-recommendations', wid, tableId],
+    queryFn: () => analyticsApi.recommend(wid!, tableId!),
+    enabled: !!wid && !!tableId,
+    retry: false,
+    staleTime: 5 * 60_000,
   })
 
   const tableFields = useMemo<string[]>(() => (tableDetail?.fields ?? []).map(f => f.name), [tableDetail])
@@ -196,9 +217,10 @@ export default function AnalyticsPage() {
   }, [setSearchParams])
 
   /** 切换模板：有未保存修改先确认（避免用户误丢编辑成果） */
-  const requestTemplateLoad = useCallback((tpl: AnalyticsTemplate) => {
+  const requestTemplateLoad = useCallback((tpl: AnalyticsTemplate, opts?: { onApplied?: () => void }) => {
     if (!dirty) {
       applyTemplateConfig(tpl)
+      opts?.onApplied?.()
       return
     }
     modal.confirm({
@@ -206,9 +228,103 @@ export default function AnalyticsPage() {
       content: `模板「${templateName || '未命名分析'}」有未保存的修改，切换后将丢失。`,
       okText: '放弃并切换',
       cancelText: '继续编辑',
-      onOk: () => applyTemplateConfig(tpl),
+      onOk: () => {
+        applyTemplateConfig(tpl)
+        opts?.onApplied?.()
+      },
     })
   }, [dirty, templateName, applyTemplateConfig, modal])
+
+  /** 新建分析：真正清空当前配置与深链（有未保存修改先确认） */
+  const startNewAnalysis = useCallback(() => {
+    const reset = () => {
+      setActiveTemplateId(null)
+      setTemplateName('')
+      setTemplateDesc('')
+      setTableId(null)
+      setFormulas([newFormula(0)])
+      setChart({ ...DEFAULT_CHART })
+      setSummary({ ...EMPTY_SUMMARY, metrics: [] })
+      setResult(null)
+      setServerErrors({})
+      setTableMissing(false)
+      setSnapshot('')
+      // URL 更新走 startTransition，可能晚于本次渲染；先记录已处理的参数，
+      // 避免过渡期内深链 effect 用旧 ?template= 把刚清空的模板再载入一次。
+      handledParamRef.current = searchParams.get('template')
+      setManagerOpen(false)
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        next.delete('template')
+        return next
+      }, { replace: true })
+    }
+    if (!dirty) {
+      reset()
+      return
+    }
+    modal.confirm({
+      title: '放弃未保存的修改？',
+      content: `当前分析「${templateName || '未命名分析'}」有未保存的修改，新建后将丢失。`,
+      okText: '放弃并新建',
+      cancelText: '继续编辑',
+      onOk: reset,
+    })
+  }, [dirty, templateName, modal, searchParams, setSearchParams])
+
+  // ── 智能推荐：应用动作（不等待后端；接口失败仅降级面板，不阻塞页面）──
+  /** 首个推荐维度：点击推荐指标时用它补充分组汇总维度 */
+  const recommendedDimension = useMemo(
+    () => recommendations?.fields.find(f => f.role === 'dimension')?.name ?? null,
+    [recommendations],
+  )
+
+  const selectRecommendedDimension = useCallback((name: string) => {
+    setChart(prev => ({ ...prev, x: name }))
+  }, [])
+
+  const selectRecommendedTime = useCallback((name: string) => {
+    setChart(prev => ({ ...prev, type: 'line', x: name }))
+  }, [])
+
+  const selectRecommendedMetric = useCallback((name: string) => {
+    setChart(prev => ({ ...prev, y: name }))
+    if (recommendedDimension) {
+      setSummary(prev => (prev.group_by ? prev : { ...prev, group_by: recommendedDimension }))
+    }
+  }, [recommendedDimension])
+
+  const applyRecommendedChart = useCallback((next: AnalyticsChart) => {
+    setChart(normalizeChart(next))
+    message.success('已应用推荐图表')
+  }, [message])
+
+  const applyRecommendedSummary = useCallback((next: AnalyticsSummary) => {
+    setSummary(normalizeSummary(next))
+    message.success('已应用推荐分组汇总')
+  }, [message])
+
+  const applyRecommendedFormulas = useCallback((list: AnalyticsFormula[]) => {
+    const next = mergeFormulas(formulas, list)
+    if (next === formulas) {
+      message.info('推荐公式均已存在，未追加')
+      return
+    }
+    const currentKeys = new Set(formulas.filter(f => f.expr.trim()).map(f => f.key.trim()))
+    const added = next.filter(f => !currentKeys.has(f.key.trim())).length
+    setFormulas(next)
+    setServerErrors({})
+    message.success(`已追加 ${added} 条推荐公式`)
+  }, [formulas, message])
+
+  const applyRecommendedExample = useCallback((example: AnalyticsRecommendationExample) => {
+    const config = applyExampleConfig(example)
+    setFormulas(config.formulas)
+    setChart(config.chart)
+    setSummary(config.summary)
+    setServerErrors({})
+    message.success(`已应用典型示例「${example.name}」`)
+  }, [message])
 
   // ── 深链：?template=<id> 刷新/分享后自动载入 ──
   // 注意：URL 更新走 React Router 的 transition，可能晚于模板列表刷新一个渲染；
@@ -305,6 +421,22 @@ export default function AnalyticsPage() {
       message.success('模板已删除')
     },
     onError: () => message.error('删除失败（需编辑者及以上权限）'),
+  })
+
+  /** 复制模板：成功后刷新列表并打开副本 */
+  const duplicateMutation = useMutation({
+    mutationFn: (tpl: AnalyticsTemplate) => analyticsApi.duplicateTemplate(wid!, tpl.id),
+    onSuccess: tpl => {
+      queryClient.setQueryData<AnalyticsTemplate[]>(['analytics-templates', wid], old => {
+        const list = old ?? []
+        return list.some(t => t.id === tpl.id) ? list.map(t => (t.id === tpl.id ? tpl : t)) : [tpl, ...list]
+      })
+      void queryClient.invalidateQueries({ queryKey: ['analytics-templates', wid] })
+      message.success(`已复制为「${tpl.name}」`)
+      // 与普通「打开模板」同口径：当前有未保存修改时先确认再载入副本
+      requestTemplateLoad(tpl, { onApplied: () => setManagerOpen(false) })
+    },
+    onError: () => message.error('复制失败（需编辑者及以上权限）'),
   })
 
   const computeMutation = useMutation({
@@ -411,6 +543,13 @@ export default function AnalyticsPage() {
           数据源为工作区内任意数据表；模板存后端，可跨设备复用
         </Text>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Button
+            data-testid="analytics-manager-btn"
+            icon={<UnorderedListOutlined />}
+            onClick={() => setManagerOpen(true)}
+          >
+            分析列表
+          </Button>
           <Select
             data-testid="analytics-template-select"
             style={{ width: 220 }}
@@ -511,6 +650,23 @@ export default function AnalyticsPage() {
           </Text>
         </Space>
       </Card>
+
+      {/* ── 智能推荐：选表后按字段画像推荐图表 / 汇总 / 公式 / 典型示例 ── */}
+      {tableId != null && (
+        <RecommendationPanel
+          recommendations={recommendations}
+          loading={recommendLoading}
+          error={recommendError}
+          tableName={tableDetail?.name ?? templateTableName(tables, tableId)}
+          onSelectDimension={selectRecommendedDimension}
+          onSelectMetric={selectRecommendedMetric}
+          onSelectTime={selectRecommendedTime}
+          onApplyChart={applyRecommendedChart}
+          onApplySummary={applyRecommendedSummary}
+          onApplyFormulas={applyRecommendedFormulas}
+          onApplyExample={applyRecommendedExample}
+        />
+      )}
 
       {/* ── 配置区：公式 + 图表，分组汇总占整行 ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12 }}>
@@ -620,6 +776,22 @@ export default function AnalyticsPage() {
           </Text>
         </Space>
       </Modal>
+
+      {/* ── 分析列表 Drawer：打开 / 复制 / 删除 / 新建 ── */}
+      <AnalyticsManagerDrawer
+        open={managerOpen}
+        onClose={() => setManagerOpen(false)}
+        templates={templates}
+        tables={tables}
+        activeTemplateId={activeTemplateId}
+        dirty={dirty}
+        duplicating={duplicateMutation.isPending}
+        deleting={removeMutation.isPending}
+        onOpenTemplate={tpl => requestTemplateLoad(tpl, { onApplied: () => setManagerOpen(false) })}
+        onDuplicate={tpl => duplicateMutation.mutate(tpl)}
+        onDelete={tpl => removeMutation.mutate(tpl.id)}
+        onNew={startNewAnalysis}
+      />
     </div>
   )
 }

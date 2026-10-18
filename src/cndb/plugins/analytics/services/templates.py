@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from fastapi import HTTPException
@@ -186,9 +187,67 @@ def delete_template(db: Session, tpl: AnalyticsTemplate) -> None:
     db.commit()
 
 
+def _fit_name(name: str, limit: int = 200) -> str:
+    """按模型列宽截断名称（超长时宁可截断也不让复制失败）."""
+    return name if len(name) <= limit else name[:limit]
+
+
+def _name_with_suffix(source_name: str, suffix: str, limit: int = 200) -> str:
+    """给副本名追加后缀；超长时先截断原名、保留完整后缀（避免截断后重名死循环）."""
+    room = max(0, limit - len(suffix))
+    return _fit_name(f"{source_name[:room]}{suffix}", limit)
+
+
+def duplicate_name(db: Session, workspace_id: int, source_name: str) -> str:
+    """生成不重名的副本名称：「{原名} 副本」，重名时追加 " (2)"、" (3)"…"""
+    existing = {
+        row[0] for row in db.query(AnalyticsTemplate.name).filter(AnalyticsTemplate.workspace_id == workspace_id).all()
+    }
+    base = _name_with_suffix(source_name, " 副本")
+    if base not in existing:
+        return base
+    index = 2
+    while True:
+        candidate = _name_with_suffix(source_name, f" 副本 ({index})")
+        if candidate not in existing:
+            return candidate
+        index += 1
+
+
+def duplicate_template(
+    db: Session,
+    user: User,
+    tpl: AnalyticsTemplate,
+    *,
+    name: str | None = None,
+) -> AnalyticsTemplate:
+    """复制模板：复制 config / table_id / description，创建人改为当前用户.
+
+    Args:
+        name: 显式指定副本名称；空则自动生成不重名的「原名 副本」.
+    """
+    target_name = name.strip() if name and name.strip() else duplicate_name(db, tpl.workspace_id, tpl.name)
+    copy_tpl = AnalyticsTemplate(
+        workspace_id=tpl.workspace_id,
+        table_id=tpl.table_id,
+        name=target_name,
+        description=tpl.description,
+        # 深拷贝，避免两个模板共享同一个 config 对象
+        config=copy.deepcopy(tpl.config or {}),
+        created_by_id=user.id,
+        updated_by_id=user.id,
+    )
+    db.add(copy_tpl)
+    db.commit()
+    db.refresh(copy_tpl)
+    return copy_tpl
+
+
 __all__ = [
     "create_template",
     "delete_template",
+    "duplicate_name",
+    "duplicate_template",
     "get_template",
     "normalize_config",
     "table_field_names",
