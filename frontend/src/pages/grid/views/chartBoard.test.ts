@@ -323,7 +323,7 @@ describe('histogramBins 极端数据不变式（分箱策略调整场景）', ()
 
 describe('buildChartData 极端维度场景', () => {
   it('boolean 维度按「是/否」分桶（而非 true/false），空值归未分组', () => {
-    // 低质量数据工作区「布尔与百分比」表场景：维度=是否（boolean），度量=完成率（percentage）
+    // 极端数据场景：维度=是否（boolean），度量=完成率（percentage）
     const boolField = makeField({ id: 20, name: '是否', field_type: 'boolean' })
     const rateField = makeField({ id: 21, name: '完成率', field_type: 'percentage' })
     const rows: RowResponse[] = [
