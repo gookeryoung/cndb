@@ -295,16 +295,6 @@ export const handlers = [
       { status: 201 },
     )
   }),
-  // 每日笔记（幂等：固定返回今日笔记文档）
-  http.post('/api/v1/workspaces/:wid/documents/daily-note', () =>
-    HttpResponse.json({
-      ...mockDocuments[1],
-      id: 77,
-      title: '2026-10-14',
-      is_folder: false,
-      parent_id: null,
-      created: true,
-    })),
   // 反向链接（谁引用了本文档标题）
   http.get('/api/v1/workspaces/:wid/documents/:docId/backlinks', () =>
     HttpResponse.json({

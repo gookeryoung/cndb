@@ -457,48 +457,7 @@ class TestShare:
         assert r.status_code == 404
 
 
-# ── 每日笔记 / 反向链接 ──
-
-
-class TestDailyNote:
-    def test_daily_note_idempotent(self, client, doc_api, auth_headers):
-        """幂等：指定日期首次创建，再次调用复用同一篇。"""
-        r1 = client.post(f"{doc_api}/daily-note", json={"date": "2026-10-14"}, headers=auth_headers)
-        assert r1.status_code == 200, r1.text
-        d1 = r1.json()
-        assert d1["created"] is True
-        assert d1["title"] == "2026-10-14"
-        assert d1["version_count"] == 1  # 模板内容创建 v1
-
-        r2 = client.post(f"{doc_api}/daily-note", json={"date": "2026-10-14"}, headers=auth_headers)
-        assert r2.status_code == 200
-        d2 = r2.json()
-        assert d2["created"] is False
-        assert d2["id"] == d1["id"]
-
-    def test_daily_note_default_today(self, client, doc_api, auth_headers):
-        """无请求体/空对象时按服务器当天创建。"""
-        import datetime as dt
-
-        r = client.post(f"{doc_api}/daily-note", headers=auth_headers)
-        assert r.status_code == 200
-        assert r.json()["title"] == dt.date.today().strftime("%Y-%m-%d")
-
-        r2 = client.post(f"{doc_api}/daily-note", json={}, headers=auth_headers)
-        assert r2.json()["created"] is False  # 与上一次同一篇
-
-    def test_daily_note_reuses_titled_doc(self, client, doc_api, auth_headers):
-        """当日已存在同名普通文档时直接复用（不新建）。"""
-        existing = _create_doc(client, doc_api, auth_headers, title="2026-10-15", content="已有内容")
-        r = client.post(f"{doc_api}/daily-note", json={"date": "2026-10-15"}, headers=auth_headers)
-        assert r.status_code == 200
-        assert r.json()["created"] is False
-        assert r.json()["id"] == existing["id"]
-
-    def test_daily_note_invalid_date_rejected(self, client, doc_api, auth_headers):
-        """非法日期格式 422。"""
-        r = client.post(f"{doc_api}/daily-note", json={"date": "2026/10/14"}, headers=auth_headers)
-        assert r.status_code == 422
+# ── 反向链接 ──
 
 
 class TestBacklinks:

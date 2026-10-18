@@ -100,11 +100,6 @@ export interface ShareItem {
   created_at: string
 }
 
-/** 每日笔记响应：文档元数据 + 是否本次新建（幂等标记） */
-export interface DailyNoteResponse extends DocumentItem {
-  created: boolean
-}
-
 /** 反向链接项：引用了当前文档的其他文档 */
 export interface BacklinkItem {
   id: number
@@ -422,12 +417,6 @@ export const documentsApi = {
       .get<{ items: SearchHitItem[]; total: number; query: string }>(`${base(wid)}/search`, {
         params: { q, ...params },
       })
-      .then(r => r.data),
-
-  // 每日笔记（幂等：当日已存在直接返回）
-  dailyNote: (wid: number | string, date?: string) =>
-    api
-      .post<DailyNoteResponse>(`${base(wid)}/daily-note`, date ? { date } : {})
       .then(r => r.data),
 
   // 反向链接：谁在正文中引用了 [[本文档标题]]
