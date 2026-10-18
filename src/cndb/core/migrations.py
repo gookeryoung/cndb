@@ -22,7 +22,7 @@ from typing import Any, NoReturn
 
 import alembic.command
 import alembic.config
-from sqlalchemy import inspect, text
+from sqlalchemy import JSON, inspect, text
 from sqlalchemy.schema import CreateColumn, CreateIndex
 from sqlalchemy.sql.schema import Column
 
@@ -156,10 +156,21 @@ def _scalar_server_default(col: Column[Any]) -> str | None:
     if col.server_default is not None:
         return None  # 已有 server_default，CreateColumn 可直接编译
     default = col.default
-    if default is None or not getattr(default, "is_scalar", False):
+    if default is None:
         return None
     value = getattr(default, "arg", None)
     if value is None:
+        return None
+    if not getattr(default, "is_scalar", False):
+        # JSON 列的容器默认值（default=list / default=dict）：合成空容器字面量，
+        # 与迁移脚本中同名列的 server_default='[]' 约定一致。SQLAlchemy 会把
+        # 内置容器类型包装为可调用对象，按函数名 + JSON 列类型识别。
+        name = getattr(value, "__name__", None)
+        if isinstance(col.type, JSON):
+            if name == "list":
+                return "'[]'"
+            if name == "dict":
+                return "'{}'"
         return None
     if isinstance(value, bool):
         return "1" if value else "0"

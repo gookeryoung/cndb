@@ -404,10 +404,13 @@ class TestScalarServerDefault:
         """已有 server_default → None（CreateColumn 可直接编译，无需合成）."""
         assert mig_mod._scalar_server_default(Column("x", String(16), server_default="[]")) is None
 
-    def test_callable_default_returns_none(self):
-        """可调用 default（dict/list/lambda）非标量 → None（存量行无法取值）."""
-        assert mig_mod._scalar_server_default(Column("x", JSON, default=dict)) is None
-        assert mig_mod._scalar_server_default(Column("x", JSON, default=list)) is None
+    def test_container_default_synthesizes_empty_json(self):
+        """default=list/dict → 空 JSON 字面量（与迁移 server_default='[]' 契约一致）."""
+        assert mig_mod._scalar_server_default(Column("x", JSON, default=list)) == "'[]'"
+        assert mig_mod._scalar_server_default(Column("x", JSON, default=dict)) == "'{}'"
+
+    def test_other_callable_default_returns_none(self):
+        """其它可调用 default（lambda）无法静态求值 → None（存量行无法取值）."""
         assert mig_mod._scalar_server_default(Column("x", String(16), default=lambda: "x")) is None
 
     def test_no_default_returns_none(self):
@@ -443,6 +446,12 @@ class TestRenderAddColumnDdl:
         ddl = self._ddl(Column("manage_data_role", String(16), nullable=False, default=""))
         assert ddl is not None
         assert "NOT NULL" in ddl and "DEFAULT ''" in ddl
+
+    def test_not_null_json_container_default_compiles(self):
+        """NOT NULL JSON 列 + default=list → 编译出 DEFAULT '[]'（dropped_columns 形态）."""
+        ddl = self._ddl(Column("dropped_columns", JSON, nullable=False, default=list))
+        assert ddl is not None
+        assert "NOT NULL" in ddl and "DEFAULT '[]'" in ddl
 
     def test_not_null_without_any_default_skipped(self):
         """NOT NULL 无 server_default 也无标量 default → None（存量行必失败）."""
