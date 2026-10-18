@@ -18,7 +18,7 @@ def _seed_xlsx_table(
     xlsx_path: Path,
     owner_id: int | None = None,
 ) -> tuple[Any, list[int]]:
-    """从 xlsx 文件建表导入 —— 带降级重试，保证低质量治理样例都能入表.
+    """从 xlsx 文件建表导入 —— 带降级重试，保证原始值无损入表.
 
     两步策略：
     1. 正常自动推断类型（create_table_from_file）—— 干净文件走这条快速路径.
