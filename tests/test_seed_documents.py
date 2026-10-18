@@ -4,8 +4,8 @@
 
 - 纯函数：元数据头解析、标题派生、自然排序、数据表引用符号解析、工作区名派生；
 - 端到端注入：临时 datasets 目录 → 文档树落库（层级/状态/标签/作者/摘要/引用解析/幂等）；
-- 真实 datasets 完整性：每个非反面示例工作区不少于 5 篇文档、表/视图引用可解析、
-  双向链接目标存在、反面示例工作区（低质量数据）不生成文档。
+- 真实 datasets 完整性：每个示例工作区不少于 5 篇文档、表/视图引用可解析、
+  双向链接目标存在。
 """
 
 from __future__ import annotations
@@ -328,9 +328,6 @@ def test_ensure_fts_schema_cache_is_per_database():
 
 # ── 3. 真实 datasets 完整性 ────────────────────────────────
 
-# 反面示例工作区：按需求不生成典型文档
-NEGATIVE_WORKSPACES = {"工作区-低质量数据"}
-
 # 硬编码业务表（seed._seed_sales_tables 注入，不属于 CSV/API 来源）
 HARDCODED_TABLES: dict[str, set[str]] = {"某企业销售管理": {"部门表", "员工表"}}
 
@@ -426,25 +423,20 @@ class TestRealDatasetDocuments:
                 result[_workspace_display_name(folder.name)] = docs
         return result
 
-    def test_negative_workspace_has_no_documents(self, datasets_dir: Path):
-        """低质量数据等反面示例工作区不生成典型文档."""
-        assert not (datasets_dir / "工作区-低质量数据" / "documents").exists()
-
-    def test_every_positive_workspace_has_at_least_five_documents(self, datasets_dir: Path):
-        """除反面示例外，每个工作区都有 documents/ 且不少于 5 篇典型文档."""
+    def test_every_workspace_has_at_least_five_documents(self, datasets_dir: Path):
+        """每个示例工作区都有 documents/ 且不少于 5 篇典型文档."""
         all_workspaces = {
             _workspace_display_name(p.name) for p in datasets_dir.iterdir() if p.is_dir() and not p.name.startswith(".")
         }
-        expected = all_workspaces - {_workspace_display_name(n) for n in NEGATIVE_WORKSPACES}
-        assert set(self._workspace_dirs(datasets_dir)) == expected
+        assert set(self._workspace_dirs(datasets_dir)) == all_workspaces
 
         counts: dict[str, int] = {}
         for ws_name, docs_root in self._workspace_dirs(datasets_dir).items():
             docs = [n for n in _flatten_documents(docs_root) if not n["is_folder"]]
             counts[ws_name] = len(docs)
             assert len(docs) >= 5, f"{ws_name} 仅 {len(docs)} 篇典型文档"
-        # 反面示例工作区（低质量数据）不提供 documents/；当前带文档的示例工作区为
-        # 某企业销售管理 / 科研项目管理 两个，阈值随之收敛为 2。
+        # 当前带文档的示例工作区为某企业销售管理 / 科研项目管理 两个，
+        # 阈值随之收敛为 2，防止未来误删工作区文档种子。
         assert len(counts) >= 2
 
     def test_document_metadata_and_structure_valid(self, datasets_dir: Path):
