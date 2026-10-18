@@ -13,6 +13,7 @@ import { DownOutlined, HistoryOutlined, RollbackOutlined, UpOutlined } from '@an
 
 import type { VersionItem } from '@/api/documents'
 import { DocumentDiffView } from '@/components/DiffView'
+import { useResponsive } from '@/hooks/useResponsive'
 import { formatDateTime, formatRelativeTime } from '@/utils/datetime'
 import { formatSize } from '@/utils/formatSize'
 
@@ -91,6 +92,7 @@ export default function VersionsDrawer({
 }) {
   const latest = versions[0]
   const hidden = total !== undefined ? total - versions.length : 0
+  const { isMobile } = useResponsive()
 
   const body = () => {
     if (loading) {
@@ -222,7 +224,7 @@ export default function VersionsDrawer({
           版本历史
         </span>
       }
-      width={960}
+      width={isMobile ? '100%' : 960}
       open={open}
       onClose={onClose}
       styles={{ body: { padding: 0 } }}
