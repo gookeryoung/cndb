@@ -122,7 +122,7 @@ describe('VersionsDrawer', () => {
     expect(onRollback).not.toHaveBeenCalled()
 
     // Popconfirm 走 portal + 异步挂载
-    const ok = await screen.findByRole('button', { name: '回滚' })
+    const ok = await screen.findByRole('button', { name: '确认回滚' })
     fireEvent.click(ok)
     expect(onRollback).toHaveBeenCalledWith(2)
   })
