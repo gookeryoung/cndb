@@ -6,10 +6,11 @@
 
 import { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Card, Input, Select, Space, Table, Tag, Typography, Button } from 'antd'
-import { ReloadOutlined } from '@ant-design/icons'
+import { Input, Select, Table, Tag, Typography, Button } from 'antd'
+import { ReloadOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { adminApi } from '@/api'
+import { useResponsive } from '@/hooks/useResponsive'
 import type { CoreEventActionStat, CoreEventItem } from '@/api'
 
 const { Text } = Typography
@@ -44,6 +45,7 @@ export default function EventsPage() {
   const [keywordDraft, setKeywordDraft] = useState(appliedKeyword)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  const { isMobile } = useResponsive()
 
   /** 更新 URL 中的筛选条件（去掉空值）并回到第一页 */
   const applyFilters = (next: { action?: string; keyword?: string }) => {
@@ -120,13 +122,13 @@ export default function EventsPage() {
   ]
 
   return (
-    <div data-testid="events-page">
-      <Space wrap style={{ marginBottom: 12 }}>
+    <div className="cn-admin-section" data-testid="events-page">
+      <div className="cn-toolbar">
         <Select
           data-testid="event-action-filter"
           allowClear
           placeholder="按动作筛选"
-          style={{ width: 220 }}
+          style={{ width: isMobile ? '100%' : 220 }}
           value={appliedAction}
           onChange={(v) => applyFilters({ action: v })}
           options={(actionsQuery.data ?? []).map((it: CoreEventActionStat) => ({
@@ -138,48 +140,56 @@ export default function EventsPage() {
           data-testid="event-keyword"
           allowClear
           placeholder="摘要 / 操作人关键词"
-          style={{ width: 240 }}
+          style={{ width: isMobile ? '100%' : 240 }}
           value={keywordDraft}
           onChange={(e) => setKeywordDraft(e.target.value)}
           onSearch={(v) => applyFilters({ keyword: v })}
         />
-        <Button
-          icon={<ReloadOutlined />}
-          onClick={() => {
-            void actionsQuery.refetch()
-            void eventsQuery.refetch()
+        <div className="cn-toolbar-end">
+          <span className="cn-record-pill">{eventsQuery.data?.total ?? 0} 条事件</span>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              void actionsQuery.refetch()
+              void eventsQuery.refetch()
+            }}
+          >
+            刷新
+          </Button>
+        </div>
+      </div>
+
+      <div className="cn-grid-card">
+        <Table<CoreEventItem>
+          className="cn-table-list"
+          rowKey="id"
+          size="small"
+          data-testid="events-table"
+          loading={eventsQuery.isLoading}
+          dataSource={eventsQuery.data?.items ?? []}
+          columns={columns}
+          scroll={{ x: 'max-content' }}
+          pagination={{
+            current: page,
+            pageSize,
+            total: eventsQuery.data?.total ?? 0,
+            showSizeChanger: true,
+            onChange: (p, ps) => {
+              setPage(p)
+              setPageSize(ps)
+            },
           }}
-        >
-          刷新
-        </Button>
-      </Space>
+          locale={{ emptyText: '暂无事件' }}
+        />
+      </div>
 
-      <Table<CoreEventItem>
-        rowKey="id"
-        size="small"
-        data-testid="events-table"
-        loading={eventsQuery.isLoading}
-        dataSource={eventsQuery.data?.items ?? []}
-        columns={columns}
-        pagination={{
-          current: page,
-          pageSize,
-          total: eventsQuery.data?.total ?? 0,
-          showSizeChanger: true,
-          onChange: (p, ps) => {
-            setPage(p)
-            setPageSize(ps)
-          },
-        }}
-        locale={{ emptyText: '暂无事件' }}
-      />
-
-      <Card size="small" style={{ marginTop: 12 }}>
-        <Text type="secondary">
+      <div className="cn-hint">
+        <InfoCircleOutlined />
+        <div>
           统一事件流汇总各插件的关键动作（登录 / 用户管理 / 记录变更等）。域内明细仍在各处原始日志中；
           同一 <Text code>request_id</Text> 可在访问日志与慢查询日志中继续追踪。
-        </Text>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

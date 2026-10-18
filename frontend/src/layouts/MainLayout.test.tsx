@@ -408,13 +408,16 @@ describe('MainLayout 侧边栏工作区上下文', () => {
         expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
     })
 
-    it('未进入工作区（/admin 无 wid）时侧边栏提示先选工作区，不渲染数据表导航', async () => {
+    it('管理台（/admin 无 wid）不渲染工作区侧栏：导航交给管理台页内分区栏', async () => {
         renderLayout(mockUser, '/admin')
 
-        // 数据表导航以 wid 存在为前提；无 wid 时显示引导提示而非空列表
+        // 管理台没有工作区语义，侧栏只会剩「请先选择工作区」的空占位 →
+        // 整个 Sider 不再渲染，内容区拿到整幅宽度
         await waitFor(() => {
-            expect(screen.getByTestId('sider-no-workspace')).toHaveTextContent('请先从顶部选择一个工作区')
+            expect(screen.getByTestId('admin-panel-stub')).toHaveTextContent('/admin')
         })
+        expect(document.querySelector('.ant-layout-sider')).toBeNull()
+        expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 })

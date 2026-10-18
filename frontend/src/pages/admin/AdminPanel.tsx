@@ -1,12 +1,25 @@
-/** 系统管理台 — 用户管理 / 系统信息 / 完整备份 / 完整恢复. */
+/** 系统管理台 — 用户管理 / 事件流 / 系统信息 / 完整备份 / 完整恢复.
+ *
+ * 布局口径（与全站一致）：
+ *   - 页面根 `·cn-admin`：16px 留白（窄屏 12px）+ 分区栏 与 内容列 之间 12px 间距；
+ *   - 桌面端左侧是管理台自己的分区导航栏（200px，选中态沿用 `.cn-table-nav` 的
+ *     品牌色指示条语言），窄屏折叠成可横滑的胶囊导航；
+ *   - 内容列 = 页头（分区标题 + 说明 + 版本徽标）+ 分区内容，纵向 12px 节奏；
+ *   - 分区状态写入 `?section=`：可深链、刷新保持，且不影响「事件流」自身的
+ *     `?action=` / `?keyword=` 筛选参数。
+ */
 
-import { useState } from 'react'
-import { Tabs, Card, Descriptions, Button, Switch, Upload, Alert, App as AntApp, Progress, Typography, Space, Divider, Popconfirm, Tag, Result, Select } from 'antd'
+import { useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import {
+  Card, Descriptions, Button, Switch, Upload, Alert, App as AntApp, Progress,
+  Typography, Space, Popconfirm, Tag, Result, Select,
+} from 'antd'
 import {
   DatabaseOutlined, CloudUploadOutlined, CloudDownloadOutlined,
   InfoCircleOutlined, InboxOutlined, ExclamationCircleOutlined,
   ReloadOutlined, FileZipOutlined, WarningOutlined, SafetyOutlined,
-  TeamOutlined,
+  TeamOutlined, HistoryOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { adminApi } from '@/api'
@@ -17,7 +30,25 @@ import EventsPage from './EventsPage'
 import { useResponsive } from '@/hooks/useResponsive'
 import { formatSize } from '@/utils/formatSize'
 
-const { Text, Title } = Typography
+const { Text } = Typography
+
+/** 管理台分区 —— 导航栏、页头文案与内容切换共用同一份定义. */
+type AdminSectionKey = 'users' | 'events' | 'info' | 'backup' | 'restore'
+
+interface AdminSection {
+  key: AdminSectionKey
+  label: string
+  desc: string
+  icon: ReactNode
+}
+
+const SECTIONS: readonly AdminSection[] = [
+  { key: 'users', label: '用户管理', desc: '账号资料、角色与启停状态，变更全部写入操作日志。', icon: <TeamOutlined /> },
+  { key: 'events', label: '事件流', desc: '跨插件统一事件视图，可按动作与关键词追溯一次请求。', icon: <HistoryOutlined /> },
+  { key: 'info', label: '系统信息', desc: '版本、数据库与存储路径等运行期信息。', icon: <InfoCircleOutlined /> },
+  { key: 'backup', label: '系统备份', desc: '整库打包为 .tar.gz（含 manifest 元信息与附件目录）。', icon: <CloudDownloadOutlined /> },
+  { key: 'restore', label: '系统恢复', desc: '校验备份包后覆盖式还原，操作不可撤销。', icon: <CloudUploadOutlined /> },
+] as const
 
 export default function AdminPanel() {
   const { message, modal } = AntApp.useApp()
@@ -25,6 +56,22 @@ export default function AdminPanel() {
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
   // 窄屏：Descriptions 两列会把标签挤成竖排文字（「应用名称」一字一行），改单列 + 标签在上
   const { isMobile } = useResponsive()
+
+  // 分区切换写进 URL —— 刷新/分享后停在同一个分区；缺省回落到用户管理
+  const [searchParams, setSearchParams] = useSearchParams()
+  const rawSection = searchParams.get('section')
+  const section: AdminSectionKey = SECTIONS.some(s => s.key === rawSection)
+    ? (rawSection as AdminSectionKey)
+    : 'users'
+  const activeSection = SECTIONS.find(s => s.key === section) ?? SECTIONS[0]
+
+  const goSection = (key: AdminSectionKey) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('section', key)
+      return next
+    }, { replace: true })
+  }
 
   // ── 所有 Hook 必须在任何条件 return 之前声明 ──
   // ── 系统信息 ──
@@ -96,7 +143,7 @@ export default function AdminPanel() {
           title: '恢复完成 — 部分数据未导入',
           width: 560,
           content: (
-            <div style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
+            <div style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--cn-text-sm)' }}>
               {data.loss_report.summary}
             </div>
           ),
@@ -115,7 +162,7 @@ export default function AdminPanel() {
   // 权限检查 —— 非系统管理员无权访问（所有 Hook 已声明完毕）
   if (!isAdmin) {
     return (
-      <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }} data-testid="admin-panel">
+      <div className="cn-page" data-testid="admin-panel">
         <Result
           status="403"
           icon={<SafetyOutlined />}
@@ -140,87 +187,77 @@ export default function AdminPanel() {
   }
 
   const backupTab = (
-    <div style={{ padding: '8px 0' }}>
+    <div className="cn-admin-section">
       <Alert
         type="info"
         showIcon
         icon={<InfoCircleOutlined />}
         message="系统级完整备份"
         description="将打包整个数据库（全部工作区、表、数据行、配置）以及附件目录 uploads/。导出为 .tar.gz 文件，包含 manifest.json 元信息。"
-        style={{ marginBottom: 16 }}
       />
 
-      <Card size="small" title={<span><FileZipOutlined /> 备份选项</span>} style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Text>备份模式：</Text>
-            <Select
-              value={backupMode}
-              onChange={setBackupMode}
-              style={{ width: 200 }}
-              options={[
-                { value: 'auto', label: '自动选择（推荐）' },
-                { value: 'native', label: '完整备份（打包整个数据库文件，最快）' },
-                { value: 'sqlalchemy', label: '兼容备份（逐表导出，适用面更广）' },
-              ]}
-            />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <Card size="small" title={<span><FileZipOutlined /> 备份选项</span>}>
+        <div className="cn-field">
+          <span className="cn-field-label">备份模式</span>
+          <Select
+            value={backupMode}
+            onChange={setBackupMode}
+            style={{ width: isMobile ? '100%' : 280 }}
+            options={[
+              { value: 'auto', label: '自动选择（推荐）' },
+              { value: 'native', label: '完整备份（打包整个数据库文件，最快）' },
+              { value: 'sqlalchemy', label: '兼容备份（逐表导出，适用面更广）' },
+            ]}
+          />
+        </div>
+        <div className="cn-field">
+          <span className="cn-field-label">附件目录</span>
+          <Space size={8} wrap>
             <Switch checked={includeUploads} onChange={setIncludeUploads} />
-            <span>包含 uploads 附件目录（{info?.data_dir ? `位于 ${info.upload_dir}` : '…'}）</span>
-          </div>
+            <Text type="secondary">
+              包含 uploads 附件目录（{info?.upload_dir ? `位于 ${info.upload_dir}` : '…'}）
+            </Text>
+          </Space>
         </div>
       </Card>
 
-      <Space>
+      <div className="cn-actionbar">
         <Button
           type="primary"
-          size="large"
           icon={<CloudDownloadOutlined />}
           loading={backupProgress}
           onClick={() => backupMutation.mutate()}
         >
           立即备份并下载
         </Button>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          备份文件为 .tar.gz 格式，恢复时可直接上传
-        </Text>
-      </Space>
+        <Text type="secondary">备份文件为 .tar.gz 格式，恢复时可直接上传</Text>
+      </div>
 
       {backupProgress && (
-        <div style={{ marginTop: 16 }}>
+        <div className="cn-admin-progress">
           <Progress percent={100} status="active" showInfo={false} />
-          <Text type="secondary" style={{ fontSize: 12 }}>服务器正在生成备份，请稍候…</Text>
+          <Text type="secondary">服务器正在生成备份，请稍候…</Text>
         </div>
       )}
 
-      <Divider />
-
-      <Alert
-        type="warning"
-        showIcon
-        icon={<WarningOutlined />}
-        message="备份也可以通过 CLI 完成"
-        description={
-          <div style={{ fontSize: 13 }}>
-            Web 管理台输出 .tar.gz 方便下载；若需要直接备份到服务器文件夹（不压缩），请在服务器终端执行：
-            <br />
-            <code style={{ background: 'var(--cn-bg-muted)', padding: '2px 6px', borderRadius: 4 }}>cndb backup --dir -o /path/to/backup_dir</code>
-          </div>
-        }
-      />
+      <div className="cn-hint">
+        <WarningOutlined />
+        <div>
+          备份也可以通过 CLI 完成：Web 管理台输出 .tar.gz 方便下载；若需要直接备份到服务器文件夹（不压缩），请在服务器终端执行
+          <Text code>cndb backup --dir -o /path/to/backup_dir</Text>
+        </div>
+      </div>
     </div>
   )
 
   const restoreTab = (
-    <div style={{ padding: '8px 0' }}>
+    <div className="cn-admin-section">
       <Alert
         type="error"
         showIcon
         icon={<ExclamationCircleOutlined />}
         message="破坏性操作 — 恢复将覆盖当前数据库"
         description="请确保已备份当前数据。恢复后原有工作区、表结构、数据行将全部被替换为备份中的内容。"
-        style={{ marginBottom: 16 }}
       />
 
       {!restoreFile ? (
@@ -230,7 +267,6 @@ export default function AdminPanel() {
           beforeUpload={handleRestoreFile}
           disabled={restoring}
           showUploadList={false}
-          style={{ padding: 24 }}
         >
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>
           <p className="ant-upload-text">点击或拖拽备份文件到此处</p>
@@ -257,7 +293,7 @@ export default function AdminPanel() {
                   icon={<WarningOutlined />}
                   message="备份由更新版本的程序生成"
                   description="该备份由更高版本的程序生成，无法使用快速恢复。已自动选择「兼容恢复」：按当前程序支持的表结构逐表导入，备份中多出的表或字段的数据会被跳过。"
-                  style={{ marginBottom: 12 }}
+                  style={{ marginBottom: 'var(--cn-space-lg)' }}
                 />
               )}
               <Descriptions
@@ -293,13 +329,13 @@ export default function AdminPanel() {
                 </Descriptions.Item>
               </Descriptions>
 
-              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Text>恢复模式：</Text>
+              <div className="cn-field cn-field-spaced">
+                <span className="cn-field-label">恢复模式</span>
                 <Select
                   value={restoreMode}
                   onChange={setRestoreMode}
                   disabled={restoring}
-                  style={{ width: 320 }}
+                  style={{ width: isMobile ? '100%' : 320 }}
                   options={[
                     { value: 'auto', label: '自动选择（推荐）' },
                     { value: 'native', label: '快速恢复（直接覆盖数据库文件）' },
@@ -309,21 +345,21 @@ export default function AdminPanel() {
               </div>
 
               {manifest.database.tables.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <Text strong style={{ fontSize: 12 }}>表清单：</Text>
-                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="cn-manifest-tables">
+                  <Text type="secondary">表清单：</Text>
+                  <div className="cn-manifest-groups">
                     {([
                       ['系统表', tableGroups.system, undefined],
                       ['用户表', tableGroups.user, 'blue'],
                     ] as const).map(([label, names, color]) =>
                       names.length > 0 ? (
                         <div key={label}>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
+                          <Text type="secondary">
                             {label}（{names.length}）
                           </Text>
-                          <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          <div className="cn-manifest-tags">
                             {names.map(t => (
-                              <Tag key={t} color={color} style={{ marginRight: 0 }}>
+                              <Tag key={t} color={color}>
                                 {t} ({manifest.database.row_counts[t] ?? 0})
                               </Tag>
                             ))}
@@ -335,64 +371,50 @@ export default function AdminPanel() {
                 </div>
               )}
 
-              <Divider />
-
-              <Popconfirm
-                title={<span style={{ color: '#dc2626' }}>确认覆盖当前数据库？</span>}
-                description="此操作不可撤销，所有现有数据将被替换为备份内容。建议先做一次备份。"
-                okText="确认恢复"
-                okType="danger"
-                cancelText="取消"
-                icon={<ExclamationCircleOutlined style={{ color: '#dc2626' }} />}
-                onConfirm={() => restoreMutation.mutate(restoreFile)}
-                disabled={restoring}
-              >
-                <Button
-                  danger
-                  type="primary"
-                  size="large"
-                  icon={<ReloadOutlined />}
-                  loading={restoring}
+              <div className="cn-danger-zone">
+                <div className="cn-danger-zone-text">
+                  <Text strong>覆盖当前数据库</Text>
+                  <Text type="secondary">此操作不可撤销，所有现有数据将被替换为备份内容。建议先做一次备份。</Text>
+                </div>
+                <Popconfirm
+                  title={<Text type="danger" strong>确认覆盖当前数据库？</Text>}
+                  description="此操作不可撤销，所有现有数据将被替换为备份内容。建议先做一次备份。"
+                  okText="确认恢复"
+                  okType="danger"
+                  cancelText="取消"
+                  icon={<ExclamationCircleOutlined />}
+                  onConfirm={() => restoreMutation.mutate(restoreFile)}
+                  disabled={restoring}
                 >
-                  {restoring ? '正在恢复…' : '执行系统恢复（覆盖）'}
-                </Button>
-              </Popconfirm>
+                  <Button danger type="primary" icon={<ReloadOutlined />} loading={restoring}>
+                    {restoring ? '正在恢复…' : '执行系统恢复（覆盖）'}
+                  </Button>
+                </Popconfirm>
+              </div>
             </>
           ) : (
-            <div style={{ color: '#64748b', padding: '24px 0', textAlign: 'center' }}>
-              正在校验备份文件…
-            </div>
+            <div className="cn-state">正在校验备份文件…</div>
           )}
         </Card>
       )}
 
-      {(inspectMutation.isPending) && (
-        <div style={{ marginTop: 16 }}>
-          <Progress percent={100} status="active" showInfo={false} />
-        </div>
+      {inspectMutation.isPending && (
+        <Progress percent={100} status="active" showInfo={false} />
       )}
-      {restoring && (
-        <div style={{ marginTop: 16 }}>
-          <Alert type="info" message="正在恢复系统数据，请勿关闭页面…" showIcon />
-        </div>
-      )}
+      {restoring && <Alert type="info" showIcon message="正在恢复系统数据，请勿关闭页面…" />}
 
-      <Divider />
-      <Alert
-        type="info"
-        showIcon
-        message="从文件夹恢复（CLI）"
-        description="如果你是用 `cndb backup --dir -o <路径>` 备份到服务器文件夹的，可以直接恢复："
-        style={{ marginTop: 12 }}
-      />
-      <div style={{ marginTop: 8, fontSize: 13 }}>
-        <code style={{ background: 'var(--cn-bg-muted)', padding: '2px 6px', borderRadius: 4 }}>cndb restore /path/to/backup_dir --force</code>
+      <div className="cn-hint">
+        <InfoCircleOutlined />
+        <div>
+          从文件夹恢复（CLI）：若用 <Text code>cndb backup --dir -o &lt;路径&gt;</Text> 备份到服务器文件夹，
+          可直接执行 <Text code>cndb restore /path/to/backup_dir --force</Text>
+        </div>
       </div>
     </div>
   )
 
   const infoTab = (
-    <div style={{ padding: '8px 0' }}>
+    <div className="cn-admin-section">
       <Card size="small" title={<span><InfoCircleOutlined /> 系统运行信息</span>} loading={infoLoading}>
         {info && (
           <Descriptions
@@ -404,13 +426,13 @@ export default function AdminPanel() {
             <Descriptions.Item label="应用名称">{info.app_name}</Descriptions.Item>
             <Descriptions.Item label="版本">{info.app_version}</Descriptions.Item>
             <Descriptions.Item label="数据库" span={isMobile ? 1 : 2}>
-              <code>{info.database_url}</code>
+              <Text code copyable>{info.database_url}</Text>
             </Descriptions.Item>
             <Descriptions.Item label="数据目录" span={isMobile ? 1 : 2}>
-              <code>{info.data_dir}</code>
+              <Text code copyable>{info.data_dir}</Text>
             </Descriptions.Item>
             <Descriptions.Item label="附件目录" span={isMobile ? 1 : 2}>
-              <code>{info.upload_dir}</code>
+              <Text code copyable>{info.upload_dir}</Text>
             </Descriptions.Item>
             <Descriptions.Item label="认证">
               {info.auth_enabled ? <Tag color="green">已启用</Tag> : <Tag>未启用（开放访问）</Tag>}
@@ -422,42 +444,83 @@ export default function AdminPanel() {
     </div>
   )
 
-  return (
-    <div style={{ padding: 16, maxWidth: 960 }} data-testid="admin-panel">
-      <Title level={3} style={{ marginBottom: 4 }}><SafetyOutlined style={{ marginRight: 8 }} />系统管理台</Title>
-      <Text type="secondary">用户管理、完整备份、恢复与系统运行信息查看。以下操作需要系统管理员权限。</Text>
+  const content: Record<AdminSectionKey, ReactNode> = {
+    users: <UsersPage />,
+    events: <EventsPage />,
+    info: infoTab,
+    backup: backupTab,
+    restore: restoreTab,
+  }
 
-      <Card style={{ marginTop: 16 }}>
-        <Tabs
-          items={[
-            {
-              key: 'users',
-              label: <span><TeamOutlined /> 用户管理</span>,
-              children: <UsersPage />,
-            },
-            {
-              key: 'events',
-              label: <span><FileZipOutlined /> 事件流</span>,
-              children: <EventsPage />,
-            },
-            {
-              key: 'info',
-              label: <span><InfoCircleOutlined /> 系统信息</span>,
-              children: infoTab,
-            },
-            {
-              key: 'backup',
-              label: <span><CloudDownloadOutlined /> 系统备份</span>,
-              children: backupTab,
-            },
-            {
-              key: 'restore',
-              label: <span><CloudUploadOutlined /> 系统恢复</span>,
-              children: restoreTab,
-            },
-          ]}
-        />
-      </Card>
+  /** 分区导航项 —— 桌面导航栏与窄屏胶囊行共用（role=tab 便于键盘与测试定位） */
+  const navItems = SECTIONS.map((s) => {
+    const active = s.key === section
+    return { ...s, active, onClick: () => goSection(s.key) }
+  })
+
+  return (
+    <div className="cn-admin" data-testid="admin-panel">
+      {/* 桌面端分区导航栏：窄屏由下方胶囊行替代（避免 200px 侧栏吃掉手机宽度） */}
+      {!isMobile && (
+        <aside className="cn-admin-rail">
+          <div className="cn-admin-rail-title">系统管理台</div>
+          <nav className="cn-admin-nav" role="tablist" aria-label="管理台分区" aria-orientation="vertical">
+            {navItems.map(item => (
+              <button
+                key={item.key}
+                type="button"
+                role="tab"
+                aria-selected={item.active}
+                data-testid={`admin-nav-${item.key}`}
+                className={item.active ? 'cn-admin-nav-item cn-admin-nav-item-active' : 'cn-admin-nav-item'}
+                onClick={item.onClick}
+              >
+                <span className="cn-admin-nav-icon" aria-hidden>{item.icon}</span>
+                <span className="cn-admin-nav-label">{item.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="cn-admin-rail-foot">
+            仅系统管理员可见
+            {info?.app_version ? ` · v${info.app_version}` : ''}
+          </div>
+        </aside>
+      )}
+
+      <div className="cn-admin-main">
+        <header className="cn-admin-header">
+          <span className="cn-admin-mark" aria-hidden><SafetyOutlined /></span>
+          <div className="cn-admin-heading">
+            <div className="cn-admin-eyebrow">系统管理台</div>
+            <h1 className="cn-admin-title">{activeSection.label}</h1>
+            <p className="cn-admin-desc">{activeSection.desc}</p>
+          </div>
+          <div className="cn-admin-header-extra">
+            <Tag bordered={false} color="blue">系统管理员</Tag>
+          </div>
+        </header>
+
+        {isMobile && (
+          <nav className="cn-admin-pills" role="tablist" aria-label="管理台分区">
+            {navItems.map(item => (
+              <button
+                key={item.key}
+                type="button"
+                role="tab"
+                aria-selected={item.active}
+                data-testid={`admin-nav-${item.key}`}
+                className={item.active ? 'cn-admin-pill cn-admin-pill-active' : 'cn-admin-pill'}
+                onClick={item.onClick}
+              >
+                <span aria-hidden>{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {content[section]}
+      </div>
     </div>
   )
 }

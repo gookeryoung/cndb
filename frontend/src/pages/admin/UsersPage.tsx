@@ -7,7 +7,7 @@
 import { useMemo, useState, type Key } from 'react'
 import {
   Table, Button, Input, Select, Space, Tag, Modal, Form, Switch,
-  App as AntApp, Typography, Drawer, Alert, Popconfirm, Checkbox, Empty, Pagination, Spin,
+  App as AntApp, Typography, Drawer, Popconfirm, Checkbox, Empty, Pagination, Spin,
 } from 'antd'
 import { EditOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -258,9 +258,9 @@ export default function UsersPage() {
   ]
 
   return (
-    <div data-testid="users-page">
-      {/* 工具栏：筛选 + 批量操作 */}
-      <Space wrap style={{ marginBottom: 12 }}>
+    <div className="cn-admin-section" data-testid="users-page">
+      {/* 工具栏：检索与筛选在左、结果计数与刷新在右；窄屏整行堆叠 */}
+      <div className="cn-toolbar">
         <Input.Search
           placeholder="搜索用户名/邮箱/昵称"
           allowClear
@@ -286,51 +286,49 @@ export default function UsersPage() {
           value={activeFilter === undefined ? undefined : String(activeFilter)}
           onChange={(v) => { setActiveFilter(v === undefined ? undefined : v === 'true'); setPage(1) }}
         />
-        <Button icon={<ReloadOutlined />} onClick={() => invalidate()}>刷新</Button>
-      </Space>
+        <div className="cn-toolbar-end">
+          <span className="cn-record-pill">{listQuery.data?.total ?? 0} 个账号</span>
+          <Button icon={<ReloadOutlined />} onClick={() => invalidate()}>刷新</Button>
+        </div>
+      </div>
 
       {selectedIds.length > 0 && (
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message={(
-            <Space wrap>
-              <span>已选择 {selectedIds.length} 个用户：</span>
-              <Popconfirm title="确认批量启用所选用户？" okText="确认" cancelText="取消" onConfirm={() => confirmBatch('activate')}>
-                <Button size="small">批量启用</Button>
-              </Popconfirm>
+        <div className="cn-selection-bar" data-testid="users-selection-bar">
+          <span className="cn-selection-count">已选择 {selectedIds.length} 个用户：</span>
+          <Space wrap size={8}>
+            <Popconfirm title="确认批量启用所选用户？" okText="确认" cancelText="取消" onConfirm={() => confirmBatch('activate')}>
+              <Button size="small">批量启用</Button>
+            </Popconfirm>
+            <Popconfirm
+              title="确认批量禁用所选用户？"
+              description="禁用后用户立即无法登录"
+              okText="确认禁用"
+              okType="danger"
+              cancelText="取消"
+              onConfirm={() => confirmBatch('deactivate')}
+            >
+              <Button size="small" danger>批量禁用</Button>
+            </Popconfirm>
+            {ROLE_OPTIONS.map(r => (
               <Popconfirm
-                title="确认批量禁用所选用户？"
-                description="禁用后用户立即无法登录"
-                okText="确认禁用"
-                okType="danger"
+                key={r.value}
+                title={`确认将所选用户角色变更为「${r.label}」？`}
+                okText="确认"
                 cancelText="取消"
-                onConfirm={() => confirmBatch('deactivate')}
+                onConfirm={() => confirmBatch('set_role', r.value)}
               >
-                <Button size="small" danger>批量禁用</Button>
+                <Button size="small">设为{r.label}</Button>
               </Popconfirm>
-              {ROLE_OPTIONS.map(r => (
-                <Popconfirm
-                  key={r.value}
-                  title={`确认将所选用户角色变更为「${r.label}」？`}
-                  okText="确认"
-                  cancelText="取消"
-                  onConfirm={() => confirmBatch('set_role', r.value)}
-                >
-                  <Button size="small">设为{r.label}</Button>
-                </Popconfirm>
-              ))}
-            </Space>
-          )}
-        />
+            ))}
+          </Space>
+        </div>
       )}
 
       {isMobile ? (
         /* 窄屏卡片列表：8 列表格需左右滑动才能看到角色/状态/操作，卡片一屏一实体、操作直接可见 */
         <Spin spinning={listQuery.isLoading}>
           {(listQuery.data?.items ?? []).length === 0 ? (
-            <Empty description="暂无用户" style={{ padding: 32 }} data-testid="users-mobile-empty" />
+            <Empty description="暂无用户" className="cn-state" data-testid="users-mobile-empty" />
           ) : (
             <div className="cn-user-cards" data-testid="users-mobile-list">
               {(listQuery.data?.items ?? []).map(u => (
@@ -372,7 +370,7 @@ export default function UsersPage() {
             </div>
           )}
           <Pagination
-            style={{ marginTop: 12, textAlign: 'center' }}
+            style={{ marginTop: 'var(--cn-space-lg)', textAlign: 'center' }}
             current={page}
             pageSize={pageSize}
             total={listQuery.data?.total ?? 0}
@@ -382,24 +380,28 @@ export default function UsersPage() {
           />
         </Spin>
       ) : (
-        <Table<UserAdminRecord>
-          rowKey="id"
-          size="small"
-          loading={listQuery.isLoading}
-          dataSource={listQuery.data?.items ?? []}
-          columns={columns}
-          // 窄屏列宽不压缩（否则「昵称」「邮箱」会逐字换行/被裁切），改为表格横向滚动
-          scroll={{ x: 'max-content' }}
-          rowSelection={{ selectedRowKeys: selectedIds, onChange: setSelectedIds }}
-          pagination={{
-            current: page,
-            pageSize,
-            total: listQuery.data?.total ?? 0,
-            showSizeChanger: false,
-            showTotal: (t) => `共 ${t} 个用户`,
-            onChange: (p) => setPage(p),
-          }}
-        />
+        <div className="cn-grid-card" data-testid="users-table-card">
+          <Table<UserAdminRecord>
+            className="cn-table-list"
+            rowKey="id"
+            size="small"
+            loading={listQuery.isLoading}
+            dataSource={listQuery.data?.items ?? []}
+            columns={columns}
+            // 窄屏列宽不压缩（否则「昵称」「邮箱」会逐字换行/被裁切），改为表格横向滚动
+            scroll={{ x: 'max-content' }}
+            rowSelection={{ selectedRowKeys: selectedIds, onChange: setSelectedIds }}
+            locale={{ emptyText: <Empty description="暂无用户" /> }}
+            pagination={{
+              current: page,
+              pageSize,
+              total: listQuery.data?.total ?? 0,
+              showSizeChanger: false,
+              showTotal: (t) => `共 ${t} 个用户`,
+              onChange: (p) => setPage(p),
+            }}
+          />
+        </div>
       )}
 
       {/* 编辑弹窗（保存前二次确认在 handleEditSubmit 内） */}
