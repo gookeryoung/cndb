@@ -49,11 +49,11 @@ const DOCUMENT_SUBPAGES = [
 /** 内容区骨架 —— 懒加载页面在 Content 内挂起时的占位，避免整页高度跳动 */
 function ContentFallback() {
   return (
-    <div style={{ padding: 16 }} aria-label="页面加载中">
-      <div style={{ height: 28, width: 220, borderRadius: 6, background: 'var(--cn-border)', marginBottom: 16 }} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div className="cn-page" aria-label="页面加载中">
+      <div style={{ height: 28, width: 220, borderRadius: 'var(--cn-radius-base)', background: 'var(--cn-border)' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--cn-space-lg)' }}>
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} style={{ height: 40, borderRadius: 8, background: 'var(--cn-border)', opacity: 0.5 }} />
+          <div key={i} style={{ height: 40, borderRadius: 'var(--cn-radius-lg)', background: 'var(--cn-border)', opacity: 0.5 }} />
         ))}
       </div>
     </div>
@@ -249,7 +249,7 @@ export default function MainLayout() {
 
   if (!wid) {
     if (wsLoading) {
-      return React.createElement('div', { style: { padding: 48, textAlign: 'center' } }, '加载中...')
+      return <div className="cn-state">加载中…</div>
     }
     // 访问 / 时，让 index route 的 <Navigate to="/w" /> 生效；访问 /w 时让 Outlet 渲染 WorkspaceList.
     // 两种情况都必须返回 <Outlet /> 所在的布局，否则子路由（包括 Navigate）根本不会挂载。
@@ -272,31 +272,28 @@ export default function MainLayout() {
     if (!wid) {
       // 未进入工作区：不渲染"数据表"导航，提示用户从顶部选择
       return (
-        <div data-testid="sider-no-workspace" style={{
-          padding: '24px 16px', textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13,
-          display: collapsed ? 'none' : 'block',
-        }}>
-          <p style={{ margin: 0 }}>请先从顶部选择一个工作区</p>
+        <div data-testid="sider-no-workspace" className="cn-state" style={{ display: collapsed ? 'none' : 'block' }}>
+          <p>请先从顶部选择一个工作区</p>
         </div>
       )
     }
     return (
       <div data-testid="sider-tables" className="cn-table-nav">
         <div style={{
-          padding: '8px 12px', borderBottom: '1px solid var(--cn-border)',
+          padding: 'var(--cn-space-md) var(--cn-space-lg)', borderBottom: '1px solid var(--cn-border)',
           display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
         }}>
           <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
         </div>
-        <div style={{ padding: '6px 12px', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
+        <div style={{ padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
           数据表 ({orderedTables.length})
         </div>
         {tables.length === 0 ? (
           collapsed ? (
-            <div style={{ padding: 16, textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>无表</div>
+            <div className="cn-state">无表</div>
           ) : (
-            <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--cn-text-muted)', fontSize: 13 }}>
-              <p style={{ margin: 0 }}>还没有数据表，先创建或导入一张吧</p>
+            <div className="cn-state">
+              <p>还没有数据表，先创建或导入一张吧</p>
             </div>
           )
         ) : (
@@ -321,7 +318,7 @@ export default function MainLayout() {
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       <Header className="cn-app-header" style={{
-        padding: '0 12px', height: 44, lineHeight: '44px', flexShrink: 0,
+        padding: '0 var(--cn-space-lg)', height: 44, lineHeight: '44px', flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 8,
       }}>
         {/* 移动端汉堡入口：替代常驻 Sider，点击打开抽屉导航 */}

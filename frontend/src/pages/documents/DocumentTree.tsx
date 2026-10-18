@@ -9,7 +9,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   Tooltip, App as AntApp, Button, Dropdown, Empty, Input, Modal, Tree, TreeSelect } from 'antd'
 import type { DataNode } from 'antd/es/tree'
+import type { ComponentType } from 'react'
 import {
+  CheckCircleOutlined,
+  EditOutlined,
+  InboxOutlined,
   LockOutlined,
   TeamOutlined,
   ApartmentOutlined,
@@ -23,10 +27,22 @@ import {
   PushpinFilled,
   PushpinOutlined,
   ReloadOutlined,
+  SortAscendingOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { documentsApi } from '@/api/documents'
 import type { DocumentItem } from '@/api/documents'
+import TooltipDropdown from '@/components/TooltipDropdown'
+import {
+  DOC_SORT_OPTIONS,
+  describeSort,
+  readDocSort,
+  sortDocTree,
+  sortToValue,
+  valueToSort,
+  writeDocSort,
+} from './docTreeSort'
+import type { DocSort } from './docTreeSort'
 
 /** 树节点：文档/文件夹 + 子节点 */
 export interface DocTreeNode extends DocumentItem {
@@ -130,10 +146,17 @@ export function planDropMove(
   return ops
 }
 
-const STATUS_DOT_COLOR: Record<string, string> = {
-  draft: 'var(--cn-text-muted, #999)',
-  published: 'var(--cn-success, #52c41a)',
-  archived: 'var(--cn-warning, #faad14)',
+/** 状态标记：草稿 / 已发布 / 归档 各用不同图标区分，颜色沿用既有状态色（灰 / 绿 / 橙） */
+interface StatusMeta {
+  Icon: ComponentType<{ style?: React.CSSProperties; 'aria-label'?: string; 'data-testid'?: string }>
+  color: string
+  label: string
+}
+
+const STATUS_META: Record<string, StatusMeta> = {
+  draft: { Icon: EditOutlined, color: 'var(--cn-text-muted, #999)', label: '草稿' },
+  published: { Icon: CheckCircleOutlined, color: 'var(--cn-success, #52c41a)', label: '已发布' },
+  archived: { Icon: InboxOutlined, color: 'var(--cn-warning, #faad14)', label: '归档' },
 }
 
 /** 右键菜单触达的节点上下文 */
@@ -173,7 +196,15 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
   })
 
   const items = useMemo(() => treeQuery.data ?? [], [treeQuery.data])
-  const treeData = useMemo(() => buildDocTree(items), [items])
+  // 排序偏好是本地偏好（localStorage），不进后端：与 Obsidian 的「排序方式」一致
+  const [sort, setSort] = useState<DocSort>(() => readDocSort())
+  useEffect(() => {
+    writeDocSort(sort)
+  }, [sort])
+  // 「手动」档保持后端顺序（置顶 + sort_order）；其余档在每个层级内按所选字段重排
+  const treeData = useMemo(() => sortDocTree(buildDocTree(items), sort), [items, sort])
+  // 非手动排序下拖拽只用于改父级（同级换位只改 sort_order，按名称/时间排时看不出效果）
+  const manualSort = sort.key === 'manual'
 
   const invalidate = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
@@ -316,7 +347,7 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
   /** 展开态集合（titleRender 里决定文件夹图标开/合） */
   const expandedSet = useMemo(() => new Set(expandedKeys.map(String)), [expandedKeys])
 
-  /** 树节点渲染：图标 + 标题 + 状态色点 + 置顶标记 + 「更多」按钮（触摸端可达）
+  /** 树节点渲染：图标 + 标题 + 状态图标 + 置顶标记 + 「更多」按钮（触摸端可达）
    *  文件夹图标随展开态切换（开/合），这样静态状态下无需展开箭头也能看出层级状态，
    *  箭头只在悬停该行时出现（见 index.css `.cn-doc-tree .ant-tree-switcher`）。 */
   const titleRender = useCallback((node: DocTreeNode) => {
@@ -338,23 +369,22 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
         </span>
       )
     }
+    // 状态图标：图标形态区分草稿 / 已发布 / 归档，颜色沿用状态色，避免只靠色点导致色弱用户难以分辨
+    const status = STATUS_META[node.status] ?? STATUS_META.draft
+    const StatusIcon = status.Icon
     return (
       <span data-testid={`doc-tree-doc-${node.id}`}>
         <FileTextOutlined style={{ marginRight: 6, color: 'var(--cn-primary, #1890ff)' }} />
         {node.title}
         {pinMark}
         {moreButton(node)}
-        <span
-          aria-label="doc-status-dot"
-          style={{
-            display: 'inline-block',
-            width: 6,
-            height: 6,
-            borderRadius: 3,
-            marginLeft: 6,
-            background: STATUS_DOT_COLOR[node.status] ?? STATUS_DOT_COLOR.draft,
-          }}
-        />
+        <Tooltip title={`状态：${status.label}`}>
+          <StatusIcon
+            aria-label={`文档状态：${status.label}`}
+            data-testid={`doc-status-${node.id}`}
+            style={{ marginLeft: 6, fontSize: 11, color: status.color }}
+          />
+        </Tooltip>
         {/* 可见性提示：未发布的文档同事看不到，明确告知以免误以为"文档丢了" */}
         {node.visibility === 'private' && (
           <Tooltip title="未发布：仅你与工作区所有者可见">
@@ -523,6 +553,25 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
         >
           文件夹
         </Button>
+        {/* 排序方式（参考 Obsidian）：文件夹恒在前，同级内按所选字段升降序 */}
+        <TooltipDropdown
+          title={`排序：${describeSort(sort)}`}
+          placement="bottomRight"
+          menu={{
+            selectable: true,
+            selectedKeys: [sortToValue(sort)],
+            items: DOC_SORT_OPTIONS.map(o => ({ key: o.value, label: o.label })),
+            onClick: ({ key }) => setSort(valueToSort(key)),
+          }}
+        >
+          <Button
+            size="small"
+            type="text"
+            icon={<SortAscendingOutlined />}
+            aria-label={`排序方式：${describeSort(sort)}`}
+            data-testid="doc-tree-sort"
+          />
+        </TooltipDropdown>
         <Button
           size="small"
           type="text"
@@ -557,7 +606,9 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
             className="cn-doc-tree"
             blockNode
             expandAction="click"
-            draggable
+            /* 整行可拖即足够：关掉 antd 默认在每行行首渲染的「六点」拖拽手柄，
+               否则行首会多一列装饰性图标，与右侧「更多」按钮形成两侧各有一个按钮的观感 */
+            draggable={{ icon: false }}
             onDrop={info => {
               const dragId = Number(info.dragNode.key)
               const targetId = Number(info.node.key)
@@ -567,6 +618,17 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
               const ops = planDropMove(treeData, dragId, targetId, rel)
               if (!ops || ops.length === 0) {
                 if (!ops) message.warning('不能移动到自身或其子孙节点内')
+                return
+              }
+              if (!manualSort) {
+                // 非手动排序：只接受「拖进文件夹」这类改父级的意图；
+                // 同级换位只改 sort_order，当前按名称/时间排，改了也看不出效果（Obsidian 同此口径）
+                const moveOps = ops.filter(op => op.parent_id != null)
+                if (moveOps.length === 0) {
+                  message.info(`当前按「${describeSort(sort)}」排序，同级顺序不可拖动调整`)
+                  return
+                }
+                dropMut.mutate(moveOps)
                 return
               }
               dropMut.mutate(ops)

@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { App as AntApp, ConfigProvider, theme as antdTheme } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import {
-  getThemeConfig, loadThemeMode, saveThemeMode,
+  getThemeConfig, themeCssVars, loadThemeMode, saveThemeMode,
   loadFontSettings, saveFontSettings,
   FONT_SCALE_META, THEME_META,
   type ThemeMode, type FontScale, type FontSettings,
@@ -33,6 +33,14 @@ function applyBodyClass(mode: ThemeMode) {
 
   // 向后兼容：保留 theme-dark class 给老 CSS 规则
   body.classList.toggle('theme-dark', THEME_META[mode].isDark)
+}
+
+/** 把主题派生的圆角档位下发到 :root，index.css 里手写的卡片/浮层据此跟随主题 */
+function applyThemeVars(mode: ThemeMode) {
+  const root = document.documentElement
+  for (const [name, value] of Object.entries(themeCssVars(mode))) {
+    root.style.setProperty(name, value)
+  }
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -71,6 +79,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     applyBodyClass(mode)
+    applyThemeVars(mode)
   }, [mode])
 
   // 字体设置：注入 body 基础字号与加粗（antd 组件字号经 ConfigProvider token 下发）
