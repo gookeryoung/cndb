@@ -498,8 +498,8 @@ def _canvas_to_markdown(data: bytes, path: str) -> str:
     if not isinstance(payload, dict):
         return f"> 由 Obsidian Canvas「{title}」转换导入，结构无法识别，仅保留原文。\n\n~~~json\n{raw.strip()}\n~~~\n"
 
-    nodes = payload.get("nodes") if isinstance(payload.get("nodes"), list) else []
-    edges = payload.get("edges") if isinstance(payload.get("edges"), list) else []
+    nodes: list[Any] = payload.get("nodes") if isinstance(payload.get("nodes"), list) else []
+    edges: list[Any] = payload.get("edges") if isinstance(payload.get("edges"), list) else []
     lines = [
         f"> 由 Obsidian Canvas「{title}」转换导入：{len(nodes)} 个卡片、{len(edges)} 条连线。"
         "原始 JSON 见文末（保留无损，可据此还原）。",
