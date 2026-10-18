@@ -27,8 +27,7 @@ dependencies = [
     "psycopg[binary]>=3.1.0",
     "uvicorn[standard]>=0.34.0",
     "alembic>=1.14.0",
-    # bcrypt 4.x 为 Rust 重写，Win7 缺少 ProcessPrng 无法加载；3.x 为 CFFI 实现
-    "bcrypt>=3.2.2,<6.0.0; sys_platform == 'win32'",
+    "bcrypt>=3.2.2,<4.0.0; sys_platform == 'win32'", # bcrypt 4.x 用 Rust 重写，Rust 1.75+ 停止 Win7 支持，_bcrypt.pyd 在 Win7 上因 ProcessPrng 缺失无法加载；3.x 是 CFFI 实现，Win7 兼容
     "bcrypt>=3.2.2; sys_platform != 'win32'",
     # 42.0.6 带 Win10+ DLL 依赖，Win7 不可用；42.0.4+ 已修 CVE-2024-26130
     "cryptography>=42.0.4,<51.0.0; sys_platform == 'win32'",
