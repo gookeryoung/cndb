@@ -34,6 +34,12 @@ function renderEditor(route = '/w/10/documents/2') {
     )
 }
 
+/** 切到「源码」模式：既有断言基于 textarea（实时预览用 CodeMirror，无法直接读写 value） */
+async function enterSourceMode() {
+    fireEvent.click(await screen.findByText('源码'))
+    return (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+}
+
 /** 位置探针：展示当前 pathname 供跳转断言 */
 function LocationProbe() {
     const loc = useLocation()
@@ -65,9 +71,8 @@ describe('DocumentEditorPage 数据表动态引用', () => {
 
     it('插入辅助：选表弹窗 → 插入占位符到光标处，预览侧动态渲染', async () => {
         renderEditor()
-
-        // 初始内容加载（msw content：# 需求说明）
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('需求说明'))
 
         // 打开插入弹窗
         fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
@@ -81,13 +86,13 @@ describe('DocumentEditorPage 数据表动态引用', () => {
         // 确认插入（「插入」按钮）
         fireEvent.click(screen.getByRole('button', { name: /^插\s*入$/ }))
 
-        // 编辑区出现占位符且独占段落（前后为行首/文首与空行/文末）
+        // 编辑区出现占位符且独占首段（光标在文首时插到最前，随后空行分隔正文）
         await waitFor(() => {
-            const ta = document.querySelector<HTMLTextAreaElement>('textarea')
-            expect(ta?.value).toMatch(/(^|\n\n)\{\{table:100\}\}(\n\n|$)/)
+            expect(ta.value.startsWith('{{table:100}}')).toBe(true)
         })
 
-        // 预览侧动态渲染数据表（行数据出现即视为渲染成功；表名与 Select 选项重名不唯一）
+        // 切到查看模式：预览侧动态渲染数据表（行数据出现即视为渲染成功；表名与 Select 选项重名不唯一）
+        fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
         expect(await screen.findByText('张三')).toBeInTheDocument()
         expect(screen.getByText('李四')).toBeInTheDocument()
     })
@@ -131,12 +136,13 @@ describe('DocumentEditorPage 大纲面板', () => {
         expect(screen.getByTestId('doc-outline-item-1')).toHaveTextContent('背景')
         expect(screen.getByTestId('doc-outline-item-3')).toHaveTextContent('细分')
 
-        // 预览侧锚点已渲染（同 id 算法）
-        expect(document.getElementById('doc-h-目标')).toBeInTheDocument()
+        // 预览侧锚点在切到查看模式后才渲染（草稿文档默认编辑模式）
+        expect(document.getElementById('doc-h-目标')).toBeNull()
 
-        // 点击「目标」：滚动定位到对应锚点
+        // 点击「目标」：切到查看模式并滚动定位到对应锚点
         fireEvent.click(screen.getByTestId('doc-outline-item-2'))
         await waitFor(() => {
+            expect(document.getElementById('doc-h-目标')).toBeInTheDocument()
             expect(scrollIntoView).toHaveBeenCalled()
         })
     })
@@ -145,7 +151,7 @@ describe('DocumentEditorPage 大纲面板', () => {
         renderEditor()
         expect(await screen.findByRole('button', { name: /大纲\s*\(4\)/ })).toBeInTheDocument()
 
-        const ta = document.querySelector<HTMLTextAreaElement>('textarea')!
+        const ta = await enterSourceMode()
         fireEvent.change(ta, { target: { value: '# 新标题\n\n正文' } })
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /大纲\s*\(1\)/ })).toBeInTheDocument()
@@ -266,6 +272,9 @@ describe('DocumentEditorPage 双向链接跳转', () => {
 
     it('点击预览中的 [[标题]]：按标题定位文档树并跳转', async () => {
         renderEditorWithProbe()
+        // 预览中才渲染 wikilink：先切到查看模式
+        await screen.findByTestId('doc-mode-switch')
+        fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
 
         const link = await screen.findByTestId('doc-wikilink')
         expect(link).toHaveTextContent('客户需求')
@@ -277,16 +286,21 @@ describe('DocumentEditorPage 双向链接跳转', () => {
     })
 
     it('双链目标不存在：提示未找到且不跳转', async () => {
+        const warningSpy = vi
+            .spyOn(message, 'warning')
+            .mockImplementation((() => {}) as unknown as typeof message.warning)
         // 树中不含「客户需求」标题的文档
         server.use(
             http.get('/api/v1/workspaces/:wid/documents/tree', () =>
                 HttpResponse.json({ items: mockDocuments })),
         )
         renderEditorWithProbe()
+        await screen.findByTestId('doc-mode-switch')
+        fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
 
         fireEvent.click(await screen.findByTestId('doc-wikilink'))
         await waitFor(() => {
-            expect(screen.getByText(/未找到文档/)).toBeInTheDocument()
+            expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining('未找到文档'))
         })
         expect(screen.getByTestId('editor-location')).toHaveTextContent('/w/10/documents/2')
     })
@@ -351,29 +365,47 @@ describe('DocumentEditorPage 修改申请（双轨制保存）', () => {
         server.resetHandlers()
     })
 
-    it('无直编资格时保存转为修改申请：提示已提交而非已保存', async () => {
-        const putBodies: Record<string, unknown>[] = []
+    it('无直编资格时提交转为修改申请：正文不落库，提示待审核', async () => {
+        const submitBodies: Record<string, unknown>[] = []
         server.use(
-            http.put('/api/v1/workspaces/:wid/documents/:docId/content', async ({ request }) => {
-                putBodies.push(await request.json() as Record<string, unknown>)
+            http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    content: '# 需求说明\n\n正文段落。\n',
+                    version_number: 1,
+                    draft: null,
+                    write_mode: 'change_request',
+                })),
+            http.post('/api/v1/workspaces/:wid/documents/:docId/submit', async ({ request }) => {
+                submitBodies.push(await request.json() as Record<string, unknown>)
                 return HttpResponse.json(
                     {
-                        change_request: { id: 7, status: 'open', document_id: 2, title: '修改文档《需求说明》' },
+                        mode: 'change_request',
                         message: '已提交修改申请 #7，审核通过后生效',
+                        change_request: { id: 7, status: 'open', document_id: 2, title: '修改文档《需求说明》' },
                     },
                     { status: 202 },
                 )
             }),
         )
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('需求说明'))
+        fireEvent.change(ta, { target: { value: '# 需求说明\n\n修改后的正文。\n' } })
 
-        fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+        fireEvent.click(screen.getByTestId('doc-submit-btn'))
+        // 修改申请模式下弹窗文案为「提交审核」
+        fireEvent.click(await screen.findByRole('button', { name: /提交审核/ }))
 
         expect(await screen.findByTestId('doc-cr-notice')).toHaveTextContent('已提交修改申请 #7')
-        expect(screen.queryByText(/已保存 v/)).toBeNull()
-        // 提交时携带内容基准版本号，供后端判定基准漂移
-        expect(putBodies[0]?.base_version_number).toBe(1)
+        // 提交携带正文、变更说明与基准版本号，供后端做段落级合并 / 基准漂移判断
+        expect(submitBodies[0]).toMatchObject({
+            content: '# 需求说明\n\n修改后的正文。\n',
+            change_summary: '',
+            base_version_number: 1,
+        })
+        // 修改申请待审：回到查看模式展示当前发布版
+        expect(await screen.findByTestId('doc-view-mode')).toBeInTheDocument()
     })
 
     it('「修改申请」入口打开抽屉并展示空态', async () => {
@@ -441,48 +473,49 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
         expect(await screen.findByText('已解析')).toBeInTheDocument()
     })
 
-    it('窄屏用「编辑 / 预览」页签切换面板，不再左右分栏', async () => {
+    it('窄屏用「查看 / 编辑」模式切换，单面板无左右分栏', async () => {
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        await enterSourceMode()
 
-        // 窄屏：页签切换 + 单面板（无 Splitter）
-        const sw = screen.getByTestId('doc-mobile-pane-switch')
-        expect(sw).toBeInTheDocument()
+        // 草稿文档默认编辑；窄屏不再有独立的分屏页签
+        expect(screen.queryByTestId('doc-mobile-pane-switch')).toBeNull()
         expect(document.querySelector('.ant-splitter')).toBeNull()
-        // 默认编辑面板
-        expect(document.querySelector('textarea')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-editor-mode-switch')).toBeInTheDocument()
         expect(document.querySelector('.doc-md-preview')).toBeNull()
 
-        fireEvent.click(screen.getByText('预览'))
+        fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
         await waitFor(() => expect(document.querySelector('.doc-md-preview')).toBeInTheDocument())
-        expect(document.querySelector('textarea')).toBeNull()
+        expect(screen.queryByTestId('doc-editor-mode-switch')).toBeNull()
 
-        fireEvent.click(screen.getByText('编辑'))
-        await waitFor(() => expect(document.querySelector('textarea')).toBeInTheDocument())
+        fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('编辑'))
+        expect(await screen.findByTestId('doc-editor-mode-switch')).toBeInTheDocument()
     })
 
-    it('桌面端保持左右分栏，不渲染窄屏页签', async () => {
+    it('桌面端同样使用模式切换，不再左右分栏', async () => {
         responsiveState = {
             deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
             width: 1280, height: 800,
         }
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        await enterSourceMode()
 
         expect(screen.queryByTestId('doc-mobile-pane-switch')).toBeNull()
-        expect(document.querySelector('.ant-splitter')).toBeTruthy()
-        expect(document.querySelector('textarea')).toBeInTheDocument()
+        expect(document.querySelector('.ant-splitter')).toBeNull()
+        expect(screen.getByTestId('doc-mode-switch')).toBeInTheDocument()
     })
 
-    it('大纲点击锚点时窄屏先切到预览面板', async () => {
+    it('大纲点击锚点时先切到查看模式再定位', async () => {
+        const scrollIntoView = vi.fn()
+        Element.prototype.scrollIntoView = scrollIntoView as unknown as typeof Element.prototype.scrollIntoView
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        await enterSourceMode()
 
         // 打开大纲抽屉并点击一个标题
         fireEvent.click(screen.getByText(/大\s*纲/))
         fireEvent.click(await screen.findByText('需求说明', { selector: '.ant-drawer *' }))
 
         await waitFor(() => expect(document.querySelector('.doc-md-preview')).toBeInTheDocument())
+        await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
     })
 
     it('桌面端保持全部按钮常显，不渲染更多入口', async () => {
@@ -502,7 +535,7 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
 describe('DocumentEditorPage Markdown 快捷工具', () => {
     it('点击工具栏「加粗」把选中文本包裹为 **…** 并保留选区', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         const original = ta.value
         ta.setSelectionRange(0, 2)
 
@@ -518,7 +551,7 @@ describe('DocumentEditorPage Markdown 快捷工具', () => {
 
     it('Ctrl+B / Ctrl+I / Ctrl+K 快捷键生效', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
 
         ta.setSelectionRange(0, 1)
         fireEvent.keyDown(ta, { key: 'b', ctrlKey: true })
@@ -539,7 +572,7 @@ describe('DocumentEditorPage Markdown 快捷工具', () => {
 
     it('列表 / 引用 / 代码块按钮作用于整行', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         // 文本域先于文档内容渲染：先等内容加载完再改标题，
         // 否则标题操作作用在空内容上（CI 上曾因此偶发 "expected false to be true"）
         await waitFor(() => expect(ta.value.length).toBeGreaterThan(0))
@@ -558,7 +591,7 @@ describe('DocumentEditorPage 查找与替换', () => {
     // mock 正文为 '# 需求说明\n\n正文段落。\n'
     it('Ctrl+F 打开查找条并实时统计匹配数', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
 
         expect(screen.queryByTestId('doc-find-bar')).toBeNull()
         fireEvent.keyDown(ta, { key: 'f', ctrlKey: true })
@@ -573,7 +606,7 @@ describe('DocumentEditorPage 查找与替换', () => {
 
     it('「下一个」定位匹配：textarea 选区落到匹配文字上', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         fireEvent.keyDown(ta, { key: 'f', ctrlKey: true })
         await screen.findByTestId('doc-find-bar')
         fireEvent.change(screen.getByTestId('doc-find-input'), { target: { value: '正文' } })
@@ -586,7 +619,7 @@ describe('DocumentEditorPage 查找与替换', () => {
 
     it('全部替换改写正文并提示处数，Esc 关闭查找条', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         fireEvent.keyDown(ta, { key: 'f', ctrlKey: true })
         await screen.findByTestId('doc-find-bar')
         fireEvent.change(screen.getByTestId('doc-find-input'), { target: { value: '段落' } })
@@ -608,7 +641,7 @@ describe('DocumentEditorPage 查找与替换', () => {
 
     it('「查找」按钮打开查找条；区分大小写开关影响匹配数', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
 
         fireEvent.click(screen.getByTestId('doc-find-open'))
         await screen.findByTestId('doc-find-bar')
@@ -674,7 +707,7 @@ describe('DocumentEditorPage 插入图片', () => {
             }),
         )
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         // 光标放到正文末尾
         ta.setSelectionRange(ta.value.length, ta.value.length)
 
@@ -699,7 +732,7 @@ describe('DocumentEditorPage 插入图片', () => {
             }),
         )
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         const before = ta.value
 
         const input = screen.getByTestId('doc-image-input') as HTMLInputElement
@@ -745,7 +778,7 @@ describe('DocumentEditorPage 粘贴图片与状态栏', () => {
             }),
         )
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         ta.setSelectionRange(ta.value.length, ta.value.length)
 
         const file = new File([new Uint8Array([137, 80, 78, 71])], 'pasted.png', { type: 'image/png' })
@@ -764,7 +797,7 @@ describe('DocumentEditorPage 粘贴图片与状态栏', () => {
             }),
         )
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
 
         pasteImage(ta, [], '普通文本')
 
@@ -783,7 +816,7 @@ describe('DocumentEditorPage 粘贴图片与状态栏', () => {
             }),
         )
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         ta.setSelectionRange(ta.value.length, ta.value.length)
 
         const f1 = new File([new Uint8Array([1])], 'a.png', { type: 'image/png' })
@@ -798,7 +831,7 @@ describe('DocumentEditorPage 粘贴图片与状态栏', () => {
 
     it('状态栏实时展示字数 / 行数', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         const stats = await screen.findByTestId('doc-stats')
         // 初始正文 '# 需求说明\n\n正文段落。\n'
         expect(stats.textContent).toMatch(/\d+ 字 · \d+ 行/)
@@ -812,7 +845,7 @@ describe('DocumentEditorPage 最近打开记录', () => {
     it('打开文档后写入本地最近打开历史', async () => {
         window.localStorage.removeItem('cndb_recent_docs_v1:10')
         renderEditor()
-        await screen.findByPlaceholderText('输入 Markdown 内容…')
+        await enterSourceMode()
 
         await waitFor(() => {
             const raw = window.localStorage.getItem('cndb_recent_docs_v1:10')
@@ -825,7 +858,7 @@ describe('DocumentEditorPage 最近打开记录', () => {
 describe('DocumentEditorPage 表格骨架与标题层级', () => {
     it('工具栏表格下拉：按预设插入 Markdown 表格骨架到光标处', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         ta.setSelectionRange(ta.value.length, ta.value.length)
 
         fireEvent.click(screen.getByTestId('md-toolbar-table'))
@@ -840,7 +873,7 @@ describe('DocumentEditorPage 表格骨架与标题层级', () => {
 
     it('工具栏标题下拉：所选行变为三级标题', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         // 光标放在第一行（# 需求说明）
         // 文本域先于文档内容渲染：先等内容加载完再改标题，
         // 否则标题操作作用在空内容上（CI 上曾因此偶发 "expected false to be true"）
@@ -855,7 +888,7 @@ describe('DocumentEditorPage 表格骨架与标题层级', () => {
 
     it('工具栏标题下拉「正文」：取消已有标题', async () => {
         renderEditor()
-        const ta = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const ta = await enterSourceMode()
         // 文本域先于文档内容渲染：先等内容加载完再改标题，
         // 否则标题操作作用在空内容上（CI 上曾因此偶发 "expected false to be true"）
         await waitFor(() => expect(ta.value.length).toBeGreaterThan(0))
@@ -873,6 +906,14 @@ describe('段落锁提示与跳转', () => {
   it('他人锁定段落时展示跳转按钮，点击后光标移到该段起点', async () => {
     // 覆盖默认 mock：返回一条他人持有的第 3 段锁
     server.use(
+      http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+        HttpResponse.json({
+          ...mockDocuments[1],
+          content: '# 需求说明\n\n第一段正文。\n\n第二段正文。\n',
+          version_number: 1,
+          draft: null,
+          write_mode: 'direct',
+        })),
       http.get('/api/v1/workspaces/:wid/documents/:docId/paragraph-locks', () =>
         HttpResponse.json({
           locks: [
@@ -882,8 +923,10 @@ describe('段落锁提示与跳转', () => {
       ),
     )
 
-    const { container } = renderEditor()
+    renderEditor()
     await screen.findByTestId('doc-paragraph-locks')
+    const textarea = await enterSourceMode()
+    await waitFor(() => expect(textarea.value).toContain('第二段正文'))
 
     const jump = await screen.findByTestId('para-jump-p3')
     expect(jump).toHaveTextContent('跳转到第 3 段')
@@ -891,8 +934,6 @@ describe('段落锁提示与跳转', () => {
 
     fireEvent.click(jump)
 
-    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
-    expect(textarea).toBeTruthy()
     // 光标落在第 3 段起点：该偏移之前的段落数是 2
     const before = textarea.value.slice(0, textarea.selectionStart)
     expect(before.split('\n\n').filter((part) => part.trim()).length).toBe(2)
@@ -932,14 +973,189 @@ describe('协作者入口（桌面端）', () => {
         const listSpy = vi.spyOn(documentsApi, 'listPermissions').mockResolvedValue([])
         renderEditor()
 
-        // 等正文加载完成（编辑器用原生 textarea）
-        await waitFor(() => {
-            const ta = document.querySelector<HTMLTextAreaElement>('textarea')
-            expect(ta?.value.length ?? 0).toBeGreaterThan(0)
-        })
+        // 等正文加载完成（切到源码模式后读取 textarea）
+        await enterSourceMode()
 
         fireEvent.click(screen.getByTestId('doc-collaborators-open'))
         expect(await screen.findByTestId('doc-collaborators-modal')).toBeInTheDocument()
         await waitFor(() => expect(listSpy).toHaveBeenCalledWith(10, 2))
+    })
+})
+
+describe('DocumentEditorPage 查看 / 编辑模式与草稿提交', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+    })
+
+    it('已发布文档且无草稿：默认进入查看模式', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    status: 'published',
+                    content: '# 已发布文档\n\n正文。\n',
+                    version_number: 3,
+                    draft: null,
+                    write_mode: 'direct',
+                })),
+        )
+        renderEditor()
+
+        expect(await screen.findByTestId('doc-view-mode')).toBeInTheDocument()
+        expect(document.querySelector('.doc-md-preview')).toBeInTheDocument()
+        expect(screen.queryByTestId('doc-editor-mode-switch')).toBeNull()
+        // 无修改：保存草稿与提交修改均禁用
+        expect(screen.getByTestId('doc-save-btn')).toBeDisabled()
+        expect(screen.getByTestId('doc-submit-btn')).toBeDisabled()
+    })
+
+    it('本人有草稿：默认进入编辑模式并载入草稿内容', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    status: 'published',
+                    content: '# 已发布标题\n\n发布版正文。\n',
+                    version_number: 2,
+                    write_mode: 'direct',
+                    draft: {
+                        content: '# 草稿标题\n\n草稿正文。\n',
+                        content_size: 18,
+                        base_version_number: 2,
+                        current_version_number: 2,
+                        stale: false,
+                        updated_at: '2026-02-01T00:00:00Z',
+                    },
+                })),
+        )
+        renderEditor()
+
+        expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿待提交')
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('草稿正文'))
+        // 草稿与最新版本不同 → 允许保存 / 提交
+        expect(screen.getByTestId('doc-save-btn')).toBeEnabled()
+        expect(screen.getByTestId('doc-submit-btn')).toBeEnabled()
+    })
+
+    it('保存草稿：只调用 /draft，不生成新版本', async () => {
+        const draftBodies: Record<string, unknown>[] = []
+        let submitCalls = 0
+        server.use(
+            http.put('/api/v1/workspaces/:wid/documents/:docId/draft', async ({ request }) => {
+                const body = await request.json() as Record<string, unknown>
+                draftBodies.push(body)
+                const content = String(body.content ?? '')
+                return HttpResponse.json({
+                    draft: {
+                        content,
+                        content_size: content.length,
+                        base_version_number: 1,
+                        current_version_number: 1,
+                        stale: false,
+                        updated_at: '2026-02-01T00:00:00Z',
+                    },
+                })
+            }),
+            http.post('/api/v1/workspaces/:wid/documents/:docId/submit', () => {
+                submitCalls += 1
+                return HttpResponse.json({ mode: 'direct', message: 'x', content: '', version_number: 2 })
+            }),
+        )
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('需求说明'))
+        fireEvent.change(ta, { target: { value: '# 需求说明\n\n草稿内容。\n' } })
+
+        fireEvent.click(screen.getByTestId('doc-save-btn'))
+
+        await waitFor(() => expect(draftBodies).toHaveLength(1))
+        expect(draftBodies[0]).toMatchObject({
+            content: '# 需求说明\n\n草稿内容。\n',
+            base_version_number: 1,
+        })
+        expect(submitCalls).toBe(0)
+        expect(await screen.findByTestId('doc-draft-tag')).toBeInTheDocument()
+        // 保存后无未保存提示（仍是待提交草稿）
+        expect(screen.queryByTestId('doc-unsaved-hint')).toBeNull()
+    })
+
+    it('切到查看模式：未保存改动自动落草稿', async () => {
+        let draftCalls = 0
+        server.use(
+            http.put('/api/v1/workspaces/:wid/documents/:docId/draft', () => {
+                draftCalls += 1
+                return HttpResponse.json({ draft: null })
+            }),
+        )
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('需求说明'))
+        fireEvent.change(ta, { target: { value: '# 需求说明\n\n未提交改动。\n' } })
+
+        fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
+
+        await waitFor(() => expect(draftCalls).toBe(1))
+        expect(await screen.findByTestId('doc-view-mode')).toBeInTheDocument()
+    })
+
+    it('提交修改：先弹窗确认，成功后生成新版本并回到查看模式', async () => {
+        const submitBodies: Record<string, unknown>[] = []
+        server.use(
+            http.post('/api/v1/workspaces/:wid/documents/:docId/submit', async ({ request }) => {
+                submitBodies.push(await request.json() as Record<string, unknown>)
+                return HttpResponse.json({
+                    mode: 'direct',
+                    message: '已提交并生成 v2',
+                    content: '# 需求说明\n\n提交后的正文。\n',
+                    version_number: 2,
+                })
+            }),
+        )
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('需求说明'))
+        fireEvent.change(ta, { target: { value: '# 需求说明\n\n提交后的正文。\n' } })
+
+        fireEvent.click(screen.getByTestId('doc-submit-btn'))
+        // 弹窗出现：填写变更说明后确认提交
+        expect(await screen.findByTestId('doc-submit-summary')).toBeInTheDocument()
+        fireEvent.change(screen.getByTestId('doc-submit-summary'), { target: { value: '更新正文' } })
+        fireEvent.click(screen.getByRole('button', { name: /确认提交/ }))
+
+        await waitFor(() => expect(submitBodies).toHaveLength(1))
+        expect(submitBodies[0]).toMatchObject({
+            content: '# 需求说明\n\n提交后的正文。\n',
+            change_summary: '更新正文',
+            base_version_number: 1,
+        })
+        // 提交成功后回到查看模式，且与最新版本一致 → 按钮重新禁用
+        expect(await screen.findByTestId('doc-view-mode')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-submit-btn')).toBeDisabled()
+    })
+
+    it('无修改时保存 / 提交按钮禁用，不会产生请求', async () => {
+        let draftCalls = 0
+        let submitCalls = 0
+        server.use(
+            http.put('/api/v1/workspaces/:wid/documents/:docId/draft', () => {
+                draftCalls += 1
+                return HttpResponse.json({ draft: null })
+            }),
+            http.post('/api/v1/workspaces/:wid/documents/:docId/submit', () => {
+                submitCalls += 1
+                return HttpResponse.json({ mode: 'direct', message: 'x', content: '', version_number: 2 })
+            }),
+        )
+        renderEditor()
+        await enterSourceMode()
+        expect(screen.getByTestId('doc-save-btn')).toBeDisabled()
+        expect(screen.getByTestId('doc-submit-btn')).toBeDisabled()
+
+        fireEvent.click(screen.getByTestId('doc-save-btn'))
+        fireEvent.click(screen.getByTestId('doc-submit-btn'))
+        await new Promise(r => setTimeout(r, 100))
+        expect(draftCalls).toBe(0)
+        expect(submitCalls).toBe(0)
     })
 })

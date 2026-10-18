@@ -91,6 +91,23 @@ def resolve_write_mode(db: Session, workspace_id: int, user: User) -> str:
     return WRITE_MODE_CHANGE_REQUEST
 
 
+def resolve_document_write_mode(db: Session, workspace_id: int, doc_id: int, user: User) -> str:
+    """单篇文档的写模式：在工作区策略上叠加文档级 editor 授权.
+
+    被创建者/所有者授予 editor 的协作者，可**直接编辑**该文档；该授权仅对
+    未发布文档生效（``is_editor_granted`` 内部判断），已发布内容仍遵循
+    工作区 ``allow_edit`` / 修改申请流程，避免绕过审核。
+    """
+    mode = resolve_write_mode(db, workspace_id, user)
+    if mode != WRITE_MODE_CHANGE_REQUEST:
+        return mode
+    from cndb.plugins.documents.services import document_permissions
+
+    if document_permissions.is_editor_granted(db, doc_id, user.id):
+        return WRITE_MODE_DIRECT
+    return mode
+
+
 # ── 查询 ──────────────────────────────────────────────
 
 
@@ -261,6 +278,11 @@ def create_request(
     base = current if base_version_number is None else base_version_number
     if base > current:
         raise BadRequestError(f"基准版本不存在：v{base}（当前最新 v{current}）")
+
+    # 未发生实际修改：不生成空的待审申请（与前端「未修改不可提交」一致）。
+    current_text = content_service.load_content(content_service.latest_version(db, doc.id), doc)
+    if parse_service.content_hash(content) == parse_service.content_hash(current_text):
+        raise ConflictError("内容未发生变化，无需提交", code="no_changes")
 
     cr = DocumentChangeRequest(
         document_id=doc.id,
@@ -449,6 +471,7 @@ __all__ = [
     "mark_open_requests_stale",
     "merge_request",
     "require_member",
+    "resolve_document_write_mode",
     "resolve_write_mode",
     "serialize_request",
     "update_base",

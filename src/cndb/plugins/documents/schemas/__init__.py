@@ -54,6 +54,23 @@ class ContentUpdate(BaseModel):
     base_content: str | None = Field(default=None, description="客户端开始编辑时的正文快照")
 
 
+class DocumentDraftSave(BaseModel):
+    """保存个人工作草稿（不生成版本）."""
+
+    content: str
+    # 开始编辑时所基于的版本号；超过服务端最新版本会被拒绝
+    base_version_number: int | None = Field(default=None, ge=0)
+
+
+class DocumentSubmit(BaseModel):
+    """显式提交修改：直编落库为新版本，否则生成修改申请."""
+
+    # 缺省取服务端已保存的个人草稿
+    content: str | None = None
+    change_summary: str = Field(default="", max_length=500)
+    base_version_number: int | None = Field(default=None, ge=0)
+
+
 class DocumentPermissionGrant(BaseModel):
     """文档协作者授权（viewer 只读 / editor 可直编未发布内容）."""
 
@@ -302,9 +319,11 @@ __all__ = [
     "DocumentChangeRequestUpdateBase",
     "DocumentCreate",
     "DocumentDetail",
+    "DocumentDraftSave",
     "DocumentIssueCommentCreate",
     "DocumentIssueCreate",
     "DocumentOut",
+    "DocumentSubmit",
     "DocumentUpdate",
     "LinkRepairItem",
     "LinkRepairRequest",

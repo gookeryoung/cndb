@@ -53,7 +53,33 @@ export interface DocumentItem {
 export interface DocumentDetail extends DocumentItem {
   content: string
   version_number?: number
+  /** 当前用户的个人工作草稿（与最新版本一致时为 null） */
+  draft?: DocumentDraftPayload | null
+  /** 当前用户的写模式：direct 直编 / change_request 提交修改申请 */
+  write_mode?: 'direct' | 'change_request' | 'denied'
   edit_lock?: { user_id: number; username: string; elapsed_seconds: number } | null
+}
+
+/** 个人工作草稿：保存不生成版本，显式提交才落库 */
+export interface DocumentDraftPayload {
+  content: string
+  content_size: number
+  /** 开始编辑时所基于的版本号（提交时用于段落级三方合并） */
+  base_version_number: number
+  current_version_number: number
+  /** 基准已过期：期间文档又前进了版本 */
+  stale: boolean
+  updated_at: string | null
+}
+
+/** 显式提交结果：direct 落库为新版本；change_request 生成待审申请 */
+export interface DocumentSubmitResult {
+  mode: 'direct' | 'change_request'
+  message: string
+  change_request?: DocumentChangeRequestItem
+  document?: DocumentDetail
+  content?: string
+  version_number?: number
 }
 
 export interface VersionItem {
@@ -344,6 +370,32 @@ export const documentsApi = {
     api
       .put<DocumentDetail | DocumentChangeRequestDispatch>(`${base(wid)}/${docId}/content`, data)
       .then(r => r.data),
+
+  // 个人工作草稿（保存与提交解耦）：保存只写草稿表，不生成版本/修改申请
+  getDraft: (wid: number | string, docId: number | string) =>
+    api
+      .get<{ draft: DocumentDraftPayload | null }>(`${base(wid)}/${docId}/draft`)
+      .then(r => r.data),
+
+  saveDraft: (
+    wid: number | string,
+    docId: number | string,
+    data: { content: string; base_version_number?: number | null },
+  ) =>
+    api
+      .put<{ draft: DocumentDraftPayload | null; message?: string }>(`${base(wid)}/${docId}/draft`, data)
+      .then(r => r.data),
+
+  discardDraft: (wid: number | string, docId: number | string) =>
+    api.delete(`${base(wid)}/${docId}/draft`),
+
+  /** 显式提交修改：直编 200 / 转修改申请 202；未修改时后端返回 409（code=no_changes） */
+  submit: (
+    wid: number | string,
+    docId: number | string,
+    data: { content?: string; change_summary?: string; base_version_number?: number | null },
+  ) =>
+    api.post<DocumentSubmitResult>(`${base(wid)}/${docId}/submit`, data).then(r => r.data),
 
   // 文档修改申请（双轨制写入的待审载体）
   changeRequests: (wid: number | string, params?: { document_id?: number; scope?: string }) =>

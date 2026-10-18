@@ -319,7 +319,39 @@ export const handlers = [
       ...mockDocuments[1],
       content: '# 需求说明\n\n正文段落。\n',
       version_number: 1,
+      draft: null,
+      write_mode: 'direct',
     })),
+  // 个人草稿：保存只写草稿，不生成版本
+  http.get('/api/v1/workspaces/:wid/documents/:docId/draft', () =>
+    HttpResponse.json({ draft: null })),
+  http.put('/api/v1/workspaces/:wid/documents/:docId/draft', async ({ request }) => {
+    const body = await request.json() as { content?: string; base_version_number?: number }
+    const content = body.content ?? ''
+    return HttpResponse.json({
+      draft: {
+        content,
+        content_size: content.length,
+        base_version_number: body.base_version_number ?? 1,
+        current_version_number: 1,
+        stale: false,
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    })
+  }),
+  http.delete('/api/v1/workspaces/:wid/documents/:docId/draft', () =>
+    new HttpResponse(null, { status: 204 })),
+  // 显式提交：默认直编落库并生成新版本
+  http.post('/api/v1/workspaces/:wid/documents/:docId/submit', async ({ request }) => {
+    const body = await request.json() as { content?: string }
+    const content = body.content ?? ''
+    return HttpResponse.json({
+      mode: 'direct',
+      message: '已提交并生成 v2',
+      content,
+      version_number: 2,
+    })
+  }),
 
   // 系统基本信息（登录即可，普通用户可查看）
   http.get('/api/v1/system/about', () =>

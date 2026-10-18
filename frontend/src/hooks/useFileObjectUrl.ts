@@ -100,6 +100,19 @@ export function useFileObjectUrl(
   return { url, error }
 }
 
+/** 以 Promise 方式取附件 object URL —— 供非 React 渲染场景复用（如编辑器图片 widget）.
+ *
+ * 与 hook 共享同一份缓存与去重表：编辑器里先渲染过的图片，预览侧命中缓存不重复请求。
+ */
+export function loadFileObjectUrl(
+  wid: number | string,
+  fileKey: string,
+  inline = true,
+  thumb = 0,
+): Promise<string> {
+  return _load(wid, fileKey, inline, thumb)
+}
+
 /** 清空缓存并释放 object URL —— 供测试用例与登出/切换工作区时复用. */
 export function resetFileObjectUrls(): void {
   for (const url of _urlCache.values()) {

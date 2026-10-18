@@ -62,6 +62,15 @@ if (typeof window !== 'undefined') {
       toJSON: () => ({}),
     }) as DOMRect
   }
+  // jsdom 未实现 Range#getClientRects / getBoundingClientRect：CodeMirror 6 测量
+  // 光标与选区坐标时依赖，缺失会在 requestAnimationFrame 里抛 TypeError 刷 stderr。
+  // 返回空矩形集合即可，不影响布局无关的断言。
+  if (!Range.prototype.getClientRects) {
+    Range.prototype.getClientRects = () => [] as unknown as DOMRectList
+  }
+  if (!Range.prototype.getBoundingClientRect) {
+    Range.prototype.getBoundingClientRect = () => new DOMRect(0, 0, 0, 0)
+  }
   // jsdom 未实现 URL.createObjectURL/revokeObjectURL（useFileObjectUrl 把鉴权 blob
   // 转成 object URL 后交给 <img>；测试只需拿到可断言的假 URL）
   if (!URL.createObjectURL) {

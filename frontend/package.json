@@ -28,6 +28,7 @@
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
     "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.7.5",
     "@codemirror/theme-one-dark": "^6.1.3",

@@ -304,14 +304,18 @@ def update_content(
     change_summary: str = "",
     base_updated_at: str | None = None,
     change_type: str = CHANGE_TYPE_MANUAL,
+    enforce_role: bool = True,
 ) -> Document:
     """乐观锁更新内容：创建新版本 + 刷新元数据 + 同步 FTS.
 
     Args:
         base_updated_at: 客户端持有的 updated_at ISO 字符串；None 表示跳过冲突检测。
+        enforce_role: 是否校验工作区写权限。仅供已单独校验过「文档级 editor 授权」
+            的内部提交路径传 False（见 ``drafts.submit_draft``），路由层保持默认。
     """
     doc = get_document_or_404(db, workspace_id, doc_id)
-    require_editor(db, workspace_id, user)
+    if enforce_role:
+        require_editor(db, workspace_id, user)
 
     if doc.is_folder:
         raise ConflictError("文件夹没有内容")
