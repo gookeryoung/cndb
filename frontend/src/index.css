@@ -2893,25 +2893,87 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-brand-color);
 }
 
+/* ─────────────── 文档树紧凑排版 ───────────────
+ * antd 默认 titleHeight=24 + treenode 底部 4px 间距 → 每行 28px，文档较多时上下过松。
+ * 这里压到 22px/行、缩进 12px，并禁止标题折行（折行会让该行高度翻倍，视觉更散）。 */
+.cn-doc-tree .ant-tree-treenode {
+  padding: 0;
+  align-items: center;
+}
+
+.cn-doc-tree .ant-tree-switcher {
+  width: 16px;
+  height: 22px;
+  line-height: 22px;
+  /* 展开箭头：静态不占视觉，整行悬停或键盘聚焦时才显现（点击整行即可展开，见 expandAction="click"）。
+     静态下每行只剩「图标 + 标题」，左侧不再有按钮感 */
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.cn-doc-tree .ant-tree-treenode:hover .ant-tree-switcher,
+.cn-doc-tree .ant-tree-treenode:focus-within .ant-tree-switcher,
+.cn-doc-tree .ant-tree-switcher:focus-visible {
+  opacity: 1;
+}
+
+.cn-doc-tree .ant-tree-switcher .ant-tree-switcher-icon {
+  font-size: 10px;
+}
+
+/* 图标全部由 titleRender 自带；隐藏 antd 的 iconEle 占位（空 span 会白占 24px，行首显得松散） */
+.cn-doc-tree .ant-tree-iconEle {
+  display: none;
+}
+
+.cn-doc-tree .ant-tree-node-content-wrapper {
+  height: 22px;
+  line-height: 22px;
+  padding-inline: 2px;
+  overflow: hidden;
+}
+
+.cn-doc-tree .ant-tree-indent-unit {
+  width: 12px;
+}
+
+.cn-doc-tree .ant-tree-title {
+  display: inline-block;
+  max-width: 100%;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
 /* ─────────────── 文档树节点「更多」按钮 ───────────────
- * 桌面悬停显现（不干扰阅读），窄屏常显（触摸端没有 hover，右键菜单也不可用） */
+ * 只在悬停 / 选中 / 键盘聚焦时出现，做成 16px 纯图标（不占一整个按钮的视觉重量）；
+ * 触摸端没有 hover、右键菜单也不可用，故常显（弱化到 0.55）。 */
 .cn-doc-tree-more {
-  margin-left: 4px;
-  padding: 0 4px;
-  height: 20px;
+  margin-left: 2px;
+  padding: 0;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  font-size: 12px;
   color: var(--cn-text-muted);
   opacity: 0;
   transition: opacity 0.15s ease;
 }
 
-.ant-tree-treenode:hover .cn-doc-tree-more,
+.cn-doc-tree .ant-tree-treenode:hover .cn-doc-tree-more,
+.cn-doc-tree .ant-tree-treenode-selected .cn-doc-tree-more,
 .cn-doc-tree-more:focus-visible {
   opacity: 1;
 }
 
 @media (max-width: 767.98px) {
   .cn-doc-tree-more {
-    opacity: 0.6;
+    width: 20px;
+    min-width: 20px;
+    height: 20px;
+    opacity: 0.55;
   }
 }
 

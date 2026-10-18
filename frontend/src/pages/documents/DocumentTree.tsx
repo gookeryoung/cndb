@@ -13,11 +13,11 @@ import {
   LockOutlined,
   TeamOutlined,
   ApartmentOutlined,
-  CalendarOutlined,
   DeleteOutlined,
   FileAddOutlined,
   FileTextOutlined,
   FolderAddOutlined,
+  FolderOpenOutlined,
   FolderOutlined,
   MoreOutlined,
   PushpinFilled,
@@ -254,7 +254,6 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
     onError: () => message.error('删除失败'),
   })
 
-  // 每日笔记（幂等）：后端当日复用同一篇，返回后进入编辑
   /** 置顶 / 取消置顶（个人偏好）：成功后整树刷新，置顶项由后端排到最前 */
   const pinMut = useMutation({
     mutationFn: (id: number) => documentsApi.pinDocument(workspaceId, id),
@@ -274,16 +273,6 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
     onError: () => message.error('取消置顶失败'),
   })
 
-
-  const dailyNoteMut = useMutation({
-    mutationFn: () => documentsApi.dailyNote(workspaceId),
-    onSuccess: doc => {
-      invalidate()
-      navigate(`/w/${workspaceId}/documents/${doc.id}`)
-      onNavigate?.()
-    },
-    onError: () => message.error('打开今日笔记失败'),
-  })
 
   // 拖拽整理：逐项 PATCH（移动 parent_id + 同级排序 sort_order），完成后整树刷新
   const dropMut = useMutation({
@@ -324,7 +313,12 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
     />
   ), [openNodeMenu])
 
-  /** 树节点渲染：图标 + 标题 + 状态色点 + 置顶标记 + 「更多」按钮（触摸端可达） */
+  /** 展开态集合（titleRender 里决定文件夹图标开/合） */
+  const expandedSet = useMemo(() => new Set(expandedKeys.map(String)), [expandedKeys])
+
+  /** 树节点渲染：图标 + 标题 + 状态色点 + 置顶标记 + 「更多」按钮（触摸端可达）
+   *  文件夹图标随展开态切换（开/合），这样静态状态下无需展开箭头也能看出层级状态，
+   *  箭头只在悬停该行时出现（见 index.css `.cn-doc-tree .ant-tree-switcher`）。 */
   const titleRender = useCallback((node: DocTreeNode) => {
     const pinMark = node.pinned ? (
       <PushpinFilled
@@ -334,9 +328,10 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
       />
     ) : null
     if (node.is_folder) {
+      const FolderIcon = expandedSet.has(String(node.id)) ? FolderOpenOutlined : FolderOutlined
       return (
         <span data-testid={`doc-tree-folder-${node.id}`}>
-          <FolderOutlined style={{ marginRight: 6, color: 'var(--cn-warning, #faad14)' }} />
+          <FolderIcon style={{ marginRight: 6, color: 'var(--cn-warning, #faad14)' }} />
           {node.title}
           {pinMark}
           {moreButton(node)}
@@ -381,7 +376,7 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
         )}
       </span>
     )
-  }, [moreButton])
+  }, [moreButton, expandedSet])
 
   const treeNodes: DataNode[] = useMemo(() => {
     const toData = (node: DocTreeNode): DataNode => ({
@@ -503,8 +498,8 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
 
   return (
     <div data-testid="document-tree" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* 工具栏：新建 + 每日笔记 + 过滤 */}
-      <div style={{ padding: '8px 8px 4px', display: 'flex', gap: 4 }}>
+      {/* 工具栏：新建 + 过滤 */}
+      <div style={{ padding: '6px 8px 4px', display: 'flex', gap: 4 }}>
         <Button
           size="small"
           type="primary"
@@ -530,22 +525,13 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
         </Button>
         <Button
           size="small"
-          icon={<CalendarOutlined />}
-          data-testid="doc-tree-daily-note"
-          loading={dailyNoteMut.isPending}
-          onClick={() => dailyNoteMut.mutate()}
-        >
-          今日笔记
-        </Button>
-        <Button
-          size="small"
           type="text"
           icon={<ReloadOutlined />}
           aria-label="刷新文档树"
           onClick={() => void treeQuery.refetch()}
         />
       </div>
-      <div style={{ padding: '0 8px 8px' }}>
+      <div style={{ padding: '0 8px 6px' }}>
         <Input.Search
           size="small"
           allowClear
@@ -568,8 +554,8 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
           />
         ) : (
           <Tree
+            className="cn-doc-tree"
             blockNode
-            showIcon
             expandAction="click"
             draggable
             onDrop={info => {

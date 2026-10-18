@@ -5,7 +5,6 @@
 - GET    ""                          列表（成员，支持 parent/status/tag 筛选）
 - GET    /tree                       树形列表（含子节点计数）
 - GET    /search                     FTS5 全文检索（工作区成员）
-- POST   /daily-note                 每日笔记（幂等：当日复用同一篇）
 - GET    /trash                      回收站列表（按删除时间倒序）
 - GET    /{doc_id}                   详情（不含内容）
 - GET    /{doc_id}/backlinks         反向链接列表（谁引用了本文档）
@@ -49,7 +48,6 @@ from cndb.plugins.documents import services
 from cndb.plugins.documents.models import Document, DocumentVersion, Tag
 from cndb.plugins.documents.schemas import (
     ContentUpdate,
-    DailyNoteRequest,
     DocumentBatchRequest,
     DocumentCreate,
     DocumentPermissionGrant,
@@ -315,24 +313,6 @@ def search(
         is_admin=services.visibility.is_document_admin(db, workspace_id, current_user),
     )
     return {"items": items, "total": total, "query": q}
-
-
-@router.post("/daily-note")
-def create_daily_note(
-    workspace_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-    payload: DailyNoteRequest | None = None,
-) -> dict[str, Any]:
-    """每日笔记（幂等）：当日笔记已存在直接返回，否则按模板创建（editor+）。
-
-    注意：必须定义在 /{doc_id} 之前，否则 "daily-note" 会被解析为 doc_id。
-    """
-    _require_member(db, workspace_id, current_user)
-    doc, created = services.content.get_or_create_daily_note(
-        db, workspace_id, current_user, day=payload.date if payload else None
-    )
-    return {**services.content.serialize_document(db, doc), "created": created}
 
 
 @router.get("/trash")
