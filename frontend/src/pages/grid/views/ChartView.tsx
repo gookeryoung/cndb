@@ -448,7 +448,11 @@ export function ChartCard({ cfg, rows, fields, total, onRowClick, emptyConfigTes
     ro.observe(containerRef.current)
     return () => {
       ro.disconnect()
-      chart.dispose()
+      try {
+        chart.dispose()
+      } catch {
+        // 容器可能已被宿主整体卸载/清空（ECharts dispose 内部会 removeChild），不应阻断卸载流程
+      }
       chartRef.current = null
     }
   }, [hasChart])
@@ -476,19 +480,36 @@ export function ChartCard({ cfg, rows, fields, total, onRowClick, emptyConfigTes
     [cfg.chart_type, data],
   )
 
-  // 未配必填字段 → 引导空态（后端校验挡新视图，这里兜底历史数据/清空场景）
-  if (!hasChart) {
-    return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Empty description={`图表视图需配置${missing.join('与')}（视图设置）`} data-testid={emptyConfigTestId} />
-      </div>
-    )
-  }
-
+  // 未配必填字段时用「覆盖层空态」而不是换掉整棵子树：
+  // ECharts 的 dispose 会清空容器 innerHTML，若 React 同时也管理该容器的子节点（如空态 Empty），
+  // 之后 React 卸载这些节点就会抛 `Failed to execute 'removeChild'`（NotFoundError）。
+  // 因此图表容器始终挂载、永不承载 React 子节点，空态以兄弟覆盖层呈现。
   return (
     <>
-      <div ref={containerRef} data-testid="chart-container" style={{ flex: 1, minHeight: 320 }} />
-      {cfg.show_stats_panel !== false && stats && statsField && (
+      <div style={{ flex: 1, minHeight: 320, position: 'relative', display: 'flex' }}>
+        <div
+          ref={containerRef}
+          data-testid="chart-container"
+          data-chart-ready={hasChart ? 'true' : 'false'}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            visibility: hasChart ? 'visible' : 'hidden',
+            pointerEvents: hasChart ? 'auto' : 'none',
+          }}
+        />
+        {!hasChart && (
+          <div
+            style={{
+              position: 'absolute', inset: 0, display: 'flex',
+              alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Empty description={`图表视图需配置${missing.join('与')}（视图设置）`} data-testid={emptyConfigTestId} />
+          </div>
+        )}
+      </div>
+      {hasChart && cfg.show_stats_panel !== false && stats && statsField && (
         <StatsPanel stats={stats} total={total} fieldName={statsField} scatter={scatterSummary} />
       )}
     </>
