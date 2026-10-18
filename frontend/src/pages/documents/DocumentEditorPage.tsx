@@ -1,4 +1,4 @@
-/** 文档编辑页 — 分屏编辑/预览 + 版本历史 + 标签 + 乐观锁保存. */
+/** 文档页 — 查看/编辑双模式 + Obsidian 风格实时预览 + 个人草稿（保存与提交解耦） */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -9,14 +9,13 @@ import {
   Drawer,
   Dropdown,
   Input,
+  Modal,
   Segmented,
   Space,
-  Splitter,
   Tag,
   Typography,
   message,
 } from 'antd'
-import type { TextAreaRef } from 'antd/es/input/TextArea'
 import {
   BranchesOutlined,
   DownloadOutlined,
@@ -32,6 +31,7 @@ import {
   TeamOutlined,
   SaveOutlined,
   SearchOutlined,
+  SendOutlined,
   TableOutlined,
   TagsOutlined,
 } from '@ant-design/icons'
@@ -40,13 +40,18 @@ import FindReplaceBar from '@/components/Document/FindReplaceBar'
 import { ancestorChain } from './DocumentTree'
 import { pushRecentDoc } from './recentDocs'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
+import MarkdownLiveEditor, {
+  type MarkdownEditorHandle,
+  type MarkdownEditorMode,
+  type MarkdownEditorShortcut,
+} from '@/components/Document/MarkdownLiveEditor'
 import MarkdownToolbar, { type MarkdownAction } from '@/components/Document/MarkdownToolbar'
 import { findMatches, nextMatchIndex, replaceAllMatches, replaceMatch } from '@/components/Document/documentSearch'
 import { documentStats, formatStatsLabel } from '@/components/Document/documentStats'
 import { buildImageSnippet, isImageFile } from '@/components/Document/imageRef'
 import { buildTableSkeleton, insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
-import { documentsApi, isChangeRequestDispatch } from '@/api/documents'
+import { documentsApi } from '@/api/documents'
 import { fileApi, tableApi, workspaceApi } from '@/api'
 import { useAuthStore } from '@/store'
 import { useDocumentEditing, useDocumentViewers, useParagraphLockSnapshot, useRealtime } from '@/realtime/useRealtime'
@@ -56,15 +61,14 @@ import { CollaborationStatusTag, DocumentViewers } from '@/realtime/RealtimeIndi
 import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
 import type {
-  DocumentChangeRequestDispatch,
-  DocumentDetail,
+  DocumentDraftPayload,
   DocumentExportFormat,
   DocumentItem,
+  DocumentSubmitResult,
   OutgoingLinkItem,
 } from '@/api/documents'
 
 const { Text, Title } = Typography
-const { TextArea } = Input
 
 
 import BacklinksDrawer from './BacklinksDrawer'
@@ -90,14 +94,19 @@ export default function DocumentEditorPage() {
   const [tagsOpen, setTagsOpen] = useState(false)
   const [collaboratorsOpen, setCollaboratorsOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
-  /** 窄屏（<768px）编辑/预览二选一：左右分栏在 390px 屏上每侧仅约 190px，正文换行严重 */
-  const [mobilePane, setMobilePane] = useState<'edit' | 'preview'>('edit')
+  /** 顶层查看/编辑模式：已发布文档默认查看；有个人草稿或未发布文档默认编辑 */
+  const [viewMode, setViewMode] = useState<'view' | 'edit'>('view')
+  /** 编辑器的渲染模式：实时预览（Obsidian 风格）/ 源码 */
+  const [editorMode, setEditorMode] = useState<MarkdownEditorMode>('live')
   const [backlinksOpen, setBacklinksOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
   // 断链修复：旧标题 → 选中的目标文档 ID
   const [repairTargets, setRepairTargets] = useState<Record<string, number>>({})
   const [diffPair, setDiffPair] = useState<{ base: number; head: number } | null>(null)
   const [crOpen, setCrOpen] = useState(false)
+  /** 提交修改弹窗与变更说明 */
+  const [submitOpen, setSubmitOpen] = useState(false)
+  const [changeSummary, setChangeSummary] = useState('')
   /** 保存被转为修改申请时的提示（正文未落库，等待审核） */
   const [pendingNotice, setPendingNotice] = useState<string | null>(null)
   // 查找 / 替换（Ctrl+F / Ctrl+H 打开，Esc 关闭）
@@ -107,11 +116,19 @@ export default function DocumentEditorPage() {
   const [findCaseSensitive, setFindCaseSensitive] = useState(false)
   /** 当前定位到的匹配下标（-1 = 尚未定位） */
   const [matchIndex, setMatchIndex] = useState(-1)
-  const baseTsRef = useRef<string | null>(null)
-  /** 已同步正文快照：保存时回传，服务端据此做段落级三方合并（不同段落可并发，同段落冲突） */
-  const baseContentRef = useRef<string>('')
-  const dirtyRef = useRef(false)
-  const taRef = useRef<TextAreaRef>(null)
+  /** 最新版本正文：与编辑器正文一致时禁用「保存草稿 / 提交修改」 */
+  const [latestContent, setLatestContent] = useState('')
+  /** 最近一次已保存（版本或草稿）的正文：用于「未保存」提示 */
+  const [savedContent, setSavedContent] = useState('')
+  /** 服务端已存在的个人草稿元数据（保存/提交后同步） */
+  const [serverDraft, setServerDraft] = useState<DocumentDraftPayload | null>(null)
+  /** 当前用户的写模式：direct 直编 / change_request 提交审核 */
+  const [writeMode, setWriteMode] = useState<'direct' | 'change_request'>('direct')
+  /** 草稿基准版本：首次编辑时锁定，提交时交给服务端做段落级三方合并 */
+  const baseVersionRef = useRef(0)
+  const editorRef = useRef<MarkdownEditorHandle>(null)
+  /** 已按哪篇文档完成初始化（避免 query 重取时覆盖正在编辑的正文） */
+  const initializedDocRef = useRef<number | null>(null)
 
   // 插入数据表引用辅助
   const [insertOpen, setInsertOpen] = useState(false)
@@ -134,15 +151,7 @@ export default function DocumentEditorPage() {
   const jumpToParagraph = (index: number) => {
     const offset = offsetOfParagraph(content, index)
     if (offset === null) return
-    const inner =
-      (taRef.current as unknown as { resizableTextArea?: { textArea?: HTMLTextAreaElement } })?.resizableTextArea
-        ?.textArea ?? document.querySelector('textarea')
-    if (!inner) return
-    inner.focus()
-    inner.setSelectionRange(offset, offset)
-    // 粗定位：按行高估算滚动位置（文本框无段落 API）
-    const line = content.slice(0, offset).split('\n').length
-    inner.scrollTop = Math.max(0, (line - 3) * 24)
+    editorRef.current?.revealOffset(offset)
   }
   // 段落级并发编辑：同段互斥、不同段可并发（锁随光标移动获取/释放）
   const realtimeParaLocks = useParagraphLockSnapshot(Number.isFinite(id) ? id : null)
@@ -154,8 +163,8 @@ export default function DocumentEditorPage() {
     realtimeLocks: realtimeParaLocks,
     enabled: Number.isFinite(id) && !!currentUser,
   })
-  // 实时在线状态：进入文档页上报"查看中"，切到编辑页签上报"编辑中"，离开清空
-  const presenceMode: 'viewing' | 'editing' = !isMobile && mobilePane === 'preview' ? 'viewing' : 'editing'
+  // 实时在线状态：查看模式上报查看中，编辑模式上报编辑中，离开清空
+  const presenceMode: 'viewing' | 'editing' = viewMode === 'view' ? 'viewing' : 'editing'
   useEffect(() => {
     if (!Number.isFinite(id)) return
     updatePresence(id, presenceMode)
@@ -182,52 +191,88 @@ export default function DocumentEditorPage() {
     enabled: Number.isFinite(workspaceId) && Number.isFinite(id),
   })
 
-  // 载入文档内容 + 版本戳
+  // 载入文档：有个人草稿则优先展示草稿，否则展示最新版本
   useEffect(() => {
     const doc = docQuery.data
-    if (doc) {
-      setContent(doc.content)
-      baseTsRef.current = doc.updated_at
-      baseContentRef.current = doc.content
-      dirtyRef.current = false
-    }
+    if (!doc) return
+    if (initializedDocRef.current === doc.id) return
+    initializedDocRef.current = doc.id
+    const draft = doc.draft ?? null
+    const initial = draft?.content ?? doc.content
+    setContent(initial)
+    setSavedContent(initial)
+    setLatestContent(doc.content)
+    setServerDraft(draft)
+    setWriteMode(doc.write_mode === 'change_request' ? 'change_request' : 'direct')
+    baseVersionRef.current = draft?.base_version_number ?? doc.version_number ?? 0
+    // 默认模式：有草稿或未发布文档 → 编辑；已发布/归档且无草稿 → 查看
+    const defaultEdit = !!draft || (!doc.is_folder && doc.status === 'draft')
+    setViewMode(defaultEdit ? 'edit' : 'view')
   }, [docQuery.data])
 
-  const saveMut = useMutation({
+  // 保存草稿：只写个人草稿，不创建版本、不触发审核
+  const draftMut = useMutation({
     mutationFn: (text: string) =>
-      documentsApi.updateContent(workspaceId, id, {
+      documentsApi.saveDraft(workspaceId, id, {
         content: text,
-        base_updated_at: baseTsRef.current,
-        // 段落级三方合并依据：服务端对比 base/latest/incoming，不同段落可合并、同段落冲突
-        base_content: baseContentRef.current || undefined,
-        base_version_number: docQuery.data?.version_number ?? null,
+        base_version_number: baseVersionRef.current,
       }),
-    onSuccess: (result: DocumentDetail | DocumentChangeRequestDispatch) => {
-      // 双轨制：无直编资格时保存转为修改申请，正文未落库
-      if (isChangeRequestDispatch(result)) {
-        dirtyRef.current = false
-        setSaveError(null)
-        setPendingNotice(result.message)
-        void qc.invalidateQueries({ queryKey: ['document-change-requests', workspaceId, id] })
-        return
-      }
-      baseTsRef.current = result.updated_at
-      // 服务端可能返回合并后的正文（含他人段落改动），以它作为新基准
-      baseContentRef.current = result.content ?? content
-      if (result.content && result.content !== content) setContent(result.content)
-      dirtyRef.current = false
+    onSuccess: (result, text) => {
+      setServerDraft(result.draft)
+      setSavedContent(text)
       setSaveError(null)
       setPendingNotice(null)
-      message.success(
-        (result as { merged?: boolean }).merged ? '已保存（自动合并了他人的段落改动）' : `已保存 v${result.version_number ?? '?'}`,
-      )
-      void qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+      message.success(result.draft ? '草稿已保存（尚未提交）' : '内容与当前版本一致，草稿已清空')
+      void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id, 'content'] })
     },
     onError: (err: unknown) => {
       const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        '保存失败'
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '草稿保存失败'
       setSaveError(detail)
+    },
+  })
+
+  // 提交修改：显式动作，直接落库为新版本或生成修改申请
+  const submitMut = useMutation({
+    mutationFn: (summary: string) =>
+      documentsApi.submit(workspaceId, id, {
+        content,
+        change_summary: summary,
+        base_version_number: baseVersionRef.current,
+      }),
+    onSuccess: (result: DocumentSubmitResult) => {
+      setSubmitOpen(false)
+      setChangeSummary('')
+      setSaveError(null)
+      setServerDraft(null)
+      if (result.mode === 'direct') {
+        const next = result.content ?? content
+        setContent(next)
+        setSavedContent(next)
+        setLatestContent(next)
+        baseVersionRef.current = result.version_number ?? baseVersionRef.current
+        setPendingNotice(null)
+        message.success(result.message)
+      } else {
+        // 修改申请待审：正文不落库，回到查看模式展示当前发布版
+        setPendingNotice(result.message)
+        setContent(latestContent)
+        setSavedContent(latestContent)
+        message.success(result.message)
+      }
+      setViewMode('view')
+      void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id, 'content'] })
+      void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id, 'versions'] })
+      void qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+      void qc.invalidateQueries({ queryKey: ['document-change-requests', workspaceId, id] })
+    },
+    onError: (err: unknown) => {
+      const data = (err as { response?: { data?: { detail?: string; code?: string } } })?.response?.data
+      setSaveError(data?.detail ?? '提交失败')
+      setSubmitOpen(false)
+      if (data?.code === 'no_changes') {
+        void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id, 'content'] })
+      }
     },
   })
 
@@ -355,9 +400,40 @@ export default function DocumentEditorPage() {
 
   const doc = docQuery.data
 
+  /** 是否有未提交的修改：与最新版本正文一致时禁止保存草稿 / 提交 */
+  const hasChanges = content !== latestContent
+  /** 是否有尚未保存到草稿的修改：仅用于顶部「未保存」提示 */
+  const hasUnsaved = content !== savedContent
+
+  /** 保存：只写个人草稿，不产生版本、不触发审核；提交由「提交修改」显式触发 */
   const handleSave = useCallback(() => {
-    saveMut.mutate(content)
-  }, [content, saveMut])
+    if (!hasChanges) {
+      message.info('内容与当前版本一致，无需保存')
+      return
+    }
+    draftMut.mutate(content)
+  }, [content, draftMut, hasChanges])
+
+  /** 打开提交确认弹窗：未修改时直接拦截，避免产生空版本 */
+  const openSubmit = useCallback(() => {
+    if (!hasChanges) {
+      message.info('文档未发生修改，无需提交')
+      return
+    }
+    setSubmitOpen(true)
+  }, [hasChanges])
+
+  /** 切换查看 / 编辑：离开编辑且有未保存改动时先落草稿（草稿不提交、不影响版本） */
+  const handleModeChange = useCallback(
+    (next: 'view' | 'edit') => {
+      if (next === viewMode) return
+      if (next === 'view' && hasChanges && hasUnsaved && !draftMut.isPending) {
+        draftMut.mutate(content)
+      }
+      setViewMode(next)
+    },
+    [viewMode, hasChanges, hasUnsaved, draftMut, content],
+  )
 
   /** 当前文档所在路径（祖先链，去掉自身）：复用与文档树相同的 React Query 缓存 key */
   const treeQuery = useQuery({
@@ -393,13 +469,10 @@ export default function DocumentEditorPage() {
     [content, findQuery, findCaseSensitive],
   )
 
-  /** 选中并滚动到指定区间（textarea 聚焦后设置选区会自动将其卷入可视区） */
+  /** 选中并滚动到指定区间（编辑器负责聚焦与滚动） */
   const focusRange = useCallback((start: number, end: number) => {
     requestAnimationFrame(() => {
-      const node = taRef.current?.resizableTextArea?.textArea
-      if (!node) return
-      node.focus()
-      node.setSelectionRange(start, end)
+      editorRef.current?.setSelection(start, end)
     })
   }, [])
 
@@ -413,9 +486,9 @@ export default function DocumentEditorPage() {
 
   /** 打开查找条；若编辑器中有选中文本（且不含换行）则作为查询词 */
   const openFind = useCallback(() => {
-    const node = taRef.current?.resizableTextArea?.textArea
-    const selected = node && node.selectionEnd > node.selectionStart
-      ? content.slice(node.selectionStart, node.selectionEnd)
+    const selection = editorRef.current?.getSelection()
+    const selected = selection && selection.end > selection.start
+      ? content.slice(selection.start, selection.end)
       : ''
     if (selected && !selected.includes('\n') && selected.length <= 200) setFindQuery(selected)
     setFindOpen(true)
@@ -424,28 +497,25 @@ export default function DocumentEditorPage() {
   const closeFind = useCallback(() => {
     setFindOpen(false)
     setMatchIndex(-1)
-    requestAnimationFrame(() => taRef.current?.resizableTextArea?.textArea?.focus())
+    requestAnimationFrame(() => editorRef.current?.focus())
   }, [])
 
   /** 上一个 / 下一个匹配（从当前光标位置起算，越界环绕） */
   const stepMatch = useCallback((direction: 1 | -1) => {
     if (findMatchesList.length === 0) return
-    const node = taRef.current?.resizableTextArea?.textArea
-    const caret = node?.selectionEnd ?? 0
+    const caret = editorRef.current?.getSelection().end ?? 0
     const idx = nextMatchIndex(findMatchesList, caret, direction)
     if (idx >= 0) selectMatch(idx)
   }, [findMatchesList, selectMatch])
 
   /** 替换当前匹配，并自动跳到下一处（与常见编辑器行为一致） */
   const handleReplaceOne = useCallback(() => {
-    const node = taRef.current?.resizableTextArea?.textArea
-    const caret = node?.selectionEnd ?? 0
+    const caret = editorRef.current?.getSelection().end ?? 0
     const idx = matchIndex >= 0 && findMatchesList[matchIndex] ? matchIndex : nextMatchIndex(findMatchesList, caret, 1)
     const target = findMatchesList[idx]
     if (!target) return
     const replaced = replaceMatch(content, target, replaceText)
     setContent(replaced.value)
-    dirtyRef.current = true
     const after = findMatches(content, findQuery, { caseSensitive: findCaseSensitive })
     const nextIdx = nextMatchIndex(after, replaced.caret, 1)
     const nextMatch = after[nextIdx]
@@ -461,65 +531,32 @@ export default function DocumentEditorPage() {
       return
     }
     setContent(result.value)
-    dirtyRef.current = true
     setMatchIndex(-1)
     message.success(`已替换 ${result.count} 处`)
   }, [content, findQuery, replaceText, findCaseSensitive])
 
-  /** 应用一次 Markdown 语法操作：以 textarea 当前选区为准，写回后恢复焦点与光标 */
+  /** 应用一次 Markdown 语法操作：以编辑器当前选区为准，写回后恢复焦点与选区 */
   const applyMarkdownAction = useCallback((action: MarkdownAction) => {
-    const node = taRef.current?.resizableTextArea?.textArea
-    const start = node?.selectionStart ?? content.length
-    const end = node?.selectionEnd ?? start
+    const selection = editorRef.current?.getSelection()
+    const start = selection?.start ?? content.length
+    const end = selection?.end ?? start
     const result = action(content, start, end)
     if (result.value === content) return
     setContent(result.value)
-    dirtyRef.current = true
     // 受控组件重渲染后再恢复选区（否则光标会跳到末尾）
     requestAnimationFrame(() => {
-      const next = taRef.current?.resizableTextArea?.textArea
-      if (!next) return
-      next.focus()
-      next.setSelectionRange(result.selectionStart, result.selectionEnd)
+      editorRef.current?.setSelection(result.selectionStart, result.selectionEnd)
     })
   }, [content])
-
-  /** 编辑区快捷键：Ctrl/Cmd+B 加粗、Ctrl/Cmd+I 斜体、Ctrl/Cmd+K 链接（Ctrl+S 由全局处理） */
-  const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Escape' && findOpen) {
-      e.preventDefault()
-      closeFind()
-      return
-    }
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return
-    const key = e.key.toLowerCase()
-    if (key === 'f') {
-      // 接管浏览器查找：打开文档内查找替换
-      e.preventDefault()
-      openFind()
-    } else if (key === 'h') {
-      e.preventDefault()
-      openFind()
-    } else if (key === 'b') {
-      e.preventDefault()
-      applyMarkdownAction((v, s, en) => wrapSelection(v, s, en, '**'))
-    } else if (key === 'i') {
-      e.preventDefault()
-      applyMarkdownAction((v, s, en) => wrapSelection(v, s, en, '*'))
-    } else if (key === 'k') {
-      e.preventDefault()
-      applyMarkdownAction((v, s, en) => insertLink(v, s, en))
-    }
-  }, [applyMarkdownAction, findOpen, closeFind, openFind])
 
   /** 在光标处插入独占段落的片段（前后自动补空行）；图片 / 数据表引用共用.
    *
    * 用函数式更新：连续插入（如一次粘贴多张图片）时各自基于最新正文计算，不会互相覆盖。
    */
   const insertSnippetAtCursor = useCallback((snippet: string) => {
-    const el = taRef.current?.resizableTextArea?.textArea
-    const pos = el?.selectionStart ?? null
-    const end = el?.selectionEnd ?? pos
+    const selection = editorRef.current?.getSelection()
+    const pos = selection?.start ?? null
+    const end = selection?.end ?? pos
     setContent(prev => {
       const start = pos ?? prev.length
       const stop = end ?? start
@@ -529,8 +566,24 @@ export default function DocumentEditorPage() {
       const suffix = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : ''
       return `${before}${prefix}${snippet}${suffix}${after}`
     })
-    dirtyRef.current = true
   }, [])
+
+  /** 编辑器快捷键：查找 / 加粗 / 斜体 / 链接 / Esc 关闭查找条（Ctrl+S 由全局处理） */
+  const applyEditorShortcut = useCallback((action: MarkdownEditorShortcut) => {
+    if (action === 'escape') {
+      if (findOpen) closeFind()
+      return
+    }
+    if (action === 'find') {
+      openFind()
+    } else if (action === 'bold') {
+      applyMarkdownAction((v, s, e) => wrapSelection(v, s, e, '**'))
+    } else if (action === 'italic') {
+      applyMarkdownAction((v, s, e) => wrapSelection(v, s, e, '*'))
+    } else {
+      applyMarkdownAction((v, s, e) => insertLink(v, s, e))
+    }
+  }, [findOpen, closeFind, openFind, applyMarkdownAction])
 
   // 在光标位置插入数据表引用占位符（前后自动补空行保证独占段落）
   const insertTableRef = () => {
@@ -548,7 +601,7 @@ export default function DocumentEditorPage() {
     mutationFn: (file: File) => fileApi.upload(workspaceId, file, { documentId: id }),
     onSuccess: (res, file) => {
       insertSnippetAtCursor(buildImageSnippet(file.name, res.file_key))
-      message.success('图片已插入（保存后生效）')
+      message.success('图片已插入（提交后生效）')
     },
     onError: () => message.error('图片上传失败'),
   })
@@ -576,20 +629,8 @@ export default function DocumentEditorPage() {
     enqueueImageUpload(file)
   }
 
-  /** 编辑器内粘贴：剪贴板含图片时直接上传并插入引用，普通文本粘贴不受影响 */
-  const handleEditorPaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = e.clipboardData?.items
-    if (!items) return
-    const files: File[] = []
-    for (const item of Array.from(items)) {
-      if (item.kind === 'file' && item.type.startsWith('image/')) {
-        const file = item.getAsFile()
-        if (file) files.push(file)
-      }
-    }
-    if (files.length === 0) return
-    // 阻止默认：否则会把图片当文件粘贴，浏览器可能插入文件名文本
-    e.preventDefault()
+  /** 编辑器内粘贴图片：按顺序上传并插入站内引用（普通文本粘贴不受影响） */
+  const handlePasteImages = useCallback((files: File[]) => {
     for (const file of files) enqueueImageUpload(file)
   }, [enqueueImageUpload])
 
@@ -609,8 +650,8 @@ export default function DocumentEditorPage() {
   const outline = useMemo(() => parseOutline(content), [content])
 
   const scrollToAnchor = useCallback((anchor: string) => {
-    // 窄屏预览在独立面板：先切过去，等面板渲染后再滚动定位
-    setMobilePane('preview')
+    // 锚点位于预览区：先切到查看模式，等渲染后再滚动定位
+    setViewMode('view')
     requestAnimationFrame(() => {
       document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
@@ -703,25 +744,46 @@ export default function DocumentEditorPage() {
             />
           )}
           <Space wrap>
-          <Title level={4} style={{ margin: 0 }}>{doc.title}</Title>
-          <Tag color={doc.status === 'published' ? 'green' : 'default'}>
-            {doc.status === 'published' ? '已发布' : doc.status === 'archived' ? '归档' : '草稿（仅自己可见）'}
-          </Tag>
-          {editable && doc.status !== 'archived' && (
-            <Button
-              size="small"
-              data-testid="doc-publish-toggle"
-              loading={publishMut.isPending}
-              onClick={() => publishMut.mutate(doc.status === 'published' ? 'draft' : 'published')}
-            >
-              {doc.status === 'published' ? '转为草稿' : '发布'}
-            </Button>
-          )}
-          {dirtyRef.current && <Text type="warning" style={{ fontSize: 12 }}>未保存</Text>}
-          {/* 协作编辑状态：由全局顶栏下放到文档页，语义改为协作态（在线/接入中/重连中/已断开） */}
-          <span data-testid="doc-collab-status">
-            <CollaborationStatusTag status={collabStatus} />
-          </span>
+            <Title level={4} style={{ margin: 0 }}>{doc.title}</Title>
+            <Tag color={doc.status === 'published' ? 'green' : 'default'}>
+              {doc.status === 'published' ? '已发布' : doc.status === 'archived' ? '归档' : '草稿（仅自己可见）'}
+            </Tag>
+            {serverDraft && (
+              <Tag color="orange" data-testid="doc-draft-tag">
+                草稿待提交
+              </Tag>
+            )}
+            {!doc.is_folder && doc.status !== 'archived' && (
+              <Segmented
+                size="small"
+                value={viewMode}
+                data-testid="doc-mode-switch"
+                onChange={v => handleModeChange(v as 'view' | 'edit')}
+                options={[
+                  { label: '查看', value: 'view' },
+                  { label: '编辑', value: 'edit' },
+                ]}
+              />
+            )}
+            {editable && doc.status !== 'archived' && (
+              <Button
+                size="small"
+                data-testid="doc-publish-toggle"
+                loading={publishMut.isPending}
+                onClick={() => publishMut.mutate(doc.status === 'published' ? 'draft' : 'published')}
+              >
+                {doc.status === 'published' ? '转为草稿' : '发布'}
+              </Button>
+            )}
+            {hasUnsaved && (
+              <Text type="warning" style={{ fontSize: 12 }} data-testid="doc-unsaved-hint">
+                未保存
+              </Text>
+            )}
+            {/* 协作编辑状态：由全局顶栏下放到文档页，语义改为协作态（在线/接入中/重连中/已断开） */}
+            <span data-testid="doc-collab-status">
+              <CollaborationStatusTag status={collabStatus} />
+            </span>
           </Space>
         </div>
         {isMobile ? (
@@ -733,14 +795,23 @@ export default function DocumentEditorPage() {
               <Button icon={<MoreOutlined />} data-testid="doc-more-actions">更多</Button>
             </Dropdown>
             <Button
-              type="primary"
               icon={<SaveOutlined />}
-              loading={saveMut.isPending}
-              disabled={!editable}
+              loading={draftMut.isPending}
+              disabled={!hasChanges}
               data-testid="doc-save-btn"
               onClick={handleSave}
             >
-              保存
+              草稿
+            </Button>
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              loading={submitMut.isPending}
+              disabled={!hasChanges}
+              data-testid="doc-submit-btn"
+              onClick={openSubmit}
+            >
+              提交
             </Button>
           </Space>
         ) : (
@@ -806,13 +877,31 @@ export default function DocumentEditorPage() {
             </Button>
           </Dropdown>
           <Button
-            type="primary"
             icon={<SaveOutlined />}
-            loading={saveMut.isPending}
-            disabled={!editable}
+            loading={draftMut.isPending}
+            disabled={!hasChanges}
+            data-testid="doc-save-btn"
             onClick={handleSave}
+            title={hasChanges ? '保存为个人草稿，不生成版本' : '内容与当前版本一致，无需保存'}
           >
-            保存 (Ctrl+S)
+            保存草稿 (Ctrl+S)
+          </Button>
+          <Button
+            type="primary"
+            icon={<SendOutlined />}
+            loading={submitMut.isPending}
+            disabled={!hasChanges}
+            data-testid="doc-submit-btn"
+            onClick={openSubmit}
+            title={
+              !hasChanges
+                ? '文档未发生修改，无需提交'
+                : writeMode === 'change_request'
+                  ? '提交后生成修改申请，审核通过后生效'
+                  : '提交后生成新版本'
+            }
+          >
+            提交修改
           </Button>
         </Space>
         )}
@@ -823,7 +912,7 @@ export default function DocumentEditorPage() {
           type="warning"
           showIcon
           message={saveError}
-          description="文档可能已被他人修改。复制当前编辑内容后刷新页面，再粘贴保存。"
+          description="你的编辑内容仍在页面上；个人草稿不会丢失，可重试或刷新后继续编辑。"
           closable
           onClose={() => setSaveError(null)}
           style={{ margin: '8px 24px 0' }}
@@ -897,134 +986,71 @@ export default function DocumentEditorPage() {
       )}
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {isMobile ? (
-          <>
-            <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--cn-border)', flexShrink: 0 }}>
-              <Segmented
-                block
-                value={mobilePane}
-                data-testid="doc-mobile-pane-switch"
-                onChange={v => setMobilePane(v as 'edit' | 'preview')}
-                options={[
-                  { label: '编辑', value: 'edit' },
-                  { label: '预览', value: 'preview' },
-                ]}
-              />
-            </div>
-            {mobilePane === 'edit' ? (
-              <>
-                {findOpen && (
-                  <FindReplaceBar
-                    query={findQuery}
-                    replacement={replaceText}
-                    matches={findMatchesList}
-                    currentIndex={matchIndex < findMatchesList.length ? matchIndex : -1}
-                    caseSensitive={findCaseSensitive}
-                    onQueryChange={q => { setFindQuery(q); setMatchIndex(-1) }}
-                    onReplacementChange={setReplaceText}
-                    onPrev={() => stepMatch(-1)}
-                    onNext={() => stepMatch(1)}
-                    onReplace={handleReplaceOne}
-                    onReplaceAll={handleReplaceAll}
-                    onToggleCase={() => { setFindCaseSensitive(v => !v); setMatchIndex(-1) }}
-                    onClose={closeFind}
-                  />
-                )}
-                <MarkdownToolbar
-                  onAction={applyMarkdownAction}
-                  onInsertTable={(cols, rows) => insertSnippetAtCursor(buildTableSkeleton(cols, rows))}
-                />
-                <TextArea
-                  ref={taRef}
-                  value={content}
-                  onChange={e => {
-                    setContent(e.target.value)
-                    dirtyRef.current = true
-                  }}
-                  onKeyDown={handleEditorKeyDown}
-                  onPaste={handleEditorPaste}
-                  onSelect={e => paraLocks.onCaret((e.target as HTMLTextAreaElement).selectionStart)}
-                  onClick={e => paraLocks.onCaret((e.target as HTMLTextAreaElement).selectionStart)}
-                  placeholder="输入 Markdown 内容…"
-                  style={{
-                    flex: 1,
-                    minHeight: 0,
-                    resize: 'none',
-                    border: 'none',
-                    boxShadow: 'none',
-                    borderRadius: 0,
-                    fontFamily: 'var(--cn-mono, monospace)',
-                    fontSize: 14,
-                    lineHeight: 1.7,
-                    padding: 16,
-                  }}
-                />
-                <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
-              </>
-            ) : (
-              <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '16px' }}>
-                <MarkdownPreview content={content} workspaceId={workspaceId} onWikilink={handleWikilink} />
-              </div>
-            )}
-          </>
+        {viewMode === 'view' ? (
+          <div
+            style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: isMobile ? 16 : '20px 24px' }}
+            data-testid="doc-view-mode"
+          >
+            <MarkdownPreview content={content} workspaceId={workspaceId} onWikilink={handleWikilink} />
+          </div>
         ) : (
-          <Splitter style={{ height: '100%' }}>
-            <Splitter.Panel defaultSize="50%" min="20%" max="80%">
-              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              {findOpen && (
-                <FindReplaceBar
-                  query={findQuery}
-                  replacement={replaceText}
-                  matches={findMatchesList}
-                  currentIndex={matchIndex < findMatchesList.length ? matchIndex : -1}
-                  caseSensitive={findCaseSensitive}
-                  onQueryChange={q => { setFindQuery(q); setMatchIndex(-1) }}
-                  onReplacementChange={setReplaceText}
-                  onPrev={() => stepMatch(-1)}
-                  onNext={() => stepMatch(1)}
-                  onReplace={handleReplaceOne}
-                  onReplaceAll={handleReplaceAll}
-                  onToggleCase={() => { setFindCaseSensitive(v => !v); setMatchIndex(-1) }}
-                  onClose={closeFind}
-                />
-              )}
+          <>
+            {findOpen && (
+              <FindReplaceBar
+                query={findQuery}
+                replacement={replaceText}
+                matches={findMatchesList}
+                currentIndex={matchIndex < findMatchesList.length ? matchIndex : -1}
+                caseSensitive={findCaseSensitive}
+                onQueryChange={q => { setFindQuery(q); setMatchIndex(-1) }}
+                onReplacementChange={setReplaceText}
+                onPrev={() => stepMatch(-1)}
+                onNext={() => stepMatch(1)}
+                onReplace={handleReplaceOne}
+                onReplaceAll={handleReplaceAll}
+                onToggleCase={() => { setFindCaseSensitive(v => !v); setMatchIndex(-1) }}
+                onClose={closeFind}
+              />
+            )}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 8,
+                padding: '4px 12px',
+                borderBottom: '1px solid var(--cn-border)',
+                flexShrink: 0,
+              }}
+            >
               <MarkdownToolbar
                 onAction={applyMarkdownAction}
                 onInsertTable={(cols, rows) => insertSnippetAtCursor(buildTableSkeleton(cols, rows))}
               />
-              <TextArea
-                ref={taRef}
-                value={content}
-                onChange={e => {
-                  setContent(e.target.value)
-                  dirtyRef.current = true
-                }}
-                onKeyDown={handleEditorKeyDown}
-                onPaste={handleEditorPaste}
-                onSelect={e => paraLocks.onCaret((e.target as HTMLTextAreaElement).selectionStart)}
-                onClick={e => paraLocks.onCaret((e.target as HTMLTextAreaElement).selectionStart)}
-                placeholder="输入 Markdown 内容…"
-                style={{
-                  flex: 1,
-                  minHeight: 0,
-                  resize: 'none',
-                  border: 'none',
-                  boxShadow: 'none',
-                  fontFamily: 'var(--cn-mono, monospace)',
-                  fontSize: 14,
-                  lineHeight: 1.7,
-                  padding: 20,
-                }}
+              <Segmented
+                size="small"
+                value={editorMode}
+                data-testid="doc-editor-mode-switch"
+                onChange={v => setEditorMode(v as MarkdownEditorMode)}
+                options={[
+                  { label: '实时预览', value: 'live' },
+                  { label: '源码', value: 'source' },
+                ]}
               />
-              <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
-              </div>
-            </Splitter.Panel>
-            <Splitter.Panel min="20%" max="80%">
-              <div style={{ height: '100%', overflow: 'auto', padding: '20px 24px' }}>
-                <MarkdownPreview content={content} workspaceId={workspaceId} onWikilink={handleWikilink} />
-              </div>
-            </Splitter.Panel>
-          </Splitter>
+            </div>
+            <MarkdownLiveEditor
+              ref={editorRef}
+              value={content}
+              mode={editorMode}
+              workspaceId={workspaceId}
+              placeholder="输入 Markdown 内容…"
+              onChange={setContent}
+              onCaret={paraLocks.onCaret}
+              onPasteImages={handlePasteImages}
+              onShortcut={applyEditorShortcut}
+            />
+            <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
+          </>
         )}
       </div>
 
@@ -1139,6 +1165,33 @@ export default function DocumentEditorPage() {
         tables={tablesQuery.data ?? []}
         tablesLoading={tablesQuery.isLoading}
       />
+
+      {/* 提交修改弹窗：保存只写草稿，这里显式确认后才生成版本 / 修改申请 */}
+      <Modal
+        open={submitOpen}
+        title={writeMode === 'change_request' ? '提交修改申请' : '提交修改'}
+        okText={writeMode === 'change_request' ? '提交审核' : '确认提交'}
+        cancelText="取消"
+        confirmLoading={submitMut.isPending}
+        onOk={() => submitMut.mutate(changeSummary.trim())}
+        onCancel={() => setSubmitOpen(false)}
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Text type="secondary">
+            {writeMode === 'change_request'
+              ? '你的角色没有直接编辑权限，提交后将生成修改申请，需编辑者及以上角色审核通过后才会更新正文。'
+              : `提交后将生成新版本 v${(doc.version_number ?? 0) + 1}；保存草稿不会影响当前版本。`}
+          </Text>
+          <Input.TextArea
+            value={changeSummary}
+            onChange={e => setChangeSummary(e.target.value)}
+            placeholder="变更说明（可选）"
+            maxLength={200}
+            autoSize={{ minRows: 3, maxRows: 6 }}
+            data-testid="doc-submit-summary"
+          />
+        </Space>
+      </Modal>
     </div>
   )
 }

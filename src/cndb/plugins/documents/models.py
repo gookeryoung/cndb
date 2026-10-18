@@ -219,6 +219,38 @@ class DocumentShare(TimestampMixin, Base):
     )
 
 
+# ── 文档个人草稿（保存不落版本；显式提交后才生成版本 / 修改申请） ──
+
+
+class DocumentDraft(TimestampMixin, Base):
+    """个人工作草稿：每位用户对每篇文档至多一份，仅供本人读写.
+
+    设计意图（替代「保存即提交」）：
+    - 保存只更新本表，不创建 ``DocumentVersion``，正式内容不受影响；
+    - 显式提交时才把草稿落库为版本（有直编资格）或修改申请；
+    - ``base_version_number`` 记录开始编辑时所基于的版本，提交时用于
+      段落级三方合并与修改申请的基准漂移判定。
+    """
+
+    __tablename__ = "documents_draft"
+    __table_args__ = (
+        UniqueConstraint("document_id", "user_id", name="uq_documents_draft_doc_user"),
+        {"extend_existing": True},
+    )
+
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents_document.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("accounts_user.id", ondelete="CASCADE"), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    content_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    base_version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"DocumentDraft(document_id={self.document_id}, user_id={self.user_id})"
+
+
 # ── 文档修改申请（双轨制写入：viewer / 关闭直编的 editor 保存时生成） ──
 
 DCR_STATUS_OPEN = "open"
@@ -390,6 +422,7 @@ __all__ = [
     "SHARE_PERM_VIEWER",
     "Document",
     "DocumentChangeRequest",
+    "DocumentDraft",
     "DocumentIssue",
     "DocumentIssueComment",
     "DocumentIssueEvent",

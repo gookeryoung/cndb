@@ -10,9 +10,13 @@
 - GET    /{doc_id}/backlinks         反向链接列表（谁引用了本文档）
 - GET    /{doc_id}/links             出链解析（[[标题]] 命中与断链）
 - POST   /{doc_id}/links/repair      断链修复（改指现存文档，editor+）
-- GET    /{doc_id}/content           详情 + 最新内容
+- GET    /{doc_id}/content           详情 + 最新内容（含个人草稿与写模式）
 - GET    /{doc_id}/export            导出 Markdown / Word / PDF 文件（成员）
-- PUT    /{doc_id}/content           保存内容（双轨制：直编落库 / 转修改申请 202）
+- PUT    /{doc_id}/content           保存内容（双轨制：直编落库 / 转修改申请 202，兼容旧行为）
+- GET    /{doc_id}/draft             读取个人工作草稿
+- PUT    /{doc_id}/draft             保存个人工作草稿（不生成版本）
+- DELETE /{doc_id}/draft             丢弃个人工作草稿
+- POST   /{doc_id}/submit            显式提交修改（直编 200 / 修改申请 202）
 - PATCH  /{doc_id}                   更新元数据（标题/状态/移动/标签，editor+）
 - DELETE /{doc_id}                   软删除（editor+，进回收站）
 - POST   /{doc_id}/restore           从回收站恢复（editor+）
@@ -50,7 +54,9 @@ from cndb.plugins.documents.schemas import (
     ContentUpdate,
     DocumentBatchRequest,
     DocumentCreate,
+    DocumentDraftSave,
     DocumentPermissionGrant,
+    DocumentSubmit,
     DocumentUpdate,
     LinkRepairRequest,
     ParagraphLockRequest,
@@ -460,10 +466,15 @@ def get_document_content(
     data = services.content.serialize_document(db, doc, pinned=doc.id in pinned_ids)
     if doc.is_folder:
         data["content"] = ""
+        data["draft"] = None
     else:
         v = services.content.latest_version(db, doc.id)
         data["content"] = services.content.load_content(v, doc)
         data["version_number"] = v.version_number if v else 0
+        # 个人工作草稿：前端据此决定默认进入编辑模式（有草稿 → 编辑）
+        data["draft"] = services.drafts.draft_payload(db, doc, current_user)
+    # 当前用户的写模式：direct 直编 / change_request 走修改申请
+    data["write_mode"] = services.change_requests.resolve_document_write_mode(db, workspace_id, doc.id, current_user)
     lock = services.edit_lock.edit_lock_registry.status(doc.id)
     data["edit_lock"] = (
         {"user_id": lock.user_id, "username": lock.username, "elapsed_seconds": lock.elapsed_seconds} if lock else None
@@ -508,6 +519,8 @@ def update_document_content(
             change_summary=payload.change_summary,
             base_version_number=payload.base_version_number,
         )
+        # 旧「保存即提交」路径：提交成功后清理个人草稿，避免同一改动出现两份
+        services.drafts.delete_draft(db, workspace_id, doc_id, current_user)
         response.status_code = 202
         return {
             "change_request": services.change_requests.serialize_request(db, cr, with_diff=True),
@@ -570,6 +583,9 @@ def update_document_content(
                 [lock.as_dict() for lock in services.paragraph_lock.paragraph_lock_registry.locks_for_document(doc_id)],
             )
 
+    # 旧「保存即提交」路径：正文已落库，清理对应个人草稿
+    services.drafts.delete_draft(db, workspace_id, doc_id, current_user)
+
     data = services.content.serialize_document(db, doc)
     v = services.content.latest_version(db, doc.id)
     data["content"] = content_to_save
@@ -583,6 +599,86 @@ def doc_is_folder(db: Session, workspace_id: int, doc_id: int, user: User) -> bo
     """该文档是否文件夹（文件夹没有正文，不做合并）；不可见文档按 404 处理."""
     doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, user)
     return bool(doc.is_folder)
+
+
+@router.get("/{doc_id}/draft")
+def get_document_draft(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """读取当前用户的个人工作草稿（没有或已与正文一致时 draft 为 null）."""
+    _require_member(db, workspace_id, current_user)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    return {"draft": services.drafts.draft_payload(db, doc, current_user)}
+
+
+@router.put("/{doc_id}/draft")
+def save_document_draft(
+    workspace_id: int,
+    doc_id: int,
+    payload: DocumentDraftSave,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """保存个人工作草稿：只写草稿表，不生成版本、不触发审核.
+
+    草稿与最新版本内容一致时等价于「无修改」，服务端删除草稿并返回 draft=null。
+    """
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    draft = services.drafts.save_draft(
+        db,
+        workspace_id,
+        doc_id,
+        current_user,
+        content=payload.content,
+        base_version_number=payload.base_version_number,
+    )
+    if draft is None:
+        return {"draft": None, "message": "内容与当前版本一致，无需保存草稿"}
+    return {"draft": services.drafts.draft_payload(db, doc, current_user)}
+
+
+@router.delete("/{doc_id}/draft", status_code=204)
+def discard_document_draft(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """丢弃个人工作草稿（幂等）."""
+    services.drafts.delete_draft(db, workspace_id, doc_id, current_user)
+    return Response(status_code=204)
+
+
+@router.post("/{doc_id}/submit")
+def submit_document_content(
+    workspace_id: int,
+    doc_id: int,
+    payload: DocumentSubmit,
+    response: Response,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """显式提交修改（手动动作，替代「保存即提交」）.
+
+    - 有直编资格：落库为新版本，返回 200；
+    - 否则：生成修改申请，返回 202；
+    - 正文与服务端最新版本一致：409（code=no_changes），不产生版本/申请。
+    """
+    result = services.drafts.submit_draft(
+        db,
+        workspace_id,
+        doc_id,
+        current_user,
+        content=payload.content,
+        change_summary=payload.change_summary,
+        base_version_number=payload.base_version_number,
+    )
+    if result.get("mode") == "change_request":
+        response.status_code = 202
+    return result
 
 
 @router.post("/{doc_id}/paragraph-locks")
