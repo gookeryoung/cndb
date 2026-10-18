@@ -38,6 +38,25 @@ const FileImportPreview = lazy(() => import('@/pages/import-export/FileImportPre
 
 const { Title, Text } = Typography
 
+/** 列表时间紧凑格式：`2026-10-18 20:19`
+ *
+ * 不用 `toLocaleString()`：中文本地化会带秒（19 字符）+ 窄列宽下被挤成两行，
+ * 把整行行高翻倍。等宽数字 + 短格式才能在 150px 内单行放完。 */
+function formatListTime(value?: string): string {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** 悬停提示用的完整时间（含秒） */
+function formatFullTime(value?: string): string {
+  if (!value) return ''
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('zh-CN', { hour12: false })
+}
+
 type AccessFilter = 'all' | 'owner' | 'write' | 'read'
 
 const ACCESS_TAG: Record<string, { color: string; label: string }> = {
@@ -260,7 +279,7 @@ export default function TablesList() {
     {
       title: '',
       key: 'drag',
-      width: 40,
+      width: 36,
       render: () => (
         <Tooltip title="拖动调整表的显示顺序（顺序会保存）">
           <HolderOutlined style={{ color: '#bfbfbf', cursor: 'grab' }} />
@@ -305,7 +324,7 @@ export default function TablesList() {
       title: '拥有者',
       dataIndex: 'owner',
       key: 'owner',
-      width: 160,
+      width: 144,
       render: (owner?: { id: number | string; username: string } | null) => {
         if (!owner) {
           return <Text type="secondary">未指定</Text>
@@ -326,7 +345,7 @@ export default function TablesList() {
       title: '我的访问',
       dataIndex: 'my_access',
       key: 'my_access',
-      width: 110,
+      width: 92,
       render: (access?: string) => {
         const key = access ?? 'none'
         const info = ACCESS_TAG[key] ?? ACCESS_TAG.none
@@ -337,7 +356,7 @@ export default function TablesList() {
       title: '成员数',
       dataIndex: 'member_count',
       key: 'member_count',
-      width: 90,
+      width: 80,
       align: 'right' as const,
       render: (n?: number) => (
         <Tooltip title="显式授权成员：在表设置中单独授权的成员数量（未显式授权时遵循工作区角色）">
@@ -357,7 +376,7 @@ export default function TablesList() {
       title: '字段',
       dataIndex: 'field_count',
       key: 'field_count',
-      width: 70,
+      width: 62,
       align: 'right' as const,
       render: (n?: number) => <Tag>{n ?? 0}</Tag>,
     },
@@ -365,7 +384,7 @@ export default function TablesList() {
       title: '记录',
       dataIndex: 'record_count',
       key: 'record_count',
-      width: 80,
+      width: 72,
       align: 'right' as const,
       render: (n?: number) => <Text>{n ?? 0}</Text>,
     },
@@ -373,18 +392,31 @@ export default function TablesList() {
       title: '更新时间',
       dataIndex: 'updated_at',
       key: 'updated_at',
-      width: 170,
+      // 固定 nowrap + 短格式：宽 170 时 toLocaleString() 带秒会折成两行，行高翻倍
+      width: 148,
       render: (t?: string) => t ? (
-        <Text type="secondary">
-          <ClockCircleOutlined style={{ marginRight: 4 }} />
-          {new Date(t).toLocaleString()}
-        </Text>
+        <Tooltip title={formatFullTime(t)}>
+          <Text
+            type="secondary"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              whiteSpace: 'nowrap',
+              fontSize: 12,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            <ClockCircleOutlined />
+            {formatListTime(t)}
+          </Text>
+        </Tooltip>
       ) : <Text type="secondary">—</Text>,
     },
     {
       title: '操作',
       key: 'actions',
-      width: 110,
+      width: 96,
       render: (_: unknown, record: TableSummary) => (
         <Space size="small">
           <Tooltip title="打开这张表，进入数据表格页">
@@ -421,7 +453,7 @@ export default function TablesList() {
   return (
     <div style={{ padding: isMobile ? 12 : 16 }}>
       {/* Header —— 移动端标题与按钮区自动换行 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <Title level={3} style={{ margin: 0 }}>
             <DatabaseOutlined style={{ marginRight: 8 }} />
@@ -473,7 +505,7 @@ export default function TablesList() {
 
       {/* Filter Segmented —— 移动端纵向堆叠：筛选器整行、计数文本独立一行不折行 */}
       <div style={{
-        marginBottom: 12,
+        marginBottom: 10,
         display: 'flex',
         flexDirection: isMobile ? 'column' : 'row',
         justifyContent: 'space-between',
@@ -534,7 +566,7 @@ export default function TablesList() {
                     {record.description && <div className="cn-table-list-card-desc">{record.description}</div>}
                     <div className="cn-table-list-card-meta">
                       <span>{record.record_count ?? 0} 条记录 · {record.field_count ?? 0} 字段 · {record.member_count ?? 0} 成员</span>
-                      {record.updated_at && <span>更新于 {new Date(record.updated_at).toLocaleDateString()}</span>}
+                      {record.updated_at && <span>更新于 {formatListTime(record.updated_at)}</span>}
                     </div>
                     <div className="cn-table-list-card-actions">
                       <Button size="small" type="link" icon={<LoginOutlined />} data-testid={`open-table-${record.id}`}>打开</Button>
@@ -556,7 +588,8 @@ export default function TablesList() {
           ) : (
           <div className="cn-grid-card">
             <Table
-              size="middle"
+              size="small"
+              className="cn-table-list"
               loading={isLoading}
               rowKey="id"
               columns={visibleColumns}
