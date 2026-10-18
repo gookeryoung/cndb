@@ -190,6 +190,66 @@
         ]
       },
       "order": 9
+    },
+    {
+      "name": "项目投入产出",
+      "view_type": "chart",
+      "view_options": {
+        "charts": [
+          {
+            "chart_type": "scatter",
+            "x_field": "经费总额_万元",
+            "y_field": "论文数",
+            "show_trend_line": true,
+            "show_stats_panel": true
+          },
+          {
+            "chart_type": "bar",
+            "dimension_field": "项目级别",
+            "measure_field": "经费总额_万元",
+            "aggregation": "sum",
+            "show_stats_panel": true
+          }
+        ]
+      },
+      "order": 10
+    },
+    {
+      "name": "高产出项目",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "论文数",
+          "op": ">=",
+          "value": "8"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "论文数",
+          "direction": "desc"
+        }
+      ],
+      "order": 11
+    },
+    {
+      "name": "按项目级别看板",
+      "view_type": "kanban",
+      "sortings": [
+        {
+          "field_name": "经费总额_万元",
+          "direction": "desc"
+        }
+      ],
+      "view_options": {
+        "group_field": "项目级别",
+        "title_field": "项目名称",
+        "due_date_field": "结题日期",
+        "card_sort_field": "经费总额_万元",
+        "card_sort_direction": "desc"
+      },
+      "order": 12
     }
   ],
   "课题负责人": [
@@ -388,6 +448,44 @@
         ]
       },
       "order": 7
+    },
+    {
+      "name": "待拨付清单",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "经费状态",
+          "op": "=",
+          "value": "待拨付"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "拨付日期",
+          "direction": "asc"
+        }
+      ],
+      "order": 8
+    },
+    {
+      "name": "超支预警",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "经费状态",
+          "op": "=",
+          "value": "超支预警"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "已支金额_万元",
+          "direction": "desc"
+        }
+      ],
+      "order": 9
     }
   ],
   "项目进展": [
@@ -486,6 +584,25 @@
         "show_stats_panel": true
       },
       "order": 6
+    },
+    {
+      "name": "延期整改进展",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {
+          "field_name": "项目状态",
+          "op": "=",
+          "value": "延期整改"
+        }
+      ],
+      "sortings": [
+        {
+          "field_name": "报告日期",
+          "direction": "desc"
+        }
+      ],
+      "order": 7
     }
   ]
 }
