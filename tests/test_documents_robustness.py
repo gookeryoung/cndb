@@ -452,7 +452,16 @@ class TestOutgoingLinks:
         assert by_title["目标文档"]["document_id"] == target["id"]
         assert by_title["目标文档"]["exists"] is True
         assert by_title["目录A"]["document_id"] == folder["id"]
-        assert by_title["不存在"] == {"title": "不存在", "document_id": None, "exists": False, "broken": True}
+        # 出链项额外带 anchor/alias/raw：无锚点别名时保持原写法
+        assert by_title["不存在"] == {
+            "title": "不存在",
+            "document_id": None,
+            "exists": False,
+            "broken": True,
+            "anchor": "",
+            "alias": "",
+            "raw": "[[不存在]]",
+        }
 
     def test_code_fence_links_ignored(self, client, doc_api, auth_headers):
         _create_doc(client, doc_api, auth_headers, title="真链接")

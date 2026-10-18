@@ -115,12 +115,18 @@ export interface TrashItem extends DocumentItem {
   deleted_by_id: number | null
 }
 
-/** 出链项：正文 [[标题]] 指向的文档或断链 */
+/** 出链项：正文 [[标题#锚点|别名]] 指向的文档或断链 */
 export interface OutgoingLinkItem {
   title: string
   document_id: number | null
   exists: boolean
   broken: boolean
+  /** 锚点（# 之后），可为空 */
+  anchor?: string
+  /** 别名（| 之后），可为空 */
+  alias?: string
+  /** 正文中的原始写法，如 `[[标题#锚点|别名]]` */
+  raw?: string
 }
 
 /** 断链修复结果 */
@@ -157,6 +163,8 @@ export interface VaultPreviewItem {
   size: number
   tags: string[]
   status: 'new' | 'conflict'
+  /** 来源类型：markdown / canvas / base（后两者由 .canvas / .base 转换） */
+  kind: 'markdown' | 'canvas' | 'base'
   existing_document_id: number | null
 }
 
@@ -179,6 +187,10 @@ export interface VaultAnalyzeResult {
   /** zip 内的顶层目录（Obsidian 压缩包通常带一层库名目录） */
   root_dir: string
   total_notes: number
+  /** 其中原生 markdown 笔记数 */
+  total_markdown: number
+  /** 其中由 .canvas / .base 转换的文档数 */
+  total_converted: number
   total_folders: number
   total_attachments: number
   total_attachment_bytes: number
@@ -200,10 +212,12 @@ export interface VaultImportResult {
   skipped: number
   total: number
   folders_created: number
+  /** 由 .canvas / .base 转换导入的文档数 */
+  converted: number
   attachments: number
   attachment_bytes: number
   tags_created: string[]
-  documents: { id: number; title: string; path: string }[]
+  documents: { id: number; title: string; path: string; kind?: string }[]
   skipped_notes: { path: string; title: string; reason: string }[]
   warnings: VaultWarning[]
 }

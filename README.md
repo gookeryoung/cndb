@@ -14,7 +14,7 @@
 - **动态数据表**：SQLAlchemy Core 运行时建表 / 改字段，运行中即可扩 schema
 - **17 种字段类型**：text / longtext / email / url / phone / json / number / float / percentage / boolean / date / datetime / timestamp / select / multiselect / link（跨表关联）/ attachment
 - **7 种视图**：表格（Grid）/ 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表，视图级筛选、排序、字段显隐与配置持久化
-- **文档管理**：工作区 Markdown 文档树、双向链接 `[[标题]]`、数据表动态引用 `{{table:表名}}`、版本历史与全文检索、回收站与恢复、断链检测与修复、**Obsidian 文档库导入 / 导出**（目录层级 + front-matter 标签 + 附件互转）
+- **文档管理**：工作区 Markdown 文档树、双向链接 `[[标题]]`、数据表动态引用 `{{table:表名}}`、版本历史与全文检索、回收站与恢复、断链检测与修复、**Obsidian 文档库导入 / 导出**（目录层级 + front-matter 标签 + 附件互转 + 双链锚点/别名保真 + Canvas/Base 转文档）
 - **行级协作**：编辑评论 / 审计日志 / 回收站
 - **link 字段关系图**：`GET /workspaces/{id}/tables/graph` 返回所有表间依赖
 - **异步导入**：CSV / JSON / XLSX / API 抓取异步导入 + 进度轮询
