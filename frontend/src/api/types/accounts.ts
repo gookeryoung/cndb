@@ -65,7 +65,7 @@ export interface BatchUserActionResponse {
 /** 用户管理操作日志条目（对齐后端 UserAuditLogResponse） */
 export interface UserAuditLogRecord {
   id: number
-  action: 'update' | 'role_change' | 'activate' | 'deactivate' | 'batch' | string
+  action: 'update' | 'role_change' | 'activate' | 'deactivate' | 'batch' | 'import' | 'export' | string
   actor_id: number | null
   target_user_id: number | null
   detail: Record<string, unknown>
@@ -91,6 +91,28 @@ export interface UserListQuery {
   is_active?: boolean
   page?: number
   page_size?: number
+}
+
+/** 批量导入单项结果（对齐后端 UserImportRowResult） */
+export interface UserImportRowResult {
+  row_index: number
+  status: 'ok' | 'skipped' | 'failed'
+  message: string
+  user_id: number | null
+  username: string | null
+  /** 自动生成的初始密码：仅创建成功时随本次响应返回一次 */
+  generated_password: string | null
+}
+
+/** 批量导入汇总响应（对齐后端 UserImportResponse） */
+export interface UserImportResponse {
+  total: number
+  created: number
+  skipped: number
+  failed: number
+  /** true = 预演校验，未写库；此时 created 表示可导入数量 */
+  dry_run: boolean
+  results: UserImportRowResult[]
 }
 
 export interface LoginRequest { login: string; password: string }

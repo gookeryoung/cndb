@@ -1,17 +1,21 @@
-"""用户管理路由：编辑 / 批量操作 / 启禁用 / 操作日志查询.
+"""用户管理路由：编辑 / 批量操作 / 启禁用 / 批量导入导出 / 操作日志查询.
 
 权限设计（对齐 .trae/designs/user-management-upgrade.md）：
-- 用户列表 / 编辑 / 批量操作：仅超级管理员
+- 用户列表 / 编辑 / 批量操作 / 导入 / 导出：仅超级管理员
 - 操作日志查询：超级管理员或审计管理员（audit_admin 只读）
 - 旧端点 /auth/users、/auth/users/{id}/role 已迁移至本路由组并删除
 """
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
@@ -23,7 +27,16 @@ from cndb.plugins.accounts.schemas.users import (
     UserAdminUpdateRequest,
     UserAuditLogPage,
     UserAuditLogResponse,
+    UserImportResponse,
     UserListPage,
+)
+from cndb.plugins.accounts.services.user_bulk import (
+    MAX_IMPORT_BYTES,
+    build_export_rows,
+    import_user_rows,
+    parse_user_file,
+    record_export_audit,
+    serialize_export,
 )
 from cndb.plugins.accounts.services.users import (
     UserAdminError,
@@ -65,6 +78,15 @@ def _map_user_admin_error(exc: UserAdminError) -> HTTPException:
     return HTTPException(status_code=400, detail=str(exc))
 
 
+def _validate_role_filter(role: str | None) -> None:
+    """角色筛选参数校验（非法值 400 + 可选值清单）."""
+    from cndb.plugins.accounts.models import UserRole
+
+    if role is not None and role not in {r.value for r in UserRole}:
+        valid = ", ".join(r.value for r in UserRole)
+        raise HTTPException(status_code=400, detail=f"无效的角色 '{role}'，可选值: {valid}")
+
+
 @router.get("", response_model=UserListPage, summary="用户分页列表")
 def list_users(
     db: Annotated[Session, Depends(get_db)],
@@ -89,11 +111,7 @@ def list_users(
     Returns:
         用户分页
     """
-    from cndb.plugins.accounts.models import UserRole
-
-    if role is not None and role not in {r.value for r in UserRole}:
-        valid = ", ".join(r.value for r in UserRole)
-        raise HTTPException(status_code=400, detail=f"无效的角色 '{role}'，可选值: {valid}")
+    _validate_role_filter(role)
 
     q = db.query(User)
     if keyword:
@@ -107,6 +125,83 @@ def list_users(
     total = q.count()
     items = q.order_by(User.id).offset((page - 1) * page_size).limit(page_size).all()
     return UserListPage(total=total, items=[UserAdminResponse.model_validate(u) for u in items])
+
+
+@router.get("/export", summary="导出用户列表")
+def export_users(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(_require_superuser)],
+    format: str = Query(default="csv", pattern="^(csv|xlsx)$", description="导出格式"),
+    keyword: str | None = Query(default=None, max_length=150, description="用户名/邮箱/昵称模糊搜索"),
+    role: str | None = Query(default=None, description="按角色筛选"),
+    is_active: bool | None = Query(default=None, description="按启用状态筛选"),
+) -> Response:
+    """按当前筛选条件导出用户列表（CSV / XLSX，不含密码，仅超级管理员）.
+
+    导出与列表页筛选口径一致；文件名格式：`用户列表-YYYYMMDD_HHMMSS.扩展名`，
+    中文名经 RFC 5987 编码。每次导出记一条操作日志。
+
+    Args:
+        db: 数据库会话
+        current_user: 超级管理员
+        format: 导出格式（csv / xlsx）
+        keyword: 模糊匹配用户名/邮箱/昵称
+        role: 角色筛选
+        is_active: 启用状态筛选
+
+    Returns:
+        对应格式的文件二进制响应（含 Content-Disposition 下载头）
+    """
+    _validate_role_filter(role)
+    rows = build_export_rows(db, keyword=keyword, role=role, is_active=is_active)
+    body = serialize_export(rows, format)
+    record_export_audit(
+        db, actor=current_user, count=len(rows), fmt=format, keyword=keyword, role=role, is_active=is_active
+    )
+
+    ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"用户列表-{ts}.{format}"
+    ascii_fallback = "".join(c if ord(c) < 128 else "_" for c in filename)
+    disposition = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
+    media_type = "text/csv" if format == "csv" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return Response(content=body, media_type=media_type, headers={"Content-Disposition": disposition})
+
+
+@router.post("/import", response_model=UserImportResponse, summary="批量导入用户")
+async def import_users(
+    file: UploadFile,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(_require_superuser)],
+    dry_run: Annotated[bool, Form()] = False,
+) -> UserImportResponse:
+    """从 CSV / XLSX 批量导入用户（逐行独立处理，仅超级管理员）.
+
+    列头支持中英文别名（username/用户名、email/邮箱、role/角色、password/密码 等）；
+    留空密码自动生成 12 位初始密码并仅在本次响应返回；已存在的用户名/邮箱跳过不改。
+    dry_run=true 仅预演校验，不写库、不记审计。
+
+    Args:
+        file: 上传的 .csv / .xlsx 文件
+        db: 数据库会话
+        current_user: 超级管理员
+        dry_run: 仅预演（校验 + 冲突检查）
+
+    Returns:
+        逐项结果与汇总统计
+    """
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=400, detail=f"文件过大，单次导入上限 {MAX_IMPORT_BYTES // 1024 // 1024}MB")
+
+    try:
+        rows = parse_user_file(content, file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 解析为 CPU 密集 + 逐行写库，放线程池避免阻塞事件循环
+    return await run_in_threadpool(import_user_rows, db, actor=current_user, rows=rows, dry_run=dry_run)
 
 
 @router.patch("/{user_id}", response_model=UserAdminResponse, summary="编辑用户")

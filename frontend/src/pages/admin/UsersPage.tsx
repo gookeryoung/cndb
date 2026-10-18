@@ -8,13 +8,16 @@ import { useMemo, useState, type Key } from 'react'
 import {
   Table, Button, Input, Select, Space, Tag, Modal, Form, Switch,
   App as AntApp, Typography, Drawer, Popconfirm, Checkbox, Empty, Pagination, Spin,
+  Upload, Dropdown, Alert,
 } from 'antd'
-import { EditOutlined, ReloadOutlined } from '@ant-design/icons'
+import type { UploadProps, MenuProps } from 'antd'
+import { EditOutlined, ReloadOutlined, UploadOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
 import type {
   UserAdminRecord, UserRole, UserAuditLogRecord, BatchUserActionRequest, UserAdminUpdateRequest,
+  UserImportResponse, UserImportRowResult,
 } from '@/api'
 
 const { Text } = Typography
@@ -32,6 +35,44 @@ const ACTION_LABELS: Record<string, string> = {
   activate: '启用',
   deactivate: '禁用',
   batch: '批量操作',
+  import: '批量导入',
+  export: '导出',
+}
+
+/** 从 Content-Disposition 解析下载文件名（优先 RFC 5987 的 filename*，兼容中文） */
+function filenameFromDisposition(disposition: string | undefined, fallback: string): string {
+  if (!disposition) return fallback
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
+  if (utf8?.[1]) {
+    try { return decodeURIComponent(utf8[1]) } catch { /* 非法编码回退 */ }
+  }
+  const ascii = /filename="?([^";]+)"?/i.exec(disposition)
+  return ascii?.[1] ?? fallback
+}
+
+/** 触发浏览器下载 Blob */
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.style.display = 'none'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  // 延迟释放，避免部分浏览器下载中断
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/** CSV 单元格公式注入防护（与表格导出同口径） */
+function csvCell(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+}
+
+const IMPORT_STATUS_META: Record<string, { color: string; label: string }> = {
+  ok: { color: 'green', label: '成功' },
+  skipped: { color: 'orange', label: '跳过' },
+  failed: { color: 'red', label: '失败' },
 }
 
 function roleMeta(role: string) {
@@ -47,6 +88,12 @@ function DiffSummary({ log }: { log: UserAuditLogRecord }) {
     succeeded?: number
     failed?: number
     results?: { username: string; success: boolean; error?: string | null }[]
+    total?: number
+    created?: number
+    skipped?: number
+    count?: number
+    format?: string
+    usernames?: string[]
   }
   if (log.action === 'batch') {
     return (
@@ -57,6 +104,23 @@ function DiffSummary({ log }: { log: UserAuditLogRecord }) {
             - {r.username}：{r.success ? '成功' : `失败（${r.error ?? '未知原因'}）`}
           </div>
         ))}
+      </div>
+    )
+  }
+  if (log.action === 'import') {
+    return (
+      <div style={{ fontSize: 12 }}>
+        <div>
+          共 {detail.total ?? 0} 行：成功 {detail.created ?? 0} / 跳过 {detail.skipped ?? 0} / 失败 {detail.failed ?? 0}
+        </div>
+        {(detail.usernames ?? []).length > 0 && <div>新建：{(detail.usernames ?? []).join('、')}</div>}
+      </div>
+    )
+  }
+  if (log.action === 'export') {
+    return (
+      <div style={{ fontSize: 12 }}>
+        <div>导出 {detail.count ?? 0} 个用户（{String(detail.format ?? 'csv').toUpperCase()}）</div>
       </div>
     )
   }
@@ -101,6 +165,12 @@ export default function UsersPage() {
 
   // ── 日志抽屉（单用户） ──
   const [logTarget, setLogTarget] = useState<UserAdminRecord | null>(null)
+
+  // ── 批量导入弹窗（选文件 → 预演 → 确认 → 结果） ──
+  const [importOpen, setImportOpen] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importPreview, setImportPreview] = useState<UserImportResponse | null>(null)
+  const [importResult, setImportResult] = useState<UserImportResponse | null>(null)
 
   const listQuery = useQuery({
     queryKey: ['users', { keyword, roleFilter, activeFilter, page, pageSize }],
@@ -151,6 +221,101 @@ export default function UsersPage() {
     queryFn: () => authApi.listUserAuditLogs(logTarget!.id as number, { page_size: 50 }),
     enabled: !!logTarget,
   })
+
+  /** 导出：带上当前筛选条件，与列表口径一致 */
+  const exportMutation = useMutation({
+    mutationFn: (format: 'csv' | 'xlsx') =>
+      authApi.exportUsers({
+        format,
+        keyword: keyword || undefined,
+        role: roleFilter,
+        is_active: activeFilter,
+      }),
+    onSuccess: (res, format) => {
+      const disposition = res.headers['content-disposition'] as string | undefined
+      downloadBlob(
+        filenameFromDisposition(disposition, `用户列表.${format}`),
+        res.data as Blob,
+      )
+      message.success(`已导出 ${listQuery.data?.total ?? 0} 个用户`)
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '导出失败')
+    },
+  })
+
+  /** 预演：只校验不写库，返回可导入/跳过/失败明细 */
+  const previewMutation = useMutation({
+    mutationFn: (file: File) => authApi.importUsers(file, true),
+    onSuccess: (data) => setImportPreview(data),
+    onError: (err) => {
+      setImportFile(null)
+      message.error(err instanceof Error ? err.message : '解析文件失败')
+    },
+  })
+
+  /** 正式导入：逐行创建，自动生成密码随结果返回一次 */
+  const importMutation = useMutation({
+    mutationFn: (file: File) => authApi.importUsers(file, false),
+    onSuccess: (data) => {
+      setImportResult(data)
+      setImportPreview(null)
+      const parts = [`成功 ${data.created} 个`]
+      if (data.skipped) parts.push(`跳过 ${data.skipped} 个`)
+      if (data.failed) parts.push(`失败 ${data.failed} 个`)
+      message.success(`导入完成：${parts.join('，')}`)
+      invalidate()
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '导入失败')
+    },
+  })
+
+  const openImport = () => {
+    setImportFile(null)
+    setImportPreview(null)
+    setImportResult(null)
+    setImportOpen(true)
+  }
+
+  const closeImport = () => {
+    setImportOpen(false)
+    setImportFile(null)
+    setImportPreview(null)
+    setImportResult(null)
+  }
+
+  const beforeUpload: UploadProps['beforeUpload'] = (file) => {
+    setImportFile(file)
+    setImportResult(null)
+    setImportPreview(null)
+    previewMutation.mutate(file)
+    return false // 阻止 antd 自动上传，改为手动调用预演/导入接口
+  }
+
+  const exportMenu = useMemo<MenuProps>(() => ({
+    items: [
+      { key: 'csv', label: '导出 CSV' },
+      { key: 'xlsx', label: '导出 Excel' },
+    ],
+    onClick: ({ key }) => exportMutation.mutate(key as 'csv' | 'xlsx'),
+  }), [exportMutation])
+
+  /** 初始密码只在本次导入结果中可见，提供一次性 CSV 下载 */
+  const generatedPasswordRows = (importResult?.results ?? []).filter(r => r.generated_password)
+
+  const downloadGeneratedPasswords = () => {
+    if (generatedPasswordRows.length === 0) return
+    const lines = [
+      'username,password',
+      ...generatedPasswordRows.map(r => `${csvCell(r.username ?? '')},${csvCell(r.generated_password ?? '')}`),
+    ]
+    downloadBlob(
+      '用户初始密码.csv',
+      new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }),
+    )
+    message.success('初始密码清单已下载，请尽快分发给用户并提醒修改密码')
+  }
 
   const roleOptions = useMemo(
     () => ROLE_OPTIONS.map(r => ({ value: r.value, label: r.label })),
@@ -288,6 +453,10 @@ export default function UsersPage() {
         />
         <div className="cn-toolbar-end">
           <span className="cn-record-pill">{listQuery.data?.total ?? 0} 个账号</span>
+          <Button icon={<UploadOutlined />} onClick={openImport}>导入</Button>
+          <Dropdown menu={exportMenu} trigger={['click']}>
+            <Button icon={<DownloadOutlined />} loading={exportMutation.isPending}>导出</Button>
+          </Dropdown>
           <Button icon={<ReloadOutlined />} onClick={() => invalidate()}>刷新</Button>
         </div>
       </div>
@@ -403,6 +572,107 @@ export default function UsersPage() {
           />
         </div>
       )}
+
+      {/* 批量导入弹窗：选文件 → 预演明细 → 确认导入 → 结果 + 初始密码下载 */}
+      <Modal
+        title="批量导入用户"
+        open={importOpen}
+        onCancel={closeImport}
+        width={720}
+        destroyOnHidden
+        footer={
+          importResult ? [
+            <Button key="close" type="primary" onClick={closeImport}>关闭</Button>,
+          ] : [
+            <Button key="cancel" onClick={closeImport}>取消</Button>,
+            <Button
+              key="submit"
+              type="primary"
+              disabled={!importFile || !importPreview || importPreview.created === 0}
+              loading={importMutation.isPending}
+              onClick={() => importFile && importMutation.mutate(importFile)}
+            >
+              确认导入{importPreview ? ` ${importPreview.created} 个用户` : ''}
+            </Button>,
+          ]
+        }
+      >
+        {!importPreview && !importResult && (
+          <>
+            <Upload.Dragger
+              accept=".csv,.tsv,.xlsx,.xlsm"
+              beforeUpload={beforeUpload}
+              showUploadList={false}
+              disabled={previewMutation.isPending}
+            >
+              <div className="ant-upload-drag-icon">
+                {previewMutation.isPending ? <Spin /> : <InboxOutlined />}
+              </div>
+              <p className="ant-upload-text">点击或拖拽文件到此处</p>
+              <p className="ant-upload-hint">
+                {previewMutation.isPending ? '正在解析文件…' : '支持 CSV / Excel（.xlsx），单次最多 1000 行'}
+              </p>
+            </Upload.Dragger>
+            <div style={{ marginTop: 12, fontSize: 12 }}>
+              <Text type="secondary">
+                列头：username（用户名，必填）、email（邮箱）、phone（电话）、nickname（昵称）、
+                role（角色）、is_active（启用状态）、password（初始密码）。
+                密码留空将自动生成 12 位，仅在导入结果中展示一次；已存在的用户名/邮箱会跳过且不修改。
+              </Text>
+            </div>
+          </>
+        )}
+
+        {(importPreview || importResult) && (
+          <>
+            <Alert
+              type={importResult && importResult.failed > 0 ? 'warning' : 'info'}
+              showIcon
+              message={
+                importResult
+                  ? `共 ${importResult.total} 行：成功 ${importResult.created}，跳过 ${importResult.skipped}，失败 ${importResult.failed}`
+                  : `预演结果：共 ${importPreview!.total} 行，可导入 ${importPreview!.created}，跳过 ${importPreview!.skipped}，失败 ${importPreview!.failed}`
+              }
+              description={
+                importResult
+                  ? '导入已完成。生成的初始密码只在本次结果中可见，关闭后无法再次查看。'
+                  : '预演未写入数据库。确认后将逐行创建用户，已存在的用户名/邮箱会被跳过。'
+              }
+              action={
+                importResult && generatedPasswordRows.length > 0 ? (
+                  <Button size="small" type="primary" onClick={downloadGeneratedPasswords}>
+                    下载初始密码（{generatedPasswordRows.length}）
+                  </Button>
+                ) : undefined
+              }
+            />
+            <Table<UserImportRowResult>
+              style={{ marginTop: 12 }}
+              size="small"
+              rowKey="row_index"
+              dataSource={(importResult ?? importPreview)?.results ?? []}
+              pagination={{ pageSize: 10, size: 'small', hideOnSinglePage: true }}
+              columns={[
+                { title: '行号', dataIndex: 'row_index', width: 60 },
+                { title: '用户名', dataIndex: 'username', width: 160, render: (v: string | null) => v ?? '—' },
+                {
+                  title: '状态', dataIndex: 'status', width: 90,
+                  render: (status: string) => {
+                    const meta = IMPORT_STATUS_META[status] ?? IMPORT_STATUS_META.failed
+                    const label = status === 'ok' && !importResult ? '可导入' : meta.label
+                    return <Tag color={meta.color} style={{ marginRight: 0 }}>{label}</Tag>
+                  },
+                },
+                {
+                  title: '说明', dataIndex: 'message',
+                  render: (message: string, row: UserImportRowResult) =>
+                    message || (row.generated_password ? '已生成初始密码' : '—'),
+                },
+              ]}
+            />
+          </>
+        )}
+      </Modal>
 
       {/* 编辑弹窗（保存前二次确认在 handleEditSubmit 内） */}
       <Modal

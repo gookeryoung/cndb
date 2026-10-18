@@ -73,13 +73,39 @@ class BatchUserActionResponse(BaseModel):
     results: list[BatchUserItemResult]
 
 
+class UserImportRowResult(BaseModel):
+    """批量导入单项结果."""
+
+    row_index: int = Field(description="文件中的行号（从 1 开始，不含表头）")
+    status: Literal["ok", "skipped", "failed"] = Field(
+        description="ok=已创建（预演时为校验通过）/ skipped=已存在跳过 / failed=校验失败"
+    )
+    message: str = Field(default="", description="结果说明（失败原因等）")
+    user_id: int | None = Field(default=None, description="创建成功的用户 ID")
+    username: str | None = Field(default=None, description="行内用户名")
+    generated_password: str | None = Field(
+        default=None, description="自动生成的初始密码（仅创建成功时随本次响应返回，不落库）"
+    )
+
+
+class UserImportResponse(BaseModel):
+    """批量导入汇总响应（dry_run=True 时 created 表示「校验通过、可创建」数量）."""
+
+    total: int = Field(description="文件中的数据行数")
+    created: int = Field(description="创建成功数量（预演时为可创建数量）")
+    skipped: int = Field(description="因用户名/邮箱已存在而跳过的数量")
+    failed: int = Field(description="校验失败数量")
+    dry_run: bool = Field(default=False, description="是否为预演（未写库）")
+    results: list[UserImportRowResult]
+
+
 class UserAuditLogResponse(BaseModel):
     """用户管理操作日志条目."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    action: str = Field(description="动作: update / role_change / activate / deactivate / batch")
+    action: str = Field(description="动作: update / role_change / activate / deactivate / batch / import / export")
     actor_id: int | None = Field(default=None, description="操作人 ID")
     target_user_id: int | None = Field(default=None, description="被操作用户 ID")
     detail: dict[str, Any] = Field(description="变更详情（before/after 快照、批量摘要）")

@@ -4,7 +4,7 @@
  * 覆盖：列表渲染 / 筛选参数 / 编辑二次确认后提交 / 批量操作 / 操作日志抽屉.
  */
 
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import UsersPage from './UsersPage'
@@ -20,6 +20,12 @@ let responsiveState: ResponsiveState = {
 vi.mock('@/hooks/useResponsive', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
   return { ...actual, useResponsive: () => responsiveState }
+})
+
+beforeEach(() => {
+  // jsdom 无 Blob URL 实现：导出/下载用例需要它；每次用例重新定义并清空调用记录
+  Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:mock'), writable: true, configurable: true })
+  Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), writable: true, configurable: true })
 })
 
 afterEach(() => {
@@ -151,6 +157,74 @@ describe('UsersPage 用户管理', () => {
     expect(await screen.findByText(/操作日志：bob/)).toBeInTheDocument()
     expect(await screen.findByText('角色变更')).toBeInTheDocument()
     expect(screen.getByText(/user.*→.*security_admin/)).toBeInTheDocument()
+  })
+
+  it('导出：按当前筛选请求 CSV 并触发浏览器下载', async () => {
+    const requested: URL[] = []
+    const exportHandler = vi.fn(({ request }: { request: Request }) => {
+      requested.push(new URL(request.url))
+      return new HttpResponse('username,email\nbob,b@x.com', {
+        headers: {
+          'content-type': 'text/csv',
+          'content-disposition': 'attachment; filename="users.csv"; filename*=UTF-8\'\'%E7%94%A8%E6%88%B7%E5%88%97%E8%A1%A8.csv',
+        },
+      })
+    })
+    server.use(
+      http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)),
+      http.get('/api/v1/accounts/users/export', exportHandler),
+    )
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    renderPage()
+
+    await screen.findByText('bob')
+    fireEvent.click(screen.getByRole('button', { name: /导\s*出/ }))
+    fireEvent.click(await screen.findByText('导出 CSV'))
+
+    await waitFor(() => expect(exportHandler).toHaveBeenCalledTimes(1))
+    expect(requested[0].searchParams.get('format')).toBe('csv')
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText(/已导出 2 个用户/)).toBeInTheDocument()
+  })
+
+  it('批量导入：先预演再确认导入，展示结果与初始密码下载入口', async () => {
+    // jsdom 的 FormData/File 与 undici multipart 解析器不兼容，直接按调用次序区分预演/正式导入
+    let importCalls = 0
+    const importHandler = vi.fn(() => {
+      importCalls += 1
+      const dryRun = importCalls === 1
+      return HttpResponse.json({
+        total: 1, created: 1, skipped: 0, failed: 0, dry_run: dryRun,
+        results: [{
+          row_index: 1, status: 'ok', message: dryRun ? '预演通过' : '',
+          user_id: dryRun ? null : 9, username: 'imp_x',
+          generated_password: dryRun ? null : 'Gen123456789',
+        }],
+      })
+    })
+    server.use(
+      http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)),
+      http.post('/api/v1/accounts/users/import', importHandler),
+    )
+    renderPage()
+    await screen.findByText('bob')
+
+    fireEvent.click(screen.getByRole('button', { name: /导\s*入/ }))
+    expect(await screen.findByText('批量导入用户')).toBeInTheDocument()
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    const file = new File(['username\nimp_x'], 'users.csv', { type: 'text/csv' })
+    fireEvent.change(fileInput, { target: { files: [file] } })
+
+    expect(await screen.findByText(/预演结果：共 1 行，可导入 1/)).toBeInTheDocument()
+    expect(screen.getByText('可导入')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /确认导入 1 个用户/ }))
+
+    expect(await screen.findByText(/导入完成：成功 1 个/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /下载初始密码（1）/ })).toBeInTheDocument()
+    expect(importHandler).toHaveBeenCalledTimes(2)
   })
 })
 
