@@ -6,7 +6,7 @@
  * 该表的**列表项、详情、以及挂在表上的问题清单**都必须一起收口 ——
  * 避免"表看不到但问题清单还能翻到"这类跨入口泄露。
  *
- * 账号来自 seed：admin / admin1234（工作区 OWNER）、perm_viewer / perm1234（VIEWER，同工作区）。
+ * 账号来自 seed：admin / admin1234（工作区 OWNER）、demo / demo1234（VIEWER，同工作区）。
  * 数据准备走 API，**结论断言走 UI（列表「受限」标记）与 API（403/列表缺失）**。
  */
 
@@ -19,7 +19,7 @@ test.describe.configure({ timeout: 120_000 });
 test.describe("数据表权限与问题清单（多用户）", () => {
     test("受限表：普通成员列表/详情/问题清单全部收口；管理员看到「受限」标记", async ({ browser }) => {
         const admin = await sessionAs(browser, "admin", "admin1234");
-        const viewer = await sessionAs(browser, "perm_viewer", "perm1234");
+        const viewer = await sessionAs(browser, "demo", "demo1234");
         try {
             const wid = await sharedWorkspaceId(admin, viewer);
             const tableName = `E2E 受限表 ${Date.now()}`;

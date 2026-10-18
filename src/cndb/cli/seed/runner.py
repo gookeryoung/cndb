@@ -1,6 +1,6 @@
 """seed 命令编排入口。
 
-按序注入：账号 → datasets 工作区/数据表 → 业务表 → 字段设置 → 视图 → 文档 → 报告模板 → 示例报告 → 权限演示。"""
+按序注入：账号 → datasets 工作区/数据表 → 业务表 → 字段设置 → 视图 → 文档 → 报告模板 → 示例报告。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from cndb.cli.seed import (
     documents,
     fields,
     paths,
-    permission_demo,
     sqlite,
     templates,
     views,
@@ -155,22 +154,17 @@ def seed(_args: argparse.Namespace) -> None:
                 print(f"[seed] 添加工作区成员: {label} → {sales_ws.name} ({role.value})")
             db.commit()
 
-        # 6) 修改申请写模式演示：典型权限用户 + 修改申请 + 问题清单
-        permission_demo._seed_permission_demo(db, engine, owner)
-
         total = csv_count + extra
         print(
             f"[seed] 完成！共 {total} 张数据表、{view_count} 个视图、"
             f"{doc_count} 篇示例文档（{folder_count} 个文档文件夹）、"
             f"{analytics_count} 个分析模板、"
-            f"5 个演示账号（三员 + 普通用户）。"
+            f"4 个演示账号（三员 + 普通用户）。"
             "\n登录账号："
             "\n  系统管理员: admin / admin1234"
             "\n  安全管理员: sec_admin / sec1234"
             "\n  审计管理员: audit_admin / audit1234"
             "\n  普通用户:   demo / demo1234"
-            "\n  权限演示:   perm_editor|perm_viewer|perm_review|perm_member / perm1234"
-            "（工作区『权限演示-直编开放/直编关闭』）"
         )
     finally:
         db.close()

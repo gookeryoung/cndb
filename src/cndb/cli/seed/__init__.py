@@ -20,7 +20,6 @@
 | `views`    | views.json 视图种子 + demo 个人视图 |
 | `templates`| 部门/员工业务表与报告模板种子 |
 | `samples`  | 示例报告模板定义与落盘生成 |
-| `demo`     | 「修改申请写模式」演示数据 |
 | `runner`   | `seed()` 编排入口 |
 
 本 `__init__` 保留 `cndb.cli.seed.<name>` 的历史可用性（CLI 入口 `main.py` 与
@@ -57,7 +56,6 @@ from cndb.cli.seed.fields import (
     _load_field_settings,
 )
 from cndb.cli.seed.paths import _get_datasets_dir, _get_workspace_view_configs, _workspace_display_name
-from cndb.cli.seed.permission_demo import _seed_permission_demo
 from cndb.cli.seed.runner import seed
 from cndb.cli.seed.sqlite import (
     _drop_all_tables_sqlite,
@@ -96,7 +94,6 @@ __all__ = [
     "_seed_datasets",
     "_seed_demo_personal_views",
     "_seed_documents",
-    "_seed_permission_demo",
     "_seed_sales_tables",
     "_seed_views",
     "_seed_xlsx_table",

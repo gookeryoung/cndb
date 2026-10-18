@@ -9,7 +9,7 @@
  * 为什么必须 E2E：系统文件选择框是浏览器原生行为，jsdom 单测只能 spy
  * `input.click()`；这里用 Playwright 的 `filechooser` 事件做真实断言。
  *
- * 数据准备走 API，断言走 UI；表建在 seed 的「权限演示-直编关闭」工作区，
+ * 数据准备走 API，断言走 UI；表建在 seed 的「项目管理」工作区，
  * 避免污染 workspace 1（那里有「恰好 9 张表」的并行用例）。
  */
 import { test, expect } from "../fixtures/auth";
@@ -18,8 +18,8 @@ import type { APIRequestContext, Page } from "@playwright/test";
 import { apiCall, getAdminToken, getWorkspaceId } from "../helpers/api";
 
 const ANON = ["setup", "chromium-anon"];
-/** seed：权限演示-直编关闭（admin 为 OWNER，无其它 e2e 用例使用该工作区） */
-const WORKSPACE_NAME = "权限演示-直编关闭";
+/** seed：项目管理（admin 为 OWNER，无其它 e2e 用例依赖该工作区的表清单） */
+const WORKSPACE_NAME = "项目管理";
 /** 1x1 PNG：上传/粘贴只需后端能识别的图片字节 */
 const PNG_1PX =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";

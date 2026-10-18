@@ -4,7 +4,7 @@
  * 这是 Round 1-5 那批"可见性/权限"能力的**端到端验收**：
  * 后端单测覆盖了语义，这里用两个真实账号 + 真实前端，验证用户实际看到的结果。
  *
- * 账号来自 seed（cli/seed/permission_demo.py）：perm_viewer / perm1234（工作区 VIEWER），
+ * 账号来自 seed：demo / demo1234（工作区 VIEWER），
  * admin / admin1234（工作区 OWNER）。
  *
  * 说明：
@@ -65,9 +65,9 @@ test.describe("文档可见性与授权（多用户）", () => {
         browser,
     }) => {
         const admin = await sessionAs(browser, "admin", "admin1234");
-        const viewer = await sessionAs(browser, "perm_viewer", "perm1234");
+        const viewer = await sessionAs(browser, "demo", "demo1234");
         try {
-            // 1) 两个账号共同可见的工作区（seed：admin 是 OWNER，perm_viewer 是 VIEWER）
+            // 1) 两个账号共同可见的工作区（seed：admin 是 OWNER，demo 是 VIEWER）
             const workspaceId = await sharedWorkspaceId(admin, viewer);
 
             // 1.5) 同事在工作区成员名单里的显示名（前端下拉用的就是它：nickname || username）
@@ -76,8 +76,8 @@ test.describe("文档可见性与授权（多用户）", () => {
             const memberRow = (
                 members.body as Array<{ user_id: number; user?: { username?: string; nickname?: string } }>
             ).find(m => Number(m.user_id) === viewer.userId);
-            expect(memberRow, "工作区成员名单里应有 perm_viewer").toBeTruthy();
-            const viewerLabel = memberRow?.user?.nickname || memberRow?.user?.username || "perm_viewer";
+            expect(memberRow, "工作区成员名单里应有 demo").toBeTruthy();
+            const viewerLabel = memberRow?.user?.nickname || memberRow?.user?.username || "demo";
 
             // 2) admin 建一份草稿
             const title = `E2E 草稿可见性 ${Date.now()}`;
