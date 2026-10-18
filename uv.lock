@@ -342,7 +342,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "bcrypt", marker = "sys_platform != 'win32'", specifier = ">=3.2.2" },
-    { name = "bcrypt", marker = "sys_platform == 'win32'", specifier = ">=3.2.2,<6.0.0" },
+    { name = "bcrypt", marker = "sys_platform == 'win32'", specifier = ">=3.2.2,<4.0.0" },
     { name = "chardet", specifier = ">=7.6.0" },
     { name = "cndb", extras = ["lint", "test"], marker = "extra == 'dev'" },
     { name = "cryptography", marker = "sys_platform != 'win32'", specifier = ">=42.0.4" },
