@@ -247,17 +247,12 @@ export default function DocumentEditorPage() {
   })
 
   // 导出文档：Markdown / Word / PDF（浏览器直接下载）
-  // 发布 / 转为草稿：可见性策略下「草稿仅创建者与工作区所有者可见」，
+  // 发布：可见性策略下「草稿仅创建者与工作区所有者可见」，
   // 因此必须提供显式发布入口，否则同事永远看不到这份文档。
   const publishMut = useMutation({
-    mutationFn: (nextStatus: 'draft' | 'published') =>
-      documentsApi.updateMeta(workspaceId, id, { status: nextStatus }),
-    onSuccess: (_res: unknown, nextStatus: 'draft' | 'published') => {
-      message.success(
-        nextStatus === 'published'
-          ? '已发布：工作区成员现在可以看到这份文档'
-          : '已转为草稿：仅你与工作区所有者可见',
-      )
+    mutationFn: () => documentsApi.updateMeta(workspaceId, id, { status: 'published' }),
+    onSuccess: () => {
+      message.success('已发布：工作区成员现在可以看到这份文档')
       void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id] })
       void qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
     },
@@ -735,14 +730,14 @@ export default function DocumentEditorPage() {
                 ]}
               />
             )}
-            {editable && doc.status !== 'archived' && (
+            {editable && doc.status === 'draft' && (
               <Button
                 size="small"
                 data-testid="doc-publish-toggle"
                 loading={publishMut.isPending}
-                onClick={() => publishMut.mutate(doc.status === 'published' ? 'draft' : 'published')}
+                onClick={() => publishMut.mutate()}
               >
-                {doc.status === 'published' ? '转为草稿' : '发布'}
+                发布
               </Button>
             )}
             {hasUnsaved && (

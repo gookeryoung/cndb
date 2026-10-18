@@ -928,6 +928,26 @@ describe('草稿发布控件', () => {
       expect(successSpy).toHaveBeenCalledWith('已发布：工作区成员现在可以看到这份文档'),
     )
   })
+
+  it('已发布文档不提供「转为草稿」入口', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+        HttpResponse.json({
+          ...mockDocuments[1],
+          status: 'published',
+          content: '# 已发布文档\n\n正文。\n',
+          version_number: 3,
+          draft: null,
+          write_mode: 'direct',
+        })),
+    )
+
+    renderEditor()
+
+    expect(await screen.findByTestId('doc-view-mode')).toBeInTheDocument()
+    expect(screen.queryByTestId('doc-publish-toggle')).toBeNull()
+    expect(screen.queryByText('转为草稿')).toBeNull()
+  })
 })
 
 describe('协作者入口（桌面端）', () => {
