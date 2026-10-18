@@ -1,8 +1,6 @@
-"""documents 插件测试：CRUD / 版本 / 检索 / 标签 / 分享 / 编辑锁."""
+"""documents 插件测试：CRUD / 版本 / 检索 / 标签 / 分享."""
 
 from __future__ import annotations
-
-import time
 
 import pytest
 
@@ -370,37 +368,6 @@ class TestTags:
         assert r.json()["items"] == []
 
 
-# ── 编辑锁 ──
-
-
-class TestEditLock:
-    def test_lock_lifecycle(self, client, doc_api, auth_headers):
-        doc = _create_doc(client, doc_api, auth_headers)
-        # 获取锁
-        r = client.post(f"{doc_api}/{doc['id']}/lock", headers=auth_headers)
-        assert r.status_code == 200
-        # 查询状态
-        r = client.get(f"{doc_api}/{doc['id']}/lock", headers=auth_headers)
-        assert r.json()["locked"] is True
-        # 释放
-        r = client.delete(f"{doc_api}/{doc['id']}/lock", headers=auth_headers)
-        assert r.status_code == 200
-        r = client.get(f"{doc_api}/{doc['id']}/lock", headers=auth_headers)
-        assert r.json()["locked"] is False
-
-    def test_lock_timeout_expiry(self, client, doc_api, auth_headers):
-        from cndb.plugins.documents.services.edit_lock import edit_lock_registry
-
-        edit_lock_registry._locks.clear()
-        doc = _create_doc(client, doc_api, auth_headers)
-        client.post(f"{doc_api}/{doc['id']}/lock", headers=auth_headers)
-        # 手动把获取时间拨回 6 分钟前 → 过期
-        info = edit_lock_registry._locks[doc["id"]]
-        info.acquired_at = time.time() - 360
-        r = client.get(f"{doc_api}/{doc['id']}/lock", headers=auth_headers)
-        assert r.json()["locked"] is False
-
-
 # ── 分享 ──
 
 
@@ -570,28 +537,6 @@ class TestParseService:
 
         assert extract_wikilinks("无链接普通文本 [[ ]] 空标题不计") == []
         assert extract_wikilinks("") == []
-
-
-# ── 编辑锁单元测试 ──
-
-
-class TestEditLockRegistry:
-    def test_conflict_raises(self):
-        import pytest as _pytest
-
-        from cndb.core.errors import ConflictError
-        from cndb.plugins.documents.services.edit_lock import edit_lock_registry
-
-        edit_lock_registry._locks.clear()
-        edit_lock_registry.acquire(1, user_id=1, username="alice")
-        with _pytest.raises(ConflictError):
-            edit_lock_registry.acquire(1, user_id=2, username="bob")
-        # 同一用户刷新
-        edit_lock_registry.acquire(1, user_id=1, username="alice")
-        edit_lock_registry.release(1, 1)
-        # 释放后其他人可获取
-        edit_lock_registry.acquire(1, user_id=2, username="bob")
-        edit_lock_registry._locks.clear()
 
 
 # ── 文档导出（Markdown / Word / PDF）──

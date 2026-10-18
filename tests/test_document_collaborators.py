@@ -8,7 +8,6 @@
 - viewer 协作者的写入仍走工作区策略（修改申请 202），不会因授权而绕过流程；
 - editor 协作者可直接编辑**未发布**文档；已发布文档不因授权而绕过发布/审核策略；
 - 只有创建者 / 工作区 OWNER / 超管能授权；被授权者必须是工作区成员；不能给自己或创建者授权；
-- 协作者可参与段落锁协作（跨用户并发编辑的前提）；
 - 彻底删除时授权行一并清理（无孤儿）。
 """
 
@@ -222,21 +221,6 @@ class TestGrantGuards:
 
 
 class TestCollaborationAndCleanup:
-    def test_collaborator_can_take_paragraph_lock(self, client, db):
-        """跨用户协作编辑的前提：协作者能看见文档并参与段落锁."""
-        env = _env(db)
-        doc = _create_draft(client, env)
-        _grant(client, env, doc, env.viewer, "editor")
-
-        auth = _login(client, env.viewer.username)
-        r = client.post(
-            f"{DOCS.format(ws=env.ws.id)}/{doc['id']}/paragraph-locks",
-            json={"keys": ["p1"]},
-            headers=auth,
-        )
-        assert r.status_code == 200, r.text
-        assert r.json()["locks"][0]["key"] == "p1"
-
     def test_purge_removes_permission_rows(self, client, db):
         env = _env(db)
         doc = _create_draft(client, env)

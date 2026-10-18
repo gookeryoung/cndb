@@ -48,7 +48,7 @@ docker compose version >/dev/null 2>&1 || die "未找到 docker compose v2 插�
 [[ -f "$ENV_FILE" ]] || die "缺少 $ENV_FILE，请先 cp deploy/.env.prod.example .env 并填写"
 
 # ── 反向代理开关（可选）────────────────────────────────────────
-# .env 里 CNDB_ENABLE_PROXY=1 时启用 nginx 容器（统一入口 + WebSocket 升级）。
+# .env 里 CNDB_ENABLE_PROXY=1 时启用 nginx 容器（统一入口）。
 # 不启用时行为与从前完全一致（单容器，直接暴露 CNDB_BIND）。
 ENABLE_PROXY="$(grep -E '^CNDB_ENABLE_PROXY=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | xargs || true)"
 ENABLE_PROXY="${ENABLE_PROXY:-0}"
@@ -436,11 +436,10 @@ if ! wait_healthy; then
   exit 1
 fi
 
-# 4.5 反代与实时通道冒烟验证（启用代理时）
-# 校验两件事：① 通过代理能访问应用；② **WebSocket 升级真的通**（Upgrade 头没被吞掉）。
-# 第 ② 点是纯 HTTP 检查发现不了的：代理不放行 Upgrade 时页面照常打开，只是实时通道一直"重连中"。
+# 4.5 反向代理冒烟验证（启用代理时）
+# 经代理探测健康端点，确认 nginx 到应用的上游链路可用。
 if [[ "$ENABLE_PROXY" == "1" ]]; then
-  log "验证反向代理与 WebSocket 升级（经容器 nginx）..."
+  log "验证反向代理（经容器 nginx）..."
   HTTP_BIND="${CNDB_HTTP_BIND:-80}"
   # 经代理探测健康端点。**非 2xx 视为失败**（502 曾被当成成功，隐蔽且致命）。
   # 重试是为了给 nginx reload 后的 worker 切换留窗口。
@@ -467,63 +466,6 @@ if [[ "$ENABLE_PROXY" == "1" ]]; then
       warn "  ② nginx 是否 reload（本脚本已自动 reload；手工起容器需自行 reload）"
       warn "应用容器健康、数据无碍，**不要急着重跑部署**，先按上面两项修 nginx"
       die "反向代理不可用" ;;
-  esac
-
-  # 用应用自身的密钥在容器内签发一个令牌，再经代理建立 WS 连接，期待首帧 presence.sync。
-  # 这样无需任何生产口令，且真实验证了「代理 → 应用」的升级链路。
-  WS_RESULT="$(dc exec -T app python - <<'PYEOF' 2>/dev/null || echo WS_ERROR
-import asyncio, json, sys, urllib.request
-
-try:
-    from cndb.core.database import SessionLocal
-    from cndb.core.security import create_access_token
-    from cndb.plugins.accounts.models import User
-
-    db = SessionLocal()
-    user = db.query(User).order_by(User.id).first()
-    db.close()
-    if user is None:
-        print("WS_SKIP 无用户（尚未初始化）")
-        sys.exit(0)
-
-    token = create_access_token(subject=user.id, token_version=getattr(user, "token_version", 0))
-    req = urllib.request.Request(
-        "http://nginx/api/v1/workspaces", headers={"Authorization": f"Bearer {token}"}
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        workspaces = json.load(resp)
-    if not workspaces:
-        print("WS_SKIP 无工作区（先建一个再验证实时通道）")
-        sys.exit(0)
-    wid = workspaces[0]["id"]
-
-    import websockets
-
-    async def main() -> None:
-        uri = f"ws://nginx/api/v1/ws?workspace_id={wid}&token={token}"
-        async with websockets.connect(uri, open_timeout=10) as ws:
-            first = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-        print("WS_OK " + str(first.get("type")))
-
-    asyncio.run(main())
-except Exception as exc:  # noqa: BLE001 - 冒烟失败只需结论
-    print("WS_ERROR " + type(exc).__name__ + ": " + str(exc)[:200])
-PYEOF
-)"
-
-  case "$WS_RESULT" in
-    WS_OK*)
-      ok "WebSocket 升级验证通过：${WS_RESULT}"
-      ;;
-    WS_SKIP*)
-      warn "跳过 WebSocket 验证：${WS_RESULT#WS_SKIP }"
-      ;;
-    *)
-      warn "WebSocket 升级验证失败：${WS_RESULT}"
-      warn "请检查：① 代理是否放行 Upgrade/Connection（deploy/nginx/snippets/cndb-proxy.conf）"
-      warn "        ② nginx 日志：docker compose --env-file .env -f ${COMPOSE_FILE} --profile proxy logs --tail 50 nginx"
-      warn "（HTTP 功能不受影响，但实时协作不可用；部署继续，未回滚）"
-      ;;
   esac
 fi
 

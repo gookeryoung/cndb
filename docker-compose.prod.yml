@@ -13,9 +13,9 @@
 #   cp deploy/.env.prod.example .env && vim .env   # 填 TCR 地址/域名/密钥
 #   ./deploy/deploy.sh v0.3.0                        # 或等 CI 自动部署
 #
-# 启用 nginx 反代（含实时协作 WebSocket）：
+# 启用 nginx 反代：
 #   .env 里设 CNDB_ENABLE_PROXY=1 与 CNDB_BIND=127.0.0.1:8000，再跑 ./deploy/deploy.sh <version>
-#   （脚本自动带 --profile proxy 并做 WS 冒烟验证）
+#   （脚本自动带 --profile proxy 并做代理冒烟验证）
 #
 # 查看日志：
 #   docker compose --env-file .env -f docker-compose.prod.yml logs -f app
@@ -74,7 +74,7 @@ services:
       - no-new-privileges:true
 
   # ── 反向代理（可选，docker compose --profile proxy 启用）──────────────
-  # 提供统一入口 + 域名/HTTPS + **WebSocket 升级**（实时协作必需）。
+  # 提供统一入口 + 域名/HTTPS。
   # 不启用该 profile 时行为不变（单容器、直接暴露 CNDB_BIND）。
   nginx:
     # 内网拉不到 Docker Hub 时可换成镜像源地址（如 TCR 上的副本）

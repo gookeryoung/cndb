@@ -54,10 +54,6 @@ import { parseOutline } from '@/components/Document/outline'
 import { documentsApi } from '@/api/documents'
 import { fileApi, tableApi, workspaceApi } from '@/api'
 import { useAuthStore } from '@/store'
-import { useDocumentEditing, useDocumentViewers, useParagraphLockSnapshot, useRealtime } from '@/realtime/useRealtime'
-import { useParagraphLocks } from './useParagraphLocks'
-import { offsetOfParagraph } from './paragraphLocks'
-import { CollaborationStatusTag, DocumentViewers } from '@/realtime/RealtimeIndicators'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
 import type {
@@ -142,34 +138,8 @@ export default function DocumentEditorPage() {
     enabled: Number.isFinite(workspaceId),
   })
   const myRole = (wsDetail?.current_user_role ?? null) as WorkspaceRole | null
-  // 实时协作：上报"我在看/编辑哪份文档"，并展示同一文档的在线成员
+  // 当前用户（协作者弹窗使用）
   const currentUser = useAuthStore((s) => s.user)
-  const { updatePresence, status: collabStatus } = useRealtime(wid)
-  const viewers = useDocumentViewers(Number.isFinite(id) ? id : null)
-  const remoteEditing = useDocumentEditing(Number.isFinite(id) ? id : null)
-  /** 跳转到指定段落（把光标移到该段起点并滚动到可见） */
-  const jumpToParagraph = (index: number) => {
-    const offset = offsetOfParagraph(content, index)
-    if (offset === null) return
-    editorRef.current?.revealOffset(offset)
-  }
-  // 段落级并发编辑：同段互斥、不同段可并发（锁随光标移动获取/释放）
-  const realtimeParaLocks = useParagraphLockSnapshot(Number.isFinite(id) ? id : null)
-  const paraLocks = useParagraphLocks({
-    workspaceId,
-    docId: id,
-    content,
-    currentUserId: currentUser?.id,
-    realtimeLocks: realtimeParaLocks,
-    enabled: Number.isFinite(id) && !!currentUser,
-  })
-  // 实时在线状态：查看模式上报查看中，编辑模式上报编辑中，离开清空
-  const presenceMode: 'viewing' | 'editing' = viewMode === 'view' ? 'viewing' : 'editing'
-  useEffect(() => {
-    if (!Number.isFinite(id)) return
-    updatePresence(id, presenceMode)
-    return () => updatePresence(null, null)
-  }, [id, presenceMode, updatePresence])
 
   // 该文档的修改申请（与抽屉共享缓存）：工具栏徽标显示待审核条数
   const { data: crList } = useQuery({
@@ -780,10 +750,6 @@ export default function DocumentEditorPage() {
                 未保存
               </Text>
             )}
-            {/* 协作编辑状态：由全局顶栏下放到文档页，语义改为协作态（在线/接入中/重连中/已断开） */}
-            <span data-testid="doc-collab-status">
-              <CollaborationStatusTag status={collabStatus} />
-            </span>
           </Space>
         </div>
         {isMobile ? (
@@ -932,59 +898,7 @@ export default function DocumentEditorPage() {
         />
       )}
 
-      {doc.edit_lock && doc.edit_lock.user_id !== doc.updated_by_id && (
-        <Alert
-          type="info"
-          showIcon
-          message={`${doc.edit_lock.username} 正在编辑此文档（${doc.edit_lock.elapsed_seconds} 秒前开始）`}
-          style={{ margin: '8px 24px 0' }}
-        />
-      )}
-
       {/* 分屏编辑/预览 —— 窄屏改为「编辑 / 预览」页签切换，桌面保持左右分屏 */}
-      {/* 段落锁：他人正在编辑的段落（同段互斥、不同段可并发） */}
-      {(paraLocks.othersLocks.length > 0 || paraLocks.blockedBy) && (
-        <Alert
-          type={paraLocks.blockedBy ? 'warning' : 'info'}
-          showIcon
-          data-testid="doc-paragraph-locks"
-          style={{ margin: '8px 24px 0' }}
-          message={
-            paraLocks.blockedBy
-              ? `第 ${paraLocks.blockedBy.key.slice(1)} 段正由 ${paraLocks.blockedBy.username} 编辑，请改其他段落`
-              : '以下段落正被他人编辑（其余段落你可自由修改）'
-          }
-          description={
-            paraLocks.othersLocks.length > 0 ? (
-              <Space size={4} wrap>
-                {paraLocks.othersLocks.map((lock) => (
-                  <Button
-                    key={lock.key}
-                    size="small"
-                    data-testid={`para-jump-${lock.key}`}
-                    onClick={() => jumpToParagraph(Number(lock.key.slice(1)))}
-                  >
-                    跳转到第 {lock.key.slice(1)} 段（{lock.username} 编辑中）
-                  </Button>
-                ))}
-              </Space>
-            ) : undefined
-          }
-        />
-      )}
-
-      {/* 实时在线成员：同一文档有其他人在看/编辑时展示（编辑者在前） */}
-      {viewers.length > 0 && (
-        <div style={{ margin: '8px 24px 0' }} data-testid="doc-presence-bar">
-          <DocumentViewers members={viewers} currentUserId={currentUser?.id} />
-          {remoteEditing && remoteEditing.user_id !== currentUser?.id && (
-            <span style={{ marginLeft: 8, color: '#d46b08', fontSize: 12 }}>
-              {remoteEditing.username ?? '他人'} 已获取编辑锁，你的保存可能产生版本冲突
-            </span>
-          )}
-        </div>
-      )}
-
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {viewMode === 'view' ? (
           <div
@@ -1045,7 +959,6 @@ export default function DocumentEditorPage() {
               workspaceId={workspaceId}
               placeholder="输入 Markdown 内容…"
               onChange={setContent}
-              onCaret={paraLocks.onCaret}
               onPasteImages={handlePasteImages}
               onShortcut={applyEditorShortcut}
             />

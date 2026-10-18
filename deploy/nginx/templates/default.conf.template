@@ -21,9 +21,6 @@ upstream cndb_app {
     keepalive 32;
 }
 
-# WebSocket location 专用日志格式：只记 $uri（不含 query —— 访问令牌在 query 里）
-log_format cndb_ws '$remote_addr - $status "$request_method $uri" $request_time';
-
 server {
     listen 80;
     listen [::]:80;
@@ -35,7 +32,7 @@ server {
         default_type text/plain;
     }
 
-    # 反代规则（含 WebSocket）——HTTP / HTTPS 共用同一份片段
+    # 反代规则 ——HTTP / HTTPS 共用同一份片段
     include /etc/nginx/snippets/cndb-proxy.conf;
 }
 

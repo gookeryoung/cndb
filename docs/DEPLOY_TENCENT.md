@@ -51,12 +51,12 @@ GitHub Actions (deploy-tencent.yml，被 Release 调用)
       │    → 预备份数据库
       │    → 更新 .env → up -d --force-recreate
       │    → 轮询 /api/health（180s）
-      │    （启用反代时：再拉起 nginx 容器，并做 WebSocket 升级冒烟）
+      │    （启用反代时：再拉起 nginx 容器，并做代理冒烟）
       │    → 失败：自动回滚到上一个 tag
       ▼
    单容器模式： http://<服务器IP>:8000
    反代模式：   http(s)://<域名> ──> 容器 nginx ──> app:8000
-                （HTTP 与实时协作 WebSocket 同一入口，见 4.1）
+                （HTTP 统一入口，见 4.1）
 ```
 
 **数据持久化**：唯一数据卷 `cndb-data` 挂在 `/data`，数据库、用户附件、备份归档全在里面。换版本只换镜像，卷不动。
@@ -185,7 +185,7 @@ vim .env   # 改 CNDB_IMAGE 和 CORS_ORIGINS
 > 不一致会导致部署时拉不到镜像。仓库名改动需同步 3 处：`deploy/.env.prod.example`、
 > 服务器 `.env`、GitHub Secret。
 
-### 4.1 反向代理（可选，含实时协作 WebSocket）
+### 4.1 反向代理（可选）
 
 默认部署是**单容器**（FastAPI 直接托管前端）。需要域名 / HTTPS / 统一入口时，启用内置 nginx 反代容器：
 
@@ -198,24 +198,14 @@ vim .env
 #   CNDB_HTTP_BIND=80
 #   CNDB_HTTPS_BIND=443
 #   CNDB_NGINX_IMAGE=mirror.ccs.tencentyun.com/library/nginx:1.27-alpine   # 拉不到 Docker Hub 时换源，见 4.1.1
-./deploy/deploy.sh v0.3.12       # 脚本自动带 --profile proxy，并在末尾做 WebSocket 冒烟验证
+./deploy/deploy.sh v0.3.12       # 脚本自动带 --profile proxy，并在末尾做代理冒烟验证
 ```
 
 安全组只需放行 `80`（与可选的 `443`）—— 放行清单见「3. 准备服务器」。
 
-**为什么必须走这套配置**：实时协作（在线状态、文档事件推送、段落锁）走 `WebSocket /api/v1/ws`。
-反向代理若不放行 `Upgrade`/`Connection` 头，握手会失败 —— 页面照常打开、HTTP 功能全正常，
-**只有实时通道一直显示"重连中…"**，非常容易被当成前端 bug。本仓库的配置已经处理好：
-`deploy/nginx/snippets/cndb-proxy.conf` 里对 `/api/v1/ws` 单独设置了
-`proxy_http_version 1.1` + `Upgrade`/`Connection` + `proxy_read_timeout 3600s`（远大于服务端 25s 心跳），
-并且该 location 的访问日志**只记路径不记 query**（访问令牌在 query 里）。
-
-`deploy.sh` 在启用代理时会自动做两项验证：
-
-1. 经代理容器请求 `/api/health`；
-2. 用应用自身的密钥在容器内签发一个临时令牌，**经代理建立真实 WebSocket 连接**，期待首帧 `presence.sync`。
-
-第 2 项能确认"Upgrade 真的通了"；失败时不会回滚部署，但会打印排查指引（HTTP 功能不受影响）。
+**代理做了什么**：nginx 将全部 HTTP 请求转发到应用容器（`cndb:8000`），
+统一暴露域名、处理 TLS 与上传体积限制；Agent 在启用代理时会经代理容器请求
+`/api/health`，确认「nginx → 应用」的上游链路可用。
 
 #### 4.1.1 前置检查：端口占用、镜像换源与配置自检
 
@@ -455,7 +445,7 @@ cd /opt/cndb && ./deploy/deploy.sh 0.3.0
 
 ## 三、日常发布
 
-> 启用反向代理后，发布流程不变：`deploy.sh` 会用 `--profile proxy` 一起更新应用与 nginx，并在部署末尾验证 WebSocket 升级。
+> 启用反向代理后，发布流程不变：`deploy.sh` 会用 `--profile proxy` 一起更新应用与 nginx，并在部署末尾验证代理链路。
 
 ```bash
 # 版本号在 pyproject.toml 与 CHANGELOG.md 同步更新后
@@ -611,7 +601,6 @@ ss -lntp | grep -E ':(80|443) '           # 端口是否被别的进程占着
 | `bind: address already in use`，容器起不来 | 宿主机已跑着原生 nginx 或别的 web 服务占着 80/443。按 4.1.1 停用它再部署（`systemctl stop nginx && systemctl disable nginx`） |
 | 容器反复 `Exited (1)`，日志报 `directive invalid value` | 配置里写了**不会被 envsubst 替换**的 `${VAR}`（只对 `templates/*.template` 生效）。见 4.1.1 末尾说明 |
 | 镜像拉不动 / `manifest unknown` | Docker Hub 不可达。用 `CNDB_NGINX_IMAGE` 换镜像源后重跑 `deploy.sh` |
-| 页面能开，但实时协作一直「重连中…」 | WS 升级没通。确认 `snippets/cndb-proxy.conf` 的 `/api/v1/ws` 段被 include 且未被改坏；查 `docker exec cndb-nginx tail -50 /var/log/nginx/error.log` |
 | `certbot renew --dry-run` 失败 | webroot 没指到 `/opt/cndb/certbot-www`，或 80 端口未对 Let's Encrypt 开放（见 4.1.2） |
 | 上了 HTTPS 后 HTTP 不再跳转 | `CNDB_SERVER_NAME` 填了域名，与 `ssl.conf` 的 80 跳转块撞名。改成 `_`（见 4.1.2 的说明） |
 
