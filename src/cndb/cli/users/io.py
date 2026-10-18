@@ -8,38 +8,23 @@ import string
 from pathlib import Path
 from typing import Any
 
+from cndb.plugins.accounts.services.user_bulk import _PW_FIELD as _pw_field
+from cndb.plugins.accounts.services.user_bulk import USER_IMPORT_COLUMN_ALIASES as _USER_IMPORT_COLUMN_ALIASES
 from cndb.plugins.tables.services.transfer import _coerce_long_numeric_to_text, decode_bytes_auto
 
-_pw_field = "pass" + "word"  # 拼接构造，规避通用密码字面量检测
-_USER_IMPORT_COLUMN_ALIASES: dict[str, str] = {
-    # username
-    "username": "username",
-    "user_name": "username",
-    "login": "username",
-    "登录名": "username",
-    "用户名": "username",
-    # password（字段名映射，非密码值；拼接别名仅为规避密钥扫描误报）
-    "password": _pw_field,  # nosec B105 - nosemgrep:generic.secrets.security.detected-generic-password
-    "pwd": _pw_field,  # nosec B105 - 字段名映射，非密码值
-    "user_password": _pw_field,  # nosec B105 - nosemgrep:generic.secrets.security.detected-generic-password
-    "密码": _pw_field,
-    # email
-    "email": "email",
-    "mail": "email",
-    "邮箱": "email",
-    # nickname
-    "nickname": "nickname",
-    "display_name": "nickname",
-    "nick": "nickname",
-    "昵称": "nickname",
-    "显示名": "nickname",
-    # role
-    "role": "role",
-    "user_role": "role",
-    "type": "role",
-    "类型": "role",
-    "角色": "role",
-}
+# 列头别名表与服务层共用同一张表（见 cndb.plugins.accounts.services.user_bulk），
+# API 导入与 CLI 导入的列识别规则不会漂移。
+__all__ = [
+    "_USER_IMPORT_COLUMN_ALIASES",
+    "_generate_password",
+    "_map_header",
+    "_map_row",
+    "_normalize_header",
+    "_open_tabfile",
+    "_pw_field",
+    "_read_csv",
+    "_read_xlsx",
+]
 
 
 def _generate_password(length: int = 12) -> str:

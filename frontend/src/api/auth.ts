@@ -9,6 +9,7 @@ import type {
     UserAdminRecord, UserAdminUpdateRequest, UserListPage, UserListQuery,
     BatchUserActionRequest, BatchUserActionResponse,
     UserAuditLogPage, UserAuditLogQuery,
+    UserImportResponse,
 } from './types'
 
 export const authApi = {
@@ -52,6 +53,20 @@ export const authApi = {
     /** 批量启用/禁用/设置角色，返回逐项结果 */
     batchUsers: (data: BatchUserActionRequest) =>
         api.post<BatchUserActionResponse>('/v1/accounts/users/batch', data).then(r => r.data),
+    /** 按当前筛选条件导出用户列表（CSV / XLSX，不含密码）；返回完整响应以便解析下载文件名 */
+    exportUsers: (params: UserListQuery & { format: 'csv' | 'xlsx' }) =>
+        api.get('/v1/accounts/users/export', { params, responseType: 'blob' }),
+    /** 批量导入用户（dryRun=true 仅预演校验）；multipart 需显式声明，拦截器会补 boundary */
+    importUsers: (file: File, dryRun = false) => {
+        const form = new FormData()
+        form.append('file', file)
+        form.append('dry_run', String(dryRun))
+        return api
+            .post<UserImportResponse>('/v1/accounts/users/import', form, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            })
+            .then(r => r.data)
+    },
     /** 用户管理操作日志（全量，支持按动作/操作人/目标筛选） */
     listAuditLogs: (params: UserAuditLogQuery = {}) =>
         api.get<UserAuditLogPage>('/v1/accounts/users/audit-logs', { params }).then(r => r.data),

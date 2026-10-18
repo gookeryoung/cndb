@@ -56,6 +56,8 @@ _USER_ACTION_SUMMARY = {
     "activate": "启用用户",
     "deactivate": "禁用用户",
     "batch": "批量操作用户",
+    "import": "批量导入用户",
+    "export": "导出用户列表",
 }
 
 
