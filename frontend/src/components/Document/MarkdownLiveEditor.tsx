@@ -5,8 +5,8 @@
  *   加装饰：语法标记（`#` / `**` / `` ` `` / 链接符号）在光标离开该元素时隐藏，
  *   标题、加粗、斜体、行内代码、引用、代码块、分隔线、图片按渲染态显示；
  *   光标进入对应元素后自动还原为源码，便于精确编辑（与 Obsidian 一致）。
- * - **源码模式**保留原生 textarea：行为与旧编辑器完全一致（查找替换、快捷键、
- *   段落锁都基于字符偏移），也便于无障碍与输入法。
+ * - **源码模式**保留原生 textarea：行为与旧编辑器完全一致（查找替换、快捷键
+ *   都基于字符偏移），也便于无障碍与输入法。
  * - 两种模式共用一套命令式句柄（选区 / 定位 / 聚焦），上层无需感知实现差异。
  */
 
@@ -55,8 +55,6 @@ interface MarkdownLiveEditorProps {
   workspaceId?: number | string
   placeholder?: string
   onChange: (value: string) => void
-  /** 光标/选区变化回调（段落锁按光标所在段获取） */
-  onCaret?: (offset: number) => void
   /** 粘贴图片：由调用方上传并插入引用 */
   onPasteImages?: (files: File[]) => void
   /** Ctrl/Cmd+F/H/B/I/K */
@@ -333,7 +331,7 @@ const editorTheme = EditorView.theme({
 const EDITOR_STYLE: CSSProperties = { flex: 1, minHeight: 0, overflow: 'hidden' }
 
 const MarkdownLiveEditor = forwardRef<MarkdownEditorHandle, MarkdownLiveEditorProps>(function MarkdownLiveEditor(
-  { value, mode, workspaceId, placeholder, onChange, onCaret, onPasteImages, onShortcut, style },
+  { value, mode, workspaceId, placeholder, onChange, onPasteImages, onShortcut, style },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -342,12 +340,10 @@ const MarkdownLiveEditor = forwardRef<MarkdownEditorHandle, MarkdownLiveEditorPr
 
   // 用 ref 持有回调，避免父组件每次渲染都重建 EditorView（丢撤销栈与光标）
   const onChangeRef = useRef(onChange)
-  const onCaretRef = useRef(onCaret)
   const onPasteRef = useRef(onPasteImages)
   const onShortcutRef = useRef(onShortcut)
   useEffect(() => {
     onChangeRef.current = onChange
-    onCaretRef.current = onCaret
     onPasteRef.current = onPasteImages
     onShortcutRef.current = onShortcut
   })
@@ -422,9 +418,6 @@ const MarkdownLiveEditor = forwardRef<MarkdownEditorHandle, MarkdownLiveEditorPr
         cmPlaceholder(placeholder ?? ''),
         EditorView.updateListener.of(update => {
           if (update.docChanged) onChangeRef.current(update.state.doc.toString())
-          if (update.docChanged || update.selectionSet) {
-            onCaretRef.current?.(update.state.selection.main.head)
-          }
         }),
         EditorView.domEventHandlers({
           paste(event) {
@@ -473,8 +466,6 @@ const MarkdownLiveEditor = forwardRef<MarkdownEditorHandle, MarkdownLiveEditorPr
         ref={taRef}
         value={value}
         onChange={e => onChange(e.target.value)}
-        onSelect={e => onCaret?.((e.target as HTMLTextAreaElement).selectionStart)}
-        onClick={e => onCaret?.((e.target as HTMLTextAreaElement).selectionStart)}
         onPaste={e => {
           const items = e.clipboardData?.items
           if (!items) return

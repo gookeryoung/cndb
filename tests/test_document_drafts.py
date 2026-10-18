@@ -6,7 +6,7 @@
 - 丢弃草稿幂等；
 - 未修改内容提交被拒（409，code=no_changes），旧修改申请入口同样拦截；
 - 显式提交：直编落库为新版本 / 无直编资格转修改申请（202）；
-- 基准漂移时按段落三方合并，同段改动冲突；
+- 基准漂移时拒绝提交（409，code=stale_version），不做任何写入、草稿保留；
 - 草稿仅本人可见；旧「保存即提交」接口提交后清理草稿。
 """
 
@@ -305,7 +305,7 @@ class TestSubmit:
         assert requests["total"] == 1
         assert requests["items"][0]["document_id"] == doc["id"]
 
-    def test_stale_draft_merges_other_paragraphs(self, client, ws, owner, editor, db):
+    def test_stale_draft_rejected_without_merge(self, client, ws, owner, editor, db):
         auth_owner = _login(client, owner.username)
         auth_editor = _login(client, editor.username)
         doc = _create_doc(client, ws.id, auth_owner)
@@ -323,29 +323,10 @@ class TestSubmit:
 
         r = _submit(client, ws.id, doc["id"], auth_editor)
 
-        assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["version_number"] == 3
-        assert "第一段改" in body["content"]
-        assert "第二段改" in body["content"]
-
-    def test_stale_draft_same_paragraph_conflicts(self, client, ws, owner, editor, db):
-        auth_owner = _login(client, owner.username)
-        auth_editor = _login(client, editor.username)
-        doc = _create_doc(client, ws.id, auth_owner)
-
-        _save_draft(client, ws.id, doc["id"], auth_editor, "标题\n\n第一段（编辑者）\n\n第二段\n")
-        r = client.put(
-            DOCS.format(ws=ws.id) + f"/{doc['id']}/content",
-            json={"content": "标题\n\n第一段（所有者）\n\n第二段\n"},
-            headers=auth_owner,
-        )
-        assert r.status_code == 200, r.text
-
-        r = _submit(client, ws.id, doc["id"], auth_editor)
-
+        # 不再做段落级归并：基准落后直接拒绝，避免覆盖他人已保存的修改
         assert r.status_code == 409, r.text
-        assert r.json()["code"] == "paragraph_conflict"
+        body = r.json()
+        assert body["code"] == "stale_version"
         # 冲突不做任何写入，草稿保留
         assert _versions_total(client, ws.id, doc["id"], auth_owner) == 2
         assert _get_content(client, ws.id, doc["id"], auth_editor)["draft"] is not None

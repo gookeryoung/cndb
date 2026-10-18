@@ -83,7 +83,7 @@ set_env CNDB_VOLUME "$VOLUME"                  "$ENV_FILE"
 
 # 反向代理（可选）：默认不启用，保持单容器形态。
 # 需要域名/HTTPS/统一入口时改为 1，并把 CNDB_BIND 设为 127.0.0.1:8000，
-# 再跑一次 deploy.sh（脚本会自动带 --profile proxy 并做 WebSocket 升级冒烟验证）。
+# 再跑一次 deploy.sh（脚本会自动带 --profile proxy 并做代理冒烟验证）。
 set_env CNDB_ENABLE_PROXY "0"    "$ENV_FILE"
 set_env CNDB_HTTP_BIND    "80"   "$ENV_FILE"
 set_env CNDB_HTTPS_BIND   "443"  "$ENV_FILE"

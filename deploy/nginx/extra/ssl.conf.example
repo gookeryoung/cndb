@@ -17,7 +17,7 @@
 #   b) 云厂商签发的证书：直接下载后放入 ./certs/（文件同名即可）
 #
 # 说明：本文件由 templates/default.conf.template 末尾的 `include /etc/nginx/extra/*.conf;`
-# 加载，因此 HTTP(80) 与 HTTPS(443) 两个 server 块**共用**同一份反代片段，WS 规则不会漏配。
+# 加载，因此 HTTP(80) 与 HTTPS(443) 两个 server 块**共用**同一份反代片段。
 # ═══════════════════════════════════════════════════════════════════
 
 server {
@@ -34,7 +34,7 @@ server {
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 1d;
 
-    # 反代规则（含 WebSocket）——与 HTTP server 块共用同一份片段
+    # 反代规则——与 HTTP server 块共用同一份片段
     include /etc/nginx/snippets/cndb-proxy.conf;
 }
 

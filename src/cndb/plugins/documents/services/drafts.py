@@ -7,8 +7,8 @@
 - **提交修改**：显式动作，有直编资格时落库为新版本，否则生成修改申请；
 - **未修改不可提交**：正文与当前最新版本一致时返回 409（code=``no_changes``），
   前端据此禁用提交按钮；
-- **基准合并**：草稿记录开始编辑时的 ``base_version_number``，提交时若文档已
-  前进版本，先做段落级三方合并（不同段落可合并、同段落冲突）。
+- **基准版本**：草稿记录开始编辑时的 ``base_version_number``，提交时若文档已
+  前进版本，返回 409（code=``stale_version``），要求刷新后重新编辑。
 
 草稿是**个人**数据：每位用户一份，只有本人能读写；管理员也看不到他人草稿。
 """
@@ -22,10 +22,9 @@ from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError, ConflictError
 from cndb.plugins.accounts.models import User
-from cndb.plugins.documents.models import Document, DocumentDraft, DocumentVersion
+from cndb.plugins.documents.models import Document, DocumentDraft
 from cndb.plugins.documents.services import change_requests as change_request_service
 from cndb.plugins.documents.services import content as content_service
-from cndb.plugins.documents.services import paragraph_lock
 from cndb.plugins.documents.services import parse as parse_service
 from cndb.plugins.documents.services import visibility as visibility_service
 
@@ -46,19 +45,6 @@ def _latest_content(db: Session, doc: Document) -> tuple[str, int]:
     """当前最新版本正文与版本号（无版本时为空串 / 0）."""
     version = content_service.latest_version(db, doc.id)
     return content_service.load_content(version, doc), (version.version_number if version else 0)
-
-
-def _version_content(db: Session, doc: Document, version_number: int) -> str:
-    """指定版本正文；版本不存在时返回空串."""
-    if version_number <= 0:
-        return ""
-    version = db.execute(
-        select(DocumentVersion).where(
-            DocumentVersion.document_id == doc.id,
-            DocumentVersion.version_number == version_number,
-        )
-    ).scalar_one_or_none()
-    return content_service.load_content(version, doc) if version is not None else ""
 
 
 def draft_payload(db: Session, doc: Document, user: User) -> dict[str, Any] | None:
@@ -157,21 +143,6 @@ def serialize_draft(draft: DocumentDraft | None) -> dict[str, Any] | None:
 # ── 显式提交 ──────────────────────────────────────────
 
 
-def _merge_conflict_error(doc_id: int, user: User, outcome: Any) -> ConflictError:
-    """把段落级三方合并冲突转换为带持锁人信息的 409."""
-    holders = paragraph_lock.paragraph_lock_registry.conflicts_for_indices(
-        doc_id, outcome.conflicts, getattr(user, "id", 0)
-    )
-    detail = "、".join(
-        f"第 {paragraph_lock.key_to_index(lock.key)} 段（{lock.username} 正在编辑）" for lock in holders
-    ) or "、".join(f"第 {i} 段" for i in sorted(outcome.conflicts))
-    return ConflictError(
-        f"以下段落已被他人修改，请复制你的改动后刷新：{detail}",
-        code="paragraph_conflict",
-        context={"conflict_keys": outcome.conflict_keys},
-    )
-
-
 def submit_draft(
     db: Session,
     workspace_id: int,
@@ -189,7 +160,7 @@ def submit_draft(
         base_version_number: 编辑基准版本；缺省取草稿记录，再缺省取当前最新版本。
 
     Raises:
-        ConflictError: 没有可提交内容 / 内容未变化 / 段落冲突。
+        ConflictError: 没有可提交内容 / 内容未变化 / 基准版本过期。
     """
     change_request_service.require_member(db, workspace_id, user)
     doc = visibility_service.get_visible_document_or_404(db, workspace_id, doc_id, user)
@@ -236,16 +207,14 @@ def submit_draft(
             "message": f"已提交修改申请 #{cr.id}，审核通过后生效",
         }
 
-    # ── 直编：必要时先做段落级三方合并，再落库为新版本 ──
+    # ── 直编：基准版本落后时拒绝提交，避免覆盖他人已保存的修改 ──
     if base < latest_num:
-        outcome = paragraph_lock.merge_incoming(_version_content(db, doc, base), latest_text, incoming)
-        if not outcome.merged:
-            raise _merge_conflict_error(doc.id, user, outcome)
-        incoming = outcome.text
-        if parse_service.content_hash(incoming) == parse_service.content_hash(latest_text):
-            _delete_draft_row(db, doc.id, user.id)
-            db.commit()
-            raise ConflictError("内容未发生变化，无需提交", code="no_changes")
+        raise ConflictError(
+            f"文档已更新到 v{latest_num}，你基于 v{base} 的修改已过期，请刷新后重新编辑",
+            code="stale_version",
+            base_version=base,
+            current_version=latest_num,
+        )
 
     from cndb.plugins.documents.services import document_permissions
 

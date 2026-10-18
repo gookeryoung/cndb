@@ -902,44 +902,6 @@ describe('DocumentEditorPage 表格骨架与标题层级', () => {
 })
 })
 
-describe('段落锁提示与跳转', () => {
-  it('他人锁定段落时展示跳转按钮，点击后光标移到该段起点', async () => {
-    // 覆盖默认 mock：返回一条他人持有的第 3 段锁
-    server.use(
-      http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
-        HttpResponse.json({
-          ...mockDocuments[1],
-          content: '# 需求说明\n\n第一段正文。\n\n第二段正文。\n',
-          version_number: 1,
-          draft: null,
-          write_mode: 'direct',
-        })),
-      http.get('/api/v1/workspaces/:wid/documents/:docId/paragraph-locks', () =>
-        HttpResponse.json({
-          locks: [
-            { document_id: 2, key: 'p3', user_id: 99, username: 'bob', elapsed_seconds: 3 },
-          ],
-        }),
-      ),
-    )
-
-    renderEditor()
-    await screen.findByTestId('doc-paragraph-locks')
-    const textarea = await enterSourceMode()
-    await waitFor(() => expect(textarea.value).toContain('第二段正文'))
-
-    const jump = await screen.findByTestId('para-jump-p3')
-    expect(jump).toHaveTextContent('跳转到第 3 段')
-    expect(jump).toHaveTextContent('bob')
-
-    fireEvent.click(jump)
-
-    // 光标落在第 3 段起点：该偏移之前的段落数是 2
-    const before = textarea.value.slice(0, textarea.selectionStart)
-    expect(before.split('\n\n').filter((part) => part.trim()).length).toBe(2)
-  })
-})
-
 describe('草稿发布控件', () => {
   it('草稿显示「发布」按钮，点击后 PATCH status=published 并提示', async () => {
     const bodies: unknown[] = []

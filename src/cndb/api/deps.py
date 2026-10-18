@@ -193,15 +193,8 @@ def get_optional_user(
         return None
 
 
-# 供 WebSocket 等非 HTTP 入口复用（浏览器 WS 无法自定义请求头，token 走查询参数）
-authenticate_jwt = _authenticate_jwt
-local_user_for = _get_local_user
-
-
 __all__ = [
-    "authenticate_jwt",
     "get_current_user",
     "get_optional_user",
     "get_request_id",
-    "local_user_for",
 ]

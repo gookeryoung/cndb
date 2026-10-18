@@ -4,11 +4,6 @@
  *
  * 用法：默认 handlers 覆盖组件测试常用端点（auth / workspaces / tables /
  * fields / records / views / preferences）；单用例可 server.use() 覆盖.
- *
- * 注意：WebSocket **不**走 MSW —— 实时通道（`/api/v1/ws`）在测试里由
- * src/test/setup.ts 的惰性 WebSocket 替身直接掐断，避免
- * onUnhandledRequest: 'error' 把未声明 ws handler 的连接判为未处理帧
- * （报错 + 客户端指数退避重连刷屏）；见该文件 installInertWebSocket().
  */
 
 import { http, HttpResponse } from 'msw'

@@ -14,7 +14,6 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
 import NotificationBell from '@/components/NotificationBell'
-import { useRealtime } from '@/realtime/useRealtime'
 import { documentsApi } from '@/api/documents'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -72,9 +71,6 @@ export default function MainLayout() {
   const { isMobile } = useResponsive()
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
-  // 实时协作：进入工作区即建立 WebSocket（在线状态 + 事件推送 → 缓存失效）
-  // 连接状态不再挂在全局顶栏，由文档页顶栏的「协作编辑状态」标识承载
-  useRealtime(wid)
   const settingsOpen = useUiStore(s => s.settingsOpen)
   const settingsTab = useUiStore(s => s.settingsTab)
   const openSettings = useUiStore(s => s.openSettings)

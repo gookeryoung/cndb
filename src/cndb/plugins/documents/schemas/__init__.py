@@ -50,8 +50,6 @@ class ContentUpdate(BaseModel):
     base_updated_at: str | None = None
     # 无直编资格时转修改申请所用的内容基准版本号（缺省取服务端当前最新版本）
     base_version_number: int | None = Field(default=None, ge=0)
-    # 开始编辑时的正文（按段落锁并发编辑时用于服务端做段落级三方合并）
-    base_content: str | None = Field(default=None, description="客户端开始编辑时的正文快照")
 
 
 class DocumentDraftSave(BaseModel):
@@ -76,12 +74,6 @@ class DocumentPermissionGrant(BaseModel):
 
     user_id: int = Field(gt=0)
     role: str = Field(default="viewer", pattern="^(viewer|editor)$")
-
-
-class ParagraphLockRequest(BaseModel):
-    """段落锁批量操作请求体（keys 为位置键 p1 / p2 …）."""
-
-    keys: list[str] = Field(default_factory=list, max_length=200, description="段落键列表")
 
 
 class DocumentOut(BaseModel):
