@@ -126,6 +126,27 @@ describe('buildChartData — bar/line 维度聚合', () => {
     expect(data.series[0].data).toEqual([1, 2, 1])  // 华北 1，华东 2，华南 1（跳过 2 空值）
   })
 
+  it('非数值度量字段：聚合配 sum/avg/min/max 也回退为计数（避免空图或恒 1）', () => {
+    // 度量=项目编号（text）：非数值无法求和/平均，统一按 COUNT(col) 统计个数
+    const rows = [
+      row({ id: 1, 片区: '华东', 项目编号: 'PRJ001' }),
+      row({ id: 2, 片区: '华东', 项目编号: 'PRJ002' }),
+      row({ id: 3, 片区: '华南', 项目编号: 'PRJ003' }),
+      row({ id: 4, 片区: '华南', 项目编号: null }), // 空值跳过
+    ]
+    const areaField = makeField({ id: 10, name: '片区', field_type: 'text' })
+    const prjField = makeField({ id: 11, name: '项目编号', field_type: 'text' })
+    for (const aggregation of ['sum', 'avg', 'min', 'max'] as const) {
+      const data = buildChartData(rows, [areaField, prjField], cfg({
+        chart_type: 'bar', dimension_field: '片区', measure_field: '项目编号', aggregation,
+      }))
+      expect(data.kind).toBe('category')
+      if (data.kind !== 'category') continue
+      expect(data.categories).toEqual(['华东', '华南'])
+      expect(data.series[0].data).toEqual([2, 1])
+    }
+  })
+
   it('group_field 多系列：无值桶为 null 不虚构 0', () => {
     const rows: RowResponse[] = [
       row({ id: 1, 日期: '2026-01-05', 产品: 'A', 销售额: 100 }),
