@@ -2,7 +2,7 @@
 
 Status: Proposed（待评审）
 Date: 2026-10-19
-Related: `plugins/tables/models.py`、`plugins/tables/services/core/access.py`、`plugins/tables/services/core/records.py`、`plugins/tables/routers/permissions.py`、`plugins/tables/routers/records.py`、`plugins/change_requests/services.py`（双轨制）；上游视图可见性三档模型取自 ADR 0003（该 ADR 文档已随视图权限调整移除，commit 30790638）
+Related: `plugins/tables/models.py`、`plugins/tables/services/core/access.py`、`plugins/tables/services/core/records.py`、`plugins/tables/routers/permissions.py`、`plugins/tables/routers/records.py`、`plugins/change_requests/services.py`（双轨制）；上游视图可见性三档模型取自 ADR 0003
 需求卡片: 无卡片（需求直接立项，原文见「口径」）
 
 ## 口径（需求 → 设计落点）

@@ -20,5 +20,5 @@
 ## 需求移除 / 变更
 
 1. 先清理 ADR，再改代码：删去失效的口径行 / 现状条目 / 决策行 / 测试与分期，不留「历史方案」段落，保持 ADR 与当前项目一致。
-2. 需求作废或被替代：`Status` 改 `Superseded`（+ `Superseded by: ADR NNNN`）或 `Deprecated`（+ 理由），文件保留、索引同步，留痕写 CHANGELOG。
-3. 细则见 [.trae/rules/design.md](.trae/rules/design.md)；`make adr-check` 校验索引 Status 一致与替代者行。
+2. ADR 被新方案替代或需求作废：**直接删除**该 ADR 文件、README 索引行及代码 / 文档中的引用，不在仓库保留 `Superseded` / `Deprecated` 文档；编号不复用，追溯看 git 历史（`git log -- docs/adr/`）。
+3. 细则见 [.trae/rules/design.md](.trae/rules/design.md)；`make adr-check` 会拦截残留的失效状态文档，并校验索引 Status 一致。

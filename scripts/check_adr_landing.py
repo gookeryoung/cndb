@@ -7,8 +7,8 @@
 
 检查项：
 
-- ``Status`` 取值合法；``Accepted`` / ``Implemented`` 必须有「落地状态」表。
-- ``Superseded`` 必须写 ``Superseded by: ADR NNNN``；``Deprecated`` 必须写 ``Deprecated: <理由>``。
+- ``Status`` 只允许 ``Proposed`` / ``Accepted`` / ``Implemented``；``Superseded`` / ``Deprecated`` 属失效文档，应直接删除。
+- ``Accepted`` / ``Implemented`` 必须有「落地状态」表。
 - 标为「已落地」的期：代码落点与测试文件必须存在，提交列应为 sha。
 - 全部期已落地但 ``Status`` 仍为 ``Proposed`` → 告警；CHANGELOG 未出现 ``ADR NNNN`` → 错误。
 - ``Related`` 中的文件路径必须存在；``docs/adr/README.md`` 索引必须覆盖本 ADR、链接可达且 Status 与 ADR 一致。
@@ -25,7 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ADR_DIR = ROOT / "docs" / "adr"
 SKIP_FILES = {"TEMPLATE.md", "README.md"}
-VALID_STATUS = {"Proposed", "Accepted", "Implemented", "Deprecated", "Superseded"}
+VALID_STATUS = {"Proposed", "Accepted", "Implemented"}
+REMOVED_STATUS = {"Superseded", "Deprecated"}
 VALID_PHASE = {"未开始", "进行中", "已落地"}
 PATH_BASES = (ROOT, ROOT / "src" / "cndb", ROOT / "frontend", ROOT / "src")
 BACKTICK = re.compile(r"`([^`]+)`")
@@ -96,12 +97,10 @@ def _check_file(path: Path, changelog: str) -> tuple[list[str], list[str]]:
     status = _status(text)
     if status is None:
         errors.append("缺少 Status 行")
+    elif status in REMOVED_STATUS:
+        errors.append(f"Status 为 {status}：ADR 已失效，应直接删除文件与 README 索引行（git 历史可追溯），不在仓库保留")
     elif status not in VALID_STATUS:
         errors.append(f"Status 取值非法: {status}")
-    elif status == "Superseded" and re.search(r"^Superseded by:\s*\S", text, re.MULTILINE) is None:
-        errors.append("Status 为 Superseded 但未写 `Superseded by: ADR NNNN`（需求已变更时 ADR 必须交代替代者）")
-    elif status == "Deprecated" and re.search(r"^Deprecated:\s*\S", text, re.MULTILINE) is None:
-        errors.append("Status 为 Deprecated 但未写 `Deprecated: <理由>`")
 
     related = re.search(r"^Related:\s*(.+)$", text, re.MULTILINE)
     if related is not None:

@@ -6,10 +6,12 @@
 
 | 编号 | 标题 | Status | 落地阶段 | 代码 | 测试 | CHANGELOG |
 |---|---|---|---|---|---|---|
+| [0002](0002-frontend-check-sharding.md) | Frontend Check 拆分并行 | Accepted | 静态链已落地；分片未采用 | `Makefile`、`.codeup/pipelines/ci.yml` | `frontend/scripts/check-coverage.mjs` | [未发布](../../CHANGELOG.md) |
+| [0003](0003-view-visibility-permission-model.md) | 视图可见性三档模型 | Implemented | P0-P3 + D6 已落地 | `src/cndb/plugins/tables/services/core/view_access.py` | `tests/test_view_share_p3.py` | [未发布](../../CHANGELOG.md) |
 | [0004](0004-row-level-permission-rules.md) | 行级权限规则 | Proposed | P0-P2 已落地（待评审） | `row_access.py`、`row_permissions.py` | `tests/test_row_*.py` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 
-- ADR 0003（视图可见性三档模型）的文档已随视图权限调整移除（commit 30790638）；0004「与既有 ADR 的关系」保留其历史结论。
-- 新增 ADR 时按 `NNNN-<topic>.md` 命名，并把编号、标题、Status、落地阶段补进本表。
-- 需求移除 / 变更时：先清理 ADR 正文（删失效段落与决策行），再改代码；需求作废或被替代则 `Status` 改 `Superseded`（+ `Superseded by: ADR NNNN`）或 `Deprecated`（+ 理由），文件保留并同步本表。`make adr-check` 校验索引 Status 与 ADR 一致、替代者行存在。
+- 新增 ADR 时按 `NNNN-<topic>.md` 命名，并把编号、标题、Status、落地阶段补进本表；编号一旦分配不复用。
+- ADR 被新方案替代或需求作废时**直接删除**该文件、本表索引行及代码 / 文档中的引用，不在仓库保留 `Superseded` / `Deprecated` 文档；历史追溯看 git（`git log -- docs/adr/`）。
+- 需求移除 / 变更时先清理 ADR 正文（删失效段落与决策行），再改代码。`make adr-check` 校验索引 Status 与 ADR 一致，并拦截残留的失效状态文档。

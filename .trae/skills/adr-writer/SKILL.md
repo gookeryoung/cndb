@@ -26,8 +26,8 @@ description: Use when a requirement card or feature intent needs a design decisi
 
 1. **先改 ADR，再动代码**：删或改对应「口径」行，Context、决策记录、测试清单与分期同步收缩，保持 ADR 只描述当前项目。
 2. 已失效内容直接删除，不写「曾用方案 / 已废弃」叙述（留痕写 CHANGELOG）。
-3. 需求整体作废：`Status: Superseded` + `Superseded by: ADR NNNN`；无替代方案则 `Status: Deprecated` + `Deprecated: <理由>`。文件保留，索引同步。
-4. `make adr-check` 通过（索引 Status 一致、替代者行存在、失效路径已清）。
+3. 需求整体作废或被替代：**直接删除**该 ADR 文件、`docs/adr/README.md` 索引行与全仓引用（git 历史可追溯）；不保留 `Superseded` / `Deprecated` 文档，编号不复用。
+4. `make adr-check` 通过（索引 Status 一致、不存在失效状态文档、失效路径已清）。
 
 ## 产出
 
