@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier
-_commit: v1.0.8
+_commit: v1.0.12
 _src_path: https://gitee.com/gooker_young/coopie.git
 author_email: gooker_young@qq.com
 author_name: gookeryoung
@@ -16,4 +16,3 @@ use_docker: true
 use_docs: true
 use_domestic_mirrors: true
 use_tox: true
-
