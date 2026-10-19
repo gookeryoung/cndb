@@ -105,15 +105,23 @@ for _d in (DATA_DIR, CONFIG_DIR, DATABASE_DIR, UPLOAD_DIR, PLUGINS_DIR, BACKUP_D
 
 
 def _get_version() -> str:
-    """从已安装的包元数据中读取版本号.
+    """解析应用版本号.
 
-    优先从 importlib.metadata 获取（安装后的真实版本），
-    回退到硬编码版本（开发模式/未安装时）。
+    优先从 importlib.metadata 读取已安装分发的元数据（wheel / editable install
+    的真实版本）；打包运行（fspack/Nuitka）未随包分发 ``cndb-*.dist-info``，
+    该查询必然抛 PackageNotFoundError，此时回退到包内常量 ``cndb.__version__``
+    ——它与 pyproject.toml 由 bump-my-version 同步维护，随源码/字节码一起分发。
+
+    回归背景：旧实现在此处回退到硬编码占位串 ``"0.1.0.dev"``，于是打包版
+    GUI 标题 / ``cndb info`` / ``/api/v1/system/about`` 一律报 0.1.0，
+    与实际版本（0.4.9）不符。
     """
     try:
         return importlib.metadata.version("cndb")
     except importlib.metadata.PackageNotFoundError:
-        return "0.1.0.dev"
+        import cndb
+
+        return cndb.__version__
 
 
 class Settings(BaseSettings):
