@@ -137,6 +137,7 @@ function buildOption(data: ChartData, cfg: ChartConfig, colors: ThemeColors): EC
   switch (data.kind) {
     case 'category': {
       const isLine = cfg.chart_type === 'line'
+      const hasLegend = data.series.length > 1
       const series = data.series.map((s, i) => ({
         name: s.name,
         type: isLine ? 'line' : 'bar',
@@ -147,8 +148,11 @@ function buildOption(data: ChartData, cfg: ChartConfig, colors: ThemeColors): EC
       }))
       return {
         tooltip: { trigger: 'axis', ...tooltipStyle(colors) },
-        legend: data.series.length > 1 ? { textStyle: { color: colors.secondary } } : undefined,
-        grid: { left: 48, right: 24, top: data.series.length > 1 ? 40 : 24, bottom: 32 },
+        // type:'scroll'：项数多时单行滚动（翻页）而非换行堆叠，避免 legend 向下压进绘图区
+        legend: hasLegend
+          ? { type: 'scroll', top: 0, textStyle: { color: colors.secondary }, itemGap: 8 }
+          : undefined,
+        grid: { left: 48, right: 24, top: hasLegend ? 40 : 24, bottom: 32 },
         xAxis: categoryAxis(colors, data.categories),
         yAxis: valueAxis(colors),
         series,
@@ -157,11 +161,12 @@ function buildOption(data: ChartData, cfg: ChartConfig, colors: ThemeColors): EC
     case 'pie':
       return {
         tooltip: { trigger: 'item', ...tooltipStyle(colors) },
-        legend: { textStyle: { color: colors.secondary } },
+        // 饼图图例列出各扇区（维度项）：项数多时用滚动图例，单行占位不遮挡饼体
+        legend: { type: 'scroll', top: 0, textStyle: { color: colors.secondary }, itemGap: 8 },
         series: [{
           type: 'pie',
           radius: '62%',
-          center: ['50%', '52%'],
+          center: ['50%', '55%'],
           data: data.items.map((it, i) => ({
             name: it.name,
             value: it.value,

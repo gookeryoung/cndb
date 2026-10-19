@@ -14,6 +14,7 @@
  */
 
 import type { Field, RowResponse } from '@/api'
+import { FIELD_TYPE_ALIASES } from '../cells/fieldOps'
 import {
   linearRegression,
   max as ssMax,
@@ -64,6 +65,30 @@ export interface ChartConfig {
 
 /** 无 group_field 时的单系列名 */
 export const SINGLE_SERIES = '__single__'
+
+/** 数值类字段类型（registry 规范名；timestamp 视作可数值化的时间戳轴） */
+const NUMERIC_FIELD_TYPES = new Set(['number', 'float', 'percentage', 'timestamp'])
+
+/** 字段类型是否数值类（先解析历史别名，如 decimal→float） */
+function isNumericFieldType(fieldType: string | undefined): boolean {
+  if (!fieldType) return false
+  return NUMERIC_FIELD_TYPES.has(FIELD_TYPE_ALIASES[fieldType] ?? fieldType)
+}
+
+/** 度量的有效聚合方式.
+ *
+ * 度量字段为非数值类型（文本/选择/日期等）时回退 count —— 这类字段无法求和/平均，
+ * 但可按出现次数统计个数（对齐 SQL COUNT(col)）；其余情况沿用配置（默认 sum）。
+ */
+function effectiveAggregation(
+  agg: ChartAggregation | undefined,
+  measureDef: Field | undefined,
+): ChartAggregation {
+  const base = agg ?? 'sum'
+  if (base === 'count') return 'count'
+  if (measureDef && !isNumericFieldType(measureDef.field_type)) return 'count'
+  return base
+}
 
 // ── 数值提取 ──────────────────────────────────────────
 
@@ -150,8 +175,9 @@ function isEmptyValue(v: unknown): boolean {
 
 /** 维度归桶公共骨架：dimKey → seriesKey → 数值列表（空维度归「未分组」；空值行剔除）.
  *
- * - 当 aggregation === 'count' 时，measure_field 可为任意类型（字符串/数字皆可），
- *   按 SQL COUNT(col) 语义只剔除 NULL/空值行，桶内放占位 1，最终 count = values.length.
+ * - 当有效聚合为 count（含聚合方式配成 count，或度量字段为非数值类型时回退 count）时，
+ *   measure_field 可为任意类型（字符串/数字皆可），按 SQL COUNT(col) 语义只剔除 NULL/空值行，
+ *   桶内放占位 1，最终 count = values.length.
  * - 其余聚合（sum/avg/min/max）要求 measure_field 值可转数值，非数值行剔除.
  */
 function bucketByDimension(
@@ -163,7 +189,8 @@ function bucketByDimension(
   const dimDef = fields.find((f) => f.name === cfg.dimension_field)
   const groupDef = fields.find((f) => f.name === cfg.group_field)
   const granularity = cfg.date_granularity ?? 'month'
-  const isCount = cfg.aggregation === 'count'
+  const measureDef = fields.find((f) => f.name === cfg.measure_field)
+  const isCount = effectiveAggregation(cfg.aggregation, measureDef) === 'count'
   const buckets = new Map<string, Map<string, number[]>>()
   for (const r of rows) {
     const dimKey = axisKeyForRow(r, dimDef, granularity) || UNGROUPED_LABEL
@@ -195,7 +222,8 @@ function bucketByDimension(
 /** bar/line：维度 × 度量聚合，group_field 拆多系列 */
 function buildCategoryData(rows: RowResponse[], fields: Field[], cfg: ChartConfig): CategoryChartData {
   const dimDef = fields.find((f) => f.name === cfg.dimension_field)
-  const agg = cfg.aggregation ?? 'sum'
+  const measureDef = fields.find((f) => f.name === cfg.measure_field)
+  const agg = effectiveAggregation(cfg.aggregation, measureDef)
   const hasGroup = !!cfg.group_field
   const { buckets } = bucketByDimension(rows, fields, cfg, hasGroup)
 
@@ -234,7 +262,8 @@ function buildCategoryData(rows: RowResponse[], fields: Field[], cfg: ChartConfi
 /** pie：维度聚合为扇区 */
 function buildPieData(rows: RowResponse[], fields: Field[], cfg: ChartConfig): PieChartData {
   const dimDef = fields.find((f) => f.name === cfg.dimension_field)
-  const agg = cfg.aggregation ?? 'sum'
+  const measureDef = fields.find((f) => f.name === cfg.measure_field)
+  const agg = effectiveAggregation(cfg.aggregation, measureDef)
   const { buckets } = bucketByDimension(rows, fields, cfg, false)
   const categories = sortAxisKeys([...buckets.keys()], isDateAxis(dimDef))
   return {
