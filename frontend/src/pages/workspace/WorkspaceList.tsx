@@ -12,7 +12,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useResponsive } from '@/hooks/useResponsive'
 import { workspaceApi } from '@/api'
-import type { Workspace, WorkspaceRole, WorkspaceVisibility } from '@/api'
+import type { Workspace, WorkspaceRole, WorkspaceType, WorkspaceVisibility } from '@/api'
+import { WORKSPACE_TYPE_HINT, WORKSPACE_TYPE_LABEL, WORKSPACE_TYPE_OPTIONS, workspaceLandingSegment } from '@/utils/workspaceType'
 import WorkspaceSettingsModal from '@/pages/settings/WorkspaceSettingsModal'
 import WorkspaceBackupDialog from '@/pages/settings/WorkspaceBackupDialog'
 
@@ -31,6 +32,11 @@ const ROLE_LABEL: Record<WorkspaceRole, string> = {
 
 const ROLE_BADGE_COLOR: Record<WorkspaceRole, string> = {
   owner: 'gold', editor: 'cyan', viewer: 'default',
+}
+
+/** 工作区类型徽标配色：标识功能范围（非权限），与公开性色系区分 */
+const TYPE_TAG_COLOR: Record<WorkspaceType, string> = {
+  data_doc: 'geekblue', data: 'purple', doc: 'orange',
 }
 
 export default function WorkspaceList() {
@@ -60,19 +66,21 @@ export default function WorkspaceList() {
     mutationFn: (v: {
       name: string; description?: string;
       visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean;
+      workspace_type?: WorkspaceType;
     }) => workspaceApi.create({
       name: v.name,
       description: v.description ?? '',
       visibility: v.visibility ?? 'member',
       tags: v.tags ?? [],
       allow_edit: v.allow_edit ?? true,
+      workspace_type: v.workspace_type ?? 'data_doc',
     }),
     onSuccess: (w) => {
       message.success(`已创建 "${w.name}"`)
       setCreateOpen(false)
       form.resetFields()
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
-      navigate(`/w/${w.id}/tables`)
+      navigate(`/w/${w.id}/${workspaceLandingSegment(w.workspace_type)}`)
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '创建工作区失败，请重试'),
   })
@@ -200,13 +208,16 @@ export default function WorkspaceList() {
                   onClick={(e) => {
                     const target = e.target as HTMLElement
                     if (target.closest('.ant-card-actions')) return
-                    navigate(`/w/${w.id}/tables`)
+                    navigate(`/w/${w.id}/${workspaceLandingSegment(w.workspace_type)}`)
                   }}
                 >
                   {/* 头部：标签 + 公开性 + 角色 */}
                   <div style={{ marginBottom: isMobile ? 4 : 8, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: '70%' }}>
                       {w.pinned && <Tag color="gold" style={{ marginRight: 4 }}>📌 置顶</Tag>}
+                      <Tag color={TYPE_TAG_COLOR[w.workspace_type ?? 'data_doc']} style={{ marginRight: 0 }}>
+                        {WORKSPACE_TYPE_LABEL[w.workspace_type ?? 'data_doc']}
+                      </Tag>
                       {(w.tags ?? []).slice(0, 2).map(t => (
                         <Tag key={t} style={{ marginRight: 0 }}>{t}</Tag>
                       ))}
@@ -264,7 +275,7 @@ export default function WorkspaceList() {
           <Form
             form={form}
             layout="vertical"
-            initialValues={{ visibility: 'member', allow_edit: true }}
+            initialValues={{ visibility: 'member', allow_edit: true, workspace_type: 'data_doc' }}
             onFinish={(v) => {
               const tagsStr = (v.tags as string) || ''
               create.mutate({
@@ -278,6 +289,13 @@ export default function WorkspaceList() {
             </Form.Item>
             <Form.Item name="description" label="描述（可选）">
               <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
+            </Form.Item>
+            <Form.Item
+              name="workspace_type"
+              label="工作区类型"
+              extra={WORKSPACE_TYPE_HINT[(form.getFieldValue('workspace_type') as WorkspaceType) ?? 'data_doc']}
+            >
+              <Select options={WORKSPACE_TYPE_OPTIONS} />
             </Form.Item>
             <Form.Item name="visibility" label="公开性">
               <Select
@@ -332,7 +350,7 @@ export default function WorkspaceList() {
           setImportOpen(false)
           queryClient.invalidateQueries({ queryKey: ['workspaces'] })
           message.success(`已导入工作区「${w.name}」`)
-          navigate(`/w/${w.id}/tables`)
+          navigate(`/w/${w.id}/${workspaceLandingSegment(w.workspace_type)}`)
         }}
         onError={(err) => message.error(err instanceof Error ? err.message : '导入失败')}
       />}

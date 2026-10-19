@@ -17,6 +17,7 @@ import NotificationBell from '@/components/NotificationBell'
 import { documentsApi } from '@/api/documents'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
+import { workspaceLandingSegment, workspaceTypeFeatures } from '@/utils/workspaceType'
 import { scrollActiveTabIntoViewNextFrame } from './tabScroll'
 
 // Modal 组件 lazy import：点击打开时才加载
@@ -110,33 +111,35 @@ export default function MainLayout() {
     queryFn: () => workspaceApi.list(),
   })
 
+  const currentWs = workspaces.find(w => String(w.id) === wid)
+  /** 当前工作区按类型开放的功能模块（类型缺失时按默认 data_doc 全开） */
+  const wsFeatures = workspaceTypeFeatures(currentWs?.workspace_type)
+
   const { data: tables = [], isSuccess: tablesReady } = useQuery({
     queryKey: ['workspaces', wid, 'tables'],
     queryFn: () => (wid ? tableApi.list(wid) : Promise.resolve([])),
-    enabled: !!wid,
+    enabled: !!wid && wsFeatures.tables,
   })
 
   // 文档数徽标：limit=1 仅取 total 计数，避免拉全量
   const { data: docCount, isSuccess: docsReady } = useQuery({
     queryKey: ['documents', wid, 'count'],
     queryFn: () => documentsApi.list(Number(wid), { limit: 1 }),
-    enabled: !!wid,
+    enabled: !!wid && wsFeatures.documents,
     staleTime: 60_000,
   })
 
   // 后端已按 DataTable.order（用户拖拽顺序）返回，这里直接使用即可。
   const orderedTables = tables
 
-  const currentWs = workspaces.find(w => String(w.id) === wid)
-
-  /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），覆盖数据表、文档与设置入口.
+  /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），按工作区类型过滤可见页签.
    *
    * 各项带数量徽标：仅数据就绪后渲染徽标（0 也显示），未就绪时不渲染占位，
    * 避免加载瞬间误导（class cn-ws-tab-count，样式走 var(--cn-*) 主题变量）。
    * 「工作区设置」无徽标。
    */
   const wsTabItems: TabsProps['items'] = [
-    {
+    ...(wsFeatures.tables ? [{
       key: 'tables',
       label: (
         <span>
@@ -144,8 +147,8 @@ export default function MainLayout() {
           {tablesReady && <span className="cn-ws-tab-count">{tables.length}</span>}
         </span>
       ),
-    },
-    {
+    }] : []),
+    ...(wsFeatures.documents ? [{
       key: 'documents',
       label: (
         <span>
@@ -153,15 +156,15 @@ export default function MainLayout() {
           {docsReady && docCount && <span className="cn-ws-tab-count">{docCount.total}</span>}
         </span>
       ),
-    },
-    {
+    }] : []),
+    ...(wsFeatures.analytics ? [{
       key: 'analytics',
       label: (
         <span>
           <BarChartOutlined /> 数据分析
         </span>
       ),
-    },
+    }] : []),
     { key: 'settings', label: <span><SettingOutlined /> 工作区设置</span> },
   ]
   // ── 表级页签（融合导航行，紧随工作区分页之后）──
@@ -208,6 +211,19 @@ export default function MainLayout() {
     () => scrollActiveTabIntoViewNextFrame(wsTabsRef.current),
     [location, wid, isMobile, tablesReady, tables.length, docsReady, docCount?.total],
   )
+
+  // 类型门控：当前 URL 落在该工作区未开放的功能区（如文档类访问 /tables）时，
+  // 重定向到该类型的落地页，避免出现空页签/空白内容。
+  useEffect(() => {
+    if (!wid || !currentWs) return
+    const feat = workspaceTypeFeatures(currentWs.workspace_type)
+    const inTables = location.startsWith(`/w/${wid}/tables`)
+    const inDocuments = location.startsWith(`/w/${wid}/documents`)
+    const inAnalytics = location.startsWith(`/w/${wid}/analytics`)
+    if ((!feat.tables && inTables) || (!feat.documents && inDocuments) || (!feat.analytics && inAnalytics)) {
+      navigate(`/w/${wid}/${workspaceLandingSegment(currentWs.workspace_type)}`, { replace: true })
+    }
+  }, [location, wid, currentWs, navigate])
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
@@ -395,8 +411,9 @@ export default function MainLayout() {
 
       <Layout style={{ flex: 1, minHeight: 0 }}>
         {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变。
-            管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担 */}
-        {!isMobile && !inAdminConsole && (
+            管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担。
+            文档类工作区无数据表功能 → 不渲染表导航 Sider，内容区拿到整幅宽度 */}
+        {!isMobile && !inAdminConsole && wsFeatures.tables && (
           <Sider
             collapsible collapsed={collapsed} onCollapse={setCollapsed}
             width={240} collapsedWidth={60}
@@ -510,16 +527,16 @@ export default function MainLayout() {
         </Layout>
       </Layout>
 
-      {/* 移动端抽屉导航：替代常驻 Sider，点击表项后自动收起 */}
+      {/* 移动端抽屉导航：替代常驻 Sider，点击表项后自动收起（文档类工作区无表导航） */}
       <Drawer
         title="导航"
         placement="left"
-        open={isMobile && mobileNavOpen}
+        open={isMobile && mobileNavOpen && wsFeatures.tables}
         onClose={() => setMobileNavOpen(false)}
         width={280}
         styles={{ body: { padding: 0 } }}
       >
-        {renderTableNav(true)}
+        {wsFeatures.tables && renderTableNav(true)}
       </Drawer>
 
       <Suspense fallback={<ModalFallback />}>

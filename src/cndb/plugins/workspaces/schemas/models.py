@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from cndb.plugins.workspaces.models import (
     DEFAULT_STORAGE_QUOTA_BYTES,
     WorkspaceRole,
+    WorkspaceType,
     WorkspaceVisibility,
 )
 
@@ -22,6 +23,7 @@ class WorkspaceCreate(BaseModel):
     visibility: WorkspaceVisibility = WorkspaceVisibility.MEMBER
     tags: list[str] = []
     allow_edit: bool = True
+    workspace_type: WorkspaceType = WorkspaceType.DATA_DOC
 
 
 class WorkspaceUpdate(BaseModel):
@@ -33,6 +35,7 @@ class WorkspaceUpdate(BaseModel):
     visibility: WorkspaceVisibility | None = None
     tags: list[str] | None = None
     allow_edit: bool | None = None
+    workspace_type: WorkspaceType | None = None
 
 
 class WorkspaceResponse(BaseModel):
@@ -45,6 +48,7 @@ class WorkspaceResponse(BaseModel):
     visibility: WorkspaceVisibility
     tags: list[str]
     allow_edit: bool
+    workspace_type: WorkspaceType = WorkspaceType.DATA_DOC
     # 存储配额（字节），默认 100MB；由系统管理员在管理台「空间分配」调整
     storage_quota_bytes: int = DEFAULT_STORAGE_QUOTA_BYTES
     created_by_id: int | None
