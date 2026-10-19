@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
 from contextlib import suppress
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -170,6 +172,31 @@ def _isolate_upload_dir(tmp_path_factory, monkeypatch_session):
     monkeypatch_session.setattr(settings, "UPLOAD_DIR", upload_dir)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_docs_dir(tmp_path_factory, monkeypatch_session):
+    """把文档外存根目录重定向到 session 级临时目录（原因同 _isolate_upload_dir）.
+
+    默认根目录跟随 DATABASE_URL 落在 data/docs，测试里直接写会污染真实数据；
+    且文外存路径按 doc_id 分目录，跨用例 id 重复会互相覆盖。
+    """
+    from cndb.plugins.documents.services import content as content_service
+
+    docs_dir = tmp_path_factory.mktemp("docs")
+    monkeypatch_session.setattr(content_service, "_DOCS_DIR", docs_dir)
+
+
+def _clear_dir(path: Path) -> None:
+    """清空目录内容（保留目录本身），不可删除的条目忽略."""
+    if not path.is_dir():
+        return
+    for child in path.iterdir():
+        with suppress(OSError):
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                child.unlink(missing_ok=True)
+
+
 @pytest.fixture
 def db(_session_factory):
     """function 级 session — 每个测试独立 session."""
@@ -182,7 +209,12 @@ def db(_session_factory):
 
 @pytest.fixture(autouse=True)
 def _cleanup_tables(db_engine):
-    """autouse：每个测试后等后台线程结束，再清空全部表 + 重置自增计数器."""
+    """autouse：每个测试后等后台线程结束，再清空全部表 + 重置自增计数器.
+
+    磁盘侧同样按用例清理：workspace/document id 会随 sqlite_sequence 归零，
+    上一条用例留下的 ``UPLOAD_DIR/{ws_id}``、``docs/{doc_id}`` 会被下一条用例
+    按同名 id 统计进用量（曾导致「空工作区已用空间不为 0」）。
+    """
     yield
     # 等待 import/治理后台线程完成，避免残留线程与清表冲突
     from cndb.plugins.tables.services.governance.tasks import join_background_threads as join_gov
@@ -198,6 +230,11 @@ def _cleanup_tables(db_engine):
         with suppress(Exception):
             conn.execute(text("DELETE FROM sqlite_sequence WHERE name NOT LIKE 'sqlite_%'"))
         conn.commit()
+
+    from cndb.plugins.documents.services import content as content_service
+
+    _clear_dir(Path(settings.UPLOAD_DIR))
+    _clear_dir(Path(content_service._DOCS_DIR))
 
 
 @pytest.fixture(scope="session")
