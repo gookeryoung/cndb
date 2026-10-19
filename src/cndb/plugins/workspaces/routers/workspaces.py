@@ -312,20 +312,14 @@ def toggle_pin(
 
 
 def _row_scope_where(db: Any, tbl: Any, sa_table: Any, user: Any = None) -> Any | None:
-    """编译该表的行级过滤条件（无配置或调用者豁免时返回 None）."""
-    from cndb.plugins.tables.services.core.access import (
-        get_row_scope,
-        row_filter_conjunction,
-        row_filters_bypass,
-    )
-    from cndb.plugins.tables.services.core.query import compile_filters
+    """编译该表的**读范围**条件（无配置或调用者豁免时返回 None）.
 
-    if user is not None and row_filters_bypass(db, tbl, user):
-        return None
-    scope = get_row_scope(db, tbl)
-    if not scope:
-        return None
-    return compile_filters(tbl, sa_table, scope, row_filter_conjunction(db, tbl))
+    ADR 0004：导出取数复用 ``row_access.row_read_scope_where``（默认档 ∪ 命中的行级规则），
+    与记录读取 / 审计同一入口，导出不得越过读范围。
+    """
+    from cndb.plugins.tables.services.core.row_access import row_read_scope_where
+
+    return row_read_scope_where(db, tbl, sa_table, user)
 
 
 @router.get("/{workspace_id}/export")
