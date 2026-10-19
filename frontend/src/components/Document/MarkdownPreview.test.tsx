@@ -109,6 +109,34 @@ describe('MarkdownPreview 双向链接', () => {
   })
 })
 
+describe('MarkdownPreview 代码块', () => {
+  it('围栏代码块交给 CodeBlock：语言标签 + 高亮，且不产生 pre>div 嵌套', () => {
+    const { container } = renderProviders(
+      <MarkdownPreview content={'```ts\nconst n = 1\n```'} />,
+    )
+    expect(container.querySelector('.cn-codeblock')).not.toBeNull()
+    expect(screen.getByText('TypeScript')).toBeInTheDocument()
+    expect(container.querySelector('.cn-tok-keyword')?.textContent).toBe('const')
+    expect(container.querySelector('pre > div')).toBeNull()
+  })
+
+  it('行内代码仍渲染为行内 <code>，不套代码块容器', () => {
+    const { container } = renderProviders(
+      <MarkdownPreview content={'在 `documents` 目录下'} />,
+    )
+    expect(container.querySelector('.cn-codeblock')).toBeNull()
+    expect(container.querySelector('p code')?.textContent).toBe('documents')
+  })
+
+  it('未标注语言的围栏代码块按纯文本渲染，含语言占位为「代码」', () => {
+    const { container } = renderProviders(
+      <MarkdownPreview content={'```\nplain text\n```'} />,
+    )
+    expect(screen.getByText('代码')).toBeInTheDocument()
+    expect(container.querySelector('[class*="cn-tok-"]')).toBeNull()
+  })
+})
+
 describe('Markdown 图片段落嵌套', () => {
   beforeEach(() => {
     server.resetHandlers()
