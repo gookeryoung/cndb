@@ -336,9 +336,9 @@ export default function GridPage() {
   const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
-      const KANBAN_MODES = new Set<string>(['kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart'])
+      const MODE_VIEW_TYPES = new Set<string>(['tree', 'kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'flow'])
       const vt = v.view_type ?? ''
-      const newMode: ViewMode = KANBAN_MODES.has(vt) ? (vt as ViewMode) : 'grid'
+      const newMode: ViewMode = MODE_VIEW_TYPES.has(vt) ? (vt as ViewMode) : 'grid'
 
       patchView({
         activeViewId: v.id,
