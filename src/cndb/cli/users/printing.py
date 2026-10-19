@@ -8,6 +8,7 @@ from typing import Any
 from cndb.cli.users.commands import (
     CreateResult,
     DeleteCheckResult,
+    EditResult,
     ImportReport,
 )
 from cndb.plugins.accounts.models import User
@@ -19,6 +20,15 @@ def print_create_result(result: CreateResult) -> None:
         parts.append(result.note)
     print(" ".join(parts))
     print(f"     password: {result.password}")
+
+
+def print_edit_result(result: EditResult) -> None:
+    if not result.changes:
+        print(f"[info] 用户 {result.username} (id={result.user_id}) 无变更")
+        return
+    print(f"[ok] 已更新用户 {result.username} (id={result.user_id}):")
+    for change in result.changes:
+        print(f"     - {change}")
 
 
 def print_delete_check(check: DeleteCheckResult | None) -> None:
