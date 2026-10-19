@@ -12,3 +12,4 @@
 
 - ADR 0003（视图可见性三档模型）的文档已随视图权限调整移除（commit 30790638）；0004「与既有 ADR 的关系」保留其历史结论。
 - 新增 ADR 时按 `NNNN-<topic>.md` 命名，并把编号、标题、Status、落地阶段补进本表。
+- 需求移除 / 变更时：先清理 ADR 正文（删失效段落与决策行），再改代码；需求作废或被替代则 `Status` 改 `Superseded`（+ `Superseded by: ADR NNNN`）或 `Deprecated`（+ 理由），文件保留并同步本表。`make adr-check` 校验索引 Status 与 ADR 一致、替代者行存在。

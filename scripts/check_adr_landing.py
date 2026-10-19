@@ -8,9 +8,10 @@
 检查项：
 
 - ``Status`` 取值合法；``Accepted`` / ``Implemented`` 必须有「落地状态」表。
+- ``Superseded`` 必须写 ``Superseded by: ADR NNNN``；``Deprecated`` 必须写 ``Deprecated: <理由>``。
 - 标为「已落地」的期：代码落点与测试文件必须存在，提交列应为 sha。
 - 全部期已落地但 ``Status`` 仍为 ``Proposed`` → 告警；CHANGELOG 未出现 ``ADR NNNN`` → 错误。
-- ``Related`` 中的文件路径必须存在；``docs/adr/README.md`` 索引必须覆盖本 ADR 且链接可达。
+- ``Related`` 中的文件路径必须存在；``docs/adr/README.md`` 索引必须覆盖本 ADR、链接可达且 Status 与 ADR 一致。
 - 「交接」节应包含当前阶段 / 下一步 / 已知坑（缺失告警）。
 """
 
@@ -97,6 +98,10 @@ def _check_file(path: Path, changelog: str) -> tuple[list[str], list[str]]:
         errors.append("缺少 Status 行")
     elif status not in VALID_STATUS:
         errors.append(f"Status 取值非法: {status}")
+    elif status == "Superseded" and re.search(r"^Superseded by:\s*\S", text, re.MULTILINE) is None:
+        errors.append("Status 为 Superseded 但未写 `Superseded by: ADR NNNN`（需求已变更时 ADR 必须交代替代者）")
+    elif status == "Deprecated" and re.search(r"^Deprecated:\s*\S", text, re.MULTILINE) is None:
+        errors.append("Status 为 Deprecated 但未写 `Deprecated: <理由>`")
 
     related = re.search(r"^Related:\s*(.+)$", text, re.MULTILINE)
     if related is not None:
@@ -158,9 +163,22 @@ def _check_index(adr_paths: list[Path]) -> tuple[list[str], list[str]]:
     text = index.read_text(encoding="utf-8")
     errors: list[str] = []
     warnings: list[str] = []
+
+    indexed_status: dict[str, str] = {}
+    for row in _table_rows(text):
+        match = re.search(r"\(([^)]+\.md)\)", row.get("编号", ""))
+        if match is not None:
+            indexed_status[Path(match.group(1)).name] = row.get("Status", "").strip()
+
     for path in adr_paths:
         if path.name not in text:
             warnings.append(f"README.md 未索引 {path.name}")
+            continue
+        # 索引与 ADR 本体双份记录 Status，最容易在需求变更后漂移，故强制一致
+        listed = indexed_status.get(path.name)
+        actual = _status(path.read_text(encoding="utf-8"))
+        if listed and actual and listed != actual:
+            errors.append(f"索引 Status({listed}) 与 ADR Status({actual}) 不一致: {path.name}")
     for target in re.findall(r"\]\(([^)#]+?\.md)\)", text):
         if target.startswith(("http://", "https://")):
             continue
