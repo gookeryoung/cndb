@@ -186,6 +186,8 @@ uv run python scripts/bench_10k_rows.py
 
 覆盖门禁阈值 95%，任何 PR 低于该值自动拒绝。
 
+AI 自动驱动开发流（需求意图 → 方案 → 代码 → 测试 → 部署）见 [docs/AI_DRIVEN_DEV_FLOW.md](docs/AI_DRIVEN_DEV_FLOW.md)。
+
 ## 许可证
 
 MIT — 见 [LICENSE](LICENSE)
