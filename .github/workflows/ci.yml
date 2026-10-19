@@ -240,7 +240,7 @@ jobs:
 
       # merge-multiple 把 3 个 blob 落到同一目录，目录内只有 *.blob 才符合 --mergeReports 要求
       - name: Download blob reports
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: vitest-blob-*
           path: frontend/blob-report
@@ -306,7 +306,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Download static bundle
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: frontend-static-bundle
           path: src/cndb/static
