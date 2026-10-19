@@ -224,6 +224,34 @@ export const WBS_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
+/** Tree 通用层级树视图的专属配置字段（共 6 项） */
+export const TREE_OPTIONS: ViewOptionSchema[] = [
+  {
+    key: 'parent_field', label: '父节点字段', group: '结构字段', tooltip: '哪个字段存储父节点关联（link 指向同表自身，或文本/数字存父行 ID）',
+    kind: 'field_select', fieldTypes: ['link', 'text', 'number', 'decimal'], required: true,
+  },
+  {
+    key: 'title_field', label: '节点标题字段', group: '结构字段', tooltip: '树节点显示的主标题；留空自动选第一个文本字段',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], literalFallback: 'id',
+  },
+  {
+    key: 'status_field', label: '状态字段', group: '显示字段', tooltip: 'Select 字段，显示为节点右侧状态徽章',
+    kind: 'field_select', fieldTypes: ['select', 'multiselect'],
+  },
+  {
+    key: 'assignee_field', label: '负责人字段', group: '显示字段', tooltip: '在节点右侧显示负责人名称',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'],
+  },
+  {
+    key: 'show_numbering', label: '显示层级编号', group: '操作', tooltip: '在节点名前显示 1 / 1.1 / 1.1.1 样式的编号',
+    kind: 'switch', defaultValue: false,
+  },
+  {
+    key: 'expand_all', label: '默认全部展开', group: '操作', tooltip: '首次加载时是否展开所有层级；关闭则只展开第一层',
+    kind: 'switch', defaultValue: true,
+  },
+]
+
 /** Matrix 矩阵视图的专属配置字段（共 4 项） */
 export const MATRIX_OPTIONS: ViewOptionSchema[] = [
   {
@@ -358,6 +386,7 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
     case 'calendar': return CALENDAR_OPTIONS
     case 'gantt': return GANTT_OPTIONS
     case 'wbs': return WBS_OPTIONS
+    case 'tree': return TREE_OPTIONS
     case 'matrix': return MATRIX_OPTIONS
     case 'chart': return CHART_OPTIONS
     default: return []
