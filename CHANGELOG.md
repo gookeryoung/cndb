@@ -103,6 +103,7 @@
 - 文档导出 Markdown 时，若正文含**可解析的站内图片**则改为打包 zip：`<标题>.md`（引用改写为 `assets/<file_key>`）+ `assets/` 图片文件；无图片仍为单文件 .md（行为不变），解析不到的引用原样保留不丢信息；前端按响应类型自适应 `.zip` / `.md` 文件名
 - 文档导出 Word / PDF 时**嵌入站内图片**：`![alt](file:<file_key>)` 会被替换为真实图片（按正文可用宽度等比缩放），引用缺失或图片格式不支持时降级为「[图片缺失/无法嵌入：alt]」占位，不再静默丢图；Markdown 导出保留应用内引用（单文件无法内嵌二进制）
 
+- 后端测试补齐覆盖率：新增 9 个补覆盖测试文件（覆盖 documents/obsidian、tables 的 lookups/links/records/fields、importing/transfer、cli/core/workspaces/backup、analytics/change_requests 等此前偏低的模块），`pytest -m "not slow" --cov=cndb` 由 93.25% 提升至 98.06%，CI `--cov-fail-under=95` 门禁恢复通过
 - 拆分超大文件（全部保持既有导入路径与导出面，行为不变）：
   - `cli/seed.py` 2703 行 → `cli/seed/` 包 11 个模块（sqlite/paths/datasets/fields/documents/views/templates/samples/permission_demo/runner），`__init__` re-export 历史符号
   - `plugins/reports/routers/reports.py` 1510 行 → 路由 495 行 + `renderers/{context,docx,pdf,pdf_fonts,xlsx,html,markdown}` + `services/stats` + `jinja`
