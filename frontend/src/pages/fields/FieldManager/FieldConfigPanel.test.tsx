@@ -8,10 +8,11 @@
  *  5. isEdit=false 时按类型补齐 config 默认值；isEdit=true 时保留已存 config 不覆盖
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Form } from 'antd'
-import { cleanup, fireEvent, screen } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import type { FieldType } from '@/api'
+import { fieldApi } from '@/api/tables'
 import { renderProviders } from '@/test/render-providers'
 import FieldConfigPanel from './FieldConfigPanel'
 
@@ -153,5 +154,39 @@ describe('FieldConfigPanel config 默认值补齐', () => {
         expect(cfg.min).toBe(1)
         expect(cfg.max).toBe(9)
         expect(cfg.decimals).toBeUndefined()
+    })
+})
+
+/** 从所有 .ant-form-item 中找到 label 含指定文本的那个，返回其控件容器 */
+function formItemByLabel(label: string): HTMLElement {
+    const item = Array.from(document.querySelectorAll('.ant-form-item')).find(el =>
+        el.querySelector('.ant-form-item-label')?.textContent?.includes(label),
+    )
+    expect(item).toBeDefined()
+    return item as HTMLElement
+}
+
+describe('FieldConfigPanel 关联字段业务键', () => {
+    it('目标表已选：加载目标表字段作为显示/匹配字段候选，并过滤无物理列的关联字段', async () => {
+        const spy = vi.spyOn(fieldApi, 'list').mockResolvedValue([
+            { id: 11, name: '编号', field_type: 'text' },
+            { id: 12, name: '名称', field_type: 'text' },
+            { id: 13, name: '内联关联', field_type: 'link' },
+        ] as never)
+        renderProviders(
+            <Host fieldType="link" isEdit editTargetId={1} initialValues={{ config: { target_table_id: 30, multiple: true } }} />,
+        )
+
+        await waitFor(() => expect(spy).toHaveBeenCalledWith('1', 30))
+        // 候选里应过滤掉 link 字段，仅保留有物理列的字段
+        fireEvent.mouseDown(formItemByLabel('显示字段').querySelector('.ant-select-selector')!)
+        expect(await screen.findByText('编号')).toBeInTheDocument()
+        expect(screen.getByText('名称')).toBeInTheDocument()
+        expect(screen.queryByText('内联关联')).not.toBeInTheDocument()
+
+        // 选择候选后写回 config.display_field_id
+        fireEvent.click(screen.getByText('编号'))
+        expect(formValues().config.display_field_id).toBe(11)
+        spy.mockRestore()
     })
 })

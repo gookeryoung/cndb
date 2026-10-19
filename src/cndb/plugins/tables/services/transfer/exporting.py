@@ -5,22 +5,42 @@ from __future__ import annotations
 import csv
 import io
 import json
+from collections.abc import Mapping
 from typing import Any, cast
 
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core.links import is_link_field
 
 
-def _serialize_link_value(value: Any) -> Any:
-    """导出时把 link 摘要列表压成分号分隔 id 串，其余原样."""
+def _serialize_link_value(value: Any, *, use_display: bool = False) -> Any:
+    """导出时把 link 摘要列表压成分号分隔串，其余原样.
+
+    use_display=False（默认）压成分号分隔的行 id，保持既有行为；
+    use_display=True 改用摘要里的业务文本（display_field_id 值），让导出文件可读、
+    与导入（按 match_field_id 解析）形成可回灌的往返契约。
+    """
     if isinstance(value, list) and value and isinstance(value[0], dict):
-        return ";".join(str(item.get("id", "")) for item in value)
+        parts: list[str] = []
+        for item in value:
+            raw = item.get("value") if use_display else None
+            if raw is None or raw == "":
+                raw = item.get("id", "")
+            parts.append(str(raw))
+        return ";".join(parts)
     return value
 
 
-def _exportable_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """行响应统一做导出序列化（目前仅 link 摘要列表）."""
-    return [{k: _serialize_link_value(v) for k, v in row.items()} for row in rows]
+def _exportable_rows(
+    rows: list[dict[str, Any]],
+    link_display: Mapping[str, bool] | None = None,
+) -> list[dict[str, Any]]:
+    """行响应统一做导出序列化.
+
+    link_display 为 {字段名: 是否导出业务文本} 映射；缺省（None）时 link 列仍导出 id，
+    与历史行为一致。仅对映射里为 True 的列改用业务文本。
+    """
+    display = link_display or {}
+    return [{k: _serialize_link_value(v, use_display=bool(display.get(k))) for k, v in row.items()} for row in rows]
 
 
 def _parse_link_import_value(table: DataTable, row: dict[str, Any]) -> dict[str, Any]:
@@ -46,8 +66,13 @@ def _parse_link_import_value(table: DataTable, row: dict[str, Any]) -> dict[str,
     return result
 
 
-def export_rows_to_json(rows: list[dict[str, Any]]) -> str:
-    """把行列表序列化为 JSON 字符串."""
+def export_rows_to_json(rows: list[dict[str, Any]], *, link_display: Mapping[str, bool] | None = None) -> str:
+    """把行列表序列化为 JSON 字符串.
+
+    link_display 指定哪些 link 列导出业务文本；缺省时保持结构化原值（[{id,value}]）。
+    """
+    if link_display:
+        rows = _exportable_rows(rows, link_display)
     return json.dumps(rows, ensure_ascii=False, indent=2, default=str)
 
 
@@ -79,13 +104,13 @@ def _fix_xlsx_formula_cells(ws: Any, row_idx: int) -> None:
             cell.data_type = "s"
 
 
-def export_rows_to_csv(rows: list[dict[str, Any]]) -> str:
-    """把行列表转为 CSV 字符串（link 摘要序列化为分号分隔 id）.
+def export_rows_to_csv(rows: list[dict[str, Any]], *, link_display: Mapping[str, bool] | None = None) -> str:
+    """把行列表转为 CSV 字符串（link 摘要序列化为分号分隔串）.
 
     公式注入防护：以 ``=``/``+``/``-``/``@``/Tab/CR 开头的字符串单元格（含表头）
     前加 ``'`` 前缀，避免 Excel/WPS 打开时被当作公式求值.
     """
-    rows = _exportable_rows(rows)
+    rows = _exportable_rows(rows, link_display)
     if not rows:
         return ""
     buf = io.StringIO()
@@ -127,8 +152,8 @@ def _to_excel_value(value: Any) -> Any:
     return str(value)
 
 
-def export_rows_to_xlsx(rows: list[dict[str, Any]]) -> bytes:
-    """把行列表转为 XLSX 字节串（link 摘要序列化为分号分隔 id）.
+def export_rows_to_xlsx(rows: list[dict[str, Any]], *, link_display: Mapping[str, bool] | None = None) -> bytes:
+    """把行列表转为 XLSX 字节串（link 摘要序列化为分号分隔串）.
 
     公式注入防护：``=`` 开头字符串单元格强制回字符串类型，Excel 打开不被求值.
     类型归一：openpyxl 不接受的类型（list/set/tuple/dict/UUID 等）自动降级序列化.
@@ -136,7 +161,7 @@ def export_rows_to_xlsx(rows: list[dict[str, Any]]) -> bytes:
     from openpyxl import Workbook
     from openpyxl.worksheet.worksheet import Worksheet
 
-    rows = _exportable_rows(rows)
+    rows = _exportable_rows(rows, link_display)
     wb = Workbook()
     ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
     ws.title = "Data"

@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import { Form, Row, Col, Input, InputNumber, Checkbox, Radio, Select, Tag, Tooltip, Button, App as AntApp, ColorPicker } from 'antd'
 import { PlusOutlined, DeleteOutlined, TagOutlined, BgColorsOutlined, ThunderboltOutlined, SettingOutlined, ScanOutlined } from '@ant-design/icons'
-import type { FieldType, TableSummary } from '@/api'
+import type { Field, FieldType, ID, TableSummary } from '@/api'
 import { fieldApi } from '@/api/tables'
 import { resolveTagColor, suggestColorsForLabels } from '@/utils/tagColors'
 import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
@@ -197,23 +197,7 @@ export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false
 
       {/* ── 关联 link ── */}
       {TYPE_CATEGORIES.link.includes(fieldType) && (
-        <Row gutter={12}>
-          <Col span={12}>
-            <Form.Item {...configField('target_table_id')} label="关联目标表" rules={[{ required: true, message: '请选择目标表' }]} style={{ marginBottom: 8 }}>
-              <Select
-                showSearch
-                placeholder="选择要关联的表"
-                options={tables.map(t => ({ label: t.name, value: t.id }))}
-                filterOption={(input, option) => (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item {...configField('multiple')} valuePropName="checked" label="允许多选" extra="勾选后一个单元格可关联多行目标数据" style={{ marginBottom: 8 }}>
-              <Checkbox />
-            </Form.Item>
-          </Col>
-        </Row>
+        <LinkConfigFields form={form} wid={wid} tables={tables} />
       )}
 
       {/* ── 附件 attachment ── */}
@@ -276,6 +260,102 @@ export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false
         </>
       )}
     </div>
+  )
+}
+
+/** link 字段配置区：目标表 + 多选 + 业务键（显示字段 / 匹配字段）.
+ *
+ * 业务键是关联字段对外的读写口径，替代数据库行主键：
+ *  - 显示字段（display_field_id）：单元格展示与导出该字段值，让导出文件可读；
+ *  - 匹配字段（match_field_id）：导入时按该字段值匹配目标行，让导出文件可回灌。
+ * 目标表切换后自动重载其字段列表，并把不属于新表的已选业务键清空，
+ * 避免提交被后端拒绝（后端强制业务键属于目标表且有物理列）。
+ */
+function LinkConfigFields({ form, wid, tables }: { form: ReturnType<typeof Form.useForm>[0]; wid: string; tables: TableSummary[] }) {
+  const targetTableId = Form.useWatch(['config', 'target_table_id'], form) as ID | undefined
+  const [targetFields, setTargetFields] = useState<Field[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (targetTableId == null) {
+      setTargetFields([])
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    fieldApi
+      .list(wid, targetTableId)
+      .then(fields => {
+        if (cancelled) return
+        // 仅保留有物理列的字段作为业务键候选（link / lookup 无物理列，与后端校验一致）
+        setTargetFields(fields.filter(f => f.field_type !== 'link' && f.field_type !== 'lookup'))
+      })
+      .catch(() => { if (!cancelled) setTargetFields([]) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [wid, targetTableId])
+
+  // 目标表切换后，已选业务键若不再属于目标表则清空（否则保存被后端拒绝）
+  useEffect(() => {
+    const ids = new Set(targetFields.map(f => f.id))
+    const displayId = form.getFieldValue(['config', 'display_field_id']) as ID | undefined
+    const matchId = form.getFieldValue(['config', 'match_field_id']) as ID | undefined
+    if (displayId != null && !ids.has(displayId)) form.setFieldValue(['config', 'display_field_id'], undefined)
+    if (matchId != null && !ids.has(matchId)) form.setFieldValue(['config', 'match_field_id'], undefined)
+  }, [targetFields])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fieldOptions = targetFields.map(f => ({ label: f.name, value: f.id }))
+  const fieldSelectDisabled = targetTableId == null || loading
+  const fieldSelectPlaceholder = targetTableId == null ? '请先选择目标表' : '默认：首个非空字段'
+
+  return (
+    <>
+      <Row gutter={12}>
+        <Col span={12}>
+          <Form.Item name={['config', 'target_table_id']} label="关联目标表" rules={[{ required: true, message: '请选择目标表' }]} style={{ marginBottom: 8 }}>
+            <Select
+              showSearch
+              placeholder="选择要关联的表"
+              options={tables.map(t => ({ label: t.name, value: t.id }))}
+              filterOption={(input, option) => (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
+            />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name={['config', 'multiple']} valuePropName="checked" label="允许多选" extra="勾选后一个单元格可关联多行目标数据" style={{ marginBottom: 8 }}>
+            <Checkbox />
+          </Form.Item>
+        </Col>
+      </Row>
+      <Row gutter={12}>
+        <Col span={12}>
+          <Form.Item name={['config', 'display_field_id']} label="显示字段" extra="单元格显示与导出所用的目标表字段，留空回退首个非空字段" style={{ marginBottom: 8 }}>
+            <Select
+              showSearch
+              allowClear
+              loading={loading}
+              disabled={fieldSelectDisabled}
+              placeholder={fieldSelectPlaceholder}
+              options={fieldOptions}
+              filterOption={(input, option) => (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
+            />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name={['config', 'match_field_id']} label="匹配字段" extra="导入时按该字段值匹配目标行（留空回退显示字段）" style={{ marginBottom: 8 }}>
+            <Select
+              showSearch
+              allowClear
+              loading={loading}
+              disabled={fieldSelectDisabled}
+              placeholder={fieldSelectPlaceholder}
+              options={fieldOptions}
+              filterOption={(input, option) => (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
+            />
+          </Form.Item>
+        </Col>
+      </Row>
+    </>
   )
 }
 
