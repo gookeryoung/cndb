@@ -104,7 +104,7 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 1. **`.trae/rules/`**：写死每阶段约束（禁止 `--no-verify`、覆盖率不得注水、迁移必须幂等 + downgrade）。
 2. **`.trae/skills/`**：把阶段做成角色 Skill —— requirement-intake / adr-writer / implementer / test-writer / gate-runner / release-manager，每个绑定到具体 `make` 命令。
 3. **闭环**：门禁失败输出回灌 → 自动修复 → 重跑，直到全绿。
-4. **工具化入口**：把 AGENTS 的门禁固化为 `make flow`（`check-fast` 含 `adr-check` → `test`）；文档更新与 `make push` 仍需人工判断，不纳入。
+4. **工具化入口（按改动类型分级）**：`make check-docs`（L0 纯文档：`gitkeep-check` + `adr-check`）/ `make check-fast`（L1 纯配置）/ `make flow`（L2 代码：`check-fast` 含 `adr-check` → `test`）。分级规则见 [AGENTS.md](../AGENTS.md)「门禁分级」，混合改动取最高级；文档更新与 `make push` 仍需人工判断，不纳入。
 5. **落地与交接门禁**：`make adr-check`（[check_adr_landing.py](../scripts/check_adr_landing.py)）校 ADR 落地状态表 / 交接节 / Related 链接 / CHANGELOG 关联；换会话或换 agent 时按 [AGENTS.md](../AGENTS.md) 的「开工前 / 收工前」回填与恢复上下文。
 6. **Hook**：编辑后自动触发 `make check-fast`（提交侧已由 prek 覆盖）。
 7. **审批点收敛为 3 个**：需求确认 / ADR 评审 / 上线 tag。
@@ -112,8 +112,9 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 ## 5. 项目特定护栏
 
 - 禁 `--no-verify`、禁跳过 prek；conventional commits。
+- 门禁按改动类型分级（L0 文档 → `make check-docs`；L1 配置 → `make check-fast`；L2 代码 → `make flow`），只改文档 / 配置不跑全量 `make flow`；混合改动与拿不准的情况按 L2 全链执行。
 - ADR 标「已落地」的期必须有代码落点与测试文件；落地状态与交接每期回填（`make adr-check` 校验）。
-- 需求移除 / 变更先清理 ADR（删失效段落与决策行、改 Status 与索引），不保留历史方案段。
+- 需求移除 / 变更先清理 ADR（删失效段落与决策行），不保留历史方案段；ADR 被替代或需求作废则**直接删除**该文件、`docs/adr/README.md` 索引行与全仓引用（git 历史可追溯），不保留 `Superseded` / `Deprecated` 文档，编号不复用。
 - 覆盖率不得注水（阈值 95%，omit 白名单固定）。
 - 迁移幂等 + downgrade 可还原 + 存量零迁移。
 - 新表须纳入 `backup_io`，旧备份按缺省还原。
@@ -124,6 +125,7 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 ## 6. 落地清单
 
 - [x] `make flow` 编排目标（固化 AGENTS 四步中的「门禁两步」）—— [Makefile](../Makefile)
+- [x] 门禁分级 `make check-docs` / `check-fast` / `flow`（文档 / 配置 / 代码），规则见 [AGENTS.md](../AGENTS.md)「门禁分级」—— [Makefile](../Makefile)
 - [x] ADR 模板（从 0004 抽骨架）+ 需求卡片模板 —— [docs/adr/TEMPLATE.md](adr/TEMPLATE.md)、[docs/REQUIREMENT_CARD_TEMPLATE.md](REQUIREMENT_CARD_TEMPLATE.md)
 - [x] `.trae/rules/*.md` 阶段约束 —— [dev-workflow](../.trae/rules/dev-workflow.md)、[design](../.trae/rules/design.md)、[testing](../.trae/rules/testing.md)
 - [x] `.trae/skills/*` 阶段 Skill —— requirement-intake / adr-writer / implementer / test-writer / gate-runner / release-manager
