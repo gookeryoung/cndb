@@ -114,8 +114,8 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 
 ## 6. 落地清单
 
-- [ ] `make flow` 编排目标（固化 AGENTS 四步）
-- [ ] ADR 模板（从 0004 抽骨架）+ 需求卡片模板
-- [ ] `.trae/rules/*.md` 阶段约束
-- [ ] `.trae/skills/*` 阶段 Skill
+- [x] `make flow` 编排目标（固化 AGENTS 四步中的「门禁两步」）—— [Makefile](../Makefile)
+- [x] ADR 模板（从 0004 抽骨架）+ 需求卡片模板 —— [docs/adr/TEMPLATE.md](adr/TEMPLATE.md)、[docs/REQUIREMENT_CARD_TEMPLATE.md](REQUIREMENT_CARD_TEMPLATE.md)
+- [x] `.trae/rules/*.md` 阶段约束 —— [dev-workflow](../.trae/rules/dev-workflow.md)、[design](../.trae/rules/design.md)、[testing](../.trae/rules/testing.md)
+- [x] `.trae/skills/*` 阶段 Skill —— requirement-intake / adr-writer / implementer / test-writer / gate-runner / release-manager
 - [ ] （可选）编辑后自动 `check-fast` 的 hook
