@@ -33,7 +33,12 @@ from sqlalchemy.orm import Session
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.services.core.ddl import add_column
-from cndb.plugins.tables.services.core.links import resolve_link_tokens
+from cndb.plugins.tables.services.core.links import (
+    is_link_field,
+    link_table_exists,
+    load_links,
+    resolve_link_tokens,
+)
 from cndb.plugins.tables.services.importing.cleaning import apply_cleaning_actions, generate_cleaning_suggestions
 from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
@@ -569,6 +574,15 @@ class Importer:
                 if fname is not None:
                     old_vals[fname] = row[db_col]
             result[rid] = old_vals
+
+        # 关联字段无物理列（值存独立关联表），上面的物理列查询取不到 →
+        # 单独从关联表读取，否则旧值恒为 None，未变化的关联行会被误判为"有变更"
+        for lf in self.table.active_fields():
+            if not is_link_field(lf) or not link_table_exists(self.engine, lf.link_table_name):
+                continue
+            mapping = load_links(self.engine, lf, row_ids)
+            for rid, old_vals in result.items():
+                old_vals[lf.name] = mapping.get(rid, [])
         return result
 
     @staticmethod
@@ -644,6 +658,10 @@ class Importer:
                 return da == db_
             # 一侧是日期对象、另一侧解析不出日期 → 不相等
             return False
+        # 多值集合（如关联字段）按无序比较 —— 同一集合顺序不同不应判为变更
+        # （Attachment/Image 以其 JSON 字符串形态参与比较，不会走到这里）
+        if isinstance(a, list) and isinstance(b, list):
+            return sorted(map(repr, a)) == sorted(map(repr, b))
         return a == b
 
     @staticmethod
