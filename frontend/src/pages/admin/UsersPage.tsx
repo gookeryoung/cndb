@@ -1,4 +1,4 @@
-/** 用户管理页 — 用户列表 / 编辑 / 批量操作 / 操作日志（权限变更历史）.
+/** 用户管理页 — 用户列表 / 新建 / 编辑 / 批量操作 / 操作日志（权限变更历史）.
  *
  * 由 AdminPanel 以「用户管理」Tab 挂载，门控在 AdminPanel（仅系统管理员可见）。
  * 所有写操作经 modal.confirm 二次确认，变更由后端记录操作日志。
@@ -11,13 +11,13 @@ import {
   Upload, Dropdown, Alert,
 } from 'antd'
 import type { UploadProps, MenuProps } from 'antd'
-import { EditOutlined, ReloadOutlined, UploadOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons'
+import { EditOutlined, PlusOutlined, ReloadOutlined, UploadOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
 import type {
   UserAdminRecord, UserRole, UserAuditLogRecord, BatchUserActionRequest, UserAdminUpdateRequest,
-  UserImportResponse, UserImportRowResult,
+  UserImportResponse, UserImportRowResult, AdminRegisterRequest,
 } from '@/api'
 
 const { Text } = Typography
@@ -147,10 +147,19 @@ interface EditFormValues {
   is_active: boolean
 }
 
+interface CreateFormValues {
+  username: string
+  nickname?: string
+  email?: string
+  role: UserRole
+  password: string
+}
+
 export default function UsersPage() {
   const { message, modal } = AntApp.useApp()
   const queryClient = useQueryClient()
   const [form] = Form.useForm<EditFormValues>()
+  const [createForm] = Form.useForm<CreateFormValues>()
 
   // ── 列表筛选/分页状态 ──
   const [keyword, setKeyword] = useState('')
@@ -159,6 +168,9 @@ export default function UsersPage() {
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [selectedIds, setSelectedIds] = useState<Key[]>([])
+
+  // ── 新建弹窗 ──
+  const [createOpen, setCreateOpen] = useState(false)
 
   // ── 编辑弹窗 ──
   const [editing, setEditing] = useState<UserAdminRecord | null>(null)
@@ -197,6 +209,19 @@ export default function UsersPage() {
     },
     onError: (err) => {
       message.error(err instanceof Error ? err.message : '更新失败')
+    },
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (data: AdminRegisterRequest) => authApi.adminRegister(data),
+    onSuccess: (user) => {
+      message.success(`用户 ${user.username} 已创建`)
+      setCreateOpen(false)
+      createForm.resetFields()
+      invalidate()
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '创建失败')
     },
   })
 
@@ -321,6 +346,40 @@ export default function UsersPage() {
     () => ROLE_OPTIONS.map(r => ({ value: r.value, label: r.label })),
     [],
   )
+
+  const openCreate = () => {
+    createForm.resetFields()
+    createForm.setFieldsValue({ role: 'user' })
+    setCreateOpen(true)
+  }
+
+  /** 新建提交 —— 先做二次确认，确认后才调用后端 */
+  const handleCreateSubmit = () => {
+    createForm.validateFields().then((values) => {
+      modal.confirm({
+        title: '确认创建该用户？',
+        content: (
+          <div style={{ fontSize: 13 }}>
+            <div>用户名：<Text strong>{values.username}</Text></div>
+            <div>角色：{roleMeta(values.role).label}</div>
+            {values.email ? <div>邮箱：{values.email}</div> : null}
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary">初始密码请妥善保存并转交用户，建议其登录后尽快修改。</Text>
+            </div>
+          </div>
+        ),
+        okText: '确认创建',
+        cancelText: '取消',
+        onOk: () => createMutation.mutateAsync({
+          username: values.username,
+          nickname: values.nickname || '',
+          email: values.email?.trim() || null,
+          role: values.role,
+          password: values.password,
+        }),
+      })
+    })
+  }
 
   const openEdit = (record: UserAdminRecord) => {
     setEditing(record)
@@ -453,6 +512,7 @@ export default function UsersPage() {
         />
         <div className="cn-toolbar-end">
           <span className="cn-record-pill">{listQuery.data?.total ?? 0} 个账号</span>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建用户</Button>
           <Button icon={<UploadOutlined />} onClick={openImport}>导入</Button>
           <Dropdown menu={exportMenu} trigger={['click']}>
             <Button icon={<DownloadOutlined />} loading={exportMutation.isPending}>导出</Button>
@@ -672,6 +732,44 @@ export default function UsersPage() {
             />
           </>
         )}
+      </Modal>
+
+      {/* 新建弹窗（保存前二次确认在 handleCreateSubmit 内） */}
+      <Modal
+        title="新建用户"
+        open={createOpen}
+        onCancel={() => setCreateOpen(false)}
+        onOk={handleCreateSubmit}
+        okText="创建"
+        cancelText="取消"
+        confirmLoading={createMutation.isPending}
+        destroyOnHidden
+      >
+        <Form form={createForm} layout="vertical" size="small">
+          <Form.Item
+            name="username"
+            label="用户名"
+            rules={[{ required: true, min: 2, max: 150, message: '用户名 2-150 个字符' }]}
+          >
+            <Input placeholder="登录名，全库唯一" />
+          </Form.Item>
+          <Form.Item name="nickname" label="昵称">
+            <Input placeholder="留空则使用角色中文名" />
+          </Form.Item>
+          <Form.Item name="email" label="邮箱" rules={[{ type: 'email', message: '邮箱格式不正确' }]}>
+            <Input placeholder="选填" />
+          </Form.Item>
+          <Form.Item name="role" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
+            <Select options={roleOptions} />
+          </Form.Item>
+          <Form.Item
+            name="password"
+            label="初始密码"
+            rules={[{ required: true, min: 6, max: 128, message: '密码 6-128 位' }]}
+          >
+            <Input.Password placeholder="至少 6 位" autoComplete="new-password" />
+          </Form.Item>
+        </Form>
       </Modal>
 
       {/* 编辑弹窗（保存前二次确认在 handleEditSubmit 内） */}
