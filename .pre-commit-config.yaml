@@ -12,11 +12,13 @@ repos:
         always_run: true
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    # 版本须与 pyproject.toml [project.optional-dependencies].lint 的 ruff== 一致
+    # Ruff 版本 - 与 pyproject.toml 保持同步
     rev: v0.16.8
     hooks:
+      # 运行 linter
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
+      # 运行格式化
       - id: ruff-format
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
