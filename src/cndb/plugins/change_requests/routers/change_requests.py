@@ -5,6 +5,7 @@
 - GET  /{workspace_id}/tables/{table_id}/change-requests                  — 列表（scope=open/all/mine/merged）
 - GET  /{workspace_id}/tables/{table_id}/change-requests/{request_id}     — 详情（items diff + 动作流水）
 - POST /{workspace_id}/tables/{table_id}/change-requests/{request_id}/merge      — 逐项决策合并（owner/editor）
+- POST /{workspace_id}/tables/{table_id}/change-requests/rows/{row_id}/merge      — 行组批量合并（owner/editor）
 - POST /{workspace_id}/tables/{table_id}/change-requests/{request_id}/close      — 关闭（owner/editor 或提交人）
 - POST /{workspace_id}/tables/{table_id}/change-requests/{request_id}/reopen    — 重开（owner/editor）
 - POST /{workspace_id}/tables/{table_id}/change-requests/{request_id}/update-base — 刷新基准（仅提交人）
@@ -26,6 +27,7 @@ from cndb.plugins.change_requests.schemas import (
     ChangeCommentCreate,
     ChangeRequestCreate,
     MergePayload,
+    RowMergePayload,
 )
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
@@ -72,15 +74,20 @@ def list_requests(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     scope: str = Query(default="open", pattern="^(open|all|mine|merged)$"),
+    group_by: str = Query(default="flat", pattern="^(flat|row)$"),
 ) -> dict[str, Any]:
-    """申请列表，附 conflicts_count 与当前用户写模式 write_mode（direct/change_request/denied）."""
+    """申请列表，附 conflicts_count 与当前用户写模式 write_mode（direct/change_request/denied）.
+
+    - group_by=flat（缺省）：扁平 items，向后兼容旧前端；
+    - group_by=row：按目标行聚合为行组（含冲突/漂移标记），create-only 归 ungrouped。
+    """
     table = _table_for_read(workspace_id, table_id, current_user, db)
+    write_mode = services.resolve_write_mode(db, table, current_user)
+    if group_by == "row":
+        grouped = services.list_requests(db, table.id, scope=scope, user=current_user, group_by="row")
+        return {**grouped, "write_mode": write_mode}  # type: ignore[dict-item]
     items = services.list_requests(db, table.id, scope=scope, user=current_user)
-    return {
-        "items": items,
-        "total": len(items),
-        "write_mode": services.resolve_write_mode(db, table, current_user),
-    }
+    return {"items": items, "total": len(items), "write_mode": write_mode}
 
 
 @router.get("/{request_id}")
@@ -111,6 +118,32 @@ def merge_request(
     cr = services.get_request_or_404(db, table, request_id)
     decisions = {d.item_id: d.action for d in payload.items}
     return services.merge_request(db, cr, table, current_user, decisions, payload.comment)
+
+
+@router.post("/rows/{row_id}/merge")
+def merge_row_requests(
+    workspace_id: int,
+    table_id: int,
+    row_id: int,
+    payload: RowMergePayload,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """行组批量合并：一次审批同一行的多份 open 申请（仅 owner/editor）.
+
+    冲突字段须经 resolutions 显式裁决，否则 409；delete 互斥须经 row_action 裁决。
+    """
+    table = _table_for_read(workspace_id, table_id, current_user, db)
+    return services.merge_row_requests(
+        db,
+        table,
+        row_id,
+        current_user,
+        request_ids=payload.request_ids,
+        resolutions=payload.resolutions,
+        row_action=payload.row_action,
+        comment=payload.comment,
+    )
 
 
 def _transition(

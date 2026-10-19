@@ -21,6 +21,7 @@ const IssuesPage = lazy(() => import('@/pages/issues/IssuesPage'))
 const IssueDetailPage = lazy(() => import('@/pages/issues/IssueDetailPage'))
 const ChangeRequestsPage = lazy(() => import('@/pages/changeRequests/ChangeRequestsPage'))
 const ChangeRequestDetailPage = lazy(() => import('@/pages/changeRequests/ChangeRequestDetailPage'))
+const ChangeRequestRowMergePage = lazy(() => import('@/pages/changeRequests/ChangeRequestRowMergePage'))
 const TableSettingsPage = lazy(() => import('@/pages/settings/TableSettingsPage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
@@ -69,6 +70,9 @@ function AuthenticatedApp() {
           } />
           <Route path="w/:wid/tables/:tid/change-requests" element={
             <Suspense fallback={<PageFallback />}><ChangeRequestsPage /></Suspense>
+          } />
+          <Route path="w/:wid/tables/:tid/change-requests/rows/:rowId/merge" element={
+            <Suspense fallback={<PageFallback />}><ChangeRequestRowMergePage /></Suspense>
           } />
           <Route path="w/:wid/tables/:tid/change-requests/:requestId" element={
             <Suspense fallback={<PageFallback />}><ChangeRequestDetailPage /></Suspense>

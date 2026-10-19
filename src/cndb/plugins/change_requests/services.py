@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any
@@ -173,8 +174,21 @@ def create_request(
     return _persist_request(db, table, user, title=title, items=prepared, description=description)
 
 
-def list_requests(db: Session, table_id: int, *, scope: str, user: User) -> list[dict[str, Any]]:
-    """申请列表（scope=open/all/mine/merged），每项附 conflicts_count（与其他 open 申请共享的行数）."""
+def list_requests(
+    db: Session,
+    table_id: int,
+    *,
+    scope: str,
+    user: User,
+    group_by: str | None = None,
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """申请列表.
+
+    - 缺省：扁平列表，每项附 conflicts_count（与其他 open 申请共享的行数）与 items 元信息；
+    - group_by="row"：按目标行聚合为行组（含冲突/漂移标记），create-only 申请归 ungrouped。
+
+    排序：created_at desc, id desc（时间倒序；同秒提交用 id 兜底稳定序）。
+    """
     q = db.query(ChangeRequest).filter(ChangeRequest.table_id == table_id)
     if scope == "open":
         q = q.filter(ChangeRequest.status == CR_STATUS_OPEN)
@@ -182,9 +196,15 @@ def list_requests(db: Session, table_id: int, *, scope: str, user: User) -> list
         q = q.filter(ChangeRequest.status == CR_STATUS_MERGED)
     elif scope == "mine":
         q = q.filter(ChangeRequest.submitted_by_id == user.id)
-    requests = q.order_by(ChangeRequest.id.desc()).all()
+    requests = q.order_by(ChangeRequest.created_at.desc(), ChangeRequest.id.desc()).all()
     conflicts = _conflict_row_counts(db, table_id)
-    return [serialize_request(r, conflicts_count=conflicts.get(r.id, 0)) for r in requests]
+    meta = _request_item_meta(db, table_id)
+    if group_by == "row":
+        return _group_requests_by_row(db, table_id, requests, conflicts, meta)
+    return [
+        serialize_request(r, conflicts_count=conflicts.get(r.id, 0), **(meta.get(r.id) or _EMPTY_ITEM_META))
+        for r in requests
+    ]
 
 
 def get_request_or_404(db: Session, table: DataTable, request_id: int) -> ChangeRequest:
@@ -334,7 +354,7 @@ def merge_request(
     cr.reviewed_at = dt.datetime.now(dt.UTC)
     cr.review_comment = comment
     db.add(ChangeRequestAction(request_id=cr.id, action=CR_ACTION_MERGE, comment=comment, acted_by_id=user.id))
-    _mark_others_stale(db, cr, applied_row_ids)
+    _mark_others_stale(db, cr.table_id, exclude_ids={cr.id}, row_ids=applied_row_ids)
     db.commit()
     db.refresh(cr)
     # 返回完整详情（含 items/actions）：前端以响应覆盖详情缓存，
@@ -488,27 +508,305 @@ def _conflict_row_counts(db: Session, table_id: int) -> dict[int, int]:
     return {req_id: len(rows_) for req_id, rows_ in shared_per_request.items()}
 
 
-def _mark_others_stale(db: Session, cr: ChangeRequest, row_ids: set[int]) -> None:
-    """merge 落库后，其余 open 申请中引用相同行的置 stale=True."""
+def _mark_others_stale(
+    db: Session,
+    table_id: int,
+    *,
+    exclude_ids: set[int],
+    row_ids: set[int],
+) -> None:
+    """merge 落库后，其余 open 申请中引用相同行的置 stale=True（exclude_ids 内的申请不处理）."""
     if not row_ids:
         return
-    others = (
+    q = (
         db.query(ChangeRequest)
         .join(ChangeItem, ChangeItem.request_id == ChangeRequest.id)
         .filter(
-            ChangeRequest.table_id == cr.table_id,
-            ChangeRequest.id != cr.id,
+            ChangeRequest.table_id == table_id,
             ChangeRequest.status == CR_STATUS_OPEN,
             ChangeItem.row_id.in_(row_ids),
         )
         .distinct()
-        .all()
     )
-    for other in others:
+    if exclude_ids:
+        q = q.filter(ChangeRequest.id.notin_(exclude_ids))
+    for other in q.all():
         other.stale = True
 
 
-def serialize_request(cr: ChangeRequest, *, conflicts_count: int | None = None) -> dict[str, Any]:
+# ── items 元信息 / 行组聚合 / 冲突检测 ────────────────
+
+_EMPTY_ITEM_META: dict[str, Any] = {"row_ids": [], "fields": [], "item_count": 0}
+
+
+def _request_item_meta(db: Session, table_id: int) -> dict[int, dict[str, Any]]:
+    """每个申请的 items 元信息：去重 row_ids / 涉及字段（create/update 的 values 键）/ item 数."""
+    rows = (
+        db.query(ChangeItem, ChangeRequest)
+        .join(ChangeRequest, ChangeItem.request_id == ChangeRequest.id)
+        .filter(ChangeRequest.table_id == table_id)
+        .all()
+    )
+    acc: dict[int, dict[str, Any]] = {}
+    for item, _cr in rows:
+        m = acc.setdefault(item.request_id, {"row_id_set": set(), "fields": set(), "item_count": 0})
+        m["item_count"] += 1
+        if item.row_id is not None:
+            m["row_id_set"].add(item.row_id)
+        if item.op in (CHANGE_OP_CREATE, CHANGE_OP_UPDATE):
+            m["fields"].update((item.values or {}).keys())
+    return {
+        rid: {
+            "row_ids": sorted(m["row_id_set"]),
+            "fields": sorted(m["fields"]),
+            "item_count": m["item_count"],
+        }
+        for rid, m in acc.items()
+    }
+
+
+def _open_row_items(db: Session, table_id: int) -> dict[int, list[dict[str, Any]]]:
+    """该表全部 open 申请中按 row_id 归集的变更项（create 无 row_id，排除）."""
+    rows = (
+        db.query(ChangeItem)
+        .join(ChangeRequest, ChangeItem.request_id == ChangeRequest.id)
+        .filter(
+            ChangeRequest.table_id == table_id,
+            ChangeRequest.status == CR_STATUS_OPEN,
+            ChangeItem.row_id.isnot(None),
+        )
+        .all()
+    )
+    out: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for it in rows:
+        out[it.row_id].append(_item_row(it))  # type: ignore[index]
+    return out
+
+
+def _item_row(item: ChangeItem) -> dict[str, Any]:
+    """ORM item → 行级冲突检测所需的最小投影."""
+    return {
+        "id": item.id,
+        "request_id": item.request_id,
+        "op": item.op,
+        "row_id": item.row_id,
+        "base_values": item.base_values or {},
+        "values": item.values or {},
+    }
+
+
+def _hashable(value: Any) -> str:
+    """JSON 值的可比较签名（用于判断多个写者是否写入同一值）."""
+    return json.dumps(value, sort_keys=True, ensure_ascii=False)
+
+
+def detect_row_conflicts(items: list[dict[str, Any]], current: dict[str, Any] | None) -> dict[str, Any]:
+    """给定同一行的一组 open items 与当前行值，计算冲突与漂移.
+
+    - conflict_fields：同一字段被 ≥2 个写者写入且值不等（交汇冲突）；
+    - row_op_conflict：存在 delete 且同行还有其他 item（行级互斥）；
+    - drift_fields：字段当前值 != 提交时基准快照（基准漂移）；
+    - row_missing：目标行已不存在。
+    """
+    writers: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    has_delete = False
+    for it in items:
+        if it["op"] == CHANGE_OP_DELETE:
+            has_delete = True
+            continue
+        for f, v in (it["values"] or {}).items():
+            writers[f].append({"request_id": it["request_id"], "item_id": it["id"], "value": v})
+
+    conflict_fields = sorted(f for f, ws in writers.items() if len({_hashable(w["value"]) for w in ws}) > 1)
+
+    drift: set[str] = set()
+    if current is not None:
+        for it in items:
+            for f, base in (it.get("base_values") or {}).items():
+                if f in current and current[f] != base:
+                    drift.add(f)
+
+    drift_fields = sorted(drift)
+    row_op_conflict = has_delete and len(items) > 1
+    return {
+        "conflict_fields": conflict_fields,
+        "drift_fields": drift_fields,
+        "has_conflict": bool(conflict_fields) or row_op_conflict,
+        "has_drift": bool(drift_fields),
+        "row_missing": current is None,
+        "row_op_conflict": row_op_conflict,
+        "field_writers": {f: writers[f] for f in writers},
+    }
+
+
+def _group_requests_by_row(
+    db: Session,
+    table_id: int,
+    requests: list[ChangeRequest],
+    conflicts: dict[int, int],
+    meta: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    """按 row_id 聚合申请为行组；create-only 归 ungrouped；组间/组内均按时间倒序."""
+    engine = db.get_bind()
+    table = db.get(DataTable, table_id)
+    open_items = _open_row_items(db, table_id)
+
+    groups: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    ungrouped: list[dict[str, Any]] = []
+    for r in requests:
+        item = serialize_request(r, conflicts_count=conflicts.get(r.id, 0), **(meta.get(r.id) or _EMPTY_ITEM_META))
+        row_ids = item["row_ids"]
+        if not row_ids:
+            ungrouped.append(item)
+            continue
+        # 一个申请可引用多行：分别纳入各行的行组
+        for rid in row_ids:
+            groups[rid].append(item)
+
+    out_groups: list[dict[str, Any]] = []
+    for rid, reqs in groups.items():
+        current = rec.get_row(engine, table, rid, db=db) if table is not None else None
+        det = detect_row_conflicts(open_items.get(rid, []), current)
+        reqs.sort(key=lambda x: (x.get("created_at") or "", x["id"]), reverse=True)
+        latest = reqs[0]
+        out_groups.append(
+            {
+                "row_id": rid,
+                "row_values": current or {},
+                "row_missing": det["row_missing"],
+                "requests": reqs,
+                "conflict_fields": det["conflict_fields"],
+                "drift_fields": det["drift_fields"],
+                "has_conflict": det["has_conflict"],
+                "has_drift": det["has_drift"],
+                "latest_created_at": latest.get("created_at"),
+                "_sort": (latest.get("created_at") or "", latest["id"]),
+            }
+        )
+    out_groups.sort(key=lambda g: g["_sort"], reverse=True)
+    for g in out_groups:
+        g.pop("_sort", None)
+    return {"groups": out_groups, "ungrouped": ungrouped, "total": len(requests)}
+
+
+def merge_row_requests(
+    db: Session,
+    table: DataTable,
+    row_id: int,
+    user: User,
+    request_ids: list[int],
+    resolutions: Mapping[str, Any],
+    row_action: str | None,
+    comment: str,
+) -> dict[str, Any]:
+    """行组批量合并：一次审批同一行的多份 open 申请（仅 owner/editor）.
+
+    - 每份申请的变更项须全部属于该行且不含 create，否则 400；
+    - 冲突字段（多申请写同值不等）必须由 resolutions 显式裁决，未裁决 409；
+    - 存在 delete 与修改互斥时须由 row_action 裁决（keep/delete），否则 409；
+    - 落库前 _normalize_values 预校验，失败整体 409 回滚，全部保持 open；
+    - 成功后各申请置 merged 并写 merge 流水，同行其余 open 申请置 stale。
+    """
+    role = require_reviewer_role(db, table, user)
+    if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
+        raise HTTPException(status_code=403, detail="仅 owner/editor 可合并修改申请")
+
+    engine = db.get_bind()
+    crs: list[ChangeRequest] = []
+    items: list[dict[str, Any]] = []
+    for rid in request_ids:
+        cr = get_request_or_404(db, table, rid)
+        if cr.status != CR_STATUS_OPEN:
+            raise HTTPException(status_code=409, detail=f"申请 #{rid} 当前状态 {cr.status} 不允许合并")
+        crs.append(cr)
+        for item in db.query(ChangeItem).filter(ChangeItem.request_id == cr.id).all():
+            if item.op == CHANGE_OP_CREATE:
+                raise HTTPException(status_code=400, detail=f"申请 #{cr.id} 含新增行变更项，无法按行批量合并")
+            if item.row_id != row_id:
+                raise HTTPException(status_code=400, detail=f"申请 #{cr.id} 含其他行的变更项，请到该申请详情单独处理")
+            items.append(_item_row(item))
+
+    current = rec.get_row(engine, table, row_id, db=db)
+    det = detect_row_conflicts(items, current)
+
+    # 冲突裁决校验：冲突字段必须显式裁决；delete 互斥须指定 row_action
+    if det["row_op_conflict"] and row_action not in ("keep", "delete"):
+        raise HTTPException(status_code=409, detail="该行存在删除与修改互斥，请先选择保留或删除")
+    for f in det["conflict_fields"]:
+        res = resolutions.get(f)
+        strategy = getattr(res, "strategy", None)
+        if strategy is None:
+            raise HTTPException(status_code=409, detail=f"字段「{f}」存在冲突，请先裁决")
+        if strategy == "item":
+            item_id = getattr(res, "item_id", None)
+            valid_ids = {w["item_id"] for w in det["field_writers"][f]}
+            if item_id not in valid_ids:
+                raise HTTPException(status_code=400, detail=f"字段「{f}」的裁决 item_id 非法")
+
+    # 计算最终生效的行写入（delete 分支跳过字段写）
+    effective: dict[str, Any] = {}
+    applied_row_ids: set[int] = set()
+    applied = 0
+    skipped = 0
+    try:
+        if row_action == "delete":
+            if current is not None:
+                rec.trash_row(engine, table, row_id, db=db, user=user)
+                applied_row_ids.add(row_id)
+            applied = sum(1 for it in items if it["op"] == CHANGE_OP_DELETE)
+            skipped = len(items) - applied
+        else:
+            for f, ws in det["field_writers"].items():
+                if len({_hashable(w["value"]) for w in ws}) == 1:
+                    effective[f] = ws[0]["value"]
+                    continue
+                res = resolutions[f]
+                if getattr(res, "strategy", None) == "current":
+                    continue
+                chosen = next(w for w in ws if w["item_id"] == getattr(res, "item_id", None))
+                effective[f] = chosen["value"]
+            if effective:
+                rec._normalize_values(table, effective, for_update=True)
+                if current is not None:
+                    rec.update_row(engine, table, row_id, effective, db=db, user=user)
+                    applied_row_ids.add(row_id)
+            # 应用统计：贡献了生效字段的 update 项计 applied，其余计 skipped
+            for it in items:
+                if it["op"] == CHANGE_OP_UPDATE and any(f in effective for f in (it["values"] or {})):
+                    applied += 1
+                else:
+                    skipped += 1
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"合并失败，申请保持打开: {exc}") from exc
+
+    now = dt.datetime.now(dt.UTC)
+    for cr in crs:
+        cr.status = CR_STATUS_MERGED
+        cr.stale = False
+        cr.reviewed_by_id = user.id
+        cr.reviewed_at = now
+        cr.review_comment = comment
+        db.add(ChangeRequestAction(request_id=cr.id, action=CR_ACTION_MERGE, comment=comment, acted_by_id=user.id))
+    _mark_others_stale(db, table.id, exclude_ids=set(request_ids), row_ids=applied_row_ids)
+    db.commit()
+
+    return {
+        "applied": applied,
+        "skipped": skipped,
+        "merged_request_ids": list(request_ids),
+        "requests": [get_request_detail(db, cr, table) for cr in crs],
+    }
+
+
+def serialize_request(
+    cr: ChangeRequest,
+    *,
+    conflicts_count: int | None = None,
+    row_ids: list[int] | None = None,
+    fields: list[str] | None = None,
+    item_count: int | None = None,
+) -> dict[str, Any]:
     """申请序列化（列表/详情/分派响应共用）."""
     data: dict[str, Any] = {
         "id": cr.id,
@@ -527,6 +825,12 @@ def serialize_request(cr: ChangeRequest, *, conflicts_count: int | None = None) 
     }
     if conflicts_count is not None:
         data["conflicts_count"] = conflicts_count
+    if row_ids is not None:
+        data["row_ids"] = row_ids
+    if fields is not None:
+        data["fields"] = fields
+    if item_count is not None:
+        data["item_count"] = item_count
     return data
 
 
@@ -545,10 +849,12 @@ __all__ = [
     "create_batch_delete_request",
     "create_dispatch_request",
     "create_request",
+    "detect_row_conflicts",
     "get_request_detail",
     "get_request_or_404",
     "list_requests",
     "merge_request",
+    "merge_row_requests",
     "reopen_request",
     "require_reviewer_role",
     "resolve_write_mode",

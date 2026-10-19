@@ -1,12 +1,25 @@
 /** 修改申请 API — /api/v1/workspaces/{wid}/tables/{tid}/change-requests */
 
 import api from './client'
-import type { ChangeRequestDetail, ChangeRequestPage, CRMergePayload, CRCreatePayload } from './types'
+import type {
+  CRCreatePayload, CRMergePayload, CRRowMergePayload, CRRowMergeResponse,
+  ChangeRequestDetail, ChangeRequestPage, ChangeRowGroupPage,
+} from './types'
 
 export const changeRequestsApi = {
-  /** 列表：scope=open/all/mine/merged，列表项附 conflicts_count */
+  /** 列表：scope=open/all/mine/merged，列表项附 conflicts_count/row_ids/fields */
   list: (wid: number | string, tid: number | string, scope: 'open' | 'all' | 'mine' | 'merged' = 'open') =>
     api.get<ChangeRequestPage>(`/v1/workspaces/${wid}/tables/${tid}/change-requests`, { params: { scope } }).then(r => r.data),
+  /** 分组列表：group_by=row，按目标行聚合为行组（附冲突/漂移标记），create-only 归 ungrouped */
+  listGrouped: (wid: number | string, tid: number | string, scope: 'open' | 'all' | 'mine' | 'merged' = 'open') =>
+    api.get<ChangeRowGroupPage>(
+      `/v1/workspaces/${wid}/tables/${tid}/change-requests`, { params: { scope, group_by: 'row' } },
+    ).then(r => r.data),
+  /** 行组批量合并：一次审批同一行的多份 open 申请（仅 owner/editor） */
+  mergeRow: (wid: number | string, tid: number | string, rowId: number | string, data: CRRowMergePayload) =>
+    api.post<CRRowMergeResponse>(
+      `/v1/workspaces/${wid}/tables/${tid}/change-requests/rows/${rowId}/merge`, data,
+    ).then(r => r.data),
   /** 详情 = 本体 + items（字段级 diff）+ actions 流水 */
   get: (wid: number | string, tid: number | string, requestId: number | string) =>
     api.get<ChangeRequestDetail>(`/v1/workspaces/${wid}/tables/${tid}/change-requests/${requestId}`).then(r => r.data),
