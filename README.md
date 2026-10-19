@@ -173,6 +173,7 @@ make sync          # 安装依赖
 make seed          # 注入演示数据（幂等）
 make dev           # 开发模式：同时启动后端 8772 + 前端 5173（Ctrl+C 一起停）
 make check         # 全套门禁：gitkeep + lint + typecheck + frontend-static + frontend-coverage + cov
+make flow          # AI 开发流入口：轻量静态门禁 + 全量后端测试（实现/验证内环）
 make push          # 推送全部 remote
 ```
 
@@ -185,6 +186,8 @@ uv run python scripts/bench_10k_rows.py
 ```
 
 覆盖门禁阈值 95%，任何 PR 低于该值自动拒绝。
+
+AI 自动驱动开发流（需求意图 → 方案 → 代码 → 测试 → 部署）见 [docs/AI_DRIVEN_DEV_FLOW.md](docs/AI_DRIVEN_DEV_FLOW.md)。
 
 ## 许可证
 
