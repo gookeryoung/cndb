@@ -10,15 +10,15 @@
 
 ## 特性
 
-- **插件化架构**：accounts / workspaces / tables / documents / issues / change_requests，可独立部署
+- **插件化架构**：accounts / workspaces / tables / documents / issues / change_requests / analytics / files，可独立部署
 - **动态数据表**：SQLAlchemy Core 运行时建表 / 改字段，运行中即可扩 schema
-- **17 种字段类型**：text / longtext / email / url / phone / json / number / float / percentage / boolean / date / datetime / timestamp / select / multiselect / link（跨表关联）/ attachment
-- **7 种视图**：表格（Grid）/ 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表，视图级筛选、排序、字段显隐与配置持久化
+- **19 种字段类型**：text / longtext / email / url / phone / json / number / float / percentage / boolean / date / datetime / timestamp / select / multiselect / link（跨表关联）/ lookup（跨表引用）/ attachment / image
+- **9 种视图**：表格（Grid）/ 树形（Tree）/ 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表 / 流程（Flow），视图级筛选、排序、字段显隐与配置持久化
 - **文档管理**：工作区 Markdown 文档树、双向链接 `[[标题]]`、数据表动态引用 `{{table:表名}}`、版本历史与全文检索、回收站与恢复、断链检测与修复、**Obsidian 文档库导入 / 导出**（目录层级 + front-matter 标签 + 附件互转 + 双链锚点/别名保真 + Canvas/Base 转文档）
 - **行级协作**：编辑评论 / 审计日志 / 回收站
 - **link 字段关系图**：`GET /workspaces/{id}/tables/graph` 返回所有表间依赖
 - **异步导入**：CSV / JSON / XLSX / API 抓取异步导入 + 进度轮询
-- **Jinja2 报告模板**：沙箱环境，绑定表的模板直接出 Word / PDF / Excel / HTML
+- **数据分析**：工作区级分析模板（公式引擎 + 图表 + 分组汇总/透视）与字段智能推荐，一键生成典型分析示例
 - **权限体系**：工作区三级角色 owner / editor / viewer，叠加全局角色（system_admin / security_admin / audit_admin / 超级管理员），表级 + 工作区级双重校验
 - **备份恢复**：`cndb backup` / `cndb restore` 全库归档（.tar.gz），跨机器迁移
 - **桌面 GUI**：`cndbw` 启动 Tkinter 管理面板（启动服务 / 备份恢复 / Windows 后台服务管理）
@@ -96,11 +96,13 @@ src/cndb/
 ├── api/              # 认证依赖 (get_current_user)
 ├── alembic/          # 数据库迁移脚本
 ├── cli/              # 命令行入口
-│   ├── main.py       #   cndb 主命令（serve/dev/build/info）
-│   ├── seed.py       #   演示数据注入（幂等）
+│   ├── main.py       #   cndb 主命令分发（serve/dev/build/info/seed/backup/restore/users/docs/views）
+│   ├── seed/         #   演示数据注入（幂等，按职责拆分）
+│   ├── restore/      #   恢复（自动识别 .tar.gz 归档 / 文件夹）
+│   ├── users/        #   用户管理（create / delete / list / import）
 │   ├── backup.py     #   备份（.tar.gz 归档）
-│   ├── restore.py    #   恢复
-│   ├── users.py      #   用户管理
+│   ├── docs.py       #   文档数据运维（gc：外存孤儿文件体检与回收）
+│   ├── views.py      #   视图运维（prune-orphans：孤儿视图体检与回收）
 │   └── service.py    #   Windows 后台服务
 ├── core/             # 配置 / 数据库 / 安全 / 健康检查 (system_api.py)
 ├── gui/              # Tkinter 桌面管理面板（`cndbw` 入口）
@@ -111,7 +113,9 @@ src/cndb/
 │   ├── tables/       # 动态表 / 字段 / 记录 / DDL / 查询 / 视图
 │   ├── documents/    # 文档树 / 版本 / 标签 / 分享 / 全文检索 / Word·PDF·Markdown 导出
 │   ├── issues/       # 数据表级问题反馈 + 评论/状态流水
-│   └── change_requests/ # 表级变更申请（双轨制写入的载体）
+│   ├── change_requests/ # 表级变更申请（双轨制写入的载体）
+│   ├── analytics/    # 工作区分析：公式引擎 / 图表 / 分组汇总 / 字段智能推荐
+│   └── files/        # 附件 / 图片存储与缩略图
 ├── app.py            # FastAPI 应用装配 + SPA 静态托管
 └── static/           # 前端构建产物（pnpm build 输出，同源托管）
 ```
@@ -148,8 +152,15 @@ src/cndb/
 | 导入 | `/api/v1/workspaces/{wid}/tables/{tid}/import` | 同步 / 异步 CSV·JSON·XLSX |
 | 视图 | `/api/v1/workspaces/{wid}/tables/{tid}/views` | 保存筛选条件命名视图 + 可见性三档（`table`/`shared`/`private`）与共享名单 |
 | 权限 | `/api/v1/workspaces/{wid}/tables/{tid}/permissions` | 表级权限 |
+| 修改申请 | `/api/v1/workspaces/{wid}/tables/{tid}/change-requests` | 表级修改申请（双轨制写入载体） |
+| 问题 | `/api/v1/workspaces/{wid}/tables/{tid}/issues` | 数据表级问题反馈 + 评论/状态流水 |
+| 文档 | `/api/v1/workspaces/{wid}/documents` | 文档树 / 正文 / 版本 / 个人草稿 / 全文检索 / 分享 / 标签 |
+| 文档修改申请 | `/api/v1/workspaces/{wid}/document-change-requests` | 文档级修改申请（列表 / 详情 / merge / close / update-base） |
+| 文档问题 | `/api/v1/workspaces/{wid}/document-issues` | 文档级问题清单 + 评论/状态流水 |
 | 文档导出 | `/api/v1/workspaces/{wid}/documents/{doc_id}/export` | Markdown / Word / PDF 文件下载 |
 | Obsidian 库 | `/api/v1/workspaces/{wid}/documents/import[/analyze]`、`/documents/export/vault` | 库 zip 导入（预览 → 落库）/ 整库导出 |
+| 分析 | `/api/v1/workspaces/{wid}/analytics` | 分析模板 / 运行 / 字段智能推荐 |
+| 通知 | `/api/v1/accounts/notifications` | 站内通知（列表 / 已读） |
 | 健康 | `/health` | 服务存活 |
 
 完整文档：启动后访问 `http://localhost:8000/docs`（FastAPI 自动生成）
@@ -160,7 +171,7 @@ src/cndb/
 make sync          # 安装依赖
 make seed          # 注入演示数据（幂等）
 make dev           # 开发模式：同时启动后端 8772 + 前端 5173（Ctrl+C 一起停）
-make check         # 全套门禁：lint + typecheck + cov
+make check         # 全套门禁：gitkeep + lint + typecheck + frontend-static + frontend-coverage + cov
 make push          # 推送全部 remote
 ```
 
