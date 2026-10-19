@@ -22,6 +22,7 @@ description: Use when adding or extending automated tests in the cndb repo along
    - **e2e** → `frontend/tests/e2e/{smoke,critical}/*.spec.ts`（Playwright）
 2. 断言行为而非实现细节；覆盖边界与例外（ADR 的「边界与例外」章节逐条落到用例）。
 3. 运行验证：`make test` → `make cov`（后端门槛 95%）→ 前端 `make frontend-coverage` → `make e2e`。
+4. 把新用例文件回填到 ADR「落地状态」表的「测试」列（需与代码落点同行的期匹配），再跑 `make adr-check` 确认路径可达。
 
 ## 门禁
 

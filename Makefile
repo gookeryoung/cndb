@@ -26,7 +26,7 @@ CPUS := $(shell \
 endif
 PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 
-.PHONY: help sync dev seed frontend-sync fs frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-coverage-html fcov-html frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast flow gitkeep-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
+.PHONY: help sync dev seed frontend-sync fs frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-coverage-html fcov-html frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast flow gitkeep-check adr-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -99,6 +99,10 @@ e2e: frontend-build ## 前端 E2E 测试（Playwright；webServer 自动起隔�
 gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败）
 	uv run python scripts/check_gitkeep.py
 
+# ADR 落地门禁：落地状态表 / 交接节 / Related 与 CHANGELOG 关联（只读 docs，秒级）
+adr-check: ## 校验 ADR 落地状态、交接节与 CHANGELOG 关联
+	uv run python scripts/check_adr_landing.py
+
 lint: ## 后端代码风格检查 (ruff check + format，与 CI 对齐仅扫 src + tests)
 	uv run ruff check src tests --cache-dir .ruff_cache
 	uv run ruff format --check src tests
@@ -106,16 +110,16 @@ lint: ## 后端代码风格检查 (ruff check + format，与 CI 对齐仅扫 src
 typecheck: ## 类型检查 (pyrefly)
 	uv run pyrefly check -j 0
 
-check-fast cf: gitkeep-check lint typecheck frontend-static ## 轻量静态门禁（不含任何测试，适合实现阶段快速反馈）
+check-fast cf: gitkeep-check adr-check lint typecheck frontend-static ## 轻量静态门禁（不含任何测试，适合实现阶段快速反馈）
 
-# AI 开发流入口：把 AGENTS.md 的四步固化 —— 轻量静态门禁 → 全量后端测试。
+# AI 开发流入口：把 AGENTS.md 的四步固化 —— 轻量静态门禁（含 ADR 落地）→ 全量后端测试。
 # 「项目文档更新」与 `make push` 需人工判断，故不纳入本目标（避免误推）。
 flow: check-fast test ## AI 开发流：轻量静态门禁 + 全量后端测试（实现/验证内环）
 	@echo '[flow] 门禁已通过。随后：更新项目文档 → make push（见 AGENTS.md）'
 
 # 全量门禁：cov 与其余项并行；前端仅以 coverage 模式跑一次，避免 check-fast/check 双跑全量套件。
-check: ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-static + frontend-coverage + cov)
-	@$(MAKE) -j4 cov frontend-coverage gitkeep-check lint typecheck frontend-static
+check: ## 运行全套门禁 (gitkeep + adr-check + lint + typecheck + frontend-static + frontend-coverage + cov)
+	@$(MAKE) -j4 cov frontend-coverage gitkeep-check adr-check lint typecheck frontend-static
 
 BUMP_PART := $(filter-out bump,$(MAKECMDGOALS))
 

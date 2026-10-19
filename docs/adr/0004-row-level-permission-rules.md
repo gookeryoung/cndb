@@ -2,38 +2,35 @@
 
 Status: Proposed（待评审）
 Date: 2026-10-19
-Related: `plugins/tables/models.py`、`plugins/tables/services/core/access.py`、`plugins/tables/services/core/records.py`、`plugins/tables/routers/permissions.py`、`plugins/tables/routers/records.py`、`plugins/change_requests/services.py`（双轨制）、`docs/adr/0003-view-visibility-permission-model.md`（视图可见性，本 ADR 的上游）
+Related: `plugins/tables/models.py`、`plugins/tables/services/core/access.py`、`plugins/tables/services/core/records.py`、`plugins/tables/routers/permissions.py`、`plugins/tables/routers/records.py`、`plugins/change_requests/services.py`（双轨制）；上游视图可见性三档模型取自 ADR 0003（该 ADR 文档已随视图权限调整移除，commit 30790638）
+需求卡片: 无卡片（需求直接立项，原文见「口径」）
 
-## 口径（先对齐需求措辞）
+## 口径（需求 → 设计落点）
 
-需求原文：**「更细颗粒度的数据表权限管理。包括特定筛选规则相关的数据行的编辑和查看权限控制。」**
+需求原文：**「更细颗粒度的数据表权限管理。包括特定筛选规则相关的数据行的编辑和查看权限控制。」**（本 ADR 无需求卡片，原文与 C 编号就地维护）
 
-拆成三条可实施约束：
+拆成三条可实施约束（C1..C3）：
 
-| 需求句 | 本设计的落地 |
-|---|---|
-| 更细颗粒度 | 授权对象从「工作区角色 / 表级成员档」下沉到**指定成员**与**表级成员档（read/write）**；授权粒度从「整表」下沉到「**行**」。 |
-| 特定筛选规则相关的数据行 | 每条规则 = 一组筛选条件（复用现有 `{field_name, op, value}` + `AND/OR` 模型），**命中该条件的行**才受此规则约束。 |
-| 编辑和查看权限控制 | 每条规则带 **action ∈ {view, edit}**：`view` 只给可查看，`edit` 给可编辑（隐含可查看），两者分别收放。 |
+| # | 需求句（原文片段） | 本设计的落地 |
+|---|---|---|
+| C1 | 更细颗粒度 | 授权对象从「工作区角色 / 表级成员档」下沉到**指定成员**与**表级成员档（read/write）**；授权粒度从「整表」下沉到「**行**」。 |
+| C2 | 特定筛选规则相关的数据行 | 每条规则 = 一组筛选条件（复用现有 `{field_name, op, value}` + `AND/OR` 模型），**命中该条件的行**才受此规则约束。 |
+| C3 | 编辑和查看权限控制 | 每条规则带 **action ∈ {view, edit}**：`view` 只给可查看，`edit` 给可编辑（隐含可查看），两者分别收放。 |
 
-已确认的三项决策（本次立项时与需求方确认）：
-
-1. **授权对象**：`指定成员（按 user）` + `表级成员档（read/write）`（不做工作区角色、不做自定义分组）。
-2. **与现网关系**：**扩展并存** —— 现有 `TablePermission.row_filters` 保留为「对所有非管理员的默认档」，新规则表在其之上**按主体加开放**（默认档 + 规则命中 = 并集）。
-3. **编辑受限行**：成员对某行只有查看权、无编辑权时，其编辑请求**转为「修改申请」待审（202）**，复用既有双轨制。
+三项立项决策的结论只在「决策记录」写一次：授权对象 = D1，与现网关系 = D7，编辑受限行的处理 = D8。
 
 ## Context
 
-现状逐条核对（以代码为准）：
+现状逐条核对（以代码为准；本 ADR 无需求卡片，C 编号见「口径」）：
 
-| # | 现状 | 位置 | 影响 |
-|---|---|---|---|
-| 1 | `row_filters` 是**单一表级**过滤，**无主体维度** | `models.py:435`、`access.py:272-291` | 只能"给全表所有人同一套行过滤"，无法"某些行只给某些人"。 |
-| 2 | 读与写**共用同一过滤** | `records.py:390`（list）/ `491` / `527` / `549` / `574` / `698`（update）/ `740`（delete）/ `897` | "能看但不能改"的行状态**不可表达**（要么全可见可改，要么不可见）。 |
-| 3 | 字段隐藏 `hidden_fields` 只按**工作区角色**分桶 | `access.py:294-309` | 无法按个人 / 按行差异化隐藏字段。 |
-| 4 | 权限主体只有两级：工作区角色 + `TableMember`（read/write） | `models.py:448-466`、`access.py:53-78` | 缺少"指定成员级"的行授权。 |
-| 5 | 前端**没有任何 `row_filters` 编辑 UI** | `PermissionEditor.tsx`（仅成员 + 隐藏字段） | 现有行过滤能力实际是"隐形后端能力"，需求侧无法自助配置。 |
-| 6 | 视图可见性三档已解决，且已定"视图不是安全边界" | `docs/adr/0003` | 行 / 字段边界本就属表级裁决 —— 本 ADR 正是补齐这块"行边界"。 |
+| # | 现状 | 位置 | 影响 | 对应约束 |
+|---|---|---|---|---|
+| 1 | `row_filters` 是**单一表级**过滤，**无主体维度** | `models.py:435`、`access.py:272-291` | 只能"给全表所有人同一套行过滤"，无法"某些行只给某些人"。 | C1 / C2 |
+| 2 | 读与写**共用同一过滤** | `records.py:390`（list）/ `491` / `527` / `549` / `574` / `698`（update）/ `740`（delete）/ `897` | "能看但不能改"的行状态**不可表达**（要么全可见可改，要么不可见）。 | C3 |
+| 3 | 字段隐藏 `hidden_fields` 只按**工作区角色**分桶 | `access.py:294-309` | 无法按个人 / 按行差异化隐藏字段。 | C1 |
+| 4 | 权限主体只有两级：工作区角色 + `TableMember`（read/write） | `models.py:448-466`、`access.py:53-78` | 缺少"指定成员级"的行授权。 | C1 |
+| 5 | 前端**没有任何 `row_filters` 编辑 UI** | `PermissionEditor.tsx`（仅成员 + 隐藏字段） | 现有行过滤能力实际是"隐形后端能力"，需求侧无法自助配置。 | C2 |
+| 6 | 视图可见性三档已解决，且已定"视图不是安全边界" | `docs/adr/0003` | 行 / 字段边界本就属表级裁决 —— 本 ADR 正是补齐这块"行边界"。 | — |
 
 **核心缺陷（需求要补的）**：`row_filters` 既无主体维度、又读写不分、且无 UI。需求要求的"特定筛选规则相关的数据行 → 给特定对象 → 分查看/编辑"三件事，无一能在现模型上表达。
 
@@ -238,28 +235,21 @@ def assert_row_rule_valid(db, table, operator, subject_type, subject_id, action)
 | **P1 写路径接入** | `row_edit_scope_where` + `can_edit_row`；`update`/`delete` 单行分派（直编 / 202 / 404）；批量边界按 §7-6 | 中（触及双轨制分派） |
 | **P2 规则写入面 + 前端** | 规则 CRUD 端点 + `subjects` + `preview` + 前端「行级权限」区 + 条件构建器抽取 + `AuditLog` + 备份纳入 | 中 |
 
-## 决策记录（本次立项已确认）
+## 决策记录（唯一决策台账）
 
-| # | 议题 | **结论** | 依据 | 被否决项（及理由） |
-|---|---|---|---|---|
-| D1 | 授权对象粒度 | **`user`（指定成员）+ `member_role`（表级 read/write）** | 需求方确认：既要"特定行给特定人"，也要"按编辑者/查看者两档批量" | ① 仅按工作区角色（粒度不够，无法针对个人）；② 自定义分组（需额外组模型 + 维护 UI，成本最高） |
-| D2 | `edit` 规则能否独立于表 `EDIT_RECORDS` 授予写权 | **能**（行级写 ACL 独立于表门槛） | 需求"细颗粒度"的主用例就是"把某些行开放给某人可编辑"，若仍以表 `EDIT_RECORDS` 为天花板，则行级 edit 只能"收"不能"放" | 以表 `EDIT_RECORDS` 为天花板（行级 edit 只作收紧，失去主用例） |
-| D3 | 管理员是否受行规则约束 | **豁免**（沿用 `row_filters_bypass`） | I3 存量不变 + 现网既有口径；owner 是表的兜底责任人 | 管理员受限（改变现网行为，且 owner 看不到全表将无法兜底排障） |
-| D4 | 新建行是否受行规则约束 | **不受**，沿用表级 `EDIT_RECORDS` + 双轨制 | 新行尚无行身份，无法参与"按行判定" | 新建即自动命中默认档（语义含混） |
-| D5 | `member_role` 匹配口径 | **按用户有效档位**（`EDIT_RECORDS` 通过=write，否则 READ=read） | 覆盖绝大多数靠工作区角色获权、无 `TableMember` 行的成员 | 仅匹配显式 `TableMember.role`（对多数成员永不命中） |
-| D6 | 每主体每动作规则条数 | **至多一条**（唯一键 `(table, subject_type, subject_id, action)`），多段范围用 `filter_type=OR` | 避免"多条规则 + 优先级"的冲突消解复杂度 | 多条规则 + priority 排序（冲突语义复杂，收益低） |
-| D7 | 与现有 `row_filters` 的关系 | **扩展并存**：`row_filters` 作为默认档，新规则并集叠加 | 需求方确认；存量零迁移（I3） | ① 替换进规则表（需迁移且要保证逐条不变）；② 仅叠加收紧（无法表达"把默认隐藏的行开放给某人"） |
+| # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
+|---|---|---|---|---|---|
+| D1 | 授权对象粒度 | **`user`（指定成员）+ `member_role`（表级 read/write）** | 需求方确认：既要"特定行给特定人"，也要"按编辑者/查看者两档批量" | ① 仅按工作区角色（粒度不够，无法针对个人）；② 自定义分组（需额外组模型 + 维护 UI，成本最高） | `tables_rowpermission.subject_type` 枚举 + 前端主体选择器 |
+| D2 | `edit` 规则能否独立于表 `EDIT_RECORDS` 授予写权 | **能**（行级写 ACL 独立于表门槛） | 需求"细颗粒度"的主用例就是"把某些行开放给某人可编辑"，若仍以表 `EDIT_RECORDS` 为天花板，则行级 edit 只能"收"不能"放" | 以表 `EDIT_RECORDS` 为天花板（行级 edit 只作收紧，失去主用例） | `row_access.row_edit_scope_where`（`base_edit` 与 `edit_or` 并列）+ `records._dispatch_or_403` 按行分派 |
+| D3 | 管理员是否受行规则约束 | **豁免**（沿用 `row_filters_bypass`） | I3 存量不变 + 现网既有口径；owner 是表的兜底责任人 | 管理员受限（改变现网行为，且 owner 看不到全表将无法兜底排障） | `row_access` 首行复用 `row_filters_bypass` |
+| D4 | 新建行是否受行规则约束 | **不受**，沿用表级 `EDIT_RECORDS` + 双轨制 | 新行尚无行身份，无法参与"按行判定" | 新建即自动命中默认档（语义含混） | `create` 路径不改判定 |
+| D5 | `member_role` 匹配口径 | **按用户有效档位**（`EDIT_RECORDS` 通过=write，否则 READ=read） | 覆盖绝大多数靠工作区角色获权、无 `TableMember` 行的成员 | 仅匹配显式 `TableMember.role`（对多数成员永不命中） | `row_access.applicable_row_rules` 用 `check_action(EDIT_RECORDS)` 定档 |
+| D6 | 每主体每动作规则条数 | **至多一条**（唯一键 `(table, subject_type, subject_id, action)`），多段范围用 `filter_type=OR` | 避免"多条规则 + 优先级"的冲突消解复杂度 | 多条规则 + priority 排序（冲突语义复杂，收益低） | 唯一键 `uniq_rowpermission_subject_action` |
+| D7 | 与现有 `row_filters` 的关系 | **扩展并存**：`row_filters` 作为默认档，新规则并集叠加 | 需求方确认；存量零迁移（I3） | ① 替换进规则表（需迁移且要保证逐条不变）；② 仅叠加收紧（无法表达"把默认隐藏的行开放给某人"） | `TablePermission.row_filters` 原地保留 + `row_access` 并集合成 |
+| D8 | 可查看但不可编辑的行如何处理 | **转为「修改申请」待审（202）**，复用既有双轨制 | 需求方确认；不为行级写权另造审批链 | 直接 403（用户已选 202）/ 静默忽略（用户无反馈） | `records._dispatch_or_403` + `plugins/change_requests/services.py` |
+| D9 | 整体方案选型（为何新建表 + 单一入口） | **新增独立 `tables_rowpermission` + `row_access.py` 单一判定入口**；字段级另开决策 | 需求只覆盖数据行的查看 / 编辑；判定收敛后读写 / 审计 / 导出 / 分析复用同一入口 | ① 只做前端过滤（后端可按 id 枚举，等于没做）；② 复用 `row_filters` 单表存所有规则（读不出主体与动作，且与默认档混同）；③ 引入通用 ACL 不设表天花板（会出现"行可见但表不可见"的悬空权限）；④ 行级规则同时做字段级（本次范围外） | `tables_rowpermission` + `plugins/tables/services/core/row_access.py` |
 
-## 与 ADR 0003 的关系
-
-两条 ADR 处理**两条正交的细粒度轴**，互不越界：
-
-| 轴 | 载体 | 决定 | 由谁 |
-|---|---|---|---|
-| **视图可见性**（看哪个视角 / 谁能用这个视角） | `DataView.visibility` + `tables_dataviewpermission` | 谁能看到并使用某个视图配置 | ADR 0003 |
-| **数据行可见性**（能看 / 能改哪些行） | `TablePermission.row_filters` + `tables_rowpermission`（本 ADR） | 谁能看、谁能改哪些数据行 | ADR 0004 |
-
-共识不变：**视图不是安全边界**。视图不得放大行权限；行/字段边界由表级裁决。
+门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
 ## Consequences
 
@@ -270,7 +260,8 @@ def assert_row_rule_valid(db, table, operator, subject_type, subject_id, action)
   3. 写路径从"表级布尔"变为"按行三态（直编 / 202 / 404）"，双轨制分派逻辑变复杂，需单点分派与严格回归。
   4. `member_role` 主体与工作区角色是"间接映射"（按有效档位），文档与 UI 需明确说明，避免"给 editor 档配了规则但某人靠工作区角色获权"这类困惑。
   5. 管理员豁免（D3）意味着行规则**不是**"连管理员也挡"的合规级隔离；如需该语义另开决策。
-- **已否决的替代方案**：① 只做前端过滤（后端可按 id 枚举，等于没做）；② 复用 `row_filters` 单表存所有规则（读不出主体与动作，且与默认档混同）；③ 引入通用 ACL 不设表天花板（会出现"行可见但表不可见"的悬空权限）；④ 行级规则同时做字段级（本次范围外，另开决策）。
+
+被否决的替代方案见「决策记录」D9（方案级）与各行「被否决项」，此处不重复。
 
 ## 行业对照（2026-10 核对）
 
@@ -284,14 +275,29 @@ def assert_row_rule_valid(db, table, operator, subject_type, subject_id, action)
 
 来源：飞书帮助中心《使用多维表格高级权限（记录权限）》；Airtable support《Record-level permissions》。
 
-### 决策 → 代码落点
+## 与既有 ADR 的关系
 
-| 决策 | 落地位置 | 已选值 |
-|---|---|---|
-| D1 | `tables_rowpermission.subject_type` 枚举 + 前端主体选择器 | `user` / `member_role` |
-| D2 | `row_access.row_edit_scope_where`（`base_edit` 与 `edit_or` 并列）+ `records._dispatch_or_403` 按行分派 | edit 规则独立授予行写权 |
-| D3 | `row_access` 首行 `row_filters_bypass` 复用 | 管理员豁免 |
-| D4 | `create` 路径不改判定 | 新建行沿用表级 |
-| D5 | `row_access.applicable_row_rules` 用 `check_action(EDIT_RECORDS)` 定档 | 有效档位 |
-| D6 | 唯一键 `uniq_rowpermission_subject_action` | 每主体每动作一条 |
-| D7 | `TablePermission.row_filters` 原地保留 + `row_access` 并集合成 | 扩展并存、默认档 |
+两条 ADR 处理**两条正交的细粒度轴**，互不越界：
+
+| 轴 | 载体 | 决定 | 由谁 |
+|---|---|---|---|
+| **视图可见性**（看哪个视角 / 谁能用这个视角） | `DataView.visibility` + `tables_dataviewpermission` | 谁能看到并使用某个视图配置 | ADR 0003 |
+| **数据行可见性**（能看 / 能改哪些行） | `TablePermission.row_filters` + `tables_rowpermission`（本 ADR） | 谁能看、谁能改哪些数据行 | ADR 0004 |
+
+共识不变：**视图不是安全边界**。视图不得放大行权限；行/字段边界由表级裁决。
+
+## 落地状态（随实现更新）
+
+| 期 | 状态 | 代码落点 | 测试 | 提交 |
+|---|---|---|---|---|
+| P0 模型 + 判定入口 | 已落地 | `src/cndb/plugins/tables/models.py`、`src/cndb/plugins/tables/services/core/row_access.py`、`src/cndb/alembic/versions/c8d9e0f1a2b3_add_rowpermission.py` | `tests/test_row_access_rules.py` | `1ae26783` |
+| P1 写路径接入 | 已落地 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/row_access.py` | `tests/test_row_write_dispatch.py` | `d8560007` |
+| P2 规则写入面 + 前端 | 已落地 | `src/cndb/plugins/tables/routers/row_permissions.py`、`src/cndb/plugins/tables/schemas/models.py`、`frontend/src/pages/grid/permissions/PermissionEditor.tsx`、`frontend/src/api/tables.ts`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/tables/services/core/audit.py` | `tests/test_row_permissions_api.py`、`tests/test_row_level_permissions_e2e.py`、`frontend/src/pages/grid/permissions/PermissionEditor.test.tsx` | `cde4130e` |
+
+## 交接（会话结束更新）
+
+- 当前阶段：P0-P2 已落地；ADR 仍为 `Proposed`，等待人工评审回填 `Accepted`
+- 已完成：P0（模型 + 读路径）、P1（写路径分派）、P2（CRUD / subjects / preview / 前端 / 审计 / 备份）
+- 下一步：评审 D1..D9 与测试清单；确认是否补行级权限的 Playwright 专项用例；评审通过后更新 `Status`
+- 已知坑：`member_role` 按有效档位匹配（D5）；管理员豁免（D3）；读 ⊇ 写（I4）；批量端点不开放行级旁路（§7-6）；规则增删改后必须清记录缓存（§7-7）；规则 filters 引用隐藏字段时静默丢弃
+- 最近一次全绿：`make flow` 通过（2026-10-20，本地工作区）

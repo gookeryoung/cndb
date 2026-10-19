@@ -9,12 +9,13 @@ description: Use to run the cndb repo's objective gates (make flow / make check,
 
 ## 门禁清单（对照 AGENTS.md）
 
-1. `make check-fast`：gitkeep + ruff + pyrefly + 前端 tsc/eslint（内环，秒级）。
+1. `make check-fast`：gitkeep + adr-check + ruff + pyrefly + 前端 tsc/eslint（内环，秒级）。
 2. `make flow`：`check-fast` + `test`（实现/验证快捷入口）。
 3. `make test` → `make cov`：后端单测 + 覆盖率门槛 95%。
 4. 前端 `make frontend-coverage`（双门槛）、`make e2e`（4 分片）。
-5. `make check`：全套门禁（gitkeep + lint + typecheck + frontend-static + frontend-coverage + cov，并行）。
-6. CI：GitHub Actions `ci.yml` 与 CodeUp `ci.yml`；bundle budget 不超基线 +5%（见 `docs/BUNDLE_BUDGET.md`）。
+5. `make check`：全套门禁（gitkeep + adr-check + lint + typecheck + frontend-static + frontend-coverage + cov，并行）。
+6. `make adr-check`：ADR 落地状态表 / 交接节 / Related 链接 / CHANGELOG 关联；已落地的期必须有代码落点与测试文件。
+7. CI：GitHub Actions `ci.yml` 与 `adr-check.yml`、CodeUp `ci.yml`；bundle budget 不超基线 +5%（见 `docs/BUNDLE_BUDGET.md`）。
 
 ## 步骤
 
@@ -26,5 +27,6 @@ description: Use to run the cndb repo's objective gates (make flow / make check,
 ## 铁律
 
 - 不 `--no-verify`、不跳 prek、不通过 `-k`/`--ignore` 排除失败用例、不放宽覆盖率门槛。
+- 不靠「删掉落地表 / 把状态改回未开始」让 `adr-check` 变绿；实际没做回填要补实现或拆期。
 - 迁移必须幂等 + downgrade 可还原。
 - 门禁失败的修复要追溯根因，不允许「注释掉断言」式绕过。
