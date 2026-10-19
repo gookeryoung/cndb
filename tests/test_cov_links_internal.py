@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core import links
 
@@ -97,3 +99,41 @@ class TestFindBackReferencesNoSource:
         db.commit()
         result = find_back_references(db, db_engine, tbl, 1)
         assert result == []
+
+
+class TestResolveLinkTokens:
+    """resolve_link_tokens：导入时按业务键把文本解析为目标行 id."""
+
+    def test_resolve_by_display_field(self, db_engine, db, client, auth_headers):
+        _wid, tid_b, tid_a = _create_full_link_scenario(client, auth_headers, db)
+        target_field = db.query(DataField).filter_by(table_id=tid_b, name="tname").first()
+        fa = db.query(DataField).filter_by(table_id=tid_a, name="link_to_target").first()
+        fa.config = {**(fa.config or {}), "display_field_id": target_field.id}
+        db.commit()
+        db.refresh(fa)
+
+        ids = links.resolve_link_tokens(db_engine, db, fa, ["aaa", "ccc"])
+        assert len(ids) == 2
+        assert ids[0] != ids[1]
+
+    def test_unmatched_token_raises(self, db_engine, db, client, auth_headers):
+        _wid, tid_b, tid_a = _create_full_link_scenario(client, auth_headers, db)
+        target_field = db.query(DataField).filter_by(table_id=tid_b, name="tname").first()
+        fa = db.query(DataField).filter_by(table_id=tid_a, name="link_to_target").first()
+        fa.config = {**(fa.config or {}), "match_field_id": target_field.id}
+        db.commit()
+        db.refresh(fa)
+
+        with pytest.raises(ValueError, match="未匹配到目标行"):
+            links.resolve_link_tokens(db_engine, db, fa, ["missing"])
+
+    def test_no_business_key_configured_raises(self, db_engine, db, client, auth_headers):
+        _wid, _tid_b, tid_a = _create_full_link_scenario(client, auth_headers, db)
+        fa = db.query(DataField).filter_by(table_id=tid_a, name="link_to_target").first()
+        with pytest.raises(ValueError, match="未配置匹配字段"):
+            links.resolve_link_tokens(db_engine, db, fa, ["aaa"])
+
+    def test_empty_tokens_returns_empty(self, db_engine, db, client, auth_headers):
+        _wid, _tid_b, tid_a = _create_full_link_scenario(client, auth_headers, db)
+        fa = db.query(DataField).filter_by(table_id=tid_a, name="link_to_target").first()
+        assert links.resolve_link_tokens(db_engine, db, fa, ["  "]) == []

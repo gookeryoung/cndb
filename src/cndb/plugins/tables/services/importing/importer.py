@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.services.core.ddl import add_column
+from cndb.plugins.tables.services.core.links import resolve_link_tokens
 from cndb.plugins.tables.services.importing.cleaning import apply_cleaning_actions, generate_cleaning_suggestions
 from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
@@ -192,6 +193,7 @@ class Importer:
             field_mapping=self.field_mapping,
             gap_filling=self.gap_filling,
             fill_values=self.fill_values,
+            link_resolver=self._resolve_link_tokens,
         )
         results = rv.validate_all(rows)
 
@@ -808,6 +810,16 @@ class Importer:
         # 全部 DDL 成功 → 持久化 DataField 元数据
         self.db.commit()
         self.db.refresh(self.table)
+
+    # ── 工具：link 业务键解析 ───────────────
+
+    def _resolve_link_tokens(self, field: DataField, tokens: list[str]) -> list[int]:
+        """RowValidator 回调：把 link 列的业务文本按匹配字段解析为目标行 id.
+
+        link 字段配置了 display_field_id / match_field_id 时，导出文件里的业务文本
+        经此解析回灌为目标行 id；未匹配到的文本抛 ValueError，由行级校验转为 error.
+        """
+        return resolve_link_tokens(self.engine, self.db, field, tokens)
 
     # ── 工具：预览样本字段 ────────────────────
 
