@@ -492,6 +492,9 @@ def import_fields_as_lookup(
             db.rollback()
             raise
 
+    # 把本批 lookup 登记到 link 字段的 reference_fields —— 引用字段归属该关联字段，
+    # 之后编辑 link 字段时「引用字段」列表即反映这些项（与 sync_link_reference_fields 口径一致）。
+    _register_link_reference_fields(db, link_field)
     lookup_count = sum(1 for f in created if f.field_type == "lookup")
     logger.info(
         "[field_ops] 关联引入 %d 个 lookup 字段到 %s（link 字段: %s）",
@@ -500,3 +503,142 @@ def import_fields_as_lookup(
         link_field.name,
     )
     return created, skipped
+
+
+# ── 关联字段的引用字段管理 ────────────────────────────
+
+
+def _managed_lookups(db: Session, link_field: DataField) -> list[DataField]:
+    """返回归属于某 link 字段名下的未回收 lookup 字段（via_link_field_id 指向它）."""
+    candidates = (
+        db.query(DataField)
+        .filter(
+            DataField.table_id == link_field.table_id,
+            DataField.field_type == "lookup",
+            DataField.trashed == False,  # noqa: E712
+        )
+        .all()
+    )
+    return [f for f in candidates if (f.config or {}).get("via_link_field_id") == link_field.id]
+
+
+def _register_link_reference_fields(db: Session, link_field: DataField) -> None:
+    """把 link 字段名下已有 lookup 的来源字段登记为 config.reference_fields（保序）."""
+    lookups = sorted(_managed_lookups(db, link_field), key=lambda f: (f.order, f.id))
+    ref_ids: list[int] = []
+    for lf in lookups:
+        source_id = (lf.config or {}).get("source_field_id")
+        if isinstance(source_id, int) and source_id not in ref_ids:
+            ref_ids.append(source_id)
+    config = dict(link_field.config or {})
+    if config.get("reference_fields") == ref_ids:
+        return
+    config["reference_fields"] = ref_ids
+    link_field.config = config
+    db.commit()
+
+
+def sync_link_reference_fields(db: Session, link_field: DataField, target_table: DataTable) -> list[DataField]:
+    """按 link 字段 config.reference_fields 同步其名下的 lookup 引用字段.
+
+    引用字段在关联配置内管理（而非独立字段设置）：保存 link 字段时按配置对齐 ——
+    - 配置中的每个目标字段 id 对应一个 lookup（复用同源已有项，缺失时新建）；
+    - 配置中已移除、但仍挂在 link 下的 lookup 软删除让位，释放字段名；
+    - 顺序按配置列表顺序写入 order，使字段列表折叠展示时顺序一致。
+
+    Args:
+        db: SQLAlchemy Session（本函数内 commit）.
+        link_field: 已持久化（有 id）的 link 字段.
+        target_table: link 字段关联的目标表.
+
+    Returns:
+        当前生效的引用 lookup 字段列表（按配置顺序）.
+    """
+    if link_field.id is None:  # pragma: no cover - 调用方保证已 commit 有 id
+        return []
+
+    managed = _managed_lookups(db, link_field)
+    by_source: dict[int, DataField] = {}
+    for lf in managed:
+        source_id = (lf.config or {}).get("source_field_id")
+        if isinstance(source_id, int):
+            by_source.setdefault(source_id, lf)
+
+    target_by_id = {f.id: f for f in target_table.active_fields()}
+    ref_ids = list((link_field.config or {}).get("reference_fields") or [])
+
+    used_names = {
+        f.name
+        for f in db.query(DataField)
+        .filter(DataField.table_id == link_field.table_id, DataField.trashed == False)  # noqa: E712
+        .all()
+    }
+
+    kept: list[DataField] = []
+    created: list[DataField] = []
+    for idx, ref_id in enumerate(ref_ids):
+        src = target_by_id.get(ref_id)
+        if src is None:
+            continue  # 校验期已拒绝，这里防御性跳过
+        order = (link_field.order or 0) + idx + 1
+        existing = by_source.pop(ref_id, None)
+        if existing is not None:
+            existing.order = order
+            cfg = dict(existing.config or {})
+            cfg.update(
+                {
+                    "source_table_id": target_table.id,
+                    "source_field_id": src.id,
+                    "via_link_field_id": link_field.id,
+                    "source_field_type": src.field_type,
+                }
+            )
+            cfg.pop("broken", None)
+            existing.config = cfg
+            kept.append(existing)
+            continue
+        name = _unique_name_against(used_names, src.name)
+        used_names.add(name)
+        lf = DataField(
+            table_id=link_field.table_id,
+            name=name,
+            field_type="lookup",
+            config={
+                "source_table_id": target_table.id,
+                "source_field_id": src.id,
+                "via_link_field_id": link_field.id,
+                "source_field_type": src.field_type,
+            },
+            order=order,
+        )
+        lf.ensure_db_name()
+        db.add(lf)
+        created.append(lf)
+        kept.append(lf)
+
+    # 配置外仍挂在 link 下的 lookup 软删除让位（referenced 名字释放供复用）
+    for stale in by_source.values():
+        stale.trashed = True
+        stale.name = rename_trashed_field_aside(db, stale)
+
+    db.commit()
+    for lf in created:
+        db.refresh(lf)
+    if created or by_source:
+        logger.info(
+            "[field_ops] 同步关联字段 %r 的引用字段：新建 %d，移除 %d",
+            link_field.name,
+            len(created),
+            len(by_source),
+        )
+    return kept
+
+
+def _unique_name_against(used: set[str], base: str) -> str:
+    """在 used 名字集合上为 base 取不冲突名（冲突时追加序号后缀）."""
+    if base not in used:
+        return base
+    idx = 2
+    while f"{base} {idx}" in used:
+        idx += 1
+    return f"{base} {idx}"

@@ -1394,9 +1394,9 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   justify-content: flex-start;
 }
 
+/* 内容区不再自造滚动：此前的 max-height + overflow-y 会在空间充足时仍强制出现
+   滚动条（字段页上下显示不全）。改由外层页面统一滚动，内容按需自然撑开。 */
 .table-settings-tabs>.ant-tabs-content-holder {
-  max-height: min(600px, calc(100vh - 240px));
-  overflow-y: auto;
   padding: var(--cn-space-md) var(--cn-space-hairline) var(--cn-space-md) var(--cn-space-lg);
 }
 
@@ -1572,6 +1572,17 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-muted);
 }
 
+/* 引用字段归属标注（lookup → 所属关联字段） */
+.fm-row-owner {
+  flex-shrink: 0;
+  padding: 0 var(--cn-space-sm);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-muted);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
+  white-space: nowrap;
+}
+
 .fm-row-actions {
   display: inline-flex;
   gap: var(--cn-space-hairline);
@@ -1717,6 +1728,52 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-muted);
   border: 1px dashed var(--cn-border);
   border-radius: var(--cn-radius-base);
+}
+
+/* ── 关联字段「引用字段」编辑器：可排序列表 ── */
+.fm-ref-field {
+  width: 100%;
+}
+
+.fm-ref-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+  margin-bottom: var(--cn-space-xs);
+}
+
+.fm-ref-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-xs) var(--cn-space-sm);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container);
+}
+
+.fm-ref-index {
+  width: 18px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
+}
+
+.fm-ref-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-sm);
+  color: var(--cn-text-primary);
+}
+
+.fm-ref-empty {
+  margin-bottom: var(--cn-space-xs);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
 }
 
 /* ─────────────── 表格密度控制 — 用 padding 压缩行高，不改字号 ─────────────── */
