@@ -5,11 +5,12 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
 import { renderProviders } from '@/test/render-providers'
-import { mockUser } from '@/test/msw'
-import type { UserResponse } from '@/api'
+import { mockUser, mockWorkspace, server } from '@/test/msw'
+import type { UserResponse, WorkspaceType } from '@/api'
 import type { ResponsiveState } from '@/hooks/useResponsive'
 
 // 可控 useResponsive mock：默认桌面端，移动端用例在 beforeEach 中切换
@@ -466,5 +467,50 @@ describe('MainLayout 移动端适配', () => {
         expect(screen.queryByText('cndb')).toBeNull()
         // 工作区下拉仅图标：按钮内无「测试工作区」文字
         expect(screen.queryByRole('button', { name: /测试工作区/ })).toBeNull()
+    })
+})
+
+// ─────────────── 工作区类型门控：页签 / 侧栏 / 落地页 ───────────────
+
+/** 覆盖工作区列表接口，返回指定类型的工作区 */
+function useWorkspaceType(type: WorkspaceType) {
+    server.use(
+        http.get('/api/v1/workspaces', () =>
+            HttpResponse.json([{ ...mockWorkspace, workspace_type: type }])),
+    )
+}
+
+describe('MainLayout 工作区类型门控', () => {
+    it('数据类工作区（data）不显示「文档」页签', async () => {
+        useWorkspaceType('data')
+        renderLayout(mockUser)
+
+        await waitFor(() => expect(screen.getByTestId('tables-page-stub')).toBeVisible())
+        await waitFor(() => expect(screen.queryByRole('tab', { name: /文档/ })).toBeNull())
+        expect(screen.getByRole('tab', { name: /数据表/ })).toBeInTheDocument()
+    })
+
+    it('文档类工作区（doc）仅显示「文档」与「工作区设置」，不渲染表导航侧栏', async () => {
+        useWorkspaceType('doc')
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => expect(screen.getByTestId('documents-page-stub')).toBeVisible())
+        await waitFor(() => expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull())
+
+        expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
+        expect(screen.getByRole('tab', { name: /文档/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /工作区设置/ })).toBeInTheDocument()
+        // 无数据表功能 → 不渲染常驻侧栏
+        expect(document.querySelector('.ant-layout-sider')).toBeNull()
+    })
+
+    it('文档类工作区访问数据表/数据分析路径自动重定向到文档页', async () => {
+        useWorkspaceType('doc')
+        renderLayout(mockUser, '/w/10/tables')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
+        })
+        expect(screen.queryByTestId('tables-page-stub')).toBeNull()
     })
 })
