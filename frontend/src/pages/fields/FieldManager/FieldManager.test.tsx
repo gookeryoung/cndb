@@ -1107,6 +1107,26 @@ describe('FieldManager 关联字段对话框数据同步', () => {
         })
     })
 
+    it('关联字段 reference_fields 为空数组（后端归一化结果）时同样反推展示，不显示空态', async () => {
+        // 后端 _validate_field_config 归一化后 config 恒含 reference_fields（可能为空数组），
+        // 此时若仅按「键是否存在」判断会跳过反推，导致编辑关联字段时「引用字段」区内容为空。
+        const fields = [
+            {
+                id: 5, name: '部门', field_type: 'link', order: 0,
+                config: { target_table_id: 30, multiple: false, display_field_id: null, match_field_id: null, reference_fields: [] },
+            },
+            { id: 9, name: '负责人', field_type: 'lookup', order: 1, config: { via_link_field_id: 5, source_field_id: 12, source_field_type: 'text' } },
+        ] as any
+        renderFMWith(fields)
+        clickEditRow('部门')
+        await waitFor(() => expect(targetTableText()).toBe('项目表'))
+        // 反推后引用字段区应列出「负责人」，而不是「暂无引用字段」空态
+        await waitFor(() => {
+            expect(document.querySelector('.fm-ref-list')?.textContent).toContain('负责人')
+        })
+        expect(document.querySelector('.fm-ref-empty')).toBeNull()
+    })
+
     it('字段列表中引用字段行只读：不渲染编辑/删除按钮，也不提供拖拽手柄', () => {
         const fields = [
             { id: 5, name: '部门', field_type: 'link', order: 0, config: { target_table_id: 30 } },
