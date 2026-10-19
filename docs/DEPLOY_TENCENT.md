@@ -465,9 +465,15 @@ CI 打包配置载荷 → TAT 下发 → 服务器拉 wheel 并构建镜像 → 
 GitHub Actions 页面可看实时进度（TAT 会把 `deploy.sh` 的日志回传到 job 日志里）；
 失败会自动回滚并在日志中标明原因。
 
-> 本仓库同时向 CodeUp 与 GitHub 推 tag，两条 release 流水线都会发布同一版本：
-> `uv publish --check-url` 让后到的一方跳过重复上传；GitHub 的 deploy job 即使
-> 发现 pypi job 因重复发布而失败，也会继续从 PyPI 解析已发布的 wheel 完成部署。
+> 本仓库同时向 CodeUp 与 GitHub 推 tag，两条 release 流水线都会发布同一版本并各自
+> 走 TAT 部署：`uv publish --check-url` 让后到的一方跳过重复上传；GitHub 的 deploy job
+> 即使发现 pypi job 因重复发布而失败，也会继续从 PyPI 解析已发布的 wheel 完成部署。
+> CodeUp 侧 `deploy_tencent` job 以 `needs: pypi` 串在发布之后，所用全局变量与 GitHub
+> Secrets 同名同值（清单见 `.codeup/pipelines/release.yml` 头部注释）。
+>
+> ⚠️ 两条流水线各自部署同一台服务器，而服务器端 `deploy.sh` 没有互斥锁：同一 tag 下
+> 二者可能并发执行、相互覆盖镜像与 `.env`。建议二选一只保留一侧的 deploy job，或给
+> `deploy.sh` 加 flock 串行化。
 
 **手动重跑**（不改代码重新部署）：
 

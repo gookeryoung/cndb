@@ -3,10 +3,12 @@
 #
 # 触发：推 git tag `v*.*.*`
 #
-# 并行 3 个 job（阶段内默认并行，无 needs）：
-#   pypi        →  前端构建 → uv build → uv publish（OIDC 不可用，改用 PyPI token）
-#   pack_linux  →  前端构建 → fspack b + p → 产物上传 CodeUp 制品库
-#   upload      →  收集 PyPI wheel 与 Linux fspack 产物 → 汇总上传
+# 阶段内 4 个 job（默认并行，仅 deploy_tencent 用 needs 串在 pypi 之后）：
+#   pypi           →  前端构建 → uv build → uv publish（OIDC 不可用，改用 PyPI token）
+#   pack_linux     →  前端构建 → fspack b + p → 产物上传 CodeUp 制品库
+#   upload_fspack  →  收集 PyPI wheel 与 Linux fspack 产物 → 汇总上传
+#   deploy_tencent →  依赖 pypi 成功：解析 wheel 源 → 打配置载荷 → TAT 下发，
+#                      服务器自行下载 wheel 并构建镜像（与 GitHub release.yml 等价）
 #
 # ⚠️ 本流水线不含 Windows fspack 打包：其 NSIS + mingw-w64 依赖宿主机原生工具链，而
 # CodeUp public/cn-beijing 为 K8s 容器环境，故 Windows 打包仍由 GitHub Actions 的
@@ -16,6 +18,12 @@
 #   UV_PUBLISH_TOKEN = <PyPI API Token>   ← 推荐，uv 原生支持，自动走 __token__ 用户名
 #   # 或（兼容 twine 风格）：PYPI_USERNAME=__token__ + PYPI_PASSWORD=<token>
 # fspack download_wheels 会用到 pip，流水线已在 uv venv 内 `uv pip install pip`。
+#
+# 部署 job 额外需要（与 GitHub Secrets 同名同值，最小权限见 docs/DEPLOY_TENCENT.md）：
+#   TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY  子账号密钥（tat:RunCommand / tat:DescribeInvocationTasks）
+#   CNDB_REGION / CNDB_INSTANCE_ID                    Lighthouse 实例地域与实例 ID
+#   TCR_REGISTRY / TCR_GROUP                          （可选）镜像命名/回滚识别，须成对提供
+#   BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL            （可选）服务器端构建换源
 
 name: cndb-release
 
@@ -83,6 +91,175 @@ stages:
                 # --check-url：同版本文件已存在时跳过上传。GitHub / CodeUp 两条 release
                 # 流水线都会发布同一 tag，后到的一边不再因 400 duplicate 失败。
                 uv publish --check-url https://pypi.org/simple/
+
+      # ── 生产部署（pypi 成功后，TAT 下发服务器端构建）─────────────
+      # 与 GitHub release.yml 的 deploy-tencent job 等价：pypi 成功 = wheel 已在 PyPI，
+      # 随后经腾讯云 TAT（自动化助手）下发命令，服务器自行下载 wheel 并 docker build。
+      # 用 TAT 而非 SSH：无入站连接，不产生「异地登录」告警，22 端口可对公网关掉。
+      deploy_tencent:
+        name: Deploy to Tencent Cloud (TAT)
+        needs: pypi
+        runsOn:
+          group: public/cn-beijing
+          container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/alinux3:latest
+          instanceType: MEDIUM_2C4G
+        # 70 分钟为排障上限；依赖未变时服务器构建约 20-40s，依赖变化时多一次 1-3 分钟的基础镜像构建
+        timeoutMinutes: 70
+        steps:
+          setup:
+            name: 安装 uv 与 Python 3.12
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                echo "[setup] install uv ..."
+                curl -LsSf https://astral.sh/uv/install.sh | sh
+                export PATH="$HOME/.local/bin:$PATH"
+                # 部署脚本用到 datetime.UTC（3.11+），故用 uv 托管的 3.12 而非容器自带 python3
+                uv python install 3.12
+          resolve:
+            name: 解析版本与 wheel 源
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                export PATH="$HOME/.local/bin:$PATH"
+
+                # tagPush 触发时 CI_COMMIT_REF_NAME 即 tag 名（如 v0.4.9）；去掉 v 前缀保持与 wheel 版本一致
+                VERSION="${CI_COMMIT_REF_NAME:-}"
+                VERSION="${VERSION#v}"
+                if [ -z "$VERSION" ]; then
+                  echo "[deploy] 无法解析版本：CI_COMMIT_REF_NAME=${CI_COMMIT_REF_NAME:-<空>}（本 job 需由 tagPush 触发）" >&2
+                  exit 1
+                fi
+
+                # 完整镜像前缀：TCR_REGISTRY/TCR_GROUP 成对存在才用，否则回退默认（仅作命名/回滚识别）
+                if [ -n "${TCR_REGISTRY:-}" ] && [ -n "${TCR_GROUP:-}" ]; then
+                  IMAGE_REPO="${TCR_REGISTRY}/${TCR_GROUP}/cndb"
+                else
+                  IMAGE_REPO="ccr.ccs.tencentyun.com/pydev/cndb"
+                fi
+                export VERSION IMAGE_REPO
+
+                # 跨步骤传值：CodeUp 各 step 是独立 shell，用可 source 的文件承接（setup 建的
+                # Python 与工作区都会在 job 内保留，故 /tmp 下的文件同样可见）
+                DEPLOY_ENV_FILE=/tmp/cndb-deploy.env
+                : > "$DEPLOY_ENV_FILE"
+                printf 'VERSION=%q\nIMAGE_REPO=%q\n' "$VERSION" "$IMAGE_REPO" >> "$DEPLOY_ENV_FILE"
+                echo "[deploy] 构建版本 ${VERSION}，镜像前缀 ${IMAGE_REPO}"
+
+                # 只解析 wheel 地址、国内镜像地址与 sha256（真正下载在服务器做）
+                DEPLOY_ENV_FILE="$DEPLOY_ENV_FILE" "$(uv python find 3.12)" - <<'PY'
+                import json
+                import os
+                import shlex
+                import sys
+                import time
+                import urllib.error
+                import urllib.request
+
+                pkg = "cndb"
+                version = os.environ["VERSION"]
+                out_path = os.environ["DEPLOY_ENV_FILE"]
+                endpoint = f"https://pypi.org/pypi/{pkg}/{version}/json"
+
+                data = None
+                last_err = "未知"
+                for attempt in range(1, 5):
+                    try:
+                        with urllib.request.urlopen(endpoint, timeout=30) as resp:
+                            data = json.load(resp)
+                        break
+                    except urllib.error.HTTPError as exc:
+                        last_err = f"HTTP {exc.code}"
+                    except Exception as exc:  # noqa: BLE001 - 网络抖动一律重试
+                        last_err = repr(exc)
+                    print(f"第 {attempt}/4 次未取到 {pkg}=={version}（{last_err}），15s 后重试…")
+                    time.sleep(15)
+
+                if data is None:
+                    sys.exit(f"PyPI 元数据取不到 {pkg}=={version}：{last_err}。请确认 pypi job 已成功发布。")
+
+                wheels = [u for u in data.get("urls", []) if u["filename"].endswith(".whl")]
+                if not wheels:
+                    sys.exit(f"{pkg}=={version} 没有 wheel 产物（sdist 无法用于镜像构建）")
+
+                whl = wheels[0]
+                url = whl["url"]
+                # files.pythonhosted.org/packages/xx/yy/... 的路径在国内镜像上保持一致，
+                # 因此可直接把同一段路径拼到各镜像前缀后（镜像未同步时会快速 404）
+                suffix = ""
+                if "/packages/" in url:
+                    suffix = url.split("/packages/", 1)[1].split("#", 1)[0].split("?", 1)[0]
+                mirror_bases = [
+                    "https://mirrors.cloud.tencent.com/pypi",
+                    "https://mirrors.aliyun.com/pypi",
+                    "https://pypi.tuna.tsinghua.edu.cn",
+                ]
+                mirrors = [f"{base}/packages/{suffix}" for base in mirror_bases] if suffix else []
+
+                with open(out_path, "a", encoding="utf-8") as fh:
+                    fh.write(f"WHEEL_URL={shlex.quote(url)}\n")
+                    fh.write(f"WHEEL_NAME={shlex.quote(whl['filename'])}\n")
+                    fh.write(f"WHEEL_SHA256={shlex.quote(whl['digests']['sha256'])}\n")
+                    fh.write(f"WHEEL_MIRROR_URLS={shlex.quote(' '.join(mirrors))}\n")
+
+                print(f"wheel: {whl['filename']}")
+                print(f"官方源: {url}")
+                for mirror in mirrors:
+                    print(f"镜像源: {mirror}")
+                if not mirrors:
+                    print("镜像源: <无（URL 不符合 /packages/ 布局），将只用官方源>")
+                PY
+          build_command:
+            name: 打包配置载荷并生成 TAT 命令
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                export PATH="$HOME/.local/bin:$PATH"
+                # 承接 resolve 步骤解析出的 VERSION / IMAGE_REPO / WHEEL_* ；
+                # BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL 来自流水线全局变量，已在进程环境里
+                set -a
+                . /tmp/cndb-deploy.env
+                set +a
+
+                # 导出锁定依赖供服务器端 Dockerfile.base 构建缓存层复用（依赖未变时复用基础镜像）
+                mkdir -p dist
+                uv export --frozen --no-hashes --no-dev --no-emit-project \
+                  -o dist/requirements.lock.txt
+                echo "--- requirements.lock.txt 概要 ---"
+                grep -cE '^[a-zA-Z0-9]' dist/requirements.lock.txt | xargs echo "锁定依赖数:"
+                grep -E '^(cffi|bcrypt)==' dist/requirements.lock.txt || {
+                  echo "[deploy] 锁定清单缺少 cffi/bcrypt（bcrypt 3.x 依赖 cffi，缺失会让镜像内安装失败）" >&2
+                  exit 1
+                }
+
+                # 部署配置打成载荷（只含配置，wheel 由服务器自行下载）
+                tar -czf /tmp/cndb-deploy-config.tgz \
+                  docker-compose.prod.yml deploy dist/requirements.lock.txt
+                ls -la /tmp/cndb-deploy-config.tgz
+                "$(uv python find 3.12)" scripts/build_tat_command.py
+          deploy:
+            name: 通过 TAT 下发并等待
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                export PATH="$HOME/.local/bin:$PATH"
+
+                : "${TENCENTCLOUD_SECRET_ID:?流水线全局变量缺少 TENCENTCLOUD_SECRET_ID}"
+                : "${TENCENTCLOUD_SECRET_KEY:?流水线全局变量缺少 TENCENTCLOUD_SECRET_KEY}"
+                : "${CNDB_REGION:?流水线全局变量缺少 CNDB_REGION}"
+                : "${CNDB_INSTANCE_ID:?流水线全局变量缺少 CNDB_INSTANCE_ID}"
+
+                "$(uv python find 3.12)" scripts/deploy_via_tat.py \
+                  --region "$CNDB_REGION" \
+                  --instance-id "$CNDB_INSTANCE_ID" \
+                  --command-file /tmp/cndb-deploy-cmd.sh \
+                  --timeout 3600 \
+                  --max-wait 3300 \
+                  --poll-interval 5
 
       # ── Linux fspack 原生打包 ───────────────────────────────────
       pack_linux:
