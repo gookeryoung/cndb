@@ -200,6 +200,22 @@
         "show_stats_panel": true
       },
       "order": 11
+    },
+    {
+      "name": "交付流程",
+      "view_type": "flow",
+      "view_options": {
+        "node_field": "当前交付节点",
+        "title_field": "项目名称",
+        "node_order": [
+          "需求调研",
+          "方案设计",
+          "开发实施",
+          "测试验收",
+          "运维支持"
+        ]
+      },
+      "order": 12
     }
   ],
   "客户流失": [

@@ -76,6 +76,8 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         "measure_field",
         "x_field",
         "y_field",
+        # Flow 流程视图（流程节点字段 + 卡片标题字段，标题字段已在上方）
+        "node_field",
     ):
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:

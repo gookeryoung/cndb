@@ -15,7 +15,7 @@ import {
   InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
   SaveOutlined, EditOutlined, PlusOutlined, DeleteOutlined, StarOutlined,
   ColumnHeightOutlined, CalendarOutlined, LineChartOutlined, PartitionOutlined,
-  HolderOutlined, TableOutlined, BarChartOutlined,
+  HolderOutlined, TableOutlined, BarChartOutlined, NodeIndexOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -42,6 +42,7 @@ const VIEW_MODE_META: Record<string, { label: string; icon: ReactNode }> = {
   wbs: { label: '工作分解 (WBS)', icon: <PartitionOutlined /> },
   matrix: { label: '矩阵 (Matrix)', icon: <TableOutlined /> },
   chart: { label: '图表 (Chart)', icon: <BarChartOutlined /> },
+  flow: { label: '流程 (Flow)', icon: <NodeIndexOutlined /> },
 }
 
 export type TableSettingsTab = 'basic' | 'fields' | 'views' | 'permissions'
