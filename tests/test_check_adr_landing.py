@@ -1,7 +1,7 @@
 """锁定 scripts/check_adr_landing.py 的判定口径（ADR 落地门禁自身的回归）.
 
-门禁脚本本身失效比没有门禁更危险，故用单元测试钉住四种结论：
-路径缺失 / 落地表缺项 → error；全部落地但未回填评审 → warning；CHANGELOG 缺条目 → error。
+门禁脚本本身失效比没有门禁更危险，故用单元测试钉住五种结论：
+路径缺失 / 落地表缺项 → error；全部落地但未回填评审 → warning；CHANGELOG 缺条目 → error；失效状态未删除 → error。
 """
 
 from __future__ import annotations
@@ -162,19 +162,13 @@ class TestCrossChecks:
 
 
 class TestLifecycle:
-    def test_superseded_requires_replacement(self, isolated: Path) -> None:
-        path = _write_adr(isolated, status="Superseded", rows="| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |")
+    @pytest.mark.parametrize("status", ["Superseded", "Deprecated"])
+    def test_removed_status_must_be_deleted(self, isolated: Path, status: str) -> None:
+        path = _write_adr(isolated, status=status, rows="| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |")
 
         errors, _ = adr_check._check_file(path, "ADR 0007")
 
-        assert any("Superseded by" in item for item in errors)
-
-    def test_deprecated_requires_reason(self, isolated: Path) -> None:
-        path = _write_adr(isolated, status="Deprecated", rows="| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |")
-
-        errors, _ = adr_check._check_file(path, "ADR 0007")
-
-        assert any("Deprecated" in item for item in errors)
+        assert any("应直接删除" in item for item in errors)
 
     def _write_index(self, directory: Path, adr_name: str, status: str) -> None:
         (directory / "README.md").write_text(
