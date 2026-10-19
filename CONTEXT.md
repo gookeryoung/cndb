@@ -21,3 +21,4 @@
 | 字段智能推荐（Analytics Recommendation） | 选表后按字段类型与抽样画像给出角色（metric/dimension/time/identifier/ignored）、基数、非空率、推荐公式/图表/分组汇总与典型示例 | 端点 `GET /{wid}/analytics/recommendations?table_id=`；只读成员即可用，取数复用行级权限与字段隐藏；结果确定性、一次抽样 1000 行 |
 | 典型示例（Recommend Example） | 基于当前表字段动态生成的整套分析配置（分类对比 / 数值分布 / 占比构成 / 时间趋势 / 比率分析 / 数据概览），一键应用到编辑态 | 随推荐接口返回；每个示例的公式、图表、汇总均可直接通过模板配置校验并落库 |
 | 分析列表（Analytics Manager） | 已保存分析的集中管理入口：列表展示、打开、复制（服务端默认「原名 副本」并重名递增）、删除、新建 | Drawer 入口在页面顶栏；复制端点 `POST /{wid}/analytics/templates/{id}/duplicate`，与保存/另存为共用未保存修改确认 |
+| 工作区类型（WorkspaceType） | 工作区级功能范围开关：`data_doc`（数据 + 文档，默认）/ `data`（仅数据表与数据分析）/ `doc`（仅文档），新增与工作区设置页可选用 | 落库为枚举成员名（DATA_DOC/DATA/DOC，同 Visibility/Role 约定）；前端据此门控顶部页签、侧栏表导航与根路由落地页（doc→文档、其余→数据表），URL 落在未开放功能区时自动重定向到该类型落地页 |

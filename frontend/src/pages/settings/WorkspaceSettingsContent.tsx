@@ -25,12 +25,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { workspaceApi } from '@/api'
 import type {
-  WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceVisibility,
+  WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceType, WorkspaceVisibility,
   MemberUserBrief,
 } from '@/api'
 import { useAuthStore } from '@/store'
 import HelpTip from '@/components/HelpTip'
 import { formatSize } from '@/utils/formatSize'
+import { WORKSPACE_TYPE_HINT, WORKSPACE_TYPE_LABEL, WORKSPACE_TYPE_OPTIONS } from '@/utils/workspaceType'
 import AddMemberModal from './AddMemberModal'
 import MemberZones from './MemberZones'
 import TransferOwnerModal from './TransferOwnerModal'
@@ -101,6 +102,7 @@ export default function WorkspaceSettingsContent({
         name: detail.name,
         description: detail.description,
         visibility: detail.visibility ?? 'member',
+        workspace_type: detail.workspace_type ?? 'data_doc',
         tags: (detail.tags ?? []).join(', '),
       })
     }
@@ -127,6 +129,7 @@ export default function WorkspaceSettingsContent({
         name: v.name as string,
         description: v.description as string,
         visibility: v.visibility as WorkspaceVisibility,
+        workspace_type: v.workspace_type as WorkspaceType,
         tags: tagsStr.split(/[,，]/).map(s => s.trim()).filter(Boolean),
       })
     },
@@ -377,7 +380,7 @@ export default function WorkspaceSettingsContent({
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ visibility: 'member', tags: '' }}
+          initialValues={{ visibility: 'member', tags: '', workspace_type: 'data_doc' }}
           onFinish={(v) => save.mutate(v)}
           disabled={!canEditBasic}
         >
@@ -390,6 +393,15 @@ export default function WorkspaceSettingsContent({
           </Form.Item>
           <Form.Item name="description" label="描述（可选）">
             <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
+          </Form.Item>
+          <Form.Item
+            name="workspace_type"
+            label={<>工作区类型<HelpTip title="决定工作区开放的功能：数据 + 文档=全部功能；数据=仅数据表与数据分析；文档=仅文档。修改后顶部页签与导航随之调整" /></>}
+          >
+            <Select
+              options={WORKSPACE_TYPE_OPTIONS.map(o => ({ ...o, label: `${o.label}（${WORKSPACE_TYPE_HINT[o.value]}）` }))}
+              disabled={!canEditBasic}
+            />
           </Form.Item>
           <Form.Item
             name="visibility"
@@ -488,6 +500,9 @@ export default function WorkspaceSettingsContent({
             </Descriptions.Item>
             <Descriptions.Item label="公开性">
               {VISIBILITY_LABEL[detail?.visibility ?? 'member']}
+            </Descriptions.Item>
+            <Descriptions.Item label="工作区类型">
+              {WORKSPACE_TYPE_LABEL[detail?.workspace_type ?? 'data_doc']}
             </Descriptions.Item>
             <Descriptions.Item label="标签" span={2}>
               {(detail?.tags ?? []).length > 0
