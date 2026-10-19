@@ -96,7 +96,7 @@ lint: ## 后端代码风格检查 (ruff check + format，与 CI 对齐仅扫 src
 typecheck: ## 类型检查 (pyrefly)
 	uv run pyrefly check -j 0
 
-check-fast: gitkeep-check lint typecheck frontend-static ## 轻量静态门禁（不含任何测试，适合实现阶段快速反馈）
+check-fast cf: gitkeep-check lint typecheck frontend-static ## 轻量静态门禁（不含任何测试，适合实现阶段快速反馈）
 
 # 全量门禁：cov 与其余项并行；前端仅以 coverage 模式跑一次，避免 check-fast/check 双跑全量套件。
 check: ## 运行全套门禁 (gitkeep + lint + typecheck + frontend-static + frontend-coverage + cov)
