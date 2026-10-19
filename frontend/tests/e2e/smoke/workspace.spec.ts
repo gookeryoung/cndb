@@ -30,7 +30,9 @@ test.describe("工作区 + 表列表", () => {
 
     // WID=1 某企业销售管理有 9 张 seed 表（7 张 CSV 含「产品批次」+ 部门表 + 员工表）
     const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-    await expect(rows).toHaveCount(9);
+    // 跨文件并行时其它用例可能临时向 WID=1 增表（如权限用例的临时表），
+    // 与 grid.spec 同口径：只要求 seed 的 9 张表都在，不锁死精确行数
+    await expect.poll(() => rows.count(), { timeout: 10000 }).toBeGreaterThanOrEqual(9);
   });
 
   test("表列表 owner 列正确展示拥有者用户名", async ({ page }) => {
@@ -39,7 +41,7 @@ test.describe("工作区 + 表列表", () => {
 
     // 等待表列表加载完成
     const rows = page.locator(".ant-table-tbody tr.ant-table-row");
-    await expect(rows).toHaveCount(9);
+    await expect.poll(() => rows.count(), { timeout: 10000 }).toBeGreaterThanOrEqual(9);
 
     // 表头应包含「拥有者」列
     await expect(page.locator("th", { hasText: "拥有者" }).first()).toBeVisible();
