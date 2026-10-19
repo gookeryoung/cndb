@@ -6,11 +6,15 @@ export interface Workspace {
   id: ID; name: string; description?: string; default_role?: string
   pinned?: boolean; created_at?: string; updated_at?: string
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
+  /** 存储配额（字节），默认 100MB；由系统管理员在管理台「空间分配」调整 */
+  storage_quota_bytes?: number
   current_user_role?: WorkspaceRole | null
 }
 export interface WorkspaceDetail extends Workspace {
   member_count?: number; table_count?: number
   view_count?: number; total_rows?: number
+  /** 已用存储空间（字节）：附件 + 文档外存内容 */
+  storage_bytes?: number
   owner?: { id: ID; username: string; nickname?: string } | null
   current_user_role?: WorkspaceRole | null
 }

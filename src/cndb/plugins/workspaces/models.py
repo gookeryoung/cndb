@@ -8,7 +8,7 @@ from __future__ import annotations
 import enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, Enum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, Enum, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cndb.models.base import Base, TimestampMixin
@@ -39,6 +39,9 @@ ACTION_LABELS: dict[str, str] = {
 
 # 内置角色 code（由迁移种子写入，管理员可修改但不可删除）
 BUILTIN_ROLE_CODES: tuple[str, ...] = ("read", "write", "admin")
+
+# 单工作区默认存储配额（字节）：100 MB
+DEFAULT_STORAGE_QUOTA_BYTES: int = 100 * 1024 * 1024
 
 
 class WorkspaceRole(enum.StrEnum):
@@ -100,6 +103,13 @@ class Workspace(TimestampMixin, Base):
         nullable=False,
         default=True,
         comment="是否允许成员（EDITOR 及以下）编辑数据",
+    )
+    storage_quota_bytes: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=DEFAULT_STORAGE_QUOTA_BYTES,
+        server_default=str(DEFAULT_STORAGE_QUOTA_BYTES),
+        comment="工作区存储配额（字节），默认 100MB，由管理员在管理台分配",
     )
 
     # 关系
@@ -182,6 +192,7 @@ __all__ = [
     "ACTION_KEYS",
     "ACTION_LABELS",
     "BUILTIN_ROLE_CODES",
+    "DEFAULT_STORAGE_QUOTA_BYTES",
     "ROLE_RANK",
     "Role",
     "Workspace",
