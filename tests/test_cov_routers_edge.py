@@ -302,6 +302,52 @@ class TestTablesRouterEdge:
         db.expire_all()
         assert db.get(DataTable, dt.id).owner_id is None
 
+    def test_move_table_same_workspace_rejected(self, client, db, auth_owner, ws_id, owner, src_table):
+        """目标工作区 == 源工作区 → 400，且不清空表级成员授权."""
+        dt, _ = src_table
+        db.add(TableMember(table_id=dt.id, user_id=owner.id, role="write"))
+        db.commit()
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/tables/{dt.id}/move",
+            params={"target_workspace_id": ws_id},
+            headers=auth_owner,
+        )
+        assert r.status_code == 400, r.text
+        assert "相同" in r.json()["detail"]
+        # 表仍留在原工作区，表级成员授权未被误清
+        db.expire_all()
+        assert db.get(DataTable, dt.id).workspace_id == ws_id
+        assert db.query(TableMember).filter(TableMember.table_id == dt.id).count() == 1
+
+    def test_move_table_target_workspace_missing_404(self, client, auth_owner, ws_id, src_table):
+        """目标工作区不存在 → 404."""
+        dt, _ = src_table
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/tables/{dt.id}/move",
+            params={"target_workspace_id": 999999},
+            headers=auth_owner,
+        )
+        assert r.status_code == 404, r.text
+        assert "工作区不存在" in r.json()["detail"]
+
+    def test_move_table_not_target_member_403(self, client, auth_owner, auth_peer, peer, ws_id, src_table):
+        """操作人不是目标工作区成员 → 403."""
+        dt, _ = src_table
+        # 源工作区给 peer 编辑权限（具备改表结构能力），但其不在目标工作区
+        _add_ws_member(client, auth_owner, ws_id, peer.username, "editor")
+        ws2 = client.post(
+            "/api/v1/workspaces",
+            json={"name": "EdgeWS2b"},
+            headers=auth_owner,
+        ).json()["id"]
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/tables/{dt.id}/move",
+            params={"target_workspace_id": ws2},
+            headers=auth_peer,
+        )
+        assert r.status_code == 403, r.text
+        assert "权限不足" in r.json()["detail"]
+
 
 # ── workspaces.py ──────────────────────────────────────
 
