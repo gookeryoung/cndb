@@ -18,6 +18,7 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.services import transfer
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
+from cndb.plugins.tables.services.core.links import is_link_field
 from cndb.plugins.tables.services.core.view_access import ViewAction, get_view_or_404
 from cndb.plugins.workspaces.models import Workspace
 
@@ -133,10 +134,18 @@ def export_table(
         "csv": "text/csv",
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }
+    # 配置了业务键（display_field_id）的 link 列导出业务文本，让导出文件可读、
+    # 且能被导入侧按 match_field_id 回灌；未配置的 link 列仍导出 id，保持兼容.
+    link_display = {
+        f.name: True
+        for f in table.active_fields()
+        if is_link_field(f) and (f.config or {}).get("display_field_id") is not None
+    }
+
     body_map = {
-        "json": lambda: transfer.export_rows_to_json(rows),
-        "csv": lambda: transfer.export_rows_to_csv(rows),
-        "xlsx": lambda: transfer.export_rows_to_xlsx(rows),
+        "json": lambda: transfer.export_rows_to_json(rows, link_display=link_display),
+        "csv": lambda: transfer.export_rows_to_csv(rows, link_display=link_display),
+        "xlsx": lambda: transfer.export_rows_to_xlsx(rows, link_display=link_display),
     }
 
     body = body_map[fmt]()

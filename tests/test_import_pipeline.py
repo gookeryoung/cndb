@@ -260,6 +260,112 @@ class TestRowValidatorLinkField:
         assert result.status == "error"
         assert any("link" in i.message.lower() for i in result.issues)
 
+    def test_link_field_business_text_resolved(self, test_session):
+        """提供 link_resolver 时，非数字项按业务文本解析为目标行 id."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "partner", "link", config={"target_table_id": 99}, order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+
+        seen: dict[str, list[str]] = {}
+
+        def resolver(field, tokens):
+            seen["tokens"] = tokens
+            return [77, 88]
+
+        rv = RowValidator(table, link_resolver=resolver)
+        result = rv.validate_row({"partner": "alpha;beta"}, row_number=1)
+        assert result.status == "valid"
+        f = table.active_fields()[0]
+        assert result.normalized[f.db_column_name] == [77, 88]
+        assert seen["tokens"] == ["alpha", "beta"]
+
+    def test_link_field_mixed_ids_and_text(self, test_session):
+        """数字项直读 id，非数字项交给 resolver，两者合并去重."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "partner", "link", config={"target_table_id": 99}, order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+
+        rv = RowValidator(table, link_resolver=lambda _f, _tokens: [5])
+        result = rv.validate_row({"partner": [3, "5", "alpha"]}, row_number=1)
+        assert result.status == "valid"
+        f = table.active_fields()[0]
+        assert result.normalized[f.db_column_name] == [3, 5]
+
+    def test_link_field_business_text_without_resolver_errors(self, test_session):
+        """未提供 resolver 时保留历史行为：非数字项报错."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "partner", "link", config={"target_table_id": 99}, order=0)
+        session.commit()
+        ddl.create_table(engine, table)
+
+        rv = RowValidator(table)
+        result = rv.validate_row({"partner": "alpha;beta"}, row_number=1)
+        assert result.status == "error"
+        assert any("link" in i.message.lower() for i in result.issues)
+
+
+class TestImporterLinkBusinessKey:
+    """Importer 接线：link 列的导出业务文本可经 analyze 解析回目标行 id."""
+
+    @staticmethod
+    def _build_pair(session, engine):
+        from cndb.plugins.tables.services.core import records as rec
+
+        target = DataTable(workspace_id=1, name="导入目标表")
+        target.ensure_db_name()
+        session.add(target)
+        session.commit()
+        session.refresh(target)
+        code = _add_field(session, target, "code", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, target)
+        rec.bulk_create(engine, target, [{"code": "AAA"}, {"code": "BBB"}, {"code": "CCC"}], db=session)
+
+        src = _make_table(session, engine)
+        _add_field(
+            session,
+            src,
+            "partner",
+            "link",
+            order=0,
+            config={
+                "target_table_id": target.id,
+                "multiple": True,
+                "display_field_id": code.id,
+                "match_field_id": code.id,
+            },
+        )
+        session.commit()
+        return src
+
+    def test_analyze_resolves_business_text(self, test_session):
+        engine, session = test_session
+        src = self._build_pair(session, engine)
+
+        imp = Importer(engine, session, src)
+        analysis = imp.analyze("", "json", rows=[{"partner": "AAA;CCC"}])
+
+        assert analysis.results[0].status == "valid", analysis.results[0].issues
+        field = next(f for f in src.active_fields() if f.name == "partner")
+        resolved = analysis.results[0].normalized[field.db_column_name]
+        assert len(resolved) == 2
+        assert resolved[0] != resolved[1]
+
+    def test_analyze_unmatched_business_text_is_row_error(self, test_session):
+        engine, session = test_session
+        src = self._build_pair(session, engine)
+
+        imp = Importer(engine, session, src)
+        analysis = imp.analyze("", "json", rows=[{"partner": "AAA;ZZZ"}])
+
+        assert analysis.results[0].status == "error"
+        assert any("未匹配到目标行" in i.message for i in analysis.results[0].issues)
+
 
 class TestRowValidatorEdgeCases:
     """边界情况."""

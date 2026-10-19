@@ -22,6 +22,7 @@ RowValidator 只负责调度、空值宽松处理、link 值预解析、字段�
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -97,6 +98,9 @@ class RowValidator:
             未列出的源列按 源名 == 目标名 自动匹配.
         gap_filling: 目标侧缺失字段的填充策略 — "empty" / "default" / "value" / "error".
         fill_values: gap_filling="value" 时按目标字段名指定固定填充值.
+        link_resolver: link 字段业务文本解析器 ``(field, tokens) -> list[int]``；
+            提供时把非数字的关联项按目标表匹配字段（config.match_field_id / display_field_id）
+            解析为目标行 id，缺省时非数字项直接报错（保持只接受 id 的历史行为）。
     """
 
     def __init__(
@@ -107,11 +111,13 @@ class RowValidator:
         field_mapping: dict[str, str | None] | None = None,
         gap_filling: GapFilling = "empty",
         fill_values: dict[str, Any] | None = None,
+        link_resolver: Callable[[DataField, list[str]], list[int]] | None = None,
     ) -> None:
         self.table = table
         self.skip_unknown_columns = skip_unknown_columns
         self.gap_filling = gap_filling
         self.fill_values = fill_values or {}
+        self._link_resolver = link_resolver
         self._fields: list[DataField] = table.active_fields()
         self._field_map: dict[str, DataField] = {f.name: f for f in self._fields}
         self._required_names: set[str] = {f.name for f in self._fields if f.required}
@@ -210,22 +216,27 @@ class RowValidator:
             if f.trashed:  # 防御性检查，active_fields() 应已过滤
                 continue
             raw = row.get(field_name)
-            self._validate_one_field(f, raw, result)
+            self._validate_one_field(f, raw, result, row)
 
-    def _validate_one_field(self, f: DataField, raw: Any, result: ValidationResult) -> None:
+    def _validate_one_field(self, f: DataField, raw: Any, result: ValidationResult, row: dict[str, Any]) -> None:
         """对单个字段执行 validate_value；空值宽松处理；link 预解析."""
         # 1. 空值宽松处理
         if self._is_empty(raw):
+            if is_link_field(f):
+                # 空关联归一为 []：落库路径（records._normalize_values）不再拿到空串/None 而报错
+                row[f.name] = []
             if f.required:
                 result.issues.append(Issue(field=f.name, level="error", message="必填字段不能为空"))
             return
 
         try:
-            # 2. link 字段：先把分号/逗号分隔串解析为 list[int]，再调 validate_value
+            # 2. link 字段：先把分隔串解析（id 直读 / 业务文本按匹配字段解析）为 list[int]，
+            #    再调 validate_value；并把解析结果写回行值，落库时无需二次解析。
             if is_link_field(f):
-                parsed = self._parse_link_value(raw)
+                parsed = self._parse_link_value(raw, f)
                 normalized = default_registry.get("link").validate_value(parsed, f.config)  # type: ignore[union-attr]
                 result.normalized[f.db_column_name] = normalized
+                row[f.name] = normalized
                 return
 
             # 3. 普通字段：直接调 validate_value
@@ -263,31 +274,51 @@ class RowValidator:
             return True
         return bool(isinstance(value, (bytes, bytearray)) and not value.strip())
 
-    @staticmethod
-    def _parse_link_value(raw: Any) -> Any:
+    def _parse_link_value(self, raw: Any, field: DataField) -> list[int]:
         """把 CSV/JSON 导入场景中的 link 值归一为 list[int].
 
         支持：
-        - list[int]（已是结构化格式，如 JSON 导入）
+        - list（结构化格式，如 JSON 导入）内的 int/数字字符串 / 业务文本
         - 单值 int / str
-        - 分号/逗号/空格分隔的字符串
+        - 分号/逗号分隔的字符串
+
+        数字项直读为行 id；非数字项在提供 link_resolver 时按目标表匹配字段解析，
+        否则保持历史行为（报错）。返回去重保序的目标行 id 列表。
         """
         if isinstance(raw, list):
-            try:
-                return [int(x) for x in raw]
-            except (ValueError, TypeError) as exc:
-                raise ValueError(f"link 字段解析失败: {raw!r}") from exc
-        if isinstance(raw, int):
-            return [raw]
-        if isinstance(raw, str):
-            text = raw.strip().replace(",", ";").replace(" ", "")
+            items: list[Any] = list(raw)
+        elif isinstance(raw, bool):
+            raise ValueError(f"link 字段值类型不支持: {type(raw)!r}")
+        elif isinstance(raw, int):
+            items = [raw]
+        elif isinstance(raw, str):
+            text = raw.strip().replace(",", ";")
             if not text:
-                return list[int]()
+                return []
+            items = [part.strip() for part in text.split(";") if part.strip()]
+        else:
+            raise ValueError(f"link 字段值类型不支持: {type(raw)!r}")
+
+        ids: list[int] = []
+        labels: list[str] = []
+        for item in items:
+            if isinstance(item, bool):
+                raise ValueError(f"link 字段解析失败: {raw!r}")
+            if isinstance(item, int):
+                ids.append(item)
+                continue
+            text_item = str(item).strip()
+            if not text_item:
+                continue
             try:
-                return [int(part) for part in text.split(";")]
-            except ValueError as exc:
-                raise ValueError(f"link 字段值必须是分号分隔的行 id: {raw!r}") from exc
-        raise ValueError(f"link 字段值类型不支持: {type(raw)!r}")
+                ids.append(int(text_item))
+            except ValueError:
+                labels.append(text_item)
+        if labels:
+            if self._link_resolver is None:
+                raise ValueError(f"link 字段值必须是分号分隔的行 id: {raw!r}")
+            ids.extend(self._link_resolver(field, labels))
+        return list(dict.fromkeys(ids))
 
 
 __all__ = ["Issue", "RowValidator", "ValidationResult"]

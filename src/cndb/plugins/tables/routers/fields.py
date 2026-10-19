@@ -52,6 +52,25 @@ from cndb.plugins.workspaces.models import Workspace
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
 
 
+def _validate_link_business_key(cfg: LinkFieldConfig, target: DataTable) -> None:
+    """校验 link 字段配置的业务键（显示字段 / 匹配字段）合法.
+
+    业务键必须是目标表中未回收、且有物理列的字段：显示字段为空值回退启发式、
+    匹配字段为导入解析依据，配置失效都会让读取/导入语义静默退化，因此在保存期拒绝。
+    """
+    for label, key_id in (("显示字段", cfg.display_field_id), ("匹配字段", cfg.match_field_id)):
+        if key_id is None:
+            continue
+        key_field = next((f for f in target.active_fields() if f.id == key_id), None)
+        if key_field is None:
+            raise HTTPException(status_code=400, detail=f"link 字段配置的{label}不属于目标表: {key_id}")
+        ft = default_registry.get(key_field.field_type)
+        if ft is None or not ft.has_physical_column:
+            raise HTTPException(
+                status_code=400, detail=f"link 字段配置的{label}「{key_field.name}」无物理列，不能作为业务键"
+            )
+
+
 def _validate_field_config(field_type: str, payload_config: dict[str, Any], db: Session) -> dict[str, Any]:
     """用字段类型对应的 config_schema 校验并归一化 config.
 
@@ -77,6 +96,7 @@ def _validate_field_config(field_type: str, payload_config: dict[str, Any], db: 
         target = db.get(DataTable, cfg.target_table_id)
         if target is None or target.trashed:
             raise HTTPException(status_code=400, detail=f"关联目标表不存在: {cfg.target_table_id}")
+        _validate_link_business_key(cfg, target)
 
     # lookup 字段：从源字段派生并缓存 source_field_type，保证引用字段跟随源字段类型。
     # 源字段不存在时留空（读取侧既有容错回退 None），不额外拒绝历史/跨库配置。
