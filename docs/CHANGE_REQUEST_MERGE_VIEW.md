@@ -1,9 +1,12 @@
 # 修改申请：「同行合并视图 + 批量审批 + 冲突处理」方案
 
-> 状态：方案稿（规划，未实现） · 日期：2026-10-19
+> 状态：已实现（M1-M4 全部落地） · 日期：2026-10-19
 > 范围：数据表修改申请（`src/cndb/plugins/change_requests/`、`frontend/src/pages/changeRequests/`）
 > 关联：`docs/adr/0001-table-edit-approval-change-request.md`、`CONTEXT.md`「修改申请 / 双轨制写入」
-> 说明：本文是方案（规划），描述待落地的设计；现有实现见上表所列文件。
+> 实现对照：
+> - 后端：[schemas.py](file:///workspace/src/cndb/plugins/change_requests/schemas.py)（`RowMergePayload`）、[services.py](file:///workspace/src/cndb/plugins/change_requests/services.py)（`detect_row_conflicts` / `_group_requests_by_row` / `merge_row_requests`）、[change_requests.py](file:///workspace/src/cndb/plugins/change_requests/routers/change_requests.py)（`group_by=row` + `POST .../rows/{row_id}/merge`）
+> - 前端：[ChangeRequestsPage.tsx](file:///workspace/frontend/src/pages/changeRequests/ChangeRequestsPage.tsx)（同行合并视图 + 批量审批）、[ChangeRequestRowMergePage.tsx](file:///workspace/frontend/src/pages/changeRequests/ChangeRequestRowMergePage.tsx)（冲突处理页）、[useGridData.ts](file:///workspace/frontend/src/pages/grid/useGridData.ts)（`usePendingChanges` 走聚合端点）
+> - 测试：`tests/test_change_requests_merge_view.py`、`frontend/src/pages/changeRequests/*.test.tsx`
 
 ---
 
