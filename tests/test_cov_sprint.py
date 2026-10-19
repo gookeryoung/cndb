@@ -64,10 +64,18 @@ class TestRecordsRouterCoverage:
         wid = ws.json()["id"]
         t = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "t4"})
         tid = t.json()["id"]
+        # 先落一行：按行分派会先校验读范围，目标行不存在会短路为 404（ADR 0004 I6），
+        # 本用例要覆盖的是 update_row 抛 ValueError → 400 的映射，故需目标行存在。
+        row = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records",
+            headers=auth_headers,
+            json={"values": {}},
+        )
+        rid = row.json()["id"]
 
         with patch("cndb.plugins.tables.routers.records.update_row", side_effect=ValueError("bad")):
             r = client.patch(
-                f"/api/v1/workspaces/{wid}/tables/{tid}/records/1",
+                f"/api/v1/workspaces/{wid}/tables/{tid}/records/{rid}",
                 headers=auth_headers,
                 json={"values": {"x": 1}},
             )
