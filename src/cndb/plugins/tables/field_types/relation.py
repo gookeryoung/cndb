@@ -13,6 +13,14 @@ from cndb.plugins.tables.field_types.base import FieldType, FieldTypeCategory, F
 class LinkFieldConfig(FieldTypeConfig):
     target_table_id: int = Field(..., description="关联的目标表 ID")
     multiple: bool = Field(default=True, description="是否多选（多对多关联表存储，单选由前端约束）")
+    display_field_id: int | None = Field(
+        default=None,
+        description="业务键：目标表中用于单元格显示与导出的字段 ID（留空则回退首个非空字段摘要）",
+    )
+    match_field_id: int | None = Field(
+        default=None,
+        description="业务键：导入时按该字段值匹配目标行（留空则回退 display_field_id）",
+    )
 
 
 class LinkFieldType(FieldType):

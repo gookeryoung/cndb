@@ -148,6 +148,36 @@ class TestTransferLinkSerialization:
         assert "name,links" in csv_text
         assert "1;2" in csv_text
 
+    def test_serialize_link_use_display(self):
+        """use_display=True 时导出业务文本（display_field_id 值）而非行 id."""
+        from cndb.plugins.tables.services.transfer import _serialize_link_value
+
+        val = [{"id": 1, "value": "alpha"}, {"id": 2, "value": "beta"}]
+        assert _serialize_link_value(val, use_display=True) == "alpha;beta"
+
+    def test_serialize_link_use_display_falls_back_to_id(self):
+        """use_display=True 但摘要 value 为空时回退该行 id."""
+        from cndb.plugins.tables.services.transfer import _serialize_link_value
+
+        val = [{"id": 1, "value": ""}, {"id": 2, "value": "beta"}]
+        assert _serialize_link_value(val, use_display=True) == "1;beta"
+
+    def test_export_csv_with_link_display(self):
+        """link_display 映射为真的列导出业务文本，利于文件可读与回灌."""
+        from cndb.plugins.tables.services.transfer import export_rows_to_csv
+
+        rows = [{"name": "row1", "links": [{"id": 1, "value": "alpha"}, {"id": 2, "value": "beta"}]}]
+        csv_text = export_rows_to_csv(rows, link_display={"links": True})
+        assert "alpha;beta" in csv_text
+        assert "1;2" not in csv_text
+
+    def test_export_json_without_link_display_keeps_structure(self):
+        """未传 link_display 时 JSON 保留结构化原值（[{id,value}]）."""
+        from cndb.plugins.tables.services.transfer import export_rows_to_json
+
+        rows = [{"links": [{"id": 1, "value": "alpha"}]}]
+        assert '"alpha"' in export_rows_to_json(rows)
+
     def test_parse_link_empty_string(self, db, client, auth_headers):
         from cndb.plugins.tables.services.transfer import _parse_link_import_value
 

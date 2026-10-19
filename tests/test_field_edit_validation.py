@@ -696,3 +696,77 @@ class TestTypeChangeLinkTransition:
         )
         assert r.status_code == 200, r.text
         assert r.json()["负责人"] == "张三"
+
+
+# ── link 业务键 config 保存期校验 ────────────────────────
+
+
+class TestLinkBusinessKeyConfigValidation:
+    """link 字段的显示字段 / 匹配字段必须是目标表中有物理列的字段."""
+
+    def test_display_and_match_field_accepted(self, client, auth_headers):
+        wid, tid_target = _make_table(client, auth_headers, "业务键目标")
+        code = _add_field(client, auth_headers, wid, tid_target, {"name": "code", "field_type": "text", "order": 0})
+        wid2, tid_src = _make_table(client, auth_headers, "业务键源")
+        r = client.post(
+            f"/api/v1/workspaces/{wid2}/tables/{tid_src}/fields",
+            headers=auth_headers,
+            json={
+                "name": "关联目标",
+                "field_type": "link",
+                "order": 0,
+                "config": {
+                    "target_table_id": tid_target,
+                    "multiple": True,
+                    "display_field_id": code["id"],
+                    "match_field_id": code["id"],
+                },
+            },
+        )
+        assert r.status_code == 201, r.text
+
+    def test_display_field_not_in_target_rejected(self, client, auth_headers):
+        wid, tid_target = _make_table(client, auth_headers, "业务键目标2")
+        _add_field(client, auth_headers, wid, tid_target, {"name": "code", "field_type": "text", "order": 0})
+        wid_other, tid_other = _make_table(client, auth_headers, "无关表")
+        foreign = _add_field(
+            client, auth_headers, wid_other, tid_other, {"name": "code", "field_type": "text", "order": 0}
+        )
+
+        wid2, tid_src = _make_table(client, auth_headers, "业务键源2")
+        r = client.post(
+            f"/api/v1/workspaces/{wid2}/tables/{tid_src}/fields",
+            headers=auth_headers,
+            json={
+                "name": "关联目标",
+                "field_type": "link",
+                "order": 0,
+                "config": {"target_table_id": tid_target, "display_field_id": foreign["id"]},
+            },
+        )
+        assert r.status_code == 400, r.text
+        assert "不属于目标表" in r.json()["detail"]
+
+    def test_match_field_without_physical_column_rejected(self, client, auth_headers):
+        wid, tid_target = _make_table(client, auth_headers, "业务键目标3")
+        # 目标表上一个 link 字段（无物理列），不能作为匹配字段
+        inner_link = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid_target,
+            {"name": "自关联", "field_type": "link", "order": 0, "config": {"target_table_id": tid_target}},
+        )
+        wid2, tid_src = _make_table(client, auth_headers, "业务键源3")
+        r = client.post(
+            f"/api/v1/workspaces/{wid2}/tables/{tid_src}/fields",
+            headers=auth_headers,
+            json={
+                "name": "关联目标",
+                "field_type": "link",
+                "order": 0,
+                "config": {"target_table_id": tid_target, "match_field_id": inner_link["id"]},
+            },
+        )
+        assert r.status_code == 400, r.text
+        assert "无物理列" in r.json()["detail"]

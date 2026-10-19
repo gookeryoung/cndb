@@ -352,6 +352,59 @@ def ensure_link_targets_exist(engine: Engine, field: DataField, ids: list[int], 
         raise ValueError(f"字段 {field.name} 关联的目标行不存在或已删除: {', '.join(missing)}")
 
 
+def resolve_link_tokens(engine: Engine, db: Session, field: DataField, tokens: list[str]) -> list[int]:
+    """把业务文本 tokens 按目标表匹配字段解析为目标行 id 列表（导入用）.
+
+    匹配字段取 config.match_field_id，留空时回退 config.display_field_id；
+    两者都未配置或字段不可用则抛 ValueError（调用方在行级捕获，转为校验错误）。
+    未匹配到目标行的 token 一并抛出，避免静默丢弃导入值。
+    """
+    clean = [t.strip() for t in tokens if t and t.strip()]
+    if not clean:
+        return []
+    cfg = field.config or {}
+    key_id = cfg.get("match_field_id")
+    if key_id is None:
+        key_id = cfg.get("display_field_id")
+    if key_id is None:
+        raise ValueError(f"link 字段 {field.name} 未配置匹配字段，无法按文本解析")
+    target = _target_data_table(db, field)
+    if target is None:
+        raise ValueError(f"字段 {field.name} 的关联目标表不存在")
+    key_field = next((f for f in target.active_fields() if f.id == key_id), None)
+    if key_field is None:
+        raise ValueError(f"link 字段 {field.name} 配置的匹配字段不存在")
+    ft = default_registry.get(key_field.field_type)
+    if ft is None or not ft.has_physical_column:
+        raise ValueError(f"link 字段 {field.name} 的匹配字段无物理列，无法解析")
+
+    sa_table = _get_sa_table_by_name(engine, target.db_table_name)
+    column = sa_table.c[key_field.db_column_name]
+    stmt = select(sa_table.c.id, column).where(column.in_(clean))
+    if hasattr(sa_table.c, "_trashed"):
+        stmt = stmt.where(sa_table.c._trashed.is_(False))
+    with engine.connect() as conn:
+        rows = conn.execute(stmt).all()
+
+    mapping: dict[str, int] = {}
+    for row_id, raw in rows:
+        text = str(raw).strip() if raw is not None else ""
+        if text and text not in mapping:
+            mapping[text] = int(row_id)
+
+    resolved: list[int] = []
+    missing: list[str] = []
+    for token in clean:
+        row_id = mapping.get(token)
+        if row_id is None:
+            missing.append(token)
+        elif row_id not in resolved:
+            resolved.append(row_id)
+    if missing:
+        raise ValueError(f"link 字段 {field.name} 未匹配到目标行: {', '.join(missing)}")
+    return resolved
+
+
 def _get_sa_table_by_name(engine: Engine, db_table_name: str) -> Table:
     """按物理表名获取 sa.Table（带反射缓存；不存在时抛错）."""
     return get_reflected_table(
@@ -388,7 +441,25 @@ def _target_summaries(
     target = _target_data_table(db, field)
     if target is None:
         return {target_id: f"#{target_id}" for target_id in ids}
-    return _row_summaries(engine, target, _summary_fields(target), ids)
+    return _row_summaries(engine, target, _link_summary_fields(target, field), ids)
+
+
+def _link_summary_fields(target: DataTable, field: DataField) -> list[DataField]:
+    """摘要取值字段：优先 link 字段配置的业务键显示字段，否则回退前几个非关联字段.
+
+    显示字段需属于目标表且有物理列；配置失效（字段被删/无物理列）时回退默认启发式，
+    保证读取侧永不出错。
+    """
+    display_id = (field.config or {}).get("display_field_id")
+    if display_id is not None:
+        for candidate in target.active_fields():
+            if candidate.id != display_id:
+                continue
+            ft = default_registry.get(candidate.field_type)
+            if ft is not None and ft.has_physical_column:
+                return [candidate]
+            break
+    return _summary_fields(target)
 
 
 def _row_summaries(
@@ -443,5 +514,6 @@ __all__ = [
     "link_fields",
     "link_table_exists",
     "load_links",
+    "resolve_link_tokens",
     "set_links",
 ]
