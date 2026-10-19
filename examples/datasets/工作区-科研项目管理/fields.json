@@ -32,7 +32,9 @@
       "source_table": "科研项目",
       "link_name": "关联课题",
       "multiple": false,
-      "fields": ["项目名称", "立项年份", "经费总额_万元"],
+      "fields": ["立项年份", "经费总额_万元"],
+      "display_field": "项目名称",
+      "match_field": "课题编号",
       "match": {"local": "课题编号", "source": "课题编号"}
     },
     {

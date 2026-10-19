@@ -92,6 +92,14 @@ interface FieldListProps {
 /** 字段列表 + 工具栏（Modal 与嵌入模式共用的内容区） */
 export default function FieldList({ fields, isReordering, onEdit, onRemove, onReorder, onOpenImport, onCreate }: FieldListProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+  // 引用（lookup）字段归属于某个关联字段：解析 via_link_field_id → 关联字段名，用于行内标注归属
+  const linkNameById = new Map(fields.filter(f => f.field_type === 'link').map(f => [f.id, f.name] as const))
+  const lookupOwnerName = (f: Field): string | undefined => {
+    if (f.field_type !== 'lookup') return undefined
+    const viaId = f.config?.via_link_field_id
+    if (typeof viaId !== 'number') return undefined
+    return linkNameById.get(viaId)
+  }
   const handleFieldDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -119,13 +127,14 @@ export default function FieldList({ fields, isReordering, onEdit, onRemove, onRe
       {fields.length === 0 ? (
         <Empty description="暂无字段，点击右上角「新建字段」创建" style={{ padding: 32 }} />
       ) : (
-        <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+        <div>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFieldDragEnd}>
             <SortableContext items={fields.map(f => String(f.id))} strategy={verticalListSortingStrategy}>
               {fields.map((r) => (
                 <SortableFieldRow
                   key={String(r.id)}
                   field={r}
+                  ownerLinkName={lookupOwnerName(r)}
                   onEdit={() => onEdit(r)}
                   onRemove={() => onRemove(r)}
                   isReordering={isReordering}
@@ -143,13 +152,15 @@ export default function FieldList({ fields, isReordering, onEdit, onRemove, onRe
 
 interface SortableFieldRowProps {
   field: Field
+  /** 引用（lookup）字段归属的关联字段名；非引用字段或归属丢失时为 undefined */
+  ownerLinkName?: string
   onEdit: () => void
   onRemove: () => void
   isReordering: boolean
 }
 
 /** 字段行卡片 —— 带左侧拖拽手柄，配合 DndContext + SortableContext 使用. */
-function SortableFieldRow({ field, onEdit, onRemove, isReordering }: SortableFieldRowProps) {
+function SortableFieldRow({ field, ownerLinkName, onEdit, onRemove, isReordering }: SortableFieldRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: String(field.id),
   })
@@ -184,6 +195,13 @@ function SortableFieldRow({ field, onEdit, onRemove, isReordering }: SortableFie
         {FIELD_TYPE_ICONS[field.field_type] ?? <TagOutlined />}
       </span>
       <span className="fm-row-name">{field.name}</span>
+      {/* 引用字段归属标注：lookup 由关联字段配置统一管理，这里标注其所属的关联字段，
+          避免用户误把它当成可独立配置的普通字段 */}
+      {ownerLinkName && (
+        <span className="fm-row-owner" title={`引用字段 · 归属于关联字段「${ownerLinkName}」，请在关联字段配置中管理`}>
+          来自关联「{ownerLinkName}」
+        </span>
+      )}
       {fieldNoteText(field) && (
         <span className="fm-row-note" title={fieldNoteText(field)}>{fieldNoteText(field)}</span>
       )}

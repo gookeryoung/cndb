@@ -45,6 +45,7 @@ from cndb.plugins.tables.services.fields.field_ops import (
     import_fields_as_lookup,
     rename_trashed_field_aside,
     resolve_source_fields,
+    sync_link_reference_fields,
     sync_select_data_on_options_change,
 )
 from cndb.plugins.workspaces.models import Workspace
@@ -68,6 +69,21 @@ def _validate_link_business_key(cfg: LinkFieldConfig, target: DataTable) -> None
         if ft is None or not ft.has_physical_column:
             raise HTTPException(
                 status_code=400, detail=f"link 字段配置的{label}「{key_field.name}」无物理列，不能作为业务键"
+            )
+
+    # 引用字段：额外投影的目标表字段，必须属于目标表且有物理列（lookup 只能读物理列值）
+    seen_ref: set[int] = set()
+    for ref_id in cfg.reference_fields:
+        if ref_id in seen_ref:
+            raise HTTPException(status_code=400, detail=f"link 字段配置的引用字段重复: {ref_id}")
+        seen_ref.add(ref_id)
+        ref_field = next((f for f in target.active_fields() if f.id == ref_id), None)
+        if ref_field is None:
+            raise HTTPException(status_code=400, detail=f"link 字段配置的引用字段不属于目标表: {ref_id}")
+        ft = default_registry.get(ref_field.field_type)
+        if ft is None or not ft.has_physical_column:
+            raise HTTPException(
+                status_code=400, detail=f"link 字段配置的引用字段「{ref_field.name}」无物理列，不能作为引用字段"
             )
 
 
@@ -184,6 +200,12 @@ def create_field(
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"物理加列失败: {exc}") from exc
+
+    # link 字段的引用字段在关联配置内管理：按 config.reference_fields 同步其名下 lookup
+    if is_link_field(df):
+        target = db.get(DataTable, (df.config or {}).get("target_table_id"))
+        if target is not None:
+            sync_link_reference_fields(db, df, target)
 
     return df
 
@@ -362,6 +384,15 @@ def update_field(
         except Exception as exc:
             _revert_metadata()
             raise HTTPException(status_code=500, detail=f"唯一约束变更失败: {exc}") from exc
+
+    # 3. link 字段：按 config.reference_fields 同步名下 lookup 引用字段（增/删/排序）。
+    #    仅当本次请求显式提供了 reference_fields 时才视为权威配置，避免仅改名字/业务键的
+    #    编辑误删已有关联引入产生的 lookup 字段。
+    incoming_refs = isinstance(payload.config, dict) and "reference_fields" in payload.config
+    if is_link_field(df) and incoming_refs:
+        target = db.get(DataTable, (df.config or {}).get("target_table_id"))
+        if target is not None:
+            sync_link_reference_fields(db, df, target)
 
     return df
 
