@@ -25,6 +25,12 @@ export interface ChangeRequest {
   updated_at?: string
   /** 与其他 open 申请共享的行数（去重，仅列表响应附带） */
   conflicts_count?: number
+  /** 申请涉及的目标行（去重，create-only 为空；列表/详情响应附带） */
+  row_ids?: ID[]
+  /** 申请涉及的字段名（create/update 的 values 键，去重） */
+  fields?: string[]
+  /** 申请内的变更项数量 */
+  item_count?: number
 }
 
 /** 申请内单条变更项（详情响应含字段级 diff 与冲突标记） */
@@ -40,6 +46,8 @@ export interface ChangeItemDetail {
   current_values: Record<string, unknown>
   /** 发生基准漂移的字段名清单 */
   field_conflicts: string[]
+  /** 目标行已不存在（被删除或不可见） */
+  row_missing?: boolean
 }
 
 /** 申请动作流水（评论与处理动作统一记录） */
@@ -86,4 +94,60 @@ export interface ChangeRequestBatchResponse extends ChangeRequestDispatchRespons
 /** 判定写响应是否为 202 修改申请载荷（而非直存 RowResponse） */
 export function isChangeRequestResponse(r: RowResponse | ChangeRequestBatchResponse | unknown): r is ChangeRequestBatchResponse {
   return typeof r === 'object' && r !== null && 'change_request' in r
+}
+
+/** 单个字段的冲突写者（同字段被多份申请写入且值不等） */
+export interface CRConflictWriter {
+  request_id: ID
+  item_id: ID
+  value: unknown
+}
+
+/** 冲突字段的逐字段裁决：item=采用指定 item 的值；current=保留当前行值（跳过写入） */
+export interface CRResolution {
+  strategy: 'item' | 'current'
+  item_id?: ID
+}
+
+/** 按目标行聚合的申请行组（group_by=row 响应） */
+export interface ChangeRowGroup {
+  row_id: ID
+  /** 当前行实时值（行缺失时为空对象） */
+  row_values: Record<string, unknown>
+  row_missing: boolean
+  /** 组内申请，按 created_at 倒序 */
+  requests: ChangeRequest[]
+  /** 交汇冲突字段：多份申请写同字段且值不等 */
+  conflict_fields: string[]
+  /** 基准漂移字段：当前值 != 提交时快照 */
+  drift_fields: string[]
+  has_conflict: boolean
+  has_drift: boolean
+  latest_created_at?: string | null
+}
+
+/** group_by=row 列表响应：行组 + 无行归属（create-only）申请 */
+export interface ChangeRowGroupPage {
+  groups: ChangeRowGroup[]
+  ungrouped: ChangeRequest[]
+  total: number
+  write_mode?: TableWriteMode
+}
+
+/** 行组批量合并请求体 */
+export interface CRRowMergePayload {
+  request_ids: ID[]
+  /** 存在 delete 与修改互斥时必填：keep=保留行并应用修改；delete=执行删除 */
+  row_action?: 'keep' | 'delete'
+  /** 冲突字段逐字段裁决；未裁决的冲突字段将致 409 */
+  resolutions?: Record<string, CRResolution>
+  comment?: string
+}
+
+/** 行组批量合并响应 */
+export interface CRRowMergeResponse {
+  applied: number
+  skipped: number
+  merged_request_ids: ID[]
+  requests: ChangeRequestDetail[]
 }
