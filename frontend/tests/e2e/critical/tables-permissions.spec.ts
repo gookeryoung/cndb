@@ -20,6 +20,8 @@ test.describe("数据表权限与问题清单（多用户）", () => {
     test("受限表：普通成员列表/详情/问题清单全部收口；管理员看到「受限」标记", async ({ browser }) => {
         const admin = await sessionAs(browser, "admin", "admin1234");
         const viewer = await sessionAs(browser, "demo", "demo1234");
+        // 临时表登记：用例结束（finally）删除，避免留表污染同工作区的「恰好 N 张表」并行断言
+        let createdTable: { wid: number; tid: number } | null = null;
         try {
             const wid = await sharedWorkspaceId(admin, viewer);
             const tableName = `E2E 受限表 ${Date.now()}`;
@@ -31,6 +33,7 @@ test.describe("数据表权限与问题清单（多用户）", () => {
             });
             expect(created.status, JSON.stringify(created.body)).toBe(201);
             const tid = (created.body as { id: number }).id;
+            createdTable = { wid, tid };
 
             const field = await apiCall(admin.api, admin.token, "post", `/workspaces/${wid}/tables/${tid}/fields`, {
                 name: "名称",
@@ -128,6 +131,15 @@ test.describe("数据表权限与问题清单（多用户）", () => {
             const restored = await apiCall(viewer.api, viewer.token, "get", `/workspaces/${wid}/tables`);
             expect((restored.body as Array<{ id: number }>).some(t => t.id === tid)).toBeTruthy();
         } finally {
+            // 软删除临时表（trashed=true，列表接口随之隐藏），保证同轮其它用例看到的表清单干净
+            if (createdTable) {
+                await apiCall(
+                    admin.api,
+                    admin.token,
+                    "delete",
+                    `/workspaces/${createdTable.wid}/tables/${createdTable.tid}`,
+                ).catch(() => {});
+            }
             await admin.close();
             await viewer.close();
         }
