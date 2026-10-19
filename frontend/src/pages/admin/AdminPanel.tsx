@@ -19,7 +19,7 @@ import {
   DatabaseOutlined, CloudUploadOutlined, CloudDownloadOutlined,
   InfoCircleOutlined, InboxOutlined, ExclamationCircleOutlined,
   ReloadOutlined, FileZipOutlined, WarningOutlined, SafetyOutlined,
-  TeamOutlined, HistoryOutlined,
+  TeamOutlined, HistoryOutlined, HddOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { adminApi } from '@/api'
@@ -27,13 +27,14 @@ import { useAuthStore } from '@/store'
 import type { BackupManifest } from '@/api'
 import UsersPage from './UsersPage'
 import EventsPage from './EventsPage'
+import StoragePage from './StoragePage'
 import { useResponsive } from '@/hooks/useResponsive'
 import { formatSize } from '@/utils/formatSize'
 
 const { Text } = Typography
 
 /** 管理台分区 —— 导航栏、页头文案与内容切换共用同一份定义. */
-type AdminSectionKey = 'users' | 'events' | 'info' | 'backup' | 'restore'
+type AdminSectionKey = 'users' | 'events' | 'storage' | 'info' | 'backup' | 'restore'
 
 interface AdminSection {
   key: AdminSectionKey
@@ -45,6 +46,7 @@ interface AdminSection {
 const SECTIONS: readonly AdminSection[] = [
   { key: 'users', label: '用户管理', desc: '账号资料、角色与启停状态，变更全部写入操作日志。', icon: <TeamOutlined /> },
   { key: 'events', label: '事件流', desc: '跨插件统一事件视图，可按动作与关键词追溯一次请求。', icon: <HistoryOutlined /> },
+  { key: 'storage', label: '空间分配', desc: '按工作区分配存储上限（默认 100MB），查看已用空间与使用率。', icon: <HddOutlined /> },
   { key: 'info', label: '系统信息', desc: '版本、数据库与存储路径等运行期信息。', icon: <InfoCircleOutlined /> },
   { key: 'backup', label: '系统备份', desc: '整库打包为 .tar.gz（含 manifest 元信息与附件目录）。', icon: <CloudDownloadOutlined /> },
   { key: 'restore', label: '系统恢复', desc: '校验备份包后覆盖式还原，操作不可撤销。', icon: <CloudUploadOutlined /> },
@@ -447,6 +449,7 @@ export default function AdminPanel() {
   const content: Record<AdminSectionKey, ReactNode> = {
     users: <UsersPage />,
     events: <EventsPage />,
+    storage: <StoragePage />,
     info: infoTab,
     backup: backupTab,
     restore: restoreTab,

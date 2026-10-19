@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import Depends, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from cndb.cli.backup import BackupError, create_backup, format_backup_filename
 from cndb.cli.restore import (
@@ -26,6 +27,7 @@ from cndb.cli.restore import (
     restore_backup,
 )
 from cndb.core.config import DATA_DIR
+from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User, UserRole
 
 if TYPE_CHECKING:
@@ -48,6 +50,12 @@ class SystemAbout(BaseModel):
     auth_enabled: bool
     timezone: str
     server_time: str
+
+
+class WorkspaceStorageQuotaUpdate(BaseModel):
+    """调整工作区存储配额请求（字节）."""
+
+    quota_bytes: int
 
 
 def register_system_routes(app: FastAPI) -> None:
@@ -99,6 +107,78 @@ def register_system_routes(app: FastAPI) -> None:
             "data_dir": str(DATA_DIR),
             "auth_enabled": settings.AUTH_ENABLED,
             "timezone": "UTC",
+        }
+
+    @router.get("/workspaces/storage")
+    def admin_workspace_storage(
+        current_user: User | None = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> dict[str, Any]:
+        """工作区空间分配总览 —— 列出全部工作区的已用空间与配额（仅系统管理员）."""
+        _require_superuser(current_user)
+        from cndb.plugins.workspaces.models import (
+            DEFAULT_STORAGE_QUOTA_BYTES,
+            Workspace,
+            WorkspaceMember,
+            WorkspaceRole,
+        )
+        from cndb.plugins.workspaces.services.storage import (
+            workspace_quota_bytes,
+            workspace_storage_bytes,
+        )
+
+        workspaces = db.query(Workspace).order_by(Workspace.id).all()
+        # 拥有者用户名：一次性查出，避免逐工作区查询
+        owner_ids = {
+            row[0]: row[1]
+            for row in db.query(WorkspaceMember.workspace_id, WorkspaceMember.user_id)
+            .filter(WorkspaceMember.role == WorkspaceRole.OWNER)
+            .all()
+        }
+        usernames = {
+            row[0]: row[1]
+            for row in db.query(User.id, User.username).filter(User.id.in_(set(owner_ids.values()) or {-1})).all()
+        }
+        items = [
+            {
+                "workspace_id": ws.id,
+                "name": ws.name,
+                "owner_username": usernames.get(owner_ids.get(ws.id)),
+                "used_bytes": workspace_storage_bytes(db, ws.id),
+                "quota_bytes": workspace_quota_bytes(ws),
+                "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
+            }
+            for ws in workspaces
+        ]
+        return {
+            "default_quota_bytes": DEFAULT_STORAGE_QUOTA_BYTES,
+            "items": items,
+        }
+
+    @router.patch("/workspaces/{workspace_id}/storage-quota")
+    def admin_update_workspace_quota(
+        workspace_id: int,
+        payload: WorkspaceStorageQuotaUpdate,
+        current_user: User | None = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> dict[str, Any]:
+        """调整某个工作区的存储配额（仅系统管理员）."""
+        _require_superuser(current_user)
+        from cndb.plugins.workspaces.models import Workspace
+        from cndb.plugins.workspaces.services.storage import workspace_storage_bytes
+
+        if payload.quota_bytes < 0:
+            raise HTTPException(status_code=400, detail="配额不能为负数")
+        ws = db.get(Workspace, workspace_id)
+        if ws is None:
+            raise HTTPException(status_code=404, detail="工作区不存在")
+        ws.storage_quota_bytes = payload.quota_bytes
+        db.commit()
+        db.refresh(ws)
+        return {
+            "workspace_id": ws.id,
+            "used_bytes": workspace_storage_bytes(db, ws.id),
+            "quota_bytes": ws.storage_quota_bytes,
         }
 
     # 普通用户可见的系统基本信息（登录即可，不含服务器路径等敏感字段）

@@ -13,12 +13,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
-  Popconfirm, Divider, Card, Space, Avatar,
+  Popconfirm, Divider, Card, Space, Avatar, Progress,
 } from 'antd'
 import { App as AntApp } from 'antd'
 import {
   SettingOutlined, BarChartOutlined,
-  FileTextOutlined, EyeOutlined,
+  FileTextOutlined, EyeOutlined, HddOutlined,
   ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -30,6 +30,7 @@ import type {
 } from '@/api'
 import { useAuthStore } from '@/store'
 import HelpTip from '@/components/HelpTip'
+import { formatSize } from '@/utils/formatSize'
 import AddMemberModal from './AddMemberModal'
 import MemberZones from './MemberZones'
 import TransferOwnerModal from './TransferOwnerModal'
@@ -210,12 +211,21 @@ export default function WorkspaceSettingsContent({
   const statItems = useMemo(() => {
     if (!detail) return []
     return [
-      { label: '数据表', value: detail.table_count ?? 0, icon: <FileTextOutlined />, color: 'var(--cn-brand-color)' },
-      { label: '成员', value: detail.member_count ?? 0, icon: <UserOutlined />, color: '#8b5cf6' },
-      { label: '视图', value: detail.view_count ?? 0, icon: <EyeOutlined />, color: '#10b981' },
-      { label: '数据行', value: detail.total_rows ?? 0, icon: <ColumnWidthOutlined />, color: '#f59e0b' },
+      { label: '数据表', value: (detail.table_count ?? 0).toLocaleString(), icon: <FileTextOutlined />, color: 'var(--cn-brand-color)' },
+      { label: '成员', value: (detail.member_count ?? 0).toLocaleString(), icon: <UserOutlined />, color: '#8b5cf6' },
+      { label: '视图', value: (detail.view_count ?? 0).toLocaleString(), icon: <EyeOutlined />, color: '#10b981' },
+      { label: '数据行', value: (detail.total_rows ?? 0).toLocaleString(), icon: <ColumnWidthOutlined />, color: '#f59e0b' },
+      { label: '占用空间', value: formatSize(detail.storage_bytes ?? 0), icon: <HddOutlined />, color: '#0ea5e9' },
     ]
   }, [detail])
+
+  // 存储用量：已用 / 配额（默认 100MB）与使用率配色
+  const storageUsed = detail?.storage_bytes ?? 0
+  const storageQuota = detail?.storage_quota_bytes ?? 100 * 1024 * 1024
+  const storagePercent = storageQuota > 0
+    ? Math.min(100, (storageUsed / storageQuota) * 100)
+    : 100
+  const storageColor = storagePercent >= 100 ? '#dc2626' : storagePercent >= 80 ? '#f59e0b' : '#0ea5e9'
 
   // 公共样式常量
   const subtleBoxStyle: React.CSSProperties = {
@@ -412,7 +422,7 @@ export default function WorkspaceSettingsContent({
       children: (
         <div>
           {/* 统计卡片 */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
             {statItems.map(item => (
               <div
                 key={item.label}
@@ -426,10 +436,30 @@ export default function WorkspaceSettingsContent({
                   {item.icon} {item.label}
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 600, marginTop: 4, color: 'var(--cn-text-primary)' }}>
-                  {item.value.toLocaleString()}
+                  {item.value}
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* 存储用量：已用 / 配额 + 使用率进度条 */}
+          <div style={{ padding: 16, ...subtleBoxStyle, marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <HddOutlined /> 存储用量
+              </span>
+              <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)' }}>
+                {formatSize(storageUsed)} / {formatSize(storageQuota)}
+              </span>
+            </div>
+            <Progress percent={Math.round(storagePercent * 10) / 10} strokeColor={storageColor} size="small" />
+            <div style={{ fontSize: 12, color: 'var(--cn-text-muted)', marginTop: 4 }}>
+              {storagePercent >= 100
+                ? '存储空间已用尽，请清理文件或联系管理员扩容'
+                : storagePercent >= 80
+                  ? '存储空间即将用尽，建议清理或扩容'
+                  : '可继续上传附件与保存文档'}
+            </div>
           </div>
 
           {/* 当前角色 + 拥有者 */}
