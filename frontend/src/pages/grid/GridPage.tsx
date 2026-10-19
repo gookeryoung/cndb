@@ -22,7 +22,7 @@ import { Modal, Empty, App as AntApp, Skeleton } from 'antd'
 import {
   ColumnHeightOutlined, AppstoreOutlined,
   CalendarOutlined, LineChartOutlined, PartitionOutlined,
-  TableOutlined, BarChartOutlined,
+  TableOutlined, BarChartOutlined, ApartmentOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
@@ -61,6 +61,7 @@ const KanbanView = lazy(() => import('./views/KanbanView'))
 const CalendarView = lazy(() => import('./views/CalendarView'))
 const GanttView = lazy(() => import('./views/GanttView'))
 const WbsView = lazy(() => import('./views/WbsView'))
+const TreeView = lazy(() => import('./views/TreeView'))
 const MatrixView = lazy(() => import('./views/MatrixView'))
 const ChartView = lazy(() => import('./views/ChartView'))
 
@@ -119,6 +120,7 @@ interface ModeBtn {
 }
 const MODE_BUTTONS: readonly ModeBtn[] = [
   { mode: 'grid', label: '表格', tooltip: '表格 (Grid)：行列结构，适合录入与批量管理', icon: <ColumnHeightOutlined /> },
+  { mode: 'tree', label: '树', tooltip: '树 (Tree)：按父子字段组织为可折叠层级，适合目录与分类', icon: <ApartmentOutlined /> },
   { mode: 'kanban', label: '看板', tooltip: '看板 (Kanban)：按选择字段分组拖拽流转，适合任务跟踪', icon: <AppstoreOutlined /> },
   { mode: 'calendar', label: '日历', tooltip: '日历 (Calendar)：按日期字段排布在月历上', icon: <CalendarOutlined /> },
   { mode: 'gantt', label: '甘特图', tooltip: '甘特图 (Gantt)：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
@@ -205,6 +207,7 @@ export default function GridPage() {
       void import('./views/CalendarView')
       void import('./views/GanttView')
       void import('./views/WbsView')
+      void import('./views/TreeView')
       void import('./views/MatrixView')
     }
     if (typeof requestIdleCallback === 'function') {
@@ -329,7 +332,7 @@ export default function GridPage() {
   const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
-      const KANBAN_MODES = new Set<string>(['kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart'])
+      const KANBAN_MODES = new Set<string>(['tree', 'kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart'])
       const vt = v.view_type ?? ''
       const newMode: ViewMode = KANBAN_MODES.has(vt) ? (vt as ViewMode) : 'grid'
 
@@ -1149,6 +1152,8 @@ export default function GridPage() {
               <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} pdfExporting={pdfExporting} />
             ) : mode === 'wbs' ? (
               <WbsView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
+            ) : mode === 'tree' ? (
+              <TreeView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'matrix' ? (
               <MatrixView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'chart' ? (

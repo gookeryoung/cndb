@@ -15,6 +15,7 @@ import {
   InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
   SaveOutlined, EditOutlined, PlusOutlined, DeleteOutlined, StarOutlined,
   ColumnHeightOutlined, CalendarOutlined, LineChartOutlined, PartitionOutlined,
+  ApartmentOutlined,
   HolderOutlined, TableOutlined, BarChartOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -36,6 +37,7 @@ const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
 /** 视图类型 → 中文标签 + 图标（与 GridPage MODE_BUTTONS 保持一致） */
 const VIEW_MODE_META: Record<string, { label: string; icon: ReactNode }> = {
   grid: { label: '表格 (Grid)', icon: <ColumnHeightOutlined /> },
+  tree: { label: '树 (Tree)', icon: <ApartmentOutlined /> },
   kanban: { label: '看板 (Kanban)', icon: <AppstoreOutlined /> },
   calendar: { label: '日历 (Calendar)', icon: <CalendarOutlined /> },
   gantt: { label: '甘特图 (Gantt)', icon: <LineChartOutlined /> },

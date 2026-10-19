@@ -121,6 +121,36 @@ class TestViewsAPI:
         assert r.status_code == 400
         assert "column_field" in r.json()["detail"]
 
+    def test_create_tree_view_ok(self, client, ws, table, auth_owner):
+        """树视图：父节点字段引用存在字段时应创建成功."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "层级树",
+                "view_type": "tree",
+                "view_options": {"parent_field": "姓名", "title_field": "姓名"},
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 201
+        data = r.json()
+        assert data["view_type"] == "tree"
+        assert data["view_options"]["parent_field"] == "姓名"
+
+    def test_create_tree_view_invalid_parent_field(self, client, ws, table, auth_owner):
+        """树视图：父节点字段引用不存在字段时应返回 400."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "坏树",
+                "view_type": "tree",
+                "view_options": {"parent_field": "不存在字段"},
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "parent_field" in r.json()["detail"]
+
     def test_create_chart_view_ok(self, client, ws, table, auth_owner):
         """图表视图：维度/度量/散点双轴字段引用存在字段时应创建成功."""
         r = client.post(
