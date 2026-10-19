@@ -113,6 +113,7 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 
 - 禁 `--no-verify`、禁跳过 prek；conventional commits。
 - ADR 标「已落地」的期必须有代码落点与测试文件；落地状态与交接每期回填（`make adr-check` 校验）。
+- 需求移除 / 变更先清理 ADR（删失效段落与决策行、改 Status 与索引），不保留历史方案段。
 - 覆盖率不得注水（阈值 95%，omit 白名单固定）。
 - 迁移幂等 + downgrade 可还原 + 存量零迁移。
 - 新表须纳入 `backup_io`，旧备份按缺省还原。

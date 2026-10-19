@@ -159,3 +159,54 @@ class TestCrossChecks:
 
         assert errors == []
         assert any("缺少「交接」节" in item for item in warnings)
+
+
+class TestLifecycle:
+    def test_superseded_requires_replacement(self, isolated: Path) -> None:
+        path = _write_adr(isolated, status="Superseded", rows="| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |")
+
+        errors, _ = adr_check._check_file(path, "ADR 0007")
+
+        assert any("Superseded by" in item for item in errors)
+
+    def test_deprecated_requires_reason(self, isolated: Path) -> None:
+        path = _write_adr(isolated, status="Deprecated", rows="| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |")
+
+        errors, _ = adr_check._check_file(path, "ADR 0007")
+
+        assert any("Deprecated" in item for item in errors)
+
+    def _write_index(self, directory: Path, adr_name: str, status: str) -> None:
+        (directory / "README.md").write_text(
+            "# ADR 索引\n\n"
+            "| 编号 | 标题 | Status | 落地阶段 | 代码 | 测试 | CHANGELOG |\n"
+            "|---|---|---|---|---|---|---|\n"
+            f"| [0007]({adr_name}) | 测试用 | {status} | P0 已落地 | `code.py` | `test_x.py` | - |\n",
+            encoding="utf-8",
+        )
+
+    def test_index_status_drift_is_error(self, isolated: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        path = _write_adr(
+            isolated,
+            status="Implemented",
+            rows="| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |",
+        )
+        self._write_index(isolated, path.name, "Proposed")
+        monkeypatch.setattr(adr_check, "ADR_DIR", isolated)
+
+        errors, _ = adr_check._check_index([path])
+
+        assert any("索引 Status(Proposed) 与 ADR Status(Implemented) 不一致" in item for item in errors)
+
+    def test_index_status_consistent_passes(self, isolated: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        path = _write_adr(
+            isolated,
+            status="Implemented",
+            rows="| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |",
+        )
+        self._write_index(isolated, path.name, "Implemented")
+        monkeypatch.setattr(adr_check, "ADR_DIR", isolated)
+
+        errors, _ = adr_check._check_index([path])
+
+        assert errors == []

@@ -22,6 +22,13 @@ description: Use when a requirement card or feature intent needs a design decisi
 6. 必要时补「行业对照」「与既有 ADR 的关系」两节。
 7. 写「落地状态」表（按分期列 P0/P1/P2，全部先填「未开始」）与「交接」节（当前阶段 / 已完成 / 下一步 / 已知坑），并把编号、标题、Status、落地阶段登记到 `docs/adr/README.md` 索引。
 
+## 需求移除 / 变更（修订既有 ADR）
+
+1. **先改 ADR，再动代码**：删或改对应「口径」行，Context、决策记录、测试清单与分期同步收缩，保持 ADR 只描述当前项目。
+2. 已失效内容直接删除，不写「曾用方案 / 已废弃」叙述（留痕写 CHANGELOG）。
+3. 需求整体作废：`Status: Superseded` + `Superseded by: ADR NNNN`；无替代方案则 `Status: Deprecated` + `Deprecated: <理由>`。文件保留，索引同步。
+4. `make adr-check` 通过（索引 Status 一致、替代者行存在、失效路径已清）。
+
 ## 产出
 
 - `docs/adr/NNNN-<topic>.md`（Status: Proposed，含「落地状态」与「交接」节）。
