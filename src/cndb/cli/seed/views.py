@@ -43,6 +43,9 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
         "actual_end_field",
         "progress_field",
         "assignee_field",
+        # tree/wbs 层级视图（父节点字段）
+        "parent_field",
+        "status_field",
         # matrix 矩阵视图（纵横轴字段）
         "row_field",
         "column_field",

@@ -4,7 +4,7 @@ import { VALID_MODES, collectAvailableViewTypes, deriveModeSwitch, type ViewMode
 
 /** 与 GridPage.MODE_BUTTONS 同序的测试替身（不含 icon） */
 const ALL_BUTTONS: Array<{ mode: ViewMode }> = [
-  { mode: 'grid' }, { mode: 'kanban' },
+  { mode: 'grid' }, { mode: 'tree' }, { mode: 'kanban' },
   { mode: 'calendar' }, { mode: 'gantt' }, { mode: 'wbs' }, { mode: 'matrix' }, { mode: 'chart' },
 ]
 
@@ -80,7 +80,7 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
 })
 
 describe('VALID_MODES', () => {
-  it('与 7 种模式一一对应（URL/storage 校验共用）', () => {
-    expect(VALID_MODES).toEqual(['grid', 'kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart'])
+  it('与 8 种模式一一对应（URL/storage 校验共用）', () => {
+    expect(VALID_MODES).toEqual(['grid', 'tree', 'kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart'])
   })
 })

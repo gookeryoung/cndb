@@ -48,6 +48,15 @@ describe('getOptionSchema 四种视图 + 未知类型', () => {
     expect(schema.find((o) => o.key === 'parent_field')?.required).toBe(true)
   })
 
+  it('tree 返回 6 项，parent_field 必填，默认全部展开', () => {
+    const schema = getOptionSchema('tree')
+    expect(schema).toHaveLength(6)
+    expect(schema.find((o) => o.key === 'parent_field')?.required).toBe(true)
+    const opts = resolveOpts({}, schema)
+    expect(opts.expand_all).toBe(true)
+    expect(opts.show_numbering).toBe(false)
+  })
+
   it('未知视图类型返回空数组', () => {
     expect(getOptionSchema('unknown_type')).toEqual([])
   })
