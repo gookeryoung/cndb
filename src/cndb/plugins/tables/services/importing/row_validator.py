@@ -233,7 +233,7 @@ class RowValidator:
             # 2. link 字段：先把分隔串解析（id 直读 / 业务文本按匹配字段解析）为 list[int]，
             #    再调 validate_value；并把解析结果写回行值，落库时无需二次解析。
             if is_link_field(f):
-                parsed = self._parse_link_value(raw, f)
+                parsed = self._parse_link_value(raw, f, self._link_resolver)
                 normalized = default_registry.get("link").validate_value(parsed, f.config)  # type: ignore[union-attr]
                 result.normalized[f.db_column_name] = normalized
                 row[f.name] = normalized
@@ -274,7 +274,12 @@ class RowValidator:
             return True
         return bool(isinstance(value, (bytes, bytearray)) and not value.strip())
 
-    def _parse_link_value(self, raw: Any, field: DataField) -> list[int]:
+    @staticmethod
+    def _parse_link_value(
+        raw: Any,
+        field: DataField | None = None,
+        resolver: Callable[[DataField, list[str]], list[int]] | None = None,
+    ) -> list[int]:
         """把 CSV/JSON 导入场景中的 link 值归一为 list[int].
 
         支持：
@@ -282,8 +287,10 @@ class RowValidator:
         - 单值 int / str
         - 分号/逗号分隔的字符串
 
-        数字项直读为行 id；非数字项在提供 link_resolver 时按目标表匹配字段解析，
+        数字项直读为行 id；非数字项在提供 resolver 时按目标表匹配字段解析，
         否则保持历史行为（报错）。返回去重保序的目标行 id 列表。
+
+        纯解析场景（仅数字项）可只传 ``raw``；需要文本匹配解析时再传 ``field`` 和 ``resolver``.
         """
         if isinstance(raw, list):
             items: list[Any] = list(raw)
@@ -315,9 +322,9 @@ class RowValidator:
             except ValueError:
                 labels.append(text_item)
         if labels:
-            if self._link_resolver is None:
+            if resolver is None or field is None:
                 raise ValueError(f"link 字段值必须是分号分隔的行 id: {raw!r}")
-            ids.extend(self._link_resolver(field, labels))
+            ids.extend(resolver(field, labels))
         return list(dict.fromkeys(ids))
 
 
