@@ -12,6 +12,7 @@ export async function preloadGridViews(): Promise<void> {
         import('@/pages/grid/views/CalendarView'),
         import('@/pages/grid/views/GanttView'),
         import('@/pages/grid/views/WbsView'),
+        import('@/pages/grid/views/TreeView'),
         import('@/pages/grid/views/MatrixView'),
     ])
 }

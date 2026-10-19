@@ -794,6 +794,25 @@
         ]
       },
       "order": 9
+    },
+    {
+      "name": "任务层级树",
+      "view_type": "tree",
+      "sortings": [
+        {
+          "field_name": "任务ID",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "parent_field": "父任务ID",
+        "title_field": "任务名称",
+        "status_field": "任务状态",
+        "assignee_field": "负责人",
+        "show_numbering": false,
+        "expand_all": true
+      },
+      "order": 10
     }
   ],
   "科研待办事项": [
