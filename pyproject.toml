@@ -125,5 +125,26 @@ dev = [
     "prek>=0.5.5",
 ]
 
+# 覆盖率口径：配置集中在本文件（历史上的 .coveragerc 会覆盖 pyproject 配置，
+# 两份共存时 omit 被忽略导致门槛失真，已删除，勿再新建）
 [tool.coverage.run]
-omit = ["src/cndb/cli/main.py", "src/cndb/cli/seed/**", "src/cndb/gui/**", "src/cndb/plugins/tables/routers/files.py"]
+branch = true
+source = ["cndb"]
+omit = [
+    "tests/*",
+    # CLI 入口 / GUI / 文件路由依赖真实环境，不纳入自动化覆盖率门槛
+    "src/cndb/cli/main.py",
+    "src/cndb/cli/seed/**",
+    "src/cndb/gui/**",
+    "src/cndb/plugins/tables/routers/files.py",
+]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+exclude_lines = [
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "pragma: no cover",
+    "raise NotImplementedError",
+]
