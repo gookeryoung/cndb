@@ -3,7 +3,7 @@
 #
 # 触发：push main/develop 分支、push tag
 # 并行 4 个 job（阶段内默认并行，无 needs）：
-#   lint_typecheck  → gitkeep + ruff + pyrefly（Python 静态门禁）
+#   lint_typecheck  → gitkeep + adr-check + ruff + pyrefly（Python 静态门禁）
 #   frontend_static → eslint + build(含 tsc -b) + bundle budget（前端静态链）
 #   frontend_test   → vitest coverage（唯一长尾，独占 4 核实例）
 #   test            → pytest --cov（95% 门槛，Python 3.12）
@@ -81,6 +81,7 @@ stages:
                 export PATH="$HOME/.local/bin:$PATH"
                 uv sync --frozen --extra lint --python 3.12
                 uv run python scripts/check_gitkeep.py
+                uv run python scripts/check_adr_landing.py
                 uv run ruff check src tests
                 uv run ruff format --check src tests
                 uv run pyrefly check

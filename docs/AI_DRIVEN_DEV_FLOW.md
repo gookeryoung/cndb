@@ -8,10 +8,10 @@
 
 | 原则 | 落地 |
 |---|---|
-| 门禁即裁判 | AI 不声称「做完了」，只看命令退出码：`make check-fast` / `test` / `cov` / `check` / CI / `/health` |
+| 门禁即裁判 | AI 不声称「做完了」，只看命令退出码：`make check-fast` / `test` / `cov` / `check` / `adr-check` / CI / `/health` |
 | 阶段化 + 卡点 | 每阶段：AI 动作 → 产出物 → 客观门禁 →（人类）审批点 |
 | 失败自愈闭环 | 门禁失败输出回灌 AI → 定位修复 → 重跑，直到全绿（[AGENTS.md](../AGENTS.md) 已定义） |
-| 上下文常驻 | [AGENTS.md](../AGENTS.md)（流程 + 禁令）、[CONTEXT.md](../CONTEXT.md)（术语）、`docs/adr/`（决策）作为每轮必读 |
+| 上下文常驻 | [AGENTS.md](../AGENTS.md)（流程 + 禁令 + 开工/收工交接）、[CONTEXT.md](../CONTEXT.md)（术语）、`docs/adr/`（决策 + 落地状态 + 交接）作为每轮必读 |
 | 载体 | `.trae/rules/`（阶段约束）+ `.trae/skills/`（阶段角色）—— [.gitignore](../.gitignore) 已预留这两个目录 |
 
 流水线：
@@ -25,11 +25,11 @@
 
 | 阶段 | 输入 / 触发 | AI 动作 | 产出物 | 客观门禁 | 人工卡点 |
 |---|---|---|---|---|---|
-| A 需求意图 | 用户口语需求 | 需求拆句、现状核对 | `docs/adr/NNNN-*.md`（Proposed） | 每句落到可实施约束、无待定项 | ✅ 需求确认 |
-| B 方案制定 | 需求卡片 | 逐条核对代码、定不变量、分期 | ADR（Context / Decision / D 表 / 测试清单 / 分期） | ADR → Accepted；新术语入 [CONTEXT.md](../CONTEXT.md) | ✅ 方案评审 |
-| C 代码编写 | ADR | 按 P0→P1→P2 小步实现 | alembic 迁移 + plugin 分层 + 前端 | `make check-fast` | — |
+| A 需求意图 | 用户口语需求 | 需求拆句（C1..Cn）、粗查影响面 | 需求卡片 `docs/requirements/NNNN-*.md` | 每句有 C 编号约束，未决问题清零 | ✅ 需求确认 |
+| B 方案制定 | 需求卡片 | 逐条核对代码、定不变量、收决策 D 表、分期 | ADR `docs/adr/NNNN-*.md`（Proposed，结构见模板） | 卡片约束逐条有落点、D 表无「待定」；ADR → Accepted | ✅ 方案评审 |
+| C 代码编写 | ADR | 按 P0→P1→P2 小步实现，每期回填 ADR 落地状态 | alembic 迁移 + plugin 分层 + 前端 | `make check-fast`（含 `adr-check`） | — |
 | D 测试编写与验证 | 实现同轮 | 判定层 / 接口层 / 迁移 / 备份 / e2e 同步写测试 | `tests/test_*.py`、`*.test.tsx`、`tests/e2e/*` | `make test` → `make cov`(≥95%) → `make e2e` | — |
-| E 集成门禁与文档 | 全绿 | 更新 README/CONTEXT/docs、bump 版本 | `make check`、CHANGELOG | `make check` + 双 CI | — |
+| E 集成门禁与文档 | 全绿 | 更新 README/CONTEXT/docs、回填 ADR 交接、bump 版本 | `make check`、CHANGELOG | `make check` + 双 CI + `adr-check.yml` | — |
 | F 推送与发布 | 评审通过 | 推全部 remote、打 tag | PyPI + fspack 包 + GitHub Release | [release.yml](../.github/workflows/release.yml) | ✅ 上线 tag |
 | G 部署 | tag 成功 | 观察部署与健康 | 生产实例 | [deploy-tencent.yml](../.github/workflows/deploy-tencent.yml) + `/health` | 自动回滚兜底 |
 
@@ -37,23 +37,27 @@
 
 ### A 需求意图接入
 
-把口语需求转成**可实施约束**。AI 复刻 [ADR 0004](adr/0004-row-level-permission-rules.md) 的「口径（先对齐需求措辞）」手法：
+把口语需求转成**需求卡片**（可实施约束 C1..Cn）；需求原文与约束编号此后只在卡片维护：
 
-1. 需求原句 → 逐条拆成可实施约束表；
-2. 逐句核对现状，标注 `file:line`（如 `models.py:435`）；
-3. 指出核心缺陷，定义不变量 I1..In。
+1. 需求原句逐字保留（唯一副本）；
+2. 逐句拆成 C1..Cn 可实施约束表；
+3. 粗查疑似受影响的现有能力，按编号给出候选 `file:line`（精查留给 B）。
 
-产出 `docs/adr/NNNN-<topic>.md`（Status: Proposed），含 Context / Decision / 决策记录 D1..Dn / 测试清单 / 分期。
+产出 `docs/requirements/NNNN-<topic>.md`（模板 [REQUIREMENT_CARD_TEMPLATE.md](REQUIREMENT_CARD_TEMPLATE.md)）。
 
-**门禁**：需求每句必有落点，决策表无「待定」。
+**门禁**：每条需求句都有 C 编号约束，未决问题清零。
 
-**人工卡点【需求确认】**：决策记录表全有结论才进下一阶段。
+**人工卡点【需求确认】**。
 
 ### B 方案制定
 
-读代码验证现状（Grep / Read），产出数据模型与迁移、API 变更清单、边界与例外、测试清单、分期（P0/P1/P2）、行业对照。
+读代码逐条核实卡片影响面（确认 / 排除 / 新增，补 `file:line`），产出 ADR：
 
-**门禁**：ADR 由 Proposed → Accepted；新术语写入 [CONTEXT.md](../CONTEXT.md)。
+- 口径表沿用 C1..Cn，只补「设计落点」，不复制原文；
+- 数据模型 / 判定入口 / API 变更清单 / 边界与例外 / 迁移 / 前端 / 测试清单 / 分期，结构以 [ADR 模板](adr/TEMPLATE.md) 为准；
+- 决策结论只写进 D1..Dn 台账（含被否决项与代码落点）；Consequences 只写得失，不重复否决项。
+
+**门禁**：卡片约束逐条有落点、D 表无「待定」；ADR 由 Proposed → Accepted；新术语写入 [CONTEXT.md](../CONTEXT.md)。
 
 **人工卡点【方案评审】**。
 
@@ -61,7 +65,9 @@
 
 按分期小步走：先 P0（模型 + 判定入口），再 P1（写路径接入），再 P2（端点 + 前端）。
 
-内环每改完即 `make check-fast`（gitkeep + ruff + pyrefly + tsc + eslint，秒级反馈）。
+内环每改完即 `make check-fast`（gitkeep + adr-check + ruff + pyrefly + tsc + eslint，秒级反馈）。
+
+每期完成时回填 ADR 的「落地状态」（期 / 状态 / 代码落点 / 测试 / 提交）与「交接」（当前阶段 / 下一步 / 已知坑）；`make adr-check` 会校验标「已落地」的期确有代码落点与测试文件。
 
 **强制**：不跳 prek、不 `--no-verify`、commit message 用 conventional commits。
 
@@ -75,11 +81,11 @@
 
 ### E 集成门禁与文档
 
-`make check`（[Makefile](../Makefile) 并行 6 项：gitkeep + lint + typecheck + frontend-static + frontend-coverage + cov）。
+`make check`（[Makefile](../Makefile) 并行 7 项：gitkeep + adr-check + lint + typecheck + frontend-static + frontend-coverage + cov）。
 
-文档更新：README / CONTEXT.md / `docs/*`，以及 `make bump`（CHANGELOG）。
+文档更新：README / CONTEXT.md / `docs/*`、ADR 的「落地状态 + 交接」、`docs/adr/README.md` 索引，以及 `make bump`（CHANGELOG，条目带 `(ADR NNNN Pn)`）。
 
-**门禁**：双 CI（[GitHub ci.yml](../.github/workflows/ci.yml) + [CodeUp ci.yml](../.codeup/pipelines/ci.yml)）通过；bundle budget 不超基线 +5%。
+**门禁**：双 CI（[GitHub ci.yml](../.github/workflows/ci.yml) + [CodeUp ci.yml](../.codeup/pipelines/ci.yml)）通过、[adr-check.yml](../.github/workflows/adr-check.yml) 无 error；bundle budget 不超基线 +5%。
 
 ### F 推送与发布
 
@@ -98,13 +104,15 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 1. **`.trae/rules/`**：写死每阶段约束（禁止 `--no-verify`、覆盖率不得注水、迁移必须幂等 + downgrade）。
 2. **`.trae/skills/`**：把阶段做成角色 Skill —— requirement-intake / adr-writer / implementer / test-writer / gate-runner / release-manager，每个绑定到具体 `make` 命令。
 3. **闭环**：门禁失败输出回灌 → 自动修复 → 重跑，直到全绿。
-4. **工具化入口**：把 AGENTS 的四步固化为 `make flow`（check-fast → test → 文档 → push 一条命令走完）。
-5. **Hook**：编辑后自动触发 `make check-fast`（提交侧已由 prek 覆盖）。
-6. **审批点收敛为 3 个**：需求确认 / ADR 评审 / 上线 tag。
+4. **工具化入口**：把 AGENTS 的门禁固化为 `make flow`（`check-fast` 含 `adr-check` → `test`）；文档更新与 `make push` 仍需人工判断，不纳入。
+5. **落地与交接门禁**：`make adr-check`（[check_adr_landing.py](../scripts/check_adr_landing.py)）校 ADR 落地状态表 / 交接节 / Related 链接 / CHANGELOG 关联；换会话或换 agent 时按 [AGENTS.md](../AGENTS.md) 的「开工前 / 收工前」回填与恢复上下文。
+6. **Hook**：编辑后自动触发 `make check-fast`（提交侧已由 prek 覆盖）。
+7. **审批点收敛为 3 个**：需求确认 / ADR 评审 / 上线 tag。
 
 ## 5. 项目特定护栏
 
 - 禁 `--no-verify`、禁跳过 prek；conventional commits。
+- ADR 标「已落地」的期必须有代码落点与测试文件；落地状态与交接每期回填（`make adr-check` 校验）。
 - 覆盖率不得注水（阈值 95%，omit 白名单固定）。
 - 迁移幂等 + downgrade 可还原 + 存量零迁移。
 - 新表须纳入 `backup_io`，旧备份按缺省还原。
@@ -119,3 +127,5 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 - [x] `.trae/rules/*.md` 阶段约束 —— [dev-workflow](../.trae/rules/dev-workflow.md)、[design](../.trae/rules/design.md)、[testing](../.trae/rules/testing.md)
 - [x] `.trae/skills/*` 阶段 Skill —— requirement-intake / adr-writer / implementer / test-writer / gate-runner / release-manager
 - [ ] （可选）编辑后自动 `check-fast` 的 hook
+- [x] ADR 落地门禁 `make adr-check` + 独立 CI —— [check_adr_landing.py](../scripts/check_adr_landing.py)、[adr-check.yml](../.github/workflows/adr-check.yml)
+- [x] ADR 索引与开工/收工交接协议 —— [docs/adr/README.md](adr/README.md)、[AGENTS.md](../AGENTS.md)

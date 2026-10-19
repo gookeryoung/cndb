@@ -10,6 +10,7 @@ description: Use when a verified, gate-green change in the cndb repo is ready to
 ## 步骤
 
 1. **推送**：`make push`（推全部 remote + tags）。若分支无 upstream，先 `git push -u origin <branch>`。
+   推送前确认：ADR「落地状态」与「交接」已回填、CHANGELOG 带 `(ADR NNNN Pn)` 条目、`make adr-check` 无 error。
 2. **版本 / 变更记录**：`make bump patch|minor|major`（bump-my-version，自动打 tag 并写 CHANGELOG）。
 3. **上线卡点**：打 tag `vX.Y.Z` 前必须**人工确认**（属正式上线动作）。
 4. **发布**：tag 触发 `release.yml` → PyPI（OIDC）+ Windows/Linux 原生打包（fspack）+ GitHub Release。

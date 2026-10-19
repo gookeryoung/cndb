@@ -18,8 +18,9 @@ description: Use when implementing an Accepted ADR or a scoped feature/fix in th
 2. 后端遵循插件分层：`plugins/<name>/` 下 `models.py` / `routers/` / `schemas/` / `services/`；动态表 DDL 走 SQLAlchemy Core。
 3. 迁移用 alembic：**幂等 + downgrade 可还原 + 存量零迁移**；新表须纳入 `plugins/workspaces/services/backup_io.py`。
 4. 前端改动落在 `frontend/src/`，与后端 API 类型（`api/types/*`）对齐。
-5. **内环**：每次改完立即 `make check-fast`（gitkeep + ruff + pyrefly + tsc + eslint，秒级），红了先修再继续。
-6. 小步提交，message 用 conventional commits。
+5. **内环**：每次改完立即 `make check-fast`（gitkeep + adr-check + ruff + pyrefly + tsc + eslint，秒级），红了先修再继续。
+6. 每期完成后回填 ADR 的「落地状态」（期 / 状态 / 代码落点 / 测试 / 提交）与「交接」（当前阶段 / 下一步 / 已知坑），标「已落地」的期必须有真实代码落点与测试文件。
+7. 小步提交，message 用 conventional commits。
 
 ## 门禁
 
