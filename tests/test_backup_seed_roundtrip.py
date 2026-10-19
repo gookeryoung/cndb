@@ -346,7 +346,7 @@ class TestSeedViewsIntegrity:
     - 8 种视图模式在全部工作区中均有覆盖。
     """
 
-    VALID_VIEW_TYPES = {"grid", "tree", "kanban", "calendar", "gantt", "wbs", "matrix", "chart"}
+    VALID_VIEW_TYPES = {"grid", "tree", "kanban", "calendar", "gantt", "wbs", "matrix", "chart", "flow"}
 
     # 与 seed._seed_sales_tables 保持一致的硬编码业务表字段
     HARDCODED_TABLE_FIELDS: dict[str, dict[str, set[str]]] = {
@@ -496,7 +496,7 @@ class TestSeedViewsIntegrity:
                         assert ref in fields, f"{ws_name}/{table_name} 视图'{vc['name']}' 引用不存在的字段: {ref}"
         assert checked > 0, "至少应校验一个字段引用"
 
-    def test_all_eight_view_types_covered(self, ws_configs):
+    def test_all_seven_view_types_covered(self, ws_configs):
         _, configs = ws_configs
         types = {
             vc.get("view_type", "grid")

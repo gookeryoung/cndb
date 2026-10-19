@@ -29,6 +29,7 @@ export interface ViewOptionSchema {
   | 'direction'           // 升/降方向
   | 'switch'              // 开/关
   | 'number_enum'         // 数值枚举下拉
+  | 'text_list'           // 有序字符串列表（逗号分隔输入，存 string[]）
   | 'done_flag'           // 完成标志：字段下拉 + 判定操作符 + 按字段类型动态切换的匹配值控件（存 done_field + done_op + done_value 三键）
   /** 允许的后端 field_type 原始名 + 历史别名集合（FieldType.name 或别名都可匹配）.
    *  数组顺序即自动推断时的优先级（先排先试）。 */
@@ -379,6 +380,26 @@ export const CHART_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
+/** Flow 流程视图的专属配置字段（共 3 项） */
+export const FLOW_OPTIONS: ViewOptionSchema[] = [
+  {
+    key: 'node_field', label: '流程节点字段', group: '流程字段',
+    tooltip: '每行归属的流程节点（如「当前交付节点」）；各节点按流程顺序平铺为流转管线',
+    kind: 'field_select',
+    fieldTypes: ['select', 'multiselect', 'link', 'boolean', 'text', 'longtext'],
+    required: true,
+  },
+  {
+    key: 'title_field', label: '节点卡片标题字段', group: '流程字段', tooltip: '节点内卡片显示的文字；留空自动选第一个文本字段',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], literalFallback: 'id',
+  },
+  {
+    key: 'node_order', label: '节点顺序', group: '节点顺序',
+    tooltip: '按流程先后填写节点值，逗号分隔（如：需求调研,方案设计,开发实施）；留空则按节点字段选项或数据首次出现顺序',
+    kind: 'text_list',
+  },
+]
+
 /** 按 view_type 名返回 option schema 列表 */
 export function getOptionSchema(viewType: string): ViewOptionSchema[] {
   switch (viewType) {
@@ -389,6 +410,7 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
     case 'tree': return TREE_OPTIONS
     case 'matrix': return MATRIX_OPTIONS
     case 'chart': return CHART_OPTIONS
+    case 'flow': return FLOW_OPTIONS
     default: return []
   }
 }

@@ -4,7 +4,7 @@ import { VALID_MODES, collectAvailableViewTypes, deriveModeSwitch, type ViewMode
 
 /** 与 GridPage.MODE_BUTTONS 同序的测试替身（不含 icon） */
 const ALL_BUTTONS: Array<{ mode: ViewMode }> = [
-  { mode: 'grid' }, { mode: 'tree' }, { mode: 'kanban' },
+  { mode: 'grid' }, { mode: 'kanban' },
   { mode: 'calendar' }, { mode: 'gantt' }, { mode: 'wbs' }, { mode: 'matrix' }, { mode: 'chart' },
 ]
 
@@ -60,14 +60,21 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
     expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kanban', 'calendar', 'gantt', 'wbs', 'chart'])
   })
 
-  it('产品开发（grid+kanban+calendar+gantt+chart，缺 wbs/matrix）→ 5 个按钮', () => {
+  it('产品开发（grid+kanban+calendar+gantt+chart+flow，缺 wbs/matrix）→ 6 个按钮', () => {
     const { buttons, visible } = deriveModeSwitch(
-      view('grid', 'kanban', 'calendar', 'gantt', 'chart'), ALL_BUTTONS,
+      view('grid', 'kanban', 'calendar', 'gantt', 'chart', 'flow'), ALL_BUTTONS,
     )
     expect(visible).toBe(true)
-    expect(buttons).toHaveLength(5)
+    expect(buttons).toHaveLength(6)
+    expect(buttons.some((b) => b.mode === 'flow')).toBe(true)
     expect(buttons.some((b) => b.mode === 'wbs')).toBe(false)
     expect(buttons.some((b) => b.mode === 'matrix')).toBe(false)
+  })
+
+  it('仅含 flow 的数据表（grid+flow）→ 2 个按钮且按钮组可见', () => {
+    const { buttons, visible } = deriveModeSwitch(view('grid', 'flow'), ALL_BUTTONS)
+    expect(visible).toBe(true)
+    expect(buttons.map((b) => b.mode)).toEqual(['grid', 'flow'])
   })
 
   it('科研经费（grid+kanban+calendar+matrix+chart）→ 含 matrix 按钮（seed 2026-10 补充）', () => {
@@ -80,7 +87,7 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
 })
 
 describe('VALID_MODES', () => {
-  it('与 8 种模式一一对应（URL/storage 校验共用）', () => {
-    expect(VALID_MODES).toEqual(['grid', 'tree', 'kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart'])
+  it('与 7 种模式一一对应（URL/storage 校验共用）', () => {
+    expect(VALID_MODES).toEqual(['grid', 'kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart'])
   })
 })
