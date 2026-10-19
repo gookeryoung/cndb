@@ -54,8 +54,8 @@ export function useGridData({ wid, tid, mode, limit, offset, viewFilters, viewSo
 /**
  * 编辑中状态查询（默认启用）。
  *
- * 拉取全部 open 修改申请并对每条取详情收集 items 涉及的 row_id，
- * 返回 rowId → 申请 的 Map 供行级锁定与编辑中标识；
+ * 走 group_by=row 聚合端点一次拉取全部 open 申请的行组，
+ * 返回 rowId → 申请 的 Map 供行级锁定与编辑中标识（避免逐条取详情的 N+1）；
  * 提交/合并/关闭申请后 invalidate，不做逐行请求。
  */
 export function usePendingChanges(wid: string | undefined, tid: string | undefined, enabled = true) {
@@ -63,17 +63,11 @@ export function usePendingChanges(wid: string | undefined, tid: string | undefin
   return useQuery<Map<string, ChangeRequest>>({
     queryKey: ['pending-changes', tableKey],
     queryFn: async () => {
-      const list = await changeRequestsApi.list(wid!, tid!, 'open')
-      const details = await Promise.all(
-        list.items.map(cr => changeRequestsApi.get(wid!, tid!, cr.id)),
-      )
+      const page = await changeRequestsApi.listGrouped(wid!, tid!, 'open')
       const map = new Map<string, ChangeRequest>()
-      for (const detail of details) {
-        for (const item of detail.items) {
-          if (item.row_id == null) continue
-          const key = String(item.row_id)
-          if (!map.has(key)) map.set(key, detail)
-        }
+      for (const group of page.groups ?? []) {
+        const latest = group.requests[0]
+        if (latest) map.set(String(group.row_id), latest)
       }
       return map
     },
