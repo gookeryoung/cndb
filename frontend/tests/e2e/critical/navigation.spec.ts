@@ -81,8 +81,10 @@ test.describe("表列表 owner 列 + 访问级筛选器", () => {
   const start = async (page: any) => {
     await page.goto(`/w/${WID}/tables`)
     await page.waitForURL(/\/tables$/)
-    // 等待表列表渲染（含新增的「产品批次」表，共 9 张）
-    await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(9, { timeout: 10000 })
+    // 等待表列表渲染（含新增的「产品批次」表，至少 9 张）；
+    // 并行用例可能临时向 WID=1 增表，与 grid.spec 同口径不锁死精确行数
+    const rows = page.locator(".ant-table-tbody tr.ant-table-row")
+    await expect.poll(() => rows.count(), { timeout: 10000 }).toBeGreaterThanOrEqual(9)
   }
 
   test("访问级筛选器：「我拥有的」可筛选出全部表（admin 是所有 seed 表的 owner）", async ({ page }) => {
@@ -94,7 +96,9 @@ test.describe("表列表 owner 列 + 访问级筛选器", () => {
     await seg.click()
     await expect(seg).toHaveClass(/ant-segmented-item-selected/)
 
-    // seed 所有 9 张表的 owner 都是 admin（当前用户），筛选后仍应显示 9 张
-    await expect(page.locator(".ant-table-tbody tr.ant-table-row")).toHaveCount(9, { timeout: 5000 })
+    // seed 所有 9 张表的 owner 都是 admin（当前用户），筛选后至少仍应显示 9 张
+    await expect
+      .poll(() => page.locator(".ant-table-tbody tr.ant-table-row").count(), { timeout: 5000 })
+      .toBeGreaterThanOrEqual(9)
   })
 })
