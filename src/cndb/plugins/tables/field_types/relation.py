@@ -21,6 +21,13 @@ class LinkFieldConfig(FieldTypeConfig):
         default=None,
         description="业务键：导入时按该字段值匹配目标行（留空则回退 display_field_id）",
     )
+    reference_fields: list[int] = Field(
+        default_factory=list,
+        description=(
+            "引用字段：除显示/匹配字段外，额外从目标表实时引用（投影）的目标字段 ID 列表，"
+            "按列表顺序在字段列表中以 lookup 形式挂在该关联字段下"
+        ),
+    )
 
 
 class LinkFieldType(FieldType):

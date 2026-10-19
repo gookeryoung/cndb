@@ -148,19 +148,26 @@ class TestTransferLinkSerialization:
         assert "name,links" in csv_text
         assert "1;2" in csv_text
 
-    def test_serialize_link_use_display(self):
-        """use_display=True 时导出业务文本（display_field_id 值）而非行 id."""
+    def test_serialize_link_use_business_key(self):
+        """use_business_key=True 时导出业务文本（摘要 value）而非行 id."""
         from cndb.plugins.tables.services.transfer import _serialize_link_value
 
         val = [{"id": 1, "value": "alpha"}, {"id": 2, "value": "beta"}]
-        assert _serialize_link_value(val, use_display=True) == "alpha;beta"
+        assert _serialize_link_value(val, use_business_key=True) == "alpha;beta"
 
-    def test_serialize_link_use_display_falls_back_to_id(self):
-        """use_display=True 但摘要 value 为空时回退该行 id."""
+    def test_serialize_link_business_key_prefers_match(self):
+        """摘要含 match（匹配字段值）时导出优先取 match，保证按匹配字段回灌不错位."""
+        from cndb.plugins.tables.services.transfer import _serialize_link_value
+
+        val = [{"id": 1, "value": "显示名", "match": "KEY-01"}, {"id": 2, "value": "显示名2", "match": ""}]
+        assert _serialize_link_value(val, use_business_key=True) == "KEY-01;显示名2"
+
+    def test_serialize_link_use_business_key_falls_back_to_id(self):
+        """use_business_key=True 但摘要业务文本为空时回退该行 id."""
         from cndb.plugins.tables.services.transfer import _serialize_link_value
 
         val = [{"id": 1, "value": ""}, {"id": 2, "value": "beta"}]
-        assert _serialize_link_value(val, use_display=True) == "1;beta"
+        assert _serialize_link_value(val, use_business_key=True) == "1;beta"
 
     def test_export_csv_with_link_display(self):
         """link_display 映射为真的列导出业务文本，利于文件可读与回灌."""

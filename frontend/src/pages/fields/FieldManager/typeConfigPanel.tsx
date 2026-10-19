@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Form, Row, Col, Input, InputNumber, Checkbox, Radio, Select, Tag, Tooltip, Button, App as AntApp, ColorPicker } from 'antd'
-import { PlusOutlined, DeleteOutlined, TagOutlined, BgColorsOutlined, ThunderboltOutlined, SettingOutlined, ScanOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, TagOutlined, BgColorsOutlined, ThunderboltOutlined, SettingOutlined, ScanOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons'
 import type { Field, FieldType, ID, TableSummary } from '@/api'
 import { fieldApi } from '@/api/tables'
 import { resolveTagColor, suggestColorsForLabels } from '@/utils/tagColors'
@@ -63,7 +63,7 @@ export function defaultConfigForType(fieldType: FieldType): Record<string, unkno
     case 'multiselect':
       return { options: [] }
     case 'link':
-      return { target_table_id: undefined, multiple: true }
+      return { target_table_id: undefined, multiple: true, reference_fields: [] }
     case 'attachment':
       return { max_size_mb: 10, allowed_mime_types: [], multiple: true, max_count: 0 }
     case 'image':
@@ -197,7 +197,13 @@ export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false
 
       {/* ── 关联 link ── */}
       {TYPE_CATEGORIES.link.includes(fieldType) && (
-        <LinkConfigFields form={form} wid={wid} tables={tables} />
+        <LinkConfigFields
+          key={`link-${editTargetId ?? 'new'}`}
+          form={form}
+          wid={wid}
+          tables={tables}
+          editTargetId={editTargetId}
+        />
       )}
 
       {/* ── 附件 attachment ── */}
@@ -263,19 +269,29 @@ export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false
   )
 }
 
-/** link 字段配置区：目标表 + 多选 + 业务键（显示字段 / 匹配字段）.
+/** link 字段配置区：目标表 + 多选 + 业务键（显示字段 / 匹配字段）+ 引用字段.
  *
  * 业务键是关联字段对外的读写口径，替代数据库行主键：
  *  - 显示字段（display_field_id）：单元格展示与导出该字段值，让导出文件可读；
  *  - 匹配字段（match_field_id）：导入时按该字段值匹配目标行，让导出文件可回灌。
- * 目标表切换后自动重载其字段列表，并把不属于新表的已选业务键清空，
- * 避免提交被后端拒绝（后端强制业务键属于目标表且有物理列）。
+ *
+ * 引用字段（reference_fields）：除显示/匹配字段外，额外从目标表实时引用（投影）的
+ * 目标字段 ID 列表，按列表顺序在字段列表中以 lookup 形式挂在该关联字段下 ——
+ * 引用字段随本配置一起增删/排序，不再作为独立字段单独设置。
+ *
+ * 目标表切换后自动重载其字段列表，并把不属于新表的已选业务键 / 引用字段清空，
+ * 避免提交被后端拒绝（后端强制这些键属于目标表且有物理列）。
  */
-function LinkConfigFields({ form, wid, tables }: { form: ReturnType<typeof Form.useForm>[0]; wid: string; tables: TableSummary[] }) {
+function LinkConfigFields({ form, wid, tables, editTargetId }: { form: ReturnType<typeof Form.useForm>[0]; wid: string; tables: TableSummary[]; editTargetId?: ID | null }) {
   const targetTableId = Form.useWatch(['config', 'target_table_id'], form) as ID | undefined
+  const displayFieldId = Form.useWatch(['config', 'display_field_id'], form) as ID | undefined
+  const matchFieldId = Form.useWatch(['config', 'match_field_id'], form) as ID | undefined
+  const referenceIds = ((Form.useWatch(['config', 'reference_fields'], form) as ID[] | undefined) ?? [])
   const [targetFields, setTargetFields] = useState<Field[]>([])
   const [loading, setLoading] = useState(false)
 
+  // 目标表切换时重载字段列表；editTargetId 变化（编辑不同字段）也强制重载，
+  // 避免复用上一次字段编辑的 targetFields 状态导致内容不显示。
   useEffect(() => {
     if (targetTableId == null) {
       setTargetFields([])
@@ -287,26 +303,54 @@ function LinkConfigFields({ form, wid, tables }: { form: ReturnType<typeof Form.
       .list(wid, targetTableId)
       .then(fields => {
         if (cancelled) return
-        // 仅保留有物理列的字段作为业务键候选（link / lookup 无物理列，与后端校验一致）
-        setTargetFields(fields.filter(f => f.field_type !== 'link' && f.field_type !== 'lookup'))
+        // 仅保留有物理列的字段作为业务键 / 引用字段候选（link / lookup 无物理列，与后端校验一致）
+        const usable = fields.filter(f => f.field_type !== 'link' && f.field_type !== 'lookup')
+        setTargetFields(usable)
+        // 字段列表就绪后才清理失效选择（避免初始空列表误清空已配置的业务键）
+        const ids = new Set(usable.map(f => f.id))
+        const curDisplay = form.getFieldValue(['config', 'display_field_id']) as ID | undefined
+        const curMatch = form.getFieldValue(['config', 'match_field_id']) as ID | undefined
+        if (curDisplay != null && !ids.has(curDisplay)) form.setFieldValue(['config', 'display_field_id'], undefined)
+        if (curMatch != null && !ids.has(curMatch)) form.setFieldValue(['config', 'match_field_id'], undefined)
+        const curRefs = (form.getFieldValue(['config', 'reference_fields']) as ID[] | undefined) ?? []
+        const keptRefs = curRefs.filter(id => ids.has(id))
+        if (keptRefs.length !== curRefs.length) form.setFieldValue(['config', 'reference_fields'], keptRefs)
       })
       .catch(() => { if (!cancelled) setTargetFields([]) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [wid, targetTableId])
-
-  // 目标表切换后，已选业务键若不再属于目标表则清空（否则保存被后端拒绝）
-  useEffect(() => {
-    const ids = new Set(targetFields.map(f => f.id))
-    const displayId = form.getFieldValue(['config', 'display_field_id']) as ID | undefined
-    const matchId = form.getFieldValue(['config', 'match_field_id']) as ID | undefined
-    if (displayId != null && !ids.has(displayId)) form.setFieldValue(['config', 'display_field_id'], undefined)
-    if (matchId != null && !ids.has(matchId)) form.setFieldValue(['config', 'match_field_id'], undefined)
-  }, [targetFields])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wid, targetTableId, editTargetId])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const fieldOptions = targetFields.map(f => ({ label: f.name, value: f.id }))
   const fieldSelectDisabled = targetTableId == null || loading
   const fieldSelectPlaceholder = targetTableId == null ? '请先选择目标表' : '默认：首个非空字段'
+  const fieldNameById = new Map(targetFields.map(f => [f.id, f.name]))
+
+  // 引用字段候选：排除显示/匹配字段（它们已单独配置）与已加入的项
+  const refIdSet = new Set(referenceIds)
+  const addableFields = targetFields.filter(
+    f => !refIdSet.has(f.id) && f.id !== displayFieldId && f.id !== matchFieldId,
+  )
+
+  function setReferences(next: ID[]) {
+    form.setFieldValue(['config', 'reference_fields'], next)
+  }
+
+  function addReference(id: ID) {
+    setReferences([...referenceIds, id])
+  }
+
+  function removeReference(id: ID) {
+    setReferences(referenceIds.filter(x => x !== id))
+  }
+
+  function moveReference(index: number, delta: number) {
+    const next = [...referenceIds]
+    const target = index + delta
+    if (target < 0 || target >= next.length) return
+    ;[next[index], next[target]] = [next[target]!, next[index]!]
+    setReferences(next)
+  }
 
   return (
     <>
@@ -355,6 +399,48 @@ function LinkConfigFields({ form, wid, tables }: { form: ReturnType<typeof Form.
           </Form.Item>
         </Col>
       </Row>
+
+      {/* ── 引用字段：除显示/匹配字段外，额外实时引用的目标字段（可排序） ── */}
+      <Form.Item name={['config', 'reference_fields']} hidden>
+        <Input />
+      </Form.Item>
+      <Form.Item label="引用字段" extra="除显示/匹配字段外，额外实时引用（投影）的目标字段；按顺序展示在字段列表中" style={{ marginBottom: 8 }}>
+        <div className="fm-ref-field">
+          {referenceIds.length === 0 ? (
+            <div className="fm-ref-empty">暂无引用字段，可在下方添加</div>
+          ) : (
+            <div className="fm-ref-list">
+              {referenceIds.map((id, idx) => (
+                <div key={String(id)} className="fm-ref-row">
+                  <span className="fm-ref-index">{idx + 1}</span>
+                  <span className="fm-ref-name">{fieldNameById.get(id) ?? `#${id}`}</span>
+                  <Tooltip title="上移">
+                    <Button size="small" type="text" icon={<ArrowUpOutlined />} disabled={idx === 0} onClick={() => moveReference(idx, -1)} />
+                  </Tooltip>
+                  <Tooltip title="下移">
+                    <Button size="small" type="text" icon={<ArrowDownOutlined />} disabled={idx === referenceIds.length - 1} onClick={() => moveReference(idx, 1)} />
+                  </Tooltip>
+                  <Tooltip title="移除">
+                    <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => removeReference(id)} />
+                  </Tooltip>
+                </div>
+              ))}
+            </div>
+          )}
+          <Select
+            showSearch
+            allowClear
+            value={undefined}
+            loading={loading}
+            disabled={fieldSelectDisabled || addableFields.length === 0}
+            placeholder={targetTableId == null ? '请先选择目标表' : (addableFields.length === 0 ? '无可添加字段' : '添加引用字段')}
+            options={addableFields.map(f => ({ label: f.name, value: f.id }))}
+            filterOption={(input, option) => (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
+            onChange={(v) => { if (v != null) addReference(v as ID) }}
+            style={{ width: '100%', marginTop: referenceIds.length === 0 ? 0 : 6 }}
+          />
+        </div>
+      </Form.Item>
     </>
   )
 }

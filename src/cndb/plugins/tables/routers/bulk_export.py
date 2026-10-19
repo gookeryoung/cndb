@@ -134,12 +134,14 @@ def export_table(
         "csv": "text/csv",
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }
-    # 配置了业务键（display_field_id）的 link 列导出业务文本，让导出文件可读、
-    # 且能被导入侧按 match_field_id 回灌；未配置的 link 列仍导出 id，保持兼容.
+    # 配置了业务键（display_field_id / match_field_id）的 link 列导出业务文本，
+    # 且优先写「匹配字段」值：这样导出文件可读、可被导入侧按 match_field_id 原样回灌
+    # （导出→修改→导入往返不错位）；未配置业务键的 link 列仍导出 id，保持兼容.
     link_display = {
         f.name: True
         for f in table.active_fields()
-        if is_link_field(f) and (f.config or {}).get("display_field_id") is not None
+        if is_link_field(f)
+        and ((f.config or {}).get("match_field_id") is not None or (f.config or {}).get("display_field_id") is not None)
     }
 
     body_map = {

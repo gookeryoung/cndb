@@ -627,7 +627,7 @@ class TestTypeChangeLinkTransition:
             json={"values": {"部门": [dept_row["id"]]}},
         )
         assert r.status_code == 200, r.text
-        assert r.json()["部门"] == [{"id": dept_row["id"], "value": "张三"}]
+        assert r.json()["部门"] == [{"id": dept_row["id"], "value": "张三", "match": "张三"}]
 
     def test_select_to_link_import_lookup_still_resolves(self, client, auth_headers, db):
         """select 改为 link 后，经「字段关联引入」引入的 lookup 字段可实时解析."""
