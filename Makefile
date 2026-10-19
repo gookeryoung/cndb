@@ -26,7 +26,7 @@ CPUS := $(shell \
 endif
 PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 
-.PHONY: help sync dev seed frontend-sync fs frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-coverage-html fcov-html frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast flow gitkeep-check adr-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
+.PHONY: help sync dev seed frontend-sync fs frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-coverage-html fcov-html frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast flow check-docs cd-check gitkeep-check adr-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -112,9 +112,14 @@ typecheck: ## 类型检查 (pyrefly)
 
 check-fast cf: gitkeep-check adr-check lint typecheck frontend-static ## 轻量静态门禁（不含任何测试，适合实现阶段快速反馈）
 
+# 文档级门禁：只改 *.md / docs / AGENTS.md / rules 时用（跳过代码与测试门禁，见 AGENTS.md「门禁分级」L0）
+check-docs cd-check: gitkeep-check adr-check ## 文档级门禁（gitkeep + adr-check，无 lint/类型/测试）
+	@echo '[check-docs] docs gate passed (L0: no need to run make flow)'
+
 # AI 开发流入口：把 AGENTS.md 的四步固化 —— 轻量静态门禁（含 ADR 落地）→ 全量后端测试。
+# 仅用于 L2 代码改动；L0 文档 / L1 配置按 AGENTS.md「门禁分级」降级（check-docs / check-fast）。
 # 「项目文档更新」与 `make push` 需人工判断，故不纳入本目标（避免误推）。
-flow: check-fast test ## AI 开发流：轻量静态门禁 + 全量后端测试（实现/验证内环）
+flow: check-fast test ## AI 开发流：轻量静态门禁 + 全量后端测试（仅 L2 代码改动）
 	@echo '[flow] 门禁已通过。随后：更新项目文档 → make push（见 AGENTS.md）'
 
 # 全量门禁：cov 与其余项并行；前端仅以 coverage 模式跑一次，避免 check-fast/check 双跑全量套件。
