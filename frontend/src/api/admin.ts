@@ -43,6 +43,22 @@ export interface BackupManifest {
   }
 }
 
+/** 工作区空间分配条目（对齐后端 /admin/workspaces/storage） */
+export interface WorkspaceStorageItem {
+  workspace_id: number
+  name: string
+  owner_username: string | null
+  used_bytes: number
+  quota_bytes: number
+  updated_at: string | null
+}
+
+export interface WorkspaceStorageOverview {
+  /** 默认配额（字节），新建工作区未单独分配时使用 */
+  default_quota_bytes: number
+  items: WorkspaceStorageItem[]
+}
+
 export const adminApi = {
   /** 获取系统级信息（版本/数据库路径/数据目录等） */
   info: () => api.get<AdminSystemInfo>('/v1/admin/info').then(r => r.data),
@@ -77,6 +93,17 @@ export const adminApi = {
       { headers: { 'Content-Type': 'multipart/form-data' } },
     ).then(r => r.data)
   },
+
+  // ── 工作区空间分配（/api/v1/admin/workspaces/storage，仅系统管理员） ──
+  /** 列出全部工作区的已用空间与配额 */
+  workspaceStorage: () =>
+    api.get<WorkspaceStorageOverview>('/v1/admin/workspaces/storage').then(r => r.data),
+  /** 调整某个工作区的存储配额（字节） */
+  updateWorkspaceQuota: (workspaceId: number, quotaBytes: number) =>
+    api.patch<{ workspace_id: number; used_bytes: number; quota_bytes: number }>(
+      `/v1/admin/workspaces/${workspaceId}/storage-quota`,
+      { quota_bytes: quotaBytes },
+    ).then(r => r.data),
 
   // ── 统一事件流（/api/v1/admin/events，超管或审计管理员可读） ──
   /** 统一事件流分页查询 */
