@@ -93,9 +93,11 @@ describe('DocumentEditorPage 数据表动态引用', () => {
 
         // 切到查看模式：预览侧动态渲染数据表（行数据出现即视为渲染成功；表名与 Select 选项重名不唯一）
         fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
-        expect(await screen.findByText('张三')).toBeInTheDocument()
+        // 数据行需「表详情 → 行数据」两次串行请求后才渲染；CI 高负载下默认 1s 的 findBy
+        // 等待偶发超时（曾整例顶到 10s 上限）。放宽等待窗口并给整例留出余量，消除抖动。
+        expect(await screen.findByText('张三', {}, { timeout: 8000 })).toBeInTheDocument()
         expect(screen.getByText('李四')).toBeInTheDocument()
-    })
+    }, 30_000)
 
     it('未选择表时插入按钮禁用', async () => {
         renderEditor()
