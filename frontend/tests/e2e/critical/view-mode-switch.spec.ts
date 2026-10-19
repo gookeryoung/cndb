@@ -9,7 +9,7 @@
  * 精简说明（2026-09，测试金字塔下沉）：
  *      原 5 条"换表+换按钮数"矩阵收敛为代表性 1 例（科研项目 2 按钮）；
  *      矩阵全量断言下沉至单元层 src/pages/grid/viewModes.test.ts（deriveModeSwitch，
- *      与 seed 数据 1:1 对应：部门表 0/科研项目 4/项目进展 4/科研任务分解 7/产品开发 5）；
+ *      与 seed 数据 1:1 对应：部门表 0/科研项目 4/项目进展 4/科研任务分解 6/产品开发 6）；
  *      保留"点击切换"与"跨表导航"两条端到端链路断言.
  */
 import { test, expect } from "../fixtures/auth";
@@ -74,7 +74,7 @@ const ANON = ["setup", "chromium-anon"];
 /** 与 seed 真实数据对齐的按钮数预期（2026-10 校准，chart 全面注入 + matrix/calendar 补充）：
  *  部门表 → 0（仅 grid，按钮组隐藏）
  *  科研项目 → 4（grid+kanban+calendar+chart，2026-10 补结题日历）
- *  产品开发 → 5（grid+kanban+calendar+gantt+chart）
+ *  产品开发 → 6（grid+kanban+calendar+gantt+chart+flow）
  *  客户流失 → 3（grid+kanban+chart）
  *  电商销售 → 5（grid+kanban+calendar+matrix+chart，2026-10 补日历/矩阵视图）
  */
@@ -160,9 +160,9 @@ test.describe("跨表导航 — 模式按钮组跟随数据表 views 变化", ()
     await gotoTable(page, request, wid, "部门表");
     await assertModeButtonCount(page, 0);
 
-    // 2. 产品开发表：5 个模式按钮（grid+kanban+calendar+gantt+chart，缺 wbs）
+    // 2. 产品开发表：6 个模式按钮（grid+kanban+calendar+gantt+chart+flow，缺 wbs/matrix）
     await gotoTable(page, request, wid, "产品开发");
-    await assertModeButtonCount(page, 5);
+    await assertModeButtonCount(page, 6);
     await assertModeButtonExists(page, "wbs", false);
 
     // 3. 客户流失表：3 个模式按钮（grid+kanban+chart）
