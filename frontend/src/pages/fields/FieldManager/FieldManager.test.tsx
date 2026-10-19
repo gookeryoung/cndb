@@ -1023,3 +1023,102 @@ describe('FieldManager 从其他表引入字段', () => {
         expect(screen.queryByText('字段映射对照')).not.toBeInTheDocument()
     })
 })
+
+// ─────────────── 关联字段编辑对话框：数据回流同步 + 引用字段一致性 ───────────────
+
+describe('FieldManager 关联字段对话框数据同步', () => {
+    function itemByLabel(label: string): HTMLElement {
+        const item = Array.from(document.querySelectorAll('.ant-form-item')).find(el =>
+            el.querySelector('.ant-form-item-label')?.textContent?.includes(label))
+        expect(item).toBeDefined()
+        return item as HTMLElement
+    }
+    function targetTableText(): string | undefined {
+        return itemByLabel('关联目标表').querySelector('.ant-select-selection-item')?.textContent ?? undefined
+    }
+    function renderFMWith(fields: any) {
+        return renderProviders(
+            <FieldManager open wid={WID} tid={TID} fields={fields} onClose={() => { }} onChanged={() => { }} embedded />,
+            { initialAuth: { user: { id: 1, username: 'alice', role: 'system_admin' } as any, token: 'fake' } },
+        )
+    }
+
+    beforeEach(() => {
+        vi.spyOn(tableApi, 'list').mockResolvedValue([{ id: 30, name: '项目表' }, { id: 31, name: '客户表' }] as any)
+        vi.spyOn(fieldApi, 'list').mockImplementation(((_wid: unknown, tid: unknown) => {
+            if (String(tid) === '31') {
+                return Promise.resolve([
+                    { id: 21, name: '客户名称', field_type: 'text' },
+                    { id: 22, name: '联系人', field_type: 'text' },
+                ]) as any
+            }
+            return Promise.resolve([
+                { id: 11, name: '名称', field_type: 'text' },
+                { id: 12, name: '负责人', field_type: 'text' },
+            ]) as any
+        }) as any)
+    })
+
+    it('fields 异步回流时对话框同步最新配置，不再停留旧快照（避免「需再点一次编辑」）', async () => {
+        const ui = (f: any) => (
+            <FieldManager open wid={WID} tid={TID} fields={f} onClose={() => { }} onChanged={() => { }} embedded />
+        )
+        const v1 = [{ id: 5, name: '所属项目', field_type: 'link', order: 0, config: { target_table_id: 30, multiple: true } }] as any
+        const v2 = [{ id: 5, name: '所属项目', field_type: 'link', order: 0, config: { target_table_id: 31, multiple: true } }] as any
+        const r = renderProviders(ui(v1), { initialAuth: { user: { id: 1, username: 'alice', role: 'system_admin' } as any, token: 'fake' } })
+        clickEditRow('所属项目')
+        await waitFor(() => expect(targetTableText()).toBe('项目表'))
+
+        // 模拟保存后父层 refetch 回流的 fields
+        r.rerender(ui(v2))
+        await waitFor(() => expect(targetTableText()).toBe('客户表'))
+    })
+
+    it('用户已改动表单时，异步回流不覆盖正在编辑的内容', async () => {
+        const ui = (f: any) => (
+            <FieldManager open wid={WID} tid={TID} fields={f} onClose={() => { }} onChanged={() => { }} embedded />
+        )
+        const v1 = [{ id: 5, name: '所属项目', field_type: 'link', order: 0, config: { target_table_id: 30, multiple: true } }] as any
+        const v2 = [{ id: 5, name: '所属项目', field_type: 'link', order: 0, config: { target_table_id: 31, multiple: true } }] as any
+        const r = renderProviders(ui(v1), { initialAuth: { user: { id: 1, username: 'alice', role: 'system_admin' } as any, token: 'fake' } })
+        clickEditRow('所属项目')
+        await waitFor(() => expect(targetTableText()).toBe('项目表'))
+
+        // 用户改写字段名 → onValuesChange 置脏
+        const nameInput = itemByLabel('字段名').querySelector('input') as HTMLInputElement
+        fireEvent.change(nameInput, { target: { value: '新名字' } })
+        r.rerender(ui(v2))
+        await new Promise(res => setTimeout(res, 30))
+        expect(nameInput.value).toBe('新名字')
+        expect(targetTableText()).toBe('项目表')
+    })
+
+    it('关联字段缺失 reference_fields 时从同表 lookup 反推展示（修复历史/种子数据不一致）', async () => {
+        const fields = [
+            { id: 5, name: '部门', field_type: 'link', order: 0, config: { target_table_id: 30, multiple: false } },
+            { id: 9, name: '负责人', field_type: 'lookup', order: 1, config: { via_link_field_id: 5, source_field_id: 12, source_field_type: 'text' } },
+        ] as any
+        renderFMWith(fields)
+        clickEditRow('部门')
+        await waitFor(() => expect(targetTableText()).toBe('项目表'))
+        // 目标表字段加载后，引用字段区应解析出「负责人」
+        await waitFor(() => {
+            expect(document.querySelector('.fm-ref-list')?.textContent).toContain('负责人')
+        })
+    })
+
+    it('字段列表中引用字段行只读：不渲染编辑/删除按钮，也不提供拖拽手柄', () => {
+        const fields = [
+            { id: 5, name: '部门', field_type: 'link', order: 0, config: { target_table_id: 30 } },
+            { id: 9, name: '负责人', field_type: 'lookup', order: 1, config: { via_link_field_id: 5, source_field_id: 12 } },
+        ] as any
+        renderFMWith(fields)
+        const rows = Array.from(document.querySelectorAll('.fm-row'))
+        const lookupRow = rows.find(r => r.querySelector('.fm-row-name')?.textContent === '负责人')!
+        expect(lookupRow.querySelectorAll('.fm-row-actions button').length).toBe(0)
+        // 手柄为占位（无 HolderOutlined 图标）
+        expect(lookupRow.querySelector('.anticon-holder')).toBeNull()
+        // 归属标注仍在
+        expect(lookupRow.textContent).toContain('来自关联')
+    })
+})
