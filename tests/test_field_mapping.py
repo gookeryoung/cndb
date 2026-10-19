@@ -973,7 +973,7 @@ class TestRowValidatorLinkParsing:
     def test_link_list_with_non_int_raises(self):
         from cndb.plugins.tables.services.importing.row_validator import RowValidator
 
-        with pytest.raises(ValueError, match="link 字段解析失败"):
+        with pytest.raises(ValueError, match=r"必须是分号分隔的行 id|link 字段解析失败"):
             RowValidator._parse_link_value([1, "bad"])
 
     def test_link_single_int(self):
