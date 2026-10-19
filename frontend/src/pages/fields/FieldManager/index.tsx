@@ -53,12 +53,18 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     [editTarget, fields],
   )
 
-  /** 组装编辑用 config。关联字段缺失 reference_fields（种子/历史数据）时，从同表归属于它的
-   *  lookup 行按 order 反推，保证对话框「引用字段」与字段列表一致，也避免保存时以空列表覆盖、
-   *  误删这些已存在的引用字段。 */
+  /** 组装编辑用 config。关联字段的 reference_fields 为空（缺失或空数组，种子/历史数据
+   *  或后端归一化后为 []）时，从同表归属于它的 lookup 行按 order 反推，保证对话框
+   *  「引用字段」与字段列表一致，也避免保存时以空列表覆盖、误删这些已存在的引用字段。
+   *
+   *  为什么用「空」而非「缺失」判定：后端 _validate_field_config 归一化时会写入
+   *  reference_fields=[]，若仅判断键是否存在，真实返回的 [] 会被当成有效配置而跳过反推，
+   *  导致编辑关联字段时「引用字段」区始终为空。 */
   const buildEditConfig = (f: Field): Record<string, unknown> => {
     const cfg: Record<string, unknown> = { ...defaultConfigForType(f.field_type), ...(f.config ?? {}) }
-    if (f.field_type === 'link' && !('reference_fields' in (f.config ?? {}))) {
+    const storedRefs = cfg.reference_fields
+    const hasRefs = Array.isArray(storedRefs) && storedRefs.length > 0
+    if (f.field_type === 'link' && !hasRefs) {
       const derived = fields
         .filter(l => l.field_type === 'lookup' && String(l.config?.via_link_field_id) === String(f.id))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
