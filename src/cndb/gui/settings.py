@@ -12,18 +12,31 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
+import os
+import stat
+import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from cndb.core.config import CONFIG_DIR
 
+logger = logging.getLogger(__name__)
+
 # 配置文件路径（用户级）；写盘前目录由 core.config 在导入期确保存在
 GUI_SETTINGS_FILE = CONFIG_DIR / "gui.json"
 
 # 配置文件格式版本号，用于未来向后兼容迁移
 _SETTINGS_FORMAT_VERSION = 1
+
+# 写盘重试次数与退避间隔：Windows 上文件被安全软件/同步客户端短暂占用时
+# 立即重试通常就能成功，避免把可恢复的瞬时失败上报给用户
+_SAVE_ATTEMPTS = 3
+_SAVE_RETRY_INTERVAL_S = 0.1
 
 
 @dataclass
@@ -143,16 +156,68 @@ def load_settings(path: Path | None = None) -> GuiSettings:
     return GuiSettings.from_dict(data)
 
 
-def save_settings(settings: GuiSettings, path: Path | None = None) -> None:
+def _write_text_atomic(cfg_path: Path, payload: str) -> None:
+    """原子写入文本：先写同目录临时文件，再整体替换目标文件.
+
+    直接覆盖写在中途失败（磁盘满、进程被杀）时会留下截断的配置文件，
+    下次启动解析失败即丢失全部界面设置。临时文件 + ``os.replace`` 保证
+    目标文件要么是旧内容、要么是完整的新内容。
+    """
+    fd, tmp_name = tempfile.mkstemp(prefix=f"{cfg_path.name}.", suffix=".tmp", dir=cfg_path.parent)
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        tmp_path.replace(cfg_path)
+    finally:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink(missing_ok=True)
+
+
+def _clear_readonly(cfg_path: Path) -> None:
+    """清除 Windows 只读属性.
+
+    只读文件无法被覆盖写，``open(..., "w")``/``os.replace`` 均报
+    ``PermissionError: [Errno 13]``；这是该错误在 Windows 上最常见的成因。
+    非 Windows 平台不做处理（POSIX 权限语义不同，避免误改文件 mode）。
+    """
+    if os.name != "nt" or not cfg_path.exists():
+        return
+    with contextlib.suppress(OSError):
+        cfg_path.chmod(stat.S_IWRITE)
+
+
+def save_settings(settings: GuiSettings, path: Path | None = None) -> bool:
     """把 GUI 设置写入配置文件，自动补建父目录.
+
+    写盘失败不抛异常：先清除 Windows 只读属性并做短暂退避重试，仍失败则
+    记录告警并返回 ``False``。GUI 关闭流程不能因设置持久化失败而卡死，
+    最坏结果只是「本次界面调整下次启动不恢复」。
 
     Args:
         settings: 待持久化的设置对象。
         path: 覆盖默认配置文件路径（便于测试注入临时文件）。
+
+    Returns:
+        bool: 是否成功写入。
     """
     cfg_path = path or GUI_SETTINGS_FILE
-    cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(
-        json.dumps(settings.to_dict(), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    payload = json.dumps(settings.to_dict(), ensure_ascii=False, indent=2)
+    try:
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning("保存 GUI 设置失败，配置目录不可写：%s（%s）", cfg_path.parent, exc)
+        return False
+
+    last_error: OSError | None = None
+    for attempt in range(1, _SAVE_ATTEMPTS + 1):
+        try:
+            _write_text_atomic(cfg_path, payload)
+            return True
+        except OSError as exc:
+            last_error = exc
+            _clear_readonly(cfg_path)
+            if attempt < _SAVE_ATTEMPTS:
+                time.sleep(_SAVE_RETRY_INTERVAL_S)
+    logger.warning("保存 GUI 设置失败，本次修改未持久化：%s（%s）", cfg_path, last_error)
+    return False

@@ -6,6 +6,10 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
+
+import pytest
 
 from cndb.gui.settings import GuiSettings, load_settings, save_settings
 
@@ -86,3 +90,33 @@ def test_save_creates_parent_dirs(tmp_path) -> None:
     cfg = tmp_path / "nested" / "deep" / "gui.json"
     save_settings(GuiSettings(), cfg)
     assert cfg.is_file()
+
+
+def test_save_returns_true_when_writable(tmp_path) -> None:
+    """正常写盘返回 True."""
+    assert save_settings(GuiSettings(), tmp_path / "gui.json") is True
+
+
+def test_save_unwritable_target_returns_false(tmp_path) -> None:
+    """目标不可写时返回 False 而不抛异常，且不残留临时文件.
+
+    回归背景：Windows 上 gui.json 只读/被占用会使 write_text 抛
+    PermissionError；若向上传播会阻断 GUI 关窗流程。
+    """
+    target = tmp_path / "gui.json"
+    target.mkdir()  # 用目录占位，使替换目标必然失败
+    assert save_settings(GuiSettings(), target) is False
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="只读文件属性是 Windows 语义")
+def test_save_over_readonly_file_clears_attribute(tmp_path) -> None:
+    """已有文件带只读属性时应自动清除后写入，而不是抛 PermissionError."""
+    cfg = tmp_path / "gui.json"
+    cfg.write_text("{}", encoding="utf-8")
+    cfg.chmod(stat.S_IREAD)
+    try:
+        assert save_settings(GuiSettings(), cfg) is True
+        assert json.loads(cfg.read_text(encoding="utf-8"))["version"] == 1
+    finally:
+        cfg.chmod(stat.S_IWRITE)
