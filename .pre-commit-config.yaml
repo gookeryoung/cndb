@@ -1,9 +1,11 @@
 # prek / pre-commit 配置
 # See https://pre-commit.com for more information
+# 全部为本地钩子：不引入远端 hook 仓库（ruff-pre-commit / pre-commit-hooks 需从 GitHub 拉取，
+# 云端模式每次提交都要走代理联网、慢且易失败）；ruff 复用项目已安装的 uv 环境。
 repos:
-  # 本地钩子：保护关键 .gitkeep（缺失会使 hatchling force-include 在 CI 上 FileNotFoundError）
   - repo: local
     hooks:
+      # 保护关键 .gitkeep（缺失会使 hatchling force-include 在 CI 上 FileNotFoundError）
       - id: gitkeep-check
         name: 校验关键 .gitkeep 文件
         entry: python scripts/check_gitkeep.py
@@ -11,21 +13,16 @@ repos:
         pass_filenames: false
         always_run: true
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff 版本 - 与 pyproject.toml 保持同步
-    rev: v0.16.8
-    hooks:
-      # 运行 linter
+      # ruff linter（--fix 后仍有改动则失败，提示重新提交）
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      # 运行格式化
+        name: ruff check
+        entry: uv run ruff check --fix --exit-non-zero-on-fix --cache-dir .ruff_cache
+        language: system
+        types_or: [python]
+      # ruff 格式化
       - id: ruff-format
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
-    hooks:
-      - id: check-merge-conflict
-      - id: debug-statements
-      - id: fix-byte-order-marker
-      - id: trailing-whitespace
-        args: [--markdown-linebreak-ext=md]
-      - id: end-of-file-fixer
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python]
+

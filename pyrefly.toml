@@ -2,5 +2,8 @@ preset           = "strict"
 project-excludes = [".venv/**", "tests/**", "scripts/**"]
 project-includes = ["**/*.py*"]
 python-version   = "3.12"
+# 固定 win32：cli/service.py（winreg）+ gui/**（ctypes.WinDLL 等）是 Windows 专用实现，
+# 需要 Windows 平台的 stdlib 存根才能通过类型检查；改成 linux 会使这些模块报 18 个
+# missing-attribute（云端 Linux 运行不受影响，仅类型检查口径如此）。
 python-platform  = "win32"
 search-path      = ["src", "."]
