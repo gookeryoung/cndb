@@ -151,6 +151,7 @@ class DataTable(TimestampMixin, Base):
         back_populates="table", cascade="all, delete-orphan", uselist=False
     )
     members: Mapped[list[TableMember]] = relationship(back_populates="table", cascade="all, delete-orphan")
+    row_permissions: Mapped[list[RowPermission]] = relationship(back_populates="table", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"DataTable(id={self.id}, name={self.name!r}, db_table_name={self.db_table_name!r})"
@@ -466,6 +467,70 @@ class TableMember(TimestampMixin, Base):
     user: Mapped[User] = relationship("User")
 
 
+# ── RowPermission（行级权限规则，ADR 0004） ──
+
+
+class RowSubject(enum.StrEnum):
+    """行级权限规则的授权主体类型（ADR 0004 D1）."""
+
+    USER = "user"  # 指定成员：subject_id = accounts_user.id 字符串
+    MEMBER_ROLE = "member_role"  # 表级成员档：subject_id ∈ {"read", "write"}
+
+
+class RowAction(enum.StrEnum):
+    """行级权限规则授予的动作（ADR 0004 §1）.
+
+    ``EDIT`` 隐含可查看（I4：读 ⊇ 写）。
+    """
+
+    VIEW = "view"  # 命中行对该主体可查看
+    EDIT = "edit"  # 命中行对该主体可编辑（隐含可查看）
+
+
+class RowPermission(TimestampMixin, Base):
+    """行级权限规则：给定主体 + 动作 + 一组筛选条件，命中行受此规则约束.
+
+    与 ``TablePermission.row_filters``（默认档）**扩展并存**（ADR 0004 D7）：
+    判定时先取默认档，再把命中的规则并集叠加（ADR 0004 §3）。
+    每主体每动作至多一条（唯一键 D6），多段行范围用 ``filter_type=OR`` 合进一条。
+    """
+
+    __tablename__ = "tables_rowpermission"
+    __table_args__ = (
+        UniqueConstraint(
+            "table_id",
+            "subject_type",
+            "subject_id",
+            "action",
+            name="uniq_rowpermission_subject_action",
+        ),
+        {"extend_existing": True},
+    )
+
+    table_id: Mapped[int] = mapped_column(
+        ForeignKey("tables_datatable.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    subject_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    # user id 字符串，或 member_role 的 "read"/"write"（非 FK：可能是常量，ADR 0004 §7-10）
+    subject_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(8), nullable=False)
+    # 条件列表 [{field_name, op, value}, ...]，与 row_filters / 视图 filters 同构
+    filters: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    filter_type: Mapped[str] = mapped_column(String(3), nullable=False, default="AND")
+    # 审计入口：谁授的权（授权人删号后置空，不影响规则本身）
+    granted_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # 关系
+    table: Mapped[DataTable] = relationship(back_populates="row_permissions")
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"RowPermission(table_id={self.table_id}, {self.subject_type}:{self.subject_id}={self.action})"
+
+
 # AuditLog
 class AuditLog(TimestampMixin, Base):
     __tablename__ = "tables_auditlog"
@@ -564,6 +629,9 @@ __all__ = [
     "FilterType",
     "GovernanceTask",
     "ImportTask",
+    "RowAction",
+    "RowPermission",
+    "RowSubject",
     "TableMember",
     "TablePermission",
     "ViewType",

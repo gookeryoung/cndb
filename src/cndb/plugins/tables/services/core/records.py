@@ -284,7 +284,7 @@ def get_row(
 ) -> dict[str, Any] | None:
     """按主键读取单行，返回 dict；不存在返回 None（含软删除过滤 + 行级权限 + 字段隐藏）."""
     sa_table = _get_sa_table(engine, table)
-    row_scope = _build_row_scope_where(table, sa_table, db, user)
+    row_scope = _build_row_read_scope_where(table, sa_table, db, user)
     where = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
     if row_scope is not None:
         where.append(row_scope)
@@ -306,10 +306,13 @@ def get_row(
 
 
 def _build_row_scope_where(table: DataTable, sa_table: Any, db: Any, user: Any = None) -> Any | None:
-    """从 TablePermission.row_filters 编译行级权限 WHERE 条件.
+    """从 TablePermission.row_filters 编译**默认档**行级权限 WHERE 条件.
 
     仅在 db 可用且 row_filters 非空时生效。返回的条件会与 trashed 条件 AND 组合。
     传入 ``user`` 时按统一口径处理：表所有者/工作区 OWNER/超管豁免（见 row_filters_bypass）。
+
+    写路径（update / delete / trash / restore / bulk_*）仍走本函数（默认档），
+    行级写权分派（edit 规则 / 202 / 404）在 P1 引入（ADR 0004 §11）。
     """
     if db is None:
         return None
@@ -327,6 +330,19 @@ def _build_row_scope_where(table: DataTable, sa_table: Any, db: Any, user: Any =
         return None
     conj = row_filter_conjunction(db, table)
     return compile_filters(table, sa_table, scope, conj)
+
+
+def _build_row_read_scope_where(table: DataTable, sa_table: Any, db: Any, user: Any = None) -> Any | None:
+    """读范围合成：默认档 ∪ 命中的行级规则（ADR 0004 §3，P0 仅读侧）.
+
+    与默认档-only 的 ``_build_row_scope_where`` 区分：读路径（list_rows / get_row）
+    需叠加命中的 ``view`` / ``edit`` 规则；写路径暂不叠加（P1 再分派）。
+    """
+    if db is None:
+        return None
+    from cndb.plugins.tables.services.core.row_access import row_read_scope_where
+
+    return row_read_scope_where(db, table, sa_table, user)
 
 
 def list_rows(
@@ -387,8 +403,8 @@ def list_rows(
     if not include_trashed:
         base_where.append(sa_table.c._trashed.is_(False))
 
-    # 行级权限（TablePermission.row_filters）
-    row_scope = _build_row_scope_where(table, sa_table, db, user)
+    # 行级权限（默认档 ∪ 命中的行级规则，ADR 0004）
+    row_scope = _build_row_read_scope_where(table, sa_table, db, user)
     if row_scope is not None:
         base_where.append(row_scope)
 
