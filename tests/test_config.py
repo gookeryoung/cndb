@@ -30,15 +30,36 @@ def test_get_version_pkg_installed() -> None:
 
 
 def test_get_version_fallback_when_not_installed() -> None:
-    """包未安装时 _get_version 应返回 fallback 值."""
+    """元数据缺失时应回退到包内 __version__ 常量（而非占位串）.
+
+    回归背景：打包运行（fspack/Nuitka）未随包分发 ``cndb-*.dist-info``，
+    ``importlib.metadata.version("cndb")`` 必然抛 PackageNotFoundError；
+    旧实现回退到硬编码 ``"0.1.0.dev"``，导致打包版 GUI 标题 / ``cndb info``
+    / ``/api/v1/system/about`` 一律显示 0.1.0，与实际版本不一致。
+    """
+    import cndb
 
     def raise_pkg_not_found(_name: str) -> str:
         raise importlib.metadata.PackageNotFoundError("cndb")
 
     with patch.object(importlib.metadata, "version", side_effect=raise_pkg_not_found):
         v = _get_version()
-        assert v  # 非空字符串
-        assert "." in v  # 版本号格式
+        assert v == cndb.__version__
+        assert v != "0.1.0.dev"  # 不再落回占位版本
+
+
+def test_package_version_matches_pyproject() -> None:
+    """包内 __version__ 必须与 pyproject.toml 一致（bump-my-version 双写）.
+
+    ``_get_version()`` 的打包态兜底取自 ``__version__``，二者漂移会让打包版
+    展示的版本与发布产物名（``cndb-<version>-...``）对不上。
+    """
+    import tomllib
+
+    import cndb
+
+    pyproject = tomllib.loads((BASE_DIR / "pyproject.toml").read_text(encoding="utf-8"))
+    assert cndb.__version__ == pyproject["project"]["version"]
 
 
 def test_database_url_default_sqlite() -> None:
