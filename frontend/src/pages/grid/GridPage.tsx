@@ -236,6 +236,7 @@ export default function GridPage() {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importFileContent, setImportFileContent] = useState('')
   const [moveOpen, setMoveOpen] = useState(false)
+  const [moveTarget, setMoveTarget] = useState<ID | null>(null)
   const tableKey = `${wid}/${tid}`
 
   // ── 行内编辑（新增行 / 整行编辑）状态 ──
@@ -864,6 +865,7 @@ export default function GridPage() {
     onSuccess: () => {
       message.success('表已移动')
       setMoveOpen(false)
+      setMoveTarget(null)
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
     },
@@ -1037,7 +1039,7 @@ export default function GridPage() {
         activeViewName={activeView?.name}
         activeViewId={activeView?.id}
         onCopyTable={(opts) => copyTable.mutate(opts)}
-        onMove={() => setMoveOpen(true)}
+        onMove={() => { setMoveTarget(null); setMoveOpen(true) }}
         onResetColumnLayout={mode === 'grid' && hasColumnLayoutOverride ? handleResetColumnLayout : undefined}
       />
 
@@ -1276,15 +1278,18 @@ export default function GridPage() {
       <Modal
         title="移动表到其他工作区"
         open={moveOpen}
-        onCancel={() => setMoveOpen(false)}
+        onCancel={() => { setMoveOpen(false); setMoveTarget(null) }}
         onOk={() => {
-          const el = document.querySelector<HTMLSelectElement>('select[data-move-ws]')
-          if (el?.value) moveTable.mutate(el.value)
+          if (moveTarget == null) {
+            message.warning('请先选择目标工作区')
+            return
+          }
+          moveTable.mutate(moveTarget)
         }}
         confirmLoading={moveTable.isPending}
         okText="移动"
       >
-        <MoveTableForm currentWid={wid!} />
+        <MoveTableForm currentWid={wid!} value={moveTarget} onChange={setMoveTarget} />
       </Modal>
 
       {/* 新增行 & 整行编辑改用行内编辑（见 buildColumns inlineOps / 操作列），不再使用弹窗 */}

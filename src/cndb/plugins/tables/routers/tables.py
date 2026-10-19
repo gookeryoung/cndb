@@ -670,6 +670,13 @@ def move_table(
     from cndb.plugins.tables.models import TableMember
     from cndb.plugins.workspaces.models import WorkspaceMember
 
+    # 目标工作区与源工作区相同属无意义操作：继续执行会误清表级成员授权
+    if target_workspace_id == workspace_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="目标工作区与当前工作区相同，无需移动",
+        )
+
     check_workspace_permission(db, target_workspace_id, current_user, WorkspaceRole.EDITOR)
 
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
