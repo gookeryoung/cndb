@@ -4,36 +4,32 @@
  * memo 化仍留在组件侧，依赖数组逐项不变，因此重算时机与拆分前完全一致。
  */
 
-import { Button, Checkbox, Input, InputNumber, Segmented, Select, Space, Switch, Tooltip } from 'antd'
+import { Button, Checkbox, Segmented, Select, Tooltip } from 'antd'
 import { DeleteOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 
 import type { Field } from '@/api'
 import HelpTip from '@/components/HelpTip'
-import { extractSelectOptions, getOpsForField } from '../cells/fieldOps'
 import { optionColSpan } from './viewOptionSchema'
 import { useChartListDraft } from './useChartListDraft'
 import ViewOptionItem from './ViewOptionItem'
+import FilterConditionEditor from './FilterConditionEditor'
 import type { FilterRule, SortRule } from './ViewConfigDialog'
 
 export type ViewTabItem = { key: string; label: ReactNode; children: ReactNode }
 
 export function buildFilterTab({
-  addFilter,
   draftFilterLogic,
   draftFilters,
   filterableFields,
-  removeFilter,
+  setDraftFilters,
   setDraftFilterLogic,
-  updateFilter,
 }: {
-  addFilter: () => void
   draftFilterLogic: 'AND' | 'OR'
   draftFilters: FilterRule[]
   filterableFields: Field[]
-  removeFilter: (idx: number) => void
+  setDraftFilters: (rules: FilterRule[]) => void
   setDraftFilterLogic: (logic: 'AND' | 'OR') => void
-  updateFilter: (idx: number, patch: Partial<FilterRule>) => void
 }): ViewTabItem {
   return       {
         key: 'filter',
@@ -45,68 +41,13 @@ export function buildFilterTab({
         ),
         children: (
           <div className="vcvd-tab-body">
-            <div className="vcvd-logic-bar">
-              <span className="vcvd-logic-label">条件组合：</span>
-              <Space.Compact size="small">
-                <Button type={draftFilterLogic === 'AND' ? 'primary' : 'default'} onClick={() => setDraftFilterLogic('AND')}>全部满足（AND）</Button>
-                <Button type={draftFilterLogic === 'OR' ? 'primary' : 'default'} onClick={() => setDraftFilterLogic('OR')}>任一满足（OR）</Button>
-              </Space.Compact>
-              <span className="vcvd-logic-hint">
-                {draftFilterLogic === 'AND' ? '所有筛选条件同时生效' : '任一筛选条件生效即可'}
-              </span>
-            </div>
-            {draftFilters.length === 0 && (
-              <div className="vcvd-empty">暂无筛选条件</div>
-            )}
-            {draftFilters.map((rule, idx) => {
-              const currentField = filterableFields.find(f => f.name === rule.field_name)
-              const ops = currentField ? getOpsForField(currentField.field_type) : getOpsForField('text')
-              const currentOp = ops.find(o => o.op === rule.op)
-              const needValue = !!currentOp?.needValue
-              const fieldOpts = filterableFields.map(f => ({ value: f.name, label: f.name }))
-              const selectFieldOpts = extractSelectOptions(currentField?.config).map((o) => o.value)
-              return (
-                <div key={idx} className="vcvd-rule">
-                  <span className="vcvd-rule-index">#{idx + 1}</span>
-                  <Select size="small" value={rule.field_name || undefined}
-                    onChange={(v) => {
-                      const nextField = filterableFields.find(f => f.name === v)
-                      const nextOps = nextField ? getOpsForField(nextField.field_type) : getOpsForField('text')
-                      updateFilter(idx, { field_name: v, op: nextOps[0].op, value: undefined })
-                    }}
-                    placeholder="字段" style={{ width: 130 }} options={fieldOpts} />
-                  <Select size="small" value={rule.op}
-                    onChange={(v) => updateFilter(idx, { op: v, value: undefined })}
-                    placeholder="操作符" style={{ width: 130 }} options={ops.map(o => ({ value: o.op, label: o.label }))} />
-                  {needValue ? (
-                    <span className="vcvd-rule-note">（无需值）</span>
-                  ) : currentOp?.valueKind === 'boolean' ? (
-                    <Switch size="small" checked={!!rule.value} onChange={(v) => updateFilter(idx, { value: v })} />
-                  ) : currentOp?.valueKind === 'number' ? (
-                    <InputNumber size="small" value={rule.value as number | undefined}
-                      onChange={(v) => updateFilter(idx, { value: v ?? undefined })} style={{ width: 120 }} placeholder="数值" />
-                  ) : currentOp?.valueKind === 'select' ? (
-                    <Select size="small" value={rule.value as string | undefined}
-                      onChange={(v) => updateFilter(idx, { value: v })} style={{ width: 130 }} allowClear
-                      options={selectFieldOpts.map(o => ({ value: o, label: o }))} placeholder="值" />
-                  ) : currentOp?.valueKind === 'date' ? (
-                    <Input size="small" value={rule.value as string | undefined}
-                      onChange={(e) => updateFilter(idx, { value: e.target.value })} style={{ width: 140 }}
-                      placeholder="YYYY-MM-DD" />
-                  ) : (
-                    <Input size="small" value={rule.value as string | undefined}
-                      onChange={(e) => updateFilter(idx, { value: e.target.value })} style={{ flex: 1 }} placeholder="值" />
-                  )}
-                  <Tooltip title="删除这条筛选规则">
-                    <Button size="small" type="text" danger icon={<DeleteOutlined />}
-                      className="vcvd-rule-del" onClick={() => removeFilter(idx)} />
-                  </Tooltip>
-                </div>
-              )
-            })}
-            <div className="vcvd-rule-actions">
-              <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addFilter}>添加筛选条件</Button>
-            </div>
+            <FilterConditionEditor
+              fields={filterableFields}
+              rules={draftFilters}
+              logic={draftFilterLogic}
+              onLogicChange={setDraftFilterLogic}
+              onChange={setDraftFilters}
+            />
           </div>
         ),
       }

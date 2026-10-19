@@ -7,22 +7,27 @@
  * 下半部分：隐藏字段编辑 UI（保留，未改动）。
  */
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Card, Avatar, Button, Table, Select, Modal, Tag, Space, Checkbox, App as AntApp, Popconfirm, Tooltip,
+  Alert, Radio,
 } from 'antd'
 import {
   SafetyOutlined, UserOutlined, SwapOutlined, PlusOutlined, DeleteOutlined,
+  FilterOutlined, EyeOutlined, EditOutlined, TeamOutlined, NumberOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  tableMembersApi, workspaceApi,
+  tableMembersApi, workspaceApi, rowPermissionApi,
 } from '@/api'
 import type {
   Field, TableOwnerInfo, TableMember, WorkspaceRole,
+  RowPermissionRule, RowRuleSubject, RowSubjectType, RowActionType,
 } from '@/api'
 import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
+import FilterConditionEditor from '@/pages/grid/view-config/FilterConditionEditor'
+import type { FilterRule } from '@/pages/grid/view-config/FilterConditionEditor'
 
 interface PermissionEditorProps {
   fields: Field[]
@@ -34,6 +39,8 @@ interface PermissionEditorProps {
   hiddenNames: string[]
   /** 受控回调：勾选变化时通知父组件 */
   onHiddenNamesChange: (names: string[]) => void
+  /** 是否具备表 EDIT_SCHEMA（行级权限区配置门控；缺省视为无权限） */
+  canEditSchema?: boolean
 }
 
 // ───────────────────────── 隐藏字段 + 备注（原逻辑保留） ─────────────────────────
@@ -59,7 +66,7 @@ export function buildHiddenSet(hidden: unknown): Set<string> {
 
 // ───────────────────────── 主组件 ─────────────────────────
 
-export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames, onHiddenNamesChange }: PermissionEditorProps) {
+export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames, onHiddenNamesChange, canEditSchema = false }: PermissionEditorProps) {
   const { message } = AntApp.useApp()
   const user = useAuthStore(s => s.user)
   const queryClient = useQueryClient()
@@ -67,6 +74,8 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
   const [addOpen, setAddOpen] = useState(false)
   /** 添加成员弹窗预选授权级别（由打开入口所在分区决定） */
   const [addRole, setAddRole] = useState<'read' | 'write'>('read')
+  /** 行级权限规则编辑器：null=关闭，'new'=新建，其余为待编辑规则 */
+  const [ruleEditor, setRuleEditor] = useState<RowPermissionRule | 'new' | null>(null)
 
   // ── 表成员列表 ──
   const { data: members = [], isLoading: membersLoading } = useQuery<TableMember[]>({
@@ -134,6 +143,53 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
       setTransferOpen(false)
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '转让失败'),
+  })
+
+  // ── 行级权限规则（ADR 0004）：配置属敏感信息，查询需 EDIT_SCHEMA ──
+  const { data: rowRules = [], isLoading: rulesLoading } = useQuery<RowPermissionRule[]>({
+    queryKey: ['row-rules', wid, tid],
+    queryFn: () => rowPermissionApi.list(wid, tid),
+    enabled: canEditSchema,
+  })
+  const { data: subjects = [] } = useQuery<RowRuleSubject[]>({
+    queryKey: ['row-rule-subjects', wid, tid],
+    queryFn: () => rowPermissionApi.subjects(wid, tid),
+    enabled: canEditSchema,
+  })
+
+  const invalidateRules = () => {
+    queryClient.invalidateQueries({ queryKey: ['row-rules', wid, tid] })
+  }
+
+  const createRule = useMutation({
+    mutationFn: (payload: Parameters<typeof rowPermissionApi.create>[2]) =>
+      rowPermissionApi.create(wid, tid, payload),
+    onSuccess: () => {
+      message.success('已创建行级权限规则')
+      invalidateRules()
+      setRuleEditor(null)
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '创建规则失败'),
+  })
+
+  const updateRule = useMutation({
+    mutationFn: (args: { ruleId: number; payload: Parameters<typeof rowPermissionApi.update>[3] }) =>
+      rowPermissionApi.update(wid, tid, args.ruleId, args.payload),
+    onSuccess: () => {
+      message.success('已更新行级权限规则')
+      invalidateRules()
+      setRuleEditor(null)
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '更新规则失败'),
+  })
+
+  const removeRule = useMutation({
+    mutationFn: (ruleId: number) => rowPermissionApi.remove(wid, tid, ruleId),
+    onSuccess: () => {
+      message.success('已删除行级权限规则')
+      invalidateRules()
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除规则失败'),
   })
 
   // ── 可选用户（排除当前已在成员列表里的 + 排除当前拥有者） ──
@@ -208,6 +264,86 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
       ),
     },
   ]
+
+  // ── 行级权限规则表列 ──
+  const ruleColumns = [
+    {
+      title: '主体',
+      key: 'subject',
+      render: (_: unknown, rule: RowPermissionRule) => (
+        <Space size={4}>
+          {rule.subject_type === 'user'
+            ? <UserOutlined />
+            : <TeamOutlined />}
+          <span>{rule.subject_name}</span>
+          <Tag color={rule.subject_type === 'user' ? 'blue' : 'geekblue'}>
+            {rule.subject_type === 'user' ? '成员' : '成员档'}
+          </Tag>
+        </Space>
+      ),
+    },
+    {
+      title: '动作',
+      dataIndex: 'action',
+      key: 'action',
+      width: 110,
+      render: (action: RowActionType) => action === 'edit'
+        ? <Tag color="green" icon={<EditOutlined />}>可编辑</Tag>
+        : <Tag color="blue" icon={<EyeOutlined />}>可查看</Tag>,
+    },
+    {
+      title: '条件',
+      key: 'filters',
+      render: (_: unknown, rule: RowPermissionRule) => renderRuleSummary(rule),
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 130,
+      render: (_: unknown, rule: RowPermissionRule) => (
+        <Space>
+          <Button size="small" type="link" disabled={!canEditSchema}
+            onClick={() => setRuleEditor(rule)}>编辑</Button>
+          <Popconfirm
+            title="删除这条行级权限规则？"
+            description="该主体将不再额外获得本条规则命中的行权限。"
+            okText="删除"
+            okType="danger"
+            okButtonProps={{ danger: true, type: 'primary' }}
+            cancelText="取消"
+            onConfirm={() => removeRule.mutate(rule.id)}
+            disabled={!canEditSchema}
+          >
+            <Button size="small" type="link" danger disabled={!canEditSchema}>删除</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+
+  // ── 行级权限规则编辑器：新建或编辑时提交 ──
+  const handleSubmitRule = (payload: {
+    subject_type: RowSubjectType
+    subject_id: string
+    action: RowActionType
+    filters: FilterRule[]
+    filter_type: 'AND' | 'OR'
+  }) => {
+    if (ruleEditor && ruleEditor !== 'new') {
+      updateRule.mutate({
+        ruleId: ruleEditor.id,
+        payload: { filters: payload.filters, filter_type: payload.filter_type },
+      })
+    } else {
+      createRule.mutate({
+        subject_type: payload.subject_type,
+        subject_id: payload.subject_id,
+        action: payload.action,
+        filters: payload.filters,
+        filter_type: payload.filter_type,
+      })
+    }
+  }
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -328,6 +464,50 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
         </Checkbox.Group>
       )}
 
+      {/* ─────────────── 行级权限（ADR 0004）：按筛选条件给指定主体查看 / 编辑权 ─────────────── */}
+      <Card
+        size="small"
+        title={<Space><FilterOutlined />{`行级权限（${rowRules.length}）`}</Space>}
+        style={{ marginTop: 16 }}
+        extra={
+          canEditSchema ? (
+            <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setRuleEditor('new')}>
+              添加规则
+            </Button>
+          ) : (
+            <Tooltip title="需要本表的「编辑结构」权限（EDIT_SCHEMA）">
+              <Button size="small" type="primary" icon={<PlusOutlined />} disabled>添加规则</Button>
+            </Tooltip>
+          )
+        }
+      >
+        <div style={{ fontSize: 12, color: 'var(--cn-text-secondary)', marginBottom: 8 }}>
+          每条规则 = 一组筛选条件命中的<b>数据行</b>，授予<b>指定成员</b>或<b>表级成员档</b>的「可查看 / 可编辑」权限。
+          规则在表默认档（对所有非管理员的行过滤）之上<b>按主体开放</b>；拥有者与管理员不受行规则限制。
+        </div>
+        {!canEditSchema ? (
+          <Alert
+            type="info"
+            showIcon
+            message="无行级权限配置权限"
+            description="行级权限规则属敏感配置，仅具备本表「编辑结构」权限者可查看与配置。"
+          />
+        ) : rulesLoading ? (
+          <div style={{ color: 'var(--cn-text-muted)', fontSize: 13 }}>加载中...</div>
+        ) : rowRules.length === 0 ? (
+          <div style={{ color: 'var(--cn-text-muted)', fontSize: 13 }}>暂无行级权限规则</div>
+        ) : (
+          <Table
+            size="small"
+            rowKey="id"
+            columns={ruleColumns}
+            dataSource={rowRules}
+            pagination={false}
+            scroll={{ x: 'max-content' }}
+          />
+        )}
+      </Card>
+
       {/* ─────────────── 转让所有权 Modal ─────────────── */}
       <TransferOwnerModal
         open={transferOpen}
@@ -346,7 +526,38 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
         defaultRole={addRole}
         onSubmit={(userId, role) => addMember.mutate({ user_id: userId, role })}
       />
+
+      {/* ─────────────── 行级权限规则编辑器 Modal ─────────────── */}
+      <RowRuleEditorModal
+        open={ruleEditor !== null}
+        editing={ruleEditor !== null && ruleEditor !== 'new' ? ruleEditor : null}
+        fields={fields.filter(f => !f.hidden)}
+        subjects={subjects}
+        loading={createRule.isPending || updateRule.isPending}
+        onClose={() => setRuleEditor(null)}
+        onSubmit={handleSubmitRule}
+        onPreview={(filters, filterType) => rowPermissionApi.preview(wid, tid, { filters, filter_type: filterType })}
+      />
     </div>
+  )
+}
+
+// ───────────────────────── 行级权限辅助 ─────────────────────────
+
+/** 规则条件摘要：无条件 = 全部行；有则展示组合方式与字段清单（最多 3 个，超出折叠） */
+function renderRuleSummary(rule: RowPermissionRule) {
+  const filters = rule.filters ?? []
+  if (filters.length === 0) {
+    return <span style={{ color: 'var(--cn-text-muted)' }}>全部行</span>
+  }
+  const names = filters.map(f => f.field_name).filter(Boolean)
+  const shown = names.slice(0, 3).join('、')
+  const more = names.length > 3 ? ` 等 ${names.length} 项` : ''
+  return (
+    <span style={{ fontSize: 12 }}>
+      <Tag>{rule.filter_type}</Tag>
+      {shown}{more}
+    </span>
   )
 }
 
@@ -443,6 +654,150 @@ function AddMemberModal({
             { value: 'write', label: 'write · 可编辑（可编辑数据与视图, 不可改结构）' },
           ]}
         />
+      </div>
+    </Modal>
+  )
+}
+
+// ───────────────────────── 行级权限规则编辑器 ─────────────────────────
+
+/** 主体选择项的 value 形如 `type:id`（user / member_role） */
+function subjectKey(subject_type: RowSubjectType, subject_id: string): string {
+  return `${subject_type}:${subject_id}`
+}
+
+function RowRuleEditorModal({
+  open, editing, fields, subjects, loading, onClose, onSubmit, onPreview,
+}: {
+  open: boolean
+  /** 待编辑规则（null 表示新建） */
+  editing: RowPermissionRule | null
+  fields: Field[]
+  subjects: RowRuleSubject[]
+  loading: boolean
+  onClose: () => void
+  onSubmit: (payload: {
+    subject_type: RowSubjectType
+    subject_id: string
+    action: RowActionType
+    filters: FilterRule[]
+    filter_type: 'AND' | 'OR'
+  }) => void
+  onPreview: (filters: FilterRule[], filterType: 'AND' | 'OR') => Promise<{ matched: number }>
+}) {
+  const isEdit = !!editing
+  const [subject, setSubject] = useState<string | null>(null)
+  const [action, setAction] = useState<RowActionType>('view')
+  const [filters, setFilters] = useState<FilterRule[]>([])
+  const [filterType, setFilterType] = useState<'AND' | 'OR'>('AND')
+  const [previewCount, setPreviewCount] = useState<number | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+
+  // 仅在弹窗由关→开的瞬间重置草稿：编辑时回填目标，新建时清空为默认值
+  const wasOpenRef = useRef(false)
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      if (editing) {
+        setSubject(subjectKey(editing.subject_type, editing.subject_id))
+        setAction(editing.action)
+        setFilters(editing.filters ?? [])
+        setFilterType(editing.filter_type ?? 'AND')
+      } else {
+        setSubject(null)
+        setAction('view')
+        setFilters([])
+        setFilterType('AND')
+      }
+      setPreviewCount(null)
+    }
+    wasOpenRef.current = open
+  }, [open, editing])
+
+  const subjectOptions = subjects.map(s => ({
+    value: subjectKey(s.subject_type, s.subject_id),
+    label: `${s.name}（${s.subject_type === 'user' ? '成员' : '成员级档'}）`,
+  }))
+
+  const doPreview = async () => {
+    setPreviewing(true)
+    try {
+      const res = await onPreview(filters, filterType)
+      setPreviewCount(res.matched)
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  const canSubmit = subject != null && (filters.length === 0 || filters.some(f => f.field_name))
+
+  return (
+    <Modal
+      title={isEdit ? '编辑行级权限规则' : '新建行级权限规则'}
+      open={open}
+      onCancel={onClose}
+      width={620}
+      onOk={() => {
+        if (subject == null) return
+        const [subject_type, ...rest] = subject.split(':')
+        onSubmit({
+          subject_type: subject_type as RowSubjectType,
+          subject_id: rest.join(':'),
+          action,
+          filters: filters.filter(f => f.field_name),
+          filter_type: filterType,
+        })
+      }}
+      okText="保存"
+      confirmLoading={loading}
+      okButtonProps={{ disabled: !canSubmit }}
+      destroyOnHidden
+    >
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>授权主体</div>
+        <Select
+          showSearch
+          placeholder="选择成员或成员档"
+          style={{ width: '100%' }}
+          value={subject}
+          onChange={setSubject}
+          options={subjectOptions}
+          disabled={isEdit}
+          filterOption={(input, option) =>
+            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+          }
+        />
+        {isEdit && (
+          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--cn-text-muted)' }}>
+            主体与动作创建后不可改；如需变更请删除后重建。
+          </div>
+        )}
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>动作</div>
+        <Radio.Group value={action} onChange={(e) => setAction(e.target.value)} disabled={isEdit}>
+          <Radio value="view"><EyeOutlined /> 可查看（命中行可读，不可编辑）</Radio>
+          <Radio value="edit"><EditOutlined /> 可编辑（命中行可读且可直编）</Radio>
+        </Radio.Group>
+      </div>
+      <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>命中条件（不填 = 全部行）</div>
+      <FilterConditionEditor
+        fields={fields}
+        rules={filters}
+        logic={filterType}
+        onLogicChange={setFilterType}
+        onChange={setFilters}
+        emptyText="暂无筛选条件（规则将命中全部行）"
+        addText="添加筛选条件"
+      />
+      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Button size="small" icon={<NumberOutlined />} loading={previewing} onClick={doPreview}>
+          预览命中行数
+        </Button>
+        {previewCount != null && (
+          <span style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+            预计命中 <b>{previewCount}</b> 行（仅统计您可见的行）
+          </span>
+        )}
       </div>
     </Modal>
   )

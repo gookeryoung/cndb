@@ -15,6 +15,7 @@ from cndb.plugins.tables.routers.import_csv import router as import_file_router
 from cndb.plugins.tables.routers.members import router as members_router
 from cndb.plugins.tables.routers.permissions import router as permissions_router
 from cndb.plugins.tables.routers.records import router as records_router
+from cndb.plugins.tables.routers.row_permissions import router as row_permissions_router
 from cndb.plugins.tables.routers.tables import router as tables_router
 from cndb.plugins.tables.routers.views import router as views_router
 
@@ -22,6 +23,7 @@ router = APIRouter()
 router.include_router(tables_router)
 router.include_router(views_router)
 router.include_router(permissions_router)
+router.include_router(row_permissions_router)
 router.include_router(members_router)
 router.include_router(audit_router)
 router.include_router(bulk_router)

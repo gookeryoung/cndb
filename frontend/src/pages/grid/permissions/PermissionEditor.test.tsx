@@ -23,7 +23,7 @@ vi.mock('@/hooks/useResponsive', async () => {
   return { ...actual, useResponsive: () => responsiveState }
 })
 import { makeField } from '@/test/fixtures'
-import type { Field, TableMember, TableOwnerInfo, WorkspaceMember, WorkspaceRole } from '@/api'
+import type { Field, TableMember, TableOwnerInfo, WorkspaceMember, WorkspaceRole, RowPermissionRule, RowRuleSubject } from '@/api'
 
 const WID = 10
 const TID = 100
@@ -62,6 +62,7 @@ function renderEditor(opts?: {
   owner?: TableOwnerInfo
   hiddenNames?: string[]
   onHiddenNamesChange?: (names: string[]) => void
+  canEditSchema?: boolean
 }) {
   return renderProviders(
     <PermissionEditor
@@ -71,6 +72,7 @@ function renderEditor(opts?: {
       owner={opts?.owner ?? OWNER}
       hiddenNames={opts?.hiddenNames ?? []}
       onHiddenNamesChange={opts?.onHiddenNamesChange ?? (() => { })}
+      canEditSchema={opts?.canEditSchema}
     />,
     { initialAuth: { user: mockUser } },
   )
@@ -276,5 +278,160 @@ describe('PermissionEditor 窄屏适配', () => {
     await screen.findByText('bob')
     const grid = document.querySelector('.ant-checkbox-group > div') as HTMLElement
     expect(grid.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))')
+  })
+})
+
+// ───────────────────────── 行级权限（ADR 0004 P2） ─────────────────────────
+
+const ROW_RULES: RowPermissionRule[] = [
+  {
+    id: 1, table_id: TID, subject_type: 'user', subject_id: '2', action: 'view',
+    filters: [{ field_name: '状态', op: '=', value: '高' }], filter_type: 'AND',
+    subject_name: 'bob', created_at: '', updated_at: '',
+  },
+  {
+    id: 2, table_id: TID, subject_type: 'member_role', subject_id: 'write', action: 'edit',
+    filters: [], filter_type: 'AND', subject_name: '编辑者', created_at: '', updated_at: '',
+  },
+]
+
+const ROW_SUBJECTS: RowRuleSubject[] = [
+  { subject_type: 'member_role', subject_id: 'read', name: '查看者' },
+  { subject_type: 'member_role', subject_id: 'write', name: '编辑者' },
+  { subject_type: 'user', subject_id: '2', name: 'bob' },
+]
+
+/** 在基础 handlers 上追加行级权限端点（list / subjects / preview） */
+function setupRowHandlers(rules: RowPermissionRule[] = ROW_RULES) {
+  setupHandlers()
+  server.use(
+    http.get(`/api/v1/workspaces/${WID}/tables/${TID}/row-permissions`, () => HttpResponse.json(rules)),
+    http.get(`/api/v1/workspaces/${WID}/tables/${TID}/row-permissions/subjects`, () => HttpResponse.json(ROW_SUBJECTS)),
+    http.post(`/api/v1/workspaces/${WID}/tables/${TID}/row-permissions/preview`, () =>
+      HttpResponse.json({ matched: 3, sample: [] })),
+  )
+}
+
+describe('PermissionEditor 行级权限区', () => {
+  it('无 EDIT_SCHEMA：展示无权限说明且添加按钮禁用', async () => {
+    setupHandlers()
+    renderEditor({ canEditSchema: false })
+
+    expect(await screen.findByText('无行级权限配置权限')).toBeInTheDocument()
+    const card = screen.getByText(/行级权限（0）/).closest('.ant-card') as HTMLElement
+    expect(within(card).getByRole('button', { name: /添加规则/ })).toBeDisabled()
+  })
+
+  it('有 EDIT_SCHEMA：渲染规则列表（主体 / 动作 / 条件摘要）', async () => {
+    setupRowHandlers()
+    renderEditor({ canEditSchema: true })
+
+    const card = (await screen.findByText('行级权限（2）')).closest('.ant-card') as HTMLElement
+    // 成员主体名 + 类型标签
+    expect(within(card).getByText('bob')).toBeInTheDocument()
+    expect(within(card).getByText('成员')).toBeInTheDocument()
+    expect(within(card).getByText('成员档')).toBeInTheDocument()
+    // 动作标签
+    expect(within(card).getByText('可查看')).toBeInTheDocument()
+    expect(within(card).getByText('可编辑')).toBeInTheDocument()
+    // 条件摘要：有条件的显示字段名，无条件的显示「全部行」
+    expect(within(card).getByText('状态')).toBeInTheDocument()
+    expect(within(card).getByText('全部行')).toBeInTheDocument()
+  })
+
+  it('新建规则：选主体 + 选动作 + 保存 → POST 携带正确 payload', async () => {
+    setupRowHandlers()
+    const createSpy = vi.fn()
+    server.use(http.post(`/api/v1/workspaces/${WID}/tables/${TID}/row-permissions`, async ({ request }) => {
+      createSpy(await request.json())
+      return HttpResponse.json({ ...ROW_RULES[0] }, { status: 201 })
+    }))
+    renderEditor({ canEditSchema: true })
+
+    fireEvent.click(await screen.findByRole('button', { name: /添加规则/ }))
+    const modal = (await screen.findByText('新建行级权限规则')).closest('.ant-modal') as HTMLElement
+
+    // 选择主体「bob」
+    openSelect(modal.querySelectorAll('.ant-select .ant-select-selector')[0])
+    fireEvent.click(await screen.findByText('bob（成员）', { selector: '.ant-select-item-option-content' }))
+    // 选动作「可编辑」
+    fireEvent.click(within(modal).getByText('可编辑（命中行可读且可直编）'))
+    // 默认无条件 → 规则命中全部行
+    fireEvent.click(within(modal).getByRole('button', { name: /^保\s*存$/ }))
+
+    await waitFor(() => expect(createSpy).toHaveBeenCalledWith({
+      subject_type: 'user', subject_id: '2', action: 'edit', filters: [], filter_type: 'AND',
+    }))
+  })
+
+  it('编辑规则：主体锁定回填，保存走 PATCH（仅条件）', async () => {
+    setupRowHandlers()
+    const patchSpy = vi.fn()
+    server.use(http.patch(`/api/v1/workspaces/${WID}/tables/${TID}/row-permissions/1`, async ({ request }) => {
+      patchSpy(await request.json())
+      return HttpResponse.json({ ...ROW_RULES[0] })
+    }))
+    renderEditor({ canEditSchema: true })
+
+    fireEvent.click((await screen.findAllByRole('button', { name: /^编\s*辑$/ }))[0]!)
+    const modal = (await screen.findByText('编辑行级权限规则')).closest('.ant-modal') as HTMLElement
+    // 主体下拉禁用（不可改）
+    expect(modal.querySelector('.ant-select-disabled')).not.toBeNull()
+    // 回填条件字段
+    expect(within(modal).getByText('状态')).toBeInTheDocument()
+    fireEvent.click(within(modal).getByRole('button', { name: /^保\s*存$/ }))
+
+    await waitFor(() => expect(patchSpy).toHaveBeenCalledWith({
+      filters: [{ field_name: '状态', op: '=', value: '高' }], filter_type: 'AND',
+    }))
+  })
+
+  it('删除规则：Popconfirm 确认后发起 DELETE', async () => {
+    setupRowHandlers()
+    const delSpy = vi.fn()
+    server.use(http.delete(`/api/v1/workspaces/${WID}/tables/${TID}/row-permissions/1`, () => {
+      delSpy()
+      return HttpResponse.json({})
+    }))
+    renderEditor({ canEditSchema: true })
+
+    fireEvent.click((await screen.findAllByRole('button', { name: /^删\s*除$/ }))[0]!)
+    await screen.findByText('删除这条行级权限规则？')
+    const confirmBtn = document.querySelector('.ant-popconfirm .ant-btn-dangerous') as HTMLElement
+    fireEvent.click(confirmBtn)
+
+    await waitFor(() => expect(delSpy).toHaveBeenCalledTimes(1))
+  })
+
+  it('预览命中行数：调用 preview 并展示命中数', async () => {
+    setupRowHandlers()
+    const previewSpy = vi.fn()
+    server.use(http.post(`/api/v1/workspaces/${WID}/tables/${TID}/row-permissions/preview`, async ({ request }) => {
+      previewSpy(await request.json())
+      return HttpResponse.json({ matched: 7, sample: [] })
+    }))
+    renderEditor({ canEditSchema: true })
+
+    fireEvent.click(await screen.findByRole('button', { name: /添加规则/ }))
+    const modal = (await screen.findByText('新建行级权限规则')).closest('.ant-modal') as HTMLElement
+    fireEvent.click(within(modal).getByRole('button', { name: /预览命中行数/ }))
+
+    await waitFor(() => expect(previewSpy).toHaveBeenCalledWith({ filters: [], filter_type: 'AND' }))
+    expect(await within(modal).findByText('7')).toBeInTheDocument()
+  })
+
+  it('异常态：创建失败时展示后端错误信息', async () => {
+    setupRowHandlers()
+    server.use(http.post(`/api/v1/workspaces/${WID}/tables/${TID}/row-permissions`, () =>
+      HttpResponse.json({ detail: '该主体该动作的规则已存在，请改用 PATCH 修改' }, { status: 400 })))
+    renderEditor({ canEditSchema: true })
+
+    fireEvent.click(await screen.findByRole('button', { name: /添加规则/ }))
+    const modal = (await screen.findByText('新建行级权限规则')).closest('.ant-modal') as HTMLElement
+    openSelect(modal.querySelectorAll('.ant-select .ant-select-selector')[0])
+    fireEvent.click(await screen.findByText('bob（成员）', { selector: '.ant-select-item-option-content' }))
+    fireEvent.click(within(modal).getByRole('button', { name: /^保\s*存$/ }))
+
+    expect(await screen.findByText(/已存在/)).toBeInTheDocument()
   })
 })

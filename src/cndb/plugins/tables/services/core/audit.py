@@ -18,6 +18,10 @@ ACTION_UPDATE = "update"
 ACTION_TRASH = "trash"
 ACTION_RESTORE = "restore"
 ACTION_DELETE = "delete"
+# 行级权限规则增删改（ADR 0004 §7-8）
+ACTION_ROW_RULE_CREATE = "row_rule_create"
+ACTION_ROW_RULE_UPDATE = "row_rule_update"
+ACTION_ROW_RULE_DELETE = "row_rule_delete"
 
 
 def log_action(
@@ -86,6 +90,9 @@ __all__ = [
     "ACTION_CREATE",
     "ACTION_DELETE",
     "ACTION_RESTORE",
+    "ACTION_ROW_RULE_CREATE",
+    "ACTION_ROW_RULE_DELETE",
+    "ACTION_ROW_RULE_UPDATE",
     "ACTION_TRASH",
     "ACTION_UPDATE",
     "log_action",

@@ -529,6 +529,7 @@ export default function TableSettingsPage() {
                 owner={table.owner ?? null}
                 hiddenNames={hiddenNames}
                 onHiddenNamesChange={setHiddenNames}
+                canEditSchema={canEditSchema}
               />
 
               <div style={{ marginTop: 16, textAlign: 'right' }}>

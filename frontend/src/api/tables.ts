@@ -8,6 +8,8 @@ import type {
     AuditLog, Reference,
     TablePermission,
     TableMember, MemberCreate, MemberUpdate, OwnerTransferPayload,
+    RowPermissionRule, RowRuleSubject, RowRulePreviewResponse,
+    RowRuleCreatePayload, RowRuleUpdatePayload,
 } from './types'
 
 export const tableApi = {
@@ -87,4 +89,26 @@ export const tableMembersApi = {
         api.delete(`/v1/workspaces/${wid}/tables/${tid}/members/${userId}`),
     transferOwner: (wid: number | string, tid: number | string, data: OwnerTransferPayload) =>
         api.post(`/v1/workspaces/${wid}/tables/${tid}/owner`, data),
+}
+
+/** 行级权限规则（ADR 0004 §5）：均要求表 EDIT_SCHEMA，属敏感配置 */
+export const rowPermissionApi = {
+    /** 列出规则（需 EDIT_SCHEMA） */
+    list: (wid: number | string, tid: number | string) =>
+        api.get<RowPermissionRule[]>(`/v1/workspaces/${wid}/tables/${tid}/row-permissions`).then(r => r.data),
+    /** 创建规则（每主体每动作至多一条） */
+    create: (wid: number | string, tid: number | string, data: RowRuleCreatePayload) =>
+        api.post<RowPermissionRule>(`/v1/workspaces/${wid}/tables/${tid}/row-permissions`, data).then(r => r.data),
+    /** 修改规则条件（主体 / 动作不可改） */
+    update: (wid: number | string, tid: number | string, ruleId: number, data: RowRuleUpdatePayload) =>
+        api.patch<RowPermissionRule>(`/v1/workspaces/${wid}/tables/${tid}/row-permissions/${ruleId}`, data).then(r => r.data),
+    /** 删除规则 */
+    remove: (wid: number | string, tid: number | string, ruleId: number) =>
+        api.delete(`/v1/workspaces/${wid}/tables/${tid}/row-permissions/${ruleId}`),
+    /** 可授权主体列表（选择器数据源） */
+    subjects: (wid: number | string, tid: number | string) =>
+        api.get<RowRuleSubject[]>(`/v1/workspaces/${wid}/tables/${tid}/row-permissions/subjects`).then(r => r.data),
+    /** 规则命中行 dry-run 预览 */
+    preview: (wid: number | string, tid: number | string, data: { filters: Array<{ field_name: string; op: string; value?: unknown }>; filter_type: 'AND' | 'OR' }) =>
+        api.post<RowRulePreviewResponse>(`/v1/workspaces/${wid}/tables/${tid}/row-permissions/preview`, data).then(r => r.data),
 }
