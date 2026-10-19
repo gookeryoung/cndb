@@ -101,7 +101,9 @@ def create_dispatch_request(
     elif op in (CHANGE_OP_UPDATE, CHANGE_OP_DELETE):
         if row_id is None:
             raise HTTPException(status_code=400, detail=f"{op} 必须提供 row_id")
-        row = rec.get_row(engine, table, row_id, db=db)
+        # 按提交人的读范围取行（ADR 0004）：默认档外但被 view 规则授权的行，
+        # 其修改申请仍应可正常生成，不能被默认档误判为"行不存在"。
+        row = rec.get_row(engine, table, row_id, db=db, user=user)
         if row is None:
             raise HTTPException(status_code=404, detail="行不存在")
         if op == CHANGE_OP_UPDATE:

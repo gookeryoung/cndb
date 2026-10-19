@@ -311,8 +311,9 @@ def _build_row_scope_where(table: DataTable, sa_table: Any, db: Any, user: Any =
     仅在 db 可用且 row_filters 非空时生效。返回的条件会与 trashed 条件 AND 组合。
     传入 ``user`` 时按统一口径处理：表所有者/工作区 OWNER/超管豁免（见 row_filters_bypass）。
 
-    写路径（update / delete / trash / restore / bulk_*）仍走本函数（默认档），
-    行级写权分派（edit 规则 / 202 / 404）在 P1 引入（ADR 0004 §11）。
+    用于**内部/批量路径**（`bulk_*`、修改申请合并落库、导入流水线）与 `trash`/`restore`：
+    这些路径保持默认档-only 语义（ADR 0004 §4：合并动作不受行规则约束；§7-6：批量沿用表级门槛）。
+    用户单行写路径（update / delete）改用 ``_build_row_write_scope_where`` 叠加 edit 规则。
     """
     if db is None:
         return None
@@ -336,13 +337,30 @@ def _build_row_read_scope_where(table: DataTable, sa_table: Any, db: Any, user: 
     """读范围合成：默认档 ∪ 命中的行级规则（ADR 0004 §3，P0 仅读侧）.
 
     与默认档-only 的 ``_build_row_scope_where`` 区分：读路径（list_rows / get_row）
-    需叠加命中的 ``view`` / ``edit`` 规则；写路径暂不叠加（P1 再分派）。
+    叠加命中的 ``view`` / ``edit`` 规则；写路径由 ``_build_row_write_scope_where`` 处理。
     """
     if db is None:
         return None
     from cndb.plugins.tables.services.core.row_access import row_read_scope_where
 
     return row_read_scope_where(db, table, sa_table, user)
+
+
+def _build_row_write_scope_where(
+    table: DataTable, sa_table: Any, db: Any, user: Any = None, *, enforce_row_rules: bool = False
+) -> Any | None:
+    """单行写路径的行范围：``enforce_row_rules`` 时叠加 edit 规则（写范围），否则默认档-only.
+
+    用户单行 update / delete 走写范围（默认档 ∪ 命中的 edit 规则，ADR 0004 §3）；
+    其余内部/批量/合并路径保持默认档-only，避免改变既有语义（§4、§7-6）。
+    """
+    if not enforce_row_rules:
+        return _build_row_scope_where(table, sa_table, db, user)
+    if db is None:
+        return None
+    from cndb.plugins.tables.services.core.row_access import row_edit_scope_where
+
+    return row_edit_scope_where(db, table, sa_table, user)
 
 
 def list_rows(
@@ -484,16 +502,21 @@ def update_row(
     db: Any = None,
     *,
     user: Any = None,
+    enforce_row_rules: bool = False,
 ) -> dict[str, Any] | None:
     """更新一行，返回更新后的完整数据；行不存在或已软删除或被行级权限拦截时返回 None.
 
     仅传 link 字段（无物理列值）时同样生效；link 值为 None 表示显式清空关联.
+    ``enforce_row_rules=True``（用户单行写路径）：行范围改为**写范围**（默认档 ∪ edit 规则，
+    ADR 0004 §3），并在写后按读范围回读；内部/合并路径保持默认档-only。
     """
     sa_table = _get_sa_table(engine, table)
     normalized, link_values = _normalize_values(table, values, for_update=True)
 
+    read_user = user if enforce_row_rules else None
+
     if not normalized and not link_values:
-        return get_row(engine, table, row_id, db=db)
+        return get_row(engine, table, row_id, db=db, user=read_user)
 
     # 主行提交前预校验 link 目标存在，避免主行已提交但 link 写入失败
     if db is not None:
@@ -504,7 +527,7 @@ def update_row(
     # link 必填/唯一约束校验（排除本行自身，更新为同一集合不视为冲突）
     validate_link_write(engine, link_values, exclude_row_ids=(row_id,))
 
-    row_scope = _build_row_scope_where(table, sa_table, db, user)
+    row_scope = _build_row_write_scope_where(table, sa_table, db, user, enforce_row_rules=enforce_row_rules)
     base_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
     if row_scope is not None:
         base_where.append(row_scope)
@@ -522,7 +545,7 @@ def update_row(
         for field, target_ids in link_values:
             set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
-    row = get_row(engine, table, row_id, db=db)
+    row = get_row(engine, table, row_id, db=db, user=read_user)
     if row is not None:
         try:
             log_action(db, table, ACTION_UPDATE, target_id=row_id, detail=row)
@@ -534,13 +557,22 @@ def update_row(
 # ── DELETE ───────────────────────────────────────────
 
 
-def delete_row(engine: Any, table: DataTable, row_id: int, db: Any = None, *, user: Any = None) -> bool:
+def delete_row(
+    engine: Any,
+    table: DataTable,
+    row_id: int,
+    db: Any = None,
+    *,
+    user: Any = None,
+    enforce_row_rules: bool = False,
+) -> bool:
     """硬删除单行（同步清理关联记录），返回是否成功.
 
-    行级权限拦截时返回 False（不会删除被 row_filters 过滤的行）.
+    行级权限拦截时返回 False（不会删除被行范围过滤的行）.
+    ``enforce_row_rules=True``（用户单行删路径）：按**写范围**过滤（默认档 ∪ edit 规则）。
     """
     sa_table = _get_sa_table(engine, table)
-    row_scope = _build_row_scope_where(table, sa_table, db, user)
+    row_scope = _build_row_write_scope_where(table, sa_table, db, user, enforce_row_rules=enforce_row_rules)
     base_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
     if row_scope is not None:
         base_where.append(row_scope)
@@ -559,10 +591,22 @@ def delete_row(engine: Any, table: DataTable, row_id: int, db: Any = None, *, us
 # ── 软删除 / 恢复 ────────────────────────────────────
 
 
-def trash_row(engine: Any, table: DataTable, row_id: int, db: Any = None, *, user: Any = None) -> bool:
-    """软删除（标记 _trashed=True）."""
+def trash_row(
+    engine: Any,
+    table: DataTable,
+    row_id: int,
+    db: Any = None,
+    *,
+    user: Any = None,
+    enforce_row_rules: bool = False,
+) -> bool:
+    """软删除（标记 _trashed=True）.
+
+    ``enforce_row_rules=True``（用户单行删路径）：按**写范围**过滤（默认档 ∪ edit 规则）；
+    内部/合并路径保持默认档-only。
+    """
     sa_table = _get_sa_table(engine, table)
-    row_scope = _build_row_scope_where(table, sa_table, db, user)
+    row_scope = _build_row_write_scope_where(table, sa_table, db, user, enforce_row_rules=enforce_row_rules)
     base_where: list[Any] = [sa_table.c.id == row_id]
     if row_scope is not None:
         base_where.append(row_scope)

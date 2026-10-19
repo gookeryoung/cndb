@@ -28,6 +28,7 @@ from cndb.plugins.tables.schemas import (
 )
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
 from cndb.plugins.tables.services.core.records import (
+    _get_sa_table,
     create_row,
     delete_row,
     get_row,
@@ -36,6 +37,7 @@ from cndb.plugins.tables.services.core.records import (
     trash_row,
     update_row,
 )
+from cndb.plugins.tables.services.core.row_access import can_edit_row, can_view_row
 
 logger = logging.getLogger(__name__)
 # 记录列表缓存 TTL（秒）：短 TTL + 事件驱动失效（record.* 事件提交后清该工作区记录缓存）
@@ -60,6 +62,30 @@ def _dispatch_or_403(
     if not check_action(db, dt, user, TableAction.EDIT_RECORDS):
         raise HTTPException(status_code=403, detail="表级权限不足")
     return True
+
+
+#: 单行写路径按行分派结果（ADR 0004 §4）
+ROW_WRITE_DIRECT = "direct"  # 在写范围内且可直编 → 原地落库
+ROW_WRITE_CHANGE_REQUEST = "change_request"  # 可看不可改 / 无直编资格 → 生成修改申请（202）
+ROW_WRITE_DENIED = "denied"  # 有直编资格但表级 EDIT_RECORDS 受限 → 403（存量语义）
+ROW_WRITE_NOT_FOUND = "not_found"  # 读范围外 / 不存在 → 404（不泄露存在性，I6）
+
+
+def _row_write_decision(db: Session, dt: DataTable, user: User, row_id: int) -> str:
+    """单行 update / delete 的按行分派（ADR 0004 §4）.
+
+    顺序：读范围外 → 404；写范围内且可直编 → 直编；其余按双轨制分派（可看不可改 → 202，
+    有直编资格但表级阈值受限 → 403）。管理员在行范围判定中豁免（看到全表）。
+    """
+    sa_table = _get_sa_table(db.get_bind(), dt)
+    if not can_view_row(db, dt, sa_table, row_id, user):
+        return ROW_WRITE_NOT_FOUND
+    direct_capable = cr_services.can_write_directly(db, dt, user)
+    if direct_capable and can_edit_row(db, dt, sa_table, row_id, user):
+        return ROW_WRITE_DIRECT
+    if direct_capable and not check_action(db, dt, user, TableAction.EDIT_RECORDS):
+        return ROW_WRITE_DENIED
+    return ROW_WRITE_CHANGE_REQUEST
 
 
 def _cr_response(
@@ -251,11 +277,16 @@ def update_record(
 ) -> dict[str, object] | JSONResponse:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    if not _dispatch_or_403(db, dt, current_user):
+    decision = _row_write_decision(db, dt, current_user, record_id)
+    if decision == ROW_WRITE_NOT_FOUND:
+        raise HTTPException(status_code=404, detail="行不存在")
+    if decision == ROW_WRITE_DENIED:
+        raise HTTPException(status_code=403, detail="表级权限不足")
+    if decision == ROW_WRITE_CHANGE_REQUEST:
         return _cr_response(db, dt, current_user, op=CHANGE_OP_UPDATE, row_id=record_id, values=payload.values)
 
     try:
-        row = update_row(db.get_bind(), dt, record_id, payload.values, db=db, user=current_user)
+        row = update_row(db.get_bind(), dt, record_id, payload.values, db=db, user=current_user, enforce_row_rules=True)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -275,13 +306,18 @@ def delete_record(
 ) -> Response:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
-    if not _dispatch_or_403(db, dt, current_user):
+    decision = _row_write_decision(db, dt, current_user, record_id)
+    if decision == ROW_WRITE_NOT_FOUND:
+        raise HTTPException(status_code=404, detail="行不存在")
+    if decision == ROW_WRITE_DENIED:
+        raise HTTPException(status_code=403, detail="表级权限不足")
+    if decision == ROW_WRITE_CHANGE_REQUEST:
         return _cr_response(db, dt, current_user, op=CHANGE_OP_DELETE, row_id=record_id, values={})
 
     if soft:
-        ok = trash_row(db.get_bind(), dt, record_id, db=db, user=current_user)
+        ok = trash_row(db.get_bind(), dt, record_id, db=db, user=current_user, enforce_row_rules=True)
     else:
-        ok = delete_row(db.get_bind(), dt, record_id, db=db, user=current_user)
+        ok = delete_row(db.get_bind(), dt, record_id, db=db, user=current_user, enforce_row_rules=True)
 
     if not ok:
         raise HTTPException(status_code=404, detail="行不存在")
