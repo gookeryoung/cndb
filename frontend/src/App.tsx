@@ -1,9 +1,12 @@
 /** SPA 路由配置 — 按页面 lazy import 实现代码分包. */
 
 import { Suspense, lazy, useEffect, useRef } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { App as AntApp } from 'antd'
+import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/store'
+import { workspaceApi } from '@/api'
+import { workspaceLandingSegment } from '@/utils/workspaceType'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import AuthLayout from '@/layouts/AuthLayout'
@@ -46,6 +49,21 @@ function PageFallback() {
   )
 }
 
+/** 工作区根路由落地页 —— 按工作区类型决定进入「数据表」还是「文档」.
+ *
+ * 复用 MainLayout 已缓存的 workspaces 列表（同一 queryKey），不额外发请求；
+ * 列表未就绪时先按默认（数据表）落地，类型到达后自动纠正。
+ */
+function WorkspaceLanding() {
+  const { wid } = useParams<{ wid: string }>()
+  const { data: workspaces = [] } = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: () => workspaceApi.list(),
+  })
+  const ws = workspaces.find(w => String(w.id) === wid)
+  return <Navigate to={workspaceLandingSegment(ws?.workspace_type)} replace />
+}
+
 function AuthenticatedApp() {
   return (
     <ErrorBoundary>
@@ -57,7 +75,7 @@ function AuthenticatedApp() {
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="/w" replace />} />
           <Route path="w" element={<WorkspaceList />} />
-          <Route path="w/:wid" element={<Navigate to="tables" replace />} />
+          <Route path="w/:wid" element={<WorkspaceLanding />} />
           <Route path="w/:wid/tables" element={<TablesList />} />
           <Route path="w/:wid/analytics" element={
             <Suspense fallback={<PageFallback />}><AnalyticsPage /></Suspense>

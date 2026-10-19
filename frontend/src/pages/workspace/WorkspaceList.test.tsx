@@ -10,7 +10,7 @@
 
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
-import { screen, waitFor, fireEvent, render } from '@testing-library/react'
+import { screen, waitFor, fireEvent, render, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -45,6 +45,7 @@ function renderWorkspaceList(initialRoute = '/w') {
           <Routes>
             <Route path="/w" element={<WorkspaceList />} />
             <Route path="/w/:wid/tables" element={<LocationProbe />} />
+            <Route path="/w/:wid/documents" element={<LocationProbe />} />
           </Routes>
         </MemoryRouter>
       </ThemeProvider>
@@ -312,5 +313,71 @@ describe('WorkspaceList 桌面端布局回归', () => {
     expect(getSearchWrapper()).toHaveStyle({ width: '260px' })
     expect(screen.getByTestId('create-workspace-btn').style.flex).toBe('')
     expect(screen.getByTestId('import-workspace-btn').style.flex).toBe('')
+  })
+})
+
+// ─────────────── 工作区类型：创建时可选用，并决定落地页 ───────────────
+
+describe('WorkspaceList 工作区类型', () => {
+  beforeEach(() => {
+    // 创建接口回显请求体中的 workspace_type，模拟后端落库后的返回值
+    server.use(
+      http.post('/api/v1/workspaces', async ({ request }) => {
+        const body = (await request.json()) as Partial<Workspace>
+        return HttpResponse.json({
+          id: 42,
+          name: body.name ?? '新工作区',
+          description: body.description ?? '',
+          visibility: body.visibility ?? 'member',
+          tags: body.tags ?? [],
+          allow_edit: body.allow_edit ?? true,
+          workspace_type: body.workspace_type ?? 'data_doc',
+          created_by_id: 1,
+          created_at: '',
+          updated_at: '',
+        })
+      }),
+    )
+  })
+
+  it('创建弹窗提供类型选择，默认「数据 + 文档」', async () => {
+    renderWorkspaceList()
+    fireEvent.click(await screen.findByTestId('create-workspace-btn'))
+    const modal = await screen.findByTestId('create-workspace-modal')
+
+    expect(within(modal).getByText('工作区类型')).toBeInTheDocument()
+    // 默认选中项渲染为「数据 + 文档」
+    expect(within(modal).getByText('数据 + 文档')).toBeInTheDocument()
+  })
+
+  it('选择「文档」类型创建后落地到文档页 /w/42/documents', async () => {
+    renderWorkspaceList()
+    fireEvent.click(await screen.findByTestId('create-workspace-btn'))
+    const modal = await screen.findByTestId('create-workspace-modal')
+
+    fireEvent.change(screen.getByLabelText('工作区名称'), { target: { value: '文档区' } })
+    // 弹窗内第一个 combobox 为「工作区类型」（其后为公开性）
+    fireEvent.mouseDown(within(modal).getAllByRole('combobox')[0]!)
+    fireEvent.click(await screen.findByText('文档'))
+
+    const okBtn = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement
+    fireEvent.click(okBtn)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/w/42/documents')
+    }, { timeout: 3000 })
+  })
+
+  it('文档类工作区卡片点击进入文档页而非数据表', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([makeWs({ id: 10, name: '纯文档区', workspace_type: 'doc' })])),
+    )
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByText('纯文档区'))
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/documents'))
   })
 })

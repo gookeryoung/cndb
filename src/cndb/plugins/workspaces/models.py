@@ -63,6 +63,27 @@ class WorkspaceVisibility(enum.StrEnum):
     PRIVATE = "private"
 
 
+class WorkspaceType(enum.StrEnum):
+    """工作区类型：决定工作区提供哪些功能模块.
+
+    - DATA_DOC：数据 + 文档（数据表 / 数据分析 / 文档），默认
+    - DATA：仅数据（数据表 / 数据分析，不提供文档）
+    - DOC：仅文档（不提供数据表与数据分析）
+    """
+
+    DATA_DOC = "data_doc"
+    DATA = "data"
+    DOC = "doc"
+
+
+# 工作区类型中文显示名
+WORKSPACE_TYPE_LABELS: dict[str, str] = {
+    WorkspaceType.DATA_DOC.value: "数据 + 文档",
+    WorkspaceType.DATA.value: "数据",
+    WorkspaceType.DOC.value: "文档",
+}
+
+
 # 角色等级映射：数值越大权限越高
 ROLE_RANK: dict[WorkspaceRole, int] = {
     WorkspaceRole.OWNER: 2,
@@ -103,6 +124,14 @@ class Workspace(TimestampMixin, Base):
         nullable=False,
         default=True,
         comment="是否允许成员（EDITOR 及以下）编辑数据",
+    )
+    workspace_type: Mapped[WorkspaceType] = mapped_column(
+        Enum(WorkspaceType),
+        nullable=False,
+        default=WorkspaceType.DATA_DOC,
+        # SQLAlchemy Enum 落库为枚举成员名（DATA_DOC），故 server_default 用 name
+        server_default=WorkspaceType.DATA_DOC.name,
+        comment="工作区类型：数据+文档 / 数据 / 文档",
     )
     storage_quota_bytes: Mapped[int] = mapped_column(
         BigInteger,
@@ -194,9 +223,11 @@ __all__ = [
     "BUILTIN_ROLE_CODES",
     "DEFAULT_STORAGE_QUOTA_BYTES",
     "ROLE_RANK",
+    "WORKSPACE_TYPE_LABELS",
     "Role",
     "Workspace",
     "WorkspaceMember",
     "WorkspaceRole",
+    "WorkspaceType",
     "WorkspaceVisibility",
 ]
