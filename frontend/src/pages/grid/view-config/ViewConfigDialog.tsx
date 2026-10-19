@@ -19,7 +19,9 @@ import type { ViewTabItem } from './viewTabItems'
 
 // ── 类型 ──────────────────────────────────────────
 
-export interface FilterRule { field_name: string; op: string; value?: unknown }
+// FilterRule 定义已下沉到共享的 FilterConditionEditor，此处 re-export 保持既有 import 路径不变
+export type { FilterRule } from './FilterConditionEditor'
+import type { FilterRule } from './FilterConditionEditor'
 export interface SortRule { field_name: string; direction: 'asc' | 'desc' }
 
 export interface ViewConfigDialogProps {
@@ -82,13 +84,6 @@ export default function ViewConfigDialog({
   const filterableFields = fields.filter(f => !f.hidden)
   const sortableFields = fields.filter(f => !f.hidden)
 
-  // ── 筛选规则增删改 ──
-  const addFilter = () => setDraftFilters(prev => [...prev, { field_name: '', op: 'contains' }])
-  const removeFilter = (idx: number) => setDraftFilters(prev => prev.filter((_, i) => i !== idx))
-  const updateFilter = (idx: number, patch: Partial<FilterRule>) => {
-    setDraftFilters(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
-  }
-
   // ── 排序规则增删改 ──
   const addSort = () => setDraftSorts(prev => [...prev, { field_name: '', direction: 'asc' }])
   const removeSort = (idx: number) => setDraftSorts(prev => prev.filter((_, i) => i !== idx))
@@ -137,7 +132,7 @@ export default function ViewConfigDialog({
 
   const viewTabItems = useMemo(() => {
     const items: ViewTabItem[] = [
-      buildFilterTab({ addFilter, draftFilterLogic, draftFilters, filterableFields, removeFilter, setDraftFilterLogic, updateFilter }),
+      buildFilterTab({ draftFilterLogic, draftFilters, filterableFields, setDraftFilters, setDraftFilterLogic }),
       buildSortTab({ addSort, draftSorts, removeSort, sortableFields, updateSort }),
     ]
     // 字段显示 tab（仅 grid）：不进 viewOptionSchema 的原因是交互形态不同——

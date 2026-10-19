@@ -170,9 +170,9 @@ def invalidate_for_event(action: str, workspace_id: int | None) -> int:
         from cndb.core.cache import cache_key, list_cache
 
         cleared = 0
-        if action.startswith("record."):
+        if action.startswith(("record.", "row_rule.")):
             cleared += list_cache.clear(cache_key("records", workspace_id))
-        if action.startswith(("table.", "record.")):
+        if action.startswith(("table.", "record.", "row_rule.")):
             cleared += list_cache.clear(cache_key("tables", workspace_id))
         if action.startswith("document."):
             cleared += list_cache.clear(cache_key("doc-tree", workspace_id))

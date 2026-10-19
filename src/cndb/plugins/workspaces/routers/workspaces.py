@@ -335,7 +335,7 @@ def export_workspace(
 
     from cndb.plugins.documents.models import Document, DocumentTag, Tag
     from cndb.plugins.documents.services.content import latest_version, load_content
-    from cndb.plugins.tables.models import DataField, DataTable, DataView, TablePermission
+    from cndb.plugins.tables.models import DataField, DataTable, DataView, RowPermission, TablePermission
 
     ws = _get_workspace_or_404(workspace_id, db)
     # 全量导出是备份/恢复的一侧，与 import_workspace 对称要求 EDITOR+：
@@ -459,6 +459,19 @@ def export_workspace(
             else None
         )
 
+        # 行级权限规则（tables_rowpermission，ADR 0004 §7-9）：随表导出，
+        # 导入端按新表 id 还原；旧版备份（无该键）缺失时按「无规则」还原
+        row_permissions_data = [
+            {
+                "subject_type": r.subject_type,
+                "subject_id": r.subject_id,
+                "action": r.action,
+                "filters": r.filters,
+                "filter_type": r.filter_type,
+            }
+            for r in db.query(RowPermission).filter(RowPermission.table_id == tbl.id).all()
+        ]
+
         tables_data.append(
             {
                 "id": tbl.id,
@@ -469,6 +482,7 @@ def export_workspace(
                 "rows": rows_data,
                 "links": [],
                 "permission": permission_data,
+                "row_permissions": row_permissions_data,
             }
         )
 

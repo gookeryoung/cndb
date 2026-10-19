@@ -52,6 +52,57 @@ export interface MemberUpdate {
 export interface OwnerTransferPayload {
   user_id: number
 }
+
+// ── 行级权限规则（ADR 0004） ──
+
+/** 授权主体类型：指定成员 / 表级成员档 */
+export type RowSubjectType = 'user' | 'member_role'
+/** 行级动作：可查看 / 可编辑（edit 隐含 view） */
+export type RowActionType = 'view' | 'edit'
+
+/** 行级权限规则（对齐后端 RowRuleResponse） */
+export interface RowPermissionRule {
+  id: number
+  table_id: number
+  subject_type: RowSubjectType
+  subject_id: string
+  action: RowActionType
+  filters: Array<{ field_name: string; op: string; value?: unknown }>
+  filter_type: 'AND' | 'OR'
+  granted_by_id?: number | null
+  /** 主体展示名（user 型为昵称/用户名；member_role 型为「查看者 / 编辑者」） */
+  subject_name: string
+  created_at: string
+  updated_at: string
+}
+
+/** 可授权主体（GET /row-permissions/subjects 数据源） */
+export interface RowRuleSubject {
+  subject_type: RowSubjectType
+  subject_id: string
+  name: string
+}
+
+/** 规则命中行预览结果 */
+export interface RowRulePreviewResponse {
+  matched: number
+  sample: Array<Record<string, unknown>>
+}
+
+/** 创建行级权限规则请求体 */
+export interface RowRuleCreatePayload {
+  subject_type: RowSubjectType
+  subject_id: string
+  action: RowActionType
+  filters: Array<{ field_name: string; op: string; value?: unknown }>
+  filter_type: 'AND' | 'OR'
+}
+
+/** 修改行级权限规则请求体（主体 / 动作不可改） */
+export interface RowRuleUpdatePayload {
+  filters?: Array<{ field_name: string; op: string; value?: unknown }>
+  filter_type?: 'AND' | 'OR'
+}
 /** 视图精简摘要（嵌入 TableDetail） */
 export interface ViewBrief {
   id: ID; name: string; view_type: string; is_default: boolean

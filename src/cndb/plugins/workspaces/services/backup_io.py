@@ -65,6 +65,9 @@ def _import_backup_into_workspace(
         DataField,
         DataTable,
         DataView,
+        RowAction,
+        RowPermission,
+        RowSubject,
         TablePermission,
         ViewVisibility,
         ensure_default_view,
@@ -294,6 +297,27 @@ def _import_backup_into_workspace(
                         hidden_fields=perm_data.get("hidden_fields", {}) or {},
                         row_filters=perm_data.get("row_filters", []) or [],
                         row_filter_type=perm_data.get("row_filter_type", "AND") or "AND",
+                    )
+                )
+
+            # 行级权限规则还原（ADR 0004 §7-9）：旧版备份无该键 → 按「无规则」还原；
+            # subject_id 为 user id 字符串或 read/write 常量，原样保留（孤儿规则自动失效，§7-10）
+            for rd in tbl_data.get("row_permissions", []) or []:
+                if not isinstance(rd, dict):
+                    continue
+                subject_type = str(rd.get("subject_type") or "")
+                action = str(rd.get("action") or "")
+                if subject_type not in tuple(RowSubject) or action not in tuple(RowAction):
+                    continue
+                db.add(
+                    RowPermission(
+                        table_id=table.id,
+                        subject_type=subject_type,
+                        subject_id=str(rd.get("subject_id") or ""),
+                        action=action,
+                        filters=rd.get("filters", []) or [],
+                        filter_type=rd.get("filter_type", "AND") or "AND",
+                        granted_by_id=current_user.id,
                     )
                 )
 

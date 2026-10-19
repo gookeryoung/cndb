@@ -45,6 +45,9 @@ logger = logging.getLogger(__name__)
 MEMBER_ROLE_WRITE = "write"
 MEMBER_ROLE_READ = "read"
 
+#: member_role 主体档位 → 展示名（前端选择器 / 规则列表）
+MEMBER_ROLE_LABELS: dict[str, str] = {MEMBER_ROLE_READ: "查看者", MEMBER_ROLE_WRITE: "编辑者"}
+
 #: 规则 filters 里可能引用隐藏字段的键
 _FIELD_NAME_KEYS = ("field_name", "field")
 #: 规则 filters 里的嵌套分组键
@@ -231,12 +234,88 @@ def can_edit_row(db: Session, table: DataTable, sa_table: Any, row_id: int, user
     return _row_in_scope(db, sa_table, row_id, row_edit_scope_where(db, table, sa_table, user))
 
 
+# ── 授予时的强制约束（ADR 0004 §6）────────────────────
+
+
+def _parse_user_id(subject_id: Any) -> int | None:
+    try:
+        return int(subject_id)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_workspace_member(db: Session, workspace_id: int, user_id: int) -> bool:
+    from cndb.plugins.workspaces.models import WorkspaceMember
+
+    return (
+        db.query(WorkspaceMember)
+        .filter(WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user_id)
+        .first()
+        is not None
+    )
+
+
+def assert_row_rule_valid(
+    db: Session,
+    table: DataTable,
+    operator: User,
+    *,
+    subject_type: str,
+    subject_id: str,
+    action: str,
+) -> None:
+    """授予行级规则时的强制约束，任一不满足即抛 ``HTTPException``（ADR 0004 §6）.
+
+    - ``action`` ∈ {``view``, ``edit``}；``subject_type`` ∈ {``user``, ``member_role``}；
+    - ``member_role`` 型：``subject_id`` ∈ {``read``, ``write``}；
+    - ``user`` 型：必须是**本工作区成员** ∧ 对该表有 ``READ``（生效权 = min(行规则, 表 READ)）；
+    - 不允许给自己配规则（与 ADR 0003 §4 的「target != operator」一致）。
+    """
+    from fastapi import HTTPException
+
+    if str(action) not in tuple(RowAction):
+        raise HTTPException(status_code=422, detail="动作只能是 view 或 edit")
+    if str(subject_type) == RowSubject.MEMBER_ROLE:
+        if str(subject_id) not in (MEMBER_ROLE_READ, MEMBER_ROLE_WRITE):
+            raise HTTPException(status_code=422, detail="成员档只能是 read 或 write")
+        return
+    if str(subject_type) == RowSubject.USER:
+        uid = _parse_user_id(subject_id)
+        if uid is None:
+            raise HTTPException(status_code=422, detail="成员 id 非法")
+        if uid == int(operator.id):
+            raise HTTPException(status_code=400, detail="无需给自己配置行级规则")
+        if not _is_workspace_member(db, table.workspace_id, uid):
+            raise HTTPException(status_code=422, detail="只能授权给本工作区成员")
+        target = db.get(User, uid)
+        if target is None:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        if not check_action(db, table, target, TableAction.READ):
+            raise HTTPException(status_code=422, detail="该成员无此表查看权限，无法授予行级规则")
+        return
+    raise HTTPException(status_code=422, detail="主体类型只能是 user 或 member_role")
+
+
+def row_rule_subject_label(db: Session, rule: RowPermission) -> str:
+    """规则的**主体展示名**（member_role → 档位中文名；user → 昵称 / 用户名）."""
+    if str(rule.subject_type) == RowSubject.MEMBER_ROLE:
+        return MEMBER_ROLE_LABELS.get(str(rule.subject_id), str(rule.subject_id))
+    uid = _parse_user_id(rule.subject_id)
+    user = db.get(User, uid) if uid is not None else None
+    if user is None:
+        return str(rule.subject_id)
+    return user.nickname or user.username
+
+
 __all__ = [
+    "MEMBER_ROLE_LABELS",
     "MEMBER_ROLE_READ",
     "MEMBER_ROLE_WRITE",
     "applicable_row_rules",
+    "assert_row_rule_valid",
     "can_edit_row",
     "can_view_row",
     "row_edit_scope_where",
     "row_read_scope_where",
+    "row_rule_subject_label",
 ]

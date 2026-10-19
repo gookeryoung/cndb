@@ -410,6 +410,70 @@ class PermissionResponse(BaseModel):
     updated_at: datetime
 
 
+# ── RowPermission schemas（行级权限规则，ADR 0004）───────
+
+
+class RowRuleCreate(BaseModel):
+    """创建行级权限规则.
+
+    ``subject_type`` + ``subject_id`` + ``action`` 是唯一键（D6），创建后不可改；
+    改条件用 ``PATCH``（只接受 ``filters`` / ``filter_type``）。
+    """
+
+    subject_type: Literal["user", "member_role"]
+    subject_id: str
+    action: Literal["view", "edit"]
+    filters: list[dict[str, Any]] = Field(default_factory=list)
+    filter_type: Literal["AND", "OR"] = "AND"
+
+
+class RowRuleUpdate(BaseModel):
+    """修改行级权限规则（仅条件，主体 / 动作不可改）."""
+
+    filters: list[dict[str, Any]] | None = None
+    filter_type: Literal["AND", "OR"] | None = None
+
+
+class RowRuleResponse(BaseModel):
+    """行级权限规则响应."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    table_id: int
+    subject_type: str
+    subject_id: str
+    action: str
+    filters: list[dict[str, Any]]
+    filter_type: str
+    granted_by_id: int | None = None
+    # 主体展示名（user 型为昵称/用户名，member_role 型为「查看者 / 编辑者」）
+    subject_name: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+
+class RowRuleSubjectOut(BaseModel):
+    """可授权主体（``GET /row-permissions/subjects`` 的数据源）."""
+
+    subject_type: str  # user | member_role
+    subject_id: str
+    name: str
+
+
+class RowRulePreviewRequest(BaseModel):
+    """规则命中行 dry-run 预览请求（只传条件，命中行与主体 / 动作无关）."""
+
+    filters: list[dict[str, Any]] = Field(default_factory=list)
+    filter_type: Literal["AND", "OR"] = "AND"
+
+
+class RowRulePreviewResponse(BaseModel):
+    """预览结果：命中行数 + 样例若干（均已在调用者读范围内）."""
+
+    matched: int
+    sample: list[dict[str, Any]] = Field(default_factory=list)
+
+
 # ── TableMember / Owner Transfer schemas ───────────────
 
 
@@ -461,6 +525,12 @@ __all__ = [
     "RecordListRequest",
     "RecordListResponse",
     "RecordUpdate",
+    "RowRuleCreate",
+    "RowRulePreviewRequest",
+    "RowRulePreviewResponse",
+    "RowRuleResponse",
+    "RowRuleSubjectOut",
+    "RowRuleUpdate",
     "ShareableMemberOut",
     "TableCreate",
     "TableDetailResponse",

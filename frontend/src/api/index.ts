@@ -15,7 +15,7 @@
 
 export { authApi } from './auth'
 export { workspaceApi } from './workspaces'
-export { tableApi, fieldApi, auditApi, permissionApi, tableMembersApi } from './tables'
+export { tableApi, fieldApi, auditApi, permissionApi, tableMembersApi, rowPermissionApi } from './tables'
 export { recordApi } from './records'
 export { viewApi } from './views'
 export { importApi, exportApi, fileApi } from './importExport'
