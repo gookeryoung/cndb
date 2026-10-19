@@ -114,6 +114,9 @@ exclude = [
 [tool.fspack]
 entry-app-types = { cndb = "cli", cndbw = "gui" }
 web-static-dirs = ["src/cndb/static"]
+# 文档种子是 .md 文件：不声明 data-dirs 会被 fspack 的元数据排除规则（*.md/docs）
+# 剥离，打包版 seed 只剩文档文件夹结构、没有文档正文
+data-dirs = ["examples/datasets"]
 # gui = Windows 上用 pythonw 无控制台；Linux/macOS 用 python + DISPLAY
 
 [dependency-groups]
