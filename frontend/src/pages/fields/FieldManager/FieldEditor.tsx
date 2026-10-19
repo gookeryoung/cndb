@@ -26,10 +26,12 @@ interface FieldEditorProps {
   onCancel: () => void
   /** 切换字段类型时回调（父层更新 fieldType 状态） */
   onFieldTypeChange: (type: FieldType) => void
+  /** 表单值变化回调（父层借此判断用户是否已改动，避免异步回流覆盖编辑） */
+  onValuesChange?: () => void
 }
 
 /** 新建 / 编辑字段的内部 Modal（Modal 与嵌入模式共用） */
-export default function FieldEditor({ open, editTarget, fieldType, form, wid, tid, tables, submitPending, onSubmit, onCancel, onFieldTypeChange }: FieldEditorProps) {
+export default function FieldEditor({ open, editTarget, fieldType, form, wid, tid, tables, submitPending, onSubmit, onCancel, onFieldTypeChange, onValuesChange }: FieldEditorProps) {
   return (
     <Modal
       title={editTarget ? '编辑字段' : '新建字段'}
@@ -42,7 +44,7 @@ export default function FieldEditor({ open, editTarget, fieldType, form, wid, ti
       okText={editTarget ? '保存' : '创建'}
       cancelText="取消"
     >
-      <Form form={form} layout="vertical" preserve={false}>
+      <Form form={form} layout="vertical" preserve={false} onValuesChange={onValuesChange}>
         <Row gutter={12}>
           <Col span={12}>
             <Form.Item name="name" label="字段名" rules={[{ required: true, message: '请输入字段名' }]}>
