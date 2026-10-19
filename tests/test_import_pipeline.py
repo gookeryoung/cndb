@@ -1979,6 +1979,53 @@ class TestImporterUpsertAnalyze:
         unchanged = next(p for p in rpt["update_preview"] if p["match_key_values"]["code"] == "A002")
         assert unchanged["field_diffs"] == {}
 
+    def test_link_field_unchanged_not_flagged(self, test_session):
+        """关联字段未变化的行不应被判为有变更（回归：旧关联值未从关联表读取）."""
+        engine, session = test_session
+        from cndb.plugins.tables.services.core import records as rec
+        from cndb.plugins.tables.services.core.links import set_links
+
+        # 目标表：被关联的负责人
+        target = DataTable(workspace_id=1, name="负责人表")
+        target.ensure_db_name()
+        session.add(target)
+        session.commit()
+        session.refresh(target)
+        name_field = _add_field(session, target, "name", "text", order=0)
+        session.commit()
+        ddl.create_table(engine, target)
+        target_ids = rec.bulk_create(engine, target, [{"name": "张三"}, {"name": "李四"}], db=session)
+
+        # 源表：编号 + 关联字段
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        link_field = _add_field(
+            session,
+            table,
+            "负责人",
+            "link",
+            config={"target_table_id": target.id, "match_field_id": name_field.id, "display_field_id": name_field.id},
+            order=1,
+        )
+        session.commit()
+        ddl.create_table(engine, table)
+
+        # A001 关联张三（不变）；A002 当前关联张三，文件中改为李四（变化）
+        existing_ids = rec.bulk_create(engine, table, [{"code": "A001"}, {"code": "A002"}], db=session)
+        set_links(engine, link_field, existing_ids[0], [target_ids[0]], db=session)
+        set_links(engine, link_field, existing_ids[1], [target_ids[0]], db=session)
+
+        imp = Importer(engine, session, table)
+        rpt = imp.analyze("code,负责人\nA001,张三\nA002,李四\n", "csv", match_keys=["code"]).report
+
+        assert rpt["update_count"] == 2
+        assert rpt["update_changed_count"] == 1
+        assert rpt["update_no_change_count"] == 1
+        changed = next(p for p in rpt["update_preview"] if p["match_key_values"]["code"] == "A002")
+        assert set(changed["field_diffs"].keys()) == {"负责人"}
+        unchanged = next(p for p in rpt["update_preview"] if p["match_key_values"]["code"] == "A001")
+        assert unchanged["field_diffs"] == {}
+
     def test_no_match_keys_zero_changed_counts(self, test_session):
         """V6: 未选参考列时 upsert_result 为 None，报告回退统计全 0."""
         engine, session = test_session
