@@ -1127,6 +1127,33 @@ describe('FieldManager 关联字段对话框数据同步', () => {
         expect(document.querySelector('.fm-ref-empty')).toBeNull()
     })
 
+    it('对话框打开后归属该关联字段的 lookup 行才异步到达时，引用字段区应随之反推同步', async () => {
+        // 首次进入编辑页面时 fields 可能尚未包含该关联字段名下的 lookup 行（分两批回流），
+        // 同步指纹若只看关联字段自身的 config，会误判「无变化」而跳过回填，
+        // 「引用字段」区就停在打开时的空态 —— 即「首次进入无法同步数据到页面」。
+        const ui = (f: any) => (
+            <FieldManager open wid={WID} tid={TID} fields={f} onClose={() => { }} onChanged={() => { }} embedded />
+        )
+        const v1 = [
+            { id: 5, name: '部门', field_type: 'link', order: 0, config: { target_table_id: 30, multiple: false } },
+        ] as any
+        const v2 = [
+            { id: 5, name: '部门', field_type: 'link', order: 0, config: { target_table_id: 30, multiple: false } },
+            { id: 9, name: '负责人', field_type: 'lookup', order: 1, config: { via_link_field_id: 5, source_field_id: 12, source_field_type: 'text' } },
+        ] as any
+        const r = renderProviders(ui(v1), { initialAuth: { user: { id: 1, username: 'alice', role: 'system_admin' } as any, token: 'fake' } })
+        clickEditRow('部门')
+        await waitFor(() => expect(targetTableText()).toBe('项目表'))
+        // 打开时 lookup 行尚未到达 → 引用字段区为空态
+        expect(document.querySelector('.fm-ref-list')).toBeNull()
+
+        // lookup 行异步回流后，引用字段区应同步反推出「负责人」
+        r.rerender(ui(v2))
+        await waitFor(() => {
+            expect(document.querySelector('.fm-ref-list')?.textContent).toContain('负责人')
+        })
+    })
+
     it('字段列表中引用字段行只读：不渲染编辑/删除按钮，也不提供拖拽手柄', () => {
         const fields = [
             { id: 5, name: '部门', field_type: 'link', order: 0, config: { target_table_id: 30 } },
