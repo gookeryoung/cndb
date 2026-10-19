@@ -5,7 +5,7 @@
  *   FieldEditor.tsx     — 新建 / 编辑字段 Modal（含类型感知默认值输入）
  *   typeConfigPanel.tsx — 类型专属 config 编辑区（数字/日期/选择/关联/附件）
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Modal, Button, Tag, Input, Select, Checkbox, Tooltip, App as AntApp, Alert, Empty, Spin, Divider, Form, Radio } from 'antd'
 import { MinusOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -38,6 +38,66 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   const [form] = Form.useForm()
   const [fieldType, setFieldType] = useState<FieldType | undefined>()
   const sorted = useMemo(() => [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [fields])
+
+  // ── 编辑对话框「最新数据」同步 ──
+  // fields 常因保存后父层异步 refetch 才更新：若在该窗口内点开编辑，或对话框已打开时才回流，
+  // 旧实现只在点击编辑那一刻回填一次（快照），会导致对话框停留在旧配置、需再点一次编辑才对。
+  // 这里改为在对话框打开期间监听 fields 变化并重新回填。
+  const seededSigRef = useRef<string>('')
+  const dirtyRef = useRef(false)
+  const programmaticRef = useRef(false)
+
+  /** 编辑目标始终以 fields 里的最新版本为准（找不到时回退到点击时的快照） */
+  const liveEditTarget = useMemo(
+    () => (editTarget ? fields.find(f => String(f.id) === String(editTarget.id)) ?? editTarget : null),
+    [editTarget, fields],
+  )
+
+  /** 组装编辑用 config。关联字段缺失 reference_fields（种子/历史数据）时，从同表归属于它的
+   *  lookup 行按 order 反推，保证对话框「引用字段」与字段列表一致，也避免保存时以空列表覆盖、
+   *  误删这些已存在的引用字段。 */
+  const buildEditConfig = (f: Field): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = { ...defaultConfigForType(f.field_type), ...(f.config ?? {}) }
+    if (f.field_type === 'link' && !('reference_fields' in (f.config ?? {}))) {
+      const derived = fields
+        .filter(l => l.field_type === 'lookup' && String(l.config?.via_link_field_id) === String(f.id))
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map(l => l.config?.source_field_id)
+        .filter((x): x is number => typeof x === 'number')
+      cfg.reference_fields = derived
+    }
+    return cfg
+  }
+
+  /** 把字段值回填到表单；标记为程序化写入，避免被 onValuesChange 误判为用户改动 */
+  const seedEditForm = (f: Field) => {
+    programmaticRef.current = true
+    setFieldType(f.field_type)
+    form.setFieldsValue({
+      name: f.name,
+      field_type: f.field_type,
+      required: f.required,
+      hidden: f.hidden,
+      is_unique: f.is_unique ?? false,
+      default_value: f.default_value ?? '',
+      config: buildEditConfig(f),
+    })
+    programmaticRef.current = false
+    dirtyRef.current = false
+  }
+
+  // 对话框打开期间：fields 更新且用户尚未改动表单时，同步为最新配置
+  useEffect(() => {
+    if (!innerOpen || !liveEditTarget) return
+    const sig = JSON.stringify({
+      n: liveEditTarget.name, t: liveEditTarget.field_type, r: liveEditTarget.required,
+      h: liveEditTarget.hidden, u: liveEditTarget.is_unique, d: liveEditTarget.default_value,
+      c: liveEditTarget.config ?? {},
+    })
+    if (sig === seededSigRef.current || dirtyRef.current) return
+    seededSigRef.current = sig
+    seedEditForm(liveEditTarget)
+  }, [innerOpen, liveEditTarget, fields]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 从其他表引入对话框状态 ──
   const [importOpen, setImportOpen] = useState(false)
@@ -162,7 +222,11 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   function closeDialog() {
     // 先 resetFields（此时内层 Modal 的 Form 还在 DOM 里），再关闭 Modal；
     // 若先 setInnerOpen(false) 则 Form 可能已被 Modal 卸载，form 实例找不到 Form 元素而报 warning.
+    programmaticRef.current = true
     form.resetFields()
+    programmaticRef.current = false
+    seededSigRef.current = ''
+    dirtyRef.current = false
     setInnerOpen(false)
     setEditTarget(null)
     setFieldType(undefined)
@@ -192,30 +256,23 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   function openDialog(target: Field | null) {
     setEditTarget(target)
     setInnerOpen(true)
+    // 重置同步指纹：确保每次打开都重新回填（含重开同一字段的场景）
+    seededSigRef.current = ''
+    dirtyRef.current = false
     if (target) {
-      // 先设置 fieldType，让 ConfigEditor 也能拿到正确类型
+      // 先设置 fieldType，让 ConfigEditor 也能拿到正确类型；
+      // 实际回填交由下方 effect（在 Modal + Form 挂载后执行，并随 fields 更新重新同步）
       setFieldType(target.field_type)
-      // 用 setTimeout 推入下一个事件循环，确保内层 Modal + Form 完成首次挂载
-      // 同步调用 setFieldsValue 会因 Form.Item 尚未挂载而丢失值
-      setTimeout(() => {
-        form.setFieldsValue({
-          name: target.name,
-          field_type: target.field_type,
-          required: target.required,
-          hidden: target.hidden,
-          is_unique: target.is_unique ?? false,
-          default_value: target.default_value ?? '',
-          // 类型默认值打底、已存值覆盖：存量/引入字段缺失的 config 键（如 auto_fill）
-          // 补上默认值，保证编辑时对应控件（Radio 等）总有激活态
-          config: { ...defaultConfigForType(target.field_type), ...(target.config ?? {}) },
-        })
-      }, 0)
     } else {
-      // 同样延迟到下一个 tick —— setInnerOpen(true) 是异步批处理，
+      // 新建：延迟到下一个 tick reset —— setInnerOpen(true) 是异步批处理，
       // 在 React 提交更新前 Form 还未挂载，此时 form.resetFields() 会触发
       // "Instance created by useForm is not connected to any Form element" warning.
       setFieldType(undefined)
-      setTimeout(() => { form.resetFields() }, 0)
+      setTimeout(() => {
+        programmaticRef.current = true
+        form.resetFields()
+        programmaticRef.current = false
+      }, 0)
     }
   }
 
@@ -249,7 +306,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   const editDialog = (
     <FieldEditor
       open={innerOpen}
-      editTarget={editTarget}
+      editTarget={liveEditTarget}
       fieldType={fieldType}
       form={form}
       wid={wid}
@@ -259,6 +316,8 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       onSubmit={handleSubmit}
       onCancel={closeDialog}
       onFieldTypeChange={setFieldType}
+      // 用户改动表单后置脏：此时 fields 的异步回流不再覆盖用户正在编辑的内容
+      onValuesChange={() => { if (!programmaticRef.current) dirtyRef.current = true }}
     />
   )
 

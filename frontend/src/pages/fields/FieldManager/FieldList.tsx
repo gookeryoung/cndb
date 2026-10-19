@@ -165,8 +165,11 @@ function SortableFieldRow({ field, ownerLinkName, onEdit, onRemove, isReordering
     id: String(field.id),
   })
 
+  // 引用（lookup）字段由关联字段配置统一管理：列表里仅展示（含归属标注），不提供独立的
+  // 编辑/删除/拖拽入口，避免与关联配置重复、冲突
+  const isManagedLookup = field.field_type === 'lookup'
   // 引用（lookup）字段展示后端同步到的源字段类型：源字段 文本→单选 后这里随之变为「引用 · 单选」
-  const lookupSourceType = field.field_type === 'lookup' && typeof field.config?.source_field_type === 'string'
+  const lookupSourceType = isManagedLookup && typeof field.config?.source_field_type === 'string'
     ? field.config.source_field_type as string
     : ''
   const typeLabel = lookupSourceType
@@ -182,15 +185,20 @@ function SortableFieldRow({ field, ownerLinkName, onEdit, onRemove, isReordering
 
   return (
     <div ref={setNodeRef} style={style} className="fm-row">
-      <span
-        className="fm-row-drag-handle"
-        title="拖拽调整字段顺序"
-        {...attributes}
-        {...listeners}
-        style={{ cursor: isReordering ? 'grabbing' : 'grab', color: 'var(--cn-text-muted)', marginRight: 4 }}
-      >
-        <HolderOutlined />
-      </span>
+      {isManagedLookup ? (
+        // 占位保持行对齐；引用字段顺序由关联配置管理，不提供拖拽手柄
+        <span className="fm-row-drag-handle" style={{ width: 16, marginRight: 4 }} aria-hidden />
+      ) : (
+        <span
+          className="fm-row-drag-handle"
+          title="拖拽调整字段顺序"
+          {...attributes}
+          {...listeners}
+          style={{ cursor: isReordering ? 'grabbing' : 'grab', color: 'var(--cn-text-muted)', marginRight: 4 }}
+        >
+          <HolderOutlined />
+        </span>
+      )}
       <span className="fm-row-icon" title={getFieldTypeLabel(field.field_type)}>
         {FIELD_TYPE_ICONS[field.field_type] ?? <TagOutlined />}
       </span>
@@ -216,21 +224,25 @@ function SortableFieldRow({ field, ownerLinkName, onEdit, onRemove, isReordering
         {field.hidden && <Tag style={{ marginInlineEnd: 0 }}>隐藏</Tag>}
       </span>
       <span className="fm-row-actions">
-        <Tooltip title="编辑字段类型与配置">
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={onEdit} />
-        </Tooltip>
-        {/* 不能在 Popconfirm 内嵌 Tooltip：Tooltip 浮层会覆盖确认弹层导致无法确认，
-            提示文案并入 Popconfirm 标题 */}
-        <Popconfirm
-          title={`删除字段 "${field.name}" ？`}
-          description="列及其数据将从表中移除，不可恢复"
-          okText="删除"
-          okType="danger"
-          cancelText="取消"
-          onConfirm={onRemove}
-        >
-          <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label={`删除字段 ${field.name}`} />
-        </Popconfirm>
+        {!isManagedLookup && (
+          <>
+            <Tooltip title="编辑字段类型与配置">
+              <Button size="small" type="text" icon={<EditOutlined />} onClick={onEdit} />
+            </Tooltip>
+            {/* 不能在 Popconfirm 内嵌 Tooltip：Tooltip 浮层会覆盖确认弹层导致无法确认，
+                提示文案并入 Popconfirm 标题 */}
+            <Popconfirm
+              title={`删除字段 "${field.name}" ？`}
+              description="列及其数据将从表中移除，不可恢复"
+              okText="删除"
+              okType="danger"
+              cancelText="取消"
+              onConfirm={onRemove}
+            >
+              <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label={`删除字段 ${field.name}`} />
+            </Popconfirm>
+          </>
+        )}
       </span>
     </div>
   )
