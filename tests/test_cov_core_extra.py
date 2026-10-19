@@ -53,7 +53,8 @@ class TestCacheExtra:
         assert cache.get("b") == 2
 
         cache.set("exp", 1, 0.0001)
-        time.sleep(0.01)
+        # Windows 的 monotonic 时钟精度约 15.6ms，sleep(0.01) 可能尚未跨过一个 tick
+        time.sleep(0.05)
         assert cache.purge_expired() >= 1
 
     def test_get_or_set(self) -> None:
