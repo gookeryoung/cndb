@@ -25,11 +25,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import or_
+from sqlalchemy import and_, false, or_, select
 from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.models import DataTable, RowPermission, RowSubject
+from cndb.plugins.tables.models import DataTable, RowAction, RowPermission, RowSubject
 from cndb.plugins.tables.services.core.access import (
     TableAction,
     check_action,
@@ -167,9 +167,76 @@ def row_read_scope_where(db: Session, table: DataTable, sa_table: Any, user: Use
     return or_(*parts)
 
 
+def row_edit_scope_where(db: Session, table: DataTable, sa_table: Any, user: User | None = None) -> Any | None:
+    """合成写范围 WHERE（ADR 0004 §3）：``OR(默认档 if base_edit else ∅, edit 规则命中)``.
+
+    返回 ``None`` 表示**无行限制**（全表可写）；返回恒假条件（``false()``）表示**无任何可写行**
+    （仅有 ``view`` 规则 / 无任何写侧开放）。管理员豁免返回 None。
+
+    要点：
+    - ``base_edit = check_action(EDIT_RECORDS)``：无表编辑权的用户，默认档行不可直编（避免 viewer 误得写权）；
+    - ``edit`` 规则的写权**独立于表 EDIT_RECORDS**（D2）：命中行即使无表编辑权也可写；
+    - 默认档为空且 ``base_edit`` 为真 → 全表可写（返回 None）。
+    """
+    from cndb.plugins.tables.services.core.query import compile_filters
+
+    if db is None:
+        return None
+    if user is not None and row_filters_bypass(db, table, user):
+        return None
+
+    base_edit = user is not None and check_action(db, table, user, TableAction.EDIT_RECORDS)
+    parts: list[Any] = []
+    if base_edit:
+        scope = get_row_scope(db, table)
+        if not scope:
+            # 有表编辑权且无默认档 → 全表可写（无行限制）
+            return None
+        parts.append(compile_filters(table, sa_table, scope, row_filter_conjunction(db, table)))
+
+    rules = applicable_row_rules(db, table, user)
+    hidden = get_hidden_field_names(db, table, user) if user is not None else set()
+    for rule in rules:
+        if rule.action != RowAction.EDIT:
+            continue
+        clause = _compile_rule_scope(table, sa_table, rule, hidden)
+        if clause is not None:
+            parts.append(clause)
+
+    if not parts:
+        # 无默认档可用（无表编辑权）且无命中 edit 规则 → 无任何可写行
+        return false()
+    if len(parts) == 1:
+        return parts[0]
+    return or_(*parts)
+
+
+def _row_in_scope(db: Session, sa_table: Any, row_id: int, scope: Any | None) -> bool:
+    """单行是否落在给定行范围条件内（含软删除过滤）；scope=None 表示无行限制."""
+    engine: Any = db.get_bind()
+    where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
+    if scope is not None:
+        where.append(scope)
+    with engine.connect() as conn:
+        return conn.execute(select(sa_table.c.id).where(and_(*where))).first() is not None
+
+
+def can_view_row(db: Session, table: DataTable, sa_table: Any, row_id: int, user: User | None = None) -> bool:
+    """该行是否落在调用者的**读范围**内（读范围外的行按不存在处理，I6）."""
+    return _row_in_scope(db, sa_table, row_id, row_read_scope_where(db, table, sa_table, user))
+
+
+def can_edit_row(db: Session, table: DataTable, sa_table: Any, row_id: int, user: User | None = None) -> bool:
+    """该行是否落在调用者的**写范围**内（可直编）."""
+    return _row_in_scope(db, sa_table, row_id, row_edit_scope_where(db, table, sa_table, user))
+
+
 __all__ = [
     "MEMBER_ROLE_READ",
     "MEMBER_ROLE_WRITE",
     "applicable_row_rules",
+    "can_edit_row",
+    "can_view_row",
+    "row_edit_scope_where",
     "row_read_scope_where",
 ]
