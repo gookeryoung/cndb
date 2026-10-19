@@ -9,10 +9,20 @@ DEV_HOST ?= 0.0.0.0
 DEV_PORT ?= 8772
 
 # CPU 档位映射：≤1 核→2 worker，2-3 核→4，其余→8（约 min(cpu*2, 8)）
+# 云端容器常见「宿主核数多、cgroup 配额少」，直接按宿主核数开会超订（反而更慢）；
+# 优先读 cgroup 配额（v2 cpu.max / v1 cfs_quota÷cfs_period），取不到再退回宿主核数。
 ifeq ($(OS),Windows_NT)
 CPUS := $(NUMBER_OF_PROCESSORS)
 else
-CPUS := $(shell nproc 2>/dev/null || echo 4)
+CPUS := $(shell \
+	c=$$(awk '$$1!="max" && $$1+0>0 {printf "%d", $$1/$$2}' /sys/fs/cgroup/cpu.max 2>/dev/null); \
+	if [ -z "$$c" ]; then \
+		q=$$(cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us 2>/dev/null); \
+		p=$$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us 2>/dev/null); \
+		if [ -n "$$q" ] && [ "$$q" -gt 0 ] 2>/dev/null && [ -n "$$p" ] && [ "$$p" -gt 0 ] 2>/dev/null; then c=$$((q/p)); fi; \
+	fi; \
+	if [ -z "$$c" ] || [ "$$c" -lt 1 ] 2>/dev/null; then c=$$(nproc 2>/dev/null || echo 4); fi; \
+	echo $$c)
 endif
 PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 

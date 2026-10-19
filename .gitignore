@@ -14,7 +14,6 @@ wheels/
 .coverage.*
 htmlcov/
 coverage.xml
-.tox/
 
 # 工具缓存
 .eslintcache/
