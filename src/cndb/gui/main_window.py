@@ -28,7 +28,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Any, TextIO, cast, override
 
 from cndb.gui.log_handler import QueueStdout, redirect_output, run_in_thread, schedule_log_flush
-from cndb.gui.settings import GuiSettings, load_settings, save_settings
+from cndb.gui.settings import GUI_SETTINGS_FILE, GuiSettings, load_settings, save_settings
 
 # ── 日志文本 Tag 配置（终端风格配色）──
 LOG_TAGS: dict[str, tuple[str, str]] = {
@@ -186,20 +186,39 @@ class CndbMainWindow:
         self.root.after(0, lambda: self.status_var.set(text))
 
     def _on_close(self) -> None:
-        """关闭窗口：持久化所有界面设置与窗口位置，再停止并销毁."""
-        self._persist_settings()
+        """关闭窗口：持久化所有界面设置与窗口位置，再停止并销毁.
+
+        持久化失败绝不能阻止关窗：否则用户会遇到「点了关闭没反应、控制台
+        反复刷 traceback」的死循环。失败时只弹一次提示并继续关闭。
+        """
+        saved = False
+        with contextlib.suppress(Exception):
+            saved = self._persist_settings()
+        if not saved:
+            with contextlib.suppress(Exception):
+                messagebox.showwarning(
+                    "界面设置未保存",
+                    f"无法写入配置文件：\n{GUI_SETTINGS_FILE}\n\n"
+                    "文件可能为只读、被其他程序占用或目录不可写。\n"
+                    "窗口仍将关闭，但本次界面调整下次启动不会恢复。",
+                )
         if self._server_proc is not None:
             with contextlib.suppress(Exception):
                 self._server_proc.terminate()
-        self.root.destroy()
+        with contextlib.suppress(Exception):
+            self.root.destroy()
 
-    def _persist_settings(self) -> None:
-        """把主窗口几何与各 Tab 界面设置收集进 settings 并写入配置文件."""
+    def _persist_settings(self) -> bool:
+        """把主窗口几何与各 Tab 界面设置收集进 settings 并写入配置文件.
+
+        Returns:
+            bool: 设置是否成功落盘；失败原因已由 ``save_settings`` 记录告警日志。
+        """
         with contextlib.suppress(Exception):
             self.settings.window_geometry = self.root.geometry()
         for tab in (self.tab_serve, self.tab_backup, self.tab_info):
             tab.persist(self.settings)
-        save_settings(self.settings)
+        return save_settings(self.settings)
 
     def run(self) -> None:
         # 切换到主窗口的 stdout/stderr（只在 GUI 运行期间重定向，避免影响子进程）
