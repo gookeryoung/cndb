@@ -141,6 +141,203 @@ class TestCmdCreate:
         assert "至少 6 位" in str(ei.value)
 
 
+# ── cmd_edit ─
+
+
+def _edit_ns(target: str, **kwargs) -> argparse.Namespace:
+    """构造 cmd_edit 的 Namespace，未指定字段默认「不改」."""
+    base = {
+        "username": None,
+        "email": None,
+        "phone": None,
+        "nickname": None,
+        "role": None,
+        "password": None,
+        "activate": False,
+        "deactivate": False,
+        "is_superuser": None,
+    }
+    base.update(kwargs)
+    base["target"] = target
+    return _ns(**base)
+
+
+class TestCmdEdit:
+    def test_edit_nickname_and_phone(self, cli_db):
+        from cndb.cli.users import _get_session, cmd_create, cmd_edit
+        from cndb.plugins.accounts.models import User
+
+        cmd_create(_ns(username="ed1", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        result = cmd_edit(_edit_ns("ed1", nickname="新昵称", phone="13900000000"))
+
+        assert result.username == "ed1"
+        assert any("nickname" in c for c in result.changes)
+        assert any("phone" in c for c in result.changes)
+
+        db = _get_session()
+        try:
+            u = db.query(User).filter(User.username == "ed1").first()
+            assert u is not None
+            assert u.nickname == "新昵称"
+            assert u.phone == "13900000000"
+        finally:
+            db.close()
+
+    def test_edit_role_change(self, cli_db):
+        from cndb.cli.users import _get_session, cmd_create, cmd_edit
+        from cndb.plugins.accounts.models import User
+
+        cmd_create(_ns(username="ed2", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        result = cmd_edit(_edit_ns("ed2", role="system_admin"))
+        assert any("role" in c for c in result.changes)
+
+        db = _get_session()
+        try:
+            u = db.query(User).filter(User.username == "ed2").first()
+            assert u is not None
+            assert u.role == "system_admin"
+        finally:
+            db.close()
+
+    def test_edit_rename_username(self, cli_db):
+        from cndb.cli.users import _get_session, cmd_create, cmd_edit
+        from cndb.plugins.accounts.models import User
+
+        cmd_create(_ns(username="ed3", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        result = cmd_edit(_edit_ns("ed3", username="ed3_new"))
+        assert result.username == "ed3_new"
+
+        db = _get_session()
+        try:
+            assert db.query(User).filter(User.username == "ed3_new").first() is not None
+            assert db.query(User).filter(User.username == "ed3").first() is None
+        finally:
+            db.close()
+
+    def test_edit_reset_password_bumps_token_version(self, cli_db):
+        from cndb.cli.users import _get_session, cmd_create, cmd_edit
+        from cndb.plugins.accounts.models import User
+
+        cmd_create(_ns(username="ed4", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        db = _get_session()
+        try:
+            before = db.query(User).filter(User.username == "ed4").first()
+            assert before is not None
+            old_hash, old_tv = before.hashed_password, before.token_version
+        finally:
+            db.close()
+
+        result = cmd_edit(_edit_ns("ed4", password="newpw1234"))
+        assert result.password_changed is True
+
+        db = _get_session()
+        try:
+            u = db.query(User).filter(User.username == "ed4").first()
+            assert u is not None
+            assert u.hashed_password != old_hash
+            assert u.token_version == old_tv + 1
+        finally:
+            db.close()
+
+    def test_edit_no_changes(self, cli_db):
+        from cndb.cli.users import cmd_create, cmd_edit
+
+        cmd_create(_ns(username="ed5", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        result = cmd_edit(_edit_ns("ed5"))
+        assert result.changes == []
+        assert result.password_changed is False
+
+    def test_edit_activate(self, cli_db):
+        from cndb.cli.users import _get_session, cmd_create, cmd_edit
+        from cndb.plugins.accounts.models import User
+
+        cmd_create(_ns(username="ed6", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        db = _get_session()
+        try:
+            u = db.query(User).filter(User.username == "ed6").first()
+            u.is_active = False
+            db.commit()
+        finally:
+            db.close()
+
+        result = cmd_edit(_edit_ns("ed6", activate=True))
+        assert any("is_active" in c for c in result.changes)
+
+        db = _get_session()
+        try:
+            u = db.query(User).filter(User.username == "ed6").first()
+            assert u is not None
+            assert u.is_active is True
+        finally:
+            db.close()
+
+    def test_edit_not_found(self, cli_db):
+        from cndb.cli.users import cmd_edit
+
+        with pytest.raises(SystemExit, match="不存在"):
+            cmd_edit(_edit_ns("ghost_user"))
+
+    def test_edit_invalid_role(self, cli_db):
+        from cndb.cli.users import cmd_create, cmd_edit
+
+        cmd_create(_ns(username="ed7", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        with pytest.raises(SystemExit, match="无效角色"):
+            cmd_edit(_edit_ns("ed7", role="super_hero"))
+
+    def test_edit_username_conflict(self, cli_db):
+        from cndb.cli.users import cmd_create, cmd_edit
+
+        cmd_create(_ns(username="ed8a", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        cmd_create(_ns(username="ed8b", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        with pytest.raises(SystemExit, match="已被使用"):
+            cmd_edit(_edit_ns("ed8b", username="ed8a"))
+
+    def test_edit_short_password(self, cli_db):
+        from cndb.cli.users import cmd_create, cmd_edit
+
+        cmd_create(_ns(username="ed9", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        with pytest.raises(SystemExit, match="至少 6 位"):
+            cmd_edit(_edit_ns("ed9", password="12"))
+
+    def test_edit_mutually_exclusive_activate_deactivate(self, cli_db):
+        from cndb.cli.users import cmd_create, cmd_edit
+
+        cmd_create(_ns(username="ed10", password="pw1234", email=None, nickname=None, role="user", is_superuser=False))
+        with pytest.raises(SystemExit, match="不能同时使用"):
+            cmd_edit(_edit_ns("ed10", activate=True, deactivate=True))
+
+    def test_edit_cannot_deactivate_last_superuser(self, cli_db):
+        from cndb.cli.users import cmd_create, cmd_edit
+
+        cmd_create(_ns(username="ed_su", password="pw1234", email=None, nickname=None, role="user", is_superuser=True))
+        with pytest.raises(SystemExit, match="最后一个可用"):
+            cmd_edit(_edit_ns("ed_su", deactivate=True))
+
+    def test_edit_cannot_demote_last_superuser(self, cli_db):
+        from cndb.cli.users import cmd_create, cmd_edit
+
+        cmd_create(_ns(username="ed_su2", password="pw1234", email=None, nickname=None, role="user", is_superuser=True))
+        with pytest.raises(SystemExit, match="最后一个可用"):
+            cmd_edit(_edit_ns("ed_su2", is_superuser=False))
+
+    def test_edit_can_deactivate_superuser_when_another_exists(self, cli_db):
+        from cndb.cli.users import _get_session, cmd_create, cmd_edit
+        from cndb.plugins.accounts.models import User
+
+        cmd_create(_ns(username="su_a", password="pw1234", email=None, nickname=None, role="user", is_superuser=True))
+        cmd_create(_ns(username="su_b", password="pw1234", email=None, nickname=None, role="user", is_superuser=True))
+        result = cmd_edit(_edit_ns("su_a", deactivate=True))
+        assert any("is_active" in c for c in result.changes)
+
+        db = _get_session()
+        try:
+            u = db.query(User).filter(User.username == "su_a").first()
+            assert u is not None
+            assert u.is_active is False
+        finally:
+            db.close()
+
+
 # ── cmd_delete ─
 
 
@@ -488,6 +685,23 @@ class TestPrintFunctions:
         assert "bob" in out
         assert "secret" in out
 
+    def test_print_edit_result_with_changes(self, capsys, cli_db):
+        from cndb.cli.users import EditResult, print_edit_result
+
+        print_edit_result(
+            EditResult(user_id=3, username="alice", changes=["nickname: A → B", "role: user → system_admin"])
+        )
+        out = capsys.readouterr().out
+        assert "已更新用户 alice" in out
+        assert "nickname: A → B" in out
+
+    def test_print_edit_result_no_changes(self, capsys, cli_db):
+        from cndb.cli.users import EditResult, print_edit_result
+
+        print_edit_result(EditResult(user_id=4, username="bob", changes=[]))
+        out = capsys.readouterr().out
+        assert "无变更" in out
+
     def test_print_delete_check_none(self, capsys, cli_db):
         from cndb.cli.users import print_delete_check
 
@@ -590,6 +804,13 @@ class TestUsersCommand:
         monkeypatch.setattr("cndb.cli.users.cmd_create", lambda args: None)
         monkeypatch.setattr("cndb.cli.users.print_create_result", lambda r: None)
         users_command(_ns(users_cmd="create"))
+
+    def test_dispatch_edit(self, capsys, cli_db, monkeypatch):
+        from cndb.cli.users import users_command
+
+        monkeypatch.setattr("cndb.cli.users.cmd_edit", lambda args: None)
+        monkeypatch.setattr("cndb.cli.users.print_edit_result", lambda r: None)
+        users_command(_ns(users_cmd="edit", target="x"))
 
     def test_dispatch_delete_check_only(self, capsys, cli_db, monkeypatch):
         from cndb.cli.users import users_command

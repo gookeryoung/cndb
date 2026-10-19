@@ -2,6 +2,7 @@
 
 子命令：
 - create    创建单个用户（可指定角色 / 自动生成密码）
+- edit      编辑用户（改名 / 角色 / 启禁用 / 重置密码）
 - delete    删除用户（检查 OWNER 工作区；--cascade 级联删除）
 - list      列出用户（按角色 / 激活状态筛选）
 - import    从 csv / xlsx 批量导入用户（逐行 + 不回滚 + 报告）
@@ -23,6 +24,7 @@ from typing import Any
 from cndb.cli.users.commands import (
     CreateResult,
     DeleteCheckResult,
+    EditResult,
     ImportReport,
     ImportRowResult,
     _import_single_user,
@@ -30,6 +32,7 @@ from cndb.cli.users.commands import (
     cmd_create,
     cmd_delete,
     cmd_delete_check,
+    cmd_edit,
     cmd_import,
     cmd_list,
 )
@@ -54,6 +57,7 @@ from cndb.cli.users.printing import (
     print_create_result,
     print_delete_check,
     print_delete_result,
+    print_edit_result,
     print_import_report,
     print_list,
 )
@@ -62,7 +66,7 @@ from cndb.plugins.accounts.models import UserRole
 
 def register_users_subparser(sub: Any) -> None:
     """向顶层 ArgumentParser 注册 `cndb users` 子命令组."""
-    p_users = sub.add_parser("users", help="用户管理（create/delete/list/import）")
+    p_users = sub.add_parser("users", help="用户管理（create/edit/delete/list/import）")
     users_sub = p_users.add_subparsers(dest="users_cmd")
 
     # --- create ---
@@ -78,6 +82,25 @@ def register_users_subparser(sub: Any) -> None:
         help=f"角色（默认 {UserRole.USER.value}）: system_admin / security_admin / audit_admin / user",
     )
     p_create.add_argument("--is-superuser", action="store_true", help="同时设置 is_superuser=True（危险）")
+
+    # --- edit ---
+    p_edit = users_sub.add_parser("edit", help="编辑用户（改名 / 角色 / 启禁用 / 重置密码）")
+    p_edit.add_argument("target", help="用户名或用户 ID")
+    p_edit.add_argument("-u", "--username", default=None, help="新用户名（改名）")
+    p_edit.add_argument("-e", "--email", default=None, help="新邮箱（传空字符串清空）")
+    p_edit.add_argument("--phone", default=None, help="新联系电话（传空字符串清空）")
+    p_edit.add_argument("-n", "--nickname", default=None, help="新昵称")
+    p_edit.add_argument(
+        "-r",
+        "--role",
+        default=None,
+        help="新角色: system_admin / security_admin / audit_admin / user",
+    )
+    p_edit.add_argument("-p", "--password", default=None, help="重置密码（至少 6 位，既有令牌失效）")
+    p_edit.add_argument("--activate", action="store_true", help="启用账号")
+    p_edit.add_argument("--deactivate", action="store_true", help="禁用账号")
+    p_edit.add_argument("--superuser", dest="is_superuser", action="store_true", default=None, help="设为超级管理员")
+    p_edit.add_argument("--no-superuser", dest="is_superuser", action="store_false", help="取消超级管理员")
 
     # --- delete ---
     p_delete = users_sub.add_parser("delete", help="删除用户（检查 OWNER 工作区）")
@@ -104,12 +127,15 @@ def users_command(args: argparse.Namespace) -> None:
     """分发 `cndb users <sub>`."""
     cmd = getattr(args, "users_cmd", None)
     if cmd is None:
-        print("[error] 缺少 users 子命令，可用: create / delete / list / import", file=sys.stderr)
+        print("[error] 缺少 users 子命令，可用: create / edit / delete / list / import", file=sys.stderr)
         sys.exit(2)
 
     if cmd == "create":
         result = cmd_create(args)
         print_create_result(result)
+    elif cmd == "edit":
+        result = cmd_edit(args)
+        print_edit_result(result)
     elif cmd == "delete":
         if getattr(args, "check_only", False):
             check = cmd_delete_check(args)
@@ -133,6 +159,7 @@ __all__ = [
     "_USER_IMPORT_COLUMN_ALIASES",
     "CreateResult",
     "DeleteCheckResult",
+    "EditResult",
     "ImportReport",
     "ImportRowResult",
     "_generate_password",
@@ -152,11 +179,13 @@ __all__ = [
     "cmd_create",
     "cmd_delete",
     "cmd_delete_check",
+    "cmd_edit",
     "cmd_import",
     "cmd_list",
     "print_create_result",
     "print_delete_check",
     "print_delete_result",
+    "print_edit_result",
     "print_import_report",
     "print_list",
     "register_users_subparser",

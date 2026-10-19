@@ -122,6 +122,35 @@ describe('UsersPage 用户管理', () => {
     expect(await screen.findByText('用户已更新，变更已记录到操作日志')).toBeInTheDocument()
   })
 
+  it('新建用户：填写表单二次确认后提交 admin-register', async () => {
+    const createHandler = vi.fn(() =>
+      HttpResponse.json({
+        id: 9, username: 'newbie', email: null, nickname: '普通用户',
+        role: 'user', is_active: true, is_superuser: false,
+      }),
+    )
+    server.use(
+      http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)),
+      http.post('/api/v1/accounts/auth/admin-register', createHandler),
+    )
+    renderPage()
+    await screen.findByText('bob')
+
+    fireEvent.click(screen.getByRole('button', { name: /新建用户/ }))
+    expect(await screen.findByText('新建用户', { selector: '.ant-modal-title' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'newbie' } })
+    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: 'pw123456' } })
+    fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
+
+    // 二次确认弹窗
+    expect(await screen.findByText('确认创建该用户？', { selector: '.ant-modal-title' })).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: '确认创建' }))
+
+    await waitFor(() => expect(createHandler).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('用户 newbie 已创建')).toBeInTheDocument()
+  })
+
   it('勾选用户后批量禁用走确认并提交 batch', async () => {
     const batchHandler = vi.fn(() =>
       HttpResponse.json({ total: 1, succeeded: 1, failed: 0, results: [{ user_id: 2, username: 'bob', success: true }] }),

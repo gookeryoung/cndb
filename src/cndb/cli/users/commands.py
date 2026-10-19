@@ -1,4 +1,4 @@
-"""用户管理命令实现（create / delete / list / import）与结果结构."""
+"""用户管理命令实现（create / edit / delete / list / import）与结果结构."""
 
 from __future__ import annotations
 
@@ -97,6 +97,133 @@ def cmd_create(args: argparse.Namespace) -> CreateResult:
             role=user.role,
             password=plain_password,
             note=note,
+        )
+    finally:
+        db.close()
+
+
+# ── cmd_edit ─
+
+
+@dataclass
+class EditResult:
+    user_id: int
+    username: str
+    changes: list[str]
+    password_changed: bool = False
+
+
+def _is_last_active_superuser(db: Any, user: User) -> bool:
+    """判断 user 是否为系统中最后一个可用的超级管理员.
+
+    可用超管定义：is_superuser=True 且 is_active=True；除 user 外无其他可用超管时为 True。
+    """
+    if not (user.is_superuser and user.is_active):
+        return False
+    other = db.query(User).filter(User.is_superuser.is_(True), User.is_active.is_(True), User.id != user.id).first()
+    return other is None
+
+
+def cmd_edit(args: argparse.Namespace) -> EditResult:
+    """编辑用户（改名 / 邮箱 / 电话 / 昵称 / 角色 / 启禁用 / 超管标记 / 重置密码）.
+
+    仅处理命令行显式提供的字段；email/phone 传空字符串表示清空。
+
+    Returns:
+        EditResult（含变更摘要）
+
+    Raises:
+        SystemExit: 用户不存在 / 唯一性冲突 / 角色非法 / 密码过短 / 末位超管保护
+    """
+    db = _get_session()
+    try:
+        user = _resolve_user(db, args.target)
+        if user is None:
+            raise SystemExit(f"[error] 用户 '{args.target}' 不存在")
+
+        changes: list[str] = []
+
+        new_username = getattr(args, "username", None)
+        if new_username and new_username != user.username:
+            dup = db.query(User).filter(User.username == new_username, User.id != user.id).first()
+            if dup is not None:
+                raise SystemExit(f"[error] 用户名 '{new_username}' 已被使用 (id={dup.id})")
+            changes.append(f"username: {user.username} → {new_username}")
+            user.username = new_username
+
+        email = getattr(args, "email", None)
+        if email is not None:
+            normalized_email = email.strip() or None
+            if normalized_email and normalized_email != user.email:
+                dup_email = db.query(User).filter(User.email == normalized_email, User.id != user.id).first()
+                if dup_email is not None:
+                    raise SystemExit(f"[error] 邮箱 '{normalized_email}' 已被使用 (id={dup_email.id})")
+            if normalized_email != user.email:
+                changes.append(f"email: {user.email or '—'} → {normalized_email or '—'}")
+            user.email = normalized_email
+
+        phone = getattr(args, "phone", None)
+        if phone is not None:
+            normalized_phone = phone.strip() or None
+            if normalized_phone != user.phone:
+                changes.append(f"phone: {user.phone or '—'} → {normalized_phone or '—'}")
+            user.phone = normalized_phone
+
+        nickname = getattr(args, "nickname", None)
+        if nickname is not None and nickname != user.nickname:
+            changes.append(f"nickname: {user.nickname} → {nickname}")
+            user.nickname = nickname
+
+        role = getattr(args, "role", None)
+        if role is not None:
+            try:
+                user_role = UserRole(role)
+            except ValueError:
+                valid = ", ".join(r.value for r in UserRole)
+                raise SystemExit(f"[error] 无效角色 '{role}'，可选值: {valid}") from None
+            if user_role.value != user.role:
+                changes.append(f"role: {user.role} → {user_role.value}")
+            user.role = user_role.value
+
+        activate = bool(getattr(args, "activate", False))
+        deactivate = bool(getattr(args, "deactivate", False))
+        if activate and deactivate:
+            raise SystemExit("[error] --activate 与 --deactivate 不能同时使用")
+        new_active: bool | None = True if activate else (False if deactivate else None)
+        if new_active is not None and new_active != user.is_active:
+            if new_active is False and _is_last_active_superuser(db, user):
+                raise SystemExit("[error] 不能禁用最后一个可用的超级管理员")
+            changes.append(f"is_active: {user.is_active} → {new_active}")
+            user.is_active = new_active
+
+        is_superuser = getattr(args, "is_superuser", None)
+        if is_superuser is not None and is_superuser != user.is_superuser:
+            if is_superuser is False and _is_last_active_superuser(db, user):
+                raise SystemExit("[error] 不能取消最后一个可用超级管理员的超管权限")
+            changes.append(f"is_superuser: {user.is_superuser} → {is_superuser}")
+            user.is_superuser = is_superuser
+
+        password = getattr(args, "password", None)
+        password_changed = False
+        if password:
+            if len(password) < 6:
+                raise SystemExit("[error] 密码至少 6 位")
+            user.set_password(password)
+            # 令牌代次 +1：已签发的 access token 立即失效，强制重新登录
+            user.token_version = int(user.token_version or 0) + 1
+            password_changed = True
+            changes.append("password: 已重置（既有令牌失效）")
+
+        if not changes:
+            return EditResult(user_id=user.id, username=user.username, changes=[], password_changed=False)
+
+        db.commit()
+        db.refresh(user)
+        return EditResult(
+            user_id=user.id,
+            username=user.username,
+            changes=changes,
+            password_changed=password_changed,
         )
     finally:
         db.close()
