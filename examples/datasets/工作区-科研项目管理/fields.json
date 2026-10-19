@@ -8,9 +8,6 @@
       "负责人编号": {"required": true, "unique": true},
       "电子邮箱": {"unique": true}
     },
-    "项目进展": {
-      "进展编号": {"required": true, "unique": true}
-    },
     "科研经费": {
       "经费编号": {"required": true, "unique": true}
     },
