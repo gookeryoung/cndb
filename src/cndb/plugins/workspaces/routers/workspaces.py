@@ -170,6 +170,7 @@ def get_workspace(
     from sqlalchemy import MetaData, func, select
 
     from cndb.plugins.tables.models import DataTable, DataView
+    from cndb.plugins.workspaces.services.storage import workspace_storage_bytes
 
     ws = _get_workspace_or_404(workspace_id, db)
     _require_member(ws, current_user, db)
@@ -243,6 +244,7 @@ def get_workspace(
             "member_count": member_count,
             "view_count": view_count,
             "total_rows": total_rows,
+            "storage_bytes": workspace_storage_bytes(db, workspace_id),
             "current_user_role": current_role.value if current_role else None,
         }
     )

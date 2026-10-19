@@ -23,7 +23,8 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.files import services as files_service
 from cndb.plugins.tables.services.core.access import check_workspace_permission
-from cndb.plugins.workspaces.models import WorkspaceRole
+from cndb.plugins.workspaces.models import DEFAULT_STORAGE_QUOTA_BYTES, Workspace, WorkspaceRole
+from cndb.plugins.workspaces.services.storage import workspace_quota_bytes, workspace_storage_bytes
 
 router = APIRouter(prefix="/{workspace_id}/files", tags=["files"])
 
@@ -289,6 +290,20 @@ async def upload_file(
             filename=safe_name,
             mime=mime,
             size=size,
+        )
+
+    # 工作区存储配额：管理员在管理台「空间分配」设定上限（默认 100MB）。
+    # 上传前按「已用 + 本次」预判，避免写盘后再回滚。
+    ws = db.get(Workspace, workspace_id)
+    quota = workspace_quota_bytes(ws) if ws is not None else DEFAULT_STORAGE_QUOTA_BYTES
+    used = workspace_storage_bytes(db, workspace_id)
+    if used + size > quota:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"工作区存储空间不足：已用 {used / (1024 * 1024):.1f} MB / "
+                f"配额 {quota / (1024 * 1024):.1f} MB，本次需 {size / (1024 * 1024):.1f} MB"
+            ),
         )
 
     # 生成稳定 file_key: uuid.ext（保留原始扩展名方便识别）

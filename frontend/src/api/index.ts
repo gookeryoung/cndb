@@ -29,6 +29,8 @@ export type {
   CoreEventItem,
   CoreEventPage,
   CoreEventQuery,
+  WorkspaceStorageItem,
+  WorkspaceStorageOverview,
 } from './admin'
 export { systemApi } from './system'
 export type { SystemAbout } from './system'
