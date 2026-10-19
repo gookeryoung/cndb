@@ -110,6 +110,22 @@ function ConfigItem({ opt, fields, opts, updateOpt }: {
     )
   }
 
+  // 有序字符串列表（逗号分隔输入，存 string[]）——非受控输入，变更即时解析为数组写回
+  if (opt.kind === 'text_list') {
+    const list = Array.isArray(currentValue) ? (currentValue as unknown[]).map(String) : []
+    return (
+      <Form.Item label={opt.label} tooltip={opt.tooltip}>
+        <Input.TextArea
+          key={opt.key}
+          defaultValue={list.join(', ')}
+          autoSize={{ minRows: 1, maxRows: 4 }}
+          placeholder="按流程先后填写，逗号分隔"
+          onChange={e => updateOpt(opt.key, e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+        />
+      </Form.Item>
+    )
+  }
+
   // 完成标志：字段下拉 + 操作符 + 匹配值复合控件（存 done_field + done_op + done_value 三键）
   if (opt.kind === 'done_flag') {
     return (
@@ -210,6 +226,7 @@ export default function CreateEditViewForm({
     { value: 'wbs', label: '工作分解 (WBS)' },
     { value: 'matrix', label: '矩阵 (Matrix)' },
     { value: 'chart', label: '图表 (Chart)' },
+    { value: 'flow', label: '流程 (Flow)' },
   ]
 
   return (

@@ -54,6 +54,8 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
         "measure_field",
         "x_field",
         "y_field",
+        # flow 流程视图（流程节点字段；title_field 已在上方）
+        "node_field",
     ):
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:

@@ -3,7 +3,7 @@
  * 从 ViewConfigDialog 抽出。
  */
 
-import { Select, Switch } from 'antd'
+import { Input, Select, Switch } from 'antd'
 
 import type { Field } from '@/api'
 import DoneFlagFields from '../views/DoneFlagFields'
@@ -48,6 +48,23 @@ export default function ViewOptionItem({ opt, fields, opts, onSet, onPatch }: Vi
           value={(currentValue ?? opt.defaultValue) as string | number}
           onChange={v => onSet(opt.key, v)}
           options={opt.enumOptions?.map(o => ({ value: o.value, label: o.label })) || []}
+        />
+      </div>
+    )
+  }
+
+  // 有序字符串列表（逗号分隔输入，存 string[]）——非受控输入避免打字过程中的光标跳动，
+  // 每次变更即时解析为数组写回（空项剔除；全空 => 空数组，保存时被 cleanOpt 丢弃）
+  if (opt.kind === 'text_list') {
+    const list = Array.isArray(currentValue) ? (currentValue as unknown[]).map(String) : []
+    return (
+      <div className="vcvd-item">
+        {label}
+        <Input.TextArea
+          defaultValue={list.join(', ')}
+          autoSize={{ minRows: 1, maxRows: 4 }}
+          placeholder="按流程先后填写，逗号分隔"
+          onChange={e => onSet(opt.key, e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
         />
       </div>
     )
