@@ -246,6 +246,17 @@ describe('schema group 完整性', () => {
   })
 })
 
+describe('chart 度量字段 schema 支持非数值类型', () => {
+  it('measure_field 允许文本/选择等非数值类型（用于计数统计个数），数值类型优先', () => {
+    const opt = findOptionSchema('chart', 'measure_field')!
+    expect(opt.fieldTypes).toContain('number')
+    expect(opt.fieldTypes).toContain('text')
+    expect(opt.fieldTypes).toContain('select')
+    // 自动推断按 fieldTypes 顺序取首个匹配 → 数值类型必须排在最前
+    expect(opt.fieldTypes![0]).toBe('number')
+  })
+})
+
 describe('normalizeChartList / serializeChartList chart 多图双向转换', () => {
   it('扁平 view_options 归一为单条目（仅取 CHART_OPTIONS 键）', () => {
     const draft = {

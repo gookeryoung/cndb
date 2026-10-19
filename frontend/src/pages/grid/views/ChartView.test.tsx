@@ -146,6 +146,25 @@ describe('ChartView 图表视图', () => {
     // 研发组：2026-07 两行 100+30=130、2026-08 无有效值（null 不虚构 0）、未分组无行
     expect(option.series[1].data).toEqual([130, null, null])
     expect(option.legend).toBeDefined()
+    // 多系列图例用滚动形态：项数多时单行翻页，不换行堆叠压进绘图区
+    expect(option.legend.type).toBe('scroll')
+  })
+
+  it('非数值度量字段：按计数渲染（聚合配 sum 也回退 count）', () => {
+    // 度量=团队（select，非数值）：无法求和，回退按出现次数统计个数
+    renderChart({
+      view: makeView({
+        chart_type: 'bar',
+        dimension_field: '团队',
+        measure_field: '团队',
+        aggregation: 'sum',
+      }),
+    })
+
+    const option = echartsMock.setOption.mock.calls[0][0] as Record<string, any>
+    // 设计组 2 行、研发组 3 行（拼音序：设计组 she < 研发组 yan）
+    expect(option.xAxis.data).toEqual(['设计组', '研发组'])
+    expect(option.series[0].data).toEqual([2, 3])
   })
 
   it('line 类型：series type 为 line', () => {
@@ -278,6 +297,8 @@ describe('ChartView 图表视图', () => {
     for (const d of option.series[0].data) {
       expect(d.itemStyle?.color).toBeDefined()
     }
+    // 饼图图例列出各维度扇区，项数多 → 滚动单行，不遮挡饼体
+    expect(option.legend.type).toBe('scroll')
   })
 
   it('histogram：series[0].type=bar、barCategoryGap=0、bins labels 做 xAxis', () => {

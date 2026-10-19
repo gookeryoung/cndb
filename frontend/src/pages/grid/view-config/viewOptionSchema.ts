@@ -305,8 +305,9 @@ export const CHART_OPTIONS: ViewOptionSchema[] = [
   },
   {
     key: 'measure_field', label: '度量字段', group: '图表配置',
-    tooltip: '被聚合/统计的数值字段（散点图改用 X/Y 字段）',
-    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
+    tooltip: '被聚合/统计的字段：数值字段可求和/平均等；文本/选择/日期等非数值字段按「计数」统计个数（散点图改用 X/Y 字段）',
+    kind: 'field_select',
+    fieldTypes: ['number', 'float', 'percentage', 'timestamp', 'select', 'multiselect', 'link', 'text', 'longtext', 'date', 'datetime', 'boolean'],
     required: true,
     visibleWhen: (o) => ['bar', 'line', 'pie', 'histogram', 'boxplot'].includes(String(o.chart_type ?? 'bar')),
   },
