@@ -74,6 +74,27 @@
 
 合并顺序：`baseTokens → 主题 token → 组件 token`，主题显式声明的键优先（配色不会被标尺覆盖）。
 
+### 代码高亮（`--cn-code-*`）
+
+文档里的围栏代码块与实时编辑器共用一套 token 类名（`.cn-tok-keyword` / `.cn-tok-string` / `.cn-tok-comment` …），
+语言词法见 `frontend/src/components/Document/codeHighlight.ts`，配色只在 `index.css` 定义一次：
+
+| 变量 | 浅色（`:root` / modern 系） | 深色（midnight / oled / github-dark） | 用途 |
+| --- | --- | --- | --- |
+| `--cn-code-block-bg` / `--cn-code-block-border` | `#f6f8fa` / `#d0d7de` | `#0d1117` / `#30363d` | 代码块容器底色与描边 |
+| `--cn-code-keyword` | `#cf222e` | `#ff7b72` | 关键字（`const` / `def` / `SELECT`） |
+| `--cn-code-string` | `#0a3069` | `#a5d6ff` | 字符串 / 模板串 |
+| `--cn-code-comment` | `#6e7781` | `#8b949e` | 注释 |
+| `--cn-code-number` | `#0550ae` | `#79c0ff` | 数字、布尔、颜色值 |
+| `--cn-code-function` | `#8250df` | `#d2a8ff` | 函数 / 方法调用 |
+| `--cn-code-type` | `#953800` | `#ffa657` | 类型 / 类名 |
+| `--cn-code-tag` / `--cn-code-attr` | `#116329` / `#0550ae` | `#7ee787` / `#79c0ff` | HTML/XML 标签与属性 |
+| `--cn-code-builtin` / `--cn-code-property` | `#0550ae` | `#79c0ff` | 内建对象、JSON/YAML/CSS 键名 |
+
+浅色系取 GitHub Light 口径，深色系取 GitHub Dark 口径；其余主题（ocean / forest / sepia / sakura / minimal）
+沿用浅色一套，不再单独配色 —— 换主题时只改背景，不重排语法色，避免「每套主题一套高亮」的维护成本。
+新增语言只加词法配置，**不要在组件里写死颜色**。
+
 ## 4. 硬规则
 
 1. **CSS 里不写数字间距 / 字号 / 圆角**（例外：`0` / `auto` / `1px` 光学微调 / `50%`）。

@@ -247,6 +247,24 @@ body.theme-modern {
   --cn-bg-success-subtle: #f6ffed;
   /* 投影色 RGB 三元组：浅色主题冷灰投影，供 rgb(var()/alpha) 派生 */
   --cn-shadow-color: 15 23 42;
+
+  /* 代码高亮（文档代码块 / 实时编辑器共用，词法见 components/Document/codeHighlight.ts） */
+  --cn-code-block-bg: #f6f8fa;
+  --cn-code-block-border: #d0d7de;
+  --cn-code-keyword: #cf222e;
+  --cn-code-string: #0a3069;
+  --cn-code-comment: #6e7781;
+  --cn-code-number: #0550ae;
+  --cn-code-function: #8250df;
+  --cn-code-type: #953800;
+  --cn-code-operator: #57606a;
+  --cn-code-punctuation: #6e7781;
+  --cn-code-tag: #116329;
+  --cn-code-attr: #0550ae;
+  --cn-code-builtin: #0550ae;
+  --cn-code-meta: #0969da;
+  --cn-code-property: #0550ae;
+  --cn-code-variable: #953800;
 }
 
 body.theme-midnight,
@@ -271,6 +289,24 @@ body.theme-dark {
   --cn-bg-success-subtle: #122b13;
   /* 深色主题用纯黑投影：浅色投影会在深底上产生错误发光 */
   --cn-shadow-color: 0 0 0;
+
+  /* 代码高亮：GitHub Dark 口径（浅色值在此处统一覆盖） */
+  --cn-code-block-bg: #0d1117;
+  --cn-code-block-border: #30363d;
+  --cn-code-keyword: #ff7b72;
+  --cn-code-string: #a5d6ff;
+  --cn-code-comment: #8b949e;
+  --cn-code-number: #79c0ff;
+  --cn-code-function: #d2a8ff;
+  --cn-code-type: #ffa657;
+  --cn-code-operator: #c9d1d9;
+  --cn-code-punctuation: #8b949e;
+  --cn-code-tag: #7ee787;
+  --cn-code-attr: #79c0ff;
+  --cn-code-builtin: #79c0ff;
+  --cn-code-meta: #79c0ff;
+  --cn-code-property: #79c0ff;
+  --cn-code-variable: #ffa657;
 }
 
 body.theme-github-light {
@@ -430,6 +466,100 @@ body.theme-oled {
   --cn-bg-warning-subtle: #2e2410;
   --cn-bg-success-subtle: #0f2412;
 }
+
+/* ─────────────── 代码块与语法高亮 ───────────────
+ * Markdown 文档里的围栏代码块（预览 CodeBlock 与实时编辑器共用一套 token 类名）。
+ * 配色走 --cn-code-*，浅色 / 深色主题各自一套；容器底色与边框也随主题切换。 */
+.cn-codeblock {
+  margin: var(--cn-space-lg) 0;
+  border: 1px solid var(--cn-code-block-border);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-code-block-bg);
+  overflow: hidden;
+}
+
+.cn-codeblock-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  padding: var(--cn-space-xs) var(--cn-space-lg);
+  border-bottom: 1px solid var(--cn-code-block-border);
+  background: color-mix(in srgb, var(--cn-bg-container) 55%, var(--cn-code-block-bg));
+}
+
+.cn-codeblock-lang {
+  font-size: var(--cn-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--cn-text-secondary);
+}
+
+/* 行数靠右，复制按钮固定在最右 */
+.cn-codeblock-meta {
+  margin-left: auto;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-codeblock-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  padding: var(--cn-space-hairline) var(--cn-space-sm);
+  border: none;
+  border-radius: var(--cn-radius-sm);
+  background: transparent;
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  line-height: 1.6;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.cn-codeblock-copy:hover {
+  background: var(--cn-bg-subtle);
+  color: var(--cn-text-primary);
+}
+
+.cn-codeblock-copy:focus-visible {
+  outline: 2px solid var(--cn-brand-color);
+  outline-offset: 1px;
+}
+
+.cn-codeblock-pre {
+  margin: 0;
+  padding: var(--cn-space-lg) var(--cn-space-xl);
+  overflow-x: auto;
+  font-family: var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: var(--cn-text-sm);
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+.cn-codeblock-pre code {
+  padding: 0;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--cn-text-primary);
+}
+
+/* token 颜色（预览与 CodeMirror 共用） */
+.cn-tok-keyword { color: var(--cn-code-keyword); }
+.cn-tok-string { color: var(--cn-code-string); }
+.cn-tok-comment { color: var(--cn-code-comment); }
+.cn-tok-number { color: var(--cn-code-number); }
+.cn-tok-boolean { color: var(--cn-code-number); }
+.cn-tok-function { color: var(--cn-code-function); }
+.cn-tok-type { color: var(--cn-code-type); }
+.cn-tok-operator { color: var(--cn-code-operator); }
+.cn-tok-punctuation { color: var(--cn-code-punctuation); }
+.cn-tok-tag { color: var(--cn-code-tag); }
+.cn-tok-attr { color: var(--cn-code-attr); }
+.cn-tok-builtin { color: var(--cn-code-builtin); }
+.cn-tok-meta { color: var(--cn-code-meta); }
+.cn-tok-property { color: var(--cn-code-property); }
+.cn-tok-variable { color: var(--cn-code-variable); }
 
 /* ─────────────── 新增行高亮（主题自适应） ───────────────
  * AntD 虚拟滚动把行渲染成扁平 div（.ant-table-row > .ant-table-cell），

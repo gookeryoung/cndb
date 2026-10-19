@@ -31,6 +31,7 @@ import { Input } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 
 import { loadFileObjectUrl } from '@/hooks/useFileObjectUrl'
+import { highlightCode } from './codeHighlight'
 import { parseImageRef } from './imageRef'
 
 export type MarkdownEditorMode = 'live' | 'source'
@@ -129,6 +130,8 @@ const MARK_NAMES: Record<string, string[]> = {
   Strikethrough: ['StrikethroughMark'],
 }
 const IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/
+/** 单块代码超过该长度不做词法高亮：避免超长贴入后每次按键全量 tokenize */
+const MAX_HIGHLIGHT_CHARS = 100_000
 
 function hide(from: number, to: number): Range<Decoration> | null {
   return to > from ? Decoration.replace({}).range(from, to) : null
@@ -230,12 +233,41 @@ function buildDecorations(view: EditorView): DecorationSet {
         }
 
         if (name === 'FencedCode' || name === 'CodeBlock') {
-          let pos = node.from
-          while (pos <= node.to) {
-            const line = doc.lineAt(pos)
-            ranges.push(Decoration.line({ class: 'cm-md-codeblock' }).range(line.from))
-            if (line.to >= node.to) break
-            pos = line.to + 1
+          const fenced = name === 'FencedCode'
+          const firstLine = doc.lineAt(node.from)
+          const lastLine = doc.lineAt(node.to)
+          // 闭合围栏行：与首行同为 ``` / ~~~ 且不是同一行（空代码块）
+          const closing =
+            fenced &&
+            lastLine.number > firstLine.number &&
+            /^\s*(?:`{3,}|~{3,})\s*$/.test(lastLine.text)
+          const contentFrom = fenced ? Math.min(firstLine.to + 1, doc.length) : node.from
+          const contentTo = closing ? lastLine.from : node.to
+
+          ranges.push(Decoration.line({ class: 'cm-md-codefence' }).range(firstLine.from))
+          if (closing) ranges.push(Decoration.line({ class: 'cm-md-codefence' }).range(lastLine.from))
+
+          if (contentTo > contentFrom) {
+            for (let pos = contentFrom; pos < contentTo; ) {
+              const line = doc.lineAt(pos)
+              ranges.push(Decoration.line({ class: 'cm-md-codeblock' }).range(line.from))
+              if (line.to >= contentTo) break
+              pos = line.to + 1
+            }
+            // 词法高亮：与预览共用 codeHighlight，围栏语言取自 CodeInfo（```ts）
+            const code = doc.sliceString(contentFrom, contentTo)
+            if (code.length <= MAX_HIGHLIGHT_CHARS) {
+              const info = node.node.getChild('CodeInfo')
+              const language = info ? doc.sliceString(info.from, info.to) : null
+              for (const token of highlightCode(code, language)) {
+                ranges.push(
+                  Decoration.mark({ class: `cn-tok-${token.type}` }).range(
+                    contentFrom + token.from,
+                    contentFrom + token.to,
+                  ),
+                )
+              }
+            }
           }
           return
         }
@@ -321,8 +353,15 @@ const editorTheme = EditorView.theme({
   '.cm-md-hr': { borderTop: '1px solid var(--cn-border, #e5e7eb)' },
   '.cm-md-codeblock': {
     fontFamily: 'var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)',
-    backgroundColor: 'var(--cn-bg-subtle, #fafafa)',
+    backgroundColor: 'var(--cn-code-block-bg, #f6f8fa)',
+    borderLeft: '3px solid var(--cn-code-block-border, #d0d7de)',
+    paddingLeft: 'var(--cn-space-lg, 12px)',
     fontSize: '0.92em',
+  },
+  '.cm-md-codefence': {
+    fontFamily: 'var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)',
+    color: 'var(--cn-text-muted, #9ca3af)',
+    fontSize: '0.85em',
   },
   '.cm-md-image': { display: 'inline-flex', alignItems: 'center', maxWidth: '100%' },
   '.cm-md-image img': { maxWidth: '100%', maxHeight: '320px', borderRadius: '6px', verticalAlign: 'middle' },

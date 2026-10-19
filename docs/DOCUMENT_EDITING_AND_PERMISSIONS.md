@@ -105,6 +105,21 @@
 - **发布 / 转为草稿**：工具栏 `doc-publish-toggle`（后端 `PATCH /{doc_id}` 改 `status` 需 **editor+**）。
 - **修改申请入口**：工具栏徽标显示本文件待审核条数，抽屉展开列表 + 内容 DIFF。
 
+### 4.5 代码块渲染与高亮
+
+编辑器与预览对围栏代码块用同一套词法（`frontend/src/components/Document/codeHighlight.ts`，零依赖，
+不引入 highlight.js / shiki，见 `docs/BUNDLE_BUDGET.md`）：
+
+- **支持语言**：JS/TS、Python、JSON、Shell、SQL、HTML/XML、CSS/SCSS、YAML、Go、Java、Rust、C/C++ 系；
+  fence info 支持别名（`ts` / `typescript` / `language-ts`）与附加参数（`` ```ts title="x" `` 取首个词）。
+  未知语言按纯文本渲染，**不猜语法**。
+- **实时预览**：代码块内 token 着色（`cn-tok-*` 装饰），围栏行（`` ``` ``）淡色显示、内容行带左侧色条与代码底色；
+  光标进入不打断高亮。单块超过 100 KB 跳过词法高亮，避免超长粘贴后每次按键全量 tokenize。
+- **预览 / 查看模式**：`CodeBlock` 渲染「语言标签 + 行数 + 复制按钮」，复制在非安全上下文（http）
+  退回 `execCommand`；容器为 `<div>`，因此 `MarkdownPreview` 覆盖了 `pre` 渲染，避免 `<pre><div>` 非法嵌套。
+- **配色**：全部走 `index.css` 的 `--cn-code-*` 主题变量（浅色 / 深色各一套，见
+  `docs/DESIGN_SYSTEM.md` 的「代码高亮」小节），换主题自动跟随。
+
 ---
 
 ## 5. 修改申请生命周期
@@ -223,6 +238,9 @@
 | `pages/documents/DocumentsChangeRequestsPage.tsx` | 工作区级修改申请列表（二级导航） |
 | `pages/documents/DocumentCollaboratorsModal.tsx` | 协作者授权（只读 / 可编辑） |
 | `pages/documents/DocumentTree.tsx` | 目录树：状态图标（草稿 / 已发布 / 归档）、可见性标记 |
+| `components/Document/MarkdownLiveEditor.tsx` | 实时预览 / 源码双模式编辑器（围栏代码块词法高亮装饰） |
+| `components/Document/CodeBlock.tsx` | 预览代码块：语言标签 + 行数 + 复制按钮 |
+| `components/Document/codeHighlight.ts` | 零依赖词法高亮（预览与编辑器共用） |
 | `pages/documents/DocumentsPage.tsx` | 列表：状态筛选、`仅自己可见 / 共享 / 已发布` 标记 |
 | `api/documents.ts` | 上述端点的前端封装（`saveDraft` / `submit` / `changeRequests` / `mergeChangeRequest` 等） |
 

@@ -6,6 +6,7 @@
 
 import { memo, useMemo } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
+import CodeBlock from './CodeBlock'
 import DocumentImage from './DocumentImage'
 import { FILE_REF_PREFIX } from './imageRef'
 import remarkGfm from 'remark-gfm'
@@ -85,25 +86,12 @@ const mdComponents = {
     </h6>
   ),
   code: ({ className, children, ...rest }: React.ComponentProps<'code'> & { className?: string }) => {
-    const isBlock = /language-/.test(className ?? '') || String(children).includes('\n')
+    const raw = String(children)
+    const isBlock = /language-/.test(className ?? '') || raw.includes('\n')
     if (isBlock) {
-      return (
-        <code
-          className={className}
-          style={{
-            display: 'block',
-            padding: 12,
-            background: 'var(--cn-bg-secondary, #f6f6f6)',
-            borderRadius: 8,
-            overflowX: 'auto',
-            fontSize: 13,
-            fontFamily: 'var(--cn-mono, monospace)',
-          }}
-          {...rest}
-        >
-          {children}
-        </code>
-      )
+      // 围栏代码块交给 CodeBlock：语言标签 + 复制按钮 + 词法高亮
+      const language = /language-([\w+#.-]+)/.exec(className ?? '')?.[1] ?? null
+      return <CodeBlock code={raw} language={language} />
     }
     return (
       <code
@@ -120,6 +108,9 @@ const mdComponents = {
       </code>
     )
   },
+  // `pre` 默认会包住上面的代码块，形成 <pre><div> 的非法嵌套；
+  // 直接透传子节点，块级容器由 CodeBlock 自己提供
+  pre: ({ children }: React.ComponentProps<'pre'>) => <>{children}</>,
   blockquote: (props: React.ComponentProps<'blockquote'>) => (
     <blockquote
       style={{
