@@ -19,6 +19,7 @@ from cndb.plugins.tables.services.fields.field_import import (
     plan_field_import,
     rename_trashed_field_aside,
     resolve_source_fields,
+    sync_link_reference_fields,
     validate_field_import_conflicts,
     validate_link_targets_exist,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "prefill_select_options_from_rows",
     "rename_trashed_field_aside",
     "resolve_source_fields",
+    "sync_link_reference_fields",
     "sync_select_data_on_options_change",
     "sync_select_options_from_table",
     "validate_field_import_conflicts",

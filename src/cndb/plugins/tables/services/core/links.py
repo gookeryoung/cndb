@@ -137,7 +137,9 @@ def attach_links(
 ) -> list[dict[str, Any]]:
     """为行响应附加关联字段的摘要值；无关联字段或空结果时原样返回.
 
-    db 为 None 时摘要无法解析目标行内容，回退为 "#<id>" 占位。
+    摘要项为 ``{"id", "value", "match"}``：``value`` 取显示字段（单元格展示），
+    ``match`` 取匹配字段（导出/回灌口径）；两者都未配置时回退启发式摘要，
+    此时 ``match`` 与 ``value`` 相同。db 为 None 时摘要无法解析目标行内容，回退 "#<id>"。
     """
     fields = link_fields(table)
     if not fields or not rows:
@@ -146,11 +148,17 @@ def attach_links(
     for field in fields:
         mapping = load_links(engine, field, row_ids)
         all_targets = [target_id for targets in mapping.values() for target_id in targets]
-        summaries = _target_summaries(engine, field, all_targets, db=db)
+        display_summaries = _target_summaries(engine, field, all_targets, db=db)
+        match_summaries = _match_summaries(engine, field, all_targets, display_summaries, db=db)
         for row in rows:
             targets = mapping.get(int(row["id"]), [])
             row[str(field.name)] = [
-                {"id": target_id, "value": summaries.get(target_id, f"#{target_id}")} for target_id in targets
+                {
+                    "id": target_id,
+                    "value": display_summaries.get(target_id, f"#{target_id}"),
+                    "match": match_summaries.get(target_id, f"#{target_id}"),
+                }
+                for target_id in targets
             ]
     return rows
 
@@ -444,22 +452,69 @@ def _target_summaries(
     return _row_summaries(engine, target, _link_summary_fields(target, field), ids)
 
 
+def _match_summaries(
+    engine: Engine,
+    field: DataField,
+    target_ids: Sequence[int],
+    display_summaries: dict[int, str],
+    db: Session | None = None,
+) -> dict[int, str]:
+    """批量生成目标行的匹配字段摘要（导出/回灌口径）：id -> 匹配字段值.
+
+    匹配字段取 config.match_field_id、留空回退 display_field_id；与显示字段解析为同一
+    字段（或都未配置）时直接复用 display_summaries，避免重复查询。
+    """
+    ids = list(dict.fromkeys(target_ids))
+    if not ids:
+        return {}
+    if db is None:
+        return {target_id: f"#{target_id}" for target_id in ids}
+    target = _target_data_table(db, field)
+    if target is None:
+        return {target_id: f"#{target_id}" for target_id in ids}
+    cfg = field.config or {}
+    display_key = _resolve_business_key(target, cfg.get("display_field_id"))
+    match_key_id = cfg.get("match_field_id")
+    if match_key_id is None:
+        match_key_id = cfg.get("display_field_id")
+    match_key = _resolve_business_key(target, match_key_id)
+    if (match_key.id if match_key else None) == (display_key.id if display_key else None):
+        return display_summaries
+    return _row_summaries(engine, target, _link_match_fields(target, field), ids)
+
+
+def _resolve_business_key(target: DataTable, key_id: Any) -> DataField | None:
+    """解析业务键字段（属于目标表且有物理列）；无效返回 None."""
+    if key_id is None:
+        return None
+    for candidate in target.active_fields():
+        if candidate.id != key_id:
+            continue
+        ft = default_registry.get(candidate.field_type)
+        return candidate if ft is not None and ft.has_physical_column else None
+    return None
+
+
 def _link_summary_fields(target: DataTable, field: DataField) -> list[DataField]:
     """摘要取值字段：优先 link 字段配置的业务键显示字段，否则回退前几个非关联字段.
 
     显示字段需属于目标表且有物理列；配置失效（字段被删/无物理列）时回退默认启发式，
     保证读取侧永不出错。
     """
-    display_id = (field.config or {}).get("display_field_id")
-    if display_id is not None:
-        for candidate in target.active_fields():
-            if candidate.id != display_id:
-                continue
-            ft = default_registry.get(candidate.field_type)
-            if ft is not None and ft.has_physical_column:
-                return [candidate]
-            break
-    return _summary_fields(target)
+    display = _resolve_business_key(target, (field.config or {}).get("display_field_id"))
+    return [display] if display is not None else _summary_fields(target)
+
+
+def _link_match_fields(target: DataTable, field: DataField) -> list[DataField]:
+    """匹配字段取值字段：优先 config.match_field_id、回退 display_field_id，再回退启发式."""
+    cfg = field.config or {}
+    key_id = cfg.get("match_field_id")
+    if key_id is None:
+        key_id = cfg.get("display_field_id")
+    key = _resolve_business_key(target, key_id)
+    if key is not None:
+        return [key]
+    return _link_summary_fields(target, field)
 
 
 def _row_summaries(

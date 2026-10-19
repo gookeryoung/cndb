@@ -12,17 +12,22 @@ from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core.links import is_link_field
 
 
-def _serialize_link_value(value: Any, *, use_display: bool = False) -> Any:
+def _serialize_link_value(value: Any, *, use_business_key: bool = False) -> Any:
     """导出时把 link 摘要列表压成分号分隔串，其余原样.
 
-    use_display=False（默认）压成分号分隔的行 id，保持既有行为；
-    use_display=True 改用摘要里的业务文本（display_field_id 值），让导出文件可读、
-    与导入（按 match_field_id 解析）形成可回灌的往返契约。
+    use_business_key=False（默认）压成分号分隔的行 id，保持既有行为；
+    use_business_key=True 改用摘要里的业务文本，让导出文件可读、可回灌 ——
+    link 摘要项含 ``match``（匹配字段值，导入解析依据）与 ``value``（显示字段值），
+    优先取 ``match``：这样「导出→修改→导入」按匹配字段回灌不会错位。
     """
     if isinstance(value, list) and value and isinstance(value[0], dict):
         parts: list[str] = []
         for item in value:
-            raw = item.get("value") if use_display else None
+            raw = None
+            if use_business_key:
+                raw = item.get("match")
+                if raw is None or raw == "":
+                    raw = item.get("value")
             if raw is None or raw == "":
                 raw = item.get("id", "")
             parts.append(str(raw))
@@ -37,10 +42,12 @@ def _exportable_rows(
     """行响应统一做导出序列化.
 
     link_display 为 {字段名: 是否导出业务文本} 映射；缺省（None）时 link 列仍导出 id，
-    与历史行为一致。仅对映射里为 True 的列改用业务文本。
+    与历史行为一致。仅对映射里为 True 的列改用业务文本（匹配字段值）。
     """
     display = link_display or {}
-    return [{k: _serialize_link_value(v, use_display=bool(display.get(k))) for k, v in row.items()} for row in rows]
+    return [
+        {k: _serialize_link_value(v, use_business_key=bool(display.get(k))) for k, v in row.items()} for row in rows
+    ]
 
 
 def _parse_link_import_value(table: DataTable, row: dict[str, Any]) -> dict[str, Any]:
