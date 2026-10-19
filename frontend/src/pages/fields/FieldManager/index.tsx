@@ -76,7 +76,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   }
 
   /** 把字段值回填到表单；标记为程序化写入，避免被 onValuesChange 误判为用户改动 */
-  const seedEditForm = (f: Field) => {
+  const seedEditForm = (f: Field, config: Record<string, unknown>) => {
     programmaticRef.current = true
     setFieldType(f.field_type)
     form.setFieldsValue({
@@ -86,23 +86,30 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       hidden: f.hidden,
       is_unique: f.is_unique ?? false,
       default_value: f.default_value ?? '',
-      config: buildEditConfig(f),
+      config,
     })
     programmaticRef.current = false
     dirtyRef.current = false
   }
 
-  // 对话框打开期间：fields 更新且用户尚未改动表单时，同步为最新配置
+  // 对话框打开期间：fields 更新且用户尚未改动表单时，同步为最新配置。
+  //
+  // 同步指纹必须基于「回填用的完整 config」（buildEditConfig 的结果），而不是字段自身的
+  // 原始 config —— 关联字段的「引用字段」是从同表归属它的 lookup 行反推而来的，当这些
+  // lookup 兄弟字段在对话框打开后才异步到达（首次进入时 fields 尚未含它们的典型情形），
+  // 字段自身的 config 不变但反推结果会变。若指纹只看自身 config，effect 会误判「无变化」
+  // 而跳过回填，「引用字段」区就会停在打开时的空态，表现为「首次进入编辑页面无法同步」。
   useEffect(() => {
     if (!innerOpen || !liveEditTarget) return
+    const config = buildEditConfig(liveEditTarget)
     const sig = JSON.stringify({
       n: liveEditTarget.name, t: liveEditTarget.field_type, r: liveEditTarget.required,
       h: liveEditTarget.hidden, u: liveEditTarget.is_unique, d: liveEditTarget.default_value,
-      c: liveEditTarget.config ?? {},
+      c: config,
     })
     if (sig === seededSigRef.current || dirtyRef.current) return
     seededSigRef.current = sig
-    seedEditForm(liveEditTarget)
+    seedEditForm(liveEditTarget, config)
   }, [innerOpen, liveEditTarget, fields]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 从其他表引入对话框状态 ──
