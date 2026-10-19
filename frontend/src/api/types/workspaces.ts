@@ -13,7 +13,7 @@ export interface Workspace {
 export interface WorkspaceDetail extends Workspace {
   member_count?: number; table_count?: number
   view_count?: number; total_rows?: number
-  /** 已用存储空间（字节）：附件 + 文档外存内容 */
+  /** 已用存储空间（字节）：附件 + 文档（外存文件/内联正文）+ 数据表记录 */
   storage_bytes?: number
   owner?: { id: ID; username: string; nickname?: string } | null
   current_user_role?: WorkspaceRole | null

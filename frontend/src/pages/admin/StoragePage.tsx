@@ -1,8 +1,8 @@
 /** 空间分配 — 管理台分区：为每个工作区分配存储配额（上限）。
  *
- * 数据来源 `/api/v1/admin/workspaces/storage`：已用空间按附件与文档外存内容
- * 实际占用汇总。默认配额 100MB，管理员可逐工作区调整（单位 MB）。
- * 列表紧凑呈现「已用 / 配额 / 使用率」，超过 80% 高亮、达到上限标红。
+ * 数据来源 `/api/v1/admin/workspaces/storage`：已用空间按附件、文档外存文件与
+ * 数据库内联文档正文、数据表记录实际占用汇总。默认配额 100MB，管理员可逐工作区
+ * 调整（单位 MB）。列表紧凑呈现「已用 / 配额 / 使用率」，超过 80% 高亮、达到上限标红。
  */
 
 import { useState } from 'react'
@@ -166,7 +166,7 @@ export default function StoragePage() {
         <div>
           默认配额 <Text strong>{formatSize(defaultQuota, 0)}</Text>
           {' '}· 共 {items.length} 个工作区，合计占用 <Text strong>{formatSize(totalUsed)}</Text>。
-          配额为每个工作区可用的存储上限（附件与文档外存内容合计），超出后不再允许上传新附件。
+          配额为每个工作区可用的存储上限（附件、文档与数据表记录合计），超出后不再允许上传新附件。
         </div>
       </div>
 
