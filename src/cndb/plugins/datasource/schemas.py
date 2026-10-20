@@ -41,6 +41,8 @@ class SyncJobCreate(BaseModel):
     cursor: dict[str, Any] = Field(default_factory=dict)
     schedule: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
+    session_id: int | None = Field(default=None, description="凭证会话（请求头 + 密钥）")
+    rate_limit_ms: int = Field(default=0, ge=0, le=60_000, description="同一任务内相邻请求最小间隔（毫秒）")
     run_immediately: bool = Field(default=False, description="创建后立刻跑一次（同步执行）")
 
 
@@ -59,6 +61,8 @@ class SyncJobUpdate(BaseModel):
     cursor: dict[str, Any] | None = None
     schedule: dict[str, Any] | None = None
     enabled: bool | None = None
+    session_id: int | None = None
+    rate_limit_ms: int | None = Field(default=None, ge=0, le=60_000)
 
 
 class SyncJobOut(BaseModel):
@@ -78,6 +82,8 @@ class SyncJobOut(BaseModel):
     enabled: bool
     last_run_at: dt.datetime | None
     last_status: str
+    session_id: int | None = None
+    rate_limit_ms: int = 0
     created_at: dt.datetime
     updated_at: dt.datetime
 
@@ -100,6 +106,8 @@ class SyncJobOut(BaseModel):
             enabled=job.enabled,
             last_run_at=job.last_run_at,
             last_status=job.last_status,
+            session_id=job.session_id,
+            rate_limit_ms=int(job.rate_limit_ms or 0),
             created_at=job.created_at,
             updated_at=job.updated_at,
         )
@@ -160,6 +168,68 @@ class RunResponse(BaseModel):
     run: SyncRunOut
 
 
+class SessionCreate(BaseModel):
+    """新建凭证会话：请求头 + 密钥（密钥只写不回显）."""
+
+    name: str = Field(..., min_length=1, max_length=128)
+    headers: dict[str, str] = Field(default_factory=dict, description="非敏感请求头")
+    secrets: dict[str, str] = Field(default_factory=dict, description="密钥字典，运行期作为模板变量注入")
+
+
+class SessionUpdate(BaseModel):
+    """局部更新；``secrets`` 一旦提供即整体替换."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    headers: dict[str, str] | None = None
+    secrets: dict[str, str] | None = None
+
+
+class SessionOut(BaseModel):
+    """会话详情：**不返回密钥值**，只给键名（前端做「已配置」标记）."""
+
+    id: int
+    workspace_id: int
+    name: str
+    headers: dict[str, str]
+    secret_keys: list[str] = Field(default_factory=list)
+    created_at: dt.datetime
+    updated_at: dt.datetime
+
+    @classmethod
+    def from_model(cls, session: Any) -> SessionOut:
+        return cls(
+            id=session.id,
+            workspace_id=session.workspace_id,
+            name=session.name,
+            headers=dict(session.headers or {}),
+            secret_keys=sorted((session.secrets or {}).keys()),
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+        )
+
+
+class SessionListResponse(BaseModel):
+    total: int
+    sessions: list[SessionOut]
+
+
+class DomainTemplate(BaseModel):
+    """领域模板包：按 provider 预置的一套分析配置（公式 / 图表 / 汇总）."""
+
+    id: str
+    provider: str
+    name: str
+    description: str
+    reason: str = ""
+    formulas: list[dict[str, Any]] = Field(default_factory=list)
+    chart: dict[str, Any] | None = None
+    summary: dict[str, Any] | None = None
+
+
+class DomainTemplateListResponse(BaseModel):
+    templates: list[DomainTemplate]
+
+
 class PreviewRequest(BaseModel):
     limit: int = Field(default=50, ge=1, le=500, description="返回行数上限")
 
@@ -178,11 +248,17 @@ class PreviewResponse(BaseModel):
 
 
 __all__ = [
+    "DomainTemplate",
+    "DomainTemplateListResponse",
     "PreviewRequest",
     "PreviewResponse",
     "ProviderInfo",
     "ProviderListResponse",
     "RunResponse",
+    "SessionCreate",
+    "SessionListResponse",
+    "SessionOut",
+    "SessionUpdate",
     "SyncJobCreate",
     "SyncJobListResponse",
     "SyncJobOut",

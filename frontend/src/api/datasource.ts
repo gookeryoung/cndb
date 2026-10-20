@@ -49,6 +49,10 @@ export interface SyncRequestSpec {
   params_template?: Record<string, unknown>
   body_template?: unknown
   data_path?: string | null
+  /** rows：响应即对象数组；columns：响应是「列名 → 数组」，需按列拼行 */
+  record_mode?: 'rows' | 'columns'
+  /** 列式映射：{目标列名: 源键} */
+  record_layout?: Record<string, string>
   encoding?: string
   timeout?: number
   paging?: {
@@ -104,6 +108,10 @@ export interface SyncJob {
   enabled: boolean
   last_run_at: string | null
   last_status: string
+  /** 凭证会话 id（请求头 + 密钥） */
+  session_id?: number | null
+  /** 相邻请求最小间隔（毫秒） */
+  rate_limit_ms?: number
   created_at: string
   updated_at: string
 }
@@ -121,7 +129,38 @@ export interface SyncJobPayload {
   cursor?: SyncCursorConfig
   schedule?: SyncScheduleConfig
   enabled?: boolean
+  session_id?: number | null
+  rate_limit_ms?: number
   run_immediately?: boolean
+}
+
+/** 凭证会话（密钥只写不回显，列表只返回键名） */
+export interface DatasourceSession {
+  id: number
+  workspace_id: number
+  name: string
+  headers: Record<string, string>
+  secret_keys: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface DatasourceSessionPayload {
+  name: string
+  headers?: Record<string, string>
+  secrets?: Record<string, string>
+}
+
+/** 领域模板包：按 provider 预置的分析配置 */
+export interface DomainTemplate {
+  id: string
+  provider: string
+  name: string
+  description: string
+  reason?: string
+  formulas: Array<Record<string, unknown>>
+  chart: Record<string, unknown> | null
+  summary: Record<string, unknown> | null
 }
 
 export interface SyncRun {
@@ -182,4 +221,18 @@ export const datasourceApi = {
     api
       .get<{ total: number; runs: SyncRun[] }>(`${base(wid)}/sync-jobs/${id}/runs`, { params })
       .then(r => r.data),
+  sessions: (wid: number | string) =>
+    api
+      .get<{ total: number; sessions: DatasourceSession[] }>(`${base(wid)}/sessions`)
+      .then(r => r.data.sessions),
+  createSession: (wid: number | string, data: DatasourceSessionPayload) =>
+    api.post<DatasourceSession>(`${base(wid)}/sessions`, data).then(r => r.data),
+  updateSession: (wid: number | string, id: number | string, data: Partial<DatasourceSessionPayload>) =>
+    api.put<DatasourceSession>(`${base(wid)}/sessions/${id}`, data).then(r => r.data),
+  removeSession: (wid: number | string, id: number | string) =>
+    api.delete(`${base(wid)}/sessions/${id}`).then(() => null),
+  domainTemplates: (wid: number | string, provider?: string) =>
+    api
+      .get<{ templates: DomainTemplate[] }>(`${base(wid)}/domain-templates`, { params: { provider } })
+      .then(r => r.data.templates),
 }

@@ -514,7 +514,7 @@ def _import_sync_jobs(
     - 备份里的 ``table_name`` 按同名表映射为新表 id，找不到则任务不绑定表；
     - 游标 / 调度配置在导入时校验，非法配置跳过并记错误（不阻断整体导入）。
     """
-    from cndb.plugins.datasource.models import DatasourceSyncJob
+    from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob
     from cndb.plugins.datasource.services.cursor import CursorConfig
     from cndb.plugins.datasource.services.schedule import ScheduleConfig
     from cndb.plugins.tables.models import DataTable
@@ -528,6 +528,12 @@ def _import_sync_jobs(
         row[0]: row[1]
         for row in db.query(DataTable.name, DataTable.id)
         .filter(DataTable.workspace_id == workspace_id, DataTable.trashed_at.is_(None))
+        .all()
+    }
+    session_ids = {
+        row[0]: row[1]
+        for row in db.query(DatasourceSession.name, DatasourceSession.id)
+        .filter(DatasourceSession.workspace_id == workspace_id)
         .all()
     }
     imported = 0
@@ -564,6 +570,9 @@ def _import_sync_jobs(
             cursor=item.get("cursor") or {},
             schedule=item.get("schedule") or {},
             enabled=bool(item.get("enabled", True)),
+            # 会话按同名绑定（密钥不导出）；找不到同名会话时解绑，任务仍可运行（可能缺鉴权）
+            session_id=session_ids.get(item.get("session_name") or ""),
+            rate_limit_ms=int(item.get("rate_limit_ms") or 0),
         )
         db.add(job)
         imported += 1

@@ -11,7 +11,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -61,6 +62,8 @@ def run_pipeline(
     *,
     provider: SourceProvider | None = None,
     fetch: FetchFn | None = None,
+    rate_limit_ms: int = 0,
+    sleep: Callable[[float], None] | None = None,
 ) -> PipelineOutcome:
     """执行一次同步抓取（不落库）.
 
@@ -68,6 +71,8 @@ def run_pipeline(
         job: 同步任务声明。
         provider: 显式指定适配器；缺省按 ``job.provider`` 从注册表取。
         fetch: 注入的抓取函数（测试用假源）；缺省走 ``api_fetch.fetch_json``。
+        rate_limit_ms: 同一 job 内相邻请求的最小间隔（毫秒，0 = 不限速）。
+        sleep: 注入的等待函数（测试用，缺省 ``time.sleep``）。
     """
     active = provider or get_provider(job.provider)
     fetcher: FetchFn = fetch or fetch_json
@@ -76,12 +81,17 @@ def run_pipeline(
     outcome = PipelineOutcome(plans=len(plans))
     raw_rows: list[dict[str, Any]] = []
     stop_pages: dict[tuple[str | None, str | None, str | None], int] = {}
+    waiter = sleep or time.sleep
+    sent = 0
 
     for plan in plans:
         group = (plan.entrant, plan.window_start, plan.window_end)
         stopped_at = stop_pages.get(group)
         if stopped_at is not None and plan.page is not None and plan.page > stopped_at:
             continue
+        if rate_limit_ms > 0 and sent > 0:
+            waiter(rate_limit_ms / 1000.0)
+        sent += 1
         try:
             rows = fetcher(plan.config)
         except Exception as exc:  # 单请求失败不中断整体（I3）

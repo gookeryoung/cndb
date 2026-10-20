@@ -87,6 +87,11 @@ class RequestSpec:
     params_template: Mapping[str, Any] = field(default_factory=dict)
     body_template: Any = None
     data_path: str | None = None
+    # 记录形态：rows = 响应里直接是对象数组；columns = 响应是「列名 → 数组」的对象
+    # （Open-Meteo / 部分行情接口的 daily.time[] / daily.temp[] 形态），需按列拼行
+    record_mode: Literal["rows", "columns"] = "rows"
+    # 列式映射：{目标列名: 源键}；缺省把 data_path 对象下的所有数组键当列
+    record_layout: Mapping[str, str] = field(default_factory=dict)
     encoding: str = "utf-8"
     timeout: float = DEFAULT_TIMEOUT
     paging: PagingSpec = field(default_factory=PagingSpec)
@@ -129,6 +134,8 @@ class SyncJobSpec:
     match_keys: tuple[str, ...] = ()
     field_mapping: Mapping[str, FieldTransform | None] = field(default_factory=dict)
     parser: str = "json"
+    # 额外模板变量（M5：凭证会话的密钥，如 {"api_key": "..."}）；内置变量优先，避免被配置覆盖
+    extra_variables: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.entrant_values and not self.entrant_param:

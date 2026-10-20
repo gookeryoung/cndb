@@ -37,6 +37,9 @@ export type { SystemAbout } from './system'
 export { datasourceApi } from './datasource'
 export type {
   DatasourceProviderInfo,
+  DatasourceSession,
+  DatasourceSessionPayload,
+  DomainTemplate,
   ProviderField,
   SyncCursorConfig,
   SyncCursorStrategy,

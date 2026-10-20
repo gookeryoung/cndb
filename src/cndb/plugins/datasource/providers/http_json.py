@@ -28,7 +28,7 @@ from cndb.plugins.datasource.providers.base import (
 )
 from cndb.plugins.datasource.providers.template import render_text, render_value
 from cndb.plugins.datasource.services.normalize import NormalizeResult, apply_field_mapping
-from cndb.plugins.tables.services.importing.api_fetch import FetchConfig, _extract_array
+from cndb.plugins.tables.services.importing.api_fetch import FetchConfig, _extract_array, _resolve_path
 
 # 供前端动态渲染的表单描述（M3 的「新建向导」消费）
 HTTP_JSON_PARAMS_SCHEMA: dict[str, Any] = {
@@ -80,6 +80,8 @@ class HttpJsonProvider:
             payload = json.loads(text)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ProviderError(f"响应不是合法 JSON: {exc}") from exc
+        if job.request.record_mode == "columns":
+            return columns_to_rows(payload, job.request.data_path, job.request.record_layout)
         return _extract_array(payload, job.request.data_path, True)
 
     def normalize(self, rows: Sequence[Mapping[str, Any]], job: SyncJobSpec) -> NormalizeResult:
@@ -96,7 +98,8 @@ class HttpJsonProvider:
         page: int | None,
     ) -> dict[str, Any]:
         spec = job.request
-        variables: dict[str, Any] = {}
+        # 会话密钥等额外变量先铺底，内置变量（entrant / 窗口 / 分页）随后覆盖
+        variables: dict[str, Any] = dict(job.extra_variables)
         if job.entrant_param:
             variables[job.entrant_param] = entrant
         variables["entrant"] = entrant
@@ -128,6 +131,38 @@ class HttpJsonProvider:
             data_path=spec.data_path,
             encoding=spec.encoding,
         )
+
+
+def columns_to_rows(
+    payload: Any,
+    data_path: str | None = None,
+    layout: Mapping[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """把「列名 → 数组」的响应拼成行（逐索引 zip，缺值补 None）.
+
+    ``layout`` 给出时按 ``{目标列名: 源键}`` 取列，否则把目标对象下所有数组键都当列。
+    """
+    node: Any = _resolve_path(payload, data_path) if data_path else payload
+    if not isinstance(node, dict):
+        raise ProviderError("列式记录要求 data_path 指向一个对象（列名 → 数组）")
+    columns: dict[str, list[Any]] = {}
+    if layout:
+        for target, source in layout.items():
+            series = node.get(source)
+            if not isinstance(series, list):
+                raise ProviderError(f"列式记录缺少数组列: {source}")
+            columns[target] = series
+    else:
+        for key, value in node.items():
+            if isinstance(value, list):
+                columns[key] = value
+    if not columns:
+        raise ProviderError("列式记录未找到任何数组列")
+    width = max(len(series) for series in columns.values())
+    rows: list[dict[str, Any]] = []
+    for index in range(width):
+        rows.append({name: (series[index] if index < len(series) else None) for name, series in columns.items()})
+    return rows
 
 
 def iter_windows(spec: TimeWindowSpec) -> list[tuple[str | None, str | None]]:
@@ -185,7 +220,7 @@ def _format_day(value: date, fmt: str) -> str:
     return value.strftime(fmt)
 
 
-__all__ = ["HTTP_JSON_PARAMS_SCHEMA", "HttpJsonProvider", "iter_pages", "iter_windows"]
+__all__ = ["HTTP_JSON_PARAMS_SCHEMA", "HttpJsonProvider", "columns_to_rows", "iter_pages", "iter_windows"]
 
 if TYPE_CHECKING:
     # 类型检查期验证实现满足 SourceProvider 协议（运行期零开销）

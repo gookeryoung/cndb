@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from cndb.plugins.datasource.models import (
+    DatasourceSession,
     DatasourceSyncJob,
     DatasourceSyncRun,
     RunStatus,
@@ -113,8 +114,9 @@ def execute_job(
     try:
         cursor_config = CursorConfig.from_dict(job.cursor)
         cursor_from = window_start(cursor_config, today=today) or ""
-        spec = build_job_spec(job, cursor_from=cursor_from, today=today)
-        outcome = run_pipeline(spec, fetch=fetch)
+        session = db.get(DatasourceSession, job.session_id) if job.session_id else None
+        spec = build_job_spec(job, cursor_from=cursor_from, today=today, session=session)
+        outcome = run_pipeline(spec, fetch=fetch, rate_limit_ms=max(0, int(job.rate_limit_ms or 0)))
         write_outcome = _persist_rows(db, job, outcome.rows, user=user)
         cursor_to = advance(cursor_config, outcome.rows) or ""
         _finalize(
@@ -149,6 +151,7 @@ def preview_job(
     fetch: FetchFn | None = None,
     now: dt.datetime | None = None,
     limit: int = PREVIEW_LIMIT,
+    session: DatasourceSession | None = None,
 ) -> PreviewResult:
     """抓一次做预览：不落库、不推进游标、不写运行记录."""
     current = now or dt.datetime.now(dt.UTC)
@@ -156,8 +159,8 @@ def preview_job(
     cursor_config = CursorConfig.from_dict(job.cursor)
     cursor_from = window_start(cursor_config, today=today) or ""
 
-    spec = build_job_spec(job, cursor_from=cursor_from, today=today)
-    outcome = run_pipeline(spec, fetch=fetch)
+    spec = build_job_spec(job, cursor_from=cursor_from, today=today, session=session)
+    outcome = run_pipeline(spec, fetch=fetch, rate_limit_ms=max(0, int(job.rate_limit_ms or 0)))
     normalized = outcome.normalize
     columns: list[str] = []
     if outcome.rows:
@@ -186,9 +189,26 @@ def preview_job(
 # ── 配置还原 ─────────────────────────────────────
 
 
-def build_job_spec(job: DatasourceSyncJob, *, cursor_from: str, today: str) -> SyncJobSpec:
-    """把 DB 里的 JSON 声明还原成 ``SyncJobSpec``，并注入本轮时间窗口."""
-    request = request_spec_from_payload(job.request_spec, cursor_from=cursor_from, today=today)
+def build_job_spec(
+    job: DatasourceSyncJob,
+    *,
+    cursor_from: str,
+    today: str,
+    session: DatasourceSession | None = None,
+) -> SyncJobSpec:
+    """把 DB 里的 JSON 声明还原成 ``SyncJobSpec``，注入时间窗口与会话凭证.
+
+    会话（M5）贡献两部分：``headers`` 作为请求头**铺底**（job 自己的同名头优先），
+    ``secrets`` 作为模板变量（请求模板里写 ``{api_key}`` 即可）。
+    """
+    payload = dict(job.request_spec or {})
+    extra_variables: dict[str, Any] = {}
+    if session is not None:
+        merged_headers = {**(session.headers or {}), **(payload.get("headers_template") or {})}
+        if merged_headers:
+            payload["headers_template"] = merged_headers
+        extra_variables = dict(session.secrets or {})
+    request = request_spec_from_payload(payload, cursor_from=cursor_from, today=today)
     return SyncJobSpec(
         request=request,
         provider=job.provider,
@@ -197,6 +217,7 @@ def build_job_spec(job: DatasourceSyncJob, *, cursor_from: str, today: str) -> S
         match_keys=tuple(job.match_keys or ()),
         field_mapping=field_mapping_from_payload(job.field_mapping),
         parser=job.parser,
+        extra_variables=extra_variables,
     )
 
 
@@ -221,6 +242,8 @@ def request_spec_from_payload(
         params_template=dict(data.get("params_template") or {}),
         body_template=data.get("body_template"),
         data_path=data.get("data_path") or None,
+        record_mode="columns" if data.get("record_mode") == "columns" else "rows",
+        record_layout=dict(data.get("record_layout") or {}),
         encoding=str(data.get("encoding") or "utf-8"),
         timeout=float(data.get("timeout") or 15.0),
         paging=PagingSpec(**dict(data.get("paging") or {})),

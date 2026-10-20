@@ -563,9 +563,15 @@ def export_workspace(
 
     # v5：外部数据同步任务（ADR 0006）。跨工作区 table_id 不可移植，
     # 导出用「目标表名」引用，导入端按同名表映射；找不到同名表则任务不绑定表。
-    from cndb.plugins.datasource.models import DatasourceSyncJob
+    from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob
 
     table_name_by_id = {tbl.id: tbl.name for tbl in tables}
+    session_name_by_id = {
+        row[0]: row[1]
+        for row in db.query(DatasourceSession.id, DatasourceSession.name)
+        .filter(DatasourceSession.workspace_id == workspace_id)
+        .all()
+    }
     sync_jobs = (
         db.query(DatasourceSyncJob)
         .filter(DatasourceSyncJob.workspace_id == workspace_id)
@@ -586,6 +592,9 @@ def export_workspace(
             "cursor": job.cursor,
             "schedule": job.schedule,
             "enabled": job.enabled,
+            # 会话只记名称：密钥不随备份导出（导入端按同名绑定，缺失则解绑）
+            "session_name": session_name_by_id.get(job.session_id) if job.session_id else None,
+            "rate_limit_ms": job.rate_limit_ms,
         }
         for job in sync_jobs
     ]
