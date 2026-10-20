@@ -5,6 +5,8 @@
 2. 防御 SSRF（禁止访问内网 / localhost / 保留网段 / file:// 等）
 3. 限制响应体大小、超时时间、重定向次数
 4. 内置响应处理器机制：默认 JSON 处理器 + 腾讯股票等专用处理器
+5. 重试分层：普通瞬时失败短退避；连接被对端掐断（疑似限流）用长退避，
+   并把错误翻译成“目标站可能正在限流本机出口 IP”
 
 响应处理器（response_handler）机制：
 - 默认: "json" — 标准 JSON 响应（现有逻辑）
@@ -36,6 +38,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 15.0  # 秒
 MAX_RETRIES = 2  # 瞬时失败重试次数（仅幂等 GET）
 RETRY_BACKOFF_SECONDS = 0.5  # 首次重试退避（指数：0.5s, 1s, ...）
+# 对端直接掐断连接（一个响应字节都没回）多见于风控 / 限流：短退避没有意义，
+# 只会把封禁窗口越拖越长，改用更长的退避（2s, 8s, 32s ...）
+THROTTLE_BACKOFF_SECONDS = 2.0
+THROTTLE_BACKOFF_FACTOR = 4
+THROTTLE_HINT = "目标站可能正在限流本机出口 IP"
 MAX_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_REDIRECTS = 5
 USER_AGENT = "cndb-api-importer/1.0 (+https://github.com/cndb)"
@@ -218,6 +225,44 @@ class FetchConfig:
 
 
 # ── 内部辅助 ─────────────────────────────────────
+
+
+# 对端主动断开连接的异常类型（httpx 侧统一表现为 RemoteProtocolError / ReadError）
+_THROTTLE_ERROR_TYPES = (httpx2.RemoteProtocolError, httpx2.ReadError)
+
+# ConnectError 的文案命中这些关键字时，同样按"被掐连接"处理（WinError 10054 等）
+_RESET_MARKERS = (
+    "connection reset",
+    "reset by peer",
+    "remote host closed",
+    "10054",
+    "强迫关闭",
+)
+
+
+def _is_throttle_like_error(exc: Exception) -> bool:
+    """判断异常是否更像"对端主动断开/限流"，而非本机网络故障.
+
+    典型信号：
+    - ``RemoteProtocolError``：``Server disconnected without sending a response.``
+    - ``ReadError``：响应读了一半被对端关闭
+    - ``ConnectError`` 文案命中 connection reset / WinError 10054
+    """
+    if isinstance(exc, _THROTTLE_ERROR_TYPES):
+        return True
+    text = str(exc).lower()
+    return any(marker in text for marker in _RESET_MARKERS)
+
+
+def _retry_backoff_seconds(attempt: int, *, throttled: bool) -> float:
+    """第 ``attempt``（从 0 起）次重试前的退避秒数.
+
+    普通瞬时失败用短退避（0.5s, 1s）；疑似限流的连接重置用长退避（2s, 8s），
+    既不白等，也不在封禁期继续刷请求。
+    """
+    if throttled:
+        return THROTTLE_BACKOFF_SECONDS * (THROTTLE_BACKOFF_FACTOR**attempt)
+    return RETRY_BACKOFF_SECONDS * (2**attempt)
 
 
 def _resolve_path(data: Any, path: str) -> Any:
@@ -542,8 +587,9 @@ def fetch_json(config: FetchConfig) -> list[dict[str, Any]]:
             except httpx2.RequestError as exc:
                 # 幂等 GET 的瞬时失败（连接中断/超时）做有限重试；重试语义：
                 # 仅重试请求本身，重定向循环从头开始（每步重新过 SSRF 校验）
+                throttled = _is_throttle_like_error(exc)
                 if attempt + 1 < max_attempts:
-                    backoff = RETRY_BACKOFF_SECONDS * (2**attempt)
+                    backoff = _retry_backoff_seconds(attempt, throttled=throttled)
                     logger.warning(
                         "请求失败（第 %d/%d 次尝试），%.1fs 后重试: %s",
                         attempt + 1,
@@ -553,6 +599,10 @@ def fetch_json(config: FetchConfig) -> list[dict[str, Any]]:
                     )
                     time.sleep(backoff)
                     continue
+                # 连接被对端直接掐断时，绝大多数不是本地配置写错了，
+                # 直接把"疑似限流"告诉用户，省得去查 URL / 字段映射
+                if throttled:
+                    raise ValueError(f"{THROTTLE_HINT}：{exc}") from exc
                 raise ValueError(f"请求失败: {exc}") from exc
             break
         # resp 经上方 while True 循环至少赋值一次并 break，必非空
@@ -615,13 +665,18 @@ __all__ = [
     "RESPONSE_HANDLERS",
     "RETRY_BACKOFF_SECONDS",
     "TENCENT_STOCK_FIELDS",
+    "THROTTLE_BACKOFF_FACTOR",
+    "THROTTLE_BACKOFF_SECONDS",
+    "THROTTLE_HINT",
     "USER_AGENT",
     "FetchConfig",
     "_extract_array",
     "_get_response_handler",
     "_is_private_or_reserved_ip",
+    "_is_throttle_like_error",
     "_parse_tencent_stock",
     "_resolve_path",
+    "_retry_backoff_seconds",
     "fetch_json",
     "validate_query_interval",
     "validate_url",

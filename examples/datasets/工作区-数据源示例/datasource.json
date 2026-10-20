@@ -1,5 +1,5 @@
 {
-  "_comment": "数据源同步任务种子：数据源示例工作区。tencent_kline 单任务多标的（entrant_param=symbol + 多个 entrant_keys），每个股票代码生成一个 URL，全部按 match_keys=[股票代码,交易日] 幂等 upsert 到「股市日线」表。eastmoney_kline 任务写「自选股」表：一只股一行，kline 数组按 match_keys=[股票代码] 分列 upsert（日线前/后/不复权、周线/月线前复权），部分列更新不会清空其它周期列。eastmoney_symbols 为 P1 全市场标的发现：默认停用（需联网且标的数千），手动执行后新行的「是否自选」由字段默认值落 false，已有自选行保持不变；全市场 K 线请用 `cndb sync batch-kline` 按批建任务。seed 只注入配置（enabled 按配置），不触发联网抓取；股票代码格式须与表内取值一致（带市场前缀 sh/sz/hk/us）。",
+  "_comment": "数据源同步任务种子：数据源示例工作区。tencent_kline 单任务多标的（entrant_param=symbol + 多个 entrant_keys），每个股票代码生成一个 URL，全部按 match_keys=[股票代码,交易日] 幂等 upsert 到「股市日线」表。eastmoney_kline 任务写「自选股」表：一只股一行，kline 数组按 match_keys=[股票代码] 分列 upsert（日线前/后/不复权、周线/月线前复权），部分列更新不会清空其它周期列。eastmoney_symbols 为 P1 全市场标的发现：默认停用（需联网且标的数千），手动执行后新行的「是否自选」由字段默认值落 false，已有自选行保持不变；全市场 K 线请用 `cndb sync batch-kline` 按批建任务。seed 只注入配置（enabled 按配置），不触发联网抓取；股票代码格式须与表内取值一致（带市场前缀 sh/sz/hk/us）。东财 K 线任务按 17:30/17:45/18:00/18:15/18:30 错峰且 rate_limit_ms=2000（7 个标的串行约 12s/任务），压低被按出口 IP 限流的概率。",
   "jobs": [
     {
       "name": "股市日线同步（腾讯前复权）",
@@ -54,7 +54,7 @@
       "cursor": { "strategy": "none" },
       "schedule": { "mode": "daily", "at": "17:30", "timezone": "Asia/Shanghai" },
       "enabled": true,
-      "rate_limit_ms": 500
+      "rate_limit_ms": 2000
     },
     {
       "name": "自选股日线同步（后复权）",
@@ -76,9 +76,9 @@
         "latest_amount": { "name": "成交额", "field_type": "float" }
       },
       "cursor": { "strategy": "none" },
-      "schedule": { "mode": "daily", "at": "17:35", "timezone": "Asia/Shanghai" },
+      "schedule": { "mode": "daily", "at": "17:45", "timezone": "Asia/Shanghai" },
       "enabled": true,
-      "rate_limit_ms": 500
+      "rate_limit_ms": 2000
     },
     {
       "name": "自选股日线同步（不复权）",
@@ -100,9 +100,9 @@
         "latest_amount": { "name": "成交额", "field_type": "float" }
       },
       "cursor": { "strategy": "none" },
-      "schedule": { "mode": "daily", "at": "17:40", "timezone": "Asia/Shanghai" },
+      "schedule": { "mode": "daily", "at": "18:00", "timezone": "Asia/Shanghai" },
       "enabled": true,
-      "rate_limit_ms": 500
+      "rate_limit_ms": 2000
     },
     {
       "name": "自选股周线同步（前复权）",
@@ -119,9 +119,9 @@
         "kline": { "name": "周线前复权", "field_type": "json" }
       },
       "cursor": { "strategy": "none" },
-      "schedule": { "mode": "daily", "at": "17:45", "timezone": "Asia/Shanghai" },
+      "schedule": { "mode": "daily", "at": "18:15", "timezone": "Asia/Shanghai" },
       "enabled": true,
-      "rate_limit_ms": 500
+      "rate_limit_ms": 2000
     },
     {
       "name": "自选股月线同步（前复权）",
@@ -138,9 +138,9 @@
         "kline": { "name": "月线前复权", "field_type": "json" }
       },
       "cursor": { "strategy": "none" },
-      "schedule": { "mode": "daily", "at": "17:50", "timezone": "Asia/Shanghai" },
+      "schedule": { "mode": "daily", "at": "18:30", "timezone": "Asia/Shanghai" },
       "enabled": true,
-      "rate_limit_ms": 500
+      "rate_limit_ms": 2000
     },
     {
       "name": "全市场标的发现（A股）",
