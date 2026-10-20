@@ -22,7 +22,7 @@ FRONTEND_DEPS := frontend/node_modules/.make-sync
 .PHONY: help sync dev seed frontend-sync frontend-static frontend-coverage frontend-build \
         build clean test cov lint typecheck e2e e2e-dev gitkeep-check adr-check \
         check-fast check-docs flow check bump pub push pack-doctor pack pack-cache-clean \
-        docker-build docker-export
+        docker-dev docker-dev-down docker-build docker-export
 
 # ── 开发 ──────────────────────────────────────────────────────────────
 
@@ -103,6 +103,12 @@ build: frontend-build ## 构建分发包（前端 → wheel + sdist）
 
 # 版本号（默认取 pyproject.toml；可用 make docker-build VERSION=x.y.z 覆盖）
 VERSION ?= $(shell grep -m1 -E '^version' pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+
+docker-dev dd: ## Docker 开发模式：容器内起前后端开发服务器（源码挂载 + 热重载，前端 5173 / 后端 8772）
+	docker compose -f docker-compose.dev.yml up --build
+
+docker-dev-down ddd: ## 停止 Docker 开发模式（移除容器与网络，保留数据卷）
+	docker compose -f docker-compose.dev.yml down
 
 docker-build db: build ## 本地构建镜像（联网机；VERSION=x.y.z 覆盖版本）
 	bash deploy/build-image.sh $(VERSION)

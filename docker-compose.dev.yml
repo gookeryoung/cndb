@@ -1,0 +1,73 @@
+# ═══════════════════════════════════════════════════════════════════
+# cndb 开发编排 —— 容器内全栈热重载（等价宿主 `make dev`）
+#
+#   make docker-dev          # 起后端(:8772) + 前端(:5173)，改源码即热更
+#   make docker-dev-down     # 停止并移除容器/网络（保留数据卷）
+#
+# 与生产编排（docker-compose.prod.yml）互不影响，可并存：
+#   · 仓库根 bind mount 进容器，源码改动被 uvicorn --reload / Vite HMR 立即感知
+#   · 数据落独立命名卷 cndb-dev-data（/data），不碰宿主 ~/.cndb
+#   · 前端 node_modules 用独立卷，容器重建不重复下载，也不与宿主平台产物互相污染
+#
+# 本文件不读取 .env、不依赖任何外部变量，`docker compose -f docker-compose.dev.yml up` 即可起。
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dev
+      args:
+        # 国内加速（默认值见 Dockerfile.dev）；需要官方源时置空/换成官方地址：
+        #   CNDB_PYTHON_IMAGE=python:3.12-slim CNDB_APT_MIRROR= CNDB_PIP_INDEX=https://pypi.org/simple
+        BASE_IMAGE: ${CNDB_PYTHON_IMAGE:-docker.m.daocloud.io/library/python:3.12-slim}
+        APT_MIRROR_HOST: ${CNDB_APT_MIRROR:-mirrors.cloud.tencent.com}
+        PIP_INDEX_URL: ${CNDB_PIP_INDEX:-https://mirrors.cloud.tencent.com/pypi/simple}
+    container_name: cndb-dev-backend
+    working_dir: /app
+    # 与宿主 `cndb dev` 同口径的端口（8772，Vite 代理默认目标）
+    command: uvicorn cndb.app:app --host 0.0.0.0 --port 8772 --reload
+    environment:
+      # 数据根目录统一落 /data（命名卷）；不设则默认 ~/.cndb（容器内，重建即丢）
+      - CNDB_DATA_DIR=/data
+      - DEBUG=true
+    volumes:
+      # 仓库根挂载：源码改动经 --reload 立即生效（依赖在 /opt/venv，不被覆盖）
+      - .:/app
+      - cndb-dev-data:/data
+    ports:
+      - "8772:8772"
+    # 镜像内无 curl，用 Python 标准库探测（与生产编排同口径）
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8772/api/health', timeout=5)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    # 国内加速：Node 镜像默认走国内代理；需要官方源时 `CNDB_NODE_IMAGE=node:22-alpine` 覆盖
+    image: ${CNDB_NODE_IMAGE:-docker.m.daocloud.io/library/node:22-alpine}
+    container_name: cndb-dev-frontend
+    working_dir: /app/frontend
+    # pnpm 由 corepack 按 package.json 的 packageManager 字段落地（12.4.2）
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm dev --host 0.0.0.0 --port 5173"
+    environment:
+      # Vite 代理目标指向同编排内的后端服务（默认是 127.0.0.1:8772，容器内不通）
+      - CNDB_API_TARGET=http://backend:8772
+      # 国内加速：corepack 拉取 pnpm 本体与 pnpm 下载依赖都走 npmmirror
+      - COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
+      - npm_config_registry=https://registry.npmmirror.com
+    volumes:
+      # 仓库根挂载：前端源码 HMR；node_modules 由下面的命名卷接管（见挂载说明）
+      - .:/app
+      - cndb-dev-node-modules:/app/frontend/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  cndb-dev-data:
+  cndb-dev-node-modules:

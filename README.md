@@ -51,17 +51,44 @@ git tag v0.3.1 && git push origin v0.3.1    # 同步产物 → 服务器构建 �
 部署链路、服务器准备、TCR 凭证配置、定时备份与 PostgreSQL 迁移：
 详见 **[docs/DEPLOY_TENCENT.md](docs/DEPLOY_TENCENT.md)**。
 
-**离线部署**（无外网隔离环境）：在联网机器本地构建并导出行 `build-image.sh` +
-`export-image.sh` 产出交付包，拷入离线服务器后 `OFFLINE=1 ./deploy/deploy.sh <version>`
-完成加载与部署。详见 [docs/DEPLOY_TENCENT.md](docs/DEPLOY_TENCENT.md) 的「离线部署」一节。
+#### 离线打包与部署（无外网隔离环境）
+
+服务器无法访问 Docker Hub / PyPI / TCR 时，改用「本地构建 → 导出交付包 → 离线加载」三段式，
+镜像全程不经网络：
+
+```bash
+# ① 联网构建机：构建镜像（版本默认取 pyproject，输出本地名 cndb:<version>）
+make docker-build VERSION=0.4.11
+
+# ② 导出离线交付包 → dist/offline/cndb-0.4.11-offline-bundle.tar.gz
+make docker-export VERSION=0.4.11
+#   不需要 nginx 反代镜像时：WITH_NGINX=0 bash deploy/export-image.sh 0.4.11
+
+# ③ 传到离线服务器 → 解包 → 校验 → 加载并部署
+tar -xzf cndb-0.4.11-offline-bundle.tar.gz && cd cndb-0.4.11-offline
+sha256sum -c SHA256SUMS               # 校验镜像 tar / 编排文件完整性
+cp deploy/.env.prod.example .env      # CNDB_IMAGE=cndb:0.4.11；JWT_SECRET=openssl rand -hex 32
+OFFLINE=1 ./deploy/deploy.sh 0.4.11   # sha256sum -c → docker load → 预备份 → 重建 → 健康探测 → 失败回滚
+```
+
+交付包内容：应用镜像 tar、nginx 镜像 tar（`WITH_NGINX=1` 时）、`docker-compose.prod.yml`、
+`deploy/` 脚本与 `.env` 模板、`SHA256SUMS`、包内 `OFFLINE-README.txt`。
+
+注意：镜像限构建机架构（跨架构须在目标架构机上重新执行 `docker-build` + `docker-export`）；
+`deploy/*.sh` 以 644 入库，本地用 `bash deploy/xxx.sh`（或 `make docker-*`）调用，交付包内已补执行位可直接 `./deploy/...`。
+
+完整链路（服务器准备、TCR 凭证、反代与 HTTPS、`OFFLINE_DIR` 等）见
+[docs/DEPLOY_TENCENT.md](docs/DEPLOY_TENCENT.md) 第八节「离线部署」。
 
 相关文件：
 
 | 文件 | 作用 |
 |---|---|
 | `docker-compose.prod.yml` | 生产编排（单容器 / 可选 nginx 反代 + 数据卷 + 日志轮转） |
+| `docker-compose.dev.yml` | 开发编排（容器内全栈热重载，`make docker-dev` 使用） |
 | `deploy/Dockerfile.base` | 依赖基础镜像（系统字体 + 锁定依赖，按指纹复用） |
 | `deploy/Dockerfile.prod` | 应用镜像（基于依赖基础镜像，只装 wheel） |
+| `deploy/Dockerfile.dev` | 开发镜像（只装依赖，源码运行时 bind mount，热重载） |
 | `deploy/deploy.sh` | 服务器端部署（依赖镜像复用/构建 / 预备份 / 健康探测 / 失败回滚；`OFFLINE=1` 为离线模式） |
 | `deploy/build-image.sh` | 本地构建镜像（联网机执行，供离线导出；复用同一 Dockerfile 与依赖指纹） |
 | `deploy/export-image.sh` | 导出离线交付包（应用/nginx 镜像 tar + compose + deploy 脚本 + .env 模板 + SHA256SUMS） |
@@ -179,6 +206,8 @@ make help          # 查看全部目标
 make sync          # 安装后端依赖 + pre-commit 钩子（前端依赖由 dev / 前端目标按需自动安装）
 make seed          # 注入演示数据（幂等）
 make dev           # 开发模式：同时启动后端 8772 + 前端 5173（Ctrl+C 一起停）
+make docker-dev    # Docker 开发模式：容器内跑同样的前后端（源码挂载 + 热重载）
+make docker-dev-down  # 停止 Docker 开发模式（保留数据卷）
 make check-fast    # 轻量静态门禁：gitkeep + ADR + ruff + pyrefly + tsc/eslint（实现期内环）
 make flow          # 代码改动门禁：check-fast + 全量后端测试
 make check         # 全套门禁：并行跑 lint / 类型 / 前端静态 + 覆盖率 / 后端 cov
@@ -186,6 +215,24 @@ make push          # 推送全部 remote（含 tags）
 ```
 
 `make dev` 支持覆盖绑定地址与后端端口：`make dev DEV_HOST=127.0.0.1 DEV_PORT=8000`。
+
+`make docker-dev` 用 [docker-compose.dev.yml](docker-compose.dev.yml) 在容器内起后端（uvicorn `--reload`，:8772）
+与前端（Vite，:5173）—— 仓库根 bind mount 进容器，改源码即热更，适合本机未装 Python / Node
+或想隔离运行环境的场景。开发数据落独立命名卷 `cndb-dev-data`（不碰宿主 `~/.cndb`），前端依赖落
+`cndb-dev-node-modules` 卷（容器重建不重复下载）。容器内需要演示数据时：
+`docker compose -f docker-compose.dev.yml exec backend cndb seed`。
+
+镜像构建默认走国内源（无需额外配置）：基础镜像经 `docker.m.daocloud.io` 镜像代理，
+apt 用腾讯云 Debian 源，pip / uv 依赖用腾讯云 PyPI，pnpm 与依赖用 npmmirror。
+需要官方源时逐项覆盖即可：
+
+```bash
+CNDB_PYTHON_IMAGE=python:3.12-slim \
+CNDB_APT_MIRROR= \
+CNDB_PIP_INDEX=https://pypi.org/simple \
+CNDB_NODE_IMAGE=node:22-alpine \
+make docker-dev
+```
 
 性能基准（10k 行导入 + 查询）：
 
