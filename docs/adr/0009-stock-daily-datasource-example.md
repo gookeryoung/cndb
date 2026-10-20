@@ -179,9 +179,9 @@ seed 注入入口新增 `run_seed_datasource(db, user, ws_map, tables_map, datas
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/pages/grid/views/chartBoard.ts`、`frontend/src/pages/grid/views/ChartView.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/cli/seed/views.py` | `frontend/src/pages/grid/views/chartBoard.test.ts`、`frontend/src/pages/grid/views/ChartView.test.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.test.ts`、`tests/test_views_api.py` | — |
-| P1 | 已落地 | `src/cndb/cli/seed/datasource.py`、`examples/datasets/工作区-数据源示例/datasource.json`、`examples/datasets/工作区-数据源示例/股市日线.csv`、`src/cndb/cli/seed/paths.py`、`src/cndb/cli/seed/runner.py` | `tests/test_seed_datasource.py` | — |
-| P2 | 已落地 | `examples/datasets/工作区-数据源示例/views.json` | `frontend/tests/e2e/critical/view-mode-switch.spec.ts` | — |
+| P0 | 已落地 | `frontend/src/pages/grid/views/chartBoard.ts`、`frontend/src/pages/grid/views/ChartView.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/cli/seed/views.py` | `frontend/src/pages/grid/views/chartBoard.test.ts`、`frontend/src/pages/grid/views/ChartView.test.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.test.ts`、`tests/test_views_api.py` | 38c09953 |
+| P1 | 已落地 | `src/cndb/cli/seed/datasource.py`、`examples/datasets/工作区-数据源示例/datasource.json`、`examples/datasets/工作区-数据源示例/股市日线.csv`、`src/cndb/cli/seed/paths.py`、`src/cndb/cli/seed/runner.py` | `tests/test_seed_datasource.py` | 38c09953 |
+| P2 | 已落地 | `examples/datasets/工作区-数据源示例/views.json` | `frontend/tests/e2e/critical/view-mode-switch.spec.ts` | 38c09953 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件。
 
@@ -191,4 +191,4 @@ seed 注入入口新增 `run_seed_datasource(db, user, ws_map, tables_map, datas
 - 已完成：需求卡片、ADR（Accepted）、P0 前端 candlestick + 两端校验白名单、P1 seed 数据源种子 + 示例配置/CSV 口径对齐、P2 三视图 + e2e
 - 下一步：无（本 ADR 范围内交付完毕）；如需扩展「多源站 / 多 Provider 写同表」按 D1 否决项另立 ADR
 - 已知坑：candlestick 多标的重叠（D7 用视图 `filters` 收窄单标的规避）；示例 CSV 股票代码改为带前缀（`sh/sz`）后，若下游断言依赖旧的无前缀取值需同步更新；seed 只注入 `datasource.json` 中的同步任务配置，**不会联网抓取**，示例表数据仍来自 CSV
-- 最近一次全绿：`make check-fast`（2026-10-20）；待收尾跑 `make flow`
+- 最近一次全绿：`make check-fast`（2026-10-20）；定向测试 前端 105 例 / 后端 82 例全绿
