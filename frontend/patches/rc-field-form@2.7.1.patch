@@ -1,0 +1,46 @@
+diff --git a/es/index.js b/es/index.js
+index ede2f7e6c52174ac15bfe1af5c951aee0c12d034..1a0bbdf658c01d5d0348596eb290f7ca7714c07b 100644
+--- a/es/index.js
++++ b/es/index.js
+@@ -1,4 +1,13 @@
+-import * as React from 'react';
++// 补丁（见 frontend/patches/rc-field-form@2.7.1.patch）—— 目的：让 rc-field-form 可被摇树。
++// 上游两处问题会让 antd 里仅 `import { FormProvider } from 'rc-field-form'`
++// （antd/es/form/context.js）就把 Form / useForm / Field / validateUtil /
++// @rc-component/async-validator 全量拉进首屏主入口（实测 190→185 KiB gzip）：
++//   1) package.json 未声明 "sideEffects"，Rollup 只能保守保留每个 import；
++//   2) 本文件在模块顶层给默认导出挂静态属性（RefForm.FormProvider = …），
++//      属性赋值被判定为副作用，整桶无法裁剪。
++// 改法：package.json 补 "sideEffects": false；本文件改为纯 re-export。
++// 安全性：antd 在自己的 Form 上重新挂 Item / List / useForm / useWatch / Provider，
++// 默认导出的静态属性在本仓库无人使用；该库模块导入无副作用。
+ import Field from "./Field";
+ import List from "./List";
+ import useForm from "./useForm";
+@@ -7,12 +16,5 @@ import { FormProvider } from "./FormContext";
+ import FieldContext from "./FieldContext";
+ import ListContext from "./ListContext";
+ import useWatch from "./useWatch";
+-var InternalForm = /*#__PURE__*/React.forwardRef(FieldForm);
+-var RefForm = InternalForm;
+-RefForm.FormProvider = FormProvider;
+-RefForm.Field = Field;
+-RefForm.List = List;
+-RefForm.useForm = useForm;
+-RefForm.useWatch = useWatch;
+ export { Field, List, useForm, FormProvider, FieldContext, ListContext, useWatch };
+-export default RefForm;
+\ No newline at end of file
++export default FieldForm;
+diff --git a/package.json b/package.json
+index b571afb3a81fa58f49ec7e291e47403259ffea42..d522b13fe32ec34353adcf5d28824d46e6dbf037 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "rc-field-form",
+   "version": "2.7.1",
++  "sideEffects": false,
+   "description": "React Form Component",
+   "typings": "es/index.d.ts",
+   "engines": {

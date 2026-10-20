@@ -61,6 +61,34 @@
 > 顺带一提：介于基线与上限之间时脚本标记为 `warn` 并在末尾汇总。
 > 「慢涨」要在这一步就看见，别等它攒到 FAIL。
 
+## 第三方依赖的隐性膨胀（2026-10-20 案例）
+
+归因表里如果 Top-10 全是 `node_modules/*` 而业务代码只有几 KB，说明问题不在本仓库代码，
+而在**依赖的打包声明**。这一轮主入口超限 0.07 KiB（190.10 / 上限 190.03）就是这种：
+
+- 现象：主入口里出现 `rc-field-form` 95.4 KB + `@rc-component/async-validator` 39.7 KB，
+  但首屏（App 壳 + 登录页之前的骨架）根本不渲染表单。
+- 链路：`Button` 的 style token → `antd/es/color-picker` → `antd/es/form/context`
+  → `import { FormProvider } from 'rc-field-form'`。
+- 根因两处（都在 rc-field-form 侧，仓库代码无能为力）：
+  1. `package.json` 没写 `"sideEffects"`，Rollup 只能保守保留它的每个 import；
+  2. `es/index.js` 顶层给默认导出挂静态属性（`RefForm.FormProvider = …`），
+     属性赋值被判为副作用，整个 barrel 无法裁剪。
+- 修法：`pnpm patch rc-field-form@2.7.1`（见 `frontend/patches/`）——
+  补 `"sideEffects": false` + barrel 改为纯 re-export。antd 会在自己的 `Form` 上重挂
+  `Item / List / useForm / useWatch / Provider`，默认导出的静态属性无人使用。
+
+结果：主入口 **190.10 → 175.22 KiB（-7.8%）**，表单代码回到按需 chunk
+（`useForm-*.js`，21.9 KB，随表单页加载），基线同步下调到 175.22 KiB 锁住净收益。
+
+**排查手法**（下次遇到同形态直接复用）：先看归因表的 `node_modules` 占比，
+再沿「谁 import 了它」向上追。Vite 的 `chunk-modules.json` 只到 chunk 粒度，
+需要模块级 importers 时临时加一个 `buildEnd` 钩子读 `this.getModuleInfo(id).importers`
+（用环境变量开关，别留在提交里），或者用 `pnpm analyze` 的交互式 treemap。
+
+**判据**：首屏 chunk 里出现「只有点了才出现的东西」= 代码问题；出现「整块库的边角
+模块」= 依赖声明问题。前者拆 lazy，后者补 sideEffects 或 patch，都不该直接抬基线。
+
 ## 怎样调整基线
 
 **不要手改 JSON。** 统一走脚本，理由会落盘到 `reason` / `updatedAt` / `commit`：
