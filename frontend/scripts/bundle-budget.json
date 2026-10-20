@@ -6,16 +6,17 @@
     "2026-09-26 排序三态、列宽估算/拖宽、列序 DnD 使 GridPage +2.5KB",
     "2026-10-07 图表视图接线使 GridPage +1.8KB；新增 ChartView chunk",
     "2026-10-08 数据治理向导使 GridPage +1.9KB",
-    "2026-10-10 视图筛选/排序规则值校验（ee604bd）使 GridPage +2.26KB 触发超限；改为把 ViewConfigDialog / TableSettingsModal / RowDetailDrawer 三个按需面板 lazy 化，GridPage 43.07→27.70KB，基线定为 32KiB（低于旧基线约 20%）"
+    "2026-10-10 视图筛选/排序规则值校验（ee604bd）使 GridPage +2.26KB 触发超限；改为把 ViewConfigDialog / TableSettingsModal / RowDetailDrawer 三个按需面板 lazy 化，GridPage 43.07→27.70KB，基线定为 32KiB（低于旧基线约 20%）",
+    "2026-10-20 rc-field-form 补 sideEffects + barrel 纯 re-export（pnpm patch），修掉 antd form/context 连带拉入 Form/useForm/Field/validateUtil/async-validator 的问题，主入口 190.10→175.22 KiB；基线随之下调锁定净收益"
   ],
   "chunks": [
     {
       "name": "主入口 index",
       "resolve": "entry",
-      "baseline": 185324,
-      "reason": "2025-07-01 分包瘦身基线",
-      "updatedAt": "2025-07-01",
-      "commit": ""
+      "baseline": 179424,
+      "reason": "rc-field-form 补 sideEffects + barrel 纯 re-export（pnpm patch），修掉 antd form/context 连带拉入 Form/useForm/Field/validateUtil/async-validator 的问题，主入口 190.10→175.22 KiB；基线随之下调锁定净收益",
+      "updatedAt": "2026-10-20",
+      "commit": "e08d5056"
     },
     {
       "name": "GridPage（表页闭包）",

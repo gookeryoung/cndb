@@ -7,4 +7,5 @@ allowBuilds:
 
 # pnpm 10.13+/12 起配置统一迁至本文件，package.json 的 pnpm.patchedDependencies 已被忽略
 patchedDependencies:
+  rc-field-form@2.7.1: patches/rc-field-form@2.7.1.patch
   rc-util: patches/rc-util.patch
