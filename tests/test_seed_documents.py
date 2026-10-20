@@ -424,11 +424,12 @@ class TestRealDatasetDocuments:
         return result
 
     def test_every_workspace_has_at_least_five_documents(self, datasets_dir: Path):
-        """每个示例工作区都有 documents/ 且不少于 5 篇典型文档."""
+        """带 documents/ 的示例工作区不少于 5 篇典型文档（无 documents/ 的工作区合法，不生成文档）."""
         all_workspaces = {
             _workspace_display_name(p.name) for p in datasets_dir.iterdir() if p.is_dir() and not p.name.startswith(".")
         }
-        assert set(self._workspace_dirs(datasets_dir)) == all_workspaces
+        # 含 documents/ 的工作区必须是真实工作区子集；纯数据示例工作区（如数据源示例）可以没有文档
+        assert set(self._workspace_dirs(datasets_dir)) <= all_workspaces
 
         counts: dict[str, int] = {}
         for ws_name, docs_root in self._workspace_dirs(datasets_dir).items():

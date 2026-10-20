@@ -144,11 +144,16 @@ def _seed_analytics(
                 if not _validate_template(tpl, valid_fields, ws_name, table_name):
                     continue
                 config = dict(tpl.get("config") or {})
-                # 归一化公式：补 label 默认值，避免前端展示空标题
-                config["formulas"] = [
-                    {"key": s["key"], "label": s.get("label") or s["key"], "expr": s["expr"]}
-                    for s in config.get("formulas", [])
-                ]
+                # 归一化公式：补 label 默认值，保留窗口上下文（分区 / 排序 / 降序），
+                # 避免前端展示空标题或丢失 ma/pct_change 等窗口函数的分区语义
+                formulas: list[dict[str, Any]] = []
+                for spec in config.get("formulas", []):
+                    entry = {"key": spec["key"], "label": spec.get("label") or spec["key"], "expr": spec["expr"]}
+                    for extra in ("partition_by", "order_by", "order_desc"):
+                        if spec.get(extra):
+                            entry[extra] = spec[extra]
+                    formulas.append(entry)
+                config["formulas"] = formulas
                 db.add(
                     AnalyticsTemplate(
                         workspace_id=ws.id,

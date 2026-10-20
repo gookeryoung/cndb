@@ -95,6 +95,15 @@ _DENOMINATOR_KEYWORDS: tuple[str, ...] = (
     "工时",
 )
 
+# 领域示例（数据源工作区）的字段名模式：天气（气温）与股市日线（开高低收）。
+# 只按字段名识别、纯增量追加，不命中时与原有示例完全一致。
+_TEMP_MAX_RE = re.compile(r"最高(?:气温|温度)|temp_?max", re.IGNORECASE)
+_TEMP_MIN_RE = re.compile(r"最低(?:气温|温度)|temp_?min", re.IGNORECASE)
+_STOCK_HIGH_RE = re.compile(r"最高价|\bhigh\b", re.IGNORECASE)
+_STOCK_LOW_RE = re.compile(r"最低价|\blow\b", re.IGNORECASE)
+_STOCK_CLOSE_RE = re.compile(r"收盘|\bclose\b", re.IGNORECASE)
+_STOCK_VOLUME_RE = re.compile(r"成交量|\bvolume\b", re.IGNORECASE)
+
 Role = str
 
 
@@ -574,6 +583,14 @@ def _example(
     }
 
 
+def _find_metric(profiles: Sequence[dict[str, Any]], pattern: re.Pattern[str]) -> dict[str, Any] | None:
+    """按字段名模式找第一个命中的数值字段（领域示例识别用）."""
+    for profile in profiles:
+        if profile["role"] == "metric" and pattern.search(str(profile["name"])):
+            return profile
+    return None
+
+
 def build_examples(profiles: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     """按适用性生成典型示例，最后始终追加「数据概览」保证至少 1 个.
 
@@ -737,6 +754,122 @@ def build_examples(profiles: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                     "mom",
                     series=partition_name,
                     title=f"{measure_name}环比",
+                ),
+            )
+        )
+
+    # 4c) 领域示例：天气（同表存在最高 / 最低气温 → 昼夜温差）
+    temp_max = _find_metric(profiles, _TEMP_MAX_RE)
+    temp_min = _find_metric(profiles, _TEMP_MIN_RE)
+    if time_field and temp_max is not None and temp_min is not None:
+        max_name = str(temp_max["name"])
+        min_name = str(temp_min["name"])
+        group_name = partition_name or dimension
+        range_formula: dict[str, Any] = {
+            "key": "temp_range",
+            "label": "昼夜温差",
+            "expr": f"round([{max_name}] - [{min_name}], 2)",
+            "order_by": time_field,
+        }
+        if partition_name:
+            range_formula["partition_by"] = partition_name
+        examples.append(
+            _example(
+                "weather_range",
+                "昼夜温差",
+                f"按「{time_field}」观察昼夜温差（{max_name} − {min_name}）",
+                "最高与最低气温同表时可直接作差：折线看逐日温差波动，汇总比较各城市平均温差",
+                formulas=[range_formula],
+                chart=_chart_spec(
+                    "line",
+                    time_field,
+                    "temp_range",
+                    series=partition_name,
+                    title="昼夜温差趋势",
+                ),
+                summary=(
+                    _summary_spec(
+                        group_name,
+                        [
+                            _metric_spec("temp_range", "avg", "平均温差"),
+                            _metric_spec(group_name, "count"),
+                        ],
+                        sort_by=metric_key("avg", "temp_range"),
+                        top_n=10,
+                    )
+                    if group_name
+                    else _summary_spec(
+                        None,
+                        [_metric_spec("temp_range", "avg", "平均温差")],
+                        sort_by=None,
+                        top_n=None,
+                    )
+                ),
+            )
+        )
+
+    # 4d) 领域示例：股市日线（同表存在最高价 / 最低价 / 收盘价 → 振幅与量价）
+    stock_high = _find_metric(profiles, _STOCK_HIGH_RE)
+    stock_low = _find_metric(profiles, _STOCK_LOW_RE)
+    stock_close = _find_metric(profiles, _STOCK_CLOSE_RE)
+    if time_field and stock_high is not None and stock_low is not None and stock_close is not None:
+        high_name = str(stock_high["name"])
+        low_name = str(stock_low["name"])
+        close_name = str(stock_close["name"])
+        group_name = partition_name or dimension
+        swing_formulas: list[dict[str, Any]] = [
+            {
+                "key": "amplitude",
+                "label": "振幅(%)",
+                "expr": f"round(([{high_name}] - [{low_name}]) / [{close_name}] * 100, 2)",
+                "order_by": time_field,
+            }
+        ]
+        stock_volume = _find_metric(profiles, _STOCK_VOLUME_RE)
+        if stock_volume is not None:
+            volume_name = str(stock_volume["name"])
+            swing_formulas.append(
+                {
+                    "key": "vol_ma5",
+                    "label": "量能均线(5)",
+                    "expr": f"round(ma([{volume_name}], 5), 2)",
+                    "order_by": time_field,
+                }
+            )
+        if partition_name:
+            for formula in swing_formulas:
+                formula["partition_by"] = partition_name
+        examples.append(
+            _example(
+                "stock_swing",
+                "振幅与量价",
+                f"按「{time_field}」观察日内振幅与量能水平",
+                "振幅 =（最高 − 最低）/ 收盘，衡量单日波动；有成交量时叠加 5 日量能均线看放量缩量",
+                formulas=swing_formulas,
+                chart=_chart_spec(
+                    "line",
+                    time_field,
+                    "amplitude",
+                    series=partition_name,
+                    title="日内振幅",
+                ),
+                summary=(
+                    _summary_spec(
+                        group_name,
+                        [
+                            _metric_spec("amplitude", "avg", "平均振幅(%)"),
+                            _metric_spec(group_name, "count"),
+                        ],
+                        sort_by=metric_key("avg", "amplitude"),
+                        top_n=10,
+                    )
+                    if group_name
+                    else _summary_spec(
+                        None,
+                        [_metric_spec("amplitude", "avg", "平均振幅(%)")],
+                        sort_by=None,
+                        top_n=None,
+                    )
                 ),
             )
         )

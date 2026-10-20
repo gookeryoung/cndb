@@ -1,0 +1,12 @@
+{
+  "settings": {
+    "天气每日": {
+      "城市": {"required": true},
+      "日期": {"required": true}
+    },
+    "股市日线": {
+      "股票代码": {"required": true},
+      "交易日": {"required": true}
+    }
+  }
+}

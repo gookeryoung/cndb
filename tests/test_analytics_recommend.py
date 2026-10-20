@@ -460,6 +460,90 @@ class TestPureFunctionBranches:
         assert examples[0]["formulas"] == []
         assert examples[0]["summary"] is None
 
+    def test_examples_weather_profile_appends_range_example(self) -> None:
+        """同表存在最高 / 最低气温 + 时间字段 → 追加昼夜温差领域示例（公式可解析）."""
+        profiles = [
+            _profile("城市", "partition_dimension"),
+            _profile("日期", "time", "date"),
+            _profile("最高气温", "metric", "float"),
+            _profile("最低气温", "metric", "float"),
+            _profile("平均气温", "metric", "float"),
+        ]
+        examples = recommend_service.build_examples(profiles)
+        ids = [example["id"] for example in examples]
+        assert "weather_range" in ids
+        assert len(ids) == len(set(ids))  # id 唯一
+        example = next(e for e in examples if e["id"] == "weather_range")
+        assert example["formulas"] == [
+            {
+                "key": "temp_range",
+                "label": "昼夜温差",
+                "expr": "round([最高气温] - [最低气温], 2)",
+                "order_by": "日期",
+                "partition_by": "城市",
+            }
+        ]
+        for spec in example["formulas"]:
+            formula_service.parse(spec["expr"])  # 语法可解析
+        assert example["summary"] is not None
+        assert example["summary"]["group_by"] == "城市"
+        assert example["chart"]["series"] == "城市"
+
+    def test_examples_stock_profile_appends_swing_example(self) -> None:
+        """同表存在最高 / 最低 / 收盘价 + 时间字段 → 追加振幅与量价领域示例."""
+        profiles = [
+            _profile("股票代码", "partition_dimension"),
+            _profile("股票名称", "dimension"),
+            _profile("交易日", "time", "date"),
+            _profile("最高价", "metric", "float"),
+            _profile("最低价", "metric", "float"),
+            _profile("收盘价", "metric", "float"),
+            _profile("成交量", "metric", "int"),
+        ]
+        examples = recommend_service.build_examples(profiles)
+        ids = [example["id"] for example in examples]
+        assert "stock_swing" in ids
+        assert "weather_range" not in ids  # 天气示例不误触发
+        example = next(e for e in examples if e["id"] == "stock_swing")
+        exprs = [spec["expr"] for spec in example["formulas"]]
+        assert exprs == [
+            "round(([最高价] - [最低价]) / [收盘价] * 100, 2)",
+            "round(ma([成交量], 5), 2)",
+        ]
+        for spec in example["formulas"]:
+            formula_service.parse(spec["expr"])
+            assert spec["partition_by"] == "股票代码"
+            assert spec["order_by"] == "交易日"
+        assert example["summary"]["group_by"] == "股票代码"
+
+    def test_examples_generic_profile_skips_domain_examples(self) -> None:
+        """通用业务表（无气温 / K 线字段名）不追加任何领域示例."""
+        profiles = [
+            _profile("订单编号", "identifier"),
+            _profile("产品分类", "dimension", "select"),
+            _profile("生产日期", "time", "date"),
+            _profile("销售额", "metric", "number"),
+            _profile("数量", "metric", "number"),
+        ]
+        ids = [example["id"] for example in recommend_service.build_examples(profiles)]
+        assert "weather_range" not in ids
+        assert "stock_swing" not in ids
+
+    def test_examples_stock_example_without_volume_or_partition(self) -> None:
+        """缺成交量 / 分区列时领域示例降级：无量能均线公式、汇总退化为全局均值."""
+        profiles = [
+            _profile("交易日", "time", "date"),
+            _profile("最高价", "metric", "float"),
+            _profile("最低价", "metric", "float"),
+            _profile("收盘价", "metric", "float"),
+        ]
+        examples = recommend_service.build_examples(profiles)
+        example = next(e for e in examples if e["id"] == "stock_swing")
+        assert [spec["expr"] for spec in example["formulas"]] == ["round(([最高价] - [最低价]) / [收盘价] * 100, 2)"]
+        assert "partition_by" not in example["formulas"][0]
+        assert example["summary"]["group_by"] is None
+        assert example["summary"]["top_n"] is None
+
     def test_formulas_single_metric_skips_ratio(self) -> None:
         formulas = recommend_service.recommend_formulas([_profile("销售额", "metric", "number")])
         assert [item["expr"] for item in formulas] == ["sum([销售额])", "round([销售额]/sum([销售额])*100,2)"]
