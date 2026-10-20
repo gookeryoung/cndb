@@ -1,0 +1,74 @@
+# ═══════════════════════════════════════════════════════════════════
+# cndb 开发镜像 —— 「容器内全栈热重载」开发模式的后端底座
+#
+# 与生产镜像（Dockerfile.prod）的区别：
+#   · 只负责装依赖，不 COPY 业务源码 —— 源码由 docker-compose.dev.yml 在运行时把
+#     仓库根 bind mount 到 /app，改文件即热重载（uvicorn --reload）
+#   · 依赖装在 /opt/venv（不在 /app 下），避免被 bind mount 覆盖
+#   · 用 PYTHONPATH=/app/src 让 import cndb 命中挂载进来的源码，不做 editable 安装
+#     （editable 需要构建后端参与，且宿主 / 容器平台差异下更易碎）
+#   · 不装 dev / test 依赖（lint / pytest / fspack 等），保持镜像精简；容器内跑测试
+#     另需 `uv sync --frozen` 或 `uv pip install` 补齐
+#
+# 国内加速：基础镜像 / apt / pip 均默认走国内镜像源，可用 --build-arg 覆盖：
+#   BASE_IMAGE      基础镜像（默认 Docker Hub python:3.12-slim，国内建议挂镜像代理）
+#   APT_MIRROR_HOST Debian 软件源主机（默认 mirrors.cloud.tencent.com）
+#   PIP_INDEX_URL   pip 索引源（默认腾讯云 PyPI）
+# 例：docker build -f deploy/Dockerfile.dev \
+#       --build-arg BASE_IMAGE=python:3.12-slim --build-arg APT_MIRROR_HOST=mirrors.ustc.edu.cn .
+#
+# 构建上下文：仓库根（docker-compose.dev.yml 已配好）
+#   docker build -f deploy/Dockerfile.dev -t cndb-dev .
+# 正常无需手工构建，由 `make docker-dev` 驱动。
+# ═══════════════════════════════════════════════════════════════════
+
+# 基础镜像默认走国内镜像代理，避免直连 Docker Hub 超时；设为 python:3.12-slim 可退回官方源
+ARG BASE_IMAGE=docker.m.daocloud.io/library/python:3.12-slim
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH=/app/src
+
+# Debian 软件源镜像主机：整体替换 deb822 源里的 deb.debian.org / security.debian.org，
+# 腾讯云镜像同路径提供 /debian 与 /debian-security，故只换主机名即可。
+ARG APT_MIRROR_HOST=mirrors.cloud.tencent.com
+
+# ── 中文字体（含 apt 源加速）──
+# 与生产基础镜像（Dockerfile.base）同口径：导出 Word/PDF 依赖 CJK 字形，
+# 开发容器内验证导出功能时字形缺失会静默变成方框。
+RUN set -eux; \
+    if [ -n "${APT_MIRROR_HOST}" ]; then \
+      sed -i \
+        -e "s|deb.debian.org|${APT_MIRROR_HOST}|g" \
+        -e "s|security.debian.org|${APT_MIRROR_HOST}|g" \
+        /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends fontconfig fonts-wqy-microhei; \
+    fc-cache -fv; \
+    rm -rf /var/lib/apt/lists/*
+
+# ── uv（pip 源加速）──
+# 用 uv 按 uv.lock 精确安装依赖；uv 本体与项目依赖都走国内源：
+#   · uv 本体经下面这行 pip 安装（PIP_INDEX_URL）
+#   · 项目依赖由 uv sync 读取 pyproject 的 [tool.uv.index]（腾讯云镜像）
+ARG PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
+RUN pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" uv
+
+WORKDIR /app
+# 只拷贝依赖声明（源码运行时挂载）；uv 需要 pyproject / uv.lock 解析环境，
+# README.md 因 pyproject 的 readme 字段被构建后端引用故一并拷入。
+COPY pyproject.toml uv.lock README.md ./
+
+# --no-install-project：不装 cndb 本体（由 PYTHONPATH 指向挂载进来的源码）
+# --no-group dev：跳过 [dependency-groups].dev（cndb[dev] + prek），保持镜像轻量
+# --frozen：严格按 uv.lock，lock 与 pyproject 不一致时直接失败，不静默重解析
+RUN uv sync --frozen --no-install-project --no-group dev
+
+EXPOSE 8772
