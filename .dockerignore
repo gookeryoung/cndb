@@ -13,6 +13,8 @@ __pycache__
 # 注意：Docker 不支持行尾注释，每条规则必须是纯 pattern。
 # 仅排除 sdist，保留 dist/*.whl 供 deploy/Dockerfile.prod 使用。
 dist/*.tar.gz
+# 离线交付包输出（导出脚本产物，构建上下文不需要，且体积达数百 MB）
+dist/offline
 build
 .eggs
 
