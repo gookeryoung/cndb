@@ -75,8 +75,18 @@
   2. `es/index.js` 顶层给默认导出挂静态属性（`RefForm.FormProvider = …`），
      属性赋值被判为副作用，整个 barrel 无法裁剪。
 - 修法：`pnpm patch rc-field-form@2.7.1`（见 `frontend/patches/`）——
-  补 `"sideEffects": false` + barrel 改为纯 re-export。antd 会在自己的 `Form` 上重挂
-  `Item / List / useForm / useWatch / Provider`，默认导出的静态属性无人使用。
+  补 `"sideEffects": false` **+ 只删掉 barrel 顶层那几行静态属性赋值**。antd 会在自己的
+  `Form` 上重挂 `Item / List / useForm / useWatch / Provider`，默认导出的静态属性无人使用。
+- **回归坑（2026-10-20）**：当时把 barrel 顺手写成 `export default FieldForm`（裸组件），
+  默认导出就丢了 `React.forwardRef` 包装 —— antd 的 `Form` 靠 ref 取表单实例，于是 dev 环境
+  报「Function components cannot be given refs」、点登录报
+  「**Cannot add property current, object is not extensible**」，登录页完全不可用。
+  正确改法是保留 `var RefForm = React.forwardRef(FieldForm)`，只删静态属性挂载：
+  摇树收益不变（主入口仍 175.2 KiB），ref 语义也保住。
+  这个坑**单测守不住**——vitest 里 antd 解析到 rc-field-form 的 CJS(`lib`)，而 dev/build 用
+  ES(`es`)，坏版本在单测里照样通过（实测）。因此改由 `frontend/scripts/check-patches.mjs`
+  在 `pnpm dev` / `pnpm build` / `make check-fast` 前校验补丁语义（forwardRef 存在、
+  无静态属性赋值、`sideEffects: false`）。
 
 结果：主入口 **190.10 → 175.22 KiB（-7.8%）**，表单代码回到按需 chunk
 （`useForm-*.js`，21.9 KB，随表单页加载），基线同步下调到 175.22 KiB 锁住净收益。

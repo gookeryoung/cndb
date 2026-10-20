@@ -26,7 +26,7 @@ CPUS := $(shell \
 endif
 PYTEST_JOBS := $(if $(filter 0 1,$(CPUS)),2,$(if $(filter 2 3,$(CPUS)),4,8))
 
-.PHONY: help sync dev seed frontend-sync fs frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-coverage-html fcov-html frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast flow check-docs cd-check gitkeep-check adr-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
+.PHONY: help sync dev seed frontend-sync fs frontend-patches fp frontend-lint fl frontend-typecheck ft frontend-static fst frontend-test ftest frontend-coverage fcov frontend-coverage-html fcov-html frontend-check fc frontend-build fb build b clean c test cov lint typecheck check-fast flow check-docs cd-check gitkeep-check adr-check check pub bump patch minor major push e2e pack-doctor pack pack-cache-clean
 
 help: ## 显示帮助信息
 	@uv run python -c "import sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); import re;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)
@@ -60,7 +60,10 @@ frontend-lint fl: | frontend-sync ## 前端 ESLint 检查
 frontend-typecheck ft: | frontend-sync ## 前端 TypeScript 类型检查
 	cd frontend && pnpm typecheck
 
-frontend-static fst: frontend-typecheck frontend-lint ## 前端静态检查（tsc + eslint）
+frontend-patches fp: | frontend-sync ## 校验 pnpm patch 落地（补丁语义被改坏时立刻失败）
+	cd frontend && pnpm check:patches
+
+frontend-static fst: frontend-patches frontend-typecheck frontend-lint ## 前端静态检查（补丁 + tsc + eslint）
 
 frontend-test ftest: | frontend-sync ## 前端快速回归（vitest run，无覆盖率）
 	cd frontend && pnpm test
