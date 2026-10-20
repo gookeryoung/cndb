@@ -38,12 +38,22 @@ frontend/package-lock.json
 *.tsbuildinfo
 package-lock.json
 
+# --- 前端构建产物（pnpm build 后同步到后端 static，源码在 frontend/src 与 frontend/public）---
+# 只保留占位文件，产物由 CI / 部署流水线构建，不入库
+src/cndb/static/*
+!src/cndb/static/.gitkeep
+
 # --- E2E（Playwright）---
 .e2e/
+.e2e-data/
 frontend/test-results/
 frontend/playwright-report/
+frontend/blob-report/
 frontend/e2e-report/
 reports/
+# Playwright 登录态（含 access token，绝不入库）
+.auth/
+frontend/.auth/
 
 # --- Data & artifacts（绝不提交）---
 # 数据库为本地研究数据，体积可达数百 MB

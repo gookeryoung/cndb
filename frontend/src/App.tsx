@@ -34,6 +34,7 @@ const DocumentsChangeRequestsPage = lazy(() => import('@/pages/documents/Documen
 const DocumentsIssuesPage = lazy(() => import('@/pages/documents/DocumentsIssuesPage'))
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
 const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage'))
+const DatasourcePage = lazy(() => import('@/pages/datasource/DatasourcePage'))
 
 /** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
 function PageFallback() {
@@ -79,6 +80,9 @@ function AuthenticatedApp() {
           <Route path="w/:wid/tables" element={<TablesList />} />
           <Route path="w/:wid/analytics" element={
             <Suspense fallback={<PageFallback />}><AnalyticsPage /></Suspense>
+          } />
+          <Route path="w/:wid/datasource" element={
+            <Suspense fallback={<PageFallback />}><DatasourcePage /></Suspense>
           } />
           <Route path="w/:wid/settings" element={
             <Suspense fallback={<PageFallback />}><WorkspaceSettingsPage /></Suspense>

@@ -1,6 +1,6 @@
 """Provider 注册表 —— 内置适配器在此登记，UI 由 ``params_schema`` 自动发现.
 
-M1 只有 ``http_json``；M3 增加 ``tencent_kline`` / ``rss_atom`` 等专用适配器，
+内置三个：``http_json``（声明式通用）/ ``tencent_kline``（A 股日线）/ ``rss_atom``（订阅源）。
 新增 provider 只需实现 ``SourceProvider`` 协议并在此 ``register_provider``。
 """
 
@@ -11,6 +11,8 @@ from typing import Any
 
 from cndb.plugins.datasource.providers.base import ProviderError, SourceProvider
 from cndb.plugins.datasource.providers.http_json import HttpJsonProvider
+from cndb.plugins.datasource.providers.rss_atom import RssAtomProvider
+from cndb.plugins.datasource.providers.tencent_kline import TencentKlineProvider
 
 PROVIDERS: dict[str, SourceProvider] = {}
 
@@ -52,7 +54,9 @@ def list_providers() -> list[dict[str, Any]]:
 
 def register_builtins(providers: Iterable[SourceProvider] | None = None) -> None:
     """登记内置 provider（幂等，重复调用不报错）."""
-    for provider in providers if providers is not None else (HttpJsonProvider(),):
+    for provider in (
+        providers if providers is not None else (HttpJsonProvider(), TencentKlineProvider(), RssAtomProvider())
+    ):
         if provider.name in PROVIDERS:
             continue
         register_provider(provider)

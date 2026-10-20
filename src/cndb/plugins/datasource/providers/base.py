@@ -133,6 +133,10 @@ class SyncJobSpec:
     def __post_init__(self) -> None:
         if self.entrant_values and not self.entrant_param:
             raise ProviderError("配置了 entrant_values 时必须同时给出 entrant_param")
+        # 容忍 {"字段": {"name": .., "field_type": ..}} 这种 JSON 形态（DB / API 直传），
+        # 统一规范成 FieldTransform，避免下游拿到 dict 才炸
+        if self.field_mapping:
+            object.__setattr__(self, "field_mapping", normalize_field_mapping(self.field_mapping))
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +149,22 @@ class RequestPlan:
     page: int | None = None
     window_start: str | None = None
     window_end: str | None = None
+
+
+def normalize_field_mapping(
+    mapping: Mapping[str, FieldTransform | Mapping[str, Any] | None],
+) -> dict[str, FieldTransform | None]:
+    """把 JSON 形态的字段映射规范成 ``FieldTransform``；``None`` 表示丢弃该字段."""
+    normalized: dict[str, FieldTransform | None] = {}
+    for source, transform in mapping.items():
+        if transform is None or isinstance(transform, FieldTransform):
+            normalized[source] = transform
+            continue
+        normalized[source] = FieldTransform(
+            name=str(transform.get("name") or source),
+            field_type=str(transform.get("field_type") or "text"),
+        )
+    return normalized
 
 
 class SourceProvider(Protocol):
@@ -203,4 +223,5 @@ __all__ = [
     "SyncJobSpec",
     "TimeWindowMode",
     "TimeWindowSpec",
+    "normalize_field_mapping",
 ]

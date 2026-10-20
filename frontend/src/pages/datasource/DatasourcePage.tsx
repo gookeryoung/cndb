@@ -1,0 +1,781 @@
+/** 数据源同步页 — 工作区级任务列表 + Provider 驱动的任务编辑 / 抓取预览 / 运行历史.
+ *
+ * 后端：`/api/v1/workspaces/{wid}/datasource/*`（ADR 0006 M2/M3）
+ * - 列表列：名称 / 适配器 / 目标表 / 调度 / 上次运行 / 操作
+ * - 编辑抽屉：Provider 选择 → 请求模板 → 游标 → 调度 →（保存后）抓取预览
+ * - 历史抽屉：每次运行的状态 / 游标区间 / 新增·更新 / 失败原因
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Alert, App as AntApp, Button, Collapse, Drawer, Empty, Form, Input, InputNumber, Select, Space,
+  Switch, Table, Tag, Tooltip, Typography,
+} from 'antd'
+import {
+  CloudDownloadOutlined, DeleteOutlined, EditOutlined, EyeOutlined, HistoryOutlined, PlayCircleOutlined,
+  PlusOutlined,
+} from '@ant-design/icons'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useParams } from 'react-router-dom'
+import { datasourceApi, tableApi } from '@/api'
+import type {
+  DatasourceProviderInfo, SyncJob, SyncJobPayload, SyncPreviewResult, SyncRun, SyncScheduleConfig,
+} from '@/api'
+
+const { Title, Text } = Typography
+
+const STATUS_META: Record<string, { color: string; label: string }> = {
+  success: { color: 'green', label: '成功' },
+  partial: { color: 'orange', label: '部分成功' },
+  failed: { color: 'red', label: '失败' },
+  running: { color: 'blue', label: '运行中' },
+}
+
+const CURSOR_LABEL: Record<string, string> = {
+  date: '按日增量',
+  datetime: '按时刻增量',
+  key_set: '按幂等键去重',
+  none: '每次全量',
+}
+
+/** 列表时间：`2026-10-20 17:10`（窄列不换行） */
+function formatTime(value?: string | null): string {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function scheduleLabel(schedule?: SyncScheduleConfig | null): string {
+  switch (schedule?.mode) {
+    case 'daily':
+      return `每天 ${schedule.at || '—'}`
+    case 'interval':
+      return `每 ${schedule.seconds ?? 0} 秒`
+    case 'cron':
+      return `cron ${schedule.expr || '—'}`
+    case 'manual':
+    default:
+      return '手动'
+  }
+}
+
+export default function DatasourcePage() {
+  const { wid = '' } = useParams()
+  const queryClient = useQueryClient()
+  const { message, modal } = AntApp.useApp()
+
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [editing, setEditing] = useState<SyncJob | null>(null)
+  const [historyJob, setHistoryJob] = useState<SyncJob | null>(null)
+
+  const providersQuery = useQuery({
+    queryKey: ['datasource', 'providers', wid],
+    queryFn: () => datasourceApi.providers(wid),
+    enabled: !!wid,
+    staleTime: 300_000,
+  })
+  const jobsQuery = useQuery({
+    queryKey: ['datasource', 'jobs', wid],
+    queryFn: () => datasourceApi.listJobs(wid),
+    enabled: !!wid,
+  })
+  const tablesQuery = useQuery({
+    queryKey: ['workspaces', wid, 'tables'],
+    queryFn: () => tableApi.list(wid),
+    enabled: !!wid,
+  })
+
+  const providers = useMemo(() => providersQuery.data ?? [], [providersQuery.data])
+  const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data])
+  const tables = useMemo(() => tablesQuery.data ?? [], [tablesQuery.data])
+
+  const providerLabel = useCallback(
+    (name: string) => providers.find(p => p.name === name)?.label ?? name,
+    [providers],
+  )
+  const tableName = useCallback(
+    (id: number | null) => (id == null ? '未绑定' : tables.find(t => Number(t.id) === id)?.name ?? `#${id}`),
+    [tables],
+  )
+
+  const invalidate = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['datasource', 'jobs', wid] })
+  }, [queryClient, wid])
+
+  const runMutation = useMutation({
+    mutationFn: (job: SyncJob) => datasourceApi.runJob(wid, job.id),
+    onSuccess: result => {
+      invalidate()
+      if (result.run.status === 'failed') {
+        message.error(`「${result.job.name}」同步失败：${result.run.error_message || '未知错误'}`)
+      } else {
+        message.success(
+          `「${result.job.name}」${STATUS_META[result.run.status]?.label ?? result.run.status}：新增 ${result.run.inserted} / 更新 ${result.run.updated}`,
+        )
+      }
+    },
+    onError: () => message.error('运行失败（任务可能正在执行，请稍后再试）'),
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: (job: SyncJob) => datasourceApi.removeJob(wid, job.id),
+    onSuccess: () => {
+      invalidate()
+      message.success('已删除同步任务')
+    },
+    onError: () => message.error('删除失败'),
+  })
+
+  const openCreate = () => {
+    setEditing(null)
+    setDrawerOpen(true)
+  }
+  const openEdit = (job: SyncJob) => {
+    setEditing(job)
+    setDrawerOpen(true)
+  }
+  const confirmRemove = (job: SyncJob) => {
+    modal.confirm({
+      title: `删除同步任务「${job.name}」？`,
+      content: '运行历史会一并删除，目标表中的数据保留。',
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => removeMutation.mutateAsync(job),
+    })
+  }
+
+  const columns = useMemo(
+    () => [
+      {
+        title: '名称',
+        dataIndex: 'name',
+        render: (name: string, job: SyncJob) => (
+          <Space size={6}>
+            <Text strong>{name}</Text>
+            {!job.enabled && <Tag>已停用</Tag>}
+          </Space>
+        ),
+      },
+      {
+        title: '适配器',
+        dataIndex: 'provider',
+        width: 190,
+        render: (provider: string) => <Tag color="blue">{providerLabel(provider)}</Tag>,
+      },
+      {
+        title: '目标表',
+        dataIndex: 'table_id',
+        width: 160,
+        render: (id: number | null) => <Text type={id == null ? 'secondary' : undefined}>{tableName(id)}</Text>,
+      },
+      {
+        title: '调度',
+        dataIndex: 'schedule',
+        width: 150,
+        render: (schedule: SyncScheduleConfig) => <Text>{scheduleLabel(schedule)}</Text>,
+      },
+      {
+        title: '上次运行',
+        dataIndex: 'last_run_at',
+        width: 190,
+        render: (value: string | null, job: SyncJob) => {
+          const meta = STATUS_META[job.last_status]
+          return (
+            <Space size={6}>
+              {meta ? <Tag color={meta.color}>{meta.label}</Tag> : <Tag>未运行</Tag>}
+              <Text type="secondary">{formatTime(value)}</Text>
+            </Space>
+          )
+        },
+      },
+      {
+        title: '操作',
+        key: 'actions',
+        width: 210,
+        render: (_: unknown, job: SyncJob) => (
+          <Space size={4}>
+            <Tooltip title="立即运行">
+              <Button
+                size="small"
+                type="text"
+                aria-label={`立即运行 ${job.name}`}
+                icon={<PlayCircleOutlined />}
+                loading={runMutation.isPending && runMutation.variables?.id === job.id}
+                onClick={() => runMutation.mutate(job)}
+              />
+            </Tooltip>
+            <Tooltip title="运行历史">
+              <Button
+                size="small"
+                type="text"
+                aria-label={`运行历史 ${job.name}`}
+                icon={<HistoryOutlined />}
+                onClick={() => setHistoryJob(job)}
+              />
+            </Tooltip>
+            <Tooltip title="编辑 / 预览">
+              <Button
+                size="small"
+                type="text"
+                aria-label={`编辑 ${job.name}`}
+                icon={<EditOutlined />}
+                onClick={() => openEdit(job)}
+              />
+            </Tooltip>
+            <Tooltip title="删除">
+              <Button
+                size="small"
+                type="text"
+                danger
+                aria-label={`删除 ${job.name}`}
+                icon={<DeleteOutlined />}
+                onClick={() => confirmRemove(job)}
+              />
+            </Tooltip>
+          </Space>
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [providerLabel, tableName, runMutation.isPending, runMutation.variables, jobs],
+  )
+
+  return (
+    <div style={{ padding: 16 }} data-testid="datasource-page">
+      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
+        <Space size={8}>
+          <CloudDownloadOutlined />
+          <Title level={4} style={{ margin: 0 }}>
+            数据源同步
+          </Title>
+          <Text type="secondary">定期抓取外部数据并按幂等键写入数据表</Text>
+        </Space>
+        <Button type="primary" data-testid="datasource-create-btn" icon={<PlusOutlined />} onClick={openCreate}>
+          新建同步任务
+        </Button>
+      </Space>
+
+      <Table<SyncJob>
+        data-testid="datasource-jobs-table"
+        rowKey="id"
+        size="small"
+        loading={jobsQuery.isLoading}
+        dataSource={jobs}
+        columns={columns}
+        pagination={false}
+        locale={{
+          emptyText: (
+            <Empty
+              description={
+                <Space direction="vertical" size={2}>
+                  <Text>还没有同步任务</Text>
+                  <Text type="secondary">新建后可按每天 / 间隔 / cron 自动抓取</Text>
+                </Space>
+              }
+            />
+          ),
+        }}
+      />
+
+      <JobDrawer
+        wid={wid}
+        open={drawerOpen}
+        job={editing}
+        providers={providers}
+        tables={tables}
+        onClose={() => setDrawerOpen(false)}
+        onSaved={() => {
+          invalidate()
+          setDrawerOpen(false)
+        }}
+      />
+
+      <HistoryDrawer wid={wid} job={historyJob} onClose={() => setHistoryJob(null)} />
+    </div>
+  )
+}
+
+interface JobDrawerProps {
+  wid: string
+  open: boolean
+  job: SyncJob | null
+  providers: DatasourceProviderInfo[]
+  tables: Array<{ id: number | string; name: string }>
+  onClose: () => void
+  onSaved: () => void
+}
+
+/** 新建 / 编辑抽屉：Provider 驱动 + 保存后抓取预览（预览不落库） */
+function JobDrawer({ wid, open, job, providers, tables, onClose, onSaved }: JobDrawerProps) {
+  const [form] = Form.useForm()
+  const { message } = AntApp.useApp()
+  const [saving, setSaving] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
+  const [preview, setPreview] = useState<SyncPreviewResult | null>(null)
+  const [savedJob, setSavedJob] = useState<SyncJob | null>(null)
+
+  const activeJob = job ?? savedJob
+
+  useEffect(() => {
+    if (!open) return
+    setPreview(null)
+    setSavedJob(null)
+    if (job) {
+      form.setFieldsValue({
+        name: job.name,
+        provider: job.provider,
+        table_id: job.table_id ?? undefined,
+        url_template: job.request_spec?.url_template,
+        data_path: job.request_spec?.data_path ?? undefined,
+        entrant_param: job.entrant_param ?? undefined,
+        entrant_keys: job.entrant_keys ?? [],
+        match_keys: job.match_keys ?? [],
+        cursor_strategy: job.cursor?.strategy ?? 'date',
+        cursor_field: job.cursor?.field ?? undefined,
+        backfill_start: job.cursor?.backfill_start ?? undefined,
+        schedule_mode: job.schedule?.mode ?? 'manual',
+        schedule_at: job.schedule?.at ?? undefined,
+        schedule_seconds: job.schedule?.seconds ?? undefined,
+        schedule_expr: job.schedule?.expr ?? undefined,
+        paging_mode: job.request_spec?.paging?.mode ?? 'none',
+        page_size: job.request_spec?.paging?.page_size ?? 50,
+        time_window_mode: job.request_spec?.time_window?.mode ?? 'none',
+        chunk_days: job.request_spec?.time_window?.chunk_days ?? 0,
+        enabled: job.enabled,
+      })
+    } else {
+      form.resetFields()
+      const defaultProvider = providers[0]
+      form.setFieldsValue({
+        provider: defaultProvider?.name,
+        cursor_strategy: defaultProvider?.default_cursor ?? 'date',
+        schedule_mode: 'manual',
+        paging_mode: 'none',
+        time_window_mode: 'none',
+        page_size: 50,
+        chunk_days: 0,
+        entrant_keys: [],
+        match_keys: [],
+        enabled: true,
+      })
+    }
+  }, [open, job, form, providers])
+
+  const buildPayload = useCallback(async (): Promise<SyncJobPayload> => {
+    const values = await form.validateFields()
+    const paging = values.paging_mode === 'none'
+      ? { mode: 'none' as const }
+      : { mode: values.paging_mode as 'page' | 'offset', page_size: Number(values.page_size) || 50, max_pages: 100 }
+    const timeWindow = values.time_window_mode === 'none'
+      ? { mode: 'none' as const }
+      : { mode: 'range' as const, chunk_days: Number(values.chunk_days) || 0 }
+    return {
+      name: String(values.name).trim(),
+      provider: String(values.provider),
+      table_id: values.table_id == null ? null : Number(values.table_id),
+      request_spec: {
+        url_template: String(values.url_template).trim(),
+        data_path: values.data_path || null,
+        paging,
+        time_window: timeWindow,
+      },
+      entrant_param: values.entrant_param || null,
+      entrant_keys: (values.entrant_keys ?? []).map(String),
+      match_keys: (values.match_keys ?? []).map(String),
+      cursor: {
+        strategy: values.cursor_strategy,
+        field: values.cursor_field || '',
+        backfill_start: values.backfill_start || '',
+      },
+      schedule: {
+        mode: values.schedule_mode,
+        at: values.schedule_mode === 'daily' ? values.schedule_at : '',
+        seconds: values.schedule_mode === 'interval' ? Number(values.schedule_seconds) || 0 : 0,
+        expr: values.schedule_mode === 'cron' ? values.schedule_expr : '',
+      },
+      enabled: Boolean(values.enabled),
+    }
+  }, [form])
+
+  const handleSave = async (thenPreview: boolean) => {
+    setSaving(true)
+    try {
+      const payload = await buildPayload()
+      const saved = job
+        ? await datasourceApi.updateJob(wid, job.id, payload)
+        : await datasourceApi.createJob(wid, payload)
+      setSavedJob(saved)
+      message.success(job ? '已保存' : '已创建')
+      if (!thenPreview) {
+        onSaved()
+        return
+      }
+      setPreviewing(true)
+      try {
+        setPreview(await datasourceApi.previewJob(wid, saved.id, 20))
+      } catch {
+        message.error('抓取预览失败（源可能不可达或配置有误）')
+      } finally {
+        setPreviewing(false)
+      }
+      onSaved()
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      message.error(detail || '保存失败，请检查表单')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const providerOptions = providers.map(p => ({ value: p.name, label: p.label }))
+  const activeProvider = Form.useWatch('provider', form) as string | undefined
+  const providerInfo = providers.find(p => p.name === activeProvider)
+  const scheduleMode = Form.useWatch('schedule_mode', form) as string | undefined
+  const cursorStrategy = Form.useWatch('cursor_strategy', form) as string | undefined
+  const timeWindowMode = Form.useWatch('time_window_mode', form) as string | undefined
+  const pagingMode = Form.useWatch('paging_mode', form) as string | undefined
+
+  const onProviderChange = (value: string) => {
+    const info = providers.find(p => p.name === value)
+    if (!info) return
+    form.setFieldValue('cursor_strategy', info.default_cursor)
+    const urlDefault = info.params_schema?.fields?.find(f => f.name === 'url_template')?.default
+    if (typeof urlDefault === 'string' && urlDefault) form.setFieldValue('url_template', urlDefault)
+  }
+
+  return (
+    <Drawer
+      title={job ? `编辑同步任务 · ${job.name}` : '新建同步任务'}
+      width={720}
+      open={open}
+      onClose={onClose}
+      destroyOnClose
+      extra={
+        <Space>
+          <Button onClick={onClose}>取消</Button>
+          <Button data-testid="datasource-save-btn" loading={saving} onClick={() => void handleSave(false)}>
+            保存
+          </Button>
+          <Button
+            type="primary"
+            data-testid="datasource-save-preview-btn"
+            loading={saving || previewing}
+            onClick={() => void handleSave(true)}
+          >
+            保存并预览
+          </Button>
+        </Space>
+      }
+    >
+      <Form form={form} layout="vertical" size="small">
+        <Space size={12} style={{ display: 'flex' }}>
+          <Form.Item name="name" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }]} style={{ flex: 1 }}>
+            <Input data-testid="datasource-name-input" placeholder="例如：北京天气日报" />
+          </Form.Item>
+          <Form.Item name="provider" label="适配器" rules={[{ required: true }]} style={{ width: 220 }}>
+            <Select options={providerOptions} onChange={onProviderChange} />
+          </Form.Item>
+        </Space>
+
+        <Space size={12} style={{ display: 'flex' }}>
+          <Form.Item name="table_id" label="目标表（留空则只抓不写）" style={{ flex: 1 }}>
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择数据表"
+              options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
+            />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ width: 90 }}>
+            <Switch />
+          </Form.Item>
+        </Space>
+
+        <Form.Item
+          name="url_template"
+          label="URL 模板"
+          rules={[{ required: true, message: '请输入 http/https URL 模板' }]}
+          extra={
+            providerInfo?.params_schema?.placeholders?.length
+              ? `可用占位符：${providerInfo.params_schema.placeholders.map(p => `{${p}}`).join(' ')}`
+              : '占位符用 {name}，只做字面替换'
+          }
+        >
+          <Input.TextArea
+            data-testid="datasource-url-template"
+            rows={2}
+            placeholder="https://api.example.com/data?city={city}&from={start}&to={end}"
+          />
+        </Form.Item>
+
+        <Space size={12} style={{ display: 'flex' }}>
+          <Form.Item name="data_path" label="响应数组路径" style={{ flex: 1 }}>
+            <Input placeholder="data.items（留空自动探测 data / items / results）" />
+          </Form.Item>
+          <Form.Item name="entrant_param" label="标的占位符名" style={{ width: 160 }}>
+            <Input placeholder="city / symbol" />
+          </Form.Item>
+        </Space>
+
+        <Form.Item name="entrant_keys" label="标的取值" extra="每个取值各抓一次；留空表示只抓一次">
+          <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="输入后回车，如 北京" />
+        </Form.Item>
+
+        <Form.Item name="match_keys" label="幂等键" extra="必须是目标表字段；留空则纯追加（仅快照类源适用）">
+          <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 city, day" />
+        </Form.Item>
+
+        <Collapse
+          size="small"
+          ghost
+          items={[
+            {
+              key: 'advanced',
+              label: '增量与调度',
+              children: (
+                <>
+                  <Space size={12} style={{ display: 'flex' }}>
+                    <Form.Item name="cursor_strategy" label="增量策略" style={{ width: 180 }}>
+                      <Select
+                        options={Object.entries(CURSOR_LABEL).map(([value, label]) => ({ value, label }))}
+                      />
+                    </Form.Item>
+                    <Form.Item name="cursor_field" label="增量字段" style={{ flex: 1 }}>
+                      <Input disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'} placeholder="day / published_at" />
+                    </Form.Item>
+                    <Form.Item name="backfill_start" label="回填起点" style={{ width: 150 }}>
+                      <Input
+                        disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'}
+                        placeholder="2024-01-01"
+                      />
+                    </Form.Item>
+                  </Space>
+
+                  <Space size={12} style={{ display: 'flex' }}>
+                    <Form.Item name="schedule_mode" label="调度" style={{ width: 150 }}>
+                      <Select
+                        options={[
+                          { value: 'manual', label: '手动' },
+                          { value: 'daily', label: '每天定时' },
+                          { value: 'interval', label: '固定间隔' },
+                          { value: 'cron', label: 'cron' },
+                        ]}
+                      />
+                    </Form.Item>
+                    {scheduleMode === 'daily' && (
+                      <Form.Item name="schedule_at" label="时刻（HH:MM）" style={{ width: 150 }}>
+                        <Input placeholder="17:10" />
+                      </Form.Item>
+                    )}
+                    {scheduleMode === 'interval' && (
+                      <Form.Item name="schedule_seconds" label="间隔（秒）" style={{ width: 150 }}>
+                        <InputNumber min={1} style={{ width: '100%' }} />
+                      </Form.Item>
+                    )}
+                    {scheduleMode === 'cron' && (
+                      <Form.Item name="schedule_expr" label="cron 表达式" style={{ flex: 1 }}>
+                        <Input placeholder="0 7 * * *" />
+                      </Form.Item>
+                    )}
+                  </Space>
+
+                  <Space size={12} style={{ display: 'flex' }}>
+                    <Form.Item name="paging_mode" label="分页" style={{ width: 150 }}>
+                      <Select
+                        options={[
+                          { value: 'none', label: '不分页' },
+                          { value: 'page', label: '页码' },
+                          { value: 'offset', label: '偏移量' },
+                        ]}
+                      />
+                    </Form.Item>
+                    {pagingMode !== 'none' && (
+                      <Form.Item name="page_size" label="每页条数" style={{ width: 150 }}>
+                        <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+                      </Form.Item>
+                    )}
+                    <Form.Item name="time_window_mode" label="时间区间" style={{ width: 150 }}>
+                      <Select
+                        options={[
+                          { value: 'none', label: '不注入' },
+                          { value: 'range', label: '按游标区间' },
+                        ]}
+                      />
+                    </Form.Item>
+                    {timeWindowMode === 'range' && (
+                      <Form.Item name="chunk_days" label="切片天数（0=不切）" style={{ width: 160 }}>
+                        <InputNumber min={0} max={3650} style={{ width: '100%' }} />
+                      </Form.Item>
+                    )}
+                  </Space>
+                </>
+              ),
+            },
+          ]}
+        />
+      </Form>
+
+      {preview && (
+        <PreviewPanel
+          preview={preview}
+          onRefresh={
+            activeJob
+              ? async () => {
+                  setPreviewing(true)
+                  try {
+                    setPreview(await datasourceApi.previewJob(wid, activeJob.id, 20))
+                  } catch {
+                    message.error('抓取预览失败')
+                  } finally {
+                    setPreviewing(false)
+                  }
+                }
+              : undefined
+          }
+          refreshing={previewing}
+        />
+      )}
+      {!preview && activeJob && (
+        <Button icon={<EyeOutlined />} loading={previewing} onClick={() => void handleSave(true)}>
+          抓取预览（不落库）
+        </Button>
+      )}
+    </Drawer>
+  )
+}
+
+/** 预览面板：失败明细 + 前 20 行 + 归一失败 */
+function PreviewPanel({
+  preview,
+  onRefresh,
+  refreshing,
+}: {
+  preview: SyncPreviewResult
+  onRefresh?: () => Promise<void>
+  refreshing: boolean
+}) {
+  const columns = preview.columns.slice(0, 8).map(key => ({
+    title: key,
+    dataIndex: key,
+    ellipsis: true,
+    render: (value: unknown) => (value == null ? '—' : String(value)),
+  }))
+  return (
+    <div style={{ marginTop: 8 }}>
+      <Space style={{ marginBottom: 8 }}>
+        <Tag color={STATUS_META[preview.status]?.color ?? 'default'}>
+          {STATUS_META[preview.status]?.label ?? preview.status}
+        </Tag>
+        <Text type="secondary">
+          共 {preview.total} 行 · 请求 {preview.plans} 个（成功 {preview.succeeded}）
+          {preview.cursor_from ? ` · 区间 ${preview.cursor_from} → ${preview.cursor_to || '—'}` : ''}
+        </Text>
+        {onRefresh && (
+          <Button size="small" loading={refreshing} onClick={() => void onRefresh()}>
+            重新抓取
+          </Button>
+        )}
+      </Space>
+      {preview.failures.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message={`${preview.failures.length} 个请求失败`}
+          description={preview.failures.map(f => `${f.label}: ${f.error}`).join('；')}
+        />
+      )}
+      {preview.normalize_failures.length > 0 && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message={`${preview.normalize_failures.length} 个字段归一失败（已降级为空值）`}
+          description={preview.normalize_failures
+            .slice(0, 5)
+            .map(f => `第 ${f.row_index + 1} 行 ${f.field}: ${f.reason}`)
+            .join('；')}
+        />
+      )}
+      <Table
+        rowKey={(_, index) => String(index)}
+        size="small"
+        dataSource={preview.rows}
+        columns={columns}
+        pagination={false}
+        scroll={{ x: 'max-content' }}
+        locale={{ emptyText: '没有抓到数据' }}
+      />
+    </div>
+  )
+}
+
+function HistoryDrawer({ wid, job, onClose }: { wid: string; job: SyncJob | null; onClose: () => void }) {
+  const runsQuery = useQuery({
+    queryKey: ['datasource', 'runs', wid, job?.id],
+    queryFn: () => datasourceApi.runs(wid, job?.id ?? 0, { limit: 50 }),
+    enabled: !!job,
+  })
+
+  const columns = [
+    {
+      title: '开始时间',
+      dataIndex: 'started_at',
+      width: 150,
+      render: (value: string) => formatTime(value),
+    },
+    { title: '触发', dataIndex: 'trigger', width: 90 },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 100,
+      render: (status: string) => (
+        <Tag color={STATUS_META[status]?.color ?? 'default'}>{STATUS_META[status]?.label ?? status}</Tag>
+      ),
+    },
+    {
+      title: '游标',
+      key: 'cursor',
+      width: 200,
+      render: (_: unknown, run: SyncRun) =>
+        run.cursor_from || run.cursor_to ? `${run.cursor_from || '—'} → ${run.cursor_to || '—'}` : '—',
+    },
+    {
+      title: '新增 / 更新',
+      key: 'counts',
+      width: 110,
+      render: (_: unknown, run: SyncRun) => `${run.inserted} / ${run.updated}`,
+    },
+    { title: '耗时', dataIndex: 'duration_ms', width: 90, render: (ms: number) => `${ms} ms` },
+    {
+      title: '说明',
+      key: 'error',
+      ellipsis: true,
+      render: (_: unknown, run: SyncRun) => run.error_message || '—',
+    },
+  ]
+
+  return (
+    <Drawer
+      title={job ? `运行历史 · ${job.name}` : '运行历史'}
+      width={880}
+      open={!!job}
+      onClose={onClose}
+      destroyOnClose
+    >
+      <Table<SyncRun>
+        rowKey="id"
+        size="small"
+        loading={runsQuery.isLoading}
+        dataSource={runsQuery.data?.runs ?? []}
+        columns={columns}
+        pagination={false}
+        locale={{ emptyText: '还没有运行记录' }}
+      />
+    </Drawer>
+  )
+}
