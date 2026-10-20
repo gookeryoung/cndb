@@ -23,6 +23,3 @@ stats.html
 *.njsproj
 *.sln
 *.sw?
-
-# Build output (publishes to backend static/)
-..\/src\/cndb\/static\/

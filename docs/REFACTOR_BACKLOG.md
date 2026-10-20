@@ -25,6 +25,10 @@
 - 重复类型收敛：`ViewMode`（store 副本删除）、`WorkspaceRole`（页面内副本删除）
 - 配置一致性：`ruff==0.16.8` 精确固定、`ci.yml` 用 YAML 锚点去重 paths、
   `Makefile .PHONY` 补齐、`pytest.ini` 补 `--dist` 生效条件说明
+- 配置文件去重：覆盖率阈值收敛到 `pyproject.toml` 一处（`Makefile` / 两套 CI 不再重复传
+  `--cov-fail-under`）、`.gitignore` 重复与失效规则（`frontend/node_modules/`、重复 `.idea/`、
+  Sphinx 残留）、`.dockerignore` 的 tox 残留、coverage `omit` 里恒无效的 `tests/*`；
+  `docker-compose.prod.yml` 修正 `CNDATABASE_URL` → `DATABASE_URL` 拼写
 
 ## 一、超大文件拆分：剩余候选
 

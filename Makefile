@@ -4,7 +4,6 @@
 .DEFAULT_GOAL := help
 
 PACKAGE := cndb
-COV_THRESHOLD := 95
 
 # pytest-xdist worker 数：实测 n8 后收益收敛（SQLite 单文件写锁），低配机器用 make test PYTEST_JOBS=4 覆盖
 PYTEST_JOBS ?= 8
@@ -22,7 +21,8 @@ FRONTEND_DEPS := frontend/node_modules/.make-sync
 .PHONY: help sync dev seed frontend-sync frontend-static frontend-coverage frontend-build \
         build clean test cov lint typecheck e2e e2e-dev gitkeep-check adr-check \
         check-fast check-docs flow check bump pub push pack-doctor pack pack-cache-clean \
-        docker-dev docker-dev-down docker-build docker-export
+        docker-dev docker-dev-down docker-build docker-export dd ddd db de \
+        patch minor major
 
 # ── 开发 ──────────────────────────────────────────────────────────────
 
@@ -68,8 +68,8 @@ typecheck: ## 后端类型检查（pyrefly）
 test: ## 后端测试（不含覆盖率）
 	uv run pytest -m "not slow" -n $(PYTEST_JOBS)
 
-cov: ## 后端测试 + 覆盖率门禁（与 CI 同口径，只统计 cndb 包）
-	uv run pytest -m "not slow" --cov=$(PACKAGE) --cov-report=term --cov-report=html --cov-fail-under=$(COV_THRESHOLD) -n $(PYTEST_JOBS)
+cov: ## 后端测试 + 覆盖率门禁（与 CI 同口径，只统计 cndb 包；阈值见 pyproject [tool.coverage.report]）
+	uv run pytest -m "not slow" --cov=$(PACKAGE) --cov-report=term --cov-report=html -n $(PYTEST_JOBS)
 	@echo 'Coverage report: htmlcov/index.html'
 
 gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败）
