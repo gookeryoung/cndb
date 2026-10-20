@@ -44,7 +44,7 @@ from cndb.plugins.tables.services.importing.column_profiler import profile_colum
 from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
 from cndb.plugins.tables.services.importing.field_mapping import GapFilling
 from cndb.plugins.tables.services.importing.match_key_advisor import recommend_match_keys
-from cndb.plugins.tables.services.importing.row_validator import RowValidator, ValidationResult
+from cndb.plugins.tables.services.importing.row_validator import Issue, RowValidator, ValidationResult
 from cndb.plugins.tables.services.transfer import (
     _coerce_long_numeric_to_text,
     _dedupe_samples,
@@ -136,6 +136,7 @@ class Importer:
         field_mapping: 可选的源列 → 目标字段映射 — 透传给 RowValidator.
         gap_filling: 目标侧缺失字段填充策略 — 透传给 RowValidator.
         fill_values: gap_filling="value" 时的固定值 — 透传给 RowValidator.
+        partial: 部分列模式 — 透传给 RowValidator；数据源多 job 分列写同一行时启用.
     """
 
     # 预览截断上限
@@ -151,6 +152,7 @@ class Importer:
         field_mapping: dict[str, str | None] | None = None,
         gap_filling: GapFilling = "empty",
         fill_values: dict[str, Any] | None = None,
+        partial: bool = False,
         user: Any = None,
     ) -> None:
         self.engine = engine
@@ -161,6 +163,7 @@ class Importer:
         self.field_mapping = field_mapping
         self.gap_filling = gap_filling
         self.fill_values = fill_values
+        self.partial = partial
 
     # ── 公共 API ────────────────────────────────
 
@@ -198,6 +201,7 @@ class Importer:
             field_mapping=self.field_mapping,
             gap_filling=self.gap_filling,
             fill_values=self.fill_values,
+            partial=self.partial,
             link_resolver=self._resolve_link_tokens,
         )
         results = rv.validate_all(rows)
@@ -396,11 +400,14 @@ class Importer:
             matched_ids = {id(item["values"]) for item in valid_update} | {id(v) for v in valid_new_vals}
             unmatched_vals = [v for v in to_import if id(v) not in matched_ids]
             all_new = valid_new_vals + unmatched_vals
+            all_new = self._drop_missing_required(all_new, failed)
             if all_new:
                 new_ids = rec.bulk_create(self.engine, self.table, all_new, db=self.db)
         else:
             # 纯追加路径（兼容旧流程）
-            new_ids = rec.bulk_create(self.engine, self.table, to_import, db=self.db)
+            all_new = self._drop_missing_required(to_import, failed)
+            if all_new:
+                new_ids = rec.bulk_create(self.engine, self.table, all_new, db=self.db)
 
         # 更新 report：补充实际行数
         report = dict(report)
@@ -422,6 +429,52 @@ class Importer:
             report=report,
             failed_results=failed,
         )
+
+    def _drop_missing_required(
+        self,
+        rows: list[dict[str, Any]],
+        failed: list[ValidationResult],
+    ) -> list[dict[str, Any]]:
+        """partial 模式下剔除缺必填列的新行（更新行不受必填约束）.
+
+        默认导入语义下 RowValidator 已把缺必填列的行标 error；partial 模式为
+        数据源多 job 分列写同一行豁免了必填校验，新行必须在这里补回检查，
+        否则 ``bulk_create`` 会抛 ValueError 让整个 job 失败。
+        """
+        if not self.partial or not rows:
+            return rows
+        from cndb.plugins.tables.field_types import default_registry
+
+        required: list[str] = []
+        for f in self.table.active_fields():
+            if f.trashed or not f.required or is_link_field(f):
+                continue
+            ftype = default_registry.get(f.field_type)
+            if ftype is None or not ftype.has_physical_column:
+                continue
+            if f.default_value is not None:
+                continue  # 有默认值 → records 落库时会自动补齐
+            required.append(f.name)
+        if not required:
+            return rows
+
+        kept: list[dict[str, Any]] = []
+        for values in rows:
+            missing = [name for name in required if name not in values]
+            if not missing:
+                kept.append(values)
+                continue
+            failed.append(
+                ValidationResult(
+                    row_number=0,
+                    values=values,
+                    status="error",
+                    issues=[
+                        Issue(field=name, level="error", message="必填字段缺失（部分列模式的新行）") for name in missing
+                    ],
+                )
+            )
+        return kept
 
     # ── V2: upsert 匹配 ──────────────────────
 

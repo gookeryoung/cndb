@@ -82,6 +82,19 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         "high_field",
         "low_field",
         "close_field",
+        # Kline 行内 K 线视图（标的/行情字段 + 多周期复权 JSON 序列字段）
+        "symbol_field",
+        "name_field",
+        "price_field",
+        "change_pct_field",
+        "volume_field",
+        "amount_field",
+        "date_field",
+        "day_qfq_field",
+        "day_hfq_field",
+        "day_none_field",
+        "week_qfq_field",
+        "month_qfq_field",
         # Flow 流程视图（流程节点字段 + 卡片标题字段，标题字段已在上方）
         "node_field",
     ):
@@ -109,6 +122,28 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
                 opt_val = entry.get(opt_key)
                 if opt_val and opt_val not in valid_fields:
                     return False, f"view_options.charts[{i}].{opt_key}='{opt_val}' 不存在"
+    # Kline 语义校验：标的字段必填、至少一个序列字段、默认复权/周期有可用序列
+    if getattr(vc, "view_type", None) == "kline":
+        if not vo.get("symbol_field"):
+            return False, "Kline 视图需配置 view_options.symbol_field"
+        series_keys = (
+            "day_qfq_field",
+            "day_hfq_field",
+            "day_none_field",
+            "week_qfq_field",
+            "month_qfq_field",
+        )
+        if not any(vo.get(key) for key in series_keys):
+            return False, "Kline 视图需至少配置一个 K 线序列字段"
+        adjust = str(vo.get("default_adjust") or "qfq")
+        adjust_field = {"qfq": "day_qfq_field", "hfq": "day_hfq_field", "none": "day_none_field"}.get(adjust)
+        if adjust_field and not vo.get(adjust_field):
+            return False, f"Kline 视图 default_adjust={adjust} 需配置 view_options.{adjust_field}"
+        period = str(vo.get("default_period") or "day")
+        if period in ("week", "month"):
+            period_field = "week_qfq_field" if period == "week" else "month_qfq_field"
+            if not vo.get(period_field) and not vo.get("day_qfq_field"):
+                return False, f"Kline 视图 default_period={period} 需配置 {period_field} 或 day_qfq_field"
     return True, None
 
 

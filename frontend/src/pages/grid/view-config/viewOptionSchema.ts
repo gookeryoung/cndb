@@ -437,6 +437,98 @@ export const FLOW_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
+/** Kline 行内 K 线视图的专属配置字段（17 项）— 一只标的（一行）内嵌多周期复权 JSON 序列 */
+export const KLINE_OPTIONS: ViewOptionSchema[] = [
+  {
+    key: 'symbol_field', label: '标的代码字段', group: '标的与行情',
+    tooltip: '每行一只标的的代码（如 sh600519 / hk00700 / usAAPL），左侧列表与图表标题使用',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], required: true,
+  },
+  {
+    key: 'name_field', label: '标的名称字段', group: '标的与行情',
+    tooltip: '左侧列表与图表标题显示的标的名称',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'],
+  },
+  {
+    key: 'price_field', label: '最新价字段', group: '标的与行情',
+    tooltip: '列表与图表头部显示的最新收盘价（行级字段，缺省回退到 K 线末根收盘）',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage'],
+  },
+  {
+    key: 'change_pct_field', label: '涨跌幅字段', group: '标的与行情',
+    tooltip: '存百分数（5.2 表示 5.2%），红涨绿跌着色',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage'],
+  },
+  {
+    key: 'volume_field', label: '成交量字段', group: '标的与行情',
+    kind: 'field_select', fieldTypes: ['number', 'float'],
+  },
+  {
+    key: 'amount_field', label: '成交额字段', group: '标的与行情',
+    kind: 'field_select', fieldTypes: ['number', 'float'],
+  },
+  {
+    key: 'date_field', label: '最新交易日字段', group: '标的与行情',
+    kind: 'field_select', fieldTypes: ['date', 'datetime'],
+  },
+  {
+    key: 'day_qfq_field', label: '日线前复权序列', group: 'K 线序列（JSON 列）',
+    tooltip: 'JSON 数组列：[{date,open,close,high,low,volume,amount,...}, ...]，按日期升序',
+    kind: 'field_select', fieldTypes: ['json'],
+  },
+  {
+    key: 'day_hfq_field', label: '日线后复权序列', group: 'K 线序列（JSON 列）',
+    kind: 'field_select', fieldTypes: ['json'],
+  },
+  {
+    key: 'day_none_field', label: '日线不复权序列', group: 'K 线序列（JSON 列）',
+    kind: 'field_select', fieldTypes: ['json'],
+  },
+  {
+    key: 'week_qfq_field', label: '周线前复权序列', group: 'K 线序列（JSON 列）',
+    tooltip: '留空时由日线前复权派生（首开末收、最高最低、量额求和）',
+    kind: 'field_select', fieldTypes: ['json'],
+  },
+  {
+    key: 'month_qfq_field', label: '月线前复权序列', group: 'K 线序列（JSON 列）',
+    tooltip: '留空时由日线前复权派生',
+    kind: 'field_select', fieldTypes: ['json'],
+  },
+  {
+    key: 'default_period', label: '默认周期', group: '显示',
+    kind: 'enum_select', defaultValue: 'day',
+    enumOptions: [
+      { value: 'day', label: '日线' },
+      { value: 'week', label: '周线' },
+      { value: 'month', label: '月线' },
+    ],
+  },
+  {
+    key: 'default_adjust', label: '默认复权', group: '显示',
+    kind: 'enum_select', defaultValue: 'qfq',
+    enumOptions: [
+      { value: 'qfq', label: '前复权' },
+      { value: 'hfq', label: '后复权' },
+      { value: 'none', label: '不复权' },
+    ],
+  },
+  {
+    key: 'show_ma', label: '显示均线', group: '显示',
+    tooltip: '叠加 MA 均线（默认 MA5/10/20/60，可用下方「均线周期」覆盖）',
+    kind: 'switch', defaultValue: true,
+  },
+  {
+    key: 'show_volume', label: '显示成交量', group: '显示',
+    tooltip: '价格下方显示成交量副图，与价格图共享 dataZoom',
+    kind: 'switch', defaultValue: true,
+  },
+  {
+    key: 'ma_periods', label: '均线周期', group: '显示',
+    tooltip: '逗号分隔的均线周期（如 5,10,20,60）；留空使用默认',
+    kind: 'text_list',
+  },
+]
+
 /** 按 view_type 名返回 option schema 列表 */
 export function getOptionSchema(viewType: string): ViewOptionSchema[] {
   switch (viewType) {
@@ -447,6 +539,7 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
     case 'tree': return TREE_OPTIONS
     case 'matrix': return MATRIX_OPTIONS
     case 'chart': return CHART_OPTIONS
+    case 'kline': return KLINE_OPTIONS
     case 'flow': return FLOW_OPTIONS
     default: return []
   }
