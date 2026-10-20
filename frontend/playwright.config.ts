@@ -41,6 +41,11 @@ export default defineConfig({
     },
     {
       name: "chromium-authed",
+      // dev 用例（tests/e2e/dev/*）只由 playwright.dev.config.ts（pnpm e2e:dev）托管：
+      // 其 beforeAll 起 vite dev、afterAll 杀进程会触发 sync-static 的 closeBundle，
+      // 而该钩子在缺 frontend/dist 时会清空 src/cndb/static（CI 产物由 artifact 灌入），
+      // 抹掉同分片后续用例的页面 → 整片 404。分片随机承载 dev 用例，故必须全局排除。
+      testIgnore: /[\\/]dev[\\/]/,
       dependencies: ["setup"],
       use: {
         storageState: AUTH_STATE,
@@ -49,8 +54,9 @@ export default defineConfig({
     {
       name: "chromium-anon",
       // critical 用例全部依赖登录态（匿名访问会被 ProtectedRoute 重定向到 /login），
-      // anon 项目只服务 smoke 的登录/注册/登出用例，避免双倍执行与必败重试。
-      testIgnore: /[\\/]critical[\\/]/,
+      // anon 项目只服务 smoke 的登录/注册/登出用例，避免双倍执行与必败重试；
+      // dev 用例同 authed 项目一并排除（原因见上）。
+      testIgnore: /[\\/](critical|dev)[\\/]/,
     },
   ],
 });
