@@ -16,3 +16,10 @@ replace = '\1"{new_version}"'
 filename = "src/cndb/__init__.py"
 search = '__version__ = "{current_version}"'
 replace = '__version__ = "{new_version}"'
+
+# uv.lock 记录 editable 包自身版本（name = "cndb" 下一行）；不随 bump 更新会让
+# 提交后 lock 与 pyproject 不一致，下次 uv run / uv sync 又把 uv.lock 改脏
+[[tool.bumpversion.files]]
+filename = "uv.lock"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
