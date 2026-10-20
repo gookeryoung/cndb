@@ -367,6 +367,11 @@ def main() -> None:
 
     register_views_subparser(sub)
 
+    # sync 子命令组（数据源同步：list / run / tick / preview —— ADR 0006 M2）
+    from cndb.cli.sync import register_sync_subparser
+
+    register_sync_subparser(sub)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -408,6 +413,10 @@ def main() -> None:
         from cndb.cli.views import views_command
 
         views_command(args)
+    elif args.command == "sync":
+        from cndb.cli.sync import sync_command
+
+        sync_command(args)
     else:
         parser.print_help()  # pragma: no cover - argparse 默认分支
         sys.exit(1)

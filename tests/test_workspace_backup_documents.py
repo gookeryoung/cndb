@@ -72,7 +72,7 @@ def _seed_source(client: TestClient, headers: dict[str, str]) -> tuple[int, dict
     _create_doc(client, headers, wid, "根文档", content="# 根文档\n\n根正文\n")
 
     backup = client.get(f"{WS}/{wid}/export", headers=headers).json()
-    assert backup["version"] == "4"
+    assert backup["version"] == "5"
     return wid, backup
 
 

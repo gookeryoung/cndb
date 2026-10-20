@@ -77,15 +77,17 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2", "3", "4"):
+    if version not in ("1", "2", "3", "4", "5"):
         raise HTTPException(
-            status_code=400, detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4）。请升级程序后再导入。"
+            status_code=400,
+            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5）。请升级程序后再导入。",
         )
 
     imported_tables = 0
     imported_rows = 0
     imported_views = 0
     imported_documents = 0
+    imported_sync_jobs = 0
     errors: list[str] = []
 
     # v4 跨表引用重映射的收集器（v1-v3 备份无 id 信息，保持原样跳过重映射）：
@@ -384,6 +386,11 @@ def _import_backup_into_workspace(
         doc_imported, doc_errors = _import_documents(workspace_id, json_data, current_user, db)
         imported_documents += doc_imported
         errors.extend(doc_errors)
+
+        # ── v5：外部数据同步任务（旧备份无该键时按空处理） ──
+        job_imported, job_errors = _import_sync_jobs(workspace_id, json_data, current_user, db)
+        imported_sync_jobs += job_imported
+        errors.extend(job_errors)
     except HTTPException:
         db.rollback()
         raise
@@ -396,6 +403,7 @@ def _import_backup_into_workspace(
         imported_rows=imported_rows,
         imported_views=imported_views,
         imported_documents=imported_documents,
+        imported_sync_jobs=imported_sync_jobs,
         errors=errors,
     )
 
@@ -494,4 +502,74 @@ def _import_documents(
     return imported, errors
 
 
-__all__ = ["_coerce_row_value_types", "_import_backup_into_workspace"]
+def _import_sync_jobs(
+    workspace_id: int,
+    json_data: dict[str, Any],
+    current_user: User,
+    db: Session,
+) -> tuple[int, list[str]]:
+    """还原外部数据同步任务（v5 起），返回 (成功数, 错误明细).
+
+    - 同名任务已存在则跳过（与表/文档的幂等口径一致）；
+    - 备份里的 ``table_name`` 按同名表映射为新表 id，找不到则任务不绑定表；
+    - 游标 / 调度配置在导入时校验，非法配置跳过并记错误（不阻断整体导入）。
+    """
+    from cndb.plugins.datasource.models import DatasourceSyncJob
+    from cndb.plugins.datasource.services.cursor import CursorConfig
+    from cndb.plugins.datasource.services.schedule import ScheduleConfig
+    from cndb.plugins.tables.models import DataTable
+
+    items = json_data.get("sync_jobs") or []
+    if not items:
+        return 0, []
+
+    errors: list[str] = []
+    table_ids = {
+        row[0]: row[1]
+        for row in db.query(DataTable.name, DataTable.id)
+        .filter(DataTable.workspace_id == workspace_id, DataTable.trashed_at.is_(None))
+        .all()
+    }
+    imported = 0
+    for item in items:
+        name = (item.get("name") or "").strip()
+        if not name:
+            continue
+        exists = (
+            db.query(DatasourceSyncJob)
+            .filter(DatasourceSyncJob.workspace_id == workspace_id, DatasourceSyncJob.name == name)
+            .first()
+        )
+        if exists is not None:
+            continue
+        try:
+            CursorConfig.from_dict(item.get("cursor"))
+            ScheduleConfig.from_dict(item.get("schedule"))
+        except Exception as exc:
+            errors.append(f"同步任务 {name} 跳过（配置非法）: {exc}")
+            continue
+        table_name = item.get("table_name")
+        job = DatasourceSyncJob(
+            workspace_id=workspace_id,
+            created_by=current_user.id,
+            name=name,
+            provider=item.get("provider") or "http_json",
+            table_id=table_ids.get(table_name) if table_name else None,
+            request_spec=item.get("request_spec") or {},
+            parser=item.get("parser") or "json",
+            entrant_param=item.get("entrant_param"),
+            entrant_keys=item.get("entrant_keys") or [],
+            match_keys=item.get("match_keys") or [],
+            field_mapping=item.get("field_mapping") or {},
+            cursor=item.get("cursor") or {},
+            schedule=item.get("schedule") or {},
+            enabled=bool(item.get("enabled", True)),
+        )
+        db.add(job)
+        imported += 1
+    if imported:
+        db.commit()
+    return imported, errors
+
+
+__all__ = ["_coerce_row_value_types", "_import_backup_into_workspace", "_import_sync_jobs"]

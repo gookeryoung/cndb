@@ -78,7 +78,7 @@ class TestSeedBackupRoundtrip:
         r_export = client.get(f"/api/v1/workspaces/{ws.id}/export", headers=headers)
         assert r_export.status_code == 200
         backup = r_export.json()
-        assert backup["version"] == "4"
+        assert backup["version"] == "5"
         tables = {t["name"]: t for t in backup["tables"]}
         assert set(tables) == {"部门表", "员工表"}
 

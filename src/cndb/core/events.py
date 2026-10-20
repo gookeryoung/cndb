@@ -41,12 +41,16 @@ ACTION_AUTH_TOKEN_REUSE = "auth.token_reuse_detected"
 ACTION_AUTH_SESSION_REVOKED = "auth.session_revoked"
 ACTION_AUTH_REGISTER = "auth.register"
 
+# 数据源同步（datasource 插件）：每次同步运行留一条事件，便于跨插件事后追溯
+ACTION_DATASOURCE_SYNC = "datasource.sync"
+
 # 目标类型
 TARGET_USER = "user"
 TARGET_SESSION = "session"
 TARGET_DOCUMENT = "document"
 TARGET_TABLE = "table"
 TARGET_RECORD = "record"
+TARGET_DATASOURCE = "datasource"
 TARGET_SYSTEM = "system"
 
 # 摘要模板（域内动作 → 人类可读）
@@ -170,9 +174,9 @@ def invalidate_for_event(action: str, workspace_id: int | None) -> int:
         from cndb.core.cache import cache_key, list_cache
 
         cleared = 0
-        if action.startswith(("record.", "row_rule.")):
+        if action.startswith(("record.", "row_rule.", "datasource.")):
             cleared += list_cache.clear(cache_key("records", workspace_id))
-        if action.startswith(("table.", "record.", "row_rule.")):
+        if action.startswith(("table.", "record.", "row_rule.", "datasource.")):
             cleared += list_cache.clear(cache_key("tables", workspace_id))
         if action.startswith("document."):
             cleared += list_cache.clear(cache_key("doc-tree", workspace_id))
