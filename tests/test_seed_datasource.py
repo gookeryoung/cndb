@@ -220,6 +220,10 @@ def test_real_datasource_json_is_valid():
         )
     # 5 个 job 各写一列，互不重复（配合 partial upsert 不互相清空）
     assert sorted(kline_targets) == sorted(["日线前复权", "日线后复权", "日线不复权", "周线前复权", "月线前复权"])
+    # 东财按出口 IP 限流：K 线任务必须错峰调度 + 放宽请求间隔（见 api_fetch 限流退避）
+    schedules = [job["schedule"]["at"] for job in eastmoney]
+    assert len(set(schedules)) == len(schedules), f"K 线任务必须错峰调度，实际 {schedules}"
+    assert all(job["rate_limit_ms"] >= 1500 for job in eastmoney)
 
     # eastmoney_symbols：全市场标的发现（P1），默认停用 + 分页拉取 + 只写代码/名称/市场
     symbols_jobs = [j for j in jobs if j["provider"] == "eastmoney_symbols"]

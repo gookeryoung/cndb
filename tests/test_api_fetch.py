@@ -296,6 +296,86 @@ class TestFetchJson:
             af.fetch_json(af.FetchConfig(url="https://example.com/api", max_retries=0))
         assert client.request.call_count == 1
 
+    # ── 连接被对端掐断（疑似限流）的长退避 ─────────────
+
+    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep")
+    @patch("httpx2.Client")
+    def test_throttle_error_uses_long_backoff(self, MockClient, mock_sleep):
+        """RemoteProtocolError → 2s / 8s 长退避后报“疑似限流”而不是“请求失败”."""
+
+        client = MagicMock()
+        client.request.side_effect = httpx2.RemoteProtocolError("Server disconnected without sending a response.")
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        with pytest.raises(ValueError, match=af.THROTTLE_HINT):
+            af.fetch_json(af.FetchConfig(url="https://example.com/api"))
+        assert client.request.call_count == af.MAX_RETRIES + 1
+        assert [call.args[0] for call in mock_sleep.call_args_list] == [2.0, 8.0]
+
+    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep", lambda *_: None)
+    @patch("httpx2.Client")
+    def test_throttle_error_retries_then_succeeds(self, MockClient):
+        """连接被掐断一次 → 长退避后重试成功."""
+
+        body = json.dumps([{"ok": 1}]).encode()
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = body
+        resp.text = body.decode()
+        resp.headers = {"content-type": "application/json"}
+
+        client = MagicMock()
+        client.request.side_effect = [httpx2.ReadError("peer closed connection"), resp]
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        rows = af.fetch_json(af.FetchConfig(url="https://example.com/api"))
+        assert rows == [{"ok": 1}]
+        assert client.request.call_count == 2
+
+    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep")
+    @patch("httpx2.Client")
+    def test_connect_reset_message_uses_long_backoff(self, MockClient, mock_sleep):
+        """ConnectError 文案带 connection reset → 同样走长退避 + 限流提示."""
+
+        client = MagicMock()
+        client.request.side_effect = httpx2.ConnectError("Connection reset by peer")
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        with pytest.raises(ValueError, match=af.THROTTLE_HINT):
+            af.fetch_json(af.FetchConfig(url="https://example.com/api"))
+        assert [call.args[0] for call in mock_sleep.call_args_list] == [2.0, 8.0]
+
+    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep")
+    @patch("httpx2.Client")
+    def test_plain_transient_error_keeps_short_backoff(self, MockClient, mock_sleep):
+        """普通瞬时失败（如 DNS 失败）仍用 0.5s / 1s 短退避."""
+
+        client = MagicMock()
+        client.request.side_effect = httpx2.ConnectError("getaddrinfo failed")
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        MockClient.return_value = client
+
+        with pytest.raises(ValueError, match="请求失败"):
+            af.fetch_json(af.FetchConfig(url="https://example.com/api"))
+        assert [call.args[0] for call in mock_sleep.call_args_list] == [0.5, 1.0]
+
+    def test_throttle_like_detection(self):
+        """限流类判定：断连 / 读失败 / 重置文案命中，其余不命中."""
+
+        assert af._is_throttle_like_error(httpx2.RemoteProtocolError("disconnected"))
+        assert af._is_throttle_like_error(httpx2.ReadError("peer closed"))
+        assert af._is_throttle_like_error(httpx2.ConnectError("Connection reset by peer"))
+        assert af._is_throttle_like_error(httpx2.ConnectError("[WinError 10054] 远程主机强迫关闭了一个现有的连接。"))
+        assert not af._is_throttle_like_error(httpx2.ConnectError("getaddrinfo failed"))
+        assert not af._is_throttle_like_error(httpx2.RequestError("timeout"))
+
     # ── 重定向 SSRF 防护 ──────────────────────────
 
     @patch("httpx2.Client")
