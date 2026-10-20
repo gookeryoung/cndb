@@ -55,7 +55,7 @@ Related: `src/cndb/plugins/base.py`、`src/cndb/plugins/tables/services/importin
 
 **`datasource_session`**（可选，后期）：集中管理 `{key: secret, headers}`，job 引用之；首期内联于 `request_spec`。
 
-目标表 schema 由 provider 的 `normalizer` 默认输出 + 用户 `field_mapping` 决定，首次同步自动建表（复用 `create_table_from_json_data`），按 `match_keys` 建唯一索引。
+目标表 schema 由 provider 的 `normalizer` 默认输出 + 用户 `field_mapping` 决定，首次同步自动建表（复用 `create_table_from_json_data`）。幂等由**应用层 upsert**（先查后写，见 D8）保证，不为 `match_keys` 建复合唯一索引。
 
 ### 2. 分层与唯一入口
 
@@ -88,7 +88,7 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 1. 生产形态二选一：CLI + 系统 cron（默认）或内置调度器（需单副本或依赖租约）；两者共用 `scheduler.tick()`，靠 `lease_owner / lease_until` 互斥。
 2. 密钥首期内联于 `request_spec`（可见性随 job 权限）；后续抽 `datasource_session`。
 3. 时序全量可能超 analytics 单扫描上限 `MAX_SCAN_ROWS=20000`，分析须按区间 / 分区，不支持全量一次性扫描。
-4. `match_keys` 缺省或与目标表唯一索引不一致 → 建 job 时校验失败（避免运行期产生重复行）。
+4. `match_keys` 缺省 → 退化为纯追加（仅快照类源适用）；指定时必须全部命中目标表字段，否则建 job 时校验失败（避免运行期静默退化成追加）。并发重复由 M2 的 DB 租约单飞规避（D8）。
 5. `partial` 状态的 run 不推进 cursor 到未完成区间，下一轮自动补抓。
 
 ### 5. 迁移
@@ -127,15 +127,16 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 
 | # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
 |---|---|---|---|---|---|
-| D1 | 插件命名 | `datasource`（概念：数据源同步），路由前缀挂 workspaces | 与 tables / documents 同层级；语义覆盖「数据源」而非只服务股票 | `stock` / `sync`（领域化或过泛） | 待建 `plugins/datasource/` |
-| D2 | 通用优先还是专用优先 | `http_json` 声明式为默认主路径，专用 provider 作便利封装 | 天气 / 新闻 / 多数行情源都是 HTTP + JSON，声明式覆盖约 80% | 一源一适配器（代码量与维护面线性膨胀） | 待建 `providers/http_json.py` |
-| D3 | 调度形态 | 生产 CLI + 系统 cron；开发 / 单机用内置调度器；统一 DB 租约互斥 | 与既有 `deploy/backup.sh` 的 cron 模式一致；避免多副本重复执行 | 纯内置必守单副本 / 引入外部队列（部署成本高） | 待建 `services/scheduler.py`、`cli/sync.py` |
-| D4 | 增量游标 | 内置 `date` / `datetime` / `key_set` / `none` 四策略，job 级可选 | 覆盖按日、按时刻、无时序、快照四类源 | 只做 date（新闻 / 榜单接不了） | 待建 `services/cursor.py` |
-| D5 | 分析实现 | 扩展公式引擎补窗口函数（分区分序）为主 + 通用模板 | 引擎已有逐行 / 整列聚合，加分区排序上下文改动集中 | 另建时序计算引擎（重复实现、两套口径） | `plugins/analytics/services/formula.py` |
-| D6 | 密钥管理 | 首期内联 `request_spec`；M5 抽 `datasource_session` 集中管理 | 先跑通链路，避免过早抽象 | 首期即建密钥表（无消费方） | 待建 `models.py` |
-| D7 | 规模 | 时序全量可能超 `MAX_SCAN_ROWS=20000`，分析按区间 / 分区 | 现有 analytics 为单次扫描模型，改流式代价大 | 提高扫描上限（内存与响应时间不可控） | `plugins/analytics/` |
+| D1 | 插件命名 | `datasource`（概念：数据源同步），路由前缀挂 workspaces | 与 tables / documents 同层级；语义覆盖「数据源」而非只服务股票 | `stock` / `sync`（领域化或过泛） | `src/cndb/plugins/datasource/plugin.py` |
+| D2 | 通用优先还是专用优先 | `http_json` 声明式为默认主路径，专用 provider 作便利封装 | 天气 / 新闻 / 多数行情源都是 HTTP + JSON，声明式覆盖约 80% | 一源一适配器（代码量与维护面线性膨胀） | `providers/http_json.py`、`providers/registry.py` |
+| D3 | 调度形态 | 生产 CLI + 系统 cron；开发 / 单机用内置调度器；统一 DB 租约互斥 | 与既有 `deploy/backup.sh` 的 cron 模式一致；避免多副本重复执行 | 纯内置必守单副本 / 引入外部队列（部署成本高） | M2 待建 `services/scheduler.py`、`cli/sync.py` |
+| D4 | 增量游标 | 内置 `date` / `datetime` / `key_set` / `none` 四策略，job 级可选 | 覆盖按日、按时刻、无时序、快照四类源 | 只做 date（新闻 / 榜单接不了） | M2 待建 `services/cursor.py` |
+| D5 | 分析实现 | 扩展公式引擎补窗口函数（分区分序）为主 + 通用模板 | 引擎已有逐行 / 整列聚合，加分区排序上下文改动集中 | 另建时序计算引擎（重复实现、两套口径） | `src/cndb/plugins/analytics/services/formula.py` |
+| D6 | 密钥管理 | 首期内联 `request_spec`；M5 抽 `datasource_session` 集中管理 | 先跑通链路，避免过早抽象 | 首期即建密钥表（无消费方） | M2 待建 `models.py` |
+| D7 | 规模 | 时序全量可能超 `MAX_SCAN_ROWS=20000`，分析按区间 / 分区 | 现有 analytics 为单次扫描模型，改流式代价大 | 提高扫描上限（内存与响应时间不可控） | `src/cndb/plugins/analytics/services/compute.py` |
+| D8 | 幂等落库怎么保证唯一 | 应用层 upsert：`Importer` 按 `match_keys` 先查后写；并发重复由 DB 租约单飞规避 | 现有 `tables` 自动建表只支持单列唯一，改 DDL 需动建表链路与存量测试；同步场景已由租约串行化 | 为 `match_keys` 建复合唯一索引（改 `ddl.py` + 建表链路 + 冲突语义，收益不足以抵成本） | `src/cndb/plugins/datasource/services/write.py`、`tables/services/importing/importer.py` |
 
-门禁：`Proposed` → `Accepted` 前本表不得有「待定」。**本轮 D1-D7 为方案建议，尚未经人工评审**，评审通过后才进入实现。
+门禁：`Proposed` → `Accepted` 前本表不得有「待定」。**D1-D8 已由需求方拍板采纳（2026-10-20），M1 按此口径落地**；Status 待全期落地后由人确认改 `Accepted` / `Implemented`。
 
 ## Consequences
 
@@ -157,18 +158,20 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| M1 通用抓取管线 | 未开始 | `src/cndb/plugins/datasource/providers/` | `tests/test_datasource_pipeline.py` | — |
+| M1 通用抓取管线 | 已落地 | `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/template.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/write.py` | `tests/test_datasource_template.py`、`tests/test_datasource_normalize.py`、`tests/test_datasource_pipeline.py` | `13d4c050` |
 | M2 同步任务与调度 | 未开始 | `src/cndb/plugins/datasource/services/`、`src/cndb/cli/sync.py` | `tests/test_datasource_scheduler.py` | — |
 | M3 Provider + 前端 | 未开始 | `src/cndb/plugins/datasource/routers/`、`frontend/src/pages/datasource/` | `tests/test_datasource_providers.py` | — |
 | M4 分析通用化 | 未开始 | `src/cndb/plugins/analytics/services/formula.py` | `tests/test_analytics_window_functions.py` | — |
 | M5 完善 | 未开始 | `src/cndb/plugins/datasource/models.py` | — | — |
 
-> 全部期为「未开始」。`src/cndb/plugins/datasource/` 当前不存在，不存在部分落地的隐藏事实（已按 `find src/cndb -iname "*datasource*"` 核对）。
+> M1 落地范围：`http_json` 声明式接入（请求模板 / page·offset 分页 / `chunk_days` 时间分片）、
+> 归一（改名 / 丢弃 / 类型归一，失败降级留痕）、管线（单请求失败记 partial、分页空页提前终止）、
+> 幂等落表（复用 `Importer`，应用层先查后写，不建复合唯一索引）。同步任务表、游标与调度未落地。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案（Proposed），尚未进入实现；无代码落点
-- 已完成：现状盘点与可复用面核对（`api_fetch` / `importer` / `field_mapping` / `analytics`）
-- 下一步：评审 D1-D7；通过后按 M1 起步（先做 Provider / Parser 拆分与 `http_json`，不建表）
-- 已知坑：`query_interval` 是死配置，别误当限流器用；`tencent_stock` 只有实时快照无日线；`match_keys` 与目标表唯一索引必须一致否则重复行；`MAX_SCAN_ROWS=20000` 限制时序全量分析
-- 最近一次全绿：不适用（无代码改动）
+- 当前阶段：M1 已落地，M2 待开工（同步任务模型 + 四种游标 + 调度器 + CLI）
+- 已完成：需求卡片与 ADR 口径对齐；M1 抓取管线（providers / normalize / pipeline / write）+ 72 条单测；D1-D7 经人工拍板采纳，幂等口径确认为应用层 upsert
+- 下一步：M2 先建 `datasource_sync_job` / `datasource_sync_run` 模型与迁移（新表同步进 `backup_io` 导出导入并升版本），再落 `services/cursor.py`（date / datetime / key_set / none）与 `services/scheduler.py`（到期扫描 + 租约 + 退避），最后挂 `cli/sync.py`
+- 已知坑：`Importer.analyze()` 的 `content` 是位置必填参数，传 rows 入口时须带空串；`Importer` 的 upsert 是「先查后写」，并发需靠 M2 的 DB 租约单飞；`match_keys` 必须与目标表字段名一致，否则退化为纯追加；`api_fetch` 的 `query_interval` 仍是死配置，别当限流器用
+- 最近一次全绿：`make cov` @ `13d4c050`（2026-10-20，4557 passed，覆盖率 98.07%）
