@@ -23,6 +23,7 @@ coverage.xml
 .pytest_cache/
 .pyrefly_cache/
 .ruff_cache/
+.screenshots/
 .uv-cache/
 .vitest-cache/
 
