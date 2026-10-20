@@ -44,7 +44,7 @@ export default function FieldEditor({ open, editTarget, fieldType, form, wid, ti
       okText={editTarget ? '保存' : '创建'}
       cancelText="取消"
     >
-      <Form form={form} layout="vertical" preserve={false} onValuesChange={onValuesChange}>
+      <Form form={form} layout="vertical" onValuesChange={onValuesChange}>
         <Row gutter={12}>
           <Col span={12}>
             <Form.Item name="name" label="字段名" rules={[{ required: true, message: '请输入字段名' }]}>
@@ -66,10 +66,12 @@ export default function FieldEditor({ open, editTarget, fieldType, form, wid, ti
                 }}
                 onChange={(v) => {
                   onFieldTypeChange(v)
-                  // 编辑时切换类型：重置 config 为新类型的默认值（避免旧类型 config 残留）
-                  if (editTarget && v !== editTarget.field_type) {
-                    const defaults = defaultConfigForType(v)
-                    form.setFieldValue('config', defaults)
+                  // 切换类型：重置 config 为新类型的默认值，避免旧类型的 config 残留
+                  // （原先依赖 Form 的 preserve={false} 在字段卸载时丢弃旧值，但该行为会与
+                  //  React StrictMode 开发态的「卸载→重挂载」叠加，把刚回填的 config 一并清空，
+                  //  导致编辑关联字段时读不到目标表与引用字段；故改为显式重置，创建/编辑同样适用）
+                  if (v !== fieldType) {
+                    form.setFieldValue('config', defaultConfigForType(v))
                   }
                 }}
               />
