@@ -24,6 +24,6 @@
 | 分析范围（Scan Scope） | 分析请求的 `filters`（`{field_name, op, value}` × `filter_logic`）：扫描前先收窄，统计 / 汇总 / 窗口都基于过滤后的行 | 时序表用「时间 >= 起点」绕开单次扫描行数上限（上限 `ANALYTICS_MAX_SCAN_ROWS` 仅兜底）；未知过滤字段直接 400；前端入口在分析页「分析范围」 |
 | 时序窗口函数（Window Formula） | 公式里按「分区 + 排序」计算的一类函数：`prev/lag/lead/diff/pct_change/cumsum/rank/ma/rolling_sum/rolling_std` | 公式带 `partition_by` / `order_by` / `order_desc`；第一参数必须是字段引用，聚合仍按整列；`rolling_*` 不满窗返回空；`rank` 也接受时间 / 文本列（全列可数值化按数值，否则按字符串） |
 | 字段智能推荐（Analytics Recommendation） | 选表后按字段类型与抽样画像给出角色（metric/dimension/time/identifier/ignored）、基数、非空率、推荐公式/图表/分组汇总与典型示例 | 端点 `GET /{wid}/analytics/recommendations?table_id=`；只读成员即可用，取数复用行级权限与字段隐藏；结果确定性、一次抽样 1000 行 |
-| 典型示例（Recommend Example） | 基于当前表字段动态生成的整套分析配置（分类对比 / 数值分布 / 占比构成 / 时间趋势 / 比率分析 / 数据概览），一键应用到编辑态 | 随推荐接口返回；每个示例的公式、图表、汇总均可直接通过模板配置校验并落库 |
+| 典型示例（Recommend Example） | 基于当前表字段动态生成的整套分析配置（分类对比 / 数值分布 / 占比构成 / 时间趋势 / 比率分析 / 数据概览），一键应用到编辑态 | 随推荐接口返回；每个示例的公式、图表、汇总均可直接通过模板配置校验并落库；按字段名识别数据源场景追加领域示例——同表有最高/最低气温 → `weather_range` 昼夜温差，有最高/最低/收盘价 → `stock_swing` 振幅与量价（窗口公式带分区/排序），通用表不受影响 |
 | 分析列表（Analytics Manager） | 已保存分析的集中管理入口：列表展示、打开、复制（服务端默认「原名 副本」并重名递增）、删除、新建 | Drawer 入口在页面顶栏；复制端点 `POST /{wid}/analytics/templates/{id}/duplicate`，与保存/另存为共用未保存修改确认 |
 | 工作区类型（WorkspaceType） | 工作区级功能范围开关：`data_doc`（数据 + 文档，默认）/ `data`（仅数据表与数据分析）/ `doc`（仅文档），新增与工作区设置页可选用 | 落库为枚举成员名（DATA_DOC/DATA/DOC，同 Visibility/Role 约定）；前端据此门控顶部页签、侧栏表导航与根路由落地页（doc→文档、其余→数据表），URL 落在未开放功能区时自动重定向到该类型落地页 |
