@@ -52,6 +52,7 @@ import { formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
 import SearchDrawer from './SearchDrawer'
 import TrashDrawer from './TrashDrawer'
 import ObsidianImportModal from './ObsidianImportModal'
+import DocumentImportModal from './DocumentImportModal'
 import type { DocTreeNode } from './DocumentTree'
 import { formatSize } from '@/utils/formatSize'
 
@@ -124,6 +125,8 @@ export default function DocumentsPage() {
   const [trashOpen, setTrashOpen] = useState(false)
   // Obsidian 文档库导入弹窗
   const [vaultImportOpen, setVaultImportOpen] = useState(false)
+  // 通用文件导入弹窗（md / docx / html，单文件与文件夹）
+  const [fileImportOpen, setFileImportOpen] = useState(false)
   // 最近打开：读取本地历史（清空后用 version 触发重渲染）
   const [recentVersion, setRecentVersion] = useState(0)
   // 批量操作：当前层级多选 + 批量移动弹窗
@@ -460,13 +463,22 @@ export default function DocumentsPage() {
             ]}
           />
           <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
+          <Tooltip title="导入本地文件（Markdown / Word / HTML）：单文件或整个文件夹，自动转 Markdown 并清理排版">
+            <Button
+              icon={<ImportOutlined />}
+              data-testid="doc-file-import"
+              onClick={() => setFileImportOpen(true)}
+            >
+              导入
+            </Button>
+          </Tooltip>
           <Tooltip title="导入 Obsidian 库（.zip）：保留目录结构、front-matter 标签与附件">
             <Button
               icon={<ImportOutlined />}
               data-testid="doc-vault-import"
               onClick={() => setVaultImportOpen(true)}
             >
-              导入
+              导入库
             </Button>
           </Tooltip>
           <Tooltip title="把当前工作区文档树导出为 Obsidian 库（.zip）">
@@ -879,6 +891,15 @@ export default function DocumentsPage() {
       <SearchDrawer open={searchOpen} onClose={() => setSearchOpen(false)} wid={workspaceId} />
 
       <TrashDrawer open={trashOpen} onClose={() => setTrashOpen(false)} wid={workspaceId} />
+
+      {/* 通用文件导入：md / docx / html，单文件或文件夹，默认落在当前文件夹 */}
+      <DocumentImportModal
+        open={fileImportOpen}
+        onClose={() => setFileImportOpen(false)}
+        workspaceId={workspaceId}
+        parentId={parentId}
+        parentLabel={currentFolderNode?.title}
+      />
 
       {/* Obsidian 库导入：默认落在当前文件夹，导入完成后刷新树与列表 */}
       <ObsidianImportModal
