@@ -127,9 +127,32 @@ def coerce_value(value: Any, field_type: FieldType) -> tuple[Any, str | None]:
         return _to_datetime(value)
     if kind in ("bool", "boolean"):
         return _to_bool(value)
+    if kind == "json":
+        return _to_json(value)
     # 未知类型按文本兜底，避免整列丢失
     logger.debug("未知目标类型 %r，按 text 处理", field_type)
     return _to_text(value), None
+
+
+def _to_json(value: Any) -> tuple[str | None, str | None]:
+    """JSON 列归一：字符串先校验合法性，对象/数组序列化为紧凑文本.
+
+    与 ``JsonFieldType.validate_value`` 保持同一存储口径（物理列为 Text），
+    非法 JSON 记录失败明细并降级为 None，不阻塞同批其他字段。
+    """
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None, None
+        try:
+            json.loads(text)
+        except (TypeError, ValueError) as exc:
+            return None, f"不是合法 JSON: {exc}"
+        return text, None
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str), None
+    except (TypeError, ValueError) as exc:  # pragma: no cover - default=str 已兜底
+        return None, f"无法序列化为 JSON: {exc}"
 
 
 def _to_text(value: Any) -> str:

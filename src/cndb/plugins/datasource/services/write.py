@@ -6,6 +6,9 @@
 
 幂等由应用层「先查后写」保证（ADR 0006 已确认不引入复合唯一索引）：
 同一 ``match_keys`` 组合重复运行只会更新既有行，不会新增重复行。
+
+多 job 分列写同一行时使用 ``partial=True``：只更新本次 job 实际提供的列，
+未提供的列保持原值，避免不同周期/复权任务互相把对方的 JSON 列清空。
 """
 
 from __future__ import annotations
@@ -58,7 +61,7 @@ def upsert_rows(
     from cndb.plugins.tables.services.importing.importer import Importer
 
     keys = [key for key in match_keys if key]
-    importer = Importer(engine, db, table, user=user)
+    importer = Importer(engine, db, table, user=user, partial=True)
     # content 占位为空串：行已解析好，走 rows 入口（与 import_api 的 JSON 数组导入同口径）
     analysis = importer.analyze("", rows=list(rows), match_keys=keys or None)
     result = importer.execute(analysis=analysis, match_keys=keys or None)

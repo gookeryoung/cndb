@@ -6,7 +6,7 @@ import { VALID_MODES, collectAvailableViewTypes, deriveModeSwitch, type ViewMode
 const ALL_BUTTONS: Array<{ mode: ViewMode }> = [
   { mode: 'grid' }, { mode: 'tree' }, { mode: 'kanban' },
   { mode: 'calendar' }, { mode: 'gantt' }, { mode: 'wbs' }, { mode: 'matrix' }, { mode: 'chart' },
-  { mode: 'flow' },
+  { mode: 'kline' }, { mode: 'flow' },
 ]
 
 /** 快捷构造视图（view_type 合法值） */
@@ -85,10 +85,18 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
     expect(visible).toBe(true)
     expect(buttons.some((b) => b.mode === 'matrix')).toBe(true)
   })
+
+  it('自选股（grid+kline）→ 2 个按钮且含 K 线', () => {
+    const { buttons, visible } = deriveModeSwitch(view('grid', 'kline'), ALL_BUTTONS)
+    expect(visible).toBe(true)
+    expect(buttons.map((b) => b.mode)).toEqual(['grid', 'kline'])
+  })
 })
 
 describe('VALID_MODES', () => {
-  it('与 9 种模式一一对应（URL/storage 校验共用）', () => {
-    expect(VALID_MODES).toEqual(['grid', 'tree', 'kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'flow'])
+  it('与 10 种模式一一对应（URL/storage 校验共用）', () => {
+    expect(VALID_MODES).toEqual([
+      'grid', 'tree', 'kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'kline', 'flow',
+    ])
   })
 })

@@ -14,6 +14,7 @@ from cndb.cli.seed import (
     fields,
     paths,
     sqlite,
+    stock_quotes,
     templates,
     views,
 )
@@ -109,6 +110,17 @@ def seed(_args: argparse.Namespace) -> None:
         # 1) datasets CSV：每个子文件夹 → 工作区，每个 CSV → 数据表
         csv_count, ws_map, tables_map = datasets._seed_datasets(db, engine, owner)
 
+        # 1b) 自选股表：一只股一行 + 行内多周期复权 K 线 JSON（离线样本，kline 视图开箱可用）
+        datasets_dir = paths._get_datasets_dir()
+        stock_count = 0
+        stock_ws = ws_map.get("数据源示例")
+        if stock_ws is not None:
+            stock_count, stock_dt = stock_quotes._seed_stock_quotes(db, engine, stock_ws, owner.id, datasets_dir)
+            if stock_dt is not None:
+                tables_map.setdefault("数据源示例", {})["自选股"] = stock_dt
+        else:
+            print("[seed] 未找到 '数据源示例' 工作区，跳过自选股表注入")
+
         # 2) 硬编码业务表挂到 "某企业销售管理" 工作区
         extra = 0
         sales_ws = ws_map.get("某企业销售管理")
@@ -120,7 +132,6 @@ def seed(_args: argparse.Namespace) -> None:
             print("[seed] 未找到 '某企业销售管理' 工作区，跳过部门表/员工表注入")
 
         # 2b) 字段设置种子（依赖所有表已就绪，含硬编码业务表；扫描每个工作区文件夹下的 fields.json）
-        datasets_dir = paths._get_datasets_dir()
         fields._apply_field_settings(db, engine, tables_map, datasets_dir)
 
         # 3) 视图种子（依赖所有表已就绪，扫描每个工作区文件夹下的 views.json）
@@ -159,9 +170,9 @@ def seed(_args: argparse.Namespace) -> None:
                 print(f"[seed] 添加工作区成员: {label} → {sales_ws.name} ({role.value})")
             db.commit()
 
-        total = csv_count + extra
+        total = csv_count + extra + stock_count
         print(
-            f"[seed] 完成！共 {total} 张数据表、{view_count} 个视图、"
+            f"[seed] 完成！共 {total} 张数据表（含 {stock_count} 张自选股表）、{view_count} 个视图、"
             f"{doc_count} 篇示例文档（{folder_count} 个文档文件夹）、"
             f"{analytics_count} 个分析模板、"
             f"{datasource_count} 个数据源同步任务、"

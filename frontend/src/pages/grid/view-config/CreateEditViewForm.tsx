@@ -226,6 +226,7 @@ export default function CreateEditViewForm({
     { value: 'wbs', label: '工作分解 (WBS)' },
     { value: 'matrix', label: '矩阵 (Matrix)' },
     { value: 'chart', label: '图表 (Chart)' },
+    { value: 'kline', label: 'K线 (Kline)' },
     { value: 'flow', label: '流程 (Flow)' },
   ]
 

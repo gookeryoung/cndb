@@ -98,6 +98,8 @@ class RowValidator:
             未列出的源列按 源名 == 目标名 自动匹配.
         gap_filling: 目标侧缺失字段的填充策略 — "empty" / "default" / "value" / "error".
         fill_values: gap_filling="value" 时按目标字段名指定固定填充值.
+        partial: 部分列模式（数据源多 job 分列写同一行时使用）；为 True 时
+            不补缺失字段、不校验未提供字段的必填性，只校验/保留源行实际提供的字段。
         link_resolver: link 字段业务文本解析器 ``(field, tokens) -> list[int]``；
             提供时把非数字的关联项按目标表匹配字段（config.match_field_id / display_field_id）
             解析为目标行 id，缺省时非数字项直接报错（保持只接受 id 的历史行为）。
@@ -111,12 +113,14 @@ class RowValidator:
         field_mapping: dict[str, str | None] | None = None,
         gap_filling: GapFilling = "empty",
         fill_values: dict[str, Any] | None = None,
+        partial: bool = False,
         link_resolver: Callable[[DataField, list[str]], list[int]] | None = None,
     ) -> None:
         self.table = table
         self.skip_unknown_columns = skip_unknown_columns
         self.gap_filling = gap_filling
         self.fill_values = fill_values or {}
+        self.partial = partial
         self._link_resolver = link_resolver
         self._fields: list[DataField] = table.active_fields()
         self._field_map: dict[str, DataField] = {f.name: f for f in self._fields}
@@ -146,8 +150,8 @@ class RowValidator:
         effective_row, unmapped_target = self._apply_mapping(row)
         result.values = effective_row
 
-        # 2. 目标侧缺失 → 按 gap_filling 策略处理（始终生效，与 field_mapping 是否传入无关）
-        if unmapped_target:
+        # 2. 目标侧缺失 → 按 gap_filling 策略处理（partial 模式只更新源行提供的列）
+        if unmapped_target and not self.partial:
             try:
                 effective_row = apply_gap_filling(
                     effective_row,
@@ -202,18 +206,25 @@ class RowValidator:
             for name in unknown:
                 result.issues.append(Issue(field=name, level="warning", message="文件中有但表中无此字段，已忽略"))
 
-        # 缺失必填列（仅当该必填字段在文件中完全不存在）
-        present_keys = set(row.keys())
-        for name in self._required_names:
-            if name not in present_keys:
-                result.issues.append(Issue(field=name, level="error", message="必填字段缺失"))
+        # 缺失必填列（仅当该必填字段在文件中完全不存在）；partial 模式允许后续 job 补齐
+        if not self.partial:
+            present_keys = set(row.keys())
+            for name in self._required_names:
+                if name not in present_keys:
+                    result.issues.append(Issue(field=name, level="error", message="必填字段缺失"))
 
     # ── 内部：逐字段校验 ────────────────────────────
 
     def _check_each_field(self, row: dict[str, Any], result: ValidationResult) -> None:
-        """对表中每个字段尝试做类型校验；异常记为 Issue."""
-        for field_name, f in self._field_map.items():
-            if f.trashed:  # 防御性检查，active_fields() 应已过滤
+        """对表中每个字段尝试做类型校验；异常记为 Issue.
+
+        partial 模式只校验源行实际提供的字段 —— 未提供的列由其他 job 负责，
+        不能因为本 job 没带该列就报必填错误或写入 NULL。
+        """
+        field_names = row.keys() if self.partial else self._field_map.keys()
+        for field_name in field_names:
+            f = self._field_map.get(field_name)
+            if f is None or f.trashed:  # 防御性检查，active_fields() 应已过滤
                 continue
             raw = row.get(field_name)
             self._validate_one_field(f, raw, result, row)

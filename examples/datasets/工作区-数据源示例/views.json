@@ -1,5 +1,5 @@
 {
-  "_comment": "视图种子配置：数据源示例工作区。天气每日按日期升序（时序自然序）并附高温日过滤视图；股市日线按交易日降序（最新在前）并附放量日过滤视图，另加 K 线图 / 成交量图 / 量价散点图三个图表视图（K 线与成交量图经 filters 收窄到单一标的，避免同轴多标的重叠）。字段名须与 CSV 表头一致。",
+  "_comment": "视图种子配置：数据源示例工作区。天气每日按日期升序（时序自然序）并附高温日过滤视图；股市日线按交易日降序（最新在前）并附放量日过滤视图，另加 K 线图 / 成交量图 / 量价散点图三个图表视图（K 线与成交量图经 filters 收窄到单一标的，避免同轴多标的重叠）。自选股表一只股一行，kline 视图读取行内 JSON，左侧列表选中行切换 K 线标的；filters 只取自选标的，避免全市场标的池撑大响应体。字段名须与表头一致。",
   "天气每日": [
     {
       "name": "全部",
@@ -107,6 +107,40 @@
         "show_trend_line": true
       },
       "order": 4
+    }
+  ],
+  "自选股": [
+    {
+      "name": "K线图",
+      "view_type": "kline",
+      "filter_type": "AND",
+      "filters": [
+        {"field_name": "是否自选", "op": "=", "value": true}
+      ],
+      "sortings": [
+        {"field_name": "股票代码", "direction": "asc"}
+      ],
+      "view_options": {
+        "symbol_field": "股票代码",
+        "name_field": "股票名称",
+        "price_field": "最新价",
+        "change_pct_field": "涨跌幅",
+        "volume_field": "成交量",
+        "amount_field": "成交额",
+        "date_field": "最新交易日",
+        "day_qfq_field": "日线前复权",
+        "day_hfq_field": "日线后复权",
+        "day_none_field": "日线不复权",
+        "week_qfq_field": "周线前复权",
+        "month_qfq_field": "月线前复权",
+        "default_period": "day",
+        "default_adjust": "qfq",
+        "show_ma": true,
+        "show_volume": true,
+        "ma_periods": "5,10,20,60"
+      },
+      "is_default": true,
+      "order": 0
     }
   ]
 }

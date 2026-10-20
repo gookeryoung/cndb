@@ -15,6 +15,7 @@
 | [0008](0008-offline-docker-image-export.md) | 离线部署镜像导出 | Accepted | P0-P2 已落地 | `deploy/`、`docker-compose.prod.yml` | `tests/test_deploy_scripts.py` | [未发布](../../CHANGELOG.md) |
 | [0009](0009-stock-daily-datasource-example.md) | 股市日线典型示例（数据源同步 + K 线等视图） | Accepted | P0-P2 已落地 | `frontend/src/pages/grid/views/`、`src/cndb/cli/seed/datasource.py`、`plugins/tables/routers/views.py` | `tests/test_seed_datasource.py`、`frontend/tests/e2e/*` | [未发布](../../CHANGELOG.md) |
 | [0010](0010-document-file-import.md) | 文档通用文件导入（md / docx / html，单文件与文件夹模式） | Accepted | P0-P2 已落地 | `src/cndb/plugins/documents/services/importers/`、`src/cndb/plugins/documents/routers/file_import.py` | `tests/test_documents_file_import_*.py`、`frontend/tests/e2e/critical/document-file-import.spec.ts` | [未发布](../../CHANGELOG.md) |
+| [0011](0011-stock-kline-enhanced.md) | 股市 K 线增强（多周期复权、全历史字段与行内 K 线视图） | Accepted | P0-P1 已落地 | `providers/eastmoney_kline.py`、`providers/eastmoney_symbols.py`、`cli/seed/stock_quotes.py`、`frontend/src/pages/grid/views/KlineView.tsx` | `tests/test_datasource_eastmoney_*_provider.py`、`tests/test_datasource_partial_upsert.py`、`frontend/src/pages/grid/views/klineBoard.test.ts` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 

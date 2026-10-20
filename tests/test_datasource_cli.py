@@ -211,6 +211,28 @@ class TestSubparser:
         args = parser.parse_args(["sync", "run", "--job-id", "3", "--dry-run"])
         assert (args.command, args.sync_cmd, args.job_id, args.dry_run) == ("sync", "run", 3, True)
 
+    def test_batch_kline_registered(self):
+        import argparse
+
+        from cndb.cli.sync import MAX_BATCH_SIZE, register_sync_subparser
+
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command")
+        register_sync_subparser(sub)
+        args = parser.parse_args(
+            ["sync", "batch-kline", "--workspace", "数据源示例", "--market", "A", "--batch-size", "50", "--dry-run"]
+        )
+        assert args.sync_cmd == "batch-kline"
+        assert args.workspace == "数据源示例"
+        assert args.market == "A"
+        assert args.batch_size == 50
+        assert args.series == "day_qfq"
+        assert args.dry_run is True
+        # 默认值：只取自选、每日 17:30、每批不超过上限
+        assert args.include_unselected is False
+        assert args.schedule == "daily"
+        assert parser.parse_args(["sync", "batch-kline", "--workspace", "1"]).batch_size == MAX_BATCH_SIZE
+
     def test_missing_subcommand_exits(self):
         from cndb.cli.sync import sync_command
 
