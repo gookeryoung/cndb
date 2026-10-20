@@ -71,4 +71,11 @@ COPY pyproject.toml uv.lock README.md ./
 # --frozen：严格按 uv.lock，lock 与 pyproject 不一致时直接失败，不静默重解析
 RUN uv sync --frozen --no-install-project --no-group dev
 
+# cndb 命令行入口
+# 上面用了 --no-install-project，pyproject 的 [project.scripts] 不会落成可执行文件，
+# 容器内直接 `cndb seed` 会 command not found。这里补一个等价包装，指向挂载进来的源码
+# （PYTHONPATH=/app/src），保证容器内命令与宿主一致。
+RUN printf '#!/bin/sh\nexec python -m cndb.cli.main "$@"\n' > /opt/venv/bin/cndb \
+    && chmod +x /opt/venv/bin/cndb
+
 EXPOSE 8772
