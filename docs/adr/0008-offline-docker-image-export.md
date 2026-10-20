@@ -127,9 +127,9 @@ Related: `docs/DEPLOY_TENCENT.md`、`README.md`（`deploy/Dockerfile.base`、`de
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `deploy/build-image.sh`、`deploy/export-image.sh` | `tests/test_deploy_scripts.py` | — |
-| P1 | 已落地 | `deploy/deploy.sh` | `tests/test_deploy_scripts.py` | — |
-| P2 | 已落地 | `docs/DEPLOY_TENCENT.md`、`README.md`、`Makefile` | `tests/test_deploy_scripts.py` | — |
+| P0 | 已落地 | `deploy/build-image.sh`、`deploy/export-image.sh` | `tests/test_deploy_scripts.py` | `23507ba` |
+| P1 | 已落地 | `deploy/deploy.sh` | `tests/test_deploy_scripts.py` | `23507ba` |
+| P2 | 已落地 | `docs/DEPLOY_TENCENT.md`、`README.md`、`Makefile` | `tests/test_deploy_scripts.py` | `23507ba` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
@@ -139,4 +139,4 @@ Related: `docs/DEPLOY_TENCENT.md`、`README.md`（`deploy/Dockerfile.base`、`de
 - 已完成：需求卡片与本 ADR；`deploy/build-image.sh`（本地构建）、`deploy/export-image.sh`（导出离线交付包）、`deploy/deploy.sh` 的 `OFFLINE=1` 离线加载；`Makefile` 的 `docker-build` / `docker-export`；`docs/DEPLOY_TENCENT.md` 第八节「离线部署」；`.dockerignore` 排除 `dist/offline`；脚本回归测试 `tests/test_deploy_scripts.py`
 - 下一步：人工在联网机执行一次「构建 → 导出 → 解包 → 离线 `OFFLINE=1` 部署」端到端演练并回填提交 sha
 - 已知坑：脚本不在 cndb 包覆盖率口径内（`make cov` 只统计 `cndb` 包），由 `bash -n` 静态检查 + `tests/test_deploy_scripts.py` 假 docker 桩 + 人工演练把关；导出镜像受构建机架构限制（跨架构需在目标架构机重建）；离线机磁盘需容纳数百 MB 交付包
-- 最近一次全绿：`make check-fast`（含 `adr-check`）@ 待评审后回填（YYYY-MM-DD）
+- 最近一次全绿：`make check`（含 `adr-check`、后端 98.08%、前端覆盖率双门槛）@ 2026-10-20
