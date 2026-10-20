@@ -38,7 +38,7 @@ services:
       - CNDB_DATA_DIR=/data
       # 默认即 sqlite:////data/data/cndb.db（由 CNDB_DATA_DIR 派生），显式写出便于切 PostgreSQL：
       # 改成 postgresql+psycopg://user:pass@host:5432/cndb 即可，无需改代码
-      - CNDATABASE_URL=sqlite:////data/data/cndb.db
+      - DATABASE_URL=sqlite:////data/data/cndb.db
 
       # ── 生产必须覆盖的项 ──
       # JWT 签名密钥（默认值是公开的 dev secret）：生成 openssl rand -hex 32

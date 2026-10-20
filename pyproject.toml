@@ -131,7 +131,6 @@ dev = [
 branch = true
 source = ["cndb"]
 omit = [
-    "tests/*",
     # CLI 入口 / GUI / 文件路由依赖真实环境，不纳入自动化覆盖率门槛
     "src/cndb/cli/main.py",
     "src/cndb/cli/seed/**",

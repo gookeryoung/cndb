@@ -22,7 +22,6 @@ build
 .pytest_cache
 .coverage
 htmlcov
-.tox
 coverage.xml
 
 # ── 前端 ──

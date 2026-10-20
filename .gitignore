@@ -16,7 +16,6 @@ htmlcov/
 coverage.xml
 
 # 工具缓存
-.eslintcache/
 .mypy_cache/
 .pnpm-store/
 .pytmp/
@@ -28,13 +27,12 @@ coverage.xml
 .vitest-cache/
 
 # --- Node / frontend ---
+# node_modules / package-lock 不带前缀即匹配任意层级，勿再补 frontend/ 副本
 node_modules/
-frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/coverage/
 frontend/.eslintcache
-frontend/package-lock.json
 *.tsbuildinfo
 package-lock.json
 
@@ -70,7 +68,6 @@ data/
 logs/
 
 # IDE
-.idea/
 *_profile.html
 
 # 本地协作产物一律不入库
@@ -98,6 +95,5 @@ pytest-of-*
 !.env.example
 !deploy/.env.prod.example
 
-# Sphinx 文档构建输出
-docs/_build/
-.preview
+# 运行期上传暂存（UPLOAD_DIR 落在数据目录，仓库内这个目录只是手动调试残留）
+.uploads/

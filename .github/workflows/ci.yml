@@ -285,8 +285,9 @@ jobs:
 
       # 4 vCPU runner：-n 4 与核数对齐（实测 n4 比 n2 快约 1.6×；再往上受 SQLite 单文件写锁限制，
       # 本机 24 核实测 n8 收益已明显收敛）。
+      # 覆盖率阈值只在 pyproject [tool.coverage.report].fail_under 维护，此处不再重复传 --cov-fail-under。
       - name: Run tests
-        run: uv run pytest -m "not slow" --cov=cndb --cov-fail-under=95 --cov-report=term-missing -n 4
+        run: uv run pytest -m "not slow" --cov=cndb --cov-report=term-missing -n 4
 
   e2e:
     name: E2E (Playwright) shard ${{ matrix.shard }}

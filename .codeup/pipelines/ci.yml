@@ -205,5 +205,6 @@ stages:
                 export PATH="$HOME/.local/bin:$PATH"
                 uv sync --frozen --extra test --python 3.12
                 # 实例 4 核，显式 -n 4（-n auto 可能读到宿主核数导致超订）
-                uv run pytest -m "not slow" --cov=cndb --cov-fail-under=95 \
+                # 覆盖率阈值只在 pyproject [tool.coverage.report].fail_under 维护
+                uv run pytest -m "not slow" --cov=cndb \
                   --cov-report=term-missing -n 4
