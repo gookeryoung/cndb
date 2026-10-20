@@ -54,8 +54,11 @@ function makeJob(overrides: Partial<SyncJob> = {}): SyncJob {
 
 const TABLES = [{ id: 20, name: '天气日表' }]
 
+let sessionBodies: Array<Record<string, unknown>> = []
+
 function setupHandlers(jobs: SyncJob[], options: { runStatus?: 'success' | 'failed' } = {}) {
   const calls: string[] = []
+  sessionBodies = []
   server.use(
     http.get(`/api/v1/workspaces/${WID}/datasource/providers`, () => HttpResponse.json({ providers: PROVIDERS })),
     http.get(`/api/v1/workspaces/${WID}/datasource/sync-jobs`, () =>
@@ -78,6 +81,23 @@ function setupHandlers(jobs: SyncJob[], options: { runStatus?: 'success' | 'fail
         ],
       }),
     ),
+    http.put(`/api/v1/workspaces/${WID}/datasource/sessions/:id`, async ({ request }) => {
+      calls.push('update-session')
+      sessionBodies.push((await request.json()) as Record<string, unknown>)
+      return HttpResponse.json({
+        id: 5,
+        workspace_id: WID,
+        name: '行情源 A（改）',
+        headers: {},
+        secret_keys: ['api_key'],
+        created_at: '2026-10-20T00:00:00Z',
+        updated_at: '2026-10-20T00:00:00Z',
+      })
+    }),
+    http.delete(`/api/v1/workspaces/${WID}/datasource/sessions/:id`, () => {
+      calls.push('delete-session')
+      return new HttpResponse(null, { status: 204 })
+    }),
     http.get(`/api/v1/workspaces/${WID}/datasource/domain-templates`, () =>
       HttpResponse.json({
         templates: [
@@ -240,13 +260,74 @@ describe('DatasourcePage · 凭证会话与领域模板', () => {
     expect(within(drawer).getByText('请求间隔（毫秒）')).toBeInTheDocument()
   })
 
-  it('新建会话弹窗可打开', async () => {
+  it('会话管理：列表展示已有会话，可进入新建表单', async () => {
     setupHandlers([makeJob()])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
     fireEvent.click(screen.getByTestId('datasource-session-create'))
-    expect(await screen.findByText('新建凭证会话')).toBeInTheDocument()
-    expect(screen.getByTestId('datasource-session-name')).toBeInTheDocument()
+
+    // 列表态：已有会话 + 密钥键名（值不回显）
+    const table = await screen.findByTestId('datasource-sessions-table')
+    expect(within(table).getByText('行情源 A')).toBeInTheDocument()
+    expect(within(table).getByText('api_key')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('datasource-session-new'))
+    expect(await screen.findByTestId('datasource-session-name')).toBeInTheDocument()
+  })
+
+  it('编辑会话：密钥留空时请求体不带 secrets（不误清空）', async () => {
+    const calls = setupHandlers([makeJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
+    fireEvent.click(screen.getByTestId('datasource-session-create'))
+
+    fireEvent.click(await screen.findByRole('button', { name: '编辑会话 行情源 A' }))
+    // 名称回填、密钥留空
+    expect(await screen.findByTestId('datasource-session-name')).toHaveValue('行情源 A')
+    expect(screen.getByTestId('datasource-session-secrets')).toHaveValue('')
+
+    fireEvent.change(screen.getByTestId('datasource-session-name'), { target: { value: '行情源 A（改）' } })
+    fireEvent.click(screen.getByTestId('datasource-session-save'))
+
+    await waitFor(() => expect(calls).toContain('update-session'))
+    expect(sessionBodies[0].name).toBe('行情源 A（改）')
+    expect('secrets' in sessionBodies[0]).toBe(false)
+  })
+
+  it('编辑会话：填写密钥时整体替换', async () => {
+    const calls = setupHandlers([makeJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
+    fireEvent.click(screen.getByTestId('datasource-session-create'))
+    fireEvent.click(await screen.findByRole('button', { name: '编辑会话 行情源 A' }))
+
+    fireEvent.change(await screen.findByTestId('datasource-session-secrets'), {
+      target: { value: '{"api_key":"new"}' },
+    })
+    fireEvent.click(screen.getByTestId('datasource-session-save'))
+
+    await waitFor(() => expect(calls).toContain('update-session'))
+    expect(sessionBodies[0].secrets).toEqual({ api_key: 'new' })
+  })
+
+  it('删除会话：确认后调用删除接口并提示会解绑任务', async () => {
+    const calls = setupHandlers([makeJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
+    fireEvent.click(screen.getByTestId('datasource-session-create'))
+
+    fireEvent.click(await screen.findByRole('button', { name: '删除会话 行情源 A' }))
+    // 页面本身已有 Modal：按文案找到 confirm 那个 dialog，再点它的确认按钮
+    const confirm = await waitFor(() => {
+      const found = screen.getAllByRole('dialog').find(item => item.textContent?.includes('会自动解绑'))
+      expect(found).toBeTruthy()
+      return found as HTMLElement
+    })
+    const buttons = within(confirm).getAllByRole('button')
+    fireEvent.click(buttons[buttons.length - 1])
+
+    await waitFor(() => expect(calls).toContain('delete-session'))
+    expect(await screen.findByText('会话已删除')).toBeInTheDocument()
   })
 
   it('套用领域分析模板调用 analytics 建模板接口', async () => {

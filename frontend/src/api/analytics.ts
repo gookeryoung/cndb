@@ -161,12 +161,23 @@ export interface AnalyticsComputeResponse {
   summary?: AnalyticsSummaryResult | null
 }
 
+/** 扫描范围过滤（与列表接口同语法：{field_name, op, value}） */
+export interface AnalyticsFilter {
+  field_name: string
+  /** = != > >= < <= contains ... （见 tables 查询语法） */
+  op: string
+  value?: string | number | boolean | null
+}
+
 export interface AnalyticsComputeRequest {
   table_id: number
   formulas: AnalyticsFormula[]
   fields?: string[]
   limit?: number
   summary?: AnalyticsSummary | null
+  /** 扫描范围过滤：时序表给「时间字段 >= 起点」，避免被单次扫描上限截断 */
+  filters?: AnalyticsFilter[]
+  filter_logic?: 'AND' | 'OR'
 }
 
 /** 智能推荐：字段角色 */

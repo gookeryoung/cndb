@@ -172,6 +172,52 @@ class TestRank:
         rows = [{"g": "A", "x": None}]
         assert evaluate_column("rank([x])", rows, ["g", "x"], partition_by="g") == [None]
 
+    def test_rank_on_time_column(self):
+        """时间列以前全为 None（数值化为空），现在按时间先后给名次."""
+        rows = [
+            {"g": "A", "day": "2024-01-03"},
+            {"g": "A", "day": "2024-01-01"},
+            {"g": "A", "day": "2024-01-02"},
+        ]
+        assert evaluate_column("rank([day])", rows, ["g", "day"], partition_by="g") == [3.0, 1.0, 2.0]
+
+    def test_rank_time_with_datetime_text(self):
+        """带时分秒的定宽时间串同样是字典序 = 时间序."""
+        rows = [
+            {"g": "A", "ts": "2024-01-01 10:00:00"},
+            {"g": "A", "ts": "2024-01-01 09:30:00"},
+        ]
+        assert evaluate_column("rank([ts])", rows, ["g", "ts"], partition_by="g") == [2.0, 1.0]
+
+    def test_rank_on_text_column(self):
+        """文本列按字面序（Unicode 码点）给名次，不再整列为 None."""
+        rows = [{"g": "A", "level": "beta"}, {"g": "A", "level": "alpha"}]
+        got = evaluate_column("rank([level])", rows, ["g", "level"], partition_by="g")
+        assert got == [2.0, 1.0]
+
+    def test_rank_text_ties_and_blank(self):
+        rows = [
+            {"g": "A", "level": "beta"},
+            {"g": "A", "level": "beta"},
+            {"g": "A", "level": "  "},
+            {"g": "A", "level": "alpha"},
+        ]
+        assert evaluate_column("rank([level])", rows, ["g", "level"], partition_by="g") == [2.0, 2.0, None, 1.0]
+
+    def test_rank_numeric_strings_still_numeric(self):
+        """形如数字的文本列按数值排（"10" 不能排到 "2" 前面）."""
+        rows = [{"g": "A", "code": "10"}, {"g": "A", "code": "2"}]
+        assert evaluate_column("rank([code])", rows, ["g", "code"], partition_by="g") == [2.0, 1.0]
+
+    def test_rank_is_per_partition_on_time(self):
+        rows = [
+            {"g": "A", "day": "2024-01-02"},
+            {"g": "B", "day": "2024-01-05"},
+            {"g": "A", "day": "2024-01-01"},
+            {"g": "B", "day": "2024-01-04"},
+        ]
+        assert evaluate_column("rank([day])", rows, ["g", "day"], partition_by="g") == [2.0, 2.0, 1.0, 1.0]
+
 
 class TestComposition:
     def test_window_inside_scalar_function(self):

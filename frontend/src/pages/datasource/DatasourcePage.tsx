@@ -363,6 +363,7 @@ export default function DatasourcePage() {
       <SessionModal
         wid={wid}
         open={sessionModalOpen}
+        sessions={sessions}
         onClose={() => setSessionModalOpen(false)}
         onSaved={() => void queryClient.invalidateQueries({ queryKey: ['datasource', 'sessions', wid] })}
       />
@@ -900,25 +901,49 @@ function HistoryDrawer({ wid, job, onClose }: { wid: string; job: SyncJob | null
   )
 }
 
-/** 新建凭证会话弹窗：请求头 + 密钥（密钥保存后不可回读，只能整体覆盖） */
+/** 凭证会话管理：列表 + 新建 / 编辑（改请求头、整体替换密钥）/ 删除（自动解绑任务） */
 function SessionModal({
   wid,
   open,
+  sessions,
   onClose,
   onSaved,
 }: {
   wid: string
   open: boolean
+  sessions: DatasourceSession[]
   onClose: () => void
   onSaved: () => void
 }) {
   const [form] = Form.useForm()
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState<DatasourceSession | null>(null)
+  const [formOpen, setFormOpen] = useState(false)
 
   useEffect(() => {
-    if (open) form.resetFields()
+    if (!open) {
+      setFormOpen(false)
+      setEditing(null)
+      form.resetFields()
+    }
   }, [open, form])
+
+  const openCreate = () => {
+    setEditing(null)
+    form.resetFields()
+    setFormOpen(true)
+  }
+
+  const openEdit = (session: DatasourceSession) => {
+    setEditing(session)
+    form.setFieldsValue({
+      name: session.name,
+      headers_json: Object.keys(session.headers ?? {}).length ? JSON.stringify(session.headers, null, 2) : '',
+      secrets_json: '',
+    })
+    setFormOpen(true)
+  }
 
   const submit = async () => {
     const values = await form.validateFields()
@@ -931,46 +956,163 @@ function SessionModal({
       message.error('请求头 / 密钥不是合法 JSON')
       return
     }
+    const hasSecrets = Boolean(values.secrets_json?.trim())
     setSaving(true)
     try {
-      await datasourceApi.createSession(wid, { name: String(values.name).trim(), headers, secrets })
-      message.success('会话已创建，可在任务里选用')
+      if (editing) {
+        // 密钥留空 = 保持原密文不变（后端「提供即整体替换」，所以不填就不要传这个键）
+        await datasourceApi.updateSession(wid, editing.id, {
+          name: String(values.name).trim(),
+          headers,
+          ...(hasSecrets ? { secrets } : {}),
+        })
+        message.success('会话已更新')
+      } else {
+        await datasourceApi.createSession(wid, { name: String(values.name).trim(), headers, secrets })
+        message.success('会话已创建，可在任务里选用')
+      }
       onSaved()
-      onClose()
+      setFormOpen(false)
+      setEditing(null)
+      form.resetFields()
     } catch (error) {
       const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      message.error(detail || '创建失败（名称可能重复）')
+      message.error(detail || (editing ? '更新失败（名称可能重复）' : '创建失败（名称可能重复）'))
     } finally {
       setSaving(false)
     }
   }
 
+  const confirmRemove = (session: DatasourceSession) => {
+    modal.confirm({
+      title: `删除会话「${session.name}」？`,
+      content: '引用它的同步任务会自动解绑（任务保留，但请求不再带这组请求头与密钥）。',
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await datasourceApi.removeSession(wid, session.id)
+          message.success('会话已删除')
+          onSaved()
+        } catch {
+          message.error('删除失败（需编辑者及以上权限）')
+        }
+      },
+    })
+  }
+
   return (
     <Modal
-      title="新建凭证会话"
+      title="凭证会话"
       open={open}
+      width={640}
       onCancel={onClose}
-      onOk={() => void submit()}
-      confirmLoading={saving}
-      okText="创建"
-      cancelText="取消"
       destroyOnHidden
+      footer={
+        formOpen ? (
+          <Space>
+            <Button onClick={() => setFormOpen(false)}>返回</Button>
+            <Button type="primary" loading={saving} data-testid="datasource-session-save" onClick={() => void submit()}>
+              保存
+            </Button>
+          </Space>
+        ) : (
+          <Button onClick={onClose}>关闭</Button>
+        )
+      }
     >
-      <Form form={form} layout="vertical" size="small">
-        <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入会话名称' }]}>
-          <Input data-testid="datasource-session-name" placeholder="如：行情源 A" />
-        </Form.Item>
-        <Form.Item name="headers_json" label="请求头（JSON）" extra='如 {"User-Agent": "cndb-sync/1.0"}'>
-          <Input.TextArea data-testid="datasource-session-headers" rows={2} />
-        </Form.Item>
-        <Form.Item
-          name="secrets_json"
-          label="密钥（JSON，保存后不可回读）"
-          extra='如 {"api_key": "xxx"}；请求模板里写 {api_key} 即可引用'
-        >
-          <Input.TextArea data-testid="datasource-session-secrets" rows={2} />
-        </Form.Item>
-      </Form>
+      {formOpen ? (
+        <Form form={form} layout="vertical" size="small">
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入会话名称' }]}>
+            <Input data-testid="datasource-session-name" placeholder="如：行情源 A" />
+          </Form.Item>
+          <Form.Item name="headers_json" label="请求头（JSON）" extra='如 {"User-Agent": "cndb-sync/1.0"}'>
+            <Input.TextArea data-testid="datasource-session-headers" rows={2} />
+          </Form.Item>
+          <Form.Item
+            name="secrets_json"
+            label="密钥（JSON，加密入库、保存后不可回读）"
+            extra={
+              editing
+                ? `已有密钥：${editing.secret_keys.join('、') || '无'}；留空表示不修改，填写则整体替换`
+                : '如 {"api_key": "xxx"}；请求模板里写 {api_key} 即可引用'
+            }
+          >
+            <Input.TextArea data-testid="datasource-session-secrets" rows={2} />
+          </Form.Item>
+        </Form>
+      ) : (
+        <Space direction="vertical" style={{ width: '100%' }} size={8}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Button size="small" type="primary" icon={<PlusOutlined />} data-testid="datasource-session-new" onClick={openCreate}>
+              新建会话
+            </Button>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              密钥加密存储，读接口只回显键名；不随工作区导出
+            </Text>
+          </div>
+          <Table<DatasourceSession>
+            data-testid="datasource-sessions-table"
+            rowKey="id"
+            size="small"
+            pagination={false}
+            dataSource={sessions}
+            locale={{ emptyText: '还没有凭证会话' }}
+            columns={[
+              { title: '名称', dataIndex: 'name', ellipsis: true },
+              {
+                title: '密钥',
+                dataIndex: 'secret_keys',
+                width: 200,
+                render: (keys: string[]) =>
+                  keys.length ? (
+                    <Space size={4} wrap>
+                      {keys.map(key => (
+                        <Tag key={key} color="blue">
+                          {key}
+                        </Tag>
+                      ))}
+                    </Space>
+                  ) : (
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      未配置
+                    </Text>
+                  ),
+              },
+              {
+                title: '请求头',
+                dataIndex: 'headers',
+                width: 90,
+                render: (headers: Record<string, string>) => `${Object.keys(headers ?? {}).length} 项`,
+              },
+              {
+                title: '操作',
+                width: 110,
+                render: (_: unknown, session: DatasourceSession) => (
+                  <Space size={2}>
+                    <Button
+                      size="small"
+                      type="text"
+                      aria-label={`编辑会话 ${session.name}`}
+                      icon={<EditOutlined />}
+                      onClick={() => openEdit(session)}
+                    />
+                    <Button
+                      size="small"
+                      type="text"
+                      danger
+                      aria-label={`删除会话 ${session.name}`}
+                      icon={<DeleteOutlined />}
+                      onClick={() => confirmRemove(session)}
+                    />
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </Space>
+      )}
     </Modal>
   )
 }

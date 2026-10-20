@@ -168,7 +168,7 @@ export function AnalyticsResultView({ result, chart, formulas, fields, title }: 
         extra={
           <Space size={8}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              共 {result.total} 行{result.truncated ? '（超出单次扫描上限，已截断）' : ''}
+              共 {result.total} 行{result.truncated ? '（超出单次扫描上限，已截断；可在「分析范围」限定区间）' : ''}
             </Text>
             <Tooltip title="把当前图表导出为 PNG（2x 清晰度）">
               <Button size="small" icon={<PictureOutlined />} data-testid="analytics-export-chart" onClick={exportChart}>

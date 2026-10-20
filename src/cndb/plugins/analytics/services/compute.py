@@ -89,18 +89,58 @@ def _allowed_field_names(table: DataTable, rows: list[dict[str, Any]]) -> list[s
     return [f.name for f in table.active_fields() if f.name in seen]
 
 
+def _check_filter_fields(table: DataTable, filters: Any) -> None:
+    """过滤字段必须存在.
+
+    列表接口对未知字段只记 warning 后跳过；在分析场景里这等于「静默退化成全表扫描」，
+    正好把 filters 想解决的 ``MAX_SCAN_ROWS`` 截断又带回来，所以这里直接报错。
+    """
+    if not filters:
+        return
+    known = {field.name for field in table.active_fields()}
+    for item in filters:
+        name = str((item or {}).get("field_name") or "").strip()
+        if not name:
+            raise FormulaError("过滤条件缺少 field_name")
+        if name not in known:
+            raise FormulaError(f"过滤字段不存在: {name}")
+
+
+def scan_limit() -> int:
+    """单次扫描行数上限（``settings.ANALYTICS_MAX_SCAN_ROWS``，非法值回退常量）."""
+    from cndb.core.config import settings
+
+    try:
+        value = int(settings.ANALYTICS_MAX_SCAN_ROWS)
+    except (TypeError, ValueError):  # pragma: no cover - 配置层已保证是 int
+        return MAX_SCAN_ROWS
+    return value if value > 0 else MAX_SCAN_ROWS
+
+
 def scan_rows(
     db: Session,
     table: DataTable,
     user: Any,
+    *,
+    filters: list[dict[str, Any]] | None = None,
+    filter_logic: str = "AND",
 ) -> tuple[list[dict[str, Any]], int, bool]:
-    """扫描表数据（含行级权限 / 字段隐藏），返回 (rows, total, truncated)."""
+    """扫描表数据（含行级权限 / 字段隐藏），返回 (rows, total, truncated).
+
+    Args:
+        filters: 表过滤条件（与 ``GET /tables/{id}/rows`` 同语法：``{field_name, op, value}``）。
+            时序表用「时间区间 + 标的等值」把扫描面压到区间内，是对付
+            ``MAX_SCAN_ROWS`` 的首选手段（这也是 ADR 0006 D7 的口径）。
+        filter_logic: ``AND`` / ``OR``，多条件组合方式。
+    """
     from cndb.plugins.tables.services.core.records import list_rows
 
     rows, total = list_rows(
         db.get_bind(),
         table,
-        limit=MAX_SCAN_ROWS,
+        filters=filters or None,
+        filter_logic=filter_logic,
+        limit=scan_limit(),
         offset=0,
         include_trashed=False,
         db=db,
@@ -276,6 +316,8 @@ def compute(
     fields: list[str] | None = None,
     limit: int = 1000,
     summary: Any | None = None,
+    filters: list[dict[str, Any]] | None = None,
+    filter_logic: str = "AND",
 ) -> dict[str, Any]:
     """按公式计算派生列并返回行数据 + 描述统计 + 可选分组汇总.
 
@@ -285,8 +327,11 @@ def compute(
         fields: 需要返回的原始字段；空 = 全部可见字段.
         limit: 返回行数上限（统计仍基于全量扫描）.
         summary: 分组汇总配置（None = 不汇总）.
+        filters / filter_logic: 扫描前的范围过滤（时间区间 / 分区等值），用于绕开
+            ``MAX_SCAN_ROWS`` —— 只分析区间内的行，统计与汇总都基于过滤后的行.
     """
-    rows, total, truncated = scan_rows(db, table, user)
+    _check_filter_fields(table, filters)
+    rows, total, truncated = scan_rows(db, table, user, filters=filters, filter_logic=filter_logic)
     field_names = _allowed_field_names(table, rows)
 
     wanted = [f for f in (fields or []) if f in field_names] or field_names
@@ -340,5 +385,6 @@ __all__ = [
     "compute_summary",
     "metric_key",
     "metric_label",
+    "scan_limit",
     "scan_rows",
 ]

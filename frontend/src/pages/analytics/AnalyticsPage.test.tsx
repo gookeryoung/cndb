@@ -286,6 +286,47 @@ describe('AnalyticsPage', () => {
     await waitFor(() => expect(computeBodies).toHaveLength(1))
   })
 
+  it('分析范围：设置起止值后请求体带扫描过滤', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
+
+    // 未设范围时 filters 为空数组（等价不过滤）
+    fireEvent.click(screen.getByTestId('analytics-run-btn'))
+    await waitFor(() => expect(computeBodies).toHaveLength(1))
+    expect(computeBodies[0].filters).toEqual([])
+
+    // 选范围字段 + 起止值 → 两个比较条件
+    fireEvent.mouseDown(screen.getByTestId('analytics-scope-field').querySelector('.ant-select-selector')!)
+    fireEvent.click(await screen.findByText('产品', { selector: '.ant-select-item-option-content' }))
+    fireEvent.change(screen.getByTestId('analytics-scope-from'), { target: { value: 'A' } })
+    fireEvent.change(screen.getByTestId('analytics-scope-to'), { target: { value: 'C' } })
+
+    fireEvent.click(screen.getByTestId('analytics-run-btn'))
+    await waitFor(() => expect(computeBodies).toHaveLength(2))
+    expect(computeBodies[1].filters).toEqual([
+      { field_name: '产品', op: '>=', value: 'A' },
+      { field_name: '产品', op: '<=', value: 'C' },
+    ])
+  })
+
+  it('换表后清空分析范围（范围字段属于旧表）', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+
+    fireEvent.mouseDown(screen.getByTestId('analytics-scope-field').querySelector('.ant-select-selector')!)
+    fireEvent.click(await screen.findByText('产品', { selector: '.ant-select-item-option-content' }))
+    fireEvent.change(screen.getByTestId('analytics-scope-from'), { target: { value: 'A' } })
+    expect(screen.getByTestId('analytics-scope-from')).toHaveValue('A')
+
+    fireEvent.mouseDown(screen.getByTestId('analytics-table-select').querySelector('.ant-select-selector')!)
+    fireEvent.click(await screen.findByText('其他表', { selector: '.ant-select-item-option-content' }))
+
+    await waitFor(() => expect(screen.getByTestId('analytics-scope-from')).toHaveValue(''))
+    // 字段也被清掉：输入框在未选范围字段时禁用
+    expect(screen.getByTestId('analytics-scope-from')).toBeDisabled()
+  })
+
   it('另存为副本：弹窗预填「模板名 副本」，提交后创建新模板', async () => {
     renderPage('/w/1/analytics?template=7')
     await waitTemplateLoaded()

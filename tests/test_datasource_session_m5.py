@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from sqlalchemy.orm import Session
 
+from cndb.core.config import settings
 from cndb.plugins.accounts.models import User
 from cndb.plugins.analytics.schemas import TemplateConfig
 from cndb.plugins.analytics.services.templates import normalize_config
@@ -182,6 +183,46 @@ class TestSessionApi:
         assert response.status_code == 400
         assert "凭证会话不存在" in response.json()["detail"]
 
+    def test_secrets_are_encrypted_at_rest(self, client, db, owner_env):
+        """密钥列落库即密文：键名保留、值不可读，且能解回原文."""
+        from cndb.core.crypto import decrypt_secret, is_encrypted
+
+        wid, headers = owner_env
+        sid = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/sessions",
+            json={"name": "加密", "secrets": {"api_key": "plain-value"}},
+            headers=headers,
+        ).json()["id"]
+
+        db.expire_all()
+        stored = db.get(DatasourceSession, sid)
+        assert stored is not None
+        cipher = stored.secrets["api_key"]
+        assert "plain-value" not in cipher
+        assert is_encrypted(cipher)
+        assert decrypt_secret(cipher) == "plain-value"
+
+    def test_update_also_encrypts(self, client, db, owner_env):
+        from cndb.core.crypto import decrypt_secret, is_encrypted
+
+        wid, headers = owner_env
+        sid = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/sessions",
+            json={"name": "S2", "secrets": {"a": "1"}},
+            headers=headers,
+        ).json()["id"]
+        client.put(
+            f"/api/v1/workspaces/{wid}/datasource/sessions/{sid}",
+            json={"secrets": {"b": "2"}},
+            headers=headers,
+        )
+        db.expire_all()
+        stored = db.get(DatasourceSession, sid)
+        assert stored is not None
+        assert set(stored.secrets) == {"b"}
+        assert is_encrypted(stored.secrets["b"])
+        assert decrypt_secret(stored.secrets["b"]) == "2"
+
 
 class TestSessionInjection:
     def _job(self, db: Session, session_id: int | None) -> DatasourceSyncJob:
@@ -244,6 +285,47 @@ class TestSessionInjection:
         db.commit()
         runner.execute_job(db, job, fetch=lambda _cfg: [])
         assert captured["rate_limit_ms"] == 250
+
+    def test_legacy_plaintext_secret_still_works(self, db_engine, db):
+        """加密上线前建的会话（明文密钥）不需要迁移即可继续跑."""
+        session = DatasourceSession(
+            workspace_id=1,
+            name="历史会话",
+            headers={},
+            secrets={"api_key": "legacy-token"},
+        )
+        db.add(session)
+        db.commit()
+        job = self._job(db, session.id)
+
+        seen: list[str] = []
+        execution = runner.execute_job(db, job, fetch=lambda cfg: seen.append(cfg.url) or [])
+        assert execution.run.status == "success"
+        assert seen == ["https://api.example.com/w?k=legacy-token"]
+
+    def test_decrypt_failure_lands_failed_run(self, db_engine, db, monkeypatch):
+        """换过密钥的密文：运行必须显式失败并给出可读原因，而不是拿空密钥去打接口."""
+        from cndb.core import crypto
+        from cndb.core.crypto import encrypt_secrets
+
+        session = DatasourceSession(
+            workspace_id=1,
+            name="旧密钥",
+            headers={},
+            secrets=encrypt_secrets({"api_key": "x"}),
+        )
+        db.add(session)
+        db.commit()
+        job = self._job(db, session.id)
+
+        monkeypatch.setattr(settings, "DATASOURCE_SECRET_KEY", "rotated-key")
+        crypto._fernet_for.cache_clear()
+
+        calls: list[str] = []
+        execution = runner.execute_job(db, job, fetch=lambda cfg: calls.append(cfg.url) or [])
+        assert execution.run.status == "failed"
+        assert "解密失败" in (execution.run.error_message or "")
+        assert calls == []
 
 
 class TestPipelineRateLimit:

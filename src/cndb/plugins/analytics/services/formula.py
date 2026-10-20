@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import math
 import re
-from functools import partial
 from typing import Any, Final
 
 # 表达式长度上限（防超长串拖垮解析）
@@ -320,19 +319,54 @@ def _to_number(value: Any) -> float | None:
     return None
 
 
-def _value_at(values: list[float | None], index: int) -> float:
-    """取已过滤空值的行值（调用方保证 index 处非空）."""
-    value = values[index]
-    return value if value is not None else 0.0
+def _is_blank_value(value: Any) -> bool:
+    """空值判定：None 与纯空白字符串（与分组汇总口径一致）."""
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _rank_values(raw: list[Any]) -> list[int | None]:
+    """分区内名次：升序、并列取最小名次、空值 None.
+
+    全列可数值化时按**数值**排（``10`` 排在 ``2`` 之后）；否则按原始值字符串排 ——
+    时间列的 ISO / 定宽格式字典序即时间序，文本列按其字面序。
+    """
+    usable = [i for i, value in enumerate(raw) if not _is_blank_value(value)]
+    ranks: list[int | None] = [None] * len(raw)
+    if not usable:
+        return ranks
+
+    numbers = [_to_number(raw[i]) for i in usable]
+    pairs: list[tuple[Any, int]]
+    if all(number is not None for number in numbers):
+        pairs = [(number, index) for number, index in zip(numbers, usable, strict=True)]
+    else:
+        pairs = [(str(raw[i]).strip(), i) for i in usable]
+    # 数值与字符串各自同质，key 取第 0 位即可（混合列已在上面的分支里统一成字符串）
+    pairs.sort(key=lambda pair: pair[0])
+
+    start = 0
+    while start < len(pairs):
+        end = start
+        while end + 1 < len(pairs) and pairs[end + 1][0] == pairs[start][0]:
+            end += 1
+        for k in range(start, end + 1):
+            ranks[pairs[k][1]] = start + 1
+        start = end + 1
+    return ranks
 
 
 class _WindowCache:
-    """单个分区 × 单个字段的窗口求值结构（前缀和 + 名次表，预处理一次 O(n)）."""
+    """单个分区 × 单个字段的窗口求值结构（前缀和 + 名次表，预处理一次 O(n)）.
 
-    __slots__ = ("_prefix_cnt", "_prefix_sq", "_prefix_sum", "_rank", "values")
+    ``raw`` 是该分区的**原始值**（可能是时间 / 文本）：rank 需要按原始可比值排序，
+    数值列则由 ``values`` 提供（两者等长、同序）。
+    """
 
-    def __init__(self, values: list[float | None]) -> None:
+    __slots__ = ("_prefix_cnt", "_prefix_sq", "_prefix_sum", "_rank", "raw", "values")
+
+    def __init__(self, values: list[float | None], raw: list[Any] | None = None) -> None:
         self.values = values
+        self.raw = raw if raw is not None else list(values)
         size = len(values)
         self._prefix_sum = [0.0] * (size + 1)
         self._prefix_cnt = [0] * (size + 1)
@@ -372,21 +406,7 @@ class _WindowCache:
 
     def rank(self, pos: int) -> int | None:
         if self._rank is None:
-            ranks: list[int | None] = [None] * len(self.values)
-            values = self.values
-            ordered = sorted(
-                [i for i, v in enumerate(values) if v is not None],
-                key=partial(_value_at, values),
-            )
-            i = 0
-            while i < len(ordered):
-                j = i
-                while j + 1 < len(ordered) and self.values[ordered[j + 1]] == self.values[ordered[i]]:
-                    j += 1
-                for k in range(i, j + 1):
-                    ranks[ordered[k]] = i + 1
-                i = j + 1
-            self._rank = ranks
+            self._rank = _rank_values(self.raw)
         return self._rank[pos]
 
 
@@ -398,6 +418,7 @@ class _Context:
         self._field_names = field_names
         self._columns: dict[str, list[float]] = {}
         self._aligned: dict[str, list[float | None]] = {}
+        self._raws: dict[str, list[Any]] = {}
         self._groups: list[list[int]] = [list(range(len(rows)))]
         self._window_cache: dict[tuple[int, str], _WindowCache] = {}
         self.row: dict[str, Any] = {}
@@ -437,13 +458,28 @@ class _Context:
             self._aligned[name] = cached
         return cached
 
+    def raw_column(self, name: str) -> list[Any]:
+        """行对齐的**原始值**列（不数值化；rank 等按原始可比值排序时用）."""
+        if name not in self._field_names:
+            raise FormulaError(f"未知字段: {name}")
+        cached = self._raws.get(name)
+        if cached is None:
+            cached = [r.get(name) for r in self._rows]
+            self._raws[name] = cached
+        return cached
+
     def window_cache(self, name: str) -> _WindowCache:
         """当前分区的窗口结构（按 (分区, 字段) 惰性构建，多公式复用）."""
         key = (self.group_id, name)
         cached = self._window_cache.get(key)
         if cached is None:
+            group = self._groups[self.group_id]
             values = self.aligned(name)
-            cached = _WindowCache([values[row_index] for row_index in self._groups[self.group_id]])
+            raws = self.raw_column(name)
+            cached = _WindowCache(
+                [values[row_index] for row_index in group],
+                [raws[row_index] for row_index in group],
+            )
             self._window_cache[key] = cached
         return cached
 
