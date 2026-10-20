@@ -224,9 +224,9 @@ def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[di
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 转换管线 + 判定单测 | 已落地 | `src/cndb/plugins/documents/services/importers/reader.py`、`src/cndb/plugins/documents/services/importers/normalize.py`、`src/cndb/plugins/documents/services/importers/markdown.py`、`src/cndb/plugins/documents/services/importers/docx.py`、`src/cndb/plugins/documents/services/importers/html.py` | `tests/test_documents_file_import_convert.py` | — |
-| P1 端点接入 + 落库 | 已落地 | `src/cndb/plugins/documents/routers/file_import.py`、`src/cndb/plugins/documents/services/importers/importer.py` | `tests/test_documents_file_import_api.py` | — |
-| P2 前端入口 | 已落地 | `frontend/src/pages/documents/DocumentImportModal.tsx`、`frontend/src/api/documents.ts`、`frontend/src/pages/documents/DocumentsPage.tsx` | `frontend/src/pages/documents/DocumentImportModal.test.tsx`、`frontend/tests/e2e/critical/document-file-import.spec.ts` | — |
+| P0 转换管线 + 判定单测 | 已落地 | `src/cndb/plugins/documents/services/importers/reader.py`、`src/cndb/plugins/documents/services/importers/normalize.py`、`src/cndb/plugins/documents/services/importers/markdown.py`、`src/cndb/plugins/documents/services/importers/docx.py`、`src/cndb/plugins/documents/services/importers/html.py` | `tests/test_documents_file_import_convert.py` | a322f993 |
+| P1 端点接入 + 落库 | 已落地 | `src/cndb/plugins/documents/routers/file_import.py`、`src/cndb/plugins/documents/services/importers/importer.py` | `tests/test_documents_file_import_api.py` | a322f993 |
+| P2 前端入口 | 已落地 | `frontend/src/pages/documents/DocumentImportModal.tsx`、`frontend/src/api/documents.ts`、`frontend/src/pages/documents/DocumentsPage.tsx` | `frontend/src/pages/documents/DocumentImportModal.test.tsx`、`frontend/tests/e2e/critical/document-file-import.spec.ts` | a322f993 |
 
 ## 交接（会话结束更新）
 
