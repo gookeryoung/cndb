@@ -92,7 +92,17 @@ def compute(
 ) -> dict[str, Any]:
     """按公式计算派生指标列并返回描述统计."""
     table = _table_for_read(workspace_id, payload.table_id, current_user, db)
-    formulas = [{"key": s.key, "label": s.label or s.key, "expr": s.expr} for s in payload.formulas]
+    formulas = [
+        {
+            "key": s.key,
+            "label": s.label or s.key,
+            "expr": s.expr,
+            "partition_by": s.partition_by,
+            "order_by": s.order_by,
+            "order_desc": s.order_desc,
+        }
+        for s in payload.formulas
+    ]
     keys = [s["key"] for s in formulas]
     if len(set(keys)) != len(keys):
         raise HTTPException(status_code=400, detail="公式键重复")

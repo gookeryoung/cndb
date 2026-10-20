@@ -1,7 +1,7 @@
 /** 公式编辑器卡片 —— 多行公式 + 字段/函数快捷插入 + 本地校验提示 + Ctrl/Cmd+Enter 运行. */
 
 import { useRef } from 'react'
-import { Alert, Button, Card, Dropdown, Input, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Button, Card, Dropdown, Input, Select, Tag, Tooltip, Typography } from 'antd'
 import type { InputRef } from 'antd'
 import { DeleteOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import type { AnalyticsFormula } from '@/api/analytics'
@@ -11,6 +11,12 @@ const { Text } = Typography
 
 /** 单值函数快捷片段（插入末尾留光标在括号内） */
 const SCALAR_FUNCS = ['round(', 'abs(', 'sqrt(', 'pow(', 'ceil(', 'floor(']
+
+/** 窗口函数（按「分区 + 排序」的行序列计算；第一个参数必须是字段引用） */
+const SHIFT_FUNCS = ['prev(', 'lag(', 'lead(', 'diff(', 'pct_change(', 'cumsum(', 'rank(']
+const ROLLING_FUNCS = ['ma(', 'rolling_sum(', 'rolling_std(']
+/** 表达式是否含窗口函数（决定是否展示分区 / 排序选择器） */
+const WINDOW_CALL_RE = /\b(?:prev|lag|lead|diff|pct_change|cumsum|ma|rolling_sum|rolling_std|rank)\s*\(/i
 
 interface Props {
   /** 数据表可见字段（点击插入 [字段]） */
@@ -59,7 +65,7 @@ export function FormulaPanel({
     })
   }
 
-  const patch = (index: number, field: keyof AnalyticsFormula, value: string) => {
+  const patch = (index: number, field: keyof AnalyticsFormula, value: string | boolean | undefined) => {
     onChange(formulas.map((item, i) => (i === index ? { ...item, [field]: value } : item)))
   }
 
@@ -95,7 +101,9 @@ export function FormulaPanel({
               [字段名] 引用字段值；支持 + - * / ( ) 与后缀 %；
               单值函数：round(x, n) / abs / sqrt / pow(x, y) / ceil / floor；
               整列聚合：sum([字段]) / avg / count / min / max；
+              窗口函数（按分区 + 排序）：lag / lead / prev / diff / pct_change / cumsum / rank / ma([字段], n) / rolling_sum / rolling_std；
               例：round([合格数] / [实际产量] * 100, 2) 逐行算合格率；
+                  round(pct_change([收盘价]) * 100, 2) 分区内按时间算环比；
               Ctrl / Cmd + Enter 直接运行分析
             </div>
           }
@@ -137,6 +145,27 @@ export function FormulaPanel({
               {fn}
             </Tag>
           ))}
+          {SHIFT_FUNCS.map(fn => (
+            <Tag
+              key={fn}
+              color="geekblue"
+              style={{ cursor: 'pointer', marginInlineEnd: 0 }}
+              onClick={() => insertSnippet(`${fn}[${numericFields[0] ?? '字段'}])`)}
+            >
+              {fn.replace('(', '')}
+            </Tag>
+          ))}
+          {ROLLING_FUNCS.map(fn => (
+            <Tag
+              key={fn}
+              color="geekblue"
+              style={{ cursor: 'pointer', marginInlineEnd: 0 }}
+              title="滚动窗口需指定长度，如 ma([字段], 3)"
+              onClick={() => insertSnippet(`${fn}[${numericFields[0] ?? '字段'}], 3)`)}
+            >
+              {fn.replace('(', '')}
+            </Tag>
+          ))}
           <Dropdown menu={{ items: exampleMenu() }} disabled={exampleMenu().length === 0}>
             <Button size="small" type="link" data-testid="analytics-formula-example">
               示例
@@ -147,8 +176,10 @@ export function FormulaPanel({
         {formulas.map((formula, i) => {
           const key = formula.key.trim()
           const error = errors[key] || errors[formula.key]
+          const isWindow = WINDOW_CALL_RE.test(formula.expr)
           return (
-            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
               <Input
                 style={{ width: 110 }}
                 placeholder="键名"
@@ -189,6 +220,48 @@ export function FormulaPanel({
                 aria-label="删除公式"
                 onClick={() => onChange(formulas.length > 1 ? formulas.filter((_, j) => j !== i) : [newFormula(0)])}
               />
+            </div>
+            {isWindow && (
+              <div
+                data-testid={`analytics-formula-window-${i}`}
+                style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', paddingLeft: 2 }}
+              >
+                <Select
+                  size="small"
+                  allowClear
+                  placeholder="分区字段"
+                  style={{ width: 150 }}
+                  aria-label={`公式分区字段 ${i + 1}`}
+                  value={formula.partition_by ?? undefined}
+                  options={tableFields.map(name => ({ value: name, label: name }))}
+                  onChange={value => patch(i, 'partition_by', value ?? undefined)}
+                />
+                <Select
+                  size="small"
+                  allowClear
+                  placeholder="排序字段"
+                  style={{ width: 150 }}
+                  aria-label={`公式排序字段 ${i + 1}`}
+                  value={formula.order_by ?? undefined}
+                  options={tableFields.map(name => ({ value: name, label: name }))}
+                  onChange={value => patch(i, 'order_by', value ?? undefined)}
+                />
+                <Select
+                  size="small"
+                  style={{ width: 90 }}
+                  aria-label={`公式排序方向 ${i + 1}`}
+                  value={formula.order_desc ? 'desc' : 'asc'}
+                  options={[
+                    { value: 'asc', label: '升序' },
+                    { value: 'desc', label: '降序' },
+                  ]}
+                  onChange={value => patch(i, 'order_desc', value === 'desc')}
+                />
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  窗口函数先按分区分组、再按排序字段计算
+                </Text>
+              </div>
+            )}
             </div>
           )
         })}

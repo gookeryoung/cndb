@@ -20,6 +20,12 @@ export interface AnalyticsFormula {
   label?: string
   /** 公式表达式，如 round([合格数] / [实际产量] * 100, 2) */
   expr: string
+  /** 窗口函数分区字段（空 = 全表一个分区）；如 symbol / city */
+  partition_by?: string | null
+  /** 窗口函数排序字段（空 = 原始行序）；通常是时间列 */
+  order_by?: string | null
+  /** 窗口排序方向：false 升序（默认）/ true 降序 */
+  order_desc?: boolean
 }
 
 /** 可视化配置 */

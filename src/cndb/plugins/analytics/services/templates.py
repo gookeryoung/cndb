@@ -57,7 +57,19 @@ def normalize_config(
                     status_code=400,
                     detail=f"公式 {spec.key} 引用了不存在的字段: {', '.join(unknown)}",
                 )
-        formulas.append({"key": spec.key, "label": spec.label or spec.key, "expr": spec.expr})
+        entry: dict[str, Any] = {"key": spec.key, "label": spec.label or spec.key, "expr": spec.expr}
+        for role_field, label in ((spec.partition_by, "分区字段"), (spec.order_by, "排序字段")):
+            if not role_field:
+                continue
+            if field_names is not None and role_field not in field_names:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"公式 {spec.key} 的{label}不存在: {role_field}",
+                )
+            entry["partition_by" if label == "分区字段" else "order_by"] = role_field
+        if spec.order_desc:
+            entry["order_desc"] = True
+        formulas.append(entry)
 
     chart: dict[str, Any] | None = None
     if config.chart is not None:

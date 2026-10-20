@@ -62,6 +62,12 @@ _CATEGORY_ROLES: dict[str, str] = {
 # 名称像标识字段：ID / 编号 / 序号 / 编码（"valid" 这类英文单词不会被误判）
 _IDENTIFIER_NAME_RE = re.compile(r"(?:^|[^a-z])id$|编号|序号|编码", re.IGNORECASE)
 
+# 名称像「粒度列」：同一实体的多行（标的 / 城市 / 来源），是窗口函数的天然分区键
+_PARTITION_NAME_RE = re.compile(
+    r"symbol|code|city|source|标的|代码|城市|来源|门店|渠道|设备|机房|站点|分组",
+    re.IGNORECASE,
+)
+
 # 比率公式的业务含义关键词：优先「金额/销售额/收入」÷「数量/产量/人数」
 _NUMERATOR_KEYWORDS: tuple[str, ...] = (
     "金额",
@@ -242,6 +248,25 @@ def profile_fields(fields: Sequence[DataField], sampled_rows: Sequence[dict[str,
                 "sample_values": sample_values,
             }
         )
+    return _mark_partition_dimension(profiles)
+
+
+def _mark_partition_dimension(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把「粒度列」标成 ``partition_dimension``（仅当表里存在时间字段时）.
+
+    时序分析里同一个标的 / 城市 / 来源会有多行，窗口函数（环比、均线、排名）
+    必须先按该列分区再按时间排序，否则会把不同实体的相邻行算到一起。
+    """
+    if not any(p["role"] == "time" for p in profiles):
+        return profiles
+    for profile in profiles:
+        if profile["role"] not in ("dimension", "identifier"):
+            continue
+        if not _PARTITION_NAME_RE.search(str(profile["name"])):
+            continue
+        profile["role"] = "partition_dimension"
+        profile["reason"] = "粒度列（同一实体存在多行），可作窗口函数的分区键"
+        break
     return profiles
 
 
@@ -354,13 +379,14 @@ def _chart_spec(
     *,
     aggregation: str = "sum",
     title: str = "",
+    series: str | None = None,
 ) -> dict[str, Any]:
     """构造 ChartSpec 形状的 dict（字段名 / 公式 key 由调用方保证合法）."""
     return {
         "type": chart_type,
         "x": x,
         "y": y,
-        "series": None,
+        "series": series,
         "title": title,
         "aggregation": aggregation,
     }
@@ -405,7 +431,7 @@ def recommend_chart(profiles: Sequence[dict[str, Any]]) -> dict[str, Any] | None
     scatter；无数值仅有维度 → 按维度计数的 bar。
     """
     metrics = [p for p in profiles if p["role"] == "metric"]
-    dimensions = [p for p in profiles if p["role"] == "dimension"]
+    dimensions = [p for p in profiles if p["role"] in ("dimension", "partition_dimension")]
     times = [p for p in profiles if p["role"] == "time"]
 
     if dimensions and metrics:
@@ -488,7 +514,7 @@ def recommend_summary(profiles: Sequence[dict[str, Any]]) -> dict[str, Any] | No
     有维度（或时间字段）时按维度分组并给出 sum/avg 指标 + 计数，Top 10 降序；
     无维度但有数值时做全局汇总；都没有则返回 None。
     """
-    dimensions = [p for p in profiles if p["role"] == "dimension"]
+    dimensions = [p for p in profiles if p["role"] in ("dimension", "partition_dimension")]
     times = [p for p in profiles if p["role"] == "time"]
     group = dimensions[0] if dimensions else (times[0] if times else None)
     metric = _primary_metric(profiles)
@@ -554,12 +580,14 @@ def build_examples(profiles: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     每个示例的 formulas / chart / summary 均可通过 ``normalize_config`` 语义校验。
     """
     metrics = [p for p in profiles if p["role"] == "metric"]
-    dimensions = [p for p in profiles if p["role"] == "dimension"]
+    dimensions = [p for p in profiles if p["role"] in ("dimension", "partition_dimension")]
     times = [p for p in profiles if p["role"] == "time"]
     plain = [p for p in metrics if p["field_type"] != "percentage"]
 
     dimension = str(dimensions[0]["name"]) if dimensions else None
     time_field = str(times[0]["name"]) if times else None
+    partition = next((p for p in profiles if p["role"] == "partition_dimension"), None)
+    partition_name = str(partition["name"]) if partition else None
     measure = _primary_metric(profiles)
     measure_name = str(measure["name"]) if measure is not None else None
     measure_agg = "avg" if measure is not None and measure["field_type"] == "percentage" else "sum"
@@ -634,20 +662,35 @@ def build_examples(profiles: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
             )
         )
 
-    # 4) 时间趋势：时间 + 数值
+    # 4) 时间趋势：时间 + 数值（有粒度列时按分区叠加 + 均线）
     if time_field and measure_name:
+        trend_formulas: list[dict[str, Any]] = []
+        trend_reason = "折线图 + 按时间升序汇总适合看趋势与周期"
+        if partition_name:
+            trend_formulas.append(
+                {
+                    "key": "ma3",
+                    "label": f"{measure_name}均线(3)",
+                    "expr": f"round(ma([{measure_name}], 3), 2)",
+                    "partition_by": partition_name,
+                    "order_by": time_field,
+                }
+            )
+            trend_reason = f"按「{partition_name}」分区的多线趋势 + 3 点均线：窗口函数先分区、再按时间排序"
         examples.append(
             _example(
                 "trend",
                 "时间趋势",
                 f"按「{time_field}」观察「{measure_name}」的变化趋势",
-                "折线图 + 按时间升序汇总适合看趋势与周期",
+                trend_reason,
+                formulas=trend_formulas,
                 chart=_chart_spec(
                     "line",
                     time_field,
                     measure_name,
                     aggregation=measure_agg,
                     title=f"{measure_name}趋势",
+                    series=partition_name,
                 ),
                 summary=_summary_spec(
                     time_field,
@@ -658,6 +701,42 @@ def build_examples(profiles: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                     sort_by=metric_key(measure_agg, measure_name),
                     sort_order="asc",
                     top_n=10,
+                ),
+            )
+        )
+
+    # 4b) 环比变化：窗口函数 pct_change / ma（有粒度列时按分区计算）
+    if time_field and measure_name:
+        change_formulas: list[dict[str, Any]] = [
+            {
+                "key": "mom",
+                "label": f"{measure_name}环比(%)",
+                "expr": f"round(pct_change([{measure_name}]) * 100, 2)",
+                "order_by": time_field,
+            },
+            {
+                "key": "ma3",
+                "label": f"{measure_name}均线(3)",
+                "expr": f"round(ma([{measure_name}], 3), 2)",
+                "order_by": time_field,
+            },
+        ]
+        if partition_name:
+            for formula in change_formulas:
+                formula["partition_by"] = partition_name
+        examples.append(
+            _example(
+                "period_change",
+                "环比变化",
+                f"按「{time_field}」看「{measure_name}」的环比与均线",
+                "pct_change 算相邻行变化率、ma 平滑短期波动；有粒度列时按分区计算，避免跨实体串行",
+                formulas=change_formulas,
+                chart=_chart_spec(
+                    "line",
+                    time_field,
+                    "mom",
+                    series=partition_name,
+                    title=f"{measure_name}环比",
                 ),
             )
         )
