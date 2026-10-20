@@ -173,21 +173,26 @@ api.interceptors.response.use(
       const isAuthEndpoint = AUTH_ENDPOINTS.some((p) => url.includes(p))
       const alreadyRetried = Boolean((err?.config as { __retried?: boolean } | undefined)?.__retried)
 
-      if (!isAuthEndpoint && !alreadyRetried) {
-        // 尝试用刷新令牌换新访问令牌，成功则重放原请求（仅一次）
-        const fresh = await _refreshAccessToken()
-        if (fresh) {
-          const config = err.config as InternalAxiosRequestConfig & { __retried?: boolean }
-          config.__retried = true
-          config.headers = config.headers ?? {}
-          ;(config.headers as Record<string, string>).Authorization = `Bearer ${fresh}`
-          return api.request(config)
+      if (!isAuthEndpoint) {
+        if (!alreadyRetried) {
+          // 尝试用刷新令牌换新访问令牌，成功则重放原请求（仅一次）
+          const fresh = await _refreshAccessToken()
+          if (fresh) {
+            const config = err.config as InternalAxiosRequestConfig & { __retried?: boolean }
+            config.__retried = true
+            config.headers = config.headers ?? {}
+            ;(config.headers as Record<string, string>).Authorization = `Bearer ${fresh}`
+            return api.request(config)
+          }
         }
-      }
 
-      clearToken()
-      // 防抖发出事件 —— 应用层订阅后负责更新 store + 友好提示 + 路由跳转
-      _emitAuthExpired()
+        clearToken()
+        // 防抖发出事件 —— 应用层订阅后负责更新 store + 友好提示 + 路由跳转
+        _emitAuthExpired()
+      }
+      // 鉴权端点自身的 401（密码错误等）不是「会话过期」：既不 clearToken 也不发过期事件。
+      // 否则会踩竞态 —— 用户输错一次密码后 500ms 防抖窗口内改对并登录成功，
+      // 延迟触发的 notifyExpired 会把刚拿到的会话清掉，用户被弹回登录页。
     }
 
     return Promise.reject(err)

@@ -19,6 +19,7 @@
     "e2e:setup": "playwright test --project=setup",
     "e2e:smoke": "playwright test --project=chromium-authed tests/e2e/smoke",
     "e2e:critical": "playwright test --project=chromium-authed tests/e2e/critical",
+    "e2e:dev": "playwright test --config playwright.dev.config.ts",
     "e2e:headed": "playwright test --headed",
     "test": "vitest run",
     "test:watch": "vitest",
