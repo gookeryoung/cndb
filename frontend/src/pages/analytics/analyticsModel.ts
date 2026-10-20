@@ -124,7 +124,14 @@ export function newFormula(index: number): AnalyticsFormula {
 export function normalizeFormulas(input: AnalyticsFormula[] | undefined | null): AnalyticsFormula[] {
   const list = (input ?? [])
     .filter(f => f && typeof f.key === 'string' && typeof f.expr === 'string')
-    .map(f => ({ key: f.key, label: f.label ?? '', expr: f.expr }))
+    .map(f => ({
+      key: f.key,
+      label: f.label ?? '',
+      expr: f.expr,
+      ...(f.partition_by ? { partition_by: f.partition_by } : {}),
+      ...(f.order_by ? { order_by: f.order_by } : {}),
+      ...(f.order_desc ? { order_desc: true } : {}),
+    }))
   return list.length ? list : [newFormula(0)]
 }
 

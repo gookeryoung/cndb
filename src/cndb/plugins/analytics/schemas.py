@@ -16,6 +16,9 @@ class FormulaSpec(BaseModel):
     key: str = Field(min_length=1, max_length=64, description="结果列键名（英文标识，唯一）")
     label: str = Field(default="", max_length=200, description="展示名（空则用 key）")
     expr: str = Field(min_length=1, max_length=500, description="公式表达式")
+    partition_by: str | None = Field(default=None, max_length=200, description="窗口函数分区字段（空 = 全表一个分区）")
+    order_by: str | None = Field(default=None, max_length=200, description="窗口函数排序字段（空 = 原始行序）")
+    order_desc: bool = Field(default=False, description="窗口排序方向：false 升序 / true 降序")
 
 
 class ChartSpec(BaseModel):
@@ -182,7 +185,7 @@ class ComputeResponse(BaseModel):
 # ── 智能推荐 ──────────────────────────────────────────
 
 # 字段在分析中的角色白名单（前端按此分组展示）
-FieldRole = Literal["metric", "dimension", "time", "identifier", "ignored"]
+FieldRole = Literal["metric", "dimension", "partition_dimension", "time", "identifier", "ignored"]
 
 
 class FieldRecommendation(BaseModel):

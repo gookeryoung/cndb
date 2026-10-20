@@ -6,12 +6,22 @@
 - 只允许：数字字面量、字段引用 `[字段名]`、`+ - * /`、一元 `+/-`、后缀 `%`（百分号）、
   括号与白名单函数；任何其它字符 / 标识符 / 函数名一律抛 `FormulaError`。
 
-语义（逐行求值 + 聚合看整列）：
-- `[字段名]` 取当前行的数值，非数值 / 空值 → 该行结果为 `None`（不参与聚合）；
-- 聚合函数 `sum/avg/count/min/max` 的参数必须是字段引用，作用域是**整列**
-  （对所有行的该字段求值），返回一个常量，参与当前行表达式；
-- 例：`round([合格数] / [产量] * 100, 2)` 逐行算合格率；
-      `round(sum([合格数]) / sum([产量]) * 100, 2)` 逐行给出整体合格率（常量）。
+三类函数（白名单）：
+
+1. **标量** `round / abs / sqrt / pow / ceil / floor`：逐行取值，作用在当前行；
+2. **聚合** `sum / avg / count / min / max`：参数必须是字段引用，作用域是**整列**；
+3. **窗口** `prev / lag / lead / diff / pct_change / cumsum / ma / rolling_sum / rolling_std / rank`：
+   参数第一项必须是字段引用，作用域是「同一分区内按排序键排列的行序列」（ADR 0006 M4）。
+
+窗口语义（与 evaluate_column 的 partition_by / order_by 配合）：
+
+- 分区键 ``partition_by`` 为空 → 全表一个分区；排序键 ``order_by`` 为空 → 保持原始行序；
+- ``lag([x], n)`` / ``prev([x])`` 取分区内前 n 行（n 缺省 1），越界为 ``None``；
+  ``lead([x], n)`` 取后 n 行；``diff`` = 当前 − 前一行；``pct_change`` = （当前 − 前一行）/ |前一行|；
+- ``ma / rolling_sum / rolling_std([x], n)`` 取含当前行的最近 n 行，**不满 n 行输出 None**
+  （避免开头几行给出误导性的均值）；``rolling_std`` 为总体标准差；
+- ``cumsum([x])`` 分区内累计和（跳过空值，全为空则 None）；
+- ``rank([x])`` 分区内按值升序的名次（并列取最小名次，空值 None）。
 
 数值口径：非有限值（NaN / ±Inf / 除零）一律输出 `None`；`count` 计有效数值个数。
 """
@@ -20,6 +30,7 @@ from __future__ import annotations
 
 import math
 import re
+from functools import partial
 from typing import Any, Final
 
 # 表达式长度上限（防超长串拖垮解析）
@@ -42,7 +53,23 @@ _AGG_FUNCS: Final[dict[str, tuple[int, int]]] = {
     "min": (1, 1),
     "max": (1, 1),
 }
-_ALL_FUNCS: Final[dict[str, tuple[int, int]]] = {**_SCALAR_FUNCS, **_AGG_FUNCS}
+# 窗口函数：第一参数必须是字段引用，第二参数（可选）为窗口长度 / 偏移量
+_WINDOW_FUNCS: Final[dict[str, tuple[int, int]]] = {
+    "prev": (1, 1),
+    "lag": (1, 2),
+    "lead": (1, 2),
+    "diff": (1, 1),
+    "pct_change": (1, 1),
+    "cumsum": (1, 1),
+    "ma": (1, 2),
+    "rolling_sum": (1, 2),
+    "rolling_std": (1, 2),
+    "rank": (1, 1),
+}
+_ALL_FUNCS: Final[dict[str, tuple[int, int]]] = {**_SCALAR_FUNCS, **_AGG_FUNCS, **_WINDOW_FUNCS}
+
+# 滚动类函数的缺省窗口长度
+_DEFAULT_ROLLING = 3
 
 
 class FormulaError(ValueError):
@@ -202,6 +229,8 @@ class _Parser:
                 raise FormulaError(f"函数 {func} 参数个数不合法（需 {lo}~{hi} 个）")
             if func in _AGG_FUNCS and (len(args) != 1 or args[0][0] != "field"):
                 raise FormulaError(f"聚合函数 {func} 的参数必须是字段引用，如 {func}([字段名])")
+            if func in _WINDOW_FUNCS and args[0][0] != "field":
+                raise FormulaError(f"窗口函数 {func} 的第一个参数必须是字段引用，如 {func}([字段名])")
             return ("call", func, args)
         if kind == "op" and value == "(":
             node = self._parse_expr()
@@ -220,7 +249,7 @@ def parse(expr: str) -> Node:
 
 
 def referenced_fields(node: Node) -> set[str]:
-    """收集 AST 中引用的全部字段名（含聚合函数参数）."""
+    """收集 AST 中引用的全部字段名（含聚合 / 窗口函数参数）."""
     kind = node[0]
     if kind == "field":
         return {node[1]}
@@ -238,6 +267,30 @@ def referenced_fields(node: Node) -> set[str]:
             out |= referenced_fields(arg)
         return out
     return set()  # pragma: no cover - AST 由本模块构造，kind 必属白名单
+
+
+def uses_window(node: Node) -> bool:
+    """AST 是否含窗口函数（决定是否需要分区 / 排序上下文）."""
+    kind = node[0]
+    if kind == "call":
+        if node[1] in _WINDOW_FUNCS:
+            return True
+        return any(uses_window(arg) for arg in node[2])
+    if kind in ("unary", "percent"):
+        return uses_window(node[2] if kind == "unary" else node[1])
+    if kind == "binary":
+        return uses_window(node[2]) or uses_window(node[3])
+    return False
+
+
+def uses_window_expr(expr: str) -> bool:
+    """公式串是否含窗口函数（前端 / 校验提示用）."""
+    return uses_window(parse(expr))
+
+
+def window_functions() -> dict[str, tuple[int, int]]:
+    """窗口函数清单（供文档 / 前端快捷片段生成）."""
+    return dict(_WINDOW_FUNCS)
 
 
 def validate_formula(expr: str) -> None:
@@ -267,14 +320,93 @@ def _to_number(value: Any) -> float | None:
     return None
 
 
+def _value_at(values: list[float | None], index: int) -> float:
+    """取已过滤空值的行值（调用方保证 index 处非空）."""
+    value = values[index]
+    return value if value is not None else 0.0
+
+
+class _WindowCache:
+    """单个分区 × 单个字段的窗口求值结构（前缀和 + 名次表，预处理一次 O(n)）."""
+
+    __slots__ = ("_prefix_cnt", "_prefix_sq", "_prefix_sum", "_rank", "values")
+
+    def __init__(self, values: list[float | None]) -> None:
+        self.values = values
+        size = len(values)
+        self._prefix_sum = [0.0] * (size + 1)
+        self._prefix_cnt = [0] * (size + 1)
+        self._prefix_sq = [0.0] * (size + 1)
+        for i, value in enumerate(values):
+            if value is None:
+                self._prefix_sum[i + 1] = self._prefix_sum[i]
+                self._prefix_cnt[i + 1] = self._prefix_cnt[i]
+                self._prefix_sq[i + 1] = self._prefix_sq[i]
+            else:
+                self._prefix_sum[i + 1] = self._prefix_sum[i] + value
+                self._prefix_cnt[i + 1] = self._prefix_cnt[i] + 1
+                self._prefix_sq[i + 1] = self._prefix_sq[i] + value * value
+        self._rank: list[int | None] | None = None
+
+    def at(self, pos: int) -> float | None:
+        if 0 <= pos < len(self.values):
+            return self.values[pos]
+        return None
+
+    def rolling(self, pos: int, size: int) -> tuple[float, float] | None:
+        """含当前行的最近 ``size`` 行：返回 (sum, sumsq)；窗口内非空值不足 size → None."""
+        if pos + 1 < size:
+            return None
+        start = pos + 1 - size
+        count = self._prefix_cnt[pos + 1] - self._prefix_cnt[start]
+        if count < size:
+            return None
+        total = self._prefix_sum[pos + 1] - self._prefix_sum[start]
+        total_sq = self._prefix_sq[pos + 1] - self._prefix_sq[start]
+        return total, total_sq
+
+    def cumsum(self, pos: int) -> float | None:
+        if self._prefix_cnt[pos + 1] == 0:
+            return None
+        return self._prefix_sum[pos + 1]
+
+    def rank(self, pos: int) -> int | None:
+        if self._rank is None:
+            ranks: list[int | None] = [None] * len(self.values)
+            values = self.values
+            ordered = sorted(
+                [i for i, v in enumerate(values) if v is not None],
+                key=partial(_value_at, values),
+            )
+            i = 0
+            while i < len(ordered):
+                j = i
+                while j + 1 < len(ordered) and self.values[ordered[j + 1]] == self.values[ordered[i]]:
+                    j += 1
+                for k in range(i, j + 1):
+                    ranks[ordered[k]] = i + 1
+                i = j + 1
+            self._rank = ranks
+        return self._rank[pos]
+
+
 class _Context:
-    """求值上下文：当前行 + 整列（惰性缓存，聚合函数复用）."""
+    """求值上下文：当前行 + 整列（惰性缓存）+ 窗口分区（惰性缓存）."""
 
     def __init__(self, rows: list[dict[str, Any]], field_names: set[str]) -> None:
         self._rows = rows
         self._field_names = field_names
         self._columns: dict[str, list[float]] = {}
+        self._aligned: dict[str, list[float | None]] = {}
+        self._groups: list[list[int]] = [list(range(len(rows)))]
+        self._window_cache: dict[tuple[int, str], _WindowCache] = {}
         self.row: dict[str, Any] = {}
+        self.group_id = 0
+        self.pos = 0
+
+    def attach_groups(self, groups: list[list[int]]) -> None:
+        self._groups = groups
+        self._window_cache.clear()
 
     def scalar(self, name: str) -> float | None:
         if name not in self._field_names:
@@ -293,6 +425,26 @@ class _Context:
                     vals.append(v)
             self._columns[name] = vals
             cached = vals
+        return cached
+
+    def aligned(self, name: str) -> list[float | None]:
+        """与 ``rows`` 等长的行对齐数值列（窗口函数必须按位置对齐，不能丢空值）."""
+        if name not in self._field_names:
+            raise FormulaError(f"未知字段: {name}")
+        cached = self._aligned.get(name)
+        if cached is None:
+            cached = [_to_number(r.get(name)) for r in self._rows]
+            self._aligned[name] = cached
+        return cached
+
+    def window_cache(self, name: str) -> _WindowCache:
+        """当前分区的窗口结构（按 (分区, 字段) 惰性构建，多公式复用）."""
+        key = (self.group_id, name)
+        cached = self._window_cache.get(key)
+        if cached is None:
+            values = self.aligned(name)
+            cached = _WindowCache([values[row_index] for row_index in self._groups[self.group_id]])
+            self._window_cache[key] = cached
         return cached
 
 
@@ -330,6 +482,8 @@ def _eval(node: Node, ctx: _Context, *, vector: bool = False) -> float | list[fl
         return None  # pragma: no cover - parser 只产出 + - * /
     if kind == "call":
         func, args = node[1], node[2]
+        if func in _WINDOW_FUNCS:
+            return _apply_window(func, args, ctx)
         if func in _AGG_FUNCS:
             column = _eval(args[0], ctx, vector=True)
             values: list[float] = column if isinstance(column, list) else []
@@ -355,6 +509,54 @@ def _eval(node: Node, ctx: _Context, *, vector: bool = False) -> float | list[fl
     return None  # pragma: no cover - AST 由本模块构造
 
 
+def _apply_window(func: str, args: list[Node], ctx: _Context) -> float | None:
+    """窗口函数求值（作用域 = 当前分区的有序行序列）."""
+    name = str(args[0][1])
+    cache = ctx.window_cache(name)
+    pos = ctx.pos
+    if func in ("prev", "lag", "lead"):
+        offset = 1
+        if len(args) > 1:
+            raw = _eval(args[1], ctx)
+            offset = int(raw) if isinstance(raw, float) and math.isfinite(raw) else 1
+        offset = max(1, offset)
+        current = cache.at(pos)
+        if current is None:
+            return None
+        return cache.at(pos - offset) if func in ("prev", "lag") else cache.at(pos + offset)
+    if func in ("diff", "pct_change"):
+        current = cache.at(pos)
+        previous = cache.at(pos - 1)
+        if current is None or previous is None:
+            return None
+        delta = current - previous
+        if func == "diff":
+            return delta
+        return None if previous == 0 else delta / abs(previous)
+    if func == "cumsum":
+        return cache.cumsum(pos)
+    if func == "rank":
+        value = cache.rank(pos)
+        return float(value) if value is not None else None
+    # 滚动窗口：ma / rolling_sum / rolling_std
+    size = _DEFAULT_ROLLING
+    if len(args) > 1:
+        raw = _eval(args[1], ctx)
+        size = int(raw) if isinstance(raw, float) and math.isfinite(raw) else _DEFAULT_ROLLING
+    size = max(1, size)
+    window = cache.rolling(pos, size)
+    if window is None:
+        return None
+    total, total_sq = window
+    if func == "rolling_sum":
+        return total
+    mean = total / size
+    if func == "ma":
+        return mean
+    variance = max(0.0, total_sq / size - mean * mean)
+    return math.sqrt(variance)
+
+
 def _apply_scalar(func: str, argv: list[float]) -> float | None:
     """白名单标量函数求值（除零 / 定义域外返回 None）."""
     if func == "round":
@@ -376,10 +578,69 @@ def _apply_scalar(func: str, argv: list[float]) -> float | None:
     return None  # pragma: no cover - parser 已限制函数白名单
 
 
+def _sort_key(value: Any) -> tuple[int, Any]:
+    """排序键：数值 < 文本 < 空值；空值恒排最后（与前端表格口径一致）."""
+    number = _to_number(value)
+    if number is not None:
+        return (0, number)
+    if isinstance(value, str) and value.strip():
+        return (1, value.strip())
+    return (2, "")
+
+
+def partition_rows(
+    rows: list[dict[str, Any]],
+    *,
+    partition_by: str | None = None,
+    order_by: str | None = None,
+    order_desc: bool = False,
+    field_names: set[str] | None = None,
+) -> list[list[int]]:
+    """按分区键分组、按排序键排序，返回行索引序列（组内顺序即窗口顺序）.
+
+    分区键为空 → 全表一个分区；排序键为空 → 保持原始行序；
+    分组顺序 = 分区键首次出现顺序（与分组汇总桶序一致）。
+    """
+    names = field_names or set()
+    if partition_by and names and partition_by not in names:
+        raise FormulaError(f"未知分区字段: {partition_by}")
+    if order_by and names and order_by not in names:
+        raise FormulaError(f"未知排序字段: {order_by}")
+
+    buckets: dict[Any, list[int]] = {}
+    for index, row in enumerate(rows):
+        key: Any = ("__all__",) if not partition_by else _bucket_key(row.get(partition_by))
+        buckets.setdefault(key, []).append(index)
+
+    groups: list[list[int]] = []
+    for indexes in buckets.values():
+        if order_by:
+            indexes = sorted(
+                indexes,
+                key=lambda i, field=order_by: _sort_key(rows[i].get(field)),
+                reverse=order_desc,
+            )
+        groups.append(indexes)
+    return groups
+
+
+def _bucket_key(value: Any) -> Any:
+    """分组键：哈希不可用的值退回字符串表示，空值单独成组."""
+    if value is None:
+        return ("__none__",)
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
 def evaluate_column(
     expr: str,
     rows: list[dict[str, Any]],
     field_names: list[str] | set[str],
+    *,
+    partition_by: str | None = None,
+    order_by: str | None = None,
+    order_desc: bool = False,
 ) -> list[float | None]:
     """逐行求值，返回与 ``rows`` 等长的一列结果（非法 / 不可数值化 → None）.
 
@@ -387,17 +648,40 @@ def evaluate_column(
         expr: 公式串（如 ``round([合格数] / [产量] * 100, 2)``）.
         rows: 行字典列表（键为字段显示名）.
         field_names: 该表的字段显示名集合，用于字段引用校验.
+        partition_by: 窗口函数的分区字段（空 = 全表一个分区）.
+        order_by: 窗口函数的排序字段（空 = 原始行序）.
+        order_desc: 排序方向（默认升序）.
     """
     node = parse(expr)
-    ctx = _Context(rows, set(field_names))
-    out: list[float | None] = []
-    for row in rows:
-        ctx.row = row
-        v = _eval(node, ctx)
-        if v is None or isinstance(v, list) or not math.isfinite(v):
-            out.append(None)
-        else:
-            out.append(float(v))
+    names = set(field_names)
+    ctx = _Context(rows, names)
+    out: list[float | None] = [None] * len(rows)
+
+    if not uses_window(node):
+        # 无窗口函数：保持原始逐行路径（不做排序，零额外开销）
+        for index, row in enumerate(rows):
+            ctx.row = row
+            v = _eval(node, ctx)
+            if v is not None and not isinstance(v, list) and math.isfinite(v):
+                out[index] = float(v)
+        return out
+
+    groups = partition_rows(
+        rows,
+        partition_by=partition_by,
+        order_by=order_by,
+        order_desc=order_desc,
+        field_names=names,
+    )
+    ctx.attach_groups(groups)
+    for group_id, group in enumerate(groups):
+        ctx.group_id = group_id
+        for pos, row_index in enumerate(group):
+            ctx.pos = pos
+            ctx.row = rows[row_index]
+            v = _eval(node, ctx)
+            if v is not None and not isinstance(v, list) and math.isfinite(v):
+                out[row_index] = float(v)
     return out
 
 
@@ -418,6 +702,10 @@ __all__: list[str] = [
     "evaluate_column",
     "evaluate_value",
     "parse",
+    "partition_rows",
     "referenced_fields",
+    "uses_window",
+    "uses_window_expr",
     "validate_formula",
+    "window_functions",
 ]

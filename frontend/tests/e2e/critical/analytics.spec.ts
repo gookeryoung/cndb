@@ -192,3 +192,28 @@ test.describe("数据分析模块", () => {
     await expect(page.getByTestId("analytics-manager-new")).toBeVisible()
   })
 })
+
+test.describe("分析通用化 · 窗口函数", () => {
+  test.beforeEach(async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+    void page
+  })
+
+  test("输入 ma() 后出现分区 / 排序选择器，运行后生成公式列", async ({ page }) => {
+    await gotoAnalytics(page)
+    await pickSelectOption(page, "analytics-table-select", "产品批次")
+
+    await page.getByTestId("analytics-formula-expr-0").fill("round(ma([实际产量], 2), 1)")
+
+    // 窗口函数上下文：分区 / 排序 / 方向 三个选择器
+    const windowRow = page.getByTestId("analytics-formula-window-0")
+    await expect(windowRow).toBeVisible()
+    await expect(windowRow.locator(".ant-select").first()).toBeVisible()
+
+    await expect(page.getByTestId("analytics-run-btn")).toBeEnabled()
+    await page.getByTestId("analytics-run-btn").click()
+    const stats = page.getByTestId("analytics-stats-table")
+    await expect(stats).toBeVisible({ timeout: 15_000 })
+    await expect(stats).toContainText("公式")
+  })
+})

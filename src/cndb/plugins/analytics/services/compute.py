@@ -272,7 +272,7 @@ def compute(
     table: DataTable,
     user: Any,
     *,
-    formulas: list[dict[str, str]],
+    formulas: list[dict[str, Any]],
     fields: list[str] | None = None,
     limit: int = 1000,
     summary: Any | None = None,
@@ -280,7 +280,8 @@ def compute(
     """按公式计算派生列并返回行数据 + 描述统计 + 可选分组汇总.
 
     Args:
-        formulas: [{"key","label","expr"}]，expr 已通过校验（此处仍会解析，非法即抛 FormulaError）.
+        formulas: [{"key","label","expr","partition_by","order_by","order_desc"}]，expr 已通过校验
+            （此处仍会解析，非法即抛 FormulaError）；后三项是窗口函数的分区 / 排序上下文.
         fields: 需要返回的原始字段；空 = 全部可见字段.
         limit: 返回行数上限（统计仍基于全量扫描）.
         summary: 分组汇总配置（None = 不汇总）.
@@ -292,7 +293,14 @@ def compute(
 
     computed: dict[str, list[float | None]] = {}
     for spec in formulas:
-        computed[spec["key"]] = evaluate_column(spec["expr"], rows, field_names)
+        computed[spec["key"]] = evaluate_column(
+            spec["expr"],
+            rows,
+            field_names,
+            partition_by=spec.get("partition_by"),
+            order_by=spec.get("order_by"),
+            order_desc=bool(spec.get("order_desc", False)),
+        )
 
     out_rows: list[dict[str, Any]] = []
     for idx, row in enumerate(rows[:limit]):

@@ -46,6 +46,7 @@ src/cndb/static/*
 # --- E2E（Playwright）---
 .e2e/
 .e2e-data/
+frontend/e2e-output/
 frontend/test-results/
 frontend/playwright-report/
 frontend/blob-report/
