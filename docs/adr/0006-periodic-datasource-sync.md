@@ -1,6 +1,6 @@
 # ADR 0006: 周期性外部数据同步框架（Provider × SyncJob × Cursor × Normalizer）
 
-Status: Proposed
+Status: Implemented
 Date: 2026-10-20
 Related: `src/cndb/plugins/base.py`、`src/cndb/plugins/tables/services/importing/api_fetch.py`、`src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/services/importing/api_config_loader.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/importing/import_tasks.py`、`src/cndb/core/events.py`、`src/cndb/plugins/analytics/services/formula.py`、`src/cndb/plugins/analytics/services/recommend.py`、`docker-compose.prod.yml`
 需求卡片: `docs/requirements/0006-periodic-datasource-sync.md`（需求原文与约束编号的唯一副本）
@@ -132,11 +132,11 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 | D3 | 调度形态 | 生产 CLI + 系统 cron；开发 / 单机用内置调度器；统一 DB 租约互斥 | 与既有 `deploy/backup.sh` 的 cron 模式一致；避免多副本重复执行 | 纯内置必守单副本 / 引入外部队列（部署成本高） | `src/cndb/plugins/datasource/services/scheduler.py`、`src/cndb/cli/sync.py`、`deploy/sync.sh` |
 | D4 | 增量游标 | 内置 `date` / `datetime` / `key_set` / `none` 四策略，job 级可选 | 覆盖按日、按时刻、无时序、快照四类源 | 只做 date（新闻 / 榜单接不了） | `src/cndb/plugins/datasource/services/cursor.py` |
 | D5 | 分析实现 | 扩展公式引擎补窗口函数（分区分序）为主 + 通用模板 | 引擎已有逐行 / 整列聚合，加分区排序上下文改动集中 | 另建时序计算引擎（重复实现、两套口径） | `src/cndb/plugins/analytics/services/formula.py` |
-| D6 | 密钥管理 | 首期内联 `request_spec`；M5 抽 `datasource_session` 集中管理 | 先跑通链路，避免过早抽象 | 首期即建密钥表（无消费方） | `src/cndb/plugins/datasource/models.py` |
-| D7 | 规模 | 时序全量可能超 `MAX_SCAN_ROWS=20000`，分析按区间 / 分区 | 现有 analytics 为单次扫描模型，改流式代价大 | 提高扫描上限（内存与响应时间不可控） | `src/cndb/plugins/analytics/services/compute.py` |
+| D6 | 密钥管理 | 首期内联 `request_spec`；M5 抽 `datasource_session` 集中管理，密钥**加密入库**（Fernet，`enc:v1:` 前缀，历史明文兼容） | 先跑通链路，避免过早抽象 | 首期即建密钥表（无消费方） | `src/cndb/plugins/datasource/models.py`、`src/cndb/core/crypto.py` |
+| D7 | 规模 | 分析请求带 `filters`（时间区间 / 分区等值）把扫描面压到区间内；上限提为 `ANALYTICS_MAX_SCAN_ROWS` 可配但不作为首选 | 现有 analytics 为单次扫描模型，改流式代价大；过滤是零成本的正解 | 提高扫描上限（内存与响应时间不可控） | `src/cndb/plugins/analytics/services/compute.py` |
 | D8 | 幂等落库怎么保证唯一 | 应用层 upsert：`Importer` 按 `match_keys` 先查后写；并发重复由 DB 租约单飞规避 | 现有 `tables` 自动建表只支持单列唯一，改 DDL 需动建表链路与存量测试；同步场景已由租约串行化 | 为 `match_keys` 建复合唯一索引（改 `ddl.py` + 建表链路 + 冲突语义，收益不足以抵成本） | `src/cndb/plugins/datasource/services/write.py`、`tables/services/importing/importer.py` |
 
-门禁：`Proposed` → `Accepted` 前本表不得有「待定」。**D1-D8 已由需求方拍板采纳（2026-10-20），M1 按此口径落地**；Status 待全期落地后由人确认改 `Accepted` / `Implemented`。
+门禁：`Proposed` → `Accepted` 前本表不得有「待定」。**D1-D8 已由需求方拍板采纳（2026-10-20）**；M1-M5 与遗留项全部落地后经人工确认，Status 定稿为 `Implemented`（2026-10-20）。
 
 ## Consequences
 
@@ -163,6 +163,7 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 | M3 Provider + 前端 | 已落地 | `src/cndb/plugins/datasource/providers/tencent_kline.py`、`src/cndb/plugins/datasource/providers/rss_atom.py`、`src/cndb/plugins/datasource/providers/registry.py`、`frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/App.tsx` | `tests/test_datasource_providers.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/tests/e2e/critical/datasource.spec.ts` | `741e1d0b` |
 | M4 分析通用化 | 已落地 | `src/cndb/plugins/analytics/services/formula.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/recommend.py`、`src/cndb/plugins/analytics/schemas.py`、`frontend/src/pages/analytics/FormulaPanel.tsx` | `tests/test_analytics_window_functions.py`、`tests/test_analytics_window_integration.py`、`frontend/src/pages/analytics/FormulaPanel.test.tsx`、`frontend/tests/e2e/critical/analytics.spec.ts` | `0c2a9d68` |
 | M5 完善 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/alembic/versions/1b2c3d4e5f60_add_datasource_session.py`、`src/cndb/plugins/datasource/routers/sessions.py`、`src/cndb/plugins/datasource/services/domain_templates.py`、`src/cndb/plugins/datasource/providers/http_json.py` | `tests/test_datasource_session_m5.py`、`tests/test_datasource_migration.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | `df5868d5` |
+| M5 遗留清理 | 已落地 | `src/cndb/core/crypto.py`、`src/cndb/core/config.py`、`src/cndb/plugins/datasource/routers/sessions.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/services/formula.py`、`src/cndb/plugins/analytics/schemas.py`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/pages/analytics/AnalyticsPage.tsx` | `tests/test_core_crypto.py`、`tests/test_analytics_scope.py`、`tests/test_datasource_session_m5.py`、`tests/test_analytics_window_functions.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/analytics/AnalyticsPage.test.tsx` | `fad103ce` |
 
 > M1 落地范围：`http_json` 声明式接入（请求模板 / page·offset 分页 / `chunk_days` 时间分片）、
 > 归一（改名 / 丢弃 / 类型归一，失败降级留痕）、管线（单请求失败记 partial、分页空页提前终止）、
@@ -192,12 +193,20 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 > 列式记录解析（支持「列名 → 数组」响应，配 `examples/datasource/weather-open-meteo.json` 天气示例）；
 > 领域模板包四套（股票趋势 / 波动量能 / 天气日趋势 / 新闻来源产出）与 `GET /domain-templates`；
 > 备份导出 `session_name`（不导出密钥）、导入按同名会话重绑。
+>
+> M5 遗留清理（本轮）：**密钥字段级加密** `core/crypto.py`（Fernet，key 由 `DATASOURCE_SECRET_KEY`
+> 派生、留空回退 `JWT_SECRET`；密文 `enc:v1:<token>`、键名明文、历史明文零迁移；解密失败落 failed
+> 而不是静默空密钥）；**分析取数范围** `ComputeRequest.filters / filter_logic` 透传 `list_rows`
+> （时序表按「时间 >= 起点」把扫描面压到区间内），单次扫描上限提为
+> `settings.ANALYTICS_MAX_SCAN_ROWS`，未知过滤字段直接 400；**会话管理 UI** 列表 + 新建 / 编辑 /
+> 删除（密钥留空=不修改，删除提示解绑任务）；**`rank` 支持非数值列**（时间 / 文本按原始值排序）。
+> 至此 M5 遗留清单清零。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：**M1-M5 全部落地**，方案闭环（抓取 → 调度 → 落表 → 时序分析 → 凭证 / 限流 / 模板包）。`Status` 仍为 `Proposed`，待需求方确认后改 `Implemented`
-- 已完成：需求卡片与 ADR 口径对齐；D1-D8 经人工拍板采纳；M1 抓取管线；M2 任务模型 / 迁移 / 四策略游标 / 调度与租约 / CLI / REST / 备份 v5；M3 两个专用 provider + 前端任务页与向导 + e2e；M4 窗口函数 + 分区上下文 + 推荐扩展；M5 凭证会话 / 限速 / 列式记录 / 领域模板包 / 天气示例
-- 遗留（本轮未做，已记录取舍）：①时序分析仍受 `MAX_SCAN_ROWS=20000` 限制，未做按区间 / 分区取数；②密钥为明文 JSON 列存储（DB 权限即边界），未引入字段级加密；③会话管理 UI 只支持新建（列表 / 改密 / 删除走 API 与 CLI）；④`rank` 只支持数值列，时间列排序序号需先转数值
-- 下一步建议：按实际使用反馈决定优先级 —— 若数据量先到瓶颈，先做 ①（compute 支持时间区间 + 分区过滤）；若多源接入变多，先做 ③ 的会话管理页与 job 级并发上限
-- 已知坑：`Importer.analyze()` 的 `content` 是位置必填；SQLite 读回 `DateTime(timezone=True)` 丢 tzinfo（租约 UPDATE 需 `synchronize_session=False`）；SQLite 不支持 `ALTER TABLE` 加外键列（迁移按方言分支，SQLite 列级引用完整性靠应用层）；`ScheduleConfig.from_dict` 的 0 是合法值；窗口函数第一参数必须是字段引用、聚合仍按整列、`rolling_*` 不满窗返回 None；e2e 需先 `pnpm build`，本机 Playwright 清理 `test-results/` 会被安全策略拦 → 用 `--output e2e-output/run-<ts>`
-- 最近一次全绿：`make check-fast` + `make cov` + `make frontend-coverage` + datasource/analytics e2e @ `df5868d5`（2026-10-20，4773 passed / 覆盖率 98.09%；前端核心 lines 97.64%；e2e 14 条通过）
+- 当前阶段：**M1-M5 与全部遗留项已落地，Status=Implemented**（2026-10-20 人工确认）。主链路闭环：抓取 → 调度 → 落表 → 时序分析 → 凭证 / 限流 / 模板包
+- 已完成：需求卡片与 ADR 口径对齐；D1-D8 经人工拍板采纳；M1 抓取管线；M2 任务模型 / 迁移 / 四策略游标 / 调度与租约 / CLI / REST / 备份 v5；M3 两个专用 provider + 前端任务页与向导 + e2e；M4 窗口函数 + 分区上下文 + 推荐扩展；M5 凭证会话 / 限速 / 列式记录 / 领域模板包 / 天气示例；M5 遗留清理（密钥加密 / 分析取数范围 / 会话管理 UI / rank 非数值列）
+- 遗留：**无**（原四项已清零）
+- 下一步（可选增强，非欠账，按使用反馈再定）：① job 级 / 全局并发上限（当前只有租约单飞 + `rate_limit_ms` 请求间隔）；② 密钥轮换的一键运维入口（`core.crypto.rotate_secrets` 已有函数，未接 CLI / UI）；③ 分析范围随模板保存（当前是运行时参数）；④ 图表按分区多系列的原生图表类型
+- 已知坑：`Importer.analyze()` 的 `content` 是位置必填；SQLite 读回 `DateTime(timezone=True)` 丢 tzinfo（租约 UPDATE 需 `synchronize_session=False`）；SQLite 不支持 `ALTER TABLE` 加外键列（迁移按方言分支）；`ScheduleConfig.from_dict` 的 0 是合法值；窗口函数第一参数必须是字段引用、聚合仍按整列、`rolling_*` 不满窗返回 None；`rank` 现支持时间 / 文本列（全列可数值化时按数值，否则按字符串）；分析用的 filters 未知字段会 400（列表接口只 warn，别把两处口径搞混）；加密密钥一旦变更，已有密文全部解不开 → 需重新保存会话密钥或先 `rotate_secrets`
+- 最近一次全绿：`make check-fast` + `make cov` + `make frontend-coverage` + datasource/analytics e2e @ `fad103ce`（2026-10-20，4809 passed / 覆盖率 98.09%；前端核心 lines 97.64%；e2e 14 条通过）
