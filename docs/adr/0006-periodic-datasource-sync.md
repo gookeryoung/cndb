@@ -160,7 +160,7 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 |---|---|---|---|---|
 | M1 通用抓取管线 | 已落地 | `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/template.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/write.py` | `tests/test_datasource_template.py`、`tests/test_datasource_normalize.py`、`tests/test_datasource_pipeline.py` | `13d4c050` |
 | M2 同步任务与调度 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/alembic/versions/0a1b2c3d4e5f_add_datasource_sync.py`、`src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/schedule.py`、`src/cndb/plugins/datasource/services/scheduler.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/cli/sync.py`、`deploy/sync.sh` | `tests/test_datasource_cursor.py`、`tests/test_datasource_schedule.py`、`tests/test_datasource_scheduler.py`、`tests/test_datasource_runner.py`、`tests/test_datasource_api.py`、`tests/test_datasource_cli.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_migration.py` | `fefa7c7d` |
-| M3 Provider + 前端 | 未开始 | `src/cndb/plugins/datasource/routers/`、`frontend/src/pages/datasource/` | `tests/test_datasource_providers.py` | — |
+| M3 Provider + 前端 | 已落地 | `src/cndb/plugins/datasource/providers/tencent_kline.py`、`src/cndb/plugins/datasource/providers/rss_atom.py`、`src/cndb/plugins/datasource/providers/registry.py`、`frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/App.tsx` | `tests/test_datasource_providers.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/tests/e2e/critical/datasource.spec.ts` | `741e1d0b` |
 | M4 分析通用化 | 未开始 | `src/cndb/plugins/analytics/services/formula.py` | `tests/test_analytics_window_functions.py` | — |
 | M5 完善 | 未开始 | `src/cndb/plugins/datasource/models.py` | — | — |
 
@@ -173,11 +173,17 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 > 运行编排（抓取 → 落表 → 游标 → 运行记录 + `datasource.sync` 事件，坏配置落 failed 不炸调度器）；
 > providers / sync-jobs CRUD / run（租约冲突 409）/ preview / runs 端点；`cndb sync` CLI 与
 > `deploy/sync.sh`；工作区备份升到 v5 携带同步任务（表名引用 + 同名表重绑）。
+>
+> M3 落地范围：`tencent_kline`（`qfqday/hfqday/day` 解析 + 错误码显式报错 + K 线语义默认归类型）
+> 与 `rss_atom`（RSS 2.0 / Atom 统一列，RFC 822 与 ISO 8601 都归一为 `YYYY-MM-DD HH:MM:SS`）；
+> 前端 `api/datasource.ts` + `pages/datasource/DatasourcePage.tsx`（任务列表 / Provider 驱动编辑抽屉 /
+> 抓取预览 / 运行历史），工作区页签新增「数据源同步」并按 `workspaceType` 门控；
+> 前端页面测试 8 条 + e2e 5 条（进入页签 / 新建保存落库 / 编辑回填 / 必填拦截）。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：M2 已落地，M3 待开工（专用 provider + 前端任务页 / 向导）
-- 已完成：需求卡片与 ADR 口径对齐；M1 抓取管线；M2 任务模型 / 迁移 / 四策略游标 / 调度与租约 / CLI / REST / 备份 v5；D1-D8 经人工拍板采纳
-- 下一步：M3 先补 `tencent_kline`（`fqkline` 嵌套 JSON）与 `rss_atom`（XML → title/link/source/published）两个 provider 并注册进 `PROVIDERS`；再做 `frontend/src/pages/datasource/`（任务列表 + Provider 驱动向导，复用 `importPreview` 列画像与 `ImportDiffTable`）与 `progress`/运行历史抽屉；最后补 e2e（建任务 → 运行 → 表有数据）
-- 已知坑：`Importer.analyze()` 的 `content` 是位置必填，传 rows 入口时须带空串；`Importer` upsert 是「先查后写」，并发靠 M2 租约串行化；SQLite 读回 `DateTime(timezone=True)` 会丢 tzinfo，租约 UPDATE 必须 `synchronize_session=False`；`ScheduleConfig.from_dict` 的数值 0 是合法值（不能写 `or 默认值`）；`match_keys` 必须是目标表字段，否则建任务时 400；`api_fetch` 的 `query_interval` 仍是死配置
-- 最近一次全绿：`make cov` @ `fefa7c7d`（2026-10-20，4677 passed，覆盖率 98.03%）
+- 当前阶段：M3 已落地，M4 待开工（分析通用化：公式引擎窗口函数 + 通用模板 + 推荐扩展）
+- 已完成：需求卡片与 ADR 口径对齐；M1 抓取管线；M2 任务模型 / 迁移 / 四策略游标 / 调度与租约 / CLI / REST / 备份 v5；M3 两个专用 provider + 前端任务页与向导 + e2e；D1-D8 经人工拍板采纳
+- 下一步：M4 先给 `plugins/analytics/services/formula.py` 引入 `partition_by + order_by` 上下文（列缓存当前会丢空值，必须改成行对齐数组），再补 `prev/lag/lead/ma/rolling_sum/rolling_std/cumsum/rank/pct_change/diff`；随后在 `templates.py` 预置「时间趋势（分区叠加）/分布/占比/比率/概览」通用模板，并在 `recommend.py` 识别粒度列 → `partition_dimension`；最后同步 `FormulaPanel.tsx` 的函数快捷片段与语法说明
+- 已知坑：`Importer.analyze()` 的 `content` 是位置必填，传 rows 入口时须带空串；`Importer` upsert 是「先查后写」，并发靠 M2 租约串行化；SQLite 读回 `DateTime(timezone=True)` 会丢 tzinfo，租约 UPDATE 必须 `synchronize_session=False`；`ScheduleConfig.from_dict` 的数值 0 是合法值（不能写 `or 默认值`）；`match_keys` 必须是目标表字段，否则建任务时 400；e2e 依赖 `pnpm build` 同步到 `src/cndb/static`（该目录已 gitignore，CI 部署自行构建）；Playwright 登录态在 `frontend/.auth/`（已 gitignore，含 token 不得入库）
+- 最近一次全绿：`make cov` + `make frontend-coverage` + 全量 e2e @ `741e1d0b`（2026-10-20，4700 passed / 覆盖率 98.09%；前端 lines 97.64%；e2e 51 passed / 16 skipped）
