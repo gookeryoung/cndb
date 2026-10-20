@@ -19,6 +19,8 @@
 | 文档问题清单（DocumentIssue） | 文档级反馈条目：所有成员可提交（标题 + 描述 + 类别）与评论，owner/editor 或创建者可关闭/重开；随文档级联清理 | 表 `documents_issue` / `documents_issuecomment` / `documents_issueevent`，端点 `/{wid}/document-issues`；类别/状态取值与数据表问题清单一致 |
 | 数据源同步（Datasource Sync） | 工作区级周期性外部数据接入：Provider（请求构造 + 响应解析 + 字段归一）× SyncJob（目标表 / 标的集合 / 幂等键 / 调度，持久化）× Cursor（增量位置）× Normalizer（清洗 + 按 `match_keys` upsert）四者可自由组合 | 插件 `datasource`，端点在 `/api/v1/workspaces/{wid}/datasource`，前端入口为工作区页签「数据源同步」（`/w/:wid/datasource`）；内置 `http_json`（声明式通用）/ `tencent_kline`（A 股日线）/ `rss_atom`（订阅源）三个 Provider；调度走 DB 租约（`lease_owner/lease_until`）保证单飞，生产用 `cndb sync tick` + `deploy/sync.sh` 的 cron；股票日线 / 天气 / 新闻均为同一框架的配置实例，领域差异只落在 Provider |
 | 数据分析（Analytics） | 工作区级分析模块：分析模板（公式 + 图表 + 分组汇总配置，存后端）→ 受限公式引擎逐行派生指标 → 分组汇总（维度 × 聚合，可排序 Top N）与 ChartCard 可视化 | 页面 `/w/:wid/analytics`，支持 `?template=<id>` 深链；统计/数据/汇总可导出 CSV，图表可导出 PNG |
+| 凭证会话（DatasourceSession） | 工作区级的请求头 + 密钥集合：任务以 `session_id` 引用，运行期 headers 铺底、密钥作模板变量（`{api_key}`） | 密钥只写不回显、不随工作区导出；删除会话会解绑任务；前端入口在数据源同步的编辑抽屉 |
+| 列式记录（record_mode=columns） | 响应是「列名 → 数组」而非对象数组时，按 `record_layout` 的 `{目标列: 源键}` 逐索引拼行 | 用于 Open-Meteo 等 `daily.time[]` / `daily.temp[]` 形态；长度不齐补空值 |
 | 时序窗口函数（Window Formula） | 公式里按「分区 + 排序」计算的一类函数：`prev/lag/lead/diff/pct_change/cumsum/rank/ma/rolling_sum/rolling_std` | 公式带 `partition_by` / `order_by` / `order_desc`；第一参数必须是字段引用，聚合仍按整列；`rolling_*` 不满窗返回空 |
 | 字段智能推荐（Analytics Recommendation） | 选表后按字段类型与抽样画像给出角色（metric/dimension/time/identifier/ignored）、基数、非空率、推荐公式/图表/分组汇总与典型示例 | 端点 `GET /{wid}/analytics/recommendations?table_id=`；只读成员即可用，取数复用行级权限与字段隐藏；结果确定性、一次抽样 1000 行 |
 | 典型示例（Recommend Example） | 基于当前表字段动态生成的整套分析配置（分类对比 / 数值分布 / 占比构成 / 时间趋势 / 比率分析 / 数据概览），一键应用到编辑态 | 随推荐接口返回；每个示例的公式、图表、汇总均可直接通过模板配置校验并落库 |
