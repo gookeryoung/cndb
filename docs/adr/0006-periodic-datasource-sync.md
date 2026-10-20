@@ -162,7 +162,7 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 | M2 同步任务与调度 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/alembic/versions/0a1b2c3d4e5f_add_datasource_sync.py`、`src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/schedule.py`、`src/cndb/plugins/datasource/services/scheduler.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/cli/sync.py`、`deploy/sync.sh` | `tests/test_datasource_cursor.py`、`tests/test_datasource_schedule.py`、`tests/test_datasource_scheduler.py`、`tests/test_datasource_runner.py`、`tests/test_datasource_api.py`、`tests/test_datasource_cli.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_migration.py` | `fefa7c7d` |
 | M3 Provider + 前端 | 已落地 | `src/cndb/plugins/datasource/providers/tencent_kline.py`、`src/cndb/plugins/datasource/providers/rss_atom.py`、`src/cndb/plugins/datasource/providers/registry.py`、`frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/App.tsx` | `tests/test_datasource_providers.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/tests/e2e/critical/datasource.spec.ts` | `741e1d0b` |
 | M4 分析通用化 | 已落地 | `src/cndb/plugins/analytics/services/formula.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/recommend.py`、`src/cndb/plugins/analytics/schemas.py`、`frontend/src/pages/analytics/FormulaPanel.tsx` | `tests/test_analytics_window_functions.py`、`tests/test_analytics_window_integration.py`、`frontend/src/pages/analytics/FormulaPanel.test.tsx`、`frontend/tests/e2e/critical/analytics.spec.ts` | `0c2a9d68` |
-| M5 完善 | 未开始 | `src/cndb/plugins/datasource/models.py` | — | — |
+| M5 完善 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/alembic/versions/1b2c3d4e5f60_add_datasource_session.py`、`src/cndb/plugins/datasource/routers/sessions.py`、`src/cndb/plugins/datasource/services/domain_templates.py`、`src/cndb/plugins/datasource/providers/http_json.py` | `tests/test_datasource_session_m5.py`、`tests/test_datasource_migration.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | `df5868d5` |
 
 > M1 落地范围：`http_json` 声明式接入（请求模板 / page·offset 分页 / `chunk_days` 时间分片）、
 > 归一（改名 / 丢弃 / 类型归一，失败降级留痕）、管线（单请求失败记 partial、分页空页提前终止）、
@@ -186,11 +186,18 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 > `partition_dimension` 角色（有 time 字段时标出 symbol/city/source 等粒度列），时间趋势示例改分区叠加 + 均线、
 > 新增「环比变化」示例；前端公式行检测到窗口函数即展开「分区 / 排序 / 升降序」选择器并补 10 个快捷片段。
 > **未做**：图表按分区多系列渲染仍复用既有 `chart.series`（前端 `toChartConfig` 已支持），未新增图表类型。
+>
+> M5 落地范围：`datasource_session` 凭证会话（请求头铺底 + 密钥作模板变量、只写不回显、不随导出）；
+> job 级 `rate_limit_ms` 请求限速（pipeline 只对真正发出的请求等待）；`record_mode=columns`
+> 列式记录解析（支持「列名 → 数组」响应，配 `examples/datasource/weather-open-meteo.json` 天气示例）；
+> 领域模板包四套（股票趋势 / 波动量能 / 天气日趋势 / 新闻来源产出）与 `GET /domain-templates`；
+> 备份导出 `session_name`（不导出密钥）、导入按同名会话重绑。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：M4 已落地，M5（完善）待评估；主链路（抓取 → 调度 → 落表 → 时序分析）已闭环
-- 已完成：需求卡片与 ADR 口径对齐；M1 抓取管线；M2 任务模型 / 迁移 / 四策略游标 / 调度与租约 / CLI / REST / 备份 v5；M3 两个专用 provider + 前端任务页与向导 + e2e；M4 窗口函数 + 分区上下文 + 推荐扩展 + 前端配置面；D1-D8 经人工拍板采纳
-- 下一步：M5 按需取舍 —— ①`datasource_session`（密钥集中管理，替换 `request_spec` 内联 key）；②job 级 / 全局并发限流（当前只靠 `query_interval` 与租约）；③领域模板包（股票 / 天气 / 新闻的预置公式与图表）；④天气 provider 示例（openweather 走 `http_json` 模板即可，不必新增适配器）；⑤时序分析按区间 / 分区取数（`MAX_SCAN_ROWS=20000` 仍限制全量扫描）
-- 已知坑：`Importer.analyze()` 的 `content` 是位置必填，传 rows 入口时须带空串；SQLite 读回 `DateTime(timezone=True)` 会丢 tzinfo，租约 UPDATE 必须 `synchronize_session=False`；`ScheduleConfig.from_dict` 的数值 0 是合法值（不能写 `or 默认值`）；窗口函数第一参数必须是字段引用（`ma(sum([x]), 3)` 不支持）且聚合仍按整列（不随分区）；`rolling_*` 不满窗返回 None（不是用部分窗口）；e2e 需先 `pnpm build`，且本机 Playwright 清理 `test-results/` 会被安全策略拦截 → 用 `--output <独立目录>` 规避；Playwright 登录态在 `frontend/.auth/`（gitignore）
-- 最近一次全绿：`make check-fast` + `make cov` + `make frontend-coverage` + analytics/datasource e2e @ `0c2a9d68`（2026-10-20，4746 passed / 覆盖率 98.10%；前端核心 lines 97.64%；e2e 10 + 5 条通过）
+- 当前阶段：**M1-M5 全部落地**，方案闭环（抓取 → 调度 → 落表 → 时序分析 → 凭证 / 限流 / 模板包）。`Status` 仍为 `Proposed`，待需求方确认后改 `Implemented`
+- 已完成：需求卡片与 ADR 口径对齐；D1-D8 经人工拍板采纳；M1 抓取管线；M2 任务模型 / 迁移 / 四策略游标 / 调度与租约 / CLI / REST / 备份 v5；M3 两个专用 provider + 前端任务页与向导 + e2e；M4 窗口函数 + 分区上下文 + 推荐扩展；M5 凭证会话 / 限速 / 列式记录 / 领域模板包 / 天气示例
+- 遗留（本轮未做，已记录取舍）：①时序分析仍受 `MAX_SCAN_ROWS=20000` 限制，未做按区间 / 分区取数；②密钥为明文 JSON 列存储（DB 权限即边界），未引入字段级加密；③会话管理 UI 只支持新建（列表 / 改密 / 删除走 API 与 CLI）；④`rank` 只支持数值列，时间列排序序号需先转数值
+- 下一步建议：按实际使用反馈决定优先级 —— 若数据量先到瓶颈，先做 ①（compute 支持时间区间 + 分区过滤）；若多源接入变多，先做 ③ 的会话管理页与 job 级并发上限
+- 已知坑：`Importer.analyze()` 的 `content` 是位置必填；SQLite 读回 `DateTime(timezone=True)` 丢 tzinfo（租约 UPDATE 需 `synchronize_session=False`）；SQLite 不支持 `ALTER TABLE` 加外键列（迁移按方言分支，SQLite 列级引用完整性靠应用层）；`ScheduleConfig.from_dict` 的 0 是合法值；窗口函数第一参数必须是字段引用、聚合仍按整列、`rolling_*` 不满窗返回 None；e2e 需先 `pnpm build`，本机 Playwright 清理 `test-results/` 会被安全策略拦 → 用 `--output e2e-output/run-<ts>`
+- 最近一次全绿：`make check-fast` + `make cov` + `make frontend-coverage` + datasource/analytics e2e @ `df5868d5`（2026-10-20，4773 passed / 覆盖率 98.09%；前端核心 lines 97.64%；e2e 14 条通过）

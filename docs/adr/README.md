@@ -10,7 +10,7 @@
 | [0003](0003-view-visibility-permission-model.md) | 视图可见性三档模型 | Implemented | P0-P3 + D6 已落地 | `src/cndb/plugins/tables/services/core/view_access.py` | `tests/test_view_share_p3.py` | [未发布](../../CHANGELOG.md) |
 | [0004](0004-row-level-permission-rules.md) | 行级权限规则 | Proposed | P0-P2 已落地（待评审） | `row_access.py`、`row_permissions.py` | `tests/test_row_*.py` | [未发布](../../CHANGELOG.md) |
 | [0005](0005-change-request-row-merge-view.md) | 修改申请同行合并视图与冲突裁决 | Accepted | M1-M3 已落地；M4 待补前端用例 | `plugins/change_requests/services.py`、`routers/change_requests.py` | `tests/test_change_requests_merge_view.py` | [未发布](../../CHANGELOG.md) |
-| [0006](0006-periodic-datasource-sync.md) | 周期性外部数据同步框架 | Proposed | M1-M4 已落地；M5 未开始 | `plugins/datasource/`、`analytics/services/formula.py`、`frontend/src/pages/{datasource,analytics}/` | `tests/test_{datasource,analytics_window}_*.py` | [未发布](../../CHANGELOG.md) |
+| [0006](0006-periodic-datasource-sync.md) | 周期性外部数据同步框架 | Proposed | M1-M5 全部落地（待人工确认 Status） | `plugins/datasource/`、`analytics/services/formula.py`、`frontend/src/pages/{datasource,analytics}/` | `tests/test_{datasource,analytics_window}_*.py` | [未发布](../../CHANGELOG.md) |
 | [0007](0007-backend-robustness.md) | 后端健壮性加固与极端用例基线 | Proposed | P0 已落地；P1-P3 未开始 | `core/ratelimit.py`、`core/database.py` | `tests/test_backend_extreme_cases.py` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
