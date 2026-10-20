@@ -27,3 +27,5 @@
 | 典型示例（Recommend Example） | 基于当前表字段动态生成的整套分析配置（分类对比 / 数值分布 / 占比构成 / 时间趋势 / 比率分析 / 数据概览），一键应用到编辑态 | 随推荐接口返回；每个示例的公式、图表、汇总均可直接通过模板配置校验并落库；按字段名识别数据源场景追加领域示例——同表有最高/最低气温 → `weather_range` 昼夜温差，有最高/最低/收盘价 → `stock_swing` 振幅与量价（窗口公式带分区/排序），通用表不受影响 |
 | 分析列表（Analytics Manager） | 已保存分析的集中管理入口：列表展示、打开、复制（服务端默认「原名 副本」并重名递增）、删除、新建 | Drawer 入口在页面顶栏；复制端点 `POST /{wid}/analytics/templates/{id}/duplicate`，与保存/另存为共用未保存修改确认 |
 | 工作区类型（WorkspaceType） | 工作区级功能范围开关：`data_doc`（数据 + 文档，默认）/ `data`（仅数据表与数据分析）/ `doc`（仅文档），新增与工作区设置页可选用 | 落库为枚举成员名（DATA_DOC/DATA/DOC，同 Visibility/Role 约定）；前端据此门控顶部页签、侧栏表导航与根路由落地页（doc→文档、其余→数据表），URL 落在未开放功能区时自动重定向到该类型落地页 |
+| K 线图（candlestick） | 图表视图（`view_type=chart`）的一种 `chart_type` 取值：以时间轴为类目、`[开,收,低,高]` 为蜡烛，字段由 `time_field` + `open_field`/`high_field`/`low_field`/`close_field` 指定 | 见 ADR 0009；同轴多标的蜡烛会重叠，故经视图 `filters` 收窄到单一标的使用；`group_field` 对 candlestick 不生效 |
+| 数据源示例种子（datasource.json） | `examples/datasets/<工作区>/datasource.json`：与 views.json/analytics.json 并列的种子配置，随 `cndb seed` 幂等注入 `datasource_sync_job`（`table` 名称解析为表 ID） | 见 ADR 0009；seed 只注入任务配置（`enabled=true`）不触发联网抓取 |

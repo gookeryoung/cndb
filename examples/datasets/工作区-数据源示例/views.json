@@ -1,5 +1,5 @@
 {
-  "_comment": "视图种子配置：数据源示例工作区。天气每日按日期升序（时序自然序）并附高温日过滤视图；股市日线按交易日降序（最新在前）并附放量日过滤视图。字段名须与 CSV 表头一致。",
+  "_comment": "视图种子配置：数据源示例工作区。天气每日按日期升序（时序自然序）并附高温日过滤视图；股市日线按交易日降序（最新在前）并附放量日过滤视图，另加 K 线图 / 成交量图 / 量价散点图三个图表视图（K 线与成交量图经 filters 收窄到单一标的，避免同轴多标的重叠）。字段名须与 CSV 表头一致。",
   "天气每日": [
     {
       "name": "全部",
@@ -58,6 +58,55 @@
         {"field_name": "成交量", "direction": "desc"}
       ],
       "order": 1
+    },
+    {
+      "name": "K线图（贵州茅台）",
+      "view_type": "chart",
+      "filter_type": "AND",
+      "filters": [
+        {"field_name": "股票代码", "op": "=", "value": "sh600519"}
+      ],
+      "sortings": [
+        {"field_name": "交易日", "direction": "asc"}
+      ],
+      "view_options": {
+        "chart_type": "candlestick",
+        "time_field": "交易日",
+        "open_field": "开盘价",
+        "high_field": "最高价",
+        "low_field": "最低价",
+        "close_field": "收盘价"
+      },
+      "order": 2
+    },
+    {
+      "name": "成交量图（贵州茅台）",
+      "view_type": "chart",
+      "filter_type": "AND",
+      "filters": [
+        {"field_name": "股票代码", "op": "=", "value": "sh600519"}
+      ],
+      "sortings": [
+        {"field_name": "交易日", "direction": "asc"}
+      ],
+      "view_options": {
+        "chart_type": "bar",
+        "dimension_field": "交易日",
+        "measure_field": "成交量",
+        "aggregation": "sum"
+      },
+      "order": 3
+    },
+    {
+      "name": "量价散点图",
+      "view_type": "chart",
+      "view_options": {
+        "chart_type": "scatter",
+        "x_field": "收盘价",
+        "y_field": "成交量",
+        "show_trend_line": true
+      },
+      "order": 4
     }
   ]
 }

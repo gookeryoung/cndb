@@ -76,6 +76,12 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         "measure_field",
         "x_field",
         "y_field",
+        # Chart K线蜡烛图（时间轴 + 开/高/低/收四价字段）
+        "time_field",
+        "open_field",
+        "high_field",
+        "low_field",
+        "close_field",
         # Flow 流程视图（流程节点字段 + 卡片标题字段，标题字段已在上方）
         "node_field",
     ):
@@ -88,7 +94,18 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         for i, entry in enumerate(charts):
             if not isinstance(entry, dict):
                 return False, f"view_options.charts[{i}] 不是对象"
-            for opt_key in ("dimension_field", "measure_field", "x_field", "y_field", "group_field"):
+            for opt_key in (
+                "dimension_field",
+                "measure_field",
+                "x_field",
+                "y_field",
+                "group_field",
+                "time_field",
+                "open_field",
+                "high_field",
+                "low_field",
+                "close_field",
+            ):
                 opt_val = entry.get(opt_key)
                 if opt_val and opt_val not in valid_fields:
                     return False, f"view_options.charts[{i}].{opt_key}='{opt_val}' 不存在"

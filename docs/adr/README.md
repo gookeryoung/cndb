@@ -13,6 +13,8 @@
 | [0006](0006-periodic-datasource-sync.md) | 周期性外部数据同步框架 | Implemented | M1-M5 + 遗留项全部落地 | `plugins/datasource/`、`core/crypto.py`、`analytics/services/formula.py`、`frontend/src/pages/{datasource,analytics}/` | `tests/test_{datasource,core_crypto,analytics_window,analytics_scope}_*.py` | [未发布](../../CHANGELOG.md) |
 | [0007](0007-backend-robustness.md) | 后端健壮性加固与极端用例基线 | Proposed | P0 已落地；P1-P3 未开始 | `core/ratelimit.py`、`core/database.py` | `tests/test_backend_extreme_cases.py` | [未发布](../../CHANGELOG.md) |
 | [0008](0008-offline-docker-image-export.md) | 离线部署镜像导出 | Accepted | P0-P2 已落地 | `deploy/`、`docker-compose.prod.yml` | `tests/test_deploy_scripts.py` | [未发布](../../CHANGELOG.md) |
+| [0009](0009-stock-daily-datasource-example.md) | 股市日线典型示例（数据源同步 + K 线等视图） | Accepted | P0-P2 已落地 | `frontend/src/pages/grid/views/`、`src/cndb/cli/seed/datasource.py`、`plugins/tables/routers/views.py` | `tests/test_seed_datasource.py`、`frontend/tests/e2e/*` | [未发布](../../CHANGELOG.md) |
+| [0010](0010-document-file-import.md) | 文档通用文件导入（md / docx / html，单文件与文件夹模式） | Accepted | P0-P2 未开始 | `src/cndb/plugins/documents/services/import/`、`src/cndb/plugins/documents/routers/import.py` | `tests/test_documents_file_import_*.py` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 
