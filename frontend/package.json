@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "node scripts/check-patches.mjs && vite",
+    "build": "node scripts/check-patches.mjs && tsc -b && vite build",
     "analyze": "vite build --mode analyze",
     "bundle:budget": "node scripts/bundle-budget.mjs",
     "bundle:budget:update": "node scripts/bundle-budget.mjs --update",
@@ -13,7 +13,7 @@
     "typecheck": "tsc -b --noEmit --incremental",
     "lint": "eslint . --cache --cache-location .eslintcache",
     "lint:fix": "eslint . --fix",
-    "check": "pnpm typecheck && pnpm lint",
+    "check": "pnpm check:patches && pnpm typecheck && pnpm lint",
     "e2e": "playwright test",
     "e2e:affected": "node scripts/e2e-affected.mjs",
     "e2e:setup": "playwright test --project=setup",
@@ -23,7 +23,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage && node scripts/check-coverage.mjs",
-    "test:coverage:html": "vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=html && node scripts/check-coverage.mjs"
+    "test:coverage:html": "vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=html && node scripts/check-coverage.mjs",
+    "check:patches": "node scripts/check-patches.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",

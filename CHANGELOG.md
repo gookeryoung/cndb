@@ -4,8 +4,11 @@
 
 ## [未发布]
 
+### 修复
+- **登录页报 `Cannot add property current, object is not extensible`**：`rc-field-form` 的摇树补丁把默认导出改成了裸组件（`export default FieldForm`），丢掉了 `React.forwardRef` 包装 —— antd 的 `Form` 依赖 ref 取表单实例，导致开发态报「Function components cannot be given refs」、点登录直接抛错，登录页不可用（生产构建走 antd 内部深路径，未暴露，属只在 dev 出现的坑）。补丁改为**只删静态属性挂载、保留 `React.forwardRef(FieldForm)`**，摇树收益不变（主入口仍 175.2 KiB）。新增 `frontend/scripts/check-patches.mjs` 并接入 `pnpm dev` / `pnpm build` / `make check-fast`：校验补丁后的 forwardRef 语义、静态属性与 `sideEffects`，补丁被漏打或改坏时立即失败（单测守不住 —— vitest 里 antd 走 CJS 的 `lib`，dev/build 走 `es`，坏版本在单测中照样通过）
+
 ### 变更
-- **首屏主包瘦身 190.10 → 175.22 KiB（-7.8%），修复 CI 体积门禁超限**：主入口一直被 `rc-field-form`（95.4 KB）+ `@rc-component/async-validator`（39.7 KB）占着，但首屏根本不渲染表单 —— 链路是 `Button` 的 style token → `antd/es/color-picker` → `antd/es/form/context` → `import { FormProvider } from 'rc-field-form'`，而 rc-field-form 未声明 `sideEffects` 且 barrel 顶层给默认导出挂静态属性（`RefForm.FormProvider = …`，属性赋值被 Rollup 判为副作用），导致整库无法摇树。经 `pnpm patch rc-field-form@2.7.1`（补 `"sideEffects": false` + barrel 改纯 re-export，antd 在自己的 `Form` 上重挂 `Item/List/useForm/useWatch/Provider`，默认导出的静态属性无人使用）后表单代码回到按需 chunk（`useForm-*.js`，21.9 KB）；`bundle-budget.json` 主入口基线同步下调至 175.22 KiB 以锁住净收益，`docs/BUNDLE_BUDGET.md` 补「第三方依赖隐性膨胀」排查手法与判据
+- **首屏主包瘦身 190.10 → 175.22 KiB（-7.8%），修复 CI 体积门禁超限**：主入口一直被 `rc-field-form`（95.4 KB）+ `@rc-component/async-validator`（39.7 KB）占着，但首屏根本不渲染表单 —— 链路是 `Button` 的 style token → `antd/es/color-picker` → `antd/es/form/context` → `import { FormProvider } from 'rc-field-form'`，而 rc-field-form 未声明 `sideEffects` 且 barrel 顶层给默认导出挂静态属性（`RefForm.FormProvider = …`，属性赋值被 Rollup 判为副作用），导致整库无法摇树。经 `pnpm patch rc-field-form@2.7.1`（补 `"sideEffects": false` + 去掉 barrel 顶层静态属性挂载、保留 `forwardRef` 包装，antd 在自己的 `Form` 上重挂 `Item/List/useForm/useWatch/Provider`，默认导出的静态属性无人使用）后表单代码回到按需 chunk（`useForm-*.js`，21.9 KB）；`bundle-budget.json` 主入口基线同步下调至 175.22 KiB 以锁住净收益，`docs/BUNDLE_BUDGET.md` 补「第三方依赖隐性膨胀」排查手法与判据
 - **gitignore 收敛生成产物**：`src/cndb/static/` 只保留 `.gitkeep`（前端构建产物由 CI / 部署构建，不再可能被误提交）、Playwright 登录态 `frontend/.auth/`（含 access token）与 `.auth/`、e2e 隔离数据 `.e2e-data/`、`frontend/blob-report/`
 
 ### 新增
