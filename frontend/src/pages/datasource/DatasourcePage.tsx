@@ -534,6 +534,7 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
       width={720}
       open={open}
       onClose={onClose}
+      forceRender
       destroyOnClose
       extra={
         <Space>
@@ -915,9 +916,7 @@ function SessionModal({
   onClose: () => void
   onSaved: () => void
 }) {
-  const [form] = Form.useForm()
   const { message, modal } = AntApp.useApp()
-  const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState<DatasourceSession | null>(null)
   const [formOpen, setFormOpen] = useState(false)
 
@@ -925,62 +924,17 @@ function SessionModal({
     if (!open) {
       setFormOpen(false)
       setEditing(null)
-      form.resetFields()
     }
-  }, [open, form])
+  }, [open])
 
   const openCreate = () => {
     setEditing(null)
-    form.resetFields()
     setFormOpen(true)
   }
 
   const openEdit = (session: DatasourceSession) => {
     setEditing(session)
-    form.setFieldsValue({
-      name: session.name,
-      headers_json: Object.keys(session.headers ?? {}).length ? JSON.stringify(session.headers, null, 2) : '',
-      secrets_json: '',
-    })
     setFormOpen(true)
-  }
-
-  const submit = async () => {
-    const values = await form.validateFields()
-    let headers: Record<string, string> = {}
-    let secrets: Record<string, string> = {}
-    try {
-      if (values.headers_json?.trim()) headers = JSON.parse(values.headers_json) as Record<string, string>
-      if (values.secrets_json?.trim()) secrets = JSON.parse(values.secrets_json) as Record<string, string>
-    } catch {
-      message.error('请求头 / 密钥不是合法 JSON')
-      return
-    }
-    const hasSecrets = Boolean(values.secrets_json?.trim())
-    setSaving(true)
-    try {
-      if (editing) {
-        // 密钥留空 = 保持原密文不变（后端「提供即整体替换」，所以不填就不要传这个键）
-        await datasourceApi.updateSession(wid, editing.id, {
-          name: String(values.name).trim(),
-          headers,
-          ...(hasSecrets ? { secrets } : {}),
-        })
-        message.success('会话已更新')
-      } else {
-        await datasourceApi.createSession(wid, { name: String(values.name).trim(), headers, secrets })
-        message.success('会话已创建，可在任务里选用')
-      }
-      onSaved()
-      setFormOpen(false)
-      setEditing(null)
-      form.resetFields()
-    } catch (error) {
-      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      message.error(detail || (editing ? '更新失败（名称可能重复）' : '创建失败（名称可能重复）'))
-    } finally {
-      setSaving(false)
-    }
   }
 
   const confirmRemove = (session: DatasourceSession) => {
@@ -1003,46 +957,15 @@ function SessionModal({
   }
 
   return (
-    <Modal
-      title="凭证会话"
-      open={open}
-      width={640}
-      onCancel={onClose}
-      destroyOnHidden
-      footer={
-        formOpen ? (
-          <Space>
-            <Button onClick={() => setFormOpen(false)}>返回</Button>
-            <Button type="primary" loading={saving} data-testid="datasource-session-save" onClick={() => void submit()}>
-              保存
-            </Button>
-          </Space>
-        ) : (
-          <Button onClick={onClose}>关闭</Button>
-        )
-      }
-    >
-      {formOpen ? (
-        <Form form={form} layout="vertical" size="small">
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入会话名称' }]}>
-            <Input data-testid="datasource-session-name" placeholder="如：行情源 A" />
-          </Form.Item>
-          <Form.Item name="headers_json" label="请求头（JSON）" extra='如 {"User-Agent": "cndb-sync/1.0"}'>
-            <Input.TextArea data-testid="datasource-session-headers" rows={2} />
-          </Form.Item>
-          <Form.Item
-            name="secrets_json"
-            label="密钥（JSON，加密入库、保存后不可回读）"
-            extra={
-              editing
-                ? `已有密钥：${editing.secret_keys.join('、') || '无'}；留空表示不修改，填写则整体替换`
-                : '如 {"api_key": "xxx"}；请求模板里写 {api_key} 即可引用'
-            }
-          >
-            <Input.TextArea data-testid="datasource-session-secrets" rows={2} />
-          </Form.Item>
-        </Form>
-      ) : (
+    <>
+      <Modal
+        title="凭证会话"
+        open={open}
+        width={640}
+        onCancel={onClose}
+        destroyOnHidden
+        footer={<Button onClick={onClose}>关闭</Button>}
+      >
         <Space direction="vertical" style={{ width: '100%' }} size={8}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Button size="small" type="primary" icon={<PlusOutlined />} data-testid="datasource-session-new" onClick={openCreate}>
@@ -1112,7 +1035,124 @@ function SessionModal({
             ]}
           />
         </Space>
-      )}
+      </Modal>
+      <SessionFormModal
+        wid={wid}
+        open={formOpen}
+        editing={editing}
+        onBack={() => setFormOpen(false)}
+        onSaved={onSaved}
+      />
+    </>
+  )
+}
+
+/** 会话表单态：form 实例只在这里创建，避免列表态下 useForm 未连接 Form 的 dev 警告 */
+function SessionFormModal({
+  wid,
+  open,
+  editing,
+  onBack,
+  onSaved,
+}: {
+  wid: string
+  open: boolean
+  editing: DatasourceSession | null
+  onBack: () => void
+  onSaved: () => void
+}) {
+  const [form] = Form.useForm()
+  const { message } = AntApp.useApp()
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      form.resetFields()
+      return
+    }
+    if (editing) {
+      form.setFieldsValue({
+        name: editing.name,
+        headers_json: Object.keys(editing.headers ?? {}).length ? JSON.stringify(editing.headers, null, 2) : '',
+        secrets_json: '',
+      })
+    } else {
+      form.resetFields()
+    }
+  }, [open, editing, form])
+
+  const submit = async () => {
+    const values = await form.validateFields()
+    let headers: Record<string, string> = {}
+    let secrets: Record<string, string> = {}
+    try {
+      if (values.headers_json?.trim()) headers = JSON.parse(values.headers_json) as Record<string, string>
+      if (values.secrets_json?.trim()) secrets = JSON.parse(values.secrets_json) as Record<string, string>
+    } catch {
+      message.error('请求头 / 密钥不是合法 JSON')
+      return
+    }
+    const hasSecrets = Boolean(values.secrets_json?.trim())
+    setSaving(true)
+    try {
+      if (editing) {
+        // 密钥留空 = 保持原密文不变（后端「提供即整体替换」，所以不填就不要传这个键）
+        await datasourceApi.updateSession(wid, editing.id, {
+          name: String(values.name).trim(),
+          headers,
+          ...(hasSecrets ? { secrets } : {}),
+        })
+        message.success('会话已更新')
+      } else {
+        await datasourceApi.createSession(wid, { name: String(values.name).trim(), headers, secrets })
+        message.success('会话已创建，可在任务里选用')
+      }
+      onSaved()
+      onBack()
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      message.error(detail || (editing ? '更新失败（名称可能重复）' : '创建失败（名称可能重复）'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      title={editing ? '编辑凭证会话' : '新建凭证会话'}
+      open={open}
+      width={640}
+      onCancel={onBack}
+      forceRender
+      destroyOnHidden
+      footer={
+        <Space>
+          <Button onClick={onBack}>返回</Button>
+          <Button type="primary" loading={saving} data-testid="datasource-session-save" onClick={() => void submit()}>
+            保存
+          </Button>
+        </Space>
+      }
+    >
+      <Form form={form} layout="vertical" size="small">
+        <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入会话名称' }]}>
+          <Input data-testid="datasource-session-name" placeholder="如：行情源 A" />
+        </Form.Item>
+        <Form.Item name="headers_json" label="请求头（JSON）" extra='如 {"User-Agent": "cndb-sync/1.0"}'>
+          <Input.TextArea data-testid="datasource-session-headers" rows={2} />
+        </Form.Item>
+        <Form.Item
+          name="secrets_json"
+          label="密钥（JSON，加密入库、保存后不可回读）"
+          extra={
+            editing
+              ? `已有密钥：${editing.secret_keys.join('、') || '无'}；留空表示不修改，填写则整体替换`
+              : '如 {"api_key": "xxx"}；请求模板里写 {api_key} 即可引用'
+          }
+        >
+          <Input.TextArea data-testid="datasource-session-secrets" rows={2} />
+        </Form.Item>
+      </Form>
     </Modal>
   )
 }

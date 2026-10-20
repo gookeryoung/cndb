@@ -169,12 +169,14 @@ src/cndb/
 ## 开发
 
 ```bash
-make sync          # 安装依赖
+make help          # 查看全部目标
+make sync          # 安装后端依赖 + pre-commit 钩子（前端依赖由 dev / 前端目标按需自动安装）
 make seed          # 注入演示数据（幂等）
 make dev           # 开发模式：同时启动后端 8772 + 前端 5173（Ctrl+C 一起停）
-make check         # 全套门禁：gitkeep + lint + typecheck + frontend-static + frontend-coverage + cov
-make flow          # AI 开发流入口：轻量静态门禁 + 全量后端测试（实现/验证内环）
-make push          # 推送全部 remote
+make check-fast    # 轻量静态门禁：gitkeep + ADR + ruff + pyrefly + tsc/eslint（实现期内环）
+make flow          # 代码改动门禁：check-fast + 全量后端测试
+make check         # 全套门禁：并行跑 lint / 类型 / 前端静态 + 覆盖率 / 后端 cov
+make push          # 推送全部 remote（含 tags）
 ```
 
 `make dev` 支持覆盖绑定地址与后端端口：`make dev DEV_HOST=127.0.0.1 DEV_PORT=8000`。
