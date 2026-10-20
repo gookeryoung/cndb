@@ -1,14 +1,19 @@
 """datasource 插件 —— 周期性外部数据同步.
 
-M1 阶段只提供领域无关的抓取管线（providers / services），**没有 API 端点**：
-同步任务表、调度与 run/preview 端点在 M2 / M3 落地，届时把子 router
-include 进本模块的 ``router`` 即可（挂载点已在 ``route_prefix`` 预留）。
+M1：领域无关的抓取管线（providers / services）。
+M2：同步任务表、四种游标、调度器（DB 租约）、CLI 与 run / preview 端点。
+M3 待补：专用 provider（tencent_kline / rss_atom）与前端任务页 / 向导。
 
-调用入口（M1）：
+端点（``/api/v1/workspaces/{wid}/datasource``）：
 
-    from cndb.plugins.datasource.providers.base import SyncJobSpec
-    from cndb.plugins.datasource.services.pipeline import run_pipeline
-    from cndb.plugins.datasource.services.write import upsert_rows
+- ``GET  /providers``                        适配器清单 + 参数表单描述
+- ``GET|POST /sync-jobs``                    列表 / 新建
+- ``GET|PUT|DELETE /sync-jobs/{id}``         详情 / 修改 / 删除
+- ``POST /sync-jobs/{id}/run``               立即运行（租约单飞）
+- ``POST /sync-jobs/{id}/preview``           抓一次预览（不落库）
+- ``GET  /sync-jobs/{id}/runs``              运行历史
+
+CLI：``cndb sync list|run|tick|preview``
 """
 
 from __future__ import annotations
@@ -18,8 +23,9 @@ from typing import override
 from fastapi import APIRouter
 
 from cndb.plugins.base import PluginBase
+from cndb.plugins.datasource.routers import router as datasource_router
 
-router = APIRouter()
+router = datasource_router
 
 
 class DatasourcePlugin(PluginBase):
@@ -35,7 +41,8 @@ class DatasourcePlugin(PluginBase):
 
     @override
     def register_models(self) -> None:
-        """M1 无模型；M2 增加 sync_job / sync_run 后在此导入 models."""
+        """导入 models 确保 Base.metadata 包含同步任务 / 运行记录两张表."""
+        from cndb.plugins.datasource import models  # noqa: F401
 
     @override
     def register_routes(self, router: APIRouter) -> None:

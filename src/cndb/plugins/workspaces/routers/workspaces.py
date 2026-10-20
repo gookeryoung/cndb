@@ -561,13 +561,43 @@ def export_workspace(
             }
         )
 
+    # v5：外部数据同步任务（ADR 0006）。跨工作区 table_id 不可移植，
+    # 导出用「目标表名」引用，导入端按同名表映射；找不到同名表则任务不绑定表。
+    from cndb.plugins.datasource.models import DatasourceSyncJob
+
+    table_name_by_id = {tbl.id: tbl.name for tbl in tables}
+    sync_jobs = (
+        db.query(DatasourceSyncJob)
+        .filter(DatasourceSyncJob.workspace_id == workspace_id)
+        .order_by(DatasourceSyncJob.id)
+        .all()
+    )
+    sync_jobs_data = [
+        {
+            "name": job.name,
+            "provider": job.provider,
+            "table_name": table_name_by_id.get(job.table_id) if job.table_id else None,
+            "request_spec": job.request_spec,
+            "parser": job.parser,
+            "entrant_param": job.entrant_param,
+            "entrant_keys": job.entrant_keys,
+            "match_keys": job.match_keys,
+            "field_mapping": job.field_mapping,
+            "cursor": job.cursor,
+            "schedule": job.schedule,
+            "enabled": job.enabled,
+        }
+        for job in sync_jobs
+    ]
+
     return {
-        "version": "4",
+        "version": "5",
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
         "workspace": workspace_meta,
         "tables": tables_data,
         "document_tags": document_tags_data,
         "documents": documents_data,
+        "sync_jobs": sync_jobs_data,
     }
 
 
@@ -629,6 +659,7 @@ def create_workspace_from_backup(
         imported_rows=import_result.imported_rows,
         imported_views=import_result.imported_views,
         imported_documents=import_result.imported_documents,
+        imported_sync_jobs=import_result.imported_sync_jobs,
         errors=import_result.errors,
     )
 
