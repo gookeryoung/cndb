@@ -56,6 +56,15 @@ def _get_workspace_analytics_configs(datasets_dir: Path) -> dict[str, dict[str, 
     return _scan_workspace_json(datasets_dir, "analytics.json", "seed-分析")
 
 
+def _get_workspace_datasource_configs(datasets_dir: Path) -> dict[str, dict[str, Any]]:
+    """扫描每个工作区文件夹下的 datasource.json（数据源同步任务种子）.
+
+    Returns:
+        工作区显示名 -> 同步任务配置（``{"jobs": [...]}``）的映射.
+    """
+    return _scan_workspace_json(datasets_dir, "datasource.json", "seed-数据源")
+
+
 def _scan_workspace_json(datasets_dir: Path, filename: str, log_tag: str) -> dict[str, dict[str, Any]]:
     """通用扫描：工作区文件夹下的 ``filename`` → 解析为 JSON.
 

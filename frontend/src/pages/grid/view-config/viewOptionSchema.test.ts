@@ -257,6 +257,32 @@ describe('chart 度量字段 schema 支持非数值类型', () => {
   })
 })
 
+describe('chart K 线（candlestick）schema', () => {
+  const opt = (key: string) => findOptionSchema('chart', key)
+
+  it('chart_type 枚举含 candlestick（K 线图）', () => {
+    const types = opt('chart_type')?.enumOptions?.map((o) => o.value) ?? []
+    expect(types).toContain('candlestick')
+  })
+
+  it('candlestick 专属字段仅在 candlestick 显隐，且均为必填', () => {
+    for (const key of ['time_field', 'open_field', 'high_field', 'low_field', 'close_field']) {
+      const o = opt(key)
+      expect(o, `缺 ${key}`).toBeDefined()
+      expect(o?.required).toBe(true)
+      expect(o?.visibleWhen?.({ chart_type: 'candlestick' })).toBe(true)
+      expect(o?.visibleWhen?.({ chart_type: 'bar' })).toBe(false)
+    }
+  })
+
+  it('candlestick 时维度/度量/散点/分组字段正交隐藏', () => {
+    const o = { chart_type: 'candlestick' }
+    for (const key of ['dimension_field', 'measure_field', 'x_field', 'y_field', 'group_field']) {
+      expect(opt(key)?.visibleWhen?.(o), `${key} 应对 candlestick 隐藏`).toBe(false)
+    }
+  })
+})
+
 describe('normalizeChartList / serializeChartList chart 多图双向转换', () => {
   it('扁平 view_options 归一为单条目（仅取 CHART_OPTIONS 键）', () => {
     const draft = {

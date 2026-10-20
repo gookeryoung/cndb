@@ -281,11 +281,11 @@ export const MATRIX_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
-/** Chart 图表视图的专属配置字段（共 11 项）— 各项按 chart_type 条件显隐（visibleWhen） */
+/** Chart 图表视图的专属配置字段（共 16 项）— 各项按 chart_type 条件显隐（visibleWhen） */
 export const CHART_OPTIONS: ViewOptionSchema[] = [
   {
     key: 'chart_type', label: '图表类型', group: '图表配置',
-    tooltip: '柱状图/折线图/饼图适合维度聚合；散点图看两变量关系；直方图/箱线图看分布',
+    tooltip: '柱状图/折线图/饼图适合维度聚合；散点图看两变量关系；直方图/箱线图看分布；K 线图看开高低收',
     kind: 'enum_select', defaultValue: 'bar',
     enumOptions: [
       { value: 'bar', label: '柱状图' },
@@ -294,6 +294,7 @@ export const CHART_OPTIONS: ViewOptionSchema[] = [
       { value: 'scatter', label: '散点图' },
       { value: 'histogram', label: '直方图' },
       { value: 'boxplot', label: '箱线图' },
+      { value: 'candlestick', label: 'K 线图' },
     ],
   },
   {
@@ -331,6 +332,41 @@ export const CHART_OPTIONS: ViewOptionSchema[] = [
     tooltip: '按此字段的值拆分为多个系列（如各产品线各一条折线）',
     kind: 'field_select', fieldTypes: ['select', 'multiselect', 'link'],
     visibleWhen: (o) => ['bar', 'line'].includes(String(o.chart_type ?? 'bar')),
+  },
+  {
+    key: 'time_field', label: '时间轴字段', group: '图表配置',
+    tooltip: 'K 线图横轴的时间字段（日期/时间列）；同一标的按此字段的时间顺序排列蜡烛',
+    kind: 'field_select', fieldTypes: ['date', 'datetime'],
+    required: true,
+    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'candlestick',
+  },
+  {
+    key: 'open_field', label: '开盘价字段', group: '图表配置',
+    tooltip: 'K 线蜡烛的开盘价数值字段',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
+    required: true,
+    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'candlestick',
+  },
+  {
+    key: 'high_field', label: '最高价字段', group: '图表配置',
+    tooltip: 'K 线蜡烛的最高价数值字段',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
+    required: true,
+    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'candlestick',
+  },
+  {
+    key: 'low_field', label: '最低价字段', group: '图表配置',
+    tooltip: 'K 线蜡烛的最低价数值字段',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
+    required: true,
+    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'candlestick',
+  },
+  {
+    key: 'close_field', label: '收盘价字段', group: '图表配置',
+    tooltip: 'K 线蜡烛的收盘价数值字段；统计面板以该列计算描述统计',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
+    required: true,
+    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'candlestick',
   },
   {
     key: 'aggregation', label: '聚合方式', group: '聚合与分箱',

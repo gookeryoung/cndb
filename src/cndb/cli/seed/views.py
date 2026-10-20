@@ -54,6 +54,12 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
         "measure_field",
         "x_field",
         "y_field",
+        # chart K线蜡烛图（时间轴 + 开/高/低/收四价字段）
+        "time_field",
+        "open_field",
+        "high_field",
+        "low_field",
+        "close_field",
         # flow 流程视图（流程节点字段；title_field 已在上方）
         "node_field",
     ):
@@ -73,7 +79,18 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
                     f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' 的 view_options.charts[{i}] 不是对象"
                 )
                 return False
-            for opt_key in ("dimension_field", "measure_field", "x_field", "y_field", "group_field"):
+            for opt_key in (
+                "dimension_field",
+                "measure_field",
+                "x_field",
+                "y_field",
+                "group_field",
+                "time_field",
+                "open_field",
+                "high_field",
+                "low_field",
+                "close_field",
+            ):
                 opt_val = entry.get(opt_key)
                 if opt_val and opt_val not in valid_fields:
                     print(

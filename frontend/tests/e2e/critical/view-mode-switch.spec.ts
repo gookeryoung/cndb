@@ -145,6 +145,35 @@ test.describe("图表视图 — seed 注入的 chart 视图", () => {
   });
 });
 
+// ──────────────────────────── K 线图视图回归（数据源示例） ────────────────────────────
+
+test.describe("K 线图 — 数据源示例/股市日线 seed 注入的 candlestick 视图", () => {
+  test("切到「K线图（贵州茅台）」→ 渲染 candlestick + 收盘价统计面板", async ({
+    page,
+    request,
+  }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    const wid = await getWorkspaceId(request, "数据源示例");
+    await gotoTable(page, request, wid, "股市日线");
+
+    // seed 注入 K线图 / 成交量图 / 量价散点图 三个 chart 视图 → 图表按钮存在
+    await assertModeButtonExists(page, "chart", true);
+
+    // Segmented 按视图名选择 K 线视图（非 charts[] 单图形态）
+    await page.locator(".ant-segmented-item-label", { hasText: "K线图（贵州茅台）" }).click();
+    await settle(page);
+
+    const container = page.getByTestId("chart-container");
+    await expect(container).toBeVisible({ timeout: 10000 });
+    // ECharts SVGRenderer 在容器内渲染 svg（candlestick 系列）
+    await expect(container.locator("svg").first()).toBeVisible();
+    // K 线统计面板以收盘价字段计算描述统计
+    await expect(page.getByTestId("chart-stats-panel")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/描述统计（收盘价）/)).toBeVisible();
+  });
+});
+
 // ──────────────────────────── 跨表导航切换回归 ────────────────────────────
 
 test.describe("跨表导航 — 模式按钮组跟随数据表 views 变化", () => {

@@ -1,0 +1,35 @@
+{
+  "_comment": "数据源同步任务种子：数据源示例工作区。tencent_kline 单任务多标的（entrant_param=symbol + 多个 entrant_keys），每个股票代码生成一个 URL，全部按 match_keys=[股票代码,交易日] 幂等 upsert 到「股市日线」表。seed 只注入配置（enabled=true），不触发联网抓取；股票代码格式须与 CSV 表内取值一致（带市场前缀 sh/sz）。",
+  "jobs": [
+    {
+      "name": "股市日线同步（腾讯前复权）",
+      "provider": "tencent_kline",
+      "table": "股市日线",
+      "request_spec": {
+        "url_template": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,{start},{end},320,qfq",
+        "time_window": {
+          "mode": "range",
+          "start_param": "start",
+          "end_param": "end",
+          "chunk_days": 320
+        }
+      },
+      "entrant_param": "symbol",
+      "entrant_keys": ["sh600519", "sz000001", "sz300750"],
+      "match_keys": ["股票代码", "交易日"],
+      "field_mapping": {
+        "symbol": { "name": "股票代码", "field_type": "text" },
+        "trade_date": { "name": "交易日", "field_type": "date" },
+        "open": { "name": "开盘价", "field_type": "float" },
+        "close": { "name": "收盘价", "field_type": "float" },
+        "high": { "name": "最高价", "field_type": "float" },
+        "low": { "name": "最低价", "field_type": "float" },
+        "volume": { "name": "成交量", "field_type": "int" }
+      },
+      "cursor": { "strategy": "date", "field": "交易日", "backfill_start": "2026-01-01" },
+      "schedule": { "mode": "daily", "at": "17:30", "timezone": "Asia/Shanghai" },
+      "enabled": true,
+      "rate_limit_ms": 200
+    }
+  ]
+}
