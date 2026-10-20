@@ -29,8 +29,9 @@ import { tableApi } from '@/api'
 import type { Field } from '@/api'
 import { analyticsApi } from '@/api/analytics'
 import type {
-  AnalyticsChart, AnalyticsComputeResponse, AnalyticsFormula, AnalyticsRecommendationExample,
-  AnalyticsSummary, AnalyticsTemplate, AnalyticsTemplateCreate, AnalyticsTemplateUpdate,
+  AnalyticsChart, AnalyticsComputeResponse, AnalyticsFilter, AnalyticsFormula,
+  AnalyticsRecommendationExample, AnalyticsSummary, AnalyticsTemplate, AnalyticsTemplateCreate,
+  AnalyticsTemplateUpdate,
 } from '@/api/analytics'
 import { FormulaPanel } from './FormulaPanel'
 import { ChartPanel } from './ChartPanel'
@@ -78,6 +79,10 @@ export default function AnalyticsPage() {
   const [chart, setChart] = useState<AnalyticsChart>({ ...DEFAULT_CHART })
   const [summary, setSummary] = useState<AnalyticsSummary>({ ...EMPTY_SUMMARY, metrics: [] })
   const [result, setResult] = useState<AnalyticsComputeResponse | null>(null)
+  // 分析范围：运行时参数（只影响本次扫描，不入模板），用于把时序分析限定在区间内
+  const [scopeField, setScopeField] = useState<string | null>(null)
+  const [scopeFrom, setScopeFrom] = useState('')
+  const [scopeTo, setScopeTo] = useState('')
   /** 后端 validate 返回的公式错误（键 → 信息） */
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({})
 
@@ -439,6 +444,17 @@ export default function AnalyticsPage() {
     onError: () => message.error('复制失败（需编辑者及以上权限）'),
   })
 
+  /** 范围 → 扫描过滤（字段 + 起止值都是可选，两个都空等于不过滤） */
+  const scopeFilters = useMemo<AnalyticsFilter[]>(() => {
+    if (!scopeField) return []
+    const filters: AnalyticsFilter[] = []
+    const from = scopeFrom.trim()
+    const to = scopeTo.trim()
+    if (from) filters.push({ field_name: scopeField, op: '>=', value: from })
+    if (to) filters.push({ field_name: scopeField, op: '<=', value: to })
+    return filters
+  }, [scopeField, scopeFrom, scopeTo])
+
   const computeMutation = useMutation({
     mutationFn: () =>
       analyticsApi.compute(wid!, {
@@ -454,6 +470,7 @@ export default function AnalyticsPage() {
         fields: [],
         limit: 1000,
         summary: summary.metrics.length ? summary : null,
+        filters: scopeFilters,
       }),
     onSuccess: data => setResult(data),
     onError: (error: unknown) => {
@@ -641,6 +658,10 @@ export default function AnalyticsPage() {
               setTableMissing(false)
               setResult(null)
               setServerErrors({})
+              // 范围字段属于旧表，换表后必须清空，否则会带着不存在的字段去过滤
+              setScopeField(null)
+              setScopeFrom('')
+              setScopeTo('')
             }}
           />
           {tableDetail && (
@@ -651,6 +672,46 @@ export default function AnalyticsPage() {
           <Text type="secondary" style={{ fontSize: 12 }}>
             可用字段：{tableFields.length ? tableFields.join('、') : '（先选择数据表）'}
           </Text>
+        </Space>
+
+        {/* 分析范围：扫描前过滤（时序表用「时间 >= 起点」把扫描面压到区间内） */}
+        <Space wrap size={8} style={{ marginTop: 8 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            分析范围：
+          </Text>
+          <Select
+            size="small"
+            allowClear
+            data-testid="analytics-scope-field"
+            style={{ width: 150 }}
+            placeholder="不限（全表）"
+            value={scopeField ?? undefined}
+            options={tableFields.map(name => ({ value: name, label: name }))}
+            onChange={value => setScopeField(value ?? null)}
+          />
+          <Input
+            size="small"
+            data-testid="analytics-scope-from"
+            style={{ width: 150 }}
+            placeholder="起始值（含）"
+            disabled={!scopeField}
+            value={scopeFrom}
+            onChange={event => setScopeFrom(event.target.value)}
+          />
+          <Input
+            size="small"
+            data-testid="analytics-scope-to"
+            style={{ width: 150 }}
+            placeholder="结束值（含，可选）"
+            disabled={!scopeField}
+            value={scopeTo}
+            onChange={event => setScopeTo(event.target.value)}
+          />
+          {scopeField && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              只统计区间内的行（超过扫描上限时用它收窄，而不是调大上限）
+            </Text>
+          )}
         </Space>
       </Card>
 

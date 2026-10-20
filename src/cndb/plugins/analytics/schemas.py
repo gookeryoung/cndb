@@ -129,6 +129,14 @@ class ComputeRequest(BaseModel):
     fields: list[str] = Field(default_factory=list, description="需要返回的原始字段；空 = 全部")
     limit: int = Field(default=1000, ge=1, le=10000)
     summary: SummarySpec | None = Field(default=None, description="分组汇总配置（空 = 不汇总）")
+    filters: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "扫描范围过滤，语法同列表接口：{field_name, op, value}。时序表建议给"
+            "「时间字段 >= 起点」，把扫描面压到区间内（否则受扫描行数上限截断）"
+        ),
+    )
+    filter_logic: str = Field(default="AND", pattern="^(?i)(and|or)$", description="多条件组合方式")
 
 
 class ColumnStat(BaseModel):

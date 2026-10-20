@@ -1,6 +1,6 @@
 """datasource 凭证会话与领域模板包路由.
 
-- ``sessions``：请求头 + 密钥集中管理（密钥只写不回显；**不随工作区导出**）
+- ``sessions``：请求头 + 密钥集中管理（密钥**加密入库**、只写不回显、**不随工作区导出**）
 - ``domain-templates``：按 provider 返回可直接套用的分析模板（公式 / 图表 / 汇总）
 
 权限：读 viewer、写 editor（与同步任务同口径）。
@@ -15,6 +15,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
+from cndb.core.crypto import encrypt_secrets
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob
@@ -82,7 +83,8 @@ def create_session(
         created_by=current_user.id,
         name=payload.name,
         headers=dict(payload.headers),
-        secrets=dict(payload.secrets),
+        # 值加密、键名保留：读接口要回显「已配置哪些密钥」
+        secrets=encrypt_secrets(payload.secrets),
     )
     db.add(session)
     db.commit()
@@ -106,7 +108,7 @@ def update_session(
     if payload.headers is not None:
         session.headers = dict(payload.headers)
     if payload.secrets is not None:
-        session.secrets = dict(payload.secrets)
+        session.secrets = encrypt_secrets(payload.secrets)
     db.add(session)
     db.commit()
     db.refresh(session)

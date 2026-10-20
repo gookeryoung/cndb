@@ -20,6 +20,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from cndb.core.crypto import decrypt_secrets
 from cndb.plugins.datasource.models import (
     DatasourceSession,
     DatasourceSyncJob,
@@ -207,7 +208,9 @@ def build_job_spec(
         merged_headers = {**(session.headers or {}), **(payload.get("headers_template") or {})}
         if merged_headers:
             payload["headers_template"] = merged_headers
-        extra_variables = dict(session.secrets or {})
+        # 密钥列在库里是密文（core.crypto）；解密失败直接抛 SecretDecryptError，
+        # 由外层 try 落成 failed 运行记录 —— 静默降级成空密钥只会变成难查的 401
+        extra_variables = decrypt_secrets(session.secrets)
     request = request_spec_from_payload(payload, cursor_from=cursor_from, today=today)
     return SyncJobSpec(
         request=request,

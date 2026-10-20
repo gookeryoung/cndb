@@ -172,6 +172,10 @@ class Settings(BaseSettings):
     # 避免"进度卡在 5% 且无报错"（历史上 WPS 导出文件的虚假行范围会触发）
     IMPORT_TASK_TIMEOUT_SECONDS: int = 600
 
+    # 数据分析单次扫描行数上限（保护内存）：超出即 truncated，统计只覆盖扫到的行。
+    # 时序表建议配合请求里的 filters（时间区间 / 标的等值）缩小扫描面，而不是直接调大这个值。
+    ANALYTICS_MAX_SCAN_ROWS: int = 20000
+
     # 观测（core/observability.py）：
     # - ACCESS_LOG_ENABLED：是否记录每请求访问日志（慢请求无论开关都会记录）
     # - SLOW_REQUEST_MS：超过该耗时的请求按 WARNING 记录并标注 slow=true
@@ -198,6 +202,11 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60 * 24  # 默认 24 小时
     AUTH_ENABLED: bool = True  # 默认开启，生产环境必须认证
+
+    # 字段级加密密钥（凭证会话的 secrets 列，见 core/crypto.py）：
+    # 留空则回退到 JWT_SECRET 派生 —— 单独配置可让「换 JWT 密钥」不等于「全部密文失效」。
+    # 注意：一旦有密文入库，**改这个值会让已有密文无法解密**，需重新保存会话密钥。
+    DATASOURCE_SECRET_KEY: str = ""
 
     # 单机模式（仅本地单机使用）：免登录自动映射内置本地用户；
     # 强制仅回环绑定（127.0.0.1/localhost/::1，各启动入口校验）；
