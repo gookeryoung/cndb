@@ -684,3 +684,91 @@ docker volume ls                                   # 确认无误后再清理卷
 > `AUTH_ENABLED=true` 是默认值且**不可关闭**（关闭意味着任何人都能读写全部数据）。  
 > 首次部署后立刻登录并**修改默认账号密码** —— `cndb seed` 注入的 `demo/demo1234`  
 > 是公开凭据，生产环境若跑过 seed 必须改掉。
+
+---
+
+## 八、离线部署（无外网隔离环境）
+
+以上第一~七节都是**联网形态**：服务器自行 `docker build` 或 `docker pull`。若目标服务器
+**无外网**（内网隔离、等保环境、无法访问 Docker Hub / PyPI / TCR），改用「本地构建 + 导出
+交付包 + 离线加载」三段式，镜像全程不经网络：
+
+```
+联网构建机                          离线服务器
+  build-image.sh   ──┐
+  （本地构建镜像）     │  导出 dist/offline/cndb-<version>-offline-bundle.tar.gz
+  export-image.sh  ──┘  （镜像 tar + compose + deploy/ + .env 模板 + SHA256SUMS）
+                        │
+                        ▼   scp / U 盘
+                    tar -xzf cndb-<version>-offline-bundle.tar.gz
+                    cd cndb-<version>-offline
+                    OFFLINE=1 ./deploy/deploy.sh <version>
+                        │  sha256sum -c → docker load → 预备份 → 重建 → 健康探测 → 失败回滚
+                        ▼
+                    单容器 / 反代模式（与联网部署完全一致）
+```
+
+### 8.1 在联网构建机：构建 + 导出
+
+**前置产物**：`dist/cndb-<version>-*.whl` 与 `dist/requirements.lock.txt`
+（在仓库根执行 `make build` 生成 wheel；锁定清缺失时脚本会尝试用 `uv` 生成）。
+
+```bash
+# 1) 本地构建：依赖基础镜像（字体 + 锁定依赖）+ 应用镜像；默认本地名 cndb:<version>
+./deploy/build-image.sh 0.3.0
+
+# 2) 导出离线交付包（含 nginx 反代镜像；不需要时 WITH_NGINX=0）
+./deploy/export-image.sh 0.3.0
+```
+
+产出 `dist/offline/cndb-0.3.0-offline-bundle.tar.gz`，解包目录结构：
+
+| 内容 | 说明 |
+|---|---|
+| `cndb-0.3.0-image.tar.gz` | 应用镜像（含依赖基础层，`docker load` 即得完整运行镜像） |
+| `nginx-image.tar.gz` | nginx 反代镜像（`WITH_NGINX=1` 时；离线机启用 `--profile proxy` 用） |
+| `docker-compose.prod.yml` | 生产编排（离线机直接复用） |
+| `deploy/` | 部署脚本 + nginx 配置 + `.env` 模板 |
+| `SHA256SUMS` | 关键载荷校验清单（`sha256sum -c`） |
+| `OFFLINE-README.txt` | 包内快速上手说明 |
+
+- 若要与在线镜像**同名**（用 registry 前缀），构建与导出两处都传同一个 `IMAGE_REPO`：
+
+  ```bash
+  IMAGE_REPO=ccr.ccs.tencentyun.com/pydev/cndb ./deploy/build-image.sh 0.3.0
+  IMAGE_REPO=ccr.ccs.tencentyun.com/pydev/cndb ./deploy/export-image.sh 0.3.0
+  ```
+
+- 构建源码与服务器端构建**同一套** `deploy/Dockerfile.base` / `Dockerfile.prod`，依赖基础镜像
+  指纹一致；离线机不需要重新构建，因此交付包**不单独导出基础镜像**（应用镜像已含其全部层）。
+
+### 8.2 在离线服务器：加载 + 部署
+
+离线服务器需具备 `docker`（含 `docker compose` v2），无需 `curl` / pip / 外网。
+
+```bash
+tar -xzf cndb-0.3.0-offline-bundle.tar.gz
+cd cndb-0.3.0-offline
+
+# 配置（CNDB_IMAGE 指向本地镜像名）
+cp deploy/.env.prod.example .env
+#   CNDB_IMAGE=cndb:0.3.0
+#   JWT_SECRET=...（openssl rand -hex 32）
+#   启用反代时：CNDB_ENABLE_PROXY=1、CNDB_BIND=127.0.0.1:8000、CNDB_NGINX_IMAGE=nginx:1.27-alpine
+
+# 离线部署（脚本先校验 SHA256SUMS、docker load，再走预备份/重建/健康探测/失败回滚）
+OFFLINE=1 ./deploy/deploy.sh 0.3.0
+```
+
+- `OFFLINE_DIR` 默认即交付包根目录（镜像 tar 与 `deploy/` 同级）；从别处执行可用
+  `OFFLINE_DIR=/path/to/cndb-0.3.0-offline` 指定。
+- 目标镜像 tag 由 `<version>` 参数决定，**须与导出的版本一致**（如导出 `cndb:0.3.0` 就传 `0.3.0`）。
+- 无 `SHA256SUMS` 时跳过完整性校验（会有告警）；建议始终携带并先校验。
+
+### 8.3 边界与注意
+
+- **架构一致**：导出镜像限**构建机架构**（amd64 / arm64）。跨架构须在目标架构的机器上
+  重新执行 `build-image.sh` + `export-image.sh`；本流程不做多架构镜像。
+- **包体**：含依赖基础层与 nginx 镜像，数百 MB 量级，离线机与传输介质需预留空间。
+- **同源演进**：`build-image.sh` 复用服务器端同一 `Dockerfile` 与依赖指纹，两者随版本
+  同步演进；脚本只做编排，不重复定义构建。

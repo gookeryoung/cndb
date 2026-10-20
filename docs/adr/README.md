@@ -12,6 +12,7 @@
 | [0005](0005-change-request-row-merge-view.md) | 修改申请同行合并视图与冲突裁决 | Accepted | M1-M3 已落地；M4 待补前端用例 | `plugins/change_requests/services.py`、`routers/change_requests.py` | `tests/test_change_requests_merge_view.py` | [未发布](../../CHANGELOG.md) |
 | [0006](0006-periodic-datasource-sync.md) | 周期性外部数据同步框架 | Implemented | M1-M5 + 遗留项全部落地 | `plugins/datasource/`、`core/crypto.py`、`analytics/services/formula.py`、`frontend/src/pages/{datasource,analytics}/` | `tests/test_{datasource,core_crypto,analytics_window,analytics_scope}_*.py` | [未发布](../../CHANGELOG.md) |
 | [0007](0007-backend-robustness.md) | 后端健壮性加固与极端用例基线 | Proposed | P0 已落地；P1-P3 未开始 | `core/ratelimit.py`、`core/database.py` | `tests/test_backend_extreme_cases.py` | [未发布](../../CHANGELOG.md) |
+| [0008](0008-offline-docker-image-export.md) | 离线部署镜像导出 | Accepted | P0-P2 已落地 | `deploy/`、`docker-compose.prod.yml` | `tests/test_deploy_scripts.py` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 

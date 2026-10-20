@@ -51,6 +51,10 @@ git tag v0.3.1 && git push origin v0.3.1    # 同步产物 → 服务器构建 �
 部署链路、服务器准备、TCR 凭证配置、定时备份与 PostgreSQL 迁移：
 详见 **[docs/DEPLOY_TENCENT.md](docs/DEPLOY_TENCENT.md)**。
 
+**离线部署**（无外网隔离环境）：在联网机器本地构建并导出行 `build-image.sh` +
+`export-image.sh` 产出交付包，拷入离线服务器后 `OFFLINE=1 ./deploy/deploy.sh <version>`
+完成加载与部署。详见 [docs/DEPLOY_TENCENT.md](docs/DEPLOY_TENCENT.md) 的「离线部署」一节。
+
 相关文件：
 
 | 文件 | 作用 |
@@ -58,7 +62,9 @@ git tag v0.3.1 && git push origin v0.3.1    # 同步产物 → 服务器构建 �
 | `docker-compose.prod.yml` | 生产编排（单容器 / 可选 nginx 反代 + 数据卷 + 日志轮转） |
 | `deploy/Dockerfile.base` | 依赖基础镜像（系统字体 + 锁定依赖，按指纹复用） |
 | `deploy/Dockerfile.prod` | 应用镜像（基于依赖基础镜像，只装 wheel） |
-| `deploy/deploy.sh` | 服务器端部署（依赖镜像复用/构建 / 预备份 / 健康探测 / 失败回滚） |
+| `deploy/deploy.sh` | 服务器端部署（依赖镜像复用/构建 / 预备份 / 健康探测 / 失败回滚；`OFFLINE=1` 为离线模式） |
+| `deploy/build-image.sh` | 本地构建镜像（联网机执行，供离线导出；复用同一 Dockerfile 与依赖指纹） |
+| `deploy/export-image.sh` | 导出离线交付包（应用/nginx 镜像 tar + compose + deploy 脚本 + .env 模板 + SHA256SUMS） |
 | `deploy/backup.sh` | 定时备份，可选上传 COS |
 | `deploy/.env.prod.example` | 生产环境变量模板 |
 | `deploy/nginx/` | 内置反向代理配置（模板 + HTTP/HTTPS 共用片段 + 可选扩展） |

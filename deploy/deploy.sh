@@ -10,7 +10,7 @@
 #   ./deploy/deploy.sh                     # 不传版本则沿用 .env 中的 CNDB_IMAGE
 #   FORCE_ROLLBACK_ON_FAIL=0 ./deploy/deploy.sh v0.3.0   # 失败不回滚（仅调试用）
 #
-# 镜像获取方式（按环境变量自动二选一）：
+# 镜像获取方式（按环境变量自动三选一）：
 #   1. SERVER_BUILD=1（CI 常规路径）：在服务器本地构建镜像。
 #      CI 仅同步 dist/*.whl + requirements.lock.txt + Dockerfile 到 /opt/cndb，
 #      本脚本按「依赖基础镜像（字体 + 锁定依赖）→ 应用层（wheel）」两段构建：
@@ -19,11 +19,21 @@
 #      可选环境变量（国内服务器拉 Docker Hub 超时的换源逃生通道）：
 #        BUILD_BASE_IMAGE       覆盖基础镜像，如 docker.m.daocloud.io/library/python:3.12-slim
 #        BUILD_PIP_INDEX_URL    覆盖 pip 源，不设时基础镜像构建默认腾讯云 PyPI 内网镜像
-#   2. 无 SERVER_BUILD（手动部署/回滚历史版本）：走 TCR docker pull，
+#   2. OFFLINE=1（无外网隔离环境）：用离线交付包里的本地镜像，不 pull、不出网。
+#      前置：解包 cndb-<version>-offline-bundle.tar.gz（见 deploy/export-image.sh）；
+#      本脚本先 sha256sum -c 校验、docker load 镜像 tar，再照常重建容器/健康探测/回滚。
+#      可选环境变量：
+#        OFFLINE_DIR      交付包目录（默认：脚本所在仓库/包根目录，其内含镜像 tar 与 SHA256SUMS）
+#   3. 无 SERVER_BUILD / OFFLINE（手动部署/回滚历史版本）：走 TCR docker pull，
 #      需 TCR_USERNAME/TCR_PASSWORD（CI 注入或手工 export）。
 #      镜像仍以 TCR 地址命名（与历史版本同名），保证回滚可命中。
 #
 # 由 CI 经 TAT 下发触发，也可在服务器上手动执行。
+#
+# 离线部署用法：
+#   tar -xzf cndb-0.3.0-offline-bundle.tar.gz && cd cndb-0.3.0-offline
+#   cp deploy/.env.prod.example .env && vim .env        # CNDB_IMAGE=cndb:0.3.0
+#   OFFLINE=1 ./deploy/deploy.sh 0.3.0
 # ═══════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
@@ -53,6 +63,12 @@ docker compose version >/dev/null 2>&1 || die "未找到 docker compose v2 插�
 ENABLE_PROXY="$(grep -E '^CNDB_ENABLE_PROXY=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | xargs || true)"
 ENABLE_PROXY="${ENABLE_PROXY:-0}"
 BIND_VALUE="$(grep -E '^CNDB_BIND=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | xargs || true)"
+
+# ── 离线模式开关（可选）────────────────────────────────────────
+# OFFLINE=1 时：镜像来自离线交付包（本地 tar），不校验 registry 地址、不 docker pull。
+# OFFLINE_DIR 默认指向包/仓库根：解包后镜像 tar 与 SHA256SUMS 与 deploy/ 同级。
+OFFLINE="${OFFLINE:-0}"
+OFFLINE_DIR="${OFFLINE_DIR:-$ROOT_DIR}"
 
 # compose 统一入口（启用代理时带上 profile，否则 nginx 容器不会被创建/启动）
 dc() {
@@ -105,7 +121,17 @@ fi
 #      docker.io/library/cndb，这里直接报错退出，不让错误地址进入后续步骤。
 TARGET_TAG="${TARGET_TAG#v}"
 
-if [[ -n "${IMAGE_REPO_OVERRIDE:-}" ]]; then
+if [[ "$OFFLINE" == "1" ]]; then
+  # 离线模式：镜像用本地名（如 cndb:0.3.0），**不**校验含 "/"。
+  # 仓库前缀优先取 IMAGE_REPO_OVERRIDE，否则从 .env 的 CNDB_IMAGE 推导，缺省回落 cndb。
+  if [[ -n "${IMAGE_REPO_OVERRIDE:-}" ]]; then
+    BASE_REPO="${IMAGE_REPO_OVERRIDE%:*}"
+  else
+    BASE_REPO="$(grep -E '^CNDB_IMAGE=' "$ENV_FILE" | cut -d= -f2- | cut -d: -f1)"
+    BASE_REPO="${BASE_REPO:-cndb}"
+  fi
+  log "离线模式：本地镜像前缀 ${BASE_REPO}"
+elif [[ -n "${IMAGE_REPO_OVERRIDE:-}" ]]; then
   BASE_REPO="${IMAGE_REPO_OVERRIDE%:*}"
   log "使用 CI 传入的仓库地址: ${BASE_REPO}"
 else
@@ -338,15 +364,54 @@ print('OK cndb', cndb.__version__, '| assets:', len(assets))
   ok "镜像构建完成: ${TARGET_IMAGE}"
 }
 
+# ── 离线加载应用镜像（OFFLINE=1）───────────────────────────────
+# 从离线交付包（export-image.sh 产出）加载本地镜像：先按 SHA256SUMS 校验完整性，
+# 再 docker load 目录下的镜像 tar，最后确认目标镜像已就位。全程不出网。
+acquire_offline_image() {
+  [[ -d "$OFFLINE_DIR" ]] || die "OFFLINE_DIR 不存在: ${OFFLINE_DIR}
+     解包交付包后在其根目录执行本脚本，或用 OFFLINE_DIR 指定包目录。"
+
+  if [[ -f "${OFFLINE_DIR}/SHA256SUMS" ]]; then
+    log "校验交付包完整性（sha256sum -c）..."
+    ( cd "$OFFLINE_DIR" && sha256sum -c SHA256SUMS ) \
+      || die "交付包校验失败，可能传输损坏，请重新传输后再试"
+  else
+    warn "未找到 ${OFFLINE_DIR}/SHA256SUMS，跳过完整性校验"
+  fi
+
+  # 收集镜像 tar（export-image.sh 产出 *.tar.gz；兼容未压缩 *.tar）
+  local -a tars=()
+  shopt -s nullglob
+  tars=( "$OFFLINE_DIR"/*-image.tar.gz "$OFFLINE_DIR"/*-image.tar )
+  shopt -u nullglob
+
+  if [[ ${#tars[@]} -gt 0 ]]; then
+    local t
+    for t in "${tars[@]}"; do
+      log "加载镜像: $(basename "$t")"
+      docker load -i "$t" || die "docker load 失败: $t"
+    done
+  else
+    warn "未在 ${OFFLINE_DIR} 找到镜像 tar（*-image.tar.gz）；假设镜像已 load"
+  fi
+
+  docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1 || die "加载后仍无目标镜像 ${TARGET_IMAGE}
+     请确认交付包内的镜像 tag 与版本一致：导出与部署须用同一 VERSION。"
+  ok "离线镜像已就位: ${TARGET_IMAGE}"
+}
+
 # ── 主流程 ─────────────────────────────────────────────────────
 
 # 1. 预备份
 pre_backup
 
 # 2. 获取镜像：
+#    OFFLINE=1      → 离线交付包本地 load（不出网）；
 #    SERVER_BUILD=1 → 服务器本地构建（CI 常规路径，镜像不过网）；
 #    否则           → TCR pull（手动部署/回滚历史版本，需先 docker login）。
-if [[ "${SERVER_BUILD:-0}" == "1" ]]; then
+if [[ "$OFFLINE" == "1" ]]; then
+  acquire_offline_image
+elif [[ "${SERVER_BUILD:-0}" == "1" ]]; then
   # 显式拦截：收到 SERVER_BUILD=1 却找不到 build_image，说明服务器上的脚本是
   # 旧版本（CI 同步未生效），避免被误导成镜像仓库权限/命名问题。
   if ! declare -f build_image >/dev/null 2>&1; then
