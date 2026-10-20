@@ -134,6 +134,10 @@ class TestExportImage:
             assert (out / name).is_file(), f"交付包缺少 {name}"
         assert (out / "deploy" / "deploy.sh").is_file()
 
+        # 交付包内脚本须带执行位：离线机用法是 `./deploy/deploy.sh`（仓库内为 644）
+        shipped = out / "deploy" / "deploy.sh"
+        assert shipped.stat().st_mode & stat.S_IXUSR, "交付包内 deploy/deploy.sh 缺少执行位"
+
         # 镜像 tar 是经 gzip 压缩的真实产物
         with gzip.open(out / "cndb-0.3.0-image.tar.gz") as fh:
             assert fh.read() == b"FAKE-IMAGE-TAR"

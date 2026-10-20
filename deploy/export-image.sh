@@ -71,6 +71,9 @@ fi
 log "打包 compose / deploy 脚本 / .env 模板 ..."
 cp docker-compose.prod.yml "${OUT}/docker-compose.prod.yml"
 cp -r deploy "${OUT}/deploy"
+# 仓库内 deploy/*.sh 以 644 入库（在线链路由 TAT 运行时 chmod），交付包内补执行位，
+# 使离线机可直接 `./deploy/deploy.sh`（含 OFFLINE-README.txt 所述用法）。
+chmod +x "${OUT}/deploy"/*.sh
 
 # 离线机快速上手说明（随包生成，非仓库文档）
 cat > "${OUT}/OFFLINE-README.txt" <<EOF
