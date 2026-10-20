@@ -129,10 +129,10 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 |---|---|---|---|---|---|
 | D1 | 插件命名 | `datasource`（概念：数据源同步），路由前缀挂 workspaces | 与 tables / documents 同层级；语义覆盖「数据源」而非只服务股票 | `stock` / `sync`（领域化或过泛） | `src/cndb/plugins/datasource/plugin.py` |
 | D2 | 通用优先还是专用优先 | `http_json` 声明式为默认主路径，专用 provider 作便利封装 | 天气 / 新闻 / 多数行情源都是 HTTP + JSON，声明式覆盖约 80% | 一源一适配器（代码量与维护面线性膨胀） | `providers/http_json.py`、`providers/registry.py` |
-| D3 | 调度形态 | 生产 CLI + 系统 cron；开发 / 单机用内置调度器；统一 DB 租约互斥 | 与既有 `deploy/backup.sh` 的 cron 模式一致；避免多副本重复执行 | 纯内置必守单副本 / 引入外部队列（部署成本高） | M2 待建 `services/scheduler.py`、`cli/sync.py` |
-| D4 | 增量游标 | 内置 `date` / `datetime` / `key_set` / `none` 四策略，job 级可选 | 覆盖按日、按时刻、无时序、快照四类源 | 只做 date（新闻 / 榜单接不了） | M2 待建 `services/cursor.py` |
+| D3 | 调度形态 | 生产 CLI + 系统 cron；开发 / 单机用内置调度器；统一 DB 租约互斥 | 与既有 `deploy/backup.sh` 的 cron 模式一致；避免多副本重复执行 | 纯内置必守单副本 / 引入外部队列（部署成本高） | `src/cndb/plugins/datasource/services/scheduler.py`、`src/cndb/cli/sync.py`、`deploy/sync.sh` |
+| D4 | 增量游标 | 内置 `date` / `datetime` / `key_set` / `none` 四策略，job 级可选 | 覆盖按日、按时刻、无时序、快照四类源 | 只做 date（新闻 / 榜单接不了） | `src/cndb/plugins/datasource/services/cursor.py` |
 | D5 | 分析实现 | 扩展公式引擎补窗口函数（分区分序）为主 + 通用模板 | 引擎已有逐行 / 整列聚合，加分区排序上下文改动集中 | 另建时序计算引擎（重复实现、两套口径） | `src/cndb/plugins/analytics/services/formula.py` |
-| D6 | 密钥管理 | 首期内联 `request_spec`；M5 抽 `datasource_session` 集中管理 | 先跑通链路，避免过早抽象 | 首期即建密钥表（无消费方） | M2 待建 `models.py` |
+| D6 | 密钥管理 | 首期内联 `request_spec`；M5 抽 `datasource_session` 集中管理 | 先跑通链路，避免过早抽象 | 首期即建密钥表（无消费方） | `src/cndb/plugins/datasource/models.py` |
 | D7 | 规模 | 时序全量可能超 `MAX_SCAN_ROWS=20000`，分析按区间 / 分区 | 现有 analytics 为单次扫描模型，改流式代价大 | 提高扫描上限（内存与响应时间不可控） | `src/cndb/plugins/analytics/services/compute.py` |
 | D8 | 幂等落库怎么保证唯一 | 应用层 upsert：`Importer` 按 `match_keys` 先查后写；并发重复由 DB 租约单飞规避 | 现有 `tables` 自动建表只支持单列唯一，改 DDL 需动建表链路与存量测试；同步场景已由租约串行化 | 为 `match_keys` 建复合唯一索引（改 `ddl.py` + 建表链路 + 冲突语义，收益不足以抵成本） | `src/cndb/plugins/datasource/services/write.py`、`tables/services/importing/importer.py` |
 
@@ -159,19 +159,25 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | M1 通用抓取管线 | 已落地 | `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/template.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/write.py` | `tests/test_datasource_template.py`、`tests/test_datasource_normalize.py`、`tests/test_datasource_pipeline.py` | `13d4c050` |
-| M2 同步任务与调度 | 未开始 | `src/cndb/plugins/datasource/services/`、`src/cndb/cli/sync.py` | `tests/test_datasource_scheduler.py` | — |
+| M2 同步任务与调度 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/alembic/versions/0a1b2c3d4e5f_add_datasource_sync.py`、`src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/schedule.py`、`src/cndb/plugins/datasource/services/scheduler.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/cli/sync.py`、`deploy/sync.sh` | `tests/test_datasource_cursor.py`、`tests/test_datasource_schedule.py`、`tests/test_datasource_scheduler.py`、`tests/test_datasource_runner.py`、`tests/test_datasource_api.py`、`tests/test_datasource_cli.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_migration.py` | `fefa7c7d` |
 | M3 Provider + 前端 | 未开始 | `src/cndb/plugins/datasource/routers/`、`frontend/src/pages/datasource/` | `tests/test_datasource_providers.py` | — |
 | M4 分析通用化 | 未开始 | `src/cndb/plugins/analytics/services/formula.py` | `tests/test_analytics_window_functions.py` | — |
 | M5 完善 | 未开始 | `src/cndb/plugins/datasource/models.py` | — | — |
 
 > M1 落地范围：`http_json` 声明式接入（请求模板 / page·offset 分页 / `chunk_days` 时间分片）、
 > 归一（改名 / 丢弃 / 类型归一，失败降级留痕）、管线（单请求失败记 partial、分页空页提前终止）、
-> 幂等落表（复用 `Importer`，应用层先查后写，不建复合唯一索引）。同步任务表、游标与调度未落地。
+> 幂等落表（复用 `Importer`，应用层先查后写，不建复合唯一索引）。
+>
+> M2 落地范围：`datasource_sync_job` / `datasource_sync_run` 两表与迁移；四策略游标（无新数据不推进、
+> 乱序只前进）；`manual / daily / interval / cron` 四种调度与失败退避；DB 租约原子抢占的 `tick`；
+> 运行编排（抓取 → 落表 → 游标 → 运行记录 + `datasource.sync` 事件，坏配置落 failed 不炸调度器）；
+> providers / sync-jobs CRUD / run（租约冲突 409）/ preview / runs 端点；`cndb sync` CLI 与
+> `deploy/sync.sh`；工作区备份升到 v5 携带同步任务（表名引用 + 同名表重绑）。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：M1 已落地，M2 待开工（同步任务模型 + 四种游标 + 调度器 + CLI）
-- 已完成：需求卡片与 ADR 口径对齐；M1 抓取管线（providers / normalize / pipeline / write）+ 72 条单测；D1-D7 经人工拍板采纳，幂等口径确认为应用层 upsert
-- 下一步：M2 先建 `datasource_sync_job` / `datasource_sync_run` 模型与迁移（新表同步进 `backup_io` 导出导入并升版本），再落 `services/cursor.py`（date / datetime / key_set / none）与 `services/scheduler.py`（到期扫描 + 租约 + 退避），最后挂 `cli/sync.py`
-- 已知坑：`Importer.analyze()` 的 `content` 是位置必填参数，传 rows 入口时须带空串；`Importer` 的 upsert 是「先查后写」，并发需靠 M2 的 DB 租约单飞；`match_keys` 必须与目标表字段名一致，否则退化为纯追加；`api_fetch` 的 `query_interval` 仍是死配置，别当限流器用
-- 最近一次全绿：`make cov` @ `13d4c050`（2026-10-20，4557 passed，覆盖率 98.07%）
+- 当前阶段：M2 已落地，M3 待开工（专用 provider + 前端任务页 / 向导）
+- 已完成：需求卡片与 ADR 口径对齐；M1 抓取管线；M2 任务模型 / 迁移 / 四策略游标 / 调度与租约 / CLI / REST / 备份 v5；D1-D8 经人工拍板采纳
+- 下一步：M3 先补 `tencent_kline`（`fqkline` 嵌套 JSON）与 `rss_atom`（XML → title/link/source/published）两个 provider 并注册进 `PROVIDERS`；再做 `frontend/src/pages/datasource/`（任务列表 + Provider 驱动向导，复用 `importPreview` 列画像与 `ImportDiffTable`）与 `progress`/运行历史抽屉；最后补 e2e（建任务 → 运行 → 表有数据）
+- 已知坑：`Importer.analyze()` 的 `content` 是位置必填，传 rows 入口时须带空串；`Importer` upsert 是「先查后写」，并发靠 M2 租约串行化；SQLite 读回 `DateTime(timezone=True)` 会丢 tzinfo，租约 UPDATE 必须 `synchronize_session=False`；`ScheduleConfig.from_dict` 的数值 0 是合法值（不能写 `or 默认值`）；`match_keys` 必须是目标表字段，否则建任务时 400；`api_fetch` 的 `query_interval` 仍是死配置
+- 最近一次全绿：`make cov` @ `fefa7c7d`（2026-10-20，4677 passed，覆盖率 98.03%）
