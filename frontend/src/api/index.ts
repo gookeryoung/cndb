@@ -34,6 +34,22 @@ export type {
 } from './admin'
 export { systemApi } from './system'
 export type { SystemAbout } from './system'
+export { datasourceApi } from './datasource'
+export type {
+  DatasourceProviderInfo,
+  ProviderField,
+  SyncCursorConfig,
+  SyncCursorStrategy,
+  SyncFieldMapping,
+  SyncJob,
+  SyncJobPayload,
+  SyncPreviewResult,
+  SyncRequestSpec,
+  SyncRun,
+  SyncRunStatus,
+  SyncScheduleConfig,
+  SyncScheduleMode,
+} from './datasource'
 export { governanceApi } from './governance'
 export type { DetectReport, MergeReport, CleanReport, GovernanceReport } from './governance'
 

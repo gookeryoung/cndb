@@ -9,7 +9,7 @@ import {
   MenuOutlined, InfoCircleOutlined,
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
-  PullRequestOutlined, FileTextOutlined, BarChartOutlined,
+  PullRequestOutlined, FileTextOutlined, BarChartOutlined, CloudDownloadOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
@@ -165,6 +165,14 @@ export default function MainLayout() {
         </span>
       ),
     }] : []),
+    ...(wsFeatures.datasource ? [{
+      key: 'datasource',
+      label: (
+        <span>
+          <CloudDownloadOutlined /> 数据源同步
+        </span>
+      ),
+    }] : []),
     { key: 'settings', label: <span><SettingOutlined /> 工作区设置</span> },
   ]
   // ── 表级页签（融合导航行，紧随工作区分页之后）──
@@ -220,7 +228,13 @@ export default function MainLayout() {
     const inTables = location.startsWith(`/w/${wid}/tables`)
     const inDocuments = location.startsWith(`/w/${wid}/documents`)
     const inAnalytics = location.startsWith(`/w/${wid}/analytics`)
-    if ((!feat.tables && inTables) || (!feat.documents && inDocuments) || (!feat.analytics && inAnalytics)) {
+    const inDatasource = location.startsWith(`/w/${wid}/datasource`)
+    if (
+      (!feat.tables && inTables) ||
+      (!feat.documents && inDocuments) ||
+      (!feat.analytics && inAnalytics) ||
+      (!feat.datasource && inDatasource)
+    ) {
       navigate(`/w/${wid}/${workspaceLandingSegment(currentWs.workspace_type)}`, { replace: true })
     }
   }, [location, wid, currentWs, navigate])
