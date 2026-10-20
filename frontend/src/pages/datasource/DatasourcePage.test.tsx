@@ -1,7 +1,7 @@
 /** DatasourcePage 集成测试 —— 列表渲染 / 空态 / 新建抽屉 / 立即运行 / 运行历史. */
 
 import { describe, expect, it } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Route, Routes } from 'react-router-dom'
 import DatasourcePage from './DatasourcePage'
@@ -62,6 +62,51 @@ function setupHandlers(jobs: SyncJob[], options: { runStatus?: 'success' | 'fail
       HttpResponse.json({ total: jobs.length, jobs }),
     ),
     http.get(`/api/v1/workspaces/${WID}/tables`, () => HttpResponse.json(TABLES)),
+    http.get(`/api/v1/workspaces/${WID}/datasource/sessions`, () =>
+      HttpResponse.json({
+        total: 1,
+        sessions: [
+          {
+            id: 5,
+            workspace_id: WID,
+            name: '行情源 A',
+            headers: { 'User-Agent': 'cndb' },
+            secret_keys: ['api_key'],
+            created_at: '2026-10-20T00:00:00Z',
+            updated_at: '2026-10-20T00:00:00Z',
+          },
+        ],
+      }),
+    ),
+    http.get(`/api/v1/workspaces/${WID}/datasource/domain-templates`, () =>
+      HttpResponse.json({
+        templates: [
+          {
+            id: 'kline_trend',
+            provider: 'http_json',
+            name: '股票日线趋势',
+            description: '收盘价 + 均线',
+            reason: '时序首选',
+            formulas: [],
+            chart: { type: 'line', x: 'day', y: 'close', series: null, title: '趋势', aggregation: 'avg' },
+            summary: null,
+          },
+        ],
+      }),
+    ),
+    http.post(`/api/v1/workspaces/${WID}/analytics/templates`, async ({ request }) => {
+      calls.push('create-template')
+      const body = (await request.json()) as { name: string }
+      return HttpResponse.json({
+        id: 99,
+        workspace_id: WID,
+        table_id: 20,
+        name: body.name,
+        description: '',
+        config: { formulas: [], chart: null, summary: null, fields: [], limit: 1000 },
+        updated_at: '2026-10-20T00:00:00Z',
+      })
+    }),
     http.post(`/api/v1/workspaces/${WID}/datasource/sync-jobs/:id/run`, ({ params }) => {
       calls.push(`run:${params.id}`)
       const job = jobs[0]
@@ -182,5 +227,34 @@ describe('DatasourcePage', () => {
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '运行历史 北京天气日报' }))
     expect(await screen.findByText(/运行历史 · 北京天气日报/)).toBeInTheDocument()
+  })
+})
+
+describe('DatasourcePage · 凭证会话与领域模板', () => {
+  it('编辑抽屉显示凭证会话与请求间隔', async () => {
+    setupHandlers([makeJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
+    const drawer = screen.getByText(/编辑同步任务 · 北京天气日报/).closest('.ant-drawer-content') as HTMLElement
+    expect(within(drawer).getByText('凭证会话')).toBeInTheDocument()
+    expect(within(drawer).getByText('请求间隔（毫秒）')).toBeInTheDocument()
+  })
+
+  it('新建会话弹窗可打开', async () => {
+    setupHandlers([makeJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
+    fireEvent.click(screen.getByTestId('datasource-session-create'))
+    expect(await screen.findByText('新建凭证会话')).toBeInTheDocument()
+    expect(screen.getByTestId('datasource-session-name')).toBeInTheDocument()
+  })
+
+  it('套用领域分析模板调用 analytics 建模板接口', async () => {
+    const calls = setupHandlers([makeJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '套用分析模板 北京天气日报' }))
+    fireEvent.click(await screen.findByText('股票日线趋势'))
+    await waitFor(() => expect(calls).toContain('create-template'))
+    expect(await screen.findByText(/已创建分析模板/)).toBeInTheDocument()
   })
 })

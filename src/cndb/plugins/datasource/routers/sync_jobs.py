@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.datasource.models import DatasourceSyncJob, DatasourceSyncRun, RunTrigger
+from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob, DatasourceSyncRun, RunTrigger
 from cndb.plugins.datasource.providers.base import ProviderError
 from cndb.plugins.datasource.providers.registry import get_provider
 from cndb.plugins.datasource.schemas import (
@@ -73,6 +73,7 @@ def _validate_job_config(
     cursor: dict[str, Any],
     schedule: dict[str, Any],
     match_keys: list[str],
+    session_id: int | None = None,
 ) -> None:
     """创建 / 更新时逐项校验，把配置错误挡在运行期之前（错误信息直接给前端）."""
     try:
@@ -82,6 +83,11 @@ def _validate_job_config(
         ScheduleConfig.from_dict(schedule)
     except (ProviderError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if session_id is not None:
+        session = db.get(DatasourceSession, session_id)
+        if session is None or session.workspace_id != workspace_id:
+            raise HTTPException(status_code=400, detail=f"凭证会话不存在: {session_id}")
 
     table = _validate_table(db, workspace_id, table_id)
     if table is not None and match_keys:
@@ -133,6 +139,7 @@ def create_sync_job(
         cursor=payload.cursor,
         schedule=payload.schedule,
         match_keys=payload.match_keys,
+        session_id=payload.session_id,
     )
     job = DatasourceSyncJob(
         workspace_id=workspace_id,
@@ -149,6 +156,8 @@ def create_sync_job(
         cursor=payload.cursor,
         schedule=payload.schedule,
         enabled=payload.enabled,
+        session_id=payload.session_id,
+        rate_limit_ms=payload.rate_limit_ms,
     )
     db.add(job)
     db.commit()
@@ -189,6 +198,7 @@ def update_sync_job(
     schedule = payload.schedule if payload.schedule is not None else (job.schedule or {})
     match_keys = payload.match_keys if payload.match_keys is not None else (job.match_keys or [])
     table_id = payload.table_id if payload.table_id is not None else job.table_id
+    session_id = payload.session_id if payload.session_id is not None else job.session_id
     _validate_job_config(
         db,
         workspace_id,
@@ -198,6 +208,7 @@ def update_sync_job(
         cursor=cursor,
         schedule=schedule,
         match_keys=match_keys,
+        session_id=session_id,
     )
 
     for field_name in (
@@ -213,6 +224,8 @@ def update_sync_job(
         "cursor",
         "schedule",
         "enabled",
+        "session_id",
+        "rate_limit_ms",
     ):
         value = getattr(payload, field_name)
         if value is not None:
@@ -274,7 +287,8 @@ def preview_sync_job(
     """抓一次预览：不落库、不推进游标、不写运行记录."""
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
     job = _job_or_404(db, workspace_id, job_id)
-    result = preview_job(job, limit=payload.limit)
+    session = db.get(DatasourceSession, job.session_id) if job.session_id else None
+    result = preview_job(job, limit=payload.limit, session=session)
     return PreviewResponse(
         status=result.status,
         total=result.total,

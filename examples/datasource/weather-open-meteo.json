@@ -1,0 +1,35 @@
+{
+  "_comment": "示例：Open-Meteo 每日天气（无需 API Key）。响应是「列名 → 数组」形态（daily.time[] / daily.temperature_2m_max[]），故用 record_mode=columns 拼行；POST /api/v1/workspaces/{wid}/datasource/sync-jobs 可直接用本文件（去掉 _comment）。",
+  "name": "北京每日天气",
+  "provider": "http_json",
+  "request_spec": {
+    "url_template": "https://api.open-meteo.com/v1/forecast?latitude=39.9042&longitude=116.4074&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum&timezone=Asia%2FShanghai&start_date={start}&end_date={end}",
+    "data_path": "daily",
+    "record_mode": "columns",
+    "record_layout": {
+      "day": "time",
+      "temp_max": "temperature_2m_max",
+      "temp_min": "temperature_2m_min",
+      "temp_avg": "temperature_2m_mean",
+      "precip": "precipitation_sum"
+    },
+    "time_window": {
+      "mode": "range",
+      "start_param": "start_date",
+      "end_param": "end_date"
+    }
+  },
+  "entrant_keys": [],
+  "match_keys": ["day"],
+  "field_mapping": {
+    "day": { "name": "day", "field_type": "date" },
+    "temp_max": { "name": "temp_max", "field_type": "float" },
+    "temp_min": { "name": "temp_min", "field_type": "float" },
+    "temp_avg": { "name": "temp_avg", "field_type": "float" },
+    "precip": { "name": "precip", "field_type": "float" }
+  },
+  "cursor": { "strategy": "date", "field": "day", "backfill_start": "2024-01-01" },
+  "schedule": { "mode": "daily", "at": "07:30" },
+  "enabled": true,
+  "rate_limit_ms": 0
+}

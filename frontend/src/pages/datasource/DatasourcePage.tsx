@@ -8,18 +8,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Collapse, Drawer, Empty, Form, Input, InputNumber, Select, Space,
-  Switch, Table, Tag, Tooltip, Typography,
+  Alert, App as AntApp, Button, Collapse, Drawer, Dropdown, Empty, Form, Input, InputNumber, Modal,
+  Select, Space, Switch, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import {
-  CloudDownloadOutlined, DeleteOutlined, EditOutlined, EyeOutlined, HistoryOutlined, PlayCircleOutlined,
-  PlusOutlined,
+  CloudDownloadOutlined, DeleteOutlined, EditOutlined, ExperimentOutlined, EyeOutlined, HistoryOutlined,
+  KeyOutlined, PlayCircleOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { datasourceApi, tableApi } from '@/api'
+import { analyticsApi } from '@/api/analytics'
+import type { AnalyticsChart, AnalyticsFormula, AnalyticsSummary } from '@/api/analytics'
 import type {
-  DatasourceProviderInfo, SyncJob, SyncJobPayload, SyncPreviewResult, SyncRun, SyncScheduleConfig,
+  DatasourceProviderInfo, DatasourceSession, DomainTemplate, SyncJob, SyncJobPayload, SyncPreviewResult,
+  SyncRun, SyncScheduleConfig,
 } from '@/api'
 
 const { Title, Text } = Typography
@@ -69,6 +72,7 @@ export default function DatasourcePage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editing, setEditing] = useState<SyncJob | null>(null)
   const [historyJob, setHistoryJob] = useState<SyncJob | null>(null)
+  const [sessionModalOpen, setSessionModalOpen] = useState(false)
 
   const providersQuery = useQuery({
     queryKey: ['datasource', 'providers', wid],
@@ -86,10 +90,23 @@ export default function DatasourcePage() {
     queryFn: () => tableApi.list(wid),
     enabled: !!wid,
   })
+  const sessionsQuery = useQuery({
+    queryKey: ['datasource', 'sessions', wid],
+    queryFn: () => datasourceApi.sessions(wid),
+    enabled: !!wid,
+  })
+  const domainTemplatesQuery = useQuery({
+    queryKey: ['datasource', 'domain-templates', wid],
+    queryFn: () => datasourceApi.domainTemplates(wid),
+    enabled: !!wid,
+    staleTime: 300_000,
+  })
 
   const providers = useMemo(() => providersQuery.data ?? [], [providersQuery.data])
   const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data])
   const tables = useMemo(() => tablesQuery.data ?? [], [tablesQuery.data])
+  const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data])
+  const domainTemplates = useMemo(() => domainTemplatesQuery.data ?? [], [domainTemplatesQuery.data])
 
   const providerLabel = useCallback(
     (name: string) => providers.find(p => p.name === name)?.label ?? name,
@@ -136,6 +153,33 @@ export default function DatasourcePage() {
     setEditing(job)
     setDrawerOpen(true)
   }
+  const applyDomainTemplate = useCallback(
+    async (job: SyncJob, template: DomainTemplate) => {
+      if (job.table_id == null) {
+        message.warning('该任务未绑定目标表，无法套用分析模板')
+        return
+      }
+      try {
+        await analyticsApi.createTemplate(wid, {
+          name: `${job.name} · ${template.name}`,
+          description: template.description,
+          table_id: job.table_id,
+          config: {
+            formulas: template.formulas as unknown as AnalyticsFormula[],
+            chart: (template.chart as unknown as AnalyticsChart | null) ?? null,
+            summary: (template.summary as unknown as AnalyticsSummary | null) ?? null,
+            fields: [],
+            limit: 1000,
+          },
+        })
+        message.success('已创建分析模板，可在「数据分析」页签打开')
+      } catch {
+        message.error('套用失败：字段名可能与目标表不一致，请先对齐字段映射')
+      }
+    },
+    [wid, message],
+  )
+
   const confirmRemove = (job: SyncJob) => {
     modal.confirm({
       title: `删除同步任务「${job.name}」？`,
@@ -216,6 +260,27 @@ export default function DatasourcePage() {
                 onClick={() => setHistoryJob(job)}
               />
             </Tooltip>
+            <Dropdown
+              trigger={['click']}
+              disabled={job.table_id == null || domainTemplates.filter(t => t.provider === job.provider).length === 0}
+              menu={{
+                items: domainTemplates
+                  .filter(template => template.provider === job.provider)
+                  .map(template => ({
+                    key: template.id,
+                    label: template.name,
+                    onClick: () => void applyDomainTemplate(job, template),
+                  })),
+              }}
+            >
+              <Button
+                size="small"
+                type="text"
+                aria-label={`套用分析模板 ${job.name}`}
+                title="套用领域分析模板"
+                icon={<ExperimentOutlined />}
+              />
+            </Dropdown>
             <Tooltip title="编辑 / 预览">
               <Button
                 size="small"
@@ -240,7 +305,7 @@ export default function DatasourcePage() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [providerLabel, tableName, runMutation.isPending, runMutation.variables, jobs],
+    [providerLabel, tableName, runMutation.isPending, runMutation.variables, domainTemplates, applyDomainTemplate, jobs],
   )
 
   return (
@@ -286,11 +351,20 @@ export default function DatasourcePage() {
         job={editing}
         providers={providers}
         tables={tables}
+        sessions={sessions}
+        onManageSessions={() => setSessionModalOpen(true)}
         onClose={() => setDrawerOpen(false)}
         onSaved={() => {
           invalidate()
           setDrawerOpen(false)
         }}
+      />
+
+      <SessionModal
+        wid={wid}
+        open={sessionModalOpen}
+        onClose={() => setSessionModalOpen(false)}
+        onSaved={() => void queryClient.invalidateQueries({ queryKey: ['datasource', 'sessions', wid] })}
       />
 
       <HistoryDrawer wid={wid} job={historyJob} onClose={() => setHistoryJob(null)} />
@@ -304,12 +378,14 @@ interface JobDrawerProps {
   job: SyncJob | null
   providers: DatasourceProviderInfo[]
   tables: Array<{ id: number | string; name: string }>
+  sessions: DatasourceSession[]
+  onManageSessions: () => void
   onClose: () => void
   onSaved: () => void
 }
 
 /** 新建 / 编辑抽屉：Provider 驱动 + 保存后抓取预览（预览不落库） */
-function JobDrawer({ wid, open, job, providers, tables, onClose, onSaved }: JobDrawerProps) {
+function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessions, onClose, onSaved }: JobDrawerProps) {
   const [form] = Form.useForm()
   const { message } = AntApp.useApp()
   const [saving, setSaving] = useState(false)
@@ -340,6 +416,8 @@ function JobDrawer({ wid, open, job, providers, tables, onClose, onSaved }: JobD
         schedule_at: job.schedule?.at ?? undefined,
         schedule_seconds: job.schedule?.seconds ?? undefined,
         schedule_expr: job.schedule?.expr ?? undefined,
+        session_id: job.session_id ?? undefined,
+        rate_limit_ms: job.rate_limit_ms ?? 0,
         paging_mode: job.request_spec?.paging?.mode ?? 'none',
         page_size: job.request_spec?.paging?.page_size ?? 50,
         time_window_mode: job.request_spec?.time_window?.mode ?? 'none',
@@ -360,6 +438,7 @@ function JobDrawer({ wid, open, job, providers, tables, onClose, onSaved }: JobD
         entrant_keys: [],
         match_keys: [],
         enabled: true,
+        rate_limit_ms: 0,
       })
     }
   }, [open, job, form, providers])
@@ -397,6 +476,8 @@ function JobDrawer({ wid, open, job, providers, tables, onClose, onSaved }: JobD
         expr: values.schedule_mode === 'cron' ? values.schedule_expr : '',
       },
       enabled: Boolean(values.enabled),
+      session_id: values.session_id == null ? null : Number(values.session_id),
+      rate_limit_ms: Number(values.rate_limit_ms) || 0,
     }
   }, [form])
 
@@ -492,6 +573,45 @@ function JobDrawer({ wid, open, job, providers, tables, onClose, onSaved }: JobD
           </Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ width: 90 }}>
             <Switch />
+          </Form.Item>
+        </Space>
+
+        <Space size={12} style={{ display: 'flex' }}>
+          <Form.Item
+            name="session_id"
+            label={
+              <Space size={4}>
+                凭证会话
+                <Button
+                  type="link"
+                  size="small"
+                  data-testid="datasource-session-create"
+                  icon={<KeyOutlined />}
+                  onClick={onManageSessions}
+                >
+                  新建
+                </Button>
+              </Space>
+            }
+            style={{ flex: 1 }}
+            extra="会话提供请求头与密钥；请求模板里可用 {密钥名} 占位"
+          >
+            <Select
+              allowClear
+              placeholder="不使用会话（凭据内联在请求模板里）"
+              options={sessions.map(item => ({
+                value: item.id,
+                label: item.secret_keys.length ? `${item.name}（密钥: ${item.secret_keys.join(', ')}）` : item.name,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="rate_limit_ms"
+            label="请求间隔（毫秒）"
+            style={{ width: 190 }}
+            extra="同一任务相邻请求最小间隔，0 = 不限速"
+          >
+            <InputNumber min={0} max={60000} step={100} style={{ width: '100%' }} />
           </Form.Item>
         </Space>
 
@@ -777,5 +897,80 @@ function HistoryDrawer({ wid, job, onClose }: { wid: string; job: SyncJob | null
         locale={{ emptyText: '还没有运行记录' }}
       />
     </Drawer>
+  )
+}
+
+/** 新建凭证会话弹窗：请求头 + 密钥（密钥保存后不可回读，只能整体覆盖） */
+function SessionModal({
+  wid,
+  open,
+  onClose,
+  onSaved,
+}: {
+  wid: string
+  open: boolean
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [form] = Form.useForm()
+  const { message } = AntApp.useApp()
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (open) form.resetFields()
+  }, [open, form])
+
+  const submit = async () => {
+    const values = await form.validateFields()
+    let headers: Record<string, string> = {}
+    let secrets: Record<string, string> = {}
+    try {
+      if (values.headers_json?.trim()) headers = JSON.parse(values.headers_json) as Record<string, string>
+      if (values.secrets_json?.trim()) secrets = JSON.parse(values.secrets_json) as Record<string, string>
+    } catch {
+      message.error('请求头 / 密钥不是合法 JSON')
+      return
+    }
+    setSaving(true)
+    try {
+      await datasourceApi.createSession(wid, { name: String(values.name).trim(), headers, secrets })
+      message.success('会话已创建，可在任务里选用')
+      onSaved()
+      onClose()
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      message.error(detail || '创建失败（名称可能重复）')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="新建凭证会话"
+      open={open}
+      onCancel={onClose}
+      onOk={() => void submit()}
+      confirmLoading={saving}
+      okText="创建"
+      cancelText="取消"
+      destroyOnHidden
+    >
+      <Form form={form} layout="vertical" size="small">
+        <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入会话名称' }]}>
+          <Input data-testid="datasource-session-name" placeholder="如：行情源 A" />
+        </Form.Item>
+        <Form.Item name="headers_json" label="请求头（JSON）" extra='如 {"User-Agent": "cndb-sync/1.0"}'>
+          <Input.TextArea data-testid="datasource-session-headers" rows={2} />
+        </Form.Item>
+        <Form.Item
+          name="secrets_json"
+          label="密钥（JSON，保存后不可回读）"
+          extra='如 {"api_key": "xxx"}；请求模板里写 {api_key} 即可引用'
+        >
+          <Input.TextArea data-testid="datasource-session-secrets" rows={2} />
+        </Form.Item>
+      </Form>
+    </Modal>
   )
 }

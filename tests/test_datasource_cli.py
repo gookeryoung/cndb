@@ -78,7 +78,7 @@ def fake_pipeline(monkeypatch):
     """把 runner.run_pipeline 换成固定行（避免 CLI 真实联网）."""
     rows = [{"city": "北京", "temp": 30.0}]
 
-    def fake(job, *, provider=None, fetch=None):
+    def fake(job, *, provider=None, fetch=None, rate_limit_ms=0, sleep=None):
         normalize = NormalizeResult(rows=list(rows))
         return PipelineOutcome(rows=list(rows), plans=1, succeeded=1, failures=[], normalize=normalize)
 
@@ -88,7 +88,7 @@ def fake_pipeline(monkeypatch):
 
 @pytest.fixture
 def failing_pipeline(monkeypatch):
-    def fake(job, *, provider=None, fetch=None):
+    def fake(job, *, provider=None, fetch=None, rate_limit_ms=0, sleep=None):
         normalize = NormalizeResult(rows=[])
         outcome = PipelineOutcome(rows=[], plans=1, succeeded=0, failures=[], normalize=normalize)
         outcome.failures.append(FetchFailure(label="single", error="HTTP 500"))

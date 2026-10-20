@@ -40,7 +40,8 @@ def _get_session() -> Session:
     engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, echo=settings.DEBUG)
     if "sqlite" in settings.DATABASE_URL:
         register_sqlite_pragmas(engine)
-    if not inspect(engine).has_table("datasource_sync_job"):
+    inspector = inspect(engine)
+    if not (inspector.has_table("datasource_sync_job") and inspector.has_table("datasource_session")):
         Base.metadata.create_all(engine)
     return sessionmaker(autocommit=False, autoflush=False, bind=engine)()
 
@@ -82,7 +83,7 @@ def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
-    from cndb.plugins.datasource.models import DatasourceSyncJob, RunStatus, RunTrigger
+    from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob, RunStatus, RunTrigger
     from cndb.plugins.datasource.services.runner import execute_job, preview_job
     from cndb.plugins.datasource.services.scheduler import (
         LEASE_TTL_SECONDS,
@@ -105,7 +106,8 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         for job in jobs:
             if getattr(args, "dry_run", False):
-                preview = preview_job(job, limit=int(getattr(args, "limit", 20) or 20))
+                session = db.get(DatasourceSession, job.session_id) if job.session_id else None
+                preview = preview_job(job, limit=int(getattr(args, "limit", 20) or 20), session=session)
                 results.append(
                     {
                         "job_id": job.id,
@@ -166,7 +168,7 @@ def cmd_tick(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_preview(args: argparse.Namespace) -> dict[str, Any]:
-    from cndb.plugins.datasource.models import DatasourceSyncJob
+    from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob
     from cndb.plugins.datasource.services.runner import preview_job
 
     db = _get_session()
@@ -174,7 +176,8 @@ def cmd_preview(args: argparse.Namespace) -> dict[str, Any]:
         job = db.get(DatasourceSyncJob, int(args.job_id))
         if job is None:
             raise SystemExit(f"[error] 同步任务不存在: {args.job_id}")
-        preview = preview_job(job, limit=int(getattr(args, "limit", 20) or 20))
+        session = db.get(DatasourceSession, job.session_id) if job.session_id else None
+        preview = preview_job(job, limit=int(getattr(args, "limit", 20) or 20), session=session)
         return {
             "job_id": job.id,
             "name": job.name,

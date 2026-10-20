@@ -47,6 +47,28 @@ class RunTrigger(enum.StrEnum):
     CLI = "cli"
 
 
+class DatasourceSession(TimestampMixin, Base):
+    """凭证会话：集中管理请求头与密钥，供多个同步任务复用（ADR 0006 D6 / M5）.
+
+    - ``headers``：非敏感请求头（User-Agent / Accept / Referer 等），运行期合并进 job 请求；
+    - ``secrets``：密钥字典（如 ``{"api_key": "..."}``），**不随工作区导出**、读接口只回显键名；
+      运行期作为模板变量注入（请求模板里写 ``{api_key}`` 即可）。
+    """
+
+    __tablename__ = "datasource_session"
+    __table_args__ = {"extend_existing": True}
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    headers: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    secrets: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
 class DatasourceSyncJob(TimestampMixin, Base):
     """同步任务定义.
 
@@ -82,6 +104,12 @@ class DatasourceSyncJob(TimestampMixin, Base):
     match_keys: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # 字段映射：{"源字段": {"name": "目标字段", "field_type": "float"}} 或 {"源字段": null}
     field_mapping: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    # 凭证会话（M5）：请求头 + 密钥集中管理，job 只引用不复制
+    session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("datasource_session.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # 同一 job 内相邻请求的最小间隔（毫秒；0 = 不限速），用于对源站友好的多参数 / 分页抓取
+    rate_limit_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # ── 增量与调度 ──
     # {"strategy":"date|datetime|key_set|none","field":"trade_date",
@@ -131,6 +159,7 @@ class DatasourceSyncRun(TimestampMixin, Base):
 
 
 __all__ = [
+    "DatasourceSession",
     "DatasourceSyncJob",
     "DatasourceSyncRun",
     "RunStatus",
