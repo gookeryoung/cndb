@@ -13,6 +13,7 @@
  */
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { StrictMode } from 'react'
 import type { ReactNode } from 'react'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import FieldManager, { fieldNoteText, formatIncrementExample } from './index'
@@ -1154,6 +1155,34 @@ describe('FieldManager 关联字段对话框数据同步', () => {
         })
     })
 
+    it('StrictMode 下打开编辑：目标表与引用字段正常回填，不被字段卸载清空', async () => {
+        // 回归：<Form preserve={false}> 会在字段组件卸载时丢弃其值，而 React StrictMode 开发态
+        // 的「挂载→卸载→重挂载」会连带把父层刚回填的 config 清空，表现为编辑关联字段时
+        // 「关联目标表」为空、「引用字段」区显示空态（真实页面 dev 环境即此现象）。
+        const fields = [
+            {
+                id: 5, name: '部门', field_type: 'link', order: 0,
+                config: { target_table_id: 30, multiple: false, reference_fields: [12] },
+            },
+            { id: 9, name: '负责人', field_type: 'lookup', order: 1, config: { via_link_field_id: 5, source_field_id: 12, source_field_type: 'text' } },
+        ] as any
+        renderProviders(
+            <StrictMode>
+                <FieldManager open wid={WID} tid={TID} fields={fields} onClose={() => { }} onChanged={() => { }} embedded />
+            </StrictMode>,
+            { initialAuth: { user: { id: 1, username: 'alice', role: 'system_admin' } as any, token: 'fake' } },
+        )
+        clickEditRow('部门')
+        // 字段名回填：受同一卸载清空影响，StrictMode 下曾整体为空
+        await waitFor(() => {
+            expect((itemByLabel('字段名').querySelector('input') as HTMLInputElement).value).toBe('部门')
+        })
+        await waitFor(() => expect(targetTableText()).toBe('项目表'))
+        await waitFor(() => {
+            expect(document.querySelector('.fm-ref-list')?.textContent).toContain('负责人')
+        })
+    })
+
     it('字段列表中引用字段行只读：不渲染编辑/删除按钮，也不提供拖拽手柄', () => {
         const fields = [
             { id: 5, name: '部门', field_type: 'link', order: 0, config: { target_table_id: 30 } },
@@ -1167,5 +1196,85 @@ describe('FieldManager 关联字段对话框数据同步', () => {
         expect(lookupRow.querySelector('.anticon-holder')).toBeNull()
         // 归属标注仍在
         expect(lookupRow.textContent).toContain('来自关联')
+    })
+})
+
+describe('FieldManager 切换字段类型时重置 config', () => {
+    /** 在已打开的对话框中把类型切到指定中文类型（复用类型 Select 的 showSearch 精确筛选）.
+     *  定位方式：类型 Form.Item（label 含「类型」）内的 .ant-select，避免与配置面板的下拉混用。 */
+    async function switchTypeInDialog(typeLabelZh: string) {
+        const item = Array.from(document.querySelectorAll('.ant-modal-body .ant-form-item')).find(el =>
+            el.querySelector('.ant-form-item-label')?.textContent?.includes('类型'))
+        expect(item).toBeDefined()
+        const sel = item!.querySelector('.ant-select') as HTMLElement
+        fireEvent.mouseDown(sel.querySelector('.ant-select-selector')!)
+        await waitFor(() => {
+            expect(document.querySelector('.ant-select-dropdown')).not.toBeNull()
+        })
+        const searchInput = sel.querySelector('.ant-select-selection-search-input') as HTMLInputElement
+        fireEvent.change(searchInput, { target: { value: typeLabelZh } })
+        const opt = await waitFor(() => {
+            const opts = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
+                .filter(el => (el.textContent ?? '').includes(typeLabelZh))
+            expect(opts.length).toBeGreaterThanOrEqual(1)
+            return opts[0]!
+        })
+        fireEvent.click(opt)
+    }
+
+    /** 点击对话框底部主按钮提交（字段行删除按钮文本可能含「创建」，故不走 getByText） */
+    function clickDialogSubmit() {
+        fireEvent.click(document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement)
+    }
+
+    it('新建字段：配好选项后切换类型，提交的 config 不残留旧类型的 options', async () => {
+        // 回归：旧实现靠 <Form preserve={false}> 在卸载时丢弃旧值；该行为会与 StrictMode 交互
+        // 清空回填数据（见「关联字段对话框数据同步」里的 StrictMode 用例），改为类型切换时
+        // 显式重置 config —— 本用例锁定「切换类型绝不提交旧类型配置」这一不变量。
+        const createSpy = vi.spyOn(fieldApi, 'create').mockResolvedValue({} as any)
+        await openNewDialogAndSelectType('单选')
+        addSelectOption(0, '待办')
+        addSelectOption(1, '已完成')
+        // 前置确认：选项确实写入了配置（否则下面的「不残留」断言会退化为空断言）
+        expect(document.querySelectorAll('.fm-option-row').length).toBeGreaterThanOrEqual(2)
+
+        await switchTypeInDialog('多行')
+        fireEvent.change(screen.getByPlaceholderText('例如：姓名') as HTMLInputElement, {
+            target: { value: '备注' },
+        })
+        clickDialogSubmit()
+
+        await waitFor(() => {
+            expect(createSpy).toHaveBeenCalled()
+            const payload = createSpy.mock.calls[0]![2] as unknown as Record<string, unknown>
+            expect(payload.field_type).not.toBe('select')
+            expect(payload.config ?? {}).not.toHaveProperty('options')
+        })
+    })
+
+    it('编辑字段：切换类型后提交的 config 不残留原类型配置', async () => {
+        const updateSpy = vi.spyOn(fieldApi, 'update').mockResolvedValue({} as any)
+        const fields = [
+            ...FIELDS,
+            { id: 9, name: '优先级', field_type: 'select', order: 5, config: { options: ['高', '低'] } },
+        ] as any
+        renderProviders(
+            <FieldManager open wid={WID} tid={TID} fields={fields} onClose={() => { }} onChanged={() => { }} embedded />,
+            { initialAuth: { user: { id: 1, username: 'alice', role: 'system_admin' } as any, token: 'fake' } },
+        )
+        clickEditRow('优先级')
+        // 等回填完成（字段名 = 优先级），否则切换类型前表单还可能是空的
+        await waitFor(() => {
+            expect((screen.getByPlaceholderText('例如：姓名') as HTMLInputElement).value).toBe('优先级')
+        })
+
+        await switchTypeInDialog('多行')
+        clickDialogSubmit()
+
+        await waitFor(() => {
+            expect(updateSpy).toHaveBeenCalled()
+            const payload = updateSpy.mock.calls[0]![3] as unknown as Record<string, unknown>
+            expect(payload.config ?? {}).not.toHaveProperty('options')
+        })
     })
 })
