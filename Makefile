@@ -105,10 +105,10 @@ build: frontend-build ## 构建分发包（前端 → wheel + sdist）
 VERSION ?= $(shell grep -m1 -E '^version' pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 
 docker-build db: build ## 本地构建镜像（联网机；VERSION=x.y.z 覆盖版本）
-	./deploy/build-image.sh $(VERSION)
+	bash deploy/build-image.sh $(VERSION)
 
 docker-export de: ## 导出离线交付包（先 make docker-build；VERSION=x.y.z 覆盖版本）
-	./deploy/export-image.sh $(VERSION)
+	bash deploy/export-image.sh $(VERSION)
 
 clean: ## 清理构建产物与缓存
 	@uv run python scripts/clean.py

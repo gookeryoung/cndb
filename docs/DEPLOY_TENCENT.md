@@ -715,11 +715,15 @@ docker volume ls                                   # 确认无误后再清理卷
 
 ```bash
 # 1) 本地构建：依赖基础镜像（字体 + 锁定依赖）+ 应用镜像；默认本地名 cndb:<version>
-./deploy/build-image.sh 0.3.0
+bash deploy/build-image.sh 0.3.0
 
 # 2) 导出离线交付包（含 nginx 反代镜像；不需要时 WITH_NGINX=0）
-./deploy/export-image.sh 0.3.0
+bash deploy/export-image.sh 0.3.0
 ```
+
+> 也可用 `make docker-build VERSION=0.3.0` / `make docker-export VERSION=0.3.0`。
+> 仓库内 `deploy/*.sh` 以 644 入库（在线链路由 TAT 运行时 chmod），故本地一律用
+> `bash deploy/xxx.sh` 调用；交付包内已由导出脚本补上执行位，离线机可直接 `./deploy/...`。
 
 产出 `dist/offline/cndb-0.3.0-offline-bundle.tar.gz`，解包目录结构：
 
