@@ -3,11 +3,11 @@
 Status: Proposed
 Date: 2026-10-20
 Related: `src/cndb/plugins/base.py`、`src/cndb/plugins/tables/services/importing/api_fetch.py`、`src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/services/importing/api_config_loader.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/importing/import_tasks.py`、`src/cndb/core/events.py`、`src/cndb/plugins/analytics/services/formula.py`、`src/cndb/plugins/analytics/services/recommend.py`、`docker-compose.prod.yml`
-需求卡片: 无卡片（需求直接立项，原文见「口径」）
+需求卡片: `docs/requirements/0006-periodic-datasource-sync.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
 
-需求原文：**「在工作区内提供通用的『定期拉取外部数据 → 规范化 / 幂等同步进数据表 → 面向时序的分析可视化』能力。股票日线、天气、新闻日报等均作为该框架的场景实例，而非专门功能。」**（本 ADR 无需求卡片，原文与 C 编号就地维护）
+需求原文：见需求卡片「需求原句」（逐字，本 ADR 不复制第二份）；约束编号沿用卡片的 C1..C5。
 
 | C # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
