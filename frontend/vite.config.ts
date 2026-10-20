@@ -19,6 +19,10 @@ function syncStaticPlugin(): Plugin {
       const staticDir = path.resolve(repoRoot, 'src/cndb/static')
       const gitkeepPath = path.join(staticDir, '.gitkeep')
 
+      // dist 缺失时无产物可同步，直接返回（vite dev server 关闭也会触发 closeBundle）。
+      // 绝不能在这种情况下清空 static——那会抹掉已构建的线上产物，CI 里表现为整片页面 404。
+      if (!fs.existsSync(distDir)) return
+
       // 1) 确保目标目录存在且 .gitkeep 不丢
       fs.mkdirSync(staticDir, { recursive: true })
       const hadGitkeep = fs.existsSync(gitkeepPath)
