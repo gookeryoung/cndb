@@ -369,6 +369,15 @@ jobs:
           CI: "true"
         run: cd frontend && pnpm e2e --project=chromium-authed tests/e2e/perf --workers=1
 
+      # dev 模式 E2E（vite dev 源码直出）：生产构建会绕开 rc-field-form 的 es barrel，
+      # 登录页崩溃（2026-10-20）那类依赖补丁回归只在 dev 现形，常规 e2e 全绿也发现不了。
+      # 无需 build 产物，webServer 自起隔离后端；串行 1 worker，约 1 分钟
+      - name: Run dev-mode E2E (vite dev，兜 dev-only 回归)
+        if: matrix.shard == 1
+        env:
+          CI: "true"
+        run: cd frontend && pnpm e2e:dev
+
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v7

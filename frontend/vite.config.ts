@@ -135,7 +135,9 @@ export default defineConfig(({ mode }) => ({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8772',
+        // 开发者本地的后端默认在 :8772；dev 模式 E2E 通过 CNDB_API_TARGET 指到 :8000
+        // （e2e-server.py 起的隔离实例），避免两套同端口互相抢
+        target: process.env.CNDB_API_TARGET || 'http://127.0.0.1:8772',
         changeOrigin: true,
       },
     },
@@ -181,7 +183,7 @@ export default defineConfig(({ mode }) => ({
         'src/vite-env.d.ts',
       ],
       // 恒定只出 text + json-summary（后者供 check-coverage.mjs）；html 会写数百文件，
-      // 默认关闭，需要浏览时用 pnpm test:coverage:html（make fcov-html）。
+      // 默认关闭，需要浏览时用 pnpm test:coverage:html。
       reporter: ['text', 'json-summary'],
       reportsDirectory: 'coverage',
     },

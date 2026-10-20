@@ -43,6 +43,22 @@ test.describe("匿名（chromium-anon only）", () => {
     await expect(page).toHaveURL(/\/login/);
     await expect(page.getByPlaceholder("用户名或邮箱")).toBeVisible();
     await expect(page.getByPlaceholder("密码")).toBeVisible();
+    await expect(page.getByText("用户名或密码错误")).toBeVisible();
+  });
+
+  test("错误密码后立即改对提交 → 正常登录（会话过期竞态回归，见 client.ts 401 分支）", async ({ page }) => {
+    // 修复前：登录接口的 401 也会走 clearToken + auth:expired（500ms 防抖），
+    // 随后立刻登录成功的会话会被延迟触发的 notifyExpired 清掉，用户被弹回 /login。
+    await page.goto("/login");
+    await page.getByPlaceholder("用户名或邮箱").fill("demo");
+    await page.getByPlaceholder("密码").fill("wrong-password");
+    await page.getByRole("button", { name: /登 录/ }).click();
+    await expect(page.getByText("用户名或密码错误")).toBeVisible();
+
+    await page.getByPlaceholder("密码").fill("demo1234");
+    await page.getByRole("button", { name: /登 录/ }).click();
+    await expect(page).toHaveURL(/\/w$/, { timeout: 15_000 });
+    await expect(page.getByTestId("workspace-list")).toBeVisible();
   });
 });
 
