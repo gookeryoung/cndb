@@ -161,7 +161,7 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 | M1 通用抓取管线 | 已落地 | `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/template.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/write.py` | `tests/test_datasource_template.py`、`tests/test_datasource_normalize.py`、`tests/test_datasource_pipeline.py` | `13d4c050` |
 | M2 同步任务与调度 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/alembic/versions/0a1b2c3d4e5f_add_datasource_sync.py`、`src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/schedule.py`、`src/cndb/plugins/datasource/services/scheduler.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/cli/sync.py`、`deploy/sync.sh` | `tests/test_datasource_cursor.py`、`tests/test_datasource_schedule.py`、`tests/test_datasource_scheduler.py`、`tests/test_datasource_runner.py`、`tests/test_datasource_api.py`、`tests/test_datasource_cli.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_migration.py` | `fefa7c7d` |
 | M3 Provider + 前端 | 已落地 | `src/cndb/plugins/datasource/providers/tencent_kline.py`、`src/cndb/plugins/datasource/providers/rss_atom.py`、`src/cndb/plugins/datasource/providers/registry.py`、`frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/App.tsx` | `tests/test_datasource_providers.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/tests/e2e/critical/datasource.spec.ts` | `741e1d0b` |
-| M4 分析通用化 | 未开始 | `src/cndb/plugins/analytics/services/formula.py` | `tests/test_analytics_window_functions.py` | — |
+| M4 分析通用化 | 已落地 | `src/cndb/plugins/analytics/services/formula.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/recommend.py`、`src/cndb/plugins/analytics/schemas.py`、`frontend/src/pages/analytics/FormulaPanel.tsx` | `tests/test_analytics_window_functions.py`、`tests/test_analytics_window_integration.py`、`frontend/src/pages/analytics/FormulaPanel.test.tsx`、`frontend/tests/e2e/critical/analytics.spec.ts` | `0c2a9d68` |
 | M5 完善 | 未开始 | `src/cndb/plugins/datasource/models.py` | — | — |
 
 > M1 落地范围：`http_json` 声明式接入（请求模板 / page·offset 分页 / `chunk_days` 时间分片）、
@@ -179,11 +179,18 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 > 前端 `api/datasource.ts` + `pages/datasource/DatasourcePage.tsx`（任务列表 / Provider 驱动编辑抽屉 /
 > 抓取预览 / 运行历史），工作区页签新增「数据源同步」并按 `workspaceType` 门控；
 > 前端页面测试 8 条 + e2e 5 条（进入页签 / 新建保存落库 / 编辑回填 / 必填拦截）。
+>
+> M4 落地范围：公式引擎补 10 个窗口函数（`prev/lag/lead/diff/pct_change/cumsum/rank/ma/rolling_sum/rolling_std`）
+> 与 `partition_by + order_by + order_desc` 上下文（行对齐列 + 前缀和/名次表，按分区预处理 O(n)；
+> 无窗口公式仍走原逐行路径）；`FormulaSpec` 与模板校验透传窗口上下文；推荐侧新增
+> `partition_dimension` 角色（有 time 字段时标出 symbol/city/source 等粒度列），时间趋势示例改分区叠加 + 均线、
+> 新增「环比变化」示例；前端公式行检测到窗口函数即展开「分区 / 排序 / 升降序」选择器并补 10 个快捷片段。
+> **未做**：图表按分区多系列渲染仍复用既有 `chart.series`（前端 `toChartConfig` 已支持），未新增图表类型。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：M3 已落地，M4 待开工（分析通用化：公式引擎窗口函数 + 通用模板 + 推荐扩展）
-- 已完成：需求卡片与 ADR 口径对齐；M1 抓取管线；M2 任务模型 / 迁移 / 四策略游标 / 调度与租约 / CLI / REST / 备份 v5；M3 两个专用 provider + 前端任务页与向导 + e2e；D1-D8 经人工拍板采纳
-- 下一步：M4 先给 `plugins/analytics/services/formula.py` 引入 `partition_by + order_by` 上下文（列缓存当前会丢空值，必须改成行对齐数组），再补 `prev/lag/lead/ma/rolling_sum/rolling_std/cumsum/rank/pct_change/diff`；随后在 `templates.py` 预置「时间趋势（分区叠加）/分布/占比/比率/概览」通用模板，并在 `recommend.py` 识别粒度列 → `partition_dimension`；最后同步 `FormulaPanel.tsx` 的函数快捷片段与语法说明
-- 已知坑：`Importer.analyze()` 的 `content` 是位置必填，传 rows 入口时须带空串；`Importer` upsert 是「先查后写」，并发靠 M2 租约串行化；SQLite 读回 `DateTime(timezone=True)` 会丢 tzinfo，租约 UPDATE 必须 `synchronize_session=False`；`ScheduleConfig.from_dict` 的数值 0 是合法值（不能写 `or 默认值`）；`match_keys` 必须是目标表字段，否则建任务时 400；e2e 依赖 `pnpm build` 同步到 `src/cndb/static`（该目录已 gitignore，CI 部署自行构建）；Playwright 登录态在 `frontend/.auth/`（已 gitignore，含 token 不得入库）
-- 最近一次全绿：`make cov` + `make frontend-coverage` + 全量 e2e @ `741e1d0b`（2026-10-20，4700 passed / 覆盖率 98.09%；前端 lines 97.64%；e2e 51 passed / 16 skipped）
+- 当前阶段：M4 已落地，M5（完善）待评估；主链路（抓取 → 调度 → 落表 → 时序分析）已闭环
+- 已完成：需求卡片与 ADR 口径对齐；M1 抓取管线；M2 任务模型 / 迁移 / 四策略游标 / 调度与租约 / CLI / REST / 备份 v5；M3 两个专用 provider + 前端任务页与向导 + e2e；M4 窗口函数 + 分区上下文 + 推荐扩展 + 前端配置面；D1-D8 经人工拍板采纳
+- 下一步：M5 按需取舍 —— ①`datasource_session`（密钥集中管理，替换 `request_spec` 内联 key）；②job 级 / 全局并发限流（当前只靠 `query_interval` 与租约）；③领域模板包（股票 / 天气 / 新闻的预置公式与图表）；④天气 provider 示例（openweather 走 `http_json` 模板即可，不必新增适配器）；⑤时序分析按区间 / 分区取数（`MAX_SCAN_ROWS=20000` 仍限制全量扫描）
+- 已知坑：`Importer.analyze()` 的 `content` 是位置必填，传 rows 入口时须带空串；SQLite 读回 `DateTime(timezone=True)` 会丢 tzinfo，租约 UPDATE 必须 `synchronize_session=False`；`ScheduleConfig.from_dict` 的数值 0 是合法值（不能写 `or 默认值`）；窗口函数第一参数必须是字段引用（`ma(sum([x]), 3)` 不支持）且聚合仍按整列（不随分区）；`rolling_*` 不满窗返回 None（不是用部分窗口）；e2e 需先 `pnpm build`，且本机 Playwright 清理 `test-results/` 会被安全策略拦截 → 用 `--output <独立目录>` 规避；Playwright 登录态在 `frontend/.auth/`（gitignore）
+- 最近一次全绿：`make check-fast` + `make cov` + `make frontend-coverage` + analytics/datasource e2e @ `0c2a9d68`（2026-10-20，4746 passed / 覆盖率 98.10%；前端核心 lines 97.64%；e2e 10 + 5 条通过）
