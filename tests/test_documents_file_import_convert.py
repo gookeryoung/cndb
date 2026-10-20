@@ -1,0 +1,626 @@
+"""通用文件导入 —— 转换管线单元测试（P0）.
+
+覆盖：空白规整 / 标题清洗 / 解码兜底 / md 标题识别 / docx 与 html 转换 /
+读取器批次校验与逐条隔离。对应需求 C4-C8 与 ADR 0010 P0。
+"""
+
+from __future__ import annotations
+
+import base64
+import io
+import struct
+import zlib
+
+import pytest
+from docx import Document as DocxDocument
+from docx.oxml import OxmlElement, parse_xml
+from docx.oxml.ns import nsdecls
+
+from cndb.core.errors import BadRequestError
+from cndb.plugins.documents.services.importers import docx as docx_converter
+from cndb.plugins.documents.services.importers import html as html_converter
+from cndb.plugins.documents.services.importers import markdown as markdown_converter
+from cndb.plugins.documents.services.importers import normalize as normalize_module
+from cndb.plugins.documents.services.importers import reader
+from cndb.plugins.documents.services.importers.errors import UnsupportedImport
+
+
+def _png_bytes() -> bytes:
+    """构造一张合法的 1×1 RGBA PNG（手工拼块，避免额外图片依赖）."""
+
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        head = struct.pack(">I", len(payload)) + kind + payload
+        return head + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
+    idat = zlib.compress(b"\x00\x00\x00\x00\x00")
+    return signature + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
+
+
+#: 1×1 PNG（供 python-docx add_picture 使用）
+PNG_BYTES = _png_bytes()
+
+
+def _make_docx(build) -> bytes:
+    document = DocxDocument()
+    build(document)
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+# ── normalize ──
+
+
+class TestNormalize:
+    def test_trailing_whitespace_removed(self):
+        assert normalize_module.normalize_markdown("hello   \nworld\t\n") == "hello\nworld"
+
+    def test_inline_spaces_collapsed(self):
+        assert normalize_module.normalize_markdown("a    b\t c") == "a b c"
+
+    def test_blank_lines_collapsed(self):
+        assert normalize_module.normalize_markdown("a\n\n\n\nb") == "a\n\nb"
+
+    def test_leading_blank_lines_dropped(self):
+        assert normalize_module.normalize_markdown("\n\n\na") == "a"
+
+    def test_trailing_blank_lines_dropped(self):
+        assert normalize_module.normalize_markdown("a\n\n\n") == "a"
+
+    def test_invalid_indent_removed_but_list_kept(self):
+        assert normalize_module.normalize_markdown("  plain\n  - item\n    code") == "plain\n  - item\n    code"
+
+    def test_quote_indent_kept(self):
+        assert normalize_module.normalize_markdown("  > 引用") == "  > 引用"
+
+    def test_inline_code_spaces_preserved(self):
+        assert normalize_module.normalize_markdown("a  `b   c`  d") == "a `b   c` d"
+
+    def test_fence_content_preserved(self):
+        text = "```\na  b\n\n\n```\n"
+        assert normalize_module.normalize_markdown(text) == "```\na  b\n\n\n```"
+
+    def test_table_row_preserved(self):
+        text = "| a |  b |\n|---|---|\n| 1 |  2 |"
+        assert normalize_module.normalize_markdown(text) == text
+
+    def test_fence_after_blank_line(self):
+        assert normalize_module.normalize_markdown("a\n\n```\ncode\n```") == "a\n\n```\ncode\n```"
+
+    def test_unterminated_fence_trailing_blank_trimmed(self):
+        assert normalize_module.normalize_markdown("```\na\n\n") == "```\na"
+
+    def test_front_matter_preserved_and_body_normalized(self):
+        text = "---\ntitle: x  \n---\n\n# H\n\n\nbody  \n"
+        assert normalize_module.normalize_markdown(text) == "---\ntitle: x  \n---\n\n# H\n\nbody"
+
+    def test_empty_and_whitespace_only(self):
+        assert normalize_module.normalize_markdown("") == ""
+        assert normalize_module.normalize_markdown("   \n\t\n") == ""
+
+    def test_crlf_normalized(self):
+        assert normalize_module.normalize_markdown("a\r\nb\r\n") == "a\nb"
+
+    def test_unterminated_fence_kept(self):
+        assert normalize_module.normalize_markdown("```\na  b") == "```\na  b"
+
+    def test_clean_title(self):
+        assert normalize_module.clean_title("  标题\x00  甲 ") == "标题 甲"
+        assert normalize_module.clean_title("") == "未命名"
+        assert normalize_module.clean_title("x" * 600).__len__() == 500
+
+    def test_decode_text_bom_and_gb18030(self):
+        assert normalize_module.decode_text(b"\xef\xbb\xbfhi") == "hi"
+        assert normalize_module.decode_text("中文".encode("gb18030")) == "中文"
+
+    def test_decode_text_chardet_high_confidence(self, monkeypatch):
+        import chardet
+
+        monkeypatch.setattr(chardet, "detect", lambda data: {"encoding": "cp1252", "confidence": 0.9})
+        assert normalize_module.decode_text(b"\xe0\xff") == "àÿ"
+
+    def test_decode_text_chardet_low_confidence(self, monkeypatch):
+        import chardet
+
+        monkeypatch.setattr(chardet, "detect", lambda data: {"encoding": "cp1252", "confidence": 0.1})
+        assert normalize_module.decode_text(b"\xe0\xff") == "àÿ"
+
+    def test_decode_text_ascii_detection_skipped(self, monkeypatch):
+        import chardet
+
+        monkeypatch.setattr(chardet, "detect", lambda data: {"encoding": "ascii", "confidence": 0.99})
+        assert normalize_module.decode_text(b"\xe0\xff") == "àÿ"
+
+    def test_decode_text_unknown_codec_falls_back(self, monkeypatch):
+        import chardet
+
+        monkeypatch.setattr(chardet, "detect", lambda data: {"encoding": "no-such-codec", "confidence": 0.9})
+        assert normalize_module.decode_text(b"\xe0\xff") == "àÿ"
+
+
+# ── markdown 转换 ──
+
+
+class TestMarkdownConvert:
+    def test_front_matter_title(self):
+        title, body, _ = markdown_converter.convert_markdown(
+            b"---\ntitle: \xe6\xa0\x87\xe9\xa2\x98\n---\n\n\xe6\xad\xa3\xe6\x96\x87\n", "a.md"
+        )
+        assert title == "标题"
+        assert body.strip() == "正文"
+
+    def test_h1_title_stripped(self):
+        title, body, warnings = markdown_converter.convert_markdown(
+            b"# \xe6\xa0\x87\xe9\xa2\x98\n\n\xe6\xad\xa3\xe6\x96\x87\n", "a.md"
+        )
+        assert title == "标题"
+        assert body.strip() == "正文"
+        assert warnings
+
+    def test_filename_fallback(self):
+        title, body, warnings = markdown_converter.convert_markdown(
+            b"\xe5\x8f\xaa\xe6\x9c\x89\xe6\xad\xa3\xe6\x96\x87", "notes/笔记.md"
+        )
+        assert title == "笔记"
+        assert body == "只有正文"
+        assert warnings
+
+    def test_leading_blank_then_h1(self):
+        title, _, warnings = markdown_converter.convert_markdown(
+            b"\n\n# \xe6\xa0\x87\xe9\xa2\x98\n\n\xe6\xad\xa3\xe6\x96\x87", "a.md"
+        )
+        assert title == "标题"
+        assert warnings
+
+    def test_blank_body_falls_back_to_filename(self):
+        title, body, warnings = markdown_converter.convert_markdown(b"\n\n\n", "a.md")
+        assert title == "a"
+        assert body.strip() == ""
+        assert warnings
+
+
+# ── docx 转换 ──
+
+
+class TestDocxConvert:
+    def test_heading_title_stripped(self):
+        data = _make_docx(lambda d: (d.add_heading("我的标题", level=1), d.add_paragraph("正文")))
+        title, body, warnings = docx_converter.convert_docx(data, "x.docx")
+        assert title == "我的标题"
+        assert body == "正文"
+        assert warnings
+
+    def test_core_property_title_keeps_heading(self):
+        def build(document):
+            document.core_properties.title = "核心标题"
+            document.add_heading("章节", level=1)
+            document.add_paragraph("正文")
+
+        title, body, _ = docx_converter.convert_docx(_make_docx(build), "x.docx")
+        assert title == "核心标题"
+        assert "# 章节" in body
+
+    def test_heading_levels_and_formatting(self):
+        def build(document):
+            document.add_heading("二级", level=2)
+            paragraph = document.add_paragraph()
+            run = paragraph.add_run("粗体")
+            run.bold = True
+            paragraph.add_run("与")
+            italic = paragraph.add_run("斜体")
+            italic.italic = True
+
+        _, body, _ = docx_converter.convert_docx(_make_docx(build), "x.docx")
+        assert "## 二级" in body
+        assert "**粗体**与*斜体*" in body
+
+    def test_lists(self):
+        def build(document):
+            document.add_paragraph("项一", style="List Bullet")
+            document.add_paragraph("项二", style="List Number")
+
+        _, body, _ = docx_converter.convert_docx(_make_docx(build), "x.docx")
+        assert "- 项一" in body
+        assert "1. 项二" in body
+
+    def test_table(self):
+        def build(document):
+            table = document.add_table(rows=2, cols=2)
+            table.cell(0, 0).text = "甲"
+            table.cell(0, 1).text = "乙"
+            table.cell(1, 0).text = "1"
+            table.cell(1, 1).text = "2"
+
+        _, body, _ = docx_converter.convert_docx(_make_docx(build), "x.docx")
+        assert "| 甲 | 乙 |" in body
+        assert "| --- | --- |" in body
+        assert "| 1 | 2 |" in body
+
+    def test_image_with_sink(self):
+        def build(document):
+            document.add_paragraph("前")
+            document.add_picture(io.BytesIO(PNG_BYTES))
+            document.add_paragraph("后")
+
+        calls: list[tuple[bytes, str]] = []
+
+        def sink(data: bytes, name: str) -> str:
+            calls.append((data, name))
+            return "KEY123"
+
+        _, body, _ = docx_converter.convert_docx(_make_docx(build), "x.docx", image_sink=sink)
+        assert "file:KEY123" in body
+        assert calls and calls[0][1] == "image1.png"
+
+    def test_image_without_sink_is_placeholder(self):
+        def build(document):
+            document.add_paragraph("前")
+            document.add_picture(io.BytesIO(PNG_BYTES))
+
+        _, body, warnings = docx_converter.convert_docx(_make_docx(build), "x.docx")
+        assert "图片未导入" in body
+        assert any("未导入" in message for message in warnings)
+
+    def test_image_sink_returning_none_is_placeholder(self):
+        def build(document):
+            document.add_picture(io.BytesIO(PNG_BYTES))
+
+        _, body, warnings = docx_converter.convert_docx(_make_docx(build), "x.docx", image_sink=lambda d, n: None)
+        assert "图片未导入" in body
+        assert warnings
+
+    def test_filename_fallback_when_no_heading(self):
+        data = _make_docx(lambda d: d.add_paragraph("只有正文"))
+        title, _, warnings = docx_converter.convert_docx(data, "报告.docx")
+        assert title == "报告"
+        assert warnings
+
+    def test_corrupt_file_raises(self):
+        with pytest.raises(UnsupportedImport):
+            docx_converter.convert_docx(b"not-a-docx", "x.docx")
+
+    def test_bold_italic(self):
+        def build(document):
+            run = document.add_paragraph().add_run("双")
+            run.bold = True
+            run.italic = True
+
+        _, body, _ = docx_converter.convert_docx(_make_docx(build), "x.docx")
+        assert "***双***" in body
+
+    def test_title_style_becomes_title(self):
+        title, body, _ = docx_converter.convert_docx(
+            _make_docx(lambda d: d.add_paragraph("标题样式", style="Title")), "x.docx"
+        )
+        assert title == "标题样式"
+        assert body == ""
+
+    def test_empty_paragraph_skipped(self):
+        data = _make_docx(lambda d: (d.add_paragraph(""), d.add_paragraph("正文")))
+        _, body, _ = docx_converter.convert_docx(data, "x.docx")
+        assert body == "正文"
+
+    def test_hyperlink_fallback_text(self):
+        def build(document):
+            paragraph = document.add_paragraph()
+            hyperlink = OxmlElement("w:hyperlink")
+            run = OxmlElement("w:r")
+            text = OxmlElement("w:t")
+            text.text = "链接文字"
+            run.append(text)
+            hyperlink.append(run)
+            paragraph._p.append(hyperlink)
+
+        _, body, _ = docx_converter.convert_docx(_make_docx(build), "x.docx")
+        assert "链接文字" in body
+
+    def test_empty_table_block_skipped(self):
+        def build(document):
+            document.add_paragraph("正文")
+            document.element.body.append(parse_xml(f"<w:tbl {nsdecls('w')}/>"))
+
+        _, body, _ = docx_converter.convert_docx(_make_docx(build), "x.docx")
+        assert body == "正文"
+
+    def test_blip_without_relation_is_skipped(self):
+        def build(document):
+            drawing = (
+                f"<w:drawing {nsdecls('w', 'wp', 'a', 'pic', 'r')}><wp:inline><a:graphic><a:graphicData>"
+                "<pic:pic><pic:blipFill><a:blip/></pic:blipFill></pic:pic></a:graphicData></a:graphic>"
+                "</wp:inline></w:drawing>"
+            )
+            document.add_paragraph().add_run()._element.append(parse_xml(drawing))
+
+        _, body, _ = docx_converter.convert_docx(_make_docx(build), "x.docx")
+        assert body.strip() == ""
+
+    def test_blip_with_dangling_relation_is_skipped(self):
+        def build(document):
+            drawing = (
+                f"<w:drawing {nsdecls('w', 'wp', 'a', 'pic', 'r')}><wp:inline><a:graphic><a:graphicData>"
+                '<pic:pic><pic:blipFill><a:blip r:embed="rId9999"/></pic:blipFill></pic:pic>'
+                "</a:graphicData></a:graphic></wp:inline></w:drawing>"
+            )
+            document.add_paragraph().add_run()._element.append(parse_xml(drawing))
+
+        _, body, _ = docx_converter.convert_docx(_make_docx(build), "x.docx")
+        assert body.strip() == ""
+
+
+# ── html 转换 ──
+
+
+class TestHtmlConvert:
+    def test_title_tag_wins(self):
+        text = "<html><head><title>标题甲</title></head><body><h1>忽略我</h1><p>正文</p></body></html>"
+        title, body, _ = html_converter.convert_html(text.encode(), "x.html")
+        assert title == "标题甲"
+        assert body == "# 忽略我\n\n正文"
+
+    def test_h1_as_title_stripped(self):
+        title, body, warnings = html_converter.convert_html(
+            "<body><h1>我的标题</h1><p>正文</p></body>".encode(), "x.html"
+        )
+        assert title == "我的标题"
+        assert body == "正文"
+        assert warnings
+
+    def test_filename_fallback(self):
+        title, body, warnings = html_converter.convert_html(b"<p>\xe6\xad\xa3\xe6\x96\x87</p>", "page.html")
+        assert title == "page"
+        assert body == "正文"
+        assert warnings
+
+    def test_headings_paragraph_inline(self):
+        html = (
+            "<body><h3>小节</h3><p>Hello <strong>粗</strong> 与 <em>斜</em> 用 <code>pip</code></p>"
+            "<p>见 <a href='https://e.x'>链接</a></p></body>"
+        )
+        _, body, _ = html_converter.convert_html(html.encode("utf-8"), "x.html")
+        assert "### 小节" in body
+        assert "Hello **粗** 与 *斜* 用 `pip`" in body
+        assert "[链接](https://e.x)" in body
+
+    def test_lists_with_nesting(self):
+        html = "<body><ul><li>甲</li><li>乙<ul><li>子</li></ul></li></ul><ol><li>一</li><li>二</li></ol></body>"
+        _, body, _ = html_converter.convert_html(html.encode("utf-8"), "x.html")
+        assert "- 甲" in body
+        assert "  - 子" in body
+        assert "2. 二" in body
+
+    def test_blockquote_and_hr_and_pre(self):
+        html = (
+            "<body><blockquote><p>引用</p></blockquote><hr>"
+            "<pre><code class='language-python'>print(1)</code></pre></body>"
+        )
+        _, body, _ = html_converter.convert_html(html.encode("utf-8"), "x.html")
+        assert "> 引用" in body
+        assert "---" in body
+        assert "```python\nprint(1)\n```" in body
+
+    def test_table(self):
+        html = "<body><table><tr><th>甲</th><th>乙</th></tr><tr><td>1</td><td>2</td></tr></table></body>"
+        _, body, _ = html_converter.convert_html(html.encode("utf-8"), "x.html")
+        assert body == "| 甲 | 乙 |\n| --- | --- |\n| 1 | 2 |"
+
+    def test_external_image_kept(self):
+        _, body, _ = html_converter.convert_html(
+            b"<body><p><img src='http://e.x/a.png' alt='\xe5\x9b\xbe'></p></body>", "x.html"
+        )
+        assert "![图](http://e.x/a.png)" in body
+
+    def test_data_uri_image_with_sink(self):
+        payload = base64.b64encode(PNG_BYTES).decode("ascii")
+        html = f"<body><p><img src='data:image/png;base64,{payload}' alt='图'></p></body>"
+        calls: list[tuple[bytes, str]] = []
+
+        def sink(data: bytes, name: str) -> str:
+            calls.append((data, name))
+            return "KEY9"
+
+        _, body, _ = html_converter.convert_html(html.encode("utf-8"), "x.html", image_sink=sink)
+        assert "file:KEY9" in body
+        assert calls[0][1] == "image1.png"
+
+    def test_data_uri_image_without_sink_placeholder(self):
+        payload = base64.b64encode(PNG_BYTES).decode("ascii")
+        html = f"<p><img src='data:image/png;base64,{payload}' alt='图'></p>"
+        _, body, warnings = html_converter.convert_html(html.encode("utf-8"), "x.html")
+        assert "图片未导入" in body
+        assert warnings
+
+    def test_bad_data_uri_placeholder(self):
+        _, body, warnings = html_converter.convert_html(b"<p><img src='data:image/png,plain' alt='x'></p>", "x.html")
+        assert "图片未导入" in body
+        assert warnings
+
+    def test_script_and_style_dropped(self):
+        html = "<body><script>var x=1;</script><style>.a{}</style><p>正文</p></body>"
+        _, body, _ = html_converter.convert_html(html.encode("utf-8"), "x.html")
+        assert body == "正文"
+
+    def test_broken_image_without_src(self):
+        _, body, _ = html_converter.convert_html("<body><p><img alt='x'>文字</p></body>".encode(), "x.html")
+        assert body == "文字"
+
+    def test_unknown_inline_tag_passthrough(self):
+        _, body, _ = html_converter.convert_html(b"<body><p>a <span>b</span> c</p></body>", "x.html")
+        assert body == "a b c"
+
+    def test_malformed_html_tolerated(self):
+        _, body, _ = html_converter.convert_html(b"<body><p>abc", "x.html")
+        assert body == "abc"
+
+    def test_empty_raises(self):
+        with pytest.raises(UnsupportedImport):
+            html_converter.convert_html(b"   ", "x.html")
+
+
+class TestHtmlConvertEdges:
+    """html 渲染的边界与容错分支（标签未闭合 / 空洞容器 / 裸文本 / 异常 data URI）."""
+
+    def test_self_closing_void_tag(self):
+        _, body, _ = html_converter.convert_html(b"<body><p>a<br/>b</p></body>", "x.html")
+        assert body == "a\nb"
+
+    def test_stray_and_void_end_tags(self):
+        _, body, _ = html_converter.convert_html(b"<body><p>a</span></br>b</p></body>", "x.html")
+        assert body == "ab"
+
+    def test_blockquote_multi_block_and_empty(self):
+        html = "<body><blockquote><p>一</p><p>二</p></blockquote><blockquote></blockquote></body>"
+        _, body, _ = html_converter.convert_html(html.encode(), "x.html")
+        assert body == "> 一\n> 二"
+
+    def test_bare_text_container_and_block_br(self):
+        html = "<body>裸文本<div>块<p>段</p></div><br><span>行内</span></body>"
+        _, body, _ = html_converter.convert_html(html.encode(), "x.html")
+        assert "裸文本" in body
+        assert "段" in body
+        assert "行内" in body
+
+    def test_table_without_rows(self):
+        _, body, _ = html_converter.convert_html(b"<body><table></table><p>x</p></body>", "x.html")
+        assert body == "x"
+
+    def test_table_row_without_cells(self):
+        _, body, _ = html_converter.convert_html(b"<body><table><tr></tr></table><p>y</p></body>", "x.html")
+        assert body == "y"
+
+    def test_pre_without_code_and_plain_class(self):
+        html = "<body><pre>纯文本</pre><pre><code class='hljs'>z</code></pre></body>"
+        _, body, _ = html_converter.convert_html(html.encode(), "x.html")
+        assert "```\n纯文本\n```" in body
+        assert "```\nz\n```" in body
+
+    def test_list_with_stray_child(self):
+        _, body, _ = html_converter.convert_html("<body><ul>杂文本<li>项</li></ul>".encode(), "x.html")
+        assert body == "- 项"
+
+    def test_inline_edge_tags(self):
+        html = (
+            "<body><ul><li>a<script>x</script>b</li><li><b></b></li><li>x<br>y</li><li><del>删</del></li></ul></body>"
+        )
+        _, body, _ = html_converter.convert_html(html.encode(), "x.html")
+        assert "- a b" in body
+        assert "- ~~删~~" in body
+        assert "\n-\n" in body
+
+    def test_table_cell_pipe_escaped(self):
+        html = "<body><table><tr><th>a|b</th></tr><tr><td>1</td></tr></table></body>"
+        _, body, _ = html_converter.convert_html(html.encode(), "x.html")
+        assert "a\\|b" in body
+
+    def test_data_uri_invalid_base64(self):
+        _, body, warnings = html_converter.convert_html(b"<p><img src='data:image/png;base64,A' alt='x'></p>", "x.html")
+        assert "图片未导入" in body
+        assert warnings
+
+    def test_data_uri_unknown_mime(self):
+        payload = base64.b64encode(PNG_BYTES).decode("ascii")
+        names: list[str] = []
+
+        def sink(data: bytes, name: str) -> str:
+            del data
+            names.append(name)
+            return "K"
+
+        for mime, expected in (("image/x-icon", ".x-icon"), ("application/octet-stream", ".bin")):
+            html = f"<p><img src='data:{mime};base64,{payload}'></p>"
+            html_converter.convert_html(html.encode(), "x.html", image_sink=sink)
+            assert names[-1].endswith(expected)
+
+    def test_sink_returning_none_keeps_placeholder(self):
+        payload = base64.b64encode(PNG_BYTES).decode("ascii")
+        html = f"<p><img src='data:image/png;base64,{payload}'></p>"
+        _, body, warnings = html_converter.convert_html(html.encode(), "x.html", image_sink=lambda d, n: None)
+        assert "图片未导入" in body
+        assert warnings
+
+    def test_empty_h1_falls_back_to_filename(self):
+        title, _, _ = html_converter.convert_html(b"<body><h1></h1><p>x</p></body>", "x.html")
+        assert title == "x"
+
+    def test_feed_error_wrapped(self, monkeypatch):
+        def boom(self, data):
+            del self, data
+            raise RuntimeError("kaboom")
+
+        monkeypatch.setattr(html_converter._Builder, "feed", boom)
+        with pytest.raises(UnsupportedImport):
+            html_converter.convert_html(b"<p>x</p>", "x.html")
+
+
+# ── reader ──
+
+
+class TestReader:
+    def test_is_supported(self):
+        assert reader.is_supported("a.md")
+        assert reader.is_supported("a.MARKDOWN")
+        assert reader.is_supported("a.DOCX")
+        assert reader.is_supported("a.htm")
+        assert not reader.is_supported("a.txt")
+        assert not reader.is_supported("a")
+
+    def test_normalize_path(self):
+        assert reader.normalize_path("dir\\a.md") == "dir/a.md"
+        assert reader.normalize_path("/abs/a.md") is None
+        assert reader.normalize_path("../a.md") is None
+        assert reader.normalize_path(".hidden/a.md") is None
+        assert reader.normalize_path("dir/.a.md") is None
+        assert reader.normalize_path("") is None
+
+    def test_validate_batch(self):
+        with pytest.raises(BadRequestError):
+            reader.validate_batch([])
+        assert reader.validate_batch([reader.UploadedItem("a.md", b"xy")]) == 2
+
+    def test_validate_batch_limits(self, monkeypatch):
+        monkeypatch.setattr(reader, "MAX_FILES", 2)
+        items = [reader.UploadedItem(f"{i}.md", b"x") for i in range(3)]
+        with pytest.raises(BadRequestError):
+            reader.validate_batch(items)
+        monkeypatch.setattr(reader, "MAX_FILES", 100)
+        monkeypatch.setattr(reader, "MAX_TOTAL_BYTES", 4)
+        with pytest.raises(BadRequestError):
+            reader.validate_batch([reader.UploadedItem("a.md", b"12345")])
+
+    def test_convert_file_unsupported(self):
+        with pytest.raises(UnsupportedImport):
+            reader.convert_file(reader.UploadedItem("a.txt", b"x"))
+        with pytest.raises(UnsupportedImport):
+            reader.convert_file(reader.UploadedItem("a.md", b""))
+
+    def test_convert_file_oversize(self, monkeypatch):
+        monkeypatch.setattr(reader, "MAX_FILE_BYTES", 2)
+        with pytest.raises(UnsupportedImport):
+            reader.convert_file(reader.UploadedItem("a.md", b"12345"))
+
+    def test_convert_file_markdown(self):
+        doc = reader.convert_file(reader.UploadedItem("dir/note.md", "#  标题  \n\n\n正文  \n".encode()))
+        assert doc.title == "标题"
+        assert doc.body == "正文"
+        assert doc.suffix == ".md"
+
+    def test_convert_file_parse_error_wrapped(self, monkeypatch):
+        def boom(data, path, *, image_sink=None):
+            del data, path, image_sink
+            raise RuntimeError("kaboom")
+
+        monkeypatch.setattr(reader.html_converter, "convert_html", boom)
+        with pytest.raises(UnsupportedImport):
+            reader.convert_file(reader.UploadedItem("a.html", b"<p>x</p>"))
+
+    def test_convert_batch_isolates_failures(self):
+        items = [
+            reader.UploadedItem("ok.md", b"# T\n"),
+            reader.UploadedItem("bad.txt", b"x"),
+            reader.UploadedItem("broken.docx", b"nope"),
+        ]
+        docs, skipped = reader.convert_batch(items)
+        assert [doc.path for doc in docs] == ["ok.md"]
+        assert {entry["path"] for entry in skipped} == {"bad.txt", "broken.docx"}
+        assert all(entry["reason"] for entry in skipped)

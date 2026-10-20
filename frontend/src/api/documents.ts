@@ -247,6 +247,94 @@ export interface VaultImportOptions {
   status?: 'draft' | 'published' | 'archived'
 }
 
+// ── 通用文件导入（md / docx / html）──
+
+/** 支持导入的源文件后缀（与后端 SUPPORTED_SUFFIXES 对齐） */
+export const FILE_IMPORT_ACCEPT = '.md,.markdown,.docx,.html,.htm'
+
+/** 一条待上传文件：浏览器 File + 批次内相对路径（文件夹模式取 webkitRelativePath） */
+export interface FileImportEntry {
+  file: File
+  path: string
+}
+
+export interface FileImportPayload {
+  entries: FileImportEntry[]
+  /** 导入到哪个文件夹（空 = 根目录） */
+  parentId?: number | null
+  conflict?: VaultConflictPolicy
+  status?: 'draft' | 'published' | 'archived'
+  importAttachments?: boolean
+}
+
+export interface FileImportPreviewItem {
+  path: string
+  title: string
+  folder: string
+  /** 源格式后缀，如 .md / .docx / .html */
+  suffix: string
+  status: 'new' | 'conflict'
+  existing_document_id: number | null
+  warnings: string[]
+}
+
+export interface FileImportFolderItem {
+  path: string
+  title: string
+  status: 'new'
+}
+
+export interface FileImportMessage {
+  path: string
+  message: string
+}
+
+export interface FileImportSkip {
+  path: string
+  reason: string
+}
+
+/** analyze 结果：只读预览，不写库 */
+export interface FileImportAnalyzeResult {
+  /** 上传的文件条目总数（含被忽略与解析失败的） */
+  total_files: number
+  /** 可导入的文档数 */
+  total_documents: number
+  /** 待新建文件夹数 */
+  total_folders: number
+  conflicts: number
+  skipped: FileImportSkip[]
+  warnings: FileImportMessage[]
+  folders: FileImportFolderItem[]
+  items: FileImportPreviewItem[]
+  preview_truncated: boolean
+}
+
+/** import 结果：落库后的统计 */
+export interface FileImportResult {
+  created: number
+  updated: number
+  skipped: number
+  total: number
+  folders_created: number
+  attachments: number
+  attachment_bytes: number
+  documents: { id: number; title: string; path: string }[]
+  skipped_files: FileImportSkip[]
+  warnings: FileImportMessage[]
+}
+
+/** 把批次组装为 multipart 表单：files 与 paths 按下标一一对应 */
+function buildFileImportForm(payload: FileImportPayload): FormData {
+  const form = new FormData()
+  for (const entry of payload.entries) {
+    form.append('files', entry.file, entry.file.name)
+    form.append('paths', entry.path)
+  }
+  if (payload.parentId != null) form.append('parent_id', String(payload.parentId))
+  return form
+}
+
 /** 文档修改申请（双轨制写入的待审载体） */
 export interface DocumentChangeRequestItem {
   id: number
@@ -605,4 +693,29 @@ export const documentsApi = {
   /** 导出当前工作区文档树为 Obsidian 库（zip blob） */
   vaultExport: (wid: number | string) =>
     api.get<Blob>(`${base(wid)}/export/vault`, { responseType: 'blob' }).then(r => r.data),
+
+  // ── 通用文件导入（md / docx / html，单文件与文件夹模式）──
+
+  /** 上传文件批次解析预览（只读，不落库）：篇数 / 文件夹 / 冲突 / 跳过 / 告警 */
+  fileImportAnalyze: (wid: number | string, payload: FileImportPayload) => {
+    const form = buildFileImportForm(payload)
+    return api
+      .post<FileImportAnalyzeResult>(`${base(wid)}/import/files/analyze`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(r => r.data)
+  },
+
+  /** 按确认后的策略把文件批次导入为文档树 */
+  fileImport: (wid: number | string, payload: FileImportPayload) => {
+    const form = buildFileImportForm(payload)
+    form.append('conflict', payload.conflict ?? 'rename')
+    form.append('status', payload.status ?? 'draft')
+    form.append('import_attachments', String(payload.importAttachments ?? true))
+    return api
+      .post<FileImportResult>(`${base(wid)}/import/files`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(r => r.data)
+  },
 }
