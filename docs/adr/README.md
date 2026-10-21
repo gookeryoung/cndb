@@ -18,6 +18,7 @@
 | [0011](0011-stock-kline-enhanced.md) | 股市 K 线增强（多周期复权、全历史字段与行内 K 线视图） | Accepted | P0-P1 已落地 | `providers/eastmoney_kline.py`、`providers/eastmoney_symbols.py`、`cli/seed/stock_quotes.py`、`frontend/src/pages/grid/views/KlineView.tsx` | `tests/test_datasource_eastmoney_*_provider.py`、`tests/test_datasource_partial_upsert.py`、`frontend/src/pages/grid/views/klineBoard.test.ts` | [未发布](../../CHANGELOG.md) |
 | [0012](0012-workspace-global-search.md) | 工作区顶栏统一搜索（文档 + 数据表，默认按激活视图收敛） | Implemented | P0-P2 已落地 | `src/cndb/plugins/workspaces/{routers,services}/search.py`、`frontend/src/components/GlobalSearch.tsx`、`frontend/src/layouts/MainLayout.tsx` | `tests/test_workspace_search.py`、`frontend/src/components/GlobalSearch.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0013](0013-stock-daily-multi-source-sample.md) | 示例日线两源扩样（tencent / sina，一源一表） | Accepted | P0-P2 已落地 | `src/cndb/plugins/datasource/providers/sina_kline.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`scripts/build_example_kline.py` | `tests/test_datasource_sina.py`、`tests/test_seed_datasource.py` | [未发布](../../CHANGELOG.md) |
+| [0014](0014-auth-background-animation.md) | 认证页 JS 动态背景（5 组风格，可切换） | Accepted | P0-P2 已落地 | `frontend/src/components/auth-background/`、`frontend/src/layouts/AuthLayout.tsx` | `frontend/src/components/auth-background/*.test.ts` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 

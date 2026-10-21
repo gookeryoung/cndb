@@ -3042,6 +3042,81 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   pointer-events: none;
 }
 
+/* ─────────────── 动态背景层（ADR 0014） ───────────────
+ * 画布只做氛围：位于卡片下方、不接收指针事件；加载完成后淡入。
+ * Canvas 不可用时整层保持透明，露出 .auth-shell 的 CSS 渐变。 */
+.auth-bg-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  animation: cn-bg-fade-in 0.24s ease-out both;
+}
+
+.auth-bg-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 卡片内容层：抬到背景层之上 */
+.auth-shell-body {
+  position: relative;
+  z-index: 1;
+}
+
+/* 背景切换器：右下角低调胶囊，可键盘聚焦 */
+.auth-bg-switch {
+  position: fixed;
+  right: var(--cn-space-xl);
+  bottom: var(--cn-space-xl);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+  background: color-mix(in srgb, var(--cn-bg-container) 72%, transparent);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-pill);
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.auth-bg-switch:hover {
+  color: var(--cn-brand-color);
+  border-color: color-mix(in srgb, var(--cn-brand-color) 45%, var(--cn-border));
+  background: color-mix(in srgb, var(--cn-bg-container) 88%, transparent);
+}
+
+.auth-bg-switch-dot {
+  width: var(--cn-space-sm);
+  height: var(--cn-space-sm);
+  border-radius: var(--cn-radius-pill);
+  background: var(--cn-brand-color);
+  box-shadow: 0 0 0 var(--cn-space-hairline) color-mix(in srgb, var(--cn-brand-color) 22%, transparent);
+}
+
+@keyframes cn-bg-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .auth-bg-switch {
+    right: var(--cn-space-lg);
+    bottom: var(--cn-space-lg);
+    padding: var(--cn-space-xs) var(--cn-space-md);
+  }
+}
+
 /* 品牌标识座：品牌色渐变圆角方块（认证页大号 / 顶栏小号复用） */
 .cn-brand-mark {
   display: inline-flex;
@@ -3074,6 +3149,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 @media (prefers-reduced-motion: reduce) {
   .auth-card {
     animation: cn-page-enter 0.2s ease-out both;
+  }
+
+  .auth-bg-layer {
+    animation: none;
+    opacity: 1;
   }
 }
 
