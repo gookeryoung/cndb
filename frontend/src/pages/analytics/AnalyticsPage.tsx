@@ -72,6 +72,8 @@ export default function AnalyticsPage() {
   const { message, modal } = AntApp.useApp()
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
+  /** 深链模板 id（URL ?template=<id>）：改写走 setSearchParams，读取提前到状态区供按钮禁用判定 */
+  const templateParam = searchParams.get('template')
 
   // ── 分析配置 ──
   const [tableId, setTableId] = useState<number | null>(null)
@@ -115,7 +117,7 @@ export default function AnalyticsPage() {
     enabled: !!wid && !!tableId,
   })
 
-  const { data: templates = [] } = useQuery({
+  const { data: templates = [], isLoading: templatesLoading } = useQuery({
     queryKey: ['analytics-templates', wid],
     queryFn: () => analyticsApi.listTemplates(wid!),
     enabled: !!wid,
@@ -154,6 +156,9 @@ export default function AnalyticsPage() {
     [templateName, templateDesc, tableId, formulas, chart, summary],
   )
   const dirty = activeTemplateId != null && isDirty(snapshot, currentSnapshot)
+
+  /** 深链 ?template=<id> 仍在拉模板列表：此时另存为/重命名的默认名会落到「未命名分析」，先禁用 */
+  const templatePending = templateParam != null && templatesLoading
 
   /** 图表可选值：表字段 + 公式键（公式键在结果行中作为列存在） */
   const chartOptions = useMemo(
@@ -334,7 +339,6 @@ export default function AnalyticsPage() {
   // ── 深链：?template=<id> 刷新/分享后自动载入 ──
   // 注意：URL 更新走 React Router 的 transition，可能晚于模板列表刷新一个渲染；
   // 这里用「已处理参数」ref 记录真正处理过的值，避免保存模板后的过渡态把旧模板再载入一次。
-  const templateParam = searchParams.get('template')
   useEffect(() => {
     if (!templateParam) {
       handledParamRef.current = null
@@ -598,6 +602,7 @@ export default function AnalyticsPage() {
           <Button
             data-testid="analytics-saveas-btn"
             icon={<CopyOutlined />}
+            disabled={templatePending}
             onClick={openSaveAs}
           >
             另存为
@@ -605,7 +610,7 @@ export default function AnalyticsPage() {
           <Button
             data-testid="analytics-rename-btn"
             icon={<EditOutlined />}
-            disabled={activeTemplateId == null}
+            disabled={activeTemplateId == null || templatePending}
             onClick={openRename}
           >
             重命名

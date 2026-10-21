@@ -24,11 +24,11 @@ async function gotoGrid(page: Page) {
   await page.goto("/");
   await page.waitForURL(/\/w/);
 
-  // 停留在工作区列表时，点第一张卡片进入
+  // 停留在工作区列表时，点第一行进入（GitHub 风格可折叠行列表）
   if (page.url().match(/\/w\/?$/)) {
-    const workspaceCards = page.locator(".ant-card");
-    await expect(workspaceCards.first()).toBeVisible({ timeout: 10000 });
-    await workspaceCards.first().click();
+    const firstRow = page.locator('[data-testid^="workspace-row-"]').first();
+    await expect(firstRow).toBeVisible({ timeout: 10000 });
+    await firstRow.locator(".cn-ws-row-main").first().click();
   }
 
   await page.waitForURL(/\/w\/\d+/);
