@@ -30,6 +30,15 @@ test.describe("注册流程（仅 chromium-anon）", () => {
     await expect(page.getByRole("button", { name: /注 册/ })).toBeVisible()
   })
 
+  test("动态背景可见且不拦截表单点击", async ({ page }) => {
+    await page.goto("/register")
+
+    await expect(page.locator(".auth-bg-canvas")).toBeVisible()
+    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("aria-hidden", "true")
+    await page.getByPlaceholder("用户名").click()
+    await expect(page.getByPlaceholder("用户名")).toBeFocused()
+  })
+
   test("注册成功 → 自动登录 → 进入 /w 工作区列表", async ({ page }) => {
     const username = uniqueUsername()
 
