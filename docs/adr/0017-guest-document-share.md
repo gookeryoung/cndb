@@ -1,6 +1,6 @@
 # ADR 0017: 文档游客级只读分享（匿名分享链接）
 
-Status: Proposed（待评审）
+Status: Accepted（已评审）
 Date: 2026-10-21
 Related: `src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/documents/routers/share.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/tables/routers/files.py`、`frontend/src/App.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/DocumentImage.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`docs/adr/0003-view-visibility-permission-model.md`
 需求卡片: `docs/requirements/0017-guest-document-share.md`（需求原文与约束编号的唯一副本）
@@ -179,7 +179,7 @@ db.execute(update(DocumentShare).where(DocumentShare.id == share.id).values(view
 | 图片 | `frontend/src/components/Document/DocumentImage.tsx` | 新增 `publicFileBase?: string`：有值时直接 `<img src={base + '/' + fileKey}>`（免登录），不走 `useFileObjectUrl`；外部图片在公开模式加 `referrerPolicy="no-referrer"` |
 | 分享弹层 | `frontend/src/pages/documents/DocumentShareModal.tsx`（新增） | 仅 `owner` / `editor` 打开；列表展示创建时间 / 状态 / 访问次数；「创建链接」在非 `published` 时禁用并提示；复制 `origin + /public/share/{token}`；撤销二次确认 |
 | 入口 | `frontend/src/pages/documents/DocumentEditorPage.tsx` | 在顶栏 / 「更多」菜单增加「分享」项，`myRole` 为 `owner` / `editor` 且非文件夹时展示，打开分享弹层 |
-| API 出口 | `frontend/src/api/index.ts` | 导出 `publicShareApi`（文案与类型入口与既有资源域一致） |
+| API 出口 | — | 不并入 `frontend/src/api/index.ts`：公开页直接 `import publicShareApi from '@/api/publicShare'`，与工作区鉴权 API 出口隔离，游客链路不混入登录态资源域 |
 
 ### 7. 测试清单
 
@@ -257,14 +257,14 @@ db.execute(update(DocumentShare).where(DocumentShare.id == share.id).values(view
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/files/services.py` | `tests/test_document_public_share.py` | — |
-| P1 | 未开始 | `frontend/src/pages/public/PublicSharePage.tsx`、`frontend/src/api/publicShare.ts` | `frontend/src/pages/public/PublicSharePage.test.tsx` | — |
-| P2 | 未开始 | `frontend/src/pages/documents/DocumentShareModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/pages/documents/DocumentShareModal.test.tsx`、`frontend/tests/e2e/critical/document-public-share.spec.ts` | — |
+| P0 | 已落地 | `src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/tables/routers/files.py` | `tests/test_document_public_share.py` | `feaebb9c` |
+| P1 | 已落地 | `frontend/src/pages/public/PublicSharePage.tsx`、`frontend/src/api/publicShare.ts`、`frontend/src/App.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/DocumentImage.tsx` | `frontend/src/pages/public/PublicSharePage.test.tsx`、`frontend/src/components/Document/DocumentImage.test.tsx`、`frontend/src/components/Document/MarkdownPreview.test.tsx` | `feaebb9c` |
+| P2 | 进行中 | `frontend/src/pages/documents/DocumentShareModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/pages/documents/DocumentShareModal.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx`；e2e `frontend/tests/e2e/critical/document-public-share.spec.ts` 待补 | `feaebb9c` |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 未开始（方案待评审）
-- 已完成：需求卡片 `docs/requirements/0017-guest-document-share.md`；现状核对与方案设计
-- 下一步：人工评审本 ADR；通过后按 P0 → P1 → P2 实施，先落 `resolve_public_share` 与公开图片端点
-- 已知坑：过期分享的既有测试断言 403，需随 I4 改为 404；公开图片必须按 `FileOwner.document_id` 收口，不能只校验工作区；前端公开页不得传 `workspaceId`，否则会触发工作区接口与鉴权链路
-- 最近一次全绿：尚未实施
+- 当前阶段：P0 / P1 已落地；P2 代码与单测已落地，**e2e 用例待补**（`frontend/tests/e2e/critical/document-public-share.spec.ts`）
+- 已完成：后端 `resolve_public_share` 单入口判定、公开响应白名单、过期统一 404、原子 `view_count`、免登录图片端点与 `resolve_workspace_file` 路径校验单源；前端公开路由与 `PublicSharePage`（三态，兼容历史密码分享）、`publicShareApi`、`MarkdownPreview` / `DocumentImage` 公开图片、`DocumentShareModal` 与编辑器入口（owner/editor 且非文件夹）；后端与前端相关单测全绿
+- 下一步：补 `document-public-share.spec.ts`（匿名 context 直达 `/public/share/{token}`、撤销与取消发布后失效），跑通后把 P2 置「已落地」并把 `Status` 定稿 `Implemented`、同步索引 / CHANGELOG
+- 已知坑：过期分享的既有测试断言已随 I4 从 403 改为 404；公开图片必须按 `FileOwner.document_id` 收口，不能只校验工作区；前端公开页不得传 `workspaceId`，否则会触发工作区接口与鉴权链路；`publicShareApi` 未并入 `frontend/src/api/index.ts`（公开页直接 import，避免游客链路混入鉴权资源域）
+- 最近一次全绿：2026-10-22 `make check-fast` 通过；`pytest tests/test_document_public_share.py tests/test_cov_documents_extra.py` 155 passed；前端 `PublicSharePage` / `DocumentShareModal` / `DocumentImage` / `MarkdownPreview` / `DocumentEditorPage` 单测 86 passed
