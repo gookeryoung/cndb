@@ -1,4 +1,4 @@
-/** 星座连线：星点缓慢漂移 + 近邻连线 + 品牌色高亮星（ADR 0014 D2） */
+/** 星座连线：星点缓慢漂移 + 近邻连线 + 品牌色高亮星（ADR 0016 D2） */
 
 import { createRandom, particleBudget, withAlpha } from '../palette'
 import type { BackgroundVariant } from '../types'

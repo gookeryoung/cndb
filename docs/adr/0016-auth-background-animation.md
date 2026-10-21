@@ -1,9 +1,9 @@
-# ADR 0014: 认证页 JS 动态背景（5 组风格，可切换）
+# ADR 0016: 认证页 JS 动态背景（5 组风格，可切换）
 
-Status: Accepted（2026-10-21 评审通过）
+Status: Implemented（2026-10-21 评审通过并落地）
 Date: 2026-10-21
 Related: `frontend/src/layouts/AuthLayout.tsx`、`frontend/src/App.tsx`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/theme/meta.ts`、`frontend/src/index.css`、`frontend/scripts/bundle-budget.json`
-需求卡片: `docs/requirements/0014-auth-background-animation.md`（需求原文与约束编号的唯一副本）
+需求卡片: `docs/requirements/0016-auth-background-animation.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
 
@@ -193,16 +193,16 @@ interface BackgroundVariant {
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/components/auth-background/types.ts`、`frontend/src/components/auth-background/preference.ts`、`frontend/src/components/auth-background/palette.ts`、`frontend/src/components/auth-background/engine.ts`、`frontend/src/components/auth-background/variants/constellation.ts` | `frontend/src/components/auth-background/engine.test.ts`、`frontend/src/components/auth-background/palette.test.ts`、`frontend/src/components/auth-background/preference.test.ts` | 未提交 |
-| P1 | 已落地 | `frontend/src/components/auth-background/variants/nebula.ts`、`frontend/src/components/auth-background/variants/aurora.ts`、`frontend/src/components/auth-background/variants/rain.ts`、`frontend/src/components/auth-background/variants/orbs.ts`、`frontend/src/components/auth-background/AuthBackgroundSwitcher.tsx` | `frontend/src/components/auth-background/variants.test.ts`、`frontend/src/components/auth-background/AuthBackgroundSwitcher.test.tsx` | 未提交 |
-| P2 | 已落地 | `frontend/src/components/auth-background/AuthBackground.tsx`、`frontend/src/layouts/AuthLayout.tsx`、`frontend/src/index.css` | `frontend/src/components/auth-background/AuthBackground.test.tsx`、`frontend/src/layouts/AuthLayout.test.tsx`、`frontend/tests/e2e/smoke/login.spec.ts`、`frontend/tests/e2e/smoke/register.spec.ts` | 未提交 |
+| P0 | 已落地 | `frontend/src/components/auth-background/types.ts`、`frontend/src/components/auth-background/preference.ts`、`frontend/src/components/auth-background/palette.ts`、`frontend/src/components/auth-background/engine.ts`、`frontend/src/components/auth-background/variants/constellation.ts` | `frontend/src/components/auth-background/engine.test.ts`、`frontend/src/components/auth-background/palette.test.ts`、`frontend/src/components/auth-background/preference.test.ts` | 7eba8c37 |
+| P1 | 已落地 | `frontend/src/components/auth-background/variants/nebula.ts`、`frontend/src/components/auth-background/variants/aurora.ts`、`frontend/src/components/auth-background/variants/rain.ts`、`frontend/src/components/auth-background/variants/orbs.ts`、`frontend/src/components/auth-background/AuthBackgroundSwitcher.tsx` | `frontend/src/components/auth-background/variants.test.ts`、`frontend/src/components/auth-background/AuthBackgroundSwitcher.test.tsx` | 7eba8c37 |
+| P2 | 已落地 | `frontend/src/components/auth-background/AuthBackground.tsx`、`frontend/src/layouts/AuthLayout.tsx`、`frontend/src/index.css` | `frontend/src/components/auth-background/AuthBackground.test.tsx`、`frontend/src/layouts/AuthLayout.test.tsx`、`frontend/tests/e2e/smoke/login.spec.ts`、`frontend/tests/e2e/smoke/register.spec.ts` | 7eba8c37 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地；`Status` 仍为 `Accepted`，是否改 `Implemented` 待人工确认
-- 已完成：需求卡片 0014、ADR 0014、5 个变体 + 引擎 + 偏好 + 切换器 + `AuthLayout` 接入 + 单测 + e2e 断言
-- 下一步：人工评审代码与视觉走查，确认后提交 / 发版；`Status` 改写后跑 `make check-docs`
+- 当前阶段：P0-P2 已落地并提交（`7eba8c37`），`Status=Implemented`（2026-10-21 评审通过）
+- 已完成：需求卡片 0016、ADR 0016、5 个变体 + 引擎 + 偏好 + 切换器 + `AuthLayout` 接入 + 单测 + e2e 断言
+- 下一步：无（本 ADR 范围内交付完毕）；视觉调整按新需求另立卡片
 - 已知坑：`AuthLayout` 被 `App.tsx:12` 静态引入，背景必须 lazy 才能守住主入口体积；jsdom 无 `getContext`，单测需 mock；e2e 首次运行需 `pnpm exec playwright install --with-deps chromium`
 - 最近一次全绿：`make check-fast` + `make test` + `pnpm test`（152 文件 / 1938 例）+ `pnpm build` + `bundle:budget` + `e2e:smoke` + `chromium-anon` login/register @ 2026-10-21

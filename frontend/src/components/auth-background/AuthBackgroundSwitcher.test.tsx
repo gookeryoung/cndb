@@ -1,4 +1,4 @@
-/** 背景切换器测试（ADR 0014 D3 / D8）：原生按钮、循环切换、键盘可达 */
+/** 背景切换器测试（ADR 0016 D3 / D8）：原生按钮、循环切换、键盘可达 */
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'

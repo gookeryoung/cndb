@@ -80,7 +80,8 @@ vitest 自报的分段（CI，`Duration 287.88s`）：
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P1 静态链拆分（`frontend-static` / `frontend_static`） | 已落地 | `Makefile`、`.codeup/pipelines/ci.yml` | `frontend/scripts/check-coverage.mjs` | `3a43fe72` |
-| P2 vitest 4 分片 + 覆盖率合并 | 未开始 | `frontend/package.json` | `frontend/scripts/check-coverage.mjs` | — |
+
+> 原 P2「vitest 4 分片 + 覆盖率合并」已否决（云效普通 Command job 无法消费 ArtifactUpload 产物），不作为落地分期。
 
 ## Consequences
 
@@ -109,5 +110,5 @@ vitest 自报的分段（CI，`Duration 287.88s`）：
 ## 交接（会话结束更新）
 
 - 当前阶段：静态链拆分已落地（CodeUp `frontend_static` + `frontend_test` 两个并行 job）；分片与 blob 合并未采用
-- 下一步：无。若平台支持消费 ArtifactUpload 产物（或迁回 GitHub Actions），再按 Decision 第 2、3 步启用分片
+- 下一步：无。分片方案已否决并在落地表移除；若平台支持消费 ArtifactUpload 产物（或迁回 GitHub Actions），另立 ADR 重启评估
 - 已知坑：覆盖率门禁只能在合并后的完整报告上执行；`--reporter=blob` 只能由 CLI 传入且需同时传 `default`；GitHub 分支保护按 job 名配置，改名需同步；CodeUp 侧覆盖率测试固定 `VITEST_MAX_WORKERS=4`（4 核配额）

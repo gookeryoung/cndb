@@ -1,4 +1,4 @@
-/** 变体工厂：把稳定的 UI 选择映射到绘制实现（ADR 0014 D2） */
+/** 变体工厂：把稳定的 UI 选择映射到绘制实现（ADR 0016 D2） */
 
 import type { AuthBackgroundVariant, BackgroundVariant } from '../types'
 import { createAurora } from './aurora'

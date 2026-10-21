@@ -1,4 +1,4 @@
-/** 极光流光：多正弦叠加的带状光幕，纵向渐变衰减（ADR 0014 D2） */
+/** 极光流光：多正弦叠加的带状光幕，纵向渐变衰减（ADR 0016 D2） */
 
 import { withAlpha } from '../palette'
 import type { BackgroundVariant } from '../types'

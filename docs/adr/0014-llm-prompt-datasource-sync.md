@@ -1,6 +1,6 @@
 # ADR 0014: 数据源同步接入大模型（llm_prompt Provider + 提示词 + cron + 连通测试）
 
-Status: Accepted（需求方 2026-10-21 确认提案并要求实现）
+Status: Implemented（需求方 2026-10-21 确认提案并落地）
 Date: 2026-10-21
 Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/core/crypto.py`、`frontend/src/pages/datasource/DatasourcePage.tsx`；上游框架见 ADR 0006
 需求卡片: `docs/requirements/0014-llm-prompt-datasource-sync.md`（需求原文与约束编号的唯一副本）
@@ -187,14 +187,14 @@ class LlmPromptProvider:
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/schemas.py` | `tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`（TestLlmPrompt） | 待提交 |
-| P1 | 已落地 | `frontend/src/api/datasource.ts`、`frontend/src/api/index.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/DatasourcePage.test.tsx` | 待提交 |
-| P2 | 已落地 | `CHANGELOG.md`、`docs/adr/0014-llm-prompt-datasource-sync.md` | `tests/test_datasource_llm_provider.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/schemas.py` | `tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`（TestLlmPrompt） | f8b79dba |
+| P1 | 已落地 | `frontend/src/api/datasource.ts`、`frontend/src/api/index.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/DatasourcePage.test.tsx` | f8b79dba |
+| P2 | 已落地 | `CHANGELOG.md`、`docs/adr/0014-llm-prompt-datasource-sync.md` | `tests/test_datasource_llm_provider.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | f8b79dba |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地
+- 当前阶段：P0-P2 已落地并提交（`f8b79dba`），`Status=Implemented`
 - 已完成：`llm_prompt` provider、创建 / 更新校验、`POST /test-connection`；前端按 `provider=llm_prompt` 条件渲染提示词 / 模型表单与连通测试按钮；单测、接口测试与页面测试同轮补齐
-- 下一步：`make flow` → `make frontend-coverage` → 提交（推送按 `dev-workflow` 执行）
+- 下一步：无（本 ADR 范围内交付完毕）；流式响应 / 多轮对话等增强按使用反馈另立 ADR
 - 已知坑：`api_fetch` 对非 2xx 直接抛 `ValueError`（错误信息含上游响应片段）；`render_text` 对未知占位符直接报错；cron 校验在创建 / 更新入口；抽屉里调度项位于折叠面板，未展开时 `Form.useWatch` 取不到值（已回退到任务配置）
-- 最近一次全绿：待回填
+- 最近一次全绿：`make check-docs`（2026-10-21，ADR 清理）；代码门禁以提交 `f8b79dba` 为准

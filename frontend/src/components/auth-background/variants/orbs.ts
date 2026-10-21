@@ -1,4 +1,4 @@
-/** 光点流体：少量大尺寸柔光圆斑慢速游移，形成 bokeh 式氛围（ADR 0014 D2） */
+/** 光点流体：少量大尺寸柔光圆斑慢速游移，形成 bokeh 式氛围（ADR 0016 D2） */
 
 import { createRandom, withAlpha } from '../palette'
 import type { BackgroundVariant } from '../types'

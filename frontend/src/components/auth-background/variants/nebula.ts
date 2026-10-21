@@ -1,4 +1,4 @@
-/** 星云漩涡：核心辉光 + 螺旋星尘，深色主题叠加发光（ADR 0014 D2 / D7） */
+/** 星云漩涡：核心辉光 + 螺旋星尘，深色主题叠加发光（ADR 0016 D2 / D7） */
 
 import { createRandom, particleBudget, withAlpha } from '../palette'
 import type { BackgroundVariant } from '../types'
