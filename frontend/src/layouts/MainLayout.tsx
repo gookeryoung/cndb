@@ -422,8 +422,9 @@ export default function MainLayout() {
 
         {/* 工作区搜索 —— GitHub 风格顶栏搜索框：默认范围=整个工作区，
             处于某张表时把数据表侧收敛到当前激活视图（table_id + view_id）。
-            移动端收到抽屉里，避免挤压顶栏横向空间。 */}
-        {searchNode}
+            桌面端由居中容器接管剩余横向空间，让搜索框相对居中、就近操作；
+            移动端收为图标入口并展开抽屉，避免挤压顶栏横向空间。 */}
+        {isMobile ? searchNode : <div className="cn-header-search">{searchNode}</div>}
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
           {/* 帮助中心入口 —— 所有登录用户可见 */}

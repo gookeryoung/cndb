@@ -625,6 +625,22 @@ body.theme-oled {
   margin-left: var(--cn-space-md);
 }
 
+/* 顶栏搜索居中容器：接管导航组与右侧操作组之间的剩余横向空间，
+ * 搜索框落在这段空间的中间（而非整栏绝对居中），窄屏下也不会与两侧重叠。 */
+.cn-header-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+/* 居中容器内由容器负责伸缩：取消搜索框自身的左外边距，宽度回到上限内自适应 */
+.cn-header-search .cn-global-search {
+  flex: 0 1 auto;
+  width: 100%;
+  margin-left: 0;
+}
+
 .cn-gs-box {
   display: flex;
   align-items: center;
