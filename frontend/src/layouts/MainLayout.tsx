@@ -14,6 +14,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
+import GlobalSearch from '@/components/GlobalSearch'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import { workspaceLandingSegment, workspaceTypeFeatures } from '@/utils/workspaceType'
@@ -240,6 +241,36 @@ export default function MainLayout() {
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
+  // ── 顶栏工作区搜索 ──
+  // 数据表侧的检索范围随当前激活视图收敛：表上下文 + ?view= 时把 table_id / view_id 带下去，
+  // 后端据此把行检索限制在该视图的筛选范围内。
+  const [searchMobileOpen, setSearchMobileOpen] = useState(false)
+  const viewParam = Number(searchParams.get('view'))
+  const searchContext = inTableContext && tid
+    ? {
+      tableId: Number(tid),
+      viewId: Number.isFinite(viewParam) && viewParam > 0 ? viewParam : undefined,
+    }
+    : { tableId: undefined, viewId: undefined }
+  const searchNode = wid ? (
+    isMobile ? (
+      <Button
+        type="text"
+        icon={<SearchOutlined />}
+        aria-label="搜索工作区"
+        data-testid="global-search-mobile-open"
+        onClick={() => setSearchMobileOpen(true)}
+      />
+    ) : (
+      <GlobalSearch
+        workspaceId={Number(wid)}
+        workspaceName={currentWs?.name}
+        tableId={searchContext.tableId}
+        viewId={searchContext.viewId}
+      />
+    )
+  ) : null
+
   const onLogout = useCallback(() => {
     modal.confirm({
       title: '退出登录？',
@@ -388,6 +419,11 @@ export default function MainLayout() {
             {!isMobile && (currentWs?.name || '工作区')}
           </Button>
         </Dropdown>
+
+        {/* 工作区搜索 —— GitHub 风格顶栏搜索框：默认范围=整个工作区，
+            处于某张表时把数据表侧收敛到当前激活视图（table_id + view_id）。
+            移动端收到抽屉里，避免挤压顶栏横向空间。 */}
+        {searchNode}
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
           {/* 帮助中心入口 —— 所有登录用户可见 */}
@@ -550,10 +586,31 @@ export default function MainLayout() {
         {wsFeatures.tables && renderTableNav(true)}
       </Drawer>
 
+      {/* 移动端工作区搜索：顶部抽屉承载与桌面同款搜索面板 */}
+      <Drawer
+        title="搜索工作区"
+        placement="top"
+        open={isMobile && searchMobileOpen}
+        onClose={() => setSearchMobileOpen(false)}
+        height="auto"
+        styles={{ body: { padding: 12 } }}
+        data-testid="global-search-drawer"
+      >
+        {wid && (
+          <div className="cn-search-in-drawer">
+            <GlobalSearch
+              workspaceId={Number(wid)}
+              workspaceName={currentWs?.name}
+              tableId={searchContext.tableId}
+              viewId={searchContext.viewId}
+            />
+          </div>
+        )}
+      </Drawer>
+
       <Suspense fallback={<ModalFallback />}>
         <SettingsModal open={settingsOpen} initialTab={settingsTab} onClose={closeSettings} />
       </Suspense>
-
       <Suspense fallback={<ModalFallback />}>
         {helpOpen && <HelpCenterDrawer open onClose={() => setHelpOpen(false)} />}
       </Suspense>

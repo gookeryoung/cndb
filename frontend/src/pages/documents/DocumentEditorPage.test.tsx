@@ -640,11 +640,13 @@ describe('DocumentEditorPage 查找与替换', () => {
         await waitFor(() => expect(screen.queryByTestId('doc-find-bar')).toBeNull())
     })
 
-    it('「查找」按钮打开查找条；区分大小写开关影响匹配数', async () => {
+    it('顶部不再有「查找」按钮；Ctrl+F 打开查找条后区分大小写开关影响匹配数', async () => {
         renderEditor()
         const ta = await enterSourceMode()
 
-        fireEvent.click(screen.getByTestId('doc-find-open'))
+        // 查找入口收敛到快捷键（顶栏「查找」按钮已移除）
+        expect(screen.queryByTestId('doc-find-open')).toBeNull()
+        fireEvent.keyDown(ta, { key: 'f', ctrlKey: true })
         await screen.findByTestId('doc-find-bar')
         // 写入混合大小写文本，便于验证大小写开关
         fireEvent.change(ta, { target: { value: 'Alpha alpha ALPHA' } })

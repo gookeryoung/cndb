@@ -781,9 +781,6 @@ export default function DocumentEditorPage() {
           >
             图片
           </Button>
-          <Button icon={<SearchOutlined />} data-testid="doc-find-open" onClick={openFind}>
-            查找
-          </Button>
           <Button icon={<LinkOutlined />} onClick={() => setBacklinksOpen(true)}>
             反链
           </Button>
@@ -794,6 +791,7 @@ export default function DocumentEditorPage() {
             插入表格引用
           </Button>
           <Button icon={<TagsOutlined />} onClick={() => setTagsOpen(true)}>
+            标签{doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}
           </Button>
           <Button
             icon={<PullRequestOutlined />}

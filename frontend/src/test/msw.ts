@@ -273,6 +273,53 @@ export const handlers = [
       }))
     return HttpResponse.json({ items, total: items.length, query: q })
   }),
+  // 工作区统一检索（顶栏搜索框）：文档按标题/摘要命中；数据表按表名 + 表内行值命中。
+  // scope 只影响对应分组；带 view_id 时回显 view 说明（后端「默认只搜激活视图」的契约）。
+  http.get('/api/v1/workspaces/:wid/search', ({ request }) => {
+    const url = new URL(request.url)
+    const q = (url.searchParams.get('q') ?? '').trim()
+    const scope = url.searchParams.get('scope') ?? 'all'
+    const viewId = url.searchParams.get('view_id')
+    const tableId = url.searchParams.get('table_id')
+    if (!q) return HttpResponse.json({ query: '', documents: [], tables: [], rows: [], view: null })
+    const kw = q.toLowerCase()
+    const hit = (text: string) => text.toLowerCase().includes(kw)
+    const documents = scope === 'tables'
+      ? []
+      : mockDocuments
+        .filter(d => !d.is_folder && (hit(d.title) || hit(d.summary)))
+        .map(d => ({
+          id: d.id,
+          title: d.title,
+          title_hit: hit(d.title) ? `<mark>${d.title}</mark>` : d.title,
+          summary_hit: hit(d.summary) ? `…<mark>${d.summary}</mark>…` : d.summary,
+          status: d.status,
+          updated_at: d.updated_at,
+        }))
+    const tables = scope === 'documents' || !hit(mockTable.name)
+      ? []
+      : [{ id: mockTable.id, name: mockTable.name, description: '客户主数据' }]
+    const rows = scope === 'documents'
+      ? []
+      : mockRecords.items
+        .filter(r => Object.values(r).some(v => typeof v === 'string' && hit(v)))
+        .map(r => ({
+          table_id: mockTable.id,
+          table_name: mockTable.name,
+          row_id: r.id,
+          title: String(r.姓名 ?? ''),
+          snippet: String(r.姓名 ?? ''),
+        }))
+    const view = tableId
+      ? {
+        id: viewId ? Number(viewId) : null,
+        name: viewId ? (mockViews.find(v => v.id === Number(viewId))?.name ?? '') : '',
+        table_id: Number(tableId),
+        table_name: mockTable.name,
+      }
+      : null
+    return HttpResponse.json({ query: q, documents, tables, rows, view })
+  }),
   http.post('/api/v1/workspaces/:wid/documents', async ({ request }) => {
     const body = await request.json() as {
       title?: string
