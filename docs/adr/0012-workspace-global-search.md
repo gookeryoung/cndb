@@ -71,9 +71,9 @@ Related: `src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/plugins/wor
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/plugins/workspaces/services/search.py`、`src/cndb/plugins/workspaces/plugin.py` | `tests/test_workspace_search.py` | d4bd056f |
-| P1 | 已落地 | `frontend/src/components/GlobalSearch.tsx`、`frontend/src/api/search.ts`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/components/GlobalSearch.test.tsx`、`frontend/src/test/msw.ts` | d4bd056f |
-| P2 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/pages/documents/DocumentEditorPage.test.tsx` | d4bd056f |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/plugins/workspaces/services/search.py`、`src/cndb/plugins/workspaces/plugin.py` | `tests/test_workspace_search.py` | 7e1224d1 |
+| P1 | 已落地 | `frontend/src/components/GlobalSearch.tsx`、`frontend/src/api/search.ts`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/components/GlobalSearch.test.tsx`、`frontend/src/test/msw.ts` | 7e1224d1 |
+| P2 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/pages/documents/DocumentEditorPage.test.tsx` | 7e1224d1 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件。
 
