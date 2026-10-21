@@ -13,7 +13,6 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
-import NotificationBell from '@/components/NotificationBell'
 import { documentsApi } from '@/api/documents'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -391,8 +390,6 @@ export default function MainLayout() {
         </Dropdown>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
-          {/* 通知铃铛：谁把我加进了协作者（未读角标 + 列表） */}
-          <NotificationBell />
           {/* 帮助中心入口 —— 所有登录用户可见 */}
           <Tooltip title="帮助中心与新手引导">
             <Button

@@ -69,13 +69,6 @@ class DocumentSubmit(BaseModel):
     base_version_number: int | None = Field(default=None, ge=0)
 
 
-class DocumentPermissionGrant(BaseModel):
-    """文档协作者授权（viewer 只读 / editor 可直编未发布内容）."""
-
-    user_id: int = Field(gt=0)
-    role: str = Field(default="viewer", pattern="^(viewer|editor)$")
-
-
 class DocumentOut(BaseModel):
     """文档列表项 / 详情（不含内容正文）."""
 
@@ -219,15 +212,6 @@ class SearchResponse(BaseModel):
 # ── 权限 / 分享 ──
 
 
-class PermissionEntry(BaseModel):
-    user_id: int
-    role: str = Field(pattern="^(owner|editor|viewer)$")
-
-
-class PermissionUpdateRequest(BaseModel):
-    entries: list[PermissionEntry] = Field(default_factory=list)
-
-
 class ShareCreate(BaseModel):
     permission: str = Field(default="viewer", pattern="^(viewer|editor)$")
     password: str | None = Field(default=None, max_length=100)
@@ -319,8 +303,6 @@ __all__ = [
     "DocumentUpdate",
     "LinkRepairItem",
     "LinkRepairRequest",
-    "PermissionEntry",
-    "PermissionUpdateRequest",
     "RollbackRequest",
     "SearchHit",
     "SearchResponse",

@@ -144,33 +144,6 @@ class TestDraftChangeRequestIsPrivate:
         assert len(versions) == 1  # 仅建文档时的那一版
         assert "v1" in (versions[0].content or "")
 
-    def test_granted_collaborator_can_read_draft_change_request_and_revoke_cuts_it(self, client, db):
-        env = Env(db)
-        draft = _create_doc(client, env, status="draft")
-        cr = _create_cr(client, env, draft["id"], username=env.owner.username)
-
-        auth_owner = _login(client, env.owner.username)
-        auth_viewer = _login(client, env.viewer.username)
-        url = f"{CRS.format(ws=env.ws.id)}/{cr['id']}"
-
-        assert client.get(url, headers=auth_viewer).status_code == 404
-        grant = client.post(
-            f"{DOCS.format(ws=env.ws.id)}/{draft['id']}/permissions",
-            json={"user_id": env.viewer.id, "role": "viewer"},
-            headers=auth_owner,
-        )
-        assert grant.status_code == 201, grant.text
-        # 授权后：协作者可读该草稿的修改申请
-        assert client.get(url, headers=auth_viewer).status_code == 200
-        # 撤销后立即收回
-        assert (
-            client.delete(
-                f"{DOCS.format(ws=env.ws.id)}/{draft['id']}/permissions/{env.viewer.id}", headers=auth_owner
-            ).status_code
-            == 204
-        )
-        assert client.get(url, headers=auth_viewer).status_code == 404
-
 
 class TestPublishedChangeRequestStaysVisible:
     def test_published_document_change_request_visible_to_all_members(self, client, db):

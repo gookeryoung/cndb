@@ -37,7 +37,6 @@ from cndb.plugins.documents.models import (
     DocumentIssue,
     DocumentIssueComment,
     DocumentIssueEvent,
-    DocumentPermission,
     DocumentPin,
     DocumentShare,
     DocumentTag,
@@ -304,18 +303,14 @@ def update_content(
     change_summary: str = "",
     base_updated_at: str | None = None,
     change_type: str = CHANGE_TYPE_MANUAL,
-    enforce_role: bool = True,
 ) -> Document:
     """乐观锁更新内容：创建新版本 + 刷新元数据 + 同步 FTS.
 
     Args:
         base_updated_at: 客户端持有的 updated_at ISO 字符串；None 表示跳过冲突检测。
-        enforce_role: 是否校验工作区写权限。仅供已单独校验过「文档级 editor 授权」
-            的内部提交路径传 False（见 ``drafts.submit_draft``），路由层保持默认。
     """
     doc = get_document_or_404(db, workspace_id, doc_id)
-    if enforce_role:
-        require_editor(db, workspace_id, user)
+    require_editor(db, workspace_id, user)
 
     if doc.is_folder:
         raise ConflictError("文件夹没有内容")
@@ -618,7 +613,7 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
     - 两段式：仅允许彻底删除 **已进入回收站** 的文档，未删除的文档返回 409；
     - 文件夹连同仍处于删除态的子孙一并销毁；已恢复的子项脱离父节点挂到根目录，
       不随父节点一起销毁；
-    - 一并清理版本 / 标签关联 / 分享 / 权限 / FTS 索引与外存内容目录。
+    - 一并清理版本 / 标签关联 / 分享 / FTS 索引与外存内容目录。
     """
     doc = get_document_any_state_or_404(db, workspace_id, doc_id)
     # 先判可见性再判角色：彻底删除不可逆，「看不见的草稿」不允许被销毁。
@@ -637,7 +632,6 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
 
     db.execute(delete(DocumentVersion).where(DocumentVersion.document_id.in_(ids)))
     db.execute(delete(DocumentTag).where(DocumentTag.document_id.in_(ids)))
-    db.execute(delete(DocumentPermission).where(DocumentPermission.document_id.in_(ids)))
     db.execute(delete(DocumentShare).where(DocumentShare.document_id.in_(ids)))
     # 待审修改申请随文档一并销毁，避免留下指向已清空文档的孤儿申请
     db.execute(delete(DocumentChangeRequest).where(DocumentChangeRequest.document_id.in_(ids)))
@@ -954,13 +948,11 @@ def serialize_document(db: Session, doc: Document, *, pinned: bool = False) -> d
         row.tag_id for row in db.execute(select(DocumentTag.tag_id).where(DocumentTag.document_id == doc.id)).all()
     ]
     total = 0 if doc.is_folder else version_count(db, doc.id)
-    counts = _collaborator_counts(db, [doc.id])
     return _serialize_document(
         doc,
         version_total=total,
         tag_ids=tag_ids,
         pinned=pinned,
-        collaborator_count=counts.get(doc.id, 0),
     )
 
 
@@ -1023,36 +1015,22 @@ def serialize_documents(
     ).all():
         tag_ids[doc_id].append(tag_id)
     pinned = pinned_ids or set()
-    collab_counts = _collaborator_counts(db, ids)
     return [
         _serialize_document(
             doc,
             version_total=0 if doc.is_folder else int(counts.get(doc.id, 0)),
             tag_ids=tag_ids.get(doc.id, []),
             pinned=doc.id in pinned,
-            collaborator_count=collab_counts.get(doc.id, 0),
         )
         for doc in docs
     ]
 
 
-def _collaborator_counts(db: Session, doc_ids: list[int]) -> dict[int, int]:
-    """按文档统计协作授权人数（一次分组查询，避免逐个文档查询）."""
-    if not doc_ids:
-        return {}
-    rows = db.execute(
-        select(DocumentPermission.document_id, func.count())
-        .where(DocumentPermission.document_id.in_(doc_ids))
-        .group_by(DocumentPermission.document_id)
-    ).all()
-    return {int(doc_id): int(cnt) for doc_id, cnt in rows}
-
-
-def _document_visibility(doc: Document, collaborator_count: int) -> str:
-    """可见性标签：workspace（已发布）/ shared（已授权协作者）/ private（仅自己与所有者）."""
+def _document_visibility(doc: Document) -> str:
+    """可见性标签：workspace（已发布）/ private（仅自己与所有者）."""
     if doc.status == DOC_STATUS_PUBLISHED:
         return "workspace"
-    return "shared" if collaborator_count > 0 else "private"
+    return "private"
 
 
 def _serialize_document(
@@ -1061,7 +1039,6 @@ def _serialize_document(
     version_total: int,
     tag_ids: list[int],
     pinned: bool = False,
-    collaborator_count: int = 0,
 ) -> dict[str, Any]:
     """文档 → 响应字典主体（版本数/标签由调用方提供，避免逐条查询）."""
     return {
@@ -1085,7 +1062,6 @@ def _serialize_document(
         "tag_ids": tag_ids,
         "version_count": version_total,
         "pinned": pinned,
-        # 可见性提示：前端据此展示"仅自己可见 / 共享给 N 人 / 已发布"
-        "visibility": _document_visibility(doc, collaborator_count),
-        "collaborator_count": collaborator_count,
+        # 可见性提示：前端据此展示"仅自己可见 / 已发布"
+        "visibility": _document_visibility(doc),
     }

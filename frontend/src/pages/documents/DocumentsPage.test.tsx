@@ -519,13 +519,13 @@ describe('DocumentsPage 标签筛选', () => {
 })
 
 describe('列表可见性提示', () => {
-    it('未发布草稿标注「仅自己可见」，共享草稿标注人数，已发布不标注', async () => {
+    it('未发布草稿标注「仅自己可见」，已发布不标注', async () => {
         const items = mockDocuments.map(d => {
             if (d.id === 2) {
-                return { ...d, status: 'draft' as const, visibility: 'private' as const, collaborator_count: 0 }
+                return { ...d, status: 'draft' as const, visibility: 'private' as const }
             }
             if (d.id === 3) {
-                return { ...d, status: 'draft' as const, visibility: 'shared' as const, collaborator_count: 2 }
+                return { ...d, status: 'draft' as const, visibility: 'private' as const }
             }
             return { ...d, status: 'published' as const, visibility: 'workspace' as const }
         })
@@ -550,10 +550,6 @@ describe('列表可见性提示', () => {
         // 悬浮说明"同事看不到"，避免误以为文档丢失
         fireEvent.mouseEnter(privateTag)
         expect(await screen.findByText(/仅你与工作区所有者可见/)).toBeInTheDocument()
-
-        const sharedTag = screen.getByTestId('doc-list-visibility-3')
-        expect(sharedTag).toHaveAttribute('aria-label', '已共享给协作者')
-        expect(sharedTag).toHaveTextContent('共享 2 人')
 
         // 已发布文档不显示提示（成员均可见）
         expect(screen.queryByTestId('doc-list-visibility-1')).toBeNull()

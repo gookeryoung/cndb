@@ -453,44 +453,6 @@ class TestSessionsService:
 
 
 # ══════════════════════════════════════════════════════════════
-# accounts/services/notifications.py
-# ══════════════════════════════════════════════════════════════
-
-
-class TestNotificationsService:
-    def _seed(self, db: Any) -> tuple[Any, Any]:
-        from cndb.plugins.accounts.models import Notification
-
-        actor = _make_user(db, "notifactor", nickname="张三")
-        recipient = _make_user(db, "notifrecipient")
-        row = Notification(recipient_id=recipient.id, type="doc", actor_id=actor.id, payload={})
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-        return recipient, row
-
-    def test_serialize_falls_back_to_actor_name(self, db: Any) -> None:
-        from cndb.plugins.accounts.services import notifications
-
-        recipient, _row = self._seed(db)
-        items = notifications.list_notifications(db, recipient)["items"]
-        assert items[0]["actor_name"] == "张三"
-
-    def test_unread_count(self, db: Any) -> None:
-        from cndb.plugins.accounts.services import notifications
-
-        recipient, _row = self._seed(db)
-        assert notifications.unread_count(db, recipient) == 1
-
-    def test_mark_read_twice_is_idempotent(self, db: Any) -> None:
-        from cndb.plugins.accounts.services import notifications
-
-        recipient, row = self._seed(db)
-        assert notifications.mark_read(db, recipient, row.id) is True
-        assert notifications.mark_read(db, recipient, row.id) is True
-
-
-# ══════════════════════════════════════════════════════════════
 # accounts/services/user_bulk.py
 # ══════════════════════════════════════════════════════════════
 
@@ -602,24 +564,6 @@ class TestFilesServices:
         doc = create_document(db, ws.id, creator, title="归属", content="x", status="published")
 
         returned = assert_can_attach_document(db, document_id=doc.id, workspace_id=ws.id, user=owner)
-        assert returned.id == doc.id
-
-    def test_assert_can_attach_document_editor_granted(self, db: Any) -> None:
-        from cndb.plugins.documents.models import DocumentPermission
-        from cndb.plugins.documents.services.content import create_document
-        from cndb.plugins.files.services import assert_can_attach_document
-        from cndb.plugins.workspaces.models import Workspace
-
-        creator = _make_user(db, "doccCreator4")
-        granted = _make_user(db, "doccGranted4")
-        ws = Workspace(name="attach-ws4", created_by_id=creator.id)
-        db.add(ws)
-        db.commit()
-        doc = create_document(db, ws.id, creator, title="草稿", content="x", status="draft")
-        db.add(DocumentPermission(document_id=doc.id, user_id=granted.id, role="editor"))
-        db.commit()
-
-        returned = assert_can_attach_document(db, document_id=doc.id, workspace_id=ws.id, user=granted)
         assert returned.id == doc.id
 
     def test_assert_can_attach_document_viewer_denied(self, db: Any) -> None:

@@ -2,7 +2,7 @@
 
 Status: Implemented（P0–P3 + D6 已落地，2026-10-16 ~ 2026-10-17）
 Date: 2026-10-16
-Related: `plugins/tables/routers/views.py`、`plugins/tables/services/core/view_access.py`、`plugins/tables/models.py`、`plugins/tables/routers/tables.py`、`cli/views.py`、`plugins/documents/services/document_permissions.py`（白名单模式参考）
+Related: `plugins/tables/routers/views.py`、`plugins/tables/services/core/view_access.py`、`plugins/tables/models.py`、`plugins/tables/routers/tables.py`、`cli/views.py`
 
 ## 口径（需求 → 设计约束）
 

@@ -5,7 +5,7 @@
 防止出现"全 404 也算过"的假绿：
 
 - 元数据 / 正文 / 版本列表 / 单版本 / 差异 / 导出 / 反链 / 出链 /
-  协作者名单 / 分享链接列表 / 问题清单 / 修改申请；
+  分享链接列表 / 问题清单 / 修改申请；
 - 集合类入口（列表 / 目录树 / 搜索）必须**不包含**该草稿；
 - 两类角色都要被挡住：普通成员（viewer）与工作区编辑者（editor，非创建者）；
 - 创建者对这些入口必须全部可用（正向对照）。
@@ -33,7 +33,6 @@ READ_ENDPOINTS: list[tuple[str, str, str, dict | None, dict | None]] = [
     ("导出 Markdown", "GET", "/{id}/export", {"format": "md"}, None),
     ("反链", "GET", "/{id}/backlinks", None, None),
     ("出链", "GET", "/{id}/links", None, None),
-    ("协作者名单", "GET", "/{id}/permissions", None, None),
     ("分享链接列表", "GET", "/{id}/share", None, None),
 ]
 

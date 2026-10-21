@@ -194,7 +194,6 @@ src/cndb/
 | 文档导出 | `/api/v1/workspaces/{wid}/documents/{doc_id}/export` | Markdown / Word / PDF 文件下载 |
 | Obsidian 库 | `/api/v1/workspaces/{wid}/documents/import[/analyze]`、`/documents/export/vault` | 库 zip 导入（预览 → 落库）/ 整库导出 |
 | 分析 | `/api/v1/workspaces/{wid}/analytics` | 分析模板 / 运行 / 字段智能推荐 |
-| 通知 | `/api/v1/accounts/notifications` | 站内通知（列表 / 已读） |
 | 健康 | `/health` | 服务存活 |
 
 完整文档：启动后访问 `http://localhost:8000/docs`（FastAPI 自动生成）
