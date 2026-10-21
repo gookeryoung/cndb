@@ -130,7 +130,7 @@ describe('DocumentShareModal', () => {
     const popconfirm = document.querySelector('.ant-popconfirm') as HTMLElement
     fireEvent.click(within(popconfirm).getByRole('button', { name: /^撤\s*销$/ }))
 
-    await waitFor(() => expect(screen.getByText('已撤销')).toBeInTheDocument())
+    expect(await screen.findByText('已撤销')).toBeInTheDocument()
     expect(within(screen.getByTestId('document-share-item-1')).getByRole('button', { name: /复制链接/ }))
       .toBeDisabled()
   })

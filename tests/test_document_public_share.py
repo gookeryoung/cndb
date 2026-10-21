@@ -143,7 +143,9 @@ class TestResolvePublicShare:
     def test_revoked_share_404(self, client, db, ws, auth):
         doc = _create_doc(client, ws, auth)
         share = client.post(f"{DOCS.format(ws=ws.id)}/{doc['id']}/share", json={}, headers=auth).json()
-        assert client.delete(f"{DOCS.format(ws=ws.id)}/{doc['id']}/share/{share['id']}", headers=auth).status_code == 200
+        assert (
+            client.delete(f"{DOCS.format(ws=ws.id)}/{doc['id']}/share/{share['id']}", headers=auth).status_code == 200
+        )
         assert client.get(f"{SHARE_API}/{share['token']}").status_code == 404
 
     def test_expired_share_404(self, client, db, ws, auth):

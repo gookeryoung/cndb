@@ -49,7 +49,7 @@ Related: `plugins/tables/models.py`、`plugins/tables/services/core/access.py`�
 
 ```python
 class RowSubject(StrEnum):
-    USER = "user"                # 指定成员：subject_id = accounts_user.id
+    USER = "user"  # 指定成员：subject_id = accounts_user.id
     MEMBER_ROLE = "member_role"  # 表级成员档：subject_id ∈ {"read", "write"}
 
 

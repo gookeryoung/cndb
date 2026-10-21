@@ -67,14 +67,16 @@ Related: `plugins/documents/routers/vault.py`、`plugins/documents/services/obsi
 ```python
 @dataclass
 class ImportedDoc:
-    path: str            # 批次内相对路径
-    title: str           # 识别后的标题
-    body: str            # 规整后的 Markdown 正文
-    source_suffix: str   # .md/.docx/.html
+    path: str  # 批次内相对路径
+    title: str  # 识别后的标题
+    body: str  # 规整后的 Markdown 正文
+    source_suffix: str  # .md/.docx/.html
     warnings: list[str]
+
 
 def convert_file(path: str, data: bytes) -> ImportedDoc:
     """按扩展名分派 → 解码 → 提取标题 → 转 Markdown → 规整；不支持时抛 UnsupportedImport。"""
+
 
 def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[dict]]:
     """逐条转换（I5 隔离）；返回（成功项, 跳过明细）。"""
