@@ -1,12 +1,13 @@
 /** 分析结果视图 —— 图表 + 分组汇总 + 描述统计 + 派生数据预览（含 CSV / PNG 导出）. */
 
 import { useEffect, useMemo, useState } from 'react'
-import { App as AntApp, Button, Card, Empty, Space, Table, Tag, Tooltip, Typography } from 'antd'
-import { DownloadOutlined, PictureOutlined } from '@ant-design/icons'
+import { App as AntApp, Button, Empty, Table, Tag, Tooltip, Typography } from 'antd'
+import { DownloadOutlined, LineChartOutlined, PictureOutlined, TableOutlined } from '@ant-design/icons'
 import * as echarts from 'echarts/core'
 import type { Field } from '@/api'
 import type { AnalyticsChart, AnalyticsComputeResponse } from '@/api/analytics'
 import { ChartCard } from '@/pages/grid/views/ChartView'
+import { AnalyticsBox } from './AnalyticsBox'
 import {
   downloadTextFile,
   formatNumber,

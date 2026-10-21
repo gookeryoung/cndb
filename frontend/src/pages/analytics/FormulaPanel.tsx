@@ -1,13 +1,17 @@
-/** 公式编辑器卡片 —— 多行公式 + 字段/函数快捷插入 + 本地校验提示 + Ctrl/Cmd+Enter 运行. */
+/** 公式编辑器 —— 多行公式 + 字段/函数快捷插入 + 本地校验提示 + Ctrl/Cmd+Enter 运行.
+ *
+ * 排版：每条公式占两行（键名/展示名 + 全宽表达式）。表达式独享一行，
+ * 长公式（round(sum([a]) / sum([b]) * 100, 2)）在 400px 配置栏里也能整行读完；
+ * 字段 / 函数快捷片段压成 11px 中性 chip，避免彩色标签堆成噪音。
+ */
 
 import { useRef } from 'react'
-import { Alert, Button, Card, Dropdown, Input, Select, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Button, Dropdown, Input, Select, Tag, Tooltip } from 'antd'
 import type { InputRef } from 'antd'
-import { DeleteOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { DeleteOutlined, FunctionOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import type { AnalyticsFormula } from '@/api/analytics'
+import { AnalyticsBox } from './AnalyticsBox'
 import { insertAtCursor, newFormula } from './analyticsModel'
-
-const { Text } = Typography
 
 /** 单值函数快捷片段（插入末尾留光标在括号内） */
 const SCALAR_FUNCS = ['round(', 'abs(', 'sqrt(', 'pow(', 'ceil(', 'floor(']
@@ -15,6 +19,8 @@ const SCALAR_FUNCS = ['round(', 'abs(', 'sqrt(', 'pow(', 'ceil(', 'floor(']
 /** 窗口函数（按「分区 + 排序」的行序列计算；第一个参数必须是字段引用） */
 const SHIFT_FUNCS = ['prev(', 'lag(', 'lead(', 'diff(', 'pct_change(', 'cumsum(', 'rank(']
 const ROLLING_FUNCS = ['ma(', 'rolling_sum(', 'rolling_std(']
+/** 聚合函数（整列口径，插入时预填首个数值字段） */
+const AGG_FUNCS = ['sum', 'avg', 'count', 'min', 'max'] as const
 /** 表达式是否含窗口函数（决定是否展示分区 / 排序选择器） */
 const WINDOW_CALL_RE = /\b(?:prev|lag|lead|diff|pct_change|cumsum|ma|rolling_sum|rolling_std|rank)\s*\(/i
 
@@ -33,7 +39,7 @@ interface Props {
   running: boolean
 }
 
-/** 公式编辑卡片：编辑态由父级持有，本组件只负责输入与快捷插入 */
+/** 公式编辑区：编辑态由父级持有，本组件只负责输入与快捷插入 */
 export function FormulaPanel({
   tableFields,
   numericFields,
@@ -91,9 +97,10 @@ export function FormulaPanel({
   const errorTexts = Object.entries(errors)
 
   return (
-    <Card
-      size="small"
-      title="自定义计算模板"
+    <AnalyticsBox
+      title="计算模板"
+      icon={<FunctionOutlined />}
+      className="cn-an-box--formula"
       extra={
         <Tooltip
           title={
@@ -103,117 +110,105 @@ export function FormulaPanel({
               整列聚合：sum([字段]) / avg / count / min / max；
               窗口函数（按分区 + 排序）：lag / lead / prev / diff / pct_change / cumsum / rank / ma([字段], n) / rolling_sum / rolling_std；
               例：round([合格数] / [实际产量] * 100, 2) 逐行算合格率；
-                  round(pct_change([收盘价]) * 100, 2) 分区内按时间算环比；
-              Ctrl / Cmd + Enter 直接运行分析
+                  round(pct_change([收盘价]) * 100, 2) 分区内按时间算环比
             </div>
           }
         >
-          <Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>公式语法</Text>
+          <QuestionCircleOutlined className="cn-an-box-hint" aria-label="公式语法" />
         </Tooltip>
       }
+      footer={
+        <>
+          <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => onChange([...formulas, newFormula(formulas.length)])}>
+            添加公式
+          </Button>
+          <span className="cn-an-foot-hint">Ctrl / ⌘ + Enter 运行</span>
+        </>
+      }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {tableFields.length > 0 && (
-          <div data-testid="analytics-field-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>点击插入字段：</Text>
-            {tableFields.map(name => (
-              <Tag
-                key={name}
-                color="blue"
-                style={{ cursor: 'pointer', marginInlineEnd: 0 }}
-                onClick={() => insertSnippet(`[${name}]`)}
-              >
-                {name}
-              </Tag>
-            ))}
-          </div>
+      {/* 字段：click 插入 [字段]（保留 data-testid，测试与依赖此容器的交互） */}
+      <div className="cn-an-chips" data-testid="analytics-field-chips">
+        <span className="cn-an-chips-label">字段</span>
+        {tableFields.length === 0 ? (
+          <span className="cn-an-muted">选择数据表后显示字段</span>
+        ) : (
+          tableFields.map(name => (
+            <Tag key={name} className="cn-an-chip" onClick={() => insertSnippet(`[${name}]`)}>
+              {name}
+            </Tag>
+          ))
         )}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>快捷函数：</Text>
-          {SCALAR_FUNCS.map(fn => (
-            <Tag key={fn} style={{ cursor: 'pointer', marginInlineEnd: 0 }} onClick={() => insertSnippet(fn)}>
-              {fn.replace('(', '')}
-            </Tag>
-          ))}
-          {(['sum', 'avg', 'count', 'min', 'max'] as const).map(fn => (
-            <Tag
-              key={fn}
-              color="purple"
-              style={{ cursor: 'pointer', marginInlineEnd: 0 }}
-              onClick={() => insertSnippet(`${fn}([${numericFields[0] ?? '字段'}])`)}
-            >
-              {fn}
-            </Tag>
-          ))}
-          {SHIFT_FUNCS.map(fn => (
-            <Tag
-              key={fn}
-              color="geekblue"
-              style={{ cursor: 'pointer', marginInlineEnd: 0 }}
-              onClick={() => insertSnippet(`${fn}[${numericFields[0] ?? '字段'}])`)}
-            >
-              {fn.replace('(', '')}
-            </Tag>
-          ))}
-          {ROLLING_FUNCS.map(fn => (
-            <Tag
-              key={fn}
-              color="geekblue"
-              style={{ cursor: 'pointer', marginInlineEnd: 0 }}
-              title="滚动窗口需指定长度，如 ma([字段], 3)"
-              onClick={() => insertSnippet(`${fn}[${numericFields[0] ?? '字段'}], 3)`)}
-            >
-              {fn.replace('(', '')}
-            </Tag>
-          ))}
-          <Dropdown menu={{ items: exampleMenu() }} disabled={exampleMenu().length === 0}>
-            <Button size="small" type="link" data-testid="analytics-formula-example">
-              示例
-            </Button>
-          </Dropdown>
-        </div>
+      </div>
 
-        {formulas.map((formula, i) => {
-          const key = formula.key.trim()
-          const error = errors[key] || errors[formula.key]
-          const isWindow = WINDOW_CALL_RE.test(formula.expr)
-          return (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+      {/* 函数：单值 / 聚合 / 窗口 / 滚动，全部平铺（搜索成本低于折叠菜单） */}
+      <div className="cn-an-chips">
+        <span className="cn-an-chips-label">函数</span>
+        {SCALAR_FUNCS.map(fn => (
+          <Tag key={fn} className="cn-an-chip cn-an-chip--fn" onClick={() => insertSnippet(fn)}>
+            {fn.replace('(', '')}
+          </Tag>
+        ))}
+        {AGG_FUNCS.map(fn => (
+          <Tag
+            key={fn}
+            className="cn-an-chip cn-an-chip--agg"
+            onClick={() => insertSnippet(`${fn}([${numericFields[0] ?? '字段'}])`)}
+          >
+            {fn}
+          </Tag>
+        ))}
+        {SHIFT_FUNCS.map(fn => (
+          <Tag
+            key={fn}
+            className="cn-an-chip cn-an-chip--win"
+            onClick={() => insertSnippet(`${fn}[${numericFields[0] ?? '字段'}])`)}
+          >
+            {fn.replace('(', '')}
+          </Tag>
+        ))}
+        {ROLLING_FUNCS.map(fn => (
+          <Tag
+            key={fn}
+            className="cn-an-chip cn-an-chip--win"
+            title="滚动窗口需指定长度，如 ma([字段], 3)"
+            onClick={() => insertSnippet(`${fn}[${numericFields[0] ?? '字段'}], 3)`)}
+          >
+            {fn.replace('(', '')}
+          </Tag>
+        ))}
+        <Dropdown menu={{ items: exampleMenu() }} disabled={exampleMenu().length === 0}>
+          <Button size="small" type="link" data-testid="analytics-formula-example">
+            示例
+          </Button>
+        </Dropdown>
+      </div>
+
+      {formulas.map((formula, i) => {
+        const key = formula.key.trim()
+        const error = errors[key] || errors[formula.key]
+        const isWindow = WINDOW_CALL_RE.test(formula.expr)
+        return (
+          <div key={i} className="cn-an-frow">
+            <div className="cn-an-frow-top">
+              <span className="cn-an-frow-no" aria-hidden>{i + 1}</span>
               <Input
-                style={{ width: 110 }}
+                size="small"
+                className="cn-an-frow-key"
                 placeholder="键名"
                 aria-label={`公式键名 ${i + 1}`}
                 value={formula.key}
                 onChange={e => patch(i, 'key', e.target.value)}
               />
               <Input
-                style={{ width: 110 }}
-                placeholder="展示名"
+                size="small"
+                className="cn-an-frow-label"
+                placeholder="展示名（可选）"
                 aria-label={`公式展示名 ${i + 1}`}
                 value={formula.label}
                 onChange={e => patch(i, 'label', e.target.value)}
               />
-              <Input
-                data-testid={`analytics-formula-expr-${i}`}
-                placeholder="round([合格数] / [实际产量] * 100, 2)"
-                aria-label={`公式表达式 ${i + 1}`}
-                value={formula.expr}
-                status={error ? 'error' : undefined}
-                onFocus={e => {
-                  focusedIndex.current = i
-                  lastKeyRef.current = e.target as HTMLInputElement
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault()
-                    if (canRun && !running) onRun()
-                  }
-                }}
-                onChange={e => patch(i, 'expr', e.target.value)}
-                ref={el => { exprRefs.current[i] = el }}
-              />
               <Button
+                className="cn-an-frow-del"
                 type="text"
                 danger
                 icon={<DeleteOutlined />}
@@ -221,16 +216,34 @@ export function FormulaPanel({
                 onClick={() => onChange(formulas.length > 1 ? formulas.filter((_, j) => j !== i) : [newFormula(0)])}
               />
             </div>
+            <Input
+              size="small"
+              className="cn-an-frow-expr"
+              data-testid={`analytics-formula-expr-${i}`}
+              placeholder="round([合格数] / [实际产量] * 100, 2)"
+              aria-label={`公式表达式 ${i + 1}`}
+              value={formula.expr}
+              status={error ? 'error' : undefined}
+              onFocus={e => {
+                focusedIndex.current = i
+                lastKeyRef.current = e.target as HTMLInputElement
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault()
+                  if (canRun && !running) onRun()
+                }
+              }}
+              onChange={e => patch(i, 'expr', e.target.value)}
+              ref={el => { exprRefs.current[i] = el }}
+            />
             {isWindow && (
-              <div
-                data-testid={`analytics-formula-window-${i}`}
-                style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', paddingLeft: 2 }}
-              >
+              <div className="cn-an-frow-win" data-testid={`analytics-formula-window-${i}`}>
                 <Select
                   size="small"
                   allowClear
                   placeholder="分区字段"
-                  style={{ width: 150 }}
+                  className="cn-an-frow-win-select"
                   aria-label={`公式分区字段 ${i + 1}`}
                   value={formula.partition_by ?? undefined}
                   options={tableFields.map(name => ({ value: name, label: name }))}
@@ -240,7 +253,7 @@ export function FormulaPanel({
                   size="small"
                   allowClear
                   placeholder="排序字段"
-                  style={{ width: 150 }}
+                  className="cn-an-frow-win-select"
                   aria-label={`公式排序字段 ${i + 1}`}
                   value={formula.order_by ?? undefined}
                   options={tableFields.map(name => ({ value: name, label: name }))}
@@ -248,7 +261,7 @@ export function FormulaPanel({
                 />
                 <Select
                   size="small"
-                  style={{ width: 90 }}
+                  className="cn-an-frow-win-dir"
                   aria-label={`公式排序方向 ${i + 1}`}
                   value={formula.order_desc ? 'desc' : 'asc'}
                   options={[
@@ -257,37 +270,21 @@ export function FormulaPanel({
                   ]}
                   onChange={value => patch(i, 'order_desc', value === 'desc')}
                 />
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  窗口函数先按分区分组、再按排序字段计算
-                </Text>
+                <span className="cn-an-foot-hint">窗口函数先按分区分组、再按排序字段计算</span>
               </div>
             )}
-            </div>
-          )
-        })}
+          </div>
+        )
+      })}
 
-        {errorTexts.length > 0 && (
-          <Alert
-            type="error"
-            showIcon
-            data-testid="analytics-formula-error"
-            message={errorTexts.map(([key, message]) => `${key || '未命名'}：${message}`).join('；')}
-          />
-        )}
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Button
-            type="dashed"
-            icon={<PlusOutlined />}
-            onClick={() => onChange([...formulas, newFormula(formulas.length)])}
-          >
-            添加公式
-          </Button>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            <ThunderboltOutlined /> Ctrl / Cmd + Enter 运行
-          </Text>
-        </div>
-      </div>
-    </Card>
+      {errorTexts.length > 0 && (
+        <Alert
+          type="error"
+          showIcon
+          data-testid="analytics-formula-error"
+          message={errorTexts.map(([key, message]) => `${key || '未命名'}：${message}`).join('；')}
+        />
+      )}
+    </AnalyticsBox>
   )
 }
