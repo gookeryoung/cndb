@@ -1,4 +1,4 @@
-/** 文档内图片渲染：站内 `file:<key>` 走鉴权取 blob，外部 URL 直接渲染. */
+/** 文档内图片渲染：站内 `file:<key>` 走鉴权取 blob（公开分享页走免登录 URL），外部 URL 直接渲染. */
 
 import { Image, Typography } from 'antd'
 
@@ -7,14 +7,16 @@ import { parseImageRef } from './imageRef'
 
 interface DocumentImageProps {
   workspaceId?: number | string
+  /** 公开分享页的免登录图片基地址：提供后站内图片直接拼 URL，不再取 blob */
+  publicFileBase?: string
   src?: string
   alt?: string
 }
 
-export default function DocumentImage({ workspaceId, src, alt }: DocumentImageProps) {
+export default function DocumentImage({ workspaceId, publicFileBase, src, alt }: DocumentImageProps) {
   const fileKey = parseImageRef(src)
-  // 非站内引用时 hook 内部直接置空（enabled=false），不会发请求
-  const { url, error } = useFileObjectUrl(workspaceId, fileKey)
+  // 非站内引用（或公开页已走免登录 URL）时 hook 内部直接置空，不会发请求
+  const { url, error } = useFileObjectUrl(publicFileBase ? undefined : workspaceId, fileKey)
 
   if (!fileKey) {
     return (
@@ -24,6 +26,21 @@ export default function DocumentImage({ workspaceId, src, alt }: DocumentImagePr
         loading="lazy"
         data-testid="doc-image-external"
         className="cn-doc-image"
+        // 公开页 URL 含 token：外部图片不接收 Referer，避免链接经第三方泄露
+        referrerPolicy={publicFileBase ? 'no-referrer' : undefined}
+      />
+    )
+  }
+
+  if (publicFileBase) {
+    return (
+      <Image
+        src={`${publicFileBase}/${fileKey}`}
+        alt={alt}
+        className="cn-doc-image"
+        data-testid="doc-image-public"
+        style={{ maxWidth: '100%' }}
+        preview={{ mask: '预览' }}
       />
     )
   }

@@ -11,7 +11,7 @@ import { http, HttpResponse } from 'msw'
 import { message } from 'antd'
 import DocumentEditorPage from './DocumentEditorPage'
 import { renderProviders } from '@/test/render-providers'
-import { mockDocuments, mockUser, server } from '@/test/msw'
+import { mockDocuments, mockUser, mockWorkspace, server } from '@/test/msw'
 import type { ResponsiveState } from '@/hooks/useResponsive'
 
 // 可控 useResponsive mock：默认桌面端，窄屏用例在其内部切换
@@ -1128,5 +1128,36 @@ describe('DocumentEditorPage 查看 / 编辑模式与草稿提交', () => {
         await new Promise(r => setTimeout(r, 100))
         expect(draftCalls).toBe(0)
         expect(submitCalls).toBe(0)
+    })
+})
+
+describe('DocumentEditorPage 分享入口（ADR 0017）', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/2/share', () =>
+                HttpResponse.json({ items: [] })),
+        )
+    })
+
+    it('owner 桌面端显示「分享」并打开分享弹层', async () => {
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-share-open'))
+
+        expect(await screen.findByTestId('document-share-modal')).toBeInTheDocument()
+        expect(screen.getByText('获得链接的人无需登录即可只读浏览这篇文档')).toBeInTheDocument()
+    })
+
+    it('viewer 不显示分享入口', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10', () =>
+                HttpResponse.json({ ...mockWorkspace, current_user_role: 'viewer' })),
+        )
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        expect(screen.queryByTestId('doc-share-open')).toBeNull()
     })
 })

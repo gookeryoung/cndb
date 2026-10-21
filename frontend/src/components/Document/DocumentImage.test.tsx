@@ -60,4 +60,33 @@ describe('DocumentImage', () => {
     renderProviders(<DocumentImage src="file:abc.png" />)
     expect(await screen.findByTestId('doc-image-missing')).toBeInTheDocument()
   })
+
+  it('公开分享模式：站内图片直接拼免登录 URL，不请求工作区附件接口', async () => {
+    let hits = 0
+    server.use(
+      http.get('/api/v1/workspaces/:wid/files/:fileKey', () => {
+        hits += 1
+        return new HttpResponse(null, { status: 404 })
+      }),
+    )
+
+    renderProviders(
+      <DocumentImage workspaceId={10} publicFileBase="/api/v1/documents/share/tok/files" src="file:abc.png" alt="公开图" />,
+    )
+
+    const container = await screen.findByTestId('doc-image-public')
+    const img = (container.tagName === 'IMG' ? container : container.querySelector('img')) as HTMLImageElement
+    expect(img?.getAttribute('src')).toBe('/api/v1/documents/share/tok/files/abc.png')
+    expect(img).toHaveAttribute('alt', '公开图')
+    expect(hits).toBe(0)
+  })
+
+  it('公开分享模式：外部图片禁用 Referer，避免 token 经第三方泄露', async () => {
+    renderProviders(
+      <DocumentImage publicFileBase="/api/v1/documents/share/tok/files" src="https://example.com/a.png" alt="外链" />,
+    )
+
+    const img = await screen.findByTestId('doc-image-external')
+    expect(img).toHaveAttribute('referrerpolicy', 'no-referrer')
+  })
 })

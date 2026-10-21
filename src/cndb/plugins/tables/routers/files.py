@@ -100,13 +100,6 @@ _THUMBNAILABLE_EXTENSIONS: frozenset[str] = frozenset(
 _THUMB_DIR_NAME = ".thumbs"
 
 
-def _workspace_dir(workspace_id: int) -> PathLib:
-    """返回工作区专属上传目录（自动创建）."""
-    d = settings.UPLOAD_DIR / str(workspace_id)
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
 def _safe_filename(filename: str) -> str:
     """将原始文件名安全化（防路径穿越、防超长）."""
     base = PathLib(filename).name  # 去路径，只保留 basename
@@ -115,19 +108,8 @@ def _safe_filename(filename: str) -> str:
 
 
 def _file_path(workspace_id: int, file_key: str) -> PathLib:
-    """由 file_key 还原出绝对路径（带安全校验，防路径穿越）."""
-    # file_key 必须是 uuid.hex + 可选 .ext 格式（不包含路径分隔符、.. 等危险组件）
-    if ".." in file_key or "/" in file_key or "\\" in file_key or file_key.startswith("."):
-        raise HTTPException(status_code=400, detail="非法的文件标识符")
-    if not file_key or len(file_key) > 255:
-        raise HTTPException(status_code=400, detail="非法的文件标识符")
-    path = _workspace_dir(workspace_id) / file_key
-    resolved = path.resolve()
-    work_dir = _workspace_dir(workspace_id).resolve()
-    # 用 Path.is_relative_to 做前缀校验：字符串拼接 "/" 在 Windows 反斜杠路径下会误判为越界
-    if resolved != work_dir and not resolved.is_relative_to(work_dir):
-        raise HTTPException(status_code=400, detail="非法的文件标识符")
-    return path
+    """由 file_key 还原出绝对路径（路径校验统一走 files_service）."""
+    return files_service.resolve_workspace_file(workspace_id, file_key)
 
 
 def _thumb_cache_path(workspace_id: int, file_key: str, size: int) -> PathLib:

@@ -779,7 +779,7 @@ class TestPublicShareRouter:
         )
         db.commit()
         r = client.get("/api/v1/documents/share/expired-token")
-        assert r.status_code == 403
+        assert r.status_code == 404
 
     def test_folder_share_without_content(self, client, db, ws, owner, auth):
         folder = client.post(

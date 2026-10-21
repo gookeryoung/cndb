@@ -1,31 +1,51 @@
 """documents 插件公开路由：分享链接匿名访问（无需登录）.
 
 端点：
-- GET /api/v1/documents/share/{token}          匿名读取分享文档
-- GET /api/v1/documents/share/{token}/verify   密码校验（有密码分享）
+- GET  /api/v1/documents/share/{token}                匿名读取分享文档
+- POST /api/v1/documents/share/{token}                密码校验并读取
+- GET  /api/v1/documents/share/{token}/meta           分享元信息（标题 / 是否需要密码）
+- GET  /api/v1/documents/share/{token}/files/{key}    正文站内图片（免登录）
+
+所有端点共用 ``resolve_public_share`` 作为唯一判定入口：未知 token、已撤销、
+已过期、文档已软删 / 未发布一律 404，且文案一致（不泄露链接是否存在）。
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import mimetypes
+from pathlib import Path as PathLib
 from typing import Annotated, Any
 
 import bcrypt
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
+from fastapi.responses import FileResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, NotFoundError, PermissionDeniedError
 from cndb.plugins.documents import services
-from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, DocumentShare
+from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, Document, DocumentShare
 from cndb.plugins.documents.schemas import ShareAccessRequest
+from cndb.plugins.files import services as files_service
 
 public_router = APIRouter(prefix="/api/v1/documents/share", tags=["documents"])
 
+# 失效统一文案：不区分「从未存在 / 已撤销 / 已过期 / 已下线 / 已在回收站」
+_SHARE_GONE = "分享链接不存在或已失效"
 
-def _get_active_share(db: Session, token: str) -> DocumentShare:
-    """取有效分享（激活且未过期），无效抛 404。"""
+# 公开页只放行栅格图片：svg / html / xml 可内嵌脚本，匿名页不渲染
+_PUBLIC_IMAGE_EXTENSIONS: frozenset[str] = frozenset(
+    {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".tiff"}
+)
+
+
+def resolve_public_share(db: Session, token: str) -> tuple[DocumentShare, Document]:
+    """匿名分享唯一判定入口；任何失败一律 404，不区分原因.
+
+    判定顺序固定：token 存在且激活 → 未过期 → 文档未软删且已发布。
+    """
     share = db.execute(
         select(DocumentShare).where(
             DocumentShare.token == token,
@@ -33,50 +53,71 @@ def _get_active_share(db: Session, token: str) -> DocumentShare:
         )
     ).scalar_one_or_none()
     if share is None:
-        raise NotFoundError("分享链接不存在或已被撤销")
+        raise NotFoundError(_SHARE_GONE)
     if share.expires_at is not None:
         expires = share.expires_at
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=dt.UTC)
         if expires < dt.datetime.now(dt.UTC):
-            raise PermissionDeniedError("分享链接已过期")
-    return share
+            raise NotFoundError(_SHARE_GONE)
+    doc = db.execute(
+        select(Document).where(
+            Document.id == share.document_id,
+            Document.is_deleted == False,  # noqa: E712
+            Document.status == DOC_STATUS_PUBLISHED,
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        raise NotFoundError(_SHARE_GONE)
+    return share, doc
+
+
+def serialize_public_document(db: Session, doc: Document) -> dict[str, Any]:
+    """公开响应白名单：只暴露标题 / 正文 / 更新时间，不随内部序列化扩张."""
+    data: dict[str, Any] = {"title": doc.title, "updated_at": doc.updated_at}
+    if not doc.is_folder:
+        data["content"] = services.content.load_content(services.content.latest_version(db, doc.id), doc)
+    return data
+
+
+def _count_view(db: Session, share: DocumentShare) -> None:
+    """访问计数原子 +1，避免并发读改写丢失."""
+    db.execute(
+        update(DocumentShare).where(DocumentShare.id == share.id).values(view_count=DocumentShare.view_count + 1)
+    )
+    db.commit()
+
+
+def _no_store(response: Response) -> None:
+    """匿名响应不可缓存：撤销 / 下线后浏览器不得继续展示旧内容."""
+    response.headers["Cache-Control"] = "no-store"
 
 
 @public_router.get("/{token}")
 def access_shared_document(
     token: str,
+    response: Response,
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    """匿名访问分享文档（无密码分享直接返回；有密码返回 401 提示）."""
-    share = _get_active_share(db, token)
+    """匿名访问分享文档（无密码分享直接返回；有密码返回 403 提示）."""
+    share, doc = resolve_public_share(db, token)
     if share.password_hash:
         raise PermissionDeniedError("此分享需要密码访问", code="share_password_required")
 
-    doc = services.content.get_document_or_404(db, _doc_workspace(db, share), share.document_id)
-    # 未发布（草稿/归档）文档的分享链接一律视为失效：避免"分享后取消发布"仍能访问未发布内容
-    if doc.status != DOC_STATUS_PUBLISHED:
-        raise NotFoundError("分享链接已失效")
-    db.execute(update(DocumentShare).where(DocumentShare.id == share.id).values(view_count=share.view_count + 1))
-    db.commit()
-
-    data = services.content.serialize_document(db, doc)
-    if not doc.is_folder:
-        v = services.content.latest_version(db, doc.id)
-        data["content"] = services.content.load_content(v, doc)
-    data.pop("created_by_id", None)
-    data.pop("updated_by_id", None)
-    return data
+    _count_view(db, share)
+    _no_store(response)
+    return serialize_public_document(db, doc)
 
 
 @public_router.post("/{token}")
 def access_shared_with_password(
     token: str,
     payload: ShareAccessRequest,
+    response: Response,
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """带密码访问分享文档."""
-    share = _get_active_share(db, token)
+    share, doc = resolve_public_share(db, token)
     if not share.password_hash:
         raise BadRequestError("此分享无需密码")
     if not payload.password or not bcrypt.checkpw(
@@ -84,43 +125,59 @@ def access_shared_with_password(
     ):
         raise PermissionDeniedError("密码错误")
 
-    doc = services.content.get_document_or_404(db, _doc_workspace(db, share), share.document_id)
-    # 与无密码入口一致：未发布内容不得通过分享链接访问
-    if doc.status != DOC_STATUS_PUBLISHED:
-        raise NotFoundError("分享链接已失效")
-    db.execute(update(DocumentShare).where(DocumentShare.id == share.id).values(view_count=share.view_count + 1))
-    db.commit()
-
-    data = services.content.serialize_document(db, doc)
-    if not doc.is_folder:
-        v = services.content.latest_version(db, doc.id)
-        data["content"] = services.content.load_content(v, doc)
-    data.pop("created_by_id", None)
-    data.pop("updated_by_id", None)
-    return data
-
-
-def _doc_workspace(db: Session, share: DocumentShare) -> int:
-    """通过分享关联的文档取工作区 ID。"""
-    from cndb.plugins.documents.models import Document
-
-    ws_id = db.execute(select(Document.workspace_id).where(Document.id == share.document_id)).scalar_one_or_none()
-    if ws_id is None:
-        raise NotFoundError("文档不存在")
-    return int(ws_id)
+    _count_view(db, share)
+    _no_store(response)
+    return serialize_public_document(db, doc)
 
 
 @public_router.get("/{token}/meta")
-def share_meta(token: str, db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
-    """分享元信息（标题/是否需要密码），供前端访问页预检."""
-    share = _get_active_share(db, token)
-    from cndb.plugins.documents.models import Document
+def share_meta(
+    token: str,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """分享元信息（标题 / 是否需要密码），供前端访问页预检；不计数."""
+    share, doc = resolve_public_share(db, token)
+    _no_store(response)
+    return {"title": doc.title, "has_password": bool(share.password_hash)}
 
-    title = db.execute(select(Document.title).where(Document.id == share.document_id)).scalar_one_or_none()
-    return {"title": title or "", "has_password": bool(share.password_hash)}
+
+@public_router.get("/{token}/files/{file_key}")
+def access_shared_file(
+    token: str,
+    file_key: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> FileResponse:
+    """匿名读取正文里的站内图片.
+
+    只放行归属当前分享文档的栅格图片：借 token 读不到工作区其它附件 / 表附件。
+    """
+    _, doc = resolve_public_share(db, token)
+    ext = PathLib(file_key).suffix.lower()
+    if ext not in _PUBLIC_IMAGE_EXTENSIONS:
+        raise NotFoundError(_SHARE_GONE)
+
+    owner = files_service.owner_of(db, file_key)
+    if owner is None or owner.workspace_id != doc.workspace_id or owner.document_id != doc.id:
+        raise NotFoundError(_SHARE_GONE)
+
+    target = files_service.resolve_workspace_file(doc.workspace_id, file_key)
+    if not target.is_file():
+        raise NotFoundError(_SHARE_GONE)
+
+    media_type = mimetypes.guess_type(file_key)[0] or "application/octet-stream"
+    return FileResponse(
+        path=str(target),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": "inline",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
-__all__ = ["public_router", "router"]
+__all__ = ["public_router", "resolve_public_share", "router", "serialize_public_document"]
 
 # tables 插件公开路由约定别名（app.py 统一 import router）
 router = public_router
