@@ -1147,7 +1147,7 @@ describe('DocumentEditorPage 分享入口（ADR 0017）', () => {
         fireEvent.click(screen.getByTestId('doc-share-open'))
 
         expect(await screen.findByTestId('document-share-modal')).toBeInTheDocument()
-        expect(screen.getByText('获得链接的人无需登录即可只读浏览这篇文档')).toBeInTheDocument()
+        expect(screen.getByText(/获得链接的人无需登录即可只读浏览这篇文档/)).toBeInTheDocument()
     })
 
     it('viewer 不显示分享入口', async () => {
