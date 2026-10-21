@@ -1,16 +1,14 @@
-/** 认证页背景画布（ADR 0016 §6）.
+/** 认证页 Perlin 流场粒子背景（ADR 0016）.
  *
- * 默认导出供 AuthLayout 以 React.lazy 动态引入：引擎与 5 个变体只随认证页 chunk 下载，
- * 不进入主入口（D10）。组件只负责把主题 / 设备 / 动效偏好交给引擎。
+ * 默认导出供 AuthLayout 以 React.lazy 动态引入：引擎与流场只随认证页 chunk 下载，
+ * 不进入主入口（D10）。组件只负责把设备 / 动效偏好交给引擎。
  */
 
 import { useEffect, useRef, useState } from 'react'
 
 import { useResponsive } from '@/hooks/useResponsive'
-import { useTheme } from '@/theme/ThemeProvider'
 
 import { mountAuthBackground } from './engine'
-import type { AuthBackgroundVariant } from './types'
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
 
@@ -34,26 +32,19 @@ function useReducedMotion(): boolean {
   return reduced
 }
 
-export interface AuthBackgroundProps {
-  variant: AuthBackgroundVariant
-}
-
-export default function AuthBackground({ variant }: AuthBackgroundProps) {
+export default function AuthBackground() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const { isDark, mode } = useTheme()
   const { isMobile } = useResponsive()
   const reducedMotion = useReducedMotion()
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    // mode 进入依赖：同为深色的 github-dark / midnight / oled 之间切换时 isDark 不变，
-    // 但 --cn-brand-color 会变，必须用新色板重建引擎（I3）。
-    return mountAuthBackground(canvas, { variant, isDark, isMobile, reducedMotion })
-  }, [variant, isDark, isMobile, reducedMotion, mode])
+    return mountAuthBackground(canvas, { isMobile, reducedMotion })
+  }, [isMobile, reducedMotion])
 
   return (
-    <div className="auth-bg-layer" aria-hidden="true" data-variant={variant} data-theme={mode}>
+    <div className="auth-bg-layer" aria-hidden="true" data-effect="flowfield">
       <canvas ref={canvasRef} className="auth-bg-canvas" />
     </div>
   )

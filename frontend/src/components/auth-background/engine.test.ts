@@ -49,9 +49,9 @@ function createCanvas(ctx: unknown) {
 }
 
 const paletteStyle = {
-  '--cn-brand-color': '#3b82f6',
-  '--cn-text-primary': '#1f2937',
-  '--cn-bg-page': '#f5f7fa',
+  '--cn-auth-accent': '#22d3ee',
+  '--cn-auth-accent-alt': '#a855f7',
+  '--cn-auth-ink': '#dbe4f3',
 }
 
 let frameCallbacks: Map<number, FrameRequestCallback>
@@ -88,8 +88,6 @@ afterEach(() => {
 })
 
 const baseOptions = {
-  variant: 'constellation' as const,
-  isDark: false,
   isMobile: false,
   reducedMotion: false,
 }

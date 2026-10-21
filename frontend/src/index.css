@@ -467,6 +467,16 @@ body.theme-oled {
   --cn-bg-success-subtle: #0f2412;
 }
 
+/* ─────────────── 认证页固定深色舞台（ADR 0016 D7） ───────────────
+ * 不随 10 套主题变化：黑底 + 青紫渐变保证科技感与对比度；
+ * 唯一字面量定义处，其余样式一律引用本组 token。 */
+:root {
+  --cn-auth-bg: #05070c;
+  --cn-auth-ink: #dbe4f3;
+  --cn-auth-accent: #22d3ee;
+  --cn-auth-accent-alt: #a855f7;
+}
+
 /* ─────────────── 代码块与语法高亮 ───────────────
  * Markdown 文档里的围栏代码块（预览 CodeBlock 与实时编辑器共用一套 token 类名）。
  * 配色走 --cn-code-*，浅色 / 深色主题各自一套；容器底色与边框也随主题切换。 */
@@ -3004,18 +3014,18 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 /* ─────────────── 认证页视觉（AuthLayout / Login / Register） ───────────────
- * 氛围背景：页面底色 + 品牌色双径向光晕 + 低透明度细网格纹理。
- * 全部颜色由 var(--cn-*) + color-mix 派生，10 套主题（含深色）自动适配。 */
+ * 固定深色舞台：近黑底色 + 固定青蓝光晕 + 低透明度细网格纹理，不随 10 套主题变化；
+ * 登录卡片仍跟随主题。颜色只走 --cn-auth-* token（定义在 :root 固定舞台块）。 */
 
 .auth-shell {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(1100px 620px at 85% -10%,
-      color-mix(in srgb, var(--cn-brand-color) 16%, transparent), transparent 62%),
-    radial-gradient(900px 540px at -10% 110%,
-      color-mix(in srgb, var(--cn-brand-color) 12%, transparent), transparent 58%),
-    var(--cn-bg-page);
+    radial-gradient(1100px 620px at 18% 18%,
+      color-mix(in srgb, var(--cn-auth-accent) 16%, transparent), transparent 62%),
+    radial-gradient(1000px 680px at 84% 78%,
+      color-mix(in srgb, var(--cn-auth-accent-alt) 15%, transparent), transparent 64%),
+    var(--cn-auth-bg);
 }
 
 /* 细网格纹理：极低透明度，仅提供质感；中心清晰边缘淡出 */
@@ -3024,21 +3034,21 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(color-mix(in srgb, var(--cn-text-primary) 5%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--cn-text-primary) 5%, transparent) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--cn-auth-ink) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--cn-auth-ink) 5%, transparent) 1px, transparent 1px);
   background-size: 32px 32px;
   -webkit-mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
   mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
   pointer-events: none;
 }
 
-/* 认证卡片：品牌色柔和投影 + 入场上浮动画 + 品牌色顶部饰线 */
+/* 认证卡片：中性描边环 + 深色投影，在固定黑底上与浅色 / 深色卡片都能分层 */
 .auth-card {
   position: relative;
   border-radius: var(--cn-radius-xl);
   box-shadow:
-    0 16px 48px color-mix(in srgb, var(--cn-text-primary) 12%, transparent),
-    0 2px 8px color-mix(in srgb, var(--cn-text-primary) 6%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--cn-auth-ink) 14%, transparent),
+    0 24px 64px color-mix(in srgb, var(--cn-auth-bg) 82%, transparent);
   animation: cn-rise-in 0.32s ease-out both;
 }
 
@@ -3058,9 +3068,9 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   pointer-events: none;
 }
 
-/* ─────────────── 动态背景层（ADR 0016） ───────────────
+/* ─────────────── 流场粒子层（ADR 0016） ───────────────
  * 画布只做氛围：位于卡片下方、不接收指针事件；加载完成后淡入。
- * Canvas 不可用时整层保持透明，露出 .auth-shell 的 CSS 渐变。 */
+ * Canvas 不可用时整层保持透明，露出 .auth-shell 的固定深色 CSS 背景。 */
 .auth-bg-layer {
   position: absolute;
   inset: 0;
@@ -3082,39 +3092,6 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   z-index: 1;
 }
 
-/* 背景切换器：右下角低调胶囊，可键盘聚焦 */
-.auth-bg-switch {
-  position: fixed;
-  right: var(--cn-space-xl);
-  bottom: var(--cn-space-xl);
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--cn-space-xs);
-  padding: var(--cn-space-sm) var(--cn-space-lg);
-  font-size: var(--cn-text-xs);
-  color: var(--cn-text-secondary);
-  background: color-mix(in srgb, var(--cn-bg-container) 72%, transparent);
-  border: 1px solid var(--cn-border);
-  border-radius: var(--cn-radius-pill);
-  cursor: pointer;
-  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-}
-
-.auth-bg-switch:hover {
-  color: var(--cn-brand-color);
-  border-color: color-mix(in srgb, var(--cn-brand-color) 45%, var(--cn-border));
-  background: color-mix(in srgb, var(--cn-bg-container) 88%, transparent);
-}
-
-.auth-bg-switch-dot {
-  width: var(--cn-space-sm);
-  height: var(--cn-space-sm);
-  border-radius: var(--cn-radius-pill);
-  background: var(--cn-brand-color);
-  box-shadow: 0 0 0 var(--cn-space-hairline) color-mix(in srgb, var(--cn-brand-color) 22%, transparent);
-}
-
 @keyframes cn-bg-fade-in {
   from {
     opacity: 0;
@@ -3122,14 +3099,6 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
   to {
     opacity: 1;
-  }
-}
-
-@media (max-width: 767.98px) {
-  .auth-bg-switch {
-    right: var(--cn-space-lg);
-    bottom: var(--cn-space-lg);
-    padding: var(--cn-space-xs) var(--cn-space-md);
   }
 }
 

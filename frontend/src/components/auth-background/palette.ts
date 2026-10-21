@@ -1,7 +1,8 @@
 /** 取色与绘制小工具（ADR 0016 D7）.
  *
- * 画布颜色必须来自 `--cn-*` 主题变量：ThemeProvider 切换 body class 后，
- * 组件以新色板重建引擎，避免在 JS 里维护 10 套硬编码配色。
+ * 认证页是固定深色舞台：颜色来自独立 `--cn-auth-*` token（定义在 index.css 的
+ * `:root` 固定舞台块），不随 10 套主题变化。这样浅色主题的品牌色（如 minimal 深灰）
+ * 不会在黑底上失去对比度；青紫渐变取 accent / accent-alt 两端。
  */
 
 import type { Palette } from './types'
@@ -46,35 +47,13 @@ export function withAlpha(color: string, alpha: number): string {
   return value
 }
 
-/** 读取主题色板；三个变量任一缺失即视为失败，由 CSS 渐变兜底（ADR 0016 I5） */
+/** 读取固定舞台色板；三个 auth token 任一缺失即视为失败，由 CSS 背景兜底（ADR 0016 I5） */
 export function readPalette(): Palette | null {
   if (typeof window === 'undefined' || !document.body) return null
   const style = getComputedStyle(document.body)
-  const brand = style.getPropertyValue('--cn-brand-color').trim()
-  const text = style.getPropertyValue('--cn-text-primary').trim()
-  const bg = style.getPropertyValue('--cn-bg-page').trim()
-  if (!brand || !text || !bg) return null
-  return { brand, text, bg }
-}
-
-/** 固定种子的伪随机（mulberry32）：同一变体每次挂载形态稳定，测试可复现 */
-export function createRandom(seed: number): () => number {
-  let state = seed >>> 0
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0
-    let value = Math.imul(state ^ (state >>> 15), 1 | state)
-    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-/** 按视口面积给粒子数设上限；移动端整体再降一档（ADR 0016 D6） */
-export function particleBudget(
-  area: number,
-  max: number,
-  isMobile: boolean,
-  perPixel = 14000,
-): number {
-  const base = Math.min(max, Math.max(16, Math.round(area / perPixel)))
-  return isMobile ? Math.max(10, Math.round(base * 0.45)) : base
+  const accent = style.getPropertyValue('--cn-auth-accent').trim()
+  const accentAlt = style.getPropertyValue('--cn-auth-accent-alt').trim()
+  const ink = style.getPropertyValue('--cn-auth-ink').trim()
+  if (!accent || !accentAlt || !ink) return null
+  return { accent, accentAlt, ink }
 }
