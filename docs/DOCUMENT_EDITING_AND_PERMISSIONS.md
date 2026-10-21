@@ -120,6 +120,26 @@
 - **配色**：全部走 `index.css` 的 `--cn-code-*` 主题变量（浅色 / 深色各一套，见
   `docs/DESIGN_SYSTEM.md` 的「代码高亮」小节），换主题自动跟随。
 
+### 4.6 实时预览的元素渲染（`MarkdownLiveEditor.tsx`）
+
+实时预览按语法树（`@codemirror/lang-markdown` + GFM）下发装饰，**光标离开元素时渲染，光标进入时还原为源码**：
+
+| 元素 | 实时预览表现 | 光标在元素内 |
+|---|---|---|
+| 标题 / 加粗 / 斜体 / 删除线 / 行内代码 / 链接 / 图片 / 引用 / 分隔线 | 隐藏语法标记，按渲染态显示 | 还原源码 |
+| **无序列表** | `-` / `*` / `+` 换成圆点，按缩进层级取 `•` / `◦` / `▪` | 同样渲染（标记始终不可见） |
+| **有序列表** | 保留序号，仅做配色 | 同左 |
+| **待办** | `[ ]` / `[x]` 换成复选框，点击写回 `[ ]` ↔ `[x]`（不改同行其它字符） | 还原源码 |
+| **表格** | 整块换成真表格：表头底色、按 `:--` / `--:` / `:-:` 对齐、单元格内行内语法按渲染态显示 | 还原源码（点表格即把光标落进首行） |
+
+约束与实现要点：
+
+- 表格整块替换属**块级装饰**，CodeMirror 不允许 `ViewPlugin` 下发，故装饰统一由 `StateField` 提供
+  （`livePreviewField`）；文档变更 / 选区变化时整篇重建。
+- 表格仅在**顶层**渲染；嵌在引用或列表里的表格保留源码，避免块装饰与行装饰冲突。
+  分隔行不合法的「伪表格」同样保留源码。
+- 单元格解析在 `components/Document/mdTable.ts`（`parseMdTable`，按未转义的 `|` 切分、列宽以表头为准）。
+- 大文档保护：单块 > 100 KB 不做词法高亮，单次重建的高亮总量预算 300 KB。
 ---
 
 ## 5. 修改申请生命周期
@@ -238,7 +258,8 @@
 | `pages/documents/DocumentsChangeRequestsPage.tsx` | 工作区级修改申请列表（二级导航） |
 | `pages/documents/DocumentCollaboratorsModal.tsx` | 协作者授权（只读 / 可编辑） |
 | `pages/documents/DocumentTree.tsx` | 目录树：状态图标（草稿 / 已发布 / 归档）、可见性标记 |
-| `components/Document/MarkdownLiveEditor.tsx` | 实时预览 / 源码双模式编辑器（围栏代码块词法高亮装饰） |
+| `components/Document/MarkdownLiveEditor.tsx` | 实时预览 / 源码双模式编辑器（语法标记隐藏 + 代码高亮 + 列表 / 待办 / 表格渲染，装饰由 `StateField` 提供） |
+| `components/Document/mdTable.ts` | Markdown 表格源码解析（表头 / 对齐 / 数据行），供实时预览渲染真表格 |
 | `components/Document/CodeBlock.tsx` | 预览代码块：语言标签 + 行数 + 复制按钮 |
 | `components/Document/codeHighlight.ts` | 零依赖词法高亮（预览与编辑器共用） |
 | `pages/documents/DocumentsPage.tsx` | 列表：状态筛选、`仅自己可见 / 共享 / 已发布` 标记 |

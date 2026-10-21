@@ -169,3 +169,36 @@ describe('Markdown 图片段落嵌套', () => {
     expect(container.querySelector('.doc-md-preview p')).not.toBeNull()
   })
 })
+
+/** 查看模式（react-markdown + GFM）对 GFM 语法的渲染：与实时预览口径一致 */
+describe('MarkdownPreview GFM 元素', () => {
+  it('表格渲染为 table / th / td', () => {
+    const { container } = renderProviders(
+      <MarkdownPreview content={'| 名称 | 数量 |\n| --- | --: |\n| 苹果 | 3 |'} workspaceId={WID} />,
+    )
+    expect(container.querySelector('.doc-md-preview table')).not.toBeNull()
+    expect(
+      Array.from(container.querySelectorAll('.doc-md-preview th')).map(th => th.textContent),
+    ).toEqual(['名称', '数量'])
+    expect(container.querySelector('.doc-md-preview td')?.textContent).toBe('苹果')
+  })
+
+  it('无序 / 有序列表渲染为 ul / ol', () => {
+    const { container } = renderProviders(
+      <MarkdownPreview content={'- 一\n- 二\n\n1. 甲\n2. 乙'} workspaceId={WID} />,
+    )
+    expect(container.querySelectorAll('.doc-md-preview ul li').length).toBe(2)
+    expect(container.querySelectorAll('.doc-md-preview ol li').length).toBe(2)
+  })
+
+  it('待办项渲染为禁用的复选框', () => {
+    const { container } = renderProviders(
+      <MarkdownPreview content={'- [ ] 待办\n- [x] 完成'} workspaceId={WID} />,
+    )
+    const boxes = Array.from(
+      container.querySelectorAll<HTMLInputElement>('.doc-md-preview input[type="checkbox"]'),
+    )
+    expect(boxes.map(box => box.checked)).toEqual([false, true])
+    expect(boxes.every(box => box.disabled)).toBe(true)
+  })
+})
