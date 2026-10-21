@@ -1,10 +1,13 @@
-/** 智能推荐卡片 —— 字段角色 chips + 推荐图表 / 汇总 / 公式 / 典型示例.
+/** 智能推荐 —— 字段角色 chips + 推荐图表 / 汇总 / 公式 / 典型示例.
  *
  * 定位：只负责展示与交互回调（props 注入），请求与状态由 AnalyticsPage 编排，
  * 因此可脱离路由独立单测；接口失败时页面静默降级（不弹全局错误），这里仅展示空态。
+ *
+ * 排版：卡片头只留标题 + 采样口径，正文按「维度 / 时间 / 指标 / 公式」分组紧凑排列，
+ * 一键应用按钮合并到同一行，避免三行按钮把配置栏顶长。
  */
 
-import { Button, Card, Dropdown, Empty, Skeleton, Tag, Tooltip, Typography } from 'antd'
+import { Button, Dropdown, Empty, Skeleton, Tag, Tooltip } from 'antd'
 import {
   BarChartOutlined, ExperimentOutlined, FunctionOutlined, TableOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
@@ -17,13 +20,12 @@ import type {
   AnalyticsRecommendationRole,
   AnalyticsSummary,
 } from '@/api/analytics'
+import { AnalyticsBox } from './AnalyticsBox'
 import {
   RECOMMENDATION_CHIP_ROLES,
   formatRecommendationRole,
   recommendationRoleColor,
 } from './analyticsModel'
-
-const { Text } = Typography
 
 interface Props {
   /** 推荐结果（未加载 / 失败时为 null） */
@@ -89,20 +91,19 @@ export function RecommendationPanel({
 
   return (
     <div data-testid="analytics-recommend">
-      <Card
-        size="small"
+      <AnalyticsBox
         title={
-          <span>
+          <span className="cn-an-rec-title">
             <ThunderboltOutlined /> 智能推荐
-            {tableName ? <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>{tableName}</Text> : null}
+            {tableName ? <span className="cn-an-muted">{tableName}</span> : null}
           </span>
         }
         extra={
           recommendations ? (
-            <Text type="secondary" style={{ fontSize: 12 }} data-testid="analytics-recommend-meta">
+            <span data-testid="analytics-recommend-meta">
               采样 {recommendations.sampled_rows}/{recommendations.row_count} 行
-              {recommendations.truncated ? '（数据量大，已截断采样）' : ''}
-            </Text>
+              {recommendations.truncated ? '（已截断）' : ''}
+            </span>
           ) : null
         }
       >
@@ -116,44 +117,39 @@ export function RecommendationPanel({
             description={error ? '暂无推荐（智能推荐服务暂不可用，不影响手动配置）' : '暂无推荐'}
           />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {/* 字段角色 chips：维度 / 时间 / 指标 */}
+          <>
+            {/* 字段角色 chips：维度 / 时间 / 指标（点一下即写入图表与汇总） */}
             {groups.map(group => (
               <div
                 key={group.role}
+                className="cn-an-chips"
                 data-testid={`analytics-recommend-group-${group.role}`}
-                style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}
               >
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {formatRecommendationRole(group.role)}：
-                </Text>
+                <span className="cn-an-chips-label">{formatRecommendationRole(group.role)}</span>
                 {group.items.map(field => (
                   <Tooltip key={field.name} title={fieldTooltip(field)}>
                     <Tag
-                      data-testid={`analytics-recommend-${group.role}-${field.name}`}
+                      className="cn-an-chip"
                       color={recommendationRoleColor(group.role)}
-                      style={{ cursor: 'pointer', marginInlineEnd: 0 }}
+                      data-testid={`analytics-recommend-${group.role}-${field.name}`}
                       onClick={() => chipClick(group.role, field.name)}
                     >
                       {field.name}
                     </Tag>
                   </Tooltip>
                 ))}
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {group.role === 'metric' ? '点击设为指标' : group.role === 'time' ? '点击设为折线时间轴' : '点击设为维度'}
-                </Text>
               </div>
             ))}
 
             {/* 推荐公式 */}
             {formulaCount > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                <Text type="secondary" style={{ fontSize: 12 }}>公式：</Text>
+              <div className="cn-an-chips">
+                <span className="cn-an-chips-label">公式</span>
                 {recommendations!.formulas.map(formula => (
                   <Tooltip key={formula.key} title={formula.reason || formula.expr}>
                     <Tag
+                      className="cn-an-chip"
                       color="geekblue"
-                      style={{ marginInlineEnd: 0 }}
                       data-testid={`analytics-recommend-formula-${formula.key}`}
                     >
                       {formula.label || formula.key}
@@ -163,9 +159,9 @@ export function RecommendationPanel({
               </div>
             )}
 
-            {/* 一键应用操作 */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <Tooltip title={recommendations?.chart?.reason}>
+            {/* 一键应用：同排小按钮，避免三行按钮占掉配置栏高度 */}
+            <div className="cn-an-rec-actions">
+              <Tooltip title={recommendations?.chart?.reason || '应用推荐图表配置'}>
                 <Button
                   size="small"
                   icon={<BarChartOutlined />}
@@ -173,10 +169,10 @@ export function RecommendationPanel({
                   disabled={!recommendations?.chart}
                   onClick={() => recommendations?.chart && onApplyChart(recommendations.chart.chart)}
                 >
-                  应用推荐图表
+                  图表
                 </Button>
               </Tooltip>
-              <Tooltip title={recommendations?.summary?.reason}>
+              <Tooltip title={recommendations?.summary?.reason || '应用推荐分组汇总'}>
                 <Button
                   size="small"
                   icon={<TableOutlined />}
@@ -184,7 +180,7 @@ export function RecommendationPanel({
                   disabled={!recommendations?.summary}
                   onClick={() => recommendations?.summary && onApplySummary(recommendations.summary.summary)}
                 >
-                  应用推荐汇总
+                  汇总
                 </Button>
               </Tooltip>
               <Tooltip title="把推荐公式追加到当前公式列表（自动跳过重复键名）">
@@ -195,7 +191,7 @@ export function RecommendationPanel({
                   disabled={formulaCount === 0}
                   onClick={() => onApplyFormulas(recommendations?.formulas ?? [])}
                 >
-                  追加推荐公式
+                  公式
                 </Button>
               </Tooltip>
               <Dropdown
@@ -228,13 +224,13 @@ export function RecommendationPanel({
                   data-testid="analytics-recommend-examples"
                   disabled={examples.length === 0}
                 >
-                  应用典型示例
+                  示例
                 </Button>
               </Dropdown>
             </div>
-          </div>
+          </>
         )}
-      </Card>
+      </AnalyticsBox>
     </div>
   )
 }

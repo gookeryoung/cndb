@@ -1,11 +1,14 @@
-/** 分组汇总配置卡片 —— 分组字段 + 指标（字段/公式 × 聚合方式）+ 排序 + Top N. */
+/** 分组汇总配置 —— 分组字段 + 指标（字段/公式 × 聚合方式）+ 排序 + Top N.
+ *
+ * 配置栏宽度固定，故一律用「标签在上 / 控件在下」的网格；
+ * 指标行压成紧凑的 [来源][聚合][展示名][删除] 四段，与公式行同一视觉节奏。
+ */
 
-import { Button, Card, Input, InputNumber, Select, Space, Tooltip, Typography } from 'antd'
-import { DeleteOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons'
+import { Button, Input, InputNumber, Select, Tooltip } from 'antd'
+import { DeleteOutlined, GroupOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import type { AnalyticsAgg, AnalyticsSummary, AnalyticsSummaryMetric } from '@/api/analytics'
+import { AnalyticsBox } from './AnalyticsBox'
 import { AGG_OPTIONS, summarySortOptions } from './analyticsModel'
-
-const { Text } = Typography
 
 interface Props {
   summary: AnalyticsSummary
@@ -40,21 +43,34 @@ export function SummaryPanel({ summary, onChange, groupOptions, metricOptions }:
   const sortOptions = summarySortOptions(summary)
 
   return (
-    <Card
-      size="small"
+    <AnalyticsBox
       title="分组汇总"
+      icon={<GroupOutlined />}
+      className="cn-an-box--summary"
       extra={
-        <Tooltip title="按维度分组后计算指标（基于全量扫描行），可排序并只保留前 N 组；留空分组字段则输出全局合计。">
-          <QuestionCircleOutlined style={{ color: '#94a3b8' }} />
+        <Tooltip title="按维度分组后计算指标（基于全量扫描行），可排序并只保留前 N 组；留空分组字段则输出全局合计">
+          <QuestionCircleOutlined className="cn-an-box-hint" aria-label="分组汇总说明" />
         </Tooltip>
       }
+      footer={
+        <>
+          <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addMetric}>
+            添加指标
+          </Button>
+          <span className="cn-an-foot-hint">
+            {summary.metrics.length === 0
+              ? '未配置指标时不生成汇总表'
+              : `运行后输出${summary.top_n ? `前 ${summary.top_n} 组` : '全部分组'}结果`}
+          </span>
+        </>
+      }
     >
-      <Space direction="vertical" style={{ width: '100%' }}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>分组字段</Text>
+      <div className="cn-an-grid cn-an-grid--2">
+        <div className="cn-an-field cn-an-span2">
+          <span className="cn-an-label">分组字段</span>
           <Select
+            size="small"
             data-testid="analytics-summary-group"
-            style={{ width: 220 }}
             placeholder="按字段分组（留空 = 全局合计）"
             allowClear
             showSearch
@@ -63,19 +79,24 @@ export function SummaryPanel({ summary, onChange, groupOptions, metricOptions }:
             options={groupOptions}
             onChange={v => onChange({ ...summary, group_by: v ?? null })}
           />
-          <Text type="secondary" style={{ fontSize: 12 }}>排序</Text>
+        </div>
+        <div className="cn-an-field cn-an-span2">
+          <span className="cn-an-label">排序指标</span>
           <Select
+            size="small"
             data-testid="analytics-summary-sort"
-            style={{ width: 180 }}
             placeholder="不排序"
             allowClear
             value={summary.sort_by ?? undefined}
             options={sortOptions}
             onChange={v => onChange({ ...summary, sort_by: v ?? null })}
           />
+        </div>
+        <div className="cn-an-field">
+          <span className="cn-an-label">方向</span>
           <Select
+            size="small"
             data-testid="analytics-summary-sort-order"
-            style={{ width: 90 }}
             value={summary.sort_order ?? 'desc'}
             options={[
               { value: 'desc', label: '降序' },
@@ -83,10 +104,13 @@ export function SummaryPanel({ summary, onChange, groupOptions, metricOptions }:
             ]}
             onChange={v => onChange({ ...summary, sort_order: v as 'asc' | 'desc' })}
           />
-          <Text type="secondary" style={{ fontSize: 12 }}>Top N</Text>
+        </div>
+        <div className="cn-an-field">
+          <span className="cn-an-label">Top N</span>
           <InputNumber
+            size="small"
+            style={{ width: '100%' }}
             data-testid="analytics-summary-topn"
-            style={{ width: 100 }}
             min={1}
             max={1000}
             placeholder="全部"
@@ -94,54 +118,47 @@ export function SummaryPanel({ summary, onChange, groupOptions, metricOptions }:
             onChange={v => onChange({ ...summary, top_n: typeof v === 'number' ? v : null })}
           />
         </div>
+      </div>
 
-        {summary.metrics.map((metric, i) => (
-          <div key={i} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            <Select
-              data-testid={`analytics-summary-metric-field-${i}`}
-              style={{ width: 220 }}
-              placeholder="指标来源（字段 / 公式）"
-              showSearch
-              optionFilterProp="label"
-              value={metric.field || undefined}
-              options={metricOptions}
-              onChange={v => patchMetric(i, { field: v })}
-            />
-            <Select
-              data-testid={`analytics-summary-metric-agg-${i}`}
-              style={{ width: 100 }}
-              value={metric.agg}
-              options={AGG_OPTIONS}
-              onChange={v => patchMetric(i, { agg: v as AnalyticsAgg })}
-            />
-            <Input
-              data-testid={`analytics-summary-metric-label-${i}`}
-              style={{ width: 200 }}
-              placeholder="展示名（可选）"
-              value={metric.label ?? ''}
-              onChange={e => patchMetric(i, { label: e.target.value })}
-            />
-            <Button
-              type="text"
-              danger
-              icon={<DeleteOutlined />}
-              aria-label="删除汇总指标"
-              onClick={() => removeMetric(i)}
-            />
-          </div>
-        ))}
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={addMetric}>
-            添加指标
-          </Button>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {summary.metrics.length === 0
-              ? '未配置指标时不生成汇总表'
-              : `运行后输出 ${summary.top_n ? `前 ${summary.top_n} 组` : '全部'}分组结果`}
-          </Text>
+      {summary.metrics.map((metric, i) => (
+        <div key={i} className="cn-an-metric">
+          <Select
+            size="small"
+            className="cn-an-metric-field"
+            data-testid={`analytics-summary-metric-field-${i}`}
+            placeholder="指标来源（字段 / 公式）"
+            showSearch
+            optionFilterProp="label"
+            value={metric.field || undefined}
+            options={metricOptions}
+            onChange={v => patchMetric(i, { field: v })}
+          />
+          <Select
+            size="small"
+            className="cn-an-metric-agg"
+            data-testid={`analytics-summary-metric-agg-${i}`}
+            value={metric.agg}
+            options={AGG_OPTIONS}
+            onChange={v => patchMetric(i, { agg: v as AnalyticsAgg })}
+          />
+          <Input
+            size="small"
+            className="cn-an-metric-label"
+            data-testid={`analytics-summary-metric-label-${i}`}
+            placeholder="展示名（可选）"
+            value={metric.label ?? ''}
+            onChange={e => patchMetric(i, { label: e.target.value })}
+          />
+          <Button
+            className="cn-an-metric-del"
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            aria-label="删除汇总指标"
+            onClick={() => removeMetric(i)}
+          />
         </div>
-      </Space>
-    </Card>
+      ))}
+    </AnalyticsBox>
   )
 }
