@@ -55,10 +55,15 @@ function makeJob(overrides: Partial<SyncJob> = {}): SyncJob {
 const TABLES = [{ id: 20, name: '天气日表' }]
 
 let sessionBodies: Array<Record<string, unknown>> = []
+let templateBodies: Array<Record<string, unknown>> = []
 
-function setupHandlers(jobs: SyncJob[], options: { runStatus?: 'success' | 'failed' } = {}) {
+function setupHandlers(
+  jobs: SyncJob[],
+  options: { runStatus?: 'success' | 'failed'; createTemplateError?: string } = {},
+) {
   const calls: string[] = []
   sessionBodies = []
+  templateBodies = []
   server.use(
     http.get(`/api/v1/workspaces/${WID}/datasource/providers`, () => HttpResponse.json({ providers: PROVIDERS })),
     http.get(`/api/v1/workspaces/${WID}/datasource/sync-jobs`, () =>
@@ -107,8 +112,16 @@ function setupHandlers(jobs: SyncJob[], options: { runStatus?: 'success' | 'fail
             name: '股票日线趋势',
             description: '收盘价 + 均线',
             reason: '时序首选',
-            formulas: [],
-            chart: { type: 'line', x: 'day', y: 'close', series: null, title: '趋势', aggregation: 'avg' },
+            formulas: [
+              {
+                key: 'ma5',
+                label: '5日均线',
+                expr: 'round(ma([close], 5), 2)',
+                partition_by: 'symbol',
+                order_by: 'trade_date',
+              },
+            ],
+            chart: { type: 'line', x: 'trade_date', y: 'close', series: 'symbol', title: '趋势', aggregation: 'avg' },
             summary: null,
           },
         ],
@@ -117,6 +130,10 @@ function setupHandlers(jobs: SyncJob[], options: { runStatus?: 'success' | 'fail
     http.post(`/api/v1/workspaces/${WID}/analytics/templates`, async ({ request }) => {
       calls.push('create-template')
       const body = (await request.json()) as { name: string }
+      templateBodies.push(body as Record<string, unknown>)
+      if (options.createTemplateError) {
+        return HttpResponse.json({ detail: options.createTemplateError }, { status: 400 })
+      }
       return HttpResponse.json({
         id: 99,
         workspace_id: WID,
@@ -337,5 +354,34 @@ describe('DatasourcePage · 凭证会话与领域模板', () => {
     fireEvent.click(await screen.findByText('股票日线趋势'))
     await waitFor(() => expect(calls).toContain('create-template'))
     expect(await screen.findByText(/已创建分析模板/)).toBeInTheDocument()
+  })
+
+  it('套用模板时按任务字段映射翻译成目标字段名', async () => {
+    const calls = setupHandlers([
+      makeJob({ field_mapping: { close: { name: '收盘价' }, trade_date: '交易日', symbol: { name: '代码' } } }),
+    ])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '套用分析模板 北京天气日报' }))
+    fireEvent.click(await screen.findByText('股票日线趋势'))
+    await waitFor(() => expect(calls).toContain('create-template'))
+
+    const config = templateBodies[0].config as {
+      formulas: Array<Record<string, unknown>>
+      chart: Record<string, unknown>
+    }
+    expect(config.formulas[0]).toMatchObject({
+      expr: 'round(ma([收盘价], 5), 2)',
+      partition_by: '代码',
+      order_by: '交易日',
+    })
+    expect(config.chart).toMatchObject({ x: '交易日', y: '收盘价', series: '代码' })
+  })
+
+  it('套用失败时展示后端校验原因，不猜字段映射', async () => {
+    setupHandlers([makeJob()], { createTemplateError: '公式 ma5 引用了不存在的字段: close' })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '套用分析模板 北京天气日报' }))
+    fireEvent.click(await screen.findByText('股票日线趋势'))
+    expect(await screen.findByText(/套用失败：公式 ma5 引用了不存在的字段: close/)).toBeInTheDocument()
   })
 })

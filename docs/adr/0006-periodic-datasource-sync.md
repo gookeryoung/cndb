@@ -201,12 +201,21 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 > `settings.ANALYTICS_MAX_SCAN_ROWS`，未知过滤字段直接 400；**会话管理 UI** 列表 + 新建 / 编辑 /
 > 删除（密钥留空=不修改，删除提示解绑任务）；**`rank` 支持非数值列**（时间 / 文本按原始值排序）。
 > 至此 M5 遗留清单清零。
+>
+> 套用对齐（本轮修复）：领域模板按 provider 默认字段名声明，任务改过 `field_mapping`
+> 时原样提交会被 `normalize_config` 以「引用了不存在的字段」拒绝（前端只报笼统的
+> 「字段名可能与目标表不一致」）。前端新增 `pages/datasource/domainTemplate.ts`：
+> 套用前按 `field_mapping`（源名 → 目标名 / `null` 丢弃）翻译公式字段引用、
+> `partition_by / order_by`、图表 `x / y / series`、汇总 `group_by / metrics / sort_by`，
+> 字段被丢弃时剔除对应公式并连带剔除引用它的图表 / 指标，跳过的部件回报给用户；
+> 建模板失败时直接展示后端校验文案，不再猜测原因。
 
 ## 交接（会话结束更新）
 
 - 当前阶段：**M1-M5 与全部遗留项已落地，Status=Implemented**（2026-10-20 人工确认）。主链路闭环：抓取 → 调度 → 落表 → 时序分析 → 凭证 / 限流 / 模板包
 - 已完成：需求卡片与 ADR 口径对齐；D1-D8 经人工拍板采纳；M1 抓取管线；M2 任务模型 / 迁移 / 四策略游标 / 调度与租约 / CLI / REST / 备份 v5；M3 两个专用 provider + 前端任务页与向导 + e2e；M4 窗口函数 + 分区上下文 + 推荐扩展；M5 凭证会话 / 限速 / 列式记录 / 领域模板包 / 天气示例；M5 遗留清理（密钥加密 / 分析取数范围 / 会话管理 UI / rank 非数值列）
 - 遗留：**无**（原四项已清零）
+- 本轮修复：套用领域模板前按任务 `field_mapping` 对齐字段名（`frontend/src/pages/datasource/domainTemplate.ts`），字段被丢弃时剔除相关部件并回报；失败提示改为透传后端校验文案
 - 下一步（可选增强，非欠账，按使用反馈再定）：① job 级 / 全局并发上限（当前只有租约单飞 + `rate_limit_ms` 请求间隔）；② 密钥轮换的一键运维入口（`core.crypto.rotate_secrets` 已有函数，未接 CLI / UI）；③ 分析范围随模板保存（当前是运行时参数）；④ 图表按分区多系列的原生图表类型
 - 已知坑：`Importer.analyze()` 的 `content` 是位置必填；SQLite 读回 `DateTime(timezone=True)` 丢 tzinfo（租约 UPDATE 需 `synchronize_session=False`）；SQLite 不支持 `ALTER TABLE` 加外键列（迁移按方言分支）；`ScheduleConfig.from_dict` 的 0 是合法值；窗口函数第一参数必须是字段引用、聚合仍按整列、`rolling_*` 不满窗返回 None；`rank` 现支持时间 / 文本列（全列可数值化时按数值，否则按字符串）；分析用的 filters 未知字段会 400（列表接口只 warn，别把两处口径搞混）；加密密钥一旦变更，已有密文全部解不开 → 需重新保存会话密钥或先 `rotate_secrets`
 - 最近一次全绿：`make check-fast` + `make cov` + `make frontend-coverage` + datasource/analytics e2e @ `fad103ce`（2026-10-20，4809 passed / 覆盖率 98.09%；前端核心 lines 97.64%；e2e 14 条通过）
