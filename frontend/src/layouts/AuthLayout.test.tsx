@@ -2,7 +2,7 @@
  * AuthLayout 布局测试 —— 认证页容器渲染.
  *
  * 验证点：children 在 420px 居中容器内；动态背景懒加载后存在；
- * 右下角切换器改变变体并持久化到 localStorage（ADR 0014 C4 / C9 / D10）。
+ * 右下角切换器改变变体并持久化到 localStorage（ADR 0016 C4 / C9 / D10）。
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'

@@ -1,4 +1,4 @@
-/** 取色与绘制小工具（ADR 0014 D7）.
+/** 取色与绘制小工具（ADR 0016 D7）.
  *
  * 画布颜色必须来自 `--cn-*` 主题变量：ThemeProvider 切换 body class 后，
  * 组件以新色板重建引擎，避免在 JS 里维护 10 套硬编码配色。
@@ -46,7 +46,7 @@ export function withAlpha(color: string, alpha: number): string {
   return value
 }
 
-/** 读取主题色板；三个变量任一缺失即视为失败，由 CSS 渐变兜底（ADR 0014 I5） */
+/** 读取主题色板；三个变量任一缺失即视为失败，由 CSS 渐变兜底（ADR 0016 I5） */
 export function readPalette(): Palette | null {
   if (typeof window === 'undefined' || !document.body) return null
   const style = getComputedStyle(document.body)
@@ -68,7 +68,7 @@ export function createRandom(seed: number): () => number {
   }
 }
 
-/** 按视口面积给粒子数设上限；移动端整体再降一档（ADR 0014 D6） */
+/** 按视口面积给粒子数设上限；移动端整体再降一档（ADR 0016 D6） */
 export function particleBudget(
   area: number,
   max: number,

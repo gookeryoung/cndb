@@ -1,4 +1,4 @@
-/** 背景切换器：原生按钮，点击循环切换 5 组（ADR 0014 D3 / D8） */
+/** 背景切换器：原生按钮，点击循环切换 5 组（ADR 0016 D3 / D8） */
 
 import { authBackgroundLabel, nextAuthBackground } from './preference'
 import type { AuthBackgroundVariant } from './types'
