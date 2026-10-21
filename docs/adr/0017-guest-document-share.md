@@ -1,6 +1,6 @@
 # ADR 0017: 文档游客级只读分享（匿名分享链接）
 
-Status: Accepted（已评审）
+Status: Implemented（已落地）
 Date: 2026-10-21
 Related: `src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/documents/routers/share.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/tables/routers/files.py`、`frontend/src/App.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/DocumentImage.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`docs/adr/0003-view-visibility-permission-model.md`
 需求卡片: `docs/requirements/0017-guest-document-share.md`（需求原文与约束编号的唯一副本）
@@ -259,12 +259,12 @@ db.execute(update(DocumentShare).where(DocumentShare.id == share.id).values(view
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/tables/routers/files.py` | `tests/test_document_public_share.py` | `feaebb9c` |
 | P1 | 已落地 | `frontend/src/pages/public/PublicSharePage.tsx`、`frontend/src/api/publicShare.ts`、`frontend/src/App.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/DocumentImage.tsx` | `frontend/src/pages/public/PublicSharePage.test.tsx`、`frontend/src/components/Document/DocumentImage.test.tsx`、`frontend/src/components/Document/MarkdownPreview.test.tsx` | `feaebb9c` |
-| P2 | 进行中 | `frontend/src/pages/documents/DocumentShareModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/pages/documents/DocumentShareModal.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx`；e2e `frontend/tests/e2e/critical/document-public-share.spec.ts` 待补 | `feaebb9c` |
+| P2 | 已落地 | `frontend/src/pages/documents/DocumentShareModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/pages/documents/DocumentShareModal.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx`、`frontend/tests/e2e/critical/document-public-share.spec.ts` | `3d8314c7` |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 已落地；P2 代码与单测已落地，**e2e 用例待补**（`frontend/tests/e2e/critical/document-public-share.spec.ts`）
-- 已完成：后端 `resolve_public_share` 单入口判定、公开响应白名单、过期统一 404、原子 `view_count`、免登录图片端点与 `resolve_workspace_file` 路径校验单源；前端公开路由与 `PublicSharePage`（三态，兼容历史密码分享）、`publicShareApi`、`MarkdownPreview` / `DocumentImage` 公开图片、`DocumentShareModal` 与编辑器入口（owner/editor 且非文件夹）；后端与前端相关单测全绿
-- 下一步：补 `document-public-share.spec.ts`（匿名 context 直达 `/public/share/{token}`、撤销与取消发布后失效），跑通后把 P2 置「已落地」并把 `Status` 定稿 `Implemented`、同步索引 / CHANGELOG
-- 已知坑：过期分享的既有测试断言已随 I4 从 403 改为 404；公开图片必须按 `FileOwner.document_id` 收口，不能只校验工作区；前端公开页不得传 `workspaceId`，否则会触发工作区接口与鉴权链路；`publicShareApi` 未并入 `frontend/src/api/index.ts`（公开页直接 import，避免游客链路混入鉴权资源域）
-- 最近一次全绿：2026-10-22 `make check-fast` 通过；`pytest tests/test_document_public_share.py tests/test_cov_documents_extra.py` 155 passed；前端 `PublicSharePage` / `DocumentShareModal` / `DocumentImage` / `MarkdownPreview` / `DocumentEditorPage` 单测 86 passed
+- 当前阶段：P0 / P1 / P2 全部已落地，`Status` 定稿 `Implemented`
+- 已完成：后端 `resolve_public_share` 单入口判定、公开响应白名单、过期统一 404、原子 `view_count`、免登录图片端点与 `resolve_workspace_file` 路径校验单源；前端公开路由与 `PublicSharePage`（三态，兼容历史密码分享）、`publicShareApi`、`MarkdownPreview` / `DocumentImage` 公开图片、`DocumentShareModal` 与编辑器入口（owner/editor 且非文件夹）；测试：后端 `tests/test_document_public_share.py` 等 155 例、前端相关单测 86 例、e2e `document-public-share.spec.ts`（匿名上下文直达公开页 / 不请求工作区鉴权接口 / 撤销与归档后失效）
+- 下一步：无。后续若公开页要展示新字段，需在 `serialize_public_document` 显式加白；匿名路由面保持只有 `GET`（密码入口 `POST` 仅换取读取）
+- 已知坑：过期分享的既有测试断言已随 I4 从 403 改为 404；公开图片必须按 `FileOwner.document_id` 收口，不能只校验工作区；前端公开页不得传 `workspaceId`，否则会触发工作区接口与鉴权链路；`publicShareApi` 未并入 `frontend/src/api/index.ts`（公开页直接 import，避免游客链路混入鉴权资源域）；e2e 的匿名上下文必须显式传空 `storageState`（否则 test runner 可能带入项目登录态），并用 `localStorage` 断言兜底
+- 最近一次全绿：2026-10-22 `make flow`（5169 passed / 8 skipped）与 `pnpm exec playwright test tests/e2e/critical/document-public-share.spec.ts`（2 passed）；`make check-docs` 通过
