@@ -79,7 +79,6 @@ class HttpJsonProvider:
                             page=page,
                             window_start=window_start,
                             window_end=window_end,
-                            variables=variables,
                         )
                     )
         return plans

@@ -168,17 +168,16 @@ def test_validate_job_fields_accepts_drop_and_detects_missing():
 
 
 def test_real_datasource_json_is_valid():
-    """真实 examples 配置：三源一源一表、目标表与映射列引用自洽."""
+    """真实 examples 配置：两源一源一表、目标表与映射列引用自洽."""
     base = Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-数据源示例"
     cfg = json.loads((base / "datasource.json").read_text(encoding="utf-8-sig"))
     jobs = cfg["jobs"]
-    assert len(jobs) == 3
-    assert [j["provider"] for j in jobs] == ["baostock_kline", "tencent_kline", "sina_kline"]
+    assert len(jobs) == 2
+    assert [j["provider"] for j in jobs] == ["tencent_kline", "sina_kline"]
 
-    # 一源一表：三张表名与 CSV 文件名一致（seed 按 CSV 文件建表）
+    # 一源一表：表名与 CSV 文件名一致（seed 按 CSV 文件建表）
     expected = {
-        "baostock_kline": "股市日线",
-        "tencent_kline": "股市日线-腾讯",
+        "tencent_kline": "股市日线",
         "sina_kline": "股市日线-新浪",
     }
     for job in jobs:
@@ -197,20 +196,12 @@ def test_real_datasource_json_is_valid():
 
     by_provider = {job["provider"]: job for job in jobs}
 
-    # baostock：TCP 伪协议 + 前复权 + 含成交额，一次返回整段（不分片）
-    baostock = by_provider["baostock_kline"]
-    assert baostock["request_spec"]["url_template"].startswith("baostock://kline")
-    assert "adjustflag=2" in baostock["request_spec"]["url_template"]
-    # 一次调用可返回整段 → 显式不分片（避免把 5 年拆成上千次 TCP 查询）
-    assert "chunk_days" not in baostock["request_spec"]["time_window"]
-    assert "成交额" in {t["name"] for t in baostock["field_mapping"].values() if t}
-    assert baostock["cursor"]["backfill_start"] == "2021-10-18"
-
-    # 腾讯：单次约 320 根 → chunk_days 必须 >= 320，否则相邻窗口重复抓取
+    # 腾讯（主表，前复权）：单次约 320 根 → chunk_days 必须 >= 320，否则相邻窗口重复抓取
     tencent = by_provider["tencent_kline"]
     assert tencent["request_spec"]["time_window"]["chunk_days"] >= 320
     assert "320,qfq" in tencent["request_spec"]["url_template"]
     assert "成交额" not in {t["name"] for t in tencent["field_mapping"].values() if t}
+    assert tencent["cursor"]["backfill_start"] == "2021-10-18"
 
     # 新浪：仅最近 1023 根，无时间窗口 / 无游标
     sina = by_provider["sina_kline"]
@@ -218,6 +209,6 @@ def test_real_datasource_json_is_valid():
     assert "time_window" not in sina["request_spec"]
     assert sina["cursor"] == {"strategy": "none"}
 
-    # 三源调度错峰，避免同一时刻撞同一出口 IP 的限流
+    # 两源调度错峰，避免同一时刻撞同一出口 IP 的限流
     schedules = [job["schedule"]["at"] for job in jobs]
     assert len(set(schedules)) == len(schedules), f"任务必须错峰调度，实际 {schedules}"
