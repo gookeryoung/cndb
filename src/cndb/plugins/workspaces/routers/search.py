@@ -1,7 +1,7 @@
 """工作区统一检索路由 —— 顶栏搜索框的数据源.
 
 GET /search —— 文档全文（FTS5）+ 数据表（表名 / 行），按 scope 分组返回。
-数据表侧默认只在「当前激活视图」的范围内检索（见 services/search.py）。
+数据表侧：工作区范围覆盖全部可读表（不按视图收敛），数据表范围才收敛当前表 + 激活视图（见 services/search.py）。
 """
 
 from __future__ import annotations
@@ -27,8 +27,10 @@ def search(
     db: Annotated[Session, Depends(get_db)],
     q: str = Query(min_length=1, max_length=200, description="关键词"),
     scope: str = Query(default="all", pattern="^(all|documents|tables)$", description="检索范围"),
-    table_id: int | None = Query(default=None, description="当前激活的表（数据表侧收敛到该表）"),
-    view_id: int | None = Query(default=None, description="当前激活的视图（数据表侧按其筛选范围检索）"),
+    table_id: int | None = Query(
+        default=None, description="当前激活的表（数据表范围收敛到该表；工作区范围仅排序优先）"
+    ),
+    view_id: int | None = Query(default=None, description="当前激活的视图（仅数据表范围生效，按该视图筛选范围检索）"),
     limit: int = Query(default=10, ge=1, le=30),
 ) -> dict[str, Any]:
     """工作区统一检索（成员可见，结果按权限裁剪）."""

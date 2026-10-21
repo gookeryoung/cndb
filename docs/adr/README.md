@@ -19,6 +19,7 @@
 | [0012](0012-workspace-global-search.md) | 工作区顶栏统一搜索（文档 + 数据表，默认按激活视图收敛） | Implemented | P0-P2 已落地 | `src/cndb/plugins/workspaces/{routers,services}/search.py`、`frontend/src/components/GlobalSearch.tsx`、`frontend/src/layouts/MainLayout.tsx` | `tests/test_workspace_search.py`、`frontend/src/components/GlobalSearch.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0013](0013-stock-daily-multi-source-sample.md) | 示例日线两源扩样（tencent / sina，一源一表） | Accepted | P0-P2 已落地 | `src/cndb/plugins/datasource/providers/sina_kline.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`scripts/build_example_kline.py` | `tests/test_datasource_sina.py`、`tests/test_seed_datasource.py` | [未发布](../../CHANGELOG.md) |
 | [0014](0014-llm-prompt-datasource-sync.md) | 数据源同步接入大模型（llm_prompt + 提示词 + cron + 连通测试） | Accepted | P0-P2 已落地 | `src/cndb/plugins/datasource/providers/llm_prompt.py`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | [未发布](../../CHANGELOG.md) |
+| [0015](0015-search-cache-and-full-coverage.md) | 工作区搜索缓存与全表覆盖 | Accepted | P0 已落地；P1-P2 未开始 | `src/cndb/plugins/workspaces/services/search.py`、`src/cndb/core/cache.py` | `tests/test_workspace_search.py`、`frontend/src/components/GlobalSearch.test.tsx` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 

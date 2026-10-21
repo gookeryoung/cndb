@@ -727,6 +727,7 @@ def bulk_create(
                         ids[k] = row[0]
                 i = j
 
+    _invalidate_search_cache(table)
     return ids
 
 
@@ -786,6 +787,7 @@ def bulk_update(
                 for field, target_ids in link_values:
                     set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
+    _invalidate_search_cache(table)
     return count
 
 
@@ -1011,7 +1013,24 @@ def bulk_update_rows(
             for field, target_ids in link_values:
                 set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
+    _invalidate_search_cache(table)
     return total
+
+
+def _invalidate_search_cache(table: Any) -> None:
+    """批量写不逐行记 audit，主动失效该工作区的搜索结果缓存（best-effort）.
+
+    单行 CRUD 走 ``log_action → record_event`` 已自动失效；批量导入 / 数据源同步
+    不写 audit，需要在这里补一次，否则只能等 TTL 过期（ADR 0015）。
+    """
+    try:
+        from cndb.core.cache import cache_key, search_cache
+
+        workspace_id = getattr(table, "workspace_id", None)
+        if workspace_id is not None:
+            search_cache.clear(cache_key("search", workspace_id))
+    except Exception:  # pragma: no cover - 缓存失效失败不影响写入
+        pass
 
 
 __all__ = [

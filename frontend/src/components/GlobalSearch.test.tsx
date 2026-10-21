@@ -68,10 +68,21 @@ describe('GlobalSearch 顶栏工作区搜索', () => {
     expect(screen.queryByTestId('global-search-doc-2')).toBeNull()
   })
 
-  it('表上下文带激活视图：请求收敛到该视图并回显范围', async () => {
+  it('工作区范围不按当前视图收敛：不回显视图范围', async () => {
     renderSearch({ tableId: 100, viewId: 200 })
     await typeKeyword('张三')
 
+    expect(await screen.findByTestId('global-search-row-100-1')).toBeInTheDocument()
+    // 工作区范围覆盖全部可读表，view_id 不下发、也不出现视图范围回显（ADR 0015）
+    expect(screen.getByTestId('global-search-panel')).not.toHaveTextContent('视图「全部数据」')
+  })
+
+  it('数据表范围带激活视图：请求收敛到该视图并回显范围', async () => {
+    renderSearch({ tableId: 100, viewId: 200 })
+    fireEvent.click(screen.getByTestId('global-search-scope'))
+    fireEvent.click(await screen.findByText('数据表'))
+
+    await typeKeyword('张三')
     expect(await screen.findByTestId('global-search-row-100-1')).toBeInTheDocument()
     // 视图名来自后端 view 回显，说明 table_id/view_id 已随请求下发
     expect(screen.getByTestId('global-search-panel')).toHaveTextContent('客户表 · 视图「全部数据」')

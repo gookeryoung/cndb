@@ -3,8 +3,8 @@
  * 口径：
  * - 默认范围是**整个工作区**（文档 FTS + 数据表行/表名），不再区分「文档页入口」；
  * - 左端范围选择器区分「全部 / 数据表 / 文档」，等价于 GitHub 搜索框里的 scope 限定词；
- * - 处于某张表时带上 table_id / view_id，数据表侧只在**当前激活视图**的筛选范围内检索，
- *   面板底部明示当前范围，避免「搜不到」被误读成数据丢失。
+ * - 工作区范围覆盖全部可读表且不按视图收敛；只有「数据表」范围才收敛到当前表
+ *   与激活视图（此时才下发 view_id），面板底部明示当前范围，避免「搜不到」被误读成数据丢失。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -85,12 +85,20 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
   }, [scope])
 
   const query = useQuery({
-    queryKey: ['workspace-search', workspaceId, keyword, scope, tableId ?? null, viewId ?? null],
+    // 视图收敛只属于「数据表」范围：工作区范围覆盖全部可读表，切换范围需重新请求
+    queryKey: [
+      'workspace-search',
+      workspaceId,
+      keyword,
+      scope,
+      tableId ?? null,
+      scope === 'tables' ? (viewId ?? null) : null,
+    ],
     queryFn: () => searchApi.workspace(workspaceId, {
       q: keyword,
       scope,
       table_id: tableId,
-      view_id: viewId,
+      view_id: scope === 'tables' ? viewId : undefined,
       limit: 10,
     }),
     enabled: Number.isFinite(workspaceId) && keyword.length > 0,
