@@ -1,6 +1,6 @@
 # ADR 0004: 行级权限规则（特定筛选规则数据行的查看 / 编辑控制）
 
-Status: Proposed（待评审）
+Status: Implemented
 Date: 2026-10-19
 Related: `plugins/tables/models.py`、`plugins/tables/services/core/access.py`、`plugins/tables/services/core/records.py`、`plugins/tables/routers/permissions.py`、`plugins/tables/routers/records.py`、`plugins/change_requests/services.py`（双轨制）；上游视图可见性三档模型取自 ADR 0003
 需求卡片: 无卡片（需求直接立项，原文见「口径」）
@@ -296,8 +296,8 @@ def assert_row_rule_valid(db, table, operator, subject_type, subject_id, action)
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地；ADR 仍为 `Proposed`，等待人工评审回填 `Accepted`
+- 当前阶段：P0-P2 已落地；ADR 已评审通过，`Status` 定稿为 `Implemented`（2026-10-21）
 - 已完成：P0（模型 + 读路径）、P1（写路径分派）、P2（CRUD / subjects / preview / 前端 / 审计 / 备份）；Playwright 专项用例已补（`frontend/tests/e2e/critical/row-permissions.spec.ts`，覆盖规则增删改与「可看不可改」转修改申请）
-- 下一步：评审 D1..D9 与测试清单；评审通过后更新 `Status`
+- 下一步：无（已定稿）；后续行级权限能力变更按新 ADR 立项
 - 已知坑：`member_role` 按有效档位匹配（D5）；管理员豁免（D3）；读 ⊇ 写（I4）；批量端点不开放行级旁路（§7-6）；规则增删改后必须清记录缓存（§7-7）；规则 filters 引用隐藏字段时静默丢弃
 - 最近一次全绿：`make flow` 通过（2026-10-21，本地工作区）；新增 Playwright 专项用例本地单跑 2 passed（含 setup）
