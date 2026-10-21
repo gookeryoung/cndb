@@ -77,6 +77,8 @@ def run_pipeline(
     active = provider or get_provider(job.provider)
     fetcher: FetchFn = fetch or fetch_json
     plans = active.build_requests(job)
+    # 非 HTTP provider（如 baostock）自带传输通道：有 fetch_plan 就优先它，不再走 fetch_json
+    provider_fetch = getattr(active, "fetch_plan", None) if fetch is None else None
 
     outcome = PipelineOutcome(plans=len(plans))
     raw_rows: list[dict[str, Any]] = []
@@ -93,7 +95,7 @@ def run_pipeline(
             waiter(rate_limit_ms / 1000.0)
         sent += 1
         try:
-            rows = fetcher(plan.config)
+            rows = provider_fetch(plan) if provider_fetch is not None else fetcher(plan.config)
         except Exception as exc:  # 单请求失败不中断整体（I3）
             logger.warning("数据源请求失败 [%s]: %s", plan.label, exc)
             outcome.failures.append(
@@ -103,7 +105,7 @@ def run_pipeline(
         outcome.succeeded += 1
         if plan.page is not None and not rows:
             stop_pages[group] = plan.page
-        raw_rows.extend(to_records(rows))
+        raw_rows.extend(fill_entrant(to_records(rows), job.entrant_param, plan.entrant))
 
     outcome.normalize = active.normalize(raw_rows, job)
     outcome.rows = list(outcome.normalize.rows)
@@ -115,4 +117,23 @@ def to_records(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-__all__ = ["FetchFailure", "PipelineOutcome", "run_pipeline", "to_records"]
+def fill_entrant(
+    rows: Sequence[Mapping[str, Any]],
+    entrant_param: str | None,
+    entrant: str | None,
+) -> list[dict[str, Any]]:
+    """行内缺标的列时用请求维度补齐（响应体不带 symbol 的源，如新浪日线）.
+
+    ``setdefault`` 语义：响应自带标的字段的一律保留，不被请求参数覆盖。
+    """
+    if not entrant_param or entrant is None:
+        return [dict(row) for row in rows]
+    filled: list[dict[str, Any]] = []
+    for row in rows:
+        record = dict(row)
+        record.setdefault(entrant_param, entrant)
+        filled.append(record)
+    return filled
+
+
+__all__ = ["FetchFailure", "PipelineOutcome", "fill_entrant", "run_pipeline", "to_records"]

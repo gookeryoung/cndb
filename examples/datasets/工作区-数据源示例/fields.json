@@ -7,6 +7,14 @@
     "股市日线": {
       "股票代码": {"required": true},
       "交易日": {"required": true}
+    },
+    "股市日线-腾讯": {
+      "股票代码": {"required": true},
+      "交易日": {"required": true}
+    },
+    "股市日线-新浪": {
+      "股票代码": {"required": true},
+      "交易日": {"required": true}
     }
   }
 }

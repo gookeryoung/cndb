@@ -1,5 +1,5 @@
 {
-  "_comment": "分析模板种子：数据源示例工作区（天气每日 / 股市日线）。键为数据表名（= CSV 文件名），公式字段名须与表字段一致；窗口公式（ma / pct_change）带 partition_by（城市 / 股票代码）与 order_by（日期），与 ADR 0006 M4 的时序窗口语义一致。",
+  "_comment": "分析模板种子：数据源示例工作区（天气每日 / 股市日线）。键为数据表名（= CSV 文件名），公式字段名须与表字段一致；窗口公式（ma / pct_change）带 partition_by（城市 / 股票代码）与 order_by（日期），与 ADR 0006 M4 的时序窗口语义一致。股市日线样本为 10 只标的 × 近 5 年约 1.2 万行，模板 limit 提到 3000 行（每标的约 300 个交易日）以兼顾覆盖度与前端渲染；腾讯 / 新浪两张对照表不配模板，跨源价格因复权算法不同不可直接比较。",
   "天气每日": [
     {
       "name": "温度趋势与均温线",
@@ -25,15 +25,30 @@
         "summary": {
           "group_by": "城市",
           "metrics": [
-            {"field": "平均气温", "agg": "avg", "label": "平均气温"},
-            {"field": "城市", "agg": "count", "label": "记录数"}
+            {
+              "field": "平均气温",
+              "agg": "avg",
+              "label": "平均气温"
+            },
+            {
+              "field": "城市",
+              "agg": "count",
+              "label": "记录数"
+            }
           ],
           "sort_by": "avg(平均气温)",
           "sort_order": "desc",
           "top_n": 10
         },
-        "fields": ["城市", "日期", "最高气温", "最低气温", "平均气温", "降水量"],
-        "limit": 1000
+        "fields": [
+          "城市",
+          "日期",
+          "最高气温",
+          "最低气温",
+          "平均气温",
+          "降水量"
+        ],
+        "limit": 3000
       }
     },
     {
@@ -60,15 +75,30 @@
         "summary": {
           "group_by": "城市",
           "metrics": [
-            {"field": "temp_range", "agg": "avg", "label": "平均温差"},
-            {"field": "城市", "agg": "count", "label": "记录数"}
+            {
+              "field": "temp_range",
+              "agg": "avg",
+              "label": "平均温差"
+            },
+            {
+              "field": "城市",
+              "agg": "count",
+              "label": "记录数"
+            }
           ],
           "sort_by": "avg(temp_range)",
           "sort_order": "desc",
           "top_n": 10
         },
-        "fields": ["城市", "日期", "最高气温", "最低气温", "平均气温", "降水量"],
-        "limit": 1000
+        "fields": [
+          "城市",
+          "日期",
+          "最高气温",
+          "最低气温",
+          "平均气温",
+          "降水量"
+        ],
+        "limit": 3000
       }
     },
     {
@@ -86,16 +116,35 @@
         "summary": {
           "group_by": "城市",
           "metrics": [
-            {"field": "最高气温", "agg": "max", "label": "极端最高气温"},
-            {"field": "平均气温", "agg": "avg", "label": "平均气温"},
-            {"field": "城市", "agg": "count", "label": "记录数"}
+            {
+              "field": "最高气温",
+              "agg": "max",
+              "label": "极端最高气温"
+            },
+            {
+              "field": "平均气温",
+              "agg": "avg",
+              "label": "平均气温"
+            },
+            {
+              "field": "城市",
+              "agg": "count",
+              "label": "记录数"
+            }
           ],
           "sort_by": "max(最高气温)",
           "sort_order": "desc",
           "top_n": 10
         },
-        "fields": ["城市", "日期", "最高气温", "最低气温", "平均气温", "降水量"],
-        "limit": 1000
+        "fields": [
+          "城市",
+          "日期",
+          "最高气温",
+          "最低气温",
+          "平均气温",
+          "降水量"
+        ],
+        "limit": 3000
       }
     }
   ],
@@ -124,16 +173,38 @@
         "summary": {
           "group_by": "股票名称",
           "metrics": [
-            {"field": "收盘价", "agg": "avg", "label": "区间均价"},
-            {"field": "收盘价", "agg": "max", "label": "区间最高"},
-            {"field": "收盘价", "agg": "min", "label": "区间最低"}
+            {
+              "field": "收盘价",
+              "agg": "avg",
+              "label": "区间均价"
+            },
+            {
+              "field": "收盘价",
+              "agg": "max",
+              "label": "区间最高"
+            },
+            {
+              "field": "收盘价",
+              "agg": "min",
+              "label": "区间最低"
+            }
           ],
           "sort_by": "avg(收盘价)",
           "sort_order": "desc",
           "top_n": 10
         },
-        "fields": ["股票代码", "股票名称", "交易日", "开盘价", "最高价", "最低价", "收盘价", "成交量", "成交额"],
-        "limit": 1000
+        "fields": [
+          "股票代码",
+          "股票名称",
+          "交易日",
+          "开盘价",
+          "最高价",
+          "最低价",
+          "收盘价",
+          "成交量",
+          "成交额"
+        ],
+        "limit": 3000
       }
     },
     {
@@ -167,16 +238,38 @@
         "summary": {
           "group_by": "股票名称",
           "metrics": [
-            {"field": "amplitude", "agg": "avg", "label": "平均振幅(%)"},
-            {"field": "pct_chg", "agg": "sum", "label": "区间累计涨跌幅(%)"},
-            {"field": "股票名称", "agg": "count", "label": "交易日数"}
+            {
+              "field": "amplitude",
+              "agg": "avg",
+              "label": "平均振幅(%)"
+            },
+            {
+              "field": "pct_chg",
+              "agg": "sum",
+              "label": "区间累计涨跌幅(%)"
+            },
+            {
+              "field": "股票名称",
+              "agg": "count",
+              "label": "交易日数"
+            }
           ],
           "sort_by": "avg(amplitude)",
           "sort_order": "desc",
           "top_n": 10
         },
-        "fields": ["股票代码", "股票名称", "交易日", "开盘价", "最高价", "最低价", "收盘价", "成交量", "成交额"],
-        "limit": 1000
+        "fields": [
+          "股票代码",
+          "股票名称",
+          "交易日",
+          "开盘价",
+          "最高价",
+          "最低价",
+          "收盘价",
+          "成交量",
+          "成交额"
+        ],
+        "limit": 3000
       }
     },
     {
@@ -203,16 +296,38 @@
         "summary": {
           "group_by": "股票名称",
           "metrics": [
-            {"field": "成交额", "agg": "sum", "label": "区间累计成交额"},
-            {"field": "成交量", "agg": "avg", "label": "日均成交量"},
-            {"field": "股票名称", "agg": "count", "label": "交易日数"}
+            {
+              "field": "成交额",
+              "agg": "sum",
+              "label": "区间累计成交额"
+            },
+            {
+              "field": "成交量",
+              "agg": "avg",
+              "label": "日均成交量"
+            },
+            {
+              "field": "股票名称",
+              "agg": "count",
+              "label": "交易日数"
+            }
           ],
           "sort_by": "sum(成交额)",
           "sort_order": "desc",
           "top_n": 10
         },
-        "fields": ["股票代码", "股票名称", "交易日", "开盘价", "最高价", "最低价", "收盘价", "成交量", "成交额"],
-        "limit": 1000
+        "fields": [
+          "股票代码",
+          "股票名称",
+          "交易日",
+          "开盘价",
+          "最高价",
+          "最低价",
+          "收盘价",
+          "成交量",
+          "成交额"
+        ],
+        "limit": 3000
       }
     }
   ]

@@ -168,77 +168,56 @@ def test_validate_job_fields_accepts_drop_and_detects_missing():
 
 
 def test_real_datasource_json_is_valid():
-    """真实 examples 配置：三个 provider 的任务结构合法、目标表与映射列引用自洽."""
-    path = Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-数据源示例" / "datasource.json"
-    cfg = json.loads(path.read_text(encoding="utf-8-sig"))
+    """真实 examples 配置：三源一源一表、目标表与映射列引用自洽."""
+    base = Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-数据源示例"
+    cfg = json.loads((base / "datasource.json").read_text(encoding="utf-8-sig"))
     jobs = cfg["jobs"]
-    assert len(jobs) == 7
+    assert len(jobs) == 3
+    assert [j["provider"] for j in jobs] == ["baostock_kline", "tencent_kline", "sina_kline"]
 
-    tencent = [j for j in jobs if j["provider"] == "tencent_kline"]
-    assert len(tencent) == 1
-    job = tencent[0]
-    assert job["table"] == "股市日线"
-    assert len(job["entrant_keys"]) >= 2
-    assert job["match_keys"] == ["股票代码", "交易日"]
-    # 标的前缀与 CSV 表内取值口径一致（sh/sz 前缀）
-    assert all(k[:2] in ("sh", "sz") for k in job["entrant_keys"])
-    # 映射目标列名与 CSV 表头一致
-    targets = {t["name"] for t in job["field_mapping"].values() if t}
-    assert targets <= {"股票代码", "交易日", "开盘价", "收盘价", "最高价", "最低价", "成交量"}
-
-    # eastmoney_kline：一只股一行，按周期/复权分 job 写不同 JSON 列
-    stock_cols = {
-        "股票代码",
-        "股票名称",
-        "市场",
-        "行业",
-        "是否自选",
-        "最新价",
-        "涨跌幅",
-        "最新交易日",
-        "成交量",
-        "成交额",
-        "日线前复权",
-        "日线后复权",
-        "日线不复权",
-        "周线前复权",
-        "月线前复权",
-        "更新时间",
+    # 一源一表：三张表名与 CSV 文件名一致（seed 按 CSV 文件建表）
+    expected = {
+        "baostock_kline": "股市日线",
+        "tencent_kline": "股市日线-腾讯",
+        "sina_kline": "股市日线-新浪",
     }
-    eastmoney = [j for j in jobs if j["provider"] == "eastmoney_kline"]
-    assert len(eastmoney) == 5
-    kline_targets: list[str] = []
-    for job in eastmoney:
-        assert job["table"] == "自选股"
+    for job in jobs:
+        assert job["table"] == expected[job["provider"]]
+        assert (base / f"{job['table']}.csv").is_file(), f"缺少示例数据文件 {job['table']}.csv"
+        assert job["match_keys"] == ["股票代码", "交易日"]
         assert job["entrant_param"] == "symbol"
-        assert job["match_keys"] == ["股票代码"]
-        assert all(k[:2] in ("sh", "sz", "hk", "us") for k in job["entrant_keys"])
-        for target in job["field_mapping"].values():
-            assert target["name"] in stock_cols, f"映射到不存在的列 {target['name']}"
-        kline_targets.extend(
-            target["name"] for target in job["field_mapping"].values() if target["field_type"] == "json"
-        )
-    # 5 个 job 各写一列，互不重复（配合 partial upsert 不互相清空）
-    assert sorted(kline_targets) == sorted(["日线前复权", "日线后复权", "日线不复权", "周线前复权", "月线前复权"])
-    # 东财按出口 IP 限流：K 线任务必须错峰调度 + 放宽请求间隔（见 api_fetch 限流退避）
-    schedules = [job["schedule"]["at"] for job in eastmoney]
-    assert len(set(schedules)) == len(schedules), f"K 线任务必须错峰调度，实际 {schedules}"
-    assert all(job["rate_limit_ms"] >= 1500 for job in eastmoney)
+        # 10 只标的，前缀与 CSV 表内取值口径一致（sh/sz）
+        assert len(job["entrant_keys"]) == 10
+        assert len(set(job["entrant_keys"])) == 10
+        assert all(k[:2] in ("sh", "sz") for k in job["entrant_keys"])
+        # 映射目标列必须真实存在于 CSV 表头（否则 seed 建表后写入会失败）
+        header = (base / f"{job['table']}.csv").read_text(encoding="utf-8-sig").splitlines()[0].split(",")
+        targets = {t["name"] for t in job["field_mapping"].values() if t}
+        assert targets <= set(header), f"{job['name']} 映射到不存在的列 {targets - set(header)}"
 
-    # eastmoney_symbols：全市场标的发现（P1），默认停用 + 分页拉取 + 只写代码/名称/市场
-    symbols_jobs = [j for j in jobs if j["provider"] == "eastmoney_symbols"]
-    assert len(symbols_jobs) == 1
-    symbols_job = symbols_jobs[0]
-    assert symbols_job["table"] == "自选股"
-    assert symbols_job["entrant_param"] == "market"
-    assert symbols_job["match_keys"] == ["股票代码"]
-    assert symbols_job["enabled"] is False, "全市场发现默认停用，避免 seed 后意外联网"
-    paging = symbols_job["request_spec"]["paging"]
-    assert paging["mode"] == "page"
-    assert paging["page_size"] <= 100
-    assert paging["max_pages"] >= 50
-    assert "{page}" in symbols_job["request_spec"]["url_template"]
-    assert "{fs}" in symbols_job["request_spec"]["url_template"]
-    # 不映射「是否自选」：新行由字段默认值落 false，已有自选行不被覆盖；K 线列留空
-    mapped = {target["name"] for target in symbols_job["field_mapping"].values()}
-    assert mapped == {"股票代码", "股票名称", "市场"}
+    by_provider = {job["provider"]: job for job in jobs}
+
+    # baostock：TCP 伪协议 + 前复权 + 含成交额，一次返回整段（不分片）
+    baostock = by_provider["baostock_kline"]
+    assert baostock["request_spec"]["url_template"].startswith("baostock://kline")
+    assert "adjustflag=2" in baostock["request_spec"]["url_template"]
+    # 一次调用可返回整段 → 显式不分片（避免把 5 年拆成上千次 TCP 查询）
+    assert "chunk_days" not in baostock["request_spec"]["time_window"]
+    assert "成交额" in {t["name"] for t in baostock["field_mapping"].values() if t}
+    assert baostock["cursor"]["backfill_start"] == "2021-10-18"
+
+    # 腾讯：单次约 320 根 → chunk_days 必须 >= 320，否则相邻窗口重复抓取
+    tencent = by_provider["tencent_kline"]
+    assert tencent["request_spec"]["time_window"]["chunk_days"] >= 320
+    assert "320,qfq" in tencent["request_spec"]["url_template"]
+    assert "成交额" not in {t["name"] for t in tencent["field_mapping"].values() if t}
+
+    # 新浪：仅最近 1023 根，无时间窗口 / 无游标
+    sina = by_provider["sina_kline"]
+    assert "datalen=1023" in sina["request_spec"]["url_template"]
+    assert "time_window" not in sina["request_spec"]
+    assert sina["cursor"] == {"strategy": "none"}
+
+    # 三源调度错峰，避免同一时刻撞同一出口 IP 的限流
+    schedules = [job["schedule"]["at"] for job in jobs]
+    assert len(set(schedules)) == len(schedules), f"任务必须错峰调度，实际 {schedules}"

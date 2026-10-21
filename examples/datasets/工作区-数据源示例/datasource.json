@@ -1,174 +1,122 @@
 {
-  "_comment": "数据源同步任务种子：数据源示例工作区。tencent_kline 单任务多标的（entrant_param=symbol + 多个 entrant_keys），每个股票代码生成一个 URL，全部按 match_keys=[股票代码,交易日] 幂等 upsert 到「股市日线」表。eastmoney_kline 任务写「自选股」表：一只股一行，kline 数组按 match_keys=[股票代码] 分列 upsert（日线前/后/不复权、周线/月线前复权），部分列更新不会清空其它周期列。eastmoney_symbols 为 P1 全市场标的发现：默认停用（需联网且标的数千），手动执行后新行的「是否自选」由字段默认值落 false，已有自选行保持不变；全市场 K 线请用 `cndb sync batch-kline` 按批建任务。seed 只注入配置（enabled 按配置），不触发联网抓取；股票代码格式须与表内取值一致（带市场前缀 sh/sz/hk/us）。东财 K 线任务按 17:30/17:45/18:00/18:15/18:30 错峰且 rate_limit_ms=2000（7 个标的串行约 12s/任务），压低被按出口 IP 限流的概率。",
+  "_comment": "数据源同步任务种子：数据源示例工作区。三源一源一表，避免复权口径互相覆盖：baostock（前复权，含成交额，TCP 一次返回整段）→「股市日线」；tencent（前复权，单次约 320 根，按 440 自然日分片）→「股市日线-腾讯」；sina（不复权，仅最近 1023 根）→「股市日线-新浪」。三表标的集合与时间范围一致（2021-10-18 起 10 只 A 股，约 1,200 根/标的），与 StockMaster 线上样本口径对齐。seed 只注入配置（enabled=true）不联网抓取，示例 CSV 由 scripts/build_example_kline.py 生成。股票代码带市场前缀（sh/sz），volume 统一为「股」（腾讯内部由手×100 换算）。各源复权算法不同，跨表比较只看形态不看绝对值。",
   "jobs": [
     {
-      "name": "股市日线同步（腾讯前复权）",
-      "provider": "tencent_kline",
+      "name": "股市日线同步（baostock 前复权）",
+      "provider": "baostock_kline",
       "table": "股市日线",
       "request_spec": {
-        "url_template": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,{start},{end},320,qfq",
+        "url_template": "baostock://kline?frequency=d&adjustflag=2",
         "time_window": {
           "mode": "range",
           "start_param": "start",
-          "end_param": "end",
-          "chunk_days": 320
+          "end_param": "end"
         }
       },
       "entrant_param": "symbol",
-      "entrant_keys": ["sh600519", "sz000001", "sz300750"],
+      "entrant_keys": [
+        "sh600519",
+        "sz000858",
+        "sz000001",
+        "sh600036",
+        "sh601318",
+        "sz300750",
+        "sz002594",
+        "sh601899",
+        "sh600900",
+        "sz000651"
+      ],
       "match_keys": ["股票代码", "交易日"],
       "field_mapping": {
         "symbol": { "name": "股票代码", "field_type": "text" },
         "trade_date": { "name": "交易日", "field_type": "date" },
         "open": { "name": "开盘价", "field_type": "float" },
-        "close": { "name": "收盘价", "field_type": "float" },
         "high": { "name": "最高价", "field_type": "float" },
         "low": { "name": "最低价", "field_type": "float" },
+        "close": { "name": "收盘价", "field_type": "float" },
+        "volume": { "name": "成交量", "field_type": "int" },
+        "amount": { "name": "成交额", "field_type": "float" }
+      },
+      "cursor": { "strategy": "date", "field": "交易日", "backfill_start": "2021-10-18" },
+      "schedule": { "mode": "daily", "at": "17:30", "timezone": "Asia/Shanghai" },
+      "enabled": true,
+      "rate_limit_ms": 500
+    },
+    {
+      "name": "股市日线同步（腾讯前复权）",
+      "provider": "tencent_kline",
+      "table": "股市日线-腾讯",
+      "request_spec": {
+        "url_template": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get?param={symbol},day,{start},{end},320,qfq",
+        "time_window": {
+          "mode": "range",
+          "start_param": "start",
+          "end_param": "end",
+          "chunk_days": 440
+        }
+      },
+      "entrant_param": "symbol",
+      "entrant_keys": [
+        "sh600519",
+        "sz000858",
+        "sz000001",
+        "sh600036",
+        "sh601318",
+        "sz300750",
+        "sz002594",
+        "sh601899",
+        "sh600900",
+        "sz000651"
+      ],
+      "match_keys": ["股票代码", "交易日"],
+      "field_mapping": {
+        "symbol": { "name": "股票代码", "field_type": "text" },
+        "trade_date": { "name": "交易日", "field_type": "date" },
+        "open": { "name": "开盘价", "field_type": "float" },
+        "high": { "name": "最高价", "field_type": "float" },
+        "low": { "name": "最低价", "field_type": "float" },
+        "close": { "name": "收盘价", "field_type": "float" },
         "volume": { "name": "成交量", "field_type": "int" }
       },
-      "cursor": { "strategy": "date", "field": "交易日", "backfill_start": "2026-01-01" },
-      "schedule": { "mode": "daily", "at": "17:30", "timezone": "Asia/Shanghai" },
-      "enabled": true,
-      "rate_limit_ms": 200
-    },
-    {
-      "name": "自选股日线同步（前复权）",
-      "provider": "eastmoney_kline",
-      "table": "自选股",
-      "request_spec": {
-        "url_template": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&beg=0&end=20500101&lmt=100000"
-      },
-      "entrant_param": "symbol",
-      "entrant_keys": ["sh600519", "sz000001", "sz300750", "hk00700", "hk09988", "usAAPL", "usNVDA"],
-      "match_keys": ["股票代码"],
-      "field_mapping": {
-        "symbol": { "name": "股票代码", "field_type": "text" },
-        "name": { "name": "股票名称", "field_type": "text" },
-        "kline": { "name": "日线前复权", "field_type": "json" },
-        "latest_date": { "name": "最新交易日", "field_type": "date" },
-        "latest_close": { "name": "最新价", "field_type": "float" },
-        "latest_pct_change": { "name": "涨跌幅", "field_type": "float" },
-        "latest_volume": { "name": "成交量", "field_type": "float" },
-        "latest_amount": { "name": "成交额", "field_type": "float" }
-      },
-      "cursor": { "strategy": "none" },
-      "schedule": { "mode": "daily", "at": "17:30", "timezone": "Asia/Shanghai" },
-      "enabled": true,
-      "rate_limit_ms": 2000
-    },
-    {
-      "name": "自选股日线同步（后复权）",
-      "provider": "eastmoney_kline",
-      "table": "自选股",
-      "request_spec": {
-        "url_template": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=2&beg=0&end=20500101&lmt=100000"
-      },
-      "entrant_param": "symbol",
-      "entrant_keys": ["sh600519", "sz000001", "sz300750", "hk00700", "hk09988", "usAAPL", "usNVDA"],
-      "match_keys": ["股票代码"],
-      "field_mapping": {
-        "symbol": { "name": "股票代码", "field_type": "text" },
-        "kline": { "name": "日线后复权", "field_type": "json" },
-        "latest_date": { "name": "最新交易日", "field_type": "date" },
-        "latest_close": { "name": "最新价", "field_type": "float" },
-        "latest_pct_change": { "name": "涨跌幅", "field_type": "float" },
-        "latest_volume": { "name": "成交量", "field_type": "float" },
-        "latest_amount": { "name": "成交额", "field_type": "float" }
-      },
-      "cursor": { "strategy": "none" },
+      "cursor": { "strategy": "date", "field": "交易日", "backfill_start": "2021-10-18" },
       "schedule": { "mode": "daily", "at": "17:45", "timezone": "Asia/Shanghai" },
       "enabled": true,
       "rate_limit_ms": 2000
     },
     {
-      "name": "自选股日线同步（不复权）",
-      "provider": "eastmoney_kline",
-      "table": "自选股",
+      "name": "股市日线同步（新浪不复权）",
+      "provider": "sina_kline",
+      "table": "股市日线-新浪",
       "request_spec": {
-        "url_template": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&beg=0&end=20500101&lmt=100000"
+        "url_template": "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={symbol}&scale=240&ma=no&datalen=1023"
       },
       "entrant_param": "symbol",
-      "entrant_keys": ["sh600519", "sz000001", "sz300750", "hk00700", "hk09988", "usAAPL", "usNVDA"],
-      "match_keys": ["股票代码"],
+      "entrant_keys": [
+        "sh600519",
+        "sz000858",
+        "sz000001",
+        "sh600036",
+        "sh601318",
+        "sz300750",
+        "sz002594",
+        "sh601899",
+        "sh600900",
+        "sz000651"
+      ],
+      "match_keys": ["股票代码", "交易日"],
       "field_mapping": {
         "symbol": { "name": "股票代码", "field_type": "text" },
-        "kline": { "name": "日线不复权", "field_type": "json" },
-        "latest_date": { "name": "最新交易日", "field_type": "date" },
-        "latest_close": { "name": "最新价", "field_type": "float" },
-        "latest_pct_change": { "name": "涨跌幅", "field_type": "float" },
-        "latest_volume": { "name": "成交量", "field_type": "float" },
-        "latest_amount": { "name": "成交额", "field_type": "float" }
+        "trade_date": { "name": "交易日", "field_type": "date" },
+        "open": { "name": "开盘价", "field_type": "float" },
+        "high": { "name": "最高价", "field_type": "float" },
+        "low": { "name": "最低价", "field_type": "float" },
+        "close": { "name": "收盘价", "field_type": "float" },
+        "volume": { "name": "成交量", "field_type": "int" }
       },
       "cursor": { "strategy": "none" },
       "schedule": { "mode": "daily", "at": "18:00", "timezone": "Asia/Shanghai" },
       "enabled": true,
-      "rate_limit_ms": 2000
-    },
-    {
-      "name": "自选股周线同步（前复权）",
-      "provider": "eastmoney_kline",
-      "table": "自选股",
-      "request_spec": {
-        "url_template": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=102&fqt=1&beg=0&end=20500101&lmt=100000"
-      },
-      "entrant_param": "symbol",
-      "entrant_keys": ["sh600519", "sz000001", "sz300750", "hk00700", "hk09988", "usAAPL", "usNVDA"],
-      "match_keys": ["股票代码"],
-      "field_mapping": {
-        "symbol": { "name": "股票代码", "field_type": "text" },
-        "kline": { "name": "周线前复权", "field_type": "json" }
-      },
-      "cursor": { "strategy": "none" },
-      "schedule": { "mode": "daily", "at": "18:15", "timezone": "Asia/Shanghai" },
-      "enabled": true,
-      "rate_limit_ms": 2000
-    },
-    {
-      "name": "自选股月线同步（前复权）",
-      "provider": "eastmoney_kline",
-      "table": "自选股",
-      "request_spec": {
-        "url_template": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=103&fqt=1&beg=0&end=20500101&lmt=100000"
-      },
-      "entrant_param": "symbol",
-      "entrant_keys": ["sh600519", "sz000001", "sz300750", "hk00700", "hk09988", "usAAPL", "usNVDA"],
-      "match_keys": ["股票代码"],
-      "field_mapping": {
-        "symbol": { "name": "股票代码", "field_type": "text" },
-        "kline": { "name": "月线前复权", "field_type": "json" }
-      },
-      "cursor": { "strategy": "none" },
-      "schedule": { "mode": "daily", "at": "18:30", "timezone": "Asia/Shanghai" },
-      "enabled": true,
-      "rate_limit_ms": 2000
-    },
-    {
-      "name": "全市场标的发现（A股）",
-      "provider": "eastmoney_symbols",
-      "table": "自选股",
-      "request_spec": {
-        "url_template": "https://push2.eastmoney.com/api/qt/clist/get?pn={page}&pz={page_size}&po=1&np=1&fltt=2&invt=2&fid=f3&fs={fs}&fields=f12,f13,f14",
-        "paging": {
-          "mode": "page",
-          "page_param": "page",
-          "size_param": "page_size",
-          "page_size": 100,
-          "start_page": 1,
-          "max_pages": 60
-        }
-      },
-      "entrant_param": "market",
-      "entrant_keys": ["A"],
-      "match_keys": ["股票代码"],
-      "field_mapping": {
-        "symbol": { "name": "股票代码", "field_type": "text" },
-        "name": { "name": "股票名称", "field_type": "text" },
-        "market": { "name": "市场", "field_type": "text" }
-      },
-      "cursor": { "strategy": "none" },
-      "schedule": { "mode": "manual" },
-      "enabled": false,
-      "rate_limit_ms": 300
+      "rate_limit_ms": 1000
     }
   ]
 }
