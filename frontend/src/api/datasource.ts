@@ -41,6 +41,22 @@ export interface DatasourceProviderInfo {
   supports_paging: boolean
 }
 
+/** 大模型提示词配置（`llm_prompt` provider） */
+export interface SyncPromptConfig {
+  /** 系统提示词；留空时后端补「只输出 JSON」约束 */
+  system?: string
+  /** 用户提示词，可含 {entrant} / {start} / {end} / {today} */
+  user_template?: string
+}
+
+/** 模型参数（OpenAI 兼容） */
+export interface SyncLlmConfig {
+  model?: string
+  temperature?: number
+  max_tokens?: number
+  json_mode?: boolean
+}
+
 /** 请求声明（与后端 RequestSpec 对齐） */
 export interface SyncRequestSpec {
   url_template: string
@@ -70,6 +86,10 @@ export interface SyncRequestSpec {
     date_format?: string
     chunk_days?: number
   }
+  /** `llm_prompt`：提示词 */
+  prompt?: SyncPromptConfig
+  /** `llm_prompt`：模型参数 */
+  llm?: SyncLlmConfig
 }
 
 export interface SyncCursorConfig {
@@ -151,6 +171,20 @@ export interface DatasourceSessionPayload {
   secrets?: Record<string, string>
 }
 
+/** 连通测试请求：用未保存的配置，不落库、不写运行记录 */
+export interface DatasourceConnectionTestPayload {
+  request_spec: SyncRequestSpec
+  session_id?: number | null
+}
+
+/** 连通测试结果：失败也返回 200，前端按 `ok` 展示 */
+export interface DatasourceConnectionTestResult {
+  ok: boolean
+  latency_ms: number
+  model: string
+  message: string
+}
+
 /** 领域模板包：按 provider 预置的分析配置 */
 export interface DomainTemplate {
   id: string
@@ -217,6 +251,8 @@ export const datasourceApi = {
     api.post<{ job: SyncJob; run: SyncRun }>(`${base(wid)}/sync-jobs/${id}/run`).then(r => r.data),
   previewJob: (wid: number | string, id: number | string, limit = 20) =>
     api.post<SyncPreviewResult>(`${base(wid)}/sync-jobs/${id}/preview`, { limit }).then(r => r.data),
+  testConnection: (wid: number | string, data: DatasourceConnectionTestPayload) =>
+    api.post<DatasourceConnectionTestResult>(`${base(wid)}/test-connection`, data).then(r => r.data),
   runs: (wid: number | string, id: number | string, params?: { limit?: number; offset?: number }) =>
     api
       .get<{ total: number; runs: SyncRun[] }>(`${base(wid)}/sync-jobs/${id}/runs`, { params })

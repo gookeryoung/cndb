@@ -42,6 +42,8 @@ class PipelineOutcome:
     succeeded: int = 0
     failures: list[FetchFailure] = field(default_factory=list)
     normalize: NormalizeLike | None = None
+    # 逐请求响应元信息（模型名 / token 用量等），由 provider 写入 plan.metadata
+    metadata: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def failed(self) -> int:
@@ -101,6 +103,8 @@ def run_pipeline(
             )
             continue
         outcome.succeeded += 1
+        if plan.metadata:
+            outcome.metadata.append({"label": plan.label, **plan.metadata})
         if plan.page is not None and not rows:
             stop_pages[group] = plan.page
         raw_rows.extend(fill_entrant(to_records(rows), job.entrant_param, plan.entrant))
