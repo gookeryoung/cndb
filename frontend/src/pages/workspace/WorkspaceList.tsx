@@ -1,23 +1,43 @@
-/** 工作区列表页 — 卡片式布局，支持创建/设置/导入/导出/置顶/成员管理/搜索. */
+/** 工作区列表页 — GitHub 风格可折叠行列表，支持创建/设置/导入/导出/收藏/搜索.
+ *
+ * 交互口径（参考 GitHub 仓库列表 / 文件树）：
+ *  - 收起态只保留「收藏」与「展开」两个图标按钮，行内不堆操作，一屏能看更多工作区；
+ *  - 展开后才出现描述、标签、数据表速览与「进入 / 设置 / 备份导出」等更多操作；
+ *  - 收藏（置顶）复用后端 pin 状态，已收藏的工作区单独成组排在最前。
+ */
 
 import { useMemo, useState } from 'react'
-import { Card, Row, Col, Typography, Button, Modal, Form, Input, Select, Switch, Tag, Empty, App as AntApp, Upload, Alert, Progress, Skeleton } from 'antd'
 import {
-  PlusOutlined, PushpinOutlined, TeamOutlined, TableOutlined,
-  DownloadOutlined, SettingOutlined, SearchOutlined,
-  GlobalOutlined, LockOutlined, SafetyCertificateOutlined,
-  UploadOutlined, InboxOutlined, FileTextOutlined, FolderOpenOutlined,
+  Typography, Tag, Button, Modal, Form, Input, Select, Switch, Empty, App as AntApp,
+  Upload, Alert, Progress, Skeleton, Tooltip,
+} from 'antd'
+import {
+  PlusOutlined, StarOutlined, StarFilled, CaretRightOutlined, TeamOutlined, TableOutlined,
+  DownloadOutlined, SettingOutlined, SearchOutlined, GlobalOutlined, LockOutlined,
+  SafetyCertificateOutlined, UploadOutlined, InboxOutlined, FileTextOutlined,
+  FolderOpenOutlined, DatabaseOutlined, LoginOutlined, ArrowRightOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useResponsive } from '@/hooks/useResponsive'
-import { workspaceApi } from '@/api'
-import type { Workspace, WorkspaceRole, WorkspaceType, WorkspaceVisibility } from '@/api'
-import { WORKSPACE_TYPE_HINT, WORKSPACE_TYPE_LABEL, WORKSPACE_TYPE_OPTIONS, workspaceLandingSegment } from '@/utils/workspaceType'
+import { workspaceApi, tableApi } from '@/api'
+import type {
+  Workspace, WorkspaceRole, WorkspaceType, WorkspaceVisibility, TableSummary,
+} from '@/api'
+import {
+  WORKSPACE_TYPE_HINT, WORKSPACE_TYPE_LABEL, WORKSPACE_TYPE_OPTIONS,
+  workspaceLandingSegment, workspaceTypeFeatures,
+} from '@/utils/workspaceType'
 import WorkspaceSettingsModal from '@/pages/settings/WorkspaceSettingsModal'
 import WorkspaceBackupDialog from '@/pages/settings/WorkspaceBackupDialog'
 
 const { Title, Text } = Typography
+
+/** 工作区列表页携带统计信息的工作区视图模型 */
+type WSWithStats = Workspace & {
+  table_count?: number; member_count?: number;
+  current_user_role?: WorkspaceRole | null;
+}
 
 /** 公开性图标 + 颜色映射 */
 const VISIBILITY_META: Record<WorkspaceVisibility, { icon: React.ReactNode; color: string; label: string }> = {
@@ -39,6 +59,25 @@ const TYPE_TAG_COLOR: Record<WorkspaceType, string> = {
   data_doc: 'geekblue', data: 'purple', doc: 'orange',
 }
 
+/** 行首图标：按工作区类型区分数据 / 文档语义 */
+const TYPE_ICON: Record<WorkspaceType, React.ReactNode> = {
+  data_doc: <DatabaseOutlined />,
+  data: <TableOutlined />,
+  doc: <FileTextOutlined />,
+}
+
+/** 展开后速览的数据表数量上限（超出走「查看全部」，避免展开区无限长） */
+const PREVIEW_TABLE_LIMIT = 8
+
+/** 列表时间紧凑格式：`2026-10-18 20:19`（窄屏单行，不用 toLocaleString 的秒级长串） */
+function formatListTime(value?: string): string {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function WorkspaceList() {
   const { message } = AntApp.useApp()
   const { isMobile } = useResponsive()
@@ -49,13 +88,10 @@ export default function WorkspaceList() {
   const [backupOpen, setBackupOpen] = useState<Workspace | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [search, setSearch] = useState('')
+  /** 已展开的工作区 id 集合（允许多行同时展开，与 GitHub 文件树一致） */
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [form] = Form.useForm()
   const [importForm] = Form.useForm()
-
-  type WSWithStats = Workspace & {
-    table_count?: number; member_count?: number;
-    current_user_role?: WorkspaceRole | null;
-  }
 
   const { data: workspaces = [], isLoading } = useQuery<WSWithStats[]>({
     queryKey: ['workspaces'],
@@ -88,8 +124,18 @@ export default function WorkspaceList() {
   const pin = useMutation({
     mutationFn: (w: Workspace) => workspaceApi.togglePin(w.id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workspaces'] }),
-    onError: (err) => message.error(err instanceof Error ? err.message : '置顶失败'),
+    onError: (err) => message.error(err instanceof Error ? err.message : '收藏失败'),
   })
+
+  const toggleExpand = (id: number | string) => {
+    const key = String(id)
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   // 排序 + 搜索过滤
   const filteredWorkspaces = useMemo(() => {
@@ -104,6 +150,99 @@ export default function WorkspaceList() {
       (w.tags ?? []).some(t => t.toLowerCase().includes(q)),
     )
   }, [workspaces, search])
+
+  const starred = filteredWorkspaces.filter(w => w.pinned)
+  const others = filteredWorkspaces.filter(w => !w.pinned)
+
+  /** 渲染单个工作区行：收起态只有「收藏 + 展开」两个图标 */
+  const renderRow = (w: WSWithStats) => {
+    const vis = VISIBILITY_META[(w.visibility ?? 'member') as WorkspaceVisibility]
+      ?? VISIBILITY_META.member
+    const role = w.current_user_role ?? null
+    const type = (w.workspace_type ?? 'data_doc') as WorkspaceType
+    const expanded = expandedIds.has(String(w.id))
+    const landing = `/w/${w.id}/${workspaceLandingSegment(type)}`
+
+    return (
+      <div
+        key={w.id}
+        className={`cn-ws-row${expanded ? ' is-expanded' : ''}`}
+        data-testid={`workspace-row-${w.id}`}
+      >
+        <div className="cn-ws-row-main" onClick={() => navigate(landing)}>
+          <Tooltip title={expanded ? '收起详情' : '展开详情'}>
+            <Button
+              type="text"
+              size="small"
+              className="cn-ws-row-toggle"
+              aria-expanded={expanded}
+              aria-label={`${expanded ? '收起' : '展开'}「${w.name}」`}
+              data-testid={`workspace-expand-${w.id}`}
+              icon={<CaretRightOutlined rotate={expanded ? 90 : 0} />}
+              onClick={(e) => { e.stopPropagation(); toggleExpand(w.id) }}
+            />
+          </Tooltip>
+
+          <span className="cn-ws-row-icon" aria-hidden>{TYPE_ICON[type]}</span>
+
+          <div className="cn-ws-row-title">
+            <span className="cn-ws-row-name" title={w.name}>{w.name}</span>
+            <Tooltip title={vis.label}>
+              <span className="cn-ws-row-vis" style={{ color: 'var(--cn-text-muted)' }} aria-label={vis.label}>
+                {vis.icon}
+              </span>
+            </Tooltip>
+            <Tag color={TYPE_TAG_COLOR[type]} className="cn-ws-row-tag">
+              {WORKSPACE_TYPE_LABEL[type]}
+            </Tag>
+            {role && (
+              <Tag color={ROLE_BADGE_COLOR[role]} className="cn-ws-row-tag">
+                {ROLE_LABEL[role]}
+              </Tag>
+            )}
+          </div>
+
+          {!isMobile && (
+            <div className="cn-ws-row-meta">
+              <span><TableOutlined /> {w.table_count ?? 0}</span>
+              <span><TeamOutlined /> {w.member_count ?? 1}</span>
+              {w.allow_edit === false && (
+                <Tooltip title="编辑已关闭：仅所有者可编辑数据">
+                  <span className="cn-ws-row-locked"><LockOutlined /> 只读</span>
+                </Tooltip>
+              )}
+              {w.updated_at && (
+                <span className="cn-ws-row-time">{formatListTime(w.updated_at)}</span>
+              )}
+            </div>
+          )}
+
+          <div className="cn-ws-row-actions">
+            <Tooltip title={w.pinned ? '取消收藏' : '收藏'}>
+              <Button
+                type="text"
+                size="small"
+                aria-pressed={!!w.pinned}
+                aria-label={w.pinned ? `取消收藏「${w.name}」` : `收藏「${w.name}」`}
+                data-testid={`star-btn-${w.id}`}
+                icon={w.pinned ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />}
+                onClick={(e) => { e.stopPropagation(); pin.mutate(w) }}
+              />
+            </Tooltip>
+          </div>
+        </div>
+
+        {expanded && (
+          <WorkspaceRowDetail
+            ws={w}
+            onOpen={() => navigate(landing)}
+            onSettings={() => setSettingsOpen(w)}
+            onBackup={() => setBackupOpen(w)}
+          />
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: isMobile ? 12 : 16 }} data-testid="workspace-list">
@@ -154,110 +293,48 @@ export default function WorkspaceList() {
       </div>
 
       {isLoading ? (
-        /* 骨架屏占位 —— sr-only 文本保留给屏幕阅读器与既有测试断言 */
+        /* 骨架屏占位 —— 行式布局，sr-only 文本保留给屏幕阅读器与既有测试断言 */
         <div data-testid="workspace-list-skeleton" role="status">
           <span style={{
             position: 'absolute', width: 1, height: 1, overflow: 'hidden',
             clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap',
           }}>加载中...</span>
-          <Row gutter={[16, 16]}>
+          <div className="cn-ws-list">
             {Array.from({ length: 8 }).map((_, i) => (
-              <Col xs={24} sm={12} md={8} lg={6} key={i}>
-                <Card styles={{ body: { padding: 16 } }}>
-                  <Skeleton active title={false} paragraph={{ rows: 3 }} />
-                </Card>
-              </Col>
+              <div className="cn-ws-row" key={i}>
+                <div className="cn-ws-row-main">
+                  <Skeleton active title={false} paragraph={{ rows: 1, width: '60%' }} />
+                </div>
+              </div>
             ))}
-          </Row>
+          </div>
         </div>
       ) : filteredWorkspaces.length === 0 ? (
         <Empty description={search ? `没有匹配「${search}」的工作区` : '还没有工作区，创建一个吧！'} />
       ) : (
-        <Row gutter={isMobile ? [12, 12] : [16, 16]}>
-          {filteredWorkspaces.map((w, i) => {
-            const vis = VISIBILITY_META[(w.visibility ?? 'member') as WorkspaceVisibility]
-              ?? VISIBILITY_META.member
-            const role = w.current_user_role ?? null
-            return (
-              <Col xs={24} sm={12} md={8} lg={6} key={w.id}>
-                <Card
-                  hoverable
-                  className="cn-ws-card"
-                  style={{ animationDelay: `${Math.min(i, 7) * 40}ms` }}
-                  data-testid={`workspace-card-${w.id}`}
-                  styles={{ body: { padding: isMobile ? 12 : 16 } }}
-                  actions={[
-                    <span
-                      key="pin"
-                      onClick={(e) => { e.stopPropagation(); pin.mutate(w) }}
-                      style={{ cursor: 'pointer', color: w.pinned ? '#f59e0b' : undefined }}
-                    ><PushpinOutlined /> {w.pinned ? '取消置顶' : '置顶'}</span>,
-                    <span
-                      key="backup"
-                      onClick={(e) => { e.stopPropagation(); setBackupOpen(w) }}
-                      style={{ cursor: 'pointer' }}
-                      data-testid={`backup-btn-${w.id}`}
-                    ><DownloadOutlined /> 备份</span>,
-                    <span
-                      key="settings"
-                      onClick={(e) => { e.stopPropagation(); setSettingsOpen(w) }}
-                      style={{ cursor: 'pointer' }}
-                      data-testid={`settings-btn-${w.id}`}
-                    ><SettingOutlined /> 设置</span>,
-                  ]}
-                  onClick={(e) => {
-                    const target = e.target as HTMLElement
-                    if (target.closest('.ant-card-actions')) return
-                    navigate(`/w/${w.id}/${workspaceLandingSegment(w.workspace_type)}`)
-                  }}
-                >
-                  {/* 头部：标签 + 公开性 + 角色 */}
-                  <div style={{ marginBottom: isMobile ? 4 : 8, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: '70%' }}>
-                      {w.pinned && <Tag color="gold" style={{ marginRight: 4 }}>📌 置顶</Tag>}
-                      <Tag color={TYPE_TAG_COLOR[w.workspace_type ?? 'data_doc']} style={{ marginRight: 0 }}>
-                        {WORKSPACE_TYPE_LABEL[w.workspace_type ?? 'data_doc']}
-                      </Tag>
-                      {(w.tags ?? []).slice(0, 2).map(t => (
-                        <Tag key={t} style={{ marginRight: 0 }}>{t}</Tag>
-                      ))}
-                    </div>
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                      {role && (
-                        <Tag color={ROLE_BADGE_COLOR[role]} style={{ marginRight: 0, fontSize: 11 }}>
-                          {ROLE_LABEL[role]}
-                        </Tag>
-                      )}
-                      <Tag color={vis.color} icon={vis.icon}>{vis.label}</Tag>
-                    </div>
-                  </div>
-
-                  {/* 标题 */}
-                  <Text strong style={{ fontSize: 16, display: 'block', marginBottom: 2 }}>{w.name}</Text>
-
-                  {/* 描述 */}
-                  <Text type="secondary" ellipsis style={{ display: 'block', height: isMobile ? 32 : 36, fontSize: 13, lineHeight: '16px' }}>
-                    {w.description || '暂无描述'}
-                  </Text>
-
-                  {/* 统计 + 编辑状态（始终占位，保证卡片高度一致） */}
-                  <div style={{ marginTop: isMobile ? 8 : 10, display: 'flex', gap: 16, color: '#6b7280', fontSize: 12, alignItems: 'center' }}>
-                    <span><TableOutlined /> {w.table_count ?? 0} 表</span>
-                    <span><TeamOutlined /> {w.member_count ?? 1} 成员</span>
-                    <span
-                      style={{
-                        marginLeft: 'auto',
-                        color: '#f59e0b',
-                        opacity: w.allow_edit !== undefined && !w.allow_edit ? 1 : 0,
-                        transition: 'opacity 0.15s',
-                      }}
-                    ><LockOutlined /> 编辑已关闭</span>
-                  </div>
-                </Card>
-              </Col>
-            )
-          })}
-        </Row>
+        <div className="cn-ws-groups">
+          {starred.length > 0 && (
+            <section className="cn-ws-group" data-testid="workspace-group-starred">
+              <div className="cn-ws-group-head">
+                <StarFilled style={{ color: '#f59e0b' }} />
+                <span>已收藏</span>
+                <span className="cn-ws-group-count">{starred.length}</span>
+              </div>
+              <div className="cn-ws-list">{starred.map(renderRow)}</div>
+            </section>
+          )}
+          {others.length > 0 && (
+            <section className="cn-ws-group" data-testid="workspace-group-others">
+              {starred.length > 0 && (
+                <div className="cn-ws-group-head">
+                  <span>其他工作区</span>
+                  <span className="cn-ws-group-count">{others.length}</span>
+                </div>
+              )}
+              <div className="cn-ws-list">{others.map(renderRow)}</div>
+            </section>
+          )}
+        </div>
       )}
 
       {/* 新建工作区 Modal — 扩展字段；条件渲染避免 Form.useForm 在未挂载时触发 warning */}
@@ -354,6 +431,106 @@ export default function WorkspaceList() {
         }}
         onError={(err) => message.error(err instanceof Error ? err.message : '导入失败')}
       />}
+    </div>
+  )
+}
+
+/** 展开区 —— 描述 / 标签 / 数据表速览 / 更多操作.
+ *
+ * 数据表列表按需拉取（收起态不发请求），queryKey 与 TablesList 对齐可直接命中缓存。
+ */
+function WorkspaceRowDetail({
+  ws, onOpen, onSettings, onBackup,
+}: {
+  ws: WSWithStats
+  onOpen: () => void
+  onSettings: () => void
+  onBackup: () => void
+}) {
+  const navigate = useNavigate()
+  const features = workspaceTypeFeatures(ws.workspace_type)
+
+  const { data: tables = [], isLoading } = useQuery<TableSummary[]>({
+    queryKey: ['workspaces', ws.id, 'tables'],
+    queryFn: () => tableApi.list(ws.id),
+    enabled: features.tables,
+    staleTime: 30_000,
+  })
+
+  const preview = tables.slice(0, PREVIEW_TABLE_LIMIT)
+  const tags = ws.tags ?? []
+
+  return (
+    <div
+      className="cn-ws-detail"
+      data-testid={`workspace-detail-${ws.id}`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="cn-ws-detail-desc">{ws.description || '暂无描述'}</div>
+
+      {tags.length > 0 && (
+        <div className="cn-ws-detail-tags">
+          {tags.map(t => <Tag key={t} style={{ marginInlineEnd: 0 }}>{t}</Tag>)}
+        </div>
+      )}
+
+      {ws.allow_edit === false && (
+        <div className="cn-ws-detail-note">
+          <LockOutlined /> 编辑已关闭：成员只能查看数据，仅所有者可编辑
+        </div>
+      )}
+
+      {features.tables && (
+        <div className="cn-ws-detail-section">
+          <div className="cn-ws-detail-section-head">
+            <span>数据表</span>
+            <span className="cn-ws-detail-section-count">
+              {isLoading ? '加载中…' : `共 ${tables.length} 张`}
+            </span>
+          </div>
+          {!isLoading && tables.length > 0 && (
+            <div className="cn-ws-detail-tables">
+              {preview.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="cn-ws-detail-table"
+                  data-testid={`workspace-detail-table-${t.id}`}
+                  onClick={() => navigate(`/w/${ws.id}/tables/${t.id}`)}
+                >
+                  <TableOutlined />
+                  <span className="cn-ws-detail-table-name">{t.name}</span>
+                  <span className="cn-ws-detail-table-count">{t.record_count ?? 0}</span>
+                </button>
+              ))}
+              {tables.length > preview.length && (
+                <button
+                  type="button"
+                  className="cn-ws-detail-table cn-ws-detail-table--more"
+                  onClick={onOpen}
+                >
+                  查看全部 {tables.length} 张 <ArrowRightOutlined />
+                </button>
+              )}
+            </div>
+          )}
+          {!isLoading && tables.length === 0 && (
+            <Text type="secondary" style={{ fontSize: 12 }}>还没有数据表</Text>
+          )}
+        </div>
+      )}
+
+      <div className="cn-ws-detail-actions">
+        <Button type="primary" size="small" icon={<LoginOutlined />} onClick={onOpen} data-testid={`enter-btn-${ws.id}`}>
+          进入工作区
+        </Button>
+        <Button size="small" icon={<SettingOutlined />} onClick={onSettings} data-testid={`settings-btn-${ws.id}`}>
+          工作区设置
+        </Button>
+        <Button size="small" icon={<DownloadOutlined />} onClick={onBackup} data-testid={`backup-btn-${ws.id}`}>
+          备份导出
+        </Button>
+      </div>
     </div>
   )
 }

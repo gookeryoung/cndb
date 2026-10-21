@@ -4,8 +4,8 @@
  * 验收：
  *   新建工作区成功后，应自动跳转到新工作区的表列表页 `/w/<id>/tables`。
  *
- * 追加覆盖：加载态 / 空列表空态 / 搜索过滤与无匹配空态 / 点击卡片进入工作区 /
- * 置顶请求 / 创建弹窗名称校验 / 创建失败错误提示 / 编辑已关闭标记。
+ * 追加覆盖：加载态 / 空列表空态 / 搜索过滤与无匹配空态 / 点击行进入工作区 /
+ * 收藏请求 / 折叠展开 / 表速览 / 收藏分组 / 创建弹窗名称校验 / 创建失败错误提示。
  */
 
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
@@ -45,6 +45,7 @@ function renderWorkspaceList(initialRoute = '/w') {
           <Routes>
             <Route path="/w" element={<WorkspaceList />} />
             <Route path="/w/:wid/tables" element={<LocationProbe />} />
+            <Route path="/w/:wid/tables/:tid" element={<LocationProbe />} />
             <Route path="/w/:wid/documents" element={<LocationProbe />} />
           </Routes>
         </MemoryRouter>
@@ -138,7 +139,7 @@ describe('WorkspaceList 列表渲染与交互', () => {
     expect(await screen.findByText('还没有工作区，创建一个吧！')).toBeInTheDocument()
   })
 
-  it('搜索关键字过滤卡片，无匹配时显示搜索空态', async () => {
+  it('搜索关键字过滤行，无匹配时显示搜索空态', async () => {
     server.use(
       http.get('/api/v1/workspaces', () =>
         HttpResponse.json([
@@ -167,7 +168,7 @@ describe('WorkspaceList 列表渲染与交互', () => {
     expect(await screen.findByText('没有匹配「不存在关键字」的工作区')).toBeInTheDocument()
   })
 
-  it('点击卡片主体进入该工作区的表列表页', async () => {
+  it('点击行主体进入该工作区的表列表页', async () => {
     server.use(
       http.get('/api/v1/workspaces', () =>
         HttpResponse.json([makeWs({
@@ -177,17 +178,17 @@ describe('WorkspaceList 列表渲染与交互', () => {
     renderWorkspaceList()
 
     expect(await screen.findByText('测试工作区')).toBeInTheDocument()
-    // allow_edit=false 的卡片展示"编辑已关闭"标记
-    expect(screen.getByText('编辑已关闭')).toBeInTheDocument()
+    // allow_edit=false 时收起态只给一个「只读」小标记，避免行内堆文案
+    expect(screen.getByText('只读')).toBeInTheDocument()
 
-    // 点击卡片主体（非底部操作区）→ 跳转
+    // 点击行主体（非图标按钮）→ 跳转
     const user = userEvent.setup()
     await user.click(screen.getByText('测试工作区'))
 
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/tables'))
   })
 
-  it('点击置顶发起 togglePin 请求', async () => {
+  it('点击收藏图标发起 togglePin 请求', async () => {
     let pinBody: Record<string, unknown> | undefined
     server.use(
       http.get('/api/v1/workspaces', () =>
@@ -200,9 +201,114 @@ describe('WorkspaceList 列表渲染与交互', () => {
     renderWorkspaceList()
 
     const user = userEvent.setup()
-    await user.click(await screen.findByText('置顶'))
+    await user.click(await screen.findByTestId('star-btn-10'))
 
     await waitFor(() => expect(pinBody).toMatchObject({ workspace_id: 10 }))
+  })
+})
+
+// ─────────────── 折叠 / 展开 / 收藏分组（GitHub 风格行列表） ───────────────
+
+describe('WorkspaceList 可折叠行列表', () => {
+  it('默认收起：展开图标可访问属性为 false，详情与「更多操作」不渲染', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([makeWs({ id: 10, name: '测试工作区' })])),
+    )
+    renderWorkspaceList()
+
+    const toggle = await screen.findByTestId('workspace-expand-10')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByTestId('workspace-detail-10')).not.toBeInTheDocument()
+    // 收起态只暴露收藏 + 展开两个图标按钮，设置 / 备份等入口藏进展开区
+    expect(screen.queryByTestId('settings-btn-10')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('backup-btn-10')).not.toBeInTheDocument()
+    expect(screen.getByTestId('star-btn-10')).toBeInTheDocument()
+  })
+
+  it('点击展开显示描述、标签与更多操作，再次点击收起', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([makeWs({
+          id: 10, name: '测试工作区', description: '核心业务数据', tags: ['研发', '核心'],
+        })])),
+    )
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    const toggle = await screen.findByTestId('workspace-expand-10')
+    await user.click(toggle)
+
+    expect(await screen.findByTestId('workspace-detail-10')).toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('核心业务数据')).toBeInTheDocument()
+    expect(screen.getByText('研发')).toBeInTheDocument()
+    expect(screen.getByTestId('settings-btn-10')).toBeInTheDocument()
+    expect(screen.getByTestId('backup-btn-10')).toBeInTheDocument()
+
+    await user.click(toggle)
+    await waitFor(() => expect(screen.queryByTestId('workspace-detail-10')).not.toBeInTheDocument())
+  })
+
+  it('展开后加载数据表速览，点击表名直达该表', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([makeWs({ id: 10, name: '测试工作区' })])),
+      http.get('/api/v1/workspaces/10/tables', () =>
+        HttpResponse.json([
+          { id: 100, name: '客户表', record_count: 12 },
+          { id: 101, name: '订单表', record_count: 3 },
+        ])),
+    )
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('workspace-expand-10'))
+
+    expect(await screen.findByTestId('workspace-detail-table-100')).toHaveTextContent('客户表')
+    await user.click(screen.getByTestId('workspace-detail-table-101'))
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/tables/101'))
+  })
+
+  it('文档类工作区展开后不请求数据表，仅保留操作入口', async () => {
+    let tableRequests = 0
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([makeWs({ id: 10, name: '纯文档区', workspace_type: 'doc' })])),
+      http.get('/api/v1/workspaces/10/tables', () => {
+        tableRequests += 1
+        return HttpResponse.json([])
+      }),
+    )
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('workspace-expand-10'))
+    await screen.findByTestId('workspace-detail-10')
+
+    expect(tableRequests).toBe(0)
+    expect(screen.queryByTestId('workspace-detail-table-100')).not.toBeInTheDocument()
+  })
+
+  it('收藏的工作区分成「已收藏」组并排在最前', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([
+          makeWs({ id: 10, name: '普通工作区' }),
+          makeWs({ id: 11, name: '收藏工作区', pinned: true }),
+        ])),
+    )
+    renderWorkspaceList()
+
+    const starred = await screen.findByTestId('workspace-group-starred')
+    expect(within(starred).getByText('收藏工作区')).toBeInTheDocument()
+    expect(within(starred).queryByText('普通工作区')).not.toBeInTheDocument()
+
+    const others = screen.getByTestId('workspace-group-others')
+    expect(within(others).getByText('普通工作区')).toBeInTheDocument()
+    expect(screen.getByTestId('star-btn-11')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('star-btn-10')).toHaveAttribute('aria-pressed', 'false')
   })
 })
 
