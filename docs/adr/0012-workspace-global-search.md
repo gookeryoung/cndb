@@ -12,7 +12,7 @@ Related: `src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/plugins/wor
 | 参考 GitHub，顶部增加搜索区域 | 顶栏 `MainLayout` 新增 `GlobalSearch`：左侧范围选择器 + 输入框 + `Ctrl K` 提示，聚焦后向下展开分组结果面板，交互对齐 GitHub header 搜索框 |
 | 默认搜索工作区范围的内容 | 默认 `scope=all`：一次请求同时返回文档（FTS5）与数据表（表名 / 表内行）两路结果，与当前所在页面无关 |
 | 区分数据表搜索与文档搜索的 UI | 范围选择器三档 `工作区 / 数据表 / 文档`（GitHub 的 scope 限定词等价物），结果面板按「数据表 / 表内数据 / 文档」分组并带命中数徽标 |
-| 数据表默认只搜索当前激活视图的内容 | 表上下文（`/w/:wid/tables/:tid` 且 URL 带 `?view=`）时前端下发 `table_id` + `view_id`，后端把该视图的 `filters` 按原 AND/OR 语义作为前置条件，再与关键词条件 AND 组合；面板底部回显「表名 · 视图「名称」」 |
+| 数据表范围只搜索当前激活视图的内容 | 「数据表」范围（`scope=tables`）下表上下文（`/w/:wid/tables/:tid` 且 URL 带 `?view=`）时前端下发 `table_id` + `view_id`，后端把该视图的 `filters` 按原 AND/OR 语义作为前置条件，再与关键词条件 AND 组合；面板底部回显「表名 · 视图「名称」」。「工作区」范围（`scope=all`）不收敛，覆盖全部可读表（ADR 0015） |
 
 ## Context
 
@@ -32,7 +32,7 @@ Related: `src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/plugins/wor
 - **I1 权限单一**：文档侧沿用 `search_documents` 的可见性口径（非管理员搜不到他人未发布内容）；数据表侧沿用 `preload_table_access` + `list_rows(row_scope)`，不新增旁路。
 - **I2 视图语义保留**：视图 `filter_type=OR` 时组内按 OR，外层与关键词恒 AND；视图不可见 / 不属于该表 / 参数失效时**退化为整表检索**，检索不因坏参数 500。
 - **I3 存量零迁移**：不新增表 / 列 / 索引，不改文档 FTS schema。
-- **I4 成本可控**：无视图上下文时最多扫描 `MAX_TABLES_SCAN=8` 张表、每表 3 行、总行命中 ≤ 20；单表异常不影响整体结果。
+- **I4 成本可控**：每表 3 行、总行命中 ≤ 20 的展示预算不变；工作区范围覆盖全部可读表，结果缓存与失效策略见 ADR 0015。
 - **I5 入口唯一**：模块内的「搜索 / 查找」入口收敛到顶栏一处 + 编辑器快捷键。
 
 ## Decision
@@ -49,7 +49,7 @@ Related: `src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/plugins/wor
 
 `services/search.py` 内：
 
-1. `_readable_tables` 取工作区可读表；带 `table_id` 时目标收敛到该表，否则限量扫描。
+1. `_readable_tables` 取工作区可读表；`scope=tables` 带 `table_id` 时收敛到该表，工作区范围覆盖全部可读表（ADR 0015）。
 2. `_view_scope_filters` 读视图 `filters` / `filter_type`，视图不可见或不属于该表 → 空条件（整表）。
 3. `_combine_filters` 生成 `[{__or__|__and__: 视图条件}, {field_name: "$query", value: 关键词}]`，外层 `filter_logic="AND"`。
 4. `list_rows(... limit=3, db, user)` —— 行级权限、字段隐藏、软删除排除与网格完全同口径。
@@ -80,11 +80,11 @@ Related: `src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/plugins/wor
 ## 交接（会话结束更新）
 
 - 当前阶段：P0-P2 全部落地（含 CHANGELOG 回填）
-- 已完成：统一检索端点（文档 FTS + 数据表表名/行，视图范围收敛）、顶栏 GitHub 风格搜索区（范围三档 + 分组面板 + 快捷键）、移动端抽屉、移除文档页与编辑器两处旧入口
+- 已完成：统一检索端点（文档 FTS + 数据表表名/行；数据表范围按视图收敛、工作区范围全表覆盖与结果缓存，见 ADR 0015）、顶栏 GitHub 风格搜索区（范围三档 + 分组面板 + 快捷键）、移动端抽屉、移除文档页与编辑器两处旧入口
 - 下一步：无（本 ADR 范围内交付完毕）；若要做「跨工作区全局搜索」或「检索结果独立页」，另立 ADR（当前面板只取前 10~20 条，不做分页）
 - 已知坑：
-  - 数据表行检索是**逐表 LIKE**（无全文索引），表多且行多时是线性成本；已用 `MAX_TABLES_SCAN=8` / `ROWS_PER_TABLE=3` 封顶，超大工作区若要全量覆盖需引入 FTS 索引
-  - 视图收敛只在**表上下文且 URL 带 `?view=`** 时生效；不带 view 参数视为整表检索（面板底部显示「表名 · 整表」）
+  - 数据表行检索是**逐表 LIKE**（无全文索引），表多且行多时是线性成本；已用 `ROWS_PER_TABLE=3` / 总行命中 20 封顶，并以 15s 结果缓存降低重复查询成本；更大规模按 ADR 0015 P1/P2 演进
+  - 视图收敛只在「数据表」范围 + 表上下文且 URL 带 `?view=` 时生效；工作区范围不收敛，数据表范围不带 view 参数视为整表检索（面板底部显示「表名 · 整表」）
   - 行命中只跳到表网格页，**不定位到具体行**（网格暂无 `?row=` 深链参数）
   - `documentsApi.search` 仍保留（后端端点未删除），当前无前端调用方
-- 最近一次全绿：`make check-fast` + 定向测试（后端 `tests/test_workspace_search.py` 11 例、前端 GlobalSearch 6 例与文档页 201 例）2026-10-21
+- 最近一次全绿：`make check-fast` + 定向测试（后端 `tests/test_workspace_search.py` 17 例、前端 GlobalSearch 7 例与文档页 201 例）2026-10-21

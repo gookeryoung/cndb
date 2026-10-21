@@ -243,7 +243,7 @@ export default function MainLayout() {
 
   // ── 顶栏工作区搜索 ──
   // 数据表侧的检索范围随当前激活视图收敛：表上下文 + ?view= 时把 table_id / view_id 带下去，
-  // 后端据此把行检索限制在该视图的筛选范围内。
+  // 后端仅在「数据表」范围应用视图收敛；「工作区」范围覆盖全部可读表（ADR 0015）。
   const [searchMobileOpen, setSearchMobileOpen] = useState(false)
   const viewParam = Number(searchParams.get('view'))
   const searchContext = inTableContext && tid

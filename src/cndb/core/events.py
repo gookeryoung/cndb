@@ -171,7 +171,7 @@ def invalidate_for_event(action: str, workspace_id: int | None) -> int:
     if workspace_id is None or not action:
         return 0
     try:
-        from cndb.core.cache import cache_key, list_cache
+        from cndb.core.cache import cache_key, list_cache, search_cache
 
         cleared = 0
         if action.startswith(("record.", "row_rule.", "datasource.")):
@@ -180,6 +180,9 @@ def invalidate_for_event(action: str, workspace_id: int | None) -> int:
             cleared += list_cache.clear(cache_key("tables", workspace_id))
         if action.startswith("document."):
             cleared += list_cache.clear(cache_key("doc-tree", workspace_id))
+        # 顶栏搜索会同时索引文档与数据表：任一侧变更都失效该工作区的搜索结果
+        if action.startswith(("record.", "table.", "row_rule.", "datasource.", "document.")):
+            cleared += search_cache.clear(cache_key("search", workspace_id))
         return cleared
     except Exception:
         logger.debug("事件驱动缓存失效失败 action=%s", action, exc_info=True)

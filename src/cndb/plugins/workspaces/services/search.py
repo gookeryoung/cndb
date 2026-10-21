@@ -3,11 +3,11 @@
 顶栏搜索框的唯一数据源：一次请求同时给出「数据表」与「文档」两路结果，
 由前端按 scope 分组渲染。
 
-数据表侧口径（默认按视图收敛）：
-- 调用方带 ``table_id`` + ``view_id``（当前激活的表与视图）时，**只在当前视图范围内检索**：
-  视图的 filters 以原逻辑（AND / OR）作为前置条件，再与关键词条件 AND 组合；
-- 未带视图上下文时，退化为「工作区全部可读表」，逐表限量扫描；
-- 表名 / 描述命中的表单独成一项（前端「数据表」分组里的表级结果）。
+数据表侧口径：
+- ``scope=all``（工作区）：扫描**全部可读表**，不按当前视图收敛（当前表只做排序优先）；
+- ``scope=tables``（数据表）：有表上下文时收敛到该表，并按激活视图收敛；
+  无表上下文时扫描全部可读表；
+- 结果走进程内短 TTL 缓存（见 ADR 0015），写路径通过统一事件 / 批量写入口失效。
 """
 
 from __future__ import annotations
@@ -16,11 +16,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-#: 单次检索最多扫描的数据表数（避免大工作区把一次搜索放大成 N 次动态表查询）
-MAX_TABLES_SCAN = 8
+from cndb.core.cache import cache_key, search_cache
+
+#: 搜索结果缓存 TTL（秒）：单行写由事件即时失效，批量写用短 TTL 兜底
+SEARCH_CACHE_TTL_SECONDS = 15
 #: 每张表最多返回几行命中
 ROWS_PER_TABLE = 3
-#: 无视图上下文时，表名命中与行命中共用一个上限
+#: 一次检索最多返回的行命中（面板展示预算）
 MAX_ROWS_TOTAL = 20
 
 
@@ -164,14 +166,58 @@ def search_workspace(
     view_id: int | None = None,
     limit: int = 10,
 ) -> dict[str, Any]:
-    """统一检索入口.
+    """统一检索入口（带进程内结果缓存）.
 
     Args:
         keyword: 关键词（已去空白，非空）。
-        scope: ``all`` / ``documents`` / ``tables`` —— 决定跑哪几路。
-        table_id / view_id: 当前激活的表与视图；给定时数据表侧只在该视图范围内检索。
+        scope: ``all`` / ``documents`` / ``tables``。
+        table_id: 当前激活表；仅 ``scope=tables`` 用于收敛，``scope=all`` 仅排序优先。
+        view_id: 当前激活视图；仅 ``scope=tables`` 生效。
         limit: 文档与表级结果各自的上限。
     """
+    # scope=all 时 view_id 不参与计算，键里归一为 0，避免无意义的缓存分片
+    effective_view_id = view_id if scope == "tables" else None
+    key = cache_key(
+        "search",
+        workspace_id,
+        getattr(user, "id", 0),
+        scope,
+        table_id or 0,
+        effective_view_id or 0,
+        limit,
+        keyword,
+    )
+    cached = search_cache.get(key)
+    if cached is not None:
+        return cached
+
+    result = _search_workspace(
+        db,
+        workspace_id,
+        user,
+        keyword,
+        scope=scope,
+        table_id=table_id,
+        view_id=effective_view_id,
+        limit=limit,
+    )
+    # 空结果同样缓存：关键词无命中是全表扫描的最坏情况，最需要重用
+    search_cache.set(key, result, SEARCH_CACHE_TTL_SECONDS)
+    return result
+
+
+def _search_workspace(
+    db: Session,
+    workspace_id: int,
+    user: Any,
+    keyword: str,
+    *,
+    scope: str,
+    table_id: int | None,
+    view_id: int | None,
+    limit: int,
+) -> dict[str, Any]:
+    """实际检索（无缓存）."""
     result: dict[str, Any] = {
         "query": keyword,
         "documents": [],
@@ -184,7 +230,11 @@ def search_workspace(
         result["documents"] = _search_documents(db, workspace_id, user, keyword, limit=limit)
 
     if scope in ("all", "tables"):
-        result.update(_search_tables(db, workspace_id, user, keyword, table_id=table_id, view_id=view_id, limit=limit))
+        result.update(
+            _search_tables(
+                db, workspace_id, user, keyword, table_id=table_id, view_id=view_id, limit=limit, scope=scope
+            )
+        )
 
     return result
 
@@ -232,14 +282,22 @@ def _search_tables(
     table_id: int | None,
     view_id: int | None,
     limit: int,
+    scope: str = "tables",
 ) -> dict[str, Any]:
     tables = _readable_tables(db, workspace_id, user)
     if not tables:
         return {"tables": [], "rows": [], "view": None}
 
-    # 当前激活表（表上下文）：数据表侧收敛到该表；否则按表名命中 + 限量全表扫描
     active = next((t for t in tables if table_id is not None and t.id == table_id), None)
-    targets = [active] if active is not None else tables[:MAX_TABLES_SCAN]
+    if scope == "tables" and active is not None:
+        # 数据表范围：收敛到当前表，并按当前激活视图的筛选范围检索
+        targets = [active]
+        scoped_view_id = view_id
+    else:
+        # 工作区范围（或无表上下文）：覆盖全部可读表；当前表只排在最前，不做视图收敛，
+        # 否则「没打开某个视图」时视图外的内容会整体搜不到（ADR 0015）
+        targets = ([active] + [t for t in tables if t is not active]) if active is not None else tables
+        scoped_view_id = None
 
     table_hits = [
         {"id": t.id, "name": t.name, "description": t.description or ""}
@@ -255,8 +313,8 @@ def _search_tables(
             table,
             keyword,
             user=user,
-            # 只有当前激活表才按视图收敛；顺带扫描的其他表没有视图上下文
-            view_id=view_id if active is not None else None,
+            # 只有「数据表范围 + 当前激活表」才按视图收敛
+            view_id=scoped_view_id if table is active else None,
         )
         if name:
             view_name = name
@@ -264,15 +322,14 @@ def _search_tables(
         if len(row_hits) >= MAX_ROWS_TOTAL:
             break
 
-    if active is not None:
-        view_scope: dict[str, Any] | None = {
+    view_scope: dict[str, Any] | None = None
+    if scope == "tables" and active is not None:
+        view_scope = {
             "id": view_id if view_name else None,
             "name": view_name,
             "table_id": active.id,
             "table_name": active.name,
         }
-    else:
-        view_scope = None
 
     return {
         "tables": table_hits,

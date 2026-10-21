@@ -70,8 +70,11 @@ def _rows_url(ws: Workspace, table: DataTable) -> str:
     return f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records"
 
 
-def _add_row(client, ws, table, auth, name: str, status: str) -> None:
-    r = client.post(_rows_url(ws, table), json={"values": {"名称": name, "状态": status}}, headers=auth)
+def _add_row(client, ws, table, auth, name: str, status: str | None = None) -> None:
+    values = {"名称": name}
+    if status is not None:
+        values["状态"] = status
+    r = client.post(_rows_url(ws, table), json={"values": values}, headers=auth)
     assert r.status_code in (200, 201), r.text
 
 
@@ -221,3 +224,113 @@ class TestAccess:
 
         resp = client.get(f"/api/v1/workspaces/{ws.id}/search", params={"q": "华东"}, headers=headers)
         assert resp.status_code == 403
+
+
+def _make_table(db, ws: Workspace, owner: User, name: str) -> DataTable:
+    """建一张只有「名称」文本列的空表，返回元数据对象."""
+    dt = DataTable(workspace_id=ws.id, name=name, owner_id=owner.id)
+    dt.ensure_db_name()
+    db.add(dt)
+    db.flush()
+    df = DataField(table_id=dt.id, name="名称", field_type="text", order=0)
+    df.ensure_db_name()
+    db.add(df)
+    db.commit()
+    db.refresh(dt)
+    ddl.create_table(db.get_bind(), dt)
+    return dt
+
+
+class TestCoverageAndCache:
+    """工作区范围的全表覆盖与结果缓存（ADR 0015）."""
+
+    def test_workspace_scope_scans_beyond_first_eight_tables(self, client, ws, table, auth, db):
+        """第 9 张及以后的数据表也要被扫描（旧实现只扫前 8 张，永远搜不到）."""
+        owner = db.get(User, table.owner_id)
+        for i in range(9):
+            _make_table(db, ws, owner, f"填充表{i}")
+        last = _make_table(db, ws, owner, "最后一张表")
+        _add_row(client, ws, last, auth, "深表命中词")
+
+        data = _search(client, ws, auth, "深表命中词", scope="all")
+        assert [r["table_id"] for r in data["rows"]] == [last.id]
+
+    def test_workspace_scope_ignores_view_filter_and_table(self, client, ws, table, auth, db):
+        """工作区范围不按当前表 / 视图收敛：视图外的行和其他表的行都要命中."""
+        other = _make_table(db, ws, db.get(User, table.owner_id), "供应商")
+        _add_row(client, ws, table, auth, "华东客户甲", "进行中")
+        _add_row(client, ws, table, auth, "华东客户乙", "已归档")
+        _add_row(client, ws, other, auth, "华东供应商甲")
+        view = _add_view(client, ws, table, auth, "进行中客户", [{"field_name": "状态", "op": "=", "value": "进行中"}])
+
+        data = _search(
+            client,
+            ws,
+            auth,
+            "华东",
+            scope="all",
+            table_id=table.id,
+            view_id=view["id"],
+        )
+        assert sorted(r["title"] for r in data["rows"]) == ["华东供应商甲", "华东客户乙", "华东客户甲"]
+        assert data["view"] is None
+
+    def test_table_scope_still_converges_to_active_view(self, client, ws, table, auth, db):
+        """数据表范围保持 ADR 0012 口径：只搜当前表，并按激活视图过滤."""
+        other = _make_table(db, ws, db.get(User, table.owner_id), "供应商")
+        _add_row(client, ws, table, auth, "华东客户甲", "进行中")
+        _add_row(client, ws, table, auth, "华东客户乙", "已归档")
+        _add_row(client, ws, other, auth, "华东供应商甲")
+        view = _add_view(client, ws, table, auth, "进行中客户", [{"field_name": "状态", "op": "=", "value": "进行中"}])
+
+        data = _search(
+            client,
+            ws,
+            auth,
+            "华东",
+            scope="tables",
+            table_id=table.id,
+            view_id=view["id"],
+        )
+        assert [r["title"] for r in data["rows"]] == ["华东客户甲"]
+        assert data["view"]["name"] == "进行中客户"
+
+    def test_repeated_query_hits_result_cache(self, client, ws, table, auth, monkeypatch):
+        """相同关键词 + 相同范围只应真正扫表一次."""
+        from cndb.plugins.workspaces.services import search as search_service
+
+        _add_row(client, ws, table, auth, "华东客户甲", "进行中")
+        calls = {"n": 0}
+        original = search_service._search_rows_in_table
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(search_service, "_search_rows_in_table", counting)
+        _search(client, ws, auth, "华东", scope="all")
+        first = calls["n"]
+        assert first > 0
+
+        _search(client, ws, auth, "华东", scope="all")
+        assert calls["n"] == first
+
+    def test_row_create_invalidates_cache(self, client, ws, table, auth):
+        """单行创建走 record.* 事件，搜索结果缓存应即时失效."""
+        assert _search(client, ws, auth, "新增命中", scope="all")["rows"] == []
+
+        _add_row(client, ws, table, auth, "新增命中", "进行中")
+
+        data = _search(client, ws, auth, "新增命中", scope="all")
+        assert [r["title"] for r in data["rows"]] == ["新增命中"]
+
+    def test_bulk_create_invalidates_cache(self, client, ws, table, auth, db):
+        """批量导入不写 audit，由写函数显式失效缓存."""
+        from cndb.plugins.tables.services.core import records as rec
+
+        assert _search(client, ws, auth, "批量命中", scope="all")["rows"] == []
+
+        rec.bulk_create(db.get_bind(), table, [{"名称": "批量命中"}], db=db)
+
+        data = _search(client, ws, auth, "批量命中", scope="all")
+        assert [r["title"] for r in data["rows"]] == ["批量命中"]

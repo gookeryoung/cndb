@@ -1,7 +1,8 @@
 /** 工作区统一检索 API — /api/v1/workspaces/{wid}/search
  *
  * 顶栏搜索框的唯一数据源：一次请求返回「数据表」与「文档」两路结果。
- * 数据表侧默认可带 table_id / view_id，把检索范围收敛到当前激活视图。
+ * `scope=all` 覆盖整个工作区；只有 `scope=tables` 才把 table_id / view_id
+ * 用于收敛当前表与激活视图（ADR 0015）。
  */
 
 import api from './client'
@@ -31,7 +32,7 @@ export interface SearchRowHit {
   snippet: string
 }
 
-/** 数据表侧的检索范围说明：有 name 表示已按该视图筛选 */
+/** 数据表侧的检索范围说明：有 name 表示已按该视图筛选（仅数据表范围回显） */
 export interface SearchViewScope {
   id: number | null
   name: string

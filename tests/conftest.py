@@ -65,13 +65,15 @@ def _clear_process_caches():
     测试共用同一个内存库，workspace/table 等 id 会在不同用例间重复，
     而缓存键正是基于这些 id —— 不清会跨用例串数据（曾导致 filter/sort 用例偶发失败）。
     """
-    from cndb.core.cache import list_cache, meta_cache
+    from cndb.core.cache import list_cache, meta_cache, search_cache
 
     list_cache.clear()
     meta_cache.clear()
+    search_cache.clear()
     yield
     list_cache.clear()
     meta_cache.clear()
+    search_cache.clear()
 
 
 @pytest.fixture(scope="session", autouse=True)

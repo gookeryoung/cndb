@@ -204,10 +204,13 @@ list_cache = TTLCache(max_entries=512, name="list")
 # 统计/元信息类（较长 TTL，由调用方显式失效）
 meta_cache = TTLCache(max_entries=256, name="meta")
 
+# 顶栏工作区搜索结果（短 TTL：单行写由事件即时失效，批量写显式失效，TTL 兜底）
+search_cache = TTLCache(max_entries=256, name="search")
+
 
 def invalidate_all(prefix: str | None = None) -> int:
     """失效所有预置缓存（可按前缀），供写路径或管理接口调用."""
-    return list_cache.clear(prefix) + meta_cache.clear(prefix)
+    return list_cache.clear(prefix) + meta_cache.clear(prefix) + search_cache.clear(prefix)
 
 
 __all__ = [
@@ -220,4 +223,5 @@ __all__ = [
     "invalidate_all",
     "list_cache",
     "meta_cache",
+    "search_cache",
 ]

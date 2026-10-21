@@ -274,7 +274,7 @@ export const handlers = [
     return HttpResponse.json({ items, total: items.length, query: q })
   }),
   // 工作区统一检索（顶栏搜索框）：文档按标题/摘要命中；数据表按表名 + 表内行值命中。
-  // scope 只影响对应分组；带 view_id 时回显 view 说明（后端「默认只搜激活视图」的契约）。
+  // scope 只影响对应分组；仅「数据表」范围带 view_id 时回显 view 说明（ADR 0015）。
   http.get('/api/v1/workspaces/:wid/search', ({ request }) => {
     const url = new URL(request.url)
     const q = (url.searchParams.get('q') ?? '').trim()
@@ -310,7 +310,7 @@ export const handlers = [
           title: String(r.姓名 ?? ''),
           snippet: String(r.姓名 ?? ''),
         }))
-    const view = tableId
+    const view = tableId && scope === 'tables'
       ? {
         id: viewId ? Number(viewId) : null,
         name: viewId ? (mockViews.find(v => v.id === Number(viewId))?.name ?? '') : '',
