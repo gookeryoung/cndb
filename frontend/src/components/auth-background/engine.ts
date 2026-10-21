@@ -1,16 +1,14 @@
 /** 认证页背景引擎：唯一生命周期入口（ADR 0016 §2 / I2 / I4 / I5 / I7）.
  *
- * 职责：DPR 与尺寸、单 rAF 循环、可见性暂停、resize 节流、桌面视差、dispose。
- * 变体只负责「拿到 FrameContext 后画什么」，不碰定时器与监听。
+ * 职责：DPR 与尺寸、单 rAF 循环、可见性暂停、resize 节流、桌面指针扰动、dispose。
+ * 流场动效只负责「拿到 FrameContext 后画什么」，不碰定时器与监听。
  */
 
+import { createFlowField } from './flowfield'
 import { readPalette } from './palette'
-import type { AuthBackgroundVariant, FrameContext, Palette } from './types'
-import { createVariant } from './variants'
+import type { FrameContext, Palette } from './types'
 
 export interface MountAuthBackgroundOptions {
-  variant: AuthBackgroundVariant
-  isDark: boolean
   isMobile: boolean
   reducedMotion: boolean
 }
@@ -37,7 +35,7 @@ export function mountAuthBackground(
   if (!palette) return noop
   const colors: Palette = palette
 
-  const variant = createVariant(options.variant, options.isMobile)
+  const variant = createFlowField(options.isMobile)
   const pointer = { x: 0, y: 0 }
   const frameInterval = options.isMobile ? MOBILE_FRAME_INTERVAL : 0
 
@@ -54,7 +52,6 @@ export function mountAuthBackground(
       width,
       height,
       palette: colors,
-      isDark: options.isDark,
       isMobile: options.isMobile,
       pointer,
     }

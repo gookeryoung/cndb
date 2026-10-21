@@ -28,6 +28,7 @@ test.describe("匿名（chromium-anon only）", () => {
     await page.goto("/login");
     await expect(page.locator(".auth-bg-canvas")).toBeVisible();
     await expect(page.locator(".auth-bg-layer")).toHaveAttribute("aria-hidden", "true");
+    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("data-effect", "flowfield");
     await expect(page.locator(".auth-bg-layer")).toHaveCSS("pointer-events", "none");
 
     await page.getByPlaceholder("用户名或邮箱").click();

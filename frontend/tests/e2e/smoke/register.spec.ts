@@ -35,6 +35,7 @@ test.describe("注册流程（仅 chromium-anon）", () => {
 
     await expect(page.locator(".auth-bg-canvas")).toBeVisible()
     await expect(page.locator(".auth-bg-layer")).toHaveAttribute("aria-hidden", "true")
+    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("data-effect", "flowfield")
     await page.getByPlaceholder("用户名").click()
     await expect(page.getByPlaceholder("用户名")).toBeFocused()
   })

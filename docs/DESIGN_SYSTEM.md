@@ -159,6 +159,6 @@
 | --- | --- | --- |
 | 行内 style 收敛 | 1276 处 | 优先收敛「重复出现 ≥3 次」的样式块为 `.cn-*` 类，用 `pnpm lint` + review 拦新增 |
 | `[style*="..."]` 兜底 | 281 条 | 每修一个组件就删掉对应兜底；目标是把深色补丁缩到「第三方组件」范围 |
-| 颜色字面量 | CSS 内约 300 处 | 只保留 `body.theme-*` 变量定义块里的字面量，其余换 `var(--cn-*)` |
+| 颜色字面量 | CSS 内约 300 处 | 只保留 `body.theme-*` 变量定义块与认证页固定舞台 `:root` 块（`--cn-auth-bg` / `--cn-auth-ink` / `--cn-auth-accent` / `--cn-auth-accent-alt`，不随主题）里的字面量，其余换 `var(--cn-*)` |
 | 字号档位 | 已统一 | 行内 `fontSize: 11/12/13` 仍散落，新增代码请用 `TEXT.*` 常量 |
 | 空态/加载态 | 三套写法 | 统一 `.cn-state`，同时去掉各页 `padding: 24 + textAlign: center` |
