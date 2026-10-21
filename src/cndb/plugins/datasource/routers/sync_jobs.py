@@ -17,12 +17,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
+from cndb.core.crypto import decrypt_secrets
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob, DatasourceSyncRun, RunTrigger
 from cndb.plugins.datasource.providers.base import ProviderError
+from cndb.plugins.datasource.providers.llm_prompt import test_llm_connection, validate_llm_request_spec
 from cndb.plugins.datasource.providers.registry import get_provider
 from cndb.plugins.datasource.schemas import (
+    ConnectionTestRequest,
+    ConnectionTestResponse,
     PreviewRequest,
     PreviewResponse,
     RunResponse,
@@ -34,7 +38,12 @@ from cndb.plugins.datasource.schemas import (
     SyncRunOut,
 )
 from cndb.plugins.datasource.services.cursor import CursorConfig
-from cndb.plugins.datasource.services.runner import execute_job, preview_job, validate_request_spec
+from cndb.plugins.datasource.services.runner import (
+    execute_job,
+    preview_job,
+    request_spec_from_payload,
+    validate_request_spec,
+)
 from cndb.plugins.datasource.services.schedule import ScheduleConfig
 from cndb.plugins.datasource.services.scheduler import LEASE_TTL_SECONDS, acquire_lease, release_lease
 from cndb.plugins.tables.models import DataField, DataTable
@@ -73,6 +82,7 @@ def _validate_job_config(
     cursor: dict[str, Any],
     schedule: dict[str, Any],
     match_keys: list[str],
+    entrant_param: str | None = None,
     session_id: int | None = None,
 ) -> None:
     """创建 / 更新时逐项校验，把配置错误挡在运行期之前（错误信息直接给前端）."""
@@ -81,6 +91,13 @@ def _validate_job_config(
         validate_request_spec(request_spec)
         CursorConfig.from_dict(cursor)
         ScheduleConfig.from_dict(schedule)
+        if provider == "llm_prompt":
+            validate_llm_request_spec(
+                request_spec,
+                entrant_param=entrant_param,
+                schedule=schedule,
+                match_keys=match_keys,
+            )
     except (ProviderError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -139,6 +156,7 @@ def create_sync_job(
         cursor=payload.cursor,
         schedule=payload.schedule,
         match_keys=payload.match_keys,
+        entrant_param=payload.entrant_param,
         session_id=payload.session_id,
     )
     job = DatasourceSyncJob(
@@ -197,6 +215,7 @@ def update_sync_job(
     cursor = payload.cursor if payload.cursor is not None else (job.cursor or {})
     schedule = payload.schedule if payload.schedule is not None else (job.schedule or {})
     match_keys = payload.match_keys if payload.match_keys is not None else (job.match_keys or [])
+    entrant_param = payload.entrant_param if payload.entrant_param is not None else job.entrant_param
     table_id = payload.table_id if payload.table_id is not None else job.table_id
     session_id = payload.session_id if payload.session_id is not None else job.session_id
     _validate_job_config(
@@ -208,6 +227,7 @@ def update_sync_job(
         cursor=cursor,
         schedule=schedule,
         match_keys=match_keys,
+        entrant_param=entrant_param,
         session_id=session_id,
     )
 
@@ -252,6 +272,45 @@ def delete_sync_job(
 
 
 # ── 运行 / 预览 / 历史 ───────────────────────────
+
+
+@router.post("/test-connection", response_model=ConnectionTestResponse)
+def test_connection(
+    workspace_id: int,
+    payload: ConnectionTestRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ConnectionTestResponse:
+    """大模型 API 连通测试：用未保存的配置发一次最小请求，不落库、不写运行记录."""
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
+    try:
+        validate_request_spec(payload.request_spec)
+        spec = request_spec_from_payload(payload.request_spec)
+    except (ProviderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    session: DatasourceSession | None = None
+    if payload.session_id is not None:
+        session = db.get(DatasourceSession, payload.session_id)
+        if session is None or session.workspace_id != workspace_id:
+            raise HTTPException(status_code=400, detail=f"凭证会话不存在: {payload.session_id}")
+
+    try:
+        secrets = decrypt_secrets(session.secrets) if session is not None else {}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = test_llm_connection(
+        spec,
+        api_key=secrets.get("api_key", ""),
+        session_headers=session.headers if session is not None else None,
+    )
+    return ConnectionTestResponse(
+        ok=result.ok,
+        latency_ms=result.latency_ms,
+        model=result.model,
+        message=result.message,
+    )
 
 
 @router.post("/sync-jobs/{job_id}/run", response_model=RunResponse)

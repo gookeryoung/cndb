@@ -96,6 +96,9 @@ class RequestSpec:
     timeout: float = DEFAULT_TIMEOUT
     paging: PagingSpec = field(default_factory=PagingSpec)
     time_window: TimeWindowSpec = field(default_factory=TimeWindowSpec)
+    # 大模型专用声明（其它 provider 忽略）：提示词与模型参数，见 ADR 0014
+    prompt: Mapping[str, Any] = field(default_factory=dict)
+    llm: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.url_template:
@@ -156,6 +159,8 @@ class RequestPlan:
     page: int | None = None
     window_start: str | None = None
     window_end: str | None = None
+    # 响应元信息（模型名 / token 用量等），由 provider 的响应处理器写入，随运行记录留痕
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def normalize_field_mapping(
