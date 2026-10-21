@@ -25,8 +25,10 @@ from cndb.plugins.datasource.providers.http_json import HttpJsonProvider
 from cndb.plugins.datasource.services.normalize import NormalizeResult, apply_field_mapping
 
 # 向导预填用的请求模板：{symbol} 由 entrant_param 注入，{start}/{end} 由游标区间注入
+# 域名用 proxy.finance.qq.com：web.ifzq / ifzq 对脚本流量返回 WAF 501 挑战页（同一接口的代理域名不拦）
+# 该接口语义为「截至 end 的最近 320 根」，故 time_window.chunk_days 应 >= 320（约 220 交易日/窗口）
 TENCENT_KLINE_URL_TEMPLATE = (
-    "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,{start},{end},320,qfq"
+    "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get?param={symbol},day,{start},{end},320,qfq"
 )
 
 TENCENT_KLINE_PARAMS_SCHEMA: dict[str, Any] = {
@@ -54,6 +56,8 @@ TENCENT_KLINE_PARAMS_SCHEMA: dict[str, Any] = {
 # 单条 K 线的字段顺序（腾讯固定）
 _KLINE_FIELDS = ("trade_date", "open", "close", "high", "low", "volume")
 _SERIES_KEYS = ("qfqday", "hfqday", "day")
+# 腾讯成交量单位是「手」，baostock / 新浪是「股」；统一成股，避免同表口径打架
+_LOT_TO_SHARE = 100
 
 
 class TencentKlineProvider(HttpJsonProvider):
@@ -63,6 +67,7 @@ class TencentKlineProvider(HttpJsonProvider):
     label = "腾讯 A 股日线（前 / 后复权）"
     params_schema: Mapping[str, Any] = TENCENT_KLINE_PARAMS_SCHEMA
     supports_paging = False
+    uses_custom_parse = True
 
     @override
     def parse(self, text: str, job: SyncJobSpec) -> list[dict[str, Any]]:
@@ -131,7 +136,16 @@ def _row_from_item(symbol: str, item: Any) -> dict[str, Any] | None:
     row: dict[str, Any] = {"symbol": symbol}
     for index, name in enumerate(_KLINE_FIELDS):
         row[name] = item[index] if index < len(item) else None
+    row["volume"] = _volume_in_shares(row.get("volume"))
     return row
+
+
+def _volume_in_shares(value: Any) -> Any:
+    """手 → 股（乘 100）；非数值原样返回，交给归一阶段降级留痕."""
+    try:
+        return round(float(value) * _LOT_TO_SHARE)
+    except (TypeError, ValueError):
+        return value
 
 
 __all__ = [

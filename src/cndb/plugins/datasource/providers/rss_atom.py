@@ -56,6 +56,7 @@ class RssAtomProvider(HttpJsonProvider):
     params_schema: Mapping[str, Any] = RSS_ATOM_PARAMS_SCHEMA
     default_cursor = "datetime"
     supports_paging = False
+    uses_custom_parse = True
 
     @override
     def parse(self, text: str, job: SyncJobSpec) -> list[dict[str, Any]]:

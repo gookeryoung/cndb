@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -410,13 +409,26 @@ def dt_ws(db: Session, dt: Any) -> Any:
 
 
 class TestRealExamples:
-    def test_symbol_meta_covers_three_markets(self):
+    def test_symbol_meta_matches_daily_sample(self):
         meta = json.loads((EXAMPLE_DIR / "自选股.json").read_text(encoding="utf-8-sig"))
-        assert len(meta) == 7
+        assert len(meta) == 10
         codes = {item["股票代码"] for item in meta}
-        assert {"sh600519", "sz000001", "sz300750", "hk00700", "hk09988", "usAAPL", "usNVDA"} == codes
-        assert {item["市场"] for item in meta} == {"A股", "港股", "美股"}
-        assert all(item.get("是否自选") is True for item in meta)
+        assert codes == {
+            "sh600519",
+            "sz000858",
+            "sz000001",
+            "sh600036",
+            "sh601318",
+            "sz300750",
+            "sz002594",
+            "sh601899",
+            "sh600900",
+            "sz000651",
+        }
+        # 三源示例只覆盖 A 股，自选股表的标的集合与日线表一致
+        assert {item["市场"] for item in meta} == {"A股"}
+        # 留一只非自选（格力电器）验证 kline 视图的「是否自选」筛选
+        assert sum(1 for item in meta if item.get("是否自选") is True) == 9
 
     def test_views_json_kline_options_reference_existing_fields(self):
         views = json.loads((EXAMPLE_DIR / "views.json").read_text(encoding="utf-8-sig"))
@@ -442,24 +454,6 @@ class TestRealExamples:
             assert options[key] in field_names, f"{key} 引用了不存在的字段 {options[key]}"
         assert [f["field_name"] for f in view["filters"]] == ["是否自选"]
         assert view["is_default"] is True
-
-    def test_datasource_jobs_cover_period_adjust_matrix(self):
-        cfg = json.loads((EXAMPLE_DIR / "datasource.json").read_text(encoding="utf-8-sig"))
-        field_names = {name for name, _ft, _cfg, _req, _uniq in _STOCK_FIELDS}
-        jobs = [j for j in cfg["jobs"] if j["provider"] == "eastmoney_kline"]
-        assert len(jobs) == 5
-
-        combos: set[tuple[str, str]] = set()
-        for job in jobs:
-            assert job["table"] == "自选股"
-            assert job["match_keys"] == ["股票代码"]
-            assert job["cursor"]["strategy"] == "none"
-            assert job["enabled"] is True
-            url = job["request_spec"]["url_template"]
-            combos.add((re.search(r"klt=(\d+)", url).group(1), re.search(r"fqt=(\d+)", url).group(1)))
-            for target in job["field_mapping"].values():
-                assert target["name"] in field_names, f"映射到不存在的字段 {target['name']}"
-        assert combos == {("101", "1"), ("101", "2"), ("101", "0"), ("102", "1"), ("103", "1")}
 
     def test_real_kline_view_created_as_sole_default(self, db: Session, db_engine):
         """真实 views.json：自选股 kline 视图通过校验并取代自动「全部」视图成为默认."""
@@ -491,7 +485,7 @@ class TestRealExamples:
         assert [v.name for v in views if v.is_default] == [kline_views[0].name]
 
         rows = _read_rows(db_engine, dt)
-        assert len(rows) == 7
+        assert len(rows) == 10
         with_series = [r for r in rows if r["日线前复权"]]
         assert with_series  # 示例 CSV 至少覆盖 A 股标的
         assert all(r["周线前复权"] and r["月线前复权"] for r in with_series)

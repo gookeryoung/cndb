@@ -1,5 +1,5 @@
 {
-  "_comment": "视图种子配置：数据源示例工作区。天气每日按日期升序（时序自然序）并附高温日过滤视图；股市日线按交易日降序（最新在前）并附放量日过滤视图，另加 K 线图 / 成交量图 / 量价散点图三个图表视图（K 线与成交量图经 filters 收窄到单一标的，避免同轴多标的重叠）。自选股表一只股一行，kline 视图读取行内 JSON，左侧列表选中行切换 K 线标的；filters 只取自选标的，避免全市场标的池撑大响应体。字段名须与表头一致。",
+  "_comment": "视图种子配置：数据源示例工作区。三张日线表一源一表（股市日线=baostock 前复权含成交额、股市日线-腾讯=腾讯前复权、股市日线-新浪=新浪不复权），每张表都配「全部」+ 单标的 K 线图，主表另有放量日过滤、最近一年、成交量图与量价散点图。示例数据为 10 只 A 股 × 2021-10-18 起约 1,200 根/标的（对齐 StockMaster 线上样本口径），故 K 线视图按股票代码收窄到单一标的，避免同轴多蜡烛重叠。自选股表一只股一行、kline 视图读取行内 JSON（静态示例，无同步任务）。字段名须与表头一致。",
   "天气每日": [
     {
       "name": "全部",
@@ -48,16 +48,29 @@
       "order": 0
     },
     {
-      "name": "放量日（≥1.5亿股）",
+      "name": "放量日（≥1亿股）",
       "view_type": "grid",
       "filter_type": "AND",
       "filters": [
-        {"field_name": "成交量", "op": ">=", "value": 150000000}
+        {"field_name": "成交量", "op": ">=", "value": 100000000}
       ],
       "sortings": [
         {"field_name": "成交量", "direction": "desc"}
       ],
       "order": 1
+    },
+    {
+      "name": "最近一年",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {"field_name": "交易日", "op": ">=", "value": "2025-10-20"}
+      ],
+      "sortings": [
+        {"field_name": "交易日", "direction": "desc"},
+        {"field_name": "股票代码", "direction": "asc"}
+      ],
+      "order": 2
     },
     {
       "name": "K线图（贵州茅台）",
@@ -77,7 +90,7 @@
         "low_field": "最低价",
         "close_field": "收盘价"
       },
-      "order": 2
+      "order": 3
     },
     {
       "name": "成交量图（贵州茅台）",
@@ -95,7 +108,7 @@
         "measure_field": "成交量",
         "aggregation": "sum"
       },
-      "order": 3
+      "order": 4
     },
     {
       "name": "量价散点图",
@@ -106,7 +119,71 @@
         "y_field": "成交量",
         "show_trend_line": true
       },
-      "order": 4
+      "order": 5
+    }
+  ],
+  "股市日线-腾讯": [
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {"field_name": "交易日", "direction": "desc"},
+        {"field_name": "股票代码", "direction": "asc"}
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "K线图（贵州茅台）",
+      "view_type": "chart",
+      "filter_type": "AND",
+      "filters": [
+        {"field_name": "股票代码", "op": "=", "value": "sh600519"}
+      ],
+      "sortings": [
+        {"field_name": "交易日", "direction": "asc"}
+      ],
+      "view_options": {
+        "chart_type": "candlestick",
+        "time_field": "交易日",
+        "open_field": "开盘价",
+        "high_field": "最高价",
+        "low_field": "最低价",
+        "close_field": "收盘价"
+      },
+      "order": 1
+    }
+  ],
+  "股市日线-新浪": [
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {"field_name": "交易日", "direction": "desc"},
+        {"field_name": "股票代码", "direction": "asc"}
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "K线图（贵州茅台）",
+      "view_type": "chart",
+      "filter_type": "AND",
+      "filters": [
+        {"field_name": "股票代码", "op": "=", "value": "sh600519"}
+      ],
+      "sortings": [
+        {"field_name": "交易日", "direction": "asc"}
+      ],
+      "view_options": {
+        "chart_type": "candlestick",
+        "time_field": "交易日",
+        "open_field": "开盘价",
+        "high_field": "最高价",
+        "low_field": "最低价",
+        "close_field": "收盘价"
+      },
+      "order": 1
     }
   ],
   "自选股": [

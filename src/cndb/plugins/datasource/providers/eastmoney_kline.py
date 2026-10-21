@@ -116,6 +116,7 @@ class EastmoneyKlineProvider(HttpJsonProvider):
     params_schema: Mapping[str, Any] = EASTMONEY_KLINE_PARAMS_SCHEMA
     default_cursor: CursorStrategy = "none"
     supports_paging = False
+    uses_custom_parse = True
 
     @override
     def build_requests(self, job: SyncJobSpec) -> list[RequestPlan]:

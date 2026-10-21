@@ -12,7 +12,7 @@ Related: `src/cndb/cli/seed/`、`src/cndb/plugins/datasource/`、`src/cndb/plugi
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
 | C1 | 典型示例，股市日线 | 新增 seed 子模块 `cli/seed/datasource.py`，扫描 `<工作区>/datasource.json` 幂等注入同步任务；「数据源示例」工作区的 **股市日线** 表为其唯一目标表 |
-| C2 | 应当配置数据源同步，允许多个源 URL 同步到表 | `datasource.json` 声明一个 `tencent_kline` 任务：`entrant_param=symbol` + `entrant_keys=[sh600519,sz000001,sz300750]`（每代码一个 URL）→ 全部 upsert 到 股市日线 表；`match_keys=[股票代码,交易日]`；`field_mapping` 将 provider 输出映射到表内中文列 |
+| C2 | 应当配置数据源同步，允许多个源 URL 同步到表 | `datasource.json` 声明同步任务：`entrant_param=symbol` + `entrant_keys=[…]`（每代码一个 URL）→ 按 `match_keys=[股票代码,交易日]` upsert；`field_mapping` 将 provider 输出映射到表内中文列。示例已由 [ADR 0013](0013-stock-daily-multi-source-sample.md) 扩为 baostock / tencent / sina 三任务、一源一表（`股市日线` / `股市日线-腾讯` / `股市日线-新浪`），「单任务多标的」机制不变 |
 | C3 | 增加多个视图 | 「数据源示例」工作区 `views.json` 的 股市日线 表新增 3 个图表视图：K线图 / 成交量图 / 量价散点图（保留既有网格视图）；复用既有 `_seed_views` |
 | C4 | 实现 K 线等关键图的查看 | 图表视图（`view_type=chart`）新增 `chart_type=candlestick`：配置时间轴 + 开/高/低/收字段；前端注册 ECharts `CandlestickChart` 并装配 option；后端与 seed 视图字段校验白名单放行新字段键 |
 | C5 | 派生图归位 | 涨跌幅/振幅不新增视图，沿用 `analytics.json` 既有窗口公式模板（本 ADR 不改分析模块） |
@@ -58,14 +58,16 @@ Related: `src/cndb/cli/seed/`、`src/cndb/plugins/datasource/`、`src/cndb/plugi
 
 位于 `examples/datasets/<工作区>/datasource.json`（并行 `views.json`/`analytics.json`），结构：
 
+> 下列片段只示意**单个任务**的结构；示例数据源已由 [ADR 0013](0013-stock-daily-multi-source-sample.md) 扩为 baostock / tencent / sina 三个任务、一源一表，实际文件以仓库为准。
+
 ```json
 {
   "jobs": [
     {
-      "name": "股市日线同步",
+      "name": "股市日线同步（腾讯前复权）",
       "provider": "tencent_kline",
-      "table": "股市日线",
-      "request_spec": { "url_template": "…{symbol},day,{start},{end},320,qfq", "time_window": { "mode": "range", "start_param": "start", "end_param": "end", "chunk_days": 320 } },
+      "table": "股市日线-腾讯",
+      "request_spec": { "url_template": "…{symbol},day,{start},{end},320,qfq", "time_window": { "mode": "range", "start_param": "start", "end_param": "end", "chunk_days": 440 } },
       "entrant_param": "symbol",
       "entrant_keys": ["sh600519", "sz000001", "sz300750"],
       "match_keys": ["股票代码", "交易日"],

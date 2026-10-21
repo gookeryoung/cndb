@@ -127,6 +127,7 @@ class EastmoneySymbolsProvider(HttpJsonProvider):
     params_schema: Mapping[str, Any] = EASTMONEY_SYMBOLS_PARAMS_SCHEMA
     default_cursor: CursorStrategy = "none"
     supports_paging = True
+    uses_custom_parse = True
 
     @override
     def build_requests(self, job: SyncJobSpec) -> list[RequestPlan]:

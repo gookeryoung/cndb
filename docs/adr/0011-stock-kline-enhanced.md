@@ -5,6 +5,8 @@ Date: 2026-10-20
 Related: `src/cndb/plugins/datasource/providers/eastmoney_kline.py`、`src/cndb/plugins/datasource/providers/eastmoney_symbols.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/services/importing/row_validator.py`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/cli/seed/stock_quotes.py`、`src/cndb/cli/sync.py`、`frontend/src/pages/grid/views/klineBoard.ts`、`frontend/src/pages/grid/views/KlineView.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`；上游 ADR `docs/adr/0009-stock-daily-datasource-example.md`
 需求卡片: `docs/requirements/0011-stock-kline-enhanced.md`（需求原文与约束编号的唯一副本）
 
+> 示例「自选股」表的标的集合已由 [ADR 0013](0013-stock-daily-multi-source-sample.md) 收敛为 10 只 A 股（与三源日线一致），本文的 kline 视图、多周期复权列与分列 upsert 口径不变。
+>
 > 需求变更时**先改本 ADR 再改代码**：删去失效的口径行 / 现状条目 / 决策 D 行 / 测试与分期，不留「历史方案」段落；ADR 被新方案替代或需求作废时**直接删除本文件**，同步删除 `docs/adr/README.md` 索引行与代码 / 文档中的引用，不在仓库保留 `Superseded` / `Deprecated` 文档。
 
 ## 口径（需求 → 设计落点）

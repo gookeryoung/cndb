@@ -28,7 +28,12 @@ from cndb.plugins.datasource.providers.base import (
 )
 from cndb.plugins.datasource.providers.template import render_text, render_value
 from cndb.plugins.datasource.services.normalize import NormalizeResult, apply_field_mapping
-from cndb.plugins.tables.services.importing.api_fetch import FetchConfig, _extract_array, _resolve_path
+from cndb.plugins.tables.services.importing.api_fetch import (
+    FetchConfig,
+    ResponseHandler,
+    _extract_array,
+    _resolve_path,
+)
 
 # 供前端动态渲染的表单描述（M3 的「新建向导」消费）
 HTTP_JSON_PARAMS_SCHEMA: dict[str, Any] = {
@@ -53,10 +58,14 @@ class HttpJsonProvider:
     params_schema: Mapping[str, Any] = HTTP_JSON_PARAMS_SCHEMA
     default_cursor: CursorStrategy = "date"
     supports_paging = True
+    # 覆写了 parse 的专用 provider 置 True：抓取时把原始文本交给自身 parse，
+    # 否则 fetch_json 的通用数组探测会把嵌套结构（腾讯 / 东财）解析成错误的一行
+    uses_custom_parse = False
 
     def build_requests(self, job: SyncJobSpec) -> list[RequestPlan]:
         """展开为具体请求列表（entrant × 窗口 × 页码，顺序稳定便于断言）."""
         spec = job.request
+        handler = self.response_handler_for(job)
         plans: list[RequestPlan] = []
         for entrant in job.entrant_values or (None,):
             for window_start, window_end in iter_windows(spec.time_window):
@@ -64,15 +73,26 @@ class HttpJsonProvider:
                     variables = self._variables(job, entrant, window_start, window_end, page)
                     plans.append(
                         RequestPlan(
-                            config=self._build_config(spec, variables),
+                            config=self._build_config(spec, variables, handler),
                             label=_label(job, entrant, window_start, window_end, page),
                             entrant=entrant,
                             page=page,
                             window_start=window_start,
                             window_end=window_end,
+                            variables=variables,
                         )
                     )
         return plans
+
+    def response_handler_for(self, job: SyncJobSpec) -> ResponseHandler | None:
+        """返回响应处理器：专用 provider 用自己的 ``parse`` 处理原始文本."""
+        if not self.uses_custom_parse:
+            return None
+
+        def handler(text: str, _config: FetchConfig) -> list[dict[str, Any]]:
+            return self.parse(text, job)
+
+        return handler
 
     def parse(self, text: str, job: SyncJobSpec) -> list[dict[str, Any]]:
         """响应文本 → 对象数组（JSON 解析失败即 ProviderError，不静默返回空）."""
@@ -119,7 +139,12 @@ class HttpJsonProvider:
             variables["offset"] = offset
         return variables
 
-    def _build_config(self, spec: RequestSpec, variables: Mapping[str, Any]) -> FetchConfig:
+    def _build_config(
+        self,
+        spec: RequestSpec,
+        variables: Mapping[str, Any],
+        response_handler: ResponseHandler | None = None,
+    ) -> FetchConfig:
         headers = {key: render_text(value, variables) for key, value in spec.headers_template.items()}
         return FetchConfig(
             url=render_text(spec.url_template, variables),
@@ -130,6 +155,7 @@ class HttpJsonProvider:
             timeout=spec.timeout,
             data_path=spec.data_path,
             encoding=spec.encoding,
+            response_handler=response_handler or "json",
         )
 
 
