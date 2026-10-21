@@ -4664,3 +4664,398 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     animation: none;
   }
 }
+
+/* ─────────────── 数据分析页（GitHub 方盒工作台） ───────────────
+ * 结构：紧凑页头（标题 + 当前模板 + 操作） + 双栏工作台（左配置 / 右结果）。
+ * 分区容器 .cn-an-box 对齐 GitHub 的 .Box 语言：1px 描边、6px 圆角、
+ * 浅底标题条、无投影；颜色与尺寸全部走 --cn-* 变量，深浅主题自动适配。
+ * 配置区收窄为固定列宽，结果区吃掉剩余宽度 —— 运行后无需在长表单里来回滚动。 */
+
+.cn-an-page {
+  min-height: 0;
+}
+
+/* ── 页头 ── */
+.cn-an-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cn-space-md) var(--cn-space-lg);
+}
+
+.cn-an-head-main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--cn-space-md);
+  min-width: 0;
+}
+
+.cn-an-head-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--cn-space-4xl);
+  height: var(--cn-space-4xl);
+  border-radius: var(--cn-radius-base);
+  background: color-mix(in srgb, var(--cn-brand-color) 10%, transparent);
+  color: var(--cn-brand-color);
+  font-size: var(--cn-text-lg);
+}
+
+.cn-an-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cn-an-head-title {
+  margin: 0;
+  font-size: var(--cn-text-lg);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--cn-text-primary);
+}
+
+.cn-an-head-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+/* 模板元信息单行收敛：描述等长文本走 title 悬停，不撑高页头 */
+.cn-an-head-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-an-head-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+  margin-left: auto;
+}
+
+.cn-an-run-hint {
+  font-size: var(--cn-text-2xs);
+  white-space: nowrap;
+}
+
+/* ── 双栏工作台 ── */
+.cn-an-workbench {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--cn-space-lg);
+  min-height: 0;
+}
+
+.cn-an-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-lg);
+  min-width: 0;
+}
+
+.cn-an-col--config {
+  flex: 0 1 420px;
+}
+
+.cn-an-col--result {
+  flex: 1 1 560px;
+}
+
+/* ── 分区盒子（GitHub .Box 语言） ── */
+.cn-an-box {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container);
+  overflow: hidden;
+}
+
+.cn-an-box-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  min-height: var(--cn-space-4xl);
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  background: var(--cn-bg-subtle);
+  border-bottom: 1px solid var(--cn-border);
+}
+
+.cn-an-box-icon {
+  display: inline-flex;
+  color: var(--cn-text-muted);
+  font-size: var(--cn-text-sm);
+}
+
+.cn-an-box-title {
+  margin: 0;
+  font-size: var(--cn-text-sm);
+  font-weight: 600;
+  color: var(--cn-text-primary);
+  white-space: nowrap;
+}
+
+.cn-an-box-extra {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+  margin-left: auto;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-an-box-hint {
+  color: var(--cn-text-muted);
+  font-size: var(--cn-text-sm);
+  cursor: help;
+}
+
+.cn-an-box-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-md);
+  padding: var(--cn-space-lg);
+  min-width: 0;
+}
+
+.cn-an-box-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+  margin-top: var(--cn-space-hairline);
+  padding-top: var(--cn-space-md);
+  border-top: 1px solid var(--cn-border-soft);
+}
+
+/* ── 字段网格（标签在上 / 控件在下） ── */
+.cn-an-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cn-space-md);
+}
+
+.cn-an-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cn-an-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+  min-width: 0;
+}
+
+.cn-an-span2 {
+  grid-column: span 2;
+}
+
+.cn-an-span3 {
+  grid-column: 1 / -1;
+}
+
+.cn-an-label {
+  font-size: var(--cn-text-2xs);
+  font-weight: 500;
+  color: var(--cn-text-secondary);
+}
+
+/* ── 字段 / 函数胶囊 ── */
+.cn-an-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-xs) var(--cn-space-sm);
+  min-width: 0;
+}
+
+/* 字段多时限制两行高度，避免把公式行顶出可视区 */
+.cn-an-chips--scroll {
+  max-height: 72px;
+  overflow-y: auto;
+}
+
+.cn-an-chips-label {
+  flex: none;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-an-chip.ant-tag {
+  margin: 0;
+  padding-inline: var(--cn-space-sm);
+  border-radius: var(--cn-radius-pill);
+  font-size: var(--cn-text-2xs);
+  line-height: var(--cn-space-2xl);
+  color: var(--cn-text-secondary);
+  background: var(--cn-bg-muted);
+  border-color: var(--cn-border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cn-an-chip.ant-tag:hover {
+  color: var(--cn-brand-color);
+  border-color: color-mix(in srgb, var(--cn-brand-color) 45%, var(--cn-border));
+  background: color-mix(in srgb, var(--cn-brand-color) 8%, var(--cn-bg-container));
+}
+
+.cn-an-chip--agg.ant-tag {
+  background: color-mix(in srgb, var(--cn-brand-color) 7%, var(--cn-bg-container));
+  border-color: color-mix(in srgb, var(--cn-brand-color) 24%, var(--cn-border));
+}
+
+.cn-an-chip--win.ant-tag {
+  border-style: dashed;
+}
+
+.cn-an-muted {
+  font-size: var(--cn-text-2xs);
+  font-weight: 400;
+  color: var(--cn-text-muted);
+}
+
+.cn-an-foot-hint {
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+}
+
+/* ── 公式行：序号 / 键名 / 展示名 / 删除 + 全宽表达式 ── */
+.cn-an-frow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border: 1px solid var(--cn-border-soft);
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-bg-muted);
+}
+
+.cn-an-frow-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--cn-space-sm);
+}
+
+.cn-an-frow-no {
+  min-width: var(--cn-space-lg);
+  text-align: center;
+  font-size: var(--cn-text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--cn-text-muted);
+}
+
+.cn-an-frow-key.ant-input {
+  font-family: var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+
+.cn-an-frow-expr.ant-input {
+  font-family: var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: var(--cn-text-xs);
+}
+
+.cn-an-frow-del.ant-btn {
+  width: var(--cn-space-2xl);
+  height: var(--cn-space-2xl);
+  padding: 0;
+}
+
+.cn-an-frow-win {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+}
+
+.cn-an-frow-win-select {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+
+.cn-an-frow-win-dir {
+  flex: none;
+  width: 72px;
+}
+
+/* ── 汇总指标行：来源 / 聚合 / 展示名 / 删除 ── */
+.cn-an-metric {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border: 1px solid var(--cn-border-soft);
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-bg-muted);
+}
+
+.cn-an-metric-del.ant-btn {
+  width: var(--cn-space-2xl);
+  height: var(--cn-space-2xl);
+  padding: 0;
+}
+
+/* ── 智能推荐 ── */
+.cn-an-rec-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+}
+
+.cn-an-rec-title .anticon {
+  color: var(--cn-brand-color);
+}
+
+.cn-an-rec-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+}
+
+/* ── 结果区空态 ── */
+.cn-an-empty {
+  padding: var(--cn-space-4xl) var(--cn-space-lg);
+  text-align: center;
+}
+
+@media (max-width: 767.98px) {
+  .cn-an-head-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .cn-an-col--config,
+  .cn-an-col--result {
+    flex: 1 1 100%;
+  }
+
+  .cn-an-grid--3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cn-an-metric {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  .cn-an-metric-label {
+    grid-column: span 2;
+  }
+}

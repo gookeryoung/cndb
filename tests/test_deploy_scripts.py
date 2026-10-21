@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import gzip
+import os
 import shutil
 import stat
 import subprocess
@@ -19,7 +20,12 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ("build-image.sh", "export-image.sh", "deploy.sh")
 BASH = shutil.which("bash")
-pytestmark = pytest.mark.skipif(BASH is None, reason="需要 bash")
+# Windows 开发机上的 bash 多为 MSYS/Gow 包装器（反斜杠路径不认、subprocess 直接调用恒返回 1），
+# 脚本本身是 POSIX sh，CI（Linux）已完整覆盖；此处跳过避免本地门禁假红。
+pytestmark = [
+    pytest.mark.skipif(BASH is None, reason="需要 bash"),
+    pytest.mark.skipif(os.name == "nt", reason="部署脚本回归只在 POSIX bash 下有意义（CI 为 Linux）"),
+]
 
 
 def _repo_copy(tmp_path: Path) -> Path:

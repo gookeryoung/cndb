@@ -17,12 +17,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import {
-  App as AntApp, Alert, Button, Card, Empty, Input, Modal, Select,
-  Space, Tag, Typography,
+  App as AntApp, Alert, Button, Empty, Input, Modal, Select,
+  Space, Tag, Tooltip, Typography,
 } from 'antd'
 import {
   DeleteOutlined, SaveOutlined, BarChartOutlined, PlayCircleOutlined, CopyOutlined, EditOutlined,
-  UnorderedListOutlined,
+  UnorderedListOutlined, DatabaseOutlined, TableOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi } from '@/api'
@@ -33,6 +33,7 @@ import type {
   AnalyticsRecommendationExample, AnalyticsSummary, AnalyticsTemplate, AnalyticsTemplateCreate,
   AnalyticsTemplateUpdate,
 } from '@/api/analytics'
+import { AnalyticsBox } from './AnalyticsBox'
 import { FormulaPanel } from './FormulaPanel'
 import { ChartPanel } from './ChartPanel'
 import { SummaryPanel } from './SummaryPanel'
@@ -55,7 +56,7 @@ import {
   templateTableName,
 } from './analyticsModel'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 
 const DEFAULT_TEMPLATE_NAME = '未命名分析'
 /** 数值型字段：用于公式示例 / 分组汇总默认指标候选 */
@@ -557,26 +558,35 @@ export default function AnalyticsPage() {
   if (!wid) return null
 
   return (
-    <div data-testid="analytics-page" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* ── 顶栏：标题 + 模板管理 ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <Title level={4} style={{ margin: 0 }}>
-          <BarChartOutlined /> 数据分析
-        </Title>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          数据源为工作区内任意数据表；模板存后端，可跨设备复用
-        </Text>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Button
-            data-testid="analytics-manager-btn"
-            icon={<UnorderedListOutlined />}
-            onClick={() => setManagerOpen(true)}
-          >
-            分析列表
-          </Button>
+    <div data-testid="analytics-page" className="cn-page cn-an-page">
+      {/* ── 页头：标题 + 当前模板 + 模板操作／运行（主操作常驻右侧） ── */}
+      <header className="cn-an-head">
+        <div className="cn-an-head-main">
+          <span className="cn-an-head-icon" aria-hidden><BarChartOutlined /></span>
+          <div className="cn-an-head-text">
+            <h1 className="cn-an-head-title">数据分析</h1>
+            <div className="cn-an-head-sub">
+              {activeTemplateId != null ? (
+                <span
+                  data-testid="analytics-template-meta"
+                  className="cn-an-head-meta"
+                  title={templateDesc ? `模板描述：${templateDesc}` : undefined}
+                >
+                  当前模板：{templateName}
+                  {activeTemplate?.updated_at ? ` · 更新于 ${new Date(activeTemplate.updated_at).toLocaleString()}` : ''}
+                </span>
+              ) : (
+                <span>工作区任意数据表 · 模板存后端，可跨设备复用</span>
+              )}
+              {dirty && <Tag color="orange" data-testid="analytics-dirty">未保存</Tag>}
+            </div>
+          </div>
+        </div>
+
+        <div className="cn-an-head-actions">
           <Select
             data-testid="analytics-template-select"
-            style={{ width: 220 }}
+            style={{ width: 200 }}
             placeholder="加载已保存模板"
             value={activeTemplateId ?? undefined}
             allowClear
@@ -590,54 +600,75 @@ export default function AnalyticsPage() {
               if (tpl) requestTemplateLoad(tpl)
             }}
           />
-          {dirty && <Tag color="orange" data-testid="analytics-dirty">未保存</Tag>}
+          <Tooltip title="分析列表：打开 / 复制 / 删除 / 新建">
+            <Button
+              data-testid="analytics-manager-btn"
+              aria-label="分析列表"
+              icon={<UnorderedListOutlined />}
+              onClick={() => setManagerOpen(true)}
+            />
+          </Tooltip>
           <Button
             data-testid="analytics-save-btn"
             icon={<SaveOutlined />}
             loading={saveMutation.isPending}
             onClick={saveActiveTemplate}
           >
-            {activeTemplateId != null ? '保存模板' : '保存为模板'}
+            {activeTemplateId != null ? '保存' : '保存为模板'}
           </Button>
-          <Button
-            data-testid="analytics-saveas-btn"
-            icon={<CopyOutlined />}
-            disabled={templatePending}
-            onClick={openSaveAs}
-          >
-            另存为
-          </Button>
-          <Button
-            data-testid="analytics-rename-btn"
-            icon={<EditOutlined />}
-            disabled={activeTemplateId == null || templatePending}
-            onClick={openRename}
-          >
-            重命名
-          </Button>
-          {activeTemplateId != null && (
+          <Tooltip title="另存为副本">
             <Button
-              danger
-              icon={<DeleteOutlined />}
-              loading={removeMutation.isPending}
-              onClick={() => {
-                modal.confirm({
-                  title: `删除模板「${templateName || activeTemplate?.name || ''}」？`,
-                  onOk: () => removeMutation.mutate(activeTemplateId),
-                })
-              }}
-            >
-              删除
-            </Button>
+              data-testid="analytics-saveas-btn"
+              aria-label="另存为副本"
+              icon={<CopyOutlined />}
+              disabled={templatePending}
+              onClick={openSaveAs}
+            />
+          </Tooltip>
+          <Tooltip title="重命名当前模板">
+            <Button
+              data-testid="analytics-rename-btn"
+              aria-label="重命名当前模板"
+              icon={<EditOutlined />}
+              disabled={activeTemplateId == null || templatePending}
+              onClick={openRename}
+            />
+          </Tooltip>
+          {activeTemplateId != null && (
+            <Tooltip title="删除当前模板">
+              <Button
+                danger
+                aria-label="删除当前模板"
+                icon={<DeleteOutlined />}
+                loading={removeMutation.isPending}
+                onClick={() => {
+                  modal.confirm({
+                    title: `删除模板「${templateName || activeTemplate?.name || ''}」？`,
+                    onOk: () => removeMutation.mutate(activeTemplateId),
+                  })
+                }}
+              />
+            </Tooltip>
+          )}
+          <Button
+            type="primary"
+            data-testid="analytics-run-btn"
+            icon={<PlayCircleOutlined />}
+            loading={computeMutation.isPending}
+            disabled={!canRun}
+            onClick={runAnalysis}
+          >
+            运行分析
+          </Button>
+          {!tableId && <Text type="secondary" className="cn-an-run-hint">请先选择分析表</Text>}
+          {!!tableId && validFormulas.length === 0 && (
+            <Text type="secondary" className="cn-an-run-hint">请至少填写一条公式</Text>
+          )}
+          {!!tableId && hasError && (
+            <Text type="danger" className="cn-an-run-hint">公式存在错误，修正后可运行</Text>
           )}
         </div>
-      </div>
-      {activeTemplateId != null && (
-        <Text type="secondary" style={{ fontSize: 12, marginTop: -4 }} data-testid="analytics-template-meta">
-          当前模板：{templateName}{templateDesc ? ` · ${templateDesc}` : ''}
-          {activeTemplate?.updated_at ? ` · 更新于 ${new Date(activeTemplate.updated_at).toLocaleString()}` : ''}
-        </Text>
-      )}
+      </header>
 
       {showTableMissing && (
         <Alert
@@ -648,175 +679,154 @@ export default function AnalyticsPage() {
         />
       )}
 
-      {/* ── 数据源 ── */}
-      <Card size="small" title="数据源">
-        <Space wrap>
-          <Text>分析表：</Text>
-          <Select
-            data-testid="analytics-table-select"
-            style={{ width: 260 }}
-            placeholder="选择工作区内的数据表"
-            value={tableId ?? undefined}
-            options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
-            onChange={id => {
-              setTableId(id ?? null)
-              setTableMissing(false)
-              setResult(null)
-              setServerErrors({})
-              // 范围字段属于旧表，换表后必须清空，否则会带着不存在的字段去过滤
-              setScopeField(null)
-              setScopeFrom('')
-              setScopeTo('')
-            }}
-          />
-          {tableDetail && (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {tableDetail.fields.length} 个字段 / {tableDetail.record_count ?? 0} 行
-            </Text>
+      <div className="cn-an-workbench">
+        {/* 左栏：配置（数据源 → 智能推荐 → 公式 → 可视化 → 分组汇总） */}
+        <div className="cn-an-col cn-an-col--config">
+          <AnalyticsBox
+            title="数据源"
+            icon={<DatabaseOutlined />}
+            extra={tableDetail
+              ? `${tableDetail.fields.length} 字段 · ${tableDetail.record_count ?? 0} 行`
+              : '未选择'}
+            footer={scopeField
+              ? <span className="cn-an-foot-hint">只统计区间内的行；全表扫描超上限时用它收窄</span>
+              : null}
+          >
+            <div className="cn-an-grid cn-an-grid--3">
+              <div className="cn-an-field cn-an-span3">
+                <span className="cn-an-label">分析表</span>
+                <Select
+                  data-testid="analytics-table-select"
+                  placeholder="选择工作区内的数据表"
+                  value={tableId ?? undefined}
+                  options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
+                  onChange={id => {
+                    setTableId(id ?? null)
+                    setTableMissing(false)
+                    setResult(null)
+                    setServerErrors({})
+                    // 范围字段属于旧表，换表后必须清空，否则会带着不存在的字段去过滤
+                    setScopeField(null)
+                    setScopeFrom('')
+                    setScopeTo('')
+                  }}
+                />
+              </div>
+              {/* 分析范围：扫描前过滤（时序表用「时间 >= 起点」把扫描面压到区间内） */}
+              <div className="cn-an-field">
+                <span className="cn-an-label">范围字段</span>
+                <Select
+                  size="small"
+                  allowClear
+                  data-testid="analytics-scope-field"
+                  placeholder="不限（全表）"
+                  value={scopeField ?? undefined}
+                  options={tableFields.map(name => ({ value: name, label: name }))}
+                  onChange={value => setScopeField(value ?? null)}
+                />
+              </div>
+              <div className="cn-an-field">
+                <span className="cn-an-label">起始值（含）</span>
+                <Input
+                  size="small"
+                  data-testid="analytics-scope-from"
+                  placeholder="如 2025-01-01"
+                  disabled={!scopeField}
+                  value={scopeFrom}
+                  onChange={event => setScopeFrom(event.target.value)}
+                />
+              </div>
+              <div className="cn-an-field">
+                <span className="cn-an-label">结束值（含）</span>
+                <Input
+                  size="small"
+                  data-testid="analytics-scope-to"
+                  placeholder="可选"
+                  disabled={!scopeField}
+                  value={scopeTo}
+                  onChange={event => setScopeTo(event.target.value)}
+                />
+              </div>
+            </div>
+          </AnalyticsBox>
+
+          {/* ── 智能推荐：选表后按字段画像推荐图表 / 汇总 / 公式 / 典型示例 ── */}
+          {tableId != null && (
+            <RecommendationPanel
+              recommendations={recommendations}
+              loading={recommendLoading}
+              error={recommendError}
+              tableName={tableDetail?.name ?? templateTableName(tables, tableId)}
+              onSelectDimension={selectRecommendedDimension}
+              onSelectMetric={selectRecommendedMetric}
+              onSelectTime={selectRecommendedTime}
+              onApplyChart={applyRecommendedChart}
+              onApplySummary={applyRecommendedSummary}
+              onApplyFormulas={applyRecommendedFormulas}
+              onApplyExample={applyRecommendedExample}
+            />
           )}
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            可用字段：{tableFields.length ? tableFields.join('、') : '（先选择数据表）'}
-          </Text>
-        </Space>
 
-        {/* 分析范围：扫描前过滤（时序表用「时间 >= 起点」把扫描面压到区间内） */}
-        <Space wrap size={8} style={{ marginTop: 8 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            分析范围：
-          </Text>
-          <Select
-            size="small"
-            allowClear
-            data-testid="analytics-scope-field"
-            style={{ width: 150 }}
-            placeholder="不限（全表）"
-            value={scopeField ?? undefined}
-            options={tableFields.map(name => ({ value: name, label: name }))}
-            onChange={value => setScopeField(value ?? null)}
+          <FormulaPanel
+            tableFields={tableFields}
+            numericFields={numericFields}
+            formulas={formulas}
+            errors={errors}
+            onChange={setFormulas}
+            onRun={runAnalysis}
+            canRun={canRun}
+            running={computeMutation.isPending}
           />
-          <Input
-            size="small"
-            data-testid="analytics-scope-from"
-            style={{ width: 150 }}
-            placeholder="起始值（含）"
-            disabled={!scopeField}
-            value={scopeFrom}
-            onChange={event => setScopeFrom(event.target.value)}
+          <ChartPanel
+            chart={chart}
+            onChange={setChart}
+            options={chartOptions}
+            tableFields={tableFields}
           />
-          <Input
-            size="small"
-            data-testid="analytics-scope-to"
-            style={{ width: 150 }}
-            placeholder="结束值（含，可选）"
-            disabled={!scopeField}
-            value={scopeTo}
-            onChange={event => setScopeTo(event.target.value)}
+          <SummaryPanel
+            summary={summary}
+            onChange={setSummary}
+            groupOptions={groupOptions}
+            metricOptions={chartOptions}
           />
-          {scopeField && (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              只统计区间内的行（超过扫描上限时用它收窄，而不是调大上限）
-            </Text>
-          )}
-        </Space>
-      </Card>
+        </div>
 
-      {/* ── 智能推荐：选表后按字段画像推荐图表 / 汇总 / 公式 / 典型示例 ── */}
-      {tableId != null && (
-        <RecommendationPanel
-          recommendations={recommendations}
-          loading={recommendLoading}
-          error={recommendError}
-          tableName={tableDetail?.name ?? templateTableName(tables, tableId)}
-          onSelectDimension={selectRecommendedDimension}
-          onSelectMetric={selectRecommendedMetric}
-          onSelectTime={selectRecommendedTime}
-          onApplyChart={applyRecommendedChart}
-          onApplySummary={applyRecommendedSummary}
-          onApplyFormulas={applyRecommendedFormulas}
-          onApplyExample={applyRecommendedExample}
-        />
-      )}
-
-      {/* ── 配置区：公式 + 图表，分组汇总占整行 ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12 }}>
-        <FormulaPanel
-          tableFields={tableFields}
-          numericFields={numericFields}
-          formulas={formulas}
-          errors={errors}
-          onChange={setFormulas}
-          onRun={runAnalysis}
-          canRun={canRun}
-          running={computeMutation.isPending}
-        />
-        <ChartPanel
-          chart={chart}
-          onChange={setChart}
-          options={chartOptions}
-          tableFields={tableFields}
-        />
-      </div>
-      <SummaryPanel
-        summary={summary}
-        onChange={setSummary}
-        groupOptions={groupOptions}
-        metricOptions={chartOptions}
-      />
-
-      {/* ── 运行 ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Button
-          type="primary"
-          data-testid="analytics-run-btn"
-          icon={<PlayCircleOutlined />}
-          loading={computeMutation.isPending}
-          disabled={!canRun}
-          onClick={runAnalysis}
-        >
-          运行分析
-        </Button>
-        {!tableId && <Text type="secondary" style={{ fontSize: 12 }}>请先选择分析表</Text>}
-        {!!tableId && validFormulas.length === 0 && (
-          <Text type="secondary" style={{ fontSize: 12 }}>请至少填写一条公式</Text>
-        )}
-        {!!tableId && hasError && <Text type="danger" style={{ fontSize: 12 }}>公式存在错误，修正后可运行</Text>}
-      </div>
-
-      {/* ── 结果 ── */}
-      {result ? (
-        <AnalyticsResultView
-          result={result}
-          chart={chart}
-          formulas={validFormulas.map(f => ({
-            key: f.key.trim(),
-            label: (f.label ?? '').trim() || f.key.trim(),
-          }))}
-          fields={syntheticFields}
-          title={templateName || chart.title || '分析结果'}
-        />
-      ) : (
-        <Card size="small">
-          <Empty
-            description={
-              <span>
-                选择数据表并配置公式后点击「运行分析」
+        {/* 右栏：结果（图表 → 分组汇总 → 描述统计 → 派生数据） */}
+        <div className="cn-an-col cn-an-col--result">
+          {result ? (
+            <AnalyticsResultView
+              result={result}
+              chart={chart}
+              formulas={validFormulas.map(f => ({
+                key: f.key.trim(),
+                label: (f.label ?? '').trim() || f.key.trim(),
+              }))}
+              fields={syntheticFields}
+              title={templateName || chart.title || '分析结果'}
+            />
+          ) : (
+            <AnalyticsBox title="分析结果" icon={<TableOutlined />} testId="analytics-result-empty">
+              <div className="cn-an-empty">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    <span>
+                      配置左侧公式与图表后，点右上角「运行分析」
+                      <br />
+                      图表、分组汇总、描述统计与派生数据会显示在这里
+                    </span>
+                  }
+                />
                 {templates.length > 0 && (
-                  <>
-                    <br />
-                    <Button
-                      type="link"
-                      size="small"
-                      onClick={() => requestTemplateLoad(templates[0])}
-                    >
-                      载入示例模板「{templates[0]?.name}」
-                    </Button>
-                  </>
+                  <Button type="link" size="small" onClick={() => requestTemplateLoad(templates[0])}>
+                    载入示例模板「{templates[0]?.name}」
+                  </Button>
                 )}
-              </span>
-            }
-          />
-        </Card>
-      )}
+              </div>
+            </AnalyticsBox>
+          )}
+        </div>
+      </div>
 
       {/* ── 另存为 / 重命名 ── */}
       <Modal

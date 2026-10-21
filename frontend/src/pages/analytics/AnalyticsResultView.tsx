@@ -1,7 +1,7 @@
 /** 分析结果视图 —— 图表 + 分组汇总 + 描述统计 + 派生数据预览（含 CSV / PNG 导出）. */
 
 import { useEffect, useMemo, useState } from 'react'
-import { App as AntApp, Button, Empty, Table, Tag, Tooltip, Typography } from 'antd'
+import { App as AntApp, Button, Empty, Space, Table, Tag, Tooltip } from 'antd'
 import { DownloadOutlined, LineChartOutlined, PictureOutlined, TableOutlined } from '@ant-design/icons'
 import * as echarts from 'echarts/core'
 import type { Field } from '@/api'
@@ -17,8 +17,6 @@ import {
   toCsv,
   triggerDownload,
 } from './analyticsModel'
-
-const { Text } = Typography
 
 /** 预览表分页大小候选 */
 const PAGE_SIZE_OPTIONS = [20, 50, 100]
@@ -163,20 +161,23 @@ export function AnalyticsResultView({ result, chart, formulas, fields, title }: 
 
   return (
     <>
-      <Card
-        size="small"
+      <AnalyticsBox
         title={chart.title || '可视化结果'}
+        icon={<LineChartOutlined />}
         extra={
-          <Space size={8}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              共 {result.total} 行{result.truncated ? '（超出单次扫描上限，已截断；可在「分析范围」限定区间）' : ''}
-            </Text>
+          <>
+            <span
+              className="cn-an-muted"
+              title={result.truncated ? '超出单次扫描上限，可在「分析范围」限定区间' : undefined}
+            >
+              共 {result.total} 行{result.truncated ? ' · 已截断' : ''}
+            </span>
             <Tooltip title="把当前图表导出为 PNG（2x 清晰度）">
               <Button size="small" icon={<PictureOutlined />} data-testid="analytics-export-chart" onClick={exportChart}>
                 导出图表
               </Button>
             </Tooltip>
-          </Space>
+          </>
         }
       >
         {result.rows.length === 0 ? (
@@ -184,22 +185,22 @@ export function AnalyticsResultView({ result, chart, formulas, fields, title }: 
         ) : (
           <ChartCard cfg={chartCfg} rows={result.rows} fields={fields} total={result.total} />
         )}
-      </Card>
+      </AnalyticsBox>
 
       {result.summary && (
-        <Card
-          size="small"
+        <AnalyticsBox
           title={`分组汇总（按 ${result.summary.group_label}）`}
+          icon={<TableOutlined />}
           extra={
-            <Space size={8}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+            <>
+              <span className="cn-an-muted">
                 共 {result.summary.group_count} 组
                 {result.summary.truncated ? `，已按 Top ${result.summary.rows.length} 截断` : ''}
-              </Text>
+              </span>
               <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-summary" onClick={exportSummary}>
                 导出汇总
               </Button>
-            </Space>
+            </>
           }
         >
           <Table
@@ -219,11 +220,10 @@ export function AnalyticsResultView({ result, chart, formulas, fields, title }: 
               })),
             ]}
           />
-        </Card>
+        </AnalyticsBox>
       )}
 
-      <Card
-        size="small"
+      <AnalyticsBox
         title="描述统计（含派生指标）"
         extra={
           <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-stats" onClick={exportStats}>
@@ -271,15 +271,20 @@ export function AnalyticsResultView({ result, chart, formulas, fields, title }: 
             { title: '求和', dataIndex: 'sum', render: formatNumber },
           ]}
         />
-      </Card>
+      </AnalyticsBox>
 
-      <Card
-        size="small"
+      <AnalyticsBox
         title="派生数据预览"
         extra={
           <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-rows" onClick={exportRows}>
             导出 CSV
           </Button>
+        }
+        footer={
+          <span className="cn-an-foot-hint">
+            派生列：{formulas.map(f => formulaLabelMap[f.key] ?? f.key).join('、') || '（无公式）'}
+            {result.rows.length < result.total ? `；返回前 ${result.rows.length} 行，统计基于全部 ${result.total} 行` : ''}
+          </span>
         }
       >
         <Table
@@ -302,11 +307,7 @@ export function AnalyticsResultView({ result, chart, formulas, fields, title }: 
           }}
           scroll={{ x: 'max-content' }}
         />
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          派生列：{formulas.map(f => formulaLabelMap[f.key] ?? f.key).join('、') || '（无公式）'}
-          {result.rows.length < result.total ? `；返回前 ${result.rows.length} 行，统计基于全部 ${result.total} 行` : ''}
-        </Text>
-      </Card>
+      </AnalyticsBox>
     </>
   )
 }
