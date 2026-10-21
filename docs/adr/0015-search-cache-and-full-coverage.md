@@ -101,7 +101,7 @@ P1 / P2 的取舍：FTS5 查询快但维护面大（行 CRUD、批量导入、�
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/services/search.py`、`src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/core/cache.py`、`src/cndb/core/events.py`、`src/cndb/plugins/tables/services/core/records.py`、`frontend/src/components/GlobalSearch.tsx`、`frontend/src/api/search.ts` | `tests/test_workspace_search.py`、`frontend/src/components/GlobalSearch.test.tsx` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/services/search.py`、`src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/core/cache.py`、`src/cndb/core/events.py`、`src/cndb/plugins/tables/services/core/records.py`、`frontend/src/components/GlobalSearch.tsx`、`frontend/src/api/search.ts` | `tests/test_workspace_search.py`、`frontend/src/components/GlobalSearch.test.tsx` | 8d0df1f2 |
 | P1 | 未开始 | `src/cndb/plugins/workspaces/services/search.py` | `tests/test_workspace_search.py` | - |
 | P2 | 未开始 | `src/cndb/plugins/workspaces/services/search.py`、`src/cndb/alembic/versions/` | `tests/test_workspace_search.py` | - |
 
@@ -113,4 +113,4 @@ P1 / P2 的取舍：FTS5 查询快但维护面大（行 CRUD、批量导入、�
 - 已完成：`scope=all` 改为全工作区覆盖且不按视图收敛；删除 8 张表截断；`search_cache`（15s / 256 条）与事件 / 批量写失效；前端只在数据表范围下发 `view_id`
 - 下一步：工作区规模（表数 >12 或单表 >5 万行）导致工作区搜索 P95 超 800ms 时，按 P1 做行内容快照缓存；需要跨进程共享时按 P2 上 FTS5
 - 已知坑：`$query` 只搜文本列（数字 / 日期 / 选项不命中）；总行命中 20 条为面板展示预算；缓存失效 best-effort，权限变化最迟 15s 生效
-- 最近一次全绿：`make check-fast` + `make test`（5136 passed / 8 skipped）+ 前端定向单测 34 例（`GlobalSearch` / `MainLayout`）2026-10-21
+- 最近一次全绿：`make check-fast` + `make test`（5136 passed / 8 skipped）+ 前端定向单测 34 例（`GlobalSearch` / `MainLayout`）2026-10-21 @ `8d0df1f2`
