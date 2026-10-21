@@ -27,7 +27,7 @@ test.describe("注册流程（仅 chromium-anon）", () => {
     await expect(page.getByPlaceholder("your@email.com")).toBeVisible()
     await expect(page.getByPlaceholder("密码")).toBeVisible()
     // 提交按钮（公开注册页按钮文字为"注册"）
-    await expect(page.getByRole("button", { name: /注 册/ })).toBeVisible()
+    await expect(page.getByRole("button", { name: /^注\s*册$/ })).toBeVisible()
   })
 
   test("动态背景可见且不拦截表单点击", async ({ page }) => {
@@ -45,7 +45,7 @@ test.describe("注册流程（仅 chromium-anon）", () => {
     await page.goto("/register")
     await page.getByPlaceholder("用户名").fill(username)
     await page.getByPlaceholder("密码").fill("testpass123")
-    await page.getByRole("button", { name: /注 册/ }).click()
+    await page.getByRole("button", { name: /^注\s*册$/ }).click()
 
     // 注册成功后自动登录，跳转到 /w
     await page.waitForURL(/\/w$/)
@@ -59,7 +59,7 @@ test.describe("注册流程（仅 chromium-anon）", () => {
     await page.goto("/register")
     await page.getByPlaceholder("用户名").fill("demo")
     await page.getByPlaceholder("密码").fill("testpass123")
-    await page.getByRole("button", { name: /注 册/ }).click()
+    await page.getByRole("button", { name: /^注\s*册$/ }).click()
 
     // 应该留在注册页，不跳转（toHaveURL 自动等待确认未重定向 /w）
     await expect(page).toHaveURL(/\/register/);

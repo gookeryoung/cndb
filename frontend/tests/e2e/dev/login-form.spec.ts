@@ -48,7 +48,9 @@ test("登录页：表单校验 / 提交可用，且无 ref 相关运行期错误
   // 1) 表单渲染：antd Form + Form.Item 已挂载
   const username = page.getByPlaceholder("用户名或邮箱");
   const password = page.getByPlaceholder("密码");
-  const submit = page.getByRole("button", { name: /登\s*录/ });
+  // 锚定首尾：登录页还挂着「切换登录背景」按钮（aria-label 含“登录”），
+  // 宽泛的 /登\s*录/ 会同时命中它，触发 strict mode violation
+  const submit = page.getByRole("button", { name: /^登\s*录$/ });
   await expect(username).toBeVisible();
   await expect(password).toBeVisible();
 
@@ -82,7 +84,7 @@ test("注册页：同一套 Form 链路在 dev 下也可用", async ({ page }) =
   page.on("pageerror", error => pageErrors.push(error.message));
 
   await page.goto("/register", { waitUntil: "domcontentloaded" });
-  const submit = page.getByRole("button", { name: /注\s*册/ });
+  const submit = page.getByRole("button", { name: /^注\s*册$/ });
   await expect(submit).toBeVisible();
 
   // 空提交触发必填校验：证明 Form 实例（ref）在被使用

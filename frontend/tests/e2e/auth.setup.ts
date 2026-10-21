@@ -10,7 +10,8 @@ test("登录并持久化 StorageState", async ({ page }) => {
 
   const usernameInput = page.getByPlaceholder("用户名或邮箱");
   const passwordInput = page.getByPlaceholder("密码");
-  const loginButton = page.getByRole("button", { name: /登 录/ });
+  // 首尾锚定：AuthLayout 的「切换登录背景」按钮 aria-label 也含“登录”
+  const loginButton = page.getByRole("button", { name: /^登\s*录$/ });
 
   await expect(usernameInput).toBeVisible();
   await expect(passwordInput).toBeVisible();
