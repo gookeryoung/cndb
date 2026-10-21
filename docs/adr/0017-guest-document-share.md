@@ -125,11 +125,7 @@ def serialize_public_document(db: Session, doc: Document) -> dict[str, Any]:
 计数使用原子更新，避免并发读改写丢失：
 
 ```python
-db.execute(
-    update(DocumentShare)
-    .where(DocumentShare.id == share.id)
-    .values(view_count=DocumentShare.view_count + 1)
-)
+db.execute(update(DocumentShare).where(DocumentShare.id == share.id).values(view_count=DocumentShare.view_count + 1))
 ```
 
 公开图片访问判定（与文档判定串联）：
