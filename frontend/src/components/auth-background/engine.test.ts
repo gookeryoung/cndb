@@ -90,6 +90,7 @@ afterEach(() => {
 const baseOptions = {
   isMobile: false,
   reducedMotion: false,
+  effect: 'flowfield' as const,
 }
 
 describe('mountAuthBackground', () => {
@@ -193,6 +194,19 @@ describe('mountAuthBackground', () => {
 
     takeFrame()(40)
     expect(ctx.clearRect).toHaveBeenCalledTimes(2)
+
+    dispose()
+  })
+
+  it('effect=galaxy 时改用多座星系绘制（多层星云 + 星点）', () => {
+    const ctx = createFakeContext()
+    const canvas = createCanvas(ctx)
+    const dispose = mountAuthBackground(canvas, { ...baseOptions, effect: 'galaxy' })
+
+    expect(ctx.clearRect).toHaveBeenCalledTimes(1)
+    // 桌面 3 座星系，每座外晕 + 核球各一层渐变
+    expect(ctx.createRadialGradient).toHaveBeenCalledTimes(6)
+    expect(ctx.fillRect.mock.calls.length).toBeGreaterThan(1600)
 
     dispose()
   })

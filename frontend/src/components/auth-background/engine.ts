@@ -5,12 +5,14 @@
  */
 
 import { createFlowField } from './flowfield'
+import { createGalaxy } from './galaxy'
 import { readPalette } from './palette'
-import type { FrameContext, Palette } from './types'
+import type { AuthEffect, FrameContext, Palette } from './types'
 
 export interface MountAuthBackgroundOptions {
   isMobile: boolean
   reducedMotion: boolean
+  effect: AuthEffect
 }
 
 export type DisposeAuthBackground = () => void
@@ -35,7 +37,10 @@ export function mountAuthBackground(
   if (!palette) return noop
   const colors: Palette = palette
 
-  const variant = createFlowField(options.isMobile)
+  const variant =
+    options.effect === 'galaxy'
+      ? createGalaxy(options.isMobile)
+      : createFlowField(options.isMobile)
   const pointer = { x: 0, y: 0 }
   const frameInterval = options.isMobile ? MOBILE_FRAME_INTERVAL : 0
 

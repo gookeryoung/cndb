@@ -3086,6 +3086,52 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   height: 100%;
 }
 
+/* 背景切换器：右下角胶囊，独立于 aria-hidden 背景层（ADR 0016 D8） */
+.auth-bg-switch {
+  position: absolute;
+  right: var(--cn-space-3xl);
+  bottom: var(--cn-space-3xl);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  padding: var(--cn-space-md) var(--cn-space-lg);
+  border: 1px solid color-mix(in srgb, var(--cn-auth-ink) 18%, transparent);
+  border-radius: var(--cn-radius-pill);
+  background: color-mix(in srgb, var(--cn-auth-bg) 58%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: color-mix(in srgb, var(--cn-auth-ink) 78%, transparent);
+  font-size: var(--cn-text-xs);
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+
+.auth-bg-switch:hover {
+  border-color: color-mix(in srgb, var(--cn-auth-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--cn-auth-bg) 42%, transparent);
+  color: var(--cn-auth-ink);
+}
+
+.auth-bg-switch:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--cn-auth-accent) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.auth-bg-switch-icon {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--cn-auth-accent), var(--cn-auth-accent-alt));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--cn-auth-accent) 55%, transparent);
+}
+
+.auth-bg-switch[data-effect='galaxy'] .auth-bg-switch-icon {
+  background: radial-gradient(circle at 30% 30%, #ffffff, var(--cn-auth-accent-alt) 55%, var(--cn-auth-accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--cn-auth-accent-alt) 65%, transparent);
+}
+
 /* 卡片内容层：抬到背景层之上 */
 .auth-shell-body {
   position: relative;
@@ -3140,6 +3186,10 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     animation: none;
     opacity: 1;
   }
+
+  .auth-bg-switch {
+    transition: none;
+  }
 }
 
 /* ─────────────── 移动端全局适配（< 768px，与 useResponsive BREAKPOINTS.mobile 对齐） ───────────────
@@ -3166,6 +3216,13 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   /* 顶部 Header 两侧留白收窄，给内容让出横向空间 */
   .ant-layout-header {
     padding: 0 var(--cn-space-md) !important;
+  }
+
+  /* 认证页背景切换器：靠近视口边缘，给卡片让出空间 */
+  .auth-bg-switch {
+    right: var(--cn-space-lg);
+    bottom: var(--cn-space-lg);
+    padding: var(--cn-space-sm) var(--cn-space-md);
   }
 }
 

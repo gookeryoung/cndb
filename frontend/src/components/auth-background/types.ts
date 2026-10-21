@@ -1,7 +1,21 @@
-/** 认证页动态背景：色板、帧上下文与绘制接口（ADR 0016）.
+/** 认证页动态背景：效果元数据、色板、帧上下文与绘制接口（ADR 0016）.
  *
  * 本模块保持「零依赖 + 极小体积」：真正的绘制实现只随 lazy chunk 加载。
  */
+
+/** 可选背景动效；同时也是 `localStorage['cndb_auth_bg']` 的合法取值 */
+export type AuthEffect = 'flowfield' | 'galaxy'
+
+export interface AuthEffectMeta {
+  id: AuthEffect
+  /** 切换器文案；数组顺序即循环切换顺序 */
+  label: string
+}
+
+export const AUTH_EFFECTS: readonly AuthEffectMeta[] = [
+  { id: 'flowfield', label: '流场粒子' },
+  { id: 'galaxy', label: '宇宙星系' },
+]
 
 export interface Palette {
   /** 青紫渐变起点 / 终点：青色 */

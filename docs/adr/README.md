@@ -19,7 +19,7 @@
 | [0013](0013-stock-daily-multi-source-sample.md) | 示例日线两源扩样（tencent / sina，一源一表） | Accepted | P0-P2 已落地 | `src/cndb/plugins/datasource/providers/sina_kline.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`scripts/build_example_kline.py` | `tests/test_datasource_sina.py`、`tests/test_seed_datasource.py` | [未发布](../../CHANGELOG.md) |
 | [0014](0014-llm-prompt-datasource-sync.md) | 数据源同步接入大模型（llm_prompt + 提示词 + cron + 连通测试） | Implemented | P0-P2 已落地 | `src/cndb/plugins/datasource/providers/llm_prompt.py`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0015](0015-search-cache-and-full-coverage.md) | 工作区搜索缓存与全表覆盖 | Implemented | P0 已落地 | `src/cndb/plugins/workspaces/services/search.py`、`src/cndb/core/cache.py` | `tests/test_workspace_search.py`、`frontend/src/components/GlobalSearch.test.tsx` | [未发布](../../CHANGELOG.md) |
-| [0016](0016-auth-background-animation.md) | 认证页 JS 动态背景（Perlin 流场粒子，青紫渐变，固定深色舞台） | Implemented | P0-P1 已落地 | `frontend/src/components/auth-background/`、`frontend/src/layouts/AuthLayout.tsx` | `frontend/src/components/auth-background/*.test.ts`、`frontend/tests/e2e/smoke/{login,register}.spec.ts` | [未发布](../../CHANGELOG.md) |
+| [0016](0016-auth-background-animation.md) | 认证页 JS 动态背景（Perlin 流场粒子 / 多星系宇宙星系，可切换，青紫渐变，固定深色舞台） | Implemented | P0-P2 已落地 | `frontend/src/components/auth-background/`、`frontend/src/layouts/AuthLayout.tsx` | `frontend/src/components/auth-background/*.test.ts`、`frontend/tests/e2e/smoke/{login,register}.spec.ts` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 

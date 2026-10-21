@@ -40,6 +40,19 @@ test.describe("注册流程（仅 chromium-anon）", () => {
     await expect(page.getByPlaceholder("用户名")).toBeFocused()
   })
 
+  test("切换背景动效为宇宙星系并刷新保持", async ({ page }) => {
+    await page.goto("/register")
+    const switcher = page.getByTestId("auth-bg-switch")
+    await expect(switcher).toHaveAttribute("data-effect", "flowfield")
+
+    await switcher.click()
+    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("data-effect", "galaxy")
+    await expect(page.getByTestId("auth-bg-switch")).toContainText("宇宙星系")
+
+    await page.reload()
+    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("data-effect", "galaxy")
+  })
+
   test("注册成功 → 自动登录 → 进入 /w 工作区列表", async ({ page }) => {
     const username = uniqueUsername()
 
