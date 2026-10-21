@@ -200,7 +200,7 @@ class TestTableBoundFiles:
 
 
 class TestDocumentBoundFiles:
-    def test_draft_attachment_hidden_from_members_and_visible_to_collaborator(self, client, db):
+    def test_draft_attachment_hidden_from_members(self, client, db):
         env = Env(db)
         doc_id = _doc(client, env, status="draft")
 
@@ -210,16 +210,6 @@ class TestDocumentBoundFiles:
 
         assert _download(client, env, env.viewer.username, key) == 404
         assert _download(client, env, env.owner.username, key) == 200
-
-        # 授权为协作者后即可读（与文档可见性一致）
-        auth_owner = _login(client, env.owner.username)
-        grant = client.post(
-            f"{DOCS.format(ws=env.ws.id)}/{doc_id}/permissions",
-            json={"user_id": env.viewer.id, "role": "viewer"},
-            headers=auth_owner,
-        )
-        assert grant.status_code == 201, grant.text
-        assert _download(client, env, env.viewer.username, key) == 200
 
     def test_cannot_attach_to_invisible_draft(self, client, db):
         env = Env(db)

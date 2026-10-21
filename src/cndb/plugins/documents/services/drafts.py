@@ -186,7 +186,7 @@ def submit_draft(
     if base > latest_num:
         raise BadRequestError(f"基准版本不存在：v{base}（当前最新 v{latest_num}）")
 
-    mode = change_request_service.resolve_document_write_mode(db, workspace_id, doc.id, user)
+    mode = change_request_service.resolve_write_mode(db, workspace_id, user)
 
     # ── 无直编资格：生成修改申请（正文不落库） ──
     if mode == change_request_service.WRITE_MODE_CHANGE_REQUEST:
@@ -216,9 +216,6 @@ def submit_draft(
             current_version=latest_num,
         )
 
-    from cndb.plugins.documents.services import document_permissions
-
-    granted = document_permissions.is_editor_granted(db, doc.id, user.id)
     updated = content_service.update_content(
         db,
         workspace_id,
@@ -227,7 +224,6 @@ def submit_draft(
         content=incoming,
         change_summary=change_summary or "提交修改",
         base_updated_at=None,
-        enforce_role=not granted,
     )
     _delete_draft_row(db, doc.id, user.id)
     db.commit()

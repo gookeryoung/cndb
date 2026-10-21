@@ -15,7 +15,6 @@ import {
   EditOutlined,
   InboxOutlined,
   LockOutlined,
-  TeamOutlined,
   ApartmentOutlined,
   DeleteOutlined,
   FileAddOutlined,
@@ -392,15 +391,6 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
               aria-label="仅自己可见"
               data-testid={`doc-visibility-${node.id}`}
               style={{ marginLeft: 6, fontSize: 11, color: 'var(--cn-text-secondary, #8c8c8c)' }}
-            />
-          </Tooltip>
-        )}
-        {node.visibility === 'shared' && (
-          <Tooltip title={`未发布：已授权 ${node.collaborator_count ?? 0} 位协作者可见`}>
-            <TeamOutlined
-              aria-label="已共享给协作者"
-              data-testid={`doc-visibility-${node.id}`}
-              style={{ marginLeft: 6, fontSize: 11, color: 'var(--cn-primary, #1890ff)' }}
             />
           </Tooltip>
         )}

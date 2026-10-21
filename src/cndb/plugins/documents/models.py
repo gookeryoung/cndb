@@ -1,11 +1,11 @@
-"""documents 插件 ORM 模型：文档 / 版本 / 标签 / 权限 / 分享.
+"""documents 插件 ORM 模型：文档 / 版本 / 标签 / 分享.
 
 设计要点：
 - 文档挂在工作区下，支持文件夹层级（parent_id 自引用）；
 - 内容通过 document_versions 版本化，每次保存自动创建新版本；
 - 全文检索由 SQLite FTS5 虚拟表承担（见迁移脚本中的 documents_fts + 触发器），
   ORM 不声明 FTS 虚拟表模型，检索走 services.search 中的原生 SQL；
-- 权限默认继承工作区角色，document_permissions 仅存覆盖项。
+- 权限完全继承工作区角色，不设文档级覆盖项。
 """
 
 from __future__ import annotations
@@ -182,19 +182,6 @@ class DocumentTag(Base):
     )
     tagged_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     tagged_by_id: Mapped[int | None] = mapped_column(ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True)
-
-
-class DocumentPermission(Base):
-    """文档级权限覆盖（默认继承工作区角色）."""
-
-    __tablename__ = "documents_permission"
-    __table_args__ = {"extend_existing": True}
-
-    document_id: Mapped[int] = mapped_column(ForeignKey("documents_document.id", ondelete="CASCADE"), primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts_user.id", ondelete="CASCADE"), primary_key=True, index=True
-    )
-    role: Mapped[str] = mapped_column(String(20), nullable=False)  # owner/editor/viewer
 
 
 class DocumentShare(TimestampMixin, Base):
@@ -426,7 +413,6 @@ __all__ = [
     "DocumentIssue",
     "DocumentIssueComment",
     "DocumentIssueEvent",
-    "DocumentPermission",
     "DocumentPin",
     "DocumentShare",
     "DocumentTag",

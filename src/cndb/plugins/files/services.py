@@ -7,7 +7,7 @@
 ==================  ==========================================================
 table_id (+row_id)  对表有 ``TableAction.READ``；若记录 row_id，还要该行在
                     行级过滤范围内（表所有者/超管按既有豁免规则）
-document_id         文档对调用者可见（未发布 → 仅创建者/所有者/协作者）
+document_id         文档对调用者可见（未发布 → 仅创建者/所有者）
 无记录（历史文件）   仅工作区成员（保持既有能力，键不可猜）
 ==================  ==========================================================
 """
@@ -97,10 +97,10 @@ def assert_can_attach_document(db: Session, *, document_id: int, workspace_id: i
     """上传到某份文档时的前置校验（可见 + 可直接写内容）.
 
     已发布文档的查看者走"修改申请"流程（保存转 202），而上传附件没有对应的申请形态，
-    因此这里要求"可直接写"：创建者 / 文档协作者（editor）/ 工作区编辑者+ / 所有者。
+    因此这里要求"可直接写"：创建者 / 工作区编辑者+ / 所有者。
     未发布文档对普通成员不可见，可见性校验会先行 404。
     """
-    from cndb.plugins.documents.services import document_permissions, visibility
+    from cndb.plugins.documents.services import visibility
     from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
     from cndb.plugins.workspaces.permissions import has_role
 
@@ -108,8 +108,6 @@ def assert_can_attach_document(db: Session, *, document_id: int, workspace_id: i
     if doc.created_by_id == user.id:
         return doc
     if visibility.is_document_admin(db, workspace_id, user):
-        return doc
-    if document_permissions.is_editor_granted(db, doc.id, user.id):
         return doc
     ws = db.get(Workspace, workspace_id)
     if ws is not None and has_role(user, ws, WorkspaceRole.EDITOR, db):

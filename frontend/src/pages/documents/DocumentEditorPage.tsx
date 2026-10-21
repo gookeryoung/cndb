@@ -28,7 +28,6 @@ import {
   MoreOutlined,
   PictureOutlined,
   PullRequestOutlined,
-  TeamOutlined,
   SaveOutlined,
   SearchOutlined,
   SendOutlined,
@@ -53,7 +52,6 @@ import { buildTableSkeleton, insertLink, wrapSelection } from '@/components/Docu
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi } from '@/api/documents'
 import { fileApi, tableApi, workspaceApi } from '@/api'
-import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
 import type {
@@ -68,7 +66,6 @@ const { Text, Title } = Typography
 
 
 import BacklinksDrawer from './BacklinksDrawer'
-import DocumentCollaboratorsModal from './DocumentCollaboratorsModal'
 import DocumentChangeRequestsDrawer from './DocumentChangeRequestsDrawer'
 import InsertTableModal from './InsertTableModal'
 import LinksDrawer from './LinksDrawer'
@@ -88,7 +85,6 @@ export default function DocumentEditorPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
-  const [collaboratorsOpen, setCollaboratorsOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
   /** 顶层查看/编辑模式：已发布文档默认查看；有个人草稿或未发布文档默认编辑 */
   const [viewMode, setViewMode] = useState<'view' | 'edit'>('view')
@@ -138,8 +134,6 @@ export default function DocumentEditorPage() {
     enabled: Number.isFinite(workspaceId),
   })
   const myRole = (wsDetail?.current_user_role ?? null) as WorkspaceRole | null
-  // 当前用户（协作者弹窗使用）
-  const currentUser = useAuthStore((s) => s.user)
 
   // 该文档的修改申请（与抽屉共享缓存）：工具栏徽标显示待审核条数
   const { data: crList } = useQuery({
@@ -670,7 +664,6 @@ export default function DocumentEditorPage() {
     { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
     { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
     { key: 'tags', icon: <TagsOutlined />, label: `标签${(doc.tag_ids?.length ?? 0) > 0 ? ` (${doc.tag_ids?.length})` : ''}`, onClick: () => setTagsOpen(true) },
-    { key: 'collaborators', icon: <TeamOutlined />, label: '协作者', onClick: () => setCollaboratorsOpen(true) },
     { key: 'change-requests', icon: <PullRequestOutlined />, label: `修改申请${pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}`, onClick: () => setCrOpen(true) },
     { key: 'versions', icon: <HistoryOutlined />, label: `版本${(doc.version_count ?? 0) > 0 ? ` (${doc.version_count})` : ''}`, onClick: () => setVersionsOpen(true) },
     { type: 'divider' as const },
@@ -801,16 +794,6 @@ export default function DocumentEditorPage() {
             插入表格引用
           </Button>
           <Button icon={<TagsOutlined />} onClick={() => setTagsOpen(true)}>
-            标签{doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}
-          </Button>
-          {/* 协作者：未发布文档默认仅创建者与工作区所有者可见，这里显式开放给指定同事。
-              非管理者打开为只读名单（知情即协作），因此对所有成员可见。 */}
-          <Button
-            icon={<TeamOutlined />}
-            data-testid="doc-collaborators-open"
-            onClick={() => setCollaboratorsOpen(true)}
-          >
-            协作者
           </Button>
           <Button
             icon={<PullRequestOutlined />}
@@ -1034,15 +1017,6 @@ export default function DocumentEditorPage() {
       />
 
       {/* 标签抽屉 */}
-      <DocumentCollaboratorsModal
-        open={collaboratorsOpen}
-        onClose={() => setCollaboratorsOpen(false)}
-        workspaceId={workspaceId}
-        documentId={id}
-        canManage={doc.created_by_id != null && Number(doc.created_by_id) === Number(currentUser?.id)}
-        createdById={doc.created_by_id == null ? null : Number(doc.created_by_id)}
-        currentUserId={currentUser?.id == null ? null : Number(currentUser.id)}
-      />
       <Drawer title="文档标签" width={420} open={tagsOpen} onClose={() => setTagsOpen(false)}>
         <TagEditor
           workspaceId={workspaceId}

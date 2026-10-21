@@ -32,12 +32,10 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import (
     Document,
     DocumentDraft,
-    DocumentPermission,
     DocumentShare,
     Tag,
 )
 from cndb.plugins.documents.services import content as content_service
-from cndb.plugins.documents.services import document_permissions as doc_perms
 from cndb.plugins.documents.services import drafts, obsidian, parse, search, visibility
 from cndb.plugins.documents.services.export import docx as docx_export
 from cndb.plugins.documents.services.export import pdf as pdf_export
@@ -510,11 +508,6 @@ class TestContentServiceBranches:
         with pytest.raises(ConflictError):
             content_service.create_document(db, ws.id, owner, title="C", parent_id=parent.id)
 
-    def test_update_content_skips_role_check(self, db, ws, owner):
-        doc = content_service.create_document(db, ws.id, owner, title="T", content="v1")
-        updated = content_service.update_content(db, ws.id, doc.id, owner, content="v2", enforce_role=False)
-        assert updated.id == doc.id
-
     def test_update_content_unchanged_returns_early(self, db, ws, owner):
         doc = content_service.create_document(db, ws.id, owner, title="T", content="same")
         same = content_service.update_content(db, ws.id, doc.id, owner, content="same")
@@ -590,9 +583,6 @@ class TestContentServiceBranches:
     def test_normalize_ts_strips_timezone(self):
         assert content_service._normalize_ts("2024-01-01T00:00:00+08:00") == "2024-01-01 00:00:00"
 
-    def test_collaborator_counts_empty(self, db):
-        assert content_service._collaborator_counts(db, []) == {}
-
 
 # ── content：documents 路由错误分支 ──
 
@@ -634,27 +624,6 @@ class TestDocumentsRouterBranches:
         doc = _create_doc(client, ws, auth, title="差分子", content="v1")
         r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/diff", params={"base": 999, "head": 1}, headers=auth)
         assert r.status_code == 404
-
-    def test_editor_granted_direct_write(self, client, db, ws, owner, auth):
-        # 工作区 editor + 关闭 allow_edit：常规保存走修改申请；被授予文档级 editor 后可直编草稿
-        editor = _mk_user(db, "covdoc_weditor")
-        db.add(WorkspaceMember(workspace_id=ws.id, user_id=editor.id, role=WorkspaceRole.EDITOR))
-        db.commit()
-        ws.allow_edit = False
-        db.commit()
-        editor_auth = _login(client, editor.username)
-        doc = _create_doc(client, ws, auth, title="授予直编", status="draft", content="原始正文")
-        db.add(DocumentPermission(document_id=doc["id"], user_id=editor.id, role="editor"))
-        db.commit()
-        r = client.put(
-            f"{DOCS.format(ws=ws.id)}/{doc['id']}/content",
-            json={"content": "被授予者直接编辑"},
-            headers=editor_auth,
-        )
-        assert r.status_code == 200, r.text
-
-
-# ── search ──
 
 
 class TestSearchServiceBranches:
@@ -1030,57 +999,6 @@ class TestVisibilityServiceBranches:
     def test_is_workspace_owner_missing_and_member(self, db, ws, owner):
         assert visibility.is_workspace_owner(db, 999999, owner) is False
         assert visibility.is_workspace_owner(db, ws.id, owner) is True
-
-
-class TestDocumentPermissionsBranches:
-    def test_workspace_missing(self, db):
-        with pytest.raises(NotFoundError):
-            doc_perms._workspace(db, 999999)
-
-    def test_can_manage_superuser(self, db, ws, owner):
-        su = _mk_user(db, "covdoc_perm_su2")
-        su.is_superuser = True
-        db.commit()
-        doc = content_service.create_document(db, ws.id, owner, title="T")
-        assert doc_perms.can_manage(db, doc, su) is True
-
-    def test_granted_user_ids(self, db, ws, owner):
-        doc = content_service.create_document(db, ws.id, owner, title="T")
-        grantee = _mk_user(db, "covdoc_grantee")
-        db.add(DocumentPermission(document_id=doc.id, user_id=grantee.id, role="viewer"))
-        db.commit()
-        assert doc_perms.granted_user_ids(db, doc.id) == {grantee.id}
-
-    def test_upsert_permission_guard_and_update_branches(self, db, ws, owner):
-        doc = content_service.create_document(db, ws.id, owner, title="T")
-        member = _mk_user(db, "covdoc_perm_member")
-        db.add(WorkspaceMember(workspace_id=ws.id, user_id=member.id, role=WorkspaceRole.VIEWER))
-        outsider = _mk_user(db, "covdoc_perm_outsider")
-        su = _mk_user(db, "covdoc_perm_su")
-        su.is_superuser = True
-        db.commit()
-
-        with pytest.raises(BadRequestError):
-            doc_perms.upsert_permission(db, doc, operator=owner, target_user_id=member.id, role="bogus")
-        with pytest.raises(BadRequestError):
-            doc_perms.upsert_permission(db, doc, operator=owner, target_user_id=owner.id, role="viewer")
-        with pytest.raises(BadRequestError):
-            doc_perms.upsert_permission(db, doc, operator=su, target_user_id=owner.id, role="viewer")
-        with pytest.raises(NotFoundError):
-            doc_perms.upsert_permission(db, doc, operator=owner, target_user_id=999999, role="viewer")
-        with pytest.raises(BadRequestError):
-            doc_perms.upsert_permission(db, doc, operator=owner, target_user_id=outsider.id, role="viewer")
-
-        doc_perms.upsert_permission(db, doc, operator=owner, target_user_id=member.id, role="viewer")
-        updated = doc_perms.upsert_permission(db, doc, operator=owner, target_user_id=member.id, role="editor")
-        assert updated["role"] == "editor"
-
-    def test_remove_permission_missing_returns_false(self, db, ws, owner):
-        doc = content_service.create_document(db, ws.id, owner, title="T")
-        member = _mk_user(db, "covdoc_remove_member")
-        db.add(WorkspaceMember(workspace_id=ws.id, user_id=member.id, role=WorkspaceRole.VIEWER))
-        db.commit()
-        assert doc_perms.remove_permission(db, doc, operator=owner, target_user_id=member.id) is False
 
 
 class TestDraftsServiceBranches:
