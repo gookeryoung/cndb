@@ -29,7 +29,7 @@
 | B 方案制定 | 需求卡片 | 逐条核对代码、定不变量、收决策 D 表、分期 | ADR `docs/adr/NNNN-*.md`（Proposed，结构见模板） | 卡片约束逐条有落点、D 表无「待定」；ADR → Accepted | ✅ 方案评审 |
 | C 代码编写 | ADR | 按 P0→P1→P2 小步实现，每期回填 ADR 落地状态 | alembic 迁移 + plugin 分层 + 前端 | `make check-fast`（含 `adr-check`） | — |
 | D 测试编写与验证 | 实现同轮 | 判定层 / 接口层 / 迁移 / 备份 / e2e 同步写测试 | `tests/test_*.py`、`*.test.tsx`、`tests/e2e/*` | `make test` → `make cov`(≥95%) → `make e2e` | — |
-| E 集成门禁与文档 | 全绿 | 更新 README/CONTEXT/docs、回填 ADR 交接、bump 版本 | `make check`、CHANGELOG | `make check` + 双 CI + `adr-check.yml` | — |
+| E 集成门禁与文档 | 全绿 | 更新 README/CONTEXT/docs、回填 ADR 交接、bump 版本 | `make check`、CHANGELOG | `make check` + 双 CI（含 ADR Landing） | — |
 | F 推送与发布 | 评审通过 | 推全部 remote、打 tag | PyPI + fspack 包 + GitHub Release | [release.yml](../.github/workflows/release.yml) | ✅ 上线 tag |
 | G 部署 | tag 成功 | 观察部署与健康 | 生产实例 | [deploy-tencent.yml](../.github/workflows/deploy-tencent.yml) + `/health` | 自动回滚兜底 |
 
@@ -85,7 +85,7 @@
 
 文档更新：README / CONTEXT.md / `docs/*`、ADR 的「落地状态 + 交接」、`docs/adr/README.md` 索引，以及 `make bump`（CHANGELOG，条目带 `(ADR NNNN Pn)`）。
 
-**门禁**：双 CI（[GitHub ci.yml](../.github/workflows/ci.yml) + [CodeUp ci.yml](../.codeup/pipelines/ci.yml)）通过、[adr-check.yml](../.github/workflows/adr-check.yml) 无 error；bundle budget 不超基线 +5%。
+**门禁**：双 CI（[GitHub ci.yml](../.github/workflows/ci.yml) + [CodeUp ci.yml](../.codeup/pipelines/ci.yml)）通过、ADR Landing job 无 error（代码推送由 lint 步骤校验，纯 ADR / CHANGELOG 推送单独跑该 job）；bundle budget 不超基线 +5%。
 
 ### F 推送与发布
 
@@ -130,5 +130,5 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 - [x] `.trae/rules/*.md` 阶段约束 —— [dev-workflow](../.trae/rules/dev-workflow.md)、[design](../.trae/rules/design.md)、[testing](../.trae/rules/testing.md)
 - [x] `.trae/skills/*` 阶段 Skill —— requirement-intake / adr-writer / implementer / test-writer / gate-runner / release-manager
 - [ ] （可选）编辑后自动 `check-fast` 的 hook
-- [x] ADR 落地门禁 `make adr-check` + 独立 CI —— [check_adr_landing.py](../scripts/check_adr_landing.py)、[adr-check.yml](../.github/workflows/adr-check.yml)
+- [x] ADR 落地门禁 `make adr-check` + CI 的 ADR Landing job —— [check_adr_landing.py](../scripts/check_adr_landing.py)、[ci.yml](../.github/workflows/ci.yml)
 - [x] ADR 索引与开工/收工交接协议 —— [docs/adr/README.md](adr/README.md)、[AGENTS.md](../AGENTS.md)
