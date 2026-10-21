@@ -21,7 +21,7 @@ test.describe("匿名（chromium-anon only）", () => {
     await page.waitForURL(/\/login/);
     await expect(page.getByPlaceholder("用户名或邮箱")).toBeVisible();
     await expect(page.getByPlaceholder("密码")).toBeVisible();
-    await expect(page.getByRole("button", { name: /登 录/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^登\s*录$/ })).toBeVisible();
   });
 
   test("动态背景可见且不拦截表单点击", async ({ page }) => {
@@ -38,7 +38,7 @@ test.describe("匿名（chromium-anon only）", () => {
     await page.goto("/login");
     await page.getByPlaceholder("用户名或邮箱").fill("demo");
     await page.getByPlaceholder("密码").fill("demo1234");
-    await page.getByRole("button", { name: /登 录/ }).click();
+    await page.getByRole("button", { name: /^登\s*录$/ }).click();
     await page.waitForURL(/\/w$/);
     await expect(page.getByTestId("workspace-list")).toBeVisible();
     await expect(page.getByRole("heading", { level: 3, name: /我的工作区/ })).toBeVisible();
@@ -48,7 +48,7 @@ test.describe("匿名（chromium-anon only）", () => {
     await page.goto("/login");
     await page.getByPlaceholder("用户名或邮箱").fill("demo");
     await page.getByPlaceholder("密码").fill("wrong-password");
-    await page.getByRole("button", { name: /登 录/ }).click();
+    await page.getByRole("button", { name: /^登\s*录$/ }).click();
     // 错误密码应保留在登录页，不跳转（toHaveURL 自动等待确认未重定向 /w）
     await expect(page).toHaveURL(/\/login/);
     await expect(page.getByPlaceholder("用户名或邮箱")).toBeVisible();
@@ -62,11 +62,11 @@ test.describe("匿名（chromium-anon only）", () => {
     await page.goto("/login");
     await page.getByPlaceholder("用户名或邮箱").fill("demo");
     await page.getByPlaceholder("密码").fill("wrong-password");
-    await page.getByRole("button", { name: /登 录/ }).click();
+    await page.getByRole("button", { name: /^登\s*录$/ }).click();
     await expect(page.getByText("用户名或密码错误")).toBeVisible();
 
     await page.getByPlaceholder("密码").fill("demo1234");
-    await page.getByRole("button", { name: /登 录/ }).click();
+    await page.getByRole("button", { name: /^登\s*录$/ }).click();
     await expect(page).toHaveURL(/\/w$/, { timeout: 15_000 });
     await expect(page.getByTestId("workspace-list")).toBeVisible();
   });
