@@ -35,6 +35,7 @@ const DocumentsIssuesPage = lazy(() => import('@/pages/documents/DocumentsIssues
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
 const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage'))
 const DatasourcePage = lazy(() => import('@/pages/datasource/DatasourcePage'))
+const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 
 /** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
 function PageFallback() {
@@ -72,6 +73,8 @@ function AuthenticatedApp() {
         <Routes>
         <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
         <Route path="/register" element={<AuthLayout><RegisterPage /></AuthLayout>} />
+        {/* 公开分享页（ADR 0017）：免登录只读，注册在 ProtectedRoute 之外 */}
+        <Route path="/public/share/:token" element={<PublicSharePage />} />
 
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="/w" replace />} />

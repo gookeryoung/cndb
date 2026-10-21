@@ -214,6 +214,14 @@ describe('Markdown 图片段落嵌套', () => {
     )
     expect(container.querySelector('.doc-md-preview p')).not.toBeNull()
   })
+
+  it('公开分享模式：站内图片走免登录基地址，不触发工作区鉴权请求', () => {
+    const { container } = renderProviders(
+      <MarkdownPreview content={'![图](file:abc.png)'} publicFileBase="/api/v1/documents/share/tok/files" />,
+    )
+    const img = container.querySelector('[data-testid="doc-image-public"] img') as HTMLImageElement
+    expect(img?.getAttribute('src')).toBe('/api/v1/documents/share/tok/files/abc.png')
+  })
 })
 
 /** 查看模式（react-markdown + GFM）对 GFM 语法的渲染：与实时预览口径一致 */

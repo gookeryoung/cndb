@@ -31,6 +31,7 @@ import {
   SaveOutlined,
   SearchOutlined,
   SendOutlined,
+  ShareAltOutlined,
   TableOutlined,
   TagsOutlined,
 } from '@ant-design/icons'
@@ -67,6 +68,7 @@ const { Text, Title } = Typography
 
 import BacklinksDrawer from './BacklinksDrawer'
 import DocumentChangeRequestsDrawer from './DocumentChangeRequestsDrawer'
+import DocumentShareModal from './DocumentShareModal'
 import InsertTableModal from './InsertTableModal'
 import LinksDrawer from './LinksDrawer'
 import OutlineDrawer from './OutlineDrawer'
@@ -96,6 +98,8 @@ export default function DocumentEditorPage() {
   const [repairTargets, setRepairTargets] = useState<Record<string, number>>({})
   const [diffPair, setDiffPair] = useState<{ base: number; head: number } | null>(null)
   const [crOpen, setCrOpen] = useState(false)
+  /** 分享弹层（ADR 0017）：owner/editor 可创建匿名只读链接 */
+  const [shareOpen, setShareOpen] = useState(false)
   /** 提交修改弹窗与变更说明 */
   const [submitOpen, setSubmitOpen] = useState(false)
   const [changeSummary, setChangeSummary] = useState('')
@@ -663,6 +667,10 @@ export default function DocumentEditorPage() {
     { key: 'links', icon: <BranchesOutlined />, label: '文档链接', onClick: () => setLinksOpen(true) },
     { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
     { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
+    // 仅 owner / editor 且非文件夹可分享（viewer 由后端 require_editor 拒绝）
+    ...((myRole === 'owner' || myRole === 'editor') && !doc.is_folder
+      ? [{ key: 'share', icon: <ShareAltOutlined />, label: '分享', onClick: () => setShareOpen(true) }]
+      : []),
     { key: 'tags', icon: <TagsOutlined />, label: `标签${(doc.tag_ids?.length ?? 0) > 0 ? ` (${doc.tag_ids?.length})` : ''}`, onClick: () => setTagsOpen(true) },
     { key: 'change-requests', icon: <PullRequestOutlined />, label: `修改申请${pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}`, onClick: () => setCrOpen(true) },
     { key: 'versions', icon: <HistoryOutlined />, label: `版本${(doc.version_count ?? 0) > 0 ? ` (${doc.version_count})` : ''}`, onClick: () => setVersionsOpen(true) },
@@ -800,6 +808,12 @@ export default function DocumentEditorPage() {
           >
             修改申请{pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}
           </Button>
+          {/* 分享入口仅 owner / editor 且非文件夹（viewer 由后端 require_editor 拒绝） */}
+          {(myRole === 'owner' || myRole === 'editor') && !doc.is_folder && (
+            <Button icon={<ShareAltOutlined />} data-testid="doc-share-open" onClick={() => setShareOpen(true)}>
+              分享
+            </Button>
+          )}
           <Button icon={<HistoryOutlined />} onClick={() => setVersionsOpen(true)}>
             版本{doc.version_count > 0 ? ` (${doc.version_count})` : ''}
           </Button>
@@ -1044,6 +1058,15 @@ export default function DocumentEditorPage() {
         onLimitChange={v => setInsertLimit(v)}
         tables={tablesQuery.data ?? []}
         tablesLoading={tablesQuery.isLoading}
+      />
+
+      {/* 分享弹层：匿名只读链接的创建 / 复制 / 访问次数 / 撤销（ADR 0017） */}
+      <DocumentShareModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        workspaceId={workspaceId}
+        docId={id}
+        docStatus={doc.status}
       />
 
       {/* 提交修改弹窗：保存只写草稿，这里显式确认后才生成版本 / 修改申请 */}

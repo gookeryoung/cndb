@@ -14,11 +14,13 @@ document_id         文档对调用者可见（未发布 → 仅创建者/所有
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cndb.core.errors import NotFoundError, PermissionDeniedError
+from cndb.core.config import settings
+from cndb.core.errors import BadRequestError, NotFoundError, PermissionDeniedError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.files.models import FileOwner
 
@@ -49,6 +51,23 @@ def record_owner(
 
 def owner_of(db: Session, file_key: str) -> FileOwner | None:
     return db.query(FileOwner).filter(FileOwner.file_key == file_key).first()
+
+
+def resolve_workspace_file(workspace_id: int, file_key: str) -> Path:
+    """把 file_key 还原为工作区上传目录内的路径（唯一路径校验实现，非法 key 抛 400）."""
+    if not file_key or len(file_key) > 255:
+        raise BadRequestError("非法的文件标识符")
+    if ".." in file_key or "/" in file_key or "\\" in file_key or file_key.startswith("."):
+        raise BadRequestError("非法的文件标识符")
+    work_dir = settings.UPLOAD_DIR / str(workspace_id)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    path = work_dir / file_key
+    resolved = path.resolve()
+    root = work_dir.resolve()
+    # 前缀校验：字符串拼接在 Windows 反斜杠路径下会误判越界，统一用 is_relative_to
+    if resolved != root and not resolved.is_relative_to(root):
+        raise BadRequestError("非法的文件标识符")
+    return path
 
 
 def forget_owner(db: Session, file_key: str) -> None:
@@ -122,4 +141,5 @@ __all__ = [
     "forget_owner",
     "owner_of",
     "record_owner",
+    "resolve_workspace_file",
 ]

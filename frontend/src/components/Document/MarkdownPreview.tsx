@@ -149,10 +149,13 @@ const mdComponents = {
 function Md({
   text,
   workspaceId,
+  publicFileBase,
   onWikilink,
 }: {
   text: string
   workspaceId?: number | string
+  /** 公开分享页的免登录图片基地址（提供后站内图片直接走公开 URL） */
+  publicFileBase?: string
   onWikilink?: (title: string) => void
 }) {
   const components = useMemo(
@@ -160,7 +163,7 @@ function Md({
       ...mdComponents,
       // 站内图片 `![alt](file:<key>)` 需带鉴权取 blob；外部 URL 原样渲染
       img: ({ src, alt }: React.ComponentProps<'img'>) => (
-        <DocumentImage workspaceId={workspaceId} src={src} alt={alt} />
+        <DocumentImage workspaceId={workspaceId} publicFileBase={publicFileBase} src={src} alt={alt} />
       ),
       // 仅含图片的段落用 div 承载：antd Image 的根元素是 div，
       // 放在 Markdown 的 <p> 里会产生非法嵌套（React 报
@@ -211,7 +214,7 @@ function Md({
         )
       },
     }),
-    [onWikilink, workspaceId],
+    [onWikilink, workspaceId, publicFileBase],
   )
   return (
     <ReactMarkdown
@@ -226,10 +229,12 @@ function Md({
   )
 }
 
-function MarkdownPreviewBase({ content, workspaceId, onWikilink }: {
+function MarkdownPreviewBase({ content, workspaceId, publicFileBase, onWikilink }: {
   content: string
   /** 工作区 ID：提供后启用 `{{table:…}}` 数据表动态引用渲染 */
   workspaceId?: number
+  /** 公开分享页的免登录图片基地址（ADR 0017） */
+  publicFileBase?: string
   /** 双向链接点击回调：入参为 [[文档标题]] 中的标题 */
   onWikilink?: (title: string) => void
 }) {
@@ -243,7 +248,7 @@ function MarkdownPreviewBase({ content, workspaceId, onWikilink }: {
   if (!hasTableRef) {
     return (
       <div className="doc-md-preview" style={{ lineHeight: 1.75, wordBreak: 'break-word' }}>
-        <Md text={content} workspaceId={workspaceId} onWikilink={onWikilink} />
+        <Md text={content} workspaceId={workspaceId} publicFileBase={publicFileBase} onWikilink={onWikilink} />
       </div>
     )
   }
@@ -252,7 +257,7 @@ function MarkdownPreviewBase({ content, workspaceId, onWikilink }: {
     <div className="doc-md-preview" style={{ lineHeight: 1.75, wordBreak: 'break-word' }}>
       {segments!.map((seg, i) =>
         seg.type === 'md' ? (
-          <Md key={i} text={seg.text} workspaceId={workspaceId} onWikilink={onWikilink} />
+          <Md key={i} text={seg.text} workspaceId={workspaceId} publicFileBase={publicFileBase} onWikilink={onWikilink} />
         ) : (
           <TableEmbed key={i} workspaceId={workspaceId!} tableRef={seg.ref} />
         ),
