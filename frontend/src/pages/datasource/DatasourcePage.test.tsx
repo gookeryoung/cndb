@@ -26,6 +26,22 @@ const PROVIDERS = [
     default_cursor: 'datetime',
     supports_paging: false,
   },
+  {
+    name: 'llm_prompt',
+    label: '大模型提示词',
+    params_schema: {
+      fields: [
+        { name: 'url_template', type: 'text', required: true, label: 'API 地址' },
+        { name: 'model', type: 'text', required: true, label: '模型' },
+        { name: 'temperature', type: 'number', default: 0.2 },
+        { name: 'max_tokens', type: 'number', default: 1024 },
+        { name: 'json_mode', type: 'boolean', default: true },
+      ],
+      placeholders: ['entrant', 'start', 'end', 'today'],
+    },
+    default_cursor: 'none',
+    supports_paging: false,
+  },
 ]
 
 function makeJob(overrides: Partial<SyncJob> = {}): SyncJob {
@@ -56,19 +72,40 @@ const TABLES = [{ id: 20, name: '天气日表' }]
 
 let sessionBodies: Array<Record<string, unknown>> = []
 let templateBodies: Array<Record<string, unknown>> = []
+let jobBodies: Array<Record<string, unknown>> = []
+let connectionBodies: Array<Record<string, unknown>> = []
 
 function setupHandlers(
   jobs: SyncJob[],
-  options: { runStatus?: 'success' | 'failed'; createTemplateError?: string } = {},
+  options: {
+    runStatus?: 'success' | 'failed'
+    createTemplateError?: string
+    connectionResult?: { ok: boolean; latency_ms: number; model: string; message: string }
+  } = {},
 ) {
   const calls: string[] = []
   sessionBodies = []
   templateBodies = []
+  jobBodies = []
+  connectionBodies = []
   server.use(
     http.get(`/api/v1/workspaces/${WID}/datasource/providers`, () => HttpResponse.json({ providers: PROVIDERS })),
     http.get(`/api/v1/workspaces/${WID}/datasource/sync-jobs`, () =>
       HttpResponse.json({ total: jobs.length, jobs }),
     ),
+    http.put(`/api/v1/workspaces/${WID}/datasource/sync-jobs/:id`, async ({ request, params }) => {
+      calls.push('update-job')
+      const body = (await request.json()) as Record<string, unknown>
+      jobBodies.push(body)
+      return HttpResponse.json({ ...jobs[0], id: Number(params.id), ...body })
+    }),
+    http.post(`/api/v1/workspaces/${WID}/datasource/test-connection`, async ({ request }) => {
+      calls.push('test-connection')
+      connectionBodies.push((await request.json()) as Record<string, unknown>)
+      return HttpResponse.json(
+        options.connectionResult ?? { ok: true, latency_ms: 120, model: 'deepseek-chat', message: '连通成功' },
+      )
+    }),
     http.get(`/api/v1/workspaces/${WID}/tables`, () => HttpResponse.json(TABLES)),
     http.get(`/api/v1/workspaces/${WID}/datasource/sessions`, () =>
       HttpResponse.json({
@@ -383,5 +420,92 @@ describe('DatasourcePage · 凭证会话与领域模板', () => {
     fireEvent.click(await screen.findByRole('button', { name: '套用分析模板 北京天气日报' }))
     fireEvent.click(await screen.findByText('股票日线趋势'))
     expect(await screen.findByText(/套用失败：公式 ma5 引用了不存在的字段: close/)).toBeInTheDocument()
+  })
+})
+
+function makeLlmJob(overrides: Partial<SyncJob> = {}): SyncJob {
+  return makeJob({
+    name: '模型日报',
+    provider: 'llm_prompt',
+    request_spec: {
+      url_template: 'https://api.deepseek.com',
+      prompt: { system: '你是数据抽取助手', user_template: '请生成 {today} 的天气摘要，地区：{entrant}' },
+      llm: { model: 'deepseek-chat', temperature: 0.2, max_tokens: 1024, json_mode: true },
+      time_window: { mode: 'none' },
+    },
+    entrant_param: null,
+    entrant_keys: [],
+    cursor: { strategy: 'none' },
+    match_keys: ['day'],
+    ...overrides,
+  })
+}
+
+describe('DatasourcePage · 大模型提示词', () => {
+  it('编辑 llm_prompt 任务显示提示词与模型字段，隐藏响应数组路径', async () => {
+    setupHandlers([makeLlmJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 模型日报' }))
+
+    expect(await screen.findByTestId('datasource-llm-model')).toHaveValue('deepseek-chat')
+    expect(screen.getByTestId('datasource-llm-system')).toHaveValue('你是数据抽取助手')
+    expect(screen.getByTestId('datasource-llm-user')).toHaveValue('请生成 {today} 的天气摘要，地区：{entrant}')
+    expect(screen.queryByText('响应数组路径')).not.toBeInTheDocument()
+  })
+
+  it('保存时组装 prompt / llm，且不带分页与响应路径', async () => {
+    const calls = setupHandlers([makeLlmJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 模型日报' }))
+    fireEvent.change(await screen.findByTestId('datasource-llm-model'), {
+      target: { value: 'deepseek-reasoner' },
+    })
+    fireEvent.click(screen.getByTestId('datasource-save-btn'))
+
+    await waitFor(() => expect(calls).toContain('update-job'))
+    const spec = jobBodies[0].request_spec as Record<string, unknown>
+    expect(spec.prompt).toMatchObject({ user_template: '请生成 {today} 的天气摘要，地区：{entrant}' })
+    expect(spec.llm).toMatchObject({ model: 'deepseek-reasoner', json_mode: true })
+    expect(spec).not.toHaveProperty('paging')
+    expect(spec).not.toHaveProperty('data_path')
+  })
+
+  it('连通测试成功展示模型与耗时', async () => {
+    const calls = setupHandlers([makeLlmJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 模型日报' }))
+    fireEvent.click(await screen.findByTestId('datasource-test-connection'))
+
+    await waitFor(() => expect(calls).toContain('test-connection'))
+    expect(await screen.findByText('连通成功 · deepseek-chat · 120 ms')).toBeInTheDocument()
+    const requestSpec = connectionBodies[0].request_spec as Record<string, unknown>
+    expect(requestSpec.llm).toMatchObject({ model: 'deepseek-chat' })
+  })
+
+  it('连通测试失败展示后端原因', async () => {
+    setupHandlers([makeLlmJob()], {
+      connectionResult: { ok: false, latency_ms: 80, model: '', message: '401 Unauthorized' },
+    })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 模型日报' }))
+    fireEvent.click(await screen.findByTestId('datasource-test-connection'))
+
+    expect(await screen.findByText('连通失败')).toBeInTheDocument()
+    expect(screen.getByText('401 Unauthorized')).toBeInTheDocument()
+  })
+
+  it('cron 调度时提示必须配置幂等键', async () => {
+    setupHandlers([makeLlmJob({ schedule: { mode: 'cron', expr: '0 7 * * *' } })])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 模型日报' }))
+    expect(await screen.findByText(/大模型任务使用 cron 调度时必须配置幂等键/)).toBeInTheDocument()
+  })
+
+  it('非 llm_prompt 任务不渲染模型字段', async () => {
+    setupHandlers([makeJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
+    expect(await screen.findByText('响应数组路径')).toBeInTheDocument()
+    expect(screen.queryByTestId('datasource-llm-model')).not.toBeInTheDocument()
   })
 })

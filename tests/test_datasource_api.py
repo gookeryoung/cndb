@@ -8,8 +8,11 @@ from typing import Any
 import pytest
 from sqlalchemy import MetaData, func, select
 
+from cndb.core.crypto import encrypt_secrets
 from cndb.plugins.accounts.models import User
-from cndb.plugins.datasource.models import DatasourceSyncRun
+from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob, DatasourceSyncRun
+from cndb.plugins.datasource.providers.llm_prompt import LlmConnectionResult
+from cndb.plugins.datasource.routers import sync_jobs
 from cndb.plugins.datasource.services import runner
 from cndb.plugins.datasource.services.normalize import NormalizeResult
 from cndb.plugins.datasource.services.pipeline import FetchFailure, PipelineOutcome
@@ -290,3 +293,141 @@ class TestRunPreview:
         assert response.status_code == 200
         assert response.json()["status"] == "partial"
         assert response.json()["failures"][0]["label"] == "city=上海"
+
+
+def _llm_payload(**overrides: Any) -> dict[str, Any]:
+    payload = _payload(
+        provider="llm_prompt",
+        request_spec={
+            "url_template": "https://llm.example.com",
+            "prompt": {"system": "你是数据助手", "user_template": "生成 {today} 的摘要"},
+            "llm": {"model": "model-a", "temperature": 0.2},
+        },
+        entrant_param=None,
+        entrant_keys=[],
+        match_keys=["day"],
+        schedule={"mode": "cron", "expr": "0 7 * * *"},
+    )
+    payload.update(overrides)
+    return payload
+
+
+class TestLlmPrompt:
+    def test_provider_is_listed_with_schema(self, client, workspace_with_auth):
+        wid, headers = workspace_with_auth
+        response = client.get(f"/api/v1/workspaces/{wid}/datasource/providers", headers=headers)
+        provider = next(item for item in response.json()["providers"] if item["name"] == "llm_prompt")
+        assert provider["supports_paging"] is False
+        assert provider["default_cursor"] == "none"
+        assert "user_template" in [field["name"] for field in provider["params_schema"]["fields"]]
+
+    def test_create_ok(self, client, workspace_with_auth):
+        wid, headers = workspace_with_auth
+        response = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs", json=_llm_payload(), headers=headers)
+        assert response.status_code == 201
+        body = response.json()
+        assert body["provider"] == "llm_prompt"
+        assert body["request_spec"]["llm"]["model"] == "model-a"
+
+    def test_cron_requires_match_keys(self, client, workspace_with_auth):
+        wid, headers = workspace_with_auth
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/sync-jobs",
+            json=_llm_payload(match_keys=[]),
+            headers=headers,
+        )
+        assert response.status_code == 400
+        assert "match_keys" in response.json()["detail"]
+
+    @pytest.mark.parametrize(
+        ("prompt", "match"),
+        [
+            ({"system": "", "user_template": ""}, "user_template"),
+            ({"system": "", "user_template": "生成 {unknown}"}, "模板变量缺失"),
+        ],
+    )
+    def test_rejects_bad_prompt(self, client, workspace_with_auth, prompt, match):
+        wid, headers = workspace_with_auth
+        spec = _llm_payload()["request_spec"]
+        spec["prompt"] = prompt
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/sync-jobs",
+            json=_llm_payload(request_spec=spec),
+            headers=headers,
+        )
+        assert response.status_code == 400
+        assert match in response.json()["detail"]
+
+    def test_connection_uses_session_key_and_has_no_side_effect(self, client, db, workspace_with_auth, monkeypatch):
+        wid, headers = workspace_with_auth
+        session = DatasourceSession(
+            workspace_id=wid,
+            name="LLM",
+            headers={"X-Tenant": "t1"},
+            secrets=encrypt_secrets({"api_key": "sk-test"}),
+        )
+        db.add(session)
+        db.commit()
+        captured: dict[str, Any] = {}
+
+        def fake(spec, *, api_key, session_headers=None, fetch=None):
+            captured.update(spec=spec, api_key=api_key, headers=session_headers)
+            return LlmConnectionResult(ok=True, latency_ms=12, model="model-a", message="连通成功")
+
+        monkeypatch.setattr(sync_jobs, "test_llm_connection", fake)
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/test-connection",
+            json={"request_spec": _llm_payload()["request_spec"], "session_id": session.id},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json() == {"ok": True, "latency_ms": 12, "model": "model-a", "message": "连通成功"}
+        assert captured["api_key"] == "sk-test"
+        assert captured["headers"] == {"X-Tenant": "t1"}
+        assert db.query(DatasourceSyncRun).count() == 0
+        assert db.query(DatasourceSyncJob).count() == 0
+
+    def test_connection_failure_is_reported(self, client, db, workspace_with_auth, monkeypatch):
+        wid, headers = workspace_with_auth
+        session = DatasourceSession(
+            workspace_id=wid,
+            name="LLM",
+            headers={},
+            secrets=encrypt_secrets({"api_key": "bad"}),
+        )
+        db.add(session)
+        db.commit()
+        monkeypatch.setattr(
+            sync_jobs,
+            "test_llm_connection",
+            lambda *args, **kwargs: LlmConnectionResult(ok=False, latency_ms=3, message="API 返回 401"),
+        )
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/test-connection",
+            json={"request_spec": _llm_payload()["request_spec"], "session_id": session.id},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["ok"] is False
+        assert "401" in response.json()["message"]
+
+    def test_connection_rejects_missing_session(self, client, workspace_with_auth):
+        wid, headers = workspace_with_auth
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/test-connection",
+            json={"request_spec": _llm_payload()["request_spec"], "session_id": 9999},
+            headers=headers,
+        )
+        assert response.status_code == 400
+        assert "凭证会话不存在" in response.json()["detail"]
+
+    def test_connection_rejects_bad_url(self, client, workspace_with_auth):
+        wid, headers = workspace_with_auth
+        spec = _llm_payload()["request_spec"]
+        spec["url_template"] = ""
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/test-connection",
+            json={"request_spec": spec},
+            headers=headers,
+        )
+        assert response.status_code == 400

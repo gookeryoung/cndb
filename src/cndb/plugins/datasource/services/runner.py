@@ -211,6 +211,8 @@ def build_job_spec(
         # 密钥列在库里是密文（core.crypto）；解密失败直接抛 SecretDecryptError，
         # 由外层 try 落成 failed 运行记录 —— 静默降级成空密钥只会变成难查的 401
         extra_variables = decrypt_secrets(session.secrets)
+    # 内置提示词变量（ADR 0014）：today 由本次运行时钟统一给出，保证重放一致
+    extra_variables["today"] = today
     request = request_spec_from_payload(payload, cursor_from=cursor_from, today=today)
     return SyncJobSpec(
         request=request,
@@ -251,6 +253,8 @@ def request_spec_from_payload(
         timeout=float(data.get("timeout") or 15.0),
         paging=PagingSpec(**dict(data.get("paging") or {})),
         time_window=TimeWindowSpec(**time_window),
+        prompt=dict(data.get("prompt") or {}),
+        llm=dict(data.get("llm") or {}),
     )
 
 
@@ -348,6 +352,7 @@ def _finalize(
             else []
         ),
         "dropped_fields": normalized.dropped if normalized is not None else 0,
+        "response_metadata": outcome.metadata[:50],
     }
     if outcome.status == RunStatus.FAILED.value and outcome.failures:
         run.error_message = "; ".join(f"{item.label}: {item.error}" for item in outcome.failures[:3])[:1000]

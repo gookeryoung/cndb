@@ -3,13 +3,15 @@
 - 编号：0014（与 ADR `docs/adr/0014-*.md` 同号）
 - 来源 / 提出人：工作区需求（用户提出）
 - 日期：2026-10-21
-- 关联 ADR：待立项后回填
+- 关联 ADR：[ADR 0014](../adr/0014-llm-prompt-datasource-sync.md)
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 
 ## 需求原句（逐字）
 
 > 数据源同步功能增强，需支持大模型 api 调用，配置 api 和 key，能够设置特定特示词和 cron 定时任务，将得到的结果更新到数据表当中。
+
+> api 增加连通测试。
 
 ## 可实施约束（C1..Cn）
 
@@ -21,6 +23,7 @@
 | C4 | 能够设置特定特示词（提示词） | `request_spec.prompt` 含 `system` + `user_template`；支持内置占位符 `{entrant}` / `{start}` / `{end}` / `{today}`，只做字面替换、不求值表达式；保存时校验提示词非空与占位符白名单 | `providers/llm_prompt.py`、`providers/template.py`、`routers/sync_jobs.py` | 单测：模板渲染（缺参 / 转义 / 未知占位符）；接口测试：空提示词 400 |
 | C5 | 和 cron 定时任务 | 复用现有 `ScheduleMode.CRON`（5 段表达式 + 时区偏移 + 失败退避），不新增调度器；前端调度下拉的 cron 选项沿用，保存时校验 `expr` | `services/schedule.py`、`models.py`、`frontend/src/pages/datasource/DatasourcePage.tsx` | 单测：cron 到期判定沿用现有用例；e2e：新建 cron 任务并回显表达式 |
 | C6 | 将得到的结果更新到数据表当中 | 模型回复必须是 JSON（对象 → 1 行，对象数组 → N 行）；经 `field_mapping` 归一后按 `match_keys` upsert 到 `table_id`；解析失败 → `run=failed` 且不写脏数据；预览不落库 | `providers/llm_prompt.py`、`services/write.py`、`services/runner.py` | 集成：假模型两次相同 `match_keys` → 首次 inserted=1、二次 updated=1；单测：非法 JSON 不落库 |
+| C7 | api 增加连通测试 | 新增 `POST /{wid}/datasource/test-connection`：用未保存的 `request_spec` + `session_id` 发一次最小模型请求，返回 `ok / latency_ms / model / message`；不落库、不写运行记录；仅工作区 EDITOR 可用 | `routers/sync_jobs.py`、`providers/llm_prompt.py`、`frontend/.../DatasourcePage.tsx` | 接口测试：假模型成功 / 401 / 超时三种结果；前端单测：按钮展示成功与失败文案 |
 
 约束编号在 ADR 中原样引用；不重编号、不合并。
 
@@ -39,22 +42,24 @@
 | 9 | 前端任务表单 | `frontend/src/pages/datasource/DatasourcePage.tsx:451`、`:560` | `request_spec` 目前硬编码 url / data_path / 分页，需按 provider 条件渲染提示词与模型配置 |
 | 10 | 前端接口类型 | `frontend/src/api/datasource.ts:44` | `SyncRequestSpec` 需补 llm / prompt 字段 |
 | 11 | 测试基线 | `tests/test_datasource_providers.py`、`tests/test_datasource_pipeline.py`、`tests/test_datasource_api.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/tests/e2e/critical/datasource.spec.ts` | 新 provider 需补单测、接口测试与 e2e |
+| 12 | 既有抓取预览入口 | `routers/sync_jobs.py`（`/sync-jobs/{id}/preview`） | 预览必须先保存任务；连通测试要用未保存配置，需独立端点 |
 
 > 编号与 ADR「Context」表对齐：ADR 逐条给「确认 / 排除 / 新增」并补齐 `file:line`。本阶段只粗查，精查归 ADR。
 
 ## 未决问题
 
-- [ ] **LLM 角色**：作为独立数据源 provider，还是把已有 HTTP 抓取结果交给模型做后处理，或两者都支持？（提案：首期只做独立 provider）
-- [ ] **API 协议与端点**：OpenAI 兼容公网服务 / 还需支持 Ollama、vLLM 等内网或本机端点 / 任意 HTTP JSON？（提案：OpenAI 兼容；如支持内网端点，需决定 SSRF 白名单放行规则）
-- [ ] **落表格式**：强制结构化 JSON / 整段文本写单列 / 任务级可选？（提案：强制 JSON，解析失败即 failed）
-- [ ] **提示词上下文**：仅内置变量（标的 / 时间窗口 / 今天），还是允许把目标表或指定表的已有行拼进提示词？（提案：首期仅变量）
-- [ ] **幂等口径**：启用 cron 时是否强制配置 `match_keys`，还是允许无键追加？（提案：cron 任务必填，避免每轮重复行）
-- [ ] **预览行为**：抓取预览是否真实调用模型（产生费用）？提案：真实调用 1 次并在前端提示
-- [ ] **用量留痕**：是否在运行记录中保存 token 用量 / 模型名（提案：写入 `run.detail`，不做费用估算）
+- [x] **LLM 角色** → 独立数据源 provider `llm_prompt`（2026-10-21 需求方确认）
+- [x] **API 协议与端点** → OpenAI 兼容 `/chat/completions`，首期仅公网端点；内网自建端点不在本期范围（2026-10-21 确认）
+- [x] **落表格式** → 强制结构化 JSON；解析失败即 `run=failed`（2026-10-21 确认）
+- [x] **提示词上下文** → 首期仅内置变量（`entrant` / `start` / `end` / `today`），不读表（2026-10-21 确认）
+- [x] **幂等口径** → cron 任务必须配置 `match_keys`（2026-10-21 确认）
+- [x] **预览行为** → 真实调用模型 1 次，前端提示可能产生费用（2026-10-21 确认）
+- [x] **用量留痕** → token 用量与模型名写入 `run.detail`，不做费用估算（2026-10-21 确认）
+- [x] **Key 管理** → 复用 `datasource_session`，密钥加密入库、只写不回显（2026-10-21 确认）
 
 ## 卡点
 
-- [ ] 每条需求句都有 C 编号约束（无遗漏、无「待定」）
-- [ ] 未决问题全部有结论，需求方确认
+- [x] 每条需求句都有 C 编号约束（无遗漏、无「待定」）
+- [x] 未决问题全部有结论，需求方确认（2026-10-21）
 
 > 「决策记录表无待定」是 ADR 的卡点，不在本卡片判定。
