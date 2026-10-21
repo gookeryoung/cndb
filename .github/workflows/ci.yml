@@ -3,7 +3,9 @@ name: CI
 on:
   push:
     branches: [main, develop]
-    # 路径过滤：仅对影响运行的文件变化触发全量 CI；&ci_paths 锚点供 pull_request 复用，避免两份列表漂移。
+    # 路径过滤：&ci_paths 锚点供 pull_request 复用，避免两份列表漂移。
+    # docs/adr/** 与 CHANGELOG.md 只为 ADR 落地校验而纳入：这类改动会让重活 job 全部跳过，
+    # 只跑 ADR Landing（原独立 workflow adr-check.yml 已并入本文件，一次推送只出现一个 workflow）。
     paths: &ci_paths
       - 'src/**'
       - 'tests/**'
@@ -23,6 +25,8 @@ on:
       - '.python-version'
       - '.pre-commit-config.yaml'
       - 'Makefile'
+      - 'docs/adr/**'
+      - 'CHANGELOG.md'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main, develop]
@@ -34,8 +38,73 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 判定本次推送是否只有 ADR 文档 / ADR 校验脚本变化：
+  # 是 → 只跑 ADR Landing；否（含首次推送 / 手动触发）→ 跑全量门禁。
+  changes:
+    name: Detect change scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 需要与 base commit 做 diff：PR 对比 base.sha，push 对比 before，浅克隆拿不到
+          fetch-depth: 0
+
+      - name: Detect ADR-only changes
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # 首次推送 / 手动触发 / force push（base 已不在历史）按代码改动处理（fail-safe 跑全量）
+          if [ -z "${BASE_SHA}" ] || [ "${BASE_SHA}" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}")"
+          # 变更文件全部落在 ADR / CHANGELOG / ADR 校验脚本内时，全量 job 无判别力
+          if [ -z "${changed}" ] || ! printf '%s\n' "${changed}" | grep -qvE '^(docs/adr/|CHANGELOG\.md$|scripts/check_adr_landing\.py$)'; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # 原独立 workflow adr-check.yml 的 job，合并后仅承接 ADR-only 推送；
+  # 代码推送时改由 lint 顺带执行同一条命令（两者互斥，不重复起 runner）。
+  adr-check:
+    name: ADR Landing
+    needs: changes
+    if: needs.changes.outputs.code == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          cache-suffix: adr
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      # pyproject 固定腾讯 PyPI 镜像（供国内开发），海外 runner 访问会超时，故覆盖回官方源。
+      - name: Sync dependencies
+        env:
+          UV_DEFAULT_INDEX: https://pypi.org/simple
+        run: uv sync --frozen --extra lint
+
+      # 不用 --strict：ADR 评审状态（Proposed → Accepted）由人工回填，
+      # 常驻的「待评审」告警不应阻断 CI；路径缺失 / 落地表缺项 / CHANGELOG 缺条目均为 error。
+      - name: Check ADR landing
+        run: uv run python scripts/check_adr_landing.py
+
   lint:
     name: Lint & Typecheck
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -57,6 +126,11 @@ jobs:
 
       - name: Check .gitkeep sentinels
         run: uv run python scripts/check_gitkeep.py
+
+      # ADR 落地状态表 / 交接节 / Related 链接 / CHANGELOG 关联；
+      # 与 ADR Landing job 同口径，代码推送时在这里顺带校验（复用已装好的 uv 环境）。
+      - name: Check ADR landing
+        run: uv run python scripts/check_adr_landing.py
 
       - name: Cache ruff
         uses: actions/cache@v6
@@ -88,6 +162,8 @@ jobs:
   # 拆开后 vitest 按 --shard 分摊到 3 台 runner，关键路径压到其 1/3 + 合流开销。
   frontend-static:
     name: Frontend Static
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -121,6 +197,8 @@ jobs:
 
   frontend-build:
     name: Frontend Build
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -163,6 +241,8 @@ jobs:
 
   frontend-test:
     name: Frontend Test shard ${{ matrix.shard }}/3
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -215,7 +295,8 @@ jobs:
 
   frontend-coverage:
     name: Frontend Coverage Gate
-    needs: frontend-test
+    needs: [changes, frontend-test]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -259,6 +340,8 @@ jobs:
 
   test:
     name: Test (Python 3.12)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -297,7 +380,8 @@ jobs:
     # 抖动由 CI retries=2 与 workers=4 兜底（见 frontend/playwright.config.ts）。
     # 依赖 frontend-build 复用静态产物：原先 4 个分片各自 pnpm build（4×26s），
     # 而 webServer 只读 src/cndb/static，产物可直接由 artifact 灌入。
-    needs: frontend-build
+    needs: [changes, frontend-build]
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:

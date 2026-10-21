@@ -15,7 +15,7 @@ description: Use to run the cndb repo's objective gates (make flow / make check,
 4. 前端 `make frontend-coverage`（双门槛）、`make e2e`（4 分片）。
 5. `make check`：全套门禁（gitkeep + adr-check + lint + typecheck + frontend-static + frontend-coverage + cov，并行）。
 6. `make adr-check`：ADR 落地状态表 / 交接节 / Related 链接 / CHANGELOG 关联；已落地的期必须有代码落点与测试文件。
-7. CI：GitHub Actions `ci.yml` 与 `adr-check.yml`、CodeUp `ci.yml`；bundle budget 不超基线 +5%（见 `docs/BUNDLE_BUDGET.md`）。
+7. CI：GitHub Actions `ci.yml`（含 ADR Landing job）、CodeUp `ci.yml`；bundle budget 不超基线 +5%（见 `docs/BUNDLE_BUDGET.md`）。
 
 ## 步骤
 
